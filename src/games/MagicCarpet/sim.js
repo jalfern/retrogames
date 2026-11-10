@@ -101,6 +101,10 @@ export const VIL_GRAB_R = 8
 export const VIL_GRAB_ALT = 12
 export const VIL_TRIBUTE_T = 720
 export const VIL_TRIBUTE_M = 2
+// #1764 item 2 stage 3 — the strip of land a sibling's castle hoards from:
+// any roaming pearl inside SIB_HOARD_R of his SITE vanishes into his purse,
+// capped at the world's full hoard. rng-free; paid back as scatter on death.
+export const SIB_HOARD_R = 24
 const VIL_LOOT_MIN = 4
 const VIL_LOOT_MAX = 8
 
@@ -1278,6 +1282,9 @@ export function step(gs, inp) {
                         bank: gs.bank,
                         pearls: gs.pearls.reduce((a, p) => a + (p.alive ? p.m : 0), 0),
                         hoard: gs.wizard.alive ? gs.wizard.mana : 0,
+                        // #1764 s3: the coven's purses empty with the world too —
+                        // the conservation proof in carpetcheck rebases on all seven stores.
+                        sibs: gs.sibs.reduce((a, sb) => a + (sb.alive ? sb.mana : 0), 0),
                     },
                 })
                 const keepCarry = gs.mana
@@ -1379,6 +1386,28 @@ export function step(gs, inp) {
         sb.ang += 0.012
         sb.x = wrap(sb.tx + Math.cos(sb.ang) * 34, MAP)
         sb.y = wrap(sb.ty + Math.sin(sb.ang) * 34, MAP)
+        // #1764 item 2 stage 3 — THE HOARDS: a roaming pearl that strays within
+        // SIB_HOARD_R of a sibling's SITE (his castle, not his orbit) vanishes
+        // into it and the hoard grows. His castle, not his eyes, does the work —
+        // the veil holds his shots, never his purse. The hoard caps at the
+        // world's full share (he starts at half), so no sib out-banks the primary,
+        // and a pearl is never taken once the purse is full. Nothing here spends
+        // rnd(): the seed stream never shifts. What he holds, he pays back on
+        // death — dropPearls already scatters sb.mana.
+        {
+            const cap = LEVELS[gs.level].hoard
+            let eaten = 0
+            for (const p of gs.pearls) {
+                if (!p.alive || sb.mana >= cap) continue
+                if (Math.hypot(wrapD(p.x - sb.tx), wrapD(p.y - sb.ty)) < SIB_HOARD_R) {
+                    p.alive = false
+                    const gain = Math.min(cap - sb.mana, p.m)
+                    sb.mana += gain
+                    eaten += gain
+                }
+            }
+            if (eaten) gs.events.push({ type: 'sibHoard', sib: gs.sibs.indexOf(sb), x: sb.tx, y: sb.ty, m: eaten })
+        }
         // stage 2 — his bolt, by the primary's law: held by the veil, 75u
         // reach, same speed and damage, and the wizfire cue carries HIS cast
         // point so the pan already finds the right side of the sky (#1746).

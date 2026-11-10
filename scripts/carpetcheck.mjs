@@ -516,7 +516,10 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
 {
     const gs = makeGame(7)
     const pearlMana = (s) => s.pearls.reduce((a, p) => a + (p.alive ? p.m : 0), 0)
-    const total = (s) => Math.floor(s.bank) + Math.floor(s.mana) + pearlMana(s) + (s.wizard.alive ? s.wizard.mana : 0)
+    // #1764 s3: seven stores now — vault, pouch, pearls, the primary's hoard,
+    // and the coven's four purses (hoarded pearls ride there, never vanish).
+    const total = (s) => Math.floor(s.bank) + Math.floor(s.mana) + pearlMana(s) + (s.wizard.alive ? s.wizard.mana : 0) +
+        s.sibs.reduce((a, sb) => a + (sb.alive ? sb.mana : 0), 0)
     let t0 = total(gs)
     let spent = 0, bounty = 0
     let i = 0
@@ -529,8 +532,8 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
             if (e.type === 'tribute') bounty += e.m // #1764 stage 2: the converted hut pays
             if (e.type === 'hutDown' && e.loot) bounty += e.m // #1764 stage 2: the ashes pay
             if (e.type === 'level') {
-                t0 -= e.reset.bank + e.reset.pearls + e.reset.hoard
-                t0 += pearlMana(gs) + LEVELS[e.n].hoard
+                t0 -= e.reset.bank + e.reset.pearls + e.reset.hoard + e.reset.sibs
+                t0 += pearlMana(gs) + LEVELS[e.n].hoard + gs.sibs.reduce((a, sb) => a + sb.mana, 0)
             }
         }
         gs.events.length = 0
@@ -1401,15 +1404,19 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         step(gs, { castL: true })
         const heightsSame = gs.heights.every((h, i) => h === h0[i])
         const prl1 = gs.pearls.reduce((a, p) => a + (p.alive ? p.m : 0), 0)
+        // #1764 s3: a pearl standing in a sibling's hoard strip is drawn into HIS
+        // purse this very tick — that is the hoard law, not free mana. Net it out:
+        // the land may only lose what the coven demonstrably took.
+        const hoarded = gs.events.filter((e) => e.type === 'sibHoard').reduce((a, e) => a + e.m, 0)
         r.check('casting clone pays 35 from the pouch',
             gs.mana === 65 && gs.events.some((e) => e.type === 'cast' && e.id === 'clone'), `mana=${gs.mana}`)
         r.check('the land never feels clone: no height change, no crater, no fire, no hut lost, no topple',
             heightsSame && gs.craters.length === cr0 && gs.fireMarks.length === mk0 &&
             gs.huts.length === hut0 && gs.towerDown === false,
             `heights same=${heightsSame} craters ${cr0}→${gs.craters.length} marks ${mk0}→${gs.fireMarks.length} huts ${hut0}→${gs.huts.length}`)
-        r.check('no free mana: clone spawns no pearls — only kills pay',
-            prl1 === prl0 && gs.books.length === books0 && gs.wizard.hp === whp0,
-            `pearls ${prl0}→${prl1}`)
+        r.check('no free mana: clone spawns no pearls — only kills pay (hoard-strip takings netted)',
+            prl1 + hoarded === prl0 && gs.books.length === books0 && gs.wizard.hp === whp0,
+            `pearls ${prl0}→${prl1}${hoarded ? ` (+${hoarded} hoarded)` : ''}`)
         r.check('one cast, one twin: the wolf in the ring stands twice',
             gs.monsters.length === mons0 + 1 && gs.monsters.includes(wolf),
             `monsters ${mons0}→${gs.monsters.length}`)
@@ -3453,8 +3460,14 @@ const fxA = await phone.evaluate(() => ({ parts: window.__carpetTest.trailMotes(
 await phone.screenshot({ path: 'docs/shots/issue-1673-dissolve-fx.png' })
 r.check('#1673 DISSOLVE FX: cold cyan spray spawns on the wound, zero fire/ash',
     fxA.parts >= pBefore + 16 && fxA.ash === 0, `particles ${pBefore} -> ${fxA.parts}, ash ${fxA.ash}`)
-// 3) the banner row at phone size: cast for real (touch the world) and the shell says it
-await phone.evaluate(() => { window.__game.reset(7); window.__carpetTest.start(); window.__carpetTest.arm('dissolve'); window.__carpetTest.equipL('dissolve') })
+// 3) the banner row at phone size: cast for real (touch the world) and the shell says it.
+// #1764 s3: the cast window spans ~25 real ticks of cruise, and seed 7's field
+// parks a pearl inside the pickup band of the spawn path — a mid-window magnet
+// ride made the exact −40 a timing race (a m=2 pickup reads as a 2 unspent).
+// Park first at the map's emptiest pocket (70u grid scan vs seed 7's pearls:
+// nearest pearl 109u; sim replay: 0 pickups in 80 ticks from here), so the
+// mana delta is provably only the cast.
+await phone.evaluate(() => { window.__game.reset(7); window.__carpetTest.start(); window.__carpetTest.arm('dissolve'); window.__carpetTest.equipL('dissolve'); window.__carpetTest.holdCarpet(140, 408, 40) })
 await phone.waitForTimeout(200)
 const mA = (await phone.evaluate(() => window.__carpetTest.probe())).mana
 const mM = await phone.evaluate(() => window.__carpetTest.trailMotes())
@@ -3935,6 +3948,151 @@ await pBrowser.close()
                 L1[0] === L2[0] && L1[1] === L2[1],
                 `log-eq ${L1[0] === L2[0]}, hash-eq ${L1[1] === L2[1]}, ${L1[0].split('|').length} casts logged`)
         }
+    }
+}
+
+// ---- #1764 item 2 stage 3 — THE HOARDS: siblings hoard roaming pearls.
+// Laws, pinned as LITERALS (the #1764 reach-mutant lesson — a check never
+// imports the constant it proves): a roaming pearl within 24u of a sibling's
+// SITE rides into his purse (his castle does the work, not his eyes — the
+// veil holds his bolts, never his purse); the purse caps at the world's full
+// share (80 on world 1 — he starts at half, 40) and a full purse takes
+// nothing; a dead sib hoards nothing; the carpet's own magnet (6u) beats the
+// castle by tick order (pickup before hoard); and everything he holds, he
+// pays back as scatter when he falls. rng-free — the seed stream never shifts.
+{
+    const soloSib = (seed = 7) => { // every caster but sib 0 flagged dead
+        const gs = makeGame(seed)
+        gs.wizard.alive = false
+        gs.sibs.slice(1).forEach((s) => { s.alive = false })
+        return gs
+    }
+    const putPearl = (gs, x, y, m) => {
+        const px = wrap(x, MAP), py = wrap(y, MAP)
+        const p = { x: px, y: py, z: Math.max(sampleH(gs, px, py), WATER) + 2, m, alive: true }
+        gs.pearls.push(p)
+        return p
+    }
+    const pearlSum = (gs) => gs.pearls.reduce((a, p) => a + (p.alive ? p.m : 0), 0)
+    {
+        const gs = soloSib()
+        const sb = gs.sibs[0]
+        const p1 = putPearl(gs, sb.tx + 10, sb.ty + 5, 5)  // ~11u — inside the strip
+        const p2 = putPearl(gs, sb.tx - 18, sb.ty - 10, 3)  // ~21u — inside, kills a narrow mutant
+        gs.events.length = 0
+        step(gs, {})
+        const ev = gs.events.filter((e) => e.type === 'sibHoard')
+        r.check('#1764-2s3 pearls inside the 24u hoard strip ride into his purse',
+            !p1.alive && !p2.alive && sb.mana === 48 && ev.length === 1 && ev[0].sib === 0 && ev[0].m === 8,
+            `mana ${sb.mana}, ev ${JSON.stringify(ev[0])}`)
+        r.check('#1764-2s3 the hoard cue sits at his SITE (pan finds the castle, not the orbit)',
+            ev.length === 1 && Math.hypot(wrapD(ev[0].x - sb.tx), wrapD(ev[0].y - sb.ty)) < 1,
+            `ev ${JSON.stringify(ev[0])}`)
+    }
+    {
+        const gs = soloSib()
+        const sb = gs.sibs[0]
+        const near = putPearl(gs, sb.tx + 26, sb.ty, 4)   // just past the 24u edge
+        const far = putPearl(gs, sb.tx + 40, sb.ty, 4)     // deep outside
+        gs.events.length = 0
+        step(gs, {}); step(gs, {})
+        r.check('#1764-2s3 pearls outside the strip are his no business (26u and 40u stay)',
+            near.alive && far.alive && sb.mana === 40 && !gs.events.some((e) => e.type === 'sibHoard'),
+            `near ${near.alive}, far ${far.alive}, mana ${sb.mana}`)
+    }
+    {
+        const gs = soloSib()
+        const sb = gs.sibs[0]
+        sb.mana = 77
+        const p1 = putPearl(gs, sb.tx + 4, sb.ty, 5)  // room is 3 — he takes 3 and stops
+        const p2 = putPearl(gs, sb.tx - 4, sb.ty, 5)   // a full purse takes nothing
+        gs.events.length = 0
+        step(gs, {})
+        r.check('#1764-2s3 the purse caps at the world\u2019s full share \u2014 no sib out-banks the primary',
+            sb.mana === 80 && p1.alive === false && p2.alive === true,
+            `mana ${sb.mana}, p1 ${p1.alive}, p2 ${p2.alive}`)
+    }
+    {
+        const gs = soloSib()
+        const sb = gs.sibs[0]
+        sb.hp = 0
+        step(gs, {}) // his death tick: scatter + sibDown
+        r.check('#1764-2s3 he dies by the stage-2 law unchanged (sibDown, scatter)',
+            !sb.alive && gs.events.some((e) => e.type === 'sibDown'))
+        const p = putPearl(gs, sb.tx + 8, sb.ty + 8, 5)
+        gs.events.length = 0
+        const manaDead = sb.mana
+        step(gs, {}); step(gs, {}); step(gs, {})
+        r.check('#1764-2s3 a dead sibling hoards nothing (his ruins spare the land)',
+            p.alive && sb.mana === manaDead && !gs.events.some((e) => e.type === 'sibHoard'),
+            `pearl ${p.alive}, mana ${sb.mana}`)
+    }
+    {
+        // The veil holds his SHOTS (stage 2 law) but never his PURSE: hoarding
+        // is the castle's, not a line of sight — a blind coven still strips the
+        // land around it.
+        const gs = soloSib()
+        const sb = gs.sibs[0]
+        gs.invis = 100000
+        const p = putPearl(gs, sb.tx + 12, sb.ty, 5)
+        gs.events.length = 0
+        step(gs, {})
+        r.check('#1764-2s3 the veil never holds the purse — hoarding runs blind',
+            !p.alive && sb.mana === 45,
+            `pearl ${p.alive}, mana ${sb.mana}`)
+    }
+    {
+        // Tick order is the law: the carpet's 6u magnet resolves before the
+        // castle scan, so hovering HIS site, the pearls are yours, not his.
+        const gs = soloSib()
+        const sb = gs.sibs[0]
+        gs.invis = 100000 // bolts held while you rob him at home
+        const p = putPearl(gs, sb.tx + 2, sb.ty + 2, 5)
+        p.z = Math.max(sampleH(gs, p.x, p.y), WATER) + 6
+        gs.x = sb.tx; gs.y = sb.ty; gs.alt = p.z + 4
+        const manaBefore = gs.mana
+        gs.events.length = 0
+        step(gs, {})
+        r.check('#1764-2s3 the carpet magnet beats the castle — pickings at his site go to you',
+            !p.alive && gs.mana === manaBefore + 5 && sb.mana === 40 &&
+            gs.events.some((e) => e.type === 'pickup') && !gs.events.some((e) => e.type === 'sibHoard'),
+            `mana +${gs.mana - manaBefore}, sib ${sb.mana}`)
+    }
+    {
+        // Everything he hoards, he pays back: his scatter is the player's
+        // deferred payout, so the strip moves wealth, it does not unmake it.
+        const gs = soloSib()
+        const sb = gs.sibs[0]
+        const totalBefore = pearlSum(gs)
+        putPearl(gs, sb.tx + 10, sb.ty, 5)
+        gs.events.length = 0
+        step(gs, {}) // hoard: -5 from the land, +5 in the purse
+        r.check('#1764-2s3 hoarded value leaves the land (5 gone, purse fat)',
+            pearlSum(gs) === totalBefore && sb.mana === 45,
+            `land ${pearlSum(gs)} vs ${totalBefore}, mana ${sb.mana}`)
+        sb.hp = 0
+        step(gs, {}) // death pays: dropPearls carries the WHOLE purse
+        r.check('#1764-2s3 killing a hoarder pays back every pearl he ever took',
+            pearlSum(gs) === totalBefore + 45,
+            `land ${pearlSum(gs)} vs ${totalBefore} + 45`)
+    }
+    {
+        // rng law survives the hoard: seed 7 twice under the autopilot gives an
+        // identical hoard log, cast log and hash.
+        const hoardLog = () => {
+            const g = makeGame(7)
+            const log = []
+            for (let i = 0; i < 6000; i++) {
+                step(g, autopilot(g))
+                for (const e of g.events) if (e.type === 'sibHoard') log.push(`${e.sib}:${e.m}@${e.x.toFixed(0)},${e.y.toFixed(0)}`)
+                g.events.length = 0
+            }
+            return [log.join('|'), stateHash(g)]
+        }
+        const H1 = hoardLog(), H2 = hoardLog()
+        r.check('#1764-2s3 the hoard is rng-free — seed 7 twice hoards the same pearls, same hash',
+            H1[0] === H2[0] && H1[1] === H2[1],
+            `log-eq ${H1[0] === H2[0]}, hash-eq ${H1[1] === H2[1]}, ${H1[0].split('|').filter(Boolean).length} hoards logged`)
     }
 }
 
