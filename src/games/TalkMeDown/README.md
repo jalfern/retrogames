@@ -45,6 +45,22 @@ the couch — or the mic.
   ride hash/simState and the net snapshot (additive `hp`). A GLYPH mirror
   (G6) is impossible by the seat law — GLYPH seats only at round 4/depth 5 —
   so the drain rides the dial alone.
+- **THE RAIL (#1917)**: the back plate's three holders are a physical
+  slide-rail tray with a SEEDED cell layout, and the tray opens at its right
+  end — only the cell nearest the opening can leave the plate. `<`/`>` pick
+  the slot under the hand while flipped (pad-reachable; the hand lands at the
+  rail's right end on flip); A on a blocked or empty slot refuses SILENTLY —
+  #1909's fiddle law extended to slot level, the puzzle is reading the rail,
+  never the risk of looking. The layout is a pure function of seed+round from
+  a side-stream rng — the module rng never sees it, so every pre-rail bomb
+  generates byte-identically (seed-pin law). Pull-back re-clips the cell to
+  the slot it came from (`heldSlot`); the open end is drawn honest: the free
+  cell wears a bright pull-tab, clipped neighbours a dark slate one, and the
+  action line names THIS slot (`EMPTY SLOT / BLOCKED - IT CLIPS RIGHT / A
+  PULLS IT OUT`). D5/D6/G5 stay verbatim true — the rail changes WHERE the
+  cells sit, never what the count means. `solvePad` homes to the open end
+  before it spends the press (WATCH/attract/harness share that brain);
+  `tray/sel/heldSlot` ride hash/simState and the snapshot (hp[2..4]).
 - **Solvability by construction**: the generator re-rolls module features
   until `computeTarget` resolves, so a printed precondition (e.g. N2's "the
   ONE lit wire") always holds on a live bomb.
@@ -135,6 +151,7 @@ the couch — or the mic.
 | arrows / d-pad | module + wire/dial/glyph | page + rule line |
 | ↑ at module 1 / ↓ on the back | tilt the bomb over / tilt back (#1797) | — |
 | A on the back | pull a battery out / put it back (#1909 THE DRAIN) | — |
+| ← / → on the back | move the hand across the battery rail (#1917 THE RAIL) | — |
 | SPACE / A | cut / SET / press glyph | flag rule (READ N3 on panel) |
 | B / PAGE | hide-show manual rail (solo) | — |
 | V | mic on/off | |
@@ -167,6 +184,12 @@ npm run bombcheck   # 88 gates: legal+solvable gen (300 seeds), rules-as-printed
                     # key cannot drain dry), live count moves on D5/G5 rigs,
                     # solvePad drains too, partner leads with the pull, the wire
                     # carries held+pulls, source pins)
+npm run platecheck  # THE RAIL (#1917): layout purity (seeded side-stream — module rng
+                    # untouched), rail law on 105 two-cell boards (open-end-only pull,
+                    # blocked/empty refuse silently, push-back re-clips home, pulls
+                    # never rewind), D6 solved on rigs needing a hand-shift, solvePad
+                    # taps only at the open end, tray/sel/home ride hash+simState,
+                    # quota win 120/120, and the open-end mutant dies
 npm run bombdrive   # real-key browser drive: attract->select->play, drawn pixels
                     # follow the sim, real strike (+ #1305 pixel gates: strike edge-
                     # flinch, sub-10s fuse-bezel throb), mic obey/refuse, contract
@@ -285,7 +308,12 @@ red on main while `bombcheck` stays green. Filed for the QA lane.
   structurally untestable, not just unwritten: the seat law puts NEON at
   module 0 and the type cycle keeps DIAL at one module per round, so two live
   dials never exist on a real board.
-- Deeper plate variety: the back is one layout with a count and a pocket;
-  where the batteries sit could itself carry rules (a slot-layout puzzle) —
-  that remains the fun-kind of stage 2, along with voice shorthand for the
-  drain ("PULL IT" should be enough on the mic).
+- **CLOSED by #1917 (THE RAIL):** where the batteries sit IS a rule — a
+  seeded three-slot tray that opens at the right; only the cell nearest the
+  opening pulls out, `<`/`>` pick the slot, blocked/empty refuse silently,
+  push-back re-clips home. Layout rides seed+round on a side-stream rng
+  (module stream untouched), and the tray/hand/home ride hash, simState and
+  the net snapshot. Proof: `npm run platecheck` (13 gates, incl. 105
+  two-cell boards and a dead mutant).
+- Voice shorthand for the drain: "PULL IT" should be enough on the mic
+  (DIAL/SET shorthand already reads; a bare pull verb does not).
