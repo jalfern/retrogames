@@ -160,6 +160,75 @@ r.check('real Space clocks in (attract → play)', await waitMode('play'))
     r.check('truck drives off once the dock is clear', after && after.mode === 'out', JSON.stringify(after))
 }
 
+// ---- load-out (#1911): a real tap on the pad calls the trailer, and what
+// the trailer draws is what the sim carries ----
+{
+    const tickNow = () => page.evaluate(() => window.__floorbossTest.sim().tick)
+    // settle the dock first: no parcels waiting and the trailer home, so the
+    // call below can only be the tap's doing
+    {
+        const tQ = await tickNow()
+        while ((await tickNow()) - tQ < 700) {
+            const q = await page.evaluate(() => ({ p: window.__floorbossTest.pad().length, m: window.__floorbossTest.truck().mode }))
+            if (!q.p && q.m === 'out') break
+            await new Promise((res) => setTimeout(res, 90))
+        }
+    }
+    // force one covered ship, then confirm a parcel squats on the pad
+    await page.evaluate(() => { const g = window.__floorbossTest; g.sim().orders.push({ id: 4242, items: ['crate', 'can'], due: g.sim().tick + 4000, prio: false, shipped: false, expired: false }); g.sim().staging.push('crate', 'can'); g.sim().packT = 1 })
+    let staged = null
+    const tS = await tickNow()
+    while ((await tickNow()) - tS < 200) {
+        staged = await page.evaluate(() => window.__floorbossTest.pad())
+        if (staged.length) break
+        await new Promise((res) => setTimeout(res, 80))
+    }
+    r.check('a packed order stages a parcel on the pad', staged.length >= 1, JSON.stringify(staged))
+    const preCall = await page.evaluate(() => window.__floorbossTest.truck().mode)
+    const tapPos = await clientXY(23, 13)
+    await page.mouse.click(tapPos.x, tapPos.y)
+    const called = await page.evaluate(() => window.__floorbossTest.truck().mode)
+    r.check('real tap on the shipping pad calls the truck (was ' + preCall + ')', preCall === 'out' && called === 'back', called)
+    // while it is in view, the trailer drawn on canvas sits under the dock and
+    // matches the logical truck: sample the trailer skin at the sim's own x
+    let sawTrailer = false
+    const tB = await tickNow()
+    while ((await tickNow()) - tB < 400) {
+        const px = await page.evaluate(() => {
+            const t = window.__floorbossTest
+            const g = t.sim()
+            if (g.truck.mode === 'out') return null
+            const c = t.canvas()
+            const d = c.getContext('2d').getImageData(Math.round((g.truck.x + 20) * 2), 421 * 2, 1, 1).data
+            return { rgb: [d[0], d[1], d[2]], mode: g.truck.mode, x: Math.round(g.truck.x) }
+        })
+        if (px && px.rgb[0] > 150 && px.rgb[1] > 140 && px.rgb[2] > 120) { sawTrailer = true; break }
+        await new Promise((res) => setTimeout(res, 70))
+    }
+    r.check('the trailer painted under the dock IS the sim truck (pixel at gs.truck.x)', sawTrailer)
+    // wait for park, then a second tap sends it early
+    let parked = null
+    const tP = await tickNow()
+    while ((await tickNow()) - tP < 400) {
+        parked = await page.evaluate(() => window.__floorbossTest.truck())
+        if (parked.mode === 'park') break
+        await new Promise((res) => setTimeout(res, 70))
+    }
+    await page.mouse.click(tapPos.x, tapPos.y)
+    const sent = await page.evaluate(() => window.__floorbossTest.truck().mode)
+    r.check('second tap sends the parked truck early', parked && parked.mode === 'park' && sent === 'leave', JSON.stringify({ parked, sent }))
+    const tL = await tickNow()
+    let homed = sent && { mode: sent }
+    while ((await tickNow()) - tL < 300) {
+        homed = await page.evaluate(() => window.__floorbossTest.truck())
+        // correct law: if the early send left a parcel staged, the truck recalls
+        // the moment it gets home — "back with x at home" counts as home
+        if (homed.mode === 'out' || (homed.mode === 'back' && homed.x < -50)) break
+        await new Promise((res) => setTimeout(res, 70))
+    }
+    r.check('the sent truck is home again (and straight back out for anything left)', homed && (homed.mode === 'out' || homed.mode === 'back'), JSON.stringify(homed))
+}
+
 // ---- full shift, end and restart ----
 {
     await page.evaluate(() => { const g = window.__floorbossTest; for (let i = 0; i < 9200 && !g.sim().end; i++) g.step(1) })

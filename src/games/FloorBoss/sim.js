@@ -686,8 +686,10 @@ export function step(gs, pads = [{}]) {
             tr.loadT++
             if (tr.loadT >= TRUCK_LOAD) {
                 tr.loadT = 0
-                const p = gs.pad.shift()
-                tr.carry += p.n
+                const p = gs.pad[0]
+                p.n-- // box by box — a three-box parcel takes three cycles
+                tr.carry++
+                if (p.n <= 0) gs.pad.shift()
                 gs.ev.push({ type: 'loadout', x: OUT_CELLS[0].x, y: OUT_CELLS[0].y })
             }
         } else tr.dwell++

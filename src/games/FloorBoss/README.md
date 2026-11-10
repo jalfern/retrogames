@@ -49,6 +49,19 @@ score; three expired orders and you're fired. Quota: 1000.
   painter clocks (truck back-in/park/drive-off, ghost arcs) advance in WORLD
   ticks (`gs.tick` deltas per paint, clamp 8), never display frames — software
   Chrome paints ~11 fps and wall-frame waits flaked `floorbossplay` on main.
+- **Load-out** (#1911): shipping is physical. A packed order stages a parcel
+  (`{n: item count}`) on the dock pad; the pad caps at `PAD_CAP` 3 and a full
+  pad holds the next ship on the line (silent wait, never a fine). Call law:
+  the truck backs in when the pad is full or the oldest parcel ages past
+  `PAD_AGE` 240 — or when the MANAGER taps the pad (and a tap while parked
+  sends it early, losing nothing: the un-loaded parcel stays staged and recalls
+  the trailer). Parked, it loads one box per `TRUCK_LOAD` 14 ticks, dwells
+  `TRUCK_MIN` 40 once clear, and drives off carrying exactly what it loaded.
+  Truck truth (mode, x, carry) and the pad are SIM state — the painter holds no
+  forked truck, it draws `gs.truck`; `T[..]P[..]` joined `stateHash` (additive,
+  #1373 law). Payouts and pack cadence are untouched — the truck is the pipe,
+  not the till. The autopilot calls the trailer like an attentive manager (two
+  waiting, trailer away), so attract shows staging and loaded departures.
 - **Rush hour**: a 20-second wave every 65 s doubles intake and order rate,
   tightens deadlines and pays ×1.5.
 - **Autopilot** (attract demo + harness win-proof) drives only the pad — the
@@ -59,10 +72,11 @@ score; three expired orders and you're fired. Quota: 1000.
 
 ## Verify
 ```bash
-npm run floorbosscheck          # Node: boots/rules/win/determinism/episode (mutant-proven) + servo presentation source pins (#1877)
+npm run floorbosscheck          # Node: boots/rules/win/determinism/episode (mutant-proven) + servo presentation source pins (#1877) + load-out (#1911)
 node scripts/floorbosscheck.mjs --mutate-yield   # servo bay-yield law can fail
 node scripts/floorbosscheck.mjs --mutate-reach   # servo reach law can fail
-npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877)
+node scripts/floorbosscheck.mjs --mutate-cap     # the dock cannot pack past the pad (#1911)
+npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877); real-tap pad call/send + drawn-truck-is-sim-truck gates (#1911)
 CONTRACT_ONLY=floor-boss npm run contractcheck
 node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
 ```
@@ -72,7 +86,12 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
   rotates and self-stows in-reach racks when no bot is detailed to the bay
   (see Engine notes); full arm-on-bay *pick* from the belt is still the
   scripted handoff, but the transfer is now real gantry work with a swing cost.
-- No trucks/visual departures; shipping is a dock pulse + payout.
+- ~~No trucks/visual departures; shipping is a dock pulse + payout~~ **CLOSED
+  by #1911**: the truck is sim-truth — ships stage parcels on the pad, the pad
+  caps the pack line, taps call and send the trailer, and it leaves carrying
+  exactly what it loaded (see Engine notes). Payout timing is still at pack.
+- Truck economy is thin: shipping still pays at pack, the haul costs nothing
+  and arrives free — a trucking budget or freight bonuses are unexplored.
 - Only one shift template; difficulty varies by seed, not by level ladder.
 - Two-player manager seats (model vs human, one slot each) are the #1144
   follow-up: the episode format already pins `sources`.
