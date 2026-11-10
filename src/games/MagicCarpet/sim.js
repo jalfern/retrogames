@@ -993,9 +993,27 @@ export function crumbleFeel(gs, e) {
 // screen-right, the same +world-y the renderer shows at yaw 0); behind marks
 // a shot from outside the cockpit's arc of sight — heard over the shoulder.
 // Never feeds stateHash: it drives feel, not rules.
+// #1764 item 7 stage 4: how FAR was it. prox scales a panned cue's loudness
+// with distance from the carpet — the depth half of the spatial field the pan
+// started: a bolt over the next mesa is the same crack quietly, not the same
+// crack at full volume. Flat top to CUE_LOUD_R (in earshot, full volume — a
+// chomp at your hooves must never duck), linear down to CUE_FLOOR at CUE_HEAR_R
+// (half the map), pinned at the floor beyond: the horizon keeps crackling, it
+// never mutes (the original was mono — the floor preserves every cue's warning
+// role; only the direction of depth is added, never information removed).
+// Same pure-read law: never feeds stateHash.
+export const CUE_LOUD_R = 40
+export const CUE_HEAR_R = 256
+export const CUE_FLOOR = 0.3
 export function castBearing(gs, x, y) {
-    const rel = Math.atan2(wrapD(y - gs.y), wrapD(x - gs.x)) - gs.yaw
-    return { pan: Math.sin(rel), behind: Math.cos(rel) < 0 }
+    const dx = wrapD(x - gs.x)
+    const dy = wrapD(y - gs.y)
+    const rel = Math.atan2(dy, dx) - gs.yaw
+    const d = Math.hypot(dx, dy)
+    const prox = d <= CUE_LOUD_R ? 1
+        : d >= CUE_HEAR_R ? CUE_FLOOR
+        : CUE_FLOOR + (1 - CUE_FLOOR) * (CUE_HEAR_R - d) / (CUE_HEAR_R - CUE_LOUD_R)
+    return { pan: Math.sin(rel), behind: Math.cos(rel) < 0, prox }
 }
 
 export function step(gs, inp) {

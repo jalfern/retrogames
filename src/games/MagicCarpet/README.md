@@ -394,7 +394,9 @@ see item 5).
   by #1764 item 7 stage 3:** lightning, creature strikes (bite, sling, growl
   bed), the chirp of a chaser that lost you, and the village sounds (ignite,
   burn, hut crash, tribute coin) all lean to the side of the world they come
-  from, on the same `castBearing` as the wizfire. There is no true HRTF, and
+  from, on the same `castBearing` as the wizfire. **Distance now scales every
+  one of them (#1764 item 7 stage 4, below): far sources go quiet.** There is
+  no true HRTF, and
   the carpet's own wind bed stays center on purpose — you wear it.
   `?` pause carries the rules instead. **Partially closed by #1790:** red/cyan
   anaglyph ships — the world renders twice from ±0.60u parallel cameras and
@@ -475,6 +477,37 @@ growl-bed voice, village four, the chirp, and an opt-in pin counting ALL FOUR
 `pan !== null` guards in AudioController — pan the null path and it goes red).
 Determinism gates ride along untouched: the x/y adds are presentation-only,
 the 60-seed sweep has not been re-run (nothing rule-facing changed).
+
+## #1764 item 7 stage 4 (2026-11-10, QA studio): THE DISTANCE LAW
+
+The stereo field gets its depth half: `castBearing` now also returns `prox`, a
+pure distance read (same law as `crumbleFeel`'s prox — never feeds `stateHash`).
+Every panned cue's loudness rides it: full volume to `CUE_LOUD_R = 40u` (a
+chomp at your hooves must never duck), linear down to `CUE_FLOOR = 0.3` at
+`CUE_HEAR_R = 256u` (half the map), pinned at the floor beyond — the horizon
+keeps crackling and never mutes: the original was mono, so distance adds depth
+to every cue without ever taking away its warning role. Wired at all TEN panned
+sites — wizfire, lightning (4 voices), bite, rocksling, the lost-chirp pair,
+ignite, villager burn, hut crash + loot coin, tribute coin, and the growl bed
+(a far giant rumbles at the floor, one at your back fills it).
+
+Incidental bug found and fixed on the way: the chirp's echo called
+`playSweep(f * 0.78, f * 1.1, 0.16, 'triangle', 0.022, 0.13, bl)` — SEVEN args
+at a six-param function. Pan silently received `0.13` (a near-center tilt) and
+the bearing sat ignored: the echo neither panned nor landed after its first
+voice. `playSweep` gained a trailing opt-in `delay` (`t = now + delay` through
+the whole graph; `0` keeps the exact old timing for every other title, and a
+repo-wide arg-count audit found this site alone); the chirp now passes
+`bl.pan, 0.13`.
+
+carpetcheck +9 gates (#1764-7s4 block): flat top, floor at/past half the map
+(past it is reachable only on the diagonal — an axis-aligned d > 256 FOLDS at
+the seam, and the gate reads that too), linear decay, monotonic sweep,
+facing-independence (prox is ONLY distance), seam, purity, the loudness census
+(>= 18 `* b*.prox` multiples plus three shape pins), and the delay pin.
+Mutants: `CUE_FLOOR -> 1` = floor gates red; fold yaw into prox = facing gate
+red; drop one `* .prox` = census red; swap the echo's pan/delay back = echo
+pin red.
 
 ## #1740 nine worlds + WORLD SELECT (2026-11-06, forge slot b)
 

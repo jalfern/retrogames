@@ -649,25 +649,29 @@ class AudioController {
     // pan (-1..1, or null) tilts the sweep across the stereo field — opt-in:
     // callers that pass nothing keep the exact old graph (direct to destination),
     // so no other title's sound changes (same law as the ambience bus below).
-    playSweep(startFreq, endFreq, duration, type = 'triangle', vol = 0.1, pan = null) {
+    // delay (s, opt-in #1764 item 7 stage 4) offsets the whole sweep from
+    // now — an echo lands after its first voice, not on top of it; 0 keeps
+    // the exact old timing for every other title.
+    playSweep(startFreq, endFreq, duration, type = 'triangle', vol = 0.1, pan = null, delay = 0) {
         if (this.muted || !this.ctx) return
         this.sfx++
         const osc = this.ctx.createOscillator()
         const gain = this.ctx.createGain()
+        const t = this.ctx.currentTime + delay
         osc.type = type
-        osc.frequency.setValueAtTime(startFreq, this.ctx.currentTime)
-        osc.frequency.linearRampToValueAtTime(endFreq, this.ctx.currentTime + duration)
-        gain.gain.setValueAtTime(vol, this.ctx.currentTime)
-        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + duration)
+        osc.frequency.setValueAtTime(startFreq, t)
+        osc.frequency.linearRampToValueAtTime(endFreq, t + duration)
+        gain.gain.setValueAtTime(vol, t)
+        gain.gain.linearRampToValueAtTime(0.01, t + duration)
         osc.connect(gain)
         if (pan !== null && this.ctx.createStereoPanner) {
             const sp = this.ctx.createStereoPanner()
-            sp.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), this.ctx.currentTime)
+            sp.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), t)
             gain.connect(sp); sp.connect(this.ctx.destination)
         } else {
             gain.connect(this.ctx.destination)
         }
-        osc.start(); osc.stop(this.ctx.currentTime + duration)
+        osc.start(t); osc.stop(t + duration)
     }
 
     // ---- ambience bus (#1612 item 4) ----
