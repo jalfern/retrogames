@@ -17,6 +17,15 @@ const errors = []
 page.on('pageerror', (e) => errors.push(String(e)))
 
 const st = async () => page.evaluate(() => window.__floorbossTest.state())
+// #1927: pad-tap gates need the dock cell itself — a bot parked on the OUT
+// cell swallows the tap (legitimate select law), so stand the crew off the pad
+const clearDock = () => page.evaluate(() => {
+    const g = window.__floorbossTest.sim()
+    const pads = [[23, 12], [24, 12], [22, 12], [21, 12]]
+    g.robots.forEach((b, i) => {
+        if ((b.x === 23 && b.y === 13) || (b.x === 24 && b.y === 13)) { b.x = pads[i % 4][0]; b.y = pads[i % 4][1]; b.task = { kind: 'idle' }; b.carry = null }
+    })
+})
 const waitMode = async (mode, ms = 8000) => {
     const t0 = Date.now()
     while (Date.now() - t0 < ms) { if ((await st()).mode === mode) return true; await new Promise((res) => setTimeout(res, 100)) }
@@ -141,6 +150,16 @@ r.check('real Space clocks in (attract → play)', await waitMode('play'))
     while ((await tickNow()) < tOrd + 900 && (await ordersNow()) === 0)
         await new Promise((res) => setTimeout(res, 200))
     const led0 = await page.evaluate(() => window.__floorbossTest.ledger()) // #1921 eyes on the till (before the pack)
+    // settle the road first (#1927): this gate times the trailer's legs, so it
+    // wants a truck at home with no far-haul commitment burning
+    {
+        const tR = await tickNow()
+        while ((await tickNow()) - tR < 2000) {
+            const q = await page.evaluate(() => ({ m: window.__floorbossTest.truck().mode, a: window.__floorbossTest.truck().away }))
+            if (q.m === 'out' && !q.a) break
+            await new Promise((res) => setTimeout(res, 90))
+        }
+    }
     const oid = await page.evaluate(() => window.__floorbossTest.shipNow())
     r.check('a ship is forced through the dock', oid != null, `order ${oid}`)
     // freight line (#1921): pack BOOKS the payout — within a few ticks of the
@@ -155,6 +174,7 @@ r.check('real Space clocks in (attract → play)', await waitMode('play'))
     }
     r.check('pack books escrow, pays nothing (money waits for the trailer)',
         ledB.escrow - led0.escrow >= 14 && ledB.paid === led0.paid, `escrow ${led0.escrow} -> ${ledB.escrow}, paid ${ledB.paid}`)
+    await page.evaluate(() => { const g = window.__floorbossTest.sim(); if (g.pad.length) g.pad[g.pad.length - 1].d = 0 }) // #1927: this gate times LOCAL legs — pin the route it measures
     const t0 = await tickNow()
     let parked = null
     while ((await tickNow()) - t0 < 600) {
@@ -182,12 +202,16 @@ r.check('real Space clocks in (attract → play)', await waitMode('play'))
 {
     const tickNow = () => page.evaluate(() => window.__floorbossTest.sim().tick)
     // settle the dock first: no parcels waiting and the trailer home, so the
-    // call below can only be the tap's doing
+    // call below can only be the tap's doing. #1927: auto-dispatch floods the
+    // pad while the truck is on the road and the quiet instant never lands —
+    // run these verb gates with the mixer off, and drain the ROAD before the
+    // pad, or a far haul's away-timer masks the whole section.
+    await page.evaluate(() => { window.__floorbossTest.sim().auto = false })
     {
         const tQ = await tickNow()
-        while ((await tickNow()) - tQ < 700) {
-            const q = await page.evaluate(() => ({ p: window.__floorbossTest.pad().length, m: window.__floorbossTest.truck().mode }))
-            if (!q.p && q.m === 'out') break
+        while ((await tickNow()) - tQ < 4000) {
+            const q = await page.evaluate(() => ({ p: window.__floorbossTest.pad().length, m: window.__floorbossTest.truck().mode, a: window.__floorbossTest.truck().away }))
+            if (!q.p && q.m === 'out' && !q.a) break
             await new Promise((res) => setTimeout(res, 90))
         }
     }
@@ -201,6 +225,8 @@ r.check('real Space clocks in (attract → play)', await waitMode('play'))
         await new Promise((res) => setTimeout(res, 80))
     }
     r.check('a packed order stages a parcel on the pad', staged.length >= 1, JSON.stringify(staged))
+    await page.evaluate(() => { const g = window.__floorbossTest.sim(); if (g.pad.length) g.pad[g.pad.length - 1].d = 0 }) // #1927: this gate times LOCAL legs — pin the route it measures
+    await clearDock() // no bot may stand on the pad when the tap lands
     const preCall = await page.evaluate(() => window.__floorbossTest.truck().mode)
     const tapPos = await clientXY(23, 13)
     await page.mouse.click(tapPos.x, tapPos.y)
@@ -231,6 +257,7 @@ r.check('real Space clocks in (attract → play)', await waitMode('play'))
         if (parked.mode === 'park') break
         await new Promise((res) => setTimeout(res, 70))
     }
+    await clearDock()
     await page.mouse.click(tapPos.x, tapPos.y)
     const sent = await page.evaluate(() => window.__floorbossTest.truck().mode)
     r.check('second tap sends the parked truck early', parked && parked.mode === 'park' && sent === 'leave', JSON.stringify({ parked, sent }))
@@ -246,6 +273,69 @@ r.check('real Space clocks in (attract → play)', await waitMode('play'))
     r.check('the sent truck is home again (and straight back out for anything left)', homed && (homed.mode === 'out' || homed.mode === 'back'), JSON.stringify(homed))
 }
 
+// ---- freight tiers (#1927): far posts wear their rate at the dock, and a
+// departed haul answers nothing — real taps hit an empty road ----
+{
+    const tickNow = () => page.evaluate(() => window.__floorbossTest.sim().tick)
+    // auto stays off from the load-out section — one loop drains dock, trailer
+    // and road together (#1927: a far haul can commit again mid-settle)
+    const tQ = await tickNow()
+    while ((await tickNow()) - tQ < 4000) {
+        const q = await page.evaluate(() => { const t = window.__floorbossTest; return { p: t.pad().length, m: t.truck().mode, a: t.truck().away } })
+        if (!q.p && q.m === 'out' && !q.a) break
+        await new Promise((res) => setTimeout(res, 90))
+    }
+    // stage one parcel and re-route it LONG HAUL at the dock — the painter
+    // must wear the violet tag and simState must carry the class
+    await page.evaluate(() => { const g = window.__floorbossTest.sim(); g.orders.push({ id: 4343, items: ['crate', 'can'], due: g.tick + 4000, prio: false, shipped: false, expired: false }); g.staging.push('crate', 'can'); g.packT = 1 })
+    let tag = null
+    const tS = await tickNow()
+    while ((await tickNow()) - tS < 200) {
+        tag = await page.evaluate(() => {
+            const t = window.__floorbossTest
+            const g = t.sim()
+            if (!g.pad.length) return null
+            g.pad[0].d = 2
+            const s = t.state()
+            if (!s.padDest || s.padDest[0] !== 2) return null
+            const c = t.canvas(), k = c.width / 800
+            const d = c.getContext('2d').getImageData(Math.round((10 + 23 * 26 + 13) * k), Math.round((44 + 13 * 26 + 19) * k), 1, 1).data
+            return { rgb: [d[0], d[1], d[2]] }
+        })
+        if (tag && tag.rgb[2] > 200 && tag.rgb[2] > tag.rgb[0] + 40 && tag.rgb[2] > tag.rgb[1] + 80) break
+        await new Promise((res) => setTimeout(res, 90))
+    }
+    r.check('the far-post tag paints violet under the parcel (#1927)',
+        !!(tag && tag.rgb[2] > 200 && tag.rgb[2] > tag.rgb[0] + 40 && tag.rgb[2] > tag.rgb[1] + 80), JSON.stringify(tag))
+    const sDest = (await st()).padDest
+    r.check('pad destinations ride simState (#1927)', Array.isArray(sDest) && sDest[0] === 2, JSON.stringify(sDest))
+    // a real call, a far load-out — and the send-off commits the road
+    await clearDock()
+    const tap1 = await clientXY(23, 13)
+    await page.mouse.click(tap1.x, tap1.y)
+    const tP = await tickNow()
+    let parked = null
+    while ((await tickNow()) - tP < 500) { parked = await page.evaluate(() => window.__floorbossTest.truck()); if (parked.mode === 'park') break; await new Promise((res) => setTimeout(res, 70)) }
+    const tL = await tickNow()
+    let gone = null
+    while ((await tickNow()) - tL < 300) { gone = await page.evaluate(() => window.__floorbossTest.truck()); if (gone.mode === 'leave') break; await new Promise((res) => setTimeout(res, 70)) }
+    r.check('the far send-off commits the road in the browser too (away > 1600 of 1650) (#1927)',
+        !!gone && gone.mode === 'leave' && gone.away >= 1600 && gone.far === 2, JSON.stringify(gone))
+    // stage a parcel while the haul is gone: neither the cap/age law nor a
+    // REAL tap reaches a truck on the road, and no fee is charged for it
+    await page.evaluate(() => { const g = window.__floorbossTest.sim(); g.orders.push({ id: 4344, items: ['crate'], due: g.tick + 4000, prio: false, shipped: false, expired: false }); g.staging.push('crate'); g.packT = 1 })
+    let waited = null
+    const tW = await tickNow()
+    while ((await tickNow()) - tW < 300) { waited = await page.evaluate(() => ({ p: window.__floorbossTest.pad().length, m: window.__floorbossTest.truck().mode })); if (waited.p && waited.m === 'out') break; await new Promise((res) => setTimeout(res, 70)) }
+    const feesB = await page.evaluate(() => window.__floorbossTest.ledger().fees)
+    const tap2 = await clientXY(23, 13)
+    await page.mouse.click(tap2.x, tap2.y)
+    const onRoad = await page.evaluate(() => ({ m: window.__floorbossTest.truck().mode, a: window.__floorbossTest.truck().away, f: window.__floorbossTest.ledger().fees }))
+    r.check('a real tap while the haul is on the road calls nothing and charges nothing (#1927)',
+        !!waited && waited.p >= 1 && onRoad.m === 'out' && onRoad.a > 0 && onRoad.f === feesB, JSON.stringify({ waited, onRoad }))
+}
+
+await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927: back on the mixer — the full shift runs the game's own rhythm
 // ---- full shift, end and restart ----
 {
     await page.evaluate(() => { const g = window.__floorbossTest; for (let i = 0; i < 9200 && !g.sim().end; i++) g.step(1) })
