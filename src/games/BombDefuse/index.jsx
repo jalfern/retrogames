@@ -184,13 +184,18 @@ function drawBombView(g, gs, now, opts = {}) {
             g.fillStyle = '#12150e'; g.beginPath(); g.arc(kx, cy + 10, 26, 0, 7); g.fill()
             g.fillStyle = C.chrome; g.beginPath(); g.arc(kx, cy + 10, 20, 0, 7); g.fill()
             g.fillStyle = C.steelLo; g.beginPath(); g.arc(kx, cy + 10, 15, 0, 7); g.fill()
-            // key blade rotates in when the seat turns its key
+            // key blade rotates in when the seat turns its key. #1812 item 2:
+            // the pose springs (gs.keys is the press-tick truth, the barrel
+            // lags, overshoots once); the blade lights as it crosses the
+            // ratchet detent — a turn you can SEE and HEAR mid-way.
             const on = gs.keys[i]
+            const pose = opts.keyPos ? opts.keyPos[i] : (on ? 1 : 0)
+            const lit = pose >= E.TURN.RATCHET
             g.save()
             g.translate(kx, cy + 10)
-            g.rotate(on ? 0.78 : -0.35)
-            g.fillStyle = on ? C.brass : '#7a6f4a'
-            if (on) { g.shadowColor = C.brass; g.shadowBlur = 10 }
+            g.rotate(E.keyAngle(pose))
+            g.fillStyle = lit ? C.brass : '#7a6f4a'
+            if (lit) { g.shadowColor = C.brass; g.shadowBlur = 10 }
             g.fillRect(-3, -26, 6, 22)
             g.beginPath(); g.arc(0, 0, 8, 0, 7); g.fill()
             g.shadowBlur = 0
@@ -355,6 +360,13 @@ function drawIntro(g, gs) {
     g.textAlign = 'left'
 }
 
+// #1812 item 2: per-seat key-turn view memory (spring pos/vel + seat-2 lag) —
+// presentation state lives in the hud, never in gs, so the sim hash is untouched.
+const newHud = () => ({
+    flash: 0, shake: 0, sparks: [], banner: null, bannerT: 0, boomT: 0, dudT: 0,
+    turn: [{ pos: 0, vel: 0, lag: 0, want: 0 }, { pos: 0, vel: 0, lag: 0, want: 0 }],
+})
+
 // HUD chrome: score + seats + mic (outside the case)
 function drawHudFrame(g, gs, opts) {
     g.textAlign = 'left'
@@ -381,7 +393,7 @@ export default function BombDefuseGame() {
     const coopRef = useRef(false)
     const keys1Ref = useRef({})
     const keys2Ref = useRef({})
-    const hudRef = useRef({ flash: 0, shake: 0, sparks: [], banner: null, bannerT: 0, boomT: 0, dudT: 0 })
+    const hudRef = useRef(newHud())
     const hintRef = useRef(null)
     const msgRef = useRef({ idx: 0, at: 0 })
     const overAtRef = useRef(0)
@@ -411,7 +423,7 @@ export default function BombDefuseGame() {
         seatsRef.current = players
         coopRef.current = players > 1
         watchingRef.current = false; setWatching(false) // #1637: the old route ends with the old run
-        hudRef.current = { flash: 0, shake: 0, sparks: [], banner: null, bannerT: 0, boomT: 0, dudT: 0 }
+        hudRef.current = newHud()
         hintRef.current = null
         setScreen('play')
     }, [setScreen])
@@ -468,6 +480,24 @@ export default function BombDefuseGame() {
         else if (f.k === 'boom') { sfx.boom(); hud.boomT = 70; hud.shake = 24 }
         else if (f.k === 'win') sfx.win()
     }, [])
+
+    // #1812 item 2: drive the barrel springs once per SIM tick (world seconds —
+    // pause, reseat-wait and desync-freeze all skip it, so the wobble stops
+    // with the world). gs.keys is the press-tick truth; the pose lags it, and
+    // seat 2 waits TURN.STAGGER ticks before following so the pair reads staggered.
+    const pumpTurnPoses = (g) => {
+        const tr = hudRef.current.turn
+        for (let i = 0; i < 2; i++) {
+            const t = tr[i]
+            const want = g && g.keys[i] ? 1 : 0
+            if (want !== t.want) { t.want = want; t.lag = i === 1 && want === 1 ? E.TURN.STAGGER : 0 }
+            if (t.lag > 0) { t.lag--; continue }
+            const [p, v, c] = E.turnStep(t.pos, t.vel, t.want)
+            t.pos = p; t.vel = v
+            if (c > 0) sfx.ratchet()
+            else if (c < 0) sfx.ratchetBack()
+        }
+    }
 
     // ---- game contract spec ---------------------------------------------------
     const makeSpec = () => {
@@ -559,7 +589,7 @@ export default function BombDefuseGame() {
             seedRef.current = seed
             seatsRef.current = 2
             coopRef.current = true
-            hudRef.current = { flash: 0, shake: 0, sparks: [], banner: { text: 'CREW LINKED — BOTH HANDS', ok: true }, bannerT: 70, boomT: 0, dudT: 0 }
+            hudRef.current = { ...newHud(), banner: { text: 'CREW LINKED — BOTH HANDS', ok: true }, bannerT: 70 }
             hintRef.current = null
             net.miss = 0
             net.desyncFrozen = false
@@ -798,6 +828,7 @@ export default function BombDefuseGame() {
                 if (!contractHoldsLoop()) {
                     E.step(a, E.solvePads(a))
                     while (a.events.length) pumpFx(a.events.shift())
+                    pumpTurnPoses(a)
                 }
                 if (a.done) { attractRef.current = E.createGame(1000 + Math.floor(Math.random() * 8999), 2); return }
                 return
@@ -867,6 +898,7 @@ export default function BombDefuseGame() {
                         pads = net.sync.assemble(k)
                     }
                     spec.tick(pads[0], pads)
+                    pumpTurnPoses(gs)
                     if (isRecording() && !contractHoldsLoop()) recordLiveTick(pads)
                     if (isRecording() && screenRef.current === 'over') endRun()
                     if (!gs.done && !net.sync.solo() && gs.tick % HASH_EVERY === 0) {
@@ -887,6 +919,7 @@ export default function BombDefuseGame() {
             // mid-run position. Takeover keys release the seat first.
             if (watchingRef.current && gsw && !gsw.done) { pads = E.solvePads(gsw); p1 = pads[0] }
             spec.tick(p1, pads)
+            pumpTurnPoses(gsRef.current)
             // watch never lingers past the run — the solver's win is the release
             if (watchingRef.current && gsw && gsw.done) { watchingRef.current = false; setWatching(false) }
             // the Gauntlet funnel (#1249): this loop bypasses contract step() —
@@ -917,6 +950,7 @@ export default function BombDefuseGame() {
                         cpu2: seatsRef.current === 1 || (net.active && net.sync && (net.sync.solo() || net.sync.reseatTick != null)),
                         youSeat: net.active ? (net.sync && !net.sync.solo() && net.sync.reseatTick == null ? net.sync.mySeat : -1) : (seatsRef.current === 1 ? 0 : -1),
                         dudT: hud.dudT,
+                        keyPos: hud.turn.map((t) => t.pos),
                     })
                     drawIntro(g, gs)
                     for (const s of hud.sparks) {
@@ -966,7 +1000,7 @@ export default function BombDefuseGame() {
                 drawSelect(g)
             } else {
                 const a = attractRef.current
-                if (a) drawBombView(g, a, now, { cpu2: false, dim: 0 })
+                if (a) drawBombView(g, a, now, { cpu2: false, dim: 0, keyPos: hudRef.current.turn.map((t) => t.pos) })
                 g.fillStyle = 'rgba(8,10,6,0.66)'; g.fillRect(0, 0, W, H)
                 g.fillStyle = 'rgba(6,8,4,0.78)'; g.fillRect(110, 96, 420, 84)
                 g.strokeStyle = C.amber; g.strokeRect(110, 96, 420, 84)
@@ -1062,6 +1096,10 @@ export default function BombDefuseGame() {
                 watching: () => watchingRef.current,
                 watchSfx: watchSfxLog,
                 probe: () => (gsRef.current ? E.simState(gsRef.current) : null),
+                // #1812 item 2: the barrel poses the view is showing (0..~1.15)
+                keyPoses: () => hudRef.current.turn.map((t) => t.pos),
+                // the press-tick truth, atomically sampleable beside keyPoses
+                keyOn: () => (gsRef.current ? gsRef.current.keys.map(Boolean) : []),
                 press: (code) => { const f1 = S1[code]; if (f1) pressMin(keys1Ref.current, f1); const f2 = S2[code]; if (f2) pressMin(keys2Ref.current, f2) },
                 release: (code) => { const f1 = S1[code]; if (f1) releaseMin(keys1Ref.current, f1); const f2 = S2[code]; if (f2) releaseMin(keys2Ref.current, f2) },
                 net: () => ({

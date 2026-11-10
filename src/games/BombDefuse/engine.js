@@ -381,3 +381,36 @@ export function hash(gs) {
     for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) }
     return h >>> 0
 }
+
+// ---- key-turn feel (#1812 item 2) — view math only, never gs/hash ----------
+// The sim truth stays at the press tick (gs.keys latches instantly); these
+// helpers let the BARREL pose lag it: a damped spring toward the target pose,
+// a detent crossing that sounds the ratchet, and a seat stagger so the pair's
+// turns read as two hands, not one frame. Pure arithmetic — no state, no Math.
+export const TURN = {
+    K: 0.3,            // spring pull per tick
+    D: 0.6,            // velocity damping per tick (<1 with this K overshoots once)
+    STAGGER: 4,        // ticks seat 2's pose waits behind seat 1's before following
+    RATCHET: 0.5,      // detent the click fires over (pose units)
+    SETTLE: 24,        // ticks until the pose is considered home
+    OFF: -0.35,        // legacy rest angle (rad)
+    ON: 0.78,          // legacy turned angle (rad)
+}
+
+export const keyAngle = (pose) => TURN.OFF + (TURN.ON - TURN.OFF) * pose
+
+// one detent crossing per motion: +1 turning over the ratchet, -1 falling back
+export function turnClick(prev, cur) {
+    if (prev < TURN.RATCHET && cur >= TURN.RATCHET) return 1
+    if (prev >= TURN.RATCHET && cur < TURN.RATCHET) return -1
+    return 0
+}
+
+// one spring step toward target; returns [pos, vel, click] — the view owns the
+// pos/vel memory so pause and sim-freeze stop the wobble with the world.
+export function turnStep(pos, vel, target) {
+    const v = (vel + (target - pos) * TURN.K) * TURN.D
+    const p = pos + v
+    const c = turnClick(pos, p)
+    return [p, v, c]
+}

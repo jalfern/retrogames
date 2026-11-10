@@ -99,7 +99,7 @@ lockstep-by-sampling-law (#531), same shape as the other four co-op titles:
 ## Verify
 
 ```bash
-npm run defusecheck                      # 53 gates: rules, ledger, replay, slack, source pins
+npm run defusecheck                      # 72 gates: rules, ledger, replay, slack, source pins, key-turn feel
 npm run defuselinkcheck                # 73 gates: online protocol incl. in-flight reseat (7b/7c/7d)
 CONTRACT_ONLY=bomb-defuse npm run contractcheck
 DEV_PORT=5178 npm run plaicraft:evidence -- --self-test   # fifth-title synths + mutants
@@ -111,6 +111,13 @@ npm run defuselinkdrive                # two browsers over a live relay: join→
 Mutants (harness can fail): disable the SYNC-clear condition in `engine.js`
 (`gs.keys[0] && gs.keys[1]` → add `&& false`) → defusecheck drops to 38/53,
 red on the gates that name it. Restore → 53/53.
+Key-turn feel mutants (#1812 item 2, the `TURN` block in `engine.js`):
+`STAGGER: 0` (no seat lag) → the stagger gates go red; `K: 1, D: 1` (no
+spring — teleport returns) → lag/overshoot/settle/click gates red; `RATCHET: 1.2`
+(detent unreachable) → the click gates red. All three kill named gates; restore
+→ 72/72. `defusedrive` re-proves the law in a real browser tick-exact: seat-1
+truth ON while the pose is still 0 (STAGGER hold), a mid-swing frame, then
+home (|pose−1|≤0.06) under the held truth.
 `npm run defuselinkcheck -- --mutate` kills the walkaway demote → its 4 gates
 report the freeze instead and the run dies with a dead seat (the law has teeth).
 `npm run defuselinkcheck -- --mutate-reseat` kills the shared players flip →

@@ -36,6 +36,10 @@ export const sfx = {
         A.playNoise(0.7, 0.5)
         A.playSweep(140, 30, 0.9, 'sawtooth', 0.22)
     },
+    // ratchet detent mid key-turn (#1812 item 2 — the spring pose crosses the
+    // click on the way in; the way out is the softer return)
+    ratchet() { A.playTone(740, 0.02, 'square', 0.05) },
+    ratchetBack() { A.playTone(520, 0.025, 'square', 0.03) },
     // whole run cleared
     win() {
         for (let i = 0; i < 6; i++) A.playTone([392, 523, 659, 784, 1047, 1319][i], 0.12, 'square', 0.11, i * 0.11)
