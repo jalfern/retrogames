@@ -140,8 +140,21 @@ r.check('real Space clocks in (attract → play)', await waitMode('play'))
     const tOrd = await tickNow()
     while ((await tickNow()) < tOrd + 900 && (await ordersNow()) === 0)
         await new Promise((res) => setTimeout(res, 200))
+    const led0 = await page.evaluate(() => window.__floorbossTest.ledger()) // #1921 eyes on the till (before the pack)
     const oid = await page.evaluate(() => window.__floorbossTest.shipNow())
     r.check('a ship is forced through the dock', oid != null, `order ${oid}`)
+    // freight line (#1921): pack BOOKS the payout — within a few ticks of the
+    // pack the parcel's money is escrow, and NO payout can have landed yet
+    // (the trailer needs ~280+ ticks to back in and load)
+    let ledB = led0
+    const tB = await tickNow()
+    while ((await tickNow()) - tB < 40) {
+        ledB = await page.evaluate(() => window.__floorbossTest.ledger())
+        if (ledB.escrow > led0.escrow) break
+        await new Promise((res) => setTimeout(res, 60))
+    }
+    r.check('pack books escrow, pays nothing (money waits for the trailer)',
+        ledB.escrow - led0.escrow >= 14 && ledB.paid === led0.paid, `escrow ${led0.escrow} -> ${ledB.escrow}, paid ${ledB.paid}`)
     const t0 = await tickNow()
     let parked = null
     while ((await tickNow()) - t0 < 600) {
@@ -158,6 +171,10 @@ r.check('real Space clocks in (attract → play)', await waitMode('play'))
         await new Promise((res) => setTimeout(res, 150))
     }
     r.check('truck drives off once the dock is clear', after && after.mode === 'out', JSON.stringify(after))
+    // …and the escrow landed (or is landing) — money followed the freight out
+    const ledO = await page.evaluate(() => window.__floorbossTest.ledger())
+    r.check('freight paid when the haul drove off (#1921)',
+        ledO.paid - led0.paid >= 14, `paid ${led0.paid} -> ${ledO.paid}, held ${ledO.escrow}`)
 }
 
 // ---- load-out (#1911): a real tap on the pad calls the trailer, and what
