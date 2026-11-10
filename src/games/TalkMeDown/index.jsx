@@ -51,6 +51,7 @@ const ATTRACT_MSGS = [
     'NO MIC? X TYPES THE CALL',
     'THREE STRIKES AND THE BLOCK GLOWS',
     'UP AT MODULE 1 TILTS THE BOMB OVER',
+    'A ON THE BACK PULLS A BATTERY OUT',
     `CLEAR ${QUOTA_BOMBS} BOMBS = SQUAD CHIEF`,
     'FIND A SQUAD — ONE BOMBS, ONE READS (?net=host)',
 ]
@@ -329,6 +330,7 @@ export default function TalkMeDown() {
         }
         if (f.k === 'boom') hud.boomTick = 1
         if (f.k === 'flip') hud.shake = Math.max(hud.shake, 6) // #1797: a chunky tilt
+        if (f.k === 'pull' || f.k === 'push') hud.shake = Math.max(hud.shake, 3) // #1909: spring, not thunder
         if (f.k === 'flag') hud.banner = { text: `READ RULE ${f.stamp}`, ok: true }
     }
 
@@ -984,7 +986,7 @@ export default function TalkMeDown() {
                 // #1797: the maintenance side. Batteries are the news — but
                 // the fuse and the breakers stay readable (pressure never
                 // hides, KTANE signature 5).
-                ART.drawBack(g, gs.features.batteries, tick, gs.features.serial)
+                ART.drawBack(g, gs.features.batteries, tick, gs.features.serial, gs.held)
                 ART.drawStrikes(g, gs.strikes)
                 ART.drawFuse(g, ART.PANEL.x + 16, ART.PANEL.y + 12, secs, secs <= 10 && !gs.done, tick)
                 return

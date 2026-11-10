@@ -114,10 +114,24 @@ export const RULEBOOK = {
             },
         },
         {
-            id: 'D5', text: 'Count the BATTERIES on the BACK panel. Set the dial to that number. Then SET.',
-            // #1797: the back panel's batteries are the dial's whole answer —
+            id: 'D5', text: 'Count the BATTERIES on the BACK panel. Set the dial to that number. Then SET.',            // #1797: the back panel's batteries are the dial's whole answer —
             // 0..2, so this rule is solvable by construction on every bomb.
+            // #1909: the count is LIVE — if the squad drained one first, the
+            // plate shows one less and the page is still true (it says COUNT).
             target: f => f.batteries,
+        },
+        {
+            id: 'D6', pull: true,
+            text: 'PULL OUT a battery from the BACK plate (it has one). Set the dial to the number of batteries LEFT. Then SET.',
+            // #1909 THE DRAIN: the original's battery holders are physical —
+            // KTANE rules that spend a battery make the flip an ACTION, not
+            // just a read. The demanded number is the live plate count once
+            // pulled (what is LEFT); before the pull the page already names
+            // b-1 because the rule spends exactly one (hold caps at one).
+            // Gate is pulls (the act, once done, stays done) — pushing a
+            // battery back is a fiddle, and the demanded number is then the
+            // live plate count the page's "LEFT" still matches.
+            target: (f, m, all, gs) => (gs && gs.pulls > 0 ? f.batteries : f.batteries - 1),
         },
     ],
     G: [
@@ -159,8 +173,11 @@ export function computeTarget(gs, m) {
         return i >= 0 ? { wire: i } : null
     }
     if (m.type === 'D') {
-        const n = r.target(gs.features, m, gs.modules)
-        return Number.isInteger(n) && n >= 0 && n <= 9 ? { dial: n } : null
+        const n = r.target(gs.features, m, gs.modules, gs)
+        if (!Number.isInteger(n) || n < 0 || n > 9) return null
+        // #1909: a pull rule answers with its pull flag until the battery is
+        // actually out — the dial value it prints is already the LEFT count.
+        return r.pull && gs.pulls === 0 ? { dial: n, pull: true } : { dial: n }
     }
     const seq = r.target(gs.features, m, gs.modules)
     return Array.isArray(seq) && seq.length === 3 ? { seq: seq.slice() } : null
@@ -176,9 +193,12 @@ export function variantPool(type, round) {
     // round 1, a text!=truth), and every stamp unlocks inside the 5-bomb
     // quota: D5/G5 at round 2, and N6 — dead under the old slope (needed
     // round 8, the quota ends at 5) — at round 5.
-    const open = { N: [1, 2, 5, 3, 4, 6], D: [1, 2, 5, 4, 3], G: [1, 3, 5, 2, 4] }[type]
+    const open = { N: [1, 2, 5, 3, 4, 6], D: [1, 2, 5, 4, 3, 6], G: [1, 3, 5, 2, 4] }[type]
     // D keeps D4 at round 3 (where #1708's anchor gates prove it; D3 slides to
     // round 4) and surfaces D5 at round 2; G surfaces G5 at round 2, G4 by 4.
+    // #1909 appends D6 last: depth 6 = round 5 — and round 5 is exactly where
+    // the seat law lands a DIAL (GLYPH only seats at round 4/depth 5, so a G6
+    // would never generate; the drain rides the dial, and G5 is its mirror).
     const depth = Math.min(all.length, 1 + round)
     return open.slice(0, depth)
 }
@@ -225,6 +245,10 @@ function genModule(rng, type, stamp, round, features) {
 export function buildBomb(gs) {
     const rng = gs.rng
     const round = gs.round
+    // #1909: a new bomb lands with a full, untouched plate — whatever the
+    // squad drained off the last block stays off it. Reset BEFORE the module
+    // probes so pull rules resolve against this bomb's fresh battery count.
+    gs.held = 0
     const features = genFeatures(rng)
     features.serialDigit = Number(features.serial[features.serial.length - 1])
     const n = moduleCountFor(round)
@@ -274,7 +298,7 @@ function solveTarget(gs, m, features, all) {
         return i >= 0 ? { wire: i } : null
     }
     if (m.type === 'D') {
-        const n = r.target(features, m, all)
+        const n = r.target(features, m, all, gs)
         return Number.isInteger(n) && n >= 0 && n <= 9 ? { dial: n } : null
     }
     const seq = r.target(features, m, all)
@@ -307,6 +331,9 @@ export function createGame(seed, players = 1) {
         clearFlash: 0,
         seqInput: {},         // moduleId -> glyphs pressed so far
         flip: 0,              // #1797: 0 = module panel, 1 = back plate
+        held: 0,              // #1909: battery in hand (0/1 — the pocket is one deep)
+        pulls: 0,             // #1909: batteries pulled since this bomb armed (pull rules gate on it)
+        aPrev: false,         // #1909: A held last tick — the drain edge-detects on it (not hashed: input echo)
     }
     buildBomb(gs)
     return gs
@@ -326,14 +353,33 @@ function spark(gs, m, why) {
 
 function defuserAct(gs, pad) {
     const mods = gs.modules
+    // #1909: rising-edge of A, for the drain (the flipped branch has no
+    // module-lock to swallow held-key repeats).
+    const aTap = pad.a && !gs.aPrev
+    gs.aPrev = !!pad.a
     // #1797 THE FLIP LAW — UP at module 1 tilts the bomb onto its back,
-    // DOWN tilts it face-up again. The back plate carries no verbs: while
-    // flipped, every other pad input is refused silently (no strike — the
-    // tilt is free, KTANE-style, and a strike for looking at your own
-    // batteries would punish the very curiosity the panel advertises).
+    // DOWN tilts it face-up again. While flipped the module verbs stay
+    // refused silently (no strike — the tilt is free, KTANE-style, and a
+    // strike for looking at your own batteries would punish the very
+    // curiosity the panel advertises). #1909 amended the law: the back has
+    // ONE verb of its own — A drains the plate (THE DRAIN, just below).
     // Seat 1 alone owns hands; the manual seat never sees the bomb.
     if (gs.flip) {
-        if (pad.down) { gs.flip = 0; gs.events.push({ k: 'flip', to: 0 }) }
+        if (pad.down) { gs.flip = 0; gs.events.push({ k: 'flip', to: 0 }); return }
+        // #1909 THE DRAIN — while the back is up, A is a hand: it pulls one
+        // battery out (the pocket holds one) or puts it back. Handling the
+        // batteries is as free as the tilt itself — the empty end and the
+        // full end refuse SILENTLY, a fiddle with the plate is never a strike.
+        // The drain is EDGE-triggered (aTap): the flip branch has no lock to
+        // swallow held-key repeats, so a held A would ratchet pull-push-pull.
+        // One press, one action.
+        if (aTap && gs.held === 0 && gs.features.batteries > 0) {
+            gs.features.batteries -= 1; gs.held = 1; gs.pulls += 1
+            gs.events.push({ k: 'pull' })
+        } else if (aTap && gs.held > 0) {
+            gs.features.batteries += 1; gs.held = 0
+            gs.events.push({ k: 'push' })
+        }
         return
     }
     if (pad.up && gs.cursor.mod === 0) { gs.flip = 1; gs.events.push({ k: 'flip', to: 1 }); return }
@@ -374,12 +420,12 @@ function defuserAct(gs, pad) {
         if (pad.left) { m.dial = (m.dial + 9) % 10; return }
         if (pad.right) { m.dial = (m.dial + 1) % 10; return }
         if (pad.a) {
-            if (t && m.dial === t.dial) {
+            if (t && m.dial === t.dial && !t.pull) {
                 m.solved = true; m.flash = 30
                 gs.score += 100 + gs.round * 20
                 gs.events.push({ k: 'safe' })
                 settle(gs)
-            } else spark(gs, m, 'dial off')
+            } else spark(gs, m, t && t.pull ? 'battery still in place' : 'dial off')
         }
         return
     }
@@ -452,7 +498,10 @@ function partnerSay(gs) {
     if (gs.tick < gs.orderTicks || m.locked > 0) return
     const t = computeTarget(gs, m)
     if (!t) return
-    if (t.wire !== undefined) gs.order = `CUT ${WIRE_COLORS[m.wires[t.wire].color]}`
+    // #1909: the CPU manual orders the drain first — words carry the ORDER
+    // of the rule exactly as the page prints it (pull, then the LEFT count).
+    if (t.pull) gs.order = `PULL A BATTERY, THEN DIAL ${t.dial}, THEN SET`
+    else if (t.wire !== undefined) gs.order = `CUT ${WIRE_COLORS[m.wires[t.wire].color]}`
     else if (t.dial !== undefined) gs.order = `DIAL TO ${t.dial}, THEN SET`
     else gs.order = `PRESS ${t.seq.map(i => GLYPHS[i]).join(', ')}`
 }
@@ -483,6 +532,14 @@ export function step(gs, pads) {
 // solvePad — one pad that plays the cursor's module correctly (the attract
 // demo's hands and the harness's autopilot; same rules the manual prints).
 export function solvePad(gs) {
+    // #1909 THE DRAIN: a live rule demanding a spent battery is solved at
+    // the BACK plate first — home the cursor (the tilt lives at module 1),
+    // tilt, pull (the back's one verb), then the front resumes as before.
+    if (gs.modules.some(x => !x.solved && ruleOf(x).pull && gs.pulls === 0 && gs.features.batteries >= 1)) {
+        if (!gs.flip) return gs.cursor.mod === 0 ? { up: true } : { down: true }
+        return { a: true }
+    }
+    if (gs.flip) return { down: true }
     const m = gs.modules[gs.cursor.mod]
     if (!m || m.solved) return { down: true }
     if (m.locked > 0) return {}
@@ -532,6 +589,8 @@ export function simState(gs) {
         bolt: gs.features.bolt,
         batteries: gs.features.batteries, // #1797: the back-plate fact
         flipped: gs.flip,                // #1797: which side you are on
+        held: gs.held,                 // #1909: battery in hand (THE DRAIN)
+        pulls: gs.pulls,               // #1909: drains spent on this bomb
         cursor: { ...gs.cursor },
         modules: gs.modules.map(m => ({
             stamp: m.stamp, type: m.type, solved: m.solved, locked: m.locked > 0,
@@ -552,6 +611,7 @@ export function hash(gs) {
         gs.tick, gs.round, gs.score, gs.strikes, gs.bombsCleared, gs.fuse,
         gs.features.serial, gs.features.leds, gs.features.bolt, gs.features.batteries,
         gs.cursor.mod, gs.cursor.sub, gs.manual.page, gs.manual.line, gs.flip,
+        gs.held, gs.pulls, // #1909: THE DRAIN is observable state (#494)
         gs.modules.map(m => `${m.stamp}${m.solved ? 1 : 0}${m.locked}${m.dial ?? -1}${m.wires ? m.wires.map(w => `${w.color}${w.lit ? 1 : 0}${w.cut ? 1 : 0}`).join('') : ''}`).join('|'),
         Object.values(gs.seqInput).map(q => q.join('')).join('.'),
     ].join(',')

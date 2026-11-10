@@ -84,6 +84,8 @@ export function snapshotNet(gs) {
         man: [gs.manual.page, gs.manual.line, gs.manual.flag || '', gs.manual.flagTicks],
         ord: [gs.order || '', gs.orderFor, gs.orderTicks],
         clearFlash: gs.clearFlash, flip: gs.flip,
+        hp: [gs.held, gs.pulls], // #1909: THE DRAIN state rides the snapshot (additive —
+        // snapshots without the field restore as a fresh, full plate)
         seq: Object.entries(gs.seqInput).map(([k, v]) => [k | 0, v.slice()]),
         rng: gs.rng.state(),
     }
@@ -121,6 +123,11 @@ export function restoreNet(snap) {
     gs.orderTicks = snap.ord[2] | 0
     gs.clearFlash = snap.clearFlash | 0
     gs.flip = snap.flip | 0
+    // #1909: THE DRAIN rides hp; snapshots older than the drain carry no hp
+    // and restore as a fresh, full plate (held 0, pulls 0 — the fx count is
+    // that plate's truth).
+    gs.held = snap.hp ? snap.hp[0] | 0 : 0
+    gs.pulls = snap.hp ? snap.hp[1] | 0 : 0
     gs.seqInput = {}
     for (const [k, v] of snap.seq || []) gs.seqInput[k] = v.slice()
     gs.rng.setState(snap.rng | 0)
