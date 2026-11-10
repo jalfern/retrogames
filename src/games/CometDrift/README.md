@@ -1,4 +1,4 @@
-# COMET DRIFT GP — engine notes (#419, polished #435, course pack #493, retighten #1669, sand deform #1696, self-heal #1702, sand spray #1718)
+# COMET DRIFT GP — engine notes (#419, polished #435, course pack #493, retighten #1669, sand deform #1696, self-heal #1702, sand spray #1718, tap notch #1857)
 
 Original arcade kart racer. Course pack: SUNSET GULCH (dusk canyon),
 SANDBANK SPEED BOWL (noon, Daytona road-course spirit), CORKSCOMB DUNES
@@ -280,13 +280,28 @@ The #419 "not yet cups" landed. `cup.js` holds the whole mode as pure rules:
   bottoms sit ~9.7%/18.0% off because the 316px wall corridor and the 97px
   radius floor forbid the last reach — the maps' pinch legs are narrower than
   this arcade's road + escape band, and closing them would delete the feature.
-- Controls per se are #431 (steering curve); this pass kept the sim's numbers.
-  Measured (cometplay + Node trace): keyboard steer is raw ±1, so a
-  one-direction held drift walks the kart off the asphalt in ~20 ticks at any
-  speed — tier 1 of the ladder is UNREACHABLE by holding one way. The ladder
-  is a zigzag game (alternate steering ~8 ticks while Space holds); cometplay
-  drives and grades exactly that. A softer keyboard steer notch would change
-  the feel — a #431 decision, not a harness one. #517 (Jon's call, 2026-10-21)
+- **CLOSED by #1857:** Controls per se are #431 (steering curve); this pass kept
+  the sim's numbers. Measured (cometplay + Node trace): keyboard steer was raw
+  ±1, so a one-direction held drift walks the kart off the asphalt in ~20 ticks
+  at any speed — tier 1 of the ladder is UNREACHABLE by holding one way. The
+  ladder is a zigzag game (alternate steering ~8 ticks while Space holds);
+  cometplay drives and grades exactly that. A softer keyboard steer notch would
+  change the feel — a #431 decision, and #431 shipped shaping for the **stick**
+  pipeline only ("keyboard untouched"). #1857 seats the missing middle in
+  `sim.js drive()`: DIGITAL player steering tracks its hold length per kart
+  (`tapD`/`tapT`); a tap held ≤ `CFG.tapTicks` (5) deflects at `CFG.tapLevel`
+  (0.55), a sustained hold reaches full ±1 from tick 6 — reversal re-arms the
+  notch. Analog `inp.steer` (the #431 stick pipeline, harness `pin.steer`)
+  bypasses; the notch is `isPlayer`-gated, so the field's digital brains are
+  byte-identical. Tier 1 stays unreachable one-way because charge accrues from
+  BEND weight, not steer — the #517 lesson still teaches the zigzag (its repro
+  now has a digital twin gate). `steerVis` carries the shaped value, so the kart
+  leans what it drives. Gates: cometcheck pins the constants, the soft/hard yaw
+  profile, re-arm, bypass, the #517 digital twin and determinism through the new
+  state; mutants — notch off (level 1.0) and notch welded (window 999) — die on
+  the two halves separately. What is left honest: the 0.55/5 constants are a
+  first taste, not a tuned curve — a per-course or speed-scaled notch is still
+  nobody's call. #517 (Jon's call, 2026-10-21)
   teaches the technique instead of bending the controls: the sim flags the
   player's first off-road drift-dump that pays nothing (release while
   off-road with charge < tier 1) as a once-per-race `zigHint` event + a

@@ -2711,6 +2711,52 @@ if (process.argv.includes('--mutate')) {
         plant(IDXJS, idxSrc.replace('ambAcc += 1 / am.period', 'ambAcc += 1 / 36'))
         await d511Died('the pad ignores the law (hard-coded period back in the loop)', ambienceLaw)
     } finally { pull(IDXJS) }
+
+    // #1857 mutants: switch the notch off (level 1.0) and weld it on
+    // (window 999 ticks). The tap-soft gate and the hold-full-lock gate are
+    // the two halves of the notch — each mutant must kill exactly one.
+    {
+        const simSrc1857m = readFileSync(SIM, 'utf8')
+        const tapLaw = async () => {
+            const mm = await loadSim()
+            selectCourse('gulch')
+            const TS = Tmod.TRACK
+            let si = -1; let flat = Infinity
+            for (let i = 0; i < TS.N; i++) {
+                const p = TS.pts[i]
+                const s = Math.abs(p.k) + Math.abs(p.bank)
+                if (s < flat) { flat = s; si = i }
+            }
+            const g = mm.makeGame(7)
+            const P = g.karts[0]; const p = TS.pts[si]
+            P.x = p.x; P.y = p.y; P.a = p.a; P.idx = si; P.hint = si
+            P.v = 6; P.spinT = 0; P.driftT = 0; P.charge = -1; P.driftG = 0
+            P.boostT = 0; P.boostTier = -1; P.tapD = 0; P.tapT = 0
+            g.phase = 'race'
+            const yaws = []
+            for (let i = 0; i < 8; i++) { const a0 = P.a; mm.step(g, { u: true, r: true }); yaws.push(Math.abs(P.a - a0)) }
+            // literal bands (never the mutated CFG): tick 1 must sit in the
+            // nudge band, tick 6 must reach lock.
+            const soft = yaws[0] > 0.018 && yaws[0] < 0.036
+            const full = yaws[5] > 0.047 && yaws[5] < 0.058
+            if (!soft || !full) { R.fail++; console.log(`  (assert: soft=${soft} full=${full} tick0=${yaws[0].toFixed(4)} tick5=${yaws[5].toFixed(4)})`) }
+            return soft && full
+        }
+        const d1857Died = async (label, run) => {
+            const before = R.fail
+            await run()
+            if (R.fail > before) console.log(`  MUTANT DIED — ${label}: the #1857 notch gate is load-bearing`)
+            else console.log(`  MUTANT SURVIVED — ${label}: the #1857 notch gate is BLIND`)
+        }
+        try {
+            plant(SIM, simSrc1857m.replace('tapTicks: 5, tapLevel: 0.55,', 'tapTicks: 5, tapLevel: 1,'))
+            await d1857Died('the notch is switched off (level back to full lock)', tapLaw)
+        } finally { pull(SIM) }
+        try {
+            plant(SIM, simSrc1857m.replace('tapTicks: 5, tapLevel: 0.55,', 'tapTicks: 999, tapLevel: 0.55,'))
+            await d1857Died('the notch is welded on (a hold never reaches full lock)', tapLaw)
+        } finally { pull(SIM) }
+    }
 }
 
 // ---- #502 item 4: banking cue -------------------------------------------------------
@@ -2799,6 +2845,119 @@ if (process.argv.includes('--mutate')) {
     check('#502 preview: the 2D attract stamps the outline', idxSrc.includes('previewBox(') && idxSrc.includes('minimapPath(pb.w, pb.h)'))
     check('#502 preview: the pause overlay names the chosen circuit (2D)', idxSrc.includes('badge={COURSE.name}'))
     check('#502 preview: PauseOverlay renders the optional badge', pauseSrc.includes('{badge'))
+}
+
+// ---- #1857: the keyboard tap notch — the softer middle #431 left out ----
+// #431 shaped the STICK pipeline (dead zone + curve + gain + smoothing) and
+// left the keyboard raw ±1: every keyboard correction was full lock, so fine
+// lines were a flick-fest while the stick had a precision band. The sim now
+// notches DIGITAL player steering: a tap held ≤ CFG.tapTicks deflects at
+// CFG.tapLevel, a sustained hold reaches full ±1 lock — so the drift ladder
+// stays a zigzag game (#517: charge accrues from bend weight, not steer, and
+// one-way hold still fails), the analog stick keeps its #431 pipeline, and
+// the CPU brains (which emit digital l/r but are not the player) are inert.
+{
+    console.log('— the keyboard tap notch (#1857) —')
+    const m = await loadSim()
+    const { CFG } = m
+    check('#1857: constants pinned — a tap notches for 5 ticks at 0.55 deflection',
+        CFG.tapTicks === 5 && CFG.tapLevel === 0.55, `${CFG.tapTicks}/${CFG.tapLevel}`)
+    selectCourse('gulch')
+    const TS7 = Tmod.TRACK
+    // the flattest measurable point (a Catmull straight never hits exact zero;
+    // the flattest Gulch point is k≈1e-4, bank≈0.009 — yaw ≈ steer·CFG.steer
+    // within 3% there, plenty to tell 0.55-lock from full lock)
+    let si = -1; let flat = Infinity
+    for (let i = 0; i < TS7.N; i++) {
+        const p = TS7.pts[i]
+        const s = Math.abs(p.k) + Math.abs(p.bank)
+        if (s < flat) { flat = s; si = i }
+    }
+    check('#1857: the Gulch has a flat straight to measure on', si >= 0 && flat < 0.02, `i=${si} flat=${flat.toExponential(1)}`)
+    const put = (g) => {
+        const P = g.karts[0]; const p = TS7.pts[si]
+        P.x = p.x; P.y = p.y; P.a = p.a; P.idx = si; P.hint = si
+        P.v = 6; P.spinT = 0; P.driftT = 0; P.charge = -1; P.driftG = 0
+        P.boostT = 0; P.boostTier = -1; P.tapD = 0; P.tapT = 0
+        g.phase = 'race'
+        return P
+    }
+    const yawProfile = (g, P, inp, n) => {
+        const out = []
+        for (let i = 0; i < n; i++) { const a0 = P.a; m.step(g, inp); out.push(Math.abs(P.a - a0)) }
+        return out
+    }
+    const softBand = (y) => y > 0.018 && y < 0.036 && y < CFG.steer * 0.75
+    const fullBand = (y) => y > CFG.steer * 0.9 && y < CFG.steer * 1.12
+    const gA = m.makeGame(7); const PA = put(gA)
+    const prof = yawProfile(gA, PA, { u: true, r: true }, CFG.tapTicks + 3)
+    check('#1857: a digital tap steers SOFT (≈ tapLevel·steer ≈ 0.029, not the 0.053 full lock)',
+        softBand(prof[0]) && softBand(prof[CFG.tapTicks - 1]),
+        `tick0 ${prof[0].toFixed(4)} (want ~0.0286)`)
+    check('#1857: a held steer reaches FULL lock the tick after the notch window',
+        fullBand(prof[CFG.tapTicks]) && fullBand(prof[CFG.tapTicks + 2]),
+        `tick${CFG.tapTicks} ${prof[CFG.tapTicks].toFixed(4)} (want ~${CFG.steer.toFixed(4)})`)
+    check('#1857: the notch boundary really steps (tick 5 soft, tick 6 full)',
+        prof[CFG.tapTicks] > prof[CFG.tapTicks - 1] * 1.5,
+        `${prof[CFG.tapTicks - 1].toFixed(4)} -> ${prof[CFG.tapTicks].toFixed(4)}`)
+    check('#1857: steerVis carries the SHAPED value (the kart leans what it drives)',
+        PA.tapT > CFG.tapTicks && Math.abs(PA.steerVis - 1) < 1e-9, `steerVis ${PA.steerVis}`)
+    const gB = m.makeGame(7); const PB = put(gB)
+    yawProfile(gB, PB, { u: true, r: true }, CFG.tapTicks + 2) // reach full lock right
+    const aB = PB.a
+    m.step(gB, { u: true, l: true }) // reversal lands back at nudge strength
+    check('#1857: reversing direction RE-ARMS the notch (each intent starts soft)',
+        Math.abs(Math.abs(PB.a - aB) - prof[0]) < 0.004 && PB.tapT === 1 && PB.tapD === -1,
+        `Δ${Math.abs(PB.a - aB).toFixed(4)} tapT ${PB.tapT}`)
+    const gC = m.makeGame(7); const PC = put(gC)
+    const aC = PC.a
+    m.step(gC, { u: true, steer: 1 })
+    check('#1857: analog steer bypasses the notch (the #431 stick pipeline is untouched)',
+        fullBand(Math.abs(PC.a - aC)) && PC.tapD === 0 && PC.tapT === 0,
+        `Δ${Math.abs(PC.a - aC).toFixed(4)}`)
+    // #517 preserved through the notch: a one-way HELD keyboard drift at a
+    // bend still walks off and dumps below tier 1 — the ladder is still a
+    // zigzag game, taught the same way. Digital twin of the #517 repro.
+    selectCourse('corkscomb')
+    const TS8 = Tmod.TRACK
+    const bend7 = TS8.pts.find((p) => Math.abs(p.k) > 1 / 1200)
+    let held7 = null
+    for (const s of [1, -1]) {
+        const g = m.makeGame(7); g.phase = 'race'
+        const P = g.karts[0]
+        P.x = bend7.x; P.y = bend7.y; P.a = bend7.a; P.idx = bend7.i; P.hint = bend7.i
+        P.v = 6; P.spinT = 0; P.driftT = 0; P.charge = -1; P.driftG = 0; P.boostT = 0; P.boostTier = -1
+        let offAt = -1
+        for (let i = 0; i < 120; i++) {
+            m.step(g, { u: true, drift: true, ...(s > 0 ? { r: true } : { l: true }) })
+            if (offAt < 0 && P.offroad) offAt = i
+            if (g.zigHint) { held7 = { g, P, offAt }; break }
+        }
+        if (g.zigHint) break
+    }
+    check('#1857: one-way HELD keyboard drift at a bend still dumps below tier 1 and fires the zig-zag lesson (#517 holds through the notch)',
+        !!held7 && held7.P.charge < 0 && held7.P.boostTier === -1,
+        held7 ? `off-road at tick ${held7.offAt}, charge ${held7.P.charge}` : 'never dumped')
+    selectCourse('gulch')
+    // determinism through the new per-kart hold state (tapD/tapT are plain ints)
+    const dRun = () => {
+        const g = m.makeGame(9); const P = put(g)
+        for (let i = 0; i < 40; i++) m.step(g, { u: true, ...(i % 7 < 3 ? { r: true } : { l: true }), drift: true })
+        return { h: m.stateHash(g), j: JSON.parse(JSON.stringify({ tapD: P.tapD, tapT: P.tapT })) }
+    }
+    const d1 = dRun(); const d2 = dRun()
+    check('#1857: deterministic through the hold state — same inputs, same hash; JSON-safe',
+        d1.h === d2.h && typeof d1.j.tapD === 'number' && typeof d1.j.tapT === 'number', `${d1.h}`)
+    // the notch must never touch the field: guarded at the seat, and pinned here
+    const simSrc1857 = readFileSync(SIM, 'utf8')
+    check('#1857: the notch is isPlayer-gated — CPU digital lines are inert',
+        /else if \(k\.isPlayer\) \{[\s\S]{0,700}CFG\.tapTicks/.test(simSrc1857), '')
+    const gamesSrc1857 = readFileSync(new URL('../src/config/games.js', import.meta.url), 'utf8')
+    check('#1857: the registry teaches the notch (tap = soft nudge, hold = lock)',
+        /TAP ←\/→ *(for|=)? ?a soft nudge/i.test(gamesSrc1857), '')
+    // the certified line is NOT twitch — decide() stamps, step() honours:
+    check('#1857: decide() stamps its intents autopilot (the certified line bypasses the notch)',
+        /inp\.autopilot = true/.test(simSrc1857) && /pin\.autopilot && typeof pd\.steer !== 'number'/.test(simSrc1857), '')
 }
 
 console.log(`\n${R.fail === 0 ? 'GREEN' : 'RED — ' + R.fail + ' failed'}`)
