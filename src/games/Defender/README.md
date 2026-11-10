@@ -42,15 +42,31 @@ not JSON-serializable (#391).
 
 ## Verify
 ```
-npm run defendercheck            # Node: determinism, score law, rescue chain, deaths, terminal
+npm run defendercheck            # Node: determinism, score law, rescue chain, deaths, terminal,
+                               #   + WITNESS: the WATCH patrol survives 20/20 seeds @150 s
 npm run defendercheck -- --mutant   # pre-port bugs re-planted; every mutant must go red
+npm run watchcheck -- --only defender  # seat pilot: one-tap ▶ WATCH, Y seat/takeover,
+                               #   blips, idle-hands proof (browser, needs dev server)
 npm run feedbackcheck          # floor law now 55 report+pin titles
 npm run attractcheck           # attract layout rules
 npm run lint:defender
 npm run dev -- --port 5178 --strictPort   # slot b port; /retrogames/defender
 ```
 
+## WATCH (#1637 batch 18)
+
+Y seats `watchRoute` from `sim.js` — the SAME patrol the attract demo flies
+and `defendercheck`'s WITNESS audits on 20 seeds (no forked brain; the old
+local attractInput is deleted). The patrol chases the nearest enemy into firing
+line, climbs clear of the terrain and holds altitude out of the dark. Any
+driving key or a tap hands the wheel back (shared blips).
+
 ## Honest gaps
+
+- The WATCH patrol is honest-proven, not perfect: WITNESS 20/20 survive a
+  150 s patrol (min 4750 banked, 19/20 clear ≥1 wave) but it grazes ~1 hit
+  per patrol and plays no defence of the abducted humans — tightening the
+  route is a batch-19 candidate; the gate pins what is MEASURED, not wishes.
 - No smart bomb, no hyperspace, no meteor-swarm bonus (documented 1981
   features left out of this port; the original's bonus table values 250/500/
   1000/10k are honored for what IS here).

@@ -1765,7 +1765,7 @@ const PILOTS = [
     },
     // DEFENDER's seat is the patrol its attract screen flies (watchRoute, now
     // the single brain — the forked autopilot is deleted). defendercheck's
-    // WITNESS patrols 20 seeds: all survive 150 s, min 4000 banked, 19/20
+    // WITNESS patrols 20 seeds: all survive 150 s, min 4750 banked, 19/20
     // clear a wave; the seat drives the same calls, honest from any position.
     {
         id: 'defender', url: `${BASE}/defender`, hook: '__defenderTest',
