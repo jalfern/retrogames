@@ -10,7 +10,8 @@
 import {
     createGame, step, simState, hash, solvePad, drainEvents, buildBomb, railOpen, trayLayout, ruleOf,
 } from '../src/games/TalkMeDown/engine.js'
-import { readFileSync, writeFileSync, unlinkSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
+import { plant, pull } from './lib/mutateguard.mjs'
 
 let pass = 0, fail = 0
 const ok = (name, cond, extra = '') => {
@@ -192,7 +193,8 @@ if (process.argv.includes('--mutate')) {
     if (mut === src) { console.log('  FAIL mutant target line not found'); process.exit(1) }
     console.log('  (mutate mode: open-end gate removed — the gates above must have gone red first)')
     const tmp = new URL('.mutant-engine.mjs', dir) // beside engine.js so ./rng.js resolves
-    writeFileSync(tmp, mut)
+    // #1359: plant/pull — a SIGTERM mid-run rewinds the planted file, no corpse.
+    plant(tmp, mut)
     let caught = 0
     try {
         const E = await import(tmp.href)
@@ -209,7 +211,7 @@ if (process.argv.includes('--mutate')) {
             if (gs.held === 1) caught++ // mutant pulls from a blocked slot — the law is dead
         }
     } finally {
-        unlinkSync(tmp)
+        pull(tmp)
     }
     console.log(`  mutant pulled ${caught} blocked cells (want > 0 — proof the gate line is load-bearing)`)
     process.exit(caught > 0 ? 0 : 1)
