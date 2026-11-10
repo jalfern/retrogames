@@ -52,7 +52,7 @@ export default function TalkMeDown() {
     const [paused, setPaused] = useState(false)
     const pausedRef = useRef(false)
     pausedRef.current = paused
-    const [uiScreen, setUiScreen] = useState('attract')
+    const [screen, setUiScreen] = useState('attract')
     const [micOn, setMicOn] = useState(false) // #1373: pill label mirrors the mic
     const screenRef = useRef('attract') // attract | select | play | over
     const gsRef = useRef(null)
@@ -72,6 +72,7 @@ export default function TalkMeDown() {
     const overAtRef = useRef(0)
     const [watching, setWatching] = useState(false) // #1637 WATCH: mirrors the seat flag for the chrome
     const watchingRef = useRef(false)
+    const pendingWatchRef = useRef(false) // #1637: Y banked at attract/select — seats when the run starts
     const seedRef = useRef(1)
     const msgIdxRef = useRef(0)
     const msgAtRef = useRef(0)
@@ -89,10 +90,14 @@ export default function TalkMeDown() {
         voiceLogRef.current = []
         setScreen('play')
         sfx.start()
+        // #1637 WATCH: a seat banked at attract/select arrives with the run —
+        // the proven defuser takes the wheel as the fuse starts.
+        if (pendingWatchRef.current) { pendingWatchRef.current = false; watchingRef.current = true; setWatching(true); playWatchStart() }
     }, [])
 
     const startAttract = useCallback(() => {
         attractRef.current = createGame(1000 + Math.floor(Math.random() * 9999), 1)
+        pendingWatchRef.current = false // a fresh attract drops any stale bank
         msgIdxRef.current = 0
         msgAtRef.current = performance.now()
         setScreen('attract')
@@ -324,6 +329,17 @@ export default function TalkMeDown() {
                 return
             }
             if (e.code === 'KeyV') { e.preventDefault(); toggleVoice(); return }
+            // #1637 WATCH: Y BEFORE the run banks the seat (no blip yet — no
+            // wheel has changed hands). Attract steps to select like any key;
+            // select starts the run with the current pick and startPlay seats
+            // the prover. One tap on ▶ WATCH therefore starts AND watches.
+            if (isWatchKey(e) && (screenRef.current === 'attract' || screenRef.current === 'select')) {
+                e.preventDefault()
+                pendingWatchRef.current = true
+                if (screenRef.current === 'attract') { clearKeys(); setScreen('select'); sfx.start() }
+                else humanStart(humanSeed(), selectRef.current)
+                return
+            }
             if (screenRef.current === 'attract') { clearKeys(); setScreen('select'); sfx.start(); return }
             if (screenRef.current === 'over') { if (performance.now() - overAtRef.current > 700) { clearKeys(); startAttract() } return }
             if (screenRef.current === 'select') {
@@ -736,23 +752,23 @@ export default function TalkMeDown() {
             />
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'TALK ME DOWN')} onResume={() => setPaused(false)} />}
             {/* #1637 WATCH — the proven rulebook defuses the bomb. */}
-            {uiScreen === 'play' && watching && <WatchToast className="absolute z-50" />}
-            {/* #1654 — the discoverable WATCH line, before the first Y press. */}
-            {uiScreen === 'attract' && (
-                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '20%' }}>
-                    <div className="font-mono text-xs tracking-widest text-emerald-200/70">{WATCH_ATTRACT_HINT}</div>
-                </div>
-            )}
-            {/* #1656 — the forgotten-how-to-play tap, start AND watch, one
-                button. Multi-screen boot exception (the component's own rule):
-                Space lands in a run from SELECT, not from attract, so the
-                one-tap pill lives there. */}
-            {uiScreen === 'select' && !paused && (
-                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '8%' }}>
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {/* #1654 — the discoverable WATCH line, before the first Y press,
+                and the one-tap ▶ WATCH in the clear band (#1656). Multi-screen
+                boot (#1656's own note): Space lands in a run from SELECT, so Y
+                banks a pending seat at attract/select and startPlay seats it —
+                one tap still starts the run AND watches the proven route. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
                     <AttractWatchButton />
                 </div>
             )}
-            {uiScreen === 'play' && !paused && (
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '19%' }}>
+                    <div className="font-mono text-xs tracking-widest text-emerald-200/70">{WATCH_ATTRACT_HINT}</div>
+                </div>
+            )}
+            {screen === 'play' && !paused && (
                 <div className="absolute pointer-events-auto z-50" style={{ bottom: 'calc(12.5rem + var(--sab, 0px))', left: 'calc(0.75rem + var(--sal, 0px))' }}>
                     <WatchButton on={watching} />
                 </div>
@@ -760,7 +776,7 @@ export default function TalkMeDown() {
             {/* #1373: tap-to-talk for seat 1 (#1287 pattern) — phones have no
                 V key, and the mic IS this game's co-op mechanic. Bottom-centre
                 keeps it clear of the d-pad (left) and A/PAGE (right). */}
-            {(TOUCH_UI || URL_TOUCH || micOn) && (uiScreen === 'play' || uiScreen === 'select') && !paused && (
+            {(TOUCH_UI || URL_TOUCH || micOn) && (screen === 'play' || screen === 'select') && !paused && (
                 <button
                     type="button"
                     data-voice-coop={micOn ? 'on' : 'off'}
@@ -774,7 +790,7 @@ export default function TalkMeDown() {
                     {micOn ? 'MIC ON — SHOUT' : 'MIC · TAP'}
                 </button>
             )}
-            <VirtualControls secondAction={{ label: 'PAGE', code: 'KeyB' }} visible={uiScreen === 'play'} />
+            <VirtualControls secondAction={{ label: 'PAGE', code: 'KeyB' }} visible={screen === 'play'} />
         </div>
     )
 }
