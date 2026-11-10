@@ -25,6 +25,7 @@ import { faceFor, walkFrame, drawAvatar } from './avatar.js'
 import { WARP_LEN, warpFlash, warpRing, warpMotes, warpSwapAt } from './warp.js'
 import { TERR, hash2, TILE, SUB, blockShades, builtPalette, cobbleBlock } from './tiles.js'
 import { townScore, hasCottage } from './towns.js'
+import { AVATARS, shrineTitle, plotShrines } from './shrines.js'
 import { buildClassicStamps, variantOf } from './ega.js'
 import { PHASES, moonPhase, moonName, phaseLit, gateFlavor, routeDest } from './moons.js'
 import { crest, crestLane, foam, landSides, foamPatches, splatIntensity, dimples, seaRough, crestGain, foamGain } from './swell.js'
@@ -83,6 +84,9 @@ const BritanniaGame = () => {
         const lx = light.getContext('2d')
 
         let world = null, gates = [], tiles = null
+        // shrines (#1876): one consecrated plot per gate, plotted once from the
+        // loaded land; shrineBlock maps tile -> gate index for the walk refusal.
+        let shrines = [], shrineBlock = new Map()
         let S = null
         const fresh = (seed = 0) => ({
             seed: seed >>> 0, tick: 0, x: gates[seed % Math.max(1, gates.length)]?.x ?? 93, y: gates[seed % Math.max(1, gates.length)]?.y ?? 67,
@@ -90,6 +94,7 @@ const BritanniaGame = () => {
             face: 'down', anim: 0, dismissed: -1, wasTown: false,
             sel: 1, gate: -1, hoverRow: -1, done: false, camX: 0, camY: 0, wx: WX.CLEAR, fl: 0, thunder: -1,
             amb: AMB.NONE, warp: null, toast: 0, toastMsg: '',
+            bumped: new Set(), // shrines whose stone the pilgrim has touched
             wind: windNow(0, seed >>> 0), // #1853: the day's first pressure reading
         })
 
@@ -103,6 +108,10 @@ const BritanniaGame = () => {
             const st = findStars(world)
             gates = st.gates
             tiles = buildTileCaches(zip)
+            // plot the eight shrine grounds before the first frame (#1876)
+            shrines = plotShrines(gates, terrainAt)
+            shrineBlock = new Map()
+            shrines.forEach((s, i) => { if (s) shrineBlock.set(s.x + ',' + s.y, i) })
             S = fresh(0)
             S.camX = S.x * TILE; S.camY = S.y * TILE
             setMode('attract')
@@ -195,7 +204,7 @@ const BritanniaGame = () => {
                     S.warp.swapped = true
                     S.visited.add(S.warp.dest)
                     audioController.playSweep(200, 900, 0.5, 'sine', 0.22)
-                    S.toast = 120; S.toastMsg = `The moon gate whirls thee to ${ROMAN[S.warp.dest]} of ${moonName(S.warp.dest)}!`
+                    S.toast = 120; S.toastMsg = `The moon gate whirls thee to the ${shrineTitle(S.warp.dest).toLowerCase()}, where ${AVATARS[S.warp.dest]} standeth of old.`
                     if (S.visited.size >= gates.length) {
                         S.done = true
                         audioController.playSweep(400, 1200, 1.2, 'sine', 0.25)
@@ -254,6 +263,16 @@ const BritanniaGame = () => {
                     audioController.playNoise(0.2, 0.12)
                     S.toast = 90; S.toastMsg = "Thou stepp'st ashore."
                 } else { S.x = nx; S.y = ny; S.cd = SHIP_CD }
+            } else if (shrineBlock.has(nx + ',' + ny)) {
+                // the chapel is stone (#1876): the pilgrim walks around the
+                // sanctum, through never into it. First touch names it.
+                const si = shrineBlock.get(nx + ',' + ny)
+                S.cd = 26
+                audioController.playSweep(96, 60, 0.14, 'square', 0.16)
+                if (!S.bumped.has(si)) {
+                    S.bumped.add(si)
+                    S.toast = 120; S.toastMsg = `The ${shrineTitle(si)} is stone — about face.`
+                }
             } else if (isSea(v)) {
                 S.ship = true; S.x = nx; S.y = ny; S.cd = SHIP_CD
                 S.face = faceFor(dx, dy); S.anim++
@@ -389,6 +408,59 @@ const BritanniaGame = () => {
             ctx.beginPath(); ctx.arc(cx + 4 + Math.sin(ph / 3 + tx) * 2, sy + 2 - ph, 2 + ph * 0.14, 0, 7); ctx.fill()
         }
 
+        // the chapel (#1876): a virtue-shrine over the sanctum tile — ashlar
+        // walls with staggered mortar joints, a steep slate roof, a bell-cote
+        // carrying its moonstone (the gate glow's own ink, brighter at night),
+        // and an arched door that faces its gate head-on.
+        const drawChapel = (sx, sy, spot, i, t, n) => {
+            // consecrated flags: a pale ring inlaid in the plaza ground
+            ctx.fillStyle = 'rgba(214,206,186,0.4)'
+            ctx.fillRect(sx + 1, sy + 1, 30, 30)
+            ctx.strokeStyle = 'rgba(120,112,98,0.5)'
+            ctx.lineWidth = 1
+            ctx.strokeRect(sx + 1.5, sy + 1.5, 29, 29)
+            // steps toward the gate
+            const stx = sx + 16 - spot.dx * 15, sty = sy + 16 - spot.dy * 15
+            ctx.fillStyle = '#c9c2ae'
+            ctx.fillRect(stx - (spot.dy === 0 ? 3 : 4), sty - (spot.dx === 0 ? 3 : 4), spot.dy === 0 ? 6 : 8, spot.dy === 0 ? 8 : 6)
+            // walls + staggered joints
+            ctx.fillStyle = '#a5a094'; ctx.fillRect(sx + 5, sy + 12, 22, 16)
+            ctx.fillStyle = '#837e71'
+            for (let r = 0; r < 3; r++) ctx.fillRect(sx + 5, sy + 16 + r * 4, 22, 1)
+            ctx.fillRect(sx + 10, sy + 12, 1, 4); ctx.fillRect(sx + 20, sy + 12, 1, 4)
+            ctx.fillRect(sx + 15, sy + 16, 1, 4); ctx.fillRect(sx + 8, sy + 20, 1, 4); ctx.fillRect(sx + 22, sy + 20, 1, 4)
+            ctx.fillRect(sx + 12, sy + 24, 1, 4); ctx.fillRect(sx + 19, sy + 24, 1, 4)
+            // steep slate roof, sunlit on its western face
+            ctx.fillStyle = '#4e4859'
+            ctx.beginPath(); ctx.moveTo(sx + 2, sy + 12); ctx.lineTo(sx + 16, sy + 1); ctx.lineTo(sx + 30, sy + 12); ctx.closePath(); ctx.fill()
+            ctx.fillStyle = '#39344a'
+            ctx.beginPath(); ctx.moveTo(sx + 16, sy + 1); ctx.lineTo(sx + 30, sy + 12); ctx.lineTo(sx + 23, sy + 12); ctx.lineTo(sx + 16, sy + 4); ctx.closePath(); ctx.fill()
+            // bell-cote posts at the peak
+            ctx.fillStyle = '#8f89a0'
+            ctx.fillRect(sx + 12, sy + 2, 2, 5); ctx.fillRect(sx + 18, sy + 2, 2, 5)
+            ctx.fillRect(sx + 11, sy + 1, 10, 2)
+            // the moonstone: same ink as the gate swirl, pulsing; the night
+            // halo gives pilgrims a landmark from across the moor
+            const mp = 0.5 + 0.5 * Math.sin(t / 11 + i * 1.7)
+            if (n > 0.02) {
+                const hg = ctx.createRadialGradient(sx + 16, sy + 4, 1, sx + 16, sy + 4, 9 + 7 * mp)
+                hg.addColorStop(0, `rgba(140,230,255,${(0.34 * n).toFixed(3)})`)
+                hg.addColorStop(1, 'rgba(140,230,255,0)')
+                ctx.fillStyle = hg
+                ctx.fillRect(sx + 4, sy - 8, 24, 24)
+            }
+            ctx.fillStyle = `rgba(150,235,255,${(0.4 + 0.35 * mp + 0.25 * n).toFixed(3)})`
+            ctx.beginPath(); ctx.arc(sx + 16, sy + 4, 1.8 + 0.5 * mp, 0, 7); ctx.fill()
+            // the door faces its gate (-dx,-dy): an arched oak leaf in the wall
+            ctx.fillStyle = '#33281d'
+            if (spot.dy === -1) { ctx.fillRect(sx + 13, sy + 19, 6, 9); ctx.beginPath(); ctx.arc(sx + 16, sy + 19, 3, Math.PI, 0); ctx.fill() }
+            else if (spot.dy === 1) { ctx.fillRect(sx + 13, sy + 12, 6, 6); ctx.beginPath(); ctx.arc(sx + 16, sy + 12, 3, 0, Math.PI, true); ctx.fill() }
+            else if (spot.dx === 1) { ctx.fillRect(sx + 5, sy + 18, 5, 10); ctx.beginPath(); ctx.arc(sx + 10, sy + 18, 2.5, Math.PI / 2, -Math.PI / 2); ctx.fill() }
+            else { ctx.fillRect(sx + 22, sy + 18, 5, 10); ctx.beginPath(); ctx.arc(sx + 22, sy + 18, 2.5, -Math.PI / 2, Math.PI / 2); ctx.fill() }
+            ctx.fillStyle = '#ffd98a'
+            ctx.fillRect(sx + 16 - spot.dx * 8 - 1, sy + 18 - spot.dy * 4, 2, 2) // lantern beside the door
+        }
+
         const draw = () => {
             const t = S.tick
             const n = night()
@@ -418,6 +490,17 @@ const BritanniaGame = () => {
                 ctx.strokeStyle = `rgba(240,255,255,${0.6 + 0.35 * n})`
                 ctx.lineWidth = 2
                 ctx.beginPath(); ctx.arc(sx + 16, sy + 16, 7, t / 12, t / 12 + 4.6); ctx.stroke()
+            }
+            // shrines (#1876): a chapel stands on its consecrated plot beside
+            // every gate; classic mode stays the clean CON tile sheet
+            if (!classicOn) {
+                for (let i = 0; i < shrines.length; i++) {
+                    const s = shrines[i]
+                    if (!s) continue
+                    const sx = s.x * TILE - camX, sy = s.y * TILE - camY
+                    if (sx < -40 || sy < -40 || sx > VIEW_W + 40 || sy > VIEW_H + 40) continue
+                    drawChapel(sx, sy, s, i, t, n)
+                }
             }
             // ambient life: birds wheel over the moors, fish break at sea (#1135)
             if (!classicOn) drawAmbient(t, camX, camY)
@@ -515,7 +598,7 @@ const BritanniaGame = () => {
                         ctx.font = 'bold 13px monospace'
                         ctx.textAlign = 'center'
                         ctx.fillStyle = '#7fe8ff'
-                        ctx.fillText(`to ${ROMAN[gd.i]} · ${gd.d} paces`, ax, ay + 24)
+                        ctx.fillText(`to ${moonName(gd.i)} · ${gd.d} paces`, ax, ay + 24)
                         ctx.textAlign = 'left'
                     }
                 }
@@ -674,7 +757,7 @@ const BritanniaGame = () => {
         // with rows starting at by+46: the phase caption overprinted row I, the
         // flavor line crowded row VIII, and the 420px-wide footer hint ran past
         // the border. 480px with measured gaps fits the longest row + hint.
-        const GM = { w: 480, rowTop: 62, pitch: 36, foot: 64 }
+        const GM = { w: 520, rowTop: 62, pitch: 36, foot: 64 }
         const gmBox = () => {
             const bh = GM.rowTop + (gates.length - 1) * GM.pitch + GM.foot
             return { bw: GM.w, bh, bx: VIEW_W / 2 - GM.w / 2, by: VIEW_H / 2 - bh / 2 }
@@ -713,7 +796,7 @@ const BritanniaGame = () => {
                 const sel = (i < S.gate ? i : i - 1) === S.sel
                 const moonlit = i === routed
                 ctx.fillStyle = sel ? '#ffd840' : (moonlit ? '#e8e2c8' : '#9fb4d8')
-                ctx.fillText(`${sel ? '> ' : '  '}${ROMAN[i]} — ${moonName(i)} moon${S.visited.has(i) ? '  [visited]' : ''}`, bx + 28, row + 23)
+                ctx.fillText(`${sel ? '> ' : '  '}${ROMAN[i]} — ${shrineTitle(i)}${S.visited.has(i) ? '  [visited]' : ''}`, bx + 28, row + 23)
                 if (moonlit) {
                     ctx.beginPath(); ctx.arc(bx + 18, row + 17, 3.5, 0, Math.PI * 2)
                     ctx.fillStyle = '#e8e2c8'; ctx.fill()
@@ -923,6 +1006,10 @@ const BritanniaGame = () => {
                     seaRain: splatIntensity(weatherAt(S.x, S.y, S.tick, S.seed, terrainAt)),
                     seaRough: seaRough(S.x, S.y, S.tick, S.seed, terrainAt),
                     town: townScore(S.x, S.y, gates, terrainAt),
+                    // #1876: the eight consecrated plots (null where no plot was
+                    // found) + how many shrines the pilgrim has touched
+                    shrines: shrines.map(s => (s ? [s.x, s.y] : null)),
+                    bumped: S.bumped.size,
                     warping: !!S.warp, warpFlash: S.warp ? warpFlash(S.tick - S.warp.t0) : 0, warpDest: S.warp ? S.warp.dest : -1,
                     moon: moonPhase(S.tick),
                     // #1862: where tonight's moon routeth from the open gate
