@@ -674,9 +674,14 @@ const FloorBossGame = () => {
             ctx.fillStyle = '#243342'; ctx.fillRect(x, ty, 46, 18)
             ctx.fillStyle = '#d8cfc0'; ctx.fillRect(x + 2, ty + 2, 42, 14)
             // cargo: one slot per box actually loaded (#1911 — the trailer
-            // never lies about what it is carrying)
+            // never lies about what it is carrying; past four slots it prints
+            // the exact remainder instead of silently saturating)
             ctx.fillStyle = '#171310'
             for (let i = 0; i < Math.min(tr.carry, 4); i++) ctx.fillRect(x + 6 + i * 9, ty + 4, 6, 10)
+            if (tr.carry > 4) {
+                ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 6px monospace'
+                ctx.fillText(`+${tr.carry - 4}`, x + 32, ty + 12)
+            }
             ctx.fillStyle = '#c9971f'; ctx.fillRect(x, ty + 2, 3, 14) // rear hazard stripe
             // cab
             ctx.fillStyle = '#b3541e'; ctx.fillRect(x + 48, ty + 2, 14, 16)
