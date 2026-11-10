@@ -11,7 +11,7 @@ four-tone march accelerates as the fleet shrinks.
 
 | File | Job | Proven by |
 |------|-----|-----------|
-| `sim.js` | one `step(state, input, rand)` — **zero `Math.random`**, every dice roll (invader fire, shooter choice, UFO arrival + bounty) drawn from the injected `rand` stream | `npm run invaderscheck` (54 checks incl. 5 mutants proven RED→GREEN) |
+| `sim.js` | one `step(state, input, rand)` — **zero `Math.random`**, every dice roll (invader fire, shooter choice, UFO arrival) drawn from the injected `rand` stream; the saucer's bounty is the shot-count table, not a roll | `npm run invaderscheck` (64 checks incl. 11 mutants proven RED→GREEN) |
 | `index.jsx` | render (pixel sprites from bit-rows, 2-frame march), input, seed lifecycle, attract autopilot, harness contract | eslint + `feedbackcheck` laws |
 | `attract.js` | attract screen frames | intact from the original port |
 
@@ -103,14 +103,43 @@ flight. Measured: slowest clean clear 1857 → **1265**, inter-kill stall
 deletion, plus a fort-preservation pin (6215/6560 bricks standing at clear;
 deleting b19's aim tiebreak chews it to 6108).
 
+## Polish batch #1906 (2026-11-10)
+
+Mid-game feel, from the issue list (QA polish pass):
+
+- **Kill value popups** — the original flashes 10/20/30 where the invader
+  died; the saucer pops its paid bounty. Blinking 8px text decor in
+  index.jsx (sim stays pure), driven by the score delta.
+- **March flutter** — the march rate now tracks the REMAINING fleet
+  (`max(3, round(2 + n*0.95))` ticks), not a frac of 32: the last pair
+  chatters at 3-tick steps like the arcade.
+- **Saucer warble** — a UFO overhead silences the march and plays a
+  250/340 Hz warble instead (arcade law: the march stops for the saucer).
+- **Shot-count bounty** — `ufoBounty(shots)`: >=15 ->300, >=10 ->150,
+  >=5 ->100, else 50; shots fired while the saucer is on screen are
+  counted in the sim. The dice is gone — the saucer adds **zero entropy**
+  to the stream (arrival timing still rides `rand`). Removing the bounty
+  draw shifted the stream: WITNESS re-measured on 20 seeds — slowest clean
+  clear 1312 (pin 1400), worst stall 172 (pin 220), bricks 6213/6560
+  (pin 6200). All pins held; none was loosened.
+- **WATCH re-aim tell** — between kills the seat holds position re-aiming
+  through the shot pattern; a blinking cyan target tick over the cannon
+  sells the pause as intent, not stall (#1906 comment, batch-19 ask).
+- **Attract losing moment** — ART.md attract law: the demo no longer loops
+  wave 1 forever. The route dies on waves 3-9 across the WITNESS seeds;
+  the attract holds its own GAME OVER beat ~2.5 s before restarting.
+
+Skipped from #1906 (deliberate): per-row explosion sprites and cluster
+bunker-nibble. One shot eating ONE brick is the load-bearing law behind
+`fortBlocks`, the b19 fire gate and the 6200-brick WATCH pin — changing
+decay granularity rewires the proven route and needs its own session.
+
 ## Honest gaps
 
 - The WATCH route clears wave 1 on all 20 WITNESS seeds (0 deaths, slowest
   ~1265 ticks); between kills the worst seed now pauses ~3 s (172 ticks,
   shot-tempo + re-alignment, pinned <= 220) crossing dense shot patterns.
 - 4 rows × 8 = 32 invaders; the original opens with 55 and grows per wave.
-- The UFO bounty is uniform-random from the four values; the original's
-  mystery score came from a shot-count table.
 - No 100-point bonus life; no tilt/coin mechanics; one UFO type.
 - Sound is the synthesized descending four + effect blips (studio audio law);
   the original's exact march waveform and the bonus-life jingle are absent.
