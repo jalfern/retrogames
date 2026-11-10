@@ -634,7 +634,26 @@ console.log('measured run-off bands (#530 item 2):')
         ok(b.offStdL > 15 && b.offStdR > 15, `${id}: run-off width varies corner to corner (std L ${b.offStdL.toFixed(1)}px, R ${b.offStdR.toFixed(1)}px; a constant ring reads 0)`)
         ok(b.asymMean > 10, `${id}: the two sides disagree — asymmetric escapes read from the map (mean Δ ${b.asymMean.toFixed(1)}px)`)
         ok(b.kerbMin >= 8 && b.kerbMax <= 18 && b.kerbMax - b.kerbMin > 2, `${id}: kerb depth tracks the band (${b.kerbMin.toFixed(1)}..${b.kerbMax.toFixed(1)}px)`)
-        ok(b.offMinPx >= 170 && b.offMaxPx <= 300, `${id}: walls stay inside the guard rails (${b.offMinPx.toFixed(0)}..${b.offMaxPx.toFixed(0)}px: ≥170 hairpin floor, ≤300 prop clearance)`)
+        // #1865: this gate read ≥170 for ALL sides, an assumption from the
+        // pre-#1498 HD law that never ran against real values (the dead
+        // bandContext crashed the suite before it). The live law (track.js
+        // wallLatAt) is 220..300px OUTSIDE bends and the #542 evolute cap
+        // max(48, Rloc−48) INSIDE — a hairpin inside is a tight circle by
+        // design. Pin the real law: outside spread, inside cap, per side.
+        let outLo = Infinity; let outHi = -Infinity; let capBad = 0
+        for (let i = 0; i < TRACK.N; i++) {
+            const p = TRACK.pts[i]
+            for (const side of [-1, 1]) {
+                const w = side > 0 ? b.offR[i] : b.offL[i]
+                if (p.k * side <= 0) { outLo = Math.min(outLo, w); outHi = Math.max(outHi, w) }
+                else {
+                    const Rloc = Math.abs(p.k) > 1e-9 ? 1 / Math.abs(p.k) : Infinity
+                    if (w < 48 - 1e-9 || w > Math.max(48, Rloc - 48) + 1e-9) capBad++
+                }
+            }
+        }
+        ok(outLo >= 220 - 1e-9 && outHi <= 300 + 1e-9, `${id}: outside bends stay 220..300px (${outLo.toFixed(0)}..${outHi.toFixed(0)}px: floor 220 run-off, ≤300 prop clearance)`)
+        ok(capBad === 0, `${id}: hairpin insides obey the #542 evolute cap max(48, Rloc−48) (${capBad} cap breaks)`)
         // consumption pin: recompute the offsets from bands.js + the documented
         // law and require they match what the geometry actually used.
         const braw = BANDS[id]
@@ -652,8 +671,11 @@ console.log('measured run-off bands (#530 item 2):')
                 const r = Math.min(1.7, Math.max(0.7, (at(i - 2) + at(i) + at(i + 2)) / (3 * med(side > 0 ? braw.right : braw.left))))
                 const p = TRACK.pts[i]
                 let w = Math.min(300, Math.max(220, 220 * r))
-                const R = 1 / Math.max(Math.abs(p.k), 1e-6)
-                if (p.k * side > 0) w = Math.max(170, Math.min(w, R * 0.8))
+                // #1865: re-pin to the live #1498/#542 bend law (track.js
+                // wallLatAt) — the old max(170, min(w, R·0.8)) line was the
+                // pre-#1498 HD law and mismatched every hairpin inside.
+                const Rloc = Math.abs(p.k) > 1e-9 ? 1 / Math.abs(p.k) : Infinity
+                if (p.k * side > 0) w = Math.min(w, Math.max(48, Rloc - 48))
                 const off = side > 0 ? b.offR[i] : b.offL[i]
                 const kerb = side > 0 ? b.kerbR[i] : b.kerbL[i]
                 if (Math.abs(off - w) > 1e-6) pinBad++
