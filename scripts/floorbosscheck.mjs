@@ -29,6 +29,9 @@
 //   node scripts/floorbosscheck.mjs --mutate-bonus    # dribbles earn freight too, demand RED
 //   node scripts/floorbosscheck.mjs --mutate-tiers    # far posts pay the LOCAL rate, demand RED (#1927)
 //   node scripts/floorbosscheck.mjs --mutate-miles    # the truck never leaves the depot on the road, demand RED (#1927)
+//   node scripts/floorbosscheck.mjs --mutate-weight   # heavy crates pay the LIGHT rate, demand RED (#1931)
+//   node scripts/floorbosscheck.mjs --mutate-slow     # heavies load at light speed, demand RED (#1931)
+//   node scripts/floorbosscheck.mjs --mutate-bands    # the inverted dest band returns, demand RED (#1931)
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -55,7 +58,10 @@ const MUT_FREIGHT = ARGS.includes('--mutate-freight')
 const MUT_BONUS = ARGS.includes('--mutate-bonus')
 const MUT_TIERS = ARGS.includes('--mutate-tiers')
 const MUT_MILES = ARGS.includes('--mutate-miles')
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES) {
+const MUT_WEIGHT = ARGS.includes('--mutate-weight')
+const MUT_SLOW = ARGS.includes('--mutate-slow')
+const MUT_BANDS = ARGS.includes('--mutate-bands')
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const src = readFileSync(sim, 'utf8')
     const [from, to, name] = MUT_YIELD
@@ -65,12 +71,18 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
             : MUT_FREIGHT
                 ? ['gs.escrow += pay', 'gs.score += pay', 'the old till is back — pack pays cash and the trailer hauls free money']
                 : MUT_TIERS
-                    ? ['amt += FREIGHT_PER_BOX * FREIGHT_MULT[d] * (tr.tiers[d] || 0)', 'amt += FREIGHT_PER_BOX * (tr.tiers[d] || 0)', 'distance dies — far posts pay the LOCAL rate (#1927)']
+                    ? ['amt += FREIGHT_PER_BOX * FREIGHT_MULT[d] * WEIGHT_MULT[w] * (tr.grid[d][w] || 0)', 'amt += FREIGHT_PER_BOX * WEIGHT_MULT[w] * (tr.grid[d][w] || 0)', 'distance dies — far posts pay the LOCAL rate (#1927)']
                     : MUT_MILES
                         ? ['export const TRIP_TICKS = [0, 750, 1650]', 'export const TRIP_TICKS = [0, 0, 0]', 'the road shrinks — the truck answers instantly from any distance (#1927)']
                         : MUT_BONUS
                             ? ['if (tr.carry >= FULL_TRAILER) {', 'if (tr.carry >= 0) {', 'every dribble haul claims the freight bonus it did not earn']
-                            : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
+                            : MUT_WEIGHT
+                                ? ['amt += FREIGHT_PER_BOX * FREIGHT_MULT[d] * WEIGHT_MULT[w] * (tr.grid[d][w] || 0)', 'amt += FREIGHT_PER_BOX * FREIGHT_MULT[d] * (tr.grid[d][w] || 0)', 'weight dies — heavy crates pay the LIGHT rate (#1931)']
+                                : MUT_SLOW
+                                    ? ['export const WEIGHT_LOAD = [1, 1, 2]', 'export const WEIGHT_LOAD = [1, 1, 1]', 'the dock never slows for a heavy crate — free speed (#1931)']
+                                    : MUT_BANDS
+                                        ? ['dr < DEST_ODDS[DEST_LONGHAUL] + DEST_ODDS[DEST_REGIONAL] ? DEST_REGIONAL : DEST_LOCAL', 'dr < DEST_ODDS[DEST_LOCAL] + DEST_ODDS[DEST_REGIONAL] ? DEST_REGIONAL : DEST_LOCAL', 'the inverted band is back — REGIONAL hoards LOCAL\'s share (#1931 fix)']
+                                        : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(sim, src.replace(from, to))
     console.log(`  ..    mutated: ${name} — this run MUST report FAILs`)
@@ -449,8 +461,12 @@ console.log('— freight line (#1921) —')
                     bonuses++
                     const t = e.tiers.split('').map(Number)
                     const boxes = t.reduce((a, b) => a + b, 0)
-                    const want = 6 * t.reduce((a, m, d) => a + m * (d + 1), 0)
-                    if (e.carry < FULL_TRAILER || e.carry !== boxes || e.amt !== want) viol++
+                    // #1931: the till pays by dest AND weight — the grid is the
+                    // manifest, and tiers must agree with it box-for-box
+                    const g = e.grid.split('').map(Number)
+                    const want = 6 * g.reduce((a, c, i) => a + c * (Math.floor(i / 3) + 1) * ((i % 3) + 1), 0)
+                    const gridBoxes = g.reduce((a, b) => a + b, 0)
+                    if (e.carry < FULL_TRAILER || e.carry !== boxes || boxes !== gridBoxes || e.amt !== want) viol++
                     if ((e.far | 0) > 0) farSeen++
                 }
                 if (e.type === 'truckout' && e.carry < FULL_TRAILER) dribbles++
@@ -458,7 +474,7 @@ console.log('— freight line (#1921) —')
         }
     }
     ok(viol === 0 && bonuses > 0 && dribbles > 0 && farSeen > 0,
-        `full trailers (≥${FULL_TRAILER} boxes) earn 6x[1,2,3] per box by destination, dribbles never do (${bonuses} bonuses, ${farSeen} far, ${dribbles} dribbles, 0 violations, 5 shifts)`)
+        `full trailers (≥${FULL_TRAILER} boxes) earn 6x[1,2,3]dest x[1,2,3]weight per box, dribbles never do (${bonuses} bonuses, ${farSeen} far, ${dribbles} dribbles, 0 violations, 5 shifts)`)
 }
 {
     // the till never lies: escrow/paid/freight/fees ride sim state and the hash
@@ -551,6 +567,97 @@ console.log('— freight tiers (#1927) —')
     const a = makeGame(7), b = makeGame(7)
     for (let i = 0; i < 900; i++) { step(a, [{}]); step(b, [{}]) }
     if (a.pad.length) { b.pad[0].d = a.pad[0].d === 2 ? 0 : 2; ok(stateHash(a) !== stateHash(b), 'a re-routed parcel hashes apart (the road cannot hide in the hash)') }
+}
+
+console.log('— load weight (#1931) —')
+{
+    // side-stream law, third stream: weight rolls ride their own rng and never
+    // touch the module order stream (golden above, #1927) NOR #1927's dest
+    // stream. Both signatures are goldens measured at the #1931 fork point —
+    // dest with the CORRECTED 58/28/14 ladder (the shipped ladder tested LONG
+    // first then up to 0.86, which gave REGIONAL the LOCAL band; corrected —
+    // the mix gates below now prove the documented odds, not a 72% surprise).
+    const DEST_GOLDEN = {
+        1: 3027750522, 2: 1073219832, 3: 1273724707, 4: 1424484639,
+        5: 2013266659, 6: 523675866, 7: 1895377948, 8: 269283601,
+    }
+    const WEIGHT_GOLDEN = {
+        1: 353657731, 2: 1664899872, 3: 1533065207, 4: 2849410918,
+        5: 1895356120, 6: 371882369, 7: 4087419580, 8: 430015594,
+    }
+    let viol = 0
+    for (const seed of Object.keys(DEST_GOLDEN)) {
+        const gs = makeGame(Number(seed))
+        let dsig = '', wsig = ''
+        for (let i = 0; i < 9000; i++) {
+            step(gs, [{}])
+            for (const e of gs.ev) if (e.type === 'ship' || e.type === 'late') { dsig += `d${e.d};`; wsig += `w${e.w};` }
+        }
+        if ((hashString(dsig) >>> 0) !== DEST_GOLDEN[seed]) viol++
+        if ((hashString(wsig) >>> 0) !== WEIGHT_GOLDEN[seed]) viol++
+    }
+    ok(viol === 0, 'weight rolls replay identically AND never disturb the dest stream — 8 seeds, both sigs pinned (third side-stream law)')
+}
+{
+    // odds law measured, both rate-cards read bottom-up across the shelf —
+    // dest 58/28/14 (#1927 law, now honestly) and weight 52/30/18.
+    // 16 shifts (≈200 parcels): adjacent bands ~12 points apart need the
+    // sample — an 8-seed draw once flipped STANDARD/HEAVY by pure noise.
+    const d = [0, 0, 0], w = [0, 0, 0]
+    for (const seed of [7, 1337, 4242, 99, 555, 1, 2, 3, 4, 5, 6, 8, 11, 13, 17, 21]) {
+        const gs = makeGame(seed)
+        while (!gs.end && gs.tick < SHIFT + 10) { step(gs, [{}]); for (const e of gs.ev) if (e.type === 'ship' || e.type === 'late') { d[e.d]++; w[e.w]++ } }
+    }
+    ok(d[0] > d[1] && d[1] > d[2], `dest mix reads LOCAL > REGIONAL > LONG across the shelf (${d.join('/')}) — the documented 58/28/14 ladder, not the inverted one`)
+    ok(w[0] > w[1] && w[1] > w[2], `weight mix reads LIGHT > STANDARD > HEAVY across the shelf (${w.join('/')}) — heavy freight is rare freight`)
+}
+{
+    // rate law as LITERALS: a hand-packed trailer pays exactly the rate-card
+    // product 6 x dest x weight. 0w2+1w1+2w0 = 6(3+4+3) = 60 with one heavy
+    // box named; three LOCAL heavies = 3x18 = 54 — a LOCAL×HEAVY crate pays
+    // exactly what a LONG×LIGHT crate pays (18), the whole point of the card.
+    const pack = (spec) => {
+        const gs = makeGame(7)
+        gs.auto = false
+        gs.orders = []
+        gs.pad.push(...spec.map(([d, w]) => ({ n: 1, since: gs.tick - 240, d, w })))
+        let guard = 0
+        while (gs.truck.mode !== 'park' && guard++ < 600) step(gs, [{}])
+        guard = 0
+        while (gs.truck.mode === 'park' && guard++ < 600) step(gs, [{}])
+        return gs.ev.filter((e) => e.type === 'bonus').pop()
+    }
+    const b1 = pack([[0, 2], [1, 1], [2, 0]])
+    ok(b1 && b1.amt === 60 && b1.heavy === 1 && b1.carry === 3, 'a LOCAL-heavy + REGIONAL-standard + LONG-light trailer pays exactly 60 and names its one heavy box (literal pin)')
+    const b2 = pack([[0, 2], [0, 2], [0, 2]])
+    ok(b2 && b2.amt === 54 && b2.heavy === 3 && b2.far === 0, 'three LOCAL heavies pay exactly 54 — heavy freight earns far-post money on near roads (#1931)')
+}
+{
+    // dock speed law measured: heavy crates are manhandled aboard.
+    // light and standard ride in TRUCK_LOAD 14 ticks; heavy takes 28.
+    const loadTicks = (w) => {
+        const gs = makeGame(7)
+        gs.auto = false
+        gs.orders = []
+        gs.pad.push({ n: 1, since: gs.tick - 240, d: 0, w })
+        let guard = 0
+        while (gs.truck.mode !== 'park' && guard++ < 600) step(gs, [{}])
+        let t = 0
+        while (!gs.ev.some((e) => e.type === 'loadout') && t++ < 200) step(gs, [{}])
+        return t
+    }
+    const lt = loadTicks(0), st = loadTicks(1), ht = loadTicks(2)
+    ok(lt === 14 && st === 14 && ht === 28, `one box rides aboard in 14/14/28 ticks by class — the dock slows ONLY for heavies (literal pin, measured ${lt}/${st}/${ht})`)
+}
+{
+    // hash + state carry weight (additive, #1373 law)
+    const simSrc = readFileSync(new URL('../src/games/FloorBoss/sim.js', import.meta.url), 'utf8')
+    ok(/\$\{gs\.truck\.grid\.map/.test(simSrc), 'hash carries the dest x weight manifest (#1931, additive)')
+    ok(/\$\{p\.d \|\| 0\}:\$\{p\.w \|\| 0\}/.test(simSrc), 'hash carries the per-parcel weight on the pad (#1931, additive)')
+    const a = makeGame(7), b = makeGame(7)
+    for (let i = 0; i < 900; i++) { step(a, [{}]); step(b, [{}]) }
+    if (a.pad.length) { b.pad[0].w = (a.pad[0].w || 0) === 2 ? 0 : 2; ok(stateHash(a) !== stateHash(b), 'a re-weighed parcel hashes apart (the till cannot hide the scale)') }
+    ok(['padWeight', 'truckWeights'].every((k) => k in state(a)), 'state shape carries the weight classes (#1931)')
 }
 
 console.log('— win —')

@@ -224,7 +224,7 @@ function sendTruck(gs, tap) {
         gs.score += amt
         gs.freight += amt
         const heavy = tr.grid.reduce((s, row) => s + (row[WEIGHT_HEAVY] || 0), 0)
-        gs.ev.push({ type: 'bonus', amt, carry: tr.carry, far: tr.far, tiers: tr.tiers.join(''), heavy })
+        gs.ev.push({ type: 'bonus', amt, carry: tr.carry, far: tr.far, tiers: tr.tiers.join(''), heavy, grid: tr.grid.map((r) => r.join('')).join('') })
     }
     // the road is the cost (#1927): the trip commits by the farthest class
     // aboard — an empty dribble still drives home LOCAL-cadenced
