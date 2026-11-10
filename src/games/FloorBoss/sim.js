@@ -86,6 +86,19 @@ export const DEST_NAMES = ['LOCAL', 'REGIONAL', 'LONG HAUL']
 export const FREIGHT_MULT = [1, 2, 3]
 export const TRIP_TICKS = [0, 750, 1650]
 export const DEST_ODDS = [0.58, 0.28, 0.14] // LOCAL / REGIONAL / LONG HAUL
+// Load-weight classes (#1931): the sibling rate-card to distance. The heavier
+// the crate, the higher the freight — and the longer it stays on the dock.
+// Weight rolls at pack time on a THIRD side-stream rng (gs.weightRng): the
+// module stream AND #1927's destination stream generate byte-identically.
+// A full trailer pays FREIGHT_PER_BOX × FREIGHT_MULT × WEIGHT_MULT per box by
+// the class of each box aboard (dribbles still ride free), and one box rides
+// aboard after TRUCK_LOAD × WEIGHT_LOAD ticks — heavy freight pays more but
+// holds the trailer longer, so a late-shift send of heavies costs a pickup.
+export const WEIGHT_LIGHT = 0, WEIGHT_STANDARD = 1, WEIGHT_HEAVY = 2
+export const WEIGHT_NAMES = ['LIGHT', 'STANDARD', 'HEAVY']
+export const WEIGHT_MULT = [1, 2, 3] // freight rate multiplier by weight class
+export const WEIGHT_LOAD = [1, 1, 2] // ticks-per-box multiplier (heavies are manhandled)
+export const WEIGHT_ODDS = [0.52, 0.30, 0.18] // LIGHT / STANDARD / HEAVY
 export const TRUCK_HOME = -90, TRUCK_PARK = 613, TRUCK_EXIT = 830
 const TRUCK_BACK = 2.6, TRUCK_FWD = 3.2
 const JAM_WAIT = 60 // waited this long next to another waiter -> JAM
@@ -203,12 +216,15 @@ function sendTruck(gs, tap) {
     const tr = gs.truck
     if (tr.carry >= FULL_TRAILER) {
         // freight tiers (#1927): each box pays by its own destination class —
-        // LOCAL hauls ride the flat rate, far posts multiply the freight
+        // LOCAL hauls ride the flat rate, far posts multiply the freight.
+        // Load weight (#1931): weight multiplies on top — 6 × [1,2,3] × [1,2,3],
+        // so a LOCAL×HEAVY crate pays what a LONG-HAUL×LIGHT crate pays.
         let amt = 0
-        for (let d = 0; d < FREIGHT_MULT.length; d++) amt += FREIGHT_PER_BOX * FREIGHT_MULT[d] * (tr.tiers[d] || 0)
+        for (let d = 0; d < FREIGHT_MULT.length; d++) for (let w = 0; w < WEIGHT_MULT.length; w++) amt += FREIGHT_PER_BOX * FREIGHT_MULT[d] * WEIGHT_MULT[w] * (tr.grid[d][w] || 0)
         gs.score += amt
         gs.freight += amt
-        gs.ev.push({ type: 'bonus', amt, carry: tr.carry, far: tr.far, tiers: tr.tiers.join('') })
+        const heavy = tr.grid.reduce((s, row) => s + (row[WEIGHT_HEAVY] || 0), 0)
+        gs.ev.push({ type: 'bonus', amt, carry: tr.carry, far: tr.far, tiers: tr.tiers.join(''), heavy, grid: tr.grid.map((r) => r.join('')).join('') })
     }
     // the road is the cost (#1927): the trip commits by the farthest class
     // aboard — an empty dribble still drives home LOCAL-cadenced
@@ -404,9 +420,10 @@ export function makeGame(seed = 1337) {
         prevA: false, prevB: false,
         robots: [], racks: [], staging: [], orders: [], conv: [],
         arm: { held: null, pose: 0, swing: 0, swingT0: 0, target: null, heldT: 0 }, // pose 0 docked, ramps to 1 while loading; swing/target = servo self-stow (#1872)
-        truck: { x: TRUCK_HOME, mode: 'out', dwell: 0, loadT: 0, carry: 0, away: 0, far: -1, tiers: [0, 0, 0] }, // load-out (#1911): mode out | back | park | leave; away/far/tiers = freight tiers (#1927)
+        truck: { x: TRUCK_HOME, mode: 'out', dwell: 0, loadT: 0, carry: 0, away: 0, far: -1, tiers: [0, 0, 0], grid: [[0, 0, 0], [0, 0, 0], [0, 0, 0]] }, // load-out (#1911): mode out | back | park | leave; away/far/tiers = freight tiers (#1927); grid[d][w] = boxes by dest×weight (#1931)
         destRng: mulberry32((seed ^ 0x9e3779b9) >>> 0), // freight-tier side stream (#1927): dest rolls never touch the module stream
-        pad: [], // staged parcels awaiting a trailer, { n: boxes, since: tick, esc: escrowed pay, d: destination class } (#1911/#1921/#1927)
+        weightRng: mulberry32((seed ^ 0x5f356495) >>> 0), // load-weight side stream (#1931): the third rng — dest and module streams stay byte-identical too
+        pad: [], // staged parcels awaiting a trailer, { n: boxes, since: tick, esc: escrowed pay, d: destination class, w: weight class } (#1911/#1921/#1927/#1931)
         escrow: 0, paid: 0, freight: 0, fees: 0, // freight-line ledger (#1921)
         shipped: 0, expired: 0, stows: 0, quotaHit: false,
         spawnT: 60, orderT: 240, convT: 0, packT: 30,
@@ -458,11 +475,20 @@ function tryShip(gs) {
         gs.escrow += pay // #1921 freight line: the pack books it, the trailer pays it
         gs.shipped++
         // freight tiers (#1927): the parcel gets its destination when it packs —
-        // rolled on the side stream so the module stream stays byte-identical
+        // rolled on the side stream so the module stream stays byte-identical.
+        // Cumulative bands per the documented law LOCAL 58 / REGIONAL 28 /
+        // LONG 14 (#1931 surfacing: the shipped ladder tested LONG first, then
+        // up to 0.86, which gave REGIONAL the LOCAL band — the odds were
+        // inverted on the page-vs-code bar; corrected, spread gate tightened).
         const dr = gs.destRng()
-        const d = dr < DEST_ODDS[DEST_LONGHAUL] ? DEST_LONGHAUL : dr < DEST_ODDS[DEST_LOCAL] + DEST_ODDS[DEST_REGIONAL] ? DEST_REGIONAL : DEST_LOCAL
-        gs.pad.push({ n: o.items.length, since: gs.tick, esc: pay, d }) // stage the parcel for a trailer (#1911); escrow rides the parcel (#1921), destination joins it (#1927)
-        gs.ev.push({ type: onTime ? 'ship' : 'late', pay, o: o.id, d })
+        const d = dr < DEST_ODDS[DEST_LONGHAUL] ? DEST_LONGHAUL : dr < DEST_ODDS[DEST_LONGHAUL] + DEST_ODDS[DEST_REGIONAL] ? DEST_REGIONAL : DEST_LOCAL
+        // load weight (#1931): the parcel's heaviest crate sets its class —
+        // rolled on the weight side stream, cumulative bands HEAVY 18 /
+        // STANDARD 30 / LIGHT 52
+        const wr = gs.weightRng()
+        const w = wr < WEIGHT_ODDS[WEIGHT_HEAVY] ? WEIGHT_HEAVY : wr < WEIGHT_ODDS[WEIGHT_HEAVY] + WEIGHT_ODDS[WEIGHT_STANDARD] ? WEIGHT_STANDARD : WEIGHT_LIGHT
+        gs.pad.push({ n: o.items.length, since: gs.tick, esc: pay, d, w }) // stage the parcel for a trailer (#1911); escrow rides the parcel (#1921), destination joins it (#1927), weight joins it (#1931)
+        gs.ev.push({ type: onTime ? 'ship' : 'late', pay, o: o.id, d, w })
     }
 }
 
@@ -755,14 +781,16 @@ export function step(gs, pads = [{}]) {
         if (tr.x >= TRUCK_PARK) { tr.x = TRUCK_PARK; tr.mode = 'park'; tr.dwell = 0; tr.loadT = 0 }
     } else if (tr.mode === 'park') {
         if (gs.pad.length) {
+            const pw = gs.pad[0].w || 0 // load weight (#1931): heavy crates take WEIGHT_LOAD longer to ride aboard
             tr.loadT++
-            if (tr.loadT >= TRUCK_LOAD) {
+            if (tr.loadT >= TRUCK_LOAD * WEIGHT_LOAD[pw]) {
                 tr.loadT = 0
                 const p = gs.pad[0]
                 p.n-- // box by box — a three-box parcel takes three cycles
                 tr.carry++
                 tr.tiers[p.d || 0]++ // freight tiers (#1927): the trailer knows what rides in it
-                if ((p.d || 0) > tr.far) tr.far = p.d || 0
+                tr.grid[p.d || 0][pw]++ // weight joins the manifest (#1931)
+                if ((p.d || 0) > tr.far) tr.far = p.d || 0 // the road stays distance-driven — weight prices the box, not the miles (#1931)
                 if (p.n <= 0) {
                     gs.pad.shift()
                     // #1921 freight line: the last box aboard frees the parcel's
@@ -772,13 +800,13 @@ export function step(gs, pads = [{}]) {
                     gs.score += p.esc || 0
                     if (p.esc) gs.ev.push({ type: 'freight', pay: p.esc, x: OUT_CELLS[0].x, y: OUT_CELLS[0].y })
                 }
-                gs.ev.push({ type: 'loadout', x: OUT_CELLS[0].x, y: OUT_CELLS[0].y })
+                gs.ev.push({ type: 'loadout', x: OUT_CELLS[0].x, y: OUT_CELLS[0].y, w: pw })
             }
         } else tr.dwell++
         if (!gs.pad.length && tr.dwell >= TRUCK_MIN) sendTruck(gs, false)
     } else if (tr.mode === 'leave') {
         tr.x += TRUCK_FWD
-        if (tr.x >= TRUCK_EXIT) { tr.x = TRUCK_HOME; tr.mode = 'out'; tr.carry = 0; tr.tiers = [0, 0, 0]; tr.far = -1 } // empty at the depot, ready for the next call (#1927)
+        if (tr.x >= TRUCK_EXIT) { tr.x = TRUCK_HOME; tr.mode = 'out'; tr.carry = 0; tr.tiers = [0, 0, 0]; tr.grid = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]; tr.far = -1 } // empty at the depot, ready for the next call (#1927/#1931)
     }
 
     // quota rings whenever the score crosses it (the till now rings at the
@@ -801,7 +829,7 @@ export function stateHash(gs) {
     for (const b of gs.robots) s += `${b.id}@${b.x},${b.y}c${b.carry || '-'}${b.broken ? 'B' : ''}${b.jam ? 'J' : ''}t${b.task.kind};`
     for (const r of gs.racks) s += `${r.x},${r.y}[${r.items.join('')}];`
     s += `S[${gs.staging.join('')}]|`
-    s += `T[${gs.truck.mode}:${gs.truck.carry}:${Math.round(gs.truck.x)}:${gs.truck.away}:${gs.truck.tiers.join('')}]P[${gs.pad.map((p) => `${p.n}:${p.esc || 0}:${p.d || 0}`).join(',')}]|` // load-out (#1911) + per-parcel escrow (#1921) + tiers/road (#1927), additive (#1373 law)
+    s += `T[${gs.truck.mode}:${gs.truck.carry}:${Math.round(gs.truck.x)}:${gs.truck.away}:${gs.truck.tiers.join('')}:${gs.truck.grid.map((r) => r.join('')).join('')}]P[${gs.pad.map((p) => `${p.n}:${p.esc || 0}:${p.d || 0}:${p.w || 0}`).join(',')}]|` // load-out (#1911) + per-parcel escrow (#1921) + tiers/road (#1927) + weight manifest/classes (#1931), additive (#1373 law)
     s += `E[${gs.escrow}:${gs.paid}:${gs.freight}:${gs.fees}]|` // freight ledger, additive (#1373 law, #1921)
     for (const o of gs.orders) s += `${o.id}{${o.items.join(',')}}${o.due - gs.tick}${o.prio ? '!' : ''};`
     for (const c of gs.conv) s += `${c.kind}@${c.x};`
@@ -833,8 +861,10 @@ export function state(gs) {
         armHeld: gs.arm.held,
         pad: gs.pad.map((p) => p.n),
         padDest: gs.pad.map((p) => p.d || 0), // freight tiers (#1927): the eye reads where each staged parcel is bound
+        padWeight: gs.pad.map((p) => p.w || 0), // load weight (#1931): and how heavily
         truckAway: gs.truck.away,
         truckFar: gs.truck.far,
+        truckWeights: gs.truck.grid.reduce((a, r) => a + (r[WEIGHT_HEAVY] || 0), 0), // heavy boxes aboard (#1931)
         escrow: gs.escrow, paid: gs.paid, freight: gs.freight, fees: gs.fees, // freight-line ledger (#1921)
         padAge: gs.pad.length ? gs.tick - gs.pad[0].since : 0,
         truck: gs.truck.mode,
