@@ -19,7 +19,7 @@ import {
     LEVELS,
     SPILLS, spellById,
     makeGame, step, autopilot, stateHash, setHand, cycleR, cycleL, crater, settleGround, INVIS_T,
-    hudTap, TAP, TRAY, muffleOf, OPEN_CUTOFF, crumbleFeel, castBearing, diveOf, sampleH, WATER,
+    hudTap, TAP, TRAY, muffleOf, OPEN_CUTOFF, crumbleFeel, castBearing, diveOf, sampleH, WATER, aerialFog,
     atCastle, bookOpen, bookClose, bookKey, bookTap, BOOK, BOOK_PROMPT,
     SEL, selectTap, cursorStep,
 } from './sim.js'
@@ -1289,6 +1289,15 @@ const MagicCarpetGame = () => {
                     const h1 = sampleH(gs, gs.x, gs.y)
                     return { floor: +h1.toFixed(2), flooded: h1 < WATER, digs: n }
                 },
+                // #1764 item 5 stage 5: the aerial law sampled at the live camera
+                // — the JS mirror of the exact GLSL the shaders run (AIR_GLSL
+                // bakes these same literals), so the live gate compares what the
+                // law says at the carpet's altitude against what the pixels show.
+                aerial: (d = 200) => ({
+                    low: +aerialFog(d, WATER, gs.alt).toFixed(4),
+                    peak: +aerialFog(d, 90, gs.alt).toFixed(4),
+                    camY: +gs.alt.toFixed(2),
+                }),
                 // #1703 (phone proof): queue the same crater digHot lands — but
                 // leave the crumble window OPEN so a pass can capture mid-window
                 // (rim peak) vs settled. deforms() reports each deform's age so

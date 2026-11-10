@@ -424,9 +424,12 @@ see item 5).
   ease-out swell, a shockwave rim that settles to exactly zero) with the
   final land provably equal to the old instant machine; the #1646-deferred
   RAISE-mound ripple ships here too.
-- Fog is per-object/per-vertex distance mix, not a true aerial-perspective
-  gradient with altitude; clouds are two dome layers that cast a drifting
-  shadow on the land, not volumetric bodies.
+- **CLOSED by #1764 (stage 5):** aerial perspective — the fog is now a ground-
+  hugging haze layer (full density at/below 18u, summits above 74u keep half
+  crispness) and climbing the carpet thins the path (air 1.0→0.6), mirrored in
+  GLSL constant-for-constant by AIR_GLSL with the horizon fuse kept.
+- Clouds are two dome layers that cast a drifting shadow on the land, not
+  volumetric bodies.
 
 ## #1746 item 7 polish (2026-11-06, QA studio): SPATIAL CAST CUE
 

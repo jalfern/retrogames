@@ -969,6 +969,29 @@ export const MUFFLE_CUTOFF = 520
 // Never feeds stateHash: like muffleOf it drives presentation (the renderer's
 // submersion mix) and audio (underwater the world goes muffled).
 export const diveOf = (gs) => Math.max(0, WATER - gs.alt)
+
+// ---- #1764 item 5 stage 5: AERIAL PERSPECTIVE (pure geometry, presentation-only)
+// The original's distance haze is a LAYER, not a per-object distance mix: low
+// land and sea dissolve into the horizon band while summits above the layer
+// stay crisp, and climbing the carpet thins the path you look through, so the
+// far ground resolves once your eye is up. renderer.js mirrors these three
+// numbers in GLSL — same literals, baked from here (single source of truth).
+// Never feeds the sim: a pure read, like castBearing/muffleOf.
+export const FOG_NEAR = 70 // the old distance-only fog kept these two edges;
+export const FOG_D = 260 // they stay the geometric bookends of the law
+export const HAZE = {
+    floorY: 18, // at/below this altitude (sea + beach) haze density is full
+    topY: 74, // at/above this altitude summits pierce the layer: density = keep
+    keep: 0.5, // crispness a peak keeps at full range
+    nearY: 40, // camera eye level with a full haze path below it
+    farY: 100, // eye level at which the path is thinnest (floor)
+    floor: 0.6, // climbing thins the path — distant land resolves, never vanizes
+}
+const clamp01 = (v) => Math.min(1, Math.max(0, v))
+const smooth01 = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t) }
+export const hazeOf = (y) => HAZE.keep + (1 - HAZE.keep) * clamp01((HAZE.topY - y) / (HAZE.topY - HAZE.floorY))
+export const airOf = (camY) => Math.max(HAZE.floor, 1 - (1 - HAZE.floor) * (Math.max(0, camY - HAZE.nearY)) / (HAZE.farY - HAZE.nearY))
+export const aerialFog = (dist, y, camY) => smooth01(FOG_NEAR, FOG_D, dist) * hazeOf(y) * airOf(camY)
 export function muffleOf(gs) {
     return gs.invis > 0 || diveOf(gs) > 0 ? MUFFLE_CUTOFF : OPEN_CUTOFF
 }
