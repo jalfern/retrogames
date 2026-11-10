@@ -16,7 +16,7 @@ import { seedRng } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 import {
     GW, PLAYER_Y, PLAYER_W, ROW_SCORE, RESPAWN_TICKS, UFO_Y,
-    BUNKER_W, BUNKER_ROWS, bunkerBricks,
+    BUNKER_W, BUNKER_ROWS, bunkerBricks, ufoBounty,
     makeWorld, step, loseLife, hash, done, activeCount, waveSpeed, watchRoute,
 } from '../src/games/SpaceInvaders/sim.js'
 
@@ -115,11 +115,11 @@ const INVADER_BOTTOM_PROBE = 20 // sits above the landing check until one edge-d
     while (!s.ufo && guard++ < 4000) step(s, {}, r)
     ok(!!s.ufo, `UFO arrives during play (tick ${s.tick})`)
     if (s.ufo) {
-        const pts = s.ufo.points
+        const pts = ufoBounty(s.ufo.shots)
         // place the shot so it lands inside the saucer AFTER this tick's advance (5px/frame)
         s.playerBullet = { x: Math.round(s.ufo.x) + 8, y: UFO_Y + 8 }
         step(s, {}, r)
-        ok(s.score === pts && !s.ufo, `shooting the UFO banks its bounty (${pts})`)
+        ok(s.score === pts && !s.ufo, `shooting the UFO banks the table bounty for its shot count (${pts})`)
     }
 }
 
@@ -311,34 +311,99 @@ const INVADER_BOTTOM_PROBE = 20 // sits above the landing check until one edge-d
         'registry advertises WATCH for Space Invaders')
 }
 
+// ---------- 12. #1906 polish: shot-count UFO table, march flutter, popups, warble, watch tell, attract loss ----------
+{
+    ok(ufoBounty(0) === 50 && ufoBounty(4) === 50 && ufoBounty(5) === 100 && ufoBounty(9) === 100 &&
+        ufoBounty(10) === 150 && ufoBounty(14) === 150 && ufoBounty(15) === 300 && ufoBounty(99) === 300,
+        'UFO bounty is the shot-count table (>=15 ->300, >=10 ->150, >=5 ->100, else 50) — not a dice roll')
+    // shots fired while the saucer is on screen feed its counter, and the hit
+    // pays the table for that count (quiet rand: no enemy fire, no timing dice;
+    // the one-shot rule paces spawns at the bullet's ~47-tick flight, not the
+    // 10-tick cooldown — mirror the spawn events, and floor the count honestly)
+    const rr = () => 0.99
+    const s = makeWorld(rr)
+    s.ufo = { x: -16, shots: 0 } // full ~256-tick crossing window
+    let spawned = 0
+    for (let t = 0; t < 200; t++) {
+        const ufoUp = !!s.ufo
+        const had = !!s.playerBullet
+        step(s, { fire: true }, rr)
+        if (ufoUp && !had && s.playerBullet) spawned++
+    }
+    ok(s.ufo && s.ufo.shots === spawned && spawned >= 4,
+        `every shot fired under the saucer counts (spawned ${spawned} in 200 ticks, table counted ${s.ufo ? s.ufo.shots : 'saucer gone'})`)
+    if (s.ufo) {
+        const counted = s.ufo.shots
+        const before = s.score
+        s.playerBullet = { x: Math.round(s.ufo.x) + 9, y: UFO_Y + 8 } // column inside the saucer, lands next advance
+        step(s, {}, rr)
+        ok(!s.ufo && s.score - before === ufoBounty(counted) && s.score - before >= 100,
+            `a saucer hit pays the table for its counted shots (${counted} shots -> ${s.score - before})`)
+    }
+    ok(!/points/.test(simSrc), 'the dice-bounty field is gone from the sim — zero entropy at the saucer')
+
+    // presentation-layer juice (index.jsx, decor stays out of the pure sim)
+    ok(/Math\.max\(3, Math\.round\(2 \+ n \* 0\.95\)/.test(jsx),
+        '#1906 march rate tracks the REMAINING fleet — the last pair flutters at 3-tick steps')
+    ok(/if \(world\.ufo\) \{[\s\S]*?warbleAt[\s\S]*?\} else \{[\s\S]*?MARCH_TONES/.test(jsx),
+        '#1906 a saucer overhead warbles INSTEAD of the march (arcade law)')
+    ok(/popup\(world\.invaders\[k\]\.x \+ 6, world\.invaders\[k\]\.y, ROW_SCORE\[world\.invaders\[k\]\.row\]\)/.test(jsx),
+        '#1906 kill popups flash the invader row value at the death spot (original 10/20/30)')
+    ok(/const ufoPts = world\.score - prevScore - invaderPts/.test(jsx),
+        '#1906 the saucer payout pops at the score delta (whatever the table paid)')
+    ok(/watchTell/.test(jsx),
+        '#1906 WATCH re-aim tell: a target tick blinks over the cannon between kills')
+    ok(/attractOver > 150/.test(jsx),
+        '#1906 attract holds its GAME OVER beat ~2.5 s (ART.md attract law: show losing too)')
+}
+
 // prove-it-can-fail: planted bugs the witness MUST die on
 if (process.argv.includes('--mutant')) {
     const S = 'src/games/SpaceInvaders/sim.js'
-    const orig = readFileSync(S, 'utf8')
+    const J = 'src/games/SpaceInvaders/index.jsx'
     const MUTANTS = [
-        ['the route can stand in a falling column',
+        [S, 'the route can stand in a falling column',
             'const freeAt = (x) => lanes.every((lx) => Math.abs(lx - x) >= 12)',
             'const freeAt = (x) => lanes.every((lx) => Math.abs(lx - x) >= 6)'],
-        ['shots cross forts again (b19 fire gate deleted)',
+        [S, 'shots cross forts again (b19 fire gate deleted)',
             'if (Math.abs(aimX - pc) <= 2.5 && !s.playerBullet && freeAt(pc) && (bestBlocked || !fortBlocks(s, pc))) input.fire = true',
             'if (Math.abs(aimX - pc) <= 2.5 && !s.playerBullet && freeAt(pc)) input.fire = true'],
-        ['the aim ignores the fort under its lead point (b19 tiebreak deleted)',
+        [S, 'the aim ignores the fort under its lead point (b19 tiebreak deleted)',
             'const aimBlocked = fortBlocks(s, leadOf(i))',
             'const aimBlocked = false'],
-        ['the route ignores aligned targets (b20 re-aim pass deleted)',
+        [S, 'the route ignores aligned targets (b20 re-aim pass deleted)',
             'if (!s.playerBullet && freeAt(pc)) {',
             'if (false && !s.playerBullet && freeAt(pc)) {'],
-        ['the lead ignores the edge bounce (b20 fold deleted)',
+        [S, 'the lead ignores the edge bounce (b20 fold deleted)',
             'let edgeDist = Infinity',
             'let edgeDist = flight * waveSpeed(s.wave)'],
+        [S, 'the saucer pays a flat score, ignoring the shot table (#1906)',
+            's.score += ufoBounty(s.ufo.shots)',
+            's.score += 50'],
+        [S, 'shots under the saucer stop counting (#1906 table starved)',
+            'if (s.ufo) s.ufo.shots++',
+            ''],
+        [J, 'the march rate ignores the fleet size (#1906 flutter deleted)',
+            'const interval = Math.max(3, Math.round(2 + n * 0.95))',
+            'const interval = 16'],
+        [J, 'the saucer no longer silences the march (#1906 warble deleted)',
+            'if (world.ufo) {\n                    if (world.tick - warbleAt >= 4)',
+            'if (false && world.ufo) {\n                    if (world.tick - warbleAt >= 4)'],
+        [J, 'kill popups removed (#1906)',
+            'popup(world.invaders[k].x + 6, world.invaders[k].y, ROW_SCORE[world.invaders[k].row])',
+            'void 0'],
+        [J, 'the attract loop loses instantly again (#1906 hold deleted)',
+            'attractOver > 150',
+            'attractOver > 0'],
     ]
-    for (const [what, from, to] of MUTANTS) {
+    for (const [F, what, from, to] of MUTANTS) {
+        const orig = readFileSync(F, 'utf8')
         if (!orig.includes(from)) { ok(false, `mutant anchor missing: ${what}`, from) }
         else {
-            plant(S, orig.replace(from, to))
+            plant(F, orig.replace(from, to))
             const res = spawnSync(process.execPath, ['scripts/invaderscheck.mjs'], { encoding: 'utf8' })
             ok(res.status !== 0, `mutant dies: ${what}`, res.status === 0 ? 'child passed despite the bug' : '')
-            pull(S)
+            pull(F)
         }
     }
 }

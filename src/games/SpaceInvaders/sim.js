@@ -6,10 +6,11 @@
 // forbidden (AGENTS.md "Adding a game").
 //
 // Entropy discipline (#1473): zero Math.random here. Every dice roll —
-// invader fire, shooter choice, UFO arrival and bounty — draws from `rand`,
-// injected by index.jsx as seedRng(seed). ?seed=N therefore replays the exact
-// world: same shots, same saucer, same run. The attract demo runs this SAME
-// sim, so the seed is regenerated at every human start (Outpost/DK precedent).
+// invader fire, shooter choice, UFO arrival — draws from `rand`, injected by
+// index.jsx as seedRng(seed). ?seed=N therefore replays the exact world: same
+// shots, same saucer, same run. The saucer's bounty is not a roll at all
+// (#1906) — it is the shot-count table. The attract demo runs this SAME sim,
+// so the seed is regenerated at every human start (Outpost/DK precedent).
 //
 // Terminal model (restored faithfully — the old port silently re-init'ed):
 // rows score 30/20/20/10 top-to-bottom (the original's row bands folded to
@@ -33,7 +34,10 @@ export const LIVES = 3
 export const RESPAWN_TICKS = 90
 export const UFO_SPEED = 1
 export const UFO_Y = 26
-export const UFO_POINTS = [50, 100, 150, 300]
+// #1906 — the original's mystery score was NOT a dice roll: it came from a
+// shot-count table. We count the shots fired while the saucer is on screen
+// and pay the table. Zero entropy at the saucer: the bounty is honest math.
+export const ufoBounty = (shots) => (shots >= 15 ? 300 : shots >= 10 ? 150 : shots >= 5 ? 100 : 50)
 
 // The 1978 bunkers: four destructible forts of 2x2 bricks (11x8 cells =
 // 22x16 px each), dome corners cut, a 6x4 slot in the crown. They sit
@@ -79,7 +83,7 @@ export const makeWorld = (rand, opts = {}) => {
         dir: 1,
         enemyBullets: [],
         playerBullet: null, // original: one shot on screen at a time
-        ufo: null,          // { x, points }
+        ufo: null,          // { x, shots }
         ufoNext: 900 + Math.floor(rand() * 600),
         bunkers: newBunkers(),
         phase: 'play',      // play | dying | over
@@ -257,6 +261,8 @@ export const step = (s, input, rand) => {
     if (input.fire && s.cooldown <= 0 && !s.playerBullet && s.phase === 'play') {
         s.playerBullet = { x: s.playerX + PLAYER_W / 2, y: PLAYER_Y - BULLET_H }
         s.cooldown = 10
+        // #1906 — the saucer's bounty counts the shots it sees (original table)
+        if (s.ufo) s.ufo.shots++
     }
 
     // --- respawn countdown ---
@@ -302,9 +308,10 @@ export const step = (s, input, rand) => {
         s.enemyBullets.push({ x: shooter.x + INVADER_W / 2, y: shooter.y + INVADER_H })
     }
 
-    // --- mystery UFO ---
+    // --- mystery UFO (#1906: no bounty draw — the score is the shot-count
+    // table, so the saucer adds zero entropy to the stream) ---
     if (!s.ufo && s.tick >= s.ufoNext) {
-        s.ufo = { x: -16, points: UFO_POINTS[Math.floor(rand() * UFO_POINTS.length)] }
+        s.ufo = { x: -16, shots: 0 }
         s.ufoNext = s.tick + 1200 + Math.floor(rand() * 900)
     }
     if (s.ufo) {
@@ -334,7 +341,7 @@ export const step = (s, input, rand) => {
         }
         if (!consumed && s.ufo &&
             b.x >= s.ufo.x && b.x <= s.ufo.x + 16 && b.y <= UFO_Y + 6 && b.y >= UFO_Y) {
-            s.score += s.ufo.points
+            s.score += ufoBounty(s.ufo.shots)
             s.ufo = null
             consumed = true
         }
@@ -440,7 +447,7 @@ export const hash = (s) => {
     }
     for (const b of s.enemyBullets) mix(b.x + b.y * 512)
     mix(s.playerBullet ? s.playerBullet.x + s.playerBullet.y * 512 : -1)
-    mix(s.ufo ? Math.round(s.ufo.x * 10) : -2)
+    mix(s.ufo ? Math.round(s.ufo.x * 10) + s.ufo.shots * 4096 : -2)
     return h >>> 0
 }
 

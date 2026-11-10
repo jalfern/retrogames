@@ -6,7 +6,7 @@ import { GAMES } from '../../config/games'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { attractFrame, DIM } from './attract.js'
-import { GW, GH, PLAYER_W, PLAYER_H, PLAYER_Y, INVADER_W, INVADER_H, BULLET_W, BULLET_H, UFO_Y, BUNKER_ROWS, bunkerBricks, makeWorld, step, hash, done, activeCount, watchRoute } from './sim.js'
+import { GW, GH, PLAYER_W, PLAYER_H, PLAYER_Y, INVADER_W, INVADER_H, BULLET_W, BULLET_H, UFO_Y, BUNKER_ROWS, ROW_SCORE, bunkerBricks, makeWorld, step, hash, done, activeCount, watchRoute } from './sim.js'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 
@@ -171,13 +171,21 @@ const SpaceInvadersGame = () => {
         const MARCH_TONES = [110, 98, 87, 78] // the original's descending four
         let marchStep = 0
         let marchAt = 0
+        let warbleAt = 0
         let prevShot = false
+        let lastKillTick = 0
+        let attractOver = 0 // #1906 — the attract loop's losing moment, held visible
+        // #1906 — the original flashes the killed invader's value where it died
+        // (10/20/30, and the saucer's bounty). Blinking text decor, deterministic.
+        const popups = []
+        const popup = (x, y, val) => popups.push({ x, y, val, life: 45 })
 
         const doSim = (input) => {
             const was = world.phase
             const before = world.invaders.map((i) => i.alive)
             const prevCount = activeCount(world)
             const prevScore = world.score
+            const prevUfo = world.ufo
             world = step(world, input, rand)
             if (world.score > prevScore) audioController.playNoise(0.08, 0.12)
             else if (prevScore === world.score && was === 'play' && world.phase === 'dying') audioController.playNoise(0.4, 0.25)
@@ -188,22 +196,42 @@ const SpaceInvadersGame = () => {
                 if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
             }
             if (prevCount > 0 && activeCount(world) === 0) audioController.playSweep(200, 600, 0.3)
-            // kill detection by index identity -> burst at the death spot
+            // kill detection by index identity -> burst + value popup at the death spot
+            let invaderPts = 0
             for (let k = 0; k < before.length; k++) {
-                if (before[k] && !world.invaders[k].alive) burst(world.invaders[k].x + 6, world.invaders[k].y + 4)
+                if (before[k] && !world.invaders[k].alive) {
+                    burst(world.invaders[k].x + 6, world.invaders[k].y + 4)
+                    invaderPts += ROW_SCORE[world.invaders[k].row]
+                    popup(world.invaders[k].x + 6, world.invaders[k].y, ROW_SCORE[world.invaders[k].row])
+                    lastKillTick = world.tick
+                }
             }
+            // #1906 — the saucer's payout pops where it fell too (the score delta
+            // not owned by invader rows is the table bounty, whatever it was)
+            const ufoPts = world.score - prevScore - invaderPts
+            if (prevUfo && !world.ufo && ufoPts > 0) popup(prevUfo.x + 8, UFO_Y, ufoPts)
             // fire tone: the shot appearing is the event
             const shotNow = !!world.playerBullet
             if (shotNow && !prevShot) audioController.playTone(980, 0.04, 'square', 0.08)
             prevShot = shotNow
-            // the descending four, faster as the fleet shrinks — the signature
+            // the descending four — #1906: the rate tracks the REMAINING fleet
+            // (original march), so the last pair flutters at 3-tick steps; and a
+            // saucer overhead replaces the march with its warble, like the arcade.
             if (world.phase === 'play' && prevCount > 0) {
-                const frac = activeCount(world) / 32
-                const interval = Math.max(8, Math.round(10 + frac * 22))
-                if (world.tick - marchAt >= interval) {
-                    marchAt = world.tick
-                    audioController.playTone(MARCH_TONES[marchStep % 4], 0.07, 'square', 0.06)
-                    marchStep++
+                const n = activeCount(world)
+                if (world.ufo) {
+                    if (world.tick - warbleAt >= 4) {
+                        warbleAt = world.tick
+                        audioController.playTone(marchStep % 2 ? 340 : 250, 0.05, 'square', 0.06)
+                        marchStep++
+                    }
+                } else {
+                    const interval = Math.max(3, Math.round(2 + n * 0.95))
+                    if (world.tick - marchAt >= interval) {
+                        marchAt = world.tick
+                        audioController.playTone(MARCH_TONES[marchStep % 4], 0.07, 'square', 0.06)
+                        marchStep++
+                    }
                 }
             }
             updateParts()
@@ -212,13 +240,19 @@ const SpaceInvadersGame = () => {
         const updateParts = () => {
             for (const p of parts) { p.x += p.vx; p.y += p.vy; p.life-- }
             for (let k = parts.length - 1; k >= 0; k--) if (parts[k].life <= 0) parts.splice(k, 1)
+            for (const p of popups) p.life--
+            for (let k = popups.length - 1; k >= 0; k--) if (popups[k].life <= 0) popups.splice(k, 1)
         }
 
         const update = () => {
             if (isAttractMode) {
                 attractTick++
                 doSim(watchRoute(world))
-                if (done(world)) { newRun(); uiOverMirror = false; attractTick = 0 }
+                // #1906 — ART.md attract law: show a losing moment too. The route
+                // dies on waves 3-9 across the WITNESS seeds; hold that GAME OVER
+                // beat ~2.5 s before the next demo run starts.
+                if (done(world)) { attractOver++; if (attractOver > 150) { newRun(); uiOverMirror = false; attractTick = 0; attractOver = 0 } }
+                else attractOver = 0
                 return
             }
             // #1637 WATCH: the seat drives the SAME sim with the SAME brain the
@@ -275,6 +309,17 @@ const SpaceInvadersGame = () => {
                 ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1)
             }
 
+            // #1906 — value flash where an invader (or the saucer) fell: the
+            // original blinks 10/20/30 at the kill spot for a beat.
+            ctx.font = '8px monospace'
+            ctx.textAlign = 'center'
+            for (const p of popups) {
+                if (Math.floor(p.life / 5) % 2 === 0) {
+                    ctx.fillStyle = '#ffffff'
+                    ctx.fillText(String(p.val), Math.round(p.x), Math.round(p.y))
+                }
+            }
+
             // player cannon — blinks during respawn
             const blink = world.phase === 'dying' && Math.floor(world.tick / 6) % 2 === 0
             if (!blink) drawSprite(ctx, SPR.player, Math.round(world.playerX), PLAYER_Y, '#ffffff')
@@ -292,6 +337,19 @@ const SpaceInvadersGame = () => {
             ctx.textAlign = 'right'
             ctx.fillText(`WAVE ${world.wave}`, GW - 4, GH - 1)
 
+            // #1906 — WATCH pause tell: when the seat holds position between kills
+            // it is re-aiming through the shot pattern, not stalling — a blinking
+            // target tick over the cannon sells the pause as intent.
+            const watchTell = watchingRef.current && !isAttractMode && world.phase === 'play' &&
+                world.tick - lastKillTick >= 15 && world.tick - lastKillTick < 240 && // covers b20's measured 172-tick worst gap (pin 220)
+                Math.floor(world.tick / 4) % 2 === 0
+            if (watchTell) {
+                const cx = Math.round(world.playerX + PLAYER_W / 2)
+                ctx.fillStyle = '#00e5ff'
+                ctx.fillRect(cx, PLAYER_Y - 12, 1, 4)
+                ctx.fillRect(cx - 2, PLAYER_Y - 12, 5, 1)
+            }
+
             ctx.restore()
         }
 
@@ -304,10 +362,21 @@ const SpaceInvadersGame = () => {
                 ctx.fillStyle = DIM
                 ctx.fillRect(viewOX, viewOY, GW * viewScale, GH * viewScale)
                 ctx.textAlign = 'center'
-                for (const l of attractFrame(attractTick, viewW, viewH)) {
-                    ctx.font = `${l.size}px monospace`
-                    ctx.fillStyle = l.col
-                    ctx.fillText(l.text, l.x, l.y)
+                if (done(world)) {
+                    // #1906 — the attract losing moment (ART.md attract law): the
+                    // demo's own GAME OVER beat, held ~2.5 s by attractOver.
+                    ctx.fillStyle = '#ff3b30'
+                    ctx.font = `bold ${Math.max(12, Math.floor(viewW / 18))}px monospace`
+                    ctx.fillText('GAME OVER', viewW / 2, viewH / 2 - 6)
+                    ctx.fillStyle = '#ffffff'
+                    ctx.font = `${Math.max(9, Math.floor(viewW / 32))}px monospace`
+                    ctx.fillText(`SCORE ${world.score}  WAVE ${world.wave}`, viewW / 2, viewH / 2 + 12)
+                } else {
+                    for (const l of attractFrame(attractTick, viewW, viewH)) {
+                        ctx.font = `${l.size}px monospace`
+                        ctx.fillStyle = l.col
+                        ctx.fillText(l.text, l.x, l.y)
+                    }
                 }
             } else if (done(world)) {
                 ctx.fillStyle = 'rgba(0,0,0,0.72)'
@@ -384,7 +453,7 @@ const SpaceInvadersGame = () => {
             ],
             actions: [
                 { label: 'Clear wave', run: () => { world.invaders.forEach((i) => { i.alive = false }) } },
-                { label: 'Spawn UFO', run: () => { world.ufo = { x: 20, points: 100 } } },
+                { label: 'Spawn UFO', run: () => { world.ufo = { x: 20, shots: 0 } } },
                 { label: 'Wipe forts', run: () => { world.bunkers.forEach((b) => { b.cells = b.cells.map(() => 0) }) } },
                 { label: 'Force game over', run: () => { world.lives = 0; world.phase = 'over' } },
             ],
