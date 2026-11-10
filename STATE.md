@@ -130,12 +130,9 @@ carries `armstow`.
 - Prod verify: SPA HTML is CDN-cached — poll `?nocache=$RANDOM` on the HTML,
   then sweep the entry's `index-*.js` chunk refs for your marker string
   (`grep -o '[A-Za-z0-9_-]*\.js'`); deploy ~4–14 min after merge (queue).
-- Worktree `~/Dev/retrogames-forge-comethd-landmarks` = detached at
-  `origin/main` 686cf32 (post-merge), node_modules symlinked; reuse:
-  `git checkout -B forge/<newslug> origin/main`.
+- Worktree `~/Dev/retrogames-forge-comethd-landmarks` = detached at origin/main
+  post-merge, node_modules symlinked; reuse: `git checkout -B forge/<newslug> origin/main`.
 - Dev server 5173 stopped at session end.
-- `lint:hd` is HD-only; FloorBoss gates = npm scripts above + eslint of
-  sim.js/index.jsx/floorbosscheck.mjs.
 
 ## Open questions
 - None. (No jonq filed; nothing taste/priority came up that the board can't
