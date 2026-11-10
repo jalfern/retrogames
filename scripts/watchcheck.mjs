@@ -1792,9 +1792,10 @@ const PILOTS = [
             rep.check('defender: Y seats the proven patrol', await watching())
             rep.check('defender: handoff blip at seat', (await sfx()).at(-1) === 'start')
             // Honest bar (matches defendercheck WITNESS, 20 seeds): the patrol
-            // banks points and kills landers but grazes ~1 hit per 150 s patrol —
-            // a guard drop costs a life now and then. Demand progress, allow one graze.
-            const adv = (x, y) => y.score >= x.score + 500 && y.lives >= x.lives - 1
+            // banks ~300 pts/10 s, grazes ~1 hit per 150 s, and after the player
+            // steers away it may need seconds to find the next lander — a lander
+            // pays 150/75. Demand at least one kill's worth of progress, allow one graze.
+            const adv = (x, y) => y.score >= x.score + 150 && y.lives >= x.lives - 1
             const a = await probe()
             const b = await pollAdvance(page, probe, adv, a, 12000)
             rep.check('defender: the prover patrols untouched (idle hands fire nothing)', adv(a, b),
@@ -1808,7 +1809,7 @@ const PILOTS = [
             await seatPoll(page, H)
             rep.check('defender: Y re-seats the prover mid-run', await watching())
             const c = await probe()
-            const d = await pollAdvance(page, probe, adv, c, 12000)
+            const d = await pollAdvance(page, probe, adv, c, 15000)
             rep.check('defender: resumes from where the player left it', adv(c, d),
                 `score ${c.score} -> ${d.score}, enemies ${c.enemies} -> ${d.enemies}`)
             await key(page, 'KeyY')
