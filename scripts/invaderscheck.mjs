@@ -272,44 +272,63 @@ const INVADER_BOTTOM_PROBE = 20 // sits above the landing check until one edge-d
 }
 
 
-// ---------- 11. WATCH witness (#1637 batch 18): the seat brain flies it ----------
+// ---------- 11. WATCH witness (#1637 batch 18; hardened batch 19): the seat brain flies it ----------
 {
-    let clean = 0, deaths = 0, slowest = 0
+    let clean = 0, deaths = 0, slowest = 0, slowestGap = 0
     for (let k = 0; k < 20; k++) {
         const rand = seedRng(1000 + k * 77)
         let w = makeWorld(rand)
         let dw = 0
         let cap = 9000
+        let dead0 = 0, lastKill = 0
         while (w.wave === 1 && w.phase !== 'over' && cap--) {
             const before = w.lives
             w = step(w, watchRoute(w), rand)
             if (w.lives < before) dw++
+            const dead = w.invaders.filter((i) => !i.alive).length
+            if (dead > dead0) { dead0 = dead; lastKill = w.tick }
+            slowestGap = Math.max(slowestGap, w.tick - lastKill)
         }
         deaths += dw
         if (w.wave >= 2 && dw === 0) { clean++; slowest = Math.max(slowest, w.tick) }
     }
-    ok(clean >= 19, `WATCH route clears wave 1 untouched on ${clean}/20 seeds (>=19)`)
+    ok(clean >= 20, `WATCH route clears wave 1 untouched on ${clean}/20 seeds (>=20 — #1637 b19 fixed the seed-1462 fort-lead stall)`)
     ok(deaths === 0, `the route never banks a life across 20 seeded flights (${deaths})`)
     ok(slowest <= 2100, `slowest clean clear tick ${slowest} <= 2100 (a watch worth the time)`)
+    ok(slowestGap <= 450, `no seed stalls longer than 450 ticks between kills (slowest ${slowestGap}; the b18 seed-1462 fort stall ran 511, and deleting either half of the b19 fix pushes past this line)`)
     ok(/watchRoute\(world\)/.test(jsx) && !/attractInput/.test(jsx),
         'index.jsx runs watchRoute from sim.js — attract and seat share one brain')
     ok((jsx.match(/watchRoute\(world\)/g) || []).length >= 2, 'attract AND the Y seat call the same brain')
+    ok(/bestBlocked \|\| !fortBlocks\(s, pc\)/.test(simSrc),
+        '#1637 b19: the fire gate only crosses a fort when the target itself hides behind one')
     ok(/isWatchKey\(e\)/.test(jsx) && /isTakeoverKey\(e\)/.test(jsx), 'seat + takeover wired in index.jsx')
     ok(/label: 'SPACE INVADERS'[\s\S]{0,400}WATCH_HELP/.test(readFileSync('src/config/games.js', 'utf8')),
         'registry advertises WATCH for Space Invaders')
 }
 
-// prove-it-can-fail: stand inside bullet lanes (freeAt 12 -> 6) — the witness MUST die
+// prove-it-can-fail: planted bugs the witness MUST die on
 if (process.argv.includes('--mutant')) {
     const S = 'src/games/SpaceInvaders/sim.js'
     const orig = readFileSync(S, 'utf8')
-    const from = 'const freeAt = (x) => lanes.every((lx) => Math.abs(lx - x) >= 12)'
-    if (!orig.includes(from)) { ok(false, 'mutant anchor missing', from) }
-    else {
-        plant(S, orig.replace(from, 'const freeAt = (x) => lanes.every((lx) => Math.abs(lx - x) >= 6)'))
-        const res = spawnSync(process.execPath, ['scripts/invaderscheck.mjs'], { encoding: 'utf8' })
-        ok(res.status !== 0, 'mutant dies: the route can stand in a falling column', res.status === 0 ? 'child passed despite the bug' : '')
-        pull(S)
+    const MUTANTS = [
+        ['the route can stand in a falling column',
+            'const freeAt = (x) => lanes.every((lx) => Math.abs(lx - x) >= 12)',
+            'const freeAt = (x) => lanes.every((lx) => Math.abs(lx - x) >= 6)'],
+        ['shots cross forts again (b19 fire gate deleted)',
+            'if (Math.abs(aimX - pc) <= 2.5 && !s.playerBullet && freeAt(pc) && (bestBlocked || !fortBlocks(s, pc))) input.fire = true',
+            'if (Math.abs(aimX - pc) <= 2.5 && !s.playerBullet && freeAt(pc)) input.fire = true'],
+        ['the aim ignores the fort under its lead point (b19 tiebreak deleted)',
+            'const aimBlocked = fortBlocks(s, leadOf(i))',
+            'const aimBlocked = false'],
+    ]
+    for (const [what, from, to] of MUTANTS) {
+        if (!orig.includes(from)) { ok(false, `mutant anchor missing: ${what}`, from) }
+        else {
+            plant(S, orig.replace(from, to))
+            const res = spawnSync(process.execPath, ['scripts/invaderscheck.mjs'], { encoding: 'utf8' })
+            ok(res.status !== 0, `mutant dies: ${what}`, res.status === 0 ? 'child passed despite the bug' : '')
+            pull(S)
+        }
     }
 }
 

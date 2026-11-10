@@ -307,24 +307,59 @@ console.log('feel pass #1531: death pause, telegraph, thrust voice, radar flicke
 }
 
 
-// ---------- WATCH witness (#1637 batch 18): the seat brain patrols it ----------
+// ---------- WATCH witness (#1637 batch 18; defends the humans since batch 19): the seat brain patrols it ----------
 {
-    let survived = 0, waveSeeds = 0, minScore = Infinity
+    let survived = 0, waveSeeds = 0, minScore = Infinity, catches = 0, delivers = 0
     for (let k = 0; k < 20; k++) {
         const rand = seedRng(2000 + k * 91)
         const w = createSim({ rand, height: 420 })
         let waves = 0
         let cap = 9000
-        while (!w.over && cap > 0) { w.step(watchRoute(w)); if (w.events.some((e) => e.t === 'wave')) waves++; cap-- }
+        while (!w.over && cap > 0) {
+            w.step(watchRoute(w))
+            for (const e of w.events) {
+                if (e.t === 'wave') waves++
+                if (e.t === 'catch') catches++
+                if (e.t === 'deliver') delivers++
+            }
+            cap--
+        }
         if (!w.over) survived++
         if (waves >= 1) waveSeeds++
         minScore = Math.min(minScore, w.score)
     }
     ok(survived === 20, `every seeded patrol survives its 150 s horizon (${survived}/20)`)
-    ok(minScore >= 4000, `patrol banks >= 4000 on every seed (min ${minScore})`)
+    ok(minScore >= 7000, `patrol banks >= 7000 on every seed (min ${minScore} — b19's rescues raised the floor from 4000)`)
     ok(waveSeeds >= 19, `>= 19/20 seeds clear at least a wave (${waveSeeds}/20)`)
+    ok(catches >= 30 && delivers >= 30, `the patrol rescues humans across the fleet: ${catches} catches, ${delivers} deliveries (b18: 8 and 8)`)
     ok(humansAlive(createSim({ rand: seedRng(2000), height: 420 }).humans) === HUMAN_COUNT,
         'witness seeds start with the street full (five humans)')
+    // The law, tested directly: a hauler outranks a CLOSER idle lander.
+    {
+        const s = createSim({ rand: seedRng(7), height: 420 })
+        s.enemies = [
+            { x: 120, y: 150, vx: 0, vy: 0, type: 'lander', state: 'wander', carry: null },
+            { x: -50, y: 150, vx: 0, vy: 0, type: 'lander', state: 'ascend', carry: 0 },
+        ]
+        s.humans[0].state = 'abducted'
+        s.player.x = 200; s.player.y = 150; s.player.vx = 0; s.player.vy = 0
+        s.player.facing = -1; s.player.dark = 0; s.player.invuln = 1
+        const inp = watchRoute(s)
+        ok(inp.left && !inp.right, 'a lander HAULING a human outranks a nearer idle one (the planet\'s job comes first)', `dx-steer left=${inp.left} right=${inp.right}`)
+    }
+    // Friendly fire stays honest at the brain too: a walking human in the laser
+    // line closer than the target holds the trigger.
+    {
+        const s = createSim({ rand: seedRng(11), height: 420 })
+        s.enemies = [{ x: 500, y: 300, vx: 0, vy: 0, type: 'lander', state: 'wander', carry: null }]
+        s.humans.forEach((h, i) => { if (i > 0) h.state = 'dead' })
+        const h = s.humans[0]
+        h.state = 'walk'; h.x = 300; h.y = 300
+        s.player.x = 200; s.player.y = 300; s.player.vx = 3; s.player.vy = 0
+        s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
+        const inp = watchRoute(s)
+        ok(!inp.fire, 'the brain will not shoot past a walking human standing between it and the target', `fire=${inp.fire}`)
+    }
     ok(/watchRoute\(sim\)/.test(jsx) && !/autopilot/.test(jsx),
         'index.jsx runs watchRoute for attract AND seat — the forked autopilot is gone')
     ok((jsx.match(/watchRoute\(sim\)/g) || []).length >= 2, 'attract AND the Y seat call the same brain')
@@ -391,6 +426,20 @@ if (process.argv.includes('--mutant')) {
             if (dy > 10) input.down = true
             else if (dy < -10) input.up = true
         }`],
+        ['haulers lose their rank (b19 rescue weighting deleted)', S,
+            `if (e.type === 'lander' && e.carry !== null) d *= 0.25`,
+            `if (false && e.type === 'lander' && e.carry !== null) d *= 0.25`],
+        ['the guns ignore the humans they defend (b19 friendly-fire guard blinded)', S,
+            `if (Math.abs(hd) < Math.abs(dx) + 8 && Math.sign(hd || p.facing) === Math.sign(dx || p.facing) && Math.abs(h.y - p.y) < 10) shield = true`,
+            `if (false) shield = true`],
+        ['the patrol ignores falling humans again (b19 rescue chase deleted)', S,
+            `if (fall && fallD < 1000 && !climbing) {`,
+            `if (false) {`],
+        ['the rescued human is never set down (b19 delivery elevator deleted)', S,
+            `if (s.carrying !== null) {
+        const want = groundAt(s.terrain, p.x) - 13`,
+            `if (false && s.carrying !== null) {
+        const want = groundAt(s.terrain, p.x) - 13`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
