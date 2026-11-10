@@ -321,6 +321,75 @@ export const WAVE_CYCLE = { levels: 4, stepTicks: 6 }
 // against it.
 export const WAVE_TRAVEL = { x: 0.026, y: 0.020 }
 
+// #1764 item 5 stage 6 — VOLUMETRIC CLOUD BODIES. The honest gap said the
+// clouds were two dome-painted layers: no body, no parallax, and the drifting
+// ground shadow came from nowhere. The deck is now a lattice of cloud BODIES
+// sitting at finite altitude (baseY..baseY+lift, above every terrain top —
+// heights clamp at 96u in the sim — while the carpet ceiling of 120u lets the
+// climb graze the underside). Each body is a cluster of soft sun-lit billboard
+// puffs. The deck is born FROM the ground-shadow field: buildCloudCells()
+// places a body wherever the JS twin of the terrain's cshade fbm2 exceeds
+// CLOUD_FIELD.floor, and the bodies drift at CLOUD_WIND = -drift/scale — the
+// exact world velocity the shadow field's own advance implies (the terrain
+// sample below still adds +uWorldTime*drift, now written with those shared
+// literals). So a body rides over the shadow it "casts" at every tick: shade
+// under a body is the same noise value as the body's density, by algebra
+// (anchor·scale + t·drift is time-invariant), until the recirculation wrap.
+// Presentation-only: sim.js never learns any of this.
+export const CLOUD_SCALE = 0.011
+export const CLOUD_DRIFT = { x: 0.0016, y: 0.0009 } // noise-units per sim tick — the terrain cshade law's own constants
+export const CLOUD_WIND = { x: -CLOUD_DRIFT.x / CLOUD_SCALE, y: -CLOUD_DRIFT.y / CLOUD_SCALE } // world u/tick the bodies (and their shadows) travel
+export const CLOUD_FIELD = {
+    baseY: 112, lift: 30,          // deck altitude: centres 112..142u
+    cell: 96, jitter: 0.35,       // lattice step ≈ one noise cell of the shadow field (1/scale ≈ 91u)
+    floor: 0.55,                  // cell density required to raise a body
+    puffs: 4,                     // billboard puffs per body
+    r: 480,                       // recirculation radius; bodies fold through a fade shell
+    fade0: 380, fade1: 470,       // alpha shell: a body is invisible before it folds
+    domeKeep: 0.45,               // the dome's primary painted layer steps back to this share of its mix
+    baseA: 0.9,                   // core alpha of a body's puffs before density/fog/shell
+}
+
+const fract1 = (v) => v - Math.floor(v)
+const hash21js = (x, y) => {
+    const px = fract1(x * 234.34), py = fract1(y * 435.345)
+    const d = px * (px + 34.23) + py * (py + 34.23)
+    return fract1((px + d) * (py + d))
+}
+const vnoiseJs = (x, y) => {
+    const ix = Math.floor(x), iy = Math.floor(y)
+    let fx = fract1(x), fy = fract1(y)
+    fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy)
+    const a = hash21js(ix, iy), b = hash21js(ix + 1, iy), c = hash21js(ix, iy + 1), d = hash21js(ix + 1, iy + 1)
+    return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy
+}
+const fbm2Js = (x, y) => vnoiseJs(x, y) * 0.6 + vnoiseJs(x * 2.7 + 13.1, y * 2.7 + 13.1) * 0.4
+
+// The deck, as data: one entry per cloud body that the shadow field raises.
+// Density d is the SHADOW value under the body at t=0 (same field, same
+// origin) — the tie that makes each shade sit under its cloud. Pure: no RNG,
+// no gs, no clock; every call returns the identical deck.
+export function buildCloudCells() {
+    const F = CLOUD_FIELD
+    const K = Math.floor(F.r / F.cell)
+    const out = []
+    for (let ix = -K; ix <= K; ix++) {
+        for (let iz = -K; iz <= K; iz++) {
+            const jx = (hash21js(ix * 7.13, iz * 3.71) - 0.5) * 2 * F.jitter
+            const jz = (hash21js(ix * 2.97 + 11.3, iz * 5.41 + 7.7) - 0.5) * 2 * F.jitter
+            const x = (ix + jx) * F.cell
+            const z = (iz + jz) * F.cell
+            const d = fbm2Js(x * CLOUD_SCALE, z * CLOUD_SCALE)
+            if (d < F.floor) continue
+            out.push({
+                ix, iz, x, y: F.baseY + hash21js(x * 0.31 + 5.7, z * 0.17 + 9.3) * F.lift, z,
+                d, size: F.cell * (0.5 + 0.75 * d), seed: hash21js(ix + 0.5, iz - 0.5),
+            })
+        }
+    }
+    return out
+}
+
 export function createCarpetGL(canvas, opts = {}) {
     const lite = !!opts.lite
     const cmPrev = THREE.ColorManagement.enabled
@@ -396,7 +465,7 @@ void main(){
     // #1764 item 4 stage 5: SEA FROM BELOW — how far under the surface the
     // eye sits (0 dry, 1 a metre or more under). View-dependent presentation
     // read, like the stage-2 dive composite; the sim never sees it.
-    float under = smoothstep(0.0, 1.0, .0 - uCamPos.y);
+    float under = smoothstep(0.0, 1.0, ${WATER}.0 - uCamPos.y);
     if (vH < ${WATER}.0) {
         float depth = ${WATER}.0 - vH;
         float bpos = depth * 0.28 + fbm2(vWorld.xz * 0.7 + uWorldTime * vec2(${WAVE_TRAVEL.x}, ${WAVE_TRAVEL.y}) + 3.3) * 0.45;
@@ -463,7 +532,10 @@ void main(){
         col = mix(col, col * 0.5, vScorch * 0.55);
         col += uSunCol * gloss * vScorch * 0.9;
     }
-    float cshade = fbm2(vWorld.xz * 0.011 + vec2(uWorldTime * 0.0016, uWorldTime * 0.0009));
+    // #1764 item 5 stage 6: literals baked from CLOUD_SCALE/CLOUD_DRIFT — the
+    // same constants buildCloudCells() places bodies by and CLOUD_WIND derives
+    // its velocity from, so bodies and shade travel together by construction.
+    float cshade = fbm2(vWorld.xz * ${CLOUD_SCALE} + vec2(uWorldTime * ${CLOUD_DRIFT.x}, uWorldTime * ${CLOUD_DRIFT.y}));
     col *= 1.0 - 0.22 * smoothstep(0.48, 0.76, cshade);
     // #1764 item 5 stage 5: aerial perspective — the haze layer (hazeOfG) and
     // the carpet's altitude (airOfG) shape the mix; the max() keeps the original
@@ -537,7 +609,9 @@ void main(){
     float cov = smoothstep(0.56 - uCloudMix * 0.12, 0.80, c) * smoothstep(0.0, 0.22, d.y) * (1.0 - smoothstep(0.55, 1.0, d.y) * 0.35);
     float cov2 = smoothstep(0.58 - uCloudMix * 0.1, 0.84, c2) * smoothstep(0.0, 0.3, d.y);
     col = mix(col, uCloudCol * (0.78 + 0.34 * fine), cov2 * uCloudMix * 0.55);
-    col = mix(col, uCloudCol * (0.86 + 0.3 * fine), cov * uCloudMix);
+    // #1764 item 5 stage 6: the primary painted layer steps back (domeKeep) —
+    // the bodies are the cumulus now; the dome keeps a thinner veil behind them.
+    col = mix(col, uCloudCol * (0.86 + 0.3 * fine), cov * uCloudMix * ${CLOUD_FIELD.domeKeep});
     // #1764 item 4 stage 2: submerged, the dome is the underside of the sea —
     // deep teal, sun reduced to a wavering shaft overhead (light through waves).
     float shaft = pow(max(0.0, d.y), 1.5) * (0.5 + 0.5 * sin(d.x * 9.0 + uWorldTime * 0.11) * sin(d.z * 7.0 - uWorldTime * 0.08));
@@ -549,6 +623,106 @@ void main(){
     )
     sky.frustumCulled = false
     scene.add(sky)
+
+    // ---- volumetric cloud bodies (#1764 item 5 stage 6)
+    // Instanced sun-lit puff clusters at finite altitude. The vertex shader
+    // folds each anchor through the recirculation wrap on the same uWorldTime
+    // clock the shadows ride (wind = CLOUD_WIND, the shadow field's own world
+    // velocity), then billboards the puff against the live camera basis. The
+    // fog is the aerial law (AIR_GLSL) — a distant deck sits in the same
+    // haze layer as distant ground — and the alpha carries the wrap shell plus
+    // the dive gate: under the sea the deck is gone (the ceiling is the sea).
+    const cloudCells = buildCloudCells()
+    const cUniforms = {
+        uRight: { value: new THREE.Vector3(1, 0, 0) }, uUp: { value: new THREE.Vector3(0, 1, 0) },
+        uCamPos: tUniforms.uCamPos, uFogCol: tUniforms.uFogCol, uFogD: tUniforms.uFogD,
+        uWorldTime: tUniforms.uWorldTime, uSub: sUniforms.uSub,
+        uCloudCol: sUniforms.uCloudCol, uCloudMix: sUniforms.uCloudMix,
+        uSunScr: { value: new THREE.Vector2(0.7, 0.5) },
+    }
+    const cloudGeo = new THREE.InstancedBufferGeometry()
+    {
+        const base = new THREE.PlaneGeometry(1, 1)
+        cloudGeo.index = base.index
+        cloudGeo.setAttribute('position', base.getAttribute('position'))
+        cloudGeo.setAttribute('uv', base.getAttribute('uv'))
+        const n = cloudCells.length * CLOUD_FIELD.puffs
+        const aAnchor = new Float32Array(n * 3)
+        const aOff = new Float32Array(n * 3)
+        const aSize = new Float32Array(n)
+        const aSeed = new Float32Array(n)
+        const aDens = new Float32Array(n)
+        let k = 0
+        for (const c of cloudCells) {
+            for (let p = 0; p < CLOUD_FIELD.puffs; p++) {
+                const hs = hash21js(c.seed * 13.1 + p * 7.7, c.ix * 3.3 - c.iz * 1.7 + p)
+                const hb = hash21js(c.seed * 5.9 - p * 2.3, c.ix + c.iz * 0.7 + p * 11.1)
+                const ha = hash21js(c.seed * 1.7 + p * 3.1, c.ix * 0.9 + p * 1.3)
+                const ang = (p / CLOUD_FIELD.puffs) * Math.PI * 2 + c.seed * 6.2831
+                const rad = p === 0 ? c.size * 0.06 : c.size * (0.16 + 0.26 * hs)
+                aAnchor[k * 3] = c.x; aAnchor[k * 3 + 1] = c.y; aAnchor[k * 3 + 2] = c.z
+                aOff[k * 3] = Math.cos(ang) * rad
+                aOff[k * 3 + 1] = (hb - 0.5) * c.size * 0.3
+                aOff[k * 3 + 2] = Math.sin(ang) * rad
+                aSize[k] = c.size * (0.55 + 0.4 * ha)
+                aSeed[k] = c.seed + p * 0.37
+                aDens[k] = Math.min(1, CLOUD_FIELD.baseA * (0.55 + (c.d - CLOUD_FIELD.floor) * 1.1))
+                k++
+            }
+        }
+        cloudGeo.setAttribute('aAnchor', new THREE.InstancedBufferAttribute(aAnchor, 3))
+        cloudGeo.setAttribute('aOff', new THREE.InstancedBufferAttribute(aOff, 3))
+        cloudGeo.setAttribute('aSize', new THREE.InstancedBufferAttribute(aSize, 1))
+        cloudGeo.setAttribute('aSeed', new THREE.InstancedBufferAttribute(aSeed, 1))
+        cloudGeo.setAttribute('aDens', new THREE.InstancedBufferAttribute(aDens, 1))
+        cloudGeo.instanceCount = n
+    }
+    const cloudMesh = new THREE.Mesh(cloudGeo, new THREE.ShaderMaterial({
+        uniforms: cUniforms, transparent: true, depthWrite: false, depthTest: true,
+        vertexShader: `
+uniform vec3 uRight, uUp, uCamPos; uniform float uWorldTime, uFogD;
+attribute vec3 aAnchor; attribute vec3 aOff; attribute float aSize; attribute float aSeed; attribute float aDens;
+varying vec2 vP; varying float vFog, vAlpha, vSeed, vLitH;
+${AIR_GLSL}
+void main(){
+    vec2 q = uv;
+    float wx = mod(aAnchor.x + uWorldTime * (${CLOUD_WIND.x}) + ${CLOUD_FIELD.r}.0, ${(2 * CLOUD_FIELD.r)}.0) - ${CLOUD_FIELD.r}.0;
+    float wz = mod(aAnchor.z + uWorldTime * (${CLOUD_WIND.y}) + ${CLOUD_FIELD.r}.0, ${(2 * CLOUD_FIELD.r)}.0) - ${CLOUD_FIELD.r}.0;
+    vec3 anchor = vec3(wx, aAnchor.y, wz) + aOff;
+    vec3 world = anchor + uRight * (q.x - 0.5) * aSize + uUp * (q.y - 0.5) * aSize;
+    float d = length(anchor - uCamPos);
+    vFog = aerialG(d, aAnchor.y, uCamPos.y);
+    float shell = 1.0 - smoothstep(${CLOUD_FIELD.fade0}.0, ${CLOUD_FIELD.fade1}.0, length(vec2(wx, wz)));
+    float nearf = smoothstep(26.0, 74.0, d);
+    vAlpha = aDens * shell * nearf;
+    vP = (q - 0.5) * 2.0;
+    vSeed = aSeed;
+    vLitH = clamp((aAnchor.y + aOff.y - ${CLOUD_FIELD.baseY}.0) / ${CLOUD_FIELD.lift}.0, 0.0, 1.0);
+    gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
+}
+`,
+        fragmentShader: `
+precision highp float;
+uniform vec3 uCloudCol, uFogCol; uniform vec2 uSunScr; uniform float uCloudMix, uSub;
+varying vec2 vP; varying float vFog, vAlpha, vSeed, vLitH;
+void main(){
+    float ang = atan(vP.y, vP.x);
+    float lobes = 0.80 + 0.20 * sin(ang * 3.0 + vSeed * 6.2831) + 0.10 * sin(ang * 5.0 - vSeed * 4.13);
+    float rr = length(vP) / max(lobes, 0.4);
+    float disc = smoothstep(1.0, 0.42, rr);
+    if (disc <= 0.002) discard;
+    float lit = clamp(0.28 + 0.5 * vLitH + 0.42 * dot(normalize(vP + vec2(1e-4)), normalize(uSunScr)), 0.0, 1.0);
+    vec3 col = mix(uCloudCol * 0.52, uCloudCol * 1.14, lit);
+    col += vec3(0.10, 0.10, 0.13) * smoothstep(0.9, 0.5, rr) * vLitH * lit;
+    float alpha = disc * vAlpha * (0.55 + 0.45 * uCloudMix) * (1.0 - vFog * 0.88) * (1.0 - uSub);
+    col = mix(col, uFogCol, vFog);
+    gl_FragColor = vec4(col, alpha);
+}
+`,
+    }))
+    cloudMesh.frustumCulled = false
+    cloudMesh.renderOrder = -1
+    scene.add(cloudMesh)
 
     // ---- billboard batches (sprites / additive particles / smoke)
     const mkMat = (frag, additive) => new THREE.ShaderMaterial({
@@ -1193,6 +1367,12 @@ void main(){
             m.material.uniforms.uUp.value.copy(up)
             m.material.uniforms.uFwd.value.copy(fwd)
         }
+        // #1764 item 5 stage 6: the deck rides the live camera basis, and its
+        // sun shading follows the sun's bearing in screen space.
+        cUniforms.uRight.value.copy(right)
+        cUniforms.uUp.value.copy(up)
+        cUniforms.uSunScr.value.set(right.dot(tUniforms.uSunDir.value), up.dot(tUniforms.uSunDir.value))
+            .normalize()
         fillSprites(gs)
         fillParticles({ fwd, right, up })
         boltAge += 1
@@ -1262,6 +1442,8 @@ void main(){
         spriteCount: () => spr.geo.instanceCount,
         glowCells: () => { let n = 0; for (let i = 0; i < N * N; i++) if (hData[i * 4 + 1] > 0) n++; return n },
         waveUniform: () => tUniforms.uWorldTime.value, // #1764 item 4: the shader's clock is sim ticks, not wall time
+        cloudBodyCount: () => cloudGeo.instanceCount, // #1764 item 5 stage 6: puffs the GL pass actually carries
+        cloudCellCount: () => cloudCells.length,
         subUniform: () => compMesh.material.uniforms.uSub.value, // #1764 item 4 stage 2: the painted submersion mix
         scorchCells: () => { let n = 0; for (let i = 0; i < N * N; i++) if (hData[i * 4 + 2] > 0) n++; return n },
         dispose() {

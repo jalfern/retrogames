@@ -2599,6 +2599,148 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         src.includes('smoothstep(${HALF - 28}.0, ${HALF - 4}.0, vDist) * 0.92') && half === 288, `HALF=${half}`)
 }
 
+// ---- #1764 item 5 stage 6: VOLUMETRIC CLOUD BODIES (#1764).
+// The gap said the clouds were two dome-painted layers — no body, no parallax,
+// and the drifting ground shadow came from nowhere. The deck is now a lattice
+// of billboard puff-clusters at finite altitude, born from the terrain's own
+// cshade noise field and travelling at CLOUD_WIND = -drift/scale, the exact
+// world velocity that field implies. So every body rides over a patch of shade,
+// and shade never exists where the deck is not — the tie is algebraic
+// (anchor·scale + t·drift is time-invariant), proven here with a JS twin of
+// NOISE_GLSL on the deck data. Presentation-only; deliberate no-pixels.
+//
+// Mutation guide: (1) break CLOUD_WIND derivation (e.g. free constant) and the
+// tie gate (shade under body) goes red; (2) drop the wind literals at the
+// terrain site and the construction census goes red; (3) raise the floor so the
+// deck empties and the count/coverage gates go red; (4) delete the wrap mod()
+// and the pins on the vertex shader go red; (5) lift baseY above 150 or sink it
+// below the terrain ceiling and the altitude sanity gate goes red.
+{
+    const R = await import('../src/games/MagicCarpet/renderer.js')
+    const { CLOUD_SCALE, CLOUD_DRIFT, CLOUD_WIND, CLOUD_FIELD, buildCloudCells } = R
+    const src = await readFile(new URL('../src/games/MagicCarpet/renderer.js', import.meta.url), 'utf8')
+    const simS = await readFile(new URL('../src/games/MagicCarpet/sim.js', import.meta.url), 'utf8')
+    r.check('#1764-5s6 the law literals are pinned — shadow field constants, wind = -drift/scale, deck above every terrain top',
+        CLOUD_SCALE === 0.011 && CLOUD_DRIFT.x === 0.0016 && CLOUD_DRIFT.y === 0.0009 &&
+        Math.abs(CLOUD_WIND.x * CLOUD_SCALE + CLOUD_DRIFT.x) < 1e-12 &&
+        Math.abs(CLOUD_WIND.y * CLOUD_SCALE + CLOUD_DRIFT.y) < 1e-12 &&
+        60 * Math.abs(CLOUD_WIND.x) >= 6 && 60 * Math.abs(CLOUD_WIND.x) <= 12 &&
+        Math.abs(CLOUD_WIND.x) > Math.abs(CLOUD_WIND.y) &&
+        CLOUD_WIND.x < 0 && CLOUD_WIND.y < 0,
+        `wind=${JSON.stringify(CLOUD_WIND)}`)
+    r.check('#1764-5s6 the deck sits where clouds can be — above terrain (96u cap), under a sane ceiling, fold shell ordered',
+        CLOUD_FIELD.baseY >= 104 && CLOUD_FIELD.baseY + CLOUD_FIELD.lift <= 150 &&
+        CLOUD_FIELD.fade0 < CLOUD_FIELD.fade1 && CLOUD_FIELD.fade1 <= CLOUD_FIELD.r && CLOUD_FIELD.r <= 520 &&
+        CLOUD_FIELD.floor > 0.5 && CLOUD_FIELD.floor < 0.62 &&
+        CLOUD_FIELD.domeKeep >= 0.35 && CLOUD_FIELD.domeKeep <= 0.6 && CLOUD_FIELD.puffs >= 3,
+        JSON.stringify(CLOUD_FIELD))
+    const cells = buildCloudCells()
+    const cells2 = buildCloudCells()
+    r.check('#1764-5s6 the deck is pure data — buildCloudCells is deterministic (no RNG, no gs, no clock) and populated',
+        JSON.stringify(cells) === JSON.stringify(cells2) && cells.length >= 25 && cells.length <= 70,
+        `cells=${cells.length}`)
+    r.check('#1764-5s6 every body obeys the lattice — inside the field, inside the altitude band, density at/above floor',
+        cells.every((c) => Math.abs(c.x) <= (5.5) * CLOUD_FIELD.cell && Math.abs(c.z) <= 5.5 * CLOUD_FIELD.cell &&
+            c.y >= CLOUD_FIELD.baseY && c.y <= CLOUD_FIELD.baseY + CLOUD_FIELD.lift &&
+            c.d >= CLOUD_FIELD.floor && c.size >= 0.5 * CLOUD_FIELD.cell && c.size <= 1.35 * CLOUD_FIELD.cell))
+    // JS twin of NOISE_GLSL (the exact family carpetcheck stage-4 uses).
+    const fract = (v) => v - Math.floor(v)
+    const hash21 = (x, y) => {
+        const px = fract(x * 234.34), py = fract(y * 435.345)
+        const d = px * (px + 34.23) + py * (py + 34.23)
+        return fract((px + d) * (py + d))
+    }
+    const vnoise = (x, y) => {
+        const ix = Math.floor(x), iy = Math.floor(y)
+        let fx = fract(x), fy = fract(y)
+        fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy)
+        const a = hash21(ix, iy), b = hash21(ix + 1, iy), c = hash21(ix, iy + 1), d = hash21(ix + 1, iy + 1)
+        return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy
+    }
+    const fbm2 = (x, y) => vnoise(x, y) * 0.6 + vnoise(x * 2.7 + 13.1, y * 2.7 + 13.1) * 0.4
+    // The terrain's cshade law, byte-for-byte the arithmetic the shader runs.
+    const shadeAt = (x, z, t) => fbm2(x * CLOUD_SCALE + t * CLOUD_DRIFT.x, z * CLOUD_SCALE + t * CLOUD_DRIFT.y)
+    {
+        // The tie: a body's density IS the shade value under it, and stays so —
+        // the body at anchor + wind·t sits over the shade sampled at the same
+        // noise coordinate. Only bodies still pre-wrap participate (|anchor| up
+        // to r minus the drift travelled, so no fold has touched them yet).
+        let maxErr = 0, tested = 0
+        for (const t of [0, 300, 600]) {
+            const mx = CLOUD_FIELD.r - Math.abs(CLOUD_WIND.x * t) - 1
+            const mz = CLOUD_FIELD.r - Math.abs(CLOUD_WIND.y * t) - 1
+            for (const c of cells) {
+                if (Math.abs(c.x) > mx || Math.abs(c.z) > mz) continue
+                tested++
+                const err = Math.abs(shadeAt(c.x + CLOUD_WIND.x * t, c.z + CLOUD_WIND.y * t, t) - c.d)
+                if (err > maxErr) maxErr = err
+            }
+        }
+        r.check('#1764-5s6 the tie — a body rides over the shade it casts: density equals shade-under-body at every pre-wrap tick',
+            tested >= 10 && maxErr < 1e-9, `tested=${tested} maxErr=${maxErr.toExponential(2)}`)
+    }
+    {
+        // Coverage: over the playable map (±256u), dark shade never outlives its
+        // cloud — every strongly-shaded point has a body within reach, and the
+        // deck as a whole covers the map like an overcast field.
+        let minCover = 1, minStrong = 1
+        for (const t of [0, 360, 720]) {
+            const pos = cells.map((c) => [c.x + CLOUD_WIND.x * t, c.z + CLOUD_WIND.y * t])
+            let cov = 0, tot = 0, sCov = 0, sTot = 0
+            for (let x = -240; x <= 240; x += 24) {
+                for (let z = -240; z <= 240; z += 24) {
+                    const s = shadeAt(x, z, t)
+                    let near = Infinity
+                    for (const [bx, bz] of pos) { const d = Math.hypot(bx - x, bz - z); if (d < near) near = d }
+                    tot++; if (near <= 150) cov++
+                    if (s >= 0.62) { sTot++; if (near <= 110) sCov++ }
+                }
+            }
+            if (cov / tot < minCover) minCover = cov / tot
+            if (sTot > 0 && sCov / sTot < minStrong) minStrong = sCov / sTot
+        }
+        r.check('#1764-5s6 coverage — the deck covers the map, and no strong shade stands bare under an open sky',
+            minCover >= 0.5 && minStrong >= 0.8, `covered=${minCover.toFixed(2)} strong=${minStrong.toFixed(2)}`)
+    }
+    {
+        // Volumetric proof: the dome paints by VIEW direction (rides the
+        // camera — zero parallax by construction); bodies sit at finite
+        // altitude, so a 60u camera step shifts every body's bearing — along
+        // the better of two orthogonal steps, so no body can hide on-axis.
+        let minPar = Infinity
+        const par = (c, sx, sz) => {
+            const d1 = Math.hypot(c.x, c.z, c.y - 45)
+            const d2 = Math.hypot(c.x - sx, c.z - sz, c.y - 45)
+            const dot = (c.x * (c.x - sx) + c.z * (c.z - sz) + (c.y - 45) * (c.y - 45)) / (d1 * d2)
+            return Math.acos(Math.min(1, Math.max(-1, dot)))
+        }
+        for (const c of cells) if (Math.max(par(c, 60, 0), par(c, 0, 60)) < minPar) minPar = Math.max(par(c, 60, 0), par(c, 0, 60))
+        r.check('#1764-5s6 volumetric, not paint — every body shows real parallax from a 60u camera step (the dome shows none)',
+            minPar >= 0.05, `min parallax over ${cells.length} bodies = ${minPar.toFixed(3)} rad`)
+    }
+    r.check('#1764-5s6 recirculation — the fold period sweeps the whole sky in 90–140 s, and bodies fade before they fold',
+        (2 * CLOUD_FIELD.r) / (60 * Math.abs(CLOUD_WIND.x)) >= 90 &&
+        (2 * CLOUD_FIELD.r) / (60 * Math.abs(CLOUD_WIND.x)) <= 140 &&
+        CLOUD_FIELD.fade1 < CLOUD_FIELD.r,
+        `period=${((2 * CLOUD_FIELD.r) / (60 * Math.abs(CLOUD_WIND.x))).toFixed(1)}s`)
+    r.check('#1764-5s6 census — terrain shade samples the baked constants, the dome steps back, the vertex rides wind·wrap·aerial·dive',
+        src.includes('float cshade = fbm2(vWorld.xz * ${CLOUD_SCALE} + vec2(uWorldTime * ${CLOUD_DRIFT.x}, uWorldTime * ${CLOUD_DRIFT.y}));') &&
+        src.includes('cov * uCloudMix * ${CLOUD_FIELD.domeKeep}') && !src.includes('cov * uCloudMix);') &&
+        src.includes('mod(aAnchor.x + uWorldTime * (${CLOUD_WIND.x}) + ${CLOUD_FIELD.r}.0, ${(2 * CLOUD_FIELD.r)}.0)') &&
+        src.includes('vFog = aerialG(d, aAnchor.y, uCamPos.y);') &&
+        src.includes('gl_FragColor = vec4(col, alpha);') && src.includes('(1.0 - uSub)'))
+    r.check('#1764-5s6 presentation-only law — sim.js never learns the deck, and the hash never moves',
+        !simS.includes('CLOUD_WIND') && !simS.includes('buildCloudCells') && !simS.includes('CLOUD_FIELD'),
+        'source pin')
+    {
+        const gs = makeGame(7)
+        const h0 = stateHash(gs)
+        buildCloudCells()
+        r.check('#1764-5s6 a pure read — the hash never moves across deck rebuilds (clouds are presentation, sim untouched)',
+            h0 === stateHash(gs), `${h0} vs ${stateHash(gs)}`)
+    }
+}
+
 await requireDevServer(`http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet`)
 const browser = await launch()
 const page = await openGame(browser, { url: `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet`, hook: '__game', start: false })
@@ -2833,6 +2975,39 @@ r.check('#1764-5s5 live: the aerial law rides the live camera — peaks keep hal
     airClimb.low.law.low > airClimb.low.law.peak * 1.8 &&
     airClimb.high.law.low < airClimb.low.law.low * 0.75 && airClimb.high.law.low > 0,
     `deck low=${airClimb.low.law.low} peak=${airClimb.low.law.peak}; climb low=${airClimb.high.law.low} (air floor 0.6)`)
+
+// ---- #1764 item 5 stage 6 live: the cloud deck on the running page. The
+// probe mirrors the vertex shader's wind+wrap against gs.tick and counts the
+// puffs the GL pass carries, so what the Node twin proved about the law is
+// checked against the live renderer's clock and buffers.
+// Mutation guide: freeze the wind in the probe path and the travel gate goes
+// red; cut the puff fill to zero and puffs=0; call cloudDeck twice mid-tick
+// and determinism breaks only if the law leaked wall time.
+{
+    const { CLOUD_FIELD, CLOUD_WIND } = await import('../src/games/MagicCarpet/renderer.js')
+    const deck = await page.evaluate(() => {
+        const t = window.__carpetTest
+        const a = t.cloudDeck(0)
+        const b = t.cloudDeck(120)
+        return { a, b, same: JSON.stringify(a) === JSON.stringify(t.cloudDeck(0)) }
+    })
+    const inRing = deck.a.bodies.every((p) => Math.abs(p.x) <= CLOUD_FIELD.r && Math.abs(p.z) <= CLOUD_FIELD.r)
+    const moving = deck.a.bodies.filter((p, i) => {
+        const q = deck.b.bodies[i]
+        return Math.abs(p.x) <= 380 && Math.abs(p.z) <= 450 && Math.abs(q.x) <= 380 && Math.abs(q.z) <= 450
+    }).length
+    let travelErr = 0
+    deck.a.bodies.forEach((p, i) => {
+        const q = deck.b.bodies[i]
+        if (Math.abs(p.x) > 380 || Math.abs(p.z) > 450 || Math.abs(q.x) > 380 || Math.abs(q.z) > 450) return
+        travelErr = Math.max(travelErr, Math.abs((q.x - p.x) - CLOUD_WIND.x * 120), Math.abs((q.z - p.z) - CLOUD_WIND.y * 120))
+    })
+    r.check('#1764-5s6 live: the deck rides the live clock — populated, folded inside the ring, puffs in the GL pass, tick-deterministic',
+        deck.a.cells >= 25 && deck.a.puffs === deck.a.cells * CLOUD_FIELD.puffs && inRing && deck.same,
+        `cells=${deck.a.cells} puffs=${deck.a.puffs} inRing=${inRing} same=${deck.same}`)
+    r.check('#1764-5s6 live: real travel — 120 ticks walk every near-origin body by exactly CLOUD_WIND·120 (no fold touched)',
+        moving >= 8 && travelErr <= 0.011, `moved=${moving} err=${travelErr.toFixed(4)}`)
+}
 
 // ---- #1612 item 1: the veiled carpet breathes additive ghost motes behind it.
 // Mutation guide: delete the `gs0.invis > 0` block in fillParticles (renderer.js)
