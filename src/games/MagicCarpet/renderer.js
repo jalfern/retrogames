@@ -997,6 +997,9 @@ void main(){
             else if (e.type === 'towerDown') { spawnBurst(gs, e.x, e.y, 14, [1.0, 0.45, 0.2]); addScorch(e.x, e.y, 12, 0.5) }
             // #1764: the growth reads as violet rune-dust off the rising works
             else if (e.type === 'wizGrow') spawnBurst(gs, e.x, e.y, 14, [0.85, 0.5, 1.5])
+            else if (e.type === 'sibGrow') spawnBurst(gs, e.x, e.y, 14, [0.85, 0.5, 1.5]) // #1764 stage 1
+            else if (e.type === 'sibTopple') { spawnBurst(gs, e.x, e.y, 14, [1.0, 0.45, 0.2]); addScorch(e.x, e.y, 12, 0.5) }
+            else if (e.type === 'sibDown') { spawnBurst(gs, e.x, e.y, 22, [1.4, 0.5, 0.3]); addScorch(e.x, e.y, 18, 0.6) }
             else if (e.type === 'wizardDown') { spawnBurst(gs, e.x, e.y, 22, [1.4, 0.5, 0.3]); addScorch(e.x, e.y, 18, 0.6) }
             else if (e.type === 'kill') spawnCrumble(gs, e.x, e.y, e.kind)
             else if (e.type === 'crumble') spawnGrit(gs, e)
@@ -1127,6 +1130,13 @@ void main(){
         }
         const wz = gs.wizard
         pushSpr(gs.towerDown ? 'towerFall' : gs.wizStage >= 1 ? `wizCastle${gs.wizStage}` : 'towerUp', wz.tx, wz.ty, gz(wz.tx, wz.ty), [1, 1, 1], 1)
+        // #1764 stage 1 — the coven: every sibling stands his own tower and
+        // grows it by his own clock, the same sprites, the same rules of paint.
+        if (gs.sibs) for (const sb of gs.sibs) {
+            if (!sb.alive) continue
+            pushSpr(sb.towerDown ? 'towerFall' : sb.stage >= 1 ? `wizCastle${sb.stage}` : 'towerUp', sb.tx, sb.ty, gz(sb.tx, sb.ty), [1, 1, 1], 1)
+            pushSpr('wizard', sb.x, sb.y, gz(sb.x, sb.y) + 9 + Math.sin(gs.tick * 0.05 + sb.ang) * 1.6, [1.15, 0.85, 1.25], 1)
+        }
         if (wz.alive) {
             pushSpr('wizard', wz.x, wz.y, gz(wz.x, wz.y) + 9 + Math.sin(gs.tick * 0.05) * 1.6, [1.15, 0.85, 1.25], 1)
             if (wz.lostT > 0) pushSpr('quest', wz.x, wz.y, gz(wz.x, wz.y) + 24 + Math.sin(gs.tick * 0.22) * 1.2, [1.5, 1.25, 0.5], wz.lostT > 8 ? 0.95 : wz.lostT / 8)

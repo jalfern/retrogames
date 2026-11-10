@@ -451,6 +451,20 @@ const MagicCarpetGame = () => {
                     audioController.playTone(196, 0.12, 'square', 0.05)
                     audioController.playTone(233, 0.18, 'square', 0.05, 0.12)
                     say(`THE RIVAL WIZARD FORTIFIES — STAGE ${e.n}`)
+                } else if (e.type === 'coven') {
+                    // #1764 stage 1: the original's five — name the number honestly.
+                    say(`THE COVEN RISES — ${e.n} OTHER WIZARDS HOLD THIS WORLD`)
+                    audioController.playSweep(140, 220, 0.5, 'triangle', 0.05)
+                } else if (e.type === 'sibGrow') {
+                    audioController.playTone(196, 0.12, 'square', 0.04)
+                    audioController.playTone(233, 0.18, 'square', 0.04, 0.12)
+                } else if (e.type === 'sibTopple') {
+                    audioController.playNoise(0.5, 0.1)
+                    audioController.playTone(60, 0.3, 'square', 0.07)
+                } else if (e.type === 'sibDown') {
+                    audioController.playNoise(0.5, 0.12)
+                    audioController.playSweep(300, 50, 0.7, 'sawtooth', 0.09)
+                    say('A SIBLING WIZARD FALLS — HIS HOARD SCATTERS')
                 } else if (e.type === 'towerFire') {
                     audioController.playSweep(520, 300, 0.08, 'triangle', 0.045)
                 } else if (e.type === 'wizfire') {
@@ -695,6 +709,7 @@ const MagicCarpetGame = () => {
             for (const fm of gs.fireMarks) dot(fm.x, fm.y, '#ff5030', 1.6)
             dot(gs.castle.x, gs.castle.y, '#ffd84a', 2.4)
             if (gs.wizard.alive) dot(gs.wizard.x, gs.wizard.y, '#c060ff', 2.4)
+            if (gs.sibs) for (const sb of gs.sibs) if (sb.alive) dot(sb.x, sb.y, '#c060ff', 1.8) // #1764 stage 1: the coven shows on the radar
 
             // vault bar (banked mana = the score) + carried pouch
             ctx.fillStyle = '#0e1a38'

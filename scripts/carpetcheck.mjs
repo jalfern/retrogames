@@ -11,7 +11,7 @@ import { readFile } from 'node:fs/promises'
 import { launch, openGame, requireDevServer, Report } from './lib/harness.mjs'
 import {
     LEVELS, QUOTA, SPILLS, BOUNTY, MAP, spellById, sampleH,
-    makeGame, step, autopilot, stateHash, CRATER_GLOW, glowOf, toppleTower, settleGround, CRUMBLE_T,
+    makeGame, step, autopilot, stateHash, CRATER_GLOW, glowOf, toppleTower, toppleSib, settleGround, CRUMBLE_T,
     setHand, INVIS_T, hudTap, cycleL, TAP, TRAY, W, H, HUD_H,
     muffleOf, OPEN_CUTOFF, MUFFLE_CUTOFF, volcanoErupt, raiseTerrain, shatterAt, SHATTER_R, WATER, crater, diveOf,
     DISSOLVE_R, DISSOLVE_SINK, dissolveLand, GRID, CELL,
@@ -3730,5 +3730,86 @@ r.info('#1703 premise', 'issue item 2\'s "non-WebGL 2D world" does not exist her
 
 await phone.close()
 await pBrowser.close()
+
+// ---- #1764 item 2 stage 1: THE COVEN — four sibling wizards, each with his
+// own growing castle. Node-only proof (the sim owns the whole feature).
+// Mutation guide (prove it can fail): (1) empty the `bearings` array in
+// genWorld's coven block — the count and growth gates go red; (2) delete the
+// sib death branch in step() — the kill gate goes red; (3) skip `sb.stage` in
+// stateHash — the hash gate goes red; (4) call rnd(gs) inside `covet` — the
+// seed-stream gate (seed 7 determinism, already above) goes red.
+{
+    const covenOf = (seed) => makeGame(seed).sibs
+    const seed7 = makeGame(7)
+    r.check('#1764-2s1 seed 7 stands a full coven (primary + 4 siblings)',
+        seed7.sibs.length === 4, `sibs ${seed7.sibs.length}`)
+    let min = 99, max = 0, spread = true
+    for (let seed = 1; seed <= 60; seed++) {
+        const sibs = covenOf(seed)
+        min = Math.min(min, sibs.length); max = Math.max(max, sibs.length)
+        for (const sb of sibs) {
+            const g = makeGame(seed)
+            if (Math.hypot(wrapD(sb.tx - g.castle.x), wrapD(sb.ty - g.castle.y)) < 60) spread = false
+            if (Math.hypot(wrapD(sb.tx - g.wizard.tx), wrapD(sb.ty - g.wizard.ty)) < 60) spread = false
+        }
+    }
+    r.check('#1764-2s1 every world runs a coven of 2-4 siblings, none on anyone\'s doorstep',
+        min >= 2 && max <= 4 && spread, `range ${min}..${max}, spread-ok ${spread}`)
+    r.check('#1764-2s1 rng-free placement: seed 7 twice builds identical towers',
+        seed7.sibs.map((s) => `${s.tx.toFixed(2)},${s.ty.toFixed(2)}`).join('|') ===
+        covenOf(7).map((s) => `${s.tx.toFixed(2)},${s.ty.toFixed(2)}`).join('|'))
+    {
+        const simS = await readFile(new URL('../src/games/MagicCarpet/sim.js', import.meta.url), 'utf8')
+        const blk = simS.slice(simS.indexOf('THE COVEN'), simS.indexOf('if (gs.sibs.length) gs.events'))
+        r.check('#1764-2s1 seed-stream law — the coven block spends no rnd(gs)',
+            blk.length > 200 && !blk.includes('rnd(gs)'), 'source pin')
+    }
+    {
+        const gs = makeGame(7)
+        let grew = 0
+        for (let i = 0; i < 5402; i++) { step(gs, {}); grew += gs.events.filter((e) => e.type === 'sibGrow').length; gs.events.length = 0 }
+        const stages = gs.sibs.every((s) => s.stage === 3)
+        r.check('#1764-2s1 siblings grow on the primary clock (wall/turrets/keep by 90 s)',
+            stages && grew === gs.sibs.length * 3, `stages ${gs.sibs.map((s) => s.stage)}, growEvents ${grew}`)
+    }
+    {
+        const gs = makeGame(7)
+        for (let i = 0; i < 100; i++) step(gs, {})
+        const sb = gs.sibs[0]
+        const first = toppleSib(gs, sb.tx, sb.ty)
+        const second = toppleSib(gs, sb.tx, sb.ty)
+        r.check('#1764-2s1 a blast at a sibling tower base topples it once, never rebuilds',
+            first && !second && sb.towerDown && sb.hp < 60 &&
+            gs.events.some((e) => e.type === 'sibTopple' && e.sib === 0))
+        // A felled tower still holds its wizard until he is killed outright.
+        sb.hp = 0
+        const pearlsBefore = gs.pearls.length
+        step(gs, {})
+        r.check('#1764-2s1 a slain sibling scatters his hoard and counts as a kill',
+            !sb.alive && gs.wizardKills >= 1 && gs.pearls.length > pearlsBefore &&
+            gs.events.some((e) => e.type === 'sibDown' && e.sib === 0))
+        // Shatter reaches the coven the same way it reaches the primary.
+        const sb2 = gs.sibs.find((s) => s.alive)
+        const hpBefore = sb2.hp
+        shatterAt(gs, sb2.x, sb2.y)
+        r.check('#1764-2s1 shatter bites a sibling as it bites the primary (-28)',
+            sb2.hp === hpBefore - 28, `hp ${hpBefore} -> ${sb2.hp}`)
+        // The coven is world state: a stage change moves the hash.
+        const h = stateHash(gs)
+        gs.sibs[1].stage = 2
+        r.check('#1764-2s1 the coven rides in stateHash (stage is state)',
+            stateHash(gs) !== h)
+    }
+    {
+        // A sibling cannot fire at you this stage: no bolt/tarrow may originate
+        // within reach of any sibling site while the primary's own shots stay legal.
+        const gs = makeGame(7)
+        for (let i = 0; i < 7200; i++) step(gs, {})
+        const fromSib = gs.projs.filter((p) => (p.kind === 'bolt' || p.kind === 'tarrow') &&
+            gs.sibs.some((s) => Math.hypot(wrapD(p.x - s.tx), wrapD(p.y - s.ty)) < 3))
+        r.check('#1764-2s1 the unbuilt threat — siblings loose no bolts or arrows yet (stage 2 arms them)',
+            fromSib.length === 0, `sib-sourced projectiles ${fromSib.length}`)
+    }
+}
 
 r.exit()
