@@ -75,6 +75,7 @@ export default function TalkMeDown() {
     const selectRef = useRef(1)
     const keys1Ref = useRef({})
     const keys2Ref = useRef({})
+    const driveAutoRef = useRef(false) // #1880 drive autopilot flag (DEV hook)
     const hudRef = useRef({
         shake: 0, sparks: [], banner: null, pulse: null, popT: 0, winTick: 0, boomTick: 0,
         flash: 0, zap: null, lcdFx: 0, lastOrder: null, humT: 0, beatT: 0, // #1305 juice
@@ -644,6 +645,13 @@ export default function TalkMeDown() {
         // by its mic (words online form, #1247): taps ride the SAME sampled
         // stream the host replays, so both boxes turn the page identical ticks.
         const readOwnPad = () => {
+            // #1880 drive autopilot: solve against LIVE state at the sample
+            // instant. Paired with delay 0 (set by the hook) the pad for tick
+            // k is computed AT k — the same freshness the node harness reads
+            // (its readPad(k) fires at tick k). A drive-mode affordance; the
+            // human path never touches this flag.
+            const ag = gsRef.current
+            if (driveAutoRef.current && ag && !ag.done && screenRef.current === 'play') return solvePad(ag)
             const p = padFrom(keys1Ref.current)
             if (pageTapsRef.current > 0) { p.right = true; pageTapsRef.current -= 1 }
             return p
@@ -1065,6 +1073,15 @@ export default function TalkMeDown() {
                 voiceMode: () => ({ on: voiceRef.current.on, supported: speechSupported(), listening: !!(voiceRef.current.listen && voiceRef.current.listen.active) }),
                 hud: () => ({ curtain: hudRef.current.curtain ? hudRef.current.curtain.n : 0 }), // #1373
                 solveStep: () => { const g = gsRef.current; if (g && !g.done) spec.tick(solvePad(g)) },
+                // #1880 drive: hands the OWN seat to the solver at the sample
+                // instant (readOwnPad), with delay 0 so the pad for tick k is
+                // computed AT k. tickSim remains the only sim driver; the wire,
+                // the ready gate and the hash law all keep running for real.
+                autopilot: (on) => {
+                    driveAutoRef.current = !!on && screenRef.current === 'play' && !!gsRef.current && !gsRef.current.done
+                    if (driveAutoRef.current && net.sync) net.sync.delay = 0
+                    return driveAutoRef.current
+                },
                 // #1637 WATCH: the harness pilots the seat through real keys.
                 watching: () => watchingRef.current && screenRef.current === 'play',
                 watchSfx: () => watchSfxLog(),
@@ -1076,6 +1093,9 @@ export default function TalkMeDown() {
                     miss: net.miss, desyncs: net.desyncs, frozen: net.desyncFrozen,
                     hostLost: net.hostLost,
                     solo: net.sync ? net.sync.solo() : false,
+                    slots: net.room && net.room.slots ? net.room.slots.slice() : [],
+                    watch: net.sync ? net.sync.watchSeats.slice() : [],
+                    dropped: net.sync && typeof net.sync.droppedSeats === 'function' ? net.sync.droppedSeats() : [],
                     players: gsRef.current ? gsRef.current.players : 0,
                     nextSample: net.sync ? net.sync.stats().nextSample : 0,
                 } : null),

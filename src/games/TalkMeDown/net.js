@@ -262,6 +262,15 @@ export function createTmdSync(opts = {}) {
                     pending.length = 0
                 }
             }
+            // #1880 drive law: a zero-delay line must not batch. With delay 0
+            // the peer's pad for tick k is needed the instant k runs — if our
+            // own pad k sits in `pending` waiting for a second sample, both
+            // boxes wait on each other forever (the twin deadlock: send of pad
+            // k gated on tick k, tick k gated on send of pad k).
+            if (api.delay === 0 && pending.length) {
+                send('pad', { k: nextSample - pending.length, mm: { [api.mySeat]: pending.slice() } })
+                pending.length = 0
+            }
         },
         gotPad(msg) {
             if (!msg || typeof msg.k !== 'number') return
