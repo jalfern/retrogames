@@ -200,3 +200,17 @@ The boredomaudit/juiceaudit number for `adventure` moves with this (the audit
 measures on-screen change through the contract canvas); regenerating the board
 is advisory and needs headless Chrome (#737), so the Node gates above are the
 merge bar for this change.
+
+## #1845 — the watch seat speaks (#1637 polish)
+
+Y seats the guide with the shared blip (utils/watch.js, one voice in every
+pilot — untouched). Stacked after it, the cart's own voice names WHICH driver
+took the wheel: V1/V2 sing the fixed-map script note (587 Hz), V3 re-homes
+loot so its adaptive route answers at 880 Hz. `watchVoice(sim)` in route.js
+branches on the same `sim.variant >= 3` law as `makeRoute` — one brain, two
+voices (watchcheck pins the identity; a fork turns V3 red live). Receipts land
+in `__advTest.watchVoiceLog()`. When the guide runs out of proven road mid-run
+(`r.done` while the run lives on), the canvas now says "NO ROUTE FROM HERE"
+for ~1.5s in attract-green — the blip alone was trivia, the words are the
+lesson. A run that won or died stays silent (batch-13 suppression law), every
+new run clears the lesson; `__advTest.declineMsg()` makes it harness-visible.
