@@ -11,7 +11,7 @@ import { WX, WX_EPOCH, SNOW_LINE, stormNight, weatherAt, flashAt, flashOnset, is
 import { AMB, AMB_CELL, CELL_DRIFT, ambientAt, rollOf, flockOf, flightOf, progressOf } from '../src/games/Britannia/ambient.js'
 import { FACES, faceFor, walkFrame, drawAvatar } from '../src/games/Britannia/avatar.js'
 import { WARP_LEN, WARP_PEAK, warpActive, warpFlash, warpSwapAt, warpRing, warpMotes } from '../src/games/Britannia/warp.js'
-import { MOONS, PHASES, DAY_TICKS, moonPhase, moonName, phaseLit, PHASE_FLAVOR, gateFlavor } from '../src/games/Britannia/moons.js'
+import { MOONS, PHASES, DAY_TICKS, moonPhase, moonName, phaseLit, PHASE_FLAVOR, gateFlavor, routeDest, ROUTE_OFFSET } from '../src/games/Britannia/moons.js'
 import { shadeAt, mixHex, builtPalette, cobbleBlock } from '../src/games/Britannia/tiles.js'
 import { TOWN_R, FLAT as TOWN_FLAT, townScore, hasCottage } from '../src/games/Britannia/towns.js'
 import { decodeCon, decodeRecord, CON_TERR, FLAT } from '../src/games/Britannia/ega.js'
@@ -107,12 +107,19 @@ if (coast) {
     ok(false, 'a coast tile exists (sea meets land)')
 }
 
-// winnable: the gate network lets a pilgrim visit all 8 in 7 warps
-const visited = new Set([0])
-for (let step = 0; step < 7 && visited.size < 8; step++) {
-    for (let i = 0; i < 8; i++) if (!visited.has(i)) { visited.add(i); break }
+// winnable (#1862 rewrite): the old gate was vacuous — it added a gate per
+// loop no matter what the network said. Honest version: rides obey tonight's
+// offset on the wheel. A new-moon pilgrim (+1) chains seven moonlit rides and
+// visits all 8 exactly once; and full-moon rides (+4) alone reach only the
+// diametric pair — the wheel means something, the pilgrimage spans nights.
+{
+    const chain = [0]
+    for (let ride = 0; ride < 7; ride++) chain.push(routeDest(chain[chain.length - 1], 0, 8))
+    ok(new Set(chain).size === 8, 'winnable: seven moonlit rides at new moon visit all 8 gates exactly once')
+    const fullOrbits = [0, 1, 2, 3].map(g => new Set([g, routeDest(g, 4, 8)]))
+    ok(fullOrbits.every(o => o.size === 2) && new Set(fullOrbits.flatMap(o => [...o])).size === 8,
+        'full-moon rides alone reach exactly the four diametric pairs — reach comes from the wheel, not a free picker')
 }
-ok(visited.size === 8, 'pilgrimage completes: all 8 gates reachable via the network')
 
 // weather (#1135): a deterministic sky, latitude-correct precipitation, lightning
 // only at night inside storms, one flash per strike, and skies that drift.
@@ -568,6 +575,61 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
         'index.jsx: the phase line + disc share the title row (disc by+29, caption by+34) and rows start at by+62 — #1352 no overprint of row I')
 }
 
+// moon-phase routing (#1862): the gate is no taxi — tonight's moon decides the
+// destination. The wheel is a fixed rotation per phase (waxing widens 1,3,5,7;
+// full moon rides diameters; waning mirrors), held to shifts 1..n-1 so every
+// phase is a derangement. Prove-it-can-fail: ROUTE_OFFSET[4] 4->2 reddens the
+// wheel (a); deleting the refusal branch in index.jsx reddens the rule pins (b).
+{
+    // (a) the wheel itself
+    ok(ROUTE_OFFSET.length === 8 && ROUTE_OFFSET.every(o => o >= 1 && o <= 7),
+        'the wheel is eight fixed non-zero offsets (no phase routes home)')
+    ok(String(ROUTE_OFFSET) === '1,3,5,7,4,7,5,3',
+        `the wheel's shape: widens waxing, diameters full, mirrors waning (got ${ROUTE_OFFSET})`)
+    let permOk = true, selfOk = true
+    for (let p = 0; p < 8; p++) {
+        const dests = [0, 1, 2, 3, 4, 5, 6, 7].map(g => routeDest(g, p, 8))
+        if (new Set(dests).size !== 8) permOk = false
+        if (dests.some((d, g) => d === g)) selfOk = false
+    }
+    ok(permOk, 'every phase permutes the eight gates (no destination orphaned)')
+    ok(selfOk, 'no gate ever routes to itself, at any phase')
+    ok(routeDest(3, 4, 8) === 7 && routeDest(7, 4, 8) === 3 && [0, 1, 2, 3].every(g => routeDest(g, 4, 8) === (g + 4) % 8),
+        'the full moon rides diameters (I<->V, II<->VI, III<->VII, IV<->VIII)')
+    ok(moonPhase(0) === 0 && routeDest(0, moonPhase(DAY_TICKS), 8) !== routeDest(0, moonPhase(0), 8),
+        'the road turns with the sky: same gate, next day, different destination')
+    ok([0, 1, 2, 3].every(g => routeDest(g, 8, 8) === routeDest(g, 0, 8) && routeDest(g, -1, 8) === routeDest(g, 7, 8)),
+        'routeDest wraps the wheel both ways and stays deterministic')
+    ok(routeDest(-1, 3, 8) === routeDest(7, 3, 8) && routeDest(9, 3, 8) === routeDest(1, 3, 8),
+        'gate indices wrap the circle (no crash, no off-board destination)')
+    let shapeOk = true
+    for (let n = 2; n <= 8; n++) {
+        for (let p = 0; p < 8; p++) {
+            const dests = Array.from({ length: n }, (_, g) => routeDest(g, p, n))
+            if (new Set(dests).size !== n || dests.some((d, g) => d === g)) shapeOk = false
+        }
+    }
+    ok(shapeOk, 'well-formed derangement for every map size 2..8 (the 1..n-1 clamp holds)')
+    // (b) wiring: the refusal, the mark, the probe — all in one seat
+    const src = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+    ok(/const routed = routeDest\(S\.gate, moonPhase\(S\.tick\), n\)/.test(src) && /if \(dest === routed\) \{/.test(src),
+        'index.jsx: only tonight\'s routed road may begin a warp')
+    ok(/refuseth \$\{ROMAN\[dest\]\}.*moon routeth to \$\{ROMAN\[routed\]\} of \$\{moonName\(routed\)\}/.test(src),
+        'index.jsx: the refusal names the gate it refuseth AND tonight\'s true road — the wheel gets taught, not hidden')
+    ok(/const moonlit = i === routed/.test(src) && /ctx\.arc\(bx \+ 18, row \+ 17, 3\.5/.test(src),
+        'index.jsx: the menu marks the moonlit row with a silver disc beside it')
+    ok(/tonight's moon routeth hence to \$\{ROMAN\[routed\]\} of \$\{moonName\(routed\)\}/.test(src),
+        'index.jsx: the caption names the same routed gate the disc marks (words cannot lie about the wheel)')
+    ok(/moonRoute: S\.gate >= 0 \? routeDest\(S\.gate, moonPhase\(S\.tick\), gates\.length\) : -1/.test(src) && /toastMsg: S\.toastMsg/.test(src),
+        'index.jsx: the harness sees tonight\'s road and the last toast (menu closed => -1)')
+    const caption = "tonight's moon routeth hence to VIII of Spirituality"
+    ok(caption.length * 8 <= 480 - 56, `the route caption fits the 480px box (${caption.length} chars ≈ ${caption.length * 8}px at 13px monospace)`)
+    ok(/GM = \{ w: 480, rowTop: 62, pitch: 36, foot: 64 \}/.test(src) &&
+        /const bh = GM\.rowTop \+ \(gates\.length - 1\) \* GM\.pitch \+ GM\.foot/.test(src) &&
+        !/GM\.pitch \+ 44/.test(src),
+        'index.jsx: the taller box lives in GM.foot alone — pointer handlers read gmBox(), no drifted copies')
+}
+
 // land texture (#1146): the modern tiles shade from a smooth field keyed to
 // WORLD position, so the land reads as soft, continuous terrain — never the
 // per-pixel salt-and-pepper static, and never a repeating tile stamp. grain =
@@ -1001,7 +1063,7 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
         // menu geometry: rows clear of the header, hint clear of the border
         const W = 1280, H = 720
         const g = { w: 480, rowTop: 62, pitch: 36 }, rows = 7
-        const bh = g.rowTop + rows * g.pitch + 44
+        const bh = g.rowTop + rows * g.pitch + 64
         ok(g.rowTop >= 56 && bh <= H * 0.75, `menu box stands clear (rows from by+${g.rowTop}, box height ${bh})`)
         const footer = 'arrows + SPACE choose · 1-8 jump · Z/Esc cancel'
         ok(footer.length * 8.4 <= g.w - 56, `footer hint fits inside the ${g.w}px box (${footer.length} chars ≈ ${(footer.length * 8.4) | 0}px)`)

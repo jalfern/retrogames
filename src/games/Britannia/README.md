@@ -45,9 +45,12 @@ transcribed into source:
   the menu names each gate for its virtue-moon (moons.js, the eight-wheel
   homage to the original) and prints tonight's phase with a lit-disc glyph —
   phase = day count mod 8, pure + deterministic so `britanniacheck` proves
-  the wheel (plus a bad-wheel mutant that goes red).
-  the original's moon-phase routing and shrine destinations arrive with
-  stage 5. Names (Britain, Trinsic…) arrive when town/talk data loads.
+  the wheel (plus a bad-wheel mutant that goes red). — **CLOSED by #1862**
+  (moon-phase routing seats the picker: the moon decides the destination —
+  see "Moon-phase routing" below).
+- Gate journeys land at a star, not a shrine, and the stars carry roman
+  numerals: the original's shrine destinations and town names (Britain,
+  Trinsic…) arrive when stage 5's town/talk data loads.
 - Boarding is free at any coast (the purchase lives in stage 2's shops).
 - Town walls/buildings are still tile terrain; enterable buildings are stage 2.
 - Classic mode (`C`) stamps the ORIGINAL terrain tiles: Origin's own
@@ -124,10 +127,51 @@ memo==naive sum at 1M ticks, zero-crossing steps, HUD names + shell wiring.
 Mutant: flattening `windOf` to a constant reddens ride (199/288), varies
 (1/4) and agreement — restored green.
 
+## Moon-phase routing — the moon decides the destination (#1862 polish)
+
+The picker made every gate a taxi to every star; in the original (Ultima IV,
+1985) the **moon decides** — ride a gate on a given night and it sends thee to
+the one star its wheel links that phase. The game now seats that rule:
+
+- `moons.js` grows `ROUTE_OFFSET = [1,3,5,7,4,7,5,3]` and
+  `routeDest(gate, phase, n)`: each phase rotates the gate circle by its
+  fixed offset — wider as the moon waxes (1,3,5,7), diameters at the full
+  (4), waning mirrors waxing. The original's exact table isn't in the bundle,
+  so we honour its RULE (phase-determined, fixed, learnable) rather than fake
+  its rows. Every phase is a rotation by a shift held in 1..n-1: a
+  derangement — no gate routes to itself, none is left without a destination.
+- The gate menu marks tonight's moonlit road with a small silver disc beside
+  the row, tints it moon-ink, and captions the wheel in words (`tonight's
+  moon routeth hence to V of Spirituality`). Choosing a non-routed row is
+  **refused** — buzz, menu stays open, and the refusal toast names where the
+  moon actually routeth, so the wheel gets learned rather than guessed. The
+  rule bites on keyboard, number keys and tap alike (all selection paths
+  funnel through one pad.a handler).
+- Riding the routed row warps exactly as before (#1135 swirl intact). Phase =
+  day count mod 8 (`moonPhase(tick)`), pure and deterministic, so the whole
+  wheel is provable headless. Shrine destinations and town names stay stage 5.
+- The menu box grew 20px (`GM.foot` 44→64) for the caption line; row text is
+  byte-identical, so the #1352 width pins still measure what they always did.
+- The DEV probe gained `moonRoute` (tonight's road while the menu is open)
+  and `toastMsg`; DebugKit gained a `full moon` jump.
+
+Harness (`npm run britanniacheck`, 10 new gates + 2 mutants): per-phase
+derangement + no-self over all 8 gates, wheel shape (waxing grows, full is
+diameter, waning mirrors), phase-locks-per-day, `dest != gate` for every
+(gate, phase), determinism + wrap, the honest replacement of the old vacuous
+"network" winnable gate (phase-0 chain reaches all 8 in 7 rides; full-moon
+rides alone reach exactly the diametric pair — the wheel adds meaning), and
+source pins for refusal/menu-mark/probe wiring. Mutants: `ROUTE_OFFSET[4]`
+4→2 reddens the wheel, and cutting the refusal test (`dest === routed`)
+reddens the rule pin — restored green. `britannidrive` rides the rule in a
+real browser: refusal on the wrong row, warp on the moonlit row, and the
+route flipping when the day turns.
+
 ## Verify
 
 ```bash
 npm run britanniacheck      # data integrity + rules + winnability (Node, no browser)
+npm run britannidrive       # real-key browser drive (needs `npm run dev` on $DEV_PORT)
 npm run dev                 # play at /retrogames/britannia
 ```
 

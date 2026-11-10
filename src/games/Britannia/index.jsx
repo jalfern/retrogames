@@ -26,7 +26,7 @@ import { WARP_LEN, warpFlash, warpRing, warpMotes, warpSwapAt } from './warp.js'
 import { TERR, hash2, TILE, SUB, blockShades, builtPalette, cobbleBlock } from './tiles.js'
 import { townScore, hasCottage } from './towns.js'
 import { buildClassicStamps, variantOf } from './ega.js'
-import { PHASES, moonPhase, moonName, phaseLit, gateFlavor } from './moons.js'
+import { PHASES, moonPhase, moonName, phaseLit, gateFlavor, routeDest } from './moons.js'
 import { crest, crestLane, foam, landSides, foamPatches, splatIntensity, dimples, seaRough, crestGain, foamGain } from './swell.js'
 
 const SIM_MS = 1000 / 60
@@ -216,13 +216,22 @@ const BritanniaGame = () => {
                 }
                 if (pad.a) {
                     const dest = S.sel < S.gate ? S.sel : S.sel + 1
-                    if (dest !== S.gate && dest < n) {
+                    // moon-phase routing (#1862): the gate is no taxi — tonight's
+                    // moon decides the destination. Riding the moonlit road warps;
+                    // every other choice is refused, and the refusal names the real
+                    // road, so the wheel gets learned rather than guessed.
+                    const routed = routeDest(S.gate, moonPhase(S.tick), n)
+                    if (dest === routed) {
                         // a warp begins: the teleport itself is deferred to the
                         // white-out peak (the step() warp block) so the journey
                         // is seen as a swirl + flash, not an instant cut (#1135)
                         S.warp = { dest, t0: S.tick, swapped: false }
                         S.gate = -1
                         audioController.playSweep(150, 130, 0.32, 'sawtooth', 0.13)
+                    } else {
+                        S.toast = 170
+                        S.toastMsg = `The ${PHASES[moonPhase(S.tick)]} refuseth ${ROMAN[dest]} — tonight the moon routeth to ${ROMAN[routed]} of ${moonName(routed)}.`
+                        audioController.playTone(150, 0.14, 'square', 0.12)
                     }
                 }
                 if (pad.b || pad.start) { S.dismissed = S.gate; S.gate = -1 }
@@ -665,9 +674,9 @@ const BritanniaGame = () => {
         // with rows starting at by+46: the phase caption overprinted row I, the
         // flavor line crowded row VIII, and the 420px-wide footer hint ran past
         // the border. 480px with measured gaps fits the longest row + hint.
-        const GM = { w: 480, rowTop: 62, pitch: 36 }
+        const GM = { w: 480, rowTop: 62, pitch: 36, foot: 64 }
         const gmBox = () => {
-            const bh = GM.rowTop + (gates.length - 1) * GM.pitch + 44
+            const bh = GM.rowTop + (gates.length - 1) * GM.pitch + GM.foot
             return { bw: GM.w, bh, bx: VIEW_W / 2 - GM.w / 2, by: VIEW_H / 2 - bh / 2 }
         }
 
@@ -694,18 +703,32 @@ const BritanniaGame = () => {
             ctx.fillText(`the ${PHASES[ph]} rules the sky`, bx + bw - 48, by + 34)
             ctx.textAlign = 'left'
             ctx.font = '17px monospace'
+            // #1862: one road is moonlit tonight — the wheel is learnable, so
+            // the menu marks where the moon actually routeth (a small silver
+            // disc, same ink as the phase disc overhead).
+            const routed = routeDest(S.gate, ph, gates.length)
             for (let i = 0; i < gates.length; i++) {
                 if (i === S.gate) continue
                 const row = by + GM.rowTop + (i < S.gate ? i : i - 1) * GM.pitch
                 const sel = (i < S.gate ? i : i - 1) === S.sel
-                ctx.fillStyle = sel ? '#ffd840' : '#9fb4d8'
+                const moonlit = i === routed
+                ctx.fillStyle = sel ? '#ffd840' : (moonlit ? '#e8e2c8' : '#9fb4d8')
                 ctx.fillText(`${sel ? '> ' : '  '}${ROMAN[i]} — ${moonName(i)} moon${S.visited.has(i) ? '  [visited]' : ''}`, bx + 28, row + 23)
+                if (moonlit) {
+                    ctx.beginPath(); ctx.arc(bx + 18, row + 17, 3.5, 0, Math.PI * 2)
+                    ctx.fillStyle = '#e8e2c8'; ctx.fill()
+                }
             }
             ctx.fillStyle = '#6a7b9a'
             ctx.font = '14px monospace'
             // "B" is not a key on this game's keyboard — cancel is Z (and Esc,
             // which maps to start and closes the menu) (#1352)
             ctx.fillText('arrows + SPACE choose · 1-8 jump · Z/Esc cancel', bx + 28, by + bh - 14)
+            // the wheel in words (#1862): the marked row and this line always
+            // name the same gate — the menu never points at the wrong moon
+            ctx.fillStyle = '#c8d8a8'
+            ctx.font = 'italic 13px monospace'
+            ctx.fillText(`tonight's moon routeth hence to ${ROMAN[routed]} of ${moonName(routed)}`, bx + 28, by + bh - 58)
             // tonight's moon sets the mood of the trip (#1135): one flavor
             // line per phase, always naming the phase it claims
             ctx.fillStyle = '#bcd0ec'
@@ -834,8 +857,7 @@ const BritanniaGame = () => {
             const fit = containMap(VIEW_W, VIEW_H, rect.width, rect.height)
             const mx = (e.clientX - rect.left - fit.ox) / fit.s
             const my = (e.clientY - rect.top - fit.oy) / fit.s
-            const bw = GM.w, bh = GM.rowTop + (gates.length - 1) * GM.pitch + 44
-            const bx = VIEW_W / 2 - bw / 2, by = VIEW_H / 2 - bh / 2
+            const { bw, bh, bx, by } = gmBox()
             if (mx < bx || mx > bx + bw || my < by || my > by + bh) return
             const row = Math.floor((my - (by + GM.rowTop)) / GM.pitch)
             if (row < 0 || row >= gates.length - 1) return
@@ -852,8 +874,7 @@ const BritanniaGame = () => {
             const mx = (e.clientX - rect.left - fit.ox) / fit.s
             const my = (e.clientY - rect.top - fit.oy) / fit.s
             if (S.gate >= 0) {
-                const bw = GM.w, bh = GM.rowTop + (gates.length - 1) * GM.pitch + 44
-                const bx = VIEW_W / 2 - bw / 2, by = VIEW_H / 2 - bh / 2
+                const { bw, bh, bx, by } = gmBox()
                 const row = Math.floor((my - (by + GM.rowTop)) / GM.pitch)
                 const inBox = mx >= bx && mx <= bx + bw && my >= by && my <= by + bh
                 if (inBox && row >= 0 && row < gates.length - 1) {
@@ -904,6 +925,11 @@ const BritanniaGame = () => {
                     town: townScore(S.x, S.y, gates, terrainAt),
                     warping: !!S.warp, warpFlash: S.warp ? warpFlash(S.tick - S.warp.t0) : 0, warpDest: S.warp ? S.warp.dest : -1,
                     moon: moonPhase(S.tick),
+                    // #1862: where tonight's moon routeth from the open gate
+                    // (-1 when no menu is open), plus the last toast's words so
+                    // a harness can prove a refusal actually taught the rule
+                    moonRoute: S.gate >= 0 ? routeDest(S.gate, moonPhase(S.tick), gates.length) : -1,
+                    toastMsg: S.toastMsg || '',
                     hoverRow: S.gate >= 0 ? S.hoverRow : -1,
                     gateFlavor: S.gate >= 0 ? gateFlavor(moonPhase(S.tick)) : '',
                 }
@@ -922,6 +948,7 @@ const BritanniaGame = () => {
                 actions: [
                     { label: 'to gate I', run: () => { S.x = gates[0].x; S.y = gates[0].y } },
                     { label: 'night', run: () => { S.tick = Math.floor(DAY * 0.5) } },
+                    { label: 'full moon', run: () => { S.tick = Math.floor(DAY * 4) } },
                     { label: 'all gates', run: () => { gates.forEach((g, i) => S.visited.add(i)); S.done = true; setMode('end') } },
                 ],
             })
