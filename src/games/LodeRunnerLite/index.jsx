@@ -351,7 +351,7 @@ const LodeRunnerLiteGame = () => {
             for (let y = 0; y < H; y++) {
                 for (let x = 0; x < W; x++) {
                     const rem = CFG.refill - g.holeAge[y * W + x]
-                    if (g.holeAge[y * W + x] > 0 && rem > 0 && rem < SIM_HZ && g.tick % 4 < 2) {
+                    if (g.holeAge[y * W + x] > 0 && rem > 0 && rem < 15 && g.tick % 4 < 2) {   // <1 s of fuse left (15 Hz)
                         ctx.fillStyle = '#ffb03e'
                         ctx.fillRect(x * CW, y * CH, CW, 2)
                         ctx.fillRect(x * CW, y * CH + 2, 2, 3)
