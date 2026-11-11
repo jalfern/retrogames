@@ -28,7 +28,7 @@ import { dirname, join } from 'node:path'
 import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, FEATURES } from '../src/games/PapersPleaseMin/rules.js'
 import { genWeek, genDay, viewOf, CITY2C, TRAPS, GREY } from '../src/games/PapersPleaseMin/gen.js'
 import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges } from '../src/games/PapersPleaseMin/sim.js'
-import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, ID, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
+import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, ID, PHOTO, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SRC = join(HERE, '../src/games/PapersPleaseMin')
@@ -325,6 +325,12 @@ section('PORTRAIT (#1938) — the photo on the paper against the face at the cou
     // the wall owes PORTRAIT exactly one line: the day-7 fit (y=356 of the
     // 358 law) silently degrades the moment this text wraps
     ok(ruleLines(RULES.PORTRAIT.text) === 1, `PORTRAIT prints in ${ruleLines(RULES.PORTRAIT.text)} lines — a two-line law buries the wanted sheet`)
+    // #1972 PORTRAIT-DETAIL: the zoom-crop law, pure arithmetic — the head
+    // centers in its frame, the widest head fits inside the clip, and the
+    // crop is provably BIGGER than the old flat-0.6 miniature it replaced.
+    ok(Math.abs(PHOTO.ox + PHOTO.s * 55 - PHOTO.w / 2) <= 1, `the zoom-crop head is off-center (${PHOTO.ox}+${PHOTO.s}*55 vs ${PHOTO.w / 2})`)
+    ok(PHOTO.ox + PHOTO.s * (55 - 34) >= 0 && PHOTO.ox + PHOTO.s * (55 + 34) <= PHOTO.w, 'the widest head escapes the photo frame — the clip would cut the face itself')
+    ok(PHOTO.s >= 0.7, `photo scale ${PHOTO.s} is the old flat draw, not the zoom-crop (>=0.7 required)`)
     console.log(`  ..    ${forged} forges each broke exactly one feature, ${aged} aged photos stayed legal, every break named itself on the wall`)
 }
 
