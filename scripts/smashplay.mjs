@@ -317,7 +317,14 @@ r.check('the arena actually renders', px > 500, `${px} lit px`)
                 prevA = a
                 if (flight === 8) { // mid-curve: the pale-orange warhead on canvas
                     await raf(); await raf()
-                    missilePx = countCol(m.x - (T.probe().camX || 0) - 3, m.y - 3, 7, 7, [255, 176, 79])
+                    // re-read at read-time: software Chrome's tick catch-up drifts the
+                    // drawn frame past the loop-time position, and a fractional 3×3
+                    // rect anti-aliases into 2..9 px — sample where it actually is,
+                    // in a box that covers the drift.
+                    const s2 = T.probe()
+                    const g2 = T.state()
+                    const mm = (g2.bullets || []).find((q) => q.kind === 'homing') || m
+                    missilePx = countCol(mm.x - (s2.camX || 0) - 4, mm.y - 4, 9, 9, [255, 176, 79])
                 }
             }
             flight++
