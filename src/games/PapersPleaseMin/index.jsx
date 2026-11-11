@@ -13,13 +13,13 @@ import { PRESS, MESSAGES } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { CFG, newRun, step, tick, stateHash, current, autopilot, gameClock } from './sim.js'
+import { CFG, newRun, step, tick, stateHash, current, autopilot, gameClock, monthTurn } from './sim.js'
 import { REGULARS } from './gen.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
-import { decide, RULES, dfmt, isAdult } from './rules.js'
-import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, CLOCK, SLIP, BUBBLE, wallRows } from './layout.js'
+import { decide, RULES, dfmt, dshow, isAdult, stampLines } from './rules.js'
+import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, CLOCK, SLIP, BUBBLE, EVID, SETTLE, wallRows } from './layout.js'
 
 const SIM_MS = 1000 / 60
 
@@ -81,7 +81,8 @@ const PapersPleaseMinGame = () => {
         let raf = 0, last = 0, acc = 0
         let simTick = 0           // #1473: play-frame counter for the feedback report
         let stamp = null            // {ok, why, ticks}
-        let banner = null           // {text, sub, ticks}
+        let banner = null           // {text, sub, month, ticks}
+        let settle = 0            // #1891 PAPER WEIGHT — drop/settle counter for new papers
         let demoScript = null, demoAt = 0, demoWait = 0, demoSeed = 0
         const evLog = []
         // #1637 WATCH — seat the perfect inspector paperscheck proves survives
@@ -122,8 +123,16 @@ const PapersPleaseMinGame = () => {
                 if (ed) {
                     const nRules = gs.week.days[gs.day - 1].rules
                     const newest = nRules[nRules.length - 1]
-                    banner = { text: `DAY ${gs.day} — THE LINE MOVES`, sub: `NEW RULE: ${RULES[newest].text}`, ticks: 200 }
+                    // #1891 THE NEW MONTH — when the calendar crossed a seam
+                    // overnight (day 6: OCT 31 → NOV 01), the morning says so.
+                    banner = {
+                        text: `DAY ${gs.day} — THE LINE MOVES`,
+                        sub: `NEW RULE: ${RULES[newest].text}`,
+                        month: monthTurn(gs.week, gs.day),
+                        ticks: 200,
+                    }
                     audioController.playSweep(420, 760, 0.4, 'triangle', 0.06)
+                    if (banner.month) audioController.playTone(988, 0.12, 'triangle', 0.06) // the calendar turning gets its own chime
                 }
             }
             gs.events.length = 0
@@ -134,6 +143,7 @@ const PapersPleaseMinGame = () => {
             if (screenRef.current !== 'play' || pausedRef.current || gs.end) return
             const stamped = current(gs).applicant.person   // stamp the papers YOU just judged
             const before = gs.strikes
+            settle = 0 // #1891 a fresh stamp interrupts any settling — the frame and the document must sit exactly still while the stamp holds
             step(gs, { action })
             if (!gs.end) {
                 stamp = { ok: gs.last?.ok, why: gs.last?.why, verdict: action, person: stamped, ticks: 30 }
@@ -164,6 +174,7 @@ const PapersPleaseMinGame = () => {
             demoSeed = seed
             evLog.length = 0
             stamp = null; banner = null
+            settle = SETTLE.ticks // #1891 the first papers of the week drop onto the counter
             watchingRef.current = false; setWatching(false); watchScript = null // #1637 a new week starts in your hands
             audioController.playSweep(220, 440, 0.25, 'square', 0.07)
             setMode('play')
@@ -200,7 +211,13 @@ const PapersPleaseMinGame = () => {
                 return
             }
             simTick++
-            if (stamp && stamp.ticks > 0) stamp.ticks--
+            if (stamp && stamp.ticks > 0) {
+                stamp.ticks--
+                // #1891 PAPER WEIGHT — when the judged document is picked up
+                // (the stamp hold ticks out), the next applicant's papers drop.
+                if (stamp.ticks === 0) settle = SETTLE.ticks
+            }
+            if (settle > 0) settle--
             if (banner && banner.ticks > 0) banner.ticks--
             // #1960 the shift moves; when the last hour burns down the booth
             // ticks softly through the glass, one blip per second of the wall
@@ -345,7 +362,7 @@ const PapersPleaseMinGame = () => {
             text('PASSPORT', x + 8, y + 15, 12, '#f2e8d8')
             text(`NAME ${pp.name}`, x + 10, y + 42)
             text(`NO. ${pp.id}`, x + 10, y + 58)
-            text(`DOB ${dfmt(pp.dob)}`, x + 10, y + 74)
+            text(`DOB ${dshow(pp.dob)}`, x + 10, y + 74)
             text(`SEX ${pp.sex}  HEIGHT ${pp.height}CM`, x + 10, y + 90)
             text(`WEIGHT ${pp.weight}KG`, x + 10, y + 106)
             text(`ISSUED ${pp.city}`, x + 10, y + 122)
@@ -362,7 +379,7 @@ const PapersPleaseMinGame = () => {
             ctx.beginPath(); ctx.rect(x + PHOTO.x, y + PHOTO.y, PHOTO.w, PHOTO.h); ctx.clip()
             drawFace(ctx, pp.photo, x + PHOTO.x + PHOTO.ox, y + PHOTO.y + PHOTO.oy, PHOTO.s)
             ctx.restore()
-            text(`EXPIRES ${dfmt(pp.expiry)}`, x + 10, y + 140)
+            text(`EXPIRES ${dshow(pp.expiry)}`, x + 10, y + 140)
             text(`VALID ${isAdult(pp.dob, gs.week.days[gs.day - 1].date) ? 'ADULT' : 'CHILD'}`, x + 240, y + 140, 10, '#6b5d3a', 'center')
         }
 
@@ -371,7 +388,7 @@ const PapersPleaseMinGame = () => {
             text('ID CARD', x + 8, y + 15, 11, '#20304e')
             text(`${id.name}`, x + 8, y + 32)
             text(`HT ${id.height}CM  WT ${id.weight}KG`, x + 8, y + 46, 10)
-            text(`DOB ${dfmt(id.dob)}`, x + 8, y + 59, 10)
+            text(`DOB ${dshow(id.dob)}`, x + 8, y + 59, 10)
         }
 
         const paint = () => {
@@ -381,7 +398,8 @@ const PapersPleaseMinGame = () => {
             for (let y = 14; y < CHS; y += 14) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(250, y); ctx.stroke() }
             const { day, view } = current(gs)
             // the wall: date, rulebook, entry list, wanted sheet, scale
-            text(`DAY ${day.n}   ${dfmt(day.date)}`, 12, 24, 15, COL.gold)
+            // #1891 the header prints the month NAME (the original's wall):
+            text(`DAY ${day.n}   ${dshow(day.date)}`, 12, 24, 15, COL.gold)
             let yy = WALL.top
             text('RULEBOOK TODAY:', WALL.x, yy, WALL.size, COL.text); yy += WALL.labelLine
             for (const r of day.rules) {
@@ -445,13 +463,18 @@ const PapersPleaseMinGame = () => {
             const shown = stamp && stamp.ticks > 0 ? stamp.person : view.person
             drawFace(ctx, shown ? shown.face : view.person.face, PORTRAIT.x, PORTRAIT.y, 1)
             text(`ENTRANT ${gs.idx + (stamp && stamp.ticks > 0 ? 0 : 1)}/${gs.week.days[gs.day - 1].queue.length}`, PORTRAIT.x + PORTRAIT.headCx, 168, 10, COL.text, 'center')
-            // the papers
+            // the papers — #1891 PAPER WEIGHT: while a new applicant's papers
+            // settle (settle > 0), the whole stack rides dy: papers arrive,
+            // they do not teleport. Decor only — the sim and every replay pin
+            // never see it; the stamped document stays put (dy only runs while
+            // the NEXT papers come in, after the hold ticks out).
+            const dy = settle > 0 ? SETTLE.dy(settle) : 0
             if (shown && shown.passport) {
-                drawPassport(shown.passport, PAPERS.x, PAPERS.y)
-                if (shown.idcard) drawId(shown.idcard, ID.x, ID.y)
+                drawPassport(shown.passport, PAPERS.x, PAPERS.y + dy)
+                if (shown.idcard) drawId(shown.idcard, ID.x, ID.y + dy)
             } else {
-                box(PAPERS.x, 60, PAPERS.w, 120, '#12161f', '#39415c')
-                text('"I HAVE NO PAPERS."', STAMP.x, 125, 14, '#6d7a9c', 'center')
+                box(PAPERS.x, 60 + dy, PAPERS.w, 120, '#12161f', '#39415c')
+                text('"I HAVE NO PAPERS."', STAMP.x, 125 + dy, 14, '#6d7a9c', 'center')
             }
             // #1983 THE ARC — the neighborhood remembers. A returning entrant
             // speaks at the counter: a printed paper bubble under the face
@@ -499,7 +522,16 @@ const PapersPleaseMinGame = () => {
                 ctx.strokeRect(-86, -22, 172, 44)
                 text(stamp.verdict === 'approve' ? 'APPROVED' : 'DENIED', 0, 6, 24, stampCol, 'center')
                 ctx.restore()
-                if (!stamp.ok) text(gs.last?.why === 'INNOCENT' ? 'THEY WERE CLEAN' : `WITNESS: ${gs.last?.why}`, STAMP.x, 296, 12, COL.red, 'center')
+                // #1891 THE STAMP SPEAKS — the booth quotes its case. A miss
+                // keeps its red witness (what you missed); a correct deny now
+                // prints its gold witness too (what you caught, and WHY). The
+                // evidence clauses ride in the controls strip (EVID zone —
+                // clear of the control text, strikes, slip and bubble).
+                const sl = stampLines(gs.last, EVID.wrap)
+                if (sl.witness) {
+                    text(sl.witness, STAMP.x, 296, 12, stamp.ok ? COL.gold : COL.red, 'center')
+                    sl.evidence.forEach((ln, i) => text(ln, EVID.cx, EVID.y + i * EVID.line, EVID.size, stamp.ok ? COL.gold : COL.red, 'center'))
+                }
             }
             // #1966 THE DEDUCTION SLIP — the printed paper the original
             // slides under the door at end of day: pay earned, rent (on the
@@ -528,9 +560,12 @@ const PapersPleaseMinGame = () => {
             if (banner && banner.ticks > 0) {
                 const a2 = Math.min(1, banner.ticks / 40)
                 ctx.fillStyle = `rgba(8,10,16,${0.82 * a2})`
-                ctx.fillRect(0, 150, CW, 96)
+                // #1891 THE NEW MONTH — the roll gets its own printed line,
+                // and the overlay grows a row to hold it.
+                ctx.fillRect(0, 150, CW, banner.month ? 116 : 96)
                 text(banner.text, CW / 2, 196, 26, COL.gold, 'center')
                 text(banner.sub, CW / 2, 224, 12, '#9fb0d6', 'center')
+                if (banner.month) text(`* NEW MONTH: ${banner.month} *`, CW / 2, 248, 13, COL.gold, 'center')
             }
         }
 
@@ -753,6 +788,18 @@ const PapersPleaseMinGame = () => {
                 },
                 ff: (n) => { tick(gs, n || CFG.SEAT_TICKS * 2); drainEvents(); return { clock: gs.clock, day: gs.day, end: gs.end, why: gs.endWhy, credits: gs.credits, slip: gs.slip && { ...gs.slip } } }, // #1960 wind the shift forward
                 start: startPlay,
+                // #1891 THE STAMP SPEAKS: the exact strings paint() prints with
+                // the live stamp (null once the hold ticks out). papersplay pins
+                // the evidence line VERBATIM against decide's witness, and
+                // counts the strip's red pixels to prove the quote is ink.
+                evidencePaint: () => ({ ...(stamp && stamp.ticks > 0 ? stampLines(gs.last, EVID.wrap) : { witness: null, evidence: [] }), ok: !!gs.last?.ok, why: gs.last?.why || null }),
+                // #1891 PAPER WEIGHT: the live settle offset (negative while
+                // new papers drop, 0 at rest) + the law's start value, so the
+                // gate can prove a drop actually ran.
+                settlePx: () => (settle > 0 ? SETTLE.dy(settle) : 0),
+                settleTop: SETTLE.dy(SETTLE.ticks),
+                // #1891 MONTH-NAME DATES: the header the wall actually prints.
+                wallDate: () => dshow(current(gs).day.date),
                 portraitPix, // #1938 photo-vs-face pixel probe
                 verdict: () => decide(current(gs).view).verdict,
                 hash: () => stateHash(gs),

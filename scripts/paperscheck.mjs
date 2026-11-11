@@ -25,10 +25,10 @@
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
-import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, FEATURES } from '../src/games/PapersPleaseMin/rules.js'
+import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, dshow, MON, FEATURES, stampLines } from '../src/games/PapersPleaseMin/rules.js'
 import { genWeek, genDay, viewOf, CITY2C, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, VISIT_WINDOW } from '../src/games/PapersPleaseMin/gen.js'
-import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges } from '../src/games/PapersPleaseMin/sim.js'
-import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, ID, PHOTO, BUBBLE, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
+import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges, monthTurn } from '../src/games/PapersPleaseMin/sim.js'
+import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, ID, PHOTO, BUBBLE, EVID, SETTLE, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SRC = join(HERE, '../src/games/PapersPleaseMin')
@@ -252,6 +252,98 @@ section('THE CALENDAR IS ONE CLOCK (#1889) — serials match the wall, the week 
     seamCase([1982, 2, 22], [1982, 3, 1], 'approve', 'exactly 7 days past a 28-day February')
     seamCase([1982, 12, 31], [1983, 1, 1], 'deny', 'grace over the year seam')
     seamCase([1982, 11, 1], [1982, 11, 1], 'approve', 'expires-TODAY doctrine holds at the month seam', ['EXPIRED'])
+}
+
+// ------------------------------------------------- THE STAMP SPEAKS ----
+section('THE STAMP SPEAKS (#1891) — the strip quotes the evidence, the wall prints month names, the roll is loud, papers land with weight')
+{
+    // 1) MONTH NAMES — dshow carries the SAME date as dfmt (elements cross-
+    //    checked against the numerals), in the original's `OCT 27 1982` shape.
+    ok(MON.length === 12 && MON[9] === 'OCT' && MON[10] === 'NOV', 'MON is not the twelve-month calendar')
+    for (const seed of SEEDS) {
+        for (const day of genWeek(seed).days) {
+            const shown = dshow(day.date)
+            const m = /^([A-Z]{3}) (\d{2}) (\d{4})$/.exec(shown)
+            ok(!!m, `dshow(${dfmt(day.date)}) did not print NAME DD YYYY: "${shown}"`)
+            if (m) ok(`${m[3]}.${String(MON.indexOf(m[1]) + 1).padStart(2, '0')}.${m[2]}` === dfmt(day.date),
+                `seed ${seed} day ${day.n}: dshow ${shown} disagrees with the serial ${dfmt(day.date)} — the wall prints a lie`)
+        }
+    }
+    // 2) THE NEW MONTH — the roll (#1889) fires exactly once per seed, on
+    //    day 6, and names NOVEMBER; every other morning stays quiet.
+    for (const seed of SEEDS) {
+        const week = genWeek(seed)
+        for (let n = 2; n <= CFG.DAYS; n++) {
+            const want = n === 6 ? 'NOVEMBER' : null
+            ok(monthTurn(week, n) === want, `seed ${seed}: monthTurn(day ${n}) = ${monthTurn(week, n)}, expected ${want}`)
+        }
+        ok(monthTurn(week, 1) === null && monthTurn(week, CFG.DAYS + 1) === null, `seed ${seed}: monthTurn must be null outside mornings 2-7`)
+    }
+    // 3) THE QUOTED WITNESS — every deny the booth can prove rides with its
+    //    evidence, VERBATIM, at the strip. Built the way step() builds
+    //    gs.last, so the quote is graded against the same object the booth
+    //    paints with. Rule names may headline; they may not replace the case.
+    for (const seed of SEEDS) {
+        for (const day of genWeek(seed).days) {
+            for (const a of day.queue) {
+                const d = decide(viewOf(day, a))
+                const joined = d.violations.length ? d.violations.map((x) => x.evidence).join('; ') : 'ALL PAPERS IN ORDER'
+                const lastOk = { ok: true, action: d.verdict, verdict: d.verdict, why: d.verdict === 'deny' ? d.violations[0].rule : null, evidence: joined }
+                const sl = stampLines(lastOk, EVID.wrap)
+                if (d.verdict === 'approve') {
+                    ok(sl.witness === null && sl.evidence.length === 0, `seed ${seed} d${day.n}: a clean admit printed a case (${sl.witness})`)
+                } else {
+                    ok(sl.witness === `WITNESS: ${d.violations[0].rule}`, `seed ${seed} d${day.n}: the deny did not headline its rule: "${sl.witness}"`)
+                    ok(sl.evidence.length >= 1 && sl.evidence[0] === joined || (sl.evidence.length >= 1 && joined.startsWith(sl.evidence[0]) && sl.evidence[0].length > d.violations[0].rule.length),
+                        `seed ${seed} d${day.n}: the strip did not quote the evidence verbatim: "${sl.evidence[0]}" vs "${joined}"`)
+                    ok(sl.evidence.every((ln) => ln.length <= EVID.wrap) && sl.evidence.length <= 2, `seed ${seed} d${day.n}: the quote outgrew the strip: ${JSON.stringify(sl.evidence)}`)
+                }
+                // the wrong call quotes too: approving this paper must print
+                // the clause the player missed; denying an innocent quotes
+                // nothing and says the whole truth.
+                if (d.verdict === 'deny') {
+                    const wrong = { ...lastOk, ok: false, action: 'approve' }
+                    const slw = stampLines(wrong, EVID.wrap)
+                    ok(slw.witness === sl.witness && slw.evidence.length === sl.evidence.length, `seed ${seed} d${day.n}: a missed deny lost its quote (${JSON.stringify(slw)})`)
+                } else {
+                    const wrong = { ok: false, action: 'deny', verdict: 'approve', why: 'INNOCENT', evidence: joined }
+                    const slw = stampLines(wrong, EVID.wrap)
+                    ok(slw.witness === 'THEY WERE CLEAN' && slw.evidence.length === 0, `seed ${seed} d${day.n}: the innocent quote changed: ${JSON.stringify(slw)}`)
+                }
+            }
+        }
+    }
+    // the week's signature paper: day 6's cross-month EXPIRED break must
+    // reach the strip as the FULL comparison, not the word EXPIRED.
+    for (const seed of SEEDS) {
+        const week = genWeek(seed)
+        const day = week.days[5]
+        const hit = day.queue.map((a) => ({ a, d: decide(viewOf(day, a)) })).find((x) => x.d.violations.some((v) => v.rule === 'EXPIRED'))
+        ok(!!hit, `seed ${seed}: day 6 lost its EXPIRED paper — the cross-month quote has nothing to quote`)
+        if (hit) {
+            const exp = hit.a.person.passport.expiry
+            const sl = stampLines({ ok: true, action: 'deny', verdict: 'deny', why: 'EXPIRED', evidence: hit.d.violations.map((x) => x.evidence).join('; ') }, EVID.wrap)
+            ok(sl.evidence.join(' ').includes(`EXPIRED ${dfmt(exp)} < TODAY 1982.11.01`),
+                `seed ${seed}: the strip did not print the cross-month comparison in full: ${JSON.stringify(sl.evidence)}`)
+        }
+    }
+    // 4) THE STRIP CORRIDOR — the quote zone must fit between the strip's own
+    //    texts (left control ends x≈254, right note starts x≈613) and stay
+    //    inside the strip band (y 400..440), clear of the slip and bubble.
+    const halfW = EVID.wrap * EVID.size * CHAR / 2
+    ok(EVID.cx - halfW >= 254 && EVID.cx + halfW <= CW - 14, `the evidence corridor ${Math.round(EVID.cx - halfW)}..${Math.round(EVID.cx + halfW)} runs into the strip's own texts`)
+    ok(EVID.y >= CHS - STRIP_H + 4 && EVID.y + EVID.line <= CHS - 8, `the evidence rows y=${EVID.y}/${EVID.y + EVID.line} leave the strip band`)
+    ok(EVID.y >= SLIP.y + SLIP.h + 8, `the evidence zone y=${EVID.y} crowds the deduction slip (bottom ${SLIP.y + SLIP.h})`)
+    // 5) PAPER WEIGHT — the settle law: a real drop, a monotone landing,
+    //    small enough that papers never leave their home row, short enough
+    //    to finish before the next scripted stamp (84 ticks).
+    ok(SETTLE.dy(SETTLE.ticks) <= -8, `papers do not actually drop (start dy ${SETTLE.dy(SETTLE.ticks)})`)
+    ok(SETTLE.dy(0) === 0 && SETTLE.dy(-1) === 0, 'settled papers must rest at dy 0')
+    let mono = true, prev = SETTLE.dy(SETTLE.ticks)
+    for (let t = SETTLE.ticks - 1; t >= 0; t--) { const v = SETTLE.dy(t); if (v < prev) mono = false; prev = v }
+    ok(mono, 'the settle wobbled — dy must land monotonically')
+    ok(Math.abs(SETTLE.dy(SETTLE.ticks)) <= PAPERS.h / 4 && SETTLE.ticks >= 6 && SETTLE.ticks <= 30,
+        `settle out of its envelope (top ${SETTLE.dy(SETTLE.ticks)}px, ${SETTLE.ticks} ticks)`)
 }
 
 // ------------------------------------------------------------ PORTRAIT ----
@@ -1655,6 +1747,46 @@ if (MUT) {
                             if (!a.person.say || a.person.say[1] !== c.lines.hook) return false
                         }
                     }
+                }
+            }
+            return true
+        })
+
+    // #1891 added three: m37 silences the month roll (the calendar turns but
+    // the morning never says so — the day-6 NOVEMBER pin bites); m38 keeps
+    // the witness headline but drops the quote (the booth is back to naming
+    // rules instead of showing the comparison — the verbatim-quote pin
+    // bites); m39 sends the wall back to bare numerals (the NAME DD YYYY
+    // shape pin bites).
+    await tryMut('month roll silenced (day 6 never says NOVEMBER)',
+        mutMod('sim.js', 'return a.m === b.m ? null : MONFULL[b.m - 1]', 'return null', 'm37'),
+        (m) => {
+            for (const seed of SEEDS) if (m.sim.monthTurn(m.gen.genWeek(seed), 6) !== 'NOVEMBER') return false
+            return true
+        })
+    await tryMut('the strip keeps the rule name and drops the quote (WITNESS: EXPIRED, nothing more)',
+        mutMod('rules.js', 'return { witness: `WITNESS: ${last.why}`, evidence: wrapQuote(last.evidence, wrap) }',
+            'return { witness: `WITNESS: ${last.why}`, evidence: [] }', 'm38'),
+        (m) => {
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    for (const a of day.queue) {
+                        const d = m.rules.decide(m.gen.viewOf(day, a))
+                        if (d.verdict !== 'deny') continue
+                        const sl = m.rules.stampLines({ ok: true, action: 'deny', verdict: 'deny', why: d.violations[0].rule, evidence: d.violations.map((x) => x.evidence).join('; ') }, m.layout.EVID.wrap)
+                        if (sl.evidence.length === 0) return false
+                    }
+                }
+            }
+            return true
+        })
+    await tryMut('the wall prints bare numerals again (dshow -> dfmt)',
+        mutMod('rules.js', 'export const dshow = (dt) => `${MON[dt.m - 1]} ${String(dt.d).padStart(2, \'0\')} ${dt.y}`',
+            'export const dshow = (dt) => dfmt(dt)', 'm39'),
+        (m) => {
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    if (!/^[A-Z]{3} \d{2} \d{4}$/.test(m.rules.dshow(day.date))) return false
                 }
             }
             return true

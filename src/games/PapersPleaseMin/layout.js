@@ -47,6 +47,24 @@ export const ID = { x: 356, y: 200, w: 190, h: 64 }
 // section of paperscheck pins both fit laws so no future line overflows.
 export const BUBBLE = { x: 258, y: 302, w: 190, h: 34 }
 export const STAMP = { x: 506, y: 110 }
+// #1891 THE EVIDENCE LINE — the booth quotes the clause behind a deny in the
+// controls strip, where the strip's own layout leaves a clean corridor: the
+// left control text ends by x≈254 (31 chars at 13px from x=12), the right
+// CORRECT/MISTAKE note starts by x≈613, and the strip floor is y=440. The
+// zone below stays clear of the strike boxes (x<90), the score/CR line
+// (x 100..230) and — because the strip begins at y=400 — of the speech
+// bubble (bottom ≤349) and the deduction slip (bottom ≤392). The evidence
+// wraps at wrap chars so 54*9px*CHAR = 291px centered on cx spans
+// 268..560. paperscheck re-pins all of these numbers.
+export const EVID = { cx: 414, y: 414, line: 12, size: 9, wrap: 54 }
+// #1891 PAPER WEIGHT — documents do not teleport onto the counter: a new
+// applicant's papers drop in and settle (dy over ticks, 0 when at rest).
+// Shell-only decor: the sim never sees it, so determinism and every replay
+// pin stand untouched.
+export const SETTLE = {
+    ticks: 12,
+    dy: (t) => (t <= 0 ? 0 : t >= 10 ? -10 : t >= 7 ? -5 : t >= 4 ? -2 : 0),
+}
 // #1966 THE PAY ECONOMY — the end-of-day deduction slip, pinned under the
 // ID card: below the stamp's witness line (y=296 baseline), above the strip,
 // clear of the right margin. paperscheck's WALL section re-pins all three.
