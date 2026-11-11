@@ -12,16 +12,22 @@
 //       `if (!v.ok)` door from relay/worker.js SOURCE — the unconsented POST
 //       lands. One line, the deployed file, load-bearing. (Hand equivalent:
 //       delete that line in worker.js, run this, restore.)
+//   npm run relaycheck -- --mutate-readlock   # RED by design (#1711 S8):
+//       strips the read-lock doors — the no-key reads Jon asked to see
+//       refused would LAND. (Hand equivalent: delete the `if (d) return d`
+//       lines in worker.js, run this, restore.)
 //
 // The worker runs via scripts/lib/relaysim.mjs (cloudflare:workers shim + a
 // faithful in-memory R2). Node >= 22 (module.register).
 
-import { startRelaySim } from './lib/relaysim.mjs'
+import { startRelaySim, SIM_READ_KEY } from './lib/relaysim.mjs'
 import { validate, REC_FORMAT, REC_FORMAT_V2 } from '../src/utils/recording.js'
-import { validateSessionEnvelope } from '../relay/core.js'
+import { validateSessionEnvelope, sessionReadOk } from '../relay/core.js'
 import { uploadSession, listSessions, probeStore } from '../src/utils/sessionStore.js'
 
 const MUTATE = process.argv.includes('--mutate')
+const MUTATE_RL = process.argv.includes('--mutate-readlock')
+const MUTATE_ANY = MUTATE || MUTATE_RL
 let pass = 0, fail = 0
 const ok = (cond, name, info = '') => {
     if (cond) { pass++; console.log(`  ok   ${name}`) }
@@ -63,7 +69,8 @@ const post = async (base, body, headers = {}) => {
 
     const st = await (await fetch(`${sim.base}/status`)).json()
     ok(st.ok === true && st.sessions === true, '/status advertises sessions:true with the bucket bound', JSON.stringify(st))
-    ok(st.feedback === false && st.jonKey === false, '/status keeps the other capability bools honest (no secrets set)')
+    ok(st.jonKey === true, '/status advertises jonKey:true (the read lockdown has a key to check against)', JSON.stringify(st))
+    ok(st.feedback === false, '/status keeps feedback honest (GH token not set)')
 
     // real client composes with the real server:
     const probe = await probeStore(sim.base)
@@ -76,13 +83,13 @@ const post = async (base, body, headers = {}) => {
     const up2 = await uploadSession(rec2, { player: 'jon', consent: { motion: true, voice: true, at: 1 }, base: sim.base })
     ok(up2.ok && !!up2.key, 'v2 (voice) upload accepted with both consents')
 
-    const back = await (await fetch(`${sim.base}/sessions/${encodeURIComponent(up1.key)}`)).text()
+    const back = await (await fetch(`${sim.base}/sessions/${encodeURIComponent(up1.key)}`, { headers: sim.readHeaders })).text()
     ok(back === JSON.stringify(mkRec(false)), 'GET round-trip: bytes land exactly as the client sent them')
-    const back2 = await (await fetch(`${sim.base}/sessions/${encodeURIComponent(up2.key)}`)).json()
+    const back2 = await (await fetch(`${sim.base}/sessions/${encodeURIComponent(up2.key)}`, { headers: sim.readHeaders })).json()
     ok(JSON.stringify(back2) === JSON.stringify(rec2), 'v2 voice bytes survive the R2 mock unmodified')
 
     // admin listing metadata: put(customMetadata) → head() → sessionRow.
-    const listed = await listSessions({ base: sim.base })
+    const listed = await listSessions({ base: sim.base, key: SIM_READ_KEY })
     ok(listed.ok && listed.sessions.length === 2, 'admin listing sees both uploads through worker.js')
     const row2 = listed.sessions.find((s) => s.key === up2.key)
     const row1 = listed.sessions.find((s) => s.key === up1.key)
@@ -90,10 +97,11 @@ const post = async (base, body, headers = {}) => {
     ok(row2 && row2.audio === true && row1.audio === false, 'audio flag comes from the stored file, per row')
     ok(listed.sessions[0].key <= listed.sessions[1].key, 'listing is key-ordered (R2 lexicographic semantics preserved)')
 
-    // key-shape refusals run through the worker's own regex:
-    const badKey = await fetch(`${sim.base}/sessions/${encodeURIComponent('gauntlet/nope.json')}`)
+    // key-shape refusals run through the worker's own regex (with the read
+    // key so they reach the shape check instead of the lockdown):
+    const badKey = await fetch(`${sim.base}/sessions/${encodeURIComponent('gauntlet/nope.json')}`, { headers: sim.readHeaders })
     ok(badKey.status === 400, 'malformed key refused by the GET route regex', `http ${badKey.status}`)
-    const missing = await fetch(`${sim.base}/sessions/${encodeURIComponent('gauntlet/2026-11-06-seed1-deadbeefca.json')}`)
+    const missing = await fetch(`${sim.base}/sessions/${encodeURIComponent('gauntlet/2026-11-06-seed1-deadbeefca.json')}`, { headers: sim.readHeaders })
     ok(missing.status === 404, 'unknown key answers an honest 404')
 
     sim.close()
@@ -134,6 +142,60 @@ const post = async (base, body, headers = {}) => {
     sim.close()
 }
 
+// --- READ LOCKDOWN (#1711 S8) — reads answer only to the key ------------------------------
+// Jon 2026-11-11 19:14Z: "GET /sessions and GET /sessions/<key> have no auth,
+// so anyone with the URL could list and download voice recordings." These gates
+// pin the door. Under --mutate-readlock the doors are stripped from worker.js
+// SOURCE and the no-key reads LAND — the mutant Jon asked for, graded by the
+// deployed file.
+{
+    const sim = await startRelaySim({ mutateReadlock: MUTATE_RL })
+    const rlUp = await uploadSession(mkRec(true), { player: 'jon', consent: { motion: true, voice: true, at: 1 }, base: sim.base })
+    ok(rlUp.ok && !!rlUp.key, 'uploads still need NO key (Jon: uploads stay as they are)', JSON.stringify(rlUp))
+
+    // These four assert the SECURE behaviour unconditionally: under
+    // --mutate-readlock the doors are gone, the no-key reads LAND with 200
+    // rows/bytes, and exactly these gates go red — the mutant grading Jon
+    // asked for ("a read without the key is refused").
+    const listNoKey = await fetch(`${sim.base}/sessions`)
+    const listNoKeyJson = await listNoKey.json().catch(() => null)
+    ok(listNoKey.status === 401 && listNoKeyJson && listNoKeyJson.err === 'unauthorized',
+        'GET /sessions without the key is refused (the acceptance mutant: dies when the door is stripped)', `http ${listNoKey.status}`)
+    const listWrong = await fetch(`${sim.base}/sessions`, { headers: { 'x-session-key': 'not-the-key' } })
+    ok(listWrong.status === 401, 'GET /sessions with the wrong key is refused', `http ${listWrong.status}`)
+    const getNoKey = await fetch(`${sim.base}/sessions/${encodeURIComponent(rlUp.key)}`)
+    ok(getNoKey.status === 401, 'GET /sessions/<key> without the key is refused — voice bytes never reach the URL-holder', `http ${getNoKey.status}`)
+    const getWrong = await fetch(`${sim.base}/sessions/${encodeURIComponent(rlUp.key)}`, { headers: { 'x-session-key': 'not-the-key' } })
+    ok(getWrong.status === 401, 'GET /sessions/<key> with the wrong key is refused', `http ${getWrong.status}`)
+    const listKeyed = await listSessions({ base: sim.base, key: SIM_READ_KEY })
+    ok(listKeyed.ok && listKeyed.sessions.some((s) => s.key === rlUp.key), 'with the key the admin read still works (lockdown, not lockout)')
+    const getOk = await fetch(`${sim.base}/sessions/${encodeURIComponent(rlUp.key)}`, { headers: sim.readHeaders })
+    ok(getOk.status === 200, 'with the key the download still lands')
+    const pre2 = await fetch(`${sim.base}/sessions`, { method: 'OPTIONS', headers: { origin: 'https://jalfern.com' } })
+    ok(/x-session-key/i.test(pre2.headers.get('access-control-allow-headers') || ''), 'preflight opens x-session-key (browsers can present the key)', pre2.headers.get('access-control-allow-headers'))
+
+    // the rule itself, pinned pure (constant-time core, not just transport):
+    ok(sessionReadOk(SIM_READ_KEY, SIM_READ_KEY) === true, 'core: the correct key is accepted')
+    ok(sessionReadOk('x'.repeat(SIM_READ_KEY.length), SIM_READ_KEY) === false, 'core: a same-length wrong key is refused')
+    ok(sessionReadOk('a'.repeat(999), SIM_READ_KEY) === false, 'core: an over-long guess is refused')
+    ok(sessionReadOk(null, SIM_READ_KEY) === false && sessionReadOk('', SIM_READ_KEY) === false, 'core: missing/empty key refused')
+    ok(sessionReadOk(SIM_READ_KEY, null) === false && sessionReadOk(SIM_READ_KEY, '') === false, 'core: no deployed secret = fail closed, nobody reads')
+    sim.close()
+
+    // fail-closed pre-deploy worker: bucket bound, JON_KEY absent -> reads
+    // refused with an honest reason distinct from 'unauthorized'; uploads live.
+    if (!MUTATE_RL) {
+        const simNoKey = await startRelaySim({ readKey: null })
+        const nc = await (await fetch(`${simNoKey.base}/sessions`)).json().catch(() => null)
+        ok(nc && nc.ok === false && nc.err === 'read lock not configured', 'no JON_KEY deployed: reads fail closed naming the arm state', JSON.stringify(nc))
+        const ncUp = await uploadSession(mkRec(false), { player: 'jon', consent: { motion: true }, base: simNoKey.base })
+        ok(ncUp.ok, 'no JON_KEY deployed: uploads unaffected (the lockdown gates reads only)')
+        const st3 = await (await fetch(`${simNoKey.base}/status`)).json()
+        ok(st3.jonKey === false && st3.sessions === true, 'status tells the two apart before deploy: jonKey:false + sessions:true', JSON.stringify(st3))
+        simNoKey.close()
+    }
+}
+
 // --- unbound store: the honest 503 pair + dead registry ------------------------
 {
     const sim = await startRelaySim({ bind: false })
@@ -155,6 +217,6 @@ const post = async (base, body, headers = {}) => {
 // cross-check: what the worker enforces IS core's contract (shared, not drifted)
 ok(typeof validateSessionEnvelope === 'function' && validate(mkRec(true)) === null, 'the envelopes graded here are structurally valid rec files')
 
-console.log(`\nrelaycheck: ${pass}/${pass + fail} checks passed — ${fail ? (MUTATE ? 'RED BY DESIGN (--mutate)' : 'FAILED') : 'OK'}`)
-if (fail && !MUTATE) process.exit(1)
-if (!fail && MUTATE) { console.log('mutate: expected red, got green — the door line is not load-bearing?'); process.exit(1) }
+console.log(`\nrelaycheck: ${pass}/${pass + fail} checks passed — ${fail ? (MUTATE_ANY ? `RED BY DESIGN (${MUTATE ? '--mutate' : '--mutate-readlock'})` : 'FAILED') : 'OK'}`)
+if (fail && !MUTATE_ANY) process.exit(1)
+if (!fail && MUTATE_ANY) { console.log('mutate: expected red, got green — the door line is not load-bearing?'); process.exit(1) }

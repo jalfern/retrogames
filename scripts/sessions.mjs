@@ -7,6 +7,10 @@
 //   npm run sessions -- --limit 200
 //   npm run sessions -- --store https://other.host --json
 //
+// The read lockdown (#1711 S8): the store refuses reads without the key, so
+// run it as `JON_KEY=<secret> npm run sessions` (the same secret the worker
+// deploys with; uploads from phones do not need it).
+//
 // Exit codes: 0 listing succeeded (even when empty), 1 store unreachable or
 // not configured — a cron can watch it.
 
@@ -22,14 +26,16 @@ const flagVal = (name, dflt) => {
 const base = flagVal('store', process.env.SESSION_STORE || storeFromQuery(''))
 const limit = Number(flagVal('limit', 50)) || 50
 const asJson = argv.includes('--json')
+const key = process.env.JON_KEY || null
 
-const res = await listSessions({ base, limit })
+const res = await listSessions({ base, limit, key })
 if (asJson) {
     console.log(JSON.stringify(res, null, 2))
     process.exit(res.ok ? 0 : 1)
 }
 if (!res.ok) {
-    console.error(`sessions: ${res.reason || 'store unreachable'} (base ${base})`)
+    const hint = res.reason === 'unauthorized' ? ' — set JON_KEY (the read lockdown, #1711 S8)' : ''
+    console.error(`sessions: ${res.reason || 'store unreachable'}${hint} (base ${base})`)
     process.exit(1)
 }
 if (!res.sessions.length) {

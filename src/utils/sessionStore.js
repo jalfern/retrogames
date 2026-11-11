@@ -89,12 +89,16 @@ export async function uploadSession(rec, opts = {}) {
 
 // listSessions is the admin read (scripts/sessions.mjs and any future admin
 // page ride it). Returns { ok, sessions: [ { key, game, player, seed, ticks,
-// players, audio, uploadedAt } ] }.
+// players, audio, uploadedAt } ] }. Since the read lockdown (#1711 S8) the
+// store answers reads only with the JON_KEY in x-session-key; `opts.key`
+// carries it (callers read it from env — keys never hardcode). Without it
+// the honest answer is ok:false reason:'unauthorized'.
 export async function listSessions(opts = {}) {
-    const { base = STORE_DEFAULT, limit = 50, fetchImpl = null } = opts
+    const { base = STORE_DEFAULT, limit = 50, key = null, fetchImpl = null } = opts
     const f = fetchImpl || globalThis.fetch
     try {
-        const res = await f(`${base}/sessions?limit=${encodeURIComponent(String(limit))}`)
+        const res = await f(`${base}/sessions?limit=${encodeURIComponent(String(limit))}`,
+            key ? { headers: { 'x-session-key': String(key) } } : undefined)
         if (!res.ok) {
             let err = `http ${res.status}`
             try { const j = await res.json(); if (j && j.err) err = j.err } catch { /* ignore */ }

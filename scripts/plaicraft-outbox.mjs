@@ -81,7 +81,7 @@ const penCount = (page) => page.evaluate(() => new Promise((res) => {
 
 const storeRows = async () => {
     try {
-        const j = await (await fetch(`${sim.base}/sessions`)).json()
+        const j = await (await fetch(`${sim.base}/sessions`, { headers: sim.readHeaders })).json()
         return j.sessions || []
     } catch { return [] }
 }
@@ -218,7 +218,7 @@ try {
 
     const row = rowsA.find((s) => s.game === 'gauntlet')
     r.check('store row names the game and player', !!row && row.player === 'player', JSON.stringify(row))
-    const text = await (await fetch(`${sim.base}/sessions/${encodeURIComponent(row.key)}`)).text()
+    const text = await (await fetch(`${sim.base}/sessions/${encodeURIComponent(row.key)}`, { headers: sim.readHeaders })).text()
     const rec = JSON.parse(text)
     r.check('stored file validates', validate(rec) === null, validate(rec) || '')
     r.check('it is the killed take (seed + ticks match what the pen held)', !!rec.seed && rec.ticks >= 20, `seed ${rec.seed}, ticks ${rec.ticks}`)
@@ -262,7 +262,7 @@ try {
     r.check('S7: the online-drain says SYNCED too (mirror on window.__syncBadge)', !!pillSyncB, pillSyncB || '')
     if (rowsB) {
         const rowB = rowsB.find((s) => s.seed !== rec.seed) || rowsB[1]
-        const recB = JSON.parse(await (await fetch(`${sim.base}/sessions/${encodeURIComponent(rowB.key)}`)).text())
+        const recB = JSON.parse(await (await fetch(`${sim.base}/sessions/${encodeURIComponent(rowB.key)}`, { headers: sim.readHeaders })).text())
         const verB = verifyRecording(recB, makeReplayDriver(recB.rules || {}))
         r.check('the offline-retry take replay-verifies too (kills-vs-structural discriminator for the line above)', verB.ok, verB.mismatch ? `seed ${recB.seed} diverged at tick ${verB.mismatch.tick} of ${recB.ticks}` : verB.error || '')
     }

@@ -153,13 +153,13 @@ try {
 r.check('the take uploaded through the consent gate', !!(uploaded && uploaded.uploaded), JSON.stringify(uploaded))
 if (!(uploaded && uploaded.uploaded)) await r.exit(browser)
 
-// the store saw it, with audio
-const listed = await (await fetch(`${BASE}/sessions`)).json()
+// the store saw it, with audio (reads carry the lockdown key, #1711 S8)
+const listed = await (await fetch(`${BASE}/sessions`, { headers: sim.readHeaders })).json()
 const row = (listed.sessions || []).find((s) => s.key === uploaded.key)
 r.check('the real worker lists the session with audio', !!(row && row.audio === true && row.game === 'gauntlet'), JSON.stringify(row))
 
 // download back and read the take
-const text = await (await fetch(`${BASE}/sessions/${encodeURIComponent(uploaded.key)}`)).text()
+const text = await (await fetch(`${BASE}/sessions/${encodeURIComponent(uploaded.key)}`, { headers: sim.readHeaders })).text()
 const rec = JSON.parse(text)
 r.check('stored file validates', validate(rec) === null, validate(rec) || '')
 r.check('v2 file with one voice track', rec.format === 'retrogames-rec/v2' && rec.voice && rec.voice.tracks.length === 1, rec.format)
