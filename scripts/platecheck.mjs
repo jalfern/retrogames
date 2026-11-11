@@ -10,6 +10,7 @@
 import {
     createGame, step, simState, hash, solvePad, drainEvents, buildBomb, railOpen, trayLayout, ruleOf,
 } from '../src/games/TalkMeDown/engine.js'
+import { makeRailFx, stepRailFx, railCellPose } from '../src/games/TalkMeDown/art.js'
 import { readFileSync } from 'node:fs'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -246,7 +247,111 @@ const home = g => { for (let o = railOpen(g.tray); g.sel !== o; o = railOpen(g.t
     ok('hand shift: sel moves, nothing else does, zero events (hash law stands)', !bad && moved > 0, bad || `moved=${moved}`)
 }
 
-// ---- 10. mutant: remove the open-end gate, gates must die ------------------------
+// ---- 10. THE SLIDE — view-only rail animation (#1923) -----------------------
+// fx is stepped by the renderer from diffs of (held, tray, sel). Gates prove:
+// a pull spawns an OUT flight on the slot that emptied, a push-back spawns IN,
+// the flight lands, the hand glides, the bomb swap re-baselines silently, the
+// path is flush at both ends and monotone, and the hash law stands (fx is
+// view-only). Five named mutants die.
+{
+    const dir = new URL('../src/games/TalkMeDown/', import.meta.url)
+    const artSrc = readFileSync(new URL('art.js', dir), 'utf8')
+    const view = readFileSync(new URL('index.jsx', dir), 'utf8')
+    const K = '5/2/AB12CD'
+    const drive = (E, seq) => { const fx = E.makeRailFx(); for (const s of seq) E.stepRailFx(fx, s[0], s[1], s[2], s[3]); return fx }
+    const artGate = (E) => {
+        const fx = drive(E, [[0, [1, 1, 0], 1, K], [1, [1, 0, 0], 1, K]])
+        return !!fx.anim && fx.anim.kind === 'out' && fx.anim.slot === 1
+    }
+    const inGate = (E) => {
+        const fx = drive(E, [[0, [1, 1, 0], 1, K], [1, [1, 0, 0], 1, K], [0, [1, 1, 0], 1, K]])
+        return !!fx.anim && fx.anim.kind === 'in' && fx.anim.slot === 1
+    }
+    const landGate = (E) => {
+        const fx = drive(E, [[0, [1, 1, 0], 1, K], [1, [1, 0, 0], 1, K]])
+        const flying = !!fx.anim && fx.anim.t <= fx.anim.dur
+        for (let i = 0; i < 15; i++) E.stepRailFx(fx, 1, [1, 0, 0], 1, K)
+        return flying && fx.anim === null
+    }
+    const glideGate = (E) => {
+        const fx = drive(E, [[0, [1, 1, 0], 2, K], [0, [1, 1, 0], 0, K]])
+        const mid = fx.handPos
+        for (let i = 0; i < 11; i++) E.stepRailFx(fx, 0, [1, 1, 0], 0, K)
+        return mid > 0.2 && mid < 1.9 && fx.handPos === 0
+    }
+    ok('a pull spawns an OUT flight on the slot that emptied', artGate({ makeRailFx, stepRailFx }))
+    ok('push-back spawns an IN flight onto the slot that refilled', inGate({ makeRailFx, stepRailFx }))
+    ok('the flight flies for its frames and lands (anim clears after dur)', landGate({ makeRailFx, stepRailFx }))
+    ok('quiet steps raise no anim', drive({ makeRailFx, stepRailFx },
+        [[0, [1, 1, 0], 2, K], [0, [1, 1, 0], 2, K], [1, [1, 1, 0], 2, K]]).anim === null)
+    ok('the hand glides between holders and parks exactly on the pick', glideGate({ makeRailFx, stepRailFx }))
+    // bomb swap: the fresh plate must not ghost the old plate's held cell away.
+    ok('a new bomb re-baselines silently — no ghost across plates',
+        drive({ makeRailFx, stepRailFx }, [[1, [1, 0, 0], 1, K], [0, [1, 1, 0], 2, '6/3/ZY98XX']]).anim === null)
+    ok('fx replays identically (same steps => same view state)',
+        JSON.stringify(drive({ makeRailFx, stepRailFx }, [[0, [1, 1, 0], 2, K], [1, [1, 0, 0], 1, K], [0, [1, 1, 0], 0, K]]))
+        === JSON.stringify(drive({ makeRailFx, stepRailFx }, [[0, [1, 1, 0], 2, K], [1, [1, 0, 0], 1, K], [0, [1, 1, 0], 0, K]])))
+    // the slide is view-only: interleaving it into a full solve leaves hashes equal.
+    {
+        const a = createGame(77, 1), b = createGame(77, 1)
+        const fxA = makeRailFx()
+        let same = true
+        for (let i = 0; i < 600; i++) {
+            const pa = solvePad(a); step(a, pa)
+            stepRailFx(fxA, a.held, a.tray, a.sel, `${a.round}/${a.bombsCleared}/${a.features.serial}`)
+            const pb = solvePad(b); step(b, pb)
+            if (hash(a) !== hash(b)) { same = false; break }
+        }
+        ok('hash law: 600 solvePad ticks with fx interleaved run byte-identical', same)
+    }
+    // pose law: flush in the slot at s=0, flush flat in the pocket at s=1,
+    // never travelling back along the rail, tilted only mid-swing.
+    ok('every holder sits flush at s=0 (the ghost starts where the cell was)',
+        [0, 1, 2].every((i) => { const p = railCellPose(i, 0); return p.x === 118 + i * 68 && p.y === 146 && p.w === 44 && p.h === 74 && p.tilt === 0 }))
+    ok('every path lands flush in the pocket clip, seat flat',
+        [0, 1, 2].every((i) => { const p = railCellPose(i, 1); return p.x === 344 && p.y === 244 && p.w === 32 && p.h === 26 && Math.abs(p.tilt) < 1e-9 }))
+    {
+        let mono = true, mid = true
+        for (const i of [0, 2]) {
+            let px = -1
+            for (let t = 0; t <= 14; t++) { const p = railCellPose(i, t / 14); if (p.x < px) mono = false; px = p.x }
+            if (!(railCellPose(i, 0.8).tilt > 0.1)) mid = false
+        }
+        ok('the ghost rides only toward the mouth (x monotone)', mono)
+        ok('it tilts mid-swing and seats flat', mid)
+    }
+    // wiring pins: the landing slot reads empty, the clip waits for its cell,
+    // the renderer drives fx, and fx stays optional (pre-slide pixels).
+    ok('the landing slot reads empty while its ghost is in flight', /const occ = tray\[i\] === 1 && i !== mask/.test(artSrc))
+    ok('the pocket clip stands empty until the cell arrives', /if \(!inFlight \|\| inFlight\.kind !== 'out'\)/.test(artSrc))
+    ok('the renderer steps fx from the live plate and hands it to the draw',
+        /ART\.stepRailFx\(railFxRef\.current, gs\.held, gs\.tray, gs\.sel/.test(view) && /gs\.held, gs\.tray, gs\.sel, fx\)/.test(view))
+    ok('fx is optional — old callers render the pre-slide plate byte-identical',
+        /export function drawBack\(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn = null, selIn = 2, fx = null\)/.test(artSrc))
+    // named mutants — each must die on the gate it is named for.
+    const runMutantArt = async (name, mut, gate) => {
+        if (mut === artSrc) { ok(`mutant ${name}: target line not found`, false); return }
+        const tmp = new URL(`.mutant-art-${name}.mjs`, dir)
+        plant(tmp, mut)
+        try {
+            const E = await import(tmp.href)
+            ok(`mutant ${name} dies by name`, !gate(E))
+        } finally { pull(tmp) }
+    }
+    await runMutantArt('kind-flip', artSrc.replace("kind: 'out', slot", "kind: 'in', slot"), artGate)
+    await runMutantArt('never-land', artSrc.replace('++fx.anim.t > fx.anim.dur', 'false'), landGate)
+    await runMutantArt('hand-snap', artSrc.replace(
+        'fx.handPos = Math.abs(hd) < 0.06 ? fx.sel : fx.handPos + Math.sign(hd) * Math.min(0.34, Math.abs(hd))',
+        'fx.handPos = fx.sel'), glideGate)
+    const mMask = artSrc.replace('const occ = tray[i] === 1 && i !== mask', 'const occ = tray[i] === 1')
+    ok('mutant mask-forget dies by name (the rail would show the cell twice)',
+        mMask !== artSrc && !/const occ = tray\[i\] === 1 && i !== mask/.test(mMask))
+    const mPocket = artSrc.replace("if (!inFlight || inFlight.kind !== 'out') {", 'if (true) {')
+    ok('mutant pocket-double dies by name (clip and ghost both carry the cell)',
+        mPocket !== artSrc && !/inFlight\.kind !== 'out'/.test(mPocket))
+}
+
+// ---- 11. mutant: remove the open-end gate, gates must die ------------------------
 if (process.argv.includes('--mutate')) {
     const dir = new URL('../src/games/TalkMeDown/', import.meta.url)
     const src = readFileSync(new URL('engine.js', dir), 'utf8')
