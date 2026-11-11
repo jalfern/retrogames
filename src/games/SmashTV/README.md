@@ -81,6 +81,19 @@ sheet (seat-palette aware). `juice.js recoilKick` snaps the carriage back 2 px
 on report, decaying to zero within 5 ticks ≤ the tightest fire interval. The
 sim is untouched — paint-only, so every seed hash and replay pin still holds.
 
+**Gun language at phone scale (#1950).** The 2 px carriage kick vanishes once
+the 256x248 canvas downscales, so the guns speak louder than one recoil vector:
+`SHELL_KICK` rattles the whole shell on report, weighted by the iron
+(laser 2, MG 1.5, spread 1, twin 0 — never more than an ordinary kill jolt);
+`barrelHot` glows the firing barrel in its own muzzle colour for the first
+instants of the kick; a fresh weapon pick-up flashes a mount glint that fades
+over `GLINT_TICKS`. `sprite.js SPREAD_FLOOR` slides a twin's crowded barrel
+along its perpendicular until it clears 2 px of the body centre line, so one
+gun stays visibly behind each shoulder at every diagonal aim (cardinal geometry
+byte-identical; flat aims keep their vertical stack). And `art.js
+PAULDRON_BOB` lifts the chrome caps 1 px as the feet plant, so the shoulders
+ride the run cycle — steady at rest.
+
 ## VARISIZE BOARD + CAMERA (#1973, whole-show by #2007, finale by #2024)
 The cabinet framed the show through its 16:9 lens — arenas read wider than the
 playfield. #1973 widened rooms 5 and 8; **#2007 widened the whole show**;

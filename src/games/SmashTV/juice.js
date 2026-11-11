@@ -28,6 +28,24 @@ export const recoilKick = (since) => (since < RECOIL_TICKS ? RECOIL_PX * (1 - si
 // spent-casing sparks kick out the muzzle in the gun's own tip colour
 export const casingCol = (weapon) => GUN[weapon].tip
 
+// shell shake on report (#1950): the 2px carriage kick vanishes once the
+// 256x248 canvas downscales on a phone, so the heavy iron shakes the WHOLE
+// shell — MG and LASER rattle it, SPREAD twitches, the twin is too light and
+// too fast to ever move the cabinet. Never more than an ordinary kill jolt.
+export const SHELL_KICK = { twin: 0, gun: 1.5, spread: 1, laser: 2 }
+export const shellKick = (weapon) => SHELL_KICK[weapon] || 0
+
+// barrel heat on report (#1950): for the first instants of the recoil the
+// firing barrel glows in the gun's own muzzle colour instead of gunmetal —
+// the shot reads even when the carriage travel is sub-pixel on a phone.
+export const HOT_FLOOR = 1.5
+export const barrelHot = (kick) => kick >= HOT_FLOOR
+
+// mount glint (#1950): when a new weapon arrives the shoulder mounts flash
+// and the bloom fades over GLINT_TICKS draw frames, calling out the swap.
+export const GLINT_TICKS = 12
+export const glintPhase = (t) => Math.max(0, Math.min(1, t / GLINT_TICKS))
+
 // kill shake magnitude: an ordinary kill jolts the floor, a boss add lands
 // harder, and killing THE ANNOUNCER himself rattles the whole cabinet
 export const KILL_SHAKE = { kill: 2, bossAdd: 6, boss: 12 }
