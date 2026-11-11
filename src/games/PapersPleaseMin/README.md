@@ -28,16 +28,18 @@ the title's keystone, so these notes are organized around it.
 
 ## Traps, the naive eye, and the slack rule
 
-Seven TRAP species in `gen.js` are legal papers that a careless eye
+Eight TRAP species in `gen.js` are legal papers that a careless eye
 misjudges: expires-TODAY (valid), same-name-on-the-wanted-sheet (the rule
 is name AND number), a foreign-looking city on an allowed passport (only
 the country is law), an ID with a mismatched height (height is not a rule),
 a child without ID (DOB exempts), an ID weight against the scale (no rule
-reads it), and a passport with exactly the curfew's 7-day grace.
+reads it), a passport with exactly the curfew's 7-day grace, and the
+aged photo (#1938: grey hair, same face — time fades color, forgery
+changes features).
 
 The harness owns `naiveDecide` — the careless eye — and the suite asserts
 the misjudgment set is EXACTLY the planted set, ≤2 traps per day, ≥1 from
-day 2, all seven species staged every week (`genWeek` schedules species
+day 2, every species staged every week (`genWeek` schedules species
 with a used-set: coverage is a construction, not a hope).
 
 The slack rule ("winnable by a solver is not humanly winnable") maps here
@@ -46,6 +48,35 @@ them — must still clear every seed's whole week (`<= 2` strikes a day,
 three ends it), and a pure-chaos booth must fall on day one. Zero slack
 (trap-filled queues) fails the build; mutant 6 in `--mutate` puts that
 failure back.
+
+## PORTRAIT — the photo on the paper (#1938)
+
+Comparing the ID photo against the person at the counter is the original's
+signature inspection verb, and here the booth's procedural portrait was
+pure atmosphere until this stage made it load-bearing:
+
+- Every applicant carries a face descriptor: structural features
+  (`style` 0–3 hair cut, `narrow` face width, `glasses`, `must` facial
+  hair) plus atmosphere colors (`skin`, `hairC`, `shirtC`). The live face
+  at the counter and the passport's mini photo are BOTH painted by
+  `drawFace` from a descriptor — an honest paper's two descriptors are
+  identical, so the two portraits are byte-identical renderings at two
+  scales (`papersplay` proves it: `__ppTest.portraitPix()` paints both at
+  scale 1 and counts differing pixels per feature band).
+- `PORTRAIT` compares ONLY the structural features and convicts when they
+  disagree — the forger's violation is `EXACTLY ONE feature` (paperscheck
+  pins it), and the evidence names it in words a guard would say
+  (`PHOTO WEARS GLASSES, ENTRANT DOES NOT`). Colors never convict: that
+  is what keeps the aged-photo trap legal.
+- The rule rides `DAY_RULES` from **day 1**, not a late wake: the
+  +1-rule-per-day growth law has no free slot after day 1 (day 6 owns
+  IDREQ, day 7 CURFEW), and unlike the paper laws the photo check needs
+  no teaching — the two faces sit side by side. Nine laws on day 7 is why
+  `WALL.top` moved 44→38; the fit sweep re-proves the deepest wall lands
+  its wanted sheet at y=356, above the SCALE box at y=358.
+- `judge` still reads the hidden truth (`photoMismatch`), so every paper
+  is graded twice as before, and the fairness prover is unchanged doctrine:
+  a deny with no visible witness is red.
 
 ## The day loop (`sim.js`)
 
@@ -79,7 +110,7 @@ spent by day 4 by construction) — a game rule defended by the generator's
 own audit, which is exactly how this file grew CURFEW in the first place:
 the rulebook-awakening check caught day 7 as a no-op day.
 
-## Mutants (11, all die under `npm run paperscheck -- --mutate`)
+## Mutants (14, all die under `npm run paperscheck -- --mutate`)
 
 `<`→`<=` expiry; wanted by name only; IDREQ ignoring the DOB; the scale
 reading the paperwork (witness lies); species coverage becoming luck;
@@ -92,14 +123,23 @@ regression #1889 removed — short-month seams read grace wrong); the tenth
 strips `dadd`'s backward carry (NOV 00 ships) — the bug the rolled week
 actually found. The eleventh shrinks the wanted sheet back to two decoys
 (#1902) — killed by the slot-used witness, so the fifth portrait can never
-quietly become dead letter.
+quietly become dead letter. The twelfth deletes the PORTRAIT block from
+`decide` (forgers walk free while `judge` still denies — the prover's own
+verdict-twin catches it); the thirteenth de-ages the trap (photo keeps its
+live hair color, the naive eye stops biting, the trap-count witness sees
+the hole); the fourteenth lets hair COLOR convict — the aged photo is
+denied and the truth path screams (#1938).
 
 ## Gates
 
 `lint:papers`, `paperscheck` (static CI), `papersplay` (smoke CI: real
 keys only — right call stamps its ink color, wrong call frames the papers
 red and names the witness, day banners fire, chaos is demoted, seed 2
-survives the week, pixels vs sim proven side by side).
+survives the week, pixels vs sim proven side by side; since #1938 also:
+the passport carries a painted photo in its beige frame, honest papers
+render byte-identical face+photo pixels, and a forged photo denies with
+its own feature band lit — sampled only after the stamp ticks out, since
+during a stamp the counter shows the previous document).
 
 ## Honest gaps
 
@@ -116,7 +156,21 @@ survives the week, pixels vs sim proven side by side).
   `paperscheck` pins the cap at 5, witnesses that the fifth slot is really
   staged across the seed sweep, fits the synthetic five-entry worst day, and
   mutant m11 (decoys back to two) proves the witness bites.
-- The portrait is procedural but not read by any rule — it is atmosphere,
-  deliberately load-bearing for nothing.
-- Day 7's queue is long (12 entrants); it is the finale, and the clumsy
-  budget of two still clears it with room to spare (proven, every seed).
+- **CLOSED by #1938 (2026-11-10):** the portrait was procedural but read
+  by no rule. The passport now carries a photo and PORTRAIT compares it
+  against the face at the counter — cut, shape, glasses, facial hair;
+  colors ride free so the aged-photo trap stays legal. `paperscheck`
+  pins descriptor parity, exactly-one-feature breaks, per-seed trap
+  witnesses and the one-line-text fit law; `papersplay` proves the
+  evidence is pixels (band lit, honest papers byte-identical).
+- Day 7's queue is long (13 entrants since PORTRAIT added its test paper);
+  it is the finale, and the clumsy budget of two still clears it with room
+  to spare (proven, every seed).
+- The photo paints at 0.6 scale — the features stay distinguishable at
+  that size (papersplay counts the pixels), but a 40px face is a coarse
+  read next to the original's detailed portrait art; and the compared
+  feature set is four (cut, width, glasses, facial hair) where the
+  original's eye roams a whole face.
+- Face variety is combinatorial (five skins × five hairs × four cuts ×
+  width/glasses/must), not hand-authored characters — everyone is a
+  mix of the same parts.

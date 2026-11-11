@@ -8,7 +8,11 @@ export const CW = 680, CHS = 440
 export const STRIP_H = 40
 
 export const WALL = {
-    x: 12, top: 44, labelLine: 14,
+    // top 44 -> 38: PORTRAIT (#1938) rides the sheet from day 1, so day 7
+    // prints nine laws. The lifted rim keeps the deepest wall's wanted sheet
+    // above the SCALE box (wantedEnd 356 <= SCALE.y 358) — paperscheck's
+    // fit sweep proved the old rim buries it at y=364 with nine rules.
+    x: 12, top: 38, labelLine: 14,
     ruleWrap: 34, ruleSize: 11, ruleLine: 12, ruleGap: 4,
     listSize: 10, listLine: 12,
     wantedSize: 9, wantedLine: 10,
@@ -21,6 +25,9 @@ export const CHAR = 0.6
 export const SCALE = { x: 12, y: 358, w: 96, h: 30 }
 export const PORTRAIT = { x: 262, y: 26, headCx: 55, headRx: 34, bodyBottom: 122 }
 export const PAPERS = { x: 356, y: 40, w: 300, h: 148 }
+// the passport photo (#1938): passport-relative box for the mini face draw
+// (drawFace at scale s). Shares PAPERS' right margin: 356+232+66=654 <= CW-4.
+export const PHOTO = { x: 232, y: 24, w: 66, h: 76, s: 0.6 }
 export const ID = { x: 356, y: 200, w: 190, h: 64 }
 export const STAMP = { x: 506, y: 110 }
 

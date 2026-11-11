@@ -12,7 +12,7 @@
 //
 // Sections: Math.random banned · THE FAIRNESS PROVER (verdict twin +
 // witness map) · TRAP CONTRACT (a naive eye misjudges EXACTLY the planted
-// traps, budget <= 2/day, >= 1 from day 2, all six species per week) ·
+// traps, budget <= 2/day, >= 1 from day 2, every species per week) ·
 // rulebook (every rule exercises the day it wakes; no law before its day) ·
 // calendar (one clock: serials match the wall everywhere; the week rolls
 // across a real month-end #1889) · clumsy play clears the week AND chaos
@@ -22,10 +22,10 @@
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
-import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt } from '../src/games/PapersPleaseMin/rules.js'
-import { genWeek, genDay, viewOf, CITY2C, TRAPS } from '../src/games/PapersPleaseMin/gen.js'
+import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, FEATURES } from '../src/games/PapersPleaseMin/rules.js'
+import { genWeek, genDay, viewOf, CITY2C, TRAPS, GREY } from '../src/games/PapersPleaseMin/gen.js'
 import { CFG, newRun, step, stateHash, current, autopilot } from '../src/games/PapersPleaseMin/sim.js'
-import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, wallFit } from '../src/games/PapersPleaseMin/layout.js'
+import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SRC = join(HERE, '../src/games/PapersPleaseMin')
@@ -54,6 +54,13 @@ function naiveDecide(v) {
     if (has('IDMATCH') && p.idcard && (p.idcard.name !== pp.name || p.idcard.height !== pp.height || dnum(p.idcard.dob) !== dnum(pp.dob))) return 'deny'
     if (has('IDREQ') && !p.papers.includes('idcard')) return 'deny'
     if (has('CURFEW') && dnum(pp.expiry) - v.dateNum <= 7) return 'deny'   // counts today among the grace days
+    // #1938 PORTRAIT temptation: the rookie compares the photos LIKE THE
+    // PORTRAIT RULE — except the rookie lets color convict too. Grey hair
+    // (the aged-photo trap) bites; and every structural break bites as it
+    // should, so a break is never miscounted as a trap.
+    if (has('PORTRAIT') && p.face && pp.photo) {
+        for (const k of Object.keys(p.face)) if (p.face[k] !== pp.photo[k]) return 'deny'
+    }
     return 'approve'
 }
 
@@ -244,6 +251,61 @@ section('THE CALENDAR IS ONE CLOCK (#1889) — serials match the wall, the week 
     seamCase([1982, 11, 1], [1982, 11, 1], 'approve', 'expires-TODAY doctrine holds at the month seam', ['EXPIRED'])
 }
 
+// ------------------------------------------------------------ PORTRAIT ----
+section('PORTRAIT (#1938) — the photo on the paper against the face at the counter')
+{
+    // 1. honest papers paint ONE face: every applicant that is not a
+    //    portrait-forger carries a photo structurally identical to the
+    //    live face (and identical in color too — an aged photo is the ONLY
+    //    honest color move, and it belongs to the trap).
+    // 2. a forger breaks EXACTLY ONE compared feature, and never a color —
+    //    a color-only move must be the aged-photo trap, not a break.
+    // 3. every break prints a witness naming its feature.
+    let forged = 0, aged = 0
+    for (const seed of SEEDS) {
+        for (const day of genWeek(seed).days) {
+            ok(day.rules.includes('PORTRAIT'), `day ${day.n} went without the photo law — PORTRAIT rides every day`)
+            for (const a of day.queue) {
+                const pp = a.person.passport
+                if (!pp) continue
+                const feats = FEATURES.filter((f) => a.person.face[f] !== pp.photo[f])
+                const colors = ['skin', 'hairC', 'shirtC'].filter((k) => a.person.face[k] !== pp.photo[k])
+                if (a.breakRule === 'PORTRAIT') {
+                    forged++
+                    ok(feats.length === 1, `seed ${seed} day ${day.n}: a portrait break moved ${feats.length} features — a forger overwrites exactly one`)
+                    ok(colors.length === 0, `seed ${seed} day ${day.n}: a portrait break touched color — color is never forgery`)
+                    ok(a.truth.photoMismatch === true, 'a forge the truth path forgot')
+                    const d = decide(viewOf(day, a))
+                    const ev = d.violations.find((x) => x.rule === 'PORTRAIT')
+                    ok(ev && /HAIR|FACE|GLASSES|FACIAL HAIR/.test(ev.evidence),
+                        `seed ${seed} day ${day.n}: the PORTRAIT deny printed no feature word: "${ev && ev.evidence}"`)
+                } else {
+                    ok(feats.length === 0 && a.truth.photoMismatch === false,
+                        `seed ${seed} day ${day.n}: a hidden portrait break nobody staged (${feats.join(',')}) — unfair paper`)
+                }
+                if (a.trap === 'PORTRAIT') {
+                    aged++
+                    ok(pp.photo.hairC === GREY && a.person.face.hairC !== GREY,
+                        `seed ${seed} day ${day.n}: the aged-photo trap is not grey-vs-live hair`)
+                    ok(feats.length === 0 && colors.length === 1, 'the aged photo moved something the law compares')
+                }
+            }
+        }
+    }
+    ok(forged >= SEEDS.length * 7, `only ${forged} portrait forges across ${SEEDS.length * 7} rule-days — the law skipped its exercise`)
+    // every seed's week stages the aged-photo trap at least once — the
+    // newest species must be REAL, not board decoration (#1902 pattern)
+    for (const seed of SEEDS) {
+        const has = genWeek(seed).days.some((d) => d.queue.some((a) => a.trap === 'PORTRAIT'))
+        ok(has, `seed ${seed}: the week never showed an aged photo — the trap species is theatre`)
+    }
+    ok(aged >= SEEDS.length, `only ${aged} aged photos across the sweep`)
+    // the wall owes PORTRAIT exactly one line: the day-7 fit (y=356 of the
+    // 358 law) silently degrades the moment this text wraps
+    ok(ruleLines(RULES.PORTRAIT.text) === 1, `PORTRAIT prints in ${ruleLines(RULES.PORTRAIT.text)} lines — a two-line law buries the wanted sheet`)
+    console.log(`  ..    ${forged} forges each broke exactly one feature, ${aged} aged photos stayed legal, every break named itself on the wall`)
+}
+
 // ---------------------------------------------- clumsy clears / chaos collapses ----
 section('SLACK (CLUMSY CLEARS) vs CHAOS (COLLAPSES) — every seed')
 {
@@ -309,9 +371,14 @@ section('DETERMINISM')
     const g3 = newRun(2)
     step(g3, { action: decide(current(g3).view).verdict })
     ok(stateHash(g3) !== stateHash(newRun(2)), 'stateHash ignores the stamp')
-    // genDay called standalone must equal the week's own day (no hidden state)
+    // genDay called standalone must equal the week's own day (no hidden
+    // state). Replay the week's OWN trap pick — pinning an index by hand
+    // hard-codes the rotation, which PORTRAIT (#1938) legitimately shifted.
     const wk = genWeek(1)
-    ok(JSON.stringify(genDay(1, 4, 3)) === JSON.stringify(wk.days[3]), 'genDay standalone drifts from genWeek — hidden state')
+    const d4 = wk.days[3]
+    const t4 = d4.queue.find((a) => a.trap)
+    const si4 = t4 ? TRAPS.findIndex((t) => t.rule === t4.trap) : null
+    ok(JSON.stringify(genDay(1, 4, si4)) === JSON.stringify(d4), 'genDay standalone drifts from genWeek — hidden state')
 }
 
 // ---------------------------------------------------------------- mutants ----
@@ -584,6 +651,57 @@ if (MUT) {
                 for (const day of m.gen.genWeek(seed).days) deepest = Math.max(deepest, day.wanted.length)
             }
             return deepest >= 5
+        })
+    // 12. PORTRAIT deleted from the booth's eye — forgers walk free while
+    //     the truth path still denies. The fairness prover is the witness.
+    await tryMut('PORTRAIT block deleted from decide (forgers walk free)',
+        mutMod('rules.js', "if (has('PORTRAIT') && p.passport) {", "if (false && has('PORTRAIT') && p.passport) {", 'm12'),
+        (m) => {
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    for (const a of day.queue) {
+                        const d = m.rules.decide(m.gen.viewOf(day, a))
+                        const j = m.rules.judge({ truth: a.truth, person: a.person, rules: day.rules, date: day.date, allowed: day.allowed, scale: a.scale })
+                        if (d.verdict !== j.verdict) return false
+                    }
+                }
+            }
+            return true
+        })
+
+    // 13. the aged photo keeps its live hair color — the trap loses its
+    //     bait, the naive eye stops biting, and the trap contract (which
+    //     counts flips == planted) sees the hole.
+    await tryMut('aged-photo trap stops going grey (trap has no bait)',
+        mutMod('gen.js', 'photo: { ...a.person.face, hairC: GREY } }', 'photo: { ...a.person.face } }', 'm13'),
+        (m) => {
+            for (const seed of SEEDS.slice(0, 4)) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    for (const a of day.queue) {
+                        const v = m.gen.viewOf(day, a)
+                        const flip = naiveDecide(v) !== m.rules.decide(v).verdict
+                        if (flip !== !!a.trap) return false
+                    }
+                }
+            }
+            return true
+        })
+
+    // 14. color starts convicting: portraitDiffs adds hairC, and the booth
+    //     denies the aged photo its truth path calls legal.
+    await tryMut('hair COLOR convicts (the aged photo is denied)',
+        mutMod('rules.js', 'if (face.style !== photo.style) ev.push(', "if (face.hairC !== photo.hairC) ev.push('PHOTO HAIR COLOR DIFFERS')\n    if (face.style !== photo.style) ev.push(", 'm14'),
+        (m) => {
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    for (const a of day.queue) {
+                        const d = m.rules.decide(m.gen.viewOf(day, a))
+                        const j = m.rules.judge({ truth: a.truth, person: a.person, rules: day.rules, date: day.date, allowed: day.allowed, scale: a.scale })
+                        if (d.verdict !== j.verdict) return false
+                    }
+                }
+            }
+            return true
         })
 }
 
