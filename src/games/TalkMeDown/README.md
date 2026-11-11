@@ -140,6 +140,14 @@ the couch — or the mic.
   `KEY_CALL_HINT` (press X...) while it is off; the composition rides the LCD
   glass in amber (`CALL> cut red_`). Online the fold laws inside voiceCall
   run unchanged (guest pages, host gets THEIR PAGE TO TURN).
+- **PHONE MOUTHS (#1900)**: CALL-BY-KEY is the physical-keyboard channel —
+  VirtualControls carries no X, so on a touch surface the pill is the only
+  mouth (mic-only by design; no key row on the pad). The footer says so: with
+  the mic off, a touch device gets `TOUCH_CALL_HINT` (TAP MIC · TAP...) where
+  a keyboard gets `KEY_CALL_HINT` (PRESS X...) — a phone is never coached to
+  press a key it does not have. `drawOrderRail(..., touch)` takes the surface
+  flag; bombcheck pins both coaches, the branch, the budget, and that the
+  touch coach names the pill and never a key.
 - **WATCH (#1637 batch 15)**: Y seats the engine's OWN `solvePad` into seat 1
   — the same reactive planner the attract demo runs and `tmd-smoke` wins
   200/200 seeds with, feeding the real pad path every sim tick, so a mid-run
