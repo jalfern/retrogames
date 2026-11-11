@@ -1,65 +1,60 @@
-# STATE — session 231 (2026-11-11, slot a)
+# STATE — session 232 (2026-11-11, slot b)
 
 ## What shipped
-**SMASH TV — HEAT-SEEKER + FLAMER** — merged as `8e981db` (PR #2037, Closes
-#2032; NEVER-DRY pick: weakestStage SMASH TV score 6; PPM 9 not re-pickable
-under the drain law. TARGET #1637 claimed 18:53Z then RELEASED with a comment —
-slot b was verifiably live in `forge-watch-rollout-b29`, its PR #2034 was
-mid-review; #1711 REFUSED at claim — slot b holds, Jon's #1730 R2-bucket Hold
-applies).
-The original ladder completes at six guns. HEAT-SEEKER (`homing`): one missile
-per shot, locked on the nearest heat at launch, bounded turn MISSILE_TURN 0.16
-rad/tick at constant speed, re-acquire on dead lock, fizzle at MISSILE_LIFE
-150, warhead splash MISSILE_BLAST 10 px on kill (primary pays direct+splash
-once — no double-dip). FLAMER (`flame`): three-pellet fan ±FLAME_FAN 0.17 rad,
-outer pellets ×FLAME_SLOW 0.88, pierce 1, hard cap FLAME_LIFE 20 ticks ≈ 45 px
-reach. Drops: bonus-room-only — homing room 4, flame room 7 — so the combat
-ladder stays byte-identical and every proven route/pickup order survives.
-Seat-law: the autopilot wraps every seat decision with a dropped-flame keep-out
-(16 px, perpendicular slide; lives in the brain, never the sim — humans get
-the gun free; a 45 px stream loses THE ANNOUNCER fan fights, seed 4 proved
-it). Full presentation: silhouettes, muzzle/icon tints, fire+whoosh timbres,
-missile/detonation/fizzle visuals, heavier seeker kick. Gates: smashcheck
-PASS 683 (new specials section, 24 pins), all 25 mutants die (7 new incl. the
-first planner mutant), 9/9 seeds win, seed 1 deathless, co-op 9/9, determinism
-holds; lint gates + eslint + build green.
-Follow-ups merged the same evening: `c1d9bad` (#2042 — smashplay reads the
-missile where it is actually drawn; loop-time 3x3 was a software-Chrome flake
-by construction) and `6487a73` (#2043 — renderer snaps the warhead to the
-pixel grid, killing the anti-alias coin-flip at its source).
-Prod proof: live chunk `index-BWWyQr0O.js` carries `HEAT-SEEKER`. #2032
-shipped+closed (auto `shipped` label).
+**WATCH b29: MISSILE COMMAND takes its proven gunner** — PR #2034 (Part of #1637),
+merged as `b2474d8`. First self-driving this title ever had:
+- **Whole-tick lift (b27 shape):** `makeRun(seed)` + `tickMc(gs, cmd)` in sim.js —
+  no wall clock, no Math.random inside; `?seed=N` replays the ENTIRE raid. The old
+  `setTimeout(3000)` wave break is `WAVE_BREAK_TICKS=180` on the sim clock — the
+  README's #1525 honest gap, closed.
+- **gunnerStep doctrine: intercept HIGH.** Structure anchors 530/550 vs blast max
+  radius 40 ⇒ centered y ≤ `SAFE_Y=485` can never touch a friendly. Urgent-first
+  (lowest warhead), tick-exact meet-point using the engine's own discrete stepping,
+  one promised shot per warhead (coverUntil), retry when a cover lapses, nearest
+  silo by |dx| (the click law). Proof: `missilecmdcheck` 33 gates + 9 mutants all
+  die — every seed in the sweep clears waves 1–5 with **6 cities AND 3 silos**,
+  79.8 shots vs 80 warheads; live 293/293 desktop + 300/300 phone; honest wall in
+  the README (wave 11: 32 warheads vs 30 shells; deepest observed 12).
+- **First #1748 consumer:** RotateHint's card lands dead-center on this 4:3
+  letterbox — exactly where the statutory attract pill sits (static round 1 caught
+  my first wrong answer, a top-right pill). Answer: centered copy+pill wait behind
+  the hint attribute; watchcheck's phone section clears the rotate card first.
+- Registry line: "the sweep-proven gunner meets every warhead high and never lets
+  the fire touch the ground". Merge needed a #601 wait: the failing nightly was two
+  pre-existing resume-gate flakes (#2036); re-proof 43091554878 lifted it.
 
 ## The session's catches
-- **Rebuild from files, not memory.** A context-recovery summary described a
-  planner API (`intent.buttons`, a dodge block) that was never real — edits
-  "succeeded" against phantom content. Ground truth = read the file, run the
-  trace, then edit.
-- **Auto-equip makes placement a planner question.** Pickup radius 10 px +
-  civilian-hunting stray fire breaking crates = any special crate near a proven
-  route equips itself (seed 4 took the flamer to the boss fan). Fixed honestly:
-  bonus-room placement + ONE seat-law, not per-seed tuning.
-- **Rigs sit in rooms.** A test rig at x=10 stood ON the open left exit: the
-  tick it fired, the room advanced and wiped the bullet (`clear,advance,room`
-  in the events). Park rigs clear of exit cells.
-- **Splash double-dip.** The blast loop re-damaged its own primary (hp 9→6 not
-  7): skip the directly-hit enemy; neighbours take the point.
-- **A squash-merge can't see post-push edits.** The smashplay hardening was
-  still uncommitted when `8e981db` squashed; it (and later the warhead snap)
-  needed clean follow-up PRs re-based at current main. Commit EVERYTHING
-  related before starting the merge loop.
+- **`gh run watch` exit 1 ≠ nightly red.** The watcher broke while the run was
+  still in progress; the freeze was alive but the re-proof was too. Poll
+  `gh run view --json status,conclusion` in a loop instead.
+- **`rerun --failed` on an old-sha nightly spawns a pending zombie** (43072838133,
+  head a6ad2c3) that can re-freeze main when it completes red. Cancel stale runs;
+  re-proof current tip with a fresh dispatch instead.
+- **`| head` murders the dev server slowly** — vite kept serving after head exited,
+  an orphan on :5178 for the next caller. Never pipe the server log; kill port at
+  exit (done).
+- **The park outranks HEAD** — session 230 (slot a) parked instructions mid-session
+  (its Next: file recurring resume-gate flakes as harness budget, not game change →
+  #2036 filed with both run excerpts).
 
 ## Ladder trail
-TARGET #1637: claim → release (b live, PR #2034 fix round 1) → filed+built
-#2032 (NEVER-DRY, weakestStage 6) → merged. game-queue after this session
-holds #1637 (b-owned in flight); no `next`, no open builder feedback.
+TARGET #1711 claimed for b → refused to make it the tenth confirm pass (the
+13:50Z Claude-for-Jon audit outranks the ritual; relay/ unchanged, #1730 still
+Hold) → released `next` with a one-liner → #1637 already slot-b's (b28 live) →
+resumed as b29 → shipped → #1637 back to `game-queue` for b30. #2036 filed
+(feedback + lane:qa). No jonq filed (all pattern-following).
 
 ## Open questions
-- none filed this session (#2016 lane:qa AWAITING belongs to QA).
+- none from this lane (see waiting-jon issues; #1711 hardware, #2016 lane:qa).
 
-## Notes for the next slot-a session
-- `~/Dev/retrogames-forge-smash-guns` worktree is fully merged — remove it
-  (`git worktree remove`) after `git fetch --prune`.
-- Dev server for slot a (port 5173) was killed at exit.
-- If #1637 is still b-owned and the queue is empty, rerun the weakest-stage
-  board for the next NEVER-DRY pick — SMASH TV's score moved up tonight.
+## Next
+- #1637 b30 candidates (b27 list, unseated): pacman, centipede, pitfall,
+  viper-pit, mario-classic — seat only titles with a PROVEN winning driver
+  (check the family harness for a scripted win first); honor the b28/b29 chrome
+  laws: pill at statutory bottom-24% attract band, one raw <p> per attract,
+  rotate-first titles hide centered attract chrome behind `data-rotate-hint`
+  (#1748) and watchcheck's phone section clears the card.
+- Nightly: watch whether #2036's resume gates keep biting — if the re-proof
+  goes red on them again, they need the tick-budget fix (QA lane), before
+  every lane pays a freeze per night.
+- Dev servers: slot b :5178 stopped at exit, orphan killed.
