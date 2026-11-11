@@ -1,74 +1,77 @@
-# STATE — session 215 (2026-11-10, slot a)
+# STATE — session 215 (2026-11-11, slot b)
 
 ## What shipped
-**PONG: PREDICTIVE WATCH DRIVER** merged as `d4e10dc` (PR #1970, Part of #1637,
-warden TARGET — batch 24 "driver-building, not seat-finding"). The whole per-tick
-rule set lifted into `sim.js` (`tickPong`: ball step, tracker, collisions+seeded
-spin, scoring) so the harness drives the SHIPPED physics. Driver = `watchStep`:
-approaching ball → `predictLand` forward-replays the game's OWN wall-flip
-arithmetic to the paddle plane (exact, not idealised); departing ball → table-
-center (return spin is drawn at contact — unknowable, minimax); HUMAN paddle
-speed. Reactive seat (Rogue law): seats anywhere mid-rally, steer takes over,
-re-seat re-plans, quit releases with the match. Sweep 40 seeds vs the shipped
-tracker: **39 wins, 36 conceded, deterministic**; seed 25 pinned as documented
-FORCED loss (post-point paddle scatter + steep serve outruns 6px/tick — measured
-vs center-hold/ball-track/through-opponent, none wins it). pongcheck 43/43 +
-**9/9 mutants** (4 new: seat-poses, walls-pulled, sign-flip, dead-takeover) +
-5 attract; watchcheck **749/749 all 63 pilots** (pong pilot: hits climb
-untouched, full takeover contract); watchphonecheck 450 (+7), pillcheck 208,
-attractcheck 694, tapstartcheck 33, contractcheck 682; lint gates + build
-green. Live: jalfern.com/retrogames/pong — prod-proved marker in
-`index-DD6zkXUD.js` ("seeded sweep takes your paddle").
+**PAPERS, PLEASE-MIN: PORTRAIT-DETAIL** merged as `22cbcb9` (PR #1974,
+Closes #1972 — NEVER-DRY pick, weakestStage score 7). The PORTRAIT rule's
+compared set grew from four features to SIX: `brow` (thin 2px / thick 5px)
+and `mouth` (shut bar / open block) join cut, width, glasses, facial hair
+(rules.js `FEATURES`), each new break naming itself on the deny
+(`PHOTO BROWS THICK, ENTRANT THIN`). The passport photo is a ZOOM-CROP:
+`PHOTO.s` 0.6→0.75 with `ox/oy` centering and a clip to the frame — head
+reads ~50px where the flat draw read ≤41. `drawFace` gained the parts the
+original's eye roams: sclera+pupils, brows, nose, ears, open mouth. Color
+doctrine untouched — the aged-photo trap still moves `hairC` alone.
+paperscheck **8799/8799, 24/24 mutants** (m22 brow muted, m23 mouth muted,
+m24 FEATURES-shrunk — caught ONLY by the new staged-coverage witness:
+fairness stays green under it). New Node crop law (centered, widest head
+in frame, s≥0.7). papersplay **40/40** (+4 canvas gates: zoom-run ≥44px
+head row — old build measured ≤41; brow ink 40..80; mouth ink 48..108;
+bare-eye whites 128px/0 behind lenses). watchcheck papers slice 241/241.
+Live: jalfern.com/retrogames/papers-please.
 
 ## The session's catches
-- **A physics lift breaks your own source-pins.** Moving the rules out of
-  index.jsx turned pongcheck red on its #1473 anchors (`state.leftPaddle…`,
-  `state.ball.dx *= -1.05`, `done: over`). Grep `scripts/` for the moved
-  identifiers in the same commit; pin against the file the rule now lives in.
-- **A behavioral sweep alone cannot prove prediction.** The walls-pulled mutant
-  still won 39/40 — the 80px paddle masks small aim errors. Kill it with an
-  INDEPENDENT analytic cross-check (folded triangle-wave path, zero-overshoot
-  values so the sim's penetration-free flip matches exactly).
-- **Prod verify path:** the bundle is `/retrogames/assets/index-<hash>.js` —
-  requesting `/retrogames/index-<hash>.js` answers the SPA HTML at 200, so
-  greps silently return 0 on a healthy deploy. Take the path from the HTML tag,
-  keep `-L` and `LC_ALL=C`.
-- **Canvas attract hints draw in index.jsx** (GravelYard precedent), never in
-  attract.js — rule-6 ownership (cycle audit) stays clean.
+- **zsh eats bare globs and dir-greps.** `grep -l pat dir/` searches
+  NOTHING without `-r` (stderr was swallowed → the prod loop "polled" 30×
+  at nothing). And `cp a b dest` with dest a file dies mid-chain —
+  FORGE.md step 1's two-path park must be two `cp`s.
+- **Prod verify needs a cache-bust on the ENTRY HTML.** Edge-pinned shell
+  kept handing the pre-merge asset graph for ~10 min; `?cb=$(date +%s)` +
+  `Cache-Control: no-cache` flipped it to the new entry, then enumeration
+  found the payload string on poll 1. Proof string > hash again (#1967 law
+  re-confirmed).
+- **Translucent fill leaked into a compared feature.** The new mouth rect
+  inherited the nose's `rgba(…,0.28)` — papersplay caught it as 0 ink px.
+  Every feature paint must set its own fillStyle.
 
 ## Ladder trail
-- halt none; steer none; next = #1711 hardware-stalled on Jon (4th session —
-  untouched, skip per slot-b 212/213 guidance); game-queue empty; warden TARGET
-  #1637 CLAIMED (a) → batch 24. No jonq (mechanical pick, no taste call).
+- halt none; steer none; TARGET #1637 → forge-claim REFUSED (slot a's live
+  b24 lock, 73 min) → normal ladder: `next` #1711 fifth-confirm posted
+  ("still waiting" — Jon's R2/wrangler wall, nothing more), game-queue
+  empty, QA MASTER live (pid 47359) → borrow refused; idle-kick answered
+  `KICK PAPERS, PLEASE-MIN 0 weak`. Gap-0 (PAY economy) was STALE —
+  shipped by #1967, README line never closed; filed #1972 carrying the
+  honest gap-0 note + why-weakest (score 7), claimed(b), shipped both the
+  stale-line closure and the next oldest gap. No jonq (mechanical picks).
 
 ## Session bookkeeping
-- #1637 stays OPEN + `building` (multi-stage; the ship comment carries the live
-  URL + post-b24 audit).
-- :5173 vite KILLED at session end. Worktree `~/Dev/retrogames-forge-watch-b24`
-  (node_modules symlinked, detached origin/main) — reuse or `git worktree
-  remove` next slot-a session. b23's worktree (merged 1962) can go anytime.
+- #1972 CLOSED shipped; QA polish pass filed as **#1976** (hair silhouette
+  + shading, sepia aged photo, zoom-inspect affordance, sideburn-vs-ear
+  asymmetry, brow/mouth deny sfx, wide-head zoom-run gate extension).
+- :5178 vite KILLED at session end; worktree
+  `~/Dev/retrogames-forge-papers-photo` (detached at 22cbcb9, node_modules
+  symlinked) reusable or `git worktree remove` anytime.
 
-## Next queued (slot a)
-1. Fresh ladder: halt/steer/next/queue games-first; #1711 checkpoint-and-release
-   only if the ladder reaches it (4 sessions of the same stall — no deep probes).
-2. **#1637 batch 25 = another driver.** Bare-registry post-b24: ASTEROIDS,
-   DONKEY KONG, CENTIPEDE, PITFALL, FROGGER still have no proven in-game driver
-   (FireCrew 8/10 below bar); DOS/IF behind js-dos. Pong's template: lift the
-   tick rules → pure policy in sim.js → Node sweep with a pinned honest floor →
-   reactive seat → pilot + source pins + mutants.
-3. Lode/papers README gaps stand (never-dry picks by score); QA-held items stay
-   theirs (#1915/#1900/#1888/#1871 TMD, #1907 SI/DF, #1877 FB, #1923 rail,
-   #1925 carpet, #1950 SmashTV, #1943/#1908/#1891 papers; #1967 papers PAY was
-   slot b session 214).
+## Next queued (slot b)
+1. Fresh ladder: halt/steer/next/queue games-first; #1711 = post "still
+   waiting" only (sixth confirm — keep it one line).
+2. NEVER-DRY continues: papers' last unowned gap is face variety
+   (combinatorial parts vs hand-authored characters — check #1976 doesn't
+   own it verbatim before picking); LODE RUNNER-LITE gaps sit behind QA-
+   held #1959 — re-idle-kick rather than trusting this list.
+3. #1637: slot a finished b24 with NO release comment — its lock expires
+   ~06:31Z 11-Nov; a fresh session claiming 1637 should not count a's
+   silence against it (batch 25 = next unseated solver title or driver).
 
-## Notes for the next slot-a session
-- Pong sim exports the whole vocabulary (stepBall/cpuStep/predictLand/watchStep/
-  tickPong/PAD_SPEED); `__pongTest` = watching/probe(hits)/watchSfx/start.
-  Driver constants: PAD_SPEED = BASE_SPEED*1.5, dead zone 1.5px.
-- pongcheck §driver pins wins===39 AND names seed 25 — if a future change wins
-  it, update the pin and the README together (floor pins are contracts).
-- watchcheck's batch-24 pin block requires both README copy ("Seed 25 is a
-  documented forced loss") and the sweep line in pongcheck.
+## Notes for the next slot-b session
+- Compared features live in ONE place: `FEATURES` (rules.js); gen flips
+  exactly one via the generic binary path; paperscheck pins per-feature
+  staging (the `staged{}` sweep). A 7th feature = FEATURES + portraitDiffs
+  + drawFace + papersplay FE list + coverage is automatic.
+- papersplay ink-gates count EXACT colors (#20242e brow/mouth ink,
+  #d8dce8 whites, beige frame #c9c2a4) — change a palette constant and
+  count those bands; they fail loudly, which is the point.
+- Prod-prove recipe that worked: cache-busted entry → BFS chunk refs 3
+  rounds → `grep -rl "PHOTO BROWS THICK" dir` (with -r!).
 
 ## Open questions
 - None. (No taste/priority call needed from Jon.)
