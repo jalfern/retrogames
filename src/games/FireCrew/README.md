@@ -210,8 +210,9 @@ drives immediately). Consequences the gates pin:
   co-driver mode: watch the route, still shout "LADDER UP";
 - watch never lingers: `startPlay` rebuilds sources human, `finish` releases
   silent (racer rule);
-- the attract watch-button mounts on the SELECT screen only (that's where
-  SPACE lands straight in a run; attract SPACE just opens the crew picker).
+- the attract watch-pill is honestly SKIPPED (watchphonecheck SKIP_ATTRACT: the
+  crew picker sits in the boot path and the attract IS the CPU-crew demo);
+  on phones the in-run pill (#1653 safe-area law) seats seat 1 mid-alarm.
 Verify: `npm run firecrewcheck` (seat rules: cpu drives / human idles with an
 empty pad; byte-equal across 24 seeds; rescue floor >= 18/24 honest share) and
 `DEV_PORT=<port> npm run watchcheck -- --only fire-crew` (Y seats with blips,

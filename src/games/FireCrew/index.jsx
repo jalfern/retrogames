@@ -11,7 +11,7 @@ import { GAMES } from '../../config/games'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
-import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { MESSAGES, PRESS } from './attract.js'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -610,9 +610,10 @@ export default function FireCrew() {
                         EMPTY SEATS RUN ON AUTOPILOT — ANY SEAT CAN BE A MODEL LATER
                     </p>
                     <p className="mt-4 text-base font-bold animate-pulse text-white">SPACE / TAP — GO!</p>
-                    {/* #1637 b28: SPACE lands straight in a run from here — the
-                        one screen where the attract watch button is honest. */}
-                    <AttractWatchButton className="mt-5" />
+                    {/* #1637 b28: no attract watch-pill here — FireCrew is a
+                        SKIP_ATTRACT title (picker in the boot path, the attract
+                        itself is the CPU-crew demo). On phones the in-run pill
+                        (top-right, #1653 law) seats seat 1 mid-alarm. */}
                 </div>
             )}
 
@@ -636,8 +637,8 @@ export default function FireCrew() {
             )}
 
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'FIRE CREW')} onResume={() => setPaused(false)} />}
-            {uiScreen === 'play' && (
-                <div className="absolute top-2 right-2 z-50">
+            {uiScreen === 'play' && !paused && (
+                <div className="fixed z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <WatchButton on={watching} />
                 </div>
             )}

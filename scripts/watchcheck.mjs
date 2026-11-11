@@ -2846,8 +2846,9 @@ for (const [name, f] of Object.entries(B4_SRC)) {
         /release\(false\)/.test(fj) && /watchingRef\.current = false/.test(fj))
     rep.check('FIRE CREW: the human spray mirror goes silent while seated (held keys never fake the hose)',
         /!watchingRef\.current && h\.a/.test(fj))
-    rep.check('FIRE CREW: phones can seat too (pill in-run; attract button where SPACE lands in a run)',
-        /<WatchButton on=\{watching\}/.test(fj) && /<AttractWatchButton/.test(fj))
+    rep.check('FIRE CREW: phones can seat too (pill in-run; attract pill honestly skipped — picker in the boot path, SKIP_ATTRACT names it)',
+        /<WatchButton on=\{watching\}/.test(fj) && !/<AttractWatchButton/.test(fj)
+        && /FireCrew:/.test(readFileSync('scripts/watchphonecheck.mjs', 'utf8')))
     rep.check('FIRE CREW: attract shows the shared WATCH hint (import + drawn line)',
         (fj.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
     rep.check('registry /fire-crew: controls carry the WATCH line', entryHas28('/fire-crew', 'WATCH_HELP'))
