@@ -15,6 +15,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, NO_GUIDE, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import { GAMES } from '../../config/games'
 import { PRESS, MESSAGES } from './attract.js'
 import { audioController } from '../../utils/AudioController'
@@ -47,6 +49,14 @@ const MetroidGame = () => {
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
+    // #1637 batch 23 WATCH: planRun's zero-hit win script, replayed on the
+    // fresh road it was witnessed on. Script-index junction (Paperboy law):
+    // steering desyncs the body from the script, so the seat is fresh-run-only.
+    const [watching, setWatching] = useState(false)
+    const watchingRef = useRef(false)
+    const [canSeat, setCanSeat] = useState(true)
+    const canSeatRef = useRef(true)
+    const droveRef = useRef(false)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hudRef = useRef({})
     const setHud = (k) => (el) => { hudRef.current[k] = el }
@@ -108,6 +118,7 @@ const MetroidGame = () => {
             setEnd({ score: sc, deaths: gs.deaths })
             if (sc > 0) localStorage.setItem('metroid.board', JSON.stringify([...board(), { score: sc, deaths: gs.deaths, date: new Date().toISOString().slice(2, 10) }].sort((a, b) => b.score - a.score).slice(0, 8)))
             overAtRef.current = performance.now()
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false) } // #1637 the route ends with the relic — silent release
             setMode('over')
         }
 
@@ -129,7 +140,23 @@ const MetroidGame = () => {
             }
             if (sc !== 'play') return
             const before = gs.events.length
-            step(gs, {
+            // #1637 batch 23 WATCH — script-INDEX junction (Paperboy law): the
+            // script is planRun's own zero-hit win (metroidcheck replays it to
+            // RELIC RECOVERED with ZERO hits), indexed by the fresh road's tick
+            // counter. The cave is deterministic — same inputs at the same tick
+            // mean the same physics — so the replay is honest only while nobody
+            // has steered; droveRef closes the seat for good until restart.
+            let inp
+            if (watchingRef.current) {
+                const script = provenScript()
+                if (!gs.end && gs.tick < script.length) inp = script[gs.tick]
+                else { watchingRef.current = false; setWatching(false) } // road outran the witness — release
+            }
+            if (!watchingRef.current) {
+                const rr = !gs.end && !droveRef.current // #1650: mirror the honest junction on the pill (fresh road = seatable; the seat re-anchors to tick 0)
+                if (rr !== canSeatRef.current) { canSeatRef.current = rr; setCanSeat(rr) }
+            }
+            step(gs, inp || {
                 left: keys.left, right: keys.right, down: keys.down,
                 jumpEdge, jumpCut, fireEdge, bombEdge,
             })
@@ -362,6 +389,8 @@ const MetroidGame = () => {
         const startPlay = () => {
             gs = makeGame()
             evLog.length = 0
+            watchingRef.current = false; setWatching(false) // #1637 a new road starts under your own feet
+            droveRef.current = false; canSeatRef.current = true; setCanSeat(true) // fresh road, script matches from tick 0
             setMode('play')
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
         }
@@ -384,6 +413,31 @@ const MetroidGame = () => {
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current) return
             if (e.repeat) return
+            // #1637 batch 23 WATCH: Y replays planRun's proven route — but only
+            // on the fresh road it was witnessed on (script-index junction).
+            // Steer first and the road no longer matches the script: the seat
+            // honestly declines with the shared no-guide copy. Any ordinary key
+            // takes over mid-route; Y again hands the road back.
+            if (isWatchKey(e)) {
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+                else {
+                    // compute the junction LIVE at the keypress (canSeatRef is only
+                    // the pill mirror — doSim's per-frame update can lag a hitch).
+                    // The route is tick-indexed, so seating on an unused road
+                    // RE-ANCHORS it to the witness's tick 0: the cave is fully
+                    // deterministic (makeGame is), and a road nobody has steered
+                    // has no history to lose — identical world, identical route.
+                    const fresh = !droveRef.current && !gs.end
+                    if (fresh) {
+                        if (gs.tick > 0) startPlay()
+                        watchingRef.current = true; setWatching(true); playWatchStart()
+                    }
+                    else say(NO_GUIDE)
+                }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
+            droveRef.current = true // the road is yours — the witness script no longer applies
             if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
                 if (e.code === 'ArrowLeft') keys.left = true
                 else keys.right = true
@@ -435,6 +489,7 @@ const MetroidGame = () => {
                     save: { ...gs.save },
                     cracks: gs.cracks, bulks: gs.bulks,
                     end: gs.end, win: gs.win, hash: stateHash(gs),
+                    canSeat: canSeatRef.current, drove: droveRef.current, scriptLen: provenScript().length,
                     evLog: evLog.slice(-120),
                     hist: hist.slice(-60), dbg: { ...dbg },
                     crawlers: gs.world.crawlers.map(cr => ({ x: Math.round(cr.x), alive: cr.alive })),
@@ -462,6 +517,9 @@ const MetroidGame = () => {
                 },
                 start: startPlay,
                 board: () => board(),
+                // #1637 batch 23 WATCH probes: seat state + the shared blip log
+                watching: () => watchingRef.current,
+                watchSfx: watchSfxLog,
             }
             exposeGame({
                 id: 'metroid',
@@ -475,6 +533,8 @@ const MetroidGame = () => {
                     keys.left = keys.right = keys.down = false
                     jumpEdge = jumpCut = fireEdge = bombEdge = false
                     toast = 0
+                    watchingRef.current = false; setWatching(false) // #1637 a reset road is a fresh road
+                    droveRef.current = false; canSeatRef.current = true; setCanSeat(true)
                     setMode('play')
                 },
                 tick: (pad) => {
@@ -569,6 +629,18 @@ const MetroidGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'METROID-LITE')} onResume={handleResume} />}
+            {play && watching && <WatchToast className="absolute z-50" />}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
+            )}
+            {play && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} disabled={!watching && !canSeat} />
+                </div>
+            )}
             <VirtualControls visible={play && !paused} />
         </div>
     )
