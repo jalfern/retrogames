@@ -85,6 +85,51 @@ await sleep(700)
 const pWakeB = await page.evaluate(() => window.__bdTest?.bedPings() ?? -1)
 r.check('resume wakes the bed (pings accrue again)', pWakeB > pWakeA, `pA=${pWakeA} pB=${pWakeB}`)
 
+// #1812 item 1 — the first-vent TEACH PANEL on the real clock: open a fresh
+// run WITHOUT any real input (a real press would honestly dismiss it), walk the
+// solver to the run's first VENT, prove the panel rises and reads honest, then
+// kill it with one genuine key and prove nothing re-teaches this run.
+await page.evaluate(() => window.__bdTest.start(7, 1))
+await sleep(700) // consent is stored by now; the run seeds and the clock arms
+r.check('panel ride: fresh run opens play', (await page.evaluate(() => window.__bdTest.screen())) === 'play')
+const ventArrived = await page.evaluate(() => {
+    for (let i = 0; i < 900; i++) {
+        window.__bdTest.solve(1)
+        const st = window.__bdTest.probeStep()
+        if (st && st.kind === 2) return { ok: true, holder: st.holder }
+    }
+    return { ok: false }
+})
+await sleep(150) // one real paint frame computes hud.panel from the law
+const pd = await page.evaluate(() => window.__bdTest.panel())
+r.check('the first vent raises the teach panel', ventArrived.ok && !!pd, `arrived=${ventArrived.ok} pd=${JSON.stringify(pd)}`)
+r.check('the panel is honest: it names the SIM holder with the right side and keys',
+    !!pd && ventArrived.holder === pd.holder && pd.bar === `P${pd.holder + 1} PINS THE BAR`
+    && pd.barSub.startsWith(pd.holder === 0 ? 'LEFT' : 'RIGHT')
+    && pd.barSub.includes(pd.holder === 0 ? 'HOLD PAD' : 'G KEY')
+    && pd.needleSub.includes('GREEN'), JSON.stringify(pd))
+await page.keyboard.press('KeyJ') // a genuine, unmapped key — dismiss only
+await sleep(150)
+const pAfter = await page.evaluate(() => ({ panel: window.__bdTest.panel(), gone: window.__bdTest.panelGone() }))
+r.check('one real key dismisses the panel (and does not act: still mid-vent)',
+    pAfter.panel === null && pAfter.gone === true, JSON.stringify(pAfter))
+const secondVent = await page.evaluate(() => {
+    for (let i = 0; i < 900; i++) {
+        window.__bdTest.solve(1)
+        const st = window.__bdTest.probeStep()
+        if (st && st.kind === 2 && window.__bdTest.ventTaught()) return true
+    }
+    return false
+})
+await sleep(150)
+const pLatch = await page.evaluate(() => ({ panel: window.__bdTest.panel(), gone: window.__bdTest.panelGone(), taught: window.__bdTest.ventTaught() }))
+r.check('the latch holds: a later vent in the same run stays quiet',
+    secondVent && pLatch.panel === null && pLatch.gone === true && pLatch.taught === true, JSON.stringify(pLatch))
+await page.evaluate(() => window.__bdTest.start(7, 1))
+await sleep(700)
+const pReArm = await page.evaluate(() => ({ panel: window.__bdTest.panel(), gone: window.__bdTest.panelGone() }))
+r.check('a new run re-arms the lesson (the latch is per-run)', pReArm.gone === false && pReArm.panel === null, JSON.stringify(pReArm))
+
 const win = await page.evaluate(() => {
     const s = window.__bdTest.solve(9000)
     return s && s.done && s.won
@@ -251,6 +296,11 @@ const coachProbe = await page.evaluate(async ({ seedH, seedW }) => {
     T.start(seedH, 1)
     await settle(250)
     const reachedH = await joinSmart()
+    // #1812 item 1: the teach panel covers the board while it is up — a real
+    // player dismisses it with any press; fire one now (KeyJ maps to nothing)
+    // so the ring pixels we sample are the ring, not the panel.
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ' }))
+    await settle(80)
     const hLog = []
     let pinned = false
     const t0 = Date.now()
@@ -294,6 +344,10 @@ const coachProbe = await page.evaluate(async ({ seedH, seedW }) => {
     T.start(seedW, 1)
     await settle(250)
     const reachedW = await joinSmart()
+    // #1812 item 1: same courtesy before the worker lesson (the panel would
+    // otherwise sit over the dial for the whole first vent).
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ' }))
+    await settle(80)
     const wLog = []
     const t1 = Date.now()
     let tapped = false

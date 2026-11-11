@@ -7,7 +7,7 @@ import {
     createGame, step, hash, simState, solvePads, curStep, curWindow, needleOf,
     COLORS, SYNC, CUT, VENT, BOMBS, FUSE0, WINDOW, ZONE_HALF, STRIKE_COST, SURGE_COST, NICK_COST, INTRO,
     TURN, turnStep, turnClick, keyAngle,
-    REDLINE, PEG, pegNeedle, ventCoach, preFlash, seatAsk,
+    REDLINE, PEG, pegNeedle, ventCoach, ventPanel, preFlash, seatAsk,
     TALLY, winTally, tallyDur, tallyFrame,
     LINK, netPill,
 } from '../src/games/BombDefuse/engine.js'
@@ -454,6 +454,80 @@ console.log('\n— first-vent coaching (#1932) —')
     while (bx2.intro > 0) drive(bx2, [{}, {}])
     ok(JSON.stringify(ventCoach(bx1, 0, false)) === JSON.stringify(ventCoach(bx2, 0, false)) && hash(bx1) === hash(bx2),
         'net twins: the coach is state-determined, both boxes teach the same lesson')
+}
+
+console.log('\n— first-vent teach panel (#1812 item 1) —')
+{
+    // The full-panel first lesson for phones: E.ventPanel names BOTH jobs —
+    // seat, side, and exact key/pad — at the run's first vent, until any
+    // input dismisses it (view latch) or the crew seals (taught). Mutants:
+    // always-null reddens the teach gates; ignoring `taught` reddens the
+    // silence gate; dropping the keydown dismiss reddens the pin.
+    const toVentFresh = (seed, players = 2) => {
+        const g = createGame(seed, players)
+        let guard = 0
+        while (!g.done && curStep(g).kind !== VENT && guard++ < 4000) step(g, solvePads(g))
+        while (!g.done && g.intro > 0) step(g, [{}, {}])
+        return g
+    }
+    // silence where there is nothing to teach
+    ok(ventPanel(null, false) === null, 'no run, no panel')
+    ok(ventPanel(createGame(7, 2), false) === null, 'SYNC step carries no panel (only the VENT teaches)')
+    const tg = toVentFresh(7)
+    ok(ventPanel(tg, true) === null, 'a taught crew never sees the panel again')
+    tg.done = true
+    ok(ventPanel(tg, false) === null, 'a finished run never teaches')
+    // the lesson itself, holder on either side
+    for (const seed of [7, 11, 23]) {
+        const g = toVentFresh(seed)
+        const p = ventPanel(g, false)
+        const h = curStep(g).holder
+        ok(p && p.holder === h, `seed ${seed}: the panel names the live holder (P${h + 1})`)
+        ok(p && p.bar === `P${h + 1} PINS THE BAR`, `seed ${seed}: bar row titles the holder seat`)
+        ok(p && p.needle === `P${2 - h} SEATS THE NEEDLE`, `seed ${seed}: needle row titles the worker seat`)
+        ok(p && p.barSub.startsWith(h === 0 ? 'LEFT' : 'RIGHT') && p.needleSub.startsWith(h === 0 ? 'RIGHT' : 'LEFT'),
+            `seed ${seed}: sides match the physical layout (seat 1 left, seat 2 right)`)
+        ok(p && p.barSub.includes(h === 0 ? 'B KEY' : 'G KEY'), `seed ${seed}: the bar line names the holder's real key`)
+        ok(p && p.needleSub.includes(h === 0 ? 'F KEY' : 'SPACE'), `seed ${seed}: the needle line names the worker's real key`)
+        ok(p && p.barSub.includes('GREEN') === false && p.needleSub.includes('GREEN'), 'only the needle row carries the green cue')
+    }
+    // the phone truth: seat 0 (the pad seat) always reads B / HOLD PAD + SPACE
+    // (seed 2 hosts the bar at seat 1, seed 1 hosts it at seat 2 — both sides)
+    const p0 = ventPanel(toVentFresh(2), false)
+    const p1s = ventPanel(toVentFresh(1), false)
+    ok(p0 && p0.holder === 0 && p0.barSub.includes('HOLD PAD') && p0.needleSub.includes('F KEY'),
+        'phones: the seat-1 bar line names B/HOLD PAD, the CPU-side needle line names F KEY')
+    ok(p1s && p1s.holder === 1 && p1s.barSub.includes('G KEY') && p1s.needleSub.includes('SPACE'),
+        'mirrored: the seat-2 bar line names G KEY, the pad-side needle line names SPACE')
+    // purity: the panel cannot touch the sim
+    const gp = toVentFresh(7)
+    const hp0 = hash(gp)
+    ventPanel(gp, false); ventPanel(gp, true)
+    ok(hash(gp) === hp0, 'ventPanel cannot touch gs — hash identical through the view calls')
+    // determinism: both net boxes teach the identical lesson
+    const t1 = toVentFresh(13), t2 = toVentFresh(13)
+    ok(JSON.stringify(ventPanel(t1, false)) === JSON.stringify(ventPanel(t2, false)) && hash(t1) === hash(t2),
+        'net twins: the panel is state-determined, both boxes show the same lesson')
+    // view side wired: law-driven paint, dismissal on ANY input, per-run reset
+    const jsx = readFileSync(join(here, '../src/games/BombDefuse/index.jsx'), 'utf8')
+    ok(jsx.includes('hud.panel = hud.panelGone || pausedRef.current ? null : E.ventPanel(gs, hud.ventTaught)'),
+        'index.jsx recomputes the panel from live state, silenced by dismiss, pause and seal')
+    ok(jsx.includes('if (hud.panel) drawVentPanel(g, hud.panel, youSeat, now)'), 'the panel paints only while the law says so')
+    ok(/const panelUp = \(\) => \{[\s\S]{0,260}screenRef\.current === 'play'[\s\S]{0,160}E\.ventPanel\(gsRef\.current, h\.ventTaught\)/.test(jsx),
+        'panelUp reads the live law (play screen + vent due + seal latch), not last frame paint')
+    ok(/const dismissPanel = \(\) => \{ if \(panelUp\(\)\) hudRef\.current\.panelGone = true \}/.test(jsx),
+        'the dismissal latch only trips while the lesson is due (no pre-emption by earlier keys)')
+    ok(/const onKeyDown = \(e\) => \{[\s\S]{0,320}dismissPanel\(\)/.test(jsx),
+        'any keydown during play dismisses the panel')
+    ok(/const onPointer = \(ev\) => \{[\s\S]{0,900}dismissPanel\(\)/.test(jsx),
+        'a pointer-down on the board dismisses it too')
+    ok(/const newHud = \(\) => \(\{[\s\S]{0,420}panel: null, panelGone: false/.test(jsx),
+        'a new run re-arms the lesson (newHud resets the latch)')
+    ok(jsx.includes('panel: () => hudRef.current.panel || null') && jsx.includes('panelGone: () => hudRef.current.panelGone'),
+        '__bdTest.panel/panelGone expose the lesson + latch for the drive harness')
+    const esrc = readFileSync(join(here, '../src/games/BombDefuse/engine.js'), 'utf8')
+    ok(!/ventPanel/.test(esrc.slice(esrc.indexOf('export function hash'), esrc.indexOf('export const TURN'))),
+        'hash() never mentions the panel — the lesson lives outside the determinism core')
 }
 
 console.log('\n— powered-device bed (#1812 item 10) —')

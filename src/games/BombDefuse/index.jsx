@@ -467,6 +467,36 @@ function drawIntro(g, gs, coach) {
     g.textAlign = 'left'
 }
 
+// #1812 item 1: THE TEACH PANEL — the phone answer to "the plate says my job,
+// but which side of the bomb is that?". On the run's FIRST vent it dims the
+// board and films the whole lesson: seat, side, and exact key/pad for both
+// roles. Painted ONLY from E.ventPanel's verdict (the coach card stays below
+// it — the panel is the superset); dismissed by any input (see onKeyDown /
+// onPointer), silenced by the seal (ventTaught) or a finished run.
+function drawVentPanel(g, p, youSeat, now) {
+    g.fillStyle = 'rgba(4,6,3,0.88)'; g.fillRect(0, 0, W, H)
+    g.strokeStyle = C.amber; g.lineWidth = 2
+    g.strokeRect(64, 74, W - 128, 212)
+    g.lineWidth = 1
+    g.textAlign = 'center'
+    g.font = '13px "Press Start 2P", monospace'; g.fillStyle = C.amber
+    g.fillText('VENT · TWO HANDS, ONE JOB', W / 2, 108)
+    const tag = (seat) => (youSeat === seat ? ' · YOU' : '')
+    g.font = '9px "Press Start 2P", monospace'; g.fillStyle = C.amber
+    g.fillText(p.bar + tag(p.holder), 320, 148)
+    g.font = '7px "Press Start 2P", monospace'; g.fillStyle = C.chrome
+    g.fillText(p.barSub, 320, 166)
+    g.font = '9px "Press Start 2P", monospace'; g.fillStyle = C.green
+    g.fillText(p.needle + tag(1 - p.holder), 320, 204)
+    g.font = '7px "Press Start 2P", monospace'; g.fillStyle = C.chrome
+    g.fillText(p.needleSub, 320, 222)
+    if (Math.floor(now / 420) % 2) {
+        g.font = '8px "Press Start 2P", monospace'; g.fillStyle = C.label
+        g.fillText('PRESS ANY KEY TO DEFUSE THE LESSON', 320, 262)
+    }
+    g.textAlign = 'left'
+}
+
 // #1812 item 2: per-seat key-turn view memory (spring pos/vel + seat-2 lag) —
 // presentation state lives in the hud, never in gs, so the sim hash is untouched.
 // #1932: ventTaught latches when the crew seals its FIRST vent — the coach
@@ -475,6 +505,9 @@ const newHud = () => ({
     flash: 0, shake: 0, sparks: [], banner: null, bannerT: 0, boomT: 0, dudT: 0,
     lid: null, shrap: [],
     ventTaught: false, coach: null, pf: null,
+    // #1812 item 1: full first-vent teach panel — dismissed by any input for
+    // the whole run (panelGone), re-armed only by a new run (newHud).
+    panel: null, panelGone: false,
     // #1812 item 10: bed cadence + a DEV-visible ping counter (the harness
     // proves the hum is alive without reading the speaker)
     bedT: 0, bedPings: 0,
@@ -934,7 +967,22 @@ export default function BombDefuseGame() {
 
         const beginSelect = () => { clearKeys(); selectRef.current = seatsRef.current > 1 ? 2 : 1; setScreen('select'); sfx.blip() }
 
+        // #1812 item 1: a press dismisses the teach panel — and ONLY a press
+        // while the lesson is actually due. panelUp reads the LIVE law (gs +
+        // the seal latch), not last frame's paint, so a key that lands in the
+        // tick vent was loaded but not yet drawn still dismisses honestly, and
+        // keys turns before the run's first vent never preempt the lesson.
+        const panelUp = () => {
+            const h = hudRef.current
+            return screenRef.current === 'play' && !h.panelGone && !pausedRef.current && !!E.ventPanel(gsRef.current, h.ventTaught)
+        }
+        const dismissPanel = () => { if (panelUp()) hudRef.current.panelGone = true }
+
         const onKeyDown = (e) => {
+            // any key/input while the panel is up dismisses it — the press
+            // still lands on its control (B pins, F seats…): a caption over
+            // the live board, never a modal that eats the input.
+            dismissPanel()
             if (e.code === 'Escape' || e.code === 'Backquote' || (e.shiftKey && e.code === 'Digit1')) {
                 if (screenRef.current === 'play') { e.preventDefault(); setPaused(p => !p) }
                 return
@@ -1002,6 +1050,9 @@ export default function BombDefuseGame() {
                 else humanStart(humanSeed(), seatsRef.current)
             }
             else if (screenRef.current === 'select') humanStart(humanSeed(), selectRef.current)
+            // #1812 item 1: a tap dismisses the teach panel too (pad taps
+            // reach the game as synthetic keydowns and dismiss there).
+            else dismissPanel()
         }
         window.addEventListener('keydown', onKeyDown)
         window.addEventListener('keyup', onKeyUp)
@@ -1168,6 +1219,10 @@ export default function BombDefuseGame() {
                         reseat: net.sync ? net.sync.reseatTick != null : false,
                     }) : null
                     hud.coach = E.ventCoach(gs, youSeat, hud.ventTaught)
+                    // #1812 item 1: the full teach panel law — the same first-vent
+                    // window, gated further by the view's own dismissal (any input
+                    // closes it for the run; a new run re-arms via newHud).
+                    hud.panel = hud.panelGone || pausedRef.current ? null : E.ventPanel(gs, hud.ventTaught)
                     // #1812 item 4: the pre-flash law, recomputed pure each frame.
                     hud.pf = E.preFlash(gs)
                     // #1812 item 7: the active-seat ask law, recomputed pure
@@ -1186,6 +1241,9 @@ export default function BombDefuseGame() {
                         ask: hud.ask,
                     })
                     drawIntro(g, gs, hud.coach)
+                    // #1812 item 1: the teach panel rides on top of the plate —
+                    // it is the superset lesson of the first vent.
+                    if (hud.panel) drawVentPanel(g, hud.panel, youSeat, now)
                     for (const s of hud.sparks) {
                         s.x += s.vx; s.y += s.vy; s.vy += 0.18
                         g.fillStyle = `rgba(255,${180 + Math.floor(Math.random() * 60)},80,${s.life / 14})`
@@ -1440,6 +1498,9 @@ export default function BombDefuseGame() {
                 boomFx: () => ({ lid: !!hudRef.current.lid, shrap: hudRef.current.shrap.length, scorch: scorchDecals.length, boomT: hudRef.current.boomT }),
                 boomNow: () => { const gb = gsRef.current; if (gb && !gb.done) gb.fuse = 1 },
                 ventTaught: () => hudRef.current.ventTaught,
+                // #1812 item 1: the live teach panel + its dismissal latch.
+                panel: () => hudRef.current.panel || null,
+                panelGone: () => hudRef.current.panelGone,
                 // #1812 item 10: bed pings accrued since the run began — the
                 // drive proves the hum is alive (and frozen on pause/over)
                 bedPings: () => hudRef.current.bedPings,
