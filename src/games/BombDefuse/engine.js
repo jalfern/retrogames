@@ -509,6 +509,31 @@ export function ventCoach(gs, you, taught) {
     }
 }
 
+// ---- first-vent TEACH PANEL (#1812 item 1) — view math only, never gs/hash --
+// The plate coach (#1932) names YOUR job in one line; on a phone the newcomer
+// still has to map seat numbers onto the physical layout while the fuse burns.
+// This law is the full-panel answer: at the run's FIRST vent it says, in plain
+// rows, WHICH SIDE pins the stabilizer bar and WHICH SIDE seats the needle —
+// seat, side, and the exact key/pad — until any input dismisses it (view state)
+// or the crew seals (taught). Pure function of live state: no rng, no gs write,
+// hash-clean. Key names mirror the real maps (S1: Space/B, S2: F/G).
+export function ventPanel(gs, taught) {
+    if (!gs || gs.done || taught) return null
+    const st = curStep(gs)
+    if (st.kind !== VENT) return null
+    const h = st.holder
+    const side = (i) => (i === 0 ? 'LEFT' : 'RIGHT')
+    const barKey = (i) => (i === 0 ? 'B KEY / HOLD PAD' : 'G KEY')
+    const tapKey = (i) => (i === 0 ? 'SPACE' : 'F KEY')
+    return {
+        holder: h,
+        bar: `P${h + 1} PINS THE BAR`,
+        barSub: `${side(h)} SIDE — ${barKey(h)} · KEEP IT DOWN`,
+        needle: `P${2 - h} SEATS THE NEEDLE`,
+        needleSub: `${side(1 - h)} SIDE — ${tapKey(1 - h)} WHEN NEEDLE CROSSES GREEN`,
+    }
+}
+
 // ---- win tally (#1812 item 6) — view math only, never gs/hash ----------
 // Classic arcade score-salad: WON never dumps the total raw — it RECAPS what
 // each bomb paid and rolls the grand total last. `winTally` is the honest

@@ -105,11 +105,11 @@ lockstep-by-sampling-law (#531), same shape as the other four co-op titles:
 ## Verify
 
 ```bash
-npm run defusecheck                      # 185 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline, first-VENT coaching, powered-device bed, window pre-flash, active-seat chips, the boom FX, the win tally
+npm run defusecheck                      # 261 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline, first-VENT coaching, the first-vent teach panel, powered-device bed, window pre-flash, active-seat chips, the boom FX, the win tally
 npm run defuselinkcheck                # 75 gates: online protocol incl. in-flight reseat (7b/7c/7d)
 CONTRACT_ONLY=bomb-defuse npm run contractcheck
 DEV_PORT=5178 npm run plaicraft:evidence -- --self-test   # fifth-title synths + mutants
-npm run defusedrive                      # real-key drive: start→play→bed/pause→boom→restart (+coach, press-tick, pre-flash, win-salad)
+npm run defusedrive                      # real-key drive: start→play→bed/pause→boom→restart (+coach, press-tick, pre-flash, win-salad, teach-panel)
 DEV_PORT=5173 npm run watchcheck -- --only bomb-defuse   # WATCH pilot: seat/advance/takeover/re-seat/resume/release + 5 source pins
 npm run defuselinkdrive                # two browsers over a live relay: join→lockstep→hash→walkaway→in-flight reseat
 ```
@@ -144,6 +144,25 @@ naming YOUR seat's job and pulses the control that must move (amber bar ring
 until pinned, green gauge ring + `TAP!` when the needle crosses the zone).
 `__bdTest.coach/ventTaught/probeStep` expose it for `defusedrive` (5 gates:
 role naming, ring pixels before/after the pin, latch + quiet-after).
+First-vent TEACH PANEL (#1812 item 1): the plate names YOUR job, but a phone
+newcomer still has to map seats onto the physical bomb. `E.ventPanel(gs, taught)`
+(pure, hash-clean) is the full-panel law: at the run's FIRST untaught vent it
+titles both roles with seat, side (LEFT/RIGHT = seats 1/2 as drawn) and the REAL
+keys (seat 1: B / HOLD PAD + SPACE; seat 2: G + F). `index.jsx` paints it over
+the board from the verdict only, and any input lands-while-due dismisses it for
+the run — `dismissPanel` consults `panelUp` (the LIVE law: play + vent due +
+seal latch), not last frame's paint, so a press landing the tick the vent loads
+dismisses before the first paint, while keys turned BEFORE the first vent never
+preempt the lesson (a pad tap reaches this law as its synthetic keydown);
+`newHud` re-arms per run, the seal
+(`ventTaught`) silences it too. The press still lands on its control: the panel
+is a caption over the live board, not a modal that eats the input. Mutants:
+always-null reddens the 23 teach gates; dropping `|| taught` reddens the
+taught-crew silence gate; unwiring the keydown dismiss reddens the pin.
+`__bdTest.panel/panelGone` + `defusedrive` prove it live: the panel rises at
+seed 7's first vent naming the sim's holder, one genuine (unmapped) KeyJ
+dismisses it without acting, a later vent in the same run stays quiet, and a
+new run re-arms the lesson.
 Powered-device bed (#1812 item 10): `sfx.bed` hums a sub-bass triangle every
 `BED.EVERY` (30) shell ticks while the play screen is armed; `bedHz(secs)` (pure,
 in `audio.js`) sits at BASE 55 Hz until 15 s, +3 Hz per second gone, capped TOP
