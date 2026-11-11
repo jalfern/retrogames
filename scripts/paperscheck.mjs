@@ -16,7 +16,9 @@
 // rulebook (every rule exercises the day it wakes; no law before its day) ·
 // calendar (one clock: serials match the wall everywhere; the week rolls
 // across a real month-end #1889) · clumsy play clears the week AND chaos
-// loses by day 1 (the slack rule, in booth terms) · the proven weeks
+// loses by day 1 (the slack rule, in booth terms) · the shift clock (#1960:
+// budget = queue × SEAT, human cadence clears, dawdling closes the gate,
+// the finale must finish) · the proven weeks
 // (attract replays these) · determinism · mutants.
 
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
@@ -24,8 +26,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, FEATURES } from '../src/games/PapersPleaseMin/rules.js'
 import { genWeek, genDay, viewOf, CITY2C, TRAPS, GREY } from '../src/games/PapersPleaseMin/gen.js'
-import { CFG, newRun, step, stateHash, current, autopilot } from '../src/games/PapersPleaseMin/sim.js'
-import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
+import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock } from '../src/games/PapersPleaseMin/sim.js'
+import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, STAMP, CLOCK, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SRC = join(HERE, '../src/games/PapersPleaseMin')
@@ -330,6 +332,139 @@ section('SLACK (CLUMSY CLEARS) vs CHAOS (COLLAPSES) — every seed')
         ok(g2.end === 'lose' && g2.day === 1, `seed ${seed}: a booth signing WRONG survived past day ${g2.day} — the strike wall is theatre`)
     }
     console.log('  ..    clumsy clears every week (<=2 strikes/day), chaos falls on day 1')
+}
+
+// ------------------------------------------- #1960 SHIFT CLOCK and THE QUOTA ----
+// The gate closes. Budget law: the queue is the quota and the queue sizes
+// the clock. Scripted play must never be caught by it (attract, WATCH and
+// every harness replay stamp faster than eighteen seconds an applicant);
+// dawdling must be caught, days 1-6 dock and advance, and day 7 must
+// FINISH. The clumsy eye still clears the week with the clock running —
+// the slack rule is about judgment, and pace is tested separately.
+section('SHIFT CLOCK (#1960) — the gate closes, the finale must finish — every seed')
+{
+    // budget law: entrants × SEAT
+    for (const seed of SEEDS) {
+        for (const day of genWeek(seed).days) {
+            ok(dayTicks(day) === day.queue.length * CFG.SEAT_TICKS,
+                `seed ${seed} day ${day.n}: budget ${dayTicks(day)} is not queue × SEAT`)
+        }
+    }
+    // scripted inequality: the autopilot's longest wait + the stamp animation
+    // must fit inside one applicant's allowance, or the attract booth and the
+    // WATCH seat would get turned away at their own gate
+    const maxWait = Math.max(...SEEDS.flatMap((s) => autopilot(newRun(s), 999).script.map((x) => x.wait)))
+    ok(CFG.SEAT_TICKS >= maxWait + 40, `SEAT ${CFG.SEAT_TICKS} cannot cover the scripted wait ${maxWait} + stamp — scripted play would close the gate`)
+    // cadence proof: a HUMAN 10 s/stamp clears every day of every seed, and
+    // the finale closes with margin > 0
+    for (const seed of SEEDS.slice(0, 8)) {
+        const gs = newRun(seed)
+        const script = autopilot(structuredClone(gs), 999).script
+        let i = 0, guard = 0, closes = 0
+        while (!gs.end && guard++ < 3000) {
+            step(gs, { action: script[i++].action })
+            for (let t = 0; t < 600 && !gs.end; t++) tick(gs)
+            closes += gs.events.filter((e) => e.type === 'close').length
+            gs.events.length = 0
+        }
+        ok(gs.end === 'win' && closes === 0, `seed ${seed}: human 10s cadence ended ${gs.end || 'stalled'} with ${closes} gate-close(s) — the budget is unfair to honest pace`)
+        ok(gs.clock > 0, `seed ${seed}: the finale finished with no margin at all`)
+    }
+    // clumsy at pace: the naive eye misjudges papers, never pace — with the
+    // clock running it must STILL clear the whole week (slack doctrine)
+    for (const seed of SEEDS.slice(0, 6)) {
+        const gs = newRun(seed)
+        let guard = 0
+        while (!gs.end && guard++ < 3000) {
+            const { view } = current(gs)
+            step(gs, { action: naiveDecide(view) })
+            for (let t = 0; t < 600 && !gs.end; t++) tick(gs)
+            gs.events.length = 0
+        }
+        ok(gs.end === 'win', `seed ${seed}: clumsy play at 10s/stamp ended ${gs.end || 'stalled'} on day ${gs.day} — the clock broke the slack rule`)
+    }
+    // dawdling day 1: a ~22 s cadence (1300 ticks) past the 18 s allowance —
+    // the gate falls with someone still in line; the record docks, morning
+    // rewinds a fresh shift
+    {
+        const gs = newRun(0)
+        let closeEv = null
+        let guard = 0
+        while (!closeEv && guard++ < 30) {
+            step(gs, { action: decide(current(gs).view).verdict })
+            for (let t = 0; t < 1300 && !gs.end; t++) {
+                tick(gs)
+                closeEv = gs.events.find((e) => e.type === 'close') || closeEv
+                if (closeEv) break
+            }
+            gs.events.length = 0
+            if (gs.end) break
+        }
+        ok(closeEv && closeEv.missed > 0, 'a ~22s cadence never closed the gate — the shift clock is theatre')
+        ok(gs.end === null && gs.day === 2, `an early gate close ended the run (${gs.end}) or froze the day (${gs.day}) — days 1-6 must dock and advance`)
+        ok(gs.clock === dayTicks(gs.week.days[1]), `morning after a close must rewind a full shift (${gs.clock} vs ${dayTicks(gs.week.days[1])})`)
+    }
+    // day 7 dawdle: identical arithmetic, fatal consequence — and the missed
+    // count is deterministic (every seed's finale is 13 deep, 14040 budget,
+    // stamps every 1300 ticks: the 11th stamp lands at 13000, the gate runs
+    // down at 14040 with exactly 2 still in line)
+    for (const seed of SEEDS.slice(0, 4)) {
+        const gs = newRun(seed)
+        let guard = 0
+        while (!gs.end && gs.day < CFG.DAYS && guard++ < 300) {
+            step(gs, { action: decide(current(gs).view).verdict })
+            gs.events.length = 0
+        }
+        let missed = null
+        guard = 0
+        while (!gs.end && guard++ < 40) {
+            if (gs.idx < gs.week.days[6].queue.length) { step(gs, { action: decide(current(gs).view).verdict }); gs.events.length = 0 }
+            for (let t = 0; t < 1300 && !gs.end; t++) {
+                tick(gs)
+                const ce = gs.events.find((e) => e.type === 'close')
+                if (ce) missed = ce.missed
+            }
+            gs.events.length = 0
+        }
+        ok(gs.end === 'lose' && /QUOTA UNMET/.test(gs.endWhy), `seed ${seed}: dawdling through the finale ended ${gs.end || 'stalled'} — day 7 must finish`)
+        ok(missed === 2, `seed ${seed}: day-7 dawdle missed ${missed}, expected the deterministic 2 — the finale arithmetic drifted`)
+    }
+    // dock arithmetic: exactly MISS_DOCK per turned-away head, clamped at zero
+    {
+        const gs = newRun(0)
+        gs.score = 3
+        gs.idx = gs.week.days[0].queue.length - 1   // one left in line at close
+        tick(gs, dayTicks(gs.week.days[0]))
+        ok(gs.score === 0, `close docked to ${gs.score}, not clamped to 0`)
+        const g2 = newRun(0)
+        g2.score = 100
+        g2.idx = g2.week.days[0].queue.length - 3    // three left in line
+        tick(g2, dayTicks(g2.week.days[0]))
+        ok(g2.score === 100 - 3 * CFG.MISS_DOCK, `three heads docked ${100 - g2.score}, expected ${3 * CFG.MISS_DOCK}`)
+    }
+    // the printed clock: budget maps 08:00→18:00, red is exactly the last hour,
+    // and the printed minute never runs backward inside a day
+    {
+        const g0 = newRun(0)
+        const c0 = gameClock(g0)
+        ok(c0.hh === 8 && c0.mm === 0 && !c0.red, `shift start prints ${c0.hh}:${c0.mm}`)
+        g0.clock = Math.round(c0.budget * 0.1)
+        const c17 = gameClock(g0)
+        ok(c17.hh === 17 && c17.red, `the tenth of a shift prints ${c17.hh}:${String(c17.mm).padStart(2, '0')} red=${c17.red} — red must be the last printed hour`)
+        g0.clock = 0
+        const c18 = gameClock(g0)
+        ok(c18.hh === 18 && c18.mm === 0 && c18.red, 'close must print 18:00 red')
+        let prevPrinted = 0, mono = true
+        const g1 = newRun(0)
+        for (let t = 0; t < dayTicks(g1.week.days[0]); t += 7) { tick(g1); const c = gameClock(g1); const p = c.hh * 60 + c.mm; if (p < prevPrinted) mono = false; prevPrinted = p }
+        ok(mono, 'the wall clock ran backward inside a day')
+    }
+    // the clock hangs where the original hangs it: above the papers column,
+    // clear of the passport header, the stamp sweep and both canvas edges
+    ok(CLOCK.y + CLOCK.r + 6 <= PAPERS.y - 2, 'the clock or its digits touch the passport header')
+    ok(CLOCK.x + CLOCK.r <= CW - 4 && CLOCK.x - CLOCK.r >= 2, 'the clock runs off the wall')
+    ok(CLOCK.x - CLOCK.r > STAMP.x + Math.hypot(86, 22), 'the swung APPROVED/DENIED stamp sweeps through the clock face')
+    console.log('  ..    budget = queue × SEAT (18 s/applicant); 10 s human cadence clears every day of every seed; the naive eye still clears the week; a ~22 s cadence closes day 1 (docked, morning rewound); day 7 dawdles to a deterministic 2-head quota loss; wall clock 08:00→18:00, red = the last hour, monotone, clear of the stamp sweep')
 }
 
 // ------------------------------------------------------- dead input no-ops ----
@@ -702,6 +837,72 @@ if (MUT) {
                 }
             }
             return true
+        })
+
+    // #1960 clock mutants. SURVIVED = the mutant still behaves like the
+    // original on the probes below; a probe returns false when the law broke.
+
+    // 15. eighteen seconds per applicant shrinks to half a second: the gate
+    //     now falls on SCRIPTED play — attract and WATCH would close the gate
+    //     at their own booth.
+    await tryMut('SEAT_TICKS 18s -> 0.5s (the gate catches scripted play)',
+        mutMod('sim.js', 'SEAT_TICKS: 1080', 'SEAT_TICKS: 30', 'm15'),
+        async (m) => {
+            const gs = m.sim.newRun(0)
+            const script = m.sim.autopilot(structuredClone(gs), 999).script
+            let i = 0, closes = 0, guard = 0
+            while (!gs.end && guard++ < 4000) {
+                m.sim.step(gs, { action: script[i++ % script.length].action })
+                for (let t = 0; t < 600 && !gs.end; t++) {
+                    m.sim.tick(gs)
+                    closes += gs.events.filter((e) => e.type === 'close').length
+                }
+                gs.events.length = 0
+            }
+            return gs.end === 'win' && closes === 0
+        })
+
+    // 16. the day-7 quota loses its tooth: dawdling through the finale just
+    //     advances the day (past the end of the week — which the probe reads
+    //     as a crash, also a capture).
+    await tryMut('day-7 quota tooth pulled (dawdling survives the finale)',
+        mutMod('sim.js', 'gs.score = Math.max(0, gs.score - CFG.MISS_DOCK * missed)\n        if (gs.day >= CFG.DAYS) {', 'gs.score = Math.max(0, gs.score - CFG.MISS_DOCK * missed)\n        if (false && gs.day >= CFG.DAYS) {', 'm16'),
+        async (m) => {
+            try {
+                const gs = m.sim.newRun(0)
+                let guard = 0
+                while (!gs.end && gs.day < m.sim.CFG.DAYS && guard++ < 300) { m.sim.step(gs, { action: m.rules.decide(m.sim.current(gs).view).verdict }); gs.events.length = 0 }
+                guard = 0
+                while (!gs.end && guard++ < 40) {
+                    if (gs.idx < gs.week.days[6].queue.length) { m.sim.step(gs, { action: m.rules.decide(m.sim.current(gs).view).verdict }); gs.events.length = 0 }
+                    for (let t = 0; t < 1300 && !gs.end; t++) m.sim.tick(gs)
+                    gs.events.length = 0
+                }
+                return gs.end === 'lose' && /QUOTA UNMET/.test(gs.endWhy)
+            } catch { return false }
+        })
+
+    // 17. the dock zeroes: heads still get turned away, but the record stops
+    //     costing anything — the quota becomes theatre.
+    await tryMut('miss dock zeroed (turning away costs nothing)',
+        mutMod('sim.js', 'gs.score = Math.max(0, gs.score - CFG.MISS_DOCK * missed)', 'gs.score = gs.score', 'm17'),
+        async (m) => {
+            const gs = m.sim.newRun(0)
+            gs.score = 3
+            gs.idx = gs.week.days[0].queue.length - 1
+            m.sim.tick(gs, m.sim.dayTicks(gs.week.days[0]))
+            return gs.score === 0
+        })
+
+    // 18. morning forgets to rewind: after a close the booth opens on a dead
+    //     clock and the second day closes with the whole line still in it.
+    await tryMut('morning keeps the dead clock (no rewind)',
+        mutMod('sim.js', 'gs.clock = dayTicks(gs.week.days[gs.day - 1])', 'gs.clock = 0', 'm18'),
+        async (m) => {
+            const gs = m.sim.newRun(0)
+            gs.idx = gs.week.days[0].queue.length - 1
+            m.sim.tick(gs, m.sim.dayTicks(gs.week.days[0]))
+            return gs.clock === m.sim.dayTicks(gs.week.days[1])
         })
 }
 
