@@ -43,10 +43,12 @@ const LAST = ['KOSTOV', 'DRENIN', 'VASEK', 'LAGODA', 'ORLOV', 'TOLKA', 'ZEMEK', 
 // #1979 HAND-AUTHORED REGULARS — the original's line is made of PEOPLE:
 // Jorji Costava recurs with the same bald pate, stubble and big nose, and the
 // crowd gets recognizable faces. Here the combinatorial roll (skins × hairs ×
-// cuts) still paints the background, but four entrants are authored end to
-// end: a fixed six-feature descriptor, colors, body stats, and ONE signature
-// mark (scar/mole/wrinkle/big-ear) that drawFace paints at the counter and in
-// the zoomed photo. Marks are decor — never compared, doctrine of the nose.
+// cuts) still paints the background, but six entrants are authored end to
+// end: a fixed six-feature descriptor, colors, body stats, ONE signature
+// mark (scar/mole/wrinkle/big-ear/freckles/bandage) that drawFace paints at
+// the counter and in the zoomed photo, and PERSONAL LINES (lines.greet on the
+// first walk-up of a week, lines.again on the return — #1997). Marks and
+// lines are decor — never compared, doctrine of the nose.
 // A regular's PAPERS are built legal for whatever day they walk up (allowed
 // list, expiry, IDREQ all rotate), so they are honest, approvable faces —
 // the neighborhood, not a trap.
@@ -55,39 +57,77 @@ export const REGULARS = [
         id: 'grubak', name: 'VOLEN GRUBAK', sex: 'M', ageYears: 47, dobM: 3, dobD: 14, height: 178, weight: 86,
         face: { skin: 2, hairC: 0, shirtC: 2, style: 1, narrow: 0, glasses: 0, must: 1, brow: 1, mouth: 0, hat: 1, uni: 1, ear: 0, gap: 0 },
         mark: 'scar',
+        lines: { greet: 'GOOD DAY, GUARD.', again: 'BACK AGAIN, HA!' },
     },
     {
         id: 'marko', name: 'MARKO DRENIN', sex: 'M', ageYears: 29, dobM: 8, dobD: 2, height: 164, weight: 61,
         face: { skin: 0, hairC: 1, shirtC: 0, style: 2, narrow: 1, glasses: 1, must: 0, brow: 0, mouth: 1, hat: 0, uni: 0, ear: 1, gap: 0 },
         mark: 'mole',
+        lines: { greet: 'IS MY PAPER OK?', again: 'NOTHING WRONG THIS TIME.' },
     },
     {
         id: 'anja', name: 'ANJA TOLKA', sex: 'F', ageYears: 55, dobM: 11, dobD: 21, height: 158, weight: 57,
         face: { skin: 4, hairC: 2, shirtC: 3, style: 0, narrow: 0, glasses: 0, must: 0, brow: 1, mouth: 0, hat: 3, uni: 0, ear: 0, gap: 1 },
         mark: 'wrinkle',
+        lines: { greet: 'I VISIT MY DAUGHTER.', again: 'THE LINE IS SHORT TODAY.' },
     },
     {
         id: 'petr', name: 'PETR ZEMEK', sex: 'M', ageYears: 34, dobM: 5, dobD: 9, height: 171, weight: 74,
         face: { skin: 1, hairC: 4, shirtC: 1, style: 3, narrow: 1, glasses: 0, must: 1, brow: 0, mouth: 1, hat: 2, uni: 0, ear: 0, gap: 0 },
         mark: 'ear',
+        lines: { greet: 'WORK IN THE CITY.', again: 'SAME BOOTH, SAME GUARD.' },
+    },
+    // #1997 THE FIFTH AND SIXTH — the original's neighborhood is not four:
+    // a dozen faces lean on the glass across the campaign. Sonya Malak is
+    // the knit-seller (freckles across the left cheek, headscarf AND the
+    // gold earring — the only cast member wearing two decor families);
+    // Tadek Hruby is the retired clerk (grey at 62 — color is never
+    // evidence, and his honest photo carries the same grey, so the aged-photo
+    // trap can never be pointed at him — plus glasses, the forehead bandage
+    // of a clumsy workshop life, and a missing tooth).
+    {
+        id: 'sonya', name: 'SONYA MALAK', sex: 'F', ageYears: 38, dobM: 1, dobD: 7, height: 161, weight: 63,
+        face: { skin: 3, hairC: 1, shirtC: 2, style: 0, narrow: 1, glasses: 0, must: 0, brow: 0, mouth: 0, hat: 3, uni: 0, ear: 1, gap: 0 },
+        mark: 'freckles',
+        lines: { greet: 'MY SON LIVES IN OR VECHNA.', again: 'HE SAYS HELLO, YES?' },
+    },
+    {
+        id: 'tadek', name: 'TADEK HRUBY', sex: 'M', ageYears: 62, dobM: 9, dobD: 30, height: 168, weight: 79,
+        face: { skin: 4, hairC: 3, shirtC: 0, style: 1, narrow: 0, glasses: 1, must: 1, brow: 1, mouth: 1, hat: 0, uni: 0, ear: 0, gap: 1 },
+        mark: 'patch',
+        lines: { greet: 'I AM RETIRED, GUARD.', again: 'YOU LET ME THROUGH.' },
     },
 ]
 
-// The day's regular: deterministic by seed+day, and the cycle (n-2+seed) over
-// four cast guarantees cast[0] and cast[1] walk back into the booth inside the
-// same week — recurrence is a construction, like everything else here.
-export const regularForDay = (seed, n) => (n >= 2 ? REGULARS[(n - 2 + seed) % REGULARS.length] : null)
+// #1979 (amended #1997) THE ROTATING WINDOW — the cast is six, but a week
+// has six cast slots (days 2-7) and the law needs FACES THAT COME BACK: a
+// one-per-day walk over six seats would make every entrant a stranger.
+// So each week the window of VISIT_WINDOW=4 seats rotates by the seed: the
+// week meets cast[s..s+3] (mod 6), days 2,3,4,5, and seats s, s+1 RETURN on
+// days 6, 7 — two recurrences a week, exactly as the original's neighborhood
+// works, while different weeks meet different faces. Seed 0's week is
+// byte-identical to the old cast-of-four mod-4 walk (0,1,2,3,0,1).
+export const VISIT_WINDOW = 4
+export const seatOff = (seed, regIdx) => (((regIdx - seed) % REGULARS.length + REGULARS.length) % REGULARS.length)
+export const regularForDay = (seed, n) => (n >= 2 ? REGULARS[(seed + (n - 2) % VISIT_WINDOW) % REGULARS.length] : null)
+
+// the day this seat FIRST walks up this week, or -1 when the window passed
+// without it (the neighborhood rotates; not every face leans on the glass).
+export const firstVisitDay = (seed, regIdx) => {
+    const off = seatOff(seed, regIdx)
+    return off < VISIT_WINDOW ? 2 + off : -1
+}
 
 // #1983 THE ARC — one regular per week turns wanted, Jorji-style. In the
 // original the neighborhood is not safe: a familiar face can land on the
 // bulletin while still handing over cheerful papers, and only the sheet
 // (name AND number) convicts. Here the arc is a construction, seed-only:
-// cast[seed mod 4] walks the line twice (days 2 and 6 by the injection law),
-// and the TURN lands on the return — day 6, where WANTED has been awake
-// since day 4. The papers stay built-legal for the day; the wall is the
-// whole case. The other recurrence (cast[(seed+1) mod 4], days 3 and 7)
-// just remembers you.
-export const firstVisitDay = (seed, regIdx) => 2 + (((regIdx - seed) % REGULARS.length + REGULARS.length) % REGULARS.length)
+// cast[seed mod LEN] sits at the head of the week's window (days 2 and 6 by
+// the rotating-window law), and the TURN lands on the return — day 6, where
+// WANTED has been awake since day 4. The papers stay built-legal for the
+// day; the wall is the whole case. The other recurrence (cast[(seed+1) mod
+// LEN], days 3 and 7) just remembers you. Across seeds, EVERY cast seat gets
+// its turn on the wall — paperscheck pins that no seat is dead letter.
 export function arcForWeek(seed) {
     const idx = seed % REGULARS.length
     return { id: REGULARS[idx].id, day: firstVisitDay(seed, idx) + 4 }
@@ -390,7 +430,15 @@ function regularApplicant(c, rnd, date, dayRules, day, used, seed, n) {
         day.wanted.push({ name: c.name, id: a.person.passport.id, planted: true })
         a.truth.wanted = true
     } else if (n > firstVisitDay(seed, regIdx)) {
-        a.person.say = ['YOU AGAIN.']
+        // #1997 PERSONAL SPEECH — the returning neighbor says its own piece,
+        // the booth remembers more than one phrase. Still atmosphere (decide
+        // never reads it; paperscheck pins purity every day, not just the arc).
+        a.person.say = ['YOU AGAIN.', c.lines.again]
+    } else {
+        // first walk-up of the week: the neighbor introduces itself. The arc
+        // face's first visit is the honest walk-up remembered later — and it
+        // greets too; the original's regulars never stood silent at the glass.
+        a.person.say = [c.lines.greet]
     }
     return a
 }

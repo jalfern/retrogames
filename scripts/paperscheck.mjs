@@ -26,7 +26,7 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, FEATURES } from '../src/games/PapersPleaseMin/rules.js'
-import { genWeek, genDay, viewOf, CITY2C, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor } from '../src/games/PapersPleaseMin/gen.js'
+import { genWeek, genDay, viewOf, CITY2C, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, VISIT_WINDOW } from '../src/games/PapersPleaseMin/gen.js'
 import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges } from '../src/games/PapersPleaseMin/sim.js'
 import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, ID, PHOTO, BUBBLE, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
 
@@ -340,11 +340,14 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
     // The cast is hand-authored: complete descriptors, distinct identities,
     // and every compared feature exercised by the cast alone (both binary
     // values, all four haircuts) — the wall teaches faces, not noise.
-    ok(REGULARS.length >= 4, `only ${REGULARS.length} regulars — the neighborhood is a hallway`)
+    ok(REGULARS.length >= 6, `only ${REGULARS.length} regulars — the original's neighborhood is a dozen faces deep`)
     const castIds = new Set(), castVecs = new Set(), castMarks = new Set()
     for (const c of REGULARS) {
         ok(c.id && c.name && c.mark, `cast entry without id/name/mark: ${JSON.stringify(c.id)}`)
-        ok(['scar', 'mole', 'wrinkle', 'ear'].includes(c.mark), `unknown signature mark ${c.mark}`)
+        ok(['scar', 'mole', 'wrinkle', 'ear', 'freckles', 'patch'].includes(c.mark), `unknown signature mark ${c.mark}`)
+        // #1997 PERSONAL SPEECH — every neighbor carries its own two lines:
+        // a greeting for the week's first walk-up, a callback for the return.
+        ok(c.lines && c.lines.greet && c.lines.again, `cast ${c.id} has no personal lines`)
         ok(!castIds.has(c.id), `duplicate cast id ${c.id}`); castIds.add(c.id)
         ok(!castMarks.has(c.mark), `two regulars share the mark ${c.mark} — signatures must be distinct`); castMarks.add(c.mark)
         for (const f of FEATURES) ok(c.face[f] === 0 || c.face[f] === 1 || f === 'style', `cast ${c.id} feature ${f} not a real roll`)
@@ -360,21 +363,36 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
 
     // Recurrence + identity + legality, every seed.
     let appearances = 0
+    const seatsWalked = new Set()
     for (const seed of SEEDS) {
         const w = genWeek(seed)
         const arc = arcForWeek(seed)
         const byCast = {}
+        // #1997 THE ROTATING WINDOW law: the week meets cast[s..s+3] (mod 6)
+        // — days 2..5 each carry one seat, days 6,7 are the return of seats
+        // s, s+1. A flattened rotation (seed ignored) is the same four faces
+        // forever: the sweep-wide seatsWalked witness below kills it.
+        const weekSeats = new Set()
         for (const day of w.days) {
             const regs = day.queue.filter((a) => a.person.regular)
             ok(day.n === 1 ? regs.length === 0 : regs.length === 1,
                 `seed ${seed} day ${day.n}: ${regs.length} regulars — the authored walk is days 2-7, exactly one`)
             ok(day.queue.length === day.rules.length + 4,
                 `seed ${seed} day ${day.n}: queue ${day.queue.length} vs law ${day.rules.length + 4} — a regular grew the line`)
+            if (day.n >= 2 && regs.length === 1) weekSeats.add(regs[0].person.regular)
+            // #1997 purity everywhere, not just the arc day: personal speech
+            // is atmosphere on EVERY day of the week.
+            for (const a of day.queue) {
+                const v = viewOf(day, a)
+                const stripped = { ...v, person: { ...v.person, say: undefined } }
+                ok(decide(v).verdict === decide(stripped).verdict, `seed ${seed} day ${day.n}: say-line leaked into the verdict`)
+            }
             for (const a of regs) {
                 appearances++
                 const c = REGULARS.find((k) => k.id === a.person.regular)
                 ok(!!c, `seed ${seed} day ${day.n}: unknown cast id ${a.person.regular}`)
                 if (!c) continue
+                seatsWalked.add(c.id)
                 byCast[c.id] = (byCast[c.id] || 0) + 1
                 ok(a.person.passport.name === c.name, `seed ${seed} day ${day.n}: ${a.person.passport.name} claims the face of ${c.name}`)
                 // the identity law: same person, same face — every descriptor
@@ -385,6 +403,22 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
                 }
                 ok(a.person.face.mark === c.mark && a.person.passport.photo.mark === c.mark,
                     `seed ${seed} day ${day.n}: ${c.id} lost or grew its signature mark`)
+                // #1997 SPEECH SHAPE: greet on the week's first walk-up,
+                // YOU AGAIN + personal callback on the return; the arc turn
+                // keeps the canonical Jorji pair (the wall's drama, universal).
+                const say = a.person.say
+                const isArcTurn = day.n === arc.day && c.id === arc.id
+                ok(Array.isArray(say) && say.length >= 1, `seed ${seed} day ${day.n}: ${c.id} stood silent at the glass — authored faces speak`)
+                if (isArcTurn) {
+                    ok(say.length === 2 && say[0] === 'YOU AGAIN.' && /\.\.\./.test(say[1]),
+                        `seed ${seed} day ${day.n}: the turn lost its canonical pair — ${JSON.stringify(say)}`)
+                } else if (day.n === firstVisitDay(seed, REGULARS.findIndex((k) => k.id === c.id))) {
+                    ok(say.length === 1 && say[0] === c.lines.greet,
+                        `seed ${seed} day ${day.n}: ${c.id}'s first walk-up forgot its greeting — ${JSON.stringify(say)}`)
+                } else {
+                    ok(say.length === 2 && say[0] === 'YOU AGAIN.' && say[1] === c.lines.again,
+                        `seed ${seed} day ${day.n}: ${c.id}'s return forgot its callback — ${JSON.stringify(say)}`)
+                }
                 // Legality (#1983 amended): the neighborhood is honest — decide
                 // and judge BOTH approve a regular — with exactly one exception
                 // per week: the ARC entrant on their turn day, whom the wall
@@ -392,7 +426,6 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
                 // clean. The ARC section grades that exception in full.
                 const d = decide(viewOf(day, a))
                 const j = judge({ truth: a.truth, person: a.person, rules: day.rules, date: day.date, allowed: day.allowed, scale: a.scale })
-                const isArcTurn = day.n === arc.day && c.id === arc.id
                 if (isArcTurn) {
                     ok(d.verdict === 'deny' && j.verdict === 'deny',
                         `seed ${seed} day ${day.n}: ${c.name}'s turn did NOT convict — booth ${d.verdict}, truth ${j.verdict}`)
@@ -405,10 +438,19 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
                     `seed ${seed} day ${day.n}: a random twin of ${c.name} walked the same line`)
             }
         }
+        const window = new Set(Array.from({ length: VISIT_WINDOW }, (_, i) => REGULARS[(seed + i) % REGULARS.length].id))
+        ok(window.size === VISIT_WINDOW && weekSeats.size === VISIT_WINDOW && [...weekSeats].every((id) => window.has(id)),
+            `seed ${seed}: week met ${[...weekSeats].join(',')} — the window must rotate cast[${seed % REGULARS.length}..+${VISIT_WINDOW - 1}]`)
+        ok(REGULARS[seed % REGULARS.length].id === w.days[1].queue.find((a) => a.person.regular).person.regular &&
+           REGULARS[seed % REGULARS.length].id === w.days[5].queue.find((a) => a.person.regular).person.regular,
+            `seed ${seed}: the window head does not walk days 2 and 6 — the arc's stage collapsed`)
         const back = Object.entries(byCast).filter(([, n]) => n >= 2)
         ok(back.length >= 1, `seed ${seed}: nobody came back twice — a line of strangers is not a neighborhood`)
     }
     ok(appearances >= SEEDS.length * 6, `only ${appearances} regular appearances across ${SEEDS.length} weeks — the injection is theatre`)
+    ok(seatsWalked.size === REGULARS.length, `${seatsWalked.size}/${REGULARS.length} cast seats ever walked across the sweep — a seat nobody meets is dead letter`)
+    ok(new Set(REGULARS.map((c) => c.lines.greet)).size === REGULARS.length, 'two regulars share a greeting — a neighborhood says hello six ways')
+    ok(new Set(REGULARS.map((c) => c.lines.again)).size === REGULARS.length, 'two regulars share a callback — the booth remembers six ways')
     console.log(`  ..    ${appearances} authored appearances across ${SEEDS.length} weeks; every week had faces that came back`)
 }
 
@@ -453,17 +495,21 @@ section('THE ARC (#1983) — one regular turns wanted, Jorji-style')
         }
         ok(arcHit === 1, `seed ${seed}: ${arcHit} arc turns in one week — exactly one, like the campaign's arcs`)
         // the first visit is the innocent one: same face, cheerful, approved
+        // (#1997: and it greets — the honest walk-up the wall will remember).
         const d2 = w.days[arc.day - 5]
         const first = d2.queue.find((a) => a.person.regular === arc.id)
-        ok(!!first && !first.person.arc && !first.person.say && decide(viewOf(d2, first)).verdict === 'approve',
-            `seed ${seed}: the arc's first visit was not the honest walk-up it should be remembered as`)
+        const arcC = REGULARS.find((k) => k.id === arc.id)
+        ok(!!first && !first.person.arc && Array.isArray(first.person.say) && first.person.say.length === 1 &&
+           first.person.say[0] === arcC.lines.greet && decide(viewOf(d2, first)).verdict === 'approve',
+            `seed ${seed}: the arc's first visit was not the honest, greeting walk-up it should be remembered as — ${first && JSON.stringify(first.person.say)}`)
         ok(first ? first.truth.wanted === false : false, `seed ${seed}: wanted before the turn — the arc is one beat, not a flag`)
-        // the OTHER recurrence (cast[(seed+1) mod 4], days 3 and 7) just remembers
+        // the OTHER recurrence (cast[(seed+1) mod LEN], days 3 and 7) just remembers
         const backIdx = (seed + 1) % REGULARS.length
         const backId = REGULARS[backIdx].id
         const d7 = w.days[6]
         const rememberer = d7.queue.find((x) => x.person.regular === backId)
-        ok(!!rememberer && !rememberer.person.arc && Array.isArray(rememberer.person.say) && rememberer.person.say.length === 1 && rememberer.person.say[0] === 'YOU AGAIN.',
+        ok(!!rememberer && !rememberer.person.arc && Array.isArray(rememberer.person.say) && rememberer.person.say.length === 2 &&
+           rememberer.person.say[0] === 'YOU AGAIN.' && rememberer.person.say[1] === REGULARS[backIdx].lines.again,
             `seed ${seed}: day 7's returning face forgot its callback — ${JSON.stringify(rememberer && rememberer.person.say)}`)
         ok(decide(viewOf(d7, rememberer)).verdict === 'approve', `seed ${seed}: the plain recidivist was convicted — only the arc turns`)
         // purity: `say` never moves a verdict — every paper of the arc day
@@ -475,6 +521,11 @@ section('THE ARC (#1983) — one regular turns wanted, Jorji-style')
         }
     }
     ok(turns === SEEDS.length, `${turns} turns across ${SEEDS.length} weeks — the arc is not weekly`)
+    // #1997 the wall works for the WHOLE cast: with six seats and the arc
+    // riding the seed, every seat must get its turn across the sweep — a
+    // neighborhood where the same face is always the criminal is four deep.
+    ok(new Set(SEEDS.map((s) => arcForWeek(s).id)).size === REGULARS.length,
+        'only some cast seats ever turn — the wall must work every face at least once')
     console.log(`  ..    ${turns} turns: familiar faces on the wall, honest papers under them, one memory line for the others`)
 }
 
@@ -909,12 +960,13 @@ section('THE WALL FITS THE BOOTH (#410) — nothing hides, nothing is postage')
     console.log(`  ..    deepest sheet ${deepest} entries; ${fives} five-entry days across the sweep — the original bulletin's capacity is in use`)
     // #1983 the callback bubble's lane is law too: the field sits clear of
     // the slip, the strip, and the stamp's witness line (baseline y=296),
-    // and the authored lines fit the field at 10px monospace.
+    // and the authored lines fit the field at 10px monospace. #1997 scans
+    // every personal line the cast carries, not just the canonical pair.
     ok(BUBBLE.x + BUBBLE.w <= SLIP.x - 4, 'the speech bubble runs into the deduction slip')
     ok(BUBBLE.y + BUBBLE.h <= CHS - STRIP_H - 6 && BUBBLE.y >= 300, 'the speech bubble crowds the strip or the witness line')
     ok(BUBBLE.x >= PORTRAIT.x - 4 && BUBBLE.x + BUBBLE.w <= CW - 4 && BUBBLE.y >= ID.y + ID.h + 4, 'the bubble leaves the entrant lane or crowds the papers/ID column')
-    for (const ln of ['YOU AGAIN.', '...I NO DO ANYTHING.'])
-        ok(ln.length * 10 * CHAR <= BUBBLE.w - 14, `callback line "${ln}" overflows the bubble (${ln.length * 10 * CHAR}px in ${BUBBLE.w - 14}px)`)
+    for (const ln of [...REGULARS.flatMap((c) => [c.lines.greet, c.lines.again]), 'YOU AGAIN.', '...I NO DO ANYTHING.'])
+        ok(ln.length * 10 * CHAR <= BUBBLE.w - 14, `speech line "${ln}" overflows the bubble (${ln.length * 10 * CHAR}px in ${BUBBLE.w - 14}px)`)
     // and the theoretical worst day the generator is allowed to build: the
     // full 8-rule sheet, four countries, five wanted names (#410: the old
     // booth overflowed exactly here and the scale box buried the sheet;
@@ -1426,8 +1478,9 @@ if (MUT) {
 
     // 29. the callback silenced: faces still come back, but the booth never
     //     remembers them — the recognition beat the whole stage is named for.
+    //     (Anchor re-pinned #1997: the callback grew its personal line.)
     await tryMut('recalling face loses its line (the neighborhood forgets)',
-        mutMod('gen.js', "a.person.say = ['YOU AGAIN.']", 'a.person.say = null', 'm29'),
+        mutMod('gen.js', "a.person.say = ['YOU AGAIN.', c.lines.again]", 'a.person.say = null', 'm29'),
         (m) => {
             for (const seed of SEEDS) {
                 const w = m.gen.genWeek(seed)
@@ -1485,6 +1538,42 @@ if (MUT) {
                         const pf = { ...a.person, face: { ...a.person.face, hat: 1, uni: 1, ear: 1, gap: 1 } }
                         if (m.rules.decide({ ...view, person: pf }).verdict !== v0) return false
                     }
+                }
+            }
+            return true
+        })
+
+    // 33. the window stops rotating: seed no longer moves the cast, so every
+    //     week meets the same four seats and the two new faces are dead
+    //     letter. Fairness never notices (papers are honest either way) —
+    //     only the seatsWalked witness sees a cast that never fully walks.
+    await tryMut('cast rotation frozen (new seats never walk)',
+        mutMod('gen.js', 'REGULARS[(seed + (n - 2) % VISIT_WINDOW) % REGULARS.length]', 'REGULARS[(n - 2) % VISIT_WINDOW]', 'm33'),
+        (m) => {
+            const seats = new Set()
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    for (const a of day.queue) if (a.person.regular) seats.add(a.person.regular)
+                }
+            }
+            return seats.size === m.gen.REGULARS.length
+        })
+
+    // 34. personal speech flattened: the greeting branch goes mute and the
+    //     booth only ever says the canonical pair — six neighbors, one voice.
+    //     Verdicts stay fair (say was never evidence); the speech-shape and
+    //     distinct-lines witnesses in REGULARS are what kill it here.
+    await tryMut('personal speech flattened (first walk-ups go mute)',
+        mutMod('gen.js', 'a.person.say = [c.lines.greet]', 'a.person.say = null', 'm34'),
+        (m) => {
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    const regs = day.queue.filter((a) => a.person.regular)
+                    if (!regs.length) continue
+                    const a = regs[0]
+                    if (a.person.arc) continue
+                    const fv = m.gen.firstVisitDay(seed, m.gen.REGULARS.findIndex((k) => k.id === a.person.regular))
+                    if (day.n === fv && !a.person.say) return false
                 }
             }
             return true

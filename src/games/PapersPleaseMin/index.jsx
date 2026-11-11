@@ -311,12 +311,16 @@ const PapersPleaseMinGame = () => {
                 c.fillRect(x + P(39), y + P(44), P(8), P(6)); c.fillRect(x + P(63), y + P(44), P(8), P(6))
             }
             // #1979 SIGNATURE MARKS — the authored regulars' scars of a life.
-            // One ink, three shapes (the fourth, the big ear, grows above);
-            // decor by doctrine — never a compared feature, never evidence.
+            // One ink, five shapes (the big ear grows above); decor by
+            // doctrine — never a compared feature, never evidence.
             // Rows sit clear of every compared band: the scar rides the left
             // cheek at rows 50-55 (the narrow band starts at 56), the mole
             // clears the mustache bar's right edge (x68), the wrinkle rows
             // 32/35 sit above the brow row 38 and below the longest hair.
+            // #1997 two more: the freckle cluster rides the left cheek BELOW
+            // the scar window (rows 60-67, inside the narrow ellipse's edge)
+            // and the forehead bandage sits rows 26-29 — above the wrinkle
+            // window, below the hairline, clear of the glasses rim's rows.
             if (f.mark === 'scar') {
                 c.fillStyle = '#8f4a3e'
                 c.fillRect(x + P(30), y + P(50), P(2), P(2)); c.fillRect(x + P(32), y + P(52), P(2), P(2)); c.fillRect(x + P(34), y + P(54), P(2), P(2))
@@ -326,6 +330,12 @@ const PapersPleaseMinGame = () => {
             } else if (f.mark === 'wrinkle') {
                 c.fillStyle = '#8f4a3e'
                 c.fillRect(x + P(38), y + P(32), P(34), P(1)); c.fillRect(x + P(38), y + P(35), P(32), P(1))
+            } else if (f.mark === 'freckles') {
+                c.fillStyle = '#8f4a3e'
+                c.fillRect(x + P(30), y + P(60), P(2), P(2)); c.fillRect(x + P(34), y + P(62), P(2), P(2)); c.fillRect(x + P(31), y + P(66), P(2), P(2))
+            } else if (f.mark === 'patch') {
+                c.fillStyle = '#8f4a3e'
+                c.fillRect(x + P(60), y + P(26), P(6), P(4))
             }
         }
 
@@ -660,6 +670,10 @@ const PapersPleaseMinGame = () => {
                         id: c.id, mark: c.mark, name: c.name,
                         scar: ink(28, 48, 38, 58, 0x8f4a3e), mole: ink(68, 56, 74, 62, 0x8f4a3e),
                         wrinkle: ink(36, 30, 74, 37, 0x8f4a3e), ear: ink(x0, 38, x0 + 4, 60, skinHex),
+                        // #1997 the new signatures, windows disjoint from every
+                        // mark above (freckles rows 58-69 below the scar, the
+                        // bandage rows 24-31 above the wrinkle window).
+                        freckles: ink(28, 58, 38, 70, 0x8f4a3e), patch: ink(58, 24, 68, 32, 0x8f4a3e),
                     }
                 }),
                 // #1989 ONE-OFF CROWD pixel probe: render the LIVE entrant's
