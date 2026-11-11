@@ -35,6 +35,8 @@
 
 import { requireDevServer, launch, Report } from './lib/harness.mjs'
 import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { validate } from '../src/utils/recording.js'
 import { detectClaps, clapVerdict, CLAP_TOL_MS } from '../src/utils/clapSync.js'
 import { startRelaySim } from './lib/relaysim.mjs'
@@ -269,7 +271,19 @@ r.check('the real worker lists the session with audio', !!(row && row.audio === 
 
 // download back and read the take
 const text = await (await fetch(`${BASE}/sessions/${encodeURIComponent(uploaded.key)}`, { headers: sim.readHeaders })).text()
-if (process.env.CLAP_DUMP) fs.writeFileSync(process.env.CLAP_DUMP, text) // #1711 S8: hand the stored bytes to --file= analyze self-prove
+// #1711 S8: hand the stored bytes to the --file= analyze self-prove. tmp-only
+// (the muteguard audit's SAFE shape — this script mutates nothing tracked, and
+// a stray CLAP_DUMP outside tmp is refused, not obeyed).
+if (process.env.CLAP_DUMP) {
+    const dp = path.resolve(process.env.CLAP_DUMP)
+    // compare canonical dirs: macOS os.tmpdir() is /var/folders/…/T while
+    // scripts habitually pass /tmp paths (a symlink to /private/tmp).
+    const roots = [os.tmpdir(), '/tmp'].map((t) => { try { return fs.realpathSync(t) } catch { return t } })
+    let parent = path.dirname(dp)
+    try { parent = fs.realpathSync(parent) } catch { /* dir may not exist — refusal below */ }
+    if (roots.some((t) => parent === t || parent.startsWith(t + path.sep))) fs.writeFileSync(dp, text)
+    else console.error(`clap: CLAP_DUMP ignored (must be under ${os.tmpdir()})`)
+}
 const rec = JSON.parse(text)
 r.check('stored file validates', validate(rec) === null, validate(rec) || '')
 r.check('v2 file with one voice track', rec.format === 'retrogames-rec/v2' && rec.voice && rec.voice.tracks.length === 1, rec.format)
