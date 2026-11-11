@@ -536,7 +536,7 @@ export const railMouthGlow = (tick) => tick % 60 < 38
 // #1923 THE SLIDE: pass fx (makeRailFx/stepRailFx) and the pulled/seated cell
 // flies the rail instead of teleporting; fx=null keeps this byte-identical to
 // the pre-slide plate (old callers, pixel gates).
-export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn = null, selIn = 2, fx = null) {
+export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn = null, selIn = 2, fx = null, pullPulse = false) {
     const tray = Array.isArray(trayIn) && trayIn.length === 3
         ? trayIn.map(v => (v ? 1 : 0))
         : [0, 1, 2].map(i => (i < batteries ? 1 : 0)) // pre-rail callers: the classic left-packed plate
@@ -587,7 +587,11 @@ export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn 
     g.fillText('OPEN', PANEL.x + 330, PANEL.y + 146)
     // the mouth arrow: a double chevron in the wall gap, pointing out of the
     // rail, pulsing on the same clock as the OPEN word (one law, one story).
-    g.fillStyle = mouth ? '#ffd23e' : '#4a4f57'
+    // #1923 PULL IT: a heard pull-call leads the drain on its OWN faster
+    // clock — the arrow throbs double-time; the word keeps the shared clock,
+    // so the hint can never masquerade as the law.
+    const pullGlow = pullPulse && tick % 32 < 20
+    g.fillStyle = mouth || pullGlow ? '#ffd23e' : '#4a4f57'
     for (let c = 0; c < 2; c++) for (let k = 0; k < 5; k++)
         g.fillRect(PANEL.x + 328 + c * 6 + (2 - Math.abs(2 - k)), PANEL.y + 178 + k * 3, 3, 3)
     for (let i = 0; i < 3; i++) {
@@ -654,6 +658,11 @@ export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn 
                 : sel === open ? 'A PULLS IT OUT' : 'BLOCKED - IT CLIPS RIGHT'
     g.fillStyle = held > 0 ? '#ffd23e' : sel === open && batteries > 0 && tray[sel] === 1 ? '#7dffb0' : '#5c626c'
     g.fillText(line, PANEL.x + 130, PANEL.y + PANEL.h - 60)
+    // #1923 PULL IT: with a pull-call ringing, the action line itself leads
+    // on the fast clock when a pull is actually legal right now (open end,
+    // cell seated, hands empty) — the shout echoes the truth, never a lie.
+    if (pullGlow && held === 0 && batteries > 0 && sel === open && tray[sel] === 1)
+        g.fillText('PULL IT -> A', PANEL.x + 228, PANEL.y + PANEL.h - 60)
     g.font = FONT(6); g.fillStyle = tick % 50 < 32 ? '#7dffb0' : '#41544a'
     g.fillText('DOWN TILTS IT BACK', PANEL.x + 122, PANEL.y + PANEL.h - 48)
 }

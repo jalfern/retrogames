@@ -325,9 +325,9 @@ const home = g => { for (let o = railOpen(g.tray); g.sel !== o; o = railOpen(g.t
     ok('the landing slot reads empty while its ghost is in flight', /const occ = tray\[i\] === 1 && i !== mask/.test(artSrc))
     ok('the pocket clip stands empty until the cell arrives', /if \(!inFlight \|\| inFlight\.kind !== 'out'\)/.test(artSrc))
     ok('the renderer steps fx from the live plate and hands it to the draw',
-        /ART\.stepRailFx\(railFxRef\.current, gs\.held, gs\.tray, gs\.sel/.test(view) && /gs\.held, gs\.tray, gs\.sel, fx\)/.test(view))
+        /ART\.stepRailFx\(railFxRef\.current, gs\.held, gs\.tray, gs\.sel/.test(view) && /gs\.held, gs\.tray, gs\.sel, fx,\s*!!\(hud\.pulse && hud\.pulse\.kind === 'pull'\)/.test(view))
     ok('fx is optional — old callers render the pre-slide plate byte-identical',
-        /export function drawBack\(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn = null, selIn = 2, fx = null\)/.test(artSrc))
+        /export function drawBack\(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn = null, selIn = 2, fx = null, pullPulse = false\)/.test(artSrc))
     // named mutants — each must die on the gate it is named for.
     const runMutantArt = async (name, mut, gate) => {
         if (mut === artSrc) { ok(`mutant ${name}: target line not found`, false); return }
@@ -427,12 +427,112 @@ const home = g => { for (let o = railOpen(g.tray); g.sel !== o; o = railOpen(g.t
         artSrc.replace('pullable ? RAIL_TAB_FREE : RAIL_TAB_BLOCKED', 'RAIL_TAB_FREE'),
         g => g.rects.find(r => r.x === PANEL.x + 132 && r.y === PANEL.y + 146 && r.c === RAIL_TAB_BLOCKED))
     await runLegMutant('arrow-quiet',
-        artSrc.replace("g.fillStyle = mouth ? '#ffd23e' : '#4a4f57'", "g.fillStyle = '#4a4f57'"),
+        artSrc.replace("g.fillStyle = mouth || pullGlow ? '#ffd23e' : '#4a4f57'", "g.fillStyle = '#4a4f57'"),
         g => mouthPix(g).some(r => r.c === '#ffd23e'))
     await runLegMutant('wall-full',
         artSrc.replace('fillRect(PANEL.x + 112, PANEL.y + 150, 200, 2); g.fillRect(PANEL.x + 112, PANEL.y + 222, 200, 2)',
             'fillRect(PANEL.x + 112, PANEL.y + 150, 214, 2); g.fillRect(PANEL.x + 112, PANEL.y + 222, 214, 2)'),
         g => g.rects.filter(r => r.c === '#20242a' && r.h === 2 && r.y >= PANEL.y + 150 && r.y <= PANEL.y + 224).every(r => r.w === 200))
+}
+
+// ---- 10c. PULL IT shorthand — the heard call pulses the drain (#1923) ------
+// A shouted PULL IT rides onto the plate as a view-only pulse (words never
+// act, #1247). Gates: the mouth arrow throbs on the call's own FASTER clock
+// (the OPEN word keeps the shared one — the hint can impersonate neither the
+// law nor its rhythm); the hint is honest — it only leads when a pull is
+// legal this instant; and the pin that keeps fx/pulse optional for old
+// callers stands. Three named mutants die.
+{
+    const dir = new URL('../src/games/TalkMeDown/', import.meta.url)
+    const artSrc = readFileSync(new URL('art.js', dir), 'utf8')
+    const view = readFileSync(new URL('index.jsx', dir), 'utf8')
+    const paint = (tick, tray, held = 0, sel = 2, pull = false) => {
+        const g = {
+            rects: [], texts: [], font: '', fillStyle: '',
+            fillRect(x, y, w, h) { this.rects.push({ x, y, w, h, c: this.fillStyle }) },
+            fillText(t, x, y) { this.texts.push({ t, x, y, c: this.fillStyle }) },
+            beginPath() {}, arc() {}, fill() {},
+        }
+        drawBack(g, tray.reduce((a, b) => a + b, 0), tick, 'XX0X0', held, tray, sel, null, pull)
+        return g
+    }
+    const mouthPix = g => g.rects.filter(r => r.x >= PANEL.x + 326 && r.w === 3 && r.h === 3 && r.y >= PANEL.y + 150 && r.y <= PANEL.y + 224)
+    const leadText = g => g.texts.find(r => r.t === 'PULL IT -> A')
+    // tray [1,1,0]: the open end is slot 1 (slot 0 clips behind it).
+    const LEGAL = [1, 1, 0]
+    // 1) the call drives the arrow on its own clock: bright exactly when the
+    // fast clock says so, independent of the shared mouth clock.
+    {
+        let good = true
+        for (const t of [0, 10, 19, 20, 31, 32, 51, 52, 55]) {
+            const on = t % 32 < 20
+            const p = paint(t, LEGAL, 0, 1, true)
+            const allBright = mouthPix(p).length === 10 && mouthPix(p).every(r => r.c === '#ffd23e')
+            if (allBright !== (railMouthGlow(t) || on)) good = false
+            const word = p.texts.find(r => r.t === 'OPEN')
+            if (!word || word.c !== (railMouthGlow(t) ? '#8a6512' : '#4a4f57')) good = false // word keeps the shared clock
+        }
+        ok('the pull pulse throbs the arrow double-time while the OPEN word keeps its clock', good)
+        const idle = paint(55, LEGAL, 0, 1, false) // both clocks OFF at 55 (mouth dim after 38, fast dim 55%32=23)
+        ok('no call, no throb (the arrow rests on the shared clock)',
+            mouthPix(idle).length === 10 && mouthPix(idle).every(r => r.c === '#4a4f57'))
+        const called = paint(40, LEGAL, 0, 1, true) // shared OFF (40>38), fast ON (40%32=8) at 40
+        ok('the call can light the arrow while the word rests (its own clock beats faster)',
+            mouthPix(called).every(r => r.c === '#ffd23e'))
+    }
+    // 2) honesty: the leading words appear only when A can actually pull.
+    ok('with a pull legal, the called plate spells the lead',
+        !!leadText(paint(12, LEGAL, 0, 1, true)))
+    ok('hand full: the lead stays silent (words echo truth, never order it)',
+        !leadText(paint(12, LEGAL, 1, 1, true)))
+    ok('hand on an empty slot: no lead', !leadText(paint(12, LEGAL, 0, 2, true)))
+    ok('hand behind the open cell: no lead (the rail law outranks the shout)',
+        !leadText(paint(12, LEGAL, 0, 0, true)))
+    ok('no call, no lead', !leadText(paint(12, LEGAL, 0, 1, false)))
+    // 3) wiring pins: the renderer carries the hud pulse down; the face-up
+    // hint leads too (you must flip before the rail exists).
+    ok('the renderer wires the heard pull into the plate and the tilt hint (source pins)',
+        /hud\.pulse\.kind === 'pull'/.test(view) &&
+        /hud\.pulse\.kind === 'flip' \|\| hud\.pulse\.kind === 'pull'/.test(view))
+    const runPullMutant = async (name, mut, gate) => {
+        if (mut === artSrc) { ok(`mutant ${name}: target line not found`, false); return }
+        const tmp = new URL(`.mutant-art-pull-${name}.mjs`, dir)
+        plant(tmp, mut)
+        try {
+            const E = await import(tmp.href)
+            const rec = () => ({
+                rects: [], texts: [], font: '', fillStyle: '',
+                fillRect(x, y, w, h) { this.rects.push({ x, y, w, h, c: this.fillStyle }) },
+                fillText(t, x, y) { this.texts.push({ t, x, y, c: this.fillStyle }) },
+                beginPath() {}, arc() {}, fill() {},
+            })
+            const g = rec()
+            // tick 55, hands empty: BOTH clocks OFF honestly (mouth dim after
+            // 38, fast dim at 55%32=23) — a free-runner can't sit still here.
+            E.drawBack(g, 2, 55, 'XX0X0', 0, [1, 1, 0], 1, null, true)
+            // tick 40, hand FULL: fast clock ON (40%32=8) but a pull is
+            // illegal — the lead words must stay silent. Blind shouts anyway.
+            const gh = rec()
+            E.drawBack(gh, 2, 40, 'XX0X0', 1, [1, 1, 0], 1, null, true)
+            // tick 12, hands empty, open end seated: fast clock ON, pull
+            // legal — the honest plate spells the lead here (dead cannot).
+            const gl = rec()
+            E.drawBack(gl, 2, 12, 'XX0X0', 0, [1, 1, 0], 1, null, true)
+            const gv = gate(g, gh, gl) // gates carry the HONEST expectation; a mutant makes gv false
+            ok(`mutant ${name} dies by name`, !gv)
+        } finally { pull(tmp) }
+    }
+    // Gates carry the HONEST expectation (tryMut polarity, STATE #217 law):
+    // they PASS on honest art and only a mutant can make them red.
+    await runPullMutant('throb-always',
+        artSrc.replace("const pullGlow = pullPulse && tick % 32 < 20", 'const pullGlow = true'),
+        g => mouthPix(g).length === 10 && mouthPix(g).every(r => r.c === '#4a4f57')) // honest rests dim at tick 50
+    await runPullMutant('lead-blind',
+        artSrc.replace('if (pullGlow && held === 0 && batteries > 0 && sel === open && tray[sel] === 1)', 'if (pullGlow)'),
+        (g, gh) => !gh.texts.find(r => r.t === 'PULL IT -> A')) // honest: silent while the hand is full
+    await runPullMutant('lead-dead',
+        artSrc.replace("g.fillText('PULL IT -> A', PANEL.x + 228, PANEL.y + PANEL.h - 60)", ''),
+        (g, gh, gl) => !!gl.texts.find(r => r.t === 'PULL IT -> A')) // honest: at tick 10, hand free, the lead stands
 }
 
 // ---- 11. mutant: remove the open-end gate, gates must die ------------------------

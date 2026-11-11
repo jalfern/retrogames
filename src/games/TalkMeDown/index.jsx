@@ -196,6 +196,14 @@ export default function TalkMeDown() {
             hud.pulse = { mod: -1, kind: 'flip', t: 120 }
             hud.banner = { text: 'HEARD: FLIP', ok: true }
             sfx.heard()
+        } else if (intent.kind === 'pull') {
+            // #1923: a shouted PULL IT pulses the drain story — the mouth
+            // chevron throbs faster with the back up, the tilt hint leads it
+            // face-up (you must flip to reach the rail). It never pulls: the
+            // hand belongs to seat 1 (#1247 words-never-act law).
+            hud.pulse = { mod: -1, kind: 'pull', t: 120 }
+            hud.banner = { text: 'HEARD: PULL', ok: true }
+            sfx.heard()
         } else if (!m) refuse('NO MODULE')
         else if (m.solved) refuse('ALREADY SAFE')
         else if (m.locked > 0) refuse('MODULE LOCKED')
@@ -1011,7 +1019,8 @@ export default function TalkMeDown() {
                 // — view-only, the sim and hash never hear it.
                 const fx = ART.stepRailFx(railFxRef.current, gs.held, gs.tray, gs.sel,
                     `${gs.round}/${gs.bombsCleared}/${gs.features.serial}`)
-                ART.drawBack(g, gs.features.batteries, tick, gs.features.serial, gs.held, gs.tray, gs.sel, fx)
+                ART.drawBack(g, gs.features.batteries, tick, gs.features.serial, gs.held, gs.tray, gs.sel, fx,
+                    !!(hud.pulse && hud.pulse.kind === 'pull'))
                 ART.drawStrikes(g, gs.strikes)
                 ART.drawFuse(g, ART.PANEL.x + 16, ART.PANEL.y + 12, secs, secs <= 10 && !gs.done, tick)
                 return
@@ -1023,7 +1032,7 @@ export default function TalkMeDown() {
             ART.drawFuse(g, ART.PANEL.x + 16, ART.PANEL.y + 12, secs, secs <= 10 && !gs.done, tick)
             // #1802: the serial is no longer printed here — it lives on the
             // BACK ID plate; the front shell says "SERIAL: SEE BACK".
-            ART.drawFlipHint(g, !!(hud.pulse && hud.pulse.kind === 'flip'), tick)
+            ART.drawFlipHint(g, !!(hud.pulse && (hud.pulse.kind === 'flip' || hud.pulse.kind === 'pull')), tick)
             gs.modules.forEach((m, i) => {
                 const r = ART.moduleRect(i, gs.modules.length)
                 const sel = i === gs.cursor.mod && !gs.done

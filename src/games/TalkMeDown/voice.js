@@ -14,6 +14,7 @@
 //   { kind:'press', glyph:'star'|'diamond'|'club'|'spade'|'bolt'|'moon' }
 //   { kind:'set' }                 — confirm the dial
 //   { kind:'page',  page:'neon'|'dial'|'glyph' }   — flip the manual
+//   { kind:'pull' }                — shout at the rail (#1923, hint-only)
 
 import { WIRE_COLORS, GLYPHS } from './engine.js'
 
@@ -61,6 +62,14 @@ export function parseCall(text) {
         return { kind: 'dial', value: v }
     }
     if (/\b(set|confirm|done|engage)\b/.test(t)) return { kind: 'set' }
+    // #1923 PULL IT — the rail shorthand. A verb PLUS a cell noun; a verb with
+    // a COLOR stays the wire call the grammar has always made (take the white
+    // one = CUT WHITE — the cut verb list predates the rail and must not lose
+    // ground), and a bare "pull" stays noise (no object, no meaning). HINTS the
+    // drain, never acts (words-never-act law, #1247). Sits before the tilt.
+    if (/\b(pull|pulls|yank|yanks|take|takes|grab|grabs)\b/.test(t)
+        && !/\b(red|blue|yellow|green|white|black)\b/.test(t)
+        && /\b(it|cell|cells|battery|batteries|tab|holder)\b/.test(t)) return { kind: 'pull' }
     // #1797: tilt calls — LAST, so no existing phrase is stolen. "flip to the
     // dial page" still pages (the page rule sits above and claims it); a bare
     // flip/tilt/turn-over is the bomb, not the manual.
@@ -72,7 +81,7 @@ export function parseCall(text) {
 // that must say them: the manual page (#1373) and the defuser's LCD-rail
 // footer (#1415). Grammar and hint share this const so they can never drift
 // (same law as RULEBOOK: text and truth from one source).
-export const ACCEPTED_HINT = 'SAY: "CUT RED" "DIAL 7" "SET" "PRESS STAR" "FLIP IT"'
+export const ACCEPTED_HINT = 'SAY: "CUT RED" "DIAL 7" "SET" "PRESS STAR" "FLIP IT" "PULL IT"'
 
 // ---- CALL-BY-KEY (#1894) -----------------------------------------------------
 // The mic is not the only mouth: X opens a typed call line and ENTER shouts
@@ -119,5 +128,6 @@ export function intentLabel(intent) {
     if (intent.kind === 'set') return 'SET'
     if (intent.kind === 'page') return `PAGE: ${intent.page.toUpperCase()}`
     if (intent.kind === 'flip') return 'FLIP'
+    if (intent.kind === 'pull') return 'PULL'
     return '?'
 }

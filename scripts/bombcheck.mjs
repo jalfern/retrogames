@@ -250,6 +250,12 @@ const ok = (name, cond, extra = '') => {
         ['turn the bomb over', { kind: 'flip' }],
         ['tilt it', { kind: 'flip' }],
         ['flip over', { kind: 'flip' }],
+        ['pull it', { kind: 'pull' }],
+        ['yank the cell', { kind: 'pull' }],
+        ['take the battery', { kind: 'pull' }],
+        ['grab it', { kind: 'pull' }],
+        ['pull', null],
+        ['pull red', { kind: 'cut', color: 'red' }],
         ['hello there', null],
         ['red', null],
         ['blue two three', null],
@@ -266,6 +272,13 @@ const ok = (name, cond, extra = '') => {
     ok('a FLIP call labels as a shout', intentLabel({ kind: 'flip' }) === 'FLIP')
     ok('no lookahead regex tricks leak (dial beats bare set)', parseCall('set nine').kind === 'dial')
     ok('FLIP phrases never steal the page or the dial', parseCall('flip to the dial page').kind === 'page' && parseCall('turn to seven').kind === 'dial')
+    // #1923 PULL IT: the rail shorthand parses, labels, and never steals the
+    // cut rule (a pull WITH a color stays a wire call) nor the tilt call.
+    ok('a PULL call labels as a shout', intentLabel({ kind: 'pull' }) === 'PULL')
+    ok('PULL phrases never steal the cut law', ['pull red', 'yank the blue wire', 'pull the black battery']
+        .every(s => parseCall(s)?.kind === 'cut'))
+    ok('PULL keeps tilt, page and dial whole', parseCall('tilt it').kind === 'flip'
+        && parseCall('pull the dial page').kind === 'page' && parseCall('turn to seven').kind === 'dial')
 }
 
 // ---- 12. voiceCmd banking + hint source (#1415) -----------------------------
@@ -296,8 +309,8 @@ const ok = (name, cond, extra = '') => {
     ok('the file replays hash-exact — replay ignores the trace', rp.ok, JSON.stringify(rp.mismatch || rp.error))
     // The hint line the footer and the page share must describe calls the
     // grammar actually accepts (one source, text == truth).
-    ok('ACCEPTED_HINT names shapes the grammar accepts', ['cut red', 'dial 7', 'set', 'press star'].every(s => parseCall(s)) &&
-        ACCEPTED_HINT.includes('"CUT RED"') && ACCEPTED_HINT.includes('"DIAL 7"') && ACCEPTED_HINT.includes('"SET"') && ACCEPTED_HINT.includes('"PRESS STAR"') && ACCEPTED_HINT.includes('"FLIP IT"'), ACCEPTED_HINT)
+    ok('ACCEPTED_HINT names shapes the grammar accepts', ['cut red', 'dial 7', 'set', 'press star', 'flip it', 'pull it'].every(s => parseCall(s)) &&
+        ACCEPTED_HINT.includes('"CUT RED"') && ACCEPTED_HINT.includes('"DIAL 7"') && ACCEPTED_HINT.includes('"SET"') && ACCEPTED_HINT.includes('"PRESS STAR"') && ACCEPTED_HINT.includes('"FLIP IT"') && ACCEPTED_HINT.includes('"PULL IT"'), ACCEPTED_HINT)
     const artSrc = readFileSync(new URL('../src/games/TalkMeDown/art.js', import.meta.url), 'utf8')
     ok('the LCD-rail footer draws the shared const (not a literal)', /ACCEPTED_HINT/.test(artSrc))
 }
@@ -541,7 +554,9 @@ const ok = (name, cond, extra = '') => {
         /function drawBack\([^)]*serial/.test(artSrc15) && /drawBack\(g, gs\.features\.batteries, tick, gs\.features\.serial,\s*gs\.held[,)]/.test(viewSrc))
     ok('seat 2 gets the flip coach line, fed by gs.flip (source pin)',
         /ASK THEM TO FLIP IT!/.test(artSrc15) && /BACK IS UP/.test(artSrc15) &&
-        /drawManual\([\s\S]{0,240}, gs\.flip\)/.test(viewSrc))
+        // #1977 lineage grew the call (rect arg after flip; #1923 the plate
+        // draw too) — bound the window past the closing paren, not to flip.
+        /ART\.drawManual\([\s\S]{0,300}, gs\.flip,/.test(viewSrc))
 }
 
 // ---- #1894 CALL-BY-KEY: the line is an editor, not a second grammar -------
