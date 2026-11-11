@@ -1,9 +1,9 @@
 // sim.js — the seeded dice, arcade scoring, the WHOLE play tick and the
 // WATCH driver of ASTEROIDS (#1473 batch 16; #1637 batch 26).
 //
-// Pre-port the shape/velocity/position dice rolled off Math.random, the ship
-// could not die, and there was no score at all — no terminal existed. This
-// module extracts the pure half: asteroid creation on the run's mulberry32
+// Pre-port the shape/velocity/position dice rolled off the unseeded die, the
+// ship could not die, and there was no score at all — no terminal existed.
+// This module extracts the pure half: asteroid creation on the run's mulberry32
 // stream, wave spawning, and the 1979 arcade scoring table
 // (large 20 / medium 50 / small 100) so pongcheck-style Node audits can replay
 // a field and the score law without a browser.
@@ -101,7 +101,7 @@ export function makeRun(seed, opts = {}) {
         bullets: [],
         particles: [],
     }
-    gs.asteroids = spawnWave((r) => rnd(gs), gs.wave, width, height)
+    gs.asteroids = spawnWave(() => rnd(gs), gs.wave, width, height)
     return gs
 }
 
@@ -121,7 +121,7 @@ export function rebuildBoard(gs) {
     resetShip(gs)
     gs.respawnAt = -1
     gs.invulnUntil = 0
-    gs.asteroids = spawnWave((r) => rnd(gs), gs.wave, gs.width, gs.height)
+    gs.asteroids = spawnWave(() => rnd(gs), gs.wave, gs.width, gs.height)
     gs.bullets = []
     gs.particles = []
 }
@@ -299,8 +299,8 @@ export function tickAsteroids(gs, input = null) {
                 if (earned > gs.bonusLives) { gs.lives += earned - gs.bonusLives; gs.bonusLives = earned }
                 // Split?
                 if (a.size > 15) {
-                    gs.asteroids.push(makeAsteroid((r) => rnd(gs), a.x, a.y, a.size / 2, gs.width, gs.height))
-                    gs.asteroids.push(makeAsteroid((r) => rnd(gs), a.x, a.y, a.size / 2, gs.width, gs.height))
+                    gs.asteroids.push(makeAsteroid(() => rnd(gs), a.x, a.y, a.size / 2, gs.width, gs.height))
+                    gs.asteroids.push(makeAsteroid(() => rnd(gs), a.x, a.y, a.size / 2, gs.width, gs.height))
                 }
                 // Particle FX
                 spawnParticles(gs, a.x, a.y)
@@ -327,7 +327,7 @@ export function tickAsteroids(gs, input = null) {
     // Wave clear: the field empties → next wave (arcade refill).
     if (!gs.attract && !gs.over && gs.asteroids.length === 0) {
         gs.wave++
-        gs.asteroids = spawnWave((r) => rnd(gs), gs.wave, gs.width, gs.height)
+        gs.asteroids = spawnWave(() => rnd(gs), gs.wave, gs.width, gs.height)
         ev.wave = gs.wave
     }
     return ev

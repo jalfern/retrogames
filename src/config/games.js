@@ -665,7 +665,7 @@ export const GAMES = [
         label: 'ASTEROIDS',
         theme: 'dark',
         description: 'Destroy asteroids and saucers. Watch out for debris!',
-        controls: ['Arrow Up: Thrust', 'Arrow Left/Right: Rotate', 'Space: Shoot']
+        controls: ['Arrow Up: Thrust', 'Arrow Left/Right: Rotate', 'Space: Shoot', WATCH_HELP + ' — the hunter that survives the seeded sweep clears the field']
     },
     {
         path: '/donkeykong',

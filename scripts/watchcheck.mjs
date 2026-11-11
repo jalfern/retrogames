@@ -1597,6 +1597,44 @@ const PILOTS = [
             rep.check('frogger: Y again releases the frog', !(await watching()))
         },
     },
+    // #1637 batch 26 — ASTEROIDS gets its hunter: watchStep ranks the greedy
+    // play plus twelve held candidates by replaying the game's OWN physics
+    // (lead-aim intercept, honest time-to-collision dodge) on cloned worlds
+    // with the dice forked from the state. No rand in the policy: reactive per
+    // tick (Rogue law), so it seats anywhere, steers back, re-seats live.
+    {
+        id: 'asteroids', url: `${BASE}/asteroids`, hook: '__asteroidsTest',
+        async run(page, rep) {
+            const H = '__asteroidsTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            await key(page, 'Space')                       // attract -> live run
+            await page.waitForTimeout(400)
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('asteroids: Y seats the hunter', await watching())
+            rep.check('asteroids: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            const adv = (x, y) => y.score > x.score || y.wave > x.wave
+            const a = await probe()
+            const b = await pollAdvance(page, probe, adv, a, 10000)
+            rep.check('asteroids: the hunter clears rocks untouched (idle hands shoot nothing)',
+                adv(a, b), `score ${a.score} -> ${b.score}, wave ${a.wave} -> ${b.wave}`)
+            rep.check('asteroids: still watching mid-hunt', await watching())
+            await page.keyboard.press('ArrowLeft')
+            rep.check('asteroids: steer key takes over', !(await watching()))
+            rep.check('asteroids: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('asteroids: Y re-seats mid-run (the hunter re-plans from the live field)', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 10000)
+            rep.check('asteroids: resumes from where the player left it', adv(c, d),
+                `score ${c.score} -> ${d.score}, wave ${c.wave} -> ${d.wave}`)
+            await key(page, 'KeyY')
+            rep.check('asteroids: Y again releases the ship', !(await watching()))
+        },
+    },
     // #1637 batch 13 — the racer family seats its CERTIFIED autopilot. decide()
     // (CometDrift/sim.js) is the brain cometcheck races to victory ("autopilot
     // wins the 5-lap GP from P7", #1687-certified drift ladder) and both titles'
@@ -2641,6 +2679,35 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     rep.check('batch 25: froggercheck stamps the driver sweep (40/40 det, floors pinned)',
         /40\/40 seeds replay byte-equal/.test(fc) && /zero-death runs on .34 seeds/.test(fc)
         && /every seed banks at least one full level/.test(fc))
+}
+// #1637 batch 26 — ASTEROIDS' hunter is new-built; pin that the seat, the
+// tick and the check all stand on ONE engine (the whole rule set lifted into
+// sim.js, the dice forked from the stream so rollouts judge candidates fair).
+{
+    const aj = readFileSync('src/games/Asteroids/index.jsx', 'utf8')
+    const am = readFileSync('src/games/Asteroids/sim.js', 'utf8')
+    const ac = readFileSync('scripts/asteroidscheck.mjs', 'utf8')
+    const reg26 = readFileSync('src/config/games.js', 'utf8')
+    const entryHas26 = (p, s) => { const m = reg26.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
+    rep.check('ASTEROIDS: the whole tick-rule set lives in the sim (tickAsteroids)',
+        /export function tickAsteroids\(gs, input = null\)/.test(am) && /applyEvents\(tickAsteroids\(gs, input\)\)/.test(aj))
+    rep.check('ASTEROIDS: the seat drives the sim through watchStep, not a bench script',
+        /input \|\| \(gs\.watching \? watchStep\(gs\) : null\)/.test(am))
+    rep.check('ASTEROIDS: the hunter draws no dice — rollouts fork the seeded stream, never Math.random',
+        /export function watchStep\(gs\)/.test(am) && !/\bMath\.random\b/.test(am))
+    rep.check('ASTEROIDS: the candidate is HELD before greedy takes over (1-tick ties never turn the ship)',
+        /const HOLD = \d+/.test(am) && /t < HOLD \? cand : greedy\(c\)/.test(am))
+    rep.check('ASTEROIDS: Y seats with blips; any driving key takes over',
+        /if \(isWatchKey\(e\)\)/.test(aj) && /isTakeoverKey\(e\)/.test(aj)
+        && aj.includes('playWatchStart') && aj.includes('playWatchStop') && aj.includes('watchSfx: watchSfxLog'))
+    rep.check('ASTEROIDS: watch never lingers — released at game over (silent, racer rule)',
+        /if \(ev\.over && !gs\.attract && gs\.watching\) release\(false\)/.test(aj))
+    rep.check('ASTEROIDS: attract shows the shared WATCH hint (import + drawn line)',
+        (aj.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
+    rep.check('registry /asteroids: controls carry the WATCH line', entryHas26('/asteroids', 'WATCH_HELP'))
+    rep.check('batch 26: asteroidscheck stamps the driver sweep (byte-equal det, floors pinned)',
+        /byte-equal \(hash sampled/.test(ac) && /zero-death runs on/.test(ac)
+        && /every seed banks at least one full wave/.test(ac))
 }
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray
