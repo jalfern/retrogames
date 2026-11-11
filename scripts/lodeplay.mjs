@@ -18,6 +18,9 @@
 //       aqua (no strong-blue pixel, i.e. not the old white+blue kit), the
 //       guard paints orange (not the old olive), and ladder and rope paint
 //       the original's light grey (not green/yellow).
+//   4b. THE CARVED SHAFT (#1942) — two diggable strata: dig, walk over the
+//       open pit mouth and FALL in (sprite and state agree), dig the bottom
+//       straight down, and clamber back out with UP — no life lost.
 //   4. THE LADDER AND THE ROPE (vault 2) — run to a real ladder, climb it, and
 //      dangle onto the rope line: the runner hangs, rope over his head in the state.
 //   5. GUARDS HUNT — a guard's cell changes without being touched.
@@ -187,6 +190,49 @@ r.check('the dig opens a live hole diagonally below the runner', !!holeCell && h
 await wait(6200) // refill 75 ticks = 5 s, plus margin
 const refilled = await page.evaluate(([x, y]) => { const p = window.__lodeTest.probe(); return { cell: p.cellAt(x, y), age: p.holeAt(x, y) } }, [holeCell.x, holeCell.y])
 r.check('the hole refills: the brick grows back after the fuse', refilled.cell === 1 && refilled.age === 0, JSON.stringify(refilled))
+
+// 4b — THE CARVED SHAFT (#1942), with real keys only: the ground is two
+// strata, so dig, step over the mouth (the walker falls in), dig the bottom
+// straight down, and clamber back out — state AND pixels must agree at every
+// step (the drawn sprite follows the logical cell).
+await page.evaluate(() => window.__lodeTest.start(0))
+await wait(300)
+await holdKey('ArrowRight', 300)
+await holdKey('ArrowDown', 300)                     // hole below-right of spawn: (2,17)
+const mouth = await page.evaluate(() => {
+    const p = window.__lodeTest.probe()
+    const px = p.player.x
+    return { hole17: p.holeAt(px + 1, 17), x: px + 1 }
+})
+r.check(`the shaft sits on diggable floor-rock: cell under the pit is brick (${mouth.hole17 > 0 ? 'pit open' : 'pit shut'})`,
+    await page.evaluate(([x]) => window.__lodeTest.probe().cellAt(x, 18) === 1, [mouth.x]))
+await holdKey('ArrowRight', 300)                    // step over the mouth — gravity, not a block
+let inPit = null
+for (let i = 0; i < 20 && !(inPit && inPit.player.y === 17); i++) { inPit = await probe(); await wait(120) }
+r.check('walking over an open pit drops the runner in (state row 17)', !!inPit && inPit.player.y === 17, JSON.stringify(inPit && { y: inPit.player.y, mode: inPit.player.mode }))
+const pitPix = await page.evaluate(() => {
+    const c = document.querySelector('canvas[data-lode-stage]')
+    const p = window.__lodeTest.probe()
+    const d = c.getContext('2d').getImageData(p.player.x * 20 + 3, 17 * 22 + 3, 14, 16).data
+    let n = 0
+    for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] >= 24) n++
+    return { n, at: [p.player.x, p.player.y] }
+})
+r.check('the drawn runner stands in the pit — pixels match the logical cell', pitPix.n > 60, JSON.stringify(pitPix))
+await holdKey('ArrowDown', 300)                     // dig the shaft bottom straight below
+let deepened = false
+for (let i = 0; i < 20 && !deepened; i++) {
+    deepened = await page.evaluate(([x]) => { const p = window.__lodeTest.probe(); return p.holeAt(x, 18) > 0 && p.player.y === 18 }, [mouth.x])
+    if (!deepened) await wait(150)
+}
+r.check('from the pit floor, DOWN carves the shaft deeper (row 18 opens, runner rides down)', deepened)
+await holdKey('ArrowUp', 300)
+await holdKey('ArrowUp', 300)
+let out = null
+for (let i = 0; i < 20 && !(out && out.player.y === 16); i++) { out = await probe(); await wait(120) }
+const climbs = out ? out.evLog.filter((e) => e.type === 'pitClimb').length : 0
+r.check('UP clambers the runner out of the shaft, no life lost', !!out && out.player.y === 16 && climbs >= 2 && out.lives === 3,
+    JSON.stringify(out && { y: out.player.y, climbs, lives: out.lives }))
 
 // 5 — vault 2 "THE ROPE": run to the col-8 ladder and climb it — the runner
 // rises off the floor into climb mode on the real ladder. (The rope line at

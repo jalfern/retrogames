@@ -8,10 +8,11 @@
 //   npm run lodecheck -- --mutate  + five mutants that MUST die
 //   npm run lodecheck -- --map 1   dump a vault as ASCII
 //
-// The rules pinned here: no jump, diagonal-only dig, refilling holes that kill
-// their rider, guards that fall in / climb out / steal gold, and the exit
-// ladder that only appears when every gold is in the runner's hands. There is
-// no clock.
+// The rules pinned here: no jump, diagonal-only dig (straight down only from
+// inside a pit), refilling holes that kill their rider, walkers that fall into
+// open pits, pit climb-out, guards that fall in / climb out / steal gold, the
+// deep-shaft multi-cell burial, and the exit ladder that only appears when
+// every gold is in the runner's hands. There is no clock.
 
 import { LEVELS, buildLevel } from '../src/games/LodeRunnerLite/levels.js'
 import {
@@ -35,7 +36,7 @@ if (mapArg !== null) {
     for (let y = 0; y < H; y++) {
         let line = ''
         for (let x = 0; x < W; x++) {
-            const g = b.guards.find((gd) => gd.x === x && gd.y === y)
+            const g = b.meta.guards.find((gd) => gd.x === x && gd.y === y)
             line += g ? 'G' : (x === b.meta.spawn.x && y === b.meta.spawn.y ? 'P' : x === b.meta.exit.x && y === b.meta.exit.y ? 'E' : CELL(b.grid[y * W + x]))
         }
         console.log(line)
@@ -77,7 +78,7 @@ for (let i = 0; i < LEVELS.length; i++) {
         for (let x = 0; x < W && !bad; x++) {
             const t = grid[y * W + x]
             if (t === ROPE && !(at(x, y + 1) === EMPTY || at(x, y + 1) === LADDER || at(x, y + 1) === GOLD)) bad = `rope at ${x},${y} has support (${at(x, y + 1)}) under it`
-            else if (t !== SOLID) {
+            else if (t !== SOLID && y < H - 1) {   // the floor-rock row may sit sealed: you DIG into it from the pit above (#1942)
                 const n = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => !solidT(at(x + dx, y + dy)))
                 const hanging = at(x, y - 1) === ROPE
                 if (!n.length && !hanging) bad = `cell ${x},${y} is entombed on all four sides`
@@ -244,6 +245,64 @@ section('RULES — the 1983 contract, each pinned by a scenario')
     ok(g.end !== 'time', `the vault ended on a clock (${g.end}) — there is no clock`)
 }
 
+// ---------------------------------------------------- the shaft, carved live ----
+// #1942: the multi-cell burial, built by the same inputs a player uses —
+// dig from the surface, walk over the mouth, dig the bottom from inside the
+// pit, clamber out. And a guard that takes the shortcut across the mouth.
+{
+    // CARVED SHAFT & ESCAPE: drop in, deepen, climb out — no life lost.
+    const b = buildLevel(0); const g = makeGame(b.meta, b.grid); const p = g.player
+    ok(applyAction(g, p, 'ArrowRight'), 'run refused at spawn')
+    ok(applyAction(g, p, 'ArrowDown'), 'surface dig refused')          // hole at (p.x+1, 17)
+    const hx = p.x + 1
+    ok(applyAction(g, p, 'ArrowRight'), 'the step over the pit mouth was refused')   // hole below the mouth
+    let landed = false
+    for (let k = 0; k < 8 && !landed; k++) { step(g); landed = p.mode === 'stand' && p.y === 17; g.events.length = 0 }
+    ok(landed && p.alive, `the walker did not fall into the open pit (y=${p.y}, mode=${p.mode})`)
+    ok(g.holeAge[17 * W + hx] > 0, 'the pit fused shut too early for the scenario')
+    ok(g.grid[18 * W + hx] === BRICK, 'the floor-rock under the pit is not diggable brick — the vault lost its second stratum')
+    ok(applyAction(g, p, 'ArrowDown'), 'the deep dig at the pit bottom was refused')
+    ok(g.grid[18 * W + hx] === EMPTY && g.holeAge[18 * W + hx] > 0, 'the shaft bottom was not carved')
+    ok(p.y === 18 && p.alive, `the digger did not drop to the shaft floor (y=${p.y})`)
+    ok(applyAction(g, p, 'ArrowUp'), 'the first pit climb was refused')
+    ok(p.y === 17, `the first climb did not raise the runner (y=${p.y})`)
+    ok(applyAction(g, p, 'ArrowUp'), 'the second pit climb was refused')
+    ok(p.y === 16, `the second climb did not clear the lip (y=${p.y})`)
+    ok(applyAction(g, p, 'ArrowLeft'), 'the runner could not walk off the lip')
+    for (let k = 0; k < 10; k++) step(g)
+    ok(p.alive && g.lives === (b.meta.lives ?? CFG.lives), `a carved-shaft escape cost a life (${p.lives}) — the climb must outrun a fresh fuse`)
+}
+{
+    // DEEP BURIAL, CARVED: the shaft the runner just dug swallows a guard that
+    // walks over the mouth — it rides the upper hole when that fuse closes.
+    const b = buildLevel(0); const g = makeGame(b.meta, b.grid); const p = g.player
+    applyAction(g, p, 'ArrowRight'); applyAction(g, p, 'ArrowDown')    // hole at (hx, 17)
+    const hx = p.x + 1
+    applyAction(g, p, 'ArrowRight')                                     // drop into it
+    for (let k = 0; k < 4; k++) { step(g); g.events.length = 0 }
+    applyAction(g, p, 'ArrowDown')                                      // carve the bottom; runner at row 18
+    applyAction(g, p, 'ArrowUp'); applyAction(g, p, 'ArrowUp'); applyAction(g, p, 'ArrowLeft')  // get out of the way
+    const gd = g.guards[0]
+    gd.x = hx + 1; gd.y = 16; gd.mode = 'stand'; gd.trapCount = 0
+    ok(applyAction(g, gd, 'ArrowLeft', { dig: false }), 'the guard was blocked at its own pit mouth — holeFall is not reaching guards')
+    let rode = false, buried = false
+    for (let k = 0; k < CFG.refill + 40 && !buried; k++) {
+        step(g)
+        if (gd.alive && gd.mode === 'stand' && gd.x === hx && gd.y === 17) rode = true   // climbed off the shaft floor onto the lid
+        if (g.events.some((e) => e.type === 'guardBuried')) buried = true
+        g.events.length = 0
+    }
+    ok(rode, 'the guard never climbed up the shaft — the climb law stopped working in deep pits')
+    ok(buried, 'the carved two-cell shaft never buried the guard — the multi-cell law is not live')
+    ok(gd.x === gd.home.x && gd.y === gd.home.y, 'the buried guard did not respawn at the top')
+    ok(p.alive && g.lives === (b.meta.lives ?? CFG.lives), 'the runner died in a scenario meant for the guard')
+}
+{
+    // SHAFT LAW, MEASURED: two climbs cost two guardTraps; the fuse costs one
+    // refill. Assert the clocks themselves — the law is the arithmetic.
+    ok(2 * CFG.guardTrap > CFG.refill, `a two-cell shaft is escapable by clock (${2 * CFG.guardTrap} <= ${CFG.refill}) — deep burial is a myth with these numbers`)
+}
+
 // --------------------------------------------------------------- mutants ----
 if (MUT) {
     section('MUTATIONS — each one MUST turn an honest check red')
@@ -289,6 +348,30 @@ if (MUT) {
         gd.x = 5; gd.y = 16; gd.mode = 'stand'
         applyAction(g, gd, 'ArrowLeft', { dig: false })
         return gd.carry === true
+    })
+    tryMut('holeFall=false (walkers skid across open pits)', { holeFall: false }, () => {
+        const b = buildLevel(0); const g = makeGame(b.meta, b.grid); const p = g.player
+        applyAction(g, p, 'ArrowRight'); applyAction(g, p, 'ArrowDown')
+        applyAction(g, p, 'ArrowRight')                       // over the mouth
+        let fell = false
+        for (let k = 0; k < 8 && !fell; k++) { step(g); fell = p.y === 17; g.events.length = 0 }
+        return fell
+    })
+    tryMut('digDeep=false (the pit bottom is iron)', { digDeep: false }, () => {
+        const b = buildLevel(0); const g = makeGame(b.meta, b.grid); const p = g.player
+        applyAction(g, p, 'ArrowRight'); applyAction(g, p, 'ArrowDown')
+        const hx = p.x + 1
+        applyAction(g, p, 'ArrowRight')
+        for (let k = 0; k < 8 && !(p.mode === 'stand' && p.y === 17); k++) step(g)
+        applyAction(g, p, 'ArrowDown')
+        return g.grid[18 * W + hx] === EMPTY && g.holeAge[18 * W + hx] > 0
+    })
+    tryMut('pitClimb=false (the pit is a grave for everyone)', { pitClimb: false }, () => {
+        const b = buildLevel(0); const g = makeGame(b.meta, b.grid); const p = g.player
+        applyAction(g, p, 'ArrowRight'); applyAction(g, p, 'ArrowDown')
+        applyAction(g, p, 'ArrowRight')
+        for (let k = 0; k < 8 && !(p.mode === 'stand' && p.y === 17); k++) step(g)
+        return applyAction(g, p, 'ArrowUp') && p.y === 16
     })
 }
 
