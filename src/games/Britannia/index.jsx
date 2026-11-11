@@ -28,7 +28,7 @@ import { townScore, hasCottage } from './towns.js'
 import { AVATARS, shrineTitle, plotShrines } from './shrines.js'
 import { buildClassicStamps, variantOf } from './ega.js'
 import { PHASES, moonPhase, moonName, phaseLit, gateFlavor, routeDest } from './moons.js'
-import { crest, crestLane, foam, landSides, foamPatches, splatIntensity, dimples, splashStrikes, SPLAT_GAP, seaRough, crestGain, foamGain } from './swell.js'
+import { crest, crestLane, foam, landSides, foamPatches, splatIntensity, dimples, splashStrikes, SPLAT_GAP, seaRough, crestGain, foamGain, shipCd, surfDue } from './swell.js'
 
 const SIM_MS = 1000 / 60
 const VIEW_W = 1280
@@ -184,6 +184,14 @@ const BritanniaGame = () => {
                     audioController.playNoise(0.05 + 0.09 * sis, 0.025 + 0.015 * sis)
                 }
             }
+            // #1829 item 1: aboard, the sea the ship rides gets its own voice
+            // — the hull hears the swell (surfDue is pure rough+tick: calm
+            // water aboard stays silent, a heaving sea slaps closer and
+            // closer). View/audio only — the sim never sees it.
+            if (S.ship) {
+                const sv = surfDue(seaRough(S.x, S.y, S.tick, S.seed, terrainAt), S.tick)
+                if (sv) audioController.playNoise(sv.dur, sv.vol)
+            }
             // #1853: the pressure cycle turns at epoch boundaries — name the
             // wind shift so the player can read WHY the sky races or stalls.
             // A sky change this tick keeps its own voice; GOAL stays king.
@@ -279,7 +287,7 @@ const BritanniaGame = () => {
                     S.face = faceFor(dx, dy); S.anim++
                     audioController.playNoise(0.2, 0.12)
                     S.toast = 90; S.toastMsg = "Thou stepp'st ashore."
-                } else { S.x = nx; S.y = ny; S.cd = SHIP_CD }
+                } else { S.x = nx; S.y = ny; S.cd = shipCd(seaRough(nx, ny, S.tick, S.seed, terrainAt), SHIP_CD) }
             } else if (shrineBlock.has(nx + ',' + ny)) {
                 // the chapel is stone (#1876): the pilgrim walks around the
                 // sanctum, through never into it. First touch names it.
@@ -291,7 +299,7 @@ const BritanniaGame = () => {
                     S.toast = 120; S.toastMsg = `The ${shrineTitle(si)} is stone — about face.`
                 }
             } else if (isSea(v)) {
-                S.ship = true; S.x = nx; S.y = ny; S.cd = SHIP_CD
+                S.ship = true; S.x = nx; S.y = ny; S.cd = shipCd(seaRough(nx, ny, S.tick, S.seed, terrainAt), SHIP_CD)
                 S.face = faceFor(dx, dy); S.anim++
                 audioController.playSweep(140, 90, 0.5, 'sawtooth', 0.18)
                 S.toast = 90; S.toastMsg = 'Aye, a ship! The open sea lies ahead.'
@@ -1022,6 +1030,7 @@ const BritanniaGame = () => {
                     swell: crest(S.x, S.y, S.tick),
                     seaRain: splatIntensity(weatherAt(S.x, S.y, S.tick, S.seed, terrainAt)),
                     seaRough: seaRough(S.x, S.y, S.tick, S.seed, terrainAt),
+                    shipCd: S.ship ? shipCd(seaRough(S.x, S.y, S.tick, S.seed, terrainAt), SHIP_CD) : 0,
                     town: townScore(S.x, S.y, gates, terrainAt),
                     // #1876: the eight consecrated plots (null where no plot was
                     // found) + how many shrines the pilgrim has touched

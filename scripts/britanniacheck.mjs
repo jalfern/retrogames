@@ -17,7 +17,7 @@ import { MOONS, PHASES, DAY_TICKS, moonPhase, moonName, phaseLit, PHASE_FLAVOR, 
 import { shadeAt, mixHex, builtPalette, cobbleBlock } from '../src/games/Britannia/tiles.js'
 import { TOWN_R, FLAT as TOWN_FLAT, townScore, hasCottage } from '../src/games/Britannia/towns.js'
 import { decodeCon, decodeRecord, CON_TERR, FLAT } from '../src/games/Britannia/ega.js'
-import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches, SPLAT, splatIntensity, dimples, splashStrikes, SPLAT_GAP, ROUGH_MEMORY, seaRough, crestGain, foamGain } from '../src/games/Britannia/swell.js'
+import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches, SPLAT, splatIntensity, dimples, splashStrikes, SPLAT_GAP, ROUGH_MEMORY, seaRough, crestGain, foamGain, SAIL_DRAG, shipCd, SURF_FLOOR, surfVoice, surfDue } from '../src/games/Britannia/swell.js'
 import { SHRINE_DIST, AVATARS, shrineTitle, shrineSpot, plotShrines } from '../src/games/Britannia/shrines.js'
 
 // Prove-it-can-fail mutants (#1876): --mutate-shrine shrinks SHRINE_DIST to 1
@@ -845,7 +845,49 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
             'index.jsx: crests gain stroke, foam gains body, and big crests whitecap in wind')
         ok(/seaRough: seaRough\(S\.x, S\.y, S\.tick, S\.seed, terrainAt\)/.test(idx),
             'index.jsx: the harness can watch the wind state under the Avatar')
+        ok(/S\.cd = shipCd\(seaRough\(nx, ny, S\.tick, S\.seed, terrainAt\), SHIP_CD\)/.test(idx),
+            'index.jsx: a ship crossing a sea tile waits out the drag that water demands (sail law wired to motion)')
+        ok(/surfDue\(seaRough\(S\.x, S\.y, S\.tick, S\.seed, terrainAt\), S\.tick\)/.test(idx),
+            'index.jsx: aboard, the hull hears the swell it rides')
     }
+}
+
+// ---- sail drag + surf voice (#1829 item 1) -----------------------------
+// The sea reads aboard: shipCd scales the ship's cadence by the wind-memory
+// of the tile just crossed; surfVoice/surfDue give the heaving sea its hull
+// roar. The laws that MUST hold: calm identity (rough 0 is bit-exactly the
+// old cadence — pre-existing voyages replay unchanged), monotone integer
+// drag, clamped inputs, silence below the surf floor. britannidrive proves
+// the law with real motion (same budget, calm vs heavy corridor).
+{
+    ok(shipCd(0, 5) === 5, 'sail identity: calm water (rough 0) keeps the exact old ship cadence')
+    ok(shipCd(1, 5) === 5 + SAIL_DRAG, `worst sea adds exactly SAIL_DRAG=${SAIL_DRAG} ticks`)
+    let mono = true, integ = true
+    let prev = -1
+    for (let i = 0; i <= 100; i++) {
+        const c = shipCd(i / 100, 5)
+        if (c < prev) mono = false
+        if (!Number.isInteger(c)) integ = false
+        prev = c
+    }
+    ok(mono, 'drag is monotone: heavier water is never faster')
+    ok(integ, 'cooldowns are integers — the fixed-timestep contract survives the drag law')
+    ok(shipCd(-1, 5) === 5 && shipCd(2, 5) === 5 + SAIL_DRAG,
+        'roughness is clamped to [0,1] before drag (a bad sensor reading cannot warp the cadence)')
+    ok(surfVoice(0) === null && surfVoice(SURF_FLOOR - 1e-9) === null,
+        'calm water aboard is silent — the pre-#1829 quiet survives')
+    ok(surfVoice(SURF_FLOOR) !== null && surfVoice(1).dur > surfVoice(0.5).dur && surfVoice(1).vol > surfVoice(0.5).vol,
+        'the hull roar grows longer and louder as the sea heaves')
+    ok(surfDue(0, 0) === null, 'surfDue is silent on a calm sea at every cadence')
+    let heard = 0, calms = 0
+    for (let t = 0; t < 240; t++) {
+        if (surfDue(1, t)) heard++
+        if (surfDue(SURF_FLOOR, t)) calms++
+    }
+    ok(heard >= 240 / 8 && calms >= 240 / 21 && heard > calms,
+        'a storm slaps the hull more often than a fresh breeze, with an 8-tick floor (never machine-guns)')
+    ok(surfDue(1, 0) !== null && surfDue(1, 8) !== null && surfDue(1, 4) === null,
+        'the heavy cadence is exact: every 8th tick at full roughness')
 }
 
 // classic tiles (#1135): C mode stamps the ORIGINAL terrain tiles. The mapping

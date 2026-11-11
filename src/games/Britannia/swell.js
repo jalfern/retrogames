@@ -148,3 +148,33 @@ export const CREST_GAIN = 0.6
 export const FOAM_GAIN = 0.45
 export const crestGain = (rough) => 1 + CREST_GAIN * rough
 export const foamGain = (rough) => 1 + FOAM_GAIN * rough
+
+// ---- The sea reads aboard (#1829 item 1) --------------------------------
+// Rough water slows the ship. The sim stays honest: the cooldown for the
+// next sea tile = the calm cadence plus drag scaled by the wind-memory the
+// tile the ship just crossed carries (seaRough). Calm (rough 0) is
+// bit-exactly the old cadence — every pre-existing voyage replay survives;
+// the roughest water adds SAIL_DRAG ticks. Monotone, integer, clamped,
+// pure function of seaRough, so the hash law and every replay survive.
+// Hazard (storms damaging hulls) stays an honest gap: this stage makes the
+// sea FELT, not fatal — the pilgrimage stays winnable in any weather.
+export const SAIL_DRAG = 4
+export function shipCd(rough, calmCd) {
+    return calmCd + Math.round(SAIL_DRAG * Math.max(0, Math.min(1, rough)))
+}
+
+// A heaving sea slaps the hull. surfVoice is what that roar sounds like at
+// a given roughness — null below SURF_FLOOR, so calm water aboard stays as
+// quiet as it was before this rule existed. surfDue says WHEN: the gaps
+// close as the sea heavies, with an 8-tick floor (the SPLAT_GAP law again —
+// a storm rattles, never machine-guns). Pure rough+tick, so the voice can
+// never drift from the swell the painter draws.
+export const SURF_FLOOR = 0.35
+export function surfVoice(rough) {
+    if (rough < SURF_FLOOR) return null
+    return { dur: 0.22 + 0.3 * rough, vol: 0.05 + 0.06 * rough }
+}
+export function surfDue(rough, tick) {
+    const v = surfVoice(rough)
+    return v && tick % Math.max(8, Math.round(28 - 20 * rough)) === 0 ? v : null
+}

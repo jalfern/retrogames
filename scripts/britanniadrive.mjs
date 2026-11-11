@@ -323,6 +323,60 @@ r.check('the chapel is stone: the west step onto the sanctum is refused (x stays
 r.check('the refusal names the shrine and counts the touch', /is stone — about face/.test(sS.toastMsg) && sS.bumped >= 1, JSON.stringify({ toast: sS.toastMsg, bumped: sS.bumped }))
 await page.screenshot({ path: '/tmp/forge/britannia-shrine.png' })
 
+// #1829 item 1 — the sea reads aboard, driven live with the loop locked so
+// every tick comes from the harness pad (frames cannot flake it): due south
+// off the coastal gate V (42 identical land tiles), board at (235,254), sail
+// the deep column. Epoch 57 leaves the whole corridor bit-exactly calm;
+// epoch 18 whips every tile to full roughness. The SAME tick budget must
+// cover measurably less sea in heavy water, calm cooldowns must stay the
+// exact old cadence (identity), heavy cooldowns must widen, and the panel's
+// shipCd must match the node drag law tile-for-tile.
+{
+    const CALM_E = 57, HEAVY_E = 18, BUDGET = 480
+    const avgRough = (t, k0, n) => {
+        let a = 0
+        for (let k = k0; k < k0 + n; k++) a += seaRough(235, 254 + k, t, seed0, terrainAt)
+        return a / n
+    }
+    r.check(`the epochs bracket the corridor (calm ${avgRough(CALM_E * E + 100, 0, 24).toFixed(2)} over 24 tiles, heavy ${avgRough(HEAVY_E * E + 100, 0, 15).toFixed(2)} over 15)`,
+        avgRough(CALM_E * E + 100, 0, 24) < 1e-9 && avgRough(HEAVY_E * E + 100, 0, 15) >= 0.75)
+    const sailRun = (epoch) => page.evaluate((a) => {
+        window.__game.reset(a.sd)
+        window.__britanniaTest.setTime(a.tt)
+        window.__britanniaTest.teleport(5)
+        // zero-tick step acquires the loop lock: every tick from here is the
+        // harness pad's, frames cannot inject drift
+        window.__game.step({}, 0)
+        // the first south step lands beside gate V, which whirls its menu —
+        // dismiss it (b pad), or every down-step is swallowed by the picker
+        window.__game.step({ down: true }, 1)
+        window.__game.step({ b: true }, 1)
+        const cds = []
+        let prev = window.__britanniaTest.state()
+        let lt = prev.tick, ly = prev.y
+        for (let i = 0; i < a.n; i++) {
+            window.__game.step({ down: true }, 1)
+            const s = window.__britanniaTest.state()
+            if (s.ship && s.y > ly) { cds.push(s.tick - lt); lt = s.tick; ly = s.y }
+        }
+        const s = window.__britanniaTest.state()
+        window.__game.release()
+        return { ship: s.ship, y: s.y, cds, shipCd: s.shipCd, rough: s.seaRough }
+    }, { sd: seed0, tt: epoch * E + 100, n: BUDGET })
+    const calm = await sailRun(CALM_E)
+    const heavy = await sailRun(HEAVY_E)
+    r.check('the pilgrim really boards south of gate V (both runs end under sail)', calm.ship && heavy.ship, JSON.stringify({ calm: calm.y, heavy: heavy.y }))
+    r.check('sail identity: calm water keeps the exact old cadence — every sea-tile gap is SHIP_CD+1',
+        calm.cds.length >= 12 && calm.cds.every((c) => c === 6), JSON.stringify(calm.cds))
+    r.check('heaving water slows the ship: every sea-tile cooldown widens to >= 8 ticks',
+        heavy.cds.length >= 10 && heavy.cds.every((c) => c >= 8), JSON.stringify(heavy.cds))
+    r.check(`the same ${BUDGET}-tick voyage covers more sea in calm than in heavy water`,
+        calm.y - heavy.y >= 2, JSON.stringify({ calmY: calm.y, heavyY: heavy.y, calmTiles: calm.cds.length, heavyTiles: heavy.cds.length }))
+    r.check('panel shipCd matches the node drag law at the ship\'s tile (and names the drag)',
+        heavy.shipCd === 5 + Math.round(4 * heavy.rough) && heavy.shipCd > 5, JSON.stringify({ shipCd: heavy.shipCd, rough: heavy.rough }))
+    await page.screenshot({ path: '/tmp/forge/britannia-sail.png' })
+}
+
 // restart path stays clean
 await page.evaluate(() => window.__game.reset(7))
 await sleep(250)

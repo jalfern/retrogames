@@ -424,3 +424,27 @@ npm run dev                 # play at /retrogames/britannia
   torch radius 150->220; the shared RotateHint card asks landscape titles
   to rotate in portrait. `npm run portraitsweep` (port 390x844) hard-fails
   britannia/outrun/tempest if the stretch ever returns.
+
+## The sea reads aboard (#1829 item 1)
+- `swell.js`: `shipCd(rough, calmCd)` gives sea state a hand on the tiller —
+  the cooldown for the next sea tile is the calm cadence plus `SAIL_DRAG` (=4)
+  ticks scaled by the wind-memory of the tile just crossed (`seaRough`).
+  Calm is bit-exactly the old cadence (every pre-existing voyage replays
+  unchanged); the law is integer, monotone and clamped, so the hash law
+  survives. `surfVoice`/`surfDue` give the hull a roar: silent below
+  `SURF_FLOOR` (calm aboard stays quiet), gaps close as the sea heaves with
+  an 8-tick floor (the SPLAT_GAP law — a storm rattles, never machine-guns).
+  Pure rough+tick: the voice can never drift from the swell the painter draws.
+- `index.jsx`: boarding and mid-sea moves set `S.cd = shipCd(seaRough(...),
+  SHIP_CD)`; aboard, the hull sounds when `surfDue` says; `shipCd` rides the
+  harness state for panel parity.
+- Gates: britanniacheck's SAIL LAW block (calm identity, monotone integer
+  drag, clamped inputs, surf silence + cadence) and britannidrive's live law
+  — loop locked, due south off gate V, boarding at (235,254), the same
+  480-tick voyage run at epoch 57 (corridor-bit-calm: every sea gap is
+  exactly SHIP_CD+1) and epoch 18 (corridor at full swell: every gap >= 8):
+  calm gains ~9 tiles on the same budget, and the panel's `shipCd` matches
+  the node drag law at the ship's tile.
+- Honest gaps that remain: storms still do not endanger the hull (the
+  hazard half of item 1), and fronts vary speed only through the drift wind
+  (#1853) — pressure-style variation is item 2, pinned by the drift law.
