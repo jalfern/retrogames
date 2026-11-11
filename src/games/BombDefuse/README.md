@@ -99,7 +99,7 @@ lockstep-by-sampling-law (#531), same shape as the other four co-op titles:
 ## Verify
 
 ```bash
-npm run defusecheck                      # 154 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline, first-VENT coaching, powered-device bed, window pre-flash, active-seat chips
+npm run defusecheck                      # 164 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline, first-VENT coaching, powered-device bed, window pre-flash, active-seat chips, the boom FX
 npm run defuselinkcheck                # 75 gates: online protocol incl. in-flight reseat (7b/7c/7d)
 CONTRACT_ONLY=bomb-defuse npm run contractcheck
 DEV_PORT=5178 npm run plaicraft:evidence -- --self-test   # fifth-title synths + mutants
@@ -186,6 +186,20 @@ chip pulses too, so a CPU partner's debt is visible. Paused kills the pulse.
 Mutants: holder debt ignoring `gs.held` → the pin + won-run gates go red;
 both-true-always reddens the answered gates. Restore → 154/154. `__bdTest.seatAsk`
 exposes the live law for the drive harness.
+
+The boom (#1812 item 3): the trope films it — on the boom event the case LID
+blows off (tumble + gravity + fade, paint-frame physics), nine brass SHRAPNEL
+fragments arc out on long parabolas (heavier than the tap-sparks), and the
+chassis takes five soot DECALS that ride into the next run: `scorchDecals` is
+module-level on purpose — a restart does not wash the bomb clean, only unmount
+does. All of it is view: `spawnBoom` reads only `Math.random` (the ART.md 5
+allowance for juice) and never `gs`; the engine is untouched, the hash law
+stands. `__bdTest.boomFx/boomNow` expose it; defusecheck pins spawn-wiring,
+gs-free spawn, module-level decals, gravity, and hash-invariance (mutant:
+unwire `spawnBoom(hud)` → the spawn gate reddens, 163/164). `defusedrive`
+rides it live: lid+shrapnel in flight 150 ms after the kill, FX riding across
+the screen change, next run opening scorched but lid-free — 26/26, zero page
+errors.
 
 ## Honest gaps (filed to QA as the polish pass)
 
