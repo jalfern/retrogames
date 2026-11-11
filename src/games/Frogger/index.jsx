@@ -3,9 +3,15 @@ import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { attractFrame, DIM } from './attract.js'
-import { CELL, COLS, W, DIVE_CYCLE, makeLane, deathStyle } from './sim.js'
-import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
+import {
+    CELL, COLS, W, HOME_ROW, RIVER_TOP, RIVER_BOT, MEDIAN_ROW, ROAD_TOP, ROAD_BOT, START_ROW,
+    TIME_LIMIT, HOP_ANIM, DIE_ANIM, DIVE_CYCLE,
+    makeRun, tickFrogger, hop as simHop, supportAt as simSupportAt, spansOf, surfaced, houseAt, deathStyle, stateHash,
+} from './sim.js'
+import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 
 const FroggerGame = () => {
@@ -13,6 +19,10 @@ const FroggerGame = () => {
     const containerRef = useRef(null)
     const [paused, setPaused] = React.useState(false)
     const pausedRef = useRef(false)
+    // #1637 b25 — the seat. React mirrors of the sim flags drive the shared
+    // chrome (pill, toast, attract ▶ WATCH); gs.watching is the engine flag.
+    const [watching, setWatching] = React.useState(false)
+    const [attractUi, setAttractUi] = React.useState(true)
 
     const handleResume = () => {
         setPaused(false)
@@ -26,168 +36,33 @@ const FroggerGame = () => {
         let animationFrameId
 
         // FIXED INTERNAL RESOLUTION: 13 columns of 20px, 12 play rows + HUD strip
-        // (CELL/COLS/W/DIVE_CYCLE and the seeded lane dice live in ./sim.js)
+        // (rows, configs and the whole tick rule set live in ./sim.js — #1637 b25
+        // lifted them so froggercheck proves the driver against shipped physics).
         const HUD_H = 26
         const ROWS = 12
         const H = HUD_H + ROWS * CELL
-
-        // Row map (top to bottom):
-        // 0 = homes, 1-4 = river, 5 = median, 6-10 = road (8 is the rest lane), 11 = start
-        const HOME_ROW = 0
-        const RIVER_TOP = 1
-        const RIVER_BOT = 4
-        const MEDIAN_ROW = 5
-        const ROAD_TOP = 6
-        const ROAD_BOT = 10
-        const START_ROW = 11
-
-        const TIME_LIMIT = 30 * 60
-        const HOP_ANIM = 9
-        const DIE_ANIM = 55
-        const HOME_ANIM = 45
-        const DIVE_UP = 3.3 * 60
 
         canvas.width = W
         canvas.height = H
         ctx.imageSmoothingEnabled = false
 
-        const mod = (v, c) => ((v % c) + c) % c
         const rowMid = r => HUD_H + r * CELL + CELL / 2
-
-        // ------------------------------------------------------------------
-        // LANES. Items live at continuous x; draw/hit-test through a modulo
-        // of the lane's cycle length, so the traffic line never shows a hole.
-        // ------------------------------------------------------------------
-        const RIVER_CFG = [
-            { dir: 1, speed: 0.6, kind: 'log', widths: [3], gap: 2.4 },
-            { dir: -1, speed: 0.75, kind: 'turtle', widths: [2, 2], gap: 2.6, dive: true },
-            { dir: 1, speed: 1.0, kind: 'log', widths: [2, 2], gap: 2.4 },
-            { dir: -1, speed: 1.1, kind: 'log', widths: [1], gap: 2.7 }
-        ]
-        const ROAD_CFG = {
-            6: { dir: 1, speed: 0.7, kind: 'truck', widths: [2], gap: 3.4 },
-            7: { dir: 1, speed: 1.5, kind: 'car', widths: [1, 1], gap: 2.4 },
-            9: { dir: -1, speed: 1.2, kind: 'car', widths: [1], gap: 2.3 },
-            10: { dir: -1, speed: 0.95, kind: 'car', widths: [1, 1], gap: 3.1 }
-        }
-
-        const HOUSE_COLS = [1, 4, 6, 8, 11]
 
         // ---------- world + seed (#1473 seed-param, batch 15) ----------
         // Lane dive offsets and the bonus fly house are the engine's only dice;
-        // both draw from one seeded stream regenerated at every human start,
-        // so ?seed=N replays the exact traffic.
+        // makeRun puts them on one seeded stream regenerated at every human
+        // start, so ?seed=N replays the exact traffic.
         let seed = Math.floor(Math.random() * 1000000)
-        let rand = seedRng(seed)
-        let tickN = 0
-
-        let riverLanes = []
-        let roadLanes = {}
-        let houses = []
-        let level = 1
-        let score = 0
-        let hiScore = Number(localStorage.getItem('frogger.hi') || 0)
-        let lives = 3
-        let timeLeft = TIME_LIMIT
-        let isAttractMode = true
+        let gs = makeRun(seed, { attract: true })
         let attractTick = 0
-        let gameOverFlag = false
-        let levelFlash = 0
+        let hiScore = Number(localStorage.getItem('frogger.hi') || 0)
 
-        const frog = {
-            x: 6 * CELL + CELL / 2,
-            row: START_ROW,
-            prevX: 6 * CELL + CELL / 2,
-            prevRow: START_ROW,
-            bestRow: START_ROW,
-            riding: -1,
-            state: 'alive', // alive | dying | home
-            cause: '',
-            animT: 0,
-            deadT: 0,
-            homeCol: -1
-        }
-
-        const demo = { tick: 0 }
-
-        const speedMult = () => Math.min(1 + (level - 1) * 0.12, 1.8)
-
-        const spansOf = lane => lane.items.map(it => ({
-            x: mod(it.x, lane.cycle) - lane.maxW * CELL,
-            w: it.w * CELL
-        }))
-
-        const laneFor = row => (row >= RIVER_TOP && row <= RIVER_BOT)
-            ? riverLanes[row - RIVER_TOP]
-            : (roadLanes[row] || null)
-
-        const surfaced = lane => !lane.dive || mod(lane.t, DIVE_CYCLE) < DIVE_UP
-
-        // "Can the frog stand at x in this row right now?" True on safe ground,
-        // true on a clear road (the empty rest lane counts), true on a surfaced
-        // float under the frog. False in water with nothing to ride.
-        const supportAt = (row, x) => {
-            if (row === MEDIAN_ROW || row === START_ROW) return true
-            if (row === HOME_ROW) return false
-            const lane = laneFor(row)
-            if (!lane) return row >= ROAD_TOP && row <= ROAD_BOT
-            if (row >= ROAD_TOP) return !spansOf(lane).some(s => x + 8 > s.x + 2 && x - 8 < s.x + s.w - 2)
-            if (!surfaced(lane)) return false
-            return spansOf(lane).some(s => x >= s.x - 4 && x <= s.x + s.w + 4)
-        }
-
-        const crushAt = (row, x) => {
-            const lane = roadLanes[row]
-            if (!lane) return false
-            return spansOf(lane).some(s => x + 7 > s.x + 3 && x - 7 < s.x + s.w - 3)
-        }
-
-        const houseAt = x => {
-            for (let i = 0; i < HOUSE_COLS.length; i++) {
-                const cx = HOUSE_COLS[i] * CELL + CELL / 2
-                if (Math.abs(x - cx) <= CELL * 0.6) return i
-            }
-            return -1
-        }
-
-        const buildWorld = () => {
-            riverLanes = RIVER_CFG.map(c => makeLane(c, rand))
-            roadLanes = {}
-            for (const r of Object.keys(ROAD_CFG)) roadLanes[r] = makeLane(ROAD_CFG[r], rand)
-            houses = HOUSE_COLS.map(() => ({ filled: false, fly: false }))
-            const flyIdx = Math.floor(rand() * houses.length)
-            houses[flyIdx].fly = true
-        }
-
-        const resetFrog = () => {
-            frog.x = 6 * CELL + CELL / 2
-            frog.row = START_ROW
-            frog.prevX = frog.x
-            frog.prevRow = START_ROW
-            frog.bestRow = START_ROW
-            frog.riding = -1
-            frog.state = 'alive'
-            frog.animT = 0
-            frog.deadT = 0
-            frog.homeCol = -1
-            timeLeft = TIME_LIMIT
-        }
-
-        const resetGame = () => {
-            level = 1
-            score = 0
-            lives = 3
-            gameOverFlag = false
-            buildWorld()
-            resetFrog()
-        }
-
-        const die = cause => {
-            if (frog.state !== 'alive') return
-            frog.state = 'dying'
-            frog.cause = cause
-            frog.deadT = DIE_ANIM
-            frog.riding = -1
+        // ------------------------------------------------------------------
+        // sounds (the tick returns events; the shell keeps the audio, the sim
+        // stays pure so Node can replay it)
+        // ------------------------------------------------------------------
+        const playHop = row => audioController.playTone(340 + (START_ROW - row) * 18, 0.05, 'square', 0.06)
+        const playDie = cause => {
             if (cause === 'off') {
                 // off the board: a dry descending thud, no water splash (#1508)
                 audioController.playSweep(420, 90, 0.22, 'square', 0.14)
@@ -196,169 +71,202 @@ const FroggerGame = () => {
                 audioController.playNoise(0.25, 0.15)
             }
         }
-
-        const nextLife = () => {
-            lives--
-            if (lives <= 0) {
-                gameOverFlag = true
-                if (score > hiScore) {
-                    hiScore = score
-                    localStorage.setItem('frogger.hi', String(hiScore))
-                }
-            } else {
-                resetFrog()
-            }
-        }
-
-        const completeLevel = () => {
-            score += 1000
-            level++
-            levelFlash = 120
-            audioController.playSweep(440, 1320, 0.6, 'square', 0.12)
-            buildWorld()
-            resetFrog()
-        }
-
-        const enterHome = hi => {
-            const h = houses[hi]
-            if (h.filled) { die('wall'); return }
-            h.filled = true
-            score += 50
-            if (h.fly) {
-                score += 200
-                h.fly = false
-                audioController.playTone(1568, 0.1, 'square', 0.1)
-            }
-            frog.state = 'home'
-            frog.deadT = HOME_ANIM
-            frog.homeCol = hi
-            frog.riding = -1
+        const playHome = fly => {
             audioController.playSweep(330, 660, 0.2, 'square', 0.1)
-            if (houses.every(x => x.filled)) {
-                frog.deadT = HOME_ANIM + 40
-            } else {
-                timeLeft = TIME_LIMIT
-            }
+            if (fly) audioController.playTone(1568, 0.1, 'square', 0.1)
         }
 
-        // ------------------------------------------------------------------
-        // HOP — one grid cell per press. Landing is resolved immediately;
-        // animT only interpolates the sprite along the arc.
-        // ------------------------------------------------------------------
-        const hop = (dx, dy) => {
-            if (frog.state !== 'alive') return
-            const nx = frog.x + dx * CELL
-            const nr = frog.row + dy
-            if (dx !== 0 && (nx < CELL / 2 + 2 || nx > W - CELL / 2 - 2)) return
-            const row = Math.max(HOME_ROW, Math.min(START_ROW, nr))
-
-            frog.prevX = frog.x
-            frog.prevRow = frog.row
-            frog.x = nx
-            frog.row = row
-            frog.animT = HOP_ANIM
-            audioController.playTone(340 + (START_ROW - row) * 18, 0.05, 'square', 0.06)
-
-            if (dy < 0 && row < frog.bestRow) {
-                frog.bestRow = row
-                score += 10
-            }
-            frog.riding = -1
-
-            if (row === HOME_ROW) {
-                const hi = houseAt(nx)
-                if (hi >= 0) enterHome(hi)
-                else die('water')
-            } else if (row >= RIVER_TOP && row <= RIVER_BOT) {
-                if (supportAt(row, nx)) frog.riding = row - RIVER_TOP
-                else die('water')
-            }
-            if (crushAt(row, nx)) die('car')
+        const seat = () => {
+            gs.watching = true
+            setWatching(true)
+            playWatchStart()
+        }
+        const release = (blip = true) => {
+            gs.watching = false
+            setWatching(false)
+            if (blip) playWatchStop()
         }
 
-        // ------------------------------------------------------------------
-        // ATTRACT DEMO — plays by the same rules the player does.
-        // ------------------------------------------------------------------
-        const demoThink = () => {
-            if (frog.state !== 'alive') return
-            const r = frog.row
-            const upClear = row => supportAt(row, frog.x)
-
-            if (r === START_ROW || (r > ROAD_TOP && !roadLanes[r])) {
-                if (upClear(r - 1)) hop(0, -1)
-                else if (rand() < 0.25) hop(rand() < 0.5 ? -1 : 1, 0)
-            } else if (r >= ROAD_TOP) {
-                const lane = roadLanes[r]
-                const incoming = lane && spansOf(lane).some(s =>
-                    lane.dir === 1 ? (s.x + s.w >= frog.x - 4 * CELL && s.x < frog.x) : (s.x <= frog.x + 4 * CELL && s.x + s.w > frog.x))
-                if (upClear(r - 1) && !incoming) hop(0, -1)
-                else if (rand() < 0.3) hop(rand() < 0.5 ? -1 : 1, 0)
-            } else if (r === MEDIAN_ROW) {
-                if (supportAt(RIVER_BOT, frog.x)) hop(0, -1)
-                else if (rand() < 0.3) {
-                    const d = rand() < 0.5 ? -1 : 1
-                    if (supportAt(RIVER_BOT, frog.x + d * CELL)) hop(d, 0)
-                }
-            } else {
-                const lane = riverLanes[r - RIVER_TOP]
-                const diving = lane.dive && DIVE_UP - mod(lane.t, DIVE_CYCLE) < 45
-                const fwd = supportAt(r - 1, frog.x) || (r - 1 === HOME_ROW && houseAt(frog.x) >= 0 && !houses[houseAt(frog.x)].filled)
-                if (fwd && !diving && supportAt(r, frog.x + CELL)) hop(1, -1)
-                else if (fwd && !diving && supportAt(r, frog.x)) hop(0, -1)
-                else if (diving) {
-                    const d = rand() < 0.5 ? -1 : 1
-                    const s = spansOf(lane).some(sp => frog.x + d * CELL >= sp.x + 2 && frog.x + d * CELL <= sp.x + sp.w - 2)
-                    if (s && frog.x + d * CELL > CELL && frog.x + d * CELL < W - CELL) hop(d, 0)
-                }
-            }
+        const startGame = () => {
+            // every human start regenerates the seed (?seed=N wins) — the
+            // attract demo never spends the run's traffic (#1473)
+            seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)
+            gs = makeRun(seed)
+            setAttractUi(false)
+            gs.watching = false // watch never lingers — a new run starts in your hands
+            setWatching(false)
+            audioController.playSweep(220, 440, 0.15, 'square', 0.1)
         }
 
-        // ------------------------------------------------------------------
-        const update = () => {
-            tickN++
-            if (frog.animT > 0) frog.animT--
-            const m = speedMult()
-            riverLanes.forEach(lane => {
-                lane.t++
-                lane.items.forEach(it => { it.x += lane.dir * lane.speed * m })
-            })
-            Object.values(roadLanes).forEach(lane => {
-                lane.items.forEach(it => { it.x += lane.dir * lane.speed * m })
-            })
-            if (levelFlash > 0) levelFlash--
-
-            if (isAttractMode) {
-                demo.tick++
-                if (demo.tick >= 15) {
-                    demo.tick = 0
-                    demoThink()
-                }
-                if (frog.state === 'dying' && --frog.deadT <= 0) resetFrog()
-                if (frog.state === 'home' && --frog.deadT <= 0) resetFrog()
+        const handleKeyDown = e => {
+            if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+                const newState = !pausedRef.current
+                pausedRef.current = newState
+                setPaused(newState)
                 return
             }
+            if (pausedRef.current) return
 
-            if (frog.state === 'alive') {
-                if (frog.riding >= 0) {
-                    const lane = riverLanes[frog.riding]
-                    frog.x += lane.dir * lane.speed * m
-                    if (!surfaced(lane)) die('water')
-                }
-                if (crushAt(frog.row, frog.x)) die('car')
-                if (frog.x < CELL * 0.4 || frog.x > W - CELL * 0.4) die('off')
-                timeLeft--
-                if (timeLeft <= 0) die('time')
-                else if (timeLeft < 5 * 60 && timeLeft % 60 === 0) audioController.playTone(1000, 0.04, 'square', 0.08)
-            } else if (frog.state === 'dying') {
-                if (gameOverFlag) return // frozen splat under the GAME OVER screen
-                if (--frog.deadT <= 0) nextLife()
-            } else if (frog.state === 'home') {
-                if (--frog.deadT <= 0) {
-                    if (houses.every(h => h.filled)) completeLevel()
-                    else resetFrog()
-                }
+            if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+                e.preventDefault()
+            }
+
+            // WATCH (b24 law): Y toggles the crossing planner. On attract/game
+            // over it starts a fresh run AND seats — the plan runs from tick 0.
+            if (isWatchKey(e)) {
+                if (gs.attract || gs.over) { startGame(); seat(); return }
+                if (gs.watching) release(); else seat()
+                return
+            }
+            if (gs.attract) { startGame(); return }
+            if (gs.over) { startGame(); return }
+            if (e.repeat) return
+
+            if (gs.watching && isTakeoverKey(e)) release()
+            const dir = e.code === 'ArrowUp' ? [0, -1]
+                : e.code === 'Space' ? [0, -1]
+                    : e.code === 'ArrowDown' ? [0, 1]
+                        : e.code === 'ArrowLeft' ? [-1, 0]
+                            : e.code === 'ArrowRight' ? [1, 0] : null
+            if (dir) {
+                const r = simHop(gs, dir[0], dir[1])
+                if (r?.kind === 'hopped') playHop(r.row)
+                else if (r?.kind === 'died') playDie(r.cause)
+                else if (r?.kind === 'home') playHome(r.fly)
             }
         }
+
+        const resize = () => {
+            if (!containerRef.current) return
+            const { width, height } = containerRef.current.getBoundingClientRect()
+            if (width === 0 || height === 0) return
+            const scale = Math.min(width / W, height / H)
+            canvas.style.width = `${Math.floor(W * scale)}px`
+            canvas.style.height = `${Math.floor(H * scale)}px`
+        }
+
+        // ------------------------------------------------------------------
+        // EVENTS — hop() stamps these; the shell turns them into sound and
+        // the hi-score write. The physics lives in sim.js.
+        // ------------------------------------------------------------------
+        const applyEvents = ev => {
+            if (ev.hopped) playHop(ev.hopped)
+            if (ev.died) playDie(ev.died)
+            if (ev.home) playHome(ev.fly)
+            if (ev.beep) audioController.playTone(1000, 0.04, 'square', 0.08)
+            if (ev.level) audioController.playSweep(440, 1320, 0.6, 'square', 0.12)
+            if (ev.over && !gs.attract) {
+                if (gs.score > hiScore) {
+                    hiScore = gs.score
+                    localStorage.setItem('frogger.hi', String(hiScore))
+                }
+                if (gs.watching) release(false) // the run ends in your hands (silent)
+            }
+        }
+
+        if (import.meta.env.DEV) {
+            window.__froggerTest = {
+                state: () => ({
+                    attract: gs.attract, over: gs.over, score: gs.score, lives: gs.lives, level: gs.level,
+                    row: gs.frog.row, x: gs.frog.x, frogState: gs.frog.state, time: gs.timeLeft,
+                    riding: gs.frog.riding, atHouse: houseAt(gs.frog.x) >= 0 && !gs.houses[houseAt(gs.frog.x)].filled
+                }),
+                // Read-only "may I step up right now?" — the same predicates the
+                // engine applies on landing. A harness reads; only keys act.
+                canHopUp: () => gs.frog.state === 'alive' && simSupportAt(gs, Math.max(0, gs.frog.row - 1), gs.frog.x),
+                riverSafe: dx => {
+                    if (gs.frog.state !== 'alive' || gs.frog.row < RIVER_TOP || gs.frog.row > RIVER_BOT) return false
+                    const nx = gs.frog.x + dx * CELL
+                    return nx > CELL / 2 && nx < W - CELL / 2 && simSupportAt(gs, gs.frog.row, nx)
+                },
+                hop: (dx, dy) => simHop(gs, dx, dy),
+                start: startGame,
+                // #1637 b25 — the watch contract the pilot drives against.
+                watching: () => gs.watching,
+                watchSfx: watchSfxLog,
+                probe: () => ({
+                    tick: gs.tickN, score: gs.score, level: gs.level, lives: gs.lives,
+                    row: gs.frog.row, x: gs.frog.x, frogState: gs.frog.state,
+                    homes: gs.houses.filter(h => h.filled).length,
+                    attract: gs.attract, over: gs.over,
+                }),
+            }
+        }
+
+        const handlePointerDown = () => {
+            if (gs.attract || gs.over) {
+                window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Enter' }))
+            } else if (gs.watching) {
+                // A tap DURING a watched crossing is a takeover (the contract).
+                release()
+            }
+        }
+
+        const init = () => {
+            resize()
+            window.addEventListener('keydown', handleKeyDown)
+            window.addEventListener('resize', resize)
+            canvas.addEventListener('pointerdown', handlePointerDown)
+            canvas.focus()
+            animationFrameId = requestAnimationFrame(loop)
+        }
+
+        let lastTime = 0
+        let accumulator = 0
+        const FIXED_DT = 1000 / 60
+        const loop = timestamp => {
+            if (!lastTime) lastTime = timestamp
+            const frameTime = Math.min(timestamp - lastTime, 100)
+            lastTime = timestamp
+            if (!pausedRef.current) {
+                // QA contract: while __game.step() drives the sim, the rAF loop
+                // yields the clock so scripted ticks stay deterministic.
+                if (!contractHoldsLoop()) {
+                    accumulator += frameTime
+                    while (accumulator >= FIXED_DT) {
+                        applyEvents(tickFrogger(gs))
+                        accumulator -= FIXED_DT
+                    }
+                }
+                draw()
+            }
+            animationFrameId = requestAnimationFrame(loop)
+        }
+        init()
+
+        // QA contract (#377): deterministic reset/tick/state so bots and
+        // replays drive this crossing like every other title. The pad steps
+        // through tickFrogger's humanHop — the same entry a keypress uses.
+        exposeGame({
+            id: 'frogger',
+            buttons: ['up', 'down', 'left', 'right', 'a'],
+            reset: (s) => {
+                seed = s >>> 0
+                gs = makeRun(seed)
+                release(false)
+                setAttractUi(false)
+            },
+            tick: (pad) => {
+                const dx = pad.left ? -1 : pad.right ? 1 : 0
+                const dy = (pad.up || pad.a) ? -1 : pad.down ? 1 : 0
+                applyEvents(tickFrogger(gs, dx || dy ? { dx, dy } : null))
+            },
+            state: () => ({
+                tick: gs.tickN,
+                score: gs.score,
+                done: gs.over,
+                seed: seed,
+                lives: gs.lives,
+                level: gs.level,
+                row: gs.frog.row,
+                x: Math.round(gs.frog.x),
+                homes: gs.houses.filter(h => h.filled).length,
+                hash: stateHash(gs),
+            }),
+            canvas: () => canvas,
+            // snapshot/restore omitted: gs.rand is a closure that cannot JSON
+            // round-trip (#391 — optional half of the contract).
+        })
 
         // ------------------------------------------------------------------
         // DRAWING
@@ -431,20 +339,23 @@ const FroggerGame = () => {
             }
         }
 
+        const HOUSE_COUNT = 5
+
         const draw = () => {
+            const frog = gs.frog
             ctx.fillStyle = '#000000'
             ctx.fillRect(0, 0, W, H)
 
             // ---- homes row ----
             ctx.fillStyle = '#0b3d13'
             ctx.fillRect(0, rowMid(HOME_ROW) - CELL / 2, W, CELL)
-            for (let i = 0; i < HOUSE_COLS.length; i++) {
-                const hx = HOUSE_COLS[i] * CELL
+            for (let i = 0; i < HOUSE_COUNT; i++) {
+                const hx = [1, 4, 6, 8, 11][i] * CELL
                 ctx.fillStyle = '#02160a'
                 ctx.fillRect(hx + 1, rowMid(HOME_ROW) - CELL / 2 + 1, CELL - 2, CELL - 2)
-                if (houses[i].filled) {
+                if (gs.houses[i].filled) {
                     drawFrog(hx + CELL / 2, rowMid(HOME_ROW) - 1, 0.8)
-                } else if (houses[i].fly && !isAttractMode) {
+                } else if (gs.houses[i].fly && !gs.attract) {
                     ctx.fillStyle = '#ffe14d'
                     ctx.fillRect(hx + CELL / 2 - 2, rowMid(HOME_ROW) - 2, 4, 3)
                     ctx.fillStyle = '#ffffff'
@@ -460,7 +371,7 @@ const FroggerGame = () => {
                 ctx.fillStyle = 'rgba(255,255,255,0.07)'
                 for (let i = 0; i < COLS; i++) ctx.fillRect(i * CELL + ((r * 7 + i * 11) % 12), y - 2 + (i % 3) * 4, 8, 1)
             }
-            riverLanes.forEach((lane, i) => {
+            gs.riverLanes.forEach((lane, i) => {
                 const y = rowMid(RIVER_TOP + i)
                 spansOf(lane).forEach(s => {
                     if (s.x > W || s.x + s.w < 0) return
@@ -490,8 +401,8 @@ const FroggerGame = () => {
                 ctx.setLineDash([])
             }
             const carColors = { 6: '#d8d8d8', 7: '#e0483f', 9: '#4f8fe0', 10: '#e0a03f' }
-            Object.keys(roadLanes).forEach(r => {
-                const lane = roadLanes[r]
+            Object.keys(gs.roadLanes).forEach(r => {
+                const lane = gs.roadLanes[r]
                 const y = rowMid(Number(r))
                 spansOf(lane).forEach(s => {
                     if (s.x > W || s.x + s.w < 0) return
@@ -515,7 +426,7 @@ const FroggerGame = () => {
             }
             if (frog.state === 'alive' || frog.state === 'home') {
                 if (frog.state === 'home') {
-                    drawFrog(HOUSE_COLS[frog.homeCol] * CELL + CELL / 2, rowMid(HOME_ROW) - 1, 0.8)
+                    drawFrog([1, 4, 6, 8, 11][frog.homeCol] * CELL + CELL / 2, rowMid(HOME_ROW) - 1, 0.8)
                 } else {
                     drawFrog(fx, fy, 1)
                 }
@@ -552,30 +463,30 @@ const FroggerGame = () => {
             ctx.fillText('SCORE', 6, 9)
             ctx.fillText('HI-SCORE', 6, 21)
             ctx.fillStyle = '#ffffff'
-            ctx.fillText(String(score).padStart(6, '0'), 40, 9)
-            ctx.fillText(String(Math.max(score, hiScore)).padStart(6, '0'), 60, 21)
+            ctx.fillText(String(gs.score).padStart(6, '0'), 40, 9)
+            ctx.fillText(String(Math.max(gs.score, hiScore)).padStart(6, '0'), 60, 21)
             ctx.fillStyle = '#8f8f8f'
             ctx.fillText('LEVEL', 110, 9)
             ctx.fillStyle = '#ffffff'
-            ctx.fillText(String(level), 142, 9)
+            ctx.fillText(String(gs.level), 142, 9)
             ctx.fillStyle = '#8f8f8f'
             ctx.fillText('TIME', 110, 21)
             const tw = 104
             ctx.fillStyle = '#333333'
             ctx.fillRect(138, 15, tw, 5)
-            const frac = Math.max(0, timeLeft / TIME_LIMIT)
+            const frac = Math.max(0, gs.timeLeft / TIME_LIMIT)
             ctx.fillStyle = frac < 0.25 ? '#e0483f' : '#ffe14d'
             ctx.fillRect(138, 15, tw * frac, 5)
-            for (let i = 0; i < lives; i++) drawFrog(206 + i * 17, 7, 0.4)
+            for (let i = 0; i < gs.lives; i++) drawFrog(206 + i * 17, 7, 0.4)
 
-            if (levelFlash > 0 && Math.floor(levelFlash / 15) % 2 === 0) {
+            if (gs.levelFlash > 0 && Math.floor(gs.levelFlash / 15) % 2 === 0) {
                 ctx.fillStyle = '#ffe14d'
                 ctx.font = 'bold 10px monospace'
                 ctx.textAlign = 'center'
-                ctx.fillText(`LEVEL ${level - 1} COMPLETE  +1000`, W / 2, rowMid(MEDIAN_ROW) + 3)
+                ctx.fillText(`LEVEL ${gs.level - 1} COMPLETE  +1000`, W / 2, rowMid(MEDIAN_ROW) + 3)
             }
 
-            if (isAttractMode) {
+            if (gs.attract) {
                 attractTick++
                 ctx.fillStyle = DIM
                 ctx.fillRect(0, HUD_H, W, H - HUD_H)
@@ -585,7 +496,7 @@ const FroggerGame = () => {
                     ctx.fillStyle = l.col
                     ctx.fillText(l.text, l.x, l.y)
                 }
-            } else if (gameOverFlag) {
+            } else if (gs.over) {
                 ctx.fillStyle = 'rgba(0,0,0,0.6)'
                 ctx.fillRect(0, HUD_H, W, H - HUD_H)
                 ctx.textAlign = 'center'
@@ -594,7 +505,7 @@ const FroggerGame = () => {
                 ctx.fillText('GAME OVER', W / 2, H / 2 - 14)
                 ctx.fillStyle = '#ffffff'
                 ctx.font = 'bold 9px monospace'
-                ctx.fillText(`SCORE ${score}   LEVEL ${level}`, W / 2, H / 2 + 6)
+                ctx.fillText(`SCORE ${gs.score}   LEVEL ${gs.level}`, W / 2, H / 2 + 6)
                 if (Math.floor(Date.now() / 500) % 2 === 0) {
                     ctx.fillStyle = '#ffe14d'
                     ctx.fillText('TAP OR PRESS ANY KEY', W / 2, H / 2 + 28)
@@ -602,120 +513,22 @@ const FroggerGame = () => {
             }
         }
 
-        // ------------------------------------------------------------------
-        const startGame = () => {
-            isAttractMode = false
-            // every human start regenerates the seed (?seed=N wins) — the
-            // attract demo never spends the run's traffic (#1473)
-            seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)
-            rand = seedRng(seed)
-            resetGame()
-            audioController.playSweep(220, 440, 0.15, 'square', 0.1)
-        }
-
-        const handleKeyDown = e => {
-            if (e.key === '?' || (e.shiftKey && e.key === '/')) {
-                const newState = !pausedRef.current
-                pausedRef.current = newState
-                setPaused(newState)
-                return
-            }
-            if (pausedRef.current) return
-
-            if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
-                e.preventDefault()
-            }
-            if (isAttractMode) { startGame(); return }
-            if (gameOverFlag) { startGame(); return }
-            if (e.repeat) return
-
-            if (e.code === 'ArrowUp' || e.code === 'Space') hop(0, -1)
-            else if (e.code === 'ArrowDown') hop(0, 1)
-            else if (e.code === 'ArrowLeft') hop(-1, 0)
-            else if (e.code === 'ArrowRight') hop(1, 0)
-        }
-
-        const resize = () => {
-            if (!containerRef.current) return
-            const { width, height } = containerRef.current.getBoundingClientRect()
-            if (width === 0 || height === 0) return
-            const scale = Math.min(width / W, height / H)
-            canvas.style.width = `${Math.floor(W * scale)}px`
-            canvas.style.height = `${Math.floor(H * scale)}px`
-        }
-
-        if (import.meta.env.DEV) {
-            window.__froggerTest = {
-                state: () => ({
-                    attract: isAttractMode, over: gameOverFlag, score, lives, level,
-                    row: frog.row, x: frog.x, frogState: frog.state, time: timeLeft,
-                    riding: frog.riding, atHouse: houseAt(frog.x) >= 0 && !houses[houseAt(frog.x)].filled
-                }),
-                // Read-only "may I step up right now?" — the same predicates the
-                // engine applies on landing. A harness reads; only keys act.
-                canHopUp: () => frog.state === 'alive' && supportAt(Math.max(0, frog.row - 1), frog.x),
-                riverSafe: dx => {
-                    if (frog.state !== 'alive' || frog.row < RIVER_TOP || frog.row > RIVER_BOT) return false
-                    const nx = frog.x + dx * CELL
-                    return nx > CELL / 2 && nx < W - CELL / 2 && supportAt(frog.row, nx)
-                },
-                hop,
-                start: startGame
-            }
-        }
-
-        const handlePointerDown = () => {
-            if (isAttractMode || gameOverFlag) {
-                window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Enter' }))
-            }
-        }
-
-        const init = () => {
-            buildWorld()
-            resetFrog()
-            resize()
-            window.addEventListener('keydown', handleKeyDown)
-            window.addEventListener('resize', resize)
-            canvas.addEventListener('pointerdown', handlePointerDown)
-            canvas.focus()
-            animationFrameId = requestAnimationFrame(loop)
-        }
-
-        let lastTime = 0
-        let accumulator = 0
-        const FIXED_DT = 1000 / 60
-        const loop = timestamp => {
-            if (!lastTime) lastTime = timestamp
-            const frameTime = Math.min(timestamp - lastTime, 100)
-            lastTime = timestamp
-            if (!pausedRef.current) {
-                accumulator += frameTime
-                while (accumulator >= FIXED_DT) {
-                    update()
-                    accumulator -= FIXED_DT
-                }
-                draw()
-            }
-            animationFrameId = requestAnimationFrame(loop)
-        }
-        init()
-
         // production report carries the seed (#1473)
         exposeFeedbackState(() => ({
-            tick: tickN, score: score, done: gameOverFlag, seed: seed, lives: lives, level: level,
+            tick: gs.tickN, score: gs.score, done: gs.over, seed: seed, lives: gs.lives, level: gs.level,
         }))
 
         mountDbg({
             title: 'FROGGER',
             getState: () => [
-                `score ${score}  level ${level}  lives ${lives}  time ${timeLeft}  over ${gameOverFlag}`,
-                `frog ${Math.round(frog.x)},${frog.row} state ${frog.state} riding ${frog.riding}`,
-                `houses ${houses.map(h => (h.filled ? 'F' : h.fly ? 'f' : '.')).join('')}  fly bonus live ${houses.some(h => h.fly)}`,
-                `seed ${seed}  tick ${tickN}`,
+                `score ${gs.score}  level ${gs.level}  lives ${gs.lives}  time ${gs.timeLeft}  over ${gs.over}`,
+                `frog ${Math.round(gs.frog.x)},${gs.frog.row} state ${gs.frog.state} riding ${gs.frog.riding}`,
+                `houses ${gs.houses.map(h => (h.filled ? 'F' : h.fly ? 'f' : '.')).join('')}  fly bonus live ${gs.houses.some(h => h.fly)}`,
+                `seed ${seed}  tick ${gs.tickN}  watching ${gs.watching}`,
             ],
             actions: [
-                { label: 'Hop up', run: () => hop(0, -1) },
-                { label: 'Force game over', run: () => { lives = 1; die('time') } },
+                { label: 'Hop up', run: () => simHop(gs, 0, -1) },
+                { label: 'Force game over', run: () => { gs.lives = 1; gs.frog.state = 'alive'; simHop(gs, 0, 0); gs.timeLeft = 1; } },
             ],
         })
 
@@ -724,6 +537,8 @@ const FroggerGame = () => {
             window.removeEventListener('resize', resize)
             canvas.removeEventListener('pointerdown', handlePointerDown)
             cancelAnimationFrame(animationFrameId)
+            if (import.meta.env.DEV && window.__froggerTest) delete window.__froggerTest
+            unexposeGame()
             unexposeFeedbackState()
             unmountDbg()
         }
@@ -734,6 +549,20 @@ const FroggerGame = () => {
             <div ref={containerRef} className="relative w-full max-w-[420px] h-full max-h-[460px] flex items-center justify-center border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-black">
                 <canvas ref={canvasRef} className="block" style={{ imageRendering: 'pixelated' }} />
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'FROGGER')} onResume={handleResume} />}
+                {/* #1654: the discoverable WATCH line, before the first Y press. */}
+                {attractUi && !paused && (
+                    <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-2 pointer-events-none" style={{ bottom: '10%' }}>
+                        <div className="text-emerald-200/70 font-mono text-[11px] tracking-widest">{WATCH_ATTRACT_HINT}</div>
+                        <AttractWatchButton />
+                    </div>
+                )}
+                {/* #1637 b25 — the planner crosses the roads and river; any key, pad push or tap takes over. */}
+                {!attractUi && watching && <WatchToast className="fixed z-50" />}
+                {!attractUi && !paused && (
+                    <div className="fixed z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                        <WatchButton on={watching} />
+                    </div>
+                )}
             </div>
             <VirtualControls visible={!paused} />
         </div>

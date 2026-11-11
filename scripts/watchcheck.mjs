@@ -1551,6 +1551,52 @@ const PILOTS = [
             rep.check('pong: Y again releases the paddle', !(await watching()))
         },
     },
+    // #1637 batch 25 — FROGGER gets its crossing planner: watchStep scores each
+    // candidate hop by replaying the game's OWN forward arithmetic (analytic lane
+    // offsets, dive phase, clock) under a greedy continuation. No rand: the seat
+    // is the driver froggercheck clears 40/40 seeds with. Reactive per tick
+    // (Rogue law), so it seats anywhere, steers back, re-seats from live state.
+    {
+        id: 'frogger', url: `${BASE}/frogger`, hook: '__froggerTest',
+        async run(page, rep) {
+            const H = '__froggerTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            await key(page, 'Space')                       // attract -> live run
+            await page.waitForTimeout(400)
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('frogger: Y seats the crossing planner', await watching())
+            rep.check('frogger: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            const adv = (x, y) => y.homes > x.homes || y.score > x.score
+            const a = await probe()
+            const b = await pollAdvance(page, probe, adv, a, 8000)
+            rep.check('frogger: the planner climbs and banks homes untouched (idle hands hop nothing)',
+                adv(a, b), `score ${a.score} -> ${b.score}, homes ${a.homes} -> ${b.homes}`)
+            rep.check('frogger: still watching mid-crossing', await watching())
+            // Takeover at the lily-pad moment: while the frog rides its home
+            // animation (45 ticks) a steer press hands the wheel back WITHOUT
+            // stepping into traffic — the honest window in a game where every
+            // stray hop can cost a life.
+            await page.waitForFunction((h) => {
+                const p = window[h].probe()
+                return window[h].watching() && p.frogState === 'home'
+            }, H, { timeout: 30000 })
+            await page.keyboard.press('ArrowUp')
+            rep.check('frogger: steer key takes over', !(await watching()))
+            rep.check('frogger: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('frogger: Y re-seats mid-run (the planner re-plans from the live board)', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 8000)
+            rep.check('frogger: resumes from where the player left it', adv(c, d),
+                `score ${c.score} -> ${d.score}, homes ${c.homes} -> ${d.homes}`)
+            await key(page, 'KeyY')
+            rep.check('frogger: Y again releases the frog', !(await watching()))
+        },
+    },
     // #1637 batch 13 — the racer family seats its CERTIFIED autopilot. decide()
     // (CometDrift/sim.js) is the brain cometcheck races to victory ("autopilot
     // wins the 5-lap GP from P7", #1687-certified drift ladder) and both titles'
@@ -2060,7 +2106,7 @@ const ARCADE = ['QBert', 'Joust', 'Galaga', 'Tempest', 'DigDug', 'BubbleBobble',
     'SpyHunter', 'Arkanoid', 'OutRun', 'LunarLander', 'Outpost', 'Polarity',
     'MissileBattle', 'SmashTV', 'MarioKart', 'Gauntlet', 'FourHalls',
     'PrinceOfPersia', 'CivilizationV', 'BardsTale', 'TenDeep', 'BlobBattle',
-    'SimCityMin', 'Paperboy', 'IceClimber']
+    'SimCityMin', 'Paperboy', 'IceClimber', 'Frogger']
 const watchSrc = readFileSync('src/utils/watch.js', 'utf8')
 rep.check('watch.js: one shared blip pair, audible (two tones each)',
     /export const playWatchStart[\s\S]*?playTone\([\s\S]*?playTone\([\s\S]*?export const playWatchStop[\s\S]*?playTone\([\s\S]*?playTone\(/.test(watchSrc))
@@ -2569,6 +2615,32 @@ for (const [name, f] of Object.entries(B4_SRC)) {
         pg.includes('<AttractWatchButton'))
     rep.check('batch 24: pongcheck stamps the driver sweep (39/40, seed 25 documented)',
         /the driver beats the machine on 39 of 40 seeds/.test(pc) && /Seed 25 is a documented forced loss/.test(pc))
+}
+// #1637 batch 25 — FROGGER's planner is new-built; pin that the seat, the tick
+// and the check all stand on ONE engine (the whole rule set lifted into sim.js).
+{
+    const fj = readFileSync('src/games/Frogger/index.jsx', 'utf8')
+    const fm = readFileSync('src/games/Frogger/sim.js', 'utf8')
+    const fc = readFileSync('scripts/froggercheck.mjs', 'utf8')
+    const reg25 = readFileSync('src/config/games.js', 'utf8')
+    const entryHas25 = (p, s) => { const m = reg25.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
+    rep.check('FROGGER: the whole tick-rule set lives in the sim (tickFrogger)',
+        /export function tickFrogger\(gs, humanHop = null\)/.test(fm) && /tickFrogger\(gs\)/.test(fj))
+    rep.check('FROGGER: the seat drives the sim through watchStep, not a bench script',
+        /} else if \(gs\.watching\) \{[\s\S]{0,120}?const act = watchStep\(gs\)/.test(fm))
+    rep.check('FROGGER: the planner draws no dice — the engine rolls only the seeded stream',
+        /export function watchStep\(gs\)/.test(fm) && !/\bMath\.random\b/.test(fm))
+    rep.check('FROGGER: Y seats with blips; any driving key takes over',
+        /if \(isWatchKey\(e\)\)/.test(fj) && /isTakeoverKey\(e\)/.test(fj)
+        && fj.includes('playWatchStart') && fj.includes('playWatchStop') && fj.includes('watchSfx: watchSfxLog'))
+    rep.check('FROGGER: watch never lingers — released at game over (silent, racer rule)',
+        /if \(gs\.watching\) release\(false\)/.test(fj))
+    rep.check('FROGGER: attract shows the shared WATCH hint (import + drawn line)',
+        (fj.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
+    rep.check('registry /frogger: controls carry the WATCH line', entryHas25('/frogger', 'WATCH_HELP'))
+    rep.check('batch 25: froggercheck stamps the driver sweep (40/40 det, floors pinned)',
+        /40\/40 seeds replay byte-equal/.test(fc) && /zero-death runs on .34 seeds/.test(fc)
+        && /every seed banks at least one full level/.test(fc))
 }
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray

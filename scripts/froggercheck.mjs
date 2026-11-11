@@ -8,7 +8,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { attractFrame, INFO_MSGS, HOLD, PRESS, DIM, HUD, estWidth } from '../src/games/Frogger/attract.js'
-import { makeLane, DIVE_CYCLE, deathStyle } from '../src/games/Frogger/sim.js'
+import { makeLane, DIVE_CYCLE, deathStyle, makeRun, tickFrogger, watchStep } from '../src/games/Frogger/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -86,9 +86,12 @@ console.log('seed pin: the seeded traffic replays')
     ok(seedFromQuery('?seed=777') === 777, '?seed=N parses for the pin')
     const src = readFileSync('src/games/Frogger/index.jsx', 'utf8')
     ok(/seed = seedFromQuery\(window\.location\.search\) \?\? Math\.floor\(Math\.random\(\) \* 1000000\)/.test(src) &&
-        /rand = seedRng\(seed\)/.test(src), 'human start regenerates the seed and honors ?seed=N')
+        /makeRun\(seed\)/.test(src), 'human start regenerates the seed and honors ?seed=N')
     ok(/seed: seed/.test(src), 'production report carries the seed')
     ok(!/Math\.random\(\) \* houses\.length/.test(src), 'the bonus fly house is drawn from the seeded stream')
+    const simSrc = readFileSync('src/games/Frogger/sim.js', 'utf8')
+    ok(/rand: seedRng\(seed\)/.test(simSrc) &&
+        !/Math\.random\(\) \* gs\.houses\.length/.test(simSrc), 'b25: the lifted world still draws every die from the seeded stream')
 }
 
 // ------------------------------------------ off-board death is distinct (#1508) ----
@@ -108,6 +111,45 @@ console.log('off-board death is distinct from a water splash')
     ok(!/cause === 'time' \? '#ffe14d' : 'rgba\(160,210,255/.test(src), 'no hard-coded blue ring for every death')
 }
 
+// --------------------------------- watch driver: crossings on the shipped tick ----
+// #1637 batch 25: the seat's brain (sim.js watchStep) proven against the SAME
+// tick the browser runs. Reactive, rand-free, and honest at the edges.
+console.log('watch driver: crossings proven on the shipped tick (#1637 b25)')
+{
+    const SEEDS = [...Array(40)].map((_, k) => 1000 + k * 97)
+    const runSeed = seed => {
+        const gs = makeRun(seed)
+        gs.watching = true
+        let h = 0, d = 0, c = 0
+        for (let t = 0; t < 7200; t++) {
+            const ev = tickFrogger(gs)
+            h += ev.home
+            if (ev.died) d++
+            if (ev.level) c++
+        }
+        return { h, d, c, score: gs.score, lives: gs.lives, level: gs.level }
+    }
+    let homes = 0, clean = 0, clears = 0, det = 0, minH = Infinity
+    for (const s of SEEDS) {
+        const a = runSeed(s), b = runSeed(s)
+        if (JSON.stringify(a) === JSON.stringify(b)) det++
+        homes += a.h
+        clean += a.d === 0 ? 1 : 0
+        if (a.c > 0) clears++
+        minH = Math.min(minH, a.h)
+    }
+    ok(det === 40, 'driver: 40/40 seeds replay byte-equal (watchStep draws no rand)')
+    ok(clears === 40, 'driver: every seed banks at least one full level in 120 s', `${clears}/40`)
+    ok(clean >= 34, 'driver: zero-death runs on ≥34 seeds (measured 36; the odd seed loses one life to a dive-phase shuffle)', `${clean}/40`)
+    ok(minH >= 20, 'driver: ≥20 homes landed on every seed', `min ${minH}`)
+    ok(homes >= 1800, 'driver: ≥1800 homes across the 40-seed sweep', `${homes}`)
+    const gsA = makeRun(4242, { attract: true })
+    ok(watchStep(gsA) === null, 'driver: silent while attract holds the pad')
+    const gsO = makeRun(4242)
+    gsO.over = true
+    ok(watchStep(gsO) === null, 'driver: silent at game over (watch never lingers)')
+}
+
 if (process.argv.includes('--mutate')) {
     console.log('mutants (each MUST die)')
     const F = 'src/games/Frogger/attract.js'
@@ -117,9 +159,9 @@ if (process.argv.includes('--mutate')) {
             `seed = Math.floor(Math.random() * 1000000)`,
             'src/games/Frogger/index.jsx'],
         ['the bonus fly house leaves the seeded stream',
-            `const flyIdx = Math.floor(rand() * houses.length)`,
-            `const flyIdx = Math.floor(Math.random() * houses.length)`,
-            'src/games/Frogger/index.jsx'],
+            `const flyIdx = Math.floor(gs.rand() * gs.houses.length)`,
+            `const flyIdx = Math.floor(Math.random() * gs.houses.length)`,
+            'src/games/Frogger/sim.js'],
         ['attract stacks a second message',
             `        { text: msg, x: w / 2, y: hud + region * 0.52, size: fitSize(msg, w, 11), col: '#ffffff', glow: 0 },`,
             `        { text: msg, x: w / 2, y: hud + region * 0.52, size: fitSize(msg, w, 11), col: '#ffffff', glow: 0 },
@@ -147,6 +189,26 @@ if (process.argv.includes('--mutate')) {
             `const st = deathStyle(frog.cause)`,
             `const st = { kind: 'ripple', color: 'rgba(160,210,255,0.9)' }`,
             'src/games/Frogger/index.jsx'],
+        // b25 driver mutants — each breaks a swept floor, none can hide.
+        ['the watch driver is muted (hold forever)',
+            `    let best = null
+    let bestV = -Infinity
+    for (const [dx, dy] of CANDIDATES) {`,
+            `    let best = null
+    let bestV = -Infinity
+    for (const [dx, dy] of []) {`,
+            'src/games/Frogger/sim.js'],
+        ['home lands without the earliness bonus (procrastination bug #b25)',
+            `        if (hi >= 0 && !gs.houses[hi].filled) return { ok: true, value: 1e6 + WATCH_HORIZON }`,
+            `        if (hi >= 0 && !gs.houses[hi].filled) return { ok: true, value: 1e6 }`,
+            'src/games/Frogger/sim.js'],
+        ['row 1 never shuffles back for houses behind',
+            `            const houseBehind = row === RIVER_TOP
+                && !gs.houses.some((h, i) => !h.filled && HOUSE_COLS[i] * CELL + CELL / 2 >= x)
+            if (rem <= 60 || houseBehind) {`,
+            `            const houseBehind = false
+            if (rem <= 60 || houseBehind) {`,
+            'src/games/Frogger/sim.js'],
     ]
     let died = 0
     for (const [name, from, to, file = F] of MUTANTS) {
