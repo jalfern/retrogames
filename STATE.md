@@ -1,75 +1,71 @@
-# STATE — session 217 (2026-11-11, slot b)
+# STATE — session 218 (2026-11-11, slot a)
 
 ## What shipped
-**PAPERS, PLEASE-MIN: HAND-AUTHORED REGULARS** merged as `fb1a5dc` (PR #1981,
-Closes #1979 — NEVER-DRY pick, weakestStage score 6). Four regulars authored
-end to end (`gen.js REGULARS`): Grubak/scar, Drenin/mole, Tolka/wrinkle,
-Zemek/big-ear — fixed six-feature descriptors, colors, body stats, one
-signature mark each (single ink `#8f4a3e`, painted at the counter AND in the
-zoomed photo; decor by doctrine — never compared). Injection `(day−2+seed) mod 4`
-days 2–7 ⇒ cast[0] and cast[1] return inside every week; cast names blocked
-from the random pool (no twins); papers built legal for the day (decide+judge
-both approve, every seed). Queue-size law (rules+4) untouched → shift budget
-stands. paperscheck **10752/10752** (+REGULARS section: cast integrity, both
-values per feature + 4 haircuts, identity law face+photo, injection/queue/
-legality; mutants m25 never-injected, m26 face-re-roll — both caught).
-papersplay **46/46** (`castPix`: scar 12, mole 4, wrinkle 66, big-ear 72 vs
-standard 40 ink px; live gate stamps Grubak, seed 0 day 2, approve).
-watchcheck papers-please 241/241. Live: jalfern.com/retrogames/papers-please
-(payload "VOLEN GRUBAK" in `index-f7mMQ4vv.js`, prod poll 1).
+**FROGGER: PROVEN CROSSING DRIVER** merged as `6f7df8f` (PR #1986, part of
+#1637 — batch 25 of the WATCH rollout). The old attract brain was greedy/
+random and unproven, so b25 built a real driver: `watchStep` in
+`src/games/Frogger/sim.js` scores all nine candidate hops by replaying the
+game's OWN forward arithmetic (analytic lane spans with drift + speed ramp,
+dive phase, crush, off-board, clock) under a greedy continuation. No `rand` —
+the Node sweep and the browser seat steer one identical policy. Reactive per
+tick (Rogue law): seats anywhere, any input takes over, re-seats from live
+state, silent release at game over. The whole tick-rule set lifted into
+`sim.js` (`makeRun`/`hop`/`tickFrogger`) so `froggercheck` proves shipped
+physics; shell keeps draw/sound/chrome/seat.
+
+Sweep floors (40 seeds × 120 s, watching, pinned in froggercheck): 40/40
+seeds replay byte-equal, 40/40 bank ≥1 level, 36/40 zero-death, ≥20 homes
+per seed, ≥1800 homes total. froggercheck 30/30 + 13 mutants die (3 new
+driver mutants: muted planner, home-earliness, shuffle-back). Two rules the
+sweep earned (documented in README + sim comments): home landing scores
+`1e6 + HORIZON` (dt-0 earliness parity or the frog procrastinates past the
+door), and row-1-with-all-houses-behind shuffles back onto the opposite-drift
+lane. Chrome: shared blips + WatchToast + attract hint + AttractWatchButton +
+registry WATCH_HELP line. `__game` QA contract newly wired (frogger in
+contractGames; contractcheck 14/14, FNV `stateHash` in sim). watchcheck
+frogger pilot + b25 source pins; Frogger added to ARCADE list.
+Live: jalfern.com/retrogames/frogger (registry marker verified in prod
+`index-BBbmnu-I.js` via cache-busted BFS, 64 chunks).
 
 ## The session's catches
-- **tryMut probe polarity is easy to flip.** The probe answers "does the
-  honest property still hold?" — write it as property-checker, not as
-  "mutation detector"; m25 first shipped inverted (would have reported a
-  SURVIVED mutant as caught). Re-read one mutant's expected verdict before
-  running the suite.
-- **A sibling field must move INTO the painted descriptor.** drawFace reads
-  `f.mark`; authoring `mark` next to `face` silently paints nothing. The
-  pixel gate (castPix) caught the concept, but the fix had to be at
-  `face = { ...c.face, mark }`.
+- **Mutate runs are not reentrant, and a harness timeout may detach, not
+  kill.** A 300 s-capped `froggercheck --mutate` outlived its cap while a
+  re-run started; the two loops interleaved plants and each recorded the
+  other's in-flight plant as its "original", leaving three source corpses
+  (`?seed` pin stripped in index.jsx, fly-dice `Math.random` in sim.js,
+  attract `DIM` transparent). A plain gate that "should" catch them passed,
+  because the re-run faithfully restored the corpse it remembered. Scrubbed
+  by grep for every MUTANTS `from:` fingerprint; re-verified 30/30 + 13/13.
+  Lesson: give `--mutate` exclusive access and ≥ 20 min; after any killed
+  mutate run, grep the mutant fingerprints before trusting the tree.
+- **watchphonecheck's 24% band law bites fresh chrome.** The attract ▶ WATCH
+  wrapper must sit at `bottom: '24%'` (clear of the phone pad zone) — 10%
+  passed the local eyeball but went red on static. Copy the shared wrapper
+  from Pong/SpaceInvaders when adding attract WATCH.
+- **Score sums can hide dice bugs**: fly-house +200 lands regardless of WHICH
+  house is the fly, so a cross-process replay hash that tracks score only
+  never notices an unseeded fly draw. The source pin (`no Math.random in
+  sim.js`) is what guards this class.
 
 ## Ladder trail
-- halt none; steer none; TARGET #1711 claimed (warden assignment) → honest
-  audit on current main: consent/recorder/evidence pipeline complete
-  (recordcheck 105/105, relaycheck 31/31, plaicraft evidence self-test 23/23
-  with mutants), `relay/` unchanged since `7ecf1e5`, #1730 stayed defaulted
-  Hold → sixth-confirm posted (one paragraph), RELEASED (`next` back).
-  Jon-side hardware lines only.
-- game-queue empty; QA MASTER live (pid 89569) → borrow refused; flagship
-  stage spent (all flagship gaps owned) → NEVER-DRY weakestStage:
-  PapersPleaseMin score 6 (1 unowned gap + 5 QA feedback naming it).
-  Filed #1979 with why-weakest, claimed(b), shipped. No jonq (mechanical
-  pick; #1730 already answered).
-
-## Session bookkeeping
-- #1979 CLOSED shipped (+shipped label). QA polish pass filed as **#1982**
-  (recognition beat/callback line, cast+mark breadth, story arcs — regular
-  turning wanted, aged-photo on a regular face, returning-entrant sfx, mole
-  legibility at lite scale).
-- :5178 vite KILLED at session end; worktree `~/Dev/retrogames-forge-ppm-regulars`
-  (detached at fb1a5dc, node_modules symlinked) reusable or
-  `git worktree remove` anytime.
-
-## Next queued (slot b)
-1. Fresh ladder: halt/steer/next/queue games-first. #1711 stays Jon-side —
-   if the warden re-targets it, seventh confirm is one line, release.
-2. NEVER-DRY candidates from the NEW residual gap (README): cast/mark breadth,
-   recognition beat, story arcs — but #1982 (feedback, QA lane) owns the
-   verbatim words of most of it; re-run weakestStage/idle-kick rather than
-   trusting this list, and LODE gaps sit behind QA-held #1959.
-3. #1637 (WATCH rollout) building on slot a — not a slot-b candidate unless
-   its lock goes stale.
-
-## Notes for the next slot-b session
-- Regulars doctrine: marks ride INSIDE the face descriptor (face+photo copy);
-  compared set stays FEATURES (six). A 7th compared feature = FEATURES +
-  portraitDiffs + drawFace + papersplay FE list (see #1972 law).
-- papersplay EXPECT ranges in the #1979 block pin exact inks (#8f4a3e marks,
-  skin-color ear columns x0..x0+3, x0 = 55−rx−4); move a mark rect and those
-  counts fail loudly — adjust geometry deliberately.
-- paperscheck mutants live at the bottom of the MUT block; anchors must match
-  gen.js/rules.js exactly (anchor-not-found is itself a red gate).
+- halt none; steer none. TARGET #1637 claimed via forge-claim.sh (free),
+  batch 25 = FROGGER per b24 audit (remaining unseated: Asteroids,
+  DonkeyKong, Centipede, Pitfall — none has a proven driver yet; the same
+  lift-into-sim + sweep pattern applies).
+- Advisory reds on PR (smoke/prsmokes) pre-existed on main's line
+  (civilization-v/blob-battle/iron-ring pilot flakes); static green both
+  pushes; rule-5 merge clean. Nightly on main was `cancelled` at gate time
+  (not blocking per main-ok.sh; the 16:43Z nightly before it was success).
 
 ## Open questions
-- None. (No taste/priority call needed from Jon.)
+- none filed this session (no taste/priority calls needed; all decisions
+  were pattern-following from b24).
+
+## Next
+- Batch 26 (#1637): first title of the remaining four whose rules support a
+  exhaustive-search driver. Audit suggests PITFALL (deterministic board,
+  single avatar, solvable by BFS like LodeRunner's planner) — claim with
+  `scripts/forge-claim.sh 1637 <slot>`; if the claim lands on a title whose
+  sim isn't yet Node-proofable, lift-into-sim first (the b25 pattern).
+- Dev server habit: `npm run dev -- --port 5173 --strictPort`; run
+  `--mutate` ONLY in an exclusive window with a ≥20 min budget.
