@@ -25,7 +25,7 @@ import { buildSprites, buildFloor } from './art.js'
 import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
 import { playerFrame, GUN, STOCK, gunPose } from './sprite.js'
 import { enemyFrame, CHARGE, TELEGRAPH, OUTLINE, bossMouth, ADD_TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
-import { muzzleFlash, casingCol, killShake, recoilKick, shutterPhase, SHUTTER_TICKS, shellKick, barrelHot, GLINT_TICKS, glintPhase } from './juice.js'
+import { muzzleFlash, casingCol, killShake, recoilKick, shutterPhase, SHUTTER_TICKS, shellKick, barrelHot, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, STAIN_TICKS, stainRadius } from './juice.js'
 import { BAR, PIP, POWER_LABEL, ICON, bombReady, hiRoll, RACK_FLASH, respawnState } from './hud.js'
 import { fireTimbre, BONUS_JINGLE, MURMUR, WHOOSH, ALERT } from './audio.js'
 import { attractFrame, DIM } from './attract.js'
@@ -82,6 +82,9 @@ const SmashTVGame = () => {
         const evLog = []
         const parts = []
         const pops = []
+        // #2044 bonus gibs + floor stains (draw layer only; the sim never sees them)
+        const gibs = []
+        const stains = []
 
         // #496 seat 2 is a SLOT (off / human / cpu / model). A human seat reads
         // onePad slot 2 (gamepad 2 via the bridge, or P2 keys mapped below);
@@ -135,8 +138,15 @@ const SmashTVGame = () => {
                     shake = Math.max(shake, killShake(e.kind, e.bossAdd))
                     if (e.kind === 'boss') flash = 16
                 } else if (e.type === 'civKill') {
+                    // #2044: the cabinet's splatter — red gibs with a bone chip, a
+                    // floor stain, and a wet thud under the combo chime (the old
+                    // blue spark made the bonus round read like an enemy pop).
                     audioController.playSweep(300 + e.combo * 60, 90, 0.12, 'square', 0.06)
-                    burst(e.x, e.y, 6, '#8fb0ff')
+                    audioController.playNoise(0.1, 0.14)
+                    audioController.playSweep(150, 55, 0.1, 'triangle', 0.08)
+                    for (const g of goreSet()) gibs.push({ x: e.x, y: e.y, ...g, t: 0 })
+                    stains.push({ x: e.x, y: e.y + 3, r: stainRadius(e.combo), t: 0 })
+                    while (stains.length > 14) stains.shift()
                     if (e.combo === 5) say('THE CROWD GOES WILD!')
                 } else if (e.type === 'scream') audioController.playSweep(760 + Math.random() * 320, 1500, 0.09, 'square', 0.04)
                 else if (e.type === 'crateBreak') {
@@ -160,7 +170,7 @@ const SmashTVGame = () => {
                 else if (e.type === 'clear') {
                     audioController.playSweep(330, 990, 0.35, 'square', 0.09)
                     say(e.bonus ? 'THAT WAS BEAUTIFUL!' : 'ROOM CLEAR! EXIT OPEN!')
-                } else if (e.type === 'advance') audioController.playSweep(220, 660, 0.25, 'square', 0.07)
+                } else if (e.type === 'advance') { stains.length = 0; gibs.length = 0; audioController.playSweep(220, 660, 0.25, 'square', 0.07) }
                 else if (e.type === 'bomb') { audioController.playFilteredNoise(WHOOSH.dur, WHOOSH.vol, WHOOSH.freq); audioController.playNoise(0.4, 0.12); audioController.playSweep(80, 900, 0.4, 'sawtooth', 0.1); shake = 8; flash = 12; say('FIREBOMB! THE AUDIENCE ROARS!') }
                 else if (e.type === 'bombFail') { audioController.playTone(110, 0.12, 'square', 0.05); say('NOT ENOUGH POWER!') }
                 else if (e.type === '1up') audioController.playSweep(440, 1760, 0.5, 'square', 0.08)
@@ -510,8 +520,23 @@ const SmashTVGame = () => {
             }
         }
 
-        const drawCivilians = () => {
-            for (const v of gs.civilians) {
+        // #2044 floor stains: a dark-red pizza that dries out over STAIN_TICKS.
+        // Drawn at floor level (before crates/civans) inside the camera transform.
+        const drawStains = () => {
+            for (const s of stains) {
+                s.t++
+                const a = 0.55 * (1 - s.t / STAIN_TICKS)
+                if (a <= 0) continue
+                ctx.globalAlpha = a
+                ctx.fillStyle = '#6e1018'
+                ctx.fillRect(Math.round(s.x - s.r), Math.round(s.y - 1), s.r * 2, 3)
+                ctx.fillRect(Math.round(s.x - 1), Math.round(s.y - s.r), 3, s.r * 2)
+                ctx.globalAlpha = 1
+            }
+            while (stains.length && stains[0].t >= STAIN_TICKS) stains.shift()
+        }
+
+        const drawCivilians = () => {            for (const v of gs.civilians) {
                 const frame = Math.floor(v.walk / 5) % 2
                 ctx.drawImage(SP[`civ${v.id % 3}${frame}`], v.x + v.sdir[0] * v.soff - 5, v.y + v.sdir[1] * v.soff - 7)
             }
@@ -682,6 +707,7 @@ const SmashTVGame = () => {
             drawWalls()
             drawExits()
             drawSpawns()
+            drawStains() // #2044: the crowd paint dries on the studio floor, under everything
             drawCratesItems()
             if (gs.roomData.bonus) drawCivilians()
             drawEnemies()
@@ -695,6 +721,19 @@ const SmashTVGame = () => {
                 if (p.t < 20) { ctx.fillStyle = p.col; ctx.globalAlpha = 1 - p.t / 20; ctx.fillRect(p.x, p.y, 2, 2); ctx.globalAlpha = 1 }
             }
             while (parts.length && parts[0].t >= 20) parts.shift()
+            // #2044 gibs: multi-pixel shapes on a heavier arc than sparks,
+            // snapped to the pixel grid (#2043's lesson — fractional fills
+            // anti-alias the gore away at 1× canvas resolution)
+            for (const p of gibs) {
+                p.x += p.vx; p.y += p.vy; p.vy += p.grav; p.t++
+                if (p.t < GORE_TICKS) {
+                    ctx.fillStyle = p.col
+                    ctx.globalAlpha = 1 - p.t / GORE_TICKS
+                    ctx.fillRect(Math.round(p.x), Math.round(p.y), p.w, p.h)
+                    ctx.globalAlpha = 1
+                }
+            }
+            while (gibs.length && gibs[0].t >= GORE_TICKS) gibs.shift()
             for (const pp of pops) {
                 pp.y -= 0.4; pp.t++
                 text(pp.txt, pp.x, pp.y - HUD_H / 2 > 0 ? pp.y : pp.y + 16, 8, pp.col, 4)
@@ -878,6 +917,7 @@ const SmashTVGame = () => {
                     camX, boardW: roomPx(), gw: gs.roomData.gw, // #1973: pixel checks are camera-aware
                 }),
                 gameTime: () => gs.tick / 60,
+                goreFx: () => ({ gibs: gibs.map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h, t: p.t })), stains: stains.length }),
             }
             exposeGame({
                 watchSfx: watchSfxLog, // #1654 the shared handoff blip log
@@ -891,6 +931,7 @@ const SmashTVGame = () => {
                     floor = buildFloor(0, gs.seed)
                     demoAt = 0
                     parts.length = 0; pops.length = 0; evLog.length = 0
+                    gibs.length = 0; stains.length = 0
                     held.clear(); bombEdge = false
                     shake = 0; flash = 0; toast = 0
                     glint[0] = glint[1] = 0

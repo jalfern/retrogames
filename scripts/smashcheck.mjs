@@ -57,7 +57,7 @@ const { GW, GW_BIG, BIG_ROOMS, GH, CW, CELL, EXITS, exitsOf, TOTAL_ROOMS, genRoo
 const { wallCell, NEON_TOP, CHROME, borderRivet } = await import('../src/games/SmashTV/walls.js')
 const { playerFrame, GUN, LAYERS, PLAYER_FRAMES, CARRIAGE, POSE, STOCK, SPREAD_FLOOR, gunPose } = await import('../src/games/SmashTV/sprite.js')
 const { ENEMY_FRAMES, TELEGRAPH, CHARGERS, CHARGE, OUTLINE, enemyFrame, bossMouth, BOSS_MOUTH_FLAP, ADD_TELEGRAPH, BOSS_DEATH_T } = await import('../src/games/SmashTV/enemies.js')
-const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore, recoilKick, RECOIL_TICKS, RECOIL_PX, SHELL_KICK, shellKick, barrelHot, HOT_FLOOR, GLINT_TICKS, glintPhase } = await import('../src/games/SmashTV/juice.js')
+const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore, recoilKick, RECOIL_TICKS, RECOIL_PX, SHELL_KICK, shellKick, barrelHot, HOT_FLOOR, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, GORE_GRAV, STAIN_TICKS, stainRadius } = await import('../src/games/SmashTV/juice.js')
 const { PLAYER_PAL, PAULDRON_BOB } = await import('../src/games/SmashTV/art.js')
 const { FIRE, fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_TICKS, WHOOSH, ALERT, ALERT_RADIUS, ALERT_CD } = await import('../src/games/SmashTV/audio.js')
 const { BAR, PIP, POWER_LABEL, labelClearsBar, pipFits, bombReady, RACK_FLASH, hiRoll, respawnState, RESPAWN_BLINK_SHIFT } = await import('../src/games/SmashTV/hud.js')
@@ -1036,6 +1036,34 @@ console.log('determinism')
     ok(a.hash === b.hash, 'same seed replays identically', `${a.hash} vs ${b.hash}`)
 }
 
+// ------------------------------------------------------------- gore (#2044) ----
+console.log('gore')
+{
+    // #2044: the bonus-round splatter spec. The cabinet's crowd-kills SPLAT:
+    // multi-pixel red chunks with a bone chip, a heavier arc than sparks, a
+    // lifetime long enough to read the flight, and a floor stain that dries.
+    const mkRng = (seed) => { let v = seed; return () => { v = (Math.imul(v, 1103515245) + 12345) & 0x7fffffff; return v / 0x7fffffff } }
+    const gibs = goreSet(mkRng(42))
+    ok(gibs.length === 7, 'a bonus kill comes apart into seven gibs', `${gibs.length}`)
+    ok(gibs.every((p) => p.w * p.h >= 2), 'every gib is MULTI-pixel — never a burst spark', gibs.map((p) => `${p.w}x${p.h}`).join(' '))
+    const cols = new Set(gibs.map((p) => p.col))
+    ok([...cols].filter((c) => c === '#c81f2f' || c === '#e8464a' || c === '#a01824').length >= 2, 'the gore runs a two-tone red palette', [...cols].join(' '))
+    ok(cols.has('#f0e6d8'), 'one bone chip reads against the red')
+    ok(gibs.every((p) => p.grav === GORE_GRAV && GORE_GRAV > 0.18), 'gibs fall heavier than the casing sparks', `g=${GORE_GRAV}`)
+    ok(gibs.every((p) => Math.abs(p.vx) <= 2.6 && p.vy >= -3.2 && p.vy <= 2.0), 'the launch speeds stay bounded', gibs.map((p) => `${p.vx.toFixed(1)},${p.vy.toFixed(1)}`).join(' '))
+    ok(JSON.stringify(goreSet(mkRng(7))) === JSON.stringify(goreSet(mkRng(7))), 'the splatter set is deterministic by rng')
+    ok(GORE_TICKS > 20, 'gibs live longer than a spark so the arc reads', `${GORE_TICKS}`)
+    ok(stainRadius(0) === 3 && stainRadius(3) === 6 && stainRadius(99) === 6, 'the floor stain grows with the combo and caps', `${stainRadius(0)}..${stainRadius(3)}`)
+    ok(STAIN_TICKS >= 60, 'stains dry slowly — the round keeps its litter', `${STAIN_TICKS}`)
+    // presentation-only wiring, pinned at source: the civKill handler splats,
+    // the old blue spark is gone, and a room change scrubs the floor.
+    const SRC = readFileSync('src/games/SmashTV/index.jsx', 'utf8')
+    ok(/'civKill'[\s\S]{0,700}goreSet\(\)/.test(SRC), 'the civKill event spawns the gibs')
+    ok(/'civKill'[\s\S]{0,700}stains\.push/.test(SRC), 'the civKill event leaves a stain')
+    ok(!/'civKill'[\s\S]{0,700}burst\(e\.x, e\.y, 6, '#8fb0ff'\)/.test(SRC), 'the blue spark is retired — gore replaced it')
+    ok(/'advance'[\s\S]{0,160}stains\.length = 0/.test(SRC), 'the next room opens on a clean floor')
+}
+
 // ------------------------------------------------------------- mutants ----
 if (process.argv.includes('--mutate')) {
     console.log('mutants (must die)')
@@ -1076,7 +1104,15 @@ if (process.argv.includes('--mutate')) {
     const PLANNER_MUTANTS = [
         ['#2032: the seat walks onto the dropped flamer', 'if (d > 16) return inp', 'if (d > -1e9) return inp'],
     ]
-    const targets = [[SIM, MUTANTS], [SPRITE, SPRITE_MUTANTS], [LEVELS, LEVELS_MUTANTS], [PLANNER, PLANNER_MUTANTS]]
+    const JUICE = 'src/games/SmashTV/juice.js'
+    const JUICE_MUTANTS = [
+        ['#2044: gibs shrink to burst sparks', "[3, 4, '#c81f2f'], // torso chunk (the big one)", "[1, 1, '#c81f2f'], // torso chunk (the big one)"],
+        ['#2044: the bone chip drowns in the red', "[1, 3, '#f0e6d8'], // bone chip", "[1, 3, '#c81f2f'], // bone chip"],
+        ['#2044: gore vanishes before the arc reads', 'export const GORE_TICKS = 34', 'export const GORE_TICKS = 8'],
+        ['#2044: gibs float — no weight on the splatter', 'export const GORE_GRAV = 0.22', 'export const GORE_GRAV = 0'],
+        ['#2044: the floor dries instantly', 'export const STAIN_TICKS = 120', 'export const STAIN_TICKS = 4'],
+    ]
+    const targets = [[SIM, MUTANTS], [SPRITE, SPRITE_MUTANTS], [LEVELS, LEVELS_MUTANTS], [PLANNER, PLANNER_MUTANTS], [JUICE, JUICE_MUTANTS]]
     let died = 0, total = 0
     for (const [file, muts] of targets) {
         const orig = readFileSync(file, 'utf8')
