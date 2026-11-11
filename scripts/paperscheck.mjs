@@ -1517,7 +1517,7 @@ if (MUT) {
     //     remembers them — the recognition beat the whole stage is named for.
     //     (Anchor re-pinned #1997: the callback grew its personal line.)
     await tryMut('recalling face loses its line (the neighborhood forgets)',
-        mutMod('gen.js', "a.person.say = ['YOU AGAIN.', c.lines.again]", 'a.person.say = null', 'm29'),
+        mutMod('gen.js', "a.person.say = ['YOU AGAIN.', c.lines.again, c.lines.follow]", 'a.person.say = null', 'm29'), // #2003 re-anchored: the return beat is a thread now
         (m) => {
             for (const seed of SEEDS) {
                 const w = m.gen.genWeek(seed)

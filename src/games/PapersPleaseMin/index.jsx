@@ -729,6 +729,15 @@ const PapersPleaseMinGame = () => {
                     for (let i = 0; i < d.length; i += 4) if (((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]) === 0xd8d2b8) paper++
                     return paper
                 },
+                // #2003 THE LONG CONVERSATION: the growth strip below the old
+                // 34px field — paper appears there ONLY when a three-line
+                // thread grew the bubble. Dark = the field stayed standard.
+                bubbleGrowPix: () => {
+                    const d = ctx.getImageData(BUBBLE.x + 4, BUBBLE.y + BUBBLE.h + 2, BUBBLE.w - 8, 9).data
+                    let paper = 0
+                    for (let i = 0; i < d.length; i += 4) if (((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]) === 0xd8d2b8) paper++
+                    return paper
+                },
                 probe: () => {
                     const { day, view } = current(gs)
                     return {

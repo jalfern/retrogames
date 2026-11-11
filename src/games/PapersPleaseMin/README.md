@@ -262,7 +262,34 @@ speaks personally:
   (freckles 12px, patch 24px). Grubak's day-2 first visit now greets too
   (5647px), and strangers stay silent (0px).
 
-## Mutants (34, all die under `npm run paperscheck -- --mutate`)
+## THE LONG CONVERSATION (#2003) — threads that answer themselves
+
+The original's regulars don't trade orphan sentences; they run sagas. Jorji
+escalates every time he leans on the glass, and the crowd's small topics —
+bread, pensions, trains, knits — carry from visit to visit. The booth here
+now works the same way: every `REGULARS` entry carries four authored beats
+`{greet, hook, again, follow}`, and the visit decides which pair it speaks:
+
+- **first walk-up** (days 2–5): `[greet, hook]` — introduction plus the
+  topic of the week ("GOOD DAY, GUARD." / "THE BREAD LINE WAS LONG.").
+- **the return** (days 6–7, non-arc): `['YOU AGAIN.', again, follow]` —
+  recognition, personal callback, and the ANSWER to the planted topic
+  ("BACK AGAIN, HA!" / "STILL NO BREAD, HA!").
+- **the arc turn**: the canonical pair, untouched — the wall interrupts
+  breakfast. Its planted hook is the one thread the week leaves unpaid,
+  alongside the window's once-a-week tail seats (s+2, s+3 carry their
+  topics into next week); paperscheck's continuity witness allows exactly
+  those and calls anything else a broken thread.
+
+Lines are decor by doctrine (`decide` never reads `say` — the purity twin
+still walks EVERY paper EVERY day), and authoring them consumes zero rnd(),
+so every seed replays byte-identical. 24 authored lines, 24 different
+sentences, pinned. The bubble grows with the thread: `h = max(34, 8 + 13n)`
+keeps 1–2-line fields byte-identical and opens a third row at 47px (bottom
+349, clear of the 394 strip bound); `bubbleGrowPix` proves the growth on
+live pixels and stays dark when nobody speaks.
+
+## Mutants (37, all die under `npm run paperscheck -- --mutate`)
 
 
 
@@ -313,7 +340,15 @@ cast-of-six year added two: m33 freezes the rotating window (seed stops moving
 the cast — fairness and the per-week witnesses still pass, only the sweep-wide
 seatsWalked witness sees that Sonya and Tadek never walk); m34 mutes the greet
 branch (returns still speak, but the neighborhood never introduces itself —
-the speech-shape witness kills it).
+the speech-shape witness kills it). The long-conversation year added two:
+m35 drops the payoff beat (every thread dangles unanswered — the return
+shape pin `say[2]===follow` and the plant/payoff continuity witness bite);
+m36 crosses the wires (greetings speak their own payoff — strangers answer
+questions nobody asked; only the greeting pin `say[1]===hook` sees the swap,
+because continuity alone still looks intact). m29 and m34 were re-anchored
+onto the new thread literals when #2003 widened the branches — anchor drift
+is the mutant's first test, and the sweep's `anchor not found` FAIL is the
+suite protecting itself.
 
 ## Gates
 
@@ -343,7 +378,12 @@ also: all six cast marks count in disjoint ink windows (freckles 12px, patch
 0px), and seed 4's live week proves the rotated window — Sonya greets day 2
 in her scarf+earring (hat 980px, gold 9px), the day-6 sheet carries HER
 number and the real deny scores, and Tadek's day-7 return says its own
-"YOU LET ME THROUGH."). NOTE:
+"YOU LET ME THROUGH."; since #2003 also: greetings carry their hook thread
+(Sonya's two-line intro prints 4854px), the day-7 return pays off the topic
+its greeting planted ("LITTLE, BUT IT BUYS.") and the bubble field is GROWN
+for it — the 9px growth strip below the old 34px field prints 1314 paper px
+on a thread while a quiet booth shows neither field nor growth (<100 both)).
+NOTE:
 headless Chrome on a shared box logs a device-level "AudioContext
 encountered an error" line — an OS audio-renderer complaint, not page
 code, and filtered as such).
@@ -432,11 +472,17 @@ code, and filtered as such).
   personal greet + callback for every regular), and the rotating-window law
   lets six seats share a six-day walk without losing a single recurrence —
   see "The cast of six."
-- Personal speech is two sentences deep per face. The original's regulars run
-  multi-line threads that evolve across the whole campaign (Jorji's passport
-  saga alone spans weeks); here a face greets, remembers, and turns — a beat,
-  not an arc of dialogue. Deepening the threads (and letting one recur more
-  than once a week) is QA-pass territory.
+- **CLOSED by #2003 (2026-11-11):** personal speech was two sentences deep
+  per face — greet, remember, turn; a beat, not a thread. Each regular now
+  carries four authored beats `{greet, hook, again, follow}`: the first
+  walk-up opens a topic (Grubak's bread line was LONG), the return answers
+  it ("STILL NO BREAD, HA!") — the neighborhood's conversations evolve
+  across the week. Zero rnd: every seed replays byte-identical, and the
+  bubble grows to print the payoff (8+13n growth law pinned; the growth
+  strip under the old field prints 1314 paper px live and stays dark for
+  strangers). The arc turn keeps the canonical Jorji pair — the wall
+  interrupts breakfast. The gap's other half, letting one face recur more
+  than once a week, is the window amendment below.
 - The rotating window shows four of six seats per week — deliberate (recurrence
   needs repeats), but the original's line is denser: several familiar faces
   can crowd one shift. Two regulars in one day would need a queue-size law

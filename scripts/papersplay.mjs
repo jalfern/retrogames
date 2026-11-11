@@ -364,8 +364,8 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
     r.check('a regular walks the live line (seed 0 day 2 — Volen Grubak, scar, honest paper)',
         !!reg && reg.id === 'grubak' && reg.name === 'VOLEN GRUBAK' && reg.mark === 'scar' && regVerdict === 'approve',
         JSON.stringify({ reg, regVerdict }))
-    r.check(`the first walk-up greets — bubble prints ${greetBubble} paper px with his line`,
-        greetBubble > 4000 && !!reg && Array.isArray(reg.say) && reg.say.length === 1 && reg.say[0] === 'GOOD DAY, GUARD.',
+    r.check(`the first walk-up greets — bubble prints ${greetBubble} paper px with his thread`,
+        greetBubble > 4000 && !!reg && Array.isArray(reg.say) && reg.say.length === 2 && reg.say[0] === 'GOOD DAY, GUARD.' && reg.say[1] === 'THE BREAD LINE WAS LONG.',
         `${greetBubble} ${reg && JSON.stringify(reg.say)}`)
     await page.keyboard.press('a') // stamp the neighborhood in
     await page.evaluate(() => window.__ppTest.runDay())    // finish day 2 clean
@@ -384,7 +384,8 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
     await page.evaluate(() => window.__ppTest.runDay())   // honest day 1 (no cast day)
     await wait(250)
     const quiet = await page.evaluate(() => window.__ppTest.bubblePix())
-    r.check(`strangers say nothing — bubble field dark (${quiet} paper px)`, quiet < 100, `${quiet}`)
+    const quietGrow = await page.evaluate(() => window.__ppTest.bubbleGrowPix())
+    r.check(`strangers say nothing — bubble field dark (${quiet} paper px, growth strip ${quietGrow})`, quiet < 100 && quietGrow < 100, `${quiet}/${quietGrow}`)
     for (let d = 2; d < 6; d++) { await page.evaluate(() => window.__ppTest.runDay()); await wait(150) }
     let sayProbe = null, bubbleUp = -1, arcVerdict = null
     for (let g = 0; g < 14 && !sayProbe; g++) {
@@ -467,7 +468,7 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
                 if (!per || per.regular !== want) return null
                 return { name: per.passport ? per.passport.name : null, mark: per.mark || null, say: per.say || null, arc: !!per.arc, ppId: per.passport ? per.passport.id : null, wanted: p.wanted.filter((w) => w.name === per.passport.name).map((w) => w.id) }
             }, id)
-            if (hit) { await wait(650); return { hit, bubble: await page.evaluate(() => window.__ppTest.bubblePix()), verdict: await page.evaluate(() => window.__ppTest.verdict()), pix: await page.evaluate(() => window.__ppTest.crowdPix()) } }
+            if (hit) { await wait(650); return { hit, bubble: await page.evaluate(() => window.__ppTest.bubblePix()), grow: await page.evaluate(() => window.__ppTest.bubbleGrowPix()), verdict: await page.evaluate(() => window.__ppTest.verdict()), pix: await page.evaluate(() => window.__ppTest.crowdPix()) } }
             const v = await page.evaluate(() => window.__ppTest.verdict())
             await page.keyboard.press(v === 'approve' ? 'a' : 'd')
             await wait(140)
@@ -478,8 +479,8 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
     r.check('the fifth regular walks the live line (seed 4 day 2 — Sonya Malak, freckles, honest paper)',
         !!sy2 && sy2.hit.name === 'SONYA MALAK' && sy2.hit.mark === 'freckles' && sy2.verdict === 'approve',
         JSON.stringify(sy2 && { n: sy2.hit.name, m: sy2.hit.mark, v: sy2.verdict }))
-    r.check(`Sonya greets her first shift — bubble prints ${sy2 ? sy2.bubble : -1} paper px with her line`,
-        !!sy2 && sy2.bubble > 4000 && sy2.hit.say && sy2.hit.say.length === 1 && sy2.hit.say[0] === 'MY SON LIVES IN OR VECHNA.',
+    r.check(`Sonya greets her first shift — bubble prints ${sy2 ? sy2.bubble : -1} paper px with her thread`,
+        !!sy2 && sy2.bubble > 4000 && sy2.hit.say && sy2.hit.say.length === 2 && sy2.hit.say[0] === 'MY SON LIVES IN OR VECHNA.' && sy2.hit.say[1] === 'I SELL MY KNITS AT MARKET.',
         `${sy2 && sy2.bubble} ${sy2 && JSON.stringify(sy2.hit.say)}`)
     r.check(`the knit-seller's authored scarf and earring paint at the counter ${JSON.stringify(sy2 && sy2.pix && { hat: sy2.pix.hat, ear: sy2.pix.ear })}`,
         !!sy2 && sy2.pix && sy2.pix.hat > 0 && sy2.pix.ear > 0, JSON.stringify(sy2 && sy2.pix))
@@ -512,6 +513,13 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
     r.check('day 7\'s return speaks for itself (Tadek: "YOU LET ME THROUGH.") and walks honest',
         !!tk7 && !tk7.hit.arc && tk7.hit.say && tk7.hit.say[0] === 'YOU AGAIN.' && tk7.hit.say[1] === 'YOU LET ME THROUGH.' && tk7.verdict === 'approve',
         JSON.stringify(tk7 && tk7.hit.say))
+    // #2003 THE LONG CONVERSATION, live: the return is a THREAD — the topic
+    // Tadek planted on day 3 ("THE PENSION BUYS LITTLE.") gets its answer
+    // ("LITTLE, BUT IT BUYS."), and the third line grew the bubble field
+    // past its old bottom — paper in the growth strip is pixel proof.
+    r.check(`the return pays off its planted topic and the field grows for it ${JSON.stringify(tk7 && tk7.hit.say)}`,
+        !!tk7 && tk7.hit.say && tk7.hit.say.length === 3 && tk7.hit.say[2] === 'LITTLE, BUT IT BUYS.' && tk7.bubble > 4000 && tk7.grow > 300,
+        JSON.stringify(tk7 && { say: tk7.hit.say, bubble: tk7.bubble, grow: tk7.grow }))
     await page.evaluate(() => window.__ppTest.runDay())    // finish day 7 honestly
     await wait(250)
 }
