@@ -94,7 +94,56 @@ byte-identical; flat aims keep their vertical stack). And `art.js
 PAULDRON_BOB` lifts the chrome caps 1 px as the feet plant, so the shoulders
 ride the run cycle — steady at rest.
 
-## VARISIZE BOARD + CAMERA (#1973, whole-show by #2007, finale by #2024)
+## SPECIALS — HEAT-SEEKER & FLAMER (#2032)
+The cabinet's power-up ladder had eight guns; this arena had four plus the bomb.
+#2032 adds the two signatures it was missing — the guided missile and the fire.
+
+**HEAT-SEEKER** (`WEAPONS.homing`, interval 14, speed 2.6, dmg 2) fires ONE
+missile per shot (the cabinet fired heat-seekers singly). At launch the seeker
+locks on the nearest living enemy to the muzzle — not the one the barrel
+points at — and steers with a **bounded turn rate** `MISSILE_TURN = 0.16`
+rad/tick at constant speed: guidance, not a tractor beam; a clean sidestep
+still beats it. A dead lock re-acquires the nearest heat, and an unhunted hunt
+dies at `MISSILE_LIFE = 150` ticks (a fizzle event, not a cruise missile). A
+kill detonates the warhead: everything within `MISSILE_BLAST = 10` px of the
+impact takes a point (the direct hit pays its own two — no double-dip).
+
+**FLAMER** (`WEAPONS.flame`, interval 5, speed 2.2, pierce 1) breathes a
+three-pellet puff: centre full speed, outer two splayed ±`FLAME_FAN = 0.17` rad
+and eased by `FLAME_SLOW = 0.88`. Fixed offsets, so the stream replays
+identically. Fire dies at `FLAME_LIFE = 20` ticks ≈ **45 px of reach**: king at
+contact range, useless across the stage.
+
+**Where they drop.** The specials hide in the BONUS rounds — HEAT-SEEKER in
+room 4, FLAMER in room 7 — on a deterministic free cell, and nowhere else. The
+combat-room ladder (`CRATE_WEAPONS`: spread/laser/gun, doubled spreads in rooms
+5/8) is byte-identical to pre-#2032, so every proven route, pickup order and
+seed hash behaviour is preserved. Combat-board trials were tried and rejected: a
+special crate on a contested floor gets broken by stray fire and the drop
+equips under any lane-walking route.
+
+**The seat-law.** The autopilot never equips the FLAMER: the planner wraps
+every seat decision with a drop-barrel avoidance (steer away when a dropped
+flame item is within 16 px, slide along the perpendicular if straight-away is
+walled). A 45 px stream cannot win the doctrine's lane duels — seed 4 once took
+one to THE ANNOUNCER's fan. The law lives in the brain, never in the sim: a
+human thumb steps onto the barrel and gets the gun, free. The HEAT-SEEKER needs
+no law (homing missiles win those duels outright) and the nine-seed sweep
+never happens to equip it.
+
+Presentation: distinct silhouette (single stubby launcher / wide nozzle fan),
+muzzle colour, crate and HUD icon tint, fire/whoosh timbres, missile arc +
+detonation/`fizzle` visuals, and a heavier shell kick for the seeker.
+
+smashcheck (`specials` section, 24 pins): the table law, the bonus-room-only
+drop placement across all seeds, lock-the-nearest, turn cap, constant speed,
+splash, fizzle, the three-pellet fan, the reach cap, pierce, and the seat-law
+across solo 9 seeds and co-op. Five mutants (straight missile, immortal
+missile, inert warhead, undying fire, one-pellet flamer), the levels mutant
+(specials off the bonus boards) and the planner mutant (seat walks onto the
+barrel) must all die.
+
+
 The cabinet framed the show through its 16:9 lens — arenas read wider than the
 playfield. #1973 widened rooms 5 and 8; **#2007 widened the whole show**;
 **#2024 brought THE ANNOUNCER's studio onto the board too** — every room,
@@ -151,7 +200,8 @@ co-op (all nine seeds) still win.
   #2024: the finale boards wide with the show, and framing got stronger, not
   looser — the host law keeps him always on camera (above). (#1973 opened
   rooms 5/8, #2007 opened the whole show.)
-- Eight original weapons are distilled to four (twin, machine gun, spread,
-  laser) + firebomb; the homing/heat-seeking and flamer are not modelled.
+- ~~Eight original weapons are distilled to four (twin, machine gun, spread,
+  laser) + firebomb; the homing/heat-seeking and flamer are not modelled.~~
+  CLOSED by #2032: **HEAT-SEEKER** and **FLAMER** join the ladder (below).
 - Bonus-room civilians are stylized (dot-matrix contestants, no gore sprites).
 - One-hit death softened by spawn invulnerability; the arcade gives none.

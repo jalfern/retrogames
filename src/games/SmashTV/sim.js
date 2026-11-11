@@ -239,6 +239,35 @@ function target(gs, x, y) {
 // ---------------------------------------------------------------- firing ----
 const LATERAL = 3
 
+// #2032 — the two guns the ladder was missing (the cabinet's heat-seeker and
+// fireball). All constants are LAW, pinned by smashcheck:
+//   MISSILE_TURN bounds the heat-seeker's curve (rad/tick): guidance, not a
+//   tractor beam — a sidestepped missile misses, exactly like the original.
+//   MISSILE_LIFE ends a missile's hunt; MISSILE_BLAST is its warhead radius.
+//   FLAME_LIFE caps the fire at ~45 px of reach: contact-range king, useless
+//   across the stage. The fan offsets are fixed numbers — no dice, replayable.
+export const MISSILE_TURN = 0.16
+export const MISSILE_LIFE = 150
+export const MISSILE_BLAST = 10
+// Reach ≈ speed × life ≈ 45 px at the centre pellet: a third of the board's
+// height, king at contact range, useless across the stage. It must at least
+// cover the pilot's doctrinal 40 px duel standoff (planner), or the gun is a
+// trap no doctrine can fire — seed 4 learned this the hard way against the fan.
+export const FLAME_LIFE = 20
+export const FLAME_FAN = 0.17
+export const FLAME_SLOW = 0.88
+
+// the hottest thing on the board, from a point: the nearest living enemy.
+function nearestEnemy(gs, x, y) {
+    let best = null, bd = Infinity
+    for (const e of gs.enemies) {
+        const d = dist(x, y, e.x, e.y)
+        if (d < bd) { bd = d; best = e }
+    }
+    return best
+}
+export { nearestEnemy }
+
 function firePlayer(gs, p, pi = 0) {
     const w = WEAPONS[p.weapon]
     const [fx, fy] = p.aim
@@ -251,6 +280,19 @@ function firePlayer(gs, p, pi = 0) {
         const a = Math.atan2(fy, fx)
         for (const d of [-0.38, 0, 0.38]) {
             gs.bullets.push({ id: gs._nextId++, by: pi, x: p.x, y: p.y, dx: Math.cos(a + d) * w.speed, dy: Math.sin(a + d) * w.speed, pierce: w.pierce, dmg: w.dmg, kind: p.weapon })
+        }
+    } else if (p.weapon === 'homing') {
+        // ONE missile per shot (the cabinet fired heat-seekers singly), locked
+        // on the nearest living enemy to the muzzle at launch. The lock may be
+        // behind the barrel — the bounded turn makes catching up the story.
+        const e = nearestEnemy(gs, p.x + fx * 12, p.y + fy * 12)
+        gs.bullets.push({ id: gs._nextId++, by: pi, x: p.x + ox, y: p.y + oy, dx: fx * w.speed, dy: fy * w.speed, pierce: w.pierce, dmg: w.dmg, kind: 'homing', lock: e ? e.id : null, age: 0 })
+    } else if (p.weapon === 'flame') {
+        // a three-pellet fire puff: centre pellet full speed, the outer two
+        // eased and splayed — fixed offsets, so the stream replays identically.
+        const a = Math.atan2(fy, fx)
+        for (const [d, sp] of [[-FLAME_FAN, FLAME_SLOW], [0, 1], [FLAME_FAN, FLAME_SLOW]]) {
+            gs.bullets.push({ id: gs._nextId++, by: pi, x: p.x, y: p.y, dx: Math.cos(a + d) * w.speed * sp, dy: Math.sin(a + d) * w.speed * sp, pierce: w.pierce, dmg: w.dmg, kind: 'flame', age: 0 })
         }
     } else {
         gs.bullets.push({ id: gs._nextId++, by: pi, x: p.x + ox, y: p.y + oy, dx: fx * w.speed, dy: fy * w.speed, pierce: w.pierce, dmg: w.dmg, kind: p.weapon })
@@ -456,6 +498,33 @@ function updateBullets(gs) {
     const bw = boardW(gs)
     for (const b of gs.bullets) {
         const owner = b.by || 0
+        if (b.kind === 'homing' || b.kind === 'flame') {
+            b.age++
+            if (b.kind === 'flame') {
+                if (b.age > FLAME_LIFE) { b.done = true; continue }
+            } else if (b.age > MISSILE_LIFE) {
+                b.done = true
+                gs.events.push({ type: 'missileFizzle', x: b.x, y: b.y })
+                continue
+            }
+            if (b.kind === 'homing') {
+                // steer toward the lock — at most MISSILE_TURN per tick. A dead
+                // lock re-acquires the nearest heat: the seeker never goes dead,
+                // but every course change costs ticks, which is how it stays fair.
+                let t = b.lock != null ? gs.enemies.find((e) => e.id === b.lock) : null
+                if (!t) { t = nearestEnemy(gs, b.x, b.y); if (t) b.lock = t.id }
+                if (t) {
+                    const spd = Math.hypot(b.dx, b.dy)
+                    const cur = Math.atan2(b.dy, b.dx)
+                    let diff = Math.atan2(t.y - b.y, t.x - b.x) - cur
+                    while (diff > Math.PI) diff -= Math.PI * 2
+                    while (diff < -Math.PI) diff += Math.PI * 2
+                    const a = cur + Math.max(-MISSILE_TURN, Math.min(MISSILE_TURN, diff))
+                    b.dx = Math.cos(a) * spd
+                    b.dy = Math.sin(a) * spd
+                }
+            }
+        }
         b.x += b.dx; b.y += b.dy
         if (b.x < 4 || b.x > bw - 4 || b.y < HUD_H + 4 || b.y > CH - 4) { b.done = true; continue }
         const [c, r] = cellOf(b.x, b.y)
@@ -479,6 +548,17 @@ function updateBullets(gs) {
             if (dist(b.x, b.y, e.x, e.y) < (e.kind === 'boss' ? 14 : 7)) {
                 damageEnemy(gs, e, b.dmg, b.kind, owner)
                 if (!b.pierce) b.done = true
+                if (b.kind === 'homing') {
+                    // the warhead detonates: everything inside MISSILE_BLAST of
+                    // the impact takes a point — the cabinet's missile blast.
+                    gs.events.push({ type: 'missileHit', x: b.x, y: b.y })
+                    const snapped = gs.enemies.slice()
+                    for (const q of snapped) {
+                        if (q === e) continue // the direct hit already paid; the splash is for the neighbours
+                        if (!gs.enemies.includes(q)) continue // the primary hit already buried it
+                        if (dist(b.x, b.y, q.x, q.y) < MISSILE_BLAST + (q.kind === 'boss' ? 14 : 7)) damageEnemy(gs, q, 1, 'blast', owner)
+                    }
+                }
                 break
             }
         }

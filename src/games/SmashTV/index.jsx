@@ -15,7 +15,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { CW, CH, HUD_H, CELL, GW, GH, exitsOf, ENEMIES, WEAPONS, TOTAL_ROOMS } from './levels.js'
-import { makeGame, step, stateHash, CFG, comboColor, flickerPhase } from './sim.js'
+import { makeGame, step, stateHash, CFG, comboColor, flickerPhase, FLAME_LIFE, MISSILE_LIFE } from './sim.js'
 import { plan, decidePad, padToInp } from './planner.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -146,6 +146,8 @@ const SmashTVGame = () => {
                     if (e.t === 'weapon') { audioController.playSweep(500, 1500, 0.2, 'square', 0.08); const q = gs.players[e.pi || 0] || gs.player; pop(q.x, q.y - 12, WEAPONS[e.w].name, '#8fff9f'); if (!e.pi) rackFlash = RACK_FLASH; glint[e.pi || 0] = GLINT_TICKS }
                     else { audioController.playSweep(220, 880, 0.25, 'triangle', 0.08) }
                 } else if (e.type === 'wallHit') burst(e.x, e.y, 2, '#8d99b5', 1.2)
+                else if (e.type === 'missileHit') { audioController.playNoise(0.12, 0.09); burst(e.x, e.y, 8, '#ffb04f', 2.4); shake = Math.max(shake, 2) }
+                else if (e.type === 'missileFizzle') burst(e.x, e.y, 4, '#8d99b5', 1)
                 else if (e.type === 'eshoot') audioController.playSweep(300, 140, 0.06, 'sawtooth', 0.03)
                 else if (e.type === 'charge') audioController.playSweep(120, 460, 0.3, 'sawtooth', 0.035)
                 else if (e.type === 'throw') audioController.playSweep(180, 320, 0.1, 'triangle', 0.04)
@@ -559,6 +561,23 @@ const SmashTVGame = () => {
                     ctx.lineWidth = 2
                     ctx.beginPath(); ctx.moveTo(b.x - b.dx, b.y - b.dy); ctx.lineTo(b.x + b.dx, b.y + b.dy); ctx.stroke()
                     ctx.lineWidth = 1
+                } else if (b.kind === 'homing') {
+                    // #2032 the heat-seeker: a pale warhead on a hot orange
+                    // body, dragging a thin smoke line — you can READ the curve
+                    ctx.strokeStyle = 'rgba(255,176,79,0.45)'
+                    ctx.beginPath(); ctx.moveTo(b.x - b.dx * 2.5, b.y - b.dy * 2.5); ctx.lineTo(b.x, b.y); ctx.stroke()
+                    ctx.fillStyle = '#ffb04f'
+                    ctx.fillRect(b.x - 1.5, b.y - 1.5, 3, 3)
+                    ctx.fillStyle = '#ffe9cf'
+                    ctx.fillRect(b.x + b.dx * 0.4 - 0.5, b.y + b.dy * 0.4 - 0.5, 1.5, 1.5)
+                } else if (b.kind === 'flame') {
+                    // #2032 fire: a puff that starts bright and dies out —
+                    // size and colour ride the age, so the 30 px reach is
+                    // visible on the screen, not just a law in the sim
+                    const heat = 1 - b.age / FLAME_LIFE
+                    ctx.fillStyle = heat > 0.66 ? '#ffd23f' : heat > 0.33 ? '#ff8a3f' : '#b8482c'
+                    const s = 2 + b.age * 0.32
+                    ctx.fillRect(b.x - s / 2, b.y - s / 2, s, s)
                 } else {
                     ctx.fillStyle = b.kind === 'gun' ? '#8fff9f' : b.kind === 'spread' ? '#ffd23f' : '#e9f7ff'
                     ctx.fillRect(b.x - 1.5, b.y - 1.5, 3, 3)

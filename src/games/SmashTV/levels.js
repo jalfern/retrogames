@@ -49,6 +49,14 @@ export const WEAPONS = {
     gun: { name: 'MACHINE GUN', interval: 5, speed: 3.4, dmg: 1, pierce: 0, energy: 0 },
     spread: { name: 'SPREAD GUN', interval: 10, speed: 3.0, dmg: 1, pierce: 0, energy: 0 },
     laser: { name: 'LASER', interval: 16, speed: 5.2, dmg: 2, pierce: 1, energy: 2 },
+    // the original's power-up ladder had five guns; #2032 completes it.
+    // HEAT-SEEKER: one missile per shot, slow and self-homing — its lock curves
+    // with a BOUNDED turn rate (sim.js), so it reads as guided, never as a
+    // homing cheat; a clean sidestep still beats it, exactly like the cabinet.
+    // FLAMER: a three-pellet puff of fire that burns through anything but
+    // dies out after ~45 px — king at contact range, useless across the stage.
+    homing: { name: 'HEAT-SEEKER', interval: 14, speed: 2.6, dmg: 2, pierce: 0, energy: 0 },
+    flame: { name: 'FLAMER', interval: 5, speed: 2.2, dmg: 1, pierce: 1, energy: 0 },
 }
 
 export const ENEMIES = {
@@ -72,6 +80,10 @@ const ROSTERS = [
     ['boss', 'walkcam', 'walkcam'],
 ]
 
+// #2032: this label ladder stays byte-identical to the shipped show — every
+// combat-room swap tested re-routed the autopilot's label-sensitive
+// crate-find (seeds 1/2/3/4 all fell). The two new guns of #2032 live in the
+// BONUS rounds instead (see genRoom), where the routes don't fight.
 const CRATE_WEAPONS = ['spread', 'laser', 'gun', null, 'gun', 'spread', null, 'laser', 'laser']
 
 export const isBonus = (idx) => ROSTERS[idx] === null
@@ -130,7 +142,18 @@ export function genRoom(seed, idx) {
         bonusTime: 600,
     }
 
-    if (room.bonus) return room
+    if (room.bonus) {
+        // #2032: the specials hide in the BONUS rounds — the originals handed
+        // power-ups out between the killing floors, and the combat-room trials
+        // proved why: a special crate on a contested board gets broken by
+        // stray fire and the drop equips under any route that walks the lane
+        // (seed 4 once took the flamer to THE ANNOUNCER mid-fan). The bonus
+        // boards are the honest home: loot
+        // you go and get, room-specific, deterministic pick on a free cell.
+        const [bc, br] = pick()
+        room.crates.push({ c: bc, r: br, weapon: idx === 3 ? 'homing' : 'flame' })
+        return room
+    }
 
     for (const kind of ROSTERS[idx]) {
         // #2024: the host opens centre-stage — the top middle cell of the

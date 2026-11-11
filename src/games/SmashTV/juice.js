@@ -32,7 +32,7 @@ export const casingCol = (weapon) => GUN[weapon].tip
 // 256x248 canvas downscales on a phone, so the heavy iron shakes the WHOLE
 // shell — MG and LASER rattle it, SPREAD twitches, the twin is too light and
 // too fast to ever move the cabinet. Never more than an ordinary kill jolt.
-export const SHELL_KICK = { twin: 0, gun: 1.5, spread: 1, laser: 2 }
+export const SHELL_KICK = { twin: 0, gun: 1.5, spread: 1, laser: 2, homing: 1.5, flame: 0 }
 export const shellKick = (weapon) => SHELL_KICK[weapon] || 0
 
 // barrel heat on report (#1950): for the first instants of the recoil the

@@ -13,6 +13,11 @@ export const FIRE = {
     gun: { notes: [[170, 0, 0.03], [1150, 0, 0.012]], type: 'square', vol: 0.06 },
     spread: { notes: [[262, 0, 0.07], [330, 0, 0.07], [392, 0, 0.07]], type: 'square', vol: 0.045 },
     laser: { sweep: { f0: 1600, f1: 160, dur: 0.12 }, type: 'sawtooth', vol: 0.06 },
+    // #2032: the heat-seeker leaves the rail with a rising whoosh (mirroring
+    // the laser's fall — the missile goes UP); the flamer is a low double
+    // throat-clear under the stream, never a firebell.
+    homing: { sweep: { f0: 320, f1: 1200, dur: 0.16 }, type: 'sawtooth', vol: 0.05 },
+    flame: { notes: [[140, 0, 0.08], [95, 0.03, 0.06]], type: 'triangle', vol: 0.05 },
 }
 export const fireTimbre = (weapon) => FIRE[weapon] || FIRE.twin
 
