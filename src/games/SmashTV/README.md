@@ -81,10 +81,11 @@ sheet (seat-palette aware). `juice.js recoilKick` snaps the carriage back 2 px
 on report, decaying to zero within 5 ticks ≤ the tightest fire interval. The
 sim is untouched — paint-only, so every seed hash and replay pin still holds.
 
-## VARISIZE BOARD + CAMERA (#1973, whole-show by #2007)
+## VARISIZE BOARD + CAMERA (#1973, whole-show by #2007, finale by #2024)
 The cabinet framed the show through its 16:9 lens — arenas read wider than the
-playfield. #1973 widened rooms 5 and 8; **#2007 widened the whole show**: every
-room but THE ANNOUNCER's (`BIG_ROOMS` = indices 0–7) boards 24 cells across:
+playfield. #1973 widened rooms 5 and 8; **#2007 widened the whole show**;
+**#2024 brought THE ANNOUNCER's studio onto the board too** — every room,
+finale included (`BIG_ROOMS` = indices 0–8), boards 24 cells across:
 384px, 1.5× the screen, with the wall pattern mirrored across the wider board
 so corridors really run longer. Every boundary reads the room's own
 `boardW = gw * CELL` — collision, player and enemy shots, civilian bounce,
@@ -94,9 +95,17 @@ spawn is its own lower middle (`startColOf`): 16-wide keeps byte-identical
 c8, the wide boards open at c12. The renderer owns the camera: `camX` snaps
 each frame to keep the live cast's midpoint centred, clamped to the board
 edges; the whole arena layer renders translated while HUD, banners and
-scanlines stay screen-space. THE ANNOUNCER's arena is exactly screen-wide, so
-his `camX` is pinned at 0 — a boss half off-screen reads as a bug, and the
-law is pinned by smashcheck.
+scanlines stay screen-space.
+
+The finale used to sit outside all this — exactly screen-wide with `camX`
+pinned at 0, because a boss half off-screen reads as a bug. #2024 replaces
+that pin with a stronger law, the **host law**: THE ANNOUNCER paces the middle
+of the **live camera window** — the sim computes the same cast-midpoint the
+renderer pans to and keeps him inside `[cam + 48, camW − 48]`, snapping (not
+just flipping) at the edges so containment holds even when the shot slides
+faster than his 0.7 pace. He is TV; the camera never loses him — and he opens
+deterministically centre-stage at cell (gw/2, 2). smashcheck pins the spawn
+cell and always-framed containment across 1200 ticks of sliding camera.
 
 The autopilot learned the new floor: a minor-axis lane-alignment walk when its
 snap-aim line misses a threat (doctrine #508 extended to seat 1 — a wide-room
@@ -109,18 +118,26 @@ when the goal walk stalls, the hero slides sideways until the goal direction is
 actually open again (`blockedPx` probe), with the sweep growing by the stall
 streak while it isn't — a fixed 30-tick break spans ~36px, less than the ~45px
 no-go band between two bar columns on a wide board, and the exit walk
-ping-ponged inside that band forever (seed 6, 59k ticks). The pilot floor was
+ping-ponged inside that band forever (seed 6, 59k ticks). And fleeing is for
+chasers that can reach you: #2024 added the **pin-shot law** — the planner
+tracks per-seat stillness of the threat it is worried about, and a chaser that
+has not budged in 30 ticks is scenery (wedged into chrome on the wide boards
+it sat exactly ON the 42px flee threshold, so seat 1 orbited it, firing past
+the pinned camera for 56k ticks in room 8 — seed 1). No fleeing a pinned
+camera; walk the lane onto it and let the shot land. The pilot floor was
 re-measured honestly on the new boards: **solo clears all 9 seeds** — the
 #1973 seed-3 forced loss is retired (the directed break ends the fan attrition
 without costing another seed; smashcheck pins the count — if a future change
 loses one again, update pin and README together, Pong's seed 25 style).
-Seed 1 proves the deathless matinee; the slack runs (seeds 0–2) and co-op
-(all nine seeds) still win.
+Seeds 1, 5 and 7 prove the deathless matinee; the slack runs (seeds 0–2) and
+co-op (all nine seeds) still win.
 
 ## Honest gaps vs the cabinet
-- THE ANNOUNCER keeps his screen-sized stage on purpose (a boss half off-screen
-  reads as a bug); every other room runs the 24-column pan board (#1973 opened
-  rooms 5/8, #2007 opened the whole show).
+- ~~THE ANNOUNCER keeps his screen-sized stage on purpose (a boss half off-screen
+  reads as a bug); every other room runs the 24-column pan board.~~ CLOSED by
+  #2024: the finale boards wide with the show, and framing got stronger, not
+  looser — the host law keeps him always on camera (above). (#1973 opened
+  rooms 5/8, #2007 opened the whole show.)
 - Eight original weapons are distilled to four (twin, machine gun, spread,
   laser) + firebomb; the homing/heat-seeking and flamer are not modelled.
 - Bonus-room civilians are stylized (dot-matrix contestants, no gore sprites).

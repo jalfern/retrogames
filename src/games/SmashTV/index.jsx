@@ -617,8 +617,10 @@ const SmashTVGame = () => {
             ctx.fillRect(0, 0, CW, CH)
             // #1973: the arena camera. Big rooms run wider than the screen, so
             // the view follows the live cast's midpoint and clamps to the
-            // board's edges; standard rooms are exactly screen-wide, so camX
-            // stays 0 and their framing is byte-identical to the old fixed one.
+            // board's edges. Since #2024 the WHOLE show boards wide, so every
+            // room pans; the 0 branch stays as the generic guard for any board
+            // that fits the screen — its framing is byte-identical to the old
+            // fixed camera.
             const camBoard = roomPx()
             if (camBoard > CW) {
                 const live = gs.players.filter((q) => q.deadT === 0 && !q.out)
