@@ -25,7 +25,7 @@ import { makeTransport } from '../../utils/linkPeers.js'
 import { createLobby, lobbyRole, relayFromQuery } from '../../utils/lobby.js'
 import { createDefuseSync, snapshotNet, restoreNet, packSnap, DROP_GRACE, HASH_EVERY, RESEAT_LEAD, RESEAT_WINDOW } from './net.js'
 import * as E from './engine.js'
-import { sfx } from './audio.js'
+import { sfx, BED } from './audio.js'
 import { parseCall } from './voice.js'
 
 const FIXED_DT = 1000 / 60
@@ -425,6 +425,9 @@ function drawIntro(g, gs, coach) {
 const newHud = () => ({
     flash: 0, shake: 0, sparks: [], banner: null, bannerT: 0, boomT: 0, dudT: 0,
     ventTaught: false, coach: null,
+    // #1812 item 10: bed cadence + a DEV-visible ping counter (the harness
+    // proves the hum is alive without reading the speaker)
+    bedT: 0, bedPings: 0,
     turn: [{ pos: 0, vel: 0, lag: 0, want: 0 }, { pos: 0, vel: 0, lag: 0, want: 0 }],
 })
 
@@ -558,6 +561,17 @@ export default function BombDefuseGame() {
             if (c > 0) sfx.ratchet()
             else if (c < 0) sfx.ratchetBack()
         }
+    }
+
+    // #1812 item 10: the powered-device bed hums while a bomb is armed, and
+    // ONLY while armed — attract, menus, pause and the desync freeze all stop
+    // this (it rides the tick paths), the pitch climbs as the fuse drains
+    // (bedHz, pure), and while a boom rings out (boomT) it ducks: no ping
+    // steps on the crack. Presentation clock only — gs is never touched here.
+    const pumpBed = (g) => {
+        const hud = hudRef.current
+        if (!g || g.done || screenRef.current !== 'play' || hud.boomT > 0) return
+        if (++hud.bedT % BED.EVERY === 0) { hud.bedPings++; sfx.bed(Math.ceil(g.fuse / 60)) }
     }
 
     // ---- game contract spec ---------------------------------------------------
@@ -960,6 +974,7 @@ export default function BombDefuseGame() {
                     }
                     spec.tick(pads[0], pads)
                     pumpTurnPoses(gs)
+                    pumpBed(gs)
                     if (isRecording() && !contractHoldsLoop()) recordLiveTick(pads)
                     if (isRecording() && screenRef.current === 'over') endRun()
                     if (!gs.done && !net.sync.solo() && gs.tick % HASH_EVERY === 0) {
@@ -981,6 +996,7 @@ export default function BombDefuseGame() {
             if (watchingRef.current && gsw && !gsw.done) { pads = E.solvePads(gsw); p1 = pads[0] }
             spec.tick(p1, pads)
             pumpTurnPoses(gsRef.current)
+            pumpBed(gsRef.current)
             // watch never lingers past the run — the solver's win is the release
             if (watchingRef.current && gsw && gsw.done) { watchingRef.current = false; setWatching(false) }
             // the Gauntlet funnel (#1249): this loop bypasses contract step() —
@@ -1181,6 +1197,9 @@ export default function BombDefuseGame() {
                 // of sim state + view facts — the harness reads what the plate teaches)
                 coach: () => hudRef.current.coach || null,
                 ventTaught: () => hudRef.current.ventTaught,
+                // #1812 item 10: bed pings accrued since the run began — the
+                // drive proves the hum is alive (and frozen on pause/over)
+                bedPings: () => hudRef.current.bedPings,
                 net: () => ({
                     active: net.active, role: net.role,
                     code: net.room ? net.room.code : '', phase: net.room ? net.room.phase : '',
@@ -1256,7 +1275,7 @@ export default function BombDefuseGame() {
                     <WatchButton on={watching} />
                 </div>
             )}
-            {paused && <PauseOverlay gameEntry={entry} onResume={() => setPaused(false)} />}
+            {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
             {micOn && (
                 <div className="pointer-events-none absolute top-2 right-2 rounded bg-red-700/80 px-2 py-1 font-mono text-xs text-white">
                     MIC ON — words coach, pads commit

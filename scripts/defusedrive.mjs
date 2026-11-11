@@ -63,6 +63,28 @@ const px = await page.evaluate(() => {
 })
 r.check('canvas draws real content (not black)', px > 4000, `${px} lit samples`)
 
+// #1812 item 10 — the powered-device bed in the REAL clock: pings accrue while
+// armed (the partner leads at stepT>=20, so the run joins in ~1 s), pause
+// freezes them, resume wakes them. This ride also live-proves pause itself:
+// the overlay prop bug (gameEntry vs game) crashed the whole app on Escape
+// at main (pageerror reading 'label', __bdTest gone with the tree).
+const bedPlay = await page.evaluate(() => window.__bdTest?.bedPings() ?? -1)
+r.check('bed hums while armed (pings accrue during live play)', bedPlay >= 2, `pings=${bedPlay}`)
+await page.keyboard.press('Escape')
+await sleep(250)
+r.check('pause does not crash the app (tree + probes alive, screen still play)',
+    await page.evaluate(() => !!window.__bdTest && window.__bdTest.screen() === 'play'))
+const pPauseA = await page.evaluate(() => window.__bdTest?.bedPings() ?? -1)
+await sleep(900)
+const pPauseB = await page.evaluate(() => window.__bdTest?.bedPings() ?? -1)
+r.check('pause silences the bed (pings frozen while paused)', pPauseB === pPauseA && pPauseA >= 0, `pA=${pPauseA} pB=${pPauseB}`)
+await page.keyboard.press('Escape')
+await sleep(250)
+const pWakeA = await page.evaluate(() => window.__bdTest?.bedPings() ?? -1)
+await sleep(700)
+const pWakeB = await page.evaluate(() => window.__bdTest?.bedPings() ?? -1)
+r.check('resume wakes the bed (pings accrue again)', pWakeB > pWakeA, `pA=${pWakeA} pB=${pWakeB}`)
+
 const win = await page.evaluate(() => {
     const s = window.__bdTest.solve(9000)
     return s && s.done && s.won
@@ -70,8 +92,10 @@ const win = await page.evaluate(() => {
 r.check('solver-driven run reaches WON', !!win)
 await sleep(150)
 r.check('over screen shows', (await page.evaluate(() => window.__bdTest.screen())) === 'over')
+const pOverA = await page.evaluate(() => window.__bdTest?.bedPings() ?? -1)
 await page.screenshot({ path: '/tmp/forge/bd-win.png' })
 await sleep(750)
+r.check('the over screen silences the bed (pings frozen)', (await page.evaluate(() => window.__bdTest?.bedPings() ?? -1)) === pOverA && pOverA >= 0, `p=${pOverA}`)
 await page.keyboard.press('KeyX')
 await sleep(1200)
 r.check('any key restarts (play again)', (await page.evaluate(() => window.__bdTest.screen())) === 'play')

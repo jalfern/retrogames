@@ -99,11 +99,11 @@ lockstep-by-sampling-law (#531), same shape as the other four co-op titles:
 ## Verify
 
 ```bash
-npm run defusecheck                      # 105 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline, first-VENT coaching
+npm run defusecheck                      # 119 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline, first-VENT coaching, powered-device bed
 npm run defuselinkcheck                # 75 gates: online protocol incl. in-flight reseat (7b/7c/7d)
 CONTRACT_ONLY=bomb-defuse npm run contractcheck
 DEV_PORT=5178 npm run plaicraft:evidence -- --self-test   # fifth-title synths + mutants
-npm run defusedrive                      # real-key drive: start→play→boom→restart
+npm run defusedrive                      # real-key drive: start→play→bed/pause→boom→restart (+coach, press-tick)
 DEV_PORT=5173 npm run watchcheck -- --only bomb-defuse   # WATCH pilot: seat/advance/takeover/re-seat/resume/release + 5 source pins
 npm run defuselinkdrive                # two browsers over a live relay: join→lockstep→hash→walkaway→in-flight reseat
 ```
@@ -138,6 +138,18 @@ naming YOUR seat's job and pulses the control that must move (amber bar ring
 until pinned, green gauge ring + `TAP!` when the needle crosses the zone).
 `__bdTest.coach/ventTaught/probeStep` expose it for `defusedrive` (5 gates:
 role naming, ring pixels before/after the pin, latch + quiet-after).
+Powered-device bed (#1812 item 10): `sfx.bed` hums a sub-bass triangle every
+`BED.EVERY` (30) shell ticks while the play screen is armed; `bedHz(secs)` (pure,
+in `audio.js`) sits at BASE 55 Hz until 15 s, +3 Hz per second gone, capped TOP
+98 Hz; `pumpBed` (index.jsx, both tick paths) ducks while `hud.boomT > 0` and
+never runs outside play/pause-live. `__bdTest.bedPings` proves it live. Mutants:
+flat `bedHz` (always BASE) reddens the climb + cap gates; dropping the boomT
+condition or a tick-path call reddens the pins. Restore → 119/119; drive 22/22.
+**Paused-crash fix found on the way (was red AT MAIN):** the overlay was passed
+`gameEntry=` while `PauseOverlay` takes `game=` — any Escape during play crashed
+the whole app (`{game.label}` on undefined, pageerror + React tree gone). Fixed
+to `game={entry}`; defusecheck pins the prop, the drive rides pause/resume live
+(tree alive after Escape, bed frozen while paused, awake after resume).
 Drive notes (#1932 session): two #1812 gates went red on this box AT MAIN
 (`defusedrive` 2026-11-10) and were re-anchored — the press-tick reads now
 park at a clean baseline and capture the whole spring INSIDE one sync
