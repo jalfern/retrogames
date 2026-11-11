@@ -1,71 +1,85 @@
-# STATE — session 218 (2026-11-11, slot a)
+# STATE — session 219 (2026-11-11, slot b)
 
 ## What shipped
-**FROGGER: PROVEN CROSSING DRIVER** merged as `6f7df8f` (PR #1986, part of
-#1637 — batch 25 of the WATCH rollout). The old attract brain was greedy/
-random and unproven, so b25 built a real driver: `watchStep` in
-`src/games/Frogger/sim.js` scores all nine candidate hops by replaying the
-game's OWN forward arithmetic (analytic lane spans with drift + speed ramp,
-dive phase, crush, off-board, clock) under a greedy continuation. No `rand` —
-the Node sweep and the browser seat steer one identical policy. Reactive per
-tick (Rogue law): seats anywhere, any input takes over, re-seats from live
-state, silent release at game over. The whole tick-rule set lifted into
-`sim.js` (`makeRun`/`hop`/`tickFrogger`) so `froggercheck` proves shipped
-physics; shell keeps draw/sound/chrome/seat.
-
-Sweep floors (40 seeds × 120 s, watching, pinned in froggercheck): 40/40
-seeds replay byte-equal, 40/40 bank ≥1 level, 36/40 zero-death, ≥20 homes
-per seed, ≥1800 homes total. froggercheck 30/30 + 13 mutants die (3 new
-driver mutants: muted planner, home-earliness, shuffle-back). Two rules the
-sweep earned (documented in README + sim comments): home landing scores
-`1e6 + HORIZON` (dt-0 earliness parity or the frog procrastinates past the
-door), and row-1-with-all-houses-behind shuffles back onto the opposite-drift
-lane. Chrome: shared blips + WatchToast + attract hint + AttractWatchButton +
-registry WATCH_HELP line. `__game` QA contract newly wired (frogger in
-contractGames; contractcheck 14/14, FNV `stateHash` in sim). watchcheck
-frogger pilot + b25 source pins; Frogger added to ARCADE list.
-Live: jalfern.com/retrogames/frogger (registry marker verified in prod
-`index-BBbmnu-I.js` via cache-busted BFS, 64 chunks).
+**PAPERS, PLEASE-MIN: THE ARC** merged as `dbe5b5b` (PR #1985, Closes #1983 —
+NEVER-DRY pick, weakestStage score 7 = 1 unowned README gap + 6 QA feedback
+issues naming the game). One regular per week turns wanted, Jorji-style:
+`arcForWeek(seed)` = cast[seed mod 4]; by the injection law that face walks
+days 2 and 6, so the turn lands on the **return, day 6** (WANTED awake since
+day 4). The case is the wall's: bulletin pairs the authored name with the
+passport number carried THAT day; papers stay built-legal — pull the sheet
+entry and decide approves (paperscheck's pull-the-witness pin). rules.js
+untouched. Returning faces speak: turn = `YOU AGAIN.` / `...I NO DO
+ANYTHING.`, plain recidivist (days 3→7) = `YOU AGAIN.`; lines ride
+`person.say`, purity pinned (stripping never moves a verdict). Bubble paints
+as printed paper (`layout.js BUBBLE`, tail up). Wall law: arc day stages one
+decoy less — five-portrait capacity and deepest-five witness stand.
+paperscheck **11082/11082** (new ARC section + m27 invisible-turn, m28
+wrong-number witness, m29 silenced-memory, m30 overflowing-bulletin; **m11
+re-anchored** to the adaptive decoy loop — an old anchor gone stale is a red
+mutant, catch it in the mutate run). papersplay **52/52**: bubble 0px dark on
+strangers vs 5372px when Grubak speaks; seed-0 day-6 deny stamps WANTED with
+the printed number; seed-1 sympathetic APPROVE of MARKO costs the strike.
+Live: jalfern.com/retrogames/papers-please (PPM chunk `index-Dk2m3ISj.js`
+carries `VOLEN GRUBAK` + both callback lines).
 
 ## The session's catches
-- **Mutate runs are not reentrant, and a harness timeout may detach, not
-  kill.** A 300 s-capped `froggercheck --mutate` outlived its cap while a
-  re-run started; the two loops interleaved plants and each recorded the
-  other's in-flight plant as its "original", leaving three source corpses
-  (`?seed` pin stripped in index.jsx, fly-dice `Math.random` in sim.js,
-  attract `DIM` transparent). A plain gate that "should" catch them passed,
-  because the re-run faithfully restored the corpse it remembered. Scrubbed
-  by grep for every MUTANTS `from:` fingerprint; re-verified 30/30 + 13/13.
-  Lesson: give `--mutate` exclusive access and ≥ 20 min; after any killed
-  mutate run, grep the mutant fingerprints before trusting the tree.
-- **watchphonecheck's 24% band law bites fresh chrome.** The attract ▶ WATCH
-  wrapper must sit at `bottom: '24%'` (clear of the phone pad zone) — 10%
-  passed the local eyeball but went red on static. Copy the shared wrapper
-  from Pong/SpaceInvaders when adding attract WATCH.
-- **Score sums can hide dice bugs**: fly-house +200 lands regardless of WHICH
-  house is the fly, so a cross-process replay hash that tracks score only
-  never notices an unseeded fly draw. The source pin (`no Math.random in
-  sim.js`) is what guards this class.
+- **Stamp frames lie to pixel probes.** bubblePix read 0px because the
+  PREVIOUS entrant's stamp holds 30 ticks — while shown, the counter displays
+  the judged document, not the live person. Wait ≥650 ms (stamp-tick-out)
+  before sampling a new entrant's pixels (#1938 doctrine, again).
+- **jalfern.com edge can lag a Vercel promotion by ~35 min.** Production
+  deploy status said `success` at merge+1s while the proxy HTML still
+  referenced a superseded entry hash (its assets 404 at origin). Local dist
+  hashes ≠ Vercel build hashes (drift): verify by CONTENT — fetch the entry
+  referenced by live HTML, walk its chunk map, grep the game chunk for a new
+  string fingerprint (`I NO DO ANYTHING`). Origin `retrogames-psi.vercel.app`
+  is the source of truth while the proxy settles.
+- **`ok(a.person.say)` vs `ok(a.say)`** — queue items are `{person, truth}`;
+  applicant-level fields live under `person`. One arity bug, twelve identical
+  seed failures: read the shape, not the message.
 
 ## Ladder trail
-- halt none; steer none. TARGET #1637 claimed via forge-claim.sh (free),
-  batch 25 = FROGGER per b24 audit (remaining unseated: Asteroids,
-  DonkeyKong, Centipede, Pitfall — none has a proven driver yet; the same
-  lift-into-sim + sweep pattern applies).
-- Advisory reds on PR (smoke/prsmokes) pre-existed on main's line
-  (civilization-v/blob-battle/iron-ring pilot flakes); static green both
-  pushes; rule-5 merge clean. Nightly on main was `cancelled` at gate time
-  (not blocking per main-ok.sh; the 16:43Z nightly before it was success).
+- TARGET #1637 claim REFUSED (slot a holds it, 49 min at the time — FROGGER
+  batch 25 building; never touch another slot's lock). halt none; steer none;
+  `next` #1711 → seventh confirm posted (one line), released — Jon-side
+  hardware only. game-queue empty; feedback exists but QA MASTER live
+  (pid 46138) → borrow refused; flagship stage spent (idle.mjs) → NEVER-DRY
+  `idle-kick` answered `KICK PAPERS, PLEASE-MIN 0 weak`, weakestStage score
+  7. Filed #1983 with why-weakest, claimed(b), shipped. No jonq (mechanical
+  picks; no taste call needed).
+
+## Session bookkeeping
+- #1983 CLOSED shipped. QA polish pass filed as **#1988** (bulletin faces for
+  the wanted sheet, turn announce beat, per-id voice pools, deny aftershock +
+  arc sfx, tail pixel pin).
+- :5178 vite KILLED at session end; worktree `~/Dev/retrogames-forge-ppm-arc`
+  (detached at dbe5b5b, node_modules symlinked) reusable or
+  `git worktree remove` anytime. Old `~/Dev/retrogames-forge-ppm-regulars`
+  also still removable.
+
+## Next queued (slot b)
+1. Fresh ladder: halt/steer/next/queue games-first. #1637 belongs to slot a
+   unless its lock goes stale; #1711 stays Jon-side (eighth confirm = one
+   line, release).
+2. NEVER-DRY candidates: the NEW residual gap (README) is background-entrant
+   variety (hats, unibrows, earring, missing teeth — decor, doctrine of the
+   nose: never compared). #1988 (QA lane) owns arc presentation — don't
+   build it from here; re-run idle-kick rather than trusting this list.
+3. Adding a 7th COMPARED feature = FEATURES + portraitDiffs + drawFace +
+   papersplay FE list (#1972 law). New DECOR marks are cheap by contrast
+   (drawFace + castPix/ink gates only) — that's the variety stage's shape.
+
+## Notes for the next slot-b session
+- Regulars doctrine (updated by #1983): marks ride inside the face descriptor;
+  compared set stays FEATURES (six); `say` is person-level atmosphere,
+  verdict-purity pinned; the arc is seed-derived (`arcForWeek`) and the turn
+  is ALWAYS day 6 — a second simultaneous arc must not reuse day 6's slot.
+- paperscheck mut anchors move when gen.js lines move (m11 this time): always
+  run `--mutate` before shipping, anchor-not-found is red.
+- papersplay live-arc block (seed-0 walk to idx-10 entrant) is the idiom for
+  reaching a specific day/entrant with real keys; `runDay()` per day, then
+  step until the probe matches.
 
 ## Open questions
-- none filed this session (no taste/priority calls needed; all decisions
-  were pattern-following from b24).
-
-## Next
-- Batch 26 (#1637): first title of the remaining four whose rules support a
-  exhaustive-search driver. Audit suggests PITFALL (deterministic board,
-  single avatar, solvable by BFS like LodeRunner's planner) — claim with
-  `scripts/forge-claim.sh 1637 <slot>`; if the claim lands on a title whose
-  sim isn't yet Node-proofable, lift-into-sim first (the b25 pattern).
-- Dev server habit: `npm run dev -- --port 5173 --strictPort`; run
-  `--mutate` ONLY in an exclusive window with a ≥20 min budget.
+- None. (No taste/priority call needed from Jon.)
