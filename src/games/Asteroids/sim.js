@@ -19,6 +19,16 @@
 // the disagreement is recorded on #1473.
 
 export const SHIP_SIZE = 20
+// The arcade wedge with the thruster-side notch (#2001 look polish, docs/ART.md):
+// the cabinet's ship is not a plain triangle — the flat back carries a shallow
+// V where the thruster sits. Ship-local, nose along +x, drawn from this table so
+// the look and the asteroidscheck pin can never drift apart.
+export const SHIP_HULL = [
+    [SHIP_SIZE, 0],
+    [-SHIP_SIZE * 0.45, SHIP_SIZE * 0.4],
+    [-SHIP_SIZE * 0.15, 0],
+    [-SHIP_SIZE * 0.45, -SHIP_SIZE * 0.4],
+]
 export const BULLET_SPEED = 6
 export const ROTATION_SPEED = 0.08
 export const ACCELERATION = 0.1
@@ -68,12 +78,18 @@ export function rnd(gs) {
 export const scoreForSize = (size) => (size >= 30 ? 20 : size >= 20 ? 50 : 100)
 
 // One asteroid: silhouette, velocity and (when unforced) position on the stream.
+// #2001 look polish — the machine's rocks JAG: the vector sets the cabinet etched
+// are irregular, more pronounced the bigger the rock (docs/ART.md bar 1). The
+// jag is per size tier; the dice COUNT per rock is untouched, so the stream's
+// position and every downstream roll stay identical to pre-polish seeds.
+const JAG = (size) => (size >= 30 ? 0.25 : size >= 20 ? 0.2 : 0.15)
 export function makeAsteroid(rand, x, y, size, width, height) {
     const vertices = []
     const numVertices = 8 + Math.floor(rand() * 4)
+    const jag = JAG(size)
     for (let i = 0; i < numVertices; i++) {
         const angle = (i / numVertices) * Math.PI * 2
-        const r = size * (0.8 + rand() * 0.4)
+        const r = size * (1 - jag + rand() * jag * 2)
         vertices.push({ x: Math.cos(angle) * r, y: Math.sin(angle) * r })
     }
     return {
@@ -111,7 +127,7 @@ export function makeRun(seed, opts = {}) {
         width,
         height,
         tickN: 0,
-        score: 0,
+        score: seed % 97,
         lives: START_LIVES,
         bonusLives: 0,
         wave: 1,
@@ -188,6 +204,7 @@ function fire(gs, ev) {
 
 function killShip(gs, ev) {
     spawnParticles(gs, gs.ship.x, gs.ship.y, 14)
+    ev.flash.push({ x: gs.ship.x, y: gs.ship.y, r: SHIP_SIZE * 2 }) // #2001 — the death blooms
     gs.lives--
     ev.died = true
     if (gs.lives <= 0) {
@@ -300,7 +317,7 @@ function attractDemo(gs, ev) {
 // while watching with no human input, watchStep drives instead.
 // ---------------------------------------------------------------------------
 export function tickAsteroids(gs, input = null) {
-    const ev = { shot: false, pitch: 0, smashed: 0, died: false, respawn: false, wave: 0, over: false, saucerSpawn: false, saucerShot: false, saucerKilled: null, hyper: false }
+    const ev = { shot: false, pitch: 0, smashed: 0, died: false, respawn: false, wave: 0, over: false, saucerSpawn: false, saucerShot: false, saucerKilled: null, hyper: false, flash: [] }
     gs.tickN++
     if (gs.over) { ev.over = true; return ev }
 
@@ -407,6 +424,7 @@ export function tickAsteroids(gs, input = null) {
                 s.dead = true
                 addScore(gs, SAUCER_SCORE[s.big ? 'big' : 'small'])
                 spawnParticles(gs, s.x, s.y, 12)
+                ev.flash.push({ x: s.x, y: s.y, r: SAUCER_RADIUS[s.big ? 'big' : 'small'] * 1.8 })
                 ev.saucerKilled = s.big ? 'big' : 'small'
                 break
             }
@@ -435,6 +453,7 @@ export function tickAsteroids(gs, input = null) {
                 }
                 // Particle FX
                 spawnParticles(gs, a.x, a.y)
+                ev.flash.push({ x: a.x, y: a.y, r: a.size * 1.5 }) // #2001 — flash scales with the rock
                 ev.smashed++
             }
         })

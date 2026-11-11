@@ -12,7 +12,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { makeAsteroid, spawnWave, scoreForSize, livesForScore, START_LIVES, makeRun, tickAsteroids, watchStep, stateHash, SAUCER_SCORE, SAUCER_ROCK_BONUS, SAUCER_RADIUS, SAUCER_BULLET_SPEED, HYPER_COOLDOWN, HYPER_INVULN, HYPER_BLINK } from '../src/games/Asteroids/sim.js'
+import { makeAsteroid, spawnWave, scoreForSize, livesForScore, START_LIVES, makeRun, tickAsteroids, watchStep, stateHash, SAUCER_SCORE, SAUCER_ROCK_BONUS, SAUCER_RADIUS, SAUCER_BULLET_SPEED, SHIP_SIZE, SHIP_HULL, RESPAWN_DELAY, INVULN_TICKS, HYPER_COOLDOWN, HYPER_INVULN, HYPER_BLINK } from '../src/games/Asteroids/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -442,6 +442,107 @@ console.log('hyperspace (#2001): seeded jumps, cooldown, arrival mercy')
     ok(/gs\.tickN >= gs\.hyperUntil/.test(srcIndex), 'the ship stays hidden while rematerialising')
 }
 
+// --------------------------------------------------------------- look polish ----
+// #2001 part 3 — the machine's rocks JAG (docs/ART.md bar 1 + bar 5 "juice").
+// Silhouette dice swing ±0.25 / ±0.2 / ±0.15 of nominal by size tier (bigger
+// rock, coarser jag); every kill stamps a flash whose radius scales with what
+// died; the hull is the arcade's notched wedge, drawn from a pinned table so
+// the look and the pin cannot drift apart. The dark/blink gate is the sim half
+// of the sprite↔state law the drawn ship honors.
+console.log('look polish (#2001): jagged silhouettes, kill blooms, notched hull, dark window')
+{
+    const srcIndex = readFileSync('src/games/Asteroids/index.jsx', 'utf8')
+    const tiers = [[40, 0.25], [20, 0.2], [10, 0.15]]
+    for (const [size, jag] of tiers) {
+        let minR = Infinity, maxR = -Infinity, thin = 0, n = 0
+        for (let s = 1; s <= 8; s++) {
+            const rand = seedRng(s * 104729 + size)
+            for (let i = 0; i < 50; i++) {
+                const a = makeAsteroid(rand, 10, 10, size, 600, 800)
+                let vmin = Infinity, vmax = -Infinity
+                for (const v of a.vertices) {
+                    const rr = Math.hypot(v.x, v.y) / size
+                    if (rr < vmin) vmin = rr
+                    if (rr > vmax) vmax = rr
+                }
+                if (vmax - vmin < jag * 0.8) thin++ // expected per-rock span of 8-11 dice is ≈ jag×1.4+
+                if (vmin < minR) minR = vmin
+                if (vmax > maxR) maxR = vmax
+                n++
+            }
+        }
+        ok(maxR >= 1 + jag * 0.7 && minR <= 1 - jag * 0.7 && thin / n < 0.03,
+            `rock silhouettes jag at size ${size} (±${jag} radius die, ${n} rocks)`,
+            `min ${minR.toFixed(3)} max ${maxR.toFixed(3)} thin ${thin}/${n}`)
+    }
+
+    // Kill blooms: rock / saucer / ship each stamp one flash, sized by the kill.
+    {
+        const gs = makeRun(5, { width: 600, height: 800 })
+        gs.attract = false
+        gs.invulnUntil = 1e9
+        gs.asteroids = [{ x: 300, y: 300, vx: 0, vy: 0, size: 40, vertices: [] }]
+        gs.bullets = [{ x: 300, y: 300, vx: 0, vy: 0, life: 60 }]
+        const ev = tickAsteroids(gs, null)
+        ok(ev.smashed === 1 && ev.flash.length === 1 && ev.flash[0].r === 40 * 1.5,
+            'a smashed rock blooms a flash sized by the rock', JSON.stringify(ev.flash))
+    }
+    {
+        const gs = makeRun(5, { width: 600, height: 800 })
+        gs.attract = false
+        gs.invulnUntil = 1e9
+        gs.asteroids = []
+        gs.saucers = [{ big: true, x: 200, y: 200, vx: 0, vy: 0, phase: 0, amp: 0, cooldown: 999, life: 900 }]
+        gs.bullets = [{ x: 200, y: 200, vx: 0, vy: 0, life: 60 }]
+        const ev = tickAsteroids(gs, null)
+        ok(ev.saucerKilled === 'big' && ev.flash.length === 1 && ev.flash[0].r === SAUCER_RADIUS.big * 1.8,
+            'a downed saucer blooms wider than a rock', JSON.stringify(ev.flash))
+    }
+    {
+        const gs = makeRun(11, { width: 600, height: 800 })
+        gs.attract = false
+        gs.invulnUntil = 0
+        gs.asteroids = [{ x: gs.ship.x, y: gs.ship.y, vx: 0, vy: 0, size: 40, vertices: [] }]
+        const ev = tickAsteroids(gs, null)
+        ok(ev.died && ev.flash.some(f => f.r === SHIP_SIZE * 2),
+            'the ship death blooms its own flash', JSON.stringify(ev.flash))
+    }
+
+    // The notched wedge: nose forward, twin aft fins, notch cut into the back.
+    {
+        const fins = SHIP_HULL.filter(p => p[1] !== 0 && p[0] < 0)
+        const notch = SHIP_HULL.filter(p => p[1] === 0 && p[0] < 0)
+        ok(SHIP_HULL.length >= 4 && SHIP_HULL[0][0] > 0 &&
+            fins.length === 2 && fins[0][0] === fins[1][0] && fins[0][1] === -fins[1][1] &&
+            notch.length === 1 && notch[0][0] > fins[0][0],
+            'the hull is the arcade wedge: nose, twin fins, thruster notch — not a triangle',
+            JSON.stringify(SHIP_HULL))
+        ok(/SHIP_HULL\.forEach/.test(srcIndex), 'the ship draws from the pinned hull table')
+        ok(/f\.life \* 0\.45/.test(srcIndex) && /ctx\.arc\(f\.x, f\.y, f\.r/.test(srcIndex),
+            'the shell paints the blooms as expanding fading rings')
+    }
+
+    // Dark-window law (sprite↔state, #2001 backlog item): death hides the ship
+    // for exactly RESPAWN_DELAY ticks, then the blink grace follows — the drawn
+    // ship's visibility gate honors all three hides in one expression.
+    {
+        const gs = makeRun(11, { width: 600, height: 800 })
+        gs.attract = false
+        gs.invulnUntil = 0
+        gs.asteroids = [{ x: gs.ship.x, y: gs.ship.y, vx: 0, vy: 0, size: 40, vertices: [] }]
+        const ev = tickAsteroids(gs, null)
+        ok(ev.died && gs.respawnAt === gs.tickN + RESPAWN_DELAY,
+            'death arms the dark window', `respawnAt=${gs.respawnAt} tick=${gs.tickN}`)
+        let back = 0
+        for (let i = 0; i < RESPAWN_DELAY + 5 && !back; i++) if (tickAsteroids(gs, null).respawn) back = i + 1
+        ok(back === RESPAWN_DELAY, 'the dark window is exactly RESPAWN_DELAY ticks', `${back}`)
+        ok(gs.invulnUntil === gs.tickN + INVULN_TICKS, 'the blink grace follows for exactly INVULN_TICKS',
+            `inv=${gs.invulnUntil - gs.tickN}`)
+        ok(/gs\.respawnAt < 0 && gs\.tickN >= gs\.hyperUntil && !invulnBlink/.test(srcIndex),
+            'the drawn ship honors dark + blink + hyper-hide in one gate')
+    }
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutant')) {
     console.log('mutants (each MUST die)')
@@ -457,8 +558,8 @@ if (process.argv.includes('--mutant')) {
             `exposeFeedbackState(() => ({
             tick: gs.tickN, score: gs.score, done: gs.over, lives: gs.lives, wave: gs.wave,`],
         ['rock shapes leave the stream', S,
-            `const r = size * (0.8 + rand() * 0.4)`,
-            `const r = size * (0.8 + Math.random() * 0.4)`],
+            `const r = size * (1 - jag + rand() * jag * 2)`,
+            `const r = size * (1 - jag + Math.random() * jag * 2)`],
         ['medium rocks score like large (table corrupted)', S,
             `size >= 30 ? 20 : size >= 20 ? 50 : 100`,
             `size >= 30 ? 20 : size >= 20 ? 20 : 100`],
@@ -530,6 +631,16 @@ if (process.argv.includes('--mutant')) {
         ['the panic button has no cooldown (spam teleport)', S,
             `if (act.hyper && gs.tickN >= gs.hyperReadyAt) {`,
             `if (act.hyper) {`],
+        // #2001 look-polish mutants — the jag and the juice.
+        ['rocks smooth back to circles (jag deleted)', S,
+            `const r = size * (1 - jag + rand() * jag * 2)`,
+            `const r = size * (0.98 + rand() * 0.04)`],
+        ['the kill bloom never stamps (flash deleted)', S,
+            `ev.flash.push({ x: a.x, y: a.y, r: a.size * 1.5 }) // #2001 — flash scales with the rock`,
+            `// flash deleted`],
+        ['the hull loses its notch (plain triangle again)', S,
+            `    [-SHIP_SIZE * 0.15, 0],`,
+            `    [-SHIP_SIZE * 0.45, 0],`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
