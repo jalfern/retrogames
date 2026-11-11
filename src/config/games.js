@@ -629,7 +629,7 @@ export const GAMES = [
         label: 'PONG',
         theme: 'light',
         description: 'The classic table tennis arcade game. Defeat the AI by hitting the ball past their paddle.',
-        controls: ['Arrow Up/Down: Move Left Paddle']
+        controls: ['Arrow Up/Down: Move Left Paddle', WATCH_HELP + ' — the predictor that wins the seeded sweep takes your paddle', '?: pause and read the controls']
     },
     {
         path: '/invaders',

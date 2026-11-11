@@ -6,13 +6,21 @@
 // had no terminal and no restart. This now also proves the serve-script replays
 // from one seed, the seeded draws stay in range, the quit terminal is honest,
 // and every human start re-pins ?seed=N.
+// Batch 24 (#1637): the whole tick-rule set lives in sim.js (tickPong), and
+// §driver proves the seat's route — predictive intercept (watchStep) vs the
+// shipped tracker — deterministic, sweeping 40 seeds, reporting the measured
+// floor. Seed 25 is a documented forced loss: the port's post-point paddle
+// scatter plus a steep serve outruns the 6px/tick paddle there for EVERY
+// policy tested (center, ball-track, through-opponent); the machine is not
+// unbeatable, the seed just is.
 // `--mutate` re-plants the broken behaviours in attract.js; the child MUST die.
-// `--mutant` re-plants pre-port seedpin regressions in sim/index; same rule.
+// `--mutant` re-plants pre-port seedpin regressions + driver guttings in
+// sim/index; same rule.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { attractFrame, INFO_MSGS, HOLD, PRESS, DIM, estWidth } from '../src/games/Pong/attract.js'
-import { serveBall, paddleStart, paddleSpin, BASE_SPEED, PADDLE_HEIGHT } from '../src/games/Pong/sim.js'
+import { serveBall, paddleStart, paddleSpin, predictLand, tickPong, BASE_SPEED, PADDLE_HEIGHT, PADDLE_WIDTH, PADDLE_OFFSET, BALL_SIZE } from '../src/games/Pong/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -89,18 +97,90 @@ console.log('seedpin: one stream, honest terminal')
         'no die leaves the stream (only the two seed generations)', `${dice.length}/${seedDraws.length}`)
     ok(/seed = seedFromQuery\(window\.location\.search\) \?\? Math\.floor\(Math\.random\(\) \* 1000000\)/.test(src) &&
         /rand = seedRng\(seed\)/.test(src), 'startRun regenerates the seed and honors ?seed=N')
-    ok(/done: over, seed: seed/.test(src), 'production report carries the seed + honest terminal')
-    ok(/tick: tickN, score: state\.leftPaddle\.score/.test(src), 'report carries tick and the player score')
-    const speedups = (src.match(/state\.ball\.dx \*= -1\.05/g) || []).length
+    ok(/done: state\.over, seed: seed/.test(src), 'production report carries the seed + honest terminal')
+    ok(/tick: tickN, score: state\.left\.score/.test(src), 'report carries tick and the player score')
+    const simSrc = readFileSync('src/games/Pong/sim.js', 'utf8')
+    const speedups = (simSrc.match(/b\.dx \*= -1\.05/g) || []).length
     ok(speedups === 2, 'the rally accelerates the ball on BOTH paddle returns (1.05×/hit)', `${speedups}/2`)
     const sr = src.match(/const startRun = \(\) => \{[\s\S]*?\n        \}/)
-    ok(!!sr && /state\.leftPaddle\.score = 0/.test(sr[0]) && /state\.rightPaddle\.score = 0/.test(sr[0]),
+    ok(!!sr && /state\.left\.score = 0/.test(sr[0]) && /state\.right\.score = 0/.test(sr[0]),
         'startRun resets BOTH scores (pre-port the comment literally asked "Reset score? Maybe")')
-    ok(/e\.code === 'KeyQ' \|\| e\.code === 'Escape'/.test(src) && /over = true/.test(src),
+    ok(/e\.code === 'KeyQ' \|\| e\.code === 'Escape'/.test(src) && /state\.over = true/.test(src),
         'play-to-quit terminal: q/Escape ends the match (no fake win on a capped machine)')
-    ok(/if \(over\) \{ startRun\(\); return \}/.test(src), 'any key after quit starts a fresh match')
+    ok(/if \(state\.over\) \{ startRun\(\); return \}/.test(src), 'any key after quit starts a fresh match')
     ok(/handleCanvasTap/.test(src), 'phones can tap the table to start/restart')
     ok(/exposeGame\(\{[\s\S]*?id: 'pong'/.test(src), 'QA contract exposeGame wired')
+}
+
+// ------------------------------------------------------------------ driver ----
+// #1637 batch 24 — the seat's route, proven through the shipped physics.
+// watchStep (predictive intercept, human paddle speed) vs cpuStep (the same
+// tracker the player faces). The sweep is the number a seat rests on, so it
+// reports its floor honestly: 39 wins in 40 seeds; seed 25 concedes five
+// forced points (post-point paddle scatter + serve angle outruns 6px/tick —
+// measured across center/track/through-opponent policies; none wins it).
+console.log('driver: the proven route (seat of the WATCH key)')
+{
+    const playSeed = (sd, target = 5, cap = 60 * 600) => {
+        const rand = seedRng(sd)
+        const gs = {
+            ball: { x: 0, y: 0, dx: BASE_SPEED, dy: BASE_SPEED },
+            left: { y: 0, score: 0 }, right: { y: 0, score: 0 },
+            width: 600, height: 800, over: false, watching: true, rand,
+        }
+        gs.ball = serveBall(rand, 600, 800)
+        gs.left.y = paddleStart(rand, 800)
+        gs.right.y = paddleStart(rand, 800)
+        let t = 0
+        while (gs.left.score < target && gs.right.score < target && t < cap) { tickPong(gs, null); t++ }
+        return { l: gs.left.score, r: gs.right.score, t }
+    }
+    const SEEDS = 40
+    let wins = 0, con = 0, worstT = 0
+    const losses = []
+    for (let s = 1; s <= SEEDS; s++) {
+        const r = playSeed(s * 7919 + 13)
+        if (r.l > r.r) wins++
+        else losses.push(`${s}:${r.l}-${r.r}`)
+        con += r.r
+        if (r.t > worstT) worstT = r.t
+    }
+    ok(wins === 39, 'the driver beats the machine on 39 of 40 seeds (floor pinned)',
+        `wins ${wins}, losses ${losses.join(' ')}`)
+    ok(losses.length === 1 && losses[0].startsWith('25:'),
+        'the one loss is the documented forced seed 25, nothing else fell', losses.join(' '))
+    ok(con <= 40, 'the driver never gets outscored across the sweep', `${con} points conceded`)
+    ok(worstT < 60 * 600, 'no rally runs out the hour cap (no ping-pong deadlock)', `${worstT}t`)
+    const d1 = [], d2 = []
+    for (let i = 0; i < 15; i++) { d1.push(JSON.stringify(playSeed(424242 + i))); d2.push(JSON.stringify(playSeed(424242 + i))) }
+    ok(d1.join('|') === d2.join('|'), 'same seed → identical match, driver side included')
+    // the driver's edge is prediction: aim must match the TRUE folded path
+    // (triangle-wave mirror at both walls — an independent arithmetic, not a
+    // replay of sim.js, so a predictor that forgets the walls disagrees here).
+    const appr = { x: 580, y: 30, dx: -4, dy: -3 }
+    const land = predictLand(appr, 800)
+    const n = Math.ceil((appr.x - (PADDLE_OFFSET + PADDLE_WIDTH)) / 4)
+    const unfolded = appr.y + appr.dy * n
+    const span = 800 - BALL_SIZE // the ball top's fold span: [0, height - BALL_SIZE]
+    const fold = (() => {
+        const m = ((unfolded % (2 * span)) + 2 * span) % (2 * span)
+        return (m <= span ? m : 2 * span - m) + BALL_SIZE / 2
+    })()
+    ok(land === fold, 'predictLand replays the wall mirrors exactly (folded-path cross-check)',
+        `land ${land} vs folded ${fold}`)
+    ok(predictLand({ x: 300, y: 100, dx: 5, dy: -7 }, 800) === null,
+        'predictLand is honest about a ball heading away (spin is unknowable)')
+    // seat + chrome source pins: the seat wired in index, advertised in the registry
+    const src = readFileSync('src/games/Pong/index.jsx', 'utf8')
+    ok(/isWatchKey\(e\)/.test(src) && /if \(state\.watching && isTakeoverKey\(e\)\) release\(\)/.test(src),
+        'Y seats the driver, any ordinary key takes over')
+    ok(/watching && screen !== 'attract' && <WatchToast/.test(src), 'the WATCHING toast is mounted')
+    ok(/<WatchButton on=\{watching\}/.test(src), 'the WATCH pill is mounted')
+    ok(/<AttractWatchButton/.test(src), 'the attract one-tap start-and-watch button is mounted')
+    ok(/WATCH_ATTRACT_HINT/.test(src), 'the attract screen advertises the route')
+    ok(/__pongTest/.test(src), 'DEV probes exposed for the pilot')
+    const reg = readFileSync('src/config/games.js', 'utf8')
+    ok(/path: '\/pong'[\s\S]{0,700}WATCH_HELP/.test(reg), 'the registry advertises WATCH for PONG')
 }
 
 // ------------------------------------------------------------------ mutants ----
@@ -113,19 +193,35 @@ if (process.argv.includes('--mutant')) {
             `seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)`,
             `seed = Math.floor(Math.random() * 1000000)`],
         ['production report drops the seed', I,
-            `tick: tickN, score: state.leftPaddle.score, done: over, seed: seed, opp: state.rightPaddle.score,`,
-            `tick: tickN, score: state.leftPaddle.score, done: over, opp: state.rightPaddle.score,`],
+            `tick: tickN, score: state.left.score, done: state.over, seed: seed, opp: state.right.score,`,
+            `tick: tickN, score: state.left.score, done: state.over, opp: state.right.score,`],
         ['serve direction leaves the stream', S,
             `dx: (rand() > 0.5 ? 1 : -1) * BASE_SPEED`,
             `dx: (Math.random() > 0.5 ? 1 : -1) * BASE_SPEED`],
         ['restart forgets the scores', I,
-            `            state.leftPaddle.score = 0
-            state.rightPaddle.score = 0
-            over = false`,
-            `            over = false`],
-        ['the rally stops accelerating (flat 1.00× return)', I,
-            `                state.ball.dx *= -1.05 // Slight speed up`,
-            `                state.ball.dx *= -1`],
+            `            state.left.score = 0
+            state.right.score = 0
+            state.over = false`,
+            `            state.over = false`],
+        ['the rally stops accelerating (flat 1.00× return)', S,
+            `b.dx *= -1.05 // Slight speed up`,
+            `b.dx *= -1 // Slight speed up`],
+        // b24 driver guttings — each must drop the sweep below its pinned floor
+        ['the seat poses: watchStep is never consulted', S,
+            `        const act = watchStep(gs)`,
+            `        const act = null`],
+        ['prediction forgets the walls (straight-line lie)', S,
+            `        y += dy
+        if (y <= 0 || y + BALL_SIZE >= height) dy *= -1
+    }`,
+            `        y += dy
+    }`],
+        ['the driver steers to the wrong side of its target', S,
+            `        if (act?.down) gs.left.y += PAD_SPEED`,
+            `        if (act?.down) gs.left.y -= PAD_SPEED`],
+        ['a steer no longer takes the wheel back', I,
+            `            if (state.watching && isTakeoverKey(e)) release()`,
+            `            if (false && state.watching && isTakeoverKey(e)) release()`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

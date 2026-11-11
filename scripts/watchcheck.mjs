@@ -1512,6 +1512,45 @@ const PILOTS = [
             rep.check('metroid: Y again releases the road', !(await watching()))
         },
     },
+    // #1637 batch 24 — PONG finally gets a DRIVER (there was none): watchStep
+    // predicts the intercept by replaying the game's own step physics; the seat
+    // is reactive (Rogue law) so it lands mid-rally, steers back, and re-seats
+    // from live state. The gates prove interception, not just motion: hits must
+    // climb while nobody touches the keys.
+    {
+        id: 'pong', url: `${BASE}/pong`, hook: '__pongTest',
+        async run(page, rep) {
+            const H = '__pongTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            await key(page, 'Space')                       // attract -> live rally
+            await page.waitForTimeout(400)
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('pong: Y seats the predictor mid-rally', await watching())
+            rep.check('pong: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            const a = await probe()
+            const adv = (x, y) => y.hits > x.hits || y.score > x.score
+            const b = await pollAdvance(page, probe, adv, a, 8000)
+            rep.check('pong: the predictor returns balls untouched (idle hands hit nothing)',
+                adv(a, b), `hits ${a.hits} -> ${b.hits}, score ${a.score} -> ${b.score}`)
+            rep.check('pong: still watching mid-rally', await watching())
+            await page.keyboard.down('ArrowDown')
+            rep.check('pong: steer key takes over', !(await watching()))
+            rep.check('pong: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await page.keyboard.up('ArrowDown')
+            await key(page, 'KeyY')                       // reactive seat: re-plans from HERE
+            await seatPoll(page, H)
+            rep.check('pong: Y re-seats mid-rally (the predictor re-plans from the live state)', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 8000)
+            rep.check('pong: resumes from where the player left it', adv(c, d),
+                `hits ${c.hits} -> ${d.hits}, score ${c.score} -> ${d.score}`)
+            await key(page, 'KeyY')
+            rep.check('pong: Y again releases the paddle', !(await watching()))
+        },
+    },
     // #1637 batch 13 — the racer family seats its CERTIFIED autopilot. decide()
     // (CometDrift/sim.js) is the brain cometcheck races to victory ("autopilot
     // wins the 5-lap GP from P7", #1687-certified drift ladder) and both titles'
@@ -2508,6 +2547,28 @@ for (const [name, f] of Object.entries(B4_SRC)) {
         ml.includes('playWatchStart') && ml.includes('playWatchStop') && ml.includes('watchSfxLog'))
     rep.check('METROID-LITE: attract carries the shared start-and-watch button',
         ml.includes('<AttractWatchButton'))
+}
+// #1637 batch 24 — PONG's driver is new-built, not lifted from a check: pin
+// that the seat and the check stand on the same sim functions.
+{
+    const pg = readFileSync('src/games/Pong/index.jsx', 'utf8')
+    const ps = readFileSync('src/games/Pong/sim.js', 'utf8')
+    const pc = readFileSync('scripts/pongcheck.mjs', 'utf8')
+    rep.check('PONG: the seat drives the sim through watchStep, not a bench script',
+        /if \(gs\.watching\) \{[\s\S]{0,120}?const act = watchStep\(gs\)/.test(ps))
+    rep.check('PONG: the whole tick-rule set lives in the sim (tickPong)',
+        /export function tickPong\(gs, input\)/.test(ps))
+    rep.check('PONG: prediction replays the game\'s own wall-flip arithmetic',
+        /export function predictLand\(ball, height\)/.test(ps) &&
+        /while \(x > PADDLE_OFFSET \+ PADDLE_WIDTH[\s\S]{0,160}dy \*= -1/.test(ps))
+    rep.check('PONG: a steer key takes the wheel back',
+        /if \(state\.watching && isTakeoverKey\(e\)\) release\(\)/.test(pg))
+    rep.check('PONG: imports the shared blips and logs',
+        pg.includes('playWatchStart') && pg.includes('playWatchStop') && pg.includes('watchSfxLog'))
+    rep.check('PONG: attract carries the shared start-and-watch button',
+        pg.includes('<AttractWatchButton'))
+    rep.check('batch 24: pongcheck stamps the driver sweep (39/40, seed 25 documented)',
+        /the driver beats the machine on 39 of 40 seeds/.test(pc) && /Seed 25 is a documented forced loss/.test(pc))
 }
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray
