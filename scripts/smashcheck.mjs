@@ -877,11 +877,12 @@ if (process.argv.includes('--mutate')) {
         ['both seats out never ends the co-op show', 'if (seats.every((q) => q.out)) { gs.end = \'over\'', 'if (seats.every((q) => q.out && false)) { gs.end = \'over\''],
         ['#1973: the board silently shrinks back to the screen', 'export const boardW = (gs) => gwOf(gs) * CELL', 'export const boardW = () => CW'],
         ['#1973: the far door forgets it moved with the border', 'const exits = exitsOf(gwOf(gs))', 'const exits = EXITS'],
+        ['#2024: the host law off — THE ANNOUNCER paces fixed bounds', 'const lo = cam + 48\n            const hi = cam + CW - 48', 'const lo = 60\n            const hi = bw - 60'],
     ]
     const LEVELS = 'src/games/SmashTV/levels.js'
     const LEVELS_MUTANTS = [
-        ['#1973: the show collapses back to screen width', 'export const BIG_ROOMS = new Set([0, 1, 2, 3, 4, 5, 6, 7])', 'export const BIG_ROOMS = new Set()'],
-        ['#2007: THE ANNOUNCER\'s arena gets widened too', 'export const BIG_ROOMS = new Set([0, 1, 2, 3, 4, 5, 6, 7])', 'export const BIG_ROOMS = new Set([0, 1, 2, 3, 4, 5, 6, 7, 8])'],
+        ['#1973: the show collapses back to screen width', 'export const BIG_ROOMS = new Set([0, 1, 2, 3, 4, 5, 6, 7, 8])', 'export const BIG_ROOMS = new Set()'],
+        ['#2024: the finale drops off the pan board again', 'export const BIG_ROOMS = new Set([0, 1, 2, 3, 4, 5, 6, 7, 8])', 'export const BIG_ROOMS = new Set([0, 1, 2, 3, 4, 5, 6, 7])'],
         ['#2007: spawns forget the wide board\'s middle', 'export const startColOf = (gw) => (gw > GW ? Math.floor(gw / 2) : START.c)', 'export const startColOf = () => START.c'],
         ['#1973: the wide-board mirror is never drawn', 'if (!seen.has(k)) { seen.add(k); walls.push([mc, r]) }', 'if (!seen.has(k)) { seen.add(k); void mc }'],
     ]
