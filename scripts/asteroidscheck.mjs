@@ -154,7 +154,7 @@ console.log('WATCH driver sweep: 40 seeds x 120 s of seated play on the shipped 
     }
     ok(det === SEEDS, `${SEEDS}/${SEEDS} seeds replay byte-equal (hash sampled every 1200 ticks)`, red.join(' '))
     ok(survivedAll === SEEDS, 'every seed finishes the watch — the hunter does not game over')
-    ok(zeroDeath >= (FAST ? 8 : 34), `zero-death runs on ${FAST ? 8 : 34}+ seeds`, `${zeroDeath}/${SEEDS}`)
+    ok(zeroDeath >= (FAST ? 9 : 34), `zero-death runs on ${FAST ? 9 : 34}+ seeds`, `${zeroDeath}/${SEEDS}`)
     ok(wavesBanked >= (FAST ? SEEDS - 1 : SEEDS), 'every seed banks at least one full wave', `${wavesBanked}/${SEEDS}`)
     ok(minScore >= (FAST ? 2500 : 6000), `worst seed still scores ${FAST ? 2500 : 6000}+ under the watch`, `${minScore}`)
     ok(total >= (FAST ? SEEDS * 2500 : 300000), 'the fleet banks its combined floor (score is real progress, not coasting)', `${total}`)
@@ -237,18 +237,17 @@ if (process.argv.includes('--mutant')) {
         ['terminal releases the watcher with a blip (racer rule broken)', I,
             `if (ev.over && !gs.attract && gs.watching) release(false)`,
             `if (ev.over && !gs.attract && gs.watching) release(true)`],
-        ['rollout death pays like survival (the hunter turns suicidal)', S,
-            `        if (ev.died) return t`,
-            `        if (ev.died) return WATCH_HORIZON * 10000`],
-        ['lead aim collapses to raw aim (bullets fly at ghosts)', S,
-            `        if (tHit > 0 && tHit < WATCH_HORIZON) {
-            aimX = ndx + near.vx * tHit
-            aimY = ndy + near.vy * tHit
-        }`,
-            `        if (false) {
-            aimX = ndx + near.vx * tHit
-            aimY = ndy + near.vy * tHit
-        }`],
+        ['rollout dodges too late (threat window collapsed to two ticks)', S,
+            `if (ttc < 45 && ttc < tThreat)`,
+            `if (ttc < 2 && ttc < tThreat)`],
+        ['the driver\'s eye forgets the wrap (phantom distances at the seam)', S,
+            `    while (d > span / 2) d -= span
+    while (d < -span / 2) d += span`,
+            `    while (d > span * 4) d -= span
+    while (d < -span * 4) d += span`],
+        ['the hold collapses to one tick (ties never turn the ship)', S,
+            `const HOLD = 10`,
+            `const HOLD = 1`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

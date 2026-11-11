@@ -57,7 +57,7 @@ worst seed still banks 6560.
 ## Verify
 ```
 npm run asteroidscheck            # determinism + 1979 law + wiring + driver sweep + seat rules
-npm run asteroidscheck -- --mutant  # 12 mutants (6 b16 + 6 b26 driver), all must die
+npm run asteroidscheck -- --mutant  # 13 mutants (6 b16 + 7 b26 driver), all must die
 ASTEROID_SWEEP=fast npm run asteroidscheck  # 12-seed × 60 s sweep (what the mutant children run)
 npm run watchcheck -- --only asteroids      # live seat: seat/blips/takeover/re-seat
 npm run lint:asteroids
