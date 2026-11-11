@@ -201,5 +201,70 @@ r.check('the arena actually renders', px > 500, `${px} lit px`)
     r.check('the far chrome border appears on the clamp', cam.right.b >= 60, JSON.stringify(cam.right))
 }
 
+// #2024: the finale too. Room 9 loads wide, and THE ANNOUNCER stays fully on
+// camera while the shot slides — the host law proven in pixels: his crown
+// renders, and its screen x never leaves the frame as the hero walks the
+// whole board from clamp to clamp.
+{
+    const host = await page.evaluate(async () => {
+        const raf = () => new Promise((res) => requestAnimationFrame(res))
+        const T = window.__smashTest
+        window.__game.reset(0, 1)
+        for (let i = 0; i < 4; i++) T.stepWith({})
+        const gs = T.state()
+        for (let target = 1; target <= 8; target++) {
+            gs.enemies = []; gs.roomData.spawns = []; gs.spawnT = 0; gs.bonusT = 0
+            T.stepWith({})
+            gs.player.x = Math.floor(gs.roomData.gw / 2) * 16 + 8; gs.player.y = 24 + 8
+            T.stepWith({})
+        }
+        const inFinale = gs.room === 8 && gs.roomData.gw === 24
+        // let the studio fill first — the boss rides the room's spawn queue
+        gs.spawnT = 0
+        for (let i = 0; i < 30; i++) T.stepWith({})
+        gs.enemies = gs.enemies.filter((e) => e.kind === 'boss')
+        gs.roomData.spawns = []; gs.spawnT = 1e9; gs.player.invuln = 1e9
+        const c = document.querySelector('canvas[data-smash-stage]')
+        const g = c.getContext('2d')
+        const frame = async () => {
+            await raf(); await raf()
+            const pr = T.probe()
+            const b = (pr.enemies || []).find((e) => e.kind === 'boss')
+            if (!b) return null
+            const sx = Math.round(b.x - pr.camX), sy = Math.round(b.y)
+            const d = g.getImageData(Math.max(0, sx - 18), Math.max(0, sy - 10), 36, 20).data
+            let lit = 0
+            for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 90) lit++
+            return { sx, camX: pr.camX, lit }
+        }
+        // the studio opens with the host centre-stage, before any walking
+        await raf(); await raf()
+        const pr0 = T.probe()
+        const b0 = (pr0.enemies || []).find((e) => e.kind === 'boss')
+        const open = b0 ? { sx: Math.round(b0.x - pr0.camX), camX: pr0.camX } : null
+        // the host law holds across full camera slides both ways
+        const samples = []
+        let worstLo = 999, worstHi = -999, minLit = 1e9
+        const watch = async (mx, ticks) => {
+            for (let i = 0; i < ticks; i++) {
+                gs.enemies = gs.enemies.filter((e) => e.kind === 'boss')
+                gs.player.invuln = 1e9
+                T.stepWith({ mx, my: 0 })
+                if (i % 60 === 0) {
+                    const f = await frame()
+                    if (f) { samples.push(f); worstLo = Math.min(worstLo, f.sx); worstHi = Math.max(worstHi, f.sx); minLit = Math.min(minLit, f.lit) }
+                }
+            }
+        }
+        await watch(-1, 400)
+        await watch(1, 800)
+        return { inFinale, open, worstLo, worstHi, minLit, n: samples.length, clamped: samples.some((s) => s.camX === 0) && samples.some((s) => s.camX >= 100) }
+    })
+    r.check('room 9 boards wide with the whole show (#2024)', host.inFinale, JSON.stringify({ finale: host.inFinale }))
+    r.check('THE ANNOUNCER opens centre-stage on the wide board', host.open && host.open.sx > 96 && host.open.sx < 160, JSON.stringify(host.open))
+    r.check('the host stays fully on camera while the shot slides clamp to clamp', host.clamped && host.worstLo >= 20 && host.worstHi <= 236 && host.n > 10, JSON.stringify({ lo: host.worstLo, hi: host.worstHi, n: host.n }))
+    r.check('his crown really renders through the pan', host.n > 10 && host.minLit > 50, `min ${host.minLit} lit px on the boss over ${host.n} frames`)
+}
+
 r.check('zero page errors', errors.length === 0, errors.slice(0, 3).join(' | '))
 r.exit(browser)
