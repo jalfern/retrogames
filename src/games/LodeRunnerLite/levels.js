@@ -65,7 +65,11 @@ function parse(rows, name, extra) {
     }
 }
 
-// 19 rows: wall, air, 14 vault rows (2-15), floor level, brick, wall.
+// 19 rows: wall, air, 14 vault rows (2-15), floor level, brick, brick.
+// The two brick rows are the ground: the walk level sits on `marks`, its first
+// stratum is the `floor()` row you dig through, and the LAST row is diggable
+// floor-rock too — a hole through both strata is the deep shaft (#1942). The
+// edge columns stay concrete (row() wraps every row in '=').
 // `top` must be exactly 14 rows and already carry the exit ladder in col 2.
 const vault = (top, floorMarks) => [
     wall(),
@@ -73,7 +77,7 @@ const vault = (top, floorMarks) => [
     ...top,
     marks(floorMarks),
     floor(),
-    wall(),
+    floor(),
 ]
 
 // n plain rows, exit ladder only

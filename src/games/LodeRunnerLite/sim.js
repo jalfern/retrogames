@@ -11,11 +11,18 @@
 //   nothing rises.
 // - DIAGONAL DIG. Down digs the brick one cell diagonally below-left or
 //   below-right, the way you are FACING (the last run direction). The brick
-//   straight down is never dug. A dig opens a HOLE.
+//   straight down is never dug FROM THE SURFACE. A dig opens a HOLE.
 // - REFILLING HOLES. A hole is a pit that lasts about 5 s (CFG.refill ticks)
 //   and then the brick grows back. Whatever is standing in the cell when it
 //   refills dies: a guard respawns at the top of the vault, the runner loses a
 //   life. So a dug hole is a trap with a fuse, not a permanent grave.
+// - HOLES CATCH WALKERS. The floor is two brick layers thick, and a step
+//   sideways onto a cell whose support was dug away is a FALL, not a block:
+//   run over your hole and you drop into it, and so does a chasing guard.
+// - SHAFTS AND ESCAPE. Standing inside a live hole, Down digs the brick
+//   straight below — the shaft deepens — and Up clambers you one cell back
+//   toward the surface. This is what makes the deep shaft real: two cells
+//   down is two climbs, and climbs are slow.
 // - GUARDS FALL AND CLIMB. A guard that drops into a hole is pinned there for
 //   a breath (CFG.guardTrap), then climbs out cell by cell. A shaft too deep
 //   to climb before the fuse runs out buries the guard when the brick closes.
@@ -55,6 +62,9 @@ export const CFG = {
     // `lodecheck --mutate` can prove each rule load-bearing (a child run
     // silences one and the matching check must go red).
     dig: true,                               // Down digs the diagonal brick
+    holeFall: true,                          // walking over a dug hole drops you in
+    digDeep: true,                          // in a live hole, Down digs the brick below
+    pitClimb: true,                          // from inside a live hole, Up clambers up
     guardChase: true,                        // guards replan toward the player
     ropeCatch: true,                         // a falling body grabs a rope overhead
     guardHole: true,                         // guards fall in holes, climb out / get buried
@@ -69,6 +79,8 @@ const inB = (x, y) => x >= 0 && x < W && y >= 0 && y < H
 const solidT = (t) => t === BRICK || t === SOLID
 const supportT = (t) => t === BRICK || t === SOLID || t === LADDER
 const cellT = (g, x, y) => (!inB(x, y) ? SOLID : g.grid[idx(x, y)])
+// a live pit: a dug cell whose fuse is still running
+const liveHole = (g, x, y) => inB(x, y) && g.holeAge[idx(x, y)] > 0
 
 export const hash = (s) => {
     let h = 0x811c9dc5
@@ -223,13 +235,19 @@ export function applyAction(g, e, act, opts = {}) {
             if (t === LADDER) { e.x = nx; e.mode = 'climb'; arrive(g, e); return true }
             if (t === EMPTY || t === GOLD) {
                 if (supportT(cellT(g, nx, e.y + 1))) { e.x = nx; arrive(g, e); return true }
-                return false                              // a hole: you cannot walk into a pit from the side
+                // the floor below was dug away: the step over the mouth is a fall into the pit
+                if (CFG.holeFall && liveHole(g, nx, e.y + 1)) { e.x = nx; e.mode = 'air'; e.vy = 0; push(g, { type: 'fallInto', x: nx, y: e.y }); return true }
+                return false                              // an unsupported ledge: still a block
             }
             return false                                // brick/concrete/rope: blocked
         }
         if (act === 'ArrowUp') {
             if (cellT(g, e.x, e.y - 1) === LADDER) { e.y--; e.mode = 'climb'; arrive(g, e); return true }
             if (cellT(g, e.x, e.y - 1) === ROPE) { e.mode = 'hang'; push(g, { type: 'grab', x: e.x, y: e.y }); return true }
+            // standing in a live pit: clambers up one cell toward the lip
+            if (CFG.pitClimb && liveHole(g, e.x, e.y) && (cellT(g, e.x, e.y - 1) === EMPTY || cellT(g, e.x, e.y - 1) === GOLD)) {
+                e.y--; arrive(g, e); push(g, { type: 'pitClimb', x: e.x, y: e.y }); return true
+            }
             return false
         }
         if (act === 'ArrowDown') {
@@ -237,6 +255,12 @@ export function applyAction(g, e, act, opts = {}) {
             if (b === LADDER) { e.y++; e.mode = 'climb'; return true }
             if (b === EMPTY || b === GOLD) { e.mode = 'air'; e.vy = 0; return true }   // step off into a hole
             if (allowDig && CFG.dig) {
+                // inside a live pit the shaft goes straight DOWN: dig the brick under foot
+                if (CFG.digDeep && liveHole(g, e.x, e.y) && b === BRICK) {
+                    digHole(g, e.x, e.y + 1); e.y++; e.vy = 0
+                    push(g, { type: 'fallInto', x: e.x, y: e.y })
+                    return true
+                }
                 const tx = e.x + e.face                   // the diagonal brick below the way you face
                 if (cellT(g, tx, e.y + 1) === BRICK) { digHole(g, tx, e.y + 1); return true }
             }
@@ -350,6 +374,8 @@ function guardField(g, from) {
             if (solidT(t)) continue
             const standable = supportT(cellT(g, nx, ny + 1))
             if (standable || t === LADDER) { dist[j] = d + 1; q.push(j); continue }
+            // a cell whose support is a live pit is a mouth: a walker crosses it and falls in
+            if (CFG.holeFall && (t === EMPTY || t === GOLD) && liveHole(g, nx, ny + 1)) { dist[j] = d + 1; q.push(j); continue }
             // stepping DOWN off a standable cell (or a ladder) into open air is
             // a fall the guard will take — the column below is walkable at its
             // bottom, and the hole is waiting.
@@ -467,7 +493,7 @@ export function step(g) {
 const MODE_ID = { stand: 0, climb: 1, hang: 2 }
 
 function miniGrid(g) {
-    return { search: true, end: null, grid: g.grid, meta: g.meta, have: g.have, need: g.need, exit: g.exit, events: [], unlocked: g.unlocked, lives: 1, player: { x: 0, y: 0, mode: 'stand', alive: true }, guards: [] }
+    return { search: true, end: null, grid: g.grid, holeAge: g.holeAge, meta: g.meta, have: g.have, need: g.need, exit: g.exit, events: [], unlocked: g.unlocked, lives: 1, player: { x: 0, y: 0, mode: 'stand', alive: true }, guards: [] }
 }
 
 function stepEdge(g, mini, e, act) {

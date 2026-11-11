@@ -136,6 +136,8 @@ const LodeRunnerLiteGame = () => {
                 else if (e.type === 'capture') { say('CAUGHT!'); audioController.playSweep(240, 50, 0.6, 'sawtooth', 0.1) }
                 else if (e.type === 'life') audioController.playSweep(200, 80, 0.4, 'sawtooth', 0.06)
                 else if (e.type === 'grab') audioController.playTone(520, 0.04, 'triangle', 0.04)
+                else if (e.type === 'fallInto') { bgDirty = true; say('DOWN THE SHAFT'); audioController.playSweep(180, 60, 0.22, 'square', 0.06) }
+                else if (e.type === 'pitClimb') audioController.playTone(340, 0.05, 'triangle', 0.05)
                 else if (e.type === 'win') audioController.playSweep(400, 1600, 0.9, 'square', 0.09)
                 else if (e.type === 'die') audioController.playSweep(300, 40, 1.1, 'sawtooth', 0.1)
             }
@@ -512,8 +514,14 @@ const LodeRunnerLiteGame = () => {
                     },
                     {
                         label: 'DIG HERE', run: () => {
-                            const x = gs.player.x + 1, y = gs.player.y + 1
-                            if (x < 0 || x >= W || y < 0 || y >= H || gs.grid[y * W + x] !== BRICK) return 'no diagonal brick below-right of the runner'
+                            const px = gs.player.x, py = gs.player.y
+                            if (gs.holeAge[py * W + px] > 0 && py + 1 < H && gs.grid[(py + 1) * W + px] === BRICK) {
+                                gs.grid[(py + 1) * W + px] = EMPTY; gs.holeAge[(py + 1) * W + px] = 1; bgDirty = true
+                                animAt.set((py + 1) * W + px, { kind: 'dig', t0: performance.now() })
+                                return 'the shaft deepens straight below you — pit-bottom dig (it refills in 5s)'
+                            }
+                            const x = px + 1, y = py + 1
+                            if (x < 0 || x >= W || y < 0 || y >= H || gs.grid[y * W + x] !== BRICK) return 'no diagonal brick below-right of the runner (or no pit bottom to deepen)'
                             gs.grid[y * W + x] = EMPTY; gs.holeAge[y * W + x] = 1; bgDirty = true
                             animAt.set(y * W + x, { kind: 'dig', t0: performance.now() })
                             return 'a hole opens diagonally below-right (it refills in 5s)'
