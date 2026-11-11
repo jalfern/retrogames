@@ -38,6 +38,7 @@ const GAMES = [
     { id: 'homebody', path: '/homebody' },
     { id: 'frogger', path: '/frogger' },
     { id: 'asteroids', path: '/asteroids' },
+    { id: 'donkeykong', path: '/donkeykong' }, // #1637 b27: whole-tick lift + WATCH seat
     { id: 'iron-ring', path: '/iron-ring' },
     { id: 'viper-pit', path: '/viper-pit' },
     { id: 'britannia', path: '/britannia' },
@@ -94,6 +95,11 @@ const PATTERNS = {
     homebody: (i) => ({ left: i % 53 < 12, right: i % 53 >= 20 && i % 53 < 30, up: i % 61 < 8, down: i % 61 >= 26 && i % 61 < 34, a: i % 17 === 0, b: i % 97 === 0, pointer: { x: 0.35 + 0.3 * Math.sin(i / 47), y: 0.45 + 0.25 * Math.cos(i / 41), down: i % 43 === 0 } }),
     frogger: (i) => (i % 13 === 0 ? { up: true } : i % 19 === 0 ? { right: true } : i % 23 === 0 ? { left: true } : i % 31 === 0 ? { a: true } : {}),
     asteroids: (i) => ({ left: i % 37 < 8, right: i % 37 >= 14 && i % 37 < 22, up: i % 53 < 12, a: i % 11 < 3 }),
+    // b27: a reckless pattern would just die on barrels and re-spawn; alternate
+    // the girders and reach the ladders instead. The up/down windows are long
+    // enough to actually mount and ride a ladder, and the a-taps arc (a landing
+    // on a barrel is a death in this game — determinism only needs repeatability).
+    donkeykong: (i) => ({ left: i % 47 < 16, right: i % 47 >= 20 && i % 47 < 38, up: i % 67 < 14, down: i % 67 >= 30 && i % 67 < 40, a: i % 13 < 2 }),
     'garden-guard': (i) => ({ left: i % 13 < 3, right: i % 17 >= 8 && i % 17 < 11, up: i % 29 < 2, down: i % 23 >= 6 && i % 23 < 8, a: i % 7 < 2, b: i % 31 < 1, pointer: { x: 0.55 + 0.32 * Math.sin(i / 40), y: 0.55 + 0.3 * Math.cos(i / 37), down: i % 53 === 0 } }),
     'iron-ring': (i) => ({ left: i % 61 >= 44, right: i % 61 < 22, up: i % 89 < 2, down: i % 61 >= 22 && i % 61 < 44, a: i % 13 < 2, b: i % 29 < 2 }),
     'viper-pit': (i) => ({ left: i % 61 >= 44, right: i % 61 < 22, up: i % 89 < 2, down: i % 61 >= 22 && i % 61 < 44, a: i % 13 < 2, b: i % 29 < 2 }),

@@ -184,6 +184,7 @@
     "pacmancheck": "node scripts/pacmancheck.mjs",
     "pongcheck": "node scripts/pongcheck.mjs",
     "asteroidscheck": "node scripts/asteroidscheck.mjs",
+    "kongcheck": "node scripts/kongcheck.mjs",
     "centipedechek": "node scripts/centipedechek.mjs",
     "defendercheck": "node scripts/defendercheck.mjs",
     "adventure-playtest": "node scripts/adventure-playtest.mjs",

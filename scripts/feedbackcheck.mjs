@@ -1007,10 +1007,11 @@ ok('seedparam: seedRng actually varies with the seed', seedRng(1)() !== seedRng(
 ok('seedparam: seedRng stays in [0,1)', stream1.every((v) => v >= 0 && v < 1))
 {
     const dk = readFileSync(new URL('../src/games/DonkeyKong/index.jsx', import.meta.url), 'utf8')
-    const stray = dk.split('\n').filter((l) => /Math\.random/.test(l) && !/seed/i.test(l))
+    const dkSim = readFileSync(new URL('../src/games/DonkeyKong/sim.js', import.meta.url), 'utf8')
+    const stray = [...dk.split('\n'), ...dkSim.split('\n')].filter((l) => /Math\.random/.test(l) && !/seed/i.test(l))
     ok('seedparam: DonkeyKong — Math.random only on seed-generation lines', stray.length === 0, stray.map((l) => l.trim()).join(' | '))
-    ok('seedparam: DonkeyKong — gameplay draws from the seeded stream', /rand\(\)/.test(dk) && /seedRng\(seed\)/.test(dk))
-    ok('seedparam: DonkeyKong — seed regenerated at every human start', /newRun\(\)/.test(dk) && (dk.match(/newRun\(\)/g) || []).length >= 3)
+    ok('seedparam: DonkeyKong — gameplay draws from the seeded stream', /rnd\(gs\)/.test(dkSim) && /rngState/.test(dkSim) && /seedRng is step|mulberry/.test(dkSim))
+    ok('seedparam: DonkeyKong — seed regenerated at every human start', /seed = seedFromQuery\(window\.location\.search\) \?\? Math\.floor\(Math\.random\(\) \* 1000000\)/.test(dk))
 }
 
 // ── #737 "type OR dictate": the mic half of the note ────────────────────────

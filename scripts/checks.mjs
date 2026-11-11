@@ -134,6 +134,9 @@ export const MANUAL_CHECKS = [
   "scripts/invaderscheck.mjs",
   "scripts/ironringcheck.mjs",
   "scripts/juicecheck.mjs",
+  // kongcheck: the b27 DonkeyKong harness — seeded sim sweep + mutants, run by hand
+  // (browser-free, but the lane cadence keeps it out of the static scope).
+  "scripts/kongcheck.mjs",
   "scripts/landerreplaycheck.mjs",
   "scripts/learnedwalkcheck.mjs",
   "scripts/levelcheck.mjs",

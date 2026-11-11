@@ -2,15 +2,29 @@ import React, { useEffect, useRef } from 'react'
 import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
+import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { GAMES } from '../../config/games'
-import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
+import { GW, GH, makeRun, tickDonkeyKong, stateHash } from './sim.js'
 import { attractFrame, DIM } from './attract.js'
+
+// DONKEY KONG — shell only since #1637 b27: canvas, sound, chrome, seat.
+// The world, physics and dice live in sim.js (seeded, Node-provable by
+// kongcheck); WATCH (Y) seats the proven route the sweep certifies — climb
+// zigzag, barrel arcs, zero deaths — and any other key, pad push or tap
+// takes over from exactly where the watcher left the runner.
 
 const DonkeyKongGame = () => {
     const canvasRef = useRef(null)
     const containerRef = useRef(null)
     const [paused, setPaused] = React.useState(false)
     const pausedRef = useRef(false)
+    // The React mirrors of gs.watching / gs.attract — the sim flag is truth,
+    // chrome (pill, toast, attract ▶ WATCH) reads the mirror.
+    const [watching, setWatching] = React.useState(false)
+    const [attractUi, setAttractUi] = React.useState(true)
 
     const handleResume = () => {
         setPaused(false)
@@ -24,172 +38,37 @@ const DonkeyKongGame = () => {
         let animationFrameId
 
         // =============================================
-        // GAME WORLD (fixed coordinate system 224 x 256)
+        // WORLD (fixed coordinate system 224 x 256, sim.js)
         // =============================================
-        const GW = 224
-        const GH = 256
-
-        const GRAVITY = 0.25
-        const JUMP_FORCE = -4.5
-        const SPEED = 1.5
-        const LADDER_SPEED = 1.2
-        const BARREL_SPEED = 1.2
-
-        // Arcade-accurate colors
-        const COL_GIRDER = '#d03030'    // red girders
-        const COL_LADDER = '#00ffff'    // cyan ladders
-        const COL_BG = '#000000'
-
-        let viewWidth = 0, viewHeight = 0
-
-        // =============================================
-        // LEVEL DATA - sloped girders like the original
-        // =============================================
-        // Each platform: { x, y, w, slope } - slope is py change per px (positive = slopes right-down)
-        // Ladders: { x, yTop, yBot, broken } - broken ladders only appear intermittently
-
-        const platforms = []
-        const ladders = []
-
-        const buildLevel = () => {
-            platforms.length = 0
-            ladders.length = 0
-
-            const SL = 0.035 // slope magnitude
-
-            // Bottom girder (flat) - ground floor, player starts here
-            platforms.push({ x: 0, y: 232, w: GW, slope: 0 })
-
-            // 2nd girder - barrel rolls right (slopes down-right), gap on right
-            // Left end is higher, right end lower for barrel to roll right
-            platforms.push({ x: 0, y: 192, w: GW - 16, slope: SL })
-
-            // 3rd girder - barrel rolls left (slopes down-left), gap on left
-            platforms.push({ x: 16, y: 160, w: GW - 16, slope: -SL })
-
-            // 4th girder - rolls right, gap on right
-            platforms.push({ x: 0, y: 128, w: GW - 16, slope: SL })
-
-            // 5th girder - rolls left, gap on left
-            platforms.push({ x: 16, y: 96, w: GW - 16, slope: -SL })
-
-            // 6th girder (DK's platform) - barrel starts here, rolls right
-            platforms.push({ x: 0, y: 72, w: GW, slope: SL * 0.5 })
-
-            // Top platform (Pauline)
-            platforms.push({ x: 72, y: 48, w: 80, slope: 0 })
-
-            // Helper: add a ladder that connects platforms at a given x
-            const addLadder = (x, topPlatIdx, botPlatIdx, broken) => {
-                const tp = platforms[topPlatIdx]
-                const bp = platforms[botPlatIdx]
-                const yTop = getPlatformY(tp, x) + 8  // below top platform surface
-                const yBot = getPlatformY(bp, x)       // at bottom platform surface
-                ladders.push({ x, yTop, yBot, broken })
-            }
-
-            // Floor 0 (ground) ↔ Floor 1 (2nd girder)
-            addLadder(180, 1, 0, false)
-            addLadder(120, 1, 0, true)
-
-            // Floor 1 ↔ Floor 2
-            addLadder(40, 2, 1, false)
-            addLadder(110, 2, 1, true)
-
-            // Floor 2 ↔ Floor 3
-            addLadder(180, 3, 2, false)
-            addLadder(140, 3, 2, true)
-
-            // Floor 3 ↔ Floor 4
-            addLadder(40, 4, 3, false)
-            addLadder(90, 4, 3, true)
-
-            // Floor 4 ↔ Floor 5 (DK's level)
-            addLadder(180, 5, 4, false)
-
-            // Floor 5 ↔ Top
-            addLadder(100, 6, 5, false)
-            addLadder(124, 6, 5, false)
-        }
-
-        // Get platform Y at a given X position (accounting for slope)
-        const getPlatformY = (plat, px) => {
-            return plat.y + plat.slope * (px - plat.x)
-        }
-
-        // Find what platform an entity is standing on
-        const findPlatform = (ex, ey, eh) => {
-            const footY = ey + eh
-            for (const p of platforms) {
-                if (ex >= p.x - 2 && ex <= p.x + p.w + 2) {
-                    const surfaceY = getPlatformY(p, ex)
-                    if (footY >= surfaceY - 2 && footY <= surfaceY + 6) {
-                        return p
-                    }
-                }
-            }
-            return null
-        }
-
-        // =============================================
-        // GAME STATE
-        // =============================================
-        let player = {
-            x: 24, y: 216, w: 11, h: 16,
-            vx: 0, vy: 0,
-            grounded: false, climbing: false,
-            dir: 1, frame: 0, walkFrame: 0, climbFrame: 0,
-            jumpedBarrels: new Set()
-        }
-
-        let barrels = []
-        let barrelTimer = 180
-        let score = 0
-        let lives = 3
-        let gameOver = false
-        let deathTimer = 0
-        let winTimer = 0
-        let isAttractMode = true
-        let attractTick = 0
-        let dkAnimFrame = 0
-        let dkAnimTimer = 0
-        let dkThrowing = false
-        let dkThrowTimer = 0
-        let tickCount = 0
-
-        // #1473 seed-param: DonkeyKong's two randomness sites (barrel spacing and
-        // the original's "random chance to take a ladder") now draw from a seeded
-        // mulberry32 stream. The attract AI runs the SAME sim, so the seed is
-        // (re)generated at every human start; ?seed=N replays the exact run.
         let seed = Math.floor(Math.random() * 1000000)
-        let rand = seedRng(seed)
-        const newRun = () => {
+        let gs = makeRun(seed, { attract: true })
+
+        const seat = () => {
+            gs.watching = true
+            setWatching(true)
+            playWatchStart()
+        }
+        const release = (blip = true) => {
+            gs.watching = false
+            setWatching(false)
+            if (blip) playWatchStop()
+        }
+
+        // Fresh run: seed regenerated (?seed=N wins), whole board rebuilt.
+        const startRun = () => {
             seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)
-            rand = seedRng(seed)
-            tickCount = 0
-        }
-        newRun()
-
-        const resetPlayer = () => {
-            player.x = 24
-            player.y = 216
-            player.vx = 0
-            player.vy = 0
-            player.grounded = false
-            player.climbing = false
-            player.dir = 1
-            player.frame = 0
-            player.jumpedBarrels = new Set()
-            barrels = []
-            barrelTimer = 180
-            deathTimer = 0
-            winTimer = 0
+            gs = makeRun(seed)
+            keys.ArrowLeft = keys.ArrowRight = keys.ArrowUp = keys.ArrowDown = keys.Space = false
+            setAttractUi(false)
+            gs.watching = false // watch never lingers — a new run starts in your hands
+            setWatching(false)
         }
 
         // =============================================
-        // RESIZE
+        // RESIZE (the shell owns the canvas; the world is fixed 224x256)
         // =============================================
-        let initialized = false
+        let viewWidth = 0, viewHeight = 0
+        let attractTick = 0
         const resize = () => {
             if (containerRef.current && canvas) {
                 const { width, height } = containerRef.current.getBoundingClientRect()
@@ -201,10 +80,6 @@ const DonkeyKongGame = () => {
                 ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
                 viewWidth = width
                 viewHeight = height
-                if (!initialized) {
-                    buildLevel()
-                    initialized = true
-                }
             }
         }
         window.addEventListener('resize', resize)
@@ -215,6 +90,8 @@ const DonkeyKongGame = () => {
         // =============================================
         const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, Space: false }
 
+        const overStarts = () => gs.over || gs.attract
+
         const handleKeyDown = (e) => {
             if (e.key === '?' || (e.shiftKey && e.key === '/')) {
                 const newState = !pausedRef.current
@@ -224,18 +101,19 @@ const DonkeyKongGame = () => {
             }
             if (pausedRef.current) return
 
-            if (isAttractMode) {
-                isAttractMode = false
-                newRun()
+            // WATCH (b24 law): Y toggles the route. On attract/game over it
+            // starts a fresh run AND seats — the proven climb runs from tick 0.
+            if (isWatchKey(e)) {
+                if (gs.attract || gs.over) { startRun(); seat(); return }
+                if (gs.watching) release(); else seat()
+                return
             }
-            if (gameOver) {
-                gameOver = false
-                score = 0
-                lives = 3
-                newRun()
-                resetPlayer()
+
+            if (overStarts()) {
+                startRun()
             }
-            if (keys.hasOwnProperty(e.code)) {
+            if (Object.prototype.hasOwnProperty.call(keys, e.code)) {
+                if (gs.watching && isTakeoverKey(e)) release()
                 keys[e.code] = true
             }
             if (e.code === 'ArrowUp' || e.code === 'ArrowDown' || e.code === 'Space') {
@@ -243,367 +121,58 @@ const DonkeyKongGame = () => {
             }
         }
         const handleKeyUp = (e) => {
-            if (keys.hasOwnProperty(e.code)) {
+            if (Object.prototype.hasOwnProperty.call(keys, e.code)) {
                 keys[e.code] = false
             }
         }
+        // Phones: any tap starts or restarts the run; a tap DURING a watched
+        // run is a takeover (the contract).
+        const handleCanvasTap = () => {
+            if (pausedRef.current) return
+            if (overStarts()) startRun()
+            else if (gs.watching) release()
+        }
         window.addEventListener('keydown', handleKeyDown)
         window.addEventListener('keyup', handleKeyUp)
+        canvas.addEventListener('pointerdown', handleCanvasTap)
 
-        // =============================================
-        // UPDATE
-        // =============================================
-        const update = () => {
-            if (gameOver) return
-            tickCount++
-
-            // Death animation
-            if (deathTimer > 0) {
-                deathTimer--
-                if (deathTimer <= 0) {
-                    lives--
-                    if (lives <= 0) {
-                        gameOver = true
-                    } else {
-                        resetPlayer()
-                    }
-                }
-                return
+        // ------------------------------------------------------------------
+        // EVENTS — tickDonkeyKong stamps these; the shell keeps all sound so
+        // the sim stays pure enough for Node to replay it.
+        // ------------------------------------------------------------------
+        const applyEvents = (ev) => {
+            if (ev.jump) audioController.playTone(400, 0.08, 'square')
+            if (ev.jumpedBarrel) audioController.playTone(600, 0.08, 'square')
+            if (ev.died) {
+                audioController.playNoise(0.3, 0.4)
+                audioController.playSweep(400, 80, 0.4, 'sawtooth')
             }
-
-            // Win animation
-            if (winTimer > 0) {
-                winTimer--
-                if (winTimer <= 0) {
-                    score += 1000
-                    resetPlayer()
-                }
-                return
-            }
-
-            // DK animation
-            dkAnimTimer++
-            if (dkAnimTimer > 15) {
-                dkAnimTimer = 0
-                dkAnimFrame = (dkAnimFrame + 1) % 2
-            }
-
-            // DK throwing animation
-            if (dkThrowing) {
-                dkThrowTimer--
-                if (dkThrowTimer <= 0) dkThrowing = false
-            }
-
-            // ---- CONTROLS ----
-            let moveDir = 0
-            let wantJump = false
-            let wantClimbUp = false
-            let wantClimbDown = false
-
-            if (isAttractMode) {
-                // Simple AI: run toward nearest ladder, climb up, dodge barrels
-                const playerFloor = platforms.findIndex(p =>
-                    player.x >= p.x && player.x <= p.x + p.w &&
-                    Math.abs((player.y + player.h) - getPlatformY(p, player.x)) < 4
-                )
-
-                if (player.climbing) {
-                    wantClimbUp = true
-                } else {
-                    // Find nearest ladder that goes up
-                    let bestLadder = null
-                    let bestDist = Infinity
-                    for (const l of ladders) {
-                        if (l.broken) continue
-                        const footY = player.y + player.h
-                        // Ladder bottom should be near player's feet
-                        if (Math.abs(l.yBot - footY) < 6) {
-                            const dist = Math.abs(player.x - l.x)
-                            if (dist < bestDist) {
-                                bestDist = dist
-                                bestLadder = l
-                            }
-                        }
-                    }
-
-                    if (bestLadder && bestDist < 6) {
-                        wantClimbUp = true
-                    } else if (bestLadder) {
-                        moveDir = bestLadder.x > player.x ? 1 : -1
-                    } else {
-                        moveDir = player.dir
-                        if (player.x < 20) moveDir = 1
-                        if (player.x > GW - 20) moveDir = -1
-                    }
-
-                    // Dodge barrels
-                    for (const b of barrels) {
-                        if (Math.abs(b.y - player.y) < 16 &&
-                            Math.abs(b.x - player.x) < 30 &&
-                            player.grounded) {
-                            wantJump = true
-                        }
-                    }
-                }
-            } else {
-                if (keys.ArrowLeft) moveDir = -1
-                if (keys.ArrowRight) moveDir = 1
-                if (keys.ArrowUp) wantClimbUp = true
-                if (keys.ArrowDown) wantClimbDown = true
-                if (keys.Space && player.grounded && !player.climbing) wantJump = true
-            }
-
-            // ---- LADDER LOGIC ----
-            const nearLadder = ladders.find(l => {
-                if (l.broken) return false
-                const cx = player.x + player.w / 2
-                return Math.abs(cx - l.x) < 8 &&
-                    player.y + player.h > l.yTop &&
-                    player.y + player.h <= l.yBot + 4
-            })
-
-            if (player.climbing) {
-                if (wantClimbUp) {
-                    player.y -= LADDER_SPEED
-                    player.climbFrame++
-                } else if (wantClimbDown) {
-                    player.y += LADDER_SPEED
-                    player.climbFrame++
-                }
-                player.vx = 0
-                player.vy = 0
-
-                // Check if reached top or bottom of ladder
-                if (!nearLadder) {
-                    player.climbing = false
-                    // Snap to nearest platform
-                    const plat = findPlatform(player.x + player.w / 2, player.y, player.h)
-                    if (plat) {
-                        player.y = getPlatformY(plat, player.x + player.w / 2) - player.h
-                        player.grounded = true
-                    }
-                }
-            } else {
-                // Try to mount ladder
-                if (nearLadder && (wantClimbUp || wantClimbDown)) {
-                    player.x = nearLadder.x - player.w / 2
-                    player.climbing = true
-                    player.vy = 0
-                    player.vx = 0
-                }
-
-                if (!player.climbing) {
-                    player.vx = moveDir * SPEED
-                    if (moveDir !== 0) player.dir = moveDir
-
-                    if (wantJump && player.grounded) {
-                        player.vy = JUMP_FORCE
-                        player.grounded = false
-                        audioController.playTone(400, 0.08, 'square')
-                    }
-                }
-            }
-
-            // ---- PHYSICS ----
-            if (!player.climbing) {
-                player.vy += GRAVITY
-                player.y += player.vy
-                player.x += player.vx
-            }
-
-            // Walking animation
-            if (Math.abs(player.vx) > 0.1 && player.grounded) {
-                player.walkFrame++
-            }
-            player.frame++
-
-            // Platform collision
-            player.grounded = false
-            if (!player.climbing && player.vy >= 0) {
-                for (const p of platforms) {
-                    const cx = player.x + player.w / 2
-                    if (cx >= p.x && cx <= p.x + p.w) {
-                        const surfaceY = getPlatformY(p, cx)
-                        if (player.y + player.h >= surfaceY && player.y + player.h < surfaceY + 8) {
-                            player.y = surfaceY - player.h
-                            player.vy = 0
-                            player.grounded = true
-                            break
-                        }
-                    }
-                }
-            }
-
-            // Wall constraints
-            if (player.x < 0) player.x = 0
-            if (player.x > GW - player.w) player.x = GW - player.w
-
-            // Fall death
-            if (player.y > GH + 10) {
-                killPlayer()
-            }
-
-            // ---- BARRELS ----
-            barrelTimer--
-            if (barrelTimer <= 0) {
-                spawnBarrel()
-                barrelTimer = 150 + Math.floor(rand() * 100)
-            }
-
-            for (let i = barrels.length - 1; i >= 0; i--) {
-                const b = barrels[i]
-                updateBarrel(b)
-
-                // Remove if off screen
-                if (b.y > GH + 20) {
-                    barrels.splice(i, 1)
-                    continue
-                }
-
-                // Collision with player
-                if (deathTimer <= 0 && winTimer <= 0) {
-                    const dx = (player.x + player.w / 2) - (b.x + b.w / 2)
-                    const dy = (player.y + player.h / 2) - (b.y + b.h / 2)
-                    if (Math.abs(dx) < 8 && Math.abs(dy) < 10) {
-                        killPlayer()
-                    }
-
-                    // Score for jumping over barrels
-                    if (player.vy < 0 || !player.grounded) {
-                        if (Math.abs(dx) < 16 && dy < 0 && dy > -24 && !player.jumpedBarrels.has(b)) {
-                            player.jumpedBarrels.add(b)
-                            score += 100
-                            audioController.playTone(600, 0.08, 'square')
-                        }
-                    }
-                }
-            }
-
-            // ---- WIN CONDITION ----
-            if (player.y + player.h < 56 && player.x > 72 && player.x < 152) {
-                winTimer = 90
-                audioController.playSweep(400, 1000, 0.8, 'square')
-            }
+            if (ev.won) audioController.playSweep(400, 1000, 0.8, 'square')
+            if (ev.over && !gs.attract && gs.watching) release(false) // the run ends in your hands (silent)
         }
 
-        const killPlayer = () => {
-            if (deathTimer > 0) return
-            deathTimer = 90
-            audioController.playNoise(0.3, 0.4)
-            audioController.playSweep(400, 80, 0.4, 'sawtooth')
-        }
-
-        const spawnBarrel = () => {
-            dkThrowing = true
-            dkThrowTimer = 30
-            // Spawn near DK, on the 6th platform
-            const dkPlat = platforms[5]
-            const spawnX = 48
-            const spawnY = dkPlat ? getPlatformY(dkPlat, spawnX) - 10 : 60
-            barrels.push({
-                x: spawnX, y: spawnY,
-                w: 10, h: 10,
-                vx: BARREL_SPEED, vy: 0,
-                rot: 0,
-                onLadder: false,
-                falling: false
-            })
-        }
-
-        const updateBarrel = (b) => {
-            if (b.onLadder) {
-                // Rolling down a ladder
-                b.y += 1.5
-                b.rot += 0.1
-
-                // Check if reached bottom of ladder
-                if (b.y + b.h >= (b.ladderBot || 999)) {
-                    b.onLadder = false
-                    b.falling = false
-                    // Find the platform at the bottom
-                    const onPlat = findPlatform(b.x + b.w / 2, b.y, b.h)
-                    if (onPlat) {
-                        const surfaceY = getPlatformY(onPlat, b.x + b.w / 2)
-                        b.y = surfaceY - b.h
-                        b.vy = 0
-                        if (onPlat.slope < 0) b.vx = -BARREL_SPEED
-                        else if (onPlat.slope > 0) b.vx = BARREL_SPEED
-                        else b.vx = BARREL_SPEED
-                    } else {
-                        // Fell off — just apply gravity
-                        b.vy = 0
-                        b.vx = BARREL_SPEED
-                    }
-                }
-                return
-            }
-
-            // Apply gravity
-            b.vy += GRAVITY
-            b.y += b.vy
-            b.x += b.vx
-            b.rot += b.vx * 0.15
-
-            // Platform collision
-            let landed = false
-            for (const p of platforms) {
-                const cx = b.x + b.w / 2
-                if (cx >= p.x && cx <= p.x + p.w) {
-                    const surfaceY = getPlatformY(p, cx)
-                    if (b.y + b.h >= surfaceY && b.y + b.h < surfaceY + 10 && b.vy >= 0) {
-                        b.y = surfaceY - b.h
-                        b.vy = 0
-                        b.falling = false
-                        landed = true
-
-                        // Roll in direction of slope
-                        if (p.slope < 0) b.vx = -BARREL_SPEED
-                        else if (p.slope > 0) b.vx = BARREL_SPEED
-                        break
-                    }
-                }
-            }
-
-            // Check if barrel should take a ladder down
-            if (landed && !b.falling) {
-                for (const l of ladders) {
-                    if (l.broken) continue
-                    const cx = b.x + b.w / 2
-                    // Barrel feet should be near the top of this ladder
-                    // yTop is 8px below the upper platform, so barrel feet ~ yTop - 8
-                    if (Math.abs(cx - l.x) < 6 && Math.abs((b.y + b.h) - (l.yTop - 8)) < 6) {
-                        // Random chance to take ladder (like the original)
-                        if (rand() < 0.35) {
-                            b.onLadder = true
-                            b.x = l.x - b.w / 2
-                            b.vx = 0
-                            b.vy = 0
-                            b.ladderBot = l.yBot
-                            break
-                        }
-                    }
-                }
-            }
-
-            // Edge of platform — fall off
-            if (!b.onLadder) {
-                const onPlat = findPlatform(b.x + b.w / 2, b.y, b.h)
-                if (!onPlat && b.vy === 0) {
-                    b.falling = true
-                }
-            }
-        }
+        const heldInput = () => ({
+            left: keys.ArrowLeft,
+            right: keys.ArrowRight,
+            up: keys.ArrowUp,
+            down: keys.ArrowDown,
+            jump: keys.Space,
+        })
 
         // =============================================
-        // DRAWING
+        // DRAWING (arcade palette; the world is read-only out here)
         // =============================================
+        const COL_GIRDER = '#d03030'    // red girders
+        const COL_LADDER = '#00ffff'    // cyan ladders
+        const COL_BG = '#000000'
+
         const drawGirder = (p) => {
             ctx.fillStyle = COL_GIRDER
             // Draw platform as a series of small girder bricks
             const brickW = 8
             const brickH = 4
             for (let bx = p.x; bx < p.x + p.w; bx += brickW) {
-                const by = getPlatformY(p, bx)
+                const by = p.y + p.slope * (bx - p.x)
                 const bw = Math.min(brickW, p.x + p.w - bx)
                 // Two rows of bricks, offset
                 ctx.fillRect(bx, by, bw - 0.5, brickH)
@@ -616,11 +185,9 @@ const DonkeyKongGame = () => {
         }
 
         const drawLadder = (l) => {
-            ctx.strokeStyle = COL_LADDER
-            ctx.lineWidth = 1
+            ctx.fillStyle = COL_LADDER
             const h = l.yBot - l.yTop
             // Uprights
-            ctx.fillStyle = COL_LADDER
             ctx.fillRect(l.x - 4, l.yTop, 1.5, h)
             ctx.fillRect(l.x + 3, l.yTop, 1.5, h)
             // Rungs
@@ -643,7 +210,7 @@ const DonkeyKongGame = () => {
             ctx.textAlign = 'center'
             ctx.fillText('OIL', ox + 8, oy + 13)
             // Fire flicker
-            if (tickCount % 10 < 5) {
+            if (gs.tickN % 10 < 5) {
                 ctx.fillStyle = '#ff6600'
                 ctx.fillRect(ox + 4, oy - 4, 3, 4)
                 ctx.fillRect(ox + 9, oy - 6, 3, 6)
@@ -661,9 +228,10 @@ const DonkeyKongGame = () => {
 
         const drawDK = () => {
             // DK position: on 6th platform (index 5), left side
-            const dkPlat = platforms[5]
+            const dkPlat = gs.platforms[5]
             const dkX = 16
-            const dkY = (dkPlat ? getPlatformY(dkPlat, dkX + 14) : 72) - 28
+            const dkY = (dkPlat ? dkPlat.y + dkPlat.slope * (dkX + 14 - dkPlat.x) : 72) - 28
+            const dkAnimFrame = Math.floor(gs.tickN / 16) % 2 // chest-beat cadence
             const s = 1 // pixel scale
 
             ctx.fillStyle = '#c84c0c' // brown
@@ -690,7 +258,7 @@ const DonkeyKongGame = () => {
 
             ctx.fillStyle = '#c84c0c'
             // Arms
-            if (dkThrowing) {
+            if (gs.dkThrowing) {
                 // Throwing pose: arms forward
                 ctx.fillRect(dkX + 22*s, dkY + 8*s, 6*s, 4*s)
                 ctx.fillRect(dkX - 2*s, dkY + 10*s, 6*s, 4*s)
@@ -709,9 +277,9 @@ const DonkeyKongGame = () => {
         }
 
         const drawPauline = () => {
-            const topPlat = platforms[6]
+            const topPlat = gs.platforms[6]
             const px = topPlat ? topPlat.x + topPlat.w / 2 - 4 : 108
-            const py = topPlat ? getPlatformY(topPlat, px + 4) - 20 : 28
+            const py = topPlat ? topPlat.y + topPlat.slope * (px + 4 - topPlat.x) - 20 : 28
             // Dress (pink)
             ctx.fillStyle = '#ff88aa'
             ctx.beginPath()
@@ -726,7 +294,7 @@ const DonkeyKongGame = () => {
             ctx.fillStyle = '#ff88aa'
             ctx.fillRect(px + 1, py - 1, 6, 2)
             // HELP text
-            if (tickCount % 60 < 40) {
+            if (gs.tickN % 60 < 40) {
                 ctx.fillStyle = '#ffffff'
                 ctx.font = '5px monospace'
                 ctx.textAlign = 'center'
@@ -734,18 +302,19 @@ const DonkeyKongGame = () => {
             }
         }
 
-        const drawMario = () => {
-            const mx = player.x
-            const my = player.y
-            const dir = player.dir
+        const drawJumpman = () => {
+            const p = gs.player
+            const mx = p.x
+            const my = p.y
+            const dir = p.dir
 
             ctx.save()
-            ctx.translate(mx + player.w / 2, my + player.h)
+            ctx.translate(mx + p.w / 2, my + p.h)
             ctx.scale(dir, 1)
 
-            if (deathTimer > 0) {
+            if (gs.deathTimer > 0) {
                 // Death spin animation
-                const angle = (90 - deathTimer) * 0.15
+                const angle = (90 - gs.deathTimer) * 0.15
                 ctx.rotate(angle)
                 // Draw simple X
                 ctx.strokeStyle = '#ff0000'
@@ -781,18 +350,18 @@ const DonkeyKongGame = () => {
             ctx.fillStyle = '#ffff00'
             ctx.fillRect(-3, -6, 6, 1)
 
-            if (player.climbing) {
+            if (p.climbing) {
                 // Climbing animation
-                const climbOff = (Math.floor(player.climbFrame / 6) % 2) * 2
+                const climbOff = (Math.floor(p.climbFrame / 6) % 2) * 2
                 ctx.fillStyle = '#e8a060'
                 ctx.fillRect(-5, -1, 3, 3 + climbOff)
                 ctx.fillRect(2, -1, 3, 3 + (2 - climbOff))
                 // Arms on ladder
                 ctx.fillRect(-6, -10 - climbOff, 3, 3)
                 ctx.fillRect(3, -10 - (2 - climbOff), 3, 3)
-            } else if (Math.abs(player.vx) > 0.3 && player.grounded) {
+            } else if (Math.abs(p.vx) > 0.3 && p.grounded) {
                 // Walking animation
-                const step = Math.floor(player.walkFrame / 4) % 4
+                const step = Math.floor(p.walkFrame / 4) % 4
                 ctx.fillStyle = '#e8a060'
                 if (step < 2) {
                     ctx.fillRect(-4, -1, 3, 4)
@@ -801,7 +370,7 @@ const DonkeyKongGame = () => {
                     ctx.fillRect(-4, -1, 3, 3)
                     ctx.fillRect(2, -1, 3, 4)
                 }
-            } else if (!player.grounded) {
+            } else if (!p.grounded) {
                 // Jumping
                 ctx.fillStyle = '#e8a060'
                 ctx.fillRect(-5, -1, 3, 2)
@@ -851,14 +420,14 @@ const DonkeyKongGame = () => {
             ctx.textAlign = 'left'
             ctx.fillText(`SCORE`, sx + 4 * scale, sy - 12 * scale)
             ctx.fillStyle = '#00ffff'
-            ctx.fillText(`${score}`, sx + 4 * scale, sy - 4 * scale)
+            ctx.fillText(`${gs.score}`, sx + 4 * scale, sy - 4 * scale)
 
             // Lives
             ctx.fillStyle = '#ffffff'
             ctx.textAlign = 'right'
             const livesX = sx + GW * scale
-            for (let i = 0; i < lives; i++) {
-                // Small mario head icon
+            for (let i = 0; i < gs.lives; i++) {
+                // Small jumpman head icon
                 ctx.fillStyle = '#e40000'
                 ctx.fillRect(livesX - 12 * scale - i * 14 * scale, sy - 12 * scale, 8 * scale, 4 * scale)
                 ctx.fillStyle = '#e8a060'
@@ -886,11 +455,11 @@ const DonkeyKongGame = () => {
             ctx.scale(scale, scale)
 
             // Platforms
-            platforms.forEach(p => drawGirder(p))
+            gs.platforms.forEach(p => drawGirder(p))
 
             // Ladders (broken ones flicker)
-            ladders.forEach(l => {
-                if (l.broken && tickCount % 30 < 15) return
+            gs.ladders.forEach(l => {
+                if (l.broken && gs.tickN % 30 < 15) return
                 drawLadder(l)
             })
 
@@ -904,13 +473,13 @@ const DonkeyKongGame = () => {
             drawPauline()
 
             // Barrels
-            barrels.forEach(b => drawBarrel(b))
+            gs.barrels.forEach(b => drawBarrel(b))
 
             // Player
-            drawMario()
+            drawJumpman()
 
             // Attract mode overlay
-            if (isAttractMode) {
+            if (gs.attract) {
                 attractTick++
                 ctx.fillStyle = DIM
                 ctx.fillRect(0, 0, GW, GH)
@@ -924,7 +493,7 @@ const DonkeyKongGame = () => {
             }
 
             // Game over
-            if (gameOver) {
+            if (gs.over) {
                 ctx.fillStyle = 'rgba(0,0,0,0.5)'
                 ctx.fillRect(0, 0, GW, GH)
                 ctx.fillStyle = '#ff0000'
@@ -947,10 +516,17 @@ const DonkeyKongGame = () => {
             const frameTime = Math.min(timestamp - lastTime, 100)
             lastTime = timestamp
             if (!pausedRef.current) {
-                accumulator += frameTime
-                while (accumulator >= FIXED_DT) {
-                    update()
-                    accumulator -= FIXED_DT
+                // QA contract: while __game.step() drives the sim, the rAF loop
+                // yields the clock so scripted ticks stay deterministic.
+                if (!contractHoldsLoop()) {
+                    accumulator += frameTime
+                    while (accumulator >= FIXED_DT) {
+                        // The watcher and the attract demo own the wheel; held
+                        // keys only reach the tick when the human is driving.
+                        const input = gs.attract || gs.watching ? null : heldInput()
+                        applyEvents(tickDonkeyKong(gs, input))
+                        accumulator -= FIXED_DT
+                    }
                 }
                 draw()
             }
@@ -958,18 +534,92 @@ const DonkeyKongGame = () => {
         }
         animationFrameId = requestAnimationFrame(loop)
 
-        // #1473: production-safe feedback state, every build. DonkeyKong is a
-        // seed-param port now: barrel spacing + ladder chance draw from
-        // seedRng(seed), regenerated at every human start, ?seed=N honored —
-        // a filed report replays the exact barrel pattern.
-        exposeFeedbackState(() => ({ tick: tickCount, score: score, done: gameOver, seed: seed, lives: lives }))
+        if (import.meta.env.DEV) {
+            window.__dkTest = {
+                state: () => ({
+                    attract: gs.attract, over: gs.over, score: gs.score, lives: gs.lives,
+                    x: gs.player.x, y: gs.player.y, climb: gs.player.climbing, barrels: gs.barrels.length,
+                }),
+                // #1637 b27 — the watch contract the pilot drives against.
+                watching: () => gs.watching,
+                watchSfx: watchSfxLog,
+                probe: () => ({
+                    tick: gs.tickN, score: gs.score, lives: gs.lives,
+                    x: Math.round(gs.player.x), y: Math.round(gs.player.y),
+                    climbing: gs.player.climbing, barrels: gs.barrels.length,
+                    attract: gs.attract, over: gs.over,
+                }),
+                start: startRun,
+                // #1637 b26 parity — seat the route without a keyboard (the
+                // watchcheck pilot presses Y like a player; this is the fallback).
+                seat: () => {
+                    if (gs.attract || gs.over) startRun()
+                    if (!gs.watching) { gs.watching = true; setWatching(true) }
+                    return gs.watching
+                },
+            }
+            mountDbg({
+                title: 'DONKEY KONG',
+                getState: () => [
+                    `score ${gs.score}  lives ${gs.lives}  barrels ${gs.barrels.length}`,
+                    `jumpman ${Math.round(gs.player.x)},${Math.round(gs.player.y)} climb ${gs.player.climbing}  watching ${gs.watching}`,
+                    `seed ${gs.seed}  tick ${gs.tickN}  over ${gs.over}`,
+                ],
+                actions: [
+                    { label: 'Drop a barrel on the player', run: () => { gs.deathTimer = 0; gs.barrels.push({ x: gs.player.x, y: gs.player.y + 4, w: 10, h: 10, vx: 0, vy: 0, rot: 0, onLadder: false, falling: false }) } },
+                    { label: 'Clear barrels', run: () => { gs.barrels = [] } },
+                ],
+            })
+        }
+
+        // QA contract (#377)
+        exposeGame({
+            id: 'donkeykong',
+            buttons: ['left', 'right', 'up', 'down', 'a'],
+            reset: (s) => {
+                seed = s >>> 0
+                gs = makeRun(seed)
+                keys.ArrowLeft = keys.ArrowRight = keys.ArrowUp = keys.ArrowDown = keys.Space = false
+                setAttractUi(false)
+                gs.watching = false // watch never lingers
+                setWatching(false)
+            },
+            tick: (pad) => {
+                applyEvents(tickDonkeyKong(gs, {
+                    left: !!pad.left,
+                    right: !!pad.right,
+                    up: !!pad.up,
+                    down: !!pad.down,
+                    jump: !!pad.a,
+                }))
+            },
+            state: () => ({
+                tick: gs.tickN, score: gs.score, done: gs.over, seed: gs.seed, lives: gs.lives,
+                x: Math.round(gs.player.x), y: Math.round(gs.player.y),
+                climbing: gs.player.climbing, barrels: gs.barrels.length,
+                hash: stateHash(gs),
+            }),
+            canvas: () => canvas,
+            // snapshot/restore omitted: the seeded stream rides gs.rngState and
+            // the jump-scoring Set holds barrel refs — JSON would drop world
+            // identity mid-rollout (#391).
+        })
+
+        // production report carries the seed (#1473)
+        exposeFeedbackState(() => ({
+            tick: gs.tickN, score: gs.score, done: gs.over, seed: gs.seed, lives: gs.lives,
+        }))
 
         return () => {
             unexposeFeedbackState()
             window.removeEventListener('resize', resize)
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('keyup', handleKeyUp)
+            canvas.removeEventListener('pointerdown', handleCanvasTap)
             cancelAnimationFrame(animationFrameId)
+            if (import.meta.env.DEV && window.__dkTest) delete window.__dkTest
+            unexposeGame()
+            unmountDbg()
         }
     }, [])
 
@@ -978,8 +628,22 @@ const DonkeyKongGame = () => {
             <div ref={containerRef} className="relative w-full max-w-[600px] aspect-[3/4] border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-black">
                 <canvas ref={canvasRef} className="block w-full h-full" />
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'DONKEY KONG')} onResume={handleResume} />}
+                {/* #1654: the discoverable WATCH line, before the first Y press. */}
+                {attractUi && !paused && (
+                    <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-2 pointer-events-none" style={{ bottom: '24%' }}>
+                        <div className="text-emerald-200/70 font-mono text-[11px] tracking-widest">{WATCH_ATTRACT_HINT}</div>
+                        <AttractWatchButton />
+                    </div>
+                )}
+                {/* #1637 b27 — the proven climb; any key, pad push or tap takes over. */}
+                {!attractUi && watching && <WatchToast className="fixed z-50" />}
+                {!attractUi && !paused && (
+                    <div className="fixed z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                        <WatchButton on={watching} />
+                    </div>
+                )}
             </div>
-            <VirtualControls />
+            <VirtualControls visible={!paused} />
         </div>
     )
 }
