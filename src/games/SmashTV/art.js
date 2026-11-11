@@ -159,8 +159,8 @@ function civ(f, tint) {
 // #496: the palette is a parameter so seat 2 reads as its own contestant at
 // a glance (green jersey, amber visor lights) without a second sprite sheet.
 export const PLAYER_PAL = [
-    { visor: '#e8eef8', light: '#ff4f4f', jersey: '#e8eef8', trim: '#2b3a5c', stripe: '#d43a3a', limb: '#cfd8ff' },
-    { visor: '#e8f2e8', light: '#ffd23f', jersey: '#d9f2dc', trim: '#20422c', stripe: '#3fd45a', limb: '#c9e8cf' },
+    { visor: '#e8eef8', light: '#ff4f4f', jersey: '#e8eef8', trim: '#2b3a5c', stripe: '#d43a3a', limb: '#cfd8ff', pauld: '#8d99b5', shine: '#cfd8ff' },
+    { visor: '#e8f2e8', light: '#ffd23f', jersey: '#d9f2dc', trim: '#20422c', stripe: '#3fd45a', limb: '#c9e8cf', pauld: '#7fbf8f', shine: '#e8f8ea' },
 ]
 
 function player(f, pal = PLAYER_PAL[0]) {
@@ -172,6 +172,9 @@ function player(f, pal = PLAYER_PAL[0]) {
     px(g, 3, 6, 6, 1, pal.trim); px(g, 3, 6, 1, 6, pal.trim); px(g, 8, 6, 1, 6, pal.trim)
     px(g, 4, 8, 4, 1, pal.stripe)
     px(g, 1, 7, 2, 3, pal.limb); px(g, 9, 7, 2, 3, pal.limb)
+    // chrome pauldrons capping the shoulder line (#1945) — the guns mount here
+    px(g, 0, 6, 3, 3, pal.pauld); px(g, 0, 6, 3, 1, pal.shine)
+    px(g, 9, 6, 3, 3, pal.pauld); px(g, 9, 6, 3, 1, pal.shine)
     const LEGS = [[[0, 1], [1, -1]], [[0, 0], [0, 0]], [[1, -1], [0, 1]], [[1, 0], [0, 0]]]
     const [[lx, ly], [rx, ry]] = LEGS[f % PLAYER_FRAMES]
     px(g, 3 + lx, 12 + ly, 2, 3, pal.limb)

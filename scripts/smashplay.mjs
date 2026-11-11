@@ -112,6 +112,43 @@ r.check('restart returns to the arena', p.screen === 'play' && p.room === 0 && p
     await page.evaluate(() => window.__game && window.__game.release())
 }
 
+// the cabinet pose (#1945), proven in pixels: with the twin aimed up, barrel
+// chrome crosses the head column; aimed down, the same column above the head
+// stays clean (the carriage lives on the shoulders, not wherever it lands).
+{
+    const posePx = await page.evaluate(async () => {
+        const raf = () => new Promise((res) => requestAnimationFrame(res))
+        const api = window.__game
+        api.reset(0, 1)
+        for (let i = 0; i < 4; i++) api.step([{ }])
+        const gs = window.__smashTest.state()
+        gs.player.invuln = 0 // the spawn blink would blank the sprite on odd frames
+        gs.enemies.length = 0 // camera-leg chrome is the same grey — the column
+        gs.roomData.spawns.length = 0 // must hold only what the contestant carries
+        const c = document.querySelector('canvas[data-smash-stage]')
+        const g = c.getContext('2d')
+        const chrome = (x0, y0, w, h) => {
+            const d = g.getImageData(x0, y0, w, h).data
+            let n = 0
+            for (let i = 0; i < d.length; i += 4) {
+                const [r, gg, b] = [d[i], d[i + 1], d[i + 2]]
+                if (Math.abs(r - 141) < 40 && Math.abs(gg - 153) < 40 && Math.abs(b - 181) < 40) n++
+            }
+            return n
+        }
+        const col = () => [Math.round(gs.player.x) - 4, Math.round(gs.player.y) - 12]
+        gs.player.aim = [0, -1]
+        await raf(); await raf()
+        const above = chrome(col()[0], col()[1], 9, 5)
+        gs.player.aim = [0, 1]
+        await raf(); await raf()
+        const below = chrome(col()[0], col()[1], 9, 5)
+        return { above, below }
+    })
+    r.check('over-the-shoulder in pixels: twin chrome crosses the head column aimed up', posePx.above >= 4, `${posePx.above} chrome px`)
+    r.check('aimed down leaves the column above the head clean (the guns ride the shoulders)', posePx.below === 0, `${posePx.below} chrome px`)
+}
+
 // pixel sanity: the arena is not blank while playing
 const px = await page.evaluate(() => {
     const c = document.querySelector('canvas[data-smash-stage]')

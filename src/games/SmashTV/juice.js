@@ -15,6 +15,16 @@ export const muzzleFlash = (weapon) => {
     return { col: g.tip, r: 1.5 + (g.flash - g.len) }
 }
 
+// recoil kick (#1945): each shot snaps the shoulder carriage back along the aim
+// vector; `since` is ticks since the last shot (fireT counts DOWN to the next,
+// interval - fireT counts up from the last), so the kick is strongest on report
+// and decays to zero within RECOIL_TICKS — never longer than the tightest fire
+// interval (5), so the next shot always starts from a clean mount. An armed
+// but un-fired player (fireT 0) reads since = interval → no phantom kick.
+export const RECOIL_TICKS = 5
+export const RECOIL_PX = 2
+export const recoilKick = (since) => (since < RECOIL_TICKS ? RECOIL_PX * (1 - since / RECOIL_TICKS) : 0)
+
 // spent-casing sparks kick out the muzzle in the gun's own tip colour
 export const casingCol = (weapon) => GUN[weapon].tip
 
