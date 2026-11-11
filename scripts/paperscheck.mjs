@@ -27,7 +27,7 @@ import { dirname, join } from 'node:path'
 import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, FEATURES } from '../src/games/PapersPleaseMin/rules.js'
 import { genWeek, genDay, viewOf, CITY2C, TRAPS, GREY } from '../src/games/PapersPleaseMin/gen.js'
 import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock } from '../src/games/PapersPleaseMin/sim.js'
-import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, STAMP, CLOCK, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
+import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SRC = join(HERE, '../src/games/PapersPleaseMin')
@@ -459,12 +459,15 @@ section('SHIFT CLOCK (#1960) — the gate closes, the finale must finish — eve
         for (let t = 0; t < dayTicks(g1.week.days[0]); t += 7) { tick(g1); const c = gameClock(g1); const p = c.hh * 60 + c.mm; if (p < prevPrinted) mono = false; prevPrinted = p }
         ok(mono, 'the wall clock ran backward inside a day')
     }
-    // the clock hangs where the original hangs it: above the papers column,
-    // clear of the passport header, the stamp sweep and both canvas edges
-    ok(CLOCK.y + CLOCK.r + 6 <= PAPERS.y - 2, 'the clock or its digits touch the passport header')
+    // the clock hangs on the ruled grid — clear of the date line, clear of
+    // the rulebook's first row, clear of the portrait column (and clear of
+    // the HTML chrome, which owns the canvas top-right corner: verified in
+    // screenshots, not assumed)
+    ok(CLOCK.y + CLOCK.r + 6 <= WALL.top + WALL.labelLine - WALL.size, 'the clock digits run into the RULEBOOK label')
+    ok(CLOCK.x - CLOCK.r >= 12 + 'DAY 1   1982.10.27'.length * 15 * CHAR + 4, 'the clock crowds the DAY/date line')
+    ok(CLOCK.x + CLOCK.r <= PORTRAIT.x - 4, 'the clock runs into the portrait column')
     ok(CLOCK.x + CLOCK.r <= CW - 4 && CLOCK.x - CLOCK.r >= 2, 'the clock runs off the wall')
-    ok(CLOCK.x - CLOCK.r > STAMP.x + Math.hypot(86, 22), 'the swung APPROVED/DENIED stamp sweeps through the clock face')
-    console.log('  ..    budget = queue × SEAT (18 s/applicant); 10 s human cadence clears every day of every seed; the naive eye still clears the week; a ~22 s cadence closes day 1 (docked, morning rewound); day 7 dawdles to a deterministic 2-head quota loss; wall clock 08:00→18:00, red = the last hour, monotone, clear of the stamp sweep')
+    console.log('  ..    budget = queue × SEAT (18 s/applicant); 10 s human cadence clears every day of every seed; the naive eye still clears the week; a ~22 s cadence closes day 1 (docked, morning rewound); day 7 dawdles to a deterministic 2-head quota loss; wall clock 08:00→18:00, red = the last hour, monotone, hung clear of chrome and text')
 }
 
 // ------------------------------------------------------- dead input no-ops ----
