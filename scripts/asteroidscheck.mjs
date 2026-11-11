@@ -12,7 +12,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { makeAsteroid, spawnWave, scoreForSize, livesForScore, START_LIVES, makeRun, tickAsteroids, watchStep, stateHash } from '../src/games/Asteroids/sim.js'
+import { makeAsteroid, spawnWave, scoreForSize, livesForScore, START_LIVES, makeRun, tickAsteroids, watchStep, stateHash, SAUCER_SCORE, SAUCER_ROCK_BONUS, SAUCER_RADIUS, SAUCER_BULLET_SPEED } from '../src/games/Asteroids/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -84,7 +84,8 @@ console.log('component wiring: pin, terminal, restart, HUD')
     ok(/state: \(\) => \(\{[\s\S]{0,200}?tick: gs\.tickN, score: gs\.score, done: gs\.over, seed: gs\.seed/.test(src),
         'QA contract state carries seed + terminal + lives + wave too')
     ok(/hash: stateHash\(gs\)/.test(src), 'QA contract state carries the physics hash')
-    ok(/score \+= scoreForSize\(a\.size\)/.test(SIM), 'bullet kills score through the arcade table')
+    ok(/b\.hostile \? SAUCER_ROCK_BONUS\[b\.owner\]\[sizeTier\(a\.size\)\] : scoreForSize\(a\.size\)/.test(SIM),
+        'bullet kills score through the arcade table (saucer fire through the bonus)')
     ok(/gs\.lives--/.test(SIM) && /gs\.lives <= 0[\s\S]*?gs\.over = true/.test(SIM), 'ship death decrements lives; zero ends the run')
     ok(/if \(shipAlive\(gs\) && gs\.tickN >= gs\.invulnUntil && !gs\.attract\)/.test(SIM),
         'rock-vs-ship collision honors the respawn grace')
@@ -195,6 +196,171 @@ console.log('seat semantics: driver in, driver out, honest waits')
     ok(/gs\.watching \? watchStep\(gs\) : null/.test(SIM), 'the seat drives the sim through watchStep, not a bench script')
 }
 
+// ------------------------------------------------------------ saucers ----
+// #2001 — the flying saucers. The machine's tables, its fire discipline, the
+// bonus law (a saucer's own bullet smashing a rock pays MORE than the
+// player's), the respawn mercy across all three ways the alien kills, and the
+// seeded arrival of every alarm.
+console.log('flying saucers (#2001): tables, fire discipline, bonus law')
+{
+    const srcIndex = readFileSync('src/games/Asteroids/index.jsx', 'utf8')
+    ok(SAUCER_SCORE.big === 200 && SAUCER_SCORE.small === 1000,
+        'saucer table: large 200 / small 1000')
+    ok(SAUCER_ROCK_BONUS.big.small === 50 && SAUCER_ROCK_BONUS.big.medium === 100 && SAUCER_ROCK_BONUS.big.big === 200 &&
+        SAUCER_ROCK_BONUS.small.small === 200 && SAUCER_ROCK_BONUS.small.medium === 1000 && SAUCER_ROCK_BONUS.small.big === 5000,
+        'saucer-bullet rock bonus: large UFO 50/100/200, small UFO 200/1000/5000')
+    ok(SAUCER_BULLET_SPEED < 6, 'saucer fire is slower than the player bullet (outrunnable)')
+
+    // Arrival is seeded: same seed → same alarms at the same ticks, sizes and entry sides.
+    const arrivals = (sd) => {
+        const gs = makeRun(sd, { width: 600, height: 800 })
+        gs.attract = false
+        gs.invulnUntil = 1e9 // watch the schedule, not the opening collision
+        const log = []
+        for (let i = 0; i < 4000; i++) {
+            const ev = tickAsteroids(gs, null)
+            if (ev.saucerSpawn) log.push(`${gs.tickN}:${ev.saucerSpawn ? 'B' : 's'}:${Math.round(gs.saucers.at(-1).x)}:${Math.round(gs.saucers.at(-1).y)}`)
+            if (gs.over) break
+        }
+        return log.join(';')
+    }
+    ok(arrivals(777) === arrivals(777), 'same seed → identical alarm schedule (tick, size, entry)')
+    ok(arrivals(777) !== arrivals(778), 'different seed → different alarm schedule')
+    ok(arrivals(777).length > 0, 'alarms actually arrive on a long run', arrivals(777))
+
+    // No rocks, no alarm (the machine only sent saucers over a live field).
+    {
+        const gs = makeRun(4242, { width: 600, height: 800 })
+        gs.attract = false
+        gs.asteroids = []
+        gs.nextSaucerAt = gs.tickN
+        tickAsteroids(gs, null)
+        ok(gs.saucers.length === 0, 'an empty field earns no alarm')
+    }
+
+    // Attract: the sight, never the fire.
+    {
+        const gs = makeRun(91, { width: 600, height: 800, attract: true })
+        let saw = 0, hostile = 0
+        for (let i = 0; i < 3000; i++) {
+            const ev = tickAsteroids(gs, null)
+            if (ev.saucerSpawn) saw++
+            if (gs.bullets.some(b => b.hostile)) hostile++
+            if (ev.died) hostile += 1000 // attract never dies to an alarm
+        }
+        ok(saw > 0 && hostile === 0, 'attract mode shows saucers but never fires or dies', `saw=${saw} hostile=${hostile}`)
+    }
+
+    // The small UFO flies nearly dead-on (±0.15 rad of the true bearing);
+    // the large one sprays (wider gate, still centred on you).
+    {
+        const gs = makeRun(1234, { width: 600, height: 800 })
+        gs.attract = false
+        gs.saucers.push({ big: false, x: 300, y: 200, vx: 2.7, vy: 0, phase: 0, amp: 1.2, cooldown: 1, life: 900 })
+        let err = null
+        for (let i = 0; i < 10 && err === null; i++) {
+            gs.saucers[0].x = 300; gs.saucers[0].y = 200
+            const ev = tickAsteroids(gs, null)
+            if (ev.saucerShot) {
+                const b = gs.bullets.find(bb => bb.hostile)
+                const trueBear = Math.atan2(gs.ship.y - 200, gs.ship.x - 300)
+                let d = Math.atan2(b.vy, b.vx) - trueBear
+                while (d > Math.PI) d -= Math.PI * 2
+                while (d < -Math.PI) d += Math.PI * 2
+                err = Math.abs(d)
+            }
+        }
+        ok(err !== null && err <= 0.15 + 1e-9, 'small UFO aims within ±0.15 rad of the ship', `${err}`)
+    }
+
+    // Bonus law: a saucer bullet splitting a large rock pays 5000 (small UFO)
+    // — the alien's stray fire is bonus fire — and splits it like any hit.
+    {
+        const gs = makeRun(555, { width: 600, height: 800 })
+        gs.attract = false
+        gs.asteroids = [{ x: 300, y: 400, vx: 0, vy: 0, size: 40, vertices: [] }]
+        gs.bullets.push({ x: 300, y: 430, vx: 0, vy: -1, life: 50, hostile: true, owner: 'small' })
+        const ev = tickAsteroids(gs, null)
+        ok(ev.smashed === 1 && gs.score === 5000,
+            'saucer bullet smashes a large rock for the 5000 bonus', `smashed=${ev.smashed} score=${gs.score}`)
+        ok(gs.asteroids.length === 2 && gs.asteroids.every(a => a.size === 20),
+            'saucer fire splits the rock on the same chain')
+    }
+
+    // Player bullet vs saucer: kill pays the table, spends the bullet, and a
+    // kill that crosses 10,000 buys the bonus life like any other score.
+    {
+        const gs = makeRun(77, { width: 600, height: 800 })
+        gs.attract = false
+        gs.asteroids = [] // isolate: only the saucer can score this tick
+        gs.saucers.push({ big: false, x: 300, y: 400, vx: 2.7, vy: 0, phase: 0, amp: 0, cooldown: 999, life: 900 })
+        gs.bullets.push({ x: 300, y: 400, vx: 3, vy: 0, life: 50 })
+        gs.invulnUntil = 1e9 // isolate: the alien is on our left for this shot
+        const ev = tickAsteroids(gs, null)
+        ok(ev.saucerKilled === 'small' && gs.score === 1000 && gs.saucers.length === 0,
+            'player bullet drops the small saucer for 1000', `killed=${ev.saucerKilled} score=${gs.score}`)
+        const gs2 = makeRun(78, { width: 600, height: 800 })
+        gs2.attract = false
+        gs2.asteroids = [] // isolate: only the UFO can score across 10,000
+        gs2.score = 9950
+        gs2.saucers.push({ big: true, x: 300, y: 400, vx: 2.0, vy: 0, phase: 0, amp: 0, cooldown: 999, life: 900 })
+        gs2.bullets.push({ x: 300, y: 400, vx: 3, vy: 0, life: 50 })
+        gs2.invulnUntil = 1e9
+        tickAsteroids(gs2, null)
+        ok(gs2.score === 10150 && gs2.lives === START_LIVES + 1 && gs2.bonusLives === 1,
+            'a 200-point UFO kill across 10,000 buys the extra life', `score=${gs2.score} lives=${gs2.lives}`)
+    }
+
+    // The alien kills, grace covers it: hostile bullet through the invulnerability
+    // window is mercy; after the grace it takes the ship.
+    {
+        const gs = makeRun(918, { width: 600, height: 800 })
+        gs.attract = false
+        gs.invulnUntil = gs.tickN + 60
+        gs.bullets.push({ x: gs.ship.x, y: gs.ship.y, vx: 0.1, vy: 0, life: 50, hostile: true, owner: 'small' })
+        let ev = tickAsteroids(gs, null)
+        ok(!ev.died, 'saucer fire respects the respawn grace')
+        gs.invulnUntil = 0
+        gs.bullets.push({ x: gs.ship.x, y: gs.ship.y, vx: 0.1, vy: 0, life: 50, hostile: true, owner: 'small' })
+        ev = tickAsteroids(gs, null)
+        ok(ev.died && gs.lives === START_LIVES - 1, 'after the grace a saucer bullet takes the ship', `died=${ev.died} lives=${gs.lives}`)
+        // Body contact kills too.
+        const gs3 = makeRun(919, { width: 600, height: 800 })
+        gs3.attract = false
+        gs3.saucers.push({ big: true, x: gs3.ship.x, y: gs3.ship.y, vx: 2, vy: 0, phase: 0, amp: 0, cooldown: 999, life: 900 })
+        ok(tickAsteroids(gs3, null).died, 'a saucer hull on the ship is a hit')
+    }
+
+    // Saucers never gate the wave — the machine cleared on rocks.
+    {
+        const gs = makeRun(31, { width: 600, height: 800 })
+        gs.attract = false
+        gs.asteroids = []
+        gs.saucers.push({ big: true, x: 10, y: 10, vx: 2, vy: 0, phase: 0, amp: 0, cooldown: 999, life: 900 })
+        const ev = tickAsteroids(gs, null)
+        ok(ev.wave === 2, 'the wave rolls while an alarm still flies', `wave=${gs.wave}`)
+    }
+
+    // The hash sees the saucers (else byte-equal replays would be blind).
+    {
+        const a = makeRun(501, { width: 600, height: 800 })
+        const b = makeRun(501, { width: 600, height: 800 })
+        b.saucers.push({ big: false, x: 111, y: 222, vx: 2.7, vy: 0, phase: 0, amp: 0, cooldown: 40, life: 900 })
+        ok(stateHash(a) !== stateHash(b), 'stateHash covers saucers on the field')
+    }
+
+    // Shell wiring: all three alarm events make sound, the heartbeat ladder
+    // and the warble are wired, the hulls draw as wire-frame ellipses, and
+    // the QA state reports the alarm count.
+    ok(/ev\.saucerSpawn\) audioController\./.test(srcIndex) && /ev\.saucerShot\) audioController\./.test(srcIndex) &&
+        /ev\.saucerKilled\) \{/.test(srcIndex), 'all three saucer events make sound')
+    ok(/const beat = Math\.max\(22, 14 \+ gs\.asteroids\.length \* 14\)/.test(srcIndex),
+        'heartbeat tempo is the rock-count ladder (fewer rocks = faster pulse)')
+    ok(/gs\.saucers\.length > 0 && gs\.tickN % 8 === 0/.test(srcIndex), 'hover warble runs while a saucer is on screen')
+    ok(/ctx\.ellipse\(0, 0, r, r \* 0\.42/.test(srcIndex), 'saucers draw as wire-frame hulls (ART: lines only)')
+    ok(/rocks: gs\.asteroids\.length, saucers: gs\.saucers\.length/.test(srcIndex), 'QA contract state reports saucers')
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutant')) {
     console.log('mutants (each MUST die)')
@@ -248,6 +414,29 @@ if (process.argv.includes('--mutant')) {
         ['the hold collapses to one tick (ties never turn the ship)', S,
             `const HOLD = 10`,
             `const HOLD = 1`],
+        // #2001 saucer mutants — the alien's law.
+        ['saucer bullets pay the base rock table (bonus law deleted)', S,
+            `b.hostile ? SAUCER_ROCK_BONUS[b.owner][sizeTier(a.size)] : scoreForSize(a.size)`,
+            `scoreForSize(a.size)`],
+        ['the small saucer scores like the large (table corrupted)', S,
+            `export const SAUCER_SCORE = { big: 200, small: 1000 }`,
+            `export const SAUCER_SCORE = { big: 200, small: 200 }`],
+        ['attract alarms open fire (spectators get killed)', S,
+            `if (s.cooldown <= 0 && !gs.attract && shipAlive(gs)) {`,
+            `if (s.cooldown <= 0 && shipAlive(gs)) {`],
+        ['saucer fire passes through rocks (shared field deleted)', S,
+            `            const dist = Math.sqrt(dx * dx + dy * dy)
+            if (dist < a.size) {`,
+            `            const dist = Math.sqrt(dx * dx + dy * dy)
+            if (dist < a.size && !b.hostile) {`],
+        ['the saucer hull can be flown through (no body kill)', S,
+            `if (Math.sqrt(dx * dx + dy * dy) < SAUCER_RADIUS[s.big ? 'big' : 'small'] + SHIP_SIZE * 0.4) {
+                killShip(gs, ev)`,
+            `if (Math.sqrt(dx * dx + dy * dy) < -1) {
+                killShip(gs, ev)`],
+        ['heartbeat frozen (ladder flattened to one tempo)', I,
+            `const beat = Math.max(22, 14 + gs.asteroids.length * 14)`,
+            `const beat = Math.max(22, 14 + gs.asteroids.length * 0)`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

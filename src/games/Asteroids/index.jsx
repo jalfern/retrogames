@@ -143,11 +143,38 @@ const AsteroidsGame = () => {
         // EVENTS — tickAsteroids stamps these; the shell keeps all sound so the
         // sim stays pure enough for Node to replay it.
         // ------------------------------------------------------------------
+        // #2001 sound ladder — the machine's heartbeat: a two-tone bass thrum
+        // whose tempo climbs as the field thins (danger = fewer rocks), and
+        // the two-tone hover warble of any saucer on screen. Silent on
+        // attract and at the terminal.
+        let heartTick = 0
+        let heartHi = false
         const applyEvents = (ev) => {
-            if (ev.shot) audioController.playTone(800 - ev.pitch * 200, 0.05, 'sawtooth', 0.1)
+            if (ev.shot) audioController.playSweep(900 - ev.pitch * 250, 260, 0.09, 'sawtooth', 0.1)
             if (ev.smashed) audioController.playNoise(0.1, 0.1)
             if (ev.died) audioController.playNoise(0.4, 0.4)
             if (ev.wave) audioController.playSweep(300, 900, 0.5, 'sine')
+            if (ev.saucerSpawn) audioController.playSweep(180, 640, 0.45, 'square', 0.06)
+            if (ev.saucerShot) audioController.playTone(300, 0.05, 'square', 0.07)
+            if (ev.saucerKilled) {
+                audioController.playNoise(0.3, 0.3)
+                audioController.playSweep(ev.saucerKilled === 'small' ? 700 : 400, 120, 0.25, 'square', 0.12)
+            }
+            if (!gs.attract && !gs.over) {
+                heartTick++
+                const beat = Math.max(22, 14 + gs.asteroids.length * 14)
+                if (heartTick >= beat) {
+                    heartTick = 0
+                    audioController.playTone(heartHi ? 55 : 74, 0.09, 'sine', 0.25)
+                    heartHi = !heartHi
+                }
+            } else {
+                heartTick = 0
+                heartHi = false
+            }
+            if (gs.saucers.length > 0 && gs.tickN % 8 === 0) {
+                audioController.playTone(gs.tickN % 16 === 0 ? 560 : 470, 0.045, 'square', 0.05)
+            }
             if (ev.over && !gs.attract && gs.watching) release(false) // the run ends in your hands (silent)
         }
 
@@ -221,6 +248,25 @@ const AsteroidsGame = () => {
                 ctx.restore()
             })
 
+            // Draw Saucers — wire-frame hull + dome (docs/ART.md: the original
+            // draws them as a stacked ellipse with a cap, lines only).
+            gs.saucers.forEach(s => {
+                const r = s.big ? 22 : 12
+                ctx.save()
+                ctx.translate(s.x, s.y)
+                ctx.beginPath()
+                ctx.ellipse(0, 0, r, r * 0.42, 0, 0, Math.PI * 2)
+                ctx.stroke()
+                ctx.beginPath()
+                ctx.ellipse(0, -r * 0.12, r * 0.45, r * 0.4, 0, Math.PI, Math.PI * 2)
+                ctx.stroke()
+                ctx.beginPath()
+                ctx.moveTo(-r, 0)
+                ctx.lineTo(r, 0)
+                ctx.stroke()
+                ctx.restore()
+            })
+
             // Draw Bullets
             ctx.fillStyle = '#ffffff'
             gs.bullets.forEach(b => {
@@ -287,7 +333,7 @@ const AsteroidsGame = () => {
                 watchSfx: watchSfxLog,
                 probe: () => ({
                     tick: gs.tickN, score: gs.score, wave: gs.wave, lives: gs.lives,
-                    rocks: gs.asteroids.length,
+                    rocks: gs.asteroids.length, saucers: gs.saucers.length,
                     shipX: Math.round(gs.ship.x), shipY: Math.round(gs.ship.y),
                     alive: gs.respawnAt < 0,
                     attract: gs.attract, over: gs.over,
@@ -304,6 +350,7 @@ const AsteroidsGame = () => {
                 actions: [
                     { label: 'Drop a rock on the ship', run: () => { gs.invulnUntil = 0; gs.respawnAt = -1; gs.asteroids.push({ x: gs.ship.x, y: gs.ship.y, vx: 0, vy: 0, size: 40, vertices: gs.asteroids[0] ? gs.asteroids[0].vertices : [] }) } },
                     { label: 'Clear field', run: () => { gs.asteroids = [] } },
+                    { label: 'Fly a saucer', run: () => { gs.saucers.push({ big: true, x: -22, y: gs.height / 3, vx: 2.0, vy: 1.4, phase: 0, amp: 0, cooldown: 60, life: 900 }) } },
                 ],
             })
         }
@@ -331,7 +378,7 @@ const AsteroidsGame = () => {
             state: () => ({
                 tick: gs.tickN, score: gs.score, done: gs.over, seed: gs.seed, lives: gs.lives, wave: gs.wave,
                 shipX: Math.round(gs.ship.x), shipY: Math.round(gs.ship.y),
-                rocks: gs.asteroids.length,
+                rocks: gs.asteroids.length, saucers: gs.saucers.length,
                 hash: stateHash(gs),
             }),
             canvas: () => canvas,
