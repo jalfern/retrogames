@@ -6,7 +6,7 @@
 //
 //   npm run papersplay     (needs `npm run dev`)
 import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
-import { accFor } from '../src/games/PapersPleaseMin/gen.js'
+import { accFor, genWeek, wallNameAt, weekDecoyCount } from '../src/games/PapersPleaseMin/gen.js'
 
 const URL = process.env.PP_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/papers-please`
 await requireDevServer(URL)
@@ -735,6 +735,52 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
         !!grub && grub.cp.hat > 0 && grub.cp.uni > 0)
     await page.evaluate(() => window.__ppTest.runDay())
     await wait(200)
+}
+
+// #1908 THE WALL THAT LIVES, live: seed 0's bulletin is the plan — every row
+// the browser sim prints matches Node's week row-for-row (name AND number),
+// the sheet paints in its own brighter red, no name repeats across the seven
+// walls, and no row names anyone standing in that week's line. The drawn sheet
+// IS the logical plan, pixel-proved.
+{
+    await page.evaluate(() => window.__ppTest.start(0))
+    await wait(300)
+    const wk = genWeek(0)
+    const weekEntrants = new Set(wk.days.flatMap((d) => d.queue.filter((a) => a.person.passport).map((a) => a.person.passport.name)))
+    const seenNames = new Set()
+    let dupAcrossDays = 0, framed = 0, offPlanRows = 0, totalRows = 0
+    let ink3 = -1, ink5 = -1
+    for (let d = 1; d <= 7; d++) {
+        const sheet = await page.evaluate(() => {
+            const p = window.__ppTest.probe()
+            const wi = window.__ppTest.wantedInk()
+            return { day: p.day, wanted: p.wanted, ink: wi.ink, rows: wi.rows }
+        })
+        const nodeRows = wk.days[d - 1].wanted
+        const rowStr = (x) => `${x.name}#${x.id}:${x.planted ? 1 : 0}`
+        if (sheet.day === d && sheet.wanted.length === nodeRows.length && sheet.wanted.every((x, i) => rowStr(x) === rowStr(nodeRows[i]))) {
+            totalRows += nodeRows.length
+            nodeRows.forEach((w, i) => {
+                if (w.planted) return
+                if (w.name !== wallNameAt(0, d, nodeRows.slice(0, i).filter((x) => !x.planted).length)) offPlanRows++
+                if (seenNames.has(w.name)) dupAcrossDays++
+                seenNames.add(w.name)
+                if (weekEntrants.has(w.name)) framed++
+            })
+            if (nodeRows.length === 3 && ink3 < 0) ink3 = sheet.ink
+            if (nodeRows.length === 5) ink5 = Math.max(ink5, sheet.ink)
+        } else {
+            r.check(`day ${d} sheet read live`, false, JSON.stringify({ got: sheet.day, rows: sheet.wanted.length }))
+        }
+        if (d < 7) { await page.evaluate(() => window.__ppTest.runDay()); await wait(200) }
+    }
+    r.check(`seed 0's whole week: ${totalRows} bulletin rows painted row-for-row on Node's plan`, totalRows === wk.days.reduce((a, x) => a + x.wanted.length, 0) && offPlanRows === 0, `${totalRows} rows, ${offPlanRows} off-plan`)
+    r.check(`the sheet paints in the brighter red (${ink3} ink px on the three-row day)`, ink3 > 300, `${ink3}`)
+    r.check('no name repeats across the live week\'s walls — the bulletin reads lived-in', dupAcrossDays === 0, `${dupAcrossDays}`)
+    r.check('no wall row names anyone standing in the line this week', framed === 0, `${framed}`)
+    r.check(`the five-row bulletin paints more sheet than the three-row day (${ink5} > ${ink3})`, ink5 > ink3 && ink5 > 0, `${ink5}/${ink3}`)
+    await wait(1100)
+    await page.keyboard.press('a') // leave the week-end screen
 }
 
 await wait(400)

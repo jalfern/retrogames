@@ -368,7 +368,61 @@ six seats per week; this amendment densifies the authored walk:
   before `runDay()` captures `gs.day` (it would then stamp all of day 7 and
   the return walk finds nobody) — probe the day before calling `runDay`.
 
-## Mutants (41, all die under `npm run paperscheck -- --mutate`)
+## THE WALL THAT LIVES (#1908) — the bulletin never looks stamped
+
+The fifth-portrait playtest (#1908) found the original's own name pool working
+against the wall: FIRST×LAST was 10×8 = 80 combos, three decoys were independent
+draws with zero dedup, and across seeds the sweep proved the consequences — 27
+decoy names repeated across days *within single weeks*, two weeks printed the
+same name twice on ONE bulletin (seed 0 day 4 `ILIA DRENIN` ×2), and a wall name
+could walk up the window on another day as a pure memory trap (an innocent with
+the exact name the wall printed the day before).
+
+The fix is variety as construction, not hope — this generator's own doctrine:
+
+- **The pool doubled**: FIRST 10→16, LAST 8→12 (80 → 192 combos; the two combos
+  that ARE a regular's full name, ANJA TOLKA / PETR ZEMEK, are removed from the
+  plan pool — the neighborhood decorates the wall only via the arc).
+- **Decoy names are a per-week PLAN**, not stream draws: slot (n,k) prints pool
+  index `seed*97 + n*71 + k*37 mod 190`. The offset constants are verified
+  collision-free for |Δday| ≤ 6, |Δslot| ≤ 2 (paperscheck re-proves it
+  analytically AND on the sweep), so the week's twenty slots land on twenty
+  DISTINCT names — distinct on the day, distinct across the week. Names come
+  from the plan, ids stay stream draws, so `genDay` standalone still replays
+  `genWeek`'s day exactly.
+- **The week's plan pre-seeds every day's `used`-set**: no entrant, planted
+  WANTED name, or regular can carry the FULL name of any wall row that week.
+  The old post-hoc rewrite guard is now an assertion (a collision is a broken
+  construction, not something to paper over).
+- **Token-level near-misses stay on purpose**: a decoy sharing a first or last
+  name with an entrant trains the printed NAME *AND* NUMBER law (the trap
+  species exists for exactly that). What went to zero is the identical full
+  name — from 55.6% near-miss entanglement to zero unfair doubles. Planted
+  names still coincide with another day's entrant (~1.8/week at pool 190): each
+  day is judged by the sheet the wall prints THAT day; decide/judge agree;
+  counted by the harness, so a pool narrowing back toward stamp territory goes
+  red.
+- **Legibility (#1908 item 2), recorded honestly**: five 9px rows sit at the
+  fit-law ceiling — worst sweep bottom y=356 vs the SCALE box at y=358. Two px
+  of slack: the rows CANNOT grow, and paperscheck now pins size ≥ 9 so no
+  future stage quietly shrinks them either. The honest lever left is contrast:
+  the wanted rows print in a dedicated brighter red (`wallRed #ff6f5e`, the
+  stamp ink `#d84343` and the strike `#ff8080` stay distinct), which is what
+  makes five rows scannable at arm's length on a phone.
+- `paperscheck` gains THE WALL THAT LIVES section (pool integrity ≥150 combos,
+  the offset law, arc-day pin, plan coverage row-for-row, per-day distinctness,
+  per-week distinctness, wall-vs-line disjoint, the planted-coincidence drift
+  cap). Mutants m43 (day-term frozen — same decoys on every wall: same-day
+  distinctness survives, only the week witness sees it) and m44 (plan stops
+  pre-seeding the day — the wall frames the line and the assertion fires);
+  **all 43 die**.
+- `papersplay` proves it live on seed 0's whole week: all 26 bulletin rows
+  match Node's plan row-for-row (name AND number, across processes), the sheet
+  paints in its own red ink (328 px on the three-row day, 612 px on the five-
+  row day), no name repeats across the seven walls, and no row names anyone in
+  the line.
+
+## Mutants (43, all die under `npm run paperscheck -- --mutate`)
 
 
 
@@ -483,7 +537,10 @@ settle reaches its −10px step and rests at 0); and day 6's banner announces
 crowded — the day that arrests Grubak (seed 0 day 6) also prints SONYA'S
 first hello as the day's second bubble (4854px), and on the rotated window
 (seed 4) Anja greets behind Sonya's turn (day 6, 5096px) while Petr greets
-behind Tadek's payoff (day 7, 5222px).
+behind Tadek's payoff (day 7, 5222px); since #1908 also: seed 0's whole week
+of bulletin rows matches Node's plan row-for-row across processes, the sheet
+paints in its brighter wallRed ink, no name repeats across the seven walls, and
+no row names anyone standing in the line).
 NOTE:
 headless Chrome on a shared box logs a device-level "AudioContext
 encountered an error" line — an OS audio-renderer complaint, not page
@@ -612,6 +669,18 @@ code, and filtered as such).
   (paperscheck pins the ≥2 s read window; mutant m42 proves the law bites);
   `papersplay` proves the lifetime with real keys — pinned after the ink
   (281 witness-line red px) and cleared the moment the next papers land.
+- **CLOSED by #1908 (2026-11-11):** the fifth-portrait playtest found the wall
+  stamped — 10×8 name pool, three undeduped decoy draws, 27 within-week repeats
+  and two same-bulletin doubles across the sweep, plus wall names walking the
+  window on later days. Decoy names are a per-week plan now (doubled pool,
+  distinct by construction, pre-seeded against the whole line) and the rows
+  print in a dedicated brighter red. See "THE WALL THAT LIVES (#1908)."
+  *Still open (recorded by the playtest, not bugs):* the rows stay 9px — the
+  fit law leaves 2 px to the scale box, so phone legibility rides on contrast,
+  not size, until the booth geometry grows; and token-level near-misses (a
+  decoy sharing a FIRST or LAST name with an entrant) remain by design — the
+  printed rule is NAME *AND* NUMBER and the WANTED trap species exists to
+  teach exactly that discrimination.
 - What #1891 still leaves open: evidence strings and RULES text keep
   numerals, so the month-name read is display-only; and the settle is a
   scripted drop, not drag physics — papers still cannot be moved by hand

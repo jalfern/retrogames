@@ -813,17 +813,22 @@ const PapersPleaseMinGame = () => {
                     return paper
                 },
                 // #1908 THE WALL THAT LIVES: ink of the wanted column's own
-                // brighter red (0xff6f5e — the stamp ink d84343, the strip's
-                // quote red and the strike X ff8080 are other colors, so this
-                // counts sheet rows only) plus the row count, so papersplay can
-                // prove the five-row bulletin is painted, in the readable ink.
+                // brighter red, counted as the hue FAMILY (rr>170, gg 80..150,
+                // bb 80..150) — 9px glyphs are mostly antialiased against the
+                // dark wall, so a pure-#ff6f5e count would measure ~8 px and
+                // prove nothing. The rect holds sheet rows only: the entry list
+                // is green/gold, the header is #cfd6e6, and the stamp/strip/
+                // strike reds live outside it (x>=416 or y>=400).
                 wantedInk: () => {
                     const day = current(gs).day
                     const rows = wallRows(day, day.rules.map((r) => RULES[r].text))
                     const top = rows.entries - 10
                     const d = ctx.getImageData(WALL.x + 112, top, 130, rows.wantedEnd - top + 4).data
                     let n = 0
-                    for (let i = 0; i < d.length; i += 4) if (((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]) === 0xff6f5e) n++
+                    for (let i = 0; i < d.length; i += 4) {
+                        const [rr, gg, bb] = [d[i], d[i + 1], d[i + 2]]
+                        if (rr > 170 && gg > 80 && gg < 150 && bb > 80 && bb < 150) n++
+                    }
                     return { ink: n, rows: day.wanted.length }
                 },
                 probe: () => {
