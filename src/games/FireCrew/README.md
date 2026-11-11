@@ -195,3 +195,25 @@ one line is green.
   bucket-brigade branch in `cpuHose` to `if (false) {` — "the CPU douses a
   loft fire (the bucket brigade)" goes red (the shaft is the hose's own
   ground law; the branch is what makes a loft fire the CPU's job).
+
+## WATCH seat (#1637 b28)
+The proven route is not new here — the sim has always driven `cpu` seats with
+its own autopilot, and `firecrewcheck` races that path (`runTo`: 6/6 rescues on
+the named seed list, byte-equal replays). So the WATCH seat is the SHEET flip:
+Y sets `gs.sources[0] = 'cpu'` (any driving key or a field tap sets it back to
+`'human'`, and the pressed key lands in `keys1` the same tick — a held key
+drives immediately). Consequences the gates pin:
+- seated spray mirror is silent (`!watchingRef.current && h.a`), so held SPACE
+  never fakes the hose sound while the autopilot works;
+- radio (V + shouts) STAYS live seated — calls steer cpu seats by design
+  ("a human shout outranks the autopilot", sim.js), which makes WATCH here a
+  co-driver mode: watch the route, still shout "LADDER UP";
+- watch never lingers: `startPlay` rebuilds sources human, `finish` releases
+  silent (racer rule);
+- the attract watch-pill is honestly SKIPPED (watchphonecheck SKIP_ATTRACT: the
+  crew picker sits in the boot path and the attract IS the CPU-crew demo);
+  on phones the in-run pill (#1653 safe-area law) seats seat 1 mid-alarm.
+Verify: `npm run firecrewcheck` (seat rules: cpu drives / human idles with an
+empty pad; byte-equal across 24 seeds; rescue floor >= 18/24 honest share) and
+`DEV_PORT=<port> npm run watchcheck -- --only fire-crew` (Y seats with blips,
+crew works idle hands, steer takes over, re-seat resumes from the live floor).

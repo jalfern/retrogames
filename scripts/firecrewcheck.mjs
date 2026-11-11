@@ -588,5 +588,33 @@ console.log('smoke, the ladder truck & the crew breath (#1766)')
     ok(/const breath = f\.moving \? 0 : Math\.floor\(t \/ BREATHE\) % 2/.test(artSrc), 'the breath gates on idle — never layered onto the step cycle')
 }
 
+// #1637 b28 — the WATCH seat for FIRE CREW is the SHEET flip itself: the sim
+// owes the autopilot to every 'cpu' seat (the very route this harness wins
+// with), so 'human' + empty pad must idle crew0 while 'cpu' + empty pad works.
+// The seat chrome in index.jsx stakes everything on this one law.
+console.log('seat (watch) — b28')
+{
+    const a = setSources(makeRun(77), ['cpu', 'cpu', 'cpu'])
+    const b = setSources(makeRun(77), ['human', 'cpu', 'cpu'])
+    const a0 = { x: a.crew[0].x, y: a.crew[0].y }
+    const b0 = { x: b.crew[0].x, y: b.crew[0].y }
+    for (let n = 0; n < 120 && !a.done; n++) { step(a, {}); step(b, {}) }
+    ok(a.crew[0].x !== a0.x || a.crew[0].y !== a0.y,
+        'a cpu sheet drives crew0 with an empty pad', `(${a0.x},${a0.y}) -> (${a.crew[0].x},${a.crew[0].y})`)
+    ok(b.crew[0].x === b0.x && b.crew[0].y === b0.y,
+        'a human sheet leaves crew0 to the player (the flip is the whole seat)', `(${b.crew[0].x},${b.crew[0].y})`)
+    const det = []
+    let wins = 0
+    for (let i = 0; i < 24; i++) {
+        const seed = 1 + i * 7919
+        const g1 = runTo(seed)
+        const g2 = runTo(seed)
+        if (state(g1).hash === state(g2).hash && g1.tick === g2.tick) det.push(true)
+        if (g1.rescued === 6) wins++
+    }
+    ok(det.length === 24, 'byte-equal (hash sampled) on the seated route across 24 seeds', `${det.length}/24`)
+    ok(wins >= 18, 'the seated autopilot wins on at least 18 of 24 seeds (honest share — the 6/6 gate above keeps its own seeds)', `${wins}/24`)
+}
+
 console.log(`\n${passes} passed, ${fails} failed`)
 process.exit(fails ? 1 : 0)
