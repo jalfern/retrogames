@@ -515,9 +515,14 @@ section('THE CROWD IS PEOPLE (#1989) — hats, unibrows, earrings, missing teeth
                 const ph = a.person.passport ? a.person.passport.photo : null
                 ok(!ph || ['hat', 'uni', 'ear', 'gap'].every((k) => (f[k] || 0) === (ph[k] || 0)),
                     `seed ${seed} day ${day.n}: decor drifted between face and photo`)
-                for (const k of ['hat', 'uni', 'ear', 'gap']) if (f[k]) fams[k]++
-                if (f.hat) { decorated++; hatKinds.add(f.hat) } else naked++
-                combos.add([f.hat || 0, f.uni || 0, f.ear || 0, f.gap || 0].join(''))
+                // Variety is graded on the ROLLED heads only — the regulars'
+                // authored decor would mask a flattened hash (three kinds ride
+                // on Grubak, Anja and Petr alone; m31 proved it).
+                if (!a.person.regular) {
+                    for (const k of ['hat', 'uni', 'ear', 'gap']) if (f[k]) fams[k]++
+                    if (f.hat) { decorated++; hatKinds.add(f.hat) } else naked++
+                    combos.add([f.hat || 0, f.uni || 0, f.ear || 0, f.gap || 0].join(''))
+                }
             }
         }
     }
@@ -1452,12 +1457,14 @@ if (MUT) {
     //     bare heads again. Fairness never notices (hats were never read);
     //     only the variety witness sees a whole signature feature vanish.
     await tryMut('crowd flattened (accFor never gives a hat)',
-        mutMod('gen.js', 'const hat = (h & 31) < 8 ? 1 + ((h >>> 5) % 3) : 0,', 'const hat = 0,', 'm31'),
+        mutMod('gen.js', 'hat: (h & 31) < 8 ? 1 + ((h >>> 5) % 3) : 0,', 'hat: 0,', 'm31'),
         (m) => {
             const kinds = new Set()
             for (const seed of SEEDS) {
                 for (const day of m.gen.genWeek(seed).days) {
-                    for (const a of day.queue) if (a.person.face.hat) kinds.add(a.person.face.hat)
+                    // rolled heads only — the regulars' hats are authored and
+                    // would mask a flattened hash (kinds {1,2,3} ride on them).
+                    for (const a of day.queue) if (!a.person.regular && a.person.face.hat) kinds.add(a.person.face.hat)
                 }
             }
             return kinds.size === 3
