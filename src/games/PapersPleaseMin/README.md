@@ -86,6 +86,42 @@ day; the queue resets and the rulebook grows each morning; day 7 survives =
 win. `autopilot()` — the perfect inspector — produces the script that IS
 the attract demo, replayed tick for tick by the shell.
 
+## The shift clock (#1960)
+
+The booth now has a time, the way the original's does. `sim.js` carries
+`gs.clock` (sim ticks) and `tick(gs, n)` drains it once per frame; when the
+budget bottoms the gate CLOSES.
+
+- **Budget law: the queue is the quota and the queue sizes the clock** —
+  `dayTicks(day) = queue.length × CFG.SEAT_TICKS` (18 s an applicant).
+  The finale's 13-deep line is therefore the tightest shift of the week
+  *because* it is the longest day — the original's late-week pressure,
+  honestly ported: length now costs attention.
+- **Closing** (`close` event): whoever is still in line is turned away; the
+  record docks `MISS_DOCK` (5) per head, clamped at zero. Days 1–6 dock and
+  advance; **day 7 must finish** — an unmet quota loses the week
+  (`GATE CLOSED — n STILL IN LINE, QUOTA UNMET`). Morning (`advance()`)
+  rewinds a full shift, shared by queue-drain and gate-close so the two
+  day-ends cannot drift.
+- **Who can be caught**: nobody scripted. `SEAT_TICKS` (1080) exceeds the
+  autopilot's longest wait (124) plus stamp slack — attract, WATCH and every
+  harness replay stamp faster than the gate can fall; only a human dawdling
+  past eighteen seconds an applicant is. `paperscheck` pins that inequality,
+  then proves both directions: a 10 s human cadence clears every day of every
+  seed (finale margin > 0), the naive eye still clears the whole week (the
+  slack rule is about judgment, pace is tested separately), and a ~22 s
+  cadence closes day 1 and loses day 7 with a deterministic missed count.
+- **The booth**: a real clock face on the ruled grid (hour pips, sweeping
+  hands, digital readout below), mapped onto the printed shift 08:00→18:00,
+  red through the last hour with soft per-second ticks through the glass, a
+  buzzer at close. Its corner of the canvas is chrome-safe: the app's
+  PAUSE/volume/WATCH overlays own the top-right, so the clock hangs in the
+  booth's own reach — paperscheck pins clearance from the DAY line, the
+  rulebook label and the portrait column.
+- `stateHash` deliberately ignores `clock`: it hashes the discrete booth
+  (day/idx/strikes/score), so cross-run replay comparisons stay valid while
+  the continuous shift can differ freely.
+
 ## The calendar (one clock since #1889)
 
 `dadd` walks the printed wall (real month lengths, no leap days — Arstotzka
@@ -110,7 +146,7 @@ spent by day 4 by construction) — a game rule defended by the generator's
 own audit, which is exactly how this file grew CURFEW in the first place:
 the rulebook-awakening check caught day 7 as a no-op day.
 
-## Mutants (14, all die under `npm run paperscheck -- --mutate`)
+## Mutants (18, all die under `npm run paperscheck -- --mutate`)
 
 `<`→`<=` expiry; wanted by name only; IDREQ ignoring the DOB; the scale
 reading the paperwork (witness lies); species coverage becoming luck;
@@ -128,7 +164,13 @@ quietly become dead letter. The twelfth deletes the PORTRAIT block from
 verdict-twin catches it); the thirteenth de-ages the trap (photo keeps its
 live hair color, the naive eye stops biting, the trap-count witness sees
 the hole); the fourteenth lets hair COLOR convict — the aged photo is
-denied and the truth path screams (#1938).
+denied and the truth path screams (#1938). The clock years added four:
+the fifteenth shrinks SEAT to half a second (the gate would catch scripted
+play — the cadence replay sees the closes); the sixteenth pulls the day-7
+quota tooth (dawdling survives the finale, or the week overruns and
+crashes); the seventeenth zeroes the miss dock (turning people away costs
+nothing — the dock arithmetic names it); the eighteenth keeps the dead
+clock at morning (day two opens closed — the rewind witness bites).
 
 ## Gates
 
@@ -139,7 +181,10 @@ survives the week, pixels vs sim proven side by side; since #1938 also:
 the passport carries a painted photo in its beige frame, honest papers
 render byte-identical face+photo pixels, and a forged photo denies with
 its own feature band lit — sampled only after the stamp ticks out, since
-during a stamp the counter shows the previous document).
+during a stamp the counter shows the previous document; since #1960 also:
+the wall clock ticks with live frames, a fast-forwarded shift closes the
+gate — banner, dock, full morning rewind — and an unfinished finale dies
+on the quota).
 
 ## Honest gaps
 
@@ -163,9 +208,20 @@ during a stamp the counter shows the previous document).
   pins descriptor parity, exactly-one-feature breaks, per-seed trap
   witnesses and the one-line-text fit law; `papersplay` proves the
   evidence is pixels (band lit, honest papers byte-identical).
-- Day 7's queue is long (13 entrants since PORTRAIT added its test paper);
-  it is the finale, and the clumsy budget of two still clears it with room
-  to spare (proven, every seed).
+- **CLOSED by #1960 (2026-11-10):** Day 7's queue was long (13 entrants
+  since PORTRAIT added its test paper) but the finale cost nothing — the
+  booth waited forever and the clumsy budget cleared it with room to spare.
+  The booth now has the original's shift clock: budget = queue × 18 s, the
+  gate slams at 18:00, turned-away heads dock the record, and day 7 must
+  finish. `paperscheck`'s SHIFT CLOCK section pins the budget law, the
+  scripted-play inequality, the 10 s human cadence clearing every seed, the
+  sloppy eye still clearing the week, deterministic close arithmetic and the
+  printed 08:00→18:00 mapping; `papersplay` proves the clock ticks, closes
+  and kills the unfinished finale with live keys.
+- The clock docks score for a missed line, but the original's PAY economy
+  (rent, soup, heat, the deduction slip at end of day) has no port here at
+  all — days 1–6 closing costs points, not survival, which is softer than
+  the original's slow squeeze toward a cold apartment.
 - The photo paints at 0.6 scale — the features stay distinguishable at
   that size (papersplay counts the pixels), but a 40px face is a coarse
   read next to the original's detailed portrait art; and the compared

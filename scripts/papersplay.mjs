@@ -201,6 +201,32 @@ for (let guard = 0; guard < 12 && s.day === 1 && !s.end; guard++) {
 r.check(`honest papers painted ONE face (${sawHonest} papers, every total 0)`, sawHonest >= 3 && bandFails === 0, `bandFails=${bandFails}`)
 r.check('day 1 staged its forger at the window', sawForge >= 1, `${sawForge}`)
 
+// #1960 THE SHIFT CLOCK, live: the printed minutes move with real frames,
+// a dawdled day closes the gate (banner + dock + morning rewind), and the
+// finale refuses to survive an unfinished line.
+{
+    await page.evaluate(() => window.__ppTest.start(3))
+    await wait(400)
+    s = await probe()
+    const m0 = s.clock.hh * 60 + s.clock.mm
+    await wait(1600)
+    s = await probe()
+    const m1 = s.clock.hh * 60 + s.clock.mm
+    r.check(`the wall clock ticks with the shift (${m0} -> ${m1})`, s.screen === 'play' && s.clock.hh === 8 && m1 > m0 && !s.clock.red, JSON.stringify(s.clock))
+    const ff = await page.evaluate(() => window.__ppTest.ff(8000)) // day 1 budget is 7×SEAT = 7560 ticks
+    s = await probe()
+    r.check('dawdling past the shift closes the gate — day advances, nobody dies', ff.day === 2 && !ff.end && s.screen === 'play', JSON.stringify(ff))
+    r.check('the GATE CLOSED banner spoke on the canvas', s.banner && /GATE CLOSED/.test(s.banner.text) && /TURNED AWAY/.test(s.banner.sub), s.banner && `${s.banner.text} | ${s.banner.sub}`)
+    r.check('morning rewound a full shift after the close', s.clock.hh === 8 && s.clock.mm === 0 && s.ticksLeft > 7000, JSON.stringify({ hh: s.clock.hh, mm: s.clock.mm, left: s.ticksLeft }))
+    // the finale must finish: honest days 1-6, then dawdle the day-7 line away
+    await page.evaluate(() => window.__ppTest.start(1))
+    for (let d = 1; d < 7; d++) await page.evaluate(() => window.__ppTest.runDay())
+    const ff7 = await page.evaluate(() => window.__ppTest.ff(13 * 1080 + 10))
+    r.check(`the unfinished finale is a quota loss: ${ff7.why}`, ff7.end === 'lose' && /QUOTA UNMET/.test(ff7.why || ''), JSON.stringify(ff7))
+    await wait(1200)
+    await page.keyboard.press('a') // leave the over screen
+}
+
 await wait(400)
 const clean = errors.filter((e) => !/favicon|Download the React DevTools/i.test(e))
 r.check('zero page errors', clean.length === 0, clean.slice(0, 3).join(' | '))
