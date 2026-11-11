@@ -1,68 +1,66 @@
-# STATE — session 222 (2026-11-11, slot a)
+# STATE — session 223 (2026-11-11, slot b)
 
-## Shipped this session
-**ASTEROIDS: the hunter — WATCH batch 26** — PR #2000 squash-merged to main
-(Part of #1637; issue stays open, multi-stage). Whole tick lifted verbatim into
-`src/games/Asteroids/sim.js` (makeRun/tickAsteroids/stateHash; dice ride
-gs.rngState, mulberry32 steps identical to seedRng). watchStep scores the
-greedy play + 12 candidates by replaying the game's OWN physics on cloned
-worlds (dice forked from (seed,tick,rngState)): survival ttc-quadratic ≫
-kills-in-horizon ≫ lead-aim shaping.
+## What shipped
+**THE LONG CONVERSATION** merged as `8be0644` (PR #2005, Closes #2003 —
+NEVER-DRY pick, weakestStage score 10 = 8 QA feedbacks naming PPM + 2
+unowned README gaps; TARGET #1637 REFUSED at claim — slot a alive on b26
+ASTEROIDS, checkpoint 12:05Z). Papers, Please-MIN's regulars stopped
+trading orphan sentences: every `REGULARS` entry now carries four authored
+beats `{greet, hook, again, follow}` — the first walk-up greets AND opens a
+topic ("THE BREAD LINE WAS LONG."), the return ANSWERS it ("YOU AGAIN." /
+"BACK AGAIN, HA!" / "STILL NO BREAD, HA!"). 24 authored lines, 24 distinct
+voices, pinned. Zero rnd(): every seed replays byte-identical; purity
+untouched (decide never reads `say`, twins walk every paper every day). The
+arc turn keeps the canonical Jorji pair — the wall interrupts breakfast; its
+hook is one of the week's two honest unpaid threads (see catches). The
+bubble grows with the thread: `h = max(34, 8 + 13n)` — 1–2-line fields
+byte-identical, third row at 47px, bottom 349 < 394 strip bound; new
+`bubbleGrowPix` hook samples the 9px growth strip. paperscheck **13956/13956
++ all 37 mutants die** (new m35 payoff-drop, m36 threads-crossed; m29/m34
+re-anchored — see catches); witnesses added: shape first=2/return=3/arc=2
+across the 12-seed sweep, 24-distinct-lines, plant→payoff continuity (paid
+⊆ hooked; unpaid only arc + window tail seats s+2/s+3), growth law + strip
+bound pinned in layout law. papersplay **74/74** live keys: Sonya's two-line
+intro 4854px, Tadek's day-7 payoff thread grows the field **1314 paper px**,
+strangers dark on both strips (<100), zero page errors. Live:
+jalfern.com/retrogames/papers-please (entry `index-DKFRUdw8.js` → chunk
+`index-CqJh5MBE.js` carries "STILL NO BREAD, HA!").
 
-Sweep 40 seeds × 120 s: 40/40 byte-equal replays, 0 game-overs, 35
-zero-death, waves 2–4, worst seed 6560. Gates: asteroidscheck 46/46, mutants
-13/13 (11 battery + 2 anchor-false-verdicts re-verified on clean tree — see
-corpse note), watchcheck asteroids 260/260 live seat, contractcheck 14/14
-(newly wired), watchphonecheck 464/464, watchpillcheck 214/214, attractcheck
-694/694, lint gates + build + static green. QA polish pass filed as #2001.
-
-## The three laws the driver needed (each a stall, not a crash)
-- **Hold candidates 10 ticks** before greedy continuation: a 1-tick turn can't
-  bend a 70-tick future; all-ties fell to candidate order and the ship fired
-  into empty space beside the last rock (2 min stalled at score 3020).
-- **Dodge only what arrives**: quadratic time-to-collision ≤ 45 ticks. Fleeing
-  pebbles that never reach the hull made the driver orbit the last rock forever.
-- **Lead the target + angular fire window**: solve |Δ+v·t|=B·t; rotation is
-  quantized 0.08 rad, so a distant pebble must be CLOSED before a hit is
-  geometrically possible (window = max(0.05, size/dist)).
+## The session's catches
+- **Branch edits orphan mutant anchors.** Widening the return/greet literals
+  in gen.js silently orphaned m29's anchor (`['YOU AGAIN.', c.lines.again]`
+  no longer existed) — and the NON-mutate run stayed green: anchor existence
+  is only audited under `--mutate`. The sweep's "anchor not found (m29)" FAIL
+  is the suite protecting itself; after touching any branch a mutant mutMods,
+  grep every anchor before trusting green.
+- **Thread-continuity law overreach.** First draft allowed exactly ONE unpaid
+  hook per week (the arc face) — but the window's tail seats s+2, s+3 walk
+  ONCE a week and legitimately carry their topic into next week. The failure
+  output named the seats exactly; the honest law is unpaid ⊆ {arc, s+2, s+3}.
+- **Main moves under you.** Slot a's #2002 (TMD rail) merged between PR open
+  and merge; the rule-5 loop took the fast-forward without a hiccup. Normal —
+  just re-detach after `--delete-branch` (done).
 
 ## Ladder trail
-TARGET #1637 claimed slot a (claim had lapsed at session-220 end; warden
-re-assigned). No halt/steer; `next` #1711 stays Jon-side (#1730). Queue empty.
-
-## Collision log (read before touching this branch or port)
-Warden double-kick #1782 RECURRED: a second slot-a session (pid 50660, kicked
-03:58Z-ish, target #1997 which it shipped) worked INSIDE this lane's space —
-it rebased forge/watch-b26 at 04:09 (content was disjoint, harmless) and ran
-its own asteroidscheck --mutant concurrently, which left a PLANT CORPSE
-(ttc<2) in my sim.js and produced two false "anchor missing" mutant verdicts
-in mine. Scrubbed `git checkout -- src/games/Asteroids/sim.js`, anchors
-re-verified dead on the clean tree, ownership announced on #1637. If you are
-that instance: this lane shipped b26; re-verification only, please.
-
-## Next queued (slot a)
-1. Fresh ladder: halt/steer/next/queue games-first. #1711 Jon-side.
-2. **#1637 batch 27 (WATCH)** — remaining unseated with no proven driver:
-   **DonkeyKong / Centipede / Pitfall** (registry-oldest = DonkeyKong, but it
-   has NO sim.js — whole-engine lift + driver in one session; budget ~3 h).
-   b25/b26 template: lift whole tick → Node sweep pinned floors → seat (Y +
-   blips + never-linger) → watchcheck pilot + source pins → README gaps.
-   b26 laws apply: hold candidates, honest ttc, lead + angular window.
-3. QA (#2001 ASTEROIDS polish, saucers/hyperspace/heartbeat) belongs to the
-   QA lane (#1019 rule), not builder lanes.
-
-## Notes for the next slot-a session
-- Check for plant corpses before trusting ANY check run: `git status
-  --porcelain` + grep anchors while a sibling may be running. node_modules
-  (incl .vite) is symlinked/shared — browser suites flake when two lanes'
-  Chrome runs hit one box (tapstart failed on DIFFERENT untouched games two
-  runs in a row: environmental, rerun once, move on).
-- Mutant lesson: pick mutants that break FLEET-VISIBLE laws. "Suicidal
-  rollout" and "ghost aim" survived — those laws barely move 60 s metrics
-  (total 66.7k healthy vs 64.3k/64.7k broken). ttc-window/wrap-eye/hold
-  collapse all die loudly (zeroDeath + wavesBanked floors catch them).
-- Fast-sweep mode (ASTEROID_SWEEP=fast, 12 seeds × 60 s) is what mutant
-  children run — floors scale there (zero≥9, waves≥SEEDS-1, min≥2500).
+- halt none; steer none. TARGET #1637 REFUSED at claim (slot a newest 22 min;
+  do not fight it). `next` #1711 stays released (Jon-side R2 hardware, seventh
+  confirm on record). game-queue empty; QA MASTER live (pid on studio) →
+  feedback borrow refused; flagship stage spent (idle-kick flagshipStage null)
+  → NEVER-DRY weakestStage PPM score 10 → filed #2003 with the why-weakest
+  line, claimed, shipped. No jonq filed (all decisions pattern-following).
+  No 8b polish-pass issue: PPM already carries open QA passes (#1996 owns
+  crowd polish) — do not duplicate from a builder lane.
 
 ## Open questions
-- None.
+- none (see waiting-jon issues; #1711 hardware waits on Jon).
+
+## Next
+- PPM's last unowned honest gap now: **two regulars in one day** (queue-size
+  law amendment + second bubble sample per window) — it's the natural next
+  NEVER-DRY stage unless QA files it first.
+- Slot a: b26 #1637 ASTEROIDS (check its BUILD FLOOR comments before touching
+  those titles).
+- Dev servers: slot a 5173, slot b 5178 (session's server stopped at exit).
+  `--mutate` only in an exclusive window, ≥20 min; after a killed run grep
+  every mutant fingerprint before trusting the tree (this session's sweep ran
+  clean end-to-end, 37/37).
