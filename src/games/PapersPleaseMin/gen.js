@@ -40,6 +40,44 @@ for (const c of COUNTRIES) for (const city of CITIES[c]) CITY2C[city] = c
 const FIRST = ['EMIL', 'KATYA', 'BORIS', 'ILIA', 'MARTA', 'ANJA', 'DRAGAN', 'VOLO', 'SERDA', 'PETR']
 const LAST = ['KOSTOV', 'DRENIN', 'VASEK', 'LAGODA', 'ORLOV', 'TOLKA', 'ZEMEK', 'PALIN']
 
+// #1979 HAND-AUTHORED REGULARS — the original's line is made of PEOPLE:
+// Jorji Costava recurs with the same bald pate, stubble and big nose, and the
+// crowd gets recognizable faces. Here the combinatorial roll (skins × hairs ×
+// cuts) still paints the background, but four entrants are authored end to
+// end: a fixed six-feature descriptor, colors, body stats, and ONE signature
+// mark (scar/mole/wrinkle/big-ear) that drawFace paints at the counter and in
+// the zoomed photo. Marks are decor — never compared, doctrine of the nose.
+// A regular's PAPERS are built legal for whatever day they walk up (allowed
+// list, expiry, IDREQ all rotate), so they are honest, approvable faces —
+// the neighborhood, not a trap.
+export const REGULARS = [
+    {
+        id: 'grubak', name: 'VOLEN GRUBAK', sex: 'M', ageYears: 47, dobM: 3, dobD: 14, height: 178, weight: 86,
+        face: { skin: 2, hairC: 0, shirtC: 2, style: 1, narrow: 0, glasses: 0, must: 1, brow: 1, mouth: 0 },
+        mark: 'scar',
+    },
+    {
+        id: 'marko', name: 'MARKO DRENIN', sex: 'M', ageYears: 29, dobM: 8, dobD: 2, height: 164, weight: 61,
+        face: { skin: 0, hairC: 1, shirtC: 0, style: 2, narrow: 1, glasses: 1, must: 0, brow: 0, mouth: 1 },
+        mark: 'mole',
+    },
+    {
+        id: 'anja', name: 'ANJA TOLKA', sex: 'F', ageYears: 55, dobM: 11, dobD: 21, height: 158, weight: 57,
+        face: { skin: 4, hairC: 2, shirtC: 3, style: 0, narrow: 0, glasses: 0, must: 0, brow: 1, mouth: 0 },
+        mark: 'wrinkle',
+    },
+    {
+        id: 'petr', name: 'PETR ZEMEK', sex: 'M', ageYears: 34, dobM: 5, dobD: 9, height: 171, weight: 74,
+        face: { skin: 1, hairC: 4, shirtC: 1, style: 3, narrow: 1, glasses: 0, must: 1, brow: 0, mouth: 1 },
+        mark: 'ear',
+    },
+]
+
+// The day's regular: deterministic by seed+day, and the cycle (n-2+seed) over
+// four cast guarantees cast[0] and cast[1] walk back into the booth inside the
+// same week — recurrence is a construction, like everything else here.
+export const regularForDay = (seed, n) => (n >= 2 ? REGULARS[(n - 2 + seed) % REGULARS.length] : null)
+
 // Late-October start, like the original's campaign: the week crosses a REAL
 // month-end (OCT 27…31, NOV 01–02). Day 6's EXPIRED test paper prints the
 // first cross-month verdict the booth renders — EXPIRED 1982.10.31 < TODAY
@@ -274,6 +312,30 @@ function trapApplicant(species, rnd, date, dayRules, day, used) {
     return a
 }
 
+// a regular walks up with an authored face and papers that are BUILT legal
+// for the day (country from the day's list, expiry past the curfew seam, the
+// ID card IDREQ demands). The authored half is identity — name, body, face,
+// mark; the legal half is paperwork, exactly like the original's regulars
+// whose documents evolve with the campaign. photo === face: the booth's PORTRAIT
+// machinery sees a perfectly honest paper, and the mark rides into the photo.
+function regularApplicant(c, rnd, date, dayRules, day, used) {
+    const a = base(rnd, date, dayRules, used, { allowed: day.allowed })
+    const dob = { y: date.y - c.ageYears, m: c.dobM, d: c.dobD }
+    const face = { ...c.face, mark: c.mark }
+    a.person.face = face
+    a.person.mark = c.mark
+    a.person.regular = c.id
+    a.person.passport = { ...a.person.passport, name: c.name, sex: c.sex, dob, height: c.height, weight: c.weight, photo: { ...face } }
+    if (a.person.idcard) {
+        a.person.idcard = { ...a.person.idcard, name: c.name, dob, height: c.height, weight: c.weight }
+        a.truth.idName = c.name
+    }
+    a.truth.trueName = c.name
+    a.truth.dob = dob
+    a.truth.trueWeight = c.weight
+    return a
+}
+
 export function genDay(seed, n, trapIdx, trap2Idx = null) {
     PERSON_ID = n * 37 + seed * 601
     const rnd = mulberry32((seed + 1) * 100003 + n * 7919)
@@ -291,6 +353,10 @@ export function genDay(seed, n, trapIdx, trap2Idx = null) {
         queue: [],
     }
     const used = new Set()
+    // #1979: cast names are blocked from the random pool for the whole day —
+    // a generated twin of a regular would break the recurrence (two GRUBAKs
+    // at one window is a forgery of the neighborhood, not the neighborhood).
+    for (const c of REGULARS) used.add(c.name)
     for (const rule of rules) day.queue.push(violator(rule, rnd, date, rules, day, used))
     if (trapIdx !== null && trapIdx !== undefined) {
         day.queue.push(trapApplicant(trapIdx, rnd, date, rules, day, used))
@@ -302,6 +368,12 @@ export function genDay(seed, n, trapIdx, trap2Idx = null) {
             day.queue.push(trapApplicant(trap2Idx, rnd, date, rules, day, used))
         }
     }
+    // #1979: the regular walks in after the traps, before the fill — mid-line
+    // like a face from the neighborhood. The queue's size law is untouched:
+    // the fill loop simply lays one fewer random head, so the #1960 shift
+    // budget (queue x 18s) and every day-length pin stand as written.
+    const reg = regularForDay(seed, n)
+    if (reg) day.queue.push(regularApplicant(reg, rnd, date, rules, day, used))
     while (day.queue.length < rules.length + 4) day.queue.push(base(rnd, date, rules, used, { allowed: day.allowed }))
     // decoy wanted entries: a wall that looks used must never frame a
     // person standing at the window — decoy names may not collide with any

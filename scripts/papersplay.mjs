@@ -310,6 +310,54 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
     await page.keyboard.press('a')
 }
 
+// #1979 THE REGULARS, live: every signature mark paints its own ink through
+// the SAME drawFace the booth uses, and a face from the neighborhood really
+// walks up the line — authored name, mark at the counter, honest paper.
+{
+    const EXPECT = {
+        grubak: { name: 'VOLEN GRUBAK', scar: [10, 40], mole: [0, 0], wrinkle: [0, 0], ear: [20, 52] },
+        marko: { name: 'MARKO DRENIN', scar: [0, 0], mole: [3, 12], wrinkle: [0, 0], ear: [20, 52] },
+        anja: { name: 'ANJA TOLKA', scar: [0, 0], mole: [0, 0], wrinkle: [60, 72], ear: [20, 52] },
+        petr: { name: 'PETR ZEMEK', scar: [0, 0], mole: [0, 0], wrinkle: [0, 0], ear: [64, 100] },
+    }
+    const cp = await page.evaluate(() => window.__ppTest.castPix())
+    r.check('castPix paints all four regulars', Array.isArray(cp) && cp.length === 4, JSON.stringify(cp))
+    for (const row of cp || []) {
+        const e = EXPECT[row.id]
+        if (!e) { r.check(`unknown cast id ${row.id}`, false); continue }
+        r.check(`${e.name}: every ink in its own region ${JSON.stringify({ scar: row.scar, mole: row.mole, wrinkle: row.wrinkle, ear: row.ear })}`,
+            row.scar >= e.scar[0] && row.scar <= e.scar[1]
+            && row.mole >= e.mole[0] && row.mole <= e.mole[1]
+            && row.wrinkle >= e.wrinkle[0] && row.wrinkle <= e.wrinkle[1]
+            && row.ear >= e.ear[0] && row.ear <= e.ear[1])
+    }
+    // live recurrence: seed 0's day 2 carries cast[0] — Volen Grubak walks the
+    // same line he walked… well, will walk again on day 6. The window sees it.
+    await page.evaluate(() => window.__ppTest.start(0))
+    await wait(300)
+    await page.evaluate(() => window.__ppTest.runDay())   // honest day 1 (no cast day)
+    await wait(300)
+    let reg = null, regVerdict = null
+    for (let g = 0; g < 12 && !reg; g++) {
+        reg = await page.evaluate(() => {
+            const p = window.__ppTest.probe()
+            const per = p && p.view && p.view.person
+            if (!per || !per.regular) return null
+            return { id: per.regular, name: per.passport ? per.passport.name : null, mark: per.mark || null }
+        })
+        if (reg) { regVerdict = await page.evaluate(() => window.__ppTest.verdict()); break }
+        const v = await page.evaluate(() => window.__ppTest.verdict())
+        await page.keyboard.press(v === 'approve' ? 'a' : 'd')
+        await wait(140)
+    }
+    r.check('a regular walks the live line (seed 0 day 2 — Volen Grubak, scar, honest paper)',
+        !!reg && reg.id === 'grubak' && reg.name === 'VOLEN GRUBAK' && reg.mark === 'scar' && regVerdict === 'approve',
+        JSON.stringify({ reg, regVerdict }))
+    await page.keyboard.press('a') // stamp the neighborhood in
+    await page.evaluate(() => window.__ppTest.runDay())    // finish day 2 clean
+    await wait(250)
+}
+
 await wait(400)
 const clean = errors.filter((e) => !/favicon|Download the React DevTools/i.test(e))
 r.check('zero page errors', clean.length === 0, clean.slice(0, 3).join(' | '))

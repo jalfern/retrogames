@@ -260,6 +260,23 @@ counted).
   block, and the compared set is six (brow thickness, mouth shape join
   it) — every feature pinned as actually forging in paperscheck, every
   new mark measured as canvas pixels in papersplay.
-- Face variety is combinatorial (five skins × five hairs × four cuts ×
-  width/glasses/must), not hand-authored characters — everyone is a
-  mix of the same parts.
+- **CLOSED by #1979 (2026-11-11):** Face variety is combinatorial (five
+  skins × five hairs × four cuts × width/glasses/must), not hand-authored
+  characters — everyone is a mix of the same parts. Four REGULARS are now
+  authored end to end (`gen.js REGULARS`): fixed six-feature descriptors,
+  colors, body stats and one signature mark each (scar / mole / wrinkle /
+  big-ear, one ink `#8f4a3e`, painted at the counter AND in the zoomed
+  photo). They walk the line days 2–7 — deterministic `(day−2+seed) mod 4`,
+  so two of them return inside every week — papers built legal for whatever
+  day they arrive, names blocked from the random pool so no twin dilutes the
+  recurrence. `paperscheck` REGULARS pins cast integrity, both values of
+  every compared feature, the identity law (same id ⇒ same descriptors + mark
+  on face and photo), day-injection, the queue-size law and legality (decide
+  and judge both approve); mutants m25 (never injected) and m26 (face
+  re-roll) prove the witnesses bite. `papersplay` counts the four inks
+  through the same drawFace (scar 12px, mole 4, wrinkle 66, ear 72 vs the
+  standard 40) and stamps a live Grubak at the seed-0 day-2 window.
+- The cast is four and the marks four — the original's crowd is dozens of
+  one-offs with far more variety (hats, unibrows, earring, missing teeth);
+  here background entrants stay combinatorial, and regulars get no callback
+  lines ("You again.") or story arcs (a regular turning wanted, Jorji-style).

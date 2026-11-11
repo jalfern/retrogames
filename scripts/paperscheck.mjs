@@ -26,7 +26,7 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, FEATURES } from '../src/games/PapersPleaseMin/rules.js'
-import { genWeek, genDay, viewOf, CITY2C, TRAPS, GREY } from '../src/games/PapersPleaseMin/gen.js'
+import { genWeek, genDay, viewOf, CITY2C, TRAPS, GREY, REGULARS } from '../src/games/PapersPleaseMin/gen.js'
 import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges } from '../src/games/PapersPleaseMin/sim.js'
 import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, ID, PHOTO, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
 
@@ -332,6 +332,74 @@ section('PORTRAIT (#1938) — the photo on the paper against the face at the cou
     ok(PHOTO.ox + PHOTO.s * (55 - 34) >= 0 && PHOTO.ox + PHOTO.s * (55 + 34) <= PHOTO.w, 'the widest head escapes the photo frame — the clip would cut the face itself')
     ok(PHOTO.s >= 0.7, `photo scale ${PHOTO.s} is the old flat draw, not the zoom-crop (>=0.7 required)`)
     console.log(`  ..    ${forged} forges each broke exactly one feature, ${aged} aged photos stayed legal, every break named itself on the wall`)
+}
+
+// ------------------------------------------------------ #1979 REGULARS ----
+section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
+{
+    // The cast is hand-authored: complete descriptors, distinct identities,
+    // and every compared feature exercised by the cast alone (both binary
+    // values, all four haircuts) — the wall teaches faces, not noise.
+    ok(REGULARS.length >= 4, `only ${REGULARS.length} regulars — the neighborhood is a hallway`)
+    const castIds = new Set(), castVecs = new Set(), castMarks = new Set()
+    for (const c of REGULARS) {
+        ok(c.id && c.name && c.mark, `cast entry without id/name/mark: ${JSON.stringify(c.id)}`)
+        ok(['scar', 'mole', 'wrinkle', 'ear'].includes(c.mark), `unknown signature mark ${c.mark}`)
+        ok(!castIds.has(c.id), `duplicate cast id ${c.id}`); castIds.add(c.id)
+        ok(!castMarks.has(c.mark), `two regulars share the mark ${c.mark} — signatures must be distinct`); castMarks.add(c.mark)
+        for (const f of FEATURES) ok(c.face[f] === 0 || c.face[f] === 1 || f === 'style', `cast ${c.id} feature ${f} not a real roll`)
+        for (const k of ['skin', 'hairC', 'shirtC']) ok(Number.isInteger(c.face[k]), `cast ${c.id} color ${k} missing`)
+        ok(c.ageYears >= 18, `cast ${c.id} is a child at the window but authored as an adult`)
+        ok(c.height >= 140 && c.height <= 200 && c.weight >= 40 && c.weight <= 140, `cast ${c.id} body stats off the scale's world`)
+        castVecs.add(FEATURES.map((f) => c.face[f]).join(''))
+    }
+    ok(castVecs.size === REGULARS.length, 'two regulars share a feature vector — recognizable faces must differ where the law looks')
+    for (const f of ['narrow', 'glasses', 'must', 'brow', 'mouth'])
+        ok(new Set(REGULARS.map((c) => c.face[f])).size === 2, `feature ${f} never varies across the cast`)
+    ok(new Set(REGULARS.map((c) => c.face.style)).size === 4, 'the cast does not cover all four haircuts')
+
+    // Recurrence + identity + legality, every seed.
+    let appearances = 0
+    for (const seed of SEEDS) {
+        const w = genWeek(seed)
+        const byCast = {}
+        for (const day of w.days) {
+            const regs = day.queue.filter((a) => a.person.regular)
+            ok(day.n === 1 ? regs.length === 0 : regs.length === 1,
+                `seed ${seed} day ${day.n}: ${regs.length} regulars — the authored walk is days 2-7, exactly one`)
+            ok(day.queue.length === day.rules.length + 4,
+                `seed ${seed} day ${day.n}: queue ${day.queue.length} vs law ${day.rules.length + 4} — a regular grew the line`)
+            for (const a of regs) {
+                appearances++
+                const c = REGULARS.find((k) => k.id === a.person.regular)
+                ok(!!c, `seed ${seed} day ${day.n}: unknown cast id ${a.person.regular}`)
+                if (!c) continue
+                byCast[c.id] = (byCast[c.id] || 0) + 1
+                ok(a.person.passport.name === c.name, `seed ${seed} day ${day.n}: ${a.person.passport.name} claims the face of ${c.name}`)
+                // the identity law: same person, same face — every descriptor
+                // AND the signature mark, at the counter and in the photo.
+                for (const f of [...FEATURES, 'skin', 'hairC', 'shirtC']) {
+                    ok(a.person.face[f] === c.face[f], `seed ${seed} day ${day.n}: ${c.id} re-rolled ${f} — a regular is authored, not rolled`)
+                    ok(a.person.passport.photo[f] === c.face[f], `seed ${seed} day ${day.n}: ${c.id}'s photo drifted on ${f}`)
+                }
+                ok(a.person.face.mark === c.mark && a.person.passport.photo.mark === c.mark,
+                    `seed ${seed} day ${day.n}: ${c.id} lost or grew its signature mark`)
+                // legality: the neighborhood is honest — decide and judge BOTH
+                // approve a regular on every day they walk up.
+                const d = decide(viewOf(day, a))
+                const j = judge({ truth: a.truth, person: a.person, rules: day.rules, date: day.date, allowed: day.allowed, scale: a.scale })
+                ok(d.verdict === 'approve' && j.verdict === 'approve',
+                    `seed ${seed} day ${day.n}: ${c.name} denied — ${JSON.stringify(d.violations)}`)
+                ok(a.truth.wanted === false, `seed ${seed} day ${day.n}: a regular was planted wanted`)
+                ok(day.queue.filter((x) => x.person.passport && x.person.passport.name === c.name).length === 1,
+                    `seed ${seed} day ${day.n}: a random twin of ${c.name} walked the same line`)
+            }
+        }
+        const back = Object.entries(byCast).filter(([, n]) => n >= 2)
+        ok(back.length >= 1, `seed ${seed}: nobody came back twice — a line of strangers is not a neighborhood`)
+    }
+    ok(appearances >= SEEDS.length * 6, `only ${appearances} regular appearances across ${SEEDS.length} weeks — the injection is theatre`)
+    console.log(`  ..    ${appearances} authored appearances across ${SEEDS.length} weeks; every week had faces that came back`)
 }
 
 // ---------------------------------------------- clumsy clears / chaos collapses ----
@@ -1132,6 +1200,38 @@ if (MUT) {
                 }
             }
             return six.every((f) => seen.has(f))
+        })
+
+    // 25. the cast never walks in: every seed's line is strangers again —
+    //     the recurrence witnesses go red while papers stay fair (an
+    //     invisible feature must not stay green on fairness alone).
+    await tryMut('regulars never injected (the line forgets its faces)',
+        mutMod('gen.js', 'const reg = regularForDay(seed, n)', 'const reg = null', 'm25'),
+        (m) => {
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    if (day.n >= 2 && day.queue.filter((a) => a.person.regular).length !== 1) return false
+                }
+            }
+            return true
+        })
+
+    // 26. a regular re-rolls its face: the identity behind the name drifts
+    //     run to run — a "regular" who is a different person every week is
+    //     just a combinatorial entrant wearing a name tag.
+    await tryMut('regular re-rolls its face (identity drift)',
+        mutMod('gen.js', 'const face = { ...c.face, mark: c.mark }', 'const face = { ...a.person.face, mark: c.mark }', 'm26'),
+        (m) => {
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    for (const a of day.queue) {
+                        if (!a.person.regular) continue
+                        const c = m.gen.REGULARS.find((k) => k.id === a.person.regular)
+                        for (const f of ['style', 'narrow', 'glasses', 'must', 'brow', 'mouth']) if (a.person.face[f] !== c.face[f]) return false
+                    }
+                }
+            }
+            return true
         })
 }
 
