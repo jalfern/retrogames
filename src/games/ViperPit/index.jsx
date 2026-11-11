@@ -812,9 +812,9 @@ const ViperPitGame = () => {
                 ui(Math.max(10, H * 0.02))
                 hctx.fillStyle = 'rgba(160,165,190,0.8)'
                 hctx.fillText(net.active ? `ROOM ${net.code || '····'}` : '1 STREET LADDER     2 LOCAL 2P', W / 2, H * 0.92)
+                // #1637 b30: teach the watch key from the title card — offline
+                // only, the wire owns its seats.
                 if (!net.active) {
-                    // #1637 b30: teach the watch key from the title card — offline
-                    // only (the wire owns its seats; no guide online, per house law).
                     ui(Math.max(9, H * 0.018))
                     hctx.fillStyle = 'rgba(89,224,200,0.85)'
                     hctx.fillText('PRESS Y TO WATCH THE PIT', W / 2, H * 0.52)

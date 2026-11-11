@@ -167,6 +167,13 @@ the #1096 options switched on.
 -   Motions: ↓→+P special (EX@50, super@100 same motion) · →↓↑+P uppercut
   (launches) · ↓←+P qcb counter · ↓←↓→+P at FULL bar FINISHING MOVE · close →+heavy THROW.
 - 1 ladder · 2 local 2P · keys 3-7 quick-pick · Esc/? pause.
+- Y — WATCH (#1637 b30): seat 1 fights on its fighter's own ladder-tier CPU
+  brain (the seat flips `def.cpu`; fighting.js emits the corner's pads). Any
+  driving key or a touch takes the corner back; the seat rides the ladder;
+  released at the title and at KING OF THE PIT. 1P ladder only — local 2P and
+  the net wire own their pads. Phones seat from the in-run pill (top-right;
+  the attract pill is honestly skipped — the fighter picker sits in the boot
+  path and the attract already self-drives a CPU bout).
 - Online: `/retrogames/viper-pit?net=host` / `?net=join&room=CODE`.
 
 ## Verify
@@ -176,7 +183,10 @@ the #1096 options switched on.
     counter fires, cancel combo, juggle rules, guard crush — a guard that absorbs
     enough blocks breaks into a punish stun, the punch then connects unblocked,
     and the gauge regens — determinism, every ladder CPU completes
-  a match, hit events carry `mv`) + the #1106 audio wiring (source-level
+  a match, hit events carry `mv`) + the #1637 b30 WATCH seat law (own-tier
+  seats vs LIVE rung 1: 60/60 bouts decide, offence on every seed, >= 8
+  rounds each — autonomous combat proven, a full-ladder climb explicitly NOT
+  claimed: NYX mirrors rung 1 on itself) + the #1106 audio wiring (source-level
   call-site gates + a stripped-whoosh/sting mutant proving the gate bites) +
   the #1106 stage-life wiring (source gates for the molten pulse/cast, rain
   fall, train sweep + a dead-pulse mutant) + headless Chrome drive
