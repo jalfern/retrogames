@@ -486,8 +486,53 @@ export function seatAsk(gs) {
     return { kind: st.kind, ask: [!done[0], !done[1]] }
 }
 
-export function ventCoach(gs, you, taught) {
-    if (!gs || gs.done || taught) return null
+// ---- attract marquee camera (#1812 item 8) — view math only, never gs/hash --
+// The attract self-plays the solver, but the whole case at 1x under the title
+// band makes the two key turns — the small parts that ARE the game — read
+// tiny. This law films the demo: wide while a step is being READ (INTRO is
+// the establishing shot), then a closer cut that lands on the controls the
+// live step is actually asking about — the key pair, then the seat that still
+// owes its turn; the cutter arms, then the armed blades' snip on the target
+// wire; the holder's bar until it pins, then the gauge for the seat. Because
+// the solver works through every kind, the shot cycles per step and every
+// beat of the demo gets its hero frame. Focus names the cut for drives and
+// gates. Pure function of live attract state — no rng, no gs write,
+// hash-clean; the view eases toward x/y/z per paint frame (index.jsx camRef),
+// so cuts are camera moves, never teleports.
+export const MARQUEE = {
+    WIDE: { focus: 'wide', x: 320, y: 200, z: 1 },        // establishing / between beats
+    KEYS: { focus: 'keys', x: 320, y: 210, z: 1.55 },      // both barrels, bigger
+    LATE_KEY: { focus: 'late-key', x: 150, y: 210, z: 2.1 },// the seat that still owes
+    BLADES: { focus: 'blades', x: 320, y: 250, z: 1.55 },   // arms + harness
+    ARM: { focus: 'arm', x: 150, y: 250, z: 2.1 },          // one arm, hero
+    WIRES: { focus: 'wires', x: 240, y: 252, z: 1.85 },     // the snip on the target cable
+    BAR: { focus: 'bar', x: 128, y: 224, z: 1.9 },          // the holder's stabilizer bar
+    GAUGE: { focus: 'gauge', x: 320, y: 218, z: 1.65 },     // needle + green zone
+}
+export function attractCam(gs) {
+    if (!gs || gs.done || gs.intro > 0) return MARQUEE.WIDE
+    const st = curStep(gs)
+    if (st.kind === SYNC) {
+        if (gs.keys[0] && gs.keys[1]) return MARQUEE.KEYS
+        if (gs.keys[0] || gs.keys[1]) {
+            const late = gs.keys[0] ? 1 : 0
+            return { ...MARQUEE.LATE_KEY, x: late === 0 ? 150 : 490 }
+        }
+        return MARQUEE.KEYS
+    }
+    if (st.kind === CUT) {
+        if (gs.armed[0] && gs.armed[1]) return { ...MARQUEE.WIRES, x: 240 + st.color * 54 }
+        if (gs.armed[0] || gs.armed[1]) {
+            const armed = gs.armed[0] ? 0 : 1
+            return { ...MARQUEE.ARM, x: armed === 0 ? 150 : 490 }
+        }
+        return MARQUEE.BLADES
+    }
+    if (!gs.held) return { ...MARQUEE.BAR, x: st.holder === 0 ? 128 : 512 }
+    return MARQUEE.GAUGE
+}
+
+export function ventCoach(gs, you, taught) {    if (!gs || gs.done || taught) return null
     const st = curStep(gs)
     if (st.kind !== VENT) return null
     const isHolder = you === st.holder

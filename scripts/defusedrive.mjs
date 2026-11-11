@@ -24,6 +24,27 @@ await page.waitForFunction('!!window.__bdTest', null, { timeout: 30000 })
 r.check('boots: __bdTest present', errs.length === 0, errs.join(' | '))
 r.check('attract shows', (await page.evaluate(() => window.__bdTest.screen())) === 'attract')
 
+// #1812 item 8: the marquee films the demo for real. Let the attract self-play
+// a while and watch the cut law + the eased camera: the demo must cycle through
+// its cuts (never stuck wide) and the camera must arrive at its hero zoom.
+{
+    const seen = new Set()
+    let maxZ = 1
+    const t0 = Date.now()
+    while (Date.now() - t0 < 9000) {
+        const m = await page.evaluate(() => (window.__bdTest.marquee ? window.__bdTest.marquee() : null))
+        if (!m) break
+        seen.add(m.shot.focus)
+        maxZ = Math.max(maxZ, m.cam.z)
+        await sleep(200)
+    }
+    const legal = ['wide', 'keys', 'late-key', 'blades', 'arm', 'wires', 'bar', 'gauge']
+    r.check('attract stayed attract through the marquee watch', (await page.evaluate(() => window.__bdTest.screen())) === 'attract')
+    r.check('every marquee cut is a named shot', [...seen].every((f) => legal.includes(f)), [...seen].join(','))
+    r.check('the demo gets close-ups — the camera really zooms in', maxZ > 1.25, `max cam z ${maxZ.toFixed(2)}`)
+    r.check('the marquee cycles: more than one shot in one demo loop', [...seen].length >= 2, [...seen].join(','))
+}
+
 await page.keyboard.press('Space')
 await sleep(300)
 r.check('Space opens the crew-size select', (await page.evaluate(() => window.__bdTest.screen())) === 'select')

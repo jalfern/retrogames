@@ -602,6 +602,9 @@ export default function BombDefuseGame() {
     const screenRef = useRef('attract')
     const gsRef = useRef(null)
     const attractRef = useRef(null)
+    // #1812 item 8: attract marquee camera — eases toward E.attractCam's cut
+    // each paint frame so shots MOVE (paint physics, never the sim).
+    const camRef = useRef({ x: 320, y: 200, z: 1 })
     const seedRef = useRef(0)
     const seatsRef = useRef(1)
     const selectRef = useRef(1)
@@ -651,6 +654,7 @@ export default function BombDefuseGame() {
 
     const startAttract = useCallback(() => {
         attractRef.current = E.createGame(1000 + Math.floor(Math.random() * 8999), 2)
+        camRef.current = { x: 320, y: 200, z: 1 } // #1812 item 8: new marquee loop → wide first
         setScreen('attract')
     }, [setScreen])
 
@@ -1327,8 +1331,26 @@ export default function BombDefuseGame() {
                 drawSelect(g)
             } else {
                 const a = attractRef.current
-                if (a) drawBombView(g, a, now, { cpu2: false, dim: 0, keyPos: hudRef.current.turn.map((t) => t.pos) })
-                g.fillStyle = 'rgba(8,10,6,0.66)'; g.fillRect(0, 0, W, H)
+                // #1812 item 8: the marquee films the demo. Ease toward the cut
+                // E.attractCam names for the live attract step, draw the case
+                // through that camera, and lift the dim while zoomed so the
+                // hero shot actually reads. Title band and messages unchanged:
+                // still one message at a time.
+                const cam = camRef.current
+                const shot = E.attractCam(a)
+                cam.x += (shot.x - cam.x) * 0.07
+                cam.y += (shot.y - cam.y) * 0.07
+                cam.z += (shot.z - cam.z) * 0.07
+                if (a) {
+                    g.save()
+                    g.translate(W / 2, H / 2)
+                    g.scale(cam.z, cam.z)
+                    g.translate(-cam.x, -cam.y)
+                    drawBombView(g, a, now, { cpu2: false, dim: 0, keyPos: hudRef.current.turn.map((t) => t.pos) })
+                    g.restore()
+                }
+                const lift = Math.min(1, Math.max(0, (cam.z - 1) / 1.1))
+                g.fillStyle = `rgba(8,10,6,${(0.66 - 0.24 * lift).toFixed(3)})`; g.fillRect(0, 0, W, H)
                 g.fillStyle = 'rgba(6,8,4,0.78)'; g.fillRect(110, 96, 420, 84)
                 g.strokeStyle = C.amber; g.strokeRect(110, 96, 420, 84)
                 g.textAlign = 'center'
@@ -1462,6 +1484,8 @@ export default function BombDefuseGame() {
                     return E.simState(g)
                 },
                 step: (n = 1) => { for (let i = 0; i < n; i++) simTick(); return gsRef.current ? E.simState(gsRef.current) : null },
+                // #1812 item 8: live marquee verdict + eased camera for the drive
+                marquee: () => ({ shot: E.attractCam(attractRef.current), cam: { ...camRef.current } }),
                 // #1637 WATCH probes (harness-visible state of the seat)
                 watching: () => watchingRef.current,
                 watchSfx: watchSfxLog,

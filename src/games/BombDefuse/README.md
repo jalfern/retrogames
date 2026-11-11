@@ -105,11 +105,11 @@ lockstep-by-sampling-law (#531), same shape as the other four co-op titles:
 ## Verify
 
 ```bash
-npm run defusecheck                      # 261 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline, first-VENT coaching, the first-vent teach panel, powered-device bed, window pre-flash, active-seat chips, the boom FX, the win tally
+npm run defusecheck                      # 290 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline, first-VENT coaching, the first-vent teach panel, powered-device bed, window pre-flash, active-seat chips, the boom FX, the win tally, the attract marquee camera
 npm run defuselinkcheck                # 75 gates: online protocol incl. in-flight reseat (7b/7c/7d)
 CONTRACT_ONLY=bomb-defuse npm run contractcheck
 DEV_PORT=5178 npm run plaicraft:evidence -- --self-test   # fifth-title synths + mutants
-npm run defusedrive                      # real-key drive: start→play→bed/pause→boom→restart (+coach, press-tick, pre-flash, win-salad, teach-panel)
+npm run defusedrive                      # real-key drive: start→play→bed/pause→boom→restart (+coach, press-tick, pre-flash, win-salad, teach-panel, attract marquee cuts)
 DEV_PORT=5173 npm run watchcheck -- --only bomb-defuse   # WATCH pilot: seat/advance/takeover/re-seat/resume/release + 5 source pins
 npm run defuselinkdrive                # two browsers over a live relay: join→lockstep→hash→walkaway→in-flight reseat
 ```
@@ -246,8 +246,25 @@ reddens the never-rewind gate; all die by name. Restore → 185/185;
 `defusedrive` proves it live: lines sum to the score, salad still rolling when
 the screen lands, TOTAL on the score within its window — 29/29.
 
-## Online fold-in (#1812 items 1, 2, 4): the LINK PILL
+Attract marquee camera (#1812 item 8): the demo self-played the solver, but the
+whole case at 1x under the title band made the two-key turns — the small parts
+that ARE the game — read tiny. `E.attractCam(gs)` (pure, hash-clean) is the
+cut law: INTRO holds the wide establishing shot; then the camera films what the
+live step is asking — SYNC the key pair, then the barrel of the seat that still
+owes its turn (`late-key`), back to the pair when both are in; CUT the arms,
+then the armed arm, then the snip ON the target cable (x tracks the colour);
+VENT the holder's bar until it pins, then the gauge for the seat. Because the
+solver works every kind, the shot cycles per step — every beat of the demo gets
+its hero frame. `index.jsx` eases `camRef` toward the verdict at 0.07/frame
+(paint physics) and draws the case through `center→scale(z)→focus`; the dim
+lifts 0.66→0.42 while zoomed so the hero reads; a new attract loop opens wide.
+One message at a time still holds. Mutants: gutting `attractCam` to always-wide
+reddens 16 gates by name; replacing the ease with a snap reddens the ease gate.
+Restore → 290/290. `__bdTest.marquee` exposes shot + eased cam; `defusedrive`
+watches a 9 s demo loop live: named cuts only, z reaches 1.44, the loop cycles
+through wide/keys/late-key/gauge — 39/39.
 
+## Online fold-in (#1812 items 1, 2, 4): the LINK PILL
 Mid-run online play flew blind: room code + peer state lived only in the
 Lobby/attract, the kick and the mid-run re-seat landed silent, and after a
 walkaway demote the survivor lost its YOU tag. Now `E.netPill(info)` (pure,
