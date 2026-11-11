@@ -12,7 +12,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { makeAsteroid, spawnWave, scoreForSize, livesForScore, START_LIVES, makeRun, tickAsteroids, watchStep, stateHash, SAUCER_SCORE, SAUCER_ROCK_BONUS, SAUCER_RADIUS, SAUCER_BULLET_SPEED } from '../src/games/Asteroids/sim.js'
+import { makeAsteroid, spawnWave, scoreForSize, livesForScore, START_LIVES, makeRun, tickAsteroids, watchStep, stateHash, SAUCER_SCORE, SAUCER_ROCK_BONUS, SAUCER_RADIUS, SAUCER_BULLET_SPEED, HYPER_COOLDOWN, HYPER_INVULN, HYPER_BLINK } from '../src/games/Asteroids/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -368,6 +368,81 @@ console.log('flying saucers (#2001): tables, fire discipline, bonus law')
     ok(/rocks: gs\.asteroids\.length, saucers: gs\.saucers\.length/.test(srcIndex), 'QA contract state reports saucers')
 }
 
+// ------------------------------------------------------------ hyperspace ----
+// #2001 — the desperate teleport. The jump rides the run's seeded stream
+// (same seed, same panic → same destination), throttles to zero, blinks
+// while rematerialising, and lands with grace. The original ran an arrival
+// crash lottery; this machine replaces cruelty with mercy — the one deliberate
+// departure, pinned here so it is a decision, never a regression.
+console.log('hyperspace (#2001): seeded jumps, cooldown, arrival mercy')
+{
+    const srcIndex = readFileSync('src/games/Asteroids/index.jsx', 'utf8')
+    const jump = (sd, at) => {
+        const gs = makeRun(sd, { width: 600, height: 800 })
+        gs.attract = false
+        gs.invulnUntil = 1e9 // park the opening grace — watch the jump only
+        for (let i = 0; i < at; i++) tickAsteroids(gs, { thrust: true })
+        const before = { x: gs.ship.x, y: gs.ship.y }
+        const ev = tickAsteroids(gs, { hyper: true })
+        return { gs, ev, before }
+    }
+    const a = jump(777, 200)
+    ok(a.ev.hyper === true, 'the panic button fires (hyper event)')
+    ok(a.gs.invulnUntil > a.gs.tickN && a.gs.hyperUntil > a.gs.tickN - 1,
+        'the jump arms blink + arrival grace', `inv=${a.gs.invulnUntil - a.gs.tickN} blink=${a.gs.hyperUntil - a.gs.tickN}`)
+    const b = jump(777, 200)
+    ok(a.gs.ship.x === b.gs.ship.x && a.gs.ship.y === b.gs.ship.y,
+        'same seed + same jump tick → identical destination (the jump rides the stream)')
+    const c = jump(777, 201)
+    ok(c.gs.ship.x !== a.gs.ship.x || c.gs.ship.y !== a.gs.ship.y,
+        'a jump one tick later lands somewhere else (fresh dice)')
+    ok(Math.hypot(a.gs.ship.x - a.before.x, a.gs.ship.y - a.before.y) > 1,
+        'the jump really relocates the ship')
+    ok(a.gs.ship.vx === 0 && a.gs.ship.vy === 0, 'throttle zeroes on the jump')
+
+    // Held button cannot spam: the cooldown is its own law.
+    const ev2 = tickAsteroids(a.gs, { hyper: true })
+    ok(ev2.hyper === false, 'no re-jump inside the cooldown')
+    ok(a.gs.hyperReadyAt === a.gs.tickN + HYPER_COOLDOWN - 1 || a.gs.hyperReadyAt <= a.gs.tickN + HYPER_COOLDOWN,
+        'cooldown measured in ticks on the sim clock', `readyAt-tick=${a.gs.hyperReadyAt - a.gs.tickN}`)
+
+    // Arrival mercy: park a big rock on the landing point — through the
+    // grace it cannot kill.
+    {
+        const j = jump(2027, 200)
+        const { gs } = j
+        gs.asteroids.push({ x: gs.ship.x, y: gs.ship.y, vx: 0, vy: 0, size: 40, vertices: [] })
+        let died = 0
+        for (let i = 0; i < HYPER_INVULN - 2; i++) if (tickAsteroids(gs, null).died) died++
+        ok(died === 0 && gs.lives === START_LIVES, 'a rock on the landing point cannot kill through the arrival grace')
+    }
+
+    // The attract demo never panics.
+    {
+        const gs = makeRun(91, { width: 600, height: 800, attract: true })
+        let hyper = 0
+        for (let i = 0; i < 3000; i++) if (tickAsteroids(gs, null).hyper) hyper++
+        ok(hyper === 0, 'the attract demo never hyperspaces')
+    }
+
+    // Hash coverage: both new fields ride the pin.
+    {
+        const gs = jump(777, 200).gs
+        const h0 = stateHash(gs)
+        gs.hyperReadyAt += 1
+        const h1 = stateHash(gs)
+        gs.hyperUntil += 1
+        ok(h0 !== h1 && stateHash(gs) !== h1, 'stateHash covers the hyper cooldown + blink')
+    }
+
+    // Shell wiring: button, sound, hidden draw.
+    ok(/hyper: keys\.ShiftLeft/.test(srcIndex), 'held keys carry the panic button')
+    ok(/secondAction=\{\{ label: 'HYPERSPACE', code: 'ShiftLeft' \}\}/.test(srcIndex),
+        'the pad ships a HYPERSPACE second button (phone panic)')
+    ok(/if \(ev\.hyper\)/.test(srcIndex), 'the jump has its voice (vanish/rematerialise sweeps)')
+    ok(/gs\.tickN >= gs\.hyperUntil/.test(srcIndex), 'the ship stays hidden while rematerialising')
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutant')) {
     console.log('mutants (each MUST die)')
@@ -444,6 +519,18 @@ if (process.argv.includes('--mutant')) {
         ['heartbeat frozen (ladder flattened to one tempo)', I,
             `const beat = Math.max(22, 14 + gs.asteroids.length * 14)`,
             `const beat = Math.max(22, 14 + gs.asteroids.length * 0)`],
+        // #2001 hyperspace mutants — the panic button's law.
+        ['the jump dice leave the stream (hyperspace unseeded)', S,
+            `                gs.ship.x = rnd(gs) * gs.width
+                gs.ship.y = rnd(gs) * gs.height`,
+            `                gs.ship.x = Math.random() * gs.width
+                gs.ship.y = Math.random() * gs.height`],
+        ['arrival lands naked (hyperspace grace deleted)', S,
+            `gs.invulnUntil = gs.tickN + HYPER_INVULN`,
+            `gs.invulnUntil = gs.tickN`],
+        ['the panic button has no cooldown (spam teleport)', S,
+            `if (act.hyper && gs.tickN >= gs.hyperReadyAt) {`,
+            `if (act.hyper) {`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
