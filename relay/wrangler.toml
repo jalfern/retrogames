@@ -16,9 +16,10 @@ tag = "v1"
 new_sqlite_classes = ["Room", "Registry"]
 
 # SESSION STORE (#1711): private R2 bucket for consented human recordings.
-# One-time setup (Jon): `wrangler r2 bucket create retrogames-sessions`, then
-# `wrangler deploy` from relay/. Until the bucket exists the worker answers
-# /sessions with an honest 503 and /status keeps sessions:false.
+# Bucket `retrogames-sessions` created by Jon 2026-11-11 (issue #1711); the
+# only step left is `wrangler deploy` from relay/ (or the merge-driven
+# deploy-relay workflow). Reads are locked (#1711 S8): JON_KEY must be set as
+# a worker secret for any admin read to succeed; until then reads fail closed.
 [[r2_buckets]]
 binding = "SESSIONS"
 bucket_name = "retrogames-sessions"

@@ -66,15 +66,31 @@ after 1 h).
   binds, `POST /sessions` / `GET /sessions` answer an honest 503).
 - `POST /sessions` — one consent envelope `{recording, player, consent}`;
   `validateSessionEnvelope` (core.js) refuses anything without `motion:true`
-  and any voice section without `voice:true`. The bucket is never public:
-  reads are `GET /sessions` (metadata rows) / `GET /sessions/<key>` (body),
-  both only through this worker. `npm run sessions` is the admin listing.
+  and any voice section without `voice:true`. The bucket is never public.
+- **READ LOCKDOWN (#1711 S8, Jon 2026-11-11):** `GET /sessions` and
+  `GET /sessions/<key>` answer ONLY to callers presenting the `JON_KEY`
+  secret in the `x-session-key` header (constant-time compare in core.js,
+  fail-closed: no JON_KEY deployed = nobody reads, `err:'read lock not
+  configured'`; wrong key = 401 `err:'unauthorized'`). Uploads are unchanged
+  — phones never need the key. `/status jonKey:true` = the lockdown is armed.
+  Every admin read tool sends it from the environment:
+  `JON_KEY=<secret> npm run sessions`, `JON_KEY=… npm run plaicraft:evidence`,
+  `JON_KEY=… npm run plaicraft:clap -- --key=<sessionKey>`.
+- **Jon's clap session:** play GAUNTLET on the phone with both consent
+  switches ON, and three times during the run CLAP sharply and tap RIGHT at
+  the same instant (clap + tap together, ~1 s apart, the way the harness
+  does it); finish the run so it uploads (the pill confirms). Find its key
+  with `JON_KEY=… npm run sessions`, then grade it on the studio:
+  `JON_KEY=<secret> npm run plaicraft:clap -- --store=https://retrogames.jalfern.workers.dev --key=<key>`
+  — same ±50 ms verdict as the synth test, on your real mic bytes.
 - **This file is what phones talk to** — so `npm run relaycheck` RUNS it in
   Node (`scripts/lib/relaysim.mjs`: `cloudflare:workers` shim + faithful
   in-memory R2) and grades the routes: door, CORS, key regex, metadata
-  round-trip, caps, honest 503s. `--mutate` strips the door line from
-  `worker.js` SOURCE — 5 gates red, one line. `plaicraft:evidence
-  --self-test` and `plaicraft:clap` run their pipelines on the same sim.
+  round-trip, caps, honest 503s — and the read lockdown (`--mutate` strips
+  the consent door → 5 gates red; `--mutate-readlock` strips the read doors
+  → the 4 no-key refusals red; one-line SOURCE mutants, deployed file only).
+  `plaicraft:evidence --self-test` and `plaicraft:clap` run their pipelines
+  on the same sim.
 
 ## Client
 `src/utils/lockstep.js` (pure) + the Gauntlet pilot
