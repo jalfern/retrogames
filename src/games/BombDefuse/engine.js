@@ -439,6 +439,25 @@ export function pegNeedle(raw) {
 // be pinned (until it actually is) and `pulseGauge` the instant the worker's
 // needle crosses the zone — the lesson names the job, the ring confirms the
 // deed. `taught` latches when the crew seals, so veterans keep the clean plate.
+// ---- window pre-flash (#1812 item 4) — view math only, never gs/hash ----------
+// The SYNC WINDOW bar only appears once some seat has acted (drawWindowBar's
+// hold > 0 law), so until the first press the window is invisible and the
+// controls look inert. This helper names what the step is ASKING while NO seat
+// has touched it yet — SYNC the key barrels, CUT the cutter arms, VENT the
+// holder's bar — and returns null the moment any seat acts, exactly when the
+// real window bar lights. The view adds the pulsing amber edge; the law is
+// pure arithmetic on live state — no rng, no gs write, hash-clean.
+export function preFlash(gs) {
+    if (!gs || gs.done) return null
+    const st = curStep(gs)
+    const touched =
+        st.kind === SYNC ? gs.keys[0] || gs.keys[1]
+        : st.kind === CUT ? gs.sel[0] || gs.sel[1] || gs.armed[0] || gs.armed[1]
+        : !!gs.held
+    if (touched) return null
+    return { kind: st.kind, intro: gs.intro > 0 }
+}
+
 export function ventCoach(gs, you, taught) {
     if (!gs || gs.done || taught) return null
     const st = curStep(gs)

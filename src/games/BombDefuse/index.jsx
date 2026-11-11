@@ -203,6 +203,18 @@ function drawBombView(g, gs, now, opts = {}) {
             g.fillStyle = C.label; g.font = '8px "Press Start 2P", monospace'
             g.fillText(`P${i + 1}${opts.cpu2 && i === 1 ? ' CPU' : ''}${opts.youSeat === i ? ' YOU' : ''}`, kx, cy + 52)
         }
+        // #1812 item 4: window pre-flash — while NO seat has turned, both key
+        // rims pulse amber: the window the SYNC WINDOW bar will show after the
+        // first press is learnable BEFORE anyone presses. Pure view (E.preFlash);
+        // the sim never hears about it.
+        if (opts.pf && opts.pf.kind === E.SYNC && opts.paused !== true) {
+            const fp = 0.5 + 0.5 * Math.sin(now * 0.012)
+            g.strokeStyle = `rgba(255,194,62,${(0.35 + 0.5 * fp).toFixed(3)})`
+            g.lineWidth = 3; g.shadowColor = C.amber; g.shadowBlur = 8
+            g.beginPath(); g.arc(150, cy + 10, 30, 0, 7); g.stroke()
+            g.beginPath(); g.arc(490, cy + 10, 30, 0, 7); g.stroke()
+            g.shadowBlur = 0; g.lineWidth = 1
+        }
         drawWindowBar(g, gs, (gs.keys[0] || gs.keys[1]) && !(gs.keys[0] && gs.keys[1]) ? gs.keyT : 0)
     } else if (st.kind === E.CUT) {
         g.font = '10px "Press Start 2P", monospace'
@@ -259,6 +271,16 @@ function drawBombView(g, gs, now, opts = {}) {
             g.fillText(`P${i + 1}${opts.cpu2 && i === 1 ? ' CPU' : ''}${opts.youSeat === i ? ' YOU' : ''}`, ax, 250)
             g.fillStyle = C.wire[sel]; g.font = '7px "Press Start 2P", monospace'
             g.fillText(E.COLORS[sel][0], ax, 268)
+        }
+        // #1812 item 4: window pre-flash — untouched cutter arms pulse amber
+        // (cycle + snip is the whole verb pair; the rim says "these move").
+        if (opts.pf && opts.pf.kind === E.CUT && opts.paused !== true) {
+            const fp = 0.5 + 0.5 * Math.sin(now * 0.012)
+            g.strokeStyle = `rgba(255,194,62,${(0.35 + 0.5 * fp).toFixed(3)})`
+            g.lineWidth = 3; g.shadowColor = C.amber; g.shadowBlur = 8
+            g.strokeRect(150 - 26, 206, 52, 96)
+            g.strokeRect(490 - 26, 206, 52, 96)
+            g.shadowBlur = 0; g.lineWidth = 1
         }
         drawWindowBar(g, gs, (gs.armed[0] || gs.armed[1]) && !(gs.armed[0] && gs.armed[1]) ? gs.armedT : 0)
     } else {
@@ -343,6 +365,18 @@ function drawBombView(g, gs, now, opts = {}) {
                 g.textAlign = 'left'
             }
         }
+        // #1812 item 4: window pre-flash — the holder's bar pulses until it is
+        // pinned, for EVERY seat incl. taught ones (the coach ring is a first
+        // lesson; this rim is the per-window "tend me now" — an unvented VENT
+        // burns the fuse double, so the rim is worth re-learning every step).
+        if (opts.pf && opts.pf.kind === E.VENT && opts.paused !== true && !(opts.coach && opts.coach.pulseBar)) {
+            const hbx = st.holder === 0 ? 128 : 512
+            const fp = 0.5 + 0.5 * Math.sin(now * 0.012)
+            g.strokeStyle = `rgba(255,194,62,${(0.35 + 0.5 * fp).toFixed(3)})`
+            g.lineWidth = 3; g.shadowColor = C.amber; g.shadowBlur = 8
+            g.strokeRect(hbx - 16, 176, 32, 98)
+            g.shadowBlur = 0; g.lineWidth = 1
+        }
         // #1831: a whiffed seat was sound-only — the tap read as a dead key.
         // Flash the dial red and name it for a beat.
         if (opts.dudT > 0) {
@@ -424,7 +458,7 @@ function drawIntro(g, gs, coach) {
 // (E.ventCoach, pure) then goes silent for the rest of the run.
 const newHud = () => ({
     flash: 0, shake: 0, sparks: [], banner: null, bannerT: 0, boomT: 0, dudT: 0,
-    ventTaught: false, coach: null,
+    ventTaught: false, coach: null, pf: null,
     // #1812 item 10: bed cadence + a DEV-visible ping counter (the harness
     // proves the hum is alive without reading the speaker)
     bedT: 0, bedPings: 0,
@@ -1025,6 +1059,8 @@ export default function BombDefuseGame() {
                     // the drive harness without a pixel read.
                     const youSeat = net.active ? (net.sync && !net.sync.solo() && net.sync.reseatTick == null ? net.sync.mySeat : -1) : (seatsRef.current === 1 ? 0 : -1)
                     hud.coach = E.ventCoach(gs, youSeat, hud.ventTaught)
+                    // #1812 item 4: the pre-flash law, recomputed pure each frame.
+                    hud.pf = E.preFlash(gs)
                     drawBombView(g, gs, now, {
                         paused: pausedRef.current,
                         // the seat is still the partner's during an in-flight
@@ -1034,6 +1070,7 @@ export default function BombDefuseGame() {
                         dudT: hud.dudT,
                         keyPos: hud.turn.map((t) => t.pos),
                         coach: hud.coach,
+                        pf: hud.pf,
                     })
                     drawIntro(g, gs, hud.coach)
                     for (const s of hud.sparks) {
@@ -1196,6 +1233,7 @@ export default function BombDefuseGame() {
                 // #1932: the first-VENT lesson, live-probeable (pure function
                 // of sim state + view facts — the harness reads what the plate teaches)
                 coach: () => hudRef.current.coach || null,
+                preFlash: () => hudRef.current.pf || null,
                 ventTaught: () => hudRef.current.ventTaught,
                 // #1812 item 10: bed pings accrued since the run began — the
                 // drive proves the hum is alive (and frozen on pause/over)
