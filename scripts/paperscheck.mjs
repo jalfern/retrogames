@@ -472,11 +472,24 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
         const weekSeats = new Set()
         for (const day of w.days) {
             const regs = day.queue.filter((a) => a.person.regular)
-            ok(day.n === 1 ? regs.length === 0 : regs.length === 1,
-                `seed ${seed} day ${day.n}: ${regs.length} regulars — the authored walk is days 2-7, exactly one`)
+            // #2012 THE CROWDED RETURN: one authored walk days 2-5, TWO on
+            // the return days (the head returning, the tail greeting), none
+            // day 1. A day that carries one regular on day 6 has lost its
+            // crowd; three would mean the tail walked twice in one shift.
+            const want = day.n === 1 ? 0 : day.n <= 5 ? 1 : 2
+            ok(regs.length === want,
+                `seed ${seed} day ${day.n}: ${regs.length} regulars — days 2-5 one, days 6-7 two (the crowded return)`)
             ok(day.queue.length === day.rules.length + 4,
                 `seed ${seed} day ${day.n}: queue ${day.queue.length} vs law ${day.rules.length + 4} — a regular grew the line`)
-            if (day.n >= 2 && regs.length === 1) weekSeats.add(regs[0].person.regular)
+            // #2012 the crowded day speaks BOTH ways: a return (or the wall's
+            // arc pair) and a fresh greeting share the shift — the original's
+            // dense line, proven on the day's own voices.
+            if (day.n >= 6) {
+                const voices = regs.map((a) => (a.person.say && a.person.say[0] === 'YOU AGAIN.' ? 'again' : 'greet'))
+                ok(voices.includes('greet') && voices.includes('again'),
+                    `seed ${seed} day ${day.n}: the crowded shift lost a voice — ${JSON.stringify(voices)} (a return and a hello must share the day)`)
+            }
+            for (const a of regs) weekSeats.add(a.person.regular)
             // #1997 purity everywhere, not just the arc day: personal speech
             // is atmosphere on EVERY day of the week.
             for (const a of day.queue) {
@@ -540,16 +553,26 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
                     `seed ${seed} day ${day.n}: a random twin of ${c.name} walked the same line`)
             }
         }
-        const window = new Set(Array.from({ length: VISIT_WINDOW }, (_, i) => REGULARS[(seed + i) % REGULARS.length].id))
-        ok(window.size === VISIT_WINDOW && weekSeats.size === VISIT_WINDOW && [...weekSeats].every((id) => window.has(id)),
-            `seed ${seed}: week met ${[...weekSeats].join(',')} — the window must rotate cast[${seed % REGULARS.length}..+${VISIT_WINDOW - 1}]`)
+        // #2012 amended WINDOW LAW: the week meets SIX seats — offsets 0..3
+        // greet days 2-5, offsets 4,5 greet on the crowded days 6,7 — and
+        // seats s, s+1 RETURN on days 6, 7. Order on the crowded day is the
+        // law too: the returning head first, the greeting tail after.
+        const allSix = new Set(REGULARS.map((c) => c.id))
+        ok(weekSeats.size === REGULARS.length && [...weekSeats].every((id) => allSix.has(id)),
+            `seed ${seed}: week met ${weekSeats.size}/${REGULARS.length} seats (${[...weekSeats].join(',')}) — the crowded return must meet the whole neighborhood`)
         ok(REGULARS[seed % REGULARS.length].id === w.days[1].queue.find((a) => a.person.regular).person.regular &&
            REGULARS[seed % REGULARS.length].id === w.days[5].queue.find((a) => a.person.regular).person.regular,
             `seed ${seed}: the window head does not walk days 2 and 6 — the arc's stage collapsed`)
+        for (const [dn, offHead, offTail] of [[6, 0, 4], [7, 1, 5]]) {
+            const regs = w.days[dn - 1].queue.filter((a) => a.person.regular).map((a) => a.person.regular)
+            ok(regs[0] === REGULARS[(seed + offHead) % REGULARS.length].id &&
+               regs[1] === REGULARS[(seed + offTail) % REGULARS.length].id,
+                `seed ${seed}: day ${dn} carries ${JSON.stringify(regs)} — the crowded return is seat s+${offHead} returning, seat s+${offTail} crowding`)
+        }
         const back = Object.entries(byCast).filter(([, n]) => n >= 2)
-        ok(back.length >= 1, `seed ${seed}: nobody came back twice — a line of strangers is not a neighborhood`)
+        ok(back.length === 2, `seed ${seed}: ${back.length} seats came back twice — exactly the window head two (s, s+1) return`)
     }
-    ok(appearances >= SEEDS.length * 6, `only ${appearances} regular appearances across ${SEEDS.length} weeks — the injection is theatre`)
+    ok(appearances >= SEEDS.length * 8, `only ${appearances} regular appearances across ${SEEDS.length} weeks — the injection is theatre`)
     ok(seatsWalked.size === REGULARS.length, `${seatsWalked.size}/${REGULARS.length} cast seats ever walked across the sweep — a seat nobody meets is dead letter`)
     ok(new Set(REGULARS.map((c) => c.lines.greet)).size === REGULARS.length, 'two regulars share a greeting — a neighborhood says hello six ways')
     ok(new Set(REGULARS.map((c) => c.lines.again)).size === REGULARS.length, 'two regulars share a callback — the booth remembers six ways')
@@ -564,13 +587,14 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
     ok([...paid].every((k) => hooked.has(k)), 'a payoff was spoken for a topic never planted — a fabricated memory')
     // A planted topic goes unpaid only two honest ways: its face TURNED (the
     // arc return belongs to the wall, not to breakfast) or its seat walks ONCE
-    // a week (the window's tail seats s+2, s+3 carry their topic into next
-    // week — the rotating window law, not a broken thread).
+    // a week. Since #2012 the once-a-week seats are s+2..s+5 — days 2-5's tail
+    // AND the crowded days' greeting tail — they carry their topic into next
+    // week (the crowded-return law, not a broken thread). Only the window's
+    // head-two (s, s+1) return; only s+1 is owed a payoff.
+    const onceWeek = (s, id) => [2, 3, 4, 5].some((off) => id === REGULARS[(s + off) % REGULARS.length].id)
+    const excused = (k) => { const [sStr, id] = k.split(':'); return id === arcForWeek(Number(sStr)).id || onceWeek(Number(sStr), id) }
     const unpaid = [...hooked].filter((k) => !paid.has(k))
-    ok(unpaid.every((k) => {
-        const [sStr, id] = k.split(':'), s = Number(sStr)
-        return id === arcForWeek(s).id || id === REGULARS[(s + 2) % REGULARS.length].id || id === REGULARS[(s + 3) % REGULARS.length].id
-    }), `a twice-a-week face planted a topic the line never answered: ${JSON.stringify(unpaid.filter((k) => { const [sStr, id] = k.split(':'), s = Number(sStr); return !(id === arcForWeek(s).id || id === REGULARS[(s + 2) % REGULARS.length].id || id === REGULARS[(s + 3) % REGULARS.length].id) }))}`)
+    ok(unpaid.every(excused), `a twice-a-week face planted a topic the line never answered: ${JSON.stringify(unpaid.filter((k) => !excused(k)))}`)
     ok(paid.size >= SEEDS.length, `${paid.size} threads paid across ${SEEDS.length} weeks — at least one per week, or the conversation is theatre`)
     console.log(`  ..    ${appearances} authored appearances across ${SEEDS.length} weeks; every week had faces that came back`)
 }
@@ -1542,12 +1566,14 @@ if (MUT) {
     // 25. the cast never walks in: every seed's line is strangers again —
     //     the recurrence witnesses go red while papers stay fair (an
     //     invisible feature must not stay green on fairness alone).
+    //     (#2012 re-anchored: the injection is a list now.)
     await tryMut('regulars never injected (the line forgets its faces)',
-        mutMod('gen.js', 'const reg = regularForDay(seed, n)', 'const reg = null', 'm25'),
+        mutMod('gen.js', 'for (const reg of regularsForDay(seed, n)) day.queue.push(regularApplicant(reg, rnd, date, rules, day, used, seed, n))', 'for (const reg of []) day.queue.push(regularApplicant(reg, rnd, date, rules, day, used, seed, n))', 'm25'),
         (m) => {
             for (const seed of SEEDS) {
                 for (const day of m.gen.genWeek(seed).days) {
-                    if (day.n >= 2 && day.queue.filter((a) => a.person.regular).length !== 1) return false
+                    const want = day.n === 1 ? 0 : day.n <= 5 ? 1 : 2
+                    if (day.queue.filter((a) => a.person.regular).length !== want) return false
                 }
             }
             return true
@@ -1787,6 +1813,37 @@ if (MUT) {
             for (const seed of SEEDS) {
                 for (const day of m.gen.genWeek(seed).days) {
                     if (!/^[A-Z]{3} \d{2} \d{4}$/.test(m.rules.dshow(day.date))) return false
+                }
+            }
+            return true
+        })
+
+    // #2012 THE CROWDED RETURN year adds two: m40 never sends the crowd — the
+    // week shrinks back to four seats and the neighborhood is a club again
+    // (fairness cannot see it; the week-meets-six witness bites). m41 crowds
+    // with a CLONE of the returning head instead of the tail seat — the tail
+    // never gets its day and one shift walks the same face twice; the day's
+    // head-then-tail order witness bites.
+    await tryMut('the crowd never walks (week meets four seats again)',
+        mutMod('gen.js', 'return [regularForDay(seed, n), REGULARS[(seed + n - 2) % REGULARS.length]]', 'return [regularForDay(seed, n)]', 'm40'),
+        (m) => {
+            for (const seed of SEEDS) {
+                const seats = new Set()
+                for (const day of m.gen.genWeek(seed).days)
+                    for (const a of day.queue) if (a.person.regular) seats.add(a.person.regular)
+                if (seats.size !== m.gen.REGULARS.length) return false
+            }
+            return true
+        })
+    await tryMut('the crowd clones the returning head (the tail seat never leans on the glass)',
+        mutMod('gen.js', 'REGULARS[(seed + n - 2) % REGULARS.length]', 'REGULARS[(seed + (n - 2) % VISIT_WINDOW) % REGULARS.length]', 'm41'),
+        (m) => {
+            for (const seed of SEEDS) {
+                const w = m.gen.genWeek(seed)
+                for (const [dn, offHead, offTail] of [[6, 0, 4], [7, 1, 5]]) {
+                    const regs = w.days[dn - 1].queue.filter((a) => a.person.regular).map((a) => a.person.regular)
+                    if (regs[0] !== m.gen.REGULARS[(seed + offHead) % m.gen.REGULARS.length].id ||
+                        regs[1] !== m.gen.REGULARS[(seed + offTail) % m.gen.REGULARS.length].id) return false
                 }
             }
             return true
