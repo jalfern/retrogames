@@ -129,17 +129,18 @@ console.log('WATCH driver sweep: 40 seeds x 120 s of seated play on the shipped 
         gs.attract = false
         gs.watching = true
         const samples = []
-        let deaths = 0
+        let deaths = 0, jumps = 0
         for (let i = 0; i < TICKS; i++) {
             const ev = tickAsteroids(gs, null)
             if (ev.died) deaths++
+            if (ev.hyper) jumps++
             if (i % 1200 === 0) samples.push(stateHash(gs))
             if (gs.over) break
         }
-        return { gs, samples, deaths }
+        return { gs, samples, deaths, jumps }
     }
     let det = 0, zeroDeath = 0, wavesBanked = 0, survivedAll = 0
-    let minScore = Infinity, total = 0
+    let minScore = Infinity, total = 0, hyperJumps = 0
     const red = []
     for (let s = 1; s <= SEEDS; s++) {
         const seed = s * 7919 + 13
@@ -151,21 +152,26 @@ console.log('WATCH driver sweep: 40 seeds x 120 s of seated play on the shipped 
         if (a.gs.wave >= 2) wavesBanked++
         if (a.gs.score < minScore) minScore = a.gs.score
         total += a.gs.score
+        hyperJumps += a.jumps
         if (a.gs.score < (FAST ? 2500 : 6000) || a.gs.over) red.push(`${seed}:${a.gs.score}${a.gs.over ? 'OVER' : ''}`)
     }
     ok(det === SEEDS, `${SEEDS}/${SEEDS} seeds replay byte-equal (hash sampled every 1200 ticks)`, red.join(' '))
     ok(survivedAll === SEEDS, 'every seed finishes the watch — the hunter does not game over')
-    // #2001 floor re-measure: the saucers made the field genuinely harder —
-    // the hunter dodges aimed fire now, and zero-death measured 24/40 (full),
-    // 9/12 (fast) after hardening the threat scan (75-tick hostile warning,
-    // no muzzle-buzzing). The floor drops honestly to below what the fleet
-    // banks; survivedAll and the score floors keep the real law. Raising the
-    // driver's panic-reserve game (issue #2001) should bring this back UP —
-    // a floor raise is progress, a silent floor keep is drift.
-    ok(zeroDeath >= (FAST ? 6 : 20), `zero-death runs on ${FAST ? 6 : 20}+ seeds`, `${zeroDeath}/${SEEDS}`)
+    // #2001 pt4 floor RAISE: the panic-reserve hyperspace (watchStep) is live —
+    // the doomed ship now jumps instead of steering into death. Fast re-measure
+    // 12/12 zero-death (was 9/12 at the saucer-field law); floor goes 6 → 11.
+    // The full fleet re-measure rides with it below. A driver that lost the
+    // reserve lands back at ~9 and this floor kills it — progress is pinned.
+    ok(zeroDeath >= (FAST ? 11 : 34), `zero-death runs on ${FAST ? 11 : 34}+ seeds`, `${zeroDeath}/${SEEDS}`)
     ok(wavesBanked >= (FAST ? SEEDS - 1 : SEEDS), 'every seed banks at least one full wave', `${wavesBanked}/${SEEDS}`)
     ok(minScore >= (FAST ? 2500 : 6000), `worst seed still scores ${FAST ? 2500 : 6000}+ under the watch`, `${minScore}`)
     ok(total >= (FAST ? SEEDS * 2500 : 300000), 'the fleet banks its combined floor (score is real progress, not coasting)', `${total}`)
+    // The reserve is SPENT when cornered and STAYS scarce otherwise: measured
+    // 13 jumps fast / 128 full (the long tail — waves grow to 11 rocks and the
+    // tight field corners the ace repeatedly, still only ~3 jumps per seed).
+    // A never-panics driver prints 0; transport abuse prints ~60/seed (720/4800).
+    ok(hyperJumps >= (FAST ? 4 : 10), 'the doomed ship actually panics — the reserve gets spent', `${hyperJumps}`)
+    ok(hyperJumps <= (FAST ? 24 : 160), 'hyperspace stays a panic, not transport — the reserve stays scarce', `${hyperJumps}`)
 }
 
 // ------------------------------------------------------------ seat rules ----
@@ -442,6 +448,45 @@ console.log('hyperspace (#2001): seeded jumps, cooldown, arrival mercy')
     ok(/gs\.tickN >= gs\.hyperUntil/.test(srcIndex), 'the ship stays hidden while rematerialising')
 }
 
+// ------------------------------------------------------- panic reserve (driver) ----
+// #2001 part 4 — the WATCH driver keeps hyperspace like the arcade ace did:
+// for the desperate moment ONLY. Cornered with no escape it must take the jump;
+// inside the cooldown it must stay and fight; a calm field must never spend it.
+console.log('panic reserve (#2001 pt4): doomed ships jump, safe ones keep the wheel')
+{
+    const trap = (sd, ready) => {
+        const gs = makeRun(sd, { width: 600, height: 800 })
+        gs.attract = false
+        gs.watching = true
+        gs.invulnUntil = 0
+        gs.saucers = []
+        gs.asteroids = [
+            { x: gs.ship.x + 60, y: gs.ship.y, vx: -3, vy: 0, size: 40, vertices: [] },
+            { x: gs.ship.x - 60, y: gs.ship.y, vx: 3, vy: 0, size: 40, vertices: [] },
+            { x: gs.ship.x, y: gs.ship.y + 60, vx: 0, vy: -3, size: 40, vertices: [] },
+            { x: gs.ship.x, y: gs.ship.y - 60, vx: 0, vy: 3, size: 40, vertices: [] },
+        ]
+        gs.hyperReadyAt = ready ? 0 : gs.tickN + 30
+        return watchStep(gs)
+    }
+    for (const sd of [5, 4242, 31337]) {
+        const jumped = trap(sd, true)
+        ok(jumped && jumped.hyper === true, `cornered on seed ${sd}: every steer dies, the driver takes the jump`, JSON.stringify(jumped))
+        const cooled = trap(sd, false)
+        ok(cooled && cooled.hyper !== true, `cornered inside the cooldown on seed ${sd}: no phantom jump`, JSON.stringify(cooled))
+    }
+    // Reserve discipline: the first minute of three seeds is calm field —
+    // zero jumps. (A driver that panics at anything ships jumps here.)
+    let earlyJumps = 0
+    for (const s of [1, 2, 3]) {
+        const gs = makeRun(s * 7919 + 13, { width: 600, height: 800 })
+        gs.attract = false
+        gs.watching = true
+        for (let i = 0; i < 600; i++) if (tickAsteroids(gs, null).hyper) earlyJumps++
+    }
+    ok(earlyJumps === 0, 'the reserve is never spent early — calm fields keep the wheel', `${earlyJumps}`)
+}
+
 // --------------------------------------------------------------- look polish ----
 // #2001 part 3 — the machine's rocks JAG (docs/ART.md bar 1 + bar 5 "juice").
 // Silhouette dice swing ±0.25 / ±0.2 / ±0.15 of nominal by size tier (bigger
@@ -641,6 +686,22 @@ if (process.argv.includes('--mutant')) {
         ['the hull loses its notch (plain triangle again)', S,
             `    [-SHIP_SIZE * 0.15, 0],`,
             `    [-SHIP_SIZE * 0.45, 0],`],
+        // #2001 pt4 panic-reserve mutants — the ace's discipline.
+        ['the driver never panics (reserve welded shut — doomed ships steer into death)', S,
+            `    if (bestV < WATCH_HORIZON * 10000 - 5000 &&
+        gs.tickN >= gs.hyperReadyAt && gs.tickN >= gs.hyperUntil) {`,
+            `    if (false &&
+        gs.tickN >= gs.hyperReadyAt && gs.tickN >= gs.hyperUntil) {`],
+        ['hyperspace on cooldown expiry (transport abuse — discipline deleted)', S,
+            `    if (bestV < WATCH_HORIZON * 10000 - 5000 &&
+        gs.tickN >= gs.hyperReadyAt && gs.tickN >= gs.hyperUntil) {
+        const panic = { left: false, right: false, thrust: false, fire: false, hyper: true }
+        const v = rollout(gs, panic)
+        if (v > bestV) { bestV = v; best = panic }
+    }`,
+            `    if (gs.tickN >= gs.hyperReadyAt && gs.tickN >= gs.hyperUntil) {
+        best = { left: false, right: false, thrust: false, fire: false, hyper: true }
+    }`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

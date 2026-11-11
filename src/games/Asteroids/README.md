@@ -51,8 +51,18 @@ OWN physics on a cloned world, 70 ticks ahead, under greedy continuation:
   alignment + loaded shot) — shaping keeps a gradient toward the kill until a
   horizon is long enough to SEE it.
 
-Measured 40 seeds × 120 s: all 40 finish the watch, 35 zero-death, waves 2–4,
-worst seed still banks 6560.
+Measured 40 seeds × 120 s: all 40 finish the watch, 38 zero-death, waves 2–4,
+worst seed still banks 8300 (974,430 fleet total).
+
+### Panic reserve (#2001 part 4)
+The arcade ace kept hyperspace for the desperate moment, never as transport —
+so the driver does too. `watchStep` considers the jump ONLY when every steering
+candidate comes back dead inside the horizon (value below the survival floor),
+and the jump must outlive them all to be taken. It rides the run's seeded
+stream (cloneWorld carries `hyperReadyAt`/`hyperUntil`), so the sweep judges the
+exact teleport the seat makes. Effect: zero-death 24 → **38/40** (fast 9 →
+12/12), measured 13 jumps fast / 128 full — scarce, and spent only cornered.
+Deliberate kiting is still not modelled (honest gap below).
 
 ## Flying saucers (#2001)
 The 1979 machine's signature threat. Alarms arrive every 8–14 s while rocks
@@ -98,8 +108,8 @@ probe would need the live seat).
 
 ## Verify
 ```
-npm run asteroidscheck            # determinism + 1979 law + wiring + driver sweep + seat/saucer/hyper/look rules (97 gates)
-npm run asteroidscheck -- --mutant  # 25 mutants (6 b16 + 7 b26 driver + 6 saucer/heartbeat + 3 hyperspace + 3 look polish), all must die
+npm run asteroidscheck            # determinism + 1979 law + wiring + driver sweep + seat/saucer/hyper/look/panic rules (106 gates)
+npm run asteroidscheck -- --mutant  # 27 mutants (6 b16 + 7 b26 driver + 6 saucer/heartbeat + 3 hyperspace + 3 look polish + 2 panic reserve), all must die
 ASTEROID_SWEEP=fast npm run asteroidscheck  # 12-seed × 60 s sweep (what the mutant children run)
 npm run watchcheck -- --only asteroids      # live seat: seat/blips/takeover/re-seat
 npm run lint:asteroids
@@ -109,7 +119,8 @@ npm run lint:asteroids
 - No rock-vs-rock interaction (the machine had neither).
 - Small saucers ease their aim over time in the original; ours are locked at
   ±0.15 rad — the learning curve is not modelled.
-- The hunter never hyperspaces or kites deliberately; tight waves can cost it
-  lives before the field thins — the arcade ace kept a panic reserve.
+- Deliberate kiting (drawing the saucer, beating its fire back) is not
+  modelled; the panic reserve (#2001 pt4) stopped the tight-wave bleed, but the
+  driver flees honestly rather than playing for the docked-bounty dance.
 - `snapshot/restore` stay omitted (#391): the seeded stream rides `gs.rngState`
   and mid-rollout JSON round-trips would fork dice the live world never rolled.

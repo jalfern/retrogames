@@ -549,6 +549,8 @@ function cloneWorld(gs) {
         asteroids: gs.asteroids.map(a => ({ x: a.x, y: a.y, vx: a.vx, vy: a.vy, size: a.size, vertices: a.vertices })),
         saucers: gs.saucers.map(s => ({ ...s })),
         nextSaucerAt: gs.nextSaucerAt,
+        hyperReadyAt: gs.hyperReadyAt, // #2001 pt4 — the rollout must see the reserve state
+        hyperUntil: gs.hyperUntil,
         bullets: gs.bullets.map(b => ({ ...b })),
         particles: [],
     }
@@ -779,6 +781,19 @@ export function watchStep(gs) {
     for (const cand of [greedy(gs), ...CANDIDATES]) {
         const v = rollout(gs, cand)
         if (v > bestV) { bestV = v; best = cand }
+    }
+    // #2001 part 4 — panic reserve: the arcade ace kept hyperspace for the
+    // desperate moment, never as transport. A candidate that comes back DEAD
+    // (value < the horizon×10000 survival floor, allowance for gap noise) has
+    // been steered into its death; only when EVERY steering option is doomed
+    // does the jump get considered, and it must outlive them to be taken.
+    // The jump rides the run's seeded stream, so the sweep judges the exact
+    // teleport the seat will make (cloneWorld carries the cooldown state).
+    if (bestV < WATCH_HORIZON * 10000 - 5000 &&
+        gs.tickN >= gs.hyperReadyAt && gs.tickN >= gs.hyperUntil) {
+        const panic = { left: false, right: false, thrust: false, fire: false, hyper: true }
+        const v = rollout(gs, panic)
+        if (v > bestV) { bestV = v; best = panic }
     }
     return best || { left: false, right: false, thrust: false, fire: false }
 }
