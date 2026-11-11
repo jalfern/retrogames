@@ -28,7 +28,7 @@ import { dirname, join } from 'node:path'
 import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, dshow, MON, FEATURES, stampLines } from '../src/games/PapersPleaseMin/rules.js'
 import { genWeek, genDay, viewOf, CITY2C, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, VISIT_WINDOW } from '../src/games/PapersPleaseMin/gen.js'
 import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges, monthTurn } from '../src/games/PapersPleaseMin/sim.js'
-import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, ID, PHOTO, BUBBLE, EVID, SETTLE, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
+import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, ID, PHOTO, BUBBLE, EVID, SETTLE, QUOTE, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SRC = join(HERE, '../src/games/PapersPleaseMin')
@@ -342,6 +342,13 @@ section('THE STAMP SPEAKS (#1891) — the strip quotes the evidence, the wall pr
     let mono = true, prev = SETTLE.dy(SETTLE.ticks)
     for (let t = SETTLE.ticks - 1; t >= 0; t--) { const v = SETTLE.dy(t); if (v < prev) mono = false; prev = v }
     ok(mono, 'the settle wobbled — dy must land monotonically')
+    // 5b) #2021 THE INSPECTOR STAYS — the read window: the booth's case must
+    //     outlive its ink long enough to FINISH reading — ink 30 + pin + drop
+    //     must reach 2 s — while the full judged hold stays inside the
+    //     papersplay drop window (3.4 s = 210 ticks). Cutting the pin early
+    //     with a fresh ruling is the input law, not a break.
+    ok(QUOTE.hold >= 120, `the pin (${QUOTE.hold} ticks) is shorter than a 2 s read window`)
+    ok(30 + QUOTE.hold + SETTLE.ticks <= 204, `judged hold ${30 + QUOTE.hold + SETTLE.ticks} ticks outruns the drop window`)
     ok(Math.abs(SETTLE.dy(SETTLE.ticks)) <= PAPERS.h / 4 && SETTLE.ticks >= 6 && SETTLE.ticks <= 30,
         `settle out of its envelope (top ${SETTLE.dy(SETTLE.ticks)}px, ${SETTLE.ticks} ticks)`)
 }
@@ -1850,6 +1857,13 @@ if (MUT) {
             }
             return true
         })
+
+    // #2021 THE INSPECTOR STAYS m42: the pin shrinks 132 -> 40 ticks — a
+    // sub-2-second "pin" is just the old fade wearing a new name, and the
+    // read-window law must go red, not wave the shortcut through.
+    await tryMut('pin < 2 s read window (QUOTE.hold 132 -> 40)',
+        mutMod('layout.js', 'export const QUOTE = { hold: 132 }', 'export const QUOTE = { hold: 40 }', 'm42'),
+        (m) => m.layout.QUOTE.hold >= 120)
 }
 
 console.log(`\npaperscheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

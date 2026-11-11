@@ -65,6 +65,14 @@ export const SETTLE = {
     ticks: 12,
     dy: (t) => (t <= 0 ? 0 : t >= 10 ? -10 : t >= 7 ? -5 : t >= 4 ? -2 : 0),
 }
+// #2021 THE INSPECTOR STAYS — the original keeps the violation inspector on
+// screen; here the case rides PINNED after the stamp's ink fades: the judged
+// document keeps the counter while the citation stays readable, and only when
+// the read window closes does the document get taken up and the next papers
+// drop (SETTLE). 132 ticks ≈ 2.2 s at 60 Hz — long enough to take in a
+// witness line plus three evidence clauses. Never a lock: a fresh ruling
+// (act) cuts the pin short at any time, and the drop landing ends it.
+export const QUOTE = { hold: 132 }
 // #1966 THE PAY ECONOMY — the end-of-day deduction slip, pinned under the
 // ID card: below the stamp's witness line (y=296 baseline), above the strip,
 // clear of the right margin. paperscheck's WALL section re-pins all three.
