@@ -14,7 +14,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { START_LIVES, WIN_SCORE, BARREL_SPEED, makeRun, tickDonkeyKong, watchStep, stateHash, rnd, getPlatformY, buildLevel } from '../src/games/DonkeyKong/sim.js'
+import { START_LIVES, WIN_SCORE, BARREL_SPEED, HAMMER_SWINGS, makeRun, tickDonkeyKong, watchStep, stateHash, rnd, getPlatformY, buildLevel } from '../src/games/DonkeyKong/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -180,6 +180,113 @@ console.log('rules: gravity, jump, crush, dive, arc, lap, terminal')
     ok(w.score === WIN_SCORE && w.player.x === 24 && w.player.y === 216, 'the lap banks 1000 and resets the board', `score=${w.score}`)
 }
 
+// --------------------------------------------------------------- hammer ----
+// #2018: the attract screen promised "HAMMERS SMASH BARRELS". Rules pinned
+// here: walk-over pickup (empty-handed, grounded, one at a time); while
+// carried Space swings instead of jumping (up/flat/down, the original's
+// sequence) and ladders are out; a live swing deletes barrels ahead for 100;
+// contact stays lethal (the hammer extends reach, never safety); the mallet
+// shatters after HAMMER_SWINGS hits; the screen resets the mallets back onto
+// their girders. The WATCH route never walks to a mallet — the driver must
+// stay empty-handed (the seat's zero-death floors depend on it).
+console.log('hammer: pickup, swing-not-jump, smash, limits, seat hands-free')
+{
+    const mk = () => { const g = makeRun(4242); g.attract = false; return g }
+
+    // Pickup: walk over the ground-floor mallet grounded.
+    const a = mk()
+    const h0 = a.hammers.find(h => h.plat === 0)
+    a.player.x = h0.x - a.player.w / 2
+    a.player.y = h0.y + 8 - a.player.h
+    a.player.grounded = true
+    const evP = tickDonkeyKong(a, null)
+    ok(evP.hammerUp && a.hammer === HAMMER_SWINGS && h0.taken, 'walking over a mallet picks it up (empty-handed, grounded)')
+
+    // Airborne over the same spot: no grab (the arcade takes it on the feet).
+    const air = mk()
+    const hA = air.hammers.find(h => h.plat === 0)
+    air.player.x = hA.x - air.player.w / 2
+    air.player.y = hA.y - 20 // still falling, feet well above the shelf
+    ok(!tickDonkeyKong(air, null).hammerUp, 'the mallet is taken on the feet, not mid-air')
+
+    // Carried: Space swings (sequence starts up), never launches.
+    ok(a.hammer === HAMMER_SWINGS, 'carrying after pickup')
+    const evS = tickDonkeyKong(a, { jump: true })
+    ok(evS.swing && !evS.jump && a.hammer === HAMMER_SWINGS - 1 && a.swingSeq === 1 && a.player.vy >= 0,
+        'carried: Space swings (up-phase first), no jump', `vy=${a.player.vy}`)
+
+    // Carried: ladders are out — the original's trap.
+    const b = mk()
+    b.hammer = HAMMER_SWINGS
+    const l = b.ladders.find(la => la.x === 180 && !la.broken)
+    b.player.x = l.x - b.player.w / 2
+    b.player.y = l.yBot - b.player.h
+    b.player.grounded = true
+    tickDonkeyKong(b, { up: true })
+    ok(!b.player.climbing, 'carried: ladders refuse you (power and trap at once)')
+    b.hammer = 0
+    tickDonkeyKong(b, { up: true })
+    ok(b.player.climbing, 'empty hands back on the same ladder: it mounts again')
+
+    // Smash: flat phase catches a barrel ahead for 100; up phase misses it.
+    const c = mk()
+    c.hammer = HAMMER_SWINGS
+    c.player.x = 100
+    tickDonkeyKong(c, null) // settle
+    c.barrels.push({ x: c.player.x + 12, y: 232 - 10, w: 10, h: 10, vx: 0, vy: 0, rot: 0, onLadder: false, falling: false })
+    const ev1 = tickDonkeyKong(c, { jump: true }) // swing 1: up-phase, barrel rolls on
+    ok(ev1.swing && ev1.hammered === 0 && c.barrels.length === 1 && c.score === 0, 'up-phase swings over a rolling barrel')
+    const ev2 = tickDonkeyKong(c, null)
+    const ev3 = tickDonkeyKong(c, { jump: true }) // swing 2: flat-phase, dead ahead
+    ok(ev3.hammered === 1 && c.barrels.length === 0 && c.score === 100, 'flat-phase smash deletes the barrel for the arcade 100',
+        `hammered=${ev3.hammered} score=${c.score}`)
+
+    // The hammer never makes contact safe: a behind-back barrel still kills.
+    const k = mk()
+    k.hammer = HAMMER_SWINGS
+    tickDonkeyKong(k, null)
+    k.barrels.push({ x: k.player.x - 5, y: k.player.y - 3, w: 10, h: 10, vx: 0, vy: 0, rot: 0, onLadder: false, falling: false })
+    ok(tickDonkeyKong(k, null).died, 'mallet in hand, a barrel from behind still kills (no invulnerability)')
+
+    // Limits: 5 swings, then it shatters and the jump is back.
+    const d5 = mk()
+    d5.hammer = HAMMER_SWINGS
+    tickDonkeyKong(d5, null)
+    let shattered = -1
+    for (let i = 0; i < 40; i++) {
+        const ev = tickDonkeyKong(d5, { jump: i % 2 === 0 })
+        if (ev.hammerDown) { shattered = i; break }
+    }
+    ok(shattered === 8, 'the mallet shatters on the 5th swing', `swing idx=${shattered}`)
+    ok(d5.hammer === 0 && d5.swing === 0, 'shattered: hammer state clears at once (no ghost draw)')
+    ok(tickDonkeyKong(d5, { jump: true }).jump, 'after the shatter the jump is the runner\'s again')
+
+    // The screen resets: die carrying, respawn empty-handed with fresh mallets.
+    const r = mk()
+    r.hammer = HAMMER_SWINGS
+    r.hammers[0].taken = true
+    tickDonkeyKong(r, null)
+    r.barrels.push({ x: r.player.x + 5, y: r.player.y - 3, w: 10, h: 10, vx: 0, vy: 0, rot: 0, onLadder: false, falling: false })
+    tickDonkeyKong(r, null)
+    for (let i = 0; i < 95; i++) tickDonkeyKong(r, null)
+    ok(r.hammer === 0 && r.hammers.every(h => !h.taken), 'death resets the board: mallets back on their girders')
+
+    // Seat safety: the proven route must never carry a mallet — the WATCH
+    // driver stops at its ladders (x<=185), both mallets sit out of reach.
+    let carried = 0
+    for (let s = 1; s <= 8; s++) {
+        const g = makeRun(s * 7919)
+        g.attract = false
+        g.watching = true
+        for (let i = 0; i < 2400; i++) {
+            tickDonkeyKong(g, null)
+            if (g.hammer > 0) carried++
+        }
+        if (g.hammer > 0 || g.swingSeq > 0) carried++
+    }
+    ok(carried === 0, 'seated play never touches a mallet (route stays hands-free)', `carried ticks=${carried}`)
+}
+
 // --------------------------------------------------------------- seat rules ----
 console.log('seat semantics: driver in, driver out, honest waits')
 {
@@ -289,6 +396,14 @@ console.log('shell wiring: seed, terminal, seat chrome')
     ok(/handleCanvasTap/.test(IDX), 'phones can tap the field to start/restart/take over')
     ok(/DONKEY KONG[\s\S]{0,400}WATCH_HELP/.test(REG), 'the registry advertises the proven route')
     ok(/attractFrame\(attractTick, GW, GH\)/.test(IDX), 'the attract layout rides the shared cycle')
+    // #2018: the event set gained throw, rungs and mallet voices — pin that
+    // the shell actually sounds each new sim event.
+    ok(/if \(ev\.barrel\) audioController\.play/.test(IDX), 'the barrel throw has a voice')
+    ok(/if \(ev\.climbed\) audioController\.play/.test(IDX), 'the ladder mount has a voice')
+    ok([/ev\.hammerUp/, /ev\.swing/, /ev\.hammered/, /ev\.hammerDown/].every(re => new RegExp(re.source + '\\)\\s*audioController\\.play').test(IDX)),
+        'all four mallet events are sounded')
+    ok(/HAMMERS SMASH BARRELS/.test(readFileSync('src/games/DonkeyKong/attract.js', 'utf8')) && /gs\.hammer > 0/.test(IDX),
+        'the attract promise is now kept by the engine (mallet exists in world + draw)')
 }
 
 // ------------------------------------------------------------------ mutants ----
@@ -355,6 +470,27 @@ if (process.argv.includes('--mutant')) {
         ['the hold collapses to one tick (ties never shape the climb)', S,
             `const HOLD = 8`,
             `const HOLD = 1`],
+        ['#2018 the mallet pickup is dead (attract lies again)', S,
+            `if (!gs.hammer) {`,
+            `if (false && !gs.hammer) {`],
+        ['#2018 the flat smash pays nothing (barrels vaporise free)', S,
+            `                gs.barrels.splice(i, 1)
+                gs.score += 100
+                ev.hammered++`,
+            `                gs.barrels.splice(i, 1)
+                gs.score += 0
+                ev.hammered++`],
+        ['#2018 the ladder ban lifts while carrying (trap becomes free power)', S,
+            `        wantClimbUp = false
+        wantClimbDown = false
+        if (wantJump && p.grounded) {`,
+            `        if (wantJump && p.grounded) {`],
+        ['#2018 the mallet lets you jump anyway (arcade rule stolen)', S,
+            `        wantJump = false // no jumping the tower with a mallet in hand`,
+            `        wantJump = wantJump // the ban is gone`],
+        ['#2018 the mallet never shatters (permanently stuck, no jump)', S,
+            `if (gs.hammer <= 0) {`,
+            `if (false && gs.hammer <= 0) {`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

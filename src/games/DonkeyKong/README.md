@@ -33,8 +33,6 @@ npm run contractcheck        # the exposeGame contract (in contractGames)
 Ports: the browser checks read `DEV_PORT` (slot a 5173 / slot b 5178 / QA 5176).
 
 ## Honest gaps (vs the arcade original)
-- No hammer power-up (attract copy mentions it; it was never implemented —
-  QA may file this; until then the line is a promise the game doesn't keep).
 - Single screen: the arcade's rivet level and the collapse that finishes it.
 - Oil drum is decor; the arcade's flame kills. No score bonus timers, no
   50/100-point distinction for walking past vs jumping over barrels' edges.
@@ -42,3 +40,19 @@ Ports: the browser checks read `DEV_PORT` (slot a 5173 / slot b 5178 / QA 5176).
   a barrel meeting a ladder mid-air keeps rolling).
 - Broken ladders only flicker (the original let Mario climb part-way some
   rounds); barrels and the player both refuse them outright.
+
+## Hammer (#2018 — the attract promise kept)
+Two mallets ride the right-hand ends of the ground floor and DK's girder
+(`gs.hammers`, positions in `buildLevel`). Walking over one empty-handed and
+grounded picks it up; carried, Space SWINGS instead of jumping (up / flat /
+down, the original's sequence, `gs.swingSeq % 3`) and the ladders refuse you
+(the original's trade). A live swing (12 ticks) deletes a barrel in its lane
+for the arcade 100 — the kill box is untouched, the hammer extends reach,
+never safety. Five swings and it shatters (`HAMMER_SWINGS`); death/lap reset
+puts fresh mallets back on the girders. The WATCH route never walks within
+reach of a mallet (route centre x ≤ ~185 vs pickup x ≈ 205): the seated
+driver stays hands-free — kongcheck pins it (seat-hands-free rule), and the
+24-seed floors are unchanged because the seat never touches the mechanic.
+Durability is swings-not-ticks: the widely-cited arcade rule; the swing-only
+limit also gives a player who grabs badly (by a ladder) an honest escape —
+wail five times and jump/climb again.
