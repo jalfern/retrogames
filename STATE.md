@@ -1,71 +1,77 @@
-# STATE — session 210 (2026-11-10, slot a)
+# STATE — session 211 (2026-11-11, slot a)
 
 ## What shipped
-**SMASH TV: OVER-THE-SHOULDER GUNS** merged as `f69058f` (PR #1947,
-Closes #1945 — never-dry weakestStage pick, score 4). The cabinet frames the
-contestant from above-behind: guns ride the SHOULDERS, muzzles past the head;
-the rebuild drew barrels at hip level. Now: `sprite.js` owns the pose as pure
-geometry (`CARRIAGE={back:1,rise:2.5}`, `gunPose` → base/muzzle/stock/flash per
-barrel); per-weapon carriages (twin over both shoulders w/ dual flash, MG long
-right-shoulder + drum-mag, SPREAD sawed-off w/ two dots, LASER boxy emitter +
-side-cells); chrome pauldrons in the sprite sheet (seat-palette aware);
-`juice.recoilKick` walks the carriage back 2px, zero within 5 ticks ≤ tightest
-interval. Sim UNTOUCHED — pilot seeds 0-8 clear, hashes byte-identical.
-smashcheck PASS 531 (new POSE law: mount behind shoulder plane + muzzle past it,
-8 aims × 4 weapons; silhouette, spread, stock, flash, recoil, pauldron checks);
-mutants 11/11 die (new: guns-drop-to-waist); smashplay 21/21 incl. pixel proof
-(18 chrome px cross the head column aimed up, 0 aimed down). Prod bundle
-verified (control flash:9.5 + new back:1,rise:2.5 + off:[2] in
-index-CzFQwzQj.js). Live: jalfern.com/retrogames/smash-tv.
+**WATCH BATCH 22 — THE QUOTA-CREW FAMILY** merged as `01b4df2` (PR #1957,
+Part of #1637). Two titles seat their own harness-proven crew on Y:
+- GRAVEL YARD — all three seats run `makeCpuEmitter(0..2)`, the crew
+  gravelcheck stamps CLEAN SHIFT with on 8/8 seeds (`simulate(s,3)`). It is
+  literally the attract demo's brain swapped into the play tick; unfilled
+  seats already ran it, WATCH seats the human digger too.
+- SHORT ORDER SHOUT — every seat runs its `makeCpuEmitter`: the cook+runner
+  pair soscheck wins 8/8 seeds with (`runEm(s,2)`).
+Both re-plan from live state every tick (bfs + stuck-replan → honest
+mid-run re-seat), takeover hands back, watch releases at `done`, online
+declines (#1656), WATCH_HELP + attract hint + shared pill/toast/blips.
+watchcheck pilots 222/222 each (seat/blip/advance/takeover/re-seat/resume/
+release + 10 batch-22 source pins incl. both checks' 8/8 witness stamps);
+mutant (seat-mount deleted) red on both; soscheck 47/47; watchphonecheck
+432/432; lint gates + build green. Prod live: `index-B2yyWpOm.js` carries
+"stamps CLEAN SHIFT on every test seed". Live: /retrogames/gravel-yard,
+/retrogames/short-order-shout.
 
-## The session's catch — browser pixel checks bite three ways
-The down-column pixel gate failed twice before passing: (1) walkcam LEGS use the
-exact barrel grey #8d99b5 — clear gs.enemies + roomData.spawns before sampling
-paint, or the arena's own cast votes on your sprite law; (2) the canvas lags the
-state by a frame — await 2× requestAnimationFrame after mutating state before
-getImageData; (3) spawn-invulnerability blinks the sprite out every other frame —
-zero invuln first. And grey-blending: anti-aliased visor edges at 50% land inside
-a ±40 grey window — sample ABOVE the sprite, not across it. Record: a pixel law
-is a law about the whole frame, not just the sprite.
+## The session's catches
+1. **`git stash` is repo-wide, not per-worktree.** A `stash -q` with a clean
+   tree is a silent no-op; the matching `stash pop` then applied ANOTHER
+   lane's stashed entry (qa/weightsurgery) into this lane's worktree with
+   conflicts. Recovery: `git reset --hard <own commit>` — the foreign stash
+   entry survives in the list. NEVER stash/pop in a lane worktree; to A/B a
+   failure against main, serve `~/Dev/retrogames` detached on a spare port.
+2. **watchphonecheck runs in `static` (blocking).** Every registry title
+   advertising WATCH must mount an attract `AttractWatchButton` OR be named
+   in SKIP_ATTRACT with a reason. Multi-screen boots (title→picker) belong
+   in SKIP_ATTRACT (bomb-defuse precedent). Run `npm run watchphonecheck`
+   BEFORE opening the PR — the pilots passing locally proved nothing here.
+3. gravelcheck's `#1705 lockstep holds` tick-spread (6-9) is a pre-existing
+   flake — reproduces identically on clean origin/main under machine load.
+   Don't chase it; verify-on-main is the way to prove it's not yours.
+4. `gh pr checks` right after `pr create` can fail the poll loop; guard the
+   jq with `// "PENDING"`.
 
 ## Ladder trail
-- halt none; steer none; `next` #1711 hardware-stalled on Jon (audit-confirmed
-  2026-11-10, code-complete — skip per trail); game-queue empty; QA MASTER live
-  (pid 27690) → feedback borrow refused; flagshipStage null (all flagship gaps
-  owned) → NEVER-DRY weakestStage: SMASH TV score 4, gap #0 → filed #1945 with
-  why-weakest → claimed(a) → shipped. No jonq (mechanical picks only; taste bar
-  not met).
-- Camera half of SmashTV gap #0 stays in README honestly: varisize arenas +
-  camera would re-pin every hash — not one stage.
-
-## Session bookkeeping
-- #1945 CLOSED shipped; QA polish pass filed as #1950 (recoil weight at phone
-  scale, swap glint, diagonal twin spread, pauldron bob, civ sprites, boss
-  gun-language).
-- :5173 vite runs from `~/Dev/retrogames-forge-smash-otsh` (detached f69058f
-  after merge, node_modules symlinked) — reuse or kill next slot-a session
-  before strictPort. Reclaimed 5173 from the stale ppm-portrait server (slot a's
-  own dead lineage — legal to kill; never another lane's port).
+- halt none; steer none; `next` #1711 hardware-stalled on Jon (audit-confirmed,
+  skip per trail); game-queue empty; QA MASTER live → feedback borrow refused;
+  warden TARGET #1637 won the claim (b's last liveness 179 min) → batch 22 via
+  the bare-title audit (no other reactive-driver title left unseated).
+  No jonq (mechanical picks only).
+- Audit of the bare registry (was 22): the rest have NO proven driver
+  (Pong/Asteroids/DonkeyKong/Centipede/Pitfall/Frogger), seed-tied scripts
+  (Metroid `planRun`), below-bar autopilot (FireCrew 8/10), or are DOS/IF
+  (Zork II/III, King's Quest, Rogue BFS lives in roguecheck only, Britannia,
+  ViperPit) — honest no-guide until a driver ships IN the game.
 
 ## Next queued (slot a)
-1. Fresh ladder: halt/steer/next/queue games-first, then feedback only if no QA
-   session is live (pgrep QA MASTER), else flagship/never-dry via idle.mjs.
-2. #1637 b22 candidates: other titles' watch gaps beat DF (DF far-side + graze
-   documented-closed-to-redesign, two batches of proof).
-3. QA-held items stay theirs (#1915/#1900/#1888/#1871 TMD, #1907 SI/DF, #1877
-   FB, #1923 rail, #1925 carpet, #1950 SmashTV). LodeRunner deep shafts #1942
-   is slot b's live build — don't touch.
+1. Fresh ladder: halt/steer/next/queue games-first, feedback only if no QA
+   session is live, else flagship/never-dry via idle.mjs.
+2. #1637 b23 candidates: Metroid = honest SCRIPT-replay seat (seed-pinned,
+   fresh-run-only, Paperboy-style decline mid-run); Rogue = lift its proven
+   BFS out of roguecheck into sim.js and seat it (counts as game code);
+   DF/SI are done-closed-to-redesign; don't re-litigate.
+3. QA-held items stay theirs (#1915/#1900/#1888/#1871 TMD, #1907 SI/DF,
+   #1877 FB, #1923 rail, #1925 carpet, #1950 SmashTV). LodeRunner strata
+   shipped by slot b (#1956).
 
 ## Notes for the next slot-a session
-- Any browser pixel check: clear threats/spawns, zero invuln, rAF×2 after
-  mutating state, and check your colour isn't worn by sprites you didn't clear.
-- smashcheck pose anchors measure off the SHOULDER anchor (centre + rise), not
-  body centre — the rise is the height cue; along-aim laws reference the plane
-  the carriage actually stands on.
-- Prod marker recipe: paint-only changes ship NO new UI strings — the minified
-  spec OBJECT survives (property names aren't mangled): pick a changed literal
-  pair like `back:1,rise:2.5` + an unchanged control; jalfern.com 308s to www —
-  curl -L.
+- :5173 vite is STOPPED (killed at session end); worktree
+  `~/Dev/retrogames-forge-watch-b22` detached at origin/main, node_modules
+  symlinked — reuse it or open a fresh one, then `npm run dev -- --port 5173
+  --strictPort`.
+- New-seat checklist that static enforces: WATCH_HELP in controls (flows into
+  watchphonecheck + watchcheck census + phone titles), play pill top-anchored
+  with `!paused`, attract AttractWatchButton OR SKIP_ATTRACT name, shared
+  blips logged via `watchSfx`, DEV probes `watching()/probe()/watchSfx()`,
+  pilot + source pins, mutant red proof.
+- advance-probe pattern: prover-only signals = what an idle player CANNOT do
+  (human-seat machine position, score/delivered/served) — never the sim tick.
 
 ## Open questions
 - None. (No taste/priority call needed from Jon.)
