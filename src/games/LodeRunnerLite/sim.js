@@ -206,7 +206,7 @@ function loseLife(g, cause) {
     p.mode = 'stand'; p.vx = 0; p.vy = 0; p.alive = true; p.face = 1; p.trapCount = 0; p.onLip = false
     for (const gd of g.guards) {
         if (!gd.alive) continue
-        gd.x = gd.home.x; gd.y = gd.home.y; gd.mode = 'stand'; gd.vx = 0; gd.vy = 0; gd.trapCount = 0; gd.onLip = liveHole(g, gd.x, gd.y + 1)
+        gd.x = gd.home.x; gd.y = gd.home.y; gd.mode = 'stand'; gd.vx = 0; gd.vy = 0; gd.trapCount = 0; gd.onLip = false
     }
 }
 
