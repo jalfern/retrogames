@@ -27,7 +27,10 @@
 //   pose (#1945): the over-the-shoulder carriage — mounts behind the body plane
 //               on the shoulder line, muzzles past centre in all eight aims,
 //               per-weapon silhouette, recoil that snaps, decays and never
-//               phantom-kicks; chrome pauldrons in every seat palette.
+//               phantom-kicks; chrome pauldrons in every seat palette; #1950
+//               gun language at phone scale — shell shake on the heavies, hot
+//               barrel on report, mount glint on swap, a 2px diagonal spread
+//               floor off the head column, pauldrons riding the gait.
 //   co-op (#496): two seats one arena — per-seat banks (kills pay the
 //               shooter), ONE shared POWER meter, either hero opens the exit,
 //               game over only when both seats burn their last life, the co-op
@@ -48,10 +51,10 @@ const ok = (cond, name, detail = '') => {
 
 const { GW, GW_BIG, BIG_ROOMS, GH, CW, CELL, EXITS, exitsOf, TOTAL_ROOMS, genRoom, START, startColOf, roomGw, isBonus, ENEMIES, WEAPONS } = await import('../src/games/SmashTV/levels.js')
 const { wallCell, NEON_TOP, CHROME, borderRivet } = await import('../src/games/SmashTV/walls.js')
-const { playerFrame, GUN, LAYERS, PLAYER_FRAMES, CARRIAGE, POSE, STOCK, gunPose } = await import('../src/games/SmashTV/sprite.js')
+const { playerFrame, GUN, LAYERS, PLAYER_FRAMES, CARRIAGE, POSE, STOCK, SPREAD_FLOOR, gunPose } = await import('../src/games/SmashTV/sprite.js')
 const { ENEMY_FRAMES, TELEGRAPH, CHARGERS, CHARGE, OUTLINE, enemyFrame, bossMouth, BOSS_MOUTH_FLAP, ADD_TELEGRAPH, BOSS_DEATH_T } = await import('../src/games/SmashTV/enemies.js')
-const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore, recoilKick, RECOIL_TICKS, RECOIL_PX } = await import('../src/games/SmashTV/juice.js')
-const { PLAYER_PAL } = await import('../src/games/SmashTV/art.js')
+const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore, recoilKick, RECOIL_TICKS, RECOIL_PX, SHELL_KICK, shellKick, barrelHot, HOT_FLOOR, GLINT_TICKS, glintPhase } = await import('../src/games/SmashTV/juice.js')
+const { PLAYER_PAL, PAULDRON_BOB } = await import('../src/games/SmashTV/art.js')
 const { FIRE, fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_TICKS, WHOOSH, ALERT, ALERT_RADIUS, ALERT_CD } = await import('../src/games/SmashTV/audio.js')
 const { BAR, PIP, POWER_LABEL, labelClearsBar, pipFits, bombReady, RACK_FLASH, hiRoll, respawnState, RESPAWN_BLINK_SHIFT } = await import('../src/games/SmashTV/hud.js')
 const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) }
@@ -170,6 +173,32 @@ console.log('pose')
     }
     ok(PLAYER_PAL.every((p) => p.pauld && p.shine && p.pauld !== p.jersey), 'every seat palette caps its shoulders in chrome pauldrons')
     ok(STOCK.col !== GUN.twin.col, 'the stock reads apart from the barrels')
+
+    // #1950 — the gun language at phone scale: shell shake, hot barrel, swap
+    // glint, diagonal spread floor, pauldron bob
+    ok(shellKick('gun') > 0 && shellKick('laser') > 0, 'the heavy iron shakes the shell where the carriage kick vanishes', JSON.stringify(SHELL_KICK))
+    ok(shellKick('twin') === 0, 'the twin is too light and too fast to rattle the cabinet')
+    ok(shellKick('spread') > 0 && shellKick('spread') < shellKick('gun'), 'the spread twitches, lighter than the MG')
+    ok(Object.values(SHELL_KICK).every((v) => v <= KILL_SHAKE.kill), 'a shell kick never out-jolts an ordinary kill')
+    ok(barrelHot(RECOIL_PX) && !barrelHot(HOT_FLOOR - 0.1) && !barrelHot(0), 'the barrel reports hot and cools within the recoil decay')
+    ok(!barrelHot(recoilKick(RECOIL_TICKS - 1)), 'the barrel is cold again before the kick is over')
+    ok(GLINT_TICKS >= 6 && glintPhase(GLINT_TICKS) === 1 && glintPhase(0) === 0 && glintPhase(-4) === 0 && glintPhase(GLINT_TICKS + 4) === 1, 'the mount glint flashes on swap and fades to nothing')
+    {
+        ok(SPREAD_FLOOR === 2, 'the diagonal spread floor is pinned at 2px')
+        const d = Math.SQRT1_2
+        for (const [ax, ay] of [[d, -d], [-d, -d], [d, d], [-d, d]]) {
+            const bars = gunPose('twin', [ax, ay], 0, 100, 100)
+            const h = bars.map((b) => b.base.x - 100)
+            ok(Math.min(Math.abs(h[0]), Math.abs(h[1])) >= 2 - 1e-9 && Math.sign(h[0]) !== Math.sign(h[1]),
+                'diagonal aim keeps both barrels >=2px off the head column', h.map((v) => v.toFixed(2)).join('/'))
+        }
+        const up = gunPose('twin', [0, -1], 0, 100, 100).map((b) => b.base.x - 100)
+        ok(Math.abs(up[0] - GUN.twin.off[0]) < 1e-9 && Math.abs(up[1] - GUN.twin.off[1]) < 1e-9, 'cardinal geometry is byte-identical — the floor only bites at diagonals', up.join('/'))
+        const flat = gunPose('twin', [1, 0], 0, 100, 100)
+        ok(Math.abs(flat[0].base.x - flat[1].base.x) < 1e-9 && Math.abs(flat[0].base.y - flat[1].base.y - (GUN.twin.off[0] - GUN.twin.off[1])) < 1e-9, 'flat aims keep their vertical stack — the floor ignores them')
+    }
+    ok(PAULDRON_BOB.length === PLAYER_FRAMES && PAULDRON_BOB[0] === 0 && PAULDRON_BOB[2] === 0 && PAULDRON_BOB[1] === -1 && PAULDRON_BOB[3] === -1,
+        'pauldrons ride the gait — lifted on the plant, seated on push-off, still at rest', JSON.stringify(PAULDRON_BOB))
 }
 
 // --------------------------------------------------------------- enemies ----

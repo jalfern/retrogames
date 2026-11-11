@@ -163,6 +163,12 @@ export const PLAYER_PAL = [
     { visor: '#e8f2e8', light: '#ffd23f', jersey: '#d9f2dc', trim: '#20422c', stripe: '#3fd45a', limb: '#c9e8cf', pauld: '#7fbf8f', shine: '#e8f8ea' },
 ]
 
+// pauldron bob (#1950): per run-cycle frame, in px. The caps lift 1px as the
+// feet plant and seat again on the push-off frames, so the chrome rides the
+// gait. Frame 0 doubles as the idle frame — a resting contestant's shoulders
+// stay exactly where #1945 put them.
+export const PAULDRON_BOB = [0, -1, 0, -1]
+
 function player(f, pal = PLAYER_PAL[0]) {
     const [c, g] = sheet(12, 16)
     px(g, 3, 1, 6, 5, pal.visor)
@@ -172,9 +178,12 @@ function player(f, pal = PLAYER_PAL[0]) {
     px(g, 3, 6, 6, 1, pal.trim); px(g, 3, 6, 1, 6, pal.trim); px(g, 8, 6, 1, 6, pal.trim)
     px(g, 4, 8, 4, 1, pal.stripe)
     px(g, 1, 7, 2, 3, pal.limb); px(g, 9, 7, 2, 3, pal.limb)
-    // chrome pauldrons capping the shoulder line (#1945) — the guns mount here
-    px(g, 0, 6, 3, 3, pal.pauld); px(g, 0, 6, 3, 1, pal.shine)
-    px(g, 9, 6, 3, 3, pal.pauld); px(g, 9, 6, 3, 1, pal.shine)
+    // chrome pauldrons capping the shoulder line (#1945) — the guns mount here.
+    // #1950: the caps ride the gait — lifted 1px as the feet plant, seated on
+    // the push-off frames, so the shoulders move with the run cycle.
+    const bob = PAULDRON_BOB[f % PLAYER_FRAMES]
+    px(g, 0, 6 + bob, 3, 3, pal.pauld); px(g, 0, 6 + bob, 3, 1, pal.shine)
+    px(g, 9, 6 + bob, 3, 3, pal.pauld); px(g, 9, 6 + bob, 3, 1, pal.shine)
     const LEGS = [[[0, 1], [1, -1]], [[0, 0], [0, 0]], [[1, -1], [0, 1]], [[1, 0], [0, 0]]]
     const [[lx, ly], [rx, ry]] = LEGS[f % PLAYER_FRAMES]
     px(g, 3 + lx, 12 + ly, 2, 3, pal.limb)

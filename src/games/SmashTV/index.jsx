@@ -25,7 +25,7 @@ import { buildSprites, buildFloor } from './art.js'
 import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
 import { playerFrame, GUN, STOCK, gunPose } from './sprite.js'
 import { enemyFrame, CHARGE, TELEGRAPH, OUTLINE, bossMouth, ADD_TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
-import { muzzleFlash, casingCol, killShake, recoilKick, shutterPhase, SHUTTER_TICKS } from './juice.js'
+import { muzzleFlash, casingCol, killShake, recoilKick, shutterPhase, SHUTTER_TICKS, shellKick, barrelHot, GLINT_TICKS, glintPhase } from './juice.js'
 import { BAR, PIP, POWER_LABEL, ICON, bombReady, hiRoll, RACK_FLASH, respawnState } from './hud.js'
 import { fireTimbre, BONUS_JINGLE, MURMUR, WHOOSH, ALERT } from './audio.js'
 import { attractFrame, DIM } from './attract.js'
@@ -76,6 +76,7 @@ const SmashTVGame = () => {
         let raf = 0, last = 0, acc = 0
         let demoAt = 0, toast = 0, toastMsg = '', shake = 0, flash = 0, roomTotal = 0, roomBump = 0, clearedAt = -1, rackFlash = 0, hiShown = board()[0]?.score || 0
         let camX = 0 // #1973: arena camera — big rooms run wider than the screen
+        const glint = [0, 0] // #1950: per-seat mount-glint countdown (draw frames)
                 const held = new Set()
         let bombEdge = false
         const evLog = []
@@ -122,6 +123,9 @@ const SmashTVGame = () => {
                     else for (const [fq, dl, d] of t.notes) audioController.playTone(fq, d, t.type, t.vol, dl)
                     const p = gs.players[e.pi || 0] || gs.player, [ax, ay] = p.aim
                     const col = casingCol(e.weapon || gs.weapon)
+                    // #1950: the heavies rattle the whole shell — the carriage
+                    // kick alone vanishes at phone scale
+                    shake = Math.max(shake, shellKick(e.weapon || gs.weapon))
                     for (let i = 0; i < 3; i++) parts.push({ x: p.x + ax * 6, y: p.y + ay * 6, vx: -ax * (1 + Math.random()) + (Math.random() - 0.5) * 1.6, vy: -ay * (1 + Math.random()) - 0.6, t: 0, col, grav: 0.18 })
                 }
                 else if (e.type === 'enemyHit') { audioController.playNoise(0.03, 0.05); burst(e.x || gs.player.x, e.y || gs.player.y, 3, '#ffd23f') }
@@ -139,7 +143,7 @@ const SmashTVGame = () => {
                     audioController.playNoise(0.14, 0.08); burst(e.x, e.y, 10, '#5dc8ff')
                     say(`${WEAPONS[e.weapon].name}!`)
                 } else if (e.type === 'pickup') {
-                    if (e.t === 'weapon') { audioController.playSweep(500, 1500, 0.2, 'square', 0.08); const q = gs.players[e.pi || 0] || gs.player; pop(q.x, q.y - 12, WEAPONS[e.w].name, '#8fff9f'); if (!e.pi) rackFlash = RACK_FLASH }
+                    if (e.t === 'weapon') { audioController.playSweep(500, 1500, 0.2, 'square', 0.08); const q = gs.players[e.pi || 0] || gs.player; pop(q.x, q.y - 12, WEAPONS[e.w].name, '#8fff9f'); if (!e.pi) rackFlash = RACK_FLASH; glint[e.pi || 0] = GLINT_TICKS }
                     else { audioController.playSweep(220, 880, 0.25, 'triangle', 0.08) }
                 } else if (e.type === 'wallHit') burst(e.x, e.y, 2, '#8d99b5', 1.2)
                 else if (e.type === 'eshoot') audioController.playSweep(300, 140, 0.06, 'sawtooth', 0.03)
@@ -382,13 +386,18 @@ const SmashTVGame = () => {
             const kick = recoilKick(WEAPONS[p.weapon].interval - p.fireT)
             const mf = muzzleFlash(p.weapon)
             const firing = p.fireT > WEAPONS[p.weapon].interval - 3
+            // #1950: the barrel glows in its own muzzle colour on report, and a
+            // fresh swap blooms the carriage with a mount glint that fades out
+            const hot = barrelHot(kick)
+            const gl = glintPhase(glint[idx])
+            if (glint[idx] > 0) glint[idx]--
             for (const bar of gunPose(p.weapon, p.aim, kick, p.x, p.y)) {
                 // stock stub trailing the mount
                 ctx.strokeStyle = STOCK.col
                 ctx.lineWidth = 2
                 ctx.beginPath(); ctx.moveTo(bar.base.x, bar.base.y); ctx.lineTo(bar.stock.x, bar.stock.y); ctx.stroke()
-                // barrel from shoulder to muzzle
-                ctx.strokeStyle = spec.col
+                // barrel from shoulder to muzzle — hot on report (#1950)
+                ctx.strokeStyle = hot ? spec.tip : spec.col
                 ctx.lineWidth = spec.w
                 ctx.beginPath(); ctx.moveTo(bar.base.x, bar.base.y); ctx.lineTo(bar.muz.x, bar.muz.y); ctx.stroke()
                 ctx.lineWidth = 1
@@ -397,6 +406,22 @@ const SmashTVGame = () => {
                 if (spec.mag) { ctx.fillStyle = '#4a5568'; ctx.fillRect(bar.base.x + ax * 3 - 1 + ox * 1.5, bar.base.y + ay * 3 - 1 + oy * 1.5, 2, 3) }
                 if (spec.dots) { ctx.fillStyle = spec.tip; ctx.fillRect(bar.muz.x - 1 + ox, bar.muz.y - 1 + oy, 1, 1); ctx.fillRect(bar.muz.x - 1 - ox, bar.muz.y - 1 - oy, 1, 1) }
                 if (spec.box) { ctx.fillStyle = '#3a4157'; ctx.fillRect(bar.muz.x - ax * 3 - 2, bar.muz.y - ay * 3 - 2, 4, 4); ctx.fillStyle = spec.tip; ctx.fillRect(bar.base.x + ox * spec.cells - 0.5, bar.base.y + oy * spec.cells - 0.5, 1, 1); ctx.fillRect(bar.base.x - ox * spec.cells - 0.5, bar.base.y - oy * spec.cells - 0.5, 1, 1) }
+                if (gl > 0) {
+                    // mount glint (#1950): white star at the shoulder mount plus a
+                    // muzzle-colour bloom along the new barrel, fading over GLINT_TICKS
+                    ctx.globalAlpha = gl
+                    ctx.strokeStyle = spec.tip
+                    ctx.lineWidth = spec.w + 1
+                    ctx.beginPath(); ctx.moveTo(bar.base.x, bar.base.y); ctx.lineTo(bar.muz.x, bar.muz.y); ctx.stroke()
+                    ctx.lineWidth = 1
+                    ctx.fillStyle = '#ffffff'
+                    ctx.fillRect(bar.base.x - 1, bar.base.y - 1, 2, 2)
+                    ctx.fillRect(bar.base.x - 3, bar.base.y, 1, 1)
+                    ctx.fillRect(bar.base.x + 2, bar.base.y, 1, 1)
+                    ctx.fillRect(bar.base.x, bar.base.y - 3, 1, 1)
+                    ctx.fillRect(bar.base.x, bar.base.y + 2, 1, 1)
+                    ctx.globalAlpha = 1
+                }
                 if (firing) { ctx.fillStyle = mf.col; ctx.beginPath(); ctx.arc(bar.flash.x, bar.flash.y, mf.r, 0, Math.PI * 2); ctx.fill() }
             }
         }
@@ -846,6 +871,7 @@ const SmashTVGame = () => {
                     parts.length = 0; pops.length = 0; evLog.length = 0
                     held.clear(); bombEdge = false
                     shake = 0; flash = 0; toast = 0
+                    glint[0] = glint[1] = 0
                     roomTotal = 0; roomBump = 0; clearedAt = -1
                     modelP2 = null; p2BombEdge = false
                     // a driven second seat opens as a model slot: __game.step([p1, p2])

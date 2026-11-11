@@ -37,16 +37,34 @@ export const GUN = {
 // the carriage geometry for one weapon aimed along [ax, ay] at (x, y), snapped
 // back by `kick` (juice.js recoil): one entry per barrel, each with base (the
 // shoulder mount), muz (muzzle), stock (stub end behind the mount) and flash.
+// diagonal spread floor (#1950): the shoulder offsets ride the PERPENDICULAR
+// of the aim and the carriage leans back along it, so at 45° the front barrel
+// sits ~1px off the body centre — inside the 6px head column, and the twin
+// stacks as one blob behind the visor. A twin's mount slides along the
+// perpendicular until the barrel clears ±SPREAD_FLOOR px of the CENTRE line,
+// so one gun stays visibly behind each shoulder at every aim. Only the
+// crowded barrel moves; cardinal geometry is byte-identical (it clears the
+// floor already) and flat aims keep their vertical stack.
+export const SPREAD_FLOOR = 2
+export function spreadOff(o, ax, ox, back, paired) {
+    if (!paired || ox === 0) return o
+    const h = -ax * back + ox * o
+    if (Math.abs(h) >= SPREAD_FLOOR) return o
+    return o + ((h < 0 ? -SPREAD_FLOOR : SPREAD_FLOOR) - h) / ox
+}
+
 export function gunPose(weapon, aim, kick = 0, x = 0, y = 0) {
     const g = GUN[weapon]
     const [ax, ay] = aim
     const ox = -ay, oy = ax
     const back = CARRIAGE.back + kick
+    const paired = g.off.length > 1
     return g.off.map((o) => {
-        const bx = x - ax * back + ox * o
-        const by = y - ay * back + oy * o - CARRIAGE.rise
+        const o2 = spreadOff(o, ax, ox, back, paired)
+        const bx = x - ax * back + ox * o2
+        const by = y - ay * back + oy * o2 - CARRIAGE.rise
         return {
-            perp: o,
+            perp: o2,
             base: { x: bx, y: by },
             muz: { x: bx + ax * g.len, y: by + ay * g.len },
             stock: { x: bx - ax * g.stock, y: by - ay * g.stock },
