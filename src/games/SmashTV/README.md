@@ -53,7 +53,8 @@ co-op rather than a shared run:
 - `walls.js` — the wall paint decisions (two-tone chrome, mortar, per-room
   neon top edge, rivet highlights); `drawWalls` renders exactly these.
 - `sprite.js` — the contestant's paint decisions (4-frame run cycle,
-  per-weapon gun silhouettes, layer order: feet under the gun layer).
+  per-weapon gun silhouettes, layer order: feet under the gun layer) and the
+  over-the-shoulder carriage geometry (`gunPose`) the renderer stamps exactly.
 - `art.js` — every sprite/texture synthesized at runtime.
 - `index.jsx` — canvas loop (fixed 60 Hz timestep, 256x248 internal), attract
   with seat pick (C/P), `'?'` PauseOverlay, VirtualControls (A = fire, B =
@@ -66,9 +67,24 @@ npm run smashcheck -- --mutate                  # planted bugs (incl. 2 co-op) m
 npm run smashplay                               # headless browser: play, die, restart, seat 2
 ```
 
+## OVER-THE-SHOULDER GUNS (#1945)
+The cabinet frames the contestant from a camera above-behind: the guns ride the
+**shoulders**, muzzles out past the head. `sprite.js` owns the pose as pure
+geometry — `CARRIAGE = { back: 1, rise: 2.5 }` puts every mount behind the body
+plane on the shoulder line, and `gunPose(weapon, aim, kick, x, y)` returns one
+carriage per barrel: shoulder base, muzzle, trailing stock stub, flash point.
+Per-weapon carriage: twin = one barrel over each shoulder (dual muzzle flash);
+MACHINE GUN = long right-shoulder mount with a drum-mag stub; SPREAD = short fat
+sawed-off across the chest with two muzzle dots; LASER = boxy emitter with a hot
+tip and side-cell glow. Chrome pauldrons cap the shoulder line in the sprite
+sheet (seat-palette aware). `juice.js recoilKick` snaps the carriage back 2 px
+on report, decaying to zero within 5 ticks ≤ the tightest fire interval. The
+sim is untouched — paint-only, so every seed hash and replay pin still holds.
+
 ## Honest gaps vs the cabinet
-- The original's over-the-shoulder gun sprites and zoom-out on big rooms are
-  approximated with a fixed top-down camera.
+- True zoom-out on big rooms still needs arenas bigger than the screen — a
+  varisize board + camera would re-pin every hash; the camera stays fixed
+  top-down. The guns now carry the cabinet's over-the-shoulder pose (#1945).
 - Eight original weapons are distilled to four (twin, machine gun, spread,
   laser) + firebomb; the homing/heat-seeking and flamer are not modelled.
 - Bonus-room civilians are stylized (dot-matrix contestants, no gore sprites).

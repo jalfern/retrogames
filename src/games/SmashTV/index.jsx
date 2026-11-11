@@ -23,9 +23,9 @@ import { makeSlot, setSlotKind, padFor } from '../../utils/slotSources'
 import { pressSlot, releaseSlot, slotActive, clearSlot, currentPad, connectedSlots } from '../../utils/onePad'
 import { buildSprites, buildFloor } from './art.js'
 import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
-import { playerFrame, GUN } from './sprite.js'
+import { playerFrame, GUN, STOCK, gunPose } from './sprite.js'
 import { enemyFrame, CHARGE, TELEGRAPH, OUTLINE, bossMouth, ADD_TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
-import { muzzleFlash, casingCol, killShake, shutterPhase, SHUTTER_TICKS } from './juice.js'
+import { muzzleFlash, casingCol, killShake, recoilKick, shutterPhase, SHUTTER_TICKS } from './juice.js'
 import { BAR, PIP, POWER_LABEL, ICON, bombReady, hiRoll, RACK_FLASH, respawnState } from './hud.js'
 import { fireTimbre, BONUS_JINGLE, MURMUR, WHOOSH, ALERT } from './audio.js'
 import { attractFrame, DIM } from './attract.js'
@@ -374,21 +374,26 @@ const SmashTVGame = () => {
             const spec = GUN[p.weapon]
             const [ax, ay] = p.aim
             const ox = -ay, oy = ax
-            for (const o of spec.off) {
+            // the over-the-shoulder carriage (#1945), snapped back by the recoil
+            const kick = recoilKick(WEAPONS[p.weapon].interval - p.fireT)
+            const mf = muzzleFlash(p.weapon)
+            const firing = p.fireT > WEAPONS[p.weapon].interval - 3
+            for (const bar of gunPose(p.weapon, p.aim, kick, p.x, p.y)) {
+                // stock stub trailing the mount
+                ctx.strokeStyle = STOCK.col
+                ctx.lineWidth = 2
+                ctx.beginPath(); ctx.moveTo(bar.base.x, bar.base.y); ctx.lineTo(bar.stock.x, bar.stock.y); ctx.stroke()
+                // barrel from shoulder to muzzle
                 ctx.strokeStyle = spec.col
                 ctx.lineWidth = spec.w
-                ctx.beginPath()
-                ctx.moveTo(p.x + ox * o + ax * 2, p.y + oy * o + ay * 2)
-                ctx.lineTo(p.x + ox * o + ax * spec.len, p.y + oy * o + ay * spec.len)
-                ctx.stroke()
+                ctx.beginPath(); ctx.moveTo(bar.base.x, bar.base.y); ctx.lineTo(bar.muz.x, bar.muz.y); ctx.stroke()
+                ctx.lineWidth = 1
                 ctx.fillStyle = spec.tip
-                ctx.fillRect(p.x + ox * o + ax * spec.len - 1, p.y + oy * o + ay * spec.len - 1, 2, 2)
-            }
-            ctx.lineWidth = 1
-            if (p.fireT > WEAPONS[p.weapon].interval - 3) {
-                const mf = muzzleFlash(p.weapon)
-                ctx.fillStyle = mf.col
-                ctx.beginPath(); ctx.arc(p.x + ax * spec.flash, p.y + ay * spec.flash, mf.r, 0, Math.PI * 2); ctx.fill()
+                ctx.fillRect(bar.muz.x - 1, bar.muz.y - 1, 2, 2)
+                if (spec.mag) { ctx.fillStyle = '#4a5568'; ctx.fillRect(bar.base.x + ax * 3 - 1 + ox * 1.5, bar.base.y + ay * 3 - 1 + oy * 1.5, 2, 3) }
+                if (spec.dots) { ctx.fillStyle = spec.tip; ctx.fillRect(bar.muz.x - 1 + ox, bar.muz.y - 1 + oy, 1, 1); ctx.fillRect(bar.muz.x - 1 - ox, bar.muz.y - 1 - oy, 1, 1) }
+                if (spec.box) { ctx.fillStyle = '#3a4157'; ctx.fillRect(bar.muz.x - ax * 3 - 2, bar.muz.y - ay * 3 - 2, 4, 4); ctx.fillStyle = spec.tip; ctx.fillRect(bar.base.x + ox * spec.cells - 0.5, bar.base.y + oy * spec.cells - 0.5, 1, 1); ctx.fillRect(bar.base.x - ox * spec.cells - 0.5, bar.base.y - oy * spec.cells - 0.5, 1, 1) }
+                if (firing) { ctx.fillStyle = mf.col; ctx.beginPath(); ctx.arc(bar.flash.x, bar.flash.y, mf.r, 0, Math.PI * 2); ctx.fill() }
             }
         }
 

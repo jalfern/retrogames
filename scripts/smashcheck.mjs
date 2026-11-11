@@ -13,6 +13,10 @@
 //   slack     : seed 1 still wins with one fewer crate per room and zero
 //               energy cells.
 //   determinism : same seed twice -> identical digest.
+//   pose (#1945): the over-the-shoulder carriage — mounts behind the body plane
+//               on the shoulder line, muzzles past centre in all eight aims,
+//               per-weapon silhouette, recoil that snaps, decays and never
+//               phantom-kicks; chrome pauldrons in every seat palette.
 //   co-op (#496): two seats one arena — per-seat banks (kills pay the
 //               shooter), ONE shared POWER meter, either hero opens the exit,
 //               game over only when both seats burn their last life, the co-op
@@ -31,11 +35,12 @@ const ok = (cond, name, detail = '') => {
     else { fails++; console.log(`  FAIL ${name}${detail ? ` — ${detail}` : ''}`) }
 }
 
-const { GW, GH, EXITS, TOTAL_ROOMS, genRoom, START, isBonus, ENEMIES } = await import('../src/games/SmashTV/levels.js')
+const { GW, GH, EXITS, TOTAL_ROOMS, genRoom, START, isBonus, ENEMIES, WEAPONS } = await import('../src/games/SmashTV/levels.js')
 const { wallCell, NEON_TOP, CHROME, borderRivet } = await import('../src/games/SmashTV/walls.js')
-const { playerFrame, GUN, LAYERS, PLAYER_FRAMES } = await import('../src/games/SmashTV/sprite.js')
+const { playerFrame, GUN, LAYERS, PLAYER_FRAMES, CARRIAGE, POSE, STOCK, gunPose } = await import('../src/games/SmashTV/sprite.js')
 const { ENEMY_FRAMES, TELEGRAPH, CHARGERS, CHARGE, OUTLINE, enemyFrame, bossMouth, BOSS_MOUTH_FLAP, ADD_TELEGRAPH, BOSS_DEATH_T } = await import('../src/games/SmashTV/enemies.js')
-const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore } = await import('../src/games/SmashTV/juice.js')
+const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore, recoilKick, RECOIL_TICKS, RECOIL_PX } = await import('../src/games/SmashTV/juice.js')
+const { PLAYER_PAL } = await import('../src/games/SmashTV/art.js')
 const { FIRE, fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_TICKS, WHOOSH, ALERT, ALERT_RADIUS, ALERT_CD } = await import('../src/games/SmashTV/audio.js')
 const { BAR, PIP, POWER_LABEL, labelClearsBar, pipFits, bombReady, RACK_FLASH, hiRoll, respawnState, RESPAWN_BLINK_SHIFT } = await import('../src/games/SmashTV/hud.js')
 const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) }
@@ -103,6 +108,55 @@ console.log('player')
     ok(Object.values(GUN).every((g) => g.flash > g.len), 'the muzzle flash blooms beyond the muzzle')
     ok(new Set(Object.values(GUN).map((g) => g.tip)).size === 4, 'each weapon has its own muzzle colour')
     ok(LAYERS.indexOf('feet') < LAYERS.indexOf('gun') && LAYERS.indexOf('body') < LAYERS.indexOf('gun'), 'feet and body render under the gun layer', LAYERS.join('>'))
+}
+
+// ------------------------------------------------------------------- pose ----
+// the over-the-shoulder carriage (#1945): every gun mounts behind the body
+// plane on the shoulder line, projects its muzzle past centre, keeps its own
+// silhouette in all eight aims, and recoils with a kick that dies out cleanly.
+console.log('pose')
+{
+    const AIM = [[0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]]
+        .map(([x, y]) => { const L = Math.hypot(x, y); return [x / L, y / L] })
+    ok(CARRIAGE.back >= POSE.mountBack && CARRIAGE.rise >= 2, 'the carriage mounts behind the plane, on the shoulder line', JSON.stringify(CARRIAGE))
+    for (const w of Object.keys(GUN)) {
+        for (const [ax, ay] of AIM) {
+            const bars = gunPose(w, [ax, ay], 0, 100, 100)
+            // the shoulder anchor: where the cabinet camera plants the carriage.
+            // the rise is the height cue; behind-ness and reach measure against it.
+            const anch = { x: 100, y: 100 - CARRIAGE.rise }
+            const along = (pt) => (pt.x - anch.x) * ax + (pt.y - anch.y) * ay
+            ok(bars.length === GUN[w].off.length, `${w} carries ${GUN[w].off.length} barrel(s) aimed ${ax},${ay}`)
+            for (const b of bars) {
+                ok(along(b.base) <= -POSE.mountBack + 1e-9, `${w}: mount sits behind the shoulder plane (${along(b.base).toFixed(1)})`)
+                ok(along(b.muz) >= POSE.muzzlePast, `${w}: muzzle projects past the shoulder (${along(b.muz).toFixed(1)})`)
+                ok(along(b.stock) < along(b.base), `${w}: stock trails the mount`)
+                ok(along(b.flash) > along(b.muz), `${w}: flash blooms past the muzzle`)
+            }
+        }
+        const sig = GUN[w]
+        ok(sig.flash > sig.len, `${w}: flash spec is past the muzzle`)
+        ok(sig.stock > 0, `${w}: carriage has a stock`)
+    }
+    {
+        const bars = gunPose('twin', [0, -1])
+        const perp = (pt) => -pt.x * -1 + pt.y * 0
+        ok(bars.length === 2 && Math.abs(perp(bars[0].base) - perp(bars[1].base) - (GUN.twin.off[0] - GUN.twin.off[1])) < 1e-9, 'twin keeps its shoulder spread — one gun over each shoulder')
+        ok(gunPose('gun', [1, 0])[0].perp > 0, 'the machine gun rides the right shoulder')
+    }
+    ok(recoilKick(0) === RECOIL_PX && recoilKick(RECOIL_TICKS) === 0, 'recoil snaps on report and dies out', `${recoilKick(0)}->${recoilKick(RECOIL_TICKS)}`)
+    ok(Array.from({ length: RECOIL_TICKS }, (_, s) => recoilKick(s) >= recoilKick(s + 1)).every(Boolean), 'recoil decays monotonically')
+    ok(RECOIL_TICKS <= Math.min(...Object.values(WEAPONS).map((w) => w.interval)), 'the kick is gone before the tightest fire interval')
+    ok(recoilKick(Math.min(...Object.values(WEAPONS).map((w) => w.interval))) === 0, 'an armed but un-fired gun never phantom-kicks')
+    for (const w of Object.keys(GUN)) {
+        const a = [0, -1]
+        const still = gunPose(w, a, 0, 100, 100)[0]
+        const kicked = gunPose(w, a, RECOIL_PX, 100, 100)[0]
+        const walk = (p, q) => (q.x - p.x) * a[0] + (q.y - p.y) * a[1]
+        ok(Math.abs(walk(still.base, kicked.base) + RECOIL_PX) < 1e-9 && Math.abs(walk(still.muz, kicked.muz) + RECOIL_PX) < 1e-9, `${w}: recoil walks the whole carriage back ${RECOIL_PX}px`)
+    }
+    ok(PLAYER_PAL.every((p) => p.pauld && p.shine && p.pauld !== p.jersey), 'every seat palette caps its shoulders in chrome pauldrons')
+    ok(STOCK.col !== GUN.twin.col, 'the stock reads apart from the barrels')
 }
 
 // --------------------------------------------------------------- enemies ----
@@ -688,17 +742,25 @@ if (process.argv.includes('--mutate')) {
         ['the partner\'s kills pay seat 1 instead of the shooter', 'addScore(gs, ENEMIES[e.kind].pts, { kind: e.kind }, pi)\n        gs.events.push({ type: \'kill\', id: e.id, kind: e.kind, x: e.x, y: e.y, pts: ENEMIES[e.kind].pts, bossAdd: e.born !== undefined, pi })', 'addScore(gs, ENEMIES[e.kind].pts, { kind: e.kind }, 0)\n        gs.events.push({ type: \'kill\', id: e.id, kind: e.kind, x: e.x, y: e.y, pts: ENEMIES[e.kind].pts, bossAdd: e.born !== undefined, pi })'],
         ['both seats out never ends the co-op show', 'if (seats.every((q) => q.out)) { gs.end = \'over\'', 'if (seats.every((q) => q.out && false)) { gs.end = \'over\''],
     ]
-    const orig = readFileSync(SIM, 'utf8')
-    let died = 0
-    for (const [name, from, to] of MUTANTS) {
-        if (!orig.includes(from)) { ok(false, `mutant ${name}: anchor missing`); continue }
-        plant(SIM, orig.replace(from, to))
-        const res = spawnSync('node', ['scripts/smashcheck.mjs'], { encoding: 'utf8' })
-        if (res.status !== 0) { died++; ok(true, `mutant ${name} caught`) }
-        else ok(false, `mutant ${name} SURVIVED`)
+    const SPRITE = 'src/games/SmashTV/sprite.js'
+    const SPRITE_MUTANTS = [
+        ['guns drop to the waist (pose law: shoulder carriage)', 'export const CARRIAGE = { back: 1, rise: 2.5 }', 'export const CARRIAGE = { back: 0, rise: 0 }'],
+    ]
+    const targets = [[SIM, MUTANTS], [SPRITE, SPRITE_MUTANTS]]
+    let died = 0, total = 0
+    for (const [file, muts] of targets) {
+        const orig = readFileSync(file, 'utf8')
+        for (const [name, from, to] of muts) {
+            total++
+            if (!orig.includes(from)) { ok(false, `mutant ${name}: anchor missing`); continue }
+            plant(file, orig.replace(from, to))
+            const res = spawnSync('node', ['scripts/smashcheck.mjs'], { encoding: 'utf8' })
+            if (res.status !== 0) { died++; ok(true, `mutant ${name} caught`) }
+            else ok(false, `mutant ${name} SURVIVED`)
+        }
+        pull(file)
     }
-    pull(SIM)
-    ok(died === MUTANTS.length, 'all mutants die', `${died}/${MUTANTS.length}`)
+    ok(died === total, 'all mutants die', `${died}/${total}`)
 }
 
 console.log(fails ? `FAIL ${fails} (pass ${passes})` : `PASS ${passes}`)
