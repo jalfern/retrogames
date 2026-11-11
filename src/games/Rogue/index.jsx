@@ -375,7 +375,7 @@ export default function RogueGame() {
     boxSizing: 'border-box',
     // #1833: the fixed ARCADE/PAUSE chrome sat right on the message line —
     // give every screen a band clear of it (buttons top out ~40px + safe area).
-    paddingTop: 'calc(2.75rem + var(--sat, 0px))',
+    paddingTop: 'calc(4.75rem + var(--sat, 0px))',
   }
 
   // ── GAME OVER ──────────────────────────────────────────────

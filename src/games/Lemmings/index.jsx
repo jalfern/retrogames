@@ -52,7 +52,6 @@ const LemGame = () => {
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [end, setEnd] = useState(null)
-    const [portrait, setPortrait] = useState(false)
     const [watching, setWatching] = useState(false) // #1637 WATCH: sim.js solve() assigns the skills
     const watchingRef = useRef(false)
     const screenRef = useRef('attract')
@@ -562,12 +561,10 @@ const LemGame = () => {
         window.addEventListener('pointerup', onPanelEnd)
         window.addEventListener('pointercancel', onPanelEnd)
 
-        // #432: a portrait phone gets the rotate prompt (the stage is 48x27);
-        // the same wrapper the fit shell observes owns this flag.
-        const orient = () => setPortrait(wrap.clientHeight > wrap.clientWidth)
-        const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(orient) : null
-        if (ro) ro.observe(wrap)
-        orient()
+        // #432/#1748: the rotate prompt is the shared RotateHint chrome (#1147) —
+        // its card sits dead-center and the game's own duplicate banner stacked
+        // right over its dismiss button, so the banner is gone.
+
         raf = requestAnimationFrame(frame)
 
         // ---------- DEV hook: read-only probe + solver hint ----------
@@ -699,7 +696,6 @@ const LemGame = () => {
             window.removeEventListener('pointercancel', endPress)
             window.removeEventListener('pointerup', onPanelEnd)
             window.removeEventListener('pointercancel', onPanelEnd)
-            if (ro) ro.disconnect()
             fit.destroy()
             cancelAnimationFrame(raf)
             canvas.remove()
@@ -815,16 +811,6 @@ const LemGame = () => {
                 </div>
             )}
 
-            {/* #432: portrait fills only part of the screen — say so. */}
-            {portrait && (
-                <div className="absolute inset-0 z-[60] flex items-center justify-center pointer-events-none">
-                    <div className="bg-black/70 border border-amber-300/50 rounded-lg px-6 py-4 text-center font-mono">
-                        <div className="text-3xl mb-1 text-amber-200">⟳</div>
-                        <div className="text-amber-100 font-bold tracking-widest text-sm">ROTATE YOUR PHONE</div>
-                        <div className="text-amber-200/70 text-xs mt-1">the ledge plays landscape</div>
-                    </div>
-                </div>
-            )}
         </div>
     )
 }
