@@ -1460,8 +1460,10 @@ const MagicCarpetGame = () => {
                             if (gs.end) return `already ${gs.end}`
                             const clone = JSON.parse(JSON.stringify(gs))
                             clone.events = []
+                            // #1925: the cap rides the campaign — a full 18-world win runs
+                            // ~12k ticks/world, so a fixed 60k would call world 1 unwinnable.
                             let t = 0
-                            while (!clone.end && t < 60000) { step(clone, autopilot(clone)); t++ }
+                            while (!clone.end && t < LEVELS.length * 12000) { step(clone, autopilot(clone)); t++ }
                             return clone.end === 'win'
                                 ? `WINNABLE from here: vault quota banked at tick ${clone.tick} (${clone.score} pts)`
                                 : `NOT winnable by the autopilot from here: end=${clone.end || 'timeout'} vault ${Math.floor(clone.bank)}/${clone.quota}`
@@ -1543,7 +1545,7 @@ const MagicCarpetGame = () => {
             {screen === 'attract' && (
                 <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
                     <h1 className="text-4xl font-black" style={{ color: '#e8c860', textShadow: '0 0 18px #6a4ad0, 3px 3px 0 #3a1a5a' }}>MAGIC CARPET</h1>
-                    <p className="text-purple-200/90 font-mono mt-1 text-sm">fly . gather mana . fly it home . restore nine worlds</p>
+                    <p className="text-purple-200/90 font-mono mt-1 text-sm">fly . gather mana . fly it home . restore eighteen worlds</p>
                     <p className="text-white font-mono font-bold mt-2 animate-pulse">TAP / PRESS ANY KEY TO START</p>
                     <AttractMessage
                         className="text-purple-100/80 font-mono text-[11px] mt-2 px-8 leading-4"
@@ -1556,7 +1558,7 @@ const MagicCarpetGame = () => {
                             'DIE AND THE LOAD IS LOST',
                             'FIREBALLS CRATER THE LAND · BURNING VILLAGES BREED WOLVES',
                             'CAST INVISIBILITY AND WIZARD AND WOLVES LOOK RIGHT THROUGH YOU',
-                            'NINE WORLDS · THREE ARCS OF THREE ATMOSPHERES · EACH GUARDED',
+                            'EIGHTEEN WORLDS · SIX ARCS OF THREE ATMOSPHERES · EACH GUARDED',
                         ]}
                     />
                     <span className="block mt-2 text-purple-200/70 font-mono font-bold tracking-wider">{WATCH_ATTRACT_HINT}</span>
