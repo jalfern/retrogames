@@ -5,7 +5,7 @@
 // that every classic rule the issue named is load-bearing:
 //
 //   npm run lodecheck              the audit (~2 s)
-//   npm run lodecheck -- --mutate  + thirteen mutants that MUST die
+//   npm run lodecheck -- --mutate  + fourteen mutants that MUST die
 //   npm run lodecheck -- --map 1   dump a vault as ASCII
 //
 // The rules pinned here: no jump, diagonal-only dig (straight down only from
@@ -79,6 +79,35 @@ function drive(g, capTicks) {
     return { evs, shared, hash: stateHash(g) }
 }
 
+// #1991 — the live-chain script for THE ROPE: real inputs from the real spawn
+// carve the two-cell shaft at column 9 by the ladder and climb away; both
+// hunters route across the mouth and ride the same closing brick. Returns the
+// receipts the scenario grades. Shared with the mutant that flattens the pair.
+const CHAIN_SCRIPT = [
+    ...Array(10).fill('ArrowRight'), 'ArrowLeft', 'ArrowDown', 'ArrowLeft', 'ArrowDown',
+    'ArrowUp', 'ArrowUp', 'ArrowLeft',
+    ...Array(13).fill('ArrowUp'),
+]
+const liveChain = (g, maxTicks = 400) => {
+    const p = g.player
+    const out = { chain: null, pursued: new Set(), mouths: 0, gold0: 0 }
+    let si = 0
+    for (let t = 0; t < maxTicks && !g.end && !out.chain; t++) {
+        if (g.tick % CFG.moveEvery === 0 && si < CHAIN_SCRIPT.length) {
+            applyAction(g, p, CHAIN_SCRIPT[si++], { dig: true })
+        }
+        step(g)
+        for (const e of g.events) {
+            if (e.type === 'pursued') out.pursued.add(e.id)
+            else if (e.type === 'fallInto' && e.x === 9 && e.y === 15) out.mouths++
+            else if (e.type === 'gold') out.gold0++
+            else if (e.type === 'guardBuried' && e.n >= 2) out.chain = e
+        }
+        g.events.length = 0
+    }
+    return out
+}
+
 // ------------------------------------------------- construction contracts ----
 section('CONSTRUCTION — every vault carves honestly (levels.js contracts 1-4)')
 for (let i = 0; i < LEVELS.length; i++) {
@@ -133,6 +162,12 @@ for (let i = 0; i < LEVELS.length; i++) {
         }
     }
 }
+// #1991 — the shelf carries a MULTI-GUARD vault: the chain rung of the trap
+// ladder must be reachable in actual play, and that needs a live pair. THE
+// ROPE hunts with two; flatten it back to one and the chain is a pinned law
+// with no home, which is exactly what the mutant below proves.
+ok(LEVELS.reduce((n, l) => n + l.guards.length, 0) >= 4, 'the shelf no longer carries four hunters — a multi-guard vault was flattened (#1991)')
+ok(LEVELS[1].name === 'THE ROPE' && LEVELS[1].guards.length >= 2, 'THE ROPE shipped without its second guard — the trap ladder lost its live pair (#1991)')
 
 // ------------------------------------------------ each vault, solved live ----
 const receipts = {}
@@ -351,6 +386,28 @@ section('RULES — the 1983 contract, each pinned by a scenario')
     ok(gdA.x === gdA.home.x && gdB.x === gdB.home.x, 'a chain-buried guard did not respawn at the top')
 }
 {
+    // LIVE CHAIN, REAL SPAWNS (#1991): THE ROPE's second hunter makes the
+    // original's signature reachable in actual play. A scripted stream (real
+    // inputs from the real spawn — no hand-placed bodies) carves the two-cell
+    // shaft at column 9 by the ladder, and both guards, routing across the
+    // mouth to reach the runner, drop in one behind the other. The closing
+    // brick catches the PAIR: the trap ladder pays double for one refill's
+    // catch, and the grave's stratum adds its depth premium on top.
+    //  (script: run to x11, face left, dig (9,16), drop in, deepen to (9,17),
+    //   clamber out onto the ladder foot, climb away while the fuse closes.)
+    const b = buildLevel(1); const g = makeGame(b.meta, b.grid)
+    const scoreBefore = g.score
+    const r = liveChain(g)
+    ok(r.pursued.has(0) && r.pursued.has(1), `THE ROPE's hunters: only guard(s) ${[...r.pursued]} filed a pursuit — two wings must both hunt (#1991)`)
+    ok(r.mouths >= 2, `${r.mouths} guard(s) took the shortcut across the mouth — holeFall is not reaching the pair`)
+    ok(r.chain && r.chain.n === 2, `the closing brick caught ${r.chain ? r.chain.n : 0} guards in live play — the chain rung never fired from real spawns (#1991)`)
+    ok(r.chain && r.chain.pay === 1500 && r.chain.depth === 2,
+        `the live chain paid ${r.chain ? r.chain.pay : '-'} at depth ${r.chain ? r.chain.depth : '-'} — the original's double at stratum two pays 1500 (ladder 2x + one stratum)`)
+    ok(r.chain && g.score === scoreBefore + 500 + 1500, 'the live chain pay did not land on the score (gold 500 + chain 1500)')
+    ok(g.lives === (b.meta.lives ?? CFG.lives), 'the runner lost a life in a scenario meant for the guards')
+    ok(g.guards.every((gd) => gd.alive && gd.y === 15 && gd.x >= 22), 'a chain-buried hunter did not respawn on the top wing')
+}
+{
     // SHAFT LAW, MEASURED: two climbs and three climbs both cost more than one
     // fuse. Assert the clocks themselves — the law is the arithmetic.
     ok(2 * CFG.guardTrap > CFG.refill, `a two-cell shaft is escapable by clock (${2 * CFG.guardTrap} <= ${CFG.refill}) — deep burial is a myth with these numbers`)
@@ -503,6 +560,16 @@ if (MUT) {
         for (let x = 1; x < W - 1; x++) mut[(H - 1) * W + x] = SOLID
         console.log(`  mut strata=2 (the bottom rock row is iron): ${strataLaw(mut) ? 'SURVIVED (BAD)' : 'caught by the audit'}`)
         ok(!strataLaw(mut), 'strata=2 SURVIVED — the strata law does not touch the vault ground')
+    }
+    // #1991: flatten THE ROPE back to one guard. A lone hunter can only ever
+    // pay single — the two-hunter receipts and the live chain must go red.
+    {
+        const base = liveChain(makeGame(buildLevel(1).meta, buildLevel(1).grid)).chain
+        ok(base && base.n === 2, `mutation harness broken: baseline for 'rope=one guard' is already false`)
+        const mutMeta = { ...buildLevel(1).meta, guards: [buildLevel(1).meta.guards[0]] }
+        const verdict = liveChain(makeGame(mutMeta, buildLevel(1).grid)).chain?.n ?? 0
+        console.log(`  mut rope=one guard (THE ROPE back to a single hunter): ${verdict >= 2 ? 'SURVIVED (BAD)' : 'caught by the audit'}`)
+        ok(verdict < 2, 'rope=one guard SURVIVED — the chain pay fired with a lone hunter; the pair contract is not graded')
     }
 }
 
