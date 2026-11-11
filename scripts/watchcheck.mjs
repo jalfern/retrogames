@@ -1716,6 +1716,57 @@ const PILOTS = [
             rep.check('fire-crew: Y again releases the hose', !(await watching()))
         },
     },
+    // #1637 batch 29 — MISSILE COMMAND seats the gunner its own harness
+    // certifies: missilecmdcheck sweeps waves 1-5 on 24 seeds with ALL SIX
+    // CITIES and every silo standing (gunnerStep in sim.js — intercept HIGH,
+    // urgent-first, one promised shot per warhead). The seat is reactive per
+    // tick, so mid-barrage hand-offs are honest from any sky; the mouse owns
+    // the yoke here, so a mouse move must take over too (armed a half second
+    // so seating the pill can't be released by its own touch noise).
+    {
+        id: 'missilecommand', url: `${BASE}/missilecommand`, hook: '__mcTest',
+        async run(page, rep) {
+            const H = '__mcTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            await key(page, 'Space') // attract -> the raid is live
+            await page.waitForTimeout(400)
+            rep.check('missilecommand: the raid is live before the seat',
+                (await probe()).cities === 6 && await page.evaluate((h) => window[h].screen(), H) === 'play')
+            rep.check('missilecommand: nobody is driving yet (no seat before Y)', !(await watching()))
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('missilecommand: Y seats the proven gunner', await watching())
+            rep.check('missilecommand: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            const adv = (x, y) => y.score > x.score || y.wave > x.wave || (!!y.done && !x.done)
+            const a = await probe()
+            const b = await pollAdvance(page, probe, adv, a, 12000)
+            rep.check('missilecommand: the gunner kills with idle hands', adv(a, b),
+                `score ${a.score} -> ${b.score}, wave ${a.wave} -> ${b.wave}, warheads ${a.warheads} -> ${b.warheads}`)
+            rep.check('missilecommand: all six cities still standing mid-barrage (intercept-HIGH doctrine, live)',
+                b.cities === 6, `${b.cities}/6 cities, ${b.silos}/3 silos`)
+            rep.check('missilecommand: still watching mid-raid', await watching())
+            await page.keyboard.press('ArrowLeft')
+            rep.check('missilecommand: aim key takes over', !(await watching()))
+            rep.check('missilecommand: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('missilecommand: Y re-seats mid-raid (the gunner re-solves the live sky)', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 12000)
+            rep.check('missilecommand: resumes from where the player left it', adv(c, d),
+                `score ${c.score} -> ${d.score}, wave ${c.wave} -> ${d.wave}`)
+            await key(page, 'KeyY')
+            rep.check('missilecommand: Y again releases the crosshair', !(await watching()))
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            await page.waitForTimeout(600) // past the seat's mouse-arming grace
+            await page.mouse.move(300, 220)
+            await page.mouse.move(304, 226)
+            rep.check('missilecommand: a mouse move takes the yoke back', !(await watching()))
+        },
+    },
     // #1637 batch 13 — the racer family seats its CERTIFIED autopilot. decide()
     // (CometDrift/sim.js) is the brain cometcheck races to victory ("autopilot
     // wins the 5-lap GP from P7", #1687-certified drift ladder) and both titles'
@@ -2854,6 +2905,35 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     rep.check('registry /fire-crew: controls carry the WATCH line', entryHas28('/fire-crew', 'WATCH_HELP'))
     rep.check('batch 28: firecrewcheck stamps the seated sweep (byte-equal det, rescue floor)',
         /the seated autopilot wins on/.test(fc) && /byte-equal \(hash sampled/.test(fc))
+}
+// #1637 batch 29 — MISSILE COMMAND was never self-driving: the b29 lift put the
+// whole tick into sim.js and gunnerStep became the first brain this title ever
+// had. Pins: the seat runs the sim's own gunner (not a bench script), no wall
+// clock survived the lift, watch never lingers, both pills ship for phones, and
+// the registry line names the doctrine the sweep proves.
+{
+    const mj = readFileSync('src/games/MissileCommand/index.jsx', 'utf8')
+    const mjs = readFileSync('src/games/MissileCommand/sim.js', 'utf8')
+    const mc = readFileSync('scripts/missilecmdcheck.mjs', 'utf8')
+    rep.check('MISSILE COMMAND: the route is the sim\'s own gunner (not a bench script)',
+        /gs\.watch \? gunnerStep\(gs\) : null/.test(mj) && /export function gunnerStep/.test(mjs))
+    rep.check('MISSILE COMMAND: the lift carried no wall clock (#1525)',
+        !/setTimeout\(/.test(mj) && /WAVE_BREAK_TICKS = 180/.test(mjs) && /gs\.waveBreak = WAVE_BREAK_TICKS/.test(mjs))
+    rep.check('MISSILE COMMAND: Y seats with blips; any driving key takes over',
+        /isWatchKey\(e\)/.test(mj) && /isTakeoverKey\(e\)/.test(mj)
+        && mj.includes('playWatchStart') && mj.includes('playWatchStop') && mj.includes('watchSfx: watchSfxLog'))
+    rep.check('MISSILE COMMAND: watch never lingers — released at game over and on a fresh raid',
+        /gs\.over && !wasOver\) release\(false\)/.test(mj) && /release\(false\) \/\/ watch never lingers/.test(mj))
+    rep.check('MISSILE COMMAND: doctrine lives in the sim (SAFE_Y out of reach, urgent-first sort)',
+        /export const SAFE_Y = 485/.test(mjs) && /sort\(\(a, b\) => b\.y - a\.y\)/.test(mjs))
+    rep.check('MISSILE COMMAND: phones can seat too (pill in-run and in attract — no picker in the boot path)',
+        /<WatchButton on=\{watching\}/.test(mj) && /<AttractWatchButton/.test(mj))
+    rep.check('MISSILE COMMAND: attract shows the shared WATCH hint (import + drawn line)',
+        (mj.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
+    rep.check('registry /missilecommand: controls carry the WATCH line',
+        (() => { const m = readFileSync('src/config/games.js', 'utf8').split(`path: '/missilecommand'`)[1]; return !!m && m.split('path:')[0].includes('WATCH_HELP') })())
+    rep.check('batch 29: missilecmdcheck stamps the sweep (waves 1-5 clean, cities AND silos, economy)',
+        /every seed clears waves 1\.\./.test(mc) && /6 cities AND 3 silos/.test(mc) && /economy holds/.test(mc))
 }
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray

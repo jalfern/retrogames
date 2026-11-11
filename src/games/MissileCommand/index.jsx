@@ -19,6 +19,13 @@ const MissileCommandGame = () => {
     const [watching, setWatching] = React.useState(false)
     const [attractUi, setAttractUi] = React.useState(true)
     const attractUiRef = useRef(true)
+    // #1748 consumer: RotateHint (portrait + wide canvas) lands its card dead
+    // center — exactly where this title's attract copy sits. This 4:3 letterbox
+    // is the rare attract-pill collision, so the centered block steps aside
+    // while the hint is up; the pill itself anchors top-right and stays
+    // reachable through it.
+    const [rotHint, setRotHint] = React.useState(false)
+    const rotHintRef = useRef(false)
 
     // Resume callback
     const handleResume = () => {
@@ -339,6 +346,8 @@ const MissileCommandGame = () => {
             const frameTime = Math.min(timestamp - lastTime, 100)
             lastTime = timestamp
             if (!pausedRef.current) {
+                const rh = document.documentElement.dataset.rotateHint === '1'
+                if (rh !== rotHintRef.current) { rotHintRef.current = rh; setRotHint(rh) } // #1748
                 accumulator += frameTime
                 while (accumulator >= FIXED_DT) {
                     update()
@@ -407,10 +416,16 @@ const MissileCommandGame = () => {
             <div ref={containerRef} className="relative w-full max-w-[600px] aspect-[4/3] border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-black">
                 <canvas ref={canvasRef} className="block w-full h-full cursor-none" />
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'MISSILE COMMAND')} onResume={handleResume} />}
-                {/* #1654: the discoverable WATCH line, before the first Y press. */}
-                {attractUi && !paused && (
+                {/* #1654: the discoverable WATCH line, before the first Y press.
+                    #1748: the centered copy steps aside while RotateHint is up —
+                    the card lands dead-center and its dismiss button owns that spot. */}
+                {attractUi && !paused && !rotHint && (
                     <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-2 pointer-events-none" style={{ bottom: '24%' }}>
                         <div className="text-emerald-200/70 font-mono text-[11px] tracking-widest">{WATCH_ATTRACT_HINT}</div>
+                    </div>
+                )}
+                {attractUi && !paused && (
+                    <div className="fixed z-[70] pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                         <AttractWatchButton />
                     </div>
                 )}
