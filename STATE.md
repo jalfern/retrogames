@@ -1,70 +1,69 @@
-# STATE — session 224 (2026-11-11, slot a)
+# STATE — session 224 (2026-11-11, slot b)
 
 ## What shipped
-**LODE RUNNER-LITE: THE LIP CLING** merged as `6b2db65` (PR #2006, Closes
-#2004 — NEVER-DRY pick: weakestStage score 4 = 4 QA feedback naming LRL + 1
-unowned README gap; flagship stage null). Nobody stands on air: a body
-climbing out of a pit whose hole is still open ends the climb CLINGING to the
-lip — hands on the edge, legs painted into the pit (climb frames sunk
-CH*0.45, gated on stand-mode) until one side-step onto supported floor.
-`onLip` derives at every arrival (arrive, guard escape, respawn clears), so
-`stateHash`/replay/solver receipts are byte-identical; walkers and fallers
-over the same mouth still drop in; trap ladder untouched. lodecheck 134/134
-+ 162/162 mutants (proven red by hand-breaking the escape flag, restored);
-lodeplay 36/36 live: cling flag true with hole open below at the shaft exit,
-bright runner pixels INTO the pit cell below the lip line, side-step clears.
-Lint gates + build green. Live proof: entry `index-DwavVhs8.js` → chunk
-`index-DV7Z0u3t.js` carries `onLip`.
-**Earlier this shift the lane also landed ASTEROIDS b26** (`4fdf0b1`, #2000)
-— see the takeover log; that first instance shipped it while I stood down.
+**SMASH TV: THE WHOLE SHOW IS WIDE** merged as `ac0d247` (PR #2010, Closes
+#2007 — NEVER-DRY pick, weakestStage score 6 = 2 QA feedbacks naming SmashTV
+(#1978/#1950) + 4 unowned README gaps; TARGET #2004 REFUSED at claim — slot a
+alive 19 min). #1973 built the varisize machine but aimed it at two rooms; #2007
+aims it at the show: `BIG_ROOMS` 4,7 → 0–7 — rooms 1–8 all board the 24-column
+384px board, THE ANNOUNCER's arena stays screen-sized BY LAW ("a boss half
+off-screen reads as a bug" — pinned as a gate + mutant). Up/down doors centre on
+the room's own width (standard boards byte-identical c8/c7); every board spawns
+at its own lower middle (`startColOf`, wide opens at c12). Player-visible:
+panning everywhere, mid-arena opening, no invisible bot stalls.
 
-## Takeover log (read first — #1782 class RECURRED on slot a)
-TARGET #1997 was REFUSED (slot b held it since 11:43; they shipped #1999 at
-12:13). Step-1b looked like a #1637 corpse (claim lapsed, branch pushed, no
-`opencode run` matching the 11:07 session) — **it was NOT dead**: warden
-kicked slot a twice (11:07 AND 11:58); the first instance was mid-mutant-sweep
-in the same worktree. My checks ran into its live planting (anchors "missing",
-one mutant "survived" — cross-planting, both sides' runs polluted), and my
-rebase of forge/watch-b26 moved the ref under it (content disjoint, it
-re-based over harmlessly). Its merge loop survived as a CHILD OF THE OPENCODE
-DAEMON (ppid = `opencode.exe serve`), not of any session — pgrep on `opencode
-run` misses daemon-adopted shells. I yielded, posted evidence on #1782, and
-the loop merged #2000 at 12:45. **Rules of thumb for a "corpse":** before
-reaping — `git ls-remote` the branch (is it advancing?), check daemon-adopted
-shells (`pgrep -P <serve-pid>`), and treat anchor-missing/survivor noise as
-possible interference, not broken code.
+**The pilot floor moved UP and the honest proof moved with it:** solo 9/9 wins —
+the #1973 seed-3 forced loss is RETIRED, pin says 9/9 + "update pin AND README
+together" for the future. Two doctrine fixes earned it: (1) DIRECTED break —
+stalled goal-walks slide until `blockedPx` says the goal vector opens, sweep
+growing by stall-streak while it doesn't (fixed 30-tick break ≈ 36px < the
+~45px bar-to-bar no-go band on 24-wide boards: seed 6 ping-ponged 59k ticks);
+(2) bonus exits — clock dies, EVERY seat walks a door (#508 law → seat 1; wide
+ghosting floor had it shooting a bar corner 58k ticks). Gates: smashcheck 551 +
+all 18 mutants die (new: whole-show law, boss-exception gate, spawn-centre gate,
+2 new mutants; BIG_ROOMS anchor re-anchored); smashplay 24/24 live on :5178;
+contractcheck 710/710; lint gates + build green. Prod verified: live chunk
+`index-C_lj12xq.js` carries `new Set([0,1,2,3,4,5,6,7])`. 8b filed #2011
+(pan readability for the SIX new wide rooms — #1978 predated the wide show).
 
 ## The session's catches
-- **Stale CLOSED bullets re-kick lanes (#961, again).** weakestStage pointed
-  at LRL's "Three strata are real (#1952)" gap — #1952 has been shipped for
-  days; the bullet just lacked its `CLOSED by #1952` marker. Marker added in
-  this PR; the real gap taken was the air-standing one.
-- **sed restores are shotguns.** Turning a mutant off by string-replace hit a
-  second `gd.onLip = false` at the respawn site. Reading the COMMITTED diff
-  (not just re-running green) caught it. Restore by targeted edit, verify by
-  `git show HEAD:<file>`.
-- **Probe shape:** `probe()` returns the whole object — `offLip.lip` vs
-  `offLip.player.lip` failed a check whose detail line printed the *right*
-  value. Detail JSON and assertion read different depths.
-- Device-level `AudioContext encountered an error from the audio device`
-  filtered in lodeplay now (same precedent papersplay/britanniadrive carry).
+- **Detour-streak decay defeated itself.** First stall-fix grew the break by a
+  streak that decayed on "progress" — but detour movement IS progress, so the
+  streak deflated exactly while the break kept failing (0→1→0 forever, all 9
+  seeds stalled worse than before). The trace said k:1 every detour — read it
+  before the second guess. Final law: no decay mid-goal; streak resets per room.
+- **Harness pixel probes must subtract camX.** #1945's over-the-shoulder gate
+  treated world px as canvas px — true only while room 0 fit the screen. Wide
+  room 0 broke it (and its "aimed down clean" twin passed VACUOUSLY at 0 chrome
+  px before failing at 1 — a vacuous PASS is a dead sensor, not a green one).
+  Also: the mirrored seed-0 bar sits at c12 right above the new centre spawn —
+  the pose probe sidesteps to c2.
+- **Ladder-hops used hardcoded door cells** (`8*16+8`): the centred doors moved
+  the up exit to c12 on wide rooms, so smashplay's camera test never climbed.
+  Derive from `roomData.gw` — the sim already exports what tests need.
 
 ## Ladder trail
-TARGET #1997 REFUSED (b held) → #1637 false-corpse (double-kick, yielded to
-live instance; b26 shipped) → halt none, steer none → `next` #1711 stays
-Jon-side (eighth confirm) → game-queue empty → QA MASTER live (borrow
-refused) → flagshipStage null → NEVER-DRY weakestStage #2004 → shipped
-#2006. No jonq filed (all decisions pattern-following).
-
-## Next
-- Batch 27 (#1637): DonkeyKong first (registry-oldest unseated; NO sim.js —
-  whole-tick lift + driver + seat in one session, budget ~3 h). b25/b26
-  template + b26 laws (hold candidates, honest ttc, lead + angular window).
-  #1637 still carries `building` — claim fresh (the lock expired at 12:39).
-- QA owns #1949 (LRL polish, + my cling addendum), #2001 (asteroids), and
-  the fat feedback list. Ports: slot a 5173, slot b 5178, QA 5176.
-- `--mutate` only in an exclusive window; before trusting ANY check output on
-  a lane you think is dead, run the corpse checks above.
+- halt none; steer none. TARGET #2004 REFUSED at claim (slot a, 19 min — did not
+  fight it). `next` #1711 stays released (Jon-side R2 hardware, eighth confirm).
+  game-queue empty; QA MASTER live (pid 34843) → feedback borrow refused;
+  flagship stage spent (all SSX/Emberwood/COMET DRIFT HD/Myst gaps CLOSED —
+  verified via parseGaps, not memory) → NEVER-DRY weakestStage #2007. No jonq
+  filed (all pattern-following).
+- `weakestStage`'s first answer was PPM "two regulars in one day" — but #1891
+  moved to building-qa mid-ladder and heldDirs (which needs label STRINGS, not
+  gh's label objects) skipped it correctly on the rerun. PPM gap stays unbuilt:
+  QA owns it now.
 
 ## Open questions
-- none (see waiting-jon issues; #1711 hardware still waits on Jon).
+- none (see waiting-jon issues; #1711 hardware waits on Jon).
+
+## Next
+- Slot a: #2004 (LODE guard-air). Its BUILD FLOOR comments own LodeRunner; do
+  not touch that title from slot b.
+- SmashTV's #2011 is QA's (six new wide rooms). For slot b's next NEVER-DRY
+  stage, weakestStage will move on — re-derive honestly at claim time.
+- PPM's "two regulars in one day" gap: filed-by-nobody, owned by #1891's pass —
+  only take it if QA drops it.
+- Dev servers: slot a 5173, slot b 5178 (this session's server stopped at exit).
+  `--mutate` only in an exclusive window ≥20 min; re-grep mutant anchors after
+  touching any branch a mutant mutates (this session: BIG_ROOMS re-anchored).
