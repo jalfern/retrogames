@@ -194,6 +194,31 @@ loses one again, update pin and README together, Pong's seed 25 style).
 Seeds 1, 5 and 7 prove the deathless matinee; the slack runs (seeds 0–2) and
 co-op (all nine seeds) still win.
 
+## BONUS GIBS — the splatter sprites (#2044)
+
+The cabinet paid you to gun down the bonus crowd and made every kill SPLAT.
+This stage replaces the old blue `burst()` spark on `civKill` with real gore,
+presentation-only (`rules/gen/sim` untouched, layout pins byte-identical):
+
+- `juice.js` owns the spec: `goreSet(rng)` returns **seven MULTI-pixel parts**
+  (2×2 head-dot, 3×4 torso chunk, two limb strips, a bone chip, two spatter
+  dashes) on bounded outward velocities with a constant upward bias; palette is
+  two-tone red (`#c81f2f`, `#e8464a`, `#a01824`) plus one bone `#f0e6d8`.
+  `GORE_GRAV = 0.22` (heavier than the 0.18 casing sparks), `GORE_TICKS = 34`
+  (longer than a spark's 20 so the arc reads), `STAIN_TICKS = 120`,
+  `stainRadius(combo) = 3 + min(3, combo)`.
+- `index.jsx` draws them in the fx layer: gibs snap to the pixel grid (#2043's
+  lesson — fractional fills anti-alias away at 1× canvas) and fade with their
+  age; a dark-red cross-pizza stain dries on the floor under everything from
+  spawn to STAIN_TICKS. A room `advance` scrubs the floor. The splat gets its
+  own voice: white noise + a low triangle thud under the combo chime.
+- Gates: `smashcheck` gore section (14 gates: count, multi-pixel law, palette,
+  weight vs sparks, bounded speeds, rng determinism, lifetimes, stain growth +
+  cap, and the presentation wiring pinned at source) + five JUICE mutants (all
+  die). `smashplay` adds three live gates: a staged bonus kill splats ≥10 red
+  gib px on canvas near the corpse, the whole set lands (7 gibs + a stain),
+  and the air is clear after the lifetime.
+
 ## Honest gaps vs the cabinet
 - ~~THE ANNOUNCER keeps his screen-sized stage on purpose (a boss half off-screen
   reads as a bug); every other room runs the 24-column pan board.~~ CLOSED by
@@ -203,5 +228,7 @@ co-op (all nine seeds) still win.
 - ~~Eight original weapons are distilled to four (twin, machine gun, spread,
   laser) + firebomb; the homing/heat-seeking and flamer are not modelled.~~
   CLOSED by #2032: **HEAT-SEEKER** and **FLAMER** join the ladder (below).
-- Bonus-room civilians are stylized (dot-matrix contestants, no gore sprites).
+- ~~Bonus-room civilians are stylized (dot-matrix contestants, no gore sprites).~~
+  CLOSED by #2044: the bonus crowd now SPLATS — seven multi-pixel gibs, a bone
+  chip and a floor stain (above).
 - One-hit death softened by spawn invulnerability; the arcade gives none.

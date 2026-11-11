@@ -66,3 +66,36 @@ export function roomScore(events) {
     }
     return { room, total }
 }
+
+// #2044 — bonus-round gibs. The cabinet paid you to gun down the bonus crowd,
+// and every kill SPLATTED: the contestant came apart into red chunks with a
+// bone chip or two and a floor stain that slowly dried. The old presentation
+// was a generic blue spark (the honest gap this closes). A gib is a MULTI-pixel
+// shape — never the 1px `burst()` spark — and the whole set is a pure function
+// of an injectable rng so the Node harness can pin count, shape and lifetime.
+export const GORE_TICKS = 34 // gib flight: arcs, lands, gone
+export const STAIN_TICKS = 120 // floor splatter fade — long enough to litter the round
+export const GORE_GRAV = 0.22 // heavier than sparks (0.18): these have mass
+
+// [w, h, col] — head, torso chunk, two limb strips, a bone chip, spatter dots.
+// Reds are the two-tone palette (dark clot + bright spray); bone reads once.
+const GORE_SHAPES = [
+    [2, 2, '#e8464a'], // head-dot
+    [3, 4, '#c81f2f'], // torso chunk (the big one)
+    [4, 1, '#a01824'], // limb, long axis
+    [1, 4, '#a01824'], // limb, tall axis
+    [1, 3, '#f0e6d8'], // bone chip
+    [2, 2, '#e8464a'], // spatter
+    [2, 1, '#c81f2f'], // spatter dash
+]
+
+export function goreSet(rng = Math.random) {
+    return GORE_SHAPES.map(([w, h, col]) => {
+        const a = rng() * Math.PI * 2
+        const s = 0.8 + rng() * 1.8
+        return { vx: Math.cos(a) * s, vy: Math.sin(a) * s - 0.6, w, h, col, grav: GORE_GRAV }
+    })
+}
+
+// the stain a kill leaves on the studio floor: combo makes it a bigger pizza
+export const stainRadius = (combo) => 3 + Math.min(3, combo)
