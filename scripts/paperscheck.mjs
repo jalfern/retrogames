@@ -12,7 +12,7 @@
 //
 // Sections: Math.random banned · THE FAIRNESS PROVER (verdict twin +
 // witness map) · TRAP CONTRACT (a naive eye misjudges EXACTLY the planted
-// traps, budget <= 2/day, >= 1 from day 2, all six species per week) ·
+// traps, budget <= 2/day, >= 1 from day 2, every species per week) ·
 // rulebook (every rule exercises the day it wakes; no law before its day) ·
 // calendar (one clock: serials match the wall everywhere; the week rolls
 // across a real month-end #1889) · clumsy play clears the week AND chaos
@@ -54,6 +54,13 @@ function naiveDecide(v) {
     if (has('IDMATCH') && p.idcard && (p.idcard.name !== pp.name || p.idcard.height !== pp.height || dnum(p.idcard.dob) !== dnum(pp.dob))) return 'deny'
     if (has('IDREQ') && !p.papers.includes('idcard')) return 'deny'
     if (has('CURFEW') && dnum(pp.expiry) - v.dateNum <= 7) return 'deny'   // counts today among the grace days
+    // #1938 PORTRAIT temptation: the rookie compares the photos LIKE THE
+    // PORTRAIT RULE — except the rookie lets color convict too. Grey hair
+    // (the aged-photo trap) bites; and every structural break bites as it
+    // should, so a break is never miscounted as a trap.
+    if (has('PORTRAIT') && p.face && pp.photo) {
+        for (const k of Object.keys(p.face)) if (p.face[k] !== pp.photo[k]) return 'deny'
+    }
     return 'approve'
 }
 
@@ -309,9 +316,14 @@ section('DETERMINISM')
     const g3 = newRun(2)
     step(g3, { action: decide(current(g3).view).verdict })
     ok(stateHash(g3) !== stateHash(newRun(2)), 'stateHash ignores the stamp')
-    // genDay called standalone must equal the week's own day (no hidden state)
+    // genDay called standalone must equal the week's own day (no hidden
+    // state). Replay the week's OWN trap pick — pinning an index by hand
+    // hard-codes the rotation, which PORTRAIT (#1938) legitimately shifted.
     const wk = genWeek(1)
-    ok(JSON.stringify(genDay(1, 4, 3)) === JSON.stringify(wk.days[3]), 'genDay standalone drifts from genWeek — hidden state')
+    const d4 = wk.days[3]
+    const t4 = d4.queue.find((a) => a.trap)
+    const si4 = t4 ? TRAPS.findIndex((t) => t.rule === t4.trap) : null
+    ok(JSON.stringify(genDay(1, 4, si4)) === JSON.stringify(d4), 'genDay standalone drifts from genWeek — hidden state')
 }
 
 // ---------------------------------------------------------------- mutants ----

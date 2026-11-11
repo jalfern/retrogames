@@ -14,7 +14,7 @@
 // (the budget, and the slack rule, caps clumsy play at two strikes a day),
 // and legal fill so the booth never runs dry.
 
-import { DAY_RULES, dadd, dnum } from './rules.js'
+import { DAY_RULES, dadd, dnum, FEATURES } from './rules.js'
 
 export function mulberry32(seed) {
     let a = seed >>> 0
@@ -57,7 +57,17 @@ export const TRAPS = [
     { rule: 'IDMATCH', how: 'ID name matches; the HEIGHT differs (height is not a rule)' },
     { rule: 'IDREQ', how: 'no ID card, but the DOB makes them a child — children are exempt' },
     { rule: 'CURFEW', how: 'valid for exactly 7 more days — curfew counts days AFTER today' },
+    { rule: 'PORTRAIT', how: 'the photo shows the SAME face, years ago — grey hair; the rule compares cut, shape, glasses, facial hair, never color' },
 ]
+
+// #1938 PORTRAIT — the face descriptor. Every applicant gets one; the
+// live face at the counter AND the passport photo of an honest paper are
+// painted from the SAME descriptor (that identity is paperscheck's law).
+// Structural fields (style/narrow/glasses/must) are the PORTRAIT rule's
+// comparison set; colors (skin/hairC/shirtC) are atmosphere: the aged-
+// photo trap moves ONLY a color, and no rule may convict on color.
+// GREY is a hair color index, not a structural change.
+export const GREY = 3
 
 let PERSON_ID = 0
 
@@ -95,13 +105,28 @@ function base(rnd, date, dayRules, used, opts = {}) {
     }
     const wantId = opts.idcard !== undefined ? opts.idcard : (dayRules.includes('IDREQ') || rnd() < 0.35)
     const idcard = wantId ? { name, height: pp.height, weight: pp.weight, dob } : null
+    // #1938: roll the face AFTER the papers so existing seed draws keep
+    // their names/numbers/weights — only the face stream is new. An honest
+    // paper's photo and live face are the SAME descriptor; every later
+    // mutation that touches one and not the other is by definition a
+    // portrait break (or, for a color-only touch, the aged-photo trap).
+    const face = {
+        skin: Math.floor(rnd() * 5),
+        hairC: Math.floor(rnd() * 5),
+        shirtC: Math.floor(rnd() * 4),
+        style: Math.floor(rnd() * 4),
+        narrow: rnd() < 0.4 ? 1 : 0,
+        glasses: rnd() < 0.35 ? 1 : 0,
+        must: adult && rnd() < 0.3 ? 1 : 0,
+    }
+    pp.photo = { ...face }
     return {
         trap: null,
         breakRule: null,
-        person: { pic: Math.floor(rnd() * 1e9), papers: wantId ? ['passport', 'idcard'] : ['passport'], passport: pp, idcard },
+        person: { pic: Math.floor(rnd() * 1e9), face, papers: wantId ? ['passport', 'idcard'] : ['passport'], passport: pp, idcard },
         truth: {
             hasPassport: true, hasIdCard: !!idcard, trueName: name, idName: idcard ? idcard.name : null,
-            country, expiry: pp.expiry, dob, trueWeight: pp.weight, wanted: false,
+            country, expiry: pp.expiry, dob, trueWeight: pp.weight, wanted: false, photoMismatch: false,
         },
     }
 }
@@ -165,6 +190,20 @@ function violator(rule, rnd, date, dayRules, day, used) {
             a.truth.expiry = exp
             break
         }
+        case 'PORTRAIT': {
+            // the forged photo: the PASSPORT lies about the face while the
+            // body at the counter tells the truth. Exactly ONE compared
+            // feature flips; colors ride along untouched (a color-only move
+            // is the aged-photo trap, not a break).
+            const feat = FEATURES[Math.floor(rnd() * FEATURES.length)]
+            const photo = { ...a.person.face }
+            if (feat === 'style') photo.style = (photo.style + 1 + Math.floor(rnd() * 3)) % 4
+            else photo[feat] = photo[feat] ? 0 : 1
+            a.person.passport = { ...a.person.passport, photo }
+            a.truth.photoMismatch = true
+            a.breakFeature = feat
+            break
+        }
         default: throw new Error(`no builder for rule ${rule}`)
     }
     a.breakRule = rule
@@ -210,6 +249,15 @@ function trapApplicant(species, rnd, date, dayRules, day, used) {
             const exp = dadd(date, 7)   // exactly 7 days of grace: the law counts days AFTER today
             a.person.passport = { ...pp, expiry: exp }
             a.truth.expiry = exp
+            break
+        }
+        case 'PORTRAIT': {
+            // the aged photo: hair gone grey, every compared feature intact.
+            // Time changes color; forgery changes the face. If the live hair
+            // rolled grey too, ground it dark first (#2c2622) — colors judge
+            // nothing, and the planted trap stays exactly one visible move.
+            if (a.person.face.hairC === GREY) a.person.face = { ...a.person.face, hairC: 0 }
+            a.person.passport = { ...pp, photo: { ...a.person.face, hairC: GREY } }
             break
         }
         default: throw new Error(`no trap builder for ${s.rule}`)

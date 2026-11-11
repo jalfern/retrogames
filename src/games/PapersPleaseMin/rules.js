@@ -47,23 +47,49 @@ export const RULES = {
     IDMATCH: { text: 'IF AN ID CARD IS SHOWN, ITS NAME MUST MATCH THE PASSPORT.', reads: 'passport.name + id-card name' },
     IDREQ: { text: 'ADULTS MUST CARRY AN ID CARD. CHILDREN (BY DOB) ARE EXEMPT.', reads: 'papers + passport DOB + wall date' },
     CURFEW: { text: 'CURFEW: PASSPORTS EXPIRING SOONER THAN 7 DAYS FROM TODAY ARE VOID.', reads: 'passport.expiry + wall date' },
+    // One printed line — the wall's fit law (layout.js) is the reason the
+    // text stays short: day 7 is the deepest wall the booth is allowed.
+    PORTRAIT: { text: 'THE PHOTO MUST MATCH THE FACE.', reads: 'passport.photo + entrant face' },
 }
 
-// the rulebook grows one line a day; day 7 is the full sheet.
+// the rulebook grows one line a day; day 7 is the full sheet. PORTRAIT
+// (#1938) rides from day 1: the +1-per-day growth law leaves no free slot
+// (day 6 wakes IDREQ, day 7 CURFEW), and unlike the paper laws the photo
+// check needs no teaching — the two faces sit side by side on the wall.
+const DAY_RULES_BASE = ['PASSPORT', 'ALLOWED', 'PORTRAIT']
 export const DAY_RULES = [
-    ['PASSPORT', 'ALLOWED'],
-    ['PASSPORT', 'ALLOWED', 'EXPIRED'],
-    ['PASSPORT', 'ALLOWED', 'EXPIRED', 'WEIGHT'],
-    ['PASSPORT', 'ALLOWED', 'EXPIRED', 'WEIGHT', 'WANTED'],
-    ['PASSPORT', 'ALLOWED', 'EXPIRED', 'WEIGHT', 'WANTED', 'IDMATCH'],
-    ['PASSPORT', 'ALLOWED', 'EXPIRED', 'WEIGHT', 'WANTED', 'IDMATCH', 'IDREQ'],
+    DAY_RULES_BASE,
+    ['PASSPORT', 'ALLOWED', 'PORTRAIT', 'EXPIRED'],
+    ['PASSPORT', 'ALLOWED', 'PORTRAIT', 'EXPIRED', 'WEIGHT'],
+    ['PASSPORT', 'ALLOWED', 'PORTRAIT', 'EXPIRED', 'WEIGHT', 'WANTED'],
+    ['PASSPORT', 'ALLOWED', 'PORTRAIT', 'EXPIRED', 'WEIGHT', 'WANTED', 'IDMATCH'],
+    ['PASSPORT', 'ALLOWED', 'PORTRAIT', 'EXPIRED', 'WEIGHT', 'WANTED', 'IDMATCH', 'IDREQ'],
     // day 7: the state tightens again — a passport must carry a full week
     // of validity. (Where that meets the expires-TODAY doctrine, the newer,
     // harsher law speaks; both booths — decide and judge — agree, and the
     // prover is the referee.)
-    ['PASSPORT', 'ALLOWED', 'EXPIRED', 'WEIGHT', 'WANTED', 'IDMATCH', 'IDREQ', 'CURFEW'],
+    ['PASSPORT', 'ALLOWED', 'PORTRAIT', 'EXPIRED', 'WEIGHT', 'WANTED', 'IDMATCH', 'IDREQ', 'CURFEW'],
 ]
 export const newRuleOfDay = (day) => (day >= 2 ? DAY_RULES[day - 1][DAY_RULES[day - 1].length - 1] : null)
+
+// ---- PORTRAIT: the face on the paper vs the face at the counter.
+// Compared FEATURES are structural — cut, shape, glasses, facial hair.
+// Colors (skin, hair color, shirt) are NEVER evidence: time fades hair,
+// heat changes clothes; a photo taken years ago is not a forgery. The
+// descriptor fields are exactly what the booth PAINTS (index.jsx renders
+// both portraits from these), so every diff decide names is pixels on the
+// canvas — the papersplay gates sample them.
+export const FEATURES = ['style', 'narrow', 'glasses', 'must']
+export const STYLE_NAMES = ['CAP', 'THIN', 'SIDE-LEFT', 'SIDE-RIGHT']
+export function portraitDiffs(face, photo) {
+    const ev = []
+    if (!face || !photo) return ev
+    if (face.style !== photo.style) ev.push(`PHOTO HAIR ${STYLE_NAMES[photo.style]} vs ENTRANT ${STYLE_NAMES[face.style]}`)
+    if (face.narrow !== photo.narrow) ev.push(`PHOTO FACE ${photo.narrow ? 'NARROW' : 'WIDE'} vs ENTRANT ${face.narrow ? 'WIDE' : 'NARROW'}`)
+    if (face.glasses !== photo.glasses) ev.push(photo.glasses ? 'PHOTO WEARS GLASSES, ENTRANT DOES NOT' : 'ENTRANT WEARS GLASSES, PHOTO DOES NOT')
+    if (face.must !== photo.must) ev.push(photo.must ? 'PHOTO HAS FACIAL HAIR, ENTRANT HAS NONE' : 'ENTRANT HAS FACIAL HAIR, PHOTO HAS NONE')
+    return ev
+}
 
 // ---- decide: the booth's eye. `view` is exactly what the canvas paints.
 // Returns {verdict, violations:[{rule, evidence}]}. Every evidence string
@@ -102,6 +128,10 @@ export function decide(view) {
     if (has('CURFEW') && dnum(pp.expiry) - view.dateNum <= 6) {
         v.push({ rule: 'CURFEW', evidence: `EXPIRES ${dfmt(pp.expiry)} — CURFEW WANTS 7 DAYS OF GRACE` })
     }
+    if (has('PORTRAIT') && p.passport) {
+        const diffs = portraitDiffs(p.face, p.passport.photo)
+        if (diffs.length) v.push({ rule: 'PORTRAIT', evidence: diffs.join('; ') })
+    }
     return { verdict: v.length ? 'deny' : 'approve', violations: v }
 }
 
@@ -126,5 +156,9 @@ export function judge(day) {
     if (has('IDMATCH') && p.idcard && t.idName !== t.trueName) v.push({ rule: 'IDMATCH' })
     if (has('IDREQ') && !t.hasIdCard && isAdult(t.dob, day.date)) v.push({ rule: 'IDREQ' })
     if (has('CURFEW') && dnum(t.expiry) - dnum(day.date) <= 6) v.push({ rule: 'CURFEW' })
+    // the truth of a forged photo is the generator's, not the booth's: the
+    // booth must catch it through the printed descriptors (portraitDiffs),
+    // and the prover grades the two paths as usual.
+    if (has('PORTRAIT') && t.photoMismatch) v.push({ rule: 'PORTRAIT' })
     return { verdict: v.length ? 'deny' : 'approve', violations: v }
 }

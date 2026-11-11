@@ -18,7 +18,7 @@ import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../..
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { decide, RULES, dfmt, isAdult } from './rules.js'
-import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, wallRows } from './layout.js'
+import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, wallRows } from './layout.js'
 
 const SIM_MS = 1000 / 60
 
@@ -27,8 +27,15 @@ const COL = {
     ink: '#20242e', red: '#d84343', green: '#49b25a', gold: '#e8c15a', text: '#cfd6e6',
 }
 
-// deterministic pseudo-random for painting: the pic seed is the person
-const prand = (seed) => { let a = seed >>> 0; return () => { a = (a * 1664525 + 1013904223) >>> 0; return a / 4294967296 } }
+// #1938 PORTRAIT — faces are painted from a descriptor, not from the
+// pic: the live booth face, the passport photo and the DEV pixel probe all
+// run through drawFace, so "the photo differs" means "this function's
+// pixels differ". Structural features (hair cut, face width, glasses,
+// facial hair) are what the PORTRAIT rule compares; colors are atmosphere
+// — time fades hair, and an old photo of the right person is not a lie.
+const SKINS = ['#e8c39e', '#d2a679', '#b07f55', '#8a5a3a', '#f0d3b4']
+const HAIRS = ['#2c2622', '#5a3b1e', '#8d1f1f', '#b3b6bd', '#1e1e28']
+const SHIRTS = ['#39466e', '#6e4b7a', '#4b7a5e', '#7a634b']
 
 const PapersPleaseMinGame = () => {
     const stageRef = useRef(null)
@@ -175,21 +182,27 @@ const PapersPleaseMinGame = () => {
             ctx.fillText(s, x, y)
         }
 
-        const drawPortrait = (pic, x, y) => {
-            const rnd = prand(pic)
-            const skins = ['#e8c39e', '#d2a679', '#b07f55', '#8a5a3a', '#f0d3b4']
-            const hairs = ['#2c2622', '#5a3b1e', '#8d1f1f', '#b3b6bd', '#1e1e28']
-            box(x, y + 92, 110, 30, ['#39466e', '#6e4b7a', '#4b7a5e', '#7a634b'][Math.floor(rnd() * 4)], '#141824')
-            ctx.fillStyle = skins[Math.floor(rnd() * skins.length)]
-            ctx.beginPath(); ctx.ellipse(x + 55, y + 52, 34, 40, 0, 0, Math.PI * 2); ctx.fill()
-            ctx.fillStyle = hairs[Math.floor(rnd() * hairs.length)]
-            const style = Math.floor(rnd() * 4)
-            ctx.fillRect(x + 20, y + 8, 70, style === 0 ? 16 : style === 1 ? 10 : 22)
-            if (style === 2) ctx.fillRect(x + 18, y + 8, 8, 44)
-            if (style === 3) ctx.fillRect(x + 84, y + 8, 8, 44)
-            ctx.fillStyle = '#20242e'
-            ctx.fillRect(x + 40, y + 46, 6, 4); ctx.fillRect(x + 66, y + 46, 6, 4)
-            ctx.fillRect(x + 48, y + 66, 16, 3)
+        const drawFace = (c, f, x, y, s = 1) => {
+            const P = (v) => v * s
+            c.fillStyle = SHIRTS[f.shirtC]; c.fillRect(x, y + P(92), P(110), P(30))
+            c.strokeStyle = '#141824'; c.lineWidth = 1; c.strokeRect(x + 0.5, y + P(92) + 0.5, P(110) - 1, P(30) - 1)
+            c.fillStyle = SKINS[f.skin]
+            c.beginPath(); c.ellipse(x + P(55), y + P(52), P(f.narrow ? 27 : 34), P(40), 0, 0, Math.PI * 2); c.fill()
+            c.fillStyle = HAIRS[f.hairC]
+            c.fillRect(x + P(20), y + P(8), P(70), P(f.style === 0 ? 16 : f.style === 1 ? 10 : 22))
+            if (f.style === 2) c.fillRect(x + P(18), y + P(8), P(8), P(44))
+            if (f.style === 3) c.fillRect(x + P(84), y + P(8), P(8), P(44))
+            c.fillStyle = '#20242e'
+            c.fillRect(x + P(40), y + P(46), P(6), P(4)); c.fillRect(x + P(66), y + P(46), P(6), P(4))
+            c.fillRect(x + P(48), y + P(66), P(16), P(3))
+            if (f.must) { c.fillStyle = HAIRS[f.hairC]; c.fillRect(x + P(44), y + P(58), P(24), P(5)) }
+            if (f.glasses) {
+                c.fillStyle = '#10151f'
+                c.fillRect(x + P(37), y + P(42), P(12), P(10)); c.fillRect(x + P(61), y + P(42), P(12), P(10))
+                c.fillRect(x + P(49), y + P(46), P(12), P(2))
+                c.fillStyle = '#5a6b8a'
+                c.fillRect(x + P(39), y + P(44), P(8), P(6)); c.fillRect(x + P(63), y + P(44), P(8), P(6))
+            }
         }
 
         const drawPassport = (pp, x, y) => {
@@ -202,9 +215,13 @@ const PapersPleaseMinGame = () => {
             text(`SEX ${pp.sex}  HEIGHT ${pp.height}CM`, x + 10, y + 90)
             text(`WEIGHT ${pp.weight}KG`, x + 10, y + 106)
             text(`ISSUED ${pp.city}`, x + 10, y + 122)
-            box(x + 190, y + 34, 100, 60, '#c9c2a4', COL.paperLine)
-            text('ISSUED BY', x + 240, y + 48, 8, '#6b5d3a', 'center')
-            text(`${pp.country}`, x + 240, y + 70, 11, COL.ink, 'center')
+            box(x + 140, y + 34, 84, 60, '#c9c2a4', COL.paperLine)
+            text('ISSUED BY', x + 182, y + 48, 8, '#6b5d3a', 'center')
+            text(`${pp.country}`, x + 182, y + 70, 11, COL.ink, 'center')
+            // #1938 the photo on the paper — same drawFace, smaller scale,
+            // so an honest photo is the identical face in miniature
+            box(x + PHOTO.x, y + PHOTO.y, PHOTO.w, PHOTO.h, '#c9c2a4', COL.paperLine)
+            drawFace(ctx, pp.photo, x + PHOTO.x, y + PHOTO.y, PHOTO.s)
             text(`EXPIRES ${dfmt(pp.expiry)}`, x + 10, y + 140)
             text(`VALID ${isAdult(pp.dob, gs.week.days[gs.day - 1].date) ? 'ADULT' : 'CHILD'}`, x + 240, y + 140, 10, '#6b5d3a', 'center')
         }
@@ -260,7 +277,7 @@ const PapersPleaseMinGame = () => {
             // the entrant (during a stamp, the papers shown are the ones
             // just judged — the stamp lands on its own document)
             const shown = stamp && stamp.ticks > 0 ? stamp.person : view.person
-            drawPortrait(shown ? shown.pic : view.person.pic, PORTRAIT.x, PORTRAIT.y)
+            drawFace(ctx, shown ? shown.face : view.person.face, PORTRAIT.x, PORTRAIT.y, 1)
             text(`ENTRANT ${gs.idx + (stamp && stamp.ticks > 0 ? 0 : 1)}/${gs.week.days[gs.day - 1].queue.length}`, PORTRAIT.x + PORTRAIT.headCx, 168, 10, COL.text, 'center')
             // the papers
             if (shown && shown.passport) {
@@ -369,6 +386,42 @@ const PapersPleaseMinGame = () => {
         raf = requestAnimationFrame(frame)
 
         if (import.meta.env.DEV) {
+            // #1938 PORTRAIT pixel probe: render the live face and the photo
+            // descriptors through the SAME drawFace at one scale, and count
+            // differing pixels per feature band. Papersplay gates it: honest
+            // papers paint byte-identical faces (total 0); every break lights
+            // its own band. Bands may overlap (they count DIFFERENCES, and a
+            // break is exactly one feature), and only the named band is
+            // load-bearing in the gates.
+            const PIX = { w: 110, h: 122 }
+            const portraitPix = () => {
+                const p = current(gs).view.person
+                if (!p.face || !p.passport || !p.passport.photo) return null
+                const render = (f) => {
+                    const c = document.createElement('canvas')
+                    c.width = PIX.w; c.height = PIX.h
+                    const cc = c.getContext('2d')
+                    cc.imageSmoothingEnabled = false
+                    drawFace(cc, f, 0, 0, 1)
+                    return cc.getImageData(0, 0, PIX.w, PIX.h).data
+                }
+                const A = render(p.face), B = render(p.passport.photo)
+                const band = (x0, y0, x1, y1) => {
+                    let n = 0
+                    for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) {
+                        const i = (yy * PIX.w + xx) * 4
+                        if (A[i] !== B[i] || A[i + 1] !== B[i + 1] || A[i + 2] !== B[i + 2]) n++
+                    }
+                    return n
+                }
+                return {
+                    total: band(0, 0, PIX.w, PIX.h),
+                    style: band(16, 6, 94, 40) + band(16, 6, 28, 54) + band(82, 6, 94, 54),
+                    narrow: band(20, 56, 32, 70) + band(78, 56, 92, 70),
+                    glasses: band(35, 41, 75, 56),
+                    must: band(42, 56, 70, 66),
+                }
+            }
             window.__ppTest = {
                 watching: () => watchingRef.current, // #1637 WATCH probes
                 watchSfx: watchSfxLog,
@@ -383,6 +436,7 @@ const PapersPleaseMinGame = () => {
                     }
                 },
                 start: startPlay,
+                portraitPix, // #1938 photo-vs-face pixel probe
                 verdict: () => decide(current(gs).view).verdict,
                 hash: () => stateHash(gs),
                 stamp: act,
