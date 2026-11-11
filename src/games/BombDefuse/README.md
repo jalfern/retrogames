@@ -99,11 +99,11 @@ lockstep-by-sampling-law (#531), same shape as the other four co-op titles:
 ## Verify
 
 ```bash
-npm run defusecheck                      # 119 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline, first-VENT coaching, powered-device bed
+npm run defusecheck                      # 136 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline, first-VENT coaching, powered-device bed, window pre-flash
 npm run defuselinkcheck                # 75 gates: online protocol incl. in-flight reseat (7b/7c/7d)
 CONTRACT_ONLY=bomb-defuse npm run contractcheck
 DEV_PORT=5178 npm run plaicraft:evidence -- --self-test   # fifth-title synths + mutants
-npm run defusedrive                      # real-key drive: start→play→bed/pause→boom→restart (+coach, press-tick)
+npm run defusedrive                      # real-key drive: start→play→bed/pause→boom→restart (+coach, press-tick, pre-flash)
 DEV_PORT=5173 npm run watchcheck -- --only bomb-defuse   # WATCH pilot: seat/advance/takeover/re-seat/resume/release + 5 source pins
 npm run defuselinkdrive                # two browsers over a live relay: join→lockstep→hash→walkaway→in-flight reseat
 ```
@@ -159,6 +159,20 @@ after the partner's key is visibly turned (blind Space spam was a self-strike
 farm). The same run also fixed a latent crash: the guest reseat hud literal
 dropped `turn`, so `drawScene` read `undefined` on the next frame — main's
 linkdrive errors there (pageerror ×3), this branch is clean.
+
+Window pre-flash (#1812 item 4): the SYNC WINDOW bar only appears after a
+seat acts (`drawWindowBar`'s `hold > 0`), so before the first press the window
+was invisible. `E.preFlash(gs)` (pure, hash-clean) names what an UNTOUCHED
+step asks — SYNC barrels, CUT arms, VENT holder bar — and `index.jsx` rings
+those controls with a pulsing amber rim until any seat touches the step
+(key / blade-cycle / bar-pin = touched; that tick the window bar takes the
+shift). Per-window law: every step of a clean run flashes at its load. VENT's
+rim shares the coach ring geometry and yields to it while the first-vent
+lesson is still untaught. Mutants: always-null reddens the five load-flash
+gates; never-null reddens the three retire gates; ignoring `gs.held` reddens
+the VENT pin gate; ignoring `gs.sel` reddens the cycle-counts-touched gate.
+All four die by name; restore → 136/136. `defusedrive` live-gates it after a
+fresh `start` (rim law answers at load, retires on the partner's first lead).
 
 ## Honest gaps (filed to QA as the polish pass)
 

@@ -7,7 +7,7 @@ import {
     createGame, step, hash, simState, solvePads, curStep, curWindow, needleOf,
     COLORS, SYNC, CUT, VENT, BOMBS, FUSE0, WINDOW, ZONE_HALF, STRIKE_COST, SURGE_COST, NICK_COST, INTRO,
     TURN, turnStep, turnClick, keyAngle,
-    REDLINE, PEG, pegNeedle, ventCoach,
+    REDLINE, PEG, pegNeedle, ventCoach, preFlash,
 } from '../src/games/BombDefuse/engine.js'
 import { bedHz, BED } from '../src/games/BombDefuse/audio.js'
 import { readFileSync } from 'node:fs'
@@ -481,6 +481,89 @@ console.log('\n— powered-device bed (#1812 item 10) —')
         'the hum rides live fuse seconds every BED.EVERY ticks')
     ok(jsx.includes('bedPings: () => hudRef.current.bedPings'), '__bdTest.bedPings exposes the bed for the drive harness')
     ok(jsx.includes('<PauseOverlay game={entry}'), 'PauseOverlay gets the game prop (gameEntry crashed the whole app on Escape — the QA drive live-proves pause/resume)')
+}
+
+console.log('\n— window pre-flash (#1812 item 4) —')
+{
+    // Pure view law (the item-2/5/1932 house pattern): while NO seat has
+    // touched the live step, preFlash names the verb it asks (SYNC barrels,
+    // CUT arms, VENT holder bar) so the pulsing edge teaches the window
+    // BEFORE the first press; the moment any seat acts it returns null —
+    // exactly when drawWindowBar takes over. Kill laws (README mutants):
+    // always-null reddens the relight gates; ignoring held reddens VENT;
+    // ignoring sel reddens the cycle-counts-as-touch gate.
+    const toKind = (seed, kind, players = 2) => {
+        const g = createGame(seed, players)
+        let guard = 0
+        while (!g.done && curStep(g).kind !== kind && guard++ < 4000) drive(g, solvePads(g))
+        return g
+    }
+    const g0 = createGame(7, 2) // step 0 always SYNC
+    const p0 = preFlash(g0)
+    ok(p0 && p0.kind === SYNC && p0.intro === true, 'SYNC at step load: the barrels flash before anyone presses')
+    while (g0.intro > 0) drive(g0, [{}, {}])
+    const p1 = preFlash(g0)
+    ok(p1 && p1.kind === SYNC && p1.intro === false, 'the flash survives READ-STEP — live and untouched it keeps teaching')
+    drive(g0, [{ a: true }, {}])
+    ok(preFlash(g0) === null, 'a turned key kills the flash — the SYNC WINDOW bar takes the shift')
+    // CUT: arms flash at load; cycling counts as touching (the player found the verb).
+    const gc = toKind(7, CUT)
+    while (gc.intro > 0) drive(gc, [{}, {}])
+    const pc = preFlash(gc)
+    ok(pc && pc.kind === CUT, 'CUT at step load: the cutter arms flash')
+    drive(gc, [{ up: true }, {}])
+    ok(gc.sel[0] !== 0 && preFlash(gc) === null, 'cycling an arm counts as touched — the flash retires')
+    // VENT: the holder bar flashes (unvented burns double) and silences on the pin.
+    const gv = toKind(7, VENT)
+    while (gv.intro > 0) drive(gv, [{}, {}])
+    const holder = curStep(gv).holder
+    ok(preFlash(gv) && preFlash(gv).kind === VENT, 'VENT at step load: the holder bar flashes before the double-burn bites')
+    drive(gv, [{ b: holder === 0 }, { b: holder === 1 }])
+    ok(gv.held && preFlash(gv) === null, 'pinning the bar silences the flash (same deed, same law)')
+    const gdone = toKind(7, VENT)
+    gdone.done = true
+    ok(preFlash(gdone) === null, 'a finished run never flashes')
+    // per-window law: EVERY step of a clean run flashes at its load — the rim
+    // is a window teacher, not a one-time lesson.
+    const gr = createGame(11, 2)
+    let stepsSeen = 0, flashed = 0, sig = ''
+    while (!gr.done) {
+        const s = `${gr.bomb}/${gr.step}`
+        if (s !== sig) { sig = s; stepsSeen++; if (preFlash(gr)) flashed++ }
+        gr.events.length = 0
+        step(gr, solvePads(gr))
+    }
+    ok(gr.won && stepsSeen === 12 && flashed === 12, 'all 12 steps of a won run flash at load — per-window, not per-run', `steps=${stepsSeen} flashed=${flashed}`)
+    // purity + net twins: the view calls can neither move the sim nor disagree.
+    const gx = createGame(5, 2)
+    for (let t = 0; t < 60; t++) { step(gx, solvePads(gx)); gx.events.length = 0 }
+    const hx = hash(gx)
+    preFlash(gx); preFlash(createGame(5, 2)); preFlash(null)
+    ok(hash(gx) === hx, 'preFlash cannot touch gs — hash identical through the view calls')
+    const t1 = createGame(13, 2), t2 = createGame(13, 2)
+    let pfSame = true
+    for (let t = 0; t < 240; t++) {
+        const pads = solvePads(t1)
+        step(t1, pads); t1.events.length = 0
+        step(t2, pads); t2.events.length = 0
+        if (JSON.stringify(preFlash(t1)) !== JSON.stringify(preFlash(t2))) pfSame = false
+    }
+    ok(pfSame && hash(t1) === hash(t2), 'net twins: both boxes flash the same law through a whole bomb', `hash=${hash(t1)}`)
+    // source pins: the determinism core and step logic never hear about it.
+    const esrc = readFileSync(join(here, '../src/games/BombDefuse/engine.js'), 'utf8')
+    ok(!/preFlash/.test(esrc.slice(esrc.indexOf('export function step'), esrc.indexOf('export function simState'))),
+        'step()/simState() never mention the flash — it lives outside the determinism core')
+    ok(!/preFlash/.test(esrc.slice(esrc.indexOf('export function hash'), esrc.indexOf('// ---- key-turn feel'))),
+        'hash() never mentions the flash')
+    // view side wired: computed per frame, drawn per kind, exposed for the drive.
+    const jsx = readFileSync(join(here, '../src/games/BombDefuse/index.jsx'), 'utf8')
+    ok(jsx.includes('hud.pf = E.preFlash(gs)') && jsx.includes('pf: hud.pf'),
+        'index.jsx recomputes the pre-flash from live state every frame')
+    ok(jsx.includes('opts.pf && opts.pf.kind === E.SYNC') && jsx.includes('opts.pf && opts.pf.kind === E.CUT') && jsx.includes('opts.pf && opts.pf.kind === E.VENT'),
+        'all three kinds draw their pulsing amber rim')
+    ok(jsx.includes('preFlash: () => hudRef.current.pf || null'), '__bdTest.preFlash exposes the law for the drive harness')
+    ok(jsx.includes("if (hold <= 0) return") && /const p1 = |drawWindowBar\(g, gs, \(gs\.keys/.test(jsx),
+        'the SYNC WINDOW bar still answers only to a held press — the flash covers the other half of the gap')
 }
 
 console.log(`\ndefusecheck: ${pass}/${pass + fail} gates`)
