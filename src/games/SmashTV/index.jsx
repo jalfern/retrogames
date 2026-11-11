@@ -563,13 +563,16 @@ const SmashTVGame = () => {
                     ctx.lineWidth = 1
                 } else if (b.kind === 'homing') {
                     // #2032 the heat-seeker: a pale warhead on a hot orange
-                    // body, dragging a thin smoke line — you can READ the curve
+                    // body, dragging a thin smoke line — you can READ the curve.
+                    // Snap the warhead to the pixel grid: a fractional 3×3 fill
+                    // anti-aliases into 2..9 exact-colour px (the live gate rode
+                    // that coin-flip), and a crisp square is the pixel truth anyway.
                     ctx.strokeStyle = 'rgba(255,176,79,0.45)'
                     ctx.beginPath(); ctx.moveTo(b.x - b.dx * 2.5, b.y - b.dy * 2.5); ctx.lineTo(b.x, b.y); ctx.stroke()
                     ctx.fillStyle = '#ffb04f'
-                    ctx.fillRect(b.x - 1.5, b.y - 1.5, 3, 3)
+                    ctx.fillRect(Math.round(b.x - 1.5), Math.round(b.y - 1.5), 3, 3)
                     ctx.fillStyle = '#ffe9cf'
-                    ctx.fillRect(b.x + b.dx * 0.4 - 0.5, b.y + b.dy * 0.4 - 0.5, 1.5, 1.5)
+                    ctx.fillRect(Math.round(b.x + b.dx * 0.4 - 0.5), Math.round(b.y + b.dy * 0.4 - 0.5), 1.5, 1.5)
                 } else if (b.kind === 'flame') {
                     // #2032 fire: a puff that starts bright and dies out —
                     // size and colour ride the age, so the ~45 px reach is
