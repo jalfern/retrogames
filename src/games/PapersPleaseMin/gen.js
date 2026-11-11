@@ -57,15 +57,16 @@ export const TRAPS = [
     { rule: 'IDMATCH', how: 'ID name matches; the HEIGHT differs (height is not a rule)' },
     { rule: 'IDREQ', how: 'no ID card, but the DOB makes them a child — children are exempt' },
     { rule: 'CURFEW', how: 'valid for exactly 7 more days — curfew counts days AFTER today' },
-    { rule: 'PORTRAIT', how: 'the photo shows the SAME face, years ago — grey hair; the rule compares cut, shape, glasses, facial hair, never color' },
+    { rule: 'PORTRAIT', how: 'the photo shows the SAME face, years ago — grey hair; the rule compares cut, shape, glasses, facial hair, brows, mouth — never color' },
 ]
 
 // #1938 PORTRAIT — the face descriptor. Every applicant gets one; the
 // live face at the counter AND the passport photo of an honest paper are
 // painted from the SAME descriptor (that identity is paperscheck's law).
-// Structural fields (style/narrow/glasses/must) are the PORTRAIT rule's
-// comparison set; colors (skin/hairC/shirtC) are atmosphere: the aged-
-// photo trap moves ONLY a color, and no rule may convict on color.
+// Structural fields (style/narrow/glasses/must/brow/mouth — the last two
+// added by #1972) are the PORTRAIT rule's comparison set; colors
+// (skin/hairC/shirtC) are atmosphere: the aged-photo trap moves ONLY a
+// color, and no rule may convict on color.
 // GREY is a hair color index, not a structural change.
 export const GREY = 3
 
@@ -118,6 +119,13 @@ function base(rnd, date, dayRules, used, opts = {}) {
         narrow: rnd() < 0.4 ? 1 : 0,
         glasses: rnd() < 0.35 ? 1 : 0,
         must: adult && rnd() < 0.3 ? 1 : 0,
+        // #1972 PORTRAIT-DETAIL: two more structural features the original's
+        // eye roams. Two new rnd() draws per face re-sequenced every later
+        // draw, so seeds present NEW weeks (still deterministic — paperscheck
+        // judges properties, not old fixtures); brow runs a little hot (0.45)
+        // so the thick/thin read shows up fast on the wall.
+        brow: rnd() < 0.45 ? 1 : 0,
+        mouth: rnd() < 0.35 ? 1 : 0,
     }
     pp.photo = { ...face }
     return {

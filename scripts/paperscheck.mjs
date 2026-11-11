@@ -280,7 +280,7 @@ section('PORTRAIT (#1938) — the photo on the paper against the face at the cou
                     ok(a.truth.photoMismatch === true, 'a forge the truth path forgot')
                     const d = decide(viewOf(day, a))
                     const ev = d.violations.find((x) => x.rule === 'PORTRAIT')
-                    ok(ev && /HAIR|FACE|GLASSES|FACIAL HAIR/.test(ev.evidence),
+                    ok(ev && /HAIR|FACE|GLASSES|FACIAL HAIR|BROWS|MOUTH/.test(ev.evidence),
                         `seed ${seed} day ${day.n}: the PORTRAIT deny printed no feature word: "${ev && ev.evidence}"`)
                 } else {
                     ok(feats.length === 0 && a.truth.photoMismatch === false,
@@ -303,6 +303,25 @@ section('PORTRAIT (#1938) — the photo on the paper against the face at the cou
         ok(has, `seed ${seed}: the week never showed an aged photo — the trap species is theatre`)
     }
     ok(aged >= SEEDS.length, `only ${aged} aged photos across the sweep`)
+    // #1972 PORTRAIT-DETAIL: every compared feature must actually FORGE at
+    // least once across the sweep, and its denial must name it — a sixth
+    // feature that never appears in a violation is a rule written in pencil.
+    const staged = {}
+    for (const seed of SEEDS) {
+        for (const day of genWeek(seed).days) {
+            for (const a of day.queue) {
+                if (a.breakRule !== 'PORTRAIT' || !a.person.passport) continue
+                for (const f of FEATURES) {
+                    if (a.person.face[f] === a.person.passport.photo[f]) continue
+                    staged[f] = (staged[f] || 0) + 1
+                    const ev = decide(viewOf(day, a)).violations.find((x) => x.rule === 'PORTRAIT')
+                    ok(ev && ev.evidence.length > 4, `seed ${seed} day ${day.n}: ${f} broke but no evidence printed`)
+                }
+            }
+        }
+    }
+    for (const f of FEATURES) ok((staged[f] || 0) > 0, `feature ${f} never forged across ${SEEDS.length} weeks — the eye never gets to use it`)
+    console.log(`  ..    all ${FEATURES.length} features forged: ${FEATURES.map((f) => `${f}=${staged[f] || 0}`).join(' ')}`)
     // the wall owes PORTRAIT exactly one line: the day-7 fit (y=356 of the
     // 358 law) silently degrades the moment this text wraps
     ok(ruleLines(RULES.PORTRAIT.text) === 1, `PORTRAIT prints in ${ruleLines(RULES.PORTRAIT.text)} lines — a two-line law buries the wanted sheet`)
@@ -1060,6 +1079,53 @@ if (MUT) {
             g.credits = 0
             m.sim.settle(g); m.sim.settle(g)
             return g.end === 'lose' && /STARVED/.test(g.endWhy)
+        })
+
+    // #1972 PORTRAIT-DETAIL mutants. Shared fairness walker: returns true
+    // (SURVIVED) only if booth and truth agree on every paper of every seed.
+    const fairAll = (m) => {
+        for (const seed of SEEDS) {
+            for (const day of m.gen.genWeek(seed).days) {
+                for (const a of day.queue) {
+                    const d = m.rules.decide(m.gen.viewOf(day, a))
+                    const j = m.rules.judge({ truth: a.truth, person: a.person, rules: day.rules, date: day.date, allowed: day.allowed, scale: a.scale })
+                    if (d.verdict !== j.verdict) return false
+                }
+            }
+        }
+        return true
+    }
+
+    // 22. the brow comparison is muted: thick-vs-thin forges walk free past
+    //    the booth while the truth path still convicts — unfair papers.
+    await tryMut('brow comparison muted (brow forgers walk free)',
+        mutMod('rules.js', 'if (face.brow !== photo.brow) ev.push(', 'if (false && face.brow !== photo.brow) ev.push(', 'm22'),
+        (m) => fairAll(m))
+
+    // 23. same for the mouth: an open-mouthed photo of a shut-mouthed
+    //     entrant stops being evidence.
+    await tryMut('mouth comparison muted (mouth forgers walk free)',
+        mutMod('rules.js', 'if (face.mouth !== photo.mouth) ev.push(', 'if (false && face.mouth !== photo.mouth) ev.push(', 'm23'),
+        (m) => fairAll(m))
+
+    // 24. the compared set shrinks back to four: the generator stops staging
+    //     brow/mouth forges entirely — the fairness prover stays green, so
+    //     only the coverage pin sees the new rules turn into décor.
+    await tryMut('FEATURES back to four (new features never staged)',
+        mutMod('rules.js', "export const FEATURES = ['style', 'narrow', 'glasses', 'must', 'brow', 'mouth']",
+            "export const FEATURES = ['style', 'narrow', 'glasses', 'must']", 'm24'),
+        (m) => {
+            const six = ['style', 'narrow', 'glasses', 'must', 'brow', 'mouth']
+            const seen = new Set()
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    for (const a of day.queue) {
+                        if (a.breakRule !== 'PORTRAIT' || !a.person.passport) continue
+                        for (const f of six) if (a.person.face[f] !== a.person.passport.photo[f]) seen.add(f)
+                    }
+                }
+            }
+            return six.every((f) => seen.has(f))
         })
 }
 

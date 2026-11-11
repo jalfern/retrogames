@@ -73,13 +73,14 @@ export const DAY_RULES = [
 export const newRuleOfDay = (day) => (day >= 2 ? DAY_RULES[day - 1][DAY_RULES[day - 1].length - 1] : null)
 
 // ---- PORTRAIT: the face on the paper vs the face at the counter.
-// Compared FEATURES are structural — cut, shape, glasses, facial hair.
-// Colors (skin, hair color, shirt) are NEVER evidence: time fades hair,
-// heat changes clothes; a photo taken years ago is not a forgery. The
-// descriptor fields are exactly what the booth PAINTS (index.jsx renders
-// both portraits from these), so every diff decide names is pixels on the
-// canvas — the papersplay gates sample them.
-export const FEATURES = ['style', 'narrow', 'glasses', 'must']
+// Compared FEATURES are structural — cut, shape, glasses, facial hair,
+// brows, mouth (#1972: the original's eye roams a whole face, so the
+// set grew from four to six). Colors (skin, hair color, shirt) are NEVER
+// evidence: time fades hair, heat changes clothes; a photo taken years
+// ago is not a forgery. The descriptor fields are exactly what the booth
+// PAINTS (index.jsx renders both portraits from these), so every diff
+// decide names is pixels on the canvas — the papersplay gates sample them.
+export const FEATURES = ['style', 'narrow', 'glasses', 'must', 'brow', 'mouth']
 export const STYLE_NAMES = ['CAP', 'THIN', 'SIDE-LEFT', 'SIDE-RIGHT']
 export function portraitDiffs(face, photo) {
     const ev = []
@@ -88,6 +89,8 @@ export function portraitDiffs(face, photo) {
     if (face.narrow !== photo.narrow) ev.push(`PHOTO FACE ${photo.narrow ? 'NARROW' : 'WIDE'} vs ENTRANT ${face.narrow ? 'WIDE' : 'NARROW'}`)
     if (face.glasses !== photo.glasses) ev.push(photo.glasses ? 'PHOTO WEARS GLASSES, ENTRANT DOES NOT' : 'ENTRANT WEARS GLASSES, PHOTO DOES NOT')
     if (face.must !== photo.must) ev.push(photo.must ? 'PHOTO HAS FACIAL HAIR, ENTRANT HAS NONE' : 'ENTRANT HAS FACIAL HAIR, PHOTO HAS NONE')
+    if (face.brow !== photo.brow) ev.push(photo.brow ? 'PHOTO BROWS THICK, ENTRANT THIN' : 'ENTRANT BROWS THICK, PHOTO THIN')
+    if (face.mouth !== photo.mouth) ev.push(photo.mouth ? 'PHOTO MOUTH OPEN, ENTRANT SHUT' : 'ENTRANT MOUTH OPEN, PHOTO SHUT')
     return ev
 }
 
