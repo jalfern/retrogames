@@ -1,73 +1,83 @@
-# STATE — session 212 (2026-11-10, slot b)
+# STATE — session 213 (2026-11-10, slot a)
 
 ## What shipped
-**PAPERS, PLEASE-MIN: THE SHIFT CLOCK** merged as `41eea36` (PR #1963,
-Closes #1960, never-dry pick — weakestStage score 6). The booth finally has
-the original's time: `gs.clock` drains via `tick(gs,n)`; budget =
-`queue.length × CFG.SEAT_TICKS` (18 s/applicant), so the 13-entrant finale is
-the tightest shift of the week *because* it is the longest day. At 0 the gate
-slams: `close` event, `MISS_DOCK`(5)/head clamped at 0, days 1–6 dock and
-advance, **day 7 must finish** — `GATE CLOSED — n STILL IN LINE, QUOTA UNMET`
-loses the week. Morning `advance()` rewinds (shared by drain and close).
-Canvas: real clock face (pips, sweeping hands, digital readout) on the ruled
-grid by the date line, mapped 08:00→18:00, red last hour + soft per-second
-ticks + close buzzer + GATE CLOSED banner. paperscheck 8596/8596 with **18/18
-mutants** (4 new: SEAT shrink, quota tooth pulled, dock zeroed, dead-clock
-morning); papersplay 30/30 (+5 live clock gates incl. ff-close + day-7 death);
-lints + build green. Live: jalfern.com/retrogames/papers-please (prod-proved
-`QUOTA UNMET` in game chunk index-DyYHGdPy.js).
+**WATCH BATCH 23 — "THE LAST TWO ROADS"** merged as `12bf874` (PR #1962,
+Part of #1637). Two titles seat their own proven route on Y:
+- ROGUE — `watchStep(state)` lifted from roguecheck §6 INTO sim.js (stairs ->
+  DESCEND, adjacent foe -> bump-attack, else BFS first step, no route -> honest
+  release). Reactive every turn: seats anywhere, re-seats from live state. Node
+  re-witness through the game driver: dlvl2 20/20, min food 1344. Turn-based
+  seat = own 140 ms interval (no frame clock; entropy per typed move). First
+  `__rogueTest` DEV hook (watching/probe/watchSfx/hash).
+- METROID-LITE — script-INDEX junction (Paperboy law): replays `planRun`'s
+  zero-hit win at `script[gs.tick]`, FRESH never-steered roads only; the seat
+  RE-ANCHORS an unused road to the witness's tick 0 (deterministic makeGame —
+  re-anchor is THE catch, see below). Steer -> droveRef closes the seat for the
+  run, mid-route Y answers NO_GUIDE silently; relic win releases silently.
+Chrome: WATCH_HELP x2, shared pill/toast/blips, Rogue named in SKIP_ATTRACT
+(no attract), Metroid mounts attract ▶ WATCH. watchcheck pilots 234/234 +
+235/235 (rogue pilot dug to dlvl 3 untouched; metroid full drive RELIC
+RECOVERED 0 deaths energy 4/4 2150 pts) + 12 batch-23 source pins; 2 mutants
+red as designed (droveRef drop -> 3 red; seat-mount gut -> seat/blip/advance
+red). roguecheck 76/76, metroidcheck 49/49, watchphonecheck 443/443,
+attractcheck 694, 3 lint gates + build green. Prod verified by CONTENT:
+`index-U22epagg.js` carries both new registry markers.
+Live: /retrogames/rogue, /retrogames/metroid.
 
 ## The session's catches
-- **Canvas top-right is app chrome's, not yours.** The clock shipped first at
-  x=612 "clear of everything" — paperscheck could only prove canvas-vs-canvas
-  clearance; the PAUSE/volume/WATCH HTML overlays sit exactly there and ate the
-  clock. Screenshots caught what asserts can't: shoot the booth before trusting
-  a wall position.
-- **Cadence tests must overshoot the drain.** Stamping once per `budget/queue`
-  wait (1200 ticks, q13) drains the queue *before* the gate falls — closes
-  never fire and the test reads the clock as dead. The gate only catches a
-  cadence above `queue×SEAT/(queue−1)` (1300 works).
-- **Prod verify:** `jalfern.com/retrogames/` returns "Redirecting…" without
-  `-L`; lazy game code lives in bare `index-<hash>.js` strings inside the entry
-  chunk (no `./` prefix — grepping for `./x.js` finds nothing); grep LC_ALL=C.
+1. **A tick-indexed script seat must land at the witness's tick 0.** Seating at
+   live tick N replaying script[N] is pose-desynced (script's own motion started
+   tick ~2; walking right looked fine — shafts would not). House fix: seat on a
+   fresh un-steered road calls `startPlay()` first (identical world, no history
+   to lose), then replays from index 0. AttractWatchButton's +180 ms Y is then
+   inside the idle prefix and honest.
+2. **Seat decisions compute LIVE at the keypress, never from the per-frame pill
+   mirror.** A rAF hitch can leave canSeatRef stale for ~2 frames (a mid-run
+   re-seat slipped through once in-browser). Mirror gates the pill only.
+3. **`gh api commits/<sha>/check-runs` 404'd right after the force-push rebase**
+   (loop starved on empty). `gh pr checks` rollup DID show static=pass — fall
+   back to the rollup when the api path 404s, don't spin the rule-5 loop blind.
 
 ## Ladder trail
-- halt none; steer none; warden TARGET #1711 claimed(b) → **third session
-  confirming the same hardware stall** (capture spine intact at HEAD, `relay/`
-  untouched, no Jon post) → posted the "this needs Jon, not another probe"
-  checkpoint and RELEASED (`next` back). Do not re-verify deeply next time.
-- game-queue empty; QA MASTER live (pgrep) → feedback borrow refused;
-  flagshipStage null (all flagship gaps owned) → NEVER-DRY weakestStage
-  PAPERS, PLEASE-MIN score 6 → filed #1960 with why-weakest → claimed(b) →
-  shipped. No jonq (mechanical picks only).
+- halt none; steer none; next #1711 hardware-stalled on Jon (verified 11-10 by
+  slot b, skip); game-queue empty; QA MASTER live → feedback borrow refused;
+  flagshipStage null → warden TARGET #1637 claim returned "already yours: resume
+  it" (my slot's own lineage) → batch 23. No jonq (mechanical pick; no taste
+  call came up).
 
 ## Session bookkeeping
-- #1960 CLOSED shipped; clock-round QA items commented on #1943 (legibility
-  at phone scale, day-1 cold play, real dawdle close, banner-vs-stamp, dock
-  wording, finale pressure — tightening SEAT is a one-constant change).
-- #1711 stays `next`, waiting on Jon (R2 bucket + `wrangler deploy`,
-  #1730 defaulted Hold). The 4-line hardware pass lives in #1711 comments.
-- :5178 vite KILLED at session end; worktree `~/Dev/retrogames-forge-shiftclock`
-  (node_modules symlinked, detached origin/main) — reuse or `git worktree
-  remove` next slot-b session. Lode-strata server was killed early; that
-  worktree (#1956 shipped) can be removed anytime.
+- #1637 stays OPEN + `building` (multi-stage; batch 23 shipped, the issue's
+  last comment carries the live URLs + post-b23 driver audit).
+- :5173 vite left RUNNING from `~/Dev/retrogames-forge-watch-b23` (detached
+  origin/main) — next slot-a session reuse or kill before strictPort.
 
-## Next queued (slot b)
-1. Fresh ladder: halt/steer/next/queue games-first; #1711 verifiable-stalled —
-   check comments first for the bucket, then checkpoint-and-release only.
-2. LODE RUNNER-LITE keeps 4 unowned README gaps; papers photo detail + face
-   variety are its next unowned rungs (never-dry will pick by score).
-3. QA-held items stay theirs (#1915/#1900/#1888/#1871 TMD, #1907 SI/DF,
-   #1877 FB, #1923 rail, #1925 carpet, #1950 SmashTV, #1959 LODE,
-   #1943/#1908/#1891 papers).
+## Next queued (slot a)
+1. Fresh ladder: halt/steer/next/queue games-first; #1711 = 3 sessions of the
+   same hardware stall (slot b's 212 says plainly: check comments for Jon's
+   bucket, then checkpoint-and-release, no deep re-verify). Feedback only if
+   no QA MASTER live; else flagship/never-dry.
+2. **#1637 batch 24 = driver-building, not seat-finding.** Bare registry audit
+   (post-b23): Pong/Asteroids/DonkeyKong/Centipede/Pitfall/Frogger have no
+   proven in-game driver; FireCrew autopilot is 8/10 (below the 8/8 bar);
+   DOS/IF titles sit behind js-dos. If the ladder still points at #1637, the
+   honest move is to pick ONE title and ship its driver IN the game first
+   (Rogue's BFS→sim lift is the template), then seat it next batch — or
+   declare the rollout closed-to-new-titles and move the lane to flagship
+   polish. The audit line is now in the b23 shipped comment.
+3. QA-held items stay theirs (#1915/#1900/#1888/#1871 TMD, #1907 SI/DF, #1877
+   FB, #1923 rail, #1925 carpet, #1950 SmashTV, #1943/#1908/#1891 papers;
+   #1959 LODE chain-burials shipped as #1964 by slot b — my earlier note
+   predates it).
 
-## Notes for the next slot-b session
-- Clock constants live in `CFG` (SEAT_TICKS 1080, MISS_DOCK 5, SIM_HZ 60);
-  `gameClock(gs)` for the printed time; DEV `__ppTest.ff(n)` winds the shift.
-- Any new wall art: run `npm run shot` and LOOK — chrome (PAUSE/volume/WATCH,
-  footer) overlays the canvas edges; paperscheck now pins the clock's
-  chrome-safe corner (its DAY-line/rules/portrait asserts must stay green).
-- stateHash ignores `clock` on purpose (discrete booth only).
+## Notes for the next slot-a session
+- :5173 vite runs from `~/Dev/retrogames-forge-watch-b23` (detached origin/main
+  after merge, node_modules symlinked) — reuse or kill before strictPort.
+- New-seat checklist unchanged (WATCH_HELP, top-anchored !paused pill, attract
+  button or SKIP_ATTRACT name, shared blips logged, DEV probes, pilot + pins,
+  mutant proof). Rogue joins SKIP_ATTRACT; metroid's pill mirrors canSeat.
+- MetroidLite now HAS a README (was missing — AGENTS.md engine-notes law kept
+  retroactively); Rogue README's check-count drift fixed to 76 — re-count after
+  any roguecheck edit.
 
 ## Open questions
 - None. (No taste/priority call needed from Jon.)
