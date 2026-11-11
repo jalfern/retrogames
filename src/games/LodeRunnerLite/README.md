@@ -57,7 +57,10 @@ canvas and zero `Math.random`. That is what lets:
   double (500, 1000, 3000, the machine's own ladder), and every stratum the
   grave sits below the surface adds another 500 (`CFG.deepPay`). That pay is
   the reason to dig deep: the shaft is where the money and the risk both live
-  (#1952, ladder and depth pay by #1959).
+  (#1952, ladder and depth pay by #1959). And it pays **in play** now (#1991):
+  THE ROPE hunts with a pair, and the canonical col-9 shaft by the ladder is
+  the double grave — lodecheck scripts the real-input kill, no hand-placed
+  bodies.
 - **Guard gold** — a guard pockets the gold it walks over and drops it a
   moment later; the runner must win it back before the exit opens.
 - **The ladder appears** — the exit ladder is concealed until every gold is
@@ -74,7 +77,8 @@ third) · `pitClimb` (the pit is a grave for everyone) · `guardChase` (the
 lift gold) · `guardPay` (a buried guard is worth nothing) · `chainLadder`
 flat (chain burials pay nothing extra) · `deepPay=0` (the stratum bonus is
 dead) · the **strata law** (the bottom rock row turned to concrete must be
-illegal).
+illegal) · `rope=one guard` (#1991: THE ROPE back to a lone hunter must
+kill the two-wing pursuit and the live col-9 chain).
 
 ## The solver's honesty contract
 
@@ -90,7 +94,7 @@ to clear, it is unclassic and lodecheck's winnability gate fails it.
 
 | | |
 |---|---|
-| `npm run lodecheck` | 115 Node checks (141 with `--mutate`): construction contracts including the **strata law** (three diggable brick layers over an open walk row, per vault), per-vault solve + determinism both ways + one-fewer-life slack, every classic rule pinned by a scenario, the carved three-cell shaft (drop in, deepen twice, climb out), its live paid deep grave (1000 — guardPay plus one stratum) and the two-guard **chain pay** in one closing brick (the original's double), thirteen mutant runs that MUST die. CI runs the plain audit in the static gate
+| `npm run lodecheck` | 125 Node checks (153 with `--mutate`): construction contracts including the **strata law** (three diggable brick layers over an open walk row, per vault) and the **pair contract** (a multi-guard vault on the shelf, THE ROPE ≥2, #1991), per-vault solve + determinism both ways + one-fewer-life slack, every classic rule pinned by a scenario, the carved three-cell shaft (drop in, deepen twice, climb out), its live paid deep grave (1000 — guardPay plus one stratum), the hand-placed two-guard **chain pay** in one closing brick (the original's double), the **live chain from real spawns** (#1991: both ROPE hunters ride the scripted col-9 shaft together, n=2 pays 1500, both wings pursue), fourteen mutant runs that MUST die. CI runs the plain audit in the static gate
 (`--mutate` is the local deep pass). |
 | `npm run lodeplay` | Chrome, real key events only: the attract demo moves by itself, a held arrow runs the runner, dig→hole→refill graded in pixels, the paint graded in pixels too (warm mortar brick distinct from cool concrete in hue AND density; runner and guard distinct sprites; the original palette itself — navy background, aqua runner, orange guard, grey ladder and rope), climb-to-hang on the real ladder, guards hunt untouched, R replays your lost run as a ghost, in-page replay hash-matches mid-run. |
 
@@ -98,11 +102,11 @@ to clear, it is unclassic and lodecheck's winnability gate fails it.
 
 - **The pay scales now (#1959).** A depth-2 grave pays 1000, depth-3 pays
   1500, and one closing brick catching two guards pays the original's double
-  (trap ladder 500/1000/3000...). What still separates this vault from the
-  machine: the shipped vaults carry ONE guard each, so the chain rung is a
-  proven sim law (lodecheck pins it with a hand-placed second guard) but a
-  live chain needs a multi-guard vault — queued work, not yet dug. Row 18
-  remains the bedrock: no fourth stratum.
+  (trap ladder 500/1000/3000...). **CLOSED by #1991:** THE ROPE now hunts
+  with a pair (wing spawns at x24 and x29) and lodecheck scripts the kill
+  from real spawns — both hunters route across the col-9 shaft mouth into one
+  closing brick, n=2 pays 1500. Row 18 remains the bedrock: no fourth
+  stratum, and vaults 1 and 3 keep a single hunter by design.
 - **Three strata are real (#1952).** The ground is three diggable brick
   layers, shafts carve three cells down, and the solver routes over the
   thicker rock; the strata now also *look* and *sound* different — deeper

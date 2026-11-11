@@ -96,7 +96,10 @@ export const LEVELS = [
     // --------------------------------------------------------- level 2 ----
     // THE ROPE — three nuggets dangle from a line over the middle hall. The
     // col-8 ladder climbs to the hang row: dangle, swing, and take them, plus
-    // one on the floor. A guard paces the floor below the line.
+    // one on the floor. TWO guards hunt the floor below the line, one from
+    // each wing (#1991): the crossing the solver makes is triangulation, and
+    // the diggable hall between them is where a closing brick can catch a
+    // pair — the chain rung of the trap ladder pays in actual play now.
     parse(vault(
         [
             ex(() => '.'),                                                    // 2
@@ -106,7 +109,7 @@ export const LEVELS = [
             ex((x) => (x === 8 ? '|' : (x === 10 || x === 13 || x === 16 ? '*' : '.'))),  // 6: ladder top + gold
             ...Array.from({ length: 8 }, () => ladderCol([8], () => '.')),    // 7-14: col-8 ladder
         ],
-        { 1: 'P', 4: '*', 29: 'G' },
+        { 1: 'P', 4: '*', 29: 'G', 24: 'G' },
     ), 'THE ROPE',
         { exit: { x: EXIT_X, y: 2 }, lives: 3, proves: ['swing', 'pursued'] }),
 
