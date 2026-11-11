@@ -125,6 +125,9 @@ r.check('restart returns to the arena', p.screen === 'play' && p.room === 0 && p
         gs.player.invuln = 0 // the spawn blink would blank the sprite on odd frames
         gs.enemies.length = 0 // camera-leg chrome is the same grey — the column
         gs.roomData.spawns.length = 0 // must hold only what the contestant carries
+        // #2007: the wide seed-0 board mirrors a bar into column 12, right above
+        // the middle spawn — stand two columns in, where only the guns can chrome
+        gs.player.x = 2 * 16 + 8
         const c = document.querySelector('canvas[data-smash-stage]')
         const g = c.getContext('2d')
         const chrome = (x0, y0, w, h) => {
@@ -136,7 +139,12 @@ r.check('restart returns to the arena', p.screen === 'play' && p.room === 0 && p
             }
             return n
         }
-        const col = () => [Math.round(gs.player.x) - 4, Math.round(gs.player.y) - 12]
+        const col = () => {
+            // #2007: wide rooms pan — canvas x is the hero's world x less the
+            // camera (screen-width rooms still read camX 0, byte-identical probe)
+            const camX = window.__smashTest.probe().camX || 0
+            return [Math.round(gs.player.x) - camX - 4, Math.round(gs.player.y) - 12]
+        }
         gs.player.aim = [0, -1]
         await raf(); await raf()
         const above = chrome(col()[0], col()[1], 9, 5)
@@ -168,11 +176,15 @@ r.check('the arena actually renders', px > 500, `${px} lit px`)
     const cam = await page.evaluate(async () => {
         const raf = () => new Promise((res) => requestAnimationFrame(res))
         const T = window.__smashTest
+        window.__game.reset(0, 1) // deterministic single-seat frame of reference
+        for (let i = 0; i < 4; i++) T.stepWith({})
         const gs = T.state()
         for (let target = 1; target <= 4; target++) {
             gs.enemies = []; gs.roomData.spawns = []; gs.spawnT = 0; gs.bonusT = 0
             T.stepWith({})
-            gs.player.x = 8 * 16 + 8; gs.player.y = 24 + 8
+            // #2007: the up door centres on the room's own board (still c8 in
+            // standard rooms; c12 once the whole show went wide)
+            gs.player.x = Math.floor(gs.roomData.gw / 2) * 16 + 8; gs.player.y = 24 + 8
             T.stepWith({})
         }
         const inBig = gs.room === 4 && gs.roomData.gw === 24

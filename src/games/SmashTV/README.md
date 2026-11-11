@@ -81,35 +81,46 @@ sheet (seat-palette aware). `juice.js recoilKick` snaps the carriage back 2 px
 on report, decaying to zero within 5 ticks ≤ the tightest fire interval. The
 sim is untouched — paint-only, so every seed hash and replay pin still holds.
 
-## VARISIZE BOARD + CAMERA (#1973)
+## VARISIZE BOARD + CAMERA (#1973, whole-show by #2007)
 The cabinet framed the show through its 16:9 lens — arenas read wider than the
-playfield. Rooms 5 and 8 (`BIG_ROOMS`) now board 24 cells across: 384px, 1.5×
-the screen, with the wall pattern mirrored across the wider board so corridors
-really run longer. Every boundary reads the room's own `boardW = gw * CELL` —
-collision, player and enemy shots, civilian bounce, THE ANNOUNCER's pace and
-add spawns, and the exits (the right door sits on the room's true border,
-`exitsOf`). The renderer owns the camera: `camX` snaps each frame to keep the
-live cast's midpoint centred, clamped to the board edges; the whole arena
-layer renders translated while HUD, banners and scanlines stay screen-space.
-Standard rooms are exactly screen-wide, so their `camX` is pinned at 0 and
-their framing is byte-identical to the old fixed camera.
+playfield. #1973 widened rooms 5 and 8; **#2007 widened the whole show**: every
+room but THE ANNOUNCER's (`BIG_ROOMS` = indices 0–7) boards 24 cells across:
+384px, 1.5× the screen, with the wall pattern mirrored across the wider board
+so corridors really run longer. Every boundary reads the room's own
+`boardW = gw * CELL` — collision, player and enemy shots, civilian bounce,
+THE ANNOUNCER's pace and add spawns, and the exits (the right door sits on the
+room's true border, the up/down doors centre on it, `exitsOf`). Each board's
+spawn is its own lower middle (`startColOf`): 16-wide keeps byte-identical
+c8, the wide boards open at c12. The renderer owns the camera: `camX` snaps
+each frame to keep the live cast's midpoint centred, clamped to the board
+edges; the whole arena layer renders translated while HUD, banners and
+scanlines stay screen-space. THE ANNOUNCER's arena is exactly screen-wide, so
+his `camX` is pinned at 0 — a boss half off-screen reads as a bug, and the
+law is pinned by smashcheck.
 
 The autopilot learned the new floor: a minor-axis lane-alignment walk when its
 snap-aim line misses a threat (doctrine #508 extended to seat 1 — a wide-room
 add can pin itself against a bar corner just off the lane, and seat 1 held the
-duel firing past it forever), and at THE ANNOUNCER one add is already worth
-the firebomb. The pilot floor was re-measured honestly: solo clears 8 of 9
-seeds — **seed 3 is a documented forced loss** (fan attrition at the
-ANNOUNCER; volley-commit, round-relative, crosser-aware and bottom-pocket-rise
-breaks were all measured, and each rescues seed 3 by losing another seed
-instead; smashcheck pins the count AND names the seed — update pin and README
-together, Pong's seed 25 style). Seed 6 proves the deathless matinee; the
-slack run (seed 1) and co-op (all nine seeds) still win.
+duel firing past it forever), at THE ANNOUNCER one add is already worth the
+firebomb, and when the bonus clock dies EVERY seat walks a door (the #508
+partner law, extended to seat 1 — a 24-column ghosting floor gave civilians
+somewhere to hide for 58k ticks). The stalled-exit fix is the DIRECTED break:
+when the goal walk stalls, the hero slides sideways until the goal direction is
+actually open again (`blockedPx` probe), with the sweep growing by the stall
+streak while it isn't — a fixed 30-tick break spans ~36px, less than the ~45px
+no-go band between two bar columns on a wide board, and the exit walk
+ping-ponged inside that band forever (seed 6, 59k ticks). The pilot floor was
+re-measured honestly on the new boards: **solo clears all 9 seeds** — the
+#1973 seed-3 forced loss is retired (the directed break ends the fan attrition
+without costing another seed; smashcheck pins the count — if a future change
+loses one again, update pin and README together, Pong's seed 25 style).
+Seed 1 proves the deathless matinee; the slack runs (seeds 0–2) and co-op
+(all nine seeds) still win.
 
 ## Honest gaps vs the cabinet
-- Big rooms pan (rooms 5 and 8 run 24 columns, #1973), but the rest are still
-  screen-sized — the original rotated its whole cabinet to 16:9. THE ANNOUNCER
-  keeps his screen-sized stage on purpose: a boss half off-screen reads as a bug.
+- THE ANNOUNCER keeps his screen-sized stage on purpose (a boss half off-screen
+  reads as a bug); every other room runs the 24-column pan board (#1973 opened
+  rooms 5/8, #2007 opened the whole show).
 - Eight original weapons are distilled to four (twin, machine gun, spread,
   laser) + firebomb; the homing/heat-seeking and flamer are not modelled.
 - Bonus-room civilians are stylized (dot-matrix contestants, no gore sprites).
