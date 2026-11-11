@@ -119,13 +119,15 @@ export const humansAlive = (humans) => humans.filter((h) => h.state !== 'dead').
 // at anything level inside laser range — EXCEPT when a walking human stands in the
 // laser line closer than the target (the arcade's friendly-fire law runs both
 // ways). No rand, no memory — honest from any position.
-// Honest measure (defendercheck's WITNESS section, 20 seeded 150-second
-// patrols): every seed survives to the horizon with lives to spare and banks
-// >= 7,000 points, 19/20 clear at least a wave; the patrol rescues a human
+// Honest measure (defendercheck's WITNESS, two seeded 150-second patrol sets
+// — 20 witness + 20 untuned holdout): every seed survives to the horizon with
+// lives to spare, banks its floor (witness >= 7,000, holdout >= 1,300), and
+// NO seed crashes twice (b21 crash law). The patrol rescues a human
 // (catch + deliver) on most seeds, does NOT fly collision-free (a graze about
-// once a patrol), and cannot always reach a far-side haul before it crests. The
-// watch advertises the route, not invincibility — any input takes over, and the
-// seat releases with the run.
+// once a patrol — see the README for the six b21 policing designs that all
+// traded flow or floors), and cannot always reach a far-side haul before it
+// crests. The watch advertises the route, not invincibility — any input takes
+// over, and the seat releases with the run.
 export const watchRoute = (s) => {
     const input = { left: false, right: false, up: false, down: false, fire: false }
     const p = s.player

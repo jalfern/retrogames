@@ -43,7 +43,8 @@ not JSON-serializable (#391).
 ## Verify
 ```
 npm run defendercheck            # Node: determinism, score law, rescue chain, deaths, terminal,
-                               #   + WITNESS: the WATCH patrol survives 20/20 seeds @150 s
+                               #   + WITNESS: the WATCH patrol survives both 20-seed sets
+                               #     (witness + holdout) @150 s, never crashes twice
 npm run defendercheck -- --mutant   # pre-port bugs re-planted; every mutant must go red
 npm run watchcheck -- --only defender  # seat pilot: one-tap ▶ WATCH, Y seat/takeover,
                                #   blips, idle-hands proof (browser, needs dev server)
@@ -67,17 +68,29 @@ driving key or a tap hands the wheel back (shared blips).
 
 ## Honest gaps
 
-- The WATCH patrol is honest-proven, not perfect: WITNESS 20/20 survive a
-  150 s patrol (min 7800 banked, 19/20 clear ≥1 wave; 46 rescues — catch+
-  deliver — across the 20 seeds) but it grazes ~1 hit per patrol and a haul
-  started on the far side of the planet can still crest before the ship
-  arrives; the gate pins what is MEASURED, not wishes. (#1637 b20 measured
-  three interception redesigns — reachability-budget concessions, a dive
-  pivot while hauls are lost, and reachable-diver VIP — each RAISED patrol
-  totals (best +18% score, +15 waves) but regressed a seed floor (7800 →
-  3150–5850) and cost lives: at 4000 px the far side is out of the
-  fighter's 210-tick rescue window, and b19's engage-everything law is the
-  honest optimum. The gap stands.)
+- The WATCH patrol is honest-proven, not perfect: WITNESS now replays BOTH a
+  20-seed witness set and a 20-seed HOLDOUT (never tuned against) — all 40
+  survive a 150 s patrol (witness min 7800 banked, holdout min 1350; 19/20
+  and 16/20 clear >= 1 wave; 46/47 rescues per set), and the b21 crash law
+  pins that NO seed loses two of its three lives inside a patrol — the ~1
+  graze per patrol is measured law, not luck. (#1637 b20 measured three
+  interception redesigns — reachability-budget concessions, a dive pivot while
+  hauls are lost, and reachable-diver VIP — each RAISED patrol totals (best
+  +18% score, +15 waves) but regressed a seed floor (7800 -> 3150-5850) and
+  cost lives: at 4000 px the far side is out of the fighter's 210-tick
+  rescue window, and b19's engage-everything law is the honest optimum.
+  #1637 b21 attacked the graze itself and the planet won: six more policing
+  designs measured on the same 40 seeds — velocity-vector run-out guards
+  (thr 10-20) starve the guns (104 waves -> 17-33, kills need the low
+  band), momentum-braked delivery/rescue elevators and a fresh-facing fire
+  gate each buy flow (best 125 waves, 55 rescues) but reshuffle one seed
+  into b20's own reject band (floor 7800 -> 4500), a dy-standoff plus hot
+  window trades paint for stalemates (15 waves), and duel-priority tracking
+  collapses the job list. The route's one early crash per patrol is the
+  price of that flow at this sim's knife-edge: the seed outcomes are chaotic
+  (any rule nudge reshuffles 20 runs), so the LAW is what ships pinned —
+  40-seed survival, per-seed single-crash, holdout floors — and the
+  interception gap stands too.)
 - No smart bomb, no hyperspace, no meteor-swarm bonus (documented 1981
   features left out of this port; the original's bonus table values 250/500/
   1000/10k are honored for what IS here).
