@@ -532,6 +532,12 @@ function drawGhostCell(g, x, y, w, h, tilt) {
 // its amber). The word and the arrow share one clock — railMouthGlow.
 export const RAIL_TAB_FREE = '#8a6512'
 export const RAIL_TAB_BLOCKED = '#22262b'
+// #1992: decisive deny inks. The rail floor sits at #33373d (lum 54.5) and the
+// old shared plateHi copy (#5c626c, lum 97.5) measured 1.79x there — under the
+// rec-601 phone-scale floor. Jammed cells flash deny-red, empty holders slate;
+// both clear 2.9x so the WORD is readable at phone scale, not just implied.
+export const RAIL_DENY_JAM = '#ff8a7e'
+export const RAIL_DENY_EMPTY = '#9aa0aa'
 export const railMouthGlow = (tick) => tick % 60 < 38
 // #1923 THE SLIDE: pass fx (makeRailFx/stepRailFx) and the pulled/seated cell
 // flies the rail instead of teleporting; fx=null keeps this byte-identical to
@@ -647,7 +653,11 @@ export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn 
             g.fillStyle = '#8a6512'; g.fillRect(hx + 5, hy + 9, 22, 2)
             g.fillStyle = '#d8dce2'; g.fillRect(hx + 34, hy - 4, 6, 5); g.fillRect(hx + 34, hy + 25, 6, 5)
         }
-        g.font = FONT(6); g.fillStyle = P.amber
+        // #1992: the holder readout must read at phone scale — an amber badge
+        // under dark ink, one size up. The badge carries "the hand is loaded"
+        // even before the 7px word resolves on a small screen.
+        g.fillStyle = '#ffd23e'; g.fillRect(hx - 4, hy + 36, 52, 10)
+        g.font = FONT(7); g.fillStyle = '#20242a'
         g.fillText('IN HAND', hx - 2, hy + 44)
     }
     // the action line is the selected slot's truth, never the plate's average
@@ -656,7 +666,9 @@ export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn 
         : batteries <= 0 ? 'PLATE EMPTY'
             : tray[sel] === 0 ? 'EMPTY SLOT'
                 : sel === open ? 'A PULLS IT OUT' : 'BLOCKED - IT CLIPS RIGHT'
-    g.fillStyle = held > 0 ? '#ffd23e' : sel === open && batteries > 0 && tray[sel] === 1 ? '#7dffb0' : '#5c626c'
+    g.fillStyle = held > 0 ? '#ffd23e'
+        : sel === open && batteries > 0 && tray[sel] === 1 ? '#7dffb0'
+            : tray[sel] === 1 ? RAIL_DENY_JAM : RAIL_DENY_EMPTY // #1992: jammed vs empty, both > 2x the floor
     g.fillText(line, PANEL.x + 130, PANEL.y + PANEL.h - 60)
     // #1923 PULL IT: with a pull-call ringing, the action line itself leads
     // on the fast clock when a pull is actually legal right now (open end,
