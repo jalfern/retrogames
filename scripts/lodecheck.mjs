@@ -5,7 +5,7 @@
 // that every classic rule the issue named is load-bearing:
 //
 //   npm run lodecheck              the audit (~2 s)
-//   npm run lodecheck -- --mutate  + eleven mutants that MUST die
+//   npm run lodecheck -- --mutate  + thirteen mutants that MUST die
 //   npm run lodecheck -- --map 1   dump a vault as ASCII
 //
 // The rules pinned here: no jump, diagonal-only dig (straight down only from
@@ -319,10 +319,36 @@ section('RULES — the 1983 contract, each pinned by a scenario')
     }
     ok(rode, 'the guard never climbed up the shaft — the climb law stopped working in deep pits')
     ok(buried, 'the carved three-cell shaft never buried the guard — the multi-cell law is not live')
-    ok(paid === CFG.guardPay && g.score === scoreBefore + CFG.guardPay,
-        `the buried guard paid ${paid} and moved the score ${g.score - scoreBefore} — the original scores a buried guard at ${CFG.guardPay}`)
+    // the grave sits at row 17 — one stratum below the surface floor — so the
+    // depth law adds one guardPay to the original's 500 (#1959).
+    const deepWants = CFG.guardPay * (1 + CFG.deepPay)
+    ok(paid === deepWants && g.score === scoreBefore + deepWants,
+        `the buried guard paid ${paid} and moved the score ${g.score - scoreBefore} — a depth-${17 - 16 + 1} grave pays ${deepWants} (guardPay + one stratum)`)
     ok(gd.x === gd.home.x && gd.y === gd.home.y, 'the buried guard did not respawn at the top')
     ok(p.alive && g.lives === (b.meta.lives ?? CFG.lives), 'the runner died in a scenario meant for the guard')
+}
+{
+    // CHAIN PAY, THE ORIGINAL'S SIGNATURE: ONE closing brick that catches TWO
+    // pinned guards pays the trap ladder (double), not twice the single grave —
+    // and three is worth more than double (500, 1000, 3000...). The vault ships
+    // one guard, so the second is placed by hand — the LAW is what is graded.
+    const b = buildLevel(0); const g = makeGame(b.meta, b.grid); const p = g.player
+    applyAction(g, p, 'ArrowRight'); applyAction(g, p, 'ArrowDown')     // hole at (hx, 16)
+    const cx = p.x + 1, cy = 16
+    const mkGd = (id) => ({ x: cx, y: cy, mode: 'stand', vx: 0, vy: 0, face: 1, alive: true, isGuard: true, id, home: { x: cx + 8, y: 15 }, trapCount: 0, carry: false, carryCount: 0 })
+    const gdA = g.guards[0]
+    gdA.x = cx; gdA.y = cy; gdA.mode = 'stand'; gdA.trapCount = 0
+    const gdB = mkGd(1)
+    g.guards.push(gdB); g.ents.push(gdB); g.guardDist.push(Infinity)
+    const scoreBefore = g.score
+    const saveTrap = CFG.guardTrap; CFG.guardTrap = 1e6                  // pin both so the refill finds them
+    let be = null
+    for (let k = 0; k < CFG.refill + 20 && !be; k++) { step(g); be = g.events.find((e) => e.type === 'guardBuried') || null; g.events.length = 0 }
+    CFG.guardTrap = saveTrap
+    ok(be && be.n === 2, `the closing brick caught ${be ? be.n : 0} guards — the chain law is not counting one refill's catch`)
+    ok(be && be.pay === CFG.guardPay * CFG.chainLadder[1], `two guards in one hole paid ${be ? be.pay : '-'} — the original's ladder pays ${CFG.guardPay * CFG.chainLadder[1]} (double), never twice the single grave`)
+    ok(be && g.score === scoreBefore + CFG.guardPay * CFG.chainLadder[1], 'the chain pay did not land on the score')
+    ok(gdA.x === gdA.home.x && gdB.x === gdB.home.x, 'a chain-buried guard did not respawn at the top')
 }
 {
     // SHAFT LAW, MEASURED: two climbs and three climbs both cost more than one
@@ -420,6 +446,46 @@ if (MUT) {
         }
         CFG.guardTrap = saveTrap
         return paid === 500                                   // the original's number, independent of CFG
+    })
+    tryMut('chainLadder=flat (chain burials pay nothing extra)', { chainLadder: [1, 1, 1, 1, 1, 1] }, () => {
+        const b = buildLevel(0); const g = makeGame(b.meta, b.grid); const p = g.player
+        applyAction(g, p, 'ArrowRight'); applyAction(g, p, 'ArrowDown')
+        const cx = p.x + 1, cy = 16
+        const gdA = g.guards[0]
+        gdA.x = cx; gdA.y = cy; gdA.mode = 'stand'; gdA.trapCount = 0
+        const gdB = { x: cx, y: cy, mode: 'stand', vx: 0, vy: 0, face: 1, alive: true, isGuard: true, id: 1, home: { x: cx + 8, y: 15 }, trapCount: 0, carry: false, carryCount: 0 }
+        g.guards.push(gdB); g.ents.push(gdB); g.guardDist.push(Infinity)
+        const saveTrap = CFG.guardTrap; CFG.guardTrap = 1e6
+        let pay = 0
+        for (let k = 0; k < CFG.refill + 20 && !pay; k++) {
+            step(g)
+            const be = g.events.find((e) => e.type === 'guardBuried')
+            if (be) pay = be.pay ?? 0
+            g.events.length = 0
+        }
+        CFG.guardTrap = saveTrap
+        return pay === 1000                                   // the original's double, independent of CFG
+    })
+    tryMut('deepPay=0 (the stratum bonus is dead)', { deepPay: 0 }, () => {
+        const b = buildLevel(0); const g = makeGame(b.meta, b.grid); const p = g.player
+        applyAction(g, p, 'ArrowRight'); applyAction(g, p, 'ArrowDown')
+        const hx = p.x + 1
+        applyAction(g, p, 'ArrowRight')
+        for (let k = 0; k < 4; k++) { step(g); g.events.length = 0 }
+        applyAction(g, p, 'ArrowDown'); applyAction(g, p, 'ArrowDown')   // carve to row 18
+        applyAction(g, p, 'ArrowUp'); applyAction(g, p, 'ArrowUp'); applyAction(g, p, 'ArrowUp')
+        applyAction(g, p, 'ArrowLeft')
+        const gd = g.guards[0]
+        gd.x = hx + 1; gd.y = 15; gd.mode = 'stand'; gd.trapCount = 0
+        applyAction(g, gd, 'ArrowLeft', { dig: false })                    // over the mouth, into the shaft
+        let pay = 0
+        for (let k = 0; k < CFG.refill + 60 && !pay; k++) {
+            step(g)
+            const be = g.events.find((e) => e.type === 'guardBuried')
+            if (be) pay = be.pay ?? 0
+            g.events.length = 0
+        }
+        return pay === 1000                                   // depth-2 grave: guardPay + one stratum, independent of CFG
     })
     tryMut('pitClimb=false (the pit is a grave for everyone)', { pitClimb: false }, () => {
         const b = buildLevel(0); const g = makeGame(b.meta, b.grid); const p = g.player

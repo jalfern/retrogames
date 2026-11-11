@@ -99,6 +99,7 @@ const LodeRunnerLiteGame = () => {
         const ANIM_MS = 450                        // crumble/refill cosmetic window
         const animAt = new Map()                   // cell index -> { kind, t0 }
         const movedT = new WeakMap()               // entity -> { x, y, t } for run frames
+        const popups = []                          // { x, y, text, t0 } — pay drifting up from a grave (#1959)
 
         let levelIdx = 0
         let b0 = buildLevel(0)
@@ -127,11 +128,21 @@ const LodeRunnerLiteGame = () => {
             for (const e of evts) evLog.push({ ...e, tick: gs.tick })
             if (evLog.length > 300) evLog.splice(0, evLog.length - 300)
             for (const e of evts) {
-                if (e.type === 'dig') { bgDirty = true; animAt.set(e.y * W + e.x, { kind: 'dig', t0: performance.now() }); audioController.playNoise(0.05, 0.04) }
-                else if (e.type === 'refill') { bgDirty = true; animAt.set(e.y * W + e.x, { kind: 'refill', t0: performance.now() }); audioController.playTone(140, 0.08, 'square', 0.05) }
+                if (e.type === 'dig') {
+                    bgDirty = true; animAt.set(e.y * W + e.x, { kind: 'dig', t0: performance.now() })
+                    audioController.playNoise(0.05, 0.04)
+                    // the deeper the bite, the lower the thud — the ear reads the stratum (#1959)
+                    if (e.depth > 1) audioController.playFilteredNoise(0.09, 0.055, 240 / e.depth)
+                }
+                else if (e.type === 'refill') { bgDirty = true; animAt.set(e.y * W + e.x, { kind: 'refill', t0: performance.now() }); audioController.playTone(140 / Math.max(1, e.depth || 1), 0.08, 'square', 0.05) }
                 else if (e.type === 'gold') { say(`GOLD ${e.have}/${gs.need}`); audioController.playTone(880, 0.07, 'square', 0.06) }
                 else if (e.type === 'unlock') { bgDirty = true; say('THE LADDER APPEARS'); audioController.playSweep(300, 700, 0.4, 'square', 0.07) }
-                else if (e.type === 'guardBuried') { say(e.pay ? `A GUARD IS BURIED +${e.pay}` : 'A GUARD IS BURIED'); audioController.playSweep(300, 60, 0.5, 'sawtooth', 0.08) }
+                else if (e.type === 'guardBuried') {
+                    say(e.n > 1 ? `${e.n} GUARDS BURIED +${e.pay}` : `A GUARD IS BURIED +${e.pay}`)
+                    audioController.playSweep(300 / Math.max(1, e.depth || 1), 60, 0.5, 'sawtooth', 0.08)
+                    if (e.n > 1) audioController.playTone(520, 0.07, 'square', 0.06, 0.12)   // the chain ladder gets its own high accent
+                    if (e.x != null) popups.push({ x: e.x, y: e.y, text: `+${e.pay}`, t0: performance.now() })
+                }
                 else if (e.type === 'goldPickup') { say('A GUARD LIFTED GOLD'); audioController.playTone(220, 0.06, 'square', 0.05) }
                 else if (e.type === 'capture') { say('CAUGHT!'); audioController.playSweep(240, 50, 0.6, 'sawtooth', 0.1) }
                 else if (e.type === 'life') audioController.playSweep(200, 80, 0.4, 'sawtooth', 0.06)
@@ -170,6 +181,7 @@ const LodeRunnerLiteGame = () => {
             }
             bgDirty = true
             animAt.clear()
+            popups.length = 0
             setMode('play')
             say(b.meta.name)
             audioController.playSweep(220, 440, 0.25, 'square', 0.07)
@@ -274,7 +286,7 @@ const LodeRunnerLiteGame = () => {
                     const t = src.grid[i]
                     let tile = null
                     if (t === SOLID) tile = art.solid
-                    else if (t === BRICK) tile = art.brick
+                    else if (t === BRICK) tile = art.bricks[Math.min(3, Math.max(1, y - (src.ground?.[x] ?? y) + 1)) - 1]   // deeper strata paint darker/coarser (#1959)
                     else if (t === ROPE) tile = art.rope
                     else if (t === LADDER) tile = art.ladder
                     else if (t === EMPTY && src.holeAge[i] > 0) tile = art.hole   // a live hole: it will refill
@@ -285,7 +297,8 @@ const LodeRunnerLiteGame = () => {
                         if (age >= ANIM_MS) animAt.delete(i)
                         else {
                             const stage = Math.min(2, Math.floor(age / (ANIM_MS / 3)))
-                            bgx.drawImage(anim.kind === 'dig' ? art.crumble[stage] : art.rebuild[stage], x * CW, y * CH)
+                            const stratum = Math.min(3, Math.max(1, y - (src.ground?.[x] ?? y) + 1))
+                            bgx.drawImage((anim.kind === 'dig' ? art.crumble[stratum - 1] : art.rebuild[stratum - 1])[stage], x * CW, y * CH)
                         }
                     }
                 }
@@ -331,6 +344,54 @@ const LodeRunnerLiteGame = () => {
             const live = screenRef.current === 'play'
             const g = screenRef.current === 'attract' && demoG ? demoG : gs
             const now = performance.now()
+            // FUSE TELL (#1959): a hole whose brick will grow back in under a
+            // second blinks its lip amber — the closing grave warns before it
+            // closes, so the first-time player learns the fuse instead of
+            // walking into it.
+            for (let y = 0; y < H; y++) {
+                for (let x = 0; x < W; x++) {
+                    const rem = CFG.refill - g.holeAge[y * W + x]
+                    if (g.holeAge[y * W + x] > 0 && rem > 0 && rem < SIM_HZ && g.tick % 4 < 2) {
+                        ctx.fillStyle = '#ffb03e'
+                        ctx.fillRect(x * CW, y * CH, CW, 2)
+                        ctx.fillRect(x * CW, y * CH + 2, 2, 3)
+                        ctx.fillRect(x * CW + CW - 2, y * CH + 2, 2, 3)
+                    }
+                }
+            }
+            // DIG AFFORDANCE (#1959): at 20px cells the diggable brick below
+            // the runner is invisible until tried. Corner-tick the one Down
+            // would carve — the diagonal below-fore at the surface, straight
+            // below at a pit bottom — a suggestion, never a wall of text.
+            const ap = g.player
+            if (ap.alive && !g.end && ap.mode === 'stand') {
+                const inPit = g.holeAge[ap.y * W + ap.x] > 0
+                const tx = inPit ? ap.x : ap.x + ap.face
+                const ty = ap.y + 1
+                if (tx >= 0 && tx < W && ty < H && g.grid[ty * W + tx] === BRICK && now % 520 < 320) {
+                    ctx.fillStyle = 'rgba(255, 210, 62, 0.75)'
+                    const px = tx * CW, py = ty * CH
+                    for (const [cx, cy, dw, dh] of [[0, 0, 5, 1], [0, 0, 1, 5], [CW - 5, 0, 5, 1], [CW - 1, 0, 1, 5], [0, CH - 1, 5, 1], [0, CH - 5, 1, 5], [CW - 5, CH - 1, 5, 1], [CW - 1, CH - 5, 1, 5]]) {
+                        ctx.fillRect(px + cx, py + cy, dw, dh)
+                    }
+                }
+            }
+            // PAY POPUP (#1959): the score the machine made famous drifts up
+            // out of the fresh grave.
+            for (let k = popups.length - 1; k >= 0; k--) {
+                const pp = popups[k]
+                const age = now - pp.t0
+                if (age >= 900) { popups.splice(k, 1); continue }
+                const rise = (age / 900) * 14
+                ctx.font = 'bold 11px monospace'
+                ctx.textAlign = 'center'
+                ctx.globalAlpha = 1 - age / 1000
+                ctx.fillStyle = '#0a0e24'
+                ctx.fillText(pp.text, pp.x * CW + CW / 2 + 1, pp.y * CH + 10 - rise + 1)
+                ctx.fillStyle = '#ffd23e'
+                ctx.fillText(pp.text, pp.x * CW + CW / 2, pp.y * CH + 10 - rise)
+                ctx.globalAlpha = 1
+            }
             // gold rides the dynamic layer (collecting is a state change,
             // never a repaint guess); the nugget keeps the original's blink
             const gold = g.tick % 30 < 18 ? art.gold[0] : art.gold[1]

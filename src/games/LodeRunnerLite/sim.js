@@ -24,8 +24,11 @@
 //   toward the surface. This is what makes the deep shaft real: three strata
 //   down is three climbs, and climbs are slow.
 // - THE DIG PAYS. The 1983 machine scored gold 500, a buried guard 500, the
-//   vault 1000. A refill that catches a guard in your shaft pays CFG.guardPay
-//   — the deeper shaft is where the money and the risk both live.
+//   vault 1000. A refill that catches a guard in your shaft pays CFG.guardPay,
+//   the original's trap ladder multiplies it when ONE refill catches several
+//   guards (CFG.chainLadder: double for two, more for three), and each stratum
+//   below the surface adds another guardPay to the grave (CFG.deepPay) — the
+//   deeper shaft is where the money and the risk both live.
 // - GUARDS FALL AND CLIMB. A guard that drops into a hole is pinned there for
 //   a breath (CFG.guardTrap), then climbs out cell by cell. A shaft too deep
 //   to climb before the fuse runs out buries the guard when the brick closes.
@@ -60,6 +63,8 @@ export const CFG = {
     guardTrap: 60,                           // ticks a guard is pinned in a hole before it climbs
     guardCarry: 30,                          // ticks a guard carries stolen gold before it drops
     guardPay: 500,                           // points a buried guard is worth — the original's score (gold 500, guard 500, vault 1000)
+    chainLadder: [1, 2, 6, 10, 16, 20],     // the original's trap bonus: ONE refill catching n guards pays guardPay × ladder[n-1] (500, 1000, 3000, ...)
+    deepPay: 1,                              // extra guardPay per stratum below the top — a deeper grave pays deeper
     lives: 3,
     dangerMargin: 8,                         // ticks of guard slack the solver refuses to burn
     // Engine switches. All normal in play; they exist ONLY so
@@ -83,8 +88,13 @@ const inB = (x, y) => x >= 0 && x < W && y >= 0 && y < H
 const solidT = (t) => t === BRICK || t === SOLID
 const supportT = (t) => t === BRICK || t === SOLID || t === LADDER
 const cellT = (g, x, y) => (!inB(x, y) ? SOLID : g.grid[idx(x, y)])
-// a live pit: a dug cell whose fuse is still running
+// live pit: a dug cell whose fuse is still running
 const liveHole = (g, x, y) => inB(x, y) && g.holeAge[idx(x, y)] > 0
+
+// how deep a cell sits below the vault ground: the first row of original rock
+// in its column (computed once at makeGame — strata are structure, not state).
+// Row 16 of every vault is depth 1 (a surface dig), row 18 is depth 3.
+export const graveDepth = (g, x, y) => Math.max(1, y - (g.ground[x] ?? y) + 1)
 
 export const hash = (s) => {
     let h = 0x811c9dc5
@@ -131,6 +141,14 @@ export function makeGame(meta, grid) {
         events: [],
     }
     g.ents = [g.player, ...g.guards]
+    // per-column ground row: the first rock row down — the stratum measure for
+    // graves (a hole at row 17 in a column whose floor is row 16 is depth 2).
+    g.ground = []
+    for (let x = 0; x < W; x++) {
+        g.ground[x] = H
+        for (let y = 0; y < H; y++) if (grid[idx(x, y)] === BRICK) { g.ground[x] = y; break }
+        if (g.ground[x] === H) for (let y = 0; y < H; y++) if (grid[idx(x, y)] === SOLID) { g.ground[x] = y; break }   // wall columns (never diggable)
+    }
     g.exitLadder = []
     if (g.exit) {
         for (let y = 0; y < H; y++) {
@@ -160,7 +178,7 @@ function revealLadder(g) {
 function digHole(g, x, y) {
     g.grid[idx(x, y)] = EMPTY
     g.holeAge[idx(x, y)] = 1
-    push(g, { type: 'dig', x, y })
+    push(g, { type: 'dig', x, y, depth: graveDepth(g, x, y) })
 }
 
 function checkExit(g, e) {
@@ -425,19 +443,32 @@ export function step(g) {
         const tx = i % W, ty = (i - tx) / W
         g.holeAge[i] = 0
         g.grid[i] = BRICK
-        push(g, { type: 'refill', x: tx, y: ty })
+        const depth = graveDepth(g, tx, ty)
+        push(g, { type: 'refill', x: tx, y: ty, depth })
+        const caught = []
+        let playerRode = false
         for (const e of g.ents) {
             if (!e.alive || e.mode !== 'stand' || e.x !== tx || e.y !== ty) continue
-            if (e.isGuard) {
-                // dies in the hole and re-enters at the top of the vault — and the dig PAYS,
-                // like the original: whatever dies when the brick grows back scores 500
+            if (e.isGuard) caught.push(e)
+            else playerRode = true
+        }
+        // THE DIG PAYS — the original's trap ladder: ONE closing brick scores
+        // guardPay × chainLadder[n] for n guards, plus guardPay × deepPay for
+        // every stratum the grave sits below the surface. Two guards in one
+        // hole double the pay; three is worth more than double; a body buried
+        // in the third stratum pays a deeper grave.
+        if (caught.length) {
+            const pay = CFG.guardPay * (CFG.chainLadder[Math.min(caught.length, CFG.chainLadder.length) - 1] + CFG.deepPay * (depth - 1))
+            for (const e of caught) {
+                // dies in the hole and re-enters at the top of the vault
                 e.x = e.home.x; e.y = e.home.y; e.mode = 'stand'; e.trapCount = 0; e.carry = false; e.carryCount = 0
-                g.score += CFG.guardPay
-                push(g, { type: 'guardBuried', id: e.id, pay: CFG.guardPay })
-            } else {
-                push(g, { type: 'refillDeath', x: tx, y: ty })
-                loseLife(g, 'refill')
             }
+            g.score += pay
+            push(g, { type: 'guardBuried', id: caught[0].id, ids: caught.map((e) => e.id), n: caught.length, pay, x: tx, y: ty, depth })
+        }
+        if (playerRode) {
+            push(g, { type: 'refillDeath', x: tx, y: ty })
+            loseLife(g, 'refill')
         }
     }
 
