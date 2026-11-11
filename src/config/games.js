@@ -825,7 +825,7 @@ export const GAMES = [
         label: 'ROGUE',
         theme: 'dark',
         description: 'The original dungeon crawler. Descend through procedurally generated dungeons, battle monsters, collect treasure, and go as deep as you dare. Permadeath — every run is unique.',
-        controls: ['Arrow Keys / hjkl: Move', ',: Pick up', 'i: Inventory', 'q: Quaff potion', 'r: Read scroll', '>: Descend stairs', '?: Help']
+        controls: ['Arrow Keys / hjkl: Move', ',: Pick up', 'i: Inventory', 'q: Quaff potion', 'r: Read scroll', '>: Descend stairs', '?: Help', WATCH_HELP + ' — the BFS crawler that clears every test seed descends for you']
     }
     ,
     {

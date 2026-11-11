@@ -1164,3 +1164,51 @@ export function stepGame(state, action) {
   const next = reducer(state, action)
   return { ...next, randState: getRandState() }
 }
+
+// #1637 batch 23 — the WATCH brain (the Y key): roguecheck §6's proven
+// autopilot lifted OUT of the harness and INTO the game, so the guide drives
+// the real reducer. The same route the check wins with — every seed reaches
+// dlvl 2, >=15/20 reach dlvl 4, supplies untouched (slack law) — replanned
+// from the LIVE state every turn: an adjacent monster gets hit (walk-and-
+// attack, the 1980 way), otherwise the first step of the 8-dir BFS toward
+// the `%` stairs; standing on the stairs descends. No route from here ->
+// null, and the watcher honestly holds instead of faking progress.
+function watchPath(state) {
+  const start = `${state.player.x},${state.player.y}`
+  const prev = new Map([[start, null]])
+  const q = [[state.player.x, state.player.y]]
+  while (q.length) {
+    const [x, y] = q.shift()
+    if (state.map[y][x] === '%') {
+      const path = []
+      let k = `${x},${y}`
+      while (prev.get(k)) {
+        const [cx, cy] = k.split(',').map(Number)
+        const [px, py] = prev.get(k).split(',').map(Number)
+        path.unshift({ dx: Math.sign(cx - px), dy: Math.sign(cy - py) })
+        k = prev.get(k)
+      }
+      return path
+    }
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue
+      const nx = x + dx, ny = y + dy
+      if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H || blocksMove(state.map[ny][nx])) continue
+      const k = `${nx},${ny}`
+      if (prev.has(k)) continue
+      prev.set(k, `${x},${y}`); q.push([nx, ny])
+    }
+  }
+  return null
+}
+
+export function watchStep(state) {
+  if (state.phase !== 'playing') return null
+  if (state.map[state.player.y][state.player.x] === '%') return { type: 'DESCEND' }
+  const foe = state.monsters.find(m =>
+    Math.abs(m.x - state.player.x) <= 1 && Math.abs(m.y - state.player.y) <= 1 &&
+    (m.x !== state.player.x || m.y !== state.player.y))
+  if (foe) return { type: 'MOVE', dx: Math.sign(foe.x - state.player.x), dy: Math.sign(foe.y - state.player.y) }
+  const path = watchPath(state)
+  return path ? { type: 'MOVE', dx: path[0].dx, dy: path[0].dy } : null
+}
