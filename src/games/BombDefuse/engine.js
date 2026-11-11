@@ -93,7 +93,7 @@ export function createGame(seed, players = 1) {
                 holder: (b * 7 + k) % 2,
             })
         }
-        bombs.push({ fuse0: FUSE0[b], steps })
+        bombs.push({ fuse0: FUSE0[b], steps, earned: 0 })
     }
     const gs = {
         seed: s,
@@ -160,10 +160,16 @@ function strike(gs, why) {
 }
 
 function advance(gs) {
+    // #1812 item 6: honest ledger — every point names the bomb that paid it.
+    // `earned` rides the bomb, never the hash list (see winTally), so replay
+    // hashes are byte-identical; the score law itself is untouched.
     gs.score += 50
+    gs.bombs[gs.bomb].earned += 50
     gs.step++
     if (gs.step >= gs.bombs[gs.bomb].steps.length) {
-        gs.score += 500 + Math.floor(gs.fuse / 60) * 5
+        const bonus = 500 + Math.floor(gs.fuse / 60) * 5
+        gs.score += bonus
+        gs.bombs[gs.bomb].earned += bonus
         gs.events.push({ k: 'defused', bomb: gs.bomb + 1 })
         gs.bomb++
         gs.step = 0
@@ -501,4 +507,44 @@ export function ventCoach(gs, you, taught) {
         pulseBar: named && isHolder && !gs.held,
         pulseGauge: named && !isHolder && inZone,
     }
+}
+
+// ---- win tally (#1812 item 6) — view math only, never gs/hash ----------
+// Classic arcade score-salad: WON never dumps the total raw — it RECAPS what
+// each bomb paid and rolls the grand total last. `winTally` is the honest
+// ledger: per-bomb `earned` (written where the score is earned, advance()),
+// summed it equals gs.score by construction. `tallyFrame` is the pure playback
+// law: line i rolls 0→value over TALLY.ROLL starting at i*LINE, the total
+// rolls after the last line over TALLY.TOTAL, every roll lands EXACTLY on its
+// target (ease-out, rounded, capped — monotonic, never overshoots). `landed`
+// counts lines home, +1 when the total lands; the view paints what this says
+// and dings when the count grows. No gs write, no rng — hash-clean.
+export const TALLY = { LINE: 620, ROLL: 380, TOTAL: 780 }
+
+export function winTally(gs) {
+    if (!gs || !gs.won) return []
+    return gs.bombs.map((b, i) => ({ bomb: i + 1, value: b.earned | 0 }))
+}
+
+export const tallyDur = (values) => Math.max(0, (Array.isArray(values) ? values.length : 0) * TALLY.LINE + TALLY.TOTAL)
+
+const easeOut = (v, f) => Math.min(v, Math.round(v * f * (2 - f)))
+
+export function tallyFrame(values, ms) {
+    const vals = (Array.isArray(values) ? values : []).map((v) => v | 0)
+    const sum = vals.reduce((a, b) => a + b, 0) | 0
+    if (!vals.length || ms >= tallyDur(vals))
+        return { lines: vals.slice(), total: sum, landed: vals.length + 1, done: true }
+    const t = Math.max(0, ms)
+    const totalAt = vals.length * TALLY.LINE
+    const lines = []
+    let landed = 0
+    for (let i = 0; i < vals.length; i++) {
+        const f = (t - i * TALLY.LINE) / TALLY.ROLL
+        if (f <= 0) break
+        lines.push(easeOut(vals[i], Math.min(1, f)))
+        if (f >= 1) landed++
+    }
+    const total = t >= totalAt ? easeOut(sum, Math.min(1, (t - totalAt) / TALLY.TOTAL)) : 0
+    return { lines, total, landed, done: false }
 }

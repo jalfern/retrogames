@@ -8,8 +8,10 @@ import {
     COLORS, SYNC, CUT, VENT, BOMBS, FUSE0, WINDOW, ZONE_HALF, STRIKE_COST, SURGE_COST, NICK_COST, INTRO,
     TURN, turnStep, turnClick, keyAngle,
     REDLINE, PEG, pegNeedle, ventCoach, preFlash, seatAsk,
+    TALLY, winTally, tallyDur, tallyFrame,
 } from '../src/games/BombDefuse/engine.js'
 import { bedHz, BED } from '../src/games/BombDefuse/audio.js'
+import { snapshotNet, restoreNet } from '../src/games/BombDefuse/net.js'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -698,6 +700,122 @@ console.log('\n— the boom (#1812 item 3) —')
     let n = 0
     while (!g.done && n++ < 6000) { g.events.length = 0; step(g, solvePads(g)) }
     ok(g.won && hash(g) === hash((() => { const h = createGame(11, 2); let m = 0; while (!h.done && m++ < 6000) step(h, solvePads(h)); return h })()), 'a clean run replays hash-equal — the boom FX added no sim state')
+}
+
+console.log('\n— win tally (#1812 item 6) —')
+{
+    // Score-salad law. The ledger is honest (sums to the score, matches the
+    // per-bomb payout), the playback is monotonic and lands exactly, and the
+    // determinism core never hears about it. Kill laws (README mutants):
+    // dropping an `earned +=` reddens the delta gate; adding earned to hash()
+    // reddens the purity pins; an uncapped ease-out reddens the overshoot gate.
+    const deltasOk = []
+    const sumsOk = []
+    const paysOk = []
+    for (const seed of [3, 7, 11, 42, 99]) {
+        const g = createGame(seed, 2)
+        let n = 0
+        let prev = 0
+        while (!g.done && n++ < 6000) {
+            step(g, solvePads(g))
+            for (const f of g.events) {
+                if (f.k === 'defused') {
+                    deltasOk.push(g.bombs[f.bomb - 1].earned === g.score - prev)
+                    prev = g.score
+                }
+            }
+            g.events.length = 0
+        }
+        const t = winTally(g)
+        sumsOk.push(g.won && t.length === BOMBS && t.reduce((a, l) => a + l.value, 0) === g.score)
+        t.forEach((l, i) => {
+            const floor = 50 * g.bombs[i].steps.length + 500
+            const ceil = floor + Math.floor(g.bombs[i].fuse0 / 60) * 5
+            paysOk.push(Number.isInteger(l.value) && l.value >= floor && l.value <= ceil && l.bomb === i + 1)
+        })
+    }
+    ok(deltasOk.length === BOMBS * 5 && deltasOk.every(Boolean),
+        'the ledger matches the score delta at every defuse — 15 payouts across 5 seeds', `${deltasOk.filter(Boolean).length}/${deltasOk.length}`)
+    ok(sumsOk.every(Boolean), 'winTally: one line per bomb, and the lines sum exactly to gs.score')
+    ok(paysOk.every(Boolean), 'each bomb pays steps×50 + 500 + a fuse bonus in 5s — within its honest floor/ceiling')
+    ok(winTally(createGame(7, 2)).length === 0 && winTally(null).length === 0,
+        'no tally before the win — a live or missing run answers empty')
+
+    // playback law: monotonic rolls, exact landings, nothing overshoots, and
+    // the whole salad fits a bounded window.
+    const vals = [650, 800, 975]
+    const dur = tallyDur(vals)
+    ok(dur === 3 * TALLY.LINE + TALLY.TOTAL && dur < 3000, 'a three-bomb salad runs under 3 s — arcade-quick')
+    let mono = true
+    let over = 0
+    let relaunch = 0
+    let landedNonMono = 0
+    let lastDone = false
+    let prevLines = []
+    let prevTotal = 0
+    let prevLanded = -1
+    let firstLand = []
+    for (let ms = 0; ms <= dur; ms += 16) {
+        const f = tallyFrame(vals, ms)
+        if (lastDone && !f.done) relaunch++
+        lastDone = f.done
+        if (f.landed < prevLanded) landedNonMono++
+        prevLanded = f.landed
+        if (f.lines.length < prevLines.length) relaunch++
+        f.lines.forEach((v, i) => {
+            if (v > vals[i]) over++
+            if (i < prevLines.length && v < prevLines[i]) mono = false
+            if (v === vals[i] && firstLand[i] === undefined) firstLand[i] = ms
+        })
+        if (f.total > vals.reduce((a, b) => a + b, 0)) over++
+        if (f.total < prevTotal) mono = false
+        prevTotal = f.total
+        prevLines = f.lines
+    }
+    const fin = tallyFrame(vals, dur)
+    ok(mono && landedNonMono === 0 && relaunch === 0, 'rolls only climb; lines, total and landed never rewind or relaunch')
+    ok(over === 0, 'no roll ever overshoots its target — capped ease-out')
+    ok(fin.done && JSON.stringify(fin.lines) === JSON.stringify(vals) && fin.total === 2425 && fin.landed === vals.length + 1,
+        'the salad lands exactly on every value, then the total', JSON.stringify(fin))
+    ok(firstLand.every((t, i) => t !== undefined && t >= i * TALLY.LINE && t <= i * TALLY.LINE + TALLY.ROLL + 16),
+        'each line lands inside its cue window (i×LINE .. +ROLL)', JSON.stringify(firstLand))
+    ok(tallyFrame([], 0).done === true, 'an empty ledger resolves instantly — the salad can never wedge the over screen')
+    const zeros = tallyFrame([0, 0, 0], tallyDur([0, 0, 0]) - 1)
+    ok(zeros.total === 0 && zeros.landed >= 3, 'zero-value lines still cue — every bomb gets its line and its ding')
+
+    // determinism core untouched: `earned` rides outside the hash and simState.
+    const esrc = readFileSync(join(here, '../src/games/BombDefuse/engine.js'), 'utf8')
+    ok(!/earned/.test(esrc.slice(esrc.indexOf('export function hash'), esrc.indexOf('// ---- key-turn feel'))),
+        'hash() never mentions the ledger')
+    ok(!/earned/.test(esrc.slice(esrc.indexOf('export function simState'), esrc.indexOf('export function hash'))),
+        'simState() never leaks the ledger')
+    const twin = (seed) => {
+        const g = createGame(seed, 2)
+        let m = 0
+        while (!g.done && m++ < 6000) { g.events.length = 0; step(g, solvePads(g)) }
+        return g
+    }
+    ok(hash(twin(11)) === hash(twin(11)), 'a won run still replays hash-equal — the ledger added no sim drift')
+
+    // net resync carries the ledger — the guest's recap tells the host's story.
+    const host = twin(42)
+    const guest = restoreNet(JSON.parse(JSON.stringify(snapshotNet(host))))
+    ok(guest.bombs.every((b, i) => b.earned === host.bombs[i].earned) && guest.score === host.score,
+        'snapshot → restore rebuilds the per-bomb ledger whole (no wire-less lines)')
+
+    // view side wired: the salad paints from the law and dings on landings.
+    const jsx = readFileSync(join(here, '../src/games/BombDefuse/index.jsx'), 'utf8')
+    ok(/const values = E\.winTally\(gs\)\.map/.test(jsx) && /E\.tallyFrame\(values, performance\.now\(\) - overAtRef\.current\)/.test(jsx),
+        'drawOver rolls the salad off the law, clocked from the over-screen entry')
+    ok(/while \(tallyDingsRef\.current < fr\.landed\)[\s\S]{0,120}sfx\.tally\(/.test(jsx),
+        'one ding per landed line, driven by the landed counter')
+    ok(jsx.includes("if (s === 'over') tallyDingsRef.current = 0"), 'entering over re-arms the ding counter — the salad repeats honestly run after run')
+    ok(!/String\(gs\.score\)/.test(jsx.slice(jsx.indexOf('score-salad. The win RECAPS'), jsx.indexOf('const drawSelect'))),
+        'the win side paints only from the tally — it never dumps the raw gs.score')
+    ok(jsx.includes('winTally: () =>') && jsx.includes('tally: () =>'),
+        '__bdTest.winTally/tally expose the ledger and the live frame for the drive harness')
+    const asrc = readFileSync(join(here, '../src/games/BombDefuse/audio.js'), 'utf8')
+    ok(/tally\(i\) \{ A\.playTone\(660 \+ \(i \| 0\) \* 110/.test(asrc), 'the tally ding rises with the line number')
 }
 
 console.log(`\ndefusecheck: ${pass}/${pass + fail} gates`)
