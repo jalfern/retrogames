@@ -200,7 +200,8 @@ function drawBombView(g, gs, now, opts = {}) {
             g.beginPath(); g.arc(0, 0, 8, 0, 7); g.fill()
             g.shadowBlur = 0
             g.restore()
-            g.fillStyle = C.label; g.font = '8px "Press Start 2P", monospace'
+            g.font = '8px "Press Start 2P", monospace'
+            g.fillStyle = chipInk(opts, i, now)
             g.fillText(`P${i + 1}${opts.cpu2 && i === 1 ? ' CPU' : ''}${opts.youSeat === i ? ' YOU' : ''}`, kx, cy + 52)
         }
         // #1812 item 4: window pre-flash — while NO seat has turned, both key
@@ -267,7 +268,8 @@ function drawBombView(g, gs, now, opts = {}) {
             g.beginPath(); g.moveTo(ax - 12, 296); g.lineTo(ax + 12, 296 - 14 * close)
             g.moveTo(ax - 12, 296 - 14 * close); g.lineTo(ax + 12, 296)
             g.stroke(); g.lineWidth = 1
-            g.fillStyle = C.label; g.font = '8px "Press Start 2P", monospace'
+            g.font = '8px "Press Start 2P", monospace'
+            g.fillStyle = chipInk(opts, i, now)
             g.fillText(`P${i + 1}${opts.cpu2 && i === 1 ? ' CPU' : ''}${opts.youSeat === i ? ' YOU' : ''}`, ax, 250)
             g.fillStyle = C.wire[sel]; g.font = '7px "Press Start 2P", monospace'
             g.fillText(E.COLORS[sel][0], ax, 268)
@@ -398,9 +400,12 @@ function drawBombView(g, gs, now, opts = {}) {
             g.shadowBlur = 0
             g.strokeStyle = isHolder ? C.amber : '#000'
             g.strokeRect(bx - 10, 180, 20, 90)
-            g.fillStyle = isHolder ? C.amber : C.label; g.font = '8px "Press Start 2P", monospace'
+            g.font = '8px "Press Start 2P", monospace'
             // #1831: your own bar names the key — a newcomer reads the role
             // for THEIR hand, not a seat number they must map.
+            // #1812 item 7: the chip color is the ask (amber=hold owed,
+            // green=seat owed, quiet=label).
+            g.fillStyle = chipInk(opts, i, now)
             g.fillText(`P${i + 1}${opts.cpu2 && i === 1 ? ' CPU' : ''}${opts.youSeat === i ? (i === st.holder ? ' YOU:HOLD B' : ' YOU:SEAT SP') : ''}`, bx, 288)
         }
     }
@@ -462,16 +467,48 @@ const newHud = () => ({
     // #1812 item 10: bed cadence + a DEV-visible ping counter (the harness
     // proves the hum is alive without reading the speaker)
     bedT: 0, bedPings: 0,
+    ask: null,
     turn: [{ pos: 0, vel: 0, lag: 0, want: 0 }, { pos: 0, vel: 0, lag: 0, want: 0 }],
 })
 
 // HUD chrome: score + seats + mic (outside the case)
-function drawHudFrame(g, gs, opts) {
+//
+// #1812 item 7: active-seat chip. The P-chip under the control each seat
+// operates pulses in the debt's color while that seat owes an answer to the
+// live step: SYNC amber (both, same phase — the pair must act together), CUT
+// green (both, same phase — blades), VENT split (holder amber, worker green,
+// half a beat apart so the roles READ apart). A seat that answers — turns the
+// key, arms the blade, pins the bar — falls back to plain label ink. The law
+// is engine.seatAsk (pure, hash-clean); this is paint. `opts.paused` kills the
+// pulse: a frozen board must not advertise progress.
+function chipInk(opts, seat, now) {
+    const a = opts.paused === true ? null : opts.ask
+    if (!a || !a.ask[seat]) return C.label
+    const workerRole = a.kind === E.VENT && seat !== a.holder
+    const ph = workerRole ? now + 150 : now
+    const on = Math.floor(ph / 300) % 2
+    const col = a.kind === E.CUT || workerRole ? C.green : C.amber
+    return on ? col : (col === C.green ? C.greenDim : '#6b5210')
+}
+
+function drawHudFrame(g, gs, opts, now) {
     g.textAlign = 'left'
     g.font = '8px "Press Start 2P", monospace'
     g.fillStyle = C.label; g.fillText('SCORE', 24, 344)
     drawSegText(g, 70, 332, String(gs ? gs.score : 0).padStart(5, '0'), 16, C.green, false)
-    g.fillStyle = opts.coop ? C.green : C.amber
+    // #1812 item 7: the strip's P2 chip also carries the ask — when the live
+    // step is waiting on seat 2 (a CPU partner's debt is otherwise invisible),
+    // the chip pulses: amber while it owes a key/hold, green while it owes a
+    // blade/seat. VENT worker keeps its half-beat offset.
+    let seatInk = opts.coop ? C.green : C.amber
+    const a = opts.ask
+    if (a && a.ask[1]) {
+        const workerRole = a.kind === E.VENT && 1 !== a.holder
+        const on = Math.floor((workerRole ? now + 150 : now) / 300) % 2
+        const col = a.kind === E.CUT || workerRole ? C.green : C.amber
+        seatInk = on ? col : (opts.coop ? C.greenDim : '#6b5210')
+    }
+    g.fillStyle = seatInk
     g.fillText(opts.coop ? 'P2 CO-OP' : 'P2 CPU', 520, 344)
     if (opts.mic) { g.fillStyle = C.red; g.fillText('MIC', 470, 344) }
 }
@@ -1061,6 +1098,9 @@ export default function BombDefuseGame() {
                     hud.coach = E.ventCoach(gs, youSeat, hud.ventTaught)
                     // #1812 item 4: the pre-flash law, recomputed pure each frame.
                     hud.pf = E.preFlash(gs)
+                    // #1812 item 7: the active-seat ask law, recomputed pure
+                    // each frame — which seats still owe the step an answer.
+                    hud.ask = E.seatAsk(gs)
                     drawBombView(g, gs, now, {
                         paused: pausedRef.current,
                         // the seat is still the partner's during an in-flight
@@ -1071,6 +1111,7 @@ export default function BombDefuseGame() {
                         keyPos: hud.turn.map((t) => t.pos),
                         coach: hud.coach,
                         pf: hud.pf,
+                        ask: hud.ask,
                     })
                     drawIntro(g, gs, hud.coach)
                     for (const s of hud.sparks) {
@@ -1100,7 +1141,7 @@ export default function BombDefuseGame() {
                         g.lineWidth = 1
                         if (--hn.t <= 0) hintRef.current = null
                     }
-                    drawHudFrame(g, gs, { coop: seatsRef.current > 1 && !(net.active && net.sync && net.sync.solo()), mic: voiceRef.current.on })
+                    drawHudFrame(g, gs, { coop: seatsRef.current > 1 && !(net.active && net.sync && net.sync.solo()), mic: voiceRef.current.on, ask: hud.ask }, now)
                     if (hud.flash > 0) {
                         g.fillStyle = `rgba(255,60,40,${Math.min(0.35, hud.flash / 60)})`
                         g.fillRect(0, 0, W, H); hud.flash--
@@ -1116,7 +1157,7 @@ export default function BombDefuseGame() {
                 if (hud.shake > 0) hud.shake -= 0.5
                 if (screenRef.current === 'over') drawOver(g, now)
             } else if (screenRef.current === 'select') {
-                drawHudFrame(g, null, { coop: false, mic: voiceRef.current.on })
+                drawHudFrame(g, null, { coop: false, mic: voiceRef.current.on }, now)
                 drawSelect(g)
             } else {
                 const a = attractRef.current
@@ -1234,6 +1275,9 @@ export default function BombDefuseGame() {
                 // of sim state + view facts — the harness reads what the plate teaches)
                 coach: () => hudRef.current.coach || null,
                 preFlash: () => hudRef.current.pf || null,
+                // #1812 item 7: the active-seat ask, live-probeable (which
+                // seats still owe the step — the same object the chips pulse on)
+                seatAsk: () => hudRef.current.ask || null,
                 ventTaught: () => hudRef.current.ventTaught,
                 // #1812 item 10: bed pings accrued since the run began — the
                 // drive proves the hum is alive (and frozen on pause/over)
