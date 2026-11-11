@@ -1,63 +1,62 @@
-# STATE — session 232 (2026-11-11, slot a)
+# STATE — session 232 (2026-11-11, slot b)
 
 ## What shipped
-**SMASH TV: HEAT-SEEKER + FLAMER — the two missing original guns.** Merged as
-`8e981db` (PR #2037, Closes #2032 — the warden's TARGET; claim was already
-slot a's, refreshed at take). This session resumed `forge/smash-guns` found at
-`39db2f3` and added the live layer + number consistency: six new `smashplay`
-browser gates (seeker locks nearest heat at launch, curves at the 0.16 rad/tick
-cap and lands its two points, warhead pixels mid-curve; flamer three-pellet
-puff, one point on first contact, hard ~45 px reach, fire painted-then-gone),
-and registry text + renderer comment fixed from "thirty pixels" to the ~45 px
-law (`FLAME_LIFE` 20 × speed 2.2). Post-merge follow-ups `#2042`/`#2043`
-(gate reads the snapped warhead; warhead snaps to pixel grid) landed the same
-evening; **re-verified on final main**: smashcheck PASS 683, smashplay 34/34
-live, lint gates + eslint + build green, prod entry chunk `index-BpUW5u-L.js`
-carries HEAT-SEEKER + missileFizzle → https://jalfern.com/retrogames/smash-tv.
-#2032 shipped+closed (labels moved, live URL posted). Step 8b not filed: this
-was a polish stage on an existing title, and SMASH TV's QA pile (#2028/#1978/
-#2011 pan-framing) is already open.
+**SMASH TV: BONUS GIBS** — merged as `0b9d6ee` (PR #2046, Closes #2044,
+NEVER-DRY pick: weakestStage score 5 — 3 open QA feedbacks naming SMASH TV
+(all pan/framing, QA-owned) + 2 unowned README gaps; flagshipStage null; PPM
+not re-pickable per session 230's drain law; #1637 held by slot a).
+`goreSet(rng)` = seven MULTI-pixel parts (two-tone reds + bone chip),
+GORE_GRAV 0.22 > spark 0.18, GORE_TICKS 34 > spark 20; floor stain grows
+with combo (cap r6), dries over 120 t; room-advance scrubs the floor; splat
+voice (noise + low triangle) under the combo chime; gibs snap to the pixel
+grid (#2043 lesson). Presentation only — rules/gen/sim byte-identical.
+Gates: smashcheck 697 with the new 14-gate `gore` section + all 5 JUICE
+mutants die (--mutate 728 PASS); smashplay 37/37 live (≥10 red gib px at the
+corpse, 7 gibs + stain land, air clears after the lifetime). lint gates +
+eslint + build green.
+
+## Earlier in the session (TARGET #2032 saga, #1258)
+Warden aimed #2032 (HEAT-SEEKER + FLAMER) at slot b; the claim script gave it
+to b at 21:02, but slot a merged #2037 first (21:11:52) — both lanes ran the
+full guns build side by side, and both independently diagnosed the same
+live-gate flake: the warhead's fractional 3×3 fill anti-aliases to 2..9 exact
+px (scan: 2 survivors at (101.9,131.3)). Slot a's follow-ups #2042
+(read-time sampling) + #2043 (grid snap) are on main; my duplicate
+`forge/smash-playfix` local commit stands unused. **Lesson: shared slug
+worktrees collide across slots** — a's checkout switched my worktree branch
+mid-edit (nothing lost; verify branch before every commit in a shared path).
+Slot a also merged b29 (#2034, MISSILE COMMAND seat) while slot b filed
+#2044 — no lane idled.
 
 ## The session's catches
-- **Corpse inference can be wrong — filed #2045.** Claim 19:12Z + push 20:12Z
-  + zero checkpoint comments read as a dead session; the slot-a session that
-  made them was alive (vite orphan ppid=1 sealed the misread), and the warden
-  had also put TARGET #2032 on slot b (20:09Z) and on slot a again (20:29Z —
-  me). Three lanes overlapped one issue; #2037's squash was won seconds before
-  my rule-5 loop ("already merged" — re-check what landed, don't assume your
-  merge won). No work lost: `599ea8d` (my gates) is inside `8e981db`. Before
-  killing a listener on your own port: check the worktree/branch it serves.
-- **Debris ages on DRAW frames, not sim ticks.** A tight `stepWith` loop
-  starves the painter, so kill-burst particles never decayed and poisoned a
-  pixel gone-check. Wait real `raf()`s (~30) before post-effect pixel probes.
-- **Sprite palettes collide with feature colors.** The turret dish blinks
-  `#ffd23f/#ff8a3f` — identical to fire. Pixel gates must sample short of
-  enemy sprites or clear the board first.
-- **First-contact ≠ dwell damage.** Fire dwells ~6 ticks × 3 pellets on a
-  body (contact-range king). Like smashcheck, live gates pin the FIRST hp drop
-  (one point), not end-of-stream hp.
+- **An exact-colour pixel gate on a fractional fill is a coin-flip.** Fix is
+  the pixel-grid snap (game side), not a looser threshold — crisp AND stable.
+- **A scratch dir shared across lanes** shows other sessions' file versions as
+  "old content" in write diffs; trust the repo files (git diff --stat), not
+  the scratch echo.
 
 ## Ladder trail
-TARGET #2032 mine → resumed 39db2f3 (see crossings above) → gates → shipped.
-No halt, no steer. `next` #1711: no new binding beyond Jon's 19:14Z post
-(executed by session 231/b — #2040 shipped). game-queue empty; QA borrow
-skipped (QA MASTER live on studio; never double-claim). flagshipStage null.
-No jonq filed (#2045 is an observation issue, not a question; jonq: none open
-games-lane).
+TARGET #2032 claimed (script) → shipped by a's #2037 first → a also merged
+b29/#2034 and #2042/#2043 → #1637 re-claim REFUSED (a holds) → steer/next
+empty → game-queue only #1637 → QA borrow blocked (QA MASTER live) →
+flagshipStage null → NEVER-DRY weakestStage SMASH TV score 5 → filed +
+claimed #2044 → PR #2046. No jonq filed (all pattern-following).
 
 ## Open questions
 - none (see waiting-jon issues).
 
 ## Next
-- #1637: b29 shipped `#2034`. Read the issue's last FORGE comment before
-  claiming — it lists which WATCH batches the rollout still owes.
-- PPM drain law still stands (session 230): do not re-pick PPM at weakestStage
-  while its 8-open feedback pile + #2020 sit unowned.
-- SMASH TV's open QA feedbacks (#2028/#1978/#2011, pan/framing) belong to the
-  QA lane; builders leave them unless directly asked.
-- #2045 (this shift): lane liveness crossings — slot-scoped park READ + server
-  liveness beside the comment clock are open harness improvements.
-- Dev servers: slot a 5173 stopped at exit; slot b 5178; QA studio 5176. The
-  `~/Dev/retrogames-forge-smash-guns` worktree was left on `forge/smash-snap`
-  (merged #2043) — restore found state before touching it. `--mutate` only in
-  an exclusive window ≥20 min.
+- **Prod-proof at handoff:** jalfern.com still served the pre-merge entry
+  `index-_wHOwl9R.js` ~35 min after `0b9d6ee` (Vercel success on the commit;
+  `x-vercel-cache: HIT` + age>1600 on a must-revalidate HTML = proxy-layer
+  cache). Next prod-check: grep `c81f2f` in the live entry — absent hours
+  later ⇒ harness/proxy issue for Jon's side, not a game regression.
+- #1637 stays Open (multi-stage): next WATCH batch awaits a claimer; check
+  its last FORGE comment for the owed titles.
+- SMASH TV now has 1 honest gap left ("one-hit death softened by spawn
+  invulnerability") + the 3 pan/framing QA feedbacks (#1978/#2011/#2028).
+  If SMASH TV comes up weakestStage again, don't re-pick the same gap — the
+  drain law cuts both ways.
+- Dev servers: slot b 5178 (this session's server — stop at exit), slot a
+  5173, QA 5176. Never reuse another lane's port; orphan 5178s do happen
+  (found a read-lockdown one at boot this session — kill before strictPort).
