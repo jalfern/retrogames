@@ -19,25 +19,35 @@ import { TOWN_R, FLAT as TOWN_FLAT, townScore, hasCottage } from '../src/games/B
 import { decodeCon, decodeRecord, CON_TERR, FLAT } from '../src/games/Britannia/ega.js'
 import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches, SPLAT, splatIntensity, dimples, splashStrikes, SPLAT_GAP, ROUGH_MEMORY, seaRough, crestGain, foamGain, SAIL_DRAG, shipCd, SURF_FLOOR, surfVoice, surfDue } from '../src/games/Britannia/swell.js'
 import { SHRINE_DIST, AVATARS, shrineTitle, shrineSpot, plotShrines } from '../src/games/Britannia/shrines.js'
+import { HULL_MAX, STRAIN_STORM, strain, wear, repair, nearestCoast, GROAN_GAP } from '../src/games/Britannia/hull.js'
 
 // Prove-it-can-fail mutants (#1876): --mutate-shrine shrinks SHRINE_DIST to 1
 // (sanctums onto the gate's approach ring), --mutate-block deletes the foot
 // refusal at the sanctum. Either must redden the child suite; the guard rewinds
 // the tree on every exit path.
+// #1829 hazard adds three more: --mutate-hull-zero zeroes the storm strain
+// (back to a harmless sea), --mutate-hull-sky drops the storm-sky requirement
+// (rain starts eating hulls), --mutate-founder deletes the founder branch
+// (the pilgrim drowns instead of washing ashore).
 const ARGS = process.argv.slice(2)
-if (ARGS.includes('--mutate-shrine') || ARGS.includes('--mutate-block')) {
-    const shr = ARGS.includes('--mutate-shrine')
-    const target = shr ? 'src/games/Britannia/shrines.js' : 'src/games/Britannia/index.jsx'
-    const src = readFileSync(target, 'utf8')
-    const from = shr ? 'export const SHRINE_DIST = 2' : "} else if (shrineBlock.has(nx + ',' + ny)) {"
-    const to = shr ? 'export const SHRINE_DIST = 1' : '} else if (false) {'
-    if (!src.includes(from)) { console.log('FAIL  mutate target line not found'); process.exit(1) }
-    plant(target, src.replace(from, to))
+const MUT = {
+    '--mutate-shrine': { target: 'src/games/Britannia/shrines.js', from: 'export const SHRINE_DIST = 2', to: 'export const SHRINE_DIST = 1', name: 'SHRINE_DIST 2->1' },
+    '--mutate-block': { target: 'src/games/Britannia/index.jsx', from: "} else if (shrineBlock.has(nx + ',' + ny)) {", to: '} else if (false) {', name: 'sanctum refusal deleted' },
+    '--mutate-hull-zero': { target: 'src/games/Britannia/hull.js', from: 'export const STRAIN_STORM = 0.5', to: 'export const STRAIN_STORM = 0', name: 'storm strain zeroed' },
+    '--mutate-hull-sky': { target: 'src/games/Britannia/hull.js', from: 'if (wx !== WX.STORM) return 0', to: 'if (false) return 0', name: 'storm-sky requirement dropped' },
+    '--mutate-founder': { target: 'src/games/Britannia/index.jsx', from: 'if (S.hull <= 0 && S.worn <= 0) {', to: 'if (false) {', name: 'founder branch deleted' },
+}
+const mutKey = Object.keys(MUT).find(k => ARGS.includes(k))
+if (mutKey) {
+    const m = MUT[mutKey]
+    const src = readFileSync(m.target, 'utf8')
+    if (!src.includes(m.from)) { console.log('FAIL  mutate target line not found'); process.exit(1) }
+    plant(m.target, src.replace(m.from, m.to))
     const kid = spawnSync(process.execPath, ['scripts/britanniacheck.mjs'], { encoding: 'utf8' })
-    pull(target)
+    pull(m.target)
     const fails = (kid.stdout.match(/^FAIL/gm) || []).length
     const red = kid.status !== 0 && fails > 0
-    console.log(`${red ? 'PASS' : 'FAIL'}  mutant ${shr ? 'SHRINE_DIST 2->1' : 'sanctum refusal deleted'} reddened the suite (${fails} FAIL lines, child exit ${kid.status})`)
+    console.log(`${red ? 'PASS' : 'FAIL'}  mutant ${m.name} reddened the suite (${fails} FAIL lines, child exit ${kid.status})`)
     process.exit(red ? 0 : 1)
 }
 
@@ -888,6 +898,96 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
         'a storm slaps the hull more often than a fresh breeze, with an 8-tick floor (never machine-guns)')
     ok(surfDue(1, 0) !== null && surfDue(1, 8) !== null && surfDue(1, 4) === null,
         'the heavy cadence is exact: every 8th tick at full roughness')
+}
+
+// ---- storm endangers the hull (#1829 item 1, hazard half) --------------
+// The sea was made felt (#1822) and slow (#1829-drag); now it bites. Laws
+// that MUST hold: only a STORM sky strains (rain/snow/clear replay bit-exact
+// — the pre-hazard voyages survive), full sea under storm = exactly
+// STRAIN_STORM per tile, integer hull with honest fractional accumulation
+// (no rounding into immortality), repair capped at capacity, and a founder
+// always washes ashore — the hazard is real but never fatal and never
+// winnable-breaking. Literal expectations (12 / 0.5 / 24) live HERE, not in
+// the module under test — a harness re-reading a mutant's constants can
+// never go red (#1822 doctrine).
+{
+    ok(HULL_MAX === 12 && STRAIN_STORM === 0.5,
+        'the hull profile is exactly what the design booked: capacity 12, a full storm tile costs 0.5')
+    ok(GROAN_GAP === 20, 'the groan gap is booked at 20 ticks — the hull creaks, never machine-guns (SPLAT_GAP doctrine)')
+    ok(strain(1, WX.RAIN) === 0 && strain(1, WX.SNOW) === 0 && strain(1, WX.CLEAR) === 0,
+        'no sky but the storm strains the planks — rain, snow and clear voyages replay untouched')
+    ok(strain(1, WX.STORM) === STRAIN_STORM, 'a full sea under storm takes exactly STRAIN_STORM per tile')
+    let sMono = true
+    for (let i = 1; i <= 100; i++) if (strain(i / 100, WX.STORM) < strain((i - 1) / 100, WX.STORM)) sMono = false
+    ok(sMono && strain(-1, WX.STORM) === 0 && strain(2, WX.STORM) === STRAIN_STORM,
+        'strain is monotone in the swell and clamped inputs cannot warp it')
+    ok(strain(0.5, WX.STORM) === strain(0.5, WX.STORM) && wear(HULL_MAX, 0.25, 0.8, WX.RAIN).hull === HULL_MAX,
+        'pure + deterministic: same inputs, same verdict; a non-storm tile wears nothing')
+    // fraction accumulation: half-planks land on whole planks, small strains
+    // still bite eventually (the worn accumulator forbids rounding immortality)
+    const h1 = wear(HULL_MAX, 0, 1, WX.STORM)
+    const twoHalves = wear(h1.hull, h1.worn, 1, WX.STORM)
+    ok(twoHalves.hull === HULL_MAX - 1 && twoHalves.worn === 0,
+        'two full-storm tiles cost exactly one plank (0.5 a tile) — half-points land on whole planks')
+    let trickle = { hull: HULL_MAX, worn: 0 }, tn = 0
+    while (!(trickle.hull <= 0 && trickle.worn <= 0) && tn < 500) { trickle = wear(trickle.hull, trickle.worn, 0.1, WX.STORM); tn++ }
+    ok(trickle.hull <= 0 && tn <= Math.ceil(HULL_MAX / (0.5 * 0.1)) + 2,
+        `a drizzle of storm (rough 0.1) still finishes her in ${tn} tiles — no rounding immortality`)
+    ok(wear(0, 0.4, 1, WX.STORM).hull === 0, 'the hull never reads below zero (a finished ship is zero, not negative)')
+    ok(repair(HULL_MAX) === HULL_MAX && repair(HULL_MAX - 1) === HULL_MAX,
+        'repair is bit-exact at capacity — a repaired ship is exactly the pre-hazard ship')
+    let rChain = 0
+    for (let h = 0; h < HULL_MAX; h = repair(h)) rChain++
+    ok(rChain === HULL_MAX, `a wrecked hull is made sound ashore in exactly ${HULL_MAX} ticks`)
+    // voyage sims — the hazard at scale, literal expectations from the design:
+    // a heavy 15-tile crossing WITHOUT storm overhead (the drive corridor:
+    // rain-memory swell under moving skies) loses nothing; a straight 24-tile
+    // storm crossing from sound founders a sound ship. Sims accumulate strain
+    // as the sim does (hull+worn carried forward) and read the final hull.
+    let calmStrain = 0
+    for (let k = 0; k < 15; k++) calmStrain += strain(1, WX.RAIN)
+    ok(HULL_MAX - Math.floor(calmStrain) === HULL_MAX,
+        'the heavy drive corridor (full swell, no storm overhead) crosses unharmed — britannidrive stays green')
+    let sim = { hull: HULL_MAX, worn: 0 }, sinkAt = -1
+    for (let k = 1; k <= 30 && sinkAt < 0; k++) {
+        sim = wear(sim.hull, sim.worn, 1, WX.STORM)
+        if (sim.hull <= 0 && sim.worn <= 0) sinkAt = k
+    }
+    ok(sinkAt === 24, `a straight 24-tile storm crossing finishes a sound ship — sank at tile ${sinkAt} (must be 24)`)
+    // the rescue: on the REAL map, every sampled deep-sea tile washes the
+    // pilgrim onto a coast tile (open water with land at hand), always the
+    // same one, never null — the hazard can never drown the pilgrimage.
+    const deep = []
+    for (let y = 0; y < MAPW && deep.length < 40; y += 7) for (let x = 0; x < MAPW && deep.length < 40; x += 11) {
+        if (isSea(world.get(x, y))) deep.push([x, y])
+    }
+    let rescued = 0, onCoast = 0, same = 0
+    for (const [x, y] of deep) {
+        const c = nearestCoast(x, y, world)
+        if (c) rescued++
+        if (c && !isSea(world.get(c.x + 1, c.y)) + !isSea(world.get(c.x - 1, c.y)) + !isSea(world.get(c.x, c.y + 1)) + !isSea(world.get(c.x, c.y - 1)) >= 1) onCoast++
+        if (c && c.x === nearestCoast(x, y, world).x && c.y === nearestCoast(x, y, world).y) same++
+    }
+    ok(rescued === deep.length && onCoast === deep.length && same === deep.length,
+        `every deep-sea wreck finds the same shore: ${rescued}/${deep.length} rescued, ${onCoast} onto land-holding tiles, deterministic`)
+    const rc = nearestCoast(128, 128, world)
+    ok(rc !== null && isSea(world.get(rc.x, rc.y)), 'the dead centre of the map still washes ashore (the BFS sea is one body)')
+    // wiring pins: the hazard rides motion, repair rides the shore, the hull
+    // speaks on HUD + harness — and the block writes only sim hull fields.
+    const src = readFileSync('src/games/Britannia/hull.js', 'utf8')
+    const idx = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+    ok(/wear\(S\.hull, S\.worn, rough, wxn\)/.test(idx),
+        'index.jsx: the mid-sea move pays the strain of the tile it enters (hazard wired to motion)')
+    ok(/if \(S\.hull <= 0 && S\.worn <= 0\) \{[\s\S]{0,240}nearestCoast\(nx, ny, world\)/.test(idx),
+        'index.jsx: a finished hull founders — and the BFS shore takes the pilgrim back')
+    ok(/if \(S\.hull < HULL_MAX && !isSea\(terrainAt\(S\.x, S\.y\)\)\) S\.hull = repair\(S\.hull\)/.test(idx),
+        'index.jsx: standing on dry land the hull knits back a point a tick (the rescue coast itself never heals her)')
+    ok(/S\.tick - S\.groan >= GROAN_GAP/.test(idx),
+        'index.jsx: the plank groan rides the rate-limit law (a hammering storm creaks at most once per gap)')
+    ok(/hull: S\.hull,/.test(idx), 'index.jsx: the harness can watch the planks')
+    ok(/`SHIP \$\{S\.hull\}`/.test(idx), 'index.jsx: the HUD carries the hull where the ship word stood')
+    ok(!/S\.(x|y|ship|cd|visited|gate|warp)\s*=/.test(src),
+        'hull.js purity: the hazard module never touches positions or flags — it only judges the planks')
 }
 
 // classic tiles (#1135): C mode stamps the ORIGINAL terrain tiles. The mapping
