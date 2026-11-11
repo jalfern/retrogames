@@ -1,22 +1,32 @@
-// SMASH TV — room data. A 16x14 grid of 16px cells under a 24px HUD strip.
-// Rooms are generated deterministically from (seed, index): a wall pattern from
-// a small pool, crates with the weapon ladder, and an enemy roster that grows.
+// SMASH TV — room data. A grid under a 24px HUD strip; standard rooms are
+// 16x14 cells of 16px, and the big rooms (#1973) run GW_BIG=24 columns wide —
+// an arena wider than the screen, framed by the camera like the cabinet's
+// 16:9 show. Rooms are generated deterministically from (seed, index): a wall
+// pattern from a small pool (mirrored across the big boards), crates with the
+// weapon ladder, and an enemy roster that grows.
 // Rooms 3 and 6 are BONUS rooms; room 8 is THE ANNOUNCER.
 
 export const GW = 16, GH = 14, CELL = 16
+export const GW_BIG = 24
 export const HUD_H = 24
 export const CW = 256, CH = 248
 export const ARENA = { x0: 0, y0: HUD_H, x1: CW, y1: CH }
 
 export const TOTAL_ROOMS = 9
 
-// exit cells on the border ring (walk into one when the room falls to advance)
-export const EXITS = [
+// the mid-show arena rooms: bigger rooms, bigger show (#1973)
+export const BIG_ROOMS = new Set([4, 7])
+export const roomGw = (idx) => (BIG_ROOMS.has(idx) ? GW_BIG : GW)
+
+// exit cells on the border ring (walk into one when the room falls to advance);
+// the right door sits on the room's own border, so big rooms open wider
+export const exitsOf = (gw) => [
     { c: 8, r: 0, side: 'up' },
     { c: 7, r: GH - 1, side: 'down' },
     { c: 0, r: 7, side: 'left' },
-    { c: GW - 1, r: 6, side: 'right' },
+    { c: gw - 1, r: 6, side: 'right' },
 ]
+export const EXITS = exitsOf(GW)
 
 // interior wall patterns (grid cells). Every pattern keeps the border ring and
 // the exit mouths reachable.
@@ -69,11 +79,11 @@ export function lcg(s) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
 }
 
-const freeCells = (walls) => {
+const freeCells = (walls, gw = GW) => {
     const blocked = new Set(walls.map(([c, r]) => `${c},${r}`))
     const out = []
     for (let r = 1; r < GH - 1; r++) {
-        for (let c = 1; c < GW - 1; c++) {
+        for (let c = 1; c < gw - 1; c++) {
             if (!blocked.has(`${c},${r}`)) out.push([c, r])
         }
     }
@@ -83,12 +93,25 @@ const freeCells = (walls) => {
 // ---------------------------------------------------------------- rooms ----
 export function genRoom(seed, idx) {
     const s = { v: (seed * 2654435761 + idx * 40503 + 12345) | 0 }
-    const walls = PATTERNS[(seed + idx) % PATTERNS.length].map(([c, r]) => [c, r])
-    const free = freeCells(walls)
+    const gw = roomGw(idx)
+    let walls = PATTERNS[(seed + idx) % PATTERNS.length].map(([c, r]) => [c, r])
+    if (gw > GW) {
+        // big boards mirror the pattern across the wider arena: the corridors
+        // run longer, the studio reads bigger than the screen (#1973)
+        const seen = new Set(walls.map(([c, r]) => `${c},${r}`))
+        for (const [c, r] of PATTERNS[(seed + idx) % PATTERNS.length]) {
+            const mc = gw - 1 - c
+            const k = `${mc},${r}`
+            if (!seen.has(k)) { seen.add(k); walls.push([mc, r]) }
+        }
+        walls.sort((a, b) => a[1] - b[1] || a[0] - b[0])
+    }
+    const free = freeCells(walls, gw)
     const pick = () => free.splice(Math.floor(lcg(s) * free.length), 1)[0]
 
     const room = {
         idx,
+        gw,
         walls,
         bonus: isBonus(idx),
         boss: isBoss(idx),

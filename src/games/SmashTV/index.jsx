@@ -14,7 +14,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
-import { CW, CH, HUD_H, CELL, GW, GH, EXITS, ENEMIES, WEAPONS, TOTAL_ROOMS } from './levels.js'
+import { CW, CH, HUD_H, CELL, GW, GH, exitsOf, ENEMIES, WEAPONS, TOTAL_ROOMS } from './levels.js'
 import { makeGame, step, stateHash, CFG, comboColor, flickerPhase } from './sim.js'
 import { plan, decidePad, padToInp } from './planner.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
@@ -72,9 +72,10 @@ const SmashTVGame = () => {
         ctx.imageSmoothingEnabled = false
 
         let gs = makeGame(0)
-        let floor = buildFloor(0, 0)
+        let floor = buildFloor(0, 0, gs.roomData.gw * CELL)
         let raf = 0, last = 0, acc = 0
         let demoAt = 0, toast = 0, toastMsg = '', shake = 0, flash = 0, roomTotal = 0, roomBump = 0, clearedAt = -1, rackFlash = 0, hiShown = board()[0]?.score || 0
+        let camX = 0 // #1973: arena camera — big rooms run wider than the screen
                 const held = new Set()
         let bombEdge = false
         const evLog = []
@@ -106,7 +107,7 @@ const SmashTVGame = () => {
             if (evLog.length > 240) evLog.splice(0, evLog.length - 240)
             for (const e of evts) {
                 if (e.type === 'room') {
-                    floor = buildFloor(e.room, gs.seed)
+                    floor = buildFloor(e.room, gs.seed, gs.roomData.gw * CELL)
                     say(ROOM_NAMES[e.room])
                     roomTotal = 0; roomBump = 0; clearedAt = -1
                     if (e.bonus) {
@@ -255,29 +256,32 @@ const SmashTVGame = () => {
             ctx.shadowBlur = 0
         }
 
-        const cellWall = (c, r) => c < 0 || r < 0 || c >= GW || r >= GH || gs.walls.has(`${c},${r}`)
+        const roomPx = () => (gs.roomData ? gs.roomData.gw : GW) * CELL
+        const cellWall = (c, r) => c < 0 || r < 0 || c >= roomPx() / CELL || r >= GH || gs.walls.has(`${c},${r}`)
 
         const drawWalls = () => {
-            // border frame
+            // border frame — drawn in BOARD space so a big room's far wall
+            // shows when the camera pans to it (#1973)
+            const bw = roomPx()
             ctx.fillStyle = '#0c0e16'
-            ctx.fillRect(0, 0, CW, HUD_H)
-            for (const [bx, by, bw, bh] of [[0, HUD_H, CW, 8], [0, CH - 8, CW, 8], [0, HUD_H, 8, CH - HUD_H], [CW - 8, HUD_H, 8, CH - HUD_H]]) {
+            ctx.fillRect(0, 0, bw, HUD_H)
+            for (const [bx, by, bw2, bh] of [[0, HUD_H, bw, 8], [0, CH - 8, bw, 8], [0, HUD_H, 8, CH - HUD_H], [bw - 8, HUD_H, 8, CH - HUD_H]]) {
                 ctx.fillStyle = '#2b3348'
-                ctx.fillRect(bx, by, bw, bh)
-                for (let i = bx + 4; i < bx + bw; i += 16) for (let j = by + 3; j < by + bh; j += 8) {
+                ctx.fillRect(bx, by, bw2, bh)
+                for (let i = bx + 4; i < bx + bw2; i += 16) for (let j = by + 3; j < by + bh; j += 8) {
                     ctx.fillStyle = borderRivet.body
                     ctx.fillRect(i, j, 2, 2)
                     ctx.fillStyle = borderRivet.hi
                     ctx.fillRect(i, j, 1, 1)
                 }
                 ctx.fillStyle = '#161b2a'
-                ctx.fillRect(bx, by + bh - 2, bw, 2)
+                ctx.fillRect(bx, by + bh - 2, bw2, 2)
             }
             // interior wall cells: two-tone chrome brick with mortar seams, a
             // per-room neon top edge, and corner rivets that catch a highlight
             const neon = NEON_TOP[gs.room]
             for (let r = 0; r < GH; r++) {
-                for (let c = 0; c < GW; c++) {
+                for (let c = 0; c < roomPx() / CELL; c++) {
                     if (!cellWall(c, r)) continue
                     const x = c * CELL, y = HUD_H + r * CELL
                     const w = wallCell(c, r, neon)
@@ -312,7 +316,7 @@ const SmashTVGame = () => {
             ctx.lineWidth = 1; ctx.globalAlpha = 1
         }
         const drawExits = () => {
-            for (const e of EXITS) {
+            for (const e of exitsOf(gs.roomData.gw)) {
                 const x = e.c * CELL, y = HUD_H + e.r * CELL
                 if (!gs.cleared) {
                     // sealed: a dark red shutter of horizontal slats + a warning pip
@@ -491,19 +495,20 @@ const SmashTVGame = () => {
         // over the arena, hunting for a blackout as the clock runs to zero
         const drawBonusLights = () => {
             if (!gs.roomData.bonus || gs.bonusT <= 0) return
+            const bw = roomPx()
             const phase = flickerPhase(gs.bonusT, gs.roomData.bonusTime)
             ctx.fillStyle = `rgba(6,4,14,${(phase * 0.5).toFixed(3)})`
-            ctx.fillRect(0, HUD_H, CW, CH - HUD_H)
+            ctx.fillRect(0, HUD_H, bw, CH - HUD_H)
             if (phase > 0.14) {
                 ctx.fillStyle = `rgba(212,232,255,${((phase - 0.14) * 0.3).toFixed(3)})`
-                ctx.fillRect(0, HUD_H, CW, CH - HUD_H)
+                ctx.fillRect(0, HUD_H, bw, CH - HUD_H)
             }
-            const gcount = Math.floor(60 + phase * 260)
+            const gcount = Math.floor((60 + phase * 260) * bw / CW)
             ctx.fillStyle = `rgba(226,240,255,${(0.03 + phase * 0.06).toFixed(3)})`
             let v = (gs.tick * 2654435761 + 17) | 0
             const rnd = () => { v = (Math.imul(v, 1103515245) + 12345) & 0x7fffffff; return v / 0x7fffffff }
             for (let i = 0; i < gcount; i++) {
-                const x = Math.floor(rnd() * CW), y = HUD_H + Math.floor(rnd() * (CH - HUD_H))
+                const x = Math.floor(rnd() * bw), y = HUD_H + Math.floor(rnd() * (CH - HUD_H))
                 ctx.fillRect(x, y, 1, 1)
             }
         }
@@ -516,7 +521,7 @@ const SmashTVGame = () => {
             const col = comboColor(n)
             const pulse = 1 + 0.08 * Math.sin(gs.tick / 3)
             ctx.save()
-            ctx.translate(CW / 2, HUD_H + 30)
+            ctx.translate(CW / 2 + camX, HUD_H + 30)
             ctx.scale(pulse, pulse)
             text(`BONUS ×${n}`, 0, 0, 20 + Math.min(8, n), col, 14)
             ctx.restore()
@@ -610,8 +615,20 @@ const SmashTVGame = () => {
         const draw = () => {
             ctx.fillStyle = '#05050c'
             ctx.fillRect(0, 0, CW, CH)
+            // #1973: the arena camera. Big rooms run wider than the screen, so
+            // the view follows the live cast's midpoint and clamps to the
+            // board's edges; standard rooms are exactly screen-wide, so camX
+            // stays 0 and their framing is byte-identical to the old fixed one.
+            const camBoard = roomPx()
+            if (camBoard > CW) {
+                const live = gs.players.filter((q) => q.deadT === 0 && !q.out)
+                const seats = live.length ? live : gs.players
+                const mid = seats.reduce((s, q) => s + q.x, 0) / seats.length
+                camX = Math.max(0, Math.min(Math.round(mid - CW / 2), camBoard - CW))
+            } else camX = 0
             ctx.save()
             if (shake > 0) { ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake); shake -= 0.5 }
+            ctx.translate(-camX, 0)
             ctx.drawImage(floor, 0, HUD_H)
             drawWalls()
             drawExits()
@@ -809,6 +826,7 @@ const SmashTVGame = () => {
                     ebullets: gs.ebullets.length, bullets: gs.bullets.length,
                     crates: gs.crates.map((k) => k.hp), items: gs.items.filter((i) => !i.taken).map((i) => i.t),
                     civilians: gs.civilians.length, bonusT: gs.bonusT,
+                    camX, boardW: roomPx(), gw: gs.roomData.gw, // #1973: pixel checks are camera-aware
                 }),
                 gameTime: () => gs.tick / 60,
             }

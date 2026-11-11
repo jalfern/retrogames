@@ -38,7 +38,7 @@ co-op rather than a shared run:
   WASD move, numpad 8/4/6/2+corners aim, Numpad0/Enter fire, RightShift bomb.
 - The co-op autopilot (`planCoop`) drives the partner through **pads only**
   (`decidePad` → pad stream), proving a second gamepad could do everything the
-  model does; it clears the show on 7/9 seeds (smashcheck pins the bar at 4).
+  model does; it clears the show on all 9 seeds (smashcheck pins the bar at 9).
 - Single-player is untouched: solo runs never read seat 2, `stateHash` appends
   P2 fields only when `players.length > 1`, so every pre-co-op hash and the
   solo pilot's byte-identical replay still hold.
@@ -81,10 +81,35 @@ sheet (seat-palette aware). `juice.js recoilKick` snaps the carriage back 2 px
 on report, decaying to zero within 5 ticks ≤ the tightest fire interval. The
 sim is untouched — paint-only, so every seed hash and replay pin still holds.
 
+## VARISIZE BOARD + CAMERA (#1973)
+The cabinet framed the show through its 16:9 lens — arenas read wider than the
+playfield. Rooms 5 and 8 (`BIG_ROOMS`) now board 24 cells across: 384px, 1.5×
+the screen, with the wall pattern mirrored across the wider board so corridors
+really run longer. Every boundary reads the room's own `boardW = gw * CELL` —
+collision, player and enemy shots, civilian bounce, THE ANNOUNCER's pace and
+add spawns, and the exits (the right door sits on the room's true border,
+`exitsOf`). The renderer owns the camera: `camX` snaps each frame to keep the
+live cast's midpoint centred, clamped to the board edges; the whole arena
+layer renders translated while HUD, banners and scanlines stay screen-space.
+Standard rooms are exactly screen-wide, so their `camX` is pinned at 0 and
+their framing is byte-identical to the old fixed camera.
+
+The autopilot learned the new floor: a minor-axis lane-alignment walk when its
+snap-aim line misses a threat (doctrine #508 extended to seat 1 — a wide-room
+add can pin itself against a bar corner just off the lane, and seat 1 held the
+duel firing past it forever), and at THE ANNOUNCER one add is already worth
+the firebomb. The pilot floor was re-measured honestly: solo clears 8 of 9
+seeds — **seed 3 is a documented forced loss** (fan attrition at the
+ANNOUNCER; volley-commit, round-relative, crosser-aware and bottom-pocket-rise
+breaks were all measured, and each rescues seed 3 by losing another seed
+instead; smashcheck pins the count AND names the seed — update pin and README
+together, Pong's seed 25 style). Seed 6 proves the deathless matinee; the
+slack run (seed 1) and co-op (all nine seeds) still win.
+
 ## Honest gaps vs the cabinet
-- True zoom-out on big rooms still needs arenas bigger than the screen — a
-  varisize board + camera would re-pin every hash; the camera stays fixed
-  top-down. The guns now carry the cabinet's over-the-shoulder pose (#1945).
+- Big rooms pan (rooms 5 and 8 run 24 columns, #1973), but the rest are still
+  screen-sized — the original rotated its whole cabinet to 16:9. THE ANNOUNCER
+  keeps his screen-sized stage on purpose: a boss half off-screen reads as a bug.
 - Eight original weapons are distilled to four (twin, machine gun, spread,
   laser) + firebomb; the homing/heat-seeking and flamer are not modelled.
 - Bonus-room civilians are stylized (dot-matrix contestants, no gore sprites).

@@ -236,28 +236,31 @@ export function buildSprites() {
     return SP
 }
 
-// arena floor: dark broadcast-studio concrete with a grid and seeded grain
-export function buildFloor(roomIdx, seed) {
-    const [c, g] = sheet(256, 224)
+// arena floor: dark broadcast-studio concrete with a grid and seeded grain.
+// Width follows the room (#1973): standard boards are screen-wide, big rooms
+// paint wider than the camera so a pan shows real floor, walls and crowd.
+export function buildFloor(roomIdx, seed, w = 256) {
+    const [c, g] = sheet(w, 224)
     let v = (seed * 7919 + roomIdx * 104729) | 0
     const rnd = () => { v = (v * 1103515245 + 12345) & 0x7fffffff; return v / 0x7fffffff }
     const tint = ['#15151f', '#161218', '#121519', '#171316'][roomIdx % 4]
-    px(g, 0, 0, 256, 224, tint)
-    for (let i = 0; i < 900; i++) {
-        const x = Math.floor(rnd() * 256), y = Math.floor(rnd() * 224)
+    px(g, 0, 0, w, 224, tint)
+    for (let i = 0; i < Math.round(900 * w / 256); i++) {
+        const x = Math.floor(rnd() * w), y = Math.floor(rnd() * 224)
         const b = rnd()
         px(g, x, y, 1, 1, b < 0.5 ? '#1d1d29' : b < 0.8 ? '#101018' : '#22222f')
     }
     g.strokeStyle = 'rgba(93,200,255,0.05)'
-    for (let x = 0; x <= 256; x += 32) { g.beginPath(); g.moveTo(x + 0.5, 0); g.lineTo(x + 0.5, 224); g.stroke() }
-    for (let y = 0; y <= 224; y += 32) { g.beginPath(); g.moveTo(0, y + 0.5); g.lineTo(256, y + 0.5); g.stroke() }
-    // studio center logo: a cracked SMASH diamond
+    for (let x = 0; x <= w; x += 32) { g.beginPath(); g.moveTo(x + 0.5, 0); g.lineTo(x + 0.5, 224); g.stroke() }
+    for (let y = 0; y <= 224; y += 32) { g.beginPath(); g.moveTo(0, y + 0.5); g.lineTo(w, y + 0.5); g.stroke() }
+    // studio center logo: a cracked SMASH diamond, centred on the board
     g.strokeStyle = 'rgba(255,93,93,0.10)'
     g.lineWidth = 2
-    g.beginPath(); g.moveTo(128, 70); g.lineTo(170, 112); g.lineTo(128, 154); g.lineTo(86, 112); g.closePath(); g.stroke()
+    const mx = Math.round(w / 2)
+    g.beginPath(); g.moveTo(mx, 70); g.lineTo(mx + 42, 112); g.lineTo(mx, 154); g.lineTo(mx - 42, 112); g.closePath(); g.stroke()
     g.lineWidth = 1
     // crowd band at the very top edge of the arena
-    for (let x = 0; x < 256; x += 4) {
+    for (let x = 0; x < w; x += 4) {
         const h = 3 + Math.floor(rnd() * 4)
         px(g, x, 0, 3, h, ['#2b2f3d', '#333a4d', '#242836'][x % 3])
     }

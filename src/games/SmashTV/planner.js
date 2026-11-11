@@ -10,8 +10,8 @@
 // padToInp / inpToPad are the shared fold between pads and sim inputs, so a
 // harness can replay a 2P run from seed + per-player pad streams.
 
-import { makeGame, step, stateHash, q8, los, CFG } from './sim.js'
-import { EXITS, ENEMIES, CW, CH, HUD_H } from './levels.js'
+import { makeGame, step, stateHash, q8, los, CFG, boardW } from './sim.js'
+import { exitsOf, ENEMIES, CH, HUD_H } from './levels.js'
 
 const cx = (c) => c * 16 + 8
 const cy = (r) => 24 + r * 16 + 8
@@ -48,10 +48,12 @@ function dodge(gs, p) {
         if (t < bt) { bt = t; best = b }
     }
     if (!best) return null
-    // perpendicular to the bullet's heading, away from walls
+    // perpendicular to the bullet's heading, away from walls (of this room,
+    // whatever width it runs — #1973)
+    const bw = boardW(gs)
     const [px, py] = norm(-best.dy, best.dx)
     const s1 = [px, py], s2 = [-px, -py]
-    const roomy = (v) => p.x + v[0] * 10 > 14 && p.x + v[0] * 10 < CW - 14 && p.y + v[1] * 10 > HUD_H + 14 && p.y + v[1] * 10 < CH - 14
+    const roomy = (v) => p.x + v[0] * 10 > 14 && p.x + v[0] * 10 < bw - 14 && p.y + v[1] * 10 > HUD_H + 14 && p.y + v[1] * 10 < CH - 14
     if (roomy(s1)) return s1
     if (roomy(s2)) return s2
     return null
@@ -71,7 +73,7 @@ const moveH = (gs, inp, p, x, y, drop = 0) => {
 
 function nearestExit(gs, p) {
     let best = null, bd = 1e9
-    for (const e of EXITS) {
+    for (const e of exitsOf((gs.roomData && gs.roomData.gw) || 16)) {
         const [x, y] = exitPos(e)
         const d = Math.hypot(x - p.x, y - p.y)
         if (d < bd) { bd = d; best = [x, y] }
@@ -144,8 +146,12 @@ export function decide(gs, pi = 0) {
         return inp
     }
 
-    // firebombs when they pay: 3+ live non-boss enemies and spare energy
-    if (gs.enemies.filter((e) => e.kind !== 'boss').length >= 3 && gs.energy >= CFG.firebombCost + 20 && p.invuln <= 0 && pi === 0) inp.bomb = true
+    // firebombs when they pay: 3+ live non-boss enemies and spare energy.
+    // #1973: at THE ANNOUNCER one add is already worth the bomb — it denies
+    // the swarm while the hero duels, and his attrition fights were where the
+    // reshuffled big-room seeds bled out (seed 3 / slack seed 1 died twin-
+    // pistols-to-the-fan with full power meters sitting unused)
+    if (gs.enemies.filter((e) => e.kind !== 'boss').length >= (gs.roomData.boss ? 1 : 3) && gs.energy >= CFG.firebombCost + 20 && p.invuln <= 0 && pi === 0) inp.bomb = true
 
     const dodgeVec = dodge(gs, p)
     const threat = nearestEnemy(gs, true, p) || nearestEnemy(gs, false, p)
@@ -173,6 +179,9 @@ export function decide(gs, pi = 0) {
             // track under the ANNOUNCER and break his fan: when any of his
             // bullets is moments away, jink horizontally AWAY from his lane —
             // the fan converges where you were, so sideways beats precision.
+            // (#1973 tried volley-commit, round-relative and crosser-aware
+            // directions: all measured worse on the seed sweep — the fan is
+            // aim-locked, so away-from-the-lane is already the open ground.)
             let incoming = false
             for (const b of gs.ebullets) {
                 const bd = Math.hypot(b.x - p.x, b.y - p.y)
@@ -181,7 +190,7 @@ export function decide(gs, pi = 0) {
             if (incoming) {
                 let s = Math.sign(p.x - threat.x) || st.side || 1
                 if (p.x < 20) s = 1
-                if (p.x > CW - 20) s = -1
+                if (p.x > boardW(gs) - 20) s = -1
                 st.side = s
                 inp.mx = s; inp.my = 0
             } else moveToward(threat.x, CH - 36, 40)
@@ -193,7 +202,7 @@ export function decide(gs, pi = 0) {
         // partner in a pocket, pacing the 42 px threshold forever (#508): with
         // no line the partner walks TO the threat instead and lets the stuck
         // breaker detour it around the bar.
-        if (ENEMIES[threat.kind].kind === 'chaser' && d < 42 && (pi === 0 || los(gs, p.x, p.y, threat.x, threat.y))) { inp.mx = -Math.sign(threat.x - p.x) || (p.x < CW / 2 ? 1 : -1); inp.my = -Math.sign(threat.y - p.y) || (p.y < CH / 2 ? 1 : -1); return inp }
+        if (ENEMIES[threat.kind].kind === 'chaser' && d < 42 && (pi === 0 || los(gs, p.x, p.y, threat.x, threat.y))) { inp.mx = -Math.sign(threat.x - p.x) || (p.x < boardW(gs) / 2 ? 1 : -1); inp.my = -Math.sign(threat.y - p.y) || (p.y < CH / 2 ? 1 : -1); return inp }
         // The 8-way aim only lands what its line crosses, so a partner walks
         // ONTO the camera's row or column and empties the clip down the lane:
         // null out one axis at a time, stop at arm's length, and the shot that
@@ -221,12 +230,25 @@ export function decide(gs, pi = 0) {
             return inp
         }
         if (d > 80 || !los(gs, p.x, p.y, threat.x, threat.y)) moveToward(threat.x, threat.y)
-        else { inp.mx = 0; inp.my = 0 }
+        else {
+            // #1973: the snap-aim only lands what its line crosses. A wide-room
+            // add can pin itself against a bar corner just off the lane, and a
+            // hold-and-shoot hero fires past it forever (seed 5 held a duel
+            // with a pinned walkcam for 56k ticks). Same doctrine #508 gave the
+            // partner: walk the minor axis until the line sweeps onto the shot.
+            const [qx, qy] = q8(threat.x - p.x, threat.y - p.y)
+            const perp = (threat.x - p.x) * qy - (threat.y - p.y) * qx
+            if (Math.abs(perp) > 4 && d > 24) {
+                if (Math.abs(qy) >= Math.abs(qx)) inp.mx = Math.sign(perp * qy) || Math.sign(threat.x - p.x) || 1
+                else inp.my = -Math.sign(perp * qx) || Math.sign(threat.y - p.y) || 1
+                st.wantMove = true
+            } else { inp.mx = 0; inp.my = 0 }
+        }
         return inp
     }
 
     // no threat visible and not clear: hold center, wait for the wave
-    moveToward(CW / 2, CH - 48, 24)
+    moveToward(boardW(gs) / 2, CH - 48, 24)
     // the partner gives its twin room on the same sheet of chrome
     if (pi === 1) {
         const other = seatOf(gs, 0)

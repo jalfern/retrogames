@@ -16,13 +16,18 @@
 //   - score ledger: final score == sum of every scored event.
 
 import {
-    GW, GH, CELL, HUD_H, CW, CH, EXITS, ENEMIES, WEAPONS,
+    GW, GH, CELL, HUD_H, CW, CH, EXITS, exitsOf, ENEMIES, WEAPONS,
     TOTAL_ROOMS, genRoom, isBonus, isBoss, START, lcg,
 } from './levels.js'
 import { TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
 import { MURMUR_TICKS, ALERT_RADIUS, ALERT_CD } from './audio.js'
 
 export { GW, GH, CELL, HUD_H, CW, CH, EXITS, ENEMIES, WEAPONS, TOTAL_ROOMS, isBonus, isBoss }
+
+// the room's own width in px (#1973): standard arenas fill the screen, big
+// rooms run wider than the camera and the camera follows the contestant
+export const boardW = (gs) => gwOf(gs) * CELL
+const gwOf = (gs) => (gs.roomData ? gs.roomData.gw : GW)
 
 export const CFG = {
     playerSpeed: 1.2,
@@ -72,11 +77,12 @@ function wallSet(room) {
 }
 
 function blockedPx(gs, x, y, r) {
+    const bw = boardW(gs)
     const x0 = x - r, x1 = x + r, y0 = y - r, y1 = y + r
-    if (x0 < CFG.playerR || x1 > CW - CFG.playerR || y0 < HUD_H + CFG.playerR || y1 > CH - CFG.playerR) return true
+    if (x0 < CFG.playerR || x1 > bw - CFG.playerR || y0 < HUD_H + CFG.playerR || y1 > CH - CFG.playerR) return true
     for (const [px, py] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]) {
         const [c, rr] = cellOf(px, py)
-        if (c < 0 || rr < 0 || c >= GW || rr >= GH) return true
+        if (c < 0 || rr < 0 || c >= gwOf(gs) || rr >= GH) return true
         if (gs.walls.has(`${c},${rr}`)) return true
     }
     return false
@@ -182,8 +188,9 @@ function loadRoom(gs, idx) {
         p2.aim = [0, -1]; p2.fireT = 0; p2.deadT = 0; p2.invuln = inv; p2.walk = 0
     }
     if (room.bonus) {
+        const gw = room.gw
         for (let i = 0; i < room.civilians; i++) {
-            const c = 2 + Math.floor(lcg(gs.rng) * (GW - 4))
+            const c = 2 + Math.floor(lcg(gs.rng) * (gw - 4))
             const r = 2 + Math.floor(lcg(gs.rng) * (GH - 4))
             gs.civilians.push({ id: gs._nextId++, x: cx(c), y: cy(r), dx: 0, dy: 0, panic: 0, walk: i, sprintT: 0, sprintCd: 30 + ((i * 53) % 150), sprintRng: { v: ((gs.seed + 1) * 2654435761 + i * 40503 + 12345) | 0 }, sdir: [0, 0], soff: 0 })
         }
@@ -367,8 +374,9 @@ function updateEnemies(gs) {
                 for (const d of [-0.35, 0, 0.35]) enemyShoot(gs, e, Math.cos(a + d), Math.sin(a + d), 1.6)
             }
         } else if (def.kind === 'boss') {
+            const bw = boardW(gs)
             e.x += e.dir * def.speed
-            if (e.x > CW - 30) e.dir = -1
+            if (e.x > bw - 30) e.dir = -1
             if (e.x < 30) e.dir = 1
             if (e.cd <= 0 && p.deadT === 0) {
                 e.cd = def.cd
@@ -380,7 +388,7 @@ function updateEnemies(gs) {
             if (e.spawnT <= 0 && gs._adds < 3) {
                 e.spawnT = 360
                 const kind = lcg(gs.rng) < 0.5 ? 'walkcam' : 'runner'
-                const e2 = makeEnemy(gs, kind, 24 + lcg(gs.rng) * (CW - 48), cy(2))
+                const e2 = makeEnemy(gs, kind, 24 + lcg(gs.rng) * (bw - 48), cy(2))
                 e2.born = gs.tick
                 gs.enemies.push(e2)
                 gs.events.push({ type: 'spawn', kind, x: e2.x, y: e2.y, bossAdd: true })
@@ -428,10 +436,11 @@ function damageEnemy(gs, e, dmg, via, pi = 0) {
 }
 
 function updateBullets(gs) {
+    const bw = boardW(gs)
     for (const b of gs.bullets) {
         const owner = b.by || 0
         b.x += b.dx; b.y += b.dy
-        if (b.x < 4 || b.x > CW - 4 || b.y < HUD_H + 4 || b.y > CH - 4) { b.done = true; continue }
+        if (b.x < 4 || b.x > bw - 4 || b.y < HUD_H + 4 || b.y > CH - 4) { b.done = true; continue }
         const [c, r] = cellOf(b.x, b.y)
         if (gs.walls.has(`${c},${r}`)) { b.done = true; gs.events.push({ type: 'wallHit', x: b.x, y: b.y }); continue }
         let hitCrate = false
@@ -462,7 +471,7 @@ function updateBullets(gs) {
     for (const b of gs.ebullets) {
         b.x += b.dx; b.y += b.dy
         const [c, r] = cellOf(b.x, b.y)
-        if (b.x < 4 || b.x > CW - 4 || b.y < HUD_H + 4 || b.y > CH - 4 || gs.walls.has(`${c},${r}`)) { b.done = true; continue }
+        if (b.x < 4 || b.x > bw - 4 || b.y < HUD_H + 4 || b.y > CH - 4 || gs.walls.has(`${c},${r}`)) { b.done = true; continue }
         for (let i = 0; i < gs.players.length; i++) {
             const q = gs.players[i]
             if (q.deadT === 0 && dist(b.x, b.y, q.x, q.y) < CFG.bulletR + CFG.playerR) {
@@ -506,7 +515,8 @@ function updateCivilians(gs) {
         const sp = v.panic > 0 ? 1.0 : 0.45
         const k = sp * (v.dx && v.dy ? 0.7071 : 1)
         const nx = v.x + v.dx * k, ny = v.y + v.dy * k
-        if (nx < 12 || nx > CW - 12) { v.dx = -v.dx; v.panic = Math.max(v.panic, 10) }
+        const bw = boardW(gs)
+        if (nx < 12 || nx > bw - 12) { v.dx = -v.dx; v.panic = Math.max(v.panic, 10) }
         else v.x = nx
         if (ny < HUD_H + 12 || ny > CH - 12) { v.dy = -v.dy; v.panic = Math.max(v.panic, 10) }
         else v.y = ny
@@ -601,11 +611,13 @@ function checkClear(gs) {
 
 function checkExit(gs) {
     if (!gs.cleared || !EXITS.length) return
-    // any hero walking an open door takes the whole cast to the next room
+    // any hero walking an open door takes the whole cast to the next room;
+    // the doors sit on the room's own width (#1973)
+    const exits = exitsOf(gwOf(gs))
     for (let i = 0; i < gs.players.length; i++) {
         const p = gs.players[i]
         if (p.deadT > 0 || p.out) continue
-        for (const ex of EXITS) {
+        for (const ex of exits) {
             const x = cx(ex.c), y = cy(ex.r)
             if (Math.abs(p.x - x) < 7 && Math.abs(p.y - y) < 7) {
                 gs.roomsCleared++
