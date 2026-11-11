@@ -17,7 +17,7 @@
 
 import {
     GW, GH, CELL, HUD_H, CW, CH, EXITS, exitsOf, ENEMIES, WEAPONS,
-    TOTAL_ROOMS, genRoom, isBonus, isBoss, START, lcg,
+    TOTAL_ROOMS, genRoom, isBonus, isBoss, START, startColOf, roomGw, lcg,
 } from './levels.js'
 import { TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
 import { MURMUR_TICKS, ALERT_RADIUS, ALERT_CD } from './audio.js'
@@ -125,7 +125,7 @@ function makeSeat(x, y, invuln, seed) {
 
 export function makeGame(seed = 0, opts = {}) {
     const seats = Math.max(1, Math.min(2, opts.players | 0 || 1))
-    const start = { x: cx(START.c), y: cy(START.r) }
+    const start = { x: cx(startColOf(roomGw(0))), y: cy(START.r) }
     const gs = {
         seed, rng: { v: (seed * 97 + 13) | 0 }, slack: !!opts.slack,
         tick: 0, room: 0, lives: CFG.lives, score: 0, end: null,
@@ -175,7 +175,7 @@ function loadRoom(gs, idx) {
     if (energyCells) gs.items.push({ id: gs._nextId++, t: 'energy', x: cx(3), y: cy(2) })
     const inv = gs.tick === 0 ? CFG.invulnRoom : CFG.invulnRespawn
     const p1 = gs.players[0]
-    p1.x = cx(START.c); p1.y = cy(START.r)
+    p1.x = cx(startColOf(room.gw)); p1.y = cy(START.r)
     p1.aim = [0, -1]; p1.fireT = 0; p1.deadT = 0; p1.invuln = inv; p1.walk = 0
     gs.player = p1
     if (gs.players.length > 1) {
@@ -647,7 +647,7 @@ export function step(gs, inp = {}, inp2 = null) {
             p.deadT--
             if (p.deadT === 0) {
                 if (p.lives <= 0) { gs.end = 'over'; gs.events.push({ type: 'over' }); return gs }
-                p.x = cx(START.c); p.y = cy(START.r)
+                p.x = cx(startColOf(gwOf(gs))); p.y = cy(START.r)
                 p.invuln = CFG.invulnRespawn
                 gs.energy = CFG.maxEnergy
                 gs.events.push({ type: 'respawn' })
@@ -666,7 +666,7 @@ export function step(gs, inp = {}, inp2 = null) {
             if (q.deadT === 0) {
                 if (q.lives <= 0) q.out = true
                 else {
-                    q.x = cx(START.c); q.y = cy(START.r)
+                    q.x = cx(startColOf(gwOf(gs))); q.y = cy(START.r)
                     q.invuln = CFG.invulnRespawn
                     if (i === 0) gs.energy = CFG.maxEnergy
                     gs.events.push({ type: 'respawn', pi: i })
