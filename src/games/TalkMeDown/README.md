@@ -55,8 +55,12 @@ the couch — or the mic.
   a side-stream rng — the module rng never sees it, so every pre-rail bomb
   generates byte-identically (seed-pin law). Pull-back re-clips the cell to
   the slot it came from (`heldSlot`); the open end is drawn honest: the free
-  cell wears a bright pull-tab, clipped neighbours a dark slate one, and the
-  action line names THIS slot (`EMPTY SLOT / BLOCKED - IT CLIPS RIGHT / A
+  cell wears a bright pull-tab, clipped neighbours a dark slate one. #1923
+  made the mouth READ at phone scale: the groove walls stop short of the
+  opening, a double chevron points out through the gap on one pulse clock
+  with the `OPEN` word (`railMouthGlow`), and blocked tabs sit near-black
+  (`RAIL_TAB_*`, contrast-gated ≥ 2x) so the free amber tab is the only
+  bright thing at the rail end. The action line names THIS slot (`EMPTY SLOT / BLOCKED - IT CLIPS RIGHT / A
   PULLS IT OUT`). D5/D6/G5 stay verbatim true — the rail changes WHERE the
   cells sit, never what the count means. `solvePad` homes to the open end
   before it spends the press (WATCH/attract/harness share that brain);
@@ -217,6 +221,10 @@ npm run platecheck  # THE RAIL (#1917): layout purity (seeded side-stream — mo
                     # glide, silent bomb-swap re-baseline, pose flush+monotone,
                     # pocket/landing-slot double-image pins, fx-interleaved hash
                     # law, 5 named mutants)
+                    # + OPEN-END LEGIBILITY (#1923: recording-stub pixel gates —
+                    # mouth-chevron count + shared pulse clock, walls stop short,
+                    # tab-luminance ratio ≥ 2x; 3 named mutants tab-flat /
+                    # arrow-quiet / wall-full)
                     # blocked/empty refuse silently, push-back re-clips home, pulls
                     # never rewind), D6 solved on rigs needing a hand-shift, solvePad
                     # taps only at the open end, tray/sel/home ride hash+simState,

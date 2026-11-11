@@ -525,6 +525,14 @@ function drawGhostCell(g, x, y, w, h, tilt) {
 // the opening has its pull-tab clipped (dark slate), the open-end cell wears a
 // bright amber tab. < > moves the hand; the action line names what A does for
 // THIS slot — never lies (plate truth, hash truth, engine truth: one rail).
+// #1923 OPEN-END LEGIBILITY: at phone scale the tab pair was the whole story
+// and it read as noise. Now three things say "this end opens": the groove's
+// wall bars stop short of the mouth, a double chevron points out of the gap,
+// and the blocked tabs sit near-black against the holders (the free tab keeps
+// its amber). The word and the arrow share one clock — railMouthGlow.
+export const RAIL_TAB_FREE = '#8a6512'
+export const RAIL_TAB_BLOCKED = '#22262b'
+export const railMouthGlow = (tick) => tick % 60 < 38
 // #1923 THE SLIDE: pass fx (makeRailFx/stepRailFx) and the pulled/seated cell
 // flies the rail instead of teleporting; fx=null keeps this byte-identical to
 // the pre-slide plate (old callers, pixel gates).
@@ -569,19 +577,27 @@ export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn 
     g.fillText('BATTERIES', PANEL.x + 152, PANEL.y + 136)
     g.font = FONT(5); g.fillStyle = '#5c626c'
     g.fillText('< > PICKS THE CELL', PANEL.x + 236, PANEL.y + 136)
-    // the rail itself: a groove the cells slide along, open at the right end
+    // the rail itself: a groove the cells slide along. #1923 legibility: the
+    // wall bars stop short (200 of the 214 groove) so the mouth is drawn open,
+    // not just named — and the chevron below points through the gap.
     g.fillStyle = '#141519'; g.fillRect(PANEL.x + 112, PANEL.y + 150, 214, 74)
-    g.fillStyle = '#20242a'; g.fillRect(PANEL.x + 112, PANEL.y + 150, 214, 2); g.fillRect(PANEL.x + 112, PANEL.y + 222, 214, 2)
-    g.fillStyle = tick % 60 < 38 ? '#8a6512' : '#4a4f57'
+    g.fillStyle = '#20242a'; g.fillRect(PANEL.x + 112, PANEL.y + 150, 200, 2); g.fillRect(PANEL.x + 112, PANEL.y + 222, 200, 2)
+    const mouth = railMouthGlow(tick)
+    g.fillStyle = mouth ? '#8a6512' : '#4a4f57'
     g.fillText('OPEN', PANEL.x + 330, PANEL.y + 146)
+    // the mouth arrow: a double chevron in the wall gap, pointing out of the
+    // rail, pulsing on the same clock as the OPEN word (one law, one story).
+    g.fillStyle = mouth ? '#ffd23e' : '#4a4f57'
+    for (let c = 0; c < 2; c++) for (let k = 0; k < 5; k++)
+        g.fillRect(PANEL.x + 328 + c * 6 + (2 - Math.abs(2 - k)), PANEL.y + 178 + k * 3, 3, 3)
     for (let i = 0; i < 3; i++) {
         const bx = PANEL.x + 118 + i * 68, by = PANEL.y + 146
         const occ = tray[i] === 1 && i !== mask
         const pullable = occ && i === open
         if (occ) {
             // the pull-tab tells the rail law: bright amber = free at the open
-            // end; dark slate = clipped behind a neighbor (it goes first).
-            g.fillStyle = pullable ? '#8a6512' : '#3a4148'; g.fillRect(bx + 14, by, 16, 8)
+            // end; near-black = clipped behind a neighbor (it goes first).
+            g.fillStyle = pullable ? RAIL_TAB_FREE : RAIL_TAB_BLOCKED; g.fillRect(bx + 14, by, 16, 8)
             g.fillStyle = '#c98f1f'; g.fillRect(bx, by + 6, 44, 74)
             g.fillStyle = P.amber; g.fillRect(bx + 3, by + 9, 38, 68)
             g.fillStyle = '#8a6512'

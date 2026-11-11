@@ -10,7 +10,7 @@
 import {
     createGame, step, simState, hash, solvePad, drainEvents, buildBomb, railOpen, trayLayout, ruleOf,
 } from '../src/games/TalkMeDown/engine.js'
-import { makeRailFx, stepRailFx, railCellPose } from '../src/games/TalkMeDown/art.js'
+import { makeRailFx, stepRailFx, railCellPose, drawBack, RAIL_TAB_FREE, RAIL_TAB_BLOCKED, railMouthGlow, PANEL } from '../src/games/TalkMeDown/art.js'
 import { readFileSync } from 'node:fs'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -349,6 +349,90 @@ const home = g => { for (let o = railOpen(g.tray); g.sel !== o; o = railOpen(g.t
     const mPocket = artSrc.replace("if (!inFlight || inFlight.kind !== 'out') {", 'if (true) {')
     ok('mutant pocket-double dies by name (clip and ghost both carry the cell)',
         mPocket !== artSrc && !/inFlight\.kind !== 'out'/.test(mPocket))
+}
+
+// ---- 10b. OPEN-END legibility (#1923) — pixels, not vibes --------------------
+// drawBack through a recording stub: the plate must DRAW the open-end story,
+// not just tell it in the action line. Gates: the groove's wall bars stop short
+// of the mouth; a double chevron stands in that gap; the word and the arrow
+// share one pulse clock; the free pull-tab is decisively brighter than the
+// blocked ones (rec-601 luminance, >= 2x — the old #3a4148 tab sat at 1.6x
+// and died here). Three named mutants die.
+{
+    const dir = new URL('../src/games/TalkMeDown/', import.meta.url)
+    const artSrc = readFileSync(new URL('art.js', dir), 'utf8')
+    const paint = (tick, tray, held = 0, sel = 2) => {
+        const rects = [], texts = []
+        const g = {
+            rects, texts, font: '', fillStyle: '',
+            fillRect(x, y, w, h) { rects.push({ x, y, w, h, c: this.fillStyle }) },
+            fillText(t, x, y) { texts.push({ t, x, y, c: this.fillStyle }) },
+            beginPath() {}, arc() {}, fill() {},
+        }
+        drawBack(g, tray.reduce((a, b) => a + b, 0), tick, 'XX0X0', held, tray, sel, null)
+        return g
+    }
+    const lum = h => 0.2126 * parseInt(h.slice(1, 3), 16) + 0.7152 * parseInt(h.slice(3, 5), 16) + 0.0722 * parseInt(h.slice(5, 7), 16)
+    // 3x3 mark pixels inside the groove band, right of the wall gap
+    const mouthPix = g => g.rects.filter(r => r.x >= PANEL.x + 326 && r.w === 3 && r.h === 3 && r.y >= PANEL.y + 150 && r.y <= PANEL.y + 224)
+    const plate = paint(0, [1, 1, 0]) // tray with slot 1 free, slot 0 blocked
+    const chev = mouthPix(plate)
+    ok('the mouth arrow stands in the wall gap — 10 pixels pointing out of the rail',
+        chev.length === 10 && chev.every(r => r.c === '#ffd23e'), `n=${chev.length}`)
+    ok('the arrow rests dim off-pulse (a throb, not a shout)',
+        mouthPix(paint(50, [1, 1, 0])).length === 10 && mouthPix(paint(50, [1, 1, 0])).every(r => r.c === '#4a4f57'))
+    {
+        let shared = true
+        for (const t of [0, 37, 38, 59, 60, 97]) {
+            const p = paint(t, [1, 1, 0])
+            const word = p.texts.find(r => r.t === 'OPEN')
+            const bright = mouthPix(p).every(r => r.c === '#ffd23e')
+            if (!word || word.c !== (railMouthGlow(t) ? '#8a6512' : '#4a4f57') || bright !== railMouthGlow(t)) shared = false
+        }
+        ok('the OPEN word and the arrow beat on one clock (railMouthGlow)', shared)
+    }
+    {
+        const bars = plate.rects.filter(r => r.c === '#20242a' && r.h === 2 && r.y >= PANEL.y + 150 && r.y <= PANEL.y + 224)
+        ok('the groove walls stop short of the mouth (200 of 214 — the gap is drawn, not implied)',
+            bars.length === 2 && bars.every(r => r.w === 200), JSON.stringify(bars.map(r => r.w)))
+    }
+    {
+        const tab = (g, slot) => g.rects.find(r => r.x === PANEL.x + 118 + slot * 68 + 14 && r.y === PANEL.y + 146 && r.w === 16 && r.h === 8)
+        const free = tab(plate, 1), blocked = tab(plate, 0)
+        ok('the free cell wears the amber tab, its blocked neighbour the dark one',
+            !!free && !!blocked && free.c === RAIL_TAB_FREE && blocked.c === RAIL_TAB_BLOCKED,
+            `free=${free && free.c} blocked=${blocked && blocked.c}`)
+        const ratio = lum(RAIL_TAB_FREE) / lum(RAIL_TAB_BLOCKED)
+        ok('tab contrast is decisive at phone scale (>= 2x luminance)', ratio >= 2, `${ratio.toFixed(2)}x`)
+    }
+    ok('the tab pair is driven by the constants, not in-plate hex',
+        /pullable \? RAIL_TAB_FREE : RAIL_TAB_BLOCKED/.test(artSrc))
+    const runLegMutant = async (name, mut, gate) => {
+        if (mut === artSrc) { ok(`mutant ${name}: target line not found`, false); return }
+        const tmp = new URL(`.mutant-art-leg-${name}.mjs`, dir)
+        plant(tmp, mut)
+        try {
+            const E = await import(tmp.href)
+            const g = {
+                rects: [], texts: [], font: '', fillStyle: '',
+                fillRect(x, y, w, h) { this.rects.push({ x, y, w, h, c: this.fillStyle }) },
+                fillText(t, x, y) { this.texts.push({ t, x, y, c: this.fillStyle }) },
+                beginPath() {}, arc() {}, fill() {},
+            }
+            E.drawBack(g, 2, 0, 'XX0X0', 0, [1, 1, 0], 2, null)
+            ok(`mutant ${name} dies by name`, !gate(g))
+        } finally { pull(tmp) }
+    }
+    await runLegMutant('tab-flat',
+        artSrc.replace('pullable ? RAIL_TAB_FREE : RAIL_TAB_BLOCKED', 'RAIL_TAB_FREE'),
+        g => g.rects.find(r => r.x === PANEL.x + 132 && r.y === PANEL.y + 146 && r.c === RAIL_TAB_BLOCKED))
+    await runLegMutant('arrow-quiet',
+        artSrc.replace("g.fillStyle = mouth ? '#ffd23e' : '#4a4f57'", "g.fillStyle = '#4a4f57'"),
+        g => mouthPix(g).some(r => r.c === '#ffd23e'))
+    await runLegMutant('wall-full',
+        artSrc.replace('fillRect(PANEL.x + 112, PANEL.y + 150, 200, 2); g.fillRect(PANEL.x + 112, PANEL.y + 222, 200, 2)',
+            'fillRect(PANEL.x + 112, PANEL.y + 150, 214, 2); g.fillRect(PANEL.x + 112, PANEL.y + 222, 214, 2)'),
+        g => g.rects.filter(r => r.c === '#20242a' && r.h === 2 && r.y >= PANEL.y + 150 && r.y <= PANEL.y + 224).every(r => r.w === 200))
 }
 
 // ---- 11. mutant: remove the open-end gate, gates must die ------------------------
