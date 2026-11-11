@@ -2,9 +2,11 @@ import { useReducer, useEffect, useCallback, useRef, useState } from 'react'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { audioController } from '../../utils/AudioController'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import {
   COLORS,
-  createInitialState, stepGame, buildGrid,
+  createInitialState, stepGame, buildGrid, watchStep,
   getItemName, playerAC, runScore, done, hash,
 } from './sim.js'
 
@@ -137,6 +139,31 @@ export default function RogueGame() {
   const stateRef = useRef(state)
   useEffect(() => { stateRef.current = state })
 
+  // #1637 batch 23 WATCH: Y hands the dungeon to sim.js's own BFS crawler.
+  // A turn-based seat runs on its own clock, not the frame clock: one reducer
+  // action per SEAT_MS, so the route keeps pace while the browser is idle.
+  const [watching, setWatching] = useState(false)
+  const watchingRef = useRef(false)
+  const releaseWatch = useCallback((silent) => {
+    if (!watchingRef.current) return
+    watchingRef.current = false
+    setWatching(false)
+    if (!silent) playWatchStop()
+  }, [])
+
+  useEffect(() => {
+    if (!watching) return undefined
+    const SEAT_MS = 140
+    const id = setInterval(() => {
+      const s = stateRef.current
+      if (done(s)) { releaseWatch(true); return }   // the dungeon keeps the run; the guide releases
+      const act = watchStep(s)
+      if (!act) { releaseWatch(false); return }      // no route from here — hand back honestly
+      dispatch(act)                                   // the state effect carries stateRef onward
+    }, SEAT_MS)
+    return () => clearInterval(id)
+  }, [watching, releaseWatch])
+
   // #1502: drain the sim's fx log into audio. The log grows through the run
   // and resets to [] on NEW_GAME — the length compare handles both.
   const fxSeenRef = useRef(0)
@@ -196,9 +223,29 @@ export default function RogueGame() {
       ],
     })
 
+    // #1637 WATCH probes (DEV-only): seat state, the shared blip log, and a
+    // prover-only view — `turn` only moves when the sim takes a turn, which an
+    // idle watcher never does.
+    if (import.meta.env.DEV) {
+      window.__rogueTest = {
+        watching: () => watchingRef.current,
+        watchSfx: watchSfxLog,
+        probe: () => {
+          const s = stateRef.current
+          return {
+            turn: s.turn, dlvl: s.dungeonLevel, gold: s.player.gold, score: runScore(s),
+            x: s.player.x, y: s.player.y, hp: s.player.hp, phase: s.phase,
+            monsters: s.monsters.length, done: done(s),
+          }
+        },
+        hash: () => hash(stateRef.current),
+      }
+    }
+
     return () => {
       unexposeFeedbackState()
       unmountDbg()
+      if (import.meta.env.DEV && window.__rogueTest) delete window.__rogueTest
     }
   }, [])
 
@@ -213,6 +260,19 @@ export default function RogueGame() {
       if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) {
         e.preventDefault()
       }
+
+      // #1637 batch 23 WATCH: Y seats the game's OWN BFS crawler (the route
+      // roguecheck descends 20/20 seeds with) at any live position — it plans
+      // from the state it is handed, never a bench script. Y again hands back;
+      // any ordinary key/tap takes over first. Lowercase `y` is the 1980 NW
+      // key — the shared Y contract wins, numpad 7 keeps the compass whole.
+      if (isWatchKey(e)) {
+        e.preventDefault()
+        if (watchingRef.current) releaseWatch(false)
+        else if (phase === 'playing' && !done(state)) { watchingRef.current = true; setWatching(true); playWatchStart() }
+        return
+      }
+      if (watchingRef.current && isTakeoverKey(e)) releaseWatch(false)
 
       if (phase === 'gameover') {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -270,7 +330,7 @@ export default function RogueGame() {
 
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [state])
+  }, [state, releaseWatch])
 
   // Swipe to move on mobile
   const handleTouchStart = useCallback((e) => {
@@ -286,14 +346,18 @@ export default function RogueGame() {
     const adx = Math.abs(dx), ady = Math.abs(dy)
     const mx = adx > ady * 2 ? (dx > 0 ? 1 : -1) : (adx > ady * 0.5 ? (dx > 0 ? 1 : -1) : 0)
     const my = ady > adx * 2 ? (dy > 0 ? 1 : -1) : (ady > adx * 0.5 ? (dy > 0 ? 1 : -1) : 0)
-    if (mx !== 0 || my !== 0) dispatch({ type: 'MOVE', dx: mx, dy: my })
-  }, [])
+    if (mx !== 0 || my !== 0) { releaseWatch(false); dispatch({ type: 'MOVE', dx: mx, dy: my }) } // #1637: a swipe takes over
+  }, [releaseWatch])
 
   const handleMobileAction = useCallback((action) => {
+    releaseWatch(false) // #1637: the pad takes over before it acts
     dispatch(action)
-  }, [])
+  }, [releaseWatch])
 
   const { player, phase, messages, dungeonLevel, finalScore, killer } = state
+  // #1637: the dungeon only drives while phase is playing — every menu/help/
+  // death screen already returned above, so this also mirrors the pill's door.
+  const paused = phase !== 'playing'
 
   const base = {
     background: '#000',
@@ -516,6 +580,14 @@ export default function RogueGame() {
       }}>
         {statusStr}
       </div>
+
+      {/* #1637 WATCH — the crawler's banner; top-anchored pill (#1656 law) */}
+      {watching && <WatchToast className="fixed z-50" />}
+      {!paused && (
+        <div className="fixed z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+          <WatchButton on={watching} />
+        </div>
+      )}
 
       {/* Mobile controls */}
       {isMobile && <DPad onAction={handleMobileAction} />}

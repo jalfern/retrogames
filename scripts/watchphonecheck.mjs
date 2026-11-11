@@ -56,6 +56,7 @@ const SKIP_ATTRACT = {
     BombDefuse: 'title → crew select (a WATCH tap would stop at the picker; the attract already self-drives the solver demo)',
     GravelYard: 'title → hands select (a WATCH tap would stop at the picker; the attract already self-drives the CPU crew demo)',
     ShortOrderShout: 'title → cooks select (a WATCH tap would stop at the picker; the attract already self-drives the CPU cooks demo)',
+    Rogue: 'no attract screen — the dungeon boots straight into play, so the pill sits on live ground from the first frame',
 }
 
 // ── shared chrome ─────────────────────────────────────────────────────────────
