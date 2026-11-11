@@ -221,6 +221,26 @@ reddens the never-rewind gate; all die by name. Restore → 185/185;
 `defusedrive` proves it live: lines sum to the score, salad still rolling when
 the screen lands, TOTAL on the score within its window — 29/29.
 
+## Online fold-in (#1812 items 1, 2, 4): the LINK PILL
+
+Mid-run online play flew blind: room code + peer state lived only in the
+Lobby/attract, the kick and the mid-run re-seat landed silent, and after a
+walkaway demote the survivor lost its YOU tag. Now `E.netPill(info)` (pure,
+engine.js — shell facts only, never `gs`) is the law: no code → no pill;
+a returning seat reads **LINK RETURNING** (amber) before anything; a demoted
+crew reads **CPU PARTNER** (red) before jitter; ≥ `LINK.SHAKY` (8) stalled
+ticks reads **LINK SHAKY** (amber); whole wire reads **NET ·CODE· LIVE**
+(green, code clamped to 4 chars). `drawHudFrame` paints only the verdict,
+centered in the bottom strip; `__bdTest.netPill()` exposes it for drives.
+`sfx.crew()` (rising C-E-C) sounds on the kick (CREW LINKED) and the #1838
+flip (PARTNER RE-SEATED) — the shared Lobby chime only covers the attract
+overlay, so these two moments were the silent ones. Solo survivors re-tag:
+`youSeat = solo ? 0 : ...` — the survivor's keys drive seat 0 (loop law),
+so the YOU tag stays honest. defusecheck 185→201 (law + precedence + code
+clamp + shaky threshold exact + hash-lacing invariance + view/chime pins).
+Mutants: drop the solo branch → the demote + tone gates die by name;
+restore → 201/201.
+
 ## Honest gaps (filed to QA as the polish pass)
 
 - **CLOSED by #1838**: online mid-run rejoin landed at the next `go`, not
