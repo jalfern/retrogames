@@ -1434,6 +1434,84 @@ const PILOTS = [
             rep.check('short-order-shout: Y again releases the pair', !(await watching()))
         },
     },
+    // #1637 batch 23 — "the last two roads". ROGUE lifts roguecheck §6's BFS
+    // autopilot into sim.js (watchStep): every seed reaches dlvl 2 in the check,
+    // and the seat re-plans from the LIVE state every turn — so it seats anywhere,
+    // hands back on any steer, and re-seats from exactly where the player stopped.
+    // METROID-LITE replays planRun's zero-hit win script, tick-indexed: it seats
+    // only on a fresh, never-steered road (the seat re-anchors that road to the
+    // witness's tick 0 — the cave is deterministic); a steered road declines.
+    {
+        id: 'rogue', url: `${BASE}/rogue`, hook: '__rogueTest',
+        async run(page, rep) {
+            const H = '__rogueTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            // the dungeon boots straight into play — no attract screen
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('rogue: Y seats the BFS crawler', await watching())
+            rep.check('rogue: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            const a = await probe()
+            const adv = (x, y) => y.turn > x.turn || y.dlvl > x.dlvl || y.gold > x.gold
+            const b = await pollAdvance(page, probe, adv, a, 5000)
+            rep.check('rogue: the crawler takes turns untouched (idle hands wait in the dark)',
+                adv(a, b), `turn ${a.turn} -> ${b.turn}, dlvl ${b.dlvl}, gold ${a.gold} -> ${b.gold}`)
+            rep.check('rogue: still watching mid-dive', await watching())
+            await page.keyboard.down('ArrowLeft')
+            rep.check('rogue: steer key takes over', !(await watching()))
+            rep.check('rogue: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await page.keyboard.up('ArrowLeft')
+            await key(page, 'KeyY')                       // re-seat: BFS re-plans from HERE
+            await seatPoll(page, H)
+            rep.check('rogue: Y re-seats mid-dive (the crawler re-plans from the live state)', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 5000)
+            rep.check('rogue: resumes from where the player left it', adv(c, d),
+                `turn ${c.turn} -> ${d.turn}, dlvl ${d.dlvl}`)
+            await key(page, 'KeyY')
+            rep.check('rogue: Y again releases the crawler', !(await watching()))
+        },
+    },
+    {
+        id: 'metroid', url: `${BASE}/metroid`, hook: '__metroidTest',
+        async run(page, rep) {
+            const H = '__metroidTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            await key(page, 'Space')                       // attract -> fresh road
+            await page.waitForTimeout(700)                 // let the road idle a few ticks (the re-anchor path)
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('metroid: Y seats the proven script on a fresh road', await watching())
+            rep.check('metroid: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            const a = await probe()
+            const adv = (x, y) => y.player.x !== x.player.x || y.taken > x.taken || y.score > x.score
+            const b = await pollAdvance(page, probe, adv, a, 6000)
+            rep.check('metroid: the script runs untouched (idle hands cross no cave)',
+                adv(a, b), `x ${a.player.x} -> ${b.player.x}, score ${a.score} -> ${b.score}`)
+            rep.check('metroid: still watching mid-route', await watching())
+            await page.keyboard.down('ArrowLeft')
+            rep.check('metroid: steer key takes over', !(await watching()))
+            rep.check('metroid: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await page.keyboard.up('ArrowLeft')
+            const sBefore = (await sfx()).length
+            await key(page, 'KeyY')                       // steered road: the honest decline
+            await page.waitForTimeout(300)
+            rep.check('metroid: re-seat after steering says no guide (the road left the witness)', !(await watching()))
+            rep.check('metroid: the decline is silent (no blip for a guide that never started)',
+                (await sfx()).length === sBefore)
+            await page.evaluate((h) => window[h].start(), H) // a NEW road matches the witness again
+            await page.waitForTimeout(300)
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('metroid: Y seats again on a fresh road', await watching())
+            await key(page, 'KeyY')
+            rep.check('metroid: Y again releases the road', !(await watching()))
+        },
+    },
     // #1637 batch 13 — the racer family seats its CERTIFIED autopilot. decide()
     // (CometDrift/sim.js) is the brain cometcheck races to victory ("autopilot
     // wins the 5-lap GP from P7", #1687-certified drift ladder) and both titles'
@@ -2399,6 +2477,37 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     const sc = readFileSync('scripts/soscheck.mjs', 'utf8')
     rep.check('batch 22: soscheck still stamps the seat\'s witness (pair wins 8/8)',
         /wins 8\/8 known-good seeds/.test(sc))
+}
+// ---- #1637 batch 23 source pins — the last two roads seat their own proof ----
+{
+    const rg = readFileSync('src/games/Rogue/index.jsx', 'utf8')
+    rep.check('ROGUE: the seat imports watchStep from its own sim.js',
+        /import\s*\{[^}]*watchStep[^}]*\}\s*from\s*'\.\/sim\.js'/s.test(rg))
+    rep.check('ROGUE: the seat drives the reducer through watchStep, not a bench script',
+        /const act = watchStep\(s\)[\s\S]{0,120}?dispatch\(act\)/.test(rg))
+    rep.check('ROGUE: no route from here hands back honestly (watchStep null -> release)',
+        /if \(!act\) \{ releaseWatch\(false\)/.test(rg))
+    rep.check('ROGUE: imports the shared blips and logs',
+        rg.includes('playWatchStart') && rg.includes('playWatchStop') && rg.includes('watchSfxLog'))
+    const rs = readFileSync('src/games/Rogue/sim.js', 'utf8')
+    rep.check('ROGUE: watchStep lives in the sim and descends what it stands on',
+        /export function watchStep\(state\)/.test(rs) && /=== '%'\) return \{ type: 'DESCEND' \}/.test(rs))
+    const rc = readFileSync('scripts/roguecheck.mjs', 'utf8')
+    rep.check('batch 23: roguecheck still stamps the seat\'s witness (BFS reaches dlvl 2, 20/20)',
+        /every seed reaches dungeon level 2 \(stairs found \+ descended\) — 20\/20/.test(rc))
+    const ml = readFileSync('src/games/MetroidLite/index.jsx', 'utf8')
+    rep.check('METROID-LITE: the seat replays provenScript tick-indexed by the live clock',
+        /if \(watchingRef\.current\) \{[\s\S]{0,160}?inp = script\[gs\.tick\]/.test(ml))
+    rep.check('METROID-LITE: a steered road closes the seat for the run (droveRef)',
+        /droveRef\.current = true/.test(ml) && /const fresh = !droveRef\.current && !gs\.end/.test(ml))
+    rep.check('METROID-LITE: the decline is the shared NO_GUIDE copy',
+        ml.includes('NO_GUIDE') && ml.includes('say(NO_GUIDE)'))
+    rep.check('METROID-LITE: fresh-road seats re-anchor to the witness tick (deterministic makeGame)',
+        /if \(fresh\) \{[\s\S]{0,120}?if \(gs\.tick > 0\) startPlay\(\)/.test(ml))
+    rep.check('METROID-LITE: imports the shared blips and logs',
+        ml.includes('playWatchStart') && ml.includes('playWatchStop') && ml.includes('watchSfxLog'))
+    rep.check('METROID-LITE: attract carries the shared start-and-watch button',
+        ml.includes('<AttractWatchButton'))
 }
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray
