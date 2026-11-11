@@ -266,5 +266,107 @@ r.check('the arena actually renders', px > 500, `${px} lit px`)
     r.check('his crown really renders through the pan', host.n > 10 && host.minLit > 50, `min ${host.minLit} lit px on the boss over ${host.n} frames`)
 }
 
+// #2032's two specials, driven live through the same contract the harness
+// uses: the seeker must curve onto its lock and land the kill; the flamer must
+// puff three pellets, and its stream must die out at the reach law — both
+// proven to really render, not just live in the sim.
+{
+    const specials = await page.evaluate(async () => {
+        const raf = () => new Promise((res) => requestAnimationFrame(res))
+        const T = window.__smashTest
+        const api = window.__game
+        api.reset(0, 1)
+        for (let i = 0; i < 4; i++) T.stepWith({})
+        const gs = T.state()
+        const clear = () => {
+            gs.enemies = []; gs.civilians = []; gs.ebullets = []; gs.grenades = []; gs.crates = []; gs.items = []
+            gs.roomData.spawns = []; gs.spawnT = 1e9; gs.bonusT = 0; gs.bullets = []
+            gs.walls = new Set()
+            gs.player.invuln = 1e9
+        }
+        const mk = (id, x, y) => ({ id, kind: 'turret', x, y, hp: 9, cd: 9999, wanderT: 0, wdx: 0, wdy: 0, hitT: 0, dir: 1, walk: 0, moving: false, chg: 0, aim: [0, 0] })
+        const c = document.querySelector('canvas[data-smash-stage]')
+        const g = c.getContext('2d')
+        const near = (d, i, r0, gg0, b0) => Math.abs(d[i] - r0) < 40 && Math.abs(d[i + 1] - gg0) < 40 && Math.abs(d[i + 2] - b0) < 40
+        const countCol = (x0, y0, w, h, rgb) => {
+            const d = g.getImageData(Math.max(0, Math.round(x0)), Math.max(0, Math.round(y0)), Math.round(w), Math.round(h)).data
+            let n = 0
+            for (let i = 0; i < d.length; i += 4) if (near(d, i, ...rgb)) n++
+            return n
+        }
+
+        // HEAT-SEEKER: the nearer heat sits off the barrel line — the live
+        // missile must curve onto it and take its two points, and the warhead
+        // must draw on screen mid-flight.
+        clear()
+        gs.player.weapon = 'homing'
+        gs.player.x = 200; gs.player.y = 140
+        gs.enemies = [mk(9301, 200, 60), mk(9302, 170, 140)]
+        T.stepWith({ fx: 0, fy: -1, fire: true })
+        const m = gs.bullets.find((b) => b.kind === 'homing')
+        let flight = 0, turned = 0, missilePx = 0
+        let prevA = m ? Math.atan2(m.dy, m.dx) : 0
+        while (m && !m.done && flight < 400) {
+            T.stepWith({})
+            if (m && !m.done) {
+                const a = Math.atan2(m.dy, m.dx)
+                let d = a - prevA
+                while (d > Math.PI) d -= Math.PI * 2
+                while (d < -Math.PI) d += Math.PI * 2
+                turned = Math.max(turned, Math.abs(d))
+                prevA = a
+                if (flight === 8) { // mid-curve: the pale-orange warhead on canvas
+                    await raf(); await raf()
+                    missilePx = countCol(m.x - (T.probe().camX || 0) - 3, m.y - 3, 7, 7, [255, 176, 79])
+                }
+            }
+            flight++
+        }
+        const seekTarget = gs.enemies.find((e) => e.id === 9302)
+        const seek = { fired: !!m, lock: m ? m.lock : null, turned: +turned.toFixed(3), hp: seekTarget ? seekTarget.hp : null, missilePx }
+
+        // FLAMER: three pellets at the muzzle, one point on first contact
+        // (the same pin smashcheck drives), and the stream dead past its
+        // reach — with fire really painted. The turret's dish blinks the same
+        // orange as the fire (#ffd23f), so the pixel box sits short of the
+        // sprite (x 102..118 vs sprite 122+); the gone-sample runs only after
+        // the board is cleared and the kill blast has settled.
+        clear()
+        gs.player.weapon = 'flame'
+        gs.player.x = 100; gs.player.y = 140
+        gs.enemies = [mk(9311, 130, 140)]
+        T.stepWith({ fx: 1, fy: 0, fire: true })
+        const puffs = gs.bullets.filter((b) => b.kind === 'flame').length
+        let f = 0, reach = 0, firePx = 0, firstDrop = null, hpWatch = 9
+        while (gs.bullets.some((b) => b.kind === 'flame') && f < 60) {
+            T.stepWith({})
+            for (const b of gs.bullets) if (b.kind === 'flame') reach = Math.max(reach, b.x - 100)
+            const e = gs.enemies.find((q) => q.id === 9311)
+            if (e && firstDrop === null && e.hp < hpWatch) firstDrop = hpWatch - e.hp
+            if (e) hpWatch = e.hp
+            if (f === 3) { // young puff, short of the enemy sprite: fire colours only
+                await raf(); await raf()
+                const camX = T.probe().camX || 0
+                firePx = countCol(102 - camX, 133, 16, 14, [255, 210, 63]) + countCol(102 - camX, 133, 16, 14, [255, 138, 63])
+            }
+            f++
+        }
+        gs.enemies = []
+        // debris ages on DRAW frames, not sim ticks — wait real frames so the
+        // blast settles before the gone-sample (stepWith alone starves the painter)
+        for (let i = 0; i < 30; i++) await raf()
+        const camX = T.probe().camX || 0
+        const goneFire = countCol(102 - camX, 133, 58, 14, [255, 210, 63]) + countCol(102 - camX, 133, 58, 14, [255, 138, 63])
+        const flamer = { puffs, firstDrop, reach: +reach.toFixed(1), dying: !gs.bullets.some((b) => b.kind === 'flame'), firePx }
+        return { seek, flamer, goneFire }
+    })
+    r.check('the heat-seeker fires one missile locked on the nearest heat', specials.seek.fired && specials.seek.lock === 9302, JSON.stringify({ fired: specials.seek.fired, lock: specials.seek.lock }))
+    r.check('the live missile curves onto its lock and lands the damage', specials.seek.turned > 0.05 && specials.seek.hp === 7, JSON.stringify({ turned: specials.seek.turned, hp: specials.seek.hp }))
+    r.check('the missile really draws mid-curve', specials.seek.missilePx >= 3, `${specials.seek.missilePx} warhead px`)
+    r.check('the flamer puffs three pellets and burns one point through on contact', specials.flamer.puffs === 3 && specials.flamer.firstDrop === 1, JSON.stringify(specials.flamer))
+    r.check('the fire dies out at its ~45 px reach', specials.flamer.dying && specials.flamer.reach <= 47, JSON.stringify({ reach: specials.flamer.reach, dying: specials.flamer.dying }))
+    r.check('fire is painted while the stream lives, gone when it dies', specials.flamer.firePx >= 4 && specials.goneFire === 0, JSON.stringify({ live: specials.flamer.firePx, gone: specials.goneFire }))
+}
+
 r.check('zero page errors', errors.length === 0, errors.slice(0, 3).join(' | '))
 r.exit(browser)

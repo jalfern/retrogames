@@ -572,7 +572,7 @@ const SmashTVGame = () => {
                     ctx.fillRect(b.x + b.dx * 0.4 - 0.5, b.y + b.dy * 0.4 - 0.5, 1.5, 1.5)
                 } else if (b.kind === 'flame') {
                     // #2032 fire: a puff that starts bright and dies out —
-                    // size and colour ride the age, so the 30 px reach is
+                    // size and colour ride the age, so the ~45 px reach is
                     // visible on the screen, not just a law in the sim
                     const heat = 1 - b.age / FLAME_LIFE
                     ctx.fillStyle = heat > 0.66 ? '#ffd23f' : heat > 0.33 ? '#ff8a3f' : '#b8482c'
