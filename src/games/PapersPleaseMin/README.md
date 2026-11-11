@@ -602,9 +602,17 @@ code, and filtered as such).
   (Note: #1891's item 5 listed three gaps that were stale — wanted-sheet
   capacity, portrait read, day-7 queue length — all three closed earlier by
   #1902, #1938 and #1960; verified against the code before touching them.)
-- What #1891 deliberately left open: the quote lives only while the stamp
-  holds (the original keeps a violation inspector on screen — here it fades
-  with the ink); evidence strings and RULES text keep numerals, so the
-  month-name read is display-only; and the settle is a scripted drop, not
-  drag physics — papers still cannot be moved by hand (no rule needs them
-  moved, and VirtualControls owns the pad).
+- **CLOSED by #2023 (2026-11-11):** the quote lived only while the stamp
+  held (~0.5 s — a three-clause deny faded before a human could finish it;
+  the original keeps a violation inspector on screen). The booth now *stays*:
+  witness + evidence ride pinned after the ink, the judged document holds the
+  counter, and only when the read window closes (~2.2 s) is it taken up and
+  the next papers dropped — the pin ends on landing, on your next ruling, or
+  at the week's end, and input is never blocked. `QUOTE.hold` is layout law
+  (paperscheck pins the ≥2 s read window; mutant m42 proves the law bites);
+  `papersplay` proves the lifetime with real keys — pinned after the ink
+  (281 witness-line red px) and cleared the moment the next papers land.
+- What #1891 still leaves open: evidence strings and RULES text keep
+  numerals, so the month-name read is display-only; and the settle is a
+  scripted drop, not drag physics — papers still cannot be moved by hand
+  (no rule needs them moved, and VirtualControls owns the pad).
