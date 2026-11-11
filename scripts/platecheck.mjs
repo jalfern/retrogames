@@ -10,7 +10,7 @@
 import {
     createGame, step, simState, hash, solvePad, drainEvents, buildBomb, railOpen, trayLayout, ruleOf,
 } from '../src/games/TalkMeDown/engine.js'
-import { makeRailFx, stepRailFx, railCellPose, drawBack, RAIL_TAB_FREE, RAIL_TAB_BLOCKED, railMouthGlow, PANEL } from '../src/games/TalkMeDown/art.js'
+import { makeRailFx, stepRailFx, railCellPose, drawBack, RAIL_TAB_FREE, RAIL_TAB_BLOCKED, RAIL_DENY_JAM, RAIL_DENY_EMPTY, railMouthGlow, PANEL } from '../src/games/TalkMeDown/art.js'
 import { readFileSync } from 'node:fs'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -533,6 +533,105 @@ const home = g => { for (let o = railOpen(g.tray); g.sel !== o; o = railOpen(g.t
     await runPullMutant('lead-dead',
         artSrc.replace("g.fillText('PULL IT -> A', PANEL.x + 228, PANEL.y + PANEL.h - 60)", ''),
         (g, gh, gl) => !!gl.texts.find(r => r.t === 'PULL IT -> A')) // honest: at tick 10, hand free, the lead stands
+}
+
+// ---- 10d. phone-scale legibility — deny words + loaded badge (#1992) --------
+// The old shared plateHi deny copy (#5c626c) measured 1.79x luminance over the
+// rail floor (#33373d) — under the rec-601 phone-scale floor — and IN HAND was
+// 6px amber. Gate: EVERY rejection path renders its own word at >=2x, and the
+// path is proven live (slide onto a jammed cell, press, silent refusal — that
+// very state must render BLOCKED in deny red); the loaded readout rides a badge
+// (amber chip + dark ink + one size up) so "the hand is loaded" survives phone
+// scale even before the word resolves. View-only (#1247): the engine never sees
+// any of it. Two named mutants die.
+{
+    const dir = new URL('../src/games/TalkMeDown/', import.meta.url)
+    const artSrc = readFileSync(new URL('art.js', dir), 'utf8')
+    const FLOOR = '#33373d'
+    const lum = h => 0.2126 * parseInt(h.slice(1, 3), 16) + 0.7152 * parseInt(h.slice(3, 5), 16) + 0.0722 * parseInt(h.slice(5, 7), 16)
+    const ratio = ink => lum(ink) / lum(FLOOR)
+    const paintD = (batteries, held = 0, tray = [1, 1, 0], sel = 2) => {
+        const g = {
+            rects: [], texts: [], font: '', fillStyle: '',
+            fillRect(x, y, w, h) { this.rects.push({ x, y, w, h, c: this.fillStyle }) },
+            fillText(t, x, y) { this.texts.push({ t, x, y, c: this.fillStyle, f: this.font }) },
+            beginPath() {}, arc() {}, fill() {},
+        }
+        drawBack(g, batteries, 0, 'XX0X0', held, tray, sel, null)
+        return g
+    }
+    const word = (g, t) => g.texts.find(r => r.t === t)
+    // 1) the jam path: cell seated but behind the open end (tray 110, sel 0)
+    const jw = word(paintD(2, 0, [1, 1, 0], 0), 'BLOCKED - IT CLIPS RIGHT')
+    ok('the jam path prints BLOCKED in deny red at >=2x the rail floor (#1992)',
+        !!jw && jw.c === RAIL_DENY_JAM && ratio(RAIL_DENY_JAM) >= 2, `${jw && jw.c} at ${ratio(RAIL_DENY_JAM).toFixed(2)}x`)
+    // 2) the empty-holder path (sel on an unseated slot)
+    const ew = word(paintD(2, 0, [1, 1, 0], 2), 'EMPTY SLOT')
+    ok('the empty-holder path prints its word at >=2x the rail floor (#1992)',
+        !!ew && ew.c === RAIL_DENY_EMPTY && ratio(RAIL_DENY_EMPTY) >= 2, `${ew && ew.c} at ${ratio(RAIL_DENY_EMPTY).toFixed(2)}x`)
+    // 3) the plate-empty path
+    const dw = word(paintD(0, 0, [0, 0, 0], 2), 'PLATE EMPTY')
+    ok('the plate-empty path prints its word at >=2x the rail floor (#1992)',
+        !!dw && dw.c === RAIL_DENY_EMPTY && ratio(RAIL_DENY_EMPTY) >= 2, `${dw && dw.c} at ${ratio(RAIL_DENY_EMPTY).toFixed(2)}x`)
+    // 4) live proof: the jam fires in the ENGINE, and that very state renders
+    let live = false, note = ''
+    for (let seed = 1; seed <= 60 && !live; seed++) {
+        const gs = createGame(seed, 1)
+        if (gs.features.batteries < 2) continue
+        step(gs, { up: true })
+        const o = railOpen(gs.tray)
+        const blocked = (o + 2) % 3
+        if (gs.tray[blocked] !== 1) continue
+        while (gs.sel !== blocked) step(gs, { left: true })
+        drainEvents(gs)
+        const b0 = gs.features.batteries
+        step(gs, { a: true })
+        if (gs.features.batteries !== b0 || gs.held !== 0 || gs.strikes !== 0 || drainEvents(gs).length !== 0) { note = `seed ${seed} refused wrong`; break }
+        const g = paintD(gs.features.batteries, gs.held, gs.tray, gs.sel)
+        const w = word(g, 'BLOCKED - IT CLIPS RIGHT')
+        if (!w || w.c !== RAIL_DENY_JAM) { note = `seed ${seed} refused silently but the plate shows ${w && w.c} ${w && w.t}`; break }
+        live = true
+    }
+    ok('a refused jam in the sim is spelled out by the plate in deny red (#1992)', live, note)
+    // 5) the loaded badge — chip + dark ink + one size up, and its word
+    const hp = paintD(2, 1, [1, 0, 0], 2)
+    const ih = word(hp, 'IN HAND')
+    ok('the loaded readout is a badge: amber chip under dark ink, FONT(7) (#1992)',
+        !!ih && ih.f === '7px "Press Start 2P", monospace' && ih.c === '#20242a' &&
+        hp.rects.some(r => r.c === '#ffd23e' && r.w === 52 && r.h === 10 && r.y === ih.y - 8 && r.x === ih.x - 2),
+        JSON.stringify(ih && { c: ih.c, f: ih.f }))
+    ok('the badge clears the rail floor at >=2x (loads read at phone scale)', ratio('#ffd23e') >= 2, `${ratio('#ffd23e').toFixed(2)}x`)
+    ok('the plate never shows twice: badge only while held',
+        !word(paintD(2, 0, [1, 1, 1], 2), 'IN HAND'))
+    const ab = word(hp, 'A PUTS IT BACK')
+    ok('the put-back line stays amber and legible while loaded',
+        !!ab && ab.c === '#ffd23e' && ratio('#ffd23e') >= 2)
+    ok('deny inks ride the constants, not a shared dim ink (source pin)',
+        /tray\[sel\] === 1 \? RAIL_DENY_JAM : RAIL_DENY_EMPTY/.test(artSrc))
+    const runDenyMutant = async (name, mut, state, gate) => {
+        if (mut === artSrc) { ok(`mutant ${name}: target line not found`, false); return }
+        const tmp = new URL(`.mutant-art-deny-${name}.mjs`, dir)
+        plant(tmp, mut)
+        try {
+            const E = await import(tmp.href)
+            const g = {
+                rects: [], texts: [], font: '', fillStyle: '',
+                fillRect(x, y, w, h) { this.rects.push({ x, y, w, h, c: this.fillStyle }) },
+                fillText(t, x, y) { this.texts.push({ t, x, y, c: this.fillStyle, f: this.font }) },
+                beginPath() {}, arc() {}, fill() {},
+            }
+            E.drawBack(g, ...state)
+            ok(`mutant ${name} dies by name`, !gate(g))
+        } finally { pull(tmp) }
+    }
+    await runDenyMutant('deny-flat',
+        artSrc.replace('tray[sel] === 1 ? RAIL_DENY_JAM : RAIL_DENY_EMPTY', "tray[sel] === 1 ? '#5c626c' : '#5c626c'"),
+        [2, 0, [1, 1, 0], 0], // jammed cell, hands empty — the word must be deny red
+        g => { const w = g.texts.find(r => r.t === 'BLOCKED - IT CLIPS RIGHT'); return !!w && w.c === RAIL_DENY_JAM })
+    await runDenyMutant('badge-gone',
+        artSrc.replace("g.fillStyle = '#ffd23e'; g.fillRect(hx - 4, hy + 36, 52, 10)", ''),
+        [2, 1, [1, 0, 0], 2], // loaded — the chip must sit under the word
+        g => { const ih = g.texts.find(r => r.t === 'IN HAND'); return !!ih && g.rects.some(r => r.c === '#ffd23e' && r.w === 52 && r.h === 10 && r.y === ih.y - 8) })
 }
 
 // ---- 11. mutant: remove the open-end gate, gates must die ------------------------

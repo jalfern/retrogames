@@ -218,6 +218,11 @@ npm run platecheck  # THE RAIL (#1917): layout purity (seeded side-stream — mo
                     # still-winnable on 120 seeds, + rail AUDIO identity (#1923:
                     # cell-out rising / clip-in falling / softest-voice handTick,
                     # press-edge wiring pin, named mutants; hand shift event-silent)
+                    # phone-scale legibility (#1992): every rail word sits at
+                    # >=2x luminance over the rail floor (#33373d), the jam path
+                    # prints deny red, the loaded readout rides an amber badge +
+                    # FONT(7), and a sim-refused jam is proven to spell it out.
+                    # Mutants deny-flat / badge-gone die by name.
                     # + THE SLIDE (#1923: ghost spawn/land/quiet-step laws, hand
                     # glide, silent bomb-swap re-baseline, pose flush+monotone,
                     # pocket/landing-slot double-image pins, fx-interleaved hash
@@ -357,7 +362,7 @@ red on main while `bombcheck` stays green. Filed for the QA lane.
   opening pulls out, `<`/`>` pick the slot, blocked/empty refuse silently,
   push-back re-clips home. Layout rides seed+round on a side-stream rng
   (module stream untouched), and the tray/hand/home ride hash, simState and
-  the net snapshot. Proof: `npm run platecheck` (45 gates incl. audio + slide
+  the net snapshot. Proof: `npm run platecheck` (78 gates incl. audio + slide
   identity, 105 two-cell boards and named mutants).
 - Voice shorthand for the drain: "PULL IT" on the mic pulses the drain story
   (#1923: parseCall `pull` intent, faster chevron clock, `PULL IT -> A` lead
