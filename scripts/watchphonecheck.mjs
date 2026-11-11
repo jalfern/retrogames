@@ -57,6 +57,7 @@ const SKIP_ATTRACT = {
     GravelYard: 'title → hands select (a WATCH tap would stop at the picker; the attract already self-drives the CPU crew demo)',
     ShortOrderShout: 'title → cooks select (a WATCH tap would stop at the picker; the attract already self-drives the CPU cooks demo)',
     FireCrew: 'title → crew select (a WATCH tap would stop at the picker; the attract already self-drives the CPU crew demo — the in-run pill seats seat 1)',
+    ViperPit: 'title → fighter select (a WATCH tap would stop at the picker; the attract already self-drives the CPU bout demo — the in-run pill seats seat 1)',
     Rogue: 'no attract screen — the dungeon boots straight into play, so the pill sits on live ground from the first frame',
 }
 

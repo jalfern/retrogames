@@ -14,10 +14,12 @@ import React, { useEffect, useRef, useState } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import Lobby from '../../components/Lobby'
 import VirtualControls from '../../components/VirtualControls'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { GAMES } from '../../config/games.js'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
+import { isWatchKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
 import { createMatch, step, emptyPad, matchHash, fightersState, forceKO, FIXED_DT } from '../../engine/fighting.js'
 import { ROSTER, BY_ID, LADDER, introQuotes, koQuotes, voiceNotes } from './fighters.js'
@@ -63,7 +65,9 @@ const ViperPitGame = () => {
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const desyncRef = useRef(false)
+    const watchingRef = useRef(false) // #1637 b30 WATCH: the sim flag is gs.fighters[0].def.cpu — this mirrors it for chrome
     const guardRef = useRef(null)
+    const [watching, setWatching] = useState(false)
 
     useEffect(() => {
         const wrap = wrapRef.current
@@ -239,6 +243,26 @@ const ViperPitGame = () => {
         }
 
         // ---- flow ---------------------------------------------------------------------
+        // ---- WATCH (#1637 b30) --------------------------------------------------------
+        // The seat is the engine's OWN corner brain: flipping def.cpu switches seat
+        // 1's pad source to cpuPad/cpuDecide in fighting.js (the same pad-emitting
+        // driver the attract demo runs and viperpitcheck certifies: the idle-win law
+        // plus the b30 seat sweep — own tier, live ladder foe, decisive 60/60,
+        // offense on every seed). Closed loop, reads the live fight every decision,
+        // so seat/release mid-round is honest. 1P ladder mode only — local 2P and
+        // the net wire own their pads.
+        const seatOn = () => {
+            if (mode !== 'cpu' || net.active || !gs || gs.phase === 'done') return false
+            watchingRef.current = true; setWatching(true); playWatchStart()
+            gs.fighters[0].def.cpu = BY_ID[p1Char]?.cpu || 'normal'
+            return true
+        }
+        const seatOff = (blip = true) => {
+            if (!watchingRef.current) return
+            watchingRef.current = false; setWatching(false)
+            if (blip) playWatchStop()
+            if (gs) gs.fighters[0].def.cpu = false
+        }
         const startFight = (seed, m) => {
             mode = m
             mySeat = net.active ? (net.role === 'host' ? 0 : 1) : 0
@@ -272,10 +296,14 @@ const ViperPitGame = () => {
             rebuildRigs()
             rebuildStage()
             audioController.startMusic(stage.bed)
+            // #1637 b30 WATCH across the ladder: a fight starting while the watcher
+            // holds seat 1 re-seats the fighter's own proven tier immediately.
+            if (watchingRef.current && gs) gs.fighters[0].def.cpu = BY_ID[p1Char]?.cpu || 'normal'
             setSc('play')
         }
 
         const atAttract = () => {
+            seatOff(false) // #1637 the cabinet returns to the player
             pickLine = null
             if (net.active) { setSc('select'); return }
             p2Picked = false
@@ -338,6 +366,16 @@ const ViperPitGame = () => {
                 return
             }
             if (scr !== 'play') return
+            // #1637 b30 WATCH: Y hands seat 1 to the fighter's own ladder-tier
+            // brain (see the seat block above); any other driving key takes the
+            // corner back — and then drives for real below. Chrome keys (Esc/`/?)
+            // returned earlier and never count as takeover (utils/watch law).
+            if (isWatchKey(e)) {
+                if (watchingRef.current) seatOff()
+                else seatOn()
+                return
+            }
+            if (watchingRef.current) seatOff()
             const k1 = KEY_P1[e.code]
             if (k1) { keys1[k1] = true; latch1.add(k1); if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault() }
             const k2 = KEY_P2[e.code]
@@ -362,6 +400,8 @@ const ViperPitGame = () => {
         guardRef.current = { down: guardDown, up: guardUp }
         const onPointer = () => {
             const scr = screenRef.current
+            // #1637 b30 WATCH: a touch on the cabinet hands seat 1 back mid-bout.
+            if (scr === 'play') { seatOff(); return }
             if (scr === 'attract') atAttract()
             else if (scr === 'select') atSelect()
             else if (scr === 'champion') atAttract()
@@ -554,6 +594,7 @@ const ViperPitGame = () => {
                             }
                         }, 2600)
                     } else if (won) {
+                        seatOff(false) // #1637 the ladder is won — hands off
                         ;[0, 3, 7, 10].forEach((semi, i) => setTimeout(() => audioController.playTone(440 * Math.pow(2, semi / 12), 0.2, 'sawtooth', 0.1), i * 130))
                         setSc('champion')
                         attractDemo()
@@ -771,6 +812,13 @@ const ViperPitGame = () => {
                 ui(Math.max(10, H * 0.02))
                 hctx.fillStyle = 'rgba(160,165,190,0.8)'
                 hctx.fillText(net.active ? `ROOM ${net.code || '····'}` : '1 STREET LADDER     2 LOCAL 2P', W / 2, H * 0.92)
+                // #1637 b30: teach the watch key from the title card — offline
+                // only, the wire owns its seats.
+                if (!net.active) {
+                    ui(Math.max(9, H * 0.018))
+                    hctx.fillStyle = 'rgba(89,224,200,0.85)'
+                    hctx.fillText('PRESS Y TO WATCH THE PIT', W / 2, H * 0.52)
+                }
             }
             if (scr === 'select') {
                 ensurePortraits()
@@ -956,6 +1004,10 @@ const ViperPitGame = () => {
                 koP2() { if (gs) forceKO(gs, 0) },
                 finisherReady() { if (gs) { gs.fighters[0].meter = 100; gs.fighters[1].hp = Math.min(gs.fighters[1].hp, 25) } },
                 stage(i) { startFight(i, 'cpu') },
+                // #1637 b30 watchcheck pilot drives these.
+                watching: () => watchingRef.current,
+                probe: () => (gs ? { phase: gs.phase, tick: gs.tick, screen: screenRef.current, x: gs.fighters.map((f) => +f.x.toFixed(2)), hp: gs.fighters.map((f) => Math.round(f.hp)), wins: gs.fighters.map((f) => f.wins), done: gs.phase === 'done' } : null),
+                watchSfx: watchSfxLog,
                 sweep() { if (stageFx && stageFx.sweep) stageFx.sweep.force = performance.now() / 1000 },
                 selectInfo() {
                     return {
@@ -1125,6 +1177,13 @@ const ViperPitGame = () => {
         <div className="relative h-full w-full bg-[#08080e]" style={{ minHeight: '100%' }}>
             <div ref={wrapRef} className="absolute inset-0" />
             <VirtualControls visible={screen === 'play' && !paused} secondAction={{ label: 'K', code: 'KeyZ' }} />
+            {/* #1637 b30 WATCH — seat 1 fights on its fighter's own ladder tier. */}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {screen === 'play' && !paused && !desync && (
+                <div className="absolute pointer-events-auto z-50" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             {screen === 'play' && !paused && (
                 <div
                     data-vc="guard"

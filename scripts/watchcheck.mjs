@@ -1767,6 +1767,66 @@ const PILOTS = [
             rep.check('missilecommand: a mouse move takes the yoke back', !(await watching()))
         },
     },
+    // #1637 batch 30 — VIPER PIT seats its fighter's OWN corner brain: Y flips
+    // def.cpu to the fighter's ladder tier and fighting.js starts emitting that
+    // corner's pads (cpuDecide/cpuPad — the same driver the attract bout runs,
+    // the idle-win law certifies, and viperpitcheck's b30 sweep decides 60/60
+    // against live rung 1 with autonomous offence). Reactive per tick, so seat
+    // and hand-back mid-round are honest. 1P ladder only; any key or a touch
+    // hands the corner back, and the seat rides the ladder (rung climbs re-seat).
+    {
+        id: 'viper-pit', url: `${BASE}/viper-pit`, hook: '__viperPitTest',
+        async run(page, rep) {
+            const H = '__viperPitTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            // Digit1 picks the street ladder at the title (landing on select),
+            // Space locks the hovered fighter and starts the bout.
+            await key(page, 'Digit1')
+            await page.waitForTimeout(250)
+            await key(page, 'Space')
+            await page.waitForTimeout(800)
+            const live = await probe()
+            rep.check('viper-pit: the bout is live before the seat', live && live.screen === 'play' && !live.done, `phase ${live && live.phase}`)
+            rep.check('viper-pit: nobody is driving yet (no seat before Y)', !(await watching()))
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('viper-pit: Y seats the fighter\'s own corner brain', await watching())
+            rep.check('viper-pit: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            // #1722 settle: the pre-fightfreeze holds physics ~2.5 s (and longer
+            // on CI's software render) — wait for the round to actually move.
+            await page.waitForFunction((h) => {
+                const w = (window.__watchSettle || (window.__watchSettle = {}))
+                const p = window[h].probe()
+                const prev = w.viperPit
+                w.viperPit = { x0: p.x[0], x1: p.x[1], hp0: p.hp[0], hp1: p.hp[1], w0: p.wins[0] }
+                return !!prev && (Math.abs(prev.x0 - p.x[0]) > 0.03 || Math.abs(prev.x1 - p.x[1]) > 0.03
+                    || p.hp0 < prev.hp0 || p.hp1 < prev.hp1 || p.w0 > prev.w0)
+            }, H, { timeout: 25000 }).catch(() => {})
+            const adv = (x, y) => y.tick > x.tick && (Math.abs(y.x[0] - x.x[0]) > 0.08 || y.hp[1] < x.hp[1] || y.wins[0] > x.wins[0])
+            const note = (x, y) => `p1 x ${x.x[0]} -> ${y.x[0]}, p2 hp ${x.hp[1]} -> ${y.hp[1]}, rounds ${y.wins[0]}`
+            const a = await probe()
+            const b = await pollAdvance(page, probe, adv, a, 12000)
+            rep.check('viper-pit: the corner fights untouched (own tier, live foe)', adv(a, b), note(a, b))
+            rep.check('viper-pit: still watching mid-round', await watching())
+            await page.keyboard.press('ArrowLeft')
+            rep.check('viper-pit: steer key takes the corner back', !(await watching()))
+            rep.check('viper-pit: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('viper-pit: Y re-seats mid-round (the brain reads the live fight)', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 8000)
+            rep.check('viper-pit: resumes from where the player left it', adv(c, d), note(c, d))
+            await key(page, 'KeyY')
+            rep.check('viper-pit: Y again releases the corner', !(await watching()))
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            await page.mouse.click(480, 300)
+            rep.check('viper-pit: a touch on the cabinet hands seat 1 back mid-bout', !(await watching()))
+        },
+    },
     // #1637 batch 13 — the racer family seats its CERTIFIED autopilot. decide()
     // (CometDrift/sim.js) is the brain cometcheck races to victory ("autopilot
     // wins the 5-lap GP from P7", #1687-certified drift ladder) and both titles'
@@ -2934,6 +2994,31 @@ for (const [name, f] of Object.entries(B4_SRC)) {
         (() => { const m = readFileSync('src/config/games.js', 'utf8').split(`path: '/missilecommand'`)[1]; return !!m && m.split('path:')[0].includes('WATCH_HELP') })())
     rep.check('batch 29: missilecmdcheck stamps the sweep (waves 1-5 clean, cities AND silos, economy)',
         /every seed clears waves 1\.\./.test(mc) && /6 cities AND 3 silos/.test(mc) && /economy holds/.test(mc))
+}
+// ---- #1637 batch 30 source pins — VIPER PIT seats its fighter's own corner ----
+{
+    const vp = readFileSync('src/games/ViperPit/index.jsx', 'utf8')
+    const vpc = readFileSync('scripts/viperpitcheck.mjs', 'utf8')
+    rep.check('VIPER PIT: the seat is the sim\'s own corner at the fighter\'s tier (no bench script)',
+        /gs\.fighters\[0\]\.def\.cpu = BY_ID\[p1Char\]\?\.cpu \|\| 'normal'/.test(vp) && /seat law: the cabinet flips def\.cpu/.test(vpc))
+    rep.check('VIPER PIT: Y seats with blips; any driving key takes over',
+        /isWatchKey\(e\)/.test(vp) && vp.includes('playWatchStart') && vp.includes('playWatchStop') && vp.includes('watchSfx: watchSfxLog'))
+    rep.check('VIPER PIT: the wire never seats — 1P ladder mode only (net and local own their pads)',
+        /if \(mode !== 'cpu' \|\| net\.active \|\| !gs \|\| gs\.phase === 'done'\) return false/.test(vp))
+    rep.check('VIPER PIT: watch never lingers — released at the title and when the ladder is won',
+        /seatOff\(false\) \/\/ #1637 the cabinet returns to the player/.test(vp)
+        && /seatOff\(false\) \/\/ #1637 the ladder is won — hands off/.test(vp))
+    rep.check('VIPER PIT: the seat rides the ladder — a new fight re-seats the same corner',
+        /if \(watchingRef\.current && gs\) gs\.fighters\[0\]\.def\.cpu = BY_ID\[p1Char\]\?\.cpu \|\| 'normal'/.test(vp))
+    rep.check('VIPER PIT: phones can seat too (in-run pill + toast; the picker-attract skip is named)',
+        /<WatchButton on=\{watching\}/.test(vp) && /<WatchToast/.test(vp)
+        && /ViperPit: 'title → fighter select/.test(readFileSync('scripts/watchphonecheck.mjs', 'utf8')))
+    rep.check('VIPER PIT: the title card teaches Y — offline only (no guide on the wire)',
+        /if \(!net\.active\) \{[\s\S]{0,240}PRESS Y TO WATCH THE PIT/.test(vp))
+    rep.check('registry /viper-pit: controls carry the WATCH line',
+        (() => { const m = readFileSync('src/config/games.js', 'utf8').split(`path: '/viper-pit'`)[1]; return !!m && m.split('path:')[0].includes('WATCH_HELP') })())
+    rep.check('batch 30: viperpitcheck stamps the seat sweep (60/60 decisive vs live rung 1, offence on every seed)',
+        /60\/60 own-tier bouts vs live rung 1 decide/.test(vpc) && /drags its foe off full health untouched/.test(vpc))
 }
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray

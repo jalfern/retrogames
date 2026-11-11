@@ -260,6 +260,41 @@ if (!MUT) {
     ok(run(3) === run(3), 'same seed + same pads -> identical hash stream')
     ok(run(3) !== run(4), 'different seed -> different stream')
 
+    // #1637 b30 WATCH seat law. The cabinet's seat flips def.cpu to the fighter's
+    // OWN ladder tier (BY_ID[p1Char].cpu) — the tier the arcade runs it at. What
+    // this sweep certifies is honest and bounded: 60/60 own-tier bouts against
+    // LIVE rung 1 run to a decisive end (no hang), every fighter drags its foe off
+    // full health unasked (autonomous offence), and each fighter takes its share
+    // of rounds (>= 8 of 12 — NYX mirrors rung 1 on itself, a coin flip, so the
+    // bar is per-fighter rounds, never a full-ladder climb claim).
+    {
+        const seatIds = LADDER // each seats at BY_ID[id].cpu vs live LADDER[0]
+        let decisive = 0, offence = 0
+        const roundsById = {}
+        const hitTick = {}
+        for (const id of seatIds) {
+            let rounds = 0
+            hitTick[id] = 0
+            for (let s = 0; s < 12; s++) {
+                const mm = e.createMatch({ seed: s * 7919 + 13, guardButton: true, juggle: true, guardCrush: true, p1: { ...BY_ID[id], cpu: BY_ID[id].cpu }, p2: { ...BY_ID[LADDER[0]] } })
+                let g = 0
+                while (mm.phase !== 'done' && g++ < 60 * 60 * 4) e.step(mm, [P(), P()])
+                if (mm.phase === 'done' && mm.winner !== null) decisive++
+                if (mm.fighters[1].hp < 100) offence++
+                rounds += mm.fighters[0].wins
+                if (!hitTick[id] && mm.fighters[1].hp < 100) hitTick[id] = 1
+            }
+            roundsById[id] = rounds
+        }
+        ok(decisive === 60, `seat law: 60/60 own-tier bouts vs live rung 1 decide (${decisive})`)
+        ok(offence === 60, `seat law: every fighter drags its foe off full health untouched (${offence}/60)`)
+        ok(Object.values(roundsById).every((r) => r >= 8), `seat law: every fighter takes >= 8 rounds of its 12 (${Object.entries(roundsById).map(([k, v]) => `${k}:${v}`).join(' ')})`)
+        // the seat must be the engine's own brain, not a bench script: the exact
+        // tier flip the cabinet performs sits in the shipped source.
+        const VP = await import('node:fs').then((fs) => fs.readFileSync(path.join(HERE, '../src/games/ViperPit/index.jsx'), 'utf8'))
+        ok(/gs\.fighters\[0\]\.def\.cpu = BY_ID\[p1Char\]\?\.cpu \|\| 'normal'/.test(VP), 'seat law: the cabinet flips def.cpu to the fighter\'s own ladder tier (the value this sweep runs)')
+    }
+
     // the game can be won: every ladder CPU beats an idle dummy
     for (const id of LADDER) {
         const mm = e.createMatch({ seed: 1234, guardButton: true, juggle: true, p1: { ...BY_ID[id], cpu: true }, p2: human('nyx') })
