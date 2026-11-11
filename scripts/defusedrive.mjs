@@ -92,6 +92,19 @@ const win = await page.evaluate(() => {
 r.check('solver-driven run reaches WON', !!win)
 await sleep(150)
 r.check('over screen shows', (await page.evaluate(() => window.__bdTest.screen())) === 'over')
+// #1812 item 6: the salad — mid-roll the total is short, by the deadline it
+// lands exactly on the score, line by line honest.
+const talEarly = await page.evaluate(() => window.__bdTest?.tally() || null)
+const talLedger = await page.evaluate(() => {
+    const t = window.__bdTest?.winTally() || []
+    const s = window.__bdTest?.state?.() || null
+    return t.length && s ? { n: t.length, sum: t.reduce((a, l) => a + l.value, 0), score: s.score } : null
+})
+r.check('#1812 item 6 salad: three honest lines sum to the score', !!talLedger && talLedger.n === 3 && talLedger.sum === talLedger.score, JSON.stringify(talLedger))
+r.check('#1812 item 6 salad: it is still rolling when the screen lands (not a raw dump)', !!talEarly && !talEarly.done, JSON.stringify(talEarly))
+await sleep(2800)
+const talFinal = await page.evaluate(() => window.__bdTest?.tally() || null)
+r.check('#1812 item 6 salad: total lands on the score within its window', !!talFinal && talFinal.done && talFinal.total === (talLedger ? talLedger.score : -1), JSON.stringify(talFinal))
 const pOverA = await page.evaluate(() => window.__bdTest?.bedPings() ?? -1)
 await page.screenshot({ path: '/tmp/forge/bd-win.png' })
 await sleep(750)

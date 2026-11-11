@@ -99,11 +99,11 @@ lockstep-by-sampling-law (#531), same shape as the other four co-op titles:
 ## Verify
 
 ```bash
-npm run defusecheck                      # 164 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline, first-VENT coaching, powered-device bed, window pre-flash, active-seat chips, the boom FX
+npm run defusecheck                      # 185 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline, first-VENT coaching, powered-device bed, window pre-flash, active-seat chips, the boom FX, the win tally
 npm run defuselinkcheck                # 75 gates: online protocol incl. in-flight reseat (7b/7c/7d)
 CONTRACT_ONLY=bomb-defuse npm run contractcheck
 DEV_PORT=5178 npm run plaicraft:evidence -- --self-test   # fifth-title synths + mutants
-npm run defusedrive                      # real-key drive: start→play→bed/pause→boom→restart (+coach, press-tick, pre-flash)
+npm run defusedrive                      # real-key drive: start→play→bed/pause→boom→restart (+coach, press-tick, pre-flash, win-salad)
 DEV_PORT=5173 npm run watchcheck -- --only bomb-defuse   # WATCH pilot: seat/advance/takeover/re-seat/resume/release + 5 source pins
 npm run defuselinkdrive                # two browsers over a live relay: join→lockstep→hash→walkaway→in-flight reseat
 ```
@@ -200,6 +200,26 @@ unwire `spawnBoom(hud)` → the spawn gate reddens, 163/164). `defusedrive`
 rides it live: lid+shrapnel in flight 150 ms after the kill, FX riding across
 the screen change, next run opening scorched but lid-free — 26/26, zero page
 errors.
+
+Win tally (#1812 item 6): the WON screen no longer dumps the raw score — it
+RECAPS like the arcade does. `gs.bombs[i].earned` accumulates wherever points
+are paid (`advance()`: +50 per step, +500 + fuse-bonus per bomb), so the ledger
+is honest by construction: the lines sum EXACTLY to `gs.score`. `earned` rides
+no hash input and never enters `simState` — replay hashes are byte-identical
+(pinned). `E.winTally(gs)` (pure) hands the view its three lines;
+`E.tallyFrame(values, ms)` is the playback law — line i rolls 0→value over
+`TALLY.ROLL` starting at i×`TALLY.LINE`, the TOTAL rolls last over
+`TALLY.TOTAL`; every roll is monotonic, capped, and lands EXACTLY (`landed`
+counts home-lines, +1 for the total). `drawOver` paints from the frame only and
+dings via `sfx.tally(i)` (rising, one per landing); entering over re-arms the
+ding counter. `net.js` carries `ez` in the resync snapshot so a guest's recap
+tells the host's story (missing `ez` = old host = zeros, honest by omission).
+Any key still retries after the 700 ms lockout — impatient crews skip the
+salad. Mutants: dropping an `earned +=` reddens the score-delta + sums gates;
+always-live `winTally` reddens the empty-ledger gate; dropping the roll's f-clamp
+reddens the never-rewind gate; all die by name. Restore → 185/185;
+`defusedrive` proves it live: lines sum to the score, salad still rolling when
+the screen lands, TOTAL on the score within its window — 29/29.
 
 ## Honest gaps (filed to QA as the polish pass)
 

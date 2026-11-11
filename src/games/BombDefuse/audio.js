@@ -61,6 +61,9 @@ export const sfx = {
     win() {
         for (let i = 0; i < 6; i++) A.playTone([392, 523, 659, 784, 1047, 1319][i], 0.12, 'square', 0.11, i * 0.11)
     },
+    // #1812 item 6: win-tally ding — one per line as it lands, rising; the
+    // grand total lands highest.
+    tally(i) { A.playTone(660 + (i | 0) * 110, 0.07, 'square', 0.09) },
     // UI blips
     blip() { A.playTone(880, 0.04, 'square', 0.07) },
     deny() { A.playTone(160, 0.09, 'square', 0.08) },

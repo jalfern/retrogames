@@ -80,6 +80,9 @@ export function snapshotNet(gs) {
         // was down at resync time), and the hash boundary would never agree.
         pp: gs.prevPad.map(p => (p.up ? 1 : 0) | (p.down ? 2 : 0) | (p.a ? 4 : 0)),
         lead: gs.brain.syncLead, follow: gs.brain.follow, rx: gs.rng.x(),
+        // #1812 item 6: the per-bomb ledger rides the resync so the guest's
+        // win tally tells the same story as the host's (view data, not hashed).
+        ez: gs.bombs.map((b) => b.earned | 0),
     }
 }
 
@@ -112,6 +115,9 @@ export function restoreNet(snap) {
     gs.brain.syncLead = snap.lead | 0
     gs.brain.follow = snap.follow | 0
     gs.rng.x(snap.rx)
+    // #1812 item 6: rebuild the ledger (same seed → same layout, so the bomb
+    // indices line up). Missing snap.ez = an old host: zeros, honest by omission.
+    if (Array.isArray(snap.ez)) gs.bombs.forEach((b, i) => { b.earned = snap.ez[i] | 0 })
     gs.events = []
     return gs
 }

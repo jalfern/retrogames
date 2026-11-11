@@ -566,6 +566,8 @@ export default function BombDefuseGame() {
     const hintRef = useRef(null)
     const msgRef = useRef({ idx: 0, at: 0 })
     const overAtRef = useRef(0)
+    // #1812 item 6: how many tally lines have already sounded their ding
+    const tallyDingsRef = useRef(0)
     const voiceRef = useRef({ on: false, listen: null })
     // #1819 online — lobby + lockstep sync live here; the loop reads netRef.current
     const netRef = useRef({
@@ -584,7 +586,11 @@ export default function BombDefuseGame() {
 
     useEffect(() => { pausedRef.current = paused }, [paused])
 
-    const setScreen = useCallback((s) => { screenRef.current = s; setUiScreen(s) }, [])
+    const setScreen = useCallback((s) => {
+        // #1812 item 6: entering the over screen starts the score-salad clock
+        if (s === 'over') tallyDingsRef.current = 0
+        screenRef.current = s; setUiScreen(s)
+    }, [])
 
     const startPlay = useCallback((seed, players) => {
         gsRef.current = E.createGame(seed, players)
@@ -1247,22 +1253,65 @@ export default function BombDefuseGame() {
         const drawOver = (g, now) => {
             const gs = gsRef.current
             if (!gs) return
-            g.fillStyle = 'rgba(6,8,4,0.74)'; g.fillRect(120, 108, 400, 144)
-            g.strokeStyle = gs.won ? C.green : C.red; g.lineWidth = 2; g.strokeRect(120, 108, 400, 144); g.lineWidth = 1
+            if (!gs.won) {
+                g.fillStyle = 'rgba(6,8,4,0.74)'; g.fillRect(120, 108, 400, 144)
+                g.strokeStyle = C.red; g.lineWidth = 2; g.strokeRect(120, 108, 400, 144); g.lineWidth = 1
+                g.textAlign = 'center'
+                g.font = '18px "Press Start 2P", monospace'
+                g.fillStyle = C.red
+                g.shadowColor = g.fillStyle; g.shadowBlur = 12
+                g.fillText('KABOOM', 320, 148)
+                g.shadowBlur = 0
+                g.font = '8px "Press Start 2P", monospace'; g.fillStyle = C.label
+                g.fillText(`THE CLOCK WON ON BOMB ${gs.bomb + 1}`, 320, 176)
+                drawSegText(g, 264, 192, String(gs.score).padStart(5, '0'), 22, C.amber, true)
+                if (performance.now() - overAtRef.current > 700 && Math.floor(now / 460) % 2) {
+                    g.font = '9px "Press Start 2P", monospace'; g.fillStyle = '#fff'
+                    g.fillText(net.active
+                        ? (net.role === 'host' ? 'SPACE — RUN IT BACK' : 'WAITING FOR THE HOST…')
+                        : 'TRY AGAIN — ANY KEY', 320, 238)
+                }
+                g.textAlign = 'left'
+                return
+            }
+            // #1812 item 6: score-salad. The win RECAPS — each bomb's line rolls
+            // up to what it paid (the honest ledger, E.winTally), dings as it
+            // lands, and the TOTAL rolls last. Any key still retries after the
+            // 700 ms lockout, so an impatient crew skips the salad.
+            const values = E.winTally(gs).map((l) => l.value)
+            const fr = E.tallyFrame(values, performance.now() - overAtRef.current)
+            while (tallyDingsRef.current < fr.landed) {
+                tallyDingsRef.current++
+                sfx.tally(tallyDingsRef.current - 1)
+            }
+            g.fillStyle = 'rgba(6,8,4,0.74)'; g.fillRect(120, 84, 400, 192)
+            g.strokeStyle = C.green; g.lineWidth = 2; g.strokeRect(120, 84, 400, 192); g.lineWidth = 1
             g.textAlign = 'center'
-            g.font = '18px "Press Start 2P", monospace'
-            g.fillStyle = gs.won ? C.green : C.red
+            g.font = '18px "Press Start 2P", monospace'; g.fillStyle = C.green
             g.shadowColor = g.fillStyle; g.shadowBlur = 12
-            g.fillText(gs.won ? 'ALL BOMBS DEFUSED' : 'KABOOM', 320, 148)
+            g.fillText('ALL BOMBS DEFUSED', 320, 114)
             g.shadowBlur = 0
             g.font = '8px "Press Start 2P", monospace'; g.fillStyle = C.label
-            g.fillText(gs.won ? `CLEAN RUN  ·  STRIKES ${gs.strikes}` : `THE CLOCK WON ON BOMB ${gs.bomb + 1}`, 320, 176)
-            drawSegText(g, 264, 192, String(gs.score).padStart(5, '0'), 22, C.amber, true)
+            g.fillText(`CLEAN RUN  ·  STRIKES ${gs.strikes}`, 320, 136)
+            g.textAlign = 'left'
+            for (let i = 0; i < values.length && i < fr.lines.length; i++) {
+                const y = 164 + i * 20
+                g.font = '8px "Press Start 2P", monospace'
+                g.fillStyle = fr.lines[i] === values[i] ? C.green : C.label
+                g.fillText(`BOMB ${i + 1}`, 150, y)
+                drawSegText(g, 440, y - 12, String(fr.lines[i]).padStart(5, '0'), 12, C.amber, true)
+            }
+            g.font = '8px "Press Start 2P", monospace'
+            g.fillStyle = fr.done ? '#fff' : C.label
+            g.fillText('TOTAL', 150, 240)
+            if (fr.total > 0 || fr.done) drawSegText(g, 405, 218, String(fr.total).padStart(5, '0'), 22, C.amber, true)
             if (performance.now() - overAtRef.current > 700 && Math.floor(now / 460) % 2) {
                 g.font = '9px "Press Start 2P", monospace'; g.fillStyle = '#fff'
+                g.textAlign = 'center'
                 g.fillText(net.active
                     ? (net.role === 'host' ? 'SPACE — RUN IT BACK' : 'WAITING FOR THE HOST…')
-                    : 'TRY AGAIN — ANY KEY', 320, 238)
+                    : 'TRY AGAIN — ANY KEY', 320, 264)
+                g.textAlign = 'left'
             }
             g.textAlign = 'left'
         }
@@ -1336,6 +1385,12 @@ export default function BombDefuseGame() {
                 // #1812 item 7: the active-seat ask, live-probeable (which
                 // seats still owe the step — the same object the chips pulse on)
                 seatAsk: () => hudRef.current.ask || null,
+                // #1812 item 6: the honest ledger + the live salad frame, so the
+                // drive harness can prove the recap sums and lands.
+                winTally: () => (gsRef.current ? E.winTally(gsRef.current) : []),
+                tally: () => (gsRef.current && gsRef.current.won
+                    ? E.tallyFrame(E.winTally(gsRef.current).map((l) => l.value), performance.now() - overAtRef.current)
+                    : null),
                 // #1812 item 3: the boom FX, live-probeable — lid/shrapnel in
                 // flight + the scorch decals the chassis carries between runs.
                 boomFx: () => ({ lid: !!hudRef.current.lid, shrap: hudRef.current.shrap.length, scorch: scorchDecals.length, boomT: hudRef.current.boomT }),
