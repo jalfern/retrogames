@@ -1,85 +1,60 @@
-# STATE — session 219 (2026-11-11, slot b)
+# STATE — session 220 (2026-11-11, slot a)
 
-## What shipped
-**PAPERS, PLEASE-MIN: THE ARC** merged as `dbe5b5b` (PR #1985, Closes #1983 —
-NEVER-DRY pick, weakestStage score 7 = 1 unowned README gap + 6 QA feedback
-issues naming the game). One regular per week turns wanted, Jorji-style:
-`arcForWeek(seed)` = cast[seed mod 4]; by the injection law that face walks
-days 2 and 6, so the turn lands on the **return, day 6** (WANTED awake since
-day 4). The case is the wall's: bulletin pairs the authored name with the
-passport number carried THAT day; papers stay built-legal — pull the sheet
-entry and decide approves (paperscheck's pull-the-witness pin). rules.js
-untouched. Returning faces speak: turn = `YOU AGAIN.` / `...I NO DO
-ANYTHING.`, plain recidivist (days 3→7) = `YOU AGAIN.`; lines ride
-`person.say`, purity pinned (stripping never moves a verdict). Bubble paints
-as printed paper (`layout.js BUBBLE`, tail up). Wall law: arc day stages one
-decoy less — five-portrait capacity and deepest-five witness stand.
-paperscheck **11082/11082** (new ARC section + m27 invisible-turn, m28
-wrong-number witness, m29 silenced-memory, m30 overflowing-bulletin; **m11
-re-anchored** to the adaptive decoy loop — an old anchor gone stale is a red
-mutant, catch it in the mutate run). papersplay **52/52**: bubble 0px dark on
-strangers vs 5372px when Grubak speaks; seed-0 day-6 deny stamps WANTED with
-the printed number; seed-1 sympathetic APPROVE of MARKO costs the strike.
-Live: jalfern.com/retrogames/papers-please (PPM chunk `index-Dk2m3ISj.js`
-carries `VOLEN GRUBAK` + both callback lines).
+## Shipped this session
+**LODE RUNNER-LITE: a live chain** — PR #1993 squash-merged as `b54680f`
+(Closes #1991). THE ROPE (vault 2) now hunts with TWO guards (wing spawns
+x29/x24). The original's trap-ladder signature pays in actual play: a runner
+carving the col-9 shaft by the ladder can catch both hunters in one closing
+brick — n=2 pays 1500 (double + stratum) where a single grave pays 1000.
+Live at https://jalfern.com/retrogames/lode-runner (content-proven: BFS over
+67 prod chunks found `29:"G",24:"G"` in THE ROPE chunk).
 
-## The session's catches
-- **Stamp frames lie to pixel probes.** bubblePix read 0px because the
-  PREVIOUS entrant's stamp holds 30 ticks — while shown, the counter displays
-  the judged document, not the live person. Wait ≥650 ms (stamp-tick-out)
-  before sampling a new entrant's pixels (#1938 doctrine, again).
-- **jalfern.com edge can lag a Vercel promotion by ~35 min.** Production
-  deploy status said `success` at merge+1s while the proxy HTML still
-  referenced a superseded entry hash (its assets 404 at origin). Local dist
-  hashes ≠ Vercel build hashes (drift): verify by CONTENT — fetch the entry
-  referenced by live HTML, walk its chunk map, grep the game chunk for a new
-  string fingerprint (`I NO DO ANYTHING`). Origin `retrogames-psi.vercel.app`
-  is the source of truth while the proxy settles.
-- **`ok(a.person.say)` vs `ok(a.say)`** — queue items are `{person, truth}`;
-  applicant-level fields live under `person`. One arity bug, twelve identical
-  seed failures: read the shape, not the message.
+Proof: lodecheck **125/125** (+10: pair contract shelf>=4 / ROPE>=2,
+two-wing pursuit receipts, LIVE-CHAIN scenario — scripted real inputs from the
+real spawn, no hand-placed bodies), `--mutate` **153/153** (14 mutants dead,
+NEW `rope=one guard` kills the live-chain + receipts), watchcheck
+lode-runner **249/249**, lodeplay **32/33** — the lone fail is today's
+headless-Chrome AudioContext device flake (parallel slot-b logged the
+identical error in papersplay, different game; re-ran twice, same; advisory).
 
-## Ladder trail
-- TARGET #1637 claim REFUSED (slot a holds it, 49 min at the time — FROGGER
-  batch 25 building; never touch another slot's lock). halt none; steer none;
-  `next` #1711 → seventh confirm posted (one line), released — Jon-side
-  hardware only. game-queue empty; feedback exists but QA MASTER live
-  (pid 46138) → borrow refused; flagship stage spent (idle.mjs) → NEVER-DRY
-  `idle-kick` answered `KICK PAPERS, PLEASE-MIN 0 weak`, weakestStage score
-  7. Filed #1983 with why-weakest, claimed(b), shipped. No jonq (mechanical
-  picks; no taste call needed).
+## Ladder trail (how #1991 was picked)
+TARGET #1989 claim **REFUSED** (slot b held it, claimed 10:03Z) → normal
+ladder: no halt, no steer, `next` #1711 stays Jon-side (#1730 Hold — R2
+hardware, all lane-doable lines shipped, 7 confirms), game-queue empty, QA
+MASTER live so feedback borrow refused, flagship stage spent (SSX/Emberwood/
+COMET DRIFT HD/Myst READMEs gap-free) → NEVER-DRY `weakestStage` score 6 for
+LODE RUNNER-LITE (1 QA feedback #1949 + 5 unowned gaps; PapersPleaseMin and
+TalkMeDown held by other lanes) → filed #1991, claimed, built, shipped.
 
-## Session bookkeeping
-- #1983 CLOSED shipped. QA polish pass filed as **#1988** (bulletin faces for
-  the wanted sheet, turn announce beat, per-id voice pools, deny aftershock +
-  arc sfx, tail pixel pin).
-- :5178 vite KILLED at session end; worktree `~/Dev/retrogames-forge-ppm-arc`
-  (detached at dbe5b5b, node_modules symlinked) reusable or
-  `git worktree remove` anytime. Old `~/Dev/retrogames-forge-ppm-regulars`
-  also still removable.
+## Next queued (slot a)
+1. **Fresh ladder** at session start: halt/steer/next/queue games-first.
+   `next` #1711 remains Jon-side (needs his R2 bucket).
+2. **#1637 batch 26 (WATCH)** — the issue is open, my slot's claim lapsed.
+   Unseated titles with no proven driver: Asteroids / DonkeyKong / Centipede /
+   Pitfall. b24/b25 template: lift whole tick → Node sweep with pinned floors
+   → seat (Y + blips + never-linger) → watchcheck pilot + source pins →
+   README honest gaps. Expect ~3 h for one driver — budget a full session.
+3. Frogger/LODE polish go through QA unless asked directly (#1019 rule);
+   pair-review notes for LODE added on #1949.
 
-## Next queued (slot b)
-1. Fresh ladder: halt/steer/next/queue games-first. #1637 belongs to slot a
-   unless its lock goes stale; #1711 stays Jon-side (eighth confirm = one
-   line, release).
-2. NEVER-DRY candidates: the NEW residual gap (README) is background-entrant
-   variety (hats, unibrows, earring, missing teeth — decor, doctrine of the
-   nose: never compared). #1988 (QA lane) owns arc presentation — don't
-   build it from here; re-run idle-kick rather than trusting this list.
-3. Adding a 7th COMPARED feature = FEATURES + portraitDiffs + drawFace +
-   papersplay FE list (#1972 law). New DECOR marks are cheap by contrast
-   (drawFace + castPix/ink gates only) — that's the variety stage's shape.
-
-## Notes for the next slot-b session
-- Regulars doctrine (updated by #1983): marks ride inside the face descriptor;
-  compared set stays FEATURES (six); `say` is person-level atmosphere,
-  verdict-purity pinned; the arc is seed-derived (`arcForWeek`) and the turn
-  is ALWAYS day 6 — a second simultaneous arc must not reuse day 6's slot.
-- paperscheck mut anchors move when gen.js lines move (m11 this time): always
-  run `--mutate` before shipping, anchor-not-found is red.
-- papersplay live-arc block (seed-0 walk to idx-10 entrant) is the idiom for
-  reaching a specific day/entrant with real keys; `runDay()` per day, then
-  step until the probe matches.
+## Notes for the next slot-a session
+- LODE pair doctrine: sim.js was ALREADY N-guard (meta.guards array, per-id
+  clocks, chain ladder) — the gap was layout + proof only. The live-chain
+  script (lodecheck `CHAIN_SCRIPT`/`liveChain`) carves col-9 from the real
+  spawn; both hunters must cross the mouth while the runner stays reachable
+  (guards FREEZE the instant the runner hangs — hang is not a lure, it is a
+  freeze). Timing law: a guard buried in the deep shaft enters >=~15 t after
+  the bottom dig; earlier arrivals climb out at guardTrap=60 < refill=75.
+- If the pair breaks any of: per-vault witness (must stay win clean),
+  determinism, or slack — re-run 125/125 AND the 14 mutants together before
+  touching geometry (the b24/b25 lesson, now with the pair contract added).
+- lodeplay's zero-page-errors check counts AudioContext device errors; today
+  several lanes hit it on macOS headless Chrome. Not game code — rerun once
+  and move on; if it persists across days, that's a harness-ticket, not a
+  game fix (rule 6).
+- Slot b shipped PPM crowd #1994 (`5e4203f`) this same shift — the shelf's
+  two newest titles both got their honest-gaps top rung dug out.
 
 ## Open questions
-- None. (No taste/priority call needed from Jon.)
+- None. (No taste/priority call needed from Jon; #1711 already waits on him
+  via #1730.)
