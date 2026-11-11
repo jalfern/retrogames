@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import WatchButton, { AttractWatchButton, WatchToast } from '../../components/WatchButton'
+import { WATCH_ATTRACT_HINT, NO_GUIDE, isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import { GAMES } from '../../config/games'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
 
@@ -367,6 +369,15 @@ const SuperMarioGame = () => {
     const apiRef = useRef(null)
     const [ui, setUi] = React.useState({ screen: 'attract', sel: 0 })
 
+    // WATCH (#1637 b31): React mirror of the seat flip — while watching, the
+    // engine's own deterministic autopilot (menu option 3's driver, which
+    // autopilotcheck certifies clears 1-1 perfectly, all lives, no deaths)
+    // holds the overalls (mode === 'autopilot').
+    const [watching, setWatching] = React.useState(false)
+    const watchingRef = useRef(false)
+    const [noGuide, setNoGuide] = React.useState(false)
+    const noGuideTimer = useRef(0)
+
     const handleResume = () => {
         setPaused(false)
         pausedRef.current = false
@@ -542,6 +553,38 @@ const SuperMarioGame = () => {
         // ---- options menu ----
         const startPlay = (m) => { mode = m; audioController.init(); resetGame() }
         const startAutopilot = () => { apHold = 0; mode = 'autopilot'; audioController.init(); resetGame() }
+
+        // ---- WATCH (#1637 b31) ----
+        // The proven route is this engine's OWN rule-based autopilot — the same
+        // driver autopilotcheck races to the flagpole with zero deaths on every
+        // pass. The seat flips the mode, never installs a second brain, so every
+        // decision stays reactive against live sim state (Rogue law): seat and
+        // hand-back mid-run are honest. The seat lives on 1-1 — that is the
+        // sector the harness certifies; elsewhere Y declines with the shared
+        // no-guide copy (ROBOTLAB law).
+        const seat = () => {
+            mode = 'autopilot'
+            apHold = 0
+            watchingRef.current = true
+            setWatching(true)
+            playWatchStart()
+        }
+        const release = (blip = true) => {
+            mode = 'play'
+            watchingRef.current = false
+            setWatching(false)
+            // Hand back with clean hands: the autopilot writes `keys` every
+            // tick, and a player taking over must not inherit a held run button.
+            keys.left = false; keys.right = false; keys.run = false; keys.down = false
+            keys.jump = false; jumpLatch = false
+            if (blip) playWatchStop()
+        }
+        const declineWatch = () => {
+            setNoGuide(true)
+            clearTimeout(noGuideTimer.current)
+            noGuideTimer.current = setTimeout(() => setNoGuide(false), 1500)
+        }
+        const canWatch = () => (state === 'play' || state === 'intro') && mode === 'play' && levelIndex === 0 && !pausedRef.current
         const chooseOption = (i) => {
             menuSel = i
             if (i === 0) startPlay('play')
@@ -573,15 +616,39 @@ const SuperMarioGame = () => {
             }
             if (pausedRef.current) return
 
+            // WATCH (#1637 b31): Y toggles the certified autopilot. On attract
+            // or an ended run it starts a fresh run AND seats — the proven
+            // route runs from tick 0 (b24 law). Anywhere else (menu, the
+            // uncertified sectors) it declines honestly instead of faking a guide.
+            if (isWatchKey(e)) {
+                e.preventDefault()
+                if (watchingRef.current) { release(); return }
+                if (state === 'attract' || state === 'gameover' || state === 'win') {
+                    apHold = 0
+                    resetGame()
+                    audioController.init()
+                    seat()
+                    return
+                }
+                if (canWatch()) seat()
+                else declineWatch()
+                return
+            }
+
             if (state === 'attract' || state === 'gameover' || state === 'win') {
                 // don't let a lone modifier (e.g. Shift on the way to '?') start the game
                 if (['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight'].includes(c)) return
                 mode = 'play'; apHold = 0
+                watchingRef.current = false; setWatching(false) // #1637 watch never lingers — a fresh run starts in your hands
                 resetGame()
                 audioController.init()
                 e.preventDefault()
                 return
             }
+
+            // #1637 any driving key takes the overalls back (chrome keys exempt);
+            // the key itself still applies below — the player continues from here.
+            if (watchingRef.current && isTakeoverKey(e)) release()
 
             if (c === 'ArrowLeft' || c === 'KeyA') keys.left = true
             else if (c === 'ArrowRight' || c === 'KeyD') keys.right = true
@@ -607,6 +674,7 @@ const SuperMarioGame = () => {
         const handleCanvasTap = () => {
             if (state === 'attract') { mode = 'play'; apHold = 0; resetGame(); audioController.init() }
             else if (state === 'gameover' || state === 'win') { mode = 'play'; apHold = 0; resetGame(); audioController.init() }
+            else if (watchingRef.current) release() // #1637 a tap on the field hands the seat back
         }
         canvas.addEventListener('pointerdown', handleCanvasTap)
 
@@ -1066,6 +1134,7 @@ const SuperMarioGame = () => {
         // Iconic flagpole finish: slide down the pole, then walk into the castle.
         const startFlag = () => {
             if (state !== 'play') return
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false); mode = 'play' } // #1637 the watcher's job is the certified sector — the flagpole completes it, 1-3 starts in your hands
             state = 'flag'; flagPhase = 'slide'; flagT = 0
             audioController.stopMusic()
             mario.vx = 0; mario.vy = 0; mario.facing = -1
@@ -1138,7 +1207,12 @@ const SuperMarioGame = () => {
         // ---- UPDATE ----
         const update = () => {
             tick++
-            if (state === 'attract' || state === 'menu' || state === 'gameover' || state === 'win') return
+            if (state === 'attract' || state === 'menu' || state === 'gameover' || state === 'win') {
+                // #1637 watch never lingers: game over and the credits release
+                // the seat silently (racer rule) — the next run starts in your hands.
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); mode = 'play' }
+                return
+            }
 
             if (state === 'intro') { if (--introTimer <= 0) { state = 'play'; audioController.startMusic(bgUnder() ? 'underground' : 'overworld') } return }
 
@@ -2080,6 +2154,9 @@ const SuperMarioGame = () => {
                 openMenu: () => { state = 'menu'; menuSel = 0 },
                 choose: (i) => chooseOption(i),
                 autoplay: () => startAutopilot(),
+                // WATCH (#1637 b31): the seat truth + the shared handoff log.
+                watching: () => watchingRef.current,
+                watchSfx: watchSfxLog,
                 evolve: () => startEvolve(),
                 evoTrain: (g) => evoTrain(g || 5),
                 evoBest: () => bestEverWeights ? Array.from(bestEverWeights) : null,
@@ -2208,6 +2285,7 @@ const SuperMarioGame = () => {
             window.removeEventListener('keyup', handleKeyUp)
             canvas.removeEventListener('pointerdown', handleCanvasTap)
             cancelAnimationFrame(animationFrameId)
+            clearTimeout(noGuideTimer.current)
             unexposeGame()
             unexposeFeedbackState()
         }
@@ -2223,6 +2301,27 @@ const SuperMarioGame = () => {
                         className="absolute top-2 right-2 z-30 px-3 py-1.5 rounded-md bg-black/70 border border-yellow-400 text-yellow-300 font-mono font-bold text-xs tracking-wider active:scale-95 transition">
                         OPTIONS ▸
                     </button>
+                )}
+
+                {ui.screen === 'attract' && (
+                    <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-3" style={{ bottom: '24%' }}>
+                        <span className="font-mono text-[11px] font-bold tracking-widest text-emerald-300" style={{ textShadow: '0 2px 8px #000, 0 0 18px #000' }}>{WATCH_ATTRACT_HINT}</span>
+                        <AttractWatchButton />
+                    </div>
+                )}
+
+                {ui.screen === 'none' && watching && <WatchToast className="absolute z-50" />}
+
+                {ui.screen === 'none' && !paused && (
+                    <div className="absolute pointer-events-auto z-50" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                        <WatchButton on={watching} />
+                    </div>
+                )}
+
+                {ui.screen === 'none' && noGuide && !watching && (
+                    <div className="absolute left-1/2 -translate-x-1/2 z-50 bg-amber-400/90 border border-amber-100 text-amber-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap" style={{ top: 'calc(6.75rem + var(--sat, 0px))' }}>
+                        {`${NO_GUIDE.toUpperCase()} HERE — PRESS Y IN 1-1`}
+                    </div>
                 )}
 
                 {ui.screen === 'menu' && (
