@@ -117,14 +117,19 @@ r.check('real Space clocks in (attract → play)', await waitMode('play'))
     const servo = async () => page.evaluate(() => {
         const g = window.__floorbossTest
         const fx = g.servoFx()
-        return { held: g.sim().arm.held, swing: g.sim().arm.swing, heldT: g.sim().arm.heldT, stows: g.sim().stows, tick: g.sim().tick, arcs: fx.arcs, diamond: fx.diamond, dmode: fx.dmode, tool: fx.tool }
+        return { held: g.sim().arm.held, swing: g.sim().arm.swing, heldT: g.sim().arm.heldT, stows: g.sim().stows, tick: g.sim().tick, arcs: fx.arcs, diamond: fx.diamond, dmode: fx.dmode, tool: fx.tool, sway: fx.sway, shud: fx.shud }
     })
     let pulseMin = 1, pulseMax = 0, sawSwing = false, arcsInFlight = 0, stowed = null
+    let shudMin = 0, shudMax = 0, swayMin = 0, swayMax = 0
     while (true) {
         const s = await servo()
         if (s.tick > servo0.tick + 2100) break // 35 world seconds — enough for two patience cycles
         if (s.dmode === 'pulse') { pulseMin = Math.min(pulseMin, s.diamond); pulseMax = Math.max(pulseMax, s.diamond) }
         if (s.swing > 0) { sawSwing = true; arcsInFlight = Math.max(arcsInFlight, s.arcs) }
+        // #1877 item 3: loaded-hold shudder rides the patience wait; idle sway
+        // shows on the docked, unloaded arm between cycles
+        if (s.swing === 0 && s.held) { shudMin = Math.min(shudMin, s.shud); shudMax = Math.max(shudMax, s.shud) }
+        if (s.swing === 0 && !s.held) { swayMin = Math.min(swayMin, s.sway); swayMax = Math.max(swayMax, s.sway) }
         if (stowed === null && s.stows > servo0.stows) stowed = s
         // keep sampling through a SECOND loaded-wait: a single patience cycle at
         // 11 fps can land every poll inside the swing and miss the pulse (#1877)
@@ -134,6 +139,8 @@ r.check('real Space clocks in (attract → play)', await waitMode('play'))
     r.check('servo swung with every bot down and auto off', sawSwing && !!stowed, `stows ${servo0.stows} -> ${stowed && stowed.stows}`)
     r.check('servo carry rides the ghost arc', sawSwing && arcsInFlight >= 1, `${arcsInFlight} servo ghosts seen mid-swing`)
     r.check('loaded arm pulses the reach diamond while waiting', pulseMax - pulseMin > 0.04 && pulseMax > 0.24, `diamond α ${pulseMin.toFixed(2)}..${pulseMax.toFixed(2)} (last dmode=${(await servo()).dmode}/tool=${(await servo()).tool})`)
+    r.check('loaded gripper shudders under the hold', shudMax > 0.3 && shudMin < -0.3, `shudder ${shudMin.toFixed(2)}..${shudMax.toFixed(2)} px while loaded`)
+    r.check('docked gripper sways at idle', swayMax - swayMin > 0.02, `idle sway ${swayMin.toFixed(3)}..${swayMax.toFixed(3)} rad`)
     // hand the floor back to auto for the sections below
     await page.evaluate(() => { const g = window.__floorbossTest; g.sim().robots.forEach((b) => { b.broken = false; b.repair = 0 }); g.sim().tool = null; g.press('KeyF') })
 }
