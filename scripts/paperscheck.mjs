@@ -1698,20 +1698,22 @@ if (MUT) {
             return true
         })
 
-    // 33. the window stops rotating: seed no longer moves the cast, so every
-    //     week meets the same four seats and the two new faces are dead
-    //     letter. Fairness never notices (papers are honest either way) —
-    //     only the seatsWalked witness sees a cast that never fully walks.
+    // 33. the window stops rotating: seed no longer moves the head, so every
+    //     week meets the same four heads and only the crowded tail still
+    //     spins. #2012 sharpened the witness: a sweep-wide seatsWalked can
+    //     hide a frozen head (the crowd seats cover the sweep alone) — the
+    //     law lives in EVERY week meeting all six seats, so that is what the
+    //     invariant grades now.
     await tryMut('cast rotation frozen (new seats never walk)',
         mutMod('gen.js', 'REGULARS[(seed + (n - 2) % VISIT_WINDOW) % REGULARS.length]', 'REGULARS[(n - 2) % VISIT_WINDOW]', 'm33'),
         (m) => {
-            const seats = new Set()
             for (const seed of SEEDS) {
-                for (const day of m.gen.genWeek(seed).days) {
+                const seats = new Set()
+                for (const day of m.gen.genWeek(seed).days)
                     for (const a of day.queue) if (a.person.regular) seats.add(a.person.regular)
-                }
+                if (seats.size !== m.gen.REGULARS.length) return false
             }
-            return seats.size === m.gen.REGULARS.length
+            return true
         })
 
     // 34. personal speech flattened: the greeting thread goes mute and the
