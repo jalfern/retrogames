@@ -10,6 +10,7 @@ import {
     REDLINE, PEG, pegNeedle, ventCoach, ventPanel, preFlash, seatAsk,
     TALLY, winTally, tallyDur, tallyFrame,
     LINK, netPill,
+    MARQUEE, attractCam,
 } from '../src/games/BombDefuse/engine.js'
 import { bedHz, BED } from '../src/games/BombDefuse/audio.js'
 import { parseCall } from '../src/games/BombDefuse/voice.js'
@@ -997,6 +998,129 @@ console.log('\n— voice grammar (#1812 item 9) —')
     ok(/strokeRect\(110, 140, 420, 152\)[\s\S]{0,220}WAIT/.test(jsx), 'the warning paints its own red frame + word')
     // determinism: same words, same verdict, twice.
     ok(JSON.stringify(parseCall('CUT THE BLUE WIRE', 1)) === JSON.stringify(parseCall('cut the blue wire', 1)), 'grammar is deterministic across casings')
+}
+
+console.log('\n— attract marquee camera (#1812 item 8) —')
+{
+    const jsx = readFileSync(join(here, '../src/games/BombDefuse/index.jsx'), 'utf8')
+    // the shot table: every closer cut actually enlarges the board (the whole
+    // complaint was the demo reading tiny), and every focal point is on the case.
+    ok(Object.values(MARQUEE).every((s) => s.z >= 1 && s.z <= 2.2 && s.x >= 100 && s.x <= 540 && s.y >= 80 && s.y <= 320),
+        'MARQUEE shots all zoom ≥1 and frame points on the case')
+    const wide = Object.entries(MARQUEE).filter(([, s]) => s.focus === 'wide')
+    ok(wide.length === 1 && wide[0][1].z === 1 && wide[0][1].x === 320 && wide[0][1].y === 200,
+        'exactly one wide establishing shot, at the case centre, zoom 1')
+    // pure laws: null and a finished demo both sit wide.
+    ok(attractCam(null).focus === 'wide' && attractCam({ done: true }).focus === 'wide',
+        'no run / done demo reads wide')
+
+    // per-kind framing, straight off live state (intro drained by hand).
+    const at = (kind, mut = () => {}, bomb = 0, stepIdx = 0) => {
+        const g = createGame(7, 2)
+        g.bomb = bomb; g.step = stepIdx
+        const st = curStep(g)
+        st.kind = kind
+        g.intro = 0
+        mut(g, st)
+        return attractCam(g)
+    }
+    // SYNC — the two barrels are the game; the pair shot frames both bigger,
+    // and the moment ONE seat turns, the camera films the seat that owes.
+    const s0 = at(SYNC)
+    ok(s0.focus === 'keys' && s0.z > 1 && s0.x === 320,
+        'untouched SYNC pushes onto the key pair (both barrels, bigger)', JSON.stringify(s0))
+    const sA = at(SYNC, (g) => { g.keys[0] = true })
+    const sB = at(SYNC, (g) => { g.keys[1] = true })
+    ok(sA.focus === 'late-key' && sA.x === 490 && sA.z >= 2,
+        'P1 turned: the camera films P2\'s barrel still owed', JSON.stringify(sA))
+    ok(sB.focus === 'late-key' && sB.x === 150 && sB.z >= 2,
+        'P2 turned: the camera films P1\'s barrel still owed', JSON.stringify(sB))
+    const sBoth = at(SYNC, (g) => { g.keys[0] = true; g.keys[1] = true })
+    ok(sBoth.focus === 'keys' && sBoth.z > 1,
+        'both keys in lands back on the pair — the two-key turn is the hero', JSON.stringify(sBoth))
+    // CUT — arms, then the armed arm, then the snip ON the target cable.
+    ok(at(CUT).focus === 'blades' && at(CUT).z > 1,
+        'untouched CUT frames both cutter arms and the harness')
+    const cA = at(CUT, (g) => { g.armed[0] = true })
+    const cB = at(CUT, (g) => { g.armed[1] = true })
+    ok(cA.focus === 'arm' && cA.x === 150 && cA.z >= 2, 'P1 armed alone: hero shot on P1\'s arm', JSON.stringify(cA))
+    ok(cB.focus === 'arm' && cB.x === 490 && cB.z >= 2, 'P2 armed alone: hero shot on P2\'s arm', JSON.stringify(cB))
+    for (const col of [0, 1, 2, 3]) {
+        const c2 = at(CUT, (g, st) => { g.armed[0] = true; g.armed[1] = true; st.color = col })
+        ok(c2.focus === 'wires' && c2.x === 240 + col * 54 && c2.z > 1.5,
+            `both arms armed: the snip is filmed ON the ${COLORS[col]} cable (x=${240 + col * 54})`, JSON.stringify(c2))
+    }
+    // VENT — the bar until it pins, then the gauge for the seat.
+    const vHold = (holder, held) => at(VENT, (g, st) => { st.holder = holder; g.held = held })
+    const vb0 = vHold(0, false); const vb1 = vHold(1, false)
+    ok(vb0.focus === 'bar' && vb0.x === 128 && vb0.z >= 1.5,
+        'unpinned VENT films the LEFT bar — the holder\'s job, up close', JSON.stringify(vb0))
+    ok(vb1.focus === 'bar' && vb1.x === 512 && vb1.z >= 1.5,
+        'unpinned VENT films the RIGHT bar when P2 holds', JSON.stringify(vb1))
+    const vg = vHold(0, true)
+    ok(vg.focus === 'gauge' && vg.x === 320 && vg.z > 1,
+        'pinned bar hands the shot to the gauge — the seat is the drama now', JSON.stringify(vg))
+    // INTRO is the establishing beat — the demo shows the whole board while the
+    // step is being read, then cuts in.
+    {
+        const g = createGame(7, 2)
+        ok(attractCam(g).focus === 'wide', 'INTRO ticks stay on the establishing wide shot', `intro=${g.intro}`)
+    }
+    // determinism + purity across whole self-played attract runs: no rng, no
+    // gs write, hash untouched — the camera is a painter, not a player.
+    {
+        const run = (seed) => {
+            const g = createGame(seed, 2)
+            const shots = new Set()
+            let guard = 0
+            let zoomSeen = 1
+            let hashOk = true
+            while (!g.done && guard++ < 8000) {
+                const h1 = hash(g)
+                const s = attractCam(g)
+                shots.add(s.focus)
+                if (s.focus !== 'wide') { zoomSeen = Math.max(zoomSeen, s.z); hashOk = hashOk && hash(g) === h1 }
+                step(g, solvePads(g))
+                g.events.length = 0
+            }
+            return { shots, zoomSeen, hashOk, done: attractCam(g).focus }
+        }
+        const r1 = run(7); const r2 = run(7)
+        ok(JSON.stringify([...r1.shots]) === JSON.stringify([...r2.shots]),
+            'same seed, same cut sequence — the marquee is deterministic', [...r1.shots].join(','))
+        ok(r1.hashOk, 'calling attractCam never changes the hash (view law, hash-clean)')
+        ok(r1.zoomSeen >= 1.5, 'a self-played demo really does get close-ups', `max z ${r1.zoomSeen}`)
+        ok(r1.done === 'wide', 'the demo ends on a wide shot')
+        const kinds = new Set()
+        {
+            const g = createGame(7, 2)
+            let guard = 0
+            while (!g.done && guard++ < 8000) {
+                if (g.intro <= 0) kinds.add(curStep(g).kind)
+                step(g, solvePads(g)); g.events.length = 0
+            }
+            const covers = [...kinds].every((k) => (
+                k === SYNC ? ['keys', 'late-key'].some((f) => r1.shots.has(f))
+                : k === CUT ? ['blades', 'arm', 'wires'].some((f) => r1.shots.has(f))
+                : ['bar', 'gauge'].some((f) => r1.shots.has(f))))
+            ok(covers && kinds.size >= 2,
+                'every kind the demo plays gets its own family of cuts', `kinds=${[...kinds]} shots=${[...r1.shots]}`)
+        }
+    }
+    // view side: the shell eases to the law, paints through the transform, lifts
+    // the dim while zoomed, resets on a new loop, and exposes it to drives.
+    ok(/const shot = E\.attractCam\(a\)/.test(jsx),
+        'the attract screen asks the law for its cut every paint frame')
+    ok(/cam\.x \+= \(shot\.x - cam\.x\) \* 0\.07[\s\S]{0,120}cam\.z \+= \(shot\.z - cam\.z\) \* 0\.07/.test(jsx),
+        'the camera EASES toward the shot — cuts move, never teleport')
+    ok(/g\.translate\(W \/ 2, H \/ 2\)\s*\n\s*g\.scale\(cam\.z, cam\.z\)\s*\n\s*g\.translate\(-cam\.x, -cam\.y\)/.test(jsx),
+        'the demo is drawn THROUGH the camera transform (center→scale→focus)')
+    ok(/0\.66 - 0\.24 \* lift/.test(jsx) && /lift = Math\.min\(1, Math\.max\(0, \(cam\.z - 1\) \/ 1\.1\)\)/.test(jsx),
+        'the dim lifts while zoomed so the hero shot reads (the tiny-board fix)')
+    ok(/camRef\.current = \{ x: 320, y: 200, z: 1 \}/.test(jsx),
+        'a new attract loop opens on the establishing wide shot')
+    ok(/marquee: \(\) => \(\{ shot: E\.attractCam\(attractRef\.current\), cam: \{ \.\.\.camRef\.current \} \}\)/.test(jsx),
+        '__bdTest.marquee exposes the live cut + eased camera for the drive harness')
 }
 
 console.log(`\ndefusecheck: ${pass}/${pass + fail} gates`)
