@@ -26,6 +26,11 @@ const SIM_MS = 1000 / 60
 const COL = {
     wall: '#1c2130', wallLine: '#323a52', paper: '#d8d2b8', paperLine: '#8f8a70',
     ink: '#20242e', red: '#d84343', green: '#49b25a', gold: '#e8c15a', text: '#cfd6e6',
+    // #1908 LEGIBILITY — the wanted rows are 9px on a dark wall at the fit-law
+    // ceiling (worst bottom y=356 vs the scale box at 358: two px of slack, the
+    // rows cannot grow). The honest lever left is contrast: a brighter red at
+    // the same size reads at arm's length on a phone where #d84343 blurs.
+    wallRed: '#ff6f5e',
 }
 
 // #1938 PORTRAIT — faces are painted from a descriptor, not from the
@@ -445,8 +450,11 @@ const PapersPleaseMinGame = () => {
             let wy = rows.entries
             // every name on the sheet must FIT on the wall — paperscheck
             // pins day.wanted.length <= 5 (the original bulletin's five) and
-            // sweeps the fit, so no booth must ever hide one
-            for (const w of day.wanted) { text(`  ${w.name} #${w.id}`, WALL.x + 114, wy, WALL.wantedSize, COL.red); wy += WALL.wantedLine }
+            // sweeps the fit, so no booth must ever hide one. #1908: the rows
+            // print in the brighter wallRed — size is fit-capped (2 px of
+            // slack to the scale box), contrast is what makes five 9px rows
+            // scannable at arm's length on a phone.
+            for (const w of day.wanted) { text(`  ${w.name} #${w.id}`, WALL.x + 114, wy, WALL.wantedSize, COL.wallRed); wy += WALL.wantedLine }
             box(SCALE.x, SCALE.y, SCALE.w, SCALE.h, '#0f1420', '#4a5578')
             text('SCALE', SCALE.x + 48, SCALE.y + 12, 9, COL.text, 'center')
             text(`${view.scale}KG`, SCALE.x + 48, SCALE.y + 26, 12, COL.gold, 'center')
@@ -803,6 +811,25 @@ const PapersPleaseMinGame = () => {
                     let paper = 0
                     for (let i = 0; i < d.length; i += 4) if (((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]) === 0xd8d2b8) paper++
                     return paper
+                },
+                // #1908 THE WALL THAT LIVES: ink of the wanted column's own
+                // brighter red, counted as the hue FAMILY (rr>170, gg 80..150,
+                // bb 80..150) — 9px glyphs are mostly antialiased against the
+                // dark wall, so a pure-#ff6f5e count would measure ~8 px and
+                // prove nothing. The rect holds sheet rows only: the entry list
+                // is green/gold, the header is #cfd6e6, and the stamp/strip/
+                // strike reds live outside it (x>=416 or y>=400).
+                wantedInk: () => {
+                    const day = current(gs).day
+                    const rows = wallRows(day, day.rules.map((r) => RULES[r].text))
+                    const top = rows.entries - 10
+                    const d = ctx.getImageData(WALL.x + 112, top, 130, rows.wantedEnd - top + 4).data
+                    let n = 0
+                    for (let i = 0; i < d.length; i += 4) {
+                        const [rr, gg, bb] = [d[i], d[i + 1], d[i + 2]]
+                        if (rr > 170 && gg > 80 && gg < 150 && bb > 80 && bb < 150) n++
+                    }
+                    return { ink: n, rows: day.wanted.length }
                 },
                 probe: () => {
                     const { day, view } = current(gs)

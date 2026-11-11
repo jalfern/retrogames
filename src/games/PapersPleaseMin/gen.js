@@ -37,8 +37,15 @@ export const CITIES = {
 export const CITY2C = {}
 for (const c of COUNTRIES) for (const city of CITIES[c]) CITY2C[city] = c
 
-const FIRST = ['EMIL', 'KATYA', 'BORIS', 'ILIA', 'MARTA', 'ANJA', 'DRAGAN', 'VOLO', 'SERDA', 'PETR']
-const LAST = ['KOSTOV', 'DRENIN', 'VASEK', 'LAGODA', 'ORLOV', 'TOLKA', 'ZEMEK', 'PALIN']
+// #1908 THE WALL THAT LIVES — the pool doubled (80 -> 192 combos). The old
+// ten-times-eight name pool made the ORIGINAL its own worst enemy: three decoy
+// draws a week multiplied by seven days collide by birthday math (27 repeated
+// wall names per sweep — the bulletin looked stamped), and a wall name could
+// walk up the window on another day as a pure memory trap. The wider pool is
+// the substrate of the living-wall construction below: distinct walls per week,
+// zero full-name collisions between the bulletin and the line.
+const FIRST = ['EMIL', 'KATYA', 'BORIS', 'ILIA', 'MARTA', 'ANJA', 'DRAGAN', 'VOLO', 'SERDA', 'PETR', 'LUKA', 'MILA', 'YAKOV', 'ZORA', 'MILAN', 'DANA']
+const LAST = ['KOSTOV', 'DRENIN', 'VASEK', 'LAGODA', 'ORLOV', 'TOLKA', 'ZEMEK', 'PALIN', 'NOVAK', 'SURIN', 'BASTA', 'VRAN']
 
 // #1979 HAND-AUTHORED REGULARS — the original's line is made of PEOPLE:
 // Jorji Costava recurs with the same bald pate, stubble and big nose, and the
@@ -102,6 +109,37 @@ export const REGULARS = [
         lines: { greet: 'I AM RETIRED, GUARD.', hook: 'THE PENSION BUYS LITTLE.', again: 'YOU LET ME THROUGH.', follow: 'LITTLE, BUT IT BUYS.' },
     },
 ]
+
+// #1908 THE WALL THAT LIVES — decoy names on the bulletin are a per-week PLAN,
+// derived from the seed by an index walk over the ordered name pool. Variety is
+// a construction, not a hope (this generator's own doctrine): for every seed,
+// the week's twenty decoy slots (k < 3, k < 2 on the arc day 6) land on
+// DISTINCT pool indices — the offset constants are verified collision-free for
+// |Δday| ≤ 6 and |Δslot| ≤ 2 (paperscheck re-proves it on the sweep). The
+// plan pre-seeds every day's used-set, so across a whole week no entrant, no
+// planted WANTED name, and no regular can ever share a FULL name with a wall
+// row — a half-remembered name at the window stays possible (token-level
+// near-misses train the printed NAME *AND* NUMBER law), an identical full name
+// becomes structurally impossible. Names come from the plan, not the rnd
+// stream, so genDay standalone replays genWeek's day exactly, as always.
+export const WALL_POOL = []
+for (const l of LAST) for (const f of FIRST) {
+    const nm = `${f} ${l}`
+    if (!REGULARS.some((c) => c.name === nm)) WALL_POOL.push(nm) // cast combos never decorate the wall — the neighborhood is not wanted (until the arc says otherwise)
+}
+// the arc always rides day 6 (arcForWeek = firstVisitDay(seed, seed%LEN) + 4,
+// seatOff is 0 by construction) — paperscheck pins that equality; day 6 stages
+// one decoy less so the bulletin keeps its five.
+export const weekDecoyCount = (n) => (n === 6 ? 2 : 3)
+export const wallNameAt = (seed, n, k) => {
+    const L = WALL_POOL.length
+    return WALL_POOL[(((seed * 97 + n * 71 + k * 37) % L) + L) % L]
+}
+export const weekWallNames = (seed) => {
+    const out = []
+    for (let n = 1; n <= 7; n++) for (let k = 0; k < weekDecoyCount(n); k++) out.push(wallNameAt(seed, n, k))
+    return out
+}
 
 // #1979 (amended #1997, #2012) THE ROTATING WINDOW + THE CROWDED RETURN —
 // the cast is six, and the law needs FACES THAT COME BACK: a one-per-day walk
@@ -488,6 +526,11 @@ export function genDay(seed, n, trapIdx, trap2Idx = null) {
     // a generated twin of a regular would break the recurrence (two GRUBAKs
     // at one window is a forgery of the neighborhood, not the neighborhood).
     for (const c of REGULARS) used.add(c.name)
+    // #1908 THE WALL THAT LIVES: the WHOLE week's bulletin rides the used-set
+    // from the first draw — an entrant on any day can never carry the full name
+    // of any wall row that week (the memory trap the old booth fell into: a
+    // name wanted on Tuesday walking up on Friday, innocent, by construction).
+    for (const nm of weekWallNames(seed)) used.add(nm)
     for (const rule of rules) day.queue.push(violator(rule, rnd, date, rules, day, used))
     if (trapIdx !== null && trapIdx !== undefined) {
         day.queue.push(trapApplicant(trapIdx, rnd, date, rules, day, used))
@@ -516,18 +559,17 @@ export function genDay(seed, n, trapIdx, trap2Idx = null) {
     // fit sweep proves the fifth row lands above the scale box).
     // #1983: the arc takes a slot on its turn — the bulletin keeps the
     // original's capacity of five, so the arc day stages one decoy less.
+    // #1908 THE WALL THAT LIVES: names come from the seed's week plan (distinct
+    // across the week, pre-seeded into `used` so no entrant took one), ids stay
+    // stream draws. The old post-hoc rewrite loop is now an assertion.
     const arcPlanted = day.queue.some((x) => x.person.arc)
     for (let k = 0; k < 3 - (arcPlanted ? 1 : 0); k++) {
-        day.wanted.push({ name: `${FIRST[Math.floor(rnd() * FIRST.length)]} ${LAST[Math.floor(rnd() * LAST.length)]}`, id: 7000 + Math.floor(rnd() * 800), planted: false })
+        day.wanted.push({ name: wallNameAt(seed, n, k), id: 7000 + Math.floor(rnd() * 800), planted: false })
     }
     const entrants = day.queue.filter((a) => a.person.passport).map((a) => a.person.passport.name)
     for (const w of day.wanted) {
         if (w.planted) continue
-        let guard = 0
-        while (entrants.includes(w.name) && guard++ < 60) {
-            w.name = `${FIRST[Math.floor(rnd() * FIRST.length)]} ${LAST[Math.floor(rnd() * LAST.length)]}`
-        }
-        if (entrants.includes(w.name)) throw new Error(`day ${n}: decoy sheet name collides with an entrant — trap budget cannot be honest`)
+        if (entrants.includes(w.name)) throw new Error(`day ${n}: decoy sheet name collides with an entrant — the living-wall plan is broken`)
     }
     // the scale is the booth's witness: it reads the TRUTH weight, per
     // entrant (the dial is weighed while the person stands on it).

@@ -26,7 +26,7 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, dshow, MON, FEATURES, stampLines } from '../src/games/PapersPleaseMin/rules.js'
-import { genWeek, genDay, viewOf, CITY2C, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, VISIT_WINDOW } from '../src/games/PapersPleaseMin/gen.js'
+import { genWeek, genDay, viewOf, CITY2C, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, VISIT_WINDOW, WALL_POOL, wallNameAt, weekWallNames, weekDecoyCount } from '../src/games/PapersPleaseMin/gen.js'
 import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges, monthTurn } from '../src/games/PapersPleaseMin/sim.js'
 import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, ID, PHOTO, BUBBLE, EVID, SETTLE, QUOTE, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
 
@@ -1139,6 +1139,83 @@ section('THE WALL FITS THE BOOTH (#410) — nothing hides, nothing is postage')
     }
 }
 
+// -------------------------------------------- THE WALL THAT LIVES (#1908) ----
+section('THE WALL THAT LIVES (#1908) — the bulletin reads lived-in, never stamped')
+{
+    // Pool integrity: the 10x8 pool is what made the original's own wall its
+    // worst enemy — 20 decoy draws across a week collide by birthday math, and
+    // the sweep proved it (27 repeated wall names, two weeks printing the SAME
+    // name twice on one bulletin). The plan pool must stay wide, clean, and
+    // free of the neighborhood's names.
+    ok(WALL_POOL.length >= 150, `name pool ${WALL_POOL.length} — back near 80 combos and the stamped look returns by birthday math`)
+    ok(new Set(WALL_POOL).size === WALL_POOL.length, 'the name pool carries a duplicate combo')
+    ok(!WALL_POOL.some((n) => REGULARS.some((c) => c.name === n)), 'the decoy pool carries a regular\'s full name — the neighborhood decorates the wall only via the arc')
+    // construction law, analytically: the plan's day/slot offsets must separate
+    // every pair of the week's 20 slots (|Δday| <= 6, |Δslot| <= 2, day 6
+    // holds two decoys). If this passes the sweep witness is redundancy.
+    {
+        const L = WALL_POOL.length
+        let offClash = 0
+        for (let a = -6; a <= 6; a++) for (let b = -2; b <= 2; b++) {
+            if (!a && !b) continue
+            if ((((a * 71 + b * 37) % L) + L) % L === 0) offClash++
+        }
+        ok(offClash === 0, `plan offsets clash mod ${L} (${offClash} pairs) — two slots would share a name every week`)
+        // the 9px row law is the fit ceiling: worst sweep bottom + the two-px
+        // margin is pinned in the fit section above; the readability answer to
+        // #1908 was contrast (wallRed), and size may never quietly shrink.
+        ok(WALL.wantedSize >= 9 && WALL.wantedLine >= 10, 'wanted rows got smaller than the #1902 five-row law')
+    }
+    ok(arcForWeek(SEEDS[0]).day === 6 && SEEDS.every((s) => arcForWeek(s).day === 6), 'the arc no longer lands on day 6 — weekDecoyCount hardcoded the arc day and the bulletin would overflow')
+    // sweep witnesses: same-day distinctness, week-long distinctness, the
+    // sheet matching the plan, and the wall-vs-window separation the old booth
+    // only half kept (same-day guard; across the week the pool doubled and the
+    // plan pre-seeds every day's used-set, so NO decoy all week can name a
+    // person standing in the line).
+    let decoyRows = 0, planHits = 0
+    for (const seed of SEEDS) {
+        const w = genWeek(seed)
+        const weekEntrants = new Set(w.days.flatMap((d) => d.queue.filter((a) => a.person.passport).map((a) => a.person.passport.name)))
+        const seen = new Set()
+        for (const day of w.days) {
+            const dn = day.wanted.map((x) => x.name)
+            ok(new Set(dn).size === dn.length, `seed ${seed} day ${day.n}: the wall printed one name twice — stamped (${dn.join(' / ')})`)
+            let k = 0
+            for (const x of day.wanted) {
+                if (x.planted) continue
+                decoyRows++
+                if (x.name === wallNameAt(seed, day.n, k)) planHits++
+                else ok(false, `seed ${seed} day ${day.n} row ${k}: printed off the week plan`)
+                ok(!seen.has(x.name), `seed ${seed}: ${x.name} wanted on two different days — the stamped bulletin is back`)
+                seen.add(x.name)
+                ok(!weekEntrants.has(x.name), `seed ${seed}: ${x.name} sits on the wall AND walks the window this week — a memory trap by construction`)
+                k++
+            }
+        }
+    }
+    ok(planHits === decoyRows && decoyRows > 0, `plan coverage ${planHits}/${decoyRows} — the sheet is not fully plan-drawn`)
+    console.log(`  ..    ${decoyRows} decoy rows across the sweep: all on the plan, all distinct per day AND per week, none naming anyone in the line`)
+    // Recorded balance observation (#1908 item 3): token-level near-misses are
+    // KEPT on purpose — a decoy sharing a first or last name with an entrant
+    // trains the printed NAME *AND* NUMBER law. What must be zero is the
+    // identical full name above. Planted names may still coincide with another
+    // day's entrant (~2 a week at pool 190): each day is judged by the sheet
+    // the wall prints THAT day, decide/judge agree, and the WANTED trap species
+    // exists precisely to teach it. Counted, not accidental: an upward drift
+    // means the pool narrowed.
+    let plantCoin = 0
+    for (const seed of SEEDS) {
+        const w = genWeek(seed)
+        const byDay = w.days.map((d) => new Set(d.queue.filter((a) => a.person.passport).map((a) => a.person.passport.name)))
+        for (const day of w.days) for (const x of day.wanted) {
+            if (!x.planted) continue
+            for (const other of byDay) if (other !== byDay[day.n - 1] && other.has(x.name)) plantCoin++
+        }
+    }
+    ok(plantCoin <= SEEDS.length * 6, `${plantCoin} planted-name coincidences across ${SEEDS.length} weeks — the pool is narrowing back toward stamp territory`)
+    console.log(`  ..    planted-vs-line coincidences ${plantCoin}/${SEEDS.length} weeks (~${(plantCoin / SEEDS.length).toFixed(1)} a week) — today's sheet is today's law; recorded, not an accident`)
+}
+
 if (MUT) {
     section('MUTATIONS — each MUST turn an honest check red')
     const dir = '/var/folders/41/gz22zd5d55g08jn448xnd90m0000gn/T/opencode/pp-mutant'
@@ -1864,6 +1941,40 @@ if (MUT) {
     await tryMut('pin < 2 s read window (QUOTE.hold 132 -> 40)',
         mutMod('layout.js', 'export const QUOTE = { hold: 132 }', 'export const QUOTE = { hold: 40 }', 'm42'),
         (m) => m.layout.QUOTE.hold >= 120)
+
+    // #1908 THE WALL THAT LIVES m43: freeze the day term in the plan — every
+    // day draws the same three decoys, the bulletin is stamped again. Same-day
+    // distinctness survives (k still moves); only the week-long witness sees it.
+    await tryMut('plan day-term frozen (same decoys on every wall)',
+        mutMod('gen.js', 'return WALL_POOL[(((seed * 97 + n * 71 + k * 37) % L) + L) % L]', 'return WALL_POOL[(((seed * 97 + 0 * 71 + k * 37) % L) + L) % L]', 'm43'),
+        (m) => {
+            let dup = 0
+            for (const seed of SEEDS) {
+                const names = new Set()
+                for (const day of m.gen.genWeek(seed).days) for (const x of day.wanted) {
+                    if (x.planted) continue
+                    if (names.has(x.name)) dup++
+                    names.add(x.name)
+                }
+            }
+            return dup === 0
+        })
+    // #1908 m44: the week plan stops pre-seeding the used-set — entrants can
+    // draw a wall name again and the bulletin frames the line it prints. The
+    // genDay assertion fires (a thrown audit is a caught mutant); if a stream
+    // slips a collision past both, the witness names it.
+    await tryMut('week plan not pre-seeded into the day (wall can frame the line)',
+        mutMod('gen.js', 'for (const nm of weekWallNames(seed)) used.add(nm)', 'for (const nm of []) used.add(nm)', 'm44'),
+        async (m) => {
+            try {
+                for (const seed of SEEDS) {
+                    const w = m.gen.genWeek(seed)
+                    const all = new Set(w.days.flatMap((d) => d.queue.filter((a) => a.person.passport).map((a) => a.person.passport.name)))
+                    for (const day of w.days) for (const x of day.wanted) if (!x.planted && all.has(x.name)) return true
+                }
+                return false
+            } catch { return 'wall-vs-entrant assertion fired' }
+        })
 }
 
 console.log(`\npaperscheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)
