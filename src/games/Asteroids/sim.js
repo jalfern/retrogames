@@ -27,6 +27,12 @@ export const FRICTION = 0.99
 export const START_LIVES = 3
 export const RESPAWN_DELAY = 60   // ~1 s dark before the ship returns
 export const INVULN_TICKS = 120   // ~2 s blinking invulnerability (arcade grace)
+// #2001 hyperspace — the desperate teleport: a panic button with its own
+// cooldown; the arrival lands with mercy (the original ran a crash lottery;
+// this machine gives you the blink and the grace instead).
+export const HYPER_COOLDOWN = 60  // no re-jump for ~1 s (held button cannot spam)
+export const HYPER_INVULN = 45    // ~0.75 s of arrival grace
+export const HYPER_BLINK = 15     // hidden while rematerialising (~0.25 s)
 export const BONUS_LIFE_EVERY = 10000
 export const FIRE_COOLDOWN = 15
 
@@ -114,6 +120,8 @@ export function makeRun(seed, opts = {}) {
         watching: false, // #1637 b26 — the WATCH seat
         respawnAt: -1,   // tick the ship returns from, -1 = alive
         invulnUntil: 0,
+        hyperReadyAt: 0, // #2001 — earliest tick the next hyperspace may fire
+        hyperUntil: 0,   // hidden while rematerialising until this tick
         ship: { x: width / 2, y: height / 2, vx: 0, vy: 0, angle: -Math.PI / 2, cooldown: 0 },
         asteroids: [],
         saucers: [],
@@ -142,6 +150,8 @@ export function rebuildBoard(gs) {
     resetShip(gs)
     gs.respawnAt = -1
     gs.invulnUntil = 0
+    gs.hyperReadyAt = 0
+    gs.hyperUntil = 0
     gs.asteroids = spawnWave(() => rnd(gs), gs.wave, gs.width, gs.height)
     gs.saucers = []
     gs.nextSaucerAt = saucerGap(gs)
@@ -290,7 +300,7 @@ function attractDemo(gs, ev) {
 // while watching with no human input, watchStep drives instead.
 // ---------------------------------------------------------------------------
 export function tickAsteroids(gs, input = null) {
-    const ev = { shot: false, pitch: 0, smashed: 0, died: false, respawn: false, wave: 0, over: false, saucerSpawn: false, saucerShot: false, saucerKilled: null }
+    const ev = { shot: false, pitch: 0, smashed: 0, died: false, respawn: false, wave: 0, over: false, saucerSpawn: false, saucerShot: false, saucerKilled: null, hyper: false }
     gs.tickN++
     if (gs.over) { ev.over = true; return ev }
 
@@ -324,6 +334,19 @@ export function tickAsteroids(gs, input = null) {
                 }
             }
             if (act.fire && gs.ship.cooldown <= 0) fire(gs, ev)
+            // Hyperspace (#2001) — vanish, rematerialise at a SEEDED random
+            // point (same seed, same panic), throttle zeroed, then the blink
+            // and the arrival grace above. The driver never presses it.
+            if (act.hyper && gs.tickN >= gs.hyperReadyAt) {
+                gs.ship.x = rnd(gs) * gs.width
+                gs.ship.y = rnd(gs) * gs.height
+                gs.ship.vx = 0
+                gs.ship.vy = 0
+                gs.hyperReadyAt = gs.tickN + HYPER_COOLDOWN
+                gs.hyperUntil = gs.tickN + HYPER_BLINK
+                gs.invulnUntil = gs.tickN + HYPER_INVULN
+                ev.hyper = true
+            }
         }
     }
 
@@ -748,7 +771,7 @@ export function stateHash(gs) {
     let s = `A${gs.tickN}|${gs.score}|${gs.lives}|${gs.bonusLives}|${gs.wave}|${gs.over ? 1 : 0}|${gs.respawnAt}|${gs.invulnUntil}|${gs.rngState}|`
     s += `${r4(gs.ship.x)},${r4(gs.ship.y)},${r4(gs.ship.vx)},${r4(gs.ship.vy)},${r4(gs.ship.angle)},${gs.ship.cooldown}|`
     s += gs.asteroids.map(a => `${r4(a.x)},${r4(a.y)},${r4(a.vx)},${r4(a.vy)},${a.size}`).join(';') + '|'
-    s += gs.saucers.map(sv => `${r4(sv.x)},${r4(sv.y)},${sv.big ? 'B' : 's'},${sv.life},${sv.cooldown}`).join(';') + `|${gs.nextSaucerAt}|`
+    s += gs.saucers.map(sv => `${r4(sv.x)},${r4(sv.y)},${sv.big ? 'B' : 's'},${sv.life},${sv.cooldown}`).join(';') + `|${gs.nextSaucerAt}|${gs.hyperReadyAt}|${gs.hyperUntil}|`
     s += gs.bullets.map(b => `${r4(b.x)},${r4(b.y)},${r4(b.life)},${b.hostile ? 'H' : ''}`).join(';') + '|'
     s += gs.particles.length
     let h = 0x811c9dc5
