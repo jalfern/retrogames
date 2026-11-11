@@ -36,7 +36,18 @@ export default function RotateHint() {
         return () => { mq.removeEventListener('change', onMq); clearInterval(iv) }
     }, [])
 
-    if (!portrait || !wide || dismissed) return null
+    // #1748: publish the hint state so attract screens can get out of its way —
+    // the card lands dead-center, exactly where fixed-resolution titles put
+    // their taglines (lemmings/myst/arena-archery text covered the dismiss
+    // button). Games hide centered attract copy while this attribute is set.
+    const show = portrait && wide && !dismissed
+    useEffect(() => {
+        if (show) document.documentElement.dataset.rotateHint = '1'
+        else delete document.documentElement.dataset.rotateHint
+    }, [show])
+    useEffect(() => () => { delete document.documentElement.dataset.rotateHint }, [])
+
+    if (!show) return null
 
     return (
         <div className="fixed inset-0 z-[70] flex items-center justify-center pointer-events-none">

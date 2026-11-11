@@ -479,7 +479,7 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
             <div ref={mountRef} className="absolute inset-0">
                 <canvas ref={canvasRef} className="h-full w-full" />
             </div>
-            <div className="pointer-events-none absolute left-3 top-2 select-none font-mono text-[11px] leading-4 text-emerald-300/90">
+            <div className="pointer-events-none absolute left-3 top-2 max-lg:top-[4.75rem] select-none font-mono text-[11px] leading-4 text-emerald-300/90">
                 <div>ROBOT LAB</div>
                 <div>PUT THE CRATE IN THE DRAWER · STOW THE CAN · CLOSE UP</div>
                 {phase !== 'attract' && <div className="text-slate-500">EPISODES {runs.saved} SAVED · {runs.won} WON</div>}

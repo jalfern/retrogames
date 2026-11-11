@@ -25,30 +25,25 @@
 // src/components/PauseOverlay.jsx with `const g = [heights.map((_, i) => i)]`
 // -> every landscape game with long controls goes red (clipped body).
 
-import { spawn } from 'node:child_process'
-import { readFileSync, existsSync, readdirSync, mkdirSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { guardChrome } from './chromecleanup.mjs'
 import { relayNoise } from './lib/harness.mjs'
 import { packPages } from '../src/utils/textFit.js'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const { chromium } = await import('playwright-core').catch(() => {
+await import('playwright-core').catch(() => {
     console.error('playwright-core is not installed. Run `npm install` first.')
     process.exit(1)
 })
 
 const PORT = process.env.DEV_PORT || '5173'
 const BASE = process.env.TEXTFIT_URL || `http://localhost:${PORT}/retrogames`
-const PROFILE = process.env.TEXTFIT_PROFILE || `/tmp/forge/p${process.env.DEV_PORT || 5173}/textfit-profile`
-mkdirSync(PROFILE, { recursive: true })
-// Local boxes: system Chrome. CI (no /Applications): the playwright chromium
-// the smoke job installs (`npx playwright-core install --with-deps chromium`).
-const SYS_CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-const CHROME = process.env.SHOT_CHROME || (existsSync(SYS_CHROME)
-    ? SYS_CHROME
-    : (() => { try { return chromium.executablePath() } catch { console.error('no Chrome found — install one or run `npx playwright-core install chromium`'); process.exit(1) } })())
+// TEXTFIT_ONLY=path[,path…] runs a subset (game routes by path w/o leading /,
+// demos by name) so a single-title fix can be verified in seconds instead of
+// replaying all ~74 games x 3 viewports. The coverage + WIN gates are about
+// the whole sweep, so they are skipped while filtered.
+const ONLY = (process.env.TEXTFIT_ONLY || '').split(',').map((s) => s.trim().replace(/^\//, '')).filter(Boolean)
 
 const VIEWPORTS = [
     { name: 'phone-portrait', width: 390, height: 844 },
@@ -59,6 +54,7 @@ const VIEWPORTS = [
 const DEMOS = readdirSync(resolve(ROOT, 'public/demos'))
     .filter((f) => f.endsWith('.html') && f !== 'index.html')
     .map((f) => f.replace(/\.html$/, ''))
+    .filter((d) => !ONLY.length || ONLY.includes(d))
 
 const results = []
 const ok = (name, pass, detail) => {
@@ -116,8 +112,9 @@ const emuDirs = new Set(
 const games = [...reg.matchAll(/path:\s*'([^']+)'[\s\S]{0,400}?component:\s*(\w+)/g)]
     .map(([, path, comp]) => ({ path, dir: compDir[comp] || comp }))
     .filter((g) => !emuDirs.has(g.dir))
+    .filter((g) => !ONLY.length || ONLY.includes(g.path.replace(/^\//, '')))
 
-ok('sweep covers every non-emulator title', games.length >= 60, `${games.length} games (${emuDirs.size} emulator arms skipped)`)
+if (!ONLY.length) ok('sweep covers every non-emulator title', games.length >= 60, `${games.length} games (${emuDirs.size} emulator arms skipped)`)
 
 // ---- browser layer ----------------------------------------------------------
 
@@ -246,20 +243,17 @@ async function auditView(pages) {
 
 // CI runners (ubuntu): sandbox off + bigger shm, or Chromium dies on startup
 // before the CDP port opens (same args as launch() in lib/harness.mjs).
-const ciArgs = process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage'] : []
-const chrome = spawn(CHROME, [
-    '--headless=new', '--remote-debugging-port=9391',
-    '--no-first-run', '--no-default-browser-check', '--mute-audio',
-    ...ciArgs,
-    '--user-data-dir=' + PROFILE, 'about:blank',
-], { stdio: 'ignore' })
-const cleanup = guardChrome(chrome, PROFILE)
+// #1748: boot through the chromeboot ladder (like shot.mjs/harness.mjs) — a
+// raw headless spawn SIGABRTs on nodes without a GUI session (#1622), which
+// hard-blocked this whole gate on those boxes.
+import { launchChrome } from './lib/chromeboot.mjs'
 let browser
-for (let i = 0; i < 40 && !browser; i++) {
-    await new Promise((r) => setTimeout(r, 500))
-    try { browser = await chromium.connectOverCDP('http://127.0.0.1:9391') } catch { /* retry */ }
+try {
+    browser = await launchChrome({ headless: true })
+} catch (e) {
+    console.error(`chromeboot exhausted — cannot boot headless Chrome: ${String(e).slice(0, 120)}`)
+    process.exit(1)
 }
-if (!browser) { cleanup(); console.error('cannot reach headless Chrome over CDP'); process.exit(1) }
 
 let paged = []
 let demoErrs = 0
@@ -273,9 +267,11 @@ try {
 
     paged = await auditView(pages)
 
-    ok('WIN: at least one title pages on a landscape phone',
-        paged.some((r) => r.label.includes('phone-landscape')),
-        paged.map((r) => r.label).slice(0, 3).join(', ') || 'nothing paged anywhere')
+    if (!ONLY.length) {
+        ok('WIN: at least one title pages on a landscape phone',
+            paged.some((r) => r.label.includes('phone-landscape')),
+            paged.map((r) => r.label).slice(0, 3).join(', ') || 'nothing paged anywhere')
+    }
 
     for (const d of DEMOS) {
         const perView = await Promise.all(pages.map(async ({ page, vp }) => {
@@ -322,7 +318,6 @@ try {
     }
 } finally {
     await browser.close().catch(() => {})
-    cleanup()
 }
 
 const failed = results.filter((r) => !r.pass)

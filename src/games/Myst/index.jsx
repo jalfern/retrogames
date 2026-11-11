@@ -979,7 +979,7 @@ const MystGame = () => {
       )}
 
       {screen === 'attract' && (
-        <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/40 to-black/80 flex flex-col items-center justify-center text-center p-6">
+        <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/40 to-black/80 flex flex-col items-center justify-center text-center p-6 [html[data-rotate-hint]_&]:invisible">
           <h1 className="text-6xl font-bold tracking-[0.5em] text-amber-100 drop-shadow-[0_0_18px_rgba(255,190,90,0.6)] mb-8">MYST</h1>
           {/* #1027 — the Spectator shot: the four lenses, live, on the title
             screen. Small and dimmed — the title stays the hero. */}

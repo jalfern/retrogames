@@ -13,6 +13,9 @@
     font: 11px/1.7 ui-monospace, Menlo, monospace; letter-spacing: .14em;
     color: rgba(214,222,236,.68); text-shadow: 0 1px 3px rgba(0,0,0,.85);
     text-transform: uppercase;
+    /* #1748: telemetry grows AFTER credits.js reserves the badge column, so
+       keep a permanent right reserve (~badge width + gap) at every size. */
+    max-width: calc(100vw - 190px);
   }
   #hud b { color: rgba(255,203,110,.95); font-weight: 700; }
   @media (max-width: 560px) {

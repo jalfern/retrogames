@@ -937,8 +937,9 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
 // 33e. The Lemmings mount: the game runs the SHARED gesture (not a private
 // tap-to-assign), writes the one pad's pointer from its own touch, drives the
 // sizing from the shared fit shell (ResizeObserver, not window.resize), carries
-// the original bottom panel, and says ROTATE in portrait. Source pins, the way
-// the pilot guard does — a silent revert to tap-to-assign is caught.
+// the original bottom panel, and asks for rotation through the shared chrome.
+// Source pins, the way the pilot guard does — a silent revert to tap-to-assign
+// is caught.
 {
     const src = readFileSync(new URL('../src/games/Lemmings/index.jsx', import.meta.url), 'utf8')
     ok(/pointerGesture\(/.test(src) && /setPointer\(/.test(src), 'lemmings: runs the shared gesture and writes the one pad pointer')
@@ -950,7 +951,15 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
     ok(/ffId = e\.pointerId/.test(src), 'lemmings: FF releases by pointer id (a slide-off release cannot leave 3x stuck)')
     ok((src.match(/abortGesture\(\)/g) || []).length >= 3,
         'lemmings: the gesture aborts on level load, pause and blur (a stale press never commits)')
-    ok(/ROTATE YOUR PHONE/.test(src), 'lemmings: the portrait prompt')
+    ok(!/ROTATE YOUR PHONE/.test(src),
+        'lemmings: no private rotate banner (#1748 — it stacked over the shared hint\u2019s dismiss button; a re-add re-breaks the Text-fit sweep)')
+    // The portrait ask is not gone, it is DELEGATED: the shared chrome mounts
+    // RotateHint, and RotateHint carries the copy + publishes data-rotate-hint.
+    const chrome = readFileSync(new URL('../src/components/GameChrome.jsx', import.meta.url), 'utf8')
+    const hint = readFileSync(new URL('../src/components/RotateHint.jsx', import.meta.url), 'utf8')
+    ok(/<RotateHint \/>/.test(chrome), 'lemmings: the portrait prompt rides the shared GameChrome (RotateHint mounted)')
+    ok(/ROTATE YOUR PHONE/.test(hint) && /rotateHint/.test(hint),
+        'lemmings: the prompt copy + data-rotate-hint publish live in RotateHint')
 }
 
 // --- 34. #384 step 4: the gamepad rumble ----------------------------------
