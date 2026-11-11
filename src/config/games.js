@@ -734,7 +734,7 @@ export const GAMES = [
         label: 'MISSILE COMMAND',
         theme: 'dark',
         description: 'Defend your cities from incoming ICBMs.',
-        controls: ['Mouse Move: Aim', 'Click: Fire ABM']
+        controls: ['Mouse Move / Arrow Keys: Aim', 'Click / Space: Fire ABM — the nearest battery in range launches', WATCH_HELP + ' — the sweep-proven gunner meets every warhead high and never lets the fire touch the ground', '?: Pause and read the controls'],
     },
     {
         path: '/adventure',
