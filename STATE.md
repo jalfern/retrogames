@@ -1,69 +1,69 @@
-# STATE — session 228 (2026-11-11, slot b)
+# STATE — session 229 (2026-11-11, slot b)
 
 ## What shipped
-**SMASH TV: THE ANNOUNCER joins the pan board** merged as `a9d6881` (PR #2027,
-Closes #2024). The #2007 residue is gone: `BIG_ROOMS` covers rooms 0–8, so the
-whole show — finale included — boards 24 cells across. The removed camX pin was
-replaced by a stronger law: **THE HOST LAW** — the boss paces the middle of the
-*live camera window* (sim computes the same cast-midpoint the renderer pans to;
-bounds `[cam+48, cam+208]`, snap-and-flip containment so he holds it even when
-the shot slides faster than his 0.7 pace), and opens deterministically
-centre-stage at cell (gw/2, 2). He is TV; the camera never loses him.
-Wide boards then exposed a planner bug the narrow finale never hit: a
-chase-runner wedged into chrome exactly ON the 42px flee threshold, so seat 1
-fled-when-close/walked-back-when-not and fired past the pinned camera for 56k
-ticks (seed 1 deathless but frozen). **The PIN-SHOT LAW**: the planner tracks
-per-seat stillness of its threat; a chaser unmoved 30 ticks is scenery — no
-fleeing, walk the lane onto it, let the shot land (planner.js `pinned()`).
-Gates: smashcheck 575 PASS + full mutant sweep (18/18, incl. new host-law and
-finale-off-board mutants; two pre-#2024 anchors retired — the "ANNOUNCER
-widened too" mutant is now the truth, its slot guards the new law). Pilot 9/9
-seeds, seeds 1/5/7 deathless, slack wins, co-op 9/9. smashplay 28/28 (+4
-room-9 pixel gates: finale wide, centre-stage open, crown renders, host framed
-56..208 across clamp-to-clamp slides). watchcheck smash-tv 269/269. Lint
-gates + build green. README VARISIZE rewritten; honest-gap bullet CLOSED.
-Filed `QA — SMASH TV: finale-room polish pass` (#2028, feedback).
+**PAPERS, PLEASE-MIN: the violation inspector stays on screen** merged as `b8f932f`
+(PR #2023, Closes #2021) — a corpse resumed, re-verified whole, and landed. Slot a
+built it and went quiet at 16:21Z with the PR up and `static` green; its claim aged
+past the 90-min liveness window and `forge-claim.sh 2021 b` handed the issue to this
+slot at 17:58Z (`forge/ppm-inspector` @`19d9fbe` matched origin, clean).
+The stage: **the booth's case outlives its ink**. `stampLines` is snapshotted at the
+stamp and rides PINNED (`QUOTE.hold = 132` ≈ 2.2 s, layout.js law) after the 30-tick
+ink, the judged document keeps the counter through the read window, and the pin ends
+exactly when the next applicant's papers land (`settle` → 0) — or on your next ruling
+(`act` cuts it short: input is never blocked), or at the week's end. A clean admit has
+no witness, so nothing pins. `rules.js`/`decide` untouched → the two-path contract
+cannot shift; this is presentation of the booth's own case.
+Verification at tip before the rule-5 merge: `paperscheck --mutate` 17656/17656 with
+all 42 mutants caught (new m42 shrinks the pin 132→40 and the read-window law goes
+red); `papersplay` 85/85 zero page errors — the lifetime chain prints ink
+(`inked`/`pinTicks` 132) → pinned after the ink (281 witness-line red px) → cleared
+on landing (`pinTicks` −1); the #1891 drop gate survives the delayed hand-off (−5 px
+measured live, the exact −10 top stays Node law); lint:mario/fps/ai + eslint + build
+green. Prod proof: the live PPM chunk carries `hold:132`.
 
 ## The session's catches
-- **A freeze isn't a stall.** Seed 1's 56k-tick freeze never tripped the stall
-  detector — the hero was *oscillating* at the flee boundary, moving every
-  tick. Sample state periodically during suspected freezes; `stall` counters
-  only catch pinned-down, not limit cycles.
-- **LOS is the wrong reachability test.** "Flee chasers that can reach you"
-  implemented as line-of-sight still flees a chaser wedged in chrome. Motion,
-  not sight, is the discriminator — and the pre-existing #508 comment already
-  said it; the code just didn't.
-- **Mutant anchors are code-adjacent documentation.** Widening the whole show
-  silently invalidated two levels mutants (anchor lines gone → "anchor missing"
-  FAILs, not caught/survived). When you evolve a law, sweep `--mutate` lists
-  for its anchors in the same PR and retire/reverse them.
-- **Ghost slot-collision handled per namespace law**: #1637/b28 lived on as
-  another live session's (checkpoint 17:06Z while I claimed); picked #2024
-  instead, used :5179 (5178 held), never touched their ports/processes.
-  My claim line collided once with an API-flake "yielding to ''" — answered
-  with a correction checkpoint, kept building.
+- **A dead lane's PR is real work, but re-verify it whole.** The handoff comment said
+  "lint gates + build green"; I still ran Node laws, mutants, the browser suite, the
+  three lint gates, eslint and a build on my own port before touching the merge loop.
+  Eighteen minutes of compute bought a merge with no surprises.
+- **Prod-proof needs a runtime marker, not a test hook.** The `__ppTest` keys
+  (`pinTicks`, `pinned`) are DEV-only and get stripped by `npm run build`, so grepping
+  prod for them proves nothing. Pin a constant the SHIPPING code reads (`hold:132`), and
+  find the game's lazy chunk by a content marker ("THEY WERE CLEAN") — chunk hashes move
+  build to build (`index-DZE6FFkY` locally vs `index-DBtJPpm0` in prod). jalfern.com
+  308s assets to www, so without `curl -L` the "proof" is a redirect body.
+- **Route paths are registry facts.** I commented `/papers-please-min`; the title is
+  registered at `/papers-please` (src/config/games.js:416). The SPA fallback answers
+  200 for ANY slug, so a wrong URL looks verified — copy the path, don't recall it.
+  Correction posted on #2021.
+- **Claim liveness is the whole protocol.** Session 228 was REFUSED #2021 (live slot-a
+  holder); mine landed because slot a's newest checkpoint was 96 min old. That age check
+  is what makes resuming safe — never hand-write a claim line.
 
 ## Ladder trail
-TARGET #2021 refused at claim (live slot-a holder). `next` #1711 skipped
-(Jon's 13:50Z audit: S1 needs no more confirm passes until the binding is
-posted). #1637 avoided (occupied by live b-named session). QA-borrow refused
-(QA MASTER pid live). flagshipStage null (all flagship gaps closed).
-NEVER-DRY → SMASH TV, weakestStage 7 (3 open QA feedback #2011/#1978/#1950 +
-4 unowned README gaps) → oldest unowned gap #0 → issue #2024 filed, claimed,
-shipped. No jonq filed (all pattern-following).
+TARGET #2021 claimed for b (17:58Z, after slot a's 96-min silence) → corpse resumed in
+the existing worktree → verified → PR #2023 merged `b8f932f` → #2021 `shipped` + closed.
+Step 8b NOT filed: the second round already exists — 8 open PPM `feedback` issues own it
+(#2020 crowd staging, #1996 one-offs, #1988 arc, #1982 regulars, #1976 portrait,
+#1968 pay, #1943 portrait round, #1908 fifth portrait). `next` #1711 stays Jon-side;
+flagshipStage null (all flagship gaps owned); QA MASTER live (pid 10099) so feedback
+stays theirs. No jonq filed (all pattern-following).
 
 ## Open questions
 - none from this lane (see waiting-jon issues; #1711 hardware, #2016 lane:qa).
 
 ## Next
-- SmashTV remaining honest gaps (README): 8 weapons→4 (no homing/flamer),
-  stylized bonus civilians, softened one-hit death; plus QA #2028's finale
-  feel items (fan readability on 24 cols, off-camera add spawns — a
-  screen-edge cue is probably genuinely needed; a candidate stage of its own).
-- Other open SmashTV QA feedback: #2011 (pan readability six rooms), #1978,
-  #1950 — QA lane's board, not builder lanes' (#1637 doctrine).
-- b29 candidates for #1637 (watch rollout): see session 227's list — take
-  only titles with a PROVEN driver; honor the b28 watch-chrome laws.
-- Dev servers: slot b :5179 stopped at exit (:5178 held by the other lane —
-  check before assuming it's yours). `--mutate` only in an exclusive window
-  >=20 min; restore from git, never sed.
+- `game-queue` holds #1637 (WATCH rollout). b29 candidates: session 227's list, and the
+  rollout takes only titles with a PROVEN autopilot (centipede / missilecommand have
+  whole-tick lifts in sim.js — check the family harness for a winning driver first, and
+  keep an honest "no guide yet" where none exists). Honor the b28 watch-chrome laws:
+  pill wrapper inline calc + `--sat/--sar`, one raw paragraph per attract block,
+  picker-boot titles into watchphonecheck's SKIP_ATTRACT with a reason.
+- PPM's remaining honest gaps (README): evidence/RULES strings keep numerals, so the
+  month-name read is display-only; the settle is a scripted drop, not drag physics.
+- Nightly: tip is `ab80b20` (DK hammer #2030). `main-ok` answered "nightly cancelled"
+  through this merge — the known #601 hole (a fresh cancelled masking a failure), nothing
+  new to post; the scheduled nightly re-proves tip.
+- Dev servers: slot b :5178 stopped at exit; :5173 (slot a) was NOT running this session.
+  PPM's `--mutate` writes temp module dirs, so it needs no source window — but the
+  ≥20-min exclusivity law still applies to suites that touch the working tree (#1525).
