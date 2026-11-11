@@ -283,8 +283,20 @@ export default function TalkMeDown() {
                 const cm = g.modules[g.cursor.mod]
                 const dialTurn = !!cm && cm.type === 'D' && !cm.solved && cm.locked === 0 &&
                     ((merged[0].left && !prevPad.left) || (merged[0].right && !prevPad.right))
+                // #1923: the hand on the rail gets a voice. While the back is
+                // up, a LEFT/RIGHT press that moves the hand is free handling —
+                // but silent handling reads as a dead pad on a phone. One soft
+                // tick per fresh press-edge that actually moved it (same edge
+                // law as dialTurn: the engine has no lock in the flipped
+                // branch, so a HELD arrow slides the hand every tick — that
+                // must be one tick of sound per press, not a 60 Hz rattle).
+                // View-only: the sim never hears this, the hash never sees it.
+                const handTurn = g.flip &&
+                    ((merged[0].left && !prevPad.left) || (merged[0].right && !prevPad.right))
+                const backBefore = g.flip, selBefore = g.sel
                 prevPad = { ...merged[0] }
                 step(g, merged)
+                if (handTurn && backBefore && g.flip && g.sel !== selBefore) sfx.handTick()
                 for (const f of drainEvents(g)) {
                     if (f.k === 'key' && dialTurn) sfx.dial()
                     else if (sfx[f.k]) sfx[f.k]()

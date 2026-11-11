@@ -185,7 +185,68 @@ const home = g => { for (let o = railOpen(g.tray); g.sel !== o; o = railOpen(g.t
     ok(`the rail wins the whole quota on ${N}/${N} seeds`, wins === N, `${wins}/${N}`)
 }
 
-// ---- 8. mutant: remove the open-end gate, gates must die ------------------------
+// ---- 8. rail audio identity (#1923) ------------------------------------------
+{
+    const dir = new URL('../src/games/TalkMeDown/', import.meta.url)
+    const audio = readFileSync(new URL('audio.js', dir), 'utf8')
+    const view = readFileSync(new URL('index.jsx', dir), 'utf8')
+    const body = (name) => { const m = audio.match(new RegExp(`${name}\\(\\)\\s*\\{([^}]*)\\}`)); return m ? m[1] : '' }
+    const sweeps = (s) => [...s.matchAll(/playSweep\((\d+),\s*(\d+)/g)].map((m) => [+m[1], +m[2]])
+    const tones = (s) => [...s.matchAll(/playTone\((\d+),\s*([\d.]+),\s*'\w+',\s*([\d.]+)/g)].map((m) => ({ f: +m[1], dur: +m[2], vol: +m[3] }))
+    // eyes-closed law: OUT rises and starts bright; IN falls and lands heavy;
+    // neither voice contains the other's landmark.
+    const pullS = sweeps(body('pull'))
+    const pushS = sweeps(body('push'))
+    ok('cell-out is a RISING zip — the spring releases upward', pullS.length > 0 && pullS.every(([a, b]) => b >= a), JSON.stringify(pullS))
+    ok('clip-in is a FALLING clack — the cell seats downward', pushS.length > 0 && pushS.every(([a, b]) => b <= a), JSON.stringify(pushS))
+    ok('out and in share no landmark — bright ping above vs heavy seat below',
+        tones(body('pull')).some((t) => t.f >= 880) && tones(body('push')).some((t) => t.f <= 250)
+        && !tones(body('push')).some((t) => t.f >= 880) && !tones(body('pull')).some((t) => t.f <= 250))
+    // the hand tick is the softest voice in the kit (a rail must not out-click
+    // the verbs) and it exists at all.
+    const ht = tones(body('handTick'))
+    ok('handTick exists and is the softest shortest tick in the kit',
+        ht.length === 1 && ht[0].vol <= 0.05 && ht[0].dur <= 0.03, JSON.stringify(ht))
+    // wiring: fires only back-up + sel-changed + fresh press-edge, once, in spec.tick.
+    const pin = /backBefore && g\.flip && g\.sel !== selBefore\) sfx\.handTick\(\)/
+    ok('the tick is gated to the back plate and a real sel change', pin.test(view))
+    ok('held arrows are a slide, not a rattle — press-edge law on the tick',
+        /const handTurn = g\.flip &&[\s\S]*prevPad\.(left|right)[\s\S]*if \(handTurn && backBefore/.test(view))
+    ok('handTick is called from exactly one place (spec.tick serves keyboard, net and harness)',
+        (view.match(/sfx\.handTick\(\)/g) || []).length === 1)
+    // mutants: each named break must redden a pin above, not pass by accident.
+    const m1 = body('pull').replace(/playSweep\((\d+),\s*(\d+)/, 'playSweep($2, $1)') // pull falls like push
+    const m2 = view.replace('backBefore && g.flip && g.sel !== selBefore', 'g.sel !== selBefore') // ticks face-up
+    const m3 = view.replace('if (handTurn && backBefore && g.flip && g.sel !== selBefore) sfx.handTick()', '') // mute
+    const m1rise = sweeps(m1)
+    ok('mutant same-direction pull kills the rising gate',
+        m1rise.length > 0 && !m1rise.every(([a, b]) => b >= a), JSON.stringify(m1rise))
+    ok('mutant face-up tick kills the gate', !pin.test(m2))
+    ok('mutant muted tick kills both wiring gates',
+        !/backBefore && g\.flip/.test(m3) && (m3.match(/sfx\.handTick\(\)/g) || []).length === 0)
+}
+
+// ---- 9. hand moves stay event-silent (audio is view-only) -------------------
+{
+    let bad = null, moved = 0
+    for (let seed = 1; seed <= 60 && !bad; seed++) {
+        const gs = createGame(seed, 1)
+        if (gs.features.batteries < 1) continue
+        step(gs, { up: true })
+        drainEvents(gs) // drain the flip event
+        const s0 = simState(gs)
+        const tr0 = gs.tray.join(''), b0 = gs.features.batteries
+        step(gs, { right: true })
+        if (drainEvents(gs).length !== 0) { bad = `seed ${seed} hand shift emitted an event`; break }
+        if (gs.tray.join('') !== tr0 || gs.features.batteries !== b0 || gs.held !== 0 || gs.strikes !== 0) {
+            bad = `seed ${seed} hand shift moved the sim`; break
+        }
+        if (simState(gs).sel !== s0.sel) moved++
+    }
+    ok('hand shift: sel moves, nothing else does, zero events (hash law stands)', !bad && moved > 0, bad || `moved=${moved}`)
+}
+
+// ---- 10. mutant: remove the open-end gate, gates must die ------------------------
 if (process.argv.includes('--mutate')) {
     const dir = new URL('../src/games/TalkMeDown/', import.meta.url)
     const src = readFileSync(new URL('engine.js', dir), 'utf8')

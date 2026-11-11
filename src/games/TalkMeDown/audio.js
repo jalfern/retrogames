@@ -27,11 +27,20 @@ export const sfx = {
     refused() { A.playTone(240, 0.09, 'square', 0.08); A.playTone(180, 0.12, 'square', 0.08, 0.08) },
     // #1797: the block lands on its back with a chunky mechanical clunk.
     flip() { A.playSweep(150, 85, 0.18, 'triangle', 0.14); A.playNoise(0.05, 0.12) },
-    // #1909 THE DRAIN: a battery fights the spring clip out (rising creak +
-    // snap), and clicks home again (falling snap). Different shapes so the
-    // ear knows which way the plate just moved.
-    pull() { A.playSweep(180, 340, 0.12, 'square', 0.07); A.playNoise(0.03, 0.14) },
-    push() { A.playSweep(340, 170, 0.1, 'square', 0.07); A.playTone(140, 0.05, 'square', 0.09, 0.06) },
+    // #1909 THE DRAIN: a battery fights the spring clip out, and clicks home
+    // again. #1923 THE RAIL gives both its own voice: the ORIGINAL drain was a
+    // quiet plate creak (180..340 both inside the hum band), but the rail is a
+    // metal spring tray — cell-out SNAPS first (a bright clip-release ping) and
+    // zips UP; clip-in clacks DOWN off the clip and seats with a low thunk.
+    // Eyes-closed law (platecheck pins the shapes): out rides up and starts
+    // bright, in rides down and lands heavy; the two share no landmark.
+    pull() { A.playTone(920, 0.03, 'square', 0.08); A.playSweep(460, 980, 0.1, 'square', 0.05, 0.02); A.playNoise(0.02, 0.12) },
+    push() { A.playSweep(880, 300, 0.08, 'square', 0.06); A.playTone(190, 0.06, 'square', 0.11, 0.05) },
+    // #1923: the hand sliding between holders is handling, not a verb — but it
+    // must not be SILENT: one soft fingertip tick per press-edge that moves it
+    // (index.jsx: back-up + sel actually changed). Quietest voice in the kit
+    // on purpose — a rail that clicks louder than a spliced wire is a toy.
+    handTick() { A.playTone(300, 0.02, 'square', 0.035) },
     order() { A.playTone(880, 0.04, 'triangle', 0.06); A.playTone(1100, 0.05, 'triangle', 0.05, 0.04) },
     clear() { [523, 659, 784, 1046].forEach((f, i) => A.playTone(f, 0.12, 'square', 0.1, i * 0.09)) },
     boom() { A.playNoise(0.7, 0.45); A.playSweep(160, 30, 0.9, 'sawtooth', 0.3) },

@@ -61,6 +61,18 @@ the couch — or the mic.
   cells sit, never what the count means. `solvePad` homes to the open end
   before it spends the press (WATCH/attract/harness share that brain);
   `tray/sel/heldSlot` ride hash/simState and the snapshot (hp[2..4]).
+- **Rail audio identity (#1923)**: the rail reuses #1909's drain verbs, but a
+  metal spring tray must not sound like a quiet plate creak. `audio.js` gives
+  it its own voices: **cell-out** snaps first (920 Hz clip ping) then zips UP
+  (460→980); **clip-in** clacks DOWN off the clip (880→300) and seats with a
+  190 Hz thunk. Eyes-closed law, pinned: out rises and starts bright, in falls
+  and lands heavy, neither voice contains the other's landmark. `handTick()`
+  (300 Hz, 0.02 s, vol 0.035 — the softest shortest voice in the kit) rides
+  the hand: `spec.tick` fires it only when the back is up and a fresh press
+  edge (the `dialTurn` pattern — held arrows slide `sel` every tick in the
+  unlocked flipped branch, so one sound per PRESS, never a 60 Hz rattle)
+  actually changed `gs.sel`. View-only: hand shifts emit zero engine events
+  (pinned), the hash law and every replay stand. Mutants die by name.
 - **Solvability by construction**: the generator re-rolls module features
   until `computeTarget` resolves, so a printed precondition (e.g. N2's "the
   ONE lit wire") always holds on a live bomb.
@@ -186,6 +198,10 @@ npm run bombcheck   # 88 gates: legal+solvable gen (300 seeds), rules-as-printed
                     # carries held+pulls, source pins)
 npm run platecheck  # THE RAIL (#1917): layout purity (seeded side-stream — module rng
                     # untouched), rail law on 105 two-cell boards (open-end-only pull,
+                    # silent refusal, push-back re-clips home, pulls never rewind),
+                    # still-winnable on 120 seeds, + rail AUDIO identity (#1923:
+                    # cell-out rising / clip-in falling / softest-voice handTick,
+                    # press-edge wiring pin, named mutants; hand shift event-silent)
                     # blocked/empty refuse silently, push-back re-clips home, pulls
                     # never rewind), D6 solved on rigs needing a hand-shift, solvePad
                     # taps only at the open end, tray/sel/home ride hash+simState,
