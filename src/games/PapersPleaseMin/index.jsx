@@ -39,6 +39,18 @@ const COL = {
 const SKINS = ['#e8c39e', '#d2a679', '#b07f55', '#8a5a3a', '#f0d3b4']
 const HAIRS = ['#2c2622', '#5a3b1e', '#8d1f1f', '#b3b6bd', '#1e1e28']
 const SHIRTS = ['#39466e', '#6e4b7a', '#4b7a5e', '#7a634b']
+// #1989 ONE-OFF CROWD inks — headwear and marks of a life, each its own exact
+// color so papersplay can count them as pixels. Chosen clear of every counted
+// ink on the canvas: brow/mouth ink #20242e (the unibrow's #262b36 is one
+// step off, so the brow gate keeps counting brows, not bridges), eye whites
+// #d8dce8 (teeth are #e6ebf2), the regulars' mark ink #8f4a3e, and the
+// stamp's red/green hue tests (the scarf's wool-brown fails rr>140).
+const HAT_COLS = { 1: '#3a4257', 2: '#6b4a2f', 3: '#7d4a33' } // cap / ushanka / scarf
+const CAP_BRIM = '#2b3243'
+const SCARF_KNOT = '#5f3722'
+const UNI_COL = '#262b36'
+const EAR_COL = '#d8b23a'
+const TOOTH_COL = '#e6ebf2'
 
 const PapersPleaseMinGame = () => {
     const stageRef = useRef(null)
@@ -234,10 +246,29 @@ const PapersPleaseMinGame = () => {
             const rx = P(f.narrow ? 27 : 34)
             const ey = f.mark === 'ear' ? P(40) : P(44), eh = f.mark === 'ear' ? P(18) : P(10)
             c.fillRect(x + P(55) - rx - P(4), y + ey, P(5), eh); c.fillRect(x + P(55) + rx - P(1), y + ey, P(5), eh)
+            // #1989 the gold earring sits on the RIGHT lobe — clear of the
+            // castPix ear window (left columns) and of every mark's region.
+            if (f.ear) { c.fillStyle = EAR_COL; c.fillRect(x + P(55) + rx, y + ey + eh - P(2), P(3), P(3)) }
             c.fillStyle = HAIRS[f.hairC]
             c.fillRect(x + P(20), y + P(8), P(70), P(f.style === 0 ? 16 : f.style === 1 ? 10 : 22))
             if (f.style === 2) c.fillRect(x + P(18), y + P(8), P(8), P(44))
             if (f.style === 3) c.fillRect(x + P(84), y + P(8), P(8), P(44))
+            // #1989 HEADWEAR — the original's crowd wears its weather. Hats
+            // cover the crown but never the whole head: the hairline stays
+            // visible under the brim and past its edge (so a grey-haired
+            // aged photo or a flipped cut still READS through the hat), and
+            // the ushanka flaps stop above every compared band.
+            if (f.hat === 1) {
+                c.fillStyle = HAT_COLS[1]; c.fillRect(x + P(24), y + P(4), P(62), P(12))
+                c.fillStyle = CAP_BRIM; c.fillRect(x + P(14), y + P(16), P(54), P(4))
+            } else if (f.hat === 2) {
+                c.fillStyle = HAT_COLS[2]
+                c.fillRect(x + P(18), y + P(2), P(74), P(18))
+                c.fillRect(x + P(18), y + P(20), P(10), P(20)); c.fillRect(x + P(82), y + P(20), P(10), P(20))
+            } else if (f.hat === 3) {
+                c.fillStyle = HAT_COLS[3]; c.fillRect(x + P(22), y + P(78), P(66), P(14))
+                c.fillStyle = SCARF_KNOT; c.fillRect(x + P(48), y + P(74), P(14), P(6))
+            }
             // #1972 eyes get whites + pupils — the small face reads as a face
             c.fillStyle = '#d8dce8'
             c.fillRect(x + P(38), y + P(44), P(10), P(8)); c.fillRect(x + P(62), y + P(44), P(10), P(8))
@@ -247,6 +278,10 @@ const PapersPleaseMinGame = () => {
             // Constant ink: thickness is structure, color is never evidence.
             const bh = f.brow ? P(5) : P(2)
             c.fillRect(x + P(38), y + P(38), P(10), bh); c.fillRect(x + P(62), y + P(38), P(10), bh)
+            // #1989 the unibrow bridges the brows. Its ink sits one step off
+            // the compared-brow ink (#20242e) on purpose: thickness stays the
+            // evidence the PORTRAIT rule reads; the bridge is atmosphere.
+            if (f.uni) { c.fillStyle = UNI_COL; c.fillRect(x + P(48), y + P(38), P(14), P(4)) }
             // #1972 nose — decor only, never compared
             c.fillStyle = 'rgba(20,24,36,0.28)'
             c.fillRect(x + P(53), y + P(50), P(4), P(8))
@@ -255,6 +290,19 @@ const PapersPleaseMinGame = () => {
             if (f.mouth) c.fillRect(x + P(49), y + P(63), P(12), P(9))
             else c.fillRect(x + P(48), y + P(66), P(16), P(3))
             if (f.must) { c.fillStyle = HAIRS[f.hairC]; c.fillRect(x + P(44), y + P(58), P(24), P(5)) }
+            // #1989 the missing tooth: a light band of teeth with one dark
+            // gap column. Open mouths get the full band; a shut mouth keeps
+            // a smaller smirk — the notch reads either way. Teeth ink is
+            // distinct from the eye whites (#d8dce8) so both counters stay
+            // honest on their own pixels.
+            if (f.gap) {
+                if (f.mouth) {
+                    c.fillStyle = TOOTH_COL; c.fillRect(x + P(49), y + P(63), P(12), P(3))
+                    c.fillStyle = '#20242e'; c.fillRect(x + P(53), y + P(63), P(2), P(3))
+                } else {
+                    c.fillStyle = TOOTH_COL; c.fillRect(x + P(54), y + P(66), P(4), P(2))
+                }
+            }
             if (f.glasses) {
                 c.fillStyle = '#10151f'
                 c.fillRect(x + P(37), y + P(42), P(12), P(10)); c.fillRect(x + P(61), y + P(42), P(12), P(10))
@@ -614,6 +662,43 @@ const PapersPleaseMinGame = () => {
                         wrinkle: ink(36, 30, 74, 37, 0x8f4a3e), ear: ink(x0, 38, x0 + 4, 60, skinHex),
                     }
                 }),
+                // #1989 ONE-OFF CROWD pixel probe: render the LIVE entrant's
+                // face (and their photo, when honest papers carry one) through
+                // the SAME drawFace the booth paints with, and count each
+                // decor family's own inks — hat bodies, unibrow bridge,
+                // earring gold, tooth band. papersplay gates: decor entrants
+                // paint their pixels at the counter AND in the photo, bare
+                // heads paint none.
+                crowdPix: () => {
+                    const p = current(gs).view.person
+                    if (!p.face) return null
+                    const HEXES = {
+                        hat: [0x3a4257, 0x2b3243, 0x6b4a2f, 0x7d4a33, 0x5f3722],
+                        uni: [0x262b36], ear: [0xd8b23a], gap: [0xe6ebf2],
+                    }
+                    const hexN = (d, hexes) => {
+                        let n = 0
+                        for (let i = 0; i < d.length; i += 4) if (hexes.includes((d[i] << 16) | (d[i + 1] << 8) | d[i + 2])) n++
+                        return n
+                    }
+                    const render = (f) => {
+                        const cv = document.createElement('canvas')
+                        cv.width = PIX.w; cv.height = PIX.h
+                        const cc = cv.getContext('2d')
+                        cc.imageSmoothingEnabled = false
+                        drawFace(cc, f, 0, 0, 1)
+                        return cc.getImageData(0, 0, PIX.w, PIX.h).data
+                    }
+                    const out = { acc: { hat: p.face.hat || 0, uni: p.face.uni || 0, ear: p.face.ear || 0, gap: p.face.gap || 0 } }
+                    const A = render(p.face)
+                    for (const k of ['hat', 'uni', 'ear', 'gap']) out[k] = hexN(A, HEXES[k])
+                    if (p.passport && p.passport.photo) {
+                        const B = render(p.passport.photo)
+                        for (const k of ['hat', 'uni', 'ear', 'gap']) out[k + 'Photo'] = hexN(B, HEXES[k])
+                        out.photoAcc = { hat: p.passport.photo.hat || 0, uni: p.passport.photo.uni || 0, ear: p.passport.photo.ear || 0, gap: p.passport.photo.gap || 0 }
+                    }
+                    return out
+                },
                 watching: () => watchingRef.current, // #1637 WATCH probes
                 watchSfx: watchSfxLog,
                 // #1983 the bubble is pixels: count the bubble's own paper

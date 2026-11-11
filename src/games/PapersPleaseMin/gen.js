@@ -53,22 +53,22 @@ const LAST = ['KOSTOV', 'DRENIN', 'VASEK', 'LAGODA', 'ORLOV', 'TOLKA', 'ZEMEK', 
 export const REGULARS = [
     {
         id: 'grubak', name: 'VOLEN GRUBAK', sex: 'M', ageYears: 47, dobM: 3, dobD: 14, height: 178, weight: 86,
-        face: { skin: 2, hairC: 0, shirtC: 2, style: 1, narrow: 0, glasses: 0, must: 1, brow: 1, mouth: 0 },
+        face: { skin: 2, hairC: 0, shirtC: 2, style: 1, narrow: 0, glasses: 0, must: 1, brow: 1, mouth: 0, hat: 1, uni: 1, ear: 0, gap: 0 },
         mark: 'scar',
     },
     {
         id: 'marko', name: 'MARKO DRENIN', sex: 'M', ageYears: 29, dobM: 8, dobD: 2, height: 164, weight: 61,
-        face: { skin: 0, hairC: 1, shirtC: 0, style: 2, narrow: 1, glasses: 1, must: 0, brow: 0, mouth: 1 },
+        face: { skin: 0, hairC: 1, shirtC: 0, style: 2, narrow: 1, glasses: 1, must: 0, brow: 0, mouth: 1, hat: 0, uni: 0, ear: 1, gap: 0 },
         mark: 'mole',
     },
     {
         id: 'anja', name: 'ANJA TOLKA', sex: 'F', ageYears: 55, dobM: 11, dobD: 21, height: 158, weight: 57,
-        face: { skin: 4, hairC: 2, shirtC: 3, style: 0, narrow: 0, glasses: 0, must: 0, brow: 1, mouth: 0 },
+        face: { skin: 4, hairC: 2, shirtC: 3, style: 0, narrow: 0, glasses: 0, must: 0, brow: 1, mouth: 0, hat: 3, uni: 0, ear: 0, gap: 1 },
         mark: 'wrinkle',
     },
     {
         id: 'petr', name: 'PETR ZEMEK', sex: 'M', ageYears: 34, dobM: 5, dobD: 9, height: 171, weight: 74,
-        face: { skin: 1, hairC: 4, shirtC: 1, style: 3, narrow: 1, glasses: 0, must: 1, brow: 0, mouth: 1 },
+        face: { skin: 1, hairC: 4, shirtC: 1, style: 3, narrow: 1, glasses: 0, must: 1, brow: 0, mouth: 1, hat: 2, uni: 0, ear: 0, gap: 0 },
         mark: 'ear',
     },
 ]
@@ -122,6 +122,26 @@ export const TRAPS = [
 // color, and no rule may convict on color.
 // GREY is a hair color index, not a structural change.
 export const GREY = 3
+
+// #1989 ONE-OFF CROWD — the original's line is dozens of distinct people:
+// miners in flat caps, a fur ushanka, a woman's headscarf, a thick unibrow,
+// a gold earring, a missing tooth. Here those accessories ride as DECOR on
+// the face descriptor (doctrine of the nose: never compared, never evidence,
+// colors included). Variety is a PURE FUNCTION of the passport serial — a
+// pure hash, no rnd() draw, so the whole seed stream keeps its sequence
+// (names, numbers, weights, faces all replay exactly as before) and identity
+// is by construction: your number decides your hat, and the SAME decor object
+// is spread into `photo`, so face and photo can never disagree.
+// hat: 0 none, 1 flat cap, 2 ushanka, 3 headscarf.
+export function accFor(pic) {
+    const h = Math.imul(pic ^ 0x5bd1e996, 0x27d4eb2f) >>> 0
+    return {
+        hat: (h & 31) < 8 ? 1 + ((h >>> 5) % 3) : 0,   // 25% wear a head, kind spread
+        uni: ((h >>> 7) & 7) === 0 ? 1 : 0,             // unibrow
+        ear: ((h >>> 11) & 7) === 0 ? 1 : 0,            // gold earring
+        gap: ((h >>> 15) & 15) < 2 ? 1 : 0,             // missing tooth
+    }
+}
 
 let PERSON_ID = 0
 
@@ -180,11 +200,18 @@ function base(rnd, date, dayRules, used, opts = {}) {
         brow: rnd() < 0.45 ? 1 : 0,
         mouth: rnd() < 0.35 ? 1 : 0,
     }
+    // #1989: the serial is rolled exactly where it was before (first draw
+    // after the face) and decor is a pure hash of it — zero new draws, zero
+    // re-sequencing. Attach BEFORE the photo spread: decor is born shared,
+    // so face and photo carry the same hat by construction.
+    const pic = Math.floor(rnd() * 1e9)
+    const acc = accFor(pic)
+    face.hat = acc.hat; face.uni = acc.uni; face.ear = acc.ear; face.gap = acc.gap
     pp.photo = { ...face }
     return {
         trap: null,
         breakRule: null,
-        person: { pic: Math.floor(rnd() * 1e9), face, papers: wantId ? ['passport', 'idcard'] : ['passport'], passport: pp, idcard },
+        person: { pic, face, papers: wantId ? ['passport', 'idcard'] : ['passport'], passport: pp, idcard },
         truth: {
             hasPassport: true, hasIdCard: !!idcard, trueName: name, idName: idcard ? idcard.name : null,
             country, expiry: pp.expiry, dob, trueWeight: pp.weight, wanted: false, photoMismatch: false,
