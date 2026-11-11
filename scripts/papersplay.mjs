@@ -454,7 +454,7 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
                 const cp = t.crowdPix()
                 const per = p && p.view && p.view.person
                 if (!cp || !per) return null
-                return { day: p.day, name: per.passport ? per.passport.name : 'NO PAPERS', pic: per.pic, cp }
+                return { day: p.day, name: per.passport ? per.passport.name : 'NO PAPERS', pic: per.pic, reg: !!per.regular, cp }
             })
             if (row && row.day === d) rows.push(row)
             const v = await page.evaluate(() => window.__ppTest.verdict())
@@ -481,9 +481,15 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
         JSON.stringify(photoRows.slice(0, 3).map((x) => [x.name, x.cp.acc, x.cp.hatPhoto])))
     const bare = rows.filter((x) => x.cp.acc.hat === 0)
     r.check(`bare heads paint no hat ink (${bare.length} bare rows)`, bare.length >= 3 && bare.every((x) => x.cp.hat === 0))
-    let mismatch = 0
-    for (const x of rows) if (JSON.stringify(x.cp.acc) !== JSON.stringify(accFor(x.pic))) mismatch++
-    r.check(`browser decor === Node accFor(serial), every face (${rows.length} rows)`, mismatch === 0, `${mismatch} mismatches`)
+    let mismatch = 0, checked = 0
+    for (const x of rows) {
+        if (x.reg) continue // authored decor is identity, not hash — the
+        // cast wears what the script gave them (paperscheck pins the authored
+        // decor every appearance); the serial law governs the rolled crowd.
+        checked++
+        if (JSON.stringify(x.cp.acc) !== JSON.stringify(accFor(x.pic))) mismatch++
+    }
+    r.check(`rolled decor === Node accFor(serial), every background face (${checked} rows)`, mismatch === 0, `${mismatch} mismatches`)
     const grub = rows.find((x) => x.name === 'VOLEN GRUBAK')
     r.check(`Grubak walks the line in his authored cap and unibrow ${grub ? JSON.stringify({ hat: grub.cp.hat, uni: grub.cp.uni }) : ''}`,
         !!grub && grub.cp.hat > 0 && grub.cp.uni > 0)
@@ -492,7 +498,11 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
 }
 
 await wait(400)
-const clean = errors.filter((e) => !/favicon|Download the React DevTools/i.test(e))
+const clean = errors.filter((e) => !/favicon|Download the React DevTools/i.test(e) &&
+    // headless Chrome on a shared box logs this when the OS audio renderer
+    // fails for the page's AudioContext — a device-level complaint, not a
+    // page error (all synthesized-audio gates above passed on real tones).
+    !/AudioContext encountered an error from the audio device/i.test(e))
 r.check('zero page errors', clean.length === 0, clean.slice(0, 3).join(' | '))
 
 r.exit(browser)
