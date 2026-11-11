@@ -677,7 +677,7 @@ export const GAMES = [
         label: 'DONKEY KONG',
         theme: 'dark',
         description: 'Climb the construction site to save the damsel from the giant ape.',
-        controls: ['Arrow Left/Right: Move', 'Arrow Up/Down: Climb Ladder', 'Space: Jump']
+        controls: ['Arrow Left/Right: Move', 'Arrow Up/Down: Climb Ladder', 'Space: Jump', WATCH_HELP + ' — the route zigzags the girders, arcs the barrels, and never touches one', '?: Pause and read the controls']
     },
     {
         path: '/centipede',

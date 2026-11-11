@@ -562,35 +562,23 @@ function cloneWorld(gs) {
     }
 }
 
-// How far up the proven route the runner is: whole girders climbed, then the
-// fraction of the gap to the next waypoint's ladder shut. Higher is better;
-// the top girder is the win itself so it never needs shaping.
+// How far up the proven route the runner is: metres of height (feet above the
+// ground girder, monotone through climbs, exits and falls) plus a slim bonus
+// for standing near the route's next ladder. Height-based on purpose: a
+// target+fraction scale lets mid-ladder credit OUTRANK a finished exit, which
+// teaches the rollout to hang on ladders instead of climbing out.
 function progress(c) {
     const p = c.player
-    if (p.climbing) {
-        // Credit the girder the runner's feet will exit onto, weighted by how
-        // far up the ladder the feet have climbed.
-        let best = -1
-        let frac = 0
-        for (const l of c.ladders) {
-            if (l.broken) continue
-            const footY = p.y + p.h
-            if (Math.abs(p.x + p.w / 2 - l.x) >= 8) continue
-            if (footY > l.yTop - 2 && footY <= l.yBot + 4) {
-                const f = (l.yBot - footY) / Math.max(1, l.yBot - l.yTop)
-                const pi = c.platforms.findIndex(pl => getPlatformY(pl, l.x) + 8 === l.yTop)
-                if (pi > best || (pi === best && f > frac)) { best = pi; frac = f }
-            }
-        }
-        if (best >= 0) return best * 100 + frac * 60
-        return 0
-    }
+    const footY = p.y + p.h
+    const h = Math.max(0, 232 - footY) // px of height above the ground girder
+    if (p.climbing) return h * 10 + 8 // on a ladder = fully committed to the route
+    let align = 0
     const pi = platformIndex(c, p.x + p.w / 2, p.y, p.h)
-    if (pi === null) return 0
-    const wp = ROUTE.find(r => r.plat === pi)
-    if (!wp) return pi * 100 // standing on the top girder (win fires same tick)
-    const gap = Math.abs(wp.x - (p.x + p.w / 2))
-    return pi * 100 + Math.max(0, 60 - gap * 0.55)
+    if (pi !== null) {
+        const wp = ROUTE.find(r => r.plat === pi)
+        if (wp) align = Math.max(0, 8 - Math.abs(wp.x - (p.x + p.w / 2)) * 0.1)
+    }
+    return h * 10 + align
 }
 
 // The obvious play: climb the route's ladder when nothing is riding it, wait
@@ -717,6 +705,11 @@ function rollout(gs, cand) {
     const shaping =
         maxP * 900 +                    // highest girder reached dominates
         Math.max(0, p1 - p0) * 400 +  // net ground made
+        // Ground made then partly lost still counts: credit the best margin
+        // over the start even if the runner slipped back (walking off an edge
+        // costs less than standing still, and the ladder is still worth
+        // approaching) — capped so a doomed walk can't outvalue the climb.
+        Math.max(0, maxP - p0) * 120 +
         jumped * 150 -                // the arcade pays for barrel arcs — so does the driver
         danger
     return WATCH_HORIZON * 1000 + shaping
