@@ -9,17 +9,18 @@
 //               kills every non-boss enemy and pays them; the bonus timer opens
 //               the exits; killing THE ANNOUNCER wins.
 //   ledger    : final score == sum of scored events, pilot replay included.
-//   pilot     : 8 of seeds 0-8 win the nine-room show — seed 3 is the documented
-//               forced loss (#1973: fan attrition at THE ANNOUNCER after the
-//               big-room reshuffle; volley-commit, round-relative and crosser-
-//               aware breaks were measured and all lose other seeds instead).
-//               Seed 6 proves the deathless matinee.
+//   pilot     : all 9 seeds 0-8 win the nine-room show since #2007 — the wide
+//               boards plus the DIRECTED stall-break (slide until the goal opens;
+//               growing sweep while it doesn't) rescued every stall and the old
+//               seed-3 forced loss. Deathless on seeds 1 and 7, pinned below.
 //   slack     : seed 1 still wins with one fewer crate per room and zero
 //               energy cells.
-//   varisize (#1973): rooms 5 and 8 board 24 cells (wider than the screen) with
-//               mirrored architecture; the right door rides the far border; the
-//               hero and his shots cross the old screen line and the far door
-//               takes the show onward; the renderer carries the camera.
+//   varisize (#1973, #2007): every room but THE ANNOUNCER's boards 24 cells
+//               (wider than the screen) with mirrored architecture and a
+//               middle-column spawn; his arena stays screen-sized by law; the
+//               right door rides the far border; the hero and his shots cross
+//               the old screen line and the far door takes the show onward;
+//               the renderer carries the camera.
 //   determinism : same seed twice -> identical digest.
 //   pose (#1945): the over-the-shoulder carriage — mounts behind the body plane
 //               on the shoulder line, muzzles past centre in all eight aims,
@@ -43,7 +44,7 @@ const ok = (cond, name, detail = '') => {
     else { fails++; console.log(`  FAIL ${name}${detail ? ` — ${detail}` : ''}`) }
 }
 
-const { GW, GW_BIG, BIG_ROOMS, GH, CW, CELL, EXITS, exitsOf, TOTAL_ROOMS, genRoom, START, isBonus, ENEMIES, WEAPONS } = await import('../src/games/SmashTV/levels.js')
+const { GW, GW_BIG, BIG_ROOMS, GH, CW, CELL, EXITS, exitsOf, TOTAL_ROOMS, genRoom, START, startColOf, roomGw, isBonus, ENEMIES, WEAPONS } = await import('../src/games/SmashTV/levels.js')
 const { wallCell, NEON_TOP, CHROME, borderRivet } = await import('../src/games/SmashTV/walls.js')
 const { playerFrame, GUN, LAYERS, PLAYER_FRAMES, CARRIAGE, POSE, STOCK, gunPose } = await import('../src/games/SmashTV/sprite.js')
 const { ENEMY_FRAMES, TELEGRAPH, CHARGERS, CHARGE, OUTLINE, enemyFrame, bossMouth, BOSS_MOUTH_FLAP, ADD_TELEGRAPH, BOSS_DEATH_T } = await import('../src/games/SmashTV/enemies.js')
@@ -74,7 +75,7 @@ for (let idx = 0; idx < TOTAL_ROOMS; idx++) {
     const exits = exitsOf(gw)
     for (const e of exits) ok(!blocked.has(`${e.c},${e.r}`), `room ${idx + 1}: exit ${e.side} is free`)
     const seen = new Set()
-    const q = [[START.r, START.c]]
+    const q = [[START.r, startColOf(gw)]]
     while (q.length) {
         const [r, c] = q.pop()
         const k = `${c},${r}`
@@ -247,7 +248,7 @@ console.log('rules')
     step(gs, {})
     const evC = gs.events.find((e) => e.type === 'clear')
     ok(gs.cleared && evC, 'the room falls when the last enemy dies (+bonus event)', evC ? `+${evC.pts}` : '')
-    const ex = EXITS[0]
+    const ex = exitsOf(gs.roomData.gw)[0]
     gs.player.x = cx(ex.c); gs.player.y = cy(ex.r)
     step(gs, {})
     ok(gs.room === 1, 'walking an open exit advances the room')
@@ -637,7 +638,7 @@ console.log('co-op')
     g.spawnT = 0
     step(g, {}, {})
     ok(g.cleared, 'the co-op room falls')
-    const ex = EXITS[1]
+    const ex = exitsOf(g.roomData.gw)[1]
     g.players[1].x = cx(ex.c); g.players[1].y = cy(ex.r)
     step(g, {}, {})
     ok(g.room === 1, 'seat 2 alone walks the exit and the whole arena advances')
@@ -701,33 +702,38 @@ console.log('co-op')
 // ----------------------------------------------------------------- pilot ----
 console.log('pilot')
 {
-    // #1973 honest floor: varisize boards reshuffle every seeded run, and the
-    // sweep says seed 3 bleeds out at THE ANNOUNCER's fan no matter which
-    // break doctrine is loaded (volley-commit, round-relative, crosser-aware
-    // and bottom-pocket-rise variants each rescue seed 3 by losing another
-    // seed instead — all measured). Seed 3 is pinned as the documented forced
-    // loss, exactly like Pong's seed 25: if a future change wins it, update
-    // this pin AND the README together.
-    const FORCED_LOSS = 3
+    // #2007 honest floor: the whole show runs wide boards now, and the
+    // DIRECTED stall-break (slide until the goal vector opens, sweep growing
+    // while it doesn't) ended every pinned stall — including the seed-3 fan
+    // attrition that #1973 had documented as a forced loss. The sweep says the
+    // forced loss is retired: all nine seeds win. If a future change loses one
+    // again, update this pin AND the README together, Pong's seed 25 style.
     const wins = [], deathless = []
     for (const seed of [0, 1, 2, 3, 4, 5, 6, 7, 8]) {
         const r = S.plan(seed)
         if (r.won) { wins.push(seed); if (r.deaths === 0) deathless.push(seed) }
         console.log(`  seed ${seed}: ${r.won ? 'WON' : 'lost'} deaths=${r.deaths} score=${r.score}`)
     }
-    ok(wins.length === 8 && !wins.includes(FORCED_LOSS), 'pilot clears 8 of 9 seeds — seed 3 is the documented forced loss', `won ${wins.join(',')}`)
-    ok(deathless.includes(6), 'seed 6 proves the deathless matinee', `deathless ${deathless.join(',')}`)
+    ok(wins.length === 9, 'pilot clears all 9 seeds — the #1973 forced loss retired by the directed break', `won ${wins.join(',')}`)
+    ok(deathless.includes(1), 'seed 1 proves the deathless matinee', `deathless ${deathless.join(',')}`)
 }
 
 // ------------------------------------------------------------- varisize ----
 // #1973: big rooms are bigger than the screen — and the sim really lets you
-// use the extra floor. (The camera itself is renderer; its pins read the file.)
+// use the extra floor. #2007: the WHOLE show is big now, the boss excepted.
+// (The camera itself is renderer; its pins read the file.)
 console.log('varisize')
 {
     for (let idx = 0; idx < TOTAL_ROOMS; idx++) {
         const want = BIG_ROOMS.has(idx) ? GW_BIG : GW
         ok(genRoom(0, idx).gw === want, `room ${idx + 1} boards ${want} cols`)
     }
+    // #2007: every room but THE ANNOUNCER runs wide — and his doesn't
+    ok(BIG_ROOMS.size === TOTAL_ROOMS - 1 && [...BIG_ROOMS].every((i) => i >= 0 && i < TOTAL_ROOMS - 1),
+        'every room but the boss runs the wide board', [...BIG_ROOMS].sort().join(','))
+    ok(roomGw(TOTAL_ROOMS - 1) === GW, "THE ANNOUNCER keeps his screen-sized arena")
+    ok(startColOf(GW) === START.c && startColOf(GW_BIG) === GW_BIG / 2, 'each board spawns at its own lower middle')
+    ok(makeGame(0).player.x === cx(startColOf(GW_BIG)), 'the show opens on the middle of a wide board', `${makeGame(0).player.x}`)
     const big = genRoom(0, 4)
     const wallSet = new Set(big.walls.map(([c, r]) => `${c},${r}`))
     ok(big.walls.every(([c, r]) => wallSet.has(`${big.gw - 1 - c},${r}`)), 'the big-room pattern mirrors across the wider board')
@@ -829,7 +835,9 @@ if (process.argv.includes('--mutate')) {
     ]
     const LEVELS = 'src/games/SmashTV/levels.js'
     const LEVELS_MUTANTS = [
-        ['#1973: big rooms collapse to screen width', 'export const BIG_ROOMS = new Set([4, 7])', 'export const BIG_ROOMS = new Set()'],
+        ['#1973: the show collapses back to screen width', 'export const BIG_ROOMS = new Set([0, 1, 2, 3, 4, 5, 6, 7])', 'export const BIG_ROOMS = new Set()'],
+        ['#2007: THE ANNOUNCER\'s arena gets widened too', 'export const BIG_ROOMS = new Set([0, 1, 2, 3, 4, 5, 6, 7])', 'export const BIG_ROOMS = new Set([0, 1, 2, 3, 4, 5, 6, 7, 8])'],
+        ['#2007: spawns forget the wide board\'s middle', 'export const startColOf = (gw) => (gw > GW ? Math.floor(gw / 2) : START.c)', 'export const startColOf = () => START.c'],
         ['#1973: the wide-board mirror is never drawn', 'if (!seen.has(k)) { seen.add(k); walls.push([mc, r]) }', 'if (!seen.has(k)) { seen.add(k); void mc }'],
     ]
     const SPRITE = 'src/games/SmashTV/sprite.js'

@@ -1,9 +1,10 @@
-// SMASH TV — room data. A grid under a 24px HUD strip; standard rooms are
-// 16x14 cells of 16px, and the big rooms (#1973) run GW_BIG=24 columns wide —
-// an arena wider than the screen, framed by the camera like the cabinet's
-// 16:9 show. Rooms are generated deterministically from (seed, index): a wall
-// pattern from a small pool (mirrored across the big boards), crates with the
-// weapon ladder, and an enemy roster that grows.
+// SMASH TV — room data. A grid under a 24px HUD strip; the boss arena is
+// 16x14 cells of 16px, and every other room runs the GW_BIG=24-column board —
+// arenas wider than the screen, framed by the camera like the cabinet's
+// 16:9 show (#1973 widened rooms 5/8, #2007 widened the whole show). Rooms
+// are generated deterministically from (seed, index): a wall pattern from a
+// small pool (mirrored across the wide boards), crates with the weapon ladder,
+// and an enemy roster that grows.
 // Rooms 3 and 6 are BONUS rooms; room 8 is THE ANNOUNCER.
 
 export const GW = 16, GH = 14, CELL = 16
@@ -14,15 +15,19 @@ export const ARENA = { x0: 0, y0: HUD_H, x1: CW, y1: CH }
 
 export const TOTAL_ROOMS = 9
 
-// the mid-show arena rooms: bigger rooms, bigger show (#1973)
-export const BIG_ROOMS = new Set([4, 7])
+// the show's boards: bigger rooms, bigger show (#1973). The cabinet rotated the
+// WHOLE frame to 16:9, so every room but THE ANNOUNCER runs the wide board
+// (#2007) — his arena stays screen-sized on purpose: a boss half off-screen
+// reads as a bug.
+export const BIG_ROOMS = new Set([0, 1, 2, 3, 4, 5, 6, 7])
 export const roomGw = (idx) => (BIG_ROOMS.has(idx) ? GW_BIG : GW)
 
 // exit cells on the border ring (walk into one when the room falls to advance);
-// the right door sits on the room's own border, so big rooms open wider
+// the right door sits on the room's own border and the up/down doors centre on
+// it, so wide rooms spread and standard rooms are byte-identical to before
 export const exitsOf = (gw) => [
-    { c: 8, r: 0, side: 'up' },
-    { c: 7, r: GH - 1, side: 'down' },
+    { c: Math.floor(gw / 2), r: 0, side: 'up' },
+    { c: Math.floor(gw / 2) - 1, r: GH - 1, side: 'down' },
     { c: 0, r: 7, side: 'left' },
     { c: gw - 1, r: 6, side: 'right' },
 ]
@@ -142,5 +147,7 @@ export function genRoom(seed, idx) {
     return room
 }
 
-// player start cell: lower middle of the arena
+// player start cell: lower middle of the ARENA (a wide room's middle is the
+// 12th column; the standard board keeps START byte-identical)
 export const START = { c: 8, r: 11 }
+export const startColOf = (gw) => (gw > GW ? Math.floor(gw / 2) : START.c)

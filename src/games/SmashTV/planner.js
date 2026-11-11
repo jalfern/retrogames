@@ -10,7 +10,7 @@
 // padToInp / inpToPad are the shared fold between pads and sim inputs, so a
 // harness can replay a 2P run from seed + per-player pad streams.
 
-import { makeGame, step, stateHash, q8, los, CFG, boardW } from './sim.js'
+import { makeGame, step, stateHash, q8, los, CFG, boardW, blockedPx } from './sim.js'
 import { exitsOf, ENEMIES, CH, HUD_H } from './levels.js'
 
 const cx = (c) => c * 16 + 8
@@ -94,10 +94,17 @@ export function decide(gs, pi = 0) {
         const moved = Math.hypot(p.x - st.last[0], p.y - st.last[1])
         st.stall = moved < 0.3 ? st.stall + 1 : 0
     }
+    if (st.rn !== gs.room) { st.rn = gs.room; st.streak = 0 }
     st.last = [p.x, p.y]
     st.wantMove = false
     if (st.stall > 15) {
-        st.detour = 30
+        st.streak = (st.streak || 0) + 1
+        // #2007: a fixed 30-tick break spans ~36px — less than the no-go band
+        // between two bar columns on a 24-wide board (~45px), so the exit walk
+        // ping-ponged across the same blocked corridor forever (seed 6 sat in
+        // room 3 for 59k ticks). Grow the break with consecutive stalls until
+        // the sweep clears any finite band; the streak resets each room.
+        st.detour = Math.min(30 * st.streak, 150)
         st.stall = 0
         if (pi === 0) {
             // seat 1 keeps its proven horizontal break exactly as it always did
@@ -121,6 +128,13 @@ export function decide(gs, pi = 0) {
         // first, because the stall it usually eats is a bar wall running vertical
         if (st.axis === 0) { inp.mx = st.side; inp.my = 0 }
         else { inp.mx = 0; inp.my = st.side }
+        // #2007 DIRECTED break: slide until the way the goal WANTED to go is
+        // actually open again. A fixed-length break spans ~36px — less than the
+        // no-go band between two bar columns on a 24-wide board (~45px), so
+        // the exit walk ping-ponged across the same blocked corridor forever
+        // (seed 6 sat in room 3 for 59k ticks). Release at the gap.
+        const gx = st.gx || 0, gy = st.gy || 0
+        if ((gx || gy) && !blockedPx(gs, p.x + gx * 6, p.y + gy * 6, CFG.playerR + 1)) st.detour = 0
         const th = nearestEnemy(gs, true, p)
         if (th) aimH(gs, inp, p, th.x, th.y)
         st.wantMove = true
@@ -128,7 +142,7 @@ export function decide(gs, pi = 0) {
     }
 
     const aimAt = (x, y) => aimH(gs, inp, p, x, y)
-    const moveToward = (x, y, drop = 0) => { moveH(gs, inp, p, x, y, drop); if (inp.mx || inp.my) st.wantMove = true }
+    const moveToward = (x, y, drop = 0) => { moveH(gs, inp, p, x, y, drop); if (inp.mx || inp.my) { st.wantMove = true; st.gx = inp.mx; st.gy = inp.my } }
 
     if (room.bonus) {
         let civ = null, bd = 1e9
@@ -136,12 +150,13 @@ export function decide(gs, pi = 0) {
             const d = Math.hypot(v.x - p.x, v.y - p.y)
             if (d < bd) { bd = d; civ = v }
         }
-        // Once the clock has opened the exits, the show moves on when EITHER
-        // hero walks a door. A partner that keeps hunting a civilian across
-        // the chrome (they can ghost a bar wall its bullets cannot) pins the
-        // whole arena in the bonus room (#508) — so the partner goes to the
-        // door; seat 1 keeps its proven hunt-first game.
-        if (civ && !(pi !== 0 && gs.cleared)) { aimAt(civ.x + (civ.dx || 0) * 8, civ.y + (civ.dy || 0) * 8); moveToward(civ.x, civ.y, 4) }
+        // Once the clock has opened the exits, the show moves on when the
+        // door is walked. A hero still hunting a civilian that ghosts behind
+        // chrome pins the whole arena in the bonus room (#508 gave the partner
+        // this law; #2007 gives it to seat 1 too — a 24-column floor grew the
+        // ghosting space, and seat 1 shot into a bar corner for 58k ticks while
+        // the exits stood open).
+        if (civ && !gs.cleared) { aimAt(civ.x + (civ.dx || 0) * 8, civ.y + (civ.dy || 0) * 8); moveToward(civ.x, civ.y, 4) }
         else if (gs.cleared) { const e = nearestExit(gs, p); if (e) moveToward(e[0], e[1]) }
         return inp
     }
