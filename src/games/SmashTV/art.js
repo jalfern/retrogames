@@ -198,9 +198,11 @@ function crate(weapon, f) {
     px(g, 2, 3, 12, 10, 'rgba(93,200,255,0.25)')
     px(g, 1, 2, 14, 1, '#5dc8ff'); px(g, 1, 13, 14, 1, '#2b5a7a')
     px(g, 1, 2, 1, 12, '#5dc8ff'); px(g, 14, 2, 1, 12, '#2b5a7a')
-    const cols = { spread: '#ffd23f', laser: '#ff4f4f', gun: '#8fff9f' }
+    const cols = { spread: '#ffd23f', laser: '#ff4f4f', gun: '#8fff9f', homing: '#ffb04f', flame: '#ff8a3f' }
     px(g, 4, 7, 8, 2, cols[weapon] || '#8d99b5')
     px(g, 10, 5, 2, 2, cols[weapon] || '#8d99b5')
+    if (weapon === 'homing') px(g, 3, 5, 2, 2, '#ffe9cf') // warhead tip in the glass
+    if (weapon === 'flame') px(g, 3, 5, 2, 2, '#ffd23f') // a flame licks inside
     if (f % 2) { px(g, 3, 4, 2, 1, '#e9f7ff'); px(g, 11, 10, 2, 1, '#e9f7ff') }
     return c
 }
@@ -208,12 +210,14 @@ function crate(weapon, f) {
 // weapon icon for the HUD
 function icon(weapon) {
     const [c, g] = sheet(12, 8)
-    const cols = { twin: '#8d99b5', gun: '#8fff9f', spread: '#ffd23f', laser: '#ff4f4f' }
+    const cols = { twin: '#8d99b5', gun: '#8fff9f', spread: '#ffd23f', laser: '#ff4f4f', homing: '#ffb04f', flame: '#ff8a3f' }
     px(g, 1, 3, 8, 2, cols[weapon])
     if (weapon === 'twin') { px(g, 2, 1, 6, 1, cols[weapon]); px(g, 2, 6, 6, 1, cols[weapon]) }
     if (weapon === 'spread') { px(g, 9, 0, 2, 1, cols[weapon]); px(g, 9, 7, 2, 1, cols[weapon]) }
     if (weapon === 'laser') { px(g, 9, 3, 3, 2, '#ffb0a0') }
     if (weapon === 'gun') { px(g, 0, 5, 3, 3, '#4a5568') }
+    if (weapon === 'homing') { px(g, 9, 2, 3, 4, '#4a5568'); px(g, 10, 3, 2, 2, '#ffe9cf') } // launch tube + warhead
+    if (weapon === 'flame') { px(g, 9, 3, 1, 2, '#4a5568'); px(g, 10, 2, 2, 1, '#ffd23f'); px(g, 10, 5, 2, 1, '#ffd23f') } // nozzle + licks
     return c
 }
 
@@ -241,7 +245,7 @@ export function buildSprites() {
         SP[`civ${i}0`] = civ(0, t)
         SP[`civ${i}1`] = civ(1, t)
     })
-    for (const w of ['twin', 'gun', 'spread', 'laser']) SP[`icon_${w}`] = icon(w)
+    for (const w of ['twin', 'gun', 'spread', 'laser', 'homing', 'flame']) SP[`icon_${w}`] = icon(w)
     return SP
 }
 

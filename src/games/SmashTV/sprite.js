@@ -32,6 +32,11 @@ export const GUN = {
     gun:    { off: [2],         len: 7.5, w: 3,   col: '#6b7285', tip: '#8fff9f', flash: 9,   stock: 3.5, mag: true },
     spread: { off: [0],         len: 5.5, w: 2.5, col: '#9aa5bd', tip: '#ffd23f', flash: 7,   stock: 2.5, dots: 2 },
     laser:  { off: [0],         len: 6,   w: 3.5, col: '#5a6079', tip: '#ff4f4f', flash: 7.5, stock: 3,   box: true, cells: 2.5 },
+    // #2032: the heat-seeker rides as a boxy launch rail with a long tube
+    // (the tube IS the silhouette); the flamer carries its fuel drum (mag)
+    // and a hot orange nozzle tip.
+    homing: { off: [0],         len: 9,   w: 3.5, col: '#5a6079', tip: '#ffb04f', flash: 10.5, stock: 3,  box: true },
+    flame:  { off: [0],         len: 7,   w: 2.5, col: '#6b7285', tip: '#ff8a3f', flash: 8.5, stock: 3,   mag: true },
 }
 
 // the carriage geometry for one weapon aimed along [ax, ay] at (x, y), snapped

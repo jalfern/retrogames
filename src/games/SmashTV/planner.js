@@ -92,7 +92,7 @@ function nearestExit(gs, p) {
     return best
 }
 
-export function decide(gs, pi = 0) {
+function seatDrive(gs, pi = 0) {
     const p = seatOf(gs, pi)
     if (!p || p.deadT > 0 || p.out || gs.end) return {}
     const st = stallOf(gs, pi)
@@ -290,6 +290,30 @@ export function decide(gs, pi = 0) {
             inp.mx = Math.sign(p.x - other.x) || -1
             inp.my = 0
         }
+    }
+    return inp
+}
+
+// #2032: the seat does not equip the FLAMER, not even by accident. Stray fire
+// can break the crate for you, and the dropped barrel then sits in the lane —
+// a trap for this doctrine (seed 4 picked it up in the bonus room and walked a
+// 45 px reach into THE ANNOUNCER's fan). The seat steers around the dropped
+// barrel; a human thumb steps onto it freely, because the law lives in the
+// brain, never in the sim.
+export function decide(gs, pi = 0) {
+    const inp = seatDrive(gs, pi)
+    const p = seatOf(gs, pi)
+    if (p.out || p.weapon === 'flame') return inp
+    const it = gs.items.find((k) => k.t === 'weapon' && k.w === 'flame')
+    if (!it) return inp
+    const dx = p.x - it.x, dy = p.y - it.y
+    const d = Math.hypot(dx, dy)
+    if (d > 16) return inp
+    const ux = dx / (d || 1), uy = dy / (d || 1)
+    for (const [vx, vy] of [[ux, uy], [uy, -ux], [-uy, ux], [ux, 0], [0, uy]]) {
+        const mx = Math.round(vx), my = Math.round(vy)
+        if (!mx && !my) continue
+        if (!blockedPx(gs, p.x + mx * 10, p.y + my * 10, CFG.playerR)) { inp.mx = mx; inp.my = my; break }
     }
     return inp
 }

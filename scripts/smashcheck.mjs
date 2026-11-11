@@ -37,6 +37,10 @@
 //               autopilot (partner pads only) clears the show, and the whole 2P
 //               run replays from seed + per-player pad streams hash-for-hash;
 //               the aim stick rides THE one pad (ax/ay + digital fold).
+//   specials (#2032): HEAT-SEEKER and FLAMER complete the ladder — the table,
+//               bonus-room-only drops, bounded-turn missile guidance with blast
+//               and fizzle, the flamer's three-pellet fan and ~45 px reach cap,
+//               and the seat-law that keeps the autopilot out of the fire.
 // `-- --mutate` re-plants fixed bugs in child processes; each MUST die.
 
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -65,7 +69,7 @@ async function fresh() {
     return { ...sim, plan: planner.plan, planCoop: planner.planCoop, padToInp: planner.padToInp, inpToPad: planner.inpToPad, decidePad: planner.decidePad }
 }
 const S = await fresh()
-const { makeGame, step, stateHash, CFG, comboColor, flickerPhase, COMBO_COLORS } = S
+const { makeGame, step, stateHash, CFG, comboColor, flickerPhase, COMBO_COLORS, MISSILE_TURN, MISSILE_LIFE, MISSILE_BLAST, FLAME_LIFE, FLAME_FAN, FLAME_SLOW } = S
 const cx = (c) => c * 16 + 8
 const cy = (r) => 24 + r * 16 + 8
 
@@ -120,9 +124,9 @@ console.log('player')
     ok(GUN.twin.off.length === 2 && GUN.twin.off[0] < 0 && GUN.twin.off[0] === -GUN.twin.off[1], 'twin is two barrels flanking the aim line', JSON.stringify(GUN.twin.off))
     ok(['gun', 'spread', 'laser'].every((w) => GUN[w].off.length === 1), 'the other weapons carry a single barrel')
     const sig = Object.values(GUN).map((g) => `${g.off.length}|${g.len}|${g.w}`)
-    ok(new Set(sig).size === 4, 'every weapon reads as its own silhouette', sig.join(' '))
+    ok(new Set(sig).size === Object.keys(GUN).length && Object.keys(GUN).length === 6, 'every weapon reads as its own silhouette', sig.join(' '))
     ok(Object.values(GUN).every((g) => g.flash > g.len), 'the muzzle flash blooms beyond the muzzle')
-    ok(new Set(Object.values(GUN).map((g) => g.tip)).size === 4, 'each weapon has its own muzzle colour')
+    ok(new Set(Object.values(GUN).map((g) => g.tip)).size === 6, 'each weapon has its own muzzle colour')
     ok(LAYERS.indexOf('feet') < LAYERS.indexOf('gun') && LAYERS.indexOf('body') < LAYERS.indexOf('gun'), 'feet and body render under the gun layer', LAYERS.join('>'))
 }
 
@@ -522,7 +526,7 @@ console.log('juice')
 {
     // per-weapon muzzle flash: each gun flashes its own tip colour, never one shared bloom
     const flashCols = Object.keys(GUN).map((w) => muzzleFlash(w).col)
-    ok(new Set(flashCols).size === 4, 'every weapon flashes its own muzzle colour', flashCols.join(' '))
+    ok(new Set(flashCols).size === 6, 'every weapon flashes its own muzzle colour', flashCols.join(' '))
     ok(Object.keys(GUN).every((w) => muzzleFlash(w).col === GUN[w].tip), 'the flash rides the gun tip, not a shared white')
     ok(Object.keys(GUN).every((w) => casingCol(w) === GUN[w].tip), 'the spent casing sparks carry the gun colour')
     // kill shake: an ordinary kill jolts, a boss add hits harder, the boss rattles the cabinet
@@ -562,7 +566,7 @@ console.log('juice')
 console.log('audio')
 {
     // per-weapon fire timbre: each gun gets its own voice
-    ok(Object.keys(FIRE).length === 4 && new Set(Object.values(FIRE).map((f) => JSON.stringify(f))).size === 4, 'every weapon fires its own timbre', Object.keys(FIRE).join(','))
+    ok(Object.keys(FIRE).length === Object.keys(WEAPONS).length && Object.keys(WEAPONS).every((w) => FIRE[w]) && new Set(Object.keys(WEAPONS).map((w) => JSON.stringify(FIRE[w]))).size === Object.keys(WEAPONS).length, 'every weapon fires its own timbre', Object.keys(FIRE).join(','))
     ok(FIRE.twin.notes.length === 1 && FIRE.twin.notes[0][2] < 0.06, 'the twin is a short blip', JSON.stringify(FIRE.twin.notes))
     ok(FIRE.gun.notes.length === 2, 'the gun is a staccato double click')
     ok(FIRE.spread.notes.length === 3, 'the spread is a low chord')
@@ -772,6 +776,149 @@ console.log('co-op')
     one.releaseSlot(2, 'aimLeft')
 }
 
+// --------------------------------------------------------------- specials ----
+// #2032: HEAT-SEEKER and FLAMER — the two guns the original's power-up ladder
+// had and this arena didn't. Table, drops, guidance, reach and the seat-law
+// that keeps the autopilot out of the fire.
+console.log('specials')
+{
+    ok(WEAPONS.homing && WEAPONS.flame, 'both specials are in the table', Object.keys(WEAPONS).join(','))
+    ok(Object.keys(WEAPONS).length === 6 && new Set(Object.values(WEAPONS).map((w) => `${w.interval}|${w.speed}|${w.dmg}|${w.pierce}`)).size === 6, 'each gun is a distinct stat-line', Object.keys(WEAPONS).join(','))
+    ok(WEAPONS.homing.name === 'HEAT-SEEKER' && WEAPONS.flame.name === 'FLAMER', 'the HUD names them', `${WEAPONS.homing.name}/${WEAPONS.flame.name}`)
+}
+// the specials hide in the bonus rounds — HEAT-SEEKER in room 4, FLAMER in
+// room 7 — and nowhere else on any board.
+{
+    let clean = true, detail = ''
+    for (const seed of [0, 1, 2, 3, 4, 5, 6, 7, 8]) {
+        for (let idx = 0; idx < TOTAL_ROOMS; idx++) {
+            const got = genRoom(seed, idx).crates.map((k) => k.weapon).filter((w) => w === 'homing' || w === 'flame')
+            const want = idx === 3 ? 'homing' : idx === 6 ? 'flame' : null
+            if (got.length !== (want ? 1 : 0) || (want && got[0] !== want)) { clean = false; detail = `seed ${seed + 1} room ${idx + 1}: ${got.join(',')}` }
+        }
+    }
+    ok(clean, 'every seed: HEAT-SEEKER only in room 4, FLAMER only in room 7', detail)
+}
+// missile guidance — locked on the nearest heat at launch, curving at a BOUNDED
+// turn rate (guidance, not a tractor beam), constant speed, and a warhead that
+// splashes everything near the impact.
+{
+    const mk = (id, x, y) => ({ id, kind: 'turret', x, y, hp: 9, cd: 9999, wanderT: 0, wdx: 0, wdy: 0, hitT: 0, dir: 1, walk: 0, moving: false, chg: 0, aim: [0, 0] })
+    const rig = () => {
+        const g = makeGame(7)
+        g.enemies = []; g.civilians = []; g.ebullets = []; g.grenades = []; g.crates = []; g.items = []
+        g.roomData = { ...g.roomData, spawns: [] }; g.spawnT = 0; g.walls = new Set()
+        g.player.invuln = 99999; g.player.weapon = 'homing'
+        return g
+    }
+    const g = rig()
+    g.player.x = 200; g.player.y = 140
+    g.enemies = [mk(901, 200, 60), mk(902, 170, 140)] // far ahead, closer off the barrel line
+    step(g, { fx: 0, fy: -1, fire: true })
+    const m = g.bullets.find((b) => b.kind === 'homing')
+    ok(!!m, 'the heat-seeker fires a missile', `${g.bullets.length} bullets`)
+    ok(g.bullets.filter((b) => b.kind === 'homing').length === 1, 'one missile per shot — the cabinet fired them singly')
+    ok(m && m.lock === 902, 'the seeker locks on the nearest heat at launch, not the one in front', `lock=${m && m.lock}`)
+    let prevA = Math.atan2(m.dy, m.dx), turned = 0, bounded = true, speedHeld = true, flight = 0
+    const seen = []
+    while (!m.done && flight < 400) {
+        step(g, {}); flight++
+        const a = Math.atan2(m.dy, m.dx)
+        let d = a - prevA
+        while (d > Math.PI) d -= Math.PI * 2
+        while (d < -Math.PI) d += Math.PI * 2
+        turned = Math.max(turned, Math.abs(d))
+        if (Math.abs(d) > MISSILE_TURN + 1e-9) bounded = false
+        if (Math.abs(Math.hypot(m.dx, m.dy) - WEAPONS.homing.speed) > 1e-9) speedHeld = false
+        prevA = a
+        for (const e of g.enemies) if (Math.hypot(e.x - m.x, e.y - m.y) < 7) seen.push(e.id)
+        gs_clear(g)
+    }
+    ok(bounded, `the missile never turns more than ${MISSILE_TURN} rad/tick`, `max ${turned.toFixed(3)}`)
+    ok(turned > 0.05, 'the missile really curves onto its lock', `max turn ${turned.toFixed(3)}`)
+    ok(speedHeld, 'guidance bends the heading, never the speed')
+    ok(seen.includes(902), 'the missile catches the off-line target its lock picked', seen.join(','))
+    ok(g.enemies.find((e) => e.id === 902).hp === 7, 'the missile lands its two points of damage', `hp=${g.enemies.find((e) => e.id === 902).hp}`)
+    ok(g.enemies.find((e) => e.id === 901).hp === 9, 'a far target feels nothing — the blast is bounded')
+    // splash: a second hostile beside the impact takes a point
+    const g2 = rig()
+    g2.player.x = 200; g2.player.y = 140
+    g2.enemies = [mk(911, 200, 90), mk(912, 210, 94)]
+    step(g2, { fx: 0, fy: -1, fire: true })
+    let f2 = 0
+    while (g2.bullets.some((b) => b.kind === 'homing') && f2 < 400) { step(g2, {}); f2++; gs_clear(g2) }
+    const pair = g2.enemies.map((e) => e.hp).sort().join(',')
+    ok(pair === '7,8', `the warhead splashes: direct hit takes two, a neighbour inside ${MISSILE_BLAST} px takes one`, `hp ${pair}`)
+    // fizzle: with no heat to chase the hunt still ends — a missile is ammunition, not a cruise missile
+    const g3 = rig()
+    g3.roomData = { ...g3.roomData, gw: 40 }
+    g3.player.x = 40; g3.player.y = 140 // clear of the exit cell, long east runway
+    step(g3, { fx: 1, fy: 0, fire: true })
+    let fz = false, f3 = 0
+    while (!g3.end && f3 < MISSILE_LIFE + 40 && !fz) {
+        step(g3, {})
+        if (g3.events.some((e) => e.type === 'missileFizzle')) fz = true
+        gs_clear(g3); f3++
+    }
+    ok(fz, `an unguided hunt dies at MISSILE_LIFE=${MISSILE_LIFE} ticks`, `ticks ${f3}`)
+}
+function gs_clear(g) { g.events.length = 0 }
+// the flamer: a three-pellet puff, eased fans, and a hard reach cap — plus the
+// seat-law that keeps the autopilot out of it (it cannot win the lane duels).
+{
+    const rigF = () => {
+        const g = makeGame(7)
+        g.enemies = []; g.civilians = []; g.ebullets = []; g.grenades = []; g.crates = []; g.items = []
+        g.roomData = { ...g.roomData, spawns: [], gw: 40 }; g.spawnT = 0; g.walls = new Set()
+        g.player.invuln = 99999; g.player.weapon = 'flame'
+        return g
+    }
+    const g = rigF()
+    g.player.x = 100; g.player.y = 140
+    step(g, { fx: 1, fy: 0, fire: true })
+    const puffs = g.bullets.filter((b) => b.kind === 'flame')
+    ok(puffs.length === 3, 'the flamer breathes three pellets at once', `${puffs.length}`)
+    const angs = puffs.map((b) => Math.atan2(b.dy, b.dx)).sort((a, b) => a - b).map((a) => a.toFixed(3))
+    ok(Math.abs(parseFloat(angs[0]) + FLAME_FAN) < 1e-9 && angs[1] === '0.000' && Math.abs(parseFloat(angs[2]) - FLAME_FAN) < 1e-9, `the fan is +-${FLAME_FAN} rad`, angs.join(' '))
+    const mags = puffs.map((b) => Math.hypot(b.dx, b.dy)).sort((a, b) => a - b).map((v) => v.toFixed(4))
+    const wantMags = [WEAPONS.flame.speed * FLAME_SLOW, WEAPONS.flame.speed * FLAME_SLOW, WEAPONS.flame.speed].sort((a, b) => a - b).map((v) => v.toFixed(4))
+    ok(mags.join(',') === wantMags.join(','), 'the outer pellets fly eased by FLAME_SLOW, the centre full speed', mags.join(','))
+    let t = 0
+    while (g.bullets.some((b) => b.kind === 'flame') && t < 100) { step(g, {}); t++; g.events.length = 0 }
+    ok(t <= FLAME_LIFE, `fire dies inside FLAME_LIFE=${FLAME_LIFE} ticks`, `${t}`)
+    ok(WEAPONS.flame.speed * FLAME_LIFE <= 45.1, 'the reach stays inside ~45 px — short-range by design', `${(WEAPONS.flame.speed * FLAME_LIFE).toFixed(1)} px`)
+    const g2 = rigF()
+    g2.player.x = 100; g2.player.y = 140
+    g2.enemies = [{ id: 921, kind: 'turret', x: 130, y: 140, hp: 9, cd: 9999, wanderT: 0, wdx: 0, wdy: 0, hitT: 0, dir: 1, walk: 0, moving: false, chg: 0, aim: [0, 0] }]
+    step(g2, { fx: 1, fy: 0, fire: true })
+    let t2 = 0
+    while (t2 < 20 && g2.enemies[0].hp === 9) { step(g2, {}); t2++; g2.events.length = 0 }
+    ok(g2.enemies[0].hp === 8, 'the flame burns through a body for one point', `hp=${g2.enemies[0].hp}`)
+    ok(g2.bullets.some((b) => b.kind === 'flame'), 'and keeps flying — the fire pierces')
+}
+// the seat-law (#2032): the autopilot never equips the FLAMER — not even when
+// stray fire breaks the crate and the dropped barrel lies in its lane. A 45 px
+// stream cannot fight the doctrine's lane duels; it stays the human's gun.
+{
+    let touched = ''
+    for (const seed of [0, 1, 2, 3, 4, 5, 6, 7, 8]) {
+        const r = S.plan(seed)
+        const g = makeGame(seed)
+        let prev = g.player.weapon
+        for (const inp of r.script) {
+            step(g, inp); g.events.length = 0
+            if (g.player.weapon === 'flame') { touched = touched || `seed ${seed + 1}` }
+            if (g.player.weapon !== prev) prev = g.player.weapon
+        }
+    }
+    ok(touched === '', 'no autopilot seat ever equips the FLAMER across the 9-seed sweep', touched)
+    const rc = S.planCoop(0)
+    const gc = makeGame(0, { players: 2 })
+    let cooped = false
+    for (const [i1, pad] of rc.script) { step(gc, i1, S.padToInp(pad)); gc.events.length = 0; if (gc.players.some((q) => q.weapon === 'flame')) cooped = true }
+    ok(!cooped, 'neither co-op seat equips the FLAMER either')
+}
+
 // ----------------------------------------------------------------- pilot ----
 console.log('pilot')
 {
@@ -907,6 +1054,11 @@ if (process.argv.includes('--mutate')) {
         ['#1973: the board silently shrinks back to the screen', 'export const boardW = (gs) => gwOf(gs) * CELL', 'export const boardW = () => CW'],
         ['#1973: the far door forgets it moved with the border', 'const exits = exitsOf(gwOf(gs))', 'const exits = EXITS'],
         ['#2024: the host law off — THE ANNOUNCER paces fixed bounds', 'const lo = cam + 48\n            const hi = cam + CW - 48', 'const lo = 60\n            const hi = bw - 60'],
+        ['#2032: the missile flies straight (the lock is ignored)', 'const a = cur + Math.max(-MISSILE_TURN, Math.min(MISSILE_TURN, diff))', 'const a = cur'],
+        ['#2032: the missile never expires', '} else if (b.age > MISSILE_LIFE) {', '} else if (b.age > 1e9) {'],
+        ['#2032: the warhead is inert', 'if (dist(b.x, b.y, q.x, q.y) < MISSILE_BLAST + (q.kind === \'boss\' ? 14 : 7)) damageEnemy(gs, q, 1, \'blast\', owner)', 'if (false) damageEnemy(gs, q, 1, \'blast\', owner)'],
+        ['#2032: the fire never dies out', 'if (b.age > FLAME_LIFE) { b.done = true; continue }', 'if (b.age > 1e9) { b.done = true; continue }'],
+        ['#2032: the flamer coughs a single pellet', 'for (const [d, sp] of [[-FLAME_FAN, FLAME_SLOW], [0, 1], [FLAME_FAN, FLAME_SLOW]]) {', 'for (const [d, sp] of [[0, 1]]) {'],
     ]
     const LEVELS = 'src/games/SmashTV/levels.js'
     const LEVELS_MUTANTS = [
@@ -914,12 +1066,17 @@ if (process.argv.includes('--mutate')) {
         ['#2024: the finale drops off the pan board again', 'export const BIG_ROOMS = new Set([0, 1, 2, 3, 4, 5, 6, 7, 8])', 'export const BIG_ROOMS = new Set([0, 1, 2, 3, 4, 5, 6, 7])'],
         ['#2007: spawns forget the wide board\'s middle', 'export const startColOf = (gw) => (gw > GW ? Math.floor(gw / 2) : START.c)', 'export const startColOf = () => START.c'],
         ['#1973: the wide-board mirror is never drawn', 'if (!seen.has(k)) { seen.add(k); walls.push([mc, r]) }', 'if (!seen.has(k)) { seen.add(k); void mc }'],
+        ['#2032: the specials leave the bonus rounds', 'room.crates.push({ c: bc, r: br, weapon: idx === 3 ? \'homing\' : \'flame\' })', 'room.crates.push({ c: bc, r: br, weapon: idx === 3 ? \'laser\' : \'gun\' })'],
     ]
     const SPRITE = 'src/games/SmashTV/sprite.js'
     const SPRITE_MUTANTS = [
         ['guns drop to the waist (pose law: shoulder carriage)', 'export const CARRIAGE = { back: 1, rise: 2.5 }', 'export const CARRIAGE = { back: 0, rise: 0 }'],
     ]
-    const targets = [[SIM, MUTANTS], [SPRITE, SPRITE_MUTANTS], [LEVELS, LEVELS_MUTANTS]]
+    const PLANNER = 'src/games/SmashTV/planner.js'
+    const PLANNER_MUTANTS = [
+        ['#2032: the seat walks onto the dropped flamer', 'if (d > 16) return inp', 'if (d > -1e9) return inp'],
+    ]
+    const targets = [[SIM, MUTANTS], [SPRITE, SPRITE_MUTANTS], [LEVELS, LEVELS_MUTANTS], [PLANNER, PLANNER_MUTANTS]]
     let died = 0, total = 0
     for (const [file, muts] of targets) {
         const orig = readFileSync(file, 'utf8')
