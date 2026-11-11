@@ -1,66 +1,70 @@
-# STATE — session 223 (2026-11-11, slot b)
+# STATE — session 224 (2026-11-11, slot a)
 
 ## What shipped
-**THE LONG CONVERSATION** merged as `8be0644` (PR #2005, Closes #2003 —
-NEVER-DRY pick, weakestStage score 10 = 8 QA feedbacks naming PPM + 2
-unowned README gaps; TARGET #1637 REFUSED at claim — slot a alive on b26
-ASTEROIDS, checkpoint 12:05Z). Papers, Please-MIN's regulars stopped
-trading orphan sentences: every `REGULARS` entry now carries four authored
-beats `{greet, hook, again, follow}` — the first walk-up greets AND opens a
-topic ("THE BREAD LINE WAS LONG."), the return ANSWERS it ("YOU AGAIN." /
-"BACK AGAIN, HA!" / "STILL NO BREAD, HA!"). 24 authored lines, 24 distinct
-voices, pinned. Zero rnd(): every seed replays byte-identical; purity
-untouched (decide never reads `say`, twins walk every paper every day). The
-arc turn keeps the canonical Jorji pair — the wall interrupts breakfast; its
-hook is one of the week's two honest unpaid threads (see catches). The
-bubble grows with the thread: `h = max(34, 8 + 13n)` — 1–2-line fields
-byte-identical, third row at 47px, bottom 349 < 394 strip bound; new
-`bubbleGrowPix` hook samples the 9px growth strip. paperscheck **13956/13956
-+ all 37 mutants die** (new m35 payoff-drop, m36 threads-crossed; m29/m34
-re-anchored — see catches); witnesses added: shape first=2/return=3/arc=2
-across the 12-seed sweep, 24-distinct-lines, plant→payoff continuity (paid
-⊆ hooked; unpaid only arc + window tail seats s+2/s+3), growth law + strip
-bound pinned in layout law. papersplay **74/74** live keys: Sonya's two-line
-intro 4854px, Tadek's day-7 payoff thread grows the field **1314 paper px**,
-strangers dark on both strips (<100), zero page errors. Live:
-jalfern.com/retrogames/papers-please (entry `index-DKFRUdw8.js` → chunk
-`index-CqJh5MBE.js` carries "STILL NO BREAD, HA!").
+**LODE RUNNER-LITE: THE LIP CLING** merged as `6b2db65` (PR #2006, Closes
+#2004 — NEVER-DRY pick: weakestStage score 4 = 4 QA feedback naming LRL + 1
+unowned README gap; flagship stage null). Nobody stands on air: a body
+climbing out of a pit whose hole is still open ends the climb CLINGING to the
+lip — hands on the edge, legs painted into the pit (climb frames sunk
+CH*0.45, gated on stand-mode) until one side-step onto supported floor.
+`onLip` derives at every arrival (arrive, guard escape, respawn clears), so
+`stateHash`/replay/solver receipts are byte-identical; walkers and fallers
+over the same mouth still drop in; trap ladder untouched. lodecheck 134/134
++ 162/162 mutants (proven red by hand-breaking the escape flag, restored);
+lodeplay 36/36 live: cling flag true with hole open below at the shaft exit,
+bright runner pixels INTO the pit cell below the lip line, side-step clears.
+Lint gates + build green. Live proof: entry `index-DwavVhs8.js` → chunk
+`index-DV7Z0u3t.js` carries `onLip`.
+**Earlier this shift the lane also landed ASTEROIDS b26** (`4fdf0b1`, #2000)
+— see the takeover log; that first instance shipped it while I stood down.
+
+## Takeover log (read first — #1782 class RECURRED on slot a)
+TARGET #1997 was REFUSED (slot b held it since 11:43; they shipped #1999 at
+12:13). Step-1b looked like a #1637 corpse (claim lapsed, branch pushed, no
+`opencode run` matching the 11:07 session) — **it was NOT dead**: warden
+kicked slot a twice (11:07 AND 11:58); the first instance was mid-mutant-sweep
+in the same worktree. My checks ran into its live planting (anchors "missing",
+one mutant "survived" — cross-planting, both sides' runs polluted), and my
+rebase of forge/watch-b26 moved the ref under it (content disjoint, it
+re-based over harmlessly). Its merge loop survived as a CHILD OF THE OPENCODE
+DAEMON (ppid = `opencode.exe serve`), not of any session — pgrep on `opencode
+run` misses daemon-adopted shells. I yielded, posted evidence on #1782, and
+the loop merged #2000 at 12:45. **Rules of thumb for a "corpse":** before
+reaping — `git ls-remote` the branch (is it advancing?), check daemon-adopted
+shells (`pgrep -P <serve-pid>`), and treat anchor-missing/survivor noise as
+possible interference, not broken code.
 
 ## The session's catches
-- **Branch edits orphan mutant anchors.** Widening the return/greet literals
-  in gen.js silently orphaned m29's anchor (`['YOU AGAIN.', c.lines.again]`
-  no longer existed) — and the NON-mutate run stayed green: anchor existence
-  is only audited under `--mutate`. The sweep's "anchor not found (m29)" FAIL
-  is the suite protecting itself; after touching any branch a mutant mutMods,
-  grep every anchor before trusting green.
-- **Thread-continuity law overreach.** First draft allowed exactly ONE unpaid
-  hook per week (the arc face) — but the window's tail seats s+2, s+3 walk
-  ONCE a week and legitimately carry their topic into next week. The failure
-  output named the seats exactly; the honest law is unpaid ⊆ {arc, s+2, s+3}.
-- **Main moves under you.** Slot a's #2002 (TMD rail) merged between PR open
-  and merge; the rule-5 loop took the fast-forward without a hiccup. Normal —
-  just re-detach after `--delete-branch` (done).
+- **Stale CLOSED bullets re-kick lanes (#961, again).** weakestStage pointed
+  at LRL's "Three strata are real (#1952)" gap — #1952 has been shipped for
+  days; the bullet just lacked its `CLOSED by #1952` marker. Marker added in
+  this PR; the real gap taken was the air-standing one.
+- **sed restores are shotguns.** Turning a mutant off by string-replace hit a
+  second `gd.onLip = false` at the respawn site. Reading the COMMITTED diff
+  (not just re-running green) caught it. Restore by targeted edit, verify by
+  `git show HEAD:<file>`.
+- **Probe shape:** `probe()` returns the whole object — `offLip.lip` vs
+  `offLip.player.lip` failed a check whose detail line printed the *right*
+  value. Detail JSON and assertion read different depths.
+- Device-level `AudioContext encountered an error from the audio device`
+  filtered in lodeplay now (same precedent papersplay/britanniadrive carry).
 
 ## Ladder trail
-- halt none; steer none. TARGET #1637 REFUSED at claim (slot a newest 22 min;
-  do not fight it). `next` #1711 stays released (Jon-side R2 hardware, seventh
-  confirm on record). game-queue empty; QA MASTER live (pid on studio) →
-  feedback borrow refused; flagship stage spent (idle-kick flagshipStage null)
-  → NEVER-DRY weakestStage PPM score 10 → filed #2003 with the why-weakest
-  line, claimed, shipped. No jonq filed (all decisions pattern-following).
-  No 8b polish-pass issue: PPM already carries open QA passes (#1996 owns
-  crowd polish) — do not duplicate from a builder lane.
-
-## Open questions
-- none (see waiting-jon issues; #1711 hardware waits on Jon).
+TARGET #1997 REFUSED (b held) → #1637 false-corpse (double-kick, yielded to
+live instance; b26 shipped) → halt none, steer none → `next` #1711 stays
+Jon-side (eighth confirm) → game-queue empty → QA MASTER live (borrow
+refused) → flagshipStage null → NEVER-DRY weakestStage #2004 → shipped
+#2006. No jonq filed (all decisions pattern-following).
 
 ## Next
-- PPM's last unowned honest gap now: **two regulars in one day** (queue-size
-  law amendment + second bubble sample per window) — it's the natural next
-  NEVER-DRY stage unless QA files it first.
-- Slot a: b26 #1637 ASTEROIDS (check its BUILD FLOOR comments before touching
-  those titles).
-- Dev servers: slot a 5173, slot b 5178 (session's server stopped at exit).
-  `--mutate` only in an exclusive window, ≥20 min; after a killed run grep
-  every mutant fingerprint before trusting the tree (this session's sweep ran
-  clean end-to-end, 37/37).
+- Batch 27 (#1637): DonkeyKong first (registry-oldest unseated; NO sim.js —
+  whole-tick lift + driver + seat in one session, budget ~3 h). b25/b26
+  template + b26 laws (hold candidates, honest ttc, lead + angular window).
+  #1637 still carries `building` — claim fresh (the lock expired at 12:39).
+- QA owns #1949 (LRL polish, + my cling addendum), #2001 (asteroids), and
+  the fat feedback list. Ports: slot a 5173, slot b 5178, QA 5176.
+- `--mutate` only in an exclusive window; before trusting ANY check output on
+  a lane you think is dead, run the corpse checks above.
+
+## Open questions
+- none (see waiting-jon issues; #1711 hardware still waits on Jon).
