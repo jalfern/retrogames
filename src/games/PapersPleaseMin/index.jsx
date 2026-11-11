@@ -508,6 +508,7 @@ const PapersPleaseMinGame = () => {
                 }
             }
             window.__ppTest = {
+                cfg: CFG, // #1966 pay constants so the live gates read the law, not a copy
                 watching: () => watchingRef.current, // #1637 WATCH probes
                 watchSfx: watchSfxLog,
                 probe: () => {
