@@ -15,14 +15,41 @@
 // attract, WATCH, the harness — can never be caught by the gate, only
 // a human dawdling past eighteen seconds per entrant. paperscheck pins
 // that inequality plus the cadence margin and makes closing provable.
+//
+// #1966 THE PAY ECONOMY: the booth finally earns and spends. A correct
+// stamp pays CFG.PAY (5); a wrong call forfeits that entrant's pay — the
+// strike is not the only cost of a mistake. Every night settles: SOUP 3
+// and HEAT 3, RENT 30 after night 3 and 45 after night 6 (rent rises, as
+// the campaign's does). Rent unpaid is EVICTION — the original's rule kept
+// exactly; two nights without soup or heat is the original's two-night
+// death. Missed heads earn nothing, so the shift clock and the purse bite
+// together: a dawdled day is unpaid labor toward a rising rent. Day 7 is
+// survived only when its final slip pays out. settle() runs on BOTH
+// day-ends (queue-drain and gate-close) so the two can never drift.
 
 import { decide } from './rules.js'
 import { genWeek, viewOf } from './gen.js'
 
-export const CFG = { STRIKE_MAX: 3, DAYS: 7, SEAT_TICKS: 1080, MISS_DOCK: 5, SIM_HZ: 60 }
+export const CFG = {
+    STRIKE_MAX: 3, DAYS: 7, SEAT_TICKS: 1080, MISS_DOCK: 5, SIM_HZ: 60,
+    // #1966 THE PAY ECONOMY — the original's money: 5 a head (a write-up
+    // pays nothing), soup and heat every night, rent every third night and
+    // RISING (30, then 45 — the campaign's rent goes up; here the second
+    // bill does). An unpaid rent is the original's rule kept exactly:
+    // eviction ends the run. Two nights without soup (or heat) is the
+    // original's two-night death.
+    PAY: 5, SOUP: 3, HEAT: 3, RENTS: { 3: 30, 6: 45 },
+}
 
 // a day's clock, in sim ticks: the queue is the quota, the queue sizes the clock
 export const dayTicks = (day) => day.queue.length * CFG.SEAT_TICKS
+
+// rent nights: every third night, and it rises (see CFG.RENTS)
+export const rentDue = (day) => CFG.RENTS[day] || 0
+
+// the whole week's fixed charges — autopilot's balance arithmetic, pinned
+// by paperscheck: income 70 entrants × PAY ends the week at 350 − 117 = 233
+export const weekCharges = () => 7 * (CFG.SOUP + CFG.HEAT) + Object.values(CFG.RENTS).reduce((a, k) => a + k, 0)
 
 export function newRun(seed = 0) {
     const week = genWeek(seed)
@@ -36,6 +63,12 @@ export function newRun(seed = 0) {
         caught: 0,
         admitted: 0,
         clock: dayTicks(week.days[0]),
+        credits: 0,        // #1966 the purse: survives the week, not just the quota
+        paidToday: 0,
+        hungry: 0,
+        cold: 0,
+        slip: null,        // last deduction slip, kept through the morning
+        slipTicks: 0,
         end: null,
         endWhy: '',
         last: null,
@@ -67,7 +100,7 @@ export function step(gs, inp) {
     const why = correct
         ? (d.verdict === 'deny' ? d.violations[0].rule : null)
         : (d.verdict === 'deny' ? d.violations[0].rule : 'INNOCENT')
-    if (correct) { gs.score++; if (action === 'deny') gs.caught++; else gs.admitted++ } else gs.strikes++
+    if (correct) { gs.score++; gs.credits += CFG.PAY; gs.paidToday += CFG.PAY; if (action === 'deny') gs.caught++; else gs.admitted++ } else gs.strikes++
     gs.last = {
         ok: correct, action, verdict: d.verdict, why,
         name: a.person.passport ? a.person.passport.name : 'NO PAPERS',
@@ -83,13 +116,61 @@ export function step(gs, inp) {
     }
     if (gs.idx >= day.queue.length) {
         if (gs.day >= CFG.DAYS) {
+            // the finale must survive its NIGHT too: the last deduction slip
+            // pays out before glory. An unpaid bill on night 7 is still a loss.
+            settle(gs)
+            if (gs.end) return
             gs.end = 'win'
             gs.endWhy = 'THE WEEK SURVIVED'
-            gs.events.push({ type: 'win' })
+            gs.events.push({ type: 'win', credits: gs.credits })
         } else {
             gs.events.push({ type: 'endday', day: gs.day, score: gs.score, missed: 0 })
+            settle(gs)
+            if (gs.end) return
             advance(gs)
         }
+    }
+}
+
+// #1966 THE PAY ECONOMY — the night settles. Rent first (the original bills
+// rent before soup and heat, and an unpaid rent is eviction — immediate, the
+// week is over). Then soup, then heat: a night you cannot cover leaves the
+// counter up; TWO nights in a row without either is the original's death.
+// A covered night resets its own counter. The slip is the printed paper:
+// pay earned, bills, balance. Events: pay / lose.
+export function settle(gs) {
+    const slip = { day: gs.day, pay: gs.paidToday, rent: 0, soup: 0, heat: 0, hungry: false, cold: false }
+    const rent = rentDue(gs.day)
+    if (rent) {
+        if (gs.credits >= rent) {
+            gs.credits -= rent
+            slip.rent = rent
+        } else {
+            gs.slip = slip
+            gs.slipTicks = 400
+            gs.events.push({ type: 'pay', ...slip, balance: gs.credits, evicted: true })
+            gs.end = 'lose'
+            gs.endWhy = `RENT UNPAID — EVICTED (needed ${rent}, had ${gs.credits})`
+            gs.events.push({ type: 'lose', why: gs.endWhy })
+            return
+        }
+    }
+    if (gs.credits >= CFG.SOUP) { gs.credits -= CFG.SOUP; slip.soup = CFG.SOUP; gs.hungry = 0 } else { gs.hungry++; slip.hungry = true }
+    if (gs.credits >= CFG.HEAT) { gs.credits -= CFG.HEAT; slip.heat = CFG.HEAT; gs.cold = 0 } else { gs.cold++; slip.cold = true }
+    slip.balance = gs.credits
+    gs.slip = slip
+    gs.slipTicks = 400
+    gs.events.push({ type: 'pay', ...slip })
+    if (gs.hungry >= 2) {
+        gs.end = 'lose'
+        gs.endWhy = 'NO SOUP TWO NIGHTS — STARVED'
+        gs.events.push({ type: 'lose', why: gs.endWhy })
+        return
+    }
+    if (gs.cold >= 2) {
+        gs.end = 'lose'
+        gs.endWhy = 'NO HEAT TWO NIGHTS — FROZEN'
+        gs.events.push({ type: 'lose', why: gs.endWhy })
     }
 }
 
@@ -100,16 +181,20 @@ function advance(gs) {
     gs.day += 1
     gs.idx = 0
     gs.strikes = 0
+    gs.paidToday = 0
     gs.clock = dayTicks(gs.week.days[gs.day - 1])
 }
 
 // the shift moves. n ticks of the fixed timestep pass; when the clock
 // bottoms the gate closes on whoever is left in line. Days 1-6: turned
 // away means a docked record (the original's quota miss costs pay, not
-// your life). Day 7: the finale must finish — an unmet quota loses the
-// week. Events: close / endday / lose.
+// your life — and via #1966, literally costs PAY: a turned-away head is
+// an unpaid head). Day 7: the finale must finish — an unmet quota loses
+// the week — and even a finished finale must survive its settlement.
+// Events: close / pay / endday / lose.
 export function tick(gs, n = 1) {
     if (gs.end) return
+    if (gs.slipTicks > 0) { gs.slipTicks--; if (gs.slipTicks === 0) gs.slip = null }
     gs.clock -= n
     if (gs.clock > 0) return
     const day = gs.week.days[gs.day - 1]
@@ -124,8 +209,21 @@ export function tick(gs, n = 1) {
             gs.events.push({ type: 'lose', why: gs.endWhy })
             return
         }
+    } else if (gs.day >= CFG.DAYS) {
+        // the finale's clock ran out with the line already empty — the shift
+        // is done; it still owes the night its bills (#1966: no glory over
+        // an unpaid apartment)
+        settle(gs)
+        if (!gs.end) {
+            gs.end = 'win'
+            gs.endWhy = 'THE WEEK SURVIVED'
+            gs.events.push({ type: 'win', credits: gs.credits })
+        }
+        return
     }
     gs.events.push({ type: 'endday', day: gs.day, score: gs.score, missed })
+    settle(gs)
+    if (gs.end) return
     advance(gs)
 }
 
@@ -141,7 +239,8 @@ export function gameClock(gs) {
 }
 
 export function stateHash(gs) {
-    const s = [gs.seed, gs.day, gs.idx, gs.strikes, gs.score, gs.caught, gs.admitted, gs.end || '-',
+    const s = [gs.seed, gs.day, gs.idx, gs.strikes, gs.score, gs.caught, gs.admitted,
+        gs.credits, gs.hungry, gs.cold, gs.end || '-',
         gs.last ? `${gs.last.action}${gs.last.ok ? 1 : 0}` : '-'].join('|')
     let h = 2166136261
     for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) }
