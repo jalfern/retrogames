@@ -1,80 +1,75 @@
-# STATE — session 216 (2026-11-10, slot a)
+# STATE — session 217 (2026-11-11, slot b)
 
 ## What shipped
-**SMASH TV: VARISIZE ARENA + CAMERA** merged as `52d76d6` (PR #1977,
-Closes #1973 — NEVER-DRY pick, weakestStage score 4). Rooms 5 and 8 of
-every stage (`BIG_ROOMS = new Set([4,7])`, levels.js) now board 24 cols =
-384px against the 192px screen; the generator mirrors its wall pattern
-across the wide board and `exitsOf(gw)` puts the far door at x≈368. Every
-boundary rule in sim.js (blockedPx, bullets, civilians, boss pace+adds,
-checkExit) reads `boardW(gs)`, never the screen. index.jsx gained a snap
-camera (`camX` clamps `[0, boardW−192]`, board-space walls/lights/combo);
-renderer-only — stateHash untouched, determinism pins hold. Standard rooms
-stay byte-identical (camX pinned 0, exit x=228 unchanged).
-smashcheck **PASS 547**, mutants **15/15 die** (4 new: board-shrink,
-far-door-forget, BIG_ROOMS-empty, mirror-dead). smashplay **24/24** incl.
-pixel camera proof: studio floor where the screen-edge wall stood, far
-chrome on the clamp, flush pins in standard rooms.
-Also: planner seat-1 lane-alignment doctrine (#508 extended to the wide
-board — killed seed-5's 56k-tick deadlock) and boss-room firebomb at ≥1
-add out (was ≥3 non-boss). Live: jalfern.com/retrogames/smash-tv.
-
-## Honest pilot floor (pin + README move together)
-Solo **8/9** — seed 3 is a documented FORCED LOSS (fan attrition at
-ANNOUNCER; smashcheck pins `wins.length===8 && !wins.includes(3)` AND
-`deathless.includes(6)`). Seed 6 deathless matinee. Co-op **9/9**. Boss
-jink kept ORIGINAL doctrine — volley-commit, round-relative, crosser-aware
-and bottom-pocket variants all A/B-measured; each rescued one seed by
-losing others. Any layout change = re-measure + pin/README update together.
+**PAPERS, PLEASE-MIN: HAND-AUTHORED REGULARS** merged as `fb1a5dc` (PR #1981,
+Closes #1979 — NEVER-DRY pick, weakestStage score 6). Four regulars authored
+end to end (`gen.js REGULARS`): Grubak/scar, Drenin/mole, Tolka/wrinkle,
+Zemek/big-ear — fixed six-feature descriptors, colors, body stats, one
+signature mark each (single ink `#8f4a3e`, painted at the counter AND in the
+zoomed photo; decor by doctrine — never compared). Injection `(day−2+seed) mod 4`
+days 2–7 ⇒ cast[0] and cast[1] return inside every week; cast names blocked
+from the random pool (no twins); papers built legal for the day (decide+judge
+both approve, every seed). Queue-size law (rules+4) untouched → shift budget
+stands. paperscheck **10752/10752** (+REGULARS section: cast integrity, both
+values per feature + 4 haircuts, identity law face+photo, injection/queue/
+legality; mutants m25 never-injected, m26 face-re-roll — both caught).
+papersplay **46/46** (`castPix`: scar 12, mole 4, wrinkle 66, big-ear 72 vs
+standard 40 ink px; live gate stamps Grubak, seed 0 day 2, approve).
+watchcheck papers-please 241/241. Live: jalfern.com/retrogames/papers-please
+(payload "VOLEN GRUBAK" in `index-f7mMQ4vv.js`, prod poll 1).
 
 ## The session's catches
-- **Prod-verify fingerprints must be NEW numbers.** `?24:16` and friends
-  matched KOOPA heights from Mario first; the honest markers were the big-
-  board-only coords 356/368/384 (each exactly once) + Vercel success on
-  the merge sha. DEV probes (`boardW`, `camX`) never ship — don't grep
-  prod for them.
-- **Autopilot deadlocks are lane problems, not courage problems.** Seed 5
-  dueled a pinned walkcam for 56k ticks; the fix was doctrine (align to
-  the firing lane before committing), not faster dodging.
-- Boss jink A/B sweep: 4 doctrines, all measured over 9 seeds × solo +
-  co-op; kept the original because "rescue one, lose one" is a wash.
+- **tryMut probe polarity is easy to flip.** The probe answers "does the
+  honest property still hold?" — write it as property-checker, not as
+  "mutation detector"; m25 first shipped inverted (would have reported a
+  SURVIVED mutant as caught). Re-read one mutant's expected verdict before
+  running the suite.
+- **A sibling field must move INTO the painted descriptor.** drawFace reads
+  `f.mark`; authoring `mark` next to `face` silently paints nothing. The
+  pixel gate (castPix) caught the concept, but the fix had to be at
+  `face = { ...c.face, mark }`.
 
 ## Ladder trail
-- TARGET #1637 claim REFUSED (slot b held it minutes earlier — never touch
-  another slot's lock) → #1972 also slot b (papers portrait, later shipped
-  as session 215) → #1711 skipped (5th confirm already posted by b) → QA
-  MASTER live (pid 88023) → no feedback borrow; flagship stage spent (all
-  flagship READMEs 0 gaps) → idle-kick answered weakestStage SMASH TV
-  score 4 (registry-oldest of tie), gap #1 = varisize board/camera.
-  Filed + claimed #1973 (a). No jonq (mechanical picks).
+- halt none; steer none; TARGET #1711 claimed (warden assignment) → honest
+  audit on current main: consent/recorder/evidence pipeline complete
+  (recordcheck 105/105, relaycheck 31/31, plaicraft evidence self-test 23/23
+  with mutants), `relay/` unchanged since `7ecf1e5`, #1730 stayed defaulted
+  Hold → sixth-confirm posted (one paragraph), RELEASED (`next` back).
+  Jon-side hardware lines only.
+- game-queue empty; QA MASTER live (pid 89569) → borrow refused; flagship
+  stage spent (all flagship gaps owned) → NEVER-DRY weakestStage:
+  PapersPleaseMin score 6 (1 unowned gap + 5 QA feedback naming it).
+  Filed #1979 with why-weakest, claimed(b), shipped. No jonq (mechanical
+  pick; #1730 already answered).
 
 ## Session bookkeeping
-- #1973 CLOSED shipped; QA polish pass filed as **#1978** (pan jitter at
-  pin threshold, wide-room civilians/target layout, HUD combo placement,
-  wide-door shutter sfx, zoom-out feel comparison vs cabinet).
-- :5173 vite KILLED at session end; worktree `~/Dev/retrogames-forge-
-  smashtv-cam` (detached at 52d76d6, node_modules symlinked) reusable or
-  `git worktree remove` anytime. Old `~/Dev/retrogames-forge-watch-b24`
-  also still removable.
+- #1979 CLOSED shipped (+shipped label). QA polish pass filed as **#1982**
+  (recognition beat/callback line, cast+mark breadth, story arcs — regular
+  turning wanted, aged-photo on a regular face, returning-entrant sfx, mole
+  legibility at lite scale).
+- :5178 vite KILLED at session end; worktree `~/Dev/retrogames-forge-ppm-regulars`
+  (detached at fb1a5dc, node_modules symlinked) reusable or
+  `git worktree remove` anytime.
 
-## Next queued (slot a)
-1. Fresh ladder: halt/steer/next/queue games-first; SMASH TV polish goes
-   through QA (#1978) — builder stays off polish unless asked (#1019 rule,
-   Jon 2026-10-19).
-2. SMASH TV remaining README gaps (seat-2 aim assist, stage-1 bonus
-   timer tuning) are gap #2/#3 — idle-kick will re-rank; don't trust this
-   list.
-3. If a varisize follow-up lands: BIG_ROOMS is the single knob; a
-   taller-room axis (GH_BIG) reuses the whole camX pattern vertically.
+## Next queued (slot b)
+1. Fresh ladder: halt/steer/next/queue games-first. #1711 stays Jon-side —
+   if the warden re-targets it, seventh confirm is one line, release.
+2. NEVER-DRY candidates from the NEW residual gap (README): cast/mark breadth,
+   recognition beat, story arcs — but #1982 (feedback, QA lane) owns the
+   verbatim words of most of it; re-run weakestStage/idle-kick rather than
+   trusting this list, and LODE gaps sit behind QA-held #1959.
+3. #1637 (WATCH rollout) building on slot a — not a slot-b candidate unless
+   its lock goes stale.
 
-## Notes for the next slot-a session
-- Big-room doctrine lives in ONE place: `roomGw(idx)` (levels.js). A new
-  room size = GW_BIG/BIG_ROOMS + re-run smashcheck geometry (it derives
-  widths from probe `gw`, don't hardcode 256 in new gates).
-- smashplay camera gates force room 4 via `__smashTest.stepWith` walks
-  with `spawnT=1e9` — copy that idiom, don't fight the autopilot for keys.
-- Camera is renderer state: never let draw code write anything the sim
-  reads (stateHash would drift and determinism pins fail at the source).
+## Notes for the next slot-b session
+- Regulars doctrine: marks ride INSIDE the face descriptor (face+photo copy);
+  compared set stays FEATURES (six). A 7th compared feature = FEATURES +
+  portraitDiffs + drawFace + papersplay FE list (see #1972 law).
+- papersplay EXPECT ranges in the #1979 block pin exact inks (#8f4a3e marks,
+  skin-color ear columns x0..x0+3, x0 = 55−rx−4); move a mark rect and those
+  counts fail loudly — adjust geometry deliberately.
+- paperscheck mutants live at the bottom of the MUT block; anchors must match
+  gen.js/rules.js exactly (anchor-not-found is itself a red gate).
 
 ## Open questions
 - None. (No taste/priority call needed from Jon.)
