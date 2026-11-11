@@ -18,16 +18,17 @@
 // across a real month-end #1889) · clumsy play clears the week AND chaos
 // loses by day 1 (the slack rule, in booth terms) · the shift clock (#1960:
 // budget = queue × SEAT, human cadence clears, dawdling closes the gate,
-// the finale must finish) · the proven weeks
-// (attract replays these) · determinism · mutants.
+// the finale must finish) · the pay economy (#1966: pay per correct stamp,
+// soup/heat nightly, rising rent, eviction and two-night deaths) · the proven
+// weeks (attract replays these) · determinism · mutants.
 
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, FEATURES } from '../src/games/PapersPleaseMin/rules.js'
 import { genWeek, genDay, viewOf, CITY2C, TRAPS, GREY } from '../src/games/PapersPleaseMin/gen.js'
-import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock } from '../src/games/PapersPleaseMin/sim.js'
-import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
+import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges } from '../src/games/PapersPleaseMin/sim.js'
+import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, ID, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SRC = join(HERE, '../src/games/PapersPleaseMin')
@@ -470,6 +471,116 @@ section('SHIFT CLOCK (#1960) — the gate closes, the finale must finish — eve
     console.log('  ..    budget = queue × SEAT (18 s/applicant); 10 s human cadence clears every day of every seed; the naive eye still clears the week; a ~22 s cadence closes day 1 (docked, morning rewound); day 7 dawdles to a deterministic 2-head quota loss; wall clock 08:00→18:00, red = the last hour, monotone, hung clear of chrome and text')
 }
 
+// ------------------------------------------------- #1966 THE PAY ECONOMY ----
+// The booth earns and spends. Pay law: CFG.PAY rides every CORRECT stamp and
+// a write-up forfeits it (the original pays nothing for a penalized entrant).
+// Every night settles: soup + heat nightly, rent after nights 3 and 6, and it
+// RISES — 30 then 45. Rent unpaid = EVICTION (the original's rule, kept
+// exactly); two nights without soup or heat = the original's two-night death;
+// a covered night resets its own counter. Missed heads earn nothing, so the
+// #1960 clock and the purse bite together. Day 7 is survived only when its
+// final slip pays out. Doctrine stays doctrine: autopilot clears with margin,
+// the naive eye still clears AND covers every bill, a dawdler who stamps
+// nobody falls to money, not just to the quota.
+section('THE PAY ECONOMY (#1966) — pay law, bills, eviction, two-night deaths — every seed')
+{
+    // wage law, live: correct pays, wrong forfeits
+    {
+        const g = newRun(0)
+        step(g, { action: decide(current(g).view).verdict })
+        ok(g.credits === CFG.PAY && g.paidToday === CFG.PAY, 'a correct stamp paid nothing')
+        step(g, { action: decide(current(g).view).verdict === 'approve' ? 'deny' : 'approve' })
+        ok(g.credits === CFG.PAY, 'a wrong call got paid — the write-up pays nothing')
+    }
+    // the perfect week: income 70 entrants × PAY minus every bill, zero
+    // hungry nights, and the last slip shows the final balance
+    for (const seed of SEEDS) {
+        const gs = newRun(seed)
+        const ent = gs.week.days.reduce((x, d) => x + d.queue.length, 0)
+        const a = autopilot(gs, 999)
+        ok(a.ok, `seed ${seed}: autopilot did not survive the economy (${gs.endWhy})`)
+        ok(gs.credits === ent * CFG.PAY - weekCharges(),
+            `seed ${seed}: final purse ${gs.credits} != ${ent} entrants × PAY − ${weekCharges()} bills`)
+        ok(gs.hungry === 0 && gs.cold === 0, `seed ${seed}: autopilot went hungry/cold — the week cannot be payable`)
+        ok(gs.slip && gs.slip.day === 7 && gs.slip.balance === gs.credits, `seed ${seed}: no paid-out slip on night 7`)
+    }
+    // rent law: due every third night, rising, eviction at the counter —
+    // and an eviction never drags the purse below zero
+    ok(rentDue(1) === 0 && rentDue(3) === 30 && rentDue(6) === 45, `rent schedule wrong: ${rentDue(1)}/${rentDue(3)}/${rentDue(6)}`)
+    ok(rentDue(6) > rentDue(3), 'rent does not rise — there is no squeeze toward the finale')
+    {
+        const g = newRun(0)
+        g.day = 3; g.credits = rentDue(3) - 1
+        settle(g)
+        ok(g.end === 'lose' && /EVICTED/.test(g.endWhy), `a rent-short night is not eviction: ${g.end} ${g.endWhy}`)
+        ok(g.credits === rentDue(3) - 1, `eviction took the purse to ${g.credits} — the apartment comes first, arithmetic always`)
+        const paid = newRun(0)
+        paid.day = 3; paid.credits = rentDue(3)
+        settle(paid)
+        ok(paid.end === null && paid.credits === 0 && paid.slip.rent === rentDue(3), 'a paid rent does not clear the purse cleanly')
+    }
+    // the two-night deaths — and a covered night resets its own counter
+    {
+        const g = newRun(0); g.credits = 0
+        settle(g)
+        ok(g.end === null && g.hungry === 1 && g.cold === 1, 'the first unpaid night does not mark hungry+cold')
+        settle(g)
+        ok(g.end === 'lose' && /STARVED/.test(g.endWhy), `two nights without soup must starve: ${g.end} ${g.endWhy}`)
+        const c = newRun(0); c.credits = CFG.SOUP          // eats, freezes, twice
+        settle(c); settle(c)
+        ok(c.end === 'lose' && /FROZEN/.test(c.endWhy), `two nights without heat must freeze: ${c.end} ${c.endWhy}`)
+        const h = newRun(0); h.credits = 0; settle(h)
+        h.credits = CFG.SOUP + CFG.HEAT; settle(h)
+        ok(h.end === null && h.hungry === 0 && h.cold === 0, 'a covered night must reset hunger and cold')
+    }
+    // slip honesty: the printed paper equals the purse arithmetic, rent night
+    {
+        const g = newRun(0)
+        g.day = 3; g.credits = 50; g.paidToday = 40
+        settle(g)
+        const s = g.slip
+        ok(s && s.pay === 40 && s.rent === rentDue(3) && s.soup === CFG.SOUP && s.heat === CFG.HEAT
+            && s.balance === 50 - rentDue(3) - CFG.SOUP - CFG.HEAT, `slip arithmetic lies: ${JSON.stringify(s)}`)
+    }
+    // the dawdler dies by money too: stamp nobody, and night two is the wall
+    // (soup+heat with no income) — the economy catches what the quota missed
+    {
+        const g = newRun(0)
+        let guard = 0
+        while (!g.end && g.day <= 2 && guard++ < 12) tick(g, dayTicks(g.week.days[g.day - 1]))
+        ok(g.end === 'lose' && /STARVED|FROZEN|EVICTED/.test(g.endWhy), `a booth that stamps nobody ended ${g.end || 'never'} (${g.endWhy}) — money must bite`)
+    }
+    // slack doctrine with money: the naive eye clears the week AND covers
+    // every bill — sloppy judgment must still afford soup
+    for (const seed of SEEDS.slice(0, 6)) {
+        const gs = newRun(seed)
+        let guard = 0, shortNights = 0
+        while (!gs.end && guard++ < 400) {
+            step(gs, { action: naiveDecide(current(gs).view) })
+            shortNights += gs.events.filter((e) => e.type === 'pay' && (e.hungry || e.cold)).length
+            gs.events.length = 0
+        }
+        ok(gs.end === 'win', `seed ${seed}: the naive eye ended ${gs.end || 'stalled'} — the economy broke the slack rule`)
+        ok(shortNights === 0, `seed ${seed}: the naive eye missed ${shortNights} bill(s) — honest pace must still pay rent`)
+        ok(gs.credits > 0, `seed ${seed}: the naive week closed at ${gs.credits} — no slack in the purse`)
+    }
+    // turned-away heads are unpaid heads: a close settles only what was earned
+    {
+        const g = newRun(0)
+        g.idx = 3; g.credits = 15; g.paidToday = 15; g.clock = 1
+        tick(g, dayTicks(g.week.days[0]))
+        const pay = g.events.find((e) => e.type === 'pay')
+        ok(pay && pay.pay === 15 && pay.balance === 15 - CFG.SOUP - CFG.HEAT, `a close paid beyond the earned: ${JSON.stringify(pay)}`)
+    }
+    // the slip's corner of the booth: under the ID card, above the strip,
+    // inside the wall — and clear of the witness line the stamp paints at y=296
+    ok(SLIP.y >= ID.y + ID.h + 2, 'the slip covers the ID card')
+    ok(SLIP.y + SLIP.h <= CHS - STRIP_H, 'the slip is under the controls strip')
+    ok(SLIP.x + SLIP.w <= CW - 4, 'the slip runs off the canvas')
+    ok(SLIP.y >= 296 + 6, 'the slip crowds the stamp witness line')
+    console.log(`  ..    PAY ${CFG.PAY}/correct (write-up unpaid); soup ${CFG.SOUP} + heat ${CFG.HEAT} nightly; rent ${rentDue(3)}→${rentDue(6)} and unpaid = EVICTED; two-night STARVED/FROZEN; autopilot closes at ${70 * CFG.PAY - weekCharges()} with zero hungry nights; the naive eye survives every bill; the stampless booth starves night two; slip arithmetic + corner clearance pinned`)
+}
+
 // ------------------------------------------------------- dead input no-ops ----
 section('THE BOOTH WAITS — inputs that are not calls change nothing')
 {
@@ -506,6 +617,12 @@ section('DETERMINISM')
     ok(stateHash(g1) === stateHash(g2), 'two fresh identical booths hash differently')
     g2.strikes += 1
     ok(stateHash(g1) !== stateHash(g2), 'stateHash ignores a strike')
+    const g4 = newRun(2)
+    g4.credits += 1
+    ok(stateHash(g4) !== stateHash(newRun(2)), 'stateHash ignores the purse (#1966: credits are discrete booth state)')
+    const g5 = newRun(2)
+    g5.hungry = 1
+    ok(stateHash(g5) !== stateHash(newRun(2)), 'stateHash ignores hunger')
     const g3 = newRun(2)
     step(g3, { action: decide(current(g3).view).verdict })
     ok(stateHash(g3) !== stateHash(newRun(2)), 'stateHash ignores the stamp')
@@ -906,6 +1023,43 @@ if (MUT) {
             gs.idx = gs.week.days[0].queue.length - 1
             m.sim.tick(gs, m.sim.dayTicks(gs.week.days[0]))
             return gs.clock === m.sim.dayTicks(gs.week.days[1])
+        })
+
+    // #1966 pay-economy mutants.
+
+    // 19. the wage line goes dead: the booth still stamps, the purse never
+    //     fills, and rent night 3 becomes a wall. SURVIVED would mean the
+    //     suite could not tell a paid week from an unpaid one.
+    await tryMut('PAY zeroed (work, then starve)',
+        mutMod('sim.js', 'gs.credits += CFG.PAY; gs.paidToday += CFG.PAY', 'gs.credits += 0; gs.paidToday += 0', 'm19'),
+        (m) => {
+            const g = m.sim.newRun(0)
+            m.sim.step(g, { action: m.rules.decide(m.sim.current(g).view).verdict })
+            if (g.credits !== m.sim.CFG.PAY) return false
+            const a = m.sim.autopilot(m.sim.newRun(0), 999)
+            return a.ok
+        })
+
+    // 20. rent is pulled from the night: eviction disappears and the
+    //     campaign loses its squeeze — the schedule probe names the hole.
+    await tryMut('rent pulled from settle (no eviction, no squeeze)',
+        mutMod('sim.js', 'const rent = rentDue(gs.day)', 'const rent = 0', 'm20'),
+        (m) => {
+            const g = m.sim.newRun(0)
+            g.day = 3; g.credits = m.sim.rentDue(3) - 1
+            m.sim.settle(g)
+            return g.end === 'lose' && /EVICTED/.test(g.endWhy)
+        })
+
+    // 21. hunger loses its second night: skipping soup becomes forever free,
+    //     and the original's two-night death is unreachable.
+    await tryMut('two-night hunger tooth pulled (starvation unreachable)',
+        mutMod('sim.js', 'if (gs.hungry >= 2) {', 'if (false && gs.hungry >= 2) {', 'm21'),
+        (m) => {
+            const g = m.sim.newRun(0)
+            g.credits = 0
+            m.sim.settle(g); m.sim.settle(g)
+            return g.end === 'lose' && /STARVED/.test(g.endWhy)
         })
 }
 
