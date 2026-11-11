@@ -196,8 +196,10 @@ same hat in every process, always. Doctrine of the nose: decor is never in
 `FEATURES`, never evidence — paperscheck's CROWD section perturbs the live
 face's decor on every paper of every seed and requires the verdict to not
 flinch (`decide` AND `judge`), pins the purity of `accFor`, face==photo
-decor on every entrant, and variety floors (all three hat kinds, 25 distinct
-looks across 840 entrants, ≥24 per family). The cast wears AUTHORED decor —
+decor on every entrant, and variety floors graded on the ROLLED heads only
+(the authored cast would mask a flattened hat hash — m31's first draft
+learned that): all three hat kinds, 25 distinct looks across 768 rolled
+entrants, ≥24 per family (measured ~100). The cast wears AUTHORED decor —
 identity, not hash: Grubak cap+unibrow, Marko earring, Anja scarf+gap-tooth,
 Petr ushanka (his big ears grow below the flaps); paperscheck pins the
 authored decor every appearance. `drawFace` paints all four families at the
