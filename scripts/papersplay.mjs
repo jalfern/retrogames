@@ -112,7 +112,7 @@ const nextDay = await page.evaluate(() => window.__ppTest.runDay())
 await wait(200)
 s = await probe()
 r.check(`day 1 cleared by the honest path — the line moved to day ${nextDay}`, nextDay === 2 && s.day === 2)
-r.check('the rulebook grew: day 2 prints 3 rules', s.rules.length === 3, s.rules.join(','))
+r.check('the rulebook grew: day 2 prints 4 rules', s.rules.length === 4, s.rules.join(','))
 r.check('the day banner spoke on the canvas', s.banner && /DAY 2/.test(s.banner.text), s.banner && s.banner.text)
 r.check('the strikes reset with the morning', s.strikes === 0)
 
@@ -138,6 +138,68 @@ await wait(300)
 await page.evaluate(() => window.__ppTest.runToEnd())
 s = await probe()
 r.check(`seed 2 survived the whole week (score ${s.score}, caught ${s.caught})`, s.end === 'win' && s.day === 7 && s.score > 50)
+
+// 7 — PORTRAIT (#1938): the photo on the paper against the face at the
+// counter, proven with pixels from the SAME drawFace the booth paints with.
+// Honest papers render byte-identical faces (total 0); every forged photo
+// lights the band of its broken feature — the evidence string is pixels.
+await wait(1100)
+await page.keyboard.press('Space')            // home from the win screen
+await wait(300)
+await page.keyboard.press('Digit1')          // seed 0 — PORTRAIT rides the day-1 wall
+await wait(400)
+s = await probe()
+r.check('PORTRAIT prints on the day-1 wall', s.rules.includes('PORTRAIT'), s.rules.join(','))
+// Walk past the first two documents (the no-papers and ALLOWED violators),
+// then let the stamp tick out — every pixel gate after this samples a LIVE
+// booth, never a stamping frame. The live entrant is now the day-1
+// PORTRAIT forger: its forged mini face must be painted on the passport.
+for (let i = 0; i < 2; i++) {
+    const v = await page.evaluate(() => window.__ppTest.verdict())
+    await page.keyboard.press(v === 'approve' ? 'a' : 'd')
+    await wait(140)
+}
+await wait(700)
+s = await probe()
+r.check('the stamp has ticked out before pixel sampling', !s.stamp || s.stamp.ticks <= 0, JSON.stringify(s.stamp))
+const paint = await page.evaluate(() => {
+    const c = document.querySelector('canvas[data-pp-stage]')
+    const d = c.getContext('2d').getImageData(588, 64, 66, 76).data   // PAPERS+PHOTO box
+    let n = 0, beige = 0
+    for (let i = 0; i < d.length; i += 4) {
+        const k = (d[i] << 16) | (d[i + 1] << 8) | d[i + 2]
+        if (k === 0xd8d2b8 || k === 0xc9c2a4) beige++                  // paper / frame
+        else n++
+    }
+    return { n, beige }
+})
+r.check(`the passport carries a painted photo (${paint.n} face px in a ${paint.beige} px beige frame)`,
+    paint.n > 250 && paint.beige > 100)
+let sawForge = 0, sawHonest = 0, bandFails = 0
+for (let guard = 0; guard < 12 && s.day === 1 && !s.end; guard++) {
+    const pp = await page.evaluate(() => {
+        const t = window.__ppTest
+        const p = t.probe().view.person
+        if (!p.passport || !p.face) return null
+        const FE = ['style', 'narrow', 'glasses', 'must']
+        const feats = FE.filter((f) => p.face[f] !== p.passport.photo[f])
+        return { name: p.passport.name, feats, pix: t.portraitPix() }
+    })
+    if (pp && pp.pix) {
+        if (pp.feats.length === 0) { sawHonest++; if (pp.pix.total !== 0) bandFails++ }
+        else { sawForge++; for (const f of pp.feats) if (!(pp.pix[f] > 0)) bandFails++ }
+    }
+    const v = await page.evaluate(() => window.__ppTest.verdict())
+    if (pp && pp.feats.length > 0) {
+        r.check(`a forged photo (${pp.feats.join(',')}) denies with its band lit ${JSON.stringify(pp.pix)}`,
+            v === 'deny' && pp.pix.total > 0, pp.name)
+    }
+    await page.keyboard.press(v === 'approve' ? 'a' : 'd')
+    await wait(140)
+    s = await probe()
+}
+r.check(`honest papers painted ONE face (${sawHonest} papers, every total 0)`, sawHonest >= 3 && bandFails === 0, `bandFails=${bandFails}`)
+r.check('day 1 staged its forger at the window', sawForge >= 1, `${sawForge}`)
 
 await wait(400)
 const clean = errors.filter((e) => !/favicon|Download the React DevTools/i.test(e))
