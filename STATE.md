@@ -1,62 +1,71 @@
-# STATE — session 232 (2026-11-11, slot b)
+# STATE — session 233 (2026-11-11, slot a)
 
 ## What shipped
-**SMASH TV: BONUS GIBS** — merged as `0b9d6ee` (PR #2046, Closes #2044,
-NEVER-DRY pick: weakestStage score 5 — 3 open QA feedbacks naming SMASH TV
-(all pan/framing, QA-owned) + 2 unowned README gaps; flagshipStage null; PPM
-not re-pickable per session 230's drain law; #1637 held by slot a).
-`goreSet(rng)` = seven MULTI-pixel parts (two-tone reds + bone chip),
-GORE_GRAV 0.22 > spark 0.18, GORE_TICKS 34 > spark 20; floor stain grows
-with combo (cap r6), dries over 120 t; room-advance scrubs the floor; splat
-voice (noise + low triangle) under the combo chime; gibs snap to the pixel
-grid (#2043 lesson). Presentation only — rules/gen/sim byte-identical.
-Gates: smashcheck 697 with the new 14-gate `gore` section + all 5 JUICE
-mutants die (--mutate 728 PASS); smashplay 37/37 live (≥10 red gib px at the
-corpse, 7 gibs + stain land, air clears after the lifetime). lint gates +
-eslint + build green.
-
-## Earlier in the session (TARGET #2032 saga, #1258)
-Warden aimed #2032 (HEAT-SEEKER + FLAMER) at slot b; the claim script gave it
-to b at 21:02, but slot a merged #2037 first (21:11:52) — both lanes ran the
-full guns build side by side, and both independently diagnosed the same
-live-gate flake: the warhead's fractional 3×3 fill anti-aliases to 2..9 exact
-px (scan: 2 survivors at (101.9,131.3)). Slot a's follow-ups #2042
-(read-time sampling) + #2043 (grid snap) are on main; my duplicate
-`forge/smash-playfix` local commit stands unused. **Lesson: shared slug
-worktrees collide across slots** — a's checkout switched my worktree branch
-mid-edit (nothing lost; verify branch before every commit in a shared path).
-Slot a also merged b29 (#2034, MISSILE COMMAND seat) while slot b filed
-#2044 — no lane idled.
+**VIPER PIT takes the WATCH seat — b30 of the #1637 rollout.** Merged as
+`e8f9566` (PR #2051, "Part of #1637"; warden TARGET, claimed clean at 22:0xZ).
+Y flips seat 1 to the fighter's OWN corner brain (`gs.fighters[0].def.cpu =
+BY_ID[p1Char].cpu` — cpuDecide/cpuPad in the shared fighting core, the same
+driver the attract bout runs; no new brain). Any driving key or a touch hands
+the corner back mid-round; the seat rides the ladder (rung climbs re-seat);
+title screen and KING OF THE PIT release it; net/local never seat. Title card
+teaches Y offline; phones seat from the top-right in-run pill (attract pill
+honestly skipped FireCrew-style — picker in the boot path, SKIP_ATTRACT names
+it). Registry line: "seat 1 fights the pit at its fighter's own ladder tier
+(1P mode)". https://jalfern.com/retrogames/viper-pit — prod entry
+`index-BLZsH_r5.js` carries the literal (verified on live).
+**Honesty bar** (viperpitcheck new b30 section): own tier vs LIVE rung 1, 5
+fighters × 12 seeds — 60/60 bouts decide, 60/60 drag the foe off full health
+untouched, every fighter takes >= 8 of 12 rounds (nyx:12 cinder:23 vess:19
+riv:22 krax:18). No ladder climb claimed — NYX mirrors rung 1 on itself;
+deeper rungs beat own-tier seats (measured insane-tier ~0/12 clears).
+**Candidate audit:** b29's b30 list minus viper-pit has NO proven driver
+(pacmancheck/centipedechek have no scripted win; pitfall no harness;
+SuperMarioClassic no planner) — those four stay honest with no button.
+Mutants bit: tier-flip removed → 3 pins red; seat refused → 5 live pilot
+gates red. Live watchcheck pilot 301/301 (advance p2 hp 100→47 untouched).
+watchphonecheck 486/486, watchpillcheck 226/226, lint gates green, build green,
+viperpitcheck Part B green zero page errors.
 
 ## The session's catches
-- **An exact-colour pixel gate on a fractional fill is a coin-flip.** Fix is
-  the pixel-grid snap (game side), not a looser threshold — crisp AND stable.
-- **A scratch dir shared across lanes** shows other sessions' file versions as
-  "old content" in write diffs; trust the repo files (git diff --stat), not
-  the scratch echo.
+- **`git checkout <file>` after a mutation discards ALL uncommitted work on
+  that file, not just the mutant.** Mid-session I had an uncommitted
+  attract-comment fix; the mutant restore ate it. Re-apply after restore, or
+  checkpoint-commit before mutating.
+- **`--phone` is manual-only** (nothing in ci.yml/warden/watch.sh passes it):
+  picker titles' phone gates (pill visible at boot) sit red by design —
+  iron-ring fails identically on untouched main. Don't chase them; watchphonecheck
+  (static parse) is the wired phone contract.
+- **`gh issue comment` has no `--json` flag** (unlike pr create). Quiet-fail
+  habit: redirect + echo.
+- Two copies of the tier-flip line (seat + ladder re-seat) mean source pins
+  need distinct regex anchors (the re-seat pin pins the `watchingRef && gs`
+  prefix) or a mutant slips past one of them.
 
 ## Ladder trail
-TARGET #2032 claimed (script) → shipped by a's #2037 first → a also merged
-b29/#2034 and #2042/#2043 → #1637 re-claim REFUSED (a holds) → steer/next
-empty → game-queue only #1637 → QA borrow blocked (QA MASTER live) →
-flagshipStage null → NEVER-DRY weakestStage SMASH TV score 5 → filed +
-claimed #2044 → PR #2046. No jonq filed (all pattern-following).
+TARGET #1637 claimed clean (no halt/steer/next; game-queue empty otherwise;
+no building corpses; jonq games: none open). No QA borrow (feedback items
+exist but QA MASTER live — never double-claim). flagshipStage not needed: the
+queue had the target. 8b not filed: seat on an existing title, and the
+rollout issue itself stays open carrying the remainder (b31 audit brief posted
+in #1637's wrap comment).
 
 ## Open questions
 - none (see waiting-jon issues).
 
 ## Next
-- **Prod-proof at handoff:** jalfern.com still served the pre-merge entry
-  `index-_wHOwl9R.js` ~35 min after `0b9d6ee` (Vercel success on the commit;
-  `x-vercel-cache: HIT` + age>1600 on a must-revalidate HTML = proxy-layer
-  cache). Next prod-check: grep `c81f2f` in the live entry — absent hours
-  later ⇒ harness/proxy issue for Jon's side, not a game regression.
-- #1637 stays Open (multi-stage): next WATCH batch awaits a claimer; check
-  its last FORGE comment for the owed titles.
-- SMASH TV now has 1 honest gap left ("one-hit death softened by spawn
-  invulnerability") + the 3 pan/framing QA feedbacks (#1978/#2011/#2028).
-  If SMASH TV comes up weakestStage again, don't re-pick the same gap — the
-  drain law cuts both ways.
-- Dev servers: slot b 5178 (this session's server — stop at exit), slot a
-  5173, QA 5176. Never reuse another lane's port; orphan 5178s do happen
-  (found a read-lockdown one at boot this session — kill before strictPort).
+- **#1637 b31: full-shelf driver audit** (brief in #1637 wrap comment):
+  which remaining registry titles own a winning script in their own check —
+  seat them, or declare the rollout done with the "no guide yet" remainder.
+  Batch numbers 19–21 never appear in watchcheck — check the issue trail
+  before renumbering.
+- **`viperpitcheck` is red-on-main and wired into NO CI job**: Part A's #1732
+  gate "qcb gate: the CPU throws the counter at close range" fails
+  deterministically on untouched `0b9d6ee`+ (likely drifted with #1761/#1785
+  shared-core changes). Flagged twice on #1637; QA lane's call.
+- PPM drain law still stands (session 230): do not re-pick PPM at weakestStage
+  while its feedback pile + #2020 sit unowned.
+- #2045 (lane-liveness crossings) and #2036 (resume-gate nightly budget) remain
+  open harness improvements, unowned.
+- Dev servers: slot a 5173 stopped at exit; slot b 5178; QA studio 5176.
+  `~/Dev/retrogames-forge-watch-rollout-b30` left detached at `e8f9566`
+  (its branch died with the squash) — remove or reuse, don't rebuild on it blind.
