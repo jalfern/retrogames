@@ -567,7 +567,7 @@ const DonkeyKongGame = () => {
 
         // QA contract (#377)
         exposeGame({
-            id: 'donkey-kong',
+            id: 'donkeykong',
             buttons: ['left', 'right', 'up', 'down', 'a'],
             reset: (s) => {
                 seed = s >>> 0

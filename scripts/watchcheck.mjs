@@ -1635,6 +1635,43 @@ const PILOTS = [
             rep.check('asteroids: Y again releases the ship', !(await watching()))
         },
     },
+    // #1637 batch 27 — DONKEY KONG gets its proven climb: watchStep replays the
+    // lifted physics per tick, ranking the route instinct against held candidates
+    // (height-monotone progress, honest dive fear, jump arcs only near barrels).
+    // Reactive per tick (Rogue law): seats anywhere, steers back, re-seats live.
+    {
+        id: 'donkeykong', url: `${BASE}/donkeykong`, hook: '__dkTest',
+        async run(page, rep) {
+            const H = '__dkTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            await key(page, 'Space')                       // attract -> live run
+            await page.waitForTimeout(400)
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('donkeykong: Y seats the route', await watching())
+            rep.check('donkeykong: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            const adv = (x, y) => y.y < x.y || y.climbing // higher, or committed to a ladder
+            const a = await probe()
+            const b = await pollAdvance(page, probe, adv, a, 12000)
+            rep.check('donkeykong: the route climbs with idle hands', adv(a, b),
+                `y ${a.y} -> ${b.y}, tick ${a.tick} -> ${b.tick}`)
+            rep.check('donkeykong: still watching mid-climb', await watching())
+            await page.keyboard.press('ArrowLeft')
+            rep.check('donkeykong: steer key takes over', !(await watching()))
+            rep.check('donkeykong: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('donkeykong: Y re-seats mid-run (the route re-plans from the live girder)', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 12000)
+            rep.check('donkeykong: resumes from where the player left it', adv(c, d),
+                `y ${c.y} -> ${d.y}, tick ${c.tick} -> ${d.tick}`)
+            await key(page, 'KeyY')
+            rep.check('donkeykong: Y again releases the climber', !(await watching()))
+        },
+    },
     // #1637 batch 13 — the racer family seats its CERTIFIED autopilot. decide()
     // (CometDrift/sim.js) is the brain cometcheck races to victory ("autopilot
     // wins the 5-lap GP from P7", #1687-certified drift ladder) and both titles'
@@ -2708,6 +2745,40 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     rep.check('batch 26: asteroidscheck stamps the driver sweep (byte-equal det, floors pinned)',
         /byte-equal \(hash sampled/.test(ac) && /zero-death runs on/.test(ac)
         && /every seed banks at least one full wave/.test(ac))
+}
+// #1637 batch 27 — DONKEY KONG's climb is new-built; pin that the seat, the
+// tick and the check stand on ONE engine: the whole rule set lifted into
+// sim.js, dice forked from the state, and the arcade doctrine (jumps are for
+// barrels, ladders are for climbing) written into the candidate gate itself.
+{
+    const kj = readFileSync('src/games/DonkeyKong/index.jsx', 'utf8')
+    const ks = readFileSync('src/games/DonkeyKong/sim.js', 'utf8')
+    const kc = readFileSync('scripts/kongcheck.mjs', 'utf8')
+    const reg27 = readFileSync('src/config/games.js', 'utf8')
+    const entryHas27 = (p, s) => { const m = reg27.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
+    rep.check('DONKEY KONG: the whole tick-rule set lives in the sim (tickDonkeyKong)',
+        /export function tickDonkeyKong\(gs, input = null\)/.test(ks) && /applyEvents\(tickDonkeyKong\(gs, input\)\)/.test(kj))
+    rep.check('DONKEY KONG: the seat drives the sim through watchStep, not a bench script',
+        /input \|\| \(gs\.watching \? watchStep\(gs\) : \{\}\)/.test(ks))
+    rep.check('DONKEY KONG: the route draws no dice — rollouts fork the seeded stream, never Math.random',
+        /export function watchStep\(gs\)/.test(ks) && !/\bMath\.random\b/.test(ks))
+    rep.check('DONKEY KONG: doctrine gate — jump candidates only compete near a barrel (no kangarooing the tower)',
+        /const cands = barrelThreat\(gs\) \? \[\.\.\.WALK_CANDS, \.\.\.JUMP_CANDS\] : WALK_CANDS/.test(ks))
+    rep.check('DONKEY KONG: progress is height-monotone (mid-ladder credit can never outrank a finished exit)',
+        /232 - footY/.test(ks) && /if \(p\.climbing\) return h \* 10 \+ 8/.test(ks))
+    rep.check('DONKEY KONG: the candidate is HELD before greedy takes over (1-tick ties never shape the climb)',
+        /const HOLD = \d+/.test(ks) && /t < HOLD \? cand : greedy\(c\)/.test(ks))
+    rep.check('DONKEY KONG: Y seats with blips; any driving key takes over',
+        /if \(isWatchKey\(e\)\)/.test(kj) && /isTakeoverKey\(e\)/.test(kj)
+        && kj.includes('playWatchStart') && kj.includes('playWatchStop') && kj.includes('watchSfx: watchSfxLog'))
+    rep.check('DONKEY KONG: watch never lingers — released at game over (silent, racer rule)',
+        /if \(ev\.over && !gs\.attract && gs\.watching\) release\(false\)/.test(kj))
+    rep.check('DONKEY KONG: attract shows the shared WATCH hint (import + drawn line)',
+        (kj.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
+    rep.check('registry /donkeykong: controls carry the WATCH line', entryHas27('/donkeykong', 'WATCH_HELP'))
+    rep.check('batch 27: kongcheck stamps the driver sweep (byte-equal det, laps, zero-death floor)',
+        /byte-equal \(hash sampled/.test(kc) && /zero-death runs on/.test(kc)
+        && /every seed banks a lap under the watch/.test(kc))
 }
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray

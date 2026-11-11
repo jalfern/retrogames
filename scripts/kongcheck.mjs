@@ -274,7 +274,7 @@ console.log('shell wiring: seed, terminal, seat chrome')
     ok(/seed = seedFromQuery\(window\.location\.search\) \?\? Math\.floor\(Math\.random\(\) \* 1000000\)/.test(IDX), 'startRun regenerates the seed and honors ?seed=N')
     ok(/exposeFeedbackState\(\(\) => \(\{[\s\S]{0,160}?done: gs\.over, seed: gs\.seed, lives: gs\.lives/.test(IDX),
         'production report carries seed + terminal + lives')
-    ok(/exposeGame\(\{[\s\S]*?id: 'donkey-kong'/.test(IDX), 'QA contract exposeGame wired')
+    ok(/exposeGame\(\{[\s\S]*?id: 'donkeykong'/.test(IDX), 'QA contract exposeGame wired')
     ok(/hash: stateHash\(gs\)/.test(IDX), 'QA contract state carries the physics hash')
     ok(/if \(isWatchKey\(e\)\)/.test(IDX) && /isTakeoverKey\(e\)/.test(IDX), 'Y toggles; driving keys take over')
     ok(IDX.includes('playWatchStart') && IDX.includes('playWatchStop') && IDX.includes('watchSfx: watchSfxLog'),
