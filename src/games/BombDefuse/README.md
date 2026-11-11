@@ -99,7 +99,7 @@ lockstep-by-sampling-law (#531), same shape as the other four co-op titles:
 ## Verify
 
 ```bash
-npm run defusecheck                      # 136 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline, first-VENT coaching, powered-device bed, window pre-flash
+npm run defusecheck                      # 154 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline, first-VENT coaching, powered-device bed, window pre-flash, active-seat chips
 npm run defuselinkcheck                # 75 gates: online protocol incl. in-flight reseat (7b/7c/7d)
 CONTRACT_ONLY=bomb-defuse npm run contractcheck
 DEV_PORT=5178 npm run plaicraft:evidence -- --self-test   # fifth-title synths + mutants
@@ -173,6 +173,19 @@ gates; never-null reddens the three retire gates; ignoring `gs.held` reddens
 the VENT pin gate; ignoring `gs.sel` reddens the cycle-counts-touched gate.
 All four die by name; restore → 136/136. `defusedrive` live-gates it after a
 fresh `start` (rim law answers at load, retires on the partner's first lead).
+
+Active-seat chips (#1812 item 7): the strip said WHO sits (P2 CO-OP/CPU), never
+WHO IS ASKED. `E.seatAsk(gs)` (pure, hash-clean) names each seat's outstanding
+debt for the live step: SYNC/CUT ask BOTH and a seat leaves the list the moment
+it answers (key turned / blade armed — latches never re-light); VENT splits the
+roles — the holder owes until `gs.held` reads true (level law: release re-lights),
+the worker owes until the seal. `index.jsx chipInk` paints it: the P-chip under
+each seat's control pulses while that seat owes — SYNC amber, CUT green (both in
+phase), VENT holder amber / worker green half a beat apart; the HUD strip's P2
+chip pulses too, so a CPU partner's debt is visible. Paused kills the pulse.
+Mutants: holder debt ignoring `gs.held` → the pin + won-run gates go red;
+both-true-always reddens the answered gates. Restore → 154/154. `__bdTest.seatAsk`
+exposes the live law for the drive harness.
 
 ## Honest gaps (filed to QA as the polish pass)
 

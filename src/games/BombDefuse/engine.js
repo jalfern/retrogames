@@ -458,6 +458,28 @@ export function preFlash(gs) {
     return { kind: st.kind, intro: gs.intro > 0 }
 }
 
+// ---- active-seat ask (#1812 item 7) — view math only, never gs/hash ----------
+// The HUD strip says WHO sits where (P2 CO-OP/P2 CPU) but never WHO THE STEP
+// IS ASKING. This law names each seat's outstanding debt: SYNC/CUT demand
+// both seats, and a seat leaves the list the moment it answers (key turned /
+// blade armed); VENT splits the roles — the holder owes the pin until `gs.held`
+// actually reads true, the worker owes the seat until the crew seals (which
+// advances the step, ending the ask). null with no live run. Pure function of
+// live state — no rng, no gs write, hash-clean. The view pulses the tasked
+// seats' P-chips (index.jsx chipInk); the law lives here.
+export function seatAsk(gs) {
+    if (!gs || gs.done) return null
+    const st = curStep(gs)
+    if (st.kind === VENT) {
+        const ask = [false, false]
+        ask[st.holder] = !gs.held
+        ask[1 - st.holder] = true
+        return { kind: VENT, holder: st.holder, ask }
+    }
+    const done = st.kind === SYNC ? gs.keys : gs.armed
+    return { kind: st.kind, ask: [!done[0], !done[1]] }
+}
+
 export function ventCoach(gs, you, taught) {
     if (!gs || gs.done || taught) return null
     const st = curStep(gs)

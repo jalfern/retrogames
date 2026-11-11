@@ -7,7 +7,7 @@ import {
     createGame, step, hash, simState, solvePads, curStep, curWindow, needleOf,
     COLORS, SYNC, CUT, VENT, BOMBS, FUSE0, WINDOW, ZONE_HALF, STRIKE_COST, SURGE_COST, NICK_COST, INTRO,
     TURN, turnStep, turnClick, keyAngle,
-    REDLINE, PEG, pegNeedle, ventCoach, preFlash,
+    REDLINE, PEG, pegNeedle, ventCoach, preFlash, seatAsk,
 } from '../src/games/BombDefuse/engine.js'
 import { bedHz, BED } from '../src/games/BombDefuse/audio.js'
 import { readFileSync } from 'node:fs'
@@ -564,6 +564,114 @@ console.log('\n— window pre-flash (#1812 item 4) —')
     ok(jsx.includes('preFlash: () => hudRef.current.pf || null'), '__bdTest.preFlash exposes the law for the drive harness')
     ok(jsx.includes("if (hold <= 0) return") && /const p1 = |drawWindowBar\(g, gs, \(gs\.keys/.test(jsx),
         'the SYNC WINDOW bar still answers only to a held press — the flash covers the other half of the gap')
+}
+
+console.log('\n— active-seat ask (#1812 item 7) —')
+{
+    // The strip said WHO sits, never WHO IS ASKED. seatAsk is the pure law:
+    // per-seat debt for the live step — SYNC/CUT ask both until each answers
+    // (key turned / blade armed), VENT asks the holder until gs.held and the
+    // worker until the seal advances. Kill laws (README mutants): holder debt
+    // ignoring gs.held reddens the pin gate; both-true reddens the answered
+    // gates; null-always reddens the load gates.
+    const toKind = (seed, kind, players = 2) => {
+        const g = createGame(seed, players)
+        let guard = 0
+        while (!g.done && curStep(g).kind !== kind && guard++ < 4000) drive(g, solvePads(g))
+        return g
+    }
+    const drainIntro = (g) => { while (!g.done && g.intro > 0) drive(g, [{}, {}]) }
+
+    // load-time law: SYNC step 0 asks both; done/no-state answer null.
+    const g0 = createGame(7, 2)
+    ok(seatAsk(g0) && seatAsk(g0).kind === SYNC && seatAsk(g0).ask[0] && seatAsk(g0).ask[1], 'SYNC at load: both seats owe the turn')
+    ok(seatAsk(null) === null, 'no run, no ask')
+    const gfin = createGame(7, 2)
+    gfin.done = true
+    ok(seatAsk(gfin) === null, 'a finished run asks nothing')
+
+    // SYNC: turning ONE key silences ONE chip — the other seat stays asked.
+    const gs1 = createGame(7, 2)
+    drainIntro(gs1)
+    ok(seatAsk(gs1).ask[0] && seatAsk(gs1).ask[1], 'live SYNC before any press: both chips hot')
+    drive(gs1, [{ a: true }, {}])
+    ok(gs1.keys[0] && !gs1.keys[1] && seatAsk(gs1).ask[0] === false && seatAsk(gs1).ask[1] === true, 'one key turned: that seat goes quiet, its partner stays asked')
+
+    // CUT: arming one blade pays that seat's debt only.
+    const gc = toKind(7, CUT)
+    drainIntro(gc)
+    gc.sel[0] = curStep(gc).color
+    gc.sel[1] = curStep(gc).color
+    drive(gc, [{ a: true }, {}])
+    ok(gc.armed[0] && !gc.armed[1] && seatAsk(gc).ask[0] === false && seatAsk(gc).ask[1] === true, 'one blade armed: the other seat still owes the snip')
+
+    // VENT: holder debt is LEVEL — pinned → quiet, released → hot again;
+    // the worker stays asked until the seal (which ends the step anyway).
+    const gv = toKind(7, VENT)
+    drainIntro(gv)
+    const holder = curStep(gv).holder
+    const worker = 1 - holder
+    const v0 = seatAsk(gv)
+    ok(v0 && v0.kind === VENT && v0.holder === holder && v0.ask[holder] === true && v0.ask[worker] === true, 'VENT unpinned: holder AND worker both owe')
+    drive(gv, [{ b: holder === 0 }, { b: holder === 1 }])
+    const v1 = seatAsk(gv)
+    ok(gv.held && v1.ask[holder] === false && v1.ask[worker] === true, 'pinning the bar pays the holder; the needle-seat stays asked')
+
+    // per-step law across a WON run: every step opens asking, and an answered
+    // seat is never asked again on the same step (the debt never re-lights).
+    const gr = createGame(11, 2)
+    let sig = '', askedAll = true, relight = 0
+    const answered = { sig: '', keys: [false, false], armed: [false, false], held: false }
+    while (!gr.done) {
+        const s = `${gr.bomb}/${gr.step}`
+        if (s !== sig) { sig = s; if (!seatAsk(gr)) askedAll = false; answered.keys = [false, false]; answered.armed = [false, false]; answered.held = false }
+        const a = seatAsk(gr)
+        const st = curStep(gr)
+        if (a) {
+            if (st.kind === SYNC) for (let i = 0; i < 2; i++) { if (answered.keys[i] && a.ask[i]) relight++; if (gr.keys[i]) answered.keys[i] = true }
+            if (st.kind === CUT) for (let i = 0; i < 2; i++) { if (answered.armed[i] && a.ask[i]) relight++; if (gr.armed[i]) answered.armed[i] = true }
+            if (st.kind === VENT && answered.held && a.ask[st.holder]) relight++
+            if (gr.held) answered.held = true
+        }
+        gr.events.length = 0
+        step(gr, solvePads(gr))
+    }
+    ok(gr.won && askedAll && relight === 0, 'every step opens asking; an answered seat never re-lights on its step', `won=${gr.won} relight=${relight}`)
+
+    // purity + twins: neither gs, the hash, nor the two boxes can disagree.
+    const gx = createGame(5, 2)
+    for (let t = 0; t < 60; t++) { step(gx, solvePads(gx)); gx.events.length = 0 }
+    const hx = hash(gx)
+    seatAsk(gx); seatAsk(createGame(5, 2)); seatAsk(null)
+    ok(hash(gx) === hx, 'seatAsk cannot touch gs — hash identical through the view calls')
+    const t1 = createGame(13, 2), t2 = createGame(13, 2)
+    let askSame = true
+    for (let t = 0; t < 240; t++) {
+        const pads = solvePads(t1)
+        step(t1, pads); t1.events.length = 0
+        step(t2, pads); t2.events.length = 0
+        if (JSON.stringify(seatAsk(t1)) !== JSON.stringify(seatAsk(t2))) askSame = false
+    }
+    ok(askSame && hash(t1) === hash(t2), 'net twins: both boxes ask the same seats through a whole bomb', `hash=${hash(t1)}`)
+
+    // source pins: the determinism core never hears about the ask.
+    const esrc = readFileSync(join(here, '../src/games/BombDefuse/engine.js'), 'utf8')
+    ok(!/seatAsk/.test(esrc.slice(esrc.indexOf('export function step'), esrc.indexOf('export function simState'))),
+        'step()/simState() never mention the ask — it lives outside the determinism core')
+    ok(!/seatAsk/.test(esrc.slice(esrc.indexOf('export function hash'), esrc.indexOf('// ---- key-turn feel'))),
+        'hash() never mentions the ask')
+    // view side wired: computed per frame, chips pulsed for all three kinds,
+    // strip chip pulsed, probe exposed.
+    const jsx = readFileSync(join(here, '../src/games/BombDefuse/index.jsx'), 'utf8')
+    ok(jsx.includes('hud.ask = E.seatAsk(gs)') && jsx.includes('ask: hud.ask'),
+        'index.jsx recomputes the ask from live state every frame')
+    ok((jsx.match(/chipInk\(opts, i, now\)/g) || []).length === 3,
+        'all three kinds draw the pulsing seat chip (key, blade, bar)')
+    ok(jsx.includes('function chipInk(opts, seat, now)') && /opts\.paused === true \? null : opts\.ask/.test(jsx),
+        'the pulse is paint over the law and dies while paused')
+    ok(/seatInk = on \? col/.test(jsx) && /ask: hud\.ask \}, now\)/.test(jsx.slice(jsx.indexOf('drawHudFrame(g, gs'))),
+        'the HUD strip pulses the P2 chip while seat 2 owes the step')
+    ok(jsx.includes('seatAsk: () => hudRef.current.ask || null'), '__bdTest.seatAsk exposes the ask for the drive harness')
 }
 
 console.log(`\ndefusecheck: ${pass}/${pass + fail} gates`)
