@@ -25,7 +25,7 @@
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
-import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, dshow, MON, FEATURES, stampLines } from '../src/games/PapersPleaseMin/rules.js'
+import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, dshow, MON, FEATURES, stampLines, portraitDiffs } from '../src/games/PapersPleaseMin/rules.js'
 import { genWeek, genDay, viewOf, CITY2C, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, VISIT_WINDOW, WALL_POOL, wallNameAt, weekWallNames, weekDecoyCount } from '../src/games/PapersPleaseMin/gen.js'
 import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges, monthTurn } from '../src/games/PapersPleaseMin/sim.js'
 import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, ID, PHOTO, BUBBLE, EVID, SETTLE, QUOTE, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
@@ -421,15 +421,31 @@ section('PORTRAIT (#1938) — the photo on the paper against the face at the cou
     }
     for (const f of FEATURES) ok((staged[f] || 0) > 0, `feature ${f} never forged across ${SEEDS.length} weeks — the eye never gets to use it`)
     console.log(`  ..    all ${FEATURES.length} features forged: ${FEATURES.map((f) => `${f}=${staged[f] || 0}`).join(' ')}`)
-    // the wall owes PORTRAIT exactly one line: the day-7 fit (y=356 of the
-    // 358 law) silently degrades the moment this text wraps
+    // the wall owes PORTRAIT exactly one line: the day-7 fit (y=352 of the
+    // 358 law since #1943; 356 before) silently degrades the moment this text
+    // wraps
     ok(ruleLines(RULES.PORTRAIT.text) === 1, `PORTRAIT prints in ${ruleLines(RULES.PORTRAIT.text)} lines — a two-line law buries the wanted sheet`)
     // #1972 PORTRAIT-DETAIL: the zoom-crop law, pure arithmetic — the head
     // centers in its frame, the widest head fits inside the clip, and the
     // crop is provably BIGGER than the old flat-0.6 miniature it replaced.
     ok(Math.abs(PHOTO.ox + PHOTO.s * 55 - PHOTO.w / 2) <= 1, `the zoom-crop head is off-center (${PHOTO.ox}+${PHOTO.s}*55 vs ${PHOTO.w / 2})`)
     ok(PHOTO.ox + PHOTO.s * (55 - 34) >= 0 && PHOTO.ox + PHOTO.s * (55 + 34) <= PHOTO.w, 'the widest head escapes the photo frame — the clip would cut the face itself')
-    ok(PHOTO.s >= 0.7, `photo scale ${PHOTO.s} is the old flat draw, not the zoom-crop (>=0.7 required)`)
+    // #1943 PORTRAIT LEGIBILITY: the clip law admits s ~0.97; the photo rides
+    // near that ceiling so the head fills its frame like the original's. These
+    // floors are the ratchet — the old flat 0.6 and the 0.75 mid-crop both fail.
+    ok(PHOTO.s >= 0.85, `photo scale ${PHOTO.s} is not the #1943 deep zoom (>=0.85 required)`)
+    ok(PHOTO.s * 68 >= 54, `widest head reads ${PHOTO.s * 68}px — below the 54px legibility floor (#1943)`)
+    // #1943 ITEM 4: a PORTRAIT witness must be READABLE in one corridor line —
+    // every directional diff string fits EVID.wrap (worst today: SIDE-LEFT vs
+    // SIDE-RIGHT at 42 chars). A longer phrase would wrap-truncate the quote.
+    for (const bit of [0, 1]) {
+        for (const g of ['style', 'narrow', 'glasses', 'must', 'brow', 'mouth']) {
+            const face = { style: bit, narrow: bit, glasses: bit, must: bit, brow: bit, mouth: bit }
+            const photo = { ...face, [g]: 1 - bit }
+            for (const s of portraitDiffs(face, photo))
+                ok(s.length <= EVID.wrap, `PORTRAIT evidence "${s}" is ${s.length} chars — past the ${EVID.wrap}-char corridor (${EVID.size}px x CHAR fits ${Math.floor((EVID.wrap) * EVID.size * CHAR)}px on one line)`)
+        }
+    }
     console.log(`  ..    ${forged} forges each broke exactly one feature, ${aged} aged photos stayed legal, every break named itself on the wall`)
 }
 
@@ -1161,10 +1177,12 @@ section('THE WALL THAT LIVES (#1908) — the bulletin reads lived-in, never stam
             if ((((a * 71 + b * 37) % L) + L) % L === 0) offClash++
         }
         ok(offClash === 0, `plan offsets clash mod ${L} (${offClash} pairs) — two slots would share a name every week`)
-        // the 9px row law is the fit ceiling: worst sweep bottom + the two-px
-        // margin is pinned in the fit section above; the readability answer to
-        // #1908 was contrast (wallRed), and size may never quietly shrink.
-        ok(WALL.wantedSize >= 9 && WALL.wantedLine >= 10, 'wanted rows got smaller than the #1902 five-row law')
+        // The row law is the fit ceiling — #1908 said size cannot grow and rode
+        // contrast (wallRed); #1943 FOUND relief (ruleGap 4->3 pays 9px), so the
+        // rows are 10px now and the ratchet moved up with them: size may never
+        // quietly shrink back, and the fit section re-proves the worst day lands
+        // y=352 with 6px of slack to the scale box.
+        ok(WALL.wantedSize >= 10 && WALL.wantedLine >= 11, 'wanted rows got smaller than the #1943 relief law')
     }
     ok(arcForWeek(SEEDS[0]).day === 6 && SEEDS.every((s) => arcForWeek(s).day === 6), 'the arc no longer lands on day 6 — weekDecoyCount hardcoded the arc day and the bulletin would overflow')
     // sweep witnesses: same-day distinctness, week-long distinctness, the

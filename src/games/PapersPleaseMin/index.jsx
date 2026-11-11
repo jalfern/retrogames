@@ -281,6 +281,15 @@ const PapersPleaseMinGame = () => {
 
         const drawFace = (c, f, x, y, s = 1) => {
             const P = (v) => v * s
+            // #1943 MINIMUM INK — the thin COMPARED strokes (thin brow, glasses
+            // bridge, shut-mouth bar) are 1.5-2.25px inside the photo at the old
+            // 0.75 crop: antialiasing ate them at phone scale, and a compared
+            // feature that vanishes is not a rule the eye can check. CLamps keep
+            // every such stroke >= 2px at ANY scale. No-ops at s = 1 (every
+            // value there is already >= 2), so the counter face and every
+            // scale-1 probe (portraitPix/crowdPix/castPix byte-identity) are
+            // untouched — doctrine: the two portraits stay the same function.
+            const PL = (v, m = 2) => Math.max(v * s, m)
             c.fillStyle = SHIRTS[f.shirtC]; c.fillRect(x, y + P(92), P(110), P(30))
             c.strokeStyle = '#141824'; c.lineWidth = 1; c.strokeRect(x + 0.5, y + P(92) + 0.5, P(110) - 1, P(30) - 1)
             c.fillStyle = SKINS[f.skin]
@@ -322,7 +331,7 @@ const PapersPleaseMinGame = () => {
             c.fillRect(x + P(41), y + P(46), P(4), P(4)); c.fillRect(x + P(65), y + P(46), P(4), P(4))
             // #1972 brows — the compared thickness (thin 2px / thick 5px).
             // Constant ink: thickness is structure, color is never evidence.
-            const bh = f.brow ? P(5) : P(2)
+            const bh = PL(f.brow ? 5 : 2)
             c.fillRect(x + P(38), y + P(38), P(10), bh); c.fillRect(x + P(62), y + P(38), P(10), bh)
             // #1989 the unibrow bridges the brows. Its ink sits one step off
             // the compared-brow ink (#20242e) on purpose: thickness stays the
@@ -352,7 +361,7 @@ const PapersPleaseMinGame = () => {
             if (f.glasses) {
                 c.fillStyle = '#10151f'
                 c.fillRect(x + P(37), y + P(42), P(12), P(10)); c.fillRect(x + P(61), y + P(42), P(12), P(10))
-                c.fillRect(x + P(49), y + P(46), P(12), P(2))
+                c.fillRect(x + P(49), y + P(46), P(12), PL(2))
                 c.fillStyle = '#5a6b8a'
                 c.fillRect(x + P(39), y + P(44), P(8), P(6)); c.fillRect(x + P(63), y + P(44), P(8), P(6))
             }
@@ -450,10 +459,11 @@ const PapersPleaseMinGame = () => {
             let wy = rows.entries
             // every name on the sheet must FIT on the wall — paperscheck
             // pins day.wanted.length <= 5 (the original bulletin's five) and
-            // sweeps the fit, so no booth must ever hide one. #1908: the rows
-            // print in the brighter wallRed — size is fit-capped (2 px of
-            // slack to the scale box), contrast is what makes five 9px rows
-            // scannable at arm's length on a phone.
+            // sweeps the fit, so no booth must ever hide one. #1908 made the
+            // rows brighter (wallRed); #1943 made them BIGGER: ruleGap relief
+            // pays for 10px rows on 11px pitch, worst day y=352 vs the scale
+            // box at 358 — six px of slack — so the sheet reads by size AND
+            // contrast at arm's length on a phone.
             for (const w of day.wanted) { text(`  ${w.name} #${w.id}`, WALL.x + 114, wy, WALL.wantedSize, COL.wallRed); wy += WALL.wantedLine }
             box(SCALE.x, SCALE.y, SCALE.w, SCALE.h, '#0f1420', '#4a5578')
             text('SCALE', SCALE.x + 48, SCALE.y + 12, 9, COL.text, 'center')

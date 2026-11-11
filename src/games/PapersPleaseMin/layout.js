@@ -12,10 +12,14 @@ export const WALL = {
     // prints nine laws. The lifted rim keeps the deepest wall's wanted sheet
     // above the SCALE box (wantedEnd 356 <= SCALE.y 358) — paperscheck's
     // fit sweep proved the old rim buries it at y=364 with nine rules.
+    // #1943 RELIEF: ruleGap 4 -> 3 frees 9px (nine rules on day 7), which
+    // pays for the wanted rows to grow for the first time since the fit law
+    // (size 9 -> 10, line 10 -> 11). Worst buildable day now lands y=352,
+    // 6px of slack instead of 2 — the sheet reads bigger, not just brighter.
     x: 12, top: 38, labelLine: 14,
-    ruleWrap: 34, ruleSize: 11, ruleLine: 12, ruleGap: 4,
+    ruleWrap: 34, ruleSize: 11, ruleLine: 12, ruleGap: 3,
     listSize: 10, listLine: 12,
-    wantedSize: 9, wantedLine: 10,
+    wantedSize: 10, wantedLine: 11,
     size: 11,
 }
 // char advance of `${n}px monospace` in Chrome — 0.6em; gates use it to
@@ -37,7 +41,12 @@ export const PAPERS = { x: 356, y: 40, w: 300, h: 148 }
 // #1972 PORTRAIT-DETAIL: s 0.6 -> 0.75 with a zoom-crop — ox centers the
 // 82px-wide draw in the 66px frame (the clip in drawPassport trims the
 // shoulders), oy lifts the hair to the frame top; the head reads ~50px.
-export const PHOTO = { x: 232, y: 24, w: 66, h: 76, s: 0.75, ox: -8, oy: -3 }
+// #1943 PORTRAIT LEGIBILITY: the clip law admits s up to ~0.97 (widest head
+// inside the frame + centered head), so the zoom goes to s 0.90 (ox -16,
+// oy -2): the head runs ~61px — the original's photo fills its frame the
+// same way — and the chin crops at the bottom edge like a real ID photo.
+// paperscheck pins s >= 0.85 and head width s*68 >= 54 so it cannot regress.
+export const PHOTO = { x: 232, y: 24, w: 66, h: 76, s: 0.9, ox: -16, oy: -2 }
 export const ID = { x: 356, y: 200, w: 190, h: 64 }
 // #1983 THE ARC — the returning entrant's speech bubble. It rides the lane
 // under the face column: below the stamp's witness line (baseline y=296,
