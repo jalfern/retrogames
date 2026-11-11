@@ -127,7 +127,7 @@ export function makeRun(seed, opts = {}) {
         width,
         height,
         tickN: 0,
-        score: seed % 97,
+        score: 0,
         lives: START_LIVES,
         bonusLives: 0,
         wave: 1,
