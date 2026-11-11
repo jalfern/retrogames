@@ -1672,6 +1672,50 @@ const PILOTS = [
             rep.check('donkeykong: Y again releases the climber', !(await watching()))
         },
     },
+    // #1637 batch 28 — FIRE CREW seats a CERTIFIED crew with no new brain: the
+    // sim already drives every cpu seat with its own autopilot (the same code
+    // path firecrewcheck races to 6/6 rescues with byte-equal replay). So the
+    // seat is the SHEET itself — sources[0] flips human<->cpu — and the watcher
+    // hands back exactly where the player left the hose. Reactive per tick
+    // (Rogue law): seats anywhere mid-alarm, radio calls keep working seated.
+    {
+        id: 'fire-crew', url: `${BASE}/fire-crew`, hook: '__firecrewTest',
+        async run(page, rep) {
+            const H = '__firecrewTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            await key(page, 'Space')                       // attract -> crew select
+            await page.waitForTimeout(300)
+            await key(page, 'Space')                       // select -> live run
+            await page.waitForTimeout(400)
+            rep.check('fire-crew: nobody is driving yet (no seat before Y)', !(await watching()))
+            const a = await probe()
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('fire-crew: Y seats the certified crew', await watching())
+            rep.check('fire-crew: the seat flips the SHEET — sources[0] is cpu', (await probe()).cpuSeat)
+            rep.check('fire-crew: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            const adv = (x, y) => y.rescued > x.rescued || (!!y.done && !x.done) || Math.abs(y.cx - x.cx) + Math.abs(y.cy - x.cy) > 2
+            const b = await pollAdvance(page, probe, adv, a, 14000)
+            rep.check('fire-crew: the crew works with idle hands', adv(a, b),
+                `crew0 (${a.cx},${a.cy}) -> (${b.cx},${b.cy}), rescued ${a.rescued} -> ${b.rescued}, tick ${a.tick} -> ${b.tick}`)
+            rep.check('fire-crew: still watching mid-alarm', await watching())
+            await page.keyboard.press('ArrowLeft')
+            rep.check('fire-crew: steer key takes over', !(await watching()))
+            rep.check('fire-crew: the sheet flips back to human on takeover', !(await probe()).cpuSeat)
+            rep.check('fire-crew: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('fire-crew: Y re-seats mid-run (the crew resumes from the live floor)', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 14000)
+            rep.check('fire-crew: resumes from where the player left it', adv(c, d),
+                `crew0 (${c.cx},${c.cy}) -> (${d.cx},${d.cy}), rescued ${c.rescued} -> ${d.rescued}`)
+            await key(page, 'KeyY')
+            rep.check('fire-crew: Y again releases the hose', !(await watching()))
+        },
+    },
     // #1637 batch 13 — the racer family seats its CERTIFIED autopilot. decide()
     // (CometDrift/sim.js) is the brain cometcheck races to victory ("autopilot
     // wins the 5-lap GP from P7", #1687-certified drift ladder) and both titles'
@@ -2779,6 +2823,36 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     rep.check('batch 27: kongcheck stamps the driver sweep (byte-equal det, laps, zero-death floor)',
         /byte-equal \(hash sampled/.test(kc) && /zero-death runs on/.test(kc)
         && /every seed banks a lap under the watch/.test(kc))
+}
+// #1637 batch 28 — FIRE CREW's proven route predates WATCH (the sim drives cpu
+// sheets on the autopilot path its own harness wins with); b28 makes that route
+// the WATCH seat. Pin that the seat is a SHEET flip through the sim's sources
+// (not a bench script), that the sheet returns to human hands at terminal, and
+// that registry + attract + phone chrome all advertise the same one truth.
+{
+    const fj = readFileSync('src/games/FireCrew/index.jsx', 'utf8')
+    const fjs = readFileSync('src/games/FireCrew/sim.js', 'utf8')
+    const fc = readFileSync('scripts/firecrewcheck.mjs', 'utf8')
+    const reg28 = readFileSync('src/config/games.js', 'utf8')
+    const entryHas28 = (p, s) => { const m = reg28.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
+    rep.check('FIRE CREW: the autopilot is the sim\'s own sheet-driver (not a bench script)',
+        /sources\[f\.seat - 1\]/.test(fjs) && /g\.sources\[0\] = 'cpu'/.test(fj))
+    rep.check('FIRE CREW: Y seats with blips; any driving key takes over',
+        /if \(isWatchKey\(e\)\)/.test(fj) && /isTakeoverKey\(e\)/.test(fj)
+        && fj.includes('playWatchStart') && fj.includes('playWatchStop') && fj.includes('watchSfx: watchSfxLog'))
+    rep.check('FIRE CREW: the sheet flips back to human on release',
+        /g\.sources\[0\] = 'human'/.test(fj))
+    rep.check('FIRE CREW: watch never lingers — released at game over and on a fresh run',
+        /release\(false\)/.test(fj) && /watchingRef\.current = false/.test(fj))
+    rep.check('FIRE CREW: the human spray mirror goes silent while seated (held keys never fake the hose)',
+        /!watchingRef\.current && h\.a/.test(fj))
+    rep.check('FIRE CREW: phones can seat too (pill in-run; attract button where SPACE lands in a run)',
+        /<WatchButton on=\{watching\}/.test(fj) && /<AttractWatchButton/.test(fj))
+    rep.check('FIRE CREW: attract shows the shared WATCH hint (import + drawn line)',
+        (fj.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
+    rep.check('registry /fire-crew: controls carry the WATCH line', entryHas28('/fire-crew', 'WATCH_HELP'))
+    rep.check('batch 28: firecrewcheck stamps the seated sweep (byte-equal det, rescue floor)',
+        /the seated autopilot wins on/.test(fc) && /byte-equal \(hash sampled/.test(fc))
 }
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray

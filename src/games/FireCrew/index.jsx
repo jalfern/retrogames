@@ -11,6 +11,8 @@ import { GAMES } from '../../config/games'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { MESSAGES, PRESS } from './attract.js'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, recordVoiceCmd, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
@@ -69,6 +71,10 @@ export default function FireCrew() {
     const [end, setEnd] = useState(null)
     const [seats, setSeats] = useState(1)
     const [voiceHints, setVoiceHints] = useState(false)
+    // WATCH (#1637 b28): the React mirror of the sheet flip — seat 1 is driven
+    // by the sim's own autopilot while watching (gs.sources[0] === 'cpu').
+    const [watching, setWatching] = useState(false)
+    const watchingRef = useRef(false)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const seatsRef = useRef(1)
@@ -104,6 +110,8 @@ export default function FireCrew() {
         for (let i = 0; i < n; i++) src[i] = 'human'
         voiceRef.current.track = null // fresh run, fresh voice
         gsRef.current = setSources(makeRun(seed >>> 0 || 1), src)
+        watchingRef.current = false // watch never lingers — a new alarm starts in your hands
+        setWatching(false)
         prevRef.current = null
         windBedAtRef.current = 0
         windCreakAtRef.current = 0
@@ -127,6 +135,26 @@ export default function FireCrew() {
         setUiScreen('attract')
     }, [])
 
+    // WATCH (#1637 b28): the proven route is the sim's OWN autopilot — the
+    // sheet flip sources[0] human<->cpu hands seat 1 to the crew that
+    // firecrewcheck races to 6/6 rescues. Reactive per tick (Rogue law):
+    // seats anywhere mid-alarm, hands the live floor straight back.
+    const seat = () => {
+        const g = gsRef.current
+        if (!g || g.done || screenRef.current !== 'play' || watchingRef.current) return
+        g.sources[0] = 'cpu'
+        watchingRef.current = true
+        setWatching(true)
+        playWatchStart()
+    }
+    const release = (blip = true) => {
+        const g = gsRef.current
+        if (g) g.sources[0] = 'human'
+        watchingRef.current = false
+        setWatching(false)
+        if (blip) playWatchStop()
+    }
+
     const endVoice = useCallback((finalize) => {
         const v = voiceRef.current
         v.on = false
@@ -142,6 +170,7 @@ export default function FireCrew() {
 
     const finish = useCallback((g) => {
         if (screenRef.current === 'over') return
+        if (watchingRef.current) release(false) // watch never lingers into GAME OVER (silent, racer rule)
         // #1249 law: never leave the mic hot on the GAME OVER screen
         if (voiceRef.current.on || voiceRef.current.session) endVoice(true)
         const won = g.win && g.rescued > 0
@@ -220,6 +249,7 @@ export default function FireCrew() {
             state: () => (gsRef.current ? state(gsRef.current) : { tick: 0, score: 0, done: false, players: 1 }),
             canvas: () => canvasRef.current,
             voiceExtra: () => (voiceRef.current.track ? { tracks: [voiceRef.current.track] } : null),
+            watchSfx: watchSfxLog,
         }
     }
 
@@ -266,7 +296,13 @@ export default function FireCrew() {
                 return
             }
             if (pausedRef.current) return
-            if (e.code === 'KeyV') { e.preventDefault(); voiceToggle(); return } // crew radio (#1361)
+            if (e.code === 'KeyV') { e.preventDefault(); voiceToggle(); return } // crew radio — reaches the cpu seats even seated (#1361)
+            // WATCH (#1637 b28): Y flips the seat both ways; any driving key
+            // grabs the hose back — and lands in keys1 below, so a HELD key
+            // drives from the tick it takes over (the watcher owns the wheel
+            // only until you touch it).
+            if (isWatchKey(e)) { e.preventDefault(); if (watchingRef.current) release(); else seat(); return }
+            if (watchingRef.current && isTakeoverKey(e)) release()
             const maps = MAPS()
             const keysets = [keys1, keys2, keys3]
             for (let i = 0; i < 3; i++) {
@@ -286,6 +322,7 @@ export default function FireCrew() {
             if (screenRef.current === 'attract') { clearKeys(); screenRef.current = 'select'; setScreen('select'); sfx.start() }
             else if (screenRef.current === 'over' && performance.now() - overAtRef.current > 700) { clearKeys(); startAttract() }
             else if (screenRef.current === 'select') startPlay(humanSeed(), selectRef.current)
+            else if (screenRef.current === 'play' && watchingRef.current) release() // a tap on the field steers (#1637)
         }
 
         // VOICE RADIO (#1361): V toggles the crew radio. Consent first (the
@@ -360,7 +397,7 @@ export default function FireCrew() {
             if (voiceRef.current.session) voiceRef.current.session.onTick(g.tick)
             listenEvents(g)
             const h = padFrom(keys1)
-            if (h.a && g.crew[0].tank > 0 && g.tick % 4 === 0) sfx.spray()
+            if (!watchingRef.current && h.a && g.crew[0].tank > 0 && g.tick % 4 === 0) sfx.spray() // the human mirror goes silent seated — held keys never fake the hose
             if (g.done) finish(g)
         }
 
@@ -417,6 +454,15 @@ export default function FireCrew() {
                 start: (seed, players) => startPlay(seed >>> 0 || 1, players || 1),
                 screen: () => screenRef.current,
                 state: () => (gsRef.current ? state(gsRef.current) : null),
+                // WATCH (#1637 b28): pilot-visible seat truth + the fallback the
+                // pilot uses if a synthetic Y ever misses the window (b26 parity).
+                watching: () => watchingRef.current,
+                watchSfx: watchSfxLog,
+                probe: () => {
+                    const g = gsRef.current
+                    return g ? { tick: g.tick, rescued: g.rescued, done: !!g.done, cx: g.crew[0].x, cy: g.crew[0].y, cpuSeat: g.sources[0] === 'cpu' } : null
+                },
+                seat: () => { if (!watchingRef.current) seat(); return watchingRef.current },
                 radio: (text) => {
                     const g = gsRef.current
                     if (!g) return { error: 'no run' }
@@ -536,6 +582,7 @@ export default function FireCrew() {
                         <AttractMessage className="mb-6 text-orange-100/80" messages={MESSAGES} />
                     </span>
                     <p className="text-lg font-mono font-bold animate-pulse text-white">{PRESS}</p>
+                    <p className="mt-4 text-[11px] font-mono font-bold tracking-widest text-emerald-300">{WATCH_ATTRACT_HINT}</p>
                 </div>
             )}
 
@@ -563,6 +610,9 @@ export default function FireCrew() {
                         EMPTY SEATS RUN ON AUTOPILOT — ANY SEAT CAN BE A MODEL LATER
                     </p>
                     <p className="mt-4 text-base font-bold animate-pulse text-white">SPACE / TAP — GO!</p>
+                    {/* #1637 b28: SPACE lands straight in a run from here — the
+                        one screen where the attract watch button is honest. */}
+                    <AttractWatchButton className="mt-5" />
                 </div>
             )}
 
@@ -586,6 +636,12 @@ export default function FireCrew() {
             )}
 
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'FIRE CREW')} onResume={() => setPaused(false)} />}
+            {uiScreen === 'play' && (
+                <div className="absolute top-2 right-2 z-50">
+                    <WatchButton on={watching} />
+                </div>
+            )}
+            {watching && <WatchToast className="absolute z-50" />}
             <VirtualControls secondAction={{ label: 'FLARE', code: 'KeyB' }} visible={uiScreen === 'play'} />
         </div>
     )
