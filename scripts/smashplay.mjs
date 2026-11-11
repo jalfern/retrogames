@@ -375,5 +375,48 @@ r.check('the arena actually renders', px > 500, `${px} lit px`)
     r.check('fire is painted while the stream lives, gone when it dies', specials.flamer.firePx >= 4 && specials.goneFire === 0, JSON.stringify({ live: specials.flamer.firePx, gone: specials.goneFire }))
 }
 
+// #2044: the bonus splatter, live. A contestant killed on screen must paint
+// red multi-pixel gibs around the kill point, the fx set must arrive from the
+// draw layer, and the air must clear after the gore lifetime (the stain stays,
+// the flight does not). Presentation gates — the rules ride smashcheck.
+{
+    const gore = await page.evaluate(async () => {
+        const raf = () => new Promise((res) => requestAnimationFrame(res))
+        const T = window.__smashTest
+        const api = window.__game
+        api.reset(0, 1)
+        for (let i = 0; i < 4; i++) T.stepWith({})
+        const gs = T.state()
+        gs.enemies = []; gs.ebullets = []; gs.bullets = []
+        // civilian fire only answers in a bonus room — stage the room as one
+        // (full clock: the lights sit at phase ~0 and never tint the sample)
+        gs.roomData.bonus = true
+        gs.roomData.bonusTime = gs.roomData.bonusTime || 600
+        gs.bonusT = gs.roomData.bonusTime
+        gs.combo = 0
+        gs.civilians = [{ id: 9401, x: 150, y: 140, dx: 0, dy: 0, panic: 0, walk: 0, sprintT: 0, sprintCd: 1e9, sprintRng: { v: 999 }, sdir: [0, 0], soff: 0 }]
+        gs.player.x = 140; gs.player.y = 140; gs.player.invuln = 1e9
+        gs.bullets = [{ id: 9402, x: 146, y: 140, dx: 1, dy: 0, kind: 'gun', dmg: 1, done: false, by: 0 }]
+        T.stepWith({}) // contact: the sim pushes civKill; the draw loop spawns the splat
+        const killed = !gs.civilians.some((v) => v.id === 9401)
+        let redPx = 0, gibsNow = -1, stainNow = -1
+        for (let i = 0; i < 3; i++) { await raf(); await raf() } // 6 frames: still mid-arc, still inside the box
+        const c = document.querySelector('canvas[data-smash-stage]')
+        const g = c.getContext('2d')
+        const near = (d, i, rgb) => Math.abs(d[i] - rgb[0]) < 40 && Math.abs(d[i + 1] - rgb[1]) < 40 && Math.abs(d[i + 2] - rgb[2]) < 40
+        const camX = T.probe().camX || 0
+        const d = g.getImageData(Math.max(0, 150 - camX - 16), 124, 33, 33).data
+        for (let i = 0; i < d.length; i += 4) if (near(d, i, [200, 31, 47]) || near(d, i, [232, 70, 74]) || near(d, i, [160, 24, 36])) redPx++
+        const fx1 = T.goreFx()
+        gibsNow = fx1.gibs.length; stainNow = fx1.stains
+        for (let i = 0; i < 60; i++) { await raf(); await raf() } // outlive GORE_TICKS
+        const fx2 = T.goreFx()
+        return { killed, redPx, gibsNow, stainNow, gibsGone: fx2.gibs.length }
+    })
+    r.check('a bonus kill really splats red gibs on canvas', gore.killed && gore.redPx >= 10, JSON.stringify(gore))
+    r.check('the splatter set lands whole — seven gibs and a stain', gore.gibsNow >= 5 && gore.stainNow >= 1, JSON.stringify({ gibs: gore.gibsNow, stains: gore.stainNow }))
+    r.check('the gore clears after its lifetime', gore.gibsGone === 0, `${gore.gibsGone} gibs left`)
+}
+
 r.check('zero page errors', errors.length === 0, errors.slice(0, 3).join(' | '))
 r.exit(browser)
