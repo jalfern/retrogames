@@ -305,13 +305,26 @@ function rect(x, px, py, w, h, color) {
     x.fillRect(px, py, w, h)
 }
 
-function brickTile() {
+// the three strata (#1959): the surface shelf is the sunlit warm mortar of
+// the original; each layer down reads darker and coarser, so a player SEES
+// there is more to dig. Hues stay warm (lodeplay's brick-vs-concrete grade
+// samples row 17) — only value and grain change with depth. `speckle` is the
+// count of extra grit flecks the tile carries.
+const SHADES = [
+    { base: '#b06a3f', mortar: '#714024', hi: '#c8845a', speckle: 0 },
+    { base: '#9a5a34', mortar: '#5f3520', hi: '#b2714b', speckle: 5 },
+    { base: '#84492b', mortar: '#4d2b1a', hi: '#9a5f3f', speckle: 9 },
+]
+// fixed grit positions — deterministic, no Math.random (the art contract)
+const GRIT = [[2, 4], [8, 2], [15, 5], [18, 12], [5, 12], [12, 9], [17, 3], [1, 9], [9, 16], [14, 15], [6, 6], [16, 18]]
+
+function brickTile(shade) {
     const c = document.createElement('canvas')
     c.width = CW; c.height = CH
     const x = c.getContext('2d')
-    rect(x, 0, 0, CW, CH, '#b06a3f')
-    const mortar = '#714024'
-    const hi = '#c8845a'
+    rect(x, 0, 0, CW, CH, shade.base)
+    const mortar = shade.mortar
+    const hi = shade.hi
     // three courses of brick, offset like masonry; 1px mortar between
     const courses = [[0, [9]], [7, [4, 15]], [14, [9]]]
     for (const [y, joints] of courses) {
@@ -320,6 +333,10 @@ function brickTile() {
         for (const jx of joints) rect(x, jx, y + 1, 2, 6, mortar)
     }
     rect(x, 0, 21, CW, 1, mortar)
+    for (let s = 0; s < shade.speckle; s++) {
+        const [gx, gy] = GRIT[s % GRIT.length]
+        rect(x, gx, gy, 1, 1, s % 2 ? mortar : hi)
+    }
     return c
 }
 
@@ -368,7 +385,7 @@ function holeTile() {
 }
 
 // digging: the brick breaks in three falling stages over the anim window
-function crumbleTiles() {
+function crumbleTiles(shade) {
     const pit = holeTile()
     const out = []
     const shards = [
@@ -382,8 +399,8 @@ function crumbleTiles() {
         const x = c.getContext('2d')
         x.drawImage(pit, 0, 0)
         for (const [px, py, w, h] of s) {
-            rect(x, px, py, w, h, '#b06a3f')
-            rect(x, px, py + h - 1, w, 1, '#714024')
+            rect(x, px, py, w, h, shade.base)
+            rect(x, px, py + h - 1, w, 1, shade.mortar)
         }
         out.push(c)
     }
@@ -391,7 +408,7 @@ function crumbleTiles() {
 }
 
 // refilling: the brick grows back out of a dark gap, closing to whole
-function rebuildTiles(brick) {
+function rebuildTiles(shade, brick) {
     const out = []
     const gaps = [6, 2, 0]
     for (const gap of gaps) {
@@ -402,8 +419,8 @@ function rebuildTiles(brick) {
         if (gap > 0) {
             const gx = (CW - gap) >> 1
             rect(x, gx, 0, gap, CH, '#0d0805')
-            rect(x, gx, 2, Math.max(1, gap - 2), 3, '#b06a3f')     // a chunk
-            rect(x, gx, CH - 6, Math.max(1, gap - 2), 3, '#b06a3f') // half grown back
+            rect(x, gx, 2, Math.max(1, gap - 2), 3, shade.base)     // a chunk
+            rect(x, gx, CH - 6, Math.max(1, gap - 2), 3, shade.base) // half grown back
         }
         out.push(c)
     }
@@ -424,13 +441,14 @@ export function buildArt() {
         runner, guard, ghost,
         gold: [nugget({ g: '#ffd23e', G: '#fff6c8', f: '#8a6a1c' }),
             nugget({ g: '#b8922e', G: '#d8bc6e', f: '#6e5213' })],
-        brick: brickTile(),
+        brick: brickTile(SHADES[0]),
+        bricks: SHADES.map((s) => brickTile(s)),   // one tile per stratum: deeper reads darker/coarser
         solid: solidTile(),
         rope: ropeTile(),
         ladder: ladderTile(),
         hole: holeTile(),
     }
-    art.crumble = crumbleTiles()
-    art.rebuild = rebuildTiles(art.brick)
+    art.crumble = SHADES.map((s) => crumbleTiles(s))
+    art.rebuild = SHADES.map((s, d) => rebuildTiles(s, art.bricks[d]))
     return art
 }
