@@ -19,7 +19,7 @@ import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../..
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { decide, RULES, dfmt, dshow, isAdult, stampLines } from './rules.js'
-import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, CLOCK, SLIP, BUBBLE, EVID, SETTLE, wallRows } from './layout.js'
+import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, CLOCK, SLIP, BUBBLE, EVID, SETTLE, QUOTE, wallRows } from './layout.js'
 
 const SIM_MS = 1000 / 60
 
@@ -81,6 +81,10 @@ const PapersPleaseMinGame = () => {
         let raf = 0, last = 0, acc = 0
         let simTick = 0           // #1473: play-frame counter for the feedback report
         let stamp = null            // {ok, why, ticks}
+        // #2021 THE INSPECTOR STAYS — the booth's case outlives its ink:
+        // {ok, witness, evidence, ticks} rides after the stamp fades and ends
+        // when the next applicant's papers land on the counter (settle → 0).
+        let insp = null
         let banner = null           // {text, sub, month, ticks}
         let settle = 0            // #1891 PAPER WEIGHT — drop/settle counter for new papers
         let demoScript = null, demoAt = 0, demoWait = 0, demoSeed = 0
@@ -147,6 +151,11 @@ const PapersPleaseMinGame = () => {
             step(gs, { action })
             if (!gs.end) {
                 stamp = { ok: gs.last?.ok, why: gs.last?.why, verdict: action, person: stamped, ticks: 30 }
+                // #2021 snapshot the case the moment it stamps — the citation
+                // paints through the ink AND the pin, and a ruling without a
+                // witness (the clean admit) replaces the pin with silence.
+                const sl = stampLines(gs.last, EVID.wrap)
+                insp = sl.witness ? { ok: !!gs.last?.ok, witness: sl.witness, evidence: sl.evidence, ticks: QUOTE.hold } : null
                 audioController.playTone(action === 'approve' ? 300 : 190, 0.06, 'square', 0.06)
                 if (gs.strikes > before) audioController.playSweep(220, 90, 0.35, 'sawtooth', 0.08)
                 else if (gs.last?.ok) audioController.playTone(action === 'deny' ? 760 : 560, 0.07, 'square', 0.05)
@@ -173,7 +182,7 @@ const PapersPleaseMinGame = () => {
             simTick = 0
             demoSeed = seed
             evLog.length = 0
-            stamp = null; banner = null
+            stamp = null; banner = null; insp = null
             settle = SETTLE.ticks // #1891 the first papers of the week drop onto the counter
             watchingRef.current = false; setWatching(false); watchScript = null // #1637 a new week starts in your hands
             audioController.playSweep(220, 440, 0.25, 'square', 0.07)
@@ -215,9 +224,24 @@ const PapersPleaseMinGame = () => {
                 stamp.ticks--
                 // #1891 PAPER WEIGHT — when the judged document is picked up
                 // (the stamp hold ticks out), the next applicant's papers drop.
-                if (stamp.ticks === 0) settle = SETTLE.ticks
+                // #2021: unless there is a case to read — then the pin rides
+                // first and the pickup waits for the read window to close.
+                if (stamp.ticks === 0 && !insp) settle = SETTLE.ticks
+            } else if (insp && insp.ticks > 0 && stamp) {
+                // #2021 THE INSPECTOR STAYS — the original keeps the violation
+                // inspector on screen. The judged document holds the counter
+                // while the citation stays readable; then it is taken up and
+                // the next papers drop. Input is never blocked: act() cuts the
+                // pin short with the next ruling.
+                insp.ticks--
+                if (insp.ticks === 0) settle = SETTLE.ticks
             }
-            if (settle > 0) settle--
+            if (settle > 0) {
+                settle--
+                // #2021 the next papers landing ends the hearing — the wall
+                // never shows yesterday's reason while today's face is judged.
+                if (settle === 0) insp = null
+            }
             if (banner && banner.ticks > 0) banner.ticks--
             // #1960 the shift moves; when the last hour burns down the booth
             // ticks softly through the glass, one blip per second of the wall
@@ -459,10 +483,13 @@ const PapersPleaseMinGame = () => {
             // whether the player remembers the bills or not
             text(`CR ${gs.credits}`, 170, CHS - 19, 12, gs.credits <= 0 ? COL.red : COL.gold)
             // the entrant (during a stamp, the papers shown are the ones
-            // just judged — the stamp lands on its own document)
-            const shown = stamp && stamp.ticks > 0 ? stamp.person : view.person
+            // just judged — the stamp lands on its own document). #2021: the
+            // judged document keeps the counter through the ink AND the pin —
+            // the booth hands over only when the next papers land.
+            const judged = (stamp && stamp.ticks > 0) || !!(insp && insp.ticks > 0)
+            const shown = judged ? stamp.person : view.person
             drawFace(ctx, shown ? shown.face : view.person.face, PORTRAIT.x, PORTRAIT.y, 1)
-            text(`ENTRANT ${gs.idx + (stamp && stamp.ticks > 0 ? 0 : 1)}/${gs.week.days[gs.day - 1].queue.length}`, PORTRAIT.x + PORTRAIT.headCx, 168, 10, COL.text, 'center')
+            text(`ENTRANT ${gs.idx + (judged ? 0 : 1)}/${gs.week.days[gs.day - 1].queue.length}`, PORTRAIT.x + PORTRAIT.headCx, 168, 10, COL.text, 'center')
             // the papers — #1891 PAPER WEIGHT: while a new applicant's papers
             // settle (settle > 0), the whole stack rides dy: papers arrive,
             // they do not teleport. Decor only — the sim and every replay pin
@@ -505,8 +532,10 @@ const PapersPleaseMinGame = () => {
             // never your correctness — a wrong call gets the red/green of
             // what you did, plus the red double frame and the witness line
             // for what you missed. The player reads the stamp as ink; the
-            // harness grades the same two rectangles.
-            if (stamp && stamp.ticks > 0) {
+            // harness grades the same two rectangles. #2021: the mark rides
+            // the judged document (like the original — a stamp stays on the
+            // paper), not just the first half-second of ink.
+            if (judged && stamp) {
                 if (!stamp.ok) {
                     ctx.strokeStyle = COL.red
                     ctx.lineWidth = 4
@@ -522,16 +551,18 @@ const PapersPleaseMinGame = () => {
                 ctx.strokeRect(-86, -22, 172, 44)
                 text(stamp.verdict === 'approve' ? 'APPROVED' : 'DENIED', 0, 6, 24, stampCol, 'center')
                 ctx.restore()
-                // #1891 THE STAMP SPEAKS — the booth quotes its case. A miss
-                // keeps its red witness (what you missed); a correct deny now
-                // prints its gold witness too (what you caught, and WHY). The
-                // evidence clauses ride in the controls strip (EVID zone —
-                // clear of the control text, strikes, slip and bubble).
-                const sl = stampLines(gs.last, EVID.wrap)
-                if (sl.witness) {
-                    text(sl.witness, STAMP.x, 296, 12, stamp.ok ? COL.gold : COL.red, 'center')
-                    sl.evidence.forEach((ln, i) => text(ln, EVID.cx, EVID.y + i * EVID.line, EVID.size, stamp.ok ? COL.gold : COL.red, 'center'))
-                }
+            }
+            // #1891 THE STAMP SPEAKS — the booth quotes its case, and #2021
+            // keeps it on screen: the witness line and evidence clauses ride the
+            // stamp's ink AND outlive it, pinned (same colors, same zones — the
+            // EVID corridor of layout.js) through the read window, until the
+            // next applicant's papers land (the pin machine in doFrameSim).
+            // A miss keeps its red witness (what you missed); a correct deny
+            // prints its gold witness too (what you caught, and WHY). A clean
+            // admit has no witness — nothing pins.
+            if (insp) {
+                text(insp.witness, STAMP.x, 296, 12, insp.ok ? COL.gold : COL.red, 'center')
+                insp.evidence.forEach((ln, i) => text(ln, EVID.cx, EVID.y + i * EVID.line, EVID.size, insp.ok ? COL.gold : COL.red, 'center'))
             }
             // #1966 THE DEDUCTION SLIP — the printed paper the original
             // slides under the door at end of day: pay earned, rent (on the
@@ -789,10 +820,14 @@ const PapersPleaseMinGame = () => {
                 ff: (n) => { tick(gs, n || CFG.SEAT_TICKS * 2); drainEvents(); return { clock: gs.clock, day: gs.day, end: gs.end, why: gs.endWhy, credits: gs.credits, slip: gs.slip && { ...gs.slip } } }, // #1960 wind the shift forward
                 start: startPlay,
                 // #1891 THE STAMP SPEAKS: the exact strings paint() prints with
-                // the live stamp (null once the hold ticks out). papersplay pins
-                // the evidence line VERBATIM against decide's witness, and
-                // counts the strip's red pixels to prove the quote is ink.
-                evidencePaint: () => ({ ...(stamp && stamp.ticks > 0 ? stampLines(gs.last, EVID.wrap) : { witness: null, evidence: [] }), ok: !!gs.last?.ok, why: gs.last?.why || null }),
+                // the live stamp. #2021 THE INSPECTOR STAYS: they now ride the
+                // pin too — `inked` says the stamp hold still runs, `pinned`
+                // says the case is being held after the ink for the reading
+                // window. papersplay pins the strings VERBATIM against decide's
+                // witness, counts the strip's red pixels to prove the quote is
+                // ink, and pins the LIFETIME: ink → pin → cleared when the
+                // next papers land.
+                evidencePaint: () => ({ ...(insp ? { witness: insp.witness, evidence: insp.evidence } : { witness: null, evidence: [] }), ok: !!gs.last?.ok, why: gs.last?.why || null, inked: !!(stamp && stamp.ticks > 0), pinned: !!insp && !(stamp && stamp.ticks > 0), pinTicks: insp ? insp.ticks : -1 }),
                 // #1891 PAPER WEIGHT: the live settle offset (negative while
                 // new papers drop, 0 at rest) + the law's start value, so the
                 // gate can prove a drop actually ran.

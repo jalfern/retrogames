@@ -148,6 +148,37 @@ r.check(`a mistake frames the papers in red ${JSON.stringify(px)}`, px.red > 300
     }
 }
 
+// 3b — #2021 THE INSPECTOR STAYS: the case a deny (or a wrong admit) prints
+// does NOT fade with the ink. The same strings ride pinned while the judged
+// document keeps the counter, and the inspector is dismissed the moment the
+// next papers drop and land — the wall never shows yesterday's reason behind
+// today's face. Timings: ink 30 ticks (≈0.5 s), pin 132 (≈2.2 s), drop 12
+// (≈0.2 s) → the window closes ≈2.9 s after the press.
+{
+    await wait(850)                    // ≈ press+1.1 s: ink gone, pin riding
+    const pinMid = await page.evaluate(() => window.__ppTest.evidencePaint())
+    const want = after.last.verdict === 'deny' ? `WITNESS: ${after.last.why}` : 'THEY WERE CLEAN'
+    const witnessPx = await page.evaluate(() => {
+        const c = document.querySelector('canvas[data-pp-stage]')
+        const d = c.getContext('2d').getImageData(430, 284, 152, 14).data   // witness line zone
+        let red = 0
+        for (let i = 0; i < d.length; i += 4) {
+            const [rr, gg, bb] = [d[i], d[i + 1], d[i + 2]]
+            if (rr > 140 && rr > gg + 50 && rr > bb + 40) red++
+        }
+        return red
+    })
+    r.check(`the case stays pinned after the ink fades (${pinMid.witness}, ${witnessPx} red px)`,
+        pinMid.pinned === true && pinMid.inked === false && pinMid.witness === want &&
+        (after.last.verdict !== 'deny' || pinMid.evidence.join('; ').startsWith(after.last.evidence)) && witnessPx > 40,
+        JSON.stringify({ pinMid, witnessPx, want }))
+    await wait(2400)                 // ≈ press+3.6 s: read window closed, papers dropped and landed
+    const pinEnd = await page.evaluate(() => window.__ppTest.evidencePaint())
+    r.check('the pin clears when the next papers land',
+        pinEnd.witness === null && pinEnd.evidence.length === 0 && pinEnd.pinned === false && pinEnd.pinTicks === -1,
+        JSON.stringify(pinEnd))
+}
+
 // 4 — the rest of day 1 honestly: the rulebook grows the next morning
 const nextDay = await page.evaluate(() => window.__ppTest.runDay())
 await wait(200)
@@ -166,14 +197,22 @@ r.check('the strikes reset with the morning', s.strikes === 0)
         window.__ppTest.stamp('approve')
         return new Promise((res) => {
             let m = 0, n = 0
+            // #2021 the window covers BOTH hand-offs: a silent ruling drops
+            // right after the ink (~0.7 s), a ruling WITH a case holds the
+            // counter for the read window (~2.9 s) — either way the next
+            // papers must drop and rest inside 3.4 s. The live floor is
+            // -2px, not the law's -10px top: software-rendered Chrome
+            // catches up 3+ sim ticks per frame, and the late hand-off
+            // starts 160 ticks in, so the top step can exist only mid-frame
+            // here — its exact size is Node law (paperscheck section 5).
             const iv = setInterval(() => {
                 m = Math.min(m, window.__ppTest.settlePx())
-                if (++n > 60) { clearInterval(iv); res({ min: m, rest: window.__ppTest.settlePx(), top: window.__ppTest.settleTop }) }
-            }, 16)
+                if (++n > 900) { clearInterval(iv); res({ min: m, rest: window.__ppTest.settlePx(), top: window.__ppTest.settleTop }) }
+            }, 4)
         })
     })
     r.check(`new papers drop onto the counter (settle reached ${drop.min}px, rests at ${drop.rest})`,
-        drop.min <= -8 && drop.rest === 0 && drop.top <= -8, JSON.stringify(drop))
+        drop.min <= -2 && drop.rest === 0 && drop.top <= -8, JSON.stringify(drop))
 }
 
 // 5 — three mistakes and the day is over: DEMOTED, then one key home
