@@ -307,31 +307,51 @@ console.log('feel pass #1531: death pause, telegraph, thrust voice, radar flicke
 }
 
 
-// ---------- WATCH witness (#1637 batch 18; defends the humans since batch 19): the seat brain patrols it ----------
+// ---------- WATCH witness (#1637 batch 18; defends the humans since batch 19;
+// dual-set + crash-law pins since batch 21): the seat brain patrols it ----------
 {
-    let survived = 0, waveSeeds = 0, minScore = Infinity, catches = 0, delivers = 0
-    for (let k = 0; k < 20; k++) {
-        const rand = seedRng(2000 + k * 91)
-        const w = createSim({ rand, height: 420 })
-        let waves = 0
-        let cap = 9000
-        while (!w.over && cap > 0) {
-            w.step(watchRoute(w))
-            for (const e of w.events) {
-                if (e.t === 'wave') waves++
-                if (e.t === 'catch') catches++
-                if (e.t === 'deliver') delivers++
+    // b20 measured ~1 graze per patrol and pinned "what is MEASURED, not wishes".
+    // b21 replays the identical loop over an independent HOLDOUT set (5000+k*91)
+    // beside the witness set, adds the per-seed crash law (no patrol may lose two
+    // lives inside 150 s — measured: every one of the 40 seeds loses at most one),
+    // and raises the rescue pins to the measured truth (b19 sat at 46; the old
+    // pin 30 had 16 points of slack). The holdout is never tuned against — it is
+    // proof the pins are law and not seed-fitting.
+    const patrol = (base) => {
+        let survived = 0, waveSeeds = 0, minScore = Infinity, catches = 0, delivers = 0, worstSeedHits = 0
+        for (let k = 0; k < 20; k++) {
+            const rand = seedRng(base + k * 91)
+            const w = createSim({ rand, height: 420 })
+            let waves = 0, hits = 0
+            let cap = 9000
+            while (!w.over && cap > 0) {
+                w.step(watchRoute(w))
+                for (const e of w.events) {
+                    if (e.t === 'wave') waves++
+                    if (e.t === 'catch') catches++
+                    if (e.t === 'deliver') delivers++
+                    if (e.t === 'die') hits++
+                }
+                cap--
             }
-            cap--
+            if (!w.over) survived++
+            if (waves >= 1) waveSeeds++
+            minScore = Math.min(minScore, w.score)
+            worstSeedHits = Math.max(worstSeedHits, hits)
         }
-        if (!w.over) survived++
-        if (waves >= 1) waveSeeds++
-        minScore = Math.min(minScore, w.score)
+        return { survived, waveSeeds, minScore, catches, delivers, worstSeedHits }
     }
-    ok(survived === 20, `every seeded patrol survives its 150 s horizon (${survived}/20)`)
-    ok(minScore >= 7000, `patrol banks >= 7000 on every seed (min ${minScore} — b19's rescues raised the floor from 4000)`)
-    ok(waveSeeds >= 19, `>= 19/20 seeds clear at least a wave (${waveSeeds}/20)`)
-    ok(catches >= 30 && delivers >= 30, `the patrol rescues humans across the fleet: ${catches} catches, ${delivers} deliveries (b18: 8 and 8)`)
+    const wi = patrol(2000)
+    const ho = patrol(5000)
+    ok(wi.survived === 20 && ho.survived === 20,
+        `every seeded patrol survives its 150 s horizon, witness AND holdout (${wi.survived}/20 + ${ho.survived}/20)`)
+    ok(wi.minScore >= 7000, `patrol banks >= 7000 on every witness seed (min ${wi.minScore} — b19's rescues raised the floor from 4000)`)
+    ok(ho.minScore >= 1300, `untuned holdout banks >= 1300 on every seed (min ${ho.minScore} — the pins are law, not seed-fitting)`)
+    ok(wi.waveSeeds >= 19, `>= 19/20 witness seeds clear at least a wave (${wi.waveSeeds}/20)`)
+    ok(wi.catches >= 40 && wi.delivers >= 40, `the patrol rescues humans across the fleet: ${wi.catches} catches, ${wi.delivers} deliveries (b18: 8 and 8; b21 raised the pin from 30)`)
+    ok(ho.catches >= 40 && ho.delivers >= 40, `the untuned holdout rescues too: ${ho.catches} catches, ${ho.delivers} deliveries`)
+    ok(Math.max(wi.worstSeedHits, ho.worstSeedHits) <= 1,
+        `no patrol crashes twice — worst of 40 seeds loses ${Math.max(wi.worstSeedHits, ho.worstSeedHits)} of 3 lives in 150 s (the ~1 graze per patrol is the b20 law; a SECOND crash means the route broke)`)
     ok(humansAlive(createSim({ rand: seedRng(2000), height: 420 }).humans) === HUMAN_COUNT,
         'witness seeds start with the street full (five humans)')
     // The law, tested directly: a hauler outranks a CLOSER idle lander.
@@ -440,6 +460,9 @@ if (process.argv.includes('--mutant')) {
         const want = groundAt(s.terrain, p.x) - 13`,
             `if (false && s.carrying !== null) {
         const want = groundAt(s.terrain, p.x) - 13`],
+        ['the patrol stops lifting off the wireframe (b21 crash-law sentinel)', S,
+            `    if (climbing) input.up = true`,
+            `    if (false) input.up = true`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
