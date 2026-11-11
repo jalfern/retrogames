@@ -31,8 +31,10 @@ const COL = {
 // pic: the live booth face, the passport photo and the DEV pixel probe all
 // run through drawFace, so "the photo differs" means "this function's
 // pixels differ". Structural features (hair cut, face width, glasses,
-// facial hair) are what the PORTRAIT rule compares; colors are atmosphere
-// — time fades hair, and an old photo of the right person is not a lie.
+// facial hair — plus brows and mouth since #1972, and the face gained the
+// parts the original's eye roams: sclera+pupils, ears, nose) are what the
+// PORTRAIT rule compares; colors are atmosphere — time fades hair, and an
+// old photo of the right person is not a lie.
 const SKINS = ['#e8c39e', '#d2a679', '#b07f55', '#8a5a3a', '#f0d3b4']
 const HAIRS = ['#2c2622', '#5a3b1e', '#8d1f1f', '#b3b6bd', '#1e1e28']
 const SHIRTS = ['#39466e', '#6e4b7a', '#4b7a5e', '#7a634b']
@@ -224,13 +226,30 @@ const PapersPleaseMinGame = () => {
             c.strokeStyle = '#141824'; c.lineWidth = 1; c.strokeRect(x + 0.5, y + P(92) + 0.5, P(110) - 1, P(30) - 1)
             c.fillStyle = SKINS[f.skin]
             c.beginPath(); c.ellipse(x + P(55), y + P(52), P(f.narrow ? 27 : 34), P(40), 0, 0, Math.PI * 2); c.fill()
+            // #1972 ears, painted BEFORE the hair so a sideburn cut buries
+            // them the way the original's sprite does. Decor — never compared.
+            const rx = P(f.narrow ? 27 : 34)
+            c.fillRect(x + P(55) - rx - P(4), y + P(44), P(5), P(10)); c.fillRect(x + P(55) + rx - P(1), y + P(44), P(5), P(10))
             c.fillStyle = HAIRS[f.hairC]
             c.fillRect(x + P(20), y + P(8), P(70), P(f.style === 0 ? 16 : f.style === 1 ? 10 : 22))
             if (f.style === 2) c.fillRect(x + P(18), y + P(8), P(8), P(44))
             if (f.style === 3) c.fillRect(x + P(84), y + P(8), P(8), P(44))
+            // #1972 eyes get whites + pupils — the small face reads as a face
+            c.fillStyle = '#d8dce8'
+            c.fillRect(x + P(38), y + P(44), P(10), P(8)); c.fillRect(x + P(62), y + P(44), P(10), P(8))
             c.fillStyle = '#20242e'
-            c.fillRect(x + P(40), y + P(46), P(6), P(4)); c.fillRect(x + P(66), y + P(46), P(6), P(4))
-            c.fillRect(x + P(48), y + P(66), P(16), P(3))
+            c.fillRect(x + P(41), y + P(46), P(4), P(4)); c.fillRect(x + P(65), y + P(46), P(4), P(4))
+            // #1972 brows — the compared thickness (thin 2px / thick 5px).
+            // Constant ink: thickness is structure, color is never evidence.
+            const bh = f.brow ? P(5) : P(2)
+            c.fillRect(x + P(38), y + P(38), P(10), bh); c.fillRect(x + P(62), y + P(38), P(10), bh)
+            // #1972 nose — decor only, never compared
+            c.fillStyle = 'rgba(20,24,36,0.28)'
+            c.fillRect(x + P(53), y + P(50), P(4), P(8))
+            // #1972 mouth: shut bar vs open block — a compared feature
+            c.fillStyle = '#20242e'
+            if (f.mouth) c.fillRect(x + P(49), y + P(63), P(12), P(9))
+            else c.fillRect(x + P(48), y + P(66), P(16), P(3))
             if (f.must) { c.fillStyle = HAIRS[f.hairC]; c.fillRect(x + P(44), y + P(58), P(24), P(5)) }
             if (f.glasses) {
                 c.fillStyle = '#10151f'
@@ -254,10 +273,16 @@ const PapersPleaseMinGame = () => {
             box(x + 140, y + 34, 84, 60, '#c9c2a4', COL.paperLine)
             text('ISSUED BY', x + 182, y + 48, 8, '#6b5d3a', 'center')
             text(`${pp.country}`, x + 182, y + 70, 11, COL.ink, 'center')
-            // #1938 the photo on the paper — same drawFace, smaller scale,
-            // so an honest photo is the identical face in miniature
+            // #1938 the photo on the paper — same drawFace, so an honest
+            // photo is the identical face in miniature. #1972: the miniature
+            // is a ZOOM-CROP now (s 0.75, clipped to the frame): the head
+            // ~50px wide where the old flat 0.6 read ~40, chest cropped the
+            // way an ID photo crops a person.
             box(x + PHOTO.x, y + PHOTO.y, PHOTO.w, PHOTO.h, '#c9c2a4', COL.paperLine)
-            drawFace(ctx, pp.photo, x + PHOTO.x, y + PHOTO.y, PHOTO.s)
+            ctx.save()
+            ctx.beginPath(); ctx.rect(x + PHOTO.x, y + PHOTO.y, PHOTO.w, PHOTO.h); ctx.clip()
+            drawFace(ctx, pp.photo, x + PHOTO.x + PHOTO.ox, y + PHOTO.y + PHOTO.oy, PHOTO.s)
+            ctx.restore()
             text(`EXPIRES ${dfmt(pp.expiry)}`, x + 10, y + 140)
             text(`VALID ${isAdult(pp.dob, gs.week.days[gs.day - 1].date) ? 'ADULT' : 'CHILD'}`, x + 240, y + 140, 10, '#6b5d3a', 'center')
         }
@@ -505,6 +530,23 @@ const PapersPleaseMinGame = () => {
                     narrow: band(20, 56, 32, 70) + band(78, 56, 92, 70),
                     glasses: band(35, 41, 75, 56),
                     must: band(42, 56, 70, 66),
+                    // #1972 bands. brow rows 36-42 sit ABOVE the glasses rim
+                    // (y42 starts the frame) so a glasses flip cannot light
+                    // it; a thick brow adds rows 40-42 the thin one lacks.
+                    // mouth rows 63-74 start below the mustache's last row
+                    // (62) so only the compared mouth shape lights it.
+                    brow: band(35, 36, 75, 42),
+                    mouth: band(46, 63, 66, 74),
+                    // eye evidence: count the whites in the LIVE face render
+                    // (128px bare-eye, 0 behind opaque lenses) — proves the
+                    // sclera+pupil art is real pixels, not a descriptor claim
+                    whites: (() => {
+                        let n = 0
+                        for (let i = 0; i < A.length; i += 4) {
+                            if (((A[i] << 16) | (A[i + 1] << 8) | A[i + 2]) === 0xd8dce8) n++
+                        }
+                        return n
+                    })(),
                 }
             }
             window.__ppTest = {

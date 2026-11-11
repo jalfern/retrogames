@@ -171,23 +171,49 @@ const paint = await page.evaluate(() => {
         if (k === 0xd8d2b8 || k === 0xc9c2a4) beige++                  // paper / frame
         else n++
     }
-    return { n, beige }
+    // #1972 zoom-crop proof: longest non-beige run across the head's widest
+    // row (canvas y=100 = frame center). The old flat-0.6 head measured
+    // ~41px wide even at its widest (narrow) cut — the 0.75 crop with ears
+    // measures 47 (narrow) to 57 (wide). 44 separates new from old.
+    let run = 0, best = 0
+    for (let x = 0; x < 66; x++) {
+        const i = (36 * 66 + x) * 4
+        const k = (d[i] << 16) | (d[i + 1] << 8) | d[i + 2]
+        if (k !== 0xd8d2b8 && k !== 0xc9c2a4) { run++; best = Math.max(best, run) } else run = 0
+    }
+    return { n, beige, headRun: best }
 })
 r.check(`the passport carries a painted photo (${paint.n} face px in a ${paint.beige} px beige frame)`,
     paint.n > 250 && paint.beige > 100)
+r.check(`the photo is a zoom-crop — head reads ${paint.headRun}px across (flat-0.6 read <=41)`, paint.headRun >= 44)
 let sawForge = 0, sawHonest = 0, bandFails = 0
+const art = { browMax: 0, browMin: 1e9, mouthMax: 0, mouthMin: 1e9, whitesMax: 0, sawBare: false }
 for (let guard = 0; guard < 12 && s.day === 1 && !s.end; guard++) {
     const pp = await page.evaluate(() => {
         const t = window.__ppTest
         const p = t.probe().view.person
         if (!p.passport || !p.face) return null
-        const FE = ['style', 'narrow', 'glasses', 'must']
+        const FE = ['style', 'narrow', 'glasses', 'must', 'brow', 'mouth']
         const feats = FE.filter((f) => p.face[f] !== p.passport.photo[f])
-        return { name: p.passport.name, feats, pix: t.portraitPix() }
+        // #1972 live-portrait ink: the brow band (thin 2px vs thick 5px)
+        // and the mouth band (shut bar 48px vs open block 108px), counted
+        // in the exact ink color in the portrait column.
+        const c = document.querySelector('canvas[data-pp-stage]')
+        const ink = (x, y, w, h) => {
+            const d = c.getContext('2d').getImageData(x, y, w, h).data
+            let n = 0
+            for (let i = 0; i < d.length; i += 4) if (((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]) === 0x20242e) n++
+            return n
+        }
+        return { name: p.passport.name, feats, glasses: p.face.glasses, brow: p.face.brow, pix: t.portraitPix(), browInk: ink(300, 64, 34, 5), mouthInk: ink(310, 89, 16, 9) }
     })
     if (pp && pp.pix) {
         if (pp.feats.length === 0) { sawHonest++; if (pp.pix.total !== 0) bandFails++ }
         else { sawForge++; for (const f of pp.feats) if (!(pp.pix[f] > 0)) bandFails++ }
+        art.browMax = Math.max(art.browMax, pp.browInk); art.browMin = Math.min(art.browMin, pp.browInk)
+        art.mouthMax = Math.max(art.mouthMax, pp.mouthInk); art.mouthMin = Math.min(art.mouthMin, pp.mouthInk)
+        art.whitesMax = Math.max(art.whitesMax, pp.pix.whites)
+        if (!pp.glasses) art.sawBare = true
     }
     const v = await page.evaluate(() => window.__ppTest.verdict())
     if (pp && pp.feats.length > 0) {
@@ -200,6 +226,12 @@ for (let guard = 0; guard < 12 && s.day === 1 && !s.end; guard++) {
 }
 r.check(`honest papers painted ONE face (${sawHonest} papers, every total 0)`, sawHonest >= 3 && bandFails === 0, `bandFails=${bandFails}`)
 r.check('day 1 staged its forger at the window', sawForge >= 1, `${sawForge}`)
+// #1972 PORTRAIT-DETAIL pixel proof: the day's faces show both brow
+// thicknesses and both mouth shapes on the canvas, and a bare-eyed face
+// paints whites. (Open 108 vs shut 48; thick 100 vs thin 40; bare 128.)
+r.check(`brows paint both thicknesses (${art.browMin}..${art.browMax} ink px)`, art.browMin < 60 && art.browMax > 60)
+r.check(`mouths paint both shapes (${art.mouthMin}..${art.mouthMax} ink px)`, art.mouthMin < 80 && art.mouthMax > 80)
+r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.sawBare && art.whitesMax > 60)
 
 // #1960 THE SHIFT CLOCK, live: the printed minutes move with real frames,
 // a dawdled day closes the gate (banner + dock + morning rewind), and the

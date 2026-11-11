@@ -34,7 +34,10 @@ export const PORTRAIT = { x: 262, y: 26, headCx: 55, headRx: 34, bodyBottom: 122
 export const PAPERS = { x: 356, y: 40, w: 300, h: 148 }
 // the passport photo (#1938): passport-relative box for the mini face draw
 // (drawFace at scale s). Shares PAPERS' right margin: 356+232+66=654 <= CW-4.
-export const PHOTO = { x: 232, y: 24, w: 66, h: 76, s: 0.6 }
+// #1972 PORTRAIT-DETAIL: s 0.6 -> 0.75 with a zoom-crop — ox centers the
+// 82px-wide draw in the 66px frame (the clip in drawPassport trims the
+// shoulders), oy lifts the hair to the frame top; the head reads ~50px.
+export const PHOTO = { x: 232, y: 24, w: 66, h: 76, s: 0.75, ox: -8, oy: -3 }
 export const ID = { x: 356, y: 200, w: 190, h: 64 }
 export const STAMP = { x: 506, y: 110 }
 // #1966 THE PAY ECONOMY — the end-of-day deduction slip, pinned under the
