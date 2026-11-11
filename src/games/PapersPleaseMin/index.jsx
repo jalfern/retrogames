@@ -14,6 +14,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { CFG, newRun, step, tick, stateHash, current, autopilot, gameClock } from './sim.js'
+import { REGULARS } from './gen.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
@@ -228,8 +229,11 @@ const PapersPleaseMinGame = () => {
             c.beginPath(); c.ellipse(x + P(55), y + P(52), P(f.narrow ? 27 : 34), P(40), 0, 0, Math.PI * 2); c.fill()
             // #1972 ears, painted BEFORE the hair so a sideburn cut buries
             // them the way the original's sprite does. Decor — never compared.
+            // #1979: a regular with the `ear` mark grows them taller — one of
+            // the four signature marks, decor by the doctrine of the nose.
             const rx = P(f.narrow ? 27 : 34)
-            c.fillRect(x + P(55) - rx - P(4), y + P(44), P(5), P(10)); c.fillRect(x + P(55) + rx - P(1), y + P(44), P(5), P(10))
+            const ey = f.mark === 'ear' ? P(40) : P(44), eh = f.mark === 'ear' ? P(18) : P(10)
+            c.fillRect(x + P(55) - rx - P(4), y + ey, P(5), eh); c.fillRect(x + P(55) + rx - P(1), y + ey, P(5), eh)
             c.fillStyle = HAIRS[f.hairC]
             c.fillRect(x + P(20), y + P(8), P(70), P(f.style === 0 ? 16 : f.style === 1 ? 10 : 22))
             if (f.style === 2) c.fillRect(x + P(18), y + P(8), P(8), P(44))
@@ -257,6 +261,23 @@ const PapersPleaseMinGame = () => {
                 c.fillRect(x + P(49), y + P(46), P(12), P(2))
                 c.fillStyle = '#5a6b8a'
                 c.fillRect(x + P(39), y + P(44), P(8), P(6)); c.fillRect(x + P(63), y + P(44), P(8), P(6))
+            }
+            // #1979 SIGNATURE MARKS — the authored regulars' scars of a life.
+            // One ink, three shapes (the fourth, the big ear, grows above);
+            // decor by doctrine — never a compared feature, never evidence.
+            // Rows sit clear of every compared band: the scar rides the left
+            // cheek at rows 50-55 (the narrow band starts at 56), the mole
+            // clears the mustache bar's right edge (x68), the wrinkle rows
+            // 32/35 sit above the brow row 38 and below the longest hair.
+            if (f.mark === 'scar') {
+                c.fillStyle = '#8f4a3e'
+                c.fillRect(x + P(30), y + P(50), P(2), P(2)); c.fillRect(x + P(32), y + P(52), P(2), P(2)); c.fillRect(x + P(34), y + P(54), P(2), P(2))
+            } else if (f.mark === 'mole') {
+                c.fillStyle = '#8f4a3e'
+                c.fillRect(x + P(70), y + P(58), P(2), P(2))
+            } else if (f.mark === 'wrinkle') {
+                c.fillStyle = '#8f4a3e'
+                c.fillRect(x + P(38), y + P(32), P(34), P(1)); c.fillRect(x + P(38), y + P(35), P(32), P(1))
             }
         }
 
@@ -551,6 +572,32 @@ const PapersPleaseMinGame = () => {
             }
             window.__ppTest = {
                 cfg: CFG, // #1966 pay constants so the live gates read the law, not a copy
+                // #1979 cast pixel proof — render each authored regular through
+                // the SAME drawFace and count its signature mark's own ink (all
+                // four exact colors, never a descriptor claim). ear counts skin
+                // ink in the ear's own columns (x0..x0+3 — the ellipse is
+                // tangent at x0+4, so it is ear or nothing).
+                castPix: () => REGULARS.map((c) => {
+                    const cv = document.createElement('canvas')
+                    cv.width = PIX.w; cv.height = PIX.h
+                    const cc = cv.getContext('2d')
+                    cc.imageSmoothingEnabled = false
+                    drawFace(cc, { ...c.face, mark: c.mark }, 0, 0, 1)
+                    const d = cc.getImageData(0, 0, PIX.w, PIX.h).data
+                    const hexAt = (i) => (d[i] << 16) | (d[i + 1] << 8) | d[i + 2]
+                    const ink = (x0, y0, x1, y1, hex) => {
+                        let n = 0
+                        for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) if (hexAt((yy * PIX.w + xx) * 4) === hex) n++
+                        return n
+                    }
+                    const x0 = 55 - (c.face.narrow ? 27 : 34) - 4
+                    const skinHex = parseInt(SKINS[c.face.skin].slice(1), 16)
+                    return {
+                        id: c.id, mark: c.mark, name: c.name,
+                        scar: ink(28, 48, 38, 58, 0x8f4a3e), mole: ink(68, 56, 74, 62, 0x8f4a3e),
+                        wrinkle: ink(36, 30, 74, 37, 0x8f4a3e), ear: ink(x0, 38, x0 + 4, 60, skinHex),
+                    }
+                }),
                 watching: () => watchingRef.current, // #1637 WATCH probes
                 watchSfx: watchSfxLog,
                 probe: () => {
