@@ -460,7 +460,12 @@ const PapersPleaseMinGame = () => {
             // verdict-twinning every paper) — but the booth prints the line
             // exactly when it is present, and papersplay proves those pixels.
             if (shown && shown.say) {
-                box(BUBBLE.x, BUBBLE.y, BUBBLE.w, BUBBLE.h, COL.paper, COL.paperLine)
+                // #2003: the thread's three-line return grows the field downward
+                // (8 + 13n keeps 1–2 lines pixel-identical to the old h=34; the
+                // worst case 302+47=349 stays inside the strip/witness bound of
+                // 394 — paperscheck pins the growth law).
+                const bubH = Math.max(BUBBLE.h, 8 + 13 * shown.say.length)
+                box(BUBBLE.x, BUBBLE.y, BUBBLE.w, bubH, COL.paper, COL.paperLine)
                 ctx.fillStyle = COL.paper
                 ctx.beginPath()
                 ctx.moveTo(BUBBLE.x + 18, BUBBLE.y); ctx.lineTo(BUBBLE.x + 38, BUBBLE.y); ctx.lineTo(BUBBLE.x + 22, BUBBLE.y - 16)

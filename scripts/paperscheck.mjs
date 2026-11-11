@@ -364,6 +364,11 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
     // Recurrence + identity + legality, every seed.
     let appearances = 0
     const seatsWalked = new Set()
+    // #2003 THREAD continuity: a face's topic is planted on its greeting
+    // visit (hooked) and paid off on its return (paid) — the thread keys are
+    // seed:regular, so the payoff must follow the plant in the SAME week.
+    const hooked = new Set()
+    const paid = new Set()
     for (const seed of SEEDS) {
         const w = genWeek(seed)
         const arc = arcForWeek(seed)
@@ -406,6 +411,9 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
                 // #1997 SPEECH SHAPE: greet on the week's first walk-up,
                 // YOU AGAIN + personal callback on the return; the arc turn
                 // keeps the canonical Jorji pair (the wall's drama, universal).
+                // #2003 THE LONG CONVERSATION deepens each beat: the greeting
+                // carries its hook (2 lines), the return pays the topic off
+                // (3 lines) — a thread, not two orphan sentences.
                 const say = a.person.say
                 const isArcTurn = day.n === arc.day && c.id === arc.id
                 ok(Array.isArray(say) && say.length >= 1, `seed ${seed} day ${day.n}: ${c.id} stood silent at the glass — authored faces speak`)
@@ -413,11 +421,13 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
                     ok(say.length === 2 && say[0] === 'YOU AGAIN.' && /\.\.\./.test(say[1]),
                         `seed ${seed} day ${day.n}: the turn lost its canonical pair — ${JSON.stringify(say)}`)
                 } else if (day.n === firstVisitDay(seed, REGULARS.findIndex((k) => k.id === c.id))) {
-                    ok(say.length === 1 && say[0] === c.lines.greet,
-                        `seed ${seed} day ${day.n}: ${c.id}'s first walk-up forgot its greeting — ${JSON.stringify(say)}`)
+                    ok(say.length === 2 && say[0] === c.lines.greet && say[1] === c.lines.hook,
+                        `seed ${seed} day ${day.n}: ${c.id}'s first walk-up forgot its greeting thread — ${JSON.stringify(say)}`)
+                    hooked.add(`${seed}:${c.id}`)
                 } else {
-                    ok(say.length === 2 && say[0] === 'YOU AGAIN.' && say[1] === c.lines.again,
-                        `seed ${seed} day ${day.n}: ${c.id}'s return forgot its callback — ${JSON.stringify(say)}`)
+                    ok(say.length === 3 && say[0] === 'YOU AGAIN.' && say[1] === c.lines.again && say[2] === c.lines.follow,
+                        `seed ${seed} day ${day.n}: ${c.id}'s return forgot its payoff — ${JSON.stringify(say)}`)
+                    paid.add(`${seed}:${c.id}`)
                 }
                 // Legality (#1983 amended): the neighborhood is honest — decide
                 // and judge BOTH approve a regular — with exactly one exception
@@ -451,6 +461,25 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
     ok(seatsWalked.size === REGULARS.length, `${seatsWalked.size}/${REGULARS.length} cast seats ever walked across the sweep — a seat nobody meets is dead letter`)
     ok(new Set(REGULARS.map((c) => c.lines.greet)).size === REGULARS.length, 'two regulars share a greeting — a neighborhood says hello six ways')
     ok(new Set(REGULARS.map((c) => c.lines.again)).size === REGULARS.length, 'two regulars share a callback — the booth remembers six ways')
+    // #2003 THE LONG CONVERSATION: every line the cast carries is its own —
+    // six faces × four beats, twenty-four distinct sentences, no echoes —
+    // and every paid-off topic was planted in the same week. An arc face's
+    // hook is the one unpaid thread: its return belonged to the wall, not
+    // to breakfast.
+    const allLines = REGULARS.flatMap((c) => [c.lines.greet, c.lines.hook, c.lines.again, c.lines.follow])
+    ok(allLines.length === REGULARS.length * 4 && new Set(allLines).size === allLines.length,
+        'the cast threads repeat a sentence — 24 authored lines, 24 different voices required')
+    ok([...paid].every((k) => hooked.has(k)), 'a payoff was spoken for a topic never planted — a fabricated memory')
+    // A planted topic goes unpaid only two honest ways: its face TURNED (the
+    // arc return belongs to the wall, not to breakfast) or its seat walks ONCE
+    // a week (the window's tail seats s+2, s+3 carry their topic into next
+    // week — the rotating window law, not a broken thread).
+    const unpaid = [...hooked].filter((k) => !paid.has(k))
+    ok(unpaid.every((k) => {
+        const [sStr, id] = k.split(':'), s = Number(sStr)
+        return id === arcForWeek(s).id || id === REGULARS[(s + 2) % REGULARS.length].id || id === REGULARS[(s + 3) % REGULARS.length].id
+    }), `a twice-a-week face planted a topic the line never answered: ${JSON.stringify(unpaid.filter((k) => { const [sStr, id] = k.split(':'), s = Number(sStr); return !(id === arcForWeek(s).id || id === REGULARS[(s + 2) % REGULARS.length].id || id === REGULARS[(s + 3) % REGULARS.length].id) }))}`)
+    ok(paid.size >= SEEDS.length, `${paid.size} threads paid across ${SEEDS.length} weeks — at least one per week, or the conversation is theatre`)
     console.log(`  ..    ${appearances} authored appearances across ${SEEDS.length} weeks; every week had faces that came back`)
 }
 
@@ -499,8 +528,9 @@ section('THE ARC (#1983) — one regular turns wanted, Jorji-style')
         const d2 = w.days[arc.day - 5]
         const first = d2.queue.find((a) => a.person.regular === arc.id)
         const arcC = REGULARS.find((k) => k.id === arc.id)
-        ok(!!first && !first.person.arc && Array.isArray(first.person.say) && first.person.say.length === 1 &&
-           first.person.say[0] === arcC.lines.greet && decide(viewOf(d2, first)).verdict === 'approve',
+        ok(!!first && !first.person.arc && Array.isArray(first.person.say) && first.person.say.length === 2 &&
+           first.person.say[0] === arcC.lines.greet && first.person.say[1] === arcC.lines.hook &&
+           decide(viewOf(d2, first)).verdict === 'approve',
             `seed ${seed}: the arc's first visit was not the honest, greeting walk-up it should be remembered as — ${first && JSON.stringify(first.person.say)}`)
         ok(first ? first.truth.wanted === false : false, `seed ${seed}: wanted before the turn — the arc is one beat, not a flag`)
         // the OTHER recurrence (cast[(seed+1) mod LEN], days 3 and 7) just remembers
@@ -508,9 +538,10 @@ section('THE ARC (#1983) — one regular turns wanted, Jorji-style')
         const backId = REGULARS[backIdx].id
         const d7 = w.days[6]
         const rememberer = d7.queue.find((x) => x.person.regular === backId)
-        ok(!!rememberer && !rememberer.person.arc && Array.isArray(rememberer.person.say) && rememberer.person.say.length === 2 &&
-           rememberer.person.say[0] === 'YOU AGAIN.' && rememberer.person.say[1] === REGULARS[backIdx].lines.again,
-            `seed ${seed}: day 7's returning face forgot its callback — ${JSON.stringify(rememberer && rememberer.person.say)}`)
+        ok(!!rememberer && !rememberer.person.arc && Array.isArray(rememberer.person.say) && rememberer.person.say.length === 3 &&
+           rememberer.person.say[0] === 'YOU AGAIN.' && rememberer.person.say[1] === REGULARS[backIdx].lines.again &&
+           rememberer.person.say[2] === REGULARS[backIdx].lines.follow,
+            `seed ${seed}: day 7's returning face forgot its callback thread — ${JSON.stringify(rememberer && rememberer.person.say)}`)
         ok(decide(viewOf(d7, rememberer)).verdict === 'approve', `seed ${seed}: the plain recidivist was convicted — only the arc turns`)
         // purity: `say` never moves a verdict — every paper of the arc day
         // decides identically with the line stripped off the person.
@@ -962,10 +993,16 @@ section('THE WALL FITS THE BOOTH (#410) — nothing hides, nothing is postage')
     // the slip, the strip, and the stamp's witness line (baseline y=296),
     // and the authored lines fit the field at 10px monospace. #1997 scans
     // every personal line the cast carries, not just the canonical pair.
+    // #2003 extends the scan to the thread's hook/follow beats and pins the
+    // growth law: 1–2-line bubbles stay byte-identical to the h=34 field,
+    // the 3-line return grows it to 47 — still clear of the strip.
     ok(BUBBLE.x + BUBBLE.w <= SLIP.x - 4, 'the speech bubble runs into the deduction slip')
     ok(BUBBLE.y + BUBBLE.h <= CHS - STRIP_H - 6 && BUBBLE.y >= 300, 'the speech bubble crowds the strip or the witness line')
     ok(BUBBLE.x >= PORTRAIT.x - 4 && BUBBLE.x + BUBBLE.w <= CW - 4 && BUBBLE.y >= ID.y + ID.h + 4, 'the bubble leaves the entrant lane or crowds the papers/ID column')
-    for (const ln of [...REGULARS.flatMap((c) => [c.lines.greet, c.lines.again]), 'YOU AGAIN.', '...I NO DO ANYTHING.'])
+    ok(Math.max(BUBBLE.h, 8 + 13 * 1) === 34 && Math.max(BUBBLE.h, 8 + 13 * 2) === 34 && Math.max(BUBBLE.h, 8 + 13 * 3) === 47,
+        '#2003 the bubble growth law drifted — 1/2-line fields must not move, a 3-line thread needs 47')
+    ok(BUBBLE.y + 47 <= CHS - STRIP_H - 6, 'a grown three-line bubble crowds the strip or the witness line')
+    for (const ln of [...REGULARS.flatMap((c) => [c.lines.greet, c.lines.hook, c.lines.again, c.lines.follow]), 'YOU AGAIN.', '...I NO DO ANYTHING.'])
         ok(ln.length * 10 * CHAR <= BUBBLE.w - 14, `speech line "${ln}" overflows the bubble (${ln.length * 10 * CHAR}px in ${BUBBLE.w - 14}px)`)
     // and the theoretical worst day the generator is allowed to build: the
     // full 8-rule sheet, four countries, five wanted names (#410: the old
@@ -1559,12 +1596,13 @@ if (MUT) {
             return seats.size === m.gen.REGULARS.length
         })
 
-    // 34. personal speech flattened: the greeting branch goes mute and the
+    // 34. personal speech flattened: the greeting thread goes mute and the
     //     booth only ever says the canonical pair — six neighbors, one voice.
     //     Verdicts stay fair (say was never evidence); the speech-shape and
     //     distinct-lines witnesses in REGULARS are what kill it here.
+    //     (#2003 re-anchors it: the greeting beat is a pair now.)
     await tryMut('personal speech flattened (first walk-ups go mute)',
-        mutMod('gen.js', 'a.person.say = [c.lines.greet]', 'a.person.say = null', 'm34'),
+        mutMod('gen.js', 'a.person.say = [c.lines.greet, c.lines.hook]', 'a.person.say = null', 'm34'),
         (m) => {
             for (const seed of SEEDS) {
                 for (const day of m.gen.genWeek(seed).days) {
@@ -1574,6 +1612,49 @@ if (MUT) {
                     if (a.person.arc) continue
                     const fv = m.gen.firstVisitDay(seed, m.gen.REGULARS.findIndex((k) => k.id === a.person.regular))
                     if (day.n === fv && !a.person.say) return false
+                }
+            }
+            return true
+        })
+
+    // 35. the conversation is cut in half: the return keeps its recognition
+    //     beat but never pays off the topic the greeting planted — every
+    //     thread ends dangling. Verdicts unaffected; shape (return=3) and
+    //     the planted-thread continuity witness are what kill it.
+    await tryMut('thread payoff dropped (the return never answers the hook)',
+        mutMod('gen.js', "a.person.say = ['YOU AGAIN.', c.lines.again, c.lines.follow]", "a.person.say = ['YOU AGAIN.', c.lines.again]", 'm35'),
+        (m) => {
+            for (const seed of SEEDS) {
+                const arc = m.gen.arcForWeek(seed)
+                for (const day of m.gen.genWeek(seed).days) {
+                    for (const a of day.queue.filter((x) => x.person.regular)) {
+                        if (a.person.arc) continue
+                        const fv = m.gen.firstVisitDay(seed, m.gen.REGULARS.findIndex((k) => k.id === a.person.regular))
+                        if (day.n > fv && !(day.n === arc.day && a.person.regular === arc.id) && a.person.say.length !== 3) return false
+                    }
+                }
+            }
+            return true
+        })
+
+    // 36. the threads cross wires: the greeting branch opens with a face's
+    //     payoff line instead of its hook — strangers on the glass answering
+    //     questions nobody asked, and the week's continuity still LOOKS
+    //     intact to a mute-check. Only the greeting-shape pin (say[1]===hook)
+    //     sees the swap.
+    await tryMut('threads swapped (greetings speak their payoff)',
+        mutMod('gen.js', 'a.person.say = [c.lines.greet, c.lines.hook]', 'a.person.say = [c.lines.greet, c.lines.follow]', 'm36'),
+        (m) => {
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    for (const a of day.queue.filter((x) => x.person.regular)) {
+                        if (a.person.arc) continue
+                        const fv = m.gen.firstVisitDay(seed, m.gen.REGULARS.findIndex((k) => k.id === a.person.regular))
+                        if (day.n === fv) {
+                            const c = m.gen.REGULARS.find((k) => k.id === a.person.regular)
+                            if (!a.person.say || a.person.say[1] !== c.lines.hook) return false
+                        }
+                    }
                 }
             }
             return true
