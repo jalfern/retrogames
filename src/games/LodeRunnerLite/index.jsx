@@ -131,7 +131,7 @@ const LodeRunnerLiteGame = () => {
                 else if (e.type === 'refill') { bgDirty = true; animAt.set(e.y * W + e.x, { kind: 'refill', t0: performance.now() }); audioController.playTone(140, 0.08, 'square', 0.05) }
                 else if (e.type === 'gold') { say(`GOLD ${e.have}/${gs.need}`); audioController.playTone(880, 0.07, 'square', 0.06) }
                 else if (e.type === 'unlock') { bgDirty = true; say('THE LADDER APPEARS'); audioController.playSweep(300, 700, 0.4, 'square', 0.07) }
-                else if (e.type === 'guardBuried') { say('A GUARD IS BURIED'); audioController.playSweep(300, 60, 0.5, 'sawtooth', 0.08) }
+                else if (e.type === 'guardBuried') { say(e.pay ? `A GUARD IS BURIED +${e.pay}` : 'A GUARD IS BURIED'); audioController.playSweep(300, 60, 0.5, 'sawtooth', 0.08) }
                 else if (e.type === 'goldPickup') { say('A GUARD LIFTED GOLD'); audioController.playTone(220, 0.06, 'square', 0.05) }
                 else if (e.type === 'capture') { say('CAUGHT!'); audioController.playSweep(240, 50, 0.6, 'sawtooth', 0.1) }
                 else if (e.type === 'life') audioController.playSweep(200, 80, 0.4, 'sawtooth', 0.06)
@@ -518,7 +518,7 @@ const LodeRunnerLiteGame = () => {
                             if (gs.holeAge[py * W + px] > 0 && py + 1 < H && gs.grid[(py + 1) * W + px] === BRICK) {
                                 gs.grid[(py + 1) * W + px] = EMPTY; gs.holeAge[(py + 1) * W + px] = 1; bgDirty = true
                                 animAt.set((py + 1) * W + px, { kind: 'dig', t0: performance.now() })
-                                return 'the shaft deepens straight below you — pit-bottom dig (it refills in 5s)'
+                                return 'the shaft deepens straight below you — pit-bottom dig (three strata down; it refills in 5s)'
                             }
                             const x = px + 1, y = py + 1
                             if (x < 0 || x >= W || y < 0 || y >= H || gs.grid[y * W + x] !== BRICK) return 'no diagonal brick below-right of the runner (or no pit bottom to deepen)'

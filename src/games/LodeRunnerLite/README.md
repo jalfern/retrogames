@@ -36,8 +36,8 @@ canvas and zero `Math.random`. That is what lets:
 - **Diagonal dig** — `Down` digs the brick one cell below-LEFT/RIGHT, the way
   you face; the brick straight down is never dug **from the surface**. From
   inside a live pit, though, `Down` digs the brick under foot — **the shaft
-  deepens** (#1942).
-- **Holes catch walkers** — the ground is two brick layers thick, and a step
+  deepens** (#1942), down to the deepest stratum.
+- **Holes catch walkers** — the ground is three brick layers thick, and a step
   sideways onto a cell whose support was dug away is a **fall**, not a block:
   run over your hole and you drop in, and so does a chasing guard (the guard
   pathfinder routes across pit mouths).
@@ -48,8 +48,12 @@ canvas and zero `Math.random`. That is what lets:
   in it is buried and re-enters at the top, the runner in it loses a life.
 - **Guards fall and climb** — a guard that drops in a hole is pinned for
   `CFG.guardTrap` ticks, then climbs back to the floor; a shaft deep enough
-  that it cannot before the refill buries it — **the multi-cell burial, now
-  carved live**: two strata, two climbs (2×60 t) against one fuse (75 t).
+  that it cannot before the refill buries it — **the multi-cell burial, carved
+  live**: three strata, up to three climbs (3×60 t) against one fuse (75 t).
+- **Buried guards pay** — a refill that catches a guard credits **500 points**
+  (`CFG.guardPay`): gold 500, buried guard 500, vault 1000 — the original's
+  score. That pay is the reason to dig deep: the shaft is where the money and
+  the risk both live (#1952).
 - **Guard gold** — a guard pockets the gold it walks over and drops it a
   moment later; the runner must win it back before the exit opens.
 - **The ladder appears** — the exit ladder is concealed until every gold is
@@ -59,10 +63,12 @@ canvas and zero `Math.random`. That is what lets:
 ## Load-bearing rules (mutants must die: `npm run lodecheck -- --mutate`)
 
 `dig` (the diagonal dig) · `holeFall` (walkers skid across open pits) ·
-`digDeep` (the pit bottom turns to iron) · `pitClimb` (the pit is a grave for
-everyone) · `guardChase` (the `pursued` receipt) · `ropeCatch`
-(a falling body missing the line) · `guardHole` (a guard that never falls in)
-· `goldSteal` (a guard that cannot lift gold).
+`digDeep` (the pit bottom turns to iron — at the second stratum AND at the
+third) · `pitClimb` (the pit is a grave for everyone) · `guardChase` (the
+`pursued` receipt) · `ropeCatch` (a falling body missing the line) ·
+`guardHole` (a guard that never falls in) · `goldSteal` (a guard that cannot
+lift gold) · `guardPay` (a buried guard is worth nothing) · the **strata law**
+(the bottom rock row turned to concrete must be illegal).
 
 ## The solver's honesty contract
 
@@ -78,19 +84,19 @@ to clear, it is unclassic and lodecheck's winnability gate fails it.
 
 | | |
 |---|---|
-| `npm run lodecheck` | 101 Node checks (117 with `--mutate`): construction contracts, per-vault solve + determinism both ways + one-fewer-life slack, every classic rule pinned by a scenario, the carved deep shaft (drop in, deepen, climb out) and its live multi-cell burial, eight mutants that MUST die. CI runs the plain audit in the static gate
+| `npm run lodecheck` | 111 Node checks (133 with `--mutate`): construction contracts including the **strata law** (three diggable brick layers over an open walk row, per vault), per-vault solve + determinism both ways + one-fewer-life slack, every classic rule pinned by a scenario, the carved three-cell shaft (drop in, deepen twice, climb out) and its live paid multi-cell burial (500 credited), eleven mutant runs that MUST die. CI runs the plain audit in the static gate
 (`--mutate` is the local deep pass). |
 | `npm run lodeplay` | Chrome, real key events only: the attract demo moves by itself, a held arrow runs the runner, dig→hole→refill graded in pixels, the paint graded in pixels too (warm mortar brick distinct from cool concrete in hue AND density; runner and guard distinct sprites; the original palette itself — navy background, aqua runner, orange guard, grey ladder and rope), climb-to-hang on the real ladder, guards hunt untouched, R replays your lost run as a ghost, in-page replay hash-matches mid-run. |
 
 ## Honest gaps
 
-- **Deep shafts are real now (#1942).** The ground is two diggable strata,
-  walkers fall into open pits, a pit-bottom `Down` deepens the shaft, and `Up`
-  climbs one cell out — so the multi-cell burial is carved live, not just
-  proven by scenario. What the vault still lacks: a three-cell shaft (needs a
-  third stratum the solver would then have to route over), and the original's
-  two-way dig (down-LEFT *or* down-RIGHT at will mid-stride is honored, but
-  there is no reason to bury a guard two deep when one deep already works).
+- **Three strata are real now (#1952).** The ground is three diggable brick
+  layers, shafts carve three cells down, the paid burial (500, the original's
+  number) is live, and the solver routes over the thicker rock. What the vault
+  still lacks: pay that scales with depth (a guard caught in the deepest grave
+  pays the same 500), a fourth stratum (row 18 is the bedrock the vault ends
+  on), and the original's two-way dig is honored but still has no reason
+  beyond escape timing — the pay landed on the burial, not the dig direction.
 - A guard climbing out of a shallow pit lands in a floor-level cell with no
   support below (a "hole" is one dug brick); it stands there until it BFSes
   back to the path. A cosmetic oddity, not a sim bug.
