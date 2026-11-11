@@ -582,7 +582,9 @@ export default function FireCrew() {
                         <AttractMessage className="mb-6 text-orange-100/80" messages={MESSAGES} />
                     </span>
                     <p className="text-lg font-mono font-bold animate-pulse text-white">{PRESS}</p>
-                    <p className="mt-4 text-[11px] font-mono font-bold tracking-widest text-emerald-300">{WATCH_ATTRACT_HINT}</p>
+                    {/* #1637: attractcheck law — one raw paragraph per attract,
+                        the press prompt keeps it; the hint rides as a span. */}
+                    <span className="inline-block mt-4 text-[11px] font-mono font-bold tracking-widest text-emerald-300">{WATCH_ATTRACT_HINT}</span>
                 </div>
             )}
 
