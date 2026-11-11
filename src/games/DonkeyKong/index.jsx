@@ -550,6 +550,13 @@ const DonkeyKongGame = () => {
                     attract: gs.attract, over: gs.over,
                 }),
                 start: startRun,
+                // #1637 b26 parity — seat the route without a keyboard (the
+                // watchcheck pilot presses Y like a player; this is the fallback).
+                seat: () => {
+                    if (gs.attract || gs.over) startRun()
+                    if (!gs.watching) { gs.watching = true; setWatching(true) }
+                    return gs.watching
+                },
             }
             mountDbg({
                 title: 'DONKEY KONG',
