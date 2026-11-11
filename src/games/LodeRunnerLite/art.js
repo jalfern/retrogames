@@ -222,6 +222,11 @@ const GUARD = {
 const PALETTES = {
     runner: { w: '#98e8c8', s: '#84dcc0', b: '#3ec8b4', k: '#0e2a33' },
     guard: { o: '#f08434', s: '#f2b078', p: '#c8681c', k: '#2a1808' },
+    // #1949: THE ROPE hunts with a pair (#1991), and two identical orange kits
+    // side by side blur at phone scale. The original told its guards apart by
+    // kit colour, so the second hunter wears a deeper red-orange: still warm,
+    // still the original's family, but a one-glance read of "two guards".
+    guard2: { o: '#e05030', s: '#eca470', p: '#a83818', k: '#2a1008' },
     ghost: { w: '#b8c8dc', s: '#ccd8e8', b: '#5e7a9e', k: '#16202e' },
 }
 
@@ -436,9 +441,10 @@ export function buildArt() {
     }
     const runner = frames(RUNNER, PALETTES.runner)
     const guard = frames(GUARD, PALETTES.guard)
+    const guard2 = frames(GUARD, PALETTES.guard2)   // #1949: the wing guard's kit
     const ghost = frames(RUNNER, PALETTES.ghost)
     const art = {
-        runner, guard, ghost,
+        runner, guard, guard2, ghost,
         gold: [nugget({ g: '#ffd23e', G: '#fff6c8', f: '#8a6a1c' }),
             nugget({ g: '#b8922e', G: '#d8bc6e', f: '#6e5213' })],
         brick: brickTile(SHADES[0]),

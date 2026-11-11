@@ -122,6 +122,16 @@ to clear, it is unclassic and lodecheck's winnability gate fails it.
   receipts are untouched. lodecheck pins the cling (guard escape, runner
   pitClimb, re-drop) and scans every solver tick for an unsupported stand;
   lodeplay proves the cling live, state AND pixels.
+- **The juice landed (#1949).** A dropped body now EASES into the pit instead
+  of teleporting one cell down (paint-time slide keyed on the sim's `fallInto`
+  event — sim state and replay hashes untouched); digs, impacts, refills and
+  burials kick deterministic 1–2 px grit; the runner a closing brick catches
+  flashes at the grave before the respawn; the refill got its own pop over the
+  thud and the surface dig a low rumble under the crack; and the second ROPE
+  hunter wears a deeper red-orange kit so the pair reads apart at phone scale
+  (the original told its guards by kit colour). All paint/sound-only — the
+  attract demo runs the same cosmetics, and lodeplay's orange-guard pin still
+  reads the primary hunter.
 - Vault 3's witness spends one life (a guard closes the crossing); the
   one-fewer-life slack check proves the route is still robust.
 - No keyboard-less vault skipping on phones: pads withdraw on menus, and

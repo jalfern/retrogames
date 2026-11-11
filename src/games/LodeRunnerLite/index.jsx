@@ -100,6 +100,27 @@ const LodeRunnerLiteGame = () => {
         const animAt = new Map()                   // cell index -> { kind, t0 }
         const movedT = new WeakMap()               // entity -> { x, y, t } for run frames
         const popups = []                          // { x, y, text, t0 } — pay drifting up from a grave (#1959)
+        const dust = []                            // { x, y, vx, vy, life, color, t0 } — debris puffs (#1949)
+        const fallAnim = new WeakMap()             // entity -> { y0, t0 } — the cosmetic slide into a pit (#1949)
+        let doomed = null                          // { x, y, t0 } — the runner flashing in a closing grave (#1949)
+        const DUST_LIFE = 420                      // ms a debris puff lives
+        const spawnDust = (cx, cy, n, kind) => {
+            // deterministic puffs: no Math.random in this engine, so the fan
+            // comes from tick parity and index — enough scatter, same every run
+            const parity = gs.tick & 3
+            for (let k = 0; k < n; k++) {
+                const spread = ((k * 5 + parity) % 4) - 1.5
+                const rise = -(0.5 + ((k * 7 + parity) % 5) / 6)
+                dust.push({
+                    x: cx * CW + CW / 2 + spread * 3, y: cy * CH + CH - 4,
+                    vx: spread * (kind === 'burial' ? 0.035 : 0.022), vy: rise * 0.03,
+                    life: DUST_LIFE - ((k * 53 + parity * 17) % 90),
+                    color: kind === 'burial' ? '#8a6a3c' : (kind === 'impact' ? '#b08456' : '#d8b078'),
+                    t0: performance.now(),
+                })
+            }
+            if (dust.length > 90) dust.splice(0, dust.length - 90)
+        }
 
         let levelIdx = 0
         let b0 = buildLevel(0)
@@ -130,15 +151,23 @@ const LodeRunnerLiteGame = () => {
             for (const e of evts) {
                 if (e.type === 'dig') {
                     bgDirty = true; animAt.set(e.y * W + e.x, { kind: 'dig', t0: performance.now() })
+                    spawnDust(e.x, e.y, 4, 'dig')                                   // the crumble throws grit (#1949)
                     audioController.playNoise(0.05, 0.04)
                     // the deeper the bite, the lower the thud — the ear reads the stratum (#1959)
                     if (e.depth > 1) audioController.playFilteredNoise(0.09, 0.055, 240 / e.depth)
+                    else audioController.playFilteredNoise(0.07, 0.045, 500)      // surface bite gets its own low rumble under the crack (#1949)
                 }
-                else if (e.type === 'refill') { bgDirty = true; animAt.set(e.y * W + e.x, { kind: 'refill', t0: performance.now() }); audioController.playTone(140 / Math.max(1, e.depth || 1), 0.08, 'square', 0.05) }
+                else if (e.type === 'refill') {
+                    bgDirty = true; animAt.set(e.y * W + e.x, { kind: 'refill', t0: performance.now() })
+                    spawnDust(e.x, e.y, 3, 'impact')                               // the closing brick puffs (#1949)
+                    audioController.playTone(140 / Math.max(1, e.depth || 1), 0.08, 'square', 0.05)
+                    audioController.playTone(620, 0.025, 'square', 0.05, 0.05)    // the refill's distinct pop, on top of the thud (#1949)
+                }
                 else if (e.type === 'gold') { say(`GOLD ${e.have}/${gs.need}`); audioController.playTone(880, 0.07, 'square', 0.06) }
                 else if (e.type === 'unlock') { bgDirty = true; say('THE LADDER APPEARS'); audioController.playSweep(300, 700, 0.4, 'square', 0.07) }
                 else if (e.type === 'guardBuried') {
                     say(e.n > 1 ? `${e.n} GUARDS BURIED +${e.pay}` : `A GUARD IS BURIED +${e.pay}`)
+                    if (e.x != null) spawnDust(e.x, e.y, 8, 'burial')            // the grave kicks a cloud (#1949)
                     audioController.playSweep(300 / Math.max(1, e.depth || 1), 60, 0.5, 'sawtooth', 0.08)
                     if (e.n > 1) audioController.playTone(520, 0.07, 'square', 0.06, 0.12)   // the chain ladder gets its own high accent
                     if (e.x != null) popups.push({ x: e.x, y: e.y, text: `+${e.pay}`, t0: performance.now() })
@@ -147,7 +176,25 @@ const LodeRunnerLiteGame = () => {
                 else if (e.type === 'capture') { say('CAUGHT!'); audioController.playSweep(240, 50, 0.6, 'sawtooth', 0.1) }
                 else if (e.type === 'life') audioController.playSweep(200, 80, 0.4, 'sawtooth', 0.06)
                 else if (e.type === 'grab') audioController.playTone(520, 0.04, 'triangle', 0.04)
-                else if (e.type === 'fallInto') { bgDirty = true; say('DOWN THE SHAFT'); audioController.playSweep(180, 60, 0.22, 'square', 0.06) }
+                else if (e.type === 'fallInto') {
+                    bgDirty = true
+                    // whose drop was it? the sim stamps the landing cell — match
+                    // the live entity so both the runner AND a guard get the
+                    // cosmetic slide + impact grit (#1949)
+                    const gsrc = screenRef.current === 'attract' && demoG ? demoG : gs
+                    const fallen = [gsrc.player, ...gsrc.guards].find((q) => q.alive && q.mode === 'air' && q.x === e.x && q.y === e.y)
+                    if (fallen) fallAnim.set(fallen, { y0: e.y - 1, t0: performance.now() })
+                    spawnDust(e.x, e.y, 5, 'impact')
+                    say('DOWN THE SHAFT')
+                    audioController.playSweep(180, 60, 0.22, 'square', 0.06)
+                }
+                else if (e.type === 'refillDeath') {
+                    // the original flashes the doomed runner before the reset —
+                    // paint the last pose at the closing brick while the shell
+                    // respawns it (the sim has already moved the body home)
+                    doomed = { x: e.x, y: e.y, t0: performance.now() }
+                    spawnDust(e.x, e.y, 8, 'burial')
+                }
                 else if (e.type === 'pitClimb') audioController.playTone(340, 0.05, 'triangle', 0.05)
                 else if (e.type === 'win') audioController.playSweep(400, 1600, 0.9, 'square', 0.09)
                 else if (e.type === 'die') audioController.playSweep(300, 40, 1.1, 'sawtooth', 0.1)
@@ -182,6 +229,8 @@ const LodeRunnerLiteGame = () => {
             bgDirty = true
             animAt.clear()
             popups.length = 0
+            dust.length = 0
+            doomed = null
             setMode('play')
             say(b.meta.name)
             audioController.playSweep(220, 440, 0.25, 'square', 0.07)
@@ -236,7 +285,15 @@ const LodeRunnerLiteGame = () => {
                 if (e.type === 'dig' || e.type === 'refill') {
                     bgDirty = true
                     animAt.set(e.y * W + e.x, { kind: e.type, t0: performance.now() })
+                    spawnDust(e.x, e.y, e.type === 'dig' ? 4 : 3, e.type === 'dig' ? 'dig' : 'impact')
                 } else if (e.type === 'unlock') bgDirty = true
+                else if (e.type === 'fallInto' && demoG) {
+                    // the attract ghost eases into the pit like the live runner (#1949)
+                    const dp = demoG.player
+                    if (dp.alive && dp.mode === 'air' && dp.x === e.x && dp.y === e.y) fallAnim.set(dp, { y0: e.y - 1, t0: performance.now() })
+                    spawnDust(e.x, e.y, 5, 'impact')
+                }
+                else if (e.type === 'refillDeath' && demoG) doomed = { x: e.x, y: e.y, t0: performance.now() }
             }
             evts.length = 0
         }
@@ -330,7 +387,18 @@ const LodeRunnerLiteGame = () => {
             const img = frameOf(set, e, now)
             // #2004: a lip-clinging body hangs INTO the pit — sink the sprite
             // so hands grip the lip line and legs paint inside the hole below.
-            const dy = e.onLip && e.mode === 'stand' ? Math.round(CH * 0.45) : 0
+            let dy = e.onLip && e.mode === 'stand' ? Math.round(CH * 0.45) : 0
+            // #1949: nobody teleports one cell down — a body that just dropped
+            // slides into the pit over a couple of frames. Paint-time only;
+            // the sim already put it at the bottom.
+            const fa = fallAnim.get(e)
+            if (fa) {
+                if (e.mode !== 'air') fallAnim.delete(e)
+                else {
+                    const k = Math.min(1, (now - fa.t0) / 130)
+                    dy = Math.max(dy, Math.round((e.y - fa.y0) * CH * k * k))   // ease-in: gravity-ish
+                }
+            }
             if (e.face === -1) {
                 c.translate(e.x * CW + CW, e.y * CH + dy)
                 c.scale(-1, 1)
@@ -396,6 +464,27 @@ const LodeRunnerLiteGame = () => {
                 ctx.fillText(pp.text, pp.x * CW + CW / 2, pp.y * CH + 10 - rise)
                 ctx.globalAlpha = 1
             }
+            // DEBRIT (#1949): grit kicked by a dig, an impact or a burial —
+            // one or two px, drifting out and up, fading on its own clock.
+            for (let k = dust.length - 1; k >= 0; k--) {
+                const p = dust[k]
+                const age = now - p.t0
+                if (age >= p.life) { dust.splice(k, 1); continue }
+                ctx.globalAlpha = 1 - age / p.life
+                ctx.fillStyle = p.color
+                ctx.fillRect(p.x + p.vx * age, p.y + p.vy * age, age % 3 === 0 ? 2 : 1, 1)
+                ctx.globalAlpha = 1
+            }
+            // DOOMED FLASH (#1949): the runner the closing brick caught blinks
+            // at the grave for a beat before the respawned body reads.
+            if (doomed) {
+                if (now - doomed.t0 >= 650) doomed = null
+                else if ((now - doomed.t0) % 130 < 75) {
+                    ctx.globalAlpha = 0.85
+                    drawEnt(ctx, art.runner, { x: doomed.x, y: doomed.y, mode: 'stand', face: 1 }, now)
+                    ctx.globalAlpha = 1
+                }
+            }
             // gold rides the dynamic layer (collecting is a state change,
             // never a repaint guess); the nugget keeps the original's blink
             const gold = g.tick % 30 < 18 ? art.gold[0] : art.gold[1]
@@ -407,7 +496,9 @@ const LodeRunnerLiteGame = () => {
             for (const gd of g.guards) {
                 if (!gd.alive) continue
                 trackMove(gd, now)
-                drawEnt(ctx, art.guard, gd, now)
+                // #1949: the wing guard (#1991 pair) wears the deeper red-orange
+                // kit so two hunters read apart at phone scale
+                drawEnt(ctx, gd.id % 2 ? art.guard2 : art.guard, gd, now)
             }
             if (live && ghost && ghost.g.player.alive && !ghost.g.end) {
                 trackMove(ghost.g.player, now)
@@ -520,7 +611,7 @@ const LodeRunnerLiteGame = () => {
                     cmds: gs.cmds.length,
                     // the attract demo is a separate sim instance — the
                     // harness grades THAT moving, not the idle gs
-                    demo: demoG ? { idx: demoIdx, tick: demoG.tick, end: demoG.end, player: { x: demoG.player.x, y: demoG.player.y, mode: demoG.player.mode }, have: demoG.have } : null,
+                    demo: demoG ? { idx: demoIdx, tick: demoG.tick, end: demoG.end, player: { x: demoG.player.x, y: demoG.player.y, mode: demoG.player.mode, lip: !!demoG.player.onLip }, have: demoG.have } : null,
                     ghost: ghost ? { tick: ghost.g.tick, alive: ghost.g.player.alive } : null,
                     evLog: evLog.slice(-140),
                 }),
