@@ -54,6 +54,8 @@ const SKIP_ATTRACT = {
     Gauntlet: 'title → hero select',
     FourHalls: 'title → hero select',
     BombDefuse: 'title → crew select (a WATCH tap would stop at the picker; the attract already self-drives the solver demo)',
+    GravelYard: 'title → hands select (a WATCH tap would stop at the picker; the attract already self-drives the CPU crew demo)',
+    ShortOrderShout: 'title → cooks select (a WATCH tap would stop at the picker; the attract already self-drives the CPU cooks demo)',
 }
 
 // ── shared chrome ─────────────────────────────────────────────────────────────

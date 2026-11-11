@@ -1355,6 +1355,85 @@ const PILOTS = [
             rep.check('bomb-defuse: Y again releases the crew', !(await watching()))
         },
     },
+    // #1637 batch 22 — the quota-crew family: Y seats the game's OWN harness
+    // crew. GRAVEL YARD drives makeCpuEmitter(0..2) (gravelcheck: quota 8/8,
+    // slack >=7/8); SHORT ORDER SHOUT drives the line-cook + runner pair
+    // (soscheck: quota 8/8). Both re-plan from live state every tick (bfs +
+    // stuck-replan), so mid-run re-seats are honest, never a bench script.
+    {
+        id: 'gravel-yard', url: `${BASE}/gravel-yard`, hook: '__gyTest',
+        async run(page, rep) {
+            const H = '__gyTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            // attract -> hands select -> shift start (Space owns each screen)
+            await key(page, 'Space')
+            await page.waitForTimeout(300)
+            await key(page, 'Space')
+            await page.waitForTimeout(900)
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('gravel-yard: Y seats the proven crew', await watching())
+            rep.check('gravel-yard: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            const a = await probe()
+            const adv = (x, y) => y.dx !== x.dx || y.dy !== x.dy || y.hopper > 0 || y.score > x.score || y.delivered > x.delivered
+            const b = await pollAdvance(page, probe, adv, a, 6000)
+            rep.check('gravel-yard: the crew works untouched (idle hands move no digger)',
+                adv(a, b), `digger (${a.dx},${a.dy}) -> (${b.dx},${b.dy}), hopper ${b.hopper}, score ${a.score} -> ${b.score}`)
+            rep.check('gravel-yard: still watching mid-shift', await watching())
+            await page.keyboard.down('ArrowLeft')
+            rep.check('gravel-yard: steer key takes over', !(await watching()))
+            rep.check('gravel-yard: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await page.keyboard.up('ArrowLeft')
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('gravel-yard: Y re-seats the crew mid-shift', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 6000)
+            rep.check('gravel-yard: resumes from where the player left it', adv(c, d),
+                `digger (${c.dx},${c.dy}) -> (${d.dx},${d.dy}), score ${c.score} -> ${d.score}`)
+            await key(page, 'KeyY')
+            rep.check('gravel-yard: Y again releases the crew', !(await watching()))
+        },
+    },
+    {
+        id: 'short-order-shout', url: `${BASE}/short-order-shout`, hook: '__sosTest',
+        async run(page, rep) {
+            const H = '__sosTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            // attract -> cooks select (default 2 = the proven pair) -> shift
+            await key(page, 'Space')
+            await page.waitForTimeout(300)
+            await key(page, 'Space')
+            await page.waitForTimeout(900)
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('short-order-shout: Y seats the proven pair', await watching())
+            rep.check('short-order-shout: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            const a = await probe()
+            const adv = (x, y) => y.cx !== x.cx || y.cy !== x.cy || y.served > 0 || y.score > x.score
+            const b = await pollAdvance(page, probe, adv, a, 6000)
+            rep.check('short-order-shout: the pair works untouched (idle hands walk no cook)',
+                adv(a, b), `cook1 (${a.cx},${a.cy}) -> (${b.cx},${b.cy}), served ${b.served}, score ${a.score} -> ${b.score}`)
+            rep.check('short-order-shout: still watching mid-shift', await watching())
+            await page.keyboard.down('ArrowLeft')
+            rep.check('short-order-shout: steer key takes over', !(await watching()))
+            rep.check('short-order-shout: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await page.keyboard.up('ArrowLeft')
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('short-order-shout: Y re-seats the pair mid-shift', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 6000)
+            rep.check('short-order-shout: resumes from where the player left it', adv(c, d),
+                `cook1 (${c.cx},${c.cy}) -> (${d.cx},${d.cy}), score ${c.score} -> ${d.score}`)
+            await key(page, 'KeyY')
+            rep.check('short-order-shout: Y again releases the pair', !(await watching()))
+        },
+    },
     // #1637 batch 13 — the racer family seats its CERTIFIED autopilot. decide()
     // (CometDrift/sim.js) is the brain cometcheck races to victory ("autopilot
     // wins the 5-lap GP from P7", #1687-certified drift ladder) and both titles'
@@ -2293,6 +2372,33 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     rep.check('batch 17: peoplecheck still grants the wish with autoStep (the seat\'s witness)',
         /while \(!g\.done && t < cap\) \{ autoStep\(g, DT\)/.test(pc)
         && /autopilot grants the lifetime wish/.test(pc))
+}
+// ---- #1637 batch 22 source pins — the quota-crew family seats its own brain ----
+{
+    const gy = readFileSync('src/games/GravelYard/index.jsx', 'utf8')
+    rep.check('GRAVEL YARD: the seat imports makeCpuEmitter from its own engine.js',
+        /import\s*\{[^}]*makeCpuEmitter[^}]*\}\s*from\s*'\.\/engine\.js'/s.test(gy))
+    rep.check('GRAVEL YARD: the watch takes ALL THREE seats in the play tick',
+        /if \(watchingRef\.current\) \{[\s\S]{0,120}?for \(let i = 0; i < 3; i\+\+\) pads\[i\] = emittersRef\.current\[i\]/.test(gy))
+    rep.check('GRAVEL YARD: imports the shared blips and logs',
+        gy.includes('playWatchStart') && gy.includes('playWatchStop') && gy.includes('watchSfxLog'))
+    rep.check('GRAVEL YARD: attract shows the shared WATCH hint (import + drawn line)',
+        gy.includes('WATCH_ATTRACT_HINT'))
+    const gc = readFileSync('scripts/gravelcheck.mjs', 'utf8')
+    rep.check('batch 22: gravelcheck still stamps the seat\'s witness (quota 8/8)',
+        /CPU crew makes quota on 8\/8 seeds/.test(gc))
+    const sos = readFileSync('src/games/ShortOrderShout/index.jsx', 'utf8')
+    rep.check('SHORT ORDER SHOUT: the seat imports makeCpuEmitter from its own engine.js',
+        /import\s*\{[^}]*makeCpuEmitter[^}]*\}\s*from\s*'\.\/engine\.js'/s.test(sos))
+    rep.check('SHORT ORDER SHOUT: the watch takes every seat in the play tick',
+        /const pads = watchingRef\.current\s*\?\s*g\.cooks\.map/.test(sos))
+    rep.check('SHORT ORDER SHOUT: imports the shared blips and logs',
+        sos.includes('playWatchStart') && sos.includes('playWatchStop') && sos.includes('watchSfxLog'))
+    rep.check('SHORT ORDER SHOUT: attract shows the shared WATCH hint (import + drawn line)',
+        sos.includes('WATCH_ATTRACT_HINT'))
+    const sc = readFileSync('scripts/soscheck.mjs', 'utf8')
+    rep.check('batch 22: soscheck still stamps the seat\'s witness (pair wins 8/8)',
+        /wins 8\/8 known-good seeds/.test(sc))
 }
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray

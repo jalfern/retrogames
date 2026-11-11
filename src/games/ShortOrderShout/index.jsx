@@ -10,6 +10,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import Lobby from '../../components/Lobby'
 import { GAMES } from '../../config/games'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -66,6 +68,8 @@ export default function ShortOrderShout() {
     const modelSeatRef = useRef(null)
     const [netUi, setNetUi] = useState(null) // #1291 lobby state for the shared Lobby overlay
     const netStartRef = useRef(null)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the proven line crew takes the wheel
+    const watchingRef = useRef(false)
 
     const setScreen = (s) => { screenRef.current = s; setUiScreen(s) }
     const freshEmitters = (seats) => Array.from({ length: seats }, (_, i) => makeCpuEmitter(i))
@@ -82,6 +86,7 @@ export default function ShortOrderShout() {
         emittersRef.current = freshEmitters(players)
         const hud = hudRef.current
         hud.walk = {}; hud.pops = []; hud.slide = {}; hud.stamp = 0; hud.bump = 0; hud.lastScore = 0
+        watchingRef.current = false; setWatching(false) // #1637: the old route ends with the old shift
         resetDiner() // fresh 4-bar loop from bar 0 (#1292)
         setScreen('play')
         specRef.current.players = players
@@ -237,6 +242,21 @@ export default function ShortOrderShout() {
                 }
                 return
             }
+            // #1637 WATCH: Y seats the proven crew at any live position — the
+            // line cook + runner pair soscheck wins 8/8 seeds with, re-planned
+            // from live state every tick (never a fake route); Y again hands
+            // back; any ordinary key takes over first. Online the wire is the
+            // guide — Y no-ops there (#1656 law).
+            if (isWatchKey(ev)) {
+                ev.preventDefault()
+                const g = gsRef.current
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+                else if (sc === 'play' && !net.active && g && !g.done) {
+                    watchingRef.current = true; setWatching(true); playWatchStart()
+                }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             // play
             if (ev.code === 'ArrowUp') keys1.up = true
             if (ev.code === 'ArrowDown') keys1.down = true
@@ -562,11 +582,16 @@ export default function ShortOrderShout() {
         const liveTick = () => {
             const g = gsRef.current
             if (!g || g.done) return
-            const pads = g.cooks.map((c, i) => {
-                if (i === 0) return humanPad(keys1)
-                if (i === 1 && partnerHumanRef.current) return humanPad(keys2)
-                return emittersRef.current[i] ? emittersRef.current[i]({ gs: g, tick: g.tick }) : {}
-            })
+            // #1637 WATCH: the proven pair takes ALL seats — the same line-cook
+            // + runner emitters soscheck wins 8/8 seeds with; both re-plan from
+            // live state every tick, so a mid-run re-seat is honest.
+            const pads = watchingRef.current
+                ? g.cooks.map((c, i) => emittersRef.current[i] ? emittersRef.current[i]({ gs: g, tick: g.tick }) : {})
+                : g.cooks.map((c, i) => {
+                    if (i === 0) return humanPad(keys1)
+                    if (i === 1 && partnerHumanRef.current) return humanPad(keys2)
+                    return emittersRef.current[i] ? emittersRef.current[i]({ gs: g, tick: g.tick }) : {}
+                })
             stepGame(g, pads)
             recordLiveTick(pads)
             for (const f of drainFx(g)) { playFx(f); if (pumpHudRef.current) pumpHudRef.current(f) }
@@ -574,7 +599,7 @@ export default function ShortOrderShout() {
             const hud = hudRef.current
             if (g.score >= QUOTA && hud.lastScore < QUOTA) hud.stamp = 96 // big stamp the moment quota is made
             hud.lastScore = g.score
-            if (g.done) { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now(); endRun() }
+            if (g.done) { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now(); endRun(); if (watchingRef.current) { watchingRef.current = false; setWatching(false) } }
         }
 
         // Online frame: sample own seats D ahead, wait for every human stream,
@@ -1209,7 +1234,10 @@ export default function ShortOrderShout() {
                 ctx.font = '6px "Press Start 2P", monospace'
                 ctx.fillStyle = '#8a7a8a'
                 ctx.fillText('"CALL OUT ORDERS" — VOICE ORDERS COMING SOON', CANVAS_W / 2, 152)
-                if (Math.floor(t / 32) % 2) { ctx.fillStyle = '#58d048'; ctx.fillText('PRESS ANY KEY  /  TAP', CANVAS_W / 2, 168) }
+                // #1654: every pilot advertises its guide on the title (offline
+                // only — the wire is the online guide, #1656).
+                if (!net.active) { ctx.fillStyle = '#7dd39a'; ctx.fillText(WATCH_ATTRACT_HINT, CANVAS_W / 2, 168) }
+                if (Math.floor(t / 32) % 2) { ctx.fillStyle = '#58d048'; ctx.fillText('PRESS ANY KEY  /  TAP', CANVAS_W / 2, 184) }
                 ctx.textAlign = 'left'
             } else if (sc === 'select') {
                 ctx.textAlign = 'center'
@@ -1263,6 +1291,15 @@ export default function ShortOrderShout() {
                 press: (field, seat = 0) => { (seat === 0 ? keys1 : keys2)[field] = true },
                 release: (field, seat = 0) => { (seat === 0 ? keys1 : keys2)[field] = false },
                 hash: () => simState(gsRef.current).hash,
+                // #1637 WATCH probes: seat state, the shared blip log, and a
+                // prover-only view (score/served only move when a crew cooks)
+                watching: () => watchingRef.current,
+                watchSfx: watchSfxLog,
+                probe: () => {
+                    const g = gsRef.current || attractRef.current || createGame(1, 2)
+                    const c0 = g.cooks[0] || { x: -1, y: -1 }
+                    return { tick: g.tick, score: g.score, served: g.served, strikes: g.strikes, cx: c0.x, cy: c0.y, done: !!g.done, win: !!g.win, screen: screenRef.current }
+                },
                 desyncDrill: () => showDesyncNotice(),
                 resyncDrill: () => markResynced(),
                 netStart: () => netStartRef.current && netStartRef.current(),
@@ -1330,7 +1367,7 @@ export default function ShortOrderShout() {
     const game = GAMES.find((g) => g.label === 'SHORT ORDER SHOUT')
 
     return (
-        <div className="flex flex-col items-center justify-center w-full h-full bg-black select-none">
+        <div className="relative flex flex-col items-center justify-center w-full h-full bg-black select-none">
             <canvas
                 ref={canvasRef}
                 style={{ imageRendering: 'pixelated', width: 'min(100%, 960px)', touchAction: 'none' }}
@@ -1364,6 +1401,13 @@ export default function ShortOrderShout() {
                 />
             )}
             <VirtualControls secondAction={{ label: 'TOSS', code: 'KeyB' }} visible={!paused && uiScreen === 'play'} />
+            {uiScreen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {/* #1637 WATCH — the proven line crew takes every seat; any input takes over. */}
+            {uiScreen === 'play' && !paused && !netUi && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
         </div>
     )
 }

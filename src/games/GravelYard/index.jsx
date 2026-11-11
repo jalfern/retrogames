@@ -12,6 +12,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import Lobby from '../../components/Lobby'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { GAMES } from '../../config/games'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, recordVoiceCmd } from '../../utils/gameContract'
@@ -60,6 +62,8 @@ export default function GravelYard() {
     const [voiceHints, setVoiceHints] = useState(false) // one-time phrase card
     const voiceRef = useRef({ on: false, listen: null, said: '', label: '', ok: false, why: '', okT: 0 })
     const voiceToggleRef = useRef(null)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the proven crew takes the wheel
+    const watchingRef = useRef(false)
     const screenRef = useRef('attract') // attract | select | play | over
     const gsRef = useRef(null)
     const attractRef = useRef(null)
@@ -92,6 +96,7 @@ export default function GravelYard() {
         seedRef.current = seed
         gsRef.current = createGame(seed, seatsRef.current)
         emittersRef.current = freshEmitters()
+        watchingRef.current = false; setWatching(false) // #1637: the old route ends with the old shift
         setScreen('play')
         specRef.current.players = seatsRef.current
         playFx({ k: 'start' })
@@ -159,6 +164,14 @@ export default function GravelYard() {
     // (and any seat above the crew count) runs its CPU emitter
     const seatPads = (g, pads) => {
         const out = [{}, {}, {}]
+        // #1637 WATCH: the proven crew takes ALL THREE seats — the same
+        // emitters gravelcheck makes quota with on 8/8 seeds (simulate(s,3)).
+        // They re-plan from live state every tick, so a mid-run re-seat is
+        // honest; takeover keys release the seat before the play branch fires.
+        if (watchingRef.current && !g.done) {
+            for (let i = 0; i < 3; i++) out[i] = emittersRef.current[i] ? emittersRef.current[i]({ gs: g, tick: g.tick }) : {}
+            return out
+        }
         for (let i = 0; i < 3; i++) {
             if (i === 0) out[i] = pads[0] || {}
             else if (i === 1 && human2Active()) out[i] = pads[1] || pads[0] || {}
@@ -239,6 +252,21 @@ export default function GravelYard() {
                 }
                 return
             }
+            // #1637 WATCH: Y seats the proven crew at any live position (the
+            // digger/truck/operator emitters gravelcheck wins 8/8 seeds with,
+            // re-planned from live state every tick — never a fake route);
+            // Y again hands back; any ordinary key takes over first.
+            // Online the wire is the guide — Y no-ops there (#1656 law).
+            if (isWatchKey(ev)) {
+                ev.preventDefault()
+                const g = gsRef.current
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+                else if (sc === 'play' && !net.active && g && !g.done) {
+                    watchingRef.current = true; setWatching(true); playWatchStart()
+                }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (net.mode && net.frozen && (ev.code === 'Space' || ev.code === 'Enter')) { netReturn(); return }
             if (ev.code === 'ArrowUp') keys1.up = true
             if (ev.code === 'ArrowDown') keys1.down = true
@@ -492,17 +520,22 @@ export default function GravelYard() {
                 return
             }
             const pads = [{}, {}, {}]
-            pads[0] = humanPad(keys1)
-            if (human2Active()) pads[1] = humanPad(keys2)
-            for (let i = 0; i < 3; i++) {
-                if (i !== 0 && !(i === 1 && human2Active()) && modelSeatRef.current !== i) pads[i] = emittersRef.current[i]({ gs: g, tick: g.tick })
-                else if (modelSeatRef.current === i) pads[i] = {}
+            if (watchingRef.current) {
+                // #1637 WATCH: the crew takes all three seats until a hand arrives
+                for (let i = 0; i < 3; i++) pads[i] = emittersRef.current[i] ? emittersRef.current[i]({ gs: g, tick: g.tick }) : {}
+            } else {
+                pads[0] = humanPad(keys1)
+                if (human2Active()) pads[1] = humanPad(keys2)
+                for (let i = 0; i < 3; i++) {
+                    if (i !== 0 && !(i === 1 && human2Active()) && modelSeatRef.current !== i) pads[i] = emittersRef.current[i]({ gs: g, tick: g.tick })
+                    else if (modelSeatRef.current === i) pads[i] = {}
+                }
             }
             stepGame(g, pads)
             // seat 0 is the recording stream's human; cpu streams are banked too
             recordLiveTick(pads)
             for (const f of drainFx(g)) { playFx(f); if (pumpHudRef.current) pumpHudRef.current(f) }
-            if (g.done) { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now(); if (g.win) hudRef.current.stampT = 50; voiceOff() }
+            if (g.done) { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now(); if (g.win) hudRef.current.stampT = 50; voiceOff(); if (watchingRef.current) { watchingRef.current = false; setWatching(false) } }
         }
 
         const attractTick = () => {
@@ -876,7 +909,10 @@ export default function GravelYard() {
                 ctx.font = '7px "Press Start 2P", monospace'
                 ctx.fillStyle = '#f0e8d0'
                 ctx.fillText(ATTRACT_MSGS[Math.floor(t / 150) % ATTRACT_MSGS.length], CANVAS_W / 2, 142)
-                if (Math.floor(t / 32) % 2) { ctx.fillStyle = '#58d048'; ctx.fillText('PRESS ANY KEY  /  TAP', CANVAS_W / 2, 176) }
+                // #1654: every pilot advertises its guide on the title (and the
+                // crew exists offline only — the wire is the online guide).
+                if (!netRef.current.active) { ctx.fillStyle = '#7dd39a'; ctx.fillText(WATCH_ATTRACT_HINT, CANVAS_W / 2, 196) }
+                if (Math.floor(t / 32) % 2) { ctx.fillStyle = '#58d048'; ctx.fillText('PRESS ANY KEY  /  TAP', CANVAS_W / 2, 216) }
                 ctx.textAlign = 'left'
             } else if (sc === 'select') {
                 ctx.textAlign = 'center'
@@ -949,6 +985,14 @@ export default function GravelYard() {
                 press: (field, seat = 0) => { (seat === 0 ? keys1 : keys2)[field] = true },
                 release: (field, seat = 0) => { (seat === 0 ? keys1 : keys2)[field] = false },
                 hash: () => simState(gsRef.current).hash,
+                // #1637 WATCH probes: seat state, the shared blip log, and a
+                // prover-only view (score/delivered only move when a crew works)
+                watching: () => watchingRef.current,
+                watchSfx: watchSfxLog,
+                probe: () => {
+                    const g = gsRef.current || attractRef.current || createGame(1, 1)
+                    return { tick: g.tick, score: g.score, delivered: g.delivered, dx: g.digger.x, dy: g.digger.y, hopper: g.plant.hopper, done: !!g.done, win: !!g.win, screen: screenRef.current }
+                },
                 // #1672 online-seat probes: feed a peer pad without a relay so
                 // gravelcheck can drive the lockstep path in a headless box.
                 net: () => ({ active: net.active, role: net.role, seat: net.seat, mode: net.mode, frozen: net.frozen, phase: net.phase, code: net.code, stall: net.stall, slots: net.live || (net.room && net.room.slots) || [] }),
@@ -1090,6 +1134,13 @@ export default function GravelYard() {
                 />
             )}
             <VirtualControls secondAction={{ label: netSeatUi === 2 ? 'JOG' : 'DUMP', code: 'KeyB' }} visible={!paused && uiScreen === 'play'} />
+            {uiScreen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {/* #1637 WATCH — the proven crew takes all three seats; any input takes over. */}
+            {uiScreen === 'play' && !paused && !netUi && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             {/* #1771: the MIC pill — phones have no V key, so the pill IS the
                 toggle (consent flow and all, #1287 pattern). Amber while the
                 mic is open with the live order; dimmed "MIC · TAP" at rest. */}
