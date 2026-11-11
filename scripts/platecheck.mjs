@@ -10,7 +10,7 @@
 import {
     createGame, step, simState, hash, solvePad, drainEvents, buildBomb, railOpen, trayLayout, ruleOf,
 } from '../src/games/TalkMeDown/engine.js'
-import { makeRailFx, stepRailFx, railCellPose, drawBack, RAIL_TAB_FREE, RAIL_TAB_BLOCKED, RAIL_DENY_JAM, RAIL_DENY_EMPTY, railMouthGlow, PANEL } from '../src/games/TalkMeDown/art.js'
+import { makeRailFx, stepRailFx, railCellPose, drawBack, RAIL_TAB_FREE, RAIL_TAB_BLOCKED, RAIL_DENY_JAM, RAIL_DENY_EMPTY, RAIL_BOB, railMouthGlow, PANEL } from '../src/games/TalkMeDown/art.js'
 import { readFileSync } from 'node:fs'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -325,9 +325,9 @@ const home = g => { for (let o = railOpen(g.tray); g.sel !== o; o = railOpen(g.t
     ok('the landing slot reads empty while its ghost is in flight', /const occ = tray\[i\] === 1 && i !== mask/.test(artSrc))
     ok('the pocket clip stands empty until the cell arrives', /if \(!inFlight \|\| inFlight\.kind !== 'out'\)/.test(artSrc))
     ok('the renderer steps fx from the live plate and hands it to the draw',
-        /ART\.stepRailFx\(railFxRef\.current, gs\.held, gs\.tray, gs\.sel/.test(view) && /gs\.held, gs\.tray, gs\.sel, fx,\s*!!\(hud\.pulse && hud\.pulse\.kind === 'pull'\)/.test(view))
+        /ART\.stepRailFx\(railFxRef\.current, gs\.held, gs\.tray, gs\.sel/.test(view) && /gs\.held, gs\.tray, gs\.sel, fx,\s*!!\(hud\.pulse && hud\.pulse\.kind === 'pull'\), lead\)/.test(view))
     ok('fx is optional — old callers render the pre-slide plate byte-identical',
-        /export function drawBack\(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn = null, selIn = 2, fx = null, pullPulse = false\)/.test(artSrc))
+        /export function drawBack\(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn = null, selIn = 2, fx = null, pullPulse = false, flipLead = false\)/.test(artSrc))
     // named mutants — each must die on the gate it is named for.
     const runMutantArt = async (name, mut, gate) => {
         if (mut === artSrc) { ok(`mutant ${name}: target line not found`, false); return }
@@ -525,7 +525,7 @@ const home = g => { for (let o = railOpen(g.tray); g.sel !== o; o = railOpen(g.t
     // Gates carry the HONEST expectation (tryMut polarity, STATE #217 law):
     // they PASS on honest art and only a mutant can make them red.
     await runPullMutant('throb-always',
-        artSrc.replace("const pullGlow = pullPulse && tick % 32 < 20", 'const pullGlow = true'),
+        artSrc.replace('const pullGlow = (pullPulse || autoLead) && tick % 32 < 20', 'const pullGlow = true'),
         g => mouthPix(g).length === 10 && mouthPix(g).every(r => r.c === '#4a4f57')) // honest rests dim at tick 50
     await runPullMutant('lead-blind',
         artSrc.replace('if (pullGlow && held === 0 && batteries > 0 && sel === open && tray[sel] === 1)', 'if (pullGlow)'),
@@ -632,6 +632,146 @@ const home = g => { for (let o = railOpen(g.tray); g.sel !== o; o = railOpen(g.t
         artSrc.replace("g.fillStyle = '#ffd23e'; g.fillRect(hx - 4, hy + 36, 52, 10)", ''),
         [2, 1, [1, 0, 0], 2], // loaded — the chip must sit under the word
         g => { const ih = g.texts.find(r => r.t === 'IN HAND'); return !!ih && g.rects.some(r => r.c === '#ffd23e' && r.w === 52 && r.h === 10 && r.y === ih.y - 8) })
+}
+
+// ---- 10e. #1915 phone round 2 — pocket bob + fresh-flip drain lead ---------
+// What the phone player sees: a loaded pocket must READ loaded (the battery
+// breathes 2px so IN HAND is not a still-life), and a fresh flip must teach
+// that the back has a verb without the mic being involved. Unlike the heard
+// call, the auto lead is legality-gated in the art (it can never promise a
+// pull that A cannot do this instant). View-only: zero sim reads. Three named
+// mutants die.
+{
+    const dir = new URL('../src/games/TalkMeDown/', import.meta.url)
+    const artSrc = readFileSync(new URL('art.js', dir), 'utf8')
+    const view = readFileSync(new URL('index.jsx', dir), 'utf8')
+    const paint = (tick, tray, held = 0, sel = 2, pull = false, flip = false) => {
+        const g = {
+            rects: [], texts: [], font: '', fillStyle: '',
+            fillRect(x, y, w, h) { this.rects.push({ x, y, w, h, c: this.fillStyle }) },
+            fillText(t, x, y) { this.texts.push({ t, x, y, c: this.fillStyle }) },
+            beginPath() {}, arc() {}, fill() {},
+        }
+        drawBack(g, tray.reduce((a, b) => a + b, 0), tick, 'XX0X0', held, tray, sel, null, pull, flip)
+        return g
+    }
+    const hx = PANEL.x + 344, hy = PANEL.y + PANEL.h - 92
+    const cellTop = g => {
+        const b = g.rects.filter(r => r.x === hx && r.w === 32 && r.h === 26)
+        return b.length === 1 ? b[0].y : -1
+    }
+    const LEGAL = [1, 1, 0]
+    // 1) the bob: the seated cell rides the exported clock, fixture and all.
+    {
+        const tops = [0, 12, 24, 36].map(t => cellTop(paint(t, LEGAL, 1)))
+        ok('the pocket battery breathes on the exported RAIL_BOB clock (0,1,2,1)',
+            tops.every((y, i) => y === hy + RAIL_BOB[i]) && new Set(tops).size === 3, JSON.stringify(tops))
+        ok('the bob is a cycle, not a drift (same phase, same pixels)',
+            cellTop(paint(48, LEGAL, 1)) === cellTop(paint(0, LEGAL, 1)) && cellTop(paint(0, LEGAL, 1)) === hy)
+        let still = true
+        for (const t of [0, 12, 24, 36]) {
+            const g = paint(t, LEGAL, 1)
+            if (!g.rects.some(r => r.x === hx - 4 && r.y === hy - 4 && r.w === 52 && r.h === 40)) still = false // clip
+            if (!g.rects.some(r => r.c === '#ffd23e' && r.y === hy + 36 && r.w === 52 && r.h === 10)) still = false // badge
+        }
+        ok('the clip and the IN HAND badge stand still while the cell bobs', still)
+    }
+    // 2) the fresh-flip lead: honest words, faster clock, no call needed.
+    const leadText = g => g.texts.find(r => r.t === 'PULL IT -> A')
+    const mouthPix = g => g.rects.filter(r => r.x >= PANEL.x + 326 && r.w === 3 && r.h === 3 && r.y >= PANEL.y + 150 && r.y <= PANEL.y + 224)
+    ok('a fresh flip spells the lead without a call (tick 40: shared clock resting)',
+        !!leadText(paint(40, LEGAL, 0, 1, false, true)))
+    ok('the flip lead throbs the arrow on the faster clock too',
+        mouthPix(paint(40, LEGAL, 0, 1, false, true)).every(r => r.c === '#ffd23e'))
+    ok('auto lead cannot lie: hand behind the open cell, no words',
+        !leadText(paint(40, LEGAL, 0, 0, false, true)) && mouthPix(paint(40, LEGAL, 0, 0, false, true)).every(r => r.c === '#4a4f57'))
+    ok('auto lead cannot lie: hand already full, no words',
+        !leadText(paint(40, LEGAL, 1, 1, false, true)))
+    ok('expired lead, no call: the plate rests on the shared clock',
+        !leadText(paint(40, LEGAL, 0, 1, false, false)) && mouthPix(paint(40, LEGAL, 0, 1, false, false)).every(r => r.c === '#4a4f57'))
+    ok('the bob and the auto-lead are constant-driven in the art (source pins)',
+        /const bob = RAIL_BOB\[Math\.floor\(tick \/ 12\) % 4\]/.test(artSrc) &&
+        /const autoLead = flipLead && held === 0 && batteries > 0 && sel === open && tray\[sel\] === 1/.test(artSrc))
+    ok('the renderer arms a 96-tick lead on the flip event and decays it view-side (source pins)',
+        /if \(f\.to === 1\) flipLeadRef\.current = 96/.test(view) &&
+        /const lead = flipLeadRef\.current > 0\n\s*if \(lead\) flipLeadRef\.current -= 1/.test(view))
+    const runPhoneMutant = async (name, mut, gate) => {
+        if (mut === artSrc) { ok(`mutant ${name}: target line not found`, false); return }
+        const tmp = new URL(`.mutant-art-phone-${name}.mjs`, dir)
+        plant(tmp, mut)
+        try {
+            const E = await import(tmp.href)
+            ok(`mutant ${name} dies by name`, !gate(E.drawBack))
+        } finally { pull(tmp) }
+    }
+    await runPhoneMutant('bob-flat',
+        artSrc.replace('export const RAIL_BOB = [0, 1, 2, 1]', 'export const RAIL_BOB = [0, 0, 0, 0]'),
+        (ED) => { // honest: the seated cell rides 0,1,2,1 over ticks 0/12/24/36
+            const rec = () => ({ rects: [], texts: [], font: '', fillStyle: '',
+                fillRect(x, y, w, h) { this.rects.push({ x, y, w, h, c: this.fillStyle }) },
+                fillText() {}, beginPath() {}, arc() {}, fill() {} })
+            return [0, 12, 24, 36].every((t, i) => {
+                const g = rec()
+                ED(g, 2, t, 'XX0X0', 1, LEGAL, 2, null)
+                return cellTop(g) === hy + [0, 1, 2, 1][i]
+            })
+        })
+    await runPhoneMutant('auto-dead',
+        artSrc.replace('const autoLead = flipLead &&', 'const autoLead = false &&'),
+        (ED) => { // honest: a fresh flip spells the lead at tick 40
+            const g = { rects: [], texts: [], font: '', fillStyle: '',
+                fillRect(x, y, w, h) { this.rects.push({ x, y, w, h, c: this.fillStyle }) },
+                fillText(t, x, y) { this.texts.push({ t, x, y, c: this.fillStyle }) },
+                beginPath() {}, arc() {}, fill() {} }
+            ED(g, 2, 40, 'XX0X0', 0, LEGAL, 1, null, false, true)
+            return !!g.texts.find(r => r.t === 'PULL IT -> A')
+        })
+    await runPhoneMutant('auto-lying',
+        artSrc.replace('const autoLead = flipLead && held === 0 && batteries > 0 && sel === open && tray[sel] === 1', 'const autoLead = flipLead'),
+        (ED) => { // honest: silent AND resting while the hand is behind the open cell
+            const g = { rects: [], texts: [], font: '', fillStyle: '',
+                fillRect(x, y, w, h) { this.rects.push({ x, y, w, h, c: this.fillStyle }) },
+                fillText(t, x, y) { this.texts.push({ t, x, y, c: this.fillStyle }) },
+                beginPath() {}, arc() {}, fill() {} }
+            ED(g, 2, 40, 'XX0X0', 0, LEGAL, 0, null, false, true)
+            const mouthDim = g.rects.filter(r => r.x >= PANEL.x + 326 && r.w === 3 && r.h === 3)
+                .every(r => r.c === '#4a4f57')
+            return !g.texts.find(r => r.t === 'PULL IT -> A') && mouthDim
+        })
+}
+
+// ---- 10f. locks ride the flip honest (#1915 item 4) --------------------------
+// The lock lives where its verbs live: the face. The tilted plate has ONE verb
+// (the drain), and handling was never a verb — so the flipped plate is never
+// "idle while locked" in any way that can surprise: this pins the law instead
+// of adding a shimmer the original never had. The flip neither dodges nor
+// grants the strike, and never strikes for the tilt itself.
+{
+    let seed = 1
+    for (; seed <= 200; seed++) if (createGame(seed, 1).features.batteries > 0) break
+    const gs = createGame(seed, 1)
+    gs.modules[0].locked = 60
+    const s0 = gs.strikes
+    step(gs, { up: true }) // tilt onto the back while a module is hot
+    ok('a locked module does not veto the tilt (looking stays free, no strike)',
+        gs.flip === 1 && gs.strikes === s0)
+    home(gs) // slide the hand to the open end
+    step(gs, { a: true }); step(gs, { a: false })
+    ok('the drain is free while a module cools (handling was never a verb)',
+        gs.held === 1 && gs.pulls === 1 && gs.strikes === s0)
+    const lMid = gs.modules[0].locked
+    for (let i = 0; i < 5; i++) step(gs, {})
+    ok('the lock keeps decaying behind the plate (the flip is no pause)',
+        lMid - gs.modules[0].locked === 5 && gs.modules[0].locked > 0)
+    step(gs, { down: true })
+    ok('tilting back lands inside the same lock (the flip is no dodge)',
+        gs.flip === 0 && gs.modules[0].locked > 0)
+    const b0 = gs.features.batteries
+    for (let i = 0; i < 10; i++) step(gs, { a: true }) // hammer held-A on the hot face
+    ok('the locked face swallows held keys silently (no strike, no ratchet)',
+        gs.strikes === s0 && gs.held === 1 && gs.features.batteries === b0)
+    for (let i = 0; i < 70; i++) step(gs, {})
+    ok('the lock expires on its own clock', gs.modules[0].locked === 0)
 }
 
 // ---- 11. mutant: remove the open-end gate, gates must die ------------------------

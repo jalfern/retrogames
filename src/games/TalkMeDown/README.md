@@ -376,3 +376,15 @@ red on main while `bombcheck` stays green. Filed for the QA lane.
   (#1923: parseCall `pull` intent, faster chevron clock, `PULL IT -> A` lead
   gated on legality). A bare pull verb stays noise; a verb + color is still
   the wire call (the cut law outranks the rail).
+- **CLOSED by the #1915 phone round:** the phone learns the drain without
+  the mic — a loaded pocket battery idles with a 2px breath (`RAIL_BOB`,
+  view-only) so IN HAND reads as a live object at arm's length, and a fresh
+  flip beats the faster PULL-IT hint itself for 96 render ticks (`flipLead`),
+  legality-gated in the art so the auto lead can never promise an illegal
+  pull. Item 4 landed as a pinned law, not a shimmer: a strike lock lives on
+  the face (where its verbs are), the flip neither dodges nor grants it, the
+  drain stays free behind the plate, and the tilted side has no locked verb
+  to advertise (platecheck 10f pins all six). The pad's A button keeps its
+  static label (shared-component change, above QA pay grade). Still open from
+  the issue: a TAKE/PUT battery-verb family on the mic beyond PULL IT, and
+  the deeper slot-puzzle plate — both design calls, left by playtest verdict.

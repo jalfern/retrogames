@@ -539,10 +539,13 @@ export const RAIL_TAB_BLOCKED = '#22262b'
 export const RAIL_DENY_JAM = '#ff8a7e'
 export const RAIL_DENY_EMPTY = '#9aa0aa'
 export const railMouthGlow = (tick) => tick % 60 < 38
+// #1915 idle bob: the seated battery breathes over a 48-tick clock (2px max —
+// one integer step per 12 ticks so the plate stays pixel-crisp).
+export const RAIL_BOB = [0, 1, 2, 1]
 // #1923 THE SLIDE: pass fx (makeRailFx/stepRailFx) and the pulled/seated cell
 // flies the rail instead of teleporting; fx=null keeps this byte-identical to
 // the pre-slide plate (old callers, pixel gates).
-export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn = null, selIn = 2, fx = null, pullPulse = false) {
+export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn = null, selIn = 2, fx = null, pullPulse = false, flipLead = false) {
     const tray = Array.isArray(trayIn) && trayIn.length === 3
         ? trayIn.map(v => (v ? 1 : 0))
         : [0, 1, 2].map(i => (i < batteries ? 1 : 0)) // pre-rail callers: the classic left-packed plate
@@ -596,7 +599,13 @@ export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn 
     // #1923 PULL IT: a heard pull-call leads the drain on its OWN faster
     // clock — the arrow throbs double-time; the word keeps the shared clock,
     // so the hint can never masquerade as the law.
-    const pullGlow = pullPulse && tick % 32 < 20
+    // #1915 fresh-flip lead: a phone player who never touches the mic must
+    // still learn the back has a verb — for a moment after the tilt the plate
+    // beats the same faster hint itself. Unlike the heard call (whose arrow
+    // only points at the mouth, always honest), the auto lead is legality-
+    // gated below: it can never promise a pull A cannot do this instant.
+    const autoLead = flipLead && held === 0 && batteries > 0 && sel === open && tray[sel] === 1
+    const pullGlow = (pullPulse || autoLead) && tick % 32 < 20
     g.fillStyle = mouth || pullGlow ? '#ffd23e' : '#4a4f57'
     for (let c = 0; c < 2; c++) for (let k = 0; k < 5; k++)
         g.fillRect(PANEL.x + 328 + c * 6 + (2 - Math.abs(2 - k)), PANEL.y + 178 + k * 3, 3, 3)
@@ -648,10 +657,15 @@ export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn 
         // #1923 THE SLIDE: mid-flight the ghost carries the cell — the clip
         // stands empty until it arrives, so the plate never shows it twice.
         if (!inFlight || inFlight.kind !== 'out') {
-            g.fillStyle = '#c98f1f'; g.fillRect(hx, hy, 32, 26)
-            g.fillStyle = P.amber; g.fillRect(hx + 2, hy + 3, 28, 20)
-            g.fillStyle = '#8a6512'; g.fillRect(hx + 5, hy + 9, 22, 2)
-            g.fillStyle = '#d8dce2'; g.fillRect(hx + 34, hy - 4, 6, 5); g.fillRect(hx + 34, hy + 25, 6, 5)
+            // #1915 idle bob: a clipped battery breathes 2px so IN HAND reads
+            // at phone scale while nothing else moves — the badge says the hand
+            // is loaded, the bob shows it. View-only: zero sim reads, the hash
+            // law is untouched (view never enters it).
+            const bob = RAIL_BOB[Math.floor(tick / 12) % 4]
+            g.fillStyle = '#c98f1f'; g.fillRect(hx, hy + bob, 32, 26)
+            g.fillStyle = P.amber; g.fillRect(hx + 2, hy + bob + 3, 28, 20)
+            g.fillStyle = '#8a6512'; g.fillRect(hx + 5, hy + bob + 9, 22, 2)
+            g.fillStyle = '#d8dce2'; g.fillRect(hx + 34, hy + bob - 4, 6, 5); g.fillRect(hx + 34, hy + bob + 25, 6, 5)
         }
         // #1992: the holder readout must read at phone scale — an amber badge
         // under dark ink, one size up. The badge carries "the hand is loaded"

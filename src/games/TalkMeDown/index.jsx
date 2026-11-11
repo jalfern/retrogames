@@ -77,6 +77,9 @@ export default function TalkMeDown() {
     const screenRef = useRef('attract') // attract | select | play | over
     const gsRef = useRef(null)
     const railFxRef = useRef(ART.makeRailFx()) // #1923 THE SLIDE: view-only rail animation
+    // #1915 fresh-flip lead: for a moment after the tilt the back beats its
+    // own drain hint (view-only counter, never enters the sim or hash).
+    const flipLeadRef = useRef(0)
     const attractRef = useRef(null)
     const seatsRef = useRef(1)
     const selectRef = useRef(1)
@@ -354,7 +357,10 @@ export default function TalkMeDown() {
             if (gs && !gs.done) hud.curtain = { n: gs.bombsCleared + 1, t: 62 }
         }
         if (f.k === 'boom') hud.boomTick = 1
-        if (f.k === 'flip') hud.shake = Math.max(hud.shake, 6) // #1797: a chunky tilt
+        if (f.k === 'flip') {
+            hud.shake = Math.max(hud.shake, 6) // #1797: a chunky tilt
+            if (f.to === 1) flipLeadRef.current = 96 // #1915: the back advertises its verb
+        }
         if (f.k === 'pull' || f.k === 'push') hud.shake = Math.max(hud.shake, 3) // #1909: spring, not thunder
         if (f.k === 'flag') hud.banner = { text: `READ RULE ${f.stamp}`, ok: true }
     }
@@ -1019,8 +1025,12 @@ export default function TalkMeDown() {
                 // — view-only, the sim and hash never hear it.
                 const fx = ART.stepRailFx(railFxRef.current, gs.held, gs.tray, gs.sel,
                     `${gs.round}/${gs.bombsCleared}/${gs.features.serial}`)
+                // #1915: the lead decays on the render clock — pure look, the
+                // sim keeps its own time.
+                const lead = flipLeadRef.current > 0
+                if (lead) flipLeadRef.current -= 1
                 ART.drawBack(g, gs.features.batteries, tick, gs.features.serial, gs.held, gs.tray, gs.sel, fx,
-                    !!(hud.pulse && hud.pulse.kind === 'pull'))
+                    !!(hud.pulse && hud.pulse.kind === 'pull'), lead)
                 ART.drawStrikes(g, gs.strikes)
                 ART.drawFuse(g, ART.PANEL.x + 16, ART.PANEL.y + 12, secs, secs <= 10 && !gs.done, tick)
                 return
