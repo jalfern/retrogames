@@ -18,9 +18,10 @@
 //       aqua (no strong-blue pixel, i.e. not the old white+blue kit), the
 //       guard paints orange (not the old olive), and ladder and rope paint
 //       the original's light grey (not green/yellow).
-//   4b. THE CARVED SHAFT (#1942) — two diggable strata: dig, walk over the
-//       open pit mouth and FALL in (sprite and state agree), dig the bottom
-//       straight down, and clamber back out with UP — no life lost.
+//   4b. THE CARVED SHAFT (#1942, deepened #1952) — three diggable strata: dig,
+//       walk over the open pit mouth and FALL in (sprite and state agree), dig
+//       straight down TWICE to the bedrock, and clamber back out with UP —
+//       no life lost.
 //   4. THE LADDER AND THE ROPE (vault 2) — run to a real ladder, climb it, and
 //      dangle onto the rope line: the runner hangs, rope over his head in the state.
 //   5. GUARDS HUNT — a guard's cell changes without being touched.
@@ -137,7 +138,8 @@ if (goldCell) {
     r.check(`a gold nugget paints gold pixels (${px.gold} warm-yellow in its cell window)`, px.gold >= 6, JSON.stringify(px))
 }
 
-// 3b — the paint (issue #156): vault 1's row 0 is wall, row 17 is the floor,
+// 3b — the paint (issue #156): vault 1's row 0 is wall, rows 16-18 are the
+// three rock strata (row 15 is the walk level),
 // so one read each grades "mortar brick vs cool concrete" — in hue AND in
 // density (a glyph in a cell leaves most of the window black; a tile fills it).
 const avgPx = (gx, gy) => page.evaluate(([x, y]) => {
@@ -191,47 +193,57 @@ await wait(6200) // refill 75 ticks = 5 s, plus margin
 const refilled = await page.evaluate(([x, y]) => { const p = window.__lodeTest.probe(); return { cell: p.cellAt(x, y), age: p.holeAt(x, y) } }, [holeCell.x, holeCell.y])
 r.check('the hole refills: the brick grows back after the fuse', refilled.cell === 1 && refilled.age === 0, JSON.stringify(refilled))
 
-// 4b — THE CARVED SHAFT (#1942), with real keys only: the ground is two
-// strata, so dig, step over the mouth (the walker falls in), dig the bottom
-// straight down, and clamber back out — state AND pixels must agree at every
-// step (the drawn sprite follows the logical cell).
+// 4b — THE CARVED SHAFT (#1942, deepened to three strata by #1952), with real
+// keys only: the ground is three strata, so dig, step over the mouth (the
+// walker falls in), dig straight down TWICE, and clamber three climbs back
+// out — state AND pixels must agree at every step (the drawn sprite follows
+// the logical cell).
 await page.evaluate(() => window.__lodeTest.start(0))
 await wait(300)
 await holdKey('ArrowRight', 300)
-await holdKey('ArrowDown', 300)                     // hole below-right of spawn: (2,17)
+await holdKey('ArrowDown', 300)                     // hole below-right of spawn: (2,16)
 const mouth = await page.evaluate(() => {
     const p = window.__lodeTest.probe()
     const px = p.player.x
-    return { hole17: p.holeAt(px + 1, 17), x: px + 1 }
+    return { hole16: p.holeAt(px + 1, 16), x: px + 1 }
 })
-r.check(`the shaft sits on diggable floor-rock: cell under the pit is brick (${mouth.hole17 > 0 ? 'pit open' : 'pit shut'})`,
-    await page.evaluate(([x]) => window.__lodeTest.probe().cellAt(x, 18) === 1, [mouth.x]))
+r.check(`the shaft sits on diggable floor-rock: cells under the pit are brick (${mouth.hole16 > 0 ? 'pit open' : 'pit shut'})`,
+    await page.evaluate(([x]) => { const p = window.__lodeTest.probe(); return p.cellAt(x, 17) === 1 && p.cellAt(x, 18) === 1 }, [mouth.x]))
 await holdKey('ArrowRight', 300)                    // step over the mouth — gravity, not a block
 let inPit = null
-for (let i = 0; i < 20 && !(inPit && inPit.player.y === 17); i++) { inPit = await probe(); await wait(120) }
-r.check('walking over an open pit drops the runner in (state row 17)', !!inPit && inPit.player.y === 17, JSON.stringify(inPit && { y: inPit.player.y, mode: inPit.player.mode }))
+for (let i = 0; i < 20 && !(inPit && inPit.player.y === 16); i++) { inPit = await probe(); await wait(120) }
+r.check('walking over an open pit drops the runner in (state row 16)', !!inPit && inPit.player.y === 16, JSON.stringify(inPit && { y: inPit.player.y, mode: inPit.player.mode }))
 const pitPix = await page.evaluate(() => {
     const c = document.querySelector('canvas[data-lode-stage]')
     const p = window.__lodeTest.probe()
-    const d = c.getContext('2d').getImageData(p.player.x * 20 + 3, 17 * 22 + 3, 14, 16).data
+    const d = c.getContext('2d').getImageData(p.player.x * 20 + 3, 16 * 22 + 3, 14, 16).data
     let n = 0
     for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] >= 24) n++
     return { n, at: [p.player.x, p.player.y] }
 })
 r.check('the drawn runner stands in the pit — pixels match the logical cell', pitPix.n > 60, JSON.stringify(pitPix))
-await holdKey('ArrowDown', 300)                     // dig the shaft bottom straight below
+await holdKey('ArrowDown', 300)                     // dig down from the pit floor — a held key
+// fires every moveEvery, so one squeeze can ride the shaft all the way to bedrock
 let deepened = false
 for (let i = 0; i < 20 && !deepened; i++) {
-    deepened = await page.evaluate(([x]) => { const p = window.__lodeTest.probe(); return p.holeAt(x, 18) > 0 && p.player.y === 18 }, [mouth.x])
+    deepened = await page.evaluate(([x]) => { const p = window.__lodeTest.probe(); return p.holeAt(x, 17) > 0 && p.player.y >= 17 }, [mouth.x])
     if (!deepened) await wait(150)
 }
-r.check('from the pit floor, DOWN carves the shaft deeper (row 18 opens, runner rides down)', deepened)
+r.check('from the pit floor, DOWN carves the shaft deeper (row 17 opens, runner rides down)', deepened)
+await holdKey('ArrowDown', 300)                     // dig the third stratum — the deepest grave
+let deepest = false
+for (let i = 0; i < 20 && !deepest; i++) {
+    deepest = await page.evaluate(([x]) => { const p = window.__lodeTest.probe(); return p.holeAt(x, 18) > 0 && p.player.y === 18 }, [mouth.x])
+    if (!deepest) await wait(150)
+}
+r.check('pit-bottom DOWN again carves the third stratum (row 18 opens, runner rides to the shaft floor)', deepest)
+await holdKey('ArrowUp', 300)
 await holdKey('ArrowUp', 300)
 await holdKey('ArrowUp', 300)
 let out = null
-for (let i = 0; i < 20 && !(out && out.player.y === 16); i++) { out = await probe(); await wait(120) }
+for (let i = 0; i < 20 && !(out && out.player.y === 15); i++) { out = await probe(); await wait(120) }
 const climbs = out ? out.evLog.filter((e) => e.type === 'pitClimb').length : 0
-r.check('UP clambers the runner out of the shaft, no life lost', !!out && out.player.y === 16 && climbs >= 2 && out.lives === 3,
+r.check('UP clambers the runner out of a three-cell shaft, no life lost', !!out && out.player.y === 15 && climbs >= 3 && out.lives === 3,
     JSON.stringify(out && { y: out.player.y, climbs, lives: out.lives }))
 
 // 5 — vault 2 "THE ROPE": run to the col-8 ladder and climb it — the runner
@@ -244,13 +256,13 @@ await wait(300)
 let foot = null
 for (let i = 0; i < 40 && !foot; i++) {
     const q = await page.evaluate(() => window.__lodeTest.probe().player)
-    if (q.x === 8 && q.y === 16) { foot = q; break }
+    if (q.x === 8 && q.y === 15) { foot = q; break }
     await holdKey(q.x < 8 ? 'ArrowRight' : 'ArrowLeft', 150)
 }
 r.check('walking reaches the col-8 ladder foot in vault 2', !!foot, JSON.stringify(foot))
 for (let i = 0; i < 6; i++) await holdKey('ArrowUp', 90)   // a few rungs up, well below the top
 const climbed = await page.evaluate(() => { const p = window.__lodeTest.probe(); return { mode: p.player.mode, x: p.player.x, y: p.player.y } })
-r.check('a held arrow climbs the real ladder off the floor', (climbed.mode === 'climb' || climbed.mode === 'hang') && climbed.y < 16, JSON.stringify(climbed))
+r.check('a held arrow climbs the real ladder off the floor', (climbed.mode === 'climb' || climbed.mode === 'hang') && climbed.y < 15, JSON.stringify(climbed))
 // 5b — the rope-and-ladder read the ORIGINAL's light grey (the old art was
 // green ladder / yellow rope). The bright-filtered window average drops the
 // navy background (its r+g+b is exactly 60), so the read is pure fixture.
