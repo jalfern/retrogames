@@ -65,6 +65,7 @@ const strataLaw = (grid) => {
 function drive(g, capTicks) {
     const evs = new Set()
     let shared = 0
+    let floatBad = null        // #2004: stand-mode over a live hole without the lip flag
     const max = capTicks ?? 6000
     while (!g.end && g.tick < max) {
         if (g.tick % CFG.moveEvery === 0) {
@@ -75,8 +76,11 @@ function drive(g, capTicks) {
         step(g)
         for (const e of g.events.splice(0)) evs.add(e.type)
         if (g.player.alive && g.guards.some((gd) => gd.alive && gd.x === g.player.x && gd.y === g.player.y)) shared++
+        if (!floatBad && g.ents.some((e) => e.alive && e.mode === 'stand' && !e.onLip && e.y + 1 < H && g.holeAge[e.y * W + e.x + 1] > 0)) {
+            floatBad = `an entity stands over a live hole at tick ${g.tick}`
+        }
     }
-    return { evs, shared, hash: stateHash(g) }
+    return { evs, shared, hash: stateHash(g), floatBad }
 }
 
 // #1991 — the live-chain script for THE ROPE: real inputs from the real spawn
@@ -178,6 +182,7 @@ for (let i = 0; i < LEVELS.length; i++) {
     const g = makeGame(b.meta, b.grid)
     const r = drive(g)
     ok(g.win && g.end === 'clear', `not winnable: end=${g.end} tick=${g.tick} have=${g.have}/${g.need}`)
+    ok(!r.floatBad, `${b.meta.name}: LIP LAW broken on the solver's route — ${r.floatBad}`)
     ok(g.have === g.need, `cleared with ${g.have}/${g.need} gold — the exit opened early`)
     ok(g.lives >= 1, `the witness spent every life (${g.lives}) — a winning run must not run dry`)
     const jumps = g.cmds.filter((c) => c.act.startsWith('JUMP')).length
@@ -263,6 +268,46 @@ section('RULES — the 1983 contract, each pinned by a scenario')
     for (let k = 0; k < CFG.guardTrap + 20 && !climbed; k++) { step(g); if (g.events.some((e) => e.type === 'climbOut')) climbed = true; g.events.length = 0 }
     ok(climbed, 'a guard in a shallow pit never climbed out')
     ok(gd.alive && gd.y <= gd.home.y, `the guard did not climb back to the floor (y=${gd.y})`)
+}
+{
+    // LIP LAW (#2004): nobody paints standing in mid-air. A body climbing out
+    // of a pit whose hole is STILL OPEN ends the climb clinging to the lip
+    // (hands on the edge, legs in the hole) until it steps onto supported
+    // floor. Walkers and fallers over the same mouth still drop into the pit —
+    // route legality and the trap economy are untouched; the flag is derived
+    // deterministically at every arrival, so replay hashes are unchanged.
+    const b = buildLevel(0); const g = makeGame(b.meta, b.grid); const p = g.player
+    // (a) the guard's clocked escape clings while the fuse is open
+    applyAction(g, p, 'ArrowRight'); applyAction(g, p, 'ArrowDown')   // a 1-cell pit below-right
+    const cell = (p.y + 1) * W + (p.x + 1)
+    const gd = g.guards[0]
+    gd.x = cell % W; gd.y = (cell - gd.x) / W; gd.mode = 'stand'
+    const saveChase = CFG.guardChase; CFG.guardChase = false   // the pace-move must not step it off the lip inside the same tick
+    let climbed = false
+    for (let k = 0; k < CFG.guardTrap + 20 && !climbed; k++) { step(g); if (g.events.some((e) => e.type === 'climbOut')) climbed = true; g.events.length = 0 }
+    ok(climbed && gd.mode === 'stand' && g.holeAge[cell] > 0 && gd.onLip === true,
+        `guard escape over an open pit never ended as a lip cling (climbed=${climbed} mode=${gd.mode} open=${g.holeAge[cell] > 0} lip=${gd.onLip})`)
+    ok(applyAction(g, gd, 'ArrowLeft', { dig: false }) && gd.onLip === false, 'a clinging guard could not step off the lip onto supported floor')
+    CFG.guardChase = saveChase
+    // (b) the runner's pitClimb clings too, and clinging does not brick the
+    // escape: one supported side-step and the flag is gone.
+    const b2 = buildLevel(0); const g2 = makeGame(b2.meta, b2.grid); const p2 = g2.player
+    const sx = p2.x, sy = p2.y
+    applyAction(g2, p2, 'ArrowRight'); applyAction(g2, p2, 'ArrowDown')       // dig below-right
+    applyAction(g2, p2, 'ArrowRight')                                           // step over the mouth -> fall in
+    for (let k = 0; k < 8 && !(p2.mode === 'stand' && p2.y === sy + 1); k++) step(g2)
+    ok(p2.mode === 'stand' && p2.y === sy + 1, `runner never dropped into the pit (mode=${p2.mode} y=${p2.y})`)
+    ok(applyAction(g2, p2, 'ArrowUp') && p2.y === sy && p2.onLip === true, 'climbing out of the open pit did not cling to the lip')
+    ok(applyAction(g2, p2, 'ArrowLeft') && p2.onLip === false, 'stepping from the lip onto supported floor did not clear the cling')
+    // (c) the lip is not a floor: stepping back down drops into the pit.
+    const b3 = buildLevel(0); const g3 = makeGame(b3.meta, b3.grid); const p3 = g3.player
+    applyAction(g3, p3, 'ArrowRight'); applyAction(g3, p3, 'ArrowDown')
+    applyAction(g3, p3, 'ArrowRight')
+    for (let k = 0; k < 8 && !(p3.mode === 'stand' && p3.y === sy + 1); k++) step(g3)
+    applyAction(g3, p3, 'ArrowUp')                                            // cling the lip
+    applyAction(g3, p3, 'ArrowDown')                                          // let go
+    for (let k = 0; k < 8 && !(p3.mode === 'stand' && p3.y === sy + 1); k++) step(g3)
+    ok(p3.mode === 'stand' && p3.y === sy + 1 && p3.onLip === false, 'leaving the lip downward did not drop the runner into its pit')
 }
 {
     // GUARD GOLD: a guard pockets the gold it walks over, then drops it.

@@ -310,6 +310,7 @@ const LodeRunnerLiteGame = () => {
         // couple of hundred ms after its last cell change. The frame clock is
         // real paint time — a cosmetic, never sim state.
         const frameOf = (set, e, now) => {
+            if (e.onLip && e.mode === 'stand') return now % 160 < 80 ? set.climbA : set.climbB   // #2004 lip cling
             if (e.mode === 'hang') return set.hang
             if (e.mode === 'air') return set.fall
             if (e.mode === 'climb') return now % 160 < 80 ? set.climbA : set.climbB
@@ -327,12 +328,15 @@ const LodeRunnerLiteGame = () => {
             c.save()
             if (alpha < 1) c.globalAlpha = alpha
             const img = frameOf(set, e, now)
+            // #2004: a lip-clinging body hangs INTO the pit — sink the sprite
+            // so hands grip the lip line and legs paint inside the hole below.
+            const dy = e.onLip && e.mode === 'stand' ? Math.round(CH * 0.45) : 0
             if (e.face === -1) {
-                c.translate(e.x * CW + CW, e.y * CH)
+                c.translate(e.x * CW + CW, e.y * CH + dy)
                 c.scale(-1, 1)
                 c.drawImage(img, 0, 0)
             } else {
-                c.drawImage(img, e.x * CW, e.y * CH)
+                c.drawImage(img, e.x * CW, e.y * CH + dy)
             }
             c.restore()
         }
@@ -508,8 +512,8 @@ const LodeRunnerLiteGame = () => {
                     screen: screenRef.current, level: levelIdx, tick: gs.tick,
                     have: gs.have, need: gs.need, lives: gs.lives, score: gs.score,
                     unlocked: gs.unlocked, end: gs.end,
-                    player: { x: gs.player.x, y: gs.player.y, mode: gs.player.mode, alive: gs.player.alive },
-                    guards: gs.guards.map((gd) => ({ id: gd.id, x: gd.x, y: gd.y, mode: gd.mode, alive: gd.alive })),
+                    player: { x: gs.player.x, y: gs.player.y, mode: gs.player.mode, alive: gs.player.alive, lip: !!gs.player.onLip },
+                    guards: gs.guards.map((gd) => ({ id: gd.id, x: gd.x, y: gd.y, mode: gd.mode, alive: gd.alive, lip: !!gd.onLip })),
                     cellAt: (x, y) => (x >= 0 && y >= 0 && x < W && y < H ? gs.grid[y * W + x] : SOLID),
                     holeAt: (x, y) => (x >= 0 && y >= 0 && x < W && y < H ? gs.holeAge[y * W + x] : 0),
                     exit: { ...gs.exit },

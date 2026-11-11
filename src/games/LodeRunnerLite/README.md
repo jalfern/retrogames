@@ -111,9 +111,17 @@ to clear, it is unclassic and lodecheck's winnability gate fails it.
   layers, shafts carve three cells down, and the solver routes over the
   thicker rock; the strata now also *look* and *sound* different — deeper
   rows paint darker and coarser, and the dig thud drops pitch per stratum.
-- A guard climbing out of a shallow pit lands in a floor-level cell with no
-  support below (a "hole" is one dug brick); it stands there until it BFSes
-  back to the path. A cosmetic oddity, not a sim bug.
+  **CLOSED by #1952** (marker added by #2004 — the work shipped then; the
+  bullet lacked it and kept re-kicking lanes, #961).
+- **Nobody stands on air (#2004).** A body climbing out of a pit whose hole is
+  still open ends the climb clinging to the lip — hands on the edge, legs
+  painted into the pit (`onLip`, derived at every arrival, replay-hashes
+  unchanged). One side-step onto supported floor clears it; stepping down from
+  the lip drops you back into your pit; walkers and fallers over the same
+  mouth still fall in — route legality, the trap ladder and the solver's
+  receipts are untouched. lodecheck pins the cling (guard escape, runner
+  pitClimb, re-drop) and scans every solver tick for an unsupported stand;
+  lodeplay proves the cling live, state AND pixels.
 - Vault 3's witness spends one life (a guard closes the crossing); the
   one-fewer-life slack check proves the route is still robust.
 - No keyboard-less vault skipping on phones: pads withdraw on menus, and

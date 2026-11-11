@@ -41,9 +41,12 @@ const browser = await launch()
 const page = await browser.newPage({ viewport: { width: 780, height: 720 }, deviceScaleFactor: 1 })
 page.setDefaultTimeout(180000)
 const errors = []
-page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`))
+// device-level AudioContext complaints (no audio device/renderer on the box)
+// are not page errors — same filter papersplay/britanniadrive carry.
+const deviceNoise = (s) => /AudioContext encountered an error from the audio device/i.test(String(s || ''))
+page.on('pageerror', (e) => { if (!deviceNoise(e.message)) errors.push(`[pageerror] ${e.message}`) })
 page.on('pageerror', (e) => console.log('[pageerror]', e.message.slice(0, 200)))
-page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) { errors.push(`[console.error] ${m.text()}`); console.log('[console.error]', m.text().slice(0, 200)) } })
+page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location()) && !deviceNoise(m.text())) { errors.push(`[console.error] ${m.text()}`); console.log('[console.error]', m.text().slice(0, 200)) } })
 
 await page.goto(URL, { waitUntil: 'domcontentloaded' })
 const waitHook = async (tries) => {
@@ -245,6 +248,37 @@ for (let i = 0; i < 20 && !(out && out.player.y === 15); i++) { out = await prob
 const climbs = out ? out.evLog.filter((e) => e.type === 'pitClimb').length : 0
 r.check('UP clambers the runner out of a three-cell shaft, no life lost', !!out && out.player.y === 15 && climbs >= 3 && out.lives === 3,
     JSON.stringify(out && { y: out.player.y, climbs, lives: out.lives }))
+
+// 4c — LIP LAW live (#2004): coming out of the freshly carved shaft the pit
+// below is still open (the 5 s fuse has not run) — the runner arrives
+// CLINGING, not floating: the flag reads true and the sprite paints sunk
+// below the lip line, INTO the pit cell, where a stand frame paints nothing.
+const lipState = await page.evaluate(() => {
+    const p = window.__lodeTest.probe()
+    return { x: p.player.x, y: p.player.y, mode: p.player.mode, lip: p.player.lip, openBelow: p.holeAt(p.player.x, p.player.y + 1) > 0 }
+})
+r.check('exiting a still-open shaft ends in a lip cling (flag true, hole open below)',
+    lipState.lip === true && lipState.mode === 'stand' && lipState.openBelow, JSON.stringify(lipState))
+const clingPix = await page.evaluate(() => {
+    const c = document.querySelector('canvas[data-lode-stage]')
+    const p = window.__lodeTest.probe()
+    const w = 16
+    const d = c.getContext('2d').getImageData(p.player.x * 20 + 2, 15 * 22, w, 34).data // lip cell + pit top
+    let lastRow = -1
+    for (let yy = 0; yy < 34; yy++) {
+        for (let xx = 0; xx < w; xx++) {
+            const i = (yy * w + xx) * 4
+            if (d[i] + d[i + 1] + d[i + 2] >= 330) lastRow = yy      // runner-bright (aqua/orange hues, not navy/gray pit art)
+        }
+    }
+    return { lastRow }
+})
+r.check('the clinging body paints INTO the pit (bright pixels below the lip line)',
+    clingPix.lastRow >= 25, JSON.stringify(clingPix))
+await holdKey('ArrowLeft', 220)                    // one supported side-step and the cling is gone
+let offLip = null
+for (let i = 0; i < 12 && !(offLip && offLip.player.lip === false); i++) { offLip = await probe(); await wait(120) }
+r.check('stepping off the lip onto supported floor clears the cling', !!offLip && offLip.player.lip === false, JSON.stringify(offLip && { x: offLip.player.x, y: offLip.player.y, lip: offLip.player.lip }))
 
 // 5 — vault 2 "THE ROPE": run to the col-8 ladder and climb it — the runner
 // rises off the floor into climb mode on the real ladder. (The rope line at

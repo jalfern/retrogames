@@ -120,7 +120,7 @@ function push(g, e) { if (!g.search) g.events.push(e) }
 // concealed: the run of LADDER cells in the exit column from the top exit cell
 // down to the floor. Reveal = set them back to LADDER once every gold is held.
 export function makeGame(meta, grid) {
-    const mk = (x, y, isGuard, id, home) => ({ x, y, mode: 'stand', vx: 0, vy: 0, face: 1, alive: true, isGuard, id, home, trapCount: 0, carry: false, carryCount: 0 })
+    const mk = (x, y, isGuard, id, home) => ({ x, y, mode: 'stand', vx: 0, vy: 0, face: 1, alive: true, isGuard, id, home, trapCount: 0, carry: false, carryCount: 0, onLip: false })
     const g = {
         meta,
         grid: Uint8Array.from(grid),
@@ -203,10 +203,10 @@ function loseLife(g, cause) {
     // without a page reload, and what makes lives a real supply.
     const p = g.player
     p.x = g.meta.spawn.x; p.y = g.meta.spawn.y
-    p.mode = 'stand'; p.vx = 0; p.vy = 0; p.alive = true; p.face = 1; p.trapCount = 0
+    p.mode = 'stand'; p.vx = 0; p.vy = 0; p.alive = true; p.face = 1; p.trapCount = 0; p.onLip = false
     for (const gd of g.guards) {
         if (!gd.alive) continue
-        gd.x = gd.home.x; gd.y = gd.home.y; gd.mode = 'stand'; gd.vx = 0; gd.vy = 0; gd.trapCount = 0
+        gd.x = gd.home.x; gd.y = gd.home.y; gd.mode = 'stand'; gd.vx = 0; gd.vy = 0; gd.trapCount = 0; gd.onLip = liveHole(g, gd.x, gd.y + 1)
     }
 }
 
@@ -234,6 +234,10 @@ function guardGold(g, gd) {
 // is tested; a guard pockets gold it can drop later. Keeps goldCollect from
 // ever crediting a guard, and guardGold from ever touching the runner.
 function arrive(g, e) {
+    // #2004 LIP LAW: a body that arrives with a live hole under its feet is
+    // not standing — it clings to the lip (reachable ONLY by climbing out;
+    // walkers and fallers over the same mouth drop into the pit, rules above).
+    e.onLip = liveHole(g, e.x, e.y + 1)
     if (e.isGuard) guardGold(g, e)
     else { goldCollect(g, e); checkExit(g, e) }
 }
@@ -367,7 +371,7 @@ function airTick(g, e) {
         arrive(g, e)
     }
     if (e.mode === 'air' && e.vy <= 0) {
-        if (e.y + 1 < H && supportT(g.grid[idx(e.x, e.y + 1)])) e.mode = 'stand'
+        if (e.y + 1 < H && supportT(g.grid[idx(e.x, e.y + 1)])) { e.mode = 'stand'; e.onLip = false }
         else if (e.y >= H) killFall(g, e)
     }
 }
@@ -461,7 +465,7 @@ export function step(g) {
             const pay = CFG.guardPay * (CFG.chainLadder[Math.min(caught.length, CFG.chainLadder.length) - 1] + CFG.deepPay * (depth - 1))
             for (const e of caught) {
                 // dies in the hole and re-enters at the top of the vault
-                e.x = e.home.x; e.y = e.home.y; e.mode = 'stand'; e.trapCount = 0; e.carry = false; e.carryCount = 0
+                e.x = e.home.x; e.y = e.home.y; e.mode = 'stand'; e.trapCount = 0; e.carry = false; e.carryCount = 0; e.onLip = false
             }
             g.score += pay
             push(g, { type: 'guardBuried', id: caught[0].id, ids: caught.map((e) => e.id), n: caught.length, pay, x: tx, y: ty, depth })
@@ -491,6 +495,10 @@ export function step(g) {
         gd.trapCount++
         if (gd.trapCount >= CFG.guardTrap && cellT(g, gd.x, gd.y - 1) === EMPTY) {
             gd.y--; gd.trapCount = 0
+            // #2004 LIP LAW: escaping a still-open pit ends as a lip cling —
+            // the guard hangs from the edge (legs in the pit) until it steps
+            // onto supported floor; it never stands painted in mid-air.
+            gd.onLip = liveHole(g, gd.x, gd.y + 1)
             push(g, { type: 'climbOut', id: gd.id })
         }
     }
