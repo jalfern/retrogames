@@ -18,8 +18,10 @@ export const CFG = {
 
 // #1740: the original ran a long campaign of 45 levels; the atmospheres repeat
 // every third world (the renderer cycles its three PALs the same way), so the
-// nine named worlds below are three arcs of three — each arc stricter than the
-// last. Quota policy (learned in the sweep: seeds 41/54 stalled when world 9's
+// named worlds below are six arcs of three — each arc stricter than the last
+// (#1925 item 3 grew the campaign from nine to eighteen: arcs four to six keep
+// the same three-atmosphere cycle and the +15 vault ramp).
+// Quota policy (learned in the sweep: seeds 41/54 stalled when world 9's
 // demand outran the pearl yield): every quota stays well under what the pearls
 // alone realistically pay (~pearls x 3.5 against the 2..6 roll), because the
 // wizard hoard is NOT reliably cashable — casting needs prepaid mana, and an
@@ -34,6 +36,18 @@ export const LEVELS = [
     { name: 'LIVING MOOR', quota: 235, hoard: 185, wizHp: 155, pearls: 84 },
     { name: 'LAST EMBER', quota: 250, hoard: 200, wizHp: 170, pearls: 88 },
     { name: 'THE LAST SKY', quota: 265, hoard: 215, wizHp: 185, pearls: 92 },
+    // #1925 item 3 — the second campaign. Arc four (green/ember/frost as above):
+    { name: 'EMERALD REACH', quota: 280, hoard: 230, wizHp: 200, pearls: 96 },
+    { name: 'CINDER VALE', quota: 295, hoard: 245, wizHp: 215, pearls: 100 },
+    { name: 'RIMEFALL', quota: 310, hoard: 260, wizHp: 230, pearls: 104 },
+    // arc five — stricter still:
+    { name: 'THORNWOOD', quota: 325, hoard: 275, wizHp: 245, pearls: 108 },
+    { name: 'ASHEN HOUR', quota: 340, hoard: 290, wizHp: 260, pearls: 112 },
+    { name: 'WHITE HOLLOW', quota: 355, hoard: 305, wizHp: 275, pearls: 116 },
+    // arc six — the deep country, the original's long middle:
+    { name: 'SABLE WILD', quota: 370, hoard: 320, wizHp: 290, pearls: 120 },
+    { name: 'LAST LIGHT', quota: 385, hoard: 335, wizHp: 305, pearls: 124 },
+    { name: 'THE ENDLESS SKY', quota: 400, hoard: 350, wizHp: 320, pearls: 128 },
 ]
 export const QUOTA = LEVELS[LEVELS.length - 1].quota
 
@@ -41,7 +55,7 @@ export const QUOTA = LEVELS[LEVELS.length - 1].quota
 // Pure selector plumbing so the whole pick path is Node-provable, like hudTap.
 // Thumb-sized chevron zones sit at the bottom corners of the 320x200 title
 // surface (48x48 HUD px = >=44 CSS px on a 390px phone); the cursor cycles
-// through the nine worlds and any other start key/tap launches from it.
+// through the eighteen worlds and any other start key/tap launches from it.
 export const SEL = { y: 112, h: 48, zw: 48 }
 export function selectTap(x, y) {
     if (y < SEL.y || y > SEL.y + SEL.h) return null

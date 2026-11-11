@@ -1316,7 +1316,7 @@ void main(){
     }
     let gs0 = null
 
-    // #1740: nine worlds over three atmospheres — cycle like the original's
+    // #1740/#1925: eighteen worlds over three atmospheres — cycle like the original's
     // repeating campaign instead of clamping the ninth world to Frostbound.
     const applyPalette = (level) => {
         const p = PAL[level % PAL.length]

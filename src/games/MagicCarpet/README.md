@@ -10,7 +10,7 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
 
 - `sim.js` — the pure deterministic machine: seeded heightmap (value-noise fbm +
   three cones over a 512u wrapping map) that spells DEFORM (craters, flooding),
-  nine worlds (`LEVELS`: quota, wizard hoard/HP, pearl count), carpet, monsters,
+  eighteen worlds (`LEVELS`: quota, wizard hoard/HP, pearl count), carpet, monsters,
   wizard, spells, vault economy, `autopilot()` (drives the attract demo AND the
   harness), `stateHash()`. No browser APIs in here — the harness imports it directly.
 - `art.js` — rect-composed pixel sprites (wizard, tower, castle stages, giant,
@@ -46,19 +46,19 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
 - Death spills the pouch (`spilled`), the vault endures: with vault > 0 you
   respawn at the gates (high, shielded, 240-tick spawn-invulnerable); with an
   empty vault the flight ends.
-- Nine worlds (`LEVELS`, quotas 115→265 in nine strict steps, #1740): banking the
-  quota regenerates the whole world (terrain, pearls, huts, village, monsters, fresh wizard
-  hoard); spells learned and the carried pouch transfer; clearing world 9 wins.
+- Eighteen worlds (`LEVELS`, quotas 115→400 in eighteen strict steps, #1740 grown
+  to eighteen by #1925 item 3): banking the quota regenerates the whole world (terrain, pearls, huts, village, monsters, fresh wizard
+  hoard); spells learned and the carried pouch transfer; clearing world 18 wins.
 - WORLD economy (#1740): every quota stays under what the pearls alone realistically
   pay (~pearls × 3.5 against the 2..6 roll). The wizard hoard is BONUS, never a
   dependency: at 0 mana on an exhausted land a hoard is not reliably cashable
   (casting needs prepaid mana), and that is exactly where a hoard-dependent quota
   soft-locks — seeds 41/54 proved it during the first 9-world sweep.
 - WORLD SELECT (#1740): on the title, ◀ ▶ (arrows or the pad) cycle a cursor through
-  the nine worlds and any other key/tap launches AT it; thumb-sized chevron zones at
+  the eighteen worlds and any other key/tap launches AT it; thumb-sized chevron zones at
   the bottom corners of the HUD surface route through pure `selectTap`/`cursorStep`
   in `sim.js` (Node-provable, ≥44 CSS px at 390px phone). The renderer CYCLES its
-  three atmospheres over the nine worlds (`PAL[level % PAL.length]`) — the original
+  three atmospheres over the eighteen worlds (`PAL[level % PAL.length]`) — the original
   reused its seasons across 45 levels the same way.
 - Terrain reshape: every blast punches a crater into the heightmap (`crater()`,
   quadratic falloff; fireball r14d10, lightning r10d8, tower fall r18d11).
@@ -335,8 +335,9 @@ see item 5).
   Invisibility shipped #1610, volcano #1612 item 5, shatter + raise #1639,
   dissolve #1668, **clone #1680** — the roster tail of #1612 item 5
   (clone/dissolve/shatter/volcano) is now fully shipped.
-- **PARTIAL by #1740:** the title carries a WORLD SELECT (◀ ▶ / chevron taps, nine
-  startable worlds) — but the campaign is nine worlds, not the original's 45;
+- **PARTIAL by #1740, grown by #1925 item 3:** the title carries a WORLD SELECT
+  (◀ ▶ / chevron taps, eighteen startable worlds) — the campaign runs eighteen
+  worlds (six arcs of three atmospheres), not the original's 45;
   scoring is banked mana + kills + clears + time bonus.
 - **Castle-spell menu closed by #1764 item 1:** the original's spell selection was
   a browseable book, and the book lives at home. `B` (or a tap on the glowing
