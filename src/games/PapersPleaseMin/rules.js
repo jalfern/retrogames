@@ -22,6 +22,14 @@ const MDAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 const MPREFIX = MDAYS.reduce((a, k) => [...a, (a.at(-1) || 0) + k], [0]).slice(0, 12)
 export const dnum = (dt) => dt.y * 365 + MPREFIX[dt.m - 1] + dt.d
 export const dfmt = (dt) => `${dt.y}.${String(dt.m).padStart(2, '0')}.${String(dt.d).padStart(2, '0')}`
+// #1891 MONTH-NAME DATES — the original prints `OCT 27`, not `1982.10.27`:
+// a name plus a number makes the cross-month read instant (10.31 vs 11.01 is
+// decode-at-a-glance work on a phone; OCT 31 vs NOV 01 is not). Documents and
+// the wall header print dshow; RULES text and evidence strings keep numerals
+// (they are the contract's tokens, pinned verbatim by paperscheck).
+export const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+export const MONFULL = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER']
+export const dshow = (dt) => `${MON[dt.m - 1]} ${String(dt.d).padStart(2, '0')} ${dt.y}`
 export const dadd = (dt, n) => {
     let { y, m, d } = dt
     d += n
@@ -36,6 +44,37 @@ export const dadd = (dt, n) => {
 // adult = the printed DOB put them on earth 18 printed years before today.
 // Both numbers are on the wall or in the hand — nothing hidden.
 export const isAdult = (dob, today) => today.y - dob.y >= 18
+
+// #1891 THE STAMP SPEAKS — the two lines the booth prints with every stamp.
+// The contract calls the evidence string "the promise the booth keeps to the
+// player", but until now the strip printed only the RULE NAME (`WITNESS:
+// EXPIRED`) while the full comparison stayed in the sim. The original shows
+// the actual clause you failed on — `EXPIRED 1982.10.31 < TODAY 1982.11.01`
+// — so the strip quotes it, wrapped to the layout's width law. Pure over
+// gs.last, shared by the paint and the DEV probe; paperscheck pins that the
+// quote is the evidence VERBATIM (rule names may abbreviate, evidence may not).
+export const wrapQuote = (s, width) => {
+    const lines = []
+    let line = ''
+    for (const w of String(s).split(' ')) {
+        if (line && (line + ' ' + w).length > width) { lines.push(line); line = w }
+        else line = line ? `${line} ${w}` : w
+    }
+    if (line) lines.push(line)
+    if (lines.length > 2) lines.splice(1, lines.length - 1, `${lines[1].slice(0, width - 3)}...`)
+    return lines
+}
+
+export const stampLines = (last, wrap = 54) => {
+    if (!last) return { witness: null, evidence: [] }
+    // the booth's verdict was APPROVE: a correct admit stays silent, a wrong
+    // one says the whole truth — an innocent person has no evidence to quote.
+    if (last.verdict === 'approve') {
+        return last.ok ? { witness: null, evidence: [] } : { witness: 'THEY WERE CLEAN', evidence: [] }
+    }
+    // DENY (your call or the booth's, right or wrong): the case rides with it.
+    return { witness: `WITNESS: ${last.why}`, evidence: wrapQuote(last.evidence, wrap) }
+}
 
 // ---- the rulebook. `text` is what the wall prints when the rule wakes up.
 export const RULES = {

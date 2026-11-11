@@ -289,7 +289,46 @@ keeps 1–2-line fields byte-identical and opens a third row at 47px (bottom
 349, clear of the 394 strip bound); `bubbleGrowPix` proves the growth on
 live pixels and stays dark when nobody speaks.
 
-## Mutants (37, all die under `npm run paperscheck -- --mutate`)
+## THE BOOTH EXPLAINS ITSELF (#1891) — quoted witnesses, month names, a loud calendar, papers with weight
+
+The two-path contract calls the evidence string "the promise the booth keeps
+to the player" — but the booth only kept it in the sim. `paperscheck` already
+pinned the strings; the player never read them. This pass puts the promise on
+the canvas, in the original's own four places:
+
+- **The stamp quotes its case.** `stampLines(gs.last)` (rules.js — pure,
+  shared by the paint and the DEV probe) headlines the rule and QUOTES the
+  evidence verbatim in the controls strip: a wrong admit prints
+  `WITNESS: EXPIRED` in red plus `EXPIRED 1982.10.31 < TODAY 1982.11.01`
+  underneath; a correct deny prints the same case in gold (what you caught,
+  and WHY); a clean admit stays silent; an innocent deny says `THEY WERE
+  CLEAN` and quotes nothing. The strip's evidence corridor (layout `EVID`,
+  cx 414, wrap 54) is proven clear of the control texts, the strike boxes,
+  the score line, the slip and the bubble — paperscheck pins the geometry and
+  that every deny of every seed quotes its evidence verbatim (rule names may
+  headline, never replace); the day-6 cross-month paper must reach the strip
+  as the FULL comparison.
+- **Dates print month names.** `MON`/`MONFULL`/`dshow` (rules.js): the wall
+  header, the passport DOB/EXPIRES and the ID DOB print `OCT 27 1982` — the
+  original's shape, instant across the month seam. RULES text and evidence
+  strings keep numerals: they are the contract's tokens, pinned verbatim.
+- **The roll is announced.** `monthTurn(week, day)` (sim.js): the morning
+  after a calendar seam gets its own gold banner line — day 6 opens with
+  `* NEW MONTH: NOVEMBER *` (plus its own chime). The pin: exactly one turn
+  per seed, on day 6, naming NOVEMBER; every other morning quiet.
+- **Papers land with weight.** `SETTLE` (layout.js): when the stamp hold
+  ticks out, the next applicant's papers drop (dy −10 → −5 → −2 → 0 over 12
+  ticks) instead of teleporting. Decor for the shell only — the sim never
+  sees it, every replay pin stands; a fresh stamp zeroes it, so the red
+  misjudgement frame and the document always sit on the same row.
+- Harness: paperscheck +64 checks (quote-is-verbatim across ≈750 papers, the
+  corridor geometry, the settle law, month names vs serials on every seed);
+  papersplay +6 live gates (wall prints OCT 27 1982; correct deny quotes gold,
+  wrong admit quotes red AND the corridor counts the ink; the innocent's
+  strip stays dark; the drop runs and rests; day 6's banner carries
+  NOVEMBER).
+
+## Mutants (39, all die under `npm run paperscheck -- --mutate`)
 
 
 
@@ -348,7 +387,12 @@ questions nobody asked; only the greeting pin `say[1]===hook` sees the swap,
 because continuity alone still looks intact). m29 and m34 were re-anchored
 onto the new thread literals when #2003 widened the branches — anchor drift
 is the mutant's first test, and the sweep's `anchor not found` FAIL is the
-suite protecting itself.
+suite protecting itself. The booth-explains-itself year added three: m37
+silences the calendar roll (the seam crosses but no morning says NOVEMBER —
+the day-6 monthTurn pin bites); m38 keeps the `WITNESS: EXPIRED` headline
+but drops the quote (the booth is back to naming rules instead of showing
+the comparison — the verbatim-quote pin bites); m39 sends the wall back to
+bare numerals (dshow becomes dfmt — the `NAME DD YYYY` shape pin bites).
 
 ## Gates
 
@@ -382,7 +426,13 @@ number and the real deny scores, and Tadek's day-7 return says its own
 (Sonya's two-line intro prints 4854px), the day-7 return pays off the topic
 its greeting planted ("LITTLE, BUT IT BUYS.") and the bubble field is GROWN
 for it — the 9px growth strip below the old 34px field prints 1314 paper px
-on a thread while a quiet booth shows neither field nor growth (<100 both)).
+on a thread while a quiet booth shows neither field nor growth (<100 both));
+since #1891 also: the wall prints the month NAME (`OCT 27 1982`); a correct
+deny quotes its case in gold and a wrong admit quotes what you missed in red
+with the strip's corridor counting the ink (an innocent deny says `THEY WERE
+CLEAN` and the corridor stays dark); new papers drop onto the counter (the
+settle reaches its −10px step and rests at 0); and day 6's banner announces
+`NOVEMBER` on the morning the calendar turns).
 NOTE:
 headless Chrome on a shared box logs a device-level "AudioContext
 encountered an error" line — an OS audio-renderer complaint, not page
@@ -487,3 +537,19 @@ code, and filtered as such).
   needs repeats), but the original's line is denser: several familiar faces
   can crowd one shift. Two regulars in one day would need a queue-size law
   amendment and a second bubble sample per window.
+- **CLOSED by #1891 (2026-11-11):** the evidence string was the contract's
+  promise but lived only in the sim (`gs.last.evidence`), the wall printed bare
+  numerals, the OCT→NOV roll was silent, and papers teleported onto the
+  counter. The strip now quotes the evidence verbatim under the stamp
+  (`stampLines`, corridor proven), dates print month names on every display
+  surface (`dshow`), day 6 announces `NEW MONTH: NOVEMBER` (`monthTurn`), and
+  documents drop and settle (`SETTLE`). See "The booth explains itself."
+  (Note: #1891's item 5 listed three gaps that were stale — wanted-sheet
+  capacity, portrait read, day-7 queue length — all three closed earlier by
+  #1902, #1938 and #1960; verified against the code before touching them.)
+- What #1891 deliberately left open: the quote lives only while the stamp
+  holds (the original keeps a violation inspector on screen — here it fades
+  with the ink); evidence strings and RULES text keep numerals, so the
+  month-name read is display-only; and the settle is a scripted drop, not
+  drag physics — papers still cannot be moved by hand (no rule needs them
+  moved, and VirtualControls owns the pad).

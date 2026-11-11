@@ -73,6 +73,10 @@ await page.keyboard.press('Digit1')
 await wait(400)
 s = await probe()
 r.check('pressing 1 opens day 1 (seed 0)', s.screen === 'play' && s.day === 1 && s.idx === 0)
+// #1891 MONTH-NAME DATES — the wall header prints OCT 27 1982, the original's
+// shape: a name plus a number, decodable at a glance.
+const wallDate = await page.evaluate(() => window.__ppTest.wallDate())
+r.check(`the wall prints the month NAME (${wallDate}, not 1982.10.27)`, wallDate === 'OCT 27 1982', wallDate)
 const v0 = await page.evaluate(() => window.__ppTest.verdict())
 r.check(`day 1 has a decidable verdict (${v0})`, v0 === 'approve' || v0 === 'deny')
 await page.keyboard.press(v0 === 'approve' ? 'a' : 'd')
@@ -85,6 +89,19 @@ else r.check(`DENIED paints RED on the papers ${JSON.stringify(px)}`, px.red > 4
 r.check('the stamped document is the one just judged (the name in last is on screen)',
     (await probe()).last.name === (s.view.person.passport ? s.view.person.passport.name : 'NO PAPERS'),
     `${(await probe()).last && (await probe()).last.name}`)
+// #1891 THE STAMP SPEAKS — a deny stamps with its case attached: the witness
+// line headlines the rule and the strip quotes the evidence VERBATIM.
+{
+    const ep = await page.evaluate(() => window.__ppTest.evidencePaint())
+    if (v0 === 'deny') {
+        const joined = (await probe()).last.evidence
+        r.check(`a correct deny quotes its case (${ep.witness} — "${ep.evidence[0] || ''}")`,
+            ep.witness === `WITNESS: ${(await probe()).last.why}` && ep.evidence.length >= 1 && ep.evidence.join('; ').startsWith(joined),
+            JSON.stringify(ep))
+    } else {
+        r.check('a clean admit stays silent at the stamp', ep.witness === null && ep.evidence.length === 0, JSON.stringify(ep))
+    }
+}
 
 // 3 — the WRONG call: real key, red stamp, a strike on the wall, a witness named
 const v1 = await page.evaluate(() => window.__ppTest.verdict())
@@ -107,6 +124,29 @@ px = await page.evaluate(() => {
     return { green, red }
 })
 r.check(`a mistake frames the papers in red ${JSON.stringify(px)}`, px.red > 300)
+// #1891 the missed clause is not just named, it is QUOTED — in the strip's
+// evidence corridor, in red ink, next to the MISTAKE note.
+{
+    const ep = await page.evaluate(() => window.__ppTest.evidencePaint())
+    const evidencePix = await page.evaluate(() => {
+        const c = document.querySelector('canvas[data-pp-stage]')
+        const d = c.getContext('2d').getImageData(268, 404, 292, 28).data   // EVID corridor
+        let red = 0
+        for (let i = 0; i < d.length; i += 4) {
+            const [rr, gg, bb] = [d[i], d[i + 1], d[i + 2]]
+            if (rr > 140 && rr > gg + 50 && rr > bb + 40) red++
+        }
+        return red
+    })
+    if (after.last.verdict === 'deny') {
+        r.check(`the WRONG call quotes what you missed (${ep.witness} — "${ep.evidence[0] || ''}", ${evidencePix} red px in the strip)`,
+            ep.witness === `WITNESS: ${after.last.why}` && ep.evidence.length >= 1 && after.last.evidence.startsWith(ep.evidence[0]) && evidencePix > 30,
+            JSON.stringify({ ep, evidencePix }))
+    } else {
+        r.check(`an innocent deny says the truth and quotes nothing (${ep.witness}, strip dark at ${evidencePix} red px)`,
+            ep.witness === 'THEY WERE CLEAN' && ep.evidence.length === 0 && evidencePix < 10, JSON.stringify({ ep, evidencePix }))
+    }
+}
 
 // 4 — the rest of day 1 honestly: the rulebook grows the next morning
 const nextDay = await page.evaluate(() => window.__ppTest.runDay())
@@ -116,6 +156,25 @@ r.check(`day 1 cleared by the honest path — the line moved to day ${nextDay}`,
 r.check('the rulebook grew: day 2 prints 4 rules', s.rules.length === 4, s.rules.join(','))
 r.check('the day banner spoke on the canvas', s.banner && /DAY 2/.test(s.banner.text), s.banner && s.banner.text)
 r.check('the strikes reset with the morning', s.strikes === 0)
+// #1891 PAPER WEIGHT on live pixels: stamp once from the harness, and watch
+// the settle counter through the stamp hold — when the judged document is
+// picked up the next papers must DROP (dy reaches the law's top step) and
+// land back at rest. Self-contained in one evaluate: the interval starts the
+// moment act() returns, so the window cannot slip between round trips.
+{
+    const drop = await page.evaluate(() => {
+        window.__ppTest.stamp('approve')
+        return new Promise((res) => {
+            let m = 0, n = 0
+            const iv = setInterval(() => {
+                m = Math.min(m, window.__ppTest.settlePx())
+                if (++n > 60) { clearInterval(iv); res({ min: m, rest: window.__ppTest.settlePx(), top: window.__ppTest.settleTop }) }
+            }, 16)
+        })
+    })
+    r.check(`new papers drop onto the counter (settle reached ${drop.min}px, rests at ${drop.rest})`,
+        drop.min <= -8 && drop.rest === 0 && drop.top <= -8, JSON.stringify(drop))
+}
 
 // 5 — three mistakes and the day is over: DEMOTED, then one key home
 const v2 = await page.evaluate(() => window.__ppTest.verdict())
@@ -160,7 +219,9 @@ for (let i = 0; i < 2; i++) {
     await page.keyboard.press(v === 'approve' ? 'a' : 'd')
     await wait(140)
 }
-await wait(700)
+// #1891: wait past the stamp hold (30 ticks) AND the settle (12 ticks) —
+// 700ms landed exactly on the landing; sample only when the papers rest.
+await wait(950)
 s = await probe()
 r.check('the stamp has ticked out before pixel sampling', !s.stamp || s.stamp.ticks <= 0, JSON.stringify(s.stamp))
 const paint = await page.evaluate(() => {
@@ -387,6 +448,11 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
     const quietGrow = await page.evaluate(() => window.__ppTest.bubbleGrowPix())
     r.check(`strangers say nothing — bubble field dark (${quiet} paper px, growth strip ${quietGrow})`, quiet < 100 && quietGrow < 100, `${quiet}/${quietGrow}`)
     for (let d = 2; d < 6; d++) { await page.evaluate(() => window.__ppTest.runDay()); await wait(150) }
+    // #1891 THE NEW MONTH — the morning that crosses the seam announces it:
+    // the week rolls OCT 27 → NOV 02, and day 6's banner must say NOVEMBER.
+    s = await probe()
+    r.check(`the calendar turn is announced on the morning it happens (${s.banner && s.banner.text} | ${s.banner && s.banner.month})`,
+        s.day === 6 && !!s.banner && s.banner.month === 'NOVEMBER', JSON.stringify(s.banner))
     let sayProbe = null, bubbleUp = -1, arcVerdict = null
     for (let g = 0; g < 14 && !sayProbe; g++) {
         sayProbe = await page.evaluate(() => {
