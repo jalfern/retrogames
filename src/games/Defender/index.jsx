@@ -46,6 +46,8 @@ const DefenderGame = () => {
         let rand = seedRng(1)
         let sim = null
         let thrustFacing = 0
+        let popups = [] // #1907: floating score beats that NAME the rescue chain
+        let holdTell = false
         let hiScore = 0
         try { hiScore = Number(localStorage.getItem(HI_KEY)) || 0 } catch { hiScore = 0 }
 
@@ -63,6 +65,7 @@ const DefenderGame = () => {
             setAttractUi(false)
             watchingRef.current = false // #1637 a new run starts with the stick in your hand
             setWatching(false)
+            popups = [] // #1907: a new sky, no leftovers
             Object.keys(keys).forEach((k) => { keys[k] = false })
         }
 
@@ -70,8 +73,14 @@ const DefenderGame = () => {
             for (const ev of sim.events) {
                 if (ev.t === 'killLander') audioController.playTone(150, 0.1, 'sawtooth', 0.2)
                 else if (ev.t === 'killMutant') { audioController.playTone(90, 0.14, 'sawtooth', 0.22); audioController.playNoise(0.08, 0.12) }
-                else if (ev.t === 'catch') audioController.playSweep(300, 700, 0.12, 'triangle', 0.12)
-                else if (ev.t === 'deliver') { audioController.playTone(600, 0.08, 'square', 0.12); audioController.playTone(900, 0.12, 'square', 0.12, 0.08) }
+                else if (ev.t === 'catch') {
+                    audioController.playSweep(300, 700, 0.12, 'triangle', 0.12)
+                    popups.push({ x: sim.player.x, y: sim.player.y + 22, text: '+250', life: 70 }) // #1907
+                }
+                else if (ev.t === 'deliver') {
+                    audioController.playTone(600, 0.08, 'square', 0.12); audioController.playTone(900, 0.12, 'square', 0.12, 0.08)
+                    popups.push({ x: sim.player.x, y: sim.player.y + 24, text: '+500 RESCUED', life: 90 }) // #1907: names b19's delivery beat
+                }
                 else if (ev.t === 'wave') audioController.playSweep(200, 500 + Math.min(500, sim.wave * 80), 0.25, 'square', 0.12) // pitch ramps per wave (#1531)
                 else if (ev.t === 'die') { audioController.playNoise(0.25, 0.25); audioController.playTone(70, 0.3, 'sawtooth', 0.2) }
                 else if (ev.t === 'over') {
@@ -154,12 +163,20 @@ const DefenderGame = () => {
                         : { left: keys.ArrowLeft, right: keys.ArrowRight, up: keys.ArrowUp, down: keys.ArrowDown, fire: keys.Space }
             if (isAttractMode) sim.player.invuln = 999999 // the demo does not die
             thrustFacing = input.left ? -1 : input.right ? 1 : 0
+            // #1907: when the patrol holds fire to spare a human, tell the player.
+            holdTell = !sim.over && !!input.holdTell // only watchRoute sets the flag — human input never does
             sim.step(input)
             soundEvents()
+            popups.forEach((pp) => { pp.y -= 0.35; pp.life -= 1 })
+            popups = popups.filter((pp) => pp.life > 0)
             // #1531 feel: thrust was silent — hum while the fighter accelerates,
             // and pulse the abduction telegraph while any lander is diving.
             if (!sim.over && sim.player.dark <= 0 && thrustFacing !== 0 && tickN % 5 === 0) {
-                audioController.playTone(50 + Math.abs(sim.player.vx) * 8, 0.1, 'sawtooth', 0.045)
+                const hum = 50 + Math.abs(sim.player.vx) * 8
+                audioController.playTone(hum, 0.1, 'sawtooth', 0.045)
+                // #1907: the arcade layered a rising harmonic over the hum —
+                // speed is now audible, not just visible.
+                audioController.playSweep(hum * 2, hum * 2 + 60, 0.08, 'square', 0.018)
             }
             if (!sim.over && tickN % 14 === 0 && sim.enemies.some((e) => e.state === 'descend')) {
                 audioController.playSweep(140, 70, 0.2, 'triangle', 0.06)
@@ -171,17 +188,31 @@ const DefenderGame = () => {
         }
 
         const drawHuman = (h, anim) => {
+            // #1907: a pod released from a dead hauler TUMBLES under a flapping
+            // chute, so a drop reads as rescueable from across the planet.
+            const tumble = h.state === 'falling'
+            ctx.save()
+            ctx.translate(h.x, h.y)
+            if (tumble) ctx.rotate(Math.sin(tickN / 7 + h.x) * 0.35)
             ctx.strokeStyle = '#ffd23f'
             ctx.lineWidth = 1
             ctx.beginPath()
-            ctx.arc(h.x, h.y - 5, 2, 0, Math.PI * 2)
-            ctx.moveTo(h.x, h.y - 3); ctx.lineTo(h.x, h.y + 2)
-            ctx.moveTo(h.x - 3, h.y - 1); ctx.lineTo(h.x + 3, h.y - 1)
-            // 2-frame walk (original humanoid shuffles; frozen when carried).
+            ctx.arc(0, -5, 2, 0, Math.PI * 2)
+            ctx.moveTo(0, -3); ctx.lineTo(0, 2)
+            ctx.moveTo(-3, -1); ctx.lineTo(3, -1)
+            // 2-frame walk (original humanoid shuffles; legs kick when carried).
             const step = anim ? ((tickN >> 3) % 2 === 0 ? 1 : -1) : 0
-            ctx.moveTo(h.x, h.y + 2); ctx.lineTo(h.x - 2 + step, h.y + 5)
-            ctx.moveTo(h.x, h.y + 2); ctx.lineTo(h.x + 2 + step, h.y + 5)
+            ctx.moveTo(0, 2); ctx.lineTo(-2 + step, 5)
+            ctx.moveTo(0, 2); ctx.lineTo(2 + step, 5)
+            if (tumble) {
+                const flap = (tickN >> 2) % 2 === 0 ? 1 : 0.65
+                ctx.moveTo(-6 * flap, -16)
+                ctx.arc(0, -16, 6 * flap, Math.PI, 0)
+                ctx.moveTo(6 * flap, -16); ctx.lineTo(1, -7)
+                ctx.moveTo(-6 * flap, -16); ctx.lineTo(-1, -7)
+            }
             ctx.stroke()
+            ctx.restore()
         }
 
         const drawLander = (e) => {
@@ -203,6 +234,16 @@ const DefenderGame = () => {
                     ctx.stroke()
                     ctx.strokeStyle = '#cccccc'
                 }
+            }
+            // #1907: the tractor stays ON through the haul — the catch rides
+            // roped to the shell instead of floating detached from it.
+            if (e.type === 'lander' && e.carry !== null && e.state === 'ascend') {
+                ctx.strokeStyle = (tickN >> 2) % 2 === 0 ? 'rgba(120,220,255,0.5)' : 'rgba(120,220,255,0.25)'
+                ctx.beginPath()
+                ctx.moveTo(-3, 10); ctx.lineTo(-1, 20)
+                ctx.moveTo(3, 10); ctx.lineTo(1, 20)
+                ctx.stroke()
+                ctx.strokeStyle = '#cccccc'
             }
             ctx.beginPath()
             if (e.type === 'mutant') {
@@ -292,9 +333,9 @@ const DefenderGame = () => {
                 })
             })
 
-            // Particles
-            ctx.fillStyle = 'white'
-            sim.particles.forEach((pt) => ctx.fillRect(pt.x, pt.y, 2, 2))
+            // Particles — #1907: kills read by COLOR (green lander, red mutant,
+            // orange wreck, gold human), like the cabinet's bursts.
+            sim.particles.forEach((pt) => { ctx.fillStyle = pt.col || 'white'; ctx.fillRect(pt.x, pt.y, 2, 2) })
 
             // Player — the Jupiter fighter (dark during respawn blink).
             if (p.dark <= 0 && !(p.invuln > 0 && Math.floor(tickN / 6) % 2 === 0)) {
@@ -318,8 +359,35 @@ const DefenderGame = () => {
                 ctx.restore()
                 if (sim.carrying !== null) {
                     const h = sim.humans[sim.carrying]
-                    ctx.save(); ctx.translate(0, 0); drawHuman({ x: h.x, y: h.y }, false); ctx.restore()
+                    // #1907: harness + kicking legs — the rescue is visibly ALIVE.
+                    ctx.strokeStyle = '#ffd23f'
+                    ctx.lineWidth = 1
+                    ctx.beginPath()
+                    ctx.moveTo(p.x, p.y + 6); ctx.lineTo(h.x, h.y - 5)
+                    ctx.stroke()
+                    drawHuman(h, true)
                 }
+            }
+
+            // #1907: rescue popups drift up where they happened.
+            ctx.textAlign = 'center'
+            ctx.font = 'bold 11px monospace'
+            popups.forEach((pp) => {
+                ctx.fillStyle = pp.life % 10 < 5 ? '#ffd23f' : '#ffffff'
+                ctx.fillText(pp.text, pp.x, pp.y)
+            })
+
+            // #1907: the patrol's held trigger — a yellow bracket off the nose
+            // says WHY the guns stayed quiet (a friend is in the laser line).
+            if (holdTell && (tickN >> 3) % 2 === 0) {
+                ctx.strokeStyle = '#ffd23f'
+                ctx.lineWidth = 2
+                ctx.beginPath()
+                const bx = p.x + p.facing * 24
+                ctx.moveTo(bx, p.y - 7); ctx.lineTo(bx + p.facing * 5, p.y - 7)
+                ctx.moveTo(bx, p.y + 7); ctx.lineTo(bx + p.facing * 5, p.y + 7)
+                ctx.moveTo(bx, p.y - 7); ctx.lineTo(bx, p.y + 7)
+                ctx.stroke()
             }
 
             ctx.restore()
@@ -344,7 +412,10 @@ const DefenderGame = () => {
             sim.humans.forEach((h, i) => { if (h.state !== 'dead' && (tickN + i * 7) % 24 > 3) { ctx.fillStyle = '#ffd23f'; ctx.fillRect(h.x * sc - 1, MINIMAP_HEIGHT - 8, 2, 2) } })
             sim.enemies.forEach((e, i) => { if ((tickN + i * 5) % 18 > 2) { ctx.fillStyle = e.type === 'mutant' ? '#ff5555' : '#aaaaaa'; ctx.fillRect(e.x * sc - 1, Math.max(3, Math.min(MINIMAP_HEIGHT - 3, e.y * 0.05 + 3)), 2, 2) } })
             ctx.fillStyle = '#ffffff'
-            ctx.fillRect(p.x * sc - 2, Math.max(3, Math.min(MINIMAP_HEIGHT - 3, p.y * 0.05 + 3)), 4, 3)
+            // #1907: player priority — when the camera window is split by the
+            // seam, the dot blinks big so you can find yourself on the far side.
+            const wrapBlink = cameraX + viewWidth > WORLD_WIDTH && (tickN >> 2) % 2 === 0
+            ctx.fillRect(p.x * sc - (wrapBlink ? 3 : 2), Math.max(3, Math.min(MINIMAP_HEIGHT - 3, p.y * 0.05 + 3)), wrapBlink ? 6 : 4, wrapBlink ? 4 : 3)
             // camera window (may split across the seam)
             ctx.strokeStyle = '#ffffff'
             ctx.strokeRect(cameraX * sc, 2, Math.min(viewWidth, WORLD_WIDTH - cameraX) * sc, MINIMAP_HEIGHT - 4)
@@ -371,6 +442,28 @@ const DefenderGame = () => {
                 const by = MINIMAP_HEIGHT + 44
                 ctx.moveTo(bx, by); ctx.lineTo(bx - 10, by + 4); ctx.lineTo(bx - 10, by - 4); ctx.closePath()
                 ctx.stroke()
+            }
+
+            // #1907: wave-clear celebration — an expanding shock ring over the
+            // planet plus a flashing banner, then the new-wave countdown tell.
+            if (!isAttractMode && sim.celebrate > 0) {
+                const c = sim.celebrate
+                ctx.save()
+                ctx.strokeStyle = c % 8 < 4 ? 'rgba(120,220,255,0.8)' : 'rgba(255,255,255,0.45)'
+                ctx.lineWidth = 2
+                ctx.beginPath()
+                ctx.arc(viewWidth / 2, viewHeight / 2, (100 - c) * 3.4, 0, Math.PI * 2)
+                ctx.stroke()
+                ctx.textAlign = 'center'
+                ctx.font = 'bold 26px monospace'
+                ctx.fillStyle = c % 10 < 6 ? '#3dff5e' : '#ffffff'
+                ctx.fillText('WAVE CLEARED', viewWidth / 2, viewHeight / 2 - 16)
+                if (c <= 40 && (tickN >> 3) % 2 === 0) {
+                    ctx.fillStyle = '#ffffff'
+                    ctx.font = 'bold 16px monospace'
+                    ctx.fillText(`GET READY — WAVE ${sim.wave}`, viewWidth / 2, viewHeight / 2 + 12)
+                }
+                ctx.restore()
             }
 
             if (isAttractMode) {
