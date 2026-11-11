@@ -183,7 +183,40 @@ pixels (up ≈ 5.4k paper px on the turn, 0 on strangers), stamps the seed-0
 Grubak deny with a real key, and snaps the trap the other way at seed 1: a
 sympathetic APPROVE of MARKO costs the strike.
 
-## Mutants (30, all die under `npm run paperscheck -- --mutate`)
+## The one-off crowd (#1989)
+
+The original's line is dozens of distinct people — miners in flat caps, a fur
+ushanka, a headscarf, a thick unibrow, a glinting earring, a missing tooth.
+Here the rolled crowd gains those looks as DECOR: `accFor(pic)` in `gen.js`
+derives `{hat, uni, ear, gap}` as a **pure hash of the passport serial** —
+zero `rnd()` draws, so every existing seed keeps its names, numbers, weights
+and faces byte-identical, and the identity law is by construction: the decor
+is attached to `face` BEFORE the photo spread, so face and photo carry the
+same hat in every process, always. Doctrine of the nose: decor is never in
+`FEATURES`, never evidence — paperscheck's CROWD section perturbs the live
+face's decor on every paper of every seed and requires the verdict to not
+flinch (`decide` AND `judge`), pins the purity of `accFor`, face==photo
+decor on every entrant, and variety floors graded on the ROLLED heads only
+(the authored cast would mask a flattened hat hash — m31's first draft
+learned that): all three hat kinds, 25 distinct looks across 768 rolled
+entrants, ≥24 per family (measured ~100). The cast wears AUTHORED decor —
+identity, not hash: Grubak cap+unibrow, Marko earring, Anja scarf+gap-tooth,
+Petr ushanka (his big ears grow below the flaps); paperscheck pins the
+authored decor every appearance. `drawFace` paints all four families at the
+counter AND in the zoomed photo (same function, both scales); inks are chosen
+off every existing pixel counter — unibrow `#262b36` sits one step off the
+compared-brow ink `#20242e` so the brow gate keeps counting brows, teeth
+`#e6ebf2` distinct from eye whites `#d8dce8`, and the scarf's wool-brown
+fails the stamp's `rr>140` red hue test. Hats cover the crown but leave the
+hairline visible under the brim and past the edge — a grey-haired aged photo
+or a flipped cut still READS through the hat (papersplay's live forger bands
+stay lit). papersplay walks seed 0's days 1-2 with real keys and proves the
+crowd is pixels: hat ink maxes 1732px at the counter, unibrow 56, earring 9,
+tooth 30; hatted honest photos carry their hat; bare heads paint none; and
+every background face's browser decor equals Node's `accFor(serial)` byte for
+byte.
+
+## Mutants (32, all die under `npm run paperscheck -- --mutate`)
 
 `<`→`<=` expiry; wanted by name only; IDREQ ignoring the DOB; the scale
 reading the paperwork (witness lies); species coverage becoming luck;
@@ -222,7 +255,12 @@ Jorji — the booth lets him walk); m28 pairs the name with the wrong number
 (the witness is printed but lies, and the name-AND-number law never bites);
 m29 silences the callback (faces return but the booth has no memory); m30
 forgets the arc took a bulletin slot (the wall outgrows five — unfair by
-furniture). m11 was re-anchored to the adaptive decoy loop, same tooth.
+furniture). m11 was re-anchored to the adaptive decoy loop, same tooth. The
+crowd year added two: m31 flattens `accFor` (no headwear ever — fairness
+never notices, only the variety witness sees a signature feature vanish);
+m32 teaches the booth to read decor (a live hat differing from the photo's
+convicts — gen-born papers stay fair because decor is shared at birth, so
+the face-only perturbation in the neutrality witness is what kills it).
 
 ## Gates
 
@@ -242,7 +280,14 @@ brow thicknesses and BOTH mouth shapes in ink px, with bare-eye whites
 counted; since #1983 also: the bubble field is dark on strangers and ~5.4k
 paper px when the arc face speaks, the seed-0 Grubak turn denies with the
 printed number and scores with a real key, and a sympathetic APPROVE of
-seed 1's MARKO is the one-strike trap).
+seed 1's MARKO is the one-strike trap; since #1989 also: the crowd is
+pixels — hats/unibrows/earrings/missing teeth paint their own inks at the
+counter and in honest photos, three hat kinds walk seed 0's first two days,
+bare heads paint none, every background face's decor matches Node's
+`accFor(serial)`, and Grubak arrives in his authored cap+unibrow. NOTE:
+headless Chrome on a shared box logs a device-level "AudioContext
+encountered an error" line — an OS audio-renderer complaint, not page
+code, and filtered as such).
 
 ## Honest gaps
 
@@ -313,6 +358,16 @@ seed 1's MARKO is the one-strike trap).
   correct, approval the trap — and returning faces speak at the counter
   ("YOU AGAIN." / "...I NO DO ANYTHING." on the turn). ARC section + m27-m30
   in paperscheck; papersplay stamps both sides live (52 gates).
-- The cast is four and the marks four — the original's crowd is dozens of
-  one-offs with far more variety (hats, unibrows, earring, missing teeth);
-  here background entrants stay combinatorial.
+- **CLOSED by #1989 (2026-11-11):** the cast is four and the marks four — the
+  original's crowd is dozens of one-offs with far more variety (hats,
+  unibrows, earring, missing teeth); here background entrants stay
+  combinatorial. The line now wears the original's one-off looks: hats
+  (flat cap / ushanka / headscarf), unibrow, gold earring, missing tooth —
+  decor derived as a pure hash of the passport serial (identity by
+  construction, zero seed re-sequencing), painted at counter AND photo,
+  authored for the four regulars, and proven decor-not-evidence by the
+  CROWD section + m31/m32 (see "The one-off crowd").
+- The one-offs are decor over combinatorics: 25 distinct looks across the
+  sweep, but the original's neighborhood is dozens of FULLY authored sprites
+  with their own builds, uniforms and gait. A fifth-and-sixth regular with
+  personal speech is still QA-pass territory, not this pass.

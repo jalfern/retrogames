@@ -6,6 +6,7 @@
 //
 //   npm run papersplay     (needs `npm run dev`)
 import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
+import { accFor } from '../src/games/PapersPleaseMin/gen.js'
 
 const URL = process.env.PP_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/papers-please`
 await requireDevServer(URL)
@@ -434,8 +435,74 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
     await wait(250)
 }
 
+// #1989 THE CROWD, live: walk seed 0's first two days with real keys and
+// prove the one-off looks are PIXELS through the same drawFace — hats,
+// unibrows, earrings and missing teeth paint at the counter and (on honest
+// papers) in the photo; bare heads paint nothing; and every browser face
+// carries exactly the decor Node's accFor(serial) computed: cross-process,
+// byte for byte. Volen Grubak arrives day 2 in his authored cap+unibrow.
+{
+    await page.evaluate(() => window.__ppTest.start(0))
+    await wait(300)
+    const rows = []
+    for (let d = 1; d <= 2; d++) {
+        for (let g = 0; g < 12; g++) {
+            const row = await page.evaluate(() => {
+                const t = window.__ppTest
+                const p = t.probe()
+                if (!p || p.end) return null
+                const cp = t.crowdPix()
+                const per = p && p.view && p.view.person
+                if (!cp || !per) return null
+                return { day: p.day, name: per.passport ? per.passport.name : 'NO PAPERS', pic: per.pic, reg: !!per.regular, cp }
+            })
+            if (row && row.day === d) rows.push(row)
+            const v = await page.evaluate(() => window.__ppTest.verdict())
+            await page.keyboard.press(v === 'approve' ? 'a' : 'd')
+            await wait(130)
+            const s0 = await probe()
+            if (s0.day !== d) break
+        }
+        const sMid = await probe()
+        if (sMid.day === d && !sMid.end) { await page.evaluate(() => window.__ppTest.runDay()); await wait(200) }
+    }
+    r.check(`the live walk saw ${rows.length} faces over two days`, rows.length >= 10, `${rows.length}`)
+    const maxOf = (k) => Math.max(...rows.map((x) => x.cp[k] || 0))
+    for (const fam of ['hat', 'uni', 'ear', 'gap']) {
+        r.check(`${fam}s paint their own pixels at the counter (max ${maxOf(fam)} px)`, maxOf(fam) > 0)
+    }
+    const hatRows = rows.filter((x) => x.cp.acc.hat > 0)
+    r.check(`three hat kinds walk the line live (${[...new Set(hatRows.map((x) => x.cp.acc.hat))].sort().join(',')})`,
+        new Set(hatRows.map((x) => x.cp.acc.hat)).size === 3, JSON.stringify(hatRows.map((x) => x.cp.acc.hat)))
+    const photoRows = rows.filter((x) => x.cp.photoAcc)
+    r.check(`the photo carries the hat too (${photoRows.filter((x) => x.cp.hatPhoto > 0).length} hatted photos)`,
+        photoRows.every((x) => ['hat', 'uni', 'ear', 'gap'].every((k) => x.cp.photoAcc[k] === x.cp.acc[k])) &&
+        photoRows.some((x) => x.cp.acc.hat > 0 && x.cp.hatPhoto > 0),
+        JSON.stringify(photoRows.slice(0, 3).map((x) => [x.name, x.cp.acc, x.cp.hatPhoto])))
+    const bare = rows.filter((x) => x.cp.acc.hat === 0)
+    r.check(`bare heads paint no hat ink (${bare.length} bare rows)`, bare.length >= 3 && bare.every((x) => x.cp.hat === 0))
+    let mismatch = 0, checked = 0
+    for (const x of rows) {
+        if (x.reg) continue // authored decor is identity, not hash — the
+        // cast wears what the script gave them (paperscheck pins the authored
+        // decor every appearance); the serial law governs the rolled crowd.
+        checked++
+        if (JSON.stringify(x.cp.acc) !== JSON.stringify(accFor(x.pic))) mismatch++
+    }
+    r.check(`rolled decor === Node accFor(serial), every background face (${checked} rows)`, mismatch === 0, `${mismatch} mismatches`)
+    const grub = rows.find((x) => x.name === 'VOLEN GRUBAK')
+    r.check(`Grubak walks the line in his authored cap and unibrow ${grub ? JSON.stringify({ hat: grub.cp.hat, uni: grub.cp.uni }) : ''}`,
+        !!grub && grub.cp.hat > 0 && grub.cp.uni > 0)
+    await page.evaluate(() => window.__ppTest.runDay())
+    await wait(200)
+}
+
 await wait(400)
-const clean = errors.filter((e) => !/favicon|Download the React DevTools/i.test(e))
+const clean = errors.filter((e) => !/favicon|Download the React DevTools/i.test(e) &&
+    // headless Chrome on a shared box logs this when the OS audio renderer
+    // fails for the page's AudioContext — a device-level complaint, not a
+    // page error (all synthesized-audio gates above passed on real tones).
+    !/AudioContext encountered an error from the audio device/i.test(e))
 r.check('zero page errors', clean.length === 0, clean.slice(0, 3).join(' | '))
 
 r.exit(browser)
