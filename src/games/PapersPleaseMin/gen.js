@@ -78,6 +78,21 @@ export const REGULARS = [
 // same week — recurrence is a construction, like everything else here.
 export const regularForDay = (seed, n) => (n >= 2 ? REGULARS[(n - 2 + seed) % REGULARS.length] : null)
 
+// #1983 THE ARC — one regular per week turns wanted, Jorji-style. In the
+// original the neighborhood is not safe: a familiar face can land on the
+// bulletin while still handing over cheerful papers, and only the sheet
+// (name AND number) convicts. Here the arc is a construction, seed-only:
+// cast[seed mod 4] walks the line twice (days 2 and 6 by the injection law),
+// and the TURN lands on the return — day 6, where WANTED has been awake
+// since day 4. The papers stay built-legal for the day; the wall is the
+// whole case. The other recurrence (cast[(seed+1) mod 4], days 3 and 7)
+// just remembers you.
+export const firstVisitDay = (seed, regIdx) => 2 + (((regIdx - seed) % REGULARS.length + REGULARS.length) % REGULARS.length)
+export function arcForWeek(seed) {
+    const idx = seed % REGULARS.length
+    return { id: REGULARS[idx].id, day: firstVisitDay(seed, idx) + 4 }
+}
+
 // Late-October start, like the original's campaign: the week crosses a REAL
 // month-end (OCT 27…31, NOV 01–02). Day 6's EXPIRED test paper prints the
 // first cross-month verdict the booth renders — EXPIRED 1982.10.31 < TODAY
@@ -318,7 +333,7 @@ function trapApplicant(species, rnd, date, dayRules, day, used) {
 // mark; the legal half is paperwork, exactly like the original's regulars
 // whose documents evolve with the campaign. photo === face: the booth's PORTRAIT
 // machinery sees a perfectly honest paper, and the mark rides into the photo.
-function regularApplicant(c, rnd, date, dayRules, day, used) {
+function regularApplicant(c, rnd, date, dayRules, day, used, seed, n) {
     const a = base(rnd, date, dayRules, used, { allowed: day.allowed })
     const dob = { y: date.y - c.ageYears, m: c.dobM, d: c.dobD }
     const face = { ...c.face, mark: c.mark }
@@ -333,6 +348,23 @@ function regularApplicant(c, rnd, date, dayRules, day, used) {
     a.truth.trueName = c.name
     a.truth.dob = dob
     a.truth.trueWeight = c.weight
+    // #1983 THE ARC + callback lines. `say` is atmosphere the booth prints —
+    // decide never reads it (purity law); it is the player's recognition beat.
+    // The arc day is the ONLY regular appearance the wall convicts: the sheet
+    // pairs the authored name with the number they carry THAT day (papers are
+    // rebuilt per visit, like the original's evolving documents), and the
+    // truth agrees. Everything else about them stays honest — pull the sheet
+    // entry and the paper approves (paperscheck's pull-the-witness pin).
+    const regIdx = REGULARS.findIndex((k) => k.id === c.id)
+    const arc = arcForWeek(seed)
+    if (n === arc.day && c.id === arc.id) {
+        a.person.arc = true
+        a.person.say = ['YOU AGAIN.', '...I NO DO ANYTHING.']
+        day.wanted.push({ name: c.name, id: a.person.passport.id, planted: true })
+        a.truth.wanted = true
+    } else if (n > firstVisitDay(seed, regIdx)) {
+        a.person.say = ['YOU AGAIN.']
+    }
     return a
 }
 
@@ -373,7 +405,7 @@ export function genDay(seed, n, trapIdx, trap2Idx = null) {
     // the fill loop simply lays one fewer random head, so the #1960 shift
     // budget (queue x 18s) and every day-length pin stand as written.
     const reg = regularForDay(seed, n)
-    if (reg) day.queue.push(regularApplicant(reg, rnd, date, rules, day, used))
+    if (reg) day.queue.push(regularApplicant(reg, rnd, date, rules, day, used, seed, n))
     while (day.queue.length < rules.length + 4) day.queue.push(base(rnd, date, rules, used, { allowed: day.allowed }))
     // decoy wanted entries: a wall that looks used must never frame a
     // person standing at the window — decoy names may not collide with any
@@ -382,7 +414,10 @@ export function genDay(seed, n, trapIdx, trap2Idx = null) {
     // portraits, so a day with both wanted traps plants a twin into a fuller
     // wall — planted vs printed stays honest (paperscheck pins <= 5 and the
     // fit sweep proves the fifth row lands above the scale box).
-    for (let k = 0; k < 3; k++) {
+    // #1983: the arc takes a slot on its turn — the bulletin keeps the
+    // original's capacity of five, so the arc day stages one decoy less.
+    const arcPlanted = day.queue.some((x) => x.person.arc)
+    for (let k = 0; k < 3 - (arcPlanted ? 1 : 0); k++) {
         day.wanted.push({ name: `${FIRST[Math.floor(rnd() * FIRST.length)]} ${LAST[Math.floor(rnd() * LAST.length)]}`, id: 7000 + Math.floor(rnd() * 800), planted: false })
     }
     const entrants = day.queue.filter((a) => a.person.passport).map((a) => a.person.passport.name)

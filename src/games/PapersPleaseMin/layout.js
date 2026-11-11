@@ -39,6 +39,13 @@ export const PAPERS = { x: 356, y: 40, w: 300, h: 148 }
 // shoulders), oy lifts the hair to the frame top; the head reads ~50px.
 export const PHOTO = { x: 232, y: 24, w: 66, h: 76, s: 0.75, ox: -8, oy: -3 }
 export const ID = { x: 356, y: 200, w: 190, h: 64 }
+// #1983 THE ARC — the returning entrant's speech bubble. It rides the lane
+// under the face column: below the stamp's witness line (baseline y=296,
+// centered x=506 — the texts are vertically and horizontally disjoint),
+// left of the deduction slip (x=452), above the strip. Longest authored
+// line is 20 chars at 10px monospace (20*10*CHAR=120 <= w-14); the ARC
+// section of paperscheck pins both fit laws so no future line overflows.
+export const BUBBLE = { x: 258, y: 302, w: 190, h: 34 }
 export const STAMP = { x: 506, y: 110 }
 // #1966 THE PAY ECONOMY — the end-of-day deduction slip, pinned under the
 // ID card: below the stamp's witness line (y=296 baseline), above the strip,
