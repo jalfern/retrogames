@@ -140,6 +140,29 @@ r.check('mid-swing frame exists then the barrel homes (|pose−1|<=0.06) under t
     probe !== null && probe.mid > 0.05 && probe.mid < 0.6 && Math.abs(probe.home - 1) <= 0.06 && probe.truth === true,
     probe ? `mid=${probe.mid.toFixed(3)} home=${probe.home.toFixed(3)} truth=${probe.truth}` : 'no span')
 
+// #1812 item 4 — window pre-flash LIVE. hud.pf is cooked by the RAF loop, so
+// the probe waits between reads (the #1932 round-trip lesson: sync stepping
+// would measure stale frames). Fresh run → the untouched SYNC window answers;
+// the partner lead (the first turned key) retires it — the hand-off moment the
+// SYNC WINDOW bar takes over.
+const pfLive = await page.evaluate(async () => {
+    const settle = (ms) => new Promise((res) => setTimeout(res, ms))
+    const T = window.__bdTest
+    T.start(1207, 1)
+    let seen = null
+    for (let t = 0; t < 12 && !seen; t++) {
+        await settle(100)
+        const pf = T.preFlash()
+        if (pf && pf.kind === 0) seen = pf
+    }
+    if (!seen) return null
+    let retired = false
+    for (let t = 0; t < 30 && !retired; t++) { await settle(100); retired = T.preFlash() === null }
+    return { introAtLoad: seen.intro, retired, keyTurned: T.keyOn().some(Boolean) }
+})
+r.check('#1812 item 4 pre-flash live: untouched SYNC flashes, the first turned key retires it',
+    !!pfLive && pfLive.retired && pfLive.keyTurned, JSON.stringify(pfLive))
+
 // #1932 — first-VENT coaching LIVE. The seeded holder law is `(b*7+k)%2`, so
 // bomb 0 step 1 always seats holder 1 (worker pattern) and step 2 always
 // holder 0 (holder pattern) — the seed picks which kind lands where. One run
