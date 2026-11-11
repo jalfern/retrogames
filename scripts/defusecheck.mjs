@@ -12,6 +12,7 @@ import {
     LINK, netPill,
 } from '../src/games/BombDefuse/engine.js'
 import { bedHz, BED } from '../src/games/BombDefuse/audio.js'
+import { parseCall } from '../src/games/BombDefuse/voice.js'
 import { snapshotNet, restoreNet } from '../src/games/BombDefuse/net.js'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -882,6 +883,46 @@ console.log('\n— online link pill + crew chime (#1812 fold-in items 1, 2, 4) �
         'the hand-back rings the same bell — one crew sound for one crew')
     ok(/crew\(\) \{ A\.playTone\(523[\s\S]{0,160}A\.playTone\(784/.test(aud),
         'sfx.crew is a rising three-note chime, synthesized like every other sound')
+}
+
+console.log('\n— voice grammar (#1812 item 9) —')
+{
+    const C = (k, extra = {}) => JSON.stringify({ kind: k, ...extra })
+    const got = (t, h = 0) => JSON.stringify(parseCall(t, h))
+    // colour + wire pairs coach the blade.
+    ok(got('cut the blue wire') === C('color', { color: 1 }), 'colour+wire pair names the wire (BLUE)', got('cut the blue wire'))
+    ok(got('snip yellow wire please') === C('color', { color: 3 }), 'a polite yellow request still lands YELLOW', got('snip yellow wire please'))
+    ok(got('red') === C('color', { color: 0 }) && got('blue') === C('color', { color: 1 }), 'bare colours still coach')
+    // action words name the step — they read before colours.
+    ok(got('vent the red bar', 1) === C('hold', { seat: 1 }), 'an action beats the colour on the chassis (holder keeps their seat)', got('vent the red bar', 1))
+    ok(got('seat the needle') === C('seat', { seat: 1 }), 'the needle still calls the worker seat')
+    ok(got('green') === C('seat', { seat: 1 }), 'bare GREEN drives the needle, not the wire (author seat list)', got('green'))
+    ok(got('cut the green wire') === C('color', { color: 2 }), 'GREEN as a wire needs its pair — and lands', got('cut the green wire'))
+    // urgency words ride the sync window.
+    ok(got('faster') === C('sync') && got('quick quick') === C('sync') && got('fast') === C('sync'), 'FASTER/QUICK/FAST pulse the two-key window')
+    // the warning: WAIT/NO — heard, and never a wire.
+    ok(got('wait') === C('warn') && got('no') === C('warn') && got('stop') === C('warn'), 'WAIT/NO/STOP become the warning pulse')
+    ok(got('no red') === C('warn') && got('wait blue wait') === C('warn'), 'the warning outranges a colour — "NO, not that one!" never coaches a wire')
+    // letter-tolerance for the recogniser\'s mis-hears.
+    ok(got('read the wire') === C('color', { color: 0 }), 'READ mis-hears back to RED', got('read the wire'))
+    ok(got('blew') === C('color', { color: 1 }), 'the homophone BLEW lands BLUE', got('blew'))
+    ok(got('gren') === C('color', { color: 2 }) && got('yello') === C('color', { color: 3 }), 'one dropped letter still reaches GREEN/YELLOW')
+    // ...and the leash holds: ordinary words must NOT invent colours.
+    ok(parseCall('said') === null && parseCall('bed') !== null, 'the 3-letter leash: SAID stays silent (2 edits from RED)', JSON.stringify(parseCall('said')))
+    ok(parseCall('the wire') === null && parseCall('zzzz') === null && parseCall('') === null, 'noise still banks NO MATCH', JSON.stringify(parseCall('the wire')))
+    ok(got('VENT') === C('hold', { seat: 0 }) && got('PRESS') === C('seat', { seat: 1 }), 'real verbs keep their meaning next to the fuzzy colour scan')
+    // coaching-only (#1247): the grammar module touches no engine, the shell
+    // never commits a control from a heard word.
+    const vsrc = readFileSync(join(here, '../src/games/BombDefuse/voice.js'), 'utf8')
+    const jsx = readFileSync(join(here, '../src/games/BombDefuse/index.jsx'), 'utf8')
+    const aud = readFileSync(join(here, '../src/games/BombDefuse/audio.js'), 'utf8')
+    ok(!/import\s/.test(vsrc), 'voice.js imports nothing — words cannot reach the sim (#1247)')
+    ok(!/\bstep\s*\(/.test(vsrc), 'voice.js calls no engine functions (source pin)')
+    ok(/intent\.kind === 'warn'[\s\S]{0,80}sfx\.warn\(\)/.test(jsx), 'the warning lands heard in the shell')
+    ok(/warn\(\) \{ A\.playTone\(320[\s\S]{0,80}A\.playTone\(240/.test(aud), 'sfx.warn is a descending double blip, synthesized like every other sound')
+    ok(/strokeRect\(110, 140, 420, 152\)[\s\S]{0,220}WAIT/.test(jsx), 'the warning paints its own red frame + word')
+    // determinism: same words, same verdict, twice.
+    ok(JSON.stringify(parseCall('CUT THE BLUE WIRE', 1)) === JSON.stringify(parseCall('cut the blue wire', 1)), 'grammar is deterministic across casings')
 }
 
 console.log(`\ndefusecheck: ${pass}/${pass + fail} gates`)

@@ -50,7 +50,13 @@ loop feeds `recordLiveTick(pads)` and closes the take with `endRun()` AFTER
 banking the final tick. No attract picks → **no `rules` stamp needed**.
 `exposeFeedbackState` reports the seed; `seedFromQuery()` accepts it back.
 `V` opens the mic — words coach (`voice.js` grammar), pulse the control,
-never act (#1247), and every phrase banks a `voiceCmd`.
+never act (#1247), and every phrase banks a `voiceCmd`. The grammar reads
+priority: WARN (wait/no/stop → red frame + blip) > wire-pair colour ("cut the
+blue wire") > action verbs (sync/hold/seat — an action beats a colour, and
+bare GREEN means *needle to green*) > bare colours > one-to-two-edit mis-hear
+tolerance (read→red, blew→blue; 3-letter colours keep a leash of 1 so "said"
+stays silent). Urgency words (faster/quick) ride the SYNC pulse.
+defusecheck's voice-grammar section pins every rung (#1812 item 9).
 
 ## Online room (#1819 — `net.js` + shared Lobby)
 

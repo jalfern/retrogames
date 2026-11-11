@@ -635,6 +635,9 @@ export default function BombDefuseGame() {
         const st = gs && !gs.done ? E.curStep(gs) : null
         const intent = st ? parseCall(text, st.holder) : null
         const ok = !!intent && st !== null
+        // #1812 item 9: a shouted WAIT/NO lands heard — a descending double
+        // blip, the warning the partner needed a voice for.
+        if (ok && intent.kind === 'warn') sfx.warn()
         hintRef.current = ok ? { kind: intent.kind, color: intent.color, seat: intent.seat, t: 45 } : hintRef.current
         recordVoiceCmd({ said: String(text || '').slice(0, 80), intent: ok ? intent : null, ok, ...(!ok ? { why: 'NO MATCH' } : {}) })
     }, [])
@@ -1202,11 +1205,23 @@ export default function BombDefuseGame() {
                     }
                     if (hintRef.current) {
                         const hn = hintRef.current
-                        g.strokeStyle = 'rgba(125,255,154,0.7)'; g.lineWidth = 2
-                        if (hn.kind === 'sync') g.strokeRect(118, 158, 404, 120)
-                        else if (hn.kind === 'color') { g.strokeRect(230 + hn.color * 54 - 6, 206, 24, 92) }
-                        else if (hn.kind === 'hold') g.strokeRect((hn.seat === 0 ? 128 : 512) - 14, 176, 28, 98)
-                        else g.strokeRect(252, 150, 136, 136)
+                        g.lineWidth = 2
+                        if (hn.kind === 'warn') {
+                            // #1812 item 9: the warning pulse — red frame around
+                            // the whole board + the word, distinct from coaching.
+                            g.strokeStyle = 'rgba(255,70,50,0.8)'
+                            g.strokeRect(110, 140, 420, 152)
+                            g.fillStyle = 'rgba(255,110,90,0.95)'
+                            g.font = 'bold 20px monospace'; g.textAlign = 'center'
+                            g.fillText('WAIT', 320, 96)
+                            g.textAlign = 'left'
+                        } else {
+                            g.strokeStyle = 'rgba(125,255,154,0.7)'
+                            if (hn.kind === 'sync') g.strokeRect(118, 158, 404, 120)
+                            else if (hn.kind === 'color') { g.strokeRect(230 + hn.color * 54 - 6, 206, 24, 92) }
+                            else if (hn.kind === 'hold') g.strokeRect((hn.seat === 0 ? 128 : 512) - 14, 176, 28, 98)
+                            else g.strokeRect(252, 150, 136, 136)
+                        }
                         g.lineWidth = 1
                         if (--hn.t <= 0) hintRef.current = null
                     }

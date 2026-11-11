@@ -54,6 +54,9 @@ export const sfx = {
     // click on the way in; the way out is the softer return)
     ratchet() { A.playTone(740, 0.02, 'square', 0.05) },
     ratchetBack() { A.playTone(520, 0.025, 'square', 0.03) },
+    // #1812 item 9: the voice warning — a descending double blip, heard as
+    // "not that one" without needing any words.
+    warn() { A.playTone(320, 0.06, 'square', 0.10); A.playTone(240, 0.09, 'square', 0.10, 0.05) },
     // #1812 item 10: one breath of the powered-device bed (retriggered by the
     // shell every BED.EVERY ticks; 0.55 s > 0.5 s so the hum never gaps).
     bed(secs) { A.playTone(bedHz(secs), 0.55, 'triangle', 0.016) },
