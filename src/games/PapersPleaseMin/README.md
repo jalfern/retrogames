@@ -161,7 +161,29 @@ spent by day 4 by construction) — a game rule defended by the generator's
 own audit, which is exactly how this file grew CURFEW in the first place:
 the rulebook-awakening check caught day 7 as a no-op day.
 
-## Mutants (24, all die under `npm run paperscheck -- --mutate`)
+## The arc and the callback (#1983)
+
+One regular per week turns wanted, Jorji-style. `arcForWeek(seed)` =
+cast[seed mod 4]; by the injection law that face walks days 2 and 6, so the
+TURN lands on the return — day 6, where WANTED has been awake since day 4.
+The turn is **the wall's case, not the paper's**: the bulletin pairs the
+authored name with the passport number carried THAT day (papers are rebuilt
+legal per visit — the same trick the campaign uses with Jorji's evolving
+documents), and pull that one sheet entry and `decide` approves the same
+person. paperscheck's ARC section pins the construction, the pull-the-witness
+legality, exactly-one-violation (WANTED), the printed-pair evidence shape and
+the say-line law per visit — and that `say` is atmosphere: stripping it off
+the person never moves a verdict (purity). The bulletin keeps the original's
+five-portrait capacity: the arc day stages one decoy less (paperscheck m30
+kills the forgetful wall). The other recurrence (cast[(seed+1) mod 4], days
+3 and 7) just remembers you: one line, honest papers. Lines ride
+`person.say` and paint as a paper speech bubble (`layout.js BUBBLE`, tail
+up toward the glass) under the face column; papersplay proves the field is
+pixels (up ≈ 5.4k paper px on the turn, 0 on strangers), stamps the seed-0
+Grubak deny with a real key, and snaps the trap the other way at seed 1: a
+sympathetic APPROVE of MARKO costs the strike.
+
+## Mutants (30, all die under `npm run paperscheck -- --mutate`)
 
 `<`→`<=` expiry; wanted by name only; IDREQ ignoring the DOB; the scale
 reading the paperwork (witness lies); species coverage becoming luck;
@@ -194,7 +216,13 @@ the twenty-second mutes the BROW comparison and the twenty-third the MOUTH
 comparison (forgers of that feature walk free while `judge` still denies —
 the fairness twin catches both); the twenty-fourth shrinks `FEATURES` back
 to four — verdicts stay fair, gen never stages the new breaks, and only
-the staged-coverage witness sees the new rules become décor (#1972).
+the staged-coverage witness sees the new rules become décor (#1972). The
+arc year added four: m27 never prints the turn on the sheet (an invisible
+Jorji — the booth lets him walk); m28 pairs the name with the wrong number
+(the witness is printed but lies, and the name-AND-number law never bites);
+m29 silences the callback (faces return but the booth has no memory); m30
+forgets the arc took a bulletin slot (the wall outgrows five — unfair by
+furniture). m11 was re-anchored to the adaptive decoy loop, same tooth.
 
 ## Gates
 
@@ -211,7 +239,10 @@ gate — banner, dock, full morning rewind — and an unfinished finale dies
 on the quota; since #1972 also: the photo is a zoom-crop — the head's
 widest row runs >=44px of non-beige — and the day's faces paint BOTH
 brow thicknesses and BOTH mouth shapes in ink px, with bare-eye whites
-counted).
+counted; since #1983 also: the bubble field is dark on strangers and ~5.4k
+paper px when the arc face speaks, the seed-0 Grubak turn denies with the
+printed number and scores with a real key, and a sympathetic APPROVE of
+seed 1's MARKO is the one-strike trap).
 
 ## Honest gaps
 
@@ -276,7 +307,12 @@ counted).
   re-roll) prove the witnesses bite. `papersplay` counts the four inks
   through the same drawFace (scar 12px, mole 4, wrinkle 66, ear 72 vs the
   standard 40) and stamps a live Grubak at the seed-0 day-2 window.
+- **CLOSED by #1983 (2026-11-11):** regulars got no callback lines and no
+  story arcs. One cast member per week now turns wanted on their return
+  (`arcForWeek`, day 6) — papers legal, name+number on the bulletin, DENY
+  correct, approval the trap — and returning faces speak at the counter
+  ("YOU AGAIN." / "...I NO DO ANYTHING." on the turn). ARC section + m27-m30
+  in paperscheck; papersplay stamps both sides live (52 gates).
 - The cast is four and the marks four — the original's crowd is dozens of
   one-offs with far more variety (hats, unibrows, earring, missing teeth);
-  here background entrants stay combinatorial, and regulars get no callback
-  lines ("You again.") or story arcs (a regular turning wanted, Jorji-style).
+  here background entrants stay combinatorial.
