@@ -27,7 +27,7 @@
 import { validate, verifyRecording, createRecorder } from '../src/utils/recording.js'
 import { tickToMs, voiceDrift, VOICE_CLOCK_EVERY } from '../src/utils/voice.js'
 import { probeStore, listSessions, storeFromQuery } from '../src/utils/sessionStore.js'
-import { startRelaySim } from './lib/relaysim.mjs'
+import { startRelaySim, SIM_READ_KEY } from './lib/relaysim.mjs'
 import { collectRun, makeReplayDriver } from './plaicraft-export.mjs'
 import { createGame as tmdCreate, step as tmdStep, hash as tmdHash, solvePad } from '../src/games/TalkMeDown/engine.js'
 import { createGame as sosCreate, stepGame, hashState, makeCpuEmitter } from '../src/games/ShortOrderShout/engine.js'
@@ -113,11 +113,11 @@ function driverFor(rec) {
 // bytes decode in the browser; here we prove the clock the clap rides on is
 // intact, and clapSync.js, the verdict both share, is pinned by recordcheck).
 
-async function verifyKey(key, base) {
+async function verifyKey(key, base, readHeaders = {}) {
     const res = { key, ok: false, error: null, ticks: 0, game: '?', player: '?', audio: false, humanSeats: 0, note: '', voice: null }
     let text
     try {
-        const r = await fetch(`${base}/sessions/${encodeURIComponent(key)}`)
+        const r = await fetch(`${base}/sessions/${encodeURIComponent(key)}`, { headers: readHeaders })
         if (!r.ok) { res.error = `download http ${r.status}`; return res }
         text = await r.text()
     } catch (e) { res.error = `download failed: ${e.message}`; return res }
@@ -192,10 +192,10 @@ function report(sessions) {
     return good === sessions.length && sessions.length > 0
 }
 
-const fetchAndVerify = async (rows, base) => {
+const fetchAndVerify = async (rows, base, readHeaders = {}) => {
     const out = []
     for (const row of rows) {
-        const s = await verifyKey(row.key, base)
+        const s = await verifyKey(row.key, base, readHeaders)
         s.player = row.player || s.player
         out.push(s)
     }
@@ -211,8 +211,9 @@ async function runLive() {
         console.log(`store not provisioned (${probe.err || 'sessions:false'} @ ${base}) — the R2 bucket awaits #1730; run --self-test to prove the pipeline meanwhile`)
         return 2
     }
-    const listed = await listSessions({ base, limit: Number(flagVal('limit', 50)) || 50 })
-    if (!listed.ok) { console.log(`list failed: ${listed.reason}`); return 1 }
+    const key = process.env.JON_KEY || null // read lockdown (#1711 S8): sends x-session-key
+    const listed = await listSessions({ base, limit: Number(flagVal('limit', 50)) || 50, key })
+    if (!listed.ok) { console.log(`list failed: ${listed.reason}${listed.reason === 'unauthorized' ? ' — set JON_KEY (reads are locked, #1711 S8)' : ''}`); return 1 }
     let rows = listed.sessions
     const player = flagVal('player', null)
     const game = flagVal('game', null)
@@ -222,7 +223,7 @@ async function runLive() {
     if (player) rows = rows.filter((r) => (r.player || '') === player)
     if (game) rows = rows.filter((r) => r.game === game)
     if (!rows.length) { console.log(`no sessions matched (store ${base})`); return argv.includes('--key') ? 1 : 0 }
-    const sessions = await fetchAndVerify(rows, base)
+    const sessions = await fetchAndVerify(rows, base, key ? { 'x-session-key': key } : {})
     if (argv.includes('--json')) { console.log(JSON.stringify({ base, sessions }, null, 2)); return sessions.every((s) => s.ok) ? 0 : 1 }
     return report(sessions) ? 0 : 1
 }
@@ -390,7 +391,7 @@ async function runSelfTest() {
     // checkpoint; the gate is that at least one forks the run, and one names
     // its divergence tick.
     const gKey = [...labels].find(([, l]) => l.label.startsWith('gauntlet'))[0]
-    const gText = await (await fetch(`${base}/sessions/${encodeURIComponent(gKey)}`)).text()
+    const gText = await (await fetch(`${base}/sessions/${encodeURIComponent(gKey)}`, { headers: sim.readHeaders })).text()
     const OPP = { left: 'right', right: 'left', up: 'down', down: 'up' }
     const cand = tamperedCandidates(JSON.parse(gText))
     ok(cand.length >= 1, `found direction pads to flip (${cand.length})`)
@@ -405,9 +406,9 @@ async function runSelfTest() {
         if (tr.ok && tr.key) { labels.set(tr.key, { label: `MUTANT flip@${c.idx + 1}`, expect: false, mutant: true }); mutantKeys++ }
     }
 
-    const rows = await listSessions({ base })
+    const rows = await listSessions({ base, key: SIM_READ_KEY })
     ok(rows.ok && rows.sessions.length === labels.size, `listing sees every synthetic session (${labels.size})`)
-    const sessions = await fetchAndVerify(rows.sessions, base)
+    const sessions = await fetchAndVerify(rows.sessions, base, sim.readHeaders)
     let caught = 0
     const caughtAt = []
     for (const s of sessions) {

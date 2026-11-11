@@ -22,15 +22,37 @@
 //
 // Nothing here needs Jon's phone; when the real store lands, --store= reuses
 // the identical driver against it.
+//
+// ANALYZE MODE (#1711 S8): `npm run plaicraft:clap -- --key=<sessionKey>`
+// (add `--store=` for a non-default store; JON_KEY env required — the read
+// lockdown) downloads ONE real take — e.g. Jon's phone session where he
+// clapped + pressed three times — decodes its opus in the browser and runs
+// the SAME clapVerdict over it: the acceptance line graded on real hardware
+// bytes, not synth ones. `--file=<path.json>` feeds the analyzer a take from
+// disk instead (offline self-prove: CLAP_DUMP=/tmp/take.json npm run
+// plaicraft:clap writes the synth run's stored bytes; analyzing them must
+// land the same verdict).
 
 import { requireDevServer, launch, Report } from './lib/harness.mjs'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { validate } from '../src/utils/recording.js'
 import { detectClaps, clapVerdict, CLAP_TOL_MS } from '../src/utils/clapSync.js'
 import { startRelaySim } from './lib/relaysim.mjs'
+import { STORE_DEFAULT } from '../src/utils/sessionStore.js'
 
 const argv = process.argv.slice(2)
 const PORT = process.env.DEV_PORT || 5173
 const MUTATE = argv.includes('--mutate')
+const flagVal = (name, dflt) => {
+    const hit = argv.find((a) => a.startsWith(`--${name}=`))
+    if (hit) return hit.split('=').slice(1).join('=')
+    const i = argv.indexOf(`--${name}`)
+    return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[i + 1] : dflt
+}
+const ANALYZE_KEY = flagVal('key', null)
+const ANALYZE_FILE = flagVal('file', null)
 // Clap schedule: from mic-open (wall). First clap >= 1.2 s after YES so the
 // seed-birth + recorder-open storm settles; spacing > minGap for the detector.
 const CLAP_MS = [1200, 2600, 4000]
@@ -39,6 +61,95 @@ const CLAP_MS = [1200, 2600, 4000]
 const PRESS_OFFSET_MS = MUTATE ? 500 : 0
 
 const r = new Report('plaicraft:clap')
+
+// --- ANALYZE MODE (#1711 S8): grade ONE real take from the store ------------
+// The synth path below proves the pipeline with baked claps; this proves the
+// acceptance line on Jon's actual phone bytes: claps he made, presses he made,
+// the phone's mic, encoder and clock. Reads are keyed (JON_KEY env, #1711 S8).
+// Direction-agnostic on purpose: whichever seat's edge stream has exactly one
+// rising edge per heard clap is the candidate; the one with the best alignment
+// is graded. A 500 ms-skewed take cannot align on ANY direction, so the
+// mutant stays red by construction (the synth run pins that half).
+if (ANALYZE_KEY || ANALYZE_FILE) {
+    const ra = new Report('plaicraft:clap — keyed take')
+    const base = flagVal('store', process.env.SESSION_STORE || STORE_DEFAULT)
+    let rec = null
+    if (ANALYZE_FILE) {
+        try { rec = JSON.parse(fs.readFileSync(ANALYZE_FILE, 'utf8')) } catch (e) { console.error(`clap: cannot read ${ANALYZE_FILE}: ${e && e.message}`); process.exit(1) }
+        ra.info('take', ANALYZE_FILE)
+    } else {
+        const jk = process.env.JON_KEY
+        if (!jk) {
+            console.error(`clap: JON_KEY env var required — the store refuses un-keyed reads (#1711 S8): JON_KEY=<secret> npm run plaicraft:clap -- --key=${ANALYZE_KEY} --store=${base}`)
+            process.exit(1)
+        }
+        try {
+            const res = await fetch(`${base}/sessions/${encodeURIComponent(ANALYZE_KEY)}`, { headers: { 'x-session-key': jk } })
+            if (!res.ok) {
+                const j = await res.json().catch(() => ({}))
+                console.error(`clap: download refused (http ${res.status}${j.err ? `: ${j.err}` : ''})`)
+                process.exit(1)
+            }
+            rec = await res.json()
+        } catch (e) { console.error(`clap: store unreachable: ${e && e.message}`); process.exit(1) }
+        ra.info('take', `${ANALYZE_KEY} (${base})`)
+    }    const badRec = validate(rec)
+    ra.check('stored file validates', badRec === null, badRec || '')
+    const track = rec.voice && rec.voice.tracks && rec.voice.tracks[0]
+    ra.check('v2 take with a voice track', rec.format === 'retrogames-rec/v2' && !!track, `${rec.format || '?'}${track ? '' : ' (no track)'}`)
+    if (badRec !== null || !track) ra.exit(null)
+    const browser = await launch({ headless: !argv.includes('--headful') })
+    await requireDevServer(`http://localhost:${PORT}/retrogames/`)
+    const context = await browser.newContext({ viewport: { width: 900, height: 760 } })
+    const page = await context.newPage()
+    page.setDefaultTimeout(60000)
+    const aErrors = []
+    page.on('pageerror', (e) => aErrors.push(String(e)))
+    await page.goto(`http://localhost:${PORT}/retrogames/`, { waitUntil: 'load' })
+    let pcm = null
+    try {
+        pcm = await page.evaluate(async (b64) => {
+            const bin = atob(b64)
+            const bytes = new Uint8Array(bin.length)
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+            const AC = window.AudioContext || window.webkitAudioContext
+            const ctx = new AC()
+            const buf = await ctx.decodeAudioData(bytes.buffer)
+            const ch0 = buf.getChannelData(0)
+            const out = new Array(ch0.length)
+            for (let i = 0; i < ch0.length; i++) out[i] = Math.max(-32768, Math.min(32767, Math.round(ch0[i] * 32767)))
+            const sr = buf.sampleRate
+            ctx.close()
+            return { sr, samples: out }
+        }, track.b64)
+    } catch { /* gate below */ }
+    ra.check('opus bytes decode back to PCM in the browser', !!(pcm && pcm.samples.length > 1000), pcm ? `${pcm.samples.length} samples @ ${pcm.sr} Hz` : 'decode failed')
+    if (!(pcm && track)) { await ra.exit(browser) }
+    const aOnsets = detectClaps(Float32Array.from(pcm.samples, (v) => v / 32767), { sampleRate: pcm.sr })
+    ra.info('claps heard in the take', `${aOnsets.length}`)
+    const aCands = []
+    ;(rec.slots || []).forEach((slot, seat) => {
+        const pads = (slot && slot.pads) || []
+        for (const d of ['right', 'left', 'up', 'down']) {
+            const ticks = []
+            for (let i = 0; i < pads.length; i++) if (pads[i] && pads[i][d] && !(i && pads[i - 1] && pads[i - 1][d])) ticks.push(i + 1)
+            if (ticks.length) aCands.push({ seat, d, ticks })
+        }
+    })
+    const aGraded = aCands
+        .filter((c) => c.ticks.length === aOnsets.length && aOnsets.length >= 2)
+        .map((c) => ({ ...c, verdict: clapVerdict({ sampleRate: pcm.sr, onsets: aOnsets, pressTicks: c.ticks, clock: track.clock }) }))
+        .sort((a, b) => (b.verdict.ok - a.verdict.ok) || ((a.verdict.worstMs ?? 1e9) - (b.verdict.worstMs ?? 1e9)))
+    const best = aGraded[0]
+    ra.check('clap-coincident presses found (one edge per clap, some seat)', !!best,
+        `claps ${aOnsets.length}; edge streams ${aCands.map((c) => `s${c.seat}.${c.d}:${c.ticks.length}`).join(', ') || 'none'}`)
+    if (best) {
+        ra.info('clap pairs', JSON.stringify(best.verdict.pairs))
+        ra.check(`every clap lands within ±${CLAP_TOL_MS} ms of its frame (seat ${best.seat}, ${best.d})`, best.verdict.ok, `${best.verdict.why} (worst ${best.verdict.worstMs} ms)`)
+    }
+    ra.check('zero page errors', aErrors.length === 0, aErrors.join(' | '))
+    await ra.exit(browser)
+}
 
 // --- the real worker, in-process (#1711 S5) ------------------------------------
 const sim = await startRelaySim()
@@ -153,13 +264,26 @@ try {
 r.check('the take uploaded through the consent gate', !!(uploaded && uploaded.uploaded), JSON.stringify(uploaded))
 if (!(uploaded && uploaded.uploaded)) await r.exit(browser)
 
-// the store saw it, with audio
-const listed = await (await fetch(`${BASE}/sessions`)).json()
+// the store saw it, with audio (reads carry the lockdown key, #1711 S8)
+const listed = await (await fetch(`${BASE}/sessions`, { headers: sim.readHeaders })).json()
 const row = (listed.sessions || []).find((s) => s.key === uploaded.key)
 r.check('the real worker lists the session with audio', !!(row && row.audio === true && row.game === 'gauntlet'), JSON.stringify(row))
 
 // download back and read the take
-const text = await (await fetch(`${BASE}/sessions/${encodeURIComponent(uploaded.key)}`)).text()
+const text = await (await fetch(`${BASE}/sessions/${encodeURIComponent(uploaded.key)}`, { headers: sim.readHeaders })).text()
+// #1711 S8: hand the stored bytes to the --file= analyze self-prove. tmp-only
+// (the muteguard audit's SAFE shape — this script mutates nothing tracked, and
+// a stray CLAP_DUMP outside tmp is refused, not obeyed).
+if (process.env.CLAP_DUMP) {
+    const dp = path.resolve(process.env.CLAP_DUMP)
+    // compare canonical dirs: macOS os.tmpdir() is /var/folders/…/T while
+    // scripts habitually pass /tmp paths (a symlink to /private/tmp).
+    const roots = [os.tmpdir(), '/tmp'].map((t) => { try { return fs.realpathSync(t) } catch { return t } })
+    let parent = path.dirname(dp)
+    try { parent = fs.realpathSync(parent) } catch { /* dir may not exist — refusal below */ }
+    if (roots.some((t) => parent === t || parent.startsWith(t + path.sep))) fs.writeFileSync(dp, text)
+    else console.error(`clap: CLAP_DUMP ignored (must be under ${os.tmpdir()})`)
+}
 const rec = JSON.parse(text)
 r.check('stored file validates', validate(rec) === null, validate(rec) || '')
 r.check('v2 file with one voice track', rec.format === 'retrogames-rec/v2' && rec.voice && rec.voice.tracks.length === 1, rec.format)

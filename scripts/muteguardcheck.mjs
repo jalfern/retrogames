@@ -127,6 +127,9 @@ const SAFE = {
     'kartcheck.mjs': 'mutates copies under /tmp (mut-sim.mjs)',
     'outpostcheck.mjs': 'writes mutant copies into a mkdtemp dir',
     'paperscheck.mjs': 'writes mutant copies into a mkdtemp dir',
+    // #1711 S8: CLAP_DUMP copies the synth take's stored bytes to a tmp path
+    // for the --file= analyze self-prove; paths outside tmpdir are refused.
+    'plaicraft-clap.mjs': 'CLAP_DUMP take-dump constrained to tmpdir; reads --file, mutates nothing tracked',
     'ws2check.mjs': 'mkdtemp fixture dirs + tmpdir html only; mutants run in memory',
     // Pre-existing on main since 2ee8b35 (scripts/*.mjs is docs-shaped, so no
     // scope ran the audit when it landed — noted on #1571). Read 2026-11-05:

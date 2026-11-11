@@ -21,6 +21,13 @@
 // core.js) so the unconsented POST lands — the proof that the enforcement
 // lives in the deployed file. The mutant copy is a transient file next to
 // worker.js (relative './core.js' must resolve) and is deleted at close.
+// mutateReadlock:true strips the read-lock doors (#1711 S8) — without the
+// key, reads land; that's the mutant Jon asked for ("a read without the
+// key is refused" must die when the door is gone).
+// env.JON_KEY defaults to SIM_READ_KEY because the deployed worker Jon is
+// about to configure DOES have JON_KEY — every read in the harness sends it
+// (and relaycheck pins the refusal). readKey:null models the fail-closed
+// pre-deploy worker: reads refused, nobody can unlock them.
 
 import http from 'node:http'
 import fs from 'node:fs'
@@ -34,6 +41,10 @@ const MUTANT_FILE = path.join(RELAY_DIR, '.relaycheck-mutant.mjs')
 // The exact door inside handleSessionUpload (the same text exists in
 // handleFeedback — anchor on the validate call above it to hit only sessions).
 const DOOR = "    const v = validateSessionEnvelope(body)\n    if (!v.ok) return json({ ok: false, err: v.err }, origin, 400)"
+// The identical two-line door in handleSessionList AND handleSessionGet.
+const READ_DOOR = "    const d = readDenied(req, env, origin)\n    if (d) return d"
+
+export const SIM_READ_KEY = 'test-jon-key'
 
 let hooksDone = false
 const ensureHooks = () => {
@@ -73,12 +84,19 @@ export function mkR2() {
     }
 }
 
-async function loadWorker({ mutate = false } = {}) {
+async function loadWorker({ mutate = false, mutateReadlock = false } = {}) {
     ensureHooks()
-    if (!mutate) return (await import(pathToFileURL(WORKER_FILE).href)).default
-    const src = fs.readFileSync(WORKER_FILE, 'utf8')
-    if (!src.includes(DOOR)) throw new Error('relaysim: consent-door anchor not found in worker.js — update relaysim DOOR to match')
-    fs.writeFileSync(MUTANT_FILE, src.replace(DOOR, '    const v = validateSessionEnvelope(body) // MUTANT: door stripped'))
+    if (!mutate && !mutateReadlock) return (await import(pathToFileURL(WORKER_FILE).href)).default
+    let src = fs.readFileSync(WORKER_FILE, 'utf8')
+    if (mutate) {
+        if (!src.includes(DOOR)) throw new Error('relaysim: consent-door anchor not found in worker.js — update relaysim DOOR to match')
+        src = src.replace(DOOR, '    const v = validateSessionEnvelope(body) // MUTANT: door stripped')
+    }
+    if (mutateReadlock) {
+        if (!src.includes(READ_DOOR)) throw new Error('relaysim: read-lock door anchor not found in worker.js — update relaysim READ_DOOR to match')
+        src = src.split(READ_DOOR).join('    // MUTANT: read-lock door stripped')
+    }
+    fs.writeFileSync(MUTANT_FILE, src)
     try {
         return (await import(pathToFileURL(MUTANT_FILE).href + `?t=${Date.now()}`)).default
     } finally {
@@ -86,14 +104,18 @@ async function loadWorker({ mutate = false } = {}) {
     }
 }
 
-export async function startRelaySim({ bind = true, registry = 'ok', mutate = false } = {}) {
-    const worker = await loadWorker({ mutate })
+export async function startRelaySim({ bind = true, registry = 'ok', mutate = false, mutateReadlock = false, readKey = SIM_READ_KEY } = {}) {
+    const worker = await loadWorker({ mutate, mutateReadlock })
     const bucket = bind ? mkR2() : null
     const env = {
         SESSIONS: bucket || undefined,
         REGISTRY: registry === 'dead'
-            ? { idFromName: () => { throw new Error('registry down') }, get: () => { throw new Error('registry down') } }
+            ? { idFromName: () => { throw new Error('registry down') }, get: () => ({ count: async () => 0 }) }
             : { idFromName: (n) => n, get: () => ({ count: async () => 0 }) },
+        // Jon's deploy carries JON_KEY (feedback already uses it) — the read
+        // lockdown pins the deployed shape. Pass readKey:null for the
+        // fail-closed pre-deploy worker.
+        JON_KEY: readKey || undefined,
         // GITHUB_TOKEN/GH_REPO deliberately unset → /status feedback:false (the
         // honest "not configured" half of the capability flag).
     }
@@ -121,6 +143,7 @@ export async function startRelaySim({ bind = true, registry = 'ok', mutate = fal
     return {
         base: `http://127.0.0.1:${server.address().port}`,
         bucket,
+        readHeaders: readKey ? { 'x-session-key': readKey } : {},
         close() { server.closeAllConnections(); server.close() },
     }
 }

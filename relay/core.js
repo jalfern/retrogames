@@ -102,7 +102,10 @@ export const CORS_ALLOW = [
     'https://retrogames.jalfern.workers.dev',
 ]
 export const CORS_ALLOW_METHODS = 'GET,POST,OPTIONS'
-export const CORS_ALLOW_HEADERS = 'content-type'
+// x-session-key (#1711 S8): reads of the private store carry the key as a
+// custom header, so the preflight must allow it or the browser kills the
+// admin read before it ever reaches the worker.
+export const CORS_ALLOW_HEADERS = 'content-type,x-session-key'
 export const CORS_MAX_AGE = '86400'
 
 export function corsOrigin(origin) {
@@ -443,6 +446,26 @@ export function sessionMeta(rec, player) {
         audio: rec.voice ? '1' : '0',
         player: String(player),
     }
+}
+
+// READ LOCKDOWN (#1711 S8, Jon 2026-11-11 19:14Z) — "anyone with the URL
+// could list and download voice recordings": GET /sessions and
+// GET /sessions/<key> answer only to a caller presenting the deployed
+// JON_KEY in the x-session-key header. Uploads keep the consent door and
+// nothing else ("Uploads stay as they are"). Constant-time compare so the
+// answer-time does not grade how close a guess was; MISSING is refused too.
+// Fail-closed: if the worker has no JON_KEY secret, nobody reads — the
+// bucket is never readable un-authenticated, capability or not.
+export const SES_READ_HEADER = 'x-session-key'
+
+export function sessionReadOk(provided, jonKey) {
+    if (typeof jonKey !== 'string' || !jonKey) return false
+    if (typeof provided !== 'string' || !provided) return false
+    const a = new TextEncoder().encode(provided)
+    const b = new TextEncoder().encode(jonKey)
+    let diff = a.length ^ b.length
+    for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i % b.length]
+    return diff === 0
 }
 
 export function sessionRow(key, meta, uploadedAt) {

@@ -9,7 +9,7 @@
 // Served at https://retrogames.jalfern.workers.dev/room/<CODE> (wss).
 
 import { DurableObject } from 'cloudflare:workers'
-import { CODE_RE, MAX_MSG, IDLE_MS, RATE_WINDOW, ROOM_CAP_MAX, relay, validateFeedback, buildFeedbackIssue, corsHeaders, FB_SHOT_PLACEHOLDER, screenshotMarkdown, uploadScreenshot, SES_MAX_BODY, validateSessionEnvelope, sessionKey, sessionMeta, sessionRow } from './core.js'
+import { CODE_RE, MAX_MSG, IDLE_MS, RATE_WINDOW, ROOM_CAP_MAX, relay, validateFeedback, buildFeedbackIssue, corsHeaders, FB_SHOT_PLACEHOLDER, screenshotMarkdown, uploadScreenshot, SES_MAX_BODY, validateSessionEnvelope, sessionKey, sessionMeta, sessionRow, SES_READ_HEADER, sessionReadOk } from './core.js'
 
 const GH_API = 'https://api.github.com'
 
@@ -100,8 +100,25 @@ async function handleSessionUpload(req, env, origin) {
     return json({ ok: true, key }, origin, 200)
 }
 
+// READ LOCKDOWN (#1711 S8, Jon 2026-11-11 19:14Z): listing and downloads of
+// the private store require the JON_KEY secret in the x-session-key header —
+// before this, anyone with the worker URL could list and download every
+// voice recording. The rule itself is core.sessionReadOk (pure, Node-pinned
+// by relaycheck); this is the door on each read route. POST /sessions is
+// deliberately NOT gated beyond the consent envelope ("Uploads stay as
+// they are" — phones upload without the key). Fail-closed: no JON_KEY
+// deployed = reads refused ('read lock not configured', distinguishable
+// from a wrong key ('unauthorized'); /status jonKey bool tells you which
+// side of the deploy you're on).
+function readDenied(req, env, origin) {
+    if (sessionReadOk(req && req.headers.get(SES_READ_HEADER), env && env.JON_KEY)) return null
+    return json({ ok: false, err: env && env.JON_KEY ? 'unauthorized' : 'read lock not configured' }, origin, 401)
+}
+
 async function handleSessionList(req, env, origin) {
     if (!env || !env.SESSIONS) return json({ ok: false, err: 'store not configured' }, origin, 503)
+    const d = readDenied(req, env, origin)
+    if (d) return d
     const limit = Math.max(1, Math.min(200, Number(new URL(req.url).searchParams.get('limit')) || 50))
     const listed = await env.SESSIONS.list({ limit })
     const sessions = []
@@ -112,8 +129,10 @@ async function handleSessionList(req, env, origin) {
     return json({ ok: true, sessions }, origin, 200)
 }
 
-async function handleSessionGet(env, origin, pathname) {
+async function handleSessionGet(req, env, origin, pathname) {
     if (!env || !env.SESSIONS) return json({ ok: false, err: 'store not configured' }, origin, 503)
+    const d = readDenied(req, env, origin)
+    if (d) return d
     const key = decodeURIComponent(pathname.slice('/sessions/'.length))
     if (!/^[a-z0-9][a-z0-9-]{0,40}\/[0-9-]{10}-seed\d+-[a-f0-9]{10}\.json$/.test(key)) return json({ ok: false, err: 'bad key' }, origin, 400)
     const obj = await env.SESSIONS.get(key)
@@ -279,7 +298,7 @@ export default {
         if (req.method === 'POST' && url.pathname === '/feedback') return handleFeedback(req, env)
         if (req.method === 'POST' && url.pathname === '/sessions') return handleSessionUpload(req, env, origin)
         if (req.method === 'GET' && url.pathname === '/sessions') return handleSessionList(req, env, origin)
-        if (req.method === 'GET' && url.pathname.startsWith('/sessions/')) return handleSessionGet(env, origin, url.pathname)
+        if (req.method === 'GET' && url.pathname.startsWith('/sessions/')) return handleSessionGet(req, env, origin, url.pathname)
         if (url.pathname === '/' || url.pathname === '/status') {
             let rooms = -1
             try { rooms = await env.REGISTRY.get(env.REGISTRY.idFromName('registry')).count() } catch { /* probe anyway */ }
