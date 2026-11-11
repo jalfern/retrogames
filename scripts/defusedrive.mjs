@@ -100,6 +100,21 @@ await page.keyboard.press('KeyX')
 await sleep(1200)
 r.check('any key restarts (play again)', (await page.evaluate(() => window.__bdTest.screen())) === 'play')
 
+// #1812 item 3 — THE BOOM films itself in the REAL clock: lid flies and
+// shrapnel arcs on the kill, and the scorch decals survive the restart —
+// the chassis carries the soot into the next run (module memory, per-mount).
+await page.evaluate(() => window.__bdTest.boomNow())
+await sleep(150)
+const fxLive = await page.evaluate(() => window.__bdTest.boomFx())
+r.check('boom launches the lid and arcing shrapnel', fxLive.lid && fxLive.shrap >= 6 && fxLive.scorch >= 3, `lid=${fxLive.lid} shrap=${fxLive.shrap} scorch=${fxLive.scorch}`)
+await sleep(900)
+r.check('the FX ride across the screen change (over while soot lands)', (await page.evaluate(() => window.__bdTest.screen())) === 'over')
+await page.keyboard.press('KeyX')
+await sleep(1200)
+const fxAft = await page.evaluate(() => window.__bdTest.boomFx())
+const scrAft = await page.evaluate(() => window.__bdTest.screen())
+r.check('next run opens scorched but lid-free (decals carry, fx expire)', scrAft === 'play' && fxAft.scorch >= 3 && fxAft.lid === false && fxAft.shrap === 0, `scr=${fxAft.scorch} lid=${fxAft.lid} shrap=${fxAft.shrap}`)
+
 // #1812 item 2 — the press-tick law in the REAL view stack, stepped tick-exact
 // (wall-clock rAF sampling is too coarse on software-rendered Chrome — the
 // first observed frame can land after the spring; sim ticks are the law here).

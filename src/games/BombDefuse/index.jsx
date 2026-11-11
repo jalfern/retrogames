@@ -144,6 +144,16 @@ function drawBombView(g, gs, now, opts = {}) {
     g.strokeStyle = C.steelHi; g.lineWidth = 2; g.strokeRect(104, 82, 432, 234)
     g.strokeStyle = C.ink; g.strokeRect(96, 74, 448, 250)
 
+    // #1812 item 3: scorch decals — soot blotches from the last boom, drawn
+    // onto the case under the controls. Pure paint; module state (below); the
+    // sim has never heard of them.
+    for (const d of scorchDecals) {
+        g.fillStyle = `rgba(10,8,5,${d.a.toFixed(3)})`
+        g.beginPath(); g.arc(d.x, d.y, d.r, 0, 7); g.fill()
+        g.fillStyle = `rgba(28,20,10,${(d.a * 0.5).toFixed(3)})`
+        g.beginPath(); g.arc(d.x - d.r * 0.4, d.y - d.r * 0.3, d.r * 0.55, 0, 7); g.fill()
+    }
+
     // fuse plate
     g.fillStyle = C.screen; g.fillRect(cx - 92, 86, 184, 44)
     g.strokeStyle = '#000'; g.strokeRect(cx - 92, 86, 184, 44)
@@ -463,6 +473,7 @@ function drawIntro(g, gs, coach) {
 // (E.ventCoach, pure) then goes silent for the rest of the run.
 const newHud = () => ({
     flash: 0, shake: 0, sparks: [], banner: null, bannerT: 0, boomT: 0, dudT: 0,
+    lid: null, shrap: [],
     ventTaught: false, coach: null, pf: null,
     // #1812 item 10: bed cadence + a DEV-visible ping counter (the harness
     // proves the hum is alive without reading the speaker)
@@ -489,6 +500,29 @@ function chipInk(opts, seat, now) {
     const on = Math.floor(ph / 300) % 2
     const col = a.kind === E.CUT || workerRole ? C.green : C.amber
     return on ? col : (col === C.green ? C.greenDim : '#6b5210')
+}
+
+// #1812 item 3: THE BOOM — the trope films it, this paints it. On the boom
+// event the case lid blows off (tumbles up, gravity, fade), heavier shrapnel
+// than the tap-sparks arcs out in long parabolas, and the chassis takes scorch
+// decals that ride into the NEXT run — the bomb remembers. All of it is pure
+// view: Math.random particles are banned from the sim (the hash law, ART.md 5)
+// and these never touch gs or engine state. `scorchDecals` is deliberately
+// module-level: a fresh createGame must NOT wash the soot away — only unmount
+// does. `spawnBoom` reads only Math.random; the gate pins that it names no gs.
+let scorchDecals = []
+
+const spawnBoom = (hud) => {
+    hud.lid = { x: 320, y: 150, vx: (Math.random() - 0.5) * 4, vy: -9 - Math.random() * 3, rot: 0, vr: (Math.random() - 0.5) * 0.35, life: 46 }
+    hud.shrap = Array.from({ length: 9 }, () => ({
+        x: 320 + (Math.random() - 0.5) * 120, y: 200 + (Math.random() - 0.5) * 60,
+        vx: (Math.random() - 0.5) * 7, vy: -1 - Math.random() * 7,
+        rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.5,
+        s: 2 + Math.floor(Math.random() * 4), life: 34 + Math.floor(Math.random() * 22),
+    }))
+    scorchDecals = Array.from({ length: 5 }, () => ({
+        x: 130 + Math.random() * 380, y: 160 + Math.random() * 130, r: 7 + Math.random() * 10, a: 0.5 + Math.random() * 0.3,
+    }))
 }
 
 function drawHudFrame(g, gs, opts, now) {
@@ -612,7 +646,7 @@ export default function BombDefuseGame() {
         else if (f.k === 'strike') { sfx.strike(); hud.flash = 26; hud.shake = 12; hud.banner = { text: `STRIKE! ${f.why}`, ok: false }; hud.bannerT = 60 }
         else if (f.k === 'surge') { sfx.surge(); hud.flash = 34; hud.shake = 16; hud.banner = { text: 'PRESSURE SURGE', ok: false }; hud.bannerT = 60 }
         else if (f.k === 'defused') { sfx.defused(); hud.banner = { text: `BOMB ${f.bomb} DOWN`, ok: true }; hud.bannerT = 80 }
-        else if (f.k === 'boom') { sfx.boom(); hud.boomT = 70; hud.shake = 24 }
+        else if (f.k === 'boom') { sfx.boom(); hud.boomT = 70; hud.shake = 24; spawnBoom(hud) }
         else if (f.k === 'win') sfx.win()
     }, [])
 
@@ -1155,6 +1189,30 @@ export default function BombDefuseGame() {
                     }
                 }
                 if (hud.shake > 0) hud.shake -= 0.5
+                // #1812 item 3: the lid and shrapnel ride across the screen
+                // change — the case is already "over" while its lid is still
+                // tumbling, exactly like the movies. Physics here (gravity
+                // 0.35/0.3 per frame) is paint-frame, never sim-tick.
+                if (hud.lid) {
+                    const L = hud.lid
+                    L.x += L.vx; L.y += L.vy; L.vy += 0.35; L.rot += L.vr
+                    if (--L.life <= 0) hud.lid = null
+                    g.save(); g.translate(L.x, L.y); g.rotate(L.rot)
+                    g.fillStyle = C.steel; g.fillRect(-70, -10, 140, 14)
+                    g.strokeStyle = C.ink; g.strokeRect(-70, -10, 140, 14)
+                    g.fillStyle = C.brass; g.fillRect(-16, -6, 32, 6)
+                    g.restore()
+                }
+                if (hud.shrap.length) {
+                    for (const s of hud.shrap) {
+                        s.x += s.vx; s.y += s.vy; s.vy += 0.3; s.rot += s.vr; s.life--
+                        g.save(); g.translate(s.x, s.y); g.rotate(s.rot)
+                        g.fillStyle = s.life > 12 ? C.brass : `rgba(216,178,62,${(s.life / 12).toFixed(3)})`
+                        g.fillRect(-s.s / 2, -s.s / 2, s.s, s.s)
+                        g.restore()
+                    }
+                    hud.shrap = hud.shrap.filter(s => s.life > 0 && s.y < H + 20)
+                }
                 if (screenRef.current === 'over') drawOver(g, now)
             } else if (screenRef.current === 'select') {
                 drawHudFrame(g, null, { coop: false, mic: voiceRef.current.on }, now)
@@ -1278,6 +1336,10 @@ export default function BombDefuseGame() {
                 // #1812 item 7: the active-seat ask, live-probeable (which
                 // seats still owe the step — the same object the chips pulse on)
                 seatAsk: () => hudRef.current.ask || null,
+                // #1812 item 3: the boom FX, live-probeable — lid/shrapnel in
+                // flight + the scorch decals the chassis carries between runs.
+                boomFx: () => ({ lid: !!hudRef.current.lid, shrap: hudRef.current.shrap.length, scorch: scorchDecals.length, boomT: hudRef.current.boomT }),
+                boomNow: () => { const gb = gsRef.current; if (gb && !gb.done) gb.fuse = 1 },
                 ventTaught: () => hudRef.current.ventTaught,
                 // #1812 item 10: bed pings accrued since the run began — the
                 // drive proves the hum is alive (and frozen on pause/over)
@@ -1327,6 +1389,9 @@ export default function BombDefuseGame() {
             if (isRecording()) endRun()
             if (net.lobby) net.lobby.close() // #1819: don't leave the relay socket open
             if (import.meta.env.DEV) { unexposeGame(); unmountDbg(); delete window.__bdTest }
+            // #1812 item 3: leaving the game wipes the soot (module memory is
+            // per-mount — a remount is a fresh chassis, a restart is not).
+            scorchDecals = []
             unexposeFeedbackState()
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -674,5 +674,31 @@ console.log('\n— active-seat ask (#1812 item 7) —')
     ok(jsx.includes('seatAsk: () => hudRef.current.ask || null'), '__bdTest.seatAsk exposes the ask for the drive harness')
 }
 
+console.log('\n— the boom (#1812 item 3) —')
+{
+    // Lid off, shrapnel arcs, scorch rides into the next run. Pure view: the
+    // engine gains NOTHING (hash law — Math.random is banned from the sim, so
+    // the spawn lives where gs cannot be reached). Kill laws (README mutants):
+    // dropping spawnBoom at the boom event reddens the spawn + drive gates;
+    // clearing scorchDecals on restart reddens the carry pin; referencing gs
+    // inside spawnBoom reddens the purity pin.
+    const jsx = readFileSync(join(here, '../src/games/BombDefuse/index.jsx'), 'utf8')
+    ok(/k === 'boom'[\s\S]{0,120}spawnBoom\(hud\)/.test(jsx), 'the boom event spawns lid + shrapnel + scorch')
+    const spawn = jsx.slice(jsx.indexOf('const spawnBoom'), jsx.indexOf('function drawHudFrame'))
+    ok(spawn.includes('hud.lid') && spawn.includes('hud.shrap') && spawn.includes('scorchDecals = Array.from'), 'the spawn sets lid, shrapnel and decals')
+    ok(spawn.includes('Math.random') && !/\bgs\b/.test(spawn), 'spawnBoom reads only Math.random — no gs, hash law intact (ART.md 5)')
+    ok(/let scorchDecals = \[\]/.test(jsx), 'decals are module-level — the chassis memory outlives a createGame')
+    ok((jsx.match(/scorchDecals = \[\]/g) || []).length === 2, 'the soot washes only on unmount (the second write is the declaration)', `${(jsx.match(/scorchDecals = \[\]/g) || []).length}`)
+    ok(jsx.includes('for (const d of scorchDecals)'), 'the plate draws the scorch decals')
+    ok(/L\.vy \+= 0\.35/.test(jsx) && /s\.vy \+= 0\.3/.test(jsx), 'lid and shrapnel arc under gravity (paint-frame physics)')
+    ok(jsx.includes('lid: null, shrap: []'), 'the hud carries the fx state')
+    ok(jsx.includes('boomFx: () => ({ lid:') && jsx.includes('boomNow: () =>'), '__bdTest.boomFx/boomNow expose the FX for the drive harness')
+    // determinism untouched: two won runs, no boom, no decals, hash law holds.
+    const g = createGame(11, 2)
+    let n = 0
+    while (!g.done && n++ < 6000) { g.events.length = 0; step(g, solvePads(g)) }
+    ok(g.won && hash(g) === hash((() => { const h = createGame(11, 2); let m = 0; while (!h.done && m++ < 6000) step(h, solvePads(h)); return h })()), 'a clean run replays hash-equal — the boom FX added no sim state')
+}
+
 console.log(`\ndefusecheck: ${pass}/${pass + fail} gates`)
 process.exit(fail ? 1 : 0)
