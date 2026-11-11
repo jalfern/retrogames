@@ -101,6 +101,12 @@ export const CALL_LINE_MAX = 28
 // names the CHANNEL, not the shapes, so the one-source law is kept whole.
 export const KEY_CALL_HINT = 'NO MIC? PRESS X, TYPE THE CALL, ENTER SHOUTS IT'
 
+// TOUCH_CALL_HINT — the phone's mic-off coach (#1900): a phone has no X key
+// (the typed line is the physical-keyboard channel), so on a touch surface the
+// footer names the pill instead. One-source law unchanged: the shapes stay
+// ACCEPTED_HINT's alone; this names the CHANNEL the phone actually owns.
+export const TOUCH_CALL_HINT = 'NO MIC? TAP MIC · TAP TO LISTEN, THEN SHOUT'
+
 // applyCallKey — the whole line law, pure. Returns null when the key is not
 // the line's (the caller lets seat keys live); otherwise the new buffer and
 // whether this keystroke commits (shouts) or closes the line.

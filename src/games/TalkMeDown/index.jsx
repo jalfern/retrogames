@@ -886,7 +886,7 @@ export default function TalkMeDown() {
                     // #1305: new order arriving? stutter the LCD glass for 6 frames.
                     if (gs.order && gs.order !== hud.lastOrder) hud.lcdFx = 6
                     hud.lastOrder = gs.order
-                    ART.drawOrderRail(g, gs.order, gs.manual.flag, hud.lcdFx, voiceRef.current.on)
+                    ART.drawOrderRail(g, gs.order, gs.manual.flag, hud.lcdFx, voiceRef.current.on, !URL_NO_TOUCH && (TOUCH_UI || URL_TOUCH))
                     if (callRef.current.open) ART.drawCallLine(g, callRef.current.buf, tick) // #1894
                     drawSparks(g, hud)
                     drawZap(g, hud)

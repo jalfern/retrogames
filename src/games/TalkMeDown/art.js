@@ -2,7 +2,7 @@
 // aesthetic: beveled steel panel, red 7-seg fuse, colored wire arcs, a cream
 // typewritten manual with rule numbers in the red margin. 640x360 native.
 import { WIRE_COLORS, GLYPHS, RULEBOOK, variantPool, BACK_FACT_STAMPS } from './engine.js'
-import { ACCEPTED_HINT, KEY_CALL_HINT } from './voice.js'
+import { ACCEPTED_HINT, KEY_CALL_HINT, TOUCH_CALL_HINT } from './voice.js'
 
 export const W = 640
 export const H = 360
@@ -696,7 +696,7 @@ export function drawFlipHint(g, pulse, tick) {
 // order-text pixels keep their exact coordinates — existing pixel gates stay
 // pinned. The footer glows LCD-green while the mic listens, dim steel while
 // it is off: the hint doubles as a quiet mic-state echo.
-export function drawOrderRail(g, order, flag, flicker = 0, micOn = false) {
+export function drawOrderRail(g, order, flag, flicker = 0, micOn = false, touch = false) {
     const y = PANEL.y + PANEL.h - 32
     g.fillStyle = '#0a0d0b'; g.fillRect(PANEL.x + 8, y, PANEL.w - 16, 32)
     g.fillStyle = P.lcd; g.fillRect(PANEL.x + 10, y + 2, PANEL.w - 20, 18)
@@ -714,7 +714,9 @@ export function drawOrderRail(g, order, flag, flicker = 0, micOn = false) {
     // #1894: the footer says two true things — while the mic listens it glows
     // with the accepted shapes (one source, ACCEPTED_HINT); while it is off
     // it coaches the keyboard channel instead. Both consts live in voice.js.
-    g.fillText(micOn ? ACCEPTED_HINT : KEY_CALL_HINT, PANEL.x + 12, y + 29)
+    // #1900: on a touch surface there is no X key — the coach names the pill,
+    // the phone's only mouth, instead of a key that does not exist there.
+    g.fillText(micOn ? ACCEPTED_HINT : (touch ? TOUCH_CALL_HINT : KEY_CALL_HINT), PANEL.x + 12, y + 29)
 }
 
 // #1894 CALL-BY-KEY: the composition rides the LCD glass itself — same

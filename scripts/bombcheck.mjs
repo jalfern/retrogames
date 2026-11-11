@@ -11,7 +11,7 @@ import {
     railOpen,
     RULEBOOK, WIRE_COLORS, GLYPHS, QUOTA_BOMBS, MAX_STRIKES, STRIKE_FUSE_COST, LOCK_TICKS, variantPool, BACK_FACT_STAMPS, ruleOf,
 } from '../src/games/TalkMeDown/engine.js'
-import { parseCall, intentLabel, ACCEPTED_HINT, applyCallKey, KEY_CALL_HINT, CALL_LINE_MAX } from '../src/games/TalkMeDown/voice.js'
+import { parseCall, intentLabel, ACCEPTED_HINT, applyCallKey, KEY_CALL_HINT, TOUCH_CALL_HINT, CALL_LINE_MAX } from '../src/games/TalkMeDown/voice.js'
 import { createRecorder, verifyRecording, validate } from '../src/utils/recording.js'
 import { readFileSync } from 'node:fs'
 
@@ -584,8 +584,17 @@ const ok = (name, cond, extra = '') => {
         /if \(r\.commit\)[\s\S]{0,140}voiceCall\(/.test(viewSrc16))
     ok('the glass draws the call line (source pin)',
         /function drawCallLine\(/.test(artSrc16) && /ART\.drawCallLine\(g, callRef\.current\.buf/.test(viewSrc16))
-    ok('the footer swaps shapes for the coach by mic state (source pin)',
-        /micOn \? ACCEPTED_HINT : KEY_CALL_HINT/.test(artSrc16))
+    ok('the footer swaps shapes for the coach by mic state, keys for pill by surface (source pin)',
+        /micOn \? ACCEPTED_HINT : \(touch \? TOUCH_CALL_HINT : KEY_CALL_HINT\)/.test(artSrc16))
+    // #1900 phone truth: a phone has no X key — the touch coach must name the
+    // pill (the phone's only mouth) and never a keyboard key.
+    ok('TOUCH_CALL_HINT coaches the pill, never a key (phone truth, #1900)',
+        /TAP/.test(TOUCH_CALL_HINT) && /MIC/.test(TOUCH_CALL_HINT) && !/PRESS/.test(TOUCH_CALL_HINT)
+        && !/X\b/.test(TOUCH_CALL_HINT) && !TOUCH_CALL_HINT.includes('"CUT') && !TOUCH_CALL_HINT.includes('"SET'), TOUCH_CALL_HINT)
+    ok('the touch coach fits the footer budget (<= the shapes line)',
+        TOUCH_CALL_HINT.length <= ACCEPTED_HINT.length, `${TOUCH_CALL_HINT.length} vs ${ACCEPTED_HINT.length}`)
+    ok('the phone flag rides the rail draw call (source pin: desktop keeps the X coach)',
+        /ART\.drawOrderRail\(g, gs\.order, gs\.manual\.flag, hud\.lcdFx, voiceRef\.current\.on, !URL_NO_TOUCH && \(TOUCH_UI \|\| URL_TOUCH\)\)/.test(viewSrc16))
     ok('the channel key never reaches the seat maps (source pin: KeyX is the mouth, not a pad)',
         !/KeyX:\s*'/.test(viewSrc16) && /if \(e\.code === 'KeyX'\)/.test(viewSrc16))
     ok('j, q, x are letters no call needs (the open key cannot starve a shape)',
