@@ -34,7 +34,7 @@ Dungeons of Doom keep whatever you bring them.
 ## Verify
 
 ```bash
-npm run roguecheck        # 68 checks: boot+purity, determinism (incl.
+npm run roguecheck        # 76 checks: boot+purity, determinism (incl.
                          # interleaved replays), BFS stairs-reachability on 40
                          # seeds, combat/xp/hunger/descend/pickup/wield/eat/
                          # quaff/scroll rules, the door mechanic (closed
@@ -45,6 +45,7 @@ npm run roguecheck        # 68 checks: boot+purity, determinism (incl.
                          # audibility gate (hit/kill/die/descend/quaff/door
                          # fx all asserted in the sim)
 npm run feedbackcheck    # seedpin law + floor (Rogue = title 45)
+npm run watchcheck -- --only rogue    # the WATCH pilot + batch-23 source pins
 ```
 
 Mutant proof: flipping the descend guard in `handleDescend` (`!== '%'` →
@@ -93,6 +94,27 @@ port now speaks the original's glyph grammar:
   `audioController` synth (Emberwood #1512 pattern). roguecheck's
   audibility gate asserts the sim fires them — a silent build goes red.
   The death screen names the killer ("Killed by a dragon").
+
+## WATCH (#1637 batch 23) — the Y key seats the BFS crawler
+
+`watchStep(state)` in sim.js is roguecheck §6's proven autopilot lifted INTO
+the game: standing on `%` descends; an adjacent monster gets the bump-attack;
+otherwise the first step of the 8-dir BFS to the stairs; no route -> null and
+the seat releases honestly (never fakes progress). Because it reads only the
+state it is handed, Y seats at ANY live position, a steer hands back from
+exactly there, and Y re-seats and re-plans from where the player stopped —
+reactive, not a recording. The seat is turn-based: one reducer action per
+140 ms on its own interval (no frame clock to race; the reducer owns the RNG
+stream, so the seat consumes no more entropy than the same moves typed).
+
+- Collision to know: lowercase `y` was the 1980 NW key. The shared Y/WATCH
+  contract wins (one key in every pilot); NW lives on numpad `7` and the
+  D-pad. `Y` never seats on a menu/help/death screen.
+- Witness: roguecheck §6 descends 20/20 seeds with this same route (dlvl 4
+  on >=15/20, food slack >=500 without eating); the watchcheck pilot advances
+  the REAL dungeon untouched and re-seats after takeover.
+- No attract screen — the dungeon boots straight into play, so the pill sits
+  on live ground from the first frame (named in watchphonecheck SKIP_ATTRACT).
 
 ## Honest gaps (vs the 1980 original)
 
