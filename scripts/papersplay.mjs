@@ -316,21 +316,25 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
 // walks up the line — authored name, mark at the counter, honest paper.
 {
     const EXPECT = {
-        grubak: { name: 'VOLEN GRUBAK', scar: [10, 40], mole: [0, 0], wrinkle: [0, 0], ear: [20, 52] },
-        marko: { name: 'MARKO DRENIN', scar: [0, 0], mole: [3, 12], wrinkle: [0, 0], ear: [20, 52] },
-        anja: { name: 'ANJA TOLKA', scar: [0, 0], mole: [0, 0], wrinkle: [60, 72], ear: [20, 52] },
-        petr: { name: 'PETR ZEMEK', scar: [0, 0], mole: [0, 0], wrinkle: [0, 0], ear: [64, 100] },
+        grubak: { name: 'VOLEN GRUBAK', scar: [10, 40], mole: [0, 0], wrinkle: [0, 0], ear: [20, 52], freckles: [0, 0], patch: [0, 0] },
+        marko: { name: 'MARKO DRENIN', scar: [0, 0], mole: [3, 12], wrinkle: [0, 0], ear: [20, 52], freckles: [0, 0], patch: [0, 0] },
+        anja: { name: 'ANJA TOLKA', scar: [0, 0], mole: [0, 0], wrinkle: [60, 72], ear: [20, 52], freckles: [0, 0], patch: [0, 0] },
+        petr: { name: 'PETR ZEMEK', scar: [0, 0], mole: [0, 0], wrinkle: [0, 0], ear: [64, 100], freckles: [0, 0], patch: [0, 0] },
+        sonya: { name: 'SONYA MALAK', scar: [0, 0], mole: [0, 0], wrinkle: [0, 0], ear: [20, 52], freckles: [8, 16], patch: [0, 0] },
+        tadek: { name: 'TADEK HRUBY', scar: [0, 0], mole: [0, 0], wrinkle: [0, 0], ear: [20, 52], freckles: [0, 0], patch: [20, 28] },
     }
     const cp = await page.evaluate(() => window.__ppTest.castPix())
-    r.check('castPix paints all four regulars', Array.isArray(cp) && cp.length === 4, JSON.stringify(cp))
+    r.check('castPix paints all six regulars', Array.isArray(cp) && cp.length === 6, JSON.stringify((cp || []).map((x) => x.id)))
     for (const row of cp || []) {
         const e = EXPECT[row.id]
         if (!e) { r.check(`unknown cast id ${row.id}`, false); continue }
-        r.check(`${e.name}: every ink in its own region ${JSON.stringify({ scar: row.scar, mole: row.mole, wrinkle: row.wrinkle, ear: row.ear })}`,
+        r.check(`${e.name}: every ink in its own region ${JSON.stringify({ scar: row.scar, mole: row.mole, wrinkle: row.wrinkle, ear: row.ear, freckles: row.freckles, patch: row.patch })}`,
             row.scar >= e.scar[0] && row.scar <= e.scar[1]
             && row.mole >= e.mole[0] && row.mole <= e.mole[1]
             && row.wrinkle >= e.wrinkle[0] && row.wrinkle <= e.wrinkle[1]
-            && row.ear >= e.ear[0] && row.ear <= e.ear[1])
+            && row.ear >= e.ear[0] && row.ear <= e.ear[1]
+            && row.freckles >= e.freckles[0] && row.freckles <= e.freckles[1]
+            && row.patch >= e.patch[0] && row.patch <= e.patch[1])
     }
     // live recurrence: seed 0's day 2 carries cast[0] — Volen Grubak walks the
     // same line he walked… well, will walk again on day 6. The window sees it.
@@ -338,15 +342,21 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
     await wait(300)
     await page.evaluate(() => window.__ppTest.runDay())   // honest day 1 (no cast day)
     await wait(300)
-    let reg = null, regVerdict = null
+    let reg = null, regVerdict = null, greetBubble = -1
     for (let g = 0; g < 12 && !reg; g++) {
         reg = await page.evaluate(() => {
             const p = window.__ppTest.probe()
             const per = p && p.view && p.view.person
             if (!per || !per.regular) return null
-            return { id: per.regular, name: per.passport ? per.passport.name : null, mark: per.mark || null }
+            return { id: per.regular, name: per.passport ? per.passport.name : null, mark: per.mark || null, say: per.say || null }
         })
-        if (reg) { regVerdict = await page.evaluate(() => window.__ppTest.verdict()); break }
+        if (reg) {
+            // #1997 the neighbor introduces itself: after the previous stamp's
+            // 30-tick hold ticks out, the greet bubble prints at the counter.
+            await wait(650)
+            greetBubble = await page.evaluate(() => window.__ppTest.bubblePix())
+            regVerdict = await page.evaluate(() => window.__ppTest.verdict()); break
+        }
         const v = await page.evaluate(() => window.__ppTest.verdict())
         await page.keyboard.press(v === 'approve' ? 'a' : 'd')
         await wait(140)
@@ -354,6 +364,9 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
     r.check('a regular walks the live line (seed 0 day 2 — Volen Grubak, scar, honest paper)',
         !!reg && reg.id === 'grubak' && reg.name === 'VOLEN GRUBAK' && reg.mark === 'scar' && regVerdict === 'approve',
         JSON.stringify({ reg, regVerdict }))
+    r.check(`the first walk-up greets — bubble prints ${greetBubble} paper px with his line`,
+        greetBubble > 4000 && !!reg && Array.isArray(reg.say) && reg.say.length === 1 && reg.say[0] === 'GOOD DAY, GUARD.',
+        `${greetBubble} ${reg && JSON.stringify(reg.say)}`)
     await page.keyboard.press('a') // stamp the neighborhood in
     await page.evaluate(() => window.__ppTest.runDay())    // finish day 2 clean
     await wait(250)
@@ -432,6 +445,74 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
         && naive.strikes === beforeNaive.strikes + 1 && naive.last.ok === false && naive.last.why === 'WANTED',
         JSON.stringify({ fell, why: naive.last && naive.last.why }))
     await page.evaluate(() => window.__ppTest.runDay())    // walk the rest of the day honestly
+    await wait(250)
+}
+
+// #1997 THE WINDOW ROTATES, live: seed 4's week belongs to the two newest
+// seats. Days 2-5 carry Sonya, Tadek, Grubak, Marko; Sonya's return on day 6
+// is THIS week's arc turn (the wall convicts the familiar knit-seller) and
+// Tadek returns on day 7 with a callback of his own. Both new faces greet at
+// the counter, Sonya's authored scarf + earring paint their own inks, and the
+// correct deny on her turn proves the arc rides the rotated head of the window.
+{
+    await page.evaluate(() => window.__ppTest.start(4))
+    await wait(300)
+    await page.evaluate(() => window.__ppTest.runDay())   // honest day 1
+    await wait(250)
+    const walkTo = async (id) => {
+        for (let g = 0; g < 14; g++) {
+            const hit = await page.evaluate((want) => {
+                const p = window.__ppTest.probe()
+                const per = p && p.view && p.view.person
+                if (!per || per.regular !== want) return null
+                return { name: per.passport ? per.passport.name : null, mark: per.mark || null, say: per.say || null, arc: !!per.arc, ppId: per.passport ? per.passport.id : null, wanted: p.wanted.filter((w) => w.name === per.passport.name).map((w) => w.id) }
+            }, id)
+            if (hit) { await wait(650); return { hit, bubble: await page.evaluate(() => window.__ppTest.bubblePix()), verdict: await page.evaluate(() => window.__ppTest.verdict()), pix: await page.evaluate(() => window.__ppTest.crowdPix()) } }
+            const v = await page.evaluate(() => window.__ppTest.verdict())
+            await page.keyboard.press(v === 'approve' ? 'a' : 'd')
+            await wait(140)
+        }
+        return null
+    }
+    const sy2 = await walkTo('sonya')
+    r.check('the fifth regular walks the live line (seed 4 day 2 — Sonya Malak, freckles, honest paper)',
+        !!sy2 && sy2.hit.name === 'SONYA MALAK' && sy2.hit.mark === 'freckles' && sy2.verdict === 'approve',
+        JSON.stringify(sy2 && { n: sy2.hit.name, m: sy2.hit.mark, v: sy2.verdict }))
+    r.check(`Sonya greets her first shift — bubble prints ${sy2 ? sy2.bubble : -1} paper px with her line`,
+        !!sy2 && sy2.bubble > 4000 && sy2.hit.say && sy2.hit.say.length === 1 && sy2.hit.say[0] === 'MY SON LIVES IN OR VECHNA.',
+        `${sy2 && sy2.bubble} ${sy2 && JSON.stringify(sy2.hit.say)}`)
+    r.check(`the knit-seller's authored scarf and earring paint at the counter ${JSON.stringify(sy2 && sy2.pix && { hat: sy2.pix.hat, ear: sy2.pix.ear })}`,
+        !!sy2 && sy2.pix && sy2.pix.hat > 0 && sy2.pix.ear > 0, JSON.stringify(sy2 && sy2.pix))
+    await page.keyboard.press('a')
+    await page.evaluate(() => window.__ppTest.runDay())    // finish day 2
+    await wait(200)
+    const tk3 = await walkTo('tadek')
+    r.check('the sixth regular walks the live line (seed 4 day 3 — Tadek Hruby, patch, honest paper)',
+        !!tk3 && tk3.hit.name === 'TADEK HRUBY' && tk3.hit.mark === 'patch' && tk3.verdict === 'approve',
+        JSON.stringify(tk3 && { n: tk3.hit.name, m: tk3.hit.mark, v: tk3.verdict }))
+    r.check(`the retired clerk greets — bubble prints ${tk3 ? tk3.bubble : -1} paper px ("I AM RETIRED, GUARD.")`,
+        !!tk3 && tk3.bubble > 4000 && tk3.hit.say && tk3.hit.say[0] === 'I AM RETIRED, GUARD.',
+        `${tk3 && tk3.bubble} ${tk3 && JSON.stringify(tk3.hit.say)}`)
+    await page.keyboard.press('a')
+    await page.evaluate(() => window.__ppTest.runDay())    // finish day 3
+    await wait(200)
+    for (let d = 4; d < 6; d++) { await page.evaluate(() => window.__ppTest.runDay()); await wait(150) }
+    const sy6 = await walkTo('sonya')
+    r.check('the rotated window puts a NEW face on the wall (seed 4 day 6 — the sheet carries SONYA\'S number)',
+        !!sy6 && sy6.hit.arc && sy6.hit.name === 'SONYA MALAK' && sy6.hit.wanted.includes(sy6.hit.ppId) && sy6.verdict === 'deny',
+        JSON.stringify(sy6 && { n: sy6.hit.name, arc: sy6.hit.arc, w: sy6.hit.wanted, pp: sy6.hit.ppId, v: sy6.verdict }))
+    r.check('the turn keeps the canonical Jorji pair under the new face',
+        !!sy6 && sy6.hit.say && sy6.hit.say[0] === 'YOU AGAIN.' && /\.\.\./.test(sy6.hit.say[1]),
+        JSON.stringify(sy6 && sy6.hit.say))
+    await page.keyboard.press('d')   // the right deny — the neighborhood is not safe
+    await wait(160)
+    await page.evaluate(() => window.__ppTest.runDay())    // finish day 6 honestly
+    await wait(200)
+    const tk7 = await walkTo('tadek')
+    r.check('day 7\'s return speaks for itself (Tadek: "YOU LET ME THROUGH.") and walks honest',
+        !!tk7 && !tk7.hit.arc && tk7.hit.say && tk7.hit.say[0] === 'YOU AGAIN.' && tk7.hit.say[1] === 'YOU LET ME THROUGH.' && tk7.verdict === 'approve',
+        JSON.stringify(tk7 && tk7.hit.say))
+    await page.evaluate(() => window.__ppTest.runDay())    // finish day 7 honestly
     await wait(250)
 }
 
