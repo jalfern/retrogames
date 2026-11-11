@@ -87,6 +87,8 @@ export const GAMES = [
     { id: 'emberwood', path: '/emberwood' },
     { id: 'garden-guard', path: '/garden-guard' },
     { id: 'homebody', path: '/homebody' },
+    { id: 'frogger', path: '/frogger' }, // #1986 b25 grew contractGames; the soak roster missed it
+    { id: 'asteroids', path: '/asteroids' }, // #2000 b26 missed it too — nightly roster check reddened main
     { id: 'iron-ring', path: '/iron-ring' },
     { id: 'viper-pit', path: '/viper-pit' },
     { id: 'britannia', path: '/britannia' },
