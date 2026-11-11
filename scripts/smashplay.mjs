@@ -160,5 +160,34 @@ const px = await page.evaluate(() => {
 })
 r.check('the arena actually renders', px > 500, `${px} lit px`)
 
+// the big room and its camera (#1973), proven in pixels: the ladder climbs to
+// room 5, the hero walks the extra floor, and the pan reveals studio floor
+// where the old screen-edge wall stood — with the far chrome border arriving
+// at the right once the camera clamps.
+{
+    const cam = await page.evaluate(async () => {
+        const raf = () => new Promise((res) => requestAnimationFrame(res))
+        const T = window.__smashTest
+        const gs = T.state()
+        for (let target = 1; target <= 4; target++) {
+            gs.enemies = []; gs.roomData.spawns = []; gs.spawnT = 0; gs.bonusT = 0
+            T.stepWith({})
+            gs.player.x = 8 * 16 + 8; gs.player.y = 24 + 8
+            T.stepWith({})
+        }
+        const inBig = gs.room === 4 && gs.roomData.gw === 24
+        gs.enemies = []; gs.roomData.spawns = []; gs.spawnT = 1e9; gs.player.invuln = 1e9
+        for (let i = 0; i < 900; i++) T.stepWith({ mx: 1, my: 0 })
+        await raf(); await raf()
+        const c = document.querySelector('canvas[data-smash-stage]')
+        const g = c.getContext('2d')
+        const at = (x, y) => { const d = g.getImageData(x, y, 1, 1).data; return { r: d[0], gg: d[1], b: d[2] } }
+        return { inBig, camX: T.probe().camX, px: Math.round(gs.player.x), left: at(2, 122), right: at(253, 100) }
+    })
+    r.check('room 5 boards wide and the camera pans with the hero', cam.inBig && cam.camX >= 100 && cam.px > 300, JSON.stringify({ camX: cam.camX, x: cam.px }))
+    r.check('the pan shows studio floor where the old screen-edge wall was', cam.left.b < 60, JSON.stringify(cam.left))
+    r.check('the far chrome border appears on the clamp', cam.right.b >= 60, JSON.stringify(cam.right))
+}
+
 r.check('zero page errors', errors.length === 0, errors.slice(0, 3).join(' | '))
 r.exit(browser)
