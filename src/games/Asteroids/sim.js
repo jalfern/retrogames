@@ -30,6 +30,24 @@ export const INVULN_TICKS = 120   // ~2 s blinking invulnerability (arcade grace
 export const BONUS_LIFE_EVERY = 10000
 export const FIRE_COOLDOWN = 15
 
+// Flying saucers (#2001) — the 1979 machine's signature threat. It paid 200
+// for the large saucer and 1000 for the small one, and a saucer's OWN bullet
+// that smashed a rock paid more than the player's: the large UFO 50/100/200
+// and the small UFO 200/1000/5000 (small/medium/large rock) — the reckless
+// alien gunner is bonus fire. These are the machine's tables (#237 law).
+export const SAUCER_RADIUS = { big: 22, small: 12 }
+export const SAUCER_BULLET_SPEED = 4
+export const SAUCER_SCORE = { big: 200, small: 1000 }
+export const SAUCER_ROCK_BONUS = {
+    big: { big: 200, medium: 100, small: 50 },
+    small: { big: 5000, medium: 1000, small: 200 },
+}
+const sizeTier = (size) => (size >= 30 ? 'big' : size >= 20 ? 'medium' : 'small')
+// Alarms arrive every 8–14 s while rocks are on the field; the first after
+// ~18 s — the arcade never opened an alarm the instant the game did.
+const SAUCER_FIRST = 1080
+const saucerGap = (gs) => gs.tickN + 480 + Math.floor(rnd(gs) * 360)
+
 // The machine's stream: one mulberry32 state carried INSIDE gs (b16 law), so
 // a rollout can clone the world and fork the dice deterministically, and the
 // hash covers the stream position too. Identical steps to seedRng(seed).
@@ -98,10 +116,13 @@ export function makeRun(seed, opts = {}) {
         invulnUntil: 0,
         ship: { x: width / 2, y: height / 2, vx: 0, vy: 0, angle: -Math.PI / 2, cooldown: 0 },
         asteroids: [],
+        saucers: [],
+        nextSaucerAt: 0, // set after the wave dice so the opening field stays the seed's
         bullets: [],
         particles: [],
     }
     gs.asteroids = spawnWave(() => rnd(gs), gs.wave, width, height)
+    gs.nextSaucerAt = SAUCER_FIRST + Math.floor(rnd(gs) * 360)
     return gs
 }
 
@@ -122,6 +143,8 @@ export function rebuildBoard(gs) {
     gs.respawnAt = -1
     gs.invulnUntil = 0
     gs.asteroids = spawnWave(() => rnd(gs), gs.wave, gs.width, gs.height)
+    gs.saucers = []
+    gs.nextSaucerAt = saucerGap(gs)
     gs.bullets = []
     gs.particles = []
 }
@@ -165,6 +188,68 @@ function killShip(gs, ev) {
     }
 }
 
+// Every score path runs the arcade bonus-life check (one extra per 10,000).
+function addScore(gs, pts) {
+    gs.score += pts
+    const earned = livesForScore(gs.score)
+    if (earned > gs.bonusLives) { gs.lives += earned - gs.bonusLives; gs.bonusLives = earned }
+}
+
+// Saucers (#2001): enter from a random edge, cross and wrap, and fire at the
+// ship — the large one sprays (±0.55 rad of error, erratic course changes),
+// the small one flies the arcade's sine weave nearly dead-on (±0.15). Attract
+// mode gets the sight but never the fire. Dice all ride the run's stream, so
+// ?seed=N replays every alarm's arrival, size, path and shot.
+function tickSaucers(gs, ev) {
+    if (gs.asteroids.length > 0 && gs.tickN >= gs.nextSaucerAt) {
+        const big = rnd(gs) < 0.5
+        const fromLeft = rnd(gs) < 0.5
+        const r = SAUCER_RADIUS[big ? 'big' : 'small']
+        gs.saucers.push({
+            big,
+            x: fromLeft ? -r : gs.width + r,
+            y: 50 + rnd(gs) * (gs.height - 100),
+            vx: (fromLeft ? 1 : -1) * (big ? 2.0 : 2.7),
+            vy: big ? (rnd(gs) < 0.5 ? -1.4 : 1.4) : 0,
+            phase: rnd(gs) * Math.PI * 2,
+            amp: big ? 0 : 1.1 + rnd(gs) * 0.7,
+            cooldown: big ? 60 : 40,
+            life: 900, // an alarm that outlives its set piece leaves with the night
+        })
+        gs.nextSaucerAt = saucerGap(gs)
+        ev.saucerSpawn = big ? 'big' : 'small' // truthy for ANY alarm — both sizes arrive with their sound
+    }
+    for (const s of gs.saucers) {
+        s.x += s.vx
+        s.life--
+        const r = SAUCER_RADIUS[s.big ? 'big' : 'small']
+        if (s.big) {
+            s.y += s.vy
+            if (gs.tickN % 30 === 0 && rnd(gs) < 0.6) s.vy = -s.vy
+            if (s.y < 30) { s.y = 30; s.vy = Math.abs(s.vy) }
+            if (s.y > gs.height - 30) { s.y = gs.height - 30; s.vy = -Math.abs(s.vy) }
+        } else {
+            s.phase += 0.07
+            s.y += Math.sin(s.phase) * s.amp
+        }
+        if (s.x < -r) s.x = gs.width + r
+        if (s.x > gs.width + r) s.x = -r
+        s.cooldown--
+        if (s.cooldown <= 0 && !gs.attract && shipAlive(gs)) {
+            let ang = Math.atan2(gs.ship.y - s.y, gs.ship.x - s.x)
+            ang += (rnd(gs) - 0.5) * (s.big ? 1.1 : 0.3)
+            gs.bullets.push({
+                x: s.x, y: s.y,
+                vx: Math.cos(ang) * SAUCER_BULLET_SPEED,
+                vy: Math.sin(ang) * SAUCER_BULLET_SPEED,
+                life: 140, hostile: true, owner: s.big ? 'big' : 'small',
+            })
+            s.cooldown = s.big ? 80 + Math.floor(rnd(gs) * 40) : 45 + Math.floor(rnd(gs) * 25)
+            ev.saucerShot = true
+        }
+    }
+}
+
 // The attract demo (pre-lift, verbatim): aim at the nearest rock, fire when
 // aligned, drift toward it if far, refill the field on a die when empty.
 function attractDemo(gs, ev) {
@@ -205,7 +290,7 @@ function attractDemo(gs, ev) {
 // while watching with no human input, watchStep drives instead.
 // ---------------------------------------------------------------------------
 export function tickAsteroids(gs, input = null) {
-    const ev = { shot: false, pitch: 0, smashed: 0, died: false, respawn: false, wave: 0, over: false }
+    const ev = { shot: false, pitch: 0, smashed: 0, died: false, respawn: false, wave: 0, over: false, saucerSpawn: false, saucerShot: false, saucerKilled: null }
     gs.tickN++
     if (gs.over) { ev.over = true; return ev }
 
@@ -283,8 +368,33 @@ export function tickAsteroids(gs, input = null) {
     })
     gs.particles = gs.particles.filter(p => p.life > 0)
 
+    // Saucers (#2001) — arrival, weave, fire.
+    tickSaucers(gs, ev)
+
+    // Collisions: player bullets vs saucers — 200 big / 1000 small, and the
+    // bullet spends itself in the kill.
+    gs.bullets.forEach(b => {
+        if (b.hostile || b.life <= 0) return
+        for (const s of gs.saucers) {
+            if (s.dead) continue
+            const dx = b.x - s.x
+            const dy = b.y - s.y
+            if (Math.sqrt(dx * dx + dy * dy) < SAUCER_RADIUS[s.big ? 'big' : 'small']) {
+                b.life = 0
+                s.dead = true
+                addScore(gs, SAUCER_SCORE[s.big ? 'big' : 'small'])
+                spawnParticles(gs, s.x, s.y, 12)
+                ev.saucerKilled = s.big ? 'big' : 'small'
+                break
+            }
+        }
+    })
+
     // Collisions: bullets vs rocks — arcade table 20/50/100 by size,
-    // big rocks split into two mediums, mediums into two smalls.
+    // big rocks split into two mediums, mediums into two smalls. A SAUCER's
+    // bullet smashing a rock pays the bonus table instead (50/100/200 from
+    // the large UFO, 200/1000/5000 from the small one) — and it splits the
+    // rock the same way; the field is shared.
     gs.bullets.forEach(b => {
         gs.asteroids.forEach(a => {
             const dx = b.x - a.x
@@ -294,9 +404,7 @@ export function tickAsteroids(gs, input = null) {
                 // Hit
                 b.life = 0
                 a.hit = true
-                gs.score += scoreForSize(a.size)
-                const earned = livesForScore(gs.score)
-                if (earned > gs.bonusLives) { gs.lives += earned - gs.bonusLives; gs.bonusLives = earned }
+                addScore(gs, b.hostile ? SAUCER_ROCK_BONUS[b.owner][sizeTier(a.size)] : scoreForSize(a.size))
                 // Split?
                 if (a.size > 15) {
                     gs.asteroids.push(makeAsteroid(() => rnd(gs), a.x, a.y, a.size / 2, gs.width, gs.height))
@@ -309,8 +417,9 @@ export function tickAsteroids(gs, input = null) {
         })
     })
 
-    // Clean up hit asteroids
+    // Clean up hit asteroids and downed saucers
     gs.asteroids = gs.asteroids.filter(a => !a.hit)
+    gs.saucers = gs.saucers.filter(s => !s.dead && s.life > 0)
 
     // Ship vs rocks (1979 law — the pre-batch ship could not die).
     if (shipAlive(gs) && gs.tickN >= gs.invulnUntil && !gs.attract) {
@@ -324,10 +433,37 @@ export function tickAsteroids(gs, input = null) {
         }
     }
 
-    // Wave clear: the field empties → next wave (arcade refill).
+    // Ship vs saucers and saucer fire — the alien kills on contact and on
+    // hit; the respawn grace covers both (same 1979 mercy).
+    if (shipAlive(gs) && gs.tickN >= gs.invulnUntil && !gs.attract && gs.saucers.length > 0) {
+        for (const s of gs.saucers) {
+            const dx = s.x - gs.ship.x
+            const dy = s.y - gs.ship.y
+            if (Math.sqrt(dx * dx + dy * dy) < SAUCER_RADIUS[s.big ? 'big' : 'small'] + SHIP_SIZE * 0.4) {
+                killShip(gs, ev)
+                break
+            }
+        }
+    }
+    if (!gs.attract && shipAlive(gs) && gs.tickN >= gs.invulnUntil && gs.bullets.length > 0) {
+        for (const b of gs.bullets) {
+            if (!b.hostile) continue
+            const dx = b.x - gs.ship.x
+            const dy = b.y - gs.ship.y
+            if (Math.sqrt(dx * dx + dy * dy) < SHIP_SIZE * 0.5) {
+                b.life = 0
+                killShip(gs, ev)
+                break
+            }
+        }
+    }
+
+    // Wave clear: the field empties → next wave (arcade refill). Saucers
+    // never gate it — the machine's wave was rocks only.
     if (!gs.attract && !gs.over && gs.asteroids.length === 0) {
         gs.wave++
         gs.asteroids = spawnWave(() => rnd(gs), gs.wave, gs.width, gs.height)
+        gs.nextSaucerAt = saucerGap(gs)
         ev.wave = gs.wave
     }
     return ev
@@ -369,12 +505,15 @@ function cloneWorld(gs) {
         invulnUntil: gs.invulnUntil,
         ship: { ...gs.ship },
         asteroids: gs.asteroids.map(a => ({ x: a.x, y: a.y, vx: a.vx, vy: a.vy, size: a.size, vertices: a.vertices })),
+        saucers: gs.saucers.map(s => ({ ...s })),
+        nextSaucerAt: gs.nextSaucerAt,
         bullets: gs.bullets.map(b => ({ ...b })),
         particles: [],
     }
 }
 
-// Signed gap from the hull to the nearest rock (wrap-aware), negative = doom.
+// Signed gap from the hull to the nearest hazard (wrap-aware), negative = doom.
+// #2001: saucers and their fire count as hazards too.
 function closestGap(c) {
     let best = Infinity
     for (const a of c.asteroids) {
@@ -383,8 +522,40 @@ function closestGap(c) {
         const g = Math.sqrt(dx * dx + dy * dy) - (a.size + SHIP_SIZE * 0.4)
         if (g < best) best = g
     }
+    for (const s of c.saucers) {
+        const dx = wrapDelta(s.x - c.ship.x, c.width)
+        const dy = wrapDelta(s.y - c.ship.y, c.height)
+        const g = Math.sqrt(dx * dx + dy * dy) - (SAUCER_RADIUS[s.big ? 'big' : 'small'] + SHIP_SIZE * 0.4)
+        if (g < best) best = g
+    }
+    for (const b of c.bullets) {
+        if (!b.hostile) continue
+        const dx = wrapDelta(b.x - c.ship.x, c.width)
+        const dy = wrapDelta(b.y - c.ship.y, c.height)
+        const g = Math.sqrt(dx * dx + dy * dy) - (2.5 + SHIP_SIZE * 0.4)
+        if (g < best) best = g
+    }
     return best
 }
+
+// Honest time-to-collision on the torus-relative line (|Δ + v·t| = rr).
+function arriveTTC(dx, dy, rvx, rvy, rr) {
+    const cq = dx * dx + dy * dy - rr * rr
+    let ttc = Infinity
+    if (cq <= 0) ttc = 0
+    else {
+        const bq = dx * rvx + dy * rvy
+        if (bq < 0) {
+            const disc = bq * bq - cq
+            if (disc > 0) ttc = -bq - Math.sqrt(disc)
+        }
+    }
+    return ttc
+}
+
+// The saucer's instantaneous vertical velocity — the large one drifts on a
+// flipped course, the small one rides its sine weave.
+const saucerVy = (s) => (s.big ? s.vy : Math.cos(s.phase) * s.amp)
 
 // Scan once for the two things the policy reads: the rock whose honest time
 // to collision is soonest (|Δ + v·t| = rr on the torus-relative line — a
@@ -399,33 +570,50 @@ function scan(c) {
     let nd = Infinity
     let ndx = 0
     let ndy = 0
+    let ndvx = 0
+    let ndvy = 0
+    let ndR = 0
     let near = null
     for (const a of c.asteroids) {
         const dx = wrapDelta(a.x - c.ship.x, c.width)
         const dy = wrapDelta(a.y - c.ship.y, c.height)
         const dist = Math.sqrt(dx * dx + dy * dy)
-        if (dist < nd) { nd = dist; near = a; ndx = dx; ndy = dy }
+        if (dist < nd) { nd = dist; near = a; ndx = dx; ndy = dy; ndvx = a.vx; ndvy = a.vy; ndR = a.size }
         const rr = a.size + SHIP_SIZE * 0.4
-        const rvx = a.vx - c.ship.vx
-        const rvy = a.vy - c.ship.vy
-        const cq = dx * dx + dy * dy - rr * rr
-        let ttc = Infinity
-        if (cq <= 0) ttc = 0
-        else {
-            const bq = dx * rvx + dy * rvy
-            if (bq < 0) {
-                const disc = bq * bq - cq
-                if (disc > 0) ttc = -bq - Math.sqrt(disc)
-            }
-        }
+        const ttc = arriveTTC(dx, dy, a.vx - c.ship.vx, a.vy - c.ship.vy, rr)
         if (ttc < 45 && ttc < tThreat) { tThreat = ttc; threat = a }
+    }
+    // #2001 — the saucers shoot back, so they enter the driver's eye twice:
+    // as threats (hull and fire) and as targets worth closing on. A kill pays
+    // 200/1000 against a rock's 20/50/100, so the eye discounts their
+    // distance by 120 px — the machine's own economics, aimed with their
+    // instantaneous velocity (the weave is slow, the lead stays honest).
+    for (const s of c.saucers) {
+        const dx = wrapDelta(s.x - c.ship.x, c.width)
+        const dy = wrapDelta(s.y - c.ship.y, c.height)
+        const svy = saucerVy(s)
+        const rr = SAUCER_RADIUS[s.big ? 'big' : 'small'] + SHIP_SIZE * 0.4
+        const ttc = arriveTTC(dx, dy, s.vx - c.ship.vx, svy - c.ship.vy, rr)
+        if (ttc < 75 && ttc < tThreat) { tThreat = ttc; threat = { x: s.x, y: s.y } }
+        // Hunt the UFO, but never buzz the muzzle: the kill discount applies
+        // only beyond 160 px — inside that, its own gun outranks its bounty.
+        const raw = Math.sqrt(dx * dx + dy * dy)
+        const dist = raw - (raw > 160 ? 120 : 0)
+        if (dist < nd) { nd = dist; near = s; ndx = dx; ndy = dy; ndvx = s.vx; ndvy = svy; ndR = SAUCER_RADIUS[s.big ? 'big' : 'small'] }
+    }
+    for (const b of c.bullets) {
+        if (!b.hostile) continue
+        const dx = wrapDelta(b.x - c.ship.x, c.width)
+        const dy = wrapDelta(b.y - c.ship.y, c.height)
+        const ttc = arriveTTC(dx, dy, b.vx - c.ship.vx, b.vy - c.ship.vy, 2.5 + SHIP_SIZE * 0.4)
+        if (ttc < 60 && ttc < tThreat) { tThreat = ttc; threat = { x: b.x, y: b.y } }
     }
     let aim = null
     if (near) {
         let aimX = ndx
         let aimY = ndy
-        const qa = near.vx * near.vx - BULLET_SPEED * BULLET_SPEED
-        const qb = 2 * (ndx * near.vx + ndy * near.vy)
+        const qa = ndvx * ndvx - BULLET_SPEED * BULLET_SPEED
+        const qb = 2 * (ndx * ndvx + ndy * ndvy)
         const qc = ndx * ndx + ndy * ndy
         let tHit = 0
         if (Math.abs(qa) < 1e-9) {
@@ -439,19 +627,19 @@ function scan(c) {
             }
         }
         if (tHit > 0 && tHit < WATCH_HORIZON) {
-            aimX = ndx + near.vx * tHit
-            aimY = ndy + near.vy * tHit
+            aimX = ndx + ndvx * tHit
+            aimY = ndy + ndvy * tHit
         }
         const raw = Math.atan2(aimY, aimX)
         let diff = raw - c.ship.angle
         while (diff > Math.PI) diff -= Math.PI * 2
         while (diff < -Math.PI) diff += Math.PI * 2
         const dist = Math.sqrt(aimX * aimX + aimY * aimY)
-        // The rock's angular half-size at the shot's distance: rotation ticks
+        // The target's angular half-size at the shot's distance: rotation ticks
         // are quantized at ROTATION_SPEED, so the fire window opens when a
-        // settled heading can put the bullet inside the rock — distant pebbles
+        // settled heading can put the bullet inside it — distant pebbles
         // need the ship to CLOSE before a hit is geometrically possible.
-        const window = Math.max(0.05, near.size / Math.max(dist, 40))
+        const window = Math.max(0.05, ndR / Math.max(dist, 40))
         aim = { diff, dist, window, closing: tThreat }
     }
     return { threat, tThreat, nd, aim }
@@ -560,7 +748,8 @@ export function stateHash(gs) {
     let s = `A${gs.tickN}|${gs.score}|${gs.lives}|${gs.bonusLives}|${gs.wave}|${gs.over ? 1 : 0}|${gs.respawnAt}|${gs.invulnUntil}|${gs.rngState}|`
     s += `${r4(gs.ship.x)},${r4(gs.ship.y)},${r4(gs.ship.vx)},${r4(gs.ship.vy)},${r4(gs.ship.angle)},${gs.ship.cooldown}|`
     s += gs.asteroids.map(a => `${r4(a.x)},${r4(a.y)},${r4(a.vx)},${r4(a.vy)},${a.size}`).join(';') + '|'
-    s += gs.bullets.map(b => `${r4(b.x)},${r4(b.y)},${r4(b.life)}`).join(';') + '|'
+    s += gs.saucers.map(sv => `${r4(sv.x)},${r4(sv.y)},${sv.big ? 'B' : 's'},${sv.life},${sv.cooldown}`).join(';') + `|${gs.nextSaucerAt}|`
+    s += gs.bullets.map(b => `${r4(b.x)},${r4(b.y)},${r4(b.life)},${b.hostile ? 'H' : ''}`).join(';') + '|'
     s += gs.particles.length
     let h = 0x811c9dc5
     for (let i = 0; i < s.length; i++) {

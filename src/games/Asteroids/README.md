@@ -54,6 +54,34 @@ OWN physics on a cloned world, 70 ticks ahead, under greedy continuation:
 Measured 40 seeds × 120 s: all 40 finish the watch, 35 zero-death, waves 2–4,
 worst seed still banks 6560.
 
+## Flying saucers (#2001)
+The 1979 machine's signature threat. Alarms arrive every 8–14 s while rocks
+are on the field (first after ~18 s), entering from a random edge and wrapping.
+The **large saucer** (r 22, speed 2.0) drifts with erratic course changes and
+**sprays** — its shots carry ±0.55 rad of error. The **small saucer**
+(r 12, speed 2.7) flies the arcade's sine weave and fires nearly dead-on
+(±0.15 rad). Saucer bullets fly at 4 (outrunnable), kill the ship on hit,
+hull contact kills — and the respawn grace covers all three death paths.
+
+Scoring is the machine's table: **200 large / 1000 small** for the saucers,
+and a saucer's own bullet smashing a rock pays the **bonus** instead of the
+base table — large UFO 50/100/200, small UFO 200/1000/5000
+(small/medium/large rock) — the reckless alien gunner is bonus fire, and its
+bullets split rocks on the same chain. Attract mode shows saucers but never
+fires (`!gs.attract` gates the gun). Wave clear is rocks-only — an alarm
+never gates the refill; a saucer that outlives its set piece leaves after 15 s.
+All arrival/path/shot dice ride the run's seeded stream (`?seed=N` replays
+every alarm); the stateHash covers saucers, and the WATCH driver treats hulls
+and hostile fire as threats and discounts a saucer's range by 120 px when
+choosing what to hunt — the 1000-point kill is worth closing on.
+
+## Sound ladder (#2001)
+Runtime-synthesized, all through `audioController`: the arcade's two-tone
+heartbeat whose tempo climbs as the field thins (`beat = max(22, 14 +
+rocks × 14)` ticks), the two-tone hover warble while any saucer is on
+screen, an arrival sweep, the alien's shot tick, and a stepped kill
+explosion. The shot is now a descending saw sweep, not a bare tick.
+
 ## Verify
 ```
 npm run asteroidscheck            # determinism + 1979 law + wiring + driver sweep + seat rules
@@ -64,14 +92,11 @@ npm run lint:asteroids
 ```
 
 ## Honest gaps
-- No flying saucers (the arcade's big/small UFOs and their 20/50/100 +
-  200/1000/5000 bullet bonuses) — owed.
 - No hyperspace teleport (the arcade's desperate panic button).
-- No rock-vs-bullet or rock-vs-rock interaction (the machine had neither).
-- Sound is the Feb sketch: noise bursts + saw shot; no thumping heartbeat
-  tempo ladder, no arcade saucer warble.
-- The hunter never hyperspaces or kites deliberately; it can spend two lives in
-  tight waves (5 of 40 seeds) before the field thins — the arcade ace kept a
-  panic reserve.
+- No rock-vs-rock interaction (the machine had neither).
+- Small saucers ease their aim over time in the original; ours are locked at
+  ±0.15 rad — the learning curve is not modelled.
+- The hunter never hyperspaces or kites deliberately; tight waves can cost it
+  lives before the field thins — the arcade ace kept a panic reserve.
 - `snapshot/restore` stay omitted (#391): the seeded stream rides `gs.rngState`
   and mid-rollout JSON round-trips would fork dice the live world never rolled.
