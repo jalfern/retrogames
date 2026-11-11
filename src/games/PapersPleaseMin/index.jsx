@@ -460,7 +460,12 @@ const PapersPleaseMinGame = () => {
             // verdict-twinning every paper) — but the booth prints the line
             // exactly when it is present, and papersplay proves those pixels.
             if (shown && shown.say) {
-                box(BUBBLE.x, BUBBLE.y, BUBBLE.w, BUBBLE.h, COL.paper, COL.paperLine)
+                // #2003: the thread's three-line return grows the field downward
+                // (8 + 13n keeps 1–2 lines pixel-identical to the old h=34; the
+                // worst case 302+47=349 stays inside the strip/witness bound of
+                // 394 — paperscheck pins the growth law).
+                const bubH = Math.max(BUBBLE.h, 8 + 13 * shown.say.length)
+                box(BUBBLE.x, BUBBLE.y, BUBBLE.w, bubH, COL.paper, COL.paperLine)
                 ctx.fillStyle = COL.paper
                 ctx.beginPath()
                 ctx.moveTo(BUBBLE.x + 18, BUBBLE.y); ctx.lineTo(BUBBLE.x + 38, BUBBLE.y); ctx.lineTo(BUBBLE.x + 22, BUBBLE.y - 16)
@@ -720,6 +725,15 @@ const PapersPleaseMinGame = () => {
                 // down ≈ nothing — papersplay pins both).
                 bubblePix: () => {
                     const d = ctx.getImageData(BUBBLE.x, BUBBLE.y, BUBBLE.w, BUBBLE.h).data
+                    let paper = 0
+                    for (let i = 0; i < d.length; i += 4) if (((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]) === 0xd8d2b8) paper++
+                    return paper
+                },
+                // #2003 THE LONG CONVERSATION: the growth strip below the old
+                // 34px field — paper appears there ONLY when a three-line
+                // thread grew the bubble. Dark = the field stayed standard.
+                bubbleGrowPix: () => {
+                    const d = ctx.getImageData(BUBBLE.x + 4, BUBBLE.y + BUBBLE.h + 2, BUBBLE.w - 8, 9).data
                     let paper = 0
                     for (let i = 0; i < d.length; i += 4) if (((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]) === 0xd8d2b8) paper++
                     return paper

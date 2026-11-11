@@ -47,7 +47,11 @@ const LAST = ['KOSTOV', 'DRENIN', 'VASEK', 'LAGODA', 'ORLOV', 'TOLKA', 'ZEMEK', 
 // end: a fixed six-feature descriptor, colors, body stats, ONE signature
 // mark (scar/mole/wrinkle/big-ear/freckles/bandage) that drawFace paints at
 // the counter and in the zoomed photo, and PERSONAL LINES (lines.greet on the
-// first walk-up of a week, lines.again on the return — #1997). Marks and
+// first walk-up of a week, lines.again on the return — #1997). #2003 THE
+// LONG CONVERSATION widens each pair into a THREAD: lines.hook rides the
+// greeting (visit k opens a topic), lines.follow rides the return (visit k+1
+// answers it) — the neighborhood talks across visits, like the original's
+// regulars whose sagas evolve down the line. Marks and
 // lines are decor — never compared, doctrine of the nose.
 // A regular's PAPERS are built legal for whatever day they walk up (allowed
 // list, expiry, IDREQ all rotate), so they are honest, approvable faces —
@@ -57,25 +61,25 @@ export const REGULARS = [
         id: 'grubak', name: 'VOLEN GRUBAK', sex: 'M', ageYears: 47, dobM: 3, dobD: 14, height: 178, weight: 86,
         face: { skin: 2, hairC: 0, shirtC: 2, style: 1, narrow: 0, glasses: 0, must: 1, brow: 1, mouth: 0, hat: 1, uni: 1, ear: 0, gap: 0 },
         mark: 'scar',
-        lines: { greet: 'GOOD DAY, GUARD.', again: 'BACK AGAIN, HA!' },
+        lines: { greet: 'GOOD DAY, GUARD.', hook: 'THE BREAD LINE WAS LONG.', again: 'BACK AGAIN, HA!', follow: 'STILL NO BREAD, HA!' },
     },
     {
         id: 'marko', name: 'MARKO DRENIN', sex: 'M', ageYears: 29, dobM: 8, dobD: 2, height: 164, weight: 61,
         face: { skin: 0, hairC: 1, shirtC: 0, style: 2, narrow: 1, glasses: 1, must: 0, brow: 0, mouth: 1, hat: 0, uni: 0, ear: 1, gap: 0 },
         mark: 'mole',
-        lines: { greet: 'IS MY PAPER OK?', again: 'NOTHING WRONG THIS TIME.' },
+        lines: { greet: 'IS MY PAPER OK?', hook: 'I CHECKED IT TWICE.', again: 'NOTHING WRONG THIS TIME.', follow: 'I CHECKED IT THREE TIMES.' },
     },
     {
         id: 'anja', name: 'ANJA TOLKA', sex: 'F', ageYears: 55, dobM: 11, dobD: 21, height: 158, weight: 57,
         face: { skin: 4, hairC: 2, shirtC: 3, style: 0, narrow: 0, glasses: 0, must: 0, brow: 1, mouth: 0, hat: 3, uni: 0, ear: 0, gap: 1 },
         mark: 'wrinkle',
-        lines: { greet: 'I VISIT MY DAUGHTER.', again: 'THE LINE IS SHORT TODAY.' },
+        lines: { greet: 'I VISIT MY DAUGHTER.', hook: 'HER FLAT IS IN THE CITY.', again: 'THE LINE IS SHORT TODAY.', follow: 'SHE SENDS HER THANKS.' },
     },
     {
         id: 'petr', name: 'PETR ZEMEK', sex: 'M', ageYears: 34, dobM: 5, dobD: 9, height: 171, weight: 74,
         face: { skin: 1, hairC: 4, shirtC: 1, style: 3, narrow: 1, glasses: 0, must: 1, brow: 0, mouth: 1, hat: 2, uni: 0, ear: 0, gap: 0 },
         mark: 'ear',
-        lines: { greet: 'WORK IN THE CITY.', again: 'SAME BOOTH, SAME GUARD.' },
+        lines: { greet: 'WORK IN THE CITY.', hook: 'THE TRAIN WAS LATE.', again: 'SAME BOOTH, SAME GUARD.', follow: 'THE TRAIN IS ON TIME.' },
     },
     // #1997 THE FIFTH AND SIXTH — the original's neighborhood is not four:
     // a dozen faces lean on the glass across the campaign. Sonya Malak is
@@ -89,13 +93,13 @@ export const REGULARS = [
         id: 'sonya', name: 'SONYA MALAK', sex: 'F', ageYears: 38, dobM: 1, dobD: 7, height: 161, weight: 63,
         face: { skin: 3, hairC: 1, shirtC: 2, style: 0, narrow: 1, glasses: 0, must: 0, brow: 0, mouth: 0, hat: 3, uni: 0, ear: 1, gap: 0 },
         mark: 'freckles',
-        lines: { greet: 'MY SON LIVES IN OR VECHNA.', again: 'HE SAYS HELLO, YES?' },
+        lines: { greet: 'MY SON LIVES IN OR VECHNA.', hook: 'I SELL MY KNITS AT MARKET.', again: 'HE SAYS HELLO, YES?', follow: 'THE KNITS SOLD, GUARD.' },
     },
     {
         id: 'tadek', name: 'TADEK HRUBY', sex: 'M', ageYears: 62, dobM: 9, dobD: 30, height: 168, weight: 79,
         face: { skin: 4, hairC: 3, shirtC: 0, style: 1, narrow: 0, glasses: 1, must: 1, brow: 1, mouth: 1, hat: 0, uni: 0, ear: 0, gap: 1 },
         mark: 'patch',
-        lines: { greet: 'I AM RETIRED, GUARD.', again: 'YOU LET ME THROUGH.' },
+        lines: { greet: 'I AM RETIRED, GUARD.', hook: 'THE PENSION BUYS LITTLE.', again: 'YOU LET ME THROUGH.', follow: 'LITTLE, BUT IT BUYS.' },
     },
 ]
 
@@ -431,14 +435,18 @@ function regularApplicant(c, rnd, date, dayRules, day, used, seed, n) {
         a.truth.wanted = true
     } else if (n > firstVisitDay(seed, regIdx)) {
         // #1997 PERSONAL SPEECH — the returning neighbor says its own piece,
-        // the booth remembers more than one phrase. Still atmosphere (decide
-        // never reads it; paperscheck pins purity every day, not just the arc).
-        a.person.say = ['YOU AGAIN.', c.lines.again]
+        // the booth remembers more than one phrase. #2003 THE LONG CONVERSATION
+        // adds the payoff: the return answers the topic the greeting opened
+        // (Grubak's long bread line is STILL breadless a visit later). Still
+        // atmosphere (decide never reads it; paperscheck pins purity every day,
+        // not just the arc).
+        a.person.say = ['YOU AGAIN.', c.lines.again, c.lines.follow]
     } else {
-        // first walk-up of the week: the neighbor introduces itself. The arc
-        // face's first visit is the honest walk-up remembered later — and it
-        // greets too; the original's regulars never stood silent at the glass.
-        a.person.say = [c.lines.greet]
+        // first walk-up of the week: the neighbor introduces itself AND opens
+        // its topic (#2003 lines.hook) — the thread the return will answer.
+        // The arc face's first visit is the honest walk-up remembered later —
+        // and it greets too; the original's regulars never stood silent.
+        a.person.say = [c.lines.greet, c.lines.hook]
     }
     return a
 }
