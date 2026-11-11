@@ -23,6 +23,11 @@ export const WALL = {
 export const CHAR = 0.6
 
 export const SCALE = { x: 12, y: 358, w: 96, h: 30 }
+// #1960 THE SHIFT CLOCK — wall clock above the papers column. The free
+// right column (x>592 clears the STAMP sweep, y+r<=38 clears the passport
+// header at PAPERS.y=40) is the original's spot: a clock the guard reads
+// while the line waits. paperscheck pins these clearances.
+export const CLOCK = { x: 612, y: 17, r: 15 }
 export const PORTRAIT = { x: 262, y: 26, headCx: 55, headRx: 34, bodyBottom: 122 }
 export const PAPERS = { x: 356, y: 40, w: 300, h: 148 }
 // the passport photo (#1938): passport-relative box for the mini face draw

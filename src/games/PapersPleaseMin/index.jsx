@@ -13,12 +13,12 @@ import { PRESS, MESSAGES } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { CFG, newRun, step, stateHash, current, autopilot } from './sim.js'
+import { CFG, newRun, step, tick, stateHash, current, autopilot, gameClock } from './sim.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { decide, RULES, dfmt, isAdult } from './rules.js'
-import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, wallRows } from './layout.js'
+import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, CLOCK, wallRows } from './layout.js'
 
 const SIM_MS = 1000 / 60
 
@@ -84,17 +84,17 @@ const PapersPleaseMinGame = () => {
         }
         const releaseWatch = () => { watchingRef.current = false; setWatching(false); watchScript = null; playWatchStop() }
 
-        const act = (action) => {
-            if (screenRef.current !== 'play' || pausedRef.current || gs.end) return
-            const stamped = current(gs).applicant.person   // stamp the papers YOU just judged
-            const before = gs.strikes
-            step(gs, { action })
-            if (!gs.end) {
-                stamp = { ok: gs.last?.ok, why: gs.last?.why, verdict: action, person: stamped, ticks: 30 }
-                audioController.playTone(action === 'approve' ? 300 : 190, 0.06, 'square', 0.06)
-                if (gs.strikes > before) audioController.playSweep(220, 90, 0.35, 'sawtooth', 0.08)
-                else if (gs.last?.ok) audioController.playTone(action === 'deny' ? 760 : 560, 0.07, 'square', 0.05)
-                for (const e of gs.events) evLog.push({ ...e })
+        // #1960 events from clock advance — the gate-close beat. In one batch
+        // the close banner outranks the morning banner: the slam of the gate
+        // must not be swallowed by tomorrow's new rule.
+        const drainEvents = () => {
+            if (!gs.events.length) return
+            for (const e of gs.events) evLog.push({ ...e })
+            const cl = gs.events.find((e) => e.type === 'close')
+            if (cl && cl.missed > 0) {
+                banner = { text: 'GATE CLOSED', sub: `${cl.missed} TURNED AWAY — DOCKED ${CFG.MISS_DOCK * cl.missed}`, ticks: 220 }
+                audioController.playSweep(240, 70, 0.5, 'square', 0.09)
+            } else {
                 const ed = gs.events.find((e) => e.type === 'endday')
                 if (ed) {
                     const nRules = gs.week.days[gs.day - 1].rules
@@ -105,6 +105,20 @@ const PapersPleaseMinGame = () => {
             }
             gs.events.length = 0
             if (gs.end) finish(gs.end)
+        }
+
+        const act = (action) => {
+            if (screenRef.current !== 'play' || pausedRef.current || gs.end) return
+            const stamped = current(gs).applicant.person   // stamp the papers YOU just judged
+            const before = gs.strikes
+            step(gs, { action })
+            if (!gs.end) {
+                stamp = { ok: gs.last?.ok, why: gs.last?.why, verdict: action, person: stamped, ticks: 30 }
+                audioController.playTone(action === 'approve' ? 300 : 190, 0.06, 'square', 0.06)
+                if (gs.strikes > before) audioController.playSweep(220, 90, 0.35, 'sawtooth', 0.08)
+                else if (gs.last?.ok) audioController.playTone(action === 'deny' ? 760 : 560, 0.07, 'square', 0.05)
+            }
+            drainEvents()
         }
 
         const finish = (res) => {
@@ -145,6 +159,12 @@ const PapersPleaseMinGame = () => {
         const doFrameSim = () => {
             if (screenRef.current !== 'play') {
                 if (screenRef.current === 'attract') {
+                    // #1960 the booth keeps working behind the title card —
+                    // the shift clock sweeps on the demo too (scripted play
+                    // out-stamps the budget, so the gate never falls here)
+                    tick(gs)
+                    gs.events.length = 0
+                    if (gs.end) { demoSeed = (demoSeed + 1) % 4; gs = newRun(demoSeed) }
                     if (demoWait > 0) { demoWait--; return }
                     const sc = demoRun(demoSeed)
                     const s = sc[demoAt % sc.length]
@@ -159,6 +179,14 @@ const PapersPleaseMinGame = () => {
             simTick++
             if (stamp && stamp.ticks > 0) stamp.ticks--
             if (banner && banner.ticks > 0) banner.ticks--
+            // #1960 the shift moves; when the last hour burns down the booth
+            // ticks softly through the glass, one blip per second of the wall
+            tick(gs)
+            drainEvents()
+            if (!gs.end && screenRef.current === 'play') {
+                const gc = gameClock(gs)
+                if (gc.frac < 0.12 && gs.clock % CFG.SIM_HZ === 0) audioController.playTone(1150, 0.02, 'square', 0.028)
+            }
             if (watchingRef.current && watchScript) {
                 // #1637 the inspector's own waits ride the live booth
                 if (watchWait > 0) watchWait--
@@ -268,6 +296,29 @@ const PapersPleaseMinGame = () => {
             box(SCALE.x, SCALE.y, SCALE.w, SCALE.h, '#0f1420', '#4a5578')
             text('SCALE', SCALE.x + 48, SCALE.y + 12, 9, COL.text, 'center')
             text(`${view.scale}KG`, SCALE.x + 48, SCALE.y + 26, 12, COL.gold, 'center')
+            // #1960 THE SHIFT CLOCK — the original's wall clock: the hands
+            // sweep the printed shift 08:00→18:00 over the day's budget, the
+            // last printed hour turns red and the ticks come through the glass.
+            const gc = gameClock(gs)
+            ctx.fillStyle = '#0f1420'
+            ctx.beginPath(); ctx.arc(CLOCK.x, CLOCK.y, CLOCK.r, 0, Math.PI * 2); ctx.fill()
+            ctx.strokeStyle = gc.red ? COL.red : '#4a5578'
+            ctx.lineWidth = 1
+            ctx.beginPath(); ctx.arc(CLOCK.x, CLOCK.y, CLOCK.r + 0.5, 0, Math.PI * 2); ctx.stroke()
+            for (let i = 0; i < 4; i++) {
+                const a = i * Math.PI / 2 - Math.PI / 2
+                ctx.fillStyle = gc.red ? '#ff8080' : '#6d7a9c'
+                ctx.fillRect(CLOCK.x + Math.cos(a) * (CLOCK.r - 3) - 1, CLOCK.y + Math.sin(a) * (CLOCK.r - 3) - 1, 2, 2)
+            }
+            const hand = (ang, len, w, col) => {
+                ctx.strokeStyle = col; ctx.lineWidth = w
+                ctx.beginPath(); ctx.moveTo(CLOCK.x, CLOCK.y)
+                ctx.lineTo(CLOCK.x + Math.cos(ang) * len, CLOCK.y + Math.sin(ang) * len); ctx.stroke()
+            }
+            const hcol = gc.red ? COL.red : COL.gold
+            hand((((gc.hh % 12) + gc.mm / 60) / 12) * Math.PI * 2 - Math.PI / 2, CLOCK.r - 8, 2, hcol)
+            hand((gc.mm / 60) * Math.PI * 2 - Math.PI / 2, CLOCK.r - 4, 1, hcol)
+            text(`${gc.hh}:${String(gc.mm).padStart(2, '0')}`, CLOCK.x, CLOCK.y + CLOCK.r + 6, 7, gc.red ? '#ff8080' : COL.text, 'center')
             // strikes: three slots, filled red
             for (let i = 0; i < CFG.STRIKE_MAX; i++) {
                 box(12 + i * 26, CHS - 34, 20, 20, i < gs.strikes ? '#7a1f1f' : '#10141f', '#555f7d')
@@ -432,9 +483,11 @@ const PapersPleaseMinGame = () => {
                         strikes: gs.strikes, score: gs.score, caught: gs.caught, admitted: gs.admitted,
                         end: gs.end, why: gs.endWhy, last: gs.last, stamp: stamp && { ...stamp },
                         rules: day.rules, date: dfmt(day.date), allowed: day.allowed, wanted: day.wanted,
+                        clock: gameClock(gs), ticksLeft: gs.clock, // #1960 shift clock probes
                         banner: banner && { ...banner }, view, evLog: evLog.slice(-60),
                     }
                 },
+                ff: (n) => { tick(gs, n || CFG.SEAT_TICKS * 2); drainEvents(); return { clock: gs.clock, day: gs.day, end: gs.end, why: gs.endWhy } }, // #1960 wind the shift forward
                 start: startPlay,
                 portraitPix, // #1938 photo-vs-face pixel probe
                 verdict: () => decide(current(gs).view).verdict,
@@ -448,7 +501,7 @@ const PapersPleaseMinGame = () => {
                 getState: () => {
                     const { day, view } = current(gs)
                     return [
-                        `day ${gs.day} entrant ${gs.idx + 1}/${day.queue.length}  strikes ${gs.strikes}/${CFG.STRIKE_MAX}  score ${gs.score} caught ${gs.caught} admitted ${gs.admitted}`,
+                        `day ${gs.day} entrant ${gs.idx + 1}/${day.queue.length}  strikes ${gs.strikes}/${CFG.STRIKE_MAX}  score ${gs.score} caught ${gs.caught} admitted ${gs.admitted}  clock ${(() => { const g = gameClock(gs); return `${g.hh}:${String(g.mm).padStart(2, '0')}` })()}`,
                         `truth: verdict=${decide(view).verdict} break=${gs.week.days[gs.day - 1].queue[gs.idx].breakRule || '-'} trap=${gs.week.days[gs.day - 1].queue[gs.idx].trap || '-'} scale=${view.scale}`,
                         `end ${gs.end || '-'} ${gs.endWhy || ''}`,
                     ]
