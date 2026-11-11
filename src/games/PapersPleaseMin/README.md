@@ -216,7 +216,55 @@ tooth 30; hatted honest photos carry their hat; bare heads paint none; and
 every background face's browser decor equals Node's `accFor(serial)` byte for
 byte.
 
-## Mutants (32, all die under `npm run paperscheck -- --mutate`)
+## The cast of six (#1997) — the neighborhood grows, and everyone has a line
+
+The original's recurring cast is not four — a dozen faces lean on the glass
+across the campaign (Jorji, the steam-cleaning woman, Sergi, the work
+inspector). Two more regulars are now authored end to end, and the whole cast
+speaks personally:
+
+- **SONYA MALAK** (F, 38) — the knit-seller: freckle cluster (its own ink
+  window, rows 58-67 of the face, below the scar's), headscarf AND the gold
+  earring — the only cast member wearing two decor families.
+  **TADEK HRUBY** (M, 62) — the retired clerk: grey hair (color is never
+  evidence, and his honest photo carries the SAME grey, so the aged-photo
+  trap can never be pointed at a regular), glasses, a missing tooth, and the
+  forehead bandage of a clumsy workshop life (rows 26-29, disjoint from the
+  wrinkle window and the glasses rim).
+- **PERSONAL SPEECH** — every regular carries `lines: {greet, again}`. The
+  week's first walk-up greets in its own voice (`say = [greet]`); the return
+  says `['YOU AGAIN.', again]`; the arc turn keeps the canonical Jorji pair
+  (the wall's drama is universal). `say` is still atmosphere — the purity
+  witness moved from the arc day to EVERY day of every seed: strip the line,
+  the verdict cannot flinch.
+- **THE ROTATING WINDOW** — six seats, six cast days, and the law needs faces
+  that COME BACK: each week meets `cast[s..s+3]` (mod 6) on days 2-5, and
+  seats s, s+1 RETURN on days 6, 7. Two recurrences a week stand as before,
+  the arc rides the rotated head of the window (seed 4's day 6 puts SONYA on
+  the wall), and different weeks meet different neighbors. Seed 0's week is
+  byte-identical to the old mod-4 walk (0,1,2,3,0,1), so every existing
+  fixture replays.
+- `paperscheck` adds the speech-shape law (greet/return/turn, per appearance,
+  per seed), distinct-line witnesses (12 authored lines, no two the same),
+  the window law per week, seatsWalked (all six seats walk across the sweep —
+  a seat nobody meets is dead letter), arc-seat coverage (every seat gets its
+  turn on the wall), all-day say-purity, and a bubble-fit scan over every
+  personal line. Mutants: m33 freezes the rotation (fairness never notices —
+  only the sweep-wide witness sees the new faces vanish), m34 mutes the
+  greet branch (the booth remembers only one phrase); m29's anchor re-pinned
+  to the grown callback line. **All 34 die.**
+- `papersplay` walks seed 4 live with real keys: Sonya approves day 2 in her
+  scarf+earring (hat 980px, gold 9px at the counter) greeting "MY SON LIVES
+  IN OR VECHNA." (bubble 5424 paper px), Tadek approves day 3 ("I AM
+  RETIRED, GUARD."), the sheet on day 6 carries SONYA'S number and the
+  correct deny lands, and day 7's Tadek says "YOU LET ME THROUGH." The
+  offscreen castPix counts all six marks in disjoint ink windows
+  (freckles 12px, patch 24px). Grubak's day-2 first visit now greets too
+  (5647px), and strangers stay silent (0px).
+
+## Mutants (34, all die under `npm run paperscheck -- --mutate`)
+
+
 
 `<`→`<=` expiry; wanted by name only; IDREQ ignoring the DOB; the scale
 reading the paperwork (witness lies); species coverage becoming luck;
@@ -260,7 +308,12 @@ crowd year added two: m31 flattens `accFor` (no headwear ever — fairness
 never notices, only the variety witness sees a signature feature vanish);
 m32 teaches the booth to read decor (a live hat differing from the photo's
 convicts — gen-born papers stay fair because decor is shared at birth, so
-the face-only perturbation in the neutrality witness is what kills it).
+the face-only perturbation in the neutrality witness is what kills it). The
+cast-of-six year added two: m33 freezes the rotating window (seed stops moving
+the cast — fairness and the per-week witnesses still pass, only the sweep-wide
+seatsWalked witness sees that Sonya and Tadek never walk); m34 mutes the greet
+branch (returns still speak, but the neighborhood never introduces itself —
+the speech-shape witness kills it).
 
 ## Gates
 
@@ -284,7 +337,13 @@ seed 1's MARKO is the one-strike trap; since #1989 also: the crowd is
 pixels — hats/unibrows/earrings/missing teeth paint their own inks at the
 counter and in honest photos, three hat kinds walk seed 0's first two days,
 bare heads paint none, every background face's decor matches Node's
-`accFor(serial)`, and Grubak arrives in his authored cap+unibrow. NOTE:
+`accFor(serial)`, and Grubak arrives in his authored cap+unibrow; since #1997
+also: all six cast marks count in disjoint ink windows (freckles 12px, patch
+24px), first walk-ups greet with personal lines (Grubak 5647px, strangers
+0px), and seed 4's live week proves the rotated window — Sonya greets day 2
+in her scarf+earring (hat 980px, gold 9px), the day-6 sheet carries HER
+number and the real deny scores, and Tadek's day-7 return says its own
+"YOU LET ME THROUGH."). NOTE:
 headless Chrome on a shared box logs a device-level "AudioContext
 encountered an error" line — an OS audio-renderer complaint, not page
 code, and filtered as such).
@@ -367,7 +426,18 @@ code, and filtered as such).
   construction, zero seed re-sequencing), painted at counter AND photo,
   authored for the four regulars, and proven decor-not-evidence by the
   CROWD section + m31/m32 (see "The one-off crowd").
-- The one-offs are decor over combinatorics: 25 distinct looks across the
-  sweep, but the original's neighborhood is dozens of FULLY authored sprites
-  with their own builds, uniforms and gait. A fifth-and-sixth regular with
-  personal speech is still QA-pass territory, not this pass.
+- **CLOSED by #1997 (2026-11-11):** the cast was four and only the arc beat
+  had words beyond "YOU AGAIN." The neighborhood is six now: Sonya Malak and
+  Tadek Hruby authored end to end (new marks freckles/patch, authored decor,
+  personal greet + callback for every regular), and the rotating-window law
+  lets six seats share a six-day walk without losing a single recurrence —
+  see "The cast of six."
+- Personal speech is two sentences deep per face. The original's regulars run
+  multi-line threads that evolve across the whole campaign (Jorji's passport
+  saga alone spans weeks); here a face greets, remembers, and turns — a beat,
+  not an arc of dialogue. Deepening the threads (and letting one recur more
+  than once a week) is QA-pass territory.
+- The rotating window shows four of six seats per week — deliberate (recurrence
+  needs repeats), but the original's line is denser: several familiar faces
+  can crowd one shift. Two regulars in one day would need a queue-size law
+  amendment and a second bubble sample per window.
