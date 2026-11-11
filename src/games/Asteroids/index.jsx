@@ -53,8 +53,12 @@ const AsteroidsGame = () => {
             ArrowUp: false,
             ArrowLeft: false,
             ArrowRight: false,
-            Space: false
+            Space: false,
+            ShiftLeft: false // #2001 hyperspace — the panic button
         }
+        // A Shift press shorter than one frame must still jump: latch the
+        // edge and let the loop consume it (held sampling alone loses taps).
+        let hyperLatch = false
 
         const seat = () => {
             gs.watching = true
@@ -71,7 +75,7 @@ const AsteroidsGame = () => {
         const startRun = () => {
             seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)
             gs = makeRun(seed, { width: gs.width, height: gs.height })
-            keys.ArrowLeft = keys.ArrowRight = keys.ArrowUp = keys.Space = false
+            keys.ArrowLeft = keys.ArrowRight = keys.ArrowUp = keys.Space = keys.ShiftLeft = false
             setAttractUi(false)
             gs.watching = false // watch never lingers — a new run starts in your hands
             setWatching(false)
@@ -121,6 +125,7 @@ const AsteroidsGame = () => {
             if (Object.prototype.hasOwnProperty.call(keys, e.code)) {
                 if (gs.watching && isTakeoverKey(e)) release()
                 keys[e.code] = true
+                if (e.code === 'ShiftLeft' && !gs.attract && !gs.over && !gs.watching) hyperLatch = true
             }
         }
         const handleKeyUp = (e) => {
@@ -156,6 +161,10 @@ const AsteroidsGame = () => {
             if (ev.wave) audioController.playSweep(300, 900, 0.5, 'sine')
             if (ev.saucerSpawn) audioController.playSweep(180, 640, 0.45, 'square', 0.06)
             if (ev.saucerShot) audioController.playTone(300, 0.05, 'square', 0.07)
+            if (ev.hyper) { // #2001 — vanish down, rematerialise up
+                audioController.playSweep(1400, 120, 0.12, 'square', 0.08)
+                audioController.playSweep(120, 1400, 0.18, 'sine', 0.08)
+            }
             if (ev.saucerKilled) {
                 audioController.playNoise(0.3, 0.3)
                 audioController.playSweep(ev.saucerKilled === 'small' ? 700 : 400, 120, 0.25, 'square', 0.12)
@@ -183,6 +192,7 @@ const AsteroidsGame = () => {
             right: keys.ArrowRight,
             thrust: keys.ArrowUp,
             fire: keys.Space,
+            hyper: keys.ShiftLeft,
         })
 
         let lastTime = 0
@@ -201,6 +211,8 @@ const AsteroidsGame = () => {
                         // The watcher and the attract demo own the wheel; held
                         // keys only reach the tick when the human is driving.
                         const input = gs.attract || gs.watching ? null : heldInput()
+                        if (input && hyperLatch) { input.hyper = true; hyperLatch = false }
+                        else if (!input) hyperLatch = false // never bank a jump across watch/attract
                         applyEvents(tickAsteroids(gs, input))
                         accumulator -= FIXED_DT
                     }
@@ -221,7 +233,7 @@ const AsteroidsGame = () => {
 
             // Draw Ship (hidden while dark; blinks through the respawn grace)
             const invulnBlink = gs.tickN < gs.invulnUntil && Math.floor(gs.tickN / 6) % 2 === 0
-            if (gs.respawnAt < 0 && !invulnBlink) {
+            if (gs.respawnAt < 0 && gs.tickN >= gs.hyperUntil && !invulnBlink) {
                 ctx.save()
                 ctx.translate(gs.ship.x, gs.ship.y)
                 ctx.rotate(gs.ship.angle)
@@ -362,7 +374,7 @@ const AsteroidsGame = () => {
             reset: (s) => {
                 seed = s >>> 0
                 gs = makeRun(seed, { width: gs.width, height: gs.height })
-                keys.ArrowLeft = keys.ArrowRight = keys.ArrowUp = keys.Space = false
+                keys.ArrowLeft = keys.ArrowRight = keys.ArrowUp = keys.Space = keys.ShiftLeft = false
                 setAttractUi(false)
                 gs.watching = false // watch never lingers
                 setWatching(false)
@@ -424,7 +436,7 @@ const AsteroidsGame = () => {
                     </div>
                 )}
             </div>
-            <VirtualControls visible={!paused} />
+            <VirtualControls visible={!paused} secondAction={{ label: 'HYPERSPACE', code: 'ShiftLeft' }} />
         </div>
     )
 }
