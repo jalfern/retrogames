@@ -217,7 +217,7 @@ function tickSaucers(gs, ev) {
             life: 900, // an alarm that outlives its set piece leaves with the night
         })
         gs.nextSaucerAt = saucerGap(gs)
-        ev.saucerSpawn = big
+        ev.saucerSpawn = big ? 'big' : 'small' // truthy for ANY alarm — both sizes arrive with their sound
     }
     for (const s of gs.saucers) {
         s.x += s.vx

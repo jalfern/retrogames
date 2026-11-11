@@ -155,7 +155,14 @@ console.log('WATCH driver sweep: 40 seeds x 120 s of seated play on the shipped 
     }
     ok(det === SEEDS, `${SEEDS}/${SEEDS} seeds replay byte-equal (hash sampled every 1200 ticks)`, red.join(' '))
     ok(survivedAll === SEEDS, 'every seed finishes the watch — the hunter does not game over')
-    ok(zeroDeath >= (FAST ? 9 : 34), `zero-death runs on ${FAST ? 9 : 34}+ seeds`, `${zeroDeath}/${SEEDS}`)
+    // #2001 floor re-measure: the saucers made the field genuinely harder —
+    // the hunter dodges aimed fire now, and zero-death measured 24/40 (full),
+    // 9/12 (fast) after hardening the threat scan (75-tick hostile warning,
+    // no muzzle-buzzing). The floor drops honestly to below what the fleet
+    // banks; survivedAll and the score floors keep the real law. Raising the
+    // driver's panic-reserve game (issue #2001) should bring this back UP —
+    // a floor raise is progress, a silent floor keep is drift.
+    ok(zeroDeath >= (FAST ? 6 : 20), `zero-death runs on ${FAST ? 6 : 20}+ seeds`, `${zeroDeath}/${SEEDS}`)
     ok(wavesBanked >= (FAST ? SEEDS - 1 : SEEDS), 'every seed banks at least one full wave', `${wavesBanked}/${SEEDS}`)
     ok(minScore >= (FAST ? 2500 : 6000), `worst seed still scores ${FAST ? 2500 : 6000}+ under the watch`, `${minScore}`)
     ok(total >= (FAST ? SEEDS * 2500 : 300000), 'the fleet banks its combined floor (score is real progress, not coasting)', `${total}`)
@@ -219,7 +226,7 @@ console.log('flying saucers (#2001): tables, fire discipline, bonus law')
         const log = []
         for (let i = 0; i < 4000; i++) {
             const ev = tickAsteroids(gs, null)
-            if (ev.saucerSpawn) log.push(`${gs.tickN}:${ev.saucerSpawn ? 'B' : 's'}:${Math.round(gs.saucers.at(-1).x)}:${Math.round(gs.saucers.at(-1).y)}`)
+            if (ev.saucerSpawn) log.push(`${gs.tickN}:${ev.saucerSpawn === 'big' ? 'B' : 's'}:${Math.round(gs.saucers.at(-1).x)}:${Math.round(gs.saucers.at(-1).y)}`)
             if (gs.over) break
         }
         return log.join(';')
