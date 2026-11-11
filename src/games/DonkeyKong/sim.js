@@ -26,6 +26,8 @@ export const BARREL_SPEED = 1.2
 export const START_LIVES = 3
 export const WIN_SCORE = 1000
 export const BARREL_DIVE_CHANCE = 0.35 // the original's random ladder take
+export const HAMMER_SWINGS = 5    // hits per mallet before it shatters (arcade lore)
+export const HAMMER_SWING_TICKS = 12 // one swing animation (the hit window)
 
 export const DK_PLAT = 5   // the girder the ape stands on
 export const TOP_PLAT = 6   // the girder she stands on
@@ -117,7 +119,19 @@ export function buildLevel() {
     addLadder(100, 6, 5, false)
     addLadder(124, 6, 5, false)
 
-    return { platforms, ladders }
+    // Hammers (#2018) — two mallets ride the girders like the arcade's pair.
+    // Placed at the RIGHT-hand ends of the ground floor and DK's girder: the
+    // WATCH route (ROUTE in watchStep) never walks its centre past x≈185, so
+    // the seated driver never grabs one — the mallet is the human's
+    // risk/reward, exactly like the original where picking one up mid-climb
+    // strands you (no ladder, no jump while carried).
+    const hammerAt = (platIdx, x) => {
+        const p = platforms[platIdx]
+        return { x, y: getPlatformY(p, x) - 8, plat: platIdx, taken: false }
+    }
+    const hammers = [hammerAt(0, 205), hammerAt(5, 205)]
+
+    return { platforms, ladders, hammers }
 }
 
 // ---------------------------------------------------------------------------
@@ -125,7 +139,7 @@ export function buildLevel() {
 // every die on the run's stream, so ?seed=N replays the exact barrel pattern.
 // ---------------------------------------------------------------------------
 export function makeRun(seed, opts = {}) {
-    const { platforms, ladders } = buildLevel()
+    const { platforms, ladders, hammers } = buildLevel()
     return {
         seed: seed >>> 0,
         rngState: seed | 0,
@@ -140,8 +154,12 @@ export function makeRun(seed, opts = {}) {
         barrelTimer: 180,
         dkThrowing: false,
         dkThrowTimer: 0,
+        hammer: 0, // swings left on the carried mallet (0 = empty-handed)
+        swing: 0, // ticks remaining in the current swing animation
+        swingSeq: 0, // total swings this life — %3 picks the angle, arcade order
         platforms,
         ladders,
+        hammers,
         player: {
             x: 24, y: 216, w: 11, h: 16,
             vx: 0, vy: 0,
@@ -168,6 +186,11 @@ function resetPlayer(gs) {
     gs.barrelTimer = 180
     gs.deathTimer = 0
     gs.winTimer = 0
+    // The screen resets like the arcade's: mallets back on their girders.
+    gs.hammer = 0
+    gs.swing = 0
+    gs.swingSeq = 0
+    gs.hammers.forEach(h => { h.taken = false })
 }
 
 function killPlayer(gs, ev) {
@@ -328,9 +351,10 @@ function attractPlan(gs) {
 // human input, watchStep drives instead.
 // ---------------------------------------------------------------------------
 export function tickDonkeyKong(gs, input = null) {
-    const ev = { jump: false, jumpedBarrel: 0, died: false, respawn: false, won: false, over: false, barrel: false }
+    const ev = { jump: false, jumpedBarrel: 0, died: false, respawn: false, won: false, over: false, barrel: false, hammerUp: false, swing: false, hammered: 0, hammerDown: false, climbed: false }
     const p = gs.player
     gs.tickN++
+    if (gs.swing > 0) gs.swing--
     if (gs.over) { ev.over = true; return ev }
 
     // Death animation
@@ -378,7 +402,43 @@ export function tickDonkeyKong(gs, input = null) {
             wantClimbDown: !!act.down,
         }
     }
-    const { moveDir, wantJump, wantClimbUp, wantClimbDown } = plan
+    let { moveDir, wantJump, wantClimbUp, wantClimbDown } = plan
+
+    // ---- HAMMER (#2018) ----
+    // Walk over a mallet grounded, empty-handed, and you carry it (one at a
+    // time). The arcade's trade while carried: Space SWINGS instead of jumping
+    // (up / flat / down, the original's sequence), and the ladders are out —
+    // the mallet is power and a trap at once. It shatters after HAMMER_SWINGS
+    // hits, so a bad pickup costs swings, never the run.
+    if (!gs.hammer) {
+        for (const h of gs.hammers) {
+            if (h.taken) continue
+            if (p.grounded && !p.climbing &&
+                Math.abs((p.x + p.w / 2) - h.x) < 9 && Math.abs((p.y + p.h) - (h.y + 8)) < 12) {
+                h.taken = true
+                gs.hammer = HAMMER_SWINGS
+                gs.swingSeq = 0
+                ev.hammerUp = true
+                break
+            }
+        }
+    }
+    if (gs.hammer > 0) {
+        wantClimbUp = false
+        wantClimbDown = false
+        if (wantJump && p.grounded) {
+            gs.hammer--
+            gs.swing = HAMMER_SWING_TICKS
+            gs.swingSeq++
+            ev.swing = true
+            if (gs.hammer <= 0) {
+                gs.hammer = 0
+                gs.swing = 0
+                ev.hammerDown = true
+            }
+        }
+        wantJump = false // no jumping the tower with a mallet in hand
+    }
 
     // ---- LADDER LOGIC ----
     const nearLadder = gs.ladders.find(l => {
@@ -417,6 +477,7 @@ export function tickDonkeyKong(gs, input = null) {
             p.climbing = true
             p.vy = 0
             p.vx = 0
+            ev.climbed = true
         }
 
         if (!p.climbing) {
@@ -481,6 +542,26 @@ export function tickDonkeyKong(gs, input = null) {
         if (b.y > GH + 20) {
             gs.barrels.splice(i, 1)
             continue
+        }
+
+        // Mallet smash (#2018): a live swing deletes barrels in its arc ahead
+        // of the runner — up / flat / down by swing phase, the original's
+        // order. The kill box below stays exactly as pinned: the hammer only
+        // extends what you can reach, it never makes contact safe.
+        if (gs.swing > 0 && gs.deathTimer <= 0 && gs.winTimer <= 0 && !p.climbing) {
+            const dx = (b.x + b.w / 2 - (p.x + p.w / 2)) * p.dir
+            const dy = b.y + b.h / 2 - (p.y + p.h / 2)
+            const phase = (gs.swingSeq - 1) % 3
+            const inLane = dx > 0 && dx < 17
+            const inBand = phase === 0 ? dy >= -16 && dy <= -2
+                : phase === 1 ? dy > -8 && dy <= 8
+                    : dy >= 2 && dy <= 16
+            if (inLane && inBand) {
+                gs.barrels.splice(i, 1)
+                gs.score += 100
+                ev.hammered++
+                continue
+            }
         }
 
         // Collision with player
@@ -552,8 +633,12 @@ function cloneWorld(gs) {
         barrelTimer: gs.barrelTimer,
         dkThrowing: false,
         dkThrowTimer: 0,
+        hammer: gs.hammer,
+        swing: gs.swing,
+        swingSeq: gs.swingSeq,
         platforms: gs.platforms,
         ladders: gs.ladders,
+        hammers: gs.hammers.map(h => ({ ...h })),
         player: {
             ...gs.player,
             jumpedBarrels: new Set([...gs.player.jumpedBarrels].map(b => ref.get(b)).filter(Boolean)),
@@ -767,6 +852,7 @@ export function stateHash(gs) {
     const r4 = (n) => Math.round(n * 1e4)
     const p = gs.player
     let s = `K${gs.tickN}|${gs.score}|${gs.lives}|${gs.over ? 1 : 0}|${gs.deathTimer}|${gs.winTimer}|${gs.barrelTimer}|${gs.rngState}|`
+    s += `H${gs.hammer}|${gs.swingSeq}|${gs.hammers.map(h => (h.taken ? 1 : 0)).join('')}|`
     s += `${r4(p.x)},${r4(p.y)},${r4(p.vx)},${r4(p.vy)},${p.grounded ? 1 : 0},${p.climbing ? 1 : 0},${p.dir},${p.jumpedBarrels.size}|`
     s += gs.barrels.map(b => `${r4(b.x)},${r4(b.y)},${r4(b.vx)},${r4(b.vy)},${b.onLadder ? 1 : 0},${b.falling ? 1 : 0},${b.ladderBot || 0}`).join(';')
     let h = 0x811c9dc5

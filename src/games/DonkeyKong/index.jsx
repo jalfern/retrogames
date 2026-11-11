@@ -143,6 +143,14 @@ const DonkeyKongGame = () => {
         const applyEvents = (ev) => {
             if (ev.jump) audioController.playTone(400, 0.08, 'square')
             if (ev.jumpedBarrel) audioController.playTone(600, 0.08, 'square')
+            // #2018: the event set was missing DK's throw and the rungs.
+            if (ev.barrel) audioController.playTone(160, 0.06, 'triangle')
+            if (ev.climbed) audioController.playTone(300, 0.05, 'square')
+            // Mallet voices (#2018): grab, swing, smash, shatter.
+            if (ev.hammerUp) audioController.playSweep(300, 700, 0.15, 'square')
+            if (ev.swing) audioController.playTone(220, 0.05, 'sawtooth')
+            if (ev.hammered) audioController.playNoise(0.12, 0.3)
+            if (ev.hammerDown) audioController.playSweep(500, 120, 0.2, 'sawtooth')
             if (ev.died) {
                 audioController.playNoise(0.3, 0.4)
                 audioController.playSweep(400, 80, 0.4, 'sawtooth')
@@ -194,6 +202,16 @@ const DonkeyKongGame = () => {
             for (let ry = l.yTop + 4; ry < l.yBot; ry += 6) {
                 ctx.fillRect(l.x - 4, ry, 8.5, 1.5)
             }
+        }
+
+        const drawHammerItem = (h) => {
+            if (h.taken) return
+            const tw = Math.floor(gs.tickN / 20) % 2 // idle twinkle so it reads as a pickup
+            // Handle (wood) up from its shelf, steel head on top.
+            ctx.fillStyle = '#c88040'
+            ctx.fillRect(h.x - 1, h.y + 1, 2, 8)
+            ctx.fillStyle = tw ? '#e8e8e8' : '#a8a8a8'
+            ctx.fillRect(h.x - 5, h.y - 3, 10, 5)
         }
 
         const drawOilBarrel = () => {
@@ -350,6 +368,26 @@ const DonkeyKongGame = () => {
             ctx.fillStyle = '#ffff00'
             ctx.fillRect(-3, -6, 6, 1)
 
+            // Mallet (#2018): carried on the shoulder, or mid-swing up / flat /
+            // down (the original's sequence). The world already flipped by dir,
+            // so forward is +x here.
+            if (gs.hammer > 0) {
+                const phase = gs.swing > 0 ? (gs.swingSeq - 1) % 3 : -1
+                if (phase === 0) { // overhead wind-up
+                    ctx.fillStyle = '#c88040'; ctx.fillRect(3, -16, 2, 7)
+                    ctx.fillStyle = '#e0e0e0'; ctx.fillRect(1, -21, 7, 5)
+                } else if (phase === 1) { // flat strike
+                    ctx.fillStyle = '#c88040'; ctx.fillRect(3, -9, 7, 2)
+                    ctx.fillStyle = '#e0e0e0'; ctx.fillRect(9, -12, 6, 6)
+                } else if (phase === 2) { // low smash
+                    ctx.fillStyle = '#c88040'; ctx.fillRect(3, -4, 2, 7)
+                    ctx.fillStyle = '#e0e0e0'; ctx.fillRect(1, -1, 7, 5)
+                } else { // at rest on the shoulder
+                    ctx.fillStyle = '#c88040'; ctx.fillRect(1, -13, 2, 6)
+                    ctx.fillStyle = '#e0e0e0'; ctx.fillRect(-1, -17, 7, 5)
+                }
+            }
+
             if (p.climbing) {
                 // Climbing animation
                 const climbOff = (Math.floor(p.climbFrame / 6) % 2) * 2
@@ -463,6 +501,9 @@ const DonkeyKongGame = () => {
                 drawLadder(l)
             })
 
+            // Hammers on their girders (#2018)
+            gs.hammers.forEach(h => drawHammerItem(h))
+
             // Oil barrel
             drawOilBarrel()
 
@@ -548,6 +589,7 @@ const DonkeyKongGame = () => {
                     x: Math.round(gs.player.x), y: Math.round(gs.player.y),
                     climbing: gs.player.climbing, barrels: gs.barrels.length,
                     attract: gs.attract, over: gs.over,
+                    hammer: gs.hammer, swingSeq: gs.swingSeq,
                 }),
                 start: startRun,
                 // #1637 b26 parity — seat the route without a keyboard (the
