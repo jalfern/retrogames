@@ -417,15 +417,13 @@ const MissileCommandGame = () => {
                 <canvas ref={canvasRef} className="block w-full h-full cursor-none" />
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'MISSILE COMMAND')} onResume={handleResume} />}
                 {/* #1654: the discoverable WATCH line, before the first Y press.
-                    #1748: the centered copy steps aside while RotateHint is up —
-                    the card lands dead-center and its dismiss button owns that spot. */}
+                    #1748 consumer: RotateHint's card lands dead-center on this 4:3
+                    letterbox (its dismiss button sits exactly on the pill), so the
+                    whole centered block steps aside while the hint is up — after a
+                    rotate or a PLAY-IN-PORTRAIT dismissal the pill is back, reachable. */}
                 {attractUi && !paused && !rotHint && (
                     <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-2 pointer-events-none" style={{ bottom: '24%' }}>
                         <div className="text-emerald-200/70 font-mono text-[11px] tracking-widest">{WATCH_ATTRACT_HINT}</div>
-                    </div>
-                )}
-                {attractUi && !paused && (
-                    <div className="fixed z-[70] pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                         <AttractWatchButton />
                     </div>
                 )}

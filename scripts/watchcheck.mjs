@@ -3004,6 +3004,11 @@ if (PHONE) {
         }
         if (!page) continue
         try {
+            // #1147 rotate-first titles: the rotate card is first-run chrome and
+            // attract chrome deliberately waits behind it (#1748 consumer pattern,
+            // MISSILE COMMAND) — clear the card, then drive the pill like a player.
+            const rot = page.locator('[data-nav="rotate-dismiss"]').first()
+            if (await rot.isVisible().catch(() => false)) { await rot.tap(); await page.waitForTimeout(350) }
             const pill = page.locator('[data-watch-toggle="1"]').first()
             await pill.waitFor({ state: 'visible', timeout: 8000 })
             const box = await pill.boundingBox()
