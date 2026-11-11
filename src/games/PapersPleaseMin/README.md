@@ -328,7 +328,47 @@ the canvas, in the original's own four places:
   strip stays dark; the drop runs and rests; day 6's banner carries
   NOVEMBER).
 
-## Mutants (39, all die under `npm run paperscheck -- --mutate`)
+## THE CROWDED RETURN (#2012) — the week meets the whole neighborhood
+
+The original's line is denser than one familiar face a day: on heavy shifts
+several neighbors lean on the glass at once, and a day can carry both a
+"YOU AGAIN." and a first hello. The rotating window (#1997) met only four of
+six seats per week; this amendment densifies the authored walk:
+
+- **One clock, no special case**: the seat at offset k (`seatOff(seed, idx)`,
+  k = 0..5) FIRST leans on the glass on day 2 + k — days 2..7, every seat,
+  every week. `firstVisitDay` is `2 + seatOff`; the pre-#2012 `-1` (a seat
+  the week never met) is retired.
+- **Recurrence stands**: offsets 0 and 1 (seats s, s+1) RETURN on days 6, 7
+  — two recurrences a week, and the arc still rides seat s's return (day 6).
+- **The crowded days**: days 6 and 7 each host TWO regulars — the returning
+  head first, then the crowding tail (offset 4 on day 6, offset 5 on day 7)
+  greeting its first walk-up. Eight authored visits a week, six distinct
+  faces, exactly two seats walking twice.
+- **Nothing else moves**: the queue-size law holds by construction (the fill
+  loop lays one fewer random head per regular, `queue.length === rules + 4`
+  stands); the shift budget is queue-based, so unchanged; speech stays decor
+  (the purity twin walks every paper unchanged); cast names were already
+  blocked from the roll, so two neighbors can never grow twins.
+- `paperscheck` re-pins the law: the window witness now grades EVERY WEEK
+  meeting all six seats (the sweep-wide `seatsWalked` can no longer carry it
+  alone — seeded crowd seats cover a sweep even with a frozen head, which is
+  exactly how m33 SURVIVED its first life here: sharpened to per-week);
+  day-6 order `[s, s+4]` and day-7 `[s+1, s+5]`; the crowded day must speak
+  BOTH voices (a return — or the arc's canonical pair — and a fresh
+  greeting); continuity excuses a planted topic only for the arc face and the
+  once-a-week seats, now s+2..s+5 (they carry the topic into next week).
+  Mutants m40 (crowd never walks — week meets four) and m41 (crowd clones the
+  returning head — the tail never gets its day) join; **all 41 die**.
+- `papersplay` samples the second bubble per window live: seed 0's day 6
+  arrests Grubak AND seats Sonya's hello (greet bubble 4854px); seed 4's
+  turn-day crowds ANJA'S greeting (5096px) and day 7 pairs Tadek's payoff
+  with PETR'S introduction (5222px) — all real keys. Harness catch: the crowd
+  now takes day 6's LAST fill slot, so stamping the tail can roll the day
+  before `runDay()` captures `gs.day` (it would then stamp all of day 7 and
+  the return walk finds nobody) — probe the day before calling `runDay`.
+
+## Mutants (41, all die under `npm run paperscheck -- --mutate`)
 
 
 
@@ -392,7 +432,14 @@ silences the calendar roll (the seam crosses but no morning says NOVEMBER —
 the day-6 monthTurn pin bites); m38 keeps the `WITNESS: EXPIRED` headline
 but drops the quote (the booth is back to naming rules instead of showing
 the comparison — the verbatim-quote pin bites); m39 sends the wall back to
-bare numerals (dshow becomes dfmt — the `NAME DD YYYY` shape pin bites).
+bare numerals (dshow becomes dfmt — the `NAME DD YYYY` shape pin bites). The
+crowded-return year added two: m40 never sends the crowd (the week shrinks to
+four seats — fairness cannot see it; the per-week meets-six witness bites);
+m41 crowds with a clone of the returning head (the tail seat never leans on
+the glass — the day's head-then-tail order witness bites). m33 (frozen
+rotation) was SHARPENED, not added: its sweep-wide invariant survived for one
+sweep because the seeded crowd seats cover the sweep even when the head is
+frozen — the invariant now grades every week meeting all six.
 
 ## Gates
 
@@ -432,7 +479,11 @@ deny quotes its case in gold and a wrong admit quotes what you missed in red
 with the strip's corridor counting the ink (an innocent deny says `THEY WERE
 CLEAN` and the corridor stays dark); new papers drop onto the counter (the
 settle reaches its −10px step and rests at 0); and day 6's banner announces
-`NOVEMBER` on the morning the calendar turns).
+`NOVEMBER` on the morning the calendar turns); since #2012 also: the shift is
+crowded — the day that arrests Grubak (seed 0 day 6) also prints SONYA'S
+first hello as the day's second bubble (4854px), and on the rotated window
+(seed 4) Anja greets behind Sonya's turn (day 6, 5096px) while Petr greets
+behind Tadek's payoff (day 7, 5222px).
 NOTE:
 headless Chrome on a shared box logs a device-level "AudioContext
 encountered an error" line — an OS audio-renderer complaint, not page
@@ -533,10 +584,14 @@ code, and filtered as such).
   strangers). The arc turn keeps the canonical Jorji pair — the wall
   interrupts breakfast. The gap's other half, letting one face recur more
   than once a week, is the window amendment below.
-- The rotating window shows four of six seats per week — deliberate (recurrence
-  needs repeats), but the original's line is denser: several familiar faces
-  can crowd one shift. Two regulars in one day would need a queue-size law
-  amendment and a second bubble sample per window.
+- **CLOSED by #2012 (2026-11-11):** the rotating window showed four of six
+  seats per week — deliberate (recurrence needs repeats), but the original's
+  line is denser: several familiar faces can crowd one shift. THE CROWDED
+  RETURN: every seat walks every week (offset k greets day 2+k), seats s, s+1
+  return days 6, 7, and both return days host TWO regulars — the returning
+  head plus the greeting tail. The queue-size law needed no amendment after
+  all (the fill loop absorbs both heads); the second bubble sample per window
+  is live in `papersplay`. See "THE CROWDED RETURN (#2012)."
 - **CLOSED by #1891 (2026-11-11):** the evidence string was the contract's
   promise but lived only in the sim (`gs.last.evidence`), the wall printed bare
   numerals, the OCT→NOV roll was silent, and papers teleported onto the
