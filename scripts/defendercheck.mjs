@@ -300,10 +300,107 @@ console.log('feel pass #1531: death pause, telegraph, thrust voice, radar flicke
     const src = readFileSync('src/games/Defender/index.jsx', 'utf8')
     ok(/thrustFacing !== 0[\s\S]{0,140}?playTone\(/.test(src), 'thrust has a voice: hum plays while accelerating (docs/ART.md rule 4)')
     ok(/state === 'descend'[\s\S]{0,160}?playSweep\(/.test(src), 'a diving lander pulses a telegraph hum')
-    ok(/rgba\(120,220,255/.test(src) && /descend/.test(src), 'the tractor-beam telegraph is drawn over the dive')
+    ok(/rgba\(120,220,255,0\.45\)/.test(src) && /descend/.test(src), 'the tractor-beam telegraph is drawn over the dive')
     ok(/500 \+ Math\.min\(500, sim\.wave \* 80\)/.test(src), 'the wave fanfare pitch ramps per wave')
     ok(/drawHuman\(h, h\.state === 'walk'\)/.test(src), 'walking humans get the 2-frame shuffle')
     ok(/% 24 > 3/.test(src) && /% 18 > 2/.test(src), 'radar dots flicker on the scanner')
+}
+
+// ---------------------------------------------------- presentation #1907 ----
+console.log('presentation pass #1907: color tells, rescue staging, celebration, radar priority')
+{
+    // Kills read by COLOR: lander green, mutant red, wreck orange, mutate flash.
+    const l = newSim(59)
+    l.enemies = [
+        { x: (l.player.x + 120) % WORLD_WIDTH, y: l.player.y, vx: 0, vy: 0, type: 'lander', state: 'wander', carry: null },
+        { x: (l.player.x + 2000) % WORLD_WIDTH, y: 70, vx: 0, vy: -0.3, type: 'lander', state: 'ascend', carry: null },
+    ]
+    l.player.invuln = 100000
+    let greenPop = false
+    for (let i = 0; i < 60 && !greenPop; i++) {
+        l.step({ right: true, fire: true })
+        if (l.events.some((e) => e.t === 'killLander')) {
+            greenPop = l.particles.some((p) => p.col === '#3dff5e')
+        }
+    }
+    ok(greenPop, 'a lander pop is GREEN — distinct from every other explosion (#1907)')
+
+    const m = newSim(61)
+    m.enemies = [
+        { x: (m.player.x + 120) % WORLD_WIDTH, y: m.player.y, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null },
+        { x: (m.player.x + 2000) % WORLD_WIDTH, y: 70, vx: 0, vy: -0.3, type: 'lander', state: 'ascend', carry: null },
+    ]
+    m.player.invuln = 100000
+    let redPop = false
+    for (let i = 0; i < 60 && !redPop; i++) {
+        m.step({ right: true, fire: true })
+        if (m.events.some((e) => e.t === 'killMutant')) redPop = m.particles.some((p) => p.col === '#ff5555')
+    }
+    ok(redPop, 'a mutant burst is RED — the two kill kinds never look alike')
+
+    const g = newSim(13)
+    const groundG = groundAt(g.terrain, 500)
+    g.enemies = [{ x: 500, y: groundG - 40, vx: 0, vy: 0.5, type: 'lander', state: 'wander', carry: null }]
+    g.player.invuln = 100000
+    let mutFlash = false
+    for (let i = 0; i < 300 && !mutFlash; i++) { g.step({}); if (g.events.some((e) => e.t === 'mutate')) mutFlash = g.particles.some((p) => p.col === '#b1ff5e') }
+    ok(mutFlash, 'the ground mutate flashes — the lander→mutant turn is announced')
+
+    const w = newSim(29)
+    w.enemies = [{ x: w.player.x, y: w.player.y, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null }]
+    w.step({})
+    ok(w.particles.some((p) => p.col === '#ff8a3c'), 'the fighter wreck burns orange')
+    ok(w.particles.every((p) => typeof p.col === 'string'), 'every particle carries its color (no invisible default)')
+
+    // Wave-clear celebration: arms on the clear, burns down on its own clock.
+    const c = newSim(47)
+    c.enemies = []
+    c.player.invuln = 100000
+    c.step({})
+    ok(c.celebrate === 100 && c.wave === 2, 'a wave clear arms the ~100-tick celebration beat', `celebrate=${c.celebrate}`)
+    c.enemies = [{ x: (c.player.x + 2000) % WORLD_WIDTH, y: 70, vx: 0, vy: -0.4, type: 'lander', state: 'ascend', carry: null }]
+    for (let i = 0; i < 101; i++) c.step({ right: true })
+    ok(c.celebrate === 0, 'the celebration burns down and never hangs', `celebrate=${c.celebrate}`)
+
+    // The hold-fire tell: the brain flags WHY it stayed quiet, and only then.
+    {
+        const s = createSim({ rand: seedRng(11), height: 420 })
+        s.enemies = [{ x: 500, y: 300, vx: 0, vy: 0, type: 'lander', state: 'wander', carry: null }]
+        s.humans.forEach((h, i) => { if (i > 0) h.state = 'dead' })
+        const h = s.humans[0]
+        h.state = 'walk'; h.x = 300; h.y = 300
+        s.player.x = 200; s.player.y = 300; s.player.vx = 3; s.player.vy = 0
+        s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
+        ok(watchRoute(s).holdTell === true, 'a held trigger is TOLD: fire suppressed by a friend raises holdTell')
+    }
+    {
+        const s = createSim({ rand: seedRng(12), height: 420 })
+        s.enemies = [{ x: 500, y: 300, vx: 0, vy: 0, type: 'lander', state: 'wander', carry: null }]
+        s.humans.forEach((h) => { h.state = 'dead' })
+        s.player.x = 200; s.player.y = 300; s.player.vx = 3; s.player.vy = 0
+        s.player.facing = 1; s.player.dark = 0; s.player.invuln = 1
+        const inp = watchRoute(s)
+        ok(inp.fire === true && !inp.holdTell, 'a clear shot fires and raises no tell (the bracket lies never)')
+    }
+
+    // The render half: these live in the shell, pinned by shape like #1531 did.
+    const src = readFileSync('src/games/Defender/index.jsx', 'utf8')
+    ok(/const tumble = h\.state === 'falling'/.test(src) && /const flap = \(tickN >> 2\)/.test(src),
+        'a falling pod tumbles under a flapping chute (#1907)')
+    ok(/sim\.carrying !== null[\s\S]{0,320}?lineTo\(h\.x, h\.y - 5\)/.test(src),
+        'a carried human is roped to the belly by a harness line')
+    ok(/drawHuman\(h, true\)/.test(src), 'the carried human kicks its legs — the rescue is visibly alive')
+    ok(/if \(e\.type === 'lander' && e\.carry !== null && e\.state === 'ascend'\)/.test(src) && /rgba\(120,220,255,0\.5\)/.test(src),
+        'the tractor beam stays on through the haul (no detached floating human)')
+    ok(/sim\.celebrate > 0/.test(src) && /WAVE CLEARED/.test(src) && /GET READY/.test(src),
+        'the wave clear shows the planet-explosion banner AND the new-wave countdown tell')
+    ok(/RESCUED/.test(src), 'the delivery names itself: +500 RESCUED popup (b19 behaviour made legible)')
+    ok(/\+250/.test(src), 'the catch pops +250 over the rescue point')
+    ok(/const wrapBlink = cameraX \+ viewWidth > WORLD_WIDTH/.test(src),
+        'radar player dot takes priority — blinks big across a wrap pass')
+    ok(/playSweep\(hum \* 2/.test(src), 'thrust layers a rising harmonic over the hum — speed is audible')
+    ok(/holdTell && \(tickN >> 3\)/.test(src), 'the held trigger shows a yellow bracket off the nose')
+    ok(/pt\.col \|\| 'white'/.test(src), 'particles are drawn in their kill color')
 }
 
 
@@ -426,8 +523,10 @@ if (process.argv.includes('--mutant')) {
             `if (s.freeze > 0) { s.freeze -= 1; return s }`,
             `if (false) { s.freeze -= 1; return s }`],
         ['thrust goes silent again', I,
-            `audioController.playTone(50 + Math.abs(sim.player.vx) * 8, 0.1, 'sawtooth', 0.045)`,
-            `/* silent */`],
+            `const hum = 50 + Math.abs(sim.player.vx) * 8
+                audioController.playTone(hum, 0.1, 'sawtooth', 0.045)`,
+            `const hum = 50 + Math.abs(sim.player.vx) * 8
+                /* silent */`],
         ['the abduction telegraph hum is muted', I,
             `audioController.playSweep(140, 70, 0.2, 'triangle', 0.06)`,
             `/* muted */`],
@@ -463,6 +562,42 @@ if (process.argv.includes('--mutant')) {
         ['the patrol stops lifting off the wireframe (b21 crash-law sentinel)', S,
             `    if (climbing) input.up = true`,
             `    if (false) input.up = true`],
+        ['#1907 lander pops lose their green', S,
+            `killFx(e.x, e.y, 10, '#3dff5e') // the arcade's green lander pop (#1907)`,
+            `killFx(e.x, e.y, 10, '#ffffff')`],
+        ['#1907 mutant bursts lose their red', S,
+            `killFx(e.x, e.y, 10, '#ff5555') // mutants burst red (#1907)`,
+            `killFx(e.x, e.y, 10, '#ffffff')`],
+        ['#1907 the wave-clear celebration never arms', S,
+            `s.celebrate = 100 // #1907: the planet-exploses celebration beat before the new wave settles`,
+            `s.celebrate = 0`],
+        ['#1907 the celebration hangs forever (no decay)', S,
+            `if (s.celebrate > 0) s.celebrate -= 1 // #1907: the wave-clear beat burns its own clock`,
+            `if (false) { s.celebrate -= 1 }`],
+        ['#1907 the held-trigger tell is muted', S,
+            `else input.holdTell = true // #1907: the brain SHOWS why it held the trigger`,
+            `/* tell muted */`],
+        ['#1907 the falling pod loses its chute', I,
+            `const tumble = h.state === 'falling'`,
+            `const tumble = false`],
+        ['#1907 the harness line is cut (carried human detaches)', I,
+            `ctx.moveTo(p.x, p.y + 6); ctx.lineTo(h.x, h.y - 5)`,
+            `/* no harness */`],
+        ['#1907 the tractor drops the hauled human', I,
+            `if (e.type === 'lander' && e.carry !== null && e.state === 'ascend') {`,
+            `if (false && e.type === 'lander' && e.carry !== null && e.state === 'ascend') {`],
+        ['#1907 the rescue stops naming itself', I,
+            `popups.push({ x: sim.player.x, y: sim.player.y + 24, text: '+500 RESCUED', life: 90 }) // #1907: names b19's delivery beat`,
+            `/* silent delivery */`],
+        ['#1907 radar loses its wrap-priority blink', I,
+            `const wrapBlink = cameraX + viewWidth > WORLD_WIDTH && (tickN >> 2) % 2 === 0`,
+            `const wrapBlink = false`],
+        ['#1907 the thrust harmonic layer is peeled off', I,
+            `audioController.playSweep(hum * 2, hum * 2 + 60, 0.08, 'square', 0.018)`,
+            `/* no harmonic */`],
+        ['#1907 the celebration banner is blanked', I,
+            `ctx.fillText('WAVE CLEARED', viewWidth / 2, viewHeight / 2 - 16)`,
+            `/* blanked */`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

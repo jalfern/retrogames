@@ -25,6 +25,18 @@ on one seeded stream.
   flickering tractor beam at their target with a low telegraph pulse, wave
   fanfares ramp pitch per wave, lander/mutant sprites pulse, humans shuffle on
   a 2-frame walk, radar dots flicker on the scanner.
+- **Presentation (#1907)**: kills read by COLOR — landers pop green, mutants
+  burst red, the wreck burns orange, a lost human sparks gold, and the
+  lander→mutant turn flashes a green ring (a rand-free burst, so the seedpin
+  stream never shifts by a single draw). The rescue chain is staged end to
+  end: the tractor stays lit through the haul, a pod released from a dead
+  hauler tumbles under a flapping chute, the player carries on a visible
+  harness with kicking legs, and catches/deliveries pop `+250` / `+500
+  RESCUED` where they happen (naming b19's patrol behaviour). Wave clear gets
+  a shock ring + `WAVE CLEARED` banner with a `GET READY` countdown tell; the
+  radar player dot blinks big when the camera window crosses the seam; thrust
+  layers a rising harmonic so speed is audible; and when the patrol holds fire
+  to spare a human, a yellow bracket off the nose says WHY.
 - **Look** (docs/ART.md, RETRO): black starfield with twinkle, white mountain
   wireframe, grey lander shells with tractor bar, red diamond mutants, small
   yellow humanoids, thrust flame, red/yellow score sheet under the radar.
@@ -93,7 +105,8 @@ driving key or a tap hands the wheel back (shared blips).
   interception gap stands too.)
 - No smart bomb, no hyperspace, no meteor-swarm bonus (documented 1981
   features left out of this port; the original's bonus table values 250/500/
-  1000/10k are honored for what IS here).
+  1000/10k are honored for what IS here). Smart bomb port-or-mock is asked
+  of Jon in #2016 — default: it stays out.
 - A hauled human dies near the top of the screen instead of the lander
   circling back down with it (original re-descends; simplification).
 - Collisions within ~20 px of the wrap seam are skipped (20 px bodies on a

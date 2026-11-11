@@ -198,6 +198,7 @@ export const watchRoute = (s) => {
                 if (Math.abs(hd) < Math.abs(dx) + 8 && Math.sign(hd || p.facing) === Math.sign(dx || p.facing) && Math.abs(h.y - p.y) < 10) shield = true
             }
             if (!shield) input.fire = true
+            else input.holdTell = true // #1907: the brain SHOWS why it held the trigger
         }
     }
     return input
@@ -222,14 +223,24 @@ export function createSim({ rand, height }) {
         player: { x: 200, y: 200, vx: 3, vy: 0, facing: 1, cooldown: 0, dark: 0, invuln: 0 },
         carrying: null,
         freeze: 0,
+        celebrate: 0, // #1907: wave-clear celebration ticks (the planet-explode beat)
         events: [],
     }
     s.humans = makeHumans(rand, s.terrain)
     s.enemies = spawnWave(rand, 1, height)
 
-    const killFx = (x, y, n) => {
+    // #1907: kills read by COLOR, like the cabinet — landers pop green, mutants
+    // burst red, the wreck burns orange, a lost human sparks gold.
+    const killFx = (x, y, n, col = '#ffffff') => {
         for (let i = 0; i < n; i++) {
-            s.particles.push({ x, y, vx: (rand() - 0.5) * 10, vy: (rand() - 0.5) * 10, life: 30 })
+            s.particles.push({ x, y, vx: (rand() - 0.5) * 10, vy: (rand() - 0.5) * 10, life: 30, col })
+        }
+    }
+    // #1907: a rand-FREE burst — the seedpin law says the witness stream may
+    // not shift by a single draw, so announced flashes use a fixed pattern.
+    const flashBurst = (x, y, col) => {
+        for (let i = 0; i < 8; i++) {
+            s.particles.push({ x, y, vx: Math.cos(i * Math.PI / 4) * 4, vy: Math.sin(i * Math.PI / 4) * 4, life: 22, col })
         }
     }
 
@@ -241,7 +252,7 @@ export function createSim({ rand, height }) {
     const die = () => {
         s.lives -= 1
         s.events.push({ t: 'die' })
-        killFx(s.player.x, s.player.y, 16)
+        killFx(s.player.x, s.player.y, 16, '#ff8a3c')
         if (s.lives <= 0) {
             s.lives = 0
             s.over = true
@@ -268,6 +279,7 @@ export function createSim({ rand, height }) {
         // it for half a second before the respawn countdown — nothing moves,
         // particles included; only the clock runs.
         if (s.freeze > 0) { s.freeze -= 1; return s }
+        if (s.celebrate > 0) s.celebrate -= 1 // #1907: the wave-clear beat burns its own clock
 
         const p = s.player
 
@@ -318,7 +330,7 @@ export function createSim({ rand, height }) {
                     h.state = 'dead'
                     h.y = groundAt(s.terrain, h.x) - 4
                     s.events.push({ t: 'humanDied' })
-                    killFx(h.x, h.y, 6)
+                    killFx(h.x, h.y, 6, '#ffd23f')
                 }
             }
         })
@@ -390,6 +402,7 @@ export function createSim({ rand, height }) {
                             e.vy = -1.5
                             s.events.push({ t: 'humanDied' })
                             s.events.push({ t: 'mutate' })
+                            flashBurst(e.x, e.y, '#b1ff5e') // #1907: mutation flash, same tell as a ground mutate
                         }
                     }
                     if (e.state === 'ascend' && e.y < 70) {
@@ -416,6 +429,7 @@ export function createSim({ rand, height }) {
                     e.state = 'hunt'
                     e.vy = -1.5
                     s.events.push({ t: 'mutate' })
+                    flashBurst(e.x, e.y, '#b1ff5e') // #1907: the shell flashes green as it turns
                 }
                 // Carried human rides just below the shell.
                 if (e.carry !== null) {
@@ -435,10 +449,10 @@ export function createSim({ rand, height }) {
                 if (Math.abs(wrapDelta(l.x - e.x)) < 20 && Math.abs(l.y - e.y) < 16) {
                     e.dead = true
                     l.life = 0
-                    killFx(e.x, e.y, 10)
                     if (e.type === 'lander') {
                         addScore(SCORE_LANDER)
                         s.events.push({ t: 'killLander', pts: SCORE_LANDER })
+                        killFx(e.x, e.y, 10, '#3dff5e') // the arcade's green lander pop (#1907)
                         if (e.carry !== null) {
                             const h = s.humans[e.carry]
                             h.state = 'falling'
@@ -448,6 +462,7 @@ export function createSim({ rand, height }) {
                     } else {
                         addScore(SCORE_MUTANT)
                         s.events.push({ t: 'killMutant', pts: SCORE_MUTANT })
+                        killFx(e.x, e.y, 10, '#ff5555') // mutants burst red (#1907)
                     }
                 }
             })
@@ -499,6 +514,7 @@ export function createSim({ rand, height }) {
             addScore(SCORE_WAVE)
             s.wave += 1
             s.enemies = spawnWave(rand, s.wave, height)
+            s.celebrate = 100 // #1907: the planet-exploses celebration beat before the new wave settles
             s.events.push({ t: 'wave', pts: SCORE_WAVE })
         }
 
