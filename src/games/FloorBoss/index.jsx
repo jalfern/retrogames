@@ -128,6 +128,8 @@ const FloorBossGame = () => {
         let armTip = { x: 0, y: 0 }
         let grip = 1 // gripper spread: 1 open, 0 closed
         let diamondA = 0 // last-drawn reach-diamond alpha (harness eye on the pulse, #1877)
+        let gripSway = 0, gripShud = 0 // docked-gripper idle motion, paint-time only (#1877 item 3)
+        let escGrowAt = -999, escLast = 0 // escrow chip blinks only right after money lands (#1877 freight context)
         let humT = 60 // 60 bpm floor hum while bots move
 
         const beginEpisode = () => {
@@ -399,10 +401,20 @@ const FloorBossGame = () => {
                 const pose = gs.arm.pose
                 const restA = -2.2, workA = -0.9
                 const handing = gs.robots.some((bb) => bb.task.kind === 'toArm' && bb.pickT > 0)
-                const ang = restA + (workA - restA) * pose + (handing ? 0.22 : 0)
+                // #1877 item 3 — docked, the machine is never dead-still: a slow
+                // wrist sway sells live hydraulics at rest, and a fast micro-shudder
+                // along the forearm sells the strain while loaded cargo runs the
+                // patience clock. Both ride the paint tick (world-seconds law);
+                // nothing touches gs, so the sim hash stays honest (#1877 check).
+                const loadedHold = gs.arm.held && gs.arm.swing === 0
+                const sway = gs.arm.held || handing ? 0 : Math.sin(tick * 0.04) * 0.035
+                const shud = loadedHold ? Math.sin(tick * 2.3) * 0.7 : 0
+                gripSway = sway; gripShud = shud
+                const ang = restA + (workA - restA) * pose + (handing ? 0.22 : 0) + sway
                 const L1 = 16, L2 = 14
                 const ex = bx + Math.cos(ang) * L1, ey = by + Math.sin(ang) * L1
-                const hx = ex + Math.cos(ang + 1.1 - pose * 0.7) * L2, hy = ey + Math.sin(ang + 1.1 - pose * 0.7) * L2
+                const a2 = ang + 1.1 - pose * 0.7
+                const hx = ex + Math.cos(a2) * (L2 + shud), hy = ey + Math.sin(a2) * (L2 + shud)
                 armTip = { x: hx, y: hy }
                 ctx.strokeStyle = '#8fa3b0'; ctx.lineWidth = 4
                 ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(ex, ey); ctx.stroke()
@@ -585,9 +597,16 @@ const FloorBossGame = () => {
             ctx.fillStyle = '#7e9cb0'; ctx.font = 'bold 7px monospace'
             ctx.fillText('EXPIRED', 204, 28)
             // freight line (#1921): escrow is money the pack booked but the dock
-            // hasn't shipped — it only becomes THROUGHPUT when the trailer hauls
+            // hasn't shipped — it only becomes THROUGHPUT when the trailer hauls.
+            // #1877 freight context: blink only while money is actively landing
+            // (within the last 2 world-seconds of growth), steady otherwise — a
+            // fixed-phase blink shouts even when the number has sat still for a minute.
+            if (gs.escrow > escLast) escGrowAt = tick // also syncs downward moves (payout, reset) so the next growth reads
+            escLast = gs.escrow
             if (gs.escrow > 0) {
-                ctx.fillStyle = tick % 50 < 34 ? '#7ec8ff' : '#3d5f78'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'left'
+                const growWin = tick - escGrowAt < 120
+                ctx.fillStyle = growWin ? (tick % 50 < 34 ? '#7ec8ff' : '#3d5f78') : '#5d94b6'
+                ctx.font = 'bold 8px monospace'; ctx.textAlign = 'left'
                 ctx.fillText(`ESCROW ${gs.escrow}`, 372, 22)
             }
             // shift clock
@@ -1032,7 +1051,7 @@ const FloorBossGame = () => {
                 // #1872 harness eyes on the gantry
                 arm: () => ({ held: gs.arm.held, swing: gs.arm.swing, swingT0: gs.arm.swingT0, target: gs.arm.target ? { ...gs.arm.target } : null, heldT: gs.arm.heldT, reach: ARM_REACH }),
                 // #1877 eyes on the servo presentation ghosts (renderer-only state)
-                servoFx: () => ({ arcs: arcItems.filter((a) => a.servo).length, diamond: diamondA, dmode: gs.arm.swing > 0 ? 'swing' : gs.tool === 'rack' ? 'rack' : gs.arm.held ? 'pulse' : 'off', tool: gs.tool }),
+                servoFx: () => ({ arcs: arcItems.filter((a) => a.servo).length, diamond: diamondA, dmode: gs.arm.swing > 0 ? 'swing' : gs.tool === 'rack' ? 'rack' : gs.arm.held ? 'pulse' : 'off', tool: gs.tool, sway: gripSway, shud: gripShud }),
                 // #1637 watchcheck pilot drives these.
                 watching: () => watchingRef.current,
                 probe: () => ({ tick: gs.tick, score: gs.score, escrow: gs.escrow, freight: gs.freight, fees: gs.fees, shipped: gs.shipped, stows: gs.stows, racks: gs.racks.length, end: gs.end, away: gs.truck.away, far: gs.truck.far, padDest: gs.pad.map((p) => p.d || 0), padWeight: gs.pad.map((p) => p.w || 0), heavy: gs.truck.grid.reduce((s, r) => s + r[2], 0) }), // away/far/padDest #1927, padWeight/heavy #1931

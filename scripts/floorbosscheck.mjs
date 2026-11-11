@@ -300,8 +300,24 @@ console.log('— servo presentation (#1877, source pins) —')
     ok(/const n = a\.n \|\| 15/.test(ui), 'the shared arc painter honours per-arc durations (bay keeps 15)')
     ok(/gs\.arm\.held && gs\.arm\.swing === 0/.test(ui) && /Math\.sin\(gs\.arm\.heldT/.test(ui),
         'reach diamond pulses on the sim patience counter while loaded-and-waiting')
+    // #1877 item 3 — the docked gripper is never dead-still: slow wrist sway at
+    // idle, fast micro-shudder while loaded cargo runs the patience clock. Both
+    // must ride the paint tick (world-seconds law) and stay painter-only.
+    ok(/const sway = gs\.arm\.held \|\| handing \? 0 : Math\.sin\(tick \* 0\.04\)/.test(ui),
+        'docked gripper sways slowly at idle, from the paint tick')
+    ok(/const shud = loadedHold \? Math\.sin\(tick \* 2\.3\)/.test(ui) && /const loadedHold = gs\.arm\.held && gs\.arm\.swing === 0/.test(ui),
+        'loaded gripper shudders along the forearm while the hold runs')
+    ok(/const hx = ex \+ Math\.cos\(a2\) \* \(L2 \+ shud\)/.test(ui),
+        'the shudder telescopes the forearm (hx/hy), not the gripper-only paint')
     const simSrc = readFileSync(new URL('../src/games/FloorBoss/sim.js', import.meta.url), 'utf8')
     ok(!/arcItems|ghost/i.test(simSrc), 'presentation never leaks into the sim (hash stays honest)')
+    ok(!/gripSway|gripShud|loadedHold/.test(simSrc), 'gripper idle motion never leaks into the sim')
+    // #1877 freight context — the ESCROW chip blinks only while money is actively
+    // landing (recent growth window), steady when the number has sat still.
+    ok(/if \(gs\.escrow > escLast\) escGrowAt = tick/.test(ui) && /tick - escGrowAt < 120/.test(ui),
+        'ESCROW chip blinks only on recent growth, steady otherwise')
+    ok(/growWin \? \(tick % 50 < 34 \? '#7ec8ff' : '#3d5f78'\) : '#5d94b6'/.test(ui),
+        'settled escrow paints a steady readable mid-blue')
 }
 
 console.log('— load-out (#1911) —')
