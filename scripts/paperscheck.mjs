@@ -26,9 +26,9 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, FEATURES } from '../src/games/PapersPleaseMin/rules.js'
-import { genWeek, genDay, viewOf, CITY2C, TRAPS, GREY, REGULARS } from '../src/games/PapersPleaseMin/gen.js'
+import { genWeek, genDay, viewOf, CITY2C, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay } from '../src/games/PapersPleaseMin/gen.js'
 import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges } from '../src/games/PapersPleaseMin/sim.js'
-import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, ID, PHOTO, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
+import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, ID, PHOTO, BUBBLE, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SRC = join(HERE, '../src/games/PapersPleaseMin')
@@ -362,6 +362,7 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
     let appearances = 0
     for (const seed of SEEDS) {
         const w = genWeek(seed)
+        const arc = arcForWeek(seed)
         const byCast = {}
         for (const day of w.days) {
             const regs = day.queue.filter((a) => a.person.regular)
@@ -384,13 +385,22 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
                 }
                 ok(a.person.face.mark === c.mark && a.person.passport.photo.mark === c.mark,
                     `seed ${seed} day ${day.n}: ${c.id} lost or grew its signature mark`)
-                // legality: the neighborhood is honest — decide and judge BOTH
-                // approve a regular on every day they walk up.
+                // Legality (#1983 amended): the neighborhood is honest — decide
+                // and judge BOTH approve a regular — with exactly one exception
+                // per week: the ARC entrant on their turn day, whom the wall
+                // convicts (name + number on the sheet) while every paper stays
+                // clean. The ARC section grades that exception in full.
                 const d = decide(viewOf(day, a))
                 const j = judge({ truth: a.truth, person: a.person, rules: day.rules, date: day.date, allowed: day.allowed, scale: a.scale })
-                ok(d.verdict === 'approve' && j.verdict === 'approve',
-                    `seed ${seed} day ${day.n}: ${c.name} denied — ${JSON.stringify(d.violations)}`)
-                ok(a.truth.wanted === false, `seed ${seed} day ${day.n}: a regular was planted wanted`)
+                const isArcTurn = day.n === arc.day && c.id === arc.id
+                if (isArcTurn) {
+                    ok(d.verdict === 'deny' && j.verdict === 'deny',
+                        `seed ${seed} day ${day.n}: ${c.name}'s turn did NOT convict — booth ${d.verdict}, truth ${j.verdict}`)
+                } else {
+                    ok(d.verdict === 'approve' && j.verdict === 'approve',
+                        `seed ${seed} day ${day.n}: ${c.name} denied — ${JSON.stringify(d.violations)}`)
+                    ok(a.truth.wanted === false, `seed ${seed} day ${day.n}: a regular was planted wanted off the arc`)
+                }
                 ok(day.queue.filter((x) => x.person.passport && x.person.passport.name === c.name).length === 1,
                     `seed ${seed} day ${day.n}: a random twin of ${c.name} walked the same line`)
             }
@@ -400,6 +410,72 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
     }
     ok(appearances >= SEEDS.length * 6, `only ${appearances} regular appearances across ${SEEDS.length} weeks — the injection is theatre`)
     console.log(`  ..    ${appearances} authored appearances across ${SEEDS.length} weeks; every week had faces that came back`)
+}
+
+// ---------------------------------------------------------- #1983 ARC ----
+section('THE ARC (#1983) — one regular turns wanted, Jorji-style')
+{
+    let turns = 0
+    for (const seed of SEEDS) {
+        const w = genWeek(seed)
+        const arc = arcForWeek(seed)
+        // the arc is a construction: cast[seed mod 4], turning on the day its
+        // FIRST visit returns (day 6 for every seed) — WANTED must be awake.
+        ok(REGULARS[seed % REGULARS.length].id === arc.id, `seed ${seed}: arc picked the wrong cast seat`)
+        ok(arc.day === firstVisitDay(seed, seed % REGULARS.length) + 4 && arc.day === 6,
+            `seed ${seed}: arc day ${arc.day} — the turn must be the return (6), when WANTED is on the wall`)
+        ok(w.days[arc.day - 1].rules.includes('WANTED'), `seed ${seed}: arc day has no WANTED law — the turn would be invisible`)
+        let arcHit = 0
+        for (const day of w.days) {
+            for (const a of day.queue) {
+                if (!a.person.arc) continue
+                arcHit++
+                const pp = a.person.passport
+                ok(day.n === arc.day && a.person.regular === arc.id, `seed ${seed}: arc flag walked on day ${day.n}`)
+                // the case is the WALL's: sheet pairs the authored name with the
+                // number carried that day; decide names exactly one violation.
+                const pair = day.wanted.find((x) => x.name === pp.name && x.id === pp.id)
+                ok(!!pair, `seed ${seed}: the arc turn never reached the bulletin — invisible criminal, unfair by furniture`)
+                const d = decide(viewOf(day, a))
+                ok(d.verdict === 'deny' && d.violations.length === 1 && d.violations[0].rule === 'WANTED',
+                    `seed ${seed}: the turn carries more than the wall's case — ${JSON.stringify(d.violations)}`)
+                ok(/^WANTED: .+ #\d+$/.test(d.violations[0].evidence), `seed ${seed}: the turn's witness is not the printed pair: ${d.violations[0].evidence}`)
+                // pull-the-witness: erase the sheet entry and the SAME papers
+                // approve — proving the face, the photo and every document are
+                // honest. The trap is recognition, the proof is the number.
+                const bare = { ...viewOf(day, a), wanted: day.wanted.filter((x) => !(x.name === pp.name && x.id === pp.id)) }
+                ok(decide(bare).verdict === 'approve', `seed ${seed}: the arc's papers convict without the sheet — ${JSON.stringify(decide(bare).violations)}`)
+                // the Jorji beat: the returning face opens its mouth
+                ok(Array.isArray(a.person.say) && a.person.say.length === 2 && a.person.say[0] === 'YOU AGAIN.' && /\.\.\./.test(a.person.say[1]),
+                    `seed ${seed}: the turn lost its lines — ${JSON.stringify(a.person.say)}`)
+                turns++
+            }
+        }
+        ok(arcHit === 1, `seed ${seed}: ${arcHit} arc turns in one week — exactly one, like the campaign's arcs`)
+        // the first visit is the innocent one: same face, cheerful, approved
+        const d2 = w.days[arc.day - 5]
+        const first = d2.queue.find((a) => a.person.regular === arc.id)
+        ok(!!first && !first.person.arc && !first.person.say && decide(viewOf(d2, first)).verdict === 'approve',
+            `seed ${seed}: the arc's first visit was not the honest walk-up it should be remembered as`)
+        ok(first ? first.truth.wanted === false : false, `seed ${seed}: wanted before the turn — the arc is one beat, not a flag`)
+        // the OTHER recurrence (cast[(seed+1) mod 4], days 3 and 7) just remembers
+        const backIdx = (seed + 1) % REGULARS.length
+        const backId = REGULARS[backIdx].id
+        const d7 = w.days[6]
+        const rememberer = d7.queue.find((x) => x.person.regular === backId)
+        ok(!!rememberer && !rememberer.person.arc && Array.isArray(rememberer.person.say) && rememberer.person.say.length === 1 && rememberer.person.say[0] === 'YOU AGAIN.',
+            `seed ${seed}: day 7's returning face forgot its callback — ${JSON.stringify(rememberer && rememberer.person.say)}`)
+        ok(decide(viewOf(d7, rememberer)).verdict === 'approve', `seed ${seed}: the plain recidivist was convicted — only the arc turns`)
+        // purity: `say` never moves a verdict — every paper of the arc day
+        // decides identically with the line stripped off the person.
+        for (const a of w.days[arc.day - 1].queue) {
+            const v = viewOf(w.days[arc.day - 1], a)
+            const stripped = { ...v, person: { ...v.person, say: undefined } }
+            ok(decide(v).verdict === decide(stripped).verdict, `seed ${seed}: say-line leaked into the verdict`)
+        }
+    }
+    ok(turns === SEEDS.length, `${turns} turns across ${SEEDS.length} weeks — the arc is not weekly`)
+    console.log(`  ..    ${turns} turns: familiar faces on the wall, honest papers under them, one memory line for the others`)
 }
 
 // ---------------------------------------------- clumsy clears / chaos collapses ----
@@ -759,6 +835,14 @@ section('THE WALL FITS THE BOOTH (#410) — nothing hides, nothing is postage')
     ok(deepest === 5, `the generator never staged a five-entry sheet (deepest ${deepest}) — the fifth slot is dead letter`)
     ok(fives > 0, 'no seed/day reached the five-entry sheet')
     console.log(`  ..    deepest sheet ${deepest} entries; ${fives} five-entry days across the sweep — the original bulletin's capacity is in use`)
+    // #1983 the callback bubble's lane is law too: the field sits clear of
+    // the slip, the strip, and the stamp's witness line (baseline y=296),
+    // and the authored lines fit the field at 10px monospace.
+    ok(BUBBLE.x + BUBBLE.w <= SLIP.x - 4, 'the speech bubble runs into the deduction slip')
+    ok(BUBBLE.y + BUBBLE.h <= CHS - STRIP_H - 6 && BUBBLE.y >= 300, 'the speech bubble crowds the strip or the witness line')
+    ok(BUBBLE.x >= PORTRAIT.x - 4 && BUBBLE.x + BUBBLE.w <= CW - 4 && BUBBLE.y >= ID.y + ID.h + 4, 'the bubble leaves the entrant lane or crowds the papers/ID column')
+    for (const ln of ['YOU AGAIN.', '...I NO DO ANYTHING.'])
+        ok(ln.length * 10 * CHAR <= BUBBLE.w - 14, `callback line "${ln}" overflows the bubble (${ln.length * 10 * CHAR}px in ${BUBBLE.w - 14}px)`)
     // and the theoretical worst day the generator is allowed to build: the
     // full 8-rule sheet, four countries, five wanted names (#410: the old
     // booth overflowed exactly here and the scale box buried the sheet;
@@ -992,7 +1076,7 @@ if (MUT) {
     //     silently shrinks to the old four-portrait wall — the slot-used
     //     witness in the WALL section is the load-bearing line.
     await tryMut('wanted sheet forgets its fifth portrait (decoys 3 -> 2)',
-        mutMod('gen.js', 'for (let k = 0; k < 3; k++) {', 'for (let k = 0; k < 2; k++) {', 'm11'),
+        mutMod('gen.js', 'for (let k = 0; k < 3 - (arcPlanted ? 1 : 0); k++) {', 'for (let k = 0; k < 2 - (arcPlanted ? 1 : 0); k++) {', 'm11'),
         (m) => {
             let deepest = 0
             for (const seed of SEEDS) {
@@ -1230,6 +1314,69 @@ if (MUT) {
                         for (const f of ['style', 'narrow', 'glasses', 'must', 'brow', 'mouth']) if (a.person.face[f] !== c.face[f]) return false
                     }
                 }
+            }
+            return true
+        })
+
+    // 27. the arc never reaches the bulletin: the flag and the truth remain,
+    //     but the wall never names the familiar face — an invisible criminal,
+    //     and the booth (decide) lets the turn walk free.
+    await tryMut('arc turn never printed on the sheet (invisible Jorji)',
+        mutMod('gen.js', 'day.wanted.push({ name: c.name, id: a.person.passport.id, planted: true })', 'void 0', 'm27'),
+        (m) => {
+            for (const seed of SEEDS) {
+                const w = m.gen.genWeek(seed)
+                const arc = m.gen.arcForWeek(seed)
+                const day = w.days[arc.day - 1]
+                const a = day.queue.find((x) => x.person.arc)
+                if (!a) return false
+                if (!day.wanted.some((x) => x.name === a.person.passport.name && x.id === a.person.passport.id)) return false
+                if (m.rules.decide(m.gen.viewOf(day, a)).verdict !== 'deny') return false
+            }
+            return true
+        })
+
+    // 28. the sheet pairs the name with the WRONG number: the WANTED law
+    //     (name AND number) never bites — the witness is printed but lies.
+    await tryMut('arc sheet carries the wrong passport number',
+        mutMod('gen.js', 'id: a.person.passport.id, planted: true', 'id: a.person.passport.id + 1, planted: true', 'm28'),
+        (m) => {
+            for (const seed of SEEDS) {
+                const w = m.gen.genWeek(seed)
+                const arc = m.gen.arcForWeek(seed)
+                const day = w.days[arc.day - 1]
+                const a = day.queue.find((x) => x.person.arc)
+                if (!a) return false
+                if (m.rules.decide(m.gen.viewOf(day, a)).verdict !== 'deny') return false
+            }
+            return true
+        })
+
+    // 29. the callback silenced: faces still come back, but the booth never
+    //     remembers them — the recognition beat the whole stage is named for.
+    await tryMut('recalling face loses its line (the neighborhood forgets)',
+        mutMod('gen.js', "a.person.say = ['YOU AGAIN.']", 'a.person.say = null', 'm29'),
+        (m) => {
+            for (const seed of SEEDS) {
+                const w = m.gen.genWeek(seed)
+                const backId = m.gen.REGULARS[(seed + 1) % m.gen.REGULARS.length].id
+                const r = w.days[6].queue.find((x) => x.person.regular === backId)
+                if (!r || !r.person.say || r.person.say[0] !== 'YOU AGAIN.') return false
+            }
+            return true
+        })
+
+    // 30. the bulletin forgets the arc took a slot: decoys stay at three and
+    //     the turn day can outgrow the original's five-portrait capacity —
+    //     a wall with six names must hide one (unfair by furniture).
+    await tryMut('arc day keeps its three decoys (bulletin overflows its law)',
+        mutMod('gen.js', 'for (let k = 0; k < 3 - (arcPlanted ? 1 : 0); k++) {', 'for (let k = 0; k < 3; k++) {', 'm30'),
+        (m) => {
+            for (const seed of SEEDS) {
+                const w = m.gen.genWeek(seed)
+                const arc = m.gen.arcForWeek(seed)
+                const day = w.days[arc.day - 1]
+                if (day.wanted.filter((x) => !x.planted).length !== 2) return false
             }
             return true
         })

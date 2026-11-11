@@ -19,7 +19,7 @@ import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../..
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { decide, RULES, dfmt, isAdult } from './rules.js'
-import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, CLOCK, SLIP, wallRows } from './layout.js'
+import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, CLOCK, SLIP, BUBBLE, wallRows } from './layout.js'
 
 const SIM_MS = 1000 / 60
 
@@ -395,6 +395,22 @@ const PapersPleaseMinGame = () => {
                 box(PAPERS.x, 60, PAPERS.w, 120, '#12161f', '#39415c')
                 text('"I HAVE NO PAPERS."', STAMP.x, 125, 14, '#6d7a9c', 'center')
             }
+            // #1983 THE ARC — the neighborhood remembers. A returning entrant
+            // speaks at the counter: a printed paper bubble under the face
+            // column, tail up toward the glass. Atmosphere by doctrine —
+            // decide never reads `say` (paperscheck pins the purity by
+            // verdict-twinning every paper) — but the booth prints the line
+            // exactly when it is present, and papersplay proves those pixels.
+            if (shown && shown.say) {
+                box(BUBBLE.x, BUBBLE.y, BUBBLE.w, BUBBLE.h, COL.paper, COL.paperLine)
+                ctx.fillStyle = COL.paper
+                ctx.beginPath()
+                ctx.moveTo(BUBBLE.x + 18, BUBBLE.y); ctx.lineTo(BUBBLE.x + 38, BUBBLE.y); ctx.lineTo(BUBBLE.x + 22, BUBBLE.y - 16)
+                ctx.closePath(); ctx.fill()
+                ctx.strokeStyle = COL.paperLine; ctx.lineWidth = 1
+                ctx.beginPath(); ctx.moveTo(BUBBLE.x + 18, BUBBLE.y + 1); ctx.lineTo(BUBBLE.x + 22, BUBBLE.y - 16); ctx.lineTo(BUBBLE.x + 38, BUBBLE.y + 1); ctx.stroke()
+                shown.say.forEach((ln, i) => text(ln, BUBBLE.x + 8, BUBBLE.y + 15 + i * 13, 10, COL.ink))
+            }
             // controls strip + last call feedback
             box(0, CHS - STRIP_H, CW, STRIP_H, '#10141f', '#000')
             text('A / SPACE: ADMIT        D: DENY', 12, CHS - 16, 13, COL.gold)
@@ -600,6 +616,15 @@ const PapersPleaseMinGame = () => {
                 }),
                 watching: () => watchingRef.current, // #1637 WATCH probes
                 watchSfx: watchSfxLog,
+                // #1983 the bubble is pixels: count the bubble's own paper
+                // color in its rect on the LIVE canvas (up ≈ full field,
+                // down ≈ nothing — papersplay pins both).
+                bubblePix: () => {
+                    const d = ctx.getImageData(BUBBLE.x, BUBBLE.y, BUBBLE.w, BUBBLE.h).data
+                    let paper = 0
+                    for (let i = 0; i < d.length; i += 4) if (((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]) === 0xd8d2b8) paper++
+                    return paper
+                },
                 probe: () => {
                     const { day, view } = current(gs)
                     return {

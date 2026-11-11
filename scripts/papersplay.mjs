@@ -358,6 +358,82 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
     await wait(250)
 }
 
+// #1983 THE ARC, live: the familiar face comes back WANTED. seed 0's day 6
+// carries Volen Grubak again — the bulletin pairs his name with the number he
+// carries, every paper stays honest, and DENY is the right call the face makes
+// you doubt. The callback bubble prints as pixels: a paper field up on the
+// turn, dark on strangers. And at seed 1 the trap snaps the other way: a
+// sympathetic APPROVE of MARKO costs the strike.
+{
+    await page.evaluate(() => window.__ppTest.start(0))
+    await wait(300)
+    await page.evaluate(() => window.__ppTest.runDay())   // honest day 1 (no cast day)
+    await wait(250)
+    const quiet = await page.evaluate(() => window.__ppTest.bubblePix())
+    r.check(`strangers say nothing — bubble field dark (${quiet} paper px)`, quiet < 100, `${quiet}`)
+    for (let d = 2; d < 6; d++) { await page.evaluate(() => window.__ppTest.runDay()); await wait(150) }
+    let sayProbe = null, bubbleUp = -1, arcVerdict = null
+    for (let g = 0; g < 14 && !sayProbe; g++) {
+        sayProbe = await page.evaluate(() => {
+            const p = window.__ppTest.probe()
+            const per = p && p.view && p.view.person
+            if (!per || !per.arc) return null
+            return { id: per.regular, name: per.passport.name, say: per.say, ppId: per.passport.id, wanted: p.wanted.filter((w) => w.name === per.passport.name).map((w) => w.id) }
+        })
+        if (sayProbe) {
+            // the stamp on the PREVIOUS document holds 30 ticks — the counter
+            // shows the judged papers until it fades (#1938 doctrine): let it
+            // tick out, or the bubble sample measures the wrong entrant.
+            await wait(650)
+            bubbleUp = await page.evaluate(() => window.__ppTest.bubblePix())
+            arcVerdict = await page.evaluate(() => window.__ppTest.verdict())
+            break
+        }
+        const v = await page.evaluate(() => window.__ppTest.verdict())
+        await page.keyboard.press(v === 'approve' ? 'a' : 'd')
+        await wait(140)
+    }
+    r.check('the arc walk-up: Volen Grubak returns on day 6 and the sheet carries HIS number',
+        !!sayProbe && sayProbe.id === 'grubak' && sayProbe.wanted.includes(sayProbe.ppId), JSON.stringify(sayProbe))
+    r.check(`the returning face speaks — bubble prints ${bubbleUp} paper px with its lines`,
+        bubbleUp > 4000 && !!sayProbe && sayProbe.say[0] === 'YOU AGAIN.' && /\.\.\./.test(sayProbe.say[1]), `${bubbleUp}`)
+    r.check('recognition is not safety: the booth denies the familiar face', arcVerdict === 'deny', `${arcVerdict}`)
+    const caughtBefore = (await probe()).caught
+    await page.keyboard.press('d')   // the real deny — Jorji turned away
+    await wait(160)
+    const afterArc = await probe()
+    r.check(`the right deny scores and names the witness (${afterArc.last.why}: ${afterArc.last.evidence})`,
+        afterArc.last.ok === true && afterArc.last.why === 'WANTED' && afterArc.caught === caughtBefore + 1, JSON.stringify(afterArc.last))
+    // the trap snaps the other way at seed 1: cast[1] MARKO DRENIN turns on
+    // day 6 — approving the pleading face is the mistake the stage exists for.
+    await page.evaluate(() => window.__ppTest.start(1))
+    await wait(250)
+    for (let d = 1; d < 6; d++) { await page.evaluate(() => window.__ppTest.runDay()); await wait(120) }
+    let fell = null
+    for (let g = 0; g < 14 && !fell; g++) {
+        fell = await page.evaluate(() => {
+            const p = window.__ppTest.probe()
+            const per = p && p.view && p.view.person
+            return per && per.arc ? { name: per.passport.name, say: per.say } : null
+        })
+        if (!fell) {
+            const v = await page.evaluate(() => window.__ppTest.verdict())
+            await page.keyboard.press(v === 'approve' ? 'a' : 'd')
+            await wait(120)
+        }
+    }
+    const beforeNaive = await probe()
+    await page.keyboard.press('a')   // approve the familiar face — the trap snaps
+    await wait(160)
+    const naive = await probe()
+    r.check(`approving the familiar face is the trap: strikes ${beforeNaive.strikes}->${naive.strikes} (${naive.last && naive.last.why})`,
+        !!fell && fell.name === 'MARKO DRENIN' && Array.isArray(fell.say) && fell.say[0] === 'YOU AGAIN.'
+        && naive.strikes === beforeNaive.strikes + 1 && naive.last.ok === false && naive.last.why === 'WANTED',
+        JSON.stringify({ fell, why: naive.last && naive.last.why }))
+    await page.evaluate(() => window.__ppTest.runDay())    // walk the rest of the day honestly
+    await wait(250)
+}
+
 await wait(400)
 const clean = errors.filter((e) => !/favicon|Download the React DevTools/i.test(e))
 r.check('zero page errors', clean.length === 0, clean.slice(0, 3).join(' | '))
