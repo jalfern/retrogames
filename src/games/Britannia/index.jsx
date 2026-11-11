@@ -29,6 +29,7 @@ import { AVATARS, shrineTitle, plotShrines } from './shrines.js'
 import { buildClassicStamps, variantOf } from './ega.js'
 import { PHASES, moonPhase, moonName, phaseLit, gateFlavor, routeDest } from './moons.js'
 import { crest, crestLane, foam, landSides, foamPatches, splatIntensity, dimples, splashStrikes, SPLAT_GAP, seaRough, crestGain, foamGain, shipCd, surfDue } from './swell.js'
+import { HULL_MAX, wear, repair, nearestCoast, GROAN_GAP } from './hull.js'
 
 const SIM_MS = 1000 / 60
 const VIEW_W = 1280
@@ -97,6 +98,7 @@ const BritanniaGame = () => {
             bumped: new Set(), // shrines whose stone the pilgrim has touched
             wind: windNow(0, seed >>> 0), // #1853: the day's first pressure reading
             splat: -99, // #1829: last tick the sea spoke a drop
+            hull: HULL_MAX, worn: 0, groan: -99, // #1829 hazard: strain on the planks (integer + fraction) + groan throttle
         })
 
         const load = async () => {
@@ -287,7 +289,30 @@ const BritanniaGame = () => {
                     S.face = faceFor(dx, dy); S.anim++
                     audioController.playNoise(0.2, 0.12)
                     S.toast = 90; S.toastMsg = "Thou stepp'st ashore."
-                } else { S.x = nx; S.y = ny; S.cd = shipCd(seaRough(nx, ny, S.tick, S.seed, terrainAt), SHIP_CD) }
+                } else {
+                    // #1829 hazard: the tile the ship enters, and the sky over
+                    // it. Storm water strains the planks (wear is pure rough+wx
+                    // — the same truth the veil, the surf and the drag speak
+                    // for); when the strain finishes her she founders, and the
+                    // nearest shore takes the pilgrim back. Never fatal, never
+                    // winnable-breaking: the rescue BFS always finds land.
+                    const rough = seaRough(nx, ny, S.tick, S.seed, terrainAt)
+                    const wxn = weatherAt(nx, ny, S.tick, S.seed, terrainAt)
+                    const w = wear(S.hull, S.worn, rough, wxn)
+                    if (w.hull < S.hull && S.tick - S.groan >= GROAN_GAP) { S.groan = S.tick; audioController.playSweep(96, 52, 0.22 + 0.12 * rough, 'triangle', 0.11) }
+                    S.hull = w.hull; S.worn = w.worn
+                    if (S.hull <= 0 && S.worn <= 0) {
+                        const safe = nearestCoast(nx, ny, world) || { x: nx, y: ny }
+                        S.ship = false; S.x = safe.x; S.y = safe.y; S.cd = SHIP_CD
+                        S.hull = 1; S.worn = 0 // wreck, not kindling: the sea spares the pilgrim
+                        S.face = faceFor(dx, dy); S.anim++
+                        audioController.playNoise(0.8, 0.35)
+                        audioController.playSweep(120, 30, 1.1, 'sawtooth', 0.18)
+                        S.toast = 150; S.toastMsg = 'The ship founders! The tide casts thee up upon the coast.'
+                    } else {
+                        S.x = nx; S.y = ny; S.cd = shipCd(rough, SHIP_CD)
+                    }
+                }
             } else if (shrineBlock.has(nx + ',' + ny)) {
                 // the chapel is stone (#1876): the pilgrim walks around the
                 // sanctum, through never into it. First touch names it.
@@ -300,6 +325,15 @@ const BritanniaGame = () => {
                 }
             } else if (isSea(v)) {
                 S.ship = true; S.x = nx; S.y = ny; S.cd = shipCd(seaRough(nx, ny, S.tick, S.seed, terrainAt), SHIP_CD)
+                // #1829 hazard: the first leg strains too — her keel is in the
+                // water the moment she's boarded. Cannot finish her (a boarded
+                // hull is at least a plank; ashore she repairs every tick), so
+                // the founder branch lives in the mid-sea move alone.
+                {
+                    const wb = wear(S.hull, S.worn, seaRough(nx, ny, S.tick, S.seed, terrainAt), weatherAt(nx, ny, S.tick, S.seed, terrainAt))
+                    if (wb.hull < S.hull && S.tick - S.groan >= GROAN_GAP) { S.groan = S.tick; audioController.playSweep(96, 52, 0.2, 'triangle', 0.11) }
+                    S.hull = wb.hull; S.worn = wb.worn
+                }
                 S.face = faceFor(dx, dy); S.anim++
                 audioController.playSweep(140, 90, 0.5, 'sawtooth', 0.18)
                 S.toast = 90; S.toastMsg = 'Aye, a ship! The open sea lies ahead.'
@@ -309,6 +343,13 @@ const BritanniaGame = () => {
                 if ((S.tick % 2) === 0) audioController.playTone(90 + (S.tick % 3) * 14, 0.03, 'triangle', 0.06)
             }
             if (!S.ship) {
+                // #1829 hazard: out of the water the carpenters tighten her up —
+                // one point a tick standing on dry land, capped at capacity so a
+                // repaired ship is bit-exactly the pre-hazard ship. Dry land is
+                // the trigger: the wreck stands on the rescue coast (open water
+                // with land at hand), so hull 1 is what the founder's tide
+                // leaves, and the first step onto the sand starts the mending.
+                if (S.hull < HULL_MAX && !isSea(terrainAt(S.x, S.y))) S.hull = repair(S.hull)
                 const gi = gates.findIndex(g => Math.abs(g.x - S.x) <= 1 && Math.abs(g.y - S.y) <= 1)
                 if (gi >= 0 && !S.visited.has(gi)) { S.visited.add(gi); audioController.playSweep(600, 1100, 0.4, 'sine', 0.15) }
                 if (gi < 0) S.dismissed = -1
@@ -536,12 +577,21 @@ const BritanniaGame = () => {
                 ctx.save()
                 ctx.translate(px, py + bob * 0.6)
                 ctx.rotate(bob * 0.02)
-                ctx.fillStyle = '#5a3b1e'
+                // #1829 hazard: a strained hull wears her look — dark, waterlogged
+                // planks under half, and the sail comes tattered as the storm
+                // takes her. The player reads the danger before the HUD does.
+                const hurt = S.hull * 2 <= HULL_MAX
+                ctx.fillStyle = hurt ? '#3f2a18' : '#5a3b1e'
                 ctx.beginPath(); ctx.moveTo(-14, 6); ctx.lineTo(14, 6); ctx.lineTo(9, 13); ctx.lineTo(-9, 13); ctx.closePath(); ctx.fill()
+                if (hurt) { ctx.fillStyle = '#241708'; ctx.fillRect(-8, 8, 3, 3); ctx.fillRect(2, 7, 3, 3) }
                 ctx.strokeStyle = '#d9c9a0'; ctx.lineWidth = 2
                 ctx.beginPath(); ctx.moveTo(0, 6); ctx.lineTo(0, -12); ctx.stroke()
-                ctx.fillStyle = '#e8e0c8'
+                ctx.fillStyle = S.hull < HULL_MAX ? '#d8cfb4' : '#e8e0c8'
                 ctx.beginPath(); ctx.moveTo(1, -12); ctx.lineTo(12, -2); ctx.lineTo(1, -2); ctx.closePath(); ctx.fill()
+                if (hurt) {
+                    ctx.fillStyle = 'rgba(10,12,26,0.55)'
+                    ctx.beginPath(); ctx.moveTo(7, -5); ctx.lineTo(12, -2); ctx.lineTo(7, -2); ctx.closePath(); ctx.fill()
+                }
                 ctx.restore()
             } else {
                 ctx.save()
@@ -748,7 +798,16 @@ const BritanniaGame = () => {
             ctx.fillStyle = '#9fb4d8'
             const rx = Math.max(16, ins.right)
             ctx.fillText(`x:${S.x} y:${S.y}`, Math.max(180, tx + 130), baseY - 1)
-            ctx.fillText(S.ship ? 'SHIP' : 'FOOT', Math.max(300, tx + 250), baseY - 1)
+            // #1829 hazard: the hull reads where the ship does — gold sound,
+            // amber strained (half capacity), red on the last planks. The
+            // colour IS the law: half and below is when the planks groan.
+            if (S.ship) {
+                ctx.fillStyle = S.hull * 2 <= HULL_MAX ? (S.hull * 3 <= HULL_MAX ? '#e06060' : '#e0a060') : '#e8d9a0'
+                ctx.fillText(`SHIP ${S.hull}`, Math.max(300, tx + 250), baseY - 1)
+                ctx.fillStyle = '#9fb4d8'
+            } else {
+                ctx.fillText('FOOT', Math.max(300, tx + 250), baseY - 1)
+            }
             // tod() 0 is high sun (the night() curve is bright around it), so
             // the clock is offset half a cycle — it used to read 00:00 DAY at
             // noon (#1352). Midnight is tod 0.5, and the DAY/NIGHT label (n)
@@ -1031,6 +1090,8 @@ const BritanniaGame = () => {
                     seaRain: splatIntensity(weatherAt(S.x, S.y, S.tick, S.seed, terrainAt)),
                     seaRough: seaRough(S.x, S.y, S.tick, S.seed, terrainAt),
                     shipCd: S.ship ? shipCd(seaRough(S.x, S.y, S.tick, S.seed, terrainAt), SHIP_CD) : 0,
+                    // #1829 hazard: planks left in the ship (0 = founder's tide)
+                    hull: S.hull,
                     town: townScore(S.x, S.y, gates, terrainAt),
                     // #1876: the eight consecrated plots (null where no plot was
                     // found) + how many shrines the pilgrim has touched
@@ -1057,7 +1118,7 @@ const BritanniaGame = () => {
             }
             mountDbg({
                 title: 'BRITANNIA',
-                getState: () => exports_state().ready ? [`pos ${S.x},${S.y} ${S.ship ? 'SHIP' : 'FOOT'}`, `tod ${tod().toFixed(2)}`, `wx ${WX_NAME[S.wx]}`, `gates ${S.visited.size}/${gates.length}`, `done ${S.done}`] : ['loading…'],
+                getState: () => exports_state().ready ? [`pos ${S.x},${S.y} ${S.ship ? `SHIP ${S.hull}` : 'FOOT'}`, `tod ${tod().toFixed(2)}`, `wx ${WX_NAME[S.wx]}`, `gates ${S.visited.size}/${gates.length}`, `done ${S.done}`] : ['loading…'],
                 actions: [
                     { label: 'to gate I', run: () => { S.x = gates[0].x; S.y = gates[0].y } },
                     { label: 'night', run: () => { S.tick = Math.floor(DAY * 0.5) } },

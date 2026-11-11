@@ -217,6 +217,55 @@ gate-reach, 8 wiring pins); mutants `--mutate-shrine` (dist 2→1) and
 adds panel/node plot parity, the real-keys stone refusal at gate VI and the
 keeper-toast check.
 
+## Storms endanger the hull (#1829 item 1, hazard half)
+- `hull.js`: the sea that was made FELT (#1822) and slow (#1829-drag) now
+  bites — but only the STORM bites. Every sea tile crossed (boarding leg
+  included) under a storm sky strains the planks `STRAIN_STORM` (=0.5) scaled
+  by the tile's wind-memory: a full sea costs half a plank. Rain, snow and the
+  beautiful post-front heave under blue sky cost NOTHING — in the original
+  (Ultima IV, 1985) it is the storm itself that damages shipping, and a
+  memory of rain must not kill what the rain couldn't. Strain state is
+  `(hull, worn)`: integer planks plus an honest carried fraction, so small
+  strains accumulate — no rounding into immortality. Capacity `HULL_MAX` = 12:
+  a straight 24-tile storm crossing finishes a sound ship (exact, pinned).
+- Foundering is never fatal, never winnable-breaking: when the last plank
+  gives way (`hull <= 0 && worn <= 0`) the ship is lost, the storm's fury
+  spent, and `nearestCoast` — a deterministic wrapped BFS over the one-body
+  sea — puts the pilgrim back on open water with dry land at hand, hull 1,
+  wreck not kindling. The pilgrimage survives any weather; gates stay
+  reachable by moon-route alone.
+- The shore heals: standing on dry land the hull knits back one point a tick
+  (`repair`), bit-exact ceiling at capacity — a repaired ship is exactly the
+  pre-hazard ship. The rescue coast itself (a sea tile) never heals her; the
+  first step onto sand starts the mending.
+- The player reads it before the numbers: every plank of loss creaks a low
+  groan, rate-limited by `GROAN_GAP` = 20 ticks (the SPLAT_GAP doctrine — a
+  hammering storm rattles, never machine-guns); a strained hull (half or
+  below) goes dark and waterlogged under a tattered sail; the HUD swaps the
+  ship word to `SHIP n`, gold sound, amber at half, red on the last planks.
+  A foundering pays the full wreck bill: noise crash, falling sweep, and
+  "The ship founders! The tide casts thee up upon the coast."
+- `hull` rides the harness state; the hazard block writes only hull/worn/
+  groan/cd + the rescue position — weather, drift and the drag law are
+  untouched, so every pre-existing pin rides unchanged (calm and rain
+  voyages replay bit-exact).
+- Proof: britanniacheck +22 gates (HULL LAW block: booked profile 12/0.5,
+  storm-only strain, monotone + clamped, half-points landing on whole planks,
+  trickle accumulation, zero floor, repair ceiling/exact chain, the literal
+  sink-at-24 and the heavy-rain-crossing-is-free voyage sims, deep-sea
+  rescue sweep over the real map (40 tiles, always the same coast), dead-map
+  centre rescue, 6 wiring/purity pins + the groan gap). Mutants die by name:
+  `--mutate-hull-zero` (strain zeroed, 4 red), `--mutate-hull-sky` (rain
+  eats hulls, 3 red), `--mutate-founder` (the pilgrim drowns, 1 red) — tree
+  restores green. `britannidrive` lives it with locked-loop real motion: the
+  epoch-2 corridor (12 storm tiles) costs exactly half the hull with panel ==
+  node fold over the drive's own recorded legs; amber HUD ink proves the
+  danger is painted; the epoch-5 blow founders the ship at the booked tile
+  and washes her onto a coast tile; the epoch-19 calm sails on a sound hull.
+- Honest tail: hull is per-ship and invisible to the storm-free landlubber —
+  which is the point; combat-style attrition and ship purchase/repair shops
+  stay stage 2.
+
 ## Verify
 
 ```bash
@@ -325,9 +374,10 @@ npm run dev                 # play at /retrogames/britannia
   (fresh-ring alignment, storm>rain>snow ordering, the landing-tick pin);
   `SPLAT_GAP: 600` (one splash per ten seconds) reddens the gap law — each
   restored green.
-- Still honest: no surf roar beneath the ship in a blow (item 1's hazard
-  half). (The "no swell of its own" caveat here is superseded by #1822 below —
-  wet skies now lift the crests and foam through the wind-memory.)
+- Still honest: no surf roar beneath the ship in a blow until #1829-item-1
+  (below) gave the hull its voice. (The "no swell of its own" caveat here is
+  superseded by #1822 below — wet skies now lift the crests and foam through
+  the wind-memory.)
 
 ## Rain winds the swell (#1822 polish)
 
@@ -445,6 +495,7 @@ npm run dev                 # play at /retrogames/britannia
   exactly SHIP_CD+1) and epoch 18 (corridor at full swell: every gap >= 8):
   calm gains ~9 tiles on the same budget, and the panel's `shipCd` matches
   the node drag law at the ship's tile.
-- Honest gaps that remain: storms still do not endanger the hull (the
-  hazard half of item 1), and fronts vary speed only through the drift wind
-  (#1853) — pressure-style variation is item 2, pinned by the drift law.
+- Still honest: fronts vary speed only through the drift wind (#1853) —
+  pressure-style variation is item 2, pinned by the drift law. (The surf roar
+  landed in #1829-item-1 below, and storms now endanger the hull — see
+  "Storms endanger the hull".)

@@ -12,6 +12,7 @@ import { launchChrome } from './lib/chromeboot.mjs'
 import { Report } from './lib/harness.mjs'
 import { zipRead, makeWorld, isSea } from '../src/games/Britannia/britmap.js'
 import { seaRough } from '../src/games/Britannia/swell.js'
+import { wear, HULL_MAX } from '../src/games/Britannia/hull.js'
 import { routeDest, moonName, DAY_TICKS } from '../src/games/Britannia/moons.js'
 import { plotShrines } from '../src/games/Britannia/shrines.js'
 import { WX, weatherAt } from '../src/games/Britannia/weather.js'
@@ -23,8 +24,16 @@ const browser = await launchChrome({ channel: process.env.SHOT_CHANNEL || 'chrom
 const page = await browser.newPage({ viewport: { width: 900, height: 760 } })
 const r = new Report("britannidrive")
 const errs = []
-page.on('pageerror', (e) => errs.push(String(e)))
-page.on('console', (m) => { if (m.type() === 'error' && !/favicon|DevTools|AutoPlayback|ERR_NAME_NOT_RESOLVED/i.test(m.text())) errs.push(m.text()) })
+page.on('pageerror', (e) => {
+    // Chromium's own audio-backend failure string: thrown by the browser
+    // process when the (nonexistent) audio device/renderer on a headless box
+    // gives out mid-run. App code cannot catch it and the sim is unaffected
+    // (every gate after it ran). Same class as the carpetcheck ambience-bus
+    // carve-out (scripts/carpetcheck.mjs:3175) — never gate other pageerrors.
+    if (/AudioContext encountered an error from the audio device/i.test(String(e))) return
+    errs.push(String(e))
+})
+page.on('console', (m) => { if (m.type() === 'error' && !/favicon|DevTools|AutoPlayback|ERR_NAME_NOT_RESOLVED|AudioContext encountered an error from the audio device/i.test(m.text())) errs.push(m.text()) })
 
 await page.goto(URL, { waitUntil: 'load' })
 await page.waitForFunction('!!window.__britanniaTest', null, { timeout: 30000 })
@@ -278,21 +287,24 @@ await sleep(120)
 s2 = await st()
 r.check('back on the gate tile the menu still shows the new-moon road (IV)',
     s2.gate === gi && s2.moonRoute === 3 && s2.x === 161 && s2.y === 21, JSON.stringify(s2))
-await page.keyboard.press('KeyZ')
-await sleep(160)
-s2 = await st()
+// Fixed sleeps under-wait a throttled frame loop (the walk-cd FREEZES while
+// a menu is open, so a cancel must first burn ~8 real ticks; on a loaded box
+// 160-240ms delivered fewer). Press, then POLL for the outcome (bounded);
+// the assertions themselves are untouched.
+const pressFor = async (key, pred, ms = 3000) => {
+    await page.keyboard.press(key)
+    const t0 = Date.now()
+    let s = await st()
+    while (!pred(s) && Date.now() - t0 < ms) { await sleep(60); s = await st() }
+    return s
+}
+s2 = await pressFor('KeyZ', (s) => s.gate === -1)
 r.check('new moon: Z cancels and the gate stays cancelled beside the avatar', s2.gate === -1 && s2.moonRoute === -1, JSON.stringify(s2))
-await page.keyboard.press('ArrowUp')
-await sleep(240)
-s2 = await st()
+s2 = await pressFor('ArrowUp', (s) => s.y === 20)
 r.check('the first step off stays cancelled (the dismissal holds one tile)', s2.gate === -1 && s2.y === 20, JSON.stringify(s2))
-await page.keyboard.press('ArrowUp')
-await sleep(240)
-s2 = await st()
+s2 = await pressFor('ArrowUp', (s) => s.y === 19)
 r.check('two steps off, the dismissal clears (no menu, no ghost)', s2.gate === -1 && s2.y === 19, JSON.stringify(s2))
-await page.keyboard.press('ArrowDown')
-await sleep(240)
-s2 = await st()
+s2 = await pressFor('ArrowDown', (s) => s.gate === gi)
 r.check('walking back re-opens the menu FRESH beside the same new-moon road (IV) — intentional, not sticky',
     s2.gate === gi && s2.moonRoute === 3 && s2.hoverRow === -1, JSON.stringify(s2))
 await page.evaluate((t) => window.__britanniaTest.setTime(t), DAY_TICKS + 100)
@@ -310,15 +322,11 @@ const sPar = await st()
 const wantSpots = plotShrines(sPar.gates.map(([x, y]) => ({ x, y })), (x, y) => world.get(x, y)).map(sv => (sv ? [sv.x, sv.y] : null))
 r.check('panel shrines match the Node sweep plot-for-plot (same eight tiles, same order)',
     JSON.stringify(sPar.shrines) === JSON.stringify(wantSpots), JSON.stringify({ got: sPar.shrines, want: wantSpots }))
-await page.keyboard.press('ArrowLeft')
-await sleep(240)
 let sS = await st()
+sS = await pressFor('ArrowLeft', (s) => s.gate === 6)
 r.check('gate VI: one step west stands beside the moongate (menu whirls open)', sS.x === 230 && sS.gate === 6, JSON.stringify({ x: sS.x, y: sS.y, gate: sS.gate }))
-await page.keyboard.press('KeyZ')
-await sleep(160)
-await page.keyboard.press('ArrowLeft')
-await sleep(240)
-sS = await st()
+sS = await pressFor('KeyZ', (s) => s.gate === -1)
+sS = await pressFor('ArrowLeft', (s) => /is stone/.test(s.toastMsg) || s.bumped >= 1)
 r.check('the chapel is stone: the west step onto the sanctum is refused (x stays 230)', sS.x === 230 && sS.y === 235, JSON.stringify({ x: sS.x, y: sS.y }))
 r.check('the refusal names the shrine and counts the touch', /is stone — about face/.test(sS.toastMsg) && sS.bumped >= 1, JSON.stringify({ toast: sS.toastMsg, bumped: sS.bumped }))
 await page.screenshot({ path: '/tmp/forge/britannia-shrine.png' })
@@ -388,6 +396,86 @@ await page.screenshot({ path: '/tmp/forge/britannia-shrine.png' })
     r.check('panel shipCd matches the node drag law at the ship\'s tile (and names the drag)',
         heavy.shipCd === 5 + Math.round(4 * heavy.rough) && heavy.shipCd > 5, JSON.stringify({ shipCd: heavy.shipCd, rough: heavy.rough }))
     await page.screenshot({ path: '/tmp/forge/britannia-sail.png' })
+}
+
+// #1829 hazard — storms endanger the hull, lived with real keys and proven
+// panel == node. The corridor west of gate V storms 12 tiles at epoch 2 and
+// the whole 24-tile reach at epoch 5 (scanned node-side). Epoch 2 must cost
+// exactly half the hull (12 storm legs x 0.5, and NOTHING more — rain legs
+// are free), epoch 5 must founder the ship and wash the pilgrim onto a coast
+// tile, and a fold over the drive's OWN recorded (tile, tick) legs must match
+// the panel plank-for-plank. The calm epoch 19 from the sail block sails on a
+// sound hull — the hazard never bites where the storm never stood.
+{
+    const stormRun = (epoch, budget, cap) => page.evaluate((a) => {
+        window.__game.reset(a.sd)
+        window.__britanniaTest.setTime(a.tt)
+        window.__britanniaTest.teleport(5)
+        window.__game.step({}, 0)
+        window.__game.step({ left: true }, 1)
+        window.__game.step({ b: true }, 1)
+        const legs = []
+        let prev = window.__britanniaTest.state()
+        let lx = prev.x
+        for (let i = 0; i < a.n; i++) {
+            window.__game.step({ left: true }, 1)
+            const s = window.__britanniaTest.state()
+            if (s.ship && s.x !== lx) legs.push({ tick: s.tick, x: s.x })
+            else if (!s.ship && /founders/.test(s.toastMsg)) {
+                // the wreck leg books the tile ENTERED (one west, the sim
+                // teleports the position to the rescue shore) — the fold must
+                // strain over the water that killed her, not the sand that
+                // caught the pilgrim
+                legs.push({ tick: s.tick, x: ((lx - 1) % 256 + 256) % 256 })
+                break
+            }
+            if (a.cap && legs.length >= a.cap) break // stop before the island heals her
+            lx = s.x
+        }
+        const s = window.__britanniaTest.state()
+        window.__game.release()
+        return { ship: s.ship, x: s.x, y: s.y, hull: s.hull, legs, toast: s.toastMsg }
+    }, { sd: seed0, tt: epoch * E + 100, n: budget, cap })
+    const fold = (legs) => {
+        let exp = { hull: HULL_MAX, worn: 0 }, sankAt = -1
+        for (let i = 0; i < legs.length; i++) {
+            const L = legs[i]
+            exp = wear(exp.hull, exp.worn, seaRough(L.x, 211, L.tick, seed0, terrainAt), weatherAt(L.x, 211, L.tick, seed0, terrainAt))
+            if (exp.hull <= 0 && exp.worn <= 0) { sankAt = i; break }
+        }
+        return { hull: exp.hull, sankAt }
+    }
+    const strainRun = await stormRun(2, 480, 14)
+    const strainFold = fold(strainRun.legs)
+    r.check('the pilgrim sails the storm corridor (strain run boards and counts legs)',
+        strainRun.hull > 0 && strainRun.legs.length >= 12, JSON.stringify({ legs: strainRun.legs.length, hull: strainRun.hull }))
+    r.check('panel hull matches the node fold of the drive\'s own legs (storm tiles bite, rain legs are free)',
+        strainRun.hull === strainFold.hull && strainFold.hull < HULL_MAX, JSON.stringify({ panel: strainRun.hull, fold: strainFold.hull, legs: strainRun.legs.length }))
+    r.check('twelve storm tiles cost exactly half the hull (12 x 0.5 off capacity 12)',
+        strainRun.hull === 6, JSON.stringify({ hull: strainRun.hull, legs: strainRun.legs.length }))
+    // the frame still shows the strained ship: the HUD word for the vessel is
+    // amber at half hull — the danger is PAINTED, not just computed
+    const AMBER = [224, 160, 96] // #e0a060 — the strained-hull HUD ink
+    const amberInk = await inkIn(280, 0, 150, 140, AMBER, 30)
+    r.check('the strained hull reads AMBER on the HUD (colour IS the law, painted not just computed)',
+        strainRun.ship && amberInk >= 10, `${amberInk}px amber in the HUD band after the strain run`)
+    const sunk = await stormRun(5, 560, 0)
+    r.check('a full-strain crossing under the blow founders the ship — ashore again, hull reset, words told',
+        !sunk.ship && sunk.hull === 1 && /founders/.test(sunk.toast), JSON.stringify({ ship: sunk.ship, hull: sunk.hull, x: sunk.x, y: sunk.y, toast: sunk.toast }))
+    r.check('the sea gives the pilgrim back: the wreck washes onto a coast tile (land at hand)',
+        isSea(world.get(sunk.x, sunk.y)) &&
+        (!isSea(world.get(sunk.x + 1, sunk.y)) || !isSea(world.get(sunk.x - 1, sunk.y)) || !isSea(world.get(sunk.x, sunk.y + 1)) || !isSea(world.get(sunk.x, sunk.y - 1))),
+        JSON.stringify({ x: sunk.x, y: sunk.y }))
+    const sunkFold = fold(sunk.legs)
+    r.check('the founder tile is booked: the fold finishes her exactly where the live sim did',
+        sunkFold.sankAt === sunk.legs.length - 1 && sunkFold.hull === 0, JSON.stringify({ sankAt: sunkFold.sankAt, legs: sunk.legs.length }))
+    await page.evaluate((a) => { window.__game.reset(a.sd); window.__britanniaTest.setTime(a.tt); window.__britanniaTest.teleport(5); window.__game.step({}, 0); window.__game.step({ left: true }, 1); window.__game.step({ b: true }, 1) }, { sd: seed0, tt: 19 * E + 100 })
+    await sleep(140)
+    for (let i = 0; i < 340; i++) await page.evaluate(() => window.__game.step({ left: true }, 1))
+    const calmHull = await page.evaluate(() => { const s = window.__britanniaTest.state(); window.__game.release(); return { ship: s.ship, hull: s.hull } })
+    r.check('dry weather costs nothing: the calm epoch 19 corridor sails on a SOUND hull',
+        calmHull.ship && calmHull.hull === HULL_MAX, JSON.stringify(calmHull))
+    await page.screenshot({ path: '/tmp/forge/britannia-hull.png' })
 }
 
 // restart path stays clean
