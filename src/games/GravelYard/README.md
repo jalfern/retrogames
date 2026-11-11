@@ -170,3 +170,17 @@ CPU) wins 8/8. `simulate(seed, players)` in the engine is the reference driver.
   'batch'|'jam')`; gravelcheck proves the swing/tip/stones/plume/smoke plus
   the pure frame mappers. Remaining from #1390: in-game push-to-talk voice
   orders for the truck seat (#1247/#1249 pattern) — CLOSED by #1771.
+
+## WATCH (#1637 batch 22) — Y seats the proven crew
+`Y` hands the whole yard to `makeCpuEmitter(0..2)` — the same digger/truck/
+operator brains `gravelcheck` makes quota with on 8/8 seeds (`simulate(s,3)`).
+These are literally the attract demo's brains: unfilled seats already run
+them; WATCH seats the human's digger too, and after a takeover the crew keeps
+working the seats nobody steers. Re-planned from live state every tick, so a
+mid-run re-seat is honest (no bench script). Online the wire is the guide —
+Y no-ops and the pill hides in a room (#1656 law). The watch releases with
+the shift (`done`). Verify: `npm run watchcheck -- --only gravel-yard`
+(seat/blip/advance/takeover/re-seat/resume/release + source pins). Known
+house gap (shared with the other play-screen pills, e.g. bomb-defuse): the
+`watchcheck --phone` section waits for the pill on the title screen, which
+this multi-screen boot only shows during play.

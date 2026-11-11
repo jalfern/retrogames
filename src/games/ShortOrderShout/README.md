@@ -236,3 +236,15 @@ face). soslinkcheck pins the countdown contract (+4 => 137).
 - The patty-burn chain (burnt→fire) has no "cool the pan" counterplay
   beyond dousing; stage-2 spice (extra dishes, day/night rush) is QA's
   polish backlog.
+
+## WATCH (#1637 batch 22) — Y seats the proven pair
+`Y` seats `makeCpuEmitter` on every seat — the line-cook + runner pair
+`soscheck` wins 8/8 known-good seeds with (`runEm(s,2)`); with 3–4 cooks the
+extra seats get the same runner plan. Both plans re-plan from live state every
+tick (bfs + stuck-replan), so mid-run re-seat is honest. Online the wire is
+the guide — Y no-ops there (#1656 law). The watch releases with the shift
+(`done`). Verify: `npm run watchcheck -- --only short-order-shout`
+(seat/blip/advance/takeover/re-seat/resume/release + source pins). Known
+house gap (shared with bomb-defuse's play-screen pill): the `watchcheck
+--phone` section waits for the pill on the title screen; this boot is
+multi-screen, so the pill rides the play screen only.
