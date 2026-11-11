@@ -1,10 +1,10 @@
-// SMASH TV — room data. A grid under a 24px HUD strip; the boss arena is
-// 16x14 cells of 16px, and every other room runs the GW_BIG=24-column board —
-// arenas wider than the screen, framed by the camera like the cabinet's
-// 16:9 show (#1973 widened rooms 5/8, #2007 widened the whole show). Rooms
-// are generated deterministically from (seed, index): a wall pattern from a
-// small pool (mirrored across the wide boards), crates with the weapon ladder,
-// and an enemy roster that grows.
+// SMASH TV — room data. A grid under a 24px HUD strip; every room of the
+// show runs the GW_BIG=24-column board — arenas wider than the screen, framed
+// by the camera like the cabinet's 16:9 show (#1973 widened rooms 5/8, #2007
+// widened the whole show, #2024 brought THE ANNOUNCER's finale onto it too).
+// Rooms are generated deterministically from (seed, index): a wall pattern from
+// a small pool (mirrored across the wide boards), crates with the weapon
+// ladder, and an enemy roster that grows.
 // Rooms 3 and 6 are BONUS rooms; room 8 is THE ANNOUNCER.
 
 export const GW = 16, GH = 14, CELL = 16
@@ -16,10 +16,12 @@ export const ARENA = { x0: 0, y0: HUD_H, x1: CW, y1: CH }
 export const TOTAL_ROOMS = 9
 
 // the show's boards: bigger rooms, bigger show (#1973). The cabinet rotated the
-// WHOLE frame to 16:9, so every room but THE ANNOUNCER runs the wide board
-// (#2007) — his arena stays screen-sized on purpose: a boss half off-screen
-// reads as a bug.
-export const BIG_ROOMS = new Set([0, 1, 2, 3, 4, 5, 6, 7])
+// WHOLE frame to 16:9, so the whole show runs the wide board (#2007) — and
+// since #2024 that includes THE ANNOUNCER: he hosts the finale on the same
+// floor as every other room. His readability never depended on the width but
+// on the shot, so the host rides it — the boss law in sim.js keeps him fully
+// framed for every camera position (he is TV; the camera never loses him).
+export const BIG_ROOMS = new Set([0, 1, 2, 3, 4, 5, 6, 7, 8])
 export const roomGw = (idx) => (BIG_ROOMS.has(idx) ? GW_BIG : GW)
 
 // exit cells on the border ring (walk into one when the room falls to advance);
@@ -131,7 +133,11 @@ export function genRoom(seed, idx) {
     if (room.bonus) return room
 
     for (const kind of ROSTERS[idx]) {
-        const [c, r] = pick()
+        // #2024: the host opens centre-stage — the top middle cell of the
+        // finale's board, mirrored pattern rows never wall it. Deterministic
+        // drama: the camera sits mid-board at entry, so THE ANNOUNCER is
+        // fully framed the tick the ROOM banner fades.
+        const [c, r] = kind === 'boss' ? [Math.floor(gw / 2), 2] : pick()
         room.spawns.push({ kind, c, r })
     }
     const cw = CRATE_WEAPONS[idx]

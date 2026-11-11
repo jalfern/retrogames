@@ -15,12 +15,14 @@
 //               seed-3 forced loss. Deathless on seeds 1 and 7, pinned below.
 //   slack     : seed 1 still wins with one fewer crate per room and zero
 //               energy cells.
-//   varisize (#1973, #2007): every room but THE ANNOUNCER's boards 24 cells
-//               (wider than the screen) with mirrored architecture and a
-//               middle-column spawn; his arena stays screen-sized by law; the
-//               right door rides the far border; the hero and his shots cross
-//               the old screen line and the far door takes the show onward;
-//               the renderer carries the camera.
+//   varisize (#1973, #2007, #2024): every room of the show — THE ANNOUNCER's
+//               finale included — boards 24 cells (wider than the screen) with
+//               mirrored architecture and a middle-column spawn; the host opens
+//               centre-stage and is ALWAYS on camera: his screen position never
+//               breaks the frame at any tick; the right door rides the far
+//               border; the hero and his shots cross the old screen line and
+//               the far door takes the show onward; the renderer carries the
+//               camera.
 //   determinism : same seed twice -> identical digest.
 //   pose (#1945): the over-the-shoulder carriage — mounts behind the body plane
 //               on the shoulder line, muzzles past centre in all eight aims,
@@ -426,6 +428,48 @@ console.log('announcer')
     ok(!!add && add.born === gs.tick, 'the announcer tags each add with a born tick', add ? `born=${add.born} tick=${gs.tick}` : 'no add')
     ok(gs.enemies.length === before + 1, 'the tagged add is the one the boss threw out', `${before} -> ${gs.enemies.length}`)
 }
+// #2024 host law — THE ANNOUNCER is always on camera. His studio now boards
+// wide with the whole show, but the finale reads BETTER: he opens centre-stage
+// and paces the middle of the live camera window (the same cast midpoint the
+// renderer pans to), so his 40px crown never breaks the frame — proven across
+// a sliding shot that walks the camera to both clamp edges.
+{
+    const camOf = (g) => {
+        const bw = g.roomData.gw * CELL
+        const live = g.players.filter((q) => q.deadT === 0 && !q.out)
+        const mid = live.length ? live.reduce((s, q) => s + q.x, 0) / live.length : bw / 2
+        return Math.max(0, Math.min(Math.round(mid - CW / 2), bw - CW))
+    }
+    const r = S.plan(0)
+    const gs = makeGame(0)
+    // climb the room ladder into the finale (fall each room, take the up door)
+    for (let target = 1; target <= TOTAL_ROOMS - 1; target++) {
+        gs.enemies = []; gs.roomData.spawns = []; gs.spawnT = 0; gs.bonusT = 0
+        step(gs, {}); gs.events.length = 0
+        gs.player.x = cx(Math.floor(gs.roomData.gw / 2)); gs.player.y = 24 + 8
+        step(gs, {}); gs.events.length = 0
+        if (gs.room !== target) break
+    }
+    ok(gs.room === TOTAL_ROOMS - 1 && gs.roomData.gw === GW_BIG, 'the finale boards wide (#2024)', `room ${gs.room + 1} gw ${gs.roomData.gw}`)
+    const hostCell = genRoom(0, TOTAL_ROOMS - 1).spawns[0]
+    ok(hostCell.kind === 'boss' && hostCell.c === GW_BIG / 2 && hostCell.r === 2, 'the host opens centre-stage', JSON.stringify(hostCell))
+    gs.player.invuln = 1e9
+    let bossSeen = 0, framed = true, bad = null, camMax = 0
+    for (let i = 0; i < 1200; i++) {
+        gs.player.invuln = 1e9
+        step(gs, i < 600 ? { mx: 1, my: 0 } : { mx: -1, my: 0 })
+        gs.events.length = 0
+        const boss = gs.enemies.find((e) => e.kind === 'boss')
+        if (!boss) continue
+        bossSeen++
+        camMax = Math.max(camMax, camOf(gs))
+        const sx = boss.x - camOf(gs)
+        if (sx < 28 || sx > CW - 28) { framed = false; bad = `sx=${sx.toFixed(0)} cam=${camOf(gs)} x=${boss.x.toFixed(0)} @${i}`; break }
+    }
+    ok(bossSeen > 400, 'the host paced for hundreds of ticks', `${bossSeen}`)
+    ok(camMax >= 100, 'the shot really slid while he paced', `camX up to ${camMax}`)
+    ok(framed, 'the host is on camera every tick — the crown never breaks the frame', bad || 'all framed')
+}
 // he dies to a multi-explosion while the arena holds: the WIN banner waits out the sequence
 {
     const r = S.plan(0)
@@ -720,18 +764,19 @@ console.log('pilot')
 
 // ------------------------------------------------------------- varisize ----
 // #1973: big rooms are bigger than the screen — and the sim really lets you
-// use the extra floor. #2007: the WHOLE show is big now, the boss excepted.
-// (The camera itself is renderer; its pins read the file.)
+// use the extra floor. #2007: the WHOLE show is big now. #2024: that includes
+// THE ANNOUNCER — and his framing got stronger, not looser: see the host law
+// below. (The camera itself is renderer; its pins read the file.)
 console.log('varisize')
 {
     for (let idx = 0; idx < TOTAL_ROOMS; idx++) {
         const want = BIG_ROOMS.has(idx) ? GW_BIG : GW
         ok(genRoom(0, idx).gw === want, `room ${idx + 1} boards ${want} cols`)
     }
-    // #2007: every room but THE ANNOUNCER runs wide — and his doesn't
-    ok(BIG_ROOMS.size === TOTAL_ROOMS - 1 && [...BIG_ROOMS].every((i) => i >= 0 && i < TOTAL_ROOMS - 1),
-        'every room but the boss runs the wide board', [...BIG_ROOMS].sort().join(','))
-    ok(roomGw(TOTAL_ROOMS - 1) === GW, "THE ANNOUNCER keeps his screen-sized arena")
+    // #2024: the WHOLE show boards wide — the finale included.
+    ok(BIG_ROOMS.size === TOTAL_ROOMS && [...BIG_ROOMS].every((i) => i >= 0 && i < TOTAL_ROOMS),
+        'the whole show runs the wide board — finale included', [...BIG_ROOMS].sort((a, b) => a - b).join(','))
+    ok(roomGw(TOTAL_ROOMS - 1) === GW_BIG, 'THE ANNOUNCER boards wide with the show (#2024)')
     ok(startColOf(GW) === START.c && startColOf(GW_BIG) === GW_BIG / 2, 'each board spawns at its own lower middle')
     ok(makeGame(0).player.x === cx(startColOf(GW_BIG)), 'the show opens on the middle of a wide board', `${makeGame(0).player.x}`)
     const big = genRoom(0, 4)

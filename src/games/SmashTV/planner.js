@@ -25,6 +25,17 @@ const stallOf = (gs, pi) => {
     return gs._st[pi] || (gs._st[pi] = { last: null, wantMove: false, stall: 0, detour: 0, side: 1 })
 }
 
+// #2024: is this threat wedged? Tracks per-seat stillness of the enemy the
+// seat is currently worried about; true once it has not budged in 30 ticks.
+// (A chaser genuinely walking into a dead-end counts too — and should: by the
+// time the hero notices, it is not a threat that can close.)
+function pinned(st, e) {
+    const rec = st.pin && st.pin.e === e ? st.pin : (st.pin = { e, x: e.x, y: e.y, t: 0 })
+    rec.t = Math.hypot(e.x - rec.x, e.y - rec.y) < 0.05 ? rec.t + 1 : 0
+    rec.x = e.x; rec.y = e.y
+    return rec.t > 30
+}
+
 function nearestEnemy(gs, needLos, p) {
     let best = null, bd = 1e9
     for (const e of gs.enemies) {
@@ -217,7 +228,15 @@ export function decide(gs, pi = 0) {
         // partner in a pocket, pacing the 42 px threshold forever (#508): with
         // no line the partner walks TO the threat instead and lets the stuck
         // breaker detour it around the bar.
-        if (ENEMIES[threat.kind].kind === 'chaser' && d < 42 && (pi === 0 || los(gs, p.x, p.y, threat.x, threat.y))) { inp.mx = -Math.sign(threat.x - p.x) || (p.x < boardW(gs) / 2 ? 1 : -1); inp.my = -Math.sign(threat.y - p.y) || (p.y < CH / 2 ? 1 : -1); return inp }
+        // #2024 made the discriminator stronger than sight: a chaser wedged into
+        // chrome does not move — it cannot reach anyone at ANY range, and on the
+        // wide boards a pinned runner sits exactly ON the flee threshold, so the
+        // hero ran when it came closer and walked back when it didn't, firing
+        // past the pinned camera forever (seed 1 orbited (169,138) for 56k
+        // ticks in room 8). A chaser that has not budged in half a second is
+        // scenery: stop fleeing, walk the lane onto it, and let the shot land.
+        const pin = ENEMIES[threat.kind].kind === 'chaser' && pinned(st, threat)
+        if (ENEMIES[threat.kind].kind === 'chaser' && d < 42 && !pin && (pi === 0 || los(gs, p.x, p.y, threat.x, threat.y))) { inp.mx = -Math.sign(threat.x - p.x) || (p.x < boardW(gs) / 2 ? 1 : -1); inp.my = -Math.sign(threat.y - p.y) || (p.y < CH / 2 ? 1 : -1); return inp }
         // The 8-way aim only lands what its line crosses, so a partner walks
         // ONTO the camera's row or column and empties the clip down the lane:
         // null out one axis at a time, stop at arm's length, and the shot that

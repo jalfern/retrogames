@@ -13,6 +13,9 @@
 //   - bonus rooms: timer, fleeing civilians, 100 + 50*combo per hit, exits
 //     open when the timer expires; the run advances like any other room.
 //   - killing THE ANNOUNCER (room 9) wins the game.
+//   - THE ANNOUNCER is always on camera (#2024): he paces the middle of the
+//     live camera window (the same cast midpoint the renderer pans to) and the
+//     finale boards wide with the rest of the show — fully framed everywhere.
 //   - score ledger: final score == sum of every scored event.
 
 import {
@@ -375,9 +378,23 @@ function updateEnemies(gs) {
             }
         } else if (def.kind === 'boss') {
             const bw = boardW(gs)
+            // #2024: THE ANNOUNCER is always on camera. His studio now boards
+            // wide with the whole show, so a world-fixed pace line would half-
+            // clip him at the viewport edge whenever the camera clamps behind
+            // the player. The law rides the shot instead: he works the middle
+            // of the live camera window — the same cast midpoint the renderer
+            // pans to — so his 40px crown stays fully inside the screen at
+            // every tick, anywhere on the floor. He is TV; the camera never
+            // loses him. The snap (not just the flip) holds containment when
+            // the shot slides faster than his 0.7 pace.
+            const seats = liveSeats(gs)
+            const mid = seats.length ? seats.reduce((s, q) => s + q.x, 0) / seats.length : bw / 2
+            const cam = Math.max(0, Math.min(Math.round(mid - CW / 2), bw - CW))
+            const lo = cam + 48
+            const hi = cam + CW - 48
             e.x += e.dir * def.speed
-            if (e.x > bw - 30) e.dir = -1
-            if (e.x < 30) e.dir = 1
+            if (e.x > hi) { e.x = hi; e.dir = -1 }
+            else if (e.x < lo) { e.x = lo; e.dir = 1 }
             if (e.cd <= 0 && p.deadT === 0) {
                 e.cd = def.cd
                 const a = Math.atan2(p.y - e.y, p.x - e.x)
