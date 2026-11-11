@@ -1,4 +1,5 @@
-// sim.js — the seeded dice and arcade scoring of ASTEROIDS (#1473 batch 16).
+// sim.js — the seeded dice, arcade scoring, the WHOLE play tick and the
+// WATCH driver of ASTEROIDS (#1473 batch 16; #1637 batch 26).
 //
 // Pre-port the shape/velocity/position dice rolled off Math.random, the ship
 // could not die, and there was no score at all — no terminal existed. This
@@ -6,6 +7,11 @@
 // stream, wave spawning, and the 1979 arcade scoring table
 // (large 20 / medium 50 / small 100) so pongcheck-style Node audits can replay
 // a field and the score law without a browser.
+//
+// Batch 26 lifted the whole rule set (b24/b25 template): makeRun(seed) is the
+// entire world, tickAsteroids(gs, input) is what update() used to be, and
+// asteroidscheck proves the SHIPPED physics — survival, splits, waves, the
+// terminal — in plain Node. index.jsx keeps only shell: canvas, sound, chrome.
 //
 // Fidelity note: the b15 handoff map sketched "10/50/20 per rock size" — that
 // is not the arcade table. The machine paid large=20, medium=50, small=100,
@@ -22,6 +28,17 @@ export const START_LIVES = 3
 export const RESPAWN_DELAY = 60   // ~1 s dark before the ship returns
 export const INVULN_TICKS = 120   // ~2 s blinking invulnerability (arcade grace)
 export const BONUS_LIFE_EVERY = 10000
+export const FIRE_COOLDOWN = 15
+
+// The machine's stream: one mulberry32 state carried INSIDE gs (b16 law), so
+// a rollout can clone the world and fork the dice deterministically, and the
+// hash covers the stream position too. Identical steps to seedRng(seed).
+export function rnd(gs) {
+    gs.rngState = (gs.rngState + 0x6D2B79F5) | 0
+    let t = Math.imul(gs.rngState ^ (gs.rngState >>> 15), 1 | gs.rngState)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+}
 
 // Arcade size tiers by screen size: 40 → 20 → 10 through the split chain.
 export const scoreForSize = (size) => (size >= 30 ? 20 : size >= 20 ? 50 : 100)
@@ -56,3 +73,499 @@ export function spawnWave(rand, wave, width, height) {
 
 // How many extra lives the total score has earned (arcade: one per 10,000).
 export const livesForScore = (score) => Math.floor(score / BONUS_LIFE_EVERY)
+
+// ---------------------------------------------------------------------------
+// The world. makeRun(seed) is the whole game state: rocks, ship, bullets and
+// every die on one seeded stream, so ?seed=N replays the exact field.
+// ---------------------------------------------------------------------------
+export function makeRun(seed, opts = {}) {
+    const width = opts.width || 600
+    const height = opts.height || 800
+    const gs = {
+        seed: seed >>> 0,
+        rngState: seed | 0,
+        width,
+        height,
+        tickN: 0,
+        score: 0,
+        lives: START_LIVES,
+        bonusLives: 0,
+        wave: 1,
+        over: false,
+        attract: !!opts.attract,
+        watching: false, // #1637 b26 — the WATCH seat
+        respawnAt: -1,   // tick the ship returns from, -1 = alive
+        invulnUntil: 0,
+        ship: { x: width / 2, y: height / 2, vx: 0, vy: 0, angle: -Math.PI / 2, cooldown: 0 },
+        asteroids: [],
+        bullets: [],
+        particles: [],
+    }
+    gs.asteroids = spawnWave((r) => rnd(gs), gs.wave, width, height)
+    return gs
+}
+
+const shipAlive = (gs) => gs.respawnAt < 0
+
+export function resetShip(gs) {
+    gs.ship.x = gs.width / 2
+    gs.ship.y = gs.height / 2
+    gs.ship.vx = 0
+    gs.ship.vy = 0
+    gs.ship.angle = -Math.PI / 2
+}
+
+// Rebuild the board around the current dims (first real resize; the attract
+// demo's field-empty refill). Mirrors pre-lift initGame().
+export function rebuildBoard(gs) {
+    resetShip(gs)
+    gs.respawnAt = -1
+    gs.invulnUntil = 0
+    gs.asteroids = spawnWave((r) => rnd(gs), gs.wave, gs.width, gs.height)
+    gs.bullets = []
+    gs.particles = []
+}
+
+function spawnParticles(gs, x, y, count = 5) {
+    for (let i = 0; i < count; i++) {
+        gs.particles.push({
+            x, y,
+            vx: (rnd(gs) - 0.5) * 2,
+            vy: (rnd(gs) - 0.5) * 2,
+            life: 1.0,
+        })
+    }
+}
+
+function fire(gs, ev) {
+    gs.bullets.push({
+        x: gs.ship.x + Math.cos(gs.ship.angle) * SHIP_SIZE,
+        y: gs.ship.y + Math.sin(gs.ship.angle) * SHIP_SIZE,
+        vx: Math.cos(gs.ship.angle) * BULLET_SPEED,
+        vy: Math.sin(gs.ship.angle) * BULLET_SPEED,
+        life: 60,
+    })
+    gs.ship.cooldown = FIRE_COOLDOWN
+    ev.pitch = rnd(gs) // the shot's voice — one die on the stream, shell-side pitch
+    ev.shot = true
+    // Recoil
+    gs.ship.vx -= Math.cos(gs.ship.angle) * 0.1
+    gs.ship.vy -= Math.sin(gs.ship.angle) * 0.1
+}
+
+function killShip(gs, ev) {
+    spawnParticles(gs, gs.ship.x, gs.ship.y, 14)
+    gs.lives--
+    ev.died = true
+    if (gs.lives <= 0) {
+        gs.lives = 0
+        gs.over = true
+    } else {
+        gs.respawnAt = gs.tickN + RESPAWN_DELAY
+    }
+}
+
+// The attract demo (pre-lift, verbatim): aim at the nearest rock, fire when
+// aligned, drift toward it if far, refill the field on a die when empty.
+function attractDemo(gs, ev) {
+    let nearest = null
+    let minDist = Infinity
+    gs.asteroids.forEach(a => {
+        const dx = a.x - gs.ship.x
+        const dy = a.y - gs.ship.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        if (dist < minDist) { minDist = dist; nearest = a }
+    })
+    if (nearest) {
+        const targetAngle = Math.atan2(nearest.y - gs.ship.y, nearest.x - gs.ship.x)
+        let diff = targetAngle - gs.ship.angle
+        while (diff > Math.PI) diff -= Math.PI * 2
+        while (diff < -Math.PI) diff += Math.PI * 2
+        if (Math.abs(diff) < ROTATION_SPEED) {
+            gs.ship.angle = targetAngle
+            if (gs.ship.cooldown <= 0 && minDist < 300) fire(gs, ev)
+        } else {
+            gs.ship.angle += Math.sign(diff) * ROTATION_SPEED
+        }
+        if (minDist > 200) {
+            gs.ship.vx += Math.cos(gs.ship.angle) * ACCELERATION * 0.5
+            gs.ship.vy += Math.sin(gs.ship.angle) * ACCELERATION * 0.5
+        }
+    } else {
+        if (rnd(gs) < 0.01) rebuildBoard(gs) // Respawn field if empty
+    }
+}
+
+// ---------------------------------------------------------------------------
+// One full play tick, lifted verbatim from index.jsx update() (#1637 b26) so
+// asteroidscheck proves the SHIPPED physics: drift, wrap, splits through the
+// 40→20→10 chain, respawn dark + grace, wave regen, the terminal. Mutates gs;
+// returns the events index.jsx turns into sound. `input` ({left,right,thrust,
+// fire}) is the held-key view — the same entry a keyframe and __game.step use;
+// while watching with no human input, watchStep drives instead.
+// ---------------------------------------------------------------------------
+export function tickAsteroids(gs, input = null) {
+    const ev = { shot: false, pitch: 0, smashed: 0, died: false, respawn: false, wave: 0, over: false }
+    gs.tickN++
+    if (gs.over) { ev.over = true; return ev }
+
+    // Respawn handling: dark pause, then return at center with grace.
+    if (!shipAlive(gs) && gs.tickN >= gs.respawnAt) {
+        resetShip(gs)
+        gs.respawnAt = -1
+        gs.invulnUntil = gs.tickN + INVULN_TICKS
+        ev.respawn = true
+    }
+
+    if (gs.attract) {
+        attractDemo(gs, ev)
+    } else if (shipAlive(gs)) {
+        const act = input || (gs.watching ? watchStep(gs) : null)
+        if (act) {
+            if (act.left) gs.ship.angle -= ROTATION_SPEED
+            if (act.right) gs.ship.angle += ROTATION_SPEED
+            if (act.thrust) {
+                gs.ship.vx += Math.cos(gs.ship.angle) * ACCELERATION
+                gs.ship.vy += Math.sin(gs.ship.angle) * ACCELERATION
+                // Thruster particles (on the run's stream)
+                if (rnd(gs) > 0.5) {
+                    gs.particles.push({
+                        x: gs.ship.x - Math.cos(gs.ship.angle) * SHIP_SIZE,
+                        y: gs.ship.y - Math.sin(gs.ship.angle) * SHIP_SIZE,
+                        vx: -Math.cos(gs.ship.angle) + (rnd(gs) - 0.5),
+                        vy: -Math.sin(gs.ship.angle) + (rnd(gs) - 0.5),
+                        life: 0.5,
+                    })
+                }
+            }
+            if (act.fire && gs.ship.cooldown <= 0) fire(gs, ev)
+        }
+    }
+
+    if (gs.ship.cooldown > 0) gs.ship.cooldown--
+
+    // Physics
+    gs.ship.x += gs.ship.vx
+    gs.ship.y += gs.ship.vy
+    gs.ship.vx *= FRICTION
+    gs.ship.vy *= FRICTION
+
+    // Wrap Ship
+    if (gs.ship.x < 0) gs.ship.x = gs.width
+    if (gs.ship.x > gs.width) gs.ship.x = 0
+    if (gs.ship.y < 0) gs.ship.y = gs.height
+    if (gs.ship.y > gs.height) gs.ship.y = 0
+
+    // Bullets
+    gs.bullets.forEach(b => {
+        b.x += b.vx
+        b.y += b.vy
+        b.life--
+    })
+    gs.bullets = gs.bullets.filter(b => b.life > 0)
+
+    // Asteroids
+    gs.asteroids.forEach(a => {
+        a.x += a.vx
+        a.y += a.vy
+        // Wrap
+        if (a.x < -a.size) a.x = gs.width + a.size
+        if (a.x > gs.width + a.size) a.x = -a.size
+        if (a.y < -a.size) a.y = gs.height + a.size
+        if (a.y > gs.height + a.size) a.y = -a.size
+    })
+
+    // Particles
+    gs.particles.forEach(p => {
+        p.x += p.vx
+        p.y += p.vy
+        p.life -= 0.02
+    })
+    gs.particles = gs.particles.filter(p => p.life > 0)
+
+    // Collisions: bullets vs rocks — arcade table 20/50/100 by size,
+    // big rocks split into two mediums, mediums into two smalls.
+    gs.bullets.forEach(b => {
+        gs.asteroids.forEach(a => {
+            const dx = b.x - a.x
+            const dy = b.y - a.y
+            const dist = Math.sqrt(dx * dx + dy * dy)
+            if (dist < a.size) {
+                // Hit
+                b.life = 0
+                a.hit = true
+                gs.score += scoreForSize(a.size)
+                const earned = livesForScore(gs.score)
+                if (earned > gs.bonusLives) { gs.lives += earned - gs.bonusLives; gs.bonusLives = earned }
+                // Split?
+                if (a.size > 15) {
+                    gs.asteroids.push(makeAsteroid((r) => rnd(gs), a.x, a.y, a.size / 2, gs.width, gs.height))
+                    gs.asteroids.push(makeAsteroid((r) => rnd(gs), a.x, a.y, a.size / 2, gs.width, gs.height))
+                }
+                // Particle FX
+                spawnParticles(gs, a.x, a.y)
+                ev.smashed++
+            }
+        })
+    })
+
+    // Clean up hit asteroids
+    gs.asteroids = gs.asteroids.filter(a => !a.hit)
+
+    // Ship vs rocks (1979 law — the pre-batch ship could not die).
+    if (shipAlive(gs) && gs.tickN >= gs.invulnUntil && !gs.attract) {
+        for (const a of gs.asteroids) {
+            const dx = a.x - gs.ship.x
+            const dy = a.y - gs.ship.y
+            if (Math.sqrt(dx * dx + dy * dy) < a.size + SHIP_SIZE * 0.4) {
+                killShip(gs, ev)
+                break
+            }
+        }
+    }
+
+    // Wave clear: the field empties → next wave (arcade refill).
+    if (!gs.attract && !gs.over && gs.asteroids.length === 0) {
+        gs.wave++
+        gs.asteroids = spawnWave((r) => rnd(gs), gs.wave, gs.width, gs.height)
+        ev.wave = gs.wave
+    }
+    return ev
+}
+
+// ---------------------------------------------------------------------------
+// WATCH driver (#1637 b26). Reactive against live state every tick (Rogue
+// law): seats anywhere, steers back, re-seats from exactly there. No rand in
+// the policy — rollouts clone the world and fork the dice from the state, so
+// every candidate is judged under identical future weather and the Node sweep
+// and the seat drive ONE identical policy.
+// ---------------------------------------------------------------------------
+
+const WATCH_HORIZON = 70   // ~1.2 s — long enough for a led shot to fly and kill
+
+// Wrap-aware delta (the whole field wraps — so does the driver's eye).
+const wrapDelta = (d, span) => {
+    while (d > span / 2) d -= span
+    while (d < -span / 2) d += span
+    return d
+}
+
+// Clone only what the tick mutates. Silhouettes are read-only: shared refs.
+function cloneWorld(gs) {
+    return {
+        seed: gs.seed,
+        rngState: ((gs.rngState ^ Math.imul(gs.tickN + 1, 2654435761)) ^ Math.imul(gs.seed, 40503)) | 0,
+        width: gs.width,
+        height: gs.height,
+        tickN: gs.tickN,
+        score: gs.score,
+        lives: gs.lives,
+        bonusLives: gs.bonusLives,
+        wave: gs.wave,
+        over: false,
+        attract: false,
+        watching: false,
+        respawnAt: gs.respawnAt,
+        invulnUntil: gs.invulnUntil,
+        ship: { ...gs.ship },
+        asteroids: gs.asteroids.map(a => ({ x: a.x, y: a.y, vx: a.vx, vy: a.vy, size: a.size, vertices: a.vertices })),
+        bullets: gs.bullets.map(b => ({ ...b })),
+        particles: [],
+    }
+}
+
+// Signed gap from the hull to the nearest rock (wrap-aware), negative = doom.
+function closestGap(c) {
+    let best = Infinity
+    for (const a of c.asteroids) {
+        const dx = wrapDelta(a.x - c.ship.x, c.width)
+        const dy = wrapDelta(a.y - c.ship.y, c.height)
+        const g = Math.sqrt(dx * dx + dy * dy) - (a.size + SHIP_SIZE * 0.4)
+        if (g < best) best = g
+    }
+    return best
+}
+
+// Scan once for the two things the policy reads: the rock whose honest time
+// to collision is soonest (|Δ + v·t| = rr on the torus-relative line — a
+// pebble creeping at 1 px/t never arrives, and fleeing it is what left the
+// first driver orbiting the last rock forever), and the lead aim at the
+// nearest rock: solve |Δ + vRock·t| = BULLET_SPEED·t (the game's own linear
+// arithmetic — bullets spawn at constant speed off the hull) and aim where
+// the rock will be when the bullet gets there.
+function scan(c) {
+    let threat = null
+    let tThreat = Infinity
+    let nd = Infinity
+    let ndx = 0
+    let ndy = 0
+    let near = null
+    for (const a of c.asteroids) {
+        const dx = wrapDelta(a.x - c.ship.x, c.width)
+        const dy = wrapDelta(a.y - c.ship.y, c.height)
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        if (dist < nd) { nd = dist; near = a; ndx = dx; ndy = dy }
+        const rr = a.size + SHIP_SIZE * 0.4
+        const rvx = a.vx - c.ship.vx
+        const rvy = a.vy - c.ship.vy
+        const cq = dx * dx + dy * dy - rr * rr
+        let ttc = Infinity
+        if (cq <= 0) ttc = 0
+        else {
+            const bq = dx * rvx + dy * rvy
+            if (bq < 0) {
+                const disc = bq * bq - cq
+                if (disc > 0) ttc = -bq - Math.sqrt(disc)
+            }
+        }
+        if (ttc < 45 && ttc < tThreat) { tThreat = ttc; threat = a }
+    }
+    let aim = null
+    if (near) {
+        let aimX = ndx
+        let aimY = ndy
+        const qa = near.vx * near.vx - BULLET_SPEED * BULLET_SPEED
+        const qb = 2 * (ndx * near.vx + ndy * near.vy)
+        const qc = ndx * ndx + ndy * ndy
+        let tHit = 0
+        if (Math.abs(qa) < 1e-9) {
+            if (Math.abs(qb) > 1e-9) tHit = -qc / qb
+        } else {
+            const disc = qb * qb - 4 * qa * qc
+            if (disc >= 0) {
+                const r1 = (-qb - Math.sqrt(disc)) / (2 * qa)
+                const r2 = (-qb + Math.sqrt(disc)) / (2 * qa)
+                tHit = Math.min(...[r1, r2].filter(t => t > 0)) || 0
+            }
+        }
+        if (tHit > 0 && tHit < WATCH_HORIZON) {
+            aimX = ndx + near.vx * tHit
+            aimY = ndy + near.vy * tHit
+        }
+        const raw = Math.atan2(aimY, aimX)
+        let diff = raw - c.ship.angle
+        while (diff > Math.PI) diff -= Math.PI * 2
+        while (diff < -Math.PI) diff += Math.PI * 2
+        const dist = Math.sqrt(aimX * aimX + aimY * aimY)
+        // The rock's angular half-size at the shot's distance: rotation ticks
+        // are quantized at ROTATION_SPEED, so the fire window opens when a
+        // settled heading can put the bullet inside the rock — distant pebbles
+        // need the ship to CLOSE before a hit is geometrically possible.
+        const window = Math.max(0.05, near.size / Math.max(dist, 40))
+        aim = { diff, dist, window, closing: tThreat }
+    }
+    return { threat, tThreat, nd, aim }
+}
+
+// The obvious play: turn and thrust away from a rock that actually reaches
+// you; else close on the nearest rock and hold the lead aim, firing when the
+// firing solution is settled. The driver re-decides every tick, so a rollout
+// owes only this continuation.
+function greedy(c) {
+    const s = scan(c)
+    if (s.threat) {
+        const away = Math.atan2(-wrapDelta(s.threat.x - c.ship.x, c.width), -wrapDelta(s.threat.y - c.ship.y, c.height))
+        let diff = away - c.ship.angle
+        while (diff > Math.PI) diff -= Math.PI * 2
+        while (diff < -Math.PI) diff += Math.PI * 2
+        return {
+            left: diff < -ROTATION_SPEED / 2,
+            right: diff > ROTATION_SPEED / 2,
+            thrust: s.tThreat < 25 || Math.abs(diff) < ROTATION_SPEED,
+            fire: false,
+        }
+    }
+    if (!s.aim) return { left: false, right: false, thrust: false, fire: false }
+    return {
+        left: s.aim.diff < -0.03,
+        right: s.aim.diff > 0.03,
+        thrust: true,
+        fire: c.ship.cooldown <= 0 && s.aim.dist < 340 && Math.abs(s.aim.diff) <= s.aim.window,
+    }
+}
+
+// Value one candidate by replaying the game's OWN physics + dice on a cloned
+// world for WATCH_HORIZON ticks: dying at tick t is worth t; surviving pays
+// the horizon big, plus smashed rocks and clearance. The candidate is HELD
+// for HOLD ticks before greedy takes over — one rotation tick barely bends the
+// future, and when every candidate ties the ship never turns: holding a turn
+// long enough to matter (10 ticks ≈ 0.8 rad) is what gives the shaping term
+// and the kills-in-horizon a real difference to rank. Shaping keeps the last
+// rock dying: with nothing left to fear every candidate survives, and closing
+// on + aligning with the lead aim keeps a gradient toward the kill until a
+// rollout horizon is long enough to SEE it (then `broken` ranks alone).
+const HOLD = 10
+
+function rollout(gs, cand) {
+    const c = cloneWorld(gs)
+    const s0 = scan(c)
+    let broken = 0
+    let minGap = Infinity
+    for (let t = 0; t < WATCH_HORIZON; t++) {
+        const ev = tickAsteroids(c, t < HOLD ? cand : greedy(c))
+        if (ev.died) return t
+        broken += ev.smashed
+        if (ev.wave) broken += 4 // a cleared field pays like a few more rocks
+        const g = closestGap(c)
+        if (g < minGap) minGap = g
+    }
+    let shaping = 0
+    const s1 = scan(c)
+    if (s1.aim && s0.nd < Infinity) {
+        shaping += Math.max(-120, Math.min(120, s0.nd - s1.nd)) * 2 // px of the gap shut
+        shaping += Math.abs(s1.aim.diff) <= s1.aim.window ? 150 : Math.max(0, 90 - Math.abs(s1.aim.diff) * 30)
+        if (s1.aim.dist < 340 && s1.aim.closing === Infinity) shaping += 60 // a clean shot is loaded
+    }
+    return WATCH_HORIZON * 10000 + broken * 120 + shaping + Math.min(minGap, 150)
+}
+
+// Candidate order IS the tie-break: hold the line and shoot first, coast next,
+// burn rubber, then the turns (fire before drift in each family) — the arcade
+// player's instinct: kill what you're aimed at, move when it matters.
+const CANDIDATES = [
+    { fire: true },
+    {},
+    { thrust: true },
+    { thrust: true, fire: true },
+    { left: true, fire: true },
+    { right: true, fire: true },
+    { left: true, thrust: true, fire: true },
+    { right: true, thrust: true, fire: true },
+    { left: true },
+    { right: true },
+    { left: true, thrust: true },
+    { right: true, thrust: true },
+].map(c => ({ left: !!c.left, right: !!c.right, thrust: !!c.thrust, fire: !!c.fire }))
+
+// Null = nothing steerable yet (game over, attract, or the dark respawn gap —
+// the honest wait, matching the frogger seat's doctrine).
+export function watchStep(gs) {
+    if (gs.over || gs.attract) return null
+    if (!shipAlive(gs)) return null
+    let best = null
+    let bestV = -Infinity
+    // The immediate greedy play competes as candidate zero: when the horizon
+    // genuinely cannot separate actions, the arcade instinct keeps the wheel.
+    for (const cand of [greedy(gs), ...CANDIDATES]) {
+        const v = rollout(gs, cand)
+        if (v > bestV) { bestV = v; best = cand }
+    }
+    return best || { left: false, right: false, thrust: false, fire: false }
+}
+
+// FNV-1a over everything the physics carries — the sweep's byte-equal replay
+// witness and the contract state hash.
+export function stateHash(gs) {
+    const r4 = (n) => Math.round(n * 1e4)
+    let s = `A${gs.tickN}|${gs.score}|${gs.lives}|${gs.bonusLives}|${gs.wave}|${gs.over ? 1 : 0}|${gs.respawnAt}|${gs.invulnUntil}|${gs.rngState}|`
+    s += `${r4(gs.ship.x)},${r4(gs.ship.y)},${r4(gs.ship.vx)},${r4(gs.ship.vy)},${r4(gs.ship.angle)},${gs.ship.cooldown}|`
+    s += gs.asteroids.map(a => `${r4(a.x)},${r4(a.y)},${r4(a.vx)},${r4(a.vy)},${a.size}`).join(';') + '|'
+    s += gs.bullets.map(b => `${r4(b.x)},${r4(b.y)},${r4(b.life)}`).join(';') + '|'
+    s += gs.particles.length
+    let h = 0x811c9dc5
+    for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i)
+        h = Math.imul(h, 0x01000193)
+    }
+    return (h >>> 0).toString(36)
+}
