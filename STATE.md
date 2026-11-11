@@ -1,65 +1,71 @@
-# STATE — session 210 (2026-11-10, slot b)
+# STATE — session 210 (2026-11-10, slot a)
 
 ## What shipped
-**LODE RUNNER-LITE DEEP SHAFTS** merged as `9758b0a` (PR #1946, Closes #1942
-— never-dry POLISH stage). The trap law was fiction: walkers were flatly
-blocked from pit mouths, the last row was solid wall, only the diagonal dig
-existed — holes caught nobody in live play and the "multi-cell burial" lived
-only in teleport scenarios. Now live physics: ground is TWO diggable strata;
-`holeFall` makes a step over a dug cell a real fall (player AND guards, BFS
-routes mouths); `digDeep` digs the brick under foot from a pit bottom;
-`pitClimb` clambers out one cell. Burial = arithmetic pinned as a check:
-2×guardTrap (120 t) > refill (75 t). lodecheck 101/101 + 8/8 mutants die
-(new holeFall/digDeep/pitClimb), lodeplay 32/32 live-keys (new shaft gate:
-dig, drop, deepen, climb, no life lost), watchcheck lode-runner 210/210,
-witness receipts byte-identical (solver never digs → attract/watch untouched).
-Also fixed the pre-existing `--map` crash and the README's false "--mutate in
-CI" claim. Prod marker `fallInto` verified in the live chunk.
+**SMASH TV: OVER-THE-SHOULDER GUNS** merged as `f69058f` (PR #1947,
+Closes #1945 — never-dry weakestStage pick, score 4). The cabinet frames the
+contestant from above-behind: guns ride the SHOULDERS, muzzles past the head;
+the rebuild drew barrels at hip level. Now: `sprite.js` owns the pose as pure
+geometry (`CARRIAGE={back:1,rise:2.5}`, `gunPose` → base/muzzle/stock/flash per
+barrel); per-weapon carriages (twin over both shoulders w/ dual flash, MG long
+right-shoulder + drum-mag, SPREAD sawed-off w/ two dots, LASER boxy emitter +
+side-cells); chrome pauldrons in the sprite sheet (seat-palette aware);
+`juice.recoilKick` walks the carriage back 2px, zero within 5 ticks ≤ tightest
+interval. Sim UNTOUCHED — pilot seeds 0-8 clear, hashes byte-identical.
+smashcheck PASS 531 (new POSE law: mount behind shoulder plane + muzzle past it,
+8 aims × 4 weapons; silhouette, spread, stock, flash, recoil, pauldron checks);
+mutants 11/11 die (new: guns-drop-to-waist); smashplay 21/21 incl. pixel proof
+(18 chrome px cross the head column aimed up, 0 aimed down). Prod bundle
+verified (control flash:9.5 + new back:1,rise:2.5 + off:[2] in
+index-CzFQwzQj.js). Live: jalfern.com/retrogames/smash-tv.
 
-## The session's catch — decorative laws
-A rule the sim documents but ordinary motion can never trigger is fiction, not
-a law. "Guards fall in holes" was pinned by scenarios that TELEPORTED the
-guard into the hole — the enter-path didn't exist. Lesson: when a README says
-"proven by scenario, not by play", read it as a dead-rule alarm, and drive the
-law end-to-end with the inputs a player has. Second lesson (cheap): apex
-jalfern.com 308s to www.jalfern.com — marker greps need `curl -L` or they scan
-a 15-byte redirect stub.
+## The session's catch — browser pixel checks bite three ways
+The down-column pixel gate failed twice before passing: (1) walkcam LEGS use the
+exact barrel grey #8d99b5 — clear gs.enemies + roomData.spawns before sampling
+paint, or the arena's own cast votes on your sprite law; (2) the canvas lags the
+state by a frame — await 2× requestAnimationFrame after mutating state before
+getImageData; (3) spawn-invulnerability blinks the sprite out every other frame —
+zero invuln first. And grey-blending: anti-aliased visor edges at 50% land inside
+a ±40 grey window — sample ABOVE the sprite, not across it. Record: a pixel law
+is a law about the whole frame, not just the sprite.
 
 ## Ladder trail
-- TARGET #1938 REFUSED at claim (slot a held it; slot a shipped it as #1941
-  PORTRAIT mid-ladder). Don't chase another lane's issue.
-- halt none; steer none; `next` #1711 hardware-stalled (audit-confirmed);
-  game-queue empty; QA MASTER live (feedback borrow off) → flagship stage:
-  all four flagship README gap-lists CLOSED/owned → never-dry weakestStage:
-  LodeRunnerLite (4 unowned gaps, registry-order tie-break) → claimed #1942.
+- halt none; steer none; `next` #1711 hardware-stalled on Jon (audit-confirmed
+  2026-11-10, code-complete — skip per trail); game-queue empty; QA MASTER live
+  (pid 27690) → feedback borrow refused; flagshipStage null (all flagship gaps
+  owned) → NEVER-DRY weakestStage: SMASH TV score 4, gap #0 → filed #1945 with
+  why-weakest → claimed(a) → shipped. No jonq (mechanical picks only; taste bar
+  not met).
+- Camera half of SmashTV gap #0 stays in README honestly: varisize arenas +
+  camera would re-pin every hash — not one stage.
 
 ## Session bookkeeping
-- #1942 shipped + closed; QA polish pass filed as #1949 (pit-fall anim,
-  dust, lip-hover landing, refillDeath flash, guard-fall juice, dig rumble).
-- #1637 stays `building` (watch rollout; b22 candidates: other titles' watch
-  gaps beat DF — DF far-side interception + graze documented-closed-to-
-  redesign, two batches of proof).
-- :5178 vite runs from `~/Dev/retrogames-forge-lode-shafts` (detached
-  9758b0a after merge, node_modules symlinked) — reuse or kill next slot-b
-  session before strictPort.
+- #1945 CLOSED shipped; QA polish pass filed as #1950 (recoil weight at phone
+  scale, swap glint, diagonal twin spread, pauldron bob, civ sprites, boss
+  gun-language).
+- :5173 vite runs from `~/Dev/retrogames-forge-smash-otsh` (detached f69058f
+  after merge, node_modules symlinked) — reuse or kill next slot-a session
+  before strictPort. Reclaimed 5173 from the stale ppm-portrait server (slot a's
+  own dead lineage — legal to kill; never another lane's port).
 
-## Next queued (slot b)
-1. Fresh ladder: warden TARGET, else halt/steer/next/queue games-first,
-   then feedback only if no QA session is live (pgrep QA MASTER), else the
-   flagship/never-dry rungs via scripts/lib/idle.mjs (all flagships spent —
-   expect never-dry: LodeRunnerLite carries 3 unowned gaps still, or the next
-   weakest unheld title).
-2. #1637 b22: other titles' watch gaps first (DF is closed-to-redesign).
-3. QA-held items stay theirs (#1915/#1900/#1888/#1871 TMD, #1907 SI/DF,
-   #1877 FB polish, #1923 rail, #1925 carpet, #1949 lode polish).
+## Next queued (slot a)
+1. Fresh ladder: halt/steer/next/queue games-first, then feedback only if no QA
+   session is live (pgrep QA MASTER), else flagship/never-dry via idle.mjs.
+2. #1637 b22 candidates: other titles' watch gaps beat DF (DF far-side + graze
+   documented-closed-to-redesign, two batches of proof).
+3. QA-held items stay theirs (#1915/#1900/#1888/#1871 TMD, #1907 SI/DF, #1877
+   FB, #1923 rail, #1925 carpet, #1950 SmashTV). LodeRunner deep shafts #1942
+   is slot b's live build — don't touch.
 
-## Notes for the next slot-b session
-- `pkill -f watchcheck` before scoped watchcheck; `--only <slug>` always.
-- Prod marker recipe: new-marker + control-marker in ONE chunk; remember
-  `curl -L` (www redirect) when grepping jalfern.com assets.
-- Lode sim: solver's miniGrid shares `grid` AND `holeAge` refs — any new
-  state a physics rule reads must be added to miniGrid too or the watcher
-  crashes mid-search.
+## Notes for the next slot-a session
+- Any browser pixel check: clear threats/spawns, zero invuln, rAF×2 after
+  mutating state, and check your colour isn't worn by sprites you didn't clear.
+- smashcheck pose anchors measure off the SHOULDER anchor (centre + rise), not
+  body centre — the rise is the height cue; along-aim laws reference the plane
+  the carriage actually stands on.
+- Prod marker recipe: paint-only changes ship NO new UI strings — the minified
+  spec OBJECT survives (property names aren't mangled): pick a changed literal
+  pair like `back:1,rise:2.5` + an unchanged control; jalfern.com 308s to www —
+  curl -L.
 
 ## Open questions
 - None. (No taste/priority call needed from Jon.)
