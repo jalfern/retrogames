@@ -530,6 +530,22 @@ export const tallyDur = (values) => Math.max(0, (Array.isArray(values) ? values.
 
 const easeOut = (v, f) => Math.min(v, Math.round(v * f * (2 - f)))
 
+// #1812 online fold-in, item 1: THE LINK PILL — the play-screen answer to
+// "is my crew still on the wire?". Room code + link state lived only in the
+// Lobby/attract; mid-run the player flew blind until a banner fired. Pure law
+// over shell net facts (never gs — hash-clean): the view paints what this says.
+// Precedence is the law too: a seat on its way back reads RETURNING before
+// jitter, and a demoted crew has no wire at all — CPU PARTNER outranks stalls.
+export const LINK = { SHAKY: 8 } // stall ticks before the pill calls the link shaky
+
+export function netPill(info) {
+    if (!info || !info.code) return null
+    if (info.reseat) return { text: 'LINK RETURNING', tone: 'amber' }
+    if (info.solo) return { text: 'CPU PARTNER', tone: 'red' }
+    if ((info.stallRun | 0) >= LINK.SHAKY) return { text: 'LINK SHAKY', tone: 'amber' }
+    return { text: `NET ${String(info.code).slice(0, 4)} LIVE`, tone: 'green' }
+}
+
 export function tallyFrame(values, ms) {
     const vals = (Array.isArray(values) ? values : []).map((v) => v | 0)
     const sum = vals.reduce((a, b) => a + b, 0) | 0

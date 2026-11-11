@@ -66,5 +66,9 @@ export const sfx = {
     tally(i) { A.playTone(660 + (i | 0) * 110, 0.07, 'square', 0.09) },
     // UI blips
     blip() { A.playTone(880, 0.04, 'square', 0.07) },
+    // #1812 online fold-in item 2: the crew is together — the kick and the
+    // mid-run re-seat were silent (the shared Lobby chime only sounds on the
+    // attract overlay). Rising C-E-C on the pair's own voice.
+    crew() { A.playTone(523, 0.08, 'square', 0.10); A.playTone(659, 0.08, 'square', 0.10, 0.07); A.playTone(784, 0.14, 'square', 0.11, 0.14) },
     deny() { A.playTone(160, 0.09, 'square', 0.08) },
 }

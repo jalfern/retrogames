@@ -545,6 +545,19 @@ function drawHudFrame(g, gs, opts, now) {
     g.fillStyle = seatInk
     g.fillText(opts.coop ? 'P2 CO-OP' : 'P2 CPU', 520, 344)
     if (opts.mic) { g.fillStyle = C.red; g.fillText('MIC', 470, 344) }
+    // #1812 online fold-in item 1: the link pill, dead-center in the strip.
+    // It paints ONLY from E.netPill's verdict ({text,tone}) — the view never
+    // free-writes a room code or invents a status the law didn't call.
+    if (opts.pill) {
+        const tone = opts.pill.tone === 'amber' ? C.amber : opts.pill.tone === 'red' ? C.red : C.green
+        g.font = '8px "Press Start 2P", monospace'
+        const w = g.measureText(opts.pill.text).width
+        g.fillStyle = 'rgba(6,8,4,0.85)'; g.fillRect(320 - w / 2 - 7, 331, w + 14, 17)
+        g.strokeStyle = tone; g.strokeRect(320 - w / 2 - 7, 331, w + 14, 17)
+        g.textAlign = 'center'; g.fillStyle = tone
+        g.fillText(opts.pill.text, 320, 342)
+        g.textAlign = 'left'
+    }
 }
 
 export default function BombDefuseGame() {
@@ -776,6 +789,7 @@ export default function BombDefuseGame() {
             seatsRef.current = 2
             coopRef.current = true
             hudRef.current = { ...newHud(), banner: { text: 'CREW LINKED — BOTH HANDS', ok: true }, bannerT: 70 }
+            sfx.crew() // #1812 fold-in item 2: the kick lands heard, not silent
             hintRef.current = null
             net.miss = 0
             net.desyncFrozen = false
@@ -1079,7 +1093,7 @@ export default function BombDefuseGame() {
                             if (gs.players === 1) gs.players = 2
                             hudRef.current.banner = { text: 'PARTNER RE-SEATED — CREW WHOLE', ok: true }
                             hudRef.current.bannerT = 80
-                            sfx.blip()
+                            sfx.crew() // #1812 fold-in item 2: the crew whole again rings the same bell the kick does
                         }
                         pads = net.sync.assemble(k)
                     }
@@ -1134,7 +1148,22 @@ export default function BombDefuseGame() {
                     // #1932: the coach is recomputed from live state each frame
                     // (pure) and stashed on the hud so __bdTest.coach() answers
                     // the drive harness without a pixel read.
-                    const youSeat = net.active ? (net.sync && !net.sync.solo() && net.sync.reseatTick == null ? net.sync.mySeat : -1) : (seatsRef.current === 1 ? 0 : -1)
+                    // #1812 online fold-in item 4: a demoted crew re-tags its
+                    // survivor — solo play drives seat 0 (loop line: pads =
+                    // [own keys, {}]), so the YOU tag belongs there instead of
+                    // vanishing mid-run. The hand-back window still reads -1:
+                    // seat 1 is the partner's again only at the flip.
+                    const youSeat = net.active
+                        ? (net.sync ? (net.sync.solo() ? 0 : (net.sync.reseatTick == null ? net.sync.mySeat : -1)) : -1)
+                        : (seatsRef.current === 1 ? 0 : -1)
+                    // #1812 online fold-in item 1: the link pill, law-first —
+                    // netPill calls the verdict, the strip only paints it.
+                    hud.pill = net.active ? E.netPill({
+                        code: net.room ? net.room.code : '',
+                        solo: net.sync ? net.sync.solo() : false,
+                        stallRun: net.sync ? net.sync.stats().stallRun : 0,
+                        reseat: net.sync ? net.sync.reseatTick != null : false,
+                    }) : null
                     hud.coach = E.ventCoach(gs, youSeat, hud.ventTaught)
                     // #1812 item 4: the pre-flash law, recomputed pure each frame.
                     hud.pf = E.preFlash(gs)
@@ -1181,7 +1210,7 @@ export default function BombDefuseGame() {
                         g.lineWidth = 1
                         if (--hn.t <= 0) hintRef.current = null
                     }
-                    drawHudFrame(g, gs, { coop: seatsRef.current > 1 && !(net.active && net.sync && net.sync.solo()), mic: voiceRef.current.on, ask: hud.ask }, now)
+                    drawHudFrame(g, gs, { coop: seatsRef.current > 1 && !(net.active && net.sync && net.sync.solo()), mic: voiceRef.current.on, ask: hud.ask, pill: hud.pill }, now)
                     if (hud.flash > 0) {
                         g.fillStyle = `rgba(255,60,40,${Math.min(0.35, hud.flash / 60)})`
                         g.fillRect(0, 0, W, H); hud.flash--
@@ -1399,6 +1428,9 @@ export default function BombDefuseGame() {
                 // #1812 item 10: bed pings accrued since the run began — the
                 // drive proves the hum is alive (and frozen on pause/over)
                 bedPings: () => hudRef.current.bedPings,
+                // #1812 fold-in item 1: the live link verdict the strip paints
+                // (null offline) — the drive proves the pill tracks the wire.
+                netPill: () => hudRef.current.pill || null,
                 net: () => ({
                     active: net.active, role: net.role,
                     code: net.room ? net.room.code : '', phase: net.room ? net.room.phase : '',

@@ -9,6 +9,7 @@ import {
     TURN, turnStep, turnClick, keyAngle,
     REDLINE, PEG, pegNeedle, ventCoach, preFlash, seatAsk,
     TALLY, winTally, tallyDur, tallyFrame,
+    LINK, netPill,
 } from '../src/games/BombDefuse/engine.js'
 import { bedHz, BED } from '../src/games/BombDefuse/audio.js'
 import { snapshotNet, restoreNet } from '../src/games/BombDefuse/net.js'
@@ -671,7 +672,7 @@ console.log('\n— active-seat ask (#1812 item 7) —')
         'all three kinds draw the pulsing seat chip (key, blade, bar)')
     ok(jsx.includes('function chipInk(opts, seat, now)') && /opts\.paused === true \? null : opts\.ask/.test(jsx),
         'the pulse is paint over the law and dies while paused')
-    ok(/seatInk = on \? col/.test(jsx) && /ask: hud\.ask \}, now\)/.test(jsx.slice(jsx.indexOf('drawHudFrame(g, gs'))),
+    ok(/seatInk = on \? col/.test(jsx) && /ask: hud\.ask, pill: hud\.pill \}, now\)/.test(jsx.slice(jsx.indexOf('drawHudFrame(g, gs'))),
         'the HUD strip pulses the P2 chip while seat 2 owes the step')
     ok(jsx.includes('seatAsk: () => hudRef.current.ask || null'), '__bdTest.seatAsk exposes the ask for the drive harness')
 }
@@ -816,6 +817,71 @@ console.log('\n— win tally (#1812 item 6) —')
         '__bdTest.winTally/tally expose the ledger and the live frame for the drive harness')
     const asrc = readFileSync(join(here, '../src/games/BombDefuse/audio.js'), 'utf8')
     ok(/tally\(i\) \{ A\.playTone\(660 \+ \(i \| 0\) \* 110/.test(asrc), 'the tally ding rises with the line number')
+}
+
+console.log('\n— online link pill + crew chime (#1812 fold-in items 1, 2, 4) —')
+{
+    const aud = readFileSync(join(here, '../src/games/BombDefuse/audio.js'), 'utf8')
+    // pure law: netPill answers over shell net facts, never gs.
+    ok(netPill(null) === null && netPill({}) === null && netPill({ code: '' }) === null,
+        'no wire, no pill — offline and code-less rooms show nothing')
+    const live = netPill({ code: 'AB12', solo: false, stallRun: 0, reseat: false })
+    ok(live && live.tone === 'green' && live.text === 'NET AB12 LIVE',
+        'a whole link reads LIVE and names the room code', JSON.stringify(live))
+    ok(netPill({ code: 'ABCDEFG', solo: false, stallRun: 0 }).text === 'NET ABCD LIVE',
+        'the pill clamps the code to four chars — the strip never grows')
+    ok(netPill({ code: 'AB12', solo: false, stallRun: LINK.SHAKY - 1 }).tone === 'green'
+        && netPill({ code: 'AB12', solo: false, stallRun: LINK.SHAKY }).text === 'LINK SHAKY',
+        `the shaky tell trips at exactly ${LINK.SHAKY} stalled ticks`)
+    const lost = netPill({ code: 'AB12', solo: true, stallRun: 999, reseat: false })
+    ok(lost.text === 'CPU PARTNER' && lost.tone === 'red',
+        'a demoted crew outranks jitter — no wire, no link words', JSON.stringify(lost))
+    const back = netPill({ code: 'AB12', solo: true, stallRun: 999, reseat: true })
+    ok(back.text === 'LINK RETURNING' && back.tone === 'amber',
+        'a seat on its way back outranks everything — RETURNING, not LIVE', JSON.stringify(back))
+    ok(new Set([live, lost, back, netPill({ code: 'A', solo: false, stallRun: 99 })].map((p) => p.tone)).size === 3
+        && [live, lost, back].every((p) => /^[A-Z0-9 ()·-]+$/.test(p.text)),
+        'three honest tones (green/amber/red), every text plain canvas pixels')
+    // hash-clean by law: the pill never touches gs — a run laced with pill
+    // calls replays byte-identical against a bare one.
+    const lace = (seed) => {
+        const g = createGame(seed, 2)
+        let m = 0
+        while (!g.done && m++ < 6000) {
+            step(g, solvePads(g))
+            g.events.length = 0
+            netPill({ code: 'AB12', solo: g.tick % 7 === 0, stallRun: g.tick, reseat: g.tick % 13 === 0 })
+        }
+        return g
+    }
+    const bare = (seed) => {
+        const g = createGame(seed, 2)
+        let m = 0
+        while (!g.done && m++ < 6000) { step(g, solvePads(g)); g.events.length = 0 }
+        return g
+    }
+    ok(hash(lace(21)) === hash(bare(21)), 'pill calls interleaved through a won run leave the hash untouched')
+
+    // view side: drawScene asks the law, the strip paints only its verdict.
+    const jsx = readFileSync(join(here, '../src/games/BombDefuse/index.jsx'), 'utf8')
+    ok(/hud\.pill = net\.active \? E\.netPill\(\{[\s\S]{0,240}stallRun: net\.sync \? net\.sync\.stats\(\)\.stallRun : 0/.test(jsx),
+        'the play screen recomputes the pill each frame from room code, solo, stallRun, reseat')
+    ok(/drawHudFrame\(g, gs, \{[^}]*pill: hud\.pill/.test(jsx),
+        'the HUD strip is handed the law\'s verdict, not raw net state')
+    ok(/if \(opts\.pill\)[\s\S]{0,640}g\.fillText\(opts\.pill\.text, 320, 342\)/.test(jsx),
+        'the pill paints centered in the strip, text from the law only')
+    ok(jsx.includes('netPill: () => hudRef.current.pill || null'),
+        '__bdTest.netPill exposes the live verdict for the drive harness')
+    // item 4: a demoted crew re-tags its survivor instead of losing the YOU.
+    ok(/net\.sync\.solo\(\) \? 0 : \(net\.sync\.reseatTick == null \? net\.sync\.mySeat : -1\)/.test(jsx),
+        'solo survivor keeps the YOU tag on seat 0 — the seat its own keys drive')
+    // item 2: the kick and the mid-run re-seat land heard.
+    ok(/'CREW LINKED — BOTH HANDS'[\s\S]{0,160}sfx\.crew\(\)/.test(jsx),
+        'the kick sounds the crew chime beside its banner')
+    ok(/'PARTNER RE-SEATED — CREW WHOLE'[\s\S]{0,120}sfx\.crew\(\)/.test(jsx),
+        'the hand-back rings the same bell — one crew sound for one crew')
+    ok(/crew\(\) \{ A\.playTone\(523[\s\S]{0,160}A\.playTone\(784/.test(aud),
+        'sfx.crew is a rising three-note chime, synthesized like every other sound')
 }
 
 console.log(`\ndefusecheck: ${pass}/${pass + fail} gates`)
