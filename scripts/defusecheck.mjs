@@ -9,6 +9,7 @@ import {
     TURN, turnStep, turnClick, keyAngle,
     REDLINE, PEG, pegNeedle, ventCoach,
 } from '../src/games/BombDefuse/engine.js'
+import { bedHz, BED } from '../src/games/BombDefuse/audio.js'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -449,6 +450,37 @@ console.log('\n— first-vent coaching (#1932) —')
     while (bx2.intro > 0) drive(bx2, [{}, {}])
     ok(JSON.stringify(ventCoach(bx1, 0, false)) === JSON.stringify(ventCoach(bx2, 0, false)) && hash(bx1) === hash(bx2),
         'net twins: the coach is state-determined, both boxes teach the same lesson')
+}
+
+console.log('\n— powered-device bed (#1812 item 10) —')
+{
+    ok(bedHz(60) === BED.BASE && bedHz(BED.CRITICAL) === BED.BASE, 'standby hum: at or above CRITICAL seconds the pitch sits at BASE')
+    let mono = true, strict = 0
+    for (let s = BED.CRITICAL; s > 0; s--) {
+        const a = bedHz(s), b = bedHz(s - 1)
+        if (b < a) mono = false
+        if (b > a) strict++
+    }
+    ok(mono, 'the pitch never drops as the fuse drains')
+    ok(strict === BED.CRITICAL && bedHz(BED.CRITICAL - 1) > BED.BASE, 'the climb starts the second under CRITICAL and moves every second')
+    ok(bedHz(0) === BED.TOP && bedHz(-7) === BED.TOP, 'the climb caps at TOP (a groan, never a squeal)')
+    let stepMax = 0
+    for (let s = 75; s > 0; s--) stepMax = Math.max(stepMax, Math.abs(bedHz(s) - bedHz(s - 1)))
+    ok(stepMax <= BED.STEP, `each step of the climb is at most ${BED.STEP} Hz (a slide, not a siren)`)
+    ok(Math.min(...Array.from({ length: 76 }, (_, s) => bedHz(s))) === BED.BASE && BED.BASE > 0, 'the bed never falls silent — the floor is the standby hum')
+    const asrc = readFileSync(join(here, '../src/games/BombDefuse/audio.js'), 'utf8')
+    ok(/bed\(secs\)\s*\{\s*A\.playTone\(bedHz\(secs\)/.test(asrc), 'sfx.bed sings the pure law through AudioController')
+    ok(/bed\(secs\)[\s\S]{0,120},\s*0\.0[0-3]\d*\)/.test(asrc), 'the bed is sub-bass quiet (vol <= 0.03) — under the play, never over it')
+    const esrc = readFileSync(join(here, '../src/games/BombDefuse/engine.js'), 'utf8')
+    ok(!/bedHz|pumpBed/.test(esrc), 'engine.js never mentions the bed — the hum lives outside the determinism core')
+    const jsx = readFileSync(join(here, '../src/games/BombDefuse/index.jsx'), 'utf8')
+    ok(/const pumpBed = \(g\) => \{[\s\S]{0,320}screenRef\.current !== 'play'[\s\S]{0,80}hud\.boomT > 0/.test(jsx),
+        'pumpBed gates the hum to the play screen and ducks it under the boom')
+    ok(jsx.split('\n').filter((l) => /^\s*pumpBed\(/.test(l)).length >= 2, 'both tick paths (net + shell) pump the bed')
+    ok(/hud\.bedPings\+\+; sfx\.bed\(Math\.ceil\(g\.fuse \/ 60\)\)/.test(jsx),
+        'the hum rides live fuse seconds every BED.EVERY ticks')
+    ok(jsx.includes('bedPings: () => hudRef.current.bedPings'), '__bdTest.bedPings exposes the bed for the drive harness')
+    ok(jsx.includes('<PauseOverlay game={entry}'), 'PauseOverlay gets the game prop (gameEntry crashed the whole app on Escape — the QA drive live-proves pause/resume)')
 }
 
 console.log(`\ndefusecheck: ${pass}/${pass + fail} gates`)

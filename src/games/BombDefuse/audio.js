@@ -2,6 +2,20 @@
 // plays before the AudioContext unlock (App.jsx handles that).
 import { audioController as A } from '../../utils/AudioController.js'
 
+// #1812 item 10 — the powered-device bed. A live bomb is never silent: a low
+// hum runs while the unit is armed, and the pitch climbs as the fuse drains
+// (the transformer straining). The law is PURE and exported so defusecheck can
+// pin it without a browser: standby under CRITICAL seconds, +STEP Hz per second
+// gone, capped at TOP so the climb stays a groan, never a squeal. The duck is
+// the caller's (index.jsx pumpBed): while the boom rings out the bed stops
+// re-firing and the crack owns the room.
+export const BED = { BASE: 55, TOP: 98, CRITICAL: 15, STEP: 3, EVERY: 30 }
+export const bedHz = (secs) => {
+    const s = Math.max(0, secs | 0)
+    if (s >= BED.CRITICAL) return BED.BASE
+    return Math.min(BED.TOP, BED.BASE + (BED.CRITICAL - s) * BED.STEP)
+}
+
 export const sfx = {
     // brass key barrel turning over
     key() { A.playTone(300, 0.05, 'square', 0.09); A.playTone(520, 0.06, 'square', 0.08, 0.04) },
@@ -40,6 +54,9 @@ export const sfx = {
     // click on the way in; the way out is the softer return)
     ratchet() { A.playTone(740, 0.02, 'square', 0.05) },
     ratchetBack() { A.playTone(520, 0.025, 'square', 0.03) },
+    // #1812 item 10: one breath of the powered-device bed (retriggered by the
+    // shell every BED.EVERY ticks; 0.55 s > 0.5 s so the hum never gaps).
+    bed(secs) { A.playTone(bedHz(secs), 0.55, 'triangle', 0.016) },
     // whole run cleared
     win() {
         for (let i = 0; i < 6; i++) A.playTone([392, 523, 659, 784, 1047, 1319][i], 0.12, 'square', 0.11, i * 0.11)
