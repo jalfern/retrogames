@@ -82,17 +82,30 @@ rocks × 14)` ticks), the two-tone hover warble while any saucer is on
 screen, an arrival sweep, the alien's shot tick, and a stepped kill
 explosion. The shot is now a descending saw sweep, not a bare tick.
 
+## Look polish (#2001)
+The vector bar of docs/ART.md. Rocks JAG like the cabinet etched them: the
+vertex radius die swings ±0.25 / ±0.2 / ±0.15 of nominal for the large / medium
+/ small tiers — coarser the bigger the rock — on the same dice count, so seed
+fields keep their stream position. Every kill stamps a **flash** (rock 1.5× its
+size, saucer 1.8× its radius, ship 2× SHIP_SIZE) that the shell paints as an
+expanding fading ring, decayed on sim ticks. The ship is the arcade's **notched
+wedge** — nose, twin aft fins, a thruster notch cut into the back — exported as
+`SHIP_HULL` so the drawing and the asteroidscheck pin share one table. The
+death → dark (RESPAWN_DELAY) → blink-grace (INVULN_TICKS) chain is pinned
+tick-exact in both the sim and the drawn ship's visibility gate (#2001
+backlog item "sprite↔state after death-respawn", sim + wiring half; a pixel
+probe would need the live seat).
+
 ## Verify
 ```
-npm run asteroidscheck            # determinism + 1979 law + wiring + driver sweep + seat rules
-npm run asteroidscheck -- --mutant  # 13 mutants (6 b16 + 7 b26 driver), all must die
+npm run asteroidscheck            # determinism + 1979 law + wiring + driver sweep + seat/saucer/hyper/look rules (97 gates)
+npm run asteroidscheck -- --mutant  # 25 mutants (6 b16 + 7 b26 driver + 6 saucer/heartbeat + 3 hyperspace + 3 look polish), all must die
 ASTEROID_SWEEP=fast npm run asteroidscheck  # 12-seed × 60 s sweep (what the mutant children run)
 npm run watchcheck -- --only asteroids      # live seat: seat/blips/takeover/re-seat
 npm run lint:asteroids
 ```
 
 ## Honest gaps
-- No hyperspace teleport (the arcade's desperate panic button).
 - No rock-vs-rock interaction (the machine had neither).
 - Small saucers ease their aim over time in the original; ours are locked at
   ±0.15 rad — the learning curve is not modelled.

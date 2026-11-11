@@ -7,7 +7,7 @@ import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, 
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { GAMES } from '../../config/games'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, contractHoldsLoop } from '../../utils/gameContract'
-import { SHIP_SIZE, START_LIVES, makeRun, tickAsteroids, rebuildBoard, stateHash } from './sim.js'
+import { SHIP_HULL, START_LIVES, makeRun, tickAsteroids, rebuildBoard, stateHash } from './sim.js'
 
 // ASTEROIDS (#1473 batch 16) — the Feb port had no score, no lives and no
 // terminal: the ship could not die and the field never refilled. Restored to
@@ -154,7 +154,14 @@ const AsteroidsGame = () => {
         // attract and at the terminal.
         let heartTick = 0
         let heartHi = false
+        // #2001 look polish — explosion blooms. The sim stamps a flash per kill
+        // (radius scales with what died); the shell decays them on sim ticks so a
+        // paused or contract-held board never melts its own juice.
+        const flashes = []
         const applyEvents = (ev) => {
+            for (const f of flashes) f.life -= 0.055
+            flashes.splice(0, flashes.length, ...flashes.filter(f => f.life > 0))
+            for (const f of ev.flash) flashes.push({ x: f.x, y: f.y, r: f.r, life: 1 })
             if (ev.shot) audioController.playSweep(900 - ev.pitch * 250, 260, 0.09, 'sawtooth', 0.1)
             if (ev.smashed) audioController.playNoise(0.1, 0.1)
             if (ev.died) audioController.playNoise(0.4, 0.4)
@@ -238,9 +245,10 @@ const AsteroidsGame = () => {
                 ctx.translate(gs.ship.x, gs.ship.y)
                 ctx.rotate(gs.ship.angle)
                 ctx.beginPath()
-                ctx.moveTo(SHIP_SIZE, 0)
-                ctx.lineTo(-SHIP_SIZE / 2, SHIP_SIZE / 2)
-                ctx.lineTo(-SHIP_SIZE / 2, -SHIP_SIZE / 2)
+                SHIP_HULL.forEach(([hx, hy], i) => {
+                    if (i === 0) ctx.moveTo(hx, hy)
+                    else ctx.lineTo(hx, hy)
+                })
                 ctx.closePath()
                 ctx.stroke()
                 ctx.restore()
@@ -291,6 +299,16 @@ const AsteroidsGame = () => {
                 ctx.fillRect(p.x, p.y, 2, 2)
                 ctx.globalAlpha = 1.0
             })
+
+            // Explosion blooms (#2001) — a faint ring at every kill, expanding
+            // and fading over ~11 ticks, sized by what died.
+            for (const f of flashes) {
+                ctx.globalAlpha = f.life * 0.45
+                ctx.beginPath()
+                ctx.arc(f.x, f.y, f.r * (1 + (1 - f.life)), 0, Math.PI * 2)
+                ctx.stroke()
+                ctx.globalAlpha = 1.0
+            }
 
             // HUD — score left, wave center, spare ships right (the arcade's
             // row of bow-ships, drawn as small triangles).
