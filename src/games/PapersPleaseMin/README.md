@@ -57,8 +57,9 @@ pure atmosphere until this stage made it load-bearing:
 
 - Every applicant carries a face descriptor: structural features
   (`style` 0–3 hair cut, `narrow` face width, `glasses`, `must` facial
-  hair) plus atmosphere colors (`skin`, `hairC`, `shirtC`). The live face
-  at the counter and the passport's mini photo are BOTH painted by
+  hair — plus `brow` thickness and `mouth` shape since #1972) plus
+  atmosphere colors (`skin`, `hairC`, `shirtC`). The live face at the
+  counter and the passport's mini photo are BOTH painted by
   `drawFace` from a descriptor — an honest paper's two descriptors are
   identical, so the two portraits are byte-identical renderings at two
   scales (`papersplay` proves it: `__ppTest.portraitPix()` paints both at
@@ -68,6 +69,20 @@ pure atmosphere until this stage made it load-bearing:
   pins it), and the evidence names it in words a guard would say
   (`PHOTO WEARS GLASSES, ENTRANT DOES NOT`). Colors never convict: that
   is what keeps the aged-photo trap legal.
+- **#1972 PORTRAIT-DETAIL** — the compared set is SIX features
+  (`FEATURES`, rules.js); paperscheck pins that every one of them
+  actually forges across the seed sweep, so a sixth feature can never be
+  décor. The photo is a ZOOM-CROP (`PHOTO.s` 0.75, `ox/oy` center the
+  head, the draw is clipped to the frame): the head reads ~50px where the
+  old flat-0.6 miniature read ~40. `drawFace` gained the parts the
+  original's eye roams — sclera + pupils, brows (thin 2px / thick 5px),
+  a nose, ears, and an open-mouth block; only brow thickness and mouth
+  shape are compared, the rest is look. The crop math is a Node law
+  (centered, widest head inside the frame, `s >= 0.7`), and papersplay
+  measures the canvas: longest non-beige run across the head row ≥44px
+  (old build measured ≤41), both brow thicknesses and both mouth shapes
+  counted in ink px, bare-eye whites counted (128px bare, 0 behind the
+  opaque lenses).
 - The rule rides `DAY_RULES` from **day 1**, not a late wake: the
   +1-rule-per-day growth law has no free slot after day 1 (day 6 owns
   IDREQ, day 7 CURFEW), and unlike the paper laws the photo check needs
@@ -146,7 +161,7 @@ spent by day 4 by construction) — a game rule defended by the generator's
 own audit, which is exactly how this file grew CURFEW in the first place:
 the rulebook-awakening check caught day 7 as a no-op day.
 
-## Mutants (18, all die under `npm run paperscheck -- --mutate`)
+## Mutants (24, all die under `npm run paperscheck -- --mutate`)
 
 `<`→`<=` expiry; wanted by name only; IDREQ ignoring the DOB; the scale
 reading the paperwork (witness lies); species coverage becoming luck;
@@ -170,7 +185,16 @@ play — the cadence replay sees the closes); the sixteenth pulls the day-7
 quota tooth (dawdling survives the finale, or the week overruns and
 crashes); the seventeenth zeroes the miss dock (turning people away costs
 nothing — the dock arithmetic names it); the eighteenth keeps the dead
-clock at morning (day two opens closed — the rewind witness bites).
+clock at morning (day two opens closed — the rewind witness bites). The
+purse years added three: the nineteenth zeroes the wage (work, then starve
+— the autopilot's 233 cannot be paid); the twentieth pulls rent from
+`settle` (no eviction, the schedule probe names it); the twenty-first
+pulls the two-night starvation tooth (#1966). The detail year added three:
+the twenty-second mutes the BROW comparison and the twenty-third the MOUTH
+comparison (forgers of that feature walk free while `judge` still denies —
+the fairness twin catches both); the twenty-fourth shrinks `FEATURES` back
+to four — verdicts stay fair, gen never stages the new breaks, and only
+the staged-coverage witness sees the new rules become décor (#1972).
 
 ## Gates
 
@@ -184,7 +208,10 @@ its own feature band lit — sampled only after the stamp ticks out, since
 during a stamp the counter shows the previous document; since #1960 also:
 the wall clock ticks with live frames, a fast-forwarded shift closes the
 gate — banner, dock, full morning rewind — and an unfinished finale dies
-on the quota).
+on the quota; since #1972 also: the photo is a zoom-crop — the head's
+widest row runs >=44px of non-beige — and the day's faces paint BOTH
+brow thicknesses and BOTH mouth shapes in ink px, with bare-eye whites
+counted).
 
 ## Honest gaps
 
@@ -218,15 +245,21 @@ on the quota).
   sloppy eye still clearing the week, deterministic close arithmetic and the
   printed 08:00→18:00 mapping; `papersplay` proves the clock ticks, closes
   and kills the unfinished finale with live keys.
-- The clock docks score for a missed line, but the original's PAY economy
+- **CLOSED by #1966 (2026-11-11):** the clock docks score for a missed
+  line, but the original's PAY economy
   (rent, soup, heat, the deduction slip at end of day) has no port here at
   all — days 1–6 closing costs points, not survival, which is softer than
   the original's slow squeeze toward a cold apartment.
-- The photo paints at 0.6 scale — the features stay distinguishable at
+- **CLOSED by #1972 (2026-11-11):** the photo paints at 0.6 scale — the
+  features stay distinguishable at
   that size (papersplay counts the pixels), but a 40px face is a coarse
   read next to the original's detailed portrait art; and the compared
   feature set is four (cut, width, glasses, facial hair) where the
-  original's eye roams a whole face.
+  original's eye roams a whole face. The portrait is a zoom-crop now
+  (head ~50px) with whites+pupils, brows, nose, ears and an open-mouth
+  block, and the compared set is six (brow thickness, mouth shape join
+  it) — every feature pinned as actually forging in paperscheck, every
+  new mark measured as canvas pixels in papersplay.
 - Face variety is combinatorial (five skins × five hairs × four cuts ×
   width/glasses/must), not hand-authored characters — everyone is a
   mix of the same parts.
