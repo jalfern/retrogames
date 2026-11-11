@@ -184,6 +184,7 @@ the couch — or the mic.
 | V | mic on/off | |
 | X | open/close the CALL line; letters/digits compose, ENTER shouts, Backspace edits | |
 | `"FLIP IT"` (mic) | pulses the tilt hint (words never act, #1797) | |
+| `"PULL IT"` (mic) | pulses the drain: mouth chevron throbs double-time (back up) or the tilt hint leads (face-up); the action line spells `PULL IT -> A` only while a pull is legal (#1923) | |
 | Tab | flip manual view (solo) | |
 | Esc / `?` | pause (PauseOverlay) | |
 
@@ -358,5 +359,7 @@ red on main while `bombcheck` stays green. Filed for the QA lane.
   (module stream untouched), and the tray/hand/home ride hash, simState and
   the net snapshot. Proof: `npm run platecheck` (45 gates incl. audio + slide
   identity, 105 two-cell boards and named mutants).
-- Voice shorthand for the drain: "PULL IT" should be enough on the mic
-  (DIAL/SET shorthand already reads; a bare pull verb does not).
+- Voice shorthand for the drain: "PULL IT" on the mic pulses the drain story
+  (#1923: parseCall `pull` intent, faster chevron clock, `PULL IT -> A` lead
+  gated on legality). A bare pull verb stays noise; a verb + color is still
+  the wire call (the cut law outranks the rail).
