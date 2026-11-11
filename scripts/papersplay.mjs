@@ -485,6 +485,30 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
     const afterArc = await probe()
     r.check(`the right deny scores and names the witness (${afterArc.last.why}: ${afterArc.last.evidence})`,
         afterArc.last.ok === true && afterArc.last.why === 'WANTED' && afterArc.caught === caughtBefore + 1, JSON.stringify(afterArc.last))
+    // #2012 THE CROWDED RETURN, live: the shift that turns a neighbor carries
+    // a HELLO too. Seed 0's day 6 seats sonya (tail seat s+4) right behind the
+    // arc face — one shift where the wall says YOU AGAIN and the knit-seller
+    // introduces herself. The day's second bubble printing is the gap's
+    // "second bubble sample per window," made pixels.
+    let crowd6 = null, crowd6Bubble = -1
+    for (let g = 0; g < 4 && !crowd6; g++) {
+        crowd6 = await page.evaluate(() => {
+            const p = window.__ppTest.probe()
+            const per = p && p.view && p.view.person
+            if (!per || per.regular !== 'sonya') return null
+            return { day: p.day, name: per.passport.name, say: per.say }
+        })
+        if (!crowd6) await wait(220)
+    }
+    await wait(650)   // let the deny-hold tick out before the bubble counts
+    crowd6Bubble = await page.evaluate(() => window.__ppTest.bubblePix())
+    r.check('the crowded shift: Sonya walks the SAME day the arc turn lands (seed 0 day 6 — tail seat s+4)',
+        !!crowd6 && crowd6.day === 6 && crowd6.name === 'SONYA MALAK'
+        && Array.isArray(crowd6.say) && crowd6.say[0] === 'MY SON LIVES IN OR VECHNA.' && crowd6.say[1] === 'I SELL MY KNITS AT MARKET.',
+        JSON.stringify(crowd6))
+    r.check(`one shift, two voices — the day's second bubble prints ${crowd6Bubble} paper px of greeting`,
+        crowd6Bubble > 4000, `${crowd6Bubble}`)
+    await page.keyboard.press('a')   // Sonya is honest — stamp the neighbor in
     // the trap snaps the other way at seed 1: cast[1] MARKO DRENIN turns on
     // day 6 — approving the pleading face is the mistake the stage exists for.
     await page.evaluate(() => window.__ppTest.start(1))
@@ -532,7 +556,7 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
                 const p = window.__ppTest.probe()
                 const per = p && p.view && p.view.person
                 if (!per || per.regular !== want) return null
-                return { name: per.passport ? per.passport.name : null, mark: per.mark || null, say: per.say || null, arc: !!per.arc, ppId: per.passport ? per.passport.id : null, wanted: p.wanted.filter((w) => w.name === per.passport.name).map((w) => w.id) }
+                return { day: p.day, name: per.passport ? per.passport.name : null, mark: per.mark || null, say: per.say || null, arc: !!per.arc, ppId: per.passport ? per.passport.id : null, wanted: p.wanted.filter((w) => w.name === per.passport.name).map((w) => w.id) }
             }, id)
             if (hit) { await wait(650); return { hit, bubble: await page.evaluate(() => window.__ppTest.bubblePix()), grow: await page.evaluate(() => window.__ppTest.bubbleGrowPix()), verdict: await page.evaluate(() => window.__ppTest.verdict()), pix: await page.evaluate(() => window.__ppTest.crowdPix()) } }
             const v = await page.evaluate(() => window.__ppTest.verdict())
@@ -573,7 +597,20 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
         JSON.stringify(sy6 && sy6.hit.say))
     await page.keyboard.press('d')   // the right deny — the neighborhood is not safe
     await wait(160)
-    await page.evaluate(() => window.__ppTest.runDay())    // finish day 6 honestly
+    // #2012 the crowded turn-day, live on the rotated window: seed 4's day 6
+    // pairs SONYA'S arrest with ANJA'S first walk-up (tail seat s+4 = seat 2).
+    const aj6 = await walkTo('anja')
+    r.check('the arc day is crowded too (seed 4 day 6 — Anja greets while the wall works, tail seat s+4)',
+        !!aj6 && aj6.hit.day === 6 && !aj6.hit.arc && aj6.hit.name === 'ANJA TOLKA'
+        && aj6.hit.say && aj6.hit.say[0] === 'I VISIT MY DAUGHTER.' && aj6.verdict === 'approve' && aj6.bubble > 4000,
+        JSON.stringify(aj6 && { d: aj6.hit.day, say: aj6.hit.say, b: aj6.bubble, v: aj6.verdict }))
+    await page.keyboard.press('a')   // honest papers — the daughter-visiting neighbor goes through
+    // Anja is day 6's LAST head now (the crowd took the fill slot): the stamp
+    // may roll the day before we get here, and runDay() would then stamp away
+    // all of day 7 (it captures gs.day on entry). Only finish day 6 if it is
+    // still open; day 7's own walk belongs to walkTo('tadek') below.
+    const sD6 = await probe()
+    if (sD6.day === 6) { await page.evaluate(() => window.__ppTest.runDay()) }
     await wait(200)
     const tk7 = await walkTo('tadek')
     r.check('day 7\'s return speaks for itself (Tadek: "YOU LET ME THROUGH.") and walks honest',
@@ -586,6 +623,15 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
     r.check(`the return pays off its planted topic and the field grows for it ${JSON.stringify(tk7 && tk7.hit.say)}`,
         !!tk7 && tk7.hit.say && tk7.hit.say.length === 3 && tk7.hit.say[2] === 'LITTLE, BUT IT BUYS.' && tk7.bubble > 4000 && tk7.grow > 300,
         JSON.stringify(tk7 && { say: tk7.hit.say, bubble: tk7.bubble, grow: tk7.grow }))
+    // #2012 the crowded return again: seed 4's day 7 pairs Tadek's payoff
+    // with PETR'S fresh hello (tail seat s+5 = seat 3) — recognition and
+    // introduction on one shift, both bubbles printing, the finale denser.
+    const pt7 = await walkTo('petr')
+    r.check('day 7 carries two neighbors (seed 4 — Petr greets behind Tadek\'s payoff, tail seat s+5)',
+        !!pt7 && pt7.hit.day === 7 && !pt7.hit.arc && pt7.hit.name === 'PETR ZEMEK'
+        && pt7.hit.say && pt7.hit.say[0] === 'WORK IN THE CITY.' && pt7.hit.say[1] === 'THE TRAIN WAS LATE.' && pt7.verdict === 'approve' && pt7.bubble > 4000,
+        JSON.stringify(pt7 && { d: pt7.hit.day, say: pt7.hit.say, b: pt7.bubble, v: pt7.verdict }))
+    await page.keyboard.press('a')   // stamp the commuter through the finale line
     await page.evaluate(() => window.__ppTest.runDay())    // finish day 7 honestly
     await wait(250)
 }

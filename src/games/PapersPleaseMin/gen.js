@@ -103,24 +103,37 @@ export const REGULARS = [
     },
 ]
 
-// #1979 (amended #1997) THE ROTATING WINDOW — the cast is six, but a week
-// has six cast slots (days 2-7) and the law needs FACES THAT COME BACK: a
-// one-per-day walk over six seats would make every entrant a stranger.
-// So each week the window of VISIT_WINDOW=4 seats rotates by the seed: the
-// week meets cast[s..s+3] (mod 6), days 2,3,4,5, and seats s, s+1 RETURN on
-// days 6, 7 — two recurrences a week, exactly as the original's neighborhood
-// works, while different weeks meet different faces. Seed 0's week is
-// byte-identical to the old cast-of-four mod-4 walk (0,1,2,3,0,1).
+// #1979 (amended #1997, #2012) THE ROTATING WINDOW + THE CROWDED RETURN —
+// the cast is six, and the law needs FACES THAT COME BACK: a one-per-day walk
+// over six seats would make every entrant a stranger. #1997 solved it with a
+// window of four seats (days 2-5) and returns of its head two seats on days
+// 6, 7 — two recurrences a week, but the week met only four of six faces.
+// #2012 THE CROWDED RETURN densifies the line the way the original's does
+// (several neighbors lean on the glass the same shift): the seat at offset k
+// now walks EVERY week, first on day 2 + k, and offsets 0, 1 RETURN on days
+// 6, 7 — so each return day hosts TWO regulars: the returning head plus the
+// crowding tail (offset 4 on day 6, offset 5 on day 7), greeting its first
+// walk-up of the week. Eight authored visits a week, six distinct faces,
+// two recurrences — a neighborhood, not a club of four. The queue-size law
+// holds because the fill loop lays one fewer random head per regular.
 export const VISIT_WINDOW = 4
 export const seatOff = (seed, regIdx) => (((regIdx - seed) % REGULARS.length + REGULARS.length) % REGULARS.length)
 export const regularForDay = (seed, n) => (n >= 2 ? REGULARS[(seed + (n - 2) % VISIT_WINDOW) % REGULARS.length] : null)
 
-// the day this seat FIRST walks up this week, or -1 when the window passed
-// without it (the neighborhood rotates; not every face leans on the glass).
-export const firstVisitDay = (seed, regIdx) => {
-    const off = seatOff(seed, regIdx)
-    return off < VISIT_WINDOW ? 2 + off : -1
+// #2012 the day's authored walk, as a LIST: one regular on days 2-5, TWO on
+// days 6, 7 (the returning head, then the crowding tail at offset n-2), none
+// on day 1. The crowd seat is never the head: offsets 4, 5 vs 0, 1.
+export const regularsForDay = (seed, n) => {
+    if (n < 2) return []
+    if (n <= VISIT_WINDOW + 1) return [regularForDay(seed, n)]
+    return [regularForDay(seed, n), REGULARS[(seed + n - 2) % REGULARS.length]]
 }
+
+// the day this seat FIRST walks up this week — since #2012 every seat walks:
+// offset k greets on day 2 + k (k = 0..5 → days 2..7), and offsets 0, 1
+// walk again on days 6, 7. (Pre-#2012 the tail seats were -1, unseen; the
+// crowded return retired that special case.)
+export const firstVisitDay = (seed, regIdx) => 2 + seatOff(seed, regIdx)
 
 // #1983 THE ARC — one regular per week turns wanted, Jorji-style. In the
 // original the neighborhood is not safe: a familiar face can land on the
@@ -446,6 +459,9 @@ function regularApplicant(c, rnd, date, dayRules, day, used, seed, n) {
         // its topic (#2003 lines.hook) — the thread the return will answer.
         // The arc face's first visit is the honest walk-up remembered later —
         // and it greets too; the original's regulars never stood silent.
+        // Since #2012 this branch also speaks on the CROWDED days: the tail
+        // seat's first walk-up lands on a return day, so one shift carries
+        // both a "YOU AGAIN." and a fresh introduction.
         a.person.say = [c.lines.greet, c.lines.hook]
     }
     return a
@@ -485,10 +501,11 @@ export function genDay(seed, n, trapIdx, trap2Idx = null) {
     }
     // #1979: the regular walks in after the traps, before the fill — mid-line
     // like a face from the neighborhood. The queue's size law is untouched:
-    // the fill loop simply lays one fewer random head, so the #1960 shift
-    // budget (queue x 18s) and every day-length pin stand as written.
-    const reg = regularForDay(seed, n)
-    if (reg) day.queue.push(regularApplicant(reg, rnd, date, rules, day, used, seed, n))
+    // the fill loop simply lays one fewer random head per regular, so the
+    // #1960 shift budget (queue x 18s) and every day-length pin stand as
+    // written. #2012 THE CROWDED RETURN: days 6, 7 push TWO — the returning
+    // head first, then the crowding tail greeting its first walk-up.
+    for (const reg of regularsForDay(seed, n)) day.queue.push(regularApplicant(reg, rnd, date, rules, day, used, seed, n))
     while (day.queue.length < rules.length + 4) day.queue.push(base(rnd, date, rules, used, { allowed: day.allowed }))
     // decoy wanted entries: a wall that looks used must never frame a
     // person standing at the window — decoy names may not collide with any
