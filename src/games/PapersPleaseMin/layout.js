@@ -37,6 +37,10 @@ export const PAPERS = { x: 356, y: 40, w: 300, h: 148 }
 export const PHOTO = { x: 232, y: 24, w: 66, h: 76, s: 0.6 }
 export const ID = { x: 356, y: 200, w: 190, h: 64 }
 export const STAMP = { x: 506, y: 110 }
+// #1966 THE PAY ECONOMY — the end-of-day deduction slip, pinned under the
+// ID card: below the stamp's witness line (y=296 baseline), above the strip,
+// clear of the right margin. paperscheck's WALL section re-pins all three.
+export const SLIP = { x: 452, y: 304, w: 202, h: 88 }
 
 export const ruleLines = (text) => {
     const words = text.split(' ')

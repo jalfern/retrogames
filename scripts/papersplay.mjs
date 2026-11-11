@@ -227,6 +227,57 @@ r.check('day 1 staged its forger at the window', sawForge >= 1, `${sawForge}`)
     await page.keyboard.press('a') // leave the over screen
 }
 
+// #1966 THE PURSE, live: a correct stamp pays, the night settles onto a
+// printed slip, the slip is PIXELS on the booth — and a booth that works
+// nobody and sleeps twice in the cold loses the week to money, not strikes.
+{
+    const cfg = await page.evaluate(() => window.__ppTest.cfg)
+    r.check(`pay law reaches the booth (PAY ${cfg.PAY}, SOUP ${cfg.SOUP}, HEAT ${cfg.HEAT}, RENT ${Object.entries(cfg.RENTS)})`,
+        cfg.PAY === 5 && cfg.SOUP === 3 && cfg.HEAT === 3 && cfg.RENTS[3] === 30 && cfg.RENTS[6] === 45)
+    // one honest day: night 1's bills come off the payroll
+    await page.evaluate(() => window.__ppTest.start(0))
+    await wait(300)
+    await page.evaluate(() => window.__ppTest.runDay())
+    await wait(250)
+    s = await probe()
+    r.check(`night 1 settles onto the slip: CR ${s.credits} = ${cfg.PAY}×${s.score} − ${cfg.SOUP + cfg.HEAT}`,
+        s.credits === cfg.PAY * s.score - cfg.SOUP - cfg.HEAT
+        && s.slip && s.slip.day === 1 && s.slip.soup === cfg.SOUP && s.slip.heat === cfg.HEAT && !s.slip.hungry,
+        JSON.stringify({ credits: s.credits, score: s.score, slip: s.slip }))
+    // the deduction slip is painted paper on the booth — beige field, ink rows
+    const slipPix = await page.evaluate(() => {
+        const c = document.querySelector('canvas[data-pp-stage]')
+        const d = c.getContext('2d').getImageData(452, 304, 202, 88).data
+        let paper = 0, ink = 0
+        for (let i = 0; i < d.length; i += 4) {
+            const k = (d[i] << 16) | (d[i + 1] << 8) | d[i + 2]
+            if (k === 0xd8d2b8) paper++
+            else if (d[i] < 90 && d[i + 1] < 90 && d[i + 2] < 110 && d[i] + d[i + 1] + d[i + 2] > 40) ink++
+        }
+        return { paper, ink }
+    })
+    r.check(`the deduction slip prints (${slipPix.paper} paper px, ${slipPix.ink} ink px)`, slipPix.paper > 500 && slipPix.ink > 40, JSON.stringify(slipPix))
+    // no work, two nights: the apartment wins over the quota arithmetic
+    await page.evaluate(() => window.__ppTest.start(0))
+    await wait(200)
+    const ffn1 = await page.evaluate(() => window.__ppTest.ff(7560))   // day 1 budget, zero stamps
+    r.check(`night one unpaid only marks the booth hungry (${ffn1.why || 'alive'})`, !ffn1.end && ffn1.credits === 0, JSON.stringify(ffn1))
+    const ffn2 = await page.evaluate(() => window.__ppTest.ff(8640))   // day 2 budget, still zero
+    r.check(`two nights without soup starves the stampless booth: ${ffn2.why}`, ffn2.end === 'lose' && /STARVED/.test(ffn2.why || ''), JSON.stringify(ffn2))
+    await wait(1100)
+    await page.keyboard.press('a') // leave the over screen
+    // glory carries the purse: the proven week ends at 233 credits
+    await page.keyboard.press('Digit3')
+    await wait(300)
+    await page.evaluate(() => window.__ppTest.runToEnd())
+    s = await probe()
+    r.check(`the survived week counts its money: CR ${s.credits} on night 7's slip`,
+        s.end === 'win' && s.credits === 70 * cfg.PAY - (7 * (cfg.SOUP + cfg.HEAT) + cfg.RENTS[3] + cfg.RENTS[6])
+        && s.slip && s.slip.day === 7 && s.slip.balance === s.credits, JSON.stringify({ end: s.end, credits: s.credits, slip: s.slip }))
+    await wait(1100)
+    await page.keyboard.press('a')
+}
+
 await wait(400)
 const clean = errors.filter((e) => !/favicon|Download the React DevTools/i.test(e))
 r.check('zero page errors', clean.length === 0, clean.slice(0, 3).join(' | '))

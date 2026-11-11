@@ -18,7 +18,7 @@ import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../..
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { decide, RULES, dfmt, isAdult } from './rules.js'
-import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, CLOCK, wallRows } from './layout.js'
+import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, CLOCK, SLIP, wallRows } from './layout.js'
 
 const SIM_MS = 1000 / 60
 
@@ -91,6 +91,14 @@ const PapersPleaseMinGame = () => {
             if (!gs.events.length) return
             for (const e of gs.events) evLog.push({ ...e })
             const cl = gs.events.find((e) => e.type === 'close')
+            // #1966 night money: the coin clack of the deduction slip, and a
+            // low warning wail if the booth had to go without soup or heat.
+            const py = gs.events.find((e) => e.type === 'pay')
+            if (py && !py.evicted) {
+                audioController.playTone(880, 0.05, 'square', 0.045)
+                audioController.playTone(1175, 0.08, 'square', 0.045)
+                if (py.hungry || py.cold) audioController.playSweep(300, 120, 0.5, 'sawtooth', 0.07)
+            }
             if (cl && cl.missed > 0) {
                 banner = { text: 'GATE CLOSED', sub: `${cl.missed} TURNED AWAY — DOCKED ${CFG.MISS_DOCK * cl.missed}`, ticks: 220 }
                 audioController.playSweep(240, 70, 0.5, 'square', 0.09)
@@ -123,7 +131,7 @@ const PapersPleaseMinGame = () => {
 
         const finish = (res) => {
             watchingRef.current = false; setWatching(false); watchScript = null // #1637 the week ends in your hands
-            setEnd({ win: res === 'win', why: gs.endWhy, score: gs.score, caught: gs.caught, day: gs.day })
+            setEnd({ win: res === 'win', why: gs.endWhy, score: gs.score, caught: gs.caught, day: gs.day, credits: gs.credits })
             if (res === 'win') audioController.playSweep(400, 1500, 0.9, 'square', 0.08)
             else audioController.playSweep(300, 50, 1.2, 'sawtooth', 0.1)
             overAtRef.current = performance.now()
@@ -325,6 +333,9 @@ const PapersPleaseMinGame = () => {
                 if (i < gs.strikes) text('X', 22 + i * 26, CHS - 19, 13, '#ff8080', 'center')
             }
             text(`SCORE ${gs.score}`, 100, CHS - 19, 12, COL.gold)
+            // #1966 the purse: credits ride beside the score — rent is due
+            // whether the player remembers the bills or not
+            text(`CR ${gs.credits}`, 170, CHS - 19, 12, gs.credits <= 0 ? COL.red : COL.gold)
             // the entrant (during a stamp, the papers shown are the ones
             // just judged — the stamp lands on its own document)
             const shown = stamp && stamp.ticks > 0 ? stamp.person : view.person
@@ -364,6 +375,29 @@ const PapersPleaseMinGame = () => {
                 text(stamp.verdict === 'approve' ? 'APPROVED' : 'DENIED', 0, 6, 24, stampCol, 'center')
                 ctx.restore()
                 if (!stamp.ok) text(gs.last?.why === 'INNOCENT' ? 'THEY WERE CLEAN' : `WITNESS: ${gs.last?.why}`, STAMP.x, 296, 12, COL.red, 'center')
+            }
+            // #1966 THE DEDUCTION SLIP — the printed paper the original
+            // slides under the door at end of day: pay earned, rent (on the
+            // nights it is due), soup, heat, and the balance that has to keep
+            // the apartment alive. Hungry/cold nights print NONE in red.
+            if (gs.slip) {
+                const s = gs.slip
+                box(SLIP.x, SLIP.y, SLIP.w, SLIP.h, COL.paper, '#6f6a52')
+                ctx.strokeStyle = COL.paperLine
+                ctx.setLineDash([2, 3])
+                ctx.beginPath(); ctx.moveTo(SLIP.x + 4, SLIP.y + 18); ctx.lineTo(SLIP.x + SLIP.w - 4, SLIP.y + 18); ctx.stroke()
+                ctx.setLineDash([])
+                text(`END OF DAY ${s.day} — DEDUCTIONS`, SLIP.x + SLIP.w / 2, SLIP.y + 13, 9, '#6b5d3a', 'center')
+                const row = (i, k, v, col) => {
+                    text(k, SLIP.x + 10, SLIP.y + 32 + i * 12, 10)
+                    text(v, SLIP.x + SLIP.w - 10, SLIP.y + 32 + i * 12, 10, col, 'right')
+                }
+                row(0, 'PAY', `+${s.pay}`, COL.green)
+                let ri = 1
+                if (s.rent) row(ri++, 'RENT', `-${s.rent}`, COL.red)
+                row(ri++, 'SOUP', s.soup ? `-${s.soup}` : 'NO — HUNGRY', COL.red)
+                row(ri++, 'HEAT', s.heat ? `-${s.heat}` : 'NO — COLD', COL.red)
+                row(ri, 'BALANCE', `${s.balance}`, s.balance <= 0 ? COL.red : COL.ink)
             }
             // day banner
             if (banner && banner.ticks > 0) {
@@ -474,6 +508,7 @@ const PapersPleaseMinGame = () => {
                 }
             }
             window.__ppTest = {
+                cfg: CFG, // #1966 pay constants so the live gates read the law, not a copy
                 watching: () => watchingRef.current, // #1637 WATCH probes
                 watchSfx: watchSfxLog,
                 probe: () => {
@@ -484,10 +519,12 @@ const PapersPleaseMinGame = () => {
                         end: gs.end, why: gs.endWhy, last: gs.last, stamp: stamp && { ...stamp },
                         rules: day.rules, date: dfmt(day.date), allowed: day.allowed, wanted: day.wanted,
                         clock: gameClock(gs), ticksLeft: gs.clock, // #1960 shift clock probes
+                        credits: gs.credits, hungry: gs.hungry, cold: gs.cold, // #1966 the purse
+                        slip: gs.slip && { ...gs.slip },
                         banner: banner && { ...banner }, view, evLog: evLog.slice(-60),
                     }
                 },
-                ff: (n) => { tick(gs, n || CFG.SEAT_TICKS * 2); drainEvents(); return { clock: gs.clock, day: gs.day, end: gs.end, why: gs.endWhy } }, // #1960 wind the shift forward
+                ff: (n) => { tick(gs, n || CFG.SEAT_TICKS * 2); drainEvents(); return { clock: gs.clock, day: gs.day, end: gs.end, why: gs.endWhy, credits: gs.credits, slip: gs.slip && { ...gs.slip } } }, // #1960 wind the shift forward
                 start: startPlay,
                 portraitPix, // #1938 photo-vs-face pixel probe
                 verdict: () => decide(current(gs).view).verdict,
@@ -501,7 +538,7 @@ const PapersPleaseMinGame = () => {
                 getState: () => {
                     const { day, view } = current(gs)
                     return [
-                        `day ${gs.day} entrant ${gs.idx + 1}/${day.queue.length}  strikes ${gs.strikes}/${CFG.STRIKE_MAX}  score ${gs.score} caught ${gs.caught} admitted ${gs.admitted}  clock ${(() => { const g = gameClock(gs); return `${g.hh}:${String(g.mm).padStart(2, '0')}` })()}`,
+                        `day ${gs.day} entrant ${gs.idx + 1}/${day.queue.length}  strikes ${gs.strikes}/${CFG.STRIKE_MAX}  score ${gs.score} caught ${gs.caught} admitted ${gs.admitted}  clock ${(() => { const g = gameClock(gs); return `${g.hh}:${String(g.mm).padStart(2, '0')}` })()}  CR ${gs.credits}${gs.hungry ? ' hungry' : ''}${gs.cold ? ' cold' : ''}`,
                         `truth: verdict=${decide(view).verdict} break=${gs.week.days[gs.day - 1].queue[gs.idx].breakRule || '-'} trap=${gs.week.days[gs.day - 1].queue[gs.idx].trap || '-'} scale=${view.scale}`,
                         `end ${gs.end || '-'} ${gs.endWhy || ''}`,
                     ]
@@ -512,6 +549,7 @@ const PapersPleaseMinGame = () => {
                             if (gs.end) return `already ${gs.end}`
                             const sim = newRun(gs.seed)
                             sim.day = gs.day; sim.idx = gs.idx; sim.strikes = gs.strikes; sim.score = gs.score
+                            sim.credits = gs.credits; sim.hungry = gs.hungry; sim.cold = gs.cold; sim.paidToday = gs.paidToday // #1966 prognosis must inherit the purse: a doomed apartment stays doomed
                             sim.week = gs.week; sim.end = null
                             let n = 0
                             while (!sim.end && n++ < 300) step(sim, { action: decide(current(sim).view).verdict })
@@ -521,6 +559,7 @@ const PapersPleaseMinGame = () => {
                         },
                     },
                     { label: 'STRIKE +1', run: () => { gs.strikes += 1; return `strike ${gs.strikes}/${CFG.STRIKE_MAX} — three and day ${gs.day} is over` } },
+                    { label: 'SEIZE PAY', run: () => { gs.credits = 0; return `credits seized — rent night ${Object.keys(CFG.RENTS).join('/')} will evict, night without soup starves` } },
                     { label: 'NEXT WEEK +1', run: () => { startPlay(gs.seed + 1); return `booth rebuilt from seed ${gs.seed + 1}` } },
                 ],
             })
@@ -576,7 +615,8 @@ const PapersPleaseMinGame = () => {
                 <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-amber-50 font-mono px-6">
                     <h2 className={`text-4xl font-black mb-1 ${end.win ? 'text-yellow-300' : 'text-red-400'}`}>{end.win ? 'GLORY TO ARSTOTZKA' : 'DEMOTED'}</h2>
                     <p className="text-lg mb-1">{end.why}</p>
-                    <p className="text-sm text-amber-200/80 mb-4">{end.score} correct &middot; {end.caught} turned back &middot; every denial had a witness on the wall</p>
+                    <p className="text-sm text-amber-200/80 mb-1">{end.score} correct &middot; {end.caught} turned back &middot; every denial had a witness on the wall</p>
+                    <p className={`text-sm mb-4 ${end.win ? 'text-amber-300' : 'text-red-300/90'}`}>{end.win ? `the purse closed at ${end.credits} credits — glory to Arstotzka` : `the apartment left ${end.credits} credits at the end`}</p>
                     <p className="animate-pulse font-bold">TAP / PRESS ANY KEY</p>
                 </div>
             )}
