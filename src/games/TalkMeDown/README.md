@@ -73,6 +73,17 @@ the couch — or the mic.
   unlocked flipped branch, so one sound per PRESS, never a 60 Hz rattle)
   actually changed `gs.sel`. View-only: hand shifts emit zero engine events
   (pinned), the hash law and every replay stand. Mutants die by name.
+- **The slide (#1923)**: the original slides a cell along the rail; ours must
+  not teleport it. `art.js` carries a view-only fx: `stepRailFx` diffs the
+  rendered (held, tray, sel) and flies a ghost cell 14 frames — out rides the
+  groove to the mouth then swings down to the pocket clip with a tilt that
+  seats flat; in reverses the path while its landing slot reads empty (the
+  rail never shows one cell twice; the clip stands empty until arrival). The
+  hand's corner brackets glide a float slot index instead of jumping. All of
+  it lives in the renderer: `drawBack(..., fx)` with fx optional (pre-slide
+  pixels byte-identical for old callers), zero sim reads — 600 solvePad ticks
+  with fx interleaved hash byte-identical (pinned). A bomb swap re-baselines
+  silently, so no ghost crosses plates. Five named mutants die.
 - **Solvability by construction**: the generator re-rolls module features
   until `computeTarget` resolves, so a printed precondition (e.g. N2's "the
   ONE lit wire") always holds on a live bomb.
@@ -202,6 +213,10 @@ npm run platecheck  # THE RAIL (#1917): layout purity (seeded side-stream — mo
                     # still-winnable on 120 seeds, + rail AUDIO identity (#1923:
                     # cell-out rising / clip-in falling / softest-voice handTick,
                     # press-edge wiring pin, named mutants; hand shift event-silent)
+                    # + THE SLIDE (#1923: ghost spawn/land/quiet-step laws, hand
+                    # glide, silent bomb-swap re-baseline, pose flush+monotone,
+                    # pocket/landing-slot double-image pins, fx-interleaved hash
+                    # law, 5 named mutants)
                     # blocked/empty refuse silently, push-back re-clips home, pulls
                     # never rewind), D6 solved on rigs needing a hand-shift, solvePad
                     # taps only at the open end, tray/sel/home ride hash+simState,
@@ -333,7 +348,7 @@ red on main while `bombcheck` stays green. Filed for the QA lane.
   opening pulls out, `<`/`>` pick the slot, blocked/empty refuse silently,
   push-back re-clips home. Layout rides seed+round on a side-stream rng
   (module stream untouched), and the tray/hand/home ride hash, simState and
-  the net snapshot. Proof: `npm run platecheck` (13 gates, incl. 105
-  two-cell boards and a dead mutant).
+  the net snapshot. Proof: `npm run platecheck` (45 gates incl. audio + slide
+  identity, 105 two-cell boards and named mutants).
 - Voice shorthand for the drain: "PULL IT" should be enough on the mic
   (DIAL/SET shorthand already reads; a bare pull verb does not).

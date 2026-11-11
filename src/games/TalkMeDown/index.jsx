@@ -76,6 +76,7 @@ export default function TalkMeDown() {
     const [micOn, setMicOn] = useState(false) // #1373: pill label mirrors the mic
     const screenRef = useRef('attract') // attract | select | play | over
     const gsRef = useRef(null)
+    const railFxRef = useRef(ART.makeRailFx()) // #1923 THE SLIDE: view-only rail animation
     const attractRef = useRef(null)
     const seatsRef = useRef(1)
     const selectRef = useRef(1)
@@ -1006,7 +1007,11 @@ export default function TalkMeDown() {
                 // #1797: the maintenance side. Batteries are the news — but
                 // the fuse and the breakers stay readable (pressure never
                 // hides, KTANE signature 5).
-                ART.drawBack(g, gs.features.batteries, tick, gs.features.serial, gs.held, gs.tray, gs.sel)
+                // #1923 THE SLIDE: fx steps from the render diff (held/tray/sel)
+                // — view-only, the sim and hash never hear it.
+                const fx = ART.stepRailFx(railFxRef.current, gs.held, gs.tray, gs.sel,
+                    `${gs.round}/${gs.bombsCleared}/${gs.features.serial}`)
+                ART.drawBack(g, gs.features.batteries, tick, gs.features.serial, gs.held, gs.tray, gs.sel, fx)
                 ART.drawStrikes(g, gs.strikes)
                 ART.drawFuse(g, ART.PANEL.x + 16, ART.PANEL.y + 12, secs, secs <= 10 && !gs.done, tick)
                 return

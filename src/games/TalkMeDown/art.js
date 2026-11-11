@@ -460,18 +460,85 @@ export function drawManual(g, page, line, stamps, tick, hidden, flag, flipped = 
 // bays, a hazard stencil, the battery bank D5/G5 demand aloud, and — since
 // #1802 — the SERIAL on its ID plate. The fuse and the strike breakers stay
 // drawn by the caller — pressure never hides.
+// ---- #1923 THE SLIDE (view-only rail animation) -----------------------------
+// The original does not teleport a cell between tray and pocket — it slides it
+// along the rail. fx is built and stepped by the RENDERER from diffs of
+// (held, tray, sel); it consumes zero engine events and never feeds back, so
+// the hash law from #1923's audio pass stands untouched. 14 frames (~230 ms):
+// slide along the groove to the open mouth, then swing down to the pocket clip
+// with a tilt that seats flat at both ends of the path.
+export function makeRailFx() {
+    return { key: '', held: 0, tray: [0, 0, 0], sel: 2, handPos: 2, anim: null }
+}
+export function stepRailFx(fx, held = 0, trayIn = null, selIn = 2, key = '') {
+    const tray = Array.isArray(trayIn) && trayIn.length === 3 ? trayIn.map((v) => (v ? 1 : 0)) : null
+    if (key !== fx.key) { // new bomb: re-baseline silently, no ghost from the last plate
+        fx.key = key; fx.anim = null; fx.handPos = selIn
+        if (tray) { fx.tray = tray.slice(); fx.held = held ? 1 : 0 }
+        return fx
+    }
+    if (tray) {
+        if (fx.held === 0 && held > 0) {
+            const slot = fx.tray.findIndex((v, i) => v === 1 && tray[i] === 0)
+            if (slot >= 0) fx.anim = { kind: 'out', slot, t: 0, dur: 14 }
+        } else if (fx.held > 0 && held === 0) {
+            const slot = fx.tray.findIndex((v, i) => v === 0 && tray[i] === 1)
+            if (slot >= 0) fx.anim = { kind: 'in', slot, t: 0, dur: 14 }
+        }
+        fx.tray = tray
+    }
+    fx.held = held ? 1 : 0
+    fx.sel = selIn >= 0 && selIn <= 2 ? selIn | 0 : fx.sel
+    if (fx.anim && ++fx.anim.t > fx.anim.dur) fx.anim = null
+    // the hand glides between holders instead of jumping (press-edge law:
+    // this only ever runs from the render loop, never the sim)
+    const hd = fx.sel - fx.handPos
+    fx.handPos = Math.abs(hd) < 0.06 ? fx.sel : fx.handPos + Math.sign(hd) * Math.min(0.34, Math.abs(hd))
+    return fx
+}
+// the flight path for a cell leaving/entering holder `slot` (PANEL-relative).
+// s=0 sits flush in the slot; s=1 sits flush in the pocket clip (344,244,32,26).
+export function railCellPose(slot, s) {
+    const x0 = 118 + slot * 68
+    const se = Math.min(1, s / 0.55); const e0 = se * se * (3 - 2 * se)
+    const q = Math.max(0, (s - 0.55) / 0.45); const e = q * q * (3 - 2 * q)
+    return {
+        x: x0 + (290 - x0) * e0 + (344 - 290) * e,
+        y: 146 + (244 - 146) * e,
+        w: 44 - 12 * e,
+        h: 74 - 48 * e,
+        tilt: 0.3 * Math.sin(Math.PI * e),
+    }
+}
+function drawGhostCell(g, x, y, w, h, tilt) {
+    g.save(); g.translate(x + w / 2, y + h / 2); g.rotate(tilt)
+    g.fillStyle = '#c98f1f'; g.fillRect(-w / 2, -h / 2, w, h)
+    g.fillStyle = P.amber; g.fillRect(-w / 2 + 3, -h / 2 + 3, w - 6, h - 6)
+    g.fillStyle = '#8a6512'
+    if (h >= 44) { g.fillRect(-w / 2 + 8, -h / 2 + 22, w - 16, 3); g.fillRect(-w / 2 + 8, -h / 2 + 38, w - 16, 3) }
+    else if (h >= 20) g.fillRect(-w / 2 + 5, -1, w - 10, 2)
+    g.restore()
+}
+
 // #1917 THE RAIL: the three holders are a slide-rail tray with a SEEDED cell
 // layout. The rail opens at the right; a cell with another cell between it and
 // the opening has its pull-tab clipped (dark slate), the open-end cell wears a
 // bright amber tab. < > moves the hand; the action line names what A does for
 // THIS slot — never lies (plate truth, hash truth, engine truth: one rail).
-export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn = null, selIn = 2) {
+// #1923 THE SLIDE: pass fx (makeRailFx/stepRailFx) and the pulled/seated cell
+// flies the rail instead of teleporting; fx=null keeps this byte-identical to
+// the pre-slide plate (old callers, pixel gates).
+export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn = null, selIn = 2, fx = null) {
     const tray = Array.isArray(trayIn) && trayIn.length === 3
         ? trayIn.map(v => (v ? 1 : 0))
         : [0, 1, 2].map(i => (i < batteries ? 1 : 0)) // pre-rail callers: the classic left-packed plate
     const sel = selIn >= 0 && selIn <= 2 ? selIn | 0 : 2
     let open = -1
     for (let j = 2; j >= 0; j--) if (tray[j]) { open = j; break }
+    // #1923 THE SLIDE: while a cell flies home, its holder reads empty — the
+    // ghost carries it, so the rail never shows the same cell twice.
+    const inFlight = fx && fx.anim && fx.anim.t <= fx.anim.dur ? fx.anim : null
+    const mask = inFlight && inFlight.kind === 'in' ? inFlight.slot : -1
     bevel(g, PANEL, '#3f444c', '#1f2226')
     g.fillStyle = '#33373d'; g.fillRect(PANEL.x + 6, PANEL.y + 50, PANEL.w - 12, PANEL.h - 58)
     g.fillStyle = '#42474e'; g.fillRect(PANEL.x + 6, PANEL.y + 50, PANEL.w - 12, 2); g.fillRect(PANEL.x + 6, PANEL.y + 50, 2, PANEL.h - 58)
@@ -509,7 +576,7 @@ export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn 
     g.fillText('OPEN', PANEL.x + 330, PANEL.y + 146)
     for (let i = 0; i < 3; i++) {
         const bx = PANEL.x + 118 + i * 68, by = PANEL.y + 146
-        const occ = tray[i] === 1
+        const occ = tray[i] === 1 && i !== mask
         const pullable = occ && i === open
         if (occ) {
             // the pull-tab tells the rail law: bright amber = free at the open
@@ -527,15 +594,24 @@ export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn 
         }
         g.font = FONT(6); g.fillStyle = occ ? '#3a2c08' : '#3d4148'
         g.fillText(String(i + 1), bx + 19, by + 80)
-        // the hand: pulsing corner brackets on the selected slot
-        if (i === sel) {
-            g.fillStyle = tick % 40 < 26 ? '#ffd23e' : '#8a6d14'
-            const cx = bx - 4, cy = by - 6, cw = 52, ch = 92
-            g.fillRect(cx, cy, 10, 2); g.fillRect(cx + cw - 10, cy, 10, 2)
-            g.fillRect(cx, cy + ch - 2, 10, 2); g.fillRect(cx + cw - 10, cy + ch - 2, 10, 2)
-            g.fillRect(cx, cy, 2, 10); g.fillRect(cx + cw - 2, cy, 2, 10)
-            g.fillRect(cx, cy + ch - 10, 2, 10); g.fillRect(cx + cw - 2, cy + ch - 10, 2, 10)
-        }
+    }
+    // the hand: pulsing corner brackets, gliding between holders (#1923 —
+    // fx.handPos is a float slot index; fx=null sits it exactly on the pick)
+    {
+        const pos = fx ? fx.handPos : sel
+        const cx = PANEL.x + 118 + pos * 68 - 4, cy = PANEL.y + 146 - 6, cw = 52, ch = 92
+        g.fillStyle = tick % 40 < 26 ? '#ffd23e' : '#8a6d14'
+        g.fillRect(cx, cy, 10, 2); g.fillRect(cx + cw - 10, cy, 10, 2)
+        g.fillRect(cx, cy + ch - 2, 10, 2); g.fillRect(cx + cw - 10, cy + ch - 2, 10, 2)
+        g.fillRect(cx, cy, 2, 10); g.fillRect(cx + cw - 2, cy, 2, 10)
+        g.fillRect(cx, cy + ch - 10, 2, 10); g.fillRect(cx + cw - 2, cy + ch - 10, 2, 10)
+    }
+    // #1923 THE SLIDE: the cell in flight — out rides the groove then swings
+    // to the pocket; in reverses the path. s runs the pose in both directions.
+    if (inFlight) {
+        const s = inFlight.kind === 'out' ? inFlight.t / inFlight.dur : 1 - inFlight.t / inFlight.dur
+        const p = railCellPose(inFlight.slot, s)
+        drawGhostCell(g, PANEL.x + p.x, PANEL.y + p.y, p.w, p.h, p.tilt)
     }
     // #1909 THE DRAIN: the pocket — a battery in hand sits clipped to the
     // plate's corner, and the action line names what A does right now. The
@@ -543,10 +619,14 @@ export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn 
     if (held > 0) {
         const hx = PANEL.x + 344, hy = PANEL.y + PANEL.h - 92
         g.fillStyle = '#20242a'; g.fillRect(hx - 4, hy - 4, 52, 40) // pocket clip
-        g.fillStyle = '#c98f1f'; g.fillRect(hx, hy, 32, 26)
-        g.fillStyle = P.amber; g.fillRect(hx + 2, hy + 3, 28, 20)
-        g.fillStyle = '#8a6512'; g.fillRect(hx + 5, hy + 9, 22, 2)
-        g.fillStyle = '#d8dce2'; g.fillRect(hx + 34, hy - 4, 6, 5); g.fillRect(hx + 34, hy + 25, 6, 5)
+        // #1923 THE SLIDE: mid-flight the ghost carries the cell — the clip
+        // stands empty until it arrives, so the plate never shows it twice.
+        if (!inFlight || inFlight.kind !== 'out') {
+            g.fillStyle = '#c98f1f'; g.fillRect(hx, hy, 32, 26)
+            g.fillStyle = P.amber; g.fillRect(hx + 2, hy + 3, 28, 20)
+            g.fillStyle = '#8a6512'; g.fillRect(hx + 5, hy + 9, 22, 2)
+            g.fillStyle = '#d8dce2'; g.fillRect(hx + 34, hy - 4, 6, 5); g.fillRect(hx + 34, hy + 25, 6, 5)
+        }
         g.font = FONT(6); g.fillStyle = P.amber
         g.fillText('IN HAND', hx - 2, hy + 44)
     }
