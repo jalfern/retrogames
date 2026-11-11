@@ -65,17 +65,19 @@ function parse(rows, name, extra) {
     }
 }
 
-// 19 rows: wall, air, 14 vault rows (2-15), floor level, brick, brick.
-// The two brick rows are the ground: the walk level sits on `marks`, its first
-// stratum is the `floor()` row you dig through, and the LAST row is diggable
-// floor-rock too — a hole through both strata is the deep shaft (#1942). The
-// edge columns stay concrete (row() wraps every row in '=').
-// `top` must be exactly 14 rows and already carry the exit ladder in col 2.
+// 19 rows: wall, air, 13 vault rows (2-14), floor level, brick, brick, brick.
+// The three brick rows are the ground: the walk level sits on `marks`, its
+// strata are the `floor()` rows you dig through, and the LAST row is diggable
+// floor-rock too — a hole through all three strata is the deep shaft (#1942,
+// deepened to three cells by #1952: deeper grave, and the dig pays).
+// The edge columns stay concrete (row() wraps every row in '=').
+// `top` must be exactly 13 rows and already carry the exit ladder in col 2.
 const vault = (top, floorMarks) => [
     wall(),
     air(),
     ...top,
     marks(floorMarks),
+    floor(),
     floor(),
     floor(),
 ]
@@ -88,7 +90,7 @@ export const LEVELS = [
     // FIRST LADDER — run, climb, and the hidden exit. Two nuggets on the
     // floor, a guard pacing the far end, and the exit ladder by the spawn.
     // Collect the gold, come back to the ladder, climb off the top.
-    parse(vault(plain(14), { 1: 'P', 8: '*', 14: '*', 26: 'G' }), 'FIRST LADDER',
+    parse(vault(plain(13), { 1: 'P', 8: '*', 14: '*', 26: 'G' }), 'FIRST LADDER',
         { exit: { x: EXIT_X, y: 2 }, lives: 3, proves: ['pursued'] }),
 
     // --------------------------------------------------------- level 2 ----
@@ -102,7 +104,7 @@ export const LEVELS = [
             ex(() => '.'),                                                    // 4
             ex((x) => (x >= 6 && x <= 18 ? '~' : '.')),                       // 5: the line
             ex((x) => (x === 8 ? '|' : (x === 10 || x === 13 || x === 16 ? '*' : '.'))),  // 6: ladder top + gold
-            ...Array.from({ length: 9 }, () => ladderCol([8], () => '.')),    // 7-15: col-8 ladder
+            ...Array.from({ length: 8 }, () => ladderCol([8], () => '.')),    // 7-14: col-8 ladder
         ],
         { 1: 'P', 4: '*', 29: 'G' },
     ), 'THE ROPE',
@@ -118,7 +120,7 @@ export const LEVELS = [
             ex(() => '.'),                                                    // 3
             ex((x) => (x >= 5 && x <= 20 ? '~' : '.')),                       // 4: the line
             ex((x) => (x === 5 ? '|' : (x === 8 || x === 12 || x === 16 ? '*' : '.'))),  // 5: ladder top + gold
-            ...Array.from({ length: 11 }, () => ladderCol([5], () => '.')),   // 6-15: col-5 ladder
+            ...Array.from({ length: 9 }, () => ladderCol([5], () => '.')),    // 6-14: col-5 ladder
         ],
         { 1: 'P', 4: '*', 24: '*', 15: 'G' },
     ), 'THE VAULT',

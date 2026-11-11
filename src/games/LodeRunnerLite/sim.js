@@ -16,13 +16,16 @@
 //   and then the brick grows back. Whatever is standing in the cell when it
 //   refills dies: a guard respawns at the top of the vault, the runner loses a
 //   life. So a dug hole is a trap with a fuse, not a permanent grave.
-// - HOLES CATCH WALKERS. The floor is two brick layers thick, and a step
+// - HOLES CATCH WALKERS. The floor is three brick layers thick, and a step
 //   sideways onto a cell whose support was dug away is a FALL, not a block:
 //   run over your hole and you drop into it, and so does a chasing guard.
 // - SHAFTS AND ESCAPE. Standing inside a live hole, Down digs the brick
 //   straight below — the shaft deepens — and Up clambers you one cell back
-//   toward the surface. This is what makes the deep shaft real: two cells
-//   down is two climbs, and climbs are slow.
+//   toward the surface. This is what makes the deep shaft real: three strata
+//   down is three climbs, and climbs are slow.
+// - THE DIG PAYS. The 1983 machine scored gold 500, a buried guard 500, the
+//   vault 1000. A refill that catches a guard in your shaft pays CFG.guardPay
+//   — the deeper shaft is where the money and the risk both live.
 // - GUARDS FALL AND CLIMB. A guard that drops into a hole is pinned there for
 //   a breath (CFG.guardTrap), then climbs out cell by cell. A shaft too deep
 //   to climb before the fuse runs out buries the guard when the brick closes.
@@ -56,6 +59,7 @@ export const CFG = {
     refill: 75,                              // ticks (~5 s) a hole holds before it refills
     guardTrap: 60,                           // ticks a guard is pinned in a hole before it climbs
     guardCarry: 30,                          // ticks a guard carries stolen gold before it drops
+    guardPay: 500,                           // points a buried guard is worth — the original's score (gold 500, guard 500, vault 1000)
     lives: 3,
     dangerMargin: 8,                         // ticks of guard slack the solver refuses to burn
     // Engine switches. All normal in play; they exist ONLY so
@@ -425,9 +429,11 @@ export function step(g) {
         for (const e of g.ents) {
             if (!e.alive || e.mode !== 'stand' || e.x !== tx || e.y !== ty) continue
             if (e.isGuard) {
-                // dies in the hole and re-enters at the top of the vault
+                // dies in the hole and re-enters at the top of the vault — and the dig PAYS,
+                // like the original: whatever dies when the brick grows back scores 500
                 e.x = e.home.x; e.y = e.home.y; e.mode = 'stand'; e.trapCount = 0; e.carry = false; e.carryCount = 0
-                push(g, { type: 'guardBuried', id: e.id })
+                g.score += CFG.guardPay
+                push(g, { type: 'guardBuried', id: e.id, pay: CFG.guardPay })
             } else {
                 push(g, { type: 'refillDeath', x: tx, y: ty })
                 loseLife(g, 'refill')

@@ -5,14 +5,15 @@
 // that every classic rule the issue named is load-bearing:
 //
 //   npm run lodecheck              the audit (~2 s)
-//   npm run lodecheck -- --mutate  + five mutants that MUST die
+//   npm run lodecheck -- --mutate  + eleven mutants that MUST die
 //   npm run lodecheck -- --map 1   dump a vault as ASCII
 //
 // The rules pinned here: no jump, diagonal-only dig (straight down only from
 // inside a pit), refilling holes that kill their rider, walkers that fall into
 // open pits, pit climb-out, guards that fall in / climb out / steal gold, the
-// deep-shaft multi-cell burial, and the exit ladder that only appears when
-// every gold is in the runner's hands. There is no clock.
+// three-stratum ground, the deep-shaft multi-cell burial that PAYS the
+// original's 500 for a buried guard, and the exit ladder that only appears
+// when every gold is in the runner's hands. There is no clock.
 
 import { LEVELS, buildLevel } from '../src/games/LodeRunnerLite/levels.js'
 import {
@@ -47,6 +48,17 @@ if (mapArg !== null) {
 const supportT = (t) => t === BRICK || t === SOLID || t === LADDER
 const solidT = (t) => t === BRICK || t === SOLID
 
+// #1952 STRATA LAW: the ground of every vault is exactly three diggable brick
+// layers (rows H-3..H-1), and the walk row above them is open floor.
+const strataLaw = (grid) => {
+    for (let y = H - 3; y < H; y++) {
+        for (let x = 1; x < W - 1; x++) if (grid[y * W + x] !== BRICK) return false
+    }
+    let walkOpen = 0
+    for (let x = 1; x < W - 1; x++) if (!solidT(grid[(H - 4) * W + x])) walkOpen++
+    return walkOpen >= 4
+}
+
 // the shell's own tick shape, mirrored: act on the moveEvery phase, capture
 // events on BOTH sides of step() (applyAction pushes its events BEFORE step
 // clears the array — the browser swallowed exactly that once).
@@ -78,7 +90,7 @@ for (let i = 0; i < LEVELS.length; i++) {
         for (let x = 0; x < W && !bad; x++) {
             const t = grid[y * W + x]
             if (t === ROPE && !(at(x, y + 1) === EMPTY || at(x, y + 1) === LADDER || at(x, y + 1) === GOLD)) bad = `rope at ${x},${y} has support (${at(x, y + 1)}) under it`
-            else if (t !== SOLID && y < H - 1) {   // the floor-rock row may sit sealed: you DIG into it from the pit above (#1942)
+            else if (t !== SOLID && y < H - 3) {   // the three rock strata may sit sealed: you DIG into them from the pit above (#1942, deepened #1952)
                 const n = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => !solidT(at(x + dx, y + dy)))
                 const hanging = at(x, y - 1) === ROPE
                 if (!n.length && !hanging) bad = `cell ${x},${y} is entombed on all four sides`
@@ -103,6 +115,7 @@ for (let i = 0; i < LEVELS.length; i++) {
     for (let y = ex.y; y < H; y++) if (grid[y * W + ex.x] === LADDER) ladderRun++
     ok(ladderRun >= 3, `${b.meta.name}: the exit ladder is not a ladder run (${ladderRun} cells in col ${ex.x})`)
     ok(supportT(at(ex.x, ex.y + ladderRun + 1)) || at(ex.x, ex.y + ladderRun + 1) === LADDER, `${b.meta.name}: the exit ladder does not reach the floor`)
+    ok(strataLaw(grid), `${b.meta.name}: the ground is not three diggable brick strata over an open walk row — the vault lost its third stratum (#1952)`)
     // every rope line is reachable: a ladder TOP feeds its hang row
     for (let y = 0; y < H; y++) {
         let x = 1
@@ -220,7 +233,7 @@ section('RULES — the 1983 contract, each pinned by a scenario')
     // GUARD GOLD: a guard pockets the gold it walks over, then drops it.
     const b = buildLevel(1); const g = makeGame(b.meta, b.grid)
     const gd = g.guards[0]
-    const gx = 4, gy = 16                          // the floor gold in THE ROPE
+    const gx = 4, gy = 15                          // the floor gold in THE ROPE
     ok(g.grid[gy * W + gx] === GOLD, 'fixture: THE ROPE lost its floor gold')
     gd.x = gx + 1; gd.y = gy; gd.mode = 'stand'
     applyAction(g, gd, 'ArrowLeft', { dig: false })
@@ -246,61 +259,76 @@ section('RULES — the 1983 contract, each pinned by a scenario')
 }
 
 // ---------------------------------------------------- the shaft, carved live ----
-// #1942: the multi-cell burial, built by the same inputs a player uses —
-// dig from the surface, walk over the mouth, dig the bottom from inside the
-// pit, clamber out. And a guard that takes the shortcut across the mouth.
+// #1942 carved the deep shaft; #1952 deepened it to three strata: dig from the
+// surface, walk over the mouth, dig twice from inside the pit, clamber three
+// climbs back. And a guard that takes the shortcut across the mouth rides the
+// lids down into a paid grave.
 {
-    // CARVED SHAFT & ESCAPE: drop in, deepen, climb out — no life lost.
+    // CARVED SHAFT & ESCAPE: drop in, deepen twice, climb out — no life lost.
     const b = buildLevel(0); const g = makeGame(b.meta, b.grid); const p = g.player
     ok(applyAction(g, p, 'ArrowRight'), 'run refused at spawn')
-    ok(applyAction(g, p, 'ArrowDown'), 'surface dig refused')          // hole at (p.x+1, 17)
+    ok(applyAction(g, p, 'ArrowDown'), 'surface dig refused')          // hole at (p.x+1, 16)
     const hx = p.x + 1
     ok(applyAction(g, p, 'ArrowRight'), 'the step over the pit mouth was refused')   // hole below the mouth
     let landed = false
-    for (let k = 0; k < 8 && !landed; k++) { step(g); landed = p.mode === 'stand' && p.y === 17; g.events.length = 0 }
+    for (let k = 0; k < 8 && !landed; k++) { step(g); landed = p.mode === 'stand' && p.y === 16; g.events.length = 0 }
     ok(landed && p.alive, `the walker did not fall into the open pit (y=${p.y}, mode=${p.mode})`)
-    ok(g.holeAge[17 * W + hx] > 0, 'the pit fused shut too early for the scenario')
-    ok(g.grid[18 * W + hx] === BRICK, 'the floor-rock under the pit is not diggable brick — the vault lost its second stratum')
+    ok(g.holeAge[16 * W + hx] > 0, 'the pit fused shut too early for the scenario')
+    ok(g.grid[17 * W + hx] === BRICK && g.grid[18 * W + hx] === BRICK, 'the floor-rock under the pit is not diggable brick — the vault lost a stratum')
     ok(applyAction(g, p, 'ArrowDown'), 'the deep dig at the pit bottom was refused')
-    ok(g.grid[18 * W + hx] === EMPTY && g.holeAge[18 * W + hx] > 0, 'the shaft bottom was not carved')
+    ok(g.grid[17 * W + hx] === EMPTY && g.holeAge[17 * W + hx] > 0, 'the second stratum was not carved')
+    ok(p.y === 17 && p.alive, `the digger did not drop to the second floor (y=${p.y})`)
+    ok(applyAction(g, p, 'ArrowDown'), 'the third-stratum dig at the pit bottom was refused')
+    ok(g.grid[18 * W + hx] === EMPTY && g.holeAge[18 * W + hx] > 0, 'the shaft bottom (row 18) was not carved — the three-cell shaft is not live')
     ok(p.y === 18 && p.alive, `the digger did not drop to the shaft floor (y=${p.y})`)
     ok(applyAction(g, p, 'ArrowUp'), 'the first pit climb was refused')
     ok(p.y === 17, `the first climb did not raise the runner (y=${p.y})`)
     ok(applyAction(g, p, 'ArrowUp'), 'the second pit climb was refused')
-    ok(p.y === 16, `the second climb did not clear the lip (y=${p.y})`)
+    ok(p.y === 16, `the second climb did not raise the runner (y=${p.y})`)
+    ok(applyAction(g, p, 'ArrowUp'), 'the third pit climb was refused')
+    ok(p.y === 15, `the third climb did not clear the lip (y=${p.y})`)
     ok(applyAction(g, p, 'ArrowLeft'), 'the runner could not walk off the lip')
     for (let k = 0; k < 10; k++) step(g)
     ok(p.alive && g.lives === (b.meta.lives ?? CFG.lives), `a carved-shaft escape cost a life (${p.lives}) — the climb must outrun a fresh fuse`)
 }
 {
-    // DEEP BURIAL, CARVED: the shaft the runner just dug swallows a guard that
-    // walks over the mouth — it rides the upper hole when that fuse closes.
+    // DEEP BURIAL, CARVED & PAID: the three-cell shaft the runner just dug
+    // swallows a guard that walks over the mouth — it rides the first lid on
+    // the way up when the deep fuse closes, and the dig pays the original's
+    // 500 for the kill.
     const b = buildLevel(0); const g = makeGame(b.meta, b.grid); const p = g.player
-    applyAction(g, p, 'ArrowRight'); applyAction(g, p, 'ArrowDown')    // hole at (hx, 17)
+    applyAction(g, p, 'ArrowRight'); applyAction(g, p, 'ArrowDown')    // hole at (hx, 16)
     const hx = p.x + 1
     applyAction(g, p, 'ArrowRight')                                     // drop into it
     for (let k = 0; k < 4; k++) { step(g); g.events.length = 0 }
-    applyAction(g, p, 'ArrowDown')                                      // carve the bottom; runner at row 18
-    applyAction(g, p, 'ArrowUp'); applyAction(g, p, 'ArrowUp'); applyAction(g, p, 'ArrowLeft')  // get out of the way
+    applyAction(g, p, 'ArrowDown')                                      // carve the second stratum
+    applyAction(g, p, 'ArrowDown')                                      // carve the third; runner at row 18
+    applyAction(g, p, 'ArrowUp'); applyAction(g, p, 'ArrowUp'); applyAction(g, p, 'ArrowUp')
+    applyAction(g, p, 'ArrowLeft')                                      // get out of the way
     const gd = g.guards[0]
-    gd.x = hx + 1; gd.y = 16; gd.mode = 'stand'; gd.trapCount = 0
+    gd.x = hx + 1; gd.y = 15; gd.mode = 'stand'; gd.trapCount = 0
+    const scoreBefore = g.score
     ok(applyAction(g, gd, 'ArrowLeft', { dig: false }), 'the guard was blocked at its own pit mouth — holeFall is not reaching guards')
-    let rode = false, buried = false
-    for (let k = 0; k < CFG.refill + 40 && !buried; k++) {
+    let rode = false, buried = false, paid = -1
+    for (let k = 0; k < CFG.refill + 60 && !buried; k++) {
         step(g)
-        if (gd.alive && gd.mode === 'stand' && gd.x === hx && gd.y === 17) rode = true   // climbed off the shaft floor onto the lid
-        if (g.events.some((e) => e.type === 'guardBuried')) buried = true
+        if (gd.alive && gd.mode === 'stand' && gd.x === hx && gd.y === 17) rode = true   // climbed off the shaft floor onto the first lid
+        const be = g.events.find((e) => e.type === 'guardBuried')
+        if (be) { buried = true; paid = be.pay ?? 0 }
         g.events.length = 0
     }
     ok(rode, 'the guard never climbed up the shaft — the climb law stopped working in deep pits')
-    ok(buried, 'the carved two-cell shaft never buried the guard — the multi-cell law is not live')
+    ok(buried, 'the carved three-cell shaft never buried the guard — the multi-cell law is not live')
+    ok(paid === CFG.guardPay && g.score === scoreBefore + CFG.guardPay,
+        `the buried guard paid ${paid} and moved the score ${g.score - scoreBefore} — the original scores a buried guard at ${CFG.guardPay}`)
     ok(gd.x === gd.home.x && gd.y === gd.home.y, 'the buried guard did not respawn at the top')
     ok(p.alive && g.lives === (b.meta.lives ?? CFG.lives), 'the runner died in a scenario meant for the guard')
 }
 {
-    // SHAFT LAW, MEASURED: two climbs cost two guardTraps; the fuse costs one
-    // refill. Assert the clocks themselves — the law is the arithmetic.
+    // SHAFT LAW, MEASURED: two climbs and three climbs both cost more than one
+    // fuse. Assert the clocks themselves — the law is the arithmetic.
     ok(2 * CFG.guardTrap > CFG.refill, `a two-cell shaft is escapable by clock (${2 * CFG.guardTrap} <= ${CFG.refill}) — deep burial is a myth with these numbers`)
+    ok(3 * CFG.guardTrap > CFG.refill, `a three-cell shaft is escapable by clock (${3 * CFG.guardTrap} <= ${CFG.refill}) — the deepest grave is a myth with these numbers`)
 }
 
 // --------------------------------------------------------------- mutants ----
@@ -345,7 +373,7 @@ if (MUT) {
     tryMut('goldSteal=false (guards cannot lift gold)', { goldSteal: false }, () => {
         const b = buildLevel(1); const g = makeGame(b.meta, b.grid)
         const gd = g.guards[0]
-        gd.x = 5; gd.y = 16; gd.mode = 'stand'
+        gd.x = 5; gd.y = 15; gd.mode = 'stand'
         applyAction(g, gd, 'ArrowLeft', { dig: false })
         return gd.carry === true
     })
@@ -354,7 +382,7 @@ if (MUT) {
         applyAction(g, p, 'ArrowRight'); applyAction(g, p, 'ArrowDown')
         applyAction(g, p, 'ArrowRight')                       // over the mouth
         let fell = false
-        for (let k = 0; k < 8 && !fell; k++) { step(g); fell = p.y === 17; g.events.length = 0 }
+        for (let k = 0; k < 8 && !fell; k++) { step(g); fell = p.y === 16; g.events.length = 0 }
         return fell
     })
     tryMut('digDeep=false (the pit bottom is iron)', { digDeep: false }, () => {
@@ -362,17 +390,54 @@ if (MUT) {
         applyAction(g, p, 'ArrowRight'); applyAction(g, p, 'ArrowDown')
         const hx = p.x + 1
         applyAction(g, p, 'ArrowRight')
+        for (let k = 0; k < 8 && !(p.mode === 'stand' && p.y === 16); k++) step(g)
+        applyAction(g, p, 'ArrowDown')
+        return g.grid[17 * W + hx] === EMPTY && g.holeAge[17 * W + hx] > 0
+    })
+    tryMut('digDeep=false (the third stratum is iron)', { digDeep: false }, () => {
+        const b = buildLevel(0); const g = makeGame(b.meta, b.grid); const p = g.player
+        applyAction(g, p, 'ArrowRight'); applyAction(g, p, 'ArrowDown')
+        const hx = p.x + 1
+        applyAction(g, p, 'ArrowRight')
+        for (let k = 0; k < 8 && !(p.mode === 'stand' && p.y === 16); k++) step(g)
+        applyAction(g, p, 'ArrowDown')
         for (let k = 0; k < 8 && !(p.mode === 'stand' && p.y === 17); k++) step(g)
         applyAction(g, p, 'ArrowDown')
         return g.grid[18 * W + hx] === EMPTY && g.holeAge[18 * W + hx] > 0
+    })
+    tryMut('guardPay=0 (a buried guard is worth nothing)', { guardPay: 0 }, () => {
+        const b = buildLevel(0); const g = makeGame(b.meta, b.grid); const p = g.player
+        applyAction(g, p, 'ArrowRight'); applyAction(g, p, 'ArrowDown')
+        const cell = (p.y + 1) * W + (p.x + 1)
+        const gd = g.guards[0]
+        gd.x = cell % W; gd.y = (cell - gd.x) / W; gd.mode = 'stand'
+        const saveTrap = CFG.guardTrap; CFG.guardTrap = 1e6   // pin it so the refill finds it
+        let paid = 0
+        for (let k = 0; k < CFG.refill + 20; k++) {
+            step(g)
+            if (g.events.some((e) => e.type === 'guardBuried')) paid = g.score
+            g.events.length = 0
+        }
+        CFG.guardTrap = saveTrap
+        return paid === 500                                   // the original's number, independent of CFG
     })
     tryMut('pitClimb=false (the pit is a grave for everyone)', { pitClimb: false }, () => {
         const b = buildLevel(0); const g = makeGame(b.meta, b.grid); const p = g.player
         applyAction(g, p, 'ArrowRight'); applyAction(g, p, 'ArrowDown')
         applyAction(g, p, 'ArrowRight')
-        for (let k = 0; k < 8 && !(p.mode === 'stand' && p.y === 17); k++) step(g)
-        return applyAction(g, p, 'ArrowUp') && p.y === 16
+        for (let k = 0; k < 8 && !(p.mode === 'stand' && p.y === 16); k++) step(g)
+        return applyAction(g, p, 'ArrowUp') && p.y === 15
     })
+    // the strata law must actually read the vault ground: hand it a two-stratum
+    // vault (bottom rock row turned to concrete) and it MUST call it illegal.
+    {
+        const base = strataLaw(buildLevel(0).grid)
+        ok(base, `mutation harness broken: baseline for 'strata=2' is already false`)
+        const mut = Uint8Array.from(buildLevel(0).grid)      // copy — the live vault stays pristine
+        for (let x = 1; x < W - 1; x++) mut[(H - 1) * W + x] = SOLID
+        console.log(`  mut strata=2 (the bottom rock row is iron): ${strataLaw(mut) ? 'SURVIVED (BAD)' : 'caught by the audit'}`)
+        ok(!strataLaw(mut), 'strata=2 SURVIVED — the strata law does not touch the vault ground')
+    }
 }
 
 console.log(`\nlodecheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)
