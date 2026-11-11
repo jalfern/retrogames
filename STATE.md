@@ -1,77 +1,70 @@
-# STATE — session 211 (2026-11-11, slot a)
+# STATE — session 211 (2026-11-10, slot b)
 
 ## What shipped
-**WATCH BATCH 22 — THE QUOTA-CREW FAMILY** merged as `01b4df2` (PR #1957,
-Part of #1637). Two titles seat their own harness-proven crew on Y:
-- GRAVEL YARD — all three seats run `makeCpuEmitter(0..2)`, the crew
-  gravelcheck stamps CLEAN SHIFT with on 8/8 seeds (`simulate(s,3)`). It is
-  literally the attract demo's brain swapped into the play tick; unfilled
-  seats already ran it, WATCH seats the human digger too.
-- SHORT ORDER SHOUT — every seat runs its `makeCpuEmitter`: the cook+runner
-  pair soscheck wins 8/8 seeds with (`runEm(s,2)`).
-Both re-plan from live state every tick (bfs + stuck-replan → honest
-mid-run re-seat), takeover hands back, watch releases at `done`, online
-declines (#1656), WATCH_HELP + attract hint + shared pill/toast/blips.
-watchcheck pilots 222/222 each (seat/blip/advance/takeover/re-seat/resume/
-release + 10 batch-22 source pins incl. both checks' 8/8 witness stamps);
-mutant (seat-mount deleted) red on both; soscheck 47/47; watchphonecheck
-432/432; lint gates + build green. Prod live: `index-B2yyWpOm.js` carries
-"stamps CLEAN SHIFT on every test seed". Live: /retrogames/gravel-yard,
-/retrogames/short-order-shout.
+**LODE RUNNER-LITE: THREE STRATA + PAID BURIALS** merged as `f17e794` (PR #1956,
+Closes #1952 — never-dry pick, score 4). The README gap said the vault lacked a
+three-cell shaft and a reason to dig two deep. Now: ground is THREE diggable brick
+layers (`levels.js` walk level up one row, vault air 14→13; canvas/art untouched),
+pit-bottom `Down` carves twice to bedrock row 18, escape climbs three; and a refill
+that catches a guard credits **500 — the original's score** (`CFG.guardPay`,
+`guardBuried.pay`, toast "A GUARD IS BURIED +500", attract line, registry copy).
+Sim rules otherwise UNTOUCHED — solver still no-dig, all vaults winnable, hashes
+deterministic. lodecheck 111/133: new strata law per vault, three-cell carve+escape,
+paid deep-mouth burial (rides first lid, dies, respawns top), clock arithmetic
+(2×60 & 3×60 > 75); 3 new mutants die (`guardPay=0`, third-stratum iron, `strata=2`).
+lodeplay 33/33 real-keys, watchcheck 210, attractcheck 694, lint gates + build green.
+Prod verified (guardPay:500 + attract line + `+${pay}` toast in index-D4oXqnsM.js).
+Live: jalfern.com/retrogames/lode-runner.
 
-## The session's catches
-1. **`git stash` is repo-wide, not per-worktree.** A `stash -q` with a clean
-   tree is a silent no-op; the matching `stash pop` then applied ANOTHER
-   lane's stashed entry (qa/weightsurgery) into this lane's worktree with
-   conflicts. Recovery: `git reset --hard <own commit>` — the foreign stash
-   entry survives in the list. NEVER stash/pop in a lane worktree; to A/B a
-   failure against main, serve `~/Dev/retrogames` detached on a spare port.
-2. **watchphonecheck runs in `static` (blocking).** Every registry title
-   advertising WATCH must mount an attract `AttractWatchButton` OR be named
-   in SKIP_ATTRACT with a reason. Multi-screen boots (title→picker) belong
-   in SKIP_ATTRACT (bomb-defuse precedent). Run `npm run watchphonecheck`
-   BEFORE opening the PR — the pilots passing locally proved nothing here.
-3. gravelcheck's `#1705 lockstep holds` tick-spread (6-9) is a pre-existing
-   flake — reproduces identically on clean origin/main under machine load.
-   Don't chase it; verify-on-main is the way to prove it's not yours.
-4. `gh pr checks` right after `pr create` can fail the poll loop; guard the
-   jq with `// "PENDING"`.
+## The session's catches — merge & prod gates
+- **`gh pr checks` rolls up STALE heads**: after another lane merged, static re-runs on
+  the new merge base and the rollup can read SUCCESS from the old commit while GitHub
+  blocks the merge ("base branch policy prohibits"). Poll
+  `gh api commits/<headSha>/check-runs` for the `static` run on YOUR head, and if the
+  branch is behind, `git rebase origin/main && push --force-with-lease` first.
+- **A held key fires every moveEvery (~133 ms)** — one 300 ms squeeze at a pit bottom
+  digs BOTH strata; browser-drive polls must tolerate riding past the intermediate row
+  (`y >= 17`, not `=== 17`) or a working feature reads as three failures + a death.
+- **Prod verify races the deploy**: chunk hashes swap mid-poll (a 404 after a match).
+  Re-enumerate assets from the CURRENT entry each poll, save to file, grep with
+  LC_ALL=C (minified chunks contain bytes that break zsh grep ranges).
 
 ## Ladder trail
-- halt none; steer none; `next` #1711 hardware-stalled on Jon (audit-confirmed,
-  skip per trail); game-queue empty; QA MASTER live → feedback borrow refused;
-  warden TARGET #1637 won the claim (b's last liveness 179 min) → batch 22 via
-  the bare-title audit (no other reactive-driver title left unseated).
-  No jonq (mechanical picks only).
-- Audit of the bare registry (was 22): the rest have NO proven driver
-  (Pong/Asteroids/DonkeyKong/Centipede/Pitfall/Frogger), seed-tied scripts
-  (Metroid `planRun`), below-bar autopilot (FireCrew 8/10), or are DOS/IF
-  (Zork II/III, King's Quest, Rogue BFS lives in roguecheck only, Britannia,
-  ViperPit) — honest no-guide until a driver ships IN the game.
+- halt none; steer none; `next` #1711 = warden's TARGET: claimed(b) as instructed,
+  re-verified at HEAD (5 titles wired to capture spine, consent/outbox/clap scripts,
+  relay/worker.js + wrangler.toml ready) — code-complete, HARDWARE-stalled on Jon
+  (#1730 defaulted Hold; lanes don't self-serve the bucket). Checkpointed the 4-line
+  hardware checklist and RELEASED (building off, `next` back, per the 11-08/11-10 audits).
+- game-queue empty; QA MASTER live → feedback borrow refused; flagshipStage null
+  (all flagship gaps owned) → NEVER-DRY weakestStage: LODE RUNNER-LITE score 4 →
+  filed #1952 with why-weakest → claimed(b) → shipped. No jonq (mechanical picks only).
 
-## Next queued (slot a)
-1. Fresh ladder: halt/steer/next/queue games-first, feedback only if no QA
-   session is live, else flagship/never-dry via idle.mjs.
-2. #1637 b23 candidates: Metroid = honest SCRIPT-replay seat (seed-pinned,
-   fresh-run-only, Paperboy-style decline mid-run); Rogue = lift its proven
-   BFS out of roguecheck into sim.js and seat it (counts as game code);
-   DF/SI are done-closed-to-redesign; don't re-litigate.
-3. QA-held items stay theirs (#1915/#1900/#1888/#1871 TMD, #1907 SI/DF,
-   #1877 FB, #1923 rail, #1925 carpet, #1950 SmashTV). LodeRunner strata
-   shipped by slot b (#1956).
+## Session bookkeeping
+- #1952 CLOSED shipped; QA polish pass filed as **#1959** (chain burials pay, depth
+  cues in rock, fuse tell at mouth, +500 popup, dig affordance on phone scale, deep thud).
+- #1711 stays `next`, waiting on Jon: create R2 bucket + `wrangler deploy`
+  (relay/wrangler.toml ready), then the 4-line hardware pass is his phone only.
+- :5178 vite runs from `~/Dev/retrogames-forge-lode-strata` (detached origin/main
+  after merge, node_modules symlinked) — reuse or kill next slot-b session before
+  strictPort. The stale lode-shafts server was killed (slot b's own dead lineage);
+  that worktree (#1946 shipped) can be removed anytime.
 
-## Notes for the next slot-a session
-- :5173 vite is STOPPED (killed at session end); worktree
-  `~/Dev/retrogames-forge-watch-b22` detached at origin/main, node_modules
-  symlinked — reuse it or open a fresh one, then `npm run dev -- --port 5173
-  --strictPort`.
-- New-seat checklist that static enforces: WATCH_HELP in controls (flows into
-  watchphonecheck + watchcheck census + phone titles), play pill top-anchored
-  with `!paused`, attract AttractWatchButton OR SKIP_ATTRACT name, shared
-  blips logged via `watchSfx`, DEV probes `watching()/probe()/watchSfx()`,
-  pilot + source pins, mutant red proof.
-- advance-probe pattern: prover-only signals = what an idle player CANNOT do
-  (human-seat machine position, score/delivered/served) — never the sim tick.
+## Next queued (slot b)
+1. Fresh ladder: halt/steer/next/queue games-first; #1711 verifiable-stalled — check
+   comments first in case Jon posted the bucket; then feedback only if no QA session
+   is live (pgrep QA MASTER), else flagship/never-dry via idle.mjs.
+2. #1959's chain-burials item is the natural next LODE build (original signature,
+   score-only, keeps hashes honest) — but it's QA's to claim unless asked directly.
+3. QA-held items stay theirs (#1915/#1900/#1888/#1871 TMD, #1907 SI/DF, #1877 FB,
+   #1923 rail, #1925 carpet, #1950 SmashTV, #1949 + new #1959 LODE).
+
+## Notes for the next slot-b session
+- Browser pixel/state drives: remember held-key repeat count (action per moveEvery);
+  poll ranges, not exact rows, when several actions fit in one hold.
+- Merge loop from a lane worktree: rebase on origin/main BEFORE merging; wait on
+  static at the head SHA, not the rollup.
+- lodecheck now owns `strataLaw()` — three BRICK rows over an open walk row; any
+  future vault geometry change must keep it or the audit (and CI static) goes red.
 
 ## Open questions
 - None. (No taste/priority call needed from Jon.)
