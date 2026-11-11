@@ -1,69 +1,68 @@
-# STATE — session 222 (2026-11-11, slot b)
+# STATE — session 222 (2026-11-11, slot a)
 
-## What shipped
-**THE CAST OF SIX** merged as `74d9b76` (PR #1999, Closes #1997 — NEVER-DRY
-pick, weakestStage score 9 = 8 QA feedbacks naming PPM + 1 unowned README
-gap; TARGET #1637 REFUSED at claim — slot a holds it, 29 min). The neighborhood
-grew from four to six: SONYA MALAK (F38, freckles mark, scarf+earring — two
-decor families) and TADEK HRUBY (M62, grey hair — his honest photo carries the
-same grey so the aged-photo trap can never point at a regular — glasses, gap
-tooth, forehead-bandage mark), authored end to end per the #1979 template.
-Every regular now has PERSONAL SPEECH (`lines {greet, again}`): first walk-up
-of a week greets, the return answers, the arc turn keeps the canonical Jorji
-pair. `say` purity widened from the arc day to EVERY day of every seed.
-THE ROTATING WINDOW (the session's design keystone): widening `mod 4`→`mod 6`
-naively makes each seat walk ONCE per 6-day span — recurrence dies, and the
-arc (firstVisit+4) convicts a face that isn't at the counter. Fix: each week
-meets `cast[s..s+3]` (mod 6) on days 2-5, seats s, s+1 RETURN days 6, 7;
-arc = cast[s] turning day 6. Two recurrences/week and the day-6 arc stand;
-seed 0's week is byte-identical to the old walk (every fixture replays); seed
-4 puts Sonya on the wanted wall. marks freckles/patch paint in ink #8f4a3e at
-disjoint rows (freckles 58-67 below the scar window; patch 26-29 above the
-wrinkle window and clear of the glasses rim). paperscheck **13936/13936 + all
-32 mutants die** (new m33 frozen rotation — only sweep-wide seatsWalked sees
-the new faces vanish; m34 muted greets; m29 re-anchored to the grown callback
-line; new witnesses: speech-shape per appearance, 12 distinct authored lines,
-window law/week, seatsWalked no-dead-seats, arc-seat coverage, bubble-fit
-scan over every line). papersplay **73/73**: seed 0 Grubak greets (bubble
-5647px, strangers 0px), seed 4's live week real-keys: Sonya approves day 2
-(scarf hat 980px, gold 9px), Tadek day 3, day-6 sheet carries SONYA's number
-(real deny scores), day 7 Tadek says "YOU LET ME THROUGH."; castPix counts
-all six marks (freckles 12px, patch 24px). Live:
-jalfern.com/retrogames/papers-please (content proof: entry `index-Bwhl0gsR.js`
-→ chunk `index-Dgvy8XLC.js` carries `SONYA MALAK`).
+## Shipped this session
+**ASTEROIDS: the hunter — WATCH batch 26** — PR #2000 squash-merged to main
+(Part of #1637; issue stays open, multi-stage). Whole tick lifted verbatim into
+`src/games/Asteroids/sim.js` (makeRun/tickAsteroids/stateHash; dice ride
+gs.rngState, mulberry32 steps identical to seedRng). watchStep scores the
+greedy play + 12 candidates by replaying the game's OWN physics on cloned
+worlds (dice forked from (seed,tick,rngState)): survival ttc-quadratic ≫
+kills-in-horizon ≫ lead-aim shaping.
 
-## The session's catches
-- **Naive cast-widening kills recurrence.** Days 2-7 are six slots; a 6-seat
-  cast with one regular/day visits each face exactly once — the in-week return
-  and the arc's stage both collapse. Check any "grow the cast" plan against the
-  recurrence arithmetic FIRST (seats vs slots), the fix was a window, not more
-  regulars/day (that would move the queue-size law the shift clock rides on).
-- **Gaps can self-close mid-sweep.** #1996 (filed last session for the crowd)
-  does NOT own the fifth-and-sixth-regulars gap (ownsGap needs the gap's
-  opening words) — verified before claiming, so the NEVRDRY pick was honest.
-- Grey-haired regular + aged-photo trap: safe because photo===face at birth
-  (hairC GREY rides into his photo); the trap only ever greys a ROLLED face
-  whose live hair is dark. Commented in gen.js.
+Sweep 40 seeds × 120 s: 40/40 byte-equal replays, 0 game-overs, 35
+zero-death, waves 2–4, worst seed 6560. Gates: asteroidscheck 46/46, mutants
+13/13 (11 battery + 2 anchor-false-verdicts re-verified on clean tree — see
+corpse note), watchcheck asteroids 260/260 live seat, contractcheck 14/14
+(newly wired), watchphonecheck 464/464, watchpillcheck 214/214, attractcheck
+694/694, lint gates + build + static green. QA polish pass filed as #2001.
+
+## The three laws the driver needed (each a stall, not a crash)
+- **Hold candidates 10 ticks** before greedy continuation: a 1-tick turn can't
+  bend a 70-tick future; all-ties fell to candidate order and the ship fired
+  into empty space beside the last rock (2 min stalled at score 3020).
+- **Dodge only what arrives**: quadratic time-to-collision ≤ 45 ticks. Fleeing
+  pebbles that never reach the hull made the driver orbit the last rock forever.
+- **Lead the target + angular fire window**: solve |Δ+v·t|=B·t; rotation is
+  quantized 0.08 rad, so a distant pebble must be CLOSED before a hit is
+  geometrically possible (window = max(0.05, size/dist)).
 
 ## Ladder trail
-- halt none; steer none. TARGET #1637 REFUSED at claim (slot a, newest 29 min
-  — it is slot a's b26 build; do not fight it). #1711 stays released (Jon-side
-  R2 hardware). game-queue empty; QA MASTER live (pid on studio) → feedback
-  borrow refused; flagship stage spent (SSX/Emberwood/COMET DRIFT HD/Myst
-  gap-free) → NEVER-DRY weakestStage PPM 9 → filed #1997, claimed, shipped.
-  No jonq filed (all decisions pattern-following).
+TARGET #1637 claimed slot a (claim had lapsed at session-220 end; warden
+re-assigned). No halt/steer; `next` #1711 stays Jon-side (#1730). Queue empty.
+
+## Collision log (read before touching this branch or port)
+Warden double-kick #1782 RECURRED: a second slot-a session (pid 50660, kicked
+03:58Z-ish, target #1997 which it shipped) worked INSIDE this lane's space —
+it rebased forge/watch-b26 at 04:09 (content was disjoint, harmless) and ran
+its own asteroidscheck --mutant concurrently, which left a PLANT CORPSE
+(ttc<2) in my sim.js and produced two false "anchor missing" mutant verdicts
+in mine. Scrubbed `git checkout -- src/games/Asteroids/sim.js`, anchors
+re-verified dead on the clean tree, ownership announced on #1637. If you are
+that instance: this lane shipped b26; re-verification only, please.
+
+## Next queued (slot a)
+1. Fresh ladder: halt/steer/next/queue games-first. #1711 Jon-side.
+2. **#1637 batch 27 (WATCH)** — remaining unseated with no proven driver:
+   **DonkeyKong / Centipede / Pitfall** (registry-oldest = DonkeyKong, but it
+   has NO sim.js — whole-engine lift + driver in one session; budget ~3 h).
+   b25/b26 template: lift whole tick → Node sweep pinned floors → seat (Y +
+   blips + never-linger) → watchcheck pilot + source pins → README gaps.
+   b26 laws apply: hold candidates, honest ttc, lead + angular window.
+3. QA (#2001 ASTEROIDS polish, saucers/hyperspace/heartbeat) belongs to the
+   QA lane (#1019 rule), not builder lanes.
+
+## Notes for the next slot-a session
+- Check for plant corpses before trusting ANY check run: `git status
+  --porcelain` + grep anchors while a sibling may be running. node_modules
+  (incl .vite) is symlinked/shared — browser suites flake when two lanes'
+  Chrome runs hit one box (tapstart failed on DIFFERENT untouched games two
+  runs in a row: environmental, rerun once, move on).
+- Mutant lesson: pick mutants that break FLEET-VISIBLE laws. "Suicidal
+  rollout" and "ghost aim" survived — those laws barely move 60 s metrics
+  (total 66.7k healthy vs 64.3k/64.7k broken). ttc-window/wrap-eye/hold
+  collapse all die loudly (zeroDeath + wavesBanked floors catch them).
+- Fast-sweep mode (ASTEROID_SWEEP=fast, 12 seeds × 60 s) is what mutant
+  children run — floors scale there (zero≥9, waves≥SEEDS-1, min≥2500).
 
 ## Open questions
-- none (see waiting-jon issues; #1711 hardware waits on Jon).
-
-## Next
-- Slot b: fresh ladder at session start. If #1637 is still held by slot a's
-  b26 watch, NEVER-DRY again — PPM README now carries two fresh honest gaps
-  (multi-line dialogue threads; two-regulars-a-day needs a queue-law
-  amendment) and QA owns #1996 (crowd polish: country flavor, breadth, bodies,
-  one-off speech — do NOT duplicate it from a builder lane).
-- Slot a: b26 exhaustive driver issue #1637 in progress (check its BUILD FLOOR
-  comments before touching those titles).
-- Dev servers: slot a 5173, slot b 5178. `--mutate` only in an exclusive
-  window, ≥20 min; after a killed run grep every mutant fingerprint before
-  trusting the tree (re-verified clean this session: 34/34).
+- None.
