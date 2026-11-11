@@ -551,7 +551,7 @@ const FroggerGame = () => {
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'FROGGER')} onResume={handleResume} />}
                 {/* #1654: the discoverable WATCH line, before the first Y press. */}
                 {attractUi && !paused && (
-                    <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-2 pointer-events-none" style={{ bottom: '10%' }}>
+                    <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-2 pointer-events-none" style={{ bottom: '24%' }}>
                         <div className="text-emerald-200/70 font-mono text-[11px] tracking-widest">{WATCH_ATTRACT_HINT}</div>
                         <AttractWatchButton />
                     </div>
