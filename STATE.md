@@ -1,83 +1,69 @@
-# STATE — session 235 (2026-11-11, slot b)
+# STATE — session 236 (2026-11-11, slot a)
 
 ## What shipped
-**PAPERS, PLEASE-MIN — PORTRAIT LEGIBILITY ROUND** — merged as `e7d508a`
-(PR #2059, Closes #1943, warden TARGET; claim was clean). The PORTRAIT-round
-playtest asked if the photo reads at phone size and if the nine-law wall buries
-the sheet. Answers were geometry, not tuning:
-- Photo deep-zoom: `PHOTO.s` 0.75→0.90 (the clip law admits ~0.97 — take the
-  ceiling: head ~50→61px, live run measured 62; chin crops at the frame edge
-  like a real ID photo). Ratchets: `s >= 0.85` + `s*68 >= 54` in paperscheck
-  (both old crops fail them; reverting s to 0.75 proven RED, restored).
-- Minimum-ink clamp in `drawFace`: thin COMPARED strokes (thin brow, glasses
-  bridge, shut-mouth bar) ≥2px at ANY scale; no-op at s=1 (every source value
-  ≥2), so counter face + all scale-1 byte-identity probes untouched by
-  construction. Live: photo brow ink 34 thin vs 74 thick dark-family px.
-- Nine-law relief: `ruleGap` 4→3 frees 9px (nine rules on day 7), spends 5 to
-  grow wanted rows 9→10px / 10→11 pitch. Worst buildable day y=352 vs SCALE
-  358 — 6px slack (was 2). Size ratchet moved to ≥10/≥11. Sheet ink
-  441/734px live (was 328/612).
-- Evidence corridor law: all 12 directional PORTRAIT strings ≤42 chars vs
-  wrap-54 — every witness one corridor line.
-- Items 2+5 (aged-photo bite, day-1 fairness) = balance data per the issue's
-  own doctrine: sweep reports 108 traps == 108 naive misjudges, ≤2/day, naive
-  eye clears every week (a wrong conviction is one strike, learnable); 14 aged
-  photos across 12 weeks; day-1 forger pinned live. Posted on #1943.
-Proof: paperscheck 18243/18243 with **all 43 mutants dead**; papersplay
-**91/91** live keys, zero page errors; lint gates + build green. Prod
-verified: live PPM chunk `index-sE5ildjB.js` carries `ox:-16` + the PORTRAIT
-rule text at jalfern.com/retrogames/papers-please (deploy e7d508a; the
-jalfern proxy lagged the completed Vercel deploy by ~20 min).
+**WATCH b31 — SUPER MARIO SEATS ITS CERTIFIED AUTOPILOT, AND THE ROLLOUT CLOSES** —
+merged as `a5466c8` (PR #2060, Closes #1637, warden TARGET; claim was a resume of
+this slot's live 21:53Z claim). The b31 full-shelf audit (#1637's brief) asked the
+10 unseated registry titles "owns a winning script?": only `/mario` said yes —
+the engine's own option-3 `autopilot()`, which `autopilotcheck` certifies (flagpole,
+all lives, zero deaths, every pass). The other nine stay honest with no button
+(mario-classic/centipede/pitfall/ironkeep/pacman/zork2/zork3/britannia — no proven
+in-game driver; raccoon-heist's `heistwin.mjs` proves wins but the driver is
+EXTERNAL — Node+Playwright, frozen contract — seating would clone an unproven
+second brain). With b31, every title on the shelf plays itself on its own proven
+route or truthfully offers no guide; an **audit-ledger pin** in watchcheck freezes
+that remainder (the nine may never carry a WATCH line).
+The seat (FireCrew/ViperPit house pattern): Y flips `mode` play↔autopilot — no
+second brain, reactive per tick. b24 law: Y at the title starts AND seats from
+tick 0. The seat lives on **1-1, the certified sector**; elsewhere Y declines with
+the shared no-guide chip (~1.5 s, ROBOTLAB law). The flagpole completes the
+watcher: `touchFlag` calls `release(false)` — clean keys — so 1-3 starts in your
+hands. Proof: live pilot `watchcheck --only=mario` 13/13; autopilotcheck 11/11 on
+the seat build; watchphonecheck 493/493 (7 gates auto-armed by the registry line);
+watchpillcheck 229/229; lint:mario/fps/ai + build green; one mutant (neuter
+takeover) died on 6 live gates. Prod: `index-BAgSI-RN.js` carries the registry
+literal "clears 1-1 perfectly". #1637 shipped+closed with live URL; polish pass
+filed as #2062 (seat-sector extension if autopilot survives 1-3/1-4, phone chip
+width, nightly flagpole-release gate, README known-gaps, the mariocheck stale gate).
 
 ## The session's catches
-- **A fit law is a budget, not a wall**: #1908 concluded "rows CANNOT grow"
-  from the sheet's own 2px slack — but the 9-rule rulebook was spending 9px on
-  inter-rule gaps. Relief was upstream. Audit the whole column before accepting
-  a ceiling.
-- **Clamps that no-op at s=1 are free doctrine**: a min-ink floor written as
-  `Math.max(v*s, 2)` sharpens the photo while every byte-identity probe (which
-  renders at scale 1) stays green BY CONSTRUCTION — no pins to renegotiate.
-- **Thin-stroke ratios survive AA, absolute counts don't**: photo brow ink
-  separates thin/thick (34 vs 74) in a dark-family count; exact-hex counting at
-  fractional rect origins would have failed the same gate (#1908's lesson again).
-- Zoom ceiling arithmetic: centered + widest-inside-clip ⇒ `s ≤ (w + 2*margin)/
-  headwidth`; here 0.97 theoretical, 0.90 chosen so ears keep a 2–3px margin.
-- **Prod marker scans must follow the lazy chunks**: PPM's code is NOT in the
-  live index bundle — grep index-*.js for game literals returns nothing even
-  when prod is current. Enumerate the chunk manifest inside index-*.js
-  (`[A-Za-z0-9._-]*-[A-Za-z0-9_-]{8}\.js`) and grep the chunks; PPM lives in
-  `index-sE5ildjB.js`. (And name only hashes you actually observed — an
-  unverified hash in a ship comment is a lie you have to eat; correction
-  posted on #1943.)
-- zsh does NOT word-split multiline vars: `for c in $chunks` iterated ONCE
-  and the marker scan silently "passed" empty. Wrap multi-iteration curl
-  loops in `bash -c` (or `${(f)var}`); an empty scan result is a red harness
-  result, not a green prod result.
+- **`git stash` is REPO-WIDE across worktrees.** Working tree clean, `git stash`
+  saved nothing — then `git stash pop` landed ANOTHER lane's stash (a
+  weightsurgery QA corpse) into my worktree with 10 conflicts. Recovery:
+  `git reset --hard HEAD` (failed-apply keeps the stash entry — verified intact).
+  Never stash in this repo; checkpoint reality with commits only.
+- **`pollAdvance` sleeps its WHOLE window before polling.** A 15 s window + a
+  ~12-col/s autopilot drove the resume segment past the flagpole, and the
+  flagpole law then released the seat mid-check. Fast provers need short windows
+  (4 s here) — size the window to the prover's speed, not the harness default.
+- **A mode flip is not a handback.** The first flagpole release set `mode='play'`
+  but left the autopilot's held right/run in `keys` — 1-3 started with a stuck
+  run button and Mario walk-ran into a firebar 3× at col 20 with zero player
+  input (trace col 141→3, state gameover). `release()` must clean keys; pinned.
+- **Registry lines auto-arm watchphonecheck** (registry-driven roster): adding the
+  WATCH_HELP line pulled 7 phone gates onto mario on the spot — ship pills/hint to
+  the letter of the law (bottom '24%', z-[70], --sat/--sar, !paused-scoped) and
+  static chrome stays free.
 
 ## Ladder trail
-TARGET #1943 claimed first (`forge-claim.sh 1943 b`), clean — no halt/steer/
-next anywhere, game-queue held only #1637, no `building` corpses, jonq games:
-none open. QA MASTER was live (pid 81627) but #1943 was the WARDEN's assignment
-to slot b (claim passed the liveness check — no QA claim on it), not a borrow.
-No jonq filed.
+TARGET #1637 claimed first per warden assignment — `forge-claim.sh 1637 a`
+answered "already yours: resume it" (this slot's 21:53Z claim was still inside
+the 90-min liveness). The resume path skips LABELING, so `building` was applied
+via api to match the claim's board truth. No halt/steer/next anywhere; no jonq
+filed; no QA MASTER conflict (#1637 was the warden's, and my slot's).
 
 ## Open questions
 - none (see waiting-jon issues).
 
 ## Next
-- **#1637 b31: full-shelf driver audit** (brief in #1637's wrap comment, via
-  session 233): seat every remaining title that owns a winning script, or
-  declare the rollout done. Batch numbers 19–21 never appear in watchcheck —
-  check the trail before renumbering.
-- **`viperpitcheck` is red-on-main and wired into NO CI job** (counter-throw
-  gate drifted with #1761/#1785) — QA lane's call, flagged twice on #1637.
-- PPM drain law still stands (session 230): do not re-pick PPM at weakestStage
-  while its feedback pile sits unowned. #1908 + #1943 were warden TARGETs, not
-  picks; the PPM feedback pile is now thin (README honest gaps: procedural
-  portrait depth, numerals-in-evidence, no drag physics).
-- #2045 (lane-liveness crossings) and #2036 (resume-gate nightly budget)
-  remain open harness improvements, unowned.
-- Dev servers: slot b 5178 STOPPED at exit; slot a 5173; QA studio 5176 (not
-  mine — untouched). Stale worktrees accumulating at ~/Dev/retrogames-forge-*
-  (detached, branches died with squashes) — candidates: ppm-portrait,
-  ppm-bulletin, papers-photo; remove deliberately.
+- **QA backlog this session left the lane** (#2062 + standing): `viperpitcheck`
+  red-on-main, no CI wiring (flagged thrice now); `mariocheck`
+  "gamepad present while playing" red-on-main, no CI wiring (#290 keyboard-hides
+  outlived the check — retire it or drive it touch-only). QA lane's call.
+- #2062 asks whether the autopilot survives 1-3/1-4 — if measured yes, extend
+  autopilotcheck and widen the seat gate to the whole game.
+- PPM drain law still stands (session 230). #2045 (lane-liveness crossings) and
+  #2036 (resume-gate nightly budget) remain open harness improvements, unowned.
+  Slot b's open items ride its STATE.
+- Housekeeping: dev server slot a 5173 STOPPED at exit; `~/Dev/retrogames-forge-watch-rollout-b31`
+  removed (branch died with the squash).
