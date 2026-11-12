@@ -13,7 +13,7 @@
 //
 // Prereqs: `npm install`, a running `npm run dev`.
 
-import { opt, requireDevServer, launch, openMario, Report, URL_DEFAULT } from './lib/harness.mjs'
+import { opt, requireDevServer, launch, openMario, openGame, Report, URL_DEFAULT } from './lib/harness.mjs'
 
 const args = process.argv.slice(2)
 const url = opt(args, '--url', URL_DEFAULT)
@@ -35,8 +35,7 @@ const is = async (want, label) => {
     r.check(label, ok, `state=${s.state}`)
     return s
 }
-// The virtual gamepad renders an "A" span; it must only exist during actual play.
-const padCount = () => page.locator('span:text-is("A")').count()
+// Gamepad presence is checked in step 8, on the side that can show it.
 
 // 1. A lone modifier must NOT start the game (the PR #22 bug).
 await fresh()
@@ -95,14 +94,31 @@ await page.keyboard.press('Escape')
 await page.waitForTimeout(200)
 await is('attract', 'ESC closes the menu')
 
-// 8. Virtual gamepad is hidden on the menus, present during play.
+// 8. Virtual gamepad: absent on the menus, present while a TOUCH player is in
+//    the game. Two stale assumptions retired here (#2062, reproduced red-on-main):
+//    (a) the pad is a touch-only contract — #290 withholds it from pages whose
+//    primary pointer is not coarse, so a desktop page can never show it;
+//    (b) buttons render under the game's own pad labels (Mario: stick + "F"),
+//    not a literal "A" span — `data-vc` is the stable selector (#735).
+//    The run must also START by tap: #290 hides the pad again on any keyboard key.
+const padEl = 'span:text-is("A"), [data-vc]'
+const padCount = () => page.locator(padEl).count()
 await fresh()
 const onAttract = await padCount()
 r.check('gamepad hidden on attract', onAttract === 0, `found=${onAttract}`)
-await page.keyboard.press('ArrowRight')
-await page.waitForTimeout(600)
-const playing = await padCount()
-r.check('gamepad present while playing', playing >= 1, `found=${playing}`)
+{
+    const phone = await openGame(browser, { url, viewport: { width: 390, height: 844 }, touch: true })
+    const phonePad = () => phone.locator(padEl).count()
+    const attract0 = await phonePad()
+    r.check('gamepad hidden on attract (touch)', attract0 === 0, `found=${attract0}`)
+    const box = await phone.locator('canvas').first().boundingBox()
+    await phone.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2)
+    await phone.waitForTimeout(600)
+    const playing = await phonePad()
+    r.check('gamepad present while playing (touch)', playing >= 1, `found=${playing}`)
+    await phone.screenshot({ path: 'scripts/.shots/mariocheck-pad.png' }).catch(() => {})
+    await phone.close()
+}
 
 await page.screenshot({ path: 'scripts/.shots/mariocheck.png' }).catch(() => {})
 r.exit(browser)

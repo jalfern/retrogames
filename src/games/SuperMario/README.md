@@ -92,7 +92,11 @@ deaths. Any driving key, a tap on the field, or the pill takes the overalls back
 Three rules make the seat honest, each pinned in `watchcheck`'s b31 section:
 
 - **The seat lives on 1-1** (`levelIndex === 0`) — that is the sector the harness certifies.
-  Y anywhere else (menu, 1-3, 1-4) declines with the shared no-guide chip, ~1.5 s.
+  Y anywhere else (menu, 1-3, 1-4) declines with the shared no-guide chip, ~1.5 s. The
+  uncertified verdict is measured (#2062): the autopilot dies at col 33 of 1-3 — see *Known
+  gaps* — so widening this gate needs a col-33 fix first, not a flag change. The decline chip
+  fits 390px portrait (measured 288.6px wide, centered, clear of the OPTIONS button and the
+  attract hint, which are themselves clear of each other at 390×844).
 - **The flagpole completes the watcher.** `touchFlag` releases the seat *with `release(false)`*
   — keys included. The first version flipped `mode` but left the autopilot's held
   `right/run` behind; 1-3 then started with a stuck run button and Mario walk-ran into a
@@ -267,7 +271,7 @@ is the classic way to ship a firebar that kills you off-screen. And fire **kills
 |---------|---------|
 | `npm run verify` | the whole suite below, with a summary; non-zero exit on any failure |
 | `npm run verify -- --full` | same, with the full 60-generation evolution check |
-| `npm run mariocheck` | title/menu/touch: lone Shift must not start, `?` + OPTIONS open the menu, keys 1–4 work, BACK/ESC work, gamepad hidden on menus |
+| `npm run mariocheck` | title/menu/touch: lone Shift must not start, `?` + OPTIONS open the menu, keys 1–4 work, BACK/ESC work, virtual pad absent on menus and present during touch play (#2062: on a `touch: true` page — #290 withholds the pad from keyboard/desktop pointers, and Mario's buttons are stick+"F", not a literal "A"; `data-vc` is the stable selector) |
 | `npm run autopilotcheck` | option 3 clears 1-1 twice — as it plays (must reach Fire Mario) and with fire taken away (must jump the plants) |
 | `npm run plantcheck` | plant cycle, hitbox==emerged-part coupling, hurts-only-when-out, safe-when-retracted, not stompable |
 | `npm run levelcheck` | geometry audit of every world: no pit wider than a jump, a landing chain that reaches the flagpole, firebar clearance, lava over real holes |
@@ -336,7 +340,11 @@ symbol name.
 - **The autopilot only knows 1-1.** Its rules are tuned to that level's geometry, so when it
   clears 1-1 it walks into an athletic pit in 1-3 and dies. `autopilotcheck` therefore stops at
   the flag — which is the actual win condition for "did it clear 1-1" — rather than pretending
-  the whole game is in scope.
+  the whole game is in scope. Measured 2026-11-12 (#2062), not assumed: driven straight through,
+  it reaches the 1-1 flagpole at col 174 with three lives and zero deaths, then on 1-3 dies at
+  **col 33 — the first athletic pit — identically on all three lives** (never reaches 1-4's
+  firebars or lava at all). So the WATCH seat stays certified on 1-1, and the col-33 pit is the
+  first lever if the seat is ever to cover the whole game.
 - **No 1-up mushroom** (`coins % 100 === 0` silently adds a life; no 1-up block exists).
 - **No moving or half-solid platforms.**
 - **No Bowser, no axe, no bridge** in 1-4. It ends on a flagpole like every other level;
