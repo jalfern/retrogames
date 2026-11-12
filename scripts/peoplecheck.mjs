@@ -18,10 +18,15 @@
 //   6. COURT     — #2131: player-ordered romance — coo/affection/insult on the
 //                  chat ring, the FAMILY-tier deepening, the shared cooldown
 //                  economy, grudge-on-command with the human exit intact.
+//   7. SECOND VISITOR — #2143: Ivy, the market neighbour — her own schedule
+//                  window, rel.ivy ladder (growth, one-rel-up law, fade and
+//                  demote), the FRIENDS+/FAMILY gift economy, linger/return
+//                  ladder math, court + roomClear + hash carries, determinism.
 //
 // It proves IT can fail the playbook way: break one load-bearing line in sim.js
 // (content accrual in finishUse, or the relAdd(s,'fern') feed in the visitor
-// chat block) and the matching sections go red; restore.
+// chat block, or the relAdd(s,'ivy') feed in Ivy's chat block) and the matching
+// sections go red; restore.
 //
 // Run: node scripts/peoplecheck.mjs
 
@@ -34,6 +39,7 @@ import {
     place, sellAt, targetsOf, walkable, bfsPath, stateHash, buildRoom, buildRoomOk,
     manualMove,
     court, courtTarget, COO_BOND, AFFECTION_BOND, INSULT_DROP, CMD_CD, REL_EDGES,   // #2131
+    ivyChatPool, IVY_CHAT, IVY_FADE, IVY_GIFT_HUNGER, IVY_GIFT_CASH,   // #2143
 } from '../src/games/Homebody/sim.js'
 import { readFileSync } from 'node:fs'
 
@@ -386,7 +392,8 @@ section('BONDS (#1817): the chat loop deepens')
     check('either meter rides the hash', stateHash(ha) !== h0 && stateHash(hb) !== h0)
     const simSrc = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
     check('pin: the Fern-chat block feeds the leaf meter', /if \(partner\) \{[^}]*relAdd\(s, 'fern'/.test(simSrc))
-    check('pin: advance drives the household bond tick', /updateVisitor\(s, simDt\)\s*\n\s*updateHouseBond\(s, simDt\)/.test(simSrc))
+    check('pin: advance drives the household bond tick', /updateVisitor\(s, simDt\)\s*\n\s*updateIvy\(s, simDt\)\s*\n\s*updateHouseBond\(s, simDt\)/.test(simSrc))   // #2143: the chain is three deep now — Ivy ticks between the neighbours
+
     check('pin: scheduleVisit answers the bond level', /function scheduleVisit\(s\)\s*\{[^}]*Math\.max\(8, 9 \+ Math\.floor\(s\.rng\(\) \* 5\) - lv\)/.test(simSrc))
     check('pin: stateHash mixes both meters', /mix\(s\.rel\.house\); mix\(s\.rel\.fern\)/.test(simSrc))
 
@@ -881,6 +888,142 @@ section('COURT')
     check('pin: the warm tell lifts off the pair', /g\.cooFx > 0 && g\.cooAt/.test(ctJsx) && /s\.cooAt = \{ x: mx, y: my \}/.test(ctSim))
 }
 
+section('SECOND VISITOR')   // #2143 — Ivy, the market neighbour
+{
+    const hangIvy = (g, { r = 3, c = 9, lv = 0, gift = false, hang = 9999 } = {}) => {
+        g.visitAfter = 99; g.ivyAfter = 99; g.ivyGap = 0
+        g.rel.ivy = lv
+        g.ivy = { name: 'Ivy', r, c, x: tileX(c) + TILE / 2, y: tileY(r) + TILE / 2, path: null, state: 'hang', t: 0, hue: '#a3579b', face: 1, walkPhase: 0, chatT: 0, hangUntil: hang, gift }
+        return g.ivy
+    }
+    const beside = (p, v, dc = -1) => { p.r = v.r; p.c = v.c + dc; p.path = null; p.goal = null; p.use = null; p.working = false; p.faintT = 0 }
+
+    // Arrival: her own clock, the front gate, a path actually walked.
+    const g1 = newRun(7)
+    g1.visitAfter = 99; g1.ivyAfter = 12; g1.ivyGap = 0; g1.hour = 12
+    let arrived = false
+    for (let i = 0; i < 60 * 20 && !arrived; i++) { advance(g1, DT); arrived = drain(g1).some((e) => e.t === 'visit' && e.name === 'Ivy') }
+    check('Ivy arrives through the gate on her own hour', arrived && !!g1.ivy && g1.ivy.r === 12 && g1.ivy.c === 5)
+    check('and walks a real path toward the kitchen', !!g1.ivy && Array.isArray(g1.ivy.path) && g1.ivy.path.length > 4)
+    const g1w = newRun(9)
+    g1w.visitAfter = 99; g1w.ivyAfter = 19.5; g1w.ivyGap = 0; g1w.hour = 18.9; g1w.people[1].working = true
+    for (let i = 0; i < 60 * 6; i++) { advance(g1w, DT); drain(g1w) }
+    check('the visit window is honest — after 19:00 she never appears', g1w.hour >= 19.5 && !g1w.ivy)
+
+    // Growth: chat feeds rel.ivy at the documented rate; nobody else's meter leaks.
+    const g2 = newRun(11); hangIvy(g2)
+    beside(g2.people[0], g2.ivy)
+    g2.people[1].r = 1; g2.people[1].c = 12; g2.people[1].path = null; g2.people[1].goal = null
+    const iv0 = g2.rel.ivy, fe0 = g2.rel.fern
+    for (let i = 0; i < 60 * 5; i++) { beside(g2.people[0], g2.ivy); g2.people[1].path = null; advance(g2, DT); drain(g2) }
+    const grew = g2.rel.ivy - iv0
+    check('chatting beside Ivy grows her meter at IVY_CHAT/s', grew > 5 * IVY_CHAT - 0.05 && grew <= 5 * IVY_CHAT + 0.01, `grew=${grew.toFixed(3)}`)
+    check('Ivy-chat pays NOTHING to Fern or the household meter', g2.rel.fern === fe0 && g2.rel.house === 0)
+
+    // Crossing: exactly one rel-up per edge, level named.
+    const g3 = newRun(13); hangIvy(g3, { lv: 11.95 })
+    let ups3 = []
+    for (let i = 0; i < 60 * 2; i++) { beside(g3.people[0], g3.ivy); g3.people[1].path = null; advance(g3, DT); ups3.push(...drain(g3).filter((e) => e.t === 'rel-up')) }
+    check('crossing the FRIENDLY edge pays Ivy exactly one rel-up, level 1', ups3.length === 1 && ups3[0].k === 'ivy' && ups3[0].level === 1, JSON.stringify(ups3))
+
+    // Gift economy: FRIENDS feeds the household, FAMILY adds honey-money.
+    const giftRun = (relIvy) => {
+        const s = newRun(17); s.visitAfter = 99; s.ivyAfter = 12; s.ivyGap = 0; s.hour = 12; s.rel.ivy = relIvy
+        const hun0 = s.people.map((p) => p.needs.hunger); const money0 = s.money; const cont0 = s.content
+        let paid = null
+        for (let i = 0; i < 60 * 20 && !paid; i++) { s.people.forEach((p) => { p.path = null }); advance(s, DT); paid = drain(s).find((e) => e.t === 'gift') || null }
+        return { s, paid, hun0, money0, cont0 }
+    }
+    const R0 = giftRun(0), R2 = giftRun(30), R3 = giftRun(60)
+    check('below FRIENDS the basket stays at the market', !R0.paid && !R0.s.ivy.gift && R0.s.money === R0.money0 && R0.s.people.every((p, i) => p.needs.hunger <= R0.hun0[i] + 1e-9))
+    check('FRIENDS+ arrives with the market basket — the household eats and +1 content', !!R2.paid && R2.paid.money === 0 && R2.s.ivy.gift && R2.s.people.every((p) => Math.abs(p.needs.hunger - 1) < 1e-9) && R2.s.content === R2.cont0 + 1)
+    check('FAMILY adds the honey-money and a second content point', !!R3.paid && R3.paid.money === IVY_GIFT_CASH && R3.s.money === R3.money0 + IVY_GIFT_CASH && R3.s.content === R3.cont0 + 2)
+
+    // Ladder math: FAMILY lingers 24 s longer; the NEXT visit lands 3 h sooner
+    // (rescheduled on departure, same rng sequence — the fern law mirrored).
+    let seedL = 0
+    for (let sd = 1; sd < 500; sd++) { const t = newRun(sd); if (t.ivyAfter >= 15 && t.ivyAfter <= 18) { seedL = sd; break } }
+    const driveToIvy = (seed, ivy0) => {
+        const g = newRun(seed); g.rel.ivy = ivy0; g.visitAfter = 99; g.ivyAfter = Math.min(g.ivyAfter, 8); g.ivyGap = 0; g.hour = 8
+        for (let i = 0; i < 60 * 30; i++) { g.people.forEach((p) => { p.path = null; p.goal = null }); advance(g, DT); if (drain(g).some((e) => e.t === 'visit' && e.name === 'Ivy')) return g }
+        return null
+    }
+    const finishIvy = (g) => {
+        if (!g || !g.ivy) return false
+        g.ivy.state = 'leaving'; g.ivy.path = null
+        for (let i = 0; i < 60 * 8; i++) { g.people.forEach((p) => { p.path = null }); advance(g, DT); if (drain(g).some((e) => e.t === 'visit-end' && e.who === 'ivy')) return true }
+        return false
+    }
+    const la = driveToIvy(seedL, 0), lb = driveToIvy(seedL, 60)
+    const lingerA = la ? la.ivy.hangUntil : NaN, lingerB = lb ? lb.ivy.hangUntil : NaN
+    const lingerOk = !!la && !!lb && Math.abs(lingerB - (lingerA + 24)) < 1e-9
+    const goA = finishIvy(la), goB = finishIvy(lb)
+    check('FAMILY Ivy lingers 24 s longer and schedules her return 3 h sooner',
+        lingerOk && goA && goB && lb.ivyAfter === Math.max(12, la.ivyAfter - 3),
+        `linger=${(lingerB - lingerA).toFixed(1)} sooner=${la && lb ? `${la.ivyAfter}->${lb.ivyAfter}` : '-'}`)
+    {
+        const lg = driveToIvy(seedL + 1, 12)
+        const gone = lg && finishIvy(lg)
+        check('she walks out the gate, and her next visit reschedules', !!gone && !lg.ivy && lg.ivyAfter >= 12)
+    }
+
+    // Fade: absence demotes through exactly one rel-down (the #2076 law, reused).
+    const gf = newRun(21); gf.visitAfter = 99; gf.ivyAfter = 99; gf.rel.ivy = 12.05; gf.people[1].working = true
+    let downs = []
+    for (let i = 0; i < 60 * 12; i++) { gf.people[0].path = null; gf.people[1].path = null; advance(gf, DT); downs.push(...drain(gf).filter((e) => e.t === 'rel-down' && e.k === 'ivy')) }
+    check('absence demotes Ivy through exactly one rel-down (fade rides relSub)', gf.rel.ivy < 12 && downs.length === 1 && downs[0].level === 0, `ivy=${gf.rel.ivy.toFixed(2)} downs=${downs.length}`)
+
+    // Court: Ivy is company the player can address too (#2131 doctrine, symmetric).
+    const gc = newRun(23); hangIvy(gc, { r: 3, c: 5 }); gc.rel.ivy = 20
+    gc.people[0].r = 3; gc.people[0].c = 4; gc.people[0].path = null; gc.people[0].x = tileX(4) + TILE / 2; gc.people[0].y = tileY(3) + TILE / 2
+    gc.people[1].r = 1; gc.people[1].c = 12; gc.people[1].path = null
+    const ck = courtTarget(gc), cr = court(gc, 'coo')
+    check('the court counts Ivy — a coo in reach pays her meter', !!ck && ck.k === 'ivy' && !!cr && cr.k === 'ivy' && Math.abs(gc.rel.ivy - (20 + COO_BOND)) < 1e-9)
+    gc.cmdCd = 0
+    const ci = court(gc, 'insult')
+    check('an insult to Ivy cuts her meter but keeps the household peace', !!ci && gc.grudge === 0 && Math.abs(gc.rel.ivy - (20 + COO_BOND - INSULT_DROP)) < 1e-9)
+
+    // Autonomy: a lonely resident walks to the NEAREST neighbour, whoever she is.
+    const gz = newRun(25); hangIvy(gz)
+    gz.visitor = { name: 'Fern', r: 2, c: 2, x: tileX(2) + TILE / 2, y: tileY(2) + TILE / 2, path: null, state: 'hang', t: 5, hue: '#4fae5f', face: 1, walkPhase: 0, chatT: 0, hangUntil: 999 }
+    gz.demo = true
+    const pa = gz.people[0]; pa.r = 3; pa.c = 6; pa.path = null; pa.goal = null; pa.use = null; pa.working = false; pa.faintT = 0
+    pa.needs.social = 0.2; for (const n of NEEDS) if (n !== 'social') pa.needs[n] = 0.9
+    advance(gz, DT); drain(gz)
+    check('autonomy walks to the NEAREST neighbour (Ivy beats Fern here)', pa.goal && pa.goal.kind === 'chat' && pa.goal.v === 'ivy', JSON.stringify(pa.goal))
+
+    // The wing must not rise on top of a standing neighbour.
+    const gr = newRun(27); hangIvy(gr, { r: 3, c: 13 }); gr.money = 1000
+    check('the Spare Room cannot rise on a neighbour in the footprint', !buildRoomOk(gr))
+    gr.ivy.r = 3; gr.ivy.c = 4
+    check('…and clears the moment she steps out', buildRoomOk(gr))
+
+    // Hash + determinism + pools.
+    const hb0 = stateHash(newRun(31))
+    const h1 = newRun(31); h1.rel.ivy += 1
+    const h2 = newRun(31); h2.ivy = { name: 'Ivy', r: 3, c: 5, x: 0, y: 0, path: null, state: 'hang', t: 0, gift: false }
+    const h3 = newRun(31); h3.ivy = { ...h2.ivy, gift: true }
+    check('rel.ivy, Ivy on the lot and the basket all ride the hash', stateHash(h1) !== hb0 && stateHash(h2) !== hb0 && stateHash(h3) !== hb0 && stateHash(h3) !== stateHash(h2))
+    const dA = newRun(2143), dB = newRun(2143)
+    for (let i = 0; i < 60 * 60; i++) { autoStep(dA, DT); drain(dA); autoStep(dB, DT); drain(dB) }
+    check('an attract hour spanning Ivy is seed-exact', stateHash(dA) === stateHash(dB))
+    const ivSizes = [0, 12, 30, 60].map((v) => { const z = newRun(1); z.rel.ivy = v; return ivyChatPool(z).length })
+    check('Ivy\u2019s topic pool widens on her own ladder (3→8 lines)', ivSizes.join(',') === '3,4,6,8', ivSizes.join(','))
+    const fSizes = [0, 12, 30, 60].map((v) => { const z = newRun(1); z.rel.fern = v; return chatPool(z).length })
+    check('Fern keeps her own pool untouched (4→9)', fSizes.join(',') === '4,5,7,9', fSizes.join(','))
+
+    // Source pins: the second-neighbour wiring must not silently drop.
+    const ivSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const ivJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const ivArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    check('pin: the Ivy-chat block feeds the flower meter', /if \(partner\) \{[^}]*relAdd\(s, 'ivy'/.test(ivSim))
+    check('pin: gift tiers are FRIENDS/FAMILY and the window closes at dusk', /const gift = lv >= 2/.test(ivSim) && /lv >= 3/.test(ivSim) && /s\.hour < 19/.test(ivSim))
+    check('pin: the panel runs the flower IVY row with its FAMILY pulse', /'flower', '#a3579b', relLevel\(s\.rel\.ivy\), 'IVY'/.test(ivArt) && /relLevel\(s\.rel\.ivy\) === 3/.test(ivArt))
+    check('pin: Ivy rides the draw order and the basket is painted', ivJsx.includes('g.ivy ? [{ p: g.ivy, v: g.ivy.y }]') && /if \(p\.gift\) \{/.test(ivArt))
+    check('pin: the shell names her arrival, her gift and her bond lines', /case 'gift'/.test(ivJsx) && /IVY AT THE GATE/.test(ivJsx) && /ivy: 'IVY'/.test(ivJsx))
+}
+
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)
+
 if (fails.length) console.log('failed: ' + fails.join(' | '))
 process.exit(fail ? 1 : 0)

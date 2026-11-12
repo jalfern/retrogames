@@ -254,6 +254,42 @@ const doctr = await st()
 check('#2131 far apart, Space stays the old empty press — no meter, no cooldown',
     doctr.rel.house === 0 && doctr.cmdCd === 0 && doctr.courtKind === null, JSON.stringify({ rel: doctr.rel.house, cmdCd: doctr.cmdCd, kind: doctr.courtKind }))
 
+// #2143 live: Ivy rings, walks in wearing plum, and from FRIENDS up her visit
+// carries the basket — pixels first, then the panel's flower row lights for her.
+await page.evaluate(() => window.__homebodyTest.ringIvy())
+let iv = null
+for (let i = 0; i < 40 && !iv; i++) { await wait(250); iv = (await st()).ivy }
+check('#2143 Ivy arrives on the live lot', !!iv && iv.name === 'Ivy', JSON.stringify(iv))
+await wait(2600)   // let her walk in from the gate
+const ivp = (await st()).ivy
+const plum = await page.evaluate(([x, y]) => {
+    const c = document.querySelector('canvas')
+    const d = c.getContext('2d').getImageData(Math.max(0, x - 12), Math.max(0, y - 16), 24, 28).data
+    let n = 0
+    for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - 0xa3) < 28 && Math.abs(d[i + 1] - 0x57) < 28 && Math.abs(d[i + 2] - 0x9b) < 28) n++
+    return n
+}, [ivp.x, ivp.y])
+check('#2143 the drawn sprite is Ivy-plum — nobody else wears it', plum >= 12, `plum px ${plum}`)
+await page.evaluate(() => { window.__homebodyTest.bond('ivy', 30); window.__homebodyTest.ivyHome() })
+for (let i = 0; i < 60; i++) { await wait(200); if (!(await st()).ivy) break }   // gone through the gate — schedule re-arms
+await page.evaluate(() => window.__homebodyTest.ringIvy())                          // ring it back on the new tier
+let gift = false
+for (let i = 0; i < 80 && !gift; i++) { await wait(250); const p = await st(); gift = !!(p.ivy && p.ivy.gift) }
+check('#2143 the FRIENDS-tier return carries the market basket', gift, JSON.stringify((await st()).ivy))
+const iv2 = (await st()).ivy
+const tan = await page.evaluate(([x, y]) => {
+    const c = document.querySelector('canvas')
+    const d = c.getContext('2d').getImageData(Math.max(0, x - 4), Math.max(0, y - 6), 20, 18).data
+    let n = 0
+    for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - 0xc9) < 30 && Math.abs(d[i + 1] - 0x99) < 30 && Math.abs(d[i + 2] - 0x5c) < 30) n++
+    return n
+}, [iv2.x + 8, iv2.y + 4])
+check('#2143 the basket is painted at her side', tan >= 8, `tan px ${tan}`)
+await page.evaluate(() => window.__homebodyTest.bond('ivy', 60))
+await wait(250)
+const [vr, vg, vb] = await pxAt(557, 260)   // flower row, first pip — FAMILY now
+check('#2143 the panel runs a third BONDS row and paints Ivy pips plum', vr > vg + 24 && vb > vg + 24 && vr > 110, `rgb(${vr},${vg},${vb})`)
+
 // frame matches: sprite position follows state
 const f0 = await page.evaluate(() => window.__game.state())
 check('contract state ticks', f0.tick > 0 && typeof f0.score === 'number', `tick=${f0.tick} score=${f0.score}`)
