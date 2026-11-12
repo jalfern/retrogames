@@ -584,7 +584,7 @@ const SuperMarioGame = () => {
             clearTimeout(noGuideTimer.current)
             noGuideTimer.current = setTimeout(() => setNoGuide(false), 1500)
         }
-        const canWatch = () => (state === 'play' || state === 'intro') && mode === 'play' && levelIndex === 0 && !pausedRef.current
+        const canWatch = () => (state === 'play' || state === 'intro') && mode === 'play' && levelIndex <= 1 && !pausedRef.current
         const chooseOption = (i) => {
             menuSel = i
             if (i === 0) startPlay('play')
@@ -786,6 +786,39 @@ const SuperMarioGame = () => {
                 }
             }
             if (backing) keys.run = false
+
+            // Air brake (#2111). The 1-3 pit chains can hand Mario too much height — a
+            // koopa bounce at col 20 sends fire Mario over pit 1 with apex y=5 — and when
+            // he crosses the next platform's level a tile early, collideY cannot save him:
+            // it scans the ONE row under the feet, and he spans that platform's columns
+            // only after his feet are already below its tile. The corner locks the death
+            // several frames before the ground would, and the edge rule at the top of this
+            // function can never fire — it requires `onGround`, and there is none left.
+            // There is no second jump mid-air, but the engine accelerates horizontally
+            // regardless of ground, so it gives a player a real air brake. Predict the
+            // landing by mirroring collideY's scan exactly (same row selection, same span,
+            // same gravity); brake ONLY when the current line lands on nothing AND a
+            // braked line lands on something. When the prediction is already safe the
+            // whole block is a no-op, which is what keeps the certified 1-1 line
+            // byte-identical — every 1-1 pit lands solid today.
+            const predictFall = (brake) => {
+                let x = m.x, y = m.y, vx = m.vx, vy = m.vy
+                for (let t = 0; t < 120; t++) {
+                    vy = Math.min(vy + GRAVITY, MAX_FALL)
+                    if (brake) { if (vx > 0) vx = Math.max(0, vx - RUN_ACCEL) }
+                    else vx = Math.min(vx + RUN_ACCEL, RUN_MAX)
+                    x += vx; y += vy
+                    const r = Math.floor((y + m.h) / TILE)
+                    const c0 = Math.floor(x / TILE)
+                    const c1 = Math.floor((x + m.w - 1) / TILE)
+                    for (let c = c0; c <= c1; c++) if (solidAt(c, r)) return true
+                    if (y > VIEW_H + 40) return false      // same kill plane as the sim
+                }
+                return false
+            }
+            if (!m.onGround && m.vy > 0 && !backing && !predictFall(false) && predictFall(true)) {
+                keys.right = false; keys.left = true
+            }
 
             if (m.power !== 'fire') {
                 // seek power-ups: bump the ? block DIRECTLY OVERHEAD. Not the one a tile

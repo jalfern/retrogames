@@ -91,10 +91,11 @@ deaths. Any driving key, a tap on the field, or the pill takes the overalls back
 
 Three rules make the seat honest, each pinned in `watchcheck`'s b31 section:
 
-- **The seat lives on 1-1** (`levelIndex === 0`) — that is the sector the harness certifies.
-  Y anywhere else (menu, 1-3, 1-4) declines with the shared no-guide chip, ~1.5 s. The
-  uncertified verdict is measured (#2062): the autopilot dies at col 33 of 1-3 — see *Known
-  gaps* — so widening this gate needs a col-33 fix first, not a flag change. The decline chip
+- **The seat lives on the certified sectors, 1-1 and 1-3** (`levelIndex <= 1`, #2111) — the
+  sectors `autopilotcheck` certifies, the 1-3 leg included: all seven athletic pits crossed
+  with zero deaths to the flag. Y anywhere else (menu, 1-4) declines with the shared no-guide
+  chip, ~1.5 s. The gate widened when the col-33 corner death was fixed (air brake, see
+  *Known gaps*); it stays closed on 1-4 until its firebars are proven. The decline chip
   fits 390px portrait (measured 288.6px wide, centered, clear of the OPTIONS button and the
   attract hint, which are themselves clear of each other at 390×844).
 - **The flagpole completes the watcher.** `touchFlag` releases the seat *with `release(false)`*
@@ -337,14 +338,22 @@ symbol name.
   *approach* is not: the goomba hop and the `?`-block bumps arrive at a different phase, and as
   small Mario he takes the jump ~15px late and dies. Real bug, unfixed, deliberately not hidden
   by testing only the size that passes.
-- **The autopilot only knows 1-1.** Its rules are tuned to that level's geometry, so when it
-  clears 1-1 it walks into an athletic pit in 1-3 and dies. `autopilotcheck` therefore stops at
-  the flag — which is the actual win condition for "did it clear 1-1" — rather than pretending
-  the whole game is in scope. Measured 2026-11-12 (#2062), not assumed: driven straight through,
-  it reaches the 1-1 flagpole at col 174 with three lives and zero deaths, then on 1-3 dies at
-  **col 33 — the first athletic pit — identically on all three lives** (never reaches 1-4's
-  firebars or lava at all). So the WATCH seat stays certified on 1-1, and the col-33 pit is the
-  first lever if the seat is ever to cover the whole game.
+- **The autopilot clears 1-3 now; 1-4 is the remaining sector** (#2111, was *only knows 1-1*).
+  Measured 2026-11-12 (#2062): driven straight through, it reached the 1-1 flagpole at col 174
+  with three lives and zero deaths, then on 1-3 died at **col 33 identically on all three
+  lives**. Root cause (trace `scripts/.shots/qa2111-natural.csv`): the col-20 koopa bounce
+  sends Fire Mario over pit 1 with apex y=5 — too much height, crossed too early — and he
+  sinks past the corner of pit 2's `[31,33,r9]` platform: `collideY` scans the ONE row under
+  the feet, and his span reaches col 31 only after his feet are below that tile, so the
+  death locks several frames before the ground would (`onGround` never comes back, and the
+  edge rule needs it). The fix is an **air brake**: `predictFall` mirrors `collideY`'s exact
+  scan (same row, same span, same gravity/accel), and the autopilot brakes mid-air — the
+  engine accelerates horizontally regardless of ground — only when the current line lands on
+  nothing AND a braked line lands on solid ground. A safe prediction changes nothing, so the
+  certified 1-1 line is untouched. `autopilotcheck` pass 3 drives the 1-3 leg (all seven pits
+  witnessed, zero deaths, flagpole), and the WATCH seat widened to `levelIndex <= 1`.
+  Remaining: 1-4's col-31 firebar kills the autopilot at col 33 (measured, fresh-entry runs
+  too) — a phase/timing gate is the next lever toward whole-game certification.
 - **No 1-up mushroom** (`coins % 100 === 0` silently adds a life; no 1-up block exists).
 - **No moving or half-solid platforms.**
 - **No Bowser, no axe, no bridge** in 1-4. It ends on a flagpole like every other level;
