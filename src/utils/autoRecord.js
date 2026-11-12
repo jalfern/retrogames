@@ -166,10 +166,18 @@ export async function endRun(opts = {}) {
     const out = autoStop()
     if (!out) return null
     const { rec, flush } = out
+    // #2093 item 4: a flush that never lands is a NAMED outcome, not silence.
+    // Past the 5 s race the last chunk (or the whole track, worst case) rides
+    // off missing — say so on the two surfaces the harnesses read, so a
+    // voiceless upload can be traced to the flush instead of a mystery.
+    let voiceFlushTimedOut = false
     if (flush) {
+        let flushed = false
         try {
-            await Promise.race([flush.catch(() => null), new Promise((r) => setTimeout(r, 5000))])
+            await Promise.race([flush.then(() => { flushed = true }).catch(() => null), new Promise((r) => setTimeout(r, 5000))])
         } catch { /* the take ships without the last chunk rather than not at all */ }
+        voiceFlushTimedOut = !flushed
+        if (voiceFlushTimedOut) window.__autoCapture = { ...(window.__autoCapture || {}), voiceFlushTimedOut: true }
     }
     const consent = consentFor(ls(), PLAYER_ID)
     // S6: persist BEFORE the first attempt — the crash window is exactly the
@@ -198,6 +206,7 @@ export async function endRun(opts = {}) {
             voice: !!rec.voice, uploaded: !!res.uploaded,
             reason: res.reason || null, key: res.key || null,
             requeued: !!res.requeued, queued: entry ? 1 : 0,
+            voiceFlushTimedOut, // #2093: the missing-tail outcome has a name
         },
     }
     return res

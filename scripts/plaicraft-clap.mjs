@@ -14,11 +14,13 @@
 // (voicedrive's established trick — only the sound source is synthetic;
 // consent, MediaRecorder, the tick clock, v2 assembly and the upload are the
 // real code) fires full-scale CLAPS at known wall-times while the harness
-// presses ArrowRight at the SAME instant, like the physical clap test: clap +
-// button together. The run ends, uploads through worker.js routes, downloads
-// back, decodes the opus in the browser (WebAudio), and the pure clapSync
-// verdict pairs every detected onset with its recorded press tick through the
-// track's own clock. |offset| <= 50 ms for all three.
+// taps the ATTACK key (Space — Gauntlet's `a`, the control the #2056 player
+// instructions name) at the SAME instant, like the physical clap test: clap +
+// A-tap together, steering between claps as normal-play context. The run
+// ends, uploads through worker.js routes, downloads back, decodes the opus in
+// the browser (WebAudio), and the pure clapSync verdict pairs every detected
+// onset with its recorded A-tap through the track's own clock.
+// |offset| <= 50 ms for all three.
 //
 // Nothing here needs Jon's phone; when the real store lands, --store= reuses
 // the identical driver against it.
@@ -39,6 +41,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { validate } from '../src/utils/recording.js'
 import { detectClaps, clapVerdict, matchClapEdges, CLAP_TOL_MS, CLAP_SEARCH_MS, CLAP_MIN_PAIRS } from '../src/utils/clapSync.js'
+import { containerDurationMs } from '../src/utils/voice.js'
 import { DIR_FIELDS, AIM_FIELDS } from '../src/utils/onePad.js'
 import { startRelaySim } from './lib/relaysim.mjs'
 import { STORE_DEFAULT } from '../src/utils/sessionStore.js'
@@ -68,16 +71,16 @@ const r = new Report('plaicraft:clap')
 // The synth path below proves the pipeline with baked claps; this proves the
 // acceptance line on Jon's actual phone bytes: claps he made, presses he made,
 // the phone's mic, encoder and clock. Reads are keyed (JON_KEY env, #1711 S8).
-// Direction-agnostic on purpose (#2056): a real phone take has steering/drift
-// edges in the analog streams and its taps on the attack buttons, so a whole
-// take is NOT one clean edge-per-clap stream. Per seat we flatten EVERY input
-// edge — direction bits, a/b/start, aim bits, analog threshold crossings from
-// the raw channel — into one tick list and grade it with matchClapEdges: each
-// heard onset pairs with the nearest edge inside a ±250 ms search window (any
-// control), and the SAME ±50 ms line runs over those pairs. Presses with no
-// nearby onset are ignored (normal play in the same take is fine). A 500 ms-
-// skewed take cannot put ANY edge within ±50 ms of its claps, so the mutant
-// stays red by construction (the synth run pins that half).
+// Direction-agnostic on seat choice (#2056), control-strict on pairing (audit
+// 2026-11-12): a real phone take has steering/drift edges everywhere and its
+// clap taps on the A button. Per seat we flatten EVERY control's edges — but
+// TAGGED by control — into one list and grade with matchClapEdges, which pairs
+// each heard onset with the nearest A-tagged tap inside a ±250 ms search
+// window; edges of other controls are context, never pairing candidates. The
+// SAME ±50 ms line runs over those pairs. A 500 ms-skewed take cannot put any
+// A-tap within ±50 ms of its claps, so the mutant stays red by construction
+// (the synth run pins that half); the dense-stick +120 ms recordcheck mutant
+// pins that steering noise can no longer launder a lagging mic back to green.
 if (ANALYZE_KEY || ANALYZE_FILE) {
     const ra = new Report('plaicraft:clap — keyed take')
     const base = flagVal('store', process.env.SESSION_STORE || STORE_DEFAULT)
@@ -135,10 +138,12 @@ if (ANALYZE_KEY || ANALYZE_FILE) {
     if (!(pcm && track)) { await ra.exit(browser) }
     const aOnsets = detectClaps(Float32Array.from(pcm.samples, (v) => v / 32767), { sampleRate: pcm.sr })
     ra.info('claps heard in the take', `${aOnsets.length}`)
-    // #2056: flatten EVERY control's edges per seat — digital bits (direction,
-    // a/b/start, aim) as rising edges; analog channels (post-zone x/y, ax/ay,
-    // pointer) as |value| threshold crossings, which is what a thumb's press
-    // of a virtual stick looks like on the raw channel.
+    // #2056 + the 2026-11-12 AUDIT fix: build per-seat edges TAGGED by control.
+    // Digital bits (direction, a/b/start, aim) as rising edges under their own
+    // name; analog channels (post-zone x/y, ax/ay, pointer) as |value| threshold
+    // crossings tagged `ana:`/`raw:`. matchClapEdges pairs onsets ONLY with the
+    // `a` taps — the control #2056 instructions name — the rest is reported as
+    // context so a seat's steering still shows up in the verdict line.
     const A_DIG = [...DIR_FIELDS, 'a', 'b', 'start', ...AIM_FIELDS]
     const A_ANA = ['x', 'y', 'ax', 'ay']
     const A_RAW = ['x', 'y', 'ax', 'ay', 'px', 'py']
@@ -147,33 +152,47 @@ if (ANALYZE_KEY || ANALYZE_FILE) {
     ;(rec.slots || []).forEach((slot, seat) => {
         const pads = (slot && slot.pads) || []
         const raws = (slot && slot.raw) || []
-        const ticks = new Set()
+        const edges = []
+        const seen = new Set()
+        const add = (t, control) => { const k = `${t}|${control}`; if (!seen.has(k)) { seen.add(k); edges.push({ t, control }) } }
         for (let i = 0; i < pads.length; i++) {
             const p = pads[i] || {}
             const q = i ? pads[i - 1] || {} : {}
-            for (const f of A_DIG) if (p[f] && !q[f]) ticks.add(i + 1)
-            for (const f of A_ANA) if (Math.abs(p[f] || 0) >= CROSS && Math.abs(q[f] || 0) < CROSS) ticks.add(i + 1)
+            for (const f of A_DIG) if (p[f] && !q[f]) add(i + 1, f)
+            for (const f of A_ANA) if (Math.abs(p[f] || 0) >= CROSS && Math.abs(q[f] || 0) < CROSS) add(i + 1, `ana:${f}`)
         }
         for (let i = 0; i < raws.length; i++) {
             const p = raws[i] || {}
             const q = i ? raws[i - 1] || {} : {}
-            for (const f of A_RAW) if (Math.abs(p[f] || 0) >= CROSS && Math.abs(q[f] || 0) < CROSS) ticks.add(i + 1)
+            for (const f of A_RAW) if (Math.abs(p[f] || 0) >= CROSS && Math.abs(q[f] || 0) < CROSS) add(i + 1, `raw:${f}`)
         }
-        if (ticks.size) aCands.push({ seat, ticks: [...ticks].sort((a, b) => a - b) })
+        if (edges.length) aCands.push({ seat, edges, taps: edges.filter((e) => e.control === 'a').length })
     })
     const aGraded = aCands
-        .map((c) => ({ ...c, verdict: matchClapEdges({ sampleRate: pcm.sr, onsets: aOnsets, edgeTicks: c.ticks, clock: track.clock, minPairs: ANALYZE_MIN }) }))
+        .map((c) => ({ ...c, verdict: matchClapEdges({ sampleRate: pcm.sr, onsets: aOnsets, edges: c.edges, clock: track.clock, minPairs: ANALYZE_MIN }) }))
         .sort((a, b) => (b.verdict.ok - a.verdict.ok)
             || ((a.verdict.worstMs ?? 1e9) - (b.verdict.worstMs ?? 1e9))
             || (b.verdict.matched - a.verdict.matched))
     const best = aGraded[0]
-    ra.check(`clap-coincident edges found on some seat (any control, ±${CLAP_SEARCH_MS} ms window, >=${ANALYZE_MIN} pairs)`, !!best,
-        `claps ${aOnsets.length}; edge streams ${aCands.map((c) => `s${c.seat}:${c.ticks.length}`).join(', ') || 'none'}`)
+    ra.check(`clap-coincident A-button taps found on some seat (#2056's named control, ±${CLAP_SEARCH_MS} ms window, >=${ANALYZE_MIN} pairs)`, !!best && best.taps > 0,
+        `claps ${aOnsets.length}; A-tap streams ${aCands.map((c) => `s${c.seat}:${c.taps}`).join(', ') || 'none'}`)
     if (best) {
         ra.info('clap pairs', JSON.stringify(best.verdict.pairs))
-        ra.info('normal-play edges ignored', `${best.verdict.ignoredEdges} of ${best.ticks.length} edges on seat ${best.seat}`)
-        if (best.verdict.unmatchedOnsets) ra.info('onsets with no nearby edge', `${best.verdict.unmatchedOnsets} (ask: was each clap paired with a tap?)`)
+        ra.info('context edges ignored (steering/analog — audit 2026-11-12: only the A button pairs)', `${best.verdict.ignoredEdges} of ${best.edges.length} edges on seat ${best.seat}`)
+        if (best.verdict.unmatchedOnsets) ra.info('onsets with no nearby A-tap', `${best.verdict.unmatchedOnsets} (ask: was each clap paired with a tap?)`)
         ra.check(`every matched clap lands within ±${CLAP_TOL_MS} ms of its frame (seat ${best.seat})`, best.verdict.ok, `${best.verdict.why} (worst ${best.verdict.worstMs} ms)`)
+    }
+    // #2093 item 3: print the container-declared duration beside the verdict —
+    // a tail-dropped take must show bytes ending before the clock does at the
+    // clap stage, not only later at evidence.
+    const containerMs = containerDurationMs(track)
+    const lastClock = track.clock[track.clock.length - 1]
+    if (containerMs !== null && lastClock) {
+        const tailGap = lastClock.ms - containerMs
+        ra.info('container duration', `${containerMs} ms vs clock end ${lastClock.ms} ms${tailGap > 0 ? ` (${tailGap} ms of audio missing at the tail)` : ''}`)
+        if (tailGap > 150) ra.info('TAIL-DROP WARNING', `container ends ${tailGap} ms before the clock — this take will fail the evidence voice check`)
+    } else {
+        ra.info('container duration', 'unparseable from these bytes')
     }
     ra.check('zero page errors', aErrors.length === 0, aErrors.join(' | '))
     await ra.exit(browser)
@@ -271,13 +290,19 @@ const clapWall = await page.evaluate(() => window.__clapWall || [])
 r.check('claps scheduled from mic-open', clapWall.length === CLAP_MS.length, JSON.stringify(clapWall.map((w) => w - clapWall[0])))
 r.check('green mic badge while the take is live', await page.locator('[data-voice-mic][data-state="rec"]').count() === 1)
 
-// play + clap-and-press: real key events aimed at the clap instants (offset
-// for the mutant). Between claps, keep it visibly a run with a couple of taps.
+// play + clap-and-tap: real key events aimed at the clap instants (offset
+// for the mutant). The named control is the A button (#2056 instructions:
+// "smack the orange A button") — Space is Gauntlet's sword → pad `a`. Right
+// after each tap, a steering hold keeps it visibly a run AND puts normal-play
+// edges in the take — the audit's context: those edges must never absorb a clap.
 for (let i = 0; i < clapWall.length; i++) {
     const aim = clapWall[i] + PRESS_OFFSET_MS
     await new Promise((res) => setTimeout(res, Math.max(0, aim - Date.now())))
-    await page.keyboard.down('ArrowRight')
+    await page.keyboard.down('Space')
     await page.waitForTimeout(130)
+    await page.keyboard.up('Space')
+    await page.keyboard.down('ArrowRight')
+    await page.waitForTimeout(350)
     await page.keyboard.up('ArrowRight')
 }
 await page.waitForTimeout(500)
@@ -318,12 +343,12 @@ r.check('v2 file with one voice track', rec.format === 'retrogames-rec/v2' && re
 const track = rec.voice && rec.voice.tracks[0]
 r.check('voice track carries a clock trace', !!(track && Array.isArray(track.clock) && track.clock.length >= 2), track && JSON.stringify(track.clock))
 
-// the press ticks the pads banked: rising edges of `right` (exactly one per
-// tap — 3 taps, 3 edges, nothing else presses during the window)
+// the A-tap ticks the pads banked: rising edges of `a` (exactly one per
+// tap — 3 taps, 3 edges; the steering holds are context, not presses)
 const pads = (rec.slots[0] && rec.slots[0].pads) || []
 const pressTicks = []
-for (let i = 0; i < pads.length; i++) if (pads[i] && pads[i].right && !(i && pads[i - 1] && pads[i - 1].right)) pressTicks.push(i + 1)
-r.check('three clap-coincident presses banked in the pad stream', pressTicks.length === CLAP_MS.length, JSON.stringify(pressTicks))
+for (let i = 0; i < pads.length; i++) if (pads[i] && pads[i].a && !(i && pads[i - 1] && pads[i - 1].a)) pressTicks.push(i + 1)
+r.check('three clap-coincident A-taps banked in the pad stream', pressTicks.length === CLAP_MS.length, JSON.stringify(pressTicks))
 
 // decode the opus IN the browser (the container only lives there) and run the
 // pure verdict over real recorded bytes
