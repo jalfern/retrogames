@@ -76,6 +76,17 @@ after 1 h).
   Every admin read tool sends it from the environment:
   `JON_KEY=<secret> npm run sessions`, `JON_KEY=… npm run plaicraft:evidence`,
   `JON_KEY=… npm run plaicraft:clap -- --key=<sessionKey>`.
+- **RELABEL WRITE (#2093 item 1):** `PATCH /sessions/<key>` rides the SAME
+  door as the reads (store edits are exactly as private as store reads).
+  It performs the store's ONE permitted write-after-upload — repairing seat
+  provenance `model`→`human` (auto-record only captures human starts, so the
+  three 2026-11-11 iPhone takes that store seat 0 as `model` are honest human
+  evidence). The operation is FIXED (`applySessionRelabel`, core.js): body is
+  exactly `{seat}`; the reverse is refused (provenance cannot be laundered);
+  the stale `modelId` drops; every byte outside the seat stays byte-identical.
+  The tool: `JON_KEY=<secret> npm run sessions -- relabel <key> [<key>…]
+  [--seat N]` — the #2093 one-off:
+  `JON_KEY=<secret> npm run sessions -- relabel gauntlet/2026-11-11-seed15-8fdbfeef08.json gauntlet/2026-11-11-seed59-182a1f4459.json gauntlet/2026-11-11-seed59-5a9737e569.json`
 - **Jon's clap session:** play GAUNTLET on the phone with both consent
   switches ON, and three times during the run CLAP sharply and tap RIGHT at
   the same instant (clap + tap together, ~1 s apart, the way the harness
@@ -88,7 +99,8 @@ after 1 h).
   in-memory R2) and grades the routes: door, CORS, key regex, metadata
   round-trip, caps, honest 503s — and the read lockdown (`--mutate` strips
   the consent door → 5 gates red; `--mutate-readlock` strips the read doors
-  → the 4 no-key refusals red; one-line SOURCE mutants, deployed file only).
+  → the 4 no-key read refusals + the no-key relabel write refusals red;
+  one-line SOURCE mutants, deployed file only).
   `plaicraft:evidence --self-test` and `plaicraft:clap` run their pipelines
   on the same sim.
 
