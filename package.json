@@ -89,6 +89,7 @@
     "verify": "node scripts/verify.mjs",
     "aicheck": "node scripts/aicheck.mjs",
     "watchcheck": "node scripts/watchcheck.mjs",
+    "watchbudgetcheck": "node scripts/watchbudgetcheck.mjs",
     "watchsoakcheck": "node scripts/watchsoakcheck.mjs",
     "watchphonecheck": "node scripts/watchphonecheck.mjs",
     "watchpillcheck": "node scripts/watchpillcheck.mjs",

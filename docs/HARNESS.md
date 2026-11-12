@@ -146,6 +146,8 @@ proved; main's full proof is the nightly. Before ANY merge a lane runs
 ```bash
 scripts/main-ok.sh                        # merge-freeze check (rule 5)
 node scripts/watchcheck.mjs               # watch.sh pane self-heal proof (#1259; skips where no zsh)
+                                        #   --throttle N reproduces nightly tick debt on one pilot (#2036)
+node scripts/watchbudgetcheck.mjs         # #2036: tick-scaled resume budgets, pinned deterministically
 node scripts/nightlyverdictcheck.mjs    # the verdict workflow stays advisory-free (#1358)
 node scripts/muteguardcheck.mjs         # #1359: killed --mutate runs restore every planted file
                                         #   (canary + guard live kill tests + wiring audit of all
