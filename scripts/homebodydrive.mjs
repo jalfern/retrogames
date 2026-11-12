@@ -130,6 +130,36 @@ await wait(150)
 const [pr1, pg1, pb1] = await pxAt(557, 246)
 check('a FAMILY leaf paints its pips green', pg1 > pr1 && pg1 > pb1 && pg1 > 120 && !(pg0 > pr0 && pg0 > pb0 && pg0 > 120), `off rgb(${pr0},${pg0},${pb0}) on rgb(${pr1},${pg1},${pb1})`)
 
+// #2070 spats & make-ups on the live page: foul the pair — the heart must
+// crack (spat event lands, panel heart runs ash-dark); lift tempers — it
+// must return to ember with the grudge gone.
+const heartScan = () => page.evaluate(() => {
+    const c = document.querySelector('canvas')
+    const d = c.getContext('2d').getImageData(544, 40, 8, 260).data
+    let ember = 0, ash = 0
+    for (let i = 0; i < d.length; i += 4) {
+        const [r, g, b] = [d[i], d[i + 1], d[i + 2]]
+        if (r > 210 && r < 242 && g > 70 && g < 104 && b > 60 && b < 92) ember++
+        if (r > 124 && r < 158 && g > 42 && g < 76 && b > 36 && b < 70) ash++
+    }
+    return { ember, ash }
+})
+const calm0 = await heartScan()
+await page.evaluate(() => { window.__homebodyTest.bond('house', 50); window.__homebodyTest.foul() })
+await wait(1300)
+const sp = await st()
+const hurt = await heartScan()
+check('#2070 a real live spat docks the heart eight', sp.spats === 1 && sp.grudge === 1 && Math.abs(sp.rel.house - 42) < 0.3, JSON.stringify({ spats: sp.spats, grudge: sp.grudge, house: Math.round(sp.rel.house * 10) / 10 }))
+// deltas, not absolutes: the panel carries a persistent ember pixel set (the
+// resident name dot shares the heart's colour) — what must move is the heart.
+check('#2070 the panel heart runs ash-dark on the grudge', hurt.ash - calm0.ash > 8 && calm0.ember - hurt.ember > 15, `calm ember ${calm0.ember} ash ${calm0.ash} -> hurt ember ${hurt.ember} ash ${hurt.ash}`)
+await page.evaluate(() => window.__homebodyTest.thaw())
+await wait(1300)
+const mk = await st()
+const healed = await heartScan()
+check('#2070 the live thaw makes up and clears the grudge', mk.grudge === 0 && mk.rel.house > sp.rel.house + 6 - 0.1, JSON.stringify({ before: Math.round(sp.rel.house * 10) / 10, after: Math.round(mk.rel.house * 10) / 10 }))
+check('#2070 the ember heart returns with the thaw', healed.ember - hurt.ember > 15 && hurt.ash - healed.ash > 8, `hurt ember ${hurt.ember} ash ${hurt.ash} -> healed ember ${healed.ember} ash ${healed.ash}`)
+
 // pause via Escape: the clock stops. Sample AFTER the keypress has landed and
 // compare two post-pause reads — a tA captured before Escape can straddle one
 // last frame and false-fail (flake fixed #1806 drive).

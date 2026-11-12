@@ -58,6 +58,20 @@ freezes the rest. Workdays run the clock ×8 while a rostered resident is out
   5 real seconds, and a fade above ~0.08/s would outrun chat growth outright
   — the ladder would exist on paper and die on the phone (caught by the
   drive pass, not the node gates).
+- Spats & Make-ups (#2070): the bond can fall now. Two idle residents within
+  reach (≤2 tiles) both running needs-avg under 0.4 (`moodOf` 0 — the same
+  band the mood kite shows) **spat**: house −8 (crossing an edge down fires
+  `rel-down` and the panel pip visibly drops), −0.12 social each, a grudge
+  sets, `spats++`, at most once per 40 s window. While the grudge holds the
+  pair is in **cold war** — proximity builds nothing, only absence cools.
+  The one thaw: the same reach with both tempers up (needs-avg over 0.7)
+  **makes up** — +6 house, +1 content, grudge cleared, once per spat. No rng
+  in the triggers, so every seed stays deterministic; `spats`/`grudge` ride
+  `stateHash`. Tells: the panel heart runs ash-dark while the grudge lasts,
+  a spat lands with banner + sour buzzer + red sparks + a screen jolt, the
+  thaw answers with a warm major chord. Honesty (#237): The Sims *orders*
+  insults and compliments; spats here are a law of neglected living, not a
+  button — romance and third-party relationships stay open (see Honest gaps).
 - Contentment: +1/+2 per satisfied need (2 = everyone healthy), +1 chat, +3
   payday, +1 per happy ambience hour. 80 grants the wish.
 - Autonomy (needs self-service, clocking in) runs only in `demo` mode — attract
@@ -70,13 +84,14 @@ freezes the rest. Workdays run the clock ×8 while a rostered resident is out
 
 ## Verify
 ```bash
-npm run peoplecheck          # 124 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), winnable seeds, determinism
+npm run peoplecheck          # 148 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
 # Or zero `s.roomReact = s.people.length` in buildRoom — exactly the MOVE-IN
 # gates go red; restore. Or comment the two `footstep(...)` calls — exactly the
-# FEEL walking gates go red; restore.
+# FEEL walking gates go red; restore. Or neuter the spat trigger in
+# updateHouseBond (`if (false)`) — exactly the SPATS gates go red (14); restore.
 npm run dev   # another terminal
 npm run contractcheck        # includes homebody (CONTRACT_ONLY=homebody for just this)
 DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart
@@ -121,10 +136,11 @@ source pin go red (~7); restore.
   lines, chat speech bubbles.
 - **CLOSED by #1823 (QA pass):** walk-surface step timbre (plank/gravel/lawn)
   and the red ghost-cell flash on refused placements.
-- **PARTIAL by #1817:** bonds climb the chat loop now — `house`/`fern` meters,
-  four levels, topic/linger/return/toast unlocks, hourly fade, panel row.
-  Romance, fights and relationships beyond the household+Fern triangle are the
-  open tail of this line.
+- **PARTIAL by #1817 + #2070:** bonds climb the chat loop, unlock a topic/
+  linger/return/toast ladder, and can now break and mend — spats, cold war
+  and make-ups shipped. Player-ordered romance (insult/complement/affection
+  commands) and relationships beyond the household+Fern triangle (second
+  visitor, kids, pets) are the open tail of this line.
 - Visitors are Fern only; no kids/pets; single store catalog.
 - No skippable-speed control for the player; day/night is cosmetic + decay only.
 - Needs panel shows both residents; no per-object queue display like the original.

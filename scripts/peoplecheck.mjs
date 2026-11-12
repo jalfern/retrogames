@@ -26,6 +26,7 @@ import {
     FIXED_DT, W, H, COLS, ROWS, MAP, TILE, WIN_CONTENT, NEEDS,
     CATALOG, DEF, tileOf, tileX, tileY, SFX, RED_AT, EXT_ROOM,
     REL_NAMES, relLevel, chatPool,
+    SPAT_DROP, SPAT_SOCIAL, SPAT_CD, MAKEUP_BOND, moodOf, avg,
     newRun, advance, autoStep, cmdUse, cmdWalk, cmdWork, tryUse,
     place, sellAt, targetsOf, walkable, bfsPath, stateHash, buildRoom, buildRoomOk,
     manualMove,
@@ -564,6 +565,140 @@ section('FEEL — walk surfaces + refusal (#1823)')
     check('pin: every refusal branch emits its event', (feelSim.match(/t: 'refuse'/g) || []).length === 3)
     check('pin: the shell plays three distinct step timbres', /e\.surf === 'floor'[\s\S]*e\.surf === 'path'/.test(feelJsx))
     check('pin: the refusal flashes a red ghost cell', /refuses\.push\(\{ r: e\.r, c: e\.c/.test(feelJsx) && /fillStyle = '#e23b2e'/.test(feelJsx))
+}
+
+// SPATS & MAKE-UPS (#2070): the bond can break — and thaw -----------------
+section('SPATS (#2070): quarrels, cold war, make-up')
+{
+    const FOUL = 0.30    // avg under 0.4 → moodOf 0 (temper down)
+    const SWEET = 0.90   // avg over 0.7 → moodOf 2 (tempers up)
+    const MID = 0.55     // neither foul nor sweet
+    // park both residents idle beside each other at chosen need levels
+    const park = (g, lvA, lvB) => {
+        g.demo = false; g.visitAfter = 99
+        const [a, b] = g.people
+        a.r = 3; a.c = 3; a.path = null
+        b.r = 3; b.c = 4; b.path = null
+        for (const n of NEEDS) {
+            if (lvA !== null) a.needs[n] = lvA
+            if (lvB !== null) b.needs[n] = lvB
+        }
+        return g
+    }
+
+    // the trigger: idle, adjacent, both in the red — one hard spat
+    const g1 = park(newRun(501), FOUL, FOUL)
+    g1.rel.house = 50
+    const h0 = g1.rel.house
+    let evs = []
+    for (let i = 0; i < 60; i++) { advance(g1, DT); evs.push(...drain(g1)) }
+    const [pa, pb] = g1.people
+    check('an idle pair in the red spats once', evs.filter((e) => e.t === 'spat').length === 1 && g1.spats === 1, JSON.stringify(evs.map((e) => e.t)))
+    check('the spat docks exactly SPAT_DROP from the heart', h0 - g1.rel.house === SPAT_DROP, `house=${g1.rel.house.toFixed(2)}`)
+    check('both residents eat the social sting', Math.abs(pa.needs.social - (FOUL - SPAT_SOCIAL)) < 1e-9 && Math.abs(pb.needs.social - (FOUL - SPAT_SOCIAL)) < 1e-9)
+    check('the grudge sets — the house goes cold', g1.grudge === 1)
+
+    // cold war: same reach, nothing builds, only absence cools
+    park(g1, MID, MID)   // tempers neutral — no make-up, no climb
+    const h1 = g1.rel.house
+    const sa1 = pa.needs.social
+    evs = []
+    for (let i = 0; i < 60; i++) { advance(g1, DT); evs.push(...drain(g1)) }
+    check('cold war: company builds nothing while the grudge holds', g1.rel.house <= h1 && Math.abs(pa.needs.social - sa1) < 1e-9 && !evs.some((e) => e.t === 'rel-up'), `house=${g1.rel.house.toFixed(2)}`)
+
+    // the make-up: same reach, tempers both up — the lump back, once
+    park(g1, SWEET, SWEET)
+    const h2 = g1.rel.house
+    const c2 = g1.content
+    evs = []
+    // stop the clock the tick the thaw lands — the ordinary climb resumes after
+    for (let i = 0; i < 120 && !evs.some((e) => e.t === 'makeup'); i++) { advance(g1, DT); evs.push(...drain(g1)) }
+    check('tempers up in reach — the pair makes up', evs.filter((e) => e.t === 'makeup').length === 1 && g1.grudge === 0)
+    check('the make-up repays MAKEUP_BOND and banks one content', Math.abs(g1.rel.house - (h2 + MAKEUP_BOND)) < 1e-9 && g1.content === c2 + 1, `house=${g1.rel.house.toFixed(2)}`)
+    park(g1, SWEET, SWEET)
+    evs = []
+    for (let i = 0; i < 60; i++) { advance(g1, DT); evs.push(...drain(g1)) }
+    check('one make-up per spat — the thaw does not repeat', !evs.some((e) => e.t === 'makeup'))
+    check('after the thaw the hearth climbs again', g1.rel.house > h2 + MAKEUP_BOND)
+
+    // no make-up without a grudge (content must not farm on happy idling)
+    const g2 = park(newRun(503), SWEET, SWEET)
+    evs = []
+    for (let i = 0; i < 120; i++) { advance(g2, DT); evs.push(...drain(g2)) }
+    check('happy idling never “makes up” what was never broken', !evs.some((e) => e.t === 'makeup') && g2.spats === 0)
+
+    // trigger gating: apart stays quiet; one sweet temper stays quiet;
+    // a worker stays quiet — the original needs BOTH present and miserable
+    const g3 = park(newRun(505), FOUL, FOUL)
+    g3.people[1].r = 1; g3.people[1].c = 12
+    evs = []
+    for (let i = 0; i < 240; i++) { advance(g3, DT); evs.push(...drain(g3)) }
+    check('foul AND apart does not start a quarrel', !evs.some((e) => e.t === 'spat') && g3.rel.house === 0)
+    const g4 = park(newRun(507), FOUL, SWEET)
+    evs = []
+    for (let i = 0; i < 240; i++) { advance(g4, DT); evs.push(...drain(g4)) }
+    check('one sweet temper talks the other down — no spat', !evs.some((e) => e.t === 'spat') && g4.rel.house > 0)
+    const g5 = park(newRun(509), FOUL, FOUL)
+    g5.people[1].working = true
+    evs = []
+    for (let i = 0; i < 240; i++) { advance(g5, DT); evs.push(...drain(g5)) }
+    check('an argument needs both at home — a worker is no company', !evs.some((e) => e.t === 'spat'))
+
+    // demotion is a visible moment; a mid-level drop stays silent
+    const g6 = park(newRun(511), FOUL, FOUL)
+    g6.rel.house = 13   // FRIENDLY — one drop below the edge
+    evs = []
+    for (let i = 0; i < 60; i++) { advance(g6, DT); evs.push(...drain(g6)) }
+    const downs = evs.filter((e) => e.t === 'rel-down')
+    check('falling below an edge fires rel-down with the new level', downs.length === 1 && downs[0].k === 'house' && downs[0].level === 0, JSON.stringify(downs))
+    check('a FRIENDS-to-FRIENDLY fall lands exactly at the edge, minus eight', g6.rel.house === 13 - SPAT_DROP, `house=${g6.rel.house.toFixed(2)}`)
+    const g6b = park(newRun(519), FOUL, FOUL)
+    g6b.rel.house = 3   // barely above ACQUAINTED — the drop floors at zero
+    evs = []
+    for (let i = 0; i < 60; i++) { advance(g6b, DT); evs.push(...drain(g6b)) }
+    check('ACQUAINTED floors at zero — a broken bond is not negative', g6b.rel.house === 0 && evs.some((e) => e.t === 'spat') && !evs.some((e) => e.t === 'rel-down'))
+    const g7 = park(newRun(513), FOUL, FOUL)
+    g7.rel.house = 50   // mid-FRIENDLY drop stays inside the level
+    evs = []
+    for (let i = 0; i < 60; i++) { advance(g7, DT); evs.push(...drain(g7)) }
+    check('a drop inside a level demotes nothing', !evs.some((e) => e.t === 'rel-down') && g7.rel.house === 50 - SPAT_DROP)
+
+    // cooldown: even with the grudge cleared by hand, the window stays hot.
+    // Needs are refreshed every tick — a 40 s window spans hours, and if the
+    // pair starved into a faint they'd stop being idle (and stop fighting).
+    const holdFoul = (g, sec) => {
+        const out = []
+        for (let i = 0; i < Math.round(sec / DT); i++) {
+            for (const p of g.people) { for (const n of NEEDS) p.needs[n] = FOUL; p.path = null }
+            advance(g, DT); out.push(...drain(g))
+        }
+        return out
+    }
+    const g8 = park(newRun(515), FOUL, FOUL)
+    g8.rel.house = 50
+    evs = []
+    for (let i = 0; i < 60; i++) { advance(g8, DT); evs.push(...drain(g8)) }
+    g8.grudge = 0   // harness pokes the state; the clock must still gate
+    evs = holdFoul(g8, SPAT_CD - 5)
+    check('the spat window holds — no second round at once', g8.spats === 1 && !evs.some((e) => e.t === 'spat'))
+    g8.grudge = 0
+    evs = holdFoul(g8, 7)
+    check('when the window expires, a miserable house does crack again', g8.spats === 2 && evs.some((e) => e.t === 'spat'))
+
+    // hash + determinism
+    const hb = newRun(517)
+    const ha1 = newRun(517); ha1.spats = 1
+    const ha2 = newRun(517); ha2.grudge = 1
+    check('spats and grudge ride the hash', stateHash(ha1) !== stateHash(hb) && stateHash(ha2) !== stateHash(hb))
+    check('seed 7 replays identical with the spat law live', stateHash(play(7)) === stateHash(play(7)))
+
+    // source pins: the view's choke points
+    const spatSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const spatJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const spatArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    check('pin: the law sits in the co-presence tick', /function updateHouseBond[\s\S]*t: 'spat'[\s\S]*t: 'makeup'/.test(spatSim))
+    check('pin: the shell tells spat, thaw and demotion', /case 'spat'/.test(spatJsx) && /case 'makeup'/.test(spatJsx) && /case 'rel-down'/.test(spatJsx))
+    check('pin: the panel heart runs ash-dark on the grudge', /s\.grudge \? '#8c3b34' : '#e2574c'/.test(spatArt))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)

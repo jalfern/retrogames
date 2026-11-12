@@ -452,7 +452,9 @@ export function drawPanel(ctx, s, t) {
     const by = y + 2
     ctx.fillStyle = '#9fb4d8'; ctx.font = 'bold 9px monospace'
     ctx.fillText('BONDS', PANEL_X + 12, by)
-    bondRow(ctx, PANEL_X + 12, by + 12, 'heart', '#e2574c', relLevel(s.rel.house), 'HOUSE')
+    // #2070: a grudge runs the household heart ash-dark — the panel shows the
+    // chill until the pair makes up (the spark comes back with the level).
+    bondRow(ctx, PANEL_X + 12, by + 12, 'heart', s.grudge ? '#8c3b34' : '#e2574c', relLevel(s.rel.house), 'HOUSE')
     bondRow(ctx, PANEL_X + 12, by + 26, 'leaf', '#4fae5f', relLevel(s.rel.fern), 'FERN')
     if (relLevel(s.rel.house) === 3 && Math.floor(t * 2.5) % 2 === 0) {
         ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1

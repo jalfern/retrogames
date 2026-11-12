@@ -33,6 +33,16 @@ export const REL_MAX = 100
 export const REL_EDGES = [12, 30, 60]
 export const REL_NAMES = ['ACQUAINTED', 'FRIENDLY', 'FRIENDS', 'FAMILY']
 export const relLevel = (v) => (v >= REL_EDGES[2] ? 3 : v >= REL_EDGES[1] ? 2 : v >= REL_EDGES[0] ? 1 : 0)
+// #2070: spats & make-ups — the first *negative* relationship rule. An idle
+// pair within reach with needs in the red trades barbs instead of gossip
+// (bond drop, demotion visible, grudge set); while the grudge holds,
+// co-presence builds nothing — the cold war. The way out is the human one:
+// the same reach, both tempers up, pays the lump back. No rng in the
+// triggers — every seed stays deterministic; the dialogue pick is seeded.
+export const SPAT_DROP = 8         // house bond lost per spat
+export const SPAT_SOCIAL = 0.12   // social sting each resident pays
+export const SPAT_CD = 40         // real seconds before another spat can fire
+export const MAKEUP_BOND = 6      // lump bond repaid on the make-up
 export const COLLAPSE_AT = 16       // seconds a red need may go unanswered
 export const FAINT_SEC = 14        // how long a faint lasts
 export const RED_AT = 0.12         // a need at/below this reads red (and alarms the gem)
@@ -192,6 +202,9 @@ export function newRun(seed) {
         visitAfter: null,             // hour of next visit
         visitGap: 0,
         rel: { house: 0, fern: 0 },   // #1817 conversation ladder (0..REL_MAX)
+        spats: 0,                 // #2070: quarrels this run (rides the hash)
+        grudge: 0,                // #2070: 1 = cold war until the pair makes up
+        spatCd: 0,                // #2070: real seconds until the next spat may fire
         houseLineCd: 6,               // co-presence chat line cooldown (s)
         lastToast: 0,               // day of last shared payday toast
         thoughts: [], thoughtT: 0,
@@ -239,6 +252,26 @@ const REL_UP_LINES = {
         3: ['Otto and Mira — soulmates of this little household.'],
     },
 }
+
+// #2070: the mirror of relAdd — a bond can FALL, and crossing an edge downward
+// is a visible moment: one rel-down event, one pip off the panel.
+function relSub(s, k, n) {
+    const before = s.rel[k]
+    s.rel[k] = Math.max(0, before - n)
+    const al = relLevel(s.rel[k])
+    if (al < relLevel(before)) s.events.push({ t: 'rel-down', k, level: al })
+}
+
+const SPAT_LINES = [
+    'Otto and Mira bite each other\u2019s heads off over nothing at all.',
+    'A spat cracks through the house. Plates rattle; feelings take longer.',
+    'Somebody snaps, the other snaps back, and nobody was winning anyway.',
+]
+const MAKEUP_LINES = [
+    'Otto and Mira make up over the kitchen table, the way they always do.',
+    'The grudge thaws — somebody puts the kettle on for two.',
+    'A sigh, a shrug, a hand on the arm: the spat is over, for now.',
+]
 
 // ------------------------------------------------------------- occupancy -------
 // occupancy of solid cells: the cells a placed item physically blocks
@@ -590,8 +623,34 @@ function partnerNear(s, v) {
 function updateHouseBond(s, dt) {
     const [a, b] = s.people
     const idle = (p) => p.faintT <= 0 && !p.working && !p.use
+    if (s.spatCd > 0) s.spatCd = Math.max(0, s.spatCd - dt)
     if (!idle(a) || !idle(b) || Math.abs(a.r - b.r) + Math.abs(a.c - b.c) > 2) {
         if (s.houseLineCd > 0) s.houseLineCd -= dt
+        return
+    }
+    // #2070: spat — needs in the red, tempers lower, and nothing nearby to
+    // distract them: the pair trades barbs once per window instead of gossip.
+    if (!s.grudge && s.spatCd <= 0 && moodOf(a) === 0 && moodOf(b) === 0) {
+        s.grudge = 1
+        s.spats++
+        s.spatCd = SPAT_CD
+        a.needs.social = Math.max(0, a.needs.social - SPAT_SOCIAL)
+        b.needs.social = Math.max(0, b.needs.social - SPAT_SOCIAL)
+        relSub(s, 'house', SPAT_DROP)
+        s.events.push({ t: 'spat', x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 })
+        think(s, pick(s, SPAT_LINES))
+        return
+    }
+    // #2070: cold war — while a grudge holds, company builds nothing (the bond
+    // still cools by absence). The one exit: the same reach, tempers both up.
+    if (s.grudge) {
+        if (moodOf(a) === 2 && moodOf(b) === 2) {
+            s.grudge = 0
+            relAdd(s, 'house', MAKEUP_BOND)
+            s.content = Math.min(WIN_CONTENT, s.content + 1)
+            s.events.push({ t: 'makeup', x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 })
+            think(s, pick(s, MAKEUP_LINES))
+        } else if (s.houseLineCd > 0) s.houseLineCd -= dt
         return
     }
     a.needs.social = Math.min(1, a.needs.social + 0.03 * dt)
@@ -1004,6 +1063,7 @@ export function stateHash(s) {
     mix(s.tick); mix(s.day); mix(s.hour); mix(s.money); mix(s.content); mix(s.rank)
     mix(s.ext)
     mix(s.rel.house); mix(s.rel.fern)   // #1817: bonds ride the hash
+    mix(s.spats); mix(s.grudge)        // #2070: quarrels and grudges ride it too
     for (const p of s.people) {
         mix(p.r); mix(p.c)
         for (const n of NEEDS) mix(p.needs[n])
