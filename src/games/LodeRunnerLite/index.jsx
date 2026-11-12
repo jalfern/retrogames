@@ -70,6 +70,7 @@ const LodeRunnerLiteGame = () => {
     const [end, setEnd] = useState(null)
     const [watching, setWatching] = useState(false) // #1637 WATCH: lodecheck's autopilot runs the vault
     const watchingRef = useRef(false)
+    const padRefs = useRef([]) // #2063: the tappable vault-select pads on the marquee
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
@@ -569,7 +570,10 @@ const LodeRunnerLiteGame = () => {
             const i = held.indexOf(e.code)
             if (i >= 0) held.splice(i, 1)
         }
-        const onPointer = () => {
+        const onPointer = (e) => {
+            // #2063: a tap on a vault-select pad belongs to that pad (its own
+            // click dispatches the Digit key) — never also the tap-anywhere start.
+            if (e?.target instanceof Element && e.target.closest('button')) return
             const sc = screenRef.current
             if (sc === 'attract') { startPlay(0); return }
             if (sc === 'over' && performance.now() - overAtRef.current > 900) setMode('attract')
@@ -616,6 +620,19 @@ const LodeRunnerLiteGame = () => {
                     evLog: evLog.slice(-140),
                 }),
                 start: startPlay,
+                toAttract: () => setMode('attract'), // #2063: the tap loop returns to the marquee between pad taps
+                // #2063: harness gate — the marquee's tappable vault pads. Live
+                // geometry (CSS px, viewport coords) so lodeplay can tap the REAL
+                // centre of each pad with real pointer events.
+                vaultPads: () => padRefs.current.slice(0, LEVELS.length).map((el) => {
+                    if (!el) return null
+                    const r = el.getBoundingClientRect()
+                    return {
+                        label: el.textContent,
+                        w: Math.round(r.width), h: Math.round(r.height),
+                        cx: Math.round(r.left + r.width / 2), cy: Math.round(r.top + r.height / 2),
+                    }
+                }),
                 hash: () => stateHash(gs),
                 // #1637 watchcheck pilot drives these.
                 watching: () => watchingRef.current,
@@ -734,6 +751,25 @@ const LodeRunnerLiteGame = () => {
                         <p className="text-white font-mono font-bold mt-6 animate-pulse">{PRESS}</p>
                         <AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />
                         <span className="block mt-4 text-amber-200/70 font-mono font-bold tracking-wider">{WATCH_ATTRACT_HINT}</span>
+                        {/* #2063: phone parity for the keyboard's 1/2/3 vault skip —
+                            pads withdraw on menus, so the marquee carries its own
+                            tappable select. Each pad dispatches the SAME Digit key
+                            the keyboard path consumes; the window tap-to-start skips
+                            `button` targets, so a pad tap can never also fire the
+                            vault-1 start underneath (Emberwood #965 house pattern). */}
+                        <div className="mt-6 flex justify-center gap-3">
+                            {LEVELS.map((lv, i) => (
+                                <button
+                                    key={lv.name}
+                                    data-vc={`vault${i + 1}`}
+                                    ref={(el) => { padRefs.current[i] = el }}
+                                    title={lv.name}
+                                    className="pointer-events-auto rounded border border-orange-300/70 bg-orange-500/15 px-4 py-2 text-orange-100 font-mono text-sm font-bold tracking-widest backdrop-blur-sm transition-transform active:scale-95"
+                                    onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { code: `Digit${i + 1}`, key: String(i + 1), bubbles: true }))}
+                                >VAULT {i + 1}</button>
+                            ))}
+                        </div>
+                        <p className="mt-2 text-amber-200/60 font-mono text-xs">pick a vault &middot; keys 1 2 3 &middot; tap anywhere starts vault 1</p>
                     </div>
                 </>
             )}
