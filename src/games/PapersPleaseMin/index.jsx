@@ -19,7 +19,7 @@ import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../..
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { decide, RULES, dfmt, dshow, isAdult, stampLines } from './rules.js'
-import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, PHOTO_TINT, PHOTO_ZOOM, CLOCK, SLIP, RENT, PAYFX, BUBBLE, BUBBLE_TAIL, EVID, SETTLE, QUOTE, RECOGNITION, QUEUE, ASIDE, CROWD_NOTE, ARC_MUG, ARC_HL, SEIZE, CHAR, wallRows, bulletinRows } from './layout.js'
+import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, PHOTO_TINT, PHOTO_ZOOM, CLOCK, SLIP, RENT, PAYFX, BUBBLE, BUBBLE_TAIL, EVID, SETTLE, QUOTE, RECOGNITION, QUEUE, ASIDE, CROWD_NOTE, ARC_MUG, ARC_HL, SEIZE, CHAR, DRAG, wallRows, bulletinRows } from './layout.js'
 
 const SIM_MS = 1000 / 60
 
@@ -117,6 +117,26 @@ const PapersPleaseMinGame = () => {
         // the inspector leaning in; holding PHOTO_ZOOM.hold ticks grows the
         // print, and any release lifts it back.
         let holdDown = false, holdInPhoto = false, photoHold = 0, photoZoom = false
+        // #2120 PAPERS IN HAND — decor only (like settle/photoZoom): the sim
+        // never sees these offsets, decide/judge are untouched, and stateHash
+        // stays byte-identical. A press that travels DRAG.travel over a card
+        // grabs it (rustle + tilt in the fingers) and lands it where released;
+        // a press that never travels stays exactly the old stamp/zoom press.
+        // The desk is law in layout.js (DRAG): identity at home, never off
+        // the counter, never over the entrant's face.
+        const CARDS = { pp: { x: PAPERS.x, y: PAPERS.y, w: PAPERS.w, h: PAPERS.h }, id: { x: ID.x, y: ID.y, w: ID.w, h: ID.h } }
+        let desk = { pp: { x: 0, y: 0 }, id: { x: 0, y: 0 } } // carry offsets, booth-side only
+        let carried = null        // {which, grabX, grabY, ox, oy, tilt, moved, lastX}
+        let topCard = 'id'        // z-order: the last grabbed card rides on top
+        // The desk is cleared whenever new papers take the counter: a ruling
+        // collects the judged papers under the stamp (#2021's ride), and the
+        // #1891 drop lays the next applicant's papers home. Yesterday's stack
+        // is off the counter — the drag never accumulates across applicants.
+        const clearDesk = () => {
+            desk.pp.x = desk.pp.y = desk.id.x = desk.id.y = 0
+            carried = null
+            topCard = 'id'
+        }
         // #1968 THE WAGE FLICKER — decor only (like settle/banner): the sim
         // never sees it, so determinism and every replay pin stand untouched.
         let payFx = 0
@@ -183,6 +203,7 @@ const PapersPleaseMinGame = () => {
             const before = gs.strikes
             const paidBefore = gs.paidToday
             settle = 0 // #1891 a fresh stamp interrupts any settling — the frame and the document must sit exactly still while the stamp holds
+            clearDesk() // #2120 ruling collects the papers: what you dragged returns home under the stamp
             step(gs, { action })
             if (gs.paidToday > paidBefore) payFx = PAYFX.ticks // #1968 payday per stamp: the purse visibly fills on the correct call
             if (!gs.end) {
@@ -256,6 +277,7 @@ const PapersPleaseMinGame = () => {
             evLog.length = 0
             stamp = null; banner = null; insp = null; payFx = 0
             settle = SETTLE.ticks // #1891 the first papers of the week drop onto the counter
+            clearDesk() // #2120 a new week opens with an empty desk
             watchingRef.current = false; setWatching(false); watchScript = null // #1637 a new week starts in your hands
             audioController.playSweep(220, 440, 0.25, 'square', 0.07)
             setMode('play')
@@ -304,7 +326,7 @@ const PapersPleaseMinGame = () => {
                 // (the stamp hold ticks out), the next applicant's papers drop.
                 // #2021: unless there is a case to read — then the pin rides
                 // first and the pickup waits for the read window to close.
-                if (stamp.ticks === 0 && !insp) settle = SETTLE.ticks
+                if (stamp.ticks === 0 && !insp) { settle = SETTLE.ticks; clearDesk() } // #2120 the drop lays fresh papers home
             } else if (insp && insp.ticks > 0 && stamp) {
                 // #2021 THE INSPECTOR STAYS — the original keeps the violation
                 // inspector on screen. The judged document holds the counter
@@ -312,7 +334,7 @@ const PapersPleaseMinGame = () => {
                 // the next papers drop. Input is never blocked: act() cuts the
                 // pin short with the next ruling.
                 insp.ticks--
-                if (insp.ticks === 0) settle = SETTLE.ticks
+                if (insp.ticks === 0) { settle = SETTLE.ticks; clearDesk() } // #2120 the drop lays fresh papers home
             }
             if (settle > 0) {
                 settle--
@@ -690,8 +712,32 @@ const PapersPleaseMinGame = () => {
                 }
             }
             if (shown && shown.passport) {
-                drawPassport(shown.passport, PAPERS.x, PAPERS.y + dy, photoZoom)
-                if (shown.idcard) drawId(shown.idcard, ID.x, ID.y + dy)
+                // #2120 PAPERS IN HAND — cards draw at home + desk offset with
+                // the settle dy riding along. The carried card rides last (on
+                // top) tilted in the fingers with a lifted shadow. At rest at
+                // home NOTHING of this runs: no offset, no shadow, no tilt —
+                // the resting draw stays pixel-identical to every pin in law.
+                const drawCard = (k) => {
+                    const c = CARDS[k], o = desk[k]
+                    const cx = c.x + o.x, cy = c.y + dy + o.y
+                    const lifted = o.x !== 0 || o.y !== 0
+                    const tiltNow = carried && carried.which === k ? carried.tilt : 0
+                    ctx.save()
+                    if (tiltNow) {
+                        const mx = cx + c.w / 2, my = cy + c.h / 2
+                        ctx.translate(mx, my); ctx.rotate(tiltNow); ctx.translate(-mx, -my)
+                    }
+                    if (lifted || tiltNow) {
+                        ctx.shadowColor = 'rgba(0,0,0,0.45)'
+                        ctx.shadowBlur = tiltNow ? 9 : 6
+                        ctx.shadowOffsetX = 3; ctx.shadowOffsetY = 4
+                    }
+                    if (k === 'pp') drawPassport(shown.passport, cx, cy, photoZoom)
+                    else drawId(shown.idcard, cx, cy)
+                    ctx.restore()
+                }
+                if (topCard === 'pp') { if (shown.idcard) drawCard('id'); drawCard('pp') }
+                else { drawCard('pp'); if (shown.idcard) drawCard('id') }
             } else {
                 box(PAPERS.x, 60 + dy, PAPERS.w, 120, '#12161f', '#39415c')
                 text('"I HAVE NO PAPERS."', STAMP.x, 125 + dy, 14, '#6d7a9c', 'center')
@@ -858,25 +904,86 @@ const PapersPleaseMinGame = () => {
             if (watchingRef.current) releaseWatch() // #1637 a tap on the counter takes the stamp
             const r = canvas.getBoundingClientRect()
             if (!r.width) return
-            // #2072 HOLD TO INSPECT — a press on the photo (passport on the
-            // counter) is the inspector leaning in, not a stamp: it swallows
-            // the tap and grows the crop while held. Everywhere else on the
-            // counter the old left/right stamp zones are untouched.
             const sx = ((e.clientX - r.left) / r.width) * CW
             const sy = ((e.clientY - r.top) / r.height) * CHS
+            const dyNow = settle > 0 ? SETTLE.dy(settle) : 0
+            // #2072 HOLD TO INSPECT — a press on the photo (passport on the
+            // counter) is the inspector leaning in, not a stamp: it swallows
+            // the tap and grows the crop while held. Since #2120 the photo
+            // rides its card, so the rect carries the desk offset. Everywhere
+            // else on the counter the old left/right stamp zones are untouched.
             if (current(gs).view.person?.passport &&
-                sx >= PAPERS.x + PHOTO.x - 6 && sx <= PAPERS.x + PHOTO.x + PHOTO.w + 6 &&
-                sy >= PAPERS.y + PHOTO.y - 14 && sy <= PAPERS.y + PHOTO.y + PHOTO.h + 14) {
+                sx >= PAPERS.x + desk.pp.x + PHOTO.x - 6 && sx <= PAPERS.x + desk.pp.x + PHOTO.x + PHOTO.w + 6 &&
+                sy >= PAPERS.y + dyNow + desk.pp.y + PHOTO.y - 14 && sy <= PAPERS.y + dyNow + desk.pp.y + PHOTO.y + PHOTO.h + 14) {
                 holdDown = true; holdInPhoto = true
-                return
             }
+            // #2120 PAPERS IN HAND — a press on a document starts a GRAB
+            // candidate: travel past DRAG.travel drags the card; release with
+            // no travel is exactly the press that was there before (zoom in the
+            // photo, stamp zone elsewhere). Once a call is judged the papers are
+            // out of your hands — no grabs until the drop lays fresh ones home.
+            const fromPhoto = holdInPhoto
+            const judgedNow = (stamp && stamp.ticks > 0) || !!(insp && insp.ticks > 0)
+            if (!judgedNow && !carried && current(gs).view.person?.passport) {
+                for (const k of ['id', 'pp']) {
+                    if (k === 'id' && !current(gs).view.person?.idcard) continue
+                    const c = CARDS[k], o = desk[k]
+                    if (sx >= c.x + o.x && sx <= c.x + o.x + c.w && sy >= c.y + dyNow + o.y && sy <= c.y + dyNow + o.y + c.h) {
+                        carried = { which: k, grabX: sx, grabY: sy, ox: o.x, oy: o.y, tilt: 0, moved: false, lastX: sx, fromPhoto }
+                        topCard = k
+                        break
+                    }
+                }
+            }
+            if (carried || holdInPhoto) return // travel decides at release: drag, zoom, or stamp
             act((e.clientX - r.left) / r.width > 0.55 ? 'deny' : 'approve')
         }
-        const onUp = () => { holdDown = false; holdInPhoto = false; photoHold = 0; photoZoom = false }
+        const onMove = (e) => {
+            if (!carried) return
+            if (screenRef.current !== 'play' || pausedRef.current) return
+            const r = canvas.getBoundingClientRect()
+            if (!r.width) return
+            const sx = ((e.clientX - r.left) / r.width) * CW
+            const sy = ((e.clientY - r.top) / r.height) * CHS
+            const c = CARDS[carried.which]
+            const dx = sx - carried.grabX, dy = sy - carried.grabY
+            if (!carried.moved && Math.hypot(dx, dy) < DRAG.travel) return
+            if (!carried.moved) {
+                carried.moved = true
+                holdDown = false; holdInPhoto = false; photoHold = 0; photoZoom = false // the hand beats the loupe
+                audioController.playNoise(DRAG.liftSfx.dur, DRAG.liftSfx.gain) // the paper leaves the counter
+            }
+            carried.tilt = Math.max(-DRAG.tilt, Math.min(DRAG.tilt, (sx - carried.lastX) * DRAG.tiltK))
+            carried.lastX = sx
+            const p = DRAG.clamp(c.x + carried.ox + dx, c.y + carried.oy + dy, c.w, c.h)
+            desk[carried.which] = { x: p.x - c.x, y: p.y - c.y }
+        }
+        const stampByZone = (e) => {
+            const r = canvas.getBoundingClientRect()
+            if (!r.width) return
+            act((e.clientX - r.left) / r.width > 0.55 ? 'deny' : 'approve')
+        }
+        const onUp = (e) => {
+            const c0 = carried
+            holdDown = false; holdInPhoto = false; photoHold = 0; photoZoom = false
+            if (!c0) return
+            carried = null
+            if (c0.moved) { audioController.playNoise(DRAG.dropSfx.dur, DRAG.dropSfx.gain); return } // it stays where you set it down
+            if (c0.fromPhoto) return // #2072's law: a press on the photo never ruled
+            if (e) stampByZone(e) // a press that never travelled is the old stamp press
+        }
+        const onCancel = () => {
+            const c0 = carried
+            holdDown = false; holdInPhoto = false; photoHold = 0; photoZoom = false
+            if (!c0) return
+            carried = null
+            if (c0.moved) audioController.playNoise(DRAG.dropSfx.dur, DRAG.dropSfx.gain)
+        }
         window.addEventListener('keydown', onDown)
         window.addEventListener('pointerdown', onPointer)
+        window.addEventListener('pointermove', onMove)
         window.addEventListener('pointerup', onUp)
-        window.addEventListener('pointercancel', onUp)
+        window.addEventListener('pointercancel', onCancel)
 
         const resize = () => {
             const r = wrap.getBoundingClientRect()
@@ -950,6 +1057,18 @@ const PapersPleaseMinGame = () => {
                 // real pointer events), plus the hair shadow palette so the
                 // pixel gates can count the shadow tone where it must live.
                 photoZoom: () => photoZoom,
+                // #2120 PAPERS IN HAND probe: what the hand is doing — which
+                // card (if any) rides the pointer, the desk offsets, the
+                // z-order top, and the current lean. papersplay drives REAL
+                // mouse events and grades these plus the pixels.
+                drag: () => ({
+                    carried: carried ? carried.which : null,
+                    moved: carried ? carried.moved : false,
+                    tilt: carried ? carried.tilt : 0,
+                    pp: { x: desk.pp.x, y: desk.pp.y },
+                    id: { x: desk.id.x, y: desk.id.y },
+                    topCard,
+                }),
                 photoRect: () => ({ x: PAPERS.x + PHOTO.x, y: PAPERS.y + PHOTO.y, w: PHOTO.w, h: PHOTO.h }),
                 hairShadow: () => HAIR_SHADOW,
                 // #1979 cast pixel proof — render each authored regular through
@@ -1284,6 +1403,9 @@ const PapersPleaseMinGame = () => {
             if (import.meta.env.DEV) { if (window.__ppTest) delete window.__ppTest; unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('pointerdown', onPointer)
+            window.removeEventListener('pointermove', onMove)
+            window.removeEventListener('pointerup', onUp)
+            window.removeEventListener('pointercancel', onCancel)
             window.removeEventListener('resize', resize)
             cancelAnimationFrame(raf)
             canvas.remove()
