@@ -15,7 +15,7 @@
 //      point pools bank, a wonder queues and the board fills on live turns.
 //   6. THE WORLD (Stage 7) — D opens DIPLOMACY with the two coastal courts,
 //      pacts sign and wars come and go on live turns, and a Trireme answers N.
-//   7. THE FINAL AGES (Stage 8) — Y opens VICTORY with the three race tracks,
+//   7. THE FINAL AGES (Stage 8) — I opens VICTORY with the three race tracks (#1637: Y is WATCH),
 //      K/L answer with Musket and Galleon, and after Spaceflight the Ark banks
 //      beakers on live turns.
 //   8b. THE FIRST-PLAY CAMERA (#535) — drag pans, right-drag orbits, arrows pan,
@@ -40,15 +40,6 @@ for (let i = 0; i < 120; i++) { if (await page.evaluate(() => !!window.__civTest
 r.check('the __civTest hook is live', await page.evaluate(() => !!window.__civTest))
 
 const probe = async () => { for (let i = 0; i < 40; i++) { const p = await page.evaluate(() => window.__civTest ? window.__civTest.probe() : null); if (p && typeof p.turn === 'number') return p; await wait(60) } throw new Error('__civTest vanished') }
-const centerPx = () => page.evaluate(() => {
-    const c = document.querySelector('canvas')
-    if (!c) return null
-    const gl = c.getContext('webgl2') || c.getContext('webgl')
-    if (!gl) return null
-    const px = new Uint8Array(4)
-    gl.readPixels(Math.floor(c.width / 2), Math.floor(c.height * 0.35), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
-    return [px[0], px[1], px[2]]
-})
 const brightScan = () => page.evaluate(() => {
     const c = document.querySelector('canvas')
     if (!c) return null
@@ -68,19 +59,40 @@ await wait(3500)
 let s = await probe()
 r.check('attract mode is showing', s && s.screen === 'attract')
 // #406 part 2 — the title screen is onboarding, not a patch-note dump: a
-// first-time player gets three lines (goal, move, end turn), not ten.
+// first-time player gets the goal, the move and the end-turn. Since #368 /
+// ART.md rule 6 the rules ride the one-message-at-a-time rotator, so #2069
+// accumulates the card across a full cycle (4 messages × 2.6s) instead of
+// expecting them stacked in one frame.
 {
-    const att = await page.evaluate(() => {
+    const att0 = await page.evaluate(() => {
         const h1 = [...document.querySelectorAll('h1')].find((el) => el.textContent === 'CIVILIZATION')
         if (!h1) return null
         const box = h1.parentElement
         return { brs: box.querySelectorAll('br').length, text: box.innerText }
     })
-    r.check(`the title screen is three onboarding lines, not patch notes (${att ? att.brs : 'n/a'} line breaks)`, att && att.brs <= 2)
-    r.check('the title screen names the goal, the move and the end turn (no stage patch notes)', att && !/STAGE \d/.test(att.text) && /grow your capital to size \d+ by turn \d+/.test(att.text) && /tap a tile to move/.test(att.text) && /space ends the turn/i.test(att.text))
+    r.check(`the title screen is three onboarding lines, not patch notes (${att0 ? att0.brs : 'n/a'} line breaks)`, att0 && att0.brs <= 2)
+    const cycle = new Set()
+    for (let i = 0; i < 30; i++) {
+        const t = await page.evaluate(() => {
+            const h1 = [...document.querySelectorAll('h1')].find((el) => el.textContent === 'CIVILIZATION')
+            return h1 ? h1.parentElement.innerText : ''
+        })
+        for (const line of t.split('\n')) if (line.trim()) cycle.add(line.trim())
+        await wait(450)
+    }
+    const all = [...cycle].join(' | ')
+    r.check('the title screen names the goal, the move and the end turn (no stage patch notes)',
+        !/STAGE \d/.test(all) && /grow your capital to size \d+ by turn \d+/i.test(all) && /tap a tile to move/i.test(all) && /space ends the turn/i.test(all),
+        all.slice(0, 400))
 }
-const c1 = await centerPx()
-r.check(`attract canvas is not black (centre rgb ${c1})`, c1 && (c1[0] + c1[1] + c1[2]) > 24)
+// #2069 — attract liveness reads the instance-colour buffer (§406 doctrine):
+// the centre readPixels sample returned rgb(2,2,4) in software Chrome (the
+// camera looks over open ocean at the centre), so the dimmest tile off the
+// colour buffer proves the world paints without the racy pixel read.
+{
+    const ap = await probe()
+    r.check(`attract paints the world — dimmest tile off the colour buffer reads a dim world (unseenMin ${ap.unseenMin != null ? ap.unseenMin.toFixed(3) : 'n/a'})`, ap.unseenMin != null && ap.unseenMin > 0.10)
+}
 r.check(`the world is seeded with barbarian camps (${s.campsAlive})`, s.campsAlive >= 3)
 let aiFound = false
 for (let i = 0; i < 40 && !aiFound; i++) { await wait(700); aiFound = (await probe()).totalCities > 1 }
@@ -316,10 +328,10 @@ r.check(`the probe exposes the connected network (${(conn.connected || []).join(
     r.check(`Stage 8 opens on a fresh run (screen ${(await probe()).screen}, capital ${(await probe()).capitalSize})`, (await probe()).screen === 'play' && (await probe()).capitalSize >= 1)
     const cp8 = await probe()
     r.check(`seed 4 seats the capital beside the sea (coastal ${cp8.world.coastal})`, cp8.world.coastal === true)
-    await page.keyboard.press('KeyY')
+    await page.keyboard.press('KeyI') // #1637: VICTORY sits on I at play (Y is the WATCH key everywhere)
     await wait(250)
     const vb = await page.evaluate(() => document.body.innerText)
-    r.check('Y opens VICTORY with the three races and the rival tracks', vb.includes('VICTORY') && vb.includes('DOMINATION') && vb.includes('SCIENCE') && vb.includes('TOURISM') && vb.includes('lifetime culture') && vb.includes('THE RIVAL TRACKS'))
+    r.check('I opens VICTORY with the three races and the rival tracks', vb.includes('VICTORY') && vb.includes('DOMINATION') && vb.includes('SCIENCE') && vb.includes('TOURISM') && vb.includes('lifetime culture') && vb.includes('THE RIVAL TRACKS'))
     await page.keyboard.press('Escape')
     await wait(150)
     r.check('Escape closes the VICTORY panel', !(await page.evaluate(() => document.body.innerText.includes('THE RIVAL TRACKS'))))
