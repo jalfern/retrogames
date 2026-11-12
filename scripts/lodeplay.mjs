@@ -8,6 +8,9 @@
 //      demonstrably not black.
 //   2. THE INPUT PATH — held arrows run the runner, and the recorded
 //      command stream grows ONLY from real keypresses.
+//   1b. PHONE VAULT-SELECT (#2063) — three tappable pads on the marquee;
+//       each pad's real centre opens ITS OWN vault with real pointer events,
+//       and a tap outside the pads still starts vault 1.
 //   3. DIG → HOLE → REFILL — the dig opens a live hole diagonally below the
 //      runner; the sim's fuse grows the brick back after the ~5 s hold.
 //   3b. THE PAINT — terrain is runtime pixel art: warm mortar brick reads
@@ -112,6 +115,37 @@ const dB = s.demo
 r.check('the demo is the witness walking (advancing tick-for-tick, across vaults)',
     (dB.idx * 100000 + dB.tick) > (demoA.idx * 100000 + demoA.tick),
     `vault ${demoA.idx} tick ${demoA.tick} -> vault ${dB.idx} tick ${dB.tick}`)
+
+// 1b — #2063 phone parity: the marquee carries tappable vault-select pads.
+// Grade the geometry, prove a tap OUTSIDE the pads still starts vault 1 (the
+// button guard exempts only buttons), then tap each pad's real centre with
+// real pointer events: the run must open ITS OWN vault — vault 2 and 3 are
+// reachable without a keyboard, and the pad cannot also fire tap-anywhere.
+const padGeom = await page.evaluate(() => window.__lodeTest.vaultPads())
+r.check('the marquee carries three tappable vault pads',
+    Array.isArray(padGeom) && padGeom.length === 3 && padGeom.every(Boolean),
+    JSON.stringify(padGeom))
+r.check('each pad reads its vault and meets the phone target floor (>=44x28)',
+    padGeom.length === 3 && padGeom.every((p, i) => p && p.label === `VAULT ${i + 1}` && p.w >= 44 && p.h >= 28),
+    JSON.stringify(padGeom))
+await page.mouse.click(60, 660)                     // far corner of the marquee, no button there
+await wait(450)
+s = await probe()
+r.check('a tap outside the pads still starts vault 1', s && s.screen === 'play' && s.level === 0,
+    JSON.stringify(s && { screen: s.screen, level: s.level }))
+for (let i = 0; i < 3; i++) {
+    await page.evaluate(() => window.__lodeTest.toAttract())
+    await wait(300)
+    const p = (await page.evaluate(() => window.__lodeTest.vaultPads()))[i]
+    if (p) await page.mouse.click(p.cx, p.cy)
+    await wait(450)
+    const st = await probe()
+    r.check(`a real tap on pad ${i + 1} opens vault ${i + 1} (not the tap-anywhere vault 1)`,
+        !!p && st.screen === 'play' && st.level === i,
+        JSON.stringify({ p, screen: st.screen, level: st.level }))
+}
+await page.evaluate(() => window.__lodeTest.toAttract())   // back to the marquee for section 2
+await wait(300)
 
 // 2 — one key into the vault; a held arrow moves the runner and stamps cmds
 await page.keyboard.press('Digit1')
