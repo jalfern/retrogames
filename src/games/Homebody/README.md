@@ -72,6 +72,18 @@ freezes the rest. Workdays run the clock ×8 while a rostered resident is out
   thaw answers with a warm major chord. Honesty (#237): The Sims *orders*
   insults and compliments; spats here are a law of neglected living, not a
   button — romance and third-party relationships stay open (see Honest gaps).
+- Spat polish (#2076): the quarrel now stages itself ON the lot. `s.spatFx`
+  (2.4 s, real clock, view-only) arms at the crack: both residents get a
+  storm puff with a gold bolt over the head, knifed brows and a shaking
+  away-lean; while the grudge holds after the puff fades, the pair stands a
+  sullen away-lean with averted eyes (computed from the partner's side in the
+  shell — the sim rules are untouched). The make-up pays heart particles
+  (the BONDS glyph, pink in-palette) over the pair instead of the generic
+  panel sparkle. And the hourly neglect fade now rides `relSub` — a bond
+  sinking below an edge from ABSENCE demotes through the same `rel-down`
+  event a spat uses: one tell per crossing, silent mid-level, quiet at the
+  zero floor. The attract marquee teaches the law: red needs flare tempers,
+  a spat cracks BONDS, filling both side by side thaws.
 - Contentment: +1/+2 per satisfied need (2 = everyone healthy), +1 chat, +3
   payday, +1 per happy ambience hour. 80 grants the wish.
 - Autonomy (needs self-service, clocking in) runs only in `demo` mode — attract
@@ -84,7 +96,7 @@ freezes the rest. Workdays run the clock ×8 while a rostered resident is out
 
 ## Verify
 ```bash
-npm run peoplecheck          # 148 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), winnable seeds, determinism
+npm run peoplecheck          # 162 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -92,9 +104,13 @@ npm run peoplecheck          # 148 gates: boot, rules, spare-room wing (#1806), 
 # gates go red; restore. Or comment the two `footstep(...)` calls — exactly the
 # FEEL walking gates go red; restore. Or neuter the spat trigger in
 # updateHouseBond (`if (false)`) — exactly the SPATS gates go red (14); restore.
+# Or revert applyHourAt's fade to direct decrements — the two absence-crossing
+# gates + the relSub pin go red; restore. Or zero the `s.spatFx = 2.4` arm —
+# the sprite-tell arm gate + its pin go red (and the live drive loses the
+# storm puff); restore. (Both proven on this branch: 157/5 → 162/0.)
 npm run dev   # another terminal
 npm run contractcheck        # includes homebody (CONTRACT_ONLY=homebody for just this)
-DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart
+DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels
 ```
 Drive it: tap objects to order the active resident; G switches residents; B
 opens buy mode (time stops); 1-9 pick cards; stick/arrows walk, A uses.
@@ -131,9 +147,10 @@ source pin go red (~7); restore.
   one per lot). Deeper multi-room building (choose placement, second wing, rooms
   with purpose) remains the open tail of this old line.
 - **CLOSED by #1814 (QA pass, partial):** the wing glows at night and the
-  residents react to the build. Still open from that pass: catalog thumbnails
-  per item, wing-themed furniture, bonds-pip legend/teaching line, cooling log
-  lines, chat speech bubbles.
+  residents react to the build. #2076 taught the bond law on the attract
+  marquee (the bonds line of that list). Still open from that pass: catalog
+  thumbnails per item, wing-themed furniture, cooling log lines, chat speech
+  bubbles.
 - **CLOSED by #1823 (QA pass):** walk-surface step timbre (plank/gravel/lawn)
   and the red ghost-cell flash on refused placements.
 - **PARTIAL by #1817 + #2070:** bonds climb the chat loop, unlock a topic/

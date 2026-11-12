@@ -205,6 +205,7 @@ export function newRun(seed) {
         spats: 0,                 // #2070: quarrels this run (rides the hash)
         grudge: 0,                // #2070: 1 = cold war until the pair makes up
         spatCd: 0,                // #2070: real seconds until the next spat may fire
+        spatFx: 0,                // #2076: seconds left of the storm-puff tell over the pair
         houseLineCd: 6,               // co-presence chat line cooldown (s)
         lastToast: 0,               // day of last shared payday toast
         thoughts: [], thoughtT: 0,
@@ -634,6 +635,7 @@ function updateHouseBond(s, dt) {
         s.grudge = 1
         s.spats++
         s.spatCd = SPAT_CD
+        s.spatFx = 2.4   // #2076: the pair argues ON the lot — storm puff over their heads
         a.needs.social = Math.max(0, a.needs.social - SPAT_SOCIAL)
         b.needs.social = Math.max(0, b.needs.social - SPAT_SOCIAL)
         relSub(s, 'house', SPAT_DROP)
@@ -829,8 +831,11 @@ function applyHourAt(s, hh) {
     // #1817: bonds fade when nobody invests — absence from Fern stings faster.
     // Per-hour values (an hour is only 5 real seconds on this clock): kept well
     // under the per-second chat growth so attention beats entropy at 1x AND x8.
-    s.rel.house = Math.max(0, s.rel.house - 0.02)
-    s.rel.fern = Math.max(0, s.rel.fern - 0.035)
+    // #2076: the fade rides relSub — a bond sinking below an edge from absence
+    // demotes through the SAME event a spat uses (one rel-down per crossing,
+    // not per hour; below the zero floor relSub stays silent).
+    relSub(s, 'house', 0.02)
+    relSub(s, 'fern', 0.035)
 }
 function newDay(s) {
     for (const p of s.people) p.workedToday = false
@@ -849,6 +854,7 @@ export function advance(s, dt) {
     if (s.done) return
     s.tick++
     s.sec += dt
+    if (s.spatFx > 0) s.spatFx = Math.max(0, s.spatFx - dt)   // #2076: the sprite tell fades on the real clock
     if (s.build) return     // time stands still in buy mode
     if (s.fastT > 0) s.fastT = Math.max(0, s.fastT - dt)
     const anyWork = s.people.some((p) => p.working)

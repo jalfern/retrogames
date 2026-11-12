@@ -701,6 +701,80 @@ section('SPATS (#2070): quarrels, cold war, make-up')
     check('pin: the panel heart runs ash-dark on the grudge', /s\.grudge \? '#8c3b34' : '#e2574c'/.test(spatArt))
 }
 
+// SPAT TELL & FADE DEMOTION (#2076): the lot shows the quarrel, and the
+// hourly neglect fade crosses edges through the SAME rel-down event a spat
+// uses — two routes down, ONE tell. --------------------------
+section('TELL & FADE (#2076): sprite tell timer, neglect demotes loudly')
+{
+    const FOUL = 0.30
+    const park = (g, lvA, lvB) => {
+        g.demo = false; g.visitAfter = 99
+        const [a, b] = g.people
+        a.r = 3; a.c = 3; a.path = null
+        b.r = 3; b.c = 4; b.path = null
+        for (const n of NEEDS) {
+            if (lvA !== null) a.needs[n] = lvA
+            if (lvB !== null) b.needs[n] = lvB
+        }
+        return g
+    }
+    const apart = (g, lv) => {
+        park(g, lv, lv)
+        g.people[1].r = 1; g.people[1].c = 12   // no co-presence — fade alone
+        g.people[1].x = tileX(12) + 16; g.people[1].y = tileY(1) + 16
+        return g
+    }
+
+    // the sprite tell rides the sim clock and fades on its own
+    check('a fresh run carries no spat tell', newRun(531).spatFx === 0)
+    const g9 = park(newRun(531), FOUL, FOUL)
+    g9.rel.house = 50
+    let evs = []
+    for (let i = 0; i < 60 && !(g9.spats === 1); i++) { advance(g9, DT); evs.push(...drain(g9)) }
+    check('the spat arms the sprite tell (#2076)', evs.some((e) => e.t === 'spat') && g9.spatFx > 0, `spatFx=${g9.spatFx.toFixed(1)}`)
+    for (let i = 0; i < Math.round(3 / DT); i++) { advance(g9, DT); evs.push(...drain(g9)) }
+    check('the tell fades while the cold war still holds', g9.spatFx === 0 && g9.grudge === 1, `spatFx=${g9.spatFx}`)
+
+    // neglect fade demotions (#2076): a bond sinking past an edge from absence
+    // alone fires rel-down — one event per crossing, not per hour.
+    const g10 = apart(newRun(533), 0.75)
+    g10.rel.house = 12.01   // a hair over FRIENDLY — one hour's fade crosses it
+    g10.rel.fern = 30.01    // a hair over FRIENDS for Fern — same crossing
+    evs = []
+    for (let i = 0; i < 340; i++) { advance(g10, DT); evs.push(...drain(g10)) }   // ~1 sim hour
+    const downs = evs.filter((e) => e.t === 'rel-down')
+    check('absence across an edge fires rel-down for the house', downs.some((e) => e.k === 'house' && e.level === 0), JSON.stringify(downs.map((e) => `${e.k}@${e.level}`)))
+    check('absence across an edge fires rel-down for Fern', downs.some((e) => e.k === 'fern' && e.level === 1), JSON.stringify(downs.map((e) => `${e.k}@${e.level}`)))
+    check('the fade lands right under the edge it crossed', Math.abs(g10.rel.house - (12.01 - 0.02)) < 1e-9 && Math.abs(g10.rel.fern - (30.01 - 0.035)) < 1e-9, `house=${g10.rel.house.toFixed(3)} fern=${g10.rel.fern.toFixed(3)}`)
+
+    // one event per CROSSING, not per hour: mid-level fade runs silent
+    const g11 = apart(newRun(535), 0.75)
+    g11.rel.house = 50; g11.rel.fern = 50
+    evs = []
+    for (let i = 0; i < 3 * 300 + 40; i++) { advance(g11, DT); evs.push(...drain(g11)) }   // 3 sim hours
+    check('hours of mid-level fade stay silent — one tell per crossing', !evs.some((e) => e.t === 'rel-down') && Math.abs(g11.rel.house - (50 - 3 * 0.02)) < 1e-9, `house=${g11.rel.house.toFixed(3)}`)
+
+    // the zero floor stays quiet: faded-to-nothing bonds emit no repeat demotion
+    const g12 = apart(newRun(537), 0.75)
+    g12.rel.house = 0; g12.rel.fern = 0
+    evs = []
+    for (let i = 0; i < 3 * 300 + 40; i++) { advance(g12, DT); evs.push(...drain(g12)) }
+    check('a fully cooled bond fades silent at zero', !evs.some((e) => e.t === 'rel-down') && g12.rel.house === 0 && g12.rel.fern === 0)
+
+    // determinism: the same seed replays identical with the new law live
+    check('seed 9 replays identical with the tell law live', stateHash(play(9)) === stateHash(play(9)))
+
+    // source pins: the view's choke points for the polish
+    const polSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const polJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const polArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    check('pin: the hourly fade rides relSub', /function applyHourAt[\s\S]*relSub\(s, 'house', 0\.02\)[\s\S]*relSub\(s, 'fern', 0\.035\)/.test(polSim))
+    check('pin: the spat arms the sprite tell', /s\.spatFx = 2\.4/.test(polSim))
+    check('pin: the art draws both the storm puff and the cold-war lean', /fx === 'spat'/.test(polArt) && /fx === 'cold'/.test(polArt))
+    check('pin: the make-up pays hearts, not generic sparkles', /kind: 'heart'/.test(polJsx) && /case 'makeup'[\s\S]*heartBurst\(e\.x/.test(polJsx))
+    check('pin: the attract teaches that bonds can break', /SPAT cracks BONDS/.test(polJsx))
+}
+
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)
 if (fails.length) console.log('failed: ' + fails.join(' | '))
 process.exit(fail ? 1 : 0)
