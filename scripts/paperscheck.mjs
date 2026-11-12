@@ -26,9 +26,9 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, dshow, MON, FEATURES, stampLines, portraitDiffs } from '../src/games/PapersPleaseMin/rules.js'
-import { genWeek, genDay, viewOf, CITY2C, COUNTRIES, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, VISIT_WINDOW, WALL_POOL, wallNameAt, weekWallNames, weekDecoyCount, repChapter, turnLineFor, againLineFor, TURN_CANONICAL } from '../src/games/PapersPleaseMin/gen.js'
+import { genWeek, genDay, viewOf, CITY2C, COUNTRIES, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, VISIT_WINDOW, WALL_POOL, wallNameAt, weekWallNames, weekDecoyCount, crowdedDay, repChapter, turnLineFor, againLineFor, TURN_CANONICAL } from '../src/games/PapersPleaseMin/gen.js'
 import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges, monthTurn, isMoneyDeath } from '../src/games/PapersPleaseMin/sim.js'
-import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, RENT, PAYFX, ID, PHOTO, BUBBLE, BUBBLE_TAIL, EVID, SETTLE, QUOTE, RECOGNITION, ARC_MUG, ARC_HL, SEIZE, wallFit, ruleLines, bulletinRows } from '../src/games/PapersPleaseMin/layout.js'
+import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, RENT, PAYFX, ID, PHOTO, BUBBLE, BUBBLE_TAIL, EVID, SETTLE, QUOTE, RECOGNITION, QUEUE, ASIDE, CROWD_NOTE, ARC_MUG, ARC_HL, SEIZE, wallFit, ruleLines, bulletinRows } from '../src/games/PapersPleaseMin/layout.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SRC = join(HERE, '../src/games/PapersPleaseMin')
@@ -2183,13 +2183,38 @@ if (MUT) {
             return true
         })
 
-    // 53–56: #1988. m53 erases the mugshot (the bulletin is text-only again —
-    // the pass's signature feature dies). m54 freezes the chapter mixer (the
-    // neighborhood speaks one week forever). m55 mutes the seize aftershock.
-    // m56 hangs mugshots on every decoy — day 6's four portrait bumps push
+    // #2020 THE CROWDED SHIFT SPEAKS m53: the crowd flag is never set — the
+    // banner accent, the third note and the whole exchange hinge on it, and
+    // the dense morning is staged exactly like a solo day again: the law
+    // witness (crowd ⟺ return day) goes red while every paper stays fair.
+    await tryMut('the crowd flag is never set (a dense morning says nothing)',
+        mutMod('gen.js', 'export const crowdedDay = (seed, n) => regularsForDay(seed, n).length >= 2', 'export const crowdedDay = () => false', 'm53'),
+        (m) => {
+            for (const seed of SEEDS) for (let n = 2; n <= 7; n++) if (m.gen.crowdedDay(seed, n) !== (n >= 6)) return false
+            return true
+        })
+    // #2020 m54: the callback forgets WHO crossed — the tail's neighbor line
+    // goes anonymous and the two beats of one shift stop pointing at the same
+    // pair of faces; the name-tie witness bites.
+    await tryMut('the inside voice forgets the head\'s name (the exchange unmoors)',
+        mutMod('gen.js', "const headFirst = regs[0].person.passport.name.split(' ')[0]", "const headFirst = 'THEY'", 'm54'),
+        (m) => {
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    const regs = day.queue.filter((a) => a.person.aside)
+                    if (regs.length !== 2) continue
+                    if (regs[1].person.aside.line !== `${regs[0].person.passport.name.split(' ')[0]} SAYS HELLO.`) return false
+                }
+            }
+            return true
+        })
+    // 55–58: #1988. m55 erases the mugshot (the bulletin is text-only again —
+    // the pass's signature feature dies). m56 freezes the chapter mixer (the
+    // neighborhood speaks one week forever). m57 mutes the seize aftershock.
+    // m58 hangs mugshots on every decoy — day 6's four portrait bumps push
     // the wall past the scale box: unfair by furniture, caught by the fit law.
     await tryMut('bulletin forgets the arc face (no mugshot on the wall)',
-        mutMod('gen.js', 'planted: true, face: { ...c.face, mark: c.mark } })', 'planted: true })', 'm53'),
+        mutMod('gen.js', 'planted: true, face: { ...c.face, mark: c.mark } })', 'planted: true })', 'm55'),
         (m) => {
             for (const seed of SEEDS) {
                 const w = m.gen.genWeek(seed)
@@ -2198,7 +2223,7 @@ if (MUT) {
             return true
         })
     await tryMut('chapter frozen at week 0 (the neighborhood never learns new lines)',
-        mutMod('gen.js', 'export const repChapter = (seed) => Math.floor(seed / REGULARS.length) % 2', 'export const repChapter = (seed) => 0', 'm54'),
+        mutMod('gen.js', 'export const repChapter = (seed) => Math.floor(seed / REGULARS.length) % 2', 'export const repChapter = (seed) => 0', 'm56'),
         (m) => {
             const heard = new Set()
             for (const seed of SEEDS) {
@@ -2208,7 +2233,7 @@ if (MUT) {
             return heard.size > 1
         })
     await tryMut('seized neighbor leaves without a word (no aftershock)',
-        mutMod('gen.js', 'a.person.seize = c.seize', 'a.person.seize = null', 'm55'),
+        mutMod('gen.js', 'a.person.seize = c.seize', 'a.person.seize = null', 'm57'),
         (m) => {
             for (const seed of SEEDS) {
                 const w = m.gen.genWeek(seed)
@@ -2217,7 +2242,7 @@ if (MUT) {
             return true
         })
     await tryMut('every decoy gets a mugshot (the wall outgrows its five rows)',
-        mutMod('gen.js', 'day.wanted.push({ name: wallNameAt(seed, n, k), id: 7000 + Math.floor(rnd() * 800), planted: false })', 'day.wanted.push({ name: wallNameAt(seed, n, k), id: 7000 + Math.floor(rnd() * 800), planted: false, face: REGULARS[0].face })', 'm56'),
+        mutMod('gen.js', 'day.wanted.push({ name: wallNameAt(seed, n, k), id: 7000 + Math.floor(rnd() * 800), planted: false })', 'day.wanted.push({ name: wallNameAt(seed, n, k), id: 7000 + Math.floor(rnd() * 800), planted: false, face: REGULARS[0].face })', 'm58'),
         (m) => {
             for (const seed of SEEDS) {
                 const w = m.gen.genWeek(seed)
@@ -2458,6 +2483,117 @@ section('THE POLISHED ARC (#1988) — faces on the wall, a loud turn, many voice
         `the tail band (y ${BUBBLE_TAIL.y}..${BUBBLE_TAIL.y + BUBBLE_TAIL.h}) must hug the field's top edge (y=${BUBBLE.y})`)
     ok(/bubbleTailPix: \(\) =>/.test(idxSrc3) && /BUBBLE_TAIL\.x/.test(idxSrc3), 'index.jsx must expose bubbleTailPix over the BUBBLE_TAIL band')
     console.log('  ..    faces, voices, aftershocks: the arc speaks 43 ways and the wall shows who')
+}
+
+section('CROWDED SHIFT SPEAKS (#2020) — the dense morning announces itself')
+{
+    const idxSrc3 = readFileSync(join(SRC, 'index.jsx'), 'utf8')
+    const genSrc = readFileSync(join(SRC, 'gen.js'), 'utf8')
+    const rulesSrc3 = readFileSync(join(SRC, 'rules.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    // 1) THE CROWD LAW — a crowd is exactly the day the walk carries two
+    //    regulars, and that is days 6, 7. The flag cannot disagree with the
+    //    #2012 walk because it IS the walk's own length.
+    for (const seed of SEEDS) {
+        const wk = genWeek(seed)
+        ok(!crowdedDay(seed, 1), `seed ${seed}: day 1 (no regulars) flagged as a crowd`)
+        for (let n = 2; n <= 7; n++) {
+            const regs = wk.days[n - 1].queue.filter((a) => a.person.regular)
+            ok(crowdedDay(seed, n) === (regs.length >= 2), `seed ${seed} day ${n}: crowd flag ${crowdedDay(seed, n)} disagrees with ${regs.length} regulars on the walk`)
+            ok(crowdedDay(seed, n) === (n >= 6), `seed ${seed} day ${n}: crowd flag says ${crowdedDay(seed, n)} — the crowd walks the return days, 6 and 7`)
+        }
+    }
+    // 2) THE EXCHANGE — exactly the two crowded heads carry an aside, in
+    //    walking order: the returning head gets the voice behind commenting
+    //    on the line, the greeting tail gets the neighbor through the gate
+    //    calling back BY NAME (the two beats tie to the same pair of faces).
+    for (const seed of SEEDS) {
+        for (const day of genWeek(seed).days) {
+            const withAside = day.queue.filter((a) => a.person.aside)
+            if (!crowdedDay(seed, day.n)) {
+                ok(withAside.length === 0, `seed ${seed} day ${day.n}: ${withAside.length} asides on a solo day — the quiet shift started shouting`)
+                continue
+            }
+            const regs = day.queue.filter((a) => a.person.regular)
+            ok(withAside.length === 2, `seed ${seed} day ${day.n}: ${withAside.length} asides — a crowded shift gains exactly two bystander voices`)
+            ok(withAside[0] === regs[0] && withAside[1] === regs[1], `seed ${seed} day ${day.n}: asides landed out of walking order — the line talks head-first`)
+            ok(withAside[0].person.aside.tag === 'A VOICE BEHIND YOU' && withAside[0].person.aside.line === 'THE LINE IS LONG TODAY.',
+                `seed ${seed} day ${day.n}: the head's bystander beat lost its line — ${JSON.stringify(withAside[0].person.aside)}`)
+            const headFirst = regs[0].person.passport.name.split(' ')[0]
+            ok(withAside[1].person.aside.tag === 'A VOICE FROM INSIDE' && withAside[1].person.aside.line === `${headFirst} SAYS HELLO.`,
+                `seed ${seed} day ${day.n}: the tail's callback forgot the head's name — ${JSON.stringify(withAside[1].person.aside)}`)
+        }
+    }
+    // 3) DECOR, NOT EVIDENCE — strip the aside (speech or not) off EVERY
+    //    paper of EVERY seed: no verdict may flinch. Doctrine of the nose.
+    for (const seed of SEEDS) {
+        for (const day of genWeek(seed).days) {
+            for (const a of day.queue) {
+                const v = viewOf(day, a)
+                const stripped = { ...v, person: { ...v.person, aside: undefined } }
+                ok(decide(v).verdict === decide(stripped).verdict, `seed ${seed} day ${day.n}: an aside leaked into the booth's verdict`)
+                const mute = { ...v, person: { ...v.person, aside: undefined, say: undefined } }
+                ok(decide(v).verdict === decide(mute).verdict, `seed ${seed} day ${day.n}: muting the neighborhood moved a verdict`)
+            }
+        }
+    }
+    ok(!/aside|crowdedDay/.test(rulesSrc3), 'rules.js reads the crowd or its asides — decor became evidence')
+    // 4) THE FIT — tags at 7px, lines at 8px, inside the box; the longest
+    //    authored text must land clear of the slip and the strip.
+    {
+        const tags = ['A VOICE BEHIND YOU', 'A VOICE FROM INSIDE']
+        const lines = ['THE LINE IS LONG TODAY.']
+        for (let seed = 0; seed < 40; seed++) for (const n of [6, 7])
+            for (const c of REGULARS) { lines.push(`${c.name.split(' ')[0]} SAYS HELLO.`) }
+        const maxTag = Math.max(...tags.map((t) => t.length))
+        const maxLine = Math.max(...lines.map((l) => l.length))
+        ok(maxTag * ASIDE.tag * CHAR <= ASIDE.w - 8, `the longest tag (${maxTag} chars) overflows the aside box`)
+        ok(maxLine * ASIDE.line * CHAR <= ASIDE.w - 8, `the longest aside line (${maxLine} chars) overflows the aside box`)
+        ok(ASIDE.x + ASIDE.w <= 452 - 2, 'the aside box runs into the deduction slip column')
+        ok(ASIDE.y + ASIDE.h <= CHS - STRIP_H - 4, 'the aside leaves the controls strip')
+        ok(ASIDE.y >= BUBBLE.y + Math.max(BUBBLE.h, 8 + 13 * 3) + 2, 'the aside crowds a three-line bubble (worst-case field bottom 349)')
+        // banner: month AND crowd together still close above the bubble top.
+        ok(150 + 96 + 20 + 20 <= BUBBLE.y, 'a month+crowd banner reaches the speech bubble')
+    }
+    // 5) THE THIRD NOTE — the crowd's low hum is a voice of its own: disjoint
+    //    from every fixed tone the booth sings, including the welcome pair.
+    {
+        const owned = new Set([...idxSrc3.matchAll(/playTone\((\d+)/g)].map((mm) => Number(mm[1])))
+        ok(!owned.has(CROWD_NOTE.note), `the crowd note (${CROWD_NOTE.note}) reuses a tone the booth already sings`)
+        ok(!RECOGNITION.notes.includes(CROWD_NOTE.note), 'the crowd note duplicates a recognition note')
+        ok(CROWD_NOTE.note < RECOGNITION.notes[0], 'the crowd hum should sit BELOW the welcome it underscores')
+        ok(CROWD_NOTE.gain < RECOGNITION.gain, 'the crowd hum outshouts the welcome it rides')
+    }
+    // 6) THE BOOTH PRINTS IT — the shell pins: two mugs beat one, the accent
+    //    line, bodies riding the settle, and the probes papersplay samples.
+    ok(idxSrc3.includes('* TWO FAMILIAR FACES IN LINE *'), 'the banner forgot the crowded-morning accent line')
+    ok(/PORTRAIT\.y \+ dy/.test(idxSrc3), 'bodies must ride the settle drop (drawFace at PORTRAIT.y + dy) — entrants land, they do not teleport')
+    ok(/queueInk: \(\)/.test(idxSrc3) && /asideInk: \(\)/.test(idxSrc3) && /crowdTicks: \(\)/.test(idxSrc3),
+        'index.jsx exposes queueInk + asideInk + crowdTicks for papersplay')
+    // 7) THE LINE STRIP MATH — the mug count the shell draws is the queue's
+    //    own truth: day 6 opens with two known faces waiting, day 2 with one,
+    //    day 1 with none; the count only shrinks as heads cross the glass.
+    {
+        const mugsAt = (wk, seed, n, idx) => wk.days[n - 1].queue.slice(idx).filter((a) => a.person.regular).length
+        for (const seed of SEEDS) {
+            const wk = genWeek(seed)
+            ok(mugsAt(wk, seed, 1, 0) === 0, `seed ${seed}: day 1 shows mugs with nobody regular in line`)
+            ok(mugsAt(wk, seed, 2, 0) === 1, `seed ${seed}: a solo morning must show one mug`)
+            ok(mugsAt(wk, seed, 6, 0) === 2 && mugsAt(wk, seed, 7, 0) === 2, `seed ${seed}: a crowded morning must open with two mugs`)
+            const d6 = wk.days[5]
+            const headPos = d6.queue.findIndex((a) => a.person.regular)
+            ok(mugsAt(wk, seed, 6, headPos + 1) === 1, `seed ${seed}: after the head crosses, exactly the tail stays in line`)
+            ok(mugsAt(wk, seed, 6, d6.queue.length) === 0, `seed ${seed}: after the last regular, the strip is empty`)
+        }
+    }
+    // 8) DETERMINISM — two generations of one seed print the same exchange.
+    {
+        const seq = (s) => genWeek(s).days.map((d) => d.queue.map((a) => (a.person.aside ? `${a.person.aside.tag}:${a.person.aside.line}` : '-')).join('|')).join('||')
+        ok(seq(3) === seq(3) && seq(8) === seq(8), 'the crowded-shift exchange drifted between two generations of one seed')
+        // the aside block draws ZERO rnd() — the seed stream keeps its sequence
+        // (names, numbers, faces all replay byte-identical, as #1989 doctrine).
+        const asideBlock = genSrc.slice(genSrc.indexOf('const regs = day.queue'), genSrc.indexOf('while (day.queue.length'))
+        ok(asideBlock.length > 100 && !/rnd\(\)/.test(asideBlock), 'the aside block draws rnd() — authoring must not re-sequence the stream')
+    }
 }
 
 console.log(`\npaperscheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

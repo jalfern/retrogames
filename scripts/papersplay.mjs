@@ -35,6 +35,29 @@ const probe = async () => {
     throw new Error('__ppTest vanished')
 }
 const wait = (ms) => page.waitForTimeout(ms)
+// #2020 the morning banner is a full-width overlay (y 150..286+): any strip
+// or aside sample must wait for its ticks to drain or it measures the dark
+// veil, not the booth.
+const waitBannerOff = async () => {
+    for (let i = 0; i < 45; i++) {
+        const t = await page.evaluate(() => { const p = window.__ppTest.probe(); return p && p.banner ? p.banner.ticks : 0 })
+        if (!t) return
+        await wait(120)
+    }
+}
+// #2020 the full quiet: banner down, stamp ink faded, and the citation pin
+// released — the booth is showing the CURRENT entrant, not the judged one.
+const waitQuiet = async () => {
+    for (let i = 0; i < 50; i++) {
+        const busy = await page.evaluate(() => {
+            const p = window.__ppTest.probe()
+            const ep = window.__ppTest.evidencePaint()
+            return (p.banner && p.banner.ticks > 0) || ep.inked || ep.pinned
+        })
+        if (!busy) return
+        await wait(120)
+    }
+}
 // the stamp lives over the papers: sample its window, green in = admitted,
 // red in = denied. One pixel on a rotated stroke would lie; a window does not.
 const stampPix = () => page.evaluate(() => {
@@ -631,18 +654,35 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
 {
     await page.evaluate(() => window.__ppTest.start(0))
     await wait(300)
+    // #2020 THE LINE SHOWS ITSELF, live: day 1 has no known faces waiting —
+    // the strip stays dark; day 2's solo morning shows exactly one mug.
+    const d1Mugs = await page.evaluate(() => window.__ppTest.queueInk())
     await page.evaluate(() => window.__ppTest.runDay())   // honest day 1 (no cast day)
     await wait(250)
+    const d2banner = (await probe()).banner // #2020 the solo morning banner
+    await waitBannerOff()
+    const soloMugs = await page.evaluate(() => window.__ppTest.queueInk())
+    const quietAside = await page.evaluate(() => window.__ppTest.asideInk()) // #2020 a solo day has nobody to call across
     const quiet = await page.evaluate(() => window.__ppTest.bubblePix())
     const quietGrow = await page.evaluate(() => window.__ppTest.bubbleGrowPix())
     r.check(`strangers say nothing — bubble field dark (${quiet} paper px, growth strip ${quietGrow})`, quiet < 100 && quietGrow < 100, `${quiet}/${quietGrow}`)
+    r.check(`a solo shift has no bystander either — the aside zone stays dark (${JSON.stringify(quietAside)})`,
+        quietAside.tag === 0 && quietAside.line === 0, JSON.stringify(quietAside))
     for (let d = 2; d < 6; d++) { await page.evaluate(() => window.__ppTest.runDay()); await wait(150) }
     // #1891 THE NEW MONTH — the morning that crosses the seam announces it:
     // the week rolls OCT 27 → NOV 02, and day 6's banner must say NOVEMBER.
     s = await probe()
     r.check(`the calendar turn is announced on the morning it happens (${s.banner && s.banner.text} | ${s.banner && s.banner.month})`,
         s.day === 6 && !!s.banner && s.banner.month === 'NOVEMBER', JSON.stringify(s.banner))
-    let sayProbe = null, bubbleUp = -1, arcVerdict = null, lit = null, tailUp = -1, quietTail = -1
+    // #2020 THE CROWDED MORNING — the accent line rides the dense days' banner,
+    // and never the solo ones; the mug strip counts the known faces waiting.
+    r.check('the crowded morning says so — day 6\'s banner carries the two-faces accent',
+        s.day === 6 && !!s.banner && s.banner.crowd === true && s.crowd === true, JSON.stringify(s.banner))
+    r.check('a solo morning stays plain — day 2\'s banner carries no accent',
+        !!d2banner && d2banner.crowd === false && d2banner.month === null, JSON.stringify(d2banner))
+    r.check(`day 1 opens with an empty line — no mugs (${d1Mugs} slate px)`, d1Mugs === 0, `${d1Mugs}`)
+    r.check(`a solo morning shows exactly one mug (${soloMugs} slate px)`, soloMugs > 80 && soloMugs < 260, `${soloMugs}`)
+    let sayProbe = null, bubbleUp = -1, arcVerdict = null, arcAside = { tag: 0, line: 0 }, arcMugs = -1, arcLit = null, tailUp = -1, quietTail = -1
     quietTail = await page.evaluate(() => window.__ppTest.bubbleTailPix())
     r.check(`strangers keep the bubble tail dark too (${quietTail} paper px)`, quietTail < 20, `${quietTail}`)
     for (let g = 0; g < 14 && !sayProbe; g++) {
@@ -650,7 +690,7 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
             const p = window.__ppTest.probe()
             const per = p && p.view && p.view.person
             if (!per || !per.arc) return null
-            return { id: per.regular, name: per.passport.name, say: per.say, ppId: per.passport.id, wanted: p.wanted.filter((w) => w.name === per.passport.name).map((w) => w.id) }
+            return { id: per.regular, name: per.passport.name, say: per.say, aside: per.aside, ppId: per.passport.id, wanted: p.wanted.filter((w) => w.name === per.passport.name).map((w) => w.id) }
         })
         if (sayProbe) {
             // the stamp on the PREVIOUS document holds 30 ticks — the counter
@@ -661,8 +701,16 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
             tailUp = await page.evaluate(() => window.__ppTest.bubbleTailPix())
             // #1988: the wall lights its own bulletin while the neighbor is at
             // the glass — mugshot (paper frame + portrait) and ARC_HL ink.
-            lit = await page.evaluate(() => window.__ppTest.bulletinPix())
+            arcLit = await page.evaluate(() => window.__ppTest.bulletinPix())
             arcVerdict = await page.evaluate(() => window.__ppTest.verdict())
+            // #2020 while the turn works the glass, the shift is audibly and
+            // visibly crowded: the bystander tag + line print, two mugs wait.
+            // The day-6 morning banner can still be up mid-row — drain it, and
+            // wait for the booth to be showing the arc face itself.
+            await waitQuiet()
+            bubbleUp = await page.evaluate(() => window.__ppTest.bubblePix())
+            arcAside = await page.evaluate(() => window.__ppTest.asideInk())
+            arcMugs = await page.evaluate(() => window.__ppTest.queueInk())
             break
         }
         const v = await page.evaluate(() => window.__ppTest.verdict())
@@ -673,9 +721,17 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
         !!sayProbe && sayProbe.id === 'grubak' && sayProbe.wanted.includes(sayProbe.ppId), JSON.stringify(sayProbe))
     r.check(`the returning face speaks — bubble prints ${bubbleUp} paper px with its lines`,
         bubbleUp > 4000 && !!sayProbe && sayProbe.say[0] === 'YOU AGAIN.' && /\.\.\./.test(sayProbe.say[1]), `${bubbleUp}`)
+    // #2020 the bystander's first beat, live: while the wall works, the line
+    // behind comments — tag and line both ink, two known faces wait behind.
+    r.check(`the line comments on the crowded shift (${sayProbe && JSON.stringify(sayProbe.aside)} prints ${JSON.stringify(arcAside)})`,
+        !!sayProbe && !!sayProbe.aside && sayProbe.aside.tag === 'A VOICE BEHIND YOU' && sayProbe.aside.line === 'THE LINE IS LONG TODAY.' &&
+        arcAside.tag > 30 && arcAside.line > 30,
+        JSON.stringify({ aside: sayProbe && sayProbe.aside, ink: arcAside }))
+    r.check(`the crowded morning waits two deep (${arcMugs} slate px vs ${soloMugs} solo)`,
+        arcMugs > soloMugs + 100 && arcMugs > 300, `${arcMugs}/${soloMugs}`)
     r.check(`#1988 the bubble's tail prints with its voice (${tailUp} paper px above the field)`, tailUp > 60, `${tailUp}`)
-    r.check(`#1988 the turn announces — the bulletin prints Grubak's mugshot (${lit && lit.paper} paper px) and the row is lit (${lit && lit.hl} ARC_HL px)`,
-        !!lit && lit.present && lit.paper > 150 && lit.hl > 100, JSON.stringify(lit))
+    r.check(`#1988 the turn announces — the bulletin prints Grubak's mugshot (${arcLit && arcLit.paper} paper px) and the row is lit (${arcLit && arcLit.hl} ARC_HL px)`,
+        !!arcLit && arcLit.present && arcLit.paper > 150 && arcLit.hl > 100, JSON.stringify(arcLit))
     r.check('recognition is not safety: the booth denies the familiar face', arcVerdict === 'deny', `${arcVerdict}`)
     const caughtBefore = (await probe()).caught
     const seizeBefore = await page.evaluate(() => window.__ppTest.seizeInk())
@@ -705,18 +761,30 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
             const p = window.__ppTest.probe()
             const per = p && p.view && p.view.person
             if (!per || per.regular !== 'sonya') return null
-            return { day: p.day, name: per.passport.name, say: per.say }
+            return { day: p.day, name: per.passport.name, say: per.say, aside: per.aside }
         })
         if (!crowd6) await wait(220)
     }
     await wait(650)   // let the deny-hold tick out before the bubble counts
+    await waitQuiet() // #2020 the deny's citation pin (~2.2 s) keeps showing the judged
+    // papers — sample only once Sonya is actually at the glass.
     crowd6Bubble = await page.evaluate(() => window.__ppTest.bubblePix())
+    // #2020 the second beat: the neighbor through the gate calls back by the
+    // head's name, and the line behind Sonya is down to her own mug.
+    const crowd6Aside = await page.evaluate(() => window.__ppTest.asideInk())
+    const tailMugs = await page.evaluate(() => window.__ppTest.queueInk())
     r.check('the crowded shift: Sonya walks the SAME day the arc turn lands (seed 0 day 6 — tail seat s+4)',
         !!crowd6 && crowd6.day === 6 && crowd6.name === 'SONYA MALAK'
         && Array.isArray(crowd6.say) && crowd6.say[0] === 'MY SON LIVES IN OR VECHNA.' && crowd6.say[1] === 'I SELL MY KNITS AT MARKET.',
         JSON.stringify(crowd6))
     r.check(`one shift, two voices — the day's second bubble prints ${crowd6Bubble} paper px of greeting`,
         crowd6Bubble > 4000, `${crowd6Bubble}`)
+    r.check(`the neighbor through the gate calls back by name (${crowd6 && JSON.stringify(crowd6.aside)} prints ${JSON.stringify(crowd6Aside)})`,
+        !!crowd6 && !!crowd6.aside && crowd6.aside.tag === 'A VOICE FROM INSIDE' && crowd6.aside.line === 'VOLEN SAYS HELLO.' &&
+        crowd6Aside.tag > 30 && crowd6Aside.line > 30,
+        JSON.stringify({ aside: crowd6 && crowd6.aside, ink: crowd6Aside }))
+    r.check(`the line thins as heads cross — one mug stays behind Sonya (${tailMugs} slate px vs ${arcMugs} at sunrise)`,
+        tailMugs > 80 && tailMugs < arcMugs - 100, `${tailMugs}/${arcMugs}`)
     await page.keyboard.press('a')   // Sonya is honest — stamp the neighbor in
     // the trap snaps the other way at seed 1: cast[1] MARKO DRENIN turns on
     // day 6 — approving the pleading face is the mistake the stage exists for.
@@ -1012,6 +1080,7 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     await wait(300)
     const ag = () => page.evaluate(() => ({ n: window.__ppTest.sfxAgain(), log: window.__ppTest.againLog() }))
     const a0 = await ag()
+    const c0 = await page.evaluate(() => window.__ppTest.crowdTicks()) // #2020 the crowded-day hums ride the same two welcomes
     await page.evaluate(() => window.__ppTest.runDay()) // day 1 (no regulars) -> day 2 greets
     await wait(200)
     r.check('day 1 passes in silence — strangers and first walk-ups never ring', (await ag()).n === a0.n, `${(await ag()).n} vs ${a0.n}`)
@@ -1032,6 +1101,12 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     r.check('a whole week rings exactly twice, named: GRUBAK day 6 (turn), MARKO day 7 (again) — the greet tails never',
         aEnd.n === a0.n + 2 && JSON.stringify(aEnd.log.slice(a0.log.length)) === JSON.stringify(['6|grubak|turn', '7|marko|again']),
         JSON.stringify(aEnd.log.slice(a0.log.length)))
+    // #2020 both welcomes of a crowded week land on days 6/7 — the crowd days —
+    // so every ring carries the low third note: two hums, and the tails' silence
+    // adds none.
+    const cEnd = await page.evaluate(() => window.__ppTest.crowdTicks())
+    r.check('both crowded-day welcomes carry the low third note — two hums across the week, none elsewhere',
+        cEnd === c0 + 2, `${c0} -> ${cEnd}`)
     await wait(1100)
     await page.keyboard.press('a') // leave the week-end screen
 }

@@ -176,6 +176,10 @@ export const regularsForDay = (seed, n) => {
     return [regularForDay(seed, n), REGULARS[(seed + n - 2) % REGULARS.length]]
 }
 
+// #2020 THE CROWDED SHIFT SPEAKS — a day hosting TWO regulars is a crowd:
+// the law is just the walk's own length, so it cannot disagree with #2012.
+export const crowdedDay = (seed, n) => regularsForDay(seed, n).length >= 2
+
 // the day this seat FIRST walks up this week — since #2012 every seat walks:
 // offset k greets on day 2 + k (k = 0..5 → days 2..7), and offsets 0, 1
 // walk again on days 6, 7. (Pre-#2012 the tail seats were -1, unseen; the
@@ -614,6 +618,21 @@ export function genDay(seed, n, trapIdx, trap2Idx = null) {
     // written. #2012 THE CROWDED RETURN: days 6, 7 push TWO — the returning
     // head first, then the crowding tail greeting its first walk-up.
     for (const reg of regularsForDay(seed, n)) day.queue.push(regularApplicant(reg, rnd, date, rules, day, used, seed, n))
+    // #2020 THE CROWDED SHIFT SPEAKS — on a crowded day the neighbors talk
+    // through the line, like the original's queue where Jorji comments on
+    // whoever stands ahead. Decor by doctrine: `aside` is authored here with
+    // zero rnd() draws (no re-sequencing), is never in FEATURES, and is
+    // never read by decide/judge — paperscheck strips it off every paper of
+    // every seed and requires the verdict not to flinch. Two voices, one
+    // shift: while the returning head works the glass a voice behind remarks
+    // on the line; when the greeting tail arrives, the neighbor already
+    // through the gate calls back — by name, so the two beats tie together.
+    const regs = day.queue.filter((a) => a.person.regular)
+    if (crowdedDay(seed, n) && regs.length >= 2) {
+        regs[0].person.aside = { tag: 'A VOICE BEHIND YOU', line: 'THE LINE IS LONG TODAY.' }
+        const headFirst = regs[0].person.passport.name.split(' ')[0]
+        regs[1].person.aside = { tag: 'A VOICE FROM INSIDE', line: `${headFirst} SAYS HELLO.` }
+    }
     while (day.queue.length < rules.length + 4) day.queue.push(base(rnd, date, rules, used, { allowed: day.allowed }))
     // decoy wanted entries: a wall that looks used must never frame a
     // person standing at the window — decoy names may not collide with any

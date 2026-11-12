@@ -62,11 +62,11 @@ const ok = (cond, name, detail = '') => {
     else { fails++; console.log(`  FAIL ${name}${detail ? ` — ${detail}` : ''}`) }
 }
 
-const { GW, GW_BIG, BIG_ROOMS, GH, CW, CELL, EXITS, exitsOf, TOTAL_ROOMS, genRoom, START, startColOf, roomGw, isBonus, ENEMIES, WEAPONS } = await import('../src/games/SmashTV/levels.js')
+const { GW, GW_BIG, BIG_ROOMS, GH, CW, CELL, HUD_H, CH, EXITS, exitsOf, TOTAL_ROOMS, genRoom, START, startColOf, roomGw, isBonus, ENEMIES, WEAPONS } = await import('../src/games/SmashTV/levels.js')
 const { wallCell, NEON_TOP, CHROME, borderRivet } = await import('../src/games/SmashTV/walls.js')
 const { playerFrame, GUN, LAYERS, PLAYER_FRAMES, CARRIAGE, POSE, STOCK, SPREAD_FLOOR, gunPose } = await import('../src/games/SmashTV/sprite.js')
 const { ENEMY_FRAMES, TELEGRAPH, CHARGERS, CHARGE, OUTLINE, enemyFrame, bossMouth, BOSS_MOUTH_FLAP, ADD_TELEGRAPH, BOSS_DEATH_T } = await import('../src/games/SmashTV/enemies.js')
-const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore, recoilKick, RECOIL_TICKS, RECOIL_PX, SHELL_KICK, shellKick, barrelHot, HOT_FLOOR, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, GORE_GRAV, STAIN_TICKS, stainRadius, camPan, CAM_PAN, CAM_SNAP, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, CAM_LEAD, walkHype, camLead } = await import('../src/games/SmashTV/juice.js')
+const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore, recoilKick, RECOIL_TICKS, RECOIL_PX, SHELL_KICK, shellKick, barrelHot, HOT_FLOOR, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, GORE_GRAV, STAIN_TICKS, stainRadius, camPan, CAM_PAN, CAM_SNAP, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, CAM_LEAD, walkHype, camLead, SPAWN_CUE, edgeRow } = await import('../src/games/SmashTV/juice.js')
 const { PLAYER_PAL, PAULDRON_BOB } = await import('../src/games/SmashTV/art.js')
 const { FIRE, fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_SWELL, MURMUR_HYPE_FREQ, MURMUR_TICKS, WHOOSH, ALERT, ALERT_RADIUS, ALERT_CD } = await import('../src/games/SmashTV/audio.js')
 const { BAR, PIP, POWER_LABEL, labelClearsBar, pipFits, bombReady, RACK_FLASH, hiRoll, respawnState, RESPAWN_BLINK_SHIFT } = await import('../src/games/SmashTV/hud.js')
@@ -1123,6 +1123,51 @@ console.log('polish')
     ok(MARK.spawn === '#ffd23f' && MARK.enemy === '#ff5d5d' && MARK.civ === '#8fff9f', 'the markers reuse the telegraph, kill and exit colours')
     ok(SRC2.includes('markSide(bx, camX, CW)'), 'the renderer stamps the edge chips')
     ok(SRC2.includes("en.kind !== 'boss'"), 'the host is exempt — the host law already keeps him framed')
+
+    // 3b) #2028 the add-entry cue: the host throws adds anywhere on the wide
+    // studio, so with the camera clamped they can materialize OFF frame — the
+    // spawn ring pulses on empty unseen floor. A thrown add past the edge gets
+    // its own taller spawn-yellow flare, and the sim really does throw them
+    // past the frame (the cue is needed, not decorative).
+    ok(SPAWN_CUE > 0, 'the add-entry flare has a window', `${SPAWN_CUE}`)
+    ok(edgeRow(HUD_H - 40, HUD_H, CH) === HUD_H + 8 && edgeRow(CH + 40, HUD_H, CH) === CH - 8 && edgeRow(HUD_H + 30, HUD_H, CH) === HUD_H + 30, 'edgeRow clamps a cue into the HUD-safe band')
+    ok(SRC2.includes('spawnCues.push') && SRC2.includes('SPAWN_CUE'), 'the renderer arms the add-entry flare')
+    ok(SRC2.includes('markSide(cu.x, camX, CW)'), 'the flare re-reads its edge each frame — panning onto the add kills it')
+    {
+        // drive the finale with the hero pinned at the far edge; the host law
+        // keeps HIM framed, but the adds spawn across the whole board. Count
+        // how many materialize outside the camera window — the audit claim.
+        const camOf = (g) => {
+            const bw = g.roomData.gw * CELL
+            const live = g.players.filter((q) => q.deadT === 0 && !q.out)
+            const mid = live.length ? live.reduce((s, q) => s + q.x, 0) / live.length : bw / 2
+            return Math.max(0, Math.min(Math.round(mid - CW / 2), bw - CW))
+        }
+        let offCam = 0, onCam = 0
+        for (let seed = 0; seed < 4; seed++) {
+            const gs = makeGame(seed)
+            for (let t = 1; t <= TOTAL_ROOMS - 1; t++) {
+                gs.enemies = []; gs.roomData.spawns = []; gs.spawnT = 0; gs.bonusT = 0
+                step(gs, {}); gs.events.length = 0
+                gs.player.x = cx(Math.floor(gs.roomData.gw / 2)); gs.player.y = 24 + 8
+                step(gs, {}); gs.events.length = 0
+            }
+            gs.player.invuln = 1e9
+            for (let i = 0; i < 1500; i++) {
+                gs.player.invuln = 1e9
+                step(gs, { mx: 1, my: 0 })
+                const cam = camOf(gs)
+                for (const ev of gs.events) {
+                    if (ev.type !== 'spawn' || !ev.bossAdd) continue
+                    if (markSide(ev.x, cam, CW)) offCam++
+                    else onCam++
+                }
+                gs.events.length = 0
+                gs.enemies = gs.enemies.filter((e) => e.kind === 'boss') // keep the mat open
+            }
+        }
+        ok(offCam > 0, `the host really throws adds past the frame (${offCam} off / ${onCam} on across 4 seeds)`, JSON.stringify({ offCam, onCam }))
+    }
 
     // 4) combo pop vs shutter: the pop hangs at screen centre and the up-door
     // sits at board centre — at mid-board framing the old pop row collided

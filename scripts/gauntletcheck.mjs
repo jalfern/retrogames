@@ -1053,6 +1053,20 @@ console.log('net-seats (#554)')
     ok(!/selfEnt\(\) !== gs\.partner/.test(jsx), 'the old partner-only draw guard is gone')
 }
 
+// ---------------------------------------------------------- driver hygiene ----
+// #2100 — gauntletplay's #494 travel check merged VACUOUS: `c1.p2.y - c1.p2.y`
+// cancels to 0, so the partner "never moved" no matter what the engine did,
+// while the printed detail (correct pair) showed it crossing the corridor. A
+// distance whose two terms are the same operand can only ever compare one way.
+// Ban self-cancelling subtractions in the driver so that class cannot return.
+console.log('driver hygiene (#2100)')
+{
+    const play = readFileSync('scripts/gauntletplay.mjs', 'utf8')
+    const selfcancel = [...play.matchAll(/\b([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+) - \1\b/g)].map((m) => m[0])
+    ok(selfcancel.length === 0, 'no self-cancelling distance terms in gauntletplay', selfcancel.join(' | '))
+    ok(play.includes('c1.p2.y - c0.p2.y'), 'the #494 travel leg subtracts the two probe snapshots', 'travel formula')
+}
+
 // ------------------------------------------------------------- mutants ----
 if (process.argv.includes('--mutate')) {
     console.log('mutants (must die)')

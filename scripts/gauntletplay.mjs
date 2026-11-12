@@ -191,7 +191,7 @@ r.check('the corridor actually renders', px > 500, `${px} lit px`)
     await page.keyboard.up('ArrowUp')
     for (let i = 0; i < 60; i++) await page.evaluate(() => window.__gauntletTest.frame())
     const c1 = await probe()
-    const travel = c0.p2 && c1.p2 ? Math.hypot(c1.p2.x - c0.p2.x, c1.p2.y - c1.p2.y) : -1
+    const travel = c0.p2 && c1.p2 ? Math.hypot(c1.p2.x - c0.p2.x, c1.p2.y - c0.p2.y) : -1
     r.check('#494: the cpu partner travels under its own pads',
         travel > 0.3,
         travel < 0 ? 'no partner on the board (start blocked?)' :
@@ -227,14 +227,23 @@ r.check('the corridor actually renders', px > 500, `${px} lit px`)
         g.release()
         return {
             fmt: rec.format, seed: rec.seed, ticks: rec.ticks, build: rec.build,
+            voice: rec.voice === undefined ? null : { tracks: rec.voice.tracks.length, declined: rec.voice.declined.length },
             src: rec.slots.map((s) => s.source.kind),
             hashes: rec.hashes.length,
             nudged: rec.slots[0].raw.filter((x) => x.x === 0.08).length,
             ok: res.ok, mismatch: res.mismatch ? res.mismatch.tick : null, replayTicks: res.ticks,
         }
     })
-    r.check('#495: contract capture writes a v1 file (240 ticks, human-stream seats)',
-        rr.fmt === 'retrogames-rec/v1' && rr.seed === 11 && rr.ticks === 240 && rr.hashes >= 8 && rr.src.every((k) => k === 'model'),
+    // #2100: the old v1 pin was stale from before #1247 voice capture landed.
+    // On a real page the armed interaction opens the voice session and ANY voice
+    // section tags the file v2 (recording.js finish()); machines where mic
+    // acquisition fails stay v1 with no section. Pin the SEMANTICS — v2 iff a
+    // voice section is present — not one tag, so both honest answers pass and a
+    // tag/content mismatch goes red even if replay skipped validation.
+    r.check('#495: contract capture writes a well-tagged file with v2 iff voice (240 ticks, human-stream seats)',
+        rr.seed === 11 && rr.ticks === 240 && rr.hashes >= 8 && rr.src.every((k) => k === 'model') &&
+            (rr.fmt === 'retrogames-rec/v2') === (rr.voice !== null) &&
+            (rr.fmt === 'retrogames-rec/v1' || rr.fmt === 'retrogames-rec/v2'),
         JSON.stringify(rr))
     r.check('#495: raw channel mirrors the contract stream analog per tick (pre-quantize)', rr.nudged > 3, `${rr.nudged} ticks`)
     r.check('#495: recorded run replays hash-equal through __game.replay', rr.ok === true && rr.mismatch === null,

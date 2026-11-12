@@ -4096,4 +4096,58 @@ await pBrowser.close()
     }
 }
 
+// ---- #2102 enemy-projectile-vs-carpet hit SHAPE (the vacuous-y bug)
+// sim.js merged with `wrapD(gs.y - gs.y)` in the carpet hit test — identically
+// 0 — so any enemy bolt crossing the carpet's x COLUMN hurt from any distance
+// along the north-south axis (z window aside). Repro before the fix: a bolt
+// frozen 40u north took 6 hp. These gates pin the radius on all three edges
+// that matter: inside bites, outside holds, the y-seam still bites (the wrap
+// stays wrapD, not raw subtraction), and a driver-hygiene tripwire (the #2100
+// family) bans self-cancelling distance terms in the engine so the class
+// cannot return. Mutation guide: revert the y operand to gs.y and the far
+// gates go red; drop wrapD on the y term and the seam gate goes red.
+{
+    const simS2102 = await readFile(new URL('../src/games/MagicCarpet/sim.js', import.meta.url), 'utf8')
+    const selfcancel = [...simS2102.matchAll(/\b([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+) - \1\b/g)].map((m) => m[0])
+    r.check('#2102 driver hygiene — no self-cancelling distance terms anywhere in sim.js',
+        selfcancel.length === 0, selfcancel.join(' | '))
+    r.check('#2102 the carpet hit test subtracts the bolt from the carpet (both axes wrapped)',
+        simS2102.includes('Math.hypot(wrapD(p.x - gs.x), wrapD(p.y - gs.y)) < 6'),
+        'operand pin')
+
+    // Isolated rig: one frozen enemy bolt at carpet altitude, all other casters
+    // dead/cleared, no spawn-safety — the ONLY thing that can hurt is line's hit.
+    const boltRig = (dx, dy, seamY) => {
+        const gs = makeGame(7)
+        gs.quota = 9999
+        gs.shield = 0; gs.invis = 0; gs.safeT = 0
+        gs.projs.length = 0; gs.monsters.length = 0
+        gs.wizard.alive = false
+        gs.sibs.forEach((s) => { s.alive = false })
+        let z = gs.alt
+        if (seamY) {
+            gs.y = 2
+            z = Math.max(sampleH(gs, gs.x, gs.y), sampleH(gs, gs.x, MAP - 1), WATER) + 10
+            gs.alt = z
+        }
+        gs.projs.push({ kind: 'bolt', from: 'm', x: wrap(gs.x + dx, MAP), y: wrap(gs.y + dy, MAP),
+            z, vx: 0, vy: 0, dmg: 6, life: 90, grace: 99 })
+        const hp0 = gs.hp
+        step(gs, {})
+        return { hurt: gs.events.some((e) => e.type === 'hurt' || e.type === 'shieldHit'), hp: hp0 - gs.hp }
+    }
+    const in3 = boltRig(0, 3)
+    r.check('#2102 a bolt inside the 6u radius still bites (rig honesty — the channel works)',
+        in3.hurt && in3.hp === 6, `hp -${in3.hp}`)
+    const far20 = boltRig(0, 20)
+    r.check('#2102 a bolt 20u north does NOT reach across the map — the y term counts',
+        !far20.hurt && far20.hp === 0, `hp -${far20.hp} (pre-fix: -6)`)
+    const far40 = boltRig(3, 40)
+    r.check('#2102 x-alignment alone is not a hit — 40u north with |Δx|=3 holds',
+        !far40.hurt && far40.hp === 0, `hp -${far40.hp} (pre-fix: -6)`)
+    const seam = boltRig(0, -3, true)
+    r.check('#2102 the radius wraps the y-seam — a bolt 3u across the edge bites',
+        seam.hurt && seam.hp === 6, `hp -${seam.hp} (raw subtraction misses this)`)
+}
+
 r.exit()
