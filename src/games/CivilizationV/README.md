@@ -15,7 +15,7 @@ src/games/CivilizationV/art.js      tilted 3D hex world (three.js): relief, fog,
                                     musketeers, CS beacons, HP bars, arrows, FX
 src/games/CivilizationV/index.jsx   the shell: renderer, camera, input, HUD, research/worker/policy/
                                     wonders/legends/diplomacy/victory panels
-scripts/civcheck.mjs                Node harness (npm run civcheck) — 533 checks
+scripts/civcheck.mjs                Node harness (npm run civcheck) — 594 checks
 scripts/civplay.mjs                 Chrome drive with real keys (npm run civplay) — 65 checks
 scripts/civclock.mjs                frame budget of the late game (npm run civclock)
 ```
@@ -74,6 +74,27 @@ with the Galleon's guns or besiege by land. Embark denies by name (`no unit to
 embark`, `no friendly galleon alongside`, `ships do not board ships`).
 Touch: tap a beach beside a laden Galleon to land; E embarks the selected
 squad; J lands at the nearest open beach.
+
+**Naval supply (#2065: the sea is not a free highway).** A hull is IN SUPPLY
+while it can trace ≤ `CFG.navalSupply` (6) sea steps from its tile to a
+friendly port — a living coastal city of its own realm (own civ, its overlord,
+its vassals) or of an ALLIED city-state (`influence ≥ CFG.csAlly`). An
+unsupplied hull banks `CFG.navalAttrition` (10) HP at end of turn, does not
+heal while unsupplied, and one worn to nothing at sea goes down with its hold —
+`shipLost` names the cause `supply`, cargo drowns under the same law as a
+battle-kill. The horizon is a pure BFS from ports
+(`portsOfRealm`/`suppliedSea`/`hullSupplied`) — no new stored state; the wear
+lands in `u.hp`, already folded. Tells: HUD chip `⚠ OUT OF SUPPLY −10/TURN` on
+the selected hull, a pulsing amber ring rides the unsupplied hull, and the
+evening log reports `OUT OF SUPPLY`. Deep water stops being free: coastal
+cities and alliances are the fleet's reach, a coast-to-coast crossing costs HP,
+and losing your last coastal hub strands your navy. §39 gates ports, horizon,
+wear, sink, the land-exempt law and determinism. Honesty, in the open (#237
+doctrine): Civ V has no attrition at sea — its nearest real law is that units
+heal only on friendly territory, and borders reach out over the water, so deep
+neutral sea already starves recovery there. This stage extends that real law as
+arcade rules; the gap it closes called it "supply lines", and the extension,
+not the original, is ours.
 
 **Capital capture ≠ extinction — realms KNEEL (polish #2, vassals #1777).** In
 the original, razing every last unit is never how you win — the head of the
@@ -149,7 +170,7 @@ the hold. The Y panel is reachable by touch (on-screen button).
 ## Verify
 
 ```bash
-npm run civcheck          # 547 Node checks: boot, determinism, founding, economy, combat, barbarians,
+npm run civcheck          # 594 Node checks: boot, determinism, founding, economy, combat, barbarians,
                           # cities, production, tech (§16-18, now 21 techs / 6 eras), improvements (§19-20),
                           # resources (§21-22), borders (§23), happiness (§24), policies (§25), wonders
                           # (§26), great people (§27), stage-6 integration + slack (§28), city-states §29,
@@ -164,6 +185,11 @@ npm run civcheck          # 547 Node checks: boot, determinism, founding, econom
                            # spaceship parts §36 (four named plates split the 70 ledger, ordered fill +
                            # spill, named weld events, launch only when all four are shut, clamps,
                            # rival tracks, replay determinism)
+                           # tourism crown §37 + kneel copy/ghost-star pins §38 (previous polish passes)
+                           # naval supply §39 (ports of realm: own/vassal/overlord/allied-CS coastal cities;
+                           # horizon sharp at CFG.navalSupply sea steps; wear bites only far hulls,
+                           # no heal afloat, attrition alone sinks a hull and drowns its hold;
+                           # land units exempt; replay determinism; renderer/HUD source pins)
 npm run civplay           # Chrome, real keys: Y opens VICTORY (three tracks + rivals), K/L answer with
                           # Musket and Galleon on a seed-4 COASTAL capital (real keel, no escape clause),
                           # J/E refuse the transport paths by name, the Ark banks beakers on live
@@ -202,6 +228,9 @@ npm run lint:civ          # eslint gate for the game + its scripts
  7. Carried: the truce-line mutant reds §30; wonder race-check reds §26×4; the
    recruit gold-gate reds §27×2; border-clamp reds §23; branch-order reds §25;
    Stage-3 queue-gate reds §17; Stage-4 connectivity reds §21/§22.
+ 8. In `sim.js` `endPlayerTurn`, neuter the wear (`u.hp -= CFG.navalAttrition`
+    → `u.hp -= 0`) → seven §39 checks go red (the exact bite, the double price,
+    the attrition sink, the named loss and the drowned convoy); restore.
 
 ## Honest gaps (what the full original has that this arcade run does not)
 
@@ -214,8 +243,11 @@ npm run lint:civ          # eslint gate for the game + its scripts
   kneeling realm still takes cities one by one by siege), tribute is a flat
   whole-purse rather than the original's scaled per-population cut, there is no
   rebellion chance, and no Casus-Belli flavour on the forced peace.
-- **No naval supply or sea combat flavor beyond hulls** — transports cross any
-  coast-to-coast sea in path range; no supply lines, no naval tactics stack.
+- **Sea combat flavor beyond hulls** — transports cross any coast-to-coast sea
+  in path range; no naval tactics stack (no ranged port bombardment from the
+  water, no promotions, no line-of-battle). Supply lines CLOSED by #2065: hulls
+  beyond 6 sea steps of a friendly port wear, starve of heals, and sink with
+  their hold (§39, mutant-pinned); the tactics stack stays owed.
 - **The Ark parts are one program, not city industry** — the four named plates
   (Cockpit, Booster, Stasis, Launch) weld from the empire-wide science ledger in
   order; Civ V builds each component in a city with production, one part at a

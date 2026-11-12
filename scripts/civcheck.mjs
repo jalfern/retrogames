@@ -2,7 +2,7 @@
 // boots, its core rules hold, and it can be won. No browser, no three.
 // Run: npm run civcheck. Proven red-able (mutant) by hand — see README.
 
-import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, hasWonder, gpReady, gpThreshold, gpCost, canRecruit, recruitGP, canUseGP, spendGP, canDeclareWar, canMakePeace, makePeace, canTrade, makeTrade, cityStates, csInfo, canGift, giftCS, CS_IDS, CS0, isCS, coastalTile, coastalCityOf, isWater, findPath, orderMove, tileBlocked, canEmbark, embark, canLand, land, transportFor, ARK_PARTS, arkPartsOf, arkPartsDone } from '../src/games/CivilizationV/sim.js'
+import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, hasWonder, gpReady, gpThreshold, gpCost, canRecruit, recruitGP, canUseGP, spendGP, canDeclareWar, canMakePeace, makePeace, canTrade, makeTrade, cityStates, csInfo, canGift, giftCS, CS_IDS, CS0, isCS, coastalTile, coastalCityOf, isWater, findPath, orderMove, tileBlocked, canEmbark, embark, canLand, land, transportFor, portsOfRealm, suppliedSea, hullSupplied, ARK_PARTS, arkPartsOf, arkPartsDone } from '../src/games/CivilizationV/sim.js'
 import { decide, plan, RESEARCH_ORDER } from '../src/games/CivilizationV/planner.js'
 import { readFileSync } from 'fs'
 
@@ -2001,6 +2001,132 @@ console.log('38. kneel copy on the end screen + ghost-star data (#1783)')
         'e). the end screen rides the sim endWhy for kneel wins — no second copy table')
     ok(/realm kneels/.test(SRC('sim.js')) && /s kneel/.test(SRC('sim.js')),
         'e). the kneel sentence lives in the sim, once, both grammars')
+}
+
+// ---- 39. naval supply — far hulls wither at sea (#2065) ----
+console.log('39. naval supply — ports, horizon, wear, sink')
+{
+    // the same coastal realm as §31: settle a coastal capital, one flag on the water
+    const gs = newGame(41, 0)
+    grantTech(gs, 0, 'BRONZE_WORKING')
+    const site = gs.tiles.find((t) => canFound(gs, 0, t.c, t.r, null) === true && neighbors(t.c, t.r).some(([c, r]) => isWater(gs, c, r)))
+    const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    s.c = site.c; s.r = site.r
+    step(gs, { select: s.id, found: true })
+    const cap = gs.cities.find((c) => c.civ === 0 && c.alive)
+    ok(!!cap && coastalTile(gs, cap.c, cap.r), 'a coastal capital anchors the realm')
+    for (const u of gs.units) if (u.alive && u.civ === BARB && hexDist([u.c, u.r], [cap.c, cap.r]) < CFG.barbSeek + 2) u.alive = false
+
+    // (a) the port law: a port is a friendly flag on the coast — nothing else
+    ok(portsOfRealm(gs, 0).some(([c, r]) => c === cap.c && r === cap.r), 'a). your own coastal city is a port')
+    const csCap = gs.cities.find((c) => c.alive && isCS(c.civ))
+    ok(!!csCap, 'the world holds city-state harbours')
+    ok(!portsOfRealm(gs, 0).some(([c, r]) => c === csCap.c && r === csCap.r), 'a). an un-allied city-state is not your port')
+    gs.cs[0] = gs.cs[0] || {}
+    gs.cs[0][csCap.civ] = { met: true, influence: CFG.csAlly, ally: true }
+    ok(portsOfRealm(gs, 0).some(([c, r]) => c === csCap.c && r === csCap.r), 'a). alliance opens the city-state harbour')
+    delete gs.cs[0][csCap.civ]
+    // the realm kneels upward too: overlord and vassal ports feed each other's hulls
+    const ovrSite = gs.tiles.find((t) => walk(t.terr) && neighbors(t.c, t.r).some(([c, r]) => isWater(gs, c, r)) && gs.cities.every((ct) => hexDist([ct.c, ct.r], [t.c, t.r]) > 2))
+    ok(!!ovrSite, 'a). spare coast exists to hang a test harbour on')
+    gs.civs[0].vassal = 1
+    gs.cities.push({ id: 901, civ: 1, c: ovrSite.c, r: ovrSite.r, alive: true, name: 'OVRHARBOR' })
+    ok(portsOfRealm(gs, 0).some(([c, r]) => c === ovrSite.c && r === ovrSite.r), 'a). the overlord\u2019s harbour feeds a kneeling realm')
+    gs.cities.pop(); gs.civs[0].vassal = null
+    gs.civs[1].vassal = 0
+    gs.cities.push({ id: 902, civ: 1, c: ovrSite.c, r: ovrSite.r, alive: true, name: 'VASHARBOR' })
+    ok(portsOfRealm(gs, 0).some(([c, r]) => c === ovrSite.c && r === ovrSite.r), 'a). a vassal harbour feeds its overlord\u2019s fleet')
+    gs.cities.pop()
+    gs.cities.push({ id: 903, civ: 2, c: ovrSite.c, r: ovrSite.r, alive: true, name: 'FOEHARBOR' })
+    ok(!portsOfRealm(gs, 0).some(([c, r]) => c === ovrSite.c && r === ovrSite.r), 'a). an enemy harbour never feeds you \u2014 take the coast or go hungry')
+    gs.cities.pop(); gs.civs[1].vassal = null
+
+    // (b) the horizon: supply traces SEA steps from ports — sharp at CFG.navalSupply
+    const horizon = suppliedSea(gs, 0)
+    const waterCount = gs.tiles.filter((t) => isWater(gs, t.c, t.r)).length
+    ok([...horizon].every((i) => isWater(gs, i % CFG.W, Math.floor(i / CFG.W))), 'b). supply never claims land')
+    ok(horizon.size < waterCount, 'b). deep water lies beyond the horizon — the sea is not free')
+    // independent BFS: membership flips exactly at the horizon step
+    const dist = new Map()
+    {
+        const q = []
+        for (const [pc, pr] of portsOfRealm(gs, 0)) for (const [nc, nr] of neighbors(pc, pr)) {
+            if (isWater(gs, nc, nr) && !dist.has(idx(nc, nr))) { dist.set(idx(nc, nr), 1); q.push([nc, nr, 1]) }
+        }
+        for (let h = 0; h < q.length; h++) { const [c, r, d] = q[h]; if (d >= CFG.navalSupply + 2) continue
+            for (const [nc, nr] of neighbors(c, r)) if (isWater(gs, nc, nr) && !dist.has(idx(nc, nr))) { dist.set(idx(nc, nr), d + 1); q.push([nc, nr, d + 1]) } }
+    }
+    const edgeIn = [...dist.entries()].filter(([i, d]) => d === CFG.navalSupply)
+    const edgeOut = [...dist.entries()].filter(([i, d]) => d === CFG.navalSupply + 1)
+    ok(edgeIn.length > 0 && edgeIn.every(([i]) => horizon.has(i)), 'b). a hull at the last supplied step still eats')
+    ok(edgeOut.length > 0 && edgeOut.every(([i]) => !horizon.has(i)), 'b). one step further and the larder closes')
+
+    // (c) wear, no-heal-afloat and sink — a lone hull at each post
+    const atPort = neighbors(cap.c, cap.r).find(([c, r]) => isWater(gs, c, r) && !unitAt(gs, c, r))
+    const far = edgeOut.find(([i]) => !unitAt(gs, i % CFG.W, Math.floor(i / CFG.W)))
+    ok(!!far, 'c). the horizon leaves free deep water to strand a hull on')
+    const hull = spawnUnit(gs, 0, 'GALLEY', atPort[0], atPort[1])
+    ok(hullSupplied(gs, hull), 'c). a hull riding at anchor beside its port is supplied')
+    step(gs, { endTurn: true })
+    eq(hull.hp, 100, 'c). supplied hulls never wear — the law touches only far flags')
+    ok(!gs.events.some((ev) => ev.type === 'wear' && ev.civ === 0), 'c). no wear report while the port feeds the crew')
+
+    hull.c = far[0] % CFG.W; hull.r = Math.floor(far[0] / CFG.W)
+    ok(!hullSupplied(gs, hull), 'c). the same hull past the horizon goes unsupplied')
+    step(gs, { endTurn: true })
+    ok(gs.events.some((ev) => ev.type === 'wear' && ev.civ === 0 && ev.kind === 'GALLEY'), 'c). the far hull logs its wear')
+    eq(hull.hp, 100 - CFG.navalAttrition, 'c). wear bites the exact CFG amount — and heals for nothing (no-heal-afloat)')
+    hull.hp = 60
+    step(gs, { endTurn: true })
+    eq(hull.hp, 60 - CFG.navalAttrition, 'c). a second stranded turn wears again — the deep takes its price twice')
+
+    hull.c = atPort[0]; hull.r = atPort[1]
+    step(gs, { endTurn: true })
+    ok(hull.hp > 60 - CFG.navalAttrition, 'c). home waters heal: return to the port horizon and the crew recovers')
+
+    // a hull worn to nothing at sea goes down without an enemy ever firing
+    hull.c = far[0] % CFG.W; hull.r = Math.floor(far[0] / CFG.W)
+    hull.hp = CFG.navalAttrition
+    step(gs, { endTurn: true })
+    ok(!hull.alive, 'c). attrition alone drowns a hull — no battle required')
+    ok(gs.events.some((ev) => ev.type === 'shipLost' && ev.why === 'supply' && ev.civ === 0), 'c). the loss is named honestly: OUT OF SUPPLY')
+
+    // (d) the hold goes with the hull: a convoy stranded far from port
+    grantTech(gs, 0, 'ASTRONOMY')
+    const pier = neighbors(cap.c, cap.r).map(([c, r]) => ({ c, r,
+        land: gs.tiles.filter((t) => walk(t.terr) && !tileBlocked(gs, t.c, t.r) && !unitAt(gs, t.c, t.r)
+            && neighbors(t.c, t.r).some(([nc, nr]) => nc === c && nr === r)) }))
+        .find((o) => isWater(gs, o.c, o.r) && !unitAt(gs, o.c, o.r) && o.land.length >= 2)
+    ok(!!pier, 'd). a harbour mouth beside the capital offers two embark spots')
+    const convoy = spawnUnit(gs, 0, 'GALLEON', pier.c, pier.r)
+    const sq1 = spawnUnit(gs, 0, 'MUSKET', pier.land[0].c, pier.land[0].r)
+    const sq2 = spawnUnit(gs, 0, 'MUSKET', pier.land[1].c, pier.land[1].r)
+    ok(embark(gs, sq1) && embark(gs, sq2), 'd). the convoy takes two squads aboard')
+    convoy.c = far[0] % CFG.W; convoy.r = Math.floor(far[0] / CFG.W)
+    convoy.hp = CFG.navalAttrition
+    step(gs, { endTurn: true })
+    ok(!convoy.alive && convoy.cargo.length === 0, 'd). the stranded convoy goes down and empties its hold')
+    ok(!sq1.alive && !sq2.alive, 'd). the hold goes to the bottom with the hull')
+    ok(gs.events.filter((ev) => ev.type === 'drown').length >= 2, 'd). every squad is mourned by name')
+
+    // (e) one law for hulls: land never thirsts, loaded troops never wear
+    const inland = gs.tiles.find((t) => walk(t.terr) && !tileBlocked(gs, t.c, t.r) && !unitAt(gs, t.c, t.r) && !dist.has(idx(t.c, t.r)))
+    const guard = spawnUnit(gs, 0, 'MUSKET', inland.c, inland.r)
+    step(gs, { endTurn: true })
+    eq(guard.hp, 100, 'e). land units far from every port never wear — supply is the fleet\u2019s law alone')
+
+    // (f) determinism: the same seed with the same far hulls replays hash-for-hash
+    const a = newGame(41, 0), b = newGame(41, 0)
+    let n = 0
+    while (!a.end && n++ < 30) { step(a, decide(a)); step(b, decide(b)) }
+    eq(stateHash(a), stateHash(b), 'f). the supply law keeps replay determinism intact')
+
+    // (g) source pins: the tell rides the renderer, the help names the law
+    const SRC = (f) => readFileSync(new URL(`../src/games/CivilizationV/${f}`, import.meta.url), 'utf8')
+    ok(/navalSupply: 6, navalAttrition: 10/.test(SRC('sim.js')), 'g). the two constants sit in CFG, one source of truth')
+    ok(/type: 'wear'/.test(SRC('sim.js')) && /type: 'shipLost'/.test(SRC('sim.js')), 'g). wear and loss are events, not silent HP theft')
+    ok(/warnRing/.test(SRC('art.js')) && /suppliedSea\(gs, u\.civ\)/.test(SRC('art.js')), 'g). the amber ring rides unsupplied hulls in the renderer')
+    ok(/OUT OF SUPPLY/.test(SRC('index.jsx')), 'g). the HUD chip names the danger in words')
 }
 
 console.log(`\ncivcheck: ${pass} passed, ${fail} failed`)

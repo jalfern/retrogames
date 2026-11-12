@@ -21,7 +21,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import * as THREE from 'three'
-import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP, canDeclareWar, canMakePeace, canTrade, canGift, csInfo, CS_IDS, coastalCityOf, canEmbark, canLand, ARK_PARTS, arkPartsOf, arkPartsDone } from './sim.js'
+import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP, canDeclareWar, canMakePeace, canTrade, canGift, csInfo, CS_IDS, coastalCityOf, canEmbark, canLand, hullSupplied, ARK_PARTS, arkPartsOf, arkPartsDone } from './sim.js'
 import { decide, RESEARCH_ORDER } from './planner.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -176,6 +176,14 @@ const CivilizationVGame = () => {
                     if (e.civ === 0) say(`${e.kind} GOES DOWN WITH THE HULL`)
                     if (known(e.at[0], e.at[1])) spawnImpact(view, gs, e.at[0], e.at[1], true)
                     audioController.playSweep(220, 60, 0.5, 'sawtooth', 0.07)
+                }
+                else if (e.type === 'wear') {
+                    // #2065 supply lines: the crew's evening report when no port feeds them
+                    if (e.civ === 0) { say(`OUT OF SUPPLY — HULL WEARS −${CFG.navalAttrition}`); audioController.playTone(196, 0.08, 'triangle', 0.05) }
+                }
+                else if (e.type === 'shipLost' && e.why === 'supply') {
+                    if (e.civ === 0) { say(`${e.kind} LOST AT SEA — NO PORT WAS NEAR`); shake.v = 4; audioController.playSweep(200, 55, 0.6, 'sawtooth', 0.08) }
+                    if (known(e.at[0], e.at[1])) spawnImpact(view, gs, e.at[0], e.at[1], true)
                 }
                 else if (e.type === 'research' && e.civ === 0) { audioController.playTone(500, 0.03, 'sine', 0.03) }
                 else if (e.type === 'tech') {
@@ -385,7 +393,7 @@ const CivilizationVGame = () => {
             if (h.turn) h.turn.textContent = `TURN ${gs.turn}/${CFG.turnLimit}`
             if (h.cap) h.cap.textContent = cap ? `CAPITAL ${cap.name} · size ${cap.size}/${GOAL}` : 'NO CITY — press E to settle'
             if (h.cities) h.cities.textContent = `cities ${gs.cities.filter((c) => c.civ === 0 && c.alive).length}`
-            if (h.sel) h.sel.textContent = (() => { const s = gs.units.find((u) => u.id === gs.selected && u.alive && !u.loaded && u.civ === 0); return s ? `${s.kind} · ${s.moves}/${s.maxMoves} moves · hp ${s.hp}${s.cargo ? ` · hold ${s.cargo.length}/${UNIT[s.kind].cargo || 0}` : ''}` : 'tap a unit' })()
+            if (h.sel) h.sel.textContent = (() => { const s = gs.units.find((u) => u.id === gs.selected && u.alive && !u.loaded && u.civ === 0); return s ? `${s.kind} · ${s.moves}/${s.maxMoves} moves · hp ${s.hp}${s.cargo ? ` · hold ${s.cargo.length}/${UNIT[s.kind].cargo || 0}` : ''}${s.naval && !hullSupplied(gs, s) ? ` · ⚠ OUT OF SUPPLY −${CFG.navalAttrition}/TURN` : ''}` : 'tap a unit' })()
             if (h.build) {
                 const city = gs.cities.find((c) => c.civ === 0 && c.alive)
                 const q = city && city.queue && city.queue[0]
@@ -907,6 +915,7 @@ const CivilizationVGame = () => {
             window.__civTest = {
                 watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 watching: () => watchingRef.current, // #1637 watchcheck: is the witness brain running the empire?
+                navalSupply: () => gs.units.filter((u) => u.alive && u.naval && !u.loaded).map((u) => ({ id: u.id, civ: u.civ, kind: u.kind, c: u.c, r: u.r, hp: u.hp, supplied: hullSupplied(gs, u) })), // #2065 supply lines readback
                 probe: () => ({ screen: screenRef.current, tick: gs.tick, turn: gs.turn, phase: gs.phase, end: gs.end, why: gs.endWhy,
                     gold: gs.civs[0].gold, science: gs.civs[0].science, culture: gs.civs[0].culture || 0,
                     capitalSize: capSize(), playerCities: gs.cities.filter((c) => c.civ === 0 && c.alive).length, totalCities: gs.cities.filter((c) => c.alive).length,
@@ -1343,6 +1352,7 @@ const CivilizationVGame = () => {
                     <div className="pointer-events-auto max-w-[min(92vw,560px)] rounded-lg border border-amber-300/50 bg-black/85 px-4 py-3 font-mono text-amber-100 text-[11px] leading-5 shadow-[0_14px_50px_#000]">
                         <b className="text-amber-300 tracking-widest">HOW YOU WIN</b> — take all 3 rival capitals, or reach Spaceflight and launch the ARK, or out-shimmer every rival in TOURISM; growing your capital to size {GOAL} is the golden shortcut.
                         <div className="opacity-80 mt-1">E settles · 1–4 build · Space ends the turn · drag to pan · right-drag orbits · Home re-centers · Y tracks all three races.</div>
+                        <div className="opacity-80 mt-1 text-rose-200/80">NAVAL SUPPLY — keep a hull within {CFG.navalSupply} sea hexes of a friendly coastal port (own, vassal, or allied city-state); far hulls wear −{CFG.navalAttrition} every turn and sink in the deep.</div>
                         <button onClick={() => setHelpOpen(false)} className="mt-2 border border-amber-300/50 rounded px-3 py-0.5 hover:bg-amber-300/10 text-amber-200">GOT IT</button>
                     </div>
                 </div>
