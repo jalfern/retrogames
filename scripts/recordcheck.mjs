@@ -398,23 +398,45 @@ const BASE = `http://127.0.0.1:${server.address().port}`
     ok(!mispressed.ok, 'MUTANT press 1000 ms from its clap -> RED', mispressed.why)
     ok(detectClaps(mkPcm([], 4000), { sampleRate: SR }).length === 0, 'sub-threshold hum detects nothing (real claps are the only trigger)')
 
-    // #2056 phone grading: a real phone take is NOT one clean direction stream —
-    // steering/drift adds edges and taps live on the attack button. The old
-    // analyze path (whole-direction order pairing, exact count) refused such a
-    // take; matchClapEdges flattens every control's edges and pairs each onset
-    // with the nearest edge inside the ±250 ms search window (wide so a late
-    // phone mic grades honestly RED, not ungradeable), then the SAME ±50 ms line.
-    const PHONE = [PRESSED[0] + 2, 90, 120, PRESSED[1] + 1, 180, 250, PRESSED[2] - 2, 292] // taps on `a` + steering/drift noise
-    const phone = matchClapEdges({ sampleRate: SR, onsets, edgeTicks: PHONE, clock: realtimeClock(300) })
-    ok(phone.ok && phone.matched === 3 && phone.ignoredEdges === 5, `PHONE take grades green: 3 clap-tap edges matched among 8 (noise ignored) (worst ${phone.worstMs} ms)`, phone.why)
-    const phoneLate = matchClapEdges({ sampleRate: SR, onsets, edgeTicks: PHONE.map((t) => t + 30), clock: realtimeClock(300) }) // +500 ms
+    // #2056 phone grading + the 2026-11-12 AUDIT fix: a real phone take is NOT
+    // one clean direction stream — steering/drift adds edges and the clap taps
+    // live on the A button (what the #2056 instructions name). matchClapEdges
+    // pairs each onset ONLY with A-tagged taps inside the ±250 ms search window
+    // (wide so a late phone mic grades honestly RED, not ungradeable); every
+    // other control's edge is context, never a pairing candidate. The old
+    // any-control pairing let a ~120 ms-lagging phone land its onset on an
+    // unrelated steering edge inside ±50 ms — the dense-stick mutant below is
+    // exactly that attack and MUST stay RED.
+    const mkPhone = (taps, noise) => [
+        ...taps.map((t) => ({ t, control: 'a' })),
+        ...noise.map((t) => ({ t, control: 'right' })),
+    ]
+    const TAPS = [PRESSED[0] + 2, PRESSED[1] + 1, PRESSED[2] - 2] // clap-coincident A taps
+    const NOISE = [90, 120, 180, 250, 292]                         // steering/drift bits
+    const phone = matchClapEdges({ sampleRate: SR, onsets, edges: mkPhone(TAPS, NOISE), clock: realtimeClock(300) })
+    ok(phone.ok && phone.matched === 3 && phone.ignoredEdges === 5, `PHONE take grades green: 3 A-taps matched among 8 edges (steering noise ignored) (worst ${phone.worstMs} ms)`, phone.why)
+    const phoneLate = matchClapEdges({ sampleRate: SR, onsets, edges: mkPhone(TAPS.map((t) => t + 30), NOISE), clock: realtimeClock(300) }) // taps +500 ms
     ok(!phoneLate.ok && phoneLate.matched < 3, 'MUTANT phone take 500 ms from its claps -> RED (the clap taps pair with nothing)', phoneLate.why)
+    // AUDIT MUTANT (#1711 audit 2026-11-12): DENSE stick edges hugging every
+    // onset (within ±2 ticks) + the real taps shifted +120 ms. Under the old
+    // any-control pairing the onsets would snap onto the stick edges and grade
+    // GREEN at offset ~0 — the lagging phone the acceptance line exists to
+    // catch. With A-only pairing the taps pair at ~+117 ms -> RED. Must stay red.
+    const DENSE = []
+    for (const p of PRESSED) for (const k of [-2, -1, 1, 2]) DENSE.push({ t: p + k, control: k > 0 ? 'x' : 'right' })
+    const lagPhone = matchClapEdges({ sampleRate: SR, onsets, edges: [...DENSE, ...mkPhone(TAPS.map((t) => t + 7), [])], clock: realtimeClock(300) }) // +120 ms taps
+    ok(!lagPhone.ok && lagPhone.matched === 3 && lagPhone.pairs.every((p) => Math.abs(p.offsetMs) > CLAP_TOL_MS),
+        'AUDIT MUTANT dense steering edges + taps shifted +120 ms -> RED (steering can never absorb a clap)', lagPhone.why)
+    // shape law: untagged numbers pair NOTHING — fail-closed, so a caller that
+    // forgets the control tags gets RED, never a silent return to any-control.
+    ok(!matchClapEdges({ sampleRate: SR, onsets, edgeTicks: TAPS, clock: realtimeClock(300) }).ok, 'untagged numeric edges pair nothing -> RED (SHAPE LAW: edges must be {t, control})')
     const clock3 = realtimeClock(300).map((s) => ({ t: s.t, ms: s.ms + 120 })).concat([{ t: 301, ms: Math.round(300 * TICK_MS) + 120 }]) // +120 ms drift, samples kept, clamp never hides it
-    const phoneDrift = matchClapEdges({ sampleRate: SR, onsets, edgeTicks: PHONE, clock: clock3 }) // inside ±150 window, outside budget
+    const phoneDrift = matchClapEdges({ sampleRate: SR, onsets, edges: mkPhone(TAPS, NOISE), clock: clock3 }) // inside ±150 window, outside budget
     ok(!phoneDrift.ok && phoneDrift.matched === 3 && phoneDrift.pairs.every((p) => Math.abs(p.offsetMs) > CLAP_TOL_MS), 'MUTANT 120 ms pipeline drift all outside ±50 ms -> RED — the line is not relaxed, the window only finds candidates', phoneDrift.why)
-    const quiet = matchClapEdges({ sampleRate: SR, onsets: onsets.slice(0, 2), edgeTicks: PHONE, clock: realtimeClock(300) })
-    ok(!quiet.ok && quiet.matched === 2, 'fewer than 3 clap-coincident edges -> RED (a real take has a clap per tap)', quiet.why)
-    ok(!matchClapEdges({ sampleRate: SR, onsets, edgeTicks: [], clock: realtimeClock(300) }).ok, 'no input edges at all -> RED, never vacuous green')
+    const quiet = matchClapEdges({ sampleRate: SR, onsets: onsets.slice(0, 2), edges: mkPhone(TAPS, NOISE), clock: realtimeClock(300) })
+    ok(!quiet.ok && quiet.matched === 2, 'fewer than 3 clap-coincident A-taps -> RED (a real take has a clap per tap)', quiet.why)
+    ok(!matchClapEdges({ sampleRate: SR, onsets, edges: [], clock: realtimeClock(300) }).ok, 'no input edges at all -> RED, never vacuous green')
+    ok(!matchClapEdges({ sampleRate: SR, onsets, edges: NOISE.map((t) => ({ t, control: 'right' })), clock: realtimeClock(300) }).ok, 'noise edges without a single A-tap -> RED (the named control must be present)')
 }
 
 // --- query plumbing -----------------------------------------------------------
