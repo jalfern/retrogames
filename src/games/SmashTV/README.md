@@ -219,6 +219,39 @@ presentation-only (`rules/gen/sim` untouched, layout pins byte-identical):
   gib px on canvas near the corpse, the whole set lands (7 gibs + a stain),
   and the air is clear after the lifetime.
 
+## PAN & READABILITY POLISH (#1978)
+
+Measured before fixing (rAF-rate probe): the old camera recomputed
+`camX = round(mid − CW/2)` every frame, so a 1.2 px/tick walk stepped the
+world `1,1,2,1,1,2` px — a 2 px hop every fifth tick — and the hero's screen
+x oscillated ±0.5 px around his pace. The fix is the **uniform pan**
+(`juice.js camPan`): the float camera steps at most `CAM_PAN = 1` px per drawn
+frame, so the world glides at a steady rate; the camera trails a run by at
+most a few px and eases the hero back to centre when he stops (every board is
+wider than the screen, so the frame always has slack to give). A framing jump
+past `CAM_SNAP = 24` is a teleport, not a walk — new room, respawn, seat
+change — and snaps through instantly; `camF = -1e9` on start/reset frames the
+show at once instead of panning in.
+
+Also in this pass: **off-screen markers** (spawns, threats and the bonus crowd
+parked past the frame edge stamp a blinking chip in the game's own colours —
+telegraph yellow, kill red, exit green — on the edge they sit on; the host is
+exempt, the host law already keeps him framed); the **cross-screen door
+confirm** (when the nearest open exit is more than `FAR_EXIT_PX = 96` px from
+the hero at the clear, the shutter answers with a two-tone clank over noise —
+a bigger confirm for a longer walk); and the combo pop moved to `HUD_H + 48`,
+below the border door row, since at mid-board framing it sat right on the
+sealed/shuttering up-door (the patterns never build in rows 0–2, now pinned).
+
+Gates: smashcheck `polish` section (uniform-step walk at hero speed, snap and
+convergence laws, far/near door distances, marker side mapping and palette,
+pop-band emptiness across all rooms) + 5 mutants (2 px hop, no-snap drift,
+confirm off, blind handler, pop back on the door row); smashplay adds a live
+rAF-rate gate — max hop ≤ 1 px/frame and the pan monotone with the run.
+
+The zoom-out-vs-cabinet question (item 5) stays an honest gap: a mild entry
+scale was not prototyped blind; the pan board is the shipped framing.
+
 ## Honest gaps vs the cabinet
 - ~~THE ANNOUNCER keeps his screen-sized stage on purpose (a boss half off-screen
   reads as a bug); every other room runs the 24-column pan board.~~ CLOSED by

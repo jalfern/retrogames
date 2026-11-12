@@ -99,3 +99,36 @@ export function goreSet(rng = Math.random) {
 
 // the stain a kill leaves on the studio floor: combo makes it a bigger pizza
 export const stainRadius = (combo) => 3 + Math.min(3, combo)
+
+// #1978 — the smooth pan. The old camera recomputed camX = round(mid − CW/2) each
+// frame: a 1.2 px/tick walk made the world step 1,1,2,1,1,2 px — visible 1-px hops
+// (the hero appeared to stutter backwards every fifth tick). The pan law replaces
+// the rounding with a UNIFORM step: at most CAM_PAN px per drawn frame, so the
+// world glides at a steady rate; the camera trails the hero by at most a few px
+// while he runs and catches up the moment he stops. A jump larger than CAM_SNAP is
+// not a walk — it is a teleport (new room, respawn, seat change) — and snaps
+// instantly instead of panning across the whole board.
+export const CAM_PAN = 1 // px per drawn frame — never more, so the pan never hops
+export const CAM_SNAP = 24 // past this the framing jumped boards/respawned: snap
+export const camPan = (cur, want) => {
+    const d = want - cur
+    if (Math.abs(d) > CAM_SNAP) return want
+    return cur + Math.max(-CAM_PAN, Math.min(CAM_PAN, d))
+}
+
+// #1978 — the cross-screen door confirm. On a 384 px board the far door can sit a
+// whole walk away when the room falls; the same 330→990 blip covered every exit.
+// When the NEAREST open door is farther than FAR_EXIT_PX from the hero, the
+// shutter answers with a heavier two-tone clank + noise — a bigger confirm for a
+// bigger walk. A door already in view keeps the light blip.
+export const FAR_EXIT_PX = 96 // more than half the screen's half-frame, less than a full pan
+export const farExitPx = (x, y, exits) => Math.min(...exits.map((e) => Math.hypot(e.x - x, e.y - y)))
+export const SHUTTER_CONFIRM = { notes: [[196, 0, 0.05], [147, 0.07, 0.09]], type: 'square', vol: 0.055, noise: 0.06 }
+
+// #1978 — off-screen legibility. The wide boards park spawns, threats and the bonus
+// crowd past the frame edge; they telegraph and scream where they stand, unseen.
+// markSide maps a board x to the screen edge to stamp its colour on: −1 left,
+// +1 right, 0 in view. Colours reuse the game's own language: the spawn telegraph's
+// yellow, the kill red, the exit green for the fleeing targets.
+export const MARK = { enemy: '#ff5d5d', spawn: '#ffd23f', civ: '#8fff9f' }
+export const markSide = (x, camX, cw) => (x < camX ? -1 : x > camX + cw ? 1 : 0)
