@@ -131,17 +131,30 @@ the #1096 options switched on.
   (jump to a pit by index), `sweep()` (force the train pass) and the guard-fx
   probes `forceBlock(i)`/`forceCrush()`, `blockFx()`, `breakFx()`,
   `shieldFx()` (live GL pool counts).
-- **Select screen (#1106)**: each card shows the fighter's OWN rig rendered by
+- **Select screen (#1106, card poses #2172)**: each card shows the fighter's OWN rig rendered by
   `createPortraitRenderer` (a mini 240x187 GL view, preserveDrawingBuffer so
   the HUD `drawImage`s it; card aspect matches the canvas so nothing
-  stretches; front three-quarter framing, teal rim light). Hovering blips the
-  hovered fighter's `voice` register (`voiceNotes` in fighters.js, two notes
-  of base + fifth) and prints their intro line under the grid; the pick stings
-  the register's low pair and carries `NAME — INTRO` from the pick through the
-  pre-fight intro. The card grid sizes from the viewport so all five fit.
-  All presentation — the engine and hashes never see it. DEV hooks:
-  `selectInfo()` (cursor/id/portraits/line), `hover(d)`, `pick()`,
-  `portraitStats()` (per-portrait ink + head-region pixels), `cardRects()`
+  stretches; teal rim light). #2172: every fighter HOLDS their own signature
+  pose (`def.card` — NYX deep-bladed with the lead hand out, CINDER weight back
+  palms up, VESS on his toes elbows loose, RIV squared high fists, KRAX hunched
+  with arms wide for the grab), each with its own camera distance (`camZ`) so a
+  slim blade and a 1.4-bulk wall both fill their tile arcade-style. Portraits
+  are frozen into per-fighter snapshot canvases — the GL surface is one
+  reusable element and before #2172 all five cards composited the SAME live
+  canvas (every tile showed the last-rendered fighter; the old ink/head gates
+  couldn't see it because five identical pictures still "painted a fighter").
+  Hovering (or tapping another card — tap-to-hover walks the cursor instead of
+  picking; tapping the hovered card picks) eases that card's zoom to 1: the
+  portrait scales 1.16x, lifts, glows teal and draws LAST so it rides over its
+  neighbours. Hovering blips the hovered fighter's `voice` register
+  (`voiceNotes` in fighters.js, two notes of base + fifth) and prints their
+  intro line under the grid; the pick stings the register's low pair and
+  carries `NAME — INTRO` from the pick through the pre-fight intro. The card
+  grid sizes from the viewport so all five fit. Zoom eases per select frame and
+  resets when select closes. All presentation — the engine and hashes never see
+  it. DEV hooks: `selectInfo()` (cursor/id/portraits/line/zoom), `hover(d)`,
+  `pick()`, `zoomOf(i)` (per-card zoom), `portraitStats()` (per-portrait ink +
+  head-region pixels + head centroid + silhouette hash), `cardRects()`
   (live card geometry for the on-screen fit + portrait-ink pixel audit).
 
 ## Rules worth knowing
@@ -206,7 +219,11 @@ the #1096 options switched on.
      `pose()` + `forceHit()`, a real ArrowRight hold walking with the gait
      readable live — legs alternating, hips bobbing per step, KRAX striding
      wider than NYX and both keeping their own guard-arm geometry via
-     `pose()`'s legR/legL hips, zero page errors).
+     `pose()`'s legR/legL hips, zero page errors) + the #2172 select-card gates
+     (five unique silhouette hashes — the shared-canvas kill-shot — head
+     centroid spread, hover zoom ease + handoff, tap-to-hover with voice blip,
+     zoom reset on exit; distinct card-pose data; self-biting mutants for the
+     shared canvas, flattened zoom, buried hovered card and stripped pose table).
 - `npm run viperpitcheck -- --mutate` — proven-fail: removing the guard gate
   must let heavies smash through GUARD; lifting the juggle cap must let the
   third aerial hit connect.
@@ -222,8 +239,13 @@ the #1096 options switched on.
   judges, the match-arc line (WITHOUT LOSS / ONES THAT MATTERED) and a
   call-and-response reveal with a loser-register reply sting, all pinned in
   `viperpitcheck`.
-- Portrait polish: portrait pose-per-card and a hover portrait zoom on the
-  select screen (intro/win/lose quotes + portraits + hover blips landed #1106).
+- **CLOSED by #2172:** portrait polish — pose-per-card (five signature `card`
+  poses + per-fighter camera framing), hover/tap portrait zoom (1.16x ease +
+  lift + draw-last), tap-to-hover on the card grid, and the fix underneath it
+  all: portraits are frozen into per-fighter snapshot canvases (the GL surface
+  was shared, so all five tiles showed one fighter). Pinned by silhouette-hash,
+  centroid-spread, zoom-handoff, tap-hover and four self-biting mutants in
+  `viperpitcheck`.
 - Stage midground + fight-reactive sway landed (#1106); heavier interactivity
   (destructible props, pickups) still open.
 - `qcb` counter + guard crush landed (#1106): blocking drains a guard gauge;
