@@ -845,7 +845,8 @@ section('THE CROWD IS PEOPLE (#1989) — hats, unibrows, earrings, missing teeth
         for (const country of COUNTRIES) for (const sex of ['M', 'F']) {
             const a = accFor(pic, country, sex), b = accFor(pic, country, sex)
             if (JSON.stringify(a) !== JSON.stringify(b)) pure = false
-            if (!(a.hat >= 0 && a.hat <= 3) || ![a.uni, a.ear, a.gap].every((v) => v === 0 || v === 1)) pure = false
+            if (!(a.hat >= 0 && a.hat <= 3) || ![a.uni, a.ear, a.gap, a.shades, a.post].every((v) => v === 0 || v === 1)) pure = false
+            if (!(a.body >= 0 && a.body <= 2)) pure = false
         }
     }
     ok(pure, 'accFor is not a pure, shaped function of (serial, nation, sex)')
@@ -856,8 +857,8 @@ section('THE CROWD IS PEOPLE (#1989) — hats, unibrows, earrings, missing teeth
     //    (all decor on): the booth still decides exactly as before, and the
     //    truth path agrees. If any rule ever learns to read a hat, every
     //    hatted honest face becomes an unfair paper and this goes red.
-    let naked = 0, decorated = 0, combos = new Set(), hatKinds = new Set()
-    const fams = { hat: 0, uni: 0, ear: 0, gap: 0 }
+    let naked = 0, decorated = 0, combos = new Set(), hatKinds = new Set(), bodyKinds = new Set(), postN = 0
+    const fams = { hat: 0, uni: 0, ear: 0, gap: 0, shades: 0 }
     for (const seed of SEEDS) {
         const w = genWeek(seed)
         for (const day of w.days) {
@@ -866,27 +867,35 @@ section('THE CROWD IS PEOPLE (#1989) — hats, unibrows, earrings, missing teeth
                 const view = viewOf(day, a)
                 const v0 = decide(view).verdict
                 const j0 = judge({ truth: a.truth, person: a.person, rules: day.rules, date: day.date, allowed: day.allowed, scale: a.scale }).verdict
-                const pf = { ...a.person, face: { ...f, hat: 1, uni: 1, ear: 1, gap: 1 } }
+                const pf = { ...a.person, face: { ...f, hat: 1, uni: 1, ear: 1, gap: 1, shades: 1, body: 2, post: 1 } }
                 const v1 = decide({ ...view, person: pf }).verdict
                 const j1 = judge({ truth: a.truth, person: pf, rules: day.rules, date: day.date, allowed: day.allowed, scale: a.scale }).verdict
                 ok(v1 === v0 && j1 === j0, `seed ${seed} day ${day.n}: decor moved a verdict (${v0}->${v1}) — a hat became evidence`)
                 const ph = a.person.passport ? a.person.passport.photo : null
-                ok(!ph || ['hat', 'uni', 'ear', 'gap'].every((k) => (f[k] || 0) === (ph[k] || 0)),
+                ok(!ph || ['hat', 'uni', 'ear', 'gap', 'shades', 'body', 'post'].every((k) => (f[k] || 0) === (ph[k] || 0)),
                     `seed ${seed} day ${day.n}: decor drifted between face and photo`)
                 // Variety is graded on the ROLLED heads only — the regulars'
                 // authored decor would mask a flattened hash (three kinds ride
                 // on Grubak, Anja and Petr alone; m31 proved it).
                 if (!a.person.regular) {
-                    for (const k of ['hat', 'uni', 'ear', 'gap']) if (f[k]) fams[k]++
+                    for (const k of ['hat', 'uni', 'ear', 'gap', 'shades']) if (f[k]) fams[k]++
                     if (f.hat) { decorated++; hatKinds.add(f.hat) } else naked++
-                    combos.add([f.hat || 0, f.uni || 0, f.ear || 0, f.gap || 0].join(''))
+                    bodyKinds.add(f.body | 0); if (f.post) postN++
+                    combos.add([f.hat || 0, f.uni || 0, f.ear || 0, f.gap || 0, f.shades || 0].join(''))
                 }
             }
         }
     }
     ok(hatKinds.size === 3, `hat kinds on the line: ${[...hatKinds].join(',')} — the original wears cap, ushanka AND scarf`)
     ok(fams.uni >= 24 && fams.ear >= 24 && fams.gap >= 24, `sparse families ${JSON.stringify(fams)} — the crowd is still combinatorial dust`)
-    ok(combos.size >= 12, `only ${combos.size} distinct looks across ${SEEDS.length} weeks — one-offs must multiply`)
+    // #2087 SHADES + BODIES: the two new families must live on the ROLLED
+    // crowd (the authored cast cannot carry them), and a flattened roll —
+    // nobody in tinted lenses, everyone the same build — reads as décor that
+    // quietly died, the exact m31 pattern for the new families.
+    ok(fams.shades >= 24, `shades family at ${fams.shades} across ${SEEDS.length} weeks — the one-offs do not wear lenses`)
+    ok(bodyKinds.size === 3, `body builds on the line: ${[...bodyKinds].sort().join(',')} — shoulders must come in slim, regular AND broad`)
+    ok(postN >= 24, `leaning postures at ${postN} — everyone stands the same way`)
+    ok(combos.size >= 16, `only ${combos.size} distinct looks across ${SEEDS.length} weeks — one-offs must multiply`)
     ok(naked > 0, 'nobody walks bare — accessories became a uniform, not a crowd')
     console.log(`  ..    ${decorated}/${decorated + naked} decorated, ${combos.size} looks, families ${JSON.stringify(fams)}`)
 
