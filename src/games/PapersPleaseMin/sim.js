@@ -47,6 +47,13 @@ export const dayTicks = (day) => day.queue.length * CFG.SEAT_TICKS
 // rent nights: every third night, and it rises (see CFG.RENTS)
 export const rentDue = (day) => CFG.RENTS[day] || 0
 
+// #1968 THE TAXONOMY OF LOSING — the original ends the week two ways the
+// player must not confuse: the badge (three write-ups = DEMOTED) and the
+// purse (unpaid rent = EVICTED, two nights without soup = STARVED, without
+// heat = FROZEN). The booth stages money deaths as money deaths, and
+// paperscheck pins the taxonomy so the staging can never blur the two.
+export const isMoneyDeath = (why) => /EVICTED|STARVED|FROZEN/.test(why || '')
+
 // #1891 THE NEW MONTH — the calendar the wall prints turns NOVEMBER on day 6
 // (the week rolls OCT 27 → NOV 02, #1889), but until now the roll was silent:
 // the morning banner spoke only the new rule. The original leans on morning

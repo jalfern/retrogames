@@ -27,8 +27,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, dshow, MON, FEATURES, stampLines, portraitDiffs } from '../src/games/PapersPleaseMin/rules.js'
 import { genWeek, genDay, viewOf, CITY2C, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, VISIT_WINDOW, WALL_POOL, wallNameAt, weekWallNames, weekDecoyCount } from '../src/games/PapersPleaseMin/gen.js'
-import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges, monthTurn } from '../src/games/PapersPleaseMin/sim.js'
-import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, ID, PHOTO, BUBBLE, EVID, SETTLE, QUOTE, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
+import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges, monthTurn, isMoneyDeath } from '../src/games/PapersPleaseMin/sim.js'
+import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, RENT, PAYFX, ID, PHOTO, BUBBLE, EVID, SETTLE, QUOTE, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SRC = join(HERE, '../src/games/PapersPleaseMin')
@@ -1040,6 +1040,47 @@ section('THE PAY ECONOMY (#1966) — pay law, bills, eviction, two-night deaths 
     ok(SLIP.y + SLIP.h <= CHS - STRIP_H, 'the slip is under the controls strip')
     ok(SLIP.x + SLIP.w <= CW - 4, 'the slip runs off the canvas')
     ok(SLIP.y >= 296 + 6, 'the slip crowds the stamp witness line')
+    // #1968 PHONE LEGIBILITY — the slip rows are a size LAW, not a taste:
+    // at 390px the canvas scales ~0.57, so 10px rows land near 6px. The
+    // five-row stack (PAY/RENT/SOUP/HEAT/BALANCE) must ride >=11px on a
+    // >=13px pitch and still end inside the paper (ink ~3px past baseline).
+    ok(SLIP.size >= 11 && SLIP.pitch >= 13, `slip rows ${SLIP.size}px/${SLIP.pitch} are below the #1968 phone law (11/13)`)
+    ok(SLIP.row0 + 4 * SLIP.pitch + 3 <= SLIP.h, `five-row stack ends ${SLIP.row0 + 4 * SLIP.pitch + 3} — past the slip height ${SLIP.h}`)
+    // the hungry/cold markers name their own row and cannot crowd the value
+    // column: key + longest value must fit between the 10px margins.
+    {
+        const widest = Math.max('NO SOUP'.length, '-45'.length, `${50 + 3 * CFG.HEAT}`.length)
+        ok('BALANCE'.length * SLIP.size * CHAR + 20 <= SLIP.w, 'the BALANCE key+value run off the slip')
+        ok('SOUP'.length * SLIP.size * CHAR + 12 + widest * SLIP.size * CHAR + 20 <= SLIP.w, 'a slip row crowds its own value column at #1968 size')
+    }
+    // #1968 RENT AHEAD — the wall prints tonight's rent on rent nights, and
+    // it must live in the empty corridor: below the SCALE box, above the
+    // strip, inside the wall column's width (nothing else paints there).
+    ok(RENT.y > SCALE.y + SCALE.h && RENT.y < CHS - STRIP_H, 'the rent note left its corridor (scale bottom..strip top)')
+    ok('RENT DUE TONIGHT -45CR'.length * RENT.size * CHAR + RENT.x <= 250, 'the rent note runs into the counter column')
+    // #1968 THE WAGE FLICKER — the +5 band rides inside the strip and stays
+    // clear of the CORRECT/MISTAKE note (which right-starts by x≈613).
+    ok(PAYFX.base - PAYFX.rise >= CHS - STRIP_H, 'the wage flicker rises out of the strip band')
+    ok(PAYFX.x >= 230, 'the wage flicker sits on top of the CR readout (longest CR text ends by x≈228)')
+    ok(PAYFX.x + '+5'.length * 12 * CHAR <= 613, 'the wage flicker crowds the CORRECT/MISTAKE note')
+    // #1968 THE TAXONOMY OF LOSING — purse deaths (rent/soup/heat) read as
+    // money on the end screen; the badge (three mistakes) and the quota do
+    // not. The staging picks its heading by this law, so the law is pinned.
+    ok(isMoneyDeath('RENT UNPAID — EVICTED (needed 30, had 12)'), 'EVICTED is not staged as a money death')
+    ok(isMoneyDeath('NO SOUP TWO NIGHTS — STARVED') && isMoneyDeath('NO HEAT TWO NIGHTS — FROZEN'), 'starved/frozen are not staged as money deaths')
+    ok(!isMoneyDeath('DAY 3: THREE MISTAKES'), 'the badge death is staged as money')
+    ok(!isMoneyDeath('GATE CLOSED — 2 STILL IN LINE, QUOTA UNMET') && !isMoneyDeath('THE WEEK SURVIVED') && !isMoneyDeath(''), 'quota/win/none staged as money')
+    // live provability: a purse that cannot cover rent really ends as an
+    // isMoneyDeath why (the staging and the sim share the one classifier).
+    {
+        const g = newRun(0)
+        g.day = 3; g.credits = rentDue(3) - 1
+        settle(g)
+        ok(g.end === 'lose' && isMoneyDeath(g.endWhy), 'eviction endWhy does not classify as money — staging would lie')
+        const h = newRun(0)
+        for (let i = 0; i < CFG.STRIKE_MAX; i++) step(h, { action: decide(current(h).view).verdict === 'approve' ? 'deny' : 'approve' })
+        ok(h.end === 'lose' && !isMoneyDeath(h.endWhy), 'three mistakes classified as money — the taxonomy blurred')
+    }
     console.log(`  ..    PAY ${CFG.PAY}/correct (write-up unpaid); soup ${CFG.SOUP} + heat ${CFG.HEAT} nightly; rent ${rentDue(3)}→${rentDue(6)} and unpaid = EVICTED; two-night STARVED/FROZEN; autopilot closes at ${70 * CFG.PAY - weekCharges()} with zero hungry nights; the naive eye survives every bill; the stampless booth starves night two; slip arithmetic + corner clearance pinned`)
 }
 
@@ -1993,6 +2034,26 @@ if (MUT) {
                 return false
             } catch { return 'wall-vs-entrant assertion fired' }
         })
+
+    // #1968 PAY POLISH m45: the slip rows shrink back to the phone-illegible
+    // 10px/12 and the five-row stack loses its pitch — the exact regression
+    // the readability round shipped away from. SURVIVED = no gate on size.
+    await tryMut('slip rows shrink below the phone law (10/12 again)',
+        mutMod('layout.js', 'pitch: 13, size: 11', 'pitch: 12, size: 10', 'm45'),
+        (m) => m.layout.SLIP.size >= 11 && m.layout.SLIP.pitch >= 13)
+
+    // #1968 m46: the rent note drops out of its corridor onto the strip —
+    // the wall goes quiet on rent night and the geometry pin must notice.
+    await tryMut('rent note pushed out of the corridor (below the strip top)',
+        mutMod('layout.js', 'export const RENT = { x: 12, y: 397, size: 8 }', 'export const RENT = { x: 12, y: 402, size: 8 }', 'm46'),
+        (m) => m.layout.RENT.y > m.layout.SCALE.y + m.layout.SCALE.h && m.layout.RENT.y < m.layout.CHS - m.layout.STRIP_H)
+
+    // #1968 m47: the money taxonomy goes blind — every loss, badge included,
+    // claims to be a purse death (or none does). The end screen staging would
+    // lie to the player; the shared classifier makes that a suite failure.
+    await tryMut('money-death taxonomy blind (badge staged as purse)',
+        mutMod('sim.js', '/EVICTED|STARVED|FROZEN/.test(why || \'\')', '/NEVERMATCHES/.test(why || \'\')', 'm47'),
+        (m) => m.sim.isMoneyDeath('RENT UNPAID — EVICTED (needed 30, had 12)') && m.sim.isMoneyDeath('NO SOUP TWO NIGHTS — STARVED'))
 }
 
 console.log(`\npaperscheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

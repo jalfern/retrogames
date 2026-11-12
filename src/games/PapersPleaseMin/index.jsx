@@ -13,13 +13,13 @@ import { PRESS, MESSAGES } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { CFG, newRun, step, tick, stateHash, current, autopilot, gameClock, monthTurn } from './sim.js'
+import { CFG, newRun, step, tick, stateHash, current, autopilot, gameClock, monthTurn, rentDue, isMoneyDeath } from './sim.js'
 import { REGULARS } from './gen.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { decide, RULES, dfmt, dshow, isAdult, stampLines } from './rules.js'
-import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, CLOCK, SLIP, BUBBLE, EVID, SETTLE, QUOTE, wallRows } from './layout.js'
+import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, CLOCK, SLIP, RENT, PAYFX, BUBBLE, EVID, SETTLE, QUOTE, wallRows } from './layout.js'
 
 const SIM_MS = 1000 / 60
 
@@ -92,6 +92,9 @@ const PapersPleaseMinGame = () => {
         let insp = null
         let banner = null           // {text, sub, month, ticks}
         let settle = 0            // #1891 PAPER WEIGHT — drop/settle counter for new papers
+        // #1968 THE WAGE FLICKER — decor only (like settle/banner): the sim
+        // never sees it, so determinism and every replay pin stand untouched.
+        let payFx = 0
         let demoScript = null, demoAt = 0, demoWait = 0, demoSeed = 0
         const evLog = []
         // #1637 WATCH — seat the perfect inspector paperscheck proves survives
@@ -152,8 +155,10 @@ const PapersPleaseMinGame = () => {
             if (screenRef.current !== 'play' || pausedRef.current || gs.end) return
             const stamped = current(gs).applicant.person   // stamp the papers YOU just judged
             const before = gs.strikes
+            const paidBefore = gs.paidToday
             settle = 0 // #1891 a fresh stamp interrupts any settling — the frame and the document must sit exactly still while the stamp holds
             step(gs, { action })
+            if (gs.paidToday > paidBefore) payFx = PAYFX.ticks // #1968 payday per stamp: the purse visibly fills on the correct call
             if (!gs.end) {
                 stamp = { ok: gs.last?.ok, why: gs.last?.why, verdict: action, person: stamped, ticks: 30 }
                 // #2021 snapshot the case the moment it stamps — the citation
@@ -170,8 +175,15 @@ const PapersPleaseMinGame = () => {
 
         const finish = (res) => {
             watchingRef.current = false; setWatching(false); watchScript = null // #1637 the week ends in your hands
-            setEnd({ win: res === 'win', why: gs.endWhy, score: gs.score, caught: gs.caught, day: gs.day, credits: gs.credits })
+            const money = isMoneyDeath(gs.endWhy) // #1968 badge death vs purse death
+            setEnd({ win: res === 'win', why: gs.endWhy, score: gs.score, caught: gs.caught, day: gs.day, credits: gs.credits, money })
             if (res === 'win') audioController.playSweep(400, 1500, 0.9, 'square', 0.08)
+            else if (money) {
+                // #1968 the landlord, not the badge: a heavier, duller slam
+                // than the three-strike sawtooth — a door, not a siren.
+                audioController.playNoise(0.25, 0.14)
+                audioController.playSweep(150, 40, 0.55, 'square', 0.1)
+            }
             else audioController.playSweep(300, 50, 1.2, 'sawtooth', 0.1)
             overAtRef.current = performance.now()
             setMode('over')
@@ -187,7 +199,7 @@ const PapersPleaseMinGame = () => {
             simTick = 0
             demoSeed = seed
             evLog.length = 0
-            stamp = null; banner = null; insp = null
+            stamp = null; banner = null; insp = null; payFx = 0
             settle = SETTLE.ticks // #1891 the first papers of the week drop onto the counter
             watchingRef.current = false; setWatching(false); watchScript = null // #1637 a new week starts in your hands
             audioController.playSweep(220, 440, 0.25, 'square', 0.07)
@@ -248,6 +260,7 @@ const PapersPleaseMinGame = () => {
                 if (settle === 0) insp = null
             }
             if (banner && banner.ticks > 0) banner.ticks--
+            if (payFx > 0) payFx-- // #1968 the wage flicker rides the booth clock
             // #1960 the shift moves; when the last hour burns down the booth
             // ticks softly through the glass, one blip per second of the wall
             tick(gs)
@@ -468,6 +481,12 @@ const PapersPleaseMinGame = () => {
             box(SCALE.x, SCALE.y, SCALE.w, SCALE.h, '#0f1420', '#4a5578')
             text('SCALE', SCALE.x + 48, SCALE.y + 12, 9, COL.text, 'center')
             text(`${view.scale}KG`, SCALE.x + 48, SCALE.y + 26, 12, COL.gold, 'center')
+            // #1968 RENT AHEAD — on a rent night the booth prints tonight's
+            // bill on the wall while you can still earn it away, in the
+            // corridor under the SCALE box (paperscheck pins the corridor and
+            // the width). No more dying to a bill the booth never mentioned.
+            const rd = rentDue(day.n)
+            if (rd) text(`RENT DUE TONIGHT -${rd}CR`, RENT.x, RENT.y, RENT.size, gs.credits < rd ? COL.red : COL.gold)
             // #1960 THE SHIFT CLOCK — the original's wall clock: the hands
             // sweep the printed shift 08:00→18:00 over the day's budget, the
             // last printed hour turns red and the ticks come through the glass.
@@ -500,6 +519,16 @@ const PapersPleaseMinGame = () => {
             // #1966 the purse: credits ride beside the score — rent is due
             // whether the player remembers the bills or not
             text(`CR ${gs.credits}`, 170, CHS - 19, 12, gs.credits <= 0 ? COL.red : COL.gold)
+            // #1968 THE WAGE FLICKER — the original ticks the readout with
+            // every processed head; here +5 rises off the CR line whenever a
+            // correct stamp earns it. Decor inside the strip band (PAYFX zone).
+            if (payFx > 0) {
+                const a = Math.min(1, payFx / 24)
+                ctx.fillStyle = `rgba(125,220,93,${a.toFixed(3)})`
+                ctx.font = `bold 12px monospace`
+                ctx.textAlign = 'left'
+                ctx.fillText(`+${CFG.PAY}`, PAYFX.x, PAYFX.base - (PAYFX.ticks - payFx) * (PAYFX.rise / PAYFX.ticks))
+            }
             // the entrant (during a stamp, the papers shown are the ones
             // just judged — the stamp lands on its own document). #2021: the
             // judged document keeps the counter through the ink AND the pin —
@@ -591,18 +620,22 @@ const PapersPleaseMinGame = () => {
                 box(SLIP.x, SLIP.y, SLIP.w, SLIP.h, COL.paper, '#6f6a52')
                 ctx.strokeStyle = COL.paperLine
                 ctx.setLineDash([2, 3])
-                ctx.beginPath(); ctx.moveTo(SLIP.x + 4, SLIP.y + 18); ctx.lineTo(SLIP.x + SLIP.w - 4, SLIP.y + 18); ctx.stroke()
+                ctx.beginPath(); ctx.moveTo(SLIP.x + 4, SLIP.y + SLIP.dash); ctx.lineTo(SLIP.x + SLIP.w - 4, SLIP.y + SLIP.dash); ctx.stroke()
                 ctx.setLineDash([])
-                text(`END OF DAY ${s.day} — DEDUCTIONS`, SLIP.x + SLIP.w / 2, SLIP.y + 13, 9, '#6b5d3a', 'center')
+                text(`END OF DAY ${s.day} — DEDUCTIONS`, SLIP.x + SLIP.w / 2, SLIP.y + SLIP.head, 9, '#6b5d3a', 'center')
+                // #1968 PHONE LEGIBILITY: 11px rows on a 13px pitch (was
+                // 10/12 ≈ 6px on a 390px phone), and the hungry/cold markers
+                // name their own row (NO SOUP / NO HEAT) — shorter, clearer,
+                // and the value column can never crowd the key column.
                 const row = (i, k, v, col) => {
-                    text(k, SLIP.x + 10, SLIP.y + 32 + i * 12, 10)
-                    text(v, SLIP.x + SLIP.w - 10, SLIP.y + 32 + i * 12, 10, col, 'right')
+                    text(k, SLIP.x + 10, SLIP.y + SLIP.row0 + i * SLIP.pitch, SLIP.size)
+                    text(v, SLIP.x + SLIP.w - 10, SLIP.y + SLIP.row0 + i * SLIP.pitch, SLIP.size, col, 'right')
                 }
                 row(0, 'PAY', `+${s.pay}`, COL.green)
                 let ri = 1
                 if (s.rent) row(ri++, 'RENT', `-${s.rent}`, COL.red)
-                row(ri++, 'SOUP', s.soup ? `-${s.soup}` : 'NO — HUNGRY', COL.red)
-                row(ri++, 'HEAT', s.heat ? `-${s.heat}` : 'NO — COLD', COL.red)
+                row(ri++, 'SOUP', s.soup ? `-${s.soup}` : 'NO SOUP', COL.red)
+                row(ri++, 'HEAT', s.heat ? `-${s.heat}` : 'NO HEAT', COL.red)
                 row(ri, 'BALANCE', `${s.balance}`, s.balance <= 0 ? COL.red : COL.ink)
             }
             // day banner
@@ -841,6 +874,31 @@ const PapersPleaseMinGame = () => {
                     }
                     return { ink: n, rows: day.wanted.length }
                 },
+                wageFx: () => ({ ticks: payFx }),
+                // #1968 RENT AHEAD ink: bright warm pixels (gold or red) in the
+                // corridor under the SCALE box — the wallpaper rule lines are dark
+                // (#323a52) and nothing else paints there, so any count is the note.
+                rentNoteInk: () => {
+                    const x0 = RENT.x, y0 = SCALE.y + SCALE.h + 2
+                    const d = ctx.getImageData(x0, y0, 250 - x0, CHS - STRIP_H - y0).data
+                    let n = 0
+                    for (let i = 0; i < d.length; i += 4) {
+                        const [rr, , bb] = [d[i], d[i + 1], d[i + 2]]
+                        if (rr > 150 && rr > bb) n++
+                    }
+                    return { ink: n, due: rentDue(current(gs).day.n), credits: gs.credits }
+                },
+                // #1968 the wage flicker's green, counted near the strip band
+                // where it rises (bright alpha only — proof it actually painted).
+                wageFxInk: () => {
+                    const d = ctx.getImageData(PAYFX.x - 2, PAYFX.base - PAYFX.rise - 4, 24, PAYFX.rise + 10).data
+                    let n = 0
+                    for (let i = 0; i < d.length; i += 4) {
+                        const [rr, gg, bb] = [d[i], d[i + 1], d[i + 2]]
+                        if (gg > 110 && gg > rr + 30 && gg > bb + 30) n++
+                    }
+                    return n
+                },
                 probe: () => {
                     const { day, view } = current(gs)
                     return {
@@ -850,6 +908,7 @@ const PapersPleaseMinGame = () => {
                         rules: day.rules, date: dfmt(day.date), allowed: day.allowed, wanted: day.wanted,
                         clock: gameClock(gs), ticksLeft: gs.clock, // #1960 shift clock probes
                         credits: gs.credits, hungry: gs.hungry, cold: gs.cold, // #1966 the purse
+                        payFx, // #1968 the wage flicker's remaining ticks
                         slip: gs.slip && { ...gs.slip },
                         banner: banner && { ...banner }, view, evLog: evLog.slice(-60),
                     }
@@ -959,10 +1018,12 @@ const PapersPleaseMinGame = () => {
 
             {screen === 'over' && end && (
                 <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-amber-50 font-mono px-6">
-                    <h2 className={`text-4xl font-black mb-1 ${end.win ? 'text-yellow-300' : 'text-red-400'}`}>{end.win ? 'GLORY TO ARSTOTZKA' : 'DEMOTED'}</h2>
+                    <h2 className={`text-4xl font-black mb-1 ${end.win ? 'text-yellow-300' : end.money ? 'text-orange-400' : 'text-red-400'}`}>
+                        {end.win ? 'GLORY TO ARSTOTZKA' : end.money ? 'OUT OF MONEY' : 'DEMOTED'}
+                    </h2>
                     <p className="text-lg mb-1">{end.why}</p>
                     <p className="text-sm text-amber-200/80 mb-1">{end.score} correct &middot; {end.caught} turned back &middot; every denial had a witness on the wall</p>
-                    <p className={`text-sm mb-4 ${end.win ? 'text-amber-300' : 'text-red-300/90'}`}>{end.win ? `the purse closed at ${end.credits} credits — glory to Arstotzka` : `the apartment left ${end.credits} credits at the end`}</p>
+                    <p className={`text-sm mb-4 ${end.win ? 'text-amber-300' : end.money ? 'text-orange-300 font-bold' : 'text-red-300/90'}`}>{end.win ? `the purse closed at ${end.credits} credits — glory to Arstotzka` : end.money ? `the bills outran the booth — final purse ${end.credits} CR` : `the apartment left ${end.credits} credits at the end`}</p>
                     <p className="animate-pulse font-bold">TAP / PRESS ANY KEY</p>
                 </div>
             )}
