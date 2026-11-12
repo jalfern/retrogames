@@ -2443,7 +2443,7 @@ section('THE POLISHED ARC (#1988) — faces on the wall, a loud turn, many voice
     }
     const longestSeize = Math.max(...seizes.map((l) => l.length))
     ok(longestSeize * SEIZE.size * CHAR <= 290, `the longest seize line prints ${longestSeize * SEIZE.size * CHAR}px — the paper corridor under the stamp is 290px`)
-    ok(SEIZE.y + 4 <= PAPERS.y + 148 && SEIZE.y - Math.ceil(SEIZE.size * 0.8) >= 148, `the seize line sits at y=${SEIZE.y}: below the rotated stamp's lowest stroke (y≤147) and on the judged paper (bottom ${PAPERS.y + 148})`)
+    ok(SEIZE.y + Math.ceil(SEIZE.size * 0.5) <= PAPERS.y + 148 && SEIZE.y - Math.ceil(SEIZE.size * 0.5) >= 148, `the seize line sits at y=${SEIZE.y}: ink spans y±${Math.ceil(SEIZE.size * 0.5)} (measured: this text()'s uppercase caps reach y−5, descenders y+1), top clears the rotated stamp's lowest stroke (y≤147 at the x≈425 corner where the stroke dips) and rides the judged document's paper (bottom ${PAPERS.y + 148})`)
     {
         const owned = [...idxSrc3.matchAll(/playTone\((\d+)/g)].map((mm) => Number(mm[1]))
         ok(owned.length > 0 && SEIZE.tone < Math.min(...owned, RECOGNITION.notes[0]),

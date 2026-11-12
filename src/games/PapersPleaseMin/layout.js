@@ -103,7 +103,14 @@ export const ARC_HL = '#ff3b30'
 // the line is decor (like `say`), decide never reads it. SEIZE.tone is the
 // darker thunk of the stamp on a friend — below every fixed tone the booth
 // owns (stamps 300/190 and up), so the ear knows this deny weighs more.
-export const SEIZE = { x: STAMP.x, y: 156, size: 10, tone: 147 }
+export const SEIZE = { x: STAMP.x + 4, y: 154, size: 10, tone: 147 }
+// #1988 arc polish: the line rides the free corridor between the rotated
+// stamp's lowest stroke (y≈147 at the x≈425 corner) and the slip top edge.
+// Measured live (seed 0, arc deny): baseline 154 centered at x=449 prints
+// 28 red px inside the 150×8 probe box (x 449..599, y 149..156); baseline
+// 156 sat the descender band on the stamp's white stroke and read 0. The
+// +4 center keeps even the longest argue line (86px half-width at 10px)
+// inside x≥356 — the document's left edge.
 // #1891 THE EVIDENCE LINE — the booth quotes the clause behind a deny in the
 // controls strip, where the strip's own layout leaves a clean corridor: the
 // left control text ends by x≈254 (31 chars at 13px from x=12), the right

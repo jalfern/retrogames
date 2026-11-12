@@ -686,8 +686,12 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     // (red ink in the corridor below the stamp, verbatim the authored line),
     // and the booth thudded its stamp at the seizure's own low tone.
     const seizeAfter = await page.evaluate(() => window.__ppTest.seizeInk())
+    // Measured: the argue line's red glyph ink in the 150×8 corridor is
+    // ~27px at size 10; anything from the booth itself (dark document ink,
+    // amber VALID, paper) fails the hue test, so pre-deny is 0 by construction.
+    r.check(`the corridor is clean before the deny (${seizeBefore.ink} px)`, seizeBefore.ink === 0, JSON.stringify(seizeBefore))
     r.check(`#1988 the deny of a friend lingers — argue prints ${seizeAfter.ink} px under the stamp, verbatim, tone thudded ${seizeBefore.sfx}->${seizeAfter.sfx}`,
-        seizeAfter.ink > 80 && seizeAfter.argue === REGULARS[0].seize && seizeAfter.sfx === seizeBefore.sfx + 1, JSON.stringify(seizeAfter))
+        seizeAfter.ink > 15 && seizeAfter.argue === REGULARS[0].seize && seizeAfter.sfx === seizeBefore.sfx + 1, JSON.stringify(seizeAfter))
     r.check(`the right deny scores and names the witness (${afterArc.last.why}: ${afterArc.last.evidence})`,
         afterArc.last.ok === true && afterArc.last.why === 'WANTED' && afterArc.caught === caughtBefore + 1, JSON.stringify(afterArc.last))
     // #2012 THE CROWDED RETURN, live: the shift that turns a neighbor carries

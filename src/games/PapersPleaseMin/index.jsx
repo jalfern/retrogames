@@ -724,6 +724,7 @@ const PapersPleaseMinGame = () => {
                 text(insp.witness, STAMP.x, 296, 12, insp.ok ? COL.gold : COL.red, 'center')
                 insp.evidence.forEach((ln, i) => text(ln, EVID.cx, EVID.y + i * EVID.line, EVID.size, insp.ok ? COL.gold : COL.red, 'center'))
                 // #1988 the seized neighbor's argue line, under the DENIED stamp
+                // (SEIZE carries its own offsets — see layout for the measured box).
                 if (insp.argue) text(insp.argue, SEIZE.x, SEIZE.y, SEIZE.size, COL.red, 'center')
             }
             // #1966 THE DEDUCTION SLIP — the printed paper the original
@@ -1062,11 +1063,11 @@ const PapersPleaseMinGame = () => {
                     return { present: !!arcRow, paper, hl }
                 },
                 // #1988 THE DENY AFTERSHOCK: the argue line's red ink in the
-                // zone under the stamp (below the rotated stamp's lowest stroke,
-                // y 150..158; dark document ink and the amber VALID stamp fail
-                // the hue test, so any count is the seized voice on the paper).
+                // zone under the stamp (cap ink y−5..descender y+1 at the SEIZE
+                // baseline; dark document ink and the amber VALID stamp fail the
+                // hue test, so any count is the seized voice on the paper).
                 seizeInk: () => {
-                    const d = ctx.getImageData(445, 150, 150, 8).data
+                    const d = ctx.getImageData(SEIZE.x, SEIZE.y - 5, 150, 8).data
                     let n = 0
                     for (let i = 0; i < d.length; i += 4) {
                         const [rr, gg, bb] = [d[i], d[i + 1], d[i + 2]]
