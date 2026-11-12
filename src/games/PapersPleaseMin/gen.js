@@ -62,31 +62,38 @@ const LAST = ['KOSTOV', 'DRENIN', 'VASEK', 'LAGODA', 'ORLOV', 'TOLKA', 'ZEMEK', 
 // lines are decor — never compared, doctrine of the nose.
 // A regular's PAPERS are built legal for whatever day they walk up (allowed
 // list, expiry, IDREQ all rotate), so they are honest, approvable faces —
-// the neighborhood, not a trap.
+// the neighborhood, not a trap. #1988 REPERTOIRE widens each voice with
+// top-level `turnAlt`/`againAlt` (the campaign-chapter alternates — see
+// turnLineFor below) and `seize` (the argue line printed under the DENIED
+// stamp when the arc face is turned away). All decor, all authored, zero rnd.
 export const REGULARS = [
     {
         id: 'grubak', name: 'VOLEN GRUBAK', sex: 'M', ageYears: 47, dobM: 3, dobD: 14, height: 178, weight: 86,
         face: { skin: 2, hairC: 0, shirtC: 2, style: 1, narrow: 0, glasses: 0, must: 1, brow: 1, mouth: 0, hat: 1, uni: 1, ear: 0, gap: 0 },
         mark: 'scar',
         lines: { greet: 'GOOD DAY, GUARD.', hook: 'THE BREAD LINE WAS LONG.', again: 'BACK AGAIN, HA!', follow: 'STILL NO BREAD, HA!' },
+        turnAlt: '...IS MISTAKE, YES?', againAlt: 'BACK AT THE GLASS.', seize: '"I HAVE FAMILY IN OR VECHNA!"',
     },
     {
         id: 'marko', name: 'MARKO DRENIN', sex: 'M', ageYears: 29, dobM: 8, dobD: 2, height: 164, weight: 61,
         face: { skin: 0, hairC: 1, shirtC: 0, style: 2, narrow: 1, glasses: 1, must: 0, brow: 0, mouth: 1, hat: 0, uni: 0, ear: 1, gap: 0 },
         mark: 'mole',
         lines: { greet: 'IS MY PAPER OK?', hook: 'I CHECKED IT TWICE.', again: 'NOTHING WRONG THIS TIME.', follow: 'I CHECKED IT THREE TIMES.' },
+        turnAlt: '...TWO WEEKS STRAIGHT!', againAlt: 'BACK AGAIN, GUARD.', seize: '"NOTHING WRONG, I TELL YOU!"',
     },
     {
         id: 'anja', name: 'ANJA TOLKA', sex: 'F', ageYears: 55, dobM: 11, dobD: 21, height: 158, weight: 57,
         face: { skin: 4, hairC: 2, shirtC: 3, style: 0, narrow: 0, glasses: 0, must: 0, brow: 1, mouth: 0, hat: 3, uni: 0, ear: 0, gap: 1 },
         mark: 'wrinkle',
         lines: { greet: 'I VISIT MY DAUGHTER.', hook: 'HER FLAT IS IN THE CITY.', again: 'THE LINE IS SHORT TODAY.', follow: 'SHE SENDS HER THANKS.' },
+        turnAlt: '...I COME TO SEE FAMILY!', againAlt: 'THE LINE IS LONG AGAIN.', seize: '"YOU CANNOT DO THIS TO ME!"',
     },
     {
         id: 'petr', name: 'PETR ZEMEK', sex: 'M', ageYears: 34, dobM: 5, dobD: 9, height: 171, weight: 74,
         face: { skin: 1, hairC: 4, shirtC: 1, style: 3, narrow: 1, glasses: 0, must: 1, brow: 0, mouth: 1, hat: 2, uni: 0, ear: 0, gap: 0 },
         mark: 'ear',
         lines: { greet: 'WORK IN THE CITY.', hook: 'THE TRAIN WAS LATE.', again: 'SAME BOOTH, SAME GUARD.', follow: 'THE TRAIN IS ON TIME.' },
+        turnAlt: '...WRONG MAN, COMRADE.', againAlt: 'THE TRAIN WAS LATE AGAIN.', seize: '"I CLOCK IN AT SIX, GUARD!"',
     },
     // #1997 THE FIFTH AND SIXTH — the original's neighborhood is not four:
     // a dozen faces lean on the glass across the campaign. Sonya Malak is
@@ -101,12 +108,14 @@ export const REGULARS = [
         face: { skin: 3, hairC: 1, shirtC: 2, style: 0, narrow: 1, glasses: 0, must: 0, brow: 0, mouth: 0, hat: 3, uni: 0, ear: 1, gap: 0 },
         mark: 'freckles',
         lines: { greet: 'MY SON LIVES IN OR VECHNA.', hook: 'I SELL MY KNITS AT MARKET.', again: 'HE SAYS HELLO, YES?', follow: 'THE KNITS SOLD, GUARD.' },
+        turnAlt: '...SOMETHING WRONG, YES?', againAlt: 'HELLO AGAIN, GUARD.', seize: '"MY KNITS, MY SON, PLEASE!"',
     },
     {
         id: 'tadek', name: 'TADEK HRUBY', sex: 'M', ageYears: 62, dobM: 9, dobD: 30, height: 168, weight: 79,
         face: { skin: 4, hairC: 3, shirtC: 0, style: 1, narrow: 0, glasses: 1, must: 1, brow: 1, mouth: 1, hat: 0, uni: 0, ear: 0, gap: 1 },
         mark: 'patch',
         lines: { greet: 'I AM RETIRED, GUARD.', hook: 'THE PENSION BUYS LITTLE.', again: 'YOU LET ME THROUGH.', follow: 'LITTLE, BUT IT BUYS.' },
+        turnAlt: '...I AM ONLY RETIRED.', againAlt: 'THE BOOTH REMEMBERS ME.', seize: '"PAPERS ARE HONEST, GUARD!"',
     },
 ]
 
@@ -187,6 +196,19 @@ export function arcForWeek(seed) {
     const idx = seed % REGULARS.length
     return { id: REGULARS[idx].id, day: firstVisitDay(seed, idx) + 4 }
 }
+
+// #1988 REPERTOIRE — the original's regulars do not stand at the glass with
+// one sentence welded to their face: Jorji protests differently in week two
+// ("...I no do anything!" / "...Is mistake!"). The variant is CAMPAIGN
+// CHAPTER, floor(seed / REGULARS.length) % 2: week 0 (seeds 0–5) speaks the
+// canonical literals every existing fixture replays, week 1 meets the same
+// faces saying their alternates. Seed+day parity could not do this — the
+// visit law's period is six, so a face at a seat keeps parity forever and
+// the repertoire would be theatre. Zero rnd: pure over the seed.
+export const repChapter = (seed) => Math.floor(seed / REGULARS.length) % 2
+export const TURN_CANONICAL = '...I NO DO ANYTHING.'
+export const turnLineFor = (c, seed) => (repChapter(seed) ? c.turnAlt : TURN_CANONICAL)
+export const againLineFor = (c, seed) => (repChapter(seed) ? c.againAlt : c.lines.again)
 
 // Late-October start, like the original's campaign: the week crosses a REAL
 // month-end (OCT 27…31, NOV 01–02). Day 6's EXPIRED test paper prints the
@@ -509,8 +531,16 @@ function regularApplicant(c, rnd, date, dayRules, day, used, seed, n) {
     if (n === arc.day && c.id === arc.id) {
         a.person.arc = true
         a.person.recall = 'turn' // #1982 the wall interrupts the welcome — still a returning face
-        a.person.say = ['YOU AGAIN.', '...I NO DO ANYTHING.']
-        day.wanted.push({ name: c.name, id: a.person.passport.id, planted: true })
+        // #1988 REPERTOIRE: the turn's protest rides the chapter, and the
+        // person carries the argue line the booth prints when they're taken.
+        a.person.say = ['YOU AGAIN.', turnLineFor(c, seed)]
+        a.person.seize = c.seize
+        // #1988 THE BULLETIN PRINTS A FACE: the arc's sheet entry carries the
+        // authored descriptor (identity law — the mugshot IS the neighbor), so
+        // the wall prints the portrait next to the name like the original.
+        // Decor by doctrine: decide reads name+number only, and the fairness
+        // twin strips say/seize/face and cannot flinch.
+        day.wanted.push({ name: c.name, id: a.person.passport.id, planted: true, face: { ...c.face, mark: c.mark } })
         a.truth.wanted = true
     } else if (n > firstVisitDay(seed, regIdx)) {
         a.person.recall = 'again' // #1982 RECOGNITION AUDIO: the structural memory
@@ -521,8 +551,11 @@ function regularApplicant(c, rnd, date, dayRules, day, used, seed, n) {
         // adds the payoff: the return answers the topic the greeting opened
         // (Grubak's long bread line is STILL breadless a visit later). Still
         // atmosphere (decide never reads it; paperscheck pins purity every day,
-        // not just the arc).
-        a.person.say = ['YOU AGAIN.', c.lines.again, c.lines.follow]
+        // not just the arc). #1988 REPERTOIRE: the callback beat rides the
+        // campaign chapter — the same neighbor, a different week, a different
+        // piece of small talk (the payoff line stays: the thread it answers
+        // was planted this week).
+        a.person.say = ['YOU AGAIN.', againLineFor(c, seed), c.lines.follow]
     } else {
         // first walk-up of the week: the neighbor introduces itself AND opens
         // its topic (#2003 lines.hook) — the thread the return will answer.
