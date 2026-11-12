@@ -1,76 +1,65 @@
-# STATE — session 243 (2026-11-12, slot a)
+# STATE — session 244 (2026-11-12, slot b)
 
 ## What shipped
-**SHIFT-REPORT WINDOW PAGINATION** merged as `4a91cdd` (PR #2097, Closes #2055
-— warden TARGET #2054 REFUSED honestly: b held it with a 21-min-fresh live
-claim, and shipped it as #2096 minutes later).
-- The report read exactly ONE `per_page=100` page of closed PRs/issues — a busy
-  48 h window zeroed its oldest hours (Nov 11: printed 99, real count 116).
-- `fetchWindow({ gh, now })` exported out of `main()`: closed PRs walk
-  `sort=updated&direction=desc` pages until the tail `updated_at` falls before
-  the window start (newest-first on the sort field ⇒ nothing past the tail can
-  be in-window; client-side `updated_at >=` filter stays — pages overshoot).
-  Closed issues gain explicit `sort=updated` (default `created` buries an old
-  issue closed on-shift past page 1; tail-termination sound via
-  `closed_at <= updated_at`). Open lists paginate newest-created, stop at the
-  window edge (only in-window creations feed any count). Runs loop unchanged
-  except cap 4→10.
-- Live “done when”: merged code counts 131 merges in-window; paged API agrees
-  exactly; git-log misses-vs-API diff empty (its 4 extras are STATE
-  direct-pushes ending `(#NNNN)` — never PR merges). Pre-fix: 98 same window.
-  Published report.json now carries `merged.total: 133` (live) + my notes.
-- Harness +6 gates (145→151): fake `gh` serves synthetic newest-first pages —
-  250 closed PRs with 145 in-window (single-page code reads 100); 200-day
-  issue closed in-window among comment-only updates; termination pins (busy
-  closed-PRs exactly 2 pages, all-stale exactly 1 page/list); end-to-end
-  totals; tripwires pin the seam + forbid single-page pulls/issues literals.
-  Mutants precise: page-cap back → exactly 3 red; sort revert → exactly 2 red.
-- Two-lane merge: b's #2096 touched the same two files minutes before —
-  three-way clean; combined main verified: shiftreportcheck 157/157,
-  nightlyverdictcheck 19/19. eslint + three lint gates + build green.
+**PAPERS, PLEASE-MIN — THE CROWDED SHIFT SPEAKS** merged as `b190bc5`
+(PR #2103, Closes #2020 — warden TARGET #2020 claimed first, plan accepted).
+#2012 put two regulars in a shift but staged it like a solo day; four beats
+of dense-morning theatre, all decor (doctrine of the nose — none can convict):
+- **Queue strip** (layout `QUEUE`): paper-mug per known face not yet ruled +
+  gold "…" for random fill. Crowded days open two deep, solo one, day 1 none;
+  derived from the live queue slice, recomputed per seed in paperscheck.
+- **Bystander aside** (gen.js + `ASIDE`): one tagged exchange per crowded
+  shift — "A VOICE BEHIND YOU / THE LINE IS LONG TODAY." at the head,
+  "A VOICE FROM INSIDE / VOLEN SAYS HELLO." at the tail (named — the two
+  beats tie to the same faces). Zero rnd draws; `aside` stripped off every
+  paper of every seed in the purity twin; rules.js may not contain the word.
+- **Crowd juice**: banner accent `* TWO FAMILIAR FACES IN LINE *` (stacks
+  with the NEW MONTH line) + recognition chime gains a low third note
+  392 Hz triangle, pinned below the welcome's 523 and disjoint from every
+  owned tone.
+- **Bodies land**: #1891 SETTLE dy now rides the counter face too.
+`crowdedDay(seed,n)` = the #2012 walk's own length — one law, cannot drift.
+Harness: paperscheck +68 checks; mutants m53 (flag never set) / m54 (name-tie
+dropped) join — **all 55 die** (21331/21331 --mutate). papersplay 114/114
+live; manual break of mug ink → exactly 3 red, restored. Rule-4 streak reset.
 
 ## The session's catches
-- **Anchored your regex too late:** fake-gh `page=(\d+)` matched `per_page=100`
-  first — every fixture came back empty (6 reds that looked like logic bugs).
-  `[&?]page=` before trusting any paged fake.
-- **git-log “merges” ≠ PR merges.** STATE direct-pushes end `(#issue)`; count
-  only titles ending `(#NNNN)` and diff PR numbers BOTH ways or chase a
-  phantom 17 on the done-when check.
-- **Warden TARGET ≠ yours.** #2054 refused at claim time (b live); ran the
-  ladder as instructed rather than resuming b's pushed corpse.
+- **Prod verification must grep the lazy GAME chunk.** The HTML shell's
+  index-*.js contains zero game strings — polling it for a marker never goes
+  green. Chunks are content-addressed: verify offline by fetching the local
+  build's marker chunk name, or brute-scan all 63 index-*.js. (My first two
+  poll loops timed out spuriously for this reason, plus a 308 needing `curl -L`.)
+- **Overlays veil pixel probes.** The morning banner is a full-width veil
+  (y 150..286, ~3.3 s) and the deny citation PIN keeps showing the JUDGED
+  entrant ~2.2 s — strip/aside samples during either measure the wrong booth.
+  `waitQuiet()` (banner 0 + !inked + !pinned) before counter-adjacent samples.
+- **idle.mjs needs live args.** flagshipStage()/weakestStage() with no args
+  return null — a fake dry board. Feed gapsByGame from READMEs, issues from
+  gh, games from parseRegistry.
 
 ## Ladder trail
-TARGET #2054 REFUSED (b, fresh claim). No halt/steer/next; `jonq list games`
-empty; oldest game-queue = #2055 → claimed `forge-claim 2055 a`, worktree
-`retrogames-forge-shiftreport-paging` (removed after squash). No jonq filed —
-queue not dry, no taste call.
+TARGET #2020 CLAIMED (warden, slot b) → shipped. Queue now EMPTY; no
+next/steer/halt; QA MASTER alive (no feedback borrow). Live honest board:
+flagshipStage=null; weakestStage=PAPERS, PLEASE-MIN score 3 gap:null → shelf
+gap-free for builders. `jonq ask "Which new flagship title?"` was REFUSED by
+jonq itself (#1571 policy gate) — so no dry-queue question stands open.
+#2020's item 4 (cross-week memory) filed as #2104 (feedback, QA-owned).
 
 ## Open questions
-- none (see waiting-jon issues).
-
-## Rule-4 watch (game-code streak)
-Three consecutive merges are platform-grade (#2096 shoreperf, #2097 shift
-report, #2098 mutateguard); last game-code PR was #2094. Honest board run
-(`scripts/lib/idle.mjs`, live): flagshipStage = null (SSX/Emberwood/COMET
-DRIFT HD/Myst README gaps ALL owned), weakestStage = PAPERS, PLEASE-MIN
-(score 4, open feedback only, no unowned gap), held = []. Next run's ladder
-lands on the feedback rung → QA-borrow gate (`pgrep -f "QA MASTER"` decides),
-and b is clearly alive, so expect NOT borrow → flagship-spent → weakest stage
-needs a gap nobody owns; if weakestStage still answers gap:null, the shelf is
-dry and the one legal jonq is “which new flagship title?” (≤1/week).
+- none (jonq list empty; the flagship-title ask was refused at file time —
+  re-attempt only if jonq's own gap check passes a dry shelf next kick).
 
 ## Next
-- Recompute the ladder live at next kick; carry the Rule-4 streak: prefer any
-  game-code ship, feedback-borrow included, over more platform items.
-- Folded from slot b (parked 05:44 + shipped report): the store still holds 3
-  broken-voice iPhone takes until #2093 item 1 runs — S3 training must NOT
-  consume them.
-- NOT a smoke flake: slot b's #2095 (filed, QA-owned) — vpadboot's start
-  ladder has been swallowed by the /gauntlet consent gate since Nov 6 (#1733);
-  that is the answer to Jon's "VPad boot" on #2053/#2054. Rule 3 stands:
-  advisory red = rerun once, never block; QA owns #2095. `viperpitcheck` still red-on-main wired into NO CI
-  job (flagged since 235) — needs a QA owner issue if nobody claims it.
-- Dev servers at exit: slot a 5173 never started (no browser leg needed); slot
-  b's port untouched. Main checkout detached at `origin/main`; no worktrees of
-  mine left. Session-235 candidates (ppm-portrait, ppm-bulletin, papers-photo)
-  still stand.
+- Recompute the ladder live at next kick (with args!). If the shelf is still
+  gap-free for builders, the never-dry rung has nothing to take without
+  inventing work — hold for Jon's steer / QA's #2028 / #1988's owner to land,
+  and only then the flagship-title jonq.
+- #2104 is the designed follow-up (seed-adjacent continuity beat for PAPERS;
+  design questions listed in the issue) — builder-claimable once labeled
+  game-queue or steered.
+- Smoke advisory was red on #2103 (first fail), rerun once per rule 3; never
+  blocked the merge (static passed).
+
+## Hygiene at exit
+Dev server 5178 stopped (mine only); worktree removed; branch gone; main
+checkout detached at origin/main. Slot-a port 5173 untouched.
