@@ -331,8 +331,28 @@ export function poseFighter(rig, f, tSec) {
         q.lean = 0.3
         q.legs = [{ hip: 0.8, kn: -1.4 }, { hip: 0.4, kn: -0.8 }]
     } else if (st === 'win') {
+        // #2148 taunt-on-win: each fighter holds their own gesture through
+        // the KO freeze — beckon, flex, point, raise, or a spit-shrug —
+        // instead of one shared arms-up bob.
         q.hipY = Math.abs(Math.sin(tSec * 4)) * 0.06
-        q.arms = [{ sh: -2.9, el: -0.1, z: 0.3 }, { sh: -0.2, el: -1.4, z: -0.4 }]
+        const pose = (f.def && f.def.tauntPose) || 'raise'
+        if (pose === 'beckon') {
+            q.lean = 0.1
+            q.arms = [{ sh: -0.8 - 0.3 * Math.sin(tSec * 6), el: -1.35, z: 0.35 }, { sh: -0.25, el: -1.6, z: -0.4 }]
+        } else if (pose === 'flex') {
+            q.lean = -0.06
+            q.arms = [{ sh: -2.6 - 0.35 * Math.sin(tSec * 5), el: -1.8, z: 0.55 }, { sh: -2.6 + 0.35 * Math.sin(tSec * 5), el: -1.8, z: -0.55 }]
+        } else if (pose === 'point') {
+            q.lean = 0.08
+            q.head = -0.05
+            q.arms = [{ sh: -1.5, el: -0.05, z: 0.28 }, { sh: -0.3, el: -1.9, z: -0.4 }]
+        } else if (pose === 'spit') {
+            q.lean = 0.12 + 0.05 * Math.sin(tSec * 7)
+            q.head = 0.2
+            q.arms = [{ sh: -0.5, el: -1.5, z: 0.5 }, { sh: -0.2, el: -1.7, z: -0.45 }]
+        } else {
+            q.arms = [{ sh: -2.9, el: -0.1, z: 0.3 }, { sh: -0.2, el: -1.4, z: -0.4 }]
+        }
     } else if (st === 'lose') {
         q.drop = 1
     }

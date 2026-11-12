@@ -21,6 +21,7 @@ const defs = [
         voice: { base: 300, wave: 'sine' },
         stance: { lean: 0.12, bobAmp: 0.022, bobHz: 2.8, dip: -0.06, head: 0.12, arms: [{ sh: -0.62, el: -1.95, z: 0.55 }, { sh: -0.28, el: -2.1, z: -0.5 }], legs: [{ hip: 0.16, kn: -0.22 }, { hip: -0.18, kn: -0.14 }] },
         intro: 'I DO NOT TALK BACK', win: 'NOTHING TO SEE', lose: 'YOU GET ANOTHER SHOT',
+        taunt: 'STAY DOWN', roundLose: 'ROUND TO YOU', tauntPose: 'beckon',
         cpuStyle: { zone: 0.18, jump: 0.3 },
         build: { h: 1.06, bulk: 0.9, hair: 'hood', gear: 'wrap' },
         color: { skin: 0xcf9a72, top: 0x3d3f4a, pants: 0x23252e, hair: 0x11131a, accent: 0x59e0c8 },
@@ -44,6 +45,7 @@ const defs = [
         voice: { base: 180, wave: 'sawtooth' },
         stance: { lean: 0.0, bobAmp: 0.012, bobHz: 1.8, dip: -0.02, head: -0.05, arms: [{ sh: -0.3, el: -1.3, z: 0.35 }, { sh: -0.55, el: -2.15, z: -0.5 }], legs: [{ hip: 0.05, kn: -0.1 }, { hip: -0.16, kn: -0.2 }] },
         intro: 'YOU ASKED FOR HEAT', win: 'BURNT OUT', lose: 'STILL GOT A SPARK',
+        taunt: 'IS THAT ALL?', roundLose: 'MORE TO BURN', tauntPose: 'flex',
         cpuStyle: { zone: 0.55 },
         build: { h: 1.02, bulk: 0.95, hair: 'short', gear: 'jacket' },
         color: { skin: 0xb47a52, top: 0x7e2f22, pants: 0x2c2622, hair: 0x241612, accent: 0xff9a3c },
@@ -66,6 +68,7 @@ const defs = [
         voice: { base: 420, wave: 'square' },
         stance: { lean: 0.07, bobAmp: 0.035, bobHz: 3.4, dip: 0.02, head: -0.1, arms: [{ sh: -0.42, el: -1.35, z: 0.4 }, { sh: -0.38, el: -1.45, z: -0.4 }], legs: [{ hip: 0.1, kn: -0.28 }, { hip: -0.12, kn: -0.24 }] },
         intro: 'CATCH ME IF YOU CAN', win: 'UPSIDE DOWN', lose: 'THAT ONE LANDED',
+        taunt: 'CLEANER THAN THAT', roundLose: 'LUCKY SHOT', tauntPose: 'point',
         cpuStyle: { zone: 0.22, jump: 0.5 },
         build: { h: 0.98, bulk: 0.85, hair: 'shaven', gear: 'wrap' },
         color: { skin: 0xe4c39b, top: 0x2f5d52, pants: 0x1f2a26, hair: 0x1a1410, accent: 0xb8ff5a },
@@ -89,6 +92,7 @@ const defs = [
         voice: { base: 240, wave: 'sawtooth' },
         stance: { lean: 0.05, bobAmp: 0.015, bobHz: 2.2, dip: 0.0, head: 0.0, arms: [{ sh: -0.5, el: -1.7, z: 0.5 }, { sh: -0.35, el: -1.9, z: -0.45 }], legs: [{ hip: 0.05, kn: -0.12 }, { hip: -0.05, kn: -0.1 }] },
         intro: 'I END CONVERSATIONS', win: "LAST WORD'S MINE", lose: 'SAY IT AGAIN',
+        taunt: 'SIT DOWN', roundLose: 'NOT FINISHED', tauntPose: 'raise',
         cpuStyle: { zone: 0.4 },
         build: { h: 1.08, bulk: 1.02, hair: 'mohawk', gear: 'jacket' },
         color: { skin: 0xd69a6b, top: 0x44485a, pants: 0x1c1e26, hair: 0x8a2f3f, accent: 0xd8e04a },
@@ -114,6 +118,7 @@ const defs = [
         voice: { base: 120, wave: 'square' },
         stance: { lean: 0.16, bobAmp: 0.028, bobHz: 1.6, dip: -0.04, head: 0.18, arms: [{ sh: -0.3, el: -1.15, z: 0.9 }, { sh: -0.2, el: -1.25, z: -0.9 }], legs: [{ hip: 0.24, kn: -0.3 }, { hip: -0.24, kn: -0.28 }] },
         intro: 'BIG BILL COMING', win: 'PAID IN FULL', lose: "THAT'LL BE EXTRA",
+        taunt: 'THAT GOES ON THE BILL', roundLose: 'ADD IT TO THE TAB', tauntPose: 'spit',
         cpuStyle: { zone: 0.05, jump: 0.04 },
         build: { h: 1.18, bulk: 1.4, hair: 'bald', gear: 'chain' },
         color: { skin: 0x9a6a44, top: 0x5a4632, pants: 0x33302b, hair: 0x141414, accent: 0xc0c8d0 },
@@ -154,13 +159,43 @@ export function voiceNotes(def) {
     return [v.base, Math.round(v.base * 1.5), Math.round(v.base * 0.66)]
 }
 
-export function koQuotes(m) {
+export function koQuotes(m, ctx = {}) {
     const wIdx = (m.phase === 'done' && m.winner != null)
         ? m.winner
         : m.fighters.findIndex((f) => f.st === 'win')
     if (wIdx !== 0 && wIdx !== 1) return null
-    const wd = m.fighters[wIdx].def
-    const ld = m.fighters[wIdx === 0 ? 1 : 0].def
-    if (m.phase === 'done') return { a: `${wd.name} — ${wd.win}`, b: `${ld.name} — ${ld.lose}`, match: true }
-    return { a: `${wd.name} — ${wd.win}`, b: null }
+    const w = m.fighters[wIdx]
+    const l = m.fighters[wIdx === 0 ? 1 : 0]
+    const wd = w.def
+    const ld = l.def
+    // #2148 — deeper outround replies. Judge = why this round was dirty:
+    // no damage taken (PERFECT), a finisher closed it (IN STYLE), the winner
+    // was on fumes (CLUTCH). Arc = the match shape once it's done.
+    const maxHp = wd.hp || 100
+    const judge = m.phase !== 'done'
+        ? (w.hp >= maxHp ? 'PERFECT' : ctx.finish ? 'IN STYLE' : w.hp <= 25 ? 'CLUTCH' : null)
+        : null
+    const voice = ld.voice || { base: 240, wave: 'square' }
+    if (m.phase === 'done') {
+        const sweep = m.fighters[wIdx].wins > 0 && l.wins === 0
+        return {
+            a: `${wd.name} — ${wd.win}`,
+            b: `${ld.name} — ${ld.lose}`,
+            match: true,
+            taunt: wd.taunt,
+            sub: sweep ? 'WINS WITHOUT LOSS' : 'TOOK THE ONES THAT MATTERED',
+            judge,
+            accent: wd.color.accent,
+            replyVoice: [Math.round(voice.base * 0.66), Math.round(voice.base * 0.5), voice.wave],
+        }
+    }
+    return {
+        a: `${wd.name} — ${wd.win}`,
+        b: null,
+        taunt: wd.taunt,
+        sub: `${ld.name} — ${ld.roundLose}`,
+        judge,
+        accent: wd.color.accent,
+        replyVoice: [Math.round(voice.base * 0.66), Math.round(voice.base * 0.5), voice.wave],
+    }
 }

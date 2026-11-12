@@ -107,6 +107,10 @@ const ViperPitGame = () => {
         let shake = 0, flashT = 0, bannerT = 0, bannerText = ''
         let finishFx = 0, finishText = ''
         let quote = null, quoteT = 0
+        // #2148 — call-and-response outround replies: the loser's answer
+        // reveals a beat after the winner's taunt; `finishJustLanded` hands the
+        // finisher event to koQuotes so an IN STYLE judge rides the same KO.
+        let quoteSubAt = null, subFired = false, finishJustLanded = false
         let koFxRound = -1
         let finishCine = null, cine = null
         let comboFx = [0, 0], comboVal = [0, 0]
@@ -284,7 +288,7 @@ const ViperPitGame = () => {
             gs = createMatch({ seed: sd, guardButton: true, juggle: true, guardCrush: true, p1: { ...d1, cpu: false }, p2: human2 ? { ...d2raw, cpu: false } : d2raw })
             lagHp = [gs.fighters[0].hp, gs.fighters[1].hp]
             comboFx = [0, 0]; comboVal = [0, 0]
-            chipFx = [0, 0]; shimmerFx = [0, 0]; shatterFx = [0, 0]; koHold = null; koFxRound = 0
+            chipFx = [0, 0]; shimmerFx = [0, 0]; shatterFx = [0, 0]; koHold = null; koFxRound = 0; quote = null; quoteT = 0; quoteSubAt = null; subFired = false; finishJustLanded = false
             finishFx = 0; finishText = ''
             padMirror[0].clear(); padMirror[1].clear()
             oursH.clear(); peerH.clear()
@@ -420,7 +424,7 @@ const ViperPitGame = () => {
             rebuildRigs(); rebuildStage()
             audioController.startMusic(stage.bed)
             lagHp = [100, 100]
-            chipFx = [0, 0]; shimmerFx = [0, 0]; shatterFx = [0, 0]; koHold = null; koFxRound = 0
+            chipFx = [0, 0]; shimmerFx = [0, 0]; shatterFx = [0, 0]; koHold = null; koFxRound = 0; quote = null; quoteT = 0; quoteSubAt = null; subFired = false; finishJustLanded = false
         }
         attractDemo()
 
@@ -515,6 +519,7 @@ const ViperPitGame = () => {
                     scene.spark(m.fighters[e.by === 0 ? 1 : 0].x, 1.8, 0xffd050)
                     const qcbf = m.fighters[e.by].def.moves.qcbf
                     finishCine = { beats: (qcbf && qcbf.beats) || ['stitch', 'stitch', 'slam'], by: e.by, startedAt: performance.now(), fired: -1 }
+                    finishJustLanded = true
                 }
             }
         }
@@ -561,8 +566,12 @@ const ViperPitGame = () => {
                 audioController.playFilteredNoise(1.1, 0.16, 480)
                 shake = Math.max(shake, 14); flashT = Math.max(flashT, 18)
                 bannerText = m.banner; bannerT = 130
-                const q = koQuotes(m)
-                if (q) { quote = q; quoteT = 140 }
+                const q = koQuotes(m, { finish: finishJustLanded })
+                if (q) {
+                    quote = q; quoteT = 140
+                    quoteSubAt = performance.now() + 520; subFired = false
+                }
+                finishJustLanded = false
                 const wf = m.fighters.find((f) => f.st === 'win')
                 if (wf) {
                     koSting(wf.def.id)
@@ -576,12 +585,17 @@ const ViperPitGame = () => {
                 setTimeout(() => audioController.playTone(440, 0.16, 'square', 0.1), 140)
             } else if (m.phase === 'intro' && prevRound < m.round) {
                 bannerText = m.banner; bannerT = 110
+                quoteSubAt = null
+                finishJustLanded = false
                 audioController.playTone(494, 0.1, 'square', 0.08)
             }
             if (m.phase === 'done' && prevPhase !== 'done') {
                 const won = m.winner === 0
                 const q = koQuotes(m)
-                if (q) { quote = q; quoteT = 240 }
+                if (q) {
+                    quote = q; quoteT = 240
+                    quoteSubAt = performance.now() + 700; subFired = false
+                }
                 if (mode === 'cpu') {
                     if (won && ladderIdx < LADDER.length - 1) {
                         audioController.playTone(587, 0.12, 'square', 0.1)
@@ -776,11 +790,53 @@ const ViperPitGame = () => {
                         hctx.fillStyle = `rgba(255,246,232,${alpha.toFixed(2)})`
                         hctx.strokeText(quote.a, W / 2, H * 0.59)
                         hctx.fillText(quote.a, W / 2, H * 0.59)
-                        if (quote.b) {
-                            hctx.fillStyle = `rgba(150,214,200,${alpha.toFixed(2)})`
-                            hctx.strokeText(quote.b, W / 2, H * 0.64)
-                            hctx.fillText(quote.b, W / 2, H * 0.64)
-                        }
+                    }
+                    // #2148 — the judge badge: why this round was dirty.
+                    if (quote.judge) {
+                        ui(Math.max(12, H * 0.026))
+                        hctx.textAlign = 'center'
+                        const jcol = quote.judge === 'PERFECT' ? 'rgba(255,210,62,' : quote.judge === 'CLUTCH' ? 'rgba(255,154,60,' : 'rgba(255,64,48,'
+                        hctx.strokeStyle = 'rgba(8,5,8,0.9)'; hctx.lineWidth = Math.max(2, H * 0.005)
+                        hctx.fillStyle = jcol + Math.min(1, quoteT / 140 + 0.25).toFixed(2) + ')'
+                        hctx.strokeText(`${quote.judge}!`, W / 2, H * 0.53)
+                        hctx.fillText(`${quote.judge}!`, W / 2, H * 0.53)
+                    }
+                    // taunt-on-win: the winner's shout in their own accent,
+                    // popping in just under the win line.
+                    if (quote.taunt) {
+                        ui(Math.max(13, H * 0.028))
+                        hctx.textAlign = 'center'
+                        const hex = '#' + Number(quote.accent || 0x59e0c8).toString(16).padStart(6, '0')
+                        hctx.strokeStyle = 'rgba(8,5,8,0.9)'; hctx.lineWidth = Math.max(2, H * 0.005)
+                        hctx.strokeText(`"${quote.taunt}"`, W / 2, H * 0.635)
+                        hctx.fillStyle = hex
+                        hctx.fillText(`"${quote.taunt}"`, W / 2, H * 0.635)
+                    }
+                    if (quote.b) {
+                        ui(Math.max(15, H * 0.034))
+                        hctx.textAlign = 'center'
+                        hctx.strokeStyle = 'rgba(8,5,8,0.92)'; hctx.lineWidth = Math.max(2, H * 0.006)
+                        hctx.fillStyle = `rgba(150,214,200,${Math.min(1, quoteT / 24 + 0.12).toFixed(2)})`
+                        hctx.strokeText(quote.b, W / 2, H * 0.675)
+                        hctx.fillText(quote.b, W / 2, H * 0.675)
+                    }
+                    // call and response — the loser's answer (rounds) or the
+                    // fight-arc line (match) lands a beat after the taunt, with
+                    // a low reply-sting in the loser's own register.
+                    const subShow = quote.sub && quoteSubAt != null && performance.now() >= quoteSubAt
+                    if (subShow && !subFired) {
+                        subFired = true
+                        const [r0, r1, rwave] = quote.replyVoice || [160, 120, 'square']
+                        audioController.playTone(r0, 0.09, rwave, 0.07)
+                        audioController.playTone(r1, 0.14, rwave, 0.06, 0.09)
+                    }
+                    if (subShow) {
+                        ui(Math.max(12, H * 0.026))
+                        hctx.textAlign = 'center'
+                        hctx.strokeStyle = 'rgba(8,5,8,0.9)'; hctx.lineWidth = Math.max(2, H * 0.005)
+                        hctx.fillStyle = `rgba(150,214,200,${Math.min(1, (quoteT + 40) / 40).toFixed(2)})`
+                        hctx.strokeText(quote.sub, W / 2, quote.b ? H * 0.712 : H * 0.675)
+                        hctx.fillText(quote.sub, W / 2, quote.b ? H * 0.712 : H * 0.675)
                     }
                 }
                 if (flashT > 0) { flashT--; hctx.fillStyle = `rgba(255,235,220,${(flashT / 60).toFixed(2)})`; hctx.fillRect(0, 0, W, H) }
@@ -1055,6 +1111,16 @@ const ViperPitGame = () => {
                         active: true, by: koHold.by, name: koHold.name, tag: koHold.tag, round: koHold.round,
                         slow: !!(gs && gs.phase === 'ko' && now - koHold.startedAt < KO_SLOW_MS),
                         ms: Math.round(now - koHold.startedAt),
+                    }
+                },
+                // #2148 — outround card probe: taunt/judge land on the KO, the
+                // answer (loser reply or fight-arc line) reveals `shown` later.
+                outround() {
+                    if (!quote || quoteT <= 0) return { active: false, taunt: null, sub: null, reply: null, judge: null, match: false, shown: false }
+                    return {
+                        active: true, taunt: quote.taunt || null, sub: quote.sub || null, reply: quote.b || null,
+                        judge: quote.judge || null, match: !!quote.match, accent: quote.accent || null,
+                        shown: !!(quoteSubAt != null && performance.now() >= quoteSubAt),
                     }
                 },
                 chips() { return chipFx.map((v) => v > 0) },
