@@ -12,7 +12,7 @@ export const CORE = {
   lint: ['lint:ai', 'lint:forge', 'lint:pw'],
   checks: ['aicheck', 'zorkcheck', 'vpadcheck', 'steercheck', 'fitcanvascheck',
     'ciyamlcheck', 'shimcheck', 'forgecheck', 'dailylogcheck', 'builtbycheck', 'navcheck', 'visibilitycheck', 'jonqcheck',
-    'pulsecheck', 'shiftreportcheck', 'scrubcheck', 'feedbackcheck', 'feedbackreplay', 'nightlyheal', 'padlayoutcheck', 'nightlybotcheck',
+    'pulsecheck', 'shiftreportcheck', 'scrubcheck', 'feedbackcheck', 'feedbackreplay', 'nightlyheal', 'padlayoutcheck', 'nightlybotcheck', 'audiocheck',
     // #1667 moved watchcheck to `smoke` (line below) but left its --mutate entry
 // here; the rewritten check is browser-only (requireDevServer hard-exits, and no
 // --mutate path survives the rewrite), so it froze the browser-free nightly

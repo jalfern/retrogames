@@ -5,6 +5,15 @@
 // MIDI note -> frequency
 const f = (n) => 440 * Math.pow(2, (n - 69) / 12)
 
+// A non-finite argument (NaN / ±Infinity leaking out of a title's physics — e.g.
+// Defender's hum `50 + |vx|*8` when vx is NaN) makes EVERY AudioParam setter throw
+// `... is non-finite` — a page error that can kill the caller's frame loop, not a
+// silent no-op. Every scheduling entry point below checks the args it binds to an
+// AudioParam and drops the malformed cue instead; finite callers pass through
+// byte-for-byte unchanged. Same guard discipline the file already uses at
+// setMusicStep (`sec > 0`), setMuffle (`cutoff > 0`) and setMusicLevel (clamp).
+const isFin = Number.isFinite
+
 // the music bus level — the ceiling every bed plays under. Exported so a title's
 // duck contract and the analyser verification agree on one number (not a mirror).
 export const MUSIC_BUS = 0.16
@@ -551,6 +560,7 @@ class AudioController {
     // bus held during the cue; the bed then recovers. No-op with no bed/muted.
     duckMusic(to, hold = 0.35) {
         if (!this.ctx || !this.musicGain || this.muted) return
+        if (!isFin(to) || !(isFin(hold) && hold > 0)) return
         const t = this.ctx.currentTime
         this.musicGain.gain.cancelScheduledValues(t)
         this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, t)
@@ -565,6 +575,7 @@ class AudioController {
     // bank) keeps its dynamics through every duck. Call at the transitions
     // that matter — no per-frame spam needed. scale 1 restores the full bus.
     setMusicLevel(scale) {
+        if (!isFin(scale)) return // NaN slipped past Math.min/max (both NaN-poisoned) and crashed setTargetAtTime
         const k = Math.max(0, Math.min(1, scale))
         this.musicScale = k
         if (!this.ctx || !this.musicGain || this.muted) return
@@ -591,7 +602,7 @@ class AudioController {
     // wants mono (null pan) or the engine has neither node, so the caller's
     // `else` connects straight to the bus/destination.
     _panner(pan, t, dest) {
-        if (pan === null) return null
+        if (pan === null || !isFin(pan)) return null // a NaN lean connects direct, never NaN into pan/position
         const p = Math.max(-1, Math.min(1, pan))
         // ~±66° azimuth: full ear at the rail, never the 90° HRTF degeneracy.
         const az = p * 1.15
@@ -627,6 +638,7 @@ class AudioController {
     // pass nothing keep the exact old graph, so no other title's sound changes.
     playTone(freq, duration, type = 'square', vol = 0.1, delay = 0, pan = null) {
         if (this.muted || !this.ctx) return
+        if (!(isFin(freq) && freq > 0) || !(isFin(duration) && duration > 0) || !isFin(vol) || !isFin(delay)) return
         if (this.ctx.state === 'suspended') this.ctx.resume()
         this.sfx++
         const t = this.ctx.currentTime + delay
@@ -648,6 +660,7 @@ class AudioController {
 
     playNoise(duration, vol = 0.2, pan = null) {
         if (this.muted || !this.ctx) return
+        if (!(isFin(duration) && duration > 0) || !isFin(vol)) return
         this.sfx++
         const bufferSize = this.ctx.sampleRate * duration
         const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate)
@@ -673,6 +686,7 @@ class AudioController {
     // octave shadow, a murmur under a jingle) without a new API.
     playFilteredNoise(duration, vol = 0.2, freq = 800, delay = 0) {
         if (this.muted || !this.ctx) return
+        if (!(isFin(duration) && duration > 0) || !(isFin(freq) && freq > 0) || !isFin(vol) || !isFin(delay)) return
         this.sfx++
         const sr = this.ctx.sampleRate
         const buffer = this.ctx.createBuffer(1, Math.max(1, Math.floor(sr * duration)), sr)
@@ -696,6 +710,7 @@ class AudioController {
     // the exact old timing for every other title.
     playSweep(startFreq, endFreq, duration, type = 'triangle', vol = 0.1, pan = null, delay = 0) {
         if (this.muted || !this.ctx) return
+        if (!(isFin(startFreq) && startFreq > 0) || !(isFin(endFreq) && endFreq > 0) || !(isFin(duration) && duration > 0) || !isFin(vol) || !isFin(delay)) return
         this.sfx++
         const osc = this.ctx.createOscillator()
         const gain = this.ctx.createGain()
@@ -745,6 +760,7 @@ class AudioController {
     // creature's side behind the veil's low-pass; null keeps the old graph.
     ambTone(freq, duration, type = 'square', vol = 0.1, delay = 0, pan = null) {
         if (this.muted || !this.ctx) return
+        if (!(isFin(freq) && freq > 0) || !(isFin(duration) && duration > 0) || !isFin(vol) || !isFin(delay)) return
         const bus = this.ensureAmb()
         if (!bus) return
         if (this.ctx.state === 'suspended') this.ctx.resume()
@@ -764,6 +780,7 @@ class AudioController {
 
     ambSweep(startFreq, endFreq, duration, type = 'triangle', vol = 0.1) {
         if (this.muted || !this.ctx) return
+        if (!(isFin(startFreq) && startFreq > 0) || !(isFin(endFreq) && endFreq > 0) || !(isFin(duration) && duration > 0) || !isFin(vol)) return
         const bus = this.ensureAmb()
         if (!bus) return
         this.sfx++
@@ -780,6 +797,7 @@ class AudioController {
 
     ambNoise(duration, vol = 0.2) {
         if (this.muted || !this.ctx) return
+        if (!(isFin(duration) && duration > 0) || !isFin(vol)) return
         const bus = this.ensureAmb()
         if (!bus) return
         this.sfx++
@@ -798,6 +816,7 @@ class AudioController {
     // ---- music engine (lookahead scheduler) ----
     _note(freq, t, dur, type = 'square', vol = 0.5, vib = null) {
         if (!this.ctx || !this.musicGain) return
+        if (!(isFin(freq) && freq > 0) || !isFin(t) || !(isFin(dur) && dur > 0) || !(isFin(vol) && vol > 0)) return
         const o = this.ctx.createOscillator()
         const g = this.ctx.createGain()
         o.type = type
@@ -809,7 +828,7 @@ class AudioController {
         // optional slow pitch wobble (setMusicVibrato): a sine LFO on detune,
         // born and stopped with this note — callers that pass nothing keep the
         // exact old graph (the same opt-in law as the pan and ambience buses).
-        if (vib) {
+        if (vib && isFin(vib.hz) && isFin(vib.cents)) {
             const lfo = this.ctx.createOscillator()
             lfo.type = 'sine'; lfo.frequency.value = vib.hz
             const lg = this.ctx.createGain(); lg.gain.value = vib.cents
