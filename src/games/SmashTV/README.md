@@ -252,6 +252,36 @@ rAF-rate gate — max hop ≤ 1 px/frame and the pan monotone with the run.
 The zoom-out-vs-cabinet question (item 5) stays an honest gap: a mild entry
 scale was not prototyped blind; the pan board is the shipped framing.
 
+## THE LONG WALK HOME — the crowd follows you to the door (#2011)
+
+Measured before fixing: on the wide boards the cleared hero can sit a full pan
+(~190 px) from every open door — room 1's spawn is the exception (its down-door
+lands 36 px away), everywhere else the walk across the quiet floor was dead
+air. #1978 already keeps the pan smooth and the off-screen cast legible; this
+stage gives the walk itself a beat:
+
+- `juice.js` owns the law: `walkHype(dPx, boardPx)` maps the px remaining to
+  the nearest open door onto 0..1 — dead inside `FAR_EXIT_PX` (the shutter's
+  two-tone clank confirm owns that moment), swelling with distance; `camLead`
+  leans the camera target up to `CAM_LEAD = 8` px toward the door so the exit
+  rides the screen edge instead of hiding a whole pan away.
+- `sim.js` emits one `murmur` per `MURMUR_TICKS` after a non-bonus room
+  clears while the cast is still a walk from every door, carrying its `hype`.
+  No rng, no state touched — the pilot replay and `stateHash` are unchanged,
+  and bonus rooms keep their own clock-driven bed.
+- `index.jsx` mixes the hype into the bed (`MURMUR.vol + MURMUR_SWELL *
+  e.hype`, plus a brighter cutoff at full hype — the crowd leaning in) and
+  adds `camLead` to the pan target. The bias moves the TARGET a few px;
+  `camPan` still caps the pan at `CAM_PAN = 1` px/frame, so the settle eases
+  in and the #1978 uniform-pan law holds untouched.
+
+Gates: smashcheck `walk-home` (pure law + live sim: hush inside the confirm
+distance, monotone swell, capped lean, bed-stays-a-bed; a cleared far-from-
+doors room murmurs with hype every `MURMUR_TICKS`, goes silent at the door and
+while the room still fights; renderer pins) + 6 mutants; the old pilot gate
+"murmur nowhere else in the studio" became "murmur only on the bonus clock or
+a cleared walk-home, and walk-home murmurs carry hype".
+
 ## Honest gaps vs the cabinet
 - ~~THE ANNOUNCER keeps his screen-sized stage on purpose (a boss half off-screen
   reads as a bug); every other room runs the 24-column pan board.~~ CLOSED by
