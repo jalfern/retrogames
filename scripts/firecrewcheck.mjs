@@ -616,5 +616,61 @@ console.log('seat (watch) — b28')
     ok(wins >= 18, 'the seated autopilot wins on at least 18 of 24 seeds (honest share — the 6/6 gate above keeps its own seeds)', `${wins}/24`)
 }
 
+// #2029 — watch-seat polish: seated radio hint, the losing-route tell, and the
+// FLARE-on-takeover ruling. The tell separates honestly on the proven seats:
+// losing autopilot seeds light at tick 6601 (10 s before expiry); winning
+// seeds finish clear of it — nothing lights on a clean shift.
+console.log('watch-seat polish — #2029')
+{
+    const srcIdx = readFileSync(path.join(HERE, '../src/games/FireCrew/index.jsx'), 'utf8')
+    const srcArt = readFileSync(path.join(HERE, '../src/games/FireCrew/art.js'), 'utf8')
+
+    // the mic out-ranks the autopilot: seated, a shout still spends battery
+    // and lights the sweep — radio is coaching a seated seat, not the wheel.
+    const g = setSources(makeRun(77), ['cpu', 'cpu', 'cpu'])
+    const b0 = g.crew[0].battery
+    const res = applyRadio(g, parseRadio('victim on the left'))
+    ok(res.ok && g.crew[0].battery === b0 - SWEEP_COST && !!g.sweep,
+        'a shout steers a seated crew — the sweep lands while the autopilot drives')
+
+    // V stays a coach key at the shell: toggled before any takeover read.
+    ok(/if \(e\.code === 'KeyV'\) \{ e\.preventDefault\(\); voiceToggle\(\); return \}/.test(srcIdx),
+        'V never counts as a takeover key (early return before the seat logic)')
+
+    // FLARE ruling, decided once (#2029): B is NOT exempted — the seated B
+    // releases AND flares the same press. Source order is the ruling: the
+    // release line must run before keys land in keys1 below it.
+    ok(/if \(watchingRef\.current && isTakeoverKey\(e\)\) release\(\)\s*\n\s*const maps = MAPS\(\)/.test(srcIdx),
+        'FLARE is not exempted — seated B releases first, then flares (pinned ruling)')
+
+    // the seat tells the watcher the mic is live (the hidden mode is visible)
+    ok(srcIdx.includes('V RADIO — SHOUTS STILL STEER THE CREW'),
+        'seated chrome names the live radio')
+    ok((srcIdx.match(/\{watching && /g) || []).length >= 2,
+        'the radio hint rides the watching flag — never always-on copy')
+
+    // the crew picker says the truth about who seats
+    ok(/WATCH \(Y OR PILL\) STEPS ASIDE/.test(srcIdx) && /PARTNERS STAY HUMAN/.test(srcIdx),
+        'the picker names the HOSE seat as the watched seat and partners as staying human')
+
+    // the losing-route tell: ember edges on a red-zone clock (or a lost life)
+    // with people still inside — and only then.
+    ok(/g\.lost \|\| \(left < 600 && g\.rescued \+ g\.lost < 6\)/.test(srcArt) && /rgba\(255,64,40,/.test(srcArt),
+        'the screen edges take ember light on the losing route')
+    const tell = (gg) => gg.lost > 0 || (CLOCK - gg.tick < 600 && gg.rescued + gg.lost < 6)
+    let litAt = null
+    {
+        const s = setSources(makeRun(1), ['cpu', 'cpu', 'cpu'])
+        while (!s.done) { step(s, {}); if (litAt == null && !s.done && tell(s)) litAt = s.tick }
+    }
+    ok(litAt === 6601, 'a losing seed (1) lights the tell at tick 6601 — 600 ticks before expiry', String(litAt))
+    let cleanLit = 0
+    for (const sd of [77, 15839]) {
+        const s = setSources(makeRun(sd), ['cpu', 'cpu', 'cpu'])
+        while (!s.done) { step(s, {}); if (!s.done && tell(s)) cleanLit++ }
+    }
+    ok(cleanLit === 0, 'winning seeds finish clear — the tell never lights on a clean shift')
+}
+
 console.log(`\n${passes} passed, ${fails} failed`)
 process.exit(fails ? 1 : 0)
