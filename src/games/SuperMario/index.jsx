@@ -713,6 +713,7 @@ const SuperMarioGame = () => {
         const groundAt = (c) => solidAt(c, 13) || solidAt(c, 14)
         let apHold = 0
         let apBack = 0   // #2111: >0 = reversing to find a take-off the trajectory sim likes
+        let apBackDist = 0 // #2111: px reversed this episode; release only after real runway
         // DEV-only per-tick autopilot trace (#2111): a 40ms poll cannot see what happens
         // inside a fall, and the col-35 pit-2 death needs the brake verdicts frame by
         // frame. Rows: [tick, levelId, x, y, vx, vy, onGround, wantJump, braking,
@@ -765,7 +766,8 @@ const SuperMarioGame = () => {
                 return null
             }
             const trapAt = (land) => {
-                if (!land || land.r < 13) return false            // platform landings hop on by themselves
+                if (!land) return true                      // the sim died — worst possible "landing"
+                if (land.r < 13) return false               // platform landings hop on by themselves
                 if (groundAt(land.c + 1) && groundAt(land.c + 2)) return false
                 for (let c = land.c + 1; c <= land.c + 6; c++) {
                     if (groundAt(c)) break
@@ -775,13 +777,20 @@ const SuperMarioGame = () => {
             }
             if (apBack > 0) {
                 apBack--
-                keys.right = false; keys.left = true; keys.run = true
-                if (groundAt(frontCol + 1) && groundAt(frontCol + 2) && groundAt(frontCol + 3) && m.vx <= 0.2) apBack = 0
+                apBackDist += Math.max(0, -m.vx)
+                // #2111: reverse until there is real runway BEHIND (>=24px moved back), then
+                // coast to a stop and release only when the ground ahead is solid for four
+                // cols and Mario is genuinely stopped. The old `m.vx <= 0.2` was true while
+                // still moving left (vx<0), so the retreat released at the lip on the next
+                // tick and Mario oscillated forward-back into the pit.
+                if (apBackDist < 24) { keys.right = false; keys.left = true; keys.run = true }
+                else { keys.right = false; keys.left = false; keys.run = false }
+                if (apBackDist >= 24 && Math.abs(m.vx) <= 0.2) { apBack = 0; apBackDist = 0 }
             } else if (m.onGround && !groundAt(frontCol + 1)) {
                 if (!trapAt(simJump(16))) wantJump = true
                 else if (!trapAt(simJump(4))) { wantJump = true; jumpHold = 4 }
                 else if (!trapAt(simJump(0))) { wantJump = true; jumpHold = 0 }
-                else apBack = 90
+                else { apBack = 90; apBackDist = 0 }
             }
             // pipes / walls directly ahead
             if (!apBack && (solidAt(frontCol + 1, feetRow - 1) || solidAt(frontCol + 1, feetRow - 2))) wantJump = true
