@@ -25,7 +25,8 @@
 // longer headlines as a replay failure. Then it runs
 // the full pipeline: ALL must verify, and every pad-flip mutant must go RED
 // naming its divergence tick. Proof the evidence can fail — the shipped path
-// keeps its verdicts.
+// keeps its verdicts. Phone takes cover BOTH containers (#2093 item 2): mp4
+// (iOS) and webm (Android/Chrome) each travel store→verify end-to-end.
 //
 // Exit codes: 0 all verified, 1 any failure, 2 store not provisioned (live).
 
@@ -373,6 +374,13 @@ function synthSessions() {
         out.push({ rec: attachPhoneVoice(r.file, { micDelayMs: 1600, flushMs: 700 }), expect: true, label: 'gauntlet (PHONE take — mic lag + slow flush, mp4, human seat)' })
     }
     {
+        // #2093 item 2: BOTH containers travel the full store→verify pipeline.
+        // Android/Chrome phones file webm; until now the EBML duration path was
+        // pinned only in voicecheck. Same healthy shape as the mp4 take above.
+        const r = collectRun(2, { noRows: true, maxTicks: 1500 })
+        out.push({ rec: attachPhoneVoice(r.file, { micDelayMs: 1600, flushMs: 700, webm: true }), expect: true, label: 'gauntlet (PHONE take — webm container, human seat)' })
+    }
+    {
         // iOS dropped the tail past the flush bound: bytes end before the clock
         const r = collectRun(2, { noRows: true, maxTicks: 1500 })
         out.push({ rec: attachPhoneVoice(r.file, { micDelayMs: 1600, flushMs: 300, dropTailMs: 1200 }), expect: false, label: 'gauntlet (PHONE take — iOS dropped the tail)' })
@@ -560,6 +568,10 @@ async function runSelfTest() {
             s.ok && s.voiceOk && s.humanSeats === 1 && s.voice && s.voice[0].containerMs !== null &&
             s.voice[0].driftMs < 0 && s.voice[0].audioLonger && s.voice[0].coversRunEnd,
             'phone-shaped take verifies: negative-drift clock, settle-stamped ms, parsed mp4 duration, human seat',
+            `${s.error || ''} ${JSON.stringify(s.voice)}`)
+        if (want.label.includes('webm container')) ok(
+            s.ok === want.expect && s.voiceOk && s.voice && s.voice[0].containerMs !== null && s.voice[0].coversRunEnd,
+            'webm take verifies end-to-end: parsed EBML duration through store→verify (#2093 item 2)',
             `${s.error || ''} ${JSON.stringify(s.voice)}`)
         if (want.label.includes('dropped the tail')) ok(!s.ok && s.replayOk && s.voiceOk === false && /truncated/.test(s.error || ''), 'container-declared tail-drop is CAUGHT, naming container vs clock ms', s.error)
         if (want.label.includes('pre-flush ms stamp')) ok(!s.ok && s.replayOk && s.voiceOk === false && /voice clock broken .*track \d+ ms vs clock \d+ ms/.test(s.error || ''), 'pre-stop-stamped ms fails audioLonger — the #2058 phone shape reproduces in the harness now', s.error)
