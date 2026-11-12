@@ -24,8 +24,10 @@ the sheet. Answers were geometry, not tuning:
   eye clears every week (a wrong conviction is one strike, learnable); 14 aged
   photos across 12 weeks; day-1 forger pinned live. Posted on #1943.
 Proof: paperscheck 18243/18243 with **all 43 mutants dead**; papersplay
-**91/91** live keys, zero page errors; lint gates + build green. Prod: see
-#1943 comment for the live URL + bundle marker.
+**91/91** live keys, zero page errors; lint gates + build green. Prod
+verified: live PPM chunk `index-sE5ildjB.js` carries `ox:-16` + the PORTRAIT
+rule text at jalfern.com/retrogames/papers-please (deploy e7d508a; the
+jalfern proxy lagged the completed Vercel deploy by ~20 min).
 
 ## The session's catches
 - **A fit law is a budget, not a wall**: #1908 concluded "rows CANNOT grow"
@@ -40,6 +42,17 @@ Proof: paperscheck 18243/18243 with **all 43 mutants dead**; papersplay
   fractional rect origins would have failed the same gate (#1908's lesson again).
 - Zoom ceiling arithmetic: centered + widest-inside-clip ⇒ `s ≤ (w + 2*margin)/
   headwidth`; here 0.97 theoretical, 0.90 chosen so ears keep a 2–3px margin.
+- **Prod marker scans must follow the lazy chunks**: PPM's code is NOT in the
+  live index bundle — grep index-*.js for game literals returns nothing even
+  when prod is current. Enumerate the chunk manifest inside index-*.js
+  (`[A-Za-z0-9._-]*-[A-Za-z0-9_-]{8}\.js`) and grep the chunks; PPM lives in
+  `index-sE5ildjB.js`. (And name only hashes you actually observed — an
+  unverified hash in a ship comment is a lie you have to eat; correction
+  posted on #1943.)
+- zsh does NOT word-split multiline vars: `for c in $chunks` iterated ONCE
+  and the marker scan silently "passed" empty. Wrap multi-iteration curl
+  loops in `bash -c` (or `${(f)var}`); an empty scan result is a red harness
+  result, not a green prod result.
 
 ## Ladder trail
 TARGET #1943 claimed first (`forge-claim.sh 1943 b`), clean — no halt/steer/
