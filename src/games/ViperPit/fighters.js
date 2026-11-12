@@ -22,8 +22,9 @@ const defs = [
         stance: { lean: 0.12, bobAmp: 0.022, bobHz: 2.8, dip: -0.06, head: 0.12, arms: [{ sh: -0.62, el: -1.95, z: 0.55 }, { sh: -0.28, el: -2.1, z: -0.5 }], legs: [{ hip: 0.16, kn: -0.22 }, { hip: -0.18, kn: -0.14 }] },
         intro: 'I DO NOT TALK BACK', win: 'NOTHING TO SEE', lose: 'YOU GET ANOTHER SHOT',
         taunt: 'STAY DOWN', roundLose: 'ROUND TO YOU', tauntPose: 'beckon',
-        // #2172 select-card pose: deep bladed angle, blade hand cocked low behind.
-        card: { yaw: 0.85, hipY: -0.1, lean: 0.16, headX: 0.18, arms: [{ sh: -0.75, el: -1.6, z: 0.35 }, { sh: -0.15, el: -2.3, z: -0.3 }], legs: [{ hip: 0.22, kn: -0.3 }, { hip: -0.28, kn: -0.2 }] },
+        // #2172 select-card pose: deep bladed angle, lead hand out front, the
+        // blade hand cocked low behind — open enough to read on a 240px card.
+        card: { yaw: 0.85, hipY: -0.1, lean: 0.16, headX: 0.18, arms: [{ sh: -0.95, el: -1.35, z: 0.55 }, { sh: -0.3, el: -2.0, z: -0.45 }], legs: [{ hip: 0.26, kn: -0.3 }, { hip: -0.32, kn: -0.2 }] },
         cpuStyle: { zone: 0.18, jump: 0.3 },
         build: { h: 1.06, bulk: 0.9, hair: 'hood', gear: 'wrap' },
         color: { skin: 0xcf9a72, top: 0x3d3f4a, pants: 0x23252e, hair: 0x11131a, accent: 0x59e0c8 },
@@ -73,8 +74,8 @@ const defs = [
         stance: { lean: 0.07, bobAmp: 0.035, bobHz: 3.4, dip: 0.02, head: -0.1, arms: [{ sh: -0.42, el: -1.35, z: 0.4 }, { sh: -0.38, el: -1.45, z: -0.4 }], legs: [{ hip: 0.1, kn: -0.28 }, { hip: -0.12, kn: -0.24 }] },
         intro: 'CATCH ME IF YOU CAN', win: 'UPSIDE DOWN', lose: 'THAT ONE LANDED',
         taunt: 'CLEANER THAN THAT', roundLose: 'LUCKY SHOT', tauntPose: 'point',
-        // #2172 select-card pose: bouncing on his toes, hands loose at his face.
-        card: { yaw: 0.7, hipY: 0.05, lean: 0.08, headX: -0.12, arms: [{ sh: -0.9, el: -1.1, z: 0.45 }, { sh: -0.95, el: -1.0, z: -0.4 }], legs: [{ hip: 0.18, kn: -0.45 }, { hip: -0.2, kn: -0.4 }] },
+        // #2172 select-card pose: bouncing on his toes, elbows loose and out.
+        card: { yaw: 0.7, hipY: 0.05, lean: 0.08, headX: -0.12, arms: [{ sh: -0.9, el: -0.9, z: 0.62 }, { sh: -0.95, el: -0.85, z: -0.58 }], legs: [{ hip: 0.2, kn: -0.45 }, { hip: -0.22, kn: -0.4 }] },
         cpuStyle: { zone: 0.22, jump: 0.5 },
         build: { h: 0.98, bulk: 0.85, hair: 'shaven', gear: 'wrap' },
         color: { skin: 0xe4c39b, top: 0x2f5d52, pants: 0x1f2a26, hair: 0x1a1410, accent: 0xb8ff5a },
