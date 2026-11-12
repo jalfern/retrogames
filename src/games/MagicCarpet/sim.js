@@ -1646,7 +1646,7 @@ export function step(gs, inp) {
             blast(gs, p.x, p.y, 14, 10, p.dmg)
         }
         if (!gone && p.from !== 'p') {
-            if (gs.invis <= 0 && Math.hypot(wrapD(p.x - gs.x), wrapD(gs.y - gs.y)) < 6 && Math.abs(p.z - gs.alt) < 7) {
+            if (gs.invis <= 0 && Math.hypot(wrapD(p.x - gs.x), wrapD(p.y - gs.y)) < 6 && Math.abs(p.z - gs.alt) < 7) {
                 hurtPlayer(gs, p.dmg)
                 gone = true
             }
