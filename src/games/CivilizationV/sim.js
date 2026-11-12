@@ -112,6 +112,7 @@ export const CFG = {
     tradeGold: 3, peaceCool: 3,                             // gold per signed trade pact per turn; turns peace must hold before trade
     arkScience: 70, cultureWin: 350,       // Stage 8 victories: beakers banked into the Ark after Spaceflight (= the sum of ARK_PARTS); lifetime culture the world still records (since polish pass #375-4 it no longer crowns)
     tourismWin: 120, wonderTour: 3,       // polish pass #375-4: the CULTURE crown is the TOURISM lead — visitors bank what there is to see
+    navalSupply: 6, navalAttrition: 10,  // #2065 supply lines: hulls trace ≤6 sea hexes to a friendly port or wear 10 HP every turn at sea
 }
 
 // ---- the Ark, part by part (polish pass #375-3: the Science win assembles a
@@ -411,6 +412,55 @@ export function coastalCityOf(gs, civ) {
 function firstFreeSea(gs, c, r) {
     for (const [nc, nr] of neighbors(c, r)) if (isWater(gs, nc, nr) && !unitAt(gs, nc, nr)) return [nc, nr]
     return null
+}
+
+// ---- naval supply (#2065: supply lines — the sea is not a free highway) ----
+// A hull is SUPPLIED while it can trace at most CFG.navalSupply sea hexes to a
+// friendly port: a living city of its own realm (own civ, its overlord, its
+// vassals) or of an ALLIED city-state, standing on the coast. The original's
+// nearest real law: units heal only on friendly territory, and borders reach out
+// over the water — deep neutral sea already starves recovery there. The arcade
+// extends that law honestly: beyond the port horizon a hull also WEAR
+// (CFG.navalAttrition per turn, and no heal afloat), so coast-to-coast crossings
+// cost, coastal hubs and alliances are the fleet's reach, and a fleet stranded
+// far from any friendly flag sinks into the deep. Pure derivation from the board
+// — no new stored state; the wear lands in u.hp, already folded by stateHash.
+export function portsOfRealm(gs, civId) {
+    const friendly = new Set([civId])
+    const C = gs.civs[civId]
+    if (C && C.vassal != null && gs.civs[C.vassal].alive) friendly.add(C.vassal)
+    for (const c of gs.civs) if (c.id !== civId && c.alive && c.vassal === civId) friendly.add(c.id)
+    const out = []
+    for (const ct of gs.cities) {
+        if (!ct.alive || ct.civ == null) continue
+        let ok = friendly.has(ct.civ)
+        if (!ok && isCS(ct.civ) && gs.cs[civId]) ok = !!(gs.cs[civId][ct.civ] && gs.cs[civId][ct.civ].ally)
+        if (!ok) continue
+        if (coastalTile(gs, ct.c, ct.r)) out.push([ct.c, ct.r])
+    }
+    return out
+}
+export function suppliedSea(gs, civId) {
+    // every water hex within CFG.navalSupply sea-steps of a friendly port
+    const seen = new Set()
+    const q = []
+    for (const [pc, pr] of portsOfRealm(gs, civId)) {
+        for (const [nc, nr] of neighbors(pc, pr)) {
+            if (isWater(gs, nc, nr) && !seen.has(idx(nc, nr))) { seen.add(idx(nc, nr)); q.push([nc, nr, 1]) }
+        }
+    }
+    for (let h = 0; h < q.length; h++) {
+        const [c, r, d] = q[h]
+        if (d >= CFG.navalSupply) continue
+        for (const [nc, nr] of neighbors(c, r)) {
+            if (isWater(gs, nc, nr) && !seen.has(idx(nc, nr))) { seen.add(idx(nc, nr)); q.push([nc, nr, d + 1]) }
+        }
+    }
+    return seen
+}
+export function hullSupplied(gs, u) {
+    if (!u || !u.naval) return true   // one law for hulls; land never thirsts
+    return suppliedSea(gs, u.civ).has(idx(u.c, u.r))
 }
 export function tileBlocked(gs, c, r) {
     if (!inMap(c, r)) return true
@@ -1497,11 +1547,29 @@ function endPlayerTurn(gs) {
     for (const cs of CIVS) if (cs.cs && gs.civs[cs.id].alive) cityStateTurn(gs, cs.id)
     advanceBuilds(gs)
     for (const civ of gs.civs) if (!civ.barb && !civ.cs) resolveCiv(gs, civ.id)
+    // #2065 supply lines: an unsupplied hull wears at sea — and one worn to
+    // nothing goes down with her hold, exactly like a battle-kill at sea.
+    const seaSets = {}
+    for (const u of gs.units) {
+        if (!u.alive || u.loaded || !u.naval) continue
+        if (seaSets[u.civ] === undefined) seaSets[u.civ] = suppliedSea(gs, u.civ)
+        u.supplied = seaSets[u.civ].has(idx(u.c, u.r))
+        if (u.supplied) continue
+        u.hp -= CFG.navalAttrition
+        gs.events.push({ type: 'wear', civ: u.civ, kind: u.kind, at: [u.c, u.r], hp: Math.max(0, u.hp) })
+        if (u.hp <= 0) {
+            u.alive = false
+            drownCargo(gs, u)
+            gs.events.push({ type: 'shipLost', civ: u.civ, kind: u.kind, at: [u.c, u.r], why: 'supply' })
+        }
+    }
     gs.turn++
     gs.phase = 'player'
     for (const u of gs.units) {
         if (!u.alive || u.loaded) continue
-        if (!u.acted) {
+        if (!u.acted && !(u.naval && u.supplied === false)) {
+            // #2065: no recovery afloat beyond the port horizon — friendly
+            // waters feed the crew; empty ocean does not.
             const home = inMap(u.c, u.r) && gs.tiles[idx(u.c, u.r)].owner === u.civ
             const h = (home ? CFG.healHome : CFG.healField) + (u.fortified && home ? CFG.healFortify : 0)
             u.hp = Math.min(u.maxHp, u.hp + h)

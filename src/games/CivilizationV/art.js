@@ -7,7 +7,7 @@
 // Math.random at render time (terrain jitter is a hash of the tile).
 
 import * as THREE from 'three'
-import { CFG, T, CIVS, RES, RES_IDS, resRevealed, WONDER_IDS } from './sim.js'
+import { CFG, T, CIVS, RES, RES_IDS, resRevealed, WONDER_IDS, suppliedSea } from './sim.js'
 
 const SQ3 = Math.sqrt(3)
 export const HEX = 1
@@ -206,6 +206,14 @@ function buildUnit(u) {
     const bar = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.04, 0.055), new THREE.MeshStandardMaterial({ color: 0x49d24a, emissive: 0x1c6b1e, emissiveIntensity: 0.6 }))
     bar.position.set(0, 0.72, 0); g.add(bar)
     g.userData.bar = bar
+    if (u.naval) {
+        // #2065 supply lines: a hull beyond its ports' reach wears a pulsing
+        // amber warning ring on the water — the crew's own distress flare.
+        const warn = new THREE.Mesh(new THREE.RingGeometry(0.36, 0.46, 20),
+            new THREE.MeshBasicMaterial({ color: 0xe8a13a, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false }))
+        warn.rotation.x = -Math.PI / 2; warn.position.y = 0.02; warn.visible = false
+        g.add(warn); g.userData.warnRing = warn
+    }
     return g
 }
 
@@ -628,6 +636,7 @@ export function updateView(view, gs, extra = {}) {
 
     // units: create/remove, animate position toward logical tile
     const liveIds = new Set()
+    const seaSupply = new Map()   // #2065: one port horizon per flag per frame
     for (const u of gs.units) {
         if (!u.alive) continue
         const ti = u.r * CFG.W + u.c
@@ -642,7 +651,15 @@ export function updateView(view, gs, extra = {}) {
         m.visible = !!visible
         if (visible) {
             m.position.set(a.x, gs.tiles[ti]._h, a.z)
-            if (u.naval) m.position.y += 0.02 + Math.sin(gs.tick * 0.12 + u.id) * 0.03
+            if (u.naval) {
+                m.position.y += 0.02 + Math.sin(gs.tick * 0.12 + u.id) * 0.03
+                // #2065 supply lines: the amber ring pulses while the hull sits
+                // beyond the reach of every friendly port
+                let sup = seaSupply.get(u.civ)
+                if (sup === undefined) { sup = suppliedSea(gs, u.civ); seaSupply.set(u.civ, sup) }
+                const wr = m.userData.warnRing
+                if (wr) { wr.visible = !sup.has(ti); wr.material.opacity = 0.32 + 0.22 * Math.sin(gs.tick * 0.22 + u.id) }
+            }
             m.rotation.y = gs.tick * 0.02 + u.id
             if (u.path && u.path.length) m.position.y += 0.02 + Math.abs(Math.sin(gs.tick * 0.3)) * 0.05
             const bar = m.userData.bar
