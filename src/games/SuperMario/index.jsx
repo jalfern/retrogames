@@ -712,6 +712,12 @@ const SuperMarioGame = () => {
         // ---- autopilot: rule-based perfect-ish runner (drives `keys`) ----
         const groundAt = (c) => solidAt(c, 13) || solidAt(c, 14)
         let apHold = 0
+        let apBack = 0   // #2111: >0 = reversing to find a take-off the trajectory sim likes
+        // DEV-only per-tick autopilot trace (#2111): a 40ms poll cannot see what happens
+        // inside a fall, and the col-35 pit-2 death needs the brake verdicts frame by
+        // frame. Rows: [tick, levelId, x, y, vx, vy, onGround, wantJump, braking,
+        // jumpPressed, pfNoBrake, pfBrake]. Capped; DEV builds only.
+        const apTrace = []
         const autopilot = () => {
             const m = mario
             keys.left = false; keys.right = true; keys.run = true; keys.down = false
@@ -720,10 +726,83 @@ const SuperMarioGame = () => {
             let wantJump = false
             let jumpHold = 16   // frames of held jump; short taps land sooner
 
-            // pits / gaps: jump at the edge
-            if (m.onGround && !groundAt(frontCol + 1)) wantJump = true
+            // pits / gaps: jump at the edge — armed with a trajectory sim (#2111).
+            // simJump mirrors update()'s jump math EXACTLY — hold-gravity frames, air
+            // acceleration, collideX, ceiling bumps AND the one-row floor scan — and
+            // returns {r,c} of the tile it lands on, or null when the arc dies. The
+            // ceiling part is what the flat predictFall below missed: 1-3's r9 platform
+            // at col 31 leaves only 48px of headroom over the pit-2 lip, so every jump
+            // started from that lip bumps its underside, loses the arc, and drops Mario
+            // into the pit. Landing on a ground lip that butts against another pit with
+            // overhanging steps (trapAt) is a delayed death — the lip of pit 2 was
+            // exactly that — so it does not count as a safe landing either. When no
+            // jump from here survives, back up until there is runway and let the
+            // early-take-off rule below commit over the lip instead.
+            const simJump = (hold, x0) => {
+                let x = x0 === undefined ? m.x : x0, y = m.y, vx = m.vx
+                let vy = JUMP_VEL - Math.abs(vx) * 0.18
+                if (vy >= 0) return null
+                for (let t = 0; t < 140; t++) {
+                    vy = Math.min(vy + (t <= hold ? GRAVITY_HOLD : GRAVITY), MAX_FALL)
+                    vx = Math.min(vx + RUN_ACCEL, RUN_MAX)
+                    x += vx
+                    {
+                        const top = Math.floor(y / TILE), bot = Math.floor((y + m.h - 1) / TILE)
+                        const c = Math.floor((x + m.w) / TILE)
+                        for (let r = top; r <= bot; r++) if (solidAt(c, r)) { x = c * TILE - m.w; vx = 0; break }
+                    }
+                    y += vy
+                    const l = Math.floor(x / TILE), rt = Math.floor((x + m.w - 1) / TILE)
+                    if (vy > 0) {
+                        const r = Math.floor((y + m.h) / TILE)
+                        for (let c = l; c <= rt; c++) if (solidAt(c, r)) return { r, c }
+                    } else {
+                        const r = Math.floor(y / TILE)
+                        for (let c = l; c <= rt; c++) if (solidAt(c, r)) { y = (r + 1) * TILE; vy = 0; break }
+                    }
+                    if (y > VIEW_H + 40) return null
+                }
+                return null
+            }
+            const trapAt = (land) => {
+                if (!land || land.r < 13) return false            // platform landings hop on by themselves
+                if (groundAt(land.c + 1) && groundAt(land.c + 2)) return false
+                for (let c = land.c + 1; c <= land.c + 6; c++) {
+                    if (groundAt(c)) break
+                    for (let r = 6; r <= 11; r++) if (solidAt(c, r)) return true   // floating steps over the next pit
+                }
+                return false
+            }
+            if (apBack > 0) {
+                apBack--
+                keys.right = false; keys.left = true; keys.run = true
+                if (groundAt(frontCol + 1) && groundAt(frontCol + 2) && groundAt(frontCol + 3) && m.vx <= 0.2) apBack = 0
+            } else if (m.onGround && !groundAt(frontCol + 1)) {
+                if (!trapAt(simJump(16))) wantJump = true
+                else if (!trapAt(simJump(4))) { wantJump = true; jumpHold = 4 }
+                else if (!trapAt(simJump(0))) { wantJump = true; jumpHold = 0 }
+                else apBack = 90
+            }
             // pipes / walls directly ahead
-            if (solidAt(frontCol + 1, feetRow - 1) || solidAt(frontCol + 1, feetRow - 2)) wantJump = true
+            if (!apBack && (solidAt(frontCol + 1, feetRow - 1) || solidAt(frontCol + 1, feetRow - 2))) wantJump = true
+            // Early take-off (#2111): pit ahead under floating steps, jumping from HERE
+            // survives, but from the lip it would not — commit before the lip, where the
+            // arc can rise past the steps' underside instead of into it.
+            if (m.onGround && apHold <= 0 && !wantJump && !apBack) {
+                let gapAhead = 0, gapCol = 0
+                for (let k = 1; k <= 3; k++) if (!groundAt(frontCol + k)) { gapAhead = k; gapCol = frontCol + k; break }
+                if (gapAhead) {
+                    let tier = false
+                    for (let c = gapCol; c <= gapCol + 5 && !tier; c++) {
+                        if (groundAt(c)) break
+                        for (let r = feetRow - 7; r <= feetRow - 2; r++) if (r >= 0 && solidAt(c, r)) { tier = true; break }
+                    }
+                    if (tier) {
+                        const xLip = gapCol * TILE - m.w
+                        if (m.x < xLip - 4 && !trapAt(simJump(16)) && trapAt(simJump(16, xLip))) wantJump = true
+                    }
+                }
+            }
 
             // Piranha plants: do NOT stall. Standing still in 1-1 is a death sentence -
             // a goomba bounces off an upstream pipe and walks into a parked Mario.
@@ -816,7 +895,13 @@ const SuperMarioGame = () => {
                 }
                 return false
             }
-            if (!m.onGround && m.vy > 0 && !backing && !predictFall(false) && predictFall(true)) {
+            let pfNoBrake = 1, pfBrake = 1
+            if (!m.onGround && m.vy > 0 && !backing) {
+                pfNoBrake = predictFall(false) ? 1 : 0
+                pfBrake = pfNoBrake ? 1 : (predictFall(true) ? 1 : 0)
+            }
+            const braking = pfNoBrake === 0 && pfBrake === 1
+            if (braking) {
                 keys.right = false; keys.left = true
             }
 
@@ -874,9 +959,14 @@ const SuperMarioGame = () => {
                 }
             }
 
-            if (wantJump && m.onGround && apHold <= 0) { m.jumpPressed = true; keys.jump = true; apHold = jumpHold }
+            if (wantJump && m.onGround && apHold <= 0 && !apBack) { m.jumpPressed = true; keys.jump = true; apHold = jumpHold }
             else if (apHold > 0) { keys.jump = true; apHold-- }
             else keys.jump = false
+
+            if (import.meta.env.DEV && apTrace.length < 30000) {
+                apTrace.push([tick, level.id, +m.x.toFixed(1), +m.y.toFixed(1), +m.vx.toFixed(2), +m.vy.toFixed(2),
+                    m.onGround ? 1 : 0, wantJump ? 1 : 0, braking ? 1 : 0, keys.jump ? 1 : 0, pfNoBrake, pfBrake])
+            }
         }
 
         // ---- neuroevolution (option 4): recurrent MLP controller + GA + turbo showcase ----
@@ -2187,6 +2277,8 @@ const SuperMarioGame = () => {
                 openMenu: () => { state = 'menu'; menuSel = 0 },
                 choose: (i) => chooseOption(i),
                 autoplay: () => startAutopilot(),
+                trace: () => apTrace,
+                traceReset: () => { apTrace.length = 0 },
                 // WATCH (#1637 b31): the seat truth + the shared handoff log.
                 watching: () => watchingRef.current,
                 watchSfx: watchSfxLog,
