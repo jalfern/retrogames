@@ -8,7 +8,7 @@
 // Run: npm run soscheck          (dev server on DEV_PORT, default 5173)
 //      SOS_SKIP_BROWSER=1 npm run soscheck   (rule/determinism/win only)
 
-import { createGame, stepGame, simState, makeCpuEmitter, cellKind, SHIFT_TICKS, QUOTA, RUNNER_POST } from '../src/games/ShortOrderShout/engine.js'
+import { createGame, stepGame, simState, makeCpuEmitter, cellKind, SHIFT_TICKS, QUOTA, RUNNER_POST, hashState, COOL_SIP } from '../src/games/ShortOrderShout/engine.js'
 import { MIC_RECT, VOX_RECT, CHIP_ZONE, PIP_ZONE, CHIP_MIN_H, rectsOverlap } from '../src/games/ShortOrderShout/art.js'
 import { takeIsSpeech, ACK_MIN_MS, PTT_MIN_B64, createPttSender } from '../src/games/ShortOrderShout/ptt.js'
 
@@ -125,6 +125,67 @@ ok('stations in wall row', cellKind(0, 0) === 'cooler' && cellKind(4, 0) === 'bo
     gs.cooks[0].holding = 'water'
     tap(gs, 0, { a: true })
     ok('cup water douses it', gs.burners[0].state === 'empty', gs.burners[0].state)
+}
+
+// 4b. #2113 COOL THE PAN: pouring a cup on a hot-but-not-burnt burner backs
+// the sear clock off by COOL_SIP — pan and patty stay, the cup is spent
+// (refill at the tap). Burnt is too late: water beads off, only dousing
+// remains. Heat never runs negative. This is the counterplay BEFORE trouble,
+// the gap #2113 closed ("no cool-the-pan beyond dousing").
+{
+    const gs = createGame(1, 1)
+    gs.cooks[0].x = 6; gs.cooks[0].y = 1; gs.cooks[0].face = 'up'
+    gs.burners[0].state = 'cooking'; gs.burners[0].t = 100
+    gs.cooks[0].holding = 'water'
+    tap(gs, 0, { a: true }, 10)
+    // tap = press + release + idle ticks; the burner clock runs every one of
+    // them, so the honest expected t is 100 - COOL_SIP + (2 + 10).
+    ok('a poured cup cools a cooking pan (state holds, sear clock backs off COOL_SIP)',
+        gs.burners[0].state === 'cooking' && gs.burners[0].t === 100 - COOL_SIP + 12, `${gs.burners[0].state} t=${gs.burners[0].t}`)
+    ok('the pour spends the cup', gs.cooks[0].holding === null, String(gs.cooks[0].holding))
+    ok('the pour announces itself as fx cool', gs.fx.some((f) => f.k === 'cool' && f.n === 0 && f.t <= 40), JSON.stringify(gs.fx.filter((f) => f.k === 'cool')))
+}
+{
+    const gs = createGame(1, 1)
+    gs.cooks[0].x = 6; gs.cooks[0].y = 1; gs.cooks[0].face = 'up'
+    gs.burners[0].state = 'ready'; gs.burners[0].t = 179 // one tick from burnt
+    gs.cooks[0].holding = 'water'
+    tap(gs, 0, { a: true }, 20)
+    ok('a pan one tick from burning survives the sip', gs.burners[0].state === 'ready' && gs.burners[0].t === 179 - COOL_SIP + 22, `${gs.burners[0].state} t=${gs.burners[0].t}`)
+    ok('counterfactual: the same pan burns untouched', (() => {
+        const g2 = createGame(1, 1)
+        g2.burners[0].state = 'ready'; g2.burners[0].t = 179
+        for (let t = 0; t < 3; t++) stepGame(g2, [])
+        return g2.burners[0].state === 'burnt' || g2.burners[0].state === 'fire'
+    })())
+}
+{
+    const gs = createGame(1, 1)
+    gs.cooks[0].x = 6; gs.cooks[0].y = 1; gs.cooks[0].face = 'up'
+    gs.burners[0].state = 'burnt'; gs.burners[0].t = 0
+    gs.cooks[0].holding = 'water'
+    tap(gs, 0, { a: true }, 0)
+    ok('burnt is too late — the cup is not spent on ruin', gs.cooks[0].holding === 'water', String(gs.cooks[0].holding))
+    ok('and nothing cooled (no cool fx)', !gs.fx.some((f) => f.k === 'cool'))
+}
+{
+    const gs = createGame(1, 1)
+    gs.cooks[0].x = 6; gs.cooks[0].y = 1; gs.cooks[0].face = 'up'
+    gs.burners[0].state = 'cooking'; gs.burners[0].t = 0
+    gs.cooks[0].holding = 'water'
+    tap(gs, 0, { a: true }, 0)
+    ok('heat never cools below zero', gs.burners[0].t === 2 && gs.burners[0].state === 'cooking', `t=${gs.burners[0].t}`) // clamp at 0, then press+release ticks
+}
+{
+    const build = () => {
+        const gs = createGame(9, 1)
+        gs.cooks[0].x = 6; gs.cooks[0].y = 1; gs.cooks[0].face = 'up'
+        gs.burners[0].state = 'ready'; gs.burners[0].t = 120
+        gs.cooks[0].holding = 'water'
+        tap(gs, 0, { a: true }, 15)
+        return hashState(gs)
+    }
+    ok('the cool replay is deterministic (same script => same hash)', build() === build())
 }
 
 // 5. dirty floor items: drop => dirty; stations refuse; rinse at tap fixes
