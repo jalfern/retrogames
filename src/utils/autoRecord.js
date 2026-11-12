@@ -155,7 +155,7 @@ export function beginRun(opts = {}) {
     const plan = planRun(st.probe || { ok: false, sessions: false }, consentFor(ls(), PLAYER_ID))
     if (!plan.record) return false
     const c = consentFor(ls(), PLAYER_ID)
-    return autoStart({ voiceConsent: c.voice, sources: opts.sources })
+    return autoStart({ voiceConsent: c.voice, sources: opts.sources, humanSeats: opts.humanSeats })
 }
 
 // endRun — async, call at the over-transition (and unmount). Stops the

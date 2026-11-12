@@ -15,7 +15,7 @@
 import { createRecorder, validate, recDownload, REC_FORMAT, REC_FORMAT_V2 } from '../src/utils/recording.js'
 import {
     createVoiceClock, tickToMs, voiceDrift, b64FromBytes, bytesFromB64, voiceReexport,
-    packVoiceAudio, makeVoiceInbox, trackToWire, validateVoice, VOICE_CHUNK,
+    packVoiceAudio, makeVoiceInbox, trackToWire, validateVoice, VOICE_CHUNK, containerDurationMs,
 } from '../src/utils/voice.js'
 import { decodePadPacket } from '../src/utils/padlink.js'
 
@@ -175,6 +175,36 @@ console.log('bytes — base64 round-trip and re-export:')
     const tr = makeTrack({ ticks: 120, seconds: 2 })
     const out = voiceReexport(tr, 'p2')
     ok(out.filename === 'p2.webm' && out.bytes.length === tr._bytes.length && out.bytes.every((v, i) => v === tr._bytes[i]), 're-export is a verbatim decode — nothing to transcode')
+}
+
+console.log('container duration — #2058 (what the bytes themselves claim):')
+{
+    // minimal walkable EBML: EBML{EBMLVersion} + Segment{Info{TimecodeScale,Duration}}
+    const webm = (durationMs) => {
+        const b = [0x1a, 0x45, 0xdf, 0xa3, 0x84, 0x42, 0xf2, 0x81, 0x01, 0x18, 0x53, 0x80, 0x67, 0x80 | 24, 0x15, 0x49, 0xa9, 0x66, 0x80 | 19, 0x2a, 0xd7, 0xb1, 0x84, 0x00, 0x0f, 0x42, 0x40, 0x44, 0x89, 0x88]
+        const d = new DataView(new ArrayBuffer(8)); d.setFloat64(0, durationMs)
+        for (let i = 0; i < 8; i++) b.push(d.getUint8(i))
+        return { b64: Buffer.from(b).toString('base64'), mime: 'audio/webm;codecs=opus' }
+    }
+    // minimal ISO-BMFF: ftyp + moov{mvhd v0 timescale 1000}
+    const mp4 = (durationMs) => {
+        const b = []
+        const str = (s) => b.push(...[...s].map((c) => c.charCodeAt(0)))
+        const u32 = (v) => b.push((v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255)
+        u32(20); str('ftyp'); str('M4A '); u32(0); str('M4A ')
+        const mvhd = []
+        const mp = (...vs) => mvhd.push(...vs)
+        const mu32 = (v) => mp((v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255)
+        mp(0, 0, 0, 0); mp(0, 0, 0, 0); mp(0, 0, 0, 0); mu32(1000); mu32(Math.round(durationMs))
+        while (mvhd.length < 100) mvhd.push(0)
+        u32(8 + 8 + mvhd.length); str('moov'); u32(8 + mvhd.length); str('mvhd'); b.push(...mvhd)
+        return { b64: Buffer.from(b).toString('base64'), mime: 'audio/mp4' }
+    }
+    ok(containerDurationMs(webm(58380)) === 58380, 'webm Info>Duration read back in ms', String(containerDurationMs(webm(58380))))
+    ok(containerDurationMs(mp4(58380)) === 58380, 'mp4 mvhd duration/timescale read back in ms', String(containerDurationMs(mp4(58380))))
+    ok(containerDurationMs({ b64: 'QUJD', mime: 'audio/webm' }) === null, 'unparseable bytes answer null — never guesses')
+    ok(containerDurationMs(null) === null && containerDurationMs({}) === null, 'missing track/bytes answer null')
+    ok(containerDurationMs(mp4(20000.4)) === 20000, 'whole-ms rounding on mp4')
 }
 
 console.log(`\n${fail === 0 ? 'VOICECHECK PASS' : 'VOICECHECK FAIL'} — ${pass} passed, ${fail} failed${MUTATE ? ' [mutant run]' : ''}`)

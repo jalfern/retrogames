@@ -188,6 +188,9 @@ export function createModelPolicy(policy = POLICY) {
 // #1636: recording seat-stamp. A seat the trained net drove carries its id
 // (recorder sources take `modelId`); externally-driven contract seats stay
 // anonymous `model` — we cannot name a net we did not train.
+// NOTE (#2058): this table describes CONTRACT-driven seats (the harness IS a
+// model). For consented AUTO captures, gameContract.autoStart upgrades seat 0
+// to `human` at origin — do not "fix" this table for phones.
 export const seatSources = ({ seat2Kind = 'off', brainSeated = false, brainName = 'model/v1' }) => [
     { kind: 'model' },
     brainSeated && seat2Kind === 'model' ? { kind: 'model', modelId: brainName } : { kind: seat2Kind },

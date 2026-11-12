@@ -17,15 +17,20 @@
 // autopilot + v2 voice), short-order-shout (cpu emitter partner), and three
 // rally files: rain stamping its weather via `rules`, rain LEGACY (no stamp —
 // the verifier infers it from grip physics), and mist legacy (fog is visual:
-// mist replays bit-exact as clear — documented physics identity). Then it runs
+// mist replays bit-exact as clear — documented physics identity). Plus three
+// PHONE-shaped gauntlet takes (#2058): mic opens late (negative-drift clock),
+// stop() flushes slow (settle-stamped ms), container is mp4 — healthy verify;
+// tail-dropped and pre-flush-stamped mutants must go RED naming their ms. The
+// verifier also splits replay and voice verdicts (#2058): a voice failure no
+// longer headlines as a replay failure. Then it runs
 // the full pipeline: ALL must verify, and every pad-flip mutant must go RED
 // naming its divergence tick. Proof the evidence can fail — the shipped path
 // keeps its verdicts.
 //
 // Exit codes: 0 all verified, 1 any failure, 2 store not provisioned (live).
 
-import { validate, verifyRecording, createRecorder } from '../src/utils/recording.js'
-import { tickToMs, voiceDrift, VOICE_CLOCK_EVERY } from '../src/utils/voice.js'
+import { validate, verifyRecording, createRecorder, REC_FORMAT_V2 } from '../src/utils/recording.js'
+import { tickToMs, voiceDrift, VOICE_CLOCK_EVERY, containerDurationMs, TICK_MS } from '../src/utils/voice.js'
 import { probeStore, listSessions, storeFromQuery } from '../src/utils/sessionStore.js'
 import { startRelaySim, SIM_READ_KEY } from './lib/relaysim.mjs'
 import { collectRun, makeReplayDriver } from './plaicraft-export.mjs'
@@ -108,13 +113,24 @@ function driverFor(rec) {
 
 // --- one session's verdict -------------------------------------------------------
 // ok = structurally sound AND replay-verified (100% checkpoints) AND, for v2,
-// the voice clock is sane: samples monotonic and reaching the end of the run
-// (the ±50 ms clap proof itself lives in scripts/plaicraft-clap.mjs — opus
-// bytes decode in the browser; here we prove the clock the clap rides on is
-// intact, and clapSync.js, the verdict both share, is pinned by recordcheck).
+// the voice clock is sane: samples monotonic and reaching the end of the run,
+// track length at least as long as the clock claims, and the container not
+// declaring less audio than the clock reaches (#2058: iOS can drop the tail at
+// stop — the container's own duration is what proves it). The (±50 ms) clap
+// proof itself lives in scripts/plaicraft-clap.mjs — opus bytes decode in the
+// browser; here we prove the clock the clap rides on is intact, and clapSync.js,
+// the verdict both share, is pinned by recordcheck.
+// #2058: replay and voice are reported SEPARATELY (a file whose replay passed
+// but whose voice failed was headlined "0/3 replay-verified" — false). The
+// exit code stays strict: any failure still leaves the run red.
+
+// Container rounding allowance: opus/mp4 frame boundaries and seek padding put
+// the declared duration a few ms off the wall clock. 150 ms is generous and
+// still catches iOS tail-drops, which run in hundreds of ms (Jon's took −900).
+const VOICE_CONTAINER_TOL_MS = 150
 
 async function verifyKey(key, base, readHeaders = {}) {
-    const res = { key, ok: false, error: null, ticks: 0, game: '?', player: '?', audio: false, humanSeats: 0, note: '', voice: null }
+    const res = { key, ok: false, replayOk: false, voiceOk: null, error: null, ticks: 0, game: '?', player: '?', audio: false, humanSeats: 0, note: '', voice: null }
     let text
     try {
         const r = await fetch(`${base}/sessions/${encodeURIComponent(key)}`, { headers: readHeaders })
@@ -149,6 +165,7 @@ async function verifyKey(key, base, readHeaders = {}) {
         res.ticks = ver.ticks
         return res
     }
+    res.replayOk = true
     if (rec.voice) {
         const tracks = []
         for (const tr of rec.voice.tracks || []) {
@@ -157,6 +174,7 @@ async function verifyKey(key, base, readHeaders = {}) {
             for (let i = 1; i < clk.length; i++) if (clk[i].ms < clk[i - 1].ms) mono = false
             const covered = clk.length > 0 && clk[clk.length - 1].t >= rec.ticks - VOICE_CLOCK_EVERY
             const endMs = clk.length ? clk[clk.length - 1].ms : 0
+            const containerMs = containerDurationMs(tr) // what the bytes themselves declare (null = unparseable)
             tracks.push({
                 slots: tr.slots.join('+'),
                 clockSamples: clk.length,
@@ -164,12 +182,22 @@ async function verifyKey(key, base, readHeaders = {}) {
                 coversRunEnd: covered,
                 driftMs: clk.length >= 2 ? +voiceDrift(clk).maxLagMs.toFixed(1) : null,
                 msAtLastClock: endMs,
+                trackMs: tr.ms, // #2058: the track's claimed length, printed NEXT TO the clock it must cover
+                containerMs,     // #2058: and the container-declared length
                 audioLonger: tr.ms >= endMs, // audio at least as long as its own clock claims
+                truncated: containerMs !== null && containerMs < endMs - VOICE_CONTAINER_TOL_MS, // bytes end before the clock does
             })
         }
         res.voice = tracks
-        const broken = tracks.find((t) => !t.monotonicMs || !t.coversRunEnd || !t.audioLonger)
-        if (broken) { res.error = `voice clock broken on slot ${broken.slots}`; return res }
+        res.voiceOk = true
+        const broken = tracks.find((t) => !t.monotonicMs || !t.coversRunEnd || !t.audioLonger || t.truncated)
+        if (broken) {
+            res.voiceOk = false
+            res.error = broken.truncated
+                ? `audio truncated at stop: container ${broken.containerMs} ms < clock ${broken.msAtLastClock} ms on slot ${broken.slots}`
+                : `voice clock broken on slot ${broken.slots} (track ${broken.trackMs} ms vs clock ${broken.msAtLastClock} ms)`
+            return res
+        }
     }
     res.ok = true
     res.ticks = ver.ticks
@@ -180,14 +208,24 @@ function report(sessions) {
     const pad = (s, n) => String(s).padEnd(n)
     console.log(`${pad('VERDICT', 6)}${pad('GAME', 20)}${pad('PLAYER', 12)}${pad('LEN', 8)}${pad('HUM', 4)}${pad('AUDIO', 6)}NOTE / ERROR`)
     for (const s of sessions) {
-        console.log(`${pad(s.ok ? 'PASS' : 'FAIL', 6)}${pad(s.game, 20)}${pad(s.player, 12)}${pad(s.ticks, 8)}${pad(s.humanSeats, 4)}${pad(s.audio ? 'yes' : 'no', 6)}${s.ok ? s.note : s.error || s.note}`)
+        // VOICE = the replay verified but the audio clock did not (#2058: one
+        // verdict per axis — a voice failure is not a replay failure).
+        const verdict = s.ok ? 'PASS' : s.replayOk ? 'VOICE' : 'FAIL'
+        console.log(`${pad(verdict, 6)}${pad(s.game, 20)}${pad(s.player, 12)}${pad(s.ticks, 8)}${pad(s.humanSeats, 4)}${pad(s.audio ? 'yes' : 'no', 6)}${s.ok ? s.note : s.error || s.note}`)
     }
     const good = sessions.filter((s) => s.ok).length
-    console.log(`\nevidence: ${good}/${sessions.length} replay-verified${good === sessions.length && sessions.length ? ' — 100% (acceptance line #2 holds for these files)' : ''}`)
+    const replayGood = sessions.filter((s) => s.replayOk).length
+    console.log(`\nevidence: ${replayGood}/${sessions.length} replay-verified${replayGood === sessions.length && sessions.length ? ' — 100% (acceptance line #2 holds for these files)' : ''}`)
     const voiced = sessions.filter((s) => s.audio)
     if (voiced.length) {
+        const voiceGood = voiced.filter((s) => s.voiceOk).length
         const worst = Math.max(...voiced.flatMap((s) => (s.voice || []).map((t) => Math.abs(t.driftMs || 0))))
-        console.log(`voice: ${voiced.length} session(s) with audio${voiced.length ? `, worst clock drift ${worst.toFixed(1)} ms (clap ±50 ms rides this clock)` : ''}`)
+        console.log(`voice: ${voiceGood}/${voiced.length} clock-sane${voiceGood === voiced.length ? `, worst clock drift ${worst.toFixed(1)} ms (clap ±50 ms rides this clock)` : ''}`)
+        for (const s of voiced.filter((x) => !x.voiceOk)) {
+            for (const t of s.voice || []) {
+                console.log(`  voice ${s.key}: slot ${t.slots} track ${t.trackMs} ms vs clock ${t.msAtLastClock} ms${t.containerMs !== null ? `, container ${t.containerMs} ms` : ', container duration unknown'}`)
+            }
+        }
     }
     return good === sessions.length && sessions.length > 0
 }
@@ -239,12 +277,110 @@ const mkVoice = (ticks, startTick, simMs) => {
     return { slots: [0], consent: true, headset: false, mime: 'audio/webm;codecs=opus', ms: Math.round(ticks * 16.67 * simMs) + 40, clock, b64: 'QUJD' }
 }
 
+// --- phone-shaped takes (#2058) --------------------------------------------------
+// Jon's first iPhone takes failed evidence with audioLonger:false and
+// humanSeats 0 while the synth-mic harness above stayed green — the harness
+// knew nothing of what a phone does differently. Three behaviours baked in here:
+//   1. the mic opens ~1.5 s AFTER seed birth (getUserMedia + iOS audio-session
+//      start), so the clock trace rides NEGATIVE drift against t*16.67 — its
+//      ms are measured from mic-open, not from tick 1;
+//   2. MediaRecorder.stop() flushes hundreds of ms after the run ends; the
+//      honest track `ms` is stamped after that flush (pre-fix captures stamped
+//      it before -> audioLonger false on every phone take);
+//   3. iOS records `audio/mp4` (none of our webm/ogg candidates is supported)
+//      and can DROP the tail past the 5 s flush bound — the mvhd duration then
+//      declares less audio than the clock reaches.
+// And the human seat: the capture must label slot 0 `human` at origin.
+
+// Minimal walkable EBML: EBML header + Segment{Info{TimecodeScale=1e6 ns,
+// Duration=f64 ms}}. Sizes here are always < 128, so one-byte vints suffice.
+function fakeWebmB64(durationMs) {
+    const b = []
+    b.push(0x1a, 0x45, 0xdf, 0xa3, 0x84, 0x42, 0xf2, 0x81, 0x01) // EBML{EBMLVersion=1}
+    b.push(0x18, 0x53, 0x80, 0x67, 0x80 | 24)                       // Segment{Info}
+    b.push(0x15, 0x49, 0xa9, 0x66, 0x80 | 19)                       // Info (8 B scale + 11 B duration)
+    b.push(0x2a, 0xd7, 0xb1, 0x84, 0x00, 0x0f, 0x42, 0x40)          // TimecodeScale=1e6 ns
+    b.push(0x44, 0x89, 0x88)                                        // Duration, f64
+    const d = new DataView(new ArrayBuffer(8)); d.setFloat64(0, durationMs)
+    for (let i = 0; i < 8; i++) b.push(d.getUint8(i))
+    return Buffer.from(b).toString('base64')
+}
+
+// Minimal ISO-BMFF: ftyp + moov{mvhd v0: timescale 1000, duration ms}.
+function fakeMp4B64(durationMs) {
+    const b = []
+    const str = (s) => b.push(...[...s].map((c) => c.charCodeAt(0)))
+    const u32 = (v) => b.push((v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255)
+    u32(8 + 12); str('ftyp'); str('M4A '); u32(0); str('M4A ')
+    const mvhd = []
+    const mp = (...vs) => mvhd.push(...vs)
+    const mu32 = (v) => mp((v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255)
+    mp(0, 0, 0, 0); mp(0, 0, 0, 0); mp(0, 0, 0, 0) // version+flags, created, modified
+    mu32(1000); mu32(Math.round(durationMs))         // timescale, duration
+    while (mvhd.length < 100) mvhd.push(0)            // real v0 payloads are 100 B
+    u32(8 + 8 + mvhd.length); str('moov')            // moov{mvhd}
+    u32(8 + mvhd.length); str('mvhd')
+    b.push(...mvhd)
+    return Buffer.from(b).toString('base64')
+}
+
+// The phone-shaped voice track. Geometry (all ms since MIC OPEN, which is
+// micDelayMs after tick 1):
+//   clock end   = ticks*16.67 - micDelay + flush   (stamped at settle)
+//   ms (fixed)  = same                              (settle-stamped, #2058 fix)
+//   ms (buggy)  = clock end - flush                 (pre-stop stamp, shipped bug)
+//   container   = clock end - dropTail              (iOS tail-drop past the bound)
+function mkPhoneVoice(ticks, { micDelayMs = 1600, flushMs = 700, stamp = 'settle', dropTailMs = 0, webm = false } = {}) {
+    const clock = []
+    // first sample = first tick processed AFTER the mic opened. Its offset o
+    // is NOT a multiple of 60 (mic-open lands between ticks), so the loop
+    // samples never hit the final tick exactly — clock.finish() must add the
+    // closing sample at settle time, post-flush. That finish sample is what
+    // the pre-stop stamp lost against on Jon's phone (3600 ticks, o≈98:
+    // loop ends at 3578, finish adds {t:3600, ms:58380}).
+    const first = Math.max(2, Math.floor(micDelayMs / TICK_MS) + 1)
+    for (let t = first; t <= ticks; t += VOICE_CLOCK_EVERY) clock.push({ t, ms: Math.round(t * TICK_MS - micDelayMs) })
+    const endMs = Math.round(ticks * TICK_MS - micDelayMs + flushMs)
+    if (clock[clock.length - 1].t !== ticks) clock.push({ t: ticks, ms: endMs })
+    const ms = stamp === 'pre-stop' ? endMs - flushMs : endMs
+    const containerMs = endMs - dropTailMs
+    return { slots: [0], consent: true, headset: false, mime: webm ? 'audio/webm;codecs=opus' : 'audio/mp4', ms, clock, b64: webm ? fakeWebmB64(containerMs) : fakeMp4B64(containerMs) }
+}
+
+// Attach a phone-shaped take to a synthesized gauntlet file the way the fixed
+// CAPTURE would: v2 tag, seat 0 stamped human at origin, honest voice track.
+function attachPhoneVoice(file, opts) {
+    file.format = REC_FORMAT_V2
+    if (file.slots && file.slots[0]) file.slots[0].source = { kind: 'human' }
+    file.voice = { tracks: [mkPhoneVoice(file.ticks, opts)], declined: [] }
+    return file
+}
+
 function synthSessions() {
     const out = []
     // gauntlet — the export's planner route (verified against its own driver)
     {
         const r = collectRun(2, { noRows: true, maxTicks: 1500 })
         out.push({ rec: r.file, expect: r.stats.verified, label: 'gauntlet (planner route)' })
+    }
+    // gauntlet — PHONE-shaped takes (#2058): the shape Jon's iPhone files have.
+    // The synth-mic case above knew none of this, so real phone bytes failed
+    // while the harness stayed green — the issue's "add whatever the phone does
+    // differently so it fails here first".
+    {
+        // healthy post-fix take: mic lag + slow flush, mp4 container, human seat
+        const r = collectRun(2, { noRows: true, maxTicks: 1500 })
+        out.push({ rec: attachPhoneVoice(r.file, { micDelayMs: 1600, flushMs: 700 }), expect: true, label: 'gauntlet (PHONE take — mic lag + slow flush, mp4, human seat)' })
+    }
+    {
+        // iOS dropped the tail past the flush bound: bytes end before the clock
+        const r = collectRun(2, { noRows: true, maxTicks: 1500 })
+        out.push({ rec: attachPhoneVoice(r.file, { micDelayMs: 1600, flushMs: 300, dropTailMs: 1200 }), expect: false, label: 'gauntlet (PHONE take — iOS dropped the tail)' })
+    }
+    {
+        // the shipped #2058 capture bug shape: ms stamped before stop() flushed
+        const r = collectRun(2, { noRows: true, maxTicks: 1500 })
+        out.push({ rec: attachPhoneVoice(r.file, { micDelayMs: 1638, flushMs: 700, stamp: 'pre-stop' }), expect: false, label: 'gauntlet (PHONE take — pre-flush ms stamp)' })
     }
     // talk-me-down — solo, solvePad autopilot, v2 voice with a realistic clock
     {
@@ -420,6 +556,13 @@ async function runSelfTest() {
         ok(s.ok === want.expect, `${want.expect ? 'verified' : 'CAUGHT'}: ${want.label}`, s.ok ? s.note : s.error)
         if (want.label.includes('rain, legacy')) ok(s.note.includes('inferred=rain'), 'legacy rain file inferred the physics-true weather', s.note)
         if (want.label.includes('v2 voice')) ok(s.voice && s.voice[0].coversRunEnd && s.voice[0].monotonicMs, 'voice clock sane on the v2 session', JSON.stringify(s.voice))
+        if (want.label.includes('mic lag + slow flush')) ok(
+            s.ok && s.voiceOk && s.humanSeats === 1 && s.voice && s.voice[0].containerMs !== null &&
+            s.voice[0].driftMs < 0 && s.voice[0].audioLonger && s.voice[0].coversRunEnd,
+            'phone-shaped take verifies: negative-drift clock, settle-stamped ms, parsed mp4 duration, human seat',
+            `${s.error || ''} ${JSON.stringify(s.voice)}`)
+        if (want.label.includes('dropped the tail')) ok(!s.ok && s.replayOk && s.voiceOk === false && /truncated/.test(s.error || ''), 'container-declared tail-drop is CAUGHT, naming container vs clock ms', s.error)
+        if (want.label.includes('pre-flush ms stamp')) ok(!s.ok && s.replayOk && s.voiceOk === false && /voice clock broken .*track \d+ ms vs clock \d+ ms/.test(s.error || ''), 'pre-stop-stamped ms fails audioLonger — the #2058 phone shape reproduces in the harness now', s.error)
     }
     ok(caught >= 1 && caught === mutantKeys, `every pad-flip mutant was CAUGHT (${caught}/${mutantKeys})`, caughtAt.join(' | '))
     if (caughtAt.length) ok(caughtAt.some((e) => /diverged at tick/.test(e)), 'a mutant names its divergence tick', caughtAt[0])
