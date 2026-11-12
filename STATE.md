@@ -18,12 +18,13 @@ README honest gaps updated (CLOSED marker; portrait polish kept open).
 
 ## Open PR — DO NOT LOSE
 **#2159** (judge-badge lift over the finisher name; cosmetic follow-up on
-#2148, gates green 341/1 + the new lift gate) was blocked from merging by
-the #601 freeze: the latest completed nightly failed `full-smoke` at fddf4a2
-(the consent-gate boot-red family #2115/#2095 — FIXED since by #2152, which
-is in main). A fresh nightly is in progress at d095948 (carries #2152 + Ivy
-+ mine); when it goes green, merge #2159 with the rule-5 command from the
-`forge/viper-judge` worktree (`~/Dev/retrogames-forge-viper-reply`).
+#2148, gates green 341/1 + the new lift gate, its own `static` SUCCESS) was
+blocked by the #601 freeze and the freeze CONFIRMED: nightly run 43275782881
+at d095948 completed FAILURE — `papersplay 141/144` (crowd-aside + neighbor
+call-back ink below floor; five-row bulletin paints LESS than three-row
+466<516). Papers-Min domain, not ViperPit — diagnosis posted on #2145 and
+#2159. When a green nightly lands, merge #2159 with the rule-5 command from
+the `forge/viper-judge` branch in worktree `~/Dev/retrogames-forge-viper-reply`.
 
 ## New issues filed
 - **#2151** game-queue: VIPER PIT CPU lost its close-range qcb counter —
