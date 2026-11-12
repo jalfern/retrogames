@@ -236,9 +236,16 @@ face). soslinkcheck pins the countdown contract (+4 => 137).
   the soslinkdrive browser tier for these surfaces still awaits a Chrome box.
 - Seats 3–4 are CPU-only locally (a third keyboard pad is what online
   unlocks); the pad is d-pad-only movement (no analog).
-- The patty-burn chain (burnt→fire) has no "cool the pan" counterplay
-  beyond dousing; stage-2 spice (extra dishes, day/night rush) is QA's
-  polish backlog.
+- **CLOSED by #2113 (2026-11-12):** the patty-burn chain had no cool-the-pan
+  counterplay beyond dousing. A cup of water poured on a HOT-BUT-NOT-BURNT
+  burner (`cooking`/`ready`) now spends the cup and knocks `COOL_SIP = 60`
+  ticks off the sear clock — the pan keeps the patty, the fill walks back to
+  the tap, and burnt stays too late (water beads off ruin; only dousing
+  remains down that path). Phone play rides the existing pad A (empty hand at
+  a hot pan is the verb). `soscheck` 4b pins state gates, cup economy, the
+  `cool` fx, a counterfactual burn, the zero clamp and determinism — 7 gates,
+  red under a `COOL_SIP = 0` mutant. *Still open:* stage-2 spice (extra
+  dishes, day/night rush) stays on QA's polish backlog.
 
 ## WATCH (#1637 batch 22) — Y seats the proven pair
 `Y` seats `makeCpuEmitter` on every seat — the line-cook + runner pair

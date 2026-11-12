@@ -21,7 +21,9 @@
 // tomato garnish pays +25).
 //
 // TROUBLE (seeded): a patty left past its sear burns -> the burner catches FIRE
-// (douse with cup water, else it spreads); anything dropped on the floor is
+// (douse with cup water, else it spreads); a pan hot but not yet burnt can be
+// COOLED with a poured cup (#2113 — the counterplay before the trouble, the
+// cup is spent either way); anything dropped on the floor is
 // DIRTY and stations refuse it until rinsed at the tap; the soup pot boils over
 // unattended (rinse before the next batch).
 //
@@ -148,6 +150,7 @@ const SOUP_TICKS = 150 // rolling boil
 const STIR_GAP = 80 // stir every <80f or it boils over
 const SEAR_TICKS = 210
 const SEAR_OK = 180 // window before it burns
+export const COOL_SIP = 60 // #2113 cool the pan: one cup of water knocks this many ticks of heat off a hot-but-not-burnt burner
 const FIRE_SPREAD = 360
 const RINSE_TICKS = 30
 const TICKET_FIRST = 120
@@ -279,10 +282,15 @@ function actA(gs, c) {
     const [fx, fy] = front(gs, c)
     const fk = cellKind(fx, fy)
 
-    // cup water douses the burner we face
+    // cup water on the burner we face: fire gets doused (#1248), a pan that is
+    // hot but NOT yet burnt gets cooled instead (#2113) — the cup is poured out
+    // either way (refill at the tap), the patty stays on the pan, and the sear
+    // clock backs off COOL_SIP ticks. Burnt is too late: water beads off ruin;
+    // only dousing (or the ruin's already paid) remains down that path.
     if (c.holding === 'water' && fk === 'burner') {
         const b = gs.burners[fx === 6 ? 0 : 1]
         if (b.state === 'fire') { b.state = 'empty'; b.t = 0; b.spread = false; c.holding = null; gs.fx.push({ k: 'douse', x: fx, y: fy, tick: gs.tick }); return }
+        if (b.state === 'cooking' || b.state === 'ready') { b.t = Math.max(0, b.t - COOL_SIP); c.holding = null; gs.fx.push({ k: 'cool', n: fx === 6 ? 0 : 1, x: fx, y: fy, t: b.t, tick: gs.tick }); return }
     }
     // rinse a dirty item at the tap
     if (c.dirty && fk === 'tap') { c.dirty = false; gs.fx.push({ k: 'rinse', tick: gs.tick }); return }

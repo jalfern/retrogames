@@ -182,6 +182,7 @@ export default function ShortOrderShout() {
             if (f.k === 'serve') { hud.popT = 24; hud.pops.push({ k: 'serve', x: f.x, y: f.y, t: 0, pts: f.pts || 0 }); hud.bump = 14 }
             if (f.k === 'catch') hud.pops.push({ k: 'catch', x: f.x, y: f.y, t: 0 })
             if (f.k === 'douse') hud.pops.push({ k: 'douse', x: f.x, y: f.y, t: 0 })
+            if (f.k === 'cool') hud.pops.push({ k: 'cool', x: f.x, y: f.y, t: 0 }) // #2113 the pour on a hot pan
             if (f.k === 'boilover') hud.pops.push({ k: 'splat', x: STATION.pot[0], y: 0, t: 0 })
             if (f.k === 'boilover' || f.k === 'fire' || f.k === 'expire' || f.k === 'fired') hud.shake = f.k === 'fired' ? 40 : 18
         }
@@ -989,6 +990,14 @@ export default function ShortOrderShout() {
                     ctx.fillStyle = '#e8f0f4'
                     ctx.fillRect(wx - 6, wy - 4 - p.t, 4, 3)
                     ctx.fillRect(wx + 1, wy - 7 - p.t, 5, 4)
+                    ctx.globalAlpha = 1
+                } else if (p.k === 'cool') { // #2113 cyan pour ring + short steam on a cooled pan
+                    ctx.globalAlpha = 1 - p.t / lifeMax
+                    ctx.strokeStyle = '#7fd4e8'
+                    ctx.strokeRect(wx - 3 - p.t, wy - 3 - p.t, 6 + p.t * 2, 6 + p.t * 2)
+                    ctx.fillStyle = '#cfe9f0'
+                    ctx.fillRect(wx - 4, wy - 3 - p.t, 3, 2)
+                    ctx.fillRect(wx + 2, wy - 5 - p.t, 3, 3)
                     ctx.globalAlpha = 1
                 } else if (p.k === 'splat') {
                     ctx.globalAlpha = 1 - p.t / lifeMax
