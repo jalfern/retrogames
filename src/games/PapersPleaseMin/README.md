@@ -285,7 +285,7 @@ speaks personally:
   RETIRED, GUARD."), the sheet on day 6 carries SONYA'S number and the
   correct deny lands, and day 7's Tadek says "YOU LET ME THROUGH." The
   offscreen castPix counts all six marks in disjoint ink windows
-  (freckles 12px, patch 24px). Grubak's day-2 first visit now greets too
+  (freckles 27px, patch 40px). Grubak's day-2 first visit now greets too
   (5647px), and strangers stay silent (0px).
 
 ## THE LONG CONVERSATION (#2003) — threads that answer themselves
@@ -613,8 +613,8 @@ pixels — hats/unibrows/earrings/missing teeth paint their own inks at the
 counter and in honest photos, three hat kinds walk seed 0's first two days,
 bare heads paint none, every background face's decor matches Node's
 `accFor(serial)`, and Grubak arrives in his authored cap+unibrow; since #1997
-also: all six cast marks count in disjoint ink windows (freckles 12px, patch
-24px), first walk-ups greet with personal lines (Grubak 5647px, strangers
+also: all six cast marks count in disjoint ink windows (freckles 27px, patch
+40px), first walk-ups greet with personal lines (Grubak 5647px, strangers
 0px), and seed 4's live week proves the rotated window — Sonya greets day 2
 in her scarf+earring (hat 980px, gold 9px), the day-6 sheet carries HER
 number and the real deny scores, and Tadek's day-7 return says its own
@@ -875,8 +875,9 @@ paints the month-name comparison on the strip verbatim, serial-free (134/134).
   on face and photo), day-injection, the queue-size law and legality (decide
   and judge both approve); mutants m25 (never injected) and m26 (face
   re-roll) prove the witnesses bite. `papersplay` counts the four inks
-  through the same drawFace (scar 12px, mole 4, wrinkle 66, ear 72 vs the
-  standard 40) and stamps a live Grubak at the seed-0 day-2 window.
+  through the same drawFace (scar 25px, mole 16, wrinkle 132, ear 72 vs the
+  standard 40, freckles 27, patch 40 — re-pinned by #2080's
+  phone-weight) and stamps a live Grubak at the seed-0 day-2 window.
 - **CLOSED by #1983 (2026-11-11):** regulars got no callback lines and no
   story arcs. One cast member per week now turns wanted on their return
   (`arcForWeek`, day 6) — papers legal, name+number on the bulletin, DENY
@@ -940,7 +941,8 @@ paints the month-name comparison on the strip verbatim, serial-free (134/134).
   papersplay). See "The door knows its regulars." *Still open from the pass:*
   marks stay static decor (no aging between visits; the aged-photo trap has
   never worn a regular's face) and the mole's 4 ink px at phone scale
-  (`?lite=1` 640x426) is unmeasured — filed as #2080.
+  (`?lite=1` 640x426) is unmeasured — filed as #2080, CLOSED
+   2026-11-12 (see "THE NEIGHBOURHOOD AGES (#2080)").
 - **CLOSED by #1891 (2026-11-11):** the evidence string was the contract's
   promise but lived only in the sim (`gs.last.evidence`), the wall printed bare
   numerals, the OCT→NOV roll was silent, and papers teleported onto the
@@ -1002,6 +1004,62 @@ paints the month-name comparison on the strip verbatim, serial-free (134/134).
   (#2130)." Honest gaps are empty — what remains for this title lives on the
   open QA issues (#2104 tail-seat continuity, #2087/#2080 crowd & marks
   polish, #2109 decoy-face design call).
+ - **CLOSED by #2080 (2026-11-12):** the neighbourhood ages — regulars' marks
+   grow one step on a return (and the step rides face AND photo), the
+   aged-photo trap can wear a regular's face on a staged day 7 (decide and
+   judge approve, only the naive eye denies — colours never convict; Tadek
+   exempt, his hair is authored grey), the vacated trap seat is burned
+   coverage-preservingly, and the phone leg got honest measurements at
+   390×844: base mark ink thickened to survive the blur, the mark-hue hood
+   tightened to L1<18, and `papersplay` now gates survival at phone and CI
+   scale. See "THE NEIGHBOURHOOD AGES (#2080)." #2080's own complaint list —
+   static marks, trap never familiar, phone scale unmeasured — is fully
+   answered; the crowd-polish tail of #2087 remains open QA work.
+
+## THE NEIGHBOURHOOD AGES (#2080)
+
+- **Marks age on returns.** A regular seen again later in the week carries
+  `face.markStep = 1` — and because of the doctrine of the nose the step
+  rides into the passport photo too (`photo = { ...face }` after the step).
+  Growth per mark (drawFace): scar gains a fourth stitch at (36,56), the
+  mole spreads 4px→5px, a third wrinkle line at row 29, a fourth freckle
+  at (35,64), the bandage gains a fresh pad at (66,25), the big ear grows
+  18→22. A first-in-week visit stays byte-identical to the old art (step 0
+  repaints nothing), so the #1938 portraitPix baselines stand — only the
+  identity law's photo clause grew: `photo.markStep` may ride, hairC may be
+  GREY only when the person wears the PORTRAIT trap.
+- **The neighbour carries the aged-photo trap.** Once per staged week the
+  day-7 head is a regular with `photo.hairC = GREY` while the live face is
+  not — `trap: 'PORTRAIT'`, papers honest. `decide` and `judge` APPROVE
+  (grey hair under the 44%-alpha amber wash is what an honest old print
+  looks like; colours never convict); the naive eye denies, so the fairness
+  law is `naiveDecide ∉ approve` — never `decide ∉ approve`. Tadek can
+  never wear it (his hair is authored GREY: grey-on-grey would be an
+  invisible tell).
+- **Coverage is a construction, and the burn keeps it.** day 7 normally
+  stages two portrait traps (`trapSchedule` — single source, genWeek and
+  `day7Demote`/`neighbourTrapWeek` read the same schedule). When the
+  neighbour takes one seat, `day7Demote` BURNS (not deletes) a vacated
+  trap applicant whose species was already shown days 1–6: the draw and the
+  wall row stay spent, species coverage over the sweep stays complete, and
+  the day's trap count still holds ≤2 visible. 4 of 10 neighbour weeks
+  stage the trap; Tadek weeks never do.
+- **Phone weight.** Measured at 390×844 (the whole canvas lands at k≈0.57):
+  the 2px dots and 1px lines of #1979 blurred to ZERO ink (mole 0, wrinkle
+  0) and skin3 `#8a5a3a` sat L1=25 from the mark ink — once the hood was
+  that loose, Sonya's window false-positived from her own skin. So: dots
+  3px, lines 2px, pad 8×5, mole base 4px (the #1943 minimum-ink law, now
+  applied to decor too), hood L1<18. `phonePix` resamples the live canvas
+  at CSS scale through the compositor's bilinear path and reports per-window
+  survival plus each regular's fresh-vs-aged render; `papersplay` gates the
+  phone (390×844), the CI stage (640×426 `?lite=1`, k≈0.94) and the native
+  booth: aged > fresh for all six marks at phone scale, the counter mole
+  survives ≥3px, the greet bubble keeps ≥150 ink px on ≥300 paper px.
+  `markPix` counts the live counter face at native px (aged scar 33, aged
+  mole 25; fresh castPix scar 25, mole 16, wrinkle 132, freckles 27,
+  patch 40, ear 40/72 — windows disjoint by construction).
+- Mutants m63-m66: freeze the aging, strip the step from the photo, let
+  grey hair carry the trap, un-burn the demoted seat — all die.
 
 ## The aged print, the live ear, the face tick (#1976)
 

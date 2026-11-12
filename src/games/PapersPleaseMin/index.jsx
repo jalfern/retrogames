@@ -386,6 +386,13 @@ const PapersPleaseMinGame = () => {
             // scale-1 probe (portraitPix/crowdPix/castPix byte-identity) are
             // untouched — doctrine: the two portraits stay the same function.
             const PL = (v, m = 2) => Math.max(v * s, m)
+            // #2080 MARKS AGE — the gen hands a step (0 first walk-up of the
+            // week, 1 any return, see gen.js): a returning neighbour wears the
+            // years — the scar gains its fourth stitch, the mole spreads, a
+            // third wrinkle prints, the freckle cluster thickens, the bandage
+            // gets a fresh pad, the big ear grows taller. Decor doctrine —
+            // step 0 repaints byte-identical faces (castPix baselines stand).
+            const ms = f.markStep ? 1 : 0
             c.fillStyle = SHIRTS[f.shirtC]; c.fillRect(x, y + P(92), P(110), P(30))
             c.strokeStyle = '#141824'; c.lineWidth = 1; c.strokeRect(x + 0.5, y + P(92) + 0.5, P(110) - 1, P(30) - 1)
             c.fillStyle = SKINS[f.skin]
@@ -395,7 +402,7 @@ const PapersPleaseMinGame = () => {
             // #1979: a regular with the `ear` mark grows them taller — one of
             // the four signature marks, decor by the doctrine of the nose.
             const rx = P(f.narrow ? 27 : 34)
-            const ey = f.mark === 'ear' ? P(40) : P(44), eh = f.mark === 'ear' ? P(18) : P(10)
+            const ey = f.mark === 'ear' ? P(40) : P(44), eh = f.mark === 'ear' ? P(ms ? 22 : 18) : P(10)
             c.fillRect(x + P(55) - rx - P(4), y + ey, P(5), eh); c.fillRect(x + P(55) + rx - P(1), y + ey, P(5), eh)
             // #1989 the gold earring sits on the RIGHT lobe — clear of the
             // castPix ear window (left columns) and of every mark's region.
@@ -499,21 +506,34 @@ const PapersPleaseMinGame = () => {
             // the scar window (rows 60-67, inside the narrow ellipse's edge)
             // and the forehead bandage sits rows 26-29 — above the wrinkle
             // window, below the hairline, clear of the glasses rim's rows.
+            // #2080 PHONE WEIGHT ON MARKS — the 2px dots and 1px lines of
+            // #1979 blurred into nothing when the phone compositor shrank the
+            // canvas (phonePix: mole 0px, wrinkle 0px at k 0.57). Decor gets
+            // the #1943 minimum-ink treatment: dots 3px, lines 2px, the pad
+            // 8x5 — every mark keeps a solid core after bilinear downscale,
+            // the same law that guards the COMPARED strokes, applied to the
+            // neighbourhood's faces because a mark nobody can see is not a
+            // signature. castPix windows and papersplay ranges re-pin to the
+            // new ink counts.
             if (f.mark === 'scar') {
                 c.fillStyle = '#8f4a3e'
-                c.fillRect(x + P(30), y + P(50), P(2), P(2)); c.fillRect(x + P(32), y + P(52), P(2), P(2)); c.fillRect(x + P(34), y + P(54), P(2), P(2))
+                c.fillRect(x + P(30), y + P(50), P(3), P(3)); c.fillRect(x + P(32), y + P(52), P(3), P(3)); c.fillRect(x + P(34), y + P(54), P(3), P(3))
+                if (ms) c.fillRect(x + P(36), y + P(56), P(3), P(3)) // the fourth stitch (#2080)
             } else if (f.mark === 'mole') {
                 c.fillStyle = '#8f4a3e'
-                c.fillRect(x + P(70), y + P(58), P(2), P(2))
+                c.fillRect(x + P(70), y + P(58), P(ms ? 5 : 4), P(ms ? 5 : 4)) // #2080: the mole spreads
             } else if (f.mark === 'wrinkle') {
                 c.fillStyle = '#8f4a3e'
-                c.fillRect(x + P(38), y + P(32), P(34), P(1)); c.fillRect(x + P(38), y + P(35), P(32), P(1))
+                c.fillRect(x + P(38), y + P(32), P(34), P(2)); c.fillRect(x + P(38), y + P(35), P(32), P(2))
+                if (ms) c.fillRect(x + P(38), y + P(29), P(30), P(2)) // the third line (#2080)
             } else if (f.mark === 'freckles') {
                 c.fillStyle = '#8f4a3e'
-                c.fillRect(x + P(30), y + P(60), P(2), P(2)); c.fillRect(x + P(34), y + P(62), P(2), P(2)); c.fillRect(x + P(31), y + P(66), P(2), P(2))
+                c.fillRect(x + P(30), y + P(60), P(3), P(3)); c.fillRect(x + P(34), y + P(62), P(3), P(3)); c.fillRect(x + P(31), y + P(66), P(3), P(3))
+                if (ms) c.fillRect(x + P(35), y + P(64), P(3), P(3)) // the cluster thickens (#2080)
             } else if (f.mark === 'patch') {
                 c.fillStyle = '#8f4a3e'
-                c.fillRect(x + P(60), y + P(26), P(6), P(4))
+                c.fillRect(x + P(60), y + P(24), P(8), P(5))
+                if (ms) c.fillRect(x + P(66), y + P(25), P(4), P(3)) // a fresh pad, wider (#2080)
             }
         }
 
@@ -1093,14 +1113,105 @@ const PapersPleaseMinGame = () => {
                     const skinHex = parseInt(SKINS[c.face.skin].slice(1), 16)
                     return {
                         id: c.id, mark: c.mark, name: c.name,
-                        scar: ink(28, 48, 38, 58, 0x8f4a3e), mole: ink(68, 56, 74, 62, 0x8f4a3e),
-                        wrinkle: ink(36, 30, 74, 37, 0x8f4a3e), ear: ink(x0, 38, x0 + 4, 60, skinHex),
+                        scar: ink(28, 48, 39, 59, 0x8f4a3e), mole: ink(68, 56, 75, 63, 0x8f4a3e),
+                        wrinkle: ink(36, 29, 74, 37, 0x8f4a3e), ear: ink(x0, 38, x0 + 4, 60, skinHex),
                         // #1997 the new signatures, windows disjoint from every
                         // mark above (freckles rows 58-69 below the scar, the
                         // bandage rows 24-31 above the wrinkle window).
-                        freckles: ink(28, 58, 38, 70, 0x8f4a3e), patch: ink(58, 24, 68, 32, 0x8f4a3e),
+                        freckles: ink(28, 59, 38, 70, 0x8f4a3e), patch: ink(58, 24, 72, 29, 0x8f4a3e),
                     }
                 }),
+                // #2080 THE MARKS ARE PIXELS HERE — count the signature ink of
+                // the LIVE entrant's face at the counter (native canvas windows,
+                // the same rectangles castPix measures off-screen). papersplay
+                // pins that a returning neighbour paints the GROWN mark.
+                markPix: () => {
+                    const p = current(gs).view.person
+                    const px = (v) => Math.round(PORTRAIT.x + v)
+                    const py = (v) => Math.round(PORTRAIT.y + v)
+                    const d = ctx.getImageData(px(20), py(22), 74, 48).data // covers every window below
+                    const at = (x, y) => { const i = ((y - py(22)) * 74 + (x - px(20))) * 4; return (d[i] << 16) | (d[i + 1] << 8) | d[i + 2] }
+                    const ink = (x0, y0, x1, y1, hex) => {
+                        let n = 0
+                        for (let yy = py(y0); yy < py(y1); yy++) for (let xx = px(x0); xx < px(x1); xx++) if (at(xx, yy) === hex) n++
+                        return n
+                    }
+                    // the big ear is skin-family ink in its own columns below
+                    // the fresh height (rows 58-62): a fresh ear ends at 58.
+                    const skinHex = p.face ? parseInt(SKINS[p.face.skin].slice(1), 16) : 0
+                    const ex0 = p.face && p.face.narrow ? 24 : 17
+                    return {
+                        mark: p.face ? p.face.mark || null : null, markStep: p.face && p.face.markStep ? 1 : 0,
+                        scar: ink(28, 48, 39, 59, 0x8f4a3e), mole: ink(68, 56, 75, 63, 0x8f4a3e),
+                        wrinkle: ink(36, 29, 74, 37, 0x8f4a3e), ear: ink(ex0, 58, ex0 + 4, 62, skinHex),
+                        freckles: ink(28, 59, 38, 70, 0x8f4a3e), patch: ink(58, 24, 72, 29, 0x8f4a3e),
+                    }
+                },
+                // #2080 THE NEIGHBOURHOOD SURVIVES THE PHONE — resample the
+                // live canvas at its CSS scale (the compositor's own bilinear
+                // path, imageSmoothing on) and count how much mark ink and
+                // bubble ink survives the blur, plus every regular's face
+                // through the SAME drawFace at step 0 and step 1. A 2px ink
+                // dot that blurs into noise is a mark the player never sees;
+                // these numbers are what the phone actually shows.
+                phonePix: () => {
+                    const rect = canvas.getBoundingClientRect()
+                    const k = Math.min(1, rect.width / canvas.width)
+                    const ow = Math.max(8, Math.round(canvas.width * k)), oh = Math.max(8, Math.round(canvas.height * k))
+                    const resample = (src, w, h) => {
+                        const cv = document.createElement('canvas'); cv.width = w; cv.height = h
+                        const cc = cv.getContext('2d'); cc.imageSmoothingEnabled = true
+                        cc.drawImage(src, 0, 0, w, h)
+                        return cc.getImageData(0, 0, w, h).data
+                    }
+                    // L1 distance to the mark ink #8f4a3e under a tight hood:
+                    // skin3 #8a5a3a sits 25 away and red hair 76 — both fail
+                    // it; blends of the mark itself pass even at 50/50.
+                    const markHue = (d, i) => {
+                        const r = d[i], g = d[i + 1], b = d[i + 2]
+                        return Math.abs(r - 143) + Math.abs(g - 74) + Math.abs(b - 62) < 18 && r - g > 20 && b < 120
+                    }
+                    const count = (d, w, x0, y0, x1, y1, pred) => {
+                        let n = 0
+                        for (let yy = Math.floor(y0 * k); yy < Math.ceil(y1 * k); yy++) for (let xx = Math.floor(x0 * k); xx < Math.ceil(x1 * k); xx++) {
+                            const i = (yy * w + xx) * 4
+                            if (i + 2 < d.length && pred(d, i)) n++
+                        }
+                        return n
+                    }
+                    const WIN = {
+                        scar: [28, 48, 39, 59], mole: [68, 56, 75, 63], wrinkle: [36, 29, 74, 37],
+                        freckles: [28, 59, 38, 70], patch: [58, 24, 72, 29],
+                    }
+                    const hue = (d, w, x0, y0, x1, y1) => count(d, w, x0, y0, x1, y1, markHue)
+                    const D = resample(canvas, ow, oh)
+                    const live = { k: +k.toFixed(3) }
+                    // WIN rects are face-local; on the counter the face sits at
+                    // PORTRAIT — without the shift the windows sample the desk.
+                    for (const name of Object.keys(WIN)) live[name] = hue(D, ow, WIN[name][0] + PORTRAIT.x, WIN[name][1] + PORTRAIT.y, WIN[name][2] + PORTRAIT.x, WIN[name][3] + PORTRAIT.y)
+                    // the recognition bubble's dark ink (COL.ink #20242e on
+                    // paper #d8d2b8): survive-or-vanish, counted at phone size
+                    live.bubble = count(D, ow, BUBBLE.x + 6, BUBBLE.y + 4, BUBBLE.x + BUBBLE.w - 6, BUBBLE.y + 50,
+                        (dd, i) => dd[i] + dd[i + 1] + dd[i + 2] < 260)
+                    live.bubblePaper = count(D, ow, BUBBLE.x + 4, BUBBLE.y + 4, BUBBLE.x + BUBBLE.w - 4, BUBBLE.y + 30,
+                        (dd, i) => Math.abs(dd[i] - 0xd8) < 24 && Math.abs(dd[i + 1] - 0xd2) < 24 && Math.abs(dd[i + 2] - 0xb8) < 28)
+                    live.cast = REGULARS.map((c) => {
+                        const out = { id: c.id, mark: c.mark }
+                        // the big ear is skin-family ink below the fresh height
+                        const ex0 = c.face.narrow ? 24 : 17
+                        const skinWarm = (d, i) => d[i] + d[i + 1] + d[i + 2] > 200 && d[i] - d[i + 1] > 10 && d[i] - d[i + 2] > 25
+                        for (const [key, ms] of [['fresh', 0], ['aged', 1]]) {
+                            const cv = document.createElement('canvas'); cv.width = PIX.w; cv.height = PIX.h
+                            drawFace(cv.getContext('2d'), { ...c.face, mark: c.mark, markStep: ms }, 0, 0, 1)
+                            const w = Math.max(8, Math.round(PIX.w * k))
+                            const h = Math.max(8, Math.round(PIX.h * k))
+                            const fd = resample(cv, w, h)
+                            out[key] = c.mark === 'ear' ? count(fd, w, ex0, 58, ex0 + 4, 62, skinWarm) : hue(fd, w, ...WIN[c.mark])
+                        }
+                        return out
+                    })
+                    return live
+                },
                 // #1989 ONE-OFF CROWD pixel probe: render the LIVE entrant's
                 // face (and their photo, when honest papers carry one) through
                 // the SAME drawFace the booth paints with, and count each

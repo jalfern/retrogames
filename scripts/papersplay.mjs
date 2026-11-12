@@ -741,12 +741,12 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
 // walks up the line — authored name, mark at the counter, honest paper.
 {
     const EXPECT = {
-        grubak: { name: 'VOLEN GRUBAK', scar: [10, 40], mole: [0, 0], wrinkle: [0, 0], ear: [20, 52], freckles: [0, 0], patch: [0, 0] },
-        marko: { name: 'MARKO DRENIN', scar: [0, 0], mole: [3, 12], wrinkle: [0, 0], ear: [20, 52], freckles: [0, 0], patch: [0, 0] },
-        anja: { name: 'ANJA TOLKA', scar: [0, 0], mole: [0, 0], wrinkle: [60, 72], ear: [20, 52], freckles: [0, 0], patch: [0, 0] },
+        grubak: { name: 'VOLEN GRUBAK', scar: [20, 44], mole: [0, 0], wrinkle: [0, 0], ear: [20, 52], freckles: [0, 0], patch: [0, 0] },
+        marko: { name: 'MARKO DRENIN', scar: [0, 0], mole: [12, 30], wrinkle: [0, 0], ear: [20, 52], freckles: [0, 0], patch: [0, 0] },
+        anja: { name: 'ANJA TOLKA', scar: [0, 0], mole: [0, 0], wrinkle: [120, 200], ear: [20, 52], freckles: [0, 0], patch: [0, 0] },
         petr: { name: 'PETR ZEMEK', scar: [0, 0], mole: [0, 0], wrinkle: [0, 0], ear: [64, 100], freckles: [0, 0], patch: [0, 0] },
-        sonya: { name: 'SONYA MALAK', scar: [0, 0], mole: [0, 0], wrinkle: [0, 0], ear: [20, 52], freckles: [8, 16], patch: [0, 0] },
-        tadek: { name: 'TADEK HRUBY', scar: [0, 0], mole: [0, 0], wrinkle: [0, 0], ear: [20, 52], freckles: [0, 0], patch: [20, 28] },
+        sonya: { name: 'SONYA MALAK', scar: [0, 0], mole: [0, 0], wrinkle: [0, 0], ear: [20, 52], freckles: [22, 40], patch: [0, 0] },
+        tadek: { name: 'TADEK HRUBY', scar: [0, 0], mole: [0, 0], wrinkle: [0, 0], ear: [20, 52], freckles: [0, 0], patch: [36, 50] },
     }
     const cp = await page.evaluate(() => window.__ppTest.castPix())
     r.check('castPix paints all six regulars', Array.isArray(cp) && cp.length === 6, JSON.stringify((cp || []).map((x) => x.id)))
@@ -1306,6 +1306,141 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
         cEnd === c0 + 2, `${c0} -> ${cEnd}`)
     await wait(1100)
     await page.keyboard.press('a') // leave the week-end screen
+}
+
+// #2080 THE NEIGHBOURHOOD AGES, live — and survives the PHONE. Native first:
+// seed 0's day 6 seats Grubak with his scar WIDER (fourth stitch: markStep 1
+// rides face and photo together), and day 7 seats Marko aged — mole spread to
+// 5px. Then the trap week: seed 1 is a staged neighbour week (day7Demote
+// burns its second stranger trap), so day 7's returning head ANJA carries the
+// aged-photo trap — grey print, honest papers: APPROVE is the right call and
+// only the naive eye must fail it (paperscheck proves the rules level). Then
+// the same seats at a real phone viewport: the compositor downscales the whole
+// canvas, and every signature must keep ink — marks, bubble text, bubble paper.
+{
+    // Patience is the law here: seed 0's day 6 puts violators AHEAD of the
+    // neighbour, and every deny of a paperless entrant is a seizure — stamp
+    // hold + citation pin run seconds. The walk must chew through them.
+    const walkToRegular = async (p, id) => {
+        for (let g = 0; g < 80; g++) {
+            const st = await p.evaluate((want) => {
+                const pr = window.__ppTest.probe()
+                const per = pr && pr.view && pr.view.person
+                const busy = (pr.banner && pr.banner.ticks > 0) || window.__ppTest.settlePx() !== 0
+                return { hit: !!(per && per.regular === want) && !busy, busy }
+            }, id)
+            if (st.hit) return true
+            // papersplay law: never stamp through a busy booth (banner/settle) —
+            // the stamp lands on the wrong human and the target walks past.
+            if (!st.busy) {
+                const v = await p.evaluate(() => window.__ppTest.verdict())
+                await p.keyboard.press(v === 'approve' ? 'a' : 'd')
+            }
+            await p.waitForTimeout(250)
+        }
+        return false
+    }
+    // the judged paper must be fully home — stamp ink, citation pin, banner
+    // and settle — before any pixel of the NEW booth is sampled.
+    const pQuiet = async (p) => {
+        for (let i = 0; i < 60; i++) {
+            const busy = await p.evaluate(() => {
+                const pr = window.__ppTest.probe()
+                return (pr.banner && pr.banner.ticks > 0) || window.__ppTest.settlePx() !== 0 || window.__ppTest.evidencePaint().inked || window.__ppTest.evidencePaint().pinned
+            })
+            if (!busy) return
+            await p.waitForTimeout(120)
+        }
+    }
+    await page.evaluate(() => window.__ppTest.start(0))
+    await wait(300)
+    for (let d = 1; d < 6; d++) { await page.evaluate(() => window.__ppTest.runDay()); await wait(120) }
+    const sCar = await walkToRegular(page, 'grubak')
+    await wait(650)   // the greet bubble prints after the seat
+    const mScar = await page.evaluate(() => window.__ppTest.markPix())
+    r.check('#2080 the scar aged at the counter — day 6 seats Grubak with the fourth stitch (markStep 1 rides the face)',
+        sCar && mScar.mark === 'scar' && mScar.markStep === 1 && mScar.scar >= 30, JSON.stringify(mScar))
+    await page.evaluate(() => window.__ppTest.runDay())   // finish day 6 (the turn stays denied by the walk)
+    await wait(250)
+    const sMole = await walkToRegular(page, 'marko')
+    await pQuiet(page)
+    await wait(650)
+    const mMole = await page.evaluate(() => window.__ppTest.markPix())
+    r.check('#2080 day 7 seats Marko aged — mole spread to 5px, markStep 1',
+        sMole && mMole.mark === 'mole' && mMole.markStep === 1 && mMole.mole >= 20, JSON.stringify(mMole))
+    // the staged trap week: seed 1 demotes t2 and day 7's head Anja ages.
+    await page.evaluate(() => window.__ppTest.start(1))
+    await wait(300)
+    for (let d = 1; d < 7; d++) { await page.evaluate(() => window.__ppTest.runDay()); await wait(120) }
+    const sTrap = await walkToRegular(page, 'anja')
+    await pQuiet(page)
+    await wait(650)
+    const aMole = await page.evaluate(() => window.__ppTest.markPix())
+    const pPix = await page.evaluate(() => window.__ppTest.portraitPix())
+    const trapV = await page.evaluate(() => window.__ppTest.verdict())
+    r.check('#2080 the staged week seats Anja aged (seed 1 — demoted t2 frees her line seat)',
+        sTrap && aMole.mark === 'wrinkle' && aMole.markStep === 1 && aMole.wrinkle >= 150, JSON.stringify(aMole))
+    r.check('#2080 the aged photo differs where the hair is — grey enters the photo, the rest of the face is untouched',
+        !!pPix && pPix.total > 0 && pPix.style > 0 && pPix.glasses === 0 && pPix.must === 0 && pPix.mouth === 0,
+        JSON.stringify(pPix))
+    const okBefore = await probe()
+    await page.keyboard.press('a')   // honest papers — the trap must be ADMITTED
+    await wait(160)
+    const okAfter = await probe()
+    r.check(`#2080 the trap admits — decide and judge agree the grey photo is fair (verdict ${trapV}, ok ${okAfter.last && okAfter.last.ok}, strikes ${okBefore.strikes}->${okAfter.strikes})`,
+        trapV === 'approve' && okAfter.last && okAfter.last.ok === true && okAfter.strikes === okBefore.strikes && okAfter.last.name === 'ANJA TOLKA',
+        JSON.stringify({ trapV, last: okAfter.last }))
+    await page.evaluate(() => window.__ppTest.runToEnd())
+    await wait(250)
+
+    // the phone leg: 390×844 — the whole canvas lands at k≈0.57.
+    const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 })
+    phone.setDefaultTimeout(120000)
+    phone.on('pageerror', (e) => errors.push(`[pageerror/phone] ${e.message}`))
+    await phone.goto(URL, { waitUntil: 'domcontentloaded' })
+    for (let i = 0; i < 150; i++) { if (await phone.evaluate(() => !!window.__ppTest)) break; await phone.waitForTimeout(200) }
+    await phone.evaluate(() => window.__ppTest.start(0))
+    await phone.waitForTimeout(300)
+    for (let d = 1; d < 6; d++) { await phone.evaluate(() => window.__ppTest.runDay()); await phone.waitForTimeout(100) }
+    const pScar = await walkToRegular(phone, 'grubak')
+    await pQuiet(phone)
+    await phone.waitForTimeout(700)
+    const pp1 = await phone.evaluate(() => window.__ppTest.phonePix())
+    r.check(`#2080 phone: the scar survives the blur (${pp1 && pp1.scar} mark px at k=${pp1 && pp1.k}, cast fresh ${pp1 && pp1.cast[0].fresh}/aged ${pp1 && pp1.cast[0].aged})`,
+        pScar && !!pp1 && pp1.k < 0.7 && pp1.scar >= 2)
+    r.check(`#2080 phone: the greeting still has ink and paper (${pp1 && pp1.bubble} ink px on ${pp1 && pp1.bubblePaper} paper px)`,
+        !!pp1 && pp1.bubble >= 150 && pp1.bubblePaper >= 300)
+    const ageing = (pp1 && pp1.cast || []).filter((c) => c.aged > c.fresh).map((c) => c.id)
+    r.check(`#2080 phone: every regular's mark grows visibly at phone scale (${(pp1 && pp1.cast || []).map((c) => `${c.id} ${c.fresh}/${c.aged}`).join(', ')})`,
+        ageing.length === 6, ageing.join(','))
+    await phone.evaluate(() => window.__ppTest.runDay())
+    await phone.waitForTimeout(200)
+    const pMole = await walkToRegular(phone, 'marko')
+    await pQuiet(phone)
+    await phone.waitForTimeout(650)
+    const pp2 = await phone.evaluate(() => window.__ppTest.phonePix())
+    r.check(`#2080 phone: the aged mole survives on the counter (${pp2 && pp2.mole} px at k=${pp2 && pp2.k})`,
+        pMole && !!pp2 && pp2.mole >= 3, JSON.stringify(pp2 && { k: pp2.k, mole: pp2.mole }))
+    await phone.close()
+
+    // the CI leg: 640×426 ?lite=1 — software Chrome in CI renders the lite
+    // stage at k≈0.94; the same signatures must read there too.
+    const lite = await browser.newPage({ viewport: { width: 640, height: 426 }, deviceScaleFactor: 1 })
+    lite.setDefaultTimeout(120000)
+    lite.on('pageerror', (e) => errors.push(`[pageerror/lite] ${e.message}`))
+    await lite.goto(URL + '?lite=1', { waitUntil: 'domcontentloaded' })
+    for (let i = 0; i < 150; i++) { if (await lite.evaluate(() => !!window.__ppTest)) break; await lite.waitForTimeout(200) }
+    await lite.evaluate(() => window.__ppTest.start(0))
+    await lite.waitForTimeout(300)
+    for (let d = 1; d < 6; d++) { await lite.evaluate(() => window.__ppTest.runDay()); await lite.waitForTimeout(100) }
+    const lScar = await walkToRegular(lite, 'grubak')
+    await pQuiet(lite)
+    await lite.waitForTimeout(700)
+    const lp = await lite.evaluate(() => window.__ppTest.phonePix())
+    r.check(`#2080 lite: marks and bubble read at CI scale (${lp && lp.scar} scar px, ${lp && lp.bubble} ink px, ${lp && lp.bubblePaper} paper px at k=${lp && lp.k})`,
+        lScar && !!lp && lp.k < 1 && lp.scar >= 10 && lp.bubble >= 400 && lp.bubblePaper >= 1000,
+        JSON.stringify(lp))
+    await lite.close()
 }
 
 await wait(400)

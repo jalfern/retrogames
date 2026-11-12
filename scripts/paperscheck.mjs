@@ -26,7 +26,7 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, dshow, MON, FEATURES, stampLines, portraitDiffs } from '../src/games/PapersPleaseMin/rules.js'
-import { genWeek, genDay, viewOf, CITY2C, COUNTRIES, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, VISIT_WINDOW, WALL_POOL, wallNameAt, weekWallNames, weekDecoyCount, crowdedDay, repChapter, turnLineFor, againLineFor, TURN_CANONICAL } from '../src/games/PapersPleaseMin/gen.js'
+import { genWeek, genDay, viewOf, CITY2C, COUNTRIES, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, VISIT_WINDOW, WALL_POOL, wallNameAt, weekWallNames, weekDecoyCount, crowdedDay, repChapter, turnLineFor, againLineFor, TURN_CANONICAL, trapSchedule, day7Demote, neighbourTrapWeek } from '../src/games/PapersPleaseMin/gen.js'
 import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges, monthTurn, isMoneyDeath } from '../src/games/PapersPleaseMin/sim.js'
 import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, RENT, PAYFX, ID, PHOTO, BUBBLE, BUBBLE_TAIL, EVID, SETTLE, QUOTE, RECOGNITION, QUEUE, ASIDE, CROWD_NOTE, ARC_MUG, ARC_HL, SEIZE, DRAG, wallFit, ruleLines, bulletinRows } from '../src/games/PapersPleaseMin/layout.js'
 
@@ -569,7 +569,9 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
             // wall; stripping it must never move a verdict.
             for (const a of day.queue) {
                 const v = viewOf(day, a)
-                const stripped = { ...v, person: { ...v.person, say: undefined, seize: undefined } }
+                // #2080: markStep joins the stripped decor — the verdict may
+                // not know whether a neighbour's mark has aged.
+                const stripped = { ...v, person: { ...v.person, say: undefined, seize: undefined, face: v.person.face && { ...v.person.face, markStep: undefined }, passport: v.person.passport && { ...v.person.passport, photo: v.person.passport.photo && { ...v.person.passport.photo, markStep: undefined } } } }
                 ok(decide(v).verdict === decide(stripped).verdict, `seed ${seed} day ${day.n}: say-line leaked into the verdict`)
             }
             for (const a of regs) {
@@ -582,9 +584,16 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
                 ok(a.person.passport.name === c.name, `seed ${seed} day ${day.n}: ${a.person.passport.name} claims the face of ${c.name}`)
                 // the identity law: same person, same face — every descriptor
                 // AND the signature mark, at the counter and in the photo.
+                // #2080 the ONE allowed photo drift is the aged-photo trap:
+                // the grey print of the same face (time, not identity). The
+                // trap rides ONLY hairC, only for the day-7 head, and colors
+                // never convict — the fairness prover grades it anyway.
+                const agedTrap = a.trap === 'PORTRAIT'
                 for (const f of [...FEATURES, 'skin', 'hairC', 'shirtC']) {
                     ok(a.person.face[f] === c.face[f], `seed ${seed} day ${day.n}: ${c.id} re-rolled ${f} — a regular is authored, not rolled`)
-                    ok(a.person.passport.photo[f] === c.face[f], `seed ${seed} day ${day.n}: ${c.id}'s photo drifted on ${f}`)
+                    if (f === 'hairC' && agedTrap) ok(a.person.passport.photo.hairC === GREY && c.face.hairC !== GREY,
+                        `seed ${seed} day ${day.n}: ${c.id}'s trap photo is not the grey print of a dark-haired neighbour`)
+                    else ok(a.person.passport.photo[f] === c.face[f], `seed ${seed} day ${day.n}: ${c.id}'s photo drifted on ${f}`)
                 }
                 ok(a.person.face.mark === c.mark && a.person.passport.photo.mark === c.mark,
                     `seed ${seed} day ${day.n}: ${c.id} lost or grew its signature mark`)
@@ -751,6 +760,76 @@ section('THE ARC (#1983) — one regular turns wanted, Jorji-style')
     ok(new Set(SEEDS.map((s) => arcForWeek(s).id)).size === REGULARS.length,
         'only some cast seats ever turn — the wall must work every face at least once')
     console.log(`  ..    ${turns} turns: familiar faces on the wall, honest papers under them, one memory line for the others`)
+}
+
+// ------------------------------------------------ #2080 MARKS AGE ----
+section('THE NEIGHBOURHOOD AGES (#2080) — returning marks grow, and one familiar face carries the aged trap')
+{
+    // 1) markStep: returns age one step, first walk-ups keep the byte-exact
+    //    baselines, and the step rides face AND photo symmetrically — the
+    //    naive eye walks every descriptor key, so an asymmetric key would
+    //    plant a fake trap on an honest paper.
+    let agedVisits = 0, trapWeeks = 0
+    const agedCast = new Set()
+    for (const seed of SEEDS) {
+        const w = genWeek(seed)
+        const demote = day7Demote(seed)
+        const nb = neighbourTrapWeek(seed)
+        ok(demote === null || nb, `seed ${seed}: a vacated seat without a neighbour week`)
+        if (nb && demote) trapWeeks++
+        for (const day of w.days) {
+            for (const a of day.queue) {
+                const rid = a.person.regular
+                if (!rid) continue
+                const step = a.person.face.markStep
+                ok(step === 0 || step === 1, `seed ${seed} day ${day.n}: markStep ${step} off the ladder`)
+                ok(step === a.person.passport.photo.markStep,
+                    `seed ${seed} day ${day.n}: markStep asymmetric (face ${step}, photo ${a.person.passport.photo.markStep})`)
+                const want = day.n > firstVisitDay(seed, REGULARS.findIndex((k) => k.id === rid)) ? 1 : 0
+                ok(step === want, `seed ${seed} day ${day.n}: ${rid} ${want ? 'returned unaged' : 'wore an aged mark on its first walk-up'}`)
+                if (step === 1) { agedVisits++; agedCast.add(rid) }
+            }
+        }
+        // 2) the neighbour trap: only the day-7 returning head, only on a
+        //    vacated-seat week, grey print over dark authored hair, and the
+        //    welcome chime still rings — the honest face IS the hiding place.
+        const sched = trapSchedule(seed)
+        const d7 = w.days[6]
+        const nbTrap = d7.queue.find((x) => x.person.regular && x.trap)
+        const headId = REGULARS[(seed + 1) % REGULARS.length].id
+        ok(!!nbTrap === !!demote, `seed ${seed}: neighbour trap ${nbTrap ? 'staged without a vacated seat' : 'missing on a vacated week'}`)
+        if (nbTrap) {
+            ok(nbTrap.person.regular === headId, `seed ${seed}: the trap rode ${nbTrap.person.regular}, not the returning head ${headId}`)
+            ok(nbTrap.trap === 'PORTRAIT', `seed ${seed}: the neighbour trap was ${nbTrap.trap}, not the aged-photo species`)
+            ok(nbTrap.person.passport.photo.hairC === GREY && nbTrap.person.face.hairC !== GREY, `seed ${seed}: the neighbour's print is not grey-vs-live`)
+            ok(nbTrap.person.recall === 'again', `seed ${seed}: the trap walked up a stranger — the welcome must ride with the trap`)
+            const v = viewOf(d7, nbTrap)
+            const j = judge({ truth: nbTrap.truth, person: nbTrap.person, rules: d7.rules, date: d7.date, allowed: d7.allowed, scale: nbTrap.scale })
+            ok(decide(v).verdict === 'approve' && j.verdict === 'approve', `seed ${seed}: the aged neighbour was convicted — colors never convict`)
+            ok(naiveDecide(v) === 'deny', `seed ${seed}: the familiar grey print did not bite the naive eye`)
+        }
+        // 3) the vacated seat BURNS, it does not delete: the day hosts its
+        //    scheduled number of traps, the queue keeps its size, and the
+        //    demoted species stays covered by an earlier showing (its whole
+        //    license to vacate).
+        const scheduled = (sched[6].ti !== null ? 1 : 0) + (sched[6].t2 !== null ? 1 : 0)
+        ok(d7.queue.filter((x) => x.trap).length === scheduled, `seed ${seed}: day 7 shows ${d7.queue.filter((x) => x.trap).length} traps, schedule says ${scheduled}`)
+        ok(d7.queue.length === d7.rules.length + 4, `seed ${seed}: day 7 queue changed size`)
+        if (demote) {
+            const slot = sched[6][demote === 't1' ? 'ti' : 't2']
+            const shown = new Set()
+            for (const p of sched) if (p.n <= 6) { if (p.ti !== null) shown.add(TRAPS[p.ti].rule); if (p.t2 !== null) shown.add(TRAPS[p.t2].rule) }
+            ok(shown.has(TRAPS[slot].rule), `seed ${seed}: the demoted trap ${TRAPS[slot].rule} had no other showing — coverage is a construction, not a hope`)
+        }
+    }
+    // two returns a week minimum (the crowded return); every face ages
+    // across the sweep; and the neighbour trap lands on at least a third
+    // of the sweep's neighbour weeks (the seat only vacates when a species
+    // is safely re-run — coverage outranks frequency).
+    ok(agedVisits >= SEEDS.length * 2, `${agedVisits} aged visits across ${SEEDS.length} weeks — the crowded return lost its steps`)
+    ok(agedCast.size === REGULARS.length, `only ${agedCast.size}/${REGULARS.length} cast faces ever aged — the rotation must revisit every neighbour`)
+    ok(trapWeeks >= Math.ceil(SEEDS.length / 3), `${trapWeeks} neighbour-trap weeks in ${SEEDS.length} — the familiar face must appear more than once a season`)
+    console.log(`  ..    ${agedVisits} aged visits, ${trapWeeks} neighbour-trap weeks, marks riding face and photo together`)
 }
 
 // ---------------------------------------------------------- #1989 CROWD ----
@@ -1826,7 +1905,7 @@ if (MUT) {
     //     invisible feature must not stay green on fairness alone).
     //     (#2012 re-anchored: the injection is a list now.)
     await tryMut('regulars never injected (the line forgets its faces)',
-        mutMod('gen.js', 'for (const reg of regularsForDay(seed, n)) day.queue.push(regularApplicant(reg, rnd, date, rules, day, used, seed, n))', 'for (const reg of []) day.queue.push(regularApplicant(reg, rnd, date, rules, day, used, seed, n))', 'm25'),
+        mutMod('gen.js', 'for (const reg of regularsForDay(seed, n)) day.queue.push(regularApplicant(reg, rnd, date, rules, day, used, seed, n, demote !== null))', 'for (const reg of []) day.queue.push(regularApplicant(reg, rnd, date, rules, day, used, seed, n, demote !== null))', 'm25'),
         (m) => {
             for (const seed of SEEDS) {
                 for (const day of m.gen.genWeek(seed).days) {
@@ -1841,7 +1920,7 @@ if (MUT) {
     //     run to run — a "regular" who is a different person every week is
     //     just a combinatorial entrant wearing a name tag.
     await tryMut('regular re-rolls its face (identity drift)',
-        mutMod('gen.js', 'const face = { ...c.face, mark: c.mark }', 'const face = { ...a.person.face, mark: c.mark }', 'm26'),
+        mutMod('gen.js', 'const face = { ...c.face, mark: c.mark, markStep: visit }', 'const face = { ...a.person.face, mark: c.mark, markStep: visit }', 'm26'),
         (m) => {
             for (const seed of SEEDS) {
                 for (const day of m.gen.genWeek(seed).days) {
@@ -2129,6 +2208,62 @@ if (MUT) {
                         }
                     }
                 }
+            }
+            return true
+        })
+
+    // #2080 adds four: m63 freezes the aging (returns stay fresh — the
+    // neighbourhood stops accumulating years); m64 strips markStep from the
+    // photo alone (an asymmetric key is a fake trap on an honest paper —
+    // the naive eye walks every key); m65 hands the trap to grey hair
+    // (grey-on-grey is no visible move); m66 un-burns the vacated seat
+    // (day 7 then hosts three flips — the slack budget is the coffin).
+    await tryMut('marks never age (the visit step is frozen at zero)',
+        mutMod('gen.js', 'const visit = n > firstVisitDay(seed, regIdx) ? 1 : 0', 'const visit = 0', 'm63'),
+        (m) => {
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    for (const a of day.queue.filter((x) => x.person.regular)) {
+                        // a return visit MUST wear the step — freeze means it doesn't
+                        if (day.n > m.gen.firstVisitDay(seed, m.gen.REGULARS.findIndex((k) => k.id === a.person.regular)) && a.person.face.markStep !== 1) return false
+                    }
+                }
+            }
+            return true
+        })
+    await tryMut('the photo drops the aging step (asymmetric markStep)',
+        mutMod('gen.js', 'weight: c.weight, photo: { ...face } }', 'weight: c.weight, photo: { ...c.face, mark: c.mark } }', 'm64'),
+        (m) => {
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    for (const a of day.queue.filter((x) => x.person.regular)) {
+                        if (a.person.face.markStep !== (a.person.passport.photo.markStep || 0)) return false
+                    }
+                }
+            }
+            return true
+        })
+    await tryMut('grey hair carries the aged trap (grey-on-grey, no move)',
+        mutMod('gen.js', 'if (aged && n === 7 && c.id === REGULARS[(seed + 1) % REGULARS.length].id && c.face.hairC !== GREY) {',
+            'if (aged && n === 7 && c.id === REGULARS[(seed + 1) % REGULARS.length].id && c.face.hairC === GREY) {', 'm65'),
+        (m) => {
+            for (const seed of SEEDS) {
+                if (!m.gen.day7Demote(seed)) continue
+                const t = m.gen.genWeek(seed).days[6].queue.find((x) => x.person.regular && x.trap)
+                // the staged week must show the neighbour trap, and it must be
+                // VISIBLE: grey print over non-grey live hair. A mutant that
+                // only fires on grey hair leaves the stage empty of the trap.
+                if (!t || t.trap !== 'PORTRAIT' || t.person.passport.photo.hairC !== m.gen.GREY || t.person.face.hairC === m.gen.GREY) return false
+            }
+            return true
+        })
+    await tryMut('the vacated seat is not burned (day 7 hosts three traps)',
+        mutMod('gen.js', "if (demote !== 't2') day.queue.push(t2)", 'day.queue.push(t2)', 'm66'),
+        (m) => {
+            for (const seed of SEEDS) {
+                const s = m.gen.trapSchedule(seed)
+                const sched = (s[6].ti !== null ? 1 : 0) + (s[6].t2 !== null ? 1 : 0)
+                if (m.gen.genWeek(seed).days[6].queue.filter((x) => x.trap).length !== sched) return false
             }
             return true
         })
