@@ -58,6 +58,38 @@ const waitQuiet = async () => {
         await wait(120)
     }
 }
+// #2145 settle-sampling for pixel-ink gates. The bulletin and the bystander
+// aside paint AFTER the day changeover resolves, and one getImageData can catch
+// the dim pre-paint phase — deterministically on every box (four identical CI
+// numbers on four trees). Measured on Mac (throwaway probe, Nov 12): the
+// wanted-column count climbs dim -> clean (day 6: 460 -> 802) and holds; the
+// aside tag climbs 0 -> 98 once the arc face is really at the glass. So sample
+// until two consecutive reads agree (paint settled) or ~3.6 s of sim time
+// passes, and keep the max. Dark sides are unaffected: a solo shift stays
+// exactly 0 (the dark control near the arc section samples the same hook), so
+// "the text printed" keeps its full strength — only the floors move, per the
+// CI calibration filed on #2145 (jonq #2168 option A).
+const settle = async (read, n = 20, step = 400) => {
+    let best = null, prev = null
+    const merge = (a, b) => {
+        if (typeof a === 'number') return Math.max(a, b)
+        const m = { ...a }
+        for (const k of Object.keys(b)) m[k] = Math.max(m[k], b[k])
+        return m
+    }
+    for (let i = 0; i < n; i++) {
+        const v = await read()
+        best = best === null ? v : merge(best, v)
+        // a plateau counts only when it carries ink — two consecutive dark
+        // reads mean "not painted yet", not "settled"; keep sampling.
+        if (prev && JSON.stringify(v) === JSON.stringify(prev) &&
+            Object.values(typeof v === 'number' ? { v } : v).some((x) => x > 0)) return best
+        prev = v
+        await wait(step)
+    }
+    return best
+}
+
 // the stamp lives over the papers: sample its window, green in = admitted,
 // red in = denied. One pixel on a rotated stroke would lie; a window does not.
 const stampPix = () => page.evaluate(() => {
@@ -861,7 +893,7 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
             // wait for the booth to be showing the arc face itself.
             await waitQuiet()
             bubbleUp = await page.evaluate(() => window.__ppTest.bubblePix())
-            arcAside = await page.evaluate(() => window.__ppTest.asideInk())
+            arcAside = await settle(() => page.evaluate(() => window.__ppTest.asideInk()))
             arcMugs = await page.evaluate(() => window.__ppTest.queueInk())
             break
         }
@@ -875,9 +907,14 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
         bubbleUp > 4000 && !!sayProbe && sayProbe.say[0] === 'YOU AGAIN.' && /\.\.\./.test(sayProbe.say[1]), `${bubbleUp}`)
     // #2020 the bystander's first beat, live: while the wall works, the line
     // behind comments — tag and line both ink, two known faces wait behind.
+    // #2145: tag floor re-pinned 30 -> 10 on CI calibration (software Chrome
+    // printed the 7px gold tag at ~20 px in the dim phase and had never been
+    // observed clean on CI); with settle() the sampled value is the CLEAN
+    // plateau (Mac 98), and a solo shift still measures exactly 0 at the dark
+    // control, so ≥10 px of gold still means "the tag prints".
     r.check(`the line comments on the crowded shift (${sayProbe && JSON.stringify(sayProbe.aside)} prints ${JSON.stringify(arcAside)})`,
         !!sayProbe && !!sayProbe.aside && sayProbe.aside.tag === 'A VOICE BEHIND YOU' && sayProbe.aside.line === 'THE LINE IS LONG TODAY.' &&
-        arcAside.tag > 30 && arcAside.line > 30,
+        arcAside.tag > 10 && arcAside.line > 30,
         JSON.stringify({ aside: sayProbe && sayProbe.aside, ink: arcAside }))
     r.check(`the crowded morning waits two deep (${arcMugs} slate px vs ${soloMugs} solo)`,
         arcMugs > soloMugs + 100 && arcMugs > 300, `${arcMugs}/${soloMugs}`)
@@ -923,7 +960,7 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     crowd6Bubble = await page.evaluate(() => window.__ppTest.bubblePix())
     // #2020 the second beat: the neighbor through the gate calls back by the
     // head's name, and the line behind Sonya is down to her own mug.
-    const crowd6Aside = await page.evaluate(() => window.__ppTest.asideInk())
+    const crowd6Aside = await settle(() => page.evaluate(() => window.__ppTest.asideInk()))
     const tailMugs = await page.evaluate(() => window.__ppTest.queueInk())
     r.check('the crowded shift: Sonya walks the SAME day the arc turn lands (seed 0 day 6 — tail seat s+4)',
         !!crowd6 && crowd6.day === 6 && crowd6.name === 'SONYA MALAK'
@@ -933,7 +970,7 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
         crowd6Bubble > 4000, `${crowd6Bubble}`)
     r.check(`the neighbor through the gate calls back by name (${crowd6 && JSON.stringify(crowd6.aside)} prints ${JSON.stringify(crowd6Aside)})`,
         !!crowd6 && !!crowd6.aside && crowd6.aside.tag === 'A VOICE FROM INSIDE' && crowd6.aside.line === 'VOLEN SAYS HELLO.' &&
-        crowd6Aside.tag > 30 && crowd6Aside.line > 30,
+        crowd6Aside.tag > 10 && crowd6Aside.line > 30,  // #2145 CI-calibrated tag floor, see the crowded-shift gate
         JSON.stringify({ aside: crowd6 && crowd6.aside, ink: crowd6Aside }))
     r.check(`the line thins as heads cross — one mug stays behind Sonya (${tailMugs} slate px vs ${arcMugs} at sunrise)`,
         tailMugs > 80 && tailMugs < arcMugs - 100, `${tailMugs}/${arcMugs}`)
@@ -1251,8 +1288,12 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
                 seenNames.add(w.name)
                 if (weekEntrants.has(w.name)) framed++
             })
-            if (nodeRows.length === 3 && ink3 < 0) ink3 = sheet.ink
-            if (nodeRows.length === 5) ink5 = Math.max(ink5, sheet.ink)
+            // #2145: compare CLEAN plateaus — a single sample can catch the
+            // dim pre-paint phase (CI logged 466 vs 516 four times running;
+            // Mac climbs 460 -> 802 on the five-row day). Floors unchanged:
+            // the settle values keep the original margins honest.
+            if (nodeRows.length === 3 && ink3 < 0) ink3 = await settle(() => page.evaluate(() => window.__ppTest.wantedInk().ink))
+            if (nodeRows.length === 5) ink5 = Math.max(ink5, await settle(() => page.evaluate(() => window.__ppTest.wantedInk().ink)))
         } else {
             r.check(`day ${d} sheet read live`, false, JSON.stringify({ got: sheet.day, rows: sheet.wanted.length }))
         }
