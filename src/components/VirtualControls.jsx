@@ -110,6 +110,19 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     const knobRef = useRef(null)
     const [stickUI, setStickUI] = useState({ active: false, ax: 0, ay: 0 })
 
+    // #2057: a live push must SURVIVE the viewport moving. On Safari the visual
+    // viewport shifts under a held thumb (keyboard, toolbar collapse, rotation),
+    // and on a viewport resize nothing used to re-publish the stick — a game
+    // could keep a stale direction or lose the knob. Each stick source now
+    // remembers its finger's last viewport position, and every viewport move
+    // (resize / orientationchange / visualViewport scroll+resize) re-derives
+    // direction + analog from finger-vs-anchor: the held push carries through
+    // and the knob stays mounted.
+    const stickLast = useRef(null)
+    const fsLast = useRef(null)
+    const dgFinger = useRef(null)
+    const swLast = useRef(null)
+
     // Fixed (always-visible) stick for `method: 'stick'` games (#420): the base
     // sits at a fixed spot and the thumb pushes it; the offset from the base
     // centre drives the analog x / y written straight to the one pad.
@@ -222,13 +235,17 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
         aPtr.current = null
         stickPtr.current = null
         stickAnchor.current = null
+        stickLast.current = null // #2057
         fsPtr.current = null
+        fsLast.current = null // #2057
         if (fsKnobRef.current) fsKnobRef.current.style.transform = 'translate(-50%, -50%)'
         dgPtr.current = null
+        dgFinger.current = null // #2057
         dgLast.current = []
         if (dgKnobRef.current) dgKnobRef.current.style.transform = 'translate(-50%, -50%)'
         swPtr.current = null
         swStart.current = null
+        swLast.current = null // #2057
         clearStick()
         clearHeld()
         setStickUI({ active: false, ax: 0, ay: 0 })
@@ -249,6 +266,70 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
             clearHeld()
         }
     }, [releaseAll])
+
+    // #2057 — stick survival: when the viewport MOVES under a live push (resize,
+    // rotation, Safari's keyboard/toolbar shifting the visual viewport), re-derive
+    // direction + analog from finger-vs-anchor and re-publish. Before this, a
+    // viewport move mid-drag could leave a stale direction (no further touchmove
+    // is guaranteed after the shift) and the knob could vanish with the touch the
+    // browser stole. Each source (floating, fixed, gate, swipe) revives from its
+    // remembered finger position — the push carries through the viewport move.
+    const waysRef = useRef(ways)
+    useEffect(() => { waysRef.current = ways }, [ways])
+    useEffect(() => {
+        const revive = () => {
+            const l = stickLast.current
+            if (stickPtr.current !== null && l && stickAnchor.current) {
+                const v = stickVec(l.x - stickAnchor.current.x, l.y - stickAnchor.current.y)
+                if (knobRef.current) knobRef.current.style.transform = `translate(-50%, -50%) translate(${v.px}px, ${v.py}px)`
+                setDirCodes(dirsFrom(v.px, v.py))
+                setStick(v.x, v.y, v.push, v.engaged)
+            }
+            const f = fsLast.current
+            if (fsPtr.current !== null && f && fsZoneRef.current) {
+                const r = fsZoneRef.current.getBoundingClientRect()
+                const v = stickVec(f.x - (r.left + r.width / 2), f.y - (r.top + r.height / 2))
+                if (fsKnobRef.current) fsKnobRef.current.style.transform = `translate(-50%, -50%) translate(${v.px}px, ${v.py}px)`
+                setStickVec(v.x, v.y)
+                setDirCodes(dirsFrom(v.px, v.py))
+            }
+            const d = dgFinger.current
+            if (dgPtr.current !== null && d && dgZoneRef.current) {
+                const r = dgZoneRef.current.getBoundingClientRect()
+                const ox = d.x - (r.left + r.width / 2), oy = d.y - (r.top + r.height / 2)
+                const v = stickVec(ox, oy)
+                if (dgKnobRef.current) dgKnobRef.current.style.transform = `translate(-50%, -50%) translate(${v.px}px, ${v.py}px)`
+                setStickVec(v.x, v.y)
+                const codes = dpadDirs(ox, oy, waysRef.current, dgHyst.current)
+                dgLast.current = codes
+                setDirCodes(codes)
+            }
+            const s = swLast.current
+            if (swPtr.current !== null && s && swStart.current) {
+                const ox = s.x - swStart.current.x, oy = s.y - swStart.current.y
+                if (Math.hypot(ox, oy) >= SWIPE_MIN) {
+                    const v = stickVec(ox, oy)
+                    setStickVec(v.x, v.y)
+                    setDirCodes(dpadDirs(ox, oy, waysRef.current, swHyst.current))
+                }
+            }
+        }
+        window.addEventListener('resize', revive)
+        window.addEventListener('orientationchange', revive)
+        const vv = window.visualViewport
+        if (vv) {
+            vv.addEventListener('scroll', revive)
+            vv.addEventListener('resize', revive)
+        }
+        return () => {
+            window.removeEventListener('resize', revive)
+            window.removeEventListener('orientationchange', revive)
+            if (vv) {
+                vv.removeEventListener('scroll', revive)
+                vv.removeEventListener('resize', revive)
+            }
+        }
+    }, [setDirCodes])
 
     // Step 5 (feel): hide on real keyboard input or gamepad activity, show on touch.
     useEffect(() => {
@@ -295,6 +376,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     const sUpdate = (cx, cy) => {
         const a = stickAnchor.current
         if (!a) return
+        stickLast.current = { x: cx, y: cy } // #2057
         const v = stickVec(cx - a.x, cy - a.y)
         if (knobRef.current) knobRef.current.style.transform = `translate(-50%, -50%) translate(${v.px}px, ${v.py}px)`
         setDirCodes(dirsFrom(v.px, v.py))
@@ -312,6 +394,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
         if (id !== stickPtr.current) return
         stickPtr.current = null
         stickAnchor.current = null
+        stickLast.current = null // #2057
         setStickUI({ active: false, ax: 0, ay: 0 })
         setDirCodes([])
         clearStick()
@@ -341,6 +424,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     }
     const fsUpdate = (cx, cy) => {
         const c = fsCenter()
+        fsLast.current = { x: cx, y: cy } // #2057
         const v = stickVec(cx - c.x, cy - c.y)
         if (fsKnobRef.current) fsKnobRef.current.style.transform = `translate(-50%, -50%) translate(${v.px}px, ${v.py}px)`
         setStickVec(v.x, v.y)
@@ -351,6 +435,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     const fsEnd = (id) => {
         if (id !== fsPtr.current) return
         fsPtr.current = null
+        fsLast.current = null // #2057
         setStickVec(0, 0)
         setDirCodes([])
         if (fsKnobRef.current) fsKnobRef.current.style.transform = 'translate(-50%, -50%)'
@@ -375,6 +460,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     }
     const dgUpdate = (cx, cy) => {
         const c = dgCenter()
+        dgFinger.current = { x: cx, y: cy } // #2057
         const ox = cx - c.x, oy = cy - c.y
         const v = stickVec(ox, oy)
         if (dgKnobRef.current) dgKnobRef.current.style.transform = `translate(-50%, -50%) translate(${v.px}px, ${v.py}px)`
@@ -388,6 +474,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     const dgEnd = (id) => {
         if (id !== dgPtr.current) return
         dgPtr.current = null
+        dgFinger.current = null // #2057
         setStickVec(0, 0)
         if (dgKnobRef.current) dgKnobRef.current.style.transform = 'translate(-50%, -50%)'
         // Buffered turn: a 4-way cabinet sticks to the last pushed direction —
@@ -412,6 +499,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     const swUpdate = (cx, cy) => {
         const s = swStart.current
         if (!s) return
+        swLast.current = { x: cx, y: cy } // #2057
         const ox = cx - s.x, oy = cy - s.y
         if (Math.hypot(ox, oy) < SWIPE_MIN) return
         const v = stickVec(ox, oy)
@@ -431,6 +519,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
         for (const t of e.changedTouches) if (t.identifier === swPtr.current) {
             swPtr.current = null
             swStart.current = null
+            swLast.current = null // #2057
             setStickVec(0, 0)
             if (ways === 4) setDirCodes(dirCodes.current)  // keep the buffered turn
             else setDirCodes([])
