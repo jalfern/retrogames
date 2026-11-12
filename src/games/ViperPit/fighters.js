@@ -50,7 +50,7 @@ const defs = [
         intro: 'YOU ASKED FOR HEAT', win: 'BURNT OUT', lose: 'STILL GOT A SPARK',
         taunt: 'IS THAT ALL?', roundLose: 'MORE TO BURN', tauntPose: 'flex',
         // #2172 select-card pose: weight back, both palms raised toward you.
-        card: { yaw: 0.35, camZ: 6.8, hipY: -0.02, lean: -0.04, headX: -0.08, arms: [{ sh: -1.25, el: -0.35, z: 0.5 }, { sh: -1.1, el: -0.45, z: -0.55 }], legs: [{ hip: 0.12, kn: -0.18 }, { hip: -0.18, kn: -0.22 }] },
+        card: { yaw: 0.35, camZ: 6.5, hipY: -0.02, lean: -0.04, headX: -0.08, arms: [{ sh: -1.25, el: -0.6, z: 0.62 }, { sh: -1.1, el: -0.7, z: -0.65 }], legs: [{ hip: 0.12, kn: -0.18 }, { hip: -0.18, kn: -0.22 }] },
         cpuStyle: { zone: 0.55 },
         build: { h: 1.02, bulk: 0.95, hair: 'short', gear: 'jacket' },
         color: { skin: 0xb47a52, top: 0x7e2f22, pants: 0x2c2622, hair: 0x241612, accent: 0xff9a3c },
