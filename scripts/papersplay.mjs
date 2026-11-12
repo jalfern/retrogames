@@ -836,7 +836,12 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     await wait(300)
     const muting = new Set(), quiet = new Set()
     let mismatches = 0, mutPixOn = -1, mutPixOff = 1e9, paperMax = 0
-    for (let g = 0; g < 30; g++) {
+    // 120, not 30: seed 0 day 1 holds 7 strangers (paperscheck ground truth,
+    // 2 murmuring), and CI's software Chrome burns ~2.5 s of real time per
+    // walk-up — a 30-iteration budget died with the seventh face still in the
+    // queue (nightly family #2145). The loop's real end is the day rolling over
+    // (the null-probe break); this is only the runaway guard.
+    for (let g = 0; g < 120; g++) {
         const s = await page.evaluate(() => {
             const p = window.__ppTest.probe()
             if (!p || p.day !== 1 || p.end) return null
