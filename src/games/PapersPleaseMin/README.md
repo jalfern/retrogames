@@ -83,12 +83,28 @@ pure atmosphere until this stage made it load-bearing:
   (old build measured ≤41), both brow thicknesses and both mouth shapes
   counted in ink px, bare-eye whites counted (128px bare, 0 behind the
   opaque lenses).
+- **#1943 PORTRAIT-LEGIBILITY** — the photo zooms to the clip law's ceiling
+  (`PHOTO.s` 0.90, head ~61px where 0.75 read ~50 — the original's photo
+  fills its frame the same way; the chin crops at the bottom edge like a real
+  ID photo), and `drawFace` gained a MINIMUM-INK clamp: the thin compared
+  strokes (thin brow 2, glasses bridge 2, shut-mouth bar 3 source px) clamp to
+  ≥2px at ANY scale, so the features the PORTRAIT rule actually compares
+  survive antialiasing at phone size. The clamp no-ops at s = 1 — every source
+  value is already ≥2 — so the counter face and the scale-1 byte-identity
+  probes (`portraitPix`/`crowdPix`/`castPix`) are untouched by construction.
+  Two new arithmetic ratchets in paperscheck (`s >= 0.85`, widest head
+  `s*68 >= 54`) plus a live gate (photo brow ink: 34 thin vs 74 thick dark-
+  family px on bare faces — exact hex would lie about AA-scaled ink, count
+  the family) hold the gain against the next quiet shrink.
 - The rule rides `DAY_RULES` from **day 1**, not a late wake: the
   +1-rule-per-day growth law has no free slot after day 1 (day 6 owns
   IDREQ, day 7 CURFEW), and unlike the paper laws the photo check needs
   no teaching — the two faces sit side by side. Nine laws on day 7 is why
-  `WALL.top` moved 44→38; the fit sweep re-proves the deepest wall lands
-  its wanted sheet at y=356, above the SCALE box at y=358.
+  `WALL.top` moved 44→38; #1943 found the real relief (`ruleGap` 4→3, 9px
+  on the nine-law wall) and spent 5 of them growing the wanted rows to 10px
+  on an 11px pitch — the fit sweep re-proves the deepest wall lands its
+  wanted sheet at y=352, six px above the SCALE box at 358 (was 2 px with
+  9px rows).
 - `judge` still reads the hidden truth (`photoMismatch`), so every paper
   is graded twice as before, and the fairness prover is unchanged doctrine:
   a deny with no visible witness is red.
@@ -402,13 +418,14 @@ The fix is variety as construction, not hope — this generator's own doctrine:
   day is judged by the sheet the wall prints THAT day; decide/judge agree;
   counted by the harness, so a pool narrowing back toward stamp territory goes
   red.
-- **Legibility (#1908 item 2), recorded honestly**: five 9px rows sit at the
-  fit-law ceiling — worst sweep bottom y=356 vs the SCALE box at y=358. Two px
-  of slack: the rows CANNOT grow, and paperscheck now pins size ≥ 9 so no
-  future stage quietly shrinks them either. The honest lever left is contrast:
-  the wanted rows print in a dedicated brighter red (`wallRed #ff6f5e`, the
-  stamp ink `#d84343` and the strike `#ff8080` stay distinct), which is what
-  makes five rows scannable at arm's length on a phone.
+- **Legibility (#1908 item 2), later amended by #1943**: five 9px rows sat at
+  the fit-law ceiling — worst sweep bottom y=356 vs the SCALE box at y=358,
+  two px of slack — so #1908 rode contrast (`wallRed #ff6f5e`, distinct from
+  the stamp ink `#d84343` and the strike `#ff8080`). #1943 FOUND the space:
+  the nine-law rulebook pays 1px per gap (`ruleGap` 4→3, 9px freed), and the
+  wanted rows grew to 10px on an 11px pitch — worst buildable day now y=352,
+  six px of slack, paperscheck ratchet moved to size ≥ 10. The sheet reads by
+  size AND contrast at arm's length.
 - `paperscheck` gains THE WALL THAT LIVES section (pool integrity ≥150 combos,
   the offset law, arc-day pin, plan coverage row-for-row, per-day distinctness,
   per-week distinctness, wall-vs-line disjoint, the planted-coincidence drift
@@ -418,9 +435,9 @@ The fix is variety as construction, not hope — this generator's own doctrine:
   **all 43 die**.
 - `papersplay` proves it live on seed 0's whole week: all 26 bulletin rows
   match Node's plan row-for-row (name AND number, across processes), the sheet
-  paints in its own red ink (328 px on the three-row day, 612 px on the five-
-  row day), no name repeats across the seven walls, and no row names anyone in
-  the line.
+  paints in its own red ink (441 px on the three-row day, 734 px on the five-
+  row day — 10px rows since #1943), no name repeats across the seven walls,
+  and no row names anyone in the line.
 
 ## Mutants (43, all die under `npm run paperscheck -- --mutate`)
 
@@ -540,7 +557,10 @@ first hello as the day's second bubble (4854px), and on the rotated window
 behind Tadek's payoff (day 7, 5222px); since #1908 also: seed 0's whole week
 of bulletin rows matches Node's plan row-for-row across processes, the sheet
 paints in its brighter wallRed ink, no name repeats across the seven walls, and
-no row names anyone standing in the line).
+no row names anyone standing in the line; since #1943 also: the zoom-crop head
+is scanned across the whole head block and runs 62px, the compared brow ink
+survives inside the photo (dark-family 34 thin vs 74 thick px on bare faces),
+and the 10px sheet rows paint 441/734 px of wallRed on the 3-/5-row days).
 NOTE:
 headless Chrome on a shared box logs a device-level "AudioContext
 encountered an error" line — an OS audio-renderer complaint, not page
@@ -675,12 +695,24 @@ code, and filtered as such).
   window on later days. Decoy names are a per-week plan now (doubled pool,
   distinct by construction, pre-seeded against the whole line) and the rows
   print in a dedicated brighter red. See "THE WALL THAT LIVES (#1908)."
-  *Still open (recorded by the playtest, not bugs):* the rows stay 9px — the
-  fit law leaves 2 px to the scale box, so phone legibility rides on contrast,
-  not size, until the booth geometry grows; and token-level near-misses (a
-  decoy sharing a FIRST or LAST name with an entrant) remain by design — the
-  printed rule is NAME *AND* NUMBER and the WANTED trap species exists to
-  teach exactly that discrimination.
+  *Still open (recorded by the playtest, not bugs):* token-level near-misses
+  (a decoy sharing a FIRST or LAST name with an entrant) remain by design —
+  the printed rule is NAME *AND* NUMBER and the WANTED trap species exists to
+  teach exactly that discrimination. (The rows-stay-9px half was amended by
+  #1943 — ruleGap relief grew them to 10px; see the #1943 entry below.)
+- **CLOSED by #1943 (2026-11-11):** the PORTRAIT-round playtest asked whether
+  the photo reads at passport size, whether the nine-law wall buries the sheet,
+  and whether long PORTRAIT witnesses fit the strip. The photo now zooms to the
+  clip law's ceiling (s 0.90, head ~61px, live run measured 62) with a ≥2px
+  minimum-ink clamp on the thin compared strokes (photo brow ink 34 thin vs 74
+  thick, live); the nine-law rulebook funds 10px wanted rows (worst day y=352,
+  6px slack); all twelve directional PORTRAIT evidence strings are ≤42 chars
+  and the 54-char corridor fit is pinned. The aged-photo trap (grey hair, same
+  face) and day-1 PORTRAIT ride unchanged — the playtest's own doctrine calls
+  first-timers' convictions balance feedback, and the sweep reports the trap
+  counts every run. What stays coarse: the portrait is still procedural art at
+  ~61px where the original's is a detailed hand-drawn portrait, and face
+  variety remains combinatorial + authored, not hand-drawn per person.
 - What #1891 still leaves open: evidence strings and RULES text keep
   numerals, so the month-name read is display-only; and the settle is a
   scripted drop, not drag physics — papers still cannot be moved by hand
