@@ -604,6 +604,7 @@ if (MUT) {
         ['the reply reveals on a timer, not with the taunt', /quoteSubAt != null && performance\.now\(\) >= quoteSubAt/],
         ['the reveal fires the loser-voice sting once', /const \[r0, r1, rwave\] = quote\.replyVoice/],
         ['the judge badge renders', /quote\.judge === 'PERFECT'/],
+        ['the judge lifts above the finisher name during the FINISH cinematic', /finishFx > 0 \? H \* 0\.47 : H \* 0\.53/],
         ['the taunt renders in the winner accent', /Number\(quote\.accent \|\| 0x59e0c8\)\.toString\(16\)/],
         ['the outround probe exposes the exchange ordering', /shown: !!\(quoteSubAt != null && performance\.now\(\) >= quoteSubAt\)/],
         ['the outround probe is a dev hook', /outround\(\) \{/],
