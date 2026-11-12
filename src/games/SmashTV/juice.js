@@ -125,6 +125,19 @@ export const FAR_EXIT_PX = 96 // more than half the screen's half-frame, less th
 export const farExitPx = (x, y, exits) => Math.min(...exits.map((e) => Math.hypot(e.x - x, e.y - y)))
 export const SHUTTER_CONFIRM = { notes: [[196, 0, 0.05], [147, 0.07, 0.09]], type: 'square', vol: 0.055, noise: 0.06 }
 
+// #2011 — the long walk home. Since #2007 the whole show boards wide, so when a
+// room falls the nearest open door can still sit up to a full pan away — the
+// cleared hero crosses ~12 columns of quiet floor. Two beats fill that dead air:
+// walkHype maps the px remaining to the door (0..1) so the crowd murmur keeps
+// breathing toward the exit and SWELLS with distance — silent inside FAR_EXIT_PX,
+// where the shutter's own clank confirm takes over; and camLead lets the camera
+// settle up to CAM_LEAD px toward the door while the walk is on, previewing the
+// exit. The bias moves the pan TARGET a few px; camPan still caps the pan itself
+// at CAM_PAN px/frame, so the uniform-pan law (#1978) holds while the settle eases in.
+export const CAM_LEAD = 8 // px — the settled frame leans toward the open door
+export const walkHype = (dPx, boardPx) => (dPx > FAR_EXIT_PX ? Math.min(1, dPx / boardPx) : 0)
+export const camLead = (doorDx, dPx) => (dPx > FAR_EXIT_PX ? Math.sign(doorDx) * Math.min(Math.abs(doorDx), CAM_LEAD) : 0)
+
 // #1978 — off-screen legibility. The wide boards park spawns, threats and the bonus
 // crowd past the frame edge; they telegraph and scream where they stand, unseen.
 // markSide maps a board x to the screen edge to stamp its colour on: −1 left,

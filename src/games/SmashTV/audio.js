@@ -35,6 +35,10 @@ export const BONUS_JINGLE = [
 // tick the bonus room ends (no murmur anywhere else in the studio).
 export const MURMUR_TICKS = 28
 export const MURMUR = { dur: 0.5, vol: 0.022, freq: 420 }
+// #2011 — the walk-home swell: at full board distance the murmur gains this
+// much extra volume (still a bed, never a lead vocal) and rides brighter.
+export const MURMUR_SWELL = 0.018
+export const MURMUR_HYPE_FREQ = 220 // Hz added at full hype — the crowd leaning in
 
 // the firebomb whoosh: a short bright band of filtered noise under the blast
 export const WHOOSH = { dur: 0.22, vol: 0.06, freq: 1800 }
