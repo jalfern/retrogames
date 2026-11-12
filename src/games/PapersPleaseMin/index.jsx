@@ -408,22 +408,32 @@ const PapersPleaseMinGame = () => {
             // evidence) and face==photo carry the same torso. Shoulders draw
             // BEFORE the head ellipse so the chin overlaps them naturally,
             // and every pixel stays inside the old band's column (x..x+110).
+            // #2087 SHADES+BODIES scale law: below s = 0.6 (the ARC_MUG
+            // thumbnail) the shoulder steps are sub-pixel noise and the torso
+            // eats the mug frame's paper — mugshots stay head-only, like the
+            // original's wall photos. The byte-identity probes render at s = 1,
+            // where counter and photo both draw the body — doctrine intact.
+            const showBody = s >= 0.6
             const so = Math.max(P(1), 1)
             const body = f.body | 0
             const shL = [86, 83, 80][body], shR = shL + (f.post | 0) * 3
-            c.fillStyle = SHIRTS[f.shirtC]
-            c.fillRect(x, y + P(shL), P(14), P(92 - shL))
-            c.fillRect(x + P(14), y + P(shL + 5), P(12), P(87 - shL))
-            c.fillRect(x + P(96), y + P(shR), P(14), P(92 - shR))
-            c.fillRect(x + P(84), y + P(shR + 5), P(12), P(87 - shR))
-            c.fillStyle = SHIRT_DARK
-            c.fillRect(x, y + P(shL), P(14), so); c.fillRect(x + P(14), y + P(shL + 5), P(12), so)
-            c.fillRect(x + P(96), y + P(shR), P(14), so); c.fillRect(x + P(84), y + P(shR + 5), P(12), so)
+            if (showBody) {
+                c.fillStyle = SHIRTS[f.shirtC]
+                c.fillRect(x, y + P(shL), P(14), P(92 - shL))
+                c.fillRect(x + P(14), y + P(shL + 5), P(12), P(87 - shL))
+                c.fillRect(x + P(96), y + P(shR), P(14), P(92 - shR))
+                c.fillRect(x + P(84), y + P(shR + 5), P(12), P(87 - shR))
+                c.fillStyle = SHIRT_DARK
+                c.fillRect(x, y + P(shL), P(14), so); c.fillRect(x + P(14), y + P(shL + 5), P(12), so)
+                c.fillRect(x + P(96), y + P(shR), P(14), so); c.fillRect(x + P(84), y + P(shR + 5), P(12), so)
+            }
             c.fillStyle = SHIRTS[f.shirtC]; c.fillRect(x, y + P(92), P(110), P(30))
             c.strokeStyle = '#141824'; c.lineWidth = 1; c.strokeRect(x + 0.5, y + P(92) + 0.5, P(110) - 1, P(30) - 1)
             // collar + placket — a shirt, not a stripe
-            c.fillStyle = SHIRT_DARK
-            c.fillRect(x + P(47), y + P(92), P(16), P(3)); c.fillRect(x + P(52), y + P(95), P(6), P(10))
+            if (showBody) {
+                c.fillStyle = SHIRT_DARK
+                c.fillRect(x + P(47), y + P(92), P(16), P(3)); c.fillRect(x + P(52), y + P(95), P(6), P(10))
+            }
             c.fillStyle = SKINS[f.skin]
             c.beginPath(); c.ellipse(x + P(55), y + P(52), P(f.narrow ? 27 : 34), P(40), 0, 0, Math.PI * 2); c.fill()
             // #1972 ears, painted BEFORE the hair so a sideburn cut buries
