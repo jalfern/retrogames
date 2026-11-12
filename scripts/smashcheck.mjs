@@ -45,6 +45,11 @@
 //               cross-screen door confirm distance and voice, off-screen marker
 //               side-mapping in the game's own colours, and the combo pop's
 //               clear band below the border door row.
+//   walk-home (#2011): the cleared-room stroll to a far door is never dead air —
+//               the murmur bed swells toward the exit with distance (silent
+//               inside FAR_EXIT_PX where the clank confirm owns it) and the
+//               camera settles ≤CAM_LEAD px toward the open door; the pilot
+//               replay is untouched (no rng, no state).
 // `-- --mutate` re-plants fixed bugs in child processes; each MUST die.
 
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -61,9 +66,9 @@ const { GW, GW_BIG, BIG_ROOMS, GH, CW, CELL, EXITS, exitsOf, TOTAL_ROOMS, genRoo
 const { wallCell, NEON_TOP, CHROME, borderRivet } = await import('../src/games/SmashTV/walls.js')
 const { playerFrame, GUN, LAYERS, PLAYER_FRAMES, CARRIAGE, POSE, STOCK, SPREAD_FLOOR, gunPose } = await import('../src/games/SmashTV/sprite.js')
 const { ENEMY_FRAMES, TELEGRAPH, CHARGERS, CHARGE, OUTLINE, enemyFrame, bossMouth, BOSS_MOUTH_FLAP, ADD_TELEGRAPH, BOSS_DEATH_T } = await import('../src/games/SmashTV/enemies.js')
-const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore, recoilKick, RECOIL_TICKS, RECOIL_PX, SHELL_KICK, shellKick, barrelHot, HOT_FLOOR, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, GORE_GRAV, STAIN_TICKS, stainRadius, camPan, CAM_PAN, CAM_SNAP, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide } = await import('../src/games/SmashTV/juice.js')
+const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore, recoilKick, RECOIL_TICKS, RECOIL_PX, SHELL_KICK, shellKick, barrelHot, HOT_FLOOR, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, GORE_GRAV, STAIN_TICKS, stainRadius, camPan, CAM_PAN, CAM_SNAP, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, CAM_LEAD, walkHype, camLead } = await import('../src/games/SmashTV/juice.js')
 const { PLAYER_PAL, PAULDRON_BOB } = await import('../src/games/SmashTV/art.js')
-const { FIRE, fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_TICKS, WHOOSH, ALERT, ALERT_RADIUS, ALERT_CD } = await import('../src/games/SmashTV/audio.js')
+const { FIRE, fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_SWELL, MURMUR_HYPE_FREQ, MURMUR_TICKS, WHOOSH, ALERT, ALERT_RADIUS, ALERT_CD } = await import('../src/games/SmashTV/audio.js')
 const { BAR, PIP, POWER_LABEL, labelClearsBar, pipFits, bombReady, RACK_FLASH, hiRoll, respawnState, RESPAWN_BLINK_SHIFT } = await import('../src/games/SmashTV/hud.js')
 const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) }
 
@@ -583,18 +588,23 @@ console.log('audio')
 {
     const r = S.plan(0)
     const gs = makeGame(0)
-    let inBonus = 0, outBonus = 0, sawBonus = false
+    let inBonus = 0, strayPreClear = 0, flatWalk = 0, sawBonus = false
     for (const inp of r.script) {
         const bonusNow = gs.roomData.bonus
         step(gs, inp)
-        for (const e of gs.events) if (e.type === 'murmur') bonusNow ? inBonus++ : outBonus++
+        for (const e of gs.events) if (e.type === 'murmur') {
+            if (bonusNow) inBonus++
+            else if (gs.cleared) { if (!(e.hype > 0)) flatWalk++ } // #2011 walk-home — carries hype
+            else strayPreClear++
+        }
         if (bonusNow) sawBonus = true
         gs.events.length = 0
         if (gs.end) break
     }
     ok(sawBonus, 'the pilot reaches a bonus room')
     ok(inBonus > 0, 'the crowd murmurs while the bonus room is on', `${inBonus} bursts`)
-    ok(outBonus === 0, 'the murmur exists nowhere else in the studio', `${outBonus} stray`)
+    ok(strayPreClear === 0, 'no murmur while a room still fights — the bed is bonus-clock or cleared-walk only', `${strayPreClear} stray`)
+    ok(flatWalk === 0, 'every pilot walk-home murmur carries its hype', `${flatWalk} flat`)
     // controlled alert: one walkcam pinned at 30 px (inside the ring, outside the kill range)
     const g2 = makeGame(0)
     g2.enemies = []; g2.roomData.spawns = []; g2.spawnT = 0
@@ -1010,7 +1020,7 @@ console.log('varisize')
     // steps it uniformly, and the rounded value is all the arena sees)
     const IDX = readFileSync('src/games/SmashTV/index.jsx', 'utf8')
     ok(IDX.includes('ctx.translate(-camX, 0)'), 'the arena renders through a camera pan')
-    ok(/const want = Math\.max\(0, Math\.min\(mid - CW \/ 2, camBoard - CW\)\)/.test(IDX), 'camX centres the live cast and clamps at the board edges', '')
+    ok(/const want0 = Math\.max\(0, Math\.min\(mid - CW \/ 2, camBoard - CW\)\)/.test(IDX) && /want = Math\.max\(0, Math\.min\(mid \+ camLead\(leadDx, bd\) - CW \/ 2, camBoard - CW\)\)/.test(IDX), 'camX centres the live cast and clamps at the board edges', '')
     ok(IDX.includes('camPan(camF, want)'), 'the pan obeys the uniform-step law')
     ok(IDX.includes('camX = Math.round(camF)'), 'the pan lands on whole pixels')
 }
@@ -1125,6 +1135,69 @@ console.log('polish')
     }
 }
 
+// --------------------------------------------------------- walk-home (#2011) ----
+console.log('walk-home')
+{
+    // 1) the pure law. The murmur bed swells toward the exit and the camera
+    // leans toward the open door — both dead inside FAR_EXIT_PX, where the
+    // shutter's clank confirm (#1978) already owns the moment.
+    ok(walkHype(FAR_EXIT_PX, GW_BIG * 16) === 0, 'the swell is silent inside the confirm distance')
+    ok(walkHype(FAR_EXIT_PX + 8, GW_BIG * 16) > 0, 'a door past the confirm distance stirs the crowd')
+    ok(walkHype(300, GW_BIG * 16) > walkHype(150, GW_BIG * 16), 'the murmur swells the farther the door')
+    ok(walkHype(9999, GW_BIG * 16) === 1, 'the swell tops out at a full board')
+    ok(MURMUR.vol + MURMUR_SWELL < 0.05 && MURMUR_SWELL > 0, 'the swelled bed is still a bed, never a lead vocal', `v${(MURMUR.vol + MURMUR_SWELL).toFixed(3)}`)
+    ok(MURMUR_HYPE_FREQ > 0 && MURMUR.freq + MURMUR_HYPE_FREQ < WHOOSH.freq, 'the swell rides brighter but stays under the whoosh')
+    ok(CAM_LEAD > CAM_PAN && CAM_LEAD <= 12, 'the settle leans — more than a pan step, never a sweep', `${CAM_LEAD}`)
+    ok(camLead(200, 300) === CAM_LEAD && camLead(-200, 300) === -CAM_LEAD, 'the settle leans toward the door, capped at CAM_LEAD')
+    ok(camLead(50, 50) === 0, 'no settle for a door already in reach')
+    ok(camLead(0, 400) === 0, 'a door dead ahead of the mid adds no sideways lean')
+
+    // 2) live sim: room 1, hero standing mid-board with the doors open — the
+    // crowd keeps murmuring while the walk is on, goes quiet at the door, and
+    // says nothing at all before the room falls.
+    const gs = makeGame(0)
+    ok(!gs.roomData.bonus, 'the walk-home sim stage runs on a non-bonus room')
+    const doorsPx = exitsOf(gs.roomData.gw).map((d) => ({ x: cx(d.c), y: cy(d.r) }))
+    const p = gs.player
+    gs.enemies.length = 0
+    gs.cleared = true
+    p.x = cx(4); p.y = cy(2) // a corner genuinely far from all three doors
+    const dFar = farExitPx(p.x, p.y, doorsPx)
+    ok(dFar > FAR_EXIT_PX, `setup: the cleared hero stands a walk from every door`, `${dFar.toFixed(0)}px`)
+    let hype = 0, hush = 0
+    for (let t = 0; t < 2 * MURMUR_TICKS + 2; t++) {
+        step(gs, {})
+        for (const e of gs.events) if (e.type === 'murmur') { if (e.hype > 0) hype++; else hush++ }
+        gs.events.length = 0
+    }
+    ok(hype >= 2, 'a cleared room still a walk from the door keeps the crowd breathing', `${hype} swelled murmurs`)
+    ok(hush === 0, 'every walk-home murmur carries its hype', `flat=${hush}`)
+    const nearest = doorsPx.reduce((a, b) => (Math.hypot(b.x - p.x, b.y - p.y) < Math.hypot(a.x - p.x, a.y - p.y) ? b : a))
+    p.x = nearest.x; p.y = nearest.y - 10
+    let near = 0
+    for (let t = 0; t < 2 * MURMUR_TICKS + 2; t++) {
+        step(gs, {})
+        near += gs.events.filter((e) => e.type === 'murmur').length
+        gs.events.length = 0
+    }
+    ok(near === 0, 'at the door the bed yields to the clank confirm — no murmur', `${near}`)
+    gs.cleared = false
+    let early = 0
+    for (let t = 0; t < 2 * MURMUR_TICKS + 2; t++) {
+        step(gs, {})
+        early += gs.events.filter((e) => e.type === 'murmur').length
+        gs.events.length = 0
+    }
+    ok(early === 0, 'while the room still fights, the walk-home bed stays silent', `${early}`)
+
+    // 3) the renderer carries both beats.
+    const SRC3 = readFileSync('src/games/SmashTV/index.jsx', 'utf8')
+    ok(/MURMUR\.vol \+ MURMUR_SWELL \* \(e\.hype \|\| 0\)/.test(SRC3), 'the component mixes the hype into the bed')
+    ok(/MURMUR\.freq \+ MURMUR_HYPE_FREQ \* \(e\.hype \|\| 0\)/.test(SRC3), 'the bed rides brighter at full hype')
+    ok(/if \(gs\.cleared\) \{[\s\S]{0,700}camLead\(leadDx, bd\)/.test(SRC3), 'the camera settles toward the open door only once the room is cleared')
+    ok(/want = Math\.max\(0, Math\.min\(mid \+ camLead\(leadDx, bd\) - CW \/ 2, camBoard - CW\)\)/.test(SRC3), 'the settle keeps the pan clamped to the board edges')
+}
+
 // ------------------------------------------------------------- mutants ----
 if (process.argv.includes('--mutate')) {
     console.log('mutants (must die)')
@@ -1143,6 +1216,7 @@ if (process.argv.includes('--mutate')) {
         ['#1973: the board silently shrinks back to the screen', 'export const boardW = (gs) => gwOf(gs) * CELL', 'export const boardW = () => CW'],
         ['#1973: the far door forgets it moved with the border', 'const exits = exitsOf(gwOf(gs))', 'const exits = EXITS'],
         ['#2024: the host law off — THE ANNOUNCER paces fixed bounds', 'const lo = cam + 48\n            const hi = cam + CW - 48', 'const lo = 60\n            const hi = bw - 60'],
+        ['#2011: the crowd dies at the clear — no walk-home murmur', "gs.events.push({ type: 'murmur', hype: walkHype(d, gwOf(gs) * CELL) })", 'void 0'],
         ['#2032: the missile flies straight (the lock is ignored)', 'const a = cur + Math.max(-MISSILE_TURN, Math.min(MISSILE_TURN, diff))', 'const a = cur'],
         ['#2032: the missile never expires', '} else if (b.age > MISSILE_LIFE) {', '} else if (b.age > 1e9) {'],
         ['#2032: the warhead is inert', 'if (dist(b.x, b.y, q.x, q.y) < MISSILE_BLAST + (q.kind === \'boss\' ? 14 : 7)) damageEnemy(gs, q, 1, \'blast\', owner)', 'if (false) damageEnemy(gs, q, 1, \'blast\', owner)'],
@@ -1175,11 +1249,16 @@ if (process.argv.includes('--mutate')) {
         ['#1978: the pan regrows its 2 px hops', 'export const CAM_PAN = 1', 'export const CAM_PAN = 2'],
         ['#1978: respawns drift across the board instead of snapping', 'export const CAM_SNAP = 24', 'export const CAM_SNAP = 1e9'],
         ['#1978: the far-door confirm is switched off', 'export const FAR_EXIT_PX = 96', 'export const FAR_EXIT_PX = 1e9'],
+        ['#2011: the walk-home swell never stirs', 'dPx > FAR_EXIT_PX ? Math.min(1, dPx / boardPx) : 0', '0'],
+        ['#2011: the settle leans away from the door', 'Math.sign(doorDx) * Math.min(Math.abs(doorDx), CAM_LEAD)', '-Math.sign(doorDx) * Math.min(Math.abs(doorDx), CAM_LEAD)'],
+        ['#2011: the camera stops settling toward the exit', 'export const CAM_LEAD = 8', 'export const CAM_LEAD = 0'],
     ]
     const IDX = 'src/games/SmashTV/index.jsx'
     const IDX_MUTANTS = [
         ['#1978: the far-door confirm goes blind', 'if (farExitPx(q.x, q.y, doors) > FAR_EXIT_PX) {', 'if (false) {'],
         ['#1978: the combo pop slides back onto the door row', 'ctx.translate(CW / 2 + camX, HUD_H + 48)', 'ctx.translate(CW / 2 + camX, HUD_H + 30)'],
+        ['#2011: the swell drops out of the bed', 'MURMUR.vol + MURMUR_SWELL * (e.hype || 0)', 'MURMUR.vol'],
+        ['#2011: the camera never settles toward the exit', 'camLead(leadDx, bd)', '0'],
     ]
     const targets = [[SIM, MUTANTS], [SPRITE, SPRITE_MUTANTS], [LEVELS, LEVELS_MUTANTS], [PLANNER, PLANNER_MUTANTS], [JUICE, JUICE_MUTANTS], [IDX, IDX_MUTANTS]]
     let died = 0, total = 0

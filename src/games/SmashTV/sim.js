@@ -24,6 +24,7 @@ import {
 } from './levels.js'
 import { TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
 import { MURMUR_TICKS, ALERT_RADIUS, ALERT_CD } from './audio.js'
+import { FAR_EXIT_PX, walkHype } from './juice.js'
 
 export { GW, GH, CELL, HUD_H, CW, CH, EXITS, ENEMIES, WEAPONS, TOTAL_ROOMS, isBonus, isBoss }
 
@@ -817,6 +818,20 @@ export function step(gs, inp = {}, inp2 = null) {
     updateItems(gs)
     checkClear(gs)
     checkExit(gs)
+
+    // #2011 — the walk home: on the wide boards a cleared room can still be a
+    // cross-board stroll to the door. The crowd keeps breathing toward it — one
+    // burst per MURMUR_TICKS while the nearest open door is farther than
+    // FAR_EXIT_PX, swelling with distance (walkHype). Bonus rooms keep their
+    // own bed (above); the finale ends on the win, not a walk.
+    if (gs.cleared && !room.bonus && !gs.end && gs.tick % MURMUR_TICKS === 0) {
+        let d = Infinity
+        for (const q of gs.players) {
+            if (q.deadT > 0 || q.out) continue
+            for (const ex of exitsOf(gwOf(gs))) d = Math.min(d, Math.hypot(q.x - cx(ex.c), q.y - cy(ex.r)))
+        }
+        if (d > FAR_EXIT_PX) gs.events.push({ type: 'murmur', hype: walkHype(d, gwOf(gs) * CELL) })
+    }
     return gs
 }
 

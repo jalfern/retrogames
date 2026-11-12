@@ -25,9 +25,9 @@ import { buildSprites, buildFloor } from './art.js'
 import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
 import { playerFrame, GUN, STOCK, gunPose } from './sprite.js'
 import { enemyFrame, CHARGE, TELEGRAPH, OUTLINE, bossMouth, ADD_TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
-import { muzzleFlash, casingCol, killShake, recoilKick, shutterPhase, SHUTTER_TICKS, shellKick, barrelHot, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, STAIN_TICKS, stainRadius, camPan, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide } from './juice.js'
+import { muzzleFlash, casingCol, killShake, recoilKick, shutterPhase, SHUTTER_TICKS, shellKick, barrelHot, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, STAIN_TICKS, stainRadius, camPan, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, camLead } from './juice.js'
 import { BAR, PIP, POWER_LABEL, ICON, bombReady, hiRoll, RACK_FLASH, respawnState } from './hud.js'
-import { fireTimbre, BONUS_JINGLE, MURMUR, WHOOSH, ALERT } from './audio.js'
+import { fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_SWELL, MURMUR_HYPE_FREQ, WHOOSH, ALERT } from './audio.js'
 import { attractFrame, DIM } from './attract.js'
 
 const SIM_MS = 1000 / 60
@@ -164,7 +164,7 @@ const SmashTVGame = () => {
                 else if (e.type === 'throw') audioController.playSweep(180, 320, 0.1, 'triangle', 0.04)
                 else if (e.type === 'blast') { audioController.playNoise(0.2, 0.09); burst(e.x, e.y, 10, '#ff8a3f', 3); shake = 4 }
                 else if (e.type === 'spawn') audioController.playSweep(90, 240, 0.12, 'triangle', 0.04)
-                else if (e.type === 'murmur') audioController.playFilteredNoise(MURMUR.dur, MURMUR.vol, MURMUR.freq)
+                else if (e.type === 'murmur') audioController.playFilteredNoise(MURMUR.dur, MURMUR.vol + MURMUR_SWELL * (e.hype || 0), MURMUR.freq + MURMUR_HYPE_FREQ * (e.hype || 0))
                 else if (e.type === 'alert') audioController.playTone(ALERT.freq, ALERT.dur, ALERT.type, ALERT.vol)
                 else if (e.type === 'death') { audioController.playDeath(); shake = 10; flash = 14; say(BARKS[Math.floor(Math.random() * BARKS.length)]) }
                 else if (e.type === 'respawn') audioController.playSweep(110, 440, 0.3, 'triangle', 0.07)
@@ -713,7 +713,25 @@ const SmashTVGame = () => {
                 // so a 1.2 px/tick walk never hops the board 2 px at once. The pan
                 // trails the run by a few px and catches up when he stops; rooms
                 // and respawns jump >CAM_SNAP and snap through instantly.
-                const want = Math.max(0, Math.min(mid - CW / 2, camBoard - CW))
+                const want0 = Math.max(0, Math.min(mid - CW / 2, camBoard - CW))
+                // #2011: while a cleared room is still a walk to the door, the
+                // frame settles up to CAM_LEAD px toward it — the exit rides the
+                // edge of the screen instead of hiding a full pan away. camPan
+                // still caps the pan at CAM_PAN px/frame, so the settle eases in.
+                let want = want0
+                if (gs.cleared) {
+                    let bd = Infinity, leadDx = 0
+                    for (const q of gs.players) {
+                        if (q.deadT > 0 || q.out) continue
+                        for (const d0 of exitsOf(gs.roomData.gw)) {
+                            const dx = d0.c * CELL + CELL / 2 - mid
+                            const dy = HUD_H + d0.r * CELL + CELL / 2 - q.y
+                            const dd = Math.hypot(dx, dy)
+                            if (dd < bd) { bd = dd; leadDx = dx }
+                        }
+                    }
+                    want = Math.max(0, Math.min(mid + camLead(leadDx, bd) - CW / 2, camBoard - CW))
+                }
                 camF = camPan(camF, want)
                 camX = Math.round(camF)
             } else { camX = 0; camF = 0 }
