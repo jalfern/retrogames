@@ -1,57 +1,51 @@
-# STATE — session 247 (2026-11-12, slot a)
+# STATE — session 248 (2026-11-12, slot a)
 
 ## What shipped
-**WATCH RESUME BUDGETS (#2036)** merged as `31108b4` (PR #2116, warden TARGET
-#2036 claimed by a dead predecessor session; this session resumed the corpse
-per step 1b). Nightly full-smoke run 43072838133 red-flagged two watchcheck
-resume gates while probes showed real progress — comet-drift-hd covered 376u
-in a window demanding 500, blob-battle WON its match under watch and the old
-`!b.over` read completion as "no progress": the fixed bar silently assumed the
-window held ~240 world ticks; CI's software Chrome catches fewer.
-- `scripts/lib/watchbudget.mjs` (new): `unitsNeed(n)` rescales the racer bar
-  by measured tick delta at the old pace (500u/240t), capped at 500 so healthy
-  boxes see ZERO relaxation, floored at 40u so a parked watcher stays red.
-  `racerAdvance` = lap/finish/wrap-aware; `blobResume` = seat1 scored AND
-  prover-not-drowned (`winner !== 1`).
-- `watchcheck.mjs`: racers use `racerAdvance`; blob resume `revive: true` +
-  end-aware re-seat (a revive brain can finish mid-chain, #1705 family);
-  `--throttle N` reproduces nightly tick debt in one flag.
-- BlobBattle `watching()` no longer lingers at a terminal state (#1656 law,
-  Defender's shape) — the only game-code line; flag still clears at startPlay.
-- `npm run watchbudgetcheck` (new): 15/15 browser-free, pins BOTH sides —
-  nightly shapes pass, drown/frozen/idle-coast stay red (mutant-proved).
-Full local regression: watchcheck 868/895, zero page errors; blob + both comets
-green. The other 27 fails are 5 pilots this branch provably doesn't touch
-(start swallowed, deterministic x2 runs) — owned by #2115 (+ #2095 gauntlet);
-`static` once red = the new alias missed the #1575 scope ledger (fixed in
-`e3c6eb0` by the concurrent sibling kick, verified green locally before merge).
+**PAPERS IN HAND (#2120)** merged as `1bef805` (PR #2126) — live at
+`jalfern.com/retrogames/papers-please` (prod game chunk `index-BOVIMmx9.js`
+carries the `.004` tilt law). The warden TARGET #2113 was already claimed and
+shipped by slot b when this session started (claim REFUSED, slot b live), so
+the never-dry rung ran: queue empty, flagshipStage null → weakest stage PAPERS,
+PLEASE-MIN (score 5) → self-filed #2120 and built it.
+- `layout.js DRAG` — the desk law in Node: clamp is the IDENTITY at home (every
+  pixel pin ever written stands by construction), carried cards stay fully on the
+  counter, the desk never reaches over the entrant's face, travel 8px splits
+  tap-vs-grab, tilt 0.06 rad is a real lean.
+- `index.jsx` — grab/carry/release pointer wiring (booth-side paint only,
+  #2072 PHOTO_ZOOM doctrine: sim untouched, stateHash byte-identical, rules.js
+  and sim.js don't name the lever). A press that never travels is exactly the
+  old press (strip tap-stamps, #2072 photo hold, phone pad unchanged); starting
+  a drag cancels a zoom; last grab rides on top (hit-test order follows
+  `topCard`); ruling/next-drop clears the desk.
+- Harness: paperscheck +38 static laws (identity/extremes/face-clear/stack/
+  purity/tripwires) — 22497 green, `--mutate` **61/61 die** (new m59 clamp
+  loses upper bounds, m60 desk covers the face). papersplay +10 live gates
+  (real mouse: carry+tilt, land-at-clamp, beige vacate 2.1k/9.7k→<40 and
+  fill 0→1.7k px, tap still stamps, zoom cancels on travel, independent
+  offsets, z-order flip, ruling returns home, the hand never rules) —
+  **132/132**. Manual red: disabling `clearDesk()` in `act()` fails the
+  ruling-home gate; restored.
 
 ## The session's catches
-- **Two slot-a sessions ran concurrently** (warden kicked twice: comments at
-  09:33Z-era and 10:02Z). The sibling edited MY worktree mid-session: HEAD
-  moved b59ea2d -> e3c6eb0 under me between tool calls, its commit completing
-  the ciscope fix while I read the CI log. No damage (its work was additive,
-  ancestry clean, merge race lost→won trivially), but two drivers on one
-  branch is exactly the #1525-shape hazard. Rule suggestion for Jon: the
-  warden should refuse to kick slot X while a live `FORGE (X):` checkpoint is
-  <90 min fresh — my 10:39Z checkpoint did not stop the second kick.
-- **`detailsUrl` is not a `gh pr checks --json` field** on this gh; use
-  `link`. And CI logs for an in-progress run are withheld entirely — diagnose
-  with `gh run watch` first, then the job log.
-- **ciscope #1575 audits aliases, not just files**: a new `scripts/*check.mjs`
-  + npm alias must join CORE.checks in `scripts/checks.mjs` (browser-free) or
-  MANUAL_CHECKS — register it in the SAME commit that adds the alias.
+- **Seed 0's first walk-up is the no-papers customer** — live drag gates that
+  assume a passport at the counter grab nothing. Gates now `seatWindow(pp,id)`:
+  stamp correct verdicts with real keys until the wanted documents are at the
+  glass, then waitQuiet+settle. Any future papersplay mouse gate needs this.
+- **CSS→canvas coords are floats**: `pp.y === 90` fails at 89.99999 on a 880px
+  viewport (680 canvas). Round before comparing landed offsets.
+- **Prod verification path**: apex 308s to `www.jalfern.com`; assets must be
+  fetched from www. Vercel builds a *union* of merged PRs, so prod chunk names
+  differ from local `dist/` hashes — verify by grepping the live chunk for the
+  new constant (`.004`), not by name equality.
 
 ## Ladder trail
-- #2118 filed by this session, closed as duplicate of #2115 (sibling's filing
-  beat mine by minutes; my logs add a second deterministic repro — noted there).
-- Advisory-only reds this session: none unexplained; smoke/prsmokes reds were
-  the #2115 family (pre-existing, advisory, non-blocking per rule 3).
-- No open questions for Jon this session (jonq: nothing filed; the
-  double-kick finding above is a warden-mechanics note, not a taste call).
+- #2120 filed, claimed, shipped, closed with `shipped` label.
+- Advisory reds: none this session (all gates green on first evidence run).
+- No open questions for Jon (jonq: nothing filed).
 
 ## Lane state at exit
 Slot A: idle. Main checkout detached at origin/main. Dev server :5173 stopped
-(mine only — :5178/:5176/:5199 untouched); lane worktree removed. Next session
-claims the warden TARGET as usual; check #2115 stays QA-owned (do NOT borrow —
-QA lane alive).
+(mine only — :5176/:5178 untouched); worktree `retrogames-forge-ppm-hand`
+removed. Next session claims the warden TARGET as usual; #2115/#2036 family
+stays QA-owned. Papers-MIN honest gaps now: month-numerals in evidence text
+(contract tokens, pinned verbatim — doctrine, see README).
