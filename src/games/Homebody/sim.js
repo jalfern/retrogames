@@ -55,6 +55,21 @@ export const AFFECTION_BOND = 6   // household compliment at FAMILY tier (relLev
 export const INSULT_DROP = 4      // bond cut per insult (half an organic spat)
 export const CMD_CD = 8           // real seconds between player commands
 export const COURT_REACH = 2      // arm's reach, Manhattan — the chat ring
+// #2143: Ivy, the market neighbour — the second point of the relationship
+// triangle. She rides the #1817 law (edges, one event per crossing, hourly
+// fade) with her own personality numbers: a slower burner than Fern, longer
+// lingers per level, and a ladder that pays in a VISIBLE economy — from
+// FRIENDS up she arrives with a market basket (household hunger), and at
+// FAMILY the basket carries her honey-money too. No rng outside s.rng, so
+// every seed stays exact.
+export const IVY_HUE = '#a3579b'      // plum dress — nobody on the lot wears it
+export const IVY_HAIR = '#5d3b63'
+export const IVY_CHAT = 0.055         // rel/s while a resident chats beside her
+export const IVY_SOCIAL = 0.05       // social/s the chat pays (Fern is 0.06)
+export const IVY_FADE = 0.03         // rel lost per sim-hour of absence
+export const IVY_GIFT_HUNGER = 0.18  // per resident, per basket
+export const IVY_GIFT_CASH = 15      // the FAMILY-tier honey-money (§)
+
 export const COLLAPSE_AT = 16       // seconds a red need may go unanswered
 export const FAINT_SEC = 14        // how long a faint lasts
 export const RED_AT = 0.12         // a need at/below this reads red (and alarms the gem)
@@ -213,7 +228,10 @@ export function newRun(seed) {
         visitor: null,                  // { name, x, y, path, state, t }
         visitAfter: null,             // hour of next visit
         visitGap: 0,
-        rel: { house: 0, fern: 0 },   // #1817 conversation ladder (0..REL_MAX)
+        ivy: null,                    // #2143: second neighbour, same shape as `visitor` (+ gift)
+        ivyAfter: null,             // hour of Ivy's next visit
+        ivyGap: 0,
+        rel: { house: 0, fern: 0, ivy: 0 },   // #1817/#2143 conversation ladder (0..REL_MAX)
         spats: 0,                 // #2070: quarrels this run (rides the hash)
         grudge: 0,                // #2070: 1 = cold war until the pair makes up
         spatCd: 0,                // #2070: real seconds until the next spat may fire
@@ -232,6 +250,7 @@ export function newRun(seed) {
         ambience: 0, happyHours: 0,
     }
     scheduleVisit(s)
+    scheduleIvy(s)
     return s
 }
 
@@ -240,6 +259,14 @@ function scheduleVisit(s) {
     const lv = relLevel(s.rel ? s.rel.fern : 0)
     s.visitAfter = Math.max(8, 9 + Math.floor(s.rng() * 5) - lv)
     s.visitGap = s.rng()
+}
+
+// #2143: Ivy keeps her own market-hours — she starts later than Fern and the
+// better the bond, the sooner she's back (−1 h/level, floor 12).
+function scheduleIvy(s) {
+    const lv = relLevel(s.rel ? s.rel.ivy : 0)
+    s.ivyAfter = Math.max(12, 14 + Math.floor(s.rng() * 6) - lv)
+    s.ivyGap = s.rng()
 }
 
 // #1817: every conversation minute stacks the meter; crossing an edge is a
@@ -265,6 +292,12 @@ const REL_UP_LINES = {
         1: ['Otto and Mira have started finishing each other\u2019s sentences.', 'The two have fallen into an easy rhythm.'],
         2: ['Otto and Mira laugh at the same joke from two different rooms.', 'Friends under one roof — the house feels bigger and smaller at once.'],
         3: ['Otto and Mira — soulmates of this little household.'],
+    },
+    // #2143: the second neighbour climbs the same ladder, in her own voice.
+    ivy: {
+        1: ['Ivy waves at the gate like she means to stay a while.', 'Ivy knows which gate creaks now — she uses the quiet one.'],
+        2: ['Ivy lets herself in with a basket and an opinion about the tomatoes.', 'Ivy and the household swap market news before the kettle is on.'],
+        3: ['Ivy is practically family — two baskets now, one for each side of the house.'],
     },
 }
 
@@ -298,6 +331,7 @@ export function courtTarget(s) {
     const partner = s.people[1 - s.active]
     if (partner && partner !== me && partner.faintT <= 0) cand.push({ p: partner, k: 'house' })
     if (s.visitor && s.visitor.state !== 'leaving') cand.push({ p: s.visitor, k: 'fern' })
+    if (s.ivy && s.ivy.state !== 'leaving') cand.push({ p: s.ivy, k: 'ivy' })   // #2143
     let best = null, bd = COURT_REACH + 1
     for (const c of cand) {
         const d = Math.abs(me.r - c.p.r) + Math.abs(me.c - c.p.c)
@@ -314,6 +348,10 @@ const COO_LINES = [
 const COO_LINES_FERN = [
     'You tell Fern her stories get better every visit. She beams behind the teacup.',
     'A compliment across the tea table — Fern laughs like it was her birthday.',
+]
+const COO_LINES_IVY = [
+    'You tell Ivy her garden is the best on the street. She glows plum-bright.',
+    'A compliment about the roses — Ivy takes it like sunlight on leaves.',
 ]
 const AFFECTION_LINES = [
     'Otto and Mira — the whole house watches the two of you mean it.',
@@ -341,7 +379,7 @@ export function court(s, kind) {
         s.cooAt = { x: mx, y: my }
         s.cooDeep = deep
         s.events.push({ t: deep ? 'affection' : 'coo', k, x: mx, y: my })
-        think(s, pick(s, deep ? AFFECTION_LINES : k === 'fern' ? COO_LINES_FERN : COO_LINES))
+        think(s, pick(s, deep ? AFFECTION_LINES : k === 'fern' ? COO_LINES_FERN : k === 'ivy' ? COO_LINES_IVY : COO_LINES))
         s.cmdCd = CMD_CD
         return { deep, k }
     }
@@ -530,6 +568,7 @@ function roomClear(s) {
         if (s.people.some((p) => p.r === r && p.c === c)) return false
     }
     if (s.visitor && EXT_ROOM.floor.some(([r, c]) => r === s.visitor.r && c === s.visitor.c)) return false
+    if (s.ivy && EXT_ROOM.floor.some(([r, c]) => r === s.ivy.r && c === s.ivy.c)) return false   // #2143: Ivy stands where the wing would rise
     return true
 }
 
@@ -619,10 +658,12 @@ function autonomous(s, p) {
     if (s.demo && worst && p.needs[worst] < 0.55) {
         const t = needTarget(s, p, worst)
         if (t) { p.path = t.path; p.goal = { kind: 'use', it: t.it }; return }
-        if (worst === 'social' && hasVisitor(s)) {
-            const v = s.visitor
-            const cell = nearestFreeTo(s, v.r, v.c)
-            if (cell) { const path = bfsPath(s, { r: p.r, c: p.c }, [cell]); if (path) { p.path = path; p.goal = { kind: 'chat' }; return } }
+        if (worst === 'social') {           // #2143: chat with whichever neighbour is around
+            const nv = nearestVisitor(s)
+            if (nv) {
+                const cell = nearestFreeTo(s, nv.v.r, nv.v.c)
+                if (cell) { const path = bfsPath(s, { r: p.r, c: p.c }, [cell]); if (path) { p.path = path; p.goal = { kind: 'chat', v: nv.k }; return } }
+            }
         }
     }
     // idle wander (seeded)
@@ -638,6 +679,20 @@ function autonomous(s, p) {
 }
 
 function hasVisitor(s) { return !!s.visitor && s.visitor.state !== 'leaving' }
+// #2143: two neighbours may share the lot — these are the honest questions
+// the rest of the sim asks when it doesn't care WHICH one, only that company
+// is around (sofa bonus, autonomy target).
+function hasIvy(s) { return !!s.ivy && s.ivy.state !== 'leaving' }
+function visitorForKey(s, k) { return k === 'ivy' ? (hasIvy(s) ? s.ivy : null) : (hasVisitor(s) ? s.visitor : null) }
+function nearestVisitor(s) {
+    const cand = []
+    if (hasVisitor(s)) cand.push({ v: s.visitor, k: 'fern' })
+    if (hasIvy(s)) cand.push({ v: s.ivy, k: 'ivy' })
+    if (!cand.length) return null
+    const p = s.people[s.active] || s.people[0]
+    cand.sort((a, b) => (Math.abs(p.r - a.v.r) + Math.abs(p.c - a.v.c)) - (Math.abs(p.r - b.v.r) + Math.abs(p.c - b.v.c)))
+    return cand[0]
+}
 function nearestFreeTo(s, r, c) {
     for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, 1], [1, -1], [-1, -1]]) if (walkable(s, r + dr, c + dc)) return { r: r + dr, c: c + dc }
     return null
@@ -701,6 +756,85 @@ function updateVisitor(s, dt) {
 function partnerNear(s, v) {
     for (const p of s.people) if (Math.abs(p.r - v.r) + Math.abs(p.c - v.c) <= 3) return true
     return false
+}
+
+// ------------------------------------------------------------- ivy (#2143) ---
+// The second neighbour, on her own clock. Fern is untouched — both may share
+// the lot. Ivy enters through the gate toward the kitchen (she shops for a
+// living), chats on the same reach law, and lingers/returns by her own
+// ladder math. From FRIENDS up she arrives with a market basket — a gift the
+// whole household eats — and the FAMILY basket adds her honey-money. Every
+// random comes from s.rng, so seeds stay exact.
+function updateIvy(s, dt) {
+    const v = s.ivy
+    if (!v) {
+        if (s.hour >= s.ivyAfter + s.ivyGap && s.hour < 19) {
+            const kitchen = s.items.find((it) => it.id === 'stove') || s.items.find((it) => it.id === 'fridge')
+            const dest = kitchen ? targetsOf(s, kitchen)[0] : { r: 5, c: 2 }
+            const path = dest && walkable(s, 12, 5) ? bfsPath(s, { r: 12, c: 5 }, [dest]) : null
+            if (path) {
+                const lv = relLevel(s.rel.ivy)
+                const gift = lv >= 2
+                s.ivy = {
+                    name: 'Ivy', r: 12, c: 5, x: tileX(5) + TILE / 2, y: tileY(12) + TILE / 2,
+                    path, state: 'enter', t: 0, hue: IVY_HUE, face: 1, walkPhase: 0, chatT: 0,
+                    hangUntil: 40 + s.rng() * 40 + 8 * lv,   // friends linger — harder per level than Fern
+                    gift,
+                }
+                s.events.push({ t: 'visit', name: 'Ivy' })
+                think(s, gift
+                    ? 'Ivy drifts in through the gate, market basket already swinging.'
+                    : 'Ivy stops by on the way back from the market — empty basket for now.')
+                if (gift) {
+                    for (const p of s.people) p.needs.hunger = Math.min(1, p.needs.hunger + IVY_GIFT_HUNGER)
+                    s.content = Math.min(WIN_CONTENT, s.content + 1)
+                    let money = 0
+                    if (lv >= 3) {
+                        money = IVY_GIFT_CASH
+                        s.money += money
+                        s.content = Math.min(WIN_CONTENT, s.content + 1)
+                    }
+                    s.events.push({ t: 'gift', lv, money })
+                    think(s, money
+                        ? `Ivy leaves greens AND a jar of her honey — the till jingles with §${money}.`
+                        : 'Ivy leaves a basket of market greens on the kitchen step.')
+                }
+            }
+        }
+        return
+    }
+    v.t += dt
+    walkAlong(s, v, dt, 44)
+    if (v.path && !v.path.length) v.path = null
+    if (v.state === 'enter' && !v.path) { v.state = 'hang'; v.t = 0 }
+    if (v.state === 'hang') {
+        // chat with any resident standing close — the same ring Fern uses
+        let partner = null
+        for (const p of s.people) if (p.faintT <= 0 && !p.working && Math.abs(p.r - v.r) + Math.abs(p.c - v.c) <= 2) partner = p
+        if (partner) {
+            partner.chatT += dt
+            v.chatT += dt
+            partner.needs.social = Math.min(1, partner.needs.social + IVY_SOCIAL * dt)
+            relAdd(s, 'ivy', IVY_CHAT * dt)   // a slower burner than Fern, by design
+            if (partner.chatT > 2.4 && partner.chatT - dt <= 2.4) think(s, chatLine(s, partner, 'ivy'))
+        }
+        if (s.hour > 19 || v.t > v.hangUntil) { v.state = 'leaving'; v.path = bfsPath(s, { r: v.r, c: v.c }, [{ r: 12, c: 5 }]) }
+    } else if (v.state === 'leaving' && !v.path) {
+        s.ivy = null
+        s.events.push({ t: 'visit-end', who: 'ivy' })
+        scheduleIvy(s)
+        return
+    }
+    // if furniture changed around them, re-home toward the kitchen
+    if (v.state === 'hang' && !v.path && !partnerNear(s, v) && !v.repathT) v.repathT = 3
+    if (v.repathT) {
+        v.repathT -= dt
+        if (v.repathT <= 0 && !v.path) {
+            const kitchen = s.items.find((it) => it.id === 'stove') || s.items.find((it) => it.id === 'fridge')
+            const dest = kitchen ? targetsOf(s, kitchen)[0] : { r: 5, c: 2 }
+            if (dest) v.path = bfsPath(s, { r: v.r, c: v.c }, [dest])
+        }
+    }
 }
 
 // #1817: two residents idling within arm's reach share the moment — the
@@ -798,7 +932,7 @@ function finishUse(s, p) {
     p.use = null
     const quality = avg(p) > 0.55
     let n = quality ? 2 : 1
-    if (def.social && hasVisitor(s)) { p.needs.social = Math.min(1, p.needs.social + 0.25); n += 1 }
+    if (def.social && (hasVisitor(s) || hasIvy(s))) { p.needs.social = Math.min(1, p.needs.social + 0.25); n += 1 }   // #2143: any company counts
     s.content = Math.min(WIN_CONTENT, s.content + n)
     s.events.push({ t: 'content', n, id: def.id })
     s.events.push({ t: 'satisfied', need: def.need, name: p.name })
@@ -861,9 +995,24 @@ export function chatPool(s) {
     if (lv >= 3) base.push(`Fern and {p} finish each other's sentences about the weather.`, `Family business: Fern and {p} plan the street's next potluck.`)
     return base
 }
-function chatLine(s, p) {
-    const pool = chatPool(s)
+function chatLine(s, p, k = 'fern') {
+    const pool = k === 'ivy' ? ivyChatPool(s) : chatPool(s)
     return pick(s, pool).replace(/\{p\}/g, p.name)
+}
+// #2143: Ivy's topics — the market runs, the garden, the neighbourhood's
+// economics. Her pool widens on the same tier law as Fern's: the ladder IS
+// the unlock, twice proven.
+export function ivyChatPool(s) {
+    const lv = relLevel(s.rel.ivy)
+    const base = [
+        `Ivy and {p} haggle over tomato prices — the market has its sports.`,
+        `{p} sniffs Ivy's rosemary; she gives sprigs away like confetti.`,
+        `Ivy trades gossip from three streets over.`,
+    ]
+    if (lv >= 1) base.push(`Ivy saves {p} the ugly-but-delicious zucchinis.`)
+    if (lv >= 2) base.push(`Ivy and {p} plan the garden out loud, rows and all.`, `Ivy slips {p} cuttings wrapped in a wet paper towel.`)
+    if (lv >= 3) base.push(`Ivy and {p} are garden conspirators now — the fence has secrets.`, `Family business: Ivy picks the household's winter stores.`)
+    return base
 }
 function doneLine(s, p, def, before) {
     if (def.id === 'bed') return pick(s, [`${p.name} sleeps like a log.`, `${p.name} dreamed about flying.`])
@@ -921,6 +1070,7 @@ function applyHourAt(s, hh) {
     // not per hour; below the zero floor relSub stays silent).
     relSub(s, 'house', 0.02)
     relSub(s, 'fern', 0.035)
+    relSub(s, 'ivy', IVY_FADE)     // #2143: Ivy cools slower than Fern, faster than home
 }
 function newDay(s) {
     for (const p of s.people) p.workedToday = false
@@ -957,6 +1107,7 @@ export function advance(s, dt) {
     }
 
     updateVisitor(s, simDt)
+    updateIvy(s, simDt)
     updateHouseBond(s, simDt)
 
     for (const p of s.people) {
@@ -1025,12 +1176,14 @@ export function advance(s, dt) {
             continue
         }
         if (p.goal && p.goal.kind === 'chat') {
+            const k = p.goal.v || 'fern'     // #2143: which neighbour the walk was for
             p.goal = null
-            if (hasVisitor(s)) {
+            const v = visitorForKey(s, k)
+            if (v) {
                 p.needs.social = Math.min(1, p.needs.social + 0.3)
                 s.content = Math.min(WIN_CONTENT, s.content + 1)
                 s.events.push({ t: 'content', n: 1, id: 'chat' })
-                think(s, chatLine(s, p))
+                think(s, chatLine(s, p, k))
             }
             continue
         }
@@ -1156,6 +1309,7 @@ export function stateHash(s) {
     mix(s.tick); mix(s.day); mix(s.hour); mix(s.money); mix(s.content); mix(s.rank)
     mix(s.ext)
     mix(s.rel.house); mix(s.rel.fern)   // #1817: bonds ride the hash
+    mix(s.rel.ivy)                     // #2143: so does the second neighbour's
     mix(s.spats); mix(s.grudge)        // #2070: quarrels and grudges ride it too
     mix(s.cmdCd)                       // #2131: the command cooldown rides it too
     for (const p of s.people) {
@@ -1166,5 +1320,7 @@ export function stateHash(s) {
     mix(s.items.length)
     for (const it of s.items) { mix(it.r); mix(it.c) }
     mix(s.visitor ? 1 : 0)
+    mix(s.ivy ? 1 : 0)                                // #2143
+    mix(s.ivy && s.ivy.gift ? 1 : 0)                // the basket is state too
     return h >>> 0
 }

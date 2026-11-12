@@ -94,9 +94,26 @@ freezes the rest. Workdays run the clock ×8 while a rostered resident is out
   muffles; every refused `place` emits `refuse` at the offending cell and the
   shell flashes it red. View-only — the sim rules under placement are untouched.
 
+- Second neighbour (#2143): Ivy — the market gardener — rides her own clock
+  (`s.ivy/ivyAfter/ivyGap`, window 12:00–19:00, arrival hour clamped ≤18 so a
+  late schedule can never strand her). She enters at the gate toward the kitchen
+  and chats on Fern's reach ring; `rel.ivy` grows 0.055/s (slower than Fern, on
+  purpose) and fades 0.03/sim-hour through `relSub` — demotions ride the same
+  `rel-down` event. Her ladder beats: linger `40+rng·40+8·lv` (+8 s/level,
+  harder than Fern's +6) and return −1 h/level (floor 12). FRIENDS+ she arrives
+  with a market basket: household hunger +0.18, +1 content; FAMILY adds
+  honey-money §15 and a second point; the basket is state (`gift`) and rides
+  `stateHash` with `rel.ivy` and her presence. Court addresses her (coo pays
+  COO_BOND, insult cuts INSULT_DROP with no household grudge); autonomy routes
+  the lonely resident to the NEAREST visitor (chat goals carry `v`); the sofa
+  bonus counts any company; `roomClear` refuses the wing on top of her. Look:
+  plum dress `#a3579b`, plum-dark hair, a woven basket that swings on the walk,
+  `flower IVY` BONDS row with the FAMILY gold-pulse, gift arpeggio + toast,
+  marquee beat, `RING IVY` debug hook.
+
 ## Verify
 ```bash
-npm run peoplecheck          # 185 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), winnable seeds, determinism
+npm run peoplecheck          # 211 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -108,8 +125,11 @@ npm run peoplecheck          # 185 gates: boot, rules, spare-room wing (#1806), 
 # gates + the relSub pin go red; restore. Or zero the `s.spatFx = 2.4` arm —
 # the sprite-tell arm gate + its pin go red (and the live drive loses the
 # storm puff); restore. Or zero COURT_REACH — exactly the 13 COURT gates go red
-# (172/13) and nothing else; restore. (All proven on this branch: 157/5 → 162/0,
-# and the COURT section's reach mutant 172/13 → 185/0.)
+# (172/13) and nothing else; restore. Or comment the `relAdd(s, 'ivy', ...)`
+# feed in Ivy's chat block — exactly the two chat-law gates (grow + crossing) go
+# red; restore. (All proven on this branch: 157/5 → 162/0, 185 → 211 with the
+# SECOND VISITOR section, and the COURT section's reach mutant 172/13 → 185/0;
+# the ivy-chat mutant 211 → 209/2 → 211.)
 npm run dev   # another terminal
 npm run contractcheck        # includes homebody (CONTRACT_ONLY=homebody for just this)
 DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels + real C/X court keys with pink affection pixels and the far-apart Space doctrine
@@ -161,9 +181,10 @@ source pin go red (~7); restore.
   kind thing to whoever is within arm's reach (and Space/A rides the compliment
   where no object is near), a FAMILY-tier household compliment deepens into
   affection (double, hearts), and `X` hurls an insult — the bond falls and the
-  grudge sets, with the #2070 human exit still the only way back. Relationships
-  beyond the household+Fern triangle (second visitor, kids, pets) and insult on
-  touch remain the open tail of this line.
-- Visitors are Fern only; no kids/pets; single store catalog.
+  grudge sets, with the #2070 human exit still the only way back. The second
+  point of the triangle landed in #2143 (Ivy, the market neighbour — own
+  schedule, own meter, gift economy). Kids/pets and insult on touch remain the
+  open tail of this line.
+- Visitors are Fern and Ivy (#2143); no kids/pets; single store catalog.
 - No skippable-speed control for the player; day/night is cosmetic + decay only.
 - Needs panel shows both residents; no per-object queue display like the original.
