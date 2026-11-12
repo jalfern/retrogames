@@ -282,6 +282,13 @@ export function accFor(pic, country, sex) {
         uni: ((h >>> 7) & 7) === 0 || (country === 'VESKOLE' && (h >>> 19) % 5 === 0) ? 1 : 0,
         ear: ((h >>> 11) & 7) === 0 || (country === 'PARMENISTAN' && (h >>> 21) % 5 === 0) ? 1 : 0,
         gap: ((h >>> 15) & 15) < 2 || (country === 'KIRINIA' && (h >>> 23) % 7 === 0) ? 1 : 0,
+        // #2087 SHADES + BODIES — the original's one-offs also show up in
+        // tinted lenses and different builds. Same doctrine: decor, never in
+        // FEATURES, never evidence; shades ride their OWN ink (drawFace's
+        // SHADES_COL), so the compared glasses family keeps its own pixels.
+        shades: ((h >>> 17) & 15) === 0 || (country === 'ANTEGRIA' && (h >>> 29) % 5 === 0) ? 1 : 0,
+        body: (h >>> 3) % 3,
+        post: (h >>> 27) & 1,
     }
 }
 
@@ -349,6 +356,9 @@ function base(rnd, date, dayRules, used, opts = {}) {
     const pic = Math.floor(rnd() * 1e9)
     const acc = accFor(pic, country, pp.sex)
     face.hat = acc.hat; face.uni = acc.uni; face.ear = acc.ear; face.gap = acc.gap
+    // #2087 the bodies and shades attach the same way — born shared, so the
+    // photo carries the same build and the same dark lenses as the counter.
+    face.shades = acc.shades; face.body = acc.body; face.post = acc.post
     pp.photo = { ...face }
     return {
         trap: null,

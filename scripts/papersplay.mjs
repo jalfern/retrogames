@@ -1178,16 +1178,21 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     }
     r.check(`the live walk saw ${rows.length} faces across the week`, rows.length >= 30, `${rows.length}`)
     const maxOf = (k) => Math.max(...rows.map((x) => x.cp[k] || 0))
-    for (const fam of ['hat', 'uni', 'ear', 'gap']) {
+    for (const fam of ['hat', 'uni', 'ear', 'gap', 'shades']) {
         r.check(`${fam}s paint their own pixels at the counter (max ${maxOf(fam)} px)`, maxOf(fam) > 0)
     }
+    // #2087 BODIES: every face must paint shirt ink ABOVE row 92 (the old
+    // flat band started at 92) — shoulders on every entrant, any build.
+    const shMin = Math.min(...rows.map((x) => x.cp.shoulders || 0))
+    r.check(`shoulders stand above the old flat band (min ${shMin} px of shirt on rows 80-91)`, shMin > 40)
     const hatRows = rows.filter((x) => x.cp.acc.hat > 0)
     r.check(`three hat kinds walk the line live (${[...new Set(hatRows.map((x) => x.cp.acc.hat))].sort().join(',')})`,
         new Set(hatRows.map((x) => x.cp.acc.hat)).size === 3, JSON.stringify(hatRows.map((x) => x.cp.acc.hat)))
     const photoRows = rows.filter((x) => x.cp.photoAcc)
     r.check(`the photo carries the hat too (${photoRows.filter((x) => x.cp.hatPhoto > 0).length} hatted photos)`,
-        photoRows.every((x) => ['hat', 'uni', 'ear', 'gap'].every((k) => x.cp.photoAcc[k] === x.cp.acc[k])) &&
-        photoRows.some((x) => x.cp.acc.hat > 0 && x.cp.hatPhoto > 0),
+        photoRows.every((x) => ['hat', 'uni', 'ear', 'gap', 'shades', 'body', 'post'].every((k) => x.cp.photoAcc[k] === x.cp.acc[k])) &&
+        photoRows.some((x) => x.cp.acc.hat > 0 && x.cp.hatPhoto > 0) &&
+        photoRows.some((x) => x.cp.acc.shades > 0 && x.cp.shadesPhoto > 0),
         JSON.stringify(photoRows.slice(0, 3).map((x) => [x.name, x.cp.acc, x.cp.hatPhoto])))
     const bare = rows.filter((x) => x.cp.acc.hat === 0)
     r.check(`bare heads paint no hat ink (${bare.length} bare rows)`, bare.length >= 3 && bare.every((x) => x.cp.hat === 0))

@@ -61,6 +61,13 @@ const SCARF_KNOT = '#5f3722'
 const UNI_COL = '#262b36'
 const EAR_COL = '#d8b23a'
 const TOOTH_COL = '#e6ebf2'
+// #2087 SHADES — tinted lenses are their OWN decor family: a dedicated dark
+// ink, distinct from the compared glasses' rim (#10151f), its glass (#5a6b8a),
+// the brow ink (#20242e), the unibrow (UNI_COL) and every shirt. Never a
+// compared feature, never evidence.
+const SHADES_COL = '#1b2b3e'
+// #2087 collar/placket shade for the body — off every other ink in the file.
+const SHIRT_DARK = '#28304a'
 
 const PapersPleaseMinGame = () => {
     const stageRef = useRef(null)
@@ -393,8 +400,30 @@ const PapersPleaseMinGame = () => {
             // gets a fresh pad, the big ear grows taller. Decor doctrine —
             // step 0 repaints byte-identical faces (castPix baselines stand).
             const ms = f.markStep ? 1 : 0
+            // #2087 BODIES ARRIVE PROPER — the counter figure was head + a
+            // flat shirt band; the original shows shoulders and posture.
+            // `body` (0 slim / 1 regular / 2 broad) sets the shoulder line,
+            // `post` leans one shoulder lower — a pure serial hash from
+            // accFor, so it is decor by doctrine (never compared, never
+            // evidence) and face==photo carry the same torso. Shoulders draw
+            // BEFORE the head ellipse so the chin overlaps them naturally,
+            // and every pixel stays inside the old band's column (x..x+110).
+            const so = Math.max(P(1), 1)
+            const body = f.body | 0
+            const shL = [86, 83, 80][body], shR = shL + (f.post | 0) * 3
+            c.fillStyle = SHIRTS[f.shirtC]
+            c.fillRect(x, y + P(shL), P(14), P(92 - shL))
+            c.fillRect(x + P(14), y + P(shL + 5), P(12), P(87 - shL))
+            c.fillRect(x + P(96), y + P(shR), P(14), P(92 - shR))
+            c.fillRect(x + P(84), y + P(shR + 5), P(12), P(87 - shR))
+            c.fillStyle = SHIRT_DARK
+            c.fillRect(x, y + P(shL), P(14), so); c.fillRect(x + P(14), y + P(shL + 5), P(12), so)
+            c.fillRect(x + P(96), y + P(shR), P(14), so); c.fillRect(x + P(84), y + P(shR + 5), P(12), so)
             c.fillStyle = SHIRTS[f.shirtC]; c.fillRect(x, y + P(92), P(110), P(30))
             c.strokeStyle = '#141824'; c.lineWidth = 1; c.strokeRect(x + 0.5, y + P(92) + 0.5, P(110) - 1, P(30) - 1)
+            // collar + placket — a shirt, not a stripe
+            c.fillStyle = SHIRT_DARK
+            c.fillRect(x + P(47), y + P(92), P(16), P(3)); c.fillRect(x + P(52), y + P(95), P(6), P(10))
             c.fillStyle = SKINS[f.skin]
             c.beginPath(); c.ellipse(x + P(55), y + P(52), P(f.narrow ? 27 : 34), P(40), 0, 0, Math.PI * 2); c.fill()
             // #1972 ears, painted BEFORE the hair so a sideburn cut buries
@@ -494,6 +523,17 @@ const PapersPleaseMinGame = () => {
                 c.fillRect(x + P(49), y + P(46), P(12), PL(2))
                 c.fillStyle = '#5a6b8a'
                 c.fillRect(x + P(39), y + P(44), P(8), P(6)); c.fillRect(x + P(63), y + P(44), P(8), P(6))
+            }
+            // #2087 SHADES sit on their own — a slightly wider frame, dark
+            // tinted lenses in SHADES_COL, and a gloss tick. Their ink is
+            // disjoint from every existing counter (glasses rim/glass, brow,
+            // unibrow, eye whites), so a face wearing BOTH glasses and
+            // shades still keeps its compared-glasses pixels under the tint.
+            if (f.shades) {
+                c.fillStyle = SHADES_COL
+                c.fillRect(x + P(36), y + P(43), P(14), P(10)); c.fillRect(x + P(60), y + P(43), P(14), P(10))
+                c.fillRect(x + P(48), y + P(44), P(14), P(3))
+                c.fillStyle = '#3d5273'; c.fillRect(x + P(38), y + P(44), P(3), P(2)); c.fillRect(x + P(62), y + P(44), P(3), P(2))
             }
             // #1979 SIGNATURE MARKS — the authored regulars' scars of a life.
             // One ink, five shapes (the big ear grows above); decor by
@@ -1225,6 +1265,7 @@ const PapersPleaseMinGame = () => {
                     const HEXES = {
                         hat: [0x3a4257, 0x2b3243, 0x6b4a2f, 0x7d4a33, 0x5f3722],
                         uni: [0x262b36], ear: [0xd8b23a], gap: [0xe6ebf2],
+                        shades: [0x1b2b3e],
                     }
                     const hexN = (d, hexes) => {
                         let n = 0
@@ -1239,13 +1280,22 @@ const PapersPleaseMinGame = () => {
                         drawFace(cc, f, 0, 0, 1)
                         return cc.getImageData(0, 0, PIX.w, PIX.h).data
                     }
-                    const out = { acc: { hat: p.face.hat || 0, uni: p.face.uni || 0, ear: p.face.ear || 0, gap: p.face.gap || 0 } }
+                    const out = { acc: { hat: p.face.hat || 0, uni: p.face.uni || 0, ear: p.face.ear || 0, gap: p.face.gap || 0, shades: p.face.shades || 0, body: p.face.body | 0, post: p.face.post | 0 } }
                     const A = render(p.face)
-                    for (const k of ['hat', 'uni', 'ear', 'gap']) out[k] = hexN(A, HEXES[k])
+                    for (const k of ['hat', 'uni', 'ear', 'gap', 'shades']) out[k] = hexN(A, HEXES[k])
+                    // #2087 BODIES: shirt ink on rows 80..91 — the band starts
+                    // at 92, so anything up there is a shoulder.
+                    const SHIRT_HEX = SHIRTS.map((h) => parseInt(h.slice(1), 16))
+                    let sh = 0
+                    for (let yy = 80; yy < 92; yy++) for (let xx = 0; xx < PIX.w; xx++) {
+                        const i = (yy * PIX.w + xx) * 4
+                        if (SHIRT_HEX.includes((A[i] << 16) | (A[i + 1] << 8) | A[i + 2])) sh++
+                    }
+                    out.shoulders = sh
                     if (p.passport && p.passport.photo) {
                         const B = render(p.passport.photo)
-                        for (const k of ['hat', 'uni', 'ear', 'gap']) out[k + 'Photo'] = hexN(B, HEXES[k])
-                        out.photoAcc = { hat: p.passport.photo.hat || 0, uni: p.passport.photo.uni || 0, ear: p.passport.photo.ear || 0, gap: p.passport.photo.gap || 0 }
+                        for (const k of ['hat', 'uni', 'ear', 'gap', 'shades']) out[k + 'Photo'] = hexN(B, HEXES[k])
+                        out.photoAcc = { hat: p.passport.photo.hat || 0, uni: p.passport.photo.uni || 0, ear: p.passport.photo.ear || 0, gap: p.passport.photo.gap || 0, shades: p.passport.photo.shades || 0, body: p.passport.photo.body | 0, post: p.passport.photo.post | 0 }
                     }
                     return out
                 },
