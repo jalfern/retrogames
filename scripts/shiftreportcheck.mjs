@@ -133,6 +133,23 @@ ok('nightlies separated', ci.nightlyTotal === 1 && ci.nightlyGreen === 1)
 ok('closed unmerged PR counted', ci.closedUnmerged === 1)
 ok('runs outside window excluded by shell input', m.ciStats({ runs: [], pulls: [] }).finished === 0)
 
+// ---- #2054: silent nights — a nightly-family workflow whose scheduled runs all
+// cancel dies at scheduling (retired runner label); the report must say so. ----
+const spruce = (id, concl, ageH, event = 'schedule') => ({ id, name: 'Shoreperf nightly (perf trend, advisory)', event, conclusion: concl, created_at: iso(NOW - ageH * H), updated_at: iso(NOW - ageH * H + 60000) })
+const win = rs => rs.filter(r => D(r.created_at) >= NOW - 48 * H)
+ok('green nightly => no silence', ci.nightlySilence.length === 0)
+ok('two cancelled scheduled nights named',
+    m.ciStats({ runs: win([...runs, spruce(90, 'cancelled', 30), spruce(91, 'cancelled', 6)]), pulls: [] })
+        .nightlySilence.some(s => /Shoreperf/.test(s.name) && s.n === 2))
+ok('a green night inside the window breaks the streak',
+    m.ciStats({ runs: win([...runs, spruce(90, 'cancelled', 30), spruce(91, 'success', 6)]), pulls: [] }).nightlySilence.length === 0)
+ok('one cancelled night is not silence (dispatch supersede is legal)',
+    m.ciStats({ runs: win([...runs, spruce(90, 'cancelled', 6)]), pulls: [] }).nightlySilence.length === 0)
+ok('non-scheduled cancels never count (push cancels are superseded, not dead)',
+    m.ciStats({ runs: win([...runs, spruce(90, 'cancelled', 30, 'push'), spruce(91, 'cancelled', 6, 'push')]), pulls: [] }).nightlySilence.length === 0)
+ok('newest scheduled success on top of an old cancel pair reads healthy',
+    m.ciStats({ runs: win([...runs, spruce(90, 'cancelled', 40), spruce(91, 'cancelled', 30), spruce(92, 'success', 6)]), pulls: [] }).nightlySilence.length === 0)
+
 // ---- themes ----
 const GAME_FIXTURE = `
 export const GAMES = [

@@ -84,6 +84,7 @@ html[data-theme="light"] .sr{--bg:#f3f5f2;--panel:#ffffff;--ink:#151b18;--muted:
 .sr .ci div{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:12px 14px;min-width:0}
 .sr .ci .n{font:600 24px/1 var(--display);font-variant-numeric:tabular-nums}
 .sr .ci .l{font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.35}
+.sr .silent{margin:10px 0 0;padding:8px 12px;border-left:3px solid var(--warn);background:color-mix(in srgb,var(--warn) 10%,transparent);border-radius:0 8px 8px 0;font-size:12.5px;color:var(--warn)}
 @media (max-width:520px){.sr .ci{grid-template-columns:1fr 1fr}}
 .sr .notes{display:flex;flex-direction:column;gap:12px}
 .sr .golook{border:1px solid var(--builder);border-radius:12px;padding:16px 18px;background:color-mix(in srgb, var(--builder) 6%, var(--panel))}
@@ -364,6 +365,11 @@ export default function ShiftReport() {
                         <div><div className="n">{ci.nightlyTotal}</div><div className="l">nightly runs<br />{ci.nightlyGreen} green</div></div>
                         <div><div className="n">{ci.closedUnmerged}</div><div className="l">PR closed unmerged</div></div>
                     </div>
+                    {(ci.nightlySilence || []).length > 0 && (
+                        <p className="silent">
+                            {ci.nightlySilence.map(s => `${s.name} — ${s.n} night${s.n > 1 ? 's' : ''} silent (every scheduled run cancelled at scheduling — the workflow is dead, not quiet; check its runner)`).join('; ')}
+                        </p>
+                    )}
                 </section>
 
                 {report.notes && report.notes.length > 0 && (

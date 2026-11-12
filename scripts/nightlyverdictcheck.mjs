@@ -116,6 +116,11 @@ const shift = strip(readFileSync(join(here, 'shiftreport.mjs'), 'utf8'))
 ok(shift.includes("conclusion !== 'cancelled'") && /cancelledMain/.test(shift),
   'shiftreport separates cancelled runs from finished ones (vanish != silence)')
 
+// C3 — #2054: a nightly-family workflow cancelling every scheduled night must
+// SAY SO in the shift report; six dead shoreperf nights passed in silence.
+ok(/nightlySilence/.test(shift),
+  'shiftreport names nightly workflows that go silent (all-cancelled scheduled streaks, #2054)')
+
 section('D. wiring tripwires')
 
 const pkg = readFileSync(join(here, '..', 'package.json'), 'utf8')
