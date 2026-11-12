@@ -933,6 +933,40 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     await page.keyboard.press('a') // leave the week-end screen
 }
 
+// #1982 THE RECOGNITION CUE, live: seed 0's whole week walked with the door's
+// own memory. Strangers and first walk-ups pass in silence (days 1-5, every
+// greet tail on days 6-7); the week rings EXACTLY twice — when the arc face
+// returns to the glass (day 6) and when the second regular returns (day 7).
+// The counter is delta-based (dev hooks survive restarts, like sfxTicks).
+{
+    await page.evaluate(() => window.__ppTest.start(0))
+    await wait(300)
+    const ag = () => page.evaluate(() => ({ n: window.__ppTest.sfxAgain(), log: window.__ppTest.againLog() }))
+    const a0 = await ag()
+    await page.evaluate(() => window.__ppTest.runDay()) // day 1 (no regulars) -> day 2 greets
+    await wait(200)
+    r.check('day 1 passes in silence — strangers and first walk-ups never ring', (await ag()).n === a0.n, `${(await ag()).n} vs ${a0.n}`)
+    await page.evaluate(() => { const t = window.__ppTest; t.runDay(); t.runDay(); t.runDay(); t.runDay() })
+    await wait(250)
+    const a6 = await ag()
+    r.check('the day-6 row opens silent — the violators ahead of the neighbor earn no welcome',
+        a6.n === a0.n && a6.log.length === a0.log.length, JSON.stringify(a6.log.slice(a0.log.length)))
+    await page.evaluate(() => window.__ppTest.runDay()) // the row parts mid-day for GRUBAK'S return (the wall's turn), then the greet tail
+    await wait(250)
+    const a7 = await ag()
+    r.check("the door rings when the arc face returns to the glass (seed 0: GRUBAK, day 6) and the greet tail stays silent",
+        a7.n === a0.n + 1 && JSON.stringify(a7.log.slice(a0.log.length)) === JSON.stringify(['6|grubak|turn']),
+        JSON.stringify(a7.log.slice(a0.log.length)))
+    await page.evaluate(() => window.__ppTest.runToEnd()) // day 7's row parts for MARKO'S return; the finale ends in silence
+    await wait(250)
+    const aEnd = await ag()
+    r.check('a whole week rings exactly twice, named: GRUBAK day 6 (turn), MARKO day 7 (again) — the greet tails never',
+        aEnd.n === a0.n + 2 && JSON.stringify(aEnd.log.slice(a0.log.length)) === JSON.stringify(['6|grubak|turn', '7|marko|again']),
+        JSON.stringify(aEnd.log.slice(a0.log.length)))
+    await wait(1100)
+    await page.keyboard.press('a') // leave the week-end screen
+}
+
 await wait(400)
 const clean = errors.filter((e) => !/favicon|Download the React DevTools/i.test(e) &&
     // headless Chrome on a shared box logs this when the OS audio renderer

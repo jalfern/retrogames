@@ -28,7 +28,7 @@ import { dirname, join } from 'node:path'
 import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, dshow, MON, FEATURES, stampLines, portraitDiffs } from '../src/games/PapersPleaseMin/rules.js'
 import { genWeek, genDay, viewOf, CITY2C, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, VISIT_WINDOW, WALL_POOL, wallNameAt, weekWallNames, weekDecoyCount } from '../src/games/PapersPleaseMin/gen.js'
 import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges, monthTurn, isMoneyDeath } from '../src/games/PapersPleaseMin/sim.js'
-import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, RENT, PAYFX, ID, PHOTO, BUBBLE, EVID, SETTLE, QUOTE, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
+import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, RENT, PAYFX, ID, PHOTO, BUBBLE, EVID, SETTLE, QUOTE, RECOGNITION, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SRC = join(HERE, '../src/games/PapersPleaseMin')
@@ -2071,6 +2071,32 @@ if (MUT) {
     await tryMut('the photo-press hold never engages (threshold 100000)',
         mutMod('layout.js', 'export const PHOTO_ZOOM = { s: 1.12, hold: 11 }', 'export const PHOTO_ZOOM = { s: 1.12, hold: 100000 }', 'm50'),
         (m) => m.layout.PHOTO_ZOOM.hold <= 40)
+
+    // #1982 m51/m52: the memory behind the door's welcome. m51 never marks
+    // the plain return — the neighborhood forgets half its regulars by ear;
+    // m52 marks the first walk-up too — the bell rings for strangers to
+    // familiarity it has not earned. Both bite the per-week recall law.
+    await tryMut('the returning neighbor is never marked (recall silenced)',
+        mutMod('gen.js', "a.person.recall = 'again'", "a.person.recall = null", 'm51'),
+        (m) => {
+            for (const seed of SEEDS) if (!m.gen.genWeek(seed).days.some((d) => d.queue.some((a) => a.person.recall === 'again'))) return false
+            return true
+        })
+    await tryMut('greetings wear the memory too (the door rings for first walk-ups)',
+        mutMod('gen.js', "a.person.recall = null // #1982 a first walk-up has no memory to ring", "a.person.recall = 'again' // #1982 a first walk-up has no memory to ring", 'm52'),
+        (m) => {
+            for (const seed of SEEDS) {
+                const wk = m.gen.genWeek(seed)
+                for (const day of wk.days) {
+                    for (const a of day.queue) {
+                        if (a.person.regular == null) continue
+                        const regIdx = m.gen.REGULARS.findIndex((c) => c.id === a.person.regular)
+                        if (day.n === m.gen.firstVisitDay(seed, regIdx) && a.person.recall) return false
+                    }
+                }
+            }
+            return true
+        })
 }
 
 section('AGED PRINT & LIVE EARS (#1976) — the photo ages, the ear survives the cut')
@@ -2113,6 +2139,59 @@ section('SILHOUETTE & HOLD-TO-INSPECT (#2072) — cuts carry shape, the photo li
         'index.jsx: HAIR_SHADOW is derived per cut color and paints the hairline')
     ok(src2072.includes('photoZoom: () => photoZoom') && src2072.includes('photoRect: () =>'),
         'index.jsx: photoZoom + photoRect probes exposed for papersplay')
+}
+
+section('RECOGNITION CUE (#1982) — the door knows its regulars')
+{
+    const idxSrc2 = readFileSync(join(SRC, 'index.jsx'), 'utf8')
+    const rulesSrc2 = readFileSync(join(SRC, 'rules.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    // The motif is law in layout, and it must be a VOICE OF ITS OWN:
+    // ascending (welcome-up), warm (triangle), and arithmetically disjoint
+    // from every fixed tone the booth already owns.
+    ok(Array.isArray(RECOGNITION.notes) && RECOGNITION.notes.length === 2 && RECOGNITION.notes[0] < RECOGNITION.notes[1],
+        `the cue is an ascending two-note welcome (${JSON.stringify(RECOGNITION.notes)})`)
+    ok(RECOGNITION.wave === 'triangle' && RECOGNITION.gain >= 0.03 && RECOGNITION.gain <= 0.08,
+        `the cue is warm but soft (wave ${RECOGNITION.wave}, gain ${RECOGNITION.gain}) — it must not outshout the stamp`)
+    ok(RECOGNITION.dur[0] < RECOGNITION.dur[1], 'the welcome lands on its second, longer note')
+    {
+        const owned = new Set([...idxSrc2.matchAll(/playTone\((\d+)/g)].map((mm) => Number(mm[1])))
+        const clash = RECOGNITION.notes.filter((f) => owned.has(f))
+        ok(clash.length === 0, `the recognition notes reuse a tone the booth already sings (${clash.join('/')}) — the ear could not tell welcome from verdict`)
+    }
+    // The structural memory the chime rides — swept, per seed, per visit.
+    let agains = 0, turns = 0
+    for (const seed of SEEDS) {
+        const wk = genWeek(seed)
+        const arc = arcForWeek(seed)
+        let wkChimes = 0
+        for (const day of wk.days) {
+            for (const a of day.queue) {
+                const p = a.person
+                if (p.regular == null) { ok(!p.recall, `seed ${seed} day ${day.n}: a stranger carries recall=${p.recall} — the door rang for nobody`); continue }
+                const regIdx = REGULARS.findIndex((c) => c.id === p.regular)
+                const isArc = day.n === arc.day && p.regular === arc.id
+                if (isArc) { ok(p.recall === 'turn', `seed ${seed} day ${day.n}: the arc face carries recall=${p.recall}`); turns++ }
+                else if (day.n > firstVisitDay(seed, regIdx)) { ok(p.recall === 'again', `seed ${seed} day ${day.n}: a return carries recall=${p.recall}`); agains++ }
+                else { ok(!p.recall, `seed ${seed} day ${day.n}: a first walk-up carries recall=${p.recall} — greetings have no memory to ring`); continue }
+                wkChimes++
+                ok(p.say && p.say[0] === 'YOU AGAIN.', `seed ${seed} day ${day.n}: recall=${p.recall} but the booth says ${JSON.stringify(p.say && p.say[0])} — memory and words must share one source`)
+            }
+            const recalling = day.queue.filter((a) => a.person.recall).map((a) => a.person.regular)
+            if (day.n >= 6) ok(recalling.length === 1, `seed ${seed} day ${day.n}: ${recalling.length} returning faces at a return day — exactly the head may be remembered`)
+            else ok(recalling.length === 0, `seed ${seed} day ${day.n}: a recall before day 6 — ${recalling.join('/')}`)
+        }
+        ok(wkChimes === 2, `seed ${seed}: the week rang ${wkChimes} welcomes — the law is exactly two returns (days 6, 7)`)
+    }
+    ok(agains === SEEDS.length && turns === SEEDS.length, `${agains} agains / ${turns} turns — every week must carry exactly one return and one arc turn`)
+    // Determinism: the bell rings the same tune every replay of a seed.
+    {
+        const seq = (s) => genWeek(s).days.map((d) => d.queue.map((a) => a.person.recall || '-').join(',')).join('|')
+        ok(seq(4) === seq(4) && seq(9) === seq(9), 'recall drifted between two generations of one seed')
+    }
+    // Decor doctrine: the verdict machinery must not even know the word.
+    ok(!/recall/.test(rulesSrc2), 'rules.js reads recall — a returning face would convict harder than a stranger (decor became evidence)')
+    ok(/nextP && nextP\.recall/.test(idxSrc2) && /sfxAgain\+\+/.test(idxSrc2) && /sfxAgain: \(\) => sfxAgain/.test(idxSrc2) && /againLog: \(\) => againLog\.slice\(\)/.test(idxSrc2),
+        'index.jsx must ring RECOGNITION when the next applicant carries recall, count AND name the arrivals, and expose both for papersplay')
 }
 
 console.log(`\npaperscheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

@@ -19,7 +19,7 @@ import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../..
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { decide, RULES, dfmt, dshow, isAdult, stampLines } from './rules.js'
-import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, PHOTO_TINT, PHOTO_ZOOM, CLOCK, SLIP, RENT, PAYFX, BUBBLE, EVID, SETTLE, QUOTE, wallRows } from './layout.js'
+import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, PHOTO_TINT, PHOTO_ZOOM, CLOCK, SLIP, RENT, PAYFX, BUBBLE, EVID, SETTLE, QUOTE, RECOGNITION, wallRows } from './layout.js'
 
 const SIM_MS = 1000 / 60
 
@@ -95,6 +95,10 @@ const PapersPleaseMinGame = () => {
         // mouth break gets its own tick (the coin-clack+wail doctrine of #1966:
         // each verdict family earns its own sound). Counted by papersplay.
         let sfxTicks = 0
+        // #1982 THE RECOGNITION CUE — count of arrivals that rang the door's
+        // welcome (a familiar face stepped up). Counted by papersplay.
+        let sfxAgain = 0
+        const againLog = []
         // #2021 THE INSPECTOR STAYS — the booth's case outlives its ink:
         // {ok, witness, evidence, ticks} rides after the stamp fades and ends
         // when the next applicant's papers land on the counter (settle → 0).
@@ -188,6 +192,18 @@ const PapersPleaseMinGame = () => {
                 if (gs.last?.ok && action === 'deny' && /BROW|MOUTH/.test(gs.last.evidence || '')) { audioController.playTone(1050, 0.03, 'square', 0.05); sfxTicks++ }
                 if (gs.strikes > before) audioController.playSweep(220, 90, 0.35, 'sawtooth', 0.08)
                 else if (gs.last?.ok) audioController.playTone(action === 'deny' ? 760 : 560, 0.07, 'square', 0.05)
+                // #1982 THE RECOGNITION CUE — when the ruling takes the last
+                // face away and the NEXT applicant is a returning neighbor, the
+                // door rings its welcome as they step up. Decor: guarded by the
+                // generator's structural `recall`, never by speech, so a muted
+                // neighborhood stays fair and a chatty stranger stays silent.
+                const nextP = current(gs).applicant.person
+                if (nextP && nextP.recall) {
+                    audioController.playTone(RECOGNITION.notes[0], RECOGNITION.dur[0], RECOGNITION.wave, RECOGNITION.gain)
+                    audioController.playTone(RECOGNITION.notes[1], RECOGNITION.dur[1], RECOGNITION.wave, RECOGNITION.gain)
+                    sfxAgain++
+                    againLog.push(`${gs.day}|${nextP.regular}|${nextP.recall}`) // who the door welcomed, and when
+                }
             }
             drainEvents()
         }
@@ -942,6 +958,8 @@ const PapersPleaseMinGame = () => {
                     return win(17, 20) + win(90, 93)
                 }),
                 sfxTicks: () => sfxTicks,
+                sfxAgain: () => sfxAgain, // #1982 arrivals the door welcomed
+                againLog: () => againLog.slice(), // #1982 "day|regular|recall" per ring
                 // #1983 the bubble is pixels: count the bubble's own paper
                 // color in its rect on the LIVE canvas (up ≈ full field,
                 // down ≈ nothing — papersplay pins both).

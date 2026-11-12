@@ -554,7 +554,10 @@ settle reaches its −10px step and rests at 0); and day 6's banner announces
 crowded — the day that arrests Grubak (seed 0 day 6) also prints SONYA'S
 first hello as the day's second bubble (4854px), and on the rotated window
 (seed 4) Anja greets behind Sonya's turn (day 6, 5096px) while Petr greets
-behind Tadek's payoff (day 7, 5222px); since #1908 also: seed 0's whole week
+behind Tadek's payoff (day 7, 5222px); since #1982 also: the door rings its
+welcome — seed 0's week rings exactly twice, named: GRUBAK mid-day-6 (turn)
+and MARKO mid-day-7 (again); violators, fill and greet tails never ring
+(`sfxAgain` + `againLog`); since #1908 also: seed 0's whole week
 of bulletin rows matches Node's plan row-for-row across processes, the sheet
 paints in its brighter wallRed ink, no name repeats across the seven walls, and
 no row names anyone standing in the line; since #1943 also: the zoom-crop head
@@ -565,6 +568,33 @@ NOTE:
 headless Chrome on a shared box logs a device-level "AudioContext
 encountered an error" line — an OS audio-renderer complaint, not page
 code, and filtered as such).
+
+## The door knows its regulars (#1982)
+
+The booth remembers faces — until now only the WORDS said so. A returning
+neighbor now also gets a SOUND: when a ruling takes the last face away and
+the next applicant carries the generator's structural memory (`person.recall
+= 'again' | 'turn'`, set by the same visit law that writes `say`), the door
+rings RECOGNITION — two ascending triangle notes (523→784, layout law) as
+they step up to the glass. The first walk-up and every stranger pass in
+silence; the week rings exactly twice.
+
+- **Memory is structural, not lexical**: the chime keys on `recall`, never
+  on `say` — strip the speech and the bell still rings (and the existing
+  all-day speech-purity witness keeps proving the reverse: decor can never
+  convict, `rules.js` must not even contain the word `recall`).
+- **A voice of its own**: the pair is arithmetic-disjoint from every fixed
+  tone the booth owns (stamps 300/190, verdicts 760/560, payday 880/1175,
+  month chime 988, brow tick 1050, clock tick 1150); paperscheck extracts
+  the booth's `playTone` literals and demands zero overlap.
+- Decor for the shell only: the sim never sees the chime, `sfxAgain` counts
+  arrivals for the harness. paperscheck sweeps every seed for the recall law
+  (stranger null · first visit null · return 'again' · arc 'turn' · recall
+  ⟺ the canonical "YOU AGAIN." · exactly two welcomes a week, one per
+  return day); mutants m51 (returns unmarked) and m52 (greetings wear the
+  memory) die. `papersplay` walks seed 0 live and names the rings: GRUBAK
+  mid-day-6 (`turn`), MARKO mid-day-7 (`again`) — violators, fill and greet
+  tails pass in silence (`againLog`).
 
 ## Honest gaps
 
@@ -669,6 +699,14 @@ code, and filtered as such).
   head plus the greeting tail. The queue-size law needed no amendment after
   all (the fill loop absorbs both heads); the second bubble sample per window
   is live in `papersplay`. See "THE CROWDED RETURN (#2012)."
+- **CLOSED by #1982 (2026-11-12):** regulars' returns had no sound of their
+  own — the stamp on a familiar face sounded like every other stamp. The door
+  now rings an ascending two-note welcome when a returning applicant steps up
+  (structural `recall`, layout-pinned motif, two new mutants, live count in
+  papersplay). See "The door knows its regulars." *Still open from the pass:*
+  marks stay static decor (no aging between visits; the aged-photo trap has
+  never worn a regular's face) and the mole's 4 ink px at phone scale
+  (`?lite=1` 640x426) is unmeasured — filed as #2080.
 - **CLOSED by #1891 (2026-11-11):** the evidence string was the contract's
   promise but lived only in the sim (`gs.last.evidence`), the wall printed bare
   numerals, the OCT→NOV roll was silent, and papers teleported onto the
