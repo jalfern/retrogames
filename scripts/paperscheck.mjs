@@ -228,8 +228,8 @@ section('THE CALENDAR IS ONE CLOCK (#1889) — serials match the wall, the week 
         ok(v6.person.passport.expiry.d === 31 && v6.person.passport.expiry.m === 10 && v6.person.passport.expiry.y === 1982,
             `seed ${seed}: the day-6 EXPIRED paper does not carry OCT 31 — no cross-month paper at the booth`)
         const d6 = decide(viewOf(day, v6))
-        ok(d6.verdict === 'deny' && d6.violations.some((x) => x.rule === 'EXPIRED' && /1982\.10\.31 < TODAY 1982\.11\.01/.test(x.evidence)),
-            `seed ${seed}: the booth did not print EXPIRED 1982.10.31 < TODAY 1982.11.01`)
+        ok(d6.verdict === 'deny' && d6.violations.some((x) => x.rule === 'EXPIRED' && /OCT 31 1982 < TODAY NOV 01 1982/.test(x.evidence)),
+            `seed ${seed}: the booth did not print EXPIRED OCT 31 1982 < TODAY NOV 01 1982 (#2130: the strip speaks the paper's dates)`)
     }
 
     // short-month seams, synthetic — the rolled week never reaches one, so the
@@ -323,7 +323,7 @@ section('THE STAMP SPEAKS (#1891) — the strip quotes the evidence, the wall pr
         if (hit) {
             const exp = hit.a.person.passport.expiry
             const sl = stampLines({ ok: true, action: 'deny', verdict: 'deny', why: 'EXPIRED', evidence: hit.d.violations.map((x) => x.evidence).join('; ') }, EVID.wrap)
-            ok(sl.evidence.join(' ').includes(`EXPIRED ${dfmt(exp)} < TODAY 1982.11.01`),
+            ok(sl.evidence.join(' ').includes(`EXPIRED ${dshow(exp)} < TODAY NOV 01 1982`),
                 `seed ${seed}: the strip did not print the cross-month comparison in full: ${JSON.stringify(sl.evidence)}`)
         }
     }
@@ -351,6 +351,56 @@ section('THE STAMP SPEAKS (#1891) — the strip quotes the evidence, the wall pr
     ok(30 + QUOTE.hold + SETTLE.ticks <= 204, `judged hold ${30 + QUOTE.hold + SETTLE.ticks} ticks outruns the drop window`)
     ok(Math.abs(SETTLE.dy(SETTLE.ticks)) <= PAPERS.h / 4 && SETTLE.ticks >= 6 && SETTLE.ticks <= 30,
         `settle out of its envelope (top ${SETTLE.dy(SETTLE.ticks)}px, ${SETTLE.ticks} ticks)`)
+}
+
+// ------------------------------- #2130 THE STRIP SPEAKS THE PAPER'S DATES ----
+section('THE STRIP SPEAKS THE PAPER\'S DATES (#2130) — no serials in evidence, every date token is printed, the corridor still fits')
+{
+    // #1891 gave the papers and the wall month names, but the booth itself kept
+    // testifying in serials (`EXPIRED 1982.10.31 < TODAY …`) — a format the
+    // player never sees printed on any surface. #2130: every date the evidence
+    // speaks is dshow, the same shape the paper and wall lines print; `dfmt`
+    // survives as the machine serial (harness pins, DEV probe), out of the
+    // player's sight by law.
+    const SERIAL = /\d{4}\.\d{1,2}\.\d{1,2}/
+    let expired = 0, idreq = 0, curfew = 0, clipped = 0, longest = 0, longestEv = ''
+    for (const seed of SEEDS) {
+        for (const day of genWeek(seed).days) {
+            for (const a of day.queue) {
+                const v = decide(viewOf(day, a))
+                const pp = a.person.passport
+                for (const x of v.violations) {
+                    ok(!SERIAL.test(x.evidence), `seed ${seed} d${day.n}: evidence carries a serial no booth surface prints: "${x.evidence}"`)
+                    if (x.evidence.length > longest) { longest = x.evidence.length; longestEv = x.evidence }
+                    if (x.rule === 'EXPIRED') { expired++; ok(x.evidence === `EXPIRED ${dshow(pp.expiry)} < TODAY ${dshow(day.date)}`, `seed ${seed} d${day.n}: EXPIRED quote is not the printed shape: "${x.evidence}"`) }
+                    if (x.rule === 'IDREQ') { idreq++; ok(x.evidence === `ADULT (DOB ${dshow(pp.dob)}) WITHOUT ID CARD`, `seed ${seed} d${day.n}: IDREQ quote is not the printed shape: "${x.evidence}"`) }
+                    if (x.rule === 'CURFEW') { curfew++; ok(x.evidence === `EXPIRES ${dshow(pp.expiry)} — CURFEW WANTS 7 DAYS OF GRACE`, `seed ${seed} d${day.n}: CURFEW quote is not the printed shape: "${x.evidence}"`) }
+                    // token fidelity — every NAME DD YYYY the quote testifies to is
+                    // ALSO printed at the booth: the passport's EXPIRES/DOB line or
+                    // the wall header. The booth may not cite a date it never shows.
+                    if (pp) {
+                        for (const tok of x.evidence.match(/[A-Z]{3} \d{2} \d{4}/g) || []) {
+                            ok(tok === dshow(pp.expiry) || tok === dshow(pp.dob) || tok === dshow(day.date),
+                                `seed ${seed} d${day.n}: evidence cites ${tok}, printed nowhere at the booth: "${x.evidence}"`)
+                        }
+                    }
+                    // the real corridor law: no quote across the sweep may end in
+                    // wrapQuote's ellipsis (the old length/2-line pins passed a
+                    // spliced "...").
+                    const q = stampLines({ verdict: 'deny', ok: true, action: 'deny', why: x.rule, evidence: x.evidence }, EVID.wrap)
+                    if (q.evidence.some((ln) => ln.endsWith('...'))) clipped++
+                }
+            }
+        }
+    }
+    ok(expired >= SEEDS.length, `only ${expired} EXPIRED quotes fired — the day-6 signature paper must exist on every seed`)
+    ok(idreq >= 1, 'the sweep never fired IDREQ — its printed-shape law has no witness')
+    ok(curfew >= 1, 'the sweep never fired CURFEW — its printed-shape law has no witness')
+    ok(clipped === 0, `${clipped} quotes outgrew the corridor and were clipped with "..."`)
+    ok(longest <= EVID.wrap, `the longest evidence (${longest} chars, "${longestEv}") outgrew the wrap (${EVID.wrap})`)
+    // the machine serial survives for the harness — the player just never reads it.
+    ok(dfmt({ y: 1982, m: 10, d: 27 }) === '1982.10.27', 'dfmt died — the machine serial the harness reads is gone')
+    console.log(`  ..    ${expired + idreq + curfew} dated quotes across every seed print the paper's own shape; longest ${longest}/${EVID.wrap}; zero serials, zero clips`)
 }
 
 // ------------------------------------------------------------ PORTRAIT ----
@@ -986,7 +1036,10 @@ section('SHIFT CLOCK (#1960) — the gate closes, the finale must finish — eve
     // the HTML chrome, which owns the canvas top-right corner: verified in
     // screenshots, not assumed)
     ok(CLOCK.y + CLOCK.r + 6 <= WALL.top + WALL.labelLine - WALL.size, 'the clock digits run into the RULEBOOK label')
-    ok(CLOCK.x - CLOCK.r >= 12 + 'DAY 1   1982.10.27'.length * 15 * CHAR + 4, 'the clock crowds the DAY/date line')
+    // #2130 re-pin: the header prints dshow since #1891 (`OCT 27 1982`, 19
+    // chars) but this law still measured the old serial row (17) — the clock
+    // was clear of a width the wall no longer prints.
+    ok(CLOCK.x - CLOCK.r >= 12 + 'DAY 1   OCT 27 1982'.length * 15 * CHAR + 4, 'the clock crowds the DAY/date line')
     ok(CLOCK.x + CLOCK.r <= PORTRAIT.x - 4, 'the clock runs into the portrait column')
     ok(CLOCK.x + CLOCK.r <= CW - 4 && CLOCK.x - CLOCK.r >= 2, 'the clock runs off the wall')
     console.log('  ..    budget = queue × SEAT (18 s/applicant); 10 s human cadence clears every day of every seed; the naive eye still clears the week; a ~22 s cadence closes day 1 (docked, morning rewound); day 7 dawdles to a deterministic 2-head quota loss; wall clock 08:00→18:00, red = the last hour, monotone, hung clear of chrome and text')
@@ -2043,6 +2096,38 @@ if (MUT) {
             for (const seed of SEEDS) {
                 for (const day of m.gen.genWeek(seed).days) {
                     if (!/^[A-Z]{3} \d{2} \d{4}$/.test(m.rules.dshow(day.date))) return false
+                }
+            }
+            return true
+        })
+    // #2130 m61/m62: the booth slips back into testifying in serials — the
+    // dshow definition intact, the evidence line alone reverted.
+    await tryMut('EXPIRED evidence goes back to serials (dshow -> dfmt)',
+        mutMod('rules.js', 'v.push({ rule: \'EXPIRED\', evidence: `EXPIRED ${dshow(pp.expiry)} < TODAY ${dshow(view.date)}` })',
+            'v.push({ rule: \'EXPIRED\', evidence: `EXPIRED ${dfmt(pp.expiry)} < TODAY ${dfmt(view.date)}` })', 'm61'),
+        (m) => {
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    for (const a of day.queue) {
+                        for (const x of m.rules.decide(m.gen.viewOf(day, a)).violations) {
+                            if (x.rule === 'EXPIRED' && /\d{4}\.\d{2}\.\d{2}/.test(x.evidence)) return false
+                        }
+                    }
+                }
+            }
+            return true
+        })
+    await tryMut('CURFEW evidence goes back to a serial (dshow -> dfmt)',
+        mutMod('rules.js', 'evidence: `EXPIRES ${dshow(pp.expiry)} — CURFEW WANTS 7 DAYS OF GRACE`',
+            'evidence: `EXPIRES ${dfmt(pp.expiry)} — CURFEW WANTS 7 DAYS OF GRACE`', 'm62'),
+        (m) => {
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    for (const a of day.queue) {
+                        for (const x of m.rules.decide(m.gen.viewOf(day, a)).violations) {
+                            if (x.rule === 'CURFEW' && /\d{4}\.\d{2}\.\d{2}/.test(x.evidence)) return false
+                        }
+                    }
                 }
             }
             return true

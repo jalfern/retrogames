@@ -968,6 +968,51 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     await wait(250)
 }
 
+// #2130 THE STRIP SPEAKS THE PAPER'S DATES, live: day 6's signature paper —
+// the one that died OCT 31 against the NOV 01 wall — must reach the strip as
+// the FULL month-name comparison, the same shape the passport and the wall
+// print. Walk the week with real keys, seat the expired paper at the glass,
+// DENY it with a real key, and read what the booth painted: no serial ever
+// reaches the player's line of sight.
+{
+    await page.evaluate(() => window.__ppTest.start(0))
+    await wait(300)
+    for (let d = 1; d < 6; d++) { await page.evaluate(() => window.__ppTest.runDay()); await wait(120) }
+    await waitBannerOff() // the NEW MONTH banner is a veil — wait it out before sampling
+    const wallNow = await page.evaluate(() => window.__ppTest.wallDate())
+    // seat the expired paper: stamp the correct verdict with real keys until
+    // the entrant at the glass carries the OCT 31 passport (seatWindow law:
+    // the booth must be staffed with the right human before anything is read).
+    let seated = false
+    for (let g = 0; g < 14 && !seated; g++) {
+        seated = await page.evaluate(() => {
+            const p = window.__ppTest.probe()
+            const per = p && p.view && p.view.person
+            return !!(per && per.passport && per.passport.expiry.y === 1982
+                && per.passport.expiry.m === 10 && per.passport.expiry.d === 31
+                && window.__ppTest.verdict() === 'deny')
+        })
+        if (!seated) {
+            const v = await page.evaluate(() => window.__ppTest.verdict())
+            await page.keyboard.press(v === 'approve' ? 'a' : 'd')
+            await wait(300)
+        }
+    }
+    await waitQuiet() // the previous ruling's ink, pin and drop must be over
+    await page.keyboard.press('d')   // the real deny of the expired paper
+    await wait(200)
+    const ep = await page.evaluate(() => window.__ppTest.evidencePaint())
+    const quote = (ep.evidence || []).join(' ')
+    const after = await probe()
+    r.check(`the wall prints the seam as the papers do (${wallNow} on the header)`, wallNow === 'NOV 01 1982', wallNow)
+    r.check(`the deny quotes the paper's own dates on the strip: "${quote}"`,
+        seated && after.last.ok === true && after.last.why === 'EXPIRED'
+        && quote.includes('EXPIRED OCT 31 1982 < TODAY NOV 01 1982')
+        && !/\d{4}\.\d{2}\.\d{2}/.test(quote),
+        JSON.stringify({ seated, last: after.last, quote }))
+    await waitQuiet() // drain before the next section inherits the booth
+}
+
 // #1988 REPERTOIRE, live: chapter 1 (seed 6) meets the SAME cast seat as
 // seed 0 — Grubak turns again — but the wall's drama speaks a DIFFERENT
 // protest line. The booth is not a jukebox stuck on week 0's record; the

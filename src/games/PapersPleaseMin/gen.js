@@ -216,8 +216,8 @@ export const againLineFor = (c, seed) => (repChapter(seed) ? c.againAlt : c.line
 
 // Late-October start, like the original's campaign: the week crosses a REAL
 // month-end (OCT 27…31, NOV 01–02). Day 6's EXPIRED test paper prints the
-// first cross-month verdict the booth renders — EXPIRED 1982.10.31 < TODAY
-// 1982.11.01 — the date arithmetic the border guard does every shift.
+// first cross-month verdict the booth renders — EXPIRED OCT 31 1982 < TODAY
+// NOV 01 1982 — the date arithmetic the border guard does every shift.
 export const START_DATE = { y: 1982, m: 10, d: 27 }
 
 // The trap species: six ways a careless eye convicts an innocent paper.

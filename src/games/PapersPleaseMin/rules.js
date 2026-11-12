@@ -24,9 +24,14 @@ export const dnum = (dt) => dt.y * 365 + MPREFIX[dt.m - 1] + dt.d
 export const dfmt = (dt) => `${dt.y}.${String(dt.m).padStart(2, '0')}.${String(dt.d).padStart(2, '0')}`
 // #1891 MONTH-NAME DATES — the original prints `OCT 27`, not `1982.10.27`:
 // a name plus a number makes the cross-month read instant (10.31 vs 11.01 is
-// decode-at-a-glance work on a phone; OCT 31 vs NOV 01 is not). Documents and
-// the wall header print dshow; RULES text and evidence strings keep numerals
-// (they are the contract's tokens, pinned verbatim by paperscheck).
+// decode-at-a-glance work on a phone; OCT 31 vs NOV 01 is not). #1891 made
+// the documents and the wall header print dshow but left RULES prose and the
+// evidence strings in serials — the booth testified in a format no surface
+// the player reads prints. #2130 closes that tail: EVERY date the booth
+// speaks in prose — papers, wall, evidence strip — is dshow; every date token
+// in evidence equals the dshow of the paper/wall date it names (paperscheck
+// bans serials in evidence outright). `dfmt` survives as the machine serial:
+// harness pins and the DEV probe read numbers, the player never does.
 export const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
 export const MONFULL = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER']
 export const dshow = (dt) => `${MON[dt.m - 1]} ${String(dt.d).padStart(2, '0')} ${dt.y}`
@@ -49,10 +54,11 @@ export const isAdult = (dob, today) => today.y - dob.y >= 18
 // The contract calls the evidence string "the promise the booth keeps to the
 // player", but until now the strip printed only the RULE NAME (`WITNESS:
 // EXPIRED`) while the full comparison stayed in the sim. The original shows
-// the actual clause you failed on — `EXPIRED 1982.10.31 < TODAY 1982.11.01`
-// — so the strip quotes it, wrapped to the layout's width law. Pure over
-// gs.last, shared by the paint and the DEV probe; paperscheck pins that the
-// quote is the evidence VERBATIM (rule names may abbreviate, evidence may not).
+// the actual clause you failed on — `EXPIRED OCT 31 1982 < TODAY NOV 01 1982`
+// , the dates in the same month-name shape the papers print (#2130) — so the
+// strip quotes it, wrapped to the layout's width law. Pure over gs.last,
+// shared by the paint and the DEV probe; paperscheck pins that the quote is
+// the evidence VERBATIM (rule names may abbreviate, evidence may not).
 export const wrapQuote = (s, width) => {
     const lines = []
     let line = ''
@@ -149,7 +155,7 @@ export function decide(view) {
         v.push({ rule: 'ALLOWED', evidence: `${pp.country} IS NOT ON THE ENTRY LIST` })
     }
     if (has('EXPIRED') && dnum(pp.expiry) < view.dateNum) {
-        v.push({ rule: 'EXPIRED', evidence: `EXPIRED ${dfmt(pp.expiry)} < TODAY ${dfmt(view.date)}` })
+        v.push({ rule: 'EXPIRED', evidence: `EXPIRED ${dshow(pp.expiry)} < TODAY ${dshow(view.date)}` })
     }
     // no witness, no ruling: if the scale is not on the wall, the booth
     // has no visible proof and MUST NOT deny. (Gen guarantees the witness
@@ -165,10 +171,10 @@ export function decide(view) {
         v.push({ rule: 'IDMATCH', evidence: `ID "${p.idcard.name}" vs PASSPORT "${pp.name}"` })
     }
     if (has('IDREQ') && p.papers.indexOf('idcard') < 0 && isAdult(pp.dob, view.date)) {
-        v.push({ rule: 'IDREQ', evidence: `ADULT (DOB ${dfmt(pp.dob)}) WITHOUT ID CARD` })
+        v.push({ rule: 'IDREQ', evidence: `ADULT (DOB ${dshow(pp.dob)}) WITHOUT ID CARD` })
     }
     if (has('CURFEW') && dnum(pp.expiry) - view.dateNum <= 6) {
-        v.push({ rule: 'CURFEW', evidence: `EXPIRES ${dfmt(pp.expiry)} — CURFEW WANTS 7 DAYS OF GRACE` })
+        v.push({ rule: 'CURFEW', evidence: `EXPIRES ${dshow(pp.expiry)} — CURFEW WANTS 7 DAYS OF GRACE` })
     }
     if (has('PORTRAIT') && p.passport) {
         const diffs = portraitDiffs(p.face, p.passport.photo)
