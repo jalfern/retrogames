@@ -18,7 +18,7 @@
 //   npm run muteguardcheck -- --mutate   # + one guard-disable mutant of the
 //                                        lib itself; it MUST make test 2 die
 
-import { spawn, spawnSync } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -30,6 +30,7 @@ const WORK = join(ROOT, '.muteguard-tmp')
 const GUARD = join(HERE, 'lib', 'mutateguard.mjs')
 const SENTINEL = 'the bytes before the mutant\n'
 const MUTANT = 'THE MUTANT IS STILL HERE\n'
+const STAMP = '.mutant-running' // #2049: the freeze marker, also in .gitignore
 const MUTATE = process.argv.includes('--mutate')
 
 let passes = 0, fails = 0
@@ -215,6 +216,86 @@ function urlKeys() {
     rmSync(fresh, { force: true })
 }
 
+// #2049 — the tree is FROZEN during a mutant run. Planting rewrites tracked
+// files in place; studio's `git add` raced asteroidscheck --mutant, mutant
+// text rode into the commit and shipped via PR #2047 while every trusted gate
+// result was measured on the clean tree. The guard now refuses to start dirty,
+// aborts when another tracked file changes while a mutant is down, and parks
+// .mutant-running at the worktree root for the run's whole life. Proved in a
+// throwaway git repo (git is present in CI — checkout itself needs it; the
+// section skips loudly if not).
+function freezeTree() {
+    console.log('freeze — #2049: refuse dirty, abort on concurrent edit, stamp while live')
+    const REPO = join(WORK, 'repo')
+    rmSync(REPO, { recursive: true, force: true })
+    mkdirSync(REPO, { recursive: true })
+    const g = (args) => { try { return spawnSync('git', ['-C', REPO, ...args], { stdio: 'ignore' }).status === 0 } catch { return false } }
+    if (!g(['init']) || !g(['config', 'user.email', 'qa@muteguard.test']) || !g(['config', 'user.name', 'muteguard'])) {
+        ok(false, 'freeze: git available for the throwaway repo', 'no git binary — the guard cannot enforce #2049 here either')
+        return
+    }
+    const clean = join(REPO, 'clean.txt')
+    writeFileSync(clean, SENTINEL)
+    g(['add', 'clean.txt'])
+    if (!g(['commit', '-m', 'init'])) { ok(false, 'freeze: throwaway repo seeded'); return }
+    const script = join(WORK, 'freeze-fixture.mjs')
+    const FIXT = `
+import { execFileSync } from 'node:child_process'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+const [repo, mode, guardPath, sentinel, stampFile] = process.argv.slice(2)
+const { plant, pull } = await import(guardPath + '?v=' + Date.now())
+const F = repo + '/fix.txt'
+const stamp = () => existsSync(stampFile)
+const g = (a) => { try { return execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8' }).trim() } catch { return '' } }
+const out = {}
+const run = (fn) => { try { fn() } catch (e) { out.threw = String((e && e.code) || e) } }
+if (mode === 'refuse') {
+    writeFileSync(F, sentinel)
+    g(['add', '-A']) // track fix.txt at HEAD, then dirty it BEFORE the run
+    g(['commit', '-m', 'seed2'])
+    writeFileSync(F, 'DIRTY BEFORE THE RUN\\n')
+    run(() => plant(F, 'MUTANT\\n'))
+} else if (mode === 'concurrent') {
+    run(() => plant(F, 'MUTANT\\n'))
+    out.stampMid = stamp()
+    writeFileSync(repo + '/clean.txt', 'POLLUTED WHILE MUTANT DOWN\\n') // session edits another file
+    run(() => pull(F))
+    out.stampGone = !stamp() // unreachable if pull aborts — the parent asserts after exit
+} else {
+    run(() => plant(F, 'MUTANT\\n'))
+    out.stampMid = stamp()
+    run(() => pull(F))
+    out.stampGone = !stamp()
+    out.bytes = existsSync(F) ? readFileSync(F, 'utf8') : null
+}
+console.log(JSON.stringify(out))
+process.exit(0)
+`
+    writeFileSync(script, FIXT)
+    const runMode = (mode) => spawnSync(process.execPath, [script, REPO, mode, GUARD, SENTINEL, join(REPO, '.mutant-running')], { encoding: 'utf8', timeout: 30000 })
+    let r = runMode('refuse')
+    ok(r.status === 1 && /#2049/.test(r.stderr || '') && readFileSync(join(REPO, 'fix.txt'), 'utf8') === 'DIRTY BEFORE THE RUN\n',
+        'refuse: plant() dies on a dirty tree without overwriting it', `exit ${r.status}`)
+    r = runMode('clean')
+    let o = {}
+    try { o = JSON.parse(r.stdout) } catch { /* report below */ }
+    ok(r.status === 0 && o.bytes === SENTINEL && o.stampMid === true && o.stampGone === true && !o.threw,
+        'clean: plant/pull round-trips, stamp lives only for the run', `exit ${r.status} ${JSON.stringify(o)}`)
+    r = runMode('concurrent')
+    let diffAfter = null
+    try { diffAfter = execFileSync('git', ['-C', REPO, 'diff', 'HEAD', '--name-only'], { encoding: 'utf8' }).trim() } catch { /* red below */ }
+    ok(r.status === 1 && /#2049/.test(r.stderr || '') && diffAfter === 'clean.txt' && readFileSync(join(REPO, 'clean.txt'), 'utf8') === 'POLLUTED WHILE MUTANT DOWN\n' && !existsSync(join(REPO, '.mutant-running')),
+        'abort: foreign edit named and left for its author, our mutant restored, stamp removed, exits red', `exit ${r.status} diff=${JSON.stringify(diffAfter)}`)
+    let c = spawnSync(process.execPath, [GUARD, '--check'], { cwd: ROOT, encoding: 'utf8' })
+    ok(c.status === 0, '--check: quiet worktree answers safe to stage', `exit ${c.status} ${(c.stderr || '').trim()}`)
+    writeFileSync(join(ROOT, '.mutant-running'), 'pid 4242\n')
+    c = spawnSync(process.execPath, [GUARD, '--check'], { cwd: ROOT, encoding: 'utf8' })
+    ok(c.status === 1 && /frozen/.test(c.stderr || '') && /4242/.test(c.stderr || ''),
+        '--check: a live stamp is named with its pid', `exit ${c.status} ${(c.stderr || '').trim()}`)
+    rmSync(join(ROOT, '.mutant-running'), { force: true })
+    rmSync(REPO, { recursive: true, force: true })
+}
+
 async function run() {
     rmSync(WORK, { recursive: true, force: true })
     mkdirSync(WORK, { recursive: true })
@@ -225,6 +306,7 @@ async function run() {
     console.log('guard via URL — plant(new URL(...)) then SIGTERM (#1679)')
     await killRun('guard-url', 'guard-url', 'clean')
     urlKeys()
+    freezeTree()
     audit()
     if (MUTATE) await mutantKill()
     console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'} — ${passes} passed, ${fails} failed`)

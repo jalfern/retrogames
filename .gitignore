@@ -16,6 +16,8 @@ scripts/.strips/**/*.png
 scripts/.strips/**/*.jpg
 # #1359 scratch files for muteguardcheck's kill tests (fixture + sentinel bytes)
 .muteguard-tmp/
+# #2049 stamp: a --mutate run is live in this worktree (the tree is frozen)
+.mutant-running
 __pycache__/
 *.pyc
 

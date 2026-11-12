@@ -139,13 +139,13 @@ let selectmutat = false
 if (args.includes('--mutate-select')) {
     const osrc = readFileSync(resolve(HERE, '../src/games/CometDriftHD/scene.js'), 'utf8')
     if (!osrc.includes(OLINE)) { console.error('MUTATE_SELECT: offset law not found — probing stale code.'); process.exit(2) }
-    writeFileSync(resolve(HERE, '../src/games/CometDriftHD/scene.js'), osrc.replace(OLINE, OUTIL))
+    const pSel = resolve(HERE, '../src/games/CometDriftHD/scene.js')
+    plant(pSel, osrc.replace(OLINE, OUTIL)) // #2049: was a raw writeFileSync — pull() at exit was a silent no-op (corpse path)
     selectmutat = true
     console.log('  ..    mutated: the chevrons collapse onto the centre — the #794 selector gates MUST report a FAIL')
     process.on('exit', () => {
         if (selectmutat) {
-            const p = resolve(HERE, '../src/games/CometDriftHD/scene.js')
-            pull(p)
+            pull(pSel)
             console.log('  ..    selector mutation restored')
         }
     })
