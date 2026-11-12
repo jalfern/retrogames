@@ -1,63 +1,78 @@
-# STATE — RetroGames (last update: 2026-11-12, slot b session end)
+# STATE — session 254 (2026-11-12, slot a)
 
-## Now playing
-- Arcade: HOMEBODY (`/retrogames/homebody`) — the lot has a second neighbour.
-  Ivy the market gardener arrives 12:00–19:00 on her own clock, climbs her
-  own bond ladder, and from FRIENDS up her visits carry a basket (FAMILY adds
-  §15 honey-money). Phone-ready: tap to start, court keys ride the pad's A/B.
-- Papers-Min still ships the ageing neighbourhood (#2080); all other titles
-  unchanged.
+## What shipped
+**VIPER PIT — OUTROUND REPLIES (#2148)** merged as `7c62d22` (PR #2153).
+The KO card is now an exchange: per-character taunt-on-win (winner's shout in
+their own accent + beckon/flex/point/raise/spit rig poses held through the
+freeze), round-end loser sub-lines (own `roundLose` table), call-and-response
+reveal (520/700 ms) with a loser-register reply sting, PERFECT/CLUTCH/IN
+STYLE judges (HP law; PERFECT > IN STYLE > CLUTCH), match-arc line (WITHOUT
+LOSS / ONES THAT MATTERED). All choice pure in `koQuotes(m, ctx)`; engine,
+hashes, IRON RING untouched. 31 new viperpitcheck gates: per-pair law tables
+in Node, judge ladder incl. chip-erases-PERFECT, arc sweep/comeback, live
+cabinet exchange-ordering (`outround()` hook). Proven-fail: stripped-taunt
+data mutant, dead-PERFECT-branch module mutant, hand-mutant instant-reveal
+killed exactly the ordering gate — restored. Green: 340 ok/1 fail (= #2151,
+see below). Prod VERIFIED (chunk index-CVPj9gNf.js carries all lines).
+README honest gaps updated (CLOSED marker; portrait polish kept open).
 
-## Shipped this session
-- **#2143 (PR #2150, squash 22218fe):** Ivy — second visitor, own schedule
-  (window honest: hour clamped ≤18 so a late schedule can't strand her),
-  `rel.ivy` on the proven #1817 law (0.055/s grow, one rel-up per edge,
-  0.03/h fade via relSub), gift economy (hunger+0.18/+1 content at FRIENDS;
-  §15+2nd point at FAMILY, basket rides stateHash), court C/X symmetric with
-  Fern, nearest-visitor autonomy (chat goals carry `v`), roomClear refuses the
-  wing on Ivy, `flower IVY` BONDS row, swinging-basket sprite, marquee beat.
-  peoplecheck 185→211 (+26 gates); mutant by hand: kill the ivy chat feed →
-  exactly the two chat-law gates red (209/2), restore 211/0. Drive +5 live
-  gates (plum 117 px, basket tan 100–114 px, panel pips rgb(163,87,155)).
-  Prod verified live.
+## Open PR — DO NOT LOSE
+**#2159** (judge-badge lift over the finisher name; cosmetic follow-up on
+#2148, gates green 341/1 + the new lift gate) was blocked from merging by
+the #601 freeze: the latest completed nightly failed `full-smoke` at fddf4a2
+(the consent-gate boot-red family #2115/#2095 — FIXED since by #2152, which
+is in main). A fresh nightly is in progress at d095948 (carries #2152 + Ivy
++ mine); when it goes green, merge #2159 with the rule-5 command from the
+`forge/viper-judge` worktree (`~/Dev/retrogames-forge-viper-reply`).
 
-## Catch of the session (learnings that generalize)
-- **A poll whose grep errors is a poll that never verifies.** `grep` on
-  minified bundles dies with "character not in range" under multibyte locales
-  — silent exit 2, marker "absent" forever. Production was live while I
-  polled. Use `LC_ALL=C grep -a` for anything binary-ish; a marker missing
-  from a 1 MB bundle is an instrument failure first.
-- **Prod verify: entry-hash flips are the wrong witness.** Vite ships the
-  game strings in lazy chunks; the HTML entry hash can predate the deploy and
-  survive it. Scan the entry's *referenced* chunks for a game-unique string
-  (found Ivy in `index-BWSc_ee7.js`; Fern's strings live nowhere in the
-  entry either).
-- **Same failure twice is not a flake.** Two identical `hearts 0 / pink px 0`
-  drive failures → reproduced on clean origin/main with my diff stashed →
-  pre-existing, filed (#2149), lane moved on. The law gate passing beside the
-  pixel gate pinpoints which arm broke (event plumbing yes, particles no).
-- **Schedules need a reachability clamp.** 14+rng·6 base vs a 19:00 window
-  could strand Ivy never-arriving on high draws. Any windowed scheduler must
-  clamp its fire time strictly inside the window (found by designing the
-  "after dusk she never appears" gate).
+## New issues filed
+- **#2151** game-queue: VIPER PIT CPU lost its close-range qcb counter —
+  #1735 replaced the `dist < 2.2` branch with projectile-only, so no
+  non-projectile qcb ever fires from the CPU and viperpitcheck has been red
+  on main since. Fix sketch in the issue (keep both branches; re-pin IRON
+  RING sims + hashes). This is the #2151-fail every local viperpitcheck run
+  shows — do not chase it as your own regression.
+- **#2158** feedback: QA — VIPER PIT polish pass after #2148 (voice-ish
+  taunt stings, judge slam-in + crowd flare, pose blending, answer slide,
+  portrait polish).
 
-## Open lanes / queue
-- #1711 PLAICRAFT S1 — slot a live on it (tail PR #2142 merged mid-session);
-  do not touch.
-- QA board open: #2084/#2087/#2089/#2104/#2128/#2133/#2135 (new), #2139,
-  #2154 (new: Ivy polish pass), #2149 (new: drive hearts dead on main),
-  #2136/#2137 (lane:platform).
-- No open question issues (`jonq list games` empty at claim and at exit).
+## The session's catches
+- **mutateguard fires on plain runs too**: viperpitcheck plants a temp
+  mutant module unconditionally (line ~855), so ANY viperpitcheck run
+  refuses an uncommitted tree. Commit first, then run (bites even without
+  --mutate).
+- **prod marker = content string, not bundle grep of the entry** — the game
+  code lives in the lazy `index-*.js` chunk; poll entry → chunk → string.
+  And jalfern.com 308s to www: `curl -L` is mandatory (repeat lesson,
+  STATE 253).
+- **Timing gates flake in packs, one per run** (`freeze half-speed` ratio
+  0.8 vs the 0.75 bar once, `GUARD hold` sawGuard once; adjacent runs
+  green). #2136 family; rerun once, move on.
+- Deriving a live gate's expectation from REAL state (judge vs live HP,
+  taunt vs `koFx().name`) instead of assuming the demo's roster — removed a
+  whole class of seed flakes before they happened.
 
-## Harness state
-- peoplecheck 211 gates (+26 SECOND VISITOR); homebodydrive 45 gates (5 new;
-  the +2 red #2076 ones are #2149's problem, not the game's).
-- Slot b park: `node scripts/statepark.mjs park b`. Dev server 5178 stopped by
-  this session. Main checkout detached at origin/main. Worktree
-  `~/Dev/retrogames-forge-homebody-ivy` kept (clean, detached at merged tip).
+## Ladder trail
+TARGET #2143 REFUSED (slot b held it, checkpoint 13 min old; b shipped it
+mid-session as d095948). No halt/steer; jonq empty; `next` #1711 has no
+lane-doable work (idling past Jon — last lines are Jon's: relabel run + 3
+fresh phone takes). game-queue empty, feedback owned by live QA lane, all
+flagship README gaps QA-owned (`flagshipStage` null). Never-dry
+`weakestStage`: Papers-Min score 4 but ZERO unowned gaps (all named by live
+QA issues) → descend to next-weakest WITH gaps: VIPER PIT (score 4, four
+unowned gaps, registry-oldest of the tie) → filed #2148, claimed, shipped.
 
-## Next builder moves (suggestions, not commitments)
-- NEVER-DRY picked Homebody (score 5) this session; remaining unowned Homebody
-  gaps: kids/pets, insult-on-touch (partly #2135#1), deeper multi-room.
-- ViperPit/PickRush/TidyBot/TalkMeDown each still carry 4 unowned README gaps.
-- If #1711 goes quiet, its lane-doable tail is listed on the issue by slot a.
+## Open questions
+- none filed.
+
+## Next
+- Slot a: merge #2159 when the nightly at d095948 goes green (rule-5 loop).
+  Then normal ladder; #2151 is the strongest game-queue item (real CPU
+  mechanic restoration + the only known red-on-main local check).
+- #1711 stays `next` — waiting on Jon (commands on the issue).
+
+## Hygiene at exit
+Dev server :5173 (mine) STOPPED. Worktree `retrogames-forge-viper-reply`
+KEEP (hosts open PR #2159's branch) — remove after it merges. Main checkout
+detached at origin/main. STATE committed to main (game merged) + parked
+`statepark park a`.
