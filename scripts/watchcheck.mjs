@@ -6,13 +6,22 @@
 //
 //   npm run watchcheck            # all three pilots
 //   npm run watchcheck -- --only ssx
-import { launch, requireDevServer, Report } from './lib/harness.mjs'
+//   npm run watchcheck -- --only blob-battle --throttle 8   # nightly tick debt (#2036)
+// Companion: npm run watchbudgetcheck pins the tick-aware resume budgets
+// (scripts/lib/watchbudget.mjs) deterministically, no browser.
+import { launch, requireDevServer, Report, throttleCPU } from './lib/harness.mjs'
+import { racerAdvance, blobResume, unitsNeed } from './lib/watchbudget.mjs'
 import { readFileSync, realpathSync, existsSync } from 'node:fs'
 import { resolve as pathResolve } from 'node:path'
 
 const BASE = process.env.WATCH_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames`
 const ONLY = (process.argv.find((a) => a.startsWith('--only=')) || '').split('=')[1]
   || (process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null)
+// #2036 — reproduce nightly tick debt at will: `--throttle 8` is the nightly's
+// software-rendered box in one flag, so a resume gate's budget can be proven
+// against real frame-starvation instead of waiting for a bad night.
+const THROTTLE = Number((process.argv.find((a) => a.startsWith('--throttle=')) || '').split('=')[1]
+  || (process.argv.includes('--throttle') ? process.argv[process.argv.indexOf('--throttle') + 1] : 1))
 
 const key = (page, code) => page.keyboard.press(code)
 
@@ -62,6 +71,7 @@ async function openGameNoExit(browser, pilot) {
     page.on('pageerror', e => console.log('[pageerror]', e.message))
     await page.goto(pilot.url, { waitUntil: 'load' })
     await page.waitForFunction((h) => !!window[h], pilot.hook, { timeout: 25000 })
+    if (THROTTLE > 1) await throttleCPU(page, THROTTLE)
     return page
 }
 
@@ -173,7 +183,21 @@ const PILOTS = [
             if (off) {
                 rep.check(`${g.id}: mid-run re-seat declines off the proven bench (never a fake route)`, !(await watching()))
             } else {
-                rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+                // #2036 — a revive-capable brain can FINISH the run between the
+                // mid-route read and this press (nightly 43072838133 hit blob-battle:
+                // match won in the resume window, watch self-released at the terminal
+                // state). That run already proved resume in the advance gate — name
+                // the finish honestly and revive + re-seat so the resume promise is
+                // proven on the fresh run. Non-revive pilots never take this branch.
+                const stR = g.revive ? await probe() : null
+                const endedR = !!g.revive && (stR.screen !== 'play' || stR.over || stR.end)
+                rep.check(`${g.id}: Y re-seats the prover mid-run${endedR ? ' (or the prover already finished it)' : ''}`,
+                    endedR || await watching(), endedR ? `run ended (screen ${stR.screen})` : '')
+                if (endedR) {
+                    for (const k of (g.startKeys || ['Space', 'Space'])) { await key(page, k); await page.waitForTimeout(1100) }
+                    await page.waitForTimeout(g.seatWait || 600)
+                    await key(page, 'KeyY')
+                }
             }
             const c = await probe()
             if (!off) {
@@ -290,7 +314,21 @@ const PILOTS = [
             if (off) {
                 rep.check(`${g.id}: mid-run re-seat declines off the proven bench (never a fake route)`, !(await watching()))
             } else {
-                rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+                // #2036 — a revive-capable brain can FINISH the run between the
+                // mid-route read and this press (nightly 43072838133 hit blob-battle:
+                // match won in the resume window, watch self-released at the terminal
+                // state). That run already proved resume in the advance gate — name
+                // the finish honestly and revive + re-seat so the resume promise is
+                // proven on the fresh run. Non-revive pilots never take this branch.
+                const stR = g.revive ? await probe() : null
+                const endedR = !!g.revive && (stR.screen !== 'play' || stR.over || stR.end)
+                rep.check(`${g.id}: Y re-seats the prover mid-run${endedR ? ' (or the prover already finished it)' : ''}`,
+                    endedR || await watching(), endedR ? `run ended (screen ${stR.screen})` : '')
+                if (endedR) {
+                    for (const k of (g.startKeys || ['Space', 'Space'])) { await key(page, k); await page.waitForTimeout(1100) }
+                    await page.waitForTimeout(g.seatWait || 600)
+                    await key(page, 'KeyY')
+                }
             }
             const c = await probe()
             if (!off) {
@@ -349,8 +387,16 @@ const PILOTS = [
             // drown in 5 s, which a healthy prover never causes. The prover's
             // promise is the contract of the game itself: seat 1 keeps stacking
             // and scoring without overflowing. #1705-nightly-fix.
-            advanced: (a, b) => b.scores[0] > a.scores[0] && !b.over,
-            note: (a, b) => `seat1 score ${a.scores[0]} -> ${b.scores[0]}, rounds won ${a.rounds[0]} -> ${b.rounds[0]}`,
+            // #2036: the old `!b.over` read a match the prover COMPLETED inside
+            // a throttled ceiling window as "no progress" (nightly 43072838133
+            // saw seat1 120 -> 240 go red). Completion with seat 1 un-drowned
+            // is the strongest advance there is — only seat1's own spill
+            // (winner === 1) invalidates the proof. revive: a long ceiling can
+            // finish the match before the takeover gates too (the #1705
+            // honest-finish family), so the chain re-seats on a fresh match.
+            advanced: (a, b) => blobResume(a, b),
+            note: (a, b) => `seat1 score ${a.scores[0]} -> ${b.scores[0]}, rounds won ${a.rounds[0]} -> ${b.rounds[0]}, tick n ${b.tick - a.tick}${b.over ? `, match over (winner ${b.winner})` : ''}`,
+            revive: true,
         },
     ].map((g) => ({
         id: g.id, url: `${BASE}/${g.id}`, hook: g.hook,
@@ -407,7 +453,21 @@ const PILOTS = [
             if (off) {
                 rep.check(`${g.id}: mid-run re-seat declines off the proven bench (never a fake route)`, !(await watching()))
             } else {
-                rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+                // #2036 — a revive-capable brain can FINISH the run between the
+                // mid-route read and this press (nightly 43072838133 hit blob-battle:
+                // match won in the resume window, watch self-released at the terminal
+                // state). That run already proved resume in the advance gate — name
+                // the finish honestly and revive + re-seat so the resume promise is
+                // proven on the fresh run. Non-revive pilots never take this branch.
+                const stR = g.revive ? await probe() : null
+                const endedR = !!g.revive && (stR.screen !== 'play' || stR.over || stR.end)
+                rep.check(`${g.id}: Y re-seats the prover mid-run${endedR ? ' (or the prover already finished it)' : ''}`,
+                    endedR || await watching(), endedR ? `run ended (screen ${stR.screen})` : '')
+                if (endedR) {
+                    for (const k of (g.startKeys || ['Space', 'Space'])) { await key(page, k); await page.waitForTimeout(1100) }
+                    await page.waitForTimeout(g.seatWait || 600)
+                    await key(page, 'KeyY')
+                }
             }
             const c = await probe()
             if (!off) {
@@ -531,7 +591,21 @@ const PILOTS = [
             if (off) {
                 rep.check(`${g.id}: mid-run re-seat declines off the proven bench (never a fake route)`, !(await watching()))
             } else {
-                rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+                // #2036 — a revive-capable brain can FINISH the run between the
+                // mid-route read and this press (nightly 43072838133 hit blob-battle:
+                // match won in the resume window, watch self-released at the terminal
+                // state). That run already proved resume in the advance gate — name
+                // the finish honestly and revive + re-seat so the resume promise is
+                // proven on the fresh run. Non-revive pilots never take this branch.
+                const stR = g.revive ? await probe() : null
+                const endedR = !!g.revive && (stR.screen !== 'play' || stR.over || stR.end)
+                rep.check(`${g.id}: Y re-seats the prover mid-run${endedR ? ' (or the prover already finished it)' : ''}`,
+                    endedR || await watching(), endedR ? `run ended (screen ${stR.screen})` : '')
+                if (endedR) {
+                    for (const k of (g.startKeys || ['Space', 'Space'])) { await key(page, k); await page.waitForTimeout(1100) }
+                    await page.waitForTimeout(g.seatWait || 600)
+                    await key(page, 'KeyY')
+                }
             }
             const c = await probe()
             if (!off) {
@@ -649,7 +723,21 @@ const PILOTS = [
             if (off) {
                 rep.check(`${g.id}: mid-run re-seat declines off the proven bench (never a fake route)`, !(await watching()))
             } else {
-                rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+                // #2036 — a revive-capable brain can FINISH the run between the
+                // mid-route read and this press (nightly 43072838133 hit blob-battle:
+                // match won in the resume window, watch self-released at the terminal
+                // state). That run already proved resume in the advance gate — name
+                // the finish honestly and revive + re-seat so the resume promise is
+                // proven on the fresh run. Non-revive pilots never take this branch.
+                const stR = g.revive ? await probe() : null
+                const endedR = !!g.revive && (stR.screen !== 'play' || stR.over || stR.end)
+                rep.check(`${g.id}: Y re-seats the prover mid-run${endedR ? ' (or the prover already finished it)' : ''}`,
+                    endedR || await watching(), endedR ? `run ended (screen ${stR.screen})` : '')
+                if (endedR) {
+                    for (const k of (g.startKeys || ['Space', 'Space'])) { await key(page, k); await page.waitForTimeout(1100) }
+                    await page.waitForTimeout(g.seatWait || 600)
+                    await key(page, 'KeyY')
+                }
             }
             const c = await probe()
             if (!off) {
@@ -1853,13 +1941,16 @@ const PILOTS = [
             rep.check(`${G.id}: handoff blip at seat`, (await sfx()).at(-1) === 'start')
             // score is lap progress on a LOOP (grid sits just before the line):
             // wrap it modulo the track length so crossing start/finish reads as
-            // forward motion. Idle hands coast to v=0 and never advance 500u;
-            // backward drift is impossible for decide(), which never reverses.
-            const adv = (x, y) => y.lap > x.lap || (!!y.done && !x.done) || ((y.score - x.score + x.len) % x.len) > 500
+            // forward motion. Idle hands coast to v=0 and never advance; the
+            // 500u bar is now tick-scaled — #2036: nightly's throttled box held
+            // ~376 real units in the window because the fixed bar assumed 240
+            // world ticks of real-time, and called the racing autopilot stale.
+            // Pace is the promise (units per tick); watchbudgetcheck pins it.
+            const adv = racerAdvance
             const a = await probe()
             const b = await pollAdvance(page, probe, adv, a, G.long)
             rep.check(`${G.id}: the prover races untouched (idle hands touch no pedal)`, adv(a, b),
-                `score ${a.score} -> ${b.score} of len ${a.len}, lap ${a.lap} -> ${b.lap}, v ${a.v} -> ${b.v}`)
+                `score ${a.score} -> ${b.score} of len ${a.len}, lap ${a.lap} -> ${b.lap}, v ${a.v} -> ${b.v}, tick n ${b.tick - a.tick}`)
             rep.check(`${G.id}: still watching mid-race`, await watching())
             await page.keyboard.down('ArrowLeft')
             rep.check(`${G.id}: steer key takes over`, !(await watching()))
@@ -1871,7 +1962,7 @@ const PILOTS = [
             const c = await probe()
             const d = await pollAdvance(page, probe, adv, c, 4000)
             rep.check(`${G.id}: resumes from where the player left it`, adv(c, d),
-                `score ${c.score} -> ${d.score}, lap ${c.lap} -> ${d.lap}`)
+                `score ${c.score} -> ${d.score}, lap ${c.lap} -> ${d.lap}, tick n ${d.tick - c.tick}, need ${unitsNeed(d.tick - c.tick)}u`)
             await key(page, 'KeyY')
             rep.check(`${G.id}: Y again releases the wheel`, !(await watching()))
         },

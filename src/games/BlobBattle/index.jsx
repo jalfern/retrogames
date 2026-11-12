@@ -661,7 +661,7 @@ const BlobBattleGame = () => {
                     }
                 },
                 start: (m = 'cpu', sd, tier) => startPlay(m, sd, tier),
-                watching: () => watchingRef.current, // #1637 watchcheck: is the prover stacking seat 1?
+                watching: () => watchingRef.current && screenRef.current === 'play' && !(gs && gs.over), // #1637 watchcheck: is the prover stacking seat 1? // #2036 never lingers at a terminal state (#1656 law, Defender's shape): a finished match has nothing to drive, so the seat reports itself released — that is what the resume/release gates read when a throttled box lets the prover finish mid-window. The flag itself still clears at startPlay.
                 board: (seat) => Array.from((screenRef.current === 'attract' ? demo : gs).wells[seat].board),
                 hash: () => (gs ? stateHash(gs) : 0),
                 // desync drill seam (blobnet): flip this box's well-0 board so
