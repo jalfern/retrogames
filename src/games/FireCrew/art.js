@@ -380,6 +380,23 @@ export function drawHud(ctx, g, CLOCK) {
     ctx.fillStyle = left < 600 && Math.floor(g.tick / 20) % 2 ? '#ff3b30' : '#e8ecf5'
     const tl = `${Math.floor(left / 3600)}:${String(Math.floor((left % 3600) / 60)).padStart(2, '0')}`
     ctx.fillText(tl, VW / 2 - 10, 10)
+    // #2029 — the losing route speaks: once a life is gone, or the clock is
+    // in its red zone with people still inside, ember light takes the screen
+    // edges. A seated watcher reads "this alarm is going badly" mid-run —
+    // not for the first time on the GAME OVER card. (Autopilot losses ride
+    // the clock out at ~18/24 seeds; nothing else said so until now.)
+    if (g.lost || (left < 600 && g.rescued + g.lost < 6)) {
+        const a = Math.min(0.34, 0.16 + 0.08 * g.lost)
+        const bar = 12
+        const edge = (x0, y0, x1, y1) => {
+            const gr = ctx.createLinearGradient(x0, y0, x1, y1)
+            gr.addColorStop(0, `rgba(255,64,40,${a})`)
+            gr.addColorStop(1, 'rgba(255,64,40,0)')
+            return gr
+        }
+        ctx.fillStyle = edge(0, 0, bar, 0); ctx.fillRect(0, 0, bar, VH)
+        ctx.fillStyle = edge(VW, 0, VW - bar, 0); ctx.fillRect(VW - bar, 0, bar, VH)
+    }
     // wind vane
     const wx = VW - 40
     ctx.fillStyle = '#8b93a7'

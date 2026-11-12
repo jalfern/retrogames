@@ -138,6 +138,93 @@ spy = await page.evaluate(() => window.__firecrewTest.windSpy())
 ok(spy.whistleFired && spy.whistleFired.f0 === 240 && spy.whistleFired.f1 >= 500 && spy.whistleFired.f1 <= 760,
     'the pre-whistle fires and climbs before the shift lands', JSON.stringify(spy.whistleFired))
 
+// #2029 — watch-seat polish, live in Chrome.
+// (a) phone viewports: the WATCH pill must not crowd the canvas/HUD column;
+// (b) seated B: releases AND flares the same press (the pinned ruling);
+// (c) losing route: ember edges light on the proven losing seed before expiry;
+// (d) 2P select + a real pill tap: only seat 1 seats, partners stay human;
+// (e) the seated radio hint is on screen while the sheet is flipped.
+const pillAndHud = async () => page.evaluate(() => {
+    const pill = document.querySelector('[data-watch-toggle]')
+    const cvs = document.querySelector('canvas')
+    if (!pill || !cvs) return null
+    const p = pill.getBoundingClientRect()
+    const c = cvs.getBoundingClientRect()
+    const hud = { x: c.left, y: c.top, w: c.width, h: c.height * 0.2 } // HUD column = top fifth of the scene
+    const hit = (a, b) => Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 0 && Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > 0
+    return { overlap: hit(p, hud), pills: p, canvas: c }
+})
+for (const vp of [{ width: 390, height: 844 }, { width: 844, height: 390 }]) {
+    await page.setViewportSize(vp)
+    await new Promise((r) => setTimeout(r, 250))
+    const m = await pillAndHud()
+    ok(m && !m.overlap, `phone ${vp.width}x${vp.height}: the WATCH pill clears the HUD column`, m ? JSON.stringify({ pill: m.pills, canvas: m.canvas }) : 'no pill/canvas')
+}
+await page.setViewportSize({ width: 1280, height: 800 })
+
+// (b) + (e): seat on a fresh shift, check the radio hint, then take the hose
+// back with B — one press, released AND flaring.
+await page.evaluate(() => window.__firecrewTest.start(77, 1))
+await new Promise((r) => setTimeout(r, 200))
+await press('KeyY', 120)
+await new Promise((r) => setTimeout(r, 300))
+const seated = await page.evaluate(() => window.__firecrewTest.probe())
+ok(seated && seated.cpuSeat === true, 'B-leg: Y seats the watcher', JSON.stringify(seated))
+const radioHintShown = await page.evaluate(() => document.body.innerText.includes('V RADIO — SHOUTS STILL STEER THE CREW'))
+ok(radioHintShown, 'the seated radio hint is on screen (#2029)')
+const beforeB = await page.evaluate(() => { const p = window.__firecrewTest.probe(); return { flares: p.flares, battery: p.battery } })
+await press('KeyB', 120)
+await new Promise((r) => setTimeout(r, 250))
+const afterB = await page.evaluate(() => window.__firecrewTest.probe())
+ok(afterB && afterB.cpuSeat === false, 'seated B releases the seat (takeover rule intact)')
+ok(afterB && afterB.flares > beforeB.flares && afterB.battery <= beforeB.battery - 30,
+    'the same press flares — B releases AND flares (#2029 ruling)', JSON.stringify({ beforeB, afterB }))
+
+// (c) losing route: seed 1 loses at the clock; the ember tell must be drawn
+// by tick 6601 — sample the left edge before and after the tell.
+await page.evaluate(() => window.__firecrewTest.start(1, 1))
+await new Promise((r) => setTimeout(r, 200))
+await press('KeyY', 120) // seated: ride the proven (losing here) route
+const edge = () => page.evaluate(() => {
+    const c = document.querySelector('canvas')
+    const d = c.getContext('2d').getImageData(1, Math.floor(c.height / 2), 1, 1).data
+    return { r: d[0], g: d[1], b: d[2] }
+})
+const calmEdge = await edge()
+const lateTick = await page.evaluate(() => {
+    let t = 0
+    while (t++ < 6650) window.__game.step({})
+    return window.__firecrewTest.probe().tick
+})
+await new Promise((r) => setTimeout(r, 200))
+const lateEdge = await edge()
+ok(lateTick > 6601, 'seed 1 rides past the tell threshold while seated', String(lateTick))
+ok(lateEdge.r - lateEdge.b > calmEdge.r - calmEdge.b + 20,
+    'the losing-route ember edge is drawn (red gain at the screen edge)', JSON.stringify({ calmEdge, lateEdge }))
+await page.evaluate(() => window.__game.release())
+
+// (d) 2P on the picker + a real pill tap: seat 1 seats, the partner stays.
+await page.reload({ waitUntil: 'domcontentloaded' })
+await page.waitForFunction(() => window.__game && window.__game.meta.id === 'fire-crew', { timeout: 25000 })
+await press('Space', 120)
+await new Promise((r) => setTimeout(r, 200))
+ok(await screen() === 'select', '2P-leg: Space reaches the picker')
+const pickerCopy = await page.evaluate(() => document.body.innerText)
+ok(/WATCH \(Y OR PILL\) STEPS ASIDE/.test(pickerCopy) && /PARTNERS STAY HUMAN/.test(pickerCopy),
+    'picker copy names the HOSE seat for the watcher and partners as staying human')
+await page.evaluate(() => {
+    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('2P'))
+    b.click()
+})
+await press('Space', 150)
+await new Promise((r) => setTimeout(r, 250))
+ok(await screen() === 'play', '2P-leg: SPACE launches the two-crew shift')
+await page.click('[data-watch-toggle]') // a real tap on the pill
+await new Promise((r) => setTimeout(r, 250))
+const twoP = await page.evaluate(() => window.__firecrewTest.probe())
+ok(twoP && JSON.stringify(twoP.sources) === JSON.stringify(['cpu', 'human', 'cpu']),
+    'the pill seats only seat 1 — the human partner stays human (#2029)', JSON.stringify(twoP && twoP.sources))
+
 ok(errors.length === 0, 'zero page errors across the whole drive', errors.slice(0, 3).join(' | '))
 console.log(`\n${fails ? 'FAILED' : 'DRIVE GREEN'} — ${fails ? fails + ' failures' : 'start, play, pause, contract, die, restart'}`)
 await browser.close()

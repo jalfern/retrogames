@@ -302,6 +302,10 @@ export default function FireCrew() {
             // drives from the tick it takes over (the watcher owns the wheel
             // only until you touch it).
             if (isWatchKey(e)) { e.preventDefault(); if (watchingRef.current) release(); else seat(); return }
+            // #2029 decision, pinned: FLARE is NOT exempted — B releases the
+            // seat AND flares the same press. The release runs first, then the
+            // key lands in keys1 below, so the takeover itself throws the
+            // flare: "you grabbed the hose and lit the room" in one motion.
             if (watchingRef.current && isTakeoverKey(e)) release()
             const maps = MAPS()
             const keysets = [keys1, keys2, keys3]
@@ -460,7 +464,13 @@ export default function FireCrew() {
                 watchSfx: watchSfxLog,
                 probe: () => {
                     const g = gsRef.current
-                    return g ? { tick: g.tick, rescued: g.rescued, done: !!g.done, cx: g.crew[0].x, cy: g.crew[0].y, cpuSeat: g.sources[0] === 'cpu' } : null
+                    return g ? {
+                        tick: g.tick, rescued: g.rescued, done: !!g.done, cx: g.crew[0].x, cy: g.crew[0].y, cpuSeat: g.sources[0] === 'cpu',
+                        // #2029 — visibility for the seated-B pin: a flare thrown by
+                        // the press that grabs the seat must show in the world.
+                        flares: g.flares.length, battery: g.crew[0].battery,
+                        sources: g.sources.slice(),
+                    } : null
                 },
                 seat: () => { if (!watchingRef.current) seat(); return watchingRef.current },
                 radio: (text) => {
@@ -609,7 +619,9 @@ export default function FireCrew() {
                         SEAT 3 LADDER: IJKL WALKS THE LADDER · U RAISE &amp; BRACE · O LOWER<br />
                         WATER CLIMBS A RAISED LADDER — AIM THE STREAM AT ITS COLUMN<br />
                         V RADIO — SHOUT WHAT YOU SEE: "VICTIM ON THE LEFT" · "LADDER UP"<br />
-                        EMPTY SEATS RUN ON AUTOPILOT — ANY SEAT CAN BE A MODEL LATER
+                        EMPTY SEATS RUN ON AUTOPILOT — ANY SEAT CAN BE A MODEL LATER<br />
+                        WATCH (Y OR PILL) STEPS ASIDE — THE CPU CREW TAKES YOUR HOSE SEAT,<br />
+                        PARTNERS STAY HUMAN · ANY DRIVING KEY GRABS THE HOSE BACK
                     </p>
                     <p className="mt-4 text-base font-bold animate-pulse text-white">SPACE / TAP — GO!</p>
                     {/* #1637 b28: no attract watch-pill here — FireCrew is a
@@ -645,6 +657,14 @@ export default function FireCrew() {
                 </div>
             )}
             {watching && <WatchToast className="absolute z-50" />}
+            {/* #2029 — the radio is a seat, not a steering wheel: V toggles it
+                even seated and a shout drives the cpu crew (#1361), so the
+                watcher must know the mic is live without standing up. */}
+            {watching && (
+                <div className="absolute inset-x-0 z-50 flex justify-center pointer-events-none" style={{ top: 'calc(9.5rem + var(--sat, 0px))' }}>
+                    <span className="bg-slate-950/85 border border-orange-400 rounded-full px-3 py-1 font-mono text-[10px] font-bold tracking-widest text-orange-200">V RADIO — SHOUTS STILL STEER THE CREW</span>
+                </div>
+            )}
             <VirtualControls secondAction={{ label: 'FLARE', code: 'KeyB' }} visible={uiScreen === 'play'} />
         </div>
     )
