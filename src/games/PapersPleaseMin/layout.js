@@ -85,7 +85,21 @@ export const QUOTE = { hold: 132 }
 // #1966 THE PAY ECONOMY — the end-of-day deduction slip, pinned under the
 // ID card: below the stamp's witness line (y=296 baseline), above the strip,
 // clear of the right margin. paperscheck's WALL section re-pins all three.
-export const SLIP = { x: 452, y: 304, w: 202, h: 88 }
+// #1968 PHONE LEGIBILITY: the five-row stack (PAY/RENT/SOUP/HEAT/BALANCE)
+// grows to 11px rows on a 13px pitch — at a 390px phone the canvas scales to
+// ~0.57, which put the old 10px/12 rows near 6px. The stack still ends inside
+// the paper: worst baseline y=row0+4*pitch=388, ink bottom 391 <= 392.
+export const SLIP = { x: 452, y: 304, w: 202, h: 88, head: 13, dash: 18, row0: 32, pitch: 13, size: 11 }
+// #1968 RENT AHEAD — the night's biggest bill printed on the wall while the
+// booth can still act on it (the original shows the schedule in the apartment;
+// we have no apartment). Hangs in the corridor under the SCALE box: baseline
+// below SCALE's bottom (388) and above the strip (400), where nothing else
+// paints. paperscheck pins the corridor and the width.
+export const RENT = { x: 12, y: 397, size: 8 }
+// #1968 THE WAGE FLICKER — per-stamp pay feedback: +5 rises off the CR
+// readout when a correct stamp earns it. The band rides inside the controls
+// strip (y >= 400) and left of the CORRECT/MISTAKE note (x >= ~613).
+export const PAYFX = { ticks: 45, rise: 12, x: 170, base: CHS - 19 }
 
 export const ruleLines = (text) => {
     const words = text.split(' ')
