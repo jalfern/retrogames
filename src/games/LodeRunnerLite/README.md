@@ -152,6 +152,27 @@ to clear, it is unclassic and lodecheck's winnability gate fails it.
   vault with real pointer events (mutant: drop the button guard → pads 2/3
   open vault 1 and the section goes red).
 
+## The death card, the flash and the phone (#2067 polish)
+
+- **Death beat** — the Apple II stopped the world on its error card; the shell
+  now does too. A non-final `capture` or `refillDeath` freezes the clock for
+  1.1 s: `frame()` drops the frozen wall-time (it never banks into `acc`, so
+  no catch-up stampede when the card lifts) and paints a full-screen navy card
+  — cause (`CAUGHT!` / `BURIED!`), `VAULT n · name`, `LIVES LEFT n`, and the
+  original's cryptic `CHK! DYK?` footer. Sim, replay streams and state hashes
+  are untouched: the tick counter simply stands still (lodeplay 6d pins the
+  freeze on the tick itself). The final death hands the screen to `over`
+  instead — no double card.
+- **Unlock flash** — the revealed exit run pulses the runner's own aqua
+  (`#4ad7ff`) for 900 ms, lit/dim on a 200 ms parity clock, deterministic
+  like the #1949 kit, live and in the attract demo.
+- **Phone chrome** — the vault-select row wraps (`flex-wrap` + side padding),
+  and lodeplay 1c grades it at a real 375x667: floor ≥44x28, pads fully in
+  the viewport, an 8 px measured clearance from the attract WATCH pill and
+  the caption, and pad 2 still opening vault 2 under real pointer events.
+  (Harness lesson: rects arriving with `left/top/right/bottom` must not be
+  re-derived from `cx/cy` — the NaN silently failed every separation branch.)
+
 ## WATCH (#1637 batch 5)
 
 Y seats `planStep(gs)` at the same `CFG.moveEvery` phase the held-key stack
