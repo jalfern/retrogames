@@ -22,7 +22,7 @@ import { createLobby, lobbyRole, relayFromQuery } from '../../utils/lobby.js'
 import { makeTransport } from '../../utils/linkPeers.js'
 import { askVoiceConsent } from '../../utils/voiceCapture'
 import { b64FromBytes, bytesFromB64 } from '../../utils/voice.js'
-import { createPttSender, createPttInbox } from './ptt.js'
+import { createPttSender, createPttInbox, takeIsSpeech, ACK_MIN_MS } from './ptt.js'
 import {
     createGame, stepGame, simState, drainFx, makeCpuEmitter, snapshotGame, restoreGame, hashState,
     GRID_W, GRID_H, SHIFT_TICKS, QUOTA, MAX_STRIKES, cellKind, STATION, RUNNER_POST,
@@ -68,6 +68,8 @@ export default function ShortOrderShout() {
     const modelSeatRef = useRef(null)
     const [netUi, setNetUi] = useState(null) // #1291 lobby state for the shared Lobby overlay
     const netStartRef = useRef(null)
+    // #2079: shift-change radio hygiene setter, assigned in the loop effect.
+    const radioResetRef = useRef(null)
     const [watching, setWatching] = useState(false) // #1637 WATCH: the proven line crew takes the wheel
     const watchingRef = useRef(false)
 
@@ -87,6 +89,7 @@ export default function ShortOrderShout() {
         const hud = hudRef.current
         hud.walk = {}; hud.pops = []; hud.slide = {}; hud.stamp = 0; hud.bump = 0; hud.lastScore = 0
         watchingRef.current = false; setWatching(false) // #1637: the old route ends with the old shift
+        if (radioResetRef.current) radioResetRef.current() // #2079: old COPY chips die with the old shift
         resetDiner() // fresh 4-bar loop from bar 0 (#1292)
         setScreen('play')
         specRef.current.players = players
@@ -262,13 +265,26 @@ export default function ShortOrderShout() {
             if (ev.code === 'ArrowDown') keys1.down = true
             if (ev.code === 'ArrowLeft') keys1.left = true
             if (ev.code === 'ArrowRight') keys1.right = true
+            // #2079 the radio ties the cook: while YOUR take is live (holding)
+            // or draining onto the wire (pending), the walkie-talkie owns both
+            // hands — A/B (Space/B, and the pad's A/B which dispatch them) are
+            // refused. Walking stays legal; the partner's F/G is untouched, and
+            // so is every other screen. The refusal names itself on the chip.
+            if (ev.code === 'Space' || ev.code === 'KeyB') {
+                if (radioBusy()) {
+                    ev.preventDefault()
+                    if (!radioDenied) { playFx({ k: 'radioDeny' }); netToast('HANDS ON RADIO') }
+                    radioDenied = 40 // keep the red blink alive while the hammering does
+                    return
+                }
+            }
             if (ev.code === 'Space') pressMin(keys1, 'a')
             if (ev.code === 'KeyB') pressMin(keys1, 'b')
             const k2 = SEAT_KEYS_HUMAN2[ev.code]
             if (k2 && partnerHumanRef.current) keys2[k2] = true
             if (ev.code === 'KeyF' && partnerHumanRef.current) pressMin(keys2, 'a')
             if (ev.code === 'KeyG' && partnerHumanRef.current) pressMin(keys2, 'b')
-            if (ev.code === 'KeyV' && !ev.repeat && net.active) { ev.preventDefault(); talkStart() }
+            if (ev.code === 'KeyV' && !ev.repeat) { ev.preventDefault(); talkStart() }
         }
         const onKeyUp = (ev) => {
             if (ev.code === 'ArrowUp') keys1.up = false
@@ -281,11 +297,42 @@ export default function ShortOrderShout() {
             if (k2) keys2[k2] = false
             if (ev.code === 'KeyF') releaseMin(keys2, 'a')
             if (ev.code === 'KeyG') releaseMin(keys2, 'b')
-            if (ev.code === 'KeyV' && net.active) talkEnd()
+            if (ev.code === 'KeyV') talkEnd()
         }
         let chipRects = [] // tappable seat-tag rects from the host's last frame
         let micHold = false
         let voxPress = 0 // #1468 QA: short press-depress frame for the VOX chip
+        // #2079 the radio ties the cook. Busy = your own press held or its take
+        // still draining (the walkie-talkie is one-handed and half-duplex);
+        // `rig` is the DEV/QA seam to force the state without a mic (the
+        // foul()/thaw() precedent — a headless box has no mic to hold).
+        const radioBusy = () => !!net.voice.rig || net.ptt.holding || net.ptt.pending > 0
+        let radioDenied = 0 // refuse tell countdown (mic chip red flash)
+        // CPU cooks answer a landed take: every non-human seat gets a COPY chip
+        // (staggered a hair — the line answers person by person). fx only:
+        // never pads, never the engine, never the hash.
+        const radioAckCooks = () => {
+            const g = gsRef.current
+            if (!g || g.done) return
+            const humans = net.active ? net.humans : [0, ...(partnerHumanRef.current ? [1] : [])]
+            const cpus = g.cooks.map((c) => c.seat).filter((s) => humans.indexOf(s) < 0)
+            if (!cpus.length) return
+            cpus.forEach((s, i) => { net.voice.acks[s] = 64 + i * 16 })
+            playFx({ k: 'ack' })
+        }
+        // #2079 shift-change hygiene: an old COPY chip or refuse flash must not
+        // ride into the next kitchen (netStartRef precedent — startPlay, not
+        // startNetMatch, drives solo restarts).
+        radioResetRef.current = () => { radioDenied = 0; net.voice.acks = {}; net.voice.startAt = 0 }
+        // countdowns tick in world frames (both loop paths), never setTimeout
+        const radioDecay = () => {
+            if (radioDenied > 0) radioDenied--
+            for (const s of Object.keys(net.voice.acks)) {
+                const v = net.voice.acks[s] - 1
+                if (v > 0) net.voice.acks[s] = v
+                else delete net.voice.acks[s]
+            }
+        }
         const canvasPt = (ev) => {
             const r = cvs.getBoundingClientRect()
             if (!r.width || !r.height) return null
@@ -301,6 +348,11 @@ export default function ShortOrderShout() {
                         if (inRect(p, c.rect)) { seatCmd(c.seat, c.tap); return }
                     }
                 }
+                if (inRect(p, MIC_RECT)) { micHold = true; talkStart(); return }
+                if (inRect(p, VOX_RECT)) { voxPress = 6; toggleVoiceArm(); return }
+            }
+            // #2079: solo gets the tap-to-talk mic too — same rects, same law.
+            if (sc === 'play' && !net.active) {
                 if (inRect(p, MIC_RECT)) { micHold = true; talkStart(); return }
                 if (inRect(p, VOX_RECT)) { voxPress = 6; toggleVoiceArm(); return }
             }
@@ -354,6 +406,9 @@ export default function ShortOrderShout() {
         })
         net.voice = {
             stream: null, rec: null, chunks: [], mime: '', consent: null, flash: null,
+            // #2079: startAt times the key-down for the ack law; acks is the
+            // COPY-chip countdown per CPU seat (fx); rig is the DEV seam.
+            startAt: 0, acks: {}, rig: false,
             // mic arm state (#1416 voice stage): M / the VOX chip; persisted so
             // a muted player stays muted across reloads.
             enabled: (() => { try { return localStorage.getItem('sos-mic-off') === null } catch { return true } })(),
@@ -393,7 +448,8 @@ export default function ShortOrderShout() {
             },
         })
         const talkStart = async () => {
-            if (!net.room || net.ptt.holding || net.ptt.pending) return
+            if (screenRef.current !== 'play') return
+            if (net.ptt.holding || net.ptt.pending) return
             if (!net.voice.enabled) { netToast(IS_TOUCH ? 'MIC OFF — TAP THE MIC CHIP' : 'MIC OFF — PRESS M'); return }
             if (net.vin.speaking()) { netToast(`P${Math.max(2, net.vin.lastHeardSeat + 1)} TALKING — WAIT`); return }
             if (!net.voice.consent) net.voice.consent = await askVoiceConsent()
@@ -406,6 +462,7 @@ export default function ShortOrderShout() {
                 } catch { net.voice.consent = { consent: false, headset: false, reason: 'mic-denied' }; netToast('MIC BLOCKED'); return }
             }
             if (!net.ptt.press()) return
+            net.voice.startAt = performance.now()
             try {
                 net.voice.chunks = []
                 net.voice.rec = net.voice.mime
@@ -423,11 +480,21 @@ export default function ShortOrderShout() {
             if (!rec || rec.state === 'inactive') { net.ptt.release(''); net.voice.live = false; return }
             rec.onstop = () => {
                 net.voice.live = false
+                // #2079: how long the key was down is when the line decides to
+                // answer. A landed take (>= ACK floor) gets a COPY from every CPU
+                // cook; no room means no wire — the queued frames are discarded
+                // so `pending` cannot wedge the busy gate offline.
+                const ms = Math.max(0, Math.round(performance.now() - (net.voice.startAt || 0)))
                 const blob = new Blob(net.voice.chunks, { type: net.voice.mime || 'audio/webm' })
                 net.voice.chunks = []
                 blob.arrayBuffer()
-                    .then((buf) => net.ptt.release(b64FromBytes(new Uint8Array(buf)),
-                        { mime: blob.type || net.voice.mime, headset: !!(net.voice.consent && net.voice.consent.headset) }))
+                    .then((buf) => {
+                        const b64 = b64FromBytes(new Uint8Array(buf))
+                        net.ptt.release(b64,
+                            { mime: blob.type || net.voice.mime, headset: !!(net.voice.consent && net.voice.consent.headset) })
+                        if (!net.room) net.ptt.discard()
+                        if (takeIsSpeech(b64.length, ms)) radioAckCooks()
+                    })
                     .catch(() => net.ptt.release(''))
             }
             try { rec.stop() } catch { net.ptt.release(''); net.voice.live = false }
@@ -467,6 +534,9 @@ export default function ShortOrderShout() {
             net.sync.watchSeats = net.humans.slice()
             net.sync.reset(0)
             net.rtt.reset()
+                // #2079: shift-change hygiene — an old COPY chip or refuse flash must
+            // not ride into the next kitchen (netStartRef precedent).
+            radioResetRef.current = () => { radioDenied = 0; net.voice.acks = {}; net.voice.startAt = 0 }
             net.ptt.reset()
             net.vin.reset()
             net.cmd.clear()
@@ -596,6 +666,7 @@ export default function ShortOrderShout() {
             recordLiveTick(pads)
             for (const f of drainFx(g)) { playFx(f); if (pumpHudRef.current) pumpHudRef.current(f) }
             dinerBar(g) // 4-bar diner loop under gameplay, ducked by alarms (#1292)
+            radioDecay() // #2079 COPY chips + refuse flash fade with the sim clock
             const hud = hudRef.current
             if (g.score >= QUOTA && hud.lastScore < QUOTA) hud.stamp = 96 // big stamp the moment quota is made
             hud.lastScore = g.score
@@ -614,6 +685,7 @@ export default function ShortOrderShout() {
             // wire inside the rate budget; the whole-sim sim never reads this.
             if (net.ptt.pending) net.ptt.drain((m) => { if (net.room) net.room.send('pad', m) })
             if (net.voice.flash && net.voice.flash.t > 0) net.voice.flash.t--
+            radioDecay() // #2079: the same countdowns ride the online clock
             const ownSeat = net.role === 'host' ? 0 : net.slot
             // seat-control boundaries (#1416 gap-2 remainder): resume sampling
             // one pump ahead of the anchor (the pointer must still be at or
@@ -839,6 +911,19 @@ export default function ShortOrderShout() {
                 if (c.holding) {
                     ctx.drawImage(S.item[c.holding] || S.item.bun, px + 6 + (moving ? (((t >> 3) + c.seat) % 2) * 2 - 1 : 0), py - 11)
                     if (c.dirty) { ctx.fillStyle = '#6a5030'; ctx.fillRect(px + 5, py - 2, 14, 2) }
+                }
+                // #2079 COPY — the line answers your shout: a thermal chip over
+                // the cook, tail to the head, cyan dot = radio, not ticket.
+                if (net.voice.acks[c.seat] > 0) {
+                    const bw = 26, bh = 10, bx = Math.max(1, Math.min(CANVAS_W - bw - 1, px + TILE / 2 - bw / 2)), by = py - 24
+                    ctx.fillStyle = '#f4ead8'
+                    ctx.fillRect(bx, by, bw, bh)
+                    ctx.fillRect(Math.max(1, Math.min(CANVAS_W - 3, px + TILE / 2 - 1)), by + bh, 2, 2)
+                    ctx.fillStyle = '#20101a'
+                    ctx.font = '5px "Press Start 2P", monospace'
+                    ctx.fillText('COPY', bx + 3, by + 7)
+                    ctx.fillStyle = '#7ee0ff'
+                    ctx.fillRect(bx + bw - 4, by + 2, 2, 2)
                 }
             }
 
@@ -1071,6 +1156,10 @@ export default function ShortOrderShout() {
                 if (net.voice.live) {
                     ctx.fillStyle = Math.floor(performance.now() / 250) % 2 ? '#38e07b' : '#1d7a44'
                     ctx.fillText('MIC LIVE', 150, CANVAS_H - 11)
+                } else if (net.ptt.pending > 0) {
+                    // #2079 the take is draining — the hands are still on the radio
+                    ctx.fillStyle = Math.floor(performance.now() / 150) % 2 ? '#ffd23f' : '#7a5c14'
+                    ctx.fillText('SEND...', 150, CANVAS_H - 11)
                 } else {
                     ctx.fillStyle = '#5a4a5a'
                     ctx.fillText('V=TALK', 150, CANVAS_H - 11)
@@ -1105,10 +1194,45 @@ export default function ShortOrderShout() {
                     ctx.fillRect(mx - 2, my + 4, 1, 3); ctx.fillRect(mx + 5, my + 4, 1, 3) // yoke
                     ctx.fillRect(mx + 1, my + 7, 4, 1); ctx.fillRect(mx + 2, my + 8, 2, 1); ctx.fillRect(mx + 1, my + 9, 4, 1) // stem + base
                     if (micHold) { ctx.strokeStyle = '#7ee0ff'; ctx.strokeRect(MIC_RECT.x - 1.5, MIC_RECT.y + 1.5, MIC_RECT.w + 3, MIC_RECT.h - 3) }
+                    // #2079 refusal blink: A/B was attempted mid-take
+                    if (radioDenied > 0 && Math.floor(radioDenied / 4) % 2) { ctx.strokeStyle = '#f05030'; ctx.strokeRect(MIC_RECT.x - 2.5, MIC_RECT.y + 0.5, MIC_RECT.w + 5, MIC_RECT.h + 5) }
                 }
             } else {
                 legend = ['1', '2', '3', '4'].slice(0, g.seats).map((n, i) => `P${n}${i === 0 ? ' YOU' : partnerHumanRef.current && i === 1 && screenRef.current === 'play' ? ' YOU' : ' CPU'}`).join(' ')
-                ctx.fillText('ARROWS MOVE SPACE TAKE B TOSS', 150, CANVAS_H - 3)
+                ctx.fillText('ARROWS MOVE SPACE TAKE B TOSS V RADIO', 150, CANVAS_H - 3)
+                // #2079 the radio exists solo too: the same MIC/VOX chips and
+                // ON-AIR light ride the offline strip (tap the mic on a phone,
+                // hold V on a keyboard), so a solo cook can key up and the
+                // CPU line answers. Same rects, same thumb standard (#1468).
+                if (screenRef.current === 'play') {
+                    if (voxPress > 0) voxPress--
+                    const armed = net.voice.enabled
+                    const voxDown = voxPress > 0
+                    ctx.fillStyle = '#241420'
+                    ctx.fillRect(VOX_RECT.x, VOX_RECT.y + (voxDown ? 1 : 0), VOX_RECT.w, VOX_RECT.h)
+                    ctx.fillRect(MIC_RECT.x, MIC_RECT.y + (micHold ? 1 : 0), MIC_RECT.w, MIC_RECT.h)
+                    ctx.strokeStyle = armed ? '#3f7a4c' : '#7a3f44'
+                    ctx.strokeRect(VOX_RECT.x + 0.5, VOX_RECT.y + (voxDown ? 1.5 : 0.5), VOX_RECT.w - 1, VOX_RECT.h - 1)
+                    ctx.strokeRect(MIC_RECT.x + 0.5, MIC_RECT.y + (micHold ? 1.5 : 0.5), MIC_RECT.w - 1, MIC_RECT.h - 1)
+                    ctx.fillStyle = armed ? '#8ce098' : '#e08888'
+                    ctx.fillText(armed ? 'ON' : 'OFF', VOX_RECT.x + 5, VOX_RECT.y + 13 + (voxDown ? 1 : 0))
+                    const micHot = net.voice.live || net.voice.rig
+                    ctx.fillStyle = micHot && Math.floor(performance.now() / 200) % 2 ? '#38e07b' : (armed ? '#8ad8a0' : '#6a4a52')
+                    const smx = MIC_RECT.x + 6, smy = MIC_RECT.y + 4 + (micHold ? 1 : 0)
+                    ctx.fillRect(smx + 1, smy, 2, 1)
+                    ctx.fillRect(smx, smy + 1, 4, 5)
+                    ctx.fillRect(smx - 2, smy + 4, 1, 3); ctx.fillRect(smx + 5, smy + 4, 1, 3)
+                    ctx.fillRect(smx + 1, smy + 7, 4, 1); ctx.fillRect(smx + 2, smy + 8, 2, 1); ctx.fillRect(smx + 1, smy + 9, 4, 1)
+                    if (micHold) { ctx.strokeStyle = '#7ee0ff'; ctx.strokeRect(MIC_RECT.x - 1.5, MIC_RECT.y + 1.5, MIC_RECT.w + 3, MIC_RECT.h - 3) }
+                    if (radioDenied > 0 && Math.floor(radioDenied / 4) % 2) { ctx.strokeStyle = '#f05030'; ctx.strokeRect(MIC_RECT.x - 2.5, MIC_RECT.y + 0.5, MIC_RECT.w + 5, MIC_RECT.h + 5) }
+                    if (radioBusy()) {
+                        ctx.fillStyle = Math.floor(performance.now() / 150) % 2 ? '#ffd23f' : '#7a5c14'
+                        ctx.fillText('ON AIR', 150, CANVAS_H - 11)
+                    } else if (armed) {
+                        ctx.fillStyle = '#5a4a5a'
+                        ctx.fillText('V=RADIO', 150, CANVAS_H - 11)
+                    }
+                }
             }
             if (legend) ctx.fillText(legend, 6, CANVAS_H - 3)
 
@@ -1302,6 +1426,12 @@ export default function ShortOrderShout() {
                 },
                 desyncDrill: () => showDesyncNotice(),
                 resyncDrill: () => markResynced(),
+                // #2079 radio rig: force the busy gate without a mic (a
+                // headless box has none), fire a landed take of `ms`, and read
+                // the gate + the COPY chips. QA's foul()/thaw() precedent.
+                radioRig: (on) => { net.voice.rig = !!on },
+                radioSay: (ms) => { if (ms >= ACK_MIN_MS) radioAckCooks() },
+                radio: () => ({ busy: radioBusy(), held: net.ptt.holding, pending: net.ptt.pending, rig: !!net.voice.rig, deny: radioDenied, acks: { ...net.voice.acks } }),
                 netStart: () => netStartRef.current && netStartRef.current(),
                 notice: () => (hudRef.current.desync ? { phase: hudRef.current.desync.phase, t: hudRef.current.desync.t } : null),
                 net: () => (net.active ? { role: net.role, code: net.room ? net.room.code : '', phase: net.room ? net.room.phase : 'idle', slot: net.slot, seats: net.seats, humans: net.humans.slice(), dropped: net.dropped.slice(), stalls: net.sync.stats(), rtt: net.rtt.pips(), cmd: net.cmd.stats(), chips: chipRects.map((c) => ({ seat: c.seat, tap: c.tap, rect: { ...c.rect } })), mic: { ...MIC_RECT }, vox: { ...VOX_RECT }, voice: { held: net.ptt.holding, pending: net.ptt.pending, live: !!net.voice.live, enabled: !!net.voice.enabled, speaking: net.vin.speaking(), inflight: net.vin.inflight, lost: net.vin.lostUtterances, heard: net.vin.heardUtterances, heardLast: net.voice.heard } } : null),

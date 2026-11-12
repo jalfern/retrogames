@@ -225,8 +225,11 @@ face). soslinkcheck pins the countdown contract (+4 => 137).
 ## Honest gaps
 
 - **Voice**: half-duplex hold-V PTT over the pad wire shipped (#1416 gap 1,
-  #1432); full-duplex/WebRTC audio is still deferred, and the #1247 recorder
-  path keeps banking per-seat mic audio alongside it.
+  #1432), and the radio became a mechanic (#2079): keying ties the talker's
+  hands — A/B refused while your take is held or draining, solo included —
+  and every landed take gets a COPY from the CPU line. full-duplex/WebRTC
+  audio is still deferred, and the #1247 recorder path keeps banking per-seat
+  mic audio alongside it.
 - **Voice ops**: the production toggle (M arm, VOX, echo gate) is proven at
   the machine/wire tier. Thumb tuning shipped (#1468): MIC/VOX/seat-chip hit
   boxes are >=20 canvas px in disjoint zones (`art.js` + soscheck asserts);

@@ -94,6 +94,9 @@ export function createPttSender(opts = {}) {
             while (queued.length && budget.take()) { send(queued.shift()); n++; sent++ }
             return n
         },
+        // #2079: no wire (solo shift) — dump the queued frames so `pending`
+        // cannot sit on the busy gate forever. Honest silence, not a jam.
+        discard() { queued = [] },
         reset() { holding = false; queued = []; cutFlag = false; budget.reset() },
     }
 }
@@ -109,6 +112,15 @@ export function createPttSender(opts = {}) {
 // hearing. `speaking()` is an honest estimate (playback starts at delivery;
 // ECHO_TAIL_MS covers decode latency + room echo); the DOM half enforces it.
 export const ECHO_TAIL_MS = 250
+
+// ---- the radio ties the cook (#2079) --------------------------------------
+// A take worth an answer: the line only answers when you actually said
+// something. Too short (a click) or too quick to be a word stays silence —
+// same floor as PTT_MIN_B64 so a released-but-empty press never acks.
+export const ACK_MIN_MS = 300
+export function takeIsSpeech(b64Len, ms) {
+    return b64Len >= PTT_MIN_B64 && ms >= ACK_MIN_MS
+}
 
 export function createPttInbox(opts = {}) {
     const onUtterance = typeof opts.onUtterance === 'function' ? opts.onUtterance : () => {}
