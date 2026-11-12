@@ -2054,6 +2054,34 @@ if (MUT) {
     await tryMut('money-death taxonomy blind (badge staged as purse)',
         mutMod('sim.js', '/EVICTED|STARVED|FROZEN/.test(why || \'\')', '/NEVERMATCHES/.test(why || \'\')', 'm47'),
         (m) => m.sim.isMoneyDeath('RENT UNPAID — EVICTED (needed 30, had 12)') && m.sim.isMoneyDeath('NO SOUP TWO NIGHTS — STARVED'))
+
+    // #1976 m48: the wash fades to nothing — the print comes back fresh and
+    // the aged-photo trap loses its at-a-glance tell. The invariant is the
+    // wash's own alpha; papersplay's aged-pixel gate is the pixel proof.
+    await tryMut('aged-print wash fades to nothing (alpha 0.02)',
+        mutMod('layout.js', "export const PHOTO_TINT = 'rgba(146,102,28,0.30)'", "export const PHOTO_TINT = 'rgba(146,102,28,0.02)'", 'm48'),
+        (m) => { const t = m.layout.PHOTO_TINT.match(/,\s*([\d.]+)\)/); return !!t && Number(t[1]) >= 0.2 })
+}
+
+section('AGED PRINT & LIVE EARS (#1976) — the photo ages, the ear survives the cut')
+{
+    const idxSrc = readFileSync(join(SRC, 'index.jsx'), 'utf8')
+    const tint = (await import(pathToFileURL(join(SRC, 'layout.js')).href)).PHOTO_TINT
+    const tw = tint.match(/^rgba\((\d+),(\d+),(\d+),([\d.]+)\)$/)
+    ok(!!tw, `PHOTO_TINT is an rgba wash (${tint})`)
+    if (tw) {
+        const [, tr, tg, tb, ta] = tw.map(Number)
+        ok(tr > tg && tg > tb, `PHOTO_TINT is warm (r>g>b): ${tint} — a cool wash would not read as aged paper`)
+        ok(ta >= 0.2 && ta <= 0.45, `the wash is present but transparent (alpha ${ta} in [0.2,0.45]) — face must read through`)
+    }
+    ok(idxSrc.includes('ctx.fillStyle = PHOTO_TINT; ctx.fillRect(x + PHOTO.x + 1, y + PHOTO.y + 1, PHOTO.w - 2, PHOTO.h - 2)'),
+        'index.jsx: the wash paints the print INSIDE the frame line (inset 1) — the frame stays fresh')
+    ok(/P\(8\), P\(36\)\)/.test(idxSrc) && !/P\(8\), P\(44\)\)/.test(idxSrc),
+        'index.jsx: sideburns stop at row 44 (P(36)) — no hair cut reaches row 52 to bury the ears')
+    ok(/BROW\|MOUTH/.test(idxSrc) && /playTone\(1050/.test(idxSrc),
+        'index.jsx: a correct brow/mouth deny carries the sharp evidence tick (1050Hz)')
+    ok(/earPix: \(\)/.test(idxSrc) && /sfxTicks: \(\) => sfxTicks/.test(idxSrc),
+        'index.jsx: earPix + sfxTicks probes exposed for papersplay (ears per cut, ticks per face deny)')
 }
 
 console.log(`\npaperscheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)
