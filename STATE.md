@@ -1,66 +1,65 @@
-# STATE — session 238 (2026-11-11, slot a)
+# STATE — session 238 (2026-11-12, slot a)
 
 ## What shipped
-**CIVILIZATION V LEARNS NAVAL SUPPLY** — merged as `d6ef8b5` (PR #2068, Closes #2065).
-TARGET #2063 was REFUSED (slot b held it, claim 7 min fresh — honest yield), so the
-ladder ran: no halt/steer/next, game-queue empty, live QA MASTER up (borrow blocked),
-flagship stage spent (all four flagship READMEs fully CLOSED-marked) → NEVER-DRY rung:
-`idle-kick` answered `KICK CIVILIZATION V 0 weak` (score 4 = 4 unowned README gaps,
-no feedback naming it, ties to oldest). Filed #2065 with the why-weakest line, claimed,
-built, shipped.
-The law: a hull is SUPPLIED within `CFG.navalSupply` (6) sea steps of a friendly port
-(own/overlord/vassal coastal cities, allied-CS harbours; enemy and non-allied never).
-Unsupplied hulls wear `CFG.navalAttrition` (10) HP at end of turn, never heal afloat,
-and attrition alone sinks a hull with its hold (`shipLost` why:'supply' + the drown
-cargo fold). Pure derivation (`portsOfRealm`/`suppliedSea`/`hullSupplied`) — no new
-stored state; wear lands in `u.hp`, already hash-folded. Tells: HUD chip
-`⚠ OUT OF SUPPLY −10/TURN`, pulsing amber ring on far hulls, log line, help-card line.
-Honesty (#237 doctrine, in the README): Civ V has no attrition at sea — its real law
-is heals-on-friendly-territory-only with borders reaching water; the extension ships
-labelled as ours.
-Proof: civcheck §39 +35 checks → **594/594**; mutant (`wear → hp -= 0`) died on 7 §39
-checks; lint:civ/mario/fps/ai + build green; civplay 93/96 = EXACT parity with a
-pristine origin/main worktree (3 pre-existing reds filed as #2069 for QA). Prod:
-`index-B8rdHCjS.js` lazy-loads chunk `index-DenACxGQ.js` carrying the supply literals;
-live at `https://jalfern.com/retrogames/civilization-v`.
+**CIVILIZATION V — NAVAL SUPPLY LINES** — merged as `d6ef8b5` (PR #2068,
+Closes #2065). This session RESUMED the slot-a corpse at step 1b: the previous
+session (claimed 01:10Z) died at ~02:11 mid-merge-wait; its orphaned merge loop
+landed the PR at 02:23Z while I verified. The law: a hull >6 sea steps from a
+friendly coastal port (own/vassal/overlord/allied-CS city) banks −10 HP/turn,
+never heals afloat, and sinks with its hold; amber ring + HUD chip + log tells.
+civcheck 594/594, mutant red→green, lint+build green (all in #2068's body).
+- Paperwork mine: prod verified (entry `index-6RSAdNQw.js`, marker "OUT OF
+  SUPPLY" live in chunk `index-GA9aV15i.js`), live URL commented, #2065
+  building→shipped+closed (auto-closed by merge; label sweep was mine).
+- Filed `QA — CIVILIZATION V: naval-supply polish pass` as **#2075**
+  (horizon invisible, phone ring legibility, silent AI sink, enemy-hull ring
+  leak, no wreck beat) — every item verified against main first.
 
 ## The session's catches
-- **Inherited red blocks the required check.** #2068's static failed attractcheck:
-  slot b's #2064 vault hint shipped as a second raw `<p>` in LRL's attract (rule 6:
-  the press prompt is the only raw paragraph); #2068 was just the first PR over it.
-  Fix = one-line p→span (`WATCH_ATTRACT_HINT` two lines above is the precedent):
-  separate PR #2073 (attractcheck 694/694, lodecheck 134/134), merged, my branch
-  rebased onto it. When static reds on files your diff never touched, suspect main,
-  prove it on a pristine worktree, fix separately, then rebase.
-- **`gh pr merge` local bookkeeping dies on a held `main`.** #2073's merge left its
-  worktree on `main`, so #2068's merge threw `'main' is already used by worktree`
-  AFTER the API merge succeeded. Recovery: `checkout --detach` + `worktree remove`
-  the dead lane, `gh pr view` to confirm merged, `git push origin --delete <branch>`.
-  Re-detach immediately after every merge — the playbook law, now with the exact
-  failure signature.
-- **attractcheck is not in nightly** — main-ok.sh stayed green through a red-main
-  attract rule; only PR static sees it. README verify counts were stale (533/547 vs
-  actual 559→594); now honest.
+- **TARGET taken is not a stall.** Warden aimed #2070 at slot a, but slot b's
+  claim (02:01Z) was fresher → `forge-claim.sh 2070 a` REFUSED by the liveness
+  law (#1258/#878). Normal ladder then: no steer/next, game-queue empty, QA
+  MASTER live (pid 19543) → no feedback borrow, flagshipStage = null (all four
+  flagship READMEs fully CLOSED-marked), and the resume at step 1b had already
+  shipped. One game per session → close-out, not a second claim.
+- **Dead lanes leave orphaned merge loops.** pid 33984 is slot b's `main-ok +
+  gh pr checks` loop running in ITS worktree while its session thinks; loops
+  survive and merge for real. Read `ps ax -o pid,ppid,command` before deciding
+  a `building` issue is dead — the loop finishing is the build finishing.
+- **prod-scan paths double-prefix silently.** `BASE=/retrogames` + entry URL
+  `/retrogames/assets/...` requests `/retrogames/retrogames/...`, the SPA
+  fallback answers HTML@200 and every chunk-count check “fails”. Entry src from
+  the HTML is ALREADY base-prefixed — request it root-relative (scan scripts
+  live in the session tmp dir, never the checkout).
+- **Filing a polish pass feeds weakestStage.** #2075 names CivV, so its `named`
+  count rose immediately; the never-dry pick next sweep is CivV again, score 5
+  (3 unowned README gaps + 2 feedback). That's honest but double-counts the gap
+  my own polish bullets describe — the next CivV stage should take the Ark
+  parts gap, not re-derive anything #2075 already owns.
 
 ## Ladder trail
-TARGET #2063 claim REFUSED ("held by b, newest claim 7 min") → normal ladder →
-never-dry pick; filed-then-claimed #2065 per #1571. No halt/steer/next anywhere; no
-jonq filed (nothing taste-grade); QA borrow blocked by live QA MASTER (pgrep).
-Step 8b skipped with reason: this shipped stage WAS the polish round for the sea gap;
-remaining CIV gaps live in the README ledger for future weakest scoring.
+TARGET #2070 REFUSED (slot b live, fresh claim, own merge loop running).
+No halt/steer/next. game-queue empty. QA live → no borrow. flagshipStage null
+(SSX 3/3, Emberwood 6/6, CometDriftHD 5/5(-1 CLOSED), Myst 8 all CLOSED-owned —
+verified parseGaps counts, not memory). Resume #2065 consumed and SHIPPED the
+session. neverDry after: CIVILIZATION V score 5, oldest unowned gap = Ark parts
+per-city yards (README gap 0). PapersPleaseMin + ViperPit held dirs.
 
 ## Open questions
 - none (see waiting-jon issues).
 
 ## Next
-- #2069 (filed this session): civplay's 3 red-on-main checks — attract copy drift
-  (goal not named on the card since the b31 rewrite; #406 law), black-centre pixel
-  read (needs §406 buffer-read treatment, `unseenMin` is the pattern), Y-from-attract
-  VICTORY probe. QA lane's call.
-- CIV owed honestly: the naval tactics stack (ranged port bombardment from the water,
-  promotions) + three other README gaps — next weakest-score material.
-- PPM drain law stands (session 230). #2045/#2036 remain open harness improvements,
-  unowned. Slot b's open items ride its STATE.
-- Housekeeping: dev server slot a 5173 STOPPED at exit; `~/Dev/retrogames-forge-civ-supply-sea`
-  and `~/Dev/retrogames-forge-lrl-attract-span` removed (branches died with squashes);
-  main checkout detached at `d6ef8b5` + STATE commit.
+- Slot b ships #2070 (HOMEBODY spats) on its own; its polish pass number will
+  follow its merge.
+- Never-dry points at **CIVILIZATION V — Ark parts as city industry**
+  (gap 0 verbatim in README). File + claim normally when free.
+- #2069 (civplay 3/96 red-on-main, attract copy drift + black-centre pixel
+  read) is unowned QA — QA MASTER will see it; #2075 deliberately excludes it.
+- `viperpitcheck` red-on-main flag persists (session 235, twice now) — re-file
+  on a QA issue if nobody owns it.
+- Dev servers: slot a 5173 STOPPED at exit (was orphan pid 31821 in the merged
+  civ worktree — killed; port re-checked free); slot b 5178 live (not touched);
+  QA studio 5176 (not mine). Stale worktrees: this session removed
+  retrogames-forge-civ-supply-sea's squat on 5173 (worktree dir already pruned
+  by merge); session-235 candidates (ppm-portrait, ppm-bulletin, papers-photo)
+  still stand.
