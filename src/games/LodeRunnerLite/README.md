@@ -121,7 +121,9 @@ to clear, it is unclassic and lodecheck's winnability gate fails it.
   mouth still fall in — route legality, the trap ladder and the solver's
   receipts are untouched. lodecheck pins the cling (guard escape, runner
   pitClimb, re-drop) and scans every solver tick for an unsupported stand;
-  lodeplay proves the cling live, state AND pixels.
+  lodeplay proves the cling live, state AND pixels. — **CLOSED by #2004**
+  (marker added by #2064 — the work shipped then, merged `6b2db65`; the
+  bullet lacked it and kept re-kicking lanes, #961).
 - **The juice landed (#1949).** A dropped body now EASES into the pit instead
   of teleporting one cell down (paint-time slide keyed on the sim's `fallInto`
   event — sim state and replay hashes untouched); digs, impacts, refills and
@@ -131,12 +133,24 @@ to clear, it is unclassic and lodecheck's winnability gate fails it.
   hunter wears a deeper red-orange kit so the pair reads apart at phone scale
   (the original told its guards by kit colour). All paint/sound-only — the
   attract demo runs the same cosmetics, and lodeplay's orange-guard pin still
-  reads the primary hunter.
+  reads the primary hunter. — **CLOSED by #1949** (marker added by #2064 —
+  the work shipped then, merged `e4a0ad8`; the bullet lacked it and kept
+  re-kicking lanes, #961).
 - Vault 3's witness spends one life (a guard closes the crossing); the
   one-fewer-life slack check proves the route is still robust.
 - No keyboard-less vault skipping on phones: pads withdraw on menus, and
   vault select is 1/2/3. The vault chain carries score+lives, so a phone
   player who dies on vault 2 restarts at 1 — the honest classic.
+  — **CLOSED by #2064:** the marquee carries three tappable pads (VAULT
+  1/2/3, ≥44x28px live), each dispatching the same `Digit1/2/3` the keyboard
+  path consumes; the window tap-anywhere skips `button` targets, so a pad
+  tap can never also fire the vault-1 start (#965 Emberwood pattern). The
+  chain still carries score+lives; a phone death on vault 2 still restarts
+  the chain at 1 — the honest classic stands, the phone just reaches the
+  vaults the keyboard always could. `lodeplay` §1b gates it: geometry floor,
+  tap-outside-still-vault-1, and each pad's real centre opening its own
+  vault with real pointer events (mutant: drop the button guard → pads 2/3
+  open vault 1 and the section goes red).
 
 ## WATCH (#1637 batch 5)
 
