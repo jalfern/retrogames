@@ -98,8 +98,9 @@ export const SLIP = { x: 452, y: 304, w: 202, h: 88, head: 13, dash: 18, row0: 3
 export const RENT = { x: 12, y: 397, size: 8 }
 // #1968 THE WAGE FLICKER — per-stamp pay feedback: +5 rises off the CR
 // readout when a correct stamp earns it. The band rides inside the controls
-// strip (y >= 400) and left of the CORRECT/MISTAKE note (x >= ~613).
-export const PAYFX = { ticks: 45, rise: 12, x: 170, base: CHS - 19 }
+// strip (y >= 400), right of any CR text (CR's longest ~"CR 350" ends by
+// x≈228) and left of the CORRECT/MISTAKE note (x >= ~613).
+export const PAYFX = { ticks: 45, rise: 12, x: 234, base: CHS - 19 }
 
 export const ruleLines = (text) => {
     const words = text.split(' ')

@@ -1061,7 +1061,8 @@ section('THE PAY ECONOMY (#1966) — pay law, bills, eviction, two-night deaths 
     // #1968 THE WAGE FLICKER — the +5 band rides inside the strip and stays
     // clear of the CORRECT/MISTAKE note (which right-starts by x≈613).
     ok(PAYFX.base - PAYFX.rise >= CHS - STRIP_H, 'the wage flicker rises out of the strip band')
-    ok(PAYFX.x + 28 + '+5'.length * 12 * CHAR <= 613, 'the wage flicker crowds the CORRECT/MISTAKE note')
+    ok(PAYFX.x >= 230, 'the wage flicker sits on top of the CR readout (longest CR text ends by x≈228)')
+    ok(PAYFX.x + '+5'.length * 12 * CHAR <= 613, 'the wage flicker crowds the CORRECT/MISTAKE note')
     // #1968 THE TAXONOMY OF LOSING — purse deaths (rent/soup/heat) read as
     // money on the end screen; the badge (three mistakes) and the quota do
     // not. The staging picks its heading by this law, so the law is pinned.

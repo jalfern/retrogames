@@ -527,7 +527,7 @@ const PapersPleaseMinGame = () => {
                 ctx.fillStyle = `rgba(125,220,93,${a.toFixed(3)})`
                 ctx.font = `bold 12px monospace`
                 ctx.textAlign = 'left'
-                ctx.fillText(`+${CFG.PAY}`, PAYFX.x + 28, PAYFX.base - (PAYFX.ticks - payFx) * (PAYFX.rise / PAYFX.ticks))
+                ctx.fillText(`+${CFG.PAY}`, PAYFX.x, PAYFX.base - (PAYFX.ticks - payFx) * (PAYFX.rise / PAYFX.ticks))
             }
             // the entrant (during a stamp, the papers shown are the ones
             // just judged — the stamp lands on its own document). #2021: the
@@ -874,6 +874,31 @@ const PapersPleaseMinGame = () => {
                     }
                     return { ink: n, rows: day.wanted.length }
                 },
+                wageFx: () => ({ ticks: payFx }),
+                // #1968 RENT AHEAD ink: bright warm pixels (gold or red) in the
+                // corridor under the SCALE box — the wallpaper rule lines are dark
+                // (#323a52) and nothing else paints there, so any count is the note.
+                rentNoteInk: () => {
+                    const x0 = RENT.x, y0 = SCALE.y + SCALE.h + 2
+                    const d = ctx.getImageData(x0, y0, 250 - x0, CHS - STRIP_H - y0).data
+                    let n = 0
+                    for (let i = 0; i < d.length; i += 4) {
+                        const [rr, , bb] = [d[i], d[i + 1], d[i + 2]]
+                        if (rr > 150 && rr > bb) n++
+                    }
+                    return { ink: n, due: rentDue(current(gs).day.n), credits: gs.credits }
+                },
+                // #1968 the wage flicker's green, counted near the strip band
+                // where it rises (bright alpha only — proof it actually painted).
+                wageFxInk: () => {
+                    const d = ctx.getImageData(PAYFX.x - 2, PAYFX.base - PAYFX.rise - 4, 24, PAYFX.rise + 10).data
+                    let n = 0
+                    for (let i = 0; i < d.length; i += 4) {
+                        const [rr, gg, bb] = [d[i], d[i + 1], d[i + 2]]
+                        if (gg > 110 && gg > rr + 30 && gg > bb + 30) n++
+                    }
+                    return n
+                },
                 probe: () => {
                     const { day, view } = current(gs)
                     return {
@@ -883,6 +908,7 @@ const PapersPleaseMinGame = () => {
                         rules: day.rules, date: dfmt(day.date), allowed: day.allowed, wanted: day.wanted,
                         clock: gameClock(gs), ticksLeft: gs.clock, // #1960 shift clock probes
                         credits: gs.credits, hungry: gs.hungry, cold: gs.cold, // #1966 the purse
+                        payFx, // #1968 the wage flicker's remaining ticks
                         slip: gs.slip && { ...gs.slip },
                         banner: banner && { ...banner }, view, evLog: evLog.slice(-60),
                     }
