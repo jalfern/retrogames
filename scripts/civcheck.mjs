@@ -2,7 +2,7 @@
 // boots, its core rules hold, and it can be won. No browser, no three.
 // Run: npm run civcheck. Proven red-able (mutant) by hand — see README.
 
-import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, hasWonder, gpReady, gpThreshold, gpCost, canRecruit, recruitGP, canUseGP, spendGP, canDeclareWar, canMakePeace, makePeace, canTrade, makeTrade, cityStates, csInfo, canGift, giftCS, CS_IDS, CS0, isCS, coastalTile, coastalCityOf, isWater, findPath, orderMove, tileBlocked, canEmbark, embark, canLand, land, transportFor, portsOfRealm, suppliedSea, hullSupplied, ARK_PARTS, arkPartsOf, arkPartsDone } from '../src/games/CivilizationV/sim.js'
+import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, hasWonder, gpReady, gpThreshold, gpCost, canRecruit, recruitGP, canUseGP, spendGP, canDeclareWar, canMakePeace, makePeace, canTrade, makeTrade, cityStates, csInfo, canGift, giftCS, CS_IDS, CS0, isCS, coastalTile, coastalCityOf, isWater, findPath, orderMove, tileBlocked, canEmbark, embark, canLand, land, transportFor, portsOfRealm, suppliedSea, hullSupplied, ARK_PARTS, arkPartsOf, arkPartsDone, eraCurve, cultureBeats } from '../src/games/CivilizationV/sim.js'
 import { decide, plan, RESEARCH_ORDER } from '../src/games/CivilizationV/planner.js'
 import { readFileSync } from 'fs'
 
@@ -1426,6 +1426,7 @@ console.log('33. victories: order, tourism crown, domination, race reachability'
     // living rivals' visitor books; the dead are history, not opposition)
     const keepTW = CFG.tourismWin
     CFG.tourismWin = 120
+    for (const c of gs.civs) c.era = 5   // #2122: these pins judge RAW strictness — same era by fiat (§41 owns the curve)
     gs.civs[0].tourism = 100
     step(gs, { endTurn: true })
     ok((gs.civs[0].tourism || 0) < CFG.tourismWin && !gs.end, 'below the visitor bar — no crown, however admired')
@@ -1433,6 +1434,7 @@ console.log('33. victories: order, tourism crown, domination, race reachability'
     const gb = newGame(3, 0)
     const sb = gb.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
     step(gb, { select: sb.id, found: true })
+    for (const c of gb.civs) c.era = 5   // #2122: raw strictness is the same-era law — curve off by fiat (§41 owns it)
     gb.civs[0].tourism = CFG.tourismWin + 5
     gb.civs[1].tourism = CFG.tourismWin + 9
     step(gb, { endTurn: true })
@@ -1953,6 +1955,7 @@ console.log('37. tourism: earned, never spent — and the crown follows the crow
     const b2 = gz.events.filter((e) => e.type === 'turnEnd' && e.civ === 0).pop().tour
     ok(b1 === b2 || gz.cities.some((c) => c.alive && c.civ === 0 && c.size > 1), 'a growing capital banks a bigger crowd each turn')
     CFG.tourismWin = Math.max(1, Math.floor(gz.civs[0].tourism))      // both are past the bar from here
+    for (const c of gz.civs) c.era = 5                                 // #2122: raw strictness, same era by fiat (§41 owns the curve)
     gz.civs[1].tourism = gz.civs[0].tourism + b2                        // equal at the moment the next crowd arrives…
     gz.civs[2].tourism = 0; gz.civs[3].tourism = 0
     step(gz, { endTurn: true })
@@ -2301,6 +2304,118 @@ console.log('41. naval-supply polish — horizon paint, player-only flare, wreck
     let n41 = 0
     while (!g1.end && n41++ < 30) { step(g1, decide(g1)); step(g2, decide(g2)) }
     eq(stateHash(g1), stateHash(g2), 'f). the polish left the sim untouched: same seed, same hash')
+}
+
+// ---- 42. the era curve — tourism counts ×2 per era of lead (#2122, BNW; the §41 number went to #2075) ----
+console.log('42. the era curve — younger courts are dazzled double over')
+{
+    const keepCap = CFG.capitalSizeToWin, keepCult = CFG.cultureWin, keepTour = CFG.tourismWin, keepTurn = CFG.turnLimit
+    CFG.capitalSizeToWin = 99; CFG.cultureWin = 1e9; CFG.turnLimit = 9999
+
+    // (a) the multiplier identity — pure law: ×1 same era or behind, ×2 per era ahead
+    eq(eraCurve(3, 3), 1, 'same era reads ×1 — the raw strict-lead law stands untouched')
+    eq(eraCurve(2, 3), 1, 'one era behind reads ×1 — the curve never inflates the younger age')
+    eq(eraCurve(0, 3), 1, 'three eras behind is still ×1 for the cradle court')
+    eq(eraCurve(4, 3), 2, 'one era of lead pays ×2')
+    eq(eraCurve(5, 3), 4, 'two eras of lead pay ×4')
+    eq(eraCurve(5, 0), 32, 'and it compounds to the top mark')
+    eq(eraCurve(null, 0), 1, 'an unmarked book has no age to boast (×1)')
+
+    const booth = () => {
+        const g = newGame(2, 0)
+        const s = g.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+        step(g, { select: s.id, found: true })
+        step(g, { endTurn: true })
+        return g
+    }
+    const setEras = (g, mine, theirs) => { g.civs[0].era = mine; for (const c of [1, 2, 3]) g.civs[c].era = theirs }
+
+    // (b) exact kills at the doubled mark, via the shared walk (no turn drift)
+    const gd = booth()
+    setEras(gd, 3, 2)
+    gd.civs[0].tourism = 120; gd.civs[1].tourism = 239
+    ok(cultureBeats(gd, 0, 1), '×2: a book of 120 outranks 239 across an era gap — 240 > 239')
+    gd.civs[1].tourism = 240
+    ok(!cultureBeats(gd, 0, 1), 'the doubled mark is exact: 240 is NOT beaten by a doubled 120')
+    setEras(gd, 2, 3)
+    ok(!cultureBeats(gd, 0, 1), 'and behind, 120 never outranks 239 — no inflation for the younger age')
+
+    // (c) the threshold stays RAW: a ×16 age lead crowns nothing under the bar
+    const g = booth()
+    setEras(g, 5, 1)
+    g.civs[0].tourism = CFG.tourismWin - 20
+    g.civs[1].tourism = 4; g.civs[2].tourism = 3; g.civs[3].tourism = 2
+    step(g, { endTurn: true })
+    ok(g.civs[0].tourism < CFG.tourismWin && !g.end, 'twenty tourists under the bar with a ×16 lead over every court — no crown, the bar stays raw')
+
+    // (d) same-era strictness survives the curve: a tie stays uncoroned (§37(f) doctrine, era by fiat)
+    const gt = booth()
+    setEras(gt, 3, 3)
+    gt.civs[0].tourism = CFG.tourismWin
+    gt.civs[1].tourism = CFG.tourismWin
+    gt.civs[2].tourism = 0; gt.civs[3].tourism = 0
+    step(gt, { endTurn: true })
+    const ledRaw = gt.civs[0].tourism > gt.civs[1].tourism
+    ok((gt.end === 'win' && /Culture/.test(gt.endWhy || '')) === ledRaw, 'at the same era the crown still wants strictly more — the tie (or the lead) decides exactly as before')
+
+    // (e) the curve crowns over a RAW deficit — and the copy names the age
+    const ge = booth()
+    setEras(ge, 4, 2)
+    ge.civs[0].tourism = 130
+    ge.civs[1].tourism = 515; ge.civs[2].tourism = 2; ge.civs[3].tourism = 1
+    step(ge, { endTurn: true })
+    ok(ge.end === 'win' && /Culture/.test(ge.endWhy || '') && /younger age/.test(ge.endWhy || ''),
+        'the visitor book trails raw, ×4 answers it — WIN, and the copy says a younger age dazzled the old courts')
+
+    // (f) rivals ride the same curve: a China an era ahead crowns over your raw lead
+    const gr2 = booth()
+    setEras(gr2, 2, 4)
+    gr2.civs[0].tourism = 100
+    gr2.civs[1].tourism = CFG.tourismWin; gr2.civs[2].tourism = 2; gr2.civs[3].tourism = 1
+    step(gr2, { endTurn: true })
+    ok(gr2.end === 'lose' && /culture/i.test(gr2.endWhy || ''), 'China is one era ahead with a smaller crowd than you expected — ×4 answers YOUR book, and the world is theirs')
+
+    // (g) the AND across rivals stands: beating one court never crowns while a same-era rival draws more
+    const ga = booth()
+    ga.civs[0].era = 4; ga.civs[1].era = 2; ga.civs[2].era = 4; ga.civs[3].era = 4
+    ga.civs[0].tourism = 130; ga.civs[1].tourism = 500; ga.civs[2].tourism = 160; ga.civs[3].tourism = 2
+    ok(cultureBeats(ga, 0, 1), 'the curve still beats the cradle court (×4 over 500… 130×4=520)')
+    ok(!cultureBeats(ga, 0, 2), 'but a same-era rival at 160 is not beaten by 130 — the AND fails')
+    step(ga, { endTurn: true })
+    ok(!(ga.end === 'win' && /Culture/.test(ga.endWhy || '')), 'no crown while any living rival still out-shines you era-adjusted')
+
+    // (h) dead courts are history: their enormous book and ancient era are both skipped
+    const gq = booth()
+    gq.civs[0].era = 3; gq.civs[1].era = 0; gq.civs[2].era = 3; gq.civs[3].era = 3
+    gq.civs[0].tourism = CFG.tourismWin
+    gq.civs[1].tourism = 99999; gq.civs[1].alive = false
+    gq.civs[2].tourism = 5; gq.civs[3].tourism = 4
+    step(gq, { endTurn: true })
+    ok(gq.end === 'win' && /Culture/.test(gq.endWhy || ''), 'a destroyed empire\u2019s ghost book of 99,999 cannot haunt the crown — the dead are skipped unchanged')
+
+    // (i) income untouched: the visitor book banks the same ceil(culture/2)+3·wonders+1·luxury with an era gap in force
+    const gi = booth()
+    setEras(gi, 5, 0)
+    step(gi, { endTurn: true })
+    const tie = gi.events.filter((e) => e.type === 'turnEnd' && e.civ === 0).pop()
+    const luxI = connectedResources(gi, 0).filter((id) => RES[id].lux).length
+    const wonI = WONDER_IDS.filter((id) => gi.wonders[id] === 0).length
+    eq(tie.tour, Math.ceil(tie.cult / 2) + CFG.wonderTour * wonI + luxI, 'the curve modifies the COMPARISON only — the book banks raw, era never multiplies income')
+
+    // (j) determinism: the curve is pure law over folded state — seed-7 replays twice, hash-for-hash
+    const a = newGame(7, 0), b = newGame(7, 0)
+    let x = 0
+    while (!a.end && x++ < 40) { step(a, decide(a)); step(b, decide(b)) }
+    ok(stateHash(a) === stateHash(b), 'the autopilot still replays hash-for-hash with the era curve in force')
+
+    // (k) law and paint share one walk: the panel reads cultureBeats, the crown reads cultureBeats
+    const src = readFileSync(new URL('../src/games/CivilizationV/sim.js', import.meta.url), 'utf8')
+    ok(/cultureBeats\(gs, civ, c\.id\)/.test(src), 'victoryFor judges every rival through the exported cultureBeats walk')
+    const view = readFileSync(new URL('../src/games/CivilizationV/index.jsx', import.meta.url), 'utf8')
+    ok((view.match(/cultureBeats\(gs, 0, i\)/g) || []).length >= 2 && /eraCurve\(gs\.civs\[0\]\.era, gs\.civs\[c\.id\]\.era\)/.test(view),
+        'the VICTORY panel lead and the ×N badges read the same exported helpers — paint cannot drift from the law')
+
+    CFG.capitalSizeToWin = keepCap; CFG.cultureWin = keepCult; CFG.tourismWin = keepTour; CFG.turnLimit = keepTurn
 }
 
 console.log(`\ncivcheck: ${pass} passed, ${fail} failed`)

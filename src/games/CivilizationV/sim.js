@@ -1797,6 +1797,29 @@ function highestEra(gs, civ) {
 // the visitor book past the threshold, strictly ahead of every living rival's
 // visitor book. Rome's arcade milestone (golden age) stays behind them; a
 // rival achieving any of the three first ends the game the other way.
+// #2122 THE ERA CURVE (Brave New World, Firaxis 2013): the visitor book is
+// not raw arithmetic. Each civ's tourism is judged AGAINST EACH RIVAL with a
+// modifier for the era gap — an age ahead, your wonders dazzle a cradle-born
+// court double over: ×2 for every era of lead (×4 two ages ahead…). Same era
+// or behind reads ×1, so the old strict-lead law stands untouched byte for
+// byte. Pure law over stored state: C.era is the existing six-era mark
+// (derived from the known techs already folded into stateHash) — no new
+// state, nothing for the hash to learn. The threshold stays RAW: the curve
+// never crowns a book under the bar. eraCurve and cultureBeats are exported
+// so the VICTORY panel and the sim walk one road — law and paint cannot drift
+// (the bulletinRows lesson).
+export function eraCurve(myEra, rEra) {
+    return 2 ** Math.max(0, (myEra == null ? -1 : myEra) - (rEra == null ? -1 : rEra))
+}
+
+// The single shared walk: does civ's visitor book out-shine rival rid's,
+// era curve included? Pairwise-relative like the original: both sides may
+// satisfy "beat everyone" at once (crowns are first-past-the-post — checkEnd
+// judges Rome, then the majors, exactly as the other crowns already were).
+export function cultureBeats(gs, civ, rid) {
+    return (gs.civs[civ].tourism || 0) * eraCurve(gs.civs[civ].era, gs.civs[rid].era) > (gs.civs[rid].tourism || 0)
+}
+
 function victoryFor(gs, civ) {
     if (!gs.civs[civ].alive) return null
     // #1777: DOMINATION counts ORIGINAL capitals, forever fallen — whoever
@@ -1816,8 +1839,13 @@ function victoryFor(gs, civ) {
     }
     if (hasTech(gs, civ, 'SPACEFLIGHT') && gs.ark[civ] >= CFG.arkShields && arkPartsDone(gs, civ) === ARK_PARTS.length) return 'Science — Cockpit, Booster, Stasis and Launch are welded; the Ark leaves the ground, and the future is yours'
     const mine = gs.civs[civ].tourism || 0
-    if (mine >= CFG.tourismWin && gs.civs.every((c) => c.barb || c.cs || c.id === civ || !c.alive || (c.tourism || 0) < mine)) {
-        return 'Culture — travellers cross seas for your wonders; no court in the world shines brighter'
+    if (mine >= CFG.tourismWin && gs.civs.every((c) => c.barb || c.cs || c.id === civ || !c.alive || cultureBeats(gs, civ, c.id))) {
+        // #2122: a crown that needed the era curve says so — the raw crowd
+        // alone did not win this; a plain lead keeps the #375-4 line verbatim.
+        const neededCurve = gs.civs.some((c) => !c.barb && !c.cs && c.alive && c.id !== civ && (c.tourism || 0) >= mine)
+        return neededCurve
+            ? 'Culture — travellers cross seas for your wonders; a younger age dazzles courts still in the old'
+            : 'Culture — travellers cross seas for your wonders; no court in the world shines brighter'
     }
     return null
 }
