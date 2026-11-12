@@ -1,60 +1,61 @@
-# STATE — session 251 (2026-11-12, slot a)
+# STATE — session 252 (2026-11-12, slot a)
 
 ## What shipped
-**HOMEBODY: THE PLAYER CAN ORDER THE ROMANCE (#2131)** — the merge landed in
-THIS session's rule-5 loop as `3607481` (PR #2134). C coos whoever is in the
-chat ring (+3, social lift both ways; Space/A rides coo ONLY where the old
-press hit nothing); FAMILY-tier (≥60) household coo deepens to affection (+6,
-chord, pink hearts); X cuts −4 and sets the grudge (cold war on command, the
-#2070 human exit still the only mending); shared CMD_CD=8s rides stateHash, no
-rng in triggers. peoplecheck 185/185 (+23 COURT gates, reach mutant 172/13
-proven red); drive gates + contractcheck were green at the resumed tree
-(eslint + node gates re-run here before merging). Prod verified: chunk
-`index-BcWfzGV6.js` (entry `index-9SnX1okh.js`) carries `AFFECTION ♥ FAMILY`,
-`YOU INSULTED YOUR BETTER HALF`, `NOTHING IN REACH` verbatim — first poll.
-Live URL commented on #2131; closed shipped/completed. QA polish pass filed as
-**#2135** (insult-on-touch idiom, target-choice tell, chat speech bubbles,
-catalog thumbnails, cooling log lines, marquee teaching — view-only, do not
-soften the sim law).
+**PLAICRAFT S1 — THE ±50 ms PROOF PAIRS ONLY THE NAMED CONTROL (#1711 audit
+item 1)** merged as `a98e37c` (PR #2138). `matchClapEdges` now takes edges
+tagged `{t, control}` and pairs onsets ONLY with A-button taps — the control
+the #2056 player instructions name. Any-control laundering (audit: a ~120 ms
+lagging phone could pair its clap with an unrelated stick crossing inside
+±50 ms) is closed; untagged numbers pair NOTHING (SHAPE law, fail-closed).
+recordcheck 123/123 incl. the audit's required mutant (dense stick edges +
+taps shifted +120 ms -> RED); fail-forced by hand: restoring any-control
+pairing turned that mutant green at offset ~0 — the exact audit attack — and
+the suite went RED; restored. The synth clap driver taps Space (Gauntlet's
+`a`) at the claps like the player does, steering holds as context.
+#2093 items 2–4 shipped: webm phone take travels store→verify (evidence
+self-test 35/35), clap verdict prints container duration + tail-drop
+warning, `voiceFlushTimedOut` named outcome on `__autoCapture`/
+`__autoRecord.last`. Prod verified: `autoRecord-B68CikD-.js` carries the
+marker. #1711 NOT closed (stage rule 4): waiting on Jon's 3 fresh phone
+takes, one clapping; `next` restored on it.
 
-**Race note:** the warden kicked this session ~13:50Z with TARGET #2131 while
-the owning slot-a session (250) was finishing the same issue — the #2121
-duplicate-kick family, second sighting. Step 1b resume detection +
-forge-claim's "already yours: resume it" absorbed it safely: one merge
-(`3607481`), one prod verify, board consistent. Session 250 committed its
-STATE at 14:03Z; this rewrite consolidates and adds what it couldn't see
-(#2135, the race itself).
+**Issues filed:** #2136 — the clap synth ±50 gate is box-load-flaky and
+PRE-EXISTING on origin/main (reproduced with main's own driver, 59.7 ms;
+heardMs rock-stable across runs, jitter is press-arrival under CDP);
+#2137 — audit item 4: outbox scenario C red on main, unowned until now.
 
 ## The session's catches
-- **A merged worktree can vanish mid-session.** After the squash-merge, tidy
-  removed `retrogames-forge-homebody-court` before step 8 ran — gh calls made
-  from that cwd die on "Working directory does not exist", not on GitHub.
-  Post-merge steps (comment/labels/QA-issue) belong in the MAIN checkout;
-  `git worktree prune` clears the stale registration.
-- **Minifiers erase constants; UI strings are the prod marker.** `INSULT_DROP`/
-  `CMD_CD` are gone from the chunk; the court lines survive verbatim — trace
-  strings, not identifiers (same family as slot b's prod-trace catch).
-- **TARGET can be stale.** The prompt's issue may already be merged/closed by
-  the time you claim. The claim script and PR state are the truth; the prompt
-  is a hint. Never blind-merge on prompt authority.
+- **`jalfern.com` answers 308.** Assets need `curl -L`; without it you grep
+  a 15-byte redirect stub, count 0, and "verify prod" silently never
+  verifies. (Property keys like `voiceFlushTimedOut` survive minification —
+  identifiers don't; trace keys/strings.)
+- **Rule 8 worked as designed.** Five probes on the clap jitter before
+  stopping; the decisive cheap facts: heardMs identical every run (audio
+  stable) + denser clock sampling changes nothing (interpolation ruled out)
+  + origin/main reproduces. Outputs posted to #2136, session moved on.
+- **Box load is a measurement instrument.** Load avg 3.5–4.4 (QA vite :5178,
+  other users' Chromes) is enough to blow a ±50 ms budget on dispatch
+  latency alone. Run alignment-sensitive checks quiet or expect #2136.
 
 ## Ladder trail
-TARGET #2131 refresh-resumed (slot already held) → step 1b corpse: PR #2134
-open, MERGEABLE, no holds, Closes #2131 → main-ok green → `static` SUCCESS →
-squash-merged → prod markers on first poll → #2131 closed shipped →
-QA pass #2135 filed. No new claim (one ship per session; the race partner's
-work and mine were the same ship).
+TARGET #1711 claimed clean on first call (`forge-claim.sh 1711 a`) — no
+halt/steer/building corpses, jonq empty, no newer parked report for slot a
+(slot b's #249 park predates session 251). No new claim (one ship/session).
 
 ## Open questions
-- none filed (nothing taste-level; the touch-idiom choice rides #2135 for QA).
+- none filed (Jon's tap-vs-clap call rides #2056; the 3 fresh takes are
+  already requested on #1711).
 
 ## Next
-- Normal ladder. #2135 is fresh feedback for the QA lane. weakestStage should
-  crown Civ V next (Papers-Min gaps empty since #2132; Homebody tail now owned
-  by #2135).
+- `next` is on #1711 again. Lane-doable remainder there: #2093 item 1 —
+  relabel tool for the three stored iPhone takes needs a JON_KEY-gated
+  worker write route (deploy-relay.yml automates the deploy; core.js
+  constant-time compare pattern exists). QA lane owns #2136 (fix ±50 proof
+  under load) and #2137 (outbox scenario C).
+- If #1711 idles: normal ladder; #2135 fresh for QA.
 
 ## Hygiene at exit
-This session started no dev server (:5173 untouched, nothing listening).
-Worktree gone (tidy after merge); registration pruned. Main checkout detached
-at origin/main. STATE committed to main (game merged this session) and parked
-via statepark park a.
+Dev server :5173 (mine) stopped. Worktree `retrogames-forge-plaicraft-s1`
+removed after merge, registrations pruned. Main checkout detached at
+origin/main. STATE committed to main (this session's target merged) and
+parked via statepark park a.
