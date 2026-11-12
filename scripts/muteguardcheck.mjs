@@ -279,7 +279,7 @@ process.exit(0)
         return spawnSync(process.execPath, [script, REPO, mode, GUARD, SENTINEL, join(REPO, '.mutant-running')], { encoding: 'utf8', timeout: 30000 })
     }
     let r = runMode('refuse')
-    ok(r.status === 1 && /#2049/.test(r.stderr || '') && readFileSync(join(REPO, 'fix.txt'), 'utf8') === 'DIRTY BEFORE THE RUN\n',
+    ok(r.status === 1 && /#2047/.test(r.stderr || '') && readFileSync(join(REPO, 'fix.txt'), 'utf8') === 'DIRTY BEFORE THE RUN\n',
         'refuse: plant() dies on a dirty tree without overwriting it', `exit ${r.status}`)
     r = runMode('clean')
     let o = {}
