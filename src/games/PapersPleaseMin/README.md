@@ -208,7 +208,17 @@ derives `{hat, uni, ear, gap}` as a **pure hash of the passport serial** —
 zero `rnd()` draws, so every existing seed keeps its names, numbers, weights
 and faces byte-identical, and the identity law is by construction: the decor
 is attached to `face` BEFORE the photo spread, so face and photo carry the
-same hat in every process, always. Doctrine of the nose: decor is never in
+same hat in every process, always. **NATIONS DRESS (#1996):** since the
+polish pass the hash is salted by the entrant's OWN country and sex
+(`accFor(pic, nation, sex)`; `person.nation` is the truth at birth — the
+papers may lie, the coat doesn't): Kirinians and Antegrians wake up in flat
+caps, Veskole in fur (the women mostly too, 3-in-4), Parmenistan wraps in
+the headscarf, and the women of every nation favour the scarf; Antegrian
+officers also cover at the highest rate, with a national tint on the sparse
+families (Veskole brows, Parmenistani gold, Kirinian teeth). ARSTOTZKA, the
+host, stays deliberately mixed — nations correlate, they never uniform. The
+serial law still has zero rnd draws (purity holds over the full serial ×
+nation × sex matrix), decor is still never in `FEATURES` and never evidence. Doctrine of the nose: decor is never in
 `FEATURES`, never evidence — paperscheck's CROWD section perturbs the live
 face's decor on every paper of every seed and requires the verdict to not
 flinch (`decide` AND `judge`), pins the purity of `accFor`, face==photo
@@ -674,6 +684,22 @@ silence; the week rings exactly twice.
   construction, zero seed re-sequencing), painted at counter AND photo,
   authored for the four regulars, and proven decor-not-evidence by the
   CROWD section + m31/m32 (see "The one-off crowd").
+- **CLOSED by #1996 (2026-11-12) (part 1 — nations):** the crowd dressed free
+  of the passport — hat/earring/gap rolled pure from the serial, so the line
+  read as noise, not nations. `accFor(pic, nation, sex)` now salts the serial
+  hash by the entrant's own country and sex (still pure, zero rnd): caps for
+  Kirinia and Antegria, Veskole fur (women in fur 3-in-4), Parmenistani wraps,
+  scarves for the women across the line, the highest coverage rate for
+  Antegrian officers, and a national tint on the sparse families — while
+  ARSTOTZKA stays the deliberate mix (nations correlate, never uniform).
+  `person.nation` carries the truth-at-birth country for the witnesses (the
+  papers may lie, the coat doesn't; decide still reads neither). THE CROWD
+  WEARS ITS NATION section grades per-nation dominance + host mixing + serial
+  4031 pins (one paper, four nations) and m33 (nation-blind kind pick) dies
+  on it; papersplay's live walk grew to the full seed-0 week — 13 hatted
+  heads dress by nation, decor byte-equal to Node across 55 rows. The pass's
+  remaining halves (bodies/shoulders, one-off speech breadth, deeper regular
+  echoes) were filed on the follow-up issue the PR comment names.
 - **CLOSED by #1997 (2026-11-11):** the cast was four and only the arc beat
   had words beyond "YOU AGAIN." The neighborhood is six now: Sonya Malak and
   Tadek Hruby authored end to end (new marks freckles/patch, authored decor,
