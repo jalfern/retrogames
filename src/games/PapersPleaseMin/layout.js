@@ -129,6 +129,38 @@ export const SETTLE = {
     ticks: 12,
     dy: (t) => (t <= 0 ? 0 : t >= 10 ? -10 : t >= 7 ? -5 : t >= 4 ? -2 : 0),
 }
+// #2120 PAPERS IN HAND — the original's desk verb: the cursor GRABS a document,
+// carries it across the counter tilted in the fingers, and sets it down where
+// you release. Booth-side paint only (the #2072 PHOTO_ZOOM doctrine): the sim
+// never sees the offsets, decide/judge are untouched, stateHash stays
+// byte-identical. The law lives here so paperscheck can prove it in Node:
+// - the desk clamp is the IDENTITY at home — every pixel pin ever written for
+//   the resting cards stands unchanged (paperscheck pins exact equality);
+// - a carried card stays fully inside the booth at every extreme: nothing you
+//   drag can be lost behind the wall, under the controls strip, or off canvas;
+// - the desk starts right of the entrant's face (desk.x0 clears the portrait
+//   column): a document can never become a blindfold — what the player must
+//   see, the hand cannot hide;
+// - travel above the threshold turns a press into a grab; below it the press
+//   stays a stamp, so every tap-to-stamp gate and the phone pad story survive;
+// - tilt > 0: a card that does not lean in the fingers is a lie (#2072's
+//   "a zoom that doesn't zoom" law, applied to the hand).
+export const DRAG = {
+    travel: 8,                      // px of pointer travel before a press is a grab
+    tilt: 0.06,                     // rad the carried card leans (capped)
+    tiltK: 0.004,                   // rad per px of horizontal finger motion
+    liftSfx: { dur: 0.05, gain: 0.05 },   // paper rustle leaving the counter (noise — no tone, never a call)
+    dropSfx: { dur: 0.08, gain: 0.07 },   // the card settles back down
+    desk: { x0: 352, y0: 10, x1: CW, y1: CHS - STRIP_H },
+    clamp: (x, y, w, h) => {
+        const d = DRAG.desk
+        return {
+            x: Math.min(Math.max(x, d.x0), d.x1 - w),
+            y: Math.min(Math.max(y, d.y0), d.y1 - h),
+        }
+    },
+}
+
 // #2021 THE INSPECTOR STAYS — the original keeps the violation inspector on
 // screen; here the case rides PINNED after the stamp's ink fades: the judged
 // document keeps the counter while the citation stays readable, and only when

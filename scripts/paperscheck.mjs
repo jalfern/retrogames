@@ -28,7 +28,7 @@ import { dirname, join } from 'node:path'
 import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, dshow, MON, FEATURES, stampLines, portraitDiffs } from '../src/games/PapersPleaseMin/rules.js'
 import { genWeek, genDay, viewOf, CITY2C, COUNTRIES, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, VISIT_WINDOW, WALL_POOL, wallNameAt, weekWallNames, weekDecoyCount, crowdedDay, repChapter, turnLineFor, againLineFor, TURN_CANONICAL } from '../src/games/PapersPleaseMin/gen.js'
 import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges, monthTurn, isMoneyDeath } from '../src/games/PapersPleaseMin/sim.js'
-import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, RENT, PAYFX, ID, PHOTO, BUBBLE, BUBBLE_TAIL, EVID, SETTLE, QUOTE, RECOGNITION, QUEUE, ASIDE, CROWD_NOTE, ARC_MUG, ARC_HL, SEIZE, wallFit, ruleLines, bulletinRows } from '../src/games/PapersPleaseMin/layout.js'
+import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, RENT, PAYFX, ID, PHOTO, BUBBLE, BUBBLE_TAIL, EVID, SETTLE, QUOTE, RECOGNITION, QUEUE, ASIDE, CROWD_NOTE, ARC_MUG, ARC_HL, SEIZE, DRAG, wallFit, ruleLines, bulletinRows } from '../src/games/PapersPleaseMin/layout.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SRC = join(HERE, '../src/games/PapersPleaseMin')
@@ -2252,6 +2252,26 @@ if (MUT) {
             }
             return true
         })
+    // m59 drops the desk's upper bounds — a dragged card can be shoved off
+    // the counter (behind the strip / off canvas) and lost from the booth.
+    await tryMut('the desk clamp loses its upper bounds (papers can leave the counter)',
+        mutMod('layout.js', 'x: Math.min(Math.max(x, d.x0), d.x1 - w),', 'x: Math.max(x, d.x0),', 'm59'),
+        (m) => {
+            const D = m.layout.DRAG
+            for (const [w, h] of [[m.layout.PAPERS.w, m.layout.PAPERS.h], [m.layout.ID.w, m.layout.ID.h]]) {
+                const p = D.clamp(9999, 9999, w, h)
+                if (p.x + w > m.layout.CW || p.y + h > m.layout.CHS - m.layout.STRIP_H) return false
+            }
+            return true
+        })
+    // m60 reaches the desk over the glass — a document becomes a blindfold
+    // and what the player must inspect can be hidden by the hand.
+    await tryMut('the desk covers the entrant (a dragged card can hide the face)',
+        mutMod('layout.js', 'desk: { x0: 352, y0: 10, x1: CW, y1: CHS - STRIP_H },', 'desk: { x0: 240, y0: 10, x1: CW, y1: CHS - STRIP_H },', 'm60'),
+        (m) => {
+            const D = m.layout.DRAG
+            return D.desk.x0 >= m.layout.PORTRAIT.x + m.layout.PORTRAIT.headCx + m.layout.PORTRAIT.headRx + 1
+        })
 }
 
 section('AGED PRINT & LIVE EARS (#1976) — the photo ages, the ear survives the cut')
@@ -2594,6 +2614,54 @@ section('CROWDED SHIFT SPEAKS (#2020) — the dense morning announces itself')
         const asideBlock = genSrc.slice(genSrc.indexOf('const regs = day.queue'), genSrc.indexOf('while (day.queue.length'))
         ok(asideBlock.length > 100 && !/rnd\(\)/.test(asideBlock), 'the aside block draws rnd() — authoring must not re-sequence the stream')
     }
+}
+
+section('PAPERS IN HAND (#2120) — the desk: identity at home, nothing lost, the face never hides')
+{
+    // Pure law from layout.js. The shell applies these offsets; sim/rules
+    // must never name the lever (TMD ghost-cell tripwire — same doctrine that
+    // keeps the #1988 announce and #2072 zoom out of the fairness contract).
+    const idxSrcD = readFileSync(join(SRC, 'index.jsx'), 'utf8')
+    const rulesSrcD = readFileSync(join(SRC, 'rules.js'), 'utf8')
+    const simSrcD = readFileSync(join(SRC, 'sim.js'), 'utf8')
+    ok(!/DRAG|carried|desk\.(pp|id)/.test(rulesSrcD), 'rules.js names the drag — decor has entered the law')
+    ok(!/DRAG|carried|desk\.(pp|id)/.test(simSrcD), 'sim.js names the drag — stateHash byte-identity dies with it')
+    ok(idxSrcD.includes('DRAG.clamp') && idxSrcD.includes('DRAG.travel'),
+        'index.jsx does not drive through the DRAG law (a private copy of the numbers is a drift waiting to happen)')
+    // 1) HOME IDENTITY — clamp(home) === home EXACTLY, both cards. Every
+    //    pixel pin ever written for the resting passport/ID stands by this.
+    const homePP = DRAG.clamp(PAPERS.x, PAPERS.y, PAPERS.w, PAPERS.h)
+    const homeID = DRAG.clamp(ID.x, ID.y, ID.w, ID.h)
+    ok(homePP.x === PAPERS.x && homePP.y === PAPERS.y, 'the passport home is not identity under the desk clamp')
+    ok(homeID.x === ID.x && homeID.y === ID.y, 'the ID home is not identity under the desk clamp')
+    // 2) NOTHING LOST — both cards at every extreme stay fully inside the
+    //    booth and above the controls strip; the bounds answer when hit.
+    for (const [w, h, nm] of [[PAPERS.w, PAPERS.h, 'passport'], [ID.w, ID.h, 'ID card']]) {
+        for (const [x, y] of [[-9999, -9999], [9999, 9999], [-9999, 9999], [9999, -9999], [PAPERS.x, -9999], [9999, PAPERS.y]]) {
+            const p = DRAG.clamp(x, y, w, h)
+            ok(p.x >= 0 && p.y >= 0, `${nm} can be dragged past the canvas edge`)
+            ok(p.x + w <= CW && p.y + h <= CHS - STRIP_H, `${nm} can leave the counter (behind the wall or the strip)`)
+        }
+        const hit = DRAG.clamp(DRAG.desk.x0 - 1, DRAG.desk.y1 + 1, w, h)
+        ok(hit.x === DRAG.desk.x0 && hit.y === DRAG.desk.y1 - h, `${nm} ignores a desk bound`)
+    }
+    // 3) THE FACE NEVER HIDES — the desk starts right of the portrait head:
+    //    a document can never become a blindfold over the entrant.
+    ok(DRAG.desk.x0 >= PORTRAIT.x + PORTRAIT.headCx + PORTRAIT.headRx + 1,
+        'a dragged card could cover the entrant face — what must be seen, the hand cannot hide')
+    // 4) THE HAND FEELS REAL — travel is a sane tap-vs-grab distance, tilt
+    //    is a real lean (#2072's law applied to the hand: zero is a lie).
+    ok(DRAG.travel >= 4 && DRAG.travel <= 24, 'travel outside tap-vs-grab sanity (4..24px)')
+    ok(DRAG.tilt > 0 && DRAG.tilt < 0.35, 'tilt must lean, not sit flat nor spin')
+    ok(DRAG.tiltK > 0, 'tiltK 0 — the card never leans in the fingers')
+    ok(DRAG.liftSfx.gain > 0 && DRAG.dropSfx.gain > 0, 'the hand is silent — lift/drop must rustle')
+    // 5) STACKING WORKS — the passport can be laid down over the ID rows
+    //    (papers that cannot get out of each other's way are not in hand).
+    const low = DRAG.clamp(ID.x, DRAG.desk.y1, PAPERS.w, PAPERS.h)
+    ok(low.y + PAPERS.h > ID.y + ID.h, 'the passport cannot stack onto the ID card — nothing to move out of the way')
+    // 6) DETERMINISM — the clamp is pure arithmetic: same input, same output.
+    ok(JSON.stringify(DRAG.clamp(400, 120, PAPERS.w, PAPERS.h)) === JSON.stringify(DRAG.clamp(400, 120, PAPERS.w, PAPERS.h)),
+        'the desk clamp is not pure')
 }
 
 console.log(`\npaperscheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

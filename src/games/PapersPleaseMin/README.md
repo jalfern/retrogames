@@ -500,7 +500,7 @@ The fix is variety as construction, not hope — this generator's own doctrine:
   row day — 10px rows since #1943), no name repeats across the seven walls,
   and no row names anyone in the line.
 
-## Mutants (59, all die under `npm run paperscheck -- --mutate`)
+## Mutants (61, all die under `npm run paperscheck -- --mutate`)
 
 
 
@@ -582,7 +582,11 @@ text-only again — the pass's signature feature); m56 freezes the chapter mixer
 friend is taken without a word); m58 hangs mugshots on every decoy — three
 portrait bumps push day 6 past the scale box, and the per-row fit law (which
 m58's first draft dodged, because the bump was `some(faced)` not
-`count(faced)` — one surviving mutant, then sharpened) names it (#1988).
+`count(faced)` — one surviving mutant, then sharpened) names it (#1988). The
+hand year added two: m59 drops the upper bounds of the desk clamp (a released
+card lands over the wall or below the controls — the extremes law names it);
+m60 stretches the desk over the glass (a laid document becomes a blindfold
+over the entrant — the face-clearance law bites) (#2120).
 
 ## Gates
 
@@ -722,6 +726,50 @@ pins the bubble tail that had been drawn-but-unpinned.
   above the field (the apex-up tail toward the glass was drawn since #1983
   but only the field was measured); papersplay: strangers dark (<20px), a
   speaking neighbor lights it (>60px).
+
+## Papers in hand (#2120) — the desk has the original's verb
+
+Papers, Please is played with the hand: grab a document, carry it, set it
+down. Until now our booth nailed both cards to their column — the honest gap
+admitted it ("papers still cannot be moved by hand"). This stage puts the verb
+on the counter, as booth-side paint exactly in the #2072 PHOTO_ZOOM doctrine:
+the sim never sees it, `decide`/`judge` are untouched, `stateHash` stays
+byte-identical (paperscheck's tripwire: rules.js and sim.js may not even name
+the lever).
+
+- **Grab · carry · land**: a press on the passport or the ID card becomes a
+  grab once the pointer travels `DRAG.travel` px; the card lifts (a paper
+  rustle, `playNoise` — no tone, so the #1982 tone ledger is untouched), rides
+  the pointer leaning up to `DRAG.tilt` rad, and rests where you release with
+  a drop thud. Where you let go is where it stays — until a ruling collects
+  the papers and the next applicant's #1891 drop lays fresh ones home.
+- **The law lives in layout.js** (`DRAG`), so the Node gate can prove it:
+  the desk clamp is the **identity at home** for both cards (every pixel pin
+  ever written for the resting booth stands by construction); a carried card
+  stays fully inside the canvas above the controls strip at every extreme
+  (nothing you drag gets lost); the desk starts right of the portrait head
+  (desk.x0 ≥ face right + 1) — **a document can never become a blindfold over
+  the entrant**; travel sits in tap-vs-grab sanity (4..24px), tilt is a real
+  lean, and the passport can be laid over the ID rows (papers stack).
+- **Nothing existing moves**: a press that never travels is exactly the old
+  press — a photo-hold still zooms (#2072), the strip tap-zones still stamp,
+  the phone story is untouched (VirtualControls owns the pad; the hand is a
+  pointer verb, as the original's mouse was). Starting a drag cancels a zoom
+  hold (the hand beats the loupe). The last grabbed card rides on top
+  (`topCard` z-order), and the desk clears at every ruling and every fresh
+  drop, so drag state never accumulates across applicants.
+- Harness: paperscheck +38 (identity/extremes/bounds/face-clear/tap/lean/
+  stack/purity laws, plus the tripwire), mutants **m59** (desk clamp loses its
+  upper bounds — papers leave the counter) and **m60** (desk reaches over the
+  glass — the entrant hides); **all 61 die**. papersplay drives REAL mouse
+  events on seed 0 (after seating an entrant who actually carries papers —
+  day 1's first walk-up is the no-papers customer): the passport vacates its
+  home rows (beige ink 2.1k/9.7k before the drag → <40 after) and fills
+  1.7k px of new counter where it lands, the lean exceeds 0.05 rad mid-carry,
+  a strip tap still stamps, the zoom cancels when the same press travels, two
+  cards keep independent offsets, the z-order flips to the last grab, a ruled
+  desk returns home — and across the whole handling neither the line nor the
+  score moved until a key pressed (the hand never rules).
 
 ## Honest gaps
 
@@ -907,10 +955,16 @@ pins the bubble tail that had been drawn-but-unpinned.
   counts every run. What stays coarse: the portrait is still procedural art at
   ~61px where the original's is a detailed hand-drawn portrait, and face
   variety remains combinatorial + authored, not hand-drawn per person.
-- What #1891 still leaves open: evidence strings and RULES text keep
-  numerals, so the month-name read is display-only; and the settle is a
-  scripted drop, not drag physics — papers still cannot be moved by hand
-  (no rule needs them moved, and VirtualControls owns the pad).
+- **CLOSED by #2120 (2026-11-12)** *(the hand half)*: the settle is a scripted
+  drop (by law — #1891's curve is pinned), but the desk now has the original's
+  verb: press-drag lifts the passport or the ID card, carries it tilted in the
+  fingers, and sets it down where you release. See "Papers in hand (#2120)".
+  *Still open:* evidence strings and RULES text keep numerals, so the
+  month-name read is display-only — by doctrine since #1891 (the numerals are
+  the fairness contract's tokens, pinned verbatim by paperscheck); opening it
+  means re-pinning the contract, bigger than a polish pass.
+- What #1891 still leaves open: the drag physics arrived in #2120; the
+  month-numerals tail above is the remainder.
 
 ## The aged print, the live ear, the face tick (#1976)
 
