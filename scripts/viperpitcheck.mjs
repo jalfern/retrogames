@@ -945,6 +945,10 @@ if (MUT) {
     ok(new Set(ROSTER.map((d) => d.card.yaw)).size === 5, 'select gate: card yaws are five distinct angles (#2172)')
     const mutC = rsrc.replace('cam.position.set(0, 1.6, 7.4)', 'cam.position.set(0, 1.2, 3.1)')
     ok(!/cam\.position\.set\(0, 1\.6, 7\.4\)/.test(mutC), 'mutant: portrait camera pushed too close fails the framing gate (harness bites)')
+    ok(/out\.getContext\('2d'\)\.drawImage\(canvas, 0, 0\)/.test(rsrc),
+        'select gate: each portrait is frozen into its OWN canvas (#2172 — one shared canvas made five identical cards)')
+    const mutS = rsrc.replace("            const out = document.createElement('canvas')\n            out.width = canvas.width\n            out.height = canvas.height\n            out.getContext('2d').drawImage(canvas, 0, 0)\n            return out", '            return canvas')
+    ok(!/out\.getContext\('2d'\)\.drawImage\(canvas, 0, 0\)/.test(mutS), 'mutant: portraits sharing one live canvas fails the snapshot gate (harness bites)')
     const mutK = fsrc.replace(/\bcard: \{/g, 'card__X: {')
     ok((mutK.match(/\bcard: \{/g) || []).length === 0, 'mutant: stripped card poses empty the pose-data gate (harness bites)')
     const cabGates = [
@@ -954,7 +958,7 @@ if (MUT) {
         ['#2172 zoom eases toward the cursor every frame', /cardZoom\[i\] \+= \(target - cardZoom\[i\]\) \* 0\.22/],
         ['#2172 the hovered card draws last so its zoom rides on top', /ROSTER\.forEach\(\(rd, i\) => \{ if \(i !== cursor\) drawCard\(rd, i\) \}\)\s*drawCard\(ROSTER\[cursor\], cursor\)/],
         ['#2172 tapping another card walks the cursor there', /if \(hit >= 0 && hit !== cursor\) hoverSelect\(hit - cursor\)/],
-        ['#2172 the zoom resets when select closes', /scr !== 'select' && cardZoom\.some\(\(v\) => v !== 0\) \) cardZoom\.fill\(0\)/],
+        ['#2172 the zoom resets when select closes', /scr !== 'select' && cardZoom\.some\(\(v\) => v !== 0\)\) cardZoom\.fill\(0\)/],
         ['the hovered card glows teal', /shadowColor = 'rgba\(89,224,200,0\.75\)'/],
         ['hovering blips the hovered fighter voice', /const hoverSelect = \(d\) => \{\s*cursor = \(cursor \+ d \+ ROSTER\.length\) % ROSTER\.length\s*hoverBlip\(ROSTER\[cursor\]\)/],
         ['the arrow keys drive the hover blip', /hoverSelect\(-1\)[\s\S]*hoverSelect\(1\)/],

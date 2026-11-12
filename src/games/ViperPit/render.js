@@ -205,7 +205,15 @@ export function createPortraitRenderer(w = 240) {
             scene.add(rig.root)
             renderer.render(scene, cam)
             scene.remove(rig.root)
-            return canvas
+            // #2172 freeze THIS fighter into its own canvas: the GL canvas is
+            // one reusable surface, and the old code handed the same element to
+            // every roster slot — all five cards composited the last-rendered
+            // fighter (identical pixels, ink/head gates never saw it).
+            const out = document.createElement('canvas')
+            out.width = canvas.width
+            out.height = canvas.height
+            out.getContext('2d').drawImage(canvas, 0, 0)
+            return out
         },
         dispose() { renderer.dispose() },
     }
