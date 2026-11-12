@@ -42,8 +42,12 @@ if (MUT) {
         .replace(
             'if (m.juggle && airborne && def.juggled >= 1) {',
             'if (m.juggle && airborne && def.juggled >= (globalThis.__VIPER_NOLOCK__ ? 99 : 1)) {')
+        .replace(
+            "if (sp.qcb && f.def.moves.qcb && dist < 2.2 && m.rng() < tier * 0.22) return scriptMotion('p', 'qcb', f)",
+            "if (sp.qcb && f.def.moves.qcb && dist < 2.2 && m.rng() < tier * 0.22 && !globalThis.__VIPER_NOQCB__) return scriptMotion('p', 'qcb', f)")
     ok(mutated.includes('__VIPER_NOGUARD__'), 'mutate: guard gate line found to patch')
     ok(mutated.includes('__VIPER_NOLOCK__'), 'mutate: juggle lock gate line found to patch')
+    ok(mutated.includes('__VIPER_NOQCB__'), 'mutate: #2151 close-range qcb branch found to patch')
     plantNew(path.join(HERE, '../src/engine/.mutant-fighting.mjs'), mutated)
 }
 const ENG_PATH = MUT ? '../src/engine/.mutant-fighting.mjs' : '../src/engine/fighting.js'
@@ -353,6 +357,26 @@ if (MUT) {
     for (let i = 0; i < 12; i++) { m.fighters[1].x = m.fighters[0].x + 1.2; if (m.fighters[1].y < 0.8) m.fighters[1].y = 0.8; e.step(m, [P(), P()]) }
     ok(mutJuggle >= 8 && hp - m.fighters[1].hp >= 8, `MUTANT check: juggle cap removed → unlimited air juggles (${mutJuggle} then ${hp - m.fighters[1].hp})`)
     globalThis.__VIPER_NOLOCK__ = false
+    // #2151 mutant: with the close-range counter branch dead, no CPU throws any
+    // fighter's qcb — the exact regression that slept behind source-only greps.
+    // If the sweep sees even one counter with this kill down, the behavioural
+    // gate is measuring something other than the branch it pins.
+    globalThis.__VIPER_NOQCB__ = true
+    let mutSawQcb = false
+    for (let seed = 1; seed <= 8 && !mutSawQcb; seed++) {
+        const mm = e.createMatch({ seed, guardButton: true, juggle: true, p1: { ...BY_ID.nyx, cpu: true }, p2: human('nyx') })
+        let g = 0
+        while (mm.phase !== 'fight' && g++ < 400) e.step(mm, [P(), P()])
+        for (let k = 0; k < 900 && !mutSawQcb; k++) {
+            e.step(mm, [P(), P()])
+            if (mm.phase === 'fight') mm.fighters[0].x = mm.fighters[1].x - 1.8
+            if (mm.fighters[0].move === 'qcb') mutSawQcb = true
+            let h = 0
+            while (mm.phase !== 'fight' && h++ < 400) e.step(mm, [P(), P()])
+        }
+    }
+    ok(!mutSawQcb, 'MUTANT check: close-range qcb branch removed → CPU never throws the counter (harness bites)')
+    globalThis.__VIPER_NOQCB__ = false
     pull(path.join(HERE, '../src/engine/.mutant-fighting.mjs'))
 }
 
