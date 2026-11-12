@@ -865,7 +865,7 @@ const PapersPleaseMinGame = () => {
                     const cc = cv.getContext('2d')
                     cc.imageSmoothingEnabled = false
                     drawFace(cc, { skin: 0, hairC: 0, shirtC: 0, style, narrow: 0, glasses: 0, must: 0, brow: 0, mouth: 0 }, 0, 0, 1)
-                    const d = cv.getImageData(0, 0, PIX.w, PIX.h).data
+                    const d = cc.getImageData(0, 0, PIX.w, PIX.h).data
                     const win = (x0, x1) => {
                         let n = 0
                         for (let yy = 44; yy < 54; yy++) for (let xx = x0; xx < x1; xx++) {
