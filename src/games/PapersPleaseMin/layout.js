@@ -142,7 +142,7 @@ export const ASIDE = { x: 258, y: 352, w: 190, h: 26, tag: 7, line: 8 }
 // The crowd's third note — one tone below the welcome's first, a low hum
 // under the recognition pair when a neighbor steps up on a crowded morning.
 // paperscheck re-pins it disjoint from every fixed tone the booth owns.
-export const CROWD_NOTE = { note: 660, dur: 0.14, gain: 0.03, wave: 'triangle' }
+export const CROWD_NOTE = { note: 392, dur: 0.14, gain: 0.03, wave: 'triangle' }
 
 export const ruleLines = (text) => {
     const words = text.split(' ')
