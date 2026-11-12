@@ -266,11 +266,16 @@ r.check('the stamp has ticked out before pixel sampling', !s.stamp || s.stamp.ti
 const paint = await page.evaluate(() => {
     const c = document.querySelector('canvas[data-pp-stage]')
     const d = c.getContext('2d').getImageData(588, 64, 66, 76).data   // PAPERS+PHOTO box
-    let n = 0, beige = 0
+    // #1976 THE PRINT AGES: the photo's beige background is now an amber-washed
+    // (184/185,167,123/124) — an exact-hex check would lie (the alpha byte may
+    // round 76 or 77, the #1908 lesson), so aged pixels count as a family.
+    const age = (r, g, b) => r >= 179 && r <= 190 && g >= 162 && g <= 172 && b >= 118 && b <= 129
+    let n = 0, beige = 0, aged = 0
     for (let i = 0; i < d.length; i += 4) {
         const k = (d[i] << 16) | (d[i + 1] << 8) | d[i + 2]
-        if (k === 0xd8d2b8 || k === 0xc9c2a4) beige++                  // paper / frame
+        if (k === 0xd8d2b8 || k === 0xc9c2a4 || age(d[i], d[i + 1], d[i + 2])) beige++   // paper / aged print
         else n++
+        if (age(d[i], d[i + 1], d[i + 2])) aged++
     }
     // #1972 zoom-crop proof, #1943 deepened: the longest non-beige run across
     // the head, now scanned over the whole head block (rows 30..52 of the
@@ -284,14 +289,17 @@ const paint = await page.evaluate(() => {
         for (let x = 0; x < 66; x++) {
             const i = (row * 66 + x) * 4
             const k = (d[i] << 16) | (d[i + 1]) << 8 | d[i + 2]
-            if (k !== 0xd8d2b8 && k !== 0xc9c2a4) { run++; best = Math.max(best, run) } else run = 0
+            if (!(k === 0xd8d2b8 || k === 0xc9c2a4 || age(d[i], d[i + 1], d[i + 2]))) { run++; best = Math.max(best, run) } else run = 0
         }
     }
-    return { n, beige, headRun: best }
+    return { n, beige, aged, headRun: best }
 })
-r.check(`the passport carries a painted photo (${paint.n} face px in a ${paint.beige} px beige frame)`,
+r.check(`the passport carries a painted photo (${paint.n} face px in a ${paint.beige} px aged frame)`,
     paint.n > 250 && paint.beige > 100)
 r.check(`the photo is a zoom-crop — head reads ${paint.headRun}px across (flat-0.6 read <=41)`, paint.headRun >= 44)
+r.check(`the print is aged — ${paint.aged}px of amber wash inside the frame (a fresh print has none)`, paint.aged >= 100)
+const earV = await page.evaluate(() => window.__ppTest.earPix())
+r.check(`ears live under all four hair cuts (${earV.join('/')}, full ears = 60)`, earV.every((v) => v >= 60), JSON.stringify(earV))
 let sawForge = 0, sawHonest = 0, bandFails = 0
 const art = { browMax: 0, browMin: 1e9, mouthMax: 0, mouthMin: 1e9, whitesMax: 0, sawBare: false, pbMax: 0, pbMin: 1e9, pbN: 0 }
 for (let guard = 0; guard < 12 && s.day === 1 && !s.end; guard++) {
@@ -344,6 +352,32 @@ for (let guard = 0; guard < 12 && s.day === 1 && !s.end; guard++) {
     s = await probe()
 }
 r.check(`honest papers painted ONE face (${sawHonest} papers, every total 0)`, sawHonest >= 3 && bandFails === 0, `bandFails=${bandFails}`)
+// #1976 EVIDENCE AUDIO — when a correct deny names a brow/mouth break, the
+// booth adds a sharp tick (1050Hz) over the deny thunk. Seed 2 day 1 carries
+// a brow forger; walk it with live keys (only act() plays audio) and prove
+// the tick fires exactly when the witness names the face.
+await page.evaluate(() => window.__ppTest.start(2))
+await wait(700)
+const ticks0 = await page.evaluate(() => window.__ppTest.sfxTicks())
+let bmDenied = 0, bmTicks = 0
+for (let guard = 0; guard < 12; guard++) {
+    s = await probe()
+    if (s.day !== 1 || s.end) break
+    const need = await page.evaluate(() => {
+        const p = window.__ppTest.probe().view.person
+        return !!(p.face && p.passport?.photo && (p.face.brow !== p.passport.photo.brow || p.face.mouth !== p.passport.photo.mouth))
+    })
+    const v = await page.evaluate(() => window.__ppTest.verdict())
+    await page.keyboard.press(v === 'approve' ? 'a' : 'd')
+    if (need && v === 'deny') {
+        bmDenied++
+        await wait(120)
+        bmTicks = await page.evaluate(() => window.__ppTest.sfxTicks()) - ticks0
+    }
+    await wait(140)
+}
+r.check(`a brow/mouth deny earns its evidence tick (${bmDenied} face denies, ${bmTicks} ticks)`,
+    bmDenied >= 1 && bmTicks >= bmDenied, `denied=${bmDenied} ticks=${bmTicks}`)
 r.check('day 1 staged its forger at the window', sawForge >= 1, `${sawForge}`)
 // #1972 PORTRAIT-DETAIL pixel proof: the day's faces show both brow
 // thicknesses and both mouth shapes on the canvas, and a bare-eyed face

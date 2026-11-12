@@ -717,3 +717,22 @@ code, and filtered as such).
   numerals, so the month-name read is display-only; and the settle is a
   scripted drop, not drag physics — papers still cannot be moved by hand
   (no rule needs them moved, and VirtualControls owns the pad).
+
+## The aged print, the live ear, the face tick (#1976)
+
+- **Aged print**: every passport photo carries an amber wash (`PHOTO_TINT`,
+  layout.js) over the whole print inside the frame line — the original's
+  photos are old prints, yellowed while the entrant is live color. The wash
+  is booth-side paint, never inside `drawFace`: the byte-identity fairness
+  proof (portraitPix) stands untouched. paperscheck pins the wash's warmth
+  and alpha (m48 fades it to nothing); papersplay counts ≥100 amber px in
+  the frame and admits the aged family as background for the beige/head-run
+  gates (blend alpha may round 76 or 77 — family, not exact hex, #1908).
+- **Live ears**: sideburn cuts 2/3 reached row 52 and buried the ears
+  (rows 44-54) on one side only — asymmetry read as a bug on phones.
+  Cuts now stop at row 44 (P(36)). `earPix` renders one fixed face per cut
+  through the real `drawFace` and counts ear-column skin: 60 under every cut.
+- **Evidence audio**: a correct deny whose witness names a brow/mouth break
+  adds a sharp 1050Hz tick over the deny thunk (#1966's family-of-own-sound
+  pattern). papersplay walks seed 2 day 1 (a brow forger) with live keys and
+  counts ticks via `sfxTicks`.

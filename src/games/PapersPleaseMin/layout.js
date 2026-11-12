@@ -47,6 +47,14 @@ export const PAPERS = { x: 356, y: 40, w: 300, h: 148 }
 // same way — and the chin crops at the bottom edge like a real ID photo.
 // paperscheck pins s >= 0.85 and head width s*68 >= 54 so it cannot regress.
 export const PHOTO = { x: 232, y: 24, w: 66, h: 76, s: 0.9, ox: -16, oy: -2 }
+// #1976 THE PRINT AGES — the original's passport photos are old prints: the
+// whole print (face AND its background) sits desaturated and yellowed while
+// the entrant at the counter is live color. A warm amber wash over the photo
+// print, inside the frame line, is the cheap honest look: it rides entirely
+// free of the PORTRAIT rule (drawFace descriptors never change — the tint is
+// booth-side paint, the same doctrine as the settle drop). paperscheck pins
+// the wash's warmth (r > g > b) and papersplay counts its pixels in the frame.
+export const PHOTO_TINT = 'rgba(146,102,28,0.30)'
 export const ID = { x: 356, y: 200, w: 190, h: 64 }
 // #1983 THE ARC — the returning entrant's speech bubble. It rides the lane
 // under the face column: below the stamp's witness line (baseline y=296,

@@ -19,7 +19,7 @@ import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../..
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { decide, RULES, dfmt, dshow, isAdult, stampLines } from './rules.js'
-import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, CLOCK, SLIP, RENT, PAYFX, BUBBLE, EVID, SETTLE, QUOTE, wallRows } from './layout.js'
+import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, PHOTO_TINT, CLOCK, SLIP, RENT, PAYFX, BUBBLE, EVID, SETTLE, QUOTE, wallRows } from './layout.js'
 
 const SIM_MS = 1000 / 60
 
@@ -86,6 +86,10 @@ const PapersPleaseMinGame = () => {
         let raf = 0, last = 0, acc = 0
         let simTick = 0           // #1473: play-frame counter for the feedback report
         let stamp = null            // {ok, why, ticks}
+        // #1976 EVIDENCE AUDIO — a correct PORTRAIT deny that names a brow or
+        // mouth break gets its own tick (the coin-clack+wail doctrine of #1966:
+        // each verdict family earns its own sound). Counted by papersplay.
+        let sfxTicks = 0
         // #2021 THE INSPECTOR STAYS — the booth's case outlives its ink:
         // {ok, witness, evidence, ticks} rides after the stamp fades and ends
         // when the next applicant's papers land on the counter (settle → 0).
@@ -167,6 +171,10 @@ const PapersPleaseMinGame = () => {
                 const sl = stampLines(gs.last, EVID.wrap)
                 insp = sl.witness ? { ok: !!gs.last?.ok, witness: sl.witness, evidence: sl.evidence, ticks: QUOTE.hold } : null
                 audioController.playTone(action === 'approve' ? 300 : 190, 0.06, 'square', 0.06)
+                // #1976 the face-reading deny is the title's signature call —
+                // when the witness names the face (brows/mouth), add a sharp
+                // tick over the deny thunk so the ear learns what the eye saw.
+                if (gs.last?.ok && action === 'deny' && /BROW|MOUTH/.test(gs.last.evidence || '')) { audioController.playTone(1050, 0.03, 'square', 0.05); sfxTicks++ }
                 if (gs.strikes > before) audioController.playSweep(220, 90, 0.35, 'sawtooth', 0.08)
                 else if (gs.last?.ok) audioController.playTone(action === 'deny' ? 760 : 560, 0.07, 'square', 0.05)
             }
@@ -319,8 +327,13 @@ const PapersPleaseMinGame = () => {
             if (f.ear) { c.fillStyle = EAR_COL; c.fillRect(x + P(55) + rx, y + ey + eh - P(2), P(3), P(3)) }
             c.fillStyle = HAIRS[f.hairC]
             c.fillRect(x + P(20), y + P(8), P(70), P(f.style === 0 ? 16 : f.style === 1 ? 10 : 22))
-            if (f.style === 2) c.fillRect(x + P(18), y + P(8), P(8), P(44))
-            if (f.style === 3) c.fillRect(x + P(84), y + P(8), P(8), P(44))
+            // #1976 SIDEURNS STOP ABOVE THE EAR. The cuts reached row 52 and
+            // buried the ears (rows 44-54) on one side only — at phone scale
+            // the asymmetry read as a rendering bug, not a haircut. 36 puts
+            // the longest sideburn at row 44 = the ear top: the cut still
+            // frames the face, the ear stays alive under all four cuts.
+            if (f.style === 2) c.fillRect(x + P(18), y + P(8), P(8), P(36))
+            if (f.style === 3) c.fillRect(x + P(84), y + P(8), P(8), P(36))
             // #1989 HEADWEAR — the original's crowd wears its weather. Hats
             // cover the crown but never the whole head: the hairline stays
             // visible under the brim and past its edge (so a grey-haired
@@ -429,6 +442,11 @@ const PapersPleaseMinGame = () => {
             ctx.save()
             ctx.beginPath(); ctx.rect(x + PHOTO.x, y + PHOTO.y, PHOTO.w, PHOTO.h); ctx.clip()
             drawFace(ctx, pp.photo, x + PHOTO.x + PHOTO.ox, y + PHOTO.y + PHOTO.oy, PHOTO.s)
+            // #1976 aged print — the amber wash covers the whole print but not
+            // the frame line (inset 1), so the photo reads as an old print IN a
+            // fresh frame. Never inside drawFace: byte-identity of the two
+            // portraits (portraitPix) is the fairness proof and stays untouched.
+            ctx.fillStyle = PHOTO_TINT; ctx.fillRect(x + PHOTO.x + 1, y + PHOTO.y + 1, PHOTO.w - 2, PHOTO.h - 2)
             ctx.restore()
             text(`EXPIRES ${dshow(pp.expiry)}`, x + 10, y + 140)
             text(`VALID ${isAdult(pp.dob, gs.week.days[gs.day - 1].date) ? 'ADULT' : 'CHILD'}`, x + 240, y + 140, 10, '#6b5d3a', 'center')
@@ -837,6 +855,28 @@ const PapersPleaseMinGame = () => {
                 },
                 watching: () => watchingRef.current, // #1637 WATCH probes
                 watchSfx: watchSfxLog,
+                // #1976 ears must live under every hair cut: render one fixed
+                // face per cut through the SAME drawFace and count skin ink in
+                // the ear columns (left x17..19, right x90..92 — clear of the
+                // cheek ellipse, tangent at x21/x89). Full ears = 30+30.
+                earPix: () => [0, 1, 2, 3].map((style) => {
+                    const cv = document.createElement('canvas')
+                    cv.width = PIX.w; cv.height = PIX.h
+                    const cc = cv.getContext('2d')
+                    cc.imageSmoothingEnabled = false
+                    drawFace(cc, { skin: 0, hairC: 0, shirtC: 0, style, narrow: 0, glasses: 0, must: 0, brow: 0, mouth: 0 }, 0, 0, 1)
+                    const d = cc.getImageData(0, 0, PIX.w, PIX.h).data
+                    const win = (x0, x1) => {
+                        let n = 0
+                        for (let yy = 44; yy < 54; yy++) for (let xx = x0; xx < x1; xx++) {
+                            const i = (yy * PIX.w + xx) * 4
+                            if (d[i] - d[i + 2] > 40 && d[i] > 120) n++
+                        }
+                        return n
+                    }
+                    return win(17, 20) + win(90, 93)
+                }),
+                sfxTicks: () => sfxTicks,
                 // #1983 the bubble is pixels: count the bubble's own paper
                 // color in its rect on the LIVE canvas (up ≈ full field,
                 // down ≈ nothing — papersplay pins both).
