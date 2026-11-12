@@ -65,8 +65,10 @@ dry and the one legal jonq is “which new flagship title?” (≤1/week).
 - Folded from slot b (parked 05:44 + shipped report): the store still holds 3
   broken-voice iPhone takes until #2093 item 1 runs — S3 training must NOT
   consume them.
-- `smoke` red-on-main level (same failure on #2096 AND #2097; advisory —
-  rerun once, don't chase). `viperpitcheck` still red-on-main wired into NO CI
+- NOT a smoke flake: slot b's #2095 (filed, QA-owned) — vpadboot's start
+  ladder has been swallowed by the /gauntlet consent gate since Nov 6 (#1733);
+  that is the answer to Jon's "VPad boot" on #2053/#2054. Rule 3 stands:
+  advisory red = rerun once, never block; QA owns #2095. `viperpitcheck` still red-on-main wired into NO CI
   job (flagged since 235) — needs a QA owner issue if nobody claims it.
 - Dev servers at exit: slot a 5173 never started (no browser leg needed); slot
   b's port untouched. Main checkout detached at `origin/main`; no worktrees of
