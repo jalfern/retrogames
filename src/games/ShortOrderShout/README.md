@@ -244,7 +244,23 @@ face). soslinkcheck pins the countdown contract (+4 => 137).
   remains down that path). Phone play rides the existing pad A (empty hand at
   a hot pan is the verb). `soscheck` 4b pins state gates, cup economy, the
   `cool` fx, a counterfactual burn, the zero clamp and determinism — 7 gates,
-  red under a `COOL_SIP = 0` mutant. *Still open:* stage-2 spice (extra
+  red under a `COOL_SIP = 0` mutant.
+- **CLOSED by #2119 (2026-11-12):** cool-the-pan round two. The pan now tells:
+  crossing into the ready window's last minute (`SEAR_TELL = 60`) pushes fx
+  `scorch` (per episode — a sipped pan that re-crosses tells again) and the
+  shift's first crossing pushes fx `teach`, printed as the toast `HOT PAN! CUP
+  + A COOLS THE PAN` (the affordance stops being luck; attract also says it).
+  The tell looks like travelling dashes — distinct shape AND rate from fire's
+  fast `!` blink and the ruined pot's slow squiggle. The tap is a shared choke
+  point: one cup per `TAP_REFILL = 45`-tick beat, refusals name themselves
+  (`TAP REFILLS — HOLD ON`); `tapCd` rides `hashState` + snapshots. CPU cooks
+  sip (linePlan 2b): fires absent, water in hand, a pan inside `SIP_NOW = 30`
+  ticks of burning => walk and pour; fires outrank sips, cooks holding other
+  work keep theirs. `actionable()` gained `water` (someone wants a cup AND the
+  tap is ready) so the advisory list tells the truth. Proof: soscheck §4c
+  (19 gates incl. per-episode tells, once-per-shift teach, choke timing, the
+  water-job truth table, sip plan shape + priorities, determinism); the 8/8
+  pair-win pins are unchanged by the sip. *Still open:* stage-2 spice (extra
   dishes, day/night rush) stays on QA's polish backlog.
 
 ## WATCH (#1637 batch 22) — Y seats the proven pair

@@ -75,6 +75,7 @@ export function playFx(f) {
             break
         case 'douse': AC.playNoise(0.35, 0.12); break
         case 'cool': AC.playNoise(0.16, 0.05); AC.playSweep(520, 220, 0.18, 'sine', 0.04); break // #2113 a shorter, soft hiss + the kettle-drop of a sip
+        case 'scorch': AC.playTone(990, 0.05, 'square', 0.04); AC.playTone(990, 0.05, 'square', 0.04, 0.09); break // #2119 two soft high pips: the pan says it is running out of window
         case 'boil': AC.playSweep(120, 200, 0.5, 'triangle', 0.05); break
         case 'stir': AC.playTone(300 + (f.n || 1) * 60, 0.06, 'triangle', 0.06); break
         case 'boilover': AC.playNoise(0.5, 0.14); AC.playSweep(300, 80, 0.5, 'sawtooth', 0.08); break
