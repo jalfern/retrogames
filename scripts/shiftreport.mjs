@@ -240,6 +240,23 @@ export function ciStats({ runs, pulls }) {
     const minutes = finished.map(durMin)
     const cancelled = runs.filter(r => r.conclusion === 'cancelled')
     const nightly = runs.filter(r => /nightly|heist/i.test(r.name || ''))
+    // #2054 — silent nights. A nightly-family workflow whose scheduled runs all
+    // cancel dies at scheduling (a retired runner label does exactly this: six
+    // shoreperf nights, zero steps, nobody said a word). Silence reads as
+    // health, so name the streak: >= 2 scheduled runs in-window, newest run
+    // backwards all cancelled.
+    const byFlow = {}
+    for (const r of nightly) {
+        if (r.event !== 'schedule') continue
+        ;(byFlow[r.name] = byFlow[r.name] || []).push(r)
+    }
+    const nightlySilence = []
+    for (const name of Object.keys(byFlow)) {
+        const rs = byFlow[name].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))
+        let n = 0
+        while (n < rs.length && rs[rs.length - 1 - n].conclusion === 'cancelled') n++
+        if (n >= 2) nightlySilence.push({ name, n })
+    }
     let closedUnmerged = 0
     for (const p of pulls) {
         if (p.state === 'closed' && !p.merged_at) closedUnmerged++
@@ -254,6 +271,7 @@ export function ciStats({ runs, pulls }) {
         mainFails: runs.filter(r => r.event === 'push' && r.conclusion === 'failure').length,
         nightlyTotal: nightly.length,
         nightlyGreen: nightly.filter(r => r.conclusion === 'success').length,
+        nightlySilence,
         closedUnmerged,
     }
 }
