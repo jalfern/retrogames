@@ -272,15 +272,20 @@ const paint = await page.evaluate(() => {
         if (k === 0xd8d2b8 || k === 0xc9c2a4) beige++                  // paper / frame
         else n++
     }
-    // #1972 zoom-crop proof: longest non-beige run across the head's widest
-    // row (canvas y=100 = frame center). The old flat-0.6 head measured
-    // ~41px wide even at its widest (narrow) cut — the 0.75 crop with ears
-    // measures 47 (narrow) to 57 (wide). 44 separates new from old.
+    // #1972 zoom-crop proof, #1943 deepened: the longest non-beige run across
+    // the head, now scanned over the whole head block (rows 30..52 of the
+    // frame) instead of one equator line. The old flat-0.6 head measured <=41
+    // even at its widest; the 0.75 crop read 47..57; the 0.90 zoom runs the
+    // head (and ears) 48..61 — the gate stays >=44 as the flat-crop separator,
+    // the s>=0.85 + head-width>=54 floors in paperscheck are the ratchet.
     let run = 0, best = 0
-    for (let x = 0; x < 66; x++) {
-        const i = (36 * 66 + x) * 4
-        const k = (d[i] << 16) | (d[i + 1] << 8) | d[i + 2]
-        if (k !== 0xd8d2b8 && k !== 0xc9c2a4) { run++; best = Math.max(best, run) } else run = 0
+    for (let row = 30; row <= 52; row++) {
+        run = 0
+        for (let x = 0; x < 66; x++) {
+            const i = (row * 66 + x) * 4
+            const k = (d[i] << 16) | (d[i + 1]) << 8 | d[i + 2]
+            if (k !== 0xd8d2b8 && k !== 0xc9c2a4) { run++; best = Math.max(best, run) } else run = 0
+        }
     }
     return { n, beige, headRun: best }
 })
@@ -288,7 +293,7 @@ r.check(`the passport carries a painted photo (${paint.n} face px in a ${paint.b
     paint.n > 250 && paint.beige > 100)
 r.check(`the photo is a zoom-crop — head reads ${paint.headRun}px across (flat-0.6 read <=41)`, paint.headRun >= 44)
 let sawForge = 0, sawHonest = 0, bandFails = 0
-const art = { browMax: 0, browMin: 1e9, mouthMax: 0, mouthMin: 1e9, whitesMax: 0, sawBare: false }
+const art = { browMax: 0, browMin: 1e9, mouthMax: 0, mouthMin: 1e9, whitesMax: 0, sawBare: false, pbMax: 0, pbMin: 1e9, pbN: 0 }
 for (let guard = 0; guard < 12 && s.day === 1 && !s.end; guard++) {
     const pp = await page.evaluate(() => {
         const t = window.__ppTest
@@ -306,7 +311,19 @@ for (let guard = 0; guard < 12 && s.day === 1 && !s.end; guard++) {
             for (let i = 0; i < d.length; i += 4) if (((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]) === 0x20242e) n++
             return n
         }
-        return { name: p.passport.name, feats, glasses: p.face.glasses, brow: p.face.brow, pix: t.portraitPix(), browInk: ink(300, 64, 34, 5), mouthInk: ink(310, 89, 16, 9) }
+        // #1943 photo-scale brow survival: the brow ink inside the PHOTO box
+        // (outer brow columns only — the uni bridge sits between them, the
+        // lens ink is excluded by the family). Exact hex lies about AA-scaled
+        // ink (the #1908 lesson), so count the dark family; glasses wearers
+        // would contaminate the band with their rims, so skip them.
+        const fam = (x, y, w, h) => {
+            const d = c.getContext('2d').getImageData(x, y, w, h).data
+            let n = 0
+            for (let i = 0; i < d.length; i += 4) if (d[i] < 100 && d[i + 1] < 100 && d[i + 2] < 120) n++
+            return n
+        }
+        const photoBrow = p.face.glasses ? -1 : fam(606, 95, 10, 5) + fam(627, 95, 10, 5)
+        return { name: p.passport.name, feats, glasses: p.face.glasses, brow: p.face.brow, browPhoto: photoBrow, pix: t.portraitPix(), browInk: ink(300, 64, 34, 5), mouthInk: ink(310, 89, 16, 9) }
     })
     if (pp && pp.pix) {
         if (pp.feats.length === 0) { sawHonest++; if (pp.pix.total !== 0) bandFails++ }
@@ -315,6 +332,7 @@ for (let guard = 0; guard < 12 && s.day === 1 && !s.end; guard++) {
         art.mouthMax = Math.max(art.mouthMax, pp.mouthInk); art.mouthMin = Math.min(art.mouthMin, pp.mouthInk)
         art.whitesMax = Math.max(art.whitesMax, pp.pix.whites)
         if (!pp.glasses) art.sawBare = true
+        if (pp.browPhoto >= 0) { art.pbMax = Math.max(art.pbMax, pp.browPhoto); art.pbMin = Math.min(art.pbMin, pp.browPhoto); art.pbN++ }
     }
     const v = await page.evaluate(() => window.__ppTest.verdict())
     if (pp && pp.feats.length > 0) {
@@ -333,6 +351,12 @@ r.check('day 1 staged its forger at the window', sawForge >= 1, `${sawForge}`)
 r.check(`brows paint both thicknesses (${art.browMin}..${art.browMax} ink px)`, art.browMin < 60 && art.browMax > 60)
 r.check(`mouths paint both shapes (${art.mouthMin}..${art.mouthMax} ink px)`, art.mouthMin < 80 && art.mouthMax > 80)
 r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.sawBare && art.whitesMax > 60)
+// #1943 PORTRAIT LEGIBILITY live: inside the photo the brow ink survives the
+// zoom-crop (min > 12 dark-family px on bare faces) and thick brows paint
+// clearly more than thin — the compared feature is readable where the rule is
+// actually checked, not just on the counter.
+r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px on ${art.pbN} bare faces)`,
+    art.pbN >= 2 && art.pbMin > 12 && art.pbMax > art.pbMin, JSON.stringify({ min: art.pbMin, max: art.pbMax, n: art.pbN }))
 
 // #1960 THE SHIFT CLOCK, live: the printed minutes move with real frames,
 // a dawdled day closes the gate (banner + dock + morning rewind), and the
