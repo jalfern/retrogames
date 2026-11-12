@@ -925,7 +925,7 @@ const PapersPleaseMinGame = () => {
             const fromPhoto = holdInPhoto
             const judgedNow = (stamp && stamp.ticks > 0) || !!(insp && insp.ticks > 0)
             if (!judgedNow && !carried && current(gs).view.person?.passport) {
-                for (const k of ['id', 'pp']) {
+                for (const k of (topCard === 'pp' ? ['pp', 'id'] : ['id', 'pp'])) {
                     if (k === 'id' && !current(gs).view.person?.idcard) continue
                     const c = CARDS[k], o = desk[k]
                     if (sx >= c.x + o.x && sx <= c.x + o.x + c.w && sy >= c.y + dyNow + o.y && sy <= c.y + dyNow + o.y + c.h) {

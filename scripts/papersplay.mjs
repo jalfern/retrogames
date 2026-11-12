@@ -507,6 +507,158 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     r.check(`hair carries its shadow tone at the hairline (${shadowMax}px of shadow ink on the counter face)`, shadowMax >= 10)
 }
 
+// #2120 PAPERS IN HAND — the desk verb with REAL mouse events: a press that
+// travels drags the passport off home (rustle + tilt in the fingers), lands it
+// where released, and the pixels prove the move (the paper vacates its home
+// rows and fills new ones). A press that never travels is STILL the old press:
+// the photo zoom and the strip tap-stamp stand. Rulings return the desk home,
+// z-order follows the last grab, and the whole session never moves a verdict —
+// the hand is booth-side paint, never a rule.
+{
+    await page.evaluate(() => window.__ppTest.start(0))
+    await wait(700)
+    const geo = await page.evaluate(() => {
+        const b = document.querySelector('canvas[data-pp-stage]').getBoundingClientRect()
+        return { x: b.x, y: b.y, w: b.width, h: b.height }
+    })
+    const toClient = (cx, cy) => ({ x: geo.x + cx / 680 * geo.w, y: geo.y + cy / 440 * geo.h })
+    const dragS = () => page.evaluate(() => window.__ppTest.drag())
+    // the booth must be staffed with the right entrant: seed 0's first walk-up
+    // is a NO-PAPERS customer (the dark "I HAVE NO PAPERS" box has no card to
+    // grab), and day 1 does not yet demand an ID. Stamp the correct verdict
+    // with real keys until the requested documents sit at the window, then let
+    // the ruling's ink, pin and settle run out so the fresh papers are home.
+    const seatWindow = async (wantPP, wantId) => {
+        for (let i = 0; i < 10; i++) {
+            const ok = await page.evaluate(([wantPP, wantId]) => {
+                const person = window.__ppTest.probe().view?.person
+                return !!(person && (!wantPP || person.passport) && (!wantId || person.idcard))
+            }, [wantPP, wantId])
+            if (ok) break
+            const v = await page.evaluate(() => window.__ppTest.verdict())
+            await page.keyboard.press(v === 'approve' ? 'a' : 'd')
+            await wait(300)
+        }
+        await waitQuiet()
+        await wait(260) // the #1891 drop lands and rests before anything is measured
+    }
+    // beige field ink (the passport's own paper colour 0xd8d2b8) in a canvas rect
+    const beige = (rx, ry, rw, rh) => page.evaluate(([rx, ry, rw, rh]) => {
+        const d = document.querySelector('canvas[data-pp-stage]').getContext('2d').getImageData(rx, ry, rw, rh).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (((d[i] << 16) | (d[i + 1]) << 8 | d[i + 2]) === 0xd8d2b8) n++
+        return n
+    }, [rx, ry, rw, rh])
+    const d0 = await dragS()
+    r.check('the desk opens home: nothing carried, both cards at zero offset',
+        d0 && !d0.carried && d0.pp.x === 0 && d0.pp.y === 0 && d0.id.x === 0 && d0.id.y === 0, JSON.stringify(d0))
+    await seatWindow(true, true) // an adult holding both cards — the hand needs them
+    // 1) carry the passport: grab its centre, hop sideways, release lower-right.
+    // The vacate rects cover only the rows the LANDED card (+24,+90) does not
+    // re-cover: the old home's left column (x < 380) and top rows (y < 130).
+    const vac1a = await beige(358, 60, 22, 120)   // left column of the home card
+    const vac2a = await beige(360, 46, 290, 82)   // header rows of the home card
+    let p = toClient(506, 114)
+    await page.mouse.move(p.x, p.y)
+    await page.mouse.down()
+    p = toClient(530, 170)
+    await page.mouse.move(p.x, p.y) // one event: the finger LEAPS, the card leans
+    p = toClient(546, 204)
+    await page.mouse.move(p.x, p.y)
+    const mid = await dragS()
+    r.check('travelling over the passport carries it (grabbed, moved, leaning in the fingers)',
+        mid && mid.carried === 'pp' && mid.moved && mid.tilt > 0.05, JSON.stringify(mid))
+    p = toClient(546, 204)
+    await page.mouse.up()
+    await wait(120)
+    const d1 = await dragS()
+    r.check('the card lands where you let go (+24,+90, clamped right at the desk edge) and releases',
+        d1 && !d1.carried && Math.round(d1.pp.x) === 24 && Math.round(d1.pp.y) === 90 && d1.topCard === 'pp', JSON.stringify(d1))
+    const vac1b = await beige(358, 60, 22, 120)
+    const vac2b = await beige(360, 46, 290, 82)
+    const fillb = await beige(560, 192, 92, 64) // below the old home, right of the ID — new counter
+    r.check('the paper vacates its home rows (left column and header go dark)',
+        vac1a > 1000 && vac2a > 4000 && vac1b < 40 && vac2b < 40, JSON.stringify({ vac1a, vac1b, vac2a, vac2b }))
+    r.check('the paper fills new counter where it landed', fillb > 400, `beige px at drop=${fillb}`)
+    // 2) the desk clears when a ruling collects the papers
+    const wantDeny = await page.evaluate(() => window.__ppTest.verdict() === 'deny')
+    p = toClient(wantDeny ? 668 : 150, 420) // strip tap: legacy immediate stamp zones, never cards
+    await page.mouse.move(p.x, p.y)
+    await page.mouse.down()
+    await page.mouse.up()
+    await wait(150)
+    const d2 = await dragS()
+    r.check('a ruling returns the desk home — the judged papers ride the stamp, not your drag',
+        d2 && d2.pp.x === 0 && d2.pp.y === 0 && d2.topCard === 'id', JSON.stringify(d2))
+    // 3) press-and-hold the photo still zooms; STARTING a drag cancels the zoom
+    await wait(1400) // let the ink + (possible) pin clear so the next press is unjudged
+    await seatWindow(true, false) // the loupe needs a passport at the glass
+    p = toClient(621, 102)
+    await page.mouse.move(p.x, p.y)
+    await page.mouse.down()
+    await wait(350)
+    const zoomOn = await page.evaluate(() => window.__ppTest.photoZoom())
+    p = toClient(521, 152)
+    await page.mouse.move(p.x, p.y, { steps: 4 })
+    const midZ = await dragS()
+    const zoomOff = await page.evaluate(() => window.__ppTest.photoZoom())
+    await page.mouse.up()
+    r.check('hold still on the photo and it zooms; travel turns the same press into the hand',
+        zoomOn === true && midZ.carried === 'pp' && zoomOff === false, JSON.stringify({ zoomOn, carried: midZ.carried, zoomOff }))
+    // 4) stacking + z-order: pull the passport down, take the exposed ID,
+    //    then grab the passport again — the last grab rides on top and the
+    //    untouched card keeps ITS offset (two cards, two hands-worth of state)
+    await seatWindow(true, true) // stacking needs both cards at the counter
+    p = toClient(502, 114)
+    await page.mouse.move(p.x, p.y)
+    await page.mouse.down()
+    p = toClient(502, 300) // straight down to the desk floor (clamped at y+212)
+    await page.mouse.move(p.x, p.y, { steps: 6 })
+    await page.mouse.up()
+    const dPP = await dragS()
+    p = toClient(451, 232)
+    await page.mouse.move(p.x, p.y)
+    await page.mouse.down()
+    p = toClient(391, 132)
+    await page.mouse.move(p.x, p.y, { steps: 4 })
+    await page.mouse.up()
+    const dID = await dragS()
+    r.check('two cards roam independently: the passport parked low, the ID carried up, the ID on top',
+        dID && dID.pp.y >= 150 && dID.id.y < -50 && dID.topCard === 'id', JSON.stringify(dID))
+    p = toClient(502, 300)
+    await page.mouse.move(p.x, p.y)
+    await page.mouse.down()
+    await wait(60)
+    const dZ = await dragS()
+    await page.mouse.up()
+    r.check('grabbing the passport on the desk floor flips the z-order to it',
+        dZ.carried === 'pp' && dZ.topCard === 'pp', JSON.stringify(dZ))
+    // that last grab never travelled, so it released as the OLD press: a stamp.
+    // Let the ink and the pin run out, the papers be collected and fresh ones
+    // drop home — then probe the hand against the line.
+    await wait(1400)
+    await seatWindow(true, false) // fresh papers home, an unjudged passport to push
+    // 5) THE HAND NEVER RULES — the whole session stamped nothing and moved
+    //    nobody: idx and score only ever move through keys/strips.
+    const st = await page.evaluate(() => { const q = window.__ppTest.probe(); return { idx: q.idx, score: q.score } })
+    p = toClient(506, 114)
+    await page.mouse.move(p.x, p.y)
+    await page.mouse.down()
+    p = toClient(564, 114)
+    await page.mouse.move(p.x, p.y, { steps: 5 })
+    await page.mouse.up()
+    const stA = await page.evaluate(() => { const q = window.__ppTest.probe(); return { idx: q.idx, score: q.score } })
+    r.check('a drag rules nobody: neither the entrant nor the score moves',
+        st.idx === stA.idx && st.score === stA.score, JSON.stringify({ st, stA }))
+    // and the booth still works after all that handling: one honest key stamp
+    const v = await page.evaluate(() => window.__ppTest.verdict())
+    await page.keyboard.press(v === 'approve' ? 'a' : 'd')
+    await wait(200)
+    const stB = await page.evaluate(() => { const q = window.__ppTest.probe(); return { idx: q.idx, score: q.score } })
+    r.check('after the handling the booth still rules (one honest key stamp advances the line)',
+        stB.idx === st.idx + 1 || stB.score !== st.score, JSON.stringify({ st, stB }))
+}
+
 // #1960 THE SHIFT CLOCK, live: the printed minutes move with real frames,
 // a dawdled day closes the gate (banner + dock + morning rewind), and the
 // finale refuses to survive an unfinished line.
