@@ -15,8 +15,8 @@ src/games/CivilizationV/art.js      tilted 3D hex world (three.js): relief, fog,
                                     musketeers, CS beacons, HP bars, arrows, FX
 src/games/CivilizationV/index.jsx   the shell: renderer, camera, input, HUD, research/worker/policy/
                                     wonders/legends/diplomacy/victory panels
-scripts/civcheck.mjs                Node harness (npm run civcheck) — 594 checks
-scripts/civplay.mjs                 Chrome drive with real keys (npm run civplay) — 65 checks
+scripts/civcheck.mjs                Node harness (npm run civcheck) — 626 checks
+scripts/civplay.mjs                 Chrome drive with real keys (npm run civplay) — 99 checks
 scripts/civclock.mjs                frame budget of the late game (npm run civclock)
 ```
 
@@ -35,15 +35,23 @@ fit the arcade's 40-turn clock (§16, §32), not Civ V's centuries.
 every rival, in order:
  1. **DOMINATION** — every rival CAPITAL has fallen (polish #2 made this the
     literal law; see below — a rival is beaten the moment its capital flips).
-2. **SCIENCE** — Spaceflight unlocks **THE ARK**, and the Ark is a *ship*, not a
-   number (polish #3): beakers earned after Spaceflight bank into `gs.ark[civ]`
-   and weld **four named parts** in order — **Cockpit (15), Booster (20), Stasis
-   (15), Launch (20)** — summing to CFG.arkScience (70). An overflowing weld
-   spills into the next; each completed weld fires an `arkPart` event named for
-   the plate. Only when all four are shut (ledger ≥ 70) does the hull lift
-   (`arkLaunch`) and the game ends mid-turn, whoever is funding it. The parts are
-   a pure derivation of the ledger (`arkPartsOf` / `arkPartsDone`) — no parallel
-   state to drift. See §36.
+2. **SCIENCE** — Spaceflight opens **THE ARK yards**, and the Ark is a *ship*,
+   not a number (#375-3, city industry since #2077): each NAMED plate —
+   **Cockpit (15), Booster (20), Stasis (15), Launch (20)**, summing to
+   CFG.arkShields (70) — is a **city production project**: any living city may
+   weld any still-missing plate, one plate at a time per city, different cities
+   in parallel (`ARK_<PART>` rides `city.queue` beside units and wonders).
+   Delivery welds: `gs.arkParts[civ]` gains the bit, `gs.ark[civ]` grows by the
+   plate's cost, `arkPart`/`ark` events name the plate and the city, and a
+   duplicate that got there first falls out of the queue (`arkLost`). The old
+   #375-3 beaker-pour is gone — science funds research like any other turn.
+   The hull lifts (`arkLaunch`) only when all four plates are welded
+   (`arkPartsDone === 4` and ledger ≥ 70), ending the game whoever funded it.
+   The part view reads the bits plus the head project's banked shields
+   (`arkPartsOf` / `arkPartsDone`); the bits fold into `stateHash`. See §36
+   (the named plates, rival tracks, replay) and §40 (the yards law: gating,
+   capital default + chosen city, parallel welding, exact costs, full-yard
+   refusal, engineer speed, the AI mobilisation, determinism).
 3. **CULTURE** — tourism crowns, culture records (polish pass #4). Every civ
    keeps three ledgers: the spendable culture pool (policies), *lifetime*
    culture (`cultureEarned`, the world's memory), and **tourism** (`tourism`,
@@ -160,7 +168,9 @@ E settle · 1/2/3 warrior/archer/settler · 4 worker · C catapult · V legion �
 H chariot · **K musket** · N trireme · **L galleon** (coastal cities) ·
 **W** WORK panel (F farm · M mine · O road) · **T** RESEARCH (R next) ·
 **P** POLICY · **U** WONDERS · **G** LEGENDS · **D** DIPLOMACY ·
-**Y** VICTORY (three race tracks + rival progress) ·
+**I** VICTORY (three race tracks + rival progress; YARD ◀ ▶ picks the city,
+⚒ WELD mobilises a plate) · **Q** weld the next missing plate at the chosen
+yard (#2077; `I` because Y is the WATCH key, #1637) ·
 **E** settle — or EMBARK when a friendly Galleon rides alongside ·
 **J** LAND at the nearest open beach (laden Galleon) ·
 arrows orbit/tilt · wheel/pinch zoom · `?` help. `VirtualControls`:
@@ -170,7 +180,7 @@ the hold. The Y panel is reachable by touch (on-screen button).
 ## Verify
 
 ```bash
-npm run civcheck          # 594 Node checks: boot, determinism, founding, economy, combat, barbarians,
+npm run civcheck          # 626 Node checks: boot, determinism, founding, economy, combat, barbarians,
                           # cities, production, tech (§16-18, now 21 techs / 6 eras), improvements (§19-20),
                           # resources (§21-22), borders (§23), happiness (§24), policies (§25), wonders
                           # (§26), great people (§27), stage-6 integration + slack (§28), city-states §29,
@@ -182,19 +192,25 @@ npm run civcheck          # 594 Node checks: boot, determinism, founding, econom
                            # no-colony laws, unbind on overlord death; single-city realm extinguishes;
                            # pill counts ORIGINAL capitals; three falls trip DOMINATION; determinism +
                            # hash folds for vassal/orig marks)
-                           # spaceship parts §36 (four named plates split the 70 ledger, ordered fill +
-                           # spill, named weld events, launch only when all four are shut, clamps,
-                           # rival tracks, replay determinism)
+                           # spaceship plates §36 (four named plates split the 70 ledger, one at a time per
+                           # yard in ANY order, exact cost with no spill, named weld events, launch only
+                           # when all four are DELIVERED, duplicate mobilise drops, rival tracks stay
+                           # separate, replay determinism)
                            # tourism crown §37 + kneel copy/ghost-star pins §38 (previous polish passes)
                            # naval supply §39 (ports of realm: own/vassal/overlord/allied-CS coastal cities;
                            # horizon sharp at CFG.navalSupply sea steps; wear bites only far hulls,
                            # no heal afloat, attrition alone sinks a hull and drowns its hold;
                            # land units exempt; replay determinism; renderer/HUD source pins)
-npm run civplay           # Chrome, real keys: Y opens VICTORY (three tracks + rivals), K/L answer with
+                           # ARK YARDS §40 (plates are city industry #2077: no plate before Spaceflight,
+                           # capital takes the first, one plate per yard but parallel cities weld, engineer
+                           # speeds a plate, full yard denies, AI + witness mobilise, seed-9 replay, source
+                           # pins against the old empire-wide beaker pour)
+npm run civplay           # Chrome, real keys: I opens VICTORY (three tracks + rivals), K/L answer with
                           # Musket and Galleon on a seed-4 COASTAL capital (real keel, no escape clause),
-                          # J/E refuse the transport paths by name, the Ark banks beakers on live
-                          # turns and reads as four named part tracks, win screen names the victory type,
-                          # zero errors; then a ?lite=1 page: same world painted, dpr capped to 1, no errors
+                          # J/E refuse the transport paths by name, the four plates mobilise at the yards
+                          # and weld on live turns (panel tracks + delivery toast + weld copy), win screen
+                          # names the victory type, zero errors; then a ?lite=1 page: same world painted,
+                          # dpr capped to 1, no errors
 npm run civclock          # late-board frame budget, full vs ?lite=1 at CPU throttle 1/4/8:
                           # fps, loop ratio (the gate: >=0.9x at full speed), p50/p95 frame ms
 npm run lint:civ          # eslint gate for the game + its scripts
@@ -219,9 +235,10 @@ npm run lint:civ          # eslint gate for the game + its scripts
     of them — without the kneel the world is back to annex-or-die); restore.
  4b. In `sim.js` the tribute block (`&& C.gold > 0`) → `&& false` → only the
     §35 tribute pair reddens (the yoke keeps its other laws); restore.
- 5. In `sim.js`, make the Ark lift early (`gs.ark[civ] >= CFG.arkScience` →
-    `arkPartsDone(gs, civ) >= 1`) → §36's "a half-built hull does not lift"
-    goes red (a single welded plate cannot launch a ship); restore.
+ 5. In `sim.js` `pumpCityQueue`, drop the plate delivery (`gs.arkParts[city.civ]
+     |= 1 << pi` → `|= 0`) → nineteen checks go red (§32's launch, §36's ledger
+     folds, §40's deliveries and mobilisations — a finished yard that never marks
+     its plate builds nothing anyone can see); restore.
  6. In `sim.js` `animateUnits`, add a 30 ms busy-wait to the tick path →
     `civclock` reddens (`loop 0.55x … BELOW 0.9x`, exit 1) — a sim that eats
     the frame budget loses real time even under the raised cap; restore.
@@ -248,10 +265,16 @@ npm run lint:civ          # eslint gate for the game + its scripts
   water, no promotions, no line-of-battle). Supply lines CLOSED by #2065: hulls
   beyond 6 sea steps of a friendly port wear, starve of heals, and sink with
   their hold (§39, mutant-pinned); the tactics stack stays owed.
-- **The Ark parts are one program, not city industry** — the four named plates
-  (Cockpit, Booster, Stasis, Launch) weld from the empire-wide science ledger in
-  order; Civ V builds each component in a city with production, one part at a
-  time per city, on an Apollo-style timeline. No per-city spaceship yards here.
+- **CLOSED by #2077:** *The Ark parts were one program, not city industry* — the
+  four named plates (Cockpit, Booster, Stasis, Launch) are now per-city production
+  projects: mobilise a plate at any city (`I` panel, YARD picker or `Q` at the
+  capital), one at a time per yard, any order, cities welding in parallel on their
+  own shields; an engineer's 25% speeds a plate; delivery marks the realm's ledger
+  (§36 + §40, mutant-pinned). Still owed honestly: Civ V's Apollo-style staged
+  unlock (the five components arrive across three techs, one part kind per era)
+  is kept as all-four-open-on-Spaceflight, and plate costs are flat arcade
+  numbers split from the old 70-beaker program, not the original's speed-scaled
+  500/2000-shield components.
 - **Tourism is simplified, not BNW** — the culture/tourism split is live (the
   visitor book banks half of culture, 3 per wonder, 1 per luxury and crowns on
   the lead), but there is no World Congress, no Ideology gifting of tourism, no

@@ -960,7 +960,7 @@ const CivilizationVGame = () => {
                     selected: gs.selected, units0: gs.units.filter((u) => u.civ === 0 && u.alive).map((u) => ({ id: u.id, kind: u.kind, c: u.c, r: u.r, moves: u.moves, hp: u.hp })),
                     barbsVisible: gs.units.filter((u) => u.alive && u.civ === BARB && gs.visible[0][u.r * CFG.W + u.c]).length,
                     campsAlive: gs.camps.filter((c) => c.alive).length, wars: Object.keys(gs.wars).length,
-                    queue: gs.cities.filter((c) => c.civ === 0 && c.alive).map((c) => ({ name: c.name, queue: [...(c.queue || [])], p: Math.floor(c.buildP || 0) })),
+                    queue: gs.cities.filter((c) => c.civ === 0 && c.alive).map((c) => ({ id: c.id, name: c.name, queue: [...(c.queue || [])], p: Math.floor(c.buildP || 0) })),
                     tech: { known: TECH_IDS.filter((id) => hasTech(gs, 0, id)), research: gs.tech[0].research, prog: Math.floor(gs.tech[0].prog),
                         ai: CIVS.filter((c) => !c.barb && c.id !== 0).map((c) => ({ civ: c.id, name: c.name, n: Object.keys(gs.tech[c.id].known).length, researching: gs.tech[c.id].research })) },
                     workers: gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'WORKER').map((u) => ({ id: u.id, c: u.c, r: u.r, busy: u.busy })),
@@ -984,7 +984,7 @@ const CivilizationVGame = () => {
                 start: startPlay, hash: () => stateHash(gs),                 select: (id) => { pending = { select: id } },
                 recenter: () => recenter(),
                 move: (c, r) => { pending = { move: [c, r] } }, settle: () => { pending = { found: true } }, endTurn: () => { pending = { endTurn: true } },
-                attack: (c, r) => { pending = { ...pending, attack: [c, r] } }, queue: (k) => { pending = { ...pending, queue: k } },
+                attack: (c, r) => { pending = { ...pending, attack: [c, r] } }, queue: (k, city) => { pending = { ...pending, queue: k, ...(city != null ? { city } : {}) } },
                 research: (id) => { pending = { ...pending, research: id } }, learn: (id) => { grantTech(gs, 0, id) },
                 improve: (kind) => { pending = { ...pending, improve: kind } },
                 policy: (id) => { pending = { ...pending, policy: id } },
@@ -1403,8 +1403,8 @@ const CivilizationVGame = () => {
             {screen === 'play' && helpOpen && (
                 <div className="absolute inset-x-0 top-16 flex justify-center pointer-events-none px-4">
                     <div className="pointer-events-auto max-w-[min(92vw,560px)] rounded-lg border border-amber-300/50 bg-black/85 px-4 py-3 font-mono text-amber-100 text-[11px] leading-5 shadow-[0_14px_50px_#000]">
-                        <b className="text-amber-300 tracking-widest">HOW YOU WIN</b> — take all 3 rival capitals, or reach Spaceflight and launch the ARK (Q welds its four plates in your cities — one at a time each, in parallel yards), or out-shimmer every rival in TOURISM; growing your capital to size {GOAL} is the golden shortcut.
-                        <div className="opacity-80 mt-1">E settles · 1–4 build · Space ends the turn · drag to pan · right-drag orbits · Home re-centers · Y tracks all three races.</div>
+                        <b className="text-amber-300 tracking-widest">HOW YOU WIN</b> — take all 3 rival capitals, or reach Spaceflight and launch the ARK, or out-shimmer every rival in TOURISM; growing your capital to size {GOAL} is the golden shortcut.
+                        <div className="opacity-80 mt-1">E settles · 1–4 build · Space ends the turn · drag to pan · right-drag orbits · Home re-centers · I tracks all three races (Q welds an Ark plate).</div>
                         <div className="opacity-80 mt-1 text-rose-200/80">NAVAL SUPPLY — keep a hull within {CFG.navalSupply} sea hexes of a friendly coastal port (own, vassal, or allied city-state); far hulls wear −{CFG.navalAttrition} every turn and sink in the deep.</div>
                         <button onClick={() => setHelpOpen(false)} className="mt-2 border border-amber-300/50 rounded px-3 py-0.5 hover:bg-amber-300/10 text-amber-200">GOT IT</button>
                     </div>
