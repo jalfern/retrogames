@@ -283,12 +283,12 @@ npm run lint:civ          # eslint gate for the game + its scripts
  8. In `sim.js` `endPlayerTurn`, neuter the wear (`u.hp -= CFG.navalAttrition`
     → `u.hp -= 0`) → seven §39 checks go red (the exact bite, the double price,
     the attrition sink, the named loss and the drowned convoy); restore.
-  9. In `sim.js` `eraCurve`, neuter the curve (`2 **` → `1 **`) → four §42
-     checks go red (both exact kills, the crown over a raw deficit, and the
-     AND-court win — the curve as a whole); restore. Then drop the one-sided
-     clamp (`Math.max(0, …)` → bare difference) → the three ×1 identity checks
-     and the behind-comparison check go red (a cradle age inflating to ×2, ×4,
-     ×½ is a lie in both directions); restore.
+  9. In `sim.js` `eraCurve`, neuter the curve (`2 **` → `1 **`) → six §42
+     checks go red (the three growing identities, both exact kills, and the
+     crown over a raw deficit); restore. Then drop the one-sided clamp
+     (`Math.max(0, …)` → bare difference) → the three behind/unmarked identity
+     checks go red (×0.5, ×0.125, ×0.5 — inflating a cradle age is a lie in
+     that direction); restore.
 
 ## Honest gaps (what the full original has that this arcade run does not)
 
