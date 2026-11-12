@@ -65,10 +65,22 @@ const pollAdvance = async (page, probe, advanced, a, waitMs) => {
 
 // openGame without the exit() — a first visit can also fail on a Vite reload,
 // and this script wants to retry and report, not die.
+// #2115: the #1711 consent gate mounts when a pilot's own start key reaches
+// humanStart (store live + undecided = every fresh CI profile), swallows the
+// boot keys, and the run never leaves attract (rally/bomb-defuse/sos/tmd/
+// gauntlet boot-red parity; same root as #2095). Seed the honest DECLINED
+// answer before the page scripts run: plan.ask goes false, no gate, and the
+// pilot drives a player who opted out of recording — which changes nothing
+// about the WATCH promises this suite proves.
+const DECLINED_CONSENT = () => {
+    try { localStorage.setItem('retrogames-consent-v1', JSON.stringify({ player: { motion: false, voice: false, at: Date.now() } })) } catch { /* private mode: the gate stays, as on a real declined-to-store device */ }
+}
+
 async function openGameNoExit(browser, pilot) {
     const page = await browser.newPage({ viewport: { width: 900, height: 760 }, deviceScaleFactor: 2 })
     page.setDefaultTimeout(60000)
     page.on('pageerror', e => console.log('[pageerror]', e.message))
+    await page.addInitScript(DECLINED_CONSENT)
     await page.goto(pilot.url, { waitUntil: 'load' })
     await page.waitForFunction((h) => !!window[h], pilot.hook, { timeout: 25000 })
     if (THROTTLE > 1) await throttleCPU(page, THROTTLE)
@@ -3253,6 +3265,7 @@ if (PHONE) {
                     viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true,
                 })
                 page.setDefaultTimeout(45000)
+                await page.addInitScript(DECLINED_CONSENT) // #2115 — same gate, phone seats too
                 await page.goto(`${BASE}/${id}`, { waitUntil: 'load' })
                 await page.waitForFunction((h) => !!window[h], hook, { timeout: 25000 })
             } catch {

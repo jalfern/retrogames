@@ -80,6 +80,16 @@ async function leftCtrl(page) {
     }
 }
 
+// #2095: the #1711 consent gate raises when a title's start gesture reaches
+// humanStart with the store live and the player undecided (every fresh CI
+// profile), swallows the ladder's taps, and /gauntlet never leaves attract —
+// so no pad ever mounts. Seed the honest DECLINED answer before page scripts:
+// plan.ask goes false, no gate. (gauntletplay keeps clicking the real button —
+// the gate's own behaviour stays proven there.)
+const DECLINED_CONSENT = () => {
+    try { localStorage.setItem('retrogames-consent-v1', JSON.stringify({ player: { motion: false, voice: false, at: Date.now() } })) } catch { /* private mode */ }
+}
+
 // Try generic start gestures until a left control is on screen. Bounded, so a
 // title that never gets there fails loudly instead of hanging the gate.
 async function enterPlay(page) {
@@ -112,6 +122,7 @@ for (const [path, method] of TOUCHED) {
         viewport: { width: 430, height: 932 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true,
     })
     page.setDefaultTimeout(60000)
+    await page.addInitScript(DECLINED_CONSENT) // #2095
     page.on('pageerror', e => errors.push(String(e.message).slice(0, 200)))
     page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text().slice(0, 200)) })
     try {
@@ -170,6 +181,7 @@ for (const [path, method] of TOUCHED) {
         viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true,
     })
     page.setDefaultTimeout(60000)
+    await page.addInitScript(DECLINED_CONSENT) // #2095 — every boot path, one law
     page.on('pageerror', e => errors.push(String(e.message).slice(0, 200)))
     try {
         await page.goto(BASE + '/britannia', { waitUntil: 'load' })
