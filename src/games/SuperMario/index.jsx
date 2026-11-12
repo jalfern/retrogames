@@ -1134,7 +1134,7 @@ const SuperMarioGame = () => {
         // Iconic flagpole finish: slide down the pole, then walk into the castle.
         const startFlag = () => {
             if (state !== 'play') return
-            if (watchingRef.current) { watchingRef.current = false; setWatching(false); mode = 'play' } // #1637 the watcher's job is the certified sector — the flagpole completes it, 1-3 starts in your hands
+            if (watchingRef.current) release(false) // #1637 the watcher's job is the certified sector — the flagpole completes it; 1-3 starts in your hands, clean keys and all
             state = 'flag'; flagPhase = 'slide'; flagT = 0
             audioController.stopMusic()
             mario.vx = 0; mario.vy = 0; mario.facing = -1

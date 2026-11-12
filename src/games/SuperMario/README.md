@@ -83,6 +83,27 @@ Two rules are load-bearing and were both wrong once:
 > went unnoticed — but the "burns Goombas" fire path in the code has never actually executed.
 > Fixing the jump offset would make the showcase strictly stronger and trivialise the plants.
 
+## WATCH (#1637 b31) — the certified sector drives itself
+
+Y seats the **engine's own option-3 autopilot** (`mode` flips `play ↔ autopilot` — no second
+brain), so the watcher replays the route `autopilotcheck` certifies: flagpole, all lives, zero
+deaths. Any driving key, a tap on the field, or the pill takes the overalls back mid-sector.
+
+Three rules make the seat honest, each pinned in `watchcheck`'s b31 section:
+
+- **The seat lives on 1-1** (`levelIndex === 0`) — that is the sector the harness certifies.
+  Y anywhere else (menu, 1-3, 1-4) declines with the shared no-guide chip, ~1.5 s.
+- **The flagpole completes the watcher.** `touchFlag` releases the seat *with `release(false)`*
+  — keys included. The first version flipped `mode` but left the autopilot's held
+  `right/run` behind; 1-3 then started with a stuck run button and Mario walk-ran into a
+  firebar at col 20 three times before anyone touched anything. A handback must leave
+  clean keys — that is now pinned, not just intended.
+- **b24 law:** Y at the title starts a fresh run AND seats — the certified route from tick 0.
+
+Live proof: `node scripts/watchcheck.mjs --only=mario` (seat/blip/advance/takeover/re-seat/
+resume/touch + mode flips, 13 gates); source pins + the rollout's audit ledger ride the full
+`watchcheck`. The win itself is stamped where it always was: `npm run autopilotcheck`.
+
 ## Option 4 — neuroevolution
 
 A genuine **neuroevolution** GA running live in the browser.
