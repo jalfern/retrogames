@@ -510,7 +510,9 @@ if (!process.env.SOS_SKIP_BROWSER) {
         for (let guard = 0; guard < 40; guard++) {
             const deny = await page.evaluate(() => window.__sosTest.radio().deny)
             if (!deny) break
-            red = Math.max(red, await band(299, 200, 21, 24, (r, g, b) => r > 220 && g < 95 && b < 75)) // refuse ring
+            // #2084: a hammered streak wears the DULL ring (#8a4030) instead of
+            // the bright one — both red families count; the taper is the feature.
+            red = Math.max(red, await band(299, 200, 21, 24, (r, g, b) => r > 120 && g < 100 && b < 80)) // refuse ring
             await sleep(25)
         }
         ok('#2079 the mic chip blinks red on refusal', red > 6, `red px=${red}`)
