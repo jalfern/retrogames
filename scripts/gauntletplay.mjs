@@ -10,6 +10,25 @@ const page = await openGame(browser, { url: URL, hook: '__gauntletTest', start: 
 
 const probe = () => page.evaluate(() => window.__gauntletTest.probe())
 
+// #2091: where the research store answers, the first humanStart raises the
+// auto-record consent gate (fixed inset-0, z-9990) and it swallows every
+// scripted start until clicked. Answer it with its own NO THANKS button
+// (touchselectcheck's phone-true path — a real click, never a grant). Do NOT
+// use Escape here: Gauntlet maps Escape to pause (index.jsx onKeyDown), so the
+// keyboard decline would freeze the run that the decline just unlocked.
+// On machines where the store stays silent the gate never rises: no-op.
+const defuseGate = async () => {
+    const declined = await page.evaluate(() => {
+        const gate = document.querySelector('[data-auto-record-gate]')
+        if (!gate) return false
+        const btn = [...gate.querySelectorAll('button')].find((el) => /NO THANKS/i.test(el.textContent || ''))
+        if (btn) btn.click()
+        return true
+    })
+    if (declined) await page.waitForTimeout(400)
+    return declined
+}
+
 let p0 = await probe()
 r.check('boots into attract', p0.screen === 'attract', p0.screen)
 const frameHash1 = await page.evaluate(() => window.__gauntletTest.hash())
@@ -59,6 +78,13 @@ r.check('hero select opens', p0.screen === 'select', p0.screen)
 }
 await page.keyboard.press('Digit1')
 await page.waitForTimeout(400)
+const gateUp = await defuseGate()
+r.check('#2091: the consent gate declines — never grants — on scripted starts',
+    !gateUp || await page.evaluate(() => {
+        const map = JSON.parse(localStorage.getItem('retrogames-consent-v1') || '{}')
+        return Object.keys(map).length > 0
+            && Object.values(map).every((c) => c && !c.motion && !c.voice && c.at > 0)
+    }), gateUp ? 'gate rose; NO THANKS clicked (motion+voice false, at stamped)' : 'store silent — no gate on this machine')
 p0 = await probe()
 r.check('Warrior starts the first maze', p0.screen === 'play' && p0.level === 0, `${p0.screen} lvl${p0.level}`)
 
@@ -156,6 +182,7 @@ r.check('the corridor actually renders', px > 500, `${px} lit px`)
     r.check('#494: C opens the cpu seat at select', q.seat === 'cpu', q.seat)
     await page.keyboard.press('Digit1')
     await page.waitForTimeout(500)
+    await defuseGate() // defensive: any start that re-asks still lands
     const c0 = await probe()
     r.check('#494: the cpu seat carries a partner into the maze', c0.p2 !== null && c0.seat === 'cpu', `p2=${!!c0.p2} seat=${c0.seat}`)
     // the hero runs; the pad-emitting partner must follow under its own pads
@@ -164,9 +191,11 @@ r.check('the corridor actually renders', px > 500, `${px} lit px`)
     await page.keyboard.up('ArrowUp')
     for (let i = 0; i < 60; i++) await page.evaluate(() => window.__gauntletTest.frame())
     const c1 = await probe()
+    const travel = c0.p2 && c1.p2 ? Math.hypot(c1.p2.x - c0.p2.x, c1.p2.y - c1.p2.y) : -1
     r.check('#494: the cpu partner travels under its own pads',
-        Math.hypot(c1.p2.x - c0.p2.x, c1.p2.y - c0.p2.y) > 0.3,
-        `${c0.p2.x.toFixed(2)},${c0.p2.y.toFixed(2)} -> ${c1.p2.x.toFixed(2)},${c1.p2.y.toFixed(2)}`)
+        travel > 0.3,
+        travel < 0 ? 'no partner on the board (start blocked?)' :
+            `${c0.p2.x.toFixed(2)},${c0.p2.y.toFixed(2)} -> ${c1.p2.x.toFixed(2)},${c1.p2.y.toFixed(2)}`)
 
     const cs = await page.evaluate(() => {
         const g = window.__game
