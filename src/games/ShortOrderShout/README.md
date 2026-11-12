@@ -224,6 +224,23 @@ face). soslinkcheck pins the countdown contract (+4 => 137).
 
 ## Honest gaps
 
+- **CLOSED by #2084 (2026-11-12):** the radio got its BODY. The talker visibly
+  holds a 2-frame mic at the mouth while on air (key light blinks; rides the
+  facing transform, also marks the seat whose take is playing). The line no
+  longer stamps one word: COPY / YES CHEF / Mm-hm round-robin per take (one
+  cook never repeats back-to-back), the chip jitters like a squelch breaking,
+  and a cook far from the talker (grid distance >= 8) answers on fainter paper
+  — position reads on the air. Refusals taper: past `SOFT_AT = 3` pokes in one
+  streak the buzz drops to one dull tick (`radioDenySoft`) and the chip ring
+  dims; the streak wipes when the hands return. A coarse 4-bar live input
+  meter (`micBars` over an AnalyserNode RMS off the ALREADY-open mic stream,
+  world-clock decay; DEV seam `micLevel`) sits in the strip dead-air so silence
+  and a rant finally look different — draws only, never a hit box (zones
+  unchanged). All fx tier: engine, wire and hashes untouched. Proof: soscheck
+  §1d + 7 browser gates (pose, meter full/paint/decay, streak+soft, 3-seat
+  word variety with far mark, shift-wipe); mutant `ackLine => COPY` kills
+  exactly the back-to-back gate; the #2079 red-ring gate now accepts both ring
+  shades (the dim ring IS the taper).
 - **Voice**: half-duplex hold-V PTT over the pad wire shipped (#1416 gap 1,
   #1432), and the radio became a mechanic (#2079): keying ties the talker's
   hands — A/B refused while your take is held or draining, solo included —
