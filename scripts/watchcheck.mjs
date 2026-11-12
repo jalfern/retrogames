@@ -3172,8 +3172,8 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     rep.check('SUPER MARIO: Y seats with blips; any driving key takes over',
         /isWatchKey\(e\)/.test(sj) && /isTakeoverKey\(e\)/.test(sj)
         && sj.includes('playWatchStart') && sj.includes('playWatchStop') && sj.includes('watchSfx: watchSfxLog'))
-    rep.check('SUPER MARIO: the seat lives on 1-1 — the sector autopilotcheck certifies (else no-guide)',
-        /const canWatch = \(\) => \(state === 'play' \|\| state === 'intro'\) && mode === 'play' && levelIndex === 0/.test(sj)
+    rep.check('SUPER MARIO: the seat lives on the certified sectors 1-1 and 1-3 — autopilotcheck certifies both (else no-guide) (#2111)',
+        /const canWatch = \(\) => \(state === 'play' \|\| state === 'intro'\) && mode === 'play' && levelIndex <= 1/.test(sj)
         && sj.includes('NO_GUIDE'))
     rep.check('SUPER MARIO: b24 law — Y at the title starts AND seats from tick 0',
         /state === 'attract' \|\| state === 'gameover' \|\| state === 'win'\) \{\s*apHold = 0\s*resetGame\(\)/.test(sj))

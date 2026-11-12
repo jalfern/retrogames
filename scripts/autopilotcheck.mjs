@@ -4,7 +4,8 @@
 // The autopilot is deterministic, so "did it reach the castle?" is a real gate —
 // if a level/AI change drops it below a clean win, this exits non-zero.
 //
-// It runs the level TWICE, because one run cannot prove both things:
+// It runs THREE legs (was two; #2111 added the athletic one), because one run cannot
+// prove all of it:
 //
 //   pass 1 (as it plays) — it should reach the fire flower at col 16 and become
 //     Fire Mario. For years it did not: its ?-block rule jumped one tile early,
@@ -171,6 +172,61 @@ if (only !== 'one') {
     r.check('[jump pass] cleared at least one plant cleanly (feet above its head)', clean.length >= 1,
         `${clean.length}/${crossed.length} clean (${clean.map(([c, v]) => c + ':' + v.minVert + 'px').join(', ') || 'none'})`)
     await page.screenshot({ path: 'scripts/.shots/autopilot-jump.png' }).catch(() => {})
+    await page.close()
+}
+
+// ---------------------------------------------------------------- pass 3
+// #2111 — the 1-3 leg. The autopilot drives on past the 1-1 flagpole; until today
+// it then died at col 33 identically on all three lives: the col-20 koopa bounce
+// hands Fire Mario too much height over pit 1, he crosses pit 2's platform level a
+// tile early, and collideY — which scans the ONE row under the feet — lets him sink
+// past the platform corner before his span reaches the columns he'd land on.
+// The air-brake rule must deliver a pit-chain crossing with zero deaths to the
+// 1-3 flagpole. The leg ends at the flag: 1-4's firebars stay unproven (issue
+// carries that as the next step, so the seat widens to levelIndex <= 1, not the
+// whole game).
+async function runAthletic(page) {
+    await page.evaluate(() => window.__marioTest.autoplay())
+    const t0 = Date.now()
+    let s = await page.evaluate(() => window.__marioTest.getState())
+    let inLeg = false, maxCol = 0, deaths = 0, lastLives = s.lives, outcome = 'timeout'
+    const crossedPits = []
+    const PIT_ENDS = [25, 41, 58, 71, 107, 131, 158]   // first solid col after each pit
+    let pitIdx = 0
+    while ((Date.now() - t0) / 1000 < maxWait) {
+        await page.waitForTimeout(POLL)
+        s = await page.evaluate(() => window.__marioTest.getState())
+        if (!inLeg) {
+            if (s.level === '1-3') { inLeg = true; lastLives = s.lives }
+            continue
+        }
+        maxCol = Math.max(maxCol, s.col)
+        if (s.lives < lastLives) { deaths += lastLives - s.lives; r.info('[1-3] lost a life', `at col ${s.col}`) }
+        lastLives = s.lives
+        while (pitIdx < PIT_ENDS.length && s.col >= PIT_ENDS[pitIdx] && s.state === 'play') {
+            crossedPits.push(PIT_ENDS[pitIdx]); pitIdx++
+        }
+        if (s.state === 'gameover') { outcome = 'gameover'; break }
+        if (s.state === 'flag' || s.level === '1-4') { outcome = 'win'; break }
+    }
+    const secs = ((Date.now() - t0) / 1000).toFixed(1)
+    return { s, maxCol, deaths, outcome, crossedPits, secs }
+}
+
+if (!only || only === 'three') {
+    const page = await openMario(browser, { url })
+    const p = await runAthletic(page)
+    console.log(`  ..    [1-3] state=${p.s.state} level=${p.s.level} col=${p.s.col} maxCol=${p.maxCol} ` +
+        `lives=${p.s.lives} power=${p.s.power} in ${p.secs}s`)
+    r.check('[1-3 leg] reached 1-3 from the 1-1 flag', p.maxCol > 0 || p.outcome === 'win',
+        `maxCol=${p.maxCol} outcome=${p.outcome}`)
+    r.check('[1-3 leg] crossed pit 2 (col 41) alive — the col-33 corner death (#2111)',
+        p.crossedPits.includes(41), `crossed to cols: ${p.crossedPits.join(', ') || 'none'}`)
+    r.check('[1-3 leg] crossed all seven athletic pits', p.crossedPits.length >= 7,
+        `${p.crossedPits.length}/7 (${p.crossedPits.join(', ')})`)
+    r.check('[1-3 leg] no deaths in 1-3', p.deaths === 0, `deaths=${p.deaths}`)
+    r.check('[1-3 leg] cleared 1-3 (flagpole / world advance)', p.outcome === 'win', `outcome=${p.outcome}`)
+    await page.screenshot({ path: 'scripts/.shots/autopilot-1-3.png' }).catch(() => {})
     await page.close()
 }
 
