@@ -769,7 +769,7 @@ const LodeRunnerLiteGame = () => {
                                 >VAULT {i + 1}</button>
                             ))}
                         </div>
-                        <p className="mt-2 text-amber-200/60 font-mono text-xs">pick a vault &middot; keys 1 2 3 &middot; tap anywhere starts vault 1</p>
+                        <span className="block mt-2 text-amber-200/60 font-mono text-xs">pick a vault &middot; keys 1 2 3 &middot; tap anywhere starts vault 1</span>
                     </div>
                 </>
             )}
