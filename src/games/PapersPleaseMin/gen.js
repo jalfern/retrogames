@@ -69,7 +69,9 @@ const LAST = ['KOSTOV', 'DRENIN', 'VASEK', 'LAGODA', 'ORLOV', 'TOLKA', 'ZEMEK', 
 export const REGULARS = [
     {
         id: 'grubak', name: 'VOLEN GRUBAK', sex: 'M', ageYears: 47, dobM: 3, dobD: 14, height: 178, weight: 86,
-        face: { skin: 2, hairC: 0, shirtC: 2, style: 1, narrow: 0, glasses: 0, must: 1, brow: 1, mouth: 0, hat: 1, uni: 1, ear: 0, gap: 0 },
+        // #2087 REGULAR ECHOES — Jorji's cap sits tilted: authored decor, an
+        // identity mark like the scar, never in FEATURES, never evidence.
+        face: { skin: 2, hairC: 0, shirtC: 2, style: 1, narrow: 0, glasses: 0, must: 1, brow: 1, mouth: 0, hat: 1, uni: 1, ear: 0, gap: 0, tilt: 1 },
         mark: 'scar',
         lines: { greet: 'GOOD DAY, GUARD.', hook: 'THE BREAD LINE WAS LONG.', again: 'BACK AGAIN, HA!', follow: 'STILL NO BREAD, HA!' },
         turnAlt: '...IS MISTAKE, YES?', againAlt: 'BACK AT THE GLASS.', seize: '"I HAVE FAMILY IN OR VECHNA!"',

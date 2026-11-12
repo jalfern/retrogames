@@ -1258,7 +1258,7 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
         new Set(hatRows.map((x) => x.cp.acc.hat)).size === 3, JSON.stringify(hatRows.map((x) => x.cp.acc.hat)))
     const photoRows = rows.filter((x) => x.cp.photoAcc)
     r.check(`the photo carries the hat too (${photoRows.filter((x) => x.cp.hatPhoto > 0).length} hatted photos)`,
-        photoRows.every((x) => ['hat', 'uni', 'ear', 'gap', 'shades', 'body', 'post'].every((k) => x.cp.photoAcc[k] === x.cp.acc[k])) &&
+        photoRows.every((x) => ['hat', 'uni', 'ear', 'gap', 'shades', 'body', 'post', 'tilt'].every((k) => x.cp.photoAcc[k] === x.cp.acc[k])) &&
         photoRows.some((x) => x.cp.acc.hat > 0 && x.cp.hatPhoto > 0) &&
         photoRows.some((x) => x.cp.acc.shades > 0 && x.cp.shadesPhoto > 0),
         JSON.stringify(photoRows.slice(0, 3).map((x) => [x.name, x.cp.acc, x.cp.hatPhoto])))
@@ -1274,7 +1274,11 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
         // grade a sex from; its decor was rolled from the sex BEHIND the
         // missing papers — no witness, no comparison.
         checked++
-        if (JSON.stringify(x.cp.acc) !== JSON.stringify(accFor(x.pic, x.nation, x.sex))) mismatch++
+        // #2087 REGULAR ECHOES: the tilt is authored-only — the roll never
+        // emits it — so the serial-law twin compares the rolled families and
+        // separately pins that no rolled head tilts.
+        const { tilt: rowTilt, ...rowAcc } = x.cp.acc
+        if (JSON.stringify(rowAcc) !== JSON.stringify(accFor(x.pic, x.nation, x.sex)) || rowTilt !== 0) mismatch++
         // #1996: the same pixels must also read by NATION — a hatted rolled
         // head wears its home kind (women wrap in scarves, Veskole in fur).
         if (x.cp.acc.hat > 0 && x.sex) {
@@ -1290,6 +1294,20 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     const grub = rows.find((x) => x.name === 'VOLEN GRUBAK')
     r.check(`Grubak walks the line in his authored cap and unibrow ${grub ? JSON.stringify({ hat: grub.cp.hat, uni: grub.cp.uni }) : ''}`,
         !!grub && grub.cp.hat > 0 && grub.cp.uni > 0)
+    // #2087 REGULAR ECHOES, pixel-proved live: the Jorji tilt — Grubak's
+    // brim ink reaches the upper-left window at the counter AND in his photo,
+    // while every ROLLED flat cap keeps that window empty (geometry, not a
+    // color claim); the scarf knot paints its own ink for the wrapped heads
+    // and nowhere else.
+    const flatCaps = rows.filter((x) => !x.reg && x.cp.acc.hat === 1)
+    r.check(`the tilt is Grubak's alone (${flatCaps.length} rolled flat caps)`,
+        !!grub && grub.cp.tiltBr >= 60 && grub.cp.tiltBrPhoto >= 60 && flatCaps.every((x) => x.cp.tiltBr === 0),
+        grub ? JSON.stringify({ g: grub.cp.tiltBr, gp: grub.cp.tiltBrPhoto, f: flatCaps.map((x) => x.cp.tiltBr) }) : 'no grubak')
+    const wrapped = rows.filter((x) => x.cp.acc.hat === 3)
+    r.check(`the scarf knots under every wrapped chin (${wrapped.length} wraps)`,
+        wrapped.length >= 2 && wrapped.every((x) => x.cp.knot > 0 && (!x.cp.photoAcc || x.cp.knotPhoto > 0)) &&
+        rows.filter((x) => x.cp.acc.hat !== 3).every((x) => x.cp.knot === 0),
+        JSON.stringify(wrapped.slice(0, 3).map((x) => [x.name, x.cp.knot, x.cp.knotPhoto])))
     await page.evaluate(() => window.__ppTest.runDay())
     await wait(200)
 }

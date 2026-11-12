@@ -484,8 +484,18 @@ const PapersPleaseMinGame = () => {
             // aged photo or a flipped cut still READS through the hat), and
             // the ushanka flaps stop above every compared band.
             if (f.hat === 1) {
-                c.fillStyle = HAT_COLS[1]; c.fillRect(x + P(24), y + P(4), P(62), P(12))
-                c.fillStyle = CAP_BRIM; c.fillRect(x + P(14), y + P(16), P(54), P(4))
+                // #2087 REGULAR ECHOES — the Jorji tilt: Grubak's flat cap
+                // slouches to one side, the brim riding up at the left and
+                // staying low at the right. Same two inks, same crown area,
+                // hairline still reads past both edges — authored decor only
+                // (only a cast face carries `tilt`; the roll never sets it).
+                if (f.tilt) {
+                    c.fillStyle = HAT_COLS[1]; c.fillRect(x + P(18), y + P(2), P(62), P(12))
+                    c.fillStyle = CAP_BRIM; c.fillRect(x + P(8), y + P(14), P(40), P(4)); c.fillRect(x + P(48), y + P(16), P(20), P(4))
+                } else {
+                    c.fillStyle = HAT_COLS[1]; c.fillRect(x + P(24), y + P(4), P(62), P(12))
+                    c.fillStyle = CAP_BRIM; c.fillRect(x + P(14), y + P(16), P(54), P(4))
+                }
             } else if (f.hat === 2) {
                 c.fillStyle = HAT_COLS[2]
                 c.fillRect(x + P(18), y + P(2), P(74), P(18))
@@ -1305,9 +1315,26 @@ const PapersPleaseMinGame = () => {
                         drawFace(cc, f, 0, 0, 1)
                         return cc.getImageData(0, 0, PIX.w, PIX.h).data
                     }
-                    const out = { acc: { hat: p.face.hat || 0, uni: p.face.uni || 0, ear: p.face.ear || 0, gap: p.face.gap || 0, shades: p.face.shades || 0, body: p.face.body | 0, post: p.face.post | 0 } }
+                    const out = { acc: { hat: p.face.hat || 0, uni: p.face.uni || 0, ear: p.face.ear || 0, gap: p.face.gap || 0, shades: p.face.shades || 0, body: p.face.body | 0, post: p.face.post | 0, tilt: p.face.tilt || 0 } }
                     const A = render(p.face)
                     for (const k of ['hat', 'uni', 'ear', 'gap', 'shades']) out[k] = hexN(A, HEXES[k])
+                    // #2087 REGULAR ECHOES witnesses, both scales:
+                    // tiltBr counts brim ink (CAP_BRIM, a color the brim owns)
+                    // in the UPPER-LEFT window rows 14-16 x8..48 — only a
+                    // tilted cap reaches there (a flat brim starts at x14 and
+                    // at row 16, disjoint from this window's rows), so the
+                    // Jorji echo separates from every flat cap by geometry.
+                    // knot counts SCARF_KNOT ink (the knot owns its color).
+                    const regHex = (d, x0, y0, x1, y1, hex) => {
+                        let n = 0
+                        for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) {
+                            const i = (yy * PIX.w + xx) * 4
+                            if (((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]) === hex) n++
+                        }
+                        return n
+                    }
+                    out.tiltBr = regHex(A, 8, 14, 48, 16, 0x2b3243)
+                    out.knot = hexN(A, [0x5f3722])
                     // #2087 BODIES: shirt ink on rows 80..91 — the band starts
                     // at 92, so anything up there is a shoulder.
                     const SHIRT_HEX = SHIRTS.map((h) => parseInt(h.slice(1), 16))
@@ -1320,7 +1347,9 @@ const PapersPleaseMinGame = () => {
                     if (p.passport && p.passport.photo) {
                         const B = render(p.passport.photo)
                         for (const k of ['hat', 'uni', 'ear', 'gap', 'shades']) out[k + 'Photo'] = hexN(B, HEXES[k])
-                        out.photoAcc = { hat: p.passport.photo.hat || 0, uni: p.passport.photo.uni || 0, ear: p.passport.photo.ear || 0, gap: p.passport.photo.gap || 0, shades: p.passport.photo.shades || 0, body: p.passport.photo.body | 0, post: p.passport.photo.post | 0 }
+                        out.tiltBrPhoto = regHex(B, 8, 14, 48, 16, 0x2b3243)
+                        out.knotPhoto = hexN(B, [0x5f3722])
+                        out.photoAcc = { hat: p.passport.photo.hat || 0, uni: p.passport.photo.uni || 0, ear: p.passport.photo.ear || 0, gap: p.passport.photo.gap || 0, shades: p.passport.photo.shades || 0, body: p.passport.photo.body | 0, post: p.passport.photo.post | 0, tilt: p.passport.photo.tilt || 0 }
                     }
                     return out
                 },

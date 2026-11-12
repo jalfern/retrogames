@@ -242,6 +242,21 @@ tooth 30; hatted honest photos carry their hat; bare heads paint none; and
 every background face's browser decor equals Node's `accFor(serial)` byte for
 byte.
 
+## REGULAR ECHOES (#2087) — the cast keeps its habits
+
+The original's recurring faces wear identity the way the neighborhood remembers
+it: Jorji's cap sits tilted. Here Grubak's face carries an authored `tilt: 1`
+(the ONLY tilt in the game — `accFor` never emits it, paperscheck pins that and
+that tilting every face moves no verdict). `drawFace` renders the tilt as a
+slouched crown with the brim riding up at the left, same cap/brim inks, hairline
+still reading past both edges. Being face-spread decor, the tilt rides into the
+photo by construction and paperscheck re-pins it every appearance (face == photo
+== authored). The scarf knot rows (x48-62, y74-79, wool-dark `#5f3722`) live in
+the same function, so wrapped heads knot under the chin at the counter AND in the
+photo. papersplay pixel-proves both live: Grubak paints 80 brim px in the
+upper-left tilt window (counter and photo) while every rolled flat cap keeps it
+empty, and every wrapped head paints its knot ink.
+
 ## The cast of six (#1997) — the neighborhood grows, and everyone has a line
 
 The original's recurring cast is not four — a dozen faces lean on the glass

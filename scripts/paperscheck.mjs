@@ -867,12 +867,12 @@ section('THE CROWD IS PEOPLE (#1989) — hats, unibrows, earrings, missing teeth
                 const view = viewOf(day, a)
                 const v0 = decide(view).verdict
                 const j0 = judge({ truth: a.truth, person: a.person, rules: day.rules, date: day.date, allowed: day.allowed, scale: a.scale }).verdict
-                const pf = { ...a.person, face: { ...f, hat: 1, uni: 1, ear: 1, gap: 1, shades: 1, body: 2, post: 1 } }
+                const pf = { ...a.person, face: { ...f, hat: 1, uni: 1, ear: 1, gap: 1, shades: 1, body: 2, post: 1, tilt: 1 } }
                 const v1 = decide({ ...view, person: pf }).verdict
                 const j1 = judge({ truth: a.truth, person: pf, rules: day.rules, date: day.date, allowed: day.allowed, scale: a.scale }).verdict
                 ok(v1 === v0 && j1 === j0, `seed ${seed} day ${day.n}: decor moved a verdict (${v0}->${v1}) — a hat became evidence`)
                 const ph = a.person.passport ? a.person.passport.photo : null
-                ok(!ph || ['hat', 'uni', 'ear', 'gap', 'shades', 'body', 'post'].every((k) => (f[k] || 0) === (ph[k] || 0)),
+                ok(!ph || ['hat', 'uni', 'ear', 'gap', 'shades', 'body', 'post', 'tilt'].every((k) => (f[k] || 0) === (ph[k] || 0)),
                     `seed ${seed} day ${day.n}: decor drifted between face and photo`)
                 // Variety is graded on the ROLLED heads only — the regulars'
                 // authored decor would mask a flattened hash (three kinds ride
@@ -909,12 +909,25 @@ section('THE CROWD IS PEOPLE (#1989) — hats, unibrows, earrings, missing teeth
         for (const day of genWeek(seed).days) {
             for (const a of day.queue.filter((x) => x.person.regular)) {
                 const c = REGULARS.find((k) => k.id === a.person.regular)
-                ok(['hat', 'uni', 'ear', 'gap'].every((k) => a.person.face[k] === c.face[k] && a.person.passport.photo[k] === c.face[k]),
+                ok(['hat', 'uni', 'ear', 'gap', 'tilt'].every((k) => a.person.face[k] === c.face[k] && a.person.passport.photo[k] === c.face[k]),
                     `seed ${seed} day ${day.n}: ${c.id}'s hat changed by itself — authored decor is identity`)
             }
         }
     }
     ok(new Set(castAcc.map((v) => v[0] > 0 ? 'hatted' : 'bare')).size === 2, 'every regular hatted or every one bare — the neighborhood needs both')
+    // #2087 REGULAR ECHOES — the original's recurring faces wear their habits
+    // (Jorji's cap sits tilted). Authored identity: exactly ONE cast member
+    // tilts, it rides face AND photo every appearance, and the roll cannot
+    // emit it (accFor has no tilt — the neutrality pin above proves tilting
+    // moves no verdict either).
+    const tilters = REGULARS.filter((c) => (c.face.tilt || 0) === 1)
+    ok(tilters.length === 1 && tilters[0].id === 'grubak', `tilted caps on ${tilters.map((c) => c.id).join(',') || 'nobody'} — one neighbour, one habit`)
+    ok(!('tilt' in accFor(0x1234abcd, 'ARSTOTZKA', 'M')) && !('tilt' in accFor(0x5555aaaa, 'KIRINIA', 'F')), 'the roll learned to tilt — the echo is authored, not hashed')
+    let tiltDrift = 0
+    for (const seed of SEEDS) for (const day of genWeek(seed).days) for (const a of day.queue.filter((x) => x.person.regular)) {
+        if (((a.person.face.tilt || 0) !== 1) !== (a.person.regular !== 'grubak') || (a.person.passport.photo.tilt || 0) !== (a.person.face.tilt || 0)) tiltDrift++
+    }
+    ok(tiltDrift === 0, `${tiltDrift} cast rows lost the tilt — Jorji's cap is his identity, every appearance`)
 }
 
 // ---------------------------------------------- #1996 THE NATIONS DRESS ----
