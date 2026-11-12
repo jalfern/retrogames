@@ -825,17 +825,20 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     await wait(250)
 }
 
-// #1989 THE CROWD, live: walk seed 0's first two days with real keys and
+// #1989 THE CROWD, live: walk seed 0's whole week with real keys and
 // prove the one-off looks are PIXELS through the same drawFace — hats,
 // unibrows, earrings and missing teeth paint at the counter and (on honest
 // papers) in the photo; bare heads paint nothing; and every browser face
-// carries exactly the decor Node's accFor(serial) computed: cross-process,
-// byte for byte. Volen Grubak arrives day 2 in his authored cap+unibrow.
+// carries exactly the decor Node's accFor(serial, nation, sex) computed:
+// cross-process, byte for byte. #1996 widened the walk to seven days — the
+// nation table makes a two-day seed-0 window a coin-flip on the ushanka,
+// and the whole line is where nations read. Volen Grubak arrives day 2 in
+// his authored cap+unibrow.
 {
     await page.evaluate(() => window.__ppTest.start(0))
     await wait(300)
     const rows = []
-    for (let d = 1; d <= 2; d++) {
+    for (let d = 1; d <= 7; d++) {
         for (let g = 0; g < 12; g++) {
             const row = await page.evaluate(() => {
                 const t = window.__ppTest
@@ -844,7 +847,7 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
                 const cp = t.crowdPix()
                 const per = p && p.view && p.view.person
                 if (!cp || !per) return null
-                return { day: p.day, name: per.passport ? per.passport.name : 'NO PAPERS', pic: per.pic, reg: !!per.regular, cp }
+                return { day: p.day, name: per.passport ? per.passport.name : 'NO PAPERS', pic: per.pic, nation: per.nation, sex: per.passport ? per.passport.sex : null, reg: !!per.regular, cp }
             })
             if (row && row.day === d) rows.push(row)
             const v = await page.evaluate(() => window.__ppTest.verdict())
@@ -856,7 +859,7 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
         const sMid = await probe()
         if (sMid.day === d && !sMid.end) { await page.evaluate(() => window.__ppTest.runDay()); await wait(200) }
     }
-    r.check(`the live walk saw ${rows.length} faces over two days`, rows.length >= 10, `${rows.length}`)
+    r.check(`the live walk saw ${rows.length} faces across the week`, rows.length >= 30, `${rows.length}`)
     const maxOf = (k) => Math.max(...rows.map((x) => x.cp[k] || 0))
     for (const fam of ['hat', 'uni', 'ear', 'gap']) {
         r.check(`${fam}s paint their own pixels at the counter (max ${maxOf(fam)} px)`, maxOf(fam) > 0)
@@ -871,15 +874,29 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
         JSON.stringify(photoRows.slice(0, 3).map((x) => [x.name, x.cp.acc, x.cp.hatPhoto])))
     const bare = rows.filter((x) => x.cp.acc.hat === 0)
     r.check(`bare heads paint no hat ink (${bare.length} bare rows)`, bare.length >= 3 && bare.every((x) => x.cp.hat === 0))
-    let mismatch = 0, checked = 0
+    let mismatch = 0, checked = 0, national = 0, nationalOk = 0
+    const HOME = { KIRINIA: 1, ANTEGRIA: 1, VESKOLE: 2, PARMENISTAN: 3 }
     for (const x of rows) {
         if (x.reg) continue // authored decor is identity, not hash — the
         // cast wears what the script gave them (paperscheck pins the authored
         // decor every appearance); the serial law governs the rolled crowd.
+        if (!x.sex) continue // the PASSPORT violator carries no papers to
+        // grade a sex from; its decor was rolled from the sex BEHIND the
+        // missing papers — no witness, no comparison.
         checked++
-        if (JSON.stringify(x.cp.acc) !== JSON.stringify(accFor(x.pic))) mismatch++
+        if (JSON.stringify(x.cp.acc) !== JSON.stringify(accFor(x.pic, x.nation, x.sex))) mismatch++
+        // #1996: the same pixels must also read by NATION — a hatted rolled
+        // head wears its home kind (women wrap in scarves, Veskole in fur).
+        if (x.cp.acc.hat > 0 && x.sex) {
+            national++
+            const okHat = x.sex === 'F'
+                ? x.cp.acc.hat === 3 || (x.nation === 'VESKOLE' && x.cp.acc.hat === 2)   // Veskole wraps mostly in fur
+                : x.nation === 'ARSTOTZKA' || x.cp.acc.hat === HOME[x.nation]             // the host stays the mix
+            if (okHat) nationalOk++
+        }
     }
-    r.check(`rolled decor === Node accFor(serial), every background face (${checked} rows)`, mismatch === 0, `${mismatch} mismatches`)
+    r.check(`rolled decor === Node accFor(serial, nation, sex), every background face (${checked} rows)`, mismatch === 0, `${mismatch} mismatches`)
+    r.check(`the hatted heads dress by nation live (${nationalOk}/${national})`, national >= 3 && nationalOk === national, `${nationalOk}/${national}`)
     const grub = rows.find((x) => x.name === 'VOLEN GRUBAK')
     r.check(`Grubak walks the line in his authored cap and unibrow ${grub ? JSON.stringify({ hat: grub.cp.hat, uni: grub.cp.uni }) : ''}`,
         !!grub && grub.cp.hat > 0 && grub.cp.uni > 0)

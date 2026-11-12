@@ -26,7 +26,7 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, dshow, MON, FEATURES, stampLines, portraitDiffs } from '../src/games/PapersPleaseMin/rules.js'
-import { genWeek, genDay, viewOf, CITY2C, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, VISIT_WINDOW, WALL_POOL, wallNameAt, weekWallNames, weekDecoyCount } from '../src/games/PapersPleaseMin/gen.js'
+import { genWeek, genDay, viewOf, CITY2C, COUNTRIES, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, VISIT_WINDOW, WALL_POOL, wallNameAt, weekWallNames, weekDecoyCount } from '../src/games/PapersPleaseMin/gen.js'
 import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges, monthTurn, isMoneyDeath } from '../src/games/PapersPleaseMin/sim.js'
 import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, RENT, PAYFX, ID, PHOTO, BUBBLE, EVID, SETTLE, QUOTE, RECOGNITION, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
 
@@ -705,13 +705,17 @@ section('THE CROWD IS PEOPLE (#1989) — hats, unibrows, earrings, missing teeth
     // 1) the serial law: decor is a PURE function of the passport number —
     //    same number, same hat, every call, and no Math.random anywhere near
     //    it (the section above proves the call site; this proves the shape).
+    //    #1996 widened the inputs: purity means same serial + nation + sex,
+    //    same decor, forever.
     let pure = true
     for (const pic of [0, 1, 4001, 4002, 777, 123456789, 999999999]) {
-        const a = accFor(pic), b = accFor(pic)
-        if (JSON.stringify(a) !== JSON.stringify(b)) pure = false
-        if (!(a.hat >= 0 && a.hat <= 3) || ![a.uni, a.ear, a.gap].every((v) => v === 0 || v === 1)) pure = false
+        for (const country of COUNTRIES) for (const sex of ['M', 'F']) {
+            const a = accFor(pic, country, sex), b = accFor(pic, country, sex)
+            if (JSON.stringify(a) !== JSON.stringify(b)) pure = false
+            if (!(a.hat >= 0 && a.hat <= 3) || ![a.uni, a.ear, a.gap].every((v) => v === 0 || v === 1)) pure = false
+        }
     }
-    ok(pure, 'accFor is not a pure, shaped function of the serial')
+    ok(pure, 'accFor is not a pure, shaped function of (serial, nation, sex)')
 
     // 2) identity by construction: the SAME decor object is spread into the
     //    photo at birth — face and photo can never disagree — and 3) the
@@ -769,6 +773,57 @@ section('THE CROWD IS PEOPLE (#1989) — hats, unibrows, earrings, missing teeth
         }
     }
     ok(new Set(castAcc.map((v) => v[0] > 0 ? 'hatted' : 'bare')).size === 2, 'every regular hatted or every one bare — the neighborhood needs both')
+}
+
+// ---------------------------------------------- #1996 THE NATIONS DRESS ----
+section('THE CROWD WEARS ITS NATION (#1996) — hats correlate with origin, the host stays mixed')
+{
+    // The original's line reads as NATIONS: Kirinian workers in flat caps,
+    // Antegrian officers kept covered, Veskole fur, Parmenistani wraps, and
+    // the women favor the headscarf. Graded as DOMINANCE on rolled heads
+    // (regulars excluded — authored decor is identity, not geography), with
+    // thresholds with margin so the law can bend without snapping: it must
+    // correlate, never uniform. `nation` is the country the clothes were
+    // rolled from (truth at birth), never evidence — the neutrality witness
+    // above already proves a hat moves no verdict.
+    const cell = {}
+    for (const seed of SEEDS) {
+        for (const day of genWeek(seed).days) {
+            for (const a of day.queue) {
+                if (a.person.regular || !a.person.passport) continue
+                const k = `${a.person.nation}|${a.person.passport.sex}`
+                ;(cell[k] = cell[k] || []).push(a.person.face.hat || 0)
+            }
+        }
+    }
+    const share = (k, kind) => {
+        const hatted = (cell[k] || []).filter((x) => x > 0)
+        return { n: hatted.length, s: hatted.length ? hatted.filter((x) => x === kind).length / hatted.length : 0 }
+    }
+    const home = [
+        ['KIRINIA|M', 1, 'Kirinian caps'], ['ANTEGRIA|M', 1, 'Antegrian caps'],
+        ['VESKOLE|M', 2, 'Veskole fur'], ['PARMENISTAN|M', 3, 'Parmenistani wraps'],
+        ['VESKOLE|F', 2, 'Veskole women in fur'],
+        ['KIRINIA|F', 3, 'scarves in the line'], ['ANTEGRIA|F', 3, 'scarves in the line'],
+        ['PARMENISTAN|F', 3, 'scarves in the line'], ['ARSTOTZKA|F', 3, 'scarves in the line'],
+    ]
+    for (const [k, kind, what] of home) {
+        const { n, s } = share(k, kind)
+        ok(n >= 5 && s >= 0.6, `${what}: ${n} hatted heads, home kind at ${(s * 100).toFixed(0)}% — the crowd does not read as nations`)
+    }
+    // the host nation stays the mixed one — nations correlate, they never
+    // become uniforms (a locked ARSTOTZKA is m33's free ride otherwise).
+    const arst = (cell['ARSTOTZKA|M'] || []).filter((x) => x > 0)
+    const arstKinds = new Set(arst)
+    const arstTop = Math.max(...[1, 2, 3].map((t) => arst.filter((x) => x === t).length))
+    ok(arstKinds.size >= 3 && arstTop / arst.length <= 0.75,
+        `ARSTOTZKA men: kinds ${[...arstKinds].join(',')} top ${(arstTop / arst.length * 100).toFixed(0)}% — the host must stay the mix`)
+    // same number, different nation, different hat: the correlation is in the
+    // function, not in seed luck (pins ride serial 4031 — one paper, four nations).
+    ok(accFor(4031, 'VESKOLE', 'M').hat === 2 && accFor(4031, 'KIRINIA', 'M').hat === 1 &&
+       accFor(4031, 'PARMENISTAN', 'M').hat === 3 && accFor(4031, 'KIRINIA', 'F').hat === 3,
+        'serial 4031 stopped dressing by nation — the pins moved')
+    console.log(`  ..    ${home.map(([k, kind]) => `${k}:${share(k, kind).s >= 0.9 ? '=' : '~'}${kind}`).join(' ')} + a mixed host`)
 }
 
 // ---------------------------------------------- clumsy clears / chaos collapses ----
@@ -1807,8 +1862,10 @@ if (MUT) {
     // 31. the crowd is flattened: accFor forgets headwear — the line is
     //     bare heads again. Fairness never notices (hats were never read);
     //     only the variety witness sees a whole signature feature vanish.
+    //     #1996 moved the coverage rate into `cover` (nation-biased), so the
+    //     flattening now zeroes that line.
     await tryMut('crowd flattened (accFor never gives a hat)',
-        mutMod('gen.js', 'hat: (h & 31) < 8 ? 1 + ((h >>> 5) % 3) : 0,', 'hat: 0,', 'm31'),
+        mutMod('gen.js', "country === 'ANTEGRIA' ? 11 : country === 'VESKOLE' ? 9 : 8", '0', 'm31'),
         (m) => {
             const kinds = new Set()
             for (const seed of SEEDS) {
@@ -1819,6 +1876,27 @@ if (MUT) {
                 }
             }
             return kinds.size === 3
+        })
+
+    // 33. (#1996) the nations blur: hat KIND selection forgets the home
+    //     table — every country rolls caps/ushankas/scarves from the serial
+    //     again. Fairness and variety survive (the kinds still spread); only
+    //     the nation-dominance witness sees the line stop reading as nations.
+    await tryMut('nations blurred (hat kind ignores the home table)',
+        mutMod('gen.js', 'else hat = HAT_HOME[country] || (1 + ((h >>> 5) % 3))', 'else hat = 1 + ((h >>> 5) % 3)', 'm33'),
+        (m) => {
+            const cell = {}
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    for (const a of day.queue) {
+                        if (a.person.regular || !a.person.passport || !a.person.face.hat) continue
+                        const k = `${a.person.nation}|${a.person.passport.sex}`
+                        ;(cell[k] = cell[k] || []).push(a.person.face.hat)
+                    }
+                }
+            }
+            const dom = (k, kind) => { const h = cell[k] || []; return h.length >= 5 && h.filter((x) => x === kind).length / h.length >= 0.6 }
+            return dom('KIRINIA|M', 1) && dom('ANTEGRIA|M', 1) && dom('VESKOLE|M', 2) && dom('PARMENISTAN|M', 3)
         })
 
     // 32. the booth learns to read decor: a face whose live hat differs from

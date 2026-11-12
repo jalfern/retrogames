@@ -228,13 +228,34 @@ export const GREY = 3
 // is by construction: your number decides your hat, and the SAME decor object
 // is spread into `photo`, so face and photo can never disagree.
 // hat: 0 none, 1 flat cap, 2 ushanka, 3 headscarf.
-export function accFor(pic) {
-    const h = Math.imul(pic ^ 0x5bd1e996, 0x27d4eb2f) >>> 0
+// #1996 THE NATIONS DRESS — the original's crowd dresses by origin: Kirinian
+// workers in flat caps, Antegrian officers kept covered, Veskole fur ushankas,
+// southern wraps in Parmenistan, and the women across the line favor the
+// headscarf. Here that is a CORRELATION, not a uniform: the table biases hat
+// KIND and coverage rate by the entrant's own country + sex, while ARSTOTZKA
+// (the host nation) stays deliberately mixed and the sparse families get a
+// national tint (Veskole brows, Parmenistani gold, Kirinian teeth). The serial
+// law is untouched — still a pure hash, now salted by country and sex, zero
+// rnd() draws, so the seed stream keeps its sequence and same number + same
+// papers means same hat forever. Paperscheck grades the correlation live (per-
+// nation dominance + ARSTOTZKA mixing) and a nation-blind mutant (m33) dies
+// on those gates. Doctrine unchanged: decor is never in FEATURES, never
+// evidence — decide never reads hat/nation.
+const HAT_HOME = { KIRINIA: 1, ANTEGRIA: 1, VESKOLE: 2, PARMENISTAN: 3 }
+export function accFor(pic, country, sex) {
+    const ci = COUNTRIES.indexOf(country) + 1
+    const h = Math.imul((pic ^ 0x5bd1e996) ^ Math.imul(ci, 0x9e3779b1) ^ (sex === 'F' ? 0x85ebca6b : 0xc2b2ae35), 0x27d4eb2f) >>> 0
+    const cover = country === 'ANTEGRIA' ? 11 : country === 'VESKOLE' ? 9 : 8   // officers keep their heads covered; the north wears fur
+    let hat = 0
+    if ((h & 31) < cover) {
+        if (sex === 'F') hat = country === 'VESKOLE' && ((h >>> 9) & 3) ? 2 : 3   // scarves across the line; Veskole wraps in fur
+        else hat = HAT_HOME[country] || (1 + ((h >>> 5) % 3))                     // ARSTOTZKA rolls its mix
+    }
     return {
-        hat: (h & 31) < 8 ? 1 + ((h >>> 5) % 3) : 0,   // 25% wear a head, kind spread
-        uni: ((h >>> 7) & 7) === 0 ? 1 : 0,             // unibrow
-        ear: ((h >>> 11) & 7) === 0 ? 1 : 0,            // gold earring
-        gap: ((h >>> 15) & 15) < 2 ? 1 : 0,             // missing tooth
+        hat,
+        uni: ((h >>> 7) & 7) === 0 || (country === 'VESKOLE' && (h >>> 19) % 5 === 0) ? 1 : 0,
+        ear: ((h >>> 11) & 7) === 0 || (country === 'PARMENISTAN' && (h >>> 21) % 5 === 0) ? 1 : 0,
+        gap: ((h >>> 15) & 15) < 2 || (country === 'KIRINIA' && (h >>> 23) % 7 === 0) ? 1 : 0,
     }
 }
 
@@ -300,13 +321,19 @@ function base(rnd, date, dayRules, used, opts = {}) {
     // re-sequencing. Attach BEFORE the photo spread: decor is born shared,
     // so face and photo carry the same hat by construction.
     const pic = Math.floor(rnd() * 1e9)
-    const acc = accFor(pic)
+    const acc = accFor(pic, country, pp.sex)
     face.hat = acc.hat; face.uni = acc.uni; face.ear = acc.ear; face.gap = acc.gap
     pp.photo = { ...face }
     return {
         trap: null,
         breakRule: null,
-        person: { pic, face, papers: wantId ? ['passport', 'idcard'] : ['passport'], passport: pp, idcard },
+        // #1996: `nation` is the country the CLOTHES were rolled from (the
+        // truth at birth — an ALLOWED-lie paper keeps its home dress, the
+        // papers lie but the coat doesn't). Pure atmosphere: decide reads no
+        // more of it than of a hat (FEATURES unchanged), papersplay's
+        // cross-process witness matches the browser decor against Node's
+        // accFor(pic, nation, sex) with it.
+        person: { pic, nation: country, face, papers: wantId ? ['passport', 'idcard'] : ['passport'], passport: pp, idcard },
         truth: {
             hasPassport: true, hasIdCard: !!idcard, trueName: name, idName: idcard ? idcard.name : null,
             country, expiry: pp.expiry, dob, trueWeight: pp.weight, wanted: false, photoMismatch: false,
