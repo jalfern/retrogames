@@ -508,10 +508,23 @@ function trapApplicant(species, rnd, date, dayRules, day, used) {
 // mark; the legal half is paperwork, exactly like the original's regulars
 // whose documents evolve with the campaign. photo === face: the booth's PORTRAIT
 // machinery sees a perfectly honest paper, and the mark rides into the photo.
-function regularApplicant(c, rnd, date, dayRules, day, used, seed, n) {
+function regularApplicant(c, rnd, date, dayRules, day, used, seed, n, aged = false) {
     const a = base(rnd, date, dayRules, used, { allowed: day.allowed })
     const dob = { y: date.y - c.ageYears, m: c.dobM, d: c.dobD }
-    const face = { ...c.face, mark: c.mark }
+    const regIdx = REGULARS.findIndex((k) => k.id === c.id)
+    // #2080 MARKS AGE — the original's regulars come back CHANGED (Jorji's
+    // forged papers evolve week over week). Here the signature mark grows one
+    // step on a return visit: the scar gains its fourth stitch, the mole
+    // spreads, a third wrinkle prints, the freckle cluster thickens, the
+    // bandage gets a fresh pad, the big ear grows taller. The step is the
+    // visit index the walk law already knows (0 the first week's walk-up,
+    // 1 any return) — zero rnd, so the seed stream keeps its sequence. Decor
+    // by the doctrine of the nose: markStep rides face AND photo together
+    // (the naive eye walks every key — an asymmetric key would plant a fake
+    // trap on an honest paper, so paperscheck pins symmetry), decide reads
+    // nothing, and first visits stay byte-identical to the castPix baselines.
+    const visit = n > firstVisitDay(seed, regIdx) ? 1 : 0
+    const face = { ...c.face, mark: c.mark, markStep: visit }
     a.person.face = face
     a.person.mark = c.mark
     a.person.regular = c.id
@@ -530,7 +543,6 @@ function regularApplicant(c, rnd, date, dayRules, day, used, seed, n) {
     // rebuilt per visit, like the original's evolving documents), and the
     // truth agrees. Everything else about them stays honest — pull the sheet
     // entry and the paper approves (paperscheck's pull-the-witness pin).
-    const regIdx = REGULARS.findIndex((k) => k.id === c.id)
     const arc = arcForWeek(seed)
     if (n === arc.day && c.id === arc.id) {
         a.person.arc = true
@@ -571,7 +583,51 @@ function regularApplicant(c, rnd, date, dayRules, day, used, seed, n) {
         a.person.recall = null // #1982 a first walk-up has no memory to ring
         a.person.say = [c.lines.greet, c.lines.hook]
     }
+    // #2080 THE AGED PHOTO WEARS A NEIGHBOUR'S FACE — once a week the
+    // #1938 trap rides a familiar face, not a stranger: the day-7 returning
+    // head hands over the grey print of itself — same face, years ago. Color
+    // never convicts, so the paper stays honest (decide AND judge approve —
+    // the trap is aimed at the eye, and the recognition chime rings first:
+    // the welcome IS the hiding place). Tadek cannot carry it — his authored
+    // hair is already grey, and grey-on-grey is no visible move; on his week
+    // the day keeps its scheduled second trap instead (genWeek), so the
+    // budget stays identical.
+    if (aged && n === 7 && c.id === REGULARS[(seed + 1) % REGULARS.length].id && c.face.hairC !== GREY) {
+        a.person.passport = { ...a.person.passport, photo: { ...a.person.passport.photo, hairC: GREY } }
+        a.trap = 'PORTRAIT'
+    }
     return a
+}
+
+// #2080 THE NEIGHBOUR'S TRAP — once a week the day-7 returning head carries
+// the aged photo (#1938 species) instead of a stranger. The day already hosts
+// its scheduled two traps, so one must step out of the LINE — but coverage is
+// a construction, not a hope: only a trap whose species the week has ALREADY
+// shown (a re-run) may be demoted, preferring trap2; CURFEW (awake only here)
+// can never be demoted. When both day-7 traps are their species' sole weekly
+// showing, the neighbour keeps its week clean and the strangers keep the
+// stage. The demoted applicant still consumes its draws and its wall row
+// (burned, not deleted), so every name, number and face after it replays
+// exactly as before, the queue keeps its size, and genDay(seed, 7, …)
+// standalone answers the identical day. Tadek's hair is authored grey, so on
+// his week the trap has nothing to age — it stays with the strangers.
+export const neighbourTrapWeek = (seed) => REGULARS[(seed + 1) % REGULARS.length].face.hairC !== GREY
+// which of day 7's scheduled traps vacates its line seat (null = none):
+// a species already staged days 1-6 (or doubled on day 7 itself) is safely
+// demoted; the neighbour then takes that seat. Pure over the seed — genDay
+// consults it, so a standalone genDay replays the week's day exactly.
+export function day7Demote(seed, schedule = trapSchedule(seed)) {
+    if (!neighbourTrapWeek(seed)) return null
+    const shown = new Set()
+    for (const p of schedule) {
+        if (p.n >= 7) break
+        if (p.ti !== null) shown.add(p.ti)
+        if (p.t2 !== null) shown.add(p.t2)
+    }
+    const p7 = schedule[6]
+    if (p7.t2 !== null && (shown.has(p7.t2) || p7.t2 === p7.ti)) return 't2'
+    if (p7.ti !== null && shown.has(p7.ti)) return 't1'
+    return null
 }
 
 export function genDay(seed, n, trapIdx, trap2Idx = null) {
@@ -601,14 +657,19 @@ export function genDay(seed, n, trapIdx, trap2Idx = null) {
     // name wanted on Tuesday walking up on Friday, innocent, by construction).
     for (const nm of weekWallNames(seed)) used.add(nm)
     for (const rule of rules) day.queue.push(violator(rule, rnd, date, rules, day, used))
+    // #2080 which day-7 trap vacates its line seat for the neighbour trap
+    // (null on every other day — see day7Demote for the coverage law)
+    const demote = n === 7 ? day7Demote(seed) : null
     if (trapIdx !== null && trapIdx !== undefined) {
-        day.queue.push(trapApplicant(trapIdx, rnd, date, rules, day, used))
+        const t1 = trapApplicant(trapIdx, rnd, date, rules, day, used)
+        if (demote !== 't1') day.queue.push(t1) // burned when demoted: draws and wall row stay spent (see day7Demote)
         // a second trap when the week's schedule asks for one (days 3 and 6,
         // and day 7 to close coverage) — genWeek picks it, so a standalone
         // genDay call replays EXACTLY the week's day
         if (trap2Idx !== null && trap2Idx !== undefined) {
             if (!rules.includes(TRAPS[trap2Idx].rule)) throw new Error(`trap2 ${TRAPS[trap2Idx].rule} has no rule on day ${n}`)
-            day.queue.push(trapApplicant(trap2Idx, rnd, date, rules, day, used))
+            const t2 = trapApplicant(trap2Idx, rnd, date, rules, day, used)
+            if (demote !== 't2') day.queue.push(t2) // burned when demoted, same law (see day7Demote)
         }
     }
     // #1979: the regular walks in after the traps, before the fill — mid-line
@@ -617,7 +678,7 @@ export function genDay(seed, n, trapIdx, trap2Idx = null) {
     // #1960 shift budget (queue x 18s) and every day-length pin stand as
     // written. #2012 THE CROWDED RETURN: days 6, 7 push TWO — the returning
     // head first, then the crowding tail greeting its first walk-up.
-    for (const reg of regularsForDay(seed, n)) day.queue.push(regularApplicant(reg, rnd, date, rules, day, used, seed, n))
+    for (const reg of regularsForDay(seed, n)) day.queue.push(regularApplicant(reg, rnd, date, rules, day, used, seed, n, demote !== null))
     // #2020 THE CROWDED SHIFT SPEAKS — on a crowded day the neighbors talk
     // through the line, like the original's queue where Jorji comments on
     // whoever stands ahead. Decor by doctrine: `aside` is authored here with
@@ -667,10 +728,12 @@ export function genDay(seed, n, trapIdx, trap2Idx = null) {
 // The week picks the trap day first: the species whose rule is awake AND
 // has not run yet, rotated by seed. By construction every species the week
 // can legally stage is staged exactly once — coverage is a construction,
-// not a hope.
-export function genWeek(seed) {
+// not a hope. #2080 extracts the picks into trapSchedule so day7Demote can
+// reason about coverage BEFORE the day is built — genWeek and genDay share
+// this one schedule, so the standalone-replay law is untouched.
+export function trapSchedule(seed) {
     const used = new Set()
-    const days = []
+    const plan = []
     for (let n = 1; n <= 7; n++) {
         const rules = DAY_RULES[n - 1]
         const active = TRAPS.map((t, i) => (rules.includes(t.rule) ? i : -1)).filter((i) => i >= 0)
@@ -689,8 +752,15 @@ export function genWeek(seed) {
                 trap2Idx = left.length ? left[(n + seed) % left.length] : (active.length > 1 ? active[(n + seed) % active.length] : null)
             }
         }
-        days.push(genDay(seed, n, trapIdx, trap2Idx))
+        plan.push({ n, ti: trapIdx, t2: trap2Idx })
     }
+    return plan
+}
+
+export function genWeek(seed) {
+    const plan = trapSchedule(seed)
+    const days = []
+    for (const p of plan) days.push(genDay(seed, p.n, p.ti, p.t2))
     return { seed, days }
 }
 
