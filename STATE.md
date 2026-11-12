@@ -1,67 +1,69 @@
-# STATE — session 249 (2026-11-12, slot b)
+# STATE — session 250 (2026-11-12, slot a)
 
 ## What shipped
-**THE STRIP SPEAKS THE PAPER'S DATES** merged as `8bdc8d0` (PR #2132, Closes
-#2130). TARGET #2039 was REFUSED (slot a live, 10-min claim, worktree + vite
-:5173 up), ladder ran: halt/steer/next/queue/jonq empty, QA MASTER live (no
-borrow), flagshipStage null → idle-kick answered `KICK PAPERS, PLEASE-MIN 0
-weak` (weakestStage score 5 = 1 unowned README gap + 4 QA feedback naming it:
-#2104/#2087/#2080/#2109). Self-filed #2130, claimed, built, shipped
-in-session. #1891's tail closed: `EXPIRED`/`IDREQ`/`CURFEW` evidence strings
-assemble with `dshow` (`EXPIRED OCT 31 1982 < TODAY NOV 01 1982`) — every
-date the booth testifies to is now printed verbatim on the wall or paper it
-claims to read; `dfmt` demoted to machine serial (harness + DEV probe only).
-stateHash carries no evidence text → proven weeks/determinism byte-identical.
-Harness new section (5 laws): serial ban sweep-wide, printed-shape equality
-per dated rule (120 witnesses), token fidelity (cited date must be printed at
-the booth), NO-CLIP corridor (old ≤2-line pin passed a spliced `...`; longest
-now 50/54), dfmt survival. Re-pins: day-6 literals, strip full-comparison,
-clock-crowd law (had measured the 17-char serial row since #1891 grew the
-header to 19 — latent looseness, now honest). m61/m62 revert EXPIRED/CURFEW
-to serials with dshow intact — both die. paperscheck 23343 static / 23406
---mutate; papersplay +2 live gates (day-6 header NOV 01 1982; real-key deny
-paints the month-name comparison serial-free) 134/134. Prod verified: game
-chunk `index-D61Qd9yp.js` composes evidence via the OCT-lookup fn, not the
-serial builder. Polish pass filed as **#2133** (phone-scale quote legibility
-gate, seam-crossing audio tick, wake-day teaching line [taste — propose],
-wanted-sheet date ruling to record).
+**HOMEBODY: THE PLAYER CAN ORDER THE ROMANCE (#2131)** merged as `3607481` —
+coo/affection/insult commands on the bond law: C compliments whoever is within the
+chat ring (+3, social lift both ways, Space/A ride it ONLY where the old press hit
+nothing — object priority byte-identical, far-apart Space stays the old nothing);
+at FAMILY tier (≥60) the household coo deepens into affection (+6, chord, pink
+hearts); X cuts −4 and sets the grudge (cold war on command, #2070 human exit
+still the only mending, zero floors); shared CMD_CD=8s rides stateHash, no rng in
+triggers. Registry controls copy + README updated; honest gaps narrowed (second
+visitor/kids/pets and insult-on-touch remain open).
+- peoplecheck +23 COURT gates = **185/185**; harness proved red: `COURT_REACH=0`
+  → exactly the 13 COURT gates red (172/13), nothing else; restore → 185/0.
+- homebodydrive real Chrome: X press 48.1→44.1 grudge:1; C at 60 pays 66 with
+  pink px ≥3; Space doctrine green; zero page errors. (Two #2076 hearts-scan reds
+  on the last local run = #2095 frame-starvation family, advisory — passed warm
+  earlier this session.)
+- Gates: eslint + mario/fps/ai + contractcheck(homebody) 14/14 + build green.
+
+**#2039 (TARGET) verified-closed, no PR needed** — the fix shipped as #2116
+(31108b4); this session proved the exact nightly shapes green: watchbudgetcheck
+15/15 (nightly shapes pass AND frozen/drown stay red), blob-battle 315/315 and
+comet-drift-hd 319/319 at 8x/16x/32x CPU throttle (6 runs), no resume-gate
+failures in any CI run since. Closed shipped/completed with the full trail.
+Also completed slot b's deferred item: cool-ring ink `#7fd4e8` confirmed in prod
+chunk `index-o0puSeCp.js` — live-URL comment on #2113.
 
 ## The session's catches
-- **idle.mjs answers are pure functions.** Calling `flagshipStage()` /
-  `weakestStage()` bare returns null trivially (empty inputs) — it *proved
-  nothing* and looked like "dry". The honest driver is `scripts/idle-kick.mjs`
-  (fetches issues, parses READMEs, feeds both rungs); call the driver, or wire
-  the inputs yourself. Bare-call nulls would have ended this session early.
-- **Re-pin the neighbor pins.** #1891 grew the wall header to month names but
-  left the clock-crowd law measuring the old serial row — a check quietly
-  stopped touching reality for ~12 sessions. When a pass changes a printed
-  format, grep the layout pins for the format's OLD width/shape too.
-- **A 2-line wrap pin passes a clipped quote.** wrapQuote splices `...` into
-  line 2 when content needs 3 lines — `length <= 2` never notices. The
-  no-clip law (no line ends in `...`) is the real corridor guarantee.
-- **Prod marker for a format-only change:** no new string ships, so grep by
-  tracing: find the call in the minified chunk (`EXPIRES ${de(`), then its
-  definition — OCT-lookup = new, `y+"."+` = old. Works where constant-greps
-  can't.
+- **The law can outrun the test.** A drive gate that insulted a partner with
+  tempers up saw rel +2.0: insult −4 then INSTANT make-up +6 (mood 2/2, in reach)
+  — the game is exactly right, the gate was wrong. park-rig now sets needs 0.5
+  (mood 1: blocks organic spat AND instant make-up) before command gates.
+- **New rng consumers shift every later roll.** court's seeded dialogue pick
+  advanced the stream and re-lit a latent wander-flake in the pre-existing
+  foul→thaw drive section; re-park before thaw fixed it. Any new pick() call
+  can reshuffle timing-fragile gates downstream.
+- **The Space-ride doctrine armed my own X gate**: a Space-miss in an earlier
+  section became a coo (feature live!) and its cooldown rejected the insult.
+  park zeroes cmdCd (economy stays pinned in Node).
+- **Strict `>` on an exact expected value** — `rel > 66` rejected the correct 66.
+  Compare with abs-tolerance, never strict-greater than your own expectation.
+- **Dev-server cold vs warm**: first homebodydrive run after edits fails particle
+  scans (vite transform stall ≈ #2095 shape). Rerun warm before believing reds.
 
 ## Ladder trail
-TARGET #2039 REFUSED (slot a live) → halt none → steer none → next none →
-game-queue empty → jonq empty → QA MASTER live (no borrow) → flagshipStage
-null → weakestStage PAPERS, PLEASE-MIN score 5 → POLISH #2130 filed +
-claimed + shipped. Never-dry rung #1571, third consecutive in-session proof.
+TARGET #2039 claimed (first try) → verified-closed (fix already on main). Ladder
+then: halt none → steer/next/game-queue empty → jonq empty → QA MASTER live (no
+feedback borrow) → flagshipStage null (all flagship gaps closed/owned) →
+weakestStage crowned SOS (score 5) but its unowned list is all deferred/held
+records (full-duplex voice doctrine, soslinkdrive Chrome-box, online seats;
+#2084/#2119 own the live SOS polish) → crown passed to HOMEBODY score 4,
+oldest-registry among score-4, no lane inside → POLISH #2131 self-filed,
+claimed, built, shipped. (Idle rungs fed LIVE board args — bare flagshipStage()
+calls prove nothing, see slot b's session-249 catch.)
 
 ## Open questions
-- none filed (nothing taste-level; teaching-line proposal carried on #2133
-  for the QA lane, not a question).
+- none filed (jonq: nothing open; nothing taste-level came up).
 
 ## Next
-- Normal ladder. Papers-Min honest gaps are now EMPTY (parseGaps 0); its
-  residuals live on #2133 + pre-existing #2104/#2087/#2080/#2109 (QA lane).
-  weakestStage should pass to the next-scoring title (Civ V's big-ticket
-  gap-owned items: World Congress / Ideology gifting / great-work slotting).
+- Normal ladder. New weakest crown: re-run idle-kick with live args — Papers-Min
+  gaps empty since #2132; expect Civ V or the next scoring title. Homebody's
+  open tail (2nd visitor/kids/pets; insult-on-touch) is README-gapped, will
+  surface through weakestStage when it crowns.
 
-## Hygiene at exit
-Dev server 5178 stopped (mine only). Worktree `retrogames-forge-ppm-months`
-removed; remote branch died with the squash merge. Game merged this session →
-STATE.md committed to main directly (per step 9) and parked via
-statepark park b. Main checkout detached at origin/main.
+## Lane state at exit
+Slot A: idle. Main checkout detached at origin/main. Dev server :5173 stopped
+(mine only — :5176/:5178 untouched). Worktree retrogames-forge-homebody-court
+removed after merge; STATE parked via statepark park a.
