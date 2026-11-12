@@ -21,6 +21,14 @@ name: Shoreperf nightly (perf trend, advisory)
 # Advisory in every direction: continue-on-error keeps a perf blip a SUCCESS
 # run, and no gate reads this workflow's verdict — scripts/main-ok.sh consults
 # nightly.yml only. Proven by `npm run nightlyverdictcheck` (ci.yml, core).
+#
+# #2054: the split's blast-radius logic paid for itself a second way. GitHub
+# retired the macos-14 image on 2026-11-02; from Nov 6 every scheduled run
+# ended `cancelled` at scheduling (0 steps, six silent nights) — not the #1358
+# capacity flake but a dead label. Runner moved to macos-26; the Runner step
+# below prints the image into every summary so the trend line marks its own
+# seam (absolute fps can shift with the image), and nightlyverdictcheck now
+# forbids macos-14 in any workflow — a retired label cannot come back silently.
 
 on:
   schedule:
@@ -46,7 +54,7 @@ jobs:
     # qhd runs), so the nightly series there is the real trend line #680 asks
     # for. Advisory: continue-on-error so a perf blip never freezes merges.
     continue-on-error: true
-    runs-on: macos-14
+    runs-on: macos-26   # #2054: macos-14 was retired by GitHub on 2026-11-02
     env:
       # A GitHub-hosted runner is a dedicated box: no local LLM inference and no
       # foreign headless Chrome (the two things quietscan actually screens for).
@@ -60,6 +68,13 @@ jobs:
         with:
           node-version: 24   # npm >=11, see the note in ci.yml's static job
           cache: npm
+      - name: Runner (trend marker, #2054)
+        # The trend line IS these step summaries, so every point names its
+        # image: a level shift in absolute fps at an image boundary reads as
+        # the runner, not as a perf change in the code.
+        run: |
+          { echo "runner: ${{ runner.os }} ${{ runner.arch }} — image ${ImageOS:-?} ${ImageVersion:-?}"
+            echo 'macOS image seam: macos-14 retired 2026-11-02, macos-26 since #2054.'; } >> "$GITHUB_STEP_SUMMARY"
       - run: npm ci
       - name: Install headless Chromium (Linux only)
         if: runner.os != 'macOS'

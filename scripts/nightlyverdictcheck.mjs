@@ -13,7 +13,7 @@
 //
 // Mutant proof: re-insert `continue-on-error: true` into nightly.yml -> A1 red.
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -68,8 +68,20 @@ section('B. shoreperf-nightly.yml keeps #680 intact, advisory')
 
 ok(shore.includes('scripts/shoreperf.mjs --profile desktop,qhd,phone'),
   'shoreperf workflow runs the full desktop/qhd/phone profile set (#680)')
-ok(shore.includes('SHOREPERF_ASSUME_QUIET') && shore.includes('runs-on: macos-14'),
-  'quiet-box assumptions preserved (macos-14 Metal runner + ASSUME_QUIET)')
+ok(shore.includes('SHOREPERF_ASSUME_QUIET') && shore.includes('runs-on: macos-26'),
+  'quiet-box assumptions preserved (macos-26 Metal runner + ASSUME_QUIET)')
+
+// B3b — #2054: GitHub retired macos-14 on 2026-11-02; a dead label never fails
+// loudly, it cancels every scheduled run at scheduling (six silent nights).
+// Stripped comments only, so the war-story mentions stay legal.
+const retired = ['macos-14', 'macos-12', 'macos-13']
+const deadPin = []
+for (const f of readdirSync(join(here, '..', '.github', 'workflows'))) {
+  const code = wf(f)
+  for (const r of retired) if (code.includes(`runs-on: ${r}`)) deadPin.push(`${f}:${r}`)
+}
+ok(deadPin.length === 0,
+  `no workflow pins a retired macOS label (dead labels cancel silently at scheduling; got: ${deadPin.join(',') || 'none'})`)
 ok(/continue-on-error:\s*true/.test(shore),
   'shoreperf job stays continue-on-error (a perf blip must stay advisory here too)')
 
