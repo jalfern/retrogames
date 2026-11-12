@@ -337,7 +337,9 @@ the canvas, in the original's own four places:
 - **Dates print month names.** `MON`/`MONFULL`/`dshow` (rules.js): the wall
   header, the passport DOB/EXPIRES and the ID DOB print `OCT 27 1982` — the
   original's shape, instant across the month seam. RULES text and evidence
-  strings keep numerals: they are the contract's tokens, pinned verbatim.
+  strings kept numerals at the time: "the contract's tokens, pinned verbatim."
+  **Amended by #2130** — see "THE STRIP SPEAKS THE PAPER'S DATES (#2130)":
+  the evidence now speaks `dshow` too, and `dfmt` is the machine serial only.
 - **The roll is announced.** `monthTurn(week, day)` (sim.js): the morning
   after a calendar seam gets its own gold banner line — day 6 opens with
   `* NEW MONTH: NOVEMBER *` (plus its own chime). The pin: exactly one turn
@@ -500,7 +502,7 @@ The fix is variety as construction, not hope — this generator's own doctrine:
   row day — 10px rows since #1943), no name repeats across the seven walls,
   and no row names anyone in the line.
 
-## Mutants (61, all die under `npm run paperscheck -- --mutate`)
+## Mutants (63, all die under `npm run paperscheck -- --mutate`)
 
 
 
@@ -771,6 +773,34 @@ the lever).
   desk returns home — and across the whole handling neither the line nor the
   score moved until a key pressed (the hand never rules).
 
+## THE STRIP SPEAKS THE PAPER'S DATES (#2130) — #1891's tail, closed
+
+#1891 gave the papers and the wall their month names but left the booth's own
+testimony in serials: the strip quoted `EXPIRED 1982.10.31 < TODAY 1982.11.01`
+while no surface the player reads prints that shape. The fix was deferred then
+as "opening it means re-pinning the contract" — that is exactly what this pass
+is. `EXPIRED`, `IDREQ` and `CURFEW` evidence now assemble with `dshow`
+(`EXPIRED OCT 31 1982 < TODAY NOV 01 1982`); `dfmt` survives only as the
+machine serial the harness and the DEV probe read. The fairness story gets
+strictly stronger: every date the booth testifies to is now printed verbatim
+somewhere on the wall or the paper it claims to read.
+
+New laws in `paperscheck` (THE STRIP SPEAKS THE PAPER'S DATES section):
+**serial ban** — no evidence string, on any seed, matches `\d{4}\.\d{1,2}\.\d{1,2}`;
+**printed-shape equality** — every EXPIRED/IDREQ/CURFEW quote equals the
+`dshow` reconstruction from the view fields (120 dated quotes across the sweep);
+**token fidelity** — every `NAME DD YYYY` token in evidence is also printed at
+the booth (the passport's EXPIRES/DOB line or the wall header);
+**no-clip corridor** — no quote across the sweep reaches wrapQuote's ellipsis
+(the old ≤2-line pin passed a spliced `...`), longest measured 50 of 54;
+**dfmt survival** — the machine serial stays for the harness. Re-pins: the
+day-6 cross-month literals, the strip full-comparison pin, and the clock-crowd
+law, which had measured the 17-char serial row long after #1891 grew the
+header to the 19-char `OCT 27 1982`. Mutants m61/m62 revert EXPIRED/CURFEW
+evidence to serials with `dshow` intact — both die. `papersplay` +2: day 6's
+wall header reads `NOV 01 1982`, and the real-key deny of the OCT 31 paper
+paints the month-name comparison on the strip verbatim, serial-free (134/134).
+
 ## Honest gaps
 
 - **CLOSED by #2020 (2026-11-12):** #2012's crowded shift was staged exactly
@@ -962,9 +992,16 @@ the lever).
   *Still open:* evidence strings and RULES text keep numerals, so the
   month-name read is display-only — by doctrine since #1891 (the numerals are
   the fairness contract's tokens, pinned verbatim by paperscheck); opening it
-  means re-pinning the contract, bigger than a polish pass.
-- What #1891 still leaves open: the drag physics arrived in #2120; the
-  month-numerals tail above is the remainder.
+  means re-pinning the contract, bigger than a polish pass. *(Closed by #2130
+  — the contract was re-pinned; see "THE STRIP SPEAKS THE PAPER'S DATES".)*
+- **CLOSED by #2130 (2026-11-12):** the month-numerals tail — evidence strings
+  now print `dshow` month names, the strip quotes the dates exactly as the
+  passport and wall print them, and `paperscheck` bans serials in evidence
+  (serial ban, printed-shape equality, token fidelity, no-clip corridor, dfmt
+  survival; mutants m61/m62 die). See "THE STRIP SPEAKS THE PAPER'S DATES
+  (#2130)." Honest gaps are empty — what remains for this title lives on the
+  open QA issues (#2104 tail-seat continuity, #2087/#2080 crowd & marks
+  polish, #2109 decoy-face design call).
 
 ## The aged print, the live ear, the face tick (#1976)
 
