@@ -21,7 +21,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import * as THREE from 'three'
-import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP, canDeclareWar, canMakePeace, canTrade, canGift, csInfo, CS_IDS, coastalCityOf, canEmbark, canLand, hullSupplied, suppliedSea, canQueue, queueDeny, arkKind, ARK_PARTS, arkPartsOf, arkPartsDone } from './sim.js'
+import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP, canDeclareWar, canMakePeace, canTrade, canGift, csInfo, CS_IDS, coastalCityOf, canEmbark, canLand, hullSupplied, suppliedSea, canQueue, queueDeny, arkKind, ARK_PARTS, arkPartsOf, arkPartsDone, eraCurve, cultureBeats } from './sim.js'
 import { decide, RESEARCH_ORDER } from './planner.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -799,7 +799,7 @@ const CivilizationVGame = () => {
                 queuedPlates: gs.cities.filter((c) => c.alive && c.civ === 0).flatMap((c) => (c.queue || []).filter((k) => arkKind(k)).map((k) => k.slice(4))),
                 cult, needCult: CFG.cultureWin,
                 tour, needTour: CFG.tourismWin,
-                lead: [1, 2, 3].every((i) => !gs.civs[i].alive || (gs.civs[i].tourism || 0) < tour),
+                lead: [1, 2, 3].every((i) => !gs.civs[i].alive || cultureBeats(gs, 0, i)),
                 size: capSize(), goal: GOAL,
                 rivals: CIVS.filter((c) => !c.barb && !c.cs && c.id !== 0).map((c) => ({
                     id: c.id, name: c.name, hex: c.hex, alive: gs.civs[c.id].alive,
@@ -809,6 +809,8 @@ const CivilizationVGame = () => {
                     space: hasTech(gs, c.id, 'SPACEFLIGHT'), ark: Math.floor(gs.ark[c.id]), partsDone: arkPartsDone(gs, c.id),
                     tour: Math.floor(gs.civs[c.id].tourism || 0),
                     cult: Math.floor(gs.civs[c.id].cultureEarned || 0),
+                    mult: eraCurve(gs.civs[0].era, gs.civs[c.id].era),
+                    back: eraCurve(gs.civs[c.id].era, gs.civs[0].era),
                 })),
             })
         }
@@ -986,7 +988,7 @@ const CivilizationVGame = () => {
                     wonders: WONDER_IDS.filter((id) => gs.wonders[id] != null).map((id) => ({ id, by: gs.wonders[id] })),
                     world: { cities: CIVS.filter((c) => c.cs).map((c) => ({ id: c.id, name: c.name, alive: gs.civs[c.id].alive, c: gs.cities.find((ct) => ct.civ === c.id && ct.alive)?.c ?? -1, r: gs.cities.find((ct) => ct.civ === c.id && ct.alive)?.r ?? -1 })), rome: CS_IDS.map((id) => ({ cs: id, ...(csInfo(gs, 0, id) || { met: false, influence: 0, ally: false }) })), pacts: Object.keys(gs.trade).filter((k) => gs.trade[k]), wars: Object.keys(gs.wars), truce: Object.keys(gs.peaceTurn), naval: gs.units.filter((u) => u.alive && u.civ === 0 && u.naval).map((u) => ({ id: u.id, c: u.c, r: u.r, kind: u.kind, cargo: u.cargo ? u.cargo.length : 0 })), onboard: gs.units.filter((u) => u.alive && u.loaded).map((u) => ({ id: u.id, kind: u.kind, ship: u.loaded })), coastal: !!coastalCityOf(gs, 0) },
                     gp: GP_TYPES.map((t) => ({ t, pts: Math.floor(gs.gp[0].pts[t]), need: gpThreshold(gs, 0, t), held: gs.gp[0].held[t], ready: gpReady(gs, 0, t), cost: gpCost(gs, 0, t) })),
-                    victory: { capsTaken: [1, 2, 3].filter((i) => { const oc = gs.origCapOf[i] != null ? gs.cities[gs.origCapOf[i]] : null; return oc ? oc.civ !== i : !gs.civs[i].alive }).length, ark: Math.floor(gs.ark[0]), needArk: CFG.arkShields, spaceflight: hasTech(gs, 0, 'SPACEFLIGHT'), parts: arkPartsOf(gs, 0).map((p) => ({ id: p.id, name: p.name, cost: p.cost, funded: p.funded, done: p.done })), partsDone: arkPartsDone(gs, 0), cultEarned: Math.floor(gs.civs[0].cultureEarned || 0), needCult: CFG.cultureWin, tourism: Math.floor(gs.civs[0].tourism || 0), needTourism: CFG.tourismWin, tourismLead: [1, 2, 3].every((i) => !gs.civs[i].alive || (gs.civs[i].tourism || 0) < (gs.civs[0].tourism || 0)), rivalArk: [1, 2, 3].map((i) => Math.floor(gs.ark[i])), rivalPartsDone: [1, 2, 3].map((i) => arkPartsDone(gs, i)), rivalTourism: [1, 2, 3].map((i) => Math.floor(gs.civs[i].tourism || 0)) },
+                    victory: { capsTaken: [1, 2, 3].filter((i) => { const oc = gs.origCapOf[i] != null ? gs.cities[gs.origCapOf[i]] : null; return oc ? oc.civ !== i : !gs.civs[i].alive }).length, ark: Math.floor(gs.ark[0]), needArk: CFG.arkShields, spaceflight: hasTech(gs, 0, 'SPACEFLIGHT'), parts: arkPartsOf(gs, 0).map((p) => ({ id: p.id, name: p.name, cost: p.cost, funded: p.funded, done: p.done })), partsDone: arkPartsDone(gs, 0), cultEarned: Math.floor(gs.civs[0].cultureEarned || 0), needCult: CFG.cultureWin, tourism: Math.floor(gs.civs[0].tourism || 0), needTourism: CFG.tourismWin, tourismLead: [1, 2, 3].every((i) => !gs.civs[i].alive || cultureBeats(gs, 0, i)), rivalArk: [1, 2, 3].map((i) => Math.floor(gs.ark[i])), rivalPartsDone: [1, 2, 3].map((i) => arkPartsDone(gs, i)), rivalTourism: [1, 2, 3].map((i) => Math.floor(gs.civs[i].tourism || 0)) },
                     late: { knownLate: ['EDUCATION', 'BANKING', 'GUNPOWDER', 'ASTRONOMY', 'STEAM_POWER', 'RAILROAD', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT'].filter((id) => hasTech(gs, 0, id)), muskets: gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'MUSKET').length, galleons: gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'GALLEON').length },
                     owned: gs.tiles.filter((t) => t.owner === 0).length,
                     explored0: countArr(gs.explored[0]),
@@ -1040,7 +1042,7 @@ const CivilizationVGame = () => {
                     `player cities ${gs.cities.filter((c) => c.civ === 0 && c.alive).length}  total ${gs.cities.filter((c) => c.alive).length}  units0 ${gs.units.filter((u) => u.civ === 0 && u.alive).length}  explored ${countArr(gs.explored[0])}`,
                     `camps alive ${gs.camps.filter((c) => c.alive).length}/${gs.camps.length}  wars ${Object.keys(gs.wars).length}  barbs alive ${gs.units.filter((u) => u.alive && u.civ === BARB).length}  queue ${JSON.stringify((gs.cities.find((c) => c.civ === 0 && c.alive) || { queue: [] }).queue)}`,
                     `research ${gs.tech[0].research ? TECH[gs.tech[0].research].name + ' ' + Math.floor(gs.tech[0].prog) + '/' + TECH[gs.tech[0].research].cost : 'idle'}  known ${TECH_IDS.filter((id) => hasTech(gs, 0, id)).length}/${TECH_IDS.length}  ai ${CIVS.filter((c) => !c.barb && c.id !== 0).map((c) => c.name + ':' + Object.keys(gs.tech[c.id].known).length).join(' ')}`,
-                    `victory: caps ${[1, 2, 3].filter((i) => { const oc = gs.origCapOf[i] != null ? gs.cities[gs.origCapOf[i]] : null; return oc ? oc.civ !== i : !gs.civs[i].alive }).length}/3  ark ${arkPartsDone(gs, 0)}/4 plates ${Math.floor(gs.ark[0])}/${CFG.arkShields}⚒${hasTech(gs, 0, 'SPACEFLIGHT') ? '' : ' (needs Spaceflight)'}  tourism ${Math.floor(gs.civs[0].tourism || 0)}/${CFG.tourismWin}${[1, 2, 3].every((i) => !gs.civs[i].alive || (gs.civs[i].tourism || 0) < (gs.civs[0].tourism || 0)) ? ' LEAD' : ''}  record ❦ ${Math.floor(gs.civs[0].cultureEarned || 0)}/${CFG.cultureWin}`,
+                    `victory: caps ${[1, 2, 3].filter((i) => { const oc = gs.origCapOf[i] != null ? gs.cities[gs.origCapOf[i]] : null; return oc ? oc.civ !== i : !gs.civs[i].alive }).length}/3  ark ${arkPartsDone(gs, 0)}/4 plates ${Math.floor(gs.ark[0])}/${CFG.arkShields}⚒${hasTech(gs, 0, 'SPACEFLIGHT') ? '' : ' (needs Spaceflight)'}  tourism ${Math.floor(gs.civs[0].tourism || 0)}/${CFG.tourismWin}${[1, 2, 3].every((i) => !gs.civs[i].alive || cultureBeats(gs, 0, i)) ? ' LEAD' : ''}  record ❦ ${Math.floor(gs.civs[0].cultureEarned || 0)}/${CFG.cultureWin}`,
                     `land: workers ${gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'WORKER').length}  improvements ${gs.tiles.filter((t) => t.imp).length}  roads ${gs.tiles.filter((t) => t.road).length}  connected ${connectedResources(gs, 0).join(',') || 'none'}`,
                     `happiness ${(() => { const hs = happinessOf(gs, 0); return `${hs.net} (${hs.net >= 1 ? 'happy' : hs.net < 0 ? 'UNHAPPY' : 'content'}) lux ${hs.lux} cities ${hs.cities} wars ${hs.wars}` })()}  policies ${POLICY_IDS.filter((id) => hasPolicy(gs, 0, id)).join(',') || 'none'}  culture pool ${Math.floor(gs.civs[0].culture || 0)}  owned ${gs.tiles.filter((t) => t.owner === 0).length}`,
                     `wonders ${WONDER_IDS.filter((id) => gs.wonders[id] != null).map((id) => id + '→' + CIVS[gs.wonders[id]].name).join(',') || 'none'}  gp ${GP_TYPES.map((t) => `${t[0]}:${Math.floor(gs.gp[0].pts[t])}/${gpThreshold(gs, 0, t)}${gs.gp[0].held[t] ? `(${gs.gp[0].held[t]} held)` : ''}`).join(' ')}`,
@@ -1067,7 +1069,7 @@ const CivilizationVGame = () => {
                     { label: 'QUEUE TRIREME', run: () => { const c = coastalCityOf(gs, 0); if (!c) return 'no coastal city yet: settle beside the sea'; pending = { ...pending, queue: 'GALLEY' }; return `will launch a Trireme from ${c.name} (needs Bronze Working)` } },
                     { label: 'NEXT AGE TECH', run: () => { const line = ['EDUCATION', 'ASTRONOMY', 'STEAM_POWER', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT']; const id = line.find((x) => !hasTech(gs, 0, x)); if (!id) return 'the modern age is complete — weld the Ark and launch'; grantTech(gs, 0, id); return `instant-discovered ${TECH[id].name} (${TECH[id].effect})` } },
                     { label: 'WELD NEXT PLATE', run: () => { if (!hasTech(gs, 0, 'SPACEFLIGHT')) return 'Spaceflight comes first (NEXT AGE TECH ×n)'; const next = ARK_PARTS.find((p, i) => ((gs.arkParts[0] >> i) & 1) === 0); if (!next) return 'the hull is complete — end the turn and the Ark lifts'; gs.arkParts[0] |= 1 << ARK_PARTS.indexOf(next); gs.ark[0] += next.cost; gs.events.push({ type: 'arkPart', civ: 0, part: ARK_PARTS.indexOf(next), name: next.name, prog: gs.ark[0], need: CFG.arkShields }); if (arkPartsDone(gs, 0) === 4) gs.events.push({ type: 'arkLaunch', civ: 0 }); const nextWeld = ARK_PARTS.find((p, i) => ((gs.arkParts[0] >> i) & 1) === 0); return `instant-weld ${next.name} · ${arkPartsDone(gs, 0)}/4 plates · ${Math.floor(gs.ark[0])}/${CFG.arkShields} ⚒${nextWeld ? ` · next weld ${nextWeld.name} (0/${nextWeld.cost})` : ' · the hull is complete'}` } },
-                    { label: '+200 TOURISM', run: () => { gs.civs[0].tourism = (gs.civs[0].tourism || 0) + 200; return `tourism now ${Math.floor(gs.civs[0].tourism)} — the CULTURE crown needs ${CFG.tourismWin} and the lead over every living rival (wonders pay 3, luxuries 1, half of culture)` } },
+                    { label: '+200 TOURISM', run: () => { gs.civs[0].tourism = (gs.civs[0].tourism || 0) + 200; return `tourism now ${Math.floor(gs.civs[0].tourism)} — the CULTURE crown needs ${CFG.tourismWin} and the lead over every living rival (wonders pay 3, luxuries 1, half of culture; an era of lead doubles your book against each younger court)` } },
                     { label: 'QUEUE MUSKET', run: () => { pending = { ...pending, queue: 'MUSKET' }; return 'will train a Musket (needs Gunpowder)' } },
                     { label: 'QUEUE GALLEON', run: () => { const c = coastalCityOf(gs, 0); if (!c) return 'no coastal city yet: settle beside the sea'; pending = { ...pending, queue: 'GALLEON' }; return `will launch a Galleon from ${c.name} (needs Astronomy — it storms ports, carries 2)` } },
                     { label: 'EMBARK HERE', run: () => { const s = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0); if (!s) return 'select a land unit first'; const why = canEmbark(gs, s); if (why !== true) return String(why); pending = { ...pending, embark: true }; return `${s.kind} will board the galleon alongside` } },
@@ -1388,7 +1390,7 @@ const CivilizationVGame = () => {
                             <div className={`rounded border px-2 py-1.5 ${vpanel.lead && vpanel.tour >= vpanel.needTour ? 'border-amber-300/50 bg-amber-950/30' : 'border-white/15 bg-black/30'}`}>
                                 <div className="text-[11px] font-bold">☼ TOURISM {vpanel.lead && vpanel.tour >= vpanel.needTour ? <span className="text-emerald-300">· LEADING</span> : null}</div>
                                 <div className="h-1.5 rounded bg-black/60 mt-1"><div className="h-full bg-amber-300" style={{ width: `${Math.min(100, Math.round((vpanel.tour / vpanel.needTour) * 100))}%` }} /></div>
-                                <div className="text-[9px] opacity-70 mt-1">{vpanel.tour}/{vpanel.needTour} tourists — wonders pay 3, luxuries 1, half of every turn&apos;s culture — lead every living rival to be crowned</div>
+                                <div className="text-[9px] opacity-70 mt-1">{vpanel.tour}/{vpanel.needTour} tourists — wonders pay 3, luxuries 1, half of every turn&apos;s culture — lead every living rival to be crowned; an age ahead, your book counts double against younger courts</div>
                                 <div className="text-[9px] opacity-50 mt-0.5">❦ {vpanel.cult} lifetime culture — the world&apos;s memory, not the crown</div>
                             </div>
                         </div>
@@ -1400,11 +1402,15 @@ const CivilizationVGame = () => {
                                     <>
                                         <span className="ml-2 text-amber-300">— VASSAL of {CIVS[r.vassal]?.name || 'a rival'} · tribute flows, puppet peace</span>
                                         <span className="ml-2 opacity-80">☼ {r.tour}</span>
+                                        {r.mult > 1 && <span className="ml-1 text-emerald-300">×{r.mult} vs them</span>}
+                                        {r.back > 1 && <span className="ml-1 text-red-300">×{r.back} vs you</span>}
                                         {r.ark > 0 && <span className="ml-2 text-sky-300">ARK {r.partsDone}/4</span>}
                                     </>
                                 ) : (
                                     <>
                                         <span className="ml-2 opacity-80">☼ {r.tour}</span>
+                                        {r.mult > 1 && <span className="ml-1 text-emerald-300">×{r.mult} vs them</span>}
+                                        {r.back > 1 && <span className="ml-1 text-red-300">×{r.back} vs you</span>}
                                         {r.ark > 0 && <span className="ml-2 text-sky-300">ARK {r.partsDone}/4</span>}
                                         {r.space && r.ark === 0 && <span className="ml-2 text-sky-300">SPACEFLIGHT!</span>}
                                         {r.origFall && <span className="ml-2 text-red-300">original capital fallen</span>}

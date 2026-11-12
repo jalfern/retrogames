@@ -15,7 +15,7 @@ src/games/CivilizationV/art.js      tilted 3D hex world (three.js): relief, fog,
                                     musketeers, CS beacons, HP bars, arrows, FX
 src/games/CivilizationV/index.jsx   the shell: renderer, camera, input, HUD, research/worker/policy/
                                     wonders/legends/diplomacy/victory panels
-scripts/civcheck.mjs                Node harness (npm run civcheck) — 626 checks
+scripts/civcheck.mjs                Node harness (npm run civcheck) — 662 checks
 scripts/civplay.mjs                 Chrome drive with real keys (npm run civplay) — 99 checks
 scripts/civclock.mjs                frame budget of the late game (npm run civclock)
 ```
@@ -63,6 +63,27 @@ every rival, in order:
 Behind them sits the arcade golden age (capital size 4). A rival achieving any
 of the three first loses the world the other way; the turn limit ends it
 otherwise.
+
+**Tourism era curve (#2122, Brave New World).** The visitor book is not raw
+arithmetic. In the original (Civ V: Brave New World, Firaxis 2013) each civ's
+tourism is judged **against each rival** with a modifier for the era gap — an
+age ahead, your wonders dazzle a cradle-born court double over: ×2 per era of
+lead, ×4 two ages ahead. That curve is why late eras matter for a culture
+race. Here `cultureBeats(gs, civ, rid)` implements exactly that: the crown
+still needs CFG.tourismWin RAW (the curve never bypasses the bar) and then
+beats every living rival with `tourism × 2^max(0, myEra − rivalEra)`. Same-era
+rivals read ×1, so every §33/§37 pin replays byte-identical (the raw strictness
+pins there now say so by fiat: `era = 5` at the table). The era mark is the
+existing derived six-era field (from the known-tech mask already folded into
+`stateHash`) — no new stored state; the curve is pure law. The AND across
+rivals stands: beating one court never crowns while a same-era rival draws
+more. Pairwise-relativity means both sides may satisfy the law at once (each
+has an era-favored view) — crowns stay first-past-the-post, judged in the
+order `checkEnd` already uses. When the curve was actually needed for a crown
+(a raw-trailing lead), the victory copy says so: *a younger age dazzles courts
+still in the old*. The VICTORY panel reads the exported helpers (the culture
+track lead is `cultureBeats`, and each rival row shows `×N vs them` /
+`×N vs you`) — law and paint one walk (§42, mutant-pinned).
 
 **Weapons of the new age.** The **Musket** (Gunpowder, str 15, 45 shields) is
 the era's line infantry. The **Galleon** (Astronomy, str 14, 4 moves, 48
@@ -188,7 +209,7 @@ the hold. The Y panel is reachable by touch (on-screen button).
 ## Verify
 
 ```bash
-npm run civcheck          # 626 Node checks: boot, determinism, founding, economy, combat, barbarians,
+npm run civcheck          # 662 Node checks: boot, determinism, founding, economy, combat, barbarians,
                           # cities, production, tech (§16-18, now 21 techs / 6 eras), improvements (§19-20),
                           # resources (§21-22), borders (§23), happiness (§24), policies (§25), wonders
                           # (§26), great people (§27), stage-6 integration + slack (§28), city-states §29,
@@ -213,6 +234,12 @@ npm run civcheck          # 626 Node checks: boot, determinism, founding, econom
                            # capital takes the first, one plate per yard but parallel cities weld, engineer
                            # speeds a plate, full yard denies, AI + witness mobilise, seed-9 replay, source
                            # pins against the old empire-wide beaker pour)
+                           # the era curve §42 (#2122 BNW): multiplier identity (×1 same/behind, ×2
+                           # per era ahead to ×32), exact kills at the doubled mark (120×2 beats 239,
+                           # not 240), the threshold stays RAW, same-era ties uncoroned, crowning over
+                           # a raw deficit with age-named copy, rivals ride the same curve, the AND
+                           # across courts, dead ghost-books skipped, income law untouched, seed-7
+                           # determinism, source pins: sim and panel read one exported walk)
 npm run civplay           # Chrome, real keys: I opens VICTORY (three tracks + rivals), K/L answer with
                           # Musket and Galleon on a seed-4 COASTAL capital (real keel, no escape clause),
                           # J/E refuse the transport paths by name, the four plates mobilise at the yards
@@ -256,6 +283,12 @@ npm run lint:civ          # eslint gate for the game + its scripts
  8. In `sim.js` `endPlayerTurn`, neuter the wear (`u.hp -= CFG.navalAttrition`
     → `u.hp -= 0`) → seven §39 checks go red (the exact bite, the double price,
     the attrition sink, the named loss and the drowned convoy); restore.
+  9. In `sim.js` `eraCurve`, neuter the curve (`2 **` → `1 **`) → six §42
+     checks go red (the three growing identities, both exact kills, and the
+     crown over a raw deficit); restore. Then drop the one-sided clamp
+     (`Math.max(0, …)` → bare difference) → the three behind/unmarked identity
+     checks go red (×0.5, ×0.125, ×0.5 — inflating a cradle age is a lie in
+     that direction); restore.
 
 ## Honest gaps (what the full original has that this arcade run does not)
 
@@ -283,10 +316,13 @@ npm run lint:civ          # eslint gate for the game + its scripts
   is kept as all-four-open-on-Spaceflight, and plate costs are flat arcade
   numbers split from the old 70-beaker program, not the original's speed-scaled
   500/2000-shield components.
-- **Tourism is simplified, not BNW** — the culture/tourism split is live (the
-  visitor book banks half of culture, 3 per wonder, 1 per luxury and crowns on
-  the lead), but there is no World Congress, no Ideology gifting of tourism, no
-  great-work slotting and no tourism-scales-with-era curve.
+- **CLOSED by #2122:** *Tourism is simplified, not BNW* — the era curve is
+  live: the culture crown reads `tourism × 2^eraGap` against each living rival
+  (×2 per era of lead), the CFG.tourismWin threshold stays raw, same-era
+  strictness is untouched, and the VICTORY panel shows `×N` per court through
+  the same exported walk (§42, mutant-pinned). Still owed honestly from that
+  bullet: no World Congress, no Ideology gifting of tourism, no great-work
+  slotting.
 - Wonders stay six, great people three, policies six, city-states two, happiness
   one empire-wide face; no buildings/city screen, no world congress, no
   religion, no trade routes, no great-engineer wonders of the modern age.
