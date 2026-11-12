@@ -277,6 +277,22 @@ function build() {
         S.cook.push(frames)
     }
 
+    // --- #2084 keying pose: a mic raised to the mouth, 2 frames ------------
+    // drawn INSIDE the cook's facing transform (local x 0..16, head at y 5..11),
+    // so it mirrors with the sprite. Frame 1 lights the key LED and lifts the
+    // capsule a pixel — the take breathes instead of freezing.
+    S.radio = []
+    for (let f = 0; f < 2; f++) {
+        const [c, g] = mk(12, 12)
+        const dy = f ? -1 : 0
+        g.fillStyle = PAL.skin; g.fillRect(2, 9, 3, 3) // raised hand at the chin
+        g.fillStyle = PAL.steel; g.fillRect(4, 4 + dy, 3, 4) // mic body
+        g.fillStyle = PAL.steelHi; g.fillRect(4, 3 + dy, 3, 1) // capsule crown
+        g.fillStyle = '#20181c'; g.fillRect(5, 8 + dy, 1, 2) // stem
+        if (f) { g.fillStyle = '#f05030'; g.fillRect(8, 3, 2, 2) } // key light on air
+        S.radio.push(c)
+    }
+
     // --- ticket slip --------------------------------------------------------
     S.slip = {}
     for (const dish of ['soup', 'melt']) {

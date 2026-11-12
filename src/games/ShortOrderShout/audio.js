@@ -104,6 +104,11 @@ export function playFx(f) {
             AC.playTone(150, 0.09, 'sawtooth', 0.07)
             AC.playTone(118, 0.12, 'sawtooth', 0.07, 0.1)
             break
+        // #2084 (3): the repeat hammering gets one short dull tick, not the
+        // double buzz — quieter and deader so "stop poking" teaches by feel.
+        case 'radioDenySoft':
+            AC.playTone(92, 0.05, 'square', 0.04)
+            break
         // …and the line answering: a two-tick squelch blip + static crackle.
         case 'ack':
             AC.playTone(900, 0.05, 'square', 0.05)

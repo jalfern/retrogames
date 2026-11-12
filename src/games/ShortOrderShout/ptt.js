@@ -122,6 +122,25 @@ export function takeIsSpeech(b64Len, ms) {
     return b64Len >= PTT_MIN_B64 && ms >= ACK_MIN_MS
 }
 
+// #2084 (1) the line does not stamp the same word: a real kitchen answers with
+// variety. Round-robin per take, so the same cook never repeats back-to-back.
+export const ACK_LINES = ['COPY', 'YES CHEF', 'Mm-hm']
+export function ackLine(seat, take) {
+    return ACK_LINES[(seat + take) % ACK_LINES.length]
+}
+
+// #2084 (4) live take meter: coarse 4-bar input level. A pure mapping from an
+// 0..1 RMS so the strip can show silence vs rant; clamped both ways.
+export const MIC_BARS = 4
+export function micBars(level) {
+    const v = Math.max(0, Math.min(1, Number.isFinite(level) ? level : 0))
+    return v <= 0.02 ? 0 : Math.max(1, Math.round(v * MIC_BARS))
+}
+
+// #2084 (3) repeat hammering gets the duller answer: past SOFT_AT denials in
+// one streak the buzz drops to a single flat tick — "stop poking", not alarm.
+export const SOFT_AT = 3
+
 export function createPttInbox(opts = {}) {
     const onUtterance = typeof opts.onUtterance === 'function' ? opts.onUtterance : () => {}
     const now = typeof opts.now === 'function' ? opts.now : () => Date.now()
