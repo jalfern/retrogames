@@ -10,6 +10,7 @@
 
 import { createGame, stepGame, simState, makeCpuEmitter, cellKind, SHIFT_TICKS, QUOTA, RUNNER_POST } from '../src/games/ShortOrderShout/engine.js'
 import { MIC_RECT, VOX_RECT, CHIP_ZONE, PIP_ZONE, CHIP_MIN_H, rectsOverlap } from '../src/games/ShortOrderShout/art.js'
+import { takeIsSpeech, ACK_MIN_MS, PTT_MIN_B64, createPttSender } from '../src/games/ShortOrderShout/ptt.js'
 
 const URL = process.env.SOS_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/short-order-shout`
 
@@ -56,6 +57,20 @@ ok('stations in wall row', cellKind(0, 0) === 'cooler' && cellKind(4, 0) === 'bo
     ok('#1468 seat-chip zone clears RTT pips', !rectsOverlap(CHIP_ZONE, PIP_ZONE))
     ok('#1468 voice chips clear RTT pips', !rectsOverlap(PIP_ZONE, MIC_RECT) && !rectsOverlap(PIP_ZONE, VOX_RECT))
     ok('#1468 all zones sit on the canvas', [MIC_RECT, VOX_RECT, CHIP_ZONE, PIP_ZONE].every((r) => r.x >= 0 && r.y >= 0 && r.x + r.w <= 320 && r.y + r.h <= 224))
+}
+
+// 1c. the radio ties the cook (#2079) — the pure half: what counts as a
+// landed take, and that a solo release cannot wedge the busy gate.
+{
+    ok('#2079 a landed take passes the ack floor', takeIsSpeech(PTT_MIN_B64, ACK_MIN_MS) && takeIsSpeech(9000, 4000))
+    ok('#2079 silence stays silent — bytes or time under floor gets no ack',
+        !takeIsSpeech(PTT_MIN_B64 - 1, 9999) && !takeIsSpeech(9999, ACK_MIN_MS - 1) && !takeIsSpeech(0, 0))
+    const snd = createPttSender({ now: () => 0, budget: { take: () => true, reset() { }, stats: () => ({ dropped: 0 }) } })
+    snd.press()
+    snd.release('A'.repeat(600))
+    ok('#2079 a released take queues for drain', snd.pending > 0, `pending=${snd.pending}`)
+    snd.discard()
+    ok('#2079 discard empties the queue (solo has no wire; the gate must clear)', snd.pending === 0)
 }
 
 // 2. determinism: same seed + pads => identical hash
@@ -254,6 +269,102 @@ if (!process.env.SOS_SKIP_BROWSER) {
     ok('receipt is thermal paper on the rail', dz.paper > 400, `paper px=${dz.paper}`)
     ok('resync flips the receipt green', dz.p2 && dz.p2.phase === 'ok', JSON.stringify(dz.p2))
     ok('receipt tears off after resync', dz.p3 === null, JSON.stringify(dz.p3))
+    // #2079 the radio ties the cook — drilled through the DEV rig (a headless
+    // box has no mic to hold), with REAL keystrokes for the refusal itself:
+    // while the radio is busy A is refused at the handler and walking stays
+    // legal; clearing the rig hands the cook back; the line answers takes.
+    // Fresh boot first: the determinism drill above latches the contract onto
+    // the loop, and a contract-held loop never runs liveTick (feet need ticks).
+    {
+        await page.reload({ waitUntil: 'load' })
+        await page.waitForFunction('!!window.__game', null, { timeout: 15000 })
+        const band = async (x, y, w, h, fn) => {
+            const d = await page.evaluate(([x, y, w, h]) => Array.from(document.querySelector('canvas').getContext('2d').getImageData(x, y, w, h).data), [x, y, w, h])
+            let n = 0
+            for (let i = 0; i < d.length; i += 4) if (fn(d[i], d[i + 1], d[i + 2])) n++
+            return n
+        }
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+        const cookState = () => page.evaluate(() => { const c = window.__sosTest.state().cooks[0]; return { x: c.x, y: c.y, face: c.face, holding: c.holding } })
+        // hold a direction until the sim CONFIRMS the move: a software-rendered
+        // box runs ticks behind the page, and fixed sleeps race stale reads —
+        // same law that makes the CPU emitter hold presses until they land.
+        const nudge = async (key, pred) => {
+            for (let attempt = 0; attempt < 3; attempt++) {
+                const before = await cookState()
+                await page.keyboard.down(key)
+                let moved = false
+                for (let i = 0; i < 20 && !moved; i++) { await sleep(30); moved = pred(await cookState(), before) }
+                await page.keyboard.up(key)
+                await sleep(40)
+                if (moved) return
+            }
+        }
+        const waitTicks = async (n) => {
+            const t0 = await page.evaluate(() => window.__sosTest.probe().tick)
+            for (let i = 0; i < 60; i++) {
+                const t = await page.evaluate(() => window.__sosTest.probe().tick)
+                if (t - t0 >= n) return true
+                await sleep(50)
+            }
+            return false
+        }
+        await page.evaluate(() => window.__sosTest.start(7, 2))
+        await page.waitForFunction("window.__sosTest.screen() === 'play'")
+        ok('#2079 fresh boot ticks before the drill runs', await waitTicks(8))
+        await page.evaluate(() => window.__sosTest.radioRig(true))
+        // walk the cooler route WHILE busy: feet legal, until (1,1) facing up
+        let atCooler = false
+        for (let i = 0; i < 16 && !atCooler; i++) {
+            const c = await cookState()
+            if (c.x === 1 && c.y === 1 && c.face === 'up') atCooler = true
+            else if (c.y > 1) await nudge('ArrowUp', (n, b) => n.y !== b.y || n.face !== b.face)
+            else if (c.x > 1) await nudge('ArrowLeft', (n, b) => n.x !== b.x || n.face !== b.face)
+            else if (c.x < 1) await nudge('ArrowRight', (n, b) => n.x !== b.x || n.face !== b.face) // starved catch-up overshot — step back
+            else await nudge('ArrowUp', (n, b) => n.face !== b.face || n.y !== b.y) // bump to face the cooler
+        }
+        const wp = await cookState()
+        ok('#2079 the rig keys the radio busy', await page.evaluate(() => window.__sosTest.radio().busy === true))
+        ok('#2079 talking never stops the feet (walked the route mid-take)', wp.x === 1 && wp.y === 1 && wp.face === 'up', JSON.stringify(wp))
+        // hammer A — refused: deny lights (retry in case a press starves), and
+        // no grab lands while the radio is busy
+        let denySeen = 0
+        for (let i = 0; i < 3 && !denySeen; i++) {
+            await page.keyboard.press('Space')
+            for (let j = 0; j < 8 && !denySeen; j++) { await sleep(40); denySeen = await page.evaluate(() => window.__sosTest.radio().deny) }
+        }
+        ok('#2079 a held radio refuses the grab', denySeen > 0 && (await cookState()).holding === null, `deny=${denySeen}`)
+        // ON AIR amber blinks at ~150ms — sample across the busy window
+        let amber = 0
+        for (let i = 0; i < 8; i++) { await sleep(40); amber = Math.max(amber, await band(150, 200, 64, 14, (r, g, b) => r > 230 && g > 170 && b < 110)) }
+        ok('#2079 the strip lights ON AIR while busy', amber > 8, `amber px=${amber}`)
+        // the chip blink alternates every 4 ticks — watch the WHOLE deny
+        // countdown for a red frame (max over frames, never one fixed instant)
+        await page.keyboard.press('Space') // refresh the refuse if it decayed
+        let red = 0
+        for (let guard = 0; guard < 40; guard++) {
+            const deny = await page.evaluate(() => window.__sosTest.radio().deny)
+            if (!deny) break
+            red = Math.max(red, await band(299, 200, 21, 24, (r, g, b) => r > 220 && g < 95 && b < 75)) // refuse ring
+            await sleep(25)
+        }
+        ok('#2079 the mic chip blinks red on refusal', red > 6, `red px=${red}`)
+        // hands back: clear the rig, same press grabs (cook still at the cooler)
+        await page.evaluate(() => window.__sosTest.radioRig(false))
+        let held = null
+        for (let i = 0; i < 3 && !held; i++) {
+            await page.keyboard.press('Space')
+            for (let j = 0; j < 10 && !held; j++) { await sleep(50); held = (await cookState()).holding }
+        }
+        ok('#2079 hands return the tick the radio frees', !!held, `holding=${held}`)
+        // the line answers: a landed take gets COPY, a click gets nothing
+        ok('#2079 a click gets no answer', await page.evaluate(() => { window.__sosTest.radioSay(100); return Object.keys(window.__sosTest.radio().acks).length === 0 }))
+        ok('#2079 the CPU line answers a real take', await page.evaluate(() => { window.__sosTest.radioSay(500); const a = window.__sosTest.radio().acks; return (a['1'] | 0) > 0 }))
+        await page.evaluate(() => window.__sosTest.start(7, 1))
+        await page.waitForFunction("window.__sosTest.screen() === 'play'")
+        ok('#2079 solo with nobody to answer stays quiet', await page.evaluate(() => { window.__sosTest.radioSay(500); return Object.keys(window.__sosTest.radio().acks).length === 0 }))
+        await page.evaluate(() => window.__sosTest.radioRig(false))
+    }
     ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '))
     await browser.close()
 }

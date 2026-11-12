@@ -96,6 +96,18 @@ export function playFx(f) {
             break
         }
         case 'deny': AC.playTone(140, 0.16, 'square', 0.08); break
+        // #2079 radio ties the cook. A refused hand: two low buzzes, distinct
+        // from `deny`'s single flat (the radio answers, the station doesn't).
+        case 'radioDeny':
+            AC.playTone(150, 0.09, 'sawtooth', 0.07)
+            AC.playTone(118, 0.12, 'sawtooth', 0.07, 0.1)
+            break
+        // …and the line answering: a two-tick squelch blip + static crackle.
+        case 'ack':
+            AC.playTone(900, 0.05, 'square', 0.05)
+            AC.playTone(1320, 0.07, 'square', 0.05, 0.07)
+            AC.playNoise(0.04, 0.05)
+            break
         case 'expire': AC.playTone(220, 0.2, 'sawtooth', 0.09); AC.playTone(180, 0.25, 'sawtooth', 0.09, 0.18); break
         case 'streak': for (let i = 0; i < 3; i++) AC.playTone(PENTA[i + 2], 0.06, 'square', 0.06, i * 0.05); break
         case 'trash': AC.playTone(120, 0.1, 'square', 0.06); break
