@@ -96,7 +96,7 @@ freezes the rest. Workdays run the clock ×8 while a rostered resident is out
 
 ## Verify
 ```bash
-npm run peoplecheck          # 162 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), winnable seeds, determinism
+npm run peoplecheck          # 185 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -107,10 +107,12 @@ npm run peoplecheck          # 162 gates: boot, rules, spare-room wing (#1806), 
 # Or revert applyHourAt's fade to direct decrements — the two absence-crossing
 # gates + the relSub pin go red; restore. Or zero the `s.spatFx = 2.4` arm —
 # the sprite-tell arm gate + its pin go red (and the live drive loses the
-# storm puff); restore. (Both proven on this branch: 157/5 → 162/0.)
+# storm puff); restore. Or zero COURT_REACH — exactly the 13 COURT gates go red
+# (172/13) and nothing else; restore. (All proven on this branch: 157/5 → 162/0,
+# and the COURT section's reach mutant 172/13 → 185/0.)
 npm run dev   # another terminal
 npm run contractcheck        # includes homebody (CONTRACT_ONLY=homebody for just this)
-DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels
+DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels + real C/X court keys with pink affection pixels and the far-apart Space doctrine
 ```
 Drive it: tap objects to order the active resident; G switches residents; B
 opens buy mode (time stops); 1-9 pick cards; stick/arrows walk, A uses.
@@ -153,11 +155,15 @@ source pin go red (~7); restore.
   bubbles.
 - **CLOSED by #1823 (QA pass):** walk-surface step timbre (plank/gravel/lawn)
   and the red ghost-cell flash on refused placements.
-- **PARTIAL by #1817 + #2070:** bonds climb the chat loop, unlock a topic/
+- **PARTIAL by #1817 + #2070 + #2131:** bonds climb the chat loop, unlock a topic/
   linger/return/toast ladder, and can now break and mend — spats, cold war
-  and make-ups shipped. Player-ordered romance (insult/complement/affection
-  commands) and relationships beyond the household+Fern triangle (second
-  visitor, kids, pets) are the open tail of this line.
+  and make-ups shipped. Player-ordered romance landed too (#2131): `C` says the
+  kind thing to whoever is within arm's reach (and Space/A rides the compliment
+  where no object is near), a FAMILY-tier household compliment deepens into
+  affection (double, hearts), and `X` hurls an insult — the bond falls and the
+  grudge sets, with the #2070 human exit still the only way back. Relationships
+  beyond the household+Fern triangle (second visitor, kids, pets) and insult on
+  touch remain the open tail of this line.
 - Visitors are Fern only; no kids/pets; single store catalog.
 - No skippable-speed control for the player; day/night is cosmetic + decay only.
 - Needs panel shows both residents; no per-object queue display like the original.
