@@ -282,6 +282,43 @@ while the room still fights; renderer pins) + 6 mutants; the old pilot gate
 "murmur nowhere else in the studio" became "murmur only on the bonus clock or
 a cleared walk-home, and walk-home murmurs carry hype".
 
+## #2028 finale-room playtest — the add entry cue
+
+QA played the wide finale (autopilot replays + live watches at `/retrogames/
+smash-tv`) against the three audit questions #2024 left open:
+
+- **Do the adds read?** NO — and it was measurable. The host throws adds at
+  `24 + rng*(bw-48)` across the 384 px studio; with the hero at a clamp the
+  camera window sits where the cast is, and the live mat in smashcheck 3b
+  counts the misses (seeds 0–3: 3 of 16 thrown adds land past the frame —
+  rare but real, every seed of that run had its camera pinned). The
+  materialize ring pulsed on unseen floor — a threat just APPEARED. Fix: the
+  **add-entry cue** — when the host throws an add past the frame, that edge
+  flares a taller spawn-yellow chip (`juice.js SPAWN_CUE`, solid half the
+  window then a fast blink, in the #1978 colour language). The flare
+  re-reads its edge every frame, so panning onto the add kills it dead; the
+  generic enemy blink (#1978) covers it for the rest of its off-screen life.
+- **Host bullets at the clamps?** Clean by construction: the host law keeps
+  his centre at screen `[48, 208]` of 256 every tick (smashcheck pins 28 px
+  of margin across 1200 ticks of sliding camera), and the fan spawns AT his
+  centre — every boss bullet is born inside the frame at both clamp edges.
+  No change needed; the containment pin IS the proof.
+- **Does the extra floor trivialize the fan?** No rebalance taken. The wide
+  board lets the hero kite farther from the clamp, but the host paces the
+  LIVE window (kiting drags him along), his fan opens centre-stage, and the
+  3-add cap keeps pressure on. The pilot still clears all nine seeds with
+  the fan unmodified — the finale reads as a puzzle at both edges.
+- **Remaining honest gaps:** one-hit death softened by spawn invulnerability
+  stays AS DOCUMENTED. On a phone pad across a 384 px board with 8-way fan
+  fire, the arcade's zero-mercy respawn would be a control-tax, not a rule;
+  it is the only gap left and it is deliberate. (Weapons 4→6, gibs, and the
+  wide finale all closed since the pass that opened this list.)
+
+Gates: smashcheck 3b extends the off-screen-marker section — `SPAWN_CUE` /
+`edgeRow` law pins, renderer seam scans (arming + per-frame side re-read),
+and a live finale mat across 4 seeds counting `bossAdd` spawn events against
+the camera clamp (the cue is proven needed, not decorative).
+
 ## Honest gaps vs the cabinet
 - ~~THE ANNOUNCER keeps his screen-sized stage on purpose (a boss half off-screen
   reads as a bug); every other room runs the 24-column pan board.~~ CLOSED by

@@ -394,6 +394,57 @@ six seats per week; this amendment densifies the authored walk:
   before `runDay()` captures `gs.day` (it would then stamp all of day 7 and
   the return walk finds nobody) — probe the day before calling `runDay`.
 
+## THE CROWDED SHIFT SPEAKS (#2020) — the dense morning announces itself
+
+#2012 put two regulars in one shift but staged it exactly like a solo day.
+The original's dense shifts read differently at a glance — the line extends,
+neighbors comment on whoever stands ahead, heavy mornings look and sound like
+heavy mornings. Four beats, all decor (doctrine of the nose — none of it can
+ever convict):
+
+- **THE LINE SHOWS ITSELF** (`layout.js QUEUE`) — a waiting strip under the
+  ENTRANT label: one dim paper-mug silhouette per KNOWN face not yet ruled,
+  plus a gold "…" tick when random heads wait behind. Crowded days open two
+  deep, solo days one, day 1 none; mugs snuff out as heads cross the glass.
+  The count is derived from the live queue (`slice(idx)`), so it cannot lie:
+  paperscheck recomputes it per seed (day 1 zero, solo one, crowded two,
+  one left after the head, zero after the tail).
+- **A BYSTANDER ASIDE** (`gen.js`, `layout.js ASIDE`) — one tagged exchange
+  per crowded shift: while the returning head works the glass, `A VOICE BEHIND
+  YOU / THE LINE IS LONG TODAY.`; when the greeting tail arrives, `A VOICE
+  FROM INSIDE / <FIRST> SAYS HELLO.` — the neighbor through the gate calls
+  back BY NAME, tying the two beats to the same pair of faces. Authored with
+  zero rnd() draws (every seed replays byte-identical), never in FEATURES,
+  stripped from every paper of every seed in the purity twin (and rules.js
+  must not contain the word).
+- **THE CROWD JUICE** — crowded mornings print a third gold banner line
+  (`* TWO FAMILIAR FACES IN LINE *`, riding above or below the NEW MONTH
+  line when both beats land), and the recognition chime gains a low third
+  note — 392 Hz triangle, pinned BELOW the welcome's 523 and disjoint from
+  every fixed tone the booth owns — when a neighbor steps up on a crowd day.
+- **BODIES ARRIVE** — the #1891 SETTLE drop now rides the counter face too
+  (`drawFace` at `PORTRAIT.y + dy`), so entrants land the way their papers
+  do instead of teleporting. Shell-only decor; the stamped document and every
+  replay pin stand as written.
+
+`crowdedDay(seed, n)` is the single law — the walk's own length
+(`regularsForDay(...).length >= 2`) — so the flag and #2012's construction
+cannot disagree. paperscheck's CROWDED SHIFT SPEAKS section grades the law
+per seed, the exchange (presence, order, name-tie, verdict), the fit
+(tag/line width, box clearances, worst-case banner height), the tone
+disjointness, the mug math and determinism (+68 checks). Mutants m53 (the
+crowd flag never set — the dense morning says nothing) and m54 (the inside
+voice forgets the head's name — the exchange unmoors) join; **all 55 die**.
+`papersplay` proves it live on seed 0: day 1 opens with no mugs, day 2's
+solo morning shows exactly one, day 6 waits two deep and thins to one behind
+Sonya; both bystander beats print their gold tag and slate line (and a solo
+day's zone stays dark); the day-6 banner carries the accent while day 2's
+stays plain; the whole crowded week hums the third note exactly twice — on
+the return days, never on the tails. Harness catch: the morning banner is a
+full-width veil (y 150..286) and the deny pin (~2.2 s) keeps showing the
+judged entrant — strip/aside samples need the booth fully quiet first
+(`waitQuiet`), or they measure the veil instead of the line.
+
 ## THE WALL THAT LIVES (#1908) — the bulletin never looks stamped
 
 The fifth-portrait playtest (#1908) found the original's own name pool working
@@ -449,7 +500,7 @@ The fix is variety as construction, not hope — this generator's own doctrine:
   row day — 10px rows since #1943), no name repeats across the seven walls,
   and no row names anyone in the line.
 
-## Mutants (48, all die under `npm run paperscheck -- --mutate`)
+## Mutants (59, all die under `npm run paperscheck -- --mutate`)
 
 
 
@@ -520,12 +571,16 @@ m41 crowds with a clone of the returning head (the tail seat never leans on
 the glass — the day's head-then-tail order witness bites). m33 (frozen
 rotation) was SHARPENED, not added: its sweep-wide invariant survived for one
 sweep because the seeded crowd seats cover the sweep even when the head is
-frozen — the invariant now grades every week meeting all six. The arc-polish
-year added four: m53 erases the bulletin mugshot (the wall is text-only again
-— the pass's signature feature); m54 freezes the chapter mixer (the neighborhood
-never learns a new line); m55 mutes the seize aftershock (a friend is taken
-without a word); m56 hangs mugshots on every decoy — three portrait bumps push
-day 6 past the scale box, and the per-row fit law (which m56's first draft
+frozen — the invariant now grades every week meeting all six. The crowded-
+speaks year added two: m53 never flags a crowd (banner accent, mug math and
+the exchange hinge on the flag — the law witness bites while papers stay
+fair); m54 untethers the callback from the head's name (the two beats of one
+shift stop pointing at the same faces — the name-tie witness bites). The arc-polish
+year added four: m55 erases the bulletin mugshot (the wall is text-only again
+— the pass's signature feature); m56 freezes the chapter mixer (the neighborhood
+never learns a new line); m57 mutes the seize aftershock (a friend is taken
+without a word); m58 hangs mugshots on every decoy — three portrait bumps push
+day 6 past the scale box, and the per-row fit law (which m58's first draft
 dodged, because the bump was `some(faced)` not `count(faced)` — one surviving
 mutant, then sharpened) names it (#1988).
 
@@ -571,7 +626,15 @@ settle reaches its −10px step and rests at 0); and day 6's banner announces
 crowded — the day that arrests Grubak (seed 0 day 6) also prints SONYA'S
 first hello as the day's second bubble (4854px), and on the rotated window
 (seed 4) Anja greets behind Sonya's turn (day 6, 5096px) while Petr greets
-behind Tadek's payoff (day 7, 5222px); since #1982 also: the door rings its
+behind Tadek's payoff (day 7, 5222px); since #2020 also: the crowded morning
+announces itself — day 1 opens with no mugs in the waiting strip, a solo
+morning shows exactly one, day 6 waits two deep and thins to one behind the
+tail; both bystander beats print their gold tag and slate line (SONYA's shift
+carries "VOLEN SAYS HELLO." by name), a solo day's aside zone stays dark;
+day 6's banner carries the two-faces accent and day 2's stays plain; the
+whole crowded week hums the low third note exactly twice — the return days,
+never the tails (sampled only after `waitQuiet`: the banner veil and the
+citation pin both hide the booth); since #1982 also: the door rings its
 welcome — seed 0's week rings exactly twice, named: GRUBAK mid-day-6 (turn)
 and MARKO mid-day-7 (again); violators, fill and greet tails never ring
 (`sfxAgain` + `againLog`); since #1908 also: seed 0's whole week
@@ -661,6 +724,19 @@ pins the bubble tail that had been drawn-but-unpinned.
 
 ## Honest gaps
 
+- **CLOSED by #2020 (2026-11-12):** #2012's crowded shift was staged exactly
+  like a solo day — no visual beat marked the denser morning, neighbors never
+  acknowledged each other, and bodies teleported in. THE CROWDED SHIFT SPEAKS:
+  the waiting strip mugs the known faces (two deep on days 6/7), a tagged
+  bystander exchange runs once per crowded shift (voice behind / voice from
+  inside, the head named), the morning banner gains its accent line, the
+  recognition chime its low third note, and entrants settle onto the counter
+  with their papers. See "THE CROWDED SHIFT SPEAKS (#2020)." *Still open
+  from the pass:* the tail seats' **cross-week memory** — seats s+4/s+5 walk
+  once a week by the recurrence law and never comment on having crossed last
+  week; the beat needs a week-adjacent structure (what seed N played is what
+  seed N+1 remembers), bigger than a polish pass — filed as the follow-up
+  feedback issue.
 - **CLOSED by #1889 (2026-11-10):** dates were serials `y*372+(m-1)*31+d`
   and the generator never crossed the 31st. The week now rolls OCT 27 →
   NOV 02 and `dnum` is exact days-since-epoch — one clock with `dadd`,

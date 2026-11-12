@@ -25,7 +25,7 @@ import { buildSprites, buildFloor } from './art.js'
 import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
 import { playerFrame, GUN, STOCK, gunPose } from './sprite.js'
 import { enemyFrame, CHARGE, TELEGRAPH, OUTLINE, bossMouth, ADD_TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
-import { muzzleFlash, casingCol, killShake, recoilKick, shutterPhase, SHUTTER_TICKS, shellKick, barrelHot, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, STAIN_TICKS, stainRadius, camPan, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, camLead } from './juice.js'
+import { muzzleFlash, casingCol, killShake, recoilKick, shutterPhase, SHUTTER_TICKS, shellKick, barrelHot, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, STAIN_TICKS, stainRadius, camPan, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, camLead, SPAWN_CUE, edgeRow } from './juice.js'
 import { BAR, PIP, POWER_LABEL, ICON, bombReady, hiRoll, RACK_FLASH, respawnState } from './hud.js'
 import { fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_SWELL, MURMUR_HYPE_FREQ, WHOOSH, ALERT } from './audio.js'
 import { attractFrame, DIM } from './attract.js'
@@ -86,6 +86,10 @@ const SmashTVGame = () => {
         // #2044 bonus gibs + floor stains (draw layer only; the sim never sees them)
         const gibs = []
         const stains = []
+        // #2028 off-camera add-entry cues (draw layer only): {x, y, t} from the
+        // boss's spawn events; the chip's side is re-read per frame so it dies
+        // the tick the camera pans onto the add
+        const spawnCues = []
 
         // #496 seat 2 is a SLOT (off / human / cpu / model). A human seat reads
         // onePad slot 2 (gamepad 2 via the bridge, or P2 keys mapped below);
@@ -163,7 +167,11 @@ const SmashTVGame = () => {
                 else if (e.type === 'charge') audioController.playSweep(120, 460, 0.3, 'sawtooth', 0.035)
                 else if (e.type === 'throw') audioController.playSweep(180, 320, 0.1, 'triangle', 0.04)
                 else if (e.type === 'blast') { audioController.playNoise(0.2, 0.09); burst(e.x, e.y, 10, '#ff8a3f', 3); shake = 4 }
-                else if (e.type === 'spawn') audioController.playSweep(90, 240, 0.12, 'triangle', 0.04)
+                else if (e.type === 'spawn') {
+                    audioController.playSweep(90, 240, 0.12, 'triangle', 0.04)
+                    // #2028: a boss add thrown past the frame edge gets the flare
+                    if (e.bossAdd) spawnCues.push({ x: e.x, y: e.y, t: SPAWN_CUE })
+                }
                 else if (e.type === 'murmur') audioController.playFilteredNoise(MURMUR.dur, MURMUR.vol + MURMUR_SWELL * (e.hype || 0), MURMUR.freq + MURMUR_HYPE_FREQ * (e.hype || 0))
                 else if (e.type === 'alert') audioController.playTone(ALERT.freq, ALERT.dur, ALERT.type, ALERT.vol)
                 else if (e.type === 'death') { audioController.playDeath(); shake = 10; flash = 14; say(BARKS[Math.floor(Math.random() * BARKS.length)]) }
@@ -180,7 +188,7 @@ const SmashTVGame = () => {
                         audioController.playNoise(SHUTTER_CONFIRM.noise, 0.07)
                     }
                     say(e.bonus ? 'THAT WAS BEAUTIFUL!' : 'ROOM CLEAR! EXIT OPEN!')
-                } else if (e.type === 'advance') { stains.length = 0; gibs.length = 0; audioController.playSweep(220, 660, 0.25, 'square', 0.07) }
+                } else if (e.type === 'advance') { stains.length = 0; gibs.length = 0; spawnCues.length = 0; audioController.playSweep(220, 660, 0.25, 'square', 0.07) }
                 else if (e.type === 'bomb') { audioController.playFilteredNoise(WHOOSH.dur, WHOOSH.vol, WHOOSH.freq); audioController.playNoise(0.4, 0.12); audioController.playSweep(80, 900, 0.4, 'sawtooth', 0.1); shake = 8; flash = 12; say('FIREBOMB! THE AUDIENCE ROARS!') }
                 else if (e.type === 'bombFail') { audioController.playTone(110, 0.12, 'square', 0.05); say('NOT ENOUGH POWER!') }
                 else if (e.type === '1up') audioController.playSweep(440, 1760, 0.5, 'square', 0.08)
@@ -795,6 +803,24 @@ const SmashTVGame = () => {
                 }
             }
 
+            // #2028 add-entry flare: a boss add thrown past the frame earns a
+            // taller spawn-yellow chip on its edge — solid for the first half of
+            // the window (a fresh entry reads louder than the generic blink),
+            // then a fast blink while the add still sits off-screen. The side is
+            // re-read every frame, so panning onto the add kills the chip dead.
+            if (camBoard > CW && screenRef.current === 'play') {
+                for (let i = spawnCues.length - 1; i >= 0; i--) {
+                    const cu = spawnCues[i]
+                    cu.t--
+                    const side = markSide(cu.x, camX, CW)
+                    if (cu.t <= 0 || !side) { spawnCues.splice(i, 1); continue }
+                    if (cu.t > SPAWN_CUE / 2 || (gs.tick >> 1) % 2 === 0) {
+                        ctx.fillStyle = MARK.spawn
+                        ctx.fillRect(side < 0 ? 1 : CW - 4, edgeRow(cu.y, HUD_H, CH) - 4, 3, 9)
+                    }
+                }
+            }
+
             if (flash > 0) { ctx.fillStyle = `rgba(255,60,40,${flash * 0.025})`; ctx.fillRect(0, 0, CW, CH); flash -= 0.5 }
             const downSeat = gs.players.find((q) => q.deadT > 0) || null
             if (downSeat) {
@@ -986,7 +1012,7 @@ const SmashTVGame = () => {
                     floor = buildFloor(0, gs.seed)
                     demoAt = 0
                     parts.length = 0; pops.length = 0; evLog.length = 0
-                    gibs.length = 0; stains.length = 0
+                    gibs.length = 0; stains.length = 0; spawnCues.length = 0
                     held.clear(); bombEdge = false
                     shake = 0; flash = 0; toast = 0
                     glint[0] = glint[1] = 0

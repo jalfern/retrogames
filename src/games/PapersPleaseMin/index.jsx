@@ -14,12 +14,12 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { CFG, newRun, step, tick, stateHash, current, autopilot, gameClock, monthTurn, rentDue, isMoneyDeath } from './sim.js'
-import { REGULARS } from './gen.js'
+import { REGULARS, crowdedDay } from './gen.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { decide, RULES, dfmt, dshow, isAdult, stampLines } from './rules.js'
-import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, PHOTO_TINT, PHOTO_ZOOM, CLOCK, SLIP, RENT, PAYFX, BUBBLE, BUBBLE_TAIL, EVID, SETTLE, QUOTE, RECOGNITION, ARC_MUG, ARC_HL, SEIZE, CHAR, wallRows, bulletinRows } from './layout.js'
+import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, PHOTO_TINT, PHOTO_ZOOM, CLOCK, SLIP, RENT, PAYFX, BUBBLE, BUBBLE_TAIL, EVID, SETTLE, QUOTE, RECOGNITION, QUEUE, ASIDE, CROWD_NOTE, ARC_MUG, ARC_HL, SEIZE, CHAR, wallRows, bulletinRows } from './layout.js'
 
 const SIM_MS = 1000 / 60
 
@@ -102,6 +102,9 @@ const PapersPleaseMinGame = () => {
         // #1988 DENY AFTERSHOCK — the stamp on a SEIZED neighbor thuds lower,
         // and their argue line rides the inspector pin. Counted by papersplay.
         let sfxSeize = 0
+        // #2020 arrivals that stepped up on a CROWDED day — the recognition
+        // pair carries its low third note only then. Counted by papersplay.
+        let sfxCrowd = 0
         // #2021 THE INSPECTOR STAYS — the booth's case outlives its ink:
         // {ok, witness, evidence, ticks} rides after the stamp fades and ends
         // when the next applicant's papers land on the counter (settle → 0).
@@ -163,6 +166,7 @@ const PapersPleaseMinGame = () => {
                         text: `DAY ${gs.day} — THE LINE MOVES`,
                         sub: `NEW RULE: ${RULES[newest].text}`,
                         month: monthTurn(gs.week, gs.day),
+                        crowd: crowdedDay(gs.seed, gs.day), // #2020 the denser morning says so
                         ticks: 200,
                     }
                     audioController.playSweep(420, 760, 0.4, 'triangle', 0.06)
@@ -216,6 +220,9 @@ const PapersPleaseMinGame = () => {
                     audioController.playTone(RECOGNITION.notes[1], RECOGNITION.dur[1], RECOGNITION.wave, RECOGNITION.gain)
                     sfxAgain++
                     againLog.push(`${gs.day}|${nextP.regular}|${nextP.recall}`) // who the door welcomed, and when
+                    // #2020 on a crowded morning the welcome carries a low
+                    // third note — the rest of the line humming behind it.
+                    if (crowdedDay(gs.seed, gs.day)) { audioController.playTone(CROWD_NOTE.note, CROWD_NOTE.dur, CROWD_NOTE.wave, CROWD_NOTE.gain); sfxCrowd++ }
                 }
             }
             drainEvents()
@@ -648,14 +655,40 @@ const PapersPleaseMinGame = () => {
             // the booth hands over only when the next papers land.
             const judged = (stamp && stamp.ticks > 0) || !!(insp && insp.ticks > 0)
             const shown = judged ? stamp.person : view.person
-            drawFace(ctx, shown ? shown.face : view.person.face, PORTRAIT.x, PORTRAIT.y, 1)
-            text(`ENTRANT ${gs.idx + (judged ? 0 : 1)}/${gs.week.days[gs.day - 1].queue.length}`, PORTRAIT.x + PORTRAIT.headCx, 168, 10, COL.text, 'center')
-            // the papers — #1891 PAPER WEIGHT: while a new applicant's papers
-            // settle (settle > 0), the whole stack rides dy: papers arrive,
-            // they do not teleport. Decor only — the sim and every replay pin
-            // never see it; the stamped document stays put (dy only runs while
-            // the NEXT papers come in, after the hold ticks out).
+            // #1891 PAPER WEIGHT / #2020 BODIES ARRIVE: while a new applicant
+            // settles (settle > 0) the whole stack rides dy — and since #2020
+            // the entrant rides with it, so people step up to the glass the way
+            // their papers land on the counter instead of teleporting. Decor
+            // only — the sim and every replay pin never see it; the stamped
+            // document stays put (dy only runs while the NEXT papers come in,
+            // after the hold ticks out).
             const dy = settle > 0 ? SETTLE.dy(settle) : 0
+            drawFace(ctx, shown ? shown.face : view.person.face, PORTRAIT.x, PORTRAIT.y + dy, 1)
+            text(`ENTRANT ${gs.idx + (judged ? 0 : 1)}/${gs.week.days[gs.day - 1].queue.length}`, PORTRAIT.x + PORTRAIT.headCx, 168, 10, COL.text, 'center')
+            // #2020 THE LINE SHOWS ITSELF — the waiting strip under the label:
+            // one dim paper-mug per KNOWN face not yet ruled, plus a gold "…"
+            // when random heads wait behind. During a stamp hold the judged
+            // entrant still counts as at the glass (the ENTRANT number stands
+            // too). Crowded days open with two mugs — the crowd is visible
+            // before anyone speaks. Decor for the shell; the sim never sees it.
+            {
+                const qDay = gs.week.days[gs.day - 1]
+                const lineFrom = Math.max(0, gs.idx - (judged ? 1 : 0))
+                const qRegs = qDay.queue.slice(lineFrom).filter((a) => a.person.regular).length
+                const qFill = qDay.queue.length - lineFrom - qRegs
+                if (qRegs > 0) {
+                    text('THE LINE', QUEUE.cx, QUEUE.labelY, 7, '#6d7a9c', 'center')
+                    const nGlyph = qRegs + (qFill > 0 ? 1 : 0)
+                    const x0 = QUEUE.cx - ((nGlyph - 1) * QUEUE.pitch) / 2
+                    for (let i = 0; i < qRegs; i++) {
+                        const mx = x0 + i * QUEUE.pitch
+                        ctx.fillStyle = QUEUE.mug
+                        ctx.beginPath(); ctx.arc(mx, QUEUE.mugY + QUEUE.r, QUEUE.r, 0, Math.PI * 2); ctx.fill()
+                        ctx.fillRect(mx - QUEUE.r - 2, QUEUE.mugY + QUEUE.r * 2 + 1, (QUEUE.r + 2) * 2, 5)
+                    }
+                    if (qFill > 0) text('…', x0 + (nGlyph - 1) * QUEUE.pitch, QUEUE.mugY + QUEUE.r * 2 + 6, 12, QUEUE.dots, 'center')
+                }
+            }
             if (shown && shown.passport) {
                 drawPassport(shown.passport, PAPERS.x, PAPERS.y + dy, photoZoom)
                 if (shown.idcard) drawId(shown.idcard, ID.x, ID.y + dy)
@@ -683,6 +716,16 @@ const PapersPleaseMinGame = () => {
                 ctx.strokeStyle = COL.paperLine; ctx.lineWidth = 1
                 ctx.beginPath(); ctx.moveTo(BUBBLE.x + 18, BUBBLE.y + 1); ctx.lineTo(BUBBLE.x + 22, BUBBLE.y - 16); ctx.lineTo(BUBBLE.x + 38, BUBBLE.y + 1); ctx.stroke()
                 shown.say.forEach((ln, i) => text(ln, BUBBLE.x + 8, BUBBLE.y + 15 + i * 13, 10, COL.ink))
+            }
+            // #2020 A BYSTANDER ASIDE — the crowded shift's second speaker:
+            // a gold tag naming who calls across the line, and their line in
+            // dim type under the entrant's own bubble. Decor by doctrine — the
+            // generator attaches it, decide never reads it (paperscheck strips
+            // it from every paper of every seed) — but the booth prints it
+            // exactly when present, and papersplay proves those pixels.
+            if (shown && shown.aside) {
+                text(shown.aside.tag, ASIDE.x + 4, ASIDE.y + 9, ASIDE.tag, COL.gold)
+                text(shown.aside.line, ASIDE.x + 4, ASIDE.y + 20, ASIDE.line, '#9fb0d6')
             }
             // controls strip + last call feedback
             box(0, CHS - STRIP_H, CW, STRIP_H, '#10141f', '#000')
@@ -759,11 +802,14 @@ const PapersPleaseMinGame = () => {
                 const a2 = Math.min(1, banner.ticks / 40)
                 ctx.fillStyle = `rgba(8,10,16,${0.82 * a2})`
                 // #1891 THE NEW MONTH — the roll gets its own printed line,
-                // and the overlay grows a row to hold it.
-                ctx.fillRect(0, 150, CW, banner.month ? 116 : 96)
+                // and the overlay grows a row to hold it. #2020 the crowded
+                // morning grows it too: days 6, 7 host two familiar faces, and
+                // the day says so; both lines ride when both beats land.
+                ctx.fillRect(0, 150, CW, (banner.month ? 116 : 96) + (banner.crowd ? 20 : 0))
                 text(banner.text, CW / 2, 196, 26, COL.gold, 'center')
                 text(banner.sub, CW / 2, 224, 12, '#9fb0d6', 'center')
                 if (banner.month) text(`* NEW MONTH: ${banner.month} *`, CW / 2, 248, 13, COL.gold, 'center')
+                if (banner.crowd) text('* TWO FAMILIAR FACES IN LINE *', CW / 2, banner.month ? 268 : 248, 13, COL.gold, 'center')
             }
         }
 
@@ -1075,6 +1121,33 @@ const PapersPleaseMinGame = () => {
                     }
                     return { ink: n, argue: insp && insp.argue ? insp.argue : null, sfx: sfxSeize }
                 },
+                // #2020 THE LINE SHOWS ITSELF: mug-slate ink (the cool family
+                // r 100..160, g 110..170, b >= r+30) in the strip rect — the
+                // gold dots and every warm hue fail it, so one count measures
+                // exactly the known faces still waiting.
+                queueInk: () => {
+                    const d = ctx.getImageData(QUEUE.cx - 56, 184, 112, 22).data
+                    let n = 0
+                    for (let i = 0; i < d.length; i += 4) {
+                        const [rr, gg, bb] = [d[i], d[i + 1], d[i + 2]]
+                        if (rr >= 100 && rr <= 160 && gg >= 110 && gg <= 170 && bb - rr >= 30) n++
+                    }
+                    return n
+                },
+                // #2020 the aside's two hues, counted apart: the gold speaker
+                // tag and the dim slate line. Zero on both = nobody is talking
+                // across the line (a quiet shift, or a solo day).
+                asideInk: () => {
+                    const d = ctx.getImageData(ASIDE.x, ASIDE.y, ASIDE.w, ASIDE.h).data
+                    let tag = 0, line = 0
+                    for (let i = 0; i < d.length; i += 4) {
+                        const [rr, gg, bb] = [d[i], d[i + 1], d[i + 2]]
+                        if (rr > 180 && gg > 140 && bb < 140 && rr - bb > 60) tag++
+                        else if (bb - rr >= 30 && rr >= 120 && rr <= 200) line++
+                    }
+                    return { tag, line }
+                },
+                crowdTicks: () => sfxCrowd, // #2020 crowded-day welcomes that carried the third note
                 // #1908 THE WALL THAT LIVES: ink of the wanted column's own
                 // brighter red, counted as the hue FAMILY (rr>170, gg 80..150,
                 // bb 80..150) — 9px glyphs are mostly antialiased against the
@@ -1142,6 +1215,7 @@ const PapersPleaseMinGame = () => {
                         credits: gs.credits, hungry: gs.hungry, cold: gs.cold, // #1966 the purse
                         payFx, // #1968 the wage flicker's remaining ticks
                         slip: gs.slip && { ...gs.slip },
+                        crowd: crowdedDay(gs.seed, gs.day), // #2020 is today a crowd?
                         banner: banner && { ...banner }, view, evLog: evLog.slice(-60),
                     }
                 },

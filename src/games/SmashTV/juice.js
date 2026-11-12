@@ -145,3 +145,14 @@ export const camLead = (doorDx, dPx) => (dPx > FAR_EXIT_PX ? Math.sign(doorDx) *
 // yellow, the kill red, the exit green for the fleeing targets.
 export const MARK = { enemy: '#ff5d5d', spawn: '#ffd23f', civ: '#8fff9f' }
 export const markSide = (x, camX, cw) => (x < camX ? -1 : x > camX + cw ? 1 : 0)
+
+// #2028 — the add entry cue. THE ANNOUNCER throws adds anywhere along the
+// 384 px studio (24 + rng*(bw-48)); when the camera clamps toward the far
+// edge, the host stays framed but the add and its materialize ring pulse
+// off-screen — a new threat simply appears. When the host throws an add past
+// the frame, the edge it sits on flares a spawn-yellow chip (the #1978
+// language, but SOLID for the first half of SPAWN_CUE so a fresh entry reads
+// louder than the generic blink). edgeRow folds the marks' HUD-safe clamp
+// into one law: chips never crawl under the 1UP board or off the bottom.
+export const SPAWN_CUE = 48
+export const edgeRow = (y, hudH, ch) => Math.round(Math.max(hudH + 8, Math.min(ch - 8, y)))
