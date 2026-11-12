@@ -1,72 +1,57 @@
-# STATE — session 246 (2026-11-12, slot b)
+# STATE — session 247 (2026-11-12, slot a)
 
 ## What shipped
-**SHORT ORDER SHOUT — COOL THE PAN** merged as `60109c1` (PR #2114,
-Closes #2113 — never-dry rung: weakestStage score 7, POLISH issue self-filed,
-claimed, built, shipped in-session). Pour cup water on a HOT-BUT-NOT-BURNT
-burner: spends the cup, backs the sear clock `COOL_SIP=60`, pan keeps the
-patty; burnt stays too late. Pad-A dead input becomes a phone verb.
-soscheck 4b x7 gates (state gates, cup economy, cool fx, counterfactual burn,
-zero clamp, determinism), proven red under `COOL_SIP=0`; soscheck 70/70 incl.
-browser; eslint + 3 lint gates + build green. Follow-up polish filed as
-**#2119** (scorch tell + teaching, CPU sip when both pans run hot, shared-tap
-choke, `needs()` omission). NOTE: prod marker check deferred — game chunks are
-lazy (not enumerable from the deployed shell HTML; local dist died with the
-worktree). Next lane: fetch prod, grep any JS for `#7fd4e8` (cool-ring ink),
-then comment the live URL on #2113.
-Earlier this session: **PAPERS arc polish** (#1988) merged as `c36bb74`
-(PR #2105) by SLOT A, which resumed live mid-session; my parallel rebuild
-(dup PR #2110, closed) independently matched theirs — same mutant renumber
-m55-m58, same 22459/22518/121 counts. Smoke advisory red on #2114 (the #2095
-consent-gate family, advisory), rerun once per rule 3 via `gh workflow run
-ci.yml --ref main`; did not block the merge (static SUCCESS).
+**WATCH RESUME BUDGETS (#2036)** merged as `31108b4` (PR #2116, warden TARGET
+#2036 claimed by a dead predecessor session; this session resumed the corpse
+per step 1b). Nightly full-smoke run 43072838133 red-flagged two watchcheck
+resume gates while probes showed real progress — comet-drift-hd covered 376u
+in a window demanding 500, blob-battle WON its match under watch and the old
+`!b.over` read completion as "no progress": the fixed bar silently assumed the
+window held ~240 world ticks; CI's software Chrome catches fewer.
+- `scripts/lib/watchbudget.mjs` (new): `unitsNeed(n)` rescales the racer bar
+  by measured tick delta at the old pace (500u/240t), capped at 500 so healthy
+  boxes see ZERO relaxation, floored at 40u so a parked watcher stays red.
+  `racerAdvance` = lap/finish/wrap-aware; `blobResume` = seat1 scored AND
+  prover-not-drowned (`winner !== 1`).
+- `watchcheck.mjs`: racers use `racerAdvance`; blob resume `revive: true` +
+  end-aware re-seat (a revive brain can finish mid-chain, #1705 family);
+  `--throttle N` reproduces nightly tick debt in one flag.
+- BlobBattle `watching()` no longer lingers at a terminal state (#1656 law,
+  Defender's shape) — the only game-code line; flag still clears at startPlay.
+- `npm run watchbudgetcheck` (new): 15/15 browser-free, pins BOTH sides —
+  nightly shapes pass, drown/frozen/idle-coast stay red (mutant-proved).
+Full local regression: watchcheck 868/895, zero page errors; blob + both comets
+green. The other 27 fails are 5 pilots this branch provably doesn't touch
+(start swallowed, deterministic x2 runs) — owned by #2115 (+ #2095 gauntlet);
+`static` once red = the new alias missed the #1575 scope ledger (fixed in
+`e3c6eb0` by the concurrent sibling kick, verified green locally before merge).
 
 ## The session's catches
-- **A lapsed claim ≠ a corpse.** Slot a stalled 60+ min mid-rebase (no
-  checkpoints), I won the #878 claim and rebuilt the whole #1988 merge in my
-  own worktree — then slot a woke up and merged its #2105 minutes before my
-  verification finished. My independent resolution matched theirs exactly
-  (same renumber m55-m58, same counts) — worth the dup as a proof, but:
-  re-check `gh pr list` for a sibling PR *before* investing a parallel merge.
-- **Slot-a's worktree was hot** (live process changing HEAD/index under my
-  tools: stale conflict stages, HEAD e1c2653→b3af2c2 between commands, its
-  node_modules churned mid-build). Never share dirs or node_modules with a
-  possibly-live lane; `npm ci` into your own worktree instead of symlinking.
-- **perl s{}{} with `}` inside a character class** — the brace matcher counts
-  it and the regex dies mid-script. Use `s!…!…!` when merging JS imports.
-- **Merge-loop PENDING hang, live again:** `select(.name=="static")[0].state`
-  returns null forever when CI never fires on PR open; slot-a's guard
-  (`// "PENDING"` + cap + `gh workflow run ci.yml --ref`) is the fix —
-  worked for #2114's dispatch.
-- **sosplay space/arrows flake** (#2114 local runs 10/1 then 9/2):
-  consent-gate-swallow family (#2095, QA-owned, advisory). Not key-path code.
+- **Two slot-a sessions ran concurrently** (warden kicked twice: comments at
+  09:33Z-era and 10:02Z). The sibling edited MY worktree mid-session: HEAD
+  moved b59ea2d -> e3c6eb0 under me between tool calls, its commit completing
+  the ciscope fix while I read the CI log. No damage (its work was additive,
+  ancestry clean, merge race lost→won trivially), but two drivers on one
+  branch is exactly the #1525-shape hazard. Rule suggestion for Jon: the
+  warden should refuse to kick slot X while a live `FORGE (X):` checkpoint is
+  <90 min fresh — my 10:39Z checkpoint did not stop the second kick.
+- **`detailsUrl` is not a `gh pr checks --json` field** on this gh; use
+  `link`. And CI logs for an in-progress run are withheld entirely — diagnose
+  with `gh run watch` first, then the job log.
+- **ciscope #1575 audits aliases, not just files**: a new `scripts/*check.mjs`
+  + npm alias must join CORE.checks in `scripts/checks.mjs` (browser-free) or
+  MANUAL_CHECKS — register it in the SAME commit that adds the alias.
 
 ## Ladder trail
-TARGET #1988 CLAIMED → shipped by slot a (dup closed: PR #2110). Ladder then:
-no halt/steer/next/game-queue; jonq empty; QA MASTER live → no feedback borrow;
-flagshipStage=null (all SSX/Emberwood/COMET DRIFT HD/Myst gaps CLOSED — verify
-with live args: reg entries are `{dir,label}`, per-game gaps attach manually);
-weakestStage=SHORT ORDER SHOUT score 7 → POLISH #2113 filed (game-queue,
-lane:games, why-weakest line) → claimed → built. That's the never-dry rung
-working exactly as designed.
+- #2118 filed by this session, closed as duplicate of #2115 (sibling's filing
+  beat mine by minutes; my logs add a second deterministic repro — noted there).
+- Advisory-only reds this session: none unexplained; smoke/prsmokes reds were
+  the #2115 family (pre-existing, advisory, non-blocking per rule 3).
+- No open questions for Jon this session (jonq: nothing filed; the
+  double-kick finding above is a warden-mechanics note, not a taste call).
 
-## Open questions
-- none filed (nothing taste-level came up; #2113's carve-outs are documented
-  on the issue itself).
-
-## Next
-- Verify #2114 landed in prod (grep deployed JS for `#7fd4e8`), comment the
-  live URL on #2113. Then the ladder as usual: steer/next/game-queue →
-  (QA borrow only if no QA MASTER live) → flagshipStage → weakestStage, all
-  with LIVE args (`{dir,label}` registry shape). SOS's remaining README gaps
-  are all owned/deferred (online pad = #878-era seats item, soslinkdrive =
-  Chrome-box wait, stage-2 spice = #2119/QA), so the weakest crown should
-  pass to the next scored title.
-
-## Hygiene at exit
-Dev server 5178 stopped (mine only; 5173 untouched). Worktrees
-`retrogames-forge-sos-coolpan` + `retrogames-forge-ppm-arc-b` removed; local
-branch `forge/ppm-arc-polish-b` deleted (remote died with dup PR #2110).
-Game merged this session → STATE.md committed to main directly (per step 9)
-and parked at /tmp/forge/STATE.b.parked.md. Main checkout detached at
-origin/main.
+## Lane state at exit
+Slot A: idle. Main checkout detached at origin/main. Dev server :5173 stopped
+(mine only — :5178/:5176/:5199 untouched); lane worktree removed. Next session
+claims the warden TARGET as usual; check #2115 stays QA-owned (do NOT borrow —
+QA lane alive).
