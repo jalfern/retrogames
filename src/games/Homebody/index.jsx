@@ -126,6 +126,22 @@ const HomebodyGame = () => {
                         setTimeout(() => audioController.playTone(988, 0.14, 'sine', 0.05), 90)
                         if (live) { say(`BOND RISES — ${e.k === 'fern' ? 'FERN' : 'HOUSEHOLD'}: ${REL_NAMES[e.level]}`); sparkles() }
                         break
+                    case 'rel-down': // #2070: the ladder runs both ways now
+                        audioController.playSweep(560, 300, 0.25, 'square', 0.05)
+                        if (live) say(`BOND FALLS — ${e.k === 'fern' ? 'FERN' : 'HOUSEHOLD'}: ${REL_NAMES[e.level]}`)
+                        break
+                    case 'spat': // #2070: the crack — sour dissonance, red sparks, a jolt
+                        audioController.playTone(233, 0.09, 'sawtooth', 0.06)
+                        setTimeout(() => audioController.playTone(220, 0.16, 'sawtooth', 0.06), 100)
+                        shake = 6
+                        if (live) { say('OTTO AND MIRA SPAT!'); burst(e.x, e.y, 12, '#e23b2e', 3.0) }
+                        break
+                    case 'makeup': // #2070: the thaw — a warm major chord, pink hearts
+                        audioController.playTone(523, 0.07, 'triangle', 0.05)
+                        setTimeout(() => audioController.playTone(659, 0.07, 'triangle', 0.05), 90)
+                        setTimeout(() => audioController.playTone(784, 0.14, 'triangle', 0.05), 180)
+                        if (live) { say('MADE UP ♥'); sparkles() }
+                        break
                     case 'faint': audioController.playNoise(0.3, 0.1); audioController.playSweep(300, 60, 0.5, 'sawtooth', 0.09); shake = 10; if (live) { say(`${e.name.toUpperCase()} COLLAPSED!`); burst(e.x, e.y, 16, '#e23b2e', 3.4) } break
                     case 'wake': audioController.playSweep(440, 760, 0.2, 'triangle', 0.05); break
                     case 'day': audioController.playTone(1245, 0.06, 'sine', 0.03); setTimeout(() => audioController.playTone(1568, 0.09, 'sine', 0.03), 90); if (live && s.day > 1) say(`DAY ${s.day}`); break
