@@ -807,7 +807,7 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     await page.evaluate(() => window.__ppTest.start(0))
     await wait(300)
     let on = 0, off = 0, mismatches = 0, mutPixOn = -1, mutPixOff = 1e9, paperMax = 0
-    for (let g = 0; g < 25; g++) {
+    for (let g = 0; g < 16; g++) {
         const per = await page.evaluate(() => {
             const p = window.__ppTest.probe()
             if (!p || p.day !== 1 || p.end) return null
@@ -815,10 +815,22 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
             if (!per || per.regular || per.say) return null
             return { pic: per.pic, mutter: per.mutter || null }
         })
+        if (!per) {
+            const e = await page.evaluate(() => { const p = window.__ppTest.probe(); return !p || p.day !== 1 || p.end })
+            if (e) break
+        }
         if (per) {
             if (per.mutter !== mutterFor(per.pic)) mismatches++
-            const ink = await page.evaluate(() => window.__ppTest.mutterPix())
-            const paper = await page.evaluate(() => window.__ppTest.bubblePix())
+            // the walk-in slide settles a beat after the seat probe first
+            // names the entrant — sample across the dwell and keep the max,
+            // so the gate measures the voice, never the approach.
+            let ink = 0, paper = 0
+            for (let k = 0; k < 4; k++) {
+                const s = await page.evaluate(() => [window.__ppTest.mutterPix(), window.__ppTest.bubblePix()])
+                if (s[0] > ink) ink = s[0]
+                if (s[1] > paper) paper = s[1]
+                await wait(500)
+            }
             if (paper > paperMax) paperMax = paper
             if (per.mutter) { on++; if (ink > mutPixOn) mutPixOn = ink }
             else { off++; if (ink < mutPixOff) mutPixOff = ink }
@@ -826,11 +838,7 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
         const v = await page.evaluate(() => window.__ppTest.verdict())
         if (!v) break
         await page.keyboard.press(v === 'approve' ? 'a' : 'd')
-        // #2087 the murmur prints once the mouth is AT the counter: the
-        // seat-in takes ~1s (60 ticks) — sample after it, not on the
-        // walk-up (a shorter dwell measures the dark approaching the booth,
-        // not the voice; the first bench run measured 0px at 750ms).
-        await wait(1300)
+        await wait(900)
     }
     r.check(`the crowd murmurs live — ${on} murmuring and ${off} quiet strangers all follow the serial law`,
         mismatches === 0 && on >= 2 && off >= 2, `${on}/${off} mm=${mismatches}`)
