@@ -19,15 +19,15 @@
   #title h1 { font-size: 26px; font-weight: 900; letter-spacing: .02em; color: #f2e8d8; margin-top: 4px; }
   #title h1 b { color: #e0a45c; font-weight: 900; }
   #title .sub { font-size: 9px; letter-spacing: .18em; color: rgba(233,226,212,.62); margin-top: 6px; max-width: 340px; }
-  #strip {
+  #hud {
     left: 50%; transform: translateX(-50%);
     bottom: calc(18px + env(safe-area-inset-bottom));
     background: rgba(16,12,9,.52); border: 1px solid rgba(255,255,255,.14);
     border-radius: 10px; padding: 9px 12px 8px; backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px); width: min(430px, calc(100vw - 32px));
   }
-  #strip .cap { display: flex; justify-content: space-between; font-size: 8px; letter-spacing: .3em; color: rgba(233,226,212,.55); margin-bottom: 6px; }
-  #strip .cap b { color: #e0a45c; font-weight: 400; }
+  #hud .cap { display: flex; justify-content: space-between; font-size: 8px; letter-spacing: .3em; color: rgba(233,226,212,.55); margin-bottom: 6px; }
+  #hud .cap b { color: #e0a45c; font-weight: 400; }
   #ff { position: relative; height: 44px; }
   .ffrow { position: absolute; left: 26px; right: 0; height: 9px; }
   .fflab { position: absolute; left: 0; top: -1px; width: 22px; font-size: 8px; letter-spacing: .05em; color: rgba(233,226,212,.72); }
@@ -56,7 +56,7 @@
 
 <div class="hud" id="hint">DRAG TO LOOK · WHEEL ZOOM<br />SPACE PAUSE · M SOUND · R VIEW</div>
 
-<div class="hud" id="strip">
+<div class="hud" id="hud">
   <div class="cap"><span>FOOTFALL · ROTARY GALLOP</span><b>SEAM · 8 STRIDES</b></div>
   <div id="ff">
     <div class="ffrow" style="top:0"><span class="fflab">LF</span><div class="fftrack"><div class="ffbar" id="bar-LF"></div></div></div>
@@ -693,6 +693,21 @@ window.DEMO_CREDITS = {
   assist: 'solo', note: 'goal only — own renderer, own gait, no Three.js',
 };
 </script>
+<script src="feedback.js"></script>
 <script src="credits.js"></script>
+<script>
+// #1078: on narrow screens the centred footfall strip reaches the tag column —
+// lift the credits tag clear of it when they would collide
+function reserveTag() {
+  var s = document.getElementById('hud').getBoundingClientRect()
+  var t = document.getElementById('credits-tag')
+  var clash = t && s.right > t.getBoundingClientRect().left && s.bottom > t.getBoundingClientRect().top
+  document.documentElement.style.setProperty('--credits-bottom', clash ? Math.round(s.height + 14) + 'px' : '0px')
+}
+reserveTag()
+window.addEventListener('load', reserveTag)
+window.addEventListener('resize', reserveTag)
+setTimeout(reserveTag, 0)
+</script>
 </body>
 </html>

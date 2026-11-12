@@ -20,13 +20,13 @@
 //   + DEMO LAW — self-contained page, not registered in games.js, credits
 //               card and index entry present.
 //
-// Proven-fail mutant (run by hand): in horse.html hoofBody, change the stance
-// slide `leg.xLand - STRIDE * u` to `leg.xLand - STRIDE * u * 0.7` — the hoof
-// rides with the body instead of locking to the ground: every slip gate goes
-// RED (≈180–540 mm per stance) while boots/rules-order/seam stay green.
-// Second mutant: move the LF contact `c: 0.00` of the fore pair after the hind
-// pair (`c: 0.60`) — the footfall-order gate goes RED: a gallop that lands the
-// hind pair first is a different gait. Demonstrated 2026-11-12, then restored.
+// Proven-fail mutants (run by hand, 2026-11-12, then restored):
+// 1. horse.html hoofBody stance — `leg.xLand - STRIDE * ur` -> `... * ur * 0.7`:
+//    the hoof rides with the body instead of locking to the ground. EXACTLY
+//    the slip gate goes RED (241–387 mm per stance); everything else green.
+// 2. LEGS LF contact `c: 0.00` -> `c: 0.60` (fore pair lands after the hind
+//    pair): the footfall-order gate goes RED (saw RFLHRHLF — a pace-like gait)
+//    and the dust gate with it (both probe the LF hooffall) — 30/32.
 //
 // Usage: node scripts/horsecheck.mjs [--shots <dir>] [--json]
 // Needs a dev server serving public/demos (DEV_PORT, default 5173).
