@@ -104,6 +104,16 @@ const LodeRunnerLiteGame = () => {
         const dust = []                            // { x, y, vx, vy, life, color, t0 } — debris puffs (#1949)
         const fallAnim = new WeakMap()             // entity -> { y0, t0 } — the cosmetic slide into a pit (#1949)
         let doomed = null                          // { x, y, t0 } — the runner flashing in a closing grave (#1949)
+        // #2067 — the Apple II froze the screen on its error card when it took
+        // a runner. The shell freezes the CLOCK (not the sim: no ticks run and
+        // none bank — replay streams and state hashes are untouched) and paints
+        // a full-screen card — cause, vault, lives — before the respawn reads.
+        let deathBeat = null                       // { why, lives, t0 }
+        const DEATH_BEAT_MS = 1100
+        // #2067 — the moment the machine cheered: the revealed exit run pulses
+        // aqua for a beat. Paint-only, deterministic like the #1949 cosmetics.
+        let ladderFlash = null                     // { t0 }
+        const LADDER_FLASH_MS = 900
         const DUST_LIFE = 420                      // ms a debris puff lives
         const spawnDust = (cx, cy, n, kind) => {
             // deterministic puffs: no Math.random in this engine, so the fan
@@ -144,6 +154,7 @@ const LodeRunnerLiteGame = () => {
             demoBy = byTickOf(demoFor(i))
             bgDirty = true
             animAt.clear()
+            ladderFlash = null
         }
 
         const handleEvents = (evts) => {
@@ -165,7 +176,7 @@ const LodeRunnerLiteGame = () => {
                     audioController.playTone(620, 0.025, 'square', 0.05, 0.05)    // the refill's distinct pop, on top of the thud (#1949)
                 }
                 else if (e.type === 'gold') { say(`GOLD ${e.have}/${gs.need}`); audioController.playTone(880, 0.07, 'square', 0.06) }
-                else if (e.type === 'unlock') { bgDirty = true; say('THE LADDER APPEARS'); audioController.playSweep(300, 700, 0.4, 'square', 0.07) }
+                else if (e.type === 'unlock') { bgDirty = true; ladderFlash = { t0: performance.now() }; say('THE LADDER APPEARS'); audioController.playSweep(300, 700, 0.4, 'square', 0.07) }
                 else if (e.type === 'guardBuried') {
                     say(e.n > 1 ? `${e.n} GUARDS BURIED +${e.pay}` : `A GUARD IS BURIED +${e.pay}`)
                     if (e.x != null) spawnDust(e.x, e.y, 8, 'burial')            // the grave kicks a cloud (#1949)
@@ -174,7 +185,12 @@ const LodeRunnerLiteGame = () => {
                     if (e.x != null) popups.push({ x: e.x, y: e.y, text: `+${e.pay}`, t0: performance.now() })
                 }
                 else if (e.type === 'goldPickup') { say('A GUARD LIFTED GOLD'); audioController.playTone(220, 0.06, 'square', 0.05) }
-                else if (e.type === 'capture') { say('CAUGHT!'); audioController.playSweep(240, 50, 0.6, 'sawtooth', 0.1) }
+                else if (e.type === 'capture') {
+                    say('CAUGHT!'); audioController.playSweep(240, 50, 0.6, 'sawtooth', 0.1)
+                    // #2067: a non-final death freezes the shell on its card
+                    // (the original stopped the world on its error screen).
+                    if (gs.lives > 0 && !gs.end) deathBeat = { why: 'CAUGHT!', lives: gs.lives, t0: performance.now() }
+                }
                 else if (e.type === 'life') audioController.playSweep(200, 80, 0.4, 'sawtooth', 0.06)
                 else if (e.type === 'grab') audioController.playTone(520, 0.04, 'triangle', 0.04)
                 else if (e.type === 'fallInto') {
@@ -195,6 +211,7 @@ const LodeRunnerLiteGame = () => {
                     // respawns it (the sim has already moved the body home)
                     doomed = { x: e.x, y: e.y, t0: performance.now() }
                     spawnDust(e.x, e.y, 8, 'burial')
+                    if (gs.lives > 0 && !gs.end) deathBeat = { why: 'BURIED!', lives: gs.lives, t0: performance.now() }   // #2067
                 }
                 else if (e.type === 'pitClimb') audioController.playTone(340, 0.05, 'triangle', 0.05)
                 else if (e.type === 'win') audioController.playSweep(400, 1600, 0.9, 'square', 0.09)
@@ -204,6 +221,7 @@ const LodeRunnerLiteGame = () => {
 
         const gameOver = (win, why) => {
             watchingRef.current = false; setWatching(false) // #1637 the vault ends in your hands
+            deathBeat = null; ladderFlash = null   // #2067 the over screen IS the card on a final death
             setEnd({ win, why, level: levelIdx, score: gs.score })
             if (win) {
                 const best = JSON.parse(localStorage.getItem('lode.best') || '{}')
@@ -232,6 +250,7 @@ const LodeRunnerLiteGame = () => {
             popups.length = 0
             dust.length = 0
             doomed = null
+            deathBeat = null; ladderFlash = null   // #2067
             setMode('play')
             say(b.meta.name)
             audioController.playSweep(220, 440, 0.25, 'square', 0.07)
@@ -287,7 +306,7 @@ const LodeRunnerLiteGame = () => {
                     bgDirty = true
                     animAt.set(e.y * W + e.x, { kind: e.type, t0: performance.now() })
                     spawnDust(e.x, e.y, e.type === 'dig' ? 4 : 3, e.type === 'dig' ? 'dig' : 'impact')
-                } else if (e.type === 'unlock') bgDirty = true
+                } else if (e.type === 'unlock') { bgDirty = true; ladderFlash = { t0: performance.now() } }   // #2067 — the marquee demo flashes its reveal too
                 else if (e.type === 'fallInto' && demoG) {
                     // the attract ghost eases into the pit like the live runner (#1949)
                     const dp = demoG.player
@@ -486,6 +505,19 @@ const LodeRunnerLiteGame = () => {
                     ctx.globalAlpha = 1
                 }
             }
+            // UNLOCK FLASH (#2067): the hidden exit run the vault just gave
+            // back pulses aqua — the moment the original cheered got a face.
+            // Paint-only, on the cosmetic clock like the #1949 kit.
+            if (ladderFlash) {
+                const age = now - ladderFlash.t0
+                if (age >= LADDER_FLASH_MS) ladderFlash = null
+                else if (g.exitLadder && g.exitLadder.length) {
+                    ctx.globalAlpha = age % 200 < 100 ? 0.8 : 0.35
+                    ctx.fillStyle = '#4ad7ff'                                   // the runner's own aqua — the vault's hero colour cheers the exit
+                    for (const i of g.exitLadder) ctx.fillRect((i % W) * CW, Math.floor(i / W) * CH, CW, CH)
+                    ctx.globalAlpha = 1
+                }
+            }
             // gold rides the dynamic layer (collecting is a state change,
             // never a repaint guess); the nugget keeps the original's blink
             const gold = g.tick % 30 < 18 ? art.gold[0] : art.gold[1]
@@ -508,6 +540,27 @@ const LodeRunnerLiteGame = () => {
             if (g.player.alive && !g.end) {
                 trackMove(g.player, now)
                 drawEnt(ctx, art.runner, g.player, now)
+            }
+            // DEATH CARD (#2067): the frozen scene dips under the vault's navy
+            // and the error card states the facts — cause, place, cost. The
+            // original's cryptic "CHK! DYK?" footer rides along for period.
+            if (deathBeat && screenRef.current === 'play') {
+                ctx.fillStyle = 'rgba(10, 14, 36, 0.92)'
+                ctx.fillRect(0, 0, PXW, PXH)
+                ctx.strokeStyle = 'rgba(255, 210, 62, 0.8)'; ctx.lineWidth = 2
+                ctx.strokeRect(14, 14, PXW - 28, PXH - 28)
+                ctx.textAlign = 'center'
+                ctx.font = 'bold 30px monospace'
+                ctx.fillStyle = deathBeat.why === 'BURIED!' ? '#ffb03e' : '#ff5a52'
+                ctx.fillText(deathBeat.why, PXW / 2, PXH / 2 - 26)
+                ctx.font = 'bold 13px monospace'
+                ctx.fillStyle = '#ffd23e'
+                ctx.fillText(`VAULT ${levelIdx + 1} · ${gs.meta.name}`, PXW / 2, PXH / 2 + 4)
+                ctx.fillStyle = '#e8e0c8'
+                ctx.fillText(`LIVES LEFT ${deathBeat.lives}`, PXW / 2, PXH / 2 + 26)
+                ctx.font = 'bold 10px monospace'
+                ctx.fillStyle = 'rgba(232, 224, 200, 0.55)'
+                ctx.fillText('CHK! DYK?', PXW / 2, PXH - 34)
             }
         }
 
@@ -532,8 +585,13 @@ const LodeRunnerLiteGame = () => {
             const ft = Math.min(ts - last, 250)   // world-second catch-up cap
             last = ts
             if (!pausedRef.current) {
-                acc += ft
-                while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+                // #2067 — the death card freezes the CLOCK: frozen wall-time is
+                // dropped (acc zeroed), never banked, so the world does not
+                // catch-up-dog after the card lifts. No ticks run = no sim and
+                // no replay drift; the tick counter simply stands still.
+                if (deathBeat && performance.now() - deathBeat.t0 >= DEATH_BEAT_MS) deathBeat = null
+                if (deathBeat) acc = 0
+                else { acc += ft; while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS } }
             }
             paint()
             syncHud()
@@ -617,6 +675,19 @@ const LodeRunnerLiteGame = () => {
                     // harness grades THAT moving, not the idle gs
                     demo: demoG ? { idx: demoIdx, tick: demoG.tick, end: demoG.end, player: { x: demoG.player.x, y: demoG.player.y, mode: demoG.player.mode, lip: !!demoG.player.onLip }, have: demoG.have } : null,
                     ghost: ghost ? { tick: ghost.g.tick, alive: ghost.g.player.alive } : null,
+                    // #2067 harness surface: the frozen death card and the
+                    // unlock flash, and the marquee chrome geometry (phone).
+                    death: deathBeat ? { why: deathBeat.why, lives: deathBeat.lives, msLeft: Math.max(0, Math.round(DEATH_BEAT_MS - (performance.now() - deathBeat.t0))) } : null,
+                    flash: !!ladderFlash,
+                    chrome: () => {
+                        const q = (sel) => {
+                            const el = document.querySelector(sel)
+                            if (!el) return null
+                            const r = el.getBoundingClientRect()
+                            return { left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) }
+                        }
+                        return { vw: window.innerWidth, vh: window.innerHeight, watchPill: q('[data-watch-attract]'), caption: q('[data-lode-caption]') }
+                    },
                     evLog: evLog.slice(-140),
                 }),
                 start: startPlay,
@@ -756,8 +827,11 @@ const LodeRunnerLiteGame = () => {
                             tappable select. Each pad dispatches the SAME Digit key
                             the keyboard path consumes; the window tap-to-start skips
                             `button` targets, so a pad tap can never also fire the
-                            vault-1 start underneath (Emberwood #965 house pattern). */}
-                        <div className="mt-6 flex justify-center gap-3">
+                            vault-1 start underneath (Emberwood #965 house pattern).
+                            #2067: the row wraps and carries side padding so a 320px
+                            phone puts the third pad on a second line instead of off
+                            the screen; the ≥44x28 floor holds at every width. */}
+                        <div className="mt-6 flex flex-wrap justify-center gap-x-3 gap-y-2 px-4">
                             {LEVELS.map((lv, i) => (
                                 <button
                                     key={lv.name}
@@ -769,7 +843,7 @@ const LodeRunnerLiteGame = () => {
                                 >VAULT {i + 1}</button>
                             ))}
                         </div>
-                        <span className="block mt-2 text-amber-200/60 font-mono text-xs">pick a vault &middot; keys 1 2 3 &middot; tap anywhere starts vault 1</span>
+                        <span data-lode-caption="1" className="block mt-2 text-amber-200/60 font-mono text-xs">pick a vault &middot; keys 1 2 3 &middot; tap anywhere starts vault 1</span>
                     </div>
                 </>
             )}

@@ -11,6 +11,8 @@
 //   1b. PHONE VAULT-SELECT (#2063) — three tappable pads on the marquee;
 //       each pad's real centre opens ITS OWN vault with real pointer events,
 //       and a tap outside the pads still starts vault 1.
+//   1c. PHONE CHROME (#2067) — the same marquee at 375x667: floor, viewport
+//       containment, and no crowding of the WATCH pill or the caption.
 //   3. DIG → HOLE → REFILL — the dig opens a live hole diagonally below the
 //      runner; the sim's fuse grows the brick back after the ~5 s hold.
 //   3b. THE PAINT — terrain is runtime pixel art: warm mortar brick reads
@@ -25,6 +27,8 @@
 //       walk over the open pit mouth and FALL in (sprite and state agree), dig
 //       straight down TWICE to the bedrock, and clamber back out with UP —
 //       no life lost.
+//   4d. UNLOCK FLASH (#2067) — the solver-driven unlock arms the aqua pulse,
+//       and the exit run paints aqua over the grey ladder inside the window.
 //   4. THE LADDER AND THE ROPE (vault 2) — run to a real ladder, climb it, and
 //      dangle onto the rope line: the runner hangs, rope over his head in the state.
 //   5. GUARDS HUNT — a guard's cell changes without being touched.
@@ -32,6 +36,8 @@
 //      overs, press R, and the GHOST of the lost run haunts the retry
 //      tick-for-tick beside you.
 //      (6b: runner and guard are distinct sprites, not one glyph in two colors.)
+//      (6d: DEATH BEAT #2067 — a non-final capture freezes the clock and
+//      paints the error card; the tick stands still under it.)
 //   7. THE PAGE ITSELF REPLAYS — replayCheck re-runs the recorded stream
 //      through the sim and compares state hashes mid-run.
 import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
@@ -146,6 +152,40 @@ for (let i = 0; i < 3; i++) {
 }
 await page.evaluate(() => window.__lodeTest.toAttract())   // back to the marquee for section 2
 await wait(300)
+
+// 1c — #2067 PHONE chrome: the same marquee at a 375x667 phone (the size
+// #2063 shipped blind). The pad row must keep its >=44x28 hit floor, stay
+// fully inside the viewport, and not crowd the attract WATCH pill (bottom
+// 24%) or its own caption — watchpillcheck's clearance precedent. Then one
+// real tap on pad 2 must still open vault 2: the select survives the squeeze.
+await page.setViewportSize({ width: 375, height: 667 })
+await wait(400)
+const phonePads = await page.evaluate(() => window.__lodeTest.vaultPads())
+const phoneChrome = await page.evaluate(() => window.__lodeTest.probe().chrome())
+const rectOf = (p) => (p && p.cx !== undefined ? { left: p.cx - p.w / 2, right: p.cx + p.w / 2, top: p.cy - p.h / 2, bottom: p.cy + p.h / 2 } : null)
+const noCrowd = (a, b) => {
+    const A = rectOf(a); const B = b && b.top !== undefined ? b : null
+    if (!A || !B) return true
+    return A.right + 4 <= B.left || B.right + 4 <= A.left || A.bottom + 4 <= B.top || B.bottom + 4 <= A.top
+}
+r.check('phone (375x667) pads stay fully inside the viewport',
+    phonePads.length === 3 && phonePads.every((p) => p && rectOf(p).left >= -1 && rectOf(p).right <= phoneChrome.vw + 1 && rectOf(p).bottom <= phoneChrome.vh + 1),
+    JSON.stringify({ pads: phonePads, vw: phoneChrome.vw, vh: phoneChrome.vh }))
+r.check('phone pads keep the >=44x28 target floor (the 780px grade is not enough)',
+    phonePads.length === 3 && phonePads.every((p) => p && p.w >= 44 && p.h >= 28),
+    JSON.stringify(phonePads))
+r.check('the phone pad row crowds neither the WATCH pill nor its caption',
+    phonePads.every((p) => noCrowd(p, phoneChrome.watchPill)) && phonePads.every((p) => noCrowd(p, phoneChrome.caption)),
+    JSON.stringify({ pill: phoneChrome.watchPill, caption: phoneChrome.caption, pads: phonePads }))
+const p2 = phonePads[1]
+if (p2) await page.mouse.click(p2.cx, p2.cy)
+await wait(450)
+let sPhone = await probe()
+r.check('a phone-sized real tap on pad 2 still opens vault 2', sPhone.screen === 'play' && sPhone.level === 1,
+    JSON.stringify({ p2, screen: sPhone.screen, level: sPhone.level }))
+await page.evaluate(() => window.__lodeTest.toAttract())
+await page.setViewportSize({ width: 780, height: 720 })
+await wait(400)
 
 // 2 — one key into the vault; a held arrow moves the runner and stamps cmds
 await page.keyboard.press('Digit1')
@@ -314,6 +354,45 @@ let offLip = null
 for (let i = 0; i < 12 && !(offLip && offLip.player.lip === false); i++) { offLip = await probe(); await wait(120) }
 r.check('stepping off the lip onto supported floor clears the cling', !!offLip && offLip.player.lip === false, JSON.stringify(offLip && { x: offLip.player.x, y: offLip.player.y, lip: offLip.player.lip }))
 
+// 4d — UNLOCK FLASH (#2067): seat the solver to drain the gold (drive() is
+// planStep chunks — the proven route, no dig). The tick whose pickup unlocks
+// must arm the aqua pulse on the exit run; the canvas read lands after the
+// card's paint frames, inside the 900 ms window, lit OR dim (both phases
+// paint aqua over the grey ladder, so no phase race).
+await page.evaluate(() => window.__lodeTest.start(0))
+await wait(300)
+let reveal = null
+for (let i = 0; i < 900 && !reveal; i++) {
+    reveal = await page.evaluate(() => {
+        const t = window.__lodeTest
+        const before = t.probe().unlocked
+        t.drive(6)
+        const p = t.probe()
+        if (before || !p.unlocked) return null
+        return { flash: p.flash, exit: p.exit, screen: p.screen }
+    })
+    if (!reveal) await wait(16)
+}
+r.check('the last gold in hand arms the unlock flash', !!reveal && reveal.flash === true, JSON.stringify(reveal))
+// the canvas lags the state one paint — let two frames run inside the 900 ms
+// window before reading, or the read lands on the pre-unlock frame (the live
+// run of this pass read flashPix 0 against a correct state — exactly that).
+if (reveal) await page.evaluate(() => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res))))
+const flashPix = reveal && await page.evaluate(([x, y]) => {
+    const c = document.querySelector('canvas[data-lode-stage]')
+    let aqua = 0
+    for (let dy = 1; dy <= 3; dy++) {
+        if (y + dy >= 19) continue
+        const d = c.getContext('2d').getImageData(x * 20 + 2, (y + dy) * 22 + 2, 16, 18).data
+        for (let k = 0; k < d.length; k += 4) {
+            const [rr, gg, bb] = [d[k], d[k + 1], d[k + 2]]
+            if (bb > 150 && gg > rr + 20 && bb > rr + 25) aqua++   // aqua, not the grey ladder, not navy
+        }
+    }
+    return aqua
+}, [reveal.exit.x, reveal.exit.y])
+r.check('the revealed exit run pulses aqua over the grey ladder', typeof flashPix === 'number' && flashPix >= 30, JSON.stringify({ flashPix, exit: reveal && reveal.exit }))
+
 // 5 — vault 2 "THE ROPE": run to the col-8 ladder and climb it — the runner
 // rises off the floor into climb mode on the real ladder. (The rope line at
 // the top of this same ladder is proven load-bearing by lodecheck; a
@@ -395,6 +474,47 @@ r.check('the runner paints aqua (no strong-blue pixel in his window, the old ove
     cast.player && cast.player.blue < 40, JSON.stringify(cast.player))
 r.check('the guard paints orange, not the old olive (warm window average)',
     cast.guard && cast.guard.r > cast.guard.g + 10, JSON.stringify(cast.guard))
+
+// 6d — DEATH BEAT (#2067): the Apple II stopped the world on its error card.
+// Feed the hunt (east, section 7's move); the first non-final capture must
+// hang a full-screen card — cause line + gilded frame on the vault's navy.
+// Under the card the CLOCK freezes: the tick counter stands still (frozen
+// wall-time is dropped, never banked), and when the card lifts the runner
+// reads back home with the world walking again.
+await page.evaluate(() => window.__lodeTest.start(0))
+await wait(400)
+let dBeat = null
+for (let i = 0; i < 80 && !dBeat; i++) {
+    const st = await probe()
+    if (st.screen === 'over') break
+    if (st.death) { dBeat = st; break }
+    await holdKey('ArrowRight', 220)
+}
+r.check('a capture freezes the shell on a death card before the respawn',
+    !!dBeat && !!dBeat.death && dBeat.death.why === 'CAUGHT!' && dBeat.death.lives === 2,
+    JSON.stringify(dBeat && { death: dBeat.death, screen: dBeat.screen }))
+if (dBeat) {
+    const frozenTick = dBeat.tick
+    const cardPix = await page.evaluate(() => {
+        const c = document.querySelector('canvas[data-lode-stage]')
+        const g2 = c.getContext('2d')
+        const bright = (x, y, w, h) => { const d = g2.getImageData(x, y, w, h).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 330) n++; return n }
+        return {
+            title: bright(Math.floor(c.width / 2) - 70, Math.floor(c.height / 2) - 48, 140, 30),   // the CAUGHT! line
+            border: bright(10, 10, c.width - 20, 8),                                                    // the card's gilded frame
+        }
+    })
+    r.check('the card paints its cause line and its frame over the vault', cardPix.title >= 50 && cardPix.border >= 100, JSON.stringify(cardPix))
+    await wait(500)
+    const midBeat = await probe()
+    r.check('the clock is frozen under the card (tick stands still)', !!midBeat.death && midBeat.tick === frozenTick,
+        JSON.stringify({ frozenTick, mid: midBeat.tick, msLeft: midBeat.death && midBeat.death.msLeft }))
+    await wait(900)
+    const post = await probe()
+    r.check('the card lifts: runner home, life spent, world walking again',
+        !post.death && post.screen === 'play' && post.lives === 2 && post.player.alive && post.tick > midBeat.tick,
+        JSON.stringify({ death: post.death, lives: post.lives, tick: post.tick, at: [post.player.x, post.player.y] }))
+}
 
 // 7 — you can die: walk east into the hunt until the game overs
 let over = null
