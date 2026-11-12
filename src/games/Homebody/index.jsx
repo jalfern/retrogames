@@ -376,7 +376,6 @@ const HomebodyGame = () => {
                 ctx.strokeRect(LOT_X + f.c * TILE + 1, LOT_Y + f.r * TILE + 1, TILE - 2, TILE - 2)
                 ctx.globalAlpha = 1
             }
-            stepParticlesDraw()
             ctx.restore()
             nightTint(ctx, g.hour, g.ext)
             drawTopBar(ctx, g)
@@ -390,26 +389,27 @@ const HomebodyGame = () => {
                 ctx.fillText('· · · AT WORK · · ·', W / 2, H / 2)
             }
             if (toast > 0 && live) banner(ctx, toastMsg)
+            stepParticlesDraw(sx, sy)   // #2149: last layer — a make-up at the centre column had its hearts buried under the MADE UP card for their whole life; keep riding the shake offset the save-block used to carry
         }
 
-        const stepParticlesDraw = () => {
+        const stepParticlesDraw = (ox = 0, oy = 0) => {
             for (const pt of particles) {
                 ctx.globalAlpha = Math.max(0, pt.life / pt.max)
                 if (pt.kind === 'flash') {
                     ctx.fillStyle = pt.col
-                    ctx.fillRect(pt.x, pt.y, pt.size * 1.6, pt.size * 1.6)
+                    ctx.fillRect(pt.x + ox, pt.y + oy, pt.size * 1.6, pt.size * 1.6)
                 } else if (pt.kind === 'heart') {
                     // #2076: the BONDS heart, tiny — two lobes and a point
                     const s = pt.size
                     ctx.fillStyle = pt.col
                     ctx.beginPath()
-                    ctx.arc(pt.x - s * 0.45, pt.y - s * 0.25, s * 0.5, Math.PI, 0)
-                    ctx.arc(pt.x + s * 0.45, pt.y - s * 0.25, s * 0.5, Math.PI, 0)
-                    ctx.lineTo(pt.x, pt.y + s * 0.75)
+                    ctx.arc(pt.x + ox - s * 0.45, pt.y + oy - s * 0.25, s * 0.5, Math.PI, 0)
+                    ctx.arc(pt.x + ox + s * 0.45, pt.y + oy - s * 0.25, s * 0.5, Math.PI, 0)
+                    ctx.lineTo(pt.x + ox, pt.y + oy + s * 0.75)
                     ctx.closePath(); ctx.fill()
                 } else {
                     ctx.fillStyle = pt.col
-                    ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.size, 0, 7); ctx.fill()
+                    ctx.beginPath(); ctx.arc(pt.x + ox, pt.y + oy, pt.size, 0, 7); ctx.fill()
                 }
             }
             ctx.globalAlpha = 1
@@ -636,7 +636,7 @@ const HomebodyGame = () => {
                 // #2070: rig the spat scenario — park the pair beside each
                 // other, both in the red; `thaw` lifts their tempers up.
                 foul: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; b.r = 3; b.c = 4; b.path = null; for (const p of gs.people) { for (const n of NEEDS) p.needs[n] = 0.3; p.working = false; p.faintT = 0 } gs.grudge = 0; gs.spatCd = 0 } },
-                park: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; a.path = null; b.r = 3; b.c = 4; b.path = null; for (const p of gs.people) { p.use = null; p.goal = null; p.working = false; p.faintT = 0; for (const n of NEEDS) p.needs[n] = 0.5 } gs.visitor = null; gs.ivy = null; gs.cmdCd = 0 } },   // #2131/#2143: adjacency, idle for real, tempers NEUTRAL (mood 1: no organic spat, no instant make-up — the law itself is pinned in peoplecheck), nobody else to address, cooldown ready
+                park: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; a.path = null; b.r = 3; b.c = 4; b.path = null; a.x = LOT_X + 3 * TILE + TILE / 2; a.y = LOT_Y + 3 * TILE + TILE / 2; b.x = LOT_X + 4 * TILE + TILE / 2; b.y = LOT_Y + 3 * TILE + TILE / 2; for (const p of gs.people) { p.use = null; p.goal = null; p.working = false; p.faintT = 0; for (const n of NEEDS) p.needs[n] = 0.5 } gs.visitor = null; gs.ivy = null; gs.cmdCd = 0 } },   // #2131/#2143/#2149: adjacency, idle for real, tempers NEUTRAL (mood 1: no organic spat, no instant make-up — the law itself is pinned in peoplecheck), nobody else to address, cooldown ready — and the SPRITES land where the logic was parked (#2149: cells without pixels left the pair standing apart, so make-up hearts burst at the stale midpoint, where the MADE UP toast card paints over them)
                 thaw: () => { if (gs) for (const p of gs.people) for (const n of NEEDS) p.needs[n] = 0.9 },
                 hearts: () => particles.filter((pt) => pt.kind === 'heart').length,   // #2076: the make-up paid hearts?
                 hash: () => (gs ? stateHash(gs) : 0),
