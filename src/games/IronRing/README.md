@@ -123,6 +123,10 @@ trick), camera tracks the midpoint and zooms with the spacing.
   her fast hex. `scriptMotion` gained the missing `qcb` case (the CPU's qcb path
   was dead — it returned an empty pad), and the CPU now throws a projectile-qcb at
   range (`dist > 2.4`), so a CPU SABLE earns it through the same parser a human uses.
+  **#2151**: the CPU also throws it point-blank again — #1735 had dropped the
+  engine's close-range qcb branch (`dist < 2.2`) because the pad path was dead
+  then; with `scriptMotion` fixed the branch is restored beside the at-range one,
+  which re-pins nothing (hash determinism re-verified: ironringcheck 134/0).
 - **CLOSED by #1734 (item 2)** cancel chains — normals cancel into specials and
   supers, specials into supers. The blocker was mechanical, not policy: hitstop
   discarded the entire input pipeline, and the freeze is exactly when players
