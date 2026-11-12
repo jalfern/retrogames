@@ -175,9 +175,10 @@ export function guardShatter(k) {
     return { a: Math.pow(clamp(k, 0, 1), 1.4), spread: p * 1.7, ring: 0.45 + p * 2.3, ticks: 8 }
 }
 
-// -- select-screen portraits (#1106) -------------------------------------------------
-// A tiny second GL view renders each fighter, posed in their OWN idle stance,
-// into a card-sized canvas the 2D HUD composites onto the select grid.
+// -- select-screen portraits (#1106, card poses #2172) -----------------------------
+// A tiny second GL view renders each fighter HOLDED in their OWN signature card
+// pose (def.card, #2172) into a card-sized canvas the 2D HUD composites onto the
+// select grid.
 // preserveDrawingBuffer so drawImage can read the frame after the render — the
 // js-dos lesson, applied before it bites here. Presentation only.
 export function createPortraitRenderer(w = 240) {
@@ -198,8 +199,9 @@ export function createPortraitRenderer(w = 240) {
         canvas,
         render(def) {
             const rig = buildFighter(def)
-            rig.root.rotation.y = 0.55
-            poseFighter(rig, { st: 'idle', move: null, sf: 0, x: 0, y: 0, vx: 0, facing: 1, def }, 0.25)
+            const c = (def && def.card) || { yaw: 0.55 }
+            rig.root.rotation.y = c.yaw
+            poseCard(rig, def, 0.25)
             scene.add(rig.root)
             renderer.render(scene, cam)
             scene.remove(rig.root)
@@ -207,6 +209,30 @@ export function createPortraitRenderer(w = 240) {
         },
         dispose() { renderer.dispose() },
     }
+}
+
+// #2172 select-card pose: each fighter HOLDS their own signature stance on
+// their card (NYX bladed, CINDER palms up, VESS on his toes, RIV high fists,
+// KRAX arms wide for the grab) — same q→rig mapping poseFighter uses, fed
+// straight from def.card so the five cards read as five characters at a
+// glance instead of one idle tinted five times. Breath keeps them alive.
+// Presentation only — the engine and hashes never see it.
+export function poseCard(rig, def, tSec) {
+    const c = (def && def.card) || {
+        hipY: -0.04, lean: 0.06, headX: 0.05,
+        arms: [{ sh: -1.35, el: -2.2, z: 0.45 }, { sh: -1.25, el: -2.35, z: -0.42 }],
+        legs: [{ hip: 0.08, kn: -0.15 }, { hip: -0.1, kn: -0.12 }],
+    }
+    const breathe = Math.sin(tSec * ((def && def.stance && def.stance.bobHz) || 2.2)) * 0.012
+    const r = rig
+    r.body.rotation.x = 0
+    r.body.position.y = c.hipY + breathe
+    r.torso.rotation.x = c.lean
+    r.head.rotation.x = c.headX
+    r.armR.sh.rotation.x = c.arms[0].sh; r.armR.sh.rotation.z = c.arms[0].z; r.armR.el.rotation.x = c.arms[0].el
+    r.armL.sh.rotation.x = c.arms[1].sh; r.armL.sh.rotation.z = c.arms[1].z; r.armL.el.rotation.x = c.arms[1].el
+    r.legR.hip.rotation.x = c.legs[0].hip; r.legR.kn.rotation.x = c.legs[0].kn
+    r.legL.hip.rotation.x = c.legs[1].hip; r.legL.kn.rotation.x = c.legs[1].kn
 }
 
 function attackProgress(f) {

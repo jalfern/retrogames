@@ -103,6 +103,9 @@ const ViperPitGame = () => {
         let p2Picked = false
         let cursor = 3
         let portraits = null, portraitR = null, pickLine = null, cardRects = []
+        // #2172 hover portrait zoom: per-card 0..1 ease, driven by the cursor
+        // (arrows AND tap-to-hover), so the hovered card breathes bigger.
+        const cardZoom = new Array(ROSTER.length).fill(0)
         let attractMsg = 0, attractT = 0
         let shake = 0, flashT = 0, bannerT = 0, bannerText = ''
         let finishFx = 0, finishText = ''
@@ -402,12 +405,26 @@ const ViperPitGame = () => {
             window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyO', key: 'KeyO', bubbles: true }))
         }
         guardRef.current = { down: guardDown, up: guardUp }
-        const onPointer = () => {
+        const onPointer = (ev) => {
             const scr = screenRef.current
             // #1637 b30 WATCH: a touch on the cabinet hands seat 1 back mid-bout.
             if (scr === 'play') { seatOff(); return }
             if (scr === 'attract') atAttract()
-            else if (scr === 'select') atSelect()
+            else if (scr === 'select') {
+                // #2172 tap-to-hover: tapping a card that isn't hovered walks the
+                // cursor there (zoom + blip + intro line); tapping the hovered
+                // card picks it — the keyboard arrow/Space pairing, on touch.
+                const cv = wrap.querySelector('canvas[data-viperpit-hud]')
+                const rect = cv ? cv.getBoundingClientRect() : null
+                let hit = -1
+                if (rect && rect.width > 0 && rect.height > 0) {
+                    const px = (ev.clientX - rect.left) * (cv.width / rect.width)
+                    const py = (ev.clientY - rect.top) * (cv.height / rect.height)
+                    hit = cardRects.findIndex((r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h)
+                }
+                if (hit >= 0 && hit !== cursor) hoverSelect(hit - cursor)
+                else atSelect()
+            }
             else if (scr === 'champion') atAttract()
         }
         window.addEventListener('keydown', onKeyDown)
@@ -879,6 +896,7 @@ const ViperPitGame = () => {
                     hctx.fillText('PRESS Y TO WATCH THE PIT', W / 2, H * 0.52)
                 }
             }
+            if (scr !== 'select' && cardZoom.some((v) => v !== 0)) cardZoom.fill(0)
             if (scr === 'select') {
                 ensurePortraits()
                 hctx.fillStyle = 'rgba(5,4,10,0.82)'; hctx.fillRect(0, 0, W, H)
@@ -888,34 +906,47 @@ const ViperPitGame = () => {
                 hctx.fillText(p2Picked ? 'PLAYER 2 — CHOOSE' : net.active ? (net.role === 'host' ? 'HOST — CHOOSE' : 'GUEST — CHOOSE') : 'CHOOSE YOUR FIGHTER', W / 2, H * 0.12)
                 const total = ROSTER.length
                 const cw = Math.min(H * 0.5, (W * 0.94) / (total * 1.06)), ch = cw * 0.78
+                // #2172 ease every card toward its zoom target (hovered = 1)
+                // every frame; the hovered card is drawn LAST so its enlarged
+                // portrait rides over its neighbours instead of under them.
                 ROSTER.forEach((rd, i) => {
-                    const col = i % 5
-                    const x = W / 2 - (cw * 1.06 * total) / 2 + col * (cw * 1.06), y = H * 0.24
+                    const target = i === cursor ? 1 : 0
+                    cardZoom[i] += (target - cardZoom[i]) * 0.22
+                    if (Math.abs(cardZoom[i] - target) < 0.01) cardZoom[i] = target
+                })
+                const drawCard = (rd, i) => {
+                    const x = W / 2 - (cw * 1.06 * total) / 2 + (i % 5) * (cw * 1.06), y = H * 0.24
                     cardRects[i] = { id: rd.id, x, y, w: cw, h: ch }
                     const hovered = i === cursor
-                    hctx.fillStyle = '#12121c'; hctx.fillRect(x, y, cw, ch)
+                    const z = cardZoom[i]
+                    const yy = y - ch * 0.035 * z
+                    hctx.fillStyle = '#12121c'; hctx.fillRect(x, yy, cw, ch)
                     const pt = portraits && portraits[rd.id]
                     if (pt) {
                         if (hovered) { hctx.shadowColor = 'rgba(89,224,200,0.75)'; hctx.shadowBlur = Math.max(10, W * 0.014) }
-                        hctx.drawImage(pt, x + cw * 0.04, y + ch * 0.02, cw * 0.92, ch * 0.92)
+                        const zc = 1 + 0.16 * z
+                        const pw = cw * 0.92 * zc, ph = ch * 0.92 * zc
+                        hctx.drawImage(pt, x + cw * 0.5 - pw / 2, yy + ch * (0.48 - 0.06 * z) - ph / 2, pw, ph)
                         hctx.shadowBlur = 0
                     } else {
-                        hctx.fillStyle = hex(rd.color.skin); hctx.fillRect(x + cw * 0.4, y + ch * 0.12, cw * 0.2, ch * 0.2)
-                        hctx.fillStyle = hex(rd.color.top); hctx.fillRect(x + cw * 0.32, y + ch * 0.36, cw * 0.36, ch * 0.28)
-                        hctx.fillStyle = hex(rd.color.accent); hctx.fillRect(x + cw * 0.32, y + ch * 0.36, cw * 0.36, ch * 0.05)
-                        hctx.fillStyle = hex(rd.color.pants); hctx.fillRect(x + cw * 0.36, y + ch * 0.64, cw * 0.28, ch * 0.1)
+                        hctx.fillStyle = hex(rd.color.skin); hctx.fillRect(x + cw * 0.4, yy + ch * 0.12, cw * 0.2, ch * 0.2)
+                        hctx.fillStyle = hex(rd.color.top); hctx.fillRect(x + cw * 0.32, yy + ch * 0.36, cw * 0.36, ch * 0.28)
+                        hctx.fillStyle = hex(rd.color.accent); hctx.fillRect(x + cw * 0.32, yy + ch * 0.36, cw * 0.36, ch * 0.05)
+                        hctx.fillStyle = hex(rd.color.pants); hctx.fillRect(x + cw * 0.36, yy + ch * 0.64, cw * 0.28, ch * 0.1)
                     }
                     hctx.strokeStyle = hovered ? '#59e0c8' : '#31364a'
                     hctx.lineWidth = hovered ? 3 : 1
-                    hctx.strokeRect(x, y, cw, ch)
+                    hctx.strokeRect(x, yy, cw, ch)
                     ui(Math.max(11, H * 0.022))
                     hctx.textAlign = 'center'
                     hctx.fillStyle = '#fff'
-                    hctx.fillText(rd.name, x + cw / 2, y + ch * 0.85)
+                    hctx.fillText(rd.name, x + cw / 2, yy + ch * 0.85)
                     ui(Math.max(8, H * 0.014))
                     hctx.fillStyle = 'rgba(190,195,215,0.85)'
-                    hctx.fillText(rd.tag, x + cw / 2, y + ch * 0.95)
-                })
+                    hctx.fillText(rd.tag, x + cw / 2, yy + ch * 0.95)
+                }
+                ROSTER.forEach((rd, i) => { if (i !== cursor) drawCard(rd, i) })
+                drawCard(ROSTER[cursor], cursor)
                 ui(Math.max(10, H * 0.019))
                 hctx.textAlign = 'center'
                 hctx.fillStyle = 'rgba(89,224,200,0.85)'
@@ -1074,8 +1105,10 @@ const ViperPitGame = () => {
                         id: ROSTER[cursor] ? ROSTER[cursor].id : null,
                         portraits: portraits ? Object.keys(portraits).length : 0,
                         line: pickLine && pickLine.t > 0 ? pickLine.text : null,
+                        zoom: cardZoom[cursor] || 0,
                     }
                 },
+                zoomOf(i) { return cardZoom[i | 0] ?? 0 },
                 hover(d) { hoverSelect(d | 0) },
                 pick() { atSelect() },
                 cardRects() { return cardRects.slice() },
@@ -1088,13 +1121,19 @@ const ViperPitGame = () => {
                         const g2 = c2.getContext('2d')
                         g2.drawImage(cv, 0, 0)
                         const d = g2.getImageData(0, 0, c2.width, c2.height).data
-                        let ink = 0, head = 0
+                        let ink = 0, head = 0, hx = 0, hy = 0
                         for (let y = 0; y < c2.height; y++) {
                             for (let x = 0; x < c2.width; x++) {
-                                if (d[(y * c2.width + x) * 4 + 3] > 24) { ink++; if (y < c2.height * 0.4) head++ }
+                                if (d[(y * c2.width + x) * 4 + 3] > 24) {
+                                    ink++
+                                    if (y < c2.height * 0.4) { head++; hx += x; hy += y }
+                                }
                             }
                         }
-                        out[id] = { ink: +(ink / (c2.width * c2.height)).toFixed(3), head }
+                        // #2172 head centroid: card poses angle and lean the head to
+                        // a different spot per fighter — the pixel proof that the
+                        // five portraits are five poses, not one pose five times.
+                        out[id] = { ink: +(ink / (c2.width * c2.height)).toFixed(3), head, cx: head ? Math.round(hx / head) : -1, cy: head ? Math.round(hy / head) : -1 }
                     }
                     return out
                 },

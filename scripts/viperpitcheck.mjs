@@ -930,18 +930,31 @@ if (MUT) {
     ok(new Set(vN).size === 5, `select gate: hover-note pitches differ per fighter (${vN.join('/')})`)
     const portGates = [
         ['portrait mini-renderer captures frames for the HUD', /preserveDrawingBuffer: true/],
-        ['portrait poses the rig in its own idle stance', /poseFighter\(rig, \{ st: 'idle'/],
-        ['front three-quarter framing for the card', /rig\.root\.rotation\.y = 0\.55/],
+        ['#2172 poseCard holds each fighter in their own select pose', /export function poseCard\(rig, def, tSec\)/],
+        ['#2172 the portrait renderer poses cards with poseCard', /poseCard\(rig, def, 0\.25\)/],
+        ['#2172 card yaw comes from the fighter\'s own card pose', /rig\.root\.rotation\.y = c\.yaw/],
         ['pit-teal rim light on the portrait', /new THREE\.DirectionalLight\(0x59e0c8, 1\.6\)/],
         ['card-aspect canvas so the HUD never stretches it', /canvas\.height = Math\.round\(w \* 0\.78\)/],
         ['full-body framing: camera back far enough to keep the head in', /cam\.position\.set\(0, 1\.6, 7\.4\)/],
     ]
     for (const [label, re] of portGates) ok(re.test(rsrc), `select gate: ${label}`)
+    ok((fsrc.match(/\bcard: \{/g) || []).length >= 5, 'select gate: every fighter carries a card pose (#2172)')
+    ok(ROSTER.every((d) => d.card && d.card.yaw > 0 && d.card.yaw < 1.2 && Array.isArray(d.card.arms) && d.card.arms.length === 2 && Array.isArray(d.card.legs) && d.card.legs.length === 2),
+        'select gate: every card pose is a sane yaw + two arms + two legs (#2172)')
+    ok(new Set(ROSTER.map((d) => JSON.stringify(d.card))).size === 5, 'select gate: all five card poses differ (#2172)')
+    ok(new Set(ROSTER.map((d) => d.card.yaw)).size === 5, 'select gate: card yaws are five distinct angles (#2172)')
     const mutC = rsrc.replace('cam.position.set(0, 1.6, 7.4)', 'cam.position.set(0, 1.2, 3.1)')
     ok(!/cam\.position\.set\(0, 1\.6, 7\.4\)/.test(mutC), 'mutant: portrait camera pushed too close fails the framing gate (harness bites)')
+    const mutK = fsrc.replace(/\bcard: \{/g, 'card__X: {')
+    ok((mutK.match(/\bcard: \{/g) || []).length === 0, 'mutant: stripped card poses empty the pose-data gate (harness bites)')
     const cabGates = [
         ['select screen builds the portraits once', /const ensurePortraits = \(\) => \{\s*if \(portraits\) return portraits/],
-        ['card body composites the captured rig portrait', /hctx\.drawImage\(pt, x \+ cw \* 0\.04/],
+        ['card body composites the captured rig portrait', /hctx\.drawImage\(pt, x \+ cw \* 0\.5 - pw \/ 2/],
+        ['#2172 the hovered portrait scales up on its zoom', /const zc = 1 \+ 0\.16 \* z/],
+        ['#2172 zoom eases toward the cursor every frame', /cardZoom\[i\] \+= \(target - cardZoom\[i\]\) \* 0\.22/],
+        ['#2172 the hovered card draws last so its zoom rides on top', /ROSTER\.forEach\(\(rd, i\) => \{ if \(i !== cursor\) drawCard\(rd, i\) \}\)\s*drawCard\(ROSTER\[cursor\], cursor\)/],
+        ['#2172 tapping another card walks the cursor there', /if \(hit >= 0 && hit !== cursor\) hoverSelect\(hit - cursor\)/],
+        ['#2172 the zoom resets when select closes', /scr !== 'select' && cardZoom\.some\(\(v\) => v !== 0\) \) cardZoom\.fill\(0\)/],
         ['the hovered card glows teal', /shadowColor = 'rgba\(89,224,200,0\.75\)'/],
         ['hovering blips the hovered fighter voice', /const hoverSelect = \(d\) => \{\s*cursor = \(cursor \+ d \+ ROSTER\.length\) % ROSTER\.length\s*hoverBlip\(ROSTER\[cursor\]\)/],
         ['the arrow keys drive the hover blip', /hoverSelect\(-1\)[\s\S]*hoverSelect\(1\)/],
@@ -953,12 +966,17 @@ if (MUT) {
         ['all five cards fit the screen', /const cw = Math\.min\(H \* 0\.5, \(W \* 0\.94\) \/ \(total \* 1\.06\)\)/],
         ['card rects recorded at draw time for the probe', /cardRects\[i\] = \{ id: rd\.id, x, y, w: cw, h: ch \}/],
         ['dev hook reports the card rects', /cardRects\(\) \{ return cardRects\.slice\(\) \}/],
+        ['#2172 dev hooks expose the zoom + head centroid', /zoom: cardZoom\[cursor\] \|\| 0[\s\S]*zoomOf\(i\)[\s\S]*cx: head \? Math\.round\(hx \/ head\) : -1/],
     ]
     for (const [label, re] of cabGates) ok(re.test(gsrc), `select gate: ${label}`)
     ok(/selectInfo\(\) \{/.test(gsrc) && /hover\(d\) \{ hoverSelect\(d \| 0\) \}/.test(gsrc) && /pick\(\) \{ atSelect\(\) \}/.test(gsrc),
         'select gate: dev hooks expose selectInfo/hover/pick')
-    const mutP = gsrc.replace('hctx.drawImage(pt, x + cw * 0.04, y + ch * 0.02, cw * 0.92, ch * 0.92)', '')
+    const mutP = gsrc.replace('hctx.drawImage(pt, x + cw * 0.5 - pw / 2, yy + ch * (0.48 - 0.06 * z) - ph / 2, pw, ph)', '')
     ok(!/hctx\.drawImage\(pt/.test(mutP), 'mutant: portraits dropped from the cards fails the gate (harness bites)')
+    const mutZ = gsrc.replace('const zc = 1 + 0.16 * z', 'const zc = 1')
+    ok(!/const zc = 1 \+ 0\.16 \* z/.test(mutZ), 'mutant: flattened hover zoom fails the zoom gate (harness bites)')
+    const mutT = gsrc.replace('drawCard(ROSTER[cursor], cursor)', '')
+    ok(!/drawCard\(ROSTER\[cursor\], cursor\)/.test(mutT), 'mutant: hovered card buried under its neighbours fails the raise gate (harness bites)')
     const mutH = gsrc.replace('hoverBlip(ROSTER[cursor])', '')
     ok(!/hoverBlip\(ROSTER\[cursor\]\)/.test(mutH), 'mutant: silent hover fails the gate (harness bites)')
     const mutV = fsrc.replace(/\bvoice: \{/g, 'voice__X: {')
@@ -1039,6 +1057,53 @@ if (!MUT) {
         })
         ok(fit.length >= 5 && fit.every((c) => c.onScreen), `all five cards sit on screen (${fit.map((c) => c.id).join(',')})`)
         ok(fit.every((c) => c.ink > 0.04), `each card carries its portrait on the HUD (${fit.map((c) => `${c.id}:${c.ink}`).join(' ')})`)
+        // #2172 pose-per-card: the head centroid sits at a different spot per
+        // portrait — five poses, not one pose tinted five times.
+        {
+            let sep = 0, sepAll = 0
+            for (let a = 0; a < PIDS.length; a++) for (let b = a + 1; b < PIDS.length; b++) {
+                sepAll++
+                const da = pstats[PIDS[a]], db = pstats[PIDS[b]]
+                if (da && db && da.cx >= 0 && db.cx >= 0 && Math.hypot(da.cx - db.cx, da.cy - db.cy) >= 3) sep++
+            }
+            const cxy = PIDS.map((id) => `${id}:${pstats[id].cx},${pstats[id].cy}`).join(' ')
+            ok(sep >= 8, `select cards hold five distinct poses — head centroids separate ${sep}/${sepAll} pairs by 3px+ (${cxy})`)
+        }
+        // #2172 hover zoom: the hovered card scales its portrait up, and the
+        // zoom hands over to the new card when the cursor moves.
+        await page.waitForFunction(() => window.__viperPitTest.selectInfo().zoom > 0.9, null, { timeout: 3000 }).catch(() => {})
+        const zIn = await page.evaluate(() => window.__viperPitTest.selectInfo().zoom)
+        ok(zIn > 0.9, `the hovered card holds its portrait big (${zIn.toFixed(2)})`)
+        {
+            const oldCur = si.cursor
+            const newCur = (oldCur + 1) % 5
+            await page.evaluate(() => window.__viperPitTest.hover(1))
+            await page.waitForFunction(([o, n]) => window.__viperPitTest.zoomOf(o) < 0.1 && window.__viperPitTest.zoomOf(n) > 0.5,
+                [oldCur, newCur], { timeout: 3000 }).catch(() => {})
+            const zo = await page.evaluate(([o, n]) => [window.__viperPitTest.zoomOf(o), window.__viperPitTest.zoomOf(n)], [oldCur, newCur])
+            ok(zo[0] < 0.1 && zo[1] > 0.5, `hover zoom follows the cursor (${oldCur}->${newCur}: ${zo[0].toFixed(2)} -> ${zo[1].toFixed(2)})`)
+        }
+        // #2172 tap-to-hover: a tap on another card walks the cursor there with
+        // its zoom and blip, and does NOT pick; the same card tapped again does
+        // (the second tap rides the existing Space-pick below).
+        {
+            const tapPt = await page.evaluate(() => {
+                const cv = document.querySelector('canvas[data-viperpit-hud]')
+                const rect = cv.getBoundingClientRect()
+                const r = window.__viperPitTest.cardRects()[0]
+                return { vx: rect.left + (r.x + r.w * 0.5) * (rect.width / cv.width), vy: rect.top + (r.y + r.h * 0.5) * (rect.height / cv.height) }
+            })
+            const bt0 = await page.evaluate(() => ({ ...window.__vpAudio }))
+            await page.mouse.click(tapPt.vx, tapPt.vy)
+            await page.waitForFunction(() => window.__viperPitTest.selectInfo().cursor === 0, null, { timeout: 3000 }).catch(() => {})
+            const t1 = await page.evaluate(() => ({ ...window.__viperPitTest.selectInfo(), osc: window.__vpAudio.osc }))
+            ok(t1.cursor === 0 && !t1.line, `tapping another card hovers instead of picking (cursor -> ${t1.cursor}, no line)`)
+            ok(t1.osc - bt0.osc >= 2, `the tap-to-hover blips that fighter's voice (${t1.osc - bt0.osc} tones)`)
+            await page.waitForFunction(() => window.__viperPitTest.zoomOf(0) > 0.5, null, { timeout: 3000 }).catch(() => {})
+            const zTap = await page.evaluate(() => window.__viperPitTest.zoomOf(0))
+            ok(zTap > 0.5, `the tapped card zooms like a keyboard hover would (${zTap.toFixed(2)})`)
+            await page.evaluate((d) => window.__viperPitTest.hover(d), si.cursor - 0)
+        }
         const b0 = await page.evaluate(() => ({ ...window.__vpAudio }))
         await page.keyboard.press('ArrowRight')
         await page.waitForTimeout(150)
