@@ -74,3 +74,67 @@ export function clapVerdict(r) {
         why: broke.length ? `${broke.length}/${pairs.length} clap(s) outside ±${tol} ms` : `${pairs.length} clap(s) inside ±${tol} ms`,
     }
 }
+
+// PHONE GRADING (#2056): the order-pairing above assumes a take where the ONLY
+// presses are the clap taps — true for the synth driver, false for a real phone
+// Gauntlet session: the analog stick adds steering/drift edges, the attack
+// buttons never enter the direction streams, and normal play happens between
+// claps. matchClapEdges pairs each onset with the NEAREST input edge of ANY
+// control (buttons, direction bits, analog threshold crossings — the caller
+// flattens them into one tick list) within a ±windowMs search window, then the
+// SAME ±50 ms line runs over those pairs. Edges with no nearby onset are
+// ignored (play is not a clap); onsets with no nearby edge stay unmatched and
+// keep the take honest via minPairs (default 3 — the physical test is three
+// claps). The search window makes the take gradeable; it does NOT soften the
+// budget: an edge inside window but outside ±50 ms still goes RED, so the
+// 500 ms mutant (presses half a second from their claps) can never pair and
+// can never pass. Window > budget on purpose: a phone whose mic sits ~200 ms
+// behind the frame clock must come back honestly RED (measured), not merely
+// ungradeable — hence ±250 ms candidates against the ±50 ms acceptance line.
+export const CLAP_SEARCH_MS = 250
+export const CLAP_MIN_PAIRS = 3
+
+export function matchClapEdges(r) {
+    const sr = Number.isFinite(r.sampleRate) && r.sampleRate > 0 ? r.sampleRate : 48000
+    const tol = Number.isFinite(r.tolMs) ? r.tolMs : CLAP_TOL_MS
+    const win = Number.isFinite(r.windowMs) ? r.windowMs : CLAP_SEARCH_MS
+    const minPairs = Number.isFinite(r.minPairs) ? r.minPairs : CLAP_MIN_PAIRS
+    const onsets = r.onsets || []
+    const edgeTicks = [...(r.edgeTicks || [])].sort((a, b) => a - b)
+    const clock = r.clock || []
+    if (!clock.length) return { ok: false, pairs: [], matched: 0, unmatchedOnsets: onsets.length, ignoredEdges: edgeTicks.length, worstMs: null, why: 'no clock trace' }
+    if (!edgeTicks.length) return { ok: false, pairs: [], matched: 0, unmatchedOnsets: onsets.length, ignoredEdges: 0, worstMs: null, why: 'no input edges recorded' }
+    const pairs = []
+    const used = new Set()
+    let unmatched = 0
+    for (const o of onsets) {
+        const heardMs = (o / sr) * 1000
+        let best = null
+        for (const t of edgeTicks) {
+            const expectedMs = tickToMs(clock, t)
+            if (expectedMs == null) continue
+            const d = Math.abs(heardMs - expectedMs)
+            if (d <= win && d <= (best ? best.d : Infinity) && !used.has(t)) { best = { t, expectedMs, d }; }
+        }
+        if (!best) { unmatched++; continue }
+        used.add(best.t)
+        pairs.push({ tick: best.t, expectedMs: +best.expectedMs.toFixed(1), heardMs: +heardMs.toFixed(1), offsetMs: +(heardMs - best.expectedMs).toFixed(1) })
+    }
+    pairs.sort((a, b) => a.tick - b.tick)
+    const matched = pairs.length
+    if (matched < minPairs) {
+        return { ok: false, pairs, matched, unmatchedOnsets: unmatched, ignoredEdges: edgeTicks.length - matched, worstMs: null,
+            why: `${matched} clap-coincident edge(s) of ${onsets.length} clap(s) — need ${minPairs} (a real take has a clap per tap)` }
+    }
+    const worst = pairs.reduce((w, p) => (Math.abs(p.offsetMs) > Math.abs(w) ? p.offsetMs : w), 0)
+    const broke = pairs.filter((p) => Math.abs(p.offsetMs) > tol)
+    return {
+        ok: broke.length === 0,
+        pairs,
+        matched,
+        unmatchedOnsets: unmatched,
+        ignoredEdges: edgeTicks.length - matched,
+        worstMs: +worst.toFixed(1),
+        why: broke.length ? `${broke.length}/${matched} clap(s) outside ±${tol} ms` : `${matched} clap(s) inside ±${tol} ms`,
+    }
+}
