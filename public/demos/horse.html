@@ -126,26 +126,29 @@ const LEGS = [
 // hip anchors, body-centre frame: fore = "elbow" height, hind = stifle
 const HIP = {
   F: { x: 0.55, y: 1.10 - YC, l1: 0.55, l2: 0.62, foot: 0.15, z: 0.20 },
-  H: { x: -0.70, y: 1.32 - YC, l1: 0.62, l2: 0.72, foot: 0.15, z: 0.24 },
+  H: { x: -0.70, y: 1.32 - YC, l1: 0.66, l2: 0.78, foot: 0.15, z: 0.24 },
 };
 
 function inContact(leg, phi) {
   let u = phi - leg.c; if (u < 0) u += 1;
   return u < leg.d ? u / leg.d : -1;
 }
-// hoof position in body-centre frame: stance slides back at exactly the
-// ground rate (zero slip); swing reaches forward with a lift arc.
+// Hoof position in the BODY-FIXED world (the horse stays at the origin; the
+// ground scrolls −STRIDE per cycle behind it).
+// • Stance: the hoof is locked to its ground point — the point simply rides
+//   back with the scrolling ground, so its world position is EXACTLY linear
+//   and its ground-frame position is constant: zero slip, no pitch artifact.
+// • Swing: the hoof is attached to the body again, so it follows the pitched,
+//   heaving body — a cubic reach with a lift arc.
 function hoofBody(leg, phi) {
-  const u = inContact(leg, phi);
-  if (u >= 0) return { x: leg.xLand - STRIDE * u, y: 0.14 - YC + 0.05 * Math.sin(Math.PI * u), s: 1 };
-  let w = phi - leg.c - leg.d; if (w < 0) w += 1;
-  const v = w / (1 - leg.d);
+  let ur = phi - leg.c; if (ur < 0) ur += 1;                 // raw contact age (stride frac)
+  if (ur < leg.d) return { x: leg.xLand - STRIDE * ur, y: 0.14 + 0.05 * Math.sin(Math.PI * ur / leg.d), s: 1 };
+  const v = (ur - leg.d) / (1 - leg.d);                      // swing progress 0..1
   const ease = v * v * (3 - 2 * v);
-  return {
-    x: lerp(leg.xLand - STRIDE * leg.d, leg.xLand, ease),
-    y: leg.lift * Math.sin(Math.PI * v) + 0.14 - YC,
-    s: 0,
-  };
+  // swing runs in world/ground coords: liftoff rides back with the ground,
+  // then the hoof reaches forward to the landing spot — so the swing END
+  // meets the next stance's ground-locked start exactly (continuity gate)
+  return { x: lerp(leg.xLand - STRIDE * leg.d, leg.xLand, ease), y: leg.lift * Math.sin(Math.PI * v) + 0.14, s: 0 };
 }
 // body heave and pitch ride the same clock: dip after the fore pair lands,
 // rise through the hind push, small nod twice per stride.
@@ -215,7 +218,7 @@ function tri3(a, b, c, col, alpha) {
   const ccx = (a[0] + b[0] + c[0]) / 3 - basis.pos[0];
   const ccy = (a[1] + b[1] + c[1]) / 3 - basis.pos[1];
   const ccz = (a[2] + b[2] + c[2]) / 3 - basis.pos[2];
-  if (nrm[0] * ccx + nrm[1] * ccy + nrm[2] * ccz < 0) nrm = [-nrm[0], -nrm[1], -nrm[2]];
+  if (nrm[0] * ccx + nrm[1] * ccy + nrm[2] * ccz > 0) nrm = [-nrm[0], -nrm[1], -nrm[2]];  // normal faces the camera
   const fz = basis.focal;
   let zsum = 0;
   const ps = pts.map(p => { zsum += p[2]; return [W * 0.5 + fz * p[0] / p[2], H * 0.5 - fz * p[1] / p[2]]; });
@@ -309,9 +312,8 @@ function drawLeg(leg, phi, bm, colDark) {
   const rot = (x, y) => [x * Math.cos(bm.pitch) - y * Math.sin(bm.pitch), x * Math.sin(bm.pitch) + y * Math.cos(bm.pitch)];
   const j0 = rot(hip.x, hip.y);
   const joint = [j0[0], j0[1] + bm.y, leg.side * hip.z];
-  const hb = hoofBody(leg, phi);
-  const hq = rot(hb.x, hb.y);
-  const hoof = [hq[0], hq[1] + bm.y, joint[2]];
+  const hb = hoofBody(leg, phi);          // world point (body-fixed world)
+  const hoof = [hb.x, hb.y, joint[2]];
   const ankle = [hoof[0] - Math.sin(bm.pitch) * hip.foot, hoof[1] - Math.cos(bm.pitch) * hip.foot];
   // two-bone IK in the sagittal plane (elbow trails fore, stifle leads hind)
   const dx = ankle[0] - joint[0], dy = ankle[1] - joint[1];
@@ -405,8 +407,8 @@ function drawScenery(travel) {
   const scroll = travel % L;
   const slot = x => { let w = (x - scroll) % L; if (w < -L / 2) w += L; return w; };
   for (let m = 0; m < 5; m++) {                        // far mesas on the forward rim
-    const bx = slot(6 + m * (L / 5)), bz = 40 + h1(m) * 14;
-    const w = 7 + h1(m + 40) * 8, hgt = 5 + h1(m + 80) * 8;
+    const bx = slot(6 + m * (L / 5)), bz = 62 + h1(m) * 14;
+    const w = 7 + h1(m + 40) * 8, hgt = 8 + h1(m + 80) * 12;
     pbox(bx, hgt * 0.5 - 0.02, bz, w * 0.5, w * 0.42, hgt * 0.5, hgt * 0.5, w * 0.40, w * 0.42, 0, [176, 158, 150]);
   }
   for (let b = 0; b < 14; b++) {                      // sagebrush cones
@@ -456,16 +458,16 @@ function drawDust(phi) {
     if (a > life) continue;
     const u = a / life;
     const baseX = leg.xLand - STRIDE * a;
-    for (let k = 0; k < 5; k++) {
+    for (let k = 0; k < 6; k++) {
       const kk = li * 7 + k;
       const px = baseX + (h1(kk) - 0.5) * 0.35;
       const py = 0.02 + u * (0.30 + h1(kk + 3) * 0.35);
       const pz = leg.side * 0.22 + (h2(kk, 1) - 0.5) * 0.3;
       const p = project([px, py, pz]);
       if (!p) continue;
-      const rad = (0.05 + u * 0.16) * (basis.focal / p[2]);
-      ctx.globalAlpha = (1 - u) * (1 - u) * 0.4;
-      ctx.fillStyle = '#d8c6a4';
+      const rad = (0.05 + u * 0.17) * (basis.focal / p[2]);
+      ctx.globalAlpha = (1 - u) * (1 - u) * 0.55;
+      ctx.fillStyle = '#e8d9bc';
       ctx.beginPath(); ctx.arc(p[0], p[1], rad, 0, TAU); ctx.fill();
     }
   }
@@ -476,9 +478,10 @@ function drawDust(phi) {
 function drawSky() {
   const g = ctx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, 'rgb(38,42,84)');
-  g.addColorStop(0.52, 'rgb(120,96,120)');
-  g.addColorStop(0.72, 'rgb(214,146,110)');
-  g.addColorStop(1, 'rgb(240,182,138)');
+  g.addColorStop(0.20, 'rgb(84,74,104)');
+  g.addColorStop(0.30, 'rgb(168,120,112)');
+  g.addColorStop(0.34, 'rgb(216,152,116)');
+  g.addColorStop(1, 'rgb(232,176,136)');
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
   const sp = project([-80, 6, 84]);       // low sun bloom where the light comes from
   if (sp) {
@@ -504,8 +507,7 @@ function computeHooves(p) {
   const out = { bodyY: bm.y, pitch: bm.pitch };
   for (const leg of LEGS) {
     const hb = hoofBody(leg, p);
-    const q = [hb.x * Math.cos(bm.pitch) - hb.y * Math.sin(bm.pitch), hb.x * Math.sin(bm.pitch) + hb.y * Math.cos(bm.pitch)];
-    out[leg.name] = { x: q[0], y: q[1] + bm.y, z: leg.side, contact: hb.s };
+    out[leg.name] = { x: hb.x, y: hb.y, z: leg.side, contact: hb.s };
   }
   return out;
 }
@@ -517,15 +519,23 @@ function startedC(c, prev, cur) {
 function audit(prev, cur) {
   for (const leg of LEGS) {
     const u = inContact(leg, cur);
-    const g = computeHooves(cur)[leg.name];
     if (u >= 0) {
-      const gf = g.x;                       // ground-frame: stance x already slides at STRIDE
+      const gf = hoofBody(leg, cur).x + STRIDE * cur;   // ground-frame: world x + scroll
       if (!wasStance[leg.name]) { lastGround[leg.name] = gf; wasStance[leg.name] = true; slipMax[leg.name] = slipMax[leg.name] || 0; }
       const mm = Math.abs(gf - lastGround[leg.name]) * 1000;
       if (mm > slipMax[leg.name]) slipMax[leg.name] = mm;
     } else wasStance[leg.name] = false;
-    if (startedC(leg.c, prev, cur) && !orderBuf.includes(leg.name)) orderBuf += leg.name;
   }
+  // footfall order: stamp contact STARTS this frame in chronological order;
+  // a backward φ-wrap begins a fresh stride
+  if (prev > cur) orderBuf = '';
+  const stamps = [];
+  for (const leg of LEGS) {
+    const crossed = prev <= cur ? (leg.c > prev && leg.c <= cur) : (leg.c > prev || leg.c <= cur);
+    if (crossed) stamps.push([prev > cur && leg.c <= cur ? leg.c + 1 : leg.c, leg.name]);
+  }
+  stamps.sort((a, b) => a[0] - b[0]);
+  for (const s of stamps) if (!orderBuf.includes(s[1])) orderBuf += s[1];
   if (orderBuf.length === 8) { orderSeen = orderBuf; orderBuf = ''; }
 }
 
@@ -639,6 +649,7 @@ window.__horseTest = {
   setPhase(p) { paused = true; tRun = p * T_STRIDE; phi = p; render(); },
   // pure-function state at any phase — proves the seam without time travel
   stateAt(p) {
+    p = ((p % 1) + 1) % 1;
     const bm = bodyMotion(p);
     const hv = computeHooves(p);
     const s = { bodyY: bm.y, pitch: bm.pitch, travel: p * STRIDE };
@@ -669,7 +680,7 @@ window.__horseTest = {
     }
     return n;
   },
-  reset() { tRun = 0; phi = 0; travel = 0; paused = false; lastTs = 0; Object.assign(cam, camReset); },
+  reset() { tRun = 0; phi = 0; travel = 0; paused = false; lastTs = 0; orderBuf = ''; orderSeen = ''; Object.assign(cam, camReset); },
 };
 
 requestAnimationFrame(frame);

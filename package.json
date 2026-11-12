@@ -40,6 +40,7 @@
     "creditscheck": "node scripts/creditscheck.mjs",
     "deepglasscheck": "node scripts/deepglasscheck.mjs",
     "stickwalkcheck": "node scripts/stickwalkcheck.mjs",
+    "horsecheck": "node scripts/horsecheck.mjs",
     "physicswalkcheck": "node scripts/physicswalkcheck.mjs",
     "learnedwalkcheck": "node scripts/learnedwalkcheck.mjs",
     "neverbudrycheck": "node scripts/neverbudrycheck.mjs",
