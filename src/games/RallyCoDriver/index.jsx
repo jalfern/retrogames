@@ -502,8 +502,11 @@ export default function RallyCoDriver() {
             askConsent()
                 .then(() => {
                     startRace()
-                    // honest seat labels at stop time (WATCH/M may own seat 1)
-                    beginRun({ sources: () => [{ kind: watchSeat.on || modelSeat.on ? 'model' : 'human' }, { kind: play.g.co.kind }] })
+                    // honest seat labels at stop time (WATCH/M may own seat 1).
+                    // #2058: opt out of autoStart's seat-0 human stamp — this
+                    // game already labels seat 0 honestly (watch/model seats
+                    // are NOT the thumb).
+                    beginRun({ sources: () => [{ kind: watchSeat.on || modelSeat.on ? 'model' : 'human' }, { kind: play.g.co.kind }], humanSeats: false })
                 })
                 .finally(() => setStartBusy(false))
         }

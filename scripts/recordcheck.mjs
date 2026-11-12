@@ -289,6 +289,41 @@ const BASE = `http://127.0.0.1:${server.address().port}`
     ok(revoked.uploaded === false && revoked.reason === 'no motion consent', 'a mid-run revoke stops the upload at the last moment')
 }
 
+// --- #2058: an auto-captured run stamps seat 0 human whatever the spec claims --
+// Gauntlet's armed spec says seat 0 is `model` — true for contract steps, a
+// LIE for a phone thumb — and humanSeats came back 0 on every iPhone take,
+// starving the S3 training set of its human labels. autoStart is only ever
+// reached through autoRecord.beginRun, which only fires at human-start sites
+// with stored motion consent; so seat 0 IS the human there, structurally.
+{
+    const sim = { seed: 0, tick: 0, h: 0 }
+    const advance = (pads) => {
+        sim.tick++
+        let bits = 0
+        for (const p of pads) bits += (p.right ? 1 : 0) + (p.left ? 2 : 0)
+        sim.h = (sim.h * 131 + bits) % 1000000007
+    }
+    ok(armLiveCapture({ id: 'gauntlet', method: 'dpad', players: 2, sources: () => [{ kind: 'model' }, { kind: 'cpu' }], state: () => ({ seed: sim.seed, hash: sim.h }) }) === true, 're-arm: spec claims seat 0 model (the contract truth)')
+    sim.seed = 9; sim.h = 9 * 31
+    ok(autoStart({ voiceConsent: false }) === true, 'autoStart #2 opens for the consented human run')
+    for (let t = 1; t <= 60; t++) { const pads = [{ left: t % 8 < 4 }, {}]; advance(pads); recordLiveTick(pads) }
+    const outA = autoStop()
+    ok(outA.rec.slots[0].source.kind === 'human', '#2058: seat 0 lands human whatever the spec claimed', JSON.stringify(outA.rec.slots.map((s) => s.source)))
+    ok(outA.rec.slots[1].source.kind === 'cpu', '#2058: the other seats keep what the game reports')
+    ok(armLiveCapture({ id: 'gauntlet', method: 'dpad', players: 2, sources: () => [{ kind: 'model' }, { kind: 'cpu' }], state: () => ({ seed: sim.seed, hash: sim.h }) }) === true, 're-arm: watch-seat style spec')
+    sim.seed = 10; sim.h = 10 * 31
+    ok(autoStart({ voiceConsent: false, humanSeats: false }) === true, 'autoStart #2b: the honest-lobby opt-out opens')
+    for (let t = 1; t <= 60; t++) { const pads = [{ left: t % 8 < 4 }, {}]; advance(pads); recordLiveTick(pads) }
+    const outW = autoStop()
+    ok(outW.rec.slots[0].source.kind === 'model', '#2058: humanSeats:false opts the stamp out — Rally\'s watch seat stays model', JSON.stringify(outW.rec.slots.map((s) => s.source)))
+    ok(armLiveCapture({ id: 'gauntlet', method: 'dpad', players: 2, state: () => ({ seed: sim.seed, hash: sim.h }) }) === true, 're-arm: spec with no sources at all')
+    sim.seed = 11; sim.h = 11 * 31
+    ok(autoStart({ voiceConsent: false }) === true, 'autoStart #3 opens')
+    for (let t = 1; t <= 60; t++) { const pads = [{ right: t % 6 < 3 }, {}]; advance(pads); recordLiveTick(pads) }
+    const outB = autoStop()
+    ok(outB.rec.slots[0].source.kind === 'human' && outB.rec.slots[1].source.kind === 'model', '#2058: no-sources spec -> human seat 0 + the recorder model default beyond it', JSON.stringify(outB.rec.slots.map((s) => s.source)))
+}
+
 // --- alignment bound: the clap proof (Node twin) ------------------------------
 // A clap is one spike: mic-open (tick 1, ms 0) is the t0 anchor; every later
 // tick must sit within ±50 ms of where the clock trace interpolates it —

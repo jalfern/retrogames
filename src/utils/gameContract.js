@@ -117,6 +117,26 @@ export function autoStart(opts = {}) {
     const s = spec.state()
     if (!Number.isInteger(s.seed)) return false
     const players = spec.players && spec.players > 1 ? spec.players : 1
+    // #2058: seat 0 of an AUTO-captured run is a human, by construction —
+    // autoRecord.beginRun only fires at human-start sites after a stored
+    // motion grant (the harness drives the DEV contract, never this path).
+    // Game specs stamp seat 0 `model` because that is TRUE for contract
+    // steps; on a phone that seat is the thumb, and `model` there poisoned
+    // every training label (humanSeats 0 on Jon's iPhone takes). Override
+    // at the origin; other seats keep whatever the game reports. A game
+    // whose LOCAL player may sit elsewhere (Rally's watch seat) opts out
+    // with humanSeats:false and labels honestly itself.
+    const srcs = opts.sources || spec.sources || null
+    const stamp = opts.humanSeats !== false
+    const localHuman = (raw) => {
+        const arr = (Array.isArray(raw) ? [...raw] : []).slice(0, players)
+        while (arr.length < players) arr.push({ kind: 'model' }) // recorder default, unchanged
+        if (stamp) arr[0] = { kind: 'human' }
+        return arr
+    }
+    const sourcesOut = srcs
+        ? (typeof srcs === 'function' ? () => localHuman(srcs()) : localHuman(srcs))
+        : (stamp ? () => localHuman(null) : null)
     recorder = createRecorder({
         gameId: spec.id,
         method,
@@ -124,7 +144,7 @@ export function autoStart(opts = {}) {
         players,
         build: spec.build || BUILD,
         hashEvery: opts.hashEvery || DEFAULT_HASH_EVERY,
-        sources: opts.sources || spec.sources || null,
+        sources: sourcesOut,
         // #1711 S3: rule knobs the seed doesn't fix (Rally weather...); the
         // spec may hold an object or a live getter — resolved at recorder birth.
         rules: spec.rules || null,

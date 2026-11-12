@@ -394,12 +394,20 @@ export function createVoiceSession(opts = {}) {
             liveSessions.delete(reg); syncMicBadge()
             if (phase !== 'recording') { phase = 'done'; dbg('finalize-idle'); return Promise.resolve(null) }
             phase = 'done'
-            const ms = Math.round(now() - startMs)
             return new Promise((resolve) => {
                 const settle = () => {
                     if (stream) stream.getTracks().forEach((t) => { try { t.stop() } catch { /* gone */ } })
                     stream = null
                     const samples = clock.finish()
+                    // #2058: stamp the wall length HERE, after the encoder's
+                    // final chunk has landed — not when stop() was called.
+                    // iPhone Safari's flush latency (stop -> ondataavailable ->
+                    // onstop) is hundreds of ms; stamping before it made every
+                    // phone track claim an audio length SHORTER than its own
+                    // clock trace ends at (audioLonger:false on all three of
+                    // Jon's first takes). The bytes settle covers are the
+                    // bytes the track stores, so this is the honest length.
+                    const ms = Math.round(now() - startMs)
                     const b64From = (text) => ({
                         slots, consent: true, headset: consent.headset,
                         mime: mime || rec.mimeType || 'audio/webm',
