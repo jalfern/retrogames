@@ -127,6 +127,23 @@ export const RENT = { x: 12, y: 397, size: 8 }
 // x≈228) and left of the CORRECT/MISTAKE note (x >= ~613).
 export const PAYFX = { ticks: 45, rise: 12, x: 234, base: CHS - 19 }
 
+// #2020 THE CROWDED SHIFT SPEAKS — three new booth zones, all in the free
+// corridor under the ENTRANT label and below the bubble (face bottom 148,
+// ENTRANT baseline 168, bubble worst bottom 349, slip starts x=452, the
+// strip begins at y=400 — paperscheck re-pins every clearance).
+// THE LINE — a waiting strip of paper-mug silhouettes: one per known face
+// not yet ruled, plus a gold "…" tick when random heads wait behind. Three
+// glyphs at most (two regulars + dots), centered on the face column.
+export const QUEUE = { cx: 317, labelY: 180, mugY: 186, pitch: 22, r: 6, mug: '#7d89ad', dots: '#c9a34a' }
+// The bystander aside — two small lines (gold speaker tag, dim line) under
+// the speech bubble. Its right edge clears the deduction slip (x=452) and
+// its bottom clears the strip.
+export const ASIDE = { x: 258, y: 352, w: 190, h: 26, tag: 7, line: 8 }
+// The crowd's third note — one tone below the welcome's first, a low hum
+// under the recognition pair when a neighbor steps up on a crowded morning.
+// paperscheck re-pins it disjoint from every fixed tone the booth owns.
+export const CROWD_NOTE = { note: 392, dur: 0.14, gain: 0.03, wave: 'triangle' }
+
 export const ruleLines = (text) => {
     const words = text.split(' ')
     let n = 1, line = ''
