@@ -1,55 +1,52 @@
-# STATE — session 234 (2026-11-11, slot b)
+# STATE — session 235 (2026-11-11, slot b)
 
 ## What shipped
-**PAPERS, PLEASE-MIN: THE WALL THAT LIVES** — merged as `e991fc5` (PR #2048,
-Closes #1908, warden TARGET; claim was clean). The fifth-portrait playtest
-(#1908) caught the ORIGINAL working against the wall: FIRST×LAST was 10×8=80
-combos, decoys were undeduped stream draws — 27 within-week repeats across
-seeds, two same-bulletin doubles, and wall names walking the window on later
-days (55.6% near-miss entanglement). The fix is variety as construction:
-- Pool doubled (FIRST 16 × LAST 12 = 192 combos; the two combos that ARE a
-  regular's name removed — the arc is the only way the neighborhood decorates
-  the wall). Decoy names come from a per-week PLAN: slot (n,k) prints pool
-  index `seed*97 + n*71 + k*37 mod 190`, offsets verified collision-free for
-  |Δday|≤6, |Δslot|≤2 → twenty distinct names a week for every seed. Ids stay
-  stream draws, so `genDay` standalone still replays `genWeek` (pin green).
-- The week plan pre-seeds every day's `used`-set: no entrant/planted/regular
-  name ever equals a wall row's FULL name; the old rewrite guard became an
-  assertion. Token-level near-misses stay ON PURPOSE (they train NAME *AND*
-  NUMBER); planted-vs-other-day coincidences ~1.8/wk are drift-capped.
-- Readability: the fit law caps rows at 9px (worst y=356 vs SCALE.y=358 — 2 px
-  slack, now also pinned against shrinkage), so the lever shipped was CONTRAST:
-  dedicated `wallRed #ff6f5e` on the wanted rows (stamp `#d84343`, strikes
-  `#ff8080` stay distinct).
-Proof: paperscheck 18186 green, **43/43 mutants die** (new m43 frozen day-term,
-m44 unseeded plan); papersplay 90/90 — seed 0's whole week of 26 bulletin rows
-matches Node's plan row-for-row ACROSS processes, sheet ink 328 px (3-row day)
-/ 612 px (5-row day), zero live repeats, zero wall-names-line. Prod verified:
-`index-BbVaMeRK.js` carries `ff6f5e` + `*97+r*71+s*37` on
-https://jalfern.com/retrogames/papers-please. #1908 shipped+closed, live URL
-posted; residue (size-ceiling honesty) rides the README honest-gaps — 8b not
-filed, this WAS the polish pass.
+**PAPERS, PLEASE-MIN — PORTRAIT LEGIBILITY ROUND** — merged as `e7d508a`
+(PR #2059, Closes #1943, warden TARGET; claim was clean). The PORTRAIT-round
+playtest asked if the photo reads at phone size and if the nine-law wall buries
+the sheet. Answers were geometry, not tuning:
+- Photo deep-zoom: `PHOTO.s` 0.75→0.90 (the clip law admits ~0.97 — take the
+  ceiling: head ~50→61px, live run measured 62; chin crops at the frame edge
+  like a real ID photo). Ratchets: `s >= 0.85` + `s*68 >= 54` in paperscheck
+  (both old crops fail them; reverting s to 0.75 proven RED, restored).
+- Minimum-ink clamp in `drawFace`: thin COMPARED strokes (thin brow, glasses
+  bridge, shut-mouth bar) ≥2px at ANY scale; no-op at s=1 (every source value
+  ≥2), so counter face + all scale-1 byte-identity probes untouched by
+  construction. Live: photo brow ink 34 thin vs 74 thick dark-family px.
+- Nine-law relief: `ruleGap` 4→3 frees 9px (nine rules on day 7), spends 5 to
+  grow wanted rows 9→10px / 10→11 pitch. Worst buildable day y=352 vs SCALE
+  358 — 6px slack (was 2). Size ratchet moved to ≥10/≥11. Sheet ink
+  441/734px live (was 328/612).
+- Evidence corridor law: all 12 directional PORTRAIT strings ≤42 chars vs
+  wrap-54 — every witness one corridor line.
+- Items 2+5 (aged-photo bite, day-1 fairness) = balance data per the issue's
+  own doctrine: sweep reports 108 traps == 108 naive misjudges, ≤2/day, naive
+  eye clears every week (a wrong conviction is one strike, learnable); 14 aged
+  photos across 12 weeks; day-1 forger pinned live. Posted on #1943.
+Proof: paperscheck 18243/18243 with **all 43 mutants dead**; papersplay
+**91/91** live keys, zero page errors; lint gates + build green. Prod: see
+#1943 comment for the live URL + bundle marker.
 
 ## The session's catches
-- **Prod marker scans have three traps before the first honest answer.**
-  jalfern.com answers `Redirecting...` without `-L`; lazy-chunk refs appear BOTH
-  as `./x.js` and `assets/x.js` (normalize both); minification kills comments
-  and spaces — `seed * 97` ships as `seed*97…` (grep `\*\s*97`) and section
-  names never survive. Use string literals (hex colors) as markers.
-- **Pure-hex pixel gates lie about text**: 9px glyphs are ~98% antialiased
-  (exact-#ff6f5e counted 8 px). Count the hue family (`rr>170, g/b 80..150`)
-  inside a rect that only the sheet paints.
-- **Cross-process row-for-row proof works**: browser `probe().wanted` (rows +
-  planted flags + ids) == Node `genWeek(seed)` rows, name AND number — the
-  strongest cheap gate this title has for generator changes; reuse it.
-- A fresh worktree has no `node_modules` — `vite: command not found` until
-  `npm install` (4 s here, ifvms patch auto-applies).
+- **A fit law is a budget, not a wall**: #1908 concluded "rows CANNOT grow"
+  from the sheet's own 2px slack — but the 9-rule rulebook was spending 9px on
+  inter-rule gaps. Relief was upstream. Audit the whole column before accepting
+  a ceiling.
+- **Clamps that no-op at s=1 are free doctrine**: a min-ink floor written as
+  `Math.max(v*s, 2)` sharpens the photo while every byte-identity probe (which
+  renders at scale 1) stays green BY CONSTRUCTION — no pins to renegotiate.
+- **Thin-stroke ratios survive AA, absolute counts don't**: photo brow ink
+  separates thin/thick (34 vs 74) in a dark-family count; exact-hex counting at
+  fractional rect origins would have failed the same gate (#1908's lesson again).
+- Zoom ceiling arithmetic: centered + widest-inside-clip ⇒ `s ≤ (w + 2*margin)/
+  headwidth`; here 0.97 theoretical, 0.90 chosen so ears keep a 2–3px margin.
 
 ## Ladder trail
-TARGET #1908 claimed first, clean (no halt/steer/next anywhere, game-queue
-empty, no `building` corpses, jonq games: none open, no QA MASTER conflict —
-#1908 was the warden's, not a borrow). No jonq filed (recorded balance is not
-a question).
+TARGET #1943 claimed first (`forge-claim.sh 1943 b`), clean — no halt/steer/
+next anywhere, game-queue held only #1637, no `building` corpses, jonq games:
+none open. QA MASTER was live (pid 81627) but #1943 was the WARDEN's assignment
+to slot b (claim passed the liveness check — no QA claim on it), not a borrow.
+No jonq filed.
 
 ## Open questions
 - none (see waiting-jon issues).
@@ -62,10 +59,12 @@ a question).
 - **`viperpitcheck` is red-on-main and wired into NO CI job** (counter-throw
   gate drifted with #1761/#1785) — QA lane's call, flagged twice on #1637.
 - PPM drain law still stands (session 230): do not re-pick PPM at weakestStage
-  while its feedback pile + #2020 sit unowned. (This session's PPM work was a
-  warden TARGET, not a pick — the law's pile is now 10→9ish; #1908 closed.)
+  while its feedback pile sits unowned. #1908 + #1943 were warden TARGETs, not
+  picks; the PPM feedback pile is now thin (README honest gaps: procedural
+  portrait depth, numerals-in-evidence, no drag physics).
 - #2045 (lane-liveness crossings) and #2036 (resume-gate nightly budget)
   remain open harness improvements, unowned.
 - Dev servers: slot b 5178 STOPPED at exit; slot a 5173; QA studio 5176 (not
-  mine — untouched). `~/Dev/retrogames-forge-ppm-bulletin` left detached at
-  `e991fc5` (its branch died with the squash) — remove or reuse deliberately.
+  mine — untouched). Stale worktrees accumulating at ~/Dev/retrogames-forge-*
+  (detached, branches died with squashes) — candidates: ppm-portrait,
+  ppm-bulletin, papers-photo; remove deliberately.
