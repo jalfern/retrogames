@@ -9,7 +9,7 @@
 // Served at https://retrogames.jalfern.workers.dev/room/<CODE> (wss).
 
 import { DurableObject } from 'cloudflare:workers'
-import { CODE_RE, MAX_MSG, IDLE_MS, RATE_WINDOW, ROOM_CAP_MAX, relay, validateFeedback, buildFeedbackIssue, corsHeaders, FB_SHOT_PLACEHOLDER, screenshotMarkdown, uploadScreenshot, SES_MAX_BODY, validateSessionEnvelope, sessionKey, sessionMeta, sessionRow, SES_READ_HEADER, sessionReadOk } from './core.js'
+import { CODE_RE, MAX_MSG, IDLE_MS, RATE_WINDOW, ROOM_CAP_MAX, relay, validateFeedback, buildFeedbackIssue, corsHeaders, FB_SHOT_PLACEHOLDER, screenshotMarkdown, uploadScreenshot, SES_MAX_BODY, validateSessionEnvelope, sessionKey, sessionMeta, sessionRow, SES_READ_HEADER, sessionReadOk, SES_KEY_RE, validateSessionPatch, applySessionRelabel } from './core.js'
 
 const GH_API = 'https://api.github.com'
 
@@ -104,7 +104,9 @@ async function handleSessionUpload(req, env, origin) {
 // the private store require the JON_KEY secret in the x-session-key header —
 // before this, anyone with the worker URL could list and download every
 // voice recording. The rule itself is core.sessionReadOk (pure, Node-pinned
-// by relaycheck); this is the door on each read route. POST /sessions is
+// by relaycheck); this is the door on each PRIVILEGED route — the reads and
+// the relabel write (#2093 item 1): store edits are exactly as private as
+// store reads. POST /sessions is
 // deliberately NOT gated beyond the consent envelope ("Uploads stay as
 // they are" — phones upload without the key). Fail-closed: no JON_KEY
 // deployed = reads refused ('read lock not configured', distinguishable
@@ -134,10 +136,44 @@ async function handleSessionGet(req, env, origin, pathname) {
     const d = readDenied(req, env, origin)
     if (d) return d
     const key = decodeURIComponent(pathname.slice('/sessions/'.length))
-    if (!/^[a-z0-9][a-z0-9-]{0,40}\/[0-9-]{10}-seed\d+-[a-f0-9]{10}\.json$/.test(key)) return json({ ok: false, err: 'bad key' }, origin, 400)
+    if (!SES_KEY_RE.test(key)) return json({ ok: false, err: 'bad key' }, origin, 400)
     const obj = await env.SESSIONS.get(key)
     if (!obj) return json({ ok: false, err: 'not found' }, origin, 404)
     return new Response(obj.body, { headers: { 'content-type': 'application/json', ...corsHeaders(origin) } })
+}
+
+// RELABEL WRITE (#2093 item 1) — the store tool for repairing provenance on
+// stored takes (the three iPhone files whose seat 0 says 'model' although auto-
+// record only captures human starts). JON_KEY-gated by the same door as the
+// reads; the operation is fixed and auditable — core.applySessionRelabel
+// refuses everything except model→human on one seat, drops the stale modelId,
+// and returns a NEW object so a stored file is never half-edited. Metadata is
+// rebuilt with sessionMeta and the original uploadedAt/player survive; the
+// response names the exact change so the run is auditable from the answer.
+async function handleSessionPatch(req, env, origin, pathname) {
+    if (!env || !env.SESSIONS) return json({ ok: false, err: 'store not configured' }, origin, 503)
+    const d = readDenied(req, env, origin)
+    if (d) return d
+    const key = decodeURIComponent(pathname.slice('/sessions/'.length))
+    if (!SES_KEY_RE.test(key)) return json({ ok: false, err: 'bad key' }, origin, 400)
+    const len = Number(req.headers.get('content-length') || 0)
+    if (len > SES_MAX_BODY) return json({ ok: false, err: 'too big' }, origin, 413)
+    let body
+    try { body = await req.json() } catch { return json({ ok: false, err: 'bad json' }, origin, 400) }
+    const v = validateSessionPatch(body)
+    if (!v.ok) return json({ ok: false, err: v.err }, origin, 400)
+    const obj = await env.SESSIONS.get(key)
+    if (!obj) return json({ ok: false, err: 'not found' }, origin, 404)
+    let rec
+    try { rec = JSON.parse(await new Response(obj.body).text()) } catch { return json({ ok: false, err: 'stored file unreadable' }, origin, 500) }
+    const p = applySessionRelabel(rec, v.seat)
+    if (!p.ok) return json({ ok: false, err: p.err }, origin, 422)
+    const head = await env.SESSIONS.head(key)
+    const meta = (head && head.customMetadata) || {}
+    const fresh = sessionMeta(p.rec, meta.player || 'player')
+    if (meta.uploadedAt) fresh.uploadedAt = meta.uploadedAt
+    await env.SESSIONS.put(key, JSON.stringify(p.rec), { httpMetadata: { contentType: 'application/json' }, customMetadata: fresh })
+    return json({ ok: true, key, seat: v.seat, from: 'model', to: 'human' }, origin, 200)
 }
 
 export class Registry extends DurableObject {
@@ -297,6 +333,7 @@ export default {
         }
         if (req.method === 'POST' && url.pathname === '/feedback') return handleFeedback(req, env)
         if (req.method === 'POST' && url.pathname === '/sessions') return handleSessionUpload(req, env, origin)
+        if (req.method === 'PATCH' && url.pathname.startsWith('/sessions/')) return handleSessionPatch(req, env, origin, url.pathname)
         if (req.method === 'GET' && url.pathname === '/sessions') return handleSessionList(req, env, origin)
         if (req.method === 'GET' && url.pathname.startsWith('/sessions/')) return handleSessionGet(req, env, origin, url.pathname)
         if (url.pathname === '/' || url.pathname === '/status') {

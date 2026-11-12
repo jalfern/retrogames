@@ -101,7 +101,7 @@ export const CORS_ALLOW = [
     'https://www.jalfern.com',
     'https://retrogames.jalfern.workers.dev',
 ]
-export const CORS_ALLOW_METHODS = 'GET,POST,OPTIONS'
+export const CORS_ALLOW_METHODS = 'GET,PATCH,POST,OPTIONS'
 // x-session-key (#1711 S8): reads of the private store carry the key as a
 // custom header, so the preflight must allow it or the browser kills the
 // admin read before it ever reaches the worker.
@@ -480,4 +480,46 @@ export function sessionRow(key, meta, uploadedAt) {
         audio: m.audio === '1',
         uploadedAt: m.uploadedAt || uploadedAt || '',
     }
+}
+
+// RELABEL (#1711, #2093 item 1) — the store's one permitted write-after-upload:
+// repair a seat's provenance from 'model' to 'human'. Why this exists: auto-
+// record (#2058/#2090) only ever captures HUMAN starts, so takes stored before
+// the source-stamp fix (Jon's three iPhone takes, 2026-11-11) label seat 0
+// `model` when the evidence says a human drove. The operation is FIXED so the
+// door can never become a general editor:
+//   - body is exactly { seat } — any other field is refused (SHAPE law,
+//     fail-closed: an unknown patch field means a client we did not design);
+//   - the only kind that may change is 'model', and only to 'human' — the
+//     reverse (human→model) would launder provenance and is refused;
+//   - the seat's modelId is dropped with the relabel (no model drove it);
+//   - pads, raw, ping, voice and metadata live outside the patch entirely.
+// The route itself rides the READ LOCKDOWN door: JON_KEY in x-session-key,
+// constant-time, fail-closed — a worker without the secret can write nothing.
+
+export const SES_KEY_RE = /^[a-z0-9][a-z0-9-]{0,40}\/[0-9-]{10}-seed\d+-[a-f0-9]{10}\.json$/
+export const SES_MAX_SEATS = 4
+
+export function validateSessionPatch(body) {
+    if (!body || typeof body !== 'object') return { ok: false, err: 'body must be an object' }
+    for (const k of Object.keys(body)) {
+        if (k !== 'seat') return { ok: false, err: `unknown patch field: ${k}` }
+    }
+    const seat = body.seat
+    if (!Number.isInteger(seat) || seat < 0 || seat >= SES_MAX_SEATS) return { ok: false, err: `seat must be an integer 0..${SES_MAX_SEATS - 1}` }
+    return { ok: true, seat }
+}
+
+// applySessionRelabel returns { ok, rec } with a NEW object (the stored parse
+// is never half-mutated) or { ok:false, err } naming why the edit is refused.
+export function applySessionRelabel(rec, seat) {
+    if (!rec || typeof rec !== 'object') return { ok: false, err: 'bad recording' }
+    if (!Array.isArray(rec.slots)) return { ok: false, err: 'recording has no slots array' }
+    const slot = rec.slots[seat]
+    if (!slot || typeof slot !== 'object') return { ok: false, err: `seat ${seat}: no such seat in this take` }
+    if (!slot.source || typeof slot.source !== 'object') return { ok: false, err: `seat ${seat}: source missing — nothing to relabel` }
+    if (slot.source.kind !== 'model') return { ok: false, err: `seat ${seat}: kind is '${slot.source.kind}', only 'model' may become 'human'` }
+    const out = { ...rec }
+    out.slots = rec.slots.map((s, i) => (i === seat ? { ...s, source: { kind: 'human' } } : s))
+    return { ok: true, rec: out }
 }

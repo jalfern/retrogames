@@ -114,3 +114,28 @@ export async function listSessions(opts = {}) {
 // tickSeconds converts a tick count to world-seconds for the admin listing
 // (fixed timestep 60 Hz — WORLD seconds, per the harness law).
 export const tickSeconds = (ticks) => Math.round((ticks / 60) * 10) / 10
+
+// relabelSession (#2093 item 1) — the admin write: repair seat provenance on
+// a stored take (model→human, the ONE operation the worker's PATCH route
+// allows — core.applySessionRelabel grades every edit). Rides the same read
+// lockdown as the listing: `key` carries JON_KEY in x-session-key, so this is
+// run as `JON_KEY=<secret> npm run sessions -- relabel <key> --seat 0`, never
+// from a phone. Returns { ok, reason? }; the store's own refusal (422 'kind
+// is ...' etc.) surfaces verbatim in `reason`.
+export async function relabelSession(key, opts = {}) {
+    const { seat = 0, base = STORE_DEFAULT, key: jonKey = null, fetchImpl = null } = opts
+    const f = fetchImpl || globalThis.fetch
+    try {
+        const res = await f(`${base}/sessions/${encodeURIComponent(String(key))}`, {
+            method: 'PATCH',
+            headers: jonKey ? { 'content-type': 'application/json', 'x-session-key': String(jonKey) } : { 'content-type': 'application/json' },
+            body: JSON.stringify({ seat }),
+        })
+        let j = null
+        try { j = await res.json() } catch { /* non-json answer is itself the finding */ }
+        if (!res.ok) return { ok: false, reason: (j && j.err) || `http ${res.status}` }
+        return { ok: true, key: (j && j.key) || key, seat: (j && j.seat) ?? seat }
+    } catch (e) {
+        return { ok: false, reason: `store unreachable: ${String((e && e.message) || e)}` }
+    }
+}

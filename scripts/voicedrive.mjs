@@ -118,6 +118,128 @@ if (rec) {
     const { validate } = await import('../src/utils/recording.js')
     r.check('the live-captured file validates', validate(rec) === null, validate(rec) || '')
 }
+// #2093 item 5 — THE PHONE SHAPE: iPhone Safari's encoder settles its final
+// chunk HUNDREDS OF ms after stop(); that flush latency is what #2058's
+// settle-stamp fix had to absorb, and until now the law (track ms >= its own
+// clock trace end) was only pinned on Node synth. This page wraps the REAL
+// MediaRecorder in a fence that delivers every post-stop event 500 ms late —
+// chunking, clock, blob assembly, finalize: all production plumbing, only the
+// latency is synthetic. The gates: the fence actually delayed (trace), the
+// take still captured (flushed bytes), and finalize's stamp waited for the
+// flush — the honest length, proven in Chrome.
+const flushCtx = await browser.newContext({ viewport: { width: 900, height: 760 } })
+const FLUSH_MS = 500
+await flushCtx.addInitScript(({ tryHw, flushMs }) => {
+    const synth = () => {
+        const ctx = new AudioContext()
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.frequency.value = 440
+        gain.gain.value = 0.25
+        const dest = ctx.createMediaStreamDestination()
+        osc.connect(gain)
+        gain.connect(dest)
+        osc.start()
+        return dest.stream
+    }
+    const orig = navigator.mediaDevices && navigator.mediaDevices.getUserMedia
+        ? navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices) : null
+    const gUM = async (c) => {
+        if (tryHw && orig) { try { const s = await orig(c); if (s && s.getAudioTracks().length) return s } catch { /* fall through to synth */ } }
+        return synth()
+    }
+    if (navigator.mediaDevices) navigator.mediaDevices.getUserMedia = gUM
+    else Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: gUM, enumerateDevices: async () => [] }, configurable: true })
+    if (window.MediaRecorder) {
+        const Native = window.MediaRecorder
+        const trace = []
+        window.__recFlushTrace = trace
+        class FlushingRecorder {
+            constructor(stream, opts) {
+                this._n = opts === undefined ? new Native(stream) : new Native(stream, opts)
+                this._user = {}
+                this._stoppedAt = 0
+                this._openAbs = performance.now()
+                trace.push({ ev: 'open', abs: Math.round(this._openAbs) })
+                this._n.addEventListener('dataavailable', (ev) => {
+                    const fire = () => {
+                        if (this._stoppedAt) trace.push({ ev: 'dataavailable', sinceStop: Math.round(performance.now() - this._stoppedAt), abs: Math.round(performance.now()) })
+                        const h = this._user.ondataavailable
+                        if (h) h({ data: ev.data })
+                    }
+                    if (this._stoppedAt) setTimeout(fire, flushMs)
+                    else fire()
+                })
+                this._n.addEventListener('stop', () => {
+                    const fire = () => {
+                        if (this._stoppedAt) trace.push({ ev: 'onstop', sinceStop: Math.round(performance.now() - this._stoppedAt), abs: Math.round(performance.now()) })
+                        const h = this._user.onstop
+                        if (h) h()
+                    }
+                    if (this._stoppedAt) setTimeout(fire, flushMs)
+                    else fire()
+                })
+            }
+            set ondataavailable(fn) { this._user.ondataavailable = fn }
+            get ondataavailable() { return this._user.ondataavailable || null }
+            set onstop(fn) { this._user.onstop = fn }
+            get onstop() { return this._user.onstop || null }
+            get mimeType() { return this._n.mimeType }
+            get state() { return this._n.state }
+            get stream() { return this._n.stream }
+            start(...a) { return this._n.start(...a) }
+            stop() { this._stoppedAt = performance.now(); trace.push({ ev: 'stop-called', sinceStop: 0, abs: Math.round(this._stoppedAt) }); return this._n.stop() }
+        }
+        FlushingRecorder.isTypeSupported = (m) => Native.isTypeSupported(m)
+        window.MediaRecorder = FlushingRecorder
+    }
+}, { tryHw: !!process.env.VOICEDRIVE_HW, flushMs: FLUSH_MS })
+const page3 = await flushCtx.newPage()
+page3.setDefaultTimeout(60000)
+page3.on('pageerror', (e) => errors.push(String(e)))
+await page3.goto(URL, { waitUntil: 'load' })
+await page3.waitForFunction(() => !!window.__gauntletTest, null, { timeout: 15000 })
+await page3.keyboard.press('ArrowRight')
+await page3.waitForTimeout(900)
+await page3.keyboard.press('F1')
+await page3.waitForTimeout(300)
+await page3.getByRole('button', { name: 'REC', exact: true }).click()
+await page3.waitForTimeout(400)
+await page3.click('#vc-yes')
+for (const code of ['ArrowRight', 'ArrowUp']) {
+    await page3.keyboard.down(code)
+    await page3.waitForTimeout(700)
+    await page3.keyboard.up(code)
+}
+await page3.getByRole('button', { name: 'REC', exact: true }).click() // stop — fence holds the flush open
+await page3.waitForTimeout(2000)
+const ftrace = await page3.evaluate(() => window.__recFlushTrace || [])
+const fenced = ftrace.filter((e) => e.ev === 'dataavailable' || e.ev === 'onstop')
+r.check('the flush fence delayed the post-stop events ~500 ms', fenced.length >= 1 && fenced.every((e) => e.sinceStop >= FLUSH_MS - 50) && fenced.some((e) => e.sinceStop <= FLUSH_MS + 500), JSON.stringify(ftrace.slice(-4)))
+const frec = await page3.evaluate(async () => {
+    if (window.__voiceFlush) { try { await window.__voiceFlush } catch { /* noop */ } }
+    const R = window.__lastRecording
+    return R ? JSON.parse(JSON.stringify(R)) : null
+})
+const ftr = frec && frec.voice && frec.voice.tracks && frec.voice.tracks[0]
+r.check('the flushed take still captured — the delay loses nothing', !!(ftr && ftr.b64.length > 500 && ftr.ms > 1000), ftr ? `${ftr.b64.length} b64, ms ${ftr.ms}` : JSON.stringify(await page3.evaluate(() => window.__voiceDebug || null)))
+const fClockEnd = ftr && ftr.clock.length ? ftr.clock[ftr.clock.length - 1].ms : 0
+r.check('#2058 law on real recorder plumbing: track ms >= clock trace end', !!(ftr && ftr.ms >= fClockEnd), ftr ? `ms ${ftr.ms} vs clockEnd ${fClockEnd}` : '')
+// The discriminator: the stored b64 CONTAINS the fenced bytes, so the honest
+// stamp must reach at least the byte-arrival time measured from mic-open. A
+// pre-#2058 stamp (taken at stop()) sits ~flush ms BELOW that floor.
+const fOpenAbs = (ftrace.find((e) => e.ev === 'open') || {}).abs ?? 0
+const fByteAbs = Math.max(0, ...ftrace.filter((e) => e.ev === 'dataavailable').map((e) => e.abs || 0))
+const fStopAbs = (ftrace.find((e) => e.ev === 'stop-called') || {}).abs ?? 0
+const floorMs = fByteAbs && fOpenAbs ? fByteAbs - fOpenAbs : 0
+const stopStampMs = fStopAbs && fOpenAbs ? fStopAbs - fOpenAbs : 0
+r.check('settle-stamp covers the fenced bytes (ms >= byte arrival from open)', !!(ftr && floorMs && ftr.ms >= floorMs - 10), ftr ? `ms ${ftr.ms} vs floor ${floorMs}` : '')
+r.check('the discriminator has teeth: a stop-click stamp would fail the law by ~flush', floorMs - stopStampMs >= FLUSH_MS - 50, `floor ${floorMs} - stop ${stopStampMs} = ${floorMs - stopStampMs}`)
+if (frec) {
+    const { validate } = await import('../src/utils/recording.js')
+    r.check('the flushed-late file validates', validate(frec) === null, validate(frec) || '')
+}
+
 // #1257 declined path: fresh page (consent cache is per page), NO MIC must
 // leave a grey badge so the player knows their recording will be silent.
 const page2 = await context.newPage()

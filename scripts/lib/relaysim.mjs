@@ -41,7 +41,9 @@ const MUTANT_FILE = path.join(RELAY_DIR, '.relaycheck-mutant.mjs')
 // The exact door inside handleSessionUpload (the same text exists in
 // handleFeedback — anchor on the validate call above it to hit only sessions).
 const DOOR = "    const v = validateSessionEnvelope(body)\n    if (!v.ok) return json({ ok: false, err: v.err }, origin, 400)"
-// The identical two-line door in handleSessionList AND handleSessionGet.
+// The identical two-line door in handleSessionList, handleSessionGet AND
+// handleSessionPatch (#2093 item 1: relabel writes ride the same lockdown —
+// stripping it opens reads AND writes, and both mutant gates go red).
 const READ_DOOR = "    const d = readDenied(req, env, origin)\n    if (d) return d"
 
 export const SIM_READ_KEY = 'test-jon-key'
