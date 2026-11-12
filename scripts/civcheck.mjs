@@ -160,18 +160,18 @@ console.log('9. loss branch (turn limit)')
     const saved = CFG.capitalSizeToWin
     const savedCW = CFG.cultureWin
     const savedTW = CFG.tourismWin
-    const savedArk = CFG.arkScience
+    const savedArk = CFG.arkShields
     CFG.capitalSizeToWin = 99
     CFG.cultureWin = 1e9        // isolate the clock: the Stage-8 alternatives are §33/§37's job
     CFG.tourismWin = 1e9
-    CFG.arkScience = 1e9
+    CFG.arkShields = 1e9
     const r = plan(0, 1)
     eq(r.end, 'lose', 'unreachable goal => the turn-limit loss fires')
     eq(r.turns, CFG.turnLimit + 1, 'loss at turn limit + 1')
     CFG.capitalSizeToWin = saved
     CFG.cultureWin = savedCW
     CFG.tourismWin = savedTW
-    CFG.arkScience = savedArk
+    CFG.arkShields = savedArk
 }
 
 // ---- 10. slack analogue: the win survives a slightly worse capital site ----
@@ -1355,7 +1355,9 @@ console.log('32. later eras + science victory')
         ok(roadCost(rail, ru, rTile.c, rTile.r) === 0, 'and nothing at all once Railroad is known')
     } else ok(true, '(no seed road on this board — half-step law proven in §20)')
 
-    // THE ARK: science pours in only after Spaceflight, and launch is victory
+    // THE ARK (#2077): the hull is city industry. Plates cannot be queued before
+    // Spaceflight; the beaker faucet is gone; the launch fires when the yards
+    // deliver the fourth plate — in any order, in parallel cities.
     const keepCap = CFG.capitalSizeToWin
     CFG.capitalSizeToWin = 99            // take the arcade milestone out of the way
     const g3 = newGame(2, 0)
@@ -1363,21 +1365,30 @@ console.log('32. later eras + science victory')
     step(g3, { select: s3.id, found: true })
     for (let i = 0; i < 3; i++) step(g3, { endTurn: true })
     eq(g3.ark[0], 0, 'before Spaceflight the Ark stays empty')
+    ok(/spaceflight/i.test(queueDeny(g3, 0, 'ARK_COCKPIT') || ''), 'the yards stay shut until Spaceflight')
     grantTech(g3, 0, 'SPACEFLIGHT')
     for (let i = 0; i < 3 && !g3.end; i++) step(g3, { endTurn: true })
-    ok(g3.ark[0] > 0, 'after Spaceflight every beaker pours into the Ark')
-    ok(g3.events.some((e) => e.type === 'ark' && e.civ === 0 && e.need === CFG.arkScience), 'the program reports its funding')
-    g3.ark[0] = CFG.arkScience - 1
+    eq(g3.ark[0], 0, 'the beaker faucet is off — science alone no longer funds the hull')
+    const mobilise32 = () => {
+        for (const pp of ARK_PARTS) {
+            if (queueDeny(g3, 0, 'ARK_' + pp.id) !== null) continue
+            for (const c of g3.cities.filter((x) => x.alive && x.civ === 0)) {
+                if (!c.queue.includes('ARK_' + pp.id) && c.queue.length < 3) { step(g3, { queue: 'ARK_' + pp.id, city: c.id }); break }
+            }
+        }
+    }
     let launched = false
-    for (let i = 0; i < 8 && !launched && !g3.end; i++) { step(g3, { endTurn: true }); launched = g3.events.some((e) => e.type === 'arkLaunch') }
-    ok(launched, 'the last beaker funds the launch')
+    for (let i = 0; i < 24 && !launched && !g3.end; i++) { mobilise32(); step(g3, { endTurn: true }); launched = g3.events.some((e) => e.type === 'arkLaunch') }
+    ok(launched, 'the last weld closes in the yards — the launch fires')
+    ok(g3.events.some((e) => e.type === 'arkPart' && e.civ === 0 && e.name === 'Cockpit'), 'a closing plate is announced by name')
     ok(g3.end === 'win' && /Science/.test(g3.endWhy || ''), 'and the launch is a SCIENCE VICTORY')
     CFG.capitalSizeToWin = keepCap
 
     // the whole science path fits the arcade clock — the pace lesson, as math
     const chain = ['POTTERY', 'WRITING', 'EDUCATION', 'ASTRONOMY', 'STEAM_POWER', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT']
     const chainCost = chain.reduce((a, id) => a + TECH[id].cost, 0)
-    ok(chainCost + CFG.arkScience <= CFG.turnLimit * 12, `Pottery→launch costs ${chainCost + CFG.arkScience} beakers ≤ a ${CFG.turnLimit}-turn race at 12/turn`)
+    ok(chainCost <= CFG.turnLimit * 12, `Pottery→Spaceflight costs ${chainCost} beakers ≤ a ${CFG.turnLimit}-turn race at 12 sci/turn`)
+    ok(CFG.arkShields <= CFG.turnLimit * 2, `and the ${CFG.arkShields}-shield hull fits the same clock — ~2 ⚒/turn across the realm is enough`)
     // era dawns are announced
     const g4 = newGame(2, 0)
     const s4 = g4.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
@@ -1387,7 +1398,7 @@ console.log('32. later eras + science victory')
     ok(g4.events.some((e) => e.type === 'era' && e.civ === 0 && e.era >= 1), 'learning a Classical tech dawns a new era for the realm')
     // hash: ark + lifetime culture move the state
     const h0 = stateHash(g3)
-    g3.ark[0] = CFG.arkScience - 2
+    g3.ark[0] = CFG.arkShields - 2
     const h1 = stateHash(g3)
     g3.civs[0].cultureEarned = 123
     const h2 = stateHash(g3)
@@ -1455,7 +1466,8 @@ console.log('33. victories: order, tourism crown, domination, race reachability'
     const s3 = g3.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
     step(g3, { select: s3.id, found: true })
     grantTech(g3, 1, 'SPACEFLIGHT')
-    g3.ark[1] = CFG.arkScience
+    g3.arkParts[1] = (1 << ARK_PARTS.length) - 1   // #2077: the hull is delivery — a launched rival has all four plates welded
+    g3.ark[1] = CFG.arkShields
     step(g3, { endTurn: true })
     ok(g3.end === 'lose' && /science/i.test(g3.endWhy || ''), 'China launches first — the world is theirs')
     const g4 = newGame(2, 0)
@@ -1502,7 +1514,8 @@ console.log('33. victories: order, tourism crown, domination, race reachability'
     const s5 = g5.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
     step(g5, { select: s5.id, found: true })
     grantTech(g5, 0, 'SPACEFLIGHT')
-    g5.ark[0] = CFG.arkScience
+    g5.arkParts[0] = (1 << ARK_PARTS.length) - 1   // #2077: all four welded (delivery, not funding)
+    g5.ark[0] = CFG.arkShields
     const capC = g5.cities.find((c) => c.civ === 0)
     capC.size = CFG.capitalSizeToWin
     step(g5, { endTurn: true })
@@ -1770,84 +1783,102 @@ console.log('35. capital capture ≠ extinction — kneeling realms, original ca
     CFG.capitalSizeToWin = keepCap; CFG.cultureWin = keepCult; CFG.tourismWin = keepTour; CFG.turnLimit = keepTurn
 }
 
-// ---- 36. spaceship parts — THE ARK welds four named plates (#375 item 3) ----
-console.log('36. spaceship parts — Cockpit, Booster, Stasis, Launch')
+// ---- 36. spaceship plates — THE ARK welds four named plates (#375 item 3; #2077 city yards) ----
+console.log('36. spaceship plates — Cockpit, Booster, Stasis, Launch welded in the cities')
 {
     const keepCap = CFG.capitalSizeToWin, keepCult = CFG.cultureWin, keepTour = CFG.tourismWin, keepTurn = CFG.turnLimit
     CFG.capitalSizeToWin = 99; CFG.cultureWin = 1e9; CFG.tourismWin = 1e9; CFG.turnLimit = 9999   // isolate the hull from the other crowns
 
-    // (a) four named parts that split the launch ledger exactly
-    eq(ARK_PARTS.length, 4, 'the Ark is four named parts, not one anonymous pool')
+    // (a) four named plates that split the hull ledger exactly
+    eq(ARK_PARTS.length, 4, 'the Ark is four named plates, not one anonymous pool')
     eq(ARK_PARTS.map((p) => p.name).join('|'), 'Cockpit|Booster|Stasis|Launch', 'the hull is named: Cockpit, Booster, Stasis, Launch')
-    eq(ARK_PARTS.reduce((a, p) => a + p.cost, 0), CFG.arkScience, 'the four welds split the 70-beaker ledger exactly')
+    eq(ARK_PARTS.reduce((a, p) => a + p.cost, 0), CFG.arkShields, 'the four welds split the 70-shield ledger exactly')
     ok(new Set(ARK_PARTS.map((p) => p.cost)).size >= 2, 'the plates differ — the hull is not four identical stamps')
 
     const gs = newGame(2, 0)
     const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
     step(gs, { select: s.id, found: true })
     for (let i = 0; i < 3; i++) step(gs, { endTurn: true })
+    const cap0 = () => gs.cities.find((c) => c.alive && c.civ === 0)
 
-    // (b) before Spaceflight the yard stands empty
-    ok(arkPartsOf(gs, 0).every((p) => p.funded === 0 && !p.done), 'before Spaceflight every part sits unfunded')
+    // (b) before Spaceflight the hull is empty and nothing welds
+    ok(arkPartsOf(gs, 0).every((p) => p.funded === 0 && !p.done), 'before Spaceflight every plate sits unwelded')
+    eq(arkPartsDone(gs, 0), 0, 'the tracks read empty')
+
+    // (c) any order — Stasis first: the ordered pipeline is dead (#2077)
     grantTech(gs, 0, 'SPACEFLIGHT')
-
-    // (c) ordered fill with spill: the Cockpit closes first, overflow runs down the line
-    gs.ark[0] = ARK_PARTS[0].cost - 1
+    step(gs, { queue: 'ARK_STASIS' })                      // capital is the default yard
+    {
+        let lit = false
+        for (let i = 0; i < 12 && !lit && !gs.end; i++) { step(gs, { endTurn: true }); lit = ((gs.arkParts[0] >> 2) & 1) === 1 }
+        ok(lit, 'the Stasis plate welds shut in the yard as shields bank')
+    }
     let ps = arkPartsOf(gs, 0)
-    eq(ps[0].done, false, 'one beaker short and the Cockpit plate stays open')
-    eq(ps[1].funded, 0, 'the Booster weld waits its turn')
-    gs.ark[0] = ARK_PARTS[0].cost + 4
-    ps = arkPartsOf(gs, 0)
-    eq(ps[0].done, true, 'the Cockpit welds shut')
-    eq(ps[1].funded, 4, 'overflow spills into the Booster')
-    eq(ps[2].funded, 0, 'Stasis stays cold behind the spill')
-    eq(arkPartsDone(gs, 0), 1, 'one welded plate shows on the tracks')
+    eq(ps[2].done, true, 'the Stasis plate reads welded')
+    eq(ps[0].done, false, 'the Cockpit does NOT close behind an early Stasis — ordered fill with spill is gone')
+    eq(ps[1].done, false, 'the Booster track stays cold until its own weld')
+    eq(gs.ark[0], ARK_PARTS[2].cost, 'the ledger rides delivered plates only')
+    ok(gs.events.some((e) => e.type === 'arkPart' && e.civ === 0 && e.part === 2 && e.name === 'Stasis'), 'a delivered plate is announced by name')
 
-    // (d) three plates short of the pad — the ship holds
-    gs.ark[0] = ARK_PARTS[0].cost + ARK_PARTS[1].cost + ARK_PARTS[2].cost - 1
+    // (d) a great engineer speeds a plate — wonders keep their trick, plates get it too
+    gs.gp[0].held.ENGINEER = 1
+    step(gs, { queue: 'ARK_COCKPIT' })
+    step(gs, { useGP: { kind: 'ENGINEER', city: cap0().id } })
+    ok(arkPartsOf(gs, 0)[0].done === true, 'the engineer rushes the Cockpit shut the turn it was queued')
+    eq(gs.ark[0], ARK_PARTS[2].cost + ARK_PARTS[0].cost, 'every weld pays its exact cost to the ledger')
+
+    // (e) one copy per hull: deny a re-queue, and a duplicate weld falls out
+    ok(/already welded/i.test(queueDeny(gs, 0, 'ARK_STASIS') || ''), 'a welded plate cannot be ordered again')
+    step(gs, { queue: 'ARK_STASIS' })
+    ok(gs.events.some((e) => e.type === 'deny' && /already welded/i.test(e.reason || '')), 'the yard refuses a second Stasis out loud')
+    step(gs, { queue: 'ARK_BOOSTER' })
+    gs.arkParts[0] |= 1 << 1                              // pretend another yard closed the Booster first — and paid for it
+    gs.ark[0] += ARK_PARTS[1].cost
+    const bpBefore = cap0().buildP, pWork = cityYield(gs, cap0()).p
     step(gs, { endTurn: true })
-    ok(arkPartsDone(gs, 0) <= 3, 'the hull stops short of the Launch weld')
-    ok(!gs.events.some((e) => e.type === 'arkLaunch' && e.civ === 0), 'a half-built hull does not lift — launch waits for all four')
+    ok(gs.events.some((e) => e.type === 'arkLost' && e.civ === 0 && e.name === 'Booster'), 'the realm already has a Booster — the queued duplicate drops')
+    ok(!cap0().queue.includes('ARK_BOOSTER'), 'the duplicate leaves the queue')
+    ok(Math.abs(cap0().buildP - (bpBefore + pWork)) < 1, 'banked shields are not spent on the dropped duplicate')
+
+    // (f) three plates are not victory — the launch waits for all four
+    eq(arkPartsDone(gs, 0), 3, 'Cockpit, Booster and Stasis read welded')
     ok(!gs.end, 'three plates are not victory')
-
-    // (e) a weld that closes mid-turn is announced by name
-    gs.events.length = 0
-    gs.ark[0] = ARK_PARTS[0].cost - 1
+    const liftGuard = gs.events.length
     step(gs, { endTurn: true })
-    ok(gs.events.some((e) => e.type === 'arkPart' && e.civ === 0 && e.name === 'Cockpit' && e.part === 0), 'the Cockpit weld is announced by name')
+    ok(!gs.events.slice(liftGuard).some((e) => e.type === 'arkLaunch'), 'a hull without its Launch plate does not lift')
 
-    // (f) the last beaker finishes the fourth plate and lifts the ship
-    gs.ark[0] = CFG.arkScience - 1
+    // (g) the last weld in the yard lifts the ship — SCIENCE VICTORY
+    step(gs, { queue: 'ARK_LAUNCH' })
     let launched = false
-    for (let i = 0; i < 8 && !launched && !gs.end; i++) { step(gs, { endTurn: true }); launched = gs.events.some((e) => e.type === 'arkLaunch' && e.civ === 0) }
-    ok(launched, 'the last beaker welds the Launch plate and lifts the Ark')
-    eq(arkPartsDone(gs, 0), 4, 'at the moment of flight all four parts read welded')
+    for (let i = 0; i < 12 && !launched && !gs.end; i++) { step(gs, { endTurn: true }); launched = gs.events.some((e) => e.type === 'arkLaunch' && e.civ === 0) }
+    ok(launched, 'the Launch plate closes in the city and lifts the Ark')
+    eq(arkPartsDone(gs, 0), 4, 'at the moment of flight all four plates read welded')
     ok(arkPartsOf(gs, 0).every((p) => p.done), 'Cockpit, Booster, Stasis and Launch are all shut')
     ok(gs.end === 'win' && /Science/.test(gs.endWhy || ''), 'the completed hull is a SCIENCE VICTORY')
 
-    // (g) the tracks clamp — overfunding never invents a fifth plate
-    gs.ark[0] = CFG.arkScience * 3
+    // (h) the tracks clamp — no funding overflows a welded hull
     ps = arkPartsOf(gs, 0)
-    ok(ps.every((p) => p.funded === p.cost && p.done), 'the parts clamp at full')
-    eq(ps.reduce((a, p) => a + p.funded, 0), CFG.arkScience, 'welded beakers never exceed the ledger')
+    ok(ps.every((p) => p.funded === p.cost && p.done), 'the plates clamp at full')
+    eq(ps.reduce((a, p) => a + p.funded, 0), CFG.arkShields, 'welded shields never exceed the ledger')
 
-    // (h) rivals ride the same four tracks
+    // (i) rivals ride the same four tracks — bits are per realm
     grantTech(gs, 1, 'SPACEFLIGHT')
     eq(arkPartsDone(gs, 1), 0, 'a new rocket power starts with nothing welded')
-    gs.ark[1] = ARK_PARTS[0].cost + ARK_PARTS[1].cost
-    eq(arkPartsDone(gs, 1), 2, 'the rival track welds in the same order')
+    gs.arkParts[1] |= (1 << 0) | (1 << 1)
+    eq(arkPartsDone(gs, 1), 2, 'the rival track counts its own welds')
+    eq(arkPartsDone(gs, 0), 4, 'Rome keeps its own four')
 
-    // (i) the part layer is pure derivation: same reading, same worlds, hash for hash
-    ok(JSON.stringify(arkPartsOf(gs, 2)) === JSON.stringify(arkPartsOf(gs, 2)), 'the part view is pure — same state, same reading')
-    gs.ark[0] = ARK_PARTS[0].cost - 1; const hh1 = stateHash(gs); gs.ark[0] = ARK_PARTS[0].cost; const hh2 = stateHash(gs)
-    ok(hh1 !== hh2, 'closing the Cockpit weld moves stateHash')
+    // (j) the plate layer is pure + hashes; the autopilot still replays for real
+    ok(JSON.stringify(arkPartsOf(gs, 2)) === JSON.stringify(arkPartsOf(gs, 2)), 'the plate view is pure — same state, same reading')
+    const hj1 = stateHash(gs); gs.arkParts[2] |= 1 << 3; const hj2 = stateHash(gs); gs.arkParts[2] = 0; const hj3 = stateHash(gs)
+    ok(hj1 !== hj2 && hj1 === hj3, 'welded bits fold into stateHash')
     CFG.turnLimit = keepTurn   // determinism inside the shipped horizon (see STATE: late-game drift past t40)
     const a = newGame(7, 0), b = newGame(7, 0)
     let x = 0, y = 0
     while (!a.end && x++ < 40000) step(a, decide(a))
     while (!b.end && y++ < 40000) step(b, decide(b))
     ok(stateHash(a) === stateHash(b) && JSON.stringify(arkPartsOf(a, 0)) === JSON.stringify(arkPartsOf(b, 0)),
-        'with the part layer in place the autopilot still replays hash-for-hash')
+        'with the yards in place the autopilot still replays hash-for-hash')
 
     CFG.capitalSizeToWin = keepCap; CFG.cultureWin = keepCult; CFG.tourismWin = keepTour; CFG.turnLimit = keepTurn
 }
@@ -2127,6 +2158,104 @@ console.log('39. naval supply — ports, horizon, wear, sink')
     ok(/type: 'wear'/.test(SRC('sim.js')) && /type: 'shipLost'/.test(SRC('sim.js')), 'g). wear and loss are events, not silent HP theft')
     ok(/warnRing/.test(SRC('art.js')) && /suppliedSea\(gs, u\.civ\)/.test(SRC('art.js')), 'g). the amber ring rides unsupplied hulls in the renderer')
     ok(/OUT OF SUPPLY/.test(SRC('index.jsx')), 'g). the HUD chip names the danger in words')
+}
+
+// ---- 40. Ark yards — city industry mobilises (#2077) ----
+console.log('40. Ark yards — city industry mobilises')
+{
+    const keepCap = CFG.capitalSizeToWin, keepCult = CFG.cultureWin, keepTour = CFG.tourismWin, keepTurn = CFG.turnLimit
+    CFG.capitalSizeToWin = 99; CFG.cultureWin = 1e9; CFG.tourismWin = 1e9; CFG.turnLimit = 9999
+
+    const gs = newGame(2, 0)
+    const s0 = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gs, { select: s0.id, found: true })
+    step(gs, { endTurn: true })
+    const cap = gs.cities.find((c) => c.alive && c.civ === 0)
+
+    // (a) gating: plates are orderable only after Spaceflight, any order before that rule exists
+    ok(canQueue(gs, 0, 'ARK_COCKPIT') === false, 'a). no plates before Spaceflight')
+    ok(/spaceflight/i.test(queueDeny(gs, 0, 'ARK_BOOSTER') || ''), 'a). the refusal names the missing tech')
+    grantTech(gs, 0, 'SPACEFLIGHT')
+    ok(canQueue(gs, 0, 'ARK_COCKPIT') === true, 'a). Spaceflight opens the yards')
+    ok(queueDeny(gs, 0, 'ARK_STASIS') === null, 'a). any unwelded plate may be ordered — Stasis needs no Cockpit first')
+
+    // (b) the capital is the default yard; input.city chooses another
+    step(gs, { queue: 'ARK_COCKPIT' })
+    ok(cap.queue.includes('ARK_COCKPIT'), 'b). unnamed city — the capital takes the order')
+    const site = gs.tiles.find((t) => canFound(gs, 0, t.c, t.r) === true)
+    ok(!!site, 'b). the map still has a legal second site')
+    const s2 = spawnUnit(gs, 0, 'SETTLER', site.c, site.r)
+    step(gs, { select: s2.id, found: true })
+    const col = gs.cities.find((c) => c.alive && c.civ === 0 && c !== cap)
+    ok(!!col, 'b). a second city opens — a second yard')
+    step(gs, { queue: 'ARK_BOOSTER', city: col.id })
+    ok(col.queue.includes('ARK_BOOSTER') && !cap.queue.includes('ARK_BOOSTER'), 'b). the named city takes the order, not the capital')
+
+    // (c) parallel yards — two cities weld two different plates at once
+    ok(cap.queue.some((k) => /^ARK_/.test(k)) && col.queue.some((k) => /^ARK_/.test(k)), 'c). both yards run plate work at the same time')
+    ok(cap.queue[0] === 'ARK_COCKPIT' && col.queue[0] === 'ARK_BOOSTER', 'c). each yard minds its own plate — no shared program')
+
+    // (d) exact cost, per plate, delivered where it was welded
+    col.buildP = ARK_PARTS[1].cost - 1
+    const arkBefore = gs.ark[0]
+    step(gs, { endTurn: true })
+    ok(((gs.arkParts[0] >> 1) & 1) === 1, 'd). the Booster closes at its own city')
+    eq(gs.ark[0] - arkBefore, ARK_PARTS[1].cost, 'd). the ledger grows by the exact plate cost (overflow is not invented)')
+    ok(gs.events.some((e) => e.type === 'arkPart' && e.civ === 0 && e.part === 1 && e.city === col.id), 'd). the delivery names the plate and the city that raised it')
+
+    // (e) a full yard refuses orders out loud
+    cap.queue.push('WARRIOR', 'ARCHER')                       // capital already holds COCKPIT + these two
+    step(gs, { queue: 'ARK_STASIS' })
+    ok(gs.events.some((e) => e.type === 'deny' && /yard is full/i.test(e.reason || '')), 'e). a city three-deep in projects says the yard is full')
+    ok(!cap.queue.includes('ARK_STASIS'), 'e). the refused plate is not queued anywhere')
+
+    // (f) the AI mobilises under the same law
+    const rival = [1, 2, 3].find((i) => gs.civs[i].alive)
+    grantTech(gs, rival, 'SPACEFLIGHT')
+    let rivalQueued = false, rivalWelded = false
+    for (let i = 0; i < 14 && !gs.end; i++) {
+        step(gs, { endTurn: true })
+        if (gs.cities.some((c) => c.alive && c.civ === rival && (c.queue || []).some((k) => /^ARK_/.test(k)))) rivalQueued = true
+        if (gs.arkParts[rival] !== 0) rivalWelded = true
+    }
+    ok(rivalQueued, 'f). the rival realm queues its own plates — the mobilisation is law, not player UI')
+    ok(rivalWelded, 'f). rival industry actually closes plates')
+
+    // (g) the autopilot mobilises Rome too
+    const gz = newGame(3, 0)
+    const sz = gz.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gz, { select: sz.id, found: true })
+    grantTech(gz, 0, 'SPACEFLIGHT')
+    for (let i = 0; i < 14 && !gz.end && gz.arkParts[0] === 0; i++) step(gz, decide(gz))
+    ok(gz.arkParts[0] !== 0 || gz.cities.some((c) => c.alive && c.civ === 0 && (c.queue || []).some((k) => /^ARK_/.test(k))), 'g). the witness brain welds plates once the lab allows it')
+
+    // (h) determinism — a mobilising world replays hash for hash
+    const runMob = (seed) => {
+        const g = newGame(seed, 0)
+        const st = g.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+        step(g, { select: st.id, found: true })
+        grantTech(g, 0, 'SPACEFLIGHT')
+        let n = 0
+        while (!g.end && n++ < 24) {
+            for (const pp of ARK_PARTS) {
+                if (queueDeny(g, 0, 'ARK_' + pp.id) !== null) continue
+                for (const c of g.cities.filter((x) => x.alive && x.civ === 0)) {
+                    if (!c.queue.includes('ARK_' + pp.id) && c.queue.length < 3) { step(g, { queue: 'ARK_' + pp.id, city: c.id }); break }
+                }
+            }
+            step(g, { endTurn: true })
+        }
+        return stateHash(g)
+    }
+    eq(runMob(9), runMob(9), 'h). the yards add no rng — the same seed replays for hash')
+
+    // (i) source pins — the law, the tells and the help all name the yards
+    const SRC = (f) => readFileSync(new URL(`../src/games/CivilizationV/${f}`, import.meta.url), 'utf8')
+    ok(/ARK_PREFIX = 'ARK_'/.test(SRC('sim.js')) && /type: 'arkLost'/.test(SRC('sim.js')), 'i). plates are queue kinds and the duplicate drop is an event, not silence')
+    ok(/WELD AT/.test(SRC('index.jsx')) && /YARD/.test(SRC('index.jsx')), 'i). the victory panel names the yard and the weld')
+    ok(/Q welds/.test(SRC('index.jsx')), 'i). the help card teaches the weld key')
+
+    CFG.capitalSizeToWin = keepCap; CFG.cultureWin = keepCult; CFG.tourismWin = keepTour; CFG.turnLimit = keepTurn
 }
 
 console.log(`\ncivcheck: ${pass} passed, ${fail} failed`)

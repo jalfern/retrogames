@@ -10,7 +10,7 @@
 // grow to the milestone. It does not conquergoal: domination stays a player
 // ambition, the autopilot's job is to survive the frontier it was proven on.
 
-import { CFG, T, canFound, neighbors, hexDist, newGame, step, tileAt, unitAt, atWar, BARB, UNIT, TECH, stepToward, tileBlocked, availableTechs, canImprove, canAdopt, WONDER, WONDER_IDS, canBuildWonder, canRecruit, canUseGP, GP_TYPES } from './sim.js'
+import { CFG, T, canFound, neighbors, hexDist, newGame, step, tileAt, unitAt, atWar, BARB, UNIT, TECH, stepToward, tileBlocked, availableTechs, canImprove, canAdopt, WONDER, WONDER_IDS, canBuildWonder, canRecruit, canUseGP, GP_TYPES, hasTech, ARK_PARTS, ARK_PREFIX, arkKind } from './sim.js'
 
 const SITE = (tl) => (tl.terr === T.GRASS ? 3 : tl.terr === T.PLAINS ? 2 : 0)
     + (tl.river ? 2 : 0) + (tl.forest ? 1 : 0) + (tl.terr === T.HILLS ? 1 : 0)
@@ -109,6 +109,17 @@ export function decide(gs) {
             }
         }
         for (const t of GP_TYPES) if (canRecruit(gs, 0, t) === true) return { recruit: t }
+        // #2077: the mobilisation — once the lab hands down Spaceflight, idle
+        // industry welds: every city with a free slot takes the oldest plate not
+        // welded or queued anywhere. Deterministic, no rng. New wonders wait.
+        if (hasTech(gs, 0, 'SPACEFLIGHT') && gs.arkParts[0] !== (1 << ARK_PARTS.length) - 1) {
+            const missing = ARK_PARTS.map((p, i) => ({ p, i })).filter(({ p, i }) => (((gs.arkParts[0] >> i) & 1) === 0)
+                && !gs.cities.some((q) => q.alive && q.civ === 0 && (q.queue || []).includes(ARK_PREFIX + p.id)))
+            if (missing.length) {
+                const yard = gs.cities.filter((c) => c.alive && c.civ === 0 && (c.queue || []).length < 3 && !(c.queue || []).some((k) => arkKind(k)))
+                if (yard.length) { const c = yard[0]; return { queue: ARK_PREFIX + missing[c.id % missing.length].p.id, city: c.id } }
+            }
+        }
         if (cap.queue.length < 3 && !cap.queue.some((k) => WONDER[k]) && !WONDER_IDS.some((id) => gs.wonders[id] === 0)) {
             const pick = WONDER_IDS.filter((id) => canBuildWonder(gs, 0, id) === true)
             if (pick.length) return { queue: pick[0] }

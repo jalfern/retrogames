@@ -363,11 +363,42 @@ r.check(`the probe exposes the connected network (${(conn.connected || []).join(
     }
     await page.evaluate(() => { for (const id of ['EDUCATION', 'STEAM_POWER', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT']) window.__civTest.learn(id) })
     let p8 = await probe()
-    for (let i = 0; i < 6 && !p8.end && p8.victory.ark < 20; i++) { await page.evaluate(() => window.__civTest.turn()); await wait(60); p8 = await probe() }
-    r.check(`after Spaceflight the Ark banks beakers on live turns (${p8.victory.ark}/${p8.victory.needArk})`, p8.victory.ark > 0 || !!p8.end)
-    p8 = p8 || (await probe())
+    // #2077: the beaker faucet is gone — Spaceflight opens yards, it does not fill a hull
+    r.check(`Spaceflight opens the program but no beaker pours (ark ${p8.victory.ark}/${p8.victory.needArk} before any weld)`, p8.victory.spaceflight === true && (p8.victory.ark === 0 || !!p8.end))
+    {
+        // the autopilot may already have filled the capital yard — order the plate at a free yard
+        let ordered = false
+        for (let i = 0; i < 6 && !ordered && !p8.end; i++) {
+            const free = p8.queue.find((c) => c.queue.length < 3 && !c.queue.some((k) => k.startsWith('ARK_')))
+            if (free) { await page.evaluate((id) => window.__civTest.queue('ARK_COCKPIT', id), free.id); ordered = true }
+            else { await page.evaluate(() => window.__civTest.turn()); await wait(60); p8 = await probe() }
+        }
+        let inQueue = ordered
+        for (let i = 0; i < 8 && inQueue && p8.victory.partsDone === 0 && !p8.end; i++) {
+            const q8 = p8
+            inQueue = q8.queue.some((c) => c.queue.includes('ARK_COCKPIT')) || q8.victory.partsDone > 0
+            if (!inQueue) { await page.evaluate(() => window.__civTest.turn()); await wait(60); p8 = await probe() }
+            else break
+        }
+        r.check(`a free yard takes the plate order (queues ${JSON.stringify(p8.queue.map((c) => c.queue))})`, !ordered || !!p8.end || p8.queue.some((c) => c.queue.includes('ARK_COCKPIT')) || p8.victory.partsDone > 0)
+    }
+    let welded = false
+    for (let i = 0; i < 14 && !welded && !p8.end; i++) { await page.evaluate(() => window.__civTest.turn()); await wait(60); p8 = await probe(); welded = p8.victory.partsDone > 0 }
+    r.check(`the yard welds a plate on live turns (${(p8.victory.parts || []).filter((x) => x.done).map((x) => x.name).join(',') || (p8.end ? 'run ended first' : 'none')})`, welded || !!p8.end)
     r.check(`the victory probe reports the tracks (caps ${p8.victory.capsTaken}/3 · ☼ ${p8.victory.tourism}/${p8.victory.needTourism} · ❦ ${p8.victory.cultEarned}/${p8.victory.needCult})`, p8.victory.capsTaken === 0 && Number.isFinite(p8.victory.tourism) && p8.victory.needTourism === 120 && Array.isArray(p8.victory.rivalTourism) && p8.victory.rivalTourism.length === 3 && Number.isFinite(p8.victory.cultEarned) && p8.victory.needCult === 350 && p8.victory.needArk === 70)
-    r.check(`the Ark assembles as four named parts (${(p8.victory.parts || []).map((p) => `${p.name}${p.done ? '✓' : ':' + p.funded + '/' + p.cost}`).join(' ')})`, Array.isArray(p8.victory.parts) && p8.victory.parts.length === 4 && p8.victory.parts.map((p) => p.name).join('|') === 'Cockpit|Booster|Stasis|Launch' && p8.victory.partsDone === (p8.victory.parts || []).filter((p) => p.done).length)
+    r.check(`the Ark assembles as four named plates (${(p8.victory.parts || []).map((p) => `${p.name}${p.done ? '✓' : ':' + p.funded + '/' + p.cost}`).join(' ')})`, Array.isArray(p8.victory.parts) && p8.victory.parts.length === 4 && p8.victory.parts.map((p) => p.name).join('|') === 'Cockpit|Booster|Stasis|Launch' && p8.victory.partsDone === (p8.victory.parts || []).filter((p) => p.done).length)
+    // the YARD picker and WELD buttons live on the victory panel (#2077)
+    {
+        let vb8 = ''
+        if (!p8.end) {
+            await page.keyboard.press('KeyI')
+            await wait(250)
+            vb8 = await page.evaluate(() => document.body.innerText)
+            await page.keyboard.press('Escape')
+            await wait(120)
+        } else vb8 = 'YARD WELD (run ended first)'
+        r.check('the victory panel carries the yard picker and weld buttons', vb8.includes('YARD') && vb8.includes('WELD'))
+    }
 }
 
 // 4 — drive the same autopilot to the milestone on THIS run, then the end screen

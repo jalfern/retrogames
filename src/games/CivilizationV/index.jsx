@@ -21,7 +21,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import * as THREE from 'three'
-import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP, canDeclareWar, canMakePeace, canTrade, canGift, csInfo, CS_IDS, coastalCityOf, canEmbark, canLand, hullSupplied, ARK_PARTS, arkPartsOf, arkPartsDone } from './sim.js'
+import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP, canDeclareWar, canMakePeace, canTrade, canGift, csInfo, CS_IDS, coastalCityOf, canEmbark, canLand, hullSupplied, canQueue, queueDeny, arkKind, ARK_PARTS, arkPartsOf, arkPartsDone } from './sim.js'
 import { decide, RESEARCH_ORDER } from './planner.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -100,6 +100,7 @@ const CivilizationVGame = () => {
         let raf = 0, last = 0, acc = 0, toast = 0, toastMsg = ''
         let lastArkToast = 0
         let pending = {}
+        let yardCity = -1   // #2077: the Ark YARD picker — city id the WELD buttons queue at
         const ray = new THREE.Raycaster()
         const ndc = new THREE.Vector2()
 
@@ -264,13 +265,18 @@ const CivilizationVGame = () => {
                 }
                 else if (e.type === 'ark' && e.civ === 0 && e.prog >= lastArkToast + 20) {
                     lastArkToast = e.prog
-                    say(`THE ARK TAKES SHAPE · ${Math.round((e.prog / e.need) * 100)}% FUNDED`)
+                    say(`THE ARK TAKES SHAPE · ${Math.round((e.prog / e.need) * 100)}% WELDED`)
                     audioController.playSweep(440, 660, 0.28, 'triangle', 0.06)
                 }
                 else if (e.type === 'arkPart' && e.civ === 0) {
-                    say(`${e.name.toUpperCase()} WELDED · ${e.part + 1}/4 OF THE ARK`)
+                    const dn = e.city != null && gs.cities[e.city] ? String(gs.cities[e.city].name).toUpperCase() : 'THE YARD'
+                    say(`${e.name.toUpperCase()} DELIVERED AT ${dn} · ${e.part + 1}/4 OF THE ARK`)
                     audioController.playTone(523 + e.part * 98, 0.14, 'triangle', 0.06)
                     audioController.playTone(784 + e.part * 98, 0.22, 'sine', 0.04)
+                }
+                else if (e.type === 'arkLost' && e.civ === 0) {
+                    say(`${e.name.toUpperCase()} NOT NEEDED — THE HULL ALREADY HAS ONE`)
+                    audioController.playTone(196, 0.1, 'square', 0.05)
                 }
                 else if (e.type === 'arkLaunch') {
                     if (e.civ === 0) {
@@ -398,7 +404,7 @@ const CivilizationVGame = () => {
                 const city = gs.cities.find((c) => c.civ === 0 && c.alive)
                 const q = city && city.queue && city.queue[0]
                 const qcost = q ? (UNIT[q] ? UNIT[q].cost : WONDER[q].cost) : 0
-                h.build.textContent = q ? `BUILDING ${q} ${Math.floor(city.buildP || 0)}/${qcost}${city.queue.length > 1 ? ` +${city.queue.length - 1}` : ''}` : 'BUILD: 1 warrior · 2 archer · 3 settler · 4 worker · C catapult · N trireme · K musket · L galleon · U wonders'
+                h.build.textContent = q ? `BUILDING ${q} ${Math.floor(city.buildP || 0)}/${qcost}${city.queue.length > 1 ? ` +${city.queue.length - 1}` : ''}` : 'BUILD: 1 warrior · 2 archer · 3 settler · 4 worker · C catapult · N trireme · K musket · L galleon · U wonders · Q welds an Ark plate'
                 h.build.style.display = city ? '' : 'none'
             }
             if (h.worker) {
@@ -751,6 +757,29 @@ const CivilizationVGame = () => {
             refreshDPanel()
             audioController.playTone(587, 0.08, 'triangle', 0.05)
         }
+        // #2077: the yards — weld a named plate at the chosen city (any still-missing
+        // plate, any city, one plate at a time per city; parallel cities weld in parallel)
+        const pickPlate = (pid) => {
+            const kind = 'ARK_' + pid
+            const why = queueDeny(gs, 0, kind)
+            if (why !== true) { say(String(why).toUpperCase()); audioController.playTone(110, 0.08, 'square', 0.05); return }
+            const ys = gs.cities.filter((c) => c.alive && c.civ === 0)
+            if (!ys.length) { say('FOUND A CITY FIRST'); audioController.playTone(110, 0.08, 'square', 0.05); return }
+            const city = ys.find((c) => c.id === yardCity) || ys[0]
+            if (city.queue.length >= 3) { say(`${String(city.name).toUpperCase()}'S YARD IS FULL`); audioController.playTone(110, 0.08, 'square', 0.05); return }
+            pending = { ...pending, queue: kind, city: city.id }
+            say(`⚒ ${pid} → ${String(city.name).toUpperCase()}`)
+            refreshVPanel()
+            audioController.playTone(330, 0.04, 'triangle', 0.05)
+        }
+        const cycleYard = (d) => {
+            const ys = gs.cities.filter((c) => c.alive && c.civ === 0)
+            if (!ys.length) return
+            const i = Math.max(0, ys.findIndex((c) => c.id === yardCity))
+            yardCity = ys[(i + d + ys.length) % ys.length].id
+            refreshVPanel()
+            audioController.playTone(300, 0.03, 'sine', 0.04)
+        }
         const refreshVPanel = () => {
             const taken = [1, 2, 3].filter((i) => { const oc = gs.origCapOf[i] != null ? gs.cities[gs.origCapOf[i]] : null; return oc ? oc.civ !== i : !gs.civs[i].alive }).length
             const cult = Math.floor(gs.civs[0].cultureEarned || 0)
@@ -758,9 +787,11 @@ const CivilizationVGame = () => {
             setVpanel({
                 turn: gs.turn,
                 taken,
-                ark: Math.floor(gs.ark[0]), needArk: CFG.arkScience, space: hasTech(gs, 0, 'SPACEFLIGHT'),
+                ark: Math.floor(gs.ark[0]), needArk: CFG.arkShields, space: hasTech(gs, 0, 'SPACEFLIGHT'),
                 parts: arkPartsOf(gs, 0).map((p) => ({ id: p.id, name: p.name, cost: p.cost, funded: p.funded, done: p.done })),
                 partsDone: arkPartsDone(gs, 0),
+                yardName: (() => { const ys = gs.cities.filter((c) => c.alive && c.civ === 0); if (!ys.some((c) => c.id === yardCity)) yardCity = ys.length ? ys[0].id : -1; const yc = ys.find((c) => c.id === yardCity); return yc ? String(yc.name).toUpperCase() : '—' })(),
+                queuedPlates: gs.cities.filter((c) => c.alive && c.civ === 0).flatMap((c) => (c.queue || []).filter((k) => arkKind(k)).map((k) => k.slice(4))),
                 cult, needCult: CFG.cultureWin,
                 tour, needTour: CFG.tourismWin,
                 lead: [1, 2, 3].every((i) => !gs.civs[i].alive || (gs.civs[i].tourism || 0) < tour),
@@ -783,7 +814,7 @@ const CivilizationVGame = () => {
             if (vOpenRef.current) refreshVPanel()
             audioController.playTone(vOpenRef.current ? 330 : 240, 0.05, 'triangle', 0.05)
         }
-        actRef.current = { togglePanel, closePanel, pickResearch, toggleWPanel, closeWPanel, pickImprove, togglePPanel, closePPanel, pickPolicy, toggleUPanel, closeUPanel, pickWonder, toggleGPanel, closeGPanel, pickRecruit, pickUseGP, toggleDPanel, closeDPanel, pickDeclare, pickPeace, pickTrade, pickGift, toggleVPanel, closeVPanel, recenter }
+        actRef.current = { togglePanel, closePanel, pickResearch, toggleWPanel, closeWPanel, pickImprove, togglePPanel, closePPanel, pickPolicy, toggleUPanel, closeUPanel, pickWonder, toggleGPanel, closeGPanel, pickRecruit, pickUseGP, toggleDPanel, closeDPanel, pickDeclare, pickPeace, pickTrade, pickGift, pickPlate, cycleYard, toggleVPanel, closeVPanel, recenter }
 
         const onDown = (e) => {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
@@ -815,6 +846,13 @@ const CivilizationVGame = () => {
             if (e.code === 'KeyJ') { doLand(); return }
             if (e.code === 'KeyT') { if (screenRef.current === 'play') togglePanel(); return }
             if (e.code === 'KeyR') { if (screenRef.current === 'play') researchNext(); return }
+            if (e.code === 'KeyQ') {   // #2077: weld the next missing plate at the chosen yard
+                if (screenRef.current !== 'play') return
+                if (!hasTech(gs, 0, 'SPACEFLIGHT')) { say('SPACEFLIGHT COMES FIRST'); audioController.playTone(110, 0.08, 'square', 0.05); return }
+                const np = ARK_PARTS.find((pp) => canQueue(gs, 0, 'ARK_' + pp.id) === true)
+                if (!np) { say('THE HULL IS COMPLETE — END THE TURN'); audioController.playSweep(392, 784, 0.3, 'triangle', 0.05); return }
+                pickPlate(np.id); return
+            }
             if (e.code === 'KeyW') { if (screenRef.current === 'play') toggleWPanel(); return }
             if (e.code === 'KeyP') { if (screenRef.current === 'play') togglePPanel(); return }
             if (e.code === 'KeyU') { if (screenRef.current === 'play') toggleUPanel(); return }
@@ -922,7 +960,7 @@ const CivilizationVGame = () => {
                     selected: gs.selected, units0: gs.units.filter((u) => u.civ === 0 && u.alive).map((u) => ({ id: u.id, kind: u.kind, c: u.c, r: u.r, moves: u.moves, hp: u.hp })),
                     barbsVisible: gs.units.filter((u) => u.alive && u.civ === BARB && gs.visible[0][u.r * CFG.W + u.c]).length,
                     campsAlive: gs.camps.filter((c) => c.alive).length, wars: Object.keys(gs.wars).length,
-                    queue: gs.cities.filter((c) => c.civ === 0 && c.alive).map((c) => ({ name: c.name, queue: [...(c.queue || [])], p: Math.floor(c.buildP || 0) })),
+                    queue: gs.cities.filter((c) => c.civ === 0 && c.alive).map((c) => ({ id: c.id, name: c.name, queue: [...(c.queue || [])], p: Math.floor(c.buildP || 0) })),
                     tech: { known: TECH_IDS.filter((id) => hasTech(gs, 0, id)), research: gs.tech[0].research, prog: Math.floor(gs.tech[0].prog),
                         ai: CIVS.filter((c) => !c.barb && c.id !== 0).map((c) => ({ civ: c.id, name: c.name, n: Object.keys(gs.tech[c.id].known).length, researching: gs.tech[c.id].research })) },
                     workers: gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'WORKER').map((u) => ({ id: u.id, c: u.c, r: u.r, busy: u.busy })),
@@ -931,7 +969,7 @@ const CivilizationVGame = () => {
                     wonders: WONDER_IDS.filter((id) => gs.wonders[id] != null).map((id) => ({ id, by: gs.wonders[id] })),
                     world: { cities: CIVS.filter((c) => c.cs).map((c) => ({ id: c.id, name: c.name, alive: gs.civs[c.id].alive, c: gs.cities.find((ct) => ct.civ === c.id && ct.alive)?.c ?? -1, r: gs.cities.find((ct) => ct.civ === c.id && ct.alive)?.r ?? -1 })), rome: CS_IDS.map((id) => ({ cs: id, ...(csInfo(gs, 0, id) || { met: false, influence: 0, ally: false }) })), pacts: Object.keys(gs.trade).filter((k) => gs.trade[k]), wars: Object.keys(gs.wars), truce: Object.keys(gs.peaceTurn), naval: gs.units.filter((u) => u.alive && u.civ === 0 && u.naval).map((u) => ({ id: u.id, c: u.c, r: u.r, kind: u.kind, cargo: u.cargo ? u.cargo.length : 0 })), onboard: gs.units.filter((u) => u.alive && u.loaded).map((u) => ({ id: u.id, kind: u.kind, ship: u.loaded })), coastal: !!coastalCityOf(gs, 0) },
                     gp: GP_TYPES.map((t) => ({ t, pts: Math.floor(gs.gp[0].pts[t]), need: gpThreshold(gs, 0, t), held: gs.gp[0].held[t], ready: gpReady(gs, 0, t), cost: gpCost(gs, 0, t) })),
-                    victory: { capsTaken: [1, 2, 3].filter((i) => { const oc = gs.origCapOf[i] != null ? gs.cities[gs.origCapOf[i]] : null; return oc ? oc.civ !== i : !gs.civs[i].alive }).length, ark: Math.floor(gs.ark[0]), needArk: CFG.arkScience, spaceflight: hasTech(gs, 0, 'SPACEFLIGHT'), parts: arkPartsOf(gs, 0).map((p) => ({ id: p.id, name: p.name, cost: p.cost, funded: p.funded, done: p.done })), partsDone: arkPartsDone(gs, 0), cultEarned: Math.floor(gs.civs[0].cultureEarned || 0), needCult: CFG.cultureWin, tourism: Math.floor(gs.civs[0].tourism || 0), needTourism: CFG.tourismWin, tourismLead: [1, 2, 3].every((i) => !gs.civs[i].alive || (gs.civs[i].tourism || 0) < (gs.civs[0].tourism || 0)), rivalArk: [1, 2, 3].map((i) => Math.floor(gs.ark[i])), rivalPartsDone: [1, 2, 3].map((i) => arkPartsDone(gs, i)), rivalTourism: [1, 2, 3].map((i) => Math.floor(gs.civs[i].tourism || 0)) },
+                    victory: { capsTaken: [1, 2, 3].filter((i) => { const oc = gs.origCapOf[i] != null ? gs.cities[gs.origCapOf[i]] : null; return oc ? oc.civ !== i : !gs.civs[i].alive }).length, ark: Math.floor(gs.ark[0]), needArk: CFG.arkShields, spaceflight: hasTech(gs, 0, 'SPACEFLIGHT'), parts: arkPartsOf(gs, 0).map((p) => ({ id: p.id, name: p.name, cost: p.cost, funded: p.funded, done: p.done })), partsDone: arkPartsDone(gs, 0), cultEarned: Math.floor(gs.civs[0].cultureEarned || 0), needCult: CFG.cultureWin, tourism: Math.floor(gs.civs[0].tourism || 0), needTourism: CFG.tourismWin, tourismLead: [1, 2, 3].every((i) => !gs.civs[i].alive || (gs.civs[i].tourism || 0) < (gs.civs[0].tourism || 0)), rivalArk: [1, 2, 3].map((i) => Math.floor(gs.ark[i])), rivalPartsDone: [1, 2, 3].map((i) => arkPartsDone(gs, i)), rivalTourism: [1, 2, 3].map((i) => Math.floor(gs.civs[i].tourism || 0)) },
                     late: { knownLate: ['EDUCATION', 'BANKING', 'GUNPOWDER', 'ASTRONOMY', 'STEAM_POWER', 'RAILROAD', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT'].filter((id) => hasTech(gs, 0, id)), muskets: gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'MUSKET').length, galleons: gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'GALLEON').length },
                     owned: gs.tiles.filter((t) => t.owner === 0).length,
                     explored0: countArr(gs.explored[0]),
@@ -946,7 +984,7 @@ const CivilizationVGame = () => {
                 start: startPlay, hash: () => stateHash(gs),                 select: (id) => { pending = { select: id } },
                 recenter: () => recenter(),
                 move: (c, r) => { pending = { move: [c, r] } }, settle: () => { pending = { found: true } }, endTurn: () => { pending = { endTurn: true } },
-                attack: (c, r) => { pending = { ...pending, attack: [c, r] } }, queue: (k) => { pending = { ...pending, queue: k } },
+                attack: (c, r) => { pending = { ...pending, attack: [c, r] } }, queue: (k, city) => { pending = { ...pending, queue: k, ...(city != null ? { city } : {}) } },
                 research: (id) => { pending = { ...pending, research: id } }, learn: (id) => { grantTech(gs, 0, id) },
                 improve: (kind) => { pending = { ...pending, improve: kind } },
                 policy: (id) => { pending = { ...pending, policy: id } },
@@ -964,7 +1002,7 @@ const CivilizationVGame = () => {
                     // #375 item 5 — the board civclock measures: a live late game that cannot
                     // crown (the same crowns-off isolation §33 uses in Node) so t30+ with
                     // musket lines, wonders and a galleon keel can actually exist on screen.
-                    CFG.cultureWin = 1e9; CFG.tourismWin = 1e9; CFG.arkScience = 1e9; CFG.capitalSizeToWin = 99; CFG.turnLimit = 999
+                    CFG.cultureWin = 1e9; CFG.tourismWin = 1e9; CFG.arkShields = 1e9; CFG.capitalSizeToWin = 99; CFG.turnLimit = 999
                     let n = 0
                     while (gs.turn < turns && n++ < turns * 40 && screenRef.current === 'play') doSim(decide(gs))
                     for (const id of ['EDUCATION', 'BANKING', 'GUNPOWDER', 'ASTRONOMY', 'STEAM_POWER', 'RAILROAD', 'INDUSTRIALIZATION', 'ELECTRICITY']) grantTech(gs, 0, id)
@@ -985,7 +1023,7 @@ const CivilizationVGame = () => {
                     `player cities ${gs.cities.filter((c) => c.civ === 0 && c.alive).length}  total ${gs.cities.filter((c) => c.alive).length}  units0 ${gs.units.filter((u) => u.civ === 0 && u.alive).length}  explored ${countArr(gs.explored[0])}`,
                     `camps alive ${gs.camps.filter((c) => c.alive).length}/${gs.camps.length}  wars ${Object.keys(gs.wars).length}  barbs alive ${gs.units.filter((u) => u.alive && u.civ === BARB).length}  queue ${JSON.stringify((gs.cities.find((c) => c.civ === 0 && c.alive) || { queue: [] }).queue)}`,
                     `research ${gs.tech[0].research ? TECH[gs.tech[0].research].name + ' ' + Math.floor(gs.tech[0].prog) + '/' + TECH[gs.tech[0].research].cost : 'idle'}  known ${TECH_IDS.filter((id) => hasTech(gs, 0, id)).length}/${TECH_IDS.length}  ai ${CIVS.filter((c) => !c.barb && c.id !== 0).map((c) => c.name + ':' + Object.keys(gs.tech[c.id].known).length).join(' ')}`,
-                    `victory: caps ${[1, 2, 3].filter((i) => { const oc = gs.origCapOf[i] != null ? gs.cities[gs.origCapOf[i]] : null; return oc ? oc.civ !== i : !gs.civs[i].alive }).length}/3  ark ${arkPartsDone(gs, 0)}/4 parts ${Math.floor(gs.ark[0])}/${CFG.arkScience}${hasTech(gs, 0, 'SPACEFLIGHT') ? '' : ' (needs Spaceflight)'}  tourism ${Math.floor(gs.civs[0].tourism || 0)}/${CFG.tourismWin}${[1, 2, 3].every((i) => !gs.civs[i].alive || (gs.civs[i].tourism || 0) < (gs.civs[0].tourism || 0)) ? ' LEAD' : ''}  record ❦ ${Math.floor(gs.civs[0].cultureEarned || 0)}/${CFG.cultureWin}`,
+                    `victory: caps ${[1, 2, 3].filter((i) => { const oc = gs.origCapOf[i] != null ? gs.cities[gs.origCapOf[i]] : null; return oc ? oc.civ !== i : !gs.civs[i].alive }).length}/3  ark ${arkPartsDone(gs, 0)}/4 plates ${Math.floor(gs.ark[0])}/${CFG.arkShields}⚒${hasTech(gs, 0, 'SPACEFLIGHT') ? '' : ' (needs Spaceflight)'}  tourism ${Math.floor(gs.civs[0].tourism || 0)}/${CFG.tourismWin}${[1, 2, 3].every((i) => !gs.civs[i].alive || (gs.civs[i].tourism || 0) < (gs.civs[0].tourism || 0)) ? ' LEAD' : ''}  record ❦ ${Math.floor(gs.civs[0].cultureEarned || 0)}/${CFG.cultureWin}`,
                     `land: workers ${gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'WORKER').length}  improvements ${gs.tiles.filter((t) => t.imp).length}  roads ${gs.tiles.filter((t) => t.road).length}  connected ${connectedResources(gs, 0).join(',') || 'none'}`,
                     `happiness ${(() => { const hs = happinessOf(gs, 0); return `${hs.net} (${hs.net >= 1 ? 'happy' : hs.net < 0 ? 'UNHAPPY' : 'content'}) lux ${hs.lux} cities ${hs.cities} wars ${hs.wars}` })()}  policies ${POLICY_IDS.filter((id) => hasPolicy(gs, 0, id)).join(',') || 'none'}  culture pool ${Math.floor(gs.civs[0].culture || 0)}  owned ${gs.tiles.filter((t) => t.owner === 0).length}`,
                     `wonders ${WONDER_IDS.filter((id) => gs.wonders[id] != null).map((id) => id + '→' + CIVS[gs.wonders[id]].name).join(',') || 'none'}  gp ${GP_TYPES.map((t) => `${t[0]}:${Math.floor(gs.gp[0].pts[t])}/${gpThreshold(gs, 0, t)}${gs.gp[0].held[t] ? `(${gs.gp[0].held[t]} held)` : ''}`).join(' ')}`,
@@ -1011,7 +1049,7 @@ const CivilizationVGame = () => {
                     { label: 'MAKE PEACE', run: () => { for (const c of [1, 2, 3]) if (atWar(gs, 0, c)) { pending = { ...pending, peace: c }; return `will sue for peace with ${CIVS[c].name}` } return 'Rome is not at war with any empire' } },
                     { label: 'QUEUE TRIREME', run: () => { const c = coastalCityOf(gs, 0); if (!c) return 'no coastal city yet: settle beside the sea'; pending = { ...pending, queue: 'GALLEY' }; return `will launch a Trireme from ${c.name} (needs Bronze Working)` } },
                     { label: 'NEXT AGE TECH', run: () => { const line = ['EDUCATION', 'ASTRONOMY', 'STEAM_POWER', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT']; const id = line.find((x) => !hasTech(gs, 0, x)); if (!id) return 'the modern age is complete — weld the Ark and launch'; grantTech(gs, 0, id); return `instant-discovered ${TECH[id].name} (${TECH[id].effect})` } },
-                    { label: 'PUSH THE ARK', run: () => { if (!hasTech(gs, 0, 'SPACEFLIGHT')) return 'Spaceflight comes first (NEXT AGE TECH ×n)'; gs.ark[0] = Math.min(CFG.arkScience, gs.ark[0] + 15); const ps = arkPartsOf(gs, 0); const nextWeld = ps.find((p) => !p.done); return `Ark funded ${Math.floor(gs.ark[0])}/${CFG.arkScience} · ${arkPartsDone(gs, 0)}/4 welded${nextWeld ? ` · next weld ${nextWeld.name} ${nextWeld.funded}/${nextWeld.cost}` : ' · the hull is complete'}` } },
+                    { label: 'WELD NEXT PLATE', run: () => { if (!hasTech(gs, 0, 'SPACEFLIGHT')) return 'Spaceflight comes first (NEXT AGE TECH ×n)'; const next = ARK_PARTS.find((p, i) => ((gs.arkParts[0] >> i) & 1) === 0); if (!next) return 'the hull is complete — end the turn and the Ark lifts'; gs.arkParts[0] |= 1 << ARK_PARTS.indexOf(next); gs.ark[0] += next.cost; gs.events.push({ type: 'arkPart', civ: 0, part: ARK_PARTS.indexOf(next), name: next.name, prog: gs.ark[0], need: CFG.arkShields }); if (arkPartsDone(gs, 0) === 4) gs.events.push({ type: 'arkLaunch', civ: 0 }); const nextWeld = ARK_PARTS.find((p, i) => ((gs.arkParts[0] >> i) & 1) === 0); return `instant-weld ${next.name} · ${arkPartsDone(gs, 0)}/4 plates · ${Math.floor(gs.ark[0])}/${CFG.arkShields} ⚒${nextWeld ? ` · next weld ${nextWeld.name} (0/${nextWeld.cost})` : ' · the hull is complete'}` } },
                     { label: '+200 TOURISM', run: () => { gs.civs[0].tourism = (gs.civs[0].tourism || 0) + 200; return `tourism now ${Math.floor(gs.civs[0].tourism)} — the CULTURE crown needs ${CFG.tourismWin} and the lead over every living rival (wonders pay 3, luxuries 1, half of culture)` } },
                     { label: 'QUEUE MUSKET', run: () => { pending = { ...pending, queue: 'MUSKET' }; return 'will train a Musket (needs Gunpowder)' } },
                     { label: 'QUEUE GALLEON', run: () => { const c = coastalCityOf(gs, 0); if (!c) return 'no coastal city yet: settle beside the sea'; pending = { ...pending, queue: 'GALLEON' }; return `will launch a Galleon from ${c.name} (needs Astronomy — it storms ports, carries 2)` } },
@@ -1310,10 +1348,25 @@ const CivilizationVGame = () => {
                                         <div key={p.id} className="text-[9px] leading-3">
                                             <div className="flex justify-between opacity-90"><span>{p.name}</span><span>{p.done ? '✓' : `${p.funded}/${p.cost}`}</span></div>
                                             <div className="h-1 rounded bg-black/60"><div className={`h-full ${p.done ? 'bg-emerald-300' : 'bg-sky-300'}`} style={{ width: `${vpanel.space ? Math.round((p.funded / p.cost) * 100) : 0}%` }} /></div>
+                                            {vpanel.space && !p.done && (
+                                                <button onClick={() => actRef.current.pickPlate && actRef.current.pickPlate(p.id)}
+                                                    className={`mt-0.5 w-full rounded border px-1 py-0.5 text-[9px] transition-colors ${vpanel.queuedPlates && vpanel.queuedPlates.includes(p.id) ? 'border-amber-300/60 bg-amber-700/40 text-amber-100' : 'border-sky-300/40 bg-sky-900/40 hover:bg-sky-400/20 text-sky-100'}`}>
+                                                    {vpanel.queuedPlates && vpanel.queuedPlates.includes(p.id) ? `QUEUED · ${vpanel.yardName}` : `⚒ WELD AT ${vpanel.yardName}`}
+                                                </button>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
-                                <div className="text-[9px] opacity-70 mt-1">{vpanel.space ? `THE ARK · ${vpanel.partsDone}/4 parts welded · ${vpanel.ark}/${vpanel.needArk} beakers — overflow spills into the next weld` : 'reach Spaceflight, then weld Cockpit, Booster, Stasis & Launch'}</div>
+                                {vpanel.space && vpanel.partsDone < 4 && (
+                                    <div className="flex items-center gap-1 mt-1 text-[9px]">
+                                        <span className="opacity-70">YARD</span>
+                                        <button onClick={() => actRef.current.cycleYard && actRef.current.cycleYard(-1)} className="border border-white/30 rounded px-1.5 py-0.5 hover:bg-white/10">◀</button>
+                                        <span className="min-w-[70px] text-center text-sky-200">{vpanel.yardName}</span>
+                                        <button onClick={() => actRef.current.cycleYard && actRef.current.cycleYard(1)} className="border border-white/30 rounded px-1.5 py-0.5 hover:bg-white/10">▶</button>
+                                        <span className="opacity-50 ml-1">Q welds the next plate · cities weld in parallel</span>
+                                    </div>
+                                )}
+                                <div className="text-[9px] opacity-70 mt-1">{vpanel.space ? `THE ARK · ${vpanel.partsDone}/4 plates welded · ${vpanel.ark}/${vpanel.needArk} ⚒ — one plate at a time per city, any order, parallel yards` : 'reach Spaceflight, then weld Cockpit, Booster, Stasis & Launch in your cities'}</div>
                             </div>
                             <div className={`rounded border px-2 py-1.5 ${vpanel.lead && vpanel.tour >= vpanel.needTour ? 'border-amber-300/50 bg-amber-950/30' : 'border-white/15 bg-black/30'}`}>
                                 <div className="text-[11px] font-bold">☼ TOURISM {vpanel.lead && vpanel.tour >= vpanel.needTour ? <span className="text-emerald-300">· LEADING</span> : null}</div>
@@ -1342,7 +1395,7 @@ const CivilizationVGame = () => {
                                 )}
                             </div>
                         ))}
-                        <div className="text-[10px] text-yellow-200/60 mt-2">the arcade golden age still shines: grow the capital to size {vpanel.goal} · first crown across any line wins · Y closes</div>
+                        <div className="text-[10px] text-yellow-200/60 mt-2">the arcade golden age still shines: grow the capital to size {vpanel.goal} · first crown across any line wins · I closes</div>
                     </div>
                 </div>
             )}
@@ -1351,7 +1404,7 @@ const CivilizationVGame = () => {
                 <div className="absolute inset-x-0 top-16 flex justify-center pointer-events-none px-4">
                     <div className="pointer-events-auto max-w-[min(92vw,560px)] rounded-lg border border-amber-300/50 bg-black/85 px-4 py-3 font-mono text-amber-100 text-[11px] leading-5 shadow-[0_14px_50px_#000]">
                         <b className="text-amber-300 tracking-widest">HOW YOU WIN</b> — take all 3 rival capitals, or reach Spaceflight and launch the ARK, or out-shimmer every rival in TOURISM; growing your capital to size {GOAL} is the golden shortcut.
-                        <div className="opacity-80 mt-1">E settles · 1–4 build · Space ends the turn · drag to pan · right-drag orbits · Home re-centers · Y tracks all three races.</div>
+                        <div className="opacity-80 mt-1">E settles · 1–4 build · Space ends the turn · drag to pan · right-drag orbits · Home re-centers · I tracks all three races (Q welds an Ark plate).</div>
                         <div className="opacity-80 mt-1 text-rose-200/80">NAVAL SUPPLY — keep a hull within {CFG.navalSupply} sea hexes of a friendly coastal port (own, vassal, or allied city-state); far hulls wear −{CFG.navalAttrition} every turn and sink in the deep.</div>
                         <button onClick={() => setHelpOpen(false)} className="mt-2 border border-amber-300/50 rounded px-3 py-0.5 hover:bg-amber-300/10 text-amber-200">GOT IT</button>
                     </div>

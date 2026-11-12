@@ -70,7 +70,8 @@
 //     the INDUSTRIAL age (Steam Power, Astronomy, Railroad) into the MODERN
 //     (Industrialization, Electricity, Spaceflight), each with real era effects.
 //     Three victories end the game: DOMINATION (every rival capital), SCIENCE
-//     (Spaceflight unlocks THE ARK — beakers then weld its four named parts:
+//     (Spaceflight opens THE ARK yards — cities weld its four named plates with
+//      production shields, one at a time per city, any order, parallel yards:
 //      Cockpit, Booster, Stasis and Launch; the completed hull lifts off)
 //     and CULTURE (the TOURISM lead — visitors bank wonders, luxuries and half
 //     of every turn's culture; past the threshold and strictly ahead of every
@@ -110,35 +111,46 @@ export const CFG = {
     stoneCult: 2, librarySci: 2, gardenFood: 1, colossusGold: 1, wallDefMult: 1.5,   // wonder effects
     csGift: 25, csInfl: 30, csAlly: 60, csTribute: 40,    // city-state courts: gift cost, influence per gift, alliance threshold, sack tribute
     tradeGold: 3, peaceCool: 3,                             // gold per signed trade pact per turn; turns peace must hold before trade
-    arkScience: 70, cultureWin: 350,       // Stage 8 victories: beakers banked into the Ark after Spaceflight (= the sum of ARK_PARTS); lifetime culture the world still records (since polish pass #375-4 it no longer crowns)
+    arkShields: 70, cultureWin: 350,       // Stage 8 victories: shields welded into the Ark (#2077 — the hull is city industry, = the sum of ARK_PARTS); lifetime culture the world still records (since polish pass #375-4 it no longer crowns)
     tourismWin: 120, wonderTour: 3,       // polish pass #375-4: the CULTURE crown is the TOURISM lead — visitors bank what there is to see
     navalSupply: 6, navalAttrition: 10,  // #2065 supply lines: hulls trace ≤6 sea hexes to a friendly port or wear 10 HP every turn at sea
 }
 
-// ---- the Ark, part by part (polish pass #375-3: the Science win assembles a
-// ship, not a number) -----------------------------------------------------------
-// Spaceflight opens the yard; beakers then weld four NAMED parts in order, each
-// with its own track. The ledger stays gs.ark[civ] (the proven §32/§33 pool);
-// the parts are a pure derivation of it — ordered fill with spill, so the
-// weld boundaries are milestones: 15 + 20 + 15 + 20 = the 70-beaker launch.
+// ---- the Ark, welded in the cities (#375-3 the named hull; #2077 the yards) --
+// Spaceflight opens the yards. Each NAMED plate is now a CITY PRODUCTION project
+// — any city may weld any still-missing plate, one plate at a time per city,
+// and different cities weld different plates in parallel (Civ V builds the ship
+// with shields, not beakers; the arcade keeps the 70-point program shape, see
+// README honesty). Delivered bits live in gs.arkParts[civ]; the ledger
+// gs.ark[civ] stays the sum of delivered costs (the proven §32/§33 field and
+// hash fold still ride it). The launch waits for all four plates, in any order.
 export const ARK_PARTS = [
     { id: 'COCKPIT', name: 'Cockpit', cost: 15 },
     { id: 'BOOSTER', name: 'Booster', cost: 20 },
     { id: 'STASIS', name: 'Stasis', cost: 15 },
     { id: 'LAUNCH', name: 'Launch', cost: 20 },
 ]
+export const ARK_PREFIX = 'ARK_'
+export const arkKind = (kind) => String(kind || '').startsWith(ARK_PREFIX)
+export const arkPartOfKind = (kind) => ARK_PARTS.findIndex((p) => ARK_PREFIX + p.id === kind)
 
 export function arkPartsOf(gs, civ) {
-    const total = Math.max(0, Math.min(CFG.arkScience, Math.floor(gs.ark[civ])))
-    let acc = 0
-    return ARK_PARTS.map((p) => {
-        const funded = Math.max(0, Math.min(p.cost, total - acc))
-        acc += p.cost
-        return { id: p.id, name: p.name, cost: p.cost, funded, done: funded >= p.cost }
+    const bits = gs.arkParts ? gs.arkParts[civ] : 0
+    return ARK_PARTS.map((p, i) => {
+        const done = ((bits >> i) & 1) === 1
+        // in progress: the shields banked at the city whose queue HEAD is this plate
+        let funded = done ? p.cost : 0
+        if (!done) for (const c of gs.cities) {
+            if (c.alive && c.civ === civ && (c.queue || [])[0] === ARK_PREFIX + p.id) funded = Math.max(funded, Math.min(p.cost, Math.floor(c.buildP || 0)))
+        }
+        return { id: p.id, name: p.name, cost: p.cost, funded, done }
     })
 }
 
-export function arkPartsDone(gs, civ) { return arkPartsOf(gs, civ).filter((p) => p.done).length }
+export function arkPartsDone(gs, civ) {
+    const bits = gs.arkParts ? gs.arkParts[civ] : 0
+    return ARK_PARTS.reduce((a, _p, i) => a + (((bits >> i) & 1) === 1 ? 1 : 0), 0)
+}
 
 export const UNIT = {
     WARRIOR: { str: 8, moves: 2, sight: 2, range: 1, cost: 15 },
@@ -189,7 +201,7 @@ export const TECH = {
     RAILROAD: { name: 'Railroad', era: 4, cost: 50, prereq: ['STEAM_POWER', 'THE_WHEEL'], effect: 'roads are free to move on' },
     INDUSTRIALIZATION: { name: 'Industrialization', era: 5, cost: 45, prereq: ['STEAM_POWER'], effect: '+3 production in every city' },
     ELECTRICITY: { name: 'Electricity', era: 5, cost: 50, prereq: ['INDUSTRIALIZATION'], effect: '+2 science +1 gold in every city' },
-    SPACEFLIGHT: { name: 'Spaceflight', era: 5, cost: 55, prereq: ['ELECTRICITY', 'ASTRONOMY'], effect: 'unlocks THE ARK — weld Cockpit, Booster, Stasis & Launch (70 science)' },
+    SPACEFLIGHT: { name: 'Spaceflight', era: 5, cost: 55, prereq: ['ELECTRICITY', 'ASTRONOMY'], effect: 'unlocks THE ARK yards — weld Cockpit, Booster, Stasis & Launch in your cities (70 shields)' },
 }
 export const TECH_IDS = Object.keys(TECH)
 export const ERAS = ['ANCIENT', 'CLASSICAL', 'MEDIEVAL', 'RENAISSANCE', 'INDUSTRIAL', 'MODERN']
@@ -588,6 +600,13 @@ export function setResearch(gs, civ, id) {
 }
 export function canQueue(gs, civ, kind) {
     const st = UNIT[kind]
+    if (arkKind(kind)) {
+        const pi = arkPartOfKind(kind)
+        if (pi < 0) return false
+        if (!hasTech(gs, civ, 'SPACEFLIGHT')) return false
+        if (((gs.arkParts ? gs.arkParts[civ] : 0) >> pi) & 1) return false   // that plate is already welded
+        return true
+    }
     if (!st) return !!WONDER[kind] && canBuildWonder(gs, civ, kind) === true
     if (st.tech && !hasTech(gs, civ, st.tech)) return false
     if (st.res && !connectedResources(gs, civ).includes(st.res)) return false
@@ -700,6 +719,14 @@ export function roadCost(gs, u, c, r) {
 }
 export function queueDeny(gs, civ, kind) {
     const st = UNIT[kind]
+    if (arkKind(kind)) {
+        const pi = arkPartOfKind(kind)
+        if (pi < 0) return null
+        if (!hasTech(gs, civ, 'SPACEFLIGHT')) return 'requires Spaceflight'
+        if (((gs.arkParts ? gs.arkParts[civ] : 0) >> pi) & 1) return `${ARK_PARTS[pi].name} is already welded`
+        if (gs.cities.some((c) => c.alive && c.civ === civ && (c.queue || []).includes(kind))) return `${ARK_PARTS[pi].name} is already in the yards`
+        return null
+    }
     if (!st) {
         if (WONDER[kind]) { const w = canBuildWonder(gs, civ, kind); return w === true ? null : w }
         return null
@@ -811,7 +838,8 @@ export function spendGP(gs, civ, t, cityId) {
     }
     const city = cityId != null ? gs.cities[cityId] : gs.cities.find((c) => c.alive && c.civ === civ)
     const kind = city.queue[0]
-    const cost = WONDER[kind] ? WONDER[kind].cost : unitCost(gs, civ, kind)
+    // #2077: an engineer speeds the head project whether it is a wonder or an Ark plate
+    const cost = WONDER[kind] ? WONDER[kind].cost : arkKind(kind) ? ARK_PARTS[arkPartOfKind(kind)].cost : unitCost(gs, civ, kind)
     city.buildP = Math.max(city.buildP || 0, cost)
     pumpCityQueue(gs, city)
     gs.events.push({ type: 'gpUsed', civ, kind: t, city: city.id })
@@ -991,6 +1019,7 @@ export function newGame(seed = 1, scenario = 0) {
         cs: CIVS.map(() => ({})),
         trade: {}, peaceTurn: {},
         ark: CIVS.map(() => 0),
+        arkParts: CIVS.map(() => 0),   // #2077: welded-plate bits (1<<partIndex) — the hull is delivery, not funding
         gp: CIVS.map(() => ({ pts: { ENGINEER: 0, SCIENTIST: 0, MERCHANT: 0 }, held: { ENGINEER: 0, SCIENTIST: 0, MERCHANT: 0 }, ready: { ENGINEER: false, SCIENTIST: false, MERCHANT: false }, bought: { ENGINEER: 0, SCIENTIST: 0, MERCHANT: 0 } })),
         capitalOf: {}, origCapOf: {}, events: [], end: null, endWhy: '',
         selected: -1, _anim: [],
@@ -1589,6 +1618,23 @@ function pumpCityQueue(gs, city) {
     city.queue = city.queue || []
     while (city.queue.length) {
         const kind = city.queue[0]
+        if (arkKind(kind)) {                                          // #2077: Ark plates are city industry
+            const pi = arkPartOfKind(kind)
+            if (pi < 0) { city.queue.shift(); continue }
+            if (((gs.arkParts[city.civ] >> pi) & 1) === 1) {         // the realm welded it elsewhere first
+                city.queue.shift()
+                gs.events.push({ type: 'arkLost', civ: city.civ, part: pi, name: ARK_PARTS[pi].name, city: city.id })
+                continue
+            }
+            if (city.buildP < ARK_PARTS[pi].cost) break
+            city.buildP -= ARK_PARTS[pi].cost; city.queue.shift()
+            gs.arkParts[city.civ] |= 1 << pi
+            gs.ark[city.civ] = Math.min(CFG.arkShields, gs.ark[city.civ] + ARK_PARTS[pi].cost)
+            gs.events.push({ type: 'arkPart', civ: city.civ, part: pi, name: ARK_PARTS[pi].name, city: city.id, prog: gs.ark[city.civ], need: CFG.arkShields })
+            gs.events.push({ type: 'ark', civ: city.civ, prog: gs.ark[city.civ], need: CFG.arkShields })
+            if (arkPartsDone(gs, city.civ) === ARK_PARTS.length) gs.events.push({ type: 'arkLaunch', civ: city.civ })
+            continue
+        }
         if (WONDER[kind] && gs.wonders[kind] != null) {           // lost the race while it sat in the queue
             city.queue.shift()
             gs.events.push({ type: 'wonderLost', civ: city.civ, id: kind, by: gs.wonders[kind] })
@@ -1728,20 +1774,10 @@ function resolveCiv(gs, civ) {
     // Stage 8: lifetime culture outlives every policy purchase — it is the
     // ledger the culture victory reads, and it never gets spent.
     C.cultureEarned = (C.cultureEarned || 0) + cult
-    // Stage 8: after Spaceflight, every beaker pours into THE ARK — welding its
-    // four named parts in order (Cockpit → Booster → Stasis → Launch). A weld
-    // that closes mid-turn is announced by name; overflow spills to the next.
-    if (hasTech(gs, civ, 'SPACEFLIGHT') && gs.ark[civ] < CFG.arkScience) {
-        const before = gs.ark[civ]
-        gs.ark[civ] = Math.min(CFG.arkScience, gs.ark[civ] + sci)
-        gs.events.push({ type: 'ark', civ, prog: gs.ark[civ], need: CFG.arkScience })
-        let acc = 0
-        for (let pi = 0; pi < ARK_PARTS.length; pi++) {
-            acc += ARK_PARTS[pi].cost
-            if (before < acc && gs.ark[civ] >= acc) gs.events.push({ type: 'arkPart', civ, part: pi, name: ARK_PARTS[pi].name, prog: gs.ark[civ], need: CFG.arkScience })
-        }
-        if (gs.ark[civ] >= CFG.arkScience) gs.events.push({ type: 'arkLaunch', civ })
-    }
+    // Stage 8 (#2077): the beaker faucet is OFF. Since Spaceflight, the hull is
+    // welded city by city with production shields (pumpCityQueue — one plate at
+    // a time per yard, any order, parallel cities); science funds research like
+    // any other turn. Delivered plates announce themselves where they close.
     const eraNow = highestEra(gs, civ)
     if (eraNow > (C.era == null ? -1 : C.era)) { C.era = eraNow; if (eraNow >= 1) gs.events.push({ type: 'era', civ, era: eraNow }) }
     spreadBorders(gs, civ)
@@ -1778,7 +1814,7 @@ function victoryFor(gs, civ) {
             ? `Domination — ${kneel} realm${kneel > 1 ? 's kneel' : ' kneels'} to your court; the rest of the world flies your colours`
             : 'Domination — every rival capital flies your colours'
     }
-    if (hasTech(gs, civ, 'SPACEFLIGHT') && gs.ark[civ] >= CFG.arkScience) return 'Science — Cockpit, Booster, Stasis and Launch are welded; the Ark leaves the ground, and the future is yours'
+    if (hasTech(gs, civ, 'SPACEFLIGHT') && gs.ark[civ] >= CFG.arkShields && arkPartsDone(gs, civ) === ARK_PARTS.length) return 'Science — Cockpit, Booster, Stasis and Launch are welded; the Ark leaves the ground, and the future is yours'
     const mine = gs.civs[civ].tourism || 0
     if (mine >= CFG.tourismWin && gs.civs.every((c) => c.barb || c.cs || c.id === civ || !c.alive || (c.tourism || 0) < mine)) {
         return 'Culture — travellers cross seas for your wonders; no court in the world shines brighter'
@@ -1836,7 +1872,9 @@ function findTarget(gs, civ, u, radius) {
 const AI_TECH_ORDER = ['ARCHERY', 'BRONZE_WORKING', 'THE_WHEEL', 'POTTERY', 'AGRICULTURE', 'MASONRY', 'CURRENCY', 'WRITING', 'HORSEBACK', 'PHILOSOPHY', 'ENGINEERING', 'MATHEMATICS']
 // Stage 8: the later eras on the rack. Rivals walk the old road first (their
 // rotation and early choices are untouched); once the medieval shelf is full
-// they climb toward the Ark on a fixed line — a real, if slow, race.
+// they climb toward the Ark on a fixed line — a real, if slow, race. Since
+// #2077 the race has two legs: the lab reaches Spaceflight, then the yards
+// weld the four plates with production shields, city by parallel city.
 const AI_TECH_ORDER_LATE = ['EDUCATION', 'BANKING', 'GUNPOWDER', 'ASTRONOMY', 'STEAM_POWER', 'RAILROAD', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT']
 
 function aiTurn(gs, civ) {
@@ -1964,6 +2002,14 @@ function aiTurn(gs, civ) {
         }
         // #1777: puppets do not plant colonies — expansion is the overlord's
         // privilege; the kneeling realm holds what it kneeled with.
+        // #2077: the Apollo mobilisation — while the hull is open, every city
+        // with a free slot welds the oldest plate not welded or queued anywhere
+        // in the realm (spread by city; deterministic, no rng).
+        if (hasTech(gs, civ, 'SPACEFLIGHT') && gs.arkParts[civ] !== (1 << ARK_PARTS.length) - 1 && !city.queue.some((k) => arkKind(k))) {
+            const missing = ARK_PARTS.map((p, i) => ({ p, i })).filter(({ p, i }) => (((gs.arkParts[civ] >> i) & 1) === 0)
+                && !gs.cities.some((c) => c.alive && c.civ === civ && (c.queue || []).includes(ARK_PREFIX + p.id)))
+            if (missing.length) { city.queue.push(ARK_PREFIX + missing[(city.id + civ) % missing.length].p.id); continue }
+        }
         const wantSettler = city.size >= 2 && C.gold >= 40 && (C.cities || 0) < 6 && C.vassal == null
         const workers = gs.units.filter((x) => x.alive && x.civ === civ && x.kind === 'WORKER').length + city.queue.filter((k) => k === 'WORKER').length
         if (wantSettler && !city.queue.includes('SETTLER')) city.queue.push('SETTLER')
@@ -2068,7 +2114,7 @@ export function step(gs, input = {}) {
     if (input.peace != null) makePeace(gs, 0, input.peace)
     if (input.trade != null) makeTrade(gs, 0, input.trade)
     if (input.gift != null) giftCS(gs, 0, input.gift)
-    if (input.queue && (UNIT[input.queue] || WONDER[input.queue])) {
+    if (input.queue && (UNIT[input.queue] || WONDER[input.queue] || arkKind(input.queue))) {
         const deny = queueDeny(gs, 0, input.queue)
         if (deny) gs.events.push({ type: 'deny', reason: deny, c: -1, r: -1 })
         else {
@@ -2076,6 +2122,7 @@ export function step(gs, input = {}) {
                 : UNIT[input.queue] && UNIT[input.queue].naval ? coastalCityOf(gs, 0)
                     : gs.cities.find((c) => c.civ === 0 && c.alive)
             if (city && city.alive && city.civ === 0 && city.queue.length < 3) { city.queue.push(input.queue); gs.events.push({ type: 'queued', civ: 0, unit: input.queue }) }
+            else if (city && city.alive && city.civ === 0) gs.events.push({ type: 'deny', reason: `${city.name}'s yard is full`, c: -1, r: -1 })
         }
     }
     if (sel) {
@@ -2117,7 +2164,7 @@ export function stateHash(gs) {
         const G = gs.gp[civ]
         h = (h * 33 + m * 7 + (R.research ? TECH_IDS.indexOf(R.research) + 1 : 0) * 13 + Math.floor(R.prog) * 3 + rm * 29 + pm * 17 + (gs.civs[civ].culture | 0)) | 0
         h = (h * 33 + (Math.floor(G.pts.ENGINEER) + Math.floor(G.pts.SCIENTIST) * 7 + Math.floor(G.pts.MERCHANT) * 11 + G.held.ENGINEER * 17 + G.held.SCIENTIST * 19 + G.held.MERCHANT * 23)) | 0
-        h = (h * 33 + Math.floor(gs.ark[civ]) * 41 + ((gs.civs[civ].cultureEarned || 0) | 0) * 23 + ((gs.civs[civ].tourism || 0) | 0) * 29 + ((gs.civs[civ].vassal != null ? gs.civs[civ].vassal + 1 : 0) * 47)) | 0
+        h = (h * 33 + Math.floor(gs.ark[civ]) * 41 + ((gs.arkParts ? gs.arkParts[civ] : 0) | 0) * 59 + ((gs.civs[civ].cultureEarned || 0) | 0) * 23 + ((gs.civs[civ].tourism || 0) | 0) * 29 + ((gs.civs[civ].vassal != null ? gs.civs[civ].vassal + 1 : 0) * 47)) | 0
     }
     return (h >>> 0).toString(16)
 }
