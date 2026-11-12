@@ -209,8 +209,10 @@ function buildUnit(u) {
     if (u.naval) {
         // #2065 supply lines: a hull beyond its ports' reach wears a pulsing
         // amber warning ring on the water — the crew's own distress flare.
-        const warn = new THREE.Mesh(new THREE.RingGeometry(0.36, 0.46, 20),
-            new THREE.MeshBasicMaterial({ color: 0xe8a13a, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false }))
+        // #2075: brighter amber + wider band — the old 0.36-0.46 ring washed
+        // out against bright water at phone scale (375px, ?lite=1).
+        const warn = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.5, 22),
+            new THREE.MeshBasicMaterial({ color: 0xffb84d, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false }))
         warn.rotation.x = -Math.PI / 2; warn.position.y = 0.02; warn.visible = false
         g.add(warn); g.userData.warnRing = warn
     }
@@ -484,10 +486,20 @@ export function createView(gs) {
         shaft.visible = false; fxGroup.add(shaft)
         arrowPool.push({ mesh: shaft, t: 1, from: [0, 0, 0], to: [0, 0, 0] })
     }
+    // #2075 wreck beat: a hull lost at sea leaves drifting, sinking debris and a
+    // slow foam ring — the 14-tick combat impact is too quick for a drowning.
+    const wreckPool = []
+    for (let i = 0; i < 6; i++) {
+        const ring = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.62, 22), new THREE.MeshBasicMaterial({ color: 0xcfe8f0, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }))
+        ring.rotation.x = -Math.PI / 2; ring.visible = false; fxGroup.add(ring)
+        const planks = []
+        for (let n = 0; n < 5; n++) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.03, 0.05), new THREE.MeshBasicMaterial({ color: 0x8a6a3a, transparent: true, opacity: 0, depthWrite: false })); p.visible = false; fxGroup.add(p); planks.push(p) }
+        wreckPool.push({ ring, planks, ttl: 0 })
+    }
 
     return {
         scene, hexes, cones, ribbons, cityGroup, campGroup, unitGroup, fxGroup, roadGroup, workGroup, resGroup, wonderGroup, selRing, reachPool,
-        unitMeshes, unitAnim, cityMeshes, campMeshes, fxPool, arrowPool,
+        unitMeshes, unitAnim, cityMeshes, campMeshes, fxPool, arrowPool, wreckPool,
         hexToWorld, worldToHex,
     }
 }
@@ -509,6 +521,23 @@ export function spawnImpact(view, gs, c, r, hot) {
     })
 }
 
+// #2075 wreck beat: called by the shell when a hull goes down at sea.
+export function spawnWreck(view, gs, c, r) {
+    const slot = view.wreckPool.find((w) => w.ttl <= 0) || view.wreckPool[0]
+    const { x, z } = hexToWorld(c, r)
+    const h = (gs.tiles[r * CFG.W + c]._h || 0) + 0.03
+    slot.ttl = 36
+    slot.ring.visible = true
+    slot.ring.position.set(x, h, z)
+    slot.planks.forEach((p, n) => {
+        p.visible = true
+        const a = (n / 5) * Math.PI * 2 + (c + r) * 0.7
+        p.position.set(x + Math.cos(a) * 0.1, h + 0.06, z + Math.sin(a) * 0.1)
+        p.userData.vx = Math.cos(a) * 0.018; p.userData.vz = Math.sin(a) * 0.018
+        p.userData.sp = (n % 2 ? 1 : -1) * 0.12
+    })
+}
+
 export function spawnArrow(view, gs, from, to) {
     const slot = view.arrowPool.find((a) => a.t >= 1) || view.arrowPool[0]
     const a = hexToWorld(from[0], from[1]); const b = hexToWorld(to[0], to[1])
@@ -524,6 +553,7 @@ export function spawnArrow(view, gs, from, to) {
 // rebuild signatures below are rolling integers instead of strings.
 const CIVCOL = CIVS.map((c) => new THREE.Color(c.hex))
 const REACHCOL = new THREE.Color(0x6fe3ff)
+const HORIZONCOL = new THREE.Color(0x35b5e0)   // #2075: the port's sea-reach, faint cyan on water
 const WHITE = new THREE.Color(0xffffff)
 
 export function updateView(view, gs, extra = {}) {
@@ -531,6 +561,7 @@ export function updateView(view, gs, extra = {}) {
     const col = new THREE.Color()
     const animate = !extra.lite
     const sunK = (i) => { const r = Math.floor(i / CFG.W); return 0.82 + 0.18 * (1 - r / CFG.H) }   // gentle north light
+    let hz = 0   // #2075 probe: how many sea tiles carried the horizon tint last frame
     for (let i = 0; i < gs.tiles.length; i++) {
         const tl = gs.tiles[i]
         const base = COL[tl.terr]
@@ -544,10 +575,15 @@ export function updateView(view, gs, extra = {}) {
         else col.multiplyScalar(fogv >= 1 ? 1 : 0.72)
         // selection reach highlight
         if (extra.reach && extra.reach.has(i) && gs.visible[0][i]) col.lerp(REACHCOL, 0.42)
+        // #2075: while a hull is selected, its flag's whole port horizon sits on
+        // the water as a faint tint — the ≤6-step law should read before it bites.
+        // Explored-only: the horizon never paints terrain the player hasn't seen.
+        if (extra.horizon && extra.horizon.has(i) && gs.explored[0][i] && (tl.terr === T.OCEAN || tl.terr === T.COAST)) { col.lerp(HORIZONCOL, 0.14); hz++ }
         if (extra.hover === i) col.lerp(WHITE, 0.35)
         hexes.setColorAt(i, col)
     }
     hexes.instanceColor.needsUpdate = true
+    view._horizonPaint = hz
 
     const fr = view.forestRefs || (view.forestRefs = collectForest(view, gs))
     for (let n = 0; n < fr.length; n++) {
@@ -654,11 +690,19 @@ export function updateView(view, gs, extra = {}) {
             if (u.naval) {
                 m.position.y += 0.02 + Math.sin(gs.tick * 0.12 + u.id) * 0.03
                 // #2065 supply lines: the amber ring pulses while the hull sits
-                // beyond the reach of every friendly port
-                let sup = seaSupply.get(u.civ)
-                if (sup === undefined) { sup = suppliedSea(gs, u.civ); seaSupply.set(u.civ, sup) }
+                // beyond the reach of every friendly port.
+                // #2075: the flare is OURS — hostile hulls never wear it. Ringing
+                // enemy ships read as a leak of the player's own distress signal,
+                // and the original never shows a rival's supply state anyway.
                 const wr = m.userData.warnRing
-                if (wr) { wr.visible = !sup.has(ti); wr.material.opacity = 0.32 + 0.22 * Math.sin(gs.tick * 0.22 + u.id) }
+                if (wr) {
+                    if (u.civ === 0) {
+                        let sup = seaSupply.get(u.civ)
+                        if (sup === undefined) { sup = suppliedSea(gs, u.civ); seaSupply.set(u.civ, sup) }
+                        wr.visible = !sup.has(ti)
+                        wr.material.opacity = 0.42 + 0.24 * Math.sin(gs.tick * 0.22 + u.id)
+                    } else wr.visible = false
+                }
             }
             m.rotation.y = gs.tick * 0.02 + u.id
             if (u.path && u.path.length) m.position.y += 0.02 + Math.abs(Math.sin(gs.tick * 0.3)) * 0.05
@@ -706,6 +750,20 @@ export function updateView(view, gs, extra = {}) {
             s.material.opacity = p
             s.rotation.y += 0.4
         }
+    }
+    // #2075 wreck beat: debris drifts outward and sinks, foam ring spreads slow.
+    for (const w of view.wreckPool) {
+        if (w.ttl <= 0) continue
+        w.ttl--
+        const p = w.ttl / 36
+        w.ring.material.opacity = p * 0.5
+        w.ring.scale.setScalar(1 + (1 - p) * 1.8)
+        for (const s of w.planks) {
+            s.position.x += s.userData.vx; s.position.z += s.userData.vz
+            s.position.y -= 0.0035; s.rotation.y += s.userData.sp
+            s.material.opacity = p
+        }
+        if (w.ttl <= 0) { w.ring.visible = false; w.planks.forEach((s) => { s.visible = false }) }
     }
     for (const a of view.arrowPool) {
         if (a.t >= 1) { a.mesh.visible = false; continue }

@@ -97,7 +97,15 @@ the selected hull, a pulsing amber ring rides the unsupplied hull, and the
 evening log reports `OUT OF SUPPLY`. Deep water stops being free: coastal
 cities and alliances are the fleet's reach, a coast-to-coast crossing costs HP,
 and losing your last coastal hub strands your navy. §39 gates ports, horizon,
-wear, sink, the land-exempt law and determinism. Honesty, in the open (#237
+wear, sink, the land-exempt law and determinism. #2075 made the law visible: the
+port horizon tints the sea a faint cyan while a friendly hull is selected
+(explored water tiles only), the distress flare rings player-flag hulls only
+(enemy hulls never wear it), its pulse and band were raised for phone scale
+(floor 0.18, band 0.32–0.5, brighter `#ffb84d`), rival fleets lost at sea
+travel as `WHISPERS: <CIV> FLEET LOST AT SEA` on a distant quiet tone, and a
+drowning hull scatters a 36-tick debris-and-foam wreck beat (`spawnWreck`) —
+all view-side, no dice touched. §41 gates the polish; `supplyView` in
+`__civTest` reads ring/wreck/horizon state back in the browser. Honesty, in the open (#237
 doctrine): Civ V has no attrition at sea — its nearest real law is that units
 heal only on friendly territory, and borders reach out over the water, so deep
 neutral sea already starves recovery there. This stage extends that real law as

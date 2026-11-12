@@ -2258,5 +2258,50 @@ console.log('40. Ark yards — city industry mobilises')
     CFG.capitalSizeToWin = keepCap; CFG.cultureWin = keepCult; CFG.tourismWin = keepTour; CFG.turnLimit = keepTurn
 }
 
+// ---- 41. naval-supply polish — the horizon shows, the flare is ours alone, wrecks sink loud (#2075) ----
+console.log('41. naval-supply polish — horizon paint, player-only flare, wreck beat, rumor (#2075)')
+{
+    const SRC = (f) => readFileSync(new URL(`../src/games/CivilizationV/${f}`, import.meta.url), 'utf8')
+    const ART = SRC('art.js'), IDX = SRC('index.jsx')
+
+    // (a) the flare is OURS: ring visibility is gated on flag zero and an enemy
+    // hull explicitly extinguishes it — ringing hostile ships read as a leak of
+    // the player's own distress signal, and the original never showed rivals' supply.
+    ok(/if \(u\.civ === 0\) \{\s*\n\s*let sup = seaSupply\.get/.test(ART) && /else wr\.visible = false/.test(ART),
+        'a). the distress flare rings player-flag hulls only — the enemy never wears it')
+
+    // (b) phone-scale legibility: the pulse floor rose off 0.10 (washed out on
+    // bright water at 375px) and the band widened from 0.36–0.46.
+    ok(/0\.42 \+ 0\.24 \* Math\.sin/.test(ART), 'b). ring pulse floor is 0.18 — visible against bright sea at phone scale')
+    ok(/RingGeometry\(0\.32, 0\.5, 22\)/.test(ART) && /0xffb84d/.test(ART), 'b). brighter amber, wider band than the old washout ring')
+
+    // (c) rival fleets no longer vanish silently: the shell speaks the loss even
+    // without line of sight (a rumor travels), at a quieter volume than your own.
+    ok(/WHISPERS: \$\{CIVS\[e\.civ\]\.name\} FLEET LOST AT SEA/.test(IDX), 'c). a rival supply-loss is named: WHISPERS carries the civ')
+    ok(/else \{ say\(`WHISPERS[\s\S]*?playSweep\(150, 80, 0\.5, 'sine', 0\.03\)/.test(IDX), 'c). the rumor tone sits quieter than the player loss (0.03 < 0.08)')
+
+    // (d) the wreck beat: a hull going down at sea scatters slow sinking debris —
+    // exported, pooled, animated, and fired at BOTH drowning scenes (hold and loss).
+    ok(/export function spawnWreck/.test(ART) && /wreckPool/.test(ART) && /slot\.ttl = 36/.test(ART), 'd). the wreck FX exists and runs on its own 36-tick timer')
+    ok(/for \(const w of view\.wreckPool\)/.test(ART) && /s\.position\.y -= 0\.0035/.test(ART), 'd). debris animates each frame — drift, sink, fade')
+    ok((IDX.match(/spawnWreck\(view, gs, e\.at\[0\], e\.at\[1\]\)/g) || []).length === 2, 'd). both drowning beats scatter debris: the hold and the supply loss')
+    ok(/import \{ createView, updateView, spawnImpact, spawnArrow, spawnWreck \}/.test(IDX), 'd). the shell imports the wreck beat from the art module')
+
+    // (e) the horizon is legible before it bites: the ≤6-step law is tinted onto
+    // the water while a hull is selected, on water tiles only, explored only —
+    // never a claim on land, never a leak through the fog.
+    ok(/extra\.horizon[\s\S]*?col\.lerp\(HORIZONCOL, 0\.14\)/.test(ART) && /tl\.terr === T\.OCEAN \|\| tl\.terr === T\.COAST/.test(ART), 'e). the horizon ink touches water tiles only')
+    ok(/gs\.explored\[0\]\[i\][\s\S]{0,80}col\.lerp\(HORIZONCOL/.test(ART), 'e). the horizon never paints a tile the player has not seen')
+    ok(/selShip \? suppliedSea\(gs, 0\) : null/.test(IDX), 'e). the horizon rides only while a friendly hull is selected')
+    ok(/view\._horizonPaint = hz/.test(ART) && /horizonPaint: view\._horizonPaint/.test(IDX), 'e). the paint count reads back from __civTest for browser proof')
+
+    // (f) view-side doctrine: the polish touches no dice — the same seed replays
+    // hash-for-hash, and the supply law's own events still fire (§39 owns those).
+    const g1 = newGame(41, 0), g2 = newGame(41, 0)
+    let n41 = 0
+    while (!g1.end && n41++ < 30) { step(g1, decide(g1)); step(g2, decide(g2)) }
+    eq(stateHash(g1), stateHash(g2), 'f). the polish left the sim untouched: same seed, same hash')
+}
+
 console.log(`\ncivcheck: ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
