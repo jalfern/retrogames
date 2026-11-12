@@ -43,6 +43,18 @@ export const SPAT_DROP = 8         // house bond lost per spat
 export const SPAT_SOCIAL = 0.12   // social sting each resident pays
 export const SPAT_CD = 40         // real seconds before another spat can fire
 export const MAKEUP_BOND = 6      // lump bond repaid on the make-up
+// #2131: player-ordered romance — the bond law gets a handle. The resident you
+// command may address the nearest other person within arm's reach (same ring as
+// the co-presence chat): a compliment pays the right bond, at FAMILY tier the
+// household compliment deepens into affection (double), and an insult cuts and
+// sets the grudge — cold war on command, with the same human exit (#2070) as an
+// organic spat. Shared cooldown so spam cannot flatten the meter; no rng in the
+// triggers (the dialogue pick is seeded, as everywhere), so seeds stay exact.
+export const COO_BOND = 3         // bond paid per compliment
+export const AFFECTION_BOND = 6   // household compliment at FAMILY tier (relLevel 3)
+export const INSULT_DROP = 4      // bond cut per insult (half an organic spat)
+export const CMD_CD = 8           // real seconds between player commands
+export const COURT_REACH = 2      // arm's reach, Manhattan — the chat ring
 export const COLLAPSE_AT = 16       // seconds a red need may go unanswered
 export const FAINT_SEC = 14        // how long a faint lasts
 export const RED_AT = 0.12         // a need at/below this reads red (and alarms the gem)
@@ -206,6 +218,8 @@ export function newRun(seed) {
         grudge: 0,                // #2070: 1 = cold war until the pair makes up
         spatCd: 0,                // #2070: real seconds until the next spat may fire
         spatFx: 0,                // #2076: seconds left of the storm-puff tell over the pair
+        cooFx: 0,                 // #2131: seconds left of the sparkle/hearts tell over the pair
+        cmdCd: 0,                 // #2131: real seconds until the next player command lands
         houseLineCd: 6,               // co-presence chat line cooldown (s)
         lastToast: 0,               // day of last shared payday toast
         thoughts: [], thoughtT: 0,
@@ -273,6 +287,77 @@ const MAKEUP_LINES = [
     'The grudge thaws — somebody puts the kettle on for two.',
     'A sigh, a shrug, a hand on the arm: the spat is over, for now.',
 ]
+
+// #2131: player-ordered romance. Who is within arm's reach of the commanded
+// resident — partner first by distance, Fern while she hangs about. Fainted
+// folks are not company (their own and yours).
+export function courtTarget(s) {
+    const me = s.people[s.active]
+    if (!me || me.faintT > 0) return null
+    const cand = []
+    const partner = s.people[1 - s.active]
+    if (partner && partner !== me && partner.faintT <= 0) cand.push({ p: partner, k: 'house' })
+    if (s.visitor && s.visitor.state !== 'leaving') cand.push({ p: s.visitor, k: 'fern' })
+    let best = null, bd = COURT_REACH + 1
+    for (const c of cand) {
+        const d = Math.abs(me.r - c.p.r) + Math.abs(me.c - c.p.c)
+        if (d <= COURT_REACH && d < bd) { bd = d; best = c }
+    }
+    return best
+}
+
+const COO_LINES = [
+    'You tell Mira she runs this house like a five-star hotel. She preens.',
+    'A compliment, spoken aloud, on purpose. Otto takes it like sunshine.',
+    'You say the kind thing out loud; the kitchen warms a degree.',
+]
+const COO_LINES_FERN = [
+    'You tell Fern her stories get better every visit. She beams behind the teacup.',
+    'A compliment across the tea table — Fern laughs like it was her birthday.',
+]
+const AFFECTION_LINES = [
+    'Otto and Mira — the whole house watches the two of you mean it.',
+    'Affection, unashamed, mid-chore. The little lot glows.',
+    'A hand on the cheek, a forehead to forehead: FAMILY means this.',
+]
+const INSULT_LINES = [
+    'You say the cruel thing. It lands like a plate on tile.',
+    'A low blow, aimed and loose — words do not walk back.',
+    'You sneer; the room goes quiet in the bad way.',
+]
+
+export function court(s, kind) {
+    if (s.cmdCd > 0) return null
+    const t = courtTarget(s)
+    if (!t) return null
+    const me = s.people[s.active], other = t.p, k = t.k
+    const mx = (me.x + other.x) / 2, my = (me.y + other.y) / 2
+    if (kind === 'coo') {
+        const deep = k === 'house' && relLevel(s.rel.house) >= 3
+        relAdd(s, k, deep ? AFFECTION_BOND : COO_BOND)
+        me.needs.social = Math.min(1, me.needs.social + 0.05)
+        if (other.needs && other.needs.social !== undefined) other.needs.social = Math.min(1, other.needs.social + 0.05)
+        s.cooFx = deep ? 2.6 : 1.8   // sparkle/hearts over the pair (index paint)
+        s.cooAt = { x: mx, y: my }
+        s.cooDeep = deep
+        s.events.push({ t: deep ? 'affection' : 'coo', k, x: mx, y: my })
+        think(s, pick(s, deep ? AFFECTION_LINES : k === 'fern' ? COO_LINES_FERN : COO_LINES))
+        s.cmdCd = CMD_CD
+        return { deep, k }
+    }
+    if (kind === 'insult') {
+        relSub(s, k, INSULT_DROP)
+        if (k === 'house') s.grudge = 1     // cold war on command; the #2070 exit still ends it
+        if (other.needs && other.needs.social !== undefined) other.needs.social = Math.max(0, other.needs.social - SPAT_SOCIAL)
+        me.needs.social = Math.max(0, me.needs.social - SPAT_SOCIAL / 2)
+        s.spatFx = 2.4                      // the storm puff rides the #2076 tell
+        s.events.push({ t: 'insult', k, x: mx, y: my })
+        think(s, pick(s, INSULT_LINES))
+        s.cmdCd = CMD_CD
+        return { k }
+    }
+    return null
+}
 
 // ------------------------------------------------------------- occupancy -------
 // occupancy of solid cells: the cells a placed item physically blocks
@@ -855,6 +940,8 @@ export function advance(s, dt) {
     s.tick++
     s.sec += dt
     if (s.spatFx > 0) s.spatFx = Math.max(0, s.spatFx - dt)   // #2076: the sprite tell fades on the real clock
+    if (s.cooFx > 0) s.cooFx = Math.max(0, s.cooFx - dt)       // #2131: the warm tell too
+    if (s.cmdCd > 0) s.cmdCd = Math.max(0, s.cmdCd - dt)       // #2131: command cooldown rides the real clock
     if (s.build) return     // time stands still in buy mode
     if (s.fastT > 0) s.fastT = Math.max(0, s.fastT - dt)
     const anyWork = s.people.some((p) => p.working)
@@ -1070,6 +1157,7 @@ export function stateHash(s) {
     mix(s.ext)
     mix(s.rel.house); mix(s.rel.fern)   // #1817: bonds ride the hash
     mix(s.spats); mix(s.grudge)        // #2070: quarrels and grudges ride it too
+    mix(s.cmdCd)                       // #2131: the command cooldown rides it too
     for (const p of s.people) {
         mix(p.r); mix(p.c)
         for (const n of NEEDS) mix(p.needs[n])

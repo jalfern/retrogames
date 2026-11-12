@@ -15,6 +15,9 @@
 //                  baseline run), neglect-fade, hash, and source pins.
 //   5. FEEL      — #1823: walking footfalls name their ground (plank/gravel/
 //                  lawn), refusal events name their cell, and views are pinned.
+//   6. COURT     — #2131: player-ordered romance — coo/affection/insult on the
+//                  chat ring, the FAMILY-tier deepening, the shared cooldown
+//                  economy, grudge-on-command with the human exit intact.
 //
 // It proves IT can fail the playbook way: break one load-bearing line in sim.js
 // (content accrual in finishUse, or the relAdd(s,'fern') feed in the visitor
@@ -30,6 +33,7 @@ import {
     newRun, advance, autoStep, cmdUse, cmdWalk, cmdWork, tryUse,
     place, sellAt, targetsOf, walkable, bfsPath, stateHash, buildRoom, buildRoomOk,
     manualMove,
+    court, courtTarget, COO_BOND, AFFECTION_BOND, INSULT_DROP, CMD_CD, REL_EDGES,   // #2131
 } from '../src/games/Homebody/sim.js'
 import { readFileSync } from 'node:fs'
 
@@ -773,6 +777,108 @@ section('TELL & FADE (#2076): sprite tell timer, neglect demotes loudly')
     check('pin: the art draws both the storm puff and the cold-war lean', /fx === 'spat'/.test(polArt) && /fx === 'cold'/.test(polArt))
     check('pin: the make-up pays hearts, not generic sparkles', /kind: 'heart'/.test(polJsx) && /case 'makeup'[\s\S]*heartBurst\(e\.x/.test(polJsx))
     check('pin: the attract teaches that bonds can break', /SPAT cracks BONDS/.test(polJsx))
+}
+
+// ---------------------------------------------------------------- COURT (#2131)
+// Player-ordered romance: the bond law gets a handle. C coo (Space/A rides the
+// compliment where no object is near), X insult. The pair stands within the
+// chat ring; commands pay/cut the RIGHT bond, share one cooldown, and the
+// #2070 make-up stays the only mending.
+section('COURT')
+{
+    const pair = (g) => { g.people[0].r = 3; g.people[0].c = 3; g.people[1].r = 3; g.people[1].c = 4; g.people[0].path = null; g.people[1].path = null; g.spatCd = 0; g.grudge = 0; g.cmdCd = 0; return g }
+    const noOne = newRun(31)
+    check('no one within arm\'s reach — both commands refuse, nothing moves',
+        court(noOne, 'coo') === null && court(noOne, 'insult') === null && courtTarget(noOne) === null && noOne.rel.house === 0 && noOne.cmdCd === 0)
+
+    const g1 = pair(newRun(33))
+    const evs = []
+    const r1 = court(g1, 'coo')
+    evs.push(...drain(g1))
+    check('a coo pays COO_BOND on the household bond and sets the cooldown',
+        !!r1 && !r1.deep && Math.abs(g1.rel.house - COO_BOND) < 1e-9 && g1.cmdCd === CMD_CD && evs.some((e) => e.t === 'coo' && e.k === 'house'))
+    check('both sides of the pair get the social lift', g1.people[0].needs.social > 0.3 && g1.people[1].needs.social > 0.3)
+    check('a second command inside the cooldown refuses — even the kind ones',
+        court(g1, 'coo') === null && court(g1, 'insult') === null && Math.abs(g1.rel.house - COO_BOND) < 1e-9)
+    for (let i = 0; i < Math.round((CMD_CD + 0.1) / DT); i++) advance(g1, DT)
+    g1.people[0].r = 3; g1.people[0].c = 3; g1.people[1].r = 3; g1.people[1].c = 4   // they may have idled apart — this gate is about the cooldown, not the walk
+    check('the cooldown runs on the real clock and releases', g1.cmdCd === 0 && !!court(g1, 'coo'))
+
+    // tier gate: the FAMILY edge (60) is the exact deepening point
+    const g2 = pair(newRun(35))
+    g2.rel.house = REL_EDGES[2] - 0.01
+    const r2 = court(g2, 'coo')
+    check('just below FAMILY it is still only a compliment', !!r2 && !r2.deep && Math.abs(g2.rel.house - (REL_EDGES[2] - 0.01 + COO_BOND)) < 1e-9)
+    g2.cmdCd = 0; g2.rel.house = REL_EDGES[2]
+    const r3 = court(g2, 'coo')
+    check('at FAMILY the compliment deepens into affection (double pay, its own event)',
+        !!r3 && r3.deep && Math.abs(g2.rel.house - (REL_EDGES[2] + AFFECTION_BOND)) < 1e-9 && drain(g2).some((e) => e.t === 'affection'))
+
+    // insult cuts and starts the cold war on command
+    const g3 = pair(newRun(37))
+    g3.rel.house = 20
+    const i1 = court(g3, 'insult')
+    check('an insult cuts INSULT_DROP and sets the grudge',
+        !!i1 && Math.abs(g3.rel.house - (20 - INSULT_DROP)) < 1e-9 && g3.grudge === 1 && drain(g3).some((e) => e.t === 'insult'))
+    g3.cmdCd = 0
+    g3.rel.house = 2
+    court(g3, 'insult')
+    check('the bond cannot be driven below zero by spam of cruelty', g3.rel.house === 0 && g3.grudge === 1)
+    // the human exit still works after a COMMANDED spat
+    for (const p of g3.people) { for (const n of NEEDS) p.needs[n] = 0.9; p.working = false; p.path = null; p.use = null; p.goal = null; p.faintT = 0 }
+    for (let i = 0; i < Math.round(1 / DT); i++) { advance(g3, DT); g3.people.forEach((p) => { p.working = false; p.path = null; p.use = null; p.goal = null }) }
+    check('a commanded cold war still mends the human way (reach + both tempers up)',
+        g3.grudge === 0 && g3.rel.house >= MAKEUP_BOND - 1e-9 && drain(g3).some((e) => e.t === 'makeup'))
+
+    // Fern is company too — and the nearer person takes the address
+    const g4 = pair(newRun(39))
+    g4.visitor = { name: 'Fern', r: 3, c: 5, x: 0, y: 0, path: null, state: 'hang', t: 5 }
+    const r4 = court(g4, 'coo')
+    check('the address goes to the NEAREST person (partner at 1 beats Fern at 2)', !!r4 && r4.k === 'house' && drain(g4).some((e) => e.k === 'house'))
+    g4.cmdCd = 0; g4.people[1].r = 9; g4.people[1].c = 9
+    const r5 = court(g4, 'coo')
+    check('with the partner away, Fern takes the compliment on the leaf meter',
+        !!r5 && r5.k === 'fern' && Math.abs(g4.rel.fern - COO_BOND) < 1e-9 && drain(g4).some((e) => e.t === 'coo' && e.k === 'fern'))
+    g4.cmdCd = 0
+    const i2 = court(g4, 'insult')
+    check('an insult to Fern cuts the leaf (zero floor) and leaves the household grudge alone',
+        !!i2 && i2.k === 'fern' && g4.grudge === 0 && g4.rel.fern === 0 && drain(g4).some((e) => e.t === 'insult' && e.k === 'fern'))
+
+    // faint guards: nobody addresses the dead-and-gone, and fainting can't speak
+    const g5 = pair(newRun(41))
+    g5.people[1].faintT = 5
+    check('a fainted partner is not company', courtTarget(g5) === null && court(g5, 'coo') === null)
+    g5.people[1].faintT = 0; g5.people[0].faintT = 5
+    check('a fainted resident cannot command the household', courtTarget(g5) === null && court(g5, 'coo') === null)
+
+    // the economy law: one command per CMD_CD window, however frantic the thumb
+    const g6 = pair(newRun(43))
+    let landed = 0
+    for (let i = 0; i < Math.round(25 / DT); i++) {
+        const r = court(g6, 'coo'); if (r) landed++
+        advance(g6, DT)
+        g6.people[0].path = null; g6.people[1].path = null
+    }
+    check('spam cannot flatten the meter — at most one command per cooldown window in 25 s',
+        landed === Math.ceil(25 / CMD_CD), `landed=${landed} expected=${Math.ceil(25 / CMD_CD)}`)
+
+    // hash: the cooldown rides determinism
+    const script = () => { const g = pair(newRun(45)); court(g, 'coo'); for (let i = 0; i < Math.round(20 / DT); i++) advance(g, DT); return stateHash(g) }
+    check('scripted court run is seed-exact', script() === script())
+    const gH1 = pair(newRun(47)); court(gH1, 'coo')
+    const gH2 = pair(newRun(47))
+    check('the cooldown state rides the hash (a fresh command differs from the same run cooling)',
+        stateHash(gH1) !== stateHash(gH2))
+
+    // source pins: the handle wiring must not silently drop
+    const ctSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const ctJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    check('pin: both commands arm the cooldown', (ctSim.match(/s\.cmdCd = CMD_CD/g) || []).length === 2)
+    check('pin: the empty press rides the compliment (Space/A), objects still win', /else if \(!tryUse\(gs, p\)\)[\s\S]*court\(gs, 'coo'\)/.test(ctJsx))
+    check('pin: C/X are real keys, not stray ones', /COURT_KEYS = new Set\(\['KeyC', 'KeyX'\]\)/.test(ctJsx) && /KeyC'\s*\?\s*'coo'\s*:\s*'insult'/.test(ctJsx))
+    check('pin: affection pays its own chord and hearts, insult its own sour fall',
+        /case 'affection'/.test(ctJsx) && /case 'insult'/.test(ctJsx) && /AFFECTION ♥ FAMILY/.test(ctJsx))
+    check('pin: the warm tell lifts off the pair', /g\.cooFx > 0 && g\.cooAt/.test(ctJsx) && /s\.cooAt = \{ x: mx, y: my \}/.test(ctSim))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)

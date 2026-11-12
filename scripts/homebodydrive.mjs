@@ -3,6 +3,7 @@
 import { launch, requireDevServer, openGame } from './lib/harness.mjs'
 
 const BASE = `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/homebody`
+const CMD_WAIT = 8150   // #2131: CMD_CD (8 s) plus slack — the command cooldown on the real clock
 let pass = 0, fail = 0
 const check = (n, c, info = '') => { if (c) { pass++; console.log('  ok  ', n, info) } else { fail++; console.log('  FAIL', n, info) } }
 
@@ -185,7 +186,7 @@ check('#2076 the storm puff rides over the pair at the crack', told.spats === 1 
 await wait(1600)
 const faded = await st()
 check('#2076 the tell fades while the cold war stands', faded.spatFx === 0 && faded.grudge === 1, `spatFx=${faded.spatFx} grudge=${faded.grudge}`)
-await page.evaluate(() => window.__homebodyTest.thaw())
+await page.evaluate(() => { window.__homebodyTest.park(); window.__homebodyTest.thaw() })   // #2131: re-park — idle wander between foul and thaw must not carry the pair out of reach
 let paid = { hearts: 0, pink: 0 }
 for (let i = 0; i < 25 && !(paid.hearts > 0 && paid.pink >= 3); i++) { paid = await tellScan(); await wait(80) }
 check('#2076 the make-up pays heart particles', paid.hearts > 0, `hearts ${paid.hearts}`)
@@ -195,6 +196,32 @@ const mk = await st()
 const healed = await heartScan()
 check('#2070 the live thaw makes up and clears the grudge', mk.grudge === 0 && mk.rel.house > sp.rel.house + 6 - 0.1, JSON.stringify({ before: Math.round(sp.rel.house * 10) / 10, after: Math.round(mk.rel.house * 10) / 10 }))
 check('#2070 the ember heart returns with the thaw', healed.ember - hurt.ember > 15 && hurt.ash - healed.ash > 8, `hurt ember ${hurt.ember} ash ${hurt.ash} -> healed ember ${healed.ember} ash ${healed.ash}`)
+
+// #2131 player-ordered romance on real keys — the pair still stands side by
+// side at the parked cells (the thaw lifted tempers, not positions). A real X
+// press cuts and starts the cold war; after the cooldown, a real C press at
+// FAMILY deepens into affection with its own chord + hearts pixels.
+const cd0 = await st()
+await page.evaluate(() => window.__homebodyTest.park())
+const ready = await st()
+await page.keyboard.press('KeyX')
+await wait(250)
+const cut = await st()
+check('#2131 a real X press cuts the heart and sets the grudge',
+    cut.grudge === 1 && Math.abs(cut.rel.house - (cd0.rel.house - 4)) < 0.5 && cut.courtKind === 'house',
+    JSON.stringify({ before: Math.round(cd0.rel.house * 10) / 10, after: Math.round(cut.rel.house * 10) / 10, grudge: cut.grudge, readyCd: ready.cmdCd, readyKind: ready.courtKind, cutCd: cut.cmdCd, cutKind: cut.courtKind }))
+await wait(CMD_WAIT)
+// pair may have idled apart during the cooldown — foul re-parks them side by side
+await page.evaluate(() => window.__homebodyTest.park())
+await page.evaluate(() => window.__homebodyTest.bond('house', 60))
+await page.keyboard.press('KeyC')
+await wait(250)
+const deep = await st()
+check('#2131 a real C press at FAMILY deepens into affection (double pay)',
+    deep.cooDeep && Math.abs(deep.rel.house - (60 + 6)) < 1.2 && deep.cmdCd > 0,
+    JSON.stringify({ house: Math.round(deep.rel.house * 10) / 10, cmdCd: deep.cmdCd }))
+const paid2 = await tellScan()
+check('#2131 affection pays pink over the pair (hearts, not panel sparkle)', paid2.pink >= 3, `pink px ${paid2.pink}`)
 
 // pause via Escape: the clock stops. Sample AFTER the keypress has landed and
 // compare two post-pause reads — a tA captured before Escape can straddle one
@@ -218,6 +245,14 @@ await wait(1000)
 await page.keyboard.press('KeyR')
 await wait(400)
 check('R restarts into a fresh lot', (await st()).screen === 'play' && (await st()).day === 1 && (await st()).content === 0)
+
+// #2131 doctrine on the fresh lot: the pair starts apart, so a Space press must
+// stay the OLD nothing — the compliment only rides when someone is in reach.
+await page.keyboard.press('Space')
+await wait(300)
+const doctr = await st()
+check('#2131 far apart, Space stays the old empty press — no meter, no cooldown',
+    doctr.rel.house === 0 && doctr.cmdCd === 0 && doctr.courtKind === null, JSON.stringify({ rel: doctr.rel.house, cmdCd: doctr.cmdCd, kind: doctr.courtKind }))
 
 // frame matches: sprite position follows state
 const f0 = await page.evaluate(() => window.__game.state())

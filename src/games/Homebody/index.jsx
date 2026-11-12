@@ -26,6 +26,7 @@ import {
     tileOf, CATALOG, NEEDS, SFX, EXT_ROOM,
     newRun, advance, autoStep, cmdUse, cmdWalk, cmdWork, tryUse,
     place, sellAt, cellItem, targetsOf, walkable, manualMove, placeOk, buildRoom,
+    court, courtTarget,   // #2131: player-ordered romance commands
     stateHash,
 } from './sim.js'
 import {
@@ -50,9 +51,10 @@ const CUR = { l: ['ArrowLeft', 'KeyA'], r: ['ArrowRight', 'KeyD'], u: ['ArrowUp'
 const MOVE_KEYS = new Set([...CUR.l, ...CUR.r, ...CUR.u, ...CUR.d])
 const ACTION_KEYS = new Set(['Space', 'Enter', 'NumpadEnter'])
 const BUILD_KEYS = new Set(['KeyB'])
+const COURT_KEYS = new Set(['KeyC', 'KeyX'])   // #2131: coo / insult
 const SWITCH_KEYS = new Set(['KeyG', 'Tab'])
 const ROOM_KEYS = new Set(['KeyR'])
-const KEY_SET = new Set([...MOVE_KEYS, ...ACTION_KEYS, ...BUILD_KEYS, ...SWITCH_KEYS, ...ROOM_KEYS, ...'123456789'])
+const KEY_SET = new Set([...MOVE_KEYS, ...ACTION_KEYS, ...BUILD_KEYS, ...COURT_KEYS, ...SWITCH_KEYS, ...ROOM_KEYS, ...'123456789'])
 
 const nextSeed = (s) => (Math.imul(s, 1664525) + 1013904223) >>> 0
 
@@ -82,6 +84,7 @@ const HomebodyGame = () => {
         const prev = { left: false, right: false, up: false, down: false, a: false, b: false, pdown: false }
         const heldKeys = { left: false, right: false, up: false, down: false }
         let actQueued = false, buildQueued = false, switchQueued = false
+        let courtQueued = null    // #2131: 'coo' | 'insult' pending from C/X
         let digitPick = -1
         const say = (m) => { toastMsg = m; toast = 120 }
 
@@ -142,6 +145,22 @@ const HomebodyGame = () => {
                         setTimeout(() => audioController.playTone(659, 0.07, 'triangle', 0.05), 90)
                         setTimeout(() => audioController.playTone(784, 0.14, 'triangle', 0.05), 180)
                         if (live) { say('MADE UP ♥'); heartBurst(e.x, e.y - 12) }   // #2076: hearts, named by the BONDS glyph
+                        break
+                    case 'coo': // #2131: the compliment — a warm two-note and gold glints
+                        audioController.playTone(659, 0.06, 'triangle', 0.05)
+                        setTimeout(() => audioController.playTone(831, 0.12, 'triangle', 0.05), 80)
+                        if (live) { say(e.k === 'fern' ? 'A WORD FOR FERN ♥' : 'A WORD FOR YOUR BETTER HALF ♥'); burst(e.x, e.y - 10, 5, '#ffe6a8', 2.2, 'flash') }
+                        break
+                    case 'affection': // #2131: the FAMILY tier pays in hearts — full chord
+                        audioController.playTone(523, 0.07, 'sine', 0.05)
+                        setTimeout(() => audioController.playTone(659, 0.07, 'sine', 0.05), 80)
+                        setTimeout(() => audioController.playTone(784, 0.07, 'sine', 0.05), 160)
+                        setTimeout(() => audioController.playTone(1047, 0.16, 'sine', 0.05), 240)
+                        if (live) { say('AFFECTION ♥ FAMILY'); heartBurst(e.x, e.y - 12) }
+                        break
+                    case 'insult': // #2131: the cruel word — sour fall, cold flicker, the grudge sets
+                        audioController.playSweep(400, 180, 0.22, 'sawtooth', 0.06)
+                        if (live) { say(e.k === 'fern' ? 'YOU CUT FERN WITH WORDS' : 'YOU INSULTED YOUR BETTER HALF'); burst(e.x, e.y, 8, '#7a92c9', 2.6) }
                         break
                     case 'faint': audioController.playNoise(0.3, 0.1); audioController.playSweep(300, 60, 0.5, 'sawtooth', 0.09); shake = 10; if (live) { say(`${e.name.toUpperCase()} COLLAPSED!`); burst(e.x, e.y, 16, '#e23b2e', 3.4) } break
                     case 'wake': audioController.playSweep(440, 760, 0.2, 'triangle', 0.05); break
@@ -274,8 +293,15 @@ const HomebodyGame = () => {
                     if (cellItem(gs, gs.cursor.r, gs.cursor.c) && cellItem(gs, gs.cursor.r, gs.cursor.c).id !== 'mail') sellAt(gs, gs.cursor.r, gs.cursor.c)
                     else place(gs, gs.cursor.r, gs.cursor.c)
                 } else if (!tryUse(gs, p)) {
-                    say('NOTHING IN REACH — TAP SOMETHING')
+                    // #2131: A/Space where no object is near but a person is — the
+                    // empty press becomes the compliment. A press that used to say
+                    // nothing still says nothing unless someone is within reach.
+                    if (!court(gs, 'coo')) say(courtTarget(gs) ? 'NOT SO FAST — LET IT LAND' : 'NOTHING IN REACH — TAP SOMETHING')
                 }
+            }
+            if (courtQueued && !gs.build) {
+                court(gs, courtQueued)   // #2131: C coo / X insult — sound + sparks ride the event queue
+                courtQueued = null
             }
             if (switchQueued) { gs.active = (gs.active + 1) % gs.people.length; switchQueued = false; audioController.playTone(720, 0.05, 'triangle', 0.04) }
             if (digitPick >= 0) { if (gs.build && digitPick < CATALOG.length) { gs.sel = digitPick; audioController.playTone(640, 0.04, 'square', 0.04) } digitPick = -1 }
@@ -304,6 +330,23 @@ const HomebodyGame = () => {
                     lean = o.p.x <= other.x ? -1 : 1
                 }
                 drawPerson(ctx, o.p, g.sec, g.people[g.active] === o.p, fx, lean)
+            }
+            if (g.cooFx > 0 && g.cooAt) {
+                // #2131: the warm tell — a pixel heart (FAMILY) or gold glint lifts
+                // off the pair's midpoint and fades on the real clock.
+                const k = g.cooFx / 2.6
+                const hx = g.cooAt.x, hy = g.cooAt.y - 18 - (1 - k) * 9
+                ctx.globalAlpha = Math.min(1, g.cooFx)
+                if (g.cooDeep) {
+                    ctx.fillStyle = '#ff7fa8'
+                    const px = 2
+                    for (const [cx, cy] of [[0, 0], [1, 0], [3, 0], [4, 0], [0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [1, 2], [2, 2], [3, 2], [2, 3]]) ctx.fillRect(hx + (cx - 2) * px, hy + (cy - 1) * px, px, px)
+                } else {
+                    ctx.fillStyle = '#ffd76a'
+                    ctx.fillRect(hx - 1, hy - 4, 2, 8)
+                    ctx.fillRect(hx - 4, hy - 1, 8, 2)
+                }
+                ctx.globalAlpha = 1
             }
             if (live && g.build) drawBuildCursor(ctx, g, placeOk(g, g.cursor.r, g.cursor.c))
             for (const f of refuses) {   // #1823: refused cell — red fill pulsing out
@@ -432,7 +475,7 @@ const HomebodyGame = () => {
             gs = newRun(seed)
             particles = []; shake = 0; toast = 0; refuses.length = 0
             prev.left = prev.right = prev.up = prev.down = prev.a = prev.b = prev.pdown = false
-            actQueued = buildQueued = switchQueued = false; digitPick = -1
+            actQueued = buildQueued = switchQueued = false; digitPick = -1; courtQueued = null
             setEndInfo(null)
             setSc('play')
             audioController.playSweep(262, 523, 0.24, 'square', 0.07)
@@ -478,6 +521,7 @@ const HomebodyGame = () => {
             if (CUR.d.includes(e.code)) heldKeys.down = true
             if (ACTION_KEYS.has(e.code)) actQueued = true
             if (BUILD_KEYS.has(e.code)) buildQueued = true
+            if (COURT_KEYS.has(e.code)) courtQueued = e.code === 'KeyC' ? 'coo' : 'insult'   // #2131
             if (SWITCH_KEYS.has(e.code)) switchQueued = true
             if (ROOM_KEYS.has(e.code)) digitPick = CATALOG.findIndex((d) => d.room)
             if (/^Digit[1-9]$/.test(e.code)) digitPick = parseInt(e.code.slice(5), 10) - 1
@@ -553,6 +597,8 @@ const HomebodyGame = () => {
                     ext: gs.ext,
                     rel: { house: gs.rel.house, fern: gs.rel.fern },
                     spats: gs.spats, grudge: gs.grudge, spatFx: Math.round(gs.spatFx * 10) / 10,   // #2070/#2076
+                    cmdCd: Math.round(gs.cmdCd * 10) / 10, cooFx: Math.round(gs.cooFx * 10) / 10, cooDeep: !!gs.cooDeep,   // #2131
+                    courtKind: (() => { const t = courtTarget(gs); return t ? t.k : null })(), active: gs.active,
                     visitor: gs.visitor ? gs.visitor.name : null,
                 }) : { screen: screenRef.current, seed },
                 // #1637 watchcheck pilot drives these.
@@ -569,7 +615,8 @@ const HomebodyGame = () => {
                 bond: (k, v) => { if (gs && gs.rel[k] !== undefined) gs.rel[k] = v },
                 // #2070: rig the spat scenario — park the pair beside each
                 // other, both in the red; `thaw` lifts their tempers up.
-                foul: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; a.path = null; b.r = 3; b.c = 4; b.path = null; for (const p of gs.people) { for (const n of NEEDS) p.needs[n] = 0.3; p.working = false; p.faintT = 0 } gs.grudge = 0; gs.spatCd = 0 } },
+                foul: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; b.r = 3; b.c = 4; b.path = null; for (const p of gs.people) { for (const n of NEEDS) p.needs[n] = 0.3; p.working = false; p.faintT = 0 } gs.grudge = 0; gs.spatCd = 0 } },
+                park: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; a.path = null; b.r = 3; b.c = 4; b.path = null; for (const p of gs.people) { p.use = null; p.goal = null; p.working = false; p.faintT = 0; for (const n of NEEDS) p.needs[n] = 0.5 } gs.visitor = null; gs.cmdCd = 0 } },   // #2131: adjacency, idle for real, tempers NEUTRAL (mood 1: no organic spat, no instant make-up — the law itself is pinned in peoplecheck), nobody else to address, cooldown ready
                 thaw: () => { if (gs) for (const p of gs.people) for (const n of NEEDS) p.needs[n] = 0.9 },
                 hearts: () => particles.filter((pt) => pt.kind === 'heart').length,   // #2076: the make-up paid hearts?
                 hash: () => (gs ? stateHash(gs) : 0),
