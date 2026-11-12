@@ -199,8 +199,12 @@ export function createPortraitRenderer(w = 240) {
         canvas,
         render(def) {
             const rig = buildFighter(def)
-            const c = (def && def.card) || { yaw: 0.55 }
+            const c = (def && def.card) || { yaw: 0.55, camZ: 7.4 }
             rig.root.rotation.y = c.yaw
+            // #2172 per-fighter framing: the arcade select screen framed each
+            // fighter to fill their tile — a slim blade and a 1.4-bulk wall do
+            // not stand the same distance from the lens.
+            cam.position.z = c.camZ || 7.4
             poseCard(rig, def, 0.25)
             scene.add(rig.root)
             renderer.render(scene, cam)
