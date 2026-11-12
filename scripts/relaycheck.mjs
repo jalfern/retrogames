@@ -3,7 +3,9 @@
 // hand-crafted envelopes (the acceptance line's "mutant that tries", now
 // graded by the deployed file itself), a byte-exact upload→GET round-trip, the
 // R2 metadata round-trip that feeds the admin listing, key-shape refusals,
-// and the real client (src/utils/sessionStore.js) composing with the real
+// the relabel write (#2093 item 1 — the fixed model→human operation behind the
+// same lockdown), and the real client (src/utils/sessionStore.js) composing
+// with the real
 // server. recordcheck grades the CLIENT rules; this grades the FILE the phone
 // will actually talk to after #1730 binds the bucket.
 //
@@ -14,16 +16,16 @@
 //       delete that line in worker.js, run this, restore.)
 //   npm run relaycheck -- --mutate-readlock   # RED by design (#1711 S8):
 //       strips the read-lock doors — the no-key reads Jon asked to see
-//       refused would LAND. (Hand equivalent: delete the `if (d) return d`
-//       lines in worker.js, run this, restore.)
+//       refused, and the no-key relabel write, would LAND. (Hand equivalent:
+//       delete the `if (d) return d` lines in worker.js, run this, restore.)
 //
 // The worker runs via scripts/lib/relaysim.mjs (cloudflare:workers shim + a
 // faithful in-memory R2). Node >= 22 (module.register).
 
 import { startRelaySim, SIM_READ_KEY } from './lib/relaysim.mjs'
 import { validate, REC_FORMAT, REC_FORMAT_V2 } from '../src/utils/recording.js'
-import { validateSessionEnvelope, sessionReadOk } from '../relay/core.js'
-import { uploadSession, listSessions, probeStore } from '../src/utils/sessionStore.js'
+import { validateSessionEnvelope, sessionReadOk, validateSessionPatch, applySessionRelabel } from '../relay/core.js'
+import { uploadSession, listSessions, probeStore, relabelSession } from '../src/utils/sessionStore.js'
 
 const MUTATE = process.argv.includes('--mutate')
 const MUTATE_RL = process.argv.includes('--mutate-readlock')
@@ -135,6 +137,7 @@ const post = async (base, body, headers = {}) => {
     const pre = await fetch(`${sim.base}/sessions`, { method: 'OPTIONS', headers: { origin: 'https://jalfern.com' } })
     ok(pre.status === 204 && pre.headers.get('access-control-allow-origin') === 'https://jalfern.com', 'preflight from the arcade origin opens the POST door', `http ${pre.status}`)
     ok(/POST/.test(pre.headers.get('access-control-allow-methods') || ''), 'preflight allows POST')
+    ok(/PATCH/.test(pre.headers.get('access-control-allow-methods') || ''), 'preflight allows PATCH (the relabel write reaches the worker, #2093 item 1)', pre.headers.get('access-control-allow-methods'))
     const evil = await fetch(`${sim.base}/sessions`, { method: 'OPTIONS', headers: { origin: 'https://evil.example' } })
     ok(!evil.headers.get('access-control-allow-origin'), 'stranger origin gets NO allow header (browser blocks it)')
     const dev = await fetch(`${sim.base}/sessions`, { headers: { origin: 'http://localhost:5173' } })
@@ -196,6 +199,72 @@ const post = async (base, body, headers = {}) => {
     }
 }
 
+// --- RELABEL WRITE (#2093 item 1) — the fixed model->human repair ----------
+// The three iPhone takes stored before #2090 carry seat 0 as 'model' although
+// auto-record only captures human starts. The store's one permitted write:
+// JON_KEY-gated (the same door as reads — under --mutate-readlock the no-key
+// PATCH lands and these gates go red), operation FIXED (core pins every other
+// edit refused), auditable (the answer names the change; GET shows it).
+{
+    // the rule pure first — what the worker is allowed to do at all:
+    const pOk = validateSessionPatch({ seat: 0 })
+    ok(pOk.ok === true && pOk.seat === 0, 'core: a bare {seat} patch is the whole surface')
+    ok(validateSessionPatch({ seat: 0, kind: 'cpu' }).ok === false, 'core: any extra patch field refused (SHAPE law, fail-closed)')
+    ok(validateSessionPatch({ seat: '0' }).ok === false && validateSessionPatch({ seat: 4 }).ok === false && validateSessionPatch({}).ok === false, 'core: non-integer / out-of-range / missing seat refused')
+    const modelRec = mkRec(true)
+    modelRec.slots[0].source = { kind: 'model', modelId: 'qwen-x' }
+    const rel = applySessionRelabel(modelRec, 0)
+    ok(rel.ok === true && rel.rec.slots[0].source.kind === 'human' && rel.rec.slots[0].source.modelId === undefined, 'core: model->human applied, stale modelId dropped', JSON.stringify(rel.rec.slots[0].source))
+    ok(modelRec.slots[0].source.kind === 'model', 'core: the input object is never half-mutated (a NEW rec comes back)')
+    ok(rel.rec.slots[1].source.kind === 'human' && rel.rec.voice === modelRec.voice, 'core: every byte outside the patched seat survives untouched')
+    ok(applySessionRelabel(rel.rec, 0).ok === false, 'core: the reverse (human->model) is REFUSED — provenance cannot be laundered')
+    ok(applySessionRelabel(modelRec, 1).ok === false && applySessionRelabel(modelRec, 7).ok === false, 'core: non-model kinds and out-of-take seats refused')
+    ok(applySessionRelabel({ ...modelRec, slots: [modelRec.slots[0]] }, 1).ok === false, 'core: a seat the take does not have is refused')
+    ok(applySessionRelabel({ ...modelRec, slots: [{ source: null, pads: [], raw: [] }] }, 0).ok === false, 'core: a seat with no source is refused (nothing to relabel)')
+
+    // the deployed file, transport end. Order matters for honest mutant grading:
+    // the FEATURE round-trip runs first on take A; the security probes get a
+    // fresh take B — under --mutate-readlock the unlocks LAND (that is the
+    // mutant signal, all 3 gates red) and never cascade through the feature
+    // checks as confusing 422s.
+    const sim = await startRelaySim({ mutateReadlock: MUTATE_RL })
+    const pUp = await uploadSession(modelRec, { player: 'jon', consent: { motion: true, voice: true, at: 1 }, base: sim.base })
+    ok(pUp.ok && !!pUp.key, 'a model-sourced take uploads (the broken provenance the repair exists for)', JSON.stringify(pUp))
+    const badShape = await fetch(`${sim.base}/sessions/${encodeURIComponent('gauntlet/nope.json')}`, { method: 'PATCH', headers: sim.readHeaders, body: '{"seat":0}' })
+    ok(badShape.status === 400, 'malformed key refused by the PATCH route regex', `http ${badShape.status}`)
+    const pMissing = await fetch(`${sim.base}/sessions/${encodeURIComponent('gauntlet/2026-11-06-seed1-deadbeefca.json')}`, { method: 'PATCH', headers: sim.readHeaders, body: '{"seat":0}' })
+    ok(pMissing.status === 404, 'unknown key answers an honest 404 to PATCH too')
+    const badBody = await fetch(`${sim.base}/sessions/${encodeURIComponent(pUp.key)}`, { method: 'PATCH', headers: sim.readHeaders, body: '{"seat":0,"kind":"cpu"}' })
+    ok(badBody.status === 400 && badBody.headers.get('content-type'), 'a general-editor body refused at the door (unknown patch field)', `http ${badBody.status}`)
+
+    // the real client composing with the real server — the tool's exact path:
+    const relClient = await relabelSession(pUp.key, { seat: 0, base: sim.base, key: SIM_READ_KEY })
+    ok(relClient.ok === true, 'client relabelSession applied through worker.js', JSON.stringify(relClient))
+    const after = await (await fetch(`${sim.base}/sessions/${encodeURIComponent(pUp.key)}`, { headers: sim.readHeaders })).json()
+    ok(after.slots[0].source.kind === 'human' && after.slots[0].source.modelId === undefined, 'GET back: the relabel landed where the listing points')
+    ok(JSON.stringify(after.slots[1]) === JSON.stringify(modelRec.slots[1]), 'GET back: the other seat byte-identical')
+    ok(JSON.stringify(after.voice) === JSON.stringify(modelRec.voice), 'GET back: voice bytes untouched by the write')
+    const rowAfter = (await listSessions({ base: sim.base, key: SIM_READ_KEY })).sessions.find((s) => s.key === pUp.key)
+    ok(rowAfter && rowAfter.audio === true && rowAfter.player === 'jon' && !!rowAfter.uploadedAt, 'metadata survives the rewrite (player, audio flag, uploadedAt)', JSON.stringify(rowAfter))
+    const twice = await relabelSession(pUp.key, { seat: 0, base: sim.base, key: SIM_READ_KEY })
+    ok(twice.ok === false && /only 'model'/.test(twice.reason || ''), 'relabeling the same seat twice refused — the repair is one-way', JSON.stringify(twice))
+    const seat1 = await relabelSession(pUp.key, { seat: 1, base: sim.base, key: SIM_READ_KEY })
+    ok(seat1.ok === false && /kind is 'human'/.test(seat1.reason || ''), 'PATCHing an already-human seat refused with the reason verbatim', JSON.stringify(seat1))
+
+    // security probes on a FRESH model-sourced take B: these are the gates
+    // --mutate-readlock exists to kill.
+    const pUp2 = await uploadSession(modelRec, { player: 'mallory', consent: { motion: true, voice: true, at: 1 }, base: sim.base })
+    const patchNoKey = await fetch(`${sim.base}/sessions/${encodeURIComponent(pUp2.key)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: '{"seat":0}' })
+    ok(patchNoKey.status === 401, 'PATCH without the key is refused — a URL-holder edits nothing (dies under --mutate-readlock)', `http ${patchNoKey.status}`)
+    const patchWrong = await fetch(`${sim.base}/sessions/${encodeURIComponent(pUp2.key)}`, { method: 'PATCH', headers: { 'content-type': 'application/json', 'x-session-key': 'not-the-key' }, body: '{"seat":0}' })
+    ok(patchWrong.status === 401, 'PATCH with the wrong key is refused', `http ${patchWrong.status}`)
+    const noKeyClient = await relabelSession(pUp2.key, { seat: 0, base: sim.base })
+    ok(noKeyClient.ok === false && noKeyClient.reason === 'unauthorized', 'client without the key surfaces the lockdown honestly')
+    const afterB = JSON.parse(sim.bucket._map.get(pUp2.key).value)
+    ok(afterB.slots[0].source.kind === 'model', 'the refused probes wrote NOTHING to take B', JSON.stringify(afterB.slots[0].source))
+    sim.close()
+}
+
 // --- unbound store: the honest 503 pair + dead registry ------------------------
 {
     const sim = await startRelaySim({ bind: false })
@@ -205,6 +274,8 @@ const post = async (base, body, headers = {}) => {
     ok(up.status === 503 && up.json && up.json.err === 'store not configured', 'upload against an unbound store answers an honest 503, never writes')
     const list = await (await fetch(`${sim.base}/sessions`)).json()
     ok(list.ok === false && list.err === 'store not configured', 'listing against an unbound store answers honestly too')
+    const patchUnbound = await fetch(`${sim.base}/sessions/gauntlet/2026-11-06-seed1-deadbeefca.json`, { method: 'PATCH', headers: { 'content-type': 'application/json', 'x-session-key': SIM_READ_KEY }, body: '{"seat":0}' })
+    ok(patchUnbound.status === 503, 'relabel against an unbound store answers an honest 503, never writes')
     sim.close()
 
     const dead = await startRelaySim({ registry: 'dead' })
