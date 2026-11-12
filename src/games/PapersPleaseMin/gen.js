@@ -292,6 +292,30 @@ export function accFor(pic, country, sex) {
     }
 }
 
+// #2087 THE CROWD MURMURS — the original's line grumbles while it waits:
+// one-offs get half-heard lines ("I have no papers", "My friend is waiting").
+// Same doctrine as the arc speech: atmosphere the booth prints — decide never
+// reads `mutter` (paperscheck verdict-twins it off every paper) — but pure by
+// construction: a hash of the passport serial, ZERO rnd() draws, so the seed
+// stream keeps its sequence and the same number keeps its murmur forever.
+// Regulars speak in full sentences (their authored `say`), so they never
+// mutter; the booth prints murmurs in dim type inside the empty bubble field,
+// never on paper — the recognition bubble stays the neighborhood's own.
+export const MUTTERS = [
+    'I HAVE NO PAPERS.',
+    'MY FRIEND IS WAITING.',
+    '...COLD OUT THERE.',
+    'THE LINE NEVER MOVES.',
+    'IS IT MY TURN?',
+    'I STOOD HERE ALL MORNING.',
+    'THE MAN BEFORE ME LEFT.',
+    'JUST A STAMP, GUARD.',
+]
+export function mutterFor(pic) {
+    const h = Math.imul((pic ^ 0x2545f491) ^ Math.imul(pic >>> 7, 0x9e3779b1), 0x85ebca6b) >>> 0
+    return (h & 127) < 44 ? MUTTERS[(h >>> 9) % MUTTERS.length] : null
+}
+
 let PERSON_ID = 0
 
 // Names are UNIQUE among a day's entrants: if two entrants shared a name,
@@ -359,6 +383,10 @@ function base(rnd, date, dayRules, used, opts = {}) {
     // #2087 the bodies and shades attach the same way — born shared, so the
     // photo carries the same build and the same dark lenses as the counter.
     face.shades = acc.shades; face.body = acc.body; face.post = acc.post
+    // #2087 THE CROWD MURMURS — one-offs grumble; the line rides the serial
+    // hash (zero draws). regularApplicant clears it: a neighbor's speech is
+    // authored, never muttered.
+    const mutter = mutterFor(pic)
     pp.photo = { ...face }
     return {
         trap: null,
@@ -369,7 +397,7 @@ function base(rnd, date, dayRules, used, opts = {}) {
         // more of it than of a hat (FEATURES unchanged), papersplay's
         // cross-process witness matches the browser decor against Node's
         // accFor(pic, nation, sex) with it.
-        person: { pic, nation: country, face, papers: wantId ? ['passport', 'idcard'] : ['passport'], passport: pp, idcard },
+        person: { pic, nation: country, mutter, face, papers: wantId ? ['passport', 'idcard'] : ['passport'], passport: pp, idcard },
         truth: {
             hasPassport: true, hasIdCard: !!idcard, trueName: name, idName: idcard ? idcard.name : null,
             country, expiry: pp.expiry, dob, trueWeight: pp.weight, wanted: false, photoMismatch: false,
@@ -538,6 +566,9 @@ function regularApplicant(c, rnd, date, dayRules, day, used, seed, n, aged = fal
     a.person.face = face
     a.person.mark = c.mark
     a.person.regular = c.id
+    // #2087: a neighbor's speech is authored (say/arc lines below) — the
+    // serial-hash murmur is the one-off crowd's voice, never the cast's.
+    a.person.mutter = null
     a.person.passport = { ...a.person.passport, name: c.name, sex: c.sex, dob, height: c.height, weight: c.weight, photo: { ...face } }
     if (a.person.idcard) {
         a.person.idcard = { ...a.person.idcard, name: c.name, dob, height: c.height, weight: c.weight }

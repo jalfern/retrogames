@@ -6,7 +6,7 @@
 //
 //   npm run papersplay     (needs `npm run dev`)
 import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
-import { accFor, genWeek, wallNameAt, weekDecoyCount, REGULARS, arcForWeek, turnLineFor, TURN_CANONICAL } from '../src/games/PapersPleaseMin/gen.js'
+import { accFor, mutterFor, genWeek, wallNameAt, weekDecoyCount, REGULARS, arcForWeek, turnLineFor, TURN_CANONICAL } from '../src/games/PapersPleaseMin/gen.js'
 
 const URL = process.env.PP_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/papers-please`
 await requireDevServer(URL)
@@ -823,6 +823,48 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     await page.keyboard.press('a') // stamp the neighborhood in
     await page.evaluate(() => window.__ppTest.runDay())    // finish day 2 clean
     await wait(250)
+}
+
+// #2087 THE CROWD MURMURS, live: seed 0's day 1 is all strangers, and the
+// serial law says which of them grumble. paperscheck proved the law in Node;
+// this proves the pixels: a murmuring face lights the dim slate family inside
+// the bubble field, a quiet stranger leaves it empty, and NO murmur ever gets
+// paper — the line talks, it does not shout (the recognition bubble stays
+// the neighborhood's own).
+{
+    await page.evaluate(() => window.__ppTest.start(0))
+    await wait(300)
+    let on = 0, off = 0, mismatches = 0, mutPixOn = -1, mutPixOff = 1e9, paperMax = 0
+    for (let g = 0; g < 25; g++) {
+        const per = await page.evaluate(() => {
+            const p = window.__ppTest.probe()
+            if (!p || p.day !== 1 || p.end) return null
+            const per = p.view && p.view.person
+            if (!per || per.regular || per.say) return null
+            return { pic: per.pic, mutter: per.mutter || null }
+        })
+        if (per) {
+            if (per.mutter !== mutterFor(per.pic)) mismatches++
+            const ink = await page.evaluate(() => window.__ppTest.mutterPix())
+            const paper = await page.evaluate(() => window.__ppTest.bubblePix())
+            if (paper > paperMax) paperMax = paper
+            if (per.mutter) { on++; if (ink > mutPixOn) mutPixOn = ink }
+            else { off++; if (ink < mutPixOff) mutPixOff = ink }
+        }
+        const v = await page.evaluate(() => window.__ppTest.verdict())
+        if (!v) break
+        await page.keyboard.press(v === 'approve' ? 'a' : 'd')
+        // #2087 the murmur prints once the mouth is AT the counter: the
+        // seat-in takes ~1s (60 ticks) — sample after it, not on the
+        // walk-up (a shorter dwell measures the dark approaching the booth,
+        // not the voice; the first bench run measured 0px at 750ms).
+        await wait(1300)
+    }
+    r.check(`the crowd murmurs live — ${on} murmuring and ${off} quiet strangers all follow the serial law`,
+        mismatches === 0 && on >= 2 && off >= 2, `${on}/${off} mm=${mismatches}`)
+    r.check(`a murmur prints in dim type (${mutPixOn} cool px in the empty field)`, mutPixOn >= 40, `${mutPixOn}`)
+    r.check(`a quiet stranger leaves the field empty (${mutPixOff} px) and no murmur gets paper (${paperMax} px)`,
+        mutPixOff < 20 && paperMax < 100, `${mutPixOff}/${paperMax}`)
 }
 
 // #1983 THE ARC, live: the familiar face comes back WANTED. seed 0's day 6

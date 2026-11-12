@@ -26,7 +26,7 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, dshow, MON, FEATURES, stampLines, portraitDiffs } from '../src/games/PapersPleaseMin/rules.js'
-import { genWeek, genDay, viewOf, CITY2C, COUNTRIES, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, VISIT_WINDOW, WALL_POOL, wallNameAt, weekWallNames, weekDecoyCount, crowdedDay, repChapter, turnLineFor, againLineFor, TURN_CANONICAL, trapSchedule, day7Demote, neighbourTrapWeek } from '../src/games/PapersPleaseMin/gen.js'
+import { genWeek, genDay, viewOf, CITY2C, COUNTRIES, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, mutterFor, MUTTERS, VISIT_WINDOW, WALL_POOL, wallNameAt, weekWallNames, weekDecoyCount, crowdedDay, repChapter, turnLineFor, againLineFor, TURN_CANONICAL, trapSchedule, day7Demote, neighbourTrapWeek } from '../src/games/PapersPleaseMin/gen.js'
 import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges, monthTurn, isMoneyDeath } from '../src/games/PapersPleaseMin/sim.js'
 import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, RENT, PAYFX, ID, PHOTO, BUBBLE, BUBBLE_TAIL, EVID, SETTLE, QUOTE, RECOGNITION, QUEUE, ASIDE, CROWD_NOTE, ARC_MUG, ARC_HL, SEIZE, DRAG, wallFit, ruleLines, bulletinRows } from '../src/games/PapersPleaseMin/layout.js'
 
@@ -571,7 +571,7 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
                 const v = viewOf(day, a)
                 // #2080: markStep joins the stripped decor — the verdict may
                 // not know whether a neighbour's mark has aged.
-                const stripped = { ...v, person: { ...v.person, say: undefined, seize: undefined, face: v.person.face && { ...v.person.face, markStep: undefined }, passport: v.person.passport && { ...v.person.passport, photo: v.person.passport.photo && { ...v.person.passport.photo, markStep: undefined } } } }
+                const stripped = { ...v, person: { ...v.person, say: undefined, seize: undefined, mutter: undefined, face: v.person.face && { ...v.person.face, markStep: undefined }, passport: v.person.passport && { ...v.person.passport, photo: v.person.passport.photo && { ...v.person.passport.photo, markStep: undefined } } } }
                 ok(decide(v).verdict === decide(stripped).verdict, `seed ${seed} day ${day.n}: say-line leaked into the verdict`)
             }
             for (const a of regs) {
@@ -969,6 +969,56 @@ section('THE CROWD WEARS ITS NATION (#1996) — hats correlate with origin, the 
 }
 
 // ---------------------------------------------- clumsy clears / chaos collapses ----
+section('THE CROWD MURMURS (#2087) — one-offs grumble by serial hash, the cast never does, and nothing hears it in the verdict')
+{
+    // #2087 item 2: the original's line mutters ("I have no papers", "My
+    // friend is waiting"). The law: murmur = mutterFor(serial), ZERO rnd —
+    // so the same number keeps its murmur forever and every pre-existing
+    // seed stream replays byte-identical (the DETERMINISM section above is
+    // the stream witness; here we grade the murmur itself). Doctrine: never
+    // evidence (the verdict twin strips `mutter` off every paper at the
+    // fairness prover), regulars stay silent (their speech is authored),
+    // and the booth prints the line in dim type only — never on paper.
+    let str = 0, mut = 0
+    const lines = new Set()
+    for (const seed of SEEDS) {
+        const week = genWeek(seed)
+        const week2 = genWeek(seed)
+        ok(JSON.stringify(week.days.map((d) => d.queue.map((a) => a.person.mutter))) ===
+           JSON.stringify(week2.days.map((d) => d.queue.map((a) => a.person.mutter))),
+        `seed ${seed}: the murmur is not deterministic — two builds of the week differ`)
+        for (const day of week.days) {
+            for (const a of day.queue) {
+                if (a.person.regular) { ok(!a.person.mutter, `seed ${seed} day ${day.n}: regular ${a.person.regular} mutters — the cast speaks in full sentences`); continue }
+                str++
+                ok(a.person.mutter === mutterFor(a.person.pic),
+                    `seed ${seed} day ${day.n}: murmur does not follow the serial law (pic ${a.person.pic}: ${JSON.stringify(a.person.mutter)})`)
+                if (a.person.mutter) {
+                    mut++
+                    ok(MUTTERS.includes(a.person.mutter), `seed ${seed}: murmur ${JSON.stringify(a.person.mutter)} is not from the authored pool`)
+                    ok(a.person.mutter.length <= 25, `seed ${seed}: murmur ${a.person.mutter} outgrows the field`)
+                    lines.add(a.person.mutter)
+                }
+            }
+        }
+    }
+    const rate = mut / str
+    ok(rate >= 0.2 && rate <= 0.5, `murmur rate ${rate.toFixed(3)} outside the grumble band 0.20..0.50 — the line must murmur, not shout or stand silent`)
+    ok(lines.size >= 6, `only ${lines.size} distinct murmurs across the sweep — the pool must not collapse onto one line`)
+    // identity law: the murmur is the LIVE entrant's own — a paper rebuilt
+    // later (name/number swapped by a trap) re-hashes with its serial, and
+    // face/photo carry NO murmur key at all (speech belongs to the person,
+    // not the print).
+    for (const seed of SEEDS) {
+        for (const day of genWeek(seed).days) {
+            for (const a of day.queue) {
+                ok(!('mutter' in a.person.face) && !(a.person.passport && 'mutter' in a.person.passport),
+                    `seed ${seed} day ${day.n}: the murmur leaked into face/photo — the print must not speak`)
+            }
+        }
+    }
+}
+
 section('SLACK (CLUMSY CLEARS) vs CHAOS (COLLAPSES) — every seed')
 {
     for (const seed of SEEDS.slice(0, 6)) {
@@ -2500,6 +2550,36 @@ if (MUT) {
         (m) => {
             const D = m.layout.DRAG
             return D.desk.x0 >= m.layout.PORTRAIT.x + m.layout.PORTRAIT.headCx + m.layout.PORTRAIT.headRx + 1
+        })
+
+    // #2087 THE MURMUR MUTANTS: the crowd must keep grumbling, and the cast
+    // must keep its dignity. m61 silences every murmur (the grumble band and
+    // the papersplay pixels go red); m62 lets the neighbors mutter too (the
+    // cast-silence gate goes red).
+    await tryMut('the line goes mute (murmur law never fires)',
+        mutMod('gen.js', 'return (h & 127) < 44 ? MUTTERS[(h >>> 9) % MUTTERS.length] : null', 'return null', 'm61'),
+        (m) => {
+            let str = 0, mut = 0
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    for (const a of day.queue) {
+                        if (a.person.regular) continue
+                        str++
+                        if (a.person.mutter) mut++
+                    }
+                }
+            }
+            return mut / str >= 0.2 && mut / str <= 0.5
+        })
+    await tryMut('the cast mutters with the strangers (authored speech not exclusive)',
+        mutMod('gen.js', '    a.person.mutter = null\n', '    if (false) a.person.mutter = null\n', 'm62'),
+        (m) => {
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    for (const a of day.queue) if (a.person.regular && a.person.mutter) return false
+                }
+            }
+            return true
         })
 }
 
