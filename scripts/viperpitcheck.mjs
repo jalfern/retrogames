@@ -469,10 +469,30 @@ if (MUT) {
     const esrc = fs.readFileSync(path.join(HERE, '../src/engine/fighting.js'), 'utf8')
     const gsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/index.jsx'), 'utf8')
     ok(/if \(sp\.qcb && matchMotion\(hist, MOTION\.qcb\)\) return fire\('qcb'\)/.test(esrc), 'qcb gate: engine resolves the down-back counter motion')
-    ok(/sp\.qcb && dist < 2\.2 && m\.rng\(\) < tier \* 0\.22/.test(esrc), 'qcb gate: the CPU throws the counter at close range')
+    ok(/sp\.qcb && f\.def\.moves\.qcb && dist < 2\.2 && m\.rng\(\) < tier \* 0\.22/.test(esrc), 'qcb gate: the CPU throws the counter at close range (#2151 branch beside the #1732 projectile one)')
+    ok(/sp\.qcb && f\.def\.moves\.qcb && f\.def\.moves\.qcb\.projectile && dist > 2\.4/.test(esrc), 'qcb gate: the #1732 projectile-at-range branch survives')
     ok(/forceQcb\(\) \{/.test(gsrc), 'qcb gate: dev hook can force the counter for the probe')
     const mutE = esrc.replace("if (sp.qcb && matchMotion(hist, MOTION.qcb)) return fire('qcb')", "if (false) return fire('qcb')")
     ok(!/if \(sp\.qcb && matchMotion\(hist, MOTION\.qcb\)\) return fire\('qcb'\)/.test(mutE), 'mutant: dead qcb resolver fails the gate (harness bites)')
+    // #2151 behavioural law: the gate used to be source-only, and the source stayed
+    // "looks right" while no CPU ever threw a melee qcb. So prove it at the table:
+    // hold the foe in counter range, sweep seeds, every fighter must actually move.
+    for (const id of ROSTER.map((d) => d.id)) {
+        let sawQcb = false
+        for (let seed = 1; seed <= 8 && !sawQcb; seed++) {
+            const mm = e.createMatch({ seed, guardButton: true, juggle: true, p1: { ...BY_ID[id], cpu: true }, p2: human('nyx') })
+            let g = 0
+            while (mm.phase !== 'fight' && g++ < 400) e.step(mm, [P(), P()])
+            for (let k = 0; k < 900 && !sawQcb; k++) {
+                e.step(mm, [P(), P()])
+                if (mm.phase === 'fight') mm.fighters[0].x = mm.fighters[1].x - 1.8
+                if (mm.fighters[0].move === 'qcb') sawQcb = true
+                let h = 0
+                while (mm.phase !== 'fight' && h++ < 400) e.step(mm, [P(), P()])
+            }
+        }
+        ok(sawQcb, `qcb gate #2151: the CPU throws ${BY_ID[id].name}'s counter at close range`)
+    }
 }
 
 // ---- #1106 guard crush gate ------------------------------------------------

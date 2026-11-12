@@ -654,6 +654,12 @@ function cpuDecide(m, f, opp) {
     // old `dist < 2.2` gate could never land a slow ward and scriptMotion had no
     // qcb case — both fixed here so the CPU earns its special like a human). #1732
     if (sp.qcb && f.def.moves.qcb && f.def.moves.qcb.projectile && dist > 2.4 && m.rng() < tier * 0.28) return scriptMotion('p', 'qcb', f)
+    // #2151: the close-range counter branch beside it. #1735 deleted the pre-existing
+    // `dist < 2.2` line because scriptMotion had no qcb case then — it has one since
+    // #1732, so the branch lands now. Without it no CPU ever throws ANY fighter's qcb
+    // counter (VIPER PIT's blade/flare/back-axle/shoulder/headbutt are all non-projectile),
+    // and SABLE's ward walls off at point-blank too — which is what a ward is for.
+    if (sp.qcb && f.def.moves.qcb && dist < 2.2 && m.rng() < tier * 0.22) return scriptMotion('p', 'qcb', f)
     if (sp.dp && m.rng() < tier * 0.14) return scriptMotion("p", "dp", f)
     if (qcfKey && m.rng() < tier * 0.2) return scriptMotion(sp.qcf.kick ? "k" : "p", "qcf", f)
     const pick = m.rng()
