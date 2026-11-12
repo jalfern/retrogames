@@ -500,7 +500,7 @@ The fix is variety as construction, not hope — this generator's own doctrine:
   row day — 10px rows since #1943), no name repeats across the seven walls,
   and no row names anyone in the line.
 
-## Mutants (55, all die under `npm run paperscheck -- --mutate`)
+## Mutants (59, all die under `npm run paperscheck -- --mutate`)
 
 
 
@@ -575,7 +575,14 @@ frozen — the invariant now grades every week meeting all six. The crowded-
 speaks year added two: m53 never flags a crowd (banner accent, mug math and
 the exchange hinge on the flag — the law witness bites while papers stay
 fair); m54 untethers the callback from the head's name (the two beats of one
-shift stop pointing at the same faces — the name-tie witness bites).
+shift stop pointing at the same faces — the name-tie witness bites). The arc-
+polish year added four more: m55 erases the bulletin mugshot (the wall is
+text-only again — the pass's signature feature); m56 freezes the chapter mixer
+(the neighborhood never learns a new line); m57 mutes the seize aftershock (a
+friend is taken without a word); m58 hangs mugshots on every decoy — three
+portrait bumps push day 6 past the scale box, and the per-row fit law (which
+m58's first draft dodged, because the bump was `some(faced)` not
+`count(faced)` — one surviving mutant, then sharpened) names it (#1988).
 
 ## Gates
 
@@ -668,6 +675,53 @@ silence; the week rings exactly twice.
   memory) die. `papersplay` walks seed 0 live and names the rings: GRUBAK
   mid-day-6 (`turn`), MARKO mid-day-7 (`again`) — violators, fill and greet
   tails pass in silence (`againLog`).
+
+## THE POLISHED ARC (#1988) — faces on the wall, a loud turn, many voices, a deny that lingers
+
+The original's bulletin is never text-only, spotting a familiar name is a
+moment, Jorji's repertoire grows every week, and a seized neighbor argues all
+the way out of the booth. This pass puts those four beats on the canvas, plus
+pins the bubble tail that had been drawn-but-unpinned.
+
+- **The bulletin prints a face.** The arc's sheet entry carries the regular's
+  authored descriptor (`day.wanted.push({ ..., face })` — identity law: the
+  mugshot IS the neighbor, every feature and the mark compared), and the wall
+  paints it as a 26px paper mugshot under the name (`ARC_MUG`, drawFace at
+  s=0.30 — the third surface after counter and passport photo, same function).
+  Fit: `wallRows` grows every faced row by the frame + seam, per ROW — day 6
+  (always the arc day) worst sweep bottom y=353 vs the SCALE-box law y=358.
+  Decoys stay text-only: a face for a name that never walks is a lie with no
+  witness. `bulletinPix()` proves frame+portrait pixels live.
+- **The turn announces.** While the arc entrant is AT the window, the bulletin
+  underlines the arc row and frames its mugshot in `ARC_HL #ff3b30` — chosen
+  outside the wallRed hue family (gg<80 vs the sheet's 80..150) so the sheet
+  gate still counts sheet rows and the announce has ink of its own. View-side
+  only: keyed off `view.person.arc` and `wanted.face`, never `gs` — `stateHash`
+  is byte-identical (TMD ghost-cell doctrine; paperscheck tripwires that
+  rules.js/sim.js cannot even name the lever). The shared row-walk
+  `bulletinRows(day, rules, hlOn)` is one source for paint, probes and law.
+- **Voice breadth (REPERTOIRE).** Each regular carries `turnAlt` (the sputter
+  starts `...` — the beat is being caught mid-sentence) and `againAlt`; the
+  mixer is the CAMPAIGN CHAPTER `floor(seed/6) % 2`: week 0 speaks every
+  canonical literal (every existing fixture replays byte-identical), week 1
+  meets the same faces saying their alternates. (Seed+day parity could never
+  vary this: the visit law's period is six, so a face at a seat keeps parity
+  forever.) Zero rnd, `say` stays decor (purity twin now strips say AND seize,
+  every paper, every day). The say-line law relaxes from one literal to the
+  authored set; new distinctness laws keep the 43-sentence repertoire echo-free;
+  sweep witnesses require every alternate spoken across the 12 weeks.
+- **The deny aftershock.** `person.seize` (authored per id, arc branch only —
+  `else` nobody carries it) prints under the DENIED stamp in the corridor
+  below the rotated stroke (SEIZE = x STAMP.x+4, y 154: cap ink top 149 clears
+  the stamp's lowest stroke at y≈147/x≈425, descender stays on the paper)
+  for the lifetime of the #2021 inspector pin, and the stamp thunks at
+  `SEIZE.tone` 147 Hz — below every fixed tone the booth owns (stamps
+  300/190…, recognitions 523/784). Evidence-style, no new rule; `sfxSeize`
+  counts it for papersplay.
+- **The tail is pinned.** `bubbleTailPix()` counts paper in the triangle band
+  above the field (the apex-up tail toward the glass was drawn since #1983
+  but only the field was measured); papersplay: strangers dark (<20px), a
+  speaking neighbor lights it (>60px).
 
 ## Honest gaps
 

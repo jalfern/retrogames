@@ -80,7 +80,37 @@ export const ID = { x: 356, y: 200, w: 190, h: 64 }
 // line is 20 chars at 10px monospace (20*10*CHAR=120 <= w-14); the ARC
 // section of paperscheck pins both fit laws so no future line overflows.
 export const BUBBLE = { x: 258, y: 302, w: 190, h: 34 }
+// #1988 BUBBLE TAIL: the triangle above the field (apex at y−16, base on the
+// field's top edge between x+18 and x+38) was drawn but never pixel-pinned —
+// bubblePix saw the field, the tail could silently vanish. The band below
+// frames the tail for bubbleTailPix; papersplay counts paper px in it.
+export const BUBBLE_TAIL = { x: BUBBLE.x + 16, y: BUBBLE.y - 15, w: 26, h: 15 }
 export const STAMP = { x: 506, y: 110 }
+// #1988 THE BULLETIN PRINTS A FACE — the arc entry on the wanted sheet carries
+// the regular's authored face descriptor, and the wall paints it as a small
+// paper mugshot under the name (drawFace at ARC_MUG.s, the same function the
+// counter and the passport photo run through — one face, three surfaces).
+// ARC_HL is the turn's announcement ink: the red underline + mug frame that
+// ride ONLY while the arc entrant is at the window. Its hue sits outside the
+// wallRed family (gg < 80 vs the sheet's 80..150) so the wantedInk sheet gate
+// keeps counting sheet rows and nothing else, and clear of the stamp ink.
+export const ARC_MUG = { w: 26, h: 26, s: 0.30 }
+export const ARC_HL = '#ff3b30'
+// #1988 DENY AFTERSHOCK — the original lingers when a familiar face is taken:
+// the seized argue line prints under the DENIED stamp while the #2021 pin
+// holds. The zone clears the rotated stamp's lowest stroke (global y ≤ 147 at
+// the bottom-left corner) and rides the judged document's paper. No new rule:
+// the line is decor (like `say`), decide never reads it. SEIZE.tone is the
+// darker thunk of the stamp on a friend — below every fixed tone the booth
+// owns (stamps 300/190 and up), so the ear knows this deny weighs more.
+export const SEIZE = { x: STAMP.x + 4, y: 154, size: 10, tone: 147 }
+// #1988 arc polish: the line rides the free corridor between the rotated
+// stamp's lowest stroke (y≈147 at the x≈425 corner) and the slip top edge.
+// Measured live (seed 0, arc deny): baseline 154 centered at x=449 prints
+// 28 red px inside the 150×8 probe box (x 449..599, y 149..156); baseline
+// 156 sat the descender band on the stamp's white stroke and read 0. The
+// +4 center keeps even the longest argue line (86px half-width at 10px)
+// inside x≥356 — the document's left edge.
 // #1891 THE EVIDENCE LINE — the booth quotes the clause behind a deny in the
 // controls strip, where the strip's own layout leaves a clean corridor: the
 // left control text ends by x≈254 (31 chars at 13px from x=12), the right
@@ -163,8 +193,35 @@ export function wallRows(day, ruleTexts) {
     const listsY = yy + 2
     yy += WALL.labelLine
     const entriesEnd = yy + day.allowed.length * WALL.listLine
-    const wantedEnd = yy + day.wanted.length * WALL.wantedLine
+    // #1988: each arc-style entry that carries a mugshot grows its row by the
+    // frame plus the 2px seam — PER ROW (bulletinRows walks the same bump for
+    // every faced entry, so paint and this law agree). Day 6 is always the arc
+    // day and its worst sweep bottom is y=325, so one +28 bump lands y=353 vs
+    // the SCALE-box law y=358 — five rows stay above the line, and paperscheck
+    // re-pins the fit against a synthetic worst arc day. m56 (mugshots on the
+    // decoys too) grows three bumps and trips this ceiling — unfair by furniture.
+    const picExtra = day.wanted.filter((w) => w.face).length * (ARC_MUG.h + 2)
+    const wantedEnd = yy + day.wanted.length * WALL.wantedLine + picExtra
     return { rulesEnd, listsY, entries: yy, entriesEnd, wantedEnd, bottom: Math.max(entriesEnd, wantedEnd) }
+}
+
+// #1988 THE BULLETIN AS ROWS — the single walk paint(), the wantedInk probe
+// and papersplay share: baseline per sheet row, the mug rect where an entry
+// carries a face, and hl = the arc row lit while that face is at the window.
+export function bulletinRows(day, ruleTexts, hlOn) {
+    const rows = wallRows(day, ruleTexts)
+    const out = []
+    let wy = rows.entries
+    for (const w of day.wanted) {
+        const cell = { w, y: wy, hl: !!(w.face && hlOn) }
+        if (w.face) {
+            cell.mug = { x: WALL.x + 114 + 2, y: wy + 3, w: ARC_MUG.w, h: ARC_MUG.h }
+            wy += ARC_MUG.h + 2
+        }
+        wy += WALL.wantedLine
+        out.push(cell)
+    }
+    return out
 }
 
 export function wallFit(day, ruleTexts) {
