@@ -152,7 +152,11 @@ AGENTS.md wins.
 7. **Gate:** `npx eslint <new files>` + the three scoped lint gates + build
    green. Then ship, the ONLY allowed merge path:
     ```
-    git add -A && git commit -m "<NAME>: <summary>"   # in the forge/<slug> worktree
+   git add -A && git commit -m "<NAME>: <summary>"   # in the forge/<slug> worktree
+       # never stage while a --mutant/--mutate suite is live: plant() rewrites
+       # tracked files in place (#2047 shipped mutant text this way). The guard
+       # freezes the tree — .mutant-running at the root; `node scripts/lib/
+       # mutateguard.mjs --check` exits red while it exists. Commit first, then run.
     git push -u origin forge-<slug>
    gh pr create --base main --title "<NAME>" --body-file /tmp/pr.md
    scripts/main-ok.sh && while s=$(gh pr checks --json name,state --jq 'map(select(.name=="static"))[0].state'); do [ "$s" = SUCCESS ] && break; case "$s" in FAILURE|ERROR|TIMED_OUT) exit 1;; esac; sleep 20; done && gh pr merge --squash --delete-branch

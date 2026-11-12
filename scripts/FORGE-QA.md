@@ -15,6 +15,9 @@ confuse the two queues.
 - Never edit `STATE.md` (the forge lane owns it; two writers = a torn file).
 - Keep diffs small and surgical. You share one GPU with the forge: a QA fix
   must not spin up heavy renders more than one browser at a time.
+- A `--mutant`/`--mutate` run freezes your worktree (mutateguard stamps
+  `.mutant-running` and refuses dirty starts, #2049): commit your work first,
+  then run the suite and wait for its tally — never stage while it is live.
 
 ## Session procedure
 

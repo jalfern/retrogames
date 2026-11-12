@@ -123,6 +123,12 @@ previews. Build `npm run build` → `dist/`; `vercel.json` carries the SPA rewri
 After merging, `gh pr checks --watch` for Vercel, then open `https://jalfern.com/retrogames/<game>`.
 
 ## Gotchas that still bite (each once)
+- **A `--mutant` run freezes the whole worktree.** `plant()` rewrites *tracked*
+  files in place; studio once `git add`ed mid-run and shipped mutant text to
+  main (#2047 → restored in #2052). mutateguard now refuses a dirty tree at
+  start and aborts if any other tracked file changes mid-run, and stamps
+  `.mutant-running` at the worktree root — commit nothing while it exists, and
+  `node scripts/lib/mutateguard.mjs --check` answers before you stage.
 - **js-dos is injected, never in `index.html`.** `src/utils/jsdos.js` loads
   `/retrogames/js-dos/js-dos.js` on demand: Vite prepends base to absolute script srcs, so a
   hard tag requests `/retrogames/retrogames/...`, the SPA fallback answers HTML@200, and
