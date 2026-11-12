@@ -1,68 +1,66 @@
-# STATE — session 237 (2026-11-12, slot b)
+# STATE — session 238 (2026-11-11, slot a)
 
 ## What shipped
-**LODE RUNNER-LITE — PHONE VAULT-SELECT** — merged as `32e60ec` (PR #2064,
-Closes #2063, never-dry stage filed+claimed by this session).
-- The marquee carries three tappable VAULT 1/2/3 pads (#965 Emberwood house
-  pattern): each dispatches the SAME `Digit1/2/3` the keyboard path consumes;
-  the window tap-anywhere skips `button` targets, so a pad tap can never also
-  fire the vault-1 start. Keyboard paths untouched; the chain still carries
-  score+lives (a phone death on vault 2 restarts the chain at 1 — the honest
-  classic stands, the phone just reaches the vaults the keyboard could).
-- lodeplay §1b NEW: geometry floor (≥44x28; live 103x38), tap-outside-still-
-  vault-1, and each pad's REAL centre opens ITS OWN vault via real pointer
-  events. Mutant (neuter the guard) died exactly there — pads 2/3 fell through
-  to vault 1, 2 FAIL — restored, 42/42 green x2. lodecheck 134/134;
-  lint:mario/fps/ai/lode + build green.
-- README honesty fix (#961) rode along: the two shipped-but-unmarked bullets
-  got CLOSED markers (#2004→`6b2db65`, #1949→`e4a0ad8`) and the closed gap
-  cites this PR — LRL's honest-gaps list is now empty of actionable items.
-- Prod verified: live entry `index-Kyr1gyAI.js`, marker "pick a vault" observed
-  in chunk `index-ClxN6rct.js` at jalfern.com/retrogames/lode-runner.
-- Filed QA polish pass #2067 (phone pad crowding at 375px, CHK!DYK?-style
-  death beat, unlock ladder flash) — claims verified against code first.
+**CIVILIZATION V LEARNS NAVAL SUPPLY** — merged as `d6ef8b5` (PR #2068, Closes #2065).
+TARGET #2063 was REFUSED (slot b held it, claim 7 min fresh — honest yield), so the
+ladder ran: no halt/steer/next, game-queue empty, live QA MASTER up (borrow blocked),
+flagship stage spent (all four flagship READMEs fully CLOSED-marked) → NEVER-DRY rung:
+`idle-kick` answered `KICK CIVILIZATION V 0 weak` (score 4 = 4 unowned README gaps,
+no feedback naming it, ties to oldest). Filed #2065 with the why-weakest line, claimed,
+built, shipped.
+The law: a hull is SUPPLIED within `CFG.navalSupply` (6) sea steps of a friendly port
+(own/overlord/vassal coastal cities, allied-CS harbours; enemy and non-allied never).
+Unsupplied hulls wear `CFG.navalAttrition` (10) HP at end of turn, never heal afloat,
+and attrition alone sinks a hull with its hold (`shipLost` why:'supply' + the drown
+cargo fold). Pure derivation (`portsOfRealm`/`suppliedSea`/`hullSupplied`) — no new
+stored state; wear lands in `u.hp`, already hash-folded. Tells: HUD chip
+`⚠ OUT OF SUPPLY −10/TURN`, pulsing amber ring on far hulls, log line, help-card line.
+Honesty (#237 doctrine, in the README): Civ V has no attrition at sea — its real law
+is heals-on-friendly-territory-only with borders reaching water; the extension ships
+labelled as ours.
+Proof: civcheck §39 +35 checks → **594/594**; mutant (`wear → hp -= 0`) died on 7 §39
+checks; lint:civ/mario/fps/ai + build green; civplay 93/96 = EXACT parity with a
+pristine origin/main worktree (3 pre-existing reds filed as #2069 for QA). Prod:
+`index-B8rdHCjS.js` lazy-loads chunk `index-DenACxGQ.js` carrying the supply literals;
+live at `https://jalfern.com/retrogames/civilization-v`.
 
 ## The session's catches
-- **Prod-marker scans have THREE silent-empty traps, not one**: (1) the chunk
-  manifest is INSIDE the entry JS, not the HTML; (2) `/retrogames/assets/*`
-  answers **308** — every asset curl needs `-L` or greps a 15-byte redirect
-  stub; (3) this box's egress proxy intermittently returns Aliyun-OSS XML
-  *instead of* the site (looks like a site outage; https + retry clears it).
-  `chunks=0` or `size=14` in a scan is a FAILED scan, never a prod miss.
-- **weakestStage scores shipped work**: LRL's score of 4 included two bullets
-  whose text says the work shipped (#2004, #1949) but that lacked the literal
-  `CLOSED by` — the #961 failure, still live. When the picked gap narrates its
-  own completion (check `git log --grep`), the honest stage is markers + the
-  oldest REAL gap, and say so on the issue.
-- **Verify polish-pass claims against code before filing**: "climb reuses the
-  stand frame" was false (`set.climbA/climbB` exist); an unverified item in a
-  QA issue sends the lane chasing nothing.
-- FORGE step-1 scratch must not land in the checkout: a `.qwen/` file in the
-  main checkout showed `??` and reads as a corpse to the next lane's clean
-  check — write scratch under the session tmp dir instead.
+- **Inherited red blocks the required check.** #2068's static failed attractcheck:
+  slot b's #2064 vault hint shipped as a second raw `<p>` in LRL's attract (rule 6:
+  the press prompt is the only raw paragraph); #2068 was just the first PR over it.
+  Fix = one-line p→span (`WATCH_ATTRACT_HINT` two lines above is the precedent):
+  separate PR #2073 (attractcheck 694/694, lodecheck 134/134), merged, my branch
+  rebased onto it. When static reds on files your diff never touched, suspect main,
+  prove it on a pristine worktree, fix separately, then rebase.
+- **`gh pr merge` local bookkeeping dies on a held `main`.** #2073's merge left its
+  worktree on `main`, so #2068's merge threw `'main' is already used by worktree`
+  AFTER the API merge succeeded. Recovery: `checkout --detach` + `worktree remove`
+  the dead lane, `gh pr view` to confirm merged, `git push origin --delete <branch>`.
+  Re-detach immediately after every merge — the playbook law, now with the exact
+  failure signature.
+- **attractcheck is not in nightly** — main-ok.sh stayed green through a red-main
+  attract rule; only PR static sees it. README verify counts were stale (533/547 vs
+  actual 559→594); now honest.
 
 ## Ladder trail
-TARGET #1637 REFUSED (slot a held it, checkpoint 15 min old; a shipped b31
-SUPER MARIO seat mid-my-session and closed #1637 — #2051→`e8f9566`, audit
-done, main `49c882a`). No halt/steer/next; game-queue empty; feedback items
-exist but QA MASTER live (pid 37504) → no borrow (#1258). Flagship stage
-SPENT: `flagshipStage`=null — SSX has no open gaps, Emberwood/CometDriftHD/
-Myst bullets all carry CLOSED markers. Never-dry: `weakestStage` → LODE
-RUNNER-LITE score 4 (4 unowned gaps, 0 named feedback; registry-order tie
-break). Filed #2063 with the why-weakest line, claimed clean. No jonq filed.
+TARGET #2063 claim REFUSED ("held by b, newest claim 7 min") → normal ladder →
+never-dry pick; filed-then-claimed #2065 per #1571. No halt/steer/next anywhere; no
+jonq filed (nothing taste-grade); QA borrow blocked by live QA MASTER (pgrep).
+Step 8b skipped with reason: this shipped stage WAS the polish round for the sea gap;
+remaining CIV gaps live in the README ledger for future weakest scoring.
 
 ## Open questions
 - none (see waiting-jon issues).
 
 ## Next
-- #2067 is the QA lane's LRL job; slot lanes unaffected.
-- `viperpitcheck` still red-on-main and wired into NO CI job (session 235
-  flag, twice on #1637 now closed — re-file on a QA issue if nobody owns it).
-- PPM drain law: #1968 (its last owned feedback) shipped as `2ece0f0` during
-  this session; check `weakestStage` again before re-picking PPM.
-- #2045 (lane-liveness crossings) and #2036 (resume-gate nightly budget)
-  remain open harness improvements, unowned.
-- Dev servers: slot b 5178 STOPPED at exit; slot a 5173; QA studio 5176
-  (not mine — untouched). Stale worktrees at ~/Dev/retrogames-forge-* — this
-  session removed `lrl-vault-pads` after merge; the session-235 candidates
-  (ppm-portrait, ppm-bulletin, papers-photo) still stand.
+- #2069 (filed this session): civplay's 3 red-on-main checks — attract copy drift
+  (goal not named on the card since the b31 rewrite; #406 law), black-centre pixel
+  read (needs §406 buffer-read treatment, `unseenMin` is the pattern), Y-from-attract
+  VICTORY probe. QA lane's call.
+- CIV owed honestly: the naval tactics stack (ranged port bombardment from the water,
+  promotions) + three other README gaps — next weakest-score material.
+- PPM drain law stands (session 230). #2045/#2036 remain open harness improvements,
+  unowned. Slot b's open items ride its STATE.
+- Housekeeping: dev server slot a 5173 STOPPED at exit; `~/Dev/retrogames-forge-civ-supply-sea`
+  and `~/Dev/retrogames-forge-lrl-attract-span` removed (branches died with squashes);
+  main checkout detached at `d6ef8b5` + STATE commit.
