@@ -105,6 +105,7 @@ const PapersPleaseMinGame = () => {
         // #1982 THE RECOGNITION CUE — count of arrivals that rang the door's
         // welcome (a familiar face stepped up). Counted by papersplay.
         let sfxAgain = 0
+        let paintedMug = { mutter: null, say: false, pic: null } // #2087 what the counter painted last
         const againLog = []
         // #2020 arrivals that stepped up on a CROWDED day — the recognition
         // pair carries its low third note only then. Counted by papersplay.
@@ -843,6 +844,10 @@ const PapersPleaseMinGame = () => {
             if (shown && shown.mutter && !shown.say) {
                 text(shown.mutter, BUBBLE.x + 6, BUBBLE.y + 16, 9, '#9fb0d6')
             }
+            // #2087 what the counter is actually showing this paint (the
+            // probe's view is a tick ahead during the handoff — papersplay
+            // must only count pixels while the canvas paints THIS face).
+            paintedMug = { mutter: (shown && shown.mutter) || null, say: !!(shown && shown.say), pic: (shown && shown.pic) || null }
             // #2020 A BYSTANDER ASIDE — the crowded shift's second speaker:
             // a gold tag naming who calls across the line, and their line in
             // dim type under the entrant's own bubble. Decor by doctrine — the
@@ -1379,6 +1384,9 @@ const PapersPleaseMinGame = () => {
                     }
                     return n
                 },
+                // #2087 the serial + murmur of the face the counter PAINTED
+                // last — the handshake papersplay samples pixels behind.
+                paintedMug: () => ({ ...paintedMug }),
                 // #2020 THE LINE SHOWS ITSELF: mug-slate ink (the cool family
                 // r 100..160, g 110..170, b >= r+30) in the strip rect — the
                 // gold dots and every warm hue fail it, so one count measures

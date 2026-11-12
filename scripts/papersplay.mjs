@@ -834,42 +834,28 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
 {
     await page.evaluate(() => window.__ppTest.start(0))
     await wait(300)
-    let on = 0, off = 0, mismatches = 0, mutPixOn = -1, mutPixOff = 1e9, paperMax = 0
-    for (let g = 0; g < 16; g++) {
-        const per = await page.evaluate(() => {
+    const muting = new Set(), quiet = new Set()
+    let mismatches = 0, mutPixOn = -1, mutPixOff = 1e9, paperMax = 0
+    for (let g = 0; g < 30; g++) {
+        const s = await page.evaluate(() => {
             const p = window.__ppTest.probe()
             if (!p || p.day !== 1 || p.end) return null
-            const per = p.view && p.view.person
-            if (!per || per.regular || per.say) return null
-            return { pic: per.pic, mutter: per.mutter || null }
+            return [window.__ppTest.mutterPix(), window.__ppTest.bubblePix(), window.__ppTest.paintedMug()]
         })
-        if (!per) {
-            const e = await page.evaluate(() => { const p = window.__ppTest.probe(); return !p || p.day !== 1 || p.end })
-            if (e) break
-        }
-        if (per) {
-            if (per.mutter !== mutterFor(per.pic)) mismatches++
-            // the walk-in slide settles a beat after the seat probe first
-            // names the entrant — sample across the dwell and keep the max,
-            // so the gate measures the voice, never the approach.
-            let ink = 0, paper = 0
-            for (let k = 0; k < 4; k++) {
-                const s = await page.evaluate(() => [window.__ppTest.mutterPix(), window.__ppTest.bubblePix()])
-                if (s[0] > ink) ink = s[0]
-                if (s[1] > paper) paper = s[1]
-                await wait(500)
-            }
-            if (paper > paperMax) paperMax = paper
-            if (per.mutter) { on++; if (ink > mutPixOn) mutPixOn = ink }
-            else { off++; if (ink < mutPixOff) mutPixOff = ink }
+        if (!s) break
+        const [ink, paper, pm] = s
+        if (paper > paperMax) paperMax = paper
+        if (pm.pic && !pm.say) {
+            if (pm.mutter !== mutterFor(pm.pic)) mismatches++
+            if (pm.mutter) { muting.add(pm.pic); if (ink > mutPixOn) mutPixOn = ink }
+            else { quiet.add(pm.pic); if (ink < mutPixOff) mutPixOff = ink }
         }
         const v = await page.evaluate(() => window.__ppTest.verdict())
-        if (!v) break
-        await page.keyboard.press(v === 'approve' ? 'a' : 'd')
-        await wait(900)
+        if (v) await page.keyboard.press(v === 'approve' ? 'a' : 'd')
+        await wait(500)
     }
-    r.check(`the crowd murmurs live — ${on} murmuring and ${off} quiet strangers all follow the serial law`,
-        mismatches === 0 && on >= 2 && off >= 2, `${on}/${off} mm=${mismatches}`)
+    r.check(`the crowd murmurs live — ${muting.size} murmuring and ${quiet.size} quiet strangers all follow the serial law`,
+        mismatches === 0 && muting.size >= 2 && quiet.size >= 2, `${muting.size}/${quiet.size} mm=${mismatches}`)
     r.check(`a murmur prints in dim type (${mutPixOn} cool px in the empty field)`, mutPixOn >= 40, `${mutPixOn}`)
     r.check(`a quiet stranger leaves the field empty (${mutPixOff} px) and no murmur gets paper (${paperMax} px)`,
         mutPixOff < 20 && paperMax < 100, `${mutPixOff}/${paperMax}`)
