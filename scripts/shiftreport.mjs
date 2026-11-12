@@ -609,30 +609,58 @@ async function fetchText(url) {
     } catch { return '' }
 }
 
+// ---------- windowed GitHub fetch (#2055) ----------
+// GitHub answers each list one <=100-item page at a time, and this script used
+// to read only the first page of each. A busy 48 h window (116 merges on
+// Nov 11) overflowed the cap and the oldest hours printed as zero. Every list
+// below is requested newest-first, so walk pages until a page's TAIL falls
+// outside the window — everything older than the tail is guaranteed past it.
+// Exported with the gh call injected so scripts/shiftreportcheck.mjs can serve
+// synthetic pages and go red the moment a cap comes back.
+export function fetchWindow({ gh, now, windowHours = WINDOW_HOURS }) {
+    const sinceMs = now - windowHours * 3600 * 1000
+    const sinceIso = new Date(sinceMs).toISOString()
+    // Walk a newest-first list until it runs short or its tail leaves the
+    // window (tailKey names the field the API sorts on; an unparseable tail
+    // keeps walking — stopping early on missing data would hide entries).
+    const walk = (query, perPage, tailKey) => {
+        const out = []
+        for (let page = 1; page <= 10; page++) {
+            const batch = gh(`${REPO}/${query}&per_page=${perPage}&page=${page}`) || []
+            out.push(...batch)
+            const last = batch[batch.length - 1]
+            if (!last || batch.length < perPage || !(Date.parse(last[tailKey]) >= sinceMs)) break
+        }
+        return out
+    }
+    // pulls: no server-side date filter — keep the client-side updated filter.
+    const pullsOpen = walk('pulls?state=open&sort=created&direction=desc', 50, 'created_at')
+    const pullsClosed = walk('pulls?state=closed&sort=updated&direction=desc', 100, 'updated_at')
+        .filter(p => Date.parse(p.updated_at) >= sinceMs)
+    // issues: closed ones are sorted by UPDATED (the default `created` buries
+    // an old issue closed inside the window past page 1); terminating on the
+    // updated tail is sound because closed_at <= updated_at.
+    const issuesOpen = walk('issues?state=open&sort=created&direction=desc', 100, 'created_at')
+    const issuesClosed = walk(`issues?state=closed&since=${sinceIso}&sort=updated&direction=desc`, 100, 'updated_at')
+        .filter(i => i.closed_at && Date.parse(i.closed_at) >= sinceMs)
+    // Actions runs carry their own server-side created filter; workflow_runs
+    // is an envelope, so this list walks by hand.
+    const runs = []
+    for (let page = 1; page <= 10; page++) {
+        const batch = gh(`${REPO}/actions/runs?created=%3E${sinceIso}&per_page=100&page=${page}`).workflow_runs || []
+        runs.push(...batch)
+        const last = batch[batch.length - 1]
+        if (!last || batch.length < 100 || !(Date.parse(last.created_at) >= sinceMs)) break
+    }
+    return { pulls: [...pullsOpen, ...pullsClosed], issues: [...issuesOpen, ...issuesClosed], runs }
+}
+
 async function main() {
     const { execFileSync } = await import('node:child_process')
     const { writeFileSync, readFileSync, existsSync, mkdirSync } = await import('node:fs')
     const gh = (...args) => JSON.parse(execFileSync('gh', ['api', ...args, '--jq', '.'], { maxBuffer: 64 * 1024 * 1024 }).toString())
     const now = Date.now()
-    const sinceMs = now - WINDOW_HOURS * 3600 * 1000
-    const sinceIso = new Date(sinceMs).toISOString()
-
-    const pullsOpen = gh(`${REPO}/pulls?state=open&per_page=50`)
-    const pullsClosed = gh(`${REPO}/pulls?state=closed&sort=updated&direction=desc&per_page=100`)
-        .filter(p => Date.parse(p.updated_at) >= sinceMs)
-    const pulls = [...pullsOpen, ...pullsClosed]
-
-    const issuesOpen = gh(`${REPO}/issues?state=open&per_page=100`)
-    const issuesClosed = gh(`${REPO}/issues?state=closed&since=${sinceIso}&per_page=100`)
-        .filter(i => i.closed_at && Date.parse(i.closed_at) >= sinceMs)
-    const issues = [...issuesOpen, ...issuesClosed]
-
-    const runs = []
-    for (let page = 1; page <= 4; page++) {
-        const batch = gh(`${REPO}/actions/runs?created=%3E${sinceIso}&per_page=100&page=${page}`).workflow_runs || []
-        runs.push(...batch)
-        if (batch.length < 100) break
-    }
+    const { pulls, issues, runs } = fetchWindow({ gh, now })
 
     const telemText = await (async () => {
         try {

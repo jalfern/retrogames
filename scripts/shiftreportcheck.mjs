@@ -24,7 +24,8 @@ const m = await import('./shiftreport.mjs')
 
 for (const fn of ['hourKey', 'hourKeys', 'laneOf', 'slotOf', 'medianMinutes', 'p90Minutes', 'buildRows', 'idleBand',
     'machineRows', 'ciStats', 'themeOf', 'buildThemes', 'parsePrivateLabels', 'parseGameLabels', 'parseGameEntries',
-    'validateLook', 'buildGoLook', 'goLookCandidates', 'lookRoutes', 'buildReport', 'pushContents', 'validateStrips']) {
+    'validateLook', 'buildGoLook', 'goLookCandidates', 'lookRoutes', 'buildReport', 'pushContents', 'validateStrips',
+    'fetchWindow']) {
     ok(`boot: exports ${fn}`, typeof m[fn] === 'function')
 }
 
@@ -373,6 +374,80 @@ const noGamesNoDemos = m.buildReport({ now: NOW, pulls: [{ number: 8, title: 'do
     issues: [], runs, samples, gamesSrc: '', demos: [] })
 ok('go-look is an empty array, never missing', Array.isArray(noGamesNoDemos.look) && noGamesNoDemos.look.length === 0)
 
+// ---- #2055: the windowed fetch paginates — a per_page cap must not zero hours ----
+// The Nov 11 incident: 116 merges in 48 h, the report printed 99 and nine
+// empty hours because closed PRs were fetched one page of 100. The fake gh
+// below serves newest-first pages from synthetic archives; single-page code
+// reads 100 and the merged total goes red.
+{
+    const NOW2 = D('2026-11-11T22:00:00Z')
+    const MIN = 60000
+    const closedPrs = Array.from({ length: 250 }, (_, i) => ({
+        number: 1000 - i, state: 'closed',
+        merged_at: iso(NOW2 - i * 20 * MIN), updated_at: iso(NOW2 - i * 20 * MIN),
+        created_at: iso(NOW2 - i * 20 * MIN - 3 * H), head: { ref: 'forge/x' }, title: `merge ${i}`,
+    })) // i<=144 sit inside the 48 h window => 145 merges
+    const openPrs = Array.from({ length: 8 }, (_, i) => ({
+        number: 900 - i, state: 'open', created_at: iso(NOW2 - i * H), head: { ref: 'forge/p' }, title: `open ${i}`,
+    }))
+    // A 200-day-old issue closed inside the window, and 249 issues closed long
+    // ago that only got comments in-window. Under the API's default created-desc
+    // sort the fresh close sits past the last page; sort=updated must find it.
+    const closedIssues = Array.from({ length: 250 }, (_, i) => ({
+        number: 5000 - i, state: 'closed', updated_at: iso(NOW2 - i * 40 * MIN),
+        created_at: iso(NOW2 - (i === 0 ? 200 * 24 : 30 + i) * H),
+        closed_at: i === 0 ? iso(NOW2 - 5 * MIN) : iso(NOW2 - 100 * H),
+    }))
+    const openIssues = Array.from({ length: 250 }, (_, i) => ({
+        number: 7000 - i, state: 'open', created_at: iso(NOW2 - i * 60 * MIN),
+    })) // i<=48 created in-window => 49 opens
+    const queries = []
+    const fakeGh = (q) => {
+        queries.push(q)
+        const per = +(q.match(/per_page=(\d+)/) || [0, 100])[1]
+        const page = +(q.match(/[&?]page=(\d+)/) || [0, 1])[1]
+        if (q.includes('actions/runs')) return { workflow_runs: [] }
+        const list = q.includes('pulls?state=open') ? openPrs
+            : q.includes('pulls?state=closed') ? closedPrs
+                : q.includes('issues?state=open') ? openIssues
+                    : q.includes('issues?state=closed') ? closedIssues : []
+        const key = q.includes('sort=updated') ? 'updated_at' : 'created_at'
+        return [...list].sort((a, b) => D(b[key]) - D(a[key])).slice((page - 1) * per, page * per)
+    }
+    const win = m.fetchWindow({ gh: fakeGh, now: NOW2 })
+    ok('#2055: every in-window merge counted past the old 100 cap (145, not 100)',
+        win.pulls.filter(p => p.merged_at && D(p.merged_at) >= NOW2 - 48 * H).length === 145)
+    ok('#2055: walk stops at the window edge — closed PRs take 2 pages, not the whole archive',
+        queries.filter(q => q.includes('pulls?state=closed')).length === 2)
+    ok('#2055: closed issues sort=updated — a 200-day issue closed in-window is found, and only it', (() => {
+        const closedInWin = win.issues.filter(i => !i.pull_request && i.state === 'closed'
+            && i.closed_at && D(i.closed_at) >= NOW2 - 48 * H)
+        return closedInWin.length === 1 && closedInWin[0].number === 5000
+            && queries.some(q => q.includes('issues?state=closed') && q.includes('sort=updated'))
+    })())
+    ok('#2055: open issues page too — all 49 in-window creations counted',
+        win.issues.filter(i => !i.pull_request && D(i.created_at) >= NOW2 - 48 * H).length === 49)
+    ok('#2055: open PRs ride along', win.pulls.filter(p => !p.merged_at).length === 8)
+    const winRep = m.buildReport({ now: NOW2, pulls: win.pulls, issues: win.issues, runs: [], samples: [], gamesSrc: '' })
+    ok('#2055: report totals match the paged window end to end',
+        winRep.stats.merged.total === 145 && winRep.stats.issues.closed === 1 && winRep.stats.issues.opened === 49)
+    // Empty-window honesty: nothing in range => nothing collected, one page each.
+    const staleGh = (q) => {
+        const batch = fakeGh(q)
+        if (q.includes('actions/runs')) return batch
+        return batch.map(x => ({
+            ...x, merged_at: iso(NOW2 - 100 * H), updated_at: iso(NOW2 - 100 * H),
+            created_at: iso(NOW2 - 200 * H), closed_at: iso(NOW2 - 100 * H),
+        }))
+    }
+    const before = queries.length
+    const win0 = m.fetchWindow({ gh: staleGh, now: NOW2 })
+    ok('#2055: an all-stale archive collects nothing and takes one page per list',
+        win0.pulls.filter(p => p.merged_at && D(p.merged_at) >= NOW2 - 48 * H).length === 0
+            && win0.issues.filter(i => !i.pull_request && i.closed_at && D(i.closed_at) >= NOW2 - 48 * H).length === 0
+            && queries.length - before === 5)
+}
+
 // ---- source tripwires: the pipe stays wired ----
 const read = f => readFileSync(new URL(`../${f}`, import.meta.url), 'utf8')
 ok('npm alias shiftreportcheck exists', JSON.parse(read('package.json')).scripts.shiftreportcheck === 'node scripts/shiftreportcheck.mjs')
@@ -399,6 +474,9 @@ ok('report page shows when it was generated, at the top', (() => {
     return src.includes('generatedStamp(report.generated') && src.indexOf('className={`stamp') > h1 && src.indexOf('className={`stamp') < src.indexOf('className="golook"')
 })())
 ok('generator enumerates public demos', read('scripts/shiftreport.mjs').includes('public/demos'))
+ok('#2055: main() fetches the window through the paged seam', read('scripts/shiftreport.mjs').includes('fetchWindow({ gh, now })'))
+ok('#2055: no single-page pulls/issues fetch survives — the cap stays dead',
+    !/gh\(`\$\{REPO\}\/(pulls|issues)\?[^`]*per_page=\d+`\)/.test(read('scripts/shiftreport.mjs')))
 ok('shiftreportcheck is wired as a core CI gate',
     read('scripts/checks.mjs').includes("'shiftreportcheck'") &&
     read('.github/workflows/ci.yml').includes('npm run shiftreportcheck'))
