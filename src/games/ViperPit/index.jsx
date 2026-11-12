@@ -1121,19 +1121,25 @@ const ViperPitGame = () => {
                         const g2 = c2.getContext('2d')
                         g2.drawImage(cv, 0, 0)
                         const d = g2.getImageData(0, 0, c2.width, c2.height).data
-                        let ink = 0, head = 0, hx = 0, hy = 0
+                        let ink = 0, head = 0, hx = 0, hy = 0, sig = 0
                         for (let y = 0; y < c2.height; y++) {
                             for (let x = 0; x < c2.width; x++) {
-                                if (d[(y * c2.width + x) * 4 + 3] > 24) {
+                                const i = (y * c2.width + x) * 4
+                                if (d[i + 3] > 24) {
                                     ink++
                                     if (y < c2.height * 0.4) { head++; hx += x; hy += y }
                                 }
+                                // #2172 quantised silhouette hash (FNV-1a): two
+                                // cards sharing a live canvas hash IDENTICAL — the
+                                // exact bug this kills.
+                                const q = d[i + 3] > 24 ? ((0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) >> 4) + 1 : 0
+                                sig = ((sig ^ q) * 16777619) >>> 0
                             }
                         }
                         // #2172 head centroid: card poses angle and lean the head to
-                        // a different spot per fighter — the pixel proof that the
-                        // five portraits are five poses, not one pose five times.
-                        out[id] = { ink: +(ink / (c2.width * c2.height)).toFixed(3), head, cx: head ? Math.round(hx / head) : -1, cy: head ? Math.round(hy / head) : -1 }
+                        // a different spot per fighter — corroborating proof that
+                        // the five portraits are five poses, not one pose five times.
+                        out[id] = { ink: +(ink / (c2.width * c2.height)).toFixed(3), head, cx: head ? Math.round(hx / head) : -1, cy: head ? Math.round(hy / head) : -1, sig }
                     }
                     return out
                 },

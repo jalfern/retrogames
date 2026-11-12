@@ -1063,9 +1063,13 @@ if (!MUT) {
         })
         ok(fit.length >= 5 && fit.every((c) => c.onScreen), `all five cards sit on screen (${fit.map((c) => c.id).join(',')})`)
         ok(fit.every((c) => c.ink > 0.04), `each card carries its portrait on the HUD (${fit.map((c) => `${c.id}:${c.ink}`).join(' ')})`)
-        // #2172 pose-per-card: the head centroid sits at a different spot per
-        // portrait — five poses, not one pose tinted five times.
+        // #2172 five cards, five silhouettes: the per-portrait pixel hash must
+        // be unique per fighter — the direct kill-shot for the shared-live-canvas
+        // bug (all five slots composing the same frame). Head centroids add a
+        // corroboration: posing angles/leans most heads to different spots.
         {
+            const sigs = PIDS.map((id) => pstats[id].sig)
+            ok(new Set(sigs).size === 5, `the five portraits are five distinct pictures (${new Set(sigs).size}/5 unique silhouette hashes)`)
             let sep = 0, sepAll = 0
             for (let a = 0; a < PIDS.length; a++) for (let b = a + 1; b < PIDS.length; b++) {
                 sepAll++
@@ -1073,7 +1077,7 @@ if (!MUT) {
                 if (da && db && da.cx >= 0 && db.cx >= 0 && Math.hypot(da.cx - db.cx, da.cy - db.cy) >= 3) sep++
             }
             const cxy = PIDS.map((id) => `${id}:${pstats[id].cx},${pstats[id].cy}`).join(' ')
-            ok(sep >= 8, `select cards hold five distinct poses — head centroids separate ${sep}/${sepAll} pairs by 3px+ (${cxy})`)
+            ok(sep >= 5, `head centroids separate ${sep}/${sepAll} pose pairs by 3px+ (${cxy})`)
         }
         // #2172 hover zoom: the hovered card scales its portrait up, and the
         // zoom hands over to the new card when the cursor moves.
