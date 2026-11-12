@@ -216,10 +216,14 @@ the #1096 options switched on.
 
 ## Honest gaps (polish-pass candidates)
 
-- Intro + win/lose quote lines landed (#1106); deeper outround replies (loser
-  sub-lines, taunt-on-win) remain open. The select screen landed too
-  (portraits + hover blips + intro-on-pick); portrait pose-per-card and a
-  hover portrait zoom would be the next polish.
+- **CLOSED by #2148:** deeper outround replies — per-character taunt-on-win
+  (shout in the winner's accent + beckon/flex/point/raise/spit rig poses),
+  round-end loser sub-lines (own `roundLose` table), PERFECT/CLUTCH/IN STYLE
+  judges, the match-arc line (WITHOUT LOSS / ONES THAT MATTERED) and a
+  call-and-response reveal with a loser-register reply sting, all pinned in
+  `viperpitcheck`.
+- Portrait polish: portrait pose-per-card and a hover portrait zoom on the
+  select screen (intro/win/lose quotes + portraits + hover blips landed #1106).
 - Stage midground + fight-reactive sway landed (#1106); heavier interactivity
   (destructible props, pickups) still open.
 - `qcb` counter + guard crush landed (#1106): blocking drains a guard gauge;
