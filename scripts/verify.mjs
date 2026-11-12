@@ -57,6 +57,11 @@ const suite = [
     node('sweepplay.mjs'),
     node('papercheck.mjs'),
     node('paperplay.mjs'),
+    // #2072: Papers-Please-Min's pixel suite (portrait byte-identity, ears
+    // per cut, the wide-head crop gate, hold-to-inspect) only ran on PRs
+    // touching the game. Alongside mariocheck/viperpitcheck it now rides the
+    // nightly whole-suite too, so a slow pixel drift is seen by morning.
+    node('papersplay.mjs'),
     node('zeldaplay.mjs'),
     node('kartcheck.mjs'),
     node('kartplay.mjs'),

@@ -19,7 +19,7 @@ import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../..
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { decide, RULES, dfmt, dshow, isAdult, stampLines } from './rules.js'
-import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, PHOTO_TINT, CLOCK, SLIP, RENT, PAYFX, BUBBLE, EVID, SETTLE, QUOTE, wallRows } from './layout.js'
+import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, PHOTO_TINT, PHOTO_ZOOM, CLOCK, SLIP, RENT, PAYFX, BUBBLE, EVID, SETTLE, QUOTE, wallRows } from './layout.js'
 
 const SIM_MS = 1000 / 60
 
@@ -43,6 +43,11 @@ const COL = {
 // old photo of the right person is not a lie.
 const SKINS = ['#e8c39e', '#d2a679', '#b07f55', '#8a5a3a', '#f0d3b4']
 const HAIRS = ['#2c2622', '#5a3b1e', '#8d1f1f', '#b3b6bd', '#1e1e28']
+// #2072 HAIR SHADOW — one tone darker per cut color, derived at module level
+// so it is a pure function of hairC: the counter face and its photo (which
+// inherits the descriptor, grey only in color) land on the SAME shadow, and
+// the byte-identity doctrine stands. 26/255 steps keep the grey cut readable.
+const HAIR_SHADOW = HAIRS.map((h) => '#' + [1, 3, 5].map((i) => Math.max(0, parseInt(h.slice(i, i + 2), 16) - 26).toString(16).padStart(2, '0')).join(''))
 const SHIRTS = ['#39466e', '#6e4b7a', '#4b7a5e', '#7a634b']
 // #1989 ONE-OFF CROWD inks — headwear and marks of a life, each its own exact
 // color so papersplay can count them as pixels. Chosen clear of every counted
@@ -96,6 +101,12 @@ const PapersPleaseMinGame = () => {
         let insp = null
         let banner = null           // {text, sub, month, ticks}
         let settle = 0            // #1891 PAPER WEIGHT — drop/settle counter for new papers
+        // #2072 HOLD TO INSPECT — decor only (like settle/banner): the sim
+        // never sees it, so determinism and replay pins stand untouched.
+        // A press that lands on the passport's photo does NOT stamp — it is
+        // the inspector leaning in; holding PHOTO_ZOOM.hold ticks grows the
+        // print, and any release lifts it back.
+        let holdDown = false, holdInPhoto = false, photoHold = 0, photoZoom = false
         // #1968 THE WAGE FLICKER — decor only (like settle/banner): the sim
         // never sees it, so determinism and every replay pin stand untouched.
         let payFx = 0
@@ -225,6 +236,12 @@ const PapersPleaseMinGame = () => {
         }
 
         const doFrameSim = () => {
+            // #2072 the photo-hold ticks with the world clock (never a timer);
+            // releasing the press or leaving the booth lifts the magnifier.
+            if (screenRef.current === 'play' && holdDown && holdInPhoto) {
+                photoHold++
+                if (photoHold >= PHOTO_ZOOM.hold) photoZoom = true
+            } else { photoHold = 0; photoZoom = false }
             if (screenRef.current !== 'play') {
                 if (screenRef.current === 'attract') {
                     // #1960 the booth keeps working behind the title card —
@@ -334,6 +351,28 @@ const PapersPleaseMinGame = () => {
             // frames the face, the ear stays alive under all four cuts.
             if (f.style === 2) c.fillRect(x + P(18), y + P(8), P(8), P(36))
             if (f.style === 3) c.fillRect(x + P(84), y + P(8), P(8), P(36))
+            // #2072 HAIR SILHOUETTE — cuts carry a shape, not a flat block.
+            // Each cut grows chunky temple/jaw steps, and the SHIRT (decor,
+            // never compared, inherited identically by the photo) picks one of
+            // two variants: silhouettes vary WITHIN a cut, never across it
+            // (the cut stays the only silhouette difference the PORTRAIT rule
+            // leans on — style is compared by descriptor, and both faces run
+            // through this same pure function, so byte-identity holds; keying
+            // on hairC would break it, the photo is forced grey).
+            // The shadow tone sits one step darker at the hairline. All ink
+            // stops at row 43: the #1976 ear law keeps rows 44-53 ear-live.
+            const hb = f.style === 0 ? 24 : f.style === 1 ? 18 : 30
+            const v = f.shirtC % 2
+            if (v === 0) {
+                c.fillRect(x + P(20), y + P(hb), P(8), P(4)); c.fillRect(x + P(20), y + P(hb + 4), P(5), P(6))
+                c.fillRect(x + P(82), y + P(hb), P(8), P(4)); c.fillRect(x + P(85), y + P(hb + 4), P(5), P(6))
+            } else {
+                c.fillRect(x + P(28), y + P(4), P(16), P(4))
+                c.fillRect(x + P(20), y + P(hb), P(6), P(6)); c.fillRect(x + P(20), y + P(hb + 6), P(3), P(4))
+                c.fillRect(x + P(84), y + P(hb), P(6), P(6)); c.fillRect(x + P(87), y + P(hb + 6), P(3), P(4))
+            }
+            c.fillStyle = HAIR_SHADOW[f.hairC]
+            c.fillRect(x + P(20), y + P(hb - 3), P(70), P(3))
             // #1989 HEADWEAR — the original's crowd wears its weather. Hats
             // cover the crown but never the whole head: the hairline stays
             // visible under the brim and past its edge (so a grey-haired
@@ -420,7 +459,7 @@ const PapersPleaseMinGame = () => {
             }
         }
 
-        const drawPassport = (pp, x, y) => {
+        const drawPassport = (pp, x, y, zoom = false) => {
             box(x, y, 300, 148, COL.paper, '#6f6a52')
             ctx.fillStyle = '#a33c3c'; ctx.fillRect(x, y, 300, 20)
             text('PASSPORT', x + 8, y + 15, 12, '#f2e8d8')
@@ -441,7 +480,11 @@ const PapersPleaseMinGame = () => {
             box(x + PHOTO.x, y + PHOTO.y, PHOTO.w, PHOTO.h, '#c9c2a4', COL.paperLine)
             ctx.save()
             ctx.beginPath(); ctx.rect(x + PHOTO.x, y + PHOTO.y, PHOTO.w, PHOTO.h); ctx.clip()
-            drawFace(ctx, pp.photo, x + PHOTO.x + PHOTO.ox, y + PHOTO.y + PHOTO.oy, PHOTO.s)
+            // #2072 held: the print grows past its frame and the frame clips —
+            // the same way lifting a photo and leaning in crops the world.
+            const sz = zoom ? PHOTO_ZOOM.s : PHOTO.s
+            const oxz = zoom ? Math.round(PHOTO.w / 2 - 55 * sz) : PHOTO.ox
+            drawFace(ctx, pp.photo, x + PHOTO.x + oxz, y + PHOTO.y + PHOTO.oy, sz)
             // #1976 aged print — the amber wash covers the whole print but not
             // the frame line (inset 1), so the photo reads as an old print IN a
             // fresh frame. Never inside drawFace: byte-identity of the two
@@ -562,7 +605,7 @@ const PapersPleaseMinGame = () => {
             // the NEXT papers come in, after the hold ticks out).
             const dy = settle > 0 ? SETTLE.dy(settle) : 0
             if (shown && shown.passport) {
-                drawPassport(shown.passport, PAPERS.x, PAPERS.y + dy)
+                drawPassport(shown.passport, PAPERS.x, PAPERS.y + dy, photoZoom)
                 if (shown.idcard) drawId(shown.idcard, ID.x, ID.y + dy)
             } else {
                 box(PAPERS.x, 60 + dy, PAPERS.w, 120, '#12161f', '#39415c')
@@ -714,10 +757,25 @@ const PapersPleaseMinGame = () => {
             if (watchingRef.current) releaseWatch() // #1637 a tap on the counter takes the stamp
             const r = canvas.getBoundingClientRect()
             if (!r.width) return
+            // #2072 HOLD TO INSPECT — a press on the photo (passport on the
+            // counter) is the inspector leaning in, not a stamp: it swallows
+            // the tap and grows the crop while held. Everywhere else on the
+            // counter the old left/right stamp zones are untouched.
+            const sx = ((e.clientX - r.left) / r.width) * CW
+            const sy = ((e.clientY - r.top) / r.height) * CHS
+            if (current(gs).view.person?.passport &&
+                sx >= PAPERS.x + PHOTO.x - 6 && sx <= PAPERS.x + PHOTO.x + PHOTO.w + 6 &&
+                sy >= PAPERS.y + PHOTO.y - 14 && sy <= PAPERS.y + PHOTO.y + PHOTO.h + 14) {
+                holdDown = true; holdInPhoto = true
+                return
+            }
             act((e.clientX - r.left) / r.width > 0.55 ? 'deny' : 'approve')
         }
+        const onUp = () => { holdDown = false; holdInPhoto = false; photoHold = 0; photoZoom = false }
         window.addEventListener('keydown', onDown)
         window.addEventListener('pointerdown', onPointer)
+        window.addEventListener('pointerup', onUp)
+        window.addEventListener('pointercancel', onUp)
 
         const resize = () => {
             const r = wrap.getBoundingClientRect()
@@ -786,6 +844,13 @@ const PapersPleaseMinGame = () => {
             }
             window.__ppTest = {
                 cfg: CFG, // #1966 pay constants so the live gates read the law, not a copy
+                // #2072 hold-to-inspect probes: the zoom flag and the photo's
+                // stage rect (papersplay turns it into client coords to drive
+                // real pointer events), plus the hair shadow palette so the
+                // pixel gates can count the shadow tone where it must live.
+                photoZoom: () => photoZoom,
+                photoRect: () => ({ x: PAPERS.x + PHOTO.x, y: PAPERS.y + PHOTO.y, w: PHOTO.w, h: PHOTO.h }),
+                hairShadow: () => HAIR_SHADOW,
                 // #1979 cast pixel proof — render each authored regular through
                 // the SAME drawFace and count its signature mark's own ink (all
                 // four exact colors, never a descriptor claim). ear counts skin
