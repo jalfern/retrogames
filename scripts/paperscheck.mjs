@@ -1905,7 +1905,7 @@ if (MUT) {
     //     invisible feature must not stay green on fairness alone).
     //     (#2012 re-anchored: the injection is a list now.)
     await tryMut('regulars never injected (the line forgets its faces)',
-        mutMod('gen.js', 'for (const reg of regularsForDay(seed, n)) day.queue.push(regularApplicant(reg, rnd, date, rules, day, used, seed, n))', 'for (const reg of []) day.queue.push(regularApplicant(reg, rnd, date, rules, day, used, seed, n))', 'm25'),
+        mutMod('gen.js', 'for (const reg of regularsForDay(seed, n)) day.queue.push(regularApplicant(reg, rnd, date, rules, day, used, seed, n, demote !== null))', 'for (const reg of []) day.queue.push(regularApplicant(reg, rnd, date, rules, day, used, seed, n, demote !== null))', 'm25'),
         (m) => {
             for (const seed of SEEDS) {
                 for (const day of m.gen.genWeek(seed).days) {
@@ -2224,7 +2224,8 @@ if (MUT) {
             for (const seed of SEEDS) {
                 for (const day of m.gen.genWeek(seed).days) {
                     for (const a of day.queue.filter((x) => x.person.regular)) {
-                        if (day.n > m.gen.firstVisitDay(seed, m.gen.REGULARS.findIndex((k) => k.id === a.person.regular)) && a.person.face.markStep === 1) return false
+                        // a return visit MUST wear the step — freeze means it doesn't
+                        if (day.n > m.gen.firstVisitDay(seed, m.gen.REGULARS.findIndex((k) => k.id === a.person.regular)) && a.person.face.markStep !== 1) return false
                     }
                 }
             }
@@ -2247,9 +2248,12 @@ if (MUT) {
             'if (aged && n === 7 && c.id === REGULARS[(seed + 1) % REGULARS.length].id && c.face.hairC === GREY) {', 'm65'),
         (m) => {
             for (const seed of SEEDS) {
-                for (const day of m.gen.genWeek(seed).days) {
-                    for (const a of day.queue) if (a.trap === 'PORTRAIT' && a.person.regular && a.person.face.hairC === m.gen.GREY) return false
-                }
+                if (!m.gen.day7Demote(seed)) continue
+                const t = m.gen.genWeek(seed).days[6].queue.find((x) => x.person.regular && x.trap)
+                // the staged week must show the neighbour trap, and it must be
+                // VISIBLE: grey print over non-grey live hair. A mutant that
+                // only fires on grey hair leaves the stage empty of the trap.
+                if (!t || t.trap !== 'PORTRAIT' || t.person.passport.photo.hairC !== m.gen.GREY || t.person.face.hairC === m.gen.GREY) return false
             }
             return true
         })
