@@ -55,6 +55,15 @@ export const PHOTO = { x: 232, y: 24, w: 66, h: 76, s: 0.9, ox: -16, oy: -2 }
 // pins s strictly above PHOTO.s (a zoom that doesn't zoom is a lie) and the
 // hold at a comfortable 1/6-2/3 s.
 export const PHOTO_ZOOM = { s: 1.12, hold: 11 }
+
+// #1982 THE RECOGNITION CUE — a returning neighbor gets the door its own
+// voice: two ascending triangle notes (welcome-up) as they step up to the
+// glass. The pair must be distinct from every tone the booth already owns
+// (stamps 300/190, deny 760 / approve 560, payday 880+1175, month chime
+// 988, brow tick 1050, clock tick 1150) — paperscheck pins the arithmetic
+// disjointness, papersplay counts the arrivals. Decor: the sim never sees
+// it, so determinism and every replay pin stand untouched.
+export const RECOGNITION = { notes: [523, 784], dur: [0.07, 0.10], gain: 0.05, wave: 'triangle' }
 // #1976 THE PRINT AGES — the original's passport photos are old prints: the
 // whole print (face AND its background) sits desaturated and yellowed while
 // the entrant at the counter is live color. A warm amber wash over the photo

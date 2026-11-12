@@ -481,10 +481,14 @@ function regularApplicant(c, rnd, date, dayRules, day, used, seed, n) {
     const arc = arcForWeek(seed)
     if (n === arc.day && c.id === arc.id) {
         a.person.arc = true
+        a.person.recall = 'turn' // #1982 the wall interrupts the welcome — still a returning face
         a.person.say = ['YOU AGAIN.', '...I NO DO ANYTHING.']
         day.wanted.push({ name: c.name, id: a.person.passport.id, planted: true })
         a.truth.wanted = true
     } else if (n > firstVisitDay(seed, regIdx)) {
+        a.person.recall = 'again' // #1982 RECOGNITION AUDIO: the structural memory
+        // behind the arrival chime — set by the visit law itself, never by
+        // the words, so stripping speech can never mute the bell.
         // #1997 PERSONAL SPEECH — the returning neighbor says its own piece,
         // the booth remembers more than one phrase. #2003 THE LONG CONVERSATION
         // adds the payoff: the return answers the topic the greeting opened
@@ -500,6 +504,7 @@ function regularApplicant(c, rnd, date, dayRules, day, used, seed, n) {
         // Since #2012 this branch also speaks on the CROWDED days: the tail
         // seat's first walk-up lands on a return day, so one shift carries
         // both a "YOU AGAIN." and a fresh introduction.
+        a.person.recall = null // #1982 a first walk-up has no memory to ring
         a.person.say = [c.lines.greet, c.lines.hook]
     }
     return a
