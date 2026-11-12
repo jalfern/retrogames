@@ -1,72 +1,67 @@
-# STATE — session 248 (2026-11-12, slot b)
+# STATE — session 249 (2026-11-12, slot b)
 
 ## What shipped
-**CIVILIZATION V — THE ERA CURVE** merged as `88cf5c4` (PR #2125, Closes
-#2122). Never-dry rung: TARGET #2120 was REFUSED (slot a live, 7-min claim)
-so the ladder ran clean — no halt/steer/next/game-queue, jonq empty, QA
-MASTER live (no borrow), flagshipStage null → weakestStage crowned
-CIVILIZATION V score 5 (named by #2085/#2075/#2069 + 2 unowned README gaps;
-PapersPleaseMin skipped as held). Issue #2122 self-filed with why-weakest line,
-claimed, built, shipped in-session. BNW law: `victoryFor` culture clause beats
-each living rival `tourism × 2^max(0, eraGap)`; CFG.tourismWin stays RAW;
-same-era read ×1 so every §33/§37 pin replays byte-identical (three pins now
-pin `era=5` by fiat, in place). No new stored state — `C.era` derives from the
-tech mask already in stateHash. Panel shares the walk: exported `eraCurve`/
-`cultureBeats`, `×N vs them|you` badges, age-named crown copy. Harness §42
-(22 checks): identity ×1/×2/×4/×32, exact kills (120×2 beats 239 not 240),
-raw bar, same-era tie, crown over raw deficit, rival symmetry, AND-court, dead
-ghost-books, income law, seed-7 determinism, source pins. civcheck 662/662;
-mutants: `2 **`→`1 **` reds six, clamp-drop reds three, both restored.
-eslint+lint:civ+build green. Prod verified live: crown copy in deployed lazy
-chunk `index-xdQ_Cupl.js`; live URL commented, #2122 shipped+closed. QA polish
-pass filed as **#2128** (era-dawn tells, badge juice, culture sound, teaching,
-civplay refresh). Also closed session 246's deferred task: #2113's cool-ring
-ink `#7fd4e8` confirmed live (`index-4pb8j3u6.js`), URL commented on #2113.
+**THE STRIP SPEAKS THE PAPER'S DATES** merged as `8bdc8d0` (PR #2132, Closes
+#2130). TARGET #2039 was REFUSED (slot a live, 10-min claim, worktree + vite
+:5173 up), ladder ran: halt/steer/next/queue/jonq empty, QA MASTER live (no
+borrow), flagshipStage null → idle-kick answered `KICK PAPERS, PLEASE-MIN 0
+weak` (weakestStage score 5 = 1 unowned README gap + 4 QA feedback naming it:
+#2104/#2087/#2080/#2109). Self-filed #2130, claimed, built, shipped
+in-session. #1891's tail closed: `EXPIRED`/`IDREQ`/`CURFEW` evidence strings
+assemble with `dshow` (`EXPIRED OCT 31 1982 < TODAY NOV 01 1982`) — every
+date the booth testifies to is now printed verbatim on the wall or paper it
+claims to read; `dfmt` demoted to machine serial (harness + DEV probe only).
+stateHash carries no evidence text → proven weeks/determinism byte-identical.
+Harness new section (5 laws): serial ban sweep-wide, printed-shape equality
+per dated rule (120 witnesses), token fidelity (cited date must be printed at
+the booth), NO-CLIP corridor (old ≤2-line pin passed a spliced `...`; longest
+now 50/54), dfmt survival. Re-pins: day-6 literals, strip full-comparison,
+clock-crowd law (had measured the 17-char serial row since #1891 grew the
+header to 19 — latent looseness, now honest). m61/m62 revert EXPIRED/CURFEW
+to serials with dshow intact — both die. paperscheck 23343 static / 23406
+--mutate; papersplay +2 live gates (day-6 header NOV 01 1982; real-key deny
+paints the month-name comparison serial-free) 134/134. Prod verified: game
+chunk `index-D61Qd9yp.js` composes evidence via the OCT-lookup fn, not the
+serial builder. Polish pass filed as **#2133** (phone-scale quote legibility
+gate, seam-crossing audio tick, wake-day teaching line [taste — propose],
+wanted-sheet date ruling to record).
 
 ## The session's catches
-- **A warden TARGET can lose the claim race.** #2120 was assigned to slot b
-  but slot a held it live (claim 7 min old, process alive) — forge-claim
-  REFUSED, and the never-dry ladder produced a full shipped game anyway.
-  TARGET ≠ entitlement; the liveness namespace arbitrates, the ladder is the
-  fallback path, not a detour.
-- **§-number collision with a live main.** #2123 took §41 while my branch flew;
-  renumbered to §42 (late-merge doctrine), rebased resolving the civcheck tail
-  + an import union (main added `suppliedSea`, I added `eraCurve`). Rebase a
-  live main BEFORE pushing the PR, and grep main for your section number first.
-- **A perl mutant that mutates nothing.** `perl -pi -e '…'` with the filename
-  lost to quoting read STDIN, silently no-op'd, and the "mutant" run came back
-  GREEN — a fake proof. `git diff --stat` after planting is the five-second
-  guard; no diff = no mutant, never report the green as a pass.
-- **Prod greps the lazy chunks, never the entry bundle.** Game strings live
-  behind dynamic imports; polling the main JS for game copy loops 40×20 s and
-  finds nothing (this session wasted 13 min re-learning the same lesson
-  session 246 wrote down). Right move: entry → `grep -o assets/…js` → fetch
-  each chunk → grep the string (the #2114 check from that session is the
-  snippet to copy).
-- **civplay's Stage-8 boot checks are stale** (`tap a tile to move`/
-  `space ends the turn` left the attract with #368's split; the VICTORY-open
-  check presses KeyY, WATCH since #1637). 96/99 pre- AND post-branch — not a
-  regression; triply-confirmed, commented on #2115, folded into #2128 item 5.
+- **idle.mjs answers are pure functions.** Calling `flagshipStage()` /
+  `weakestStage()` bare returns null trivially (empty inputs) — it *proved
+  nothing* and looked like "dry". The honest driver is `scripts/idle-kick.mjs`
+  (fetches issues, parses READMEs, feeds both rungs); call the driver, or wire
+  the inputs yourself. Bare-call nulls would have ended this session early.
+- **Re-pin the neighbor pins.** #1891 grew the wall header to month names but
+  left the clock-crowd law measuring the old serial row — a check quietly
+  stopped touching reality for ~12 sessions. When a pass changes a printed
+  format, grep the layout pins for the format's OLD width/shape too.
+- **A 2-line wrap pin passes a clipped quote.** wrapQuote splices `...` into
+  line 2 when content needs 3 lines — `length <= 2` never notices. The
+  no-clip law (no line ends in `...`) is the real corridor guarantee.
+- **Prod marker for a format-only change:** no new string ships, so grep by
+  tracing: find the call in the minified chunk (`EXPIRES ${de(`), then its
+  definition — OCT-lookup = new, `y+"."+` = old. Works where constant-greps
+  can't.
 
 ## Ladder trail
-TARGET #2120 REFUSED (slot a live) → halt none → steer none → next none →
-game-queue empty → jonq empty → QA MASTER live (no feedback borrow) →
-flagshipStage null (all four flagship gap lists CLOSED) → weakestStage =
-CIVILIZATION V score 5, gap index 0 (era curve) → POLISH #2122 filed +
-claimed + shipped. Never-dry rung #1571 worked exactly as designed, twice.
+TARGET #2039 REFUSED (slot a live) → halt none → steer none → next none →
+game-queue empty → jonq empty → QA MASTER live (no borrow) → flagshipStage
+null → weakestStage PAPERS, PLEASE-MIN score 5 → POLISH #2130 filed +
+claimed + shipped. Never-dry rung #1571, third consecutive in-session proof.
 
 ## Open questions
-- none filed (nothing taste-level; the pairwise-crown tie semantics are
-  documented on #2122 and the README, not a question).
+- none filed (nothing taste-level; teaching-line proposal carried on #2133
+  for the QA lane, not a question).
 
 ## Next
-- Normal ladder. Civ's remaining README honest gaps after #2122: World
-  Congress / Ideology gifting / great-work slotting (big-ticket, gap-owned),
-  sea tactics stack, vassal liberate-choice — plus #2128's polish items for
-  the QA lane. weakestStage should now pass to whatever title scores next.
+- Normal ladder. Papers-Min honest gaps are now EMPTY (parseGaps 0); its
+  residuals live on #2133 + pre-existing #2104/#2087/#2080/#2109 (QA lane).
+  weakestStage should pass to the next-scoring title (Civ V's big-ticket
+  gap-owned items: World Congress / Ideology gifting / great-work slotting).
 
 ## Hygiene at exit
-Dev server 5178 stopped (mine only). Worktree `retrogames-forge-civ-era-curve`
+Dev server 5178 stopped (mine only). Worktree `retrogames-forge-ppm-months`
 removed; remote branch died with the squash merge. Game merged this session →
-STATE.md committed to main directly (per step 9) and parked at
-/tmp/forge/STATE.b.parked.md. Main checkout detached at origin/main.
+STATE.md committed to main directly (per step 9) and parked via
+statepark park b. Main checkout detached at origin/main.
