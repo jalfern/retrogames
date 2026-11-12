@@ -26,3 +26,4 @@ data/plaicraft/*
 !data/plaicraft/sample.jsonl
 !data/plaicraft/results.json
 !data/plaicraft/export-stats.json
+qa-art/

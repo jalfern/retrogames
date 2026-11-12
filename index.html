@@ -3,7 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- #2057: the arcade is a game surface, not a document. Pin zoom: a
+         double-tap/pinch on the play surface must never zoom or pan (iOS still
+         lets a Safari tab zoom unless the meta says otherwise; installed app
+         mode honours this outright). The pads already carry touch-action:none;
+         index.css pins the rest of the surface. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>jalfern</title>
     <!--
       Installable arcade (#433): the manifest and icons are scoped to /retrogames/

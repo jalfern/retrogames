@@ -15,6 +15,23 @@ body {
   background: #000;
 }
 
+/* #2057 — the iPhone scroll/callout family, second root cause: the shell is
+   h-screen (100vh), but in Safari the layout viewport is SMALLER than 100vh
+   while the toolbars show, so the document content exceeds the visible area
+   and a single-finger drag pans the page (collapsing toolbars, stealing the
+   stick's touch via touchcancel). Content pages never rely on document scroll
+   — every list/board/log page owns an inner overflow-y-auto scroller — so the
+   document is pinned shut: no pan, no rubber-band (overscroll-behavior), and
+   `manipulation` drops the double-tap zoom without touching inner scrollers
+   (pan/pinch stay legal where an inner scroller lives). */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
 /* #606 — the arcade is a game surface, not a document. On iPad/iOS Safari a
    press-and-drag (the virtual stick, the d-pad, the canvas, or even the footer
    label) started a text-selection / long-press callout, so drags "turned into
@@ -36,6 +53,9 @@ canvas {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
+  /* #2057: the play surface never yields a gesture to the browser — no pan,
+     no zoom, no selection drag started on the canvas itself. */
+  touch-action: none;
 }
 
 input,
