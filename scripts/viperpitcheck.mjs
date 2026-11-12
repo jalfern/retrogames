@@ -48,7 +48,7 @@ if (MUT) {
 }
 const ENG_PATH = MUT ? '../src/engine/.mutant-fighting.mjs' : '../src/engine/fighting.js'
 const e = await import(bust(ENG_PATH))
-const { ROSTER, BY_ID, LADDER, voiceNotes } = await import(bust('../src/games/ViperPit/fighters.js'))
+const { ROSTER, BY_ID, LADDER, voiceNotes, koQuotes } = await import(bust('../src/games/ViperPit/fighters.js'))
 
 ok(ROSTER.length >= 5, `roster has ${ROSTER.length} distinct fighters`)
 ok(LADDER.length >= 5, 'street ladder has 5 opponents')
@@ -509,10 +509,10 @@ if (MUT) {
     const gsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/index.jsx'), 'utf8')
     for (const [label, re] of [
         ['pure intro selector (both fighters)', /export function introQuotes\(a, b\)/],
-        ['pure K.O. selector (round + match line)', /export function koQuotes\(m\)/],
+        ['pure K.O. selector (round + match line)', /export function koQuotes\(m, ctx = \{\}\)/],
     ]) ok(re.test(fsrc), `quote gate: ${label}`)
     for (const [label, re] of [
-        ['render reads the K.O. quote', /koQuotes\(m\)/],
+        ['render reads the K.O. quote', /koQuotes\(m, \{ finish: finishJustLanded \}\)/],
         ['render reads the intro quote at FIGHT', /introQuotes\(BY_ID\[p1Char\], BY_ID\[p2Char\]\)/],
         ['K.O. quote is drawn as a card', /quote\.a, W \/ 2, H \* 0\.59/],
         ['per-fighter K.O. blurb sting', /const koSting = \(fid\)/],
@@ -523,6 +523,103 @@ if (MUT) {
     // mutant: strip the quote table — the "5 lines" data gate has nothing left to count
     const mutF = fsrc.replace(/\bintro: /g, 'intro__X: ').replace(/\bwin: /g, 'win__X: ').replace(/\blose: /g, 'lose__X: ')
     ok((mutF.match(/\bintro: /g) || []).length === 0 && (mutF.match(/\bwin: /g) || []).length === 0, 'mutant: stripped quote table empties the data gate (harness bites)')
+}
+
+// ---- #2148 outround replies gate ---------------------------------------------------
+// The KO card is an exchange, not a caption: a per-character taunt lands on the
+// win, the KO'd fighter answers a beat later (round replies are their own table,
+// distinct from the match lose line), context judges stamp WHY the round was
+// dirty (PERFECT / IN STYLE / CLUTCH), and the match card reads the fight arc
+// (without loss vs took the ones that mattered). All choice lives in koQuotes —
+// these gates run the selector on REAL matches in plain Node, so a wrong line,
+// a stolen accent or a dead judge branch is named, not just absent.
+{
+    const fs = await import('node:fs')
+    const fsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/fighters.js'), 'utf8')
+    const gsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/index.jsx'), 'utf8')
+    const rsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/render.js'), 'utf8')
+    ok((fsrc.match(/\btaunt: /g) || []).length >= 5, 'outround gate: all five fighters carry a taunt line')
+    ok((fsrc.match(/\broundLose: /g) || []).length >= 5, 'outround gate: all five fighters carry a round reply of their own')
+    ok((fsrc.match(/\btauntPose: /g) || []).length >= 5, 'outround gate: all five fighters carry a taunt pose')
+    ok(new Set(ROSTER.map((d) => d.tauntPose)).size >= 4, 'outround gate: the roster taunts are not one pose')
+    const mutT = fsrc.replace(/\btaunt: /g, 'taunt__X: ')
+    ok((mutT.match(/\btaunt: /g) || []).length === 0, 'mutant: stripped taunt table empties the taunt data gate (harness bites)')
+
+    const roundKO = (wId, lId) => {
+        const m = e.createMatch({ seed: 11, p1: BY_ID[wId], p2: BY_ID[lId] })
+        m.phase = 'fight'
+        e.forceKO(m, 0)
+        return m
+    }
+    let linesOk = true, replyOk = true, voiceOk = true
+    for (let i = 0; i < ROSTER.length; i++) {
+        const wd = ROSTER[i], ld = ROSTER[(i + 1) % ROSTER.length]
+        const q = koQuotes(roundKO(wd.id, ld.id))
+        if (!q || q.a !== `${wd.name} — ${wd.win}` || q.taunt !== wd.taunt || q.sub !== `${ld.name} — ${ld.roundLose}` || q.match) linesOk = false
+        if (!q || !q.sub || !q.taunt) replyOk = false
+        const expect = Math.round((ld.voice ? ld.voice.base : 240) * 0.66)
+        if (!q || q.replyVoice[0] !== expect) voiceOk = false
+    }
+    ok(linesOk, 'round K.O.: every winner taunts with their own line and the loser replies with their own roundLose')
+    ok(replyOk, 'loser sub-lines survive the round-end split (b:null, sub set — the answer rides the sub)')
+    ok(voiceOk, 'the reply sting rides the LOSER voice register (0.66 of their base)')
+    {
+        const jp = (f, dmg, ctx) => koQuotes(((m) => { if (dmg) m.fighters[0].hp -= dmg; return m })(roundKO(f, 'riv')), ctx).judge
+        ok(jp('nyx', 0) === 'PERFECT', 'a no-damage round stamps PERFECT')
+        ok(jp('nyx', 1) === null, 'the smallest chip erases the PERFECT stamp (the law reads HP, not vibes)')
+        ok(jp('nyx', 0, { finish: true }) === 'PERFECT', 'PERFECT outranks IN STYLE (flawless is the bigger call)')
+        ok(jp('nyx', 80) === 'CLUTCH', 'a win at <=25 HP stamps CLUTCH')
+        ok(jp('nyx', 80, { finish: true }) === 'IN STYLE', 'a finisher that did NOT end flawless stamps IN STYLE')
+    }
+    {
+        const dead = await jpPerfectProbe()
+        ok(dead === null, 'mutant: dead PERFECT branch (false ? judge) kills the stamp on a no-damage round (harness bites)')
+    }
+    function jpPerfectProbe() {
+        const mut = fsrc.replace("w.hp >= maxHp ? 'PERFECT'", "false ? 'PERFECT'")
+        fs.writeFileSync(path.join(HERE, '../src/games/ViperPit/.fighters-mut-outround.mjs'), mut.replace(/from '\.\.\/\.\.\/engine\/fighting\.js'/g, "from '../../engine/fighting.js'"))
+        return import(bust('../src/games/ViperPit/.fighters-mut-outround.mjs')).then((F) => {
+            const m = e.createMatch({ seed: 11, p1: BY_ID.nyx, p2: BY_ID.riv })
+            m.phase = 'fight'
+            e.forceKO(m, 0)
+            const q = F.koQuotes(m)
+            fs.unlinkSync(path.join(HERE, '../src/games/ViperPit/.fighters-mut-outround.mjs'))
+            return q.judge
+        })
+    }
+    {
+        const done = (aWins, bWins) => {
+            const m = roundKO('nyx', 'krax')
+            m.phase = 'done'; m.winner = 0
+            m.fighters[0].wins = aWins; m.fighters[1].wins = bWins
+            return koQuotes(m)
+        }
+        const sw = done(2, 0), cb = done(2, 1)
+        ok(sw.match && sw.b === 'KRAX — THAT\'LL BE EXTRA' && sw.sub === 'WINS WITHOUT LOSS', 'match card: sweep arc reads WITHOUT LOSS')
+        ok(cb.match && cb.sub === 'TOOK THE ONES THAT MATTERED', 'match card: dropping a round flips the arc to ONES THAT MATTERED')
+        ok(sw.judge === null && cb.judge === null, 'match-end cards carry the arc, never a round judge')
+    }
+    const wiring = [
+        ['the KO arm passes the finisher flag to the selector', /koQuotes\(m, \{ finish: finishJustLanded \}\)/],
+        ['the reply reveals on a timer, not with the taunt', /quoteSubAt != null && performance\.now\(\) >= quoteSubAt/],
+        ['the reveal fires the loser-voice sting once', /const \[r0, r1, rwave\] = quote\.replyVoice/],
+        ['the judge badge renders', /quote\.judge === 'PERFECT'/],
+        ['the taunt renders in the winner accent', /Number\(quote\.accent \|\| 0x59e0c8\)\.toString\(16\)/],
+        ['the outround probe exposes the exchange ordering', /shown: !!\(quoteSubAt != null && performance\.now\(\) >= quoteSubAt\)/],
+        ['the outround probe is a dev hook', /outround\(\) \{/],
+        ['outround state resets between matches', /koHold = null; koFxRound = 0; quote = null; quoteT = 0; quoteSubAt = null; subFired = false; finishJustLanded = false/],
+        ['the rig taunt pose reads the fighter table', /def && f\.def\.tauntPose/, rsrc],
+        ['beckon pose exists', /pose === 'beckon'/, rsrc],
+        ['flex pose exists', /pose === 'flex'/, rsrc],
+        ['point pose exists', /pose === 'point'/, rsrc],
+        ['spit pose exists', /pose === 'spit'/, rsrc],
+    ]
+    for (const gate of wiring) {
+        const [label, re, src] = gate
+        ok(re.test(src || gsrc), `outround wiring gate: ${label}`)
+    }
+    const mutReveal = gsrc.replace('quoteSubAt = performance.now() + 520; subFired = false', 'quoteSubAt = performance.now(); subFired = false')
+    ok(mutReveal !== gsrc, 'mutant: an instant reveal (no call before response) is a source change the live gate can catch')
 }
 
 // ---- #1106 fighter animation-depth gate ---------------------------------------------
@@ -1186,6 +1283,28 @@ if (!MUT) {
         const s1 = await page.evaluate(() => window.__viperPitTest.state.tick)
         const slowRate = (s1 - s0) / 250
         ok(slowRate < normalRate * 0.75, `the freeze runs at half speed during the slow-mo (${slowRate.toFixed(3)} vs ${normalRate.toFixed(3)} tick/ms)`)
+        // #2148 — the outround exchange, live: taunt rides the KO, PERFECT
+        // stamps a no-damage round, and the loser's answer reveals a beat
+        // after (never before) the taunt.
+        const TAUNT_BY_NAME = { NYX: 'STAY DOWN', CINDER: 'IS THAT ALL?', VESS: 'CLEANER THAN THAT', RIV: 'SIT DOWN', KRAX: 'THAT GOES ON THE BILL' }
+        let or1 = null
+        for (let i = 0; i < 15 && !(or1 && or1.active && or1.taunt); i++) {
+            or1 = await page.evaluate(() => window.__viperPitTest.outround())
+            if (!(or1 && or1.active && or1.taunt)) await page.waitForTimeout(40)
+        }
+        ok(or1 && or1.active && or1.taunt === TAUNT_BY_NAME[kf.name], `the winner taunts over the freeze (${kf.name}: "${or1 && or1.taunt}")`)
+        const hpAt = await page.evaluate(() => window.__viperPitTest.state.hp)
+        const MAXHP_BY_NAME = Object.fromEntries(ROSTER.map((d) => [d.name, d.hp || 100]))
+        const wHp = hpAt[kf.by]
+        const expectJudge = wHp >= MAXHP_BY_NAME[kf.name] ? 'PERFECT' : wHp <= 25 ? 'CLUTCH' : null
+        ok(or1 && or1.judge === expectJudge, `the judge stamp rides the winner's real HP at the KO (hp ${wHp}/${MAXHP_BY_NAME[kf.name]} -> ${or1 && or1.judge})`)
+        ok(or1 && !or1.shown && or1.sub, 'the loser answer is held back behind the taunt (call before response)')
+        let or2 = null
+        for (let i = 0; i < 40 && !(or2 && or2.shown); i++) {
+            or2 = await page.evaluate(() => window.__viperPitTest.outround())
+            if (!(or2 && or2.shown)) await page.waitForTimeout(50)
+        }
+        ok(or2 && or2.shown && or2.sub && / — /.test(or2.sub), `the loser answers a beat later (${or2 && or2.sub})`)
         let released = false
         for (let i = 0; i < 80 && !released; i++) {
             released = await page.evaluate(() => !window.__viperPitTest.koFx().active)
