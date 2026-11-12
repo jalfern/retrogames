@@ -8,7 +8,7 @@
 // Run: npm run soscheck          (dev server on DEV_PORT, default 5173)
 //      SOS_SKIP_BROWSER=1 npm run soscheck   (rule/determinism/win only)
 
-import { createGame, stepGame, simState, makeCpuEmitter, cellKind, SHIFT_TICKS, QUOTA, RUNNER_POST, hashState, COOL_SIP } from '../src/games/ShortOrderShout/engine.js'
+import { createGame, stepGame, simState, makeCpuEmitter, cellKind, SHIFT_TICKS, QUOTA, RUNNER_POST, hashState, COOL_SIP, SEAR_OK, SEAR_TELL, TAP_REFILL, actionable, cpuPlan } from '../src/games/ShortOrderShout/engine.js'
 import { MIC_RECT, VOX_RECT, CHIP_ZONE, PIP_ZONE, CHIP_MIN_H, rectsOverlap } from '../src/games/ShortOrderShout/art.js'
 import { takeIsSpeech, ACK_MIN_MS, PTT_MIN_B64, createPttSender } from '../src/games/ShortOrderShout/ptt.js'
 
@@ -186,6 +186,96 @@ ok('stations in wall row', cellKind(0, 0) === 'cooler' && cellKind(4, 0) === 'bo
         return hashState(gs)
     }
     ok('the cool replay is deterministic (same script => same hash)', build() === build())
+}
+
+// 4c. #2119 THE SCORCH TELL: crossing into the ready window's last minute fires
+// fx scorch (per episode — a cooled pan that re-crosses tells again), and the
+// shift's FIRST crossing adds fx teach exactly once. The tap is a shared choke
+// point: a fill locks it TAP_REFILL ticks and the next cup is refused with deny
+// + toast. actionable().water tells the truth (someone needs a cup AND the tap
+// is ready). And the CPU sip: fires absent, water in hand, a pan inside the
+// last half-minute => walk to that burner and pour; a cook holding anything else
+// keeps its job, and fires still outrank a sip.
+{
+    const gs = createGame(3, 1)
+    gs.burners[0].state = 'ready'; gs.burners[0].t = SEAR_OK - SEAR_TELL // the tick before the tell
+    gs.fx = []
+    stepGame(gs, [])
+    ok('crossing into the tell window announces scorch', gs.fx.some((f) => f.k === 'scorch' && f.n === 0), JSON.stringify(gs.fx))
+    ok('the first tell teaches the counterplay once', gs.fx.some((f) => f.k === 'teach' && /CUP.*COOLS/.test(f.msg || '')) && gs.taught, JSON.stringify(gs.fx))
+    gs.fx = []
+    stepGame(gs, [])
+    ok('the tell does not spam while the pan stays hot', !gs.fx.some((f) => f.k === 'scorch'))
+    gs.burners[1].state = 'ready'; gs.burners[1].t = SEAR_OK - SEAR_TELL
+    gs.fx = []
+    stepGame(gs, [])
+    ok('a second burner tells, but the lesson is never repeated',
+        gs.fx.some((f) => f.k === 'scorch' && f.n === 1) && !gs.fx.some((f) => f.k === 'teach'), JSON.stringify(gs.fx))
+}
+{
+    const gs = createGame(3, 1)
+    gs.cooks[0].x = 6; gs.cooks[0].y = 1; gs.cooks[0].face = 'up'
+    gs.burners[0].state = 'ready'; gs.burners[0].t = 170 // already inside the window — no tell was owed
+    gs.cooks[0].holding = 'water'
+    tap(gs, 0, { a: true }, 0) // sip: t 170-60=110 (+press/release ticks)
+    gs.fx = []
+    ok('a cooled pan owes no tell', !gs.fx.some((f) => f.k === 'scorch'), JSON.stringify(gs.fx))
+    for (let t = 0; t < 12; t++) stepGame(gs, []) // t climbs back across the line
+    ok('a cooled pan that re-crosses tells again (per-episode)', gs.fx.some((f) => f.k === 'scorch' && f.n === 0))
+}
+{
+    const gs = createGame(1, 1)
+    gs.cooks[0].x = 11; gs.cooks[0].y = 1; gs.cooks[0].face = 'up'
+    tap(gs, 0, { a: true }, 0)
+    ok('the tap fills a cup and drains', gs.cooks[0].holding === 'water' && gs.tapCd === TAP_REFILL - 2, `holding=${gs.cooks[0].holding} tapCd=${gs.tapCd}`)
+    gs.cooks[0].holding = null
+    gs.fx = []
+    tap(gs, 0, { a: true }, 0)
+    ok('the next cup is refused while the tap refills', gs.cooks[0].holding === null && gs.fx.some((f) => f.k === 'deny'), JSON.stringify(gs.cooks[0].holding))
+    ok('the refusal says why', gs.fx.some((f) => f.k === 'toast' && /TAP REFILLS/.test(f.msg || '')))
+    for (let t = 0; t < TAP_REFILL; t++) stepGame(gs, [])
+    gs.fx = []
+    tap(gs, 0, { a: true }, 0)
+    ok('the tap answers once refilled', gs.cooks[0].holding === 'water' && gs.fx.some((f) => f.k === 'fill'))
+    const drain = () => { for (let t = 0; t < TAP_REFILL + 2; t++) stepGame(gs, []) }
+    drain(); gs.cooks[0].holding = null; gs.fx = []
+    ok('rinsing stays free on the tap\'s beat', (() => { gs.cooks[0].dirty = true; tap(gs, 0, { a: true }, 0); return gs.cooks[0].dirty === false })())
+}
+{
+    const gs = createGame(1, 1)
+    ok('no trouble, no water job', actionable(gs).water === false)
+    gs.burners[0].state = 'ready'; gs.burners[0].t = SEAR_OK - SEAR_TELL + 10
+    ok('a scorching pan opens the water job', actionable(gs).water === true)
+    gs.tapCd = 10
+    ok('a drained tap cannot take the job', actionable(gs).water === false)
+    gs.tapCd = 0; gs.burners[0].state = 'fire'
+    ok('fire is a water job too', actionable(gs).water === true)
+}
+{
+    const gs = createGame(5, 2)
+    gs.cooks[0].x = 9; gs.cooks[0].y = 1; gs.cooks[0].face = 'up'
+    gs.cooks[0].holding = 'water'
+    gs.burners[1].state = 'ready'; gs.burners[1].t = SEAR_OK - 10 // scorching NOW
+    const pl = cpuPlan(gs, 0)
+    const end = pl.path && pl.path.length ? (() => { let x = 9, y = 1; for (const m of pl.path) { const d = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[m]; x += d[0]; y += d[1] } return [x, y] })() : null
+    ok('the sip plan walks a water-holding cook to the scorching burner and pours', pl.act === 'a' && pl.thenFace === 'up' && end && end[0] === 7 && end[1] === 1, JSON.stringify(pl))
+    gs.burners[0].state = 'fire'
+    const plF = cpuPlan(gs, 0)
+    const endF = plF.path && plF.path.length ? (() => { let x = 9, y = 1; for (const m of plF.path) { const d = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[m]; x += d[0]; y += d[1] } return [x, y] })() : null
+    ok('fire outranks the sip', endF && endF[0] === 6 && endF[1] === 1, JSON.stringify(plF))
+    gs.burners[0].state = 'empty'
+    gs.cooks[0].holding = 'bun'
+    const plB = cpuPlan(gs, 0)
+    ok('a cook carrying an ingredient keeps its job (no sip off water)', !(plB.act === 'a' && plB.thenFace === 'up' && plB.path && plB.path.some((m) => m === 'right')))
+}
+{
+    const build = () => {
+        const gs = createGame(13, 2)
+        gs.burners[1].state = 'ready'; gs.burners[1].t = 155
+        for (let t = 0; t < 240; t++) stepGame(gs, [])
+        return hashState(gs)
+    }
+    ok('the tell + choke + sip replay is deterministic', build() === build())
 }
 
 // 5. dirty floor items: drop => dirty; stations refuse; rinse at tap fixes

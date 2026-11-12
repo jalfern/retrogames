@@ -110,6 +110,7 @@ export function snapshotGame(gs) {
         burners: JSON.parse(JSON.stringify(gs.burners)),
         pot: JSON.parse(JSON.stringify(gs.pot)),
         board: gs.board,
+        tapCd: gs.tapCd, taught: gs.taught, // #2119
         floors: JSON.parse(JSON.stringify(gs.floors)),
         projs: JSON.parse(JSON.stringify(gs.projs)),
     }
@@ -130,7 +131,7 @@ export function hashState(gs) {
     const p = []
     p.push(gs.tick, gs.score, gs.strikes, gs.done ? 1 : 0, gs.win ? 1 : 0, gs.rngState >>> 0)
     for (const t of gs.tickets) p.push(t.dish === 'soup' ? 1 : 2, t.left, t.total)
-    p.push(gs.nextTicket, gs.dishSeq)
+    p.push(gs.nextTicket, gs.dishSeq, gs.tapCd) // #2119 tapCd gates an action — it rides the hash for desync rigor
     for (const c of gs.cooks) p.push(c.x, c.y, FACE_N[c.face], c.holding || '-', c.moveCd, c.dirty ? 1 : 0, c.alive ? 1 : 0)
     for (const b of gs.burners) p.push(b.state, b.t)
     p.push(gs.pot.state, gs.pot.t, gs.pot.stir, gs.pot.need)
@@ -149,8 +150,11 @@ const DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }
 const SOUP_TICKS = 150 // rolling boil
 const STIR_GAP = 80 // stir every <80f or it boils over
 const SEAR_TICKS = 210
-const SEAR_OK = 180 // window before it burns
+export const SEAR_OK = 180 // window before it burns
 export const COOL_SIP = 60 // #2113 cool the pan: one cup of water knocks this many ticks of heat off a hot-but-not-burnt burner
+export const SEAR_TELL = 60 // #2119 scorch tell: the ready window's last minute shimmers, and the shift's first crossing teaches the counterplay
+const SIP_NOW = SEAR_TELL / 2 // #2119 CPU sip: inside the last half-minute of the window, a water-holding cook stops and pours
+export const TAP_REFILL = 45 // #2119 tap choke point: after a fill the tap needs this many ticks before it answers again (the sink is a shared queue, not a fountain)
 const FIRE_SPREAD = 360
 const RINSE_TICKS = 30
 const TICKET_FIRST = 120
@@ -180,6 +184,8 @@ export function createGame(seed = 1, players = 2) {
         ],
         pot: { state: 'empty', t: 0, since: 0, stir: 0, need: 2 }, // empty|veg|boiling|ready|ruined|soaked
         board: 'none', // none|bun|buntom|melt
+        tapCd: 0, // #2119 ticks until the tap answers again after a fill
+        taught: false, // #2119 the shift's first scorch tell already printed its teaching line
         floors: [], // {x,y,item,dirty}
         projs: [], // in-flight tosses {x,y,dx,dy,n,item}
         fx: [], // transient events for the renderer/audio (never hashed)
@@ -246,6 +252,11 @@ export function actionable(gs) {
         tom: w.tom > 0 && (ps === 'veg' || gs.board === 'bun'),
         bun: w.bun > 0 && gs.board === 'none',
         patty: w.patty > 0 && gs.burners.some((b) => b.state === 'empty'),
+        // #2119 the advisory list must say when water is the job: some burner
+        // wants a cup (fire, or a ready patty in its scorch tell) and the tap
+        // is off its refill cooldown. Water is not a RAW ingredient — it is
+        // this function's only non-restock entry, and consumers read it as-is.
+        water: gs.tapCd === 0 && gs.burners.some((b) => b.state === 'fire' || (b.state === 'ready' && b.t > SEAR_OK - SEAR_TELL)),
     }
 }
 
@@ -336,8 +347,12 @@ function actA(gs, c) {
     // WINDOW --------------------------------------------------------------
     if (c.x === STATION.window[0] && c.y === STATION.window[1] && isDish(c.holding)) { serve(gs, c); return }
 
-    // TAP — fill the cup ----------------------------------------------------
-    if (fk === 'tap' && !c.holding) { c.holding = 'water'; gs.fx.push({ k: 'fill', tick: gs.tick }); return }
+    // TAP — fill the cup (#2119: one cup per refill beat — the tap is a shared
+    // choke point, two cooks drinking the same tap dry queue for it) -----------
+    if (fk === 'tap' && !c.holding) {
+        if (gs.tapCd > 0) { gs.fx.push({ k: 'deny', tick: gs.tick }); toast(gs, 'TAP REFILLS — HOLD ON'); return }
+        c.holding = 'water'; gs.tapCd = TAP_REFILL; gs.fx.push({ k: 'fill', tick: gs.tick }); return
+    }
 
     // COOLER — take the oldest open ticket's next ACTIONABLE ingredient
     if (fk === 'cooler' && !c.holding) {
@@ -472,7 +487,16 @@ function stepWorld(gs) {
             const other = gs.burners[b === gs.burners[0] ? 1 : 0]
             if (other.state !== 'fire') { other.state = 'fire'; other.t = 0; other.spread = true; gs.fx.push({ k: 'fire', spread: 1, tick: gs.tick }) }
         }
+        // #2119 scorch tell: crossing into the ready window's last minute says
+        // so (once per episode — a cooled pan that re-crosses tells again), and
+        // the shift's FIRST crossing prints the teaching line exactly once.
+        if (b.state === 'ready' && b.t === SEAR_OK - SEAR_TELL + 1) {
+            gs.fx.push({ k: 'scorch', n: gs.burners.indexOf(b), tick: gs.tick })
+            if (!gs.taught) { gs.taught = true; gs.fx.push({ k: 'teach', msg: 'HOT PAN! CUP + A COOLS THE PAN', tick: gs.tick }) }
+        }
     }
+    // #2119 the tap drains and refills between cups
+    if (gs.tapCd > 0) gs.tapCd--
     // pot: t counts total boil time; since counts ticks since the last stir.
     // Needs `need` stirs spaced < STIR_GAP apart; after the last stir it simmers
     // the remainder of SOUP_TICKS and becomes ready.
@@ -667,6 +691,22 @@ function linePlan(gs, seat) {
             if (p) return { path: p, thenFace: 'up', act: 'a' }
         } else if (!c.holding || c.holding === 'water') {
             const p = bfs(gs, [c.x, c.y], [STATION.tap[0], 1], seat)
+            if (p) return { path: p, thenFace: 'up', act: 'a' }
+        }
+    }
+    // 2b) #2119 sip a scorching pan before it is lost: a ready patty inside
+    // the last half-minute of its window gets the cup (COOL_SIP buys the tell
+    // back) — but only from hands that already hold water. An empty cook takes
+    // the step-4 grab instead (strictly cheaper than a tap round trip), and a
+    // cook carrying a dish or an ingredient keeps its job; this closes the
+    // silent quota leak of a pan burning beside the fire the cook fetched water
+    // for. Fires outrank sips (step 2 already returned when one exists).
+    if (fire < 0 && c.holding === 'water') {
+        const hot = gs.burners.findIndex((b) => b.state === 'ready' && b.t > SEAR_OK - SIP_NOW)
+        if (hot >= 0) {
+            const hcell = STATION.burner[hot]
+            if (c.x === hcell[0] && c.y === 1 && c.face === 'up') return { act: 'a' }
+            const p = bfs(gs, [c.x, c.y], [hcell[0], 1], seat)
             if (p) return { path: p, thenFace: 'up', act: 'a' }
         }
     }

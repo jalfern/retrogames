@@ -25,7 +25,7 @@ import { b64FromBytes, bytesFromB64 } from '../../utils/voice.js'
 import { createPttSender, createPttInbox, takeIsSpeech, ACK_MIN_MS } from './ptt.js'
 import {
     createGame, stepGame, simState, drainFx, makeCpuEmitter, snapshotGame, restoreGame, hashState,
-    GRID_W, GRID_H, SHIFT_TICKS, QUOTA, MAX_STRIKES, cellKind, STATION, RUNNER_POST,
+    GRID_W, GRID_H, SHIFT_TICKS, QUOTA, MAX_STRIKES, cellKind, STATION, RUNNER_POST, SEAR_OK, SEAR_TELL,
 } from './engine.js'
 import { createSosSync, createRttTracker, createSeatCtl, packSnap, padMask, stallNotice, DROP_GRACE, PAD_DELAY, CMD_LEAD } from './net.js'
 import { sprites, TILE, CANVAS_W, CANVAS_H, KITCHEN_X, KITCHEN_Y, MIC_RECT, VOX_RECT, CHIP_ZONE, CHIP_MIN_H } from './art.js'
@@ -43,6 +43,7 @@ const ATTRACT_MSGS = [
     'ANY SEAT: HUMAN, CPU OR MODEL',
     'STIR THE POT OR IT BOILS OVER',
     'A BURNT PATTY MEANS FIRE',
+    'CUP OF WATER COOLS A HOT PAN',
     'THREE EXPIRED TICKETS = FIRED',
 ]
 
@@ -183,6 +184,7 @@ export default function ShortOrderShout() {
             if (f.k === 'catch') hud.pops.push({ k: 'catch', x: f.x, y: f.y, t: 0 })
             if (f.k === 'douse') hud.pops.push({ k: 'douse', x: f.x, y: f.y, t: 0 })
             if (f.k === 'cool') hud.pops.push({ k: 'cool', x: f.x, y: f.y, t: 0 }) // #2113 the pour on a hot pan
+            if (f.k === 'teach') { hud.toast = f.msg; hud.toastT = 170 } // #2119 the shift's one scorch lesson
             if (f.k === 'boilover') hud.pops.push({ k: 'splat', x: STATION.pot[0], y: 0, t: 0 })
             if (f.k === 'boilover' || f.k === 'fire' || f.k === 'expire' || f.k === 'fired') hud.shake = f.k === 'fired' ? 40 : 18
         }
@@ -860,6 +862,22 @@ export default function ShortOrderShout() {
                 if (t % 16 < 8) { ctx.strokeStyle = '#f8a038'; ctx.strokeRect(px + 1, py + 1, TILE - 2, TILE - 2) }
                 ctx.fillStyle = '#f8a038'
                 ctx.fillRect(px + 5, py - 3, 3, 2); ctx.fillRect(px + 10, py - 5, 3, 2); ctx.fillRect(px + 15, py - 3, 3, 2)
+            }
+            // #2119 scorch tell: a ready patty in the last SEAR_TELL ticks before
+            // burning shimmers a TRAVELLING dashed border — moving dashes at a
+            // third rate set, distinct in shape AND rate from fire's fast solid
+            // `!` blink and the ruined pot's slow squiggle (color-blind law).
+            for (let bi = 0; bi < 2; bi++) {
+                const b = g.burners[bi]
+                if (b.state === 'ready' && b.t > SEAR_OK - SEAR_TELL) {
+                    const px = KITCHEN_X + (6 + bi) * TILE, py = KITCHEN_Y
+                    ctx.strokeStyle = '#ffd23f'
+                    ctx.setLineDash([4, 4])
+                    ctx.lineDashOffset = -(Math.floor(t / 3) % 8)
+                    ctx.strokeRect(px + 1.5, py + 1.5, TILE - 3, TILE - 3)
+                    ctx.setLineDash([])
+                    ctx.lineDashOffset = 0
+                }
             }
 
             // floor items
