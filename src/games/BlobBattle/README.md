@@ -79,6 +79,16 @@ P2 (local 2P): A/D slide · S soft · W rotate · F hard drop.
 CPU tier (solo, from the title, desktop keyboard): `1` easy · `3` hard ·
 any other key normal.
 
+### WATCH seat (#1637)
+
+`Y` seats the proven CPU planner on seat 1 (never online — the wire owns those
+pads); any seat-1 key takes it back. The seat never lingers at a terminal
+state (#1656 law, #2036): `__blobbattleTest.watching()` reports false once the
+match is over — a finished match has nothing to drive — while the raw flag
+still clears at `startPlay`. watchcheck's resume gate accordingly accepts a
+match the prover COMPLETED under watch (only seat 1's own drown invalidates the
+route; `scripts/lib/watchbudget.mjs`, pinned by `npm run watchbudgetcheck`).
+
 ## Verify
 
 ```
