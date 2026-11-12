@@ -2061,6 +2061,16 @@ if (MUT) {
     await tryMut('aged-print wash fades to nothing (alpha 0.02)',
         mutMod('layout.js', "export const PHOTO_TINT = 'rgba(146,102,28,0.30)'", "export const PHOTO_TINT = 'rgba(146,102,28,0.02)'", 'm48'),
         (m) => { const t = m.layout.PHOTO_TINT.match(/,\s*([\d.]+)\)/); return !!t && Number(t[1]) >= 0.2 })
+
+    // #2072 m49/m50: the lift lies — a "zoom" that no longer grows the print,
+    // or a hold that can never be reached, is a broken affordance stated as a
+    // law. The pin mirrors the layout invariants; papersplay is the pixel half.
+    await tryMut('the hold "zoom" no longer grows the print (PHOTO_ZOOM.s == PHOTO.s)',
+        mutMod('layout.js', 'export const PHOTO_ZOOM = { s: 1.12, hold: 11 }', 'export const PHOTO_ZOOM = { s: 0.9, hold: 11 }', 'm49'),
+        (m) => m.layout.PHOTO_ZOOM.s > m.layout.PHOTO.s)
+    await tryMut('the photo-press hold never engages (threshold 100000)',
+        mutMod('layout.js', 'export const PHOTO_ZOOM = { s: 1.12, hold: 11 }', 'export const PHOTO_ZOOM = { s: 1.12, hold: 100000 }', 'm50'),
+        (m) => m.layout.PHOTO_ZOOM.hold <= 40)
 }
 
 section('AGED PRINT & LIVE EARS (#1976) — the photo ages, the ear survives the cut')
@@ -2082,6 +2092,27 @@ section('AGED PRINT & LIVE EARS (#1976) — the photo ages, the ear survives the
         'index.jsx: a correct brow/mouth deny carries the sharp evidence tick (1050Hz)')
     ok(/earPix: \(\)/.test(idxSrc) && /sfxTicks: \(\) => sfxTicks/.test(idxSrc),
         'index.jsx: earPix + sfxTicks probes exposed for papersplay (ears per cut, ticks per face deny)')
+}
+
+section('SILHOUETTE & HOLD-TO-INSPECT (#2072) — cuts carry shape, the photo lifts, evidence stays byte-identical')
+{
+    const src2072 = readFileSync(join(SRC, 'index.jsx'), 'utf8')
+    const lay = await import(pathToFileURL(join(SRC, 'layout.js')).href)
+    ok(!!lay.PHOTO_ZOOM, 'layout.js exports PHOTO_ZOOM')
+    ok(lay.PHOTO_ZOOM.s > lay.PHOTO.s && lay.PHOTO_ZOOM.s <= 1.35,
+        `PHOTO_ZOOM.s (${lay.PHOTO_ZOOM.s}) grows the print past PHOTO.s (${lay.PHOTO.s}) but stays a crop, not a blowup`)
+    ok(lay.PHOTO_ZOOM.hold >= 6 && lay.PHOTO_ZOOM.hold <= 40,
+        `the hold is a comfortable press (${lay.PHOTO_ZOOM.hold} ticks at 60 Hz)`)
+    ok(src2072.includes('photoHold >= PHOTO_ZOOM.hold'),
+        'index.jsx: the zoom engages on WORLD ticks vs PHOTO_ZOOM.hold — never a setTimeout')
+    ok(src2072.includes('holdInPhoto = true'),
+        'index.jsx: a press on the photo is inspection, not a stamp')
+    ok(src2072.includes('const v = f.shirtC % 2'),
+        'index.jsx: the silhouette variant keys on shirtC — decor the photo inherits identically (hairC is forced grey in the photo; keying on it would break byte-identity)')
+    ok(src2072.includes('HAIR_SHADOW[f.hairC]') && /HAIR_SHADOW = HAIRS\.map/.test(src2072),
+        'index.jsx: HAIR_SHADOW is derived per cut color and paints the hairline')
+    ok(src2072.includes('photoZoom: () => photoZoom') && src2072.includes('photoRect: () =>'),
+        'index.jsx: photoZoom + photoRect probes exposed for papersplay')
 }
 
 console.log(`\npaperscheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

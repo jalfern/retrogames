@@ -392,6 +392,98 @@ r.check(`eyes get whites — a bare face paints ${art.whitesMax} white px`, art.
 r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px on ${art.pbN} bare faces)`,
     art.pbN >= 2 && art.pbMin > 12 && art.pbMax > art.pbMin, JSON.stringify({ min: art.pbMin, max: art.pbMax, n: art.pbN }))
 
+// #2072 SILHOUETTE + HOLD-TO-INSPECT + the WIDE-HEAD crop gate — a fresh
+// seed-0 day 1: every settled passport photo is scanned. The widest (narrow
+// = 0) head must run the crop >= 55px — the old >=44 gate rode seed 0's
+// single head and could silently pass a shallower zoom. A press-and-hold on
+// the photo must grow the print while portraitPix (the PORTRAIT evidence)
+// counts the SAME bytes — the zoom is booth-side paint, never a rule. And
+// every hair cut carries its shadow tone at the hairline of the counter face.
+{
+    await page.evaluate(() => window.__ppTest.start(0))
+    await wait(700)
+    const geo = await page.evaluate(() => {
+        const t = window.__ppTest.photoRect()
+        const b = document.querySelector('canvas[data-pp-stage]').getBoundingClientRect()
+        return { t, x: b.x, y: b.y, w: b.width, h: b.height }
+    })
+    const photoClient = { x: geo.x + (geo.t.x + geo.t.w / 2) / 680 * geo.w, y: geo.y + (geo.t.y + geo.t.h / 2) / 440 * geo.h }
+    const cropScan = () => page.evaluate(() => {
+        const d = document.querySelector('canvas[data-pp-stage]').getContext('2d').getImageData(588, 64, 66, 76).data
+        const age = (r, g, b) => r >= 179 && r <= 190 && g >= 162 && g <= 172 && b >= 118 && b <= 129
+        let run = 0, best = 0, n = 0
+        for (let row = 0; row < 76; row++) {
+            run = 0
+            for (let x = 0; x < 66; x++) {
+                const i = (row * 66 + x) * 4
+                const k = (d[i] << 16) | (d[i + 1]) << 8 | d[i + 2]
+                const face = !(k === 0xd8d2b8 || k === 0xc9c2a4 || age(d[i], d[i + 1], d[i + 2]))
+                if (face) {
+                    if (row >= 30 && row <= 52) { run++; best = Math.max(best, run) }
+                    n++
+                } else if (row >= 30 && row <= 52) run = 0
+            }
+        }
+        return { best, n }
+    })
+    let wideBest = 0, wideN = 0, zoomDelta = 0, zoomOk = false, liftedOk = false, evHold = true, shadowMax = 0, seen = 0
+    const judged = new Set() // QUOTE pins judged papers (stamp ink crosses the crop) — measure fresh faces only
+    for (let guard = 0; guard < 14 && seen < 6; guard++) {
+        s = await probe()
+        if (s.screen !== 'play' || s.end || s.day !== 1) break
+        if (s.stamp && s.stamp.ticks > 0) { await wait(400); continue }
+        const p = await page.evaluate(() => {
+            const q = window.__ppTest.probe().view.person
+            return q?.passport?.photo ? { name: q.passport.name, narrow: q.passport.photo.narrow, hairC: q.face.hairC } : null
+        })
+        if (!p) {
+            const v0 = await page.evaluate(() => window.__ppTest.verdict())
+            await page.keyboard.press(v0 === 'approve' ? 'a' : 'd')
+            await wait(1100)
+            continue
+        }
+        const fresh = !judged.has(p.name)
+        if (fresh) {
+            await wait(150)
+            const straight = await cropScan()
+            shadowMax = Math.max(shadowMax, await page.evaluate((hc) => {
+                const col = window.__ppTest.hairShadow()[hc]
+                const n = parseInt(col.slice(1, 3), 16), g = parseInt(col.slice(3, 5), 16), b = parseInt(col.slice(5, 7), 16)
+                const d = document.querySelector('canvas[data-pp-stage]').getContext('2d').getImageData(280, 31, 74, 26).data
+                let k = 0
+                for (let i = 0; i < d.length; i += 4) if (d[i] === n && d[i + 1] === g && d[i + 2] === b) k++
+                return k
+            }, p.hairC))
+            const total0 = await page.evaluate(() => { const px = window.__ppTest.portraitPix(); return px ? px.total : -1 })
+            await page.mouse.move(photoClient.x, photoClient.y)
+            await page.mouse.down()
+            await wait(400)
+            const zoomed = await page.evaluate(() => window.__ppTest.photoZoom())
+            const grown = await cropScan()
+            const total1 = await page.evaluate(() => { const px = window.__ppTest.portraitPix(); return px ? px.total : -1 })
+            await page.mouse.up()
+            await wait(150)
+            const lifted = await page.evaluate(() => window.__ppTest.photoZoom())
+            seen++
+            if (p.narrow === 0) { wideBest = Math.max(wideBest, straight.best); wideN++ }
+            if (zoomed && grown.n > zoomDelta) zoomDelta = grown.n - straight.n
+            if (zoomed && grown.n >= straight.n + 150) zoomOk = true
+            if (lifted === false) liftedOk = true
+            if (total0 >= 0 && total1 !== total0) evHold = false
+        }
+        judged.add(p.name)
+        const v = await page.evaluate(() => window.__ppTest.verdict())
+        await page.keyboard.press(v === 'approve' ? 'a' : 'd')
+        await wait(1100)
+    }
+    r.check(`a wide-head photo runs the crop ${wideBest}px (gate >=55; seed 0's narrow head can no longer carry the zoom-crop proof alone)`,
+        wideBest >= 55, `wide photos seen=${wideN}`)
+    r.check(`hold-to-inspect grows the print (${zoomDelta}px more face area at PHOTO_ZOOM)`, zoomOk, `area delta=${zoomDelta}`)
+    r.check('the zoom is booth-side paint — PORTRAIT evidence counts the same bytes while held', evHold)
+    r.check('release lifts the crop back', liftedOk)
+    r.check(`hair carries its shadow tone at the hairline (${shadowMax}px of shadow ink on the counter face)`, shadowMax >= 10)
+}
+
 // #1960 THE SHIFT CLOCK, live: the printed minutes move with real frames,
 // a dawdled day closes the gate (banner + dock + morning rewind), and the
 // finale refuses to survive an unfinished line.

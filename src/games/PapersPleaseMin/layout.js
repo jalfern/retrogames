@@ -47,6 +47,14 @@ export const PAPERS = { x: 356, y: 40, w: 300, h: 148 }
 // same way — and the chin crops at the bottom edge like a real ID photo.
 // paperscheck pins s >= 0.85 and head width s*68 >= 54 so it cannot regress.
 export const PHOTO = { x: 232, y: 24, w: 66, h: 76, s: 0.9, ox: -16, oy: -2 }
+// #2072 HOLD TO INSPECT — the original lets the inspector lift a document
+// and lean in. Press-and-hold the photo (passport on the counter) and the
+// print grows to a larger crop while held; release lifts it back. Booth-side
+// paint only: the PORTRAIT evidence (drawFace at the counter, portraitPix)
+// never sees this scale, so the zoom cannot fake or hide a match. paperscheck
+// pins s strictly above PHOTO.s (a zoom that doesn't zoom is a lie) and the
+// hold at a comfortable 1/6-2/3 s.
+export const PHOTO_ZOOM = { s: 1.12, hold: 11 }
 // #1976 THE PRINT AGES — the original's passport photos are old prints: the
 // whole print (face AND its background) sits desaturated and yellowed while
 // the entrant at the counter is live color. A warm amber wash over the photo
