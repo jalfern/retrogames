@@ -352,6 +352,17 @@ symbol name.
   nothing AND a braked line lands on solid ground. A safe prediction changes nothing, so the
   certified 1-1 line is untouched. `autopilotcheck` pass 3 drives the 1-3 leg (all seven pits
   witnessed, zero deaths, flagpole), and the WATCH seat widened to `levelIndex <= 1`.
+  The last two lives fell to the **sim-answers-were-lying** family (#2111 final, trace
+  `scripts/.shots/qa2111-seed-101.csv` + `qa2111-seed.mjs`): (1) `trapAt(null)` returned
+  *not-a-trap*, so an arc whose sim died — the pit-2 lip head-bump into the `[31,r9]`
+  underside — was scored as a safe jump, and the early-take-off rule (which asks for
+  `trapAt(simJump(16, xLip))`) could never fire either; a dead landing is the worst trap.
+  (2) The reverse-to-runway release `m.vx <= 0.2` was true **while reversing** (vx<0), so
+  the retreat lifted at the lip and Mario oscillated into the pit; it now requires real
+  reversed distance (`apBackDist >= 24px`) and a full stop. Both fixes together: pass 3
+  green 7/7 pits alive to the flagpole, autopilotcheck 16/16. The earlier "seed-variable"
+  note was a red herring: `rand()` only feeds decor and the evolve brain, so the autopilot
+  route is deterministic at any `?seed=` (measured identical traces across three seeds).
   Remaining: 1-4's col-31 firebar kills the autopilot at col 33 (measured, fresh-entry runs
   too) — a phase/timing gate is the next lever toward whole-game certification.
 - **No 1-up mushroom** (`coins % 100 === 0` silently adds a life; no 1-up block exists).
