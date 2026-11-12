@@ -1,63 +1,63 @@
-# STATE — session 253 (2026-11-12, slot a)
+# STATE — RetroGames (last update: 2026-11-12, slot b session end)
 
-## What shipped
-**PLAICRAFT S1 TAIL — RELABEL WRITE ROUTE + iPHONE FLUSH DRIVE** merged as
-`4a07a5e` (PR #2142, Closes #2093). `PATCH /sessions/<key>` on the worker
-rides the read lockdown (same constant-time JON_KEY door): the store's ONE
-permitted write-after-upload repairs seat provenance model→human — operation
-FIXED in `core.applySessionRelabel` (bare `{seat}` SHAPE fail-closed, reverse
-refused, modelId dropped, bytes outside the seat byte-identical, metadata
-survives). Tool: `JON_KEY=… npm run sessions -- relabel <key>…`. Prod
-VERIFIED live: PATCH without key → 401 `unauthorized` (route deployed, door
-armed); deploy-relay run green; Vercel green. **Jon can now fix the three
-stored iPhone takes with the one command in relay/README.** #2093 fully
-shipped (items 2–4 were #2138). Item 5: voicedrive gained a phone-shape page
-— real MediaRecorder behind a ~500 ms post-stop event fence; the discriminating
-law (stored b64 contains the fenced bytes ⇒ #2058 settle-stamp must reach the
-byte-arrival floor from mic-open) lands exactly (2252 vs 2252) and a stop-click
-stamp misses by ~650 ms. relaycheck 75/75 (--mutate-readlock kills exactly the
-8 security gates; --mutate keeps its 5); hand-mutants: core one-way-guard strip
-→ 4 integrity gates red; `settle();rec.stop()` → voicedrive kills exactly the
-settle law. Both restored. recordcheck 123/123, voicedrive 25/25, lints+build
-green.
+## Now playing
+- Arcade: HOMEBODY (`/retrogames/homebody`) — the lot has a second neighbour.
+  Ivy the market gardener arrives 12:00–19:00 on her own clock, climbs her
+  own bond ladder, and from FRIENDS up her visits carry a basket (FAMILY adds
+  §15 honey-money). Phone-ready: tap to start, court keys ride the pad's A/B.
+- Papers-Min still ships the ageing neighbourhood (#2080); all other titles
+  unchanged.
 
-## The session's catches
-- **Tree-shaking deletes admin clients from the site bundle.** Rollup drops
-  `listSessions`/`relabelSession` (Node-tool-only exports) from every chunk —
-  `x-session-key` appears in NO prod JS. For worker-route work the honest prod
-  marker is the WORKER's new answer (401 vs old 400), not a bundle grep.
-  Beware decoys: the only 'PATCH' hits in chunks were the Forge board's
-  build-floor COMMENT text — data, not code.
-- **A law can be trivially true and still be the wrong probe.**
-  `clock.finish()` stamps the trace end at settle, so `ms >= clockEnd` holds by
-  construction even pre-#2058. Discriminate against a quantity the fix can't
-  move: absolute byte-arrival time from mic-open.
-- **Mutant order = mutant grading.** My first draft probed no-key PATCH before
-  the feature round-trip; under --mutate-readlock the unlocking write LANDED
-  (right signal) and cascaded confusing 422s through the feature gates. Now
-  security probes get a fresh take — red gates name only the stripped door.
-- **Fresh worktree = no node_modules.** `npm ci` before vite/eslint (npm ≥ 11,
-  js-dos peer). mutateguard refused recordcheck on the dirty tree — commit
-  first, then run; it works exactly as #2047 intended.
+## Shipped this session
+- **#2143 (PR #2150, squash 22218fe):** Ivy — second visitor, own schedule
+  (window honest: hour clamped ≤18 so a late schedule can't strand her),
+  `rel.ivy` on the proven #1817 law (0.055/s grow, one rel-up per edge,
+  0.03/h fade via relSub), gift economy (hunger+0.18/+1 content at FRIENDS;
+  §15+2nd point at FAMILY, basket rides stateHash), court C/X symmetric with
+  Fern, nearest-visitor autonomy (chat goals carry `v`), roomClear refuses the
+  wing on Ivy, `flower IVY` BONDS row, swinging-basket sprite, marquee beat.
+  peoplecheck 185→211 (+26 gates); mutant by hand: kill the ivy chat feed →
+  exactly the two chat-law gates red (209/2), restore 211/0. Drive +5 live
+  gates (plum 117 px, basket tan 100–114 px, panel pips rgb(163,87,155)).
+  Prod verified live.
 
-## Ladder trail
-TARGET #1711 answered "already yours: resume it" (slot-a claim still live).
-No halt/steer/building corpse; jonq empty. Slot b shipped #2080 mid-session
-(rule-4 game-code streak fine).
+## Catch of the session (learnings that generalize)
+- **A poll whose grep errors is a poll that never verifies.** `grep` on
+  minified bundles dies with "character not in range" under multibyte locales
+  — silent exit 2, marker "absent" forever. Production was live while I
+  polled. Use `LC_ALL=C grep -a` for anything binary-ish; a marker missing
+  from a 1 MB bundle is an instrument failure first.
+- **Prod verify: entry-hash flips are the wrong witness.** Vite ships the
+  game strings in lazy chunks; the HTML entry hash can predate the deploy and
+  survive it. Scan the entry's *referenced* chunks for a game-unique string
+  (found Ivy in `index-BWSc_ee7.js`; Fern's strings live nowhere in the
+  entry either).
+- **Same failure twice is not a flake.** Two identical `hearts 0 / pink px 0`
+  drive failures → reproduced on clean origin/main with my diff stashed →
+  pre-existing, filed (#2149), lane moved on. The law gate passing beside the
+  pixel gate pinpoints which arm broke (event plumbing yes, particles no).
+- **Schedules need a reachability clamp.** 14+rng·6 base vs a 19:00 window
+  could strand Ivy never-arriving on high draws. Any windowed scheduler must
+  clamp its fire time strictly inside the window (found by designing the
+  "after dusk she never appears" gate).
 
-## Open questions
-- none filed (Jon's 3 fresh phone takes + the relabel run with the real secret
-  are both requested on #1711 with exact commands).
+## Open lanes / queue
+- #1711 PLAICRAFT S1 — slot a live on it (tail PR #2142 merged mid-session);
+  do not touch.
+- QA board open: #2084/#2087/#2089/#2104/#2128/#2133/#2135 (new), #2139,
+  #2154 (new: Ivy polish pass), #2149 (new: drive hearts dead on main),
+  #2136/#2137 (lane:platform).
+- No open question issues (`jonq list games` empty at claim and at exit).
 
-## Next
-- `next` stays on #1711. Lane-doable remainder: none left in-house — the
-  stage's last lines are Jon's: run the relabel command, play 3 fresh takes
-  (one clapping), then `plaicraft:clap` grades the clap take ±50 ms. QA board:
-  #2135, #2136 (±50 proof under load), #2137 (outbox scenario C).
-- If #1711 idles past Jon: normal ladder; builders-the-reverse applies.
+## Harness state
+- peoplecheck 211 gates (+26 SECOND VISITOR); homebodydrive 45 gates (5 new;
+  the +2 red #2076 ones are #2149's problem, not the game's).
+- Slot b park: `node scripts/statepark.mjs park b`. Dev server 5178 stopped by
+  this session. Main checkout detached at origin/main. Worktree
+  `~/Dev/retrogames-forge-homebody-ivy` kept (clean, detached at merged tip).
 
-## Hygiene at exit
-Dev server :5173 (mine) stopped. Worktree `retrogames-forge-plaicraft-s1-tail`
-removed after merge, registrations pruned. Main checkout detached at
-origin/main. STATE committed to main (this session's target merged) and parked
-via statepark park a.
+## Next builder moves (suggestions, not commitments)
+- NEVER-DRY picked Homebody (score 5) this session; remaining unowned Homebody
+  gaps: kids/pets, insult-on-touch (partly #2135#1), deeper multi-room.
+- ViperPit/PickRush/TidyBot/TalkMeDown each still carry 4 unowned README gaps.
+- If #1711 goes quiet, its lane-doable tail is listed on the issue by slot a.
