@@ -41,11 +41,14 @@ const MESSAGES = [
     'The mailbox pays the bills on workdays. § buys furniture to raise the home.',
     'Fern the neighbour wanders in by day — chat fills the blue bar.',
     'CHAT builds BONDS — Fern at FAMILY visits sooner and lingers. Neglect cools them.',
+    'Ivy shops the market — chat grows HER bond too. At FRIENDS she brings a basket; FAMILY adds honey-money.',
     'Red needs flare tempers — a SPAT cracks BONDS. Fill both, side by side, to thaw.',
     'Bank §300, then B + card 9: hammer on a Spare Room and the lot grows.',
     'Bank 80 contentment and the lifetime wish comes true.',
 ]
 const PRESS = 'TAP / PRESS ANY KEY TO MOVE IN'
+// #2143: bond-key → name, for the toast lines (three points on the triangle now).
+const BONDER = { house: 'HOUSEHOLD', fern: 'FERN', ivy: 'IVY' }
 
 const CUR = { l: ['ArrowLeft', 'KeyA'], r: ['ArrowRight', 'KeyD'], u: ['ArrowUp', 'KeyW'], d: ['ArrowDown', 'KeyS'] }
 const MOVE_KEYS = new Set([...CUR.l, ...CUR.r, ...CUR.u, ...CUR.d])
@@ -123,16 +126,30 @@ const HomebodyGame = () => {
                     case 'sell': audioController.playSweep(420, 180, 0.12, 'square', 0.05); break
                     case 'work-go': audioController.playSweep(260, 620, 0.3, 'square', 0.06); if (live) say(`${e.name.toUpperCase()} LEAVES FOR WORK`); break
                     case 'pay': audioController.playTone(880, 0.06, 'triangle', 0.05); audioController.playTone(1175, 0.06, 'triangle', 0.05); audioController.playTone(1568, 0.1, 'triangle', 0.05); if (live) say(`PAYDAY  §${e.pay}`); break
-                    case 'visit': audioController.playTone(660, 0.14, 'sine', 0.06); setTimeout(() => audioController.playTone(880, 0.18, 'sine', 0.06), 150); if (live) say('THE NEIGHBOUR RINGS'); break
+                    case 'visit':   // #2143: two neighbours now — each gets her own ring
+                        if (e.name === 'Ivy') {
+                            audioController.playTone(587, 0.14, 'sine', 0.06); setTimeout(() => audioController.playTone(988, 0.18, 'sine', 0.06), 150)
+                            if (live) say('IVY AT THE GATE')
+                        } else {
+                            audioController.playTone(660, 0.14, 'sine', 0.06); setTimeout(() => audioController.playTone(880, 0.18, 'sine', 0.06), 150)
+                            if (live) say('THE NEIGHBOUR RINGS')
+                        }
+                        break
                     case 'visit-end': audioController.playSweep(520, 300, 0.2, 'sine', 0.04); break
+                    case 'gift':   // #2143: the market basket lands — warm arpeggio, gold glints
+                        audioController.playTone(523, 0.07, 'triangle', 0.05)
+                        setTimeout(() => audioController.playTone(659, 0.07, 'triangle', 0.05), 90)
+                        setTimeout(() => audioController.playTone(880, 0.14, 'triangle', 0.05), 180)
+                        if (live) { say(e.money ? `IVY BRINGS A GIFT — §${e.money}` : 'IVY BRINGS A GIFT ♥'); sparkles() }
+                        break
                     case 'rel-up':
                         audioController.playTone(659, 0.07, 'sine', 0.05)
                         setTimeout(() => audioController.playTone(988, 0.14, 'sine', 0.05), 90)
-                        if (live) { say(`BOND RISES — ${e.k === 'fern' ? 'FERN' : 'HOUSEHOLD'}: ${REL_NAMES[e.level]}`); sparkles() }
+                        if (live) { say(`BOND RISES — ${BONDER[e.k] || 'HOUSEHOLD'}: ${REL_NAMES[e.level]}`); sparkles() }
                         break
                     case 'rel-down': // #2070: the ladder runs both ways now
                         audioController.playSweep(560, 300, 0.25, 'square', 0.05)
-                        if (live) say(`BOND FALLS — ${e.k === 'fern' ? 'FERN' : 'HOUSEHOLD'}: ${REL_NAMES[e.level]}`)
+                        if (live) say(`BOND FALLS — ${BONDER[e.k] || 'HOUSEHOLD'}: ${REL_NAMES[e.level]}`)
                         break
                     case 'spat': // #2070: the crack — sour dissonance, red sparks, a jolt
                         audioController.playTone(233, 0.09, 'sawtooth', 0.06)
@@ -149,7 +166,7 @@ const HomebodyGame = () => {
                     case 'coo': // #2131: the compliment — a warm two-note and gold glints
                         audioController.playTone(659, 0.06, 'triangle', 0.05)
                         setTimeout(() => audioController.playTone(831, 0.12, 'triangle', 0.05), 80)
-                        if (live) { say(e.k === 'fern' ? 'A WORD FOR FERN ♥' : 'A WORD FOR YOUR BETTER HALF ♥'); burst(e.x, e.y - 10, 5, '#ffe6a8', 2.2, 'flash') }
+                        if (live) { say(e.k === 'fern' ? 'A WORD FOR FERN ♥' : e.k === 'ivy' ? 'A WORD FOR IVY ♥' : 'A WORD FOR YOUR BETTER HALF ♥'); burst(e.x, e.y - 10, 5, '#ffe6a8', 2.2, 'flash') }
                         break
                     case 'affection': // #2131: the FAMILY tier pays in hearts — full chord
                         audioController.playTone(523, 0.07, 'sine', 0.05)
@@ -318,7 +335,7 @@ const HomebodyGame = () => {
             drawGate(ctx, g.sec)
             drawClouds(ctx, g.sec)
             for (const it of g.items) drawItem(ctx, it, g.sec)
-            const order = [...g.people.map((p) => ({ p, v: p.y })), ...(g.visitor ? [{ p: g.visitor, v: g.visitor.y }] : [])].sort((a, b) => a.v - b.v)
+            const order = [...g.people.map((p) => ({ p, v: p.y })), ...(g.visitor ? [{ p: g.visitor, v: g.visitor.y }] : []), ...(g.ivy ? [{ p: g.ivy, v: g.ivy.y }] : [])].sort((a, b) => a.v - b.v)   // #2143: both neighbours share the lot
             for (const o of order) {
                 // #2076: the pair argues and sulks ON screen — storm puff at the
                 // crack, a lasting away-lean through the cold war (residents only).
@@ -579,7 +596,7 @@ const HomebodyGame = () => {
             return {
                 tick: gs.tick, score: gs.content, done: gs.done || false, seed: gs.seed,
                 money: gs.money, content: gs.content, day: gs.day, hour: Math.round(gs.hour * 10) / 10,
-                items: gs.items.length, visitors: gs.visitor ? 1 : 0, ext: gs.ext,
+                items: gs.items.length, visitors: (gs.visitor ? 1 : 0) + (gs.ivy ? 1 : 0), ext: gs.ext,   // #2143: the lot can hold two neighbours
                 hero: [Math.round(gs.people[gs.active].x), Math.round(gs.people[gs.active].y)], cursor: [gs.cursor.r, gs.cursor.c],
                 needs: Object.fromEntries(gs.people.map((p) => [p.name, Object.fromEntries(NEEDS.map((n) => [n, Math.round(p.needs[n] * 100) / 100]))])),
                 hash: stateHash(gs),
@@ -595,11 +612,12 @@ const HomebodyGame = () => {
                     people: gs.people.map((p) => ({ name: p.name, x: Math.round(p.x), y: Math.round(p.y), needs: { ...p.needs }, working: p.working, fainted: p.faintT > 0 })),
                     items: gs.items.map((it) => ({ id: it.id, r: it.r, c: it.c })),
                     ext: gs.ext,
-                    rel: { house: gs.rel.house, fern: gs.rel.fern },
+                    rel: { house: gs.rel.house, fern: gs.rel.fern, ivy: gs.rel.ivy },   // #2143: third meter
                     spats: gs.spats, grudge: gs.grudge, spatFx: Math.round(gs.spatFx * 10) / 10,   // #2070/#2076
                     cmdCd: Math.round(gs.cmdCd * 10) / 10, cooFx: Math.round(gs.cooFx * 10) / 10, cooDeep: !!gs.cooDeep,   // #2131
                     courtKind: (() => { const t = courtTarget(gs); return t ? t.k : null })(), active: gs.active,
                     visitor: gs.visitor ? gs.visitor.name : null,
+                    ivy: gs.ivy ? { name: gs.ivy.name, gift: !!gs.ivy.gift, state: gs.ivy.state } : null,   // #2143
                 }) : { screen: screenRef.current, seed },
                 // #1637 watchcheck pilot drives these.
                 watching: () => watchingRef.current,
@@ -616,7 +634,7 @@ const HomebodyGame = () => {
                 // #2070: rig the spat scenario — park the pair beside each
                 // other, both in the red; `thaw` lifts their tempers up.
                 foul: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; b.r = 3; b.c = 4; b.path = null; for (const p of gs.people) { for (const n of NEEDS) p.needs[n] = 0.3; p.working = false; p.faintT = 0 } gs.grudge = 0; gs.spatCd = 0 } },
-                park: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; a.path = null; b.r = 3; b.c = 4; b.path = null; for (const p of gs.people) { p.use = null; p.goal = null; p.working = false; p.faintT = 0; for (const n of NEEDS) p.needs[n] = 0.5 } gs.visitor = null; gs.cmdCd = 0 } },   // #2131: adjacency, idle for real, tempers NEUTRAL (mood 1: no organic spat, no instant make-up — the law itself is pinned in peoplecheck), nobody else to address, cooldown ready
+                park: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; a.path = null; b.r = 3; b.c = 4; b.path = null; for (const p of gs.people) { p.use = null; p.goal = null; p.working = false; p.faintT = 0; for (const n of NEEDS) p.needs[n] = 0.5 } gs.visitor = null; gs.ivy = null; gs.cmdCd = 0 } },   // #2131/#2143: adjacency, idle for real, tempers NEUTRAL (mood 1: no organic spat, no instant make-up — the law itself is pinned in peoplecheck), nobody else to address, cooldown ready
                 thaw: () => { if (gs) for (const p of gs.people) for (const n of NEEDS) p.needs[n] = 0.9 },
                 hearts: () => particles.filter((pt) => pt.kind === 'heart').length,   // #2076: the make-up paid hearts?
                 hash: () => (gs ? stateHash(gs) : 0),
@@ -641,7 +659,7 @@ const HomebodyGame = () => {
             mountDbg({
                 title: 'HOMEBODY',
                 getState: () => gs ? [
-                    `d${gs.day} ${gs.hour.toFixed(1)}h §${gs.money} wish ${gs.content}/${WIN_CONTENT} items=${gs.items.length} build=${gs.build}${gs.visitor ? ' Fern!' : ''}`,
+                    `d${gs.day} ${gs.hour.toFixed(1)}h §${gs.money} wish ${gs.content}/${WIN_CONTENT} items=${gs.items.length} build=${gs.build}${gs.visitor ? ' Fern!' : ''}${gs.ivy ? ` Ivy${gs.ivy.gift ? '🧺' : ''}!` : ''}`,
                     gs.people.map((p) => `${p.name}:${NEEDS.map((n) => Math.round(p.needs[n] * 100)).join('/')}${p.working ? ' @work' : ''}${p.faintT > 0 ? ' FAINT' : ''}`).join('  '),
                 ] : ['attract'],
                 actions: [
@@ -649,6 +667,7 @@ const HomebodyGame = () => {
                     { label: 'BUILD ROOM', run: () => { if (gs && !gs.ext) { gs.money = Math.max(gs.money, EXT_ROOM.price); buildRoom(gs) } return gs && gs.ext ? 'spare room up — the lot grew' : 'already built / no sim' } },
                     { label: 'GRANT WISH', run: () => { if (gs) { gs.content = WIN_CONTENT } return 'wish banked — next content tick wins' } },
                     { label: 'RING FERN', run: () => { if (gs) { gs.visitAfter = Math.min(gs.visitAfter, Math.floor(gs.hour)); gs.visitGap = 0 } return 'the bell rings soon' } },
+                    { label: 'RING IVY', run: () => { if (gs) { gs.ivyAfter = Math.min(gs.ivyAfter, Math.floor(gs.hour)); gs.ivyGap = 0 } return 'Ivy swings by soon' } },   // #2143
                     { label: 'NEW SEED', run: () => { seed = nextSeed(seed); startPlay(); return `reseeded ${seed}` } },
                 ],
             })

@@ -309,6 +309,24 @@ export function drawPerson(ctx, p, t, active, fx = null, lean = 0) {
     if (leanA) { ctx.save(); ctx.translate(x, y + 11); ctx.rotate(leanA); ctx.translate(-x, -(y + 11)) }
     body(ctx, p, t, bob, fx, lean)
     if (leanA) ctx.restore()
+    // #2143: Ivy of FRIENDS+ arrives with the market basket — woven pixels,
+    // greens and a tomato on top; it swings on the walk, rests when she hangs.
+    if (p.gift) {
+        const bx = x + 8, fy = y + 4
+        const swing = p.path && p.path.length ? Math.sin(p.walkPhase * 2) * 0.12 : 0
+        ctx.save(); ctx.translate(bx, fy); ctx.rotate(swing)
+        ctx.fillStyle = '#c9995c'
+        ctx.fillRect(-5, 0, 10, 6)
+        ctx.fillStyle = '#8a6238'
+        ctx.fillRect(-5, 0, 10, 1)
+        ctx.fillRect(-5, 3, 10, 1)
+        ctx.fillRect(-1, 0, 1, 6)
+        ctx.fillStyle = '#4fae5f'
+        ctx.fillRect(-4, -3, 3, 3); ctx.fillRect(1, -2, 3, 2)
+        ctx.fillStyle = '#d1483f'
+        ctx.beginPath(); ctx.arc(0.5, -1.5, 1.6, 0, 7); ctx.fill()
+        ctx.restore()
+    }
     // #2076: the spat tell — a little storm cloud throwing a bolt over this head
     if (fx === 'spat') {
         const cy = y - 34 + Math.sin(t * 3 + p.x) * 1
@@ -380,7 +398,7 @@ function body(ctx, p, t, bob, fx = null, lean = 0) {
     ctx.fillStyle = '#e8c29a'
     ctx.beginPath(); ctx.arc(x, y - 11 + bob, 5.4, 0, 7); ctx.fill()
     // hair
-    ctx.fillStyle = p.name === 'Fern' ? '#2f7d3a' : p.name === 'Mira' ? '#7a4a28' : '#3c2a17'
+    ctx.fillStyle = p.name === 'Fern' ? '#2f7d3a' : p.name === 'Mira' ? '#7a4a28' : p.name === 'Ivy' ? '#5d3b63' : '#3c2a17'
     ctx.beginPath(); ctx.arc(x, y - 12.4 + bob, 5.4, Math.PI, 0); ctx.fill()
     // eyes — on a cold war they turn away from the partner (#2076)
     ctx.fillStyle = '#241a10'
@@ -485,6 +503,8 @@ export function drawPanel(ctx, s, t) {
     // chill until the pair makes up (the spark comes back with the level).
     bondRow(ctx, PANEL_X + 12, by + 12, 'heart', s.grudge ? '#8c3b34' : '#e2574c', relLevel(s.rel.house), 'HOUSE')
     bondRow(ctx, PANEL_X + 12, by + 26, 'leaf', '#4fae5f', relLevel(s.rel.fern), 'FERN')
+    // #2143: the third point of the triangle — flower = Ivy, the market neighbour
+    bondRow(ctx, PANEL_X + 12, by + 40, 'flower', '#a3579b', relLevel(s.rel.ivy), 'IVY')
     if (relLevel(s.rel.house) === 3 && Math.floor(t * 2.5) % 2 === 0) {
         ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1
         ctx.strokeRect(PANEL_X + 12 + 3 * 8 + 0.5, by + 12 + 0.5, 5, 5)
@@ -492,6 +512,10 @@ export function drawPanel(ctx, s, t) {
     if (relLevel(s.rel.fern) === 3 && Math.floor(t * 2.5) % 2 === 0) {
         ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1
         ctx.strokeRect(PANEL_X + 12 + 3 * 8 + 0.5, by + 26 + 0.5, 5, 5)
+    }
+    if (relLevel(s.rel.ivy) === 3 && Math.floor(t * 2.5) % 2 === 0) {   // #2143
+        ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1
+        ctx.strokeRect(PANEL_X + 12 + 3 * 8 + 0.5, by + 40 + 0.5, 5, 5)
     }
     // lifetime wish meter
     ctx.fillStyle = '#9fb4d8'; ctx.font = 'bold 9px monospace'
@@ -534,13 +558,19 @@ function bondRow(ctx, x, y, glyph, col, lv, label) {
         ctx.arc(x + 8, y + 1.5, 2.6, Math.PI, 0)
         ctx.lineTo(x + 6, y + 6.5)
         ctx.closePath(); ctx.fill()
-    } else {
+    } else if (glyph === 'leaf') {
         ctx.fillStyle = col
         ctx.beginPath()
         ctx.ellipse(x + 6, y + 2, 2.4, 4, -Math.PI / 4, 0, 7)
         ctx.fill()
         ctx.strokeStyle = col; ctx.lineWidth = 1
         ctx.beginPath(); ctx.moveTo(x + 7.5, y + 3.5); ctx.lineTo(x + 10, y + 6); ctx.stroke()
+    } else {
+        // #2143: flower — Ivy's BONDS glyph. Four petals, gold heart of it.
+        ctx.fillStyle = col
+        for (const [dx, dy] of [[0, -2.3], [2.3, 0], [0, 2.3], [-2.3, 0]]) { ctx.beginPath(); ctx.arc(x + 5 + dx, y + 3 + dy, 1.9, 0, 7); ctx.fill() }
+        ctx.fillStyle = '#ffd24a'
+        ctx.beginPath(); ctx.arc(x + 5, y + 3, 1.3, 0, 7); ctx.fill()
     }
     for (let i = 0; i < 4; i++) {
         const px = x + 14 + i * 8
