@@ -26,9 +26,9 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, dshow, MON, FEATURES, stampLines, portraitDiffs } from '../src/games/PapersPleaseMin/rules.js'
-import { genWeek, genDay, viewOf, CITY2C, COUNTRIES, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, VISIT_WINDOW, WALL_POOL, wallNameAt, weekWallNames, weekDecoyCount } from '../src/games/PapersPleaseMin/gen.js'
+import { genWeek, genDay, viewOf, CITY2C, COUNTRIES, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, VISIT_WINDOW, WALL_POOL, wallNameAt, weekWallNames, weekDecoyCount, repChapter, turnLineFor, againLineFor, TURN_CANONICAL } from '../src/games/PapersPleaseMin/gen.js'
 import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges, monthTurn, isMoneyDeath } from '../src/games/PapersPleaseMin/sim.js'
-import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, RENT, PAYFX, ID, PHOTO, BUBBLE, EVID, SETTLE, QUOTE, RECOGNITION, wallFit, ruleLines } from '../src/games/PapersPleaseMin/layout.js'
+import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, RENT, PAYFX, ID, PHOTO, BUBBLE, BUBBLE_TAIL, EVID, SETTLE, QUOTE, RECOGNITION, ARC_MUG, ARC_HL, SEIZE, wallFit, ruleLines, bulletinRows } from '../src/games/PapersPleaseMin/layout.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SRC = join(HERE, '../src/games/PapersPleaseMin')
@@ -514,10 +514,12 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
             }
             for (const a of regs) weekSeats.add(a.person.regular)
             // #1997 purity everywhere, not just the arc day: personal speech
-            // is atmosphere on EVERY day of the week.
+            // is atmosphere on EVERY day of the week. #1988: `seize` rides the
+            // strip too — the argue line is decor with a witness already on the
+            // wall; stripping it must never move a verdict.
             for (const a of day.queue) {
                 const v = viewOf(day, a)
-                const stripped = { ...v, person: { ...v.person, say: undefined } }
+                const stripped = { ...v, person: { ...v.person, say: undefined, seize: undefined } }
                 ok(decide(v).verdict === decide(stripped).verdict, `seed ${seed} day ${day.n}: say-line leaked into the verdict`)
             }
             for (const a of regs) {
@@ -546,14 +548,16 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
                 const isArcTurn = day.n === arc.day && c.id === arc.id
                 ok(Array.isArray(say) && say.length >= 1, `seed ${seed} day ${day.n}: ${c.id} stood silent at the glass — authored faces speak`)
                 if (isArcTurn) {
-                    ok(say.length === 2 && say[0] === 'YOU AGAIN.' && /\.\.\./.test(say[1]),
+                    // #1988 REPERTOIRE: the protest rides the chapter — the law
+                    // is now the AUTHORED SET (canonical / turnAlt), not one line.
+                    ok(say.length === 2 && say[0] === 'YOU AGAIN.' && say[1] === turnLineFor(c, seed) && /\.\.\./.test(say[1]),
                         `seed ${seed} day ${day.n}: the turn lost its canonical pair — ${JSON.stringify(say)}`)
                 } else if (day.n === firstVisitDay(seed, REGULARS.findIndex((k) => k.id === c.id))) {
                     ok(say.length === 2 && say[0] === c.lines.greet && say[1] === c.lines.hook,
                         `seed ${seed} day ${day.n}: ${c.id}'s first walk-up forgot its greeting thread — ${JSON.stringify(say)}`)
                     hooked.add(`${seed}:${c.id}`)
                 } else {
-                    ok(say.length === 3 && say[0] === 'YOU AGAIN.' && say[1] === c.lines.again && say[2] === c.lines.follow,
+                    ok(say.length === 3 && say[0] === 'YOU AGAIN.' && say[1] === againLineFor(c, seed) && say[2] === c.lines.follow,
                         `seed ${seed} day ${day.n}: ${c.id}'s return forgot its payoff — ${JSON.stringify(say)}`)
                     paid.add(`${seed}:${c.id}`)
                 }
@@ -678,7 +682,7 @@ section('THE ARC (#1983) — one regular turns wanted, Jorji-style')
         const d7 = w.days[6]
         const rememberer = d7.queue.find((x) => x.person.regular === backId)
         ok(!!rememberer && !rememberer.person.arc && Array.isArray(rememberer.person.say) && rememberer.person.say.length === 3 &&
-           rememberer.person.say[0] === 'YOU AGAIN.' && rememberer.person.say[1] === REGULARS[backIdx].lines.again &&
+           rememberer.person.say[0] === 'YOU AGAIN.' && rememberer.person.say[1] === againLineFor(REGULARS[backIdx], seed) &&
            rememberer.person.say[2] === REGULARS[backIdx].lines.follow,
             `seed ${seed}: day 7's returning face forgot its callback thread — ${JSON.stringify(rememberer && rememberer.person.say)}`)
         ok(decide(viewOf(d7, rememberer)).verdict === 'approve', `seed ${seed}: the plain recidivist was convicted — only the arc turns`)
@@ -1237,7 +1241,10 @@ section('THE WALL FITS THE BOOTH (#410) — nothing hides, nothing is postage')
     ok(Math.max(BUBBLE.h, 8 + 13 * 1) === 34 && Math.max(BUBBLE.h, 8 + 13 * 2) === 34 && Math.max(BUBBLE.h, 8 + 13 * 3) === 47,
         '#2003 the bubble growth law drifted — 1/2-line fields must not move, a 3-line thread needs 47')
     ok(BUBBLE.y + 47 <= CHS - STRIP_H - 6, 'a grown three-line bubble crowds the strip or the witness line')
-    for (const ln of [...REGULARS.flatMap((c) => [c.lines.greet, c.lines.hook, c.lines.again, c.lines.follow]), 'YOU AGAIN.', '...I NO DO ANYTHING.'])
+    // #1988 the REPERTOIRE pool joins the fit law: every authored line the
+    // cast can carry — threads, canonical pair, chapter alternates — fits the
+    // field it will ever print into at 10px monospace.
+    for (const ln of [...REGULARS.flatMap((c) => [c.lines.greet, c.lines.hook, c.lines.again, c.lines.follow, c.turnAlt, c.againAlt]), 'YOU AGAIN.', TURN_CANONICAL])
         ok(ln.length * 10 * CHAR <= BUBBLE.w - 14, `speech line "${ln}" overflows the bubble (${ln.length * 10 * CHAR}px in ${BUBBLE.w - 14}px)`)
     // and the theoretical worst day the generator is allowed to build: the
     // full 8-rule sheet, four countries, five wanted names (#410: the old
@@ -1799,7 +1806,7 @@ if (MUT) {
     //     but the wall never names the familiar face — an invisible criminal,
     //     and the booth (decide) lets the turn walk free.
     await tryMut('arc turn never printed on the sheet (invisible Jorji)',
-        mutMod('gen.js', 'day.wanted.push({ name: c.name, id: a.person.passport.id, planted: true })', 'void 0', 'm27'),
+        mutMod('gen.js', 'day.wanted.push({ name: c.name, id: a.person.passport.id, planted: true, face: { ...c.face, mark: c.mark } })', 'void 0', 'm27'),
         (m) => {
             for (const seed of SEEDS) {
                 const w = m.gen.genWeek(seed)
@@ -1833,7 +1840,7 @@ if (MUT) {
     //     remembers them — the recognition beat the whole stage is named for.
     //     (Anchor re-pinned #1997: the callback grew its personal line.)
     await tryMut('recalling face loses its line (the neighborhood forgets)',
-        mutMod('gen.js', "a.person.say = ['YOU AGAIN.', c.lines.again, c.lines.follow]", 'a.person.say = null', 'm29'), // #2003 re-anchored: the return beat is a thread now
+        mutMod('gen.js', "a.person.say = ['YOU AGAIN.', againLineFor(c, seed), c.lines.follow]", 'a.person.say = null', 'm29'), // #2003 re-anchored: the return beat is a thread now; #1988: and its callback beat rides the chapter pool
         (m) => {
             for (const seed of SEEDS) {
                 const w = m.gen.genWeek(seed)
@@ -1963,7 +1970,7 @@ if (MUT) {
     //     thread ends dangling. Verdicts unaffected; shape (return=3) and
     //     the planted-thread continuity witness are what kill it.
     await tryMut('thread payoff dropped (the return never answers the hook)',
-        mutMod('gen.js', "a.person.say = ['YOU AGAIN.', c.lines.again, c.lines.follow]", "a.person.say = ['YOU AGAIN.', c.lines.again]", 'm35'),
+        mutMod('gen.js', "a.person.say = ['YOU AGAIN.', againLineFor(c, seed), c.lines.follow]", "a.person.say = ['YOU AGAIN.', againLineFor(c, seed)]", 'm35'),
         (m) => {
             for (const seed of SEEDS) {
                 const arc = m.gen.arcForWeek(seed)
@@ -2175,6 +2182,51 @@ if (MUT) {
             }
             return true
         })
+
+    // 53–56: #1988. m53 erases the mugshot (the bulletin is text-only again —
+    // the pass's signature feature dies). m54 freezes the chapter mixer (the
+    // neighborhood speaks one week forever). m55 mutes the seize aftershock.
+    // m56 hangs mugshots on every decoy — day 6's four portrait bumps push
+    // the wall past the scale box: unfair by furniture, caught by the fit law.
+    await tryMut('bulletin forgets the arc face (no mugshot on the wall)',
+        mutMod('gen.js', 'planted: true, face: { ...c.face, mark: c.mark } })', 'planted: true })', 'm53'),
+        (m) => {
+            for (const seed of SEEDS) {
+                const w = m.gen.genWeek(seed)
+                if (!w.days[5].wanted.some((x) => x.face)) return false
+            }
+            return true
+        })
+    await tryMut('chapter frozen at week 0 (the neighborhood never learns new lines)',
+        mutMod('gen.js', 'export const repChapter = (seed) => Math.floor(seed / REGULARS.length) % 2', 'export const repChapter = (seed) => 0', 'm54'),
+        (m) => {
+            const heard = new Set()
+            for (const seed of SEEDS) {
+                const w = m.gen.genWeek(seed)
+                heard.add(w.days[5].queue.find((x) => x.person.arc).person.say[1])
+            }
+            return heard.size > 1
+        })
+    await tryMut('seized neighbor leaves without a word (no aftershock)',
+        mutMod('gen.js', 'a.person.seize = c.seize', 'a.person.seize = null', 'm55'),
+        (m) => {
+            for (const seed of SEEDS) {
+                const w = m.gen.genWeek(seed)
+                if (!w.days[5].queue.find((x) => x.person.arc).person.seize) return false
+            }
+            return true
+        })
+    await tryMut('every decoy gets a mugshot (the wall outgrows its five rows)',
+        mutMod('gen.js', 'day.wanted.push({ name: wallNameAt(seed, n, k), id: 7000 + Math.floor(rnd() * 800), planted: false })', 'day.wanted.push({ name: wallNameAt(seed, n, k), id: 7000 + Math.floor(rnd() * 800), planted: false, face: REGULARS[0].face })', 'm56'),
+        (m) => {
+            for (const seed of SEEDS) {
+                const w = m.gen.genWeek(seed)
+                const d6 = w.days[5]
+                const f = m.layout.wallFit(d6, d6.rules.map((r) => m.rules.RULES[r].text))
+                if (f.bottom > m.layout.SCALE.y) return false
+            }
+            return true
+        })
 }
 
 section('AGED PRINT & LIVE EARS (#1976) — the photo ages, the ear survives the cut')
@@ -2270,6 +2322,142 @@ section('RECOGNITION CUE (#1982) — the door knows its regulars')
     ok(!/recall/.test(rulesSrc2), 'rules.js reads recall — a returning face would convict harder than a stranger (decor became evidence)')
     ok(/nextP && nextP\.recall/.test(idxSrc2) && /sfxAgain\+\+/.test(idxSrc2) && /sfxAgain: \(\) => sfxAgain/.test(idxSrc2) && /againLog: \(\) => againLog\.slice\(\)/.test(idxSrc2),
         'index.jsx must ring RECOGNITION when the next applicant carries recall, count AND name the arrivals, and expose both for papersplay')
+}
+
+// -------------------------------------------- #1988 ARC POLISH PASS ----
+section('THE POLISHED ARC (#1988) — faces on the wall, a loud turn, many voices, a lingering deny')
+{
+    const idxSrc3 = readFileSync(join(SRC, 'index.jsx'), 'utf8')
+    const rulesSrc3 = readFileSync(join(SRC, 'rules.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    const simSrc3 = readFileSync(join(SRC, 'sim.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+
+    // 1) REPERTOIRE integrity: every regular carries its own protest, callback
+    //    alternate and seize line — authored, distinct, echo-free across the
+    //    whole 42-sentence repertoire (24 threads + 6 canonical + 6 + 6 + 6).
+    for (const c of REGULARS) {
+        ok(typeof c.turnAlt === 'string' && /^\.\.\./.test(c.turnAlt), `${c.id} turnAlt must be a sputter starting with "..." — the beat is being caught mid-sentence`)
+        ok(typeof c.againAlt === 'string' && c.againAlt.length >= 8, `${c.id} has no callback alternate`)
+        ok(typeof c.seize === 'string' && c.seize.length >= 8, `${c.id} has no seize (argue) line`)
+    }
+    const turnAlts = REGULARS.map((c) => c.turnAlt)
+    const againAlts = REGULARS.map((c) => c.againAlt)
+    const seizes = REGULARS.map((c) => c.seize)
+    ok(new Set(turnAlts).size === REGULARS.length, 'two regulars share a protest — the repertoire says it six ways')
+    ok(new Set(againAlts).size === REGULARS.length, 'two regulars share a callback alternate')
+    ok(new Set(seizes).size === REGULARS.length, 'two regulars argue the same way as they are taken')
+    const threads = REGULARS.flatMap((c) => [c.lines.greet, c.lines.hook, c.lines.again, c.lines.follow])
+    ok([...turnAlts, ...againAlts, ...seizes].every((l) => !threads.includes(l)), 'a repertoire variant repeats a thread line — the pool must widen the voices, not echo them')
+    ok(new Set([...threads, TURN_CANONICAL, ...turnAlts, ...againAlts, ...seizes]).size === threads.length + 1 + turnAlts.length + againAlts.length + seizes.length,
+        'the 43-sentence repertoire carries a duplicate — 43 authored lines, 43 different voices')
+    // the mixer: chapter = floor(seed/6) % 2. Week 0 speaks canonical (every
+    // old fixture replays byte-identical); week 1 speaks the alternates.
+    ok(SEEDS.every((s) => repChapter(s) === (s < REGULARS.length ? 0 : 1)), 'the chapter mixer drifted — week 0 must keep every canonical literal')
+    ok(REGULARS.every((c) => turnLineFor(c, 0) === TURN_CANONICAL && turnLineFor(c, 6) === c.turnAlt),
+        'the protest does not change with the campaign chapter — one line per beat is thin')
+    ok(REGULARS.every((c) => againLineFor(c, 0) === c.lines.again && againLineFor(c, 6) === c.againAlt),
+        'the callback does not change with the campaign chapter')
+    // sweep witness: across the 12-week sweep EVERY voice is heard — both
+    // canonical beats AND all six alternates of each pool (chapter 1 covers
+    // every seat because the arc and the day-7 head both ride the seed).
+    const heardTurn = new Set()
+    const heardAgain = new Set()
+    for (const seed of SEEDS) {
+        const w = genWeek(seed)
+        const arcA = w.days[5].queue.find((x) => x.person.arc)
+        heardTurn.add(arcA.person.say[1])
+        const back = w.days[6].queue.filter((x) => x.person.recall === 'again')
+        back.forEach((x) => heardAgain.add(x.person.say[1]))
+    }
+    ok(heardTurn.has(TURN_CANONICAL) && turnAlts.every((l) => heardTurn.has(l)),
+        `the sweep heard only ${heardTurn.size}/7 protest lines — a repertoire nobody speaks is theatre`)
+    ok(againAlts.every((l) => heardAgain.has(l)),
+        `the sweep heard ${heardAgain.size}/6 callback alternates — every voice must speak across the sweep`)
+    ok(repChapter.length === 1 && /Math\.floor\(seed \/ REGULARS\.length\)/.test(readFileSync(join(SRC, 'gen.js'), 'utf8')),
+        'the chapter mixer must be pure over the seed (zero rnd)')
+
+    // 2) THE BULLETIN PRINTS A FACE: the arc sheet entry carries the authored
+    //    descriptor (identity law — the mugshot IS the neighbor at the glass),
+    //    exactly one sheet row per week carries it, and the picture fits.
+    for (const seed of SEEDS) {
+        const w = genWeek(seed)
+        const arc = arcForWeek(seed)
+        const arcC = REGULARS.find((k) => k.id === arc.id)
+        for (const day of w.days) {
+            const faced = day.wanted.filter((x) => x.face)
+            if (day.n === arc.day) {
+                ok(faced.length === 1, `seed ${seed} day ${day.n}: ${faced.length} mugshots on the wall — only the arc's face is honest to print`)
+                const p = faced[0]
+                ok(p && p.name === arcC.name, `seed ${seed}: the mugshot named ${p && p.name}, not the arc regular`)
+                for (const f of [...FEATURES, 'skin', 'hairC', 'shirtC', 'hat', 'uni', 'ear', 'gap']) {
+                    ok(p && p.face[f] === arcC.face[f], `seed ${seed}: the bulletin's ${f} drifted from the authored face — the wall lies about the neighbor`)
+                }
+                ok(p && p.face.mark === arcC.mark, `seed ${seed}: the bulletin mugshot lost or swapped the signature mark`)
+            } else {
+                ok(faced.length === 0, `seed ${seed} day ${day.n}: a mugshot walked off the arc day`)
+            }
+        }
+        // fit: the arc day with its portrait must still clear the scale box.
+        const d6 = w.days[5]
+        const f = wallFit(d6, d6.rules.map((r) => RULES[r].text))
+        ok(f.listsClearScale && f.bottom <= SCALE.y, `seed ${seed}: the arc bulletin reaches y=${f.bottom} vs the SCALE box at ${SCALE.y} — the wall buries its own portrait`)
+    }
+    // the theoretical worst arc day: six laws, three countries, five names AND
+    // the portrait — the ceiling paperscheck ratchets against.
+    {
+        const worstArc = { n: 6, allowed: ['ARSTOTZKA', 'KIRINIA', 'VESKOLE'], wanted: [{ name: 'AAA BBB', id: 4001 }, { name: 'CCC DDD', id: 4002 }, { name: 'EEE FFF', id: 4003, face: { skin: 0, hairC: 0, shirtC: 0, style: 0, narrow: 0, glasses: 0, must: 0, brow: 0, mouth: 0 } }, { name: 'GGG HHH', id: 4004 }, { name: 'III JJJ', id: 4005 }], rules: DAY_RULES[5] }
+        const f = wallFit(worstArc, worstArc.rules.map((r) => RULES[r].text))
+        ok(f.bottom <= SCALE.y, `worst buildable ARC day reaches y=${f.bottom} vs ${SCALE.y} — no room left for the portrait, the fit law needs a new donor`)
+        console.log(`  ..    worst arc day with portrait: bottom y=${f.bottom}, scale box top y=${SCALE.y} — clear`)
+    }
+    ok(ARC_MUG.s * 68 >= 18, `the bulletin mugshot head is ${ARC_MUG.s * 68}px — below 18px a face is a smudge, not a portrait`)
+    ok(WALL.x + 114 + 2 + ARC_MUG.w <= PORTRAIT.x - 4, 'the bulletin portrait leaves the wanted column')
+
+    // 3) THE TURN ANNOUNCES — view-side doctrine: the highlight keys off the
+    //    live applicant and the sheet's face, and the sim/rules must not know
+    //    the lever exists (stateHash is byte-identical; ghost-cell doctrine).
+    ok(!/ARC_HL|bulletinRows/.test(rulesSrc3) && !/ARC_HL|bulletinRows/.test(simSrc3),
+        'rules.js/sim.js reference ARC_HL/bulletinRows — the announcement would leak into the sim')
+    ok(/view\.person && view\.person\.arc/.test(idxSrc3) && /row\.hl/.test(idxSrc3) && /bulletinRows\(day, day\.rules\.map/.test(idxSrc3),
+        'index.jsx must light the arc row (via bulletinRows hl) only while the arc face is at the window')
+    {
+        const [rr, gg, bb] = [1, 3, 5].map((i) => parseInt(ARC_HL.slice(i, i + 2), 16))
+        ok(rr > 170 && gg < 80, `ARC_HL (${ARC_HL}) sits outside the wallRed hue family (gg 80..150) — the sheet-count gate would swallow the announcement`)
+        ok(ARC_HL !== '#d84343' && ARC_HL !== '#ff8080', 'the announcement ink collides with the stamp or strike red')
+    }
+    // determinism: two generations of one seed speak identical lines.
+    {
+        const seq = (s) => genWeek(s).days.map((d) => d.queue.map((a) => (a.person.say || []).join('~')).join('|')).join('|')
+        ok(seq(7) === seq(7) && seq(11) === seq(11), 'repertoire speech drifted between two generations of one seed')
+    }
+
+    // 4) DENY AFTERSHOCK: only the arc person carries the seize line; it
+    //    fits the paper zone under the stamp; its tone is the booth's lowest.
+    for (const seed of SEEDS) {
+        const w = genWeek(seed)
+        let seized = 0
+        for (const day of w.days) for (const a of day.queue) {
+            if (a.person.arc) { seized++; ok(a.person.seize === REGULARS.find((k) => k.id === a.person.regular).seize, `seed ${seed}: the arc face has no argue line`) }
+            else ok(!a.person.seize, `seed ${seed} day ${day.n}: a stranger carries a seize line — only a seized friend argues`)
+        }
+        ok(seized === 1, `seed ${seed}: ${seized} seize lines in one week — exactly the arc's`)
+    }
+    const longestSeize = Math.max(...seizes.map((l) => l.length))
+    ok(longestSeize * SEIZE.size * CHAR <= 290, `the longest seize line prints ${longestSeize * SEIZE.size * CHAR}px — the paper corridor under the stamp is 290px`)
+    ok(SEIZE.y + 4 <= PAPERS.y + 148 && SEIZE.y - Math.ceil(SEIZE.size * 0.8) >= 148, `the seize line sits at y=${SEIZE.y}: below the rotated stamp's lowest stroke (y≤147) and on the judged paper (bottom ${PAPERS.y + 148})`)
+    {
+        const owned = [...idxSrc3.matchAll(/playTone\((\d+)/g)].map((mm) => Number(mm[1]))
+        ok(owned.length > 0 && SEIZE.tone < Math.min(...owned, RECOGNITION.notes[0]),
+            `SEIZE.tone (${SEIZE.tone}) must sit below every fixed tone the booth owns (lowest ${Math.min(...owned)}) — a heavier deny is a LOWER deny`)
+        ok(/stamped\.arc && action === 'deny'/.test(idxSrc3) && /sfxSeize\+\+/.test(idxSrc3) && /sfxSeize: \(\) => sfxSeize/.test(idxSrc3),
+            'index.jsx must thunk SEIZE.tone, set the argue line and count it when a seized neighbor is denied')
+    }
+
+    // 5) THE TAIL IS PINNED: the bubble triangle's band sits above the field
+    //    and below the witness baseline; papersplay counts its paper.
+    ok(BUBBLE_TAIL.y + BUBBLE_TAIL.h === BUBBLE.y - 0 && BUBBLE_TAIL.y > 270 && BUBBLE_TAIL.y + BUBBLE_TAIL.h < BUBBLE.y + 1,
+        `the tail band (y ${BUBBLE_TAIL.y}..${BUBBLE_TAIL.y + BUBBLE_TAIL.h}) must hug the field's top edge (y=${BUBBLE.y})`)
+    ok(/bubbleTailPix: \(\) =>/.test(idxSrc3) && /BUBBLE_TAIL\.x/.test(idxSrc3), 'index.jsx must expose bubbleTailPix over the BUBBLE_TAIL band')
+    console.log('  ..    faces, voices, aftershocks: the arc speaks 43 ways and the wall shows who')
 }
 
 console.log(`\npaperscheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

@@ -19,7 +19,7 @@ import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../..
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { decide, RULES, dfmt, dshow, isAdult, stampLines } from './rules.js'
-import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, PHOTO_TINT, PHOTO_ZOOM, CLOCK, SLIP, RENT, PAYFX, BUBBLE, EVID, SETTLE, QUOTE, RECOGNITION, wallRows } from './layout.js'
+import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, PHOTO, PHOTO_TINT, PHOTO_ZOOM, CLOCK, SLIP, RENT, PAYFX, BUBBLE, BUBBLE_TAIL, EVID, SETTLE, QUOTE, RECOGNITION, ARC_MUG, ARC_HL, SEIZE, CHAR, wallRows, bulletinRows } from './layout.js'
 
 const SIM_MS = 1000 / 60
 
@@ -99,6 +99,9 @@ const PapersPleaseMinGame = () => {
         // welcome (a familiar face stepped up). Counted by papersplay.
         let sfxAgain = 0
         const againLog = []
+        // #1988 DENY AFTERSHOCK — the stamp on a SEIZED neighbor thuds lower,
+        // and their argue line rides the inspector pin. Counted by papersplay.
+        let sfxSeize = 0
         // #2021 THE INSPECTOR STAYS — the booth's case outlives its ink:
         // {ok, witness, evidence, ticks} rides after the stamp fades and ends
         // when the next applicant's papers land on the counter (settle → 0).
@@ -185,6 +188,16 @@ const PapersPleaseMinGame = () => {
                 // witness (the clean admit) replaces the pin with silence.
                 const sl = stampLines(gs.last, EVID.wrap)
                 insp = sl.witness ? { ok: !!gs.last?.ok, witness: sl.witness, evidence: sl.evidence, ticks: QUOTE.hold } : null
+                // #1988 DENY AFTERSHOCK — the original lingers when a familiar
+                // face is taken: the seized neighbor argues as they're led away.
+                // The authored line rides under the DENIED stamp for the life of
+                // the #2021 pin, and the stamp lands with a lower thunk than any
+                // fixed tone the booth owns. Decor for the shell — gs untouched.
+                if (insp && stamped.arc && action === 'deny') {
+                    insp.argue = stamped.seize || null
+                    audioController.playTone(SEIZE.tone, 0.10, 'square', 0.07)
+                    sfxSeize++
+                }
                 audioController.playTone(action === 'approve' ? 300 : 190, 0.06, 'square', 0.06)
                 // #1976 the face-reading deny is the title's signature call —
                 // when the witness names the face (brows/mouth), add a sharp
@@ -546,7 +559,6 @@ const PapersPleaseMinGame = () => {
             text('WANTED:', WALL.x + 114, rows.listsY, WALL.size, COL.text)
             let ey = rows.entries
             for (const c of day.allowed) { text(`  ${c}`, WALL.x, ey, WALL.listSize, '#7ddc5d'); ey += WALL.listLine }
-            let wy = rows.entries
             // every name on the sheet must FIT on the wall — paperscheck
             // pins day.wanted.length <= 5 (the original bulletin's five) and
             // sweeps the fit, so no booth must ever hide one. #1908 made the
@@ -554,7 +566,31 @@ const PapersPleaseMinGame = () => {
             // pays for 10px rows on 11px pitch, worst day y=352 vs the scale
             // box at 358 — six px of slack — so the sheet reads by size AND
             // contrast at arm's length on a phone.
-            for (const w of day.wanted) { text(`  ${w.name} #${w.id}`, WALL.x + 114, wy, WALL.wantedSize, COL.wallRed); wy += WALL.wantedLine }
+            // #1988 THE BULLETIN PRINTS A FACE + ANNOUNCES THE TURN: the arc
+            // entry carries its authored face, painted as a small paper mugshot
+            // under the name (same drawFace, third surface); and while that
+            // face is AT the window, an ARC_HL underline + mug frame light the
+            // row — the wall noticing the neighbor. View-side only: keyed off
+            // the live applicant, never gs, so stateHash is byte-identical.
+            for (const row of bulletinRows(day, day.rules.map((r) => RULES[r].text), !!(view.person && view.person.arc))) {
+                const label = `  ${row.w.name} #${row.w.id}`
+                text(label, WALL.x + 114, row.y, WALL.wantedSize, COL.wallRed)
+                if (row.hl) {
+                    ctx.fillStyle = ARC_HL
+                    ctx.fillRect(WALL.x + 114, row.y + 3, label.length * WALL.wantedSize * CHAR, 2)
+                }
+                if (row.mug) {
+                    box(row.mug.x, row.mug.y, row.mug.w, row.mug.h, COL.paper, COL.paperLine)
+                    ctx.save()
+                    ctx.beginPath(); ctx.rect(row.mug.x, row.mug.y, row.mug.w, row.mug.h); ctx.clip()
+                    drawFace(ctx, row.w.face, row.mug.x + row.mug.w / 2 - 55 * ARC_MUG.s, row.mug.y - 1, ARC_MUG.s)
+                    ctx.restore()
+                    if (row.hl) {
+                        ctx.strokeStyle = ARC_HL; ctx.lineWidth = 2
+                        ctx.strokeRect(row.mug.x - 1, row.mug.y - 1, row.mug.w + 2, row.mug.h + 2)
+                    }
+                }
+            }
             box(SCALE.x, SCALE.y, SCALE.w, SCALE.h, '#0f1420', '#4a5578')
             text('SCALE', SCALE.x + 48, SCALE.y + 12, 9, COL.text, 'center')
             text(`${view.scale}KG`, SCALE.x + 48, SCALE.y + 26, 12, COL.gold, 'center')
@@ -687,6 +723,8 @@ const PapersPleaseMinGame = () => {
             if (insp) {
                 text(insp.witness, STAMP.x, 296, 12, insp.ok ? COL.gold : COL.red, 'center')
                 insp.evidence.forEach((ln, i) => text(ln, EVID.cx, EVID.y + i * EVID.line, EVID.size, insp.ok ? COL.gold : COL.red, 'center'))
+                // #1988 the seized neighbor's argue line, under the DENIED stamp
+                if (insp.argue) text(insp.argue, SEIZE.x, SEIZE.y, SEIZE.size, COL.red, 'center')
             }
             // #1966 THE DEDUCTION SLIP — the printed paper the original
             // slides under the door at end of day: pay earned, rent (on the
@@ -959,6 +997,7 @@ const PapersPleaseMinGame = () => {
                 }),
                 sfxTicks: () => sfxTicks,
                 sfxAgain: () => sfxAgain, // #1982 arrivals the door welcomed
+                sfxSeize: () => sfxSeize, // #1988 stamps that thudded on a seized neighbor
                 againLog: () => againLog.slice(), // #1982 "day|regular|recall" per ring
                 // #1983 the bubble is pixels: count the bubble's own paper
                 // color in its rect on the LIVE canvas (up ≈ full field,
@@ -978,6 +1017,63 @@ const PapersPleaseMinGame = () => {
                     for (let i = 0; i < d.length; i += 4) if (((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]) === 0xd8d2b8) paper++
                     return paper
                 },
+                // #1988 THE TAIL IS PINNED TOO: the triangle above the field was
+                // drawn but never counted — bubblePix saw only the field, so the
+                // tail could silently vanish. Count the paper-family inside the
+                // tail band (the triangle is ~170px at full size; AA shaves the
+                // edges, so the gate sits well under and papersplay proves both
+                // sides: a speaking neighbor lights it, strangers leave it dark).
+                bubbleTailPix: () => {
+                    const d = ctx.getImageData(BUBBLE_TAIL.x, BUBBLE_TAIL.y, BUBBLE_TAIL.w, BUBBLE_TAIL.h).data
+                    let paper = 0
+                    for (let i = 0; i < d.length; i += 4) {
+                        const [rr, gg, bb] = [d[i], d[i + 1], d[i + 2]]
+                        if (rr > 190 && rr < 235 && gg > 180 && gg < 225 && bb > 150 && bb < 200) paper++
+                    }
+                    return paper
+                },
+                // #1988 THE BULLETIN PRINTS A FACE — live proof of the arc
+                // mugshot and its announcement. `paper` counts the frame+field
+                // of the mug rect (face ink covers part of it), `hl` counts
+                // ARC_HL-family px in the wanted column (underline + mug frame;
+                // the stamp/strip/strike reds live outside this rect, and the
+                // sheet's own wallRed has gg 80..150 — excluded here).
+                bulletinPix: () => {
+                    const day = current(gs).day
+                    const rulesT = day.rules.map((r) => RULES[r].text)
+                    const rows = wallRows(day, rulesT)
+                    const arcRow = bulletinRows(day, rulesT, false).find((x) => x.w.face)
+                    let paper = 0
+                    if (arcRow) {
+                        const d = ctx.getImageData(arcRow.mug.x, arcRow.mug.y, arcRow.mug.w, arcRow.mug.h).data
+                        for (let i = 0; i < d.length; i += 4) {
+                            const k = (d[i] << 16) | (d[i + 1] << 8) | d[i + 2]
+                            if (k === 0xd8d2b8 || k === 0x8f8a70) paper++
+                        }
+                    }
+                    let hl = 0
+                    const top = rows.entries - 12
+                    const h2 = rows.wantedEnd - top + 8
+                    const d2 = ctx.getImageData(WALL.x + 112, top, 136, h2).data
+                    for (let i = 0; i < d2.length; i += 4) {
+                        const [rr, gg, bb] = [d2[i], d2[i + 1], d2[i + 2]]
+                        if (rr > 170 && gg < 80 && bb < 80) hl++
+                    }
+                    return { present: !!arcRow, paper, hl }
+                },
+                // #1988 THE DENY AFTERSHOCK: the argue line's red ink in the
+                // zone under the stamp (below the rotated stamp's lowest stroke,
+                // y 150..158; dark document ink and the amber VALID stamp fail
+                // the hue test, so any count is the seized voice on the paper).
+                seizeInk: () => {
+                    const d = ctx.getImageData(445, 150, 150, 8).data
+                    let n = 0
+                    for (let i = 0; i < d.length; i += 4) {
+                        const [rr, gg, bb] = [d[i], d[i + 1], d[i + 2]]
+                        if (rr > 150 && rr > gg + 60 && rr > bb + 60) n++
+                    }
+                    return { ink: n, argue: insp && insp.argue ? insp.argue : null, sfx: sfxSeize }
+                },
                 // #1908 THE WALL THAT LIVES: ink of the wanted column's own
                 // brighter red, counted as the hue FAMILY (rr>170, gg 80..150,
                 // bb 80..150) — 9px glyphs are mostly antialiased against the
@@ -987,11 +1083,23 @@ const PapersPleaseMinGame = () => {
                 // strike reds live outside it (x>=416 or y>=400).
                 wantedInk: () => {
                     const day = current(gs).day
-                    const rows = wallRows(day, day.rules.map((r) => RULES[r].text))
+                    const rulesT = day.rules.map((r) => RULES[r].text)
+                    const rows = wallRows(day, rulesT)
                     const top = rows.entries - 10
-                    const d = ctx.getImageData(WALL.x + 112, top, 130, rows.wantedEnd - top + 4).data
+                    const w0 = WALL.x + 112
+                    const h0 = rows.wantedEnd - top + 4
+                    const d = ctx.getImageData(w0, top, 130, h0).data
+                    // #1988 mask the arc mugshot: its skin tones must not leak
+                    // into the sheet's red-row count (bulletinPix measures the
+                    // face on its own terms; this gate measures rows).
+                    const mugRow = bulletinRows(day, rulesT, false).find((x) => x.mug)
+                    const M = mugRow
+                        ? { x0: mugRow.mug.x - w0 - 1, x1: mugRow.mug.x - w0 + mugRow.mug.w + 1, y0: mugRow.mug.y - top - 1, y1: mugRow.mug.y - top + mugRow.mug.h + 1 }
+                        : null
                     let n = 0
-                    for (let i = 0; i < d.length; i += 4) {
+                    for (let yy = 0; yy < h0; yy++) for (let xx = 0; xx < 130; xx++) {
+                        if (M && xx >= M.x0 && xx <= M.x1 && yy >= M.y0 && yy <= M.y1) continue
+                        const i = (yy * 130 + xx) * 4
                         const [rr, gg, bb] = [d[i], d[i + 1], d[i + 2]]
                         if (rr > 170 && gg > 80 && gg < 150 && bb > 80 && bb < 150) n++
                     }

@@ -6,7 +6,7 @@
 //
 //   npm run papersplay     (needs `npm run dev`)
 import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
-import { accFor, genWeek, wallNameAt, weekDecoyCount } from '../src/games/PapersPleaseMin/gen.js'
+import { accFor, genWeek, wallNameAt, weekDecoyCount, REGULARS, arcForWeek, turnLineFor, TURN_CANONICAL } from '../src/games/PapersPleaseMin/gen.js'
 
 const URL = process.env.PP_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/papers-please`
 await requireDevServer(URL)
@@ -642,7 +642,9 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     s = await probe()
     r.check(`the calendar turn is announced on the morning it happens (${s.banner && s.banner.text} | ${s.banner && s.banner.month})`,
         s.day === 6 && !!s.banner && s.banner.month === 'NOVEMBER', JSON.stringify(s.banner))
-    let sayProbe = null, bubbleUp = -1, arcVerdict = null
+    let sayProbe = null, bubbleUp = -1, arcVerdict = null, lit = null, tailUp = -1, quietTail = -1
+    quietTail = await page.evaluate(() => window.__ppTest.bubbleTailPix())
+    r.check(`strangers keep the bubble tail dark too (${quietTail} paper px)`, quietTail < 20, `${quietTail}`)
     for (let g = 0; g < 14 && !sayProbe; g++) {
         sayProbe = await page.evaluate(() => {
             const p = window.__ppTest.probe()
@@ -656,6 +658,10 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
             // tick out, or the bubble sample measures the wrong entrant.
             await wait(650)
             bubbleUp = await page.evaluate(() => window.__ppTest.bubblePix())
+            tailUp = await page.evaluate(() => window.__ppTest.bubbleTailPix())
+            // #1988: the wall lights its own bulletin while the neighbor is at
+            // the glass — mugshot (paper frame + portrait) and ARC_HL ink.
+            lit = await page.evaluate(() => window.__ppTest.bulletinPix())
             arcVerdict = await page.evaluate(() => window.__ppTest.verdict())
             break
         }
@@ -667,11 +673,21 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
         !!sayProbe && sayProbe.id === 'grubak' && sayProbe.wanted.includes(sayProbe.ppId), JSON.stringify(sayProbe))
     r.check(`the returning face speaks — bubble prints ${bubbleUp} paper px with its lines`,
         bubbleUp > 4000 && !!sayProbe && sayProbe.say[0] === 'YOU AGAIN.' && /\.\.\./.test(sayProbe.say[1]), `${bubbleUp}`)
+    r.check(`#1988 the bubble's tail prints with its voice (${tailUp} paper px above the field)`, tailUp > 60, `${tailUp}`)
+    r.check(`#1988 the turn announces — the bulletin prints Grubak's mugshot (${lit && lit.paper} paper px) and the row is lit (${lit && lit.hl} ARC_HL px)`,
+        !!lit && lit.present && lit.paper > 150 && lit.hl > 100, JSON.stringify(lit))
     r.check('recognition is not safety: the booth denies the familiar face', arcVerdict === 'deny', `${arcVerdict}`)
     const caughtBefore = (await probe()).caught
+    const seizeBefore = await page.evaluate(() => window.__ppTest.seizeInk())
     await page.keyboard.press('d')   // the real deny — Jorji turned away
     await wait(160)
     const afterArc = await probe()
+    // #1988 DENY AFTERSHOCK: the seized neighbor argues under the DENIED stamp
+    // (red ink in the corridor below the stamp, verbatim the authored line),
+    // and the booth thudded its stamp at the seizure's own low tone.
+    const seizeAfter = await page.evaluate(() => window.__ppTest.seizeInk())
+    r.check(`#1988 the deny of a friend lingers — argue prints ${seizeAfter.ink} px under the stamp, verbatim, tone thudded ${seizeBefore.sfx}->${seizeAfter.sfx}`,
+        seizeAfter.ink > 80 && seizeAfter.argue === REGULARS[0].seize && seizeAfter.sfx === seizeBefore.sfx + 1, JSON.stringify(seizeAfter))
     r.check(`the right deny scores and names the witness (${afterArc.last.why}: ${afterArc.last.evidence})`,
         afterArc.last.ok === true && afterArc.last.why === 'WANTED' && afterArc.caught === caughtBefore + 1, JSON.stringify(afterArc.last))
     // #2012 THE CROWDED RETURN, live: the shift that turns a neighbor carries
@@ -725,6 +741,38 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
         && naive.strikes === beforeNaive.strikes + 1 && naive.last.ok === false && naive.last.why === 'WANTED',
         JSON.stringify({ fell, why: naive.last && naive.last.why }))
     await page.evaluate(() => window.__ppTest.runDay())    // walk the rest of the day honestly
+    await wait(250)
+}
+
+// #1988 REPERTOIRE, live: chapter 1 (seed 6) meets the SAME cast seat as
+// seed 0 — Grubak turns again — but the wall's drama speaks a DIFFERENT
+// protest line. The booth is not a jukebox stuck on week 0's record; the
+// canonical literal belongs to week 0, the alternate belongs to week 1, and
+// the bulletin prints the mugshot on both. This is the pass's "voice breadth"
+// made pixels: the exact authored line is compared across processes.
+{
+    await page.evaluate(() => window.__ppTest.start(6))
+    await wait(300)
+    for (let d = 1; d < 6; d++) { await page.evaluate(() => window.__ppTest.runDay()); await wait(120) }
+    let say6 = null, lit6 = null
+    for (let g = 0; g < 14 && !say6; g++) {
+        say6 = await page.evaluate(() => {
+            const p = window.__ppTest.probe()
+            const per = p && p.view && p.view.person
+            if (!per || !per.arc) return null
+            return { id: per.regular, say: per.say }
+        })
+        if (say6) { await wait(650); lit6 = await page.evaluate(() => window.__ppTest.bulletinPix()); break }
+        const v = await page.evaluate(() => window.__ppTest.verdict())
+        await page.keyboard.press(v === 'approve' ? 'a' : 'd')
+        await wait(140)
+    }
+    const weekSeat6 = REGULARS[6 % REGULARS.length]
+    r.check(`chapter 1 turns the SAME seat — Grubak again, but the protest is new ("${say6 && say6.say && say6.say[1]}" vs week 0's "${TURN_CANONICAL}")`,
+        !!say6 && say6.id === weekSeat6.id && say6.say[0] === 'YOU AGAIN.' && say6.say[1] === turnLineFor(weekSeat6, 6) && say6.say[1] !== TURN_CANONICAL,
+        JSON.stringify(say6 && say6.say))
+    r.check('the mugshot prints in every chapter, not just week 0', !!lit6 && lit6.present && lit6.paper > 150, JSON.stringify(lit6))
+    await page.evaluate(() => window.__ppTest.runDay())    // honest rest of the day
     await wait(250)
 }
 

@@ -169,11 +169,14 @@ export function wallRows(day, ruleTexts) {
     const listsY = yy + 2
     yy += WALL.labelLine
     const entriesEnd = yy + day.allowed.length * WALL.listLine
-    // #1988: an arc entry carries a mugshot, and its row grows by the frame
-    // plus the 2px seam. Day 6 is always the arc day; its worst sweep bottom
-    // is y=325, so +28 lands y=353 vs the SCALE-box law y=358 — five rows
-    // stay above the line, and paperscheck re-pins the fit with the picture.
-    const picExtra = day.wanted.some((w) => w.face) ? ARC_MUG.h + 2 : 0
+    // #1988: each arc-style entry that carries a mugshot grows its row by the
+    // frame plus the 2px seam — PER ROW (bulletinRows walks the same bump for
+    // every faced entry, so paint and this law agree). Day 6 is always the arc
+    // day and its worst sweep bottom is y=325, so one +28 bump lands y=353 vs
+    // the SCALE-box law y=358 — five rows stay above the line, and paperscheck
+    // re-pins the fit against a synthetic worst arc day. m56 (mugshots on the
+    // decoys too) grows three bumps and trips this ceiling — unfair by furniture.
+    const picExtra = day.wanted.filter((w) => w.face).length * (ARC_MUG.h + 2)
     const wantedEnd = yy + day.wanted.length * WALL.wantedLine + picExtra
     return { rulesEnd, listsY, entries: yy, entriesEnd, wantedEnd, bottom: Math.max(entriesEnd, wantedEnd) }
 }
