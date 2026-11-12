@@ -270,9 +270,11 @@ process.exit(0)
     writeFileSync(script, FIXT)
     const runMode = (mode) => {
         // fresh worktree state per mode: prior modes deliberately leave dirt,
-        // and the guard is designed to refuse on exactly that
-        try { execFileSync('git', ['-C', REPO, 'checkout', '--', 'clean.txt'], { stdio: 'ignore' }) } catch { /* first run */ }
-        rmSync(join(REPO, 'fix.txt'), { force: true })
+        // and the guard is designed to refuse on exactly that. Restoring both
+        // tracked files byte-exact (rm would be a tracked deletion = dirt).
+        try { execFileSync('git', ['-C', REPO, 'checkout', '--', '.'], { stdio: 'ignore' }) } catch { /* first run */ }
+        writeFileSync(join(REPO, 'fix.txt'), SENTINEL)
+        writeFileSync(join(REPO, 'clean.txt'), SENTINEL)
         rmSync(join(REPO, '.mutant-running'), { force: true })
         return spawnSync(process.execPath, [script, REPO, mode, GUARD, SENTINEL, join(REPO, '.mutant-running')], { encoding: 'utf8', timeout: 30000 })
     }
