@@ -27,6 +27,7 @@ import {
     newRun, advance, autoStep, cmdUse, cmdWalk, cmdWork, tryUse,
     place, sellAt, cellItem, targetsOf, walkable, manualMove, placeOk, buildRoom,
     court, courtTarget,   // #2131: player-ordered romance commands
+    courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court — one pad button, two orders
     stateHash,
 } from './sim.js'
 import {
@@ -42,6 +43,7 @@ const MESSAGES = [
     'Fern the neighbour wanders in by day — chat fills the blue bar.',
     'CHAT builds BONDS — Fern at FAMILY visits sooner and lingers. Neglect cools them.',
     'Ivy shops the market — chat grows HER bond too. At FRIENDS she brings a basket; FAMILY adds honey-money.',
+    'Order the court on glass: tap ✓ for the kind word — hold ✓ on someone and the insult flies.',
     'Red needs flare tempers — a SPAT cracks BONDS. Fill both, side by side, to thaw.',
     'Bank §300, then B + card 9: hammer on a Spare Room and the lot grows.',
     'Bank 80 contentment and the lifetime wish comes true.',
@@ -311,9 +313,13 @@ const HomebodyGame = () => {
                     else place(gs, gs.cursor.r, gs.cursor.c)
                 } else if (!tryUse(gs, p)) {
                     // #2131: A/Space where no object is near but a person is — the
-                    // empty press becomes the compliment. A press that used to say
+                    // empty press rides the compliment. A press that used to say
                     // nothing still says nothing unless someone is within reach.
-                    if (!court(gs, 'coo')) say(courtTarget(gs) ? 'NOT SO FAST — LET IT LAND' : 'NOTHING IN REACH — TAP SOMETHING')
+                    // #2171: the compliment no longer lands at press — the pad has
+                    // no third button, so the cruel variant rides the same key by
+                    // duration: release is the coo (courtTap in onUp), holding
+                    // past HOLD_INSULT_MS hurls the insult mid-hold (courtTick).
+                    if (!courtHoldArm(gs)) say('NOTHING IN REACH — TAP SOMETHING')
                 }
             }
             if (courtQueued && !gs.build) {
@@ -364,6 +370,22 @@ const HomebodyGame = () => {
                     ctx.fillRect(hx - 4, hy - 1, 8, 2)
                 }
                 ctx.globalAlpha = 1
+            }
+            if (live && g.holdT >= 0) {
+                // #2171: the heat tell — angry ticks climb over the addressed
+                // person's head while A is held; a closed arc is a word mid-flight.
+                const t = courtTarget(g)
+                if (t) {
+                    const k = Math.min(1, g.holdT / HOLD_INSULT_MS)
+                    ctx.globalAlpha = 0.45 + 0.55 * k
+                    ctx.fillStyle = '#e23b2e'
+                    const n = 3 + Math.round(k * 5)
+                    for (let i = 0; i < n; i++) {
+                        const a = -Math.PI / 2 + (i - (n - 1) / 2) * 0.45
+                        ctx.fillRect(Math.round(t.p.x + Math.cos(a) * 12) - 1, Math.round(t.p.y - 16 + Math.sin(a) * 8) - 1, 2, 2)
+                    }
+                    ctx.globalAlpha = 1
+                }
             }
             if (live && g.build) drawBuildCursor(ctx, g, placeOk(g, g.cursor.r, g.cursor.c))
             for (const f of refuses) {   // #1823: refused cell — red fill pulsing out
@@ -468,6 +490,10 @@ const HomebodyGame = () => {
                             drivePad({ left: heldKeys.left, right: heldKeys.right, up: heldKeys.up, down: heldKeys.down, a: actA, b: buildB })
                             advance(gs, SIM_MS / 1000)
                         }
+                        // #2171: the thumb-court clock — a held A that outlives the
+                        // threshold hurls the insult now, whatever seat drives the street.
+                        const hc = courtTick(gs, SIM_MS)
+                        if (hc && hc.refused) say('NOT SO FAST — LET IT LAND')
                         handleEvents(gs, true)
                         finish(gs)
                     }
@@ -548,6 +574,14 @@ const HomebodyGame = () => {
             if (CUR.r.includes(e.code)) heldKeys.right = false
             if (CUR.u.includes(e.code)) heldKeys.up = false
             if (CUR.d.includes(e.code)) heldKeys.down = false
+            // #2171: the tap half of the thumb court — let go before the heat
+            // peaks and the press lands as the compliment. A release with no
+            // armed hold says nothing (courtTap returns null), so random keys
+            // and the death screen stay quiet.
+            if (ACTION_KEYS.has(e.code) && gs && screenRef.current === 'play' && !pausedRef.current && !gs.done) {
+                const t = courtTap(gs)
+                if (t && t.refused) say('NOT SO FAST — LET IT LAND')
+            }
         }
         const onPointer = (e) => {
             const sc = screenRef.current
@@ -616,6 +650,7 @@ const HomebodyGame = () => {
                     spats: gs.spats, grudge: gs.grudge, spatFx: Math.round(gs.spatFx * 10) / 10,   // #2070/#2076
                     cmdCd: Math.round(gs.cmdCd * 10) / 10, cooFx: Math.round(gs.cooFx * 10) / 10, cooDeep: !!gs.cooDeep,   // #2131
                     courtKind: (() => { const t = courtTarget(gs); return t ? t.k : null })(), active: gs.active,
+                    holdT: Math.round(gs.holdT), courtArmed: gs.holdT >= 0,   // #2171: the thumb court
                     visitor: gs.visitor ? gs.visitor.name : null,
                     ivy: gs.ivy ? { name: gs.ivy.name, gift: !!gs.ivy.gift, state: gs.ivy.state, x: Math.round(gs.ivy.x), y: Math.round(gs.ivy.y) } : null,   // #2143
                 }) : { screen: screenRef.current, seed },
@@ -625,6 +660,7 @@ const HomebodyGame = () => {
                 start: (sd) => startPlay(sd),
                 tap: (px, py) => pointerPx(px, py),
                 press: (code) => onDown({ code, preventDefault: () => {} }),
+                release: (code) => onUp({ code }),   // #2171: the release half of the thumb-court gesture
                 room: () => (gs ? buildRoom(gs) : false),
                 win: () => { if (gs) { gs.content = WIN_CONTENT; gs.done = 'win'; gs.endMsg = 'forced' } },
                 collapseAll: () => { if (gs) for (const p of gs.people) p.faintT = 2 },
@@ -638,6 +674,7 @@ const HomebodyGame = () => {
                 foul: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; b.r = 3; b.c = 4; b.path = null; for (const p of gs.people) { for (const n of NEEDS) p.needs[n] = 0.3; p.working = false; p.faintT = 0 } gs.grudge = 0; gs.spatCd = 0 } },
                 park: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; a.path = null; b.r = 3; b.c = 4; b.path = null; a.x = LOT_X + 3 * TILE + TILE / 2; a.y = LOT_Y + 3 * TILE + TILE / 2; b.x = LOT_X + 4 * TILE + TILE / 2; b.y = LOT_Y + 3 * TILE + TILE / 2; for (const p of gs.people) { p.use = null; p.goal = null; p.working = false; p.faintT = 0; for (const n of NEEDS) p.needs[n] = 0.5 } gs.visitor = null; gs.ivy = null; gs.cmdCd = 0 } },   // #2131/#2143/#2149: adjacency, idle for real, tempers NEUTRAL (mood 1: no organic spat, no instant make-up — the law itself is pinned in peoplecheck), nobody else to address, cooldown ready — and the SPRITES land where the logic was parked (#2149: cells without pixels left the pair standing apart, so make-up hearts burst at the stale midpoint, where the MADE UP toast card paints over them)
                 thaw: () => { if (gs) for (const p of gs.people) for (const n of NEEDS) p.needs[n] = 0.9 },
+                stand: (who, r, c) => { if (gs) { const p = gs.people[who]; p.r = r; p.c = c; p.path = null; p.use = null; p.goal = null; p.working = false; p.x = LOT_X + c * TILE + TILE / 2; p.y = LOT_Y + r * TILE + TILE / 2 } },   // #2171: park() seats the pair by the radio — the thumb-court drive needs a cell with a clear hand
                 hearts: () => particles.filter((pt) => pt.kind === 'heart').length,   // #2076: the make-up paid hearts?
                 hash: () => (gs ? stateHash(gs) : 0),
             }
