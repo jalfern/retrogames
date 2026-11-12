@@ -792,14 +792,17 @@ const ViperPitGame = () => {
                         hctx.fillText(quote.a, W / 2, H * 0.59)
                     }
                     // #2148 — the judge badge: why this round was dirty.
+                    // A finisher-KO already prints the move name at H*0.54, so
+                    // the badge lifts above it while that cinematic holds.
                     if (quote.judge) {
                         ui(Math.max(12, H * 0.026))
                         hctx.textAlign = 'center'
                         const jcol = quote.judge === 'PERFECT' ? 'rgba(255,210,62,' : quote.judge === 'CLUTCH' ? 'rgba(255,154,60,' : 'rgba(255,64,48,'
+                        const jy = finishFx > 0 ? H * 0.47 : H * 0.53
                         hctx.strokeStyle = 'rgba(8,5,8,0.9)'; hctx.lineWidth = Math.max(2, H * 0.005)
                         hctx.fillStyle = jcol + Math.min(1, quoteT / 140 + 0.25).toFixed(2) + ')'
-                        hctx.strokeText(`${quote.judge}!`, W / 2, H * 0.53)
-                        hctx.fillText(`${quote.judge}!`, W / 2, H * 0.53)
+                        hctx.strokeText(`${quote.judge}!`, W / 2, jy)
+                        hctx.fillText(`${quote.judge}!`, W / 2, jy)
                     }
                     // taunt-on-win: the winner's shout in their own accent,
                     // popping in just under the win line.
