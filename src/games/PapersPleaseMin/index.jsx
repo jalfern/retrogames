@@ -833,6 +833,16 @@ const PapersPleaseMinGame = () => {
                 ctx.beginPath(); ctx.moveTo(BUBBLE.x + 18, BUBBLE.y + 1); ctx.lineTo(BUBBLE.x + 22, BUBBLE.y - 16); ctx.lineTo(BUBBLE.x + 38, BUBBLE.y + 1); ctx.stroke()
                 shown.say.forEach((ln, i) => text(ln, BUBBLE.x + 8, BUBBLE.y + 15 + i * 13, 10, COL.ink))
             }
+            // #2087 THE CROWD MURMURS — a one-off's half-heard line in dim
+            // slate INSIDE the empty bubble field: no paper, no tail (the
+            // bubble stays the neighborhood's own — papersplay keeps its
+            // paper-quiet witnesses). Decor by doctrine: the generator
+            // attaches it, decide never reads it (paperscheck strips it from
+            // every paper), and papersplay proves both those pixels and the
+            // quiet stranger's empty field.
+            if (shown && shown.mutter && !shown.say) {
+                text(shown.mutter, BUBBLE.x + 6, BUBBLE.y + 16, 9, '#9fb0d6')
+            }
             // #2020 A BYSTANDER ASIDE — the crowded shift's second speaker:
             // a gold tag naming who calls across the line, and their line in
             // dim type under the entrant's own bubble. Decor by doctrine — the
@@ -1353,6 +1363,21 @@ const PapersPleaseMinGame = () => {
                     let paper = 0
                     for (let i = 0; i < d.length; i += 4) if (((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]) === 0xd8d2b8) paper++
                     return paper
+                },
+                // #2087 THE MURMUR IS PIXELS: the dim slate family (same hue
+                // law as the aside line: cool, b−r >= 30, mid brightness) in
+                // the bubble field. A murmuring one-off lights it; the dark
+                // booth, gold type and paper ink all fail the hue test — so a
+                // quiet stranger's field reads 0 even though it sits exactly
+                // where a bubble would print.
+                mutterPix: () => {
+                    const d = ctx.getImageData(BUBBLE.x + 2, BUBBLE.y + 4, BUBBLE.w - 4, BUBBLE.h - 8).data
+                    let n = 0
+                    for (let i = 0; i < d.length; i += 4) {
+                        const [rr, , bb] = [d[i], d[i + 1], d[i + 2]]
+                        if (bb - rr >= 30 && rr >= 120 && rr <= 200) n++
+                    }
+                    return n
                 },
                 // #2020 THE LINE SHOWS ITSELF: mug-slate ink (the cool family
                 // r 100..160, g 110..170, b >= r+30) in the strip rect — the
