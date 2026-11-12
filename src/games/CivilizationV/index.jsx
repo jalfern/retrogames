@@ -21,11 +21,11 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import * as THREE from 'three'
-import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP, canDeclareWar, canMakePeace, canTrade, canGift, csInfo, CS_IDS, coastalCityOf, canEmbark, canLand, hullSupplied, canQueue, queueDeny, arkKind, ARK_PARTS, arkPartsOf, arkPartsDone } from './sim.js'
+import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP, canDeclareWar, canMakePeace, canTrade, canGift, csInfo, CS_IDS, coastalCityOf, canEmbark, canLand, hullSupplied, suppliedSea, canQueue, queueDeny, arkKind, ARK_PARTS, arkPartsOf, arkPartsDone } from './sim.js'
 import { decide, RESEARCH_ORDER } from './planner.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
-import { createView, updateView, spawnImpact, spawnArrow } from './art.js'
+import { createView, updateView, spawnImpact, spawnArrow, spawnWreck } from './art.js'
 
 const SIM_MS = 1000 / 60
 const GOAL = CFG.capitalSizeToWin
@@ -175,7 +175,7 @@ const CivilizationVGame = () => {
                 }
                 else if (e.type === 'drown') {
                     if (e.civ === 0) say(`${e.kind} GOES DOWN WITH THE HULL`)
-                    if (known(e.at[0], e.at[1])) spawnImpact(view, gs, e.at[0], e.at[1], true)
+                    if (known(e.at[0], e.at[1])) { spawnImpact(view, gs, e.at[0], e.at[1], true); spawnWreck(view, gs, e.at[0], e.at[1]) }
                     audioController.playSweep(220, 60, 0.5, 'sawtooth', 0.07)
                 }
                 else if (e.type === 'wear') {
@@ -184,7 +184,10 @@ const CivilizationVGame = () => {
                 }
                 else if (e.type === 'shipLost' && e.why === 'supply') {
                     if (e.civ === 0) { say(`${e.kind} LOST AT SEA — NO PORT WAS NEAR`); shake.v = 4; audioController.playSweep(200, 55, 0.6, 'sawtooth', 0.08) }
-                    if (known(e.at[0], e.at[1])) spawnImpact(view, gs, e.at[0], e.at[1], true)
+                    // #2075: rival convoys used to vanish without a word. Rumors
+                    // travel without needing line-of-sight; the tone stays distant.
+                    else { say(`WHISPERS: ${CIVS[e.civ].name} FLEET LOST AT SEA`); audioController.playSweep(150, 80, 0.5, 'sine', 0.03) }
+                    if (known(e.at[0], e.at[1])) { spawnImpact(view, gs, e.at[0], e.at[1], true); spawnWreck(view, gs, e.at[0], e.at[1]) }
                 }
                 else if (e.type === 'research' && e.civ === 0) { audioController.playTone(500, 0.03, 'sine', 0.03) }
                 else if (e.type === 'tech') {
@@ -374,7 +377,9 @@ const CivilizationVGame = () => {
         }
 
         const paint = () => {
-            updateView(view, gs, { reach: screenRef.current === 'play' ? reachSet() : null, lite: LITE })
+            // #2075: a selected hull carries its flag's port horizon on the water.
+            const selShip = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0 && u.naval && !u.loaded)
+            updateView(view, gs, { reach: screenRef.current === 'play' ? reachSet() : null, horizon: screenRef.current === 'play' && selShip ? suppliedSea(gs, 0) : null, lite: LITE })
             renderer.render(view.scene, camera)
         }
 
@@ -954,6 +959,18 @@ const CivilizationVGame = () => {
                 watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 watching: () => watchingRef.current, // #1637 watchcheck: is the witness brain running the empire?
                 navalSupply: () => gs.units.filter((u) => u.alive && u.naval && !u.loaded).map((u) => ({ id: u.id, civ: u.civ, kind: u.kind, c: u.c, r: u.r, hp: u.hp, supplied: hullSupplied(gs, u) })), // #2065 supply lines readback
+                supplyView: () => { // #2075 renderer readback: who wears the flare, wreck beats live, horizon tinted last frame
+                    const o = { playerRingLit: [], enemyRingLit: 0, unsuppliedEnemyVisible: 0, wreck: 0, horizonPaint: view._horizonPaint || 0, toast: toastMsg }
+                    for (const [id, m] of view.unitMeshes) {
+                        const wr = m.userData.warnRing
+                        if (!wr || !wr.visible || !m.visible) continue
+                        const u = gs.units.find((x) => x.id === id && x.alive)
+                        if (!u) continue
+                        if (u.civ === 0) o.playerRingLit.push(id); else o.enemyRingLit++
+                    }
+                    o.unsuppliedEnemyVisible = gs.units.filter((u) => u.alive && u.naval && u.civ !== 0 && !hullSupplied(gs, u) && gs.visible[0][u.r * CFG.W + u.c]).length
+                    for (const w of view.wreckPool) if (w.ttl > 0) o.wreck++
+                    return o },
                 probe: () => ({ screen: screenRef.current, tick: gs.tick, turn: gs.turn, phase: gs.phase, end: gs.end, why: gs.endWhy,
                     gold: gs.civs[0].gold, science: gs.civs[0].science, culture: gs.civs[0].culture || 0,
                     capitalSize: capSize(), playerCities: gs.cities.filter((c) => c.civ === 0 && c.alive).length, totalCities: gs.cities.filter((c) => c.alive).length,
