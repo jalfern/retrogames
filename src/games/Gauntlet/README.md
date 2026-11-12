@@ -440,6 +440,21 @@ BufferSources and ScriptProcessor state both silently vanish in shell+sp), and
 the click content must be LOW-frequency noise + sines — the nyquist-crackle of
 `sin(k*91)` is what opus loves to eat.
 
+PHONE GRADING (#2056): analyze mode (`--key=`/`--file=`) grades REAL phone
+takes differently from the synth run: a phone session is one mixed input stream
+where steering, drift and attack-button taps all live, so `matchClapEdges`
+(flattens per seat: direction/a/b/start/aim rising edges + |analog| threshold
+crossings from pads and raw) pairs each heard onset with the nearest edge in a
+±250 ms search window and runs the SAME ±50 ms line over those pairs; presses
+with no nearby onset are ignored (normal play in the same take is fine) and
+fewer than 3 matched pairs (override `--min=`) is RED, never vacuous green.
+The window is deliberately wider than the budget so a phone whose mic trails
+the frame clock comes back honestly RED (measured offsets) instead of
+ungradeable. `--mutate`'s 500 ms take stays RED through analyze too: the taps
+pair with nothing and the report asks "was each clap paired with a tap?".
+Pure gates live in recordcheck (phone take green, 500 ms red, 120 ms drift red
+pair-by-pair, <3 pairs red, empty red).
+
 ## Hero stamp + replay hole (#1711 S6)
 
 Human runs now stamp `rules: { hero, partnerKey }` into every recording

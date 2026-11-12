@@ -38,7 +38,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { validate } from '../src/utils/recording.js'
-import { detectClaps, clapVerdict, CLAP_TOL_MS } from '../src/utils/clapSync.js'
+import { detectClaps, clapVerdict, matchClapEdges, CLAP_TOL_MS, CLAP_SEARCH_MS, CLAP_MIN_PAIRS } from '../src/utils/clapSync.js'
+import { DIR_FIELDS, AIM_FIELDS } from '../src/utils/onePad.js'
 import { startRelaySim } from './lib/relaysim.mjs'
 import { STORE_DEFAULT } from '../src/utils/sessionStore.js'
 
@@ -53,6 +54,7 @@ const flagVal = (name, dflt) => {
 }
 const ANALYZE_KEY = flagVal('key', null)
 const ANALYZE_FILE = flagVal('file', null)
+const ANALYZE_MIN = Number(flagVal('min', CLAP_MIN_PAIRS)) || CLAP_MIN_PAIRS // #2056: clap count a phone take must match
 // Clap schedule: from mic-open (wall). First clap >= 1.2 s after YES so the
 // seed-birth + recorder-open storm settles; spacing > minGap for the detector.
 const CLAP_MS = [1200, 2600, 4000]
@@ -66,10 +68,16 @@ const r = new Report('plaicraft:clap')
 // The synth path below proves the pipeline with baked claps; this proves the
 // acceptance line on Jon's actual phone bytes: claps he made, presses he made,
 // the phone's mic, encoder and clock. Reads are keyed (JON_KEY env, #1711 S8).
-// Direction-agnostic on purpose: whichever seat's edge stream has exactly one
-// rising edge per heard clap is the candidate; the one with the best alignment
-// is graded. A 500 ms-skewed take cannot align on ANY direction, so the
-// mutant stays red by construction (the synth run pins that half).
+// Direction-agnostic on purpose (#2056): a real phone take has steering/drift
+// edges in the analog streams and its taps on the attack buttons, so a whole
+// take is NOT one clean edge-per-clap stream. Per seat we flatten EVERY input
+// edge — direction bits, a/b/start, aim bits, analog threshold crossings from
+// the raw channel — into one tick list and grade it with matchClapEdges: each
+// heard onset pairs with the nearest edge inside a ±250 ms search window (any
+// control), and the SAME ±50 ms line runs over those pairs. Presses with no
+// nearby onset are ignored (normal play in the same take is fine). A 500 ms-
+// skewed take cannot put ANY edge within ±50 ms of its claps, so the mutant
+// stays red by construction (the synth run pins that half).
 if (ANALYZE_KEY || ANALYZE_FILE) {
     const ra = new Report('plaicraft:clap — keyed take')
     const base = flagVal('store', process.env.SESSION_STORE || STORE_DEFAULT)
@@ -127,25 +135,45 @@ if (ANALYZE_KEY || ANALYZE_FILE) {
     if (!(pcm && track)) { await ra.exit(browser) }
     const aOnsets = detectClaps(Float32Array.from(pcm.samples, (v) => v / 32767), { sampleRate: pcm.sr })
     ra.info('claps heard in the take', `${aOnsets.length}`)
+    // #2056: flatten EVERY control's edges per seat — digital bits (direction,
+    // a/b/start, aim) as rising edges; analog channels (post-zone x/y, ax/ay,
+    // pointer) as |value| threshold crossings, which is what a thumb's press
+    // of a virtual stick looks like on the raw channel.
+    const A_DIG = [...DIR_FIELDS, 'a', 'b', 'start', ...AIM_FIELDS]
+    const A_ANA = ['x', 'y', 'ax', 'ay']
+    const A_RAW = ['x', 'y', 'ax', 'ay', 'px', 'py']
+    const CROSS = 0.5
     const aCands = []
     ;(rec.slots || []).forEach((slot, seat) => {
         const pads = (slot && slot.pads) || []
-        for (const d of ['right', 'left', 'up', 'down']) {
-            const ticks = []
-            for (let i = 0; i < pads.length; i++) if (pads[i] && pads[i][d] && !(i && pads[i - 1] && pads[i - 1][d])) ticks.push(i + 1)
-            if (ticks.length) aCands.push({ seat, d, ticks })
+        const raws = (slot && slot.raw) || []
+        const ticks = new Set()
+        for (let i = 0; i < pads.length; i++) {
+            const p = pads[i] || {}
+            const q = i ? pads[i - 1] || {} : {}
+            for (const f of A_DIG) if (p[f] && !q[f]) ticks.add(i + 1)
+            for (const f of A_ANA) if (Math.abs(p[f] || 0) >= CROSS && Math.abs(q[f] || 0) < CROSS) ticks.add(i + 1)
         }
+        for (let i = 0; i < raws.length; i++) {
+            const p = raws[i] || {}
+            const q = i ? raws[i - 1] || {} : {}
+            for (const f of A_RAW) if (Math.abs(p[f] || 0) >= CROSS && Math.abs(q[f] || 0) < CROSS) ticks.add(i + 1)
+        }
+        if (ticks.size) aCands.push({ seat, ticks: [...ticks].sort((a, b) => a - b) })
     })
     const aGraded = aCands
-        .filter((c) => c.ticks.length === aOnsets.length && aOnsets.length >= 2)
-        .map((c) => ({ ...c, verdict: clapVerdict({ sampleRate: pcm.sr, onsets: aOnsets, pressTicks: c.ticks, clock: track.clock }) }))
-        .sort((a, b) => (b.verdict.ok - a.verdict.ok) || ((a.verdict.worstMs ?? 1e9) - (b.verdict.worstMs ?? 1e9)))
+        .map((c) => ({ ...c, verdict: matchClapEdges({ sampleRate: pcm.sr, onsets: aOnsets, edgeTicks: c.ticks, clock: track.clock, minPairs: ANALYZE_MIN }) }))
+        .sort((a, b) => (b.verdict.ok - a.verdict.ok)
+            || ((a.verdict.worstMs ?? 1e9) - (b.verdict.worstMs ?? 1e9))
+            || (b.verdict.matched - a.verdict.matched))
     const best = aGraded[0]
-    ra.check('clap-coincident presses found (one edge per clap, some seat)', !!best,
-        `claps ${aOnsets.length}; edge streams ${aCands.map((c) => `s${c.seat}.${c.d}:${c.ticks.length}`).join(', ') || 'none'}`)
+    ra.check(`clap-coincident edges found on some seat (any control, ±${CLAP_SEARCH_MS} ms window, >=${ANALYZE_MIN} pairs)`, !!best,
+        `claps ${aOnsets.length}; edge streams ${aCands.map((c) => `s${c.seat}:${c.ticks.length}`).join(', ') || 'none'}`)
     if (best) {
         ra.info('clap pairs', JSON.stringify(best.verdict.pairs))
-        ra.check(`every clap lands within ±${CLAP_TOL_MS} ms of its frame (seat ${best.seat}, ${best.d})`, best.verdict.ok, `${best.verdict.why} (worst ${best.verdict.worstMs} ms)`)
+        ra.info('normal-play edges ignored', `${best.verdict.ignoredEdges} of ${best.ticks.length} edges on seat ${best.seat}`)
+        if (best.verdict.unmatchedOnsets) ra.info('onsets with no nearby edge', `${best.verdict.unmatchedOnsets} (ask: was each clap paired with a tap?)`)
+        ra.check(`every matched clap lands within ±${CLAP_TOL_MS} ms of its frame (seat ${best.seat})`, best.verdict.ok, `${best.verdict.why} (worst ${best.verdict.worstMs} ms)`)
     }
     ra.check('zero page errors', aErrors.length === 0, aErrors.join(' | '))
     await ra.exit(browser)

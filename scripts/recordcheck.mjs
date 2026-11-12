@@ -356,7 +356,7 @@ const BASE = `http://127.0.0.1:${server.address().port}`
 // offline — including the ones that MUST fail (shifted clock, dropped clap),
 // so the clap verdict is provably load-bearing before a single mic opens.
 {
-    const { detectClaps, clapVerdict, CLAP_TOL_MS } = await import('../src/utils/clapSync.js')
+    const { detectClaps, clapVerdict, matchClapEdges, CLAP_TOL_MS } = await import('../src/utils/clapSync.js')
     const SR = 48000
     const TICK_MS = 1000 / 60
     const mkPcm = (clapsMs, durMs = 6000) => {
@@ -397,6 +397,24 @@ const BASE = `http://127.0.0.1:${server.address().port}`
     const mispressed = clapVerdict({ sampleRate: SR, onsets, pressTicks: [61, 145, 289], clock: realtimeClock(300) })
     ok(!mispressed.ok, 'MUTANT press 1000 ms from its clap -> RED', mispressed.why)
     ok(detectClaps(mkPcm([], 4000), { sampleRate: SR }).length === 0, 'sub-threshold hum detects nothing (real claps are the only trigger)')
+
+    // #2056 phone grading: a real phone take is NOT one clean direction stream —
+    // steering/drift adds edges and taps live on the attack button. The old
+    // analyze path (whole-direction order pairing, exact count) refused such a
+    // take; matchClapEdges flattens every control's edges and pairs each onset
+    // with the nearest edge inside the ±250 ms search window (wide so a late
+    // phone mic grades honestly RED, not ungradeable), then the SAME ±50 ms line.
+    const PHONE = [PRESSED[0] + 2, 90, 120, PRESSED[1] + 1, 180, 250, PRESSED[2] - 2, 292] // taps on `a` + steering/drift noise
+    const phone = matchClapEdges({ sampleRate: SR, onsets, edgeTicks: PHONE, clock: realtimeClock(300) })
+    ok(phone.ok && phone.matched === 3 && phone.ignoredEdges === 5, `PHONE take grades green: 3 clap-tap edges matched among 8 (noise ignored) (worst ${phone.worstMs} ms)`, phone.why)
+    const phoneLate = matchClapEdges({ sampleRate: SR, onsets, edgeTicks: PHONE.map((t) => t + 30), clock: realtimeClock(300) }) // +500 ms
+    ok(!phoneLate.ok && phoneLate.matched < 3, 'MUTANT phone take 500 ms from its claps -> RED (the clap taps pair with nothing)', phoneLate.why)
+    const clock3 = realtimeClock(300).map((s) => ({ t: s.t, ms: s.ms + 120 })).concat([{ t: 301, ms: Math.round(300 * TICK_MS) + 120 }]) // +120 ms drift, samples kept, clamp never hides it
+    const phoneDrift = matchClapEdges({ sampleRate: SR, onsets, edgeTicks: PHONE, clock: clock3 }) // inside ±150 window, outside budget
+    ok(!phoneDrift.ok && phoneDrift.matched === 3 && phoneDrift.pairs.every((p) => Math.abs(p.offsetMs) > CLAP_TOL_MS), 'MUTANT 120 ms pipeline drift all outside ±50 ms -> RED — the line is not relaxed, the window only finds candidates', phoneDrift.why)
+    const quiet = matchClapEdges({ sampleRate: SR, onsets: onsets.slice(0, 2), edgeTicks: PHONE, clock: realtimeClock(300) })
+    ok(!quiet.ok && quiet.matched === 2, 'fewer than 3 clap-coincident edges -> RED (a real take has a clap per tap)', quiet.why)
+    ok(!matchClapEdges({ sampleRate: SR, onsets, edgeTicks: [], clock: realtimeClock(300) }).ok, 'no input edges at all -> RED, never vacuous green')
 }
 
 // --- query plumbing -----------------------------------------------------------
