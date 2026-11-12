@@ -500,7 +500,7 @@ The fix is variety as construction, not hope — this generator's own doctrine:
   row day — 10px rows since #1943), no name repeats across the seven walls,
   and no row names anyone in the line.
 
-## Mutants (57, all die under `npm run paperscheck -- --mutate`)
+## Mutants (59, all die under `npm run paperscheck -- --mutate`)
 
 
 
@@ -712,7 +712,8 @@ pins the bubble tail that had been drawn-but-unpinned.
   sweep witnesses require every alternate spoken across the 12 weeks.
 - **The deny aftershock.** `person.seize` (authored per id, arc branch only —
   `else` nobody carries it) prints under the DENIED stamp in the corridor
-  below the rotated stroke (SEIZE.y=156, ink top ≥148 > stamp bottom 147)
+  below the rotated stroke (SEIZE = x STAMP.x+4, y 154: cap ink top 149 clears
+  the stamp's lowest stroke at y≈147/x≈425, descender stays on the paper)
   for the lifetime of the #2021 inspector pin, and the stamp thunks at
   `SEIZE.tone` 147 Hz — below every fixed tone the booth owns (stamps
   300/190…, recognitions 523/784). Evidence-style, no new rule; `sfxSeize`
