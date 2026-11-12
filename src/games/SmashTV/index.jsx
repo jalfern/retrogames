@@ -25,7 +25,7 @@ import { buildSprites, buildFloor } from './art.js'
 import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
 import { playerFrame, GUN, STOCK, gunPose } from './sprite.js'
 import { enemyFrame, CHARGE, TELEGRAPH, OUTLINE, bossMouth, ADD_TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
-import { muzzleFlash, casingCol, killShake, recoilKick, shutterPhase, SHUTTER_TICKS, shellKick, barrelHot, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, STAIN_TICKS, stainRadius } from './juice.js'
+import { muzzleFlash, casingCol, killShake, recoilKick, shutterPhase, SHUTTER_TICKS, shellKick, barrelHot, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, STAIN_TICKS, stainRadius, camPan, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide } from './juice.js'
 import { BAR, PIP, POWER_LABEL, ICON, bombReady, hiRoll, RACK_FLASH, respawnState } from './hud.js'
 import { fireTimbre, BONUS_JINGLE, MURMUR, WHOOSH, ALERT } from './audio.js'
 import { attractFrame, DIM } from './attract.js'
@@ -76,6 +76,7 @@ const SmashTVGame = () => {
         let raf = 0, last = 0, acc = 0
         let demoAt = 0, toast = 0, toastMsg = '', shake = 0, flash = 0, roomTotal = 0, roomBump = 0, clearedAt = -1, rackFlash = 0, hiShown = board()[0]?.score || 0
         let camX = 0 // #1973: arena camera — big rooms run wider than the screen
+        let camF = -1e9 // #1978: float camera position (the uniform pan); -1e9 = snap on the first frame
         const glint = [0, 0] // #1950: per-seat mount-glint countdown (draw frames)
                 const held = new Set()
         let bombEdge = false
@@ -169,6 +170,15 @@ const SmashTVGame = () => {
                 else if (e.type === 'respawn') audioController.playSweep(110, 440, 0.3, 'triangle', 0.07)
                 else if (e.type === 'clear') {
                     audioController.playSweep(330, 990, 0.35, 'square', 0.09)
+                    // #1978: on the wide boards the nearest open door can sit a
+                    // whole cross-screen walk away — that door gets the heavier
+                    // clank + noise confirm; one already in view keeps the blip.
+                    const q = gs.player
+                    const doors = exitsOf(gs.roomData.gw).map((d) => ({ x: d.c * CELL + 8, y: HUD_H + d.r * CELL + 8 }))
+                    if (farExitPx(q.x, q.y, doors) > FAR_EXIT_PX) {
+                        for (const [fq, dl, d] of SHUTTER_CONFIRM.notes) audioController.playTone(fq, d, SHUTTER_CONFIRM.type, SHUTTER_CONFIRM.vol, dl)
+                        audioController.playNoise(SHUTTER_CONFIRM.noise, 0.07)
+                    }
                     say(e.bonus ? 'THAT WAS BEAUTIFUL!' : 'ROOM CLEAR! EXIT OPEN!')
                 } else if (e.type === 'advance') { stains.length = 0; gibs.length = 0; audioController.playSweep(220, 660, 0.25, 'square', 0.07) }
                 else if (e.type === 'bomb') { audioController.playFilteredNoise(WHOOSH.dur, WHOOSH.vol, WHOOSH.freq); audioController.playNoise(0.4, 0.12); audioController.playSweep(80, 900, 0.4, 'sawtooth', 0.1); shake = 8; flash = 12; say('FIREBOMB! THE AUDIENCE ROARS!') }
@@ -573,7 +583,7 @@ const SmashTVGame = () => {
             const col = comboColor(n)
             const pulse = 1 + 0.08 * Math.sin(gs.tick / 3)
             ctx.save()
-            ctx.translate(CW / 2 + camX, HUD_H + 30)
+            ctx.translate(CW / 2 + camX, HUD_H + 48) // #1978: below the sealed-door row (r0) so the pop never fights the chevrons
             ctx.scale(pulse, pulse)
             text(`BONUS ×${n}`, 0, 0, 20 + Math.min(8, n), col, 14)
             ctx.restore()
@@ -698,8 +708,15 @@ const SmashTVGame = () => {
                 const live = gs.players.filter((q) => q.deadT === 0 && !q.out)
                 const seats = live.length ? live : gs.players
                 const mid = seats.reduce((s, q) => s + q.x, 0) / seats.length
-                camX = Math.max(0, Math.min(Math.round(mid - CW / 2), camBoard - CW))
-            } else camX = 0
+                // #1978: uniform pan — the law lives in juice.js (camPan). Steps the
+                // world ≤1 px per drawn frame instead of re-rounding the cast mid,
+                // so a 1.2 px/tick walk never hops the board 2 px at once. The pan
+                // trails the run by a few px and catches up when he stops; rooms
+                // and respawns jump >CAM_SNAP and snap through instantly.
+                const want = Math.max(0, Math.min(mid - CW / 2, camBoard - CW))
+                camF = camPan(camF, want)
+                camX = Math.round(camF)
+            } else { camX = 0; camF = 0 }
             ctx.save()
             if (shake > 0) { ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake); shake -= 0.5 }
             ctx.translate(-camX, 0)
@@ -740,6 +757,25 @@ const SmashTVGame = () => {
             }
             while (pops.length && pops[0].t >= 40) pops.shift()
             ctx.restore()
+
+            // #1978: off-screen legibility. The wide boards park spawns, threats and
+            // the bonus crowd past the frame edge — they telegraph and scream where
+            // they stand, unseen. A blinking chip on the edge they sit on, in the
+            // game's own language (spawn-telegraph yellow, kill red, exit green),
+            // says which way to look. The host is exempt: the host law keeps him in
+            // frame by construction.
+            if (camBoard > CW && screenRef.current === 'play' && (gs.tick >> 2) % 2 === 0) {
+                const marks = []
+                for (const s of gs.roomData.spawns) marks.push([s.c * CELL + 8, HUD_H + s.r * CELL + 8, MARK.spawn])
+                for (const en of gs.enemies) if (en.kind !== 'boss') marks.push([en.x, en.y, MARK.enemy])
+                if (gs.roomData.bonus) for (const v of gs.civilians) marks.push([v.x, v.y, MARK.civ])
+                for (const [bx, by, col] of marks.slice(0, 6)) {
+                    const side = markSide(bx, camX, CW)
+                    if (!side) continue
+                    ctx.fillStyle = col
+                    ctx.fillRect(side < 0 ? 2 : CW - 5, Math.round(Math.max(HUD_H + 8, Math.min(CH - 8, by))) - 1, 3, 3)
+                }
+            }
 
             if (flash > 0) { ctx.fillStyle = `rgba(255,60,40,${flash * 0.025})`; ctx.fillRect(0, 0, CW, CH); flash -= 0.5 }
             const downSeat = gs.players.find((q) => q.deadT > 0) || null
@@ -835,6 +871,7 @@ const SmashTVGame = () => {
             floor = buildFloor(0, gs.seed)
             demoAt = 0
             roomTotal = 0; roomBump = 0; clearedAt = -1
+            camF = -1e9 // #1978: frame the new show instantly, never pan in
             setMode('play')
         }
         const onKeyDown = (ev) => {
@@ -900,7 +937,7 @@ const SmashTVGame = () => {
                 stepP2: (pad) => { if (p2slot.kind !== 'off' && gs.players.length > 1) doSim({ mx: 0, my: 0, fire: false, bomb: false }, seatPadToInp(pad)) },
                 start: () => startPlay(),
                 watching: () => watchingRef.current, // #1637 watchcheck: is the prover running seat 1?
-                start2P: (seed = 0, kind = 'cpu') => { setSeat(kind); gs = makeGame(seed >>> 0, { players: 2 }); floor = buildFloor(0, gs.seed); demoAt = 0; roomTotal = 0; roomBump = 0; clearedAt = -1; setMode('play') },
+                start2P: (seed = 0, kind = 'cpu') => { setSeat(kind); gs = makeGame(seed >>> 0, { players: 2 }); floor = buildFloor(0, gs.seed); demoAt = 0; roomTotal = 0; roomBump = 0; clearedAt = -1; camF = -1e9; setMode('play') },
                 plan: (seed = 0, opts) => plan(seed, opts),
                 events: () => evLog,
                 probe: () => ({
@@ -936,6 +973,7 @@ const SmashTVGame = () => {
                     shake = 0; flash = 0; toast = 0
                     glint[0] = glint[1] = 0
                     roomTotal = 0; roomBump = 0; clearedAt = -1
+                    camF = -1e9 // #1978: a reset frames room 1 at once
                     modelP2 = null; p2BombEdge = false
                     // a driven second seat opens as a model slot: __game.step([p1, p2])
                     // feeds it pads, exactly like every other source

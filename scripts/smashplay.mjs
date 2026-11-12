@@ -41,6 +41,30 @@ r.check('firing stick aims independently', after.player.aim[0] === -1 || after.p
 let evs = await page.evaluate(() => window.__smashTest.events().map((e) => e.type))
 r.check('the guns fired', evs.includes('shoot'), [...new Set(evs)].join(','))
 
+// #1978: uniform pan. The old camera re-rounded the cast mid every frame: a
+// hero-speed walk hopped the world 2 px and stuttered the sprite. At rAF rate
+// the pan must step at most 1 px per frame and never against the run.
+{
+    const rows = await page.evaluate(() => new Promise((resolve) => {
+        window.__smashTest.press(['ArrowRight'])
+        const out = []
+        let i = 0
+        const step = () => {
+            const p = window.__smashTest.probe()
+            out.push([p.player.x, p.camX])
+            if (++i < 90) requestAnimationFrame(step)
+            else { window.__smashTest.release(['ArrowRight']); resolve(out) }
+        }
+        requestAnimationFrame(step)
+    }))
+    const dc = rows.slice(1).map((r0, j) => r0[1] - rows[j][1])
+    const hop = Math.max(...dc.map(Math.abs))
+    const travel = dc.reduce((a, b) => a + b, 0)
+    r.check('the pan never hops the world more than 1 px/frame (uniform pan)', hop <= 1, `max hop ${hop}`)
+    r.check('the pan is monotone with the run', dc.every((d) => d >= 0), `back steps ${dc.filter((d) => d < 0).length}`)
+    r.check('the pan really travelled while he ran', travel >= 20, `${travel}px`)
+}
+
 // firebomb spends power
 const e0 = await probe()
 await page.evaluate(() => window.__smashTest.bomb())

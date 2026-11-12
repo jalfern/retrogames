@@ -41,6 +41,10 @@
 //               bonus-room-only drops, bounded-turn missile guidance with blast
 //               and fizzle, the flamer's three-pellet fan and ~45 px reach cap,
 //               and the seat-law that keeps the autopilot out of the fire.
+//   polish (#1978): the uniform pan (≤1 px/frame, snap past CAM_SNAP), the
+//               cross-screen door confirm distance and voice, off-screen marker
+//               side-mapping in the game's own colours, and the combo pop's
+//               clear band below the border door row.
 // `-- --mutate` re-plants fixed bugs in child processes; each MUST die.
 
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -57,7 +61,7 @@ const { GW, GW_BIG, BIG_ROOMS, GH, CW, CELL, EXITS, exitsOf, TOTAL_ROOMS, genRoo
 const { wallCell, NEON_TOP, CHROME, borderRivet } = await import('../src/games/SmashTV/walls.js')
 const { playerFrame, GUN, LAYERS, PLAYER_FRAMES, CARRIAGE, POSE, STOCK, SPREAD_FLOOR, gunPose } = await import('../src/games/SmashTV/sprite.js')
 const { ENEMY_FRAMES, TELEGRAPH, CHARGERS, CHARGE, OUTLINE, enemyFrame, bossMouth, BOSS_MOUTH_FLAP, ADD_TELEGRAPH, BOSS_DEATH_T } = await import('../src/games/SmashTV/enemies.js')
-const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore, recoilKick, RECOIL_TICKS, RECOIL_PX, SHELL_KICK, shellKick, barrelHot, HOT_FLOOR, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, GORE_GRAV, STAIN_TICKS, stainRadius } = await import('../src/games/SmashTV/juice.js')
+const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore, recoilKick, RECOIL_TICKS, RECOIL_PX, SHELL_KICK, shellKick, barrelHot, HOT_FLOOR, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, GORE_GRAV, STAIN_TICKS, stainRadius, camPan, CAM_PAN, CAM_SNAP, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide } = await import('../src/games/SmashTV/juice.js')
 const { PLAYER_PAL, PAULDRON_BOB } = await import('../src/games/SmashTV/art.js')
 const { FIRE, fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_TICKS, WHOOSH, ALERT, ALERT_RADIUS, ALERT_CD } = await import('../src/games/SmashTV/audio.js')
 const { BAR, PIP, POWER_LABEL, labelClearsBar, pipFits, bombReady, RACK_FLASH, hiRoll, respawnState, RESPAWN_BLINK_SHIFT } = await import('../src/games/SmashTV/hud.js')
@@ -1001,11 +1005,14 @@ console.log('varisize')
     step(gs2, {})
     ok(gs2.room === 5, 'walking the FAR door of a big room advances the show', `room ${gs2.room}`)
 
-    // the renderer carries the camera (source pins — the pan lives in index.jsx)
+    // the renderer carries the camera (source pins — the pan lives in index.jsx;
+    // #1978 moved the re-rounding out: the cast mid sets a float target, camPan
+    // steps it uniformly, and the rounded value is all the arena sees)
     const IDX = readFileSync('src/games/SmashTV/index.jsx', 'utf8')
     ok(IDX.includes('ctx.translate(-camX, 0)'), 'the arena renders through a camera pan')
-    ok(IDX.includes('Math.round(mid - CW / 2)'), 'camX centres the live cast', '')
-    ok(IDX.includes('camBoard - CW'), 'camX clamps at the board edges')
+    ok(/const want = Math\.max\(0, Math\.min\(mid - CW \/ 2, camBoard - CW\)\)/.test(IDX), 'camX centres the live cast and clamps at the board edges', '')
+    ok(IDX.includes('camPan(camF, want)'), 'the pan obeys the uniform-step law')
+    ok(IDX.includes('camX = Math.round(camF)'), 'the pan lands on whole pixels')
 }
 
 // ----------------------------------------------------------------- slack ----
@@ -1064,6 +1071,60 @@ console.log('gore')
     ok(/'advance'[\s\S]{0,160}stains\.length = 0/.test(SRC), 'the next room opens on a clean floor')
 }
 
+// ---------------------------------------------------------- polish (#1978) ----
+console.log('polish')
+{
+    // 1) uniform pan (#1978). Measured on the old camera: a 1.2 px/tick walk
+    // stepped the world 1,1,2 px and the hero screen-stuttered backwards a
+    // pixel every fifth tick. Walk the law at hero speed: the world may never
+    // hop more than 1 px in a frame, never step against the walk, and still
+    // cross the whole extra board.
+    let f = 72, prev = 72, hops = 0, back = 0, moved = 0
+    for (let t = 0; t <= 160; t++) {
+        f = camPan(f, Math.min(128, 72 + t * 1.2)) // CFG.playerSpeed, clamped board
+        const x = Math.round(f)
+        if (x - prev > 1) hops++
+        if (x < prev) back++
+        moved += x - prev
+        prev = x
+    }
+    ok(hops === 0, 'a hero-speed walk never hops the world more than 1 px/frame', `hops=${hops}`)
+    ok(back === 0, 'the pan is monotone with the walk — no backwards stutter')
+    ok(moved >= 56, 'the pan still travels the whole extra board', `${moved}px`)
+    ok(camPan(0, 40) === 40 && CAM_SNAP === 24, 'a board-sized jump snaps through — rooms and respawns do not pan')
+    ok(camPan(100, 100.6) === 100.6, 'sub-pixel catch-up lands exactly (no oscillation)')
+    ok(camPan(100, 130) === 130 && camPan(100, 120) === 101, 'snap past CAM_SNAP, one px step inside it', `${camPan(100, 120)}`)
+    ok(CAM_PAN === 1, 'the pan cap is one pixel', `${CAM_PAN}`)
+
+    // 2) cross-screen door confirm: on a wide board every door can be a walk
+    // away when the room falls; the near-door blip alone read the same as the
+    // cabinet's. The far case answers with the two-tone clank over noise.
+    ok(FAR_EXIT_PX >= 64 && FAR_EXIT_PX <= 128, 'the confirm distance is a real walk, not the whole board', `${FAR_EXIT_PX}`)
+    const doors = exitsOf(GW_BIG).map((d) => ({ x: d.c * 16 + 8, y: 24 + d.r * 16 + 8 }))
+    ok(farExitPx(264, 176, doors) > FAR_EXIT_PX, 'mid-board on a wide room, every door is a walk away', farExitPx(264, 176, doors).toFixed(0))
+    ok(farExitPx(200, 192, doors) <= FAR_EXIT_PX, 'at the spawn the near door keeps the light blip', farExitPx(200, 192, doors).toFixed(0))
+    ok(SHUTTER_CONFIRM.notes.length === 2 && SHUTTER_CONFIRM.noise > 0, 'the confirm is a two-tone clank over noise, not one blip')
+    const SRC2 = readFileSync('src/games/SmashTV/index.jsx', 'utf8')
+    ok(/'clear'[\s\S]{0,900}farExitPx\(q\.x, q\.y, doors\) > FAR_EXIT_PX/.test(SRC2), 'the room-clear handler carries the far-door confirm')
+
+    // 3) off-screen markers: spawns, threats and the bonus crowd past the edge
+    // borrow the game's own colours so the chip reads without a tutorial.
+    ok(markSide(10, 72, 256) === -1 && markSide(330, 72, 256) === 1 && markSide(200, 72, 256) === 0, 'markSide maps board x to the frame edge', `${markSide(10, 72, 256)},${markSide(330, 72, 256)},${markSide(200, 72, 256)}`)
+    ok(MARK.spawn === '#ffd23f' && MARK.enemy === '#ff5d5d' && MARK.civ === '#8fff9f', 'the markers reuse the telegraph, kill and exit colours')
+    ok(SRC2.includes('markSide(bx, camX, CW)'), 'the renderer stamps the edge chips')
+    ok(SRC2.includes("en.kind !== 'boss'"), 'the host is exempt — the host law already keeps him framed')
+
+    // 4) combo pop vs shutter: the pop hangs at screen centre and the up-door
+    // sits at board centre — at mid-board framing the old pop row collided
+    // with the sealed/shuttering door. The pop now hangs below the border row,
+    // and nothing may ever be built in its band.
+    ok(SRC2.includes('ctx.translate(CW / 2 + camX, HUD_H + 48)'), 'the combo pop hangs below the border door row')
+    for (let idx = 0; idx < TOTAL_ROOMS; idx++) {
+        const low = genRoom(0, idx).walls.filter(([, r]) => r <= 2)
+        ok(low.length === 0, `room ${idx + 1}: nothing built in the pop's band (rows 0–2)`)
+    }
+}
+
 // ------------------------------------------------------------- mutants ----
 if (process.argv.includes('--mutate')) {
     console.log('mutants (must die)')
@@ -1111,8 +1172,16 @@ if (process.argv.includes('--mutate')) {
         ['#2044: gore vanishes before the arc reads', 'export const GORE_TICKS = 34', 'export const GORE_TICKS = 8'],
         ['#2044: gibs float — no weight on the splatter', 'export const GORE_GRAV = 0.22', 'export const GORE_GRAV = 0'],
         ['#2044: the floor dries instantly', 'export const STAIN_TICKS = 120', 'export const STAIN_TICKS = 4'],
+        ['#1978: the pan regrows its 2 px hops', 'export const CAM_PAN = 1', 'export const CAM_PAN = 2'],
+        ['#1978: respawns drift across the board instead of snapping', 'export const CAM_SNAP = 24', 'export const CAM_SNAP = 1e9'],
+        ['#1978: the far-door confirm is switched off', 'export const FAR_EXIT_PX = 96', 'export const FAR_EXIT_PX = 1e9'],
     ]
-    const targets = [[SIM, MUTANTS], [SPRITE, SPRITE_MUTANTS], [LEVELS, LEVELS_MUTANTS], [PLANNER, PLANNER_MUTANTS], [JUICE, JUICE_MUTANTS]]
+    const IDX = 'src/games/SmashTV/index.jsx'
+    const IDX_MUTANTS = [
+        ['#1978: the far-door confirm goes blind', 'if (farExitPx(q.x, q.y, doors) > FAR_EXIT_PX) {', 'if (false) {'],
+        ['#1978: the combo pop slides back onto the door row', 'ctx.translate(CW / 2 + camX, HUD_H + 48)', 'ctx.translate(CW / 2 + camX, HUD_H + 30)'],
+    ]
+    const targets = [[SIM, MUTANTS], [SPRITE, SPRITE_MUTANTS], [LEVELS, LEVELS_MUTANTS], [PLANNER, PLANNER_MUTANTS], [JUICE, JUICE_MUTANTS], [IDX, IDX_MUTANTS]]
     let died = 0, total = 0
     for (const [file, muts] of targets) {
         const orig = readFileSync(file, 'utf8')
