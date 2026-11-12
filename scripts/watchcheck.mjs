@@ -2288,6 +2288,51 @@ const PILOTS = [
             rep.check('defender: Y again releases the wheel', !(await watching()))
         },
     },
+    // #1637 batch 31 — SUPER MARIO seats the machine autopilotcheck certifies:
+    // the engine's own rule-based autopilot ("must clear 1-1 outright" — all
+    // lives, zero deaths, every pass). b24 law: Y at the title starts AND seats
+    // from tick 0. The seat lives on 1-1, the certified sector; handback clears
+    // the autopilot's key-holds so the player never inherits a stuck run button.
+    {
+        id: 'mario', url: `${BASE}/mario`, hook: '__marioTest',
+        async run(page, rep) {
+            const H = '__marioTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].getState(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            rep.check('mario: nobody is driving yet (no seat before Y)', !(await watching()))
+            await key(page, 'KeyY')            // b24 law: attract starts AND seats
+            await seatPoll(page, H)
+            rep.check('mario: Y seats the certified autopilot', await watching())
+            rep.check('mario: the seat flips the MODE — autopilot holds the overalls', (await probe()).mode === 'autopilot')
+            rep.check('mario: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            const adv = (x, y) => y.mode === 'autopilot' && (y.col > x.col || y.score > x.score)
+            const note = (x, y) => `col ${x.col} -> ${y.col}, score ${x.score} -> ${y.score}, state ${y.state}`
+            // Short windows: the autopilot crosses ~12 cols/s, and the flagpole
+            // releases the seat by design — a 15 s window would test the flagpole
+            // law here instead of the sector (pollAdvance sleeps its whole window).
+            const a = await probe()
+            const b = await pollAdvance(page, probe, adv, a, 4000)
+            rep.check('mario: the machine runs with idle hands (past the intro, into the sector)', adv(a, b), note(a, b))
+            rep.check('mario: still watching mid-sector', await watching())
+            await page.keyboard.press('ArrowLeft')
+            rep.check('mario: steer key takes the overalls back', !(await watching()))
+            rep.check('mario: the mode flips back to the player', (await probe()).mode === 'play')
+            rep.check('mario: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('mario: Y re-seats mid-sector (the autopilot reads the live run)', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 4000)
+            rep.check('mario: resumes from where the player left it', adv(c, d), note(c, d))
+            await key(page, 'KeyY')
+            rep.check('mario: Y again releases the overalls', !(await watching()))
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            await page.mouse.click(640, 360)
+            rep.check('mario: a tap on the field hands the seat back', !(await watching()))
+        },
+    },
 ]
 
 const run = PILOTS.filter((p) => !ONLY || p.id === ONLY)
@@ -3019,6 +3064,43 @@ for (const [name, f] of Object.entries(B4_SRC)) {
         (() => { const m = readFileSync('src/config/games.js', 'utf8').split(`path: '/viper-pit'`)[1]; return !!m && m.split('path:')[0].includes('WATCH_HELP') })())
     rep.check('batch 30: viperpitcheck stamps the seat sweep (60/60 decisive vs live rung 1, offence on every seed)',
         /60\/60 own-tier bouts vs live rung 1 decide/.test(vpc) && /drags its foe off full health untouched/.test(vpc))
+}
+// ---- #1637 batch 31 source pins — SUPER MARIO seats the certified autopilot,
+// and the audit LEDGER closes the rollout: the nine titles the b31 full-shelf
+// audit found without a winning script must never advertise WATCH. A seat can
+// only be the engine's own driver (the menu option 3 autopilot, which
+// autopilotcheck races to the flagpole with zero deaths), it lives on 1-1 —
+// the sector that proof covers — and handback leaves clean hands. ----
+{
+    const sj = readFileSync('src/games/SuperMario/index.jsx', 'utf8')
+    const ac = readFileSync('scripts/autopilotcheck.mjs', 'utf8')
+    const reg31 = readFileSync('src/config/games.js', 'utf8')
+    const entryHas31 = (p) => { const m = reg31.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes('WATCH_HELP') }
+    rep.check('SUPER MARIO: the route is the engine\'s own autopilot (not a bench script)',
+        /if \(mode === 'autopilot'\) autopilot\(\)/.test(sj) && /const seat = \(\) => \{\s*mode = 'autopilot'/.test(sj))
+    rep.check('SUPER MARIO: Y seats with blips; any driving key takes over',
+        /isWatchKey\(e\)/.test(sj) && /isTakeoverKey\(e\)/.test(sj)
+        && sj.includes('playWatchStart') && sj.includes('playWatchStop') && sj.includes('watchSfx: watchSfxLog'))
+    rep.check('SUPER MARIO: the seat lives on 1-1 — the sector autopilotcheck certifies (else no-guide)',
+        /const canWatch = \(\) => \(state === 'play' \|\| state === 'intro'\) && mode === 'play' && levelIndex === 0/.test(sj)
+        && sj.includes('NO_GUIDE'))
+    rep.check('SUPER MARIO: b24 law — Y at the title starts AND seats from tick 0',
+        /state === 'attract' \|\| state === 'gameover' \|\| state === 'win'\) \{\s*apHold = 0\s*resetGame\(\)/.test(sj))
+    rep.check('SUPER MARIO: handback clears the autopilot\'s key-holds (no inherited stuck run button)',
+        /keys\.left = false; keys\.right = false; keys\.run = false; keys\.down = false/.test(sj))
+    rep.check('SUPER MARIO: watch never lingers — terminal states release it, and the flagpole completes the watcher with CLEAN KEYS (a held run button must never leak into 1-3)',
+        /if \(watchingRef\.current\) \{ watchingRef\.current = false; setWatching\(false\); mode = 'play' \}/.test(sj)
+        && /if \(watchingRef\.current\) release\(false\) \/\/ #1637 the watcher's job is the certified sector/.test(sj))
+    rep.check('SUPER MARIO: phones can seat too (in-run pill + toast + attract button; no picker in the boot path)',
+        /<WatchButton on=\{watching\}/.test(sj) && /<WatchToast/.test(sj) && /<AttractWatchButton/.test(sj))
+    rep.check('SUPER MARIO: attract shows the shared WATCH hint (import + drawn line)',
+        (sj.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
+    rep.check('registry /mario: controls carry the WATCH line', entryHas31('/mario'))
+    rep.check('batch 31: autopilotcheck stamps the win the seat rides (flagpole, no deaths)',
+        /must clear 1-1 outright/.test(ac) && /no deaths/.test(ac))
+    // b31 audit ledger: the honest remainder never grows a silent button.
+    for (const p of ['/mario-classic', '/ironkeep', '/raccoon-heist', '/pacman', '/centipede', '/pitfall', '/zork2', '/zork3', '/britannia'])
+        rep.check(`audit ledger: ${p} carries no WATCH line (no proven driver to seat)`, !entryHas31(p))
 }
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray
