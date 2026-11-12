@@ -1,65 +1,60 @@
-# STATE — session 244 (2026-11-12, slot b)
+# STATE — session 245 (2026-11-12, slot a)
 
 ## What shipped
-**PAPERS, PLEASE-MIN — THE CROWDED SHIFT SPEAKS** merged as `b190bc5`
-(PR #2103, Closes #2020 — warden TARGET #2020 claimed first, plan accepted).
-#2012 put two regulars in a shift but staged it like a solo day; four beats
-of dense-morning theatre, all decor (doctrine of the nose — none can convict):
-- **Queue strip** (layout `QUEUE`): paper-mug per known face not yet ruled +
-  gold "…" for random fill. Crowded days open two deep, solo one, day 1 none;
-  derived from the live queue slice, recomputed per seed in paperscheck.
-- **Bystander aside** (gen.js + `ASIDE`): one tagged exchange per crowded
-  shift — "A VOICE BEHIND YOU / THE LINE IS LONG TODAY." at the head,
-  "A VOICE FROM INSIDE / VOLEN SAYS HELLO." at the tail (named — the two
-  beats tie to the same faces). Zero rnd draws; `aside` stripped off every
-  paper of every seed in the purity twin; rules.js may not contain the word.
-- **Crowd juice**: banner accent `* TWO FAMILIAR FACES IN LINE *` (stacks
-  with the NEW MONTH line) + recognition chime gains a low third note
-  392 Hz triangle, pinned below the welcome's 523 and disjoint from every
-  owned tone.
-- **Bodies land**: #1891 SETTLE dy now rides the counter face too.
-`crowdedDay(seed,n)` = the #2012 walk's own length — one law, cannot drift.
-Harness: paperscheck +68 checks; mutants m53 (flag never set) / m54 (name-tie
-dropped) join — **all 55 die** (21331/21331 --mutate). papersplay 114/114
-live; manual break of mug ink → exactly 3 red, restored. Rule-4 streak reset.
+**PAPERS, PLEASE-MIN — THE ARC POLISH PASS** merged as `c36bb74`
+(PR #2105, Closes #1988 — warden TARGET #1988 claimed first, plan accepted).
+Five upgrades to the Ministry arc, all view-side (stateHash byte-identical for
+week 0, the TMD ghost-cell doctrine):
+- **Bulletin faces** (`ARC_MUG` 26×26 @ s0.30): the ARC entry on day 6's wall
+  carries the neighbor's mugshot; decoy rows stay text-only — a face for a
+  name that never walks is a lie with no witness (m58 plants that, dies).
+  `bulletinRows()` is now the single shared walk (law and paint can't drift).
+- **Turn announce**: the ARC row flashes `ARC_HL` #ff3b30 when the arc is at
+  the glass — gg 59 sits under the wallRed family's 80 floor, so `wantedInk`
+  keeps counting sheet rows only.
+- **Voice breadth**: per-id `turnAlt`/`againAlt`/`seize` pools, a 43-sentence
+  authored repertoire (distinctness law), mixed by chapter
+  `repChapter = floor(seed/|REGULARS|) % 2` — week 0 keeps every canonical
+  literal, so existing fixtures replay verbatim.
+- **Deny aftershock**: turning the friend thuds `SEIZE.tone = 147` Hz (below
+  every fixed owned tone) and hangs their argue line under the DENIED stamp
+  for the #2021 pin's lifetime. Corridor MEASURED, not guessed: SEIZE =
+  (STAMP.x+4, y 154); baseline 156 put descender ink on the stamp's white
+  stroke and the probe read 0px against correct state.
+- **Bubble-tail pixel pin** (`bubbleTailPix`): lit by a speaking neighbor,
+  dark for strangers — both sides gated live.
+Harness: paperscheck 22459/22459; mutants **59/59 die** (22518/22518);
+papersplay 121/121. Rule-4 streak reset (src/games shipped).
 
 ## The session's catches
-- **Prod verification must grep the lazy GAME chunk.** The HTML shell's
-  index-*.js contains zero game strings — polling it for a marker never goes
-  green. Chunks are content-addressed: verify offline by fetching the local
-  build's marker chunk name, or brute-scan all 63 index-*.js. (My first two
-  poll loops timed out spuriously for this reason, plus a 308 needing `curl -L`.)
-- **Overlays veil pixel probes.** The morning banner is a full-width veil
-  (y 150..286, ~3.3 s) and the deny citation PIN keeps showing the JUDGED
-  entrant ~2.2 s — strip/aside samples during either measure the wrong booth.
-  `waitQuiet()` (banner 0 + !inked + !pinned) before counter-adjacent samples.
-- **idle.mjs needs live args.** flagshipStage()/weakestStage() with no args
-  return null — a fake dry board. Feed gapsByGame from READMEs, issues from
-  gh, games from parseRegistry.
+- **Mutant IDs are shared property.** Two lanes filed m53/m54 the same night
+  (#2020 won by merge order); collision resolution = renumber the LATE merge
+  (#1988 → m55–m58). A README count is wrong until `--mutate` says the
+  number — 55+4=59, both pre-merge counts were fiction at merge time.
+- **Merge-loop hangs on absent checks.** `gh pr checks … select(.name=="static")
+  [0].state` spins forever when CI never triggered (happened once; a manual
+  `gh workflow run ci.yml --ref <branch>` fixed it) and the loop's own
+  `[ "$s" = … ]` errors on empty. Guard with `// "PENDING"` + an iteration cap.
+  workflow_dispatch DOES satisfy branch protection (it reports on the head SHA).
+- **Worktree file loss, twice.** Uncommitted edits vanished from the lane
+  worktree between tool calls (tracked files snapped to HEAD; untracked
+  survived), and `gh pr merge` left the lane worktree checked out on `main`.
+  Filed as part of #2109. Until root-caused: commit every working increment
+  immediately (the rule-5 habit is load-bearing, not ceremonial).
+- **Top-level name collisions across lanes.** main's attract probe owns `lit`
+  at papersplay module scope; my bulletin probe collided → rename on merge
+  (`arcLit`). Node --check catches it in seconds; run it on merge resolutions
+  before the harness.
 
 ## Ladder trail
-TARGET #2020 CLAIMED (warden, slot b) → shipped. Queue now EMPTY; no
-next/steer/halt; QA MASTER alive (no feedback borrow). Live honest board:
-flagshipStage=null; weakestStage=PAPERS, PLEASE-MIN score 3 gap:null → shelf
-gap-free for builders. `jonq ask "Which new flagship title?"` was REFUSED by
-jonq itself (#1571 policy gate) — so no dry-queue question stands open.
-#2020's item 4 (cross-week memory) filed as #2104 (feedback, QA-owned).
+- #2109 open (feedback): decoy-faces design call, mug detail vs the original's
+  portraits, aftershock breadth to non-arc regulars, + the worktree-loss
+  sighting (harness).
+- Advisory reds seen on `smoke` from `/gauntlet` pad boot (vpadboot 209/211
+  locally, gauntlet only) — pre-existing on main, not papers; a QA lane owns it.
+- No open questions for Jon this session (jonq: nothing filed).
 
-## Open questions
-- none (jonq list empty; the flagship-title ask was refused at file time —
-  re-attempt only if jonq's own gap check passes a dry shelf next kick).
-
-## Next
-- Recompute the ladder live at next kick (with args!). If the shelf is still
-  gap-free for builders, the never-dry rung has nothing to take without
-  inventing work — hold for Jon's steer / QA's #2028 / #1988's owner to land,
-  and only then the flagship-title jonq.
-- #2104 is the designed follow-up (seed-adjacent continuity beat for PAPERS;
-  design questions listed in the issue) — builder-claimable once labeled
-  game-queue or steered.
-- Smoke advisory was red on #2103 (first fail), rerun once per rule 3; never
-  blocked the merge (static passed).
-
-## Hygiene at exit
-Dev server 5178 stopped (mine only); worktree removed; branch gone; main
-checkout detached at origin/main. Slot-a port 5173 untouched.
+## Lane state
+Slot A: idle — #1988 shipped, worktree `~/Dev/retrogames-forge-ppm-arc-polish`
+removed, dev server :5173 stopped. Main checkout detached at origin/main per
+Jon's 2026-10-11 decision. Next session claims the warden TARGET as usual.
