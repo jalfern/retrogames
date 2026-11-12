@@ -1,51 +1,72 @@
-# STATE — session 248 (2026-11-12, slot a)
+# STATE — session 248 (2026-11-12, slot b)
 
 ## What shipped
-**PAPERS IN HAND (#2120)** merged as `1bef805` (PR #2126) — live at
-`jalfern.com/retrogames/papers-please` (prod game chunk `index-BOVIMmx9.js`
-carries the `.004` tilt law). The warden TARGET #2113 was already claimed and
-shipped by slot b when this session started (claim REFUSED, slot b live), so
-the never-dry rung ran: queue empty, flagshipStage null → weakest stage PAPERS,
-PLEASE-MIN (score 5) → self-filed #2120 and built it.
-- `layout.js DRAG` — the desk law in Node: clamp is the IDENTITY at home (every
-  pixel pin ever written stands by construction), carried cards stay fully on the
-  counter, the desk never reaches over the entrant's face, travel 8px splits
-  tap-vs-grab, tilt 0.06 rad is a real lean.
-- `index.jsx` — grab/carry/release pointer wiring (booth-side paint only,
-  #2072 PHOTO_ZOOM doctrine: sim untouched, stateHash byte-identical, rules.js
-  and sim.js don't name the lever). A press that never travels is exactly the
-  old press (strip tap-stamps, #2072 photo hold, phone pad unchanged); starting
-  a drag cancels a zoom; last grab rides on top (hit-test order follows
-  `topCard`); ruling/next-drop clears the desk.
-- Harness: paperscheck +38 static laws (identity/extremes/face-clear/stack/
-  purity/tripwires) — 22497 green, `--mutate` **61/61 die** (new m59 clamp
-  loses upper bounds, m60 desk covers the face). papersplay +10 live gates
-  (real mouse: carry+tilt, land-at-clamp, beige vacate 2.1k/9.7k→<40 and
-  fill 0→1.7k px, tap still stamps, zoom cancels on travel, independent
-  offsets, z-order flip, ruling returns home, the hand never rules) —
-  **132/132**. Manual red: disabling `clearDesk()` in `act()` fails the
-  ruling-home gate; restored.
+**CIVILIZATION V — THE ERA CURVE** merged as `88cf5c4` (PR #2125, Closes
+#2122). Never-dry rung: TARGET #2120 was REFUSED (slot a live, 7-min claim)
+so the ladder ran clean — no halt/steer/next/game-queue, jonq empty, QA
+MASTER live (no borrow), flagshipStage null → weakestStage crowned
+CIVILIZATION V score 5 (named by #2085/#2075/#2069 + 2 unowned README gaps;
+PapersPleaseMin skipped as held). Issue #2122 self-filed with why-weakest line,
+claimed, built, shipped in-session. BNW law: `victoryFor` culture clause beats
+each living rival `tourism × 2^max(0, eraGap)`; CFG.tourismWin stays RAW;
+same-era read ×1 so every §33/§37 pin replays byte-identical (three pins now
+pin `era=5` by fiat, in place). No new stored state — `C.era` derives from the
+tech mask already in stateHash. Panel shares the walk: exported `eraCurve`/
+`cultureBeats`, `×N vs them|you` badges, age-named crown copy. Harness §42
+(22 checks): identity ×1/×2/×4/×32, exact kills (120×2 beats 239 not 240),
+raw bar, same-era tie, crown over raw deficit, rival symmetry, AND-court, dead
+ghost-books, income law, seed-7 determinism, source pins. civcheck 662/662;
+mutants: `2 **`→`1 **` reds six, clamp-drop reds three, both restored.
+eslint+lint:civ+build green. Prod verified live: crown copy in deployed lazy
+chunk `index-xdQ_Cupl.js`; live URL commented, #2122 shipped+closed. QA polish
+pass filed as **#2128** (era-dawn tells, badge juice, culture sound, teaching,
+civplay refresh). Also closed session 246's deferred task: #2113's cool-ring
+ink `#7fd4e8` confirmed live (`index-4pb8j3u6.js`), URL commented on #2113.
 
 ## The session's catches
-- **Seed 0's first walk-up is the no-papers customer** — live drag gates that
-  assume a passport at the counter grab nothing. Gates now `seatWindow(pp,id)`:
-  stamp correct verdicts with real keys until the wanted documents are at the
-  glass, then waitQuiet+settle. Any future papersplay mouse gate needs this.
-- **CSS→canvas coords are floats**: `pp.y === 90` fails at 89.99999 on a 880px
-  viewport (680 canvas). Round before comparing landed offsets.
-- **Prod verification path**: apex 308s to `www.jalfern.com`; assets must be
-  fetched from www. Vercel builds a *union* of merged PRs, so prod chunk names
-  differ from local `dist/` hashes — verify by grepping the live chunk for the
-  new constant (`.004`), not by name equality.
+- **A warden TARGET can lose the claim race.** #2120 was assigned to slot b
+  but slot a held it live (claim 7 min old, process alive) — forge-claim
+  REFUSED, and the never-dry ladder produced a full shipped game anyway.
+  TARGET ≠ entitlement; the liveness namespace arbitrates, the ladder is the
+  fallback path, not a detour.
+- **§-number collision with a live main.** #2123 took §41 while my branch flew;
+  renumbered to §42 (late-merge doctrine), rebased resolving the civcheck tail
+  + an import union (main added `suppliedSea`, I added `eraCurve`). Rebase a
+  live main BEFORE pushing the PR, and grep main for your section number first.
+- **A perl mutant that mutates nothing.** `perl -pi -e '…'` with the filename
+  lost to quoting read STDIN, silently no-op'd, and the "mutant" run came back
+  GREEN — a fake proof. `git diff --stat` after planting is the five-second
+  guard; no diff = no mutant, never report the green as a pass.
+- **Prod greps the lazy chunks, never the entry bundle.** Game strings live
+  behind dynamic imports; polling the main JS for game copy loops 40×20 s and
+  finds nothing (this session wasted 13 min re-learning the same lesson
+  session 246 wrote down). Right move: entry → `grep -o assets/…js` → fetch
+  each chunk → grep the string (the #2114 check from that session is the
+  snippet to copy).
+- **civplay's Stage-8 boot checks are stale** (`tap a tile to move`/
+  `space ends the turn` left the attract with #368's split; the VICTORY-open
+  check presses KeyY, WATCH since #1637). 96/99 pre- AND post-branch — not a
+  regression; triply-confirmed, commented on #2115, folded into #2128 item 5.
 
 ## Ladder trail
-- #2120 filed, claimed, shipped, closed with `shipped` label.
-- Advisory reds: none this session (all gates green on first evidence run).
-- No open questions for Jon (jonq: nothing filed).
+TARGET #2120 REFUSED (slot a live) → halt none → steer none → next none →
+game-queue empty → jonq empty → QA MASTER live (no feedback borrow) →
+flagshipStage null (all four flagship gap lists CLOSED) → weakestStage =
+CIVILIZATION V score 5, gap index 0 (era curve) → POLISH #2122 filed +
+claimed + shipped. Never-dry rung #1571 worked exactly as designed, twice.
 
-## Lane state at exit
-Slot A: idle. Main checkout detached at origin/main. Dev server :5173 stopped
-(mine only — :5176/:5178 untouched); worktree `retrogames-forge-ppm-hand`
-removed. Next session claims the warden TARGET as usual; #2115/#2036 family
-stays QA-owned. Papers-MIN honest gaps now: month-numerals in evidence text
-(contract tokens, pinned verbatim — doctrine, see README).
+## Open questions
+- none filed (nothing taste-level; the pairwise-crown tie semantics are
+  documented on #2122 and the README, not a question).
+
+## Next
+- Normal ladder. Civ's remaining README honest gaps after #2122: World
+  Congress / Ideology gifting / great-work slotting (big-ticket, gap-owned),
+  sea tactics stack, vassal liberate-choice — plus #2128's polish items for
+  the QA lane. weakestStage should now pass to whatever title scores next.
+
+## Hygiene at exit
+Dev server 5178 stopped (mine only). Worktree `retrogames-forge-civ-era-curve`
+removed; remote branch died with the squash merge. Game merged this session →
+STATE.md committed to main directly (per step 9) and parked at
+/tmp/forge/STATE.b.parked.md. Main checkout detached at origin/main.
