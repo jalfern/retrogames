@@ -523,6 +523,7 @@ const HomebodyGame = () => {
                     items: gs.items.map((it) => ({ id: it.id, r: it.r, c: it.c })),
                     ext: gs.ext,
                     rel: { house: gs.rel.house, fern: gs.rel.fern },
+                    spats: gs.spats, grudge: gs.grudge,   // #2070
                     visitor: gs.visitor ? gs.visitor.name : null,
                 }) : { screen: screenRef.current, seed },
                 // #1637 watchcheck pilot drives these.
@@ -537,6 +538,10 @@ const HomebodyGame = () => {
                 money: (v) => { if (gs) gs.money = v },
                 select: (i) => { if (gs) gs.sel = i },
                 bond: (k, v) => { if (gs && gs.rel[k] !== undefined) gs.rel[k] = v },
+                // #2070: rig the spat scenario — park the pair beside each
+                // other, both in the red; `thaw` lifts their tempers up.
+                foul: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; a.path = null; b.r = 3; b.c = 4; b.path = null; for (const p of gs.people) { for (const n of NEEDS) p.needs[n] = 0.3; p.working = false; p.faintT = 0 } gs.grudge = 0; gs.spatCd = 0 } },
+                thaw: () => { if (gs) for (const p of gs.people) for (const n of NEEDS) p.needs[n] = 0.9 },
                 hash: () => (gs ? stateHash(gs) : 0),
             }
             exposeGame({
