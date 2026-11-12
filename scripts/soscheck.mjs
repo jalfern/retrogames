@@ -10,7 +10,7 @@
 
 import { createGame, stepGame, simState, makeCpuEmitter, cellKind, SHIFT_TICKS, QUOTA, RUNNER_POST, hashState, COOL_SIP, SEAR_OK, SEAR_TELL, TAP_REFILL, actionable, cpuPlan } from '../src/games/ShortOrderShout/engine.js'
 import { MIC_RECT, VOX_RECT, CHIP_ZONE, PIP_ZONE, CHIP_MIN_H, rectsOverlap } from '../src/games/ShortOrderShout/art.js'
-import { takeIsSpeech, ACK_MIN_MS, PTT_MIN_B64, createPttSender } from '../src/games/ShortOrderShout/ptt.js'
+import { takeIsSpeech, ACK_MIN_MS, PTT_MIN_B64, createPttSender, ackLine, ACK_LINES, micBars, MIC_BARS, SOFT_AT } from '../src/games/ShortOrderShout/ptt.js'
 
 const URL = process.env.SOS_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/short-order-shout`
 
@@ -71,6 +71,20 @@ ok('stations in wall row', cellKind(0, 0) === 'cooler' && cellKind(4, 0) === 'bo
     ok('#2079 a released take queues for drain', snd.pending > 0, `pending=${snd.pending}`)
     snd.discard()
     ok('#2079 discard empties the queue (solo has no wire; the gate must clear)', snd.pending === 0)
+}
+
+// 1d. #2084 radio polish — the pure half: the level-meter mapping, the answer
+// table the line rotates through, and the hammering threshold.
+{
+    ok('#2084 the meter is dead at silence and pinned full at full',
+        micBars(0) === 0 && micBars(0.02) === 0 && micBars(1) === MIC_BARS && micBars(2) === MIC_BARS && micBars(NaN) === 0)
+    ok('#2084 the meter climbs monotonically with the room',
+        micBars(0.1) === 1 && micBars(0.3) === 1 && micBars(0.4) === 2 && micBars(0.6) === 2 && micBars(0.9) === MIC_BARS)
+    ok('#2084 the line has a real vocabulary (no monotone COPY)',
+        ACK_LINES.length >= 3 && new Set(ACK_LINES).size === ACK_LINES.length && ACK_LINES.includes('COPY'))
+    ok('#2084 one cook never repeats the same word back-to-back',
+        ackLine(1, 0) !== ackLine(1, 1) && ackLine(1, 2) !== ackLine(1, 3) && ackLine(1, 0) === ackLine(1, ACK_LINES.length))
+    ok('#2084 the hammer taper only kicks in past the first pokes', SOFT_AT > 1)
 }
 
 // 2. determinism: same seed + pads => identical hash
@@ -496,7 +510,9 @@ if (!process.env.SOS_SKIP_BROWSER) {
         for (let guard = 0; guard < 40; guard++) {
             const deny = await page.evaluate(() => window.__sosTest.radio().deny)
             if (!deny) break
-            red = Math.max(red, await band(299, 200, 21, 24, (r, g, b) => r > 220 && g < 95 && b < 75)) // refuse ring
+            // #2084: a hammered streak wears the DULL ring (#8a4030) instead of
+            // the bright one — both red families count; the taper is the feature.
+            red = Math.max(red, await band(299, 200, 21, 24, (r, g, b) => r > 120 && g < 100 && b < 80)) // refuse ring
             await sleep(25)
         }
         ok('#2079 the mic chip blinks red on refusal', red > 6, `red px=${red}`)
@@ -511,6 +527,43 @@ if (!process.env.SOS_SKIP_BROWSER) {
         // the line answers: a landed take gets COPY, a click gets nothing
         ok('#2079 a click gets no answer', await page.evaluate(() => { window.__sosTest.radioSay(100); return Object.keys(window.__sosTest.radio().acks).length === 0 }))
         ok('#2079 the CPU line answers a real take', await page.evaluate(() => { window.__sosTest.radioSay(500); const a = window.__sosTest.radio().acks; return (a['1'] | 0) > 0 }))
+        // #2084: the radio has a BODY and a level — pose, meter, hammer taper.
+        await page.evaluate(() => window.__sosTest.radioRig(true))
+        ok('#2084 the talker visibly keys the mic (pose follows busy)', await page.evaluate(() => window.__sosTest.radio().pose === true))
+        ok('#2084 the meter reads a fed take as full', await page.evaluate(() => { window.__sosTest.micLevel(0.95); return window.__sosTest.radio().bars === 4 }))
+        let mgreen = 0
+        for (let i = 0; i < 6 && mgreen <= 4; i++) { mgreen = Math.max(mgreen, await band(200, 204, 24, 17, (r, g, b) => g > 190 && r < 100 && b < 160)); await sleep(30) }
+        ok('#2084 the input level paints bars in the strip', mgreen > 4, `green px=${mgreen}`)
+        await sleep(900) // the meter breathes back down with the room
+        ok('#2084 the meter decays to silence when the rant stops', await page.evaluate(() => window.__sosTest.radio().bars === 0))
+        let softSeen = 0, streakMax = 0
+        for (let i = 0; i < 8 && !softSeen; i++) {
+            await page.keyboard.press('Space')
+            await sleep(25)
+            const q = await page.evaluate(() => window.__sosTest.radio())
+            streakMax = Math.max(streakMax, q.streak)
+            if (q.soft) softSeen = 1
+        }
+        ok('#2084 repeat hammering earns the duller tick (streak + soft)', softSeen === 1 && streakMax >= SOFT_AT, `streak=${streakMax}`)
+        await page.evaluate(() => window.__sosTest.radioRig(false))
+        // variety + distance on the line (3 seats: two CPU voices answer)
+        await page.evaluate(() => window.__sosTest.start(7, 3))
+        await page.waitForFunction("window.__sosTest.screen() === 'play'")
+        ok('#2084 the line answers with different words and marks the far cook', await page.evaluate(() => {
+            window.__sosTest.radioSay(500)
+            const q = window.__sosTest.radio(), ck = window.__sosTest.state().cooks
+            const seats = Object.keys(q.acks)
+            if (seats.length < 2) return false
+            const words = seats.every((s) => typeof q.lines[s] === 'string' && q.lines[s].length > 0)
+            const distinct = new Set(seats.map((s) => q.lines[s])).size >= 2
+            // tolerance: live ticks move the cooks a hair between stamp and read
+            const farOk = seats.every((s) => {
+                const d = Math.abs(ck[s].x - ck[0].x) + Math.abs(ck[s].y - ck[0].y)
+                return q.far[s] ? d >= 6 : d <= 9
+            })
+            return words && distinct && farOk
+        }))
+        ok('#2084 shift-change wipes old ack words with the chips', await page.evaluate(() => { window.__sosTest.radioSay(500); window.__sosTest.start(7, 1); const q = window.__sosTest.radio(); return Object.keys(q.acks).length === 0 && Object.keys(q.lines).length === 0 }))
         await page.evaluate(() => window.__sosTest.start(7, 1))
         await page.waitForFunction("window.__sosTest.screen() === 'play'")
         ok('#2079 solo with nobody to answer stays quiet', await page.evaluate(() => { window.__sosTest.radioSay(500); return Object.keys(window.__sosTest.radio().acks).length === 0 }))
