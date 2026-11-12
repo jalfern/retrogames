@@ -153,7 +153,43 @@ check('#2070 a real live spat docks the heart eight', sp.spats === 1 && sp.grudg
 // deltas, not absolutes: the panel carries a persistent ember pixel set (the
 // resident name dot shares the heart's colour) — what must move is the heart.
 check('#2070 the panel heart runs ash-dark on the grudge', hurt.ash - calm0.ash > 8 && calm0.ember - hurt.ember > 15, `calm ember ${calm0.ember} ash ${calm0.ash} -> hurt ember ${hurt.ember} ash ${hurt.ash}`)
+
+// #2076 live tells: a storm puff (blue-grey #66707f, drawn nowhere else on
+// the lot) rides over the pair at the crack, fades on the clock while the
+// cold war stands, and the make-up pays PINK hearts over them — not the
+// generic panel sparkle. Sprite bands are scanned around the live pixel
+// positions so wandering between reads cannot false-fail.
+const tellScan = () => page.evaluate(() => {
+    const c = document.querySelector('canvas')
+    const g = c.getContext('2d')
+    const st = window.__homebodyTest.probe()
+    let puff = 0, pink = 0
+    for (const p of st.people) {
+        const d = g.getImageData(Math.max(0, p.x - 12), Math.max(0, p.y - 44), 24, 22).data
+        for (let i = 0; i < d.length; i += 4) {
+            const [r, gg, b] = [d[i], d[i + 1], d[i + 2]]
+            if (r > 90 && r < 140 && gg > 100 && gg < 150 && b > 115 && b < 165 && b > r) puff++
+        }
+    }
+    const [a, b2] = st.people
+    const mx = (a.x + b2.x) / 2, my = (a.y + b2.y) / 2
+    const d2 = g.getImageData(Math.max(0, mx - 24), Math.max(0, my - 48), 48, 52).data
+    for (let i = 0; i < d2.length; i += 4) {
+        const [r, gg, b] = [d2[i], d2[i + 1], d2[i + 2]]
+        if (r > 225 && gg > 110 && gg < 175 && b > 150 && b < 195) pink++
+    }
+    return { puff, pink, hearts: window.__homebodyTest.hearts(), spats: st.spats, grudge: st.grudge, spatFx: st.spatFx }
+})
+const told = await tellScan()
+check('#2076 the storm puff rides over the pair at the crack', told.spats === 1 && told.grudge === 1 && told.spatFx > 0 && told.puff >= 10, `puff px ${told.puff}, spatFx ${told.spatFx}`)
+await wait(1600)
+const faded = await st()
+check('#2076 the tell fades while the cold war stands', faded.spatFx === 0 && faded.grudge === 1, `spatFx=${faded.spatFx} grudge=${faded.grudge}`)
 await page.evaluate(() => window.__homebodyTest.thaw())
+let paid = { hearts: 0, pink: 0 }
+for (let i = 0; i < 25 && !(paid.hearts > 0 && paid.pink >= 3); i++) { paid = await tellScan(); await wait(80) }
+check('#2076 the make-up pays heart particles', paid.hearts > 0, `hearts ${paid.hearts}`)
+check('#2076 hearts draw pink over the pair', paid.pink >= 3, `pink px ${paid.pink}`)
 await wait(1300)
 const mk = await st()
 const healed = await heartScan()

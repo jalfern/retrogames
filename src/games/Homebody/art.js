@@ -282,7 +282,12 @@ export function drawItem(ctx, it, t) {
 }
 
 // --------------------------------------------------------------- people ----
-export function drawPerson(ctx, p, t, active) {
+// #2076: the quarrel and the cold war now stage themselves ON the residents.
+// fx 'spat' — a storm puff with a gold bolt rides over the head and the body
+// shakes itself away from its partner; fx 'cold' — a lasting sullen lean the
+// other way, eyes averted, while the grudge holds. `lean` is the direction to
+// recoil (−1 left, +1 right), computed by the caller from the partner's side.
+export function drawPerson(ctx, p, t, active, fx = null, lean = 0) {
     const bob = p.path && p.path.length ? Math.sin(p.walkPhase) * 1.6 : Math.sin(t * 2 + p.x) * 0.6
     const x = Math.round(p.x), y = Math.round(p.y)
     const fainted = p.faintT > 0
@@ -300,7 +305,25 @@ export function drawPerson(ctx, p, t, active) {
         }
         return
     }
-    body(ctx, p, t, bob)
+    const leanA = fx === 'spat' ? lean * 0.14 + Math.sin(t * 22 + p.x) * 0.035 : fx === 'cold' ? lean * 0.07 : 0
+    if (leanA) { ctx.save(); ctx.translate(x, y + 11); ctx.rotate(leanA); ctx.translate(-x, -(y + 11)) }
+    body(ctx, p, t, bob, fx, lean)
+    if (leanA) ctx.restore()
+    // #2076: the spat tell — a little storm cloud throwing a bolt over this head
+    if (fx === 'spat') {
+        const cy = y - 34 + Math.sin(t * 3 + p.x) * 1
+        ctx.fillStyle = '#66707f'
+        ctx.beginPath()
+        ctx.arc(x - 4, cy + 0.5, 4.2, 0, 7); ctx.arc(x + 2, cy - 1.5, 3.6, 0, 7); ctx.arc(x + 6, cy + 1, 3, 0, 7)
+        ctx.fill()
+        ctx.fillStyle = '#3c2a17'
+        ctx.fillRect(x - 6, cy + 3.4, 12, 1)
+        ctx.fillStyle = '#ffd24a'
+        ctx.beginPath()
+        ctx.moveTo(x + 2, cy + 4); ctx.lineTo(x - 1, cy + 9); ctx.lineTo(x + 1.5, cy + 9); ctx.lineTo(x - 0.5, cy + 13.5)
+        ctx.lineTo(x + 4.5, cy + 7.5); ctx.lineTo(x + 2, cy + 7.5)
+        ctx.closePath(); ctx.fill()
+    }
     // mood gem — a spinning kite above the head (ours, not theirs)
     const m = p.mood > 0.7 ? 2 : p.mood > 0.4 ? 1 : 0
     const col = ['#e23b2e', '#e8a13a', '#4ec24f'][m]
@@ -337,7 +360,7 @@ export function drawPerson(ctx, p, t, active) {
     }
 }
 
-function body(ctx, p, t, bob) {
+function body(ctx, p, t, bob, fx = null, lean = 0) {
     const x = Math.round(p.x), y = Math.round(p.y)
     const leg = p.path && p.path.length ? Math.sin(p.walkPhase * 2) * 3 : 0
     // legs
@@ -359,11 +382,17 @@ function body(ctx, p, t, bob) {
     // hair
     ctx.fillStyle = p.name === 'Fern' ? '#2f7d3a' : p.name === 'Mira' ? '#7a4a28' : '#3c2a17'
     ctx.beginPath(); ctx.arc(x, y - 12.4 + bob, 5.4, Math.PI, 0); ctx.fill()
-    // eyes
+    // eyes — on a cold war they turn away from the partner (#2076)
     ctx.fillStyle = '#241a10'
-    const ex = p.face >= 0 ? 1.4 : -1.4
+    const ex = (p.face >= 0 ? 1.4 : -1.4) + (fx === 'cold' ? lean * 1.1 : 0)
     ctx.fillRect(x - 2 + ex, y - 12 + bob, 1.4, 1.6)
     ctx.fillRect(x + 1 + ex, y - 12 + bob, 1.4, 1.6)
+    // #2076: mid-spat the brows knife down toward the partner
+    if (fx === 'spat') {
+        ctx.fillStyle = '#5a2018'
+        ctx.fillRect(x - 3 + ex, y - 14.4 + bob, 3, 1)
+        ctx.fillRect(x + 1 + ex, y - 13.8 + bob, 3, 1)
+    }
 }
 
 function star(ctx, x, y, r, col) {

@@ -40,6 +40,7 @@ const MESSAGES = [
     'The mailbox pays the bills on workdays. § buys furniture to raise the home.',
     'Fern the neighbour wanders in by day — chat fills the blue bar.',
     'CHAT builds BONDS — Fern at FAMILY visits sooner and lingers. Neglect cools them.',
+    'Red needs flare tempers — a SPAT cracks BONDS. Fill both, side by side, to thaw.',
     'Bank §300, then B + card 9: hammer on a Spare Room and the lot grows.',
     'Bank 80 contentment and the lifetime wish comes true.',
 ]
@@ -140,7 +141,7 @@ const HomebodyGame = () => {
                         audioController.playTone(523, 0.07, 'triangle', 0.05)
                         setTimeout(() => audioController.playTone(659, 0.07, 'triangle', 0.05), 90)
                         setTimeout(() => audioController.playTone(784, 0.14, 'triangle', 0.05), 180)
-                        if (live) { say('MADE UP ♥'); sparkles() }
+                        if (live) { say('MADE UP ♥'); heartBurst(e.x, e.y - 12) }   // #2076: hearts, named by the BONDS glyph
                         break
                     case 'faint': audioController.playNoise(0.3, 0.1); audioController.playSweep(300, 60, 0.5, 'sawtooth', 0.09); shake = 10; if (live) { say(`${e.name.toUpperCase()} COLLAPSED!`); burst(e.x, e.y, 16, '#e23b2e', 3.4) } break
                     case 'wake': audioController.playSweep(440, 760, 0.2, 'triangle', 0.05); break
@@ -181,6 +182,14 @@ const HomebodyGame = () => {
         const sparkles = () => {
             const x = PANEL_X + 56, y = H - 76
             for (let i = 0; i < 5; i++) particles.push({ x: x + (Math.random() - 0.5) * 40, y: y - Math.random() * 8, vx: 0, vy: -0.6, life: 22, max: 22, col: '#ffd24a', size: 1.8, kind: 'flash' })
+        }
+        // #2076: the make-up pays hearts, not the generic contentment sparkle —
+        // the BONDS glyph vocabulary names the beat (pink already in the palette).
+        const heartBurst = (x, y) => {
+            for (let i = 0; i < 6; i++) {
+                const a = Math.random() * 6.28
+                particles.push({ x: x + (Math.random() - 0.5) * 12, y: y - 6 - Math.random() * 6, vx: Math.cos(a) * 1.1, vy: -0.9 - Math.random() * 1.1, life: 28 + Math.random() * 10, max: 38, col: i % 2 ? '#ff8fb3' : '#e2574c', size: 2 + Math.random() * 1.4, kind: 'heart' })
+            }
         }
 
         const finish = (s) => {
@@ -284,7 +293,18 @@ const HomebodyGame = () => {
             drawClouds(ctx, g.sec)
             for (const it of g.items) drawItem(ctx, it, g.sec)
             const order = [...g.people.map((p) => ({ p, v: p.y })), ...(g.visitor ? [{ p: g.visitor, v: g.visitor.y }] : [])].sort((a, b) => a.v - b.v)
-            for (const o of order) drawPerson(ctx, o.p, g.sec, g.people[g.active] === o.p)
+            for (const o of order) {
+                // #2076: the pair argues and sulks ON screen — storm puff at the
+                // crack, a lasting away-lean through the cold war (residents only).
+                let fx = null, lean = 0
+                const ri = g.people.indexOf(o.p)
+                if (ri >= 0 && g.grudge) {
+                    fx = g.spatFx > 0 ? 'spat' : 'cold'
+                    const other = g.people[ri === 0 ? 1 : 0]
+                    lean = o.p.x <= other.x ? -1 : 1
+                }
+                drawPerson(ctx, o.p, g.sec, g.people[g.active] === o.p, fx, lean)
+            }
             if (live && g.build) drawBuildCursor(ctx, g, placeOk(g, g.cursor.r, g.cursor.c))
             for (const f of refuses) {   // #1823: refused cell — red fill pulsing out
                 const k = f.life / 36
@@ -318,6 +338,15 @@ const HomebodyGame = () => {
                 if (pt.kind === 'flash') {
                     ctx.fillStyle = pt.col
                     ctx.fillRect(pt.x, pt.y, pt.size * 1.6, pt.size * 1.6)
+                } else if (pt.kind === 'heart') {
+                    // #2076: the BONDS heart, tiny — two lobes and a point
+                    const s = pt.size
+                    ctx.fillStyle = pt.col
+                    ctx.beginPath()
+                    ctx.arc(pt.x - s * 0.45, pt.y - s * 0.25, s * 0.5, Math.PI, 0)
+                    ctx.arc(pt.x + s * 0.45, pt.y - s * 0.25, s * 0.5, Math.PI, 0)
+                    ctx.lineTo(pt.x, pt.y + s * 0.75)
+                    ctx.closePath(); ctx.fill()
                 } else {
                     ctx.fillStyle = pt.col
                     ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.size, 0, 7); ctx.fill()
@@ -519,11 +548,11 @@ const HomebodyGame = () => {
                     screen: screenRef.current, tick: gs.tick, done: gs.done, content: gs.content, money: gs.money,
                     day: gs.day, hour: Math.round(gs.hour * 10) / 10, build: gs.build, sel: gs.sel,
                     demo: gs.demo,
-                    people: gs.people.map((p) => ({ name: p.name, needs: { ...p.needs }, working: p.working, fainted: p.faintT > 0 })),
+                    people: gs.people.map((p) => ({ name: p.name, x: Math.round(p.x), y: Math.round(p.y), needs: { ...p.needs }, working: p.working, fainted: p.faintT > 0 })),
                     items: gs.items.map((it) => ({ id: it.id, r: it.r, c: it.c })),
                     ext: gs.ext,
                     rel: { house: gs.rel.house, fern: gs.rel.fern },
-                    spats: gs.spats, grudge: gs.grudge,   // #2070
+                    spats: gs.spats, grudge: gs.grudge, spatFx: Math.round(gs.spatFx * 10) / 10,   // #2070/#2076
                     visitor: gs.visitor ? gs.visitor.name : null,
                 }) : { screen: screenRef.current, seed },
                 // #1637 watchcheck pilot drives these.
@@ -542,6 +571,7 @@ const HomebodyGame = () => {
                 // other, both in the red; `thaw` lifts their tempers up.
                 foul: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; a.path = null; b.r = 3; b.c = 4; b.path = null; for (const p of gs.people) { for (const n of NEEDS) p.needs[n] = 0.3; p.working = false; p.faintT = 0 } gs.grudge = 0; gs.spatCd = 0 } },
                 thaw: () => { if (gs) for (const p of gs.people) for (const n of NEEDS) p.needs[n] = 0.9 },
+                hearts: () => particles.filter((pt) => pt.kind === 'heart').length,   // #2076: the make-up paid hearts?
                 hash: () => (gs ? stateHash(gs) : 0),
             }
             exposeGame({
