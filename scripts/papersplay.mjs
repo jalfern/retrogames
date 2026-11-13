@@ -834,33 +834,44 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
 {
     await page.evaluate(() => window.__ppTest.start(0))
     await wait(300)
-    const muting = new Set(), quiet = new Set()
-    let mismatches = 0, mutPixOn = -1, mutPixOff = 1e9, paperMax = 0
-    // 120, not 30: seed 0 day 1 holds 7 strangers (paperscheck ground truth,
-    // 2 murmuring), and CI's software Chrome burns ~2.5 s of real time per
-    // walk-up — a 30-iteration budget died with the seventh face still in the
-    // queue (nightly family #2145). The loop's real end is the day rolling over
-    // (the null-probe break); this is only the runaway guard.
+    // Ground truth for seed 0's day 1, computed in Node through the same
+    // genWeek the game replays byte-identically: the serials of every
+    // stranger in the queue, and which of them the serial law murmurs for.
+    const law = new Map(genWeek(0).days[0].queue
+        .filter((a) => !a.person.regular)
+        .map((a) => [a.person.pic, mutterFor(a.person.pic)]))
+    // Stamp day 1 out. This loop sees NO pixels — its only job is to stamp
+    // each walk-up (120 is just the runaway guard; the day rollover ends it).
+    // The paint-side log counted every face IN the frame it painted (index.jsx),
+    // so no harness pacing — however CI's software Chrome aliases its round
+    // trips against the walk-up cycle — can alias a stranger out of the
+    // witness (the 1/5 mm=0 failure family, twice on Ubuntu).
     for (let g = 0; g < 120; g++) {
-        const s = await page.evaluate(() => {
+        const v = await page.evaluate(() => {
             const p = window.__ppTest.probe()
             if (!p || p.day !== 1 || p.end) return null
-            return [window.__ppTest.mutterPix(), window.__ppTest.bubblePix(), window.__ppTest.paintedMug()]
+            return window.__ppTest.verdict()
         })
-        if (!s) break
-        const [ink, paper, pm] = s
-        if (paper > paperMax) paperMax = paper
-        if (pm.pic && !pm.say) {
-            if (pm.mutter !== mutterFor(pm.pic)) mismatches++
-            if (pm.mutter) { muting.add(pm.pic); if (ink > mutPixOn) mutPixOn = ink }
-            else { quiet.add(pm.pic); if (ink < mutPixOff) mutPixOff = ink }
-        }
-        const v = await page.evaluate(() => window.__ppTest.verdict())
+        if (v === null) break
         if (v) await page.keyboard.press(v === 'approve' ? 'a' : 'd')
-        await wait(500)
+        await wait(Number(process.env.PP_PACE || 500))
     }
+    const log = await page.evaluate(() => window.__ppTest.murmurLog())
+    const muting = new Set(), quiet = new Set()
+    let mismatches = 0, mutPixOn = -1, mutPixOff = 1e9, paperMax = 0
+    for (const [pic, mm] of law) {
+        const rec = log[pic]
+        if (!rec || rec.say) continue
+        if (rec.mutter !== mm) mismatches++
+        if (mm) { muting.add(pic); if (rec.ink > mutPixOn) mutPixOn = rec.ink }
+        else { quiet.add(pic); if (rec.ink < mutPixOff) mutPixOff = rec.ink }
+        if (rec.paper > paperMax) paperMax = rec.paper
+    }
+    const expMut = [...law.values()].filter(Boolean).length
+    r.check(`every stranger on day 1's line is witnessed (${muting.size + quiet.size}/${law.size} logged, none paced out)`,
+        muting.size + quiet.size === law.size, `${muting.size + quiet.size}/${law.size}`)
     r.check(`the crowd murmurs live — ${muting.size} murmuring and ${quiet.size} quiet strangers all follow the serial law`,
-        mismatches === 0 && muting.size >= 2 && quiet.size >= 2, `${muting.size}/${quiet.size} mm=${mismatches}`)
+        mismatches === 0 && muting.size === expMut && quiet.size === law.size - expMut, `${muting.size}/${quiet.size} mm=${mismatches}`)
     r.check(`a murmur prints in dim type (${mutPixOn} cool px in the empty field)`, mutPixOn >= 40, `${mutPixOn}`)
     r.check(`a quiet stranger leaves the field empty (${mutPixOff} px) and no murmur gets paper (${paperMax} px)`,
         mutPixOff < 20 && paperMax < 100, `${mutPixOff}/${paperMax}`)

@@ -105,7 +105,12 @@ const PapersPleaseMinGame = () => {
         // #1982 THE RECOGNITION CUE — count of arrivals that rang the door's
         // welcome (a familiar face stepped up). Counted by papersplay.
         let sfxAgain = 0
-        let paintedMug = { mutter: null, say: false, pic: null } // #2087 what the counter painted last
+        // #2087 the paint-side witness log: every face the counter shows is
+        // pixel-counted IN THE FRAME IT PAINTS (DEV only), keyed by serial.
+        // CI's software Chrome paced its Node-side probes 1:1 against the
+        // walk-up cycle and alias-skipped the 7th stranger (1/5 mm=0, twice);
+        // a paint-side record cannot be paced out of existence.
+        const murmurLog = new Map() // pic -> { mutter, say, ink, paper }
         const againLog = []
         // #2020 arrivals that stepped up on a CROWDED day — the recognition
         // pair carries its low third note only then. Counted by papersplay.
@@ -854,10 +859,24 @@ const PapersPleaseMinGame = () => {
             if (shown && shown.mutter && !shown.say) {
                 text(shown.mutter, BUBBLE.x + 6, BUBBLE.y + 16, 9, '#9fb0d6')
             }
-            // #2087 what the counter is actually showing this paint (the
-            // probe's view is a tick ahead during the handoff — papersplay
-            // must only count pixels while the canvas paints THIS face).
-            paintedMug = { mutter: (shown && shown.mutter) || null, say: !!(shown && shown.say), pic: (shown && shown.pic) || null }
+            // #2087 the same-frame witness: count the murmur field while THIS
+            // face is on the glass (same hue/paper law as bubblePix), so every
+            // walked-up face is recorded exactly once no matter how the harness
+            // paces its own probes. Dev-only cost; the paint stays pixel-
+            // identical either way (reads never write).
+            if (import.meta.env.DEV && shown && shown.pic) {
+                let ink = 0, paper = 0
+                const md = ctx.getImageData(BUBBLE.x + 2, BUBBLE.y + 4, BUBBLE.w - 4, BUBBLE.h - 8).data
+                for (let i = 0; i < md.length; i += 4) {
+                    const rr = md[i], bb = md[i + 2]
+                    if (bb - rr >= 30 && rr >= 120 && rr <= 200) ink++
+                }
+                const pd = ctx.getImageData(BUBBLE.x, BUBBLE.y, BUBBLE.w, BUBBLE.h).data
+                for (let i = 0; i < pd.length; i += 4) if (((pd[i] << 16) | (pd[i + 1] << 8) | pd[i + 2]) === 0xd8d2b8) paper++
+                const rec = murmurLog.get(shown.pic)
+                if (rec) { if (ink > rec.ink) rec.ink = ink; if (paper > rec.paper) rec.paper = paper }
+                else murmurLog.set(shown.pic, { mutter: shown.mutter || null, say: !!(shown && shown.say), ink, paper })
+            }
             // #2020 A BYSTANDER ASIDE — the crowded shift's second speaker:
             // a gold tag naming who calls across the line, and their line in
             // dim type under the entrant's own bubble. Decor by doctrine — the
@@ -1398,24 +1417,17 @@ const PapersPleaseMinGame = () => {
                     for (let i = 0; i < d.length; i += 4) if (((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]) === 0xd8d2b8) paper++
                     return paper
                 },
-                // #2087 THE MURMUR IS PIXELS: the dim slate family (same hue
-                // law as the aside line: cool, b−r >= 30, mid brightness) in
-                // the bubble field. A murmuring one-off lights it; the dark
-                // booth, gold type and paper ink all fail the hue test — so a
-                // quiet stranger's field reads 0 even though it sits exactly
-                // where a bubble would print.
-                mutterPix: () => {
-                    const d = ctx.getImageData(BUBBLE.x + 2, BUBBLE.y + 4, BUBBLE.w - 4, BUBBLE.h - 8).data
-                    let n = 0
-                    for (let i = 0; i < d.length; i += 4) {
-                        const [rr, , bb] = [d[i], d[i + 1], d[i + 2]]
-                        if (bb - rr >= 30 && rr >= 120 && rr <= 200) n++
-                    }
-                    return n
-                },
-                // #2087 the serial + murmur of the face the counter PAINTED
-                // last — the handshake papersplay samples pixels behind.
-                paintedMug: () => ({ ...paintedMug }),
+                // #2087 THE MURMUR IS PIXELS, paint-side: the counter records
+                // every face it paints with the murmur-field ink (dim slate
+                // family: cool, b−r >= 30, mid brightness — same hue law as the
+                // aside line) and the bubble paper, keyed by serial, ink/paper
+                // the MAX seen while that face held the glass. A murmuring
+                // one-off lights it; the dark booth, gold type and paper ink all
+                // fail the hue test, so a quiet stranger's field reads 0 even
+                // where a bubble would print. Because the counting happens on
+                // the paint side, no harness probe-pacing can skip a stranger
+                // (the CI 1/5 alias the old mutterPix+paintedMug sampling had).
+                murmurLog: () => Object.fromEntries([...murmurLog].map(([k, v]) => [k, { ...v }])),
                 // #2020 THE LINE SHOWS ITSELF: mug-slate ink (the cool family
                 // r 100..160, g 110..170, b >= r+30) in the strip rect — the
                 // gold dots and every warm hue fail it, so one count measures
@@ -1572,7 +1584,7 @@ const PapersPleaseMinGame = () => {
                     }
                 },
                 ff: (n) => { tick(gs, n || CFG.SEAT_TICKS * 2); drainEvents(); return { clock: gs.clock, day: gs.day, end: gs.end, why: gs.endWhy, credits: gs.credits, slip: gs.slip && { ...gs.slip } } }, // #1960 wind the shift forward
-                start: startPlay,
+                start: (seed) => { murmurLog.clear(); return startPlay(seed) }, // #2087 the witness log rides the run
                 // #1891 THE STAMP SPEAKS: the exact strings paint() prints with
                 // the live stamp. #2021 THE INSPECTOR STAYS: they now ride the
                 // pin too — `inked` says the stamp hold still runs, `pinned`

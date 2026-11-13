@@ -257,6 +257,22 @@ photo. papersplay pixel-proves both live: Grubak paints 80 brim px in the
 upper-left tilt window (counter and photo) while every rolled flat cap keeps it
 empty, and every wrapped head paints its knot ink.
 
+### The murmur witness is paint-side (#2087)
+
+Strangers' one-off lines (`mutterFor(pic)`, see "The one-off crowd") print in
+dim slate inside the empty bubble field, and papersplay must prove those pixels
+WITHOUT ever skipping a face. Node-side sampling can: CI's software Chrome paced
+its probes ~1:1 against the walk-up cycle and alias-skipped the 7th stranger of
+seed 0 day 1 twice (`1/5 mm=0`). So the witness moved to the paint side — the
+counter records every face IT paints (`murmurLog`, DEV-only, reads never write):
+murmur-field ink, bubble paper, and the mutter string, keyed by serial, ink and
+paper the MAX across the face's tenure. papersplay then stamps the day and reads
+the log once, grading it against the Node ground truth (`genWeek(0)` day 1: 7
+strangers, exactly 2 murmuring). No harness pace can alias a face out of the
+record — the suite passes unchanged at a hostile 2.6 s cadence (`PP_PACE=2600`),
+the very period that starved the old loop. Kill the accumulator and the witness
+gate goes red (0/7) — the proof the gate can fail.
+
 ## The cast of six (#1997) — the neighborhood grows, and everyone has a line
 
 The original's recurring cast is not four — a dozen faces lean on the glass
