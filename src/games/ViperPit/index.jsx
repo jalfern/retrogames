@@ -1134,12 +1134,18 @@ const ViperPitGame = () => {
                         const g2 = c2.getContext('2d')
                         g2.drawImage(cv, 0, 0)
                         const d = g2.getImageData(0, 0, c2.width, c2.height).data
-                        let ink = 0, head = 0, hx = 0, hy = 0, sig = 0
+                        let ink = 0, head = 0, hx = 0, hy = 0, sig = 0, top = -1, bottom = -1
                         for (let y = 0; y < c2.height; y++) {
                             for (let x = 0; x < c2.width; x++) {
                                 const i = (y * c2.width + x) * 4
                                 if (d[i + 3] > 24) {
                                     ink++
+                                    // #2172 figure extents on the transparent portrait
+                                    // canvas: alpha is exactly "is this the fighter",
+                                    // so these are true head/feet rows — no border or
+                                    // name text to pollute them.
+                                    if (top < 0) top = y
+                                    bottom = y
                                     if (y < c2.height * 0.4) { head++; hx += x; hy += y }
                                 }
                                 // #2172 quantised silhouette hash (FNV-1a): two
@@ -1152,7 +1158,14 @@ const ViperPitGame = () => {
                         // #2172 head centroid: card poses angle and lean the head to
                         // a different spot per fighter — corroborating proof that
                         // the five portraits are five poses, not one pose five times.
-                        out[id] = { ink: +(ink / (c2.width * c2.height)).toFixed(3), head, cx: head ? Math.round(hx / head) : -1, cy: head ? Math.round(hy / head) : -1, sig }
+                        out[id] = {
+                            ink: +(ink / (c2.width * c2.height)).toFixed(3), head,
+                            cx: head ? Math.round(hx / head) : -1, cy: head ? Math.round(hy / head) : -1, sig,
+                            // #2172 head/feet position as a fraction of the canvas —
+                            // 0 and 1 mean the framing CROPS the fighter.
+                            top: +(top / c2.height).toFixed(3), bottom: +(bottom / c2.height).toFixed(3),
+                            span: +((bottom - top) / c2.height).toFixed(3),
+                        }
                     }
                     return out
                 },

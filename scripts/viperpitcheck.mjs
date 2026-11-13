@@ -1077,6 +1077,17 @@ if (!MUT) {
         })
         ok(fit.length >= 5 && fit.every((c) => c.onScreen), `all five cards sit on screen (${fit.map((c) => c.id).join(',')})`)
         ok(fit.every((c) => c.ink > 0.04), `each card carries its portrait on the HUD (${fit.map((c) => `${c.id}:${c.ink}`).join(' ')})`)
+        // #2172 arcade framing: a select portrait frames the WHOLE fighter with a
+        // margin. The transparent portrait canvas makes this exact — alpha is the
+        // figure — so a head or pair of feet at the canvas edge is a crop, and a
+        // tiny span is a fighter lost in its tile.
+        {
+            const fr = PIDS.map((id) => `${id}:${pstats[id].top}..${pstats[id].bottom}`)
+            ok(PIDS.every((id) => pstats[id].top >= 0.02 && pstats[id].bottom <= 0.98),
+                `no portrait crops its fighter's head or feet (${fr.join(' ')})`)
+            ok(PIDS.every((id) => pstats[id].span >= 0.5),
+                `every fighter fills their tile (${PIDS.map((id) => `${id}:${pstats[id].span}`).join(' ')})`)
+        }
         // #2172 five cards, five silhouettes: the per-portrait pixel hash must
         // be unique per fighter — the direct kill-shot for the shared-live-canvas
         // bug (all five slots composing the same frame). Head centroids add a
