@@ -974,7 +974,9 @@ if (MUT) {
         ['the intro line carries through the pre-fight intro', /pickLine && pickLine\.t > 0 && gs\.phase === 'intro'/],
         ['portraits fall back to colour blocks without WebGL', /catch \{ portraits = null \}/],
         ['all five cards fit the screen', /const cw = Math\.min\(H \* 0\.5, \(W \* 0\.94\) \/ \(total \* 1\.06\)\)/],
-        ['card rects recorded at draw time for the probe', /cardRects\[i\] = \{ id: rd\.id, x, y, w: tw, h: th \}/],
+        ['card rects recorded at draw time for the probe', /cardRects\[i\] = \{ id: rd\.id, x, y, w: tw, h: th, textBand: Math\.max\(28, H \* 0\.055\) \* zc \+ 6 \}/],
+        ['#2172 names move under the tile so they never cross the fighter', /hctx\.fillText\(rd\.name, x \+ tw \/ 2, y \+ th \+ Math\.max\(14, H \* 0\.03\) \* zc\)/],
+        ['#2172 a tap on the name band still hovers the card', /py <= r\.y \+ r\.h \+ \(r\.textBand \|\| 0\)/],
         ['dev hook reports the card rects', /cardRects\(\) \{ return cardRects\.slice\(\) \}/],
         ['#2172 dev hooks expose the zoom + head centroid', /zoom: cardZoom\[cursor\] \|\| 0[\s\S]*zoomOf\(i\)[\s\S]*cx: head \? Math\.round\(hx \/ head\) : -1/],
     ]
@@ -1167,6 +1169,31 @@ if (!MUT) {
             })
             const spill = await measureSpill()
             ok(spill.every((s) => s.warm === 0), `no portrait pokes out of its card (${spill.map((s) => `${s.id}:${s.warm}`).join(' ')})`)
+            // #2172 names live UNDER the tile now: white text drawn across the
+            // fighter's shins read as a bug in the screenshots. Near-white pixels
+            // inside a tile = text over the art; near-white below it = the name row
+            // actually got drawn.
+            const txt = await page.evaluate(() => {
+                const cv = document.querySelector('canvas[data-viperpit-hud]')
+                const c2 = document.createElement('canvas'); c2.width = cv.width; c2.height = cv.height
+                const g2 = c2.getContext('2d'); g2.drawImage(cv, 0, 0)
+                const count = (x, y, w, h) => {
+                    const x0 = Math.max(0, Math.round(x)), y0 = Math.max(0, Math.round(y))
+                    const ww = Math.max(1, Math.min(cv.width - x0, Math.round(w)))
+                    const hh = Math.max(1, Math.min(cv.height - y0, Math.round(h)))
+                    const d = g2.getImageData(x0, y0, ww, hh).data
+                    let n = 0
+                    for (let i = 0; i < d.length; i += 4) if (d[i] > 235 && d[i + 1] > 235 && d[i + 2] > 235) n++
+                    return n
+                }
+                return window.__viperPitTest.cardRects().map((r) => ({
+                    id: r.id,
+                    inside: count(r.x + 2, r.y + 2, r.w - 4, r.h - 4),
+                    below: count(r.x, r.y + r.h + 2, r.w, Math.max(8, (r.textBand || 20) - 2)),
+                }))
+            })
+            ok(txt.every((t) => t.inside === 0), `no name text printed over the fighter (${txt.map((t) => `${t.id}:${t.inside}`).join(' ')})`)
+            ok(txt.every((t) => t.below > 8), `every name prints under its own tile (${txt.map((t) => `${t.id}:${t.below}`).join(' ')})`)
             // Prove the gate can fail: __VIPER_SPILL__ inflates the portrait past
             // its tile (the pre-fix geometry) and the same measurement must see a
             // head above the frame — then restore.

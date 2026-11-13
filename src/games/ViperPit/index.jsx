@@ -420,7 +420,7 @@ const ViperPitGame = () => {
                 if (rect && rect.width > 0 && rect.height > 0) {
                     const px = (ev.clientX - rect.left) * (cv.width / rect.width)
                     const py = (ev.clientY - rect.top) * (cv.height / rect.height)
-                    hit = cardRects.findIndex((r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h)
+                    hit = cardRects.findIndex((r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h + (r.textBand || 0))
                 }
                 if (hit >= 0 && hit !== cursor) hoverSelect(hit - cursor)
                 else atSelect()
@@ -927,7 +927,7 @@ const ViperPitGame = () => {
                     const tw = cw * zc, th = ch * zc
                     const x = W / 2 - (cw * 1.06 * total) / 2 + (i % 5) * (cw * 1.06) - (tw - cw) / 2
                     const y = H * 0.24 - (th - ch) / 2 - ch * 0.02 * z
-                    cardRects[i] = { id: rd.id, x, y, w: tw, h: th }
+                    cardRects[i] = { id: rd.id, x, y, w: tw, h: th, textBand: Math.max(28, H * 0.055) * zc + 6 }
                     hctx.fillStyle = '#12121c'; hctx.fillRect(x, y, tw, th)
                     const pt = portraits && portraits[rd.id]
                     if (pt) {
@@ -953,17 +953,22 @@ const ViperPitGame = () => {
                     ui(Math.max(11, H * 0.022) * zc)
                     hctx.textAlign = 'center'
                     hctx.fillStyle = '#fff'
-                    hctx.fillText(rd.name, x + tw / 2, y + th * 0.85)
+                    // #2172 names sit UNDER the tile, arcade-style — the fit fills
+                    // the card with the fighter, so a name at 0.85 landed on their
+                    // shins and read as a bug in the screenshots.
+                    hctx.fillText(rd.name, x + tw / 2, y + th + Math.max(14, H * 0.03) * zc)
                     ui(Math.max(8, H * 0.014) * zc)
                     hctx.fillStyle = 'rgba(190,195,215,0.85)'
-                    hctx.fillText(rd.tag, x + tw / 2, y + th * 0.95)
+                    hctx.fillText(rd.tag, x + tw / 2, y + th + Math.max(28, H * 0.055) * zc)
                 }
                 ROSTER.forEach((rd, i) => { if (i !== cursor) drawCard(rd, i) })
                 drawCard(ROSTER[cursor], cursor)
                 ui(Math.max(10, H * 0.019))
                 hctx.textAlign = 'center'
                 hctx.fillStyle = 'rgba(89,224,200,0.85)'
-                hctx.fillText(`"${ROSTER[cursor].intro}"`, W / 2, H * 0.24 + ch + Math.max(22, H * 0.042))
+                // #2172: names/tags now sit under each tile, so the hovered
+                // fighter's intro blurb drops below the whole name row.
+                hctx.fillText(`"${ROSTER[cursor].intro}"`, W / 2, H * 0.24 + ch + Math.max(52, H * 0.115))
                 if (pickLine && pickLine.t > 0) {
                     ui(Math.max(13, H * 0.03))
                     hctx.strokeStyle = 'rgba(8,5,8,0.92)'; hctx.lineWidth = Math.max(2, H * 0.006)
