@@ -219,7 +219,7 @@ export function createPortraitRenderer(w = 240) {
             const fitH = size.x / 2 / Math.tan(FOV_H / 2)
             // Slight top-down bias keeps the feet inside while the head keeps its
             // margin, the way an arcade select framed a fighter.
-            cam.position.set(0, mid.y + size.y * 0.06, Math.max(fitV, fitH) / 0.9)
+            cam.position.set(0, mid.y + size.y * 0.06, Math.max(fitV, fitH) / 0.86)
             cam.lookAt(mid.x, mid.y - size.y * 0.02, 0)
             scene.add(rig.root)
             renderer.render(scene, cam)

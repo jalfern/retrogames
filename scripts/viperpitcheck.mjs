@@ -935,7 +935,7 @@ if (MUT) {
         ['#2172 card yaw comes from the fighter\'s own card pose', /rig\.root\.rotation\.y = c\.yaw/],
         ['pit-teal rim light on the portrait', /new THREE\.DirectionalLight\(0x59e0c8, 1\.6\)/],
         ['card-aspect canvas so the HUD never stretches it', /canvas\.height = Math\.round\(w \* 0\.78\)/],
-        ['full-body framing: the fit backs the lens off the posed silhouette', /cam\.position\.set\(0, mid\.y \+ size\.y \* 0\.06, Math\.max\(fitV, fitH\) \/ 0\.9\)/],
+        ['full-body framing: the fit backs the lens off the posed silhouette', /cam\.position\.set\(0, mid\.y \+ size\.y \* 0\.06, Math\.max\(fitV, fitH\) \/ 0\.86\)/],
         ['#2172 framing derives from the body, not a per-fighter constant', /const fitV = size\.y \/ 2 \/ Math\.tan\(FOV_V \/ 2\)/],
         ['#2172 the horizontal fit is computed too (yaw widening counts)', /const fitH = size\.x \/ 2 \/ Math\.tan\(FOV_H \/ 2\)/],
     ]
@@ -947,8 +947,8 @@ if (MUT) {
         'select gate: framing is computed, so no per-fighter camZ crept back in (#2172)')
     ok(new Set(ROSTER.map((d) => JSON.stringify(d.card))).size === 5, 'select gate: all five card poses differ (#2172)')
     ok(new Set(ROSTER.map((d) => d.card.yaw)).size === 5, 'select gate: card yaws are five distinct angles (#2172)')
-    const mutC = rsrc.replace('Math.max(fitV, fitH) / 0.9', 'Math.max(fitV, fitH) / 2.4')
-    ok(!/Math\.max\(fitV, fitH\) \/ 0\.9/.test(mutC), 'mutant: portrait camera pushed too close fails the framing gate (harness bites)')
+    const mutC = rsrc.replace('Math.max(fitV, fitH) / 0.86', 'Math.max(fitV, fitH) / 2.4')
+    ok(!/Math\.max\(fitV, fitH\) \/ 0\.86/.test(mutC), 'mutant: portrait camera pushed too close fails the framing gate (harness bites)')
     ok(/out\.getContext\('2d'\)\.drawImage\(canvas, 0, 0\)/.test(rsrc),
         'select gate: each portrait is frozen into its OWN canvas (#2172 — one shared canvas made five identical cards)')
     const mutS = rsrc.replace("            const out = document.createElement('canvas')\n            out.width = canvas.width\n            out.height = canvas.height\n            out.getContext('2d').drawImage(canvas, 0, 0)\n            return out", '            return canvas')
