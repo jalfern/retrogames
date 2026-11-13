@@ -581,7 +581,7 @@ function cpuHose(g) {
         return true
     }
     if (hydrantNear(f) && f.tank < 95) return pad // wait at the hydrant
-    if (f.tank < 25) { drive(stepToward(g, f.x, f.y, HYDRANT.x, HYDRANT.y, false)); return pad }
+    if (f.tank < 25) { drive(stepToward(g, f.x, f.y, HYDRANT.x, HYDRANT.y, inLoft(f.y))); return pad }
     // the bucket brigade (#1424): with the stick up, a loft fire is the hose
     // seat's job — climb the shaft, stand beside the flames, and spray.
     if (g.ladder > 0.9) {
@@ -640,7 +640,7 @@ function cpuHose(g) {
         const dd2 = Math.abs(f.x - sx) + Math.abs(f.y - sy)
         if (dd2 < spotD) { spotD = dd2; spot = { x: sx, y: sy } }
     }
-    if (spot) drive(stepToward(g, f.x, f.y, spot.x, spot.y, false))
+    if (spot) drive(stepToward(g, f.x, f.y, spot.x, spot.y, inLoft(f.y))) // #2178: from the deck the path must come down the ladder column
     return pad
 }
 
@@ -704,13 +704,34 @@ function cpuRescue(g) {
 function loftGateX(g) {
     // the climbable loft column nearest the loft work: a victim first, else a
     // burning loft cell. Pillar lines are no-go — the deck is WALL there, and
-    // the base must leave the gate walkable for whoever climbs.
+    // the base must leave the gate walkable for whoever climbs. #2178: walkable
+    // means BOTH sides of the loft line — a column whose ground cell (LOFT_Y1+1)
+    // is pillar seals the deck even when the deck row itself is open, and the
+    // autopilot marching the base there freezes the whole shift.
+    const openCol = (x) => {
+        if (x < 1 || x > W - 2) return false
+        for (const y of [LOFT_Y1, LOFT_Y1 + 1]) {
+            const i = y * W + x
+            const t = g.tile[i]
+            if (t === WALL || t === OUT) return false
+            if (g.cell[i] && g.cell[i].gone) return false
+        }
+        return true
+    }
+    const nearestOpen = (x0) => {
+        if (openCol(x0)) return x0
+        for (let k = 1; k < W; k++) {
+            if (openCol(x0 - k)) return x0 - k
+            if (openCol(x0 + k)) return x0 + k
+        }
+        return null
+    }
     let best = null; let bestD = 1e9
     const consider = (x) => {
-        if (x < 1 || x > W - 2) return
-        if (g.tile[LOFT_Y1 * W + x] === WALL || g.tile[LOFT_Y1 * W + x] === OUT) return
-        const d = Math.abs(g.crew[1].x - x)
-        if (d < bestD) { bestD = d; best = x }
+        const x1 = nearestOpen(x)
+        if (x1 === null) return
+        const d = Math.abs(g.crew[1].x - x1)
+        if (d < bestD) { bestD = d; best = x1 }
     }
     for (const v of g.victims) if (v.loft && v.state !== 'rescued' && v.state !== 'lost') consider(v.x)
     if (best === null) {

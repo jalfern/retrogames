@@ -660,16 +660,50 @@ console.log('watch-seat polish — #2029')
     const tell = (gg) => gg.lost > 0 || (CLOCK - gg.tick < 600 && gg.rescued + gg.lost < 6)
     let litAt = null
     {
-        const s = setSources(makeRun(1), ['cpu', 'cpu', 'cpu'])
+        // #2178: seed 1 used to "lose" because a pillar column sealed the loft and
+        // the autopilot froze 3 victims short — that was the bug, not the game.
+        // The losing route is nobody showing up: empty seats, the clock runs out.
+        const s = setSources(makeRun(1), ['human', 'human', 'human'])
         while (!s.done) { step(s, {}); if (litAt == null && !s.done && tell(s)) litAt = s.tick }
     }
-    ok(litAt === 6601, 'a losing seed (1) lights the tell at tick 6601 — 600 ticks before expiry', String(litAt))
+    ok(litAt === 6601, 'an unmanned shift lights the tell at tick 6601 — 600 ticks before expiry', String(litAt))
     let cleanLit = 0
     for (const sd of [77, 15839]) {
         const s = setSources(makeRun(sd), ['cpu', 'cpu', 'cpu'])
         while (!s.done) { step(s, {}); if (!s.done && tell(s)) cleanLit++ }
     }
     ok(cleanLit === 0, 'winning seeds finish clear — the tell never lights on a clean shift')
+}
+
+console.log('loft-gate pillar fix — #2178 (nightly resume freeze)')
+{
+    const src = readFileSync(path.join(HERE, '../src/games/FireCrew/sim.js'), 'utf8')
+    ok(/for \(const y of \[LOFT_Y1, LOFT_Y1 \+ 1\]\)/.test(src),
+        'loftGateX walks BOTH sides of the loft line before offering a column')
+    ok(/stepToward\(g, f\.x, f\.y, HYDRANT\.x, HYDRANT\.y, inLoft\(f\.y\)\)/.test(src),
+        'the hoseman paths to the hydrant with its OWN floor (deck escape)')
+    ok(/drive\(stepToward\(g, f\.x, f\.y, spot\.x, spot\.y, inLoft\(f\.y\)\)\)/.test(src),
+        'the hoseman paths to ground fires with its OWN floor (deck escape)')
+    // seed 1: victim column x=20 is a pillar line below the deck — the base
+    // marched under it, the sealed deck froze the rescue, and the shift died at
+    // 3/6 with fires out and crew standing still (watchcheck resume FAIL family).
+    const g = runTo(1)
+    ok(g.done && g.rescued === 6 && !g.lost, 'seed 1 (the pillar seed) finishes the shift 6/6',
+        `rescued ${g.rescued}, lost ${g.lost}, tick ${g.tick}`)
+    // the frozen signature is rescue-dead: hundreds of ticks with no victim
+    // resolving while the shift is open. Sweep probes must never go silent.
+    let dead = 0
+    for (const sd of [1, 2, 3, 5, 7, 9, 77, 15839]) {
+        const s = setSources(makeRun(sd), ['cpu', 'cpu', 'cpu'])
+        let last = -1; let quiet = 0; let worst = 0; let n = 0
+        while (!s.done && n++ < CLOCK + 10) {
+            step(s, {})
+            const r = s.rescued + s.lost
+            if (r !== last) { last = r; quiet = 0 } else if (++quiet > worst) worst = quiet
+        }
+        if (worst > 1600) dead++
+    }
+    ok(dead === 0, 'no probed seed goes rescue-dead (>1600 ticks without a resolve)', `${dead} silent seeds`)
 }
 
 console.log(`\n${passes} passed, ${fails} failed`)
