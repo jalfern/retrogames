@@ -137,8 +137,15 @@ the #1096 options switched on.
   stretches; teal rim light). #2172: every fighter HOLDS their own signature
   pose (`def.card` — NYX deep-bladed with the lead hand out, CINDER weight back
   palms up, VESS on his toes elbows loose, RIV squared high fists, KRAX hunched
-  with arms wide for the grab), each with its own camera distance (`camZ`) so a
-  slim blade and a 1.4-bulk wall both fill their tile arcade-style. Portraits
+  with arms wide for the grab), and each portrait's FRAMING IS COMPUTED from the
+  posed rig: `render()` measures the silhouette with a `Box3` and backs the lens
+  off until the body fits the 30° frame with ~14% margin (vertical and
+  horizontal, so the yaw actually counts), with a slight top-down bias so the
+  feet stay in. Hand-tuned per-fighter `camZ` is gone — it could only trade a
+  cropped head for cropped feet, and measured portraits were losing the top of
+  every head. Names/tags print UNDER the tile (arcade-style) so the text never
+  crosses the art; the tap hit-rect grows by a `textBand` so tapping a name
+  hovers that card. Portraits
   are frozen into per-fighter snapshot canvases — the GL surface is one
   reusable element and before #2172 all five cards composited the SAME live
   canvas (every tile showed the last-rendered fighter; the old ink/head gates
@@ -150,13 +157,15 @@ the #1096 options switched on.
   inside its tile (12% vs the tile's 16%), never through the frame — grew-only-
   the-portrait pushed every fighter's head above the border. Hovering blips the hovered fighter's `voice` register
   (`voiceNotes` in fighters.js, two notes of base + fifth) and prints their
-  intro line under the grid; the pick stings the register's low pair and
+  intro line under the name row; the pick stings the register's low pair and
   carries `NAME — INTRO` from the pick through the pre-fight intro. The card
   grid sizes from the viewport so all five fit. Zoom eases per select frame and
   resets when select closes. All presentation — the engine and hashes never see
   it. DEV hooks: `selectInfo()` (cursor/id/portraits/line/zoom), `hover(d)`,
   `pick()`, `zoomOf(i)` (per-card zoom), `portraitStats()` (per-portrait ink +
-  head-region pixels + head centroid + silhouette hash), `cardRects()`
+  head-region pixels + head centroid + silhouette hash + head/feet rows `top`/
+  `bottom`/`span` — alpha on the transparent canvas is exactly "the fighter", so
+  a crop shows up as 0.000 or 1.000), `cardRects()`
   (live card geometry for the on-screen fit + portrait-ink pixel audit).
 
 ## Rules worth knowing
@@ -224,10 +233,14 @@ the #1096 options switched on.
      `pose()`'s legR/legL hips, zero page errors) + the #2172 select-card gates
      (five unique silhouette hashes — the shared-canvas kill-shot — head
      centroid spread, hover zoom ease + handoff, tap-to-hover with voice blip,
-     zoom reset on exit, and warm-ink containment (no portrait above its own
-     card frame, with a live `__VIPER_SPILL__` prove-fail); distinct card-pose
+     zoom reset on exit, warm-ink containment (no portrait above its own
+     card frame, with a live `__VIPER_SPILL__` prove-fail), framing from the
+     fighter's own extents (nothing cropped, every tile filled) and name-row
+     placement (no white text over the art, names present under each tile);
+     distinct card-pose
      data; self-biting mutants for the shared canvas, flattened zoom, buried
-     hovered card, a portrait outgrowing its tile and the stripped pose table).
+     hovered card, a portrait outgrowing its tile, the camera shoved into the
+     fighter and the stripped pose table).
 - `npm run viperpitcheck -- --mutate` — proven-fail: removing the guard gate
   must let heavies smash through GUARD; lifting the juggle cap must let the
   third aerial hit connect.
