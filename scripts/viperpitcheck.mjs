@@ -955,8 +955,9 @@ if (MUT) {
     ok((mutK.match(/\bcard: \{/g) || []).length === 0, 'mutant: stripped card poses empty the pose-data gate (harness bites)')
     const cabGates = [
         ['select screen builds the portraits once', /const ensurePortraits = \(\) => \{\s*if \(portraits\) return portraits/],
-        ['card body composites the captured rig portrait', /hctx\.drawImage\(pt, x \+ cw \* 0\.5 - pw \/ 2/],
-        ['#2172 the hovered portrait scales up on its zoom', /const zc = 1 \+ 0\.16 \* z/],
+        ['card body composites the captured rig portrait', /hctx\.drawImage\(pt, x \+ tw \* 0\.5 - pw \/ 2/],
+        ['#2172 the hovered tile pops on its zoom', /const zc = 1 \+ 0\.16 \* z/],
+        ['#2172 the portrait grows with the tile', /const ps = 0\.92 \+ 0\.12 \* z/],
         ['#2172 zoom eases toward the cursor every frame', /cardZoom\[i\] \+= \(target - cardZoom\[i\]\) \* 0\.22/],
         ['#2172 the hovered card draws last so its zoom rides on top', /ROSTER\.forEach\(\(rd, i\) => \{ if \(i !== cursor\) drawCard\(rd, i\) \}\)\s*drawCard\(ROSTER\[cursor\], cursor\)/],
         ['#2172 tapping another card walks the cursor there', /if \(hit >= 0 && hit !== cursor\) hoverSelect\(hit - cursor\)/],
@@ -970,17 +971,28 @@ if (MUT) {
         ['the intro line carries through the pre-fight intro', /pickLine && pickLine\.t > 0 && gs\.phase === 'intro'/],
         ['portraits fall back to colour blocks without WebGL', /catch \{ portraits = null \}/],
         ['all five cards fit the screen', /const cw = Math\.min\(H \* 0\.5, \(W \* 0\.94\) \/ \(total \* 1\.06\)\)/],
-        ['card rects recorded at draw time for the probe', /cardRects\[i\] = \{ id: rd\.id, x, y, w: cw, h: ch \}/],
+        ['card rects recorded at draw time for the probe', /cardRects\[i\] = \{ id: rd\.id, x, y, w: tw, h: th \}/],
         ['dev hook reports the card rects', /cardRects\(\) \{ return cardRects\.slice\(\) \}/],
         ['#2172 dev hooks expose the zoom + head centroid', /zoom: cardZoom\[cursor\] \|\| 0[\s\S]*zoomOf\(i\)[\s\S]*cx: head \? Math\.round\(hx \/ head\) : -1/],
     ]
     for (const [label, re] of cabGates) ok(re.test(gsrc), `select gate: ${label}`)
     ok(/selectInfo\(\) \{/.test(gsrc) && /hover\(d\) \{ hoverSelect\(d \| 0\) \}/.test(gsrc) && /pick\(\) \{ atSelect\(\) \}/.test(gsrc),
         'select gate: dev hooks expose selectInfo/hover/pick')
-    const mutP = gsrc.replace('hctx.drawImage(pt, x + cw * 0.5 - pw / 2, yy + ch * (0.48 - 0.06 * z) - ph / 2, pw, ph)', '')
+    const mutP = gsrc.replace('hctx.drawImage(pt, x + tw * 0.5 - pw / 2, y + th * 0.5 - ph / 2 - ch * 0.02 * z, pw, ph)', '')
     ok(!/hctx\.drawImage\(pt/.test(mutP), 'mutant: portraits dropped from the cards fails the gate (harness bites)')
     const mutZ = gsrc.replace('const zc = 1 + 0.16 * z', 'const zc = 1')
     ok(!/const zc = 1 \+ 0\.16 \* z/.test(mutZ), 'mutant: flattened hover zoom fails the zoom gate (harness bites)')
+    // #2172 containment invariant: portrait growth (ps) must stay UNDER tile
+    // growth (zc) or the figure walks out of its card — the head-through-the-
+    // frame bug the select screenshots caught. Read the coefficients live.
+    {
+        const zcK = +(gsrc.match(/const zc = 1 \+ ([\d.]+) \* z/)?.[1] || 0)
+        const psK = +(gsrc.match(/const ps = [\d.]+ \+ ([\d.]+) \* z/)?.[1] || 0)
+        ok(zcK > 0 && psK > 0 && psK < zcK, `select gate: portrait growth stays inside the tile growth (${psK} < ${zcK}) (#2172 containment)`)
+        const mutC = gsrc.replace('const ps = 0.92 + 0.12 * z', 'const ps = 0.92 + 0.30 * z')
+        const psC = +(mutC.match(/const ps = [\d.]+ \+ ([\d.]+) \* z/)?.[1] || 0)
+        ok(!(psC > 0 && psC < zcK), `mutant: a portrait that outgrows its card (${psC}) fails the containment gate (harness bites)`)
+    }
     const mutT = gsrc.replace('drawCard(ROSTER[cursor], cursor)', '')
     ok(!/drawCard\(ROSTER\[cursor\], cursor\)/.test(mutT), 'mutant: hovered card buried under its neighbours fails the raise gate (harness bites)')
     const mutH = gsrc.replace('hoverBlip(ROSTER[cursor])', '')
@@ -1113,6 +1125,32 @@ if (!MUT) {
             const zTap = await page.evaluate(() => window.__viperPitTest.zoomOf(0))
             ok(zTap > 0.5, `the tapped card zooms like a keyboard hover would (${zTap.toFixed(2)})`)
             await page.evaluate((d) => window.__viperPitTest.hover(d), si.cursor - 0)
+        }
+        // #2172 containment: a hovered tile must CONTAIN its portrait. Warm,
+        // bright (red-led skin/body) ink in the band just ABOVE a card's top
+        // edge is a head poking through the frame — the bug the select
+        // screenshots caught when only the portrait scaled. The teal hover glow
+        // is excluded by construction: it is green-led, and the arena behind the
+        // 0.82 select overlay is far darker than any lit portrait pixel.
+        await page.waitForFunction(() => window.__viperPitTest.selectInfo().zoom > 0.9, null, { timeout: 3000 }).catch(() => {})
+        {
+            const spill = await page.evaluate(() => {
+                const cv = document.querySelector('canvas[data-viperpit-hud]')
+                const c2 = document.createElement('canvas'); c2.width = cv.width; c2.height = cv.height
+                const g2 = c2.getContext('2d'); g2.drawImage(cv, 0, 0)
+                return window.__viperPitTest.cardRects().map((r) => {
+                    const x0 = Math.max(0, Math.round(r.x))
+                    const w = Math.max(1, Math.min(cv.width - x0, Math.round(r.w)))
+                    const y0 = Math.max(0, Math.round(r.y - r.h * 0.1)), y1 = Math.round(r.y + 1)
+                    let warm = 0
+                    if (y1 > y0) {
+                        const d = g2.getImageData(x0, y0, w, y1 - y0).data
+                        for (let i = 0; i < d.length; i += 4) if (d[i] > 90 && d[i] > d[i + 1] + 22 && d[i] > d[i + 2] + 18) warm++
+                    }
+                    return { id: r.id, warm }
+                })
+            })
+            ok(spill.every((s) => s.warm === 0), `no portrait pokes out of its card (${spill.map((s) => `${s.id}:${s.warm}`).join(' ')})`)
         }
         const b0 = await page.evaluate(() => ({ ...window.__vpAudio }))
         await page.keyboard.press('ArrowRight')

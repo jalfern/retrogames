@@ -915,35 +915,45 @@ const ViperPitGame = () => {
                     if (Math.abs(cardZoom[i] - target) < 0.01) cardZoom[i] = target
                 })
                 const drawCard = (rd, i) => {
-                    const x = W / 2 - (cw * 1.06 * total) / 2 + (i % 5) * (cw * 1.06), y = H * 0.24
-                    cardRects[i] = { id: rd.id, x, y, w: cw, h: ch }
                     const hovered = i === cursor
                     const z = cardZoom[i]
-                    const yy = y - ch * 0.035 * z
-                    hctx.fillStyle = '#12121c'; hctx.fillRect(x, yy, cw, ch)
+                    // #2172 the WHOLE tile pops with its zoom — frame, art and
+                    // text all scale by zc. Growing only the portrait shoved every
+                    // fighter's head through the card frame at full hover (you can
+                    // see it on RIV and NYX: the head above the teal border); the
+                    // tile contains its portrait at every zoom now, and the hovered
+                    // card still reads biggest on a phone.
+                    const zc = 1 + 0.16 * z
+                    const tw = cw * zc, th = ch * zc
+                    const x = W / 2 - (cw * 1.06 * total) / 2 + (i % 5) * (cw * 1.06) - (tw - cw) / 2
+                    const y = H * 0.24 - (th - ch) / 2 - ch * 0.02 * z
+                    cardRects[i] = { id: rd.id, x, y, w: tw, h: th }
+                    hctx.fillStyle = '#12121c'; hctx.fillRect(x, y, tw, th)
                     const pt = portraits && portraits[rd.id]
                     if (pt) {
                         if (hovered) { hctx.shadowColor = 'rgba(89,224,200,0.75)'; hctx.shadowBlur = Math.max(10, W * 0.014) }
-                        const zc = 1 + 0.16 * z
-                        const pw = cw * 0.92 * zc, ph = ch * 0.92 * zc
-                        hctx.drawImage(pt, x + cw * 0.5 - pw / 2, yy + ch * (0.48 - 0.06 * z) - ph / 2, pw, ph)
+                        // Portrait grows with the tile (12% at full hover) but
+                        // stays inside it: th - ph = 0.12*ch*zc - 0.12*ch > 0.
+                        const ps = 0.92 + 0.12 * z
+                        const pw = cw * ps, ph = ch * ps
+                        hctx.drawImage(pt, x + tw * 0.5 - pw / 2, y + th * 0.5 - ph / 2 - ch * 0.02 * z, pw, ph)
                         hctx.shadowBlur = 0
                     } else {
-                        hctx.fillStyle = hex(rd.color.skin); hctx.fillRect(x + cw * 0.4, yy + ch * 0.12, cw * 0.2, ch * 0.2)
-                        hctx.fillStyle = hex(rd.color.top); hctx.fillRect(x + cw * 0.32, yy + ch * 0.36, cw * 0.36, ch * 0.28)
-                        hctx.fillStyle = hex(rd.color.accent); hctx.fillRect(x + cw * 0.32, yy + ch * 0.36, cw * 0.36, ch * 0.05)
-                        hctx.fillStyle = hex(rd.color.pants); hctx.fillRect(x + cw * 0.36, yy + ch * 0.64, cw * 0.28, ch * 0.1)
+                        hctx.fillStyle = hex(rd.color.skin); hctx.fillRect(x + tw * 0.4, y + th * 0.12, tw * 0.2, th * 0.2)
+                        hctx.fillStyle = hex(rd.color.top); hctx.fillRect(x + tw * 0.32, y + th * 0.36, tw * 0.36, th * 0.28)
+                        hctx.fillStyle = hex(rd.color.accent); hctx.fillRect(x + tw * 0.32, y + th * 0.36, tw * 0.36, th * 0.05)
+                        hctx.fillStyle = hex(rd.color.pants); hctx.fillRect(x + tw * 0.36, y + th * 0.64, tw * 0.28, th * 0.1)
                     }
                     hctx.strokeStyle = hovered ? '#59e0c8' : '#31364a'
                     hctx.lineWidth = hovered ? 3 : 1
-                    hctx.strokeRect(x, yy, cw, ch)
-                    ui(Math.max(11, H * 0.022))
+                    hctx.strokeRect(x, y, tw, th)
+                    ui(Math.max(11, H * 0.022) * zc)
                     hctx.textAlign = 'center'
                     hctx.fillStyle = '#fff'
-                    hctx.fillText(rd.name, x + cw / 2, yy + ch * 0.85)
-                    ui(Math.max(8, H * 0.014))
+                    hctx.fillText(rd.name, x + tw / 2, y + th * 0.85)
+                    ui(Math.max(8, H * 0.014) * zc)
                     hctx.fillStyle = 'rgba(190,195,215,0.85)'
-                    hctx.fillText(rd.tag, x + cw / 2, yy + ch * 0.95)
+                    hctx.fillText(rd.tag, x + tw / 2, y + th * 0.95)
                 }
                 ROSTER.forEach((rd, i) => { if (i !== cursor) drawCard(rd, i) })
                 drawCard(ROSTER[cursor], cursor)
