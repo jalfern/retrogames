@@ -934,7 +934,10 @@ const ViperPitGame = () => {
                         if (hovered) { hctx.shadowColor = 'rgba(89,224,200,0.75)'; hctx.shadowBlur = Math.max(10, W * 0.014) }
                         // Portrait grows with the tile (12% at full hover) but
                         // stays inside it: th - ph = 0.12*ch*zc - 0.12*ch > 0.
-                        const ps = 0.92 + 0.12 * z
+                        // __VIPER_SPILL__ is the harness's prove-fail flag (#2172):
+                        // inflate the portrait past the tile and the warm-ink
+                        // containment gate must go red.
+                        const ps = (0.92 + 0.12 * z) * (globalThis.__VIPER_SPILL__ ? 1.3 : 1)
                         const pw = cw * ps, ph = ch * ps
                         hctx.drawImage(pt, x + tw * 0.5 - pw / 2, y + th * 0.5 - ph / 2 - ch * 0.02 * z, pw, ph)
                         hctx.shadowBlur = 0

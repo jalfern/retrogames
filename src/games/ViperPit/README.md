@@ -145,8 +145,10 @@ the #1096 options switched on.
   couldn't see it because five identical pictures still "painted a fighter").
   Hovering (or tapping another card — tap-to-hover walks the cursor instead of
   picking; tapping the hovered card picks) eases that card's zoom to 1: the
-  portrait scales 1.16x, lifts, glows teal and draws LAST so it rides over its
-  neighbours. Hovering blips the hovered fighter's `voice` register
+  WHOLE tile pops 1.16x (frame, portrait, name and tag scale together), glows
+  teal and draws LAST so it rides over its neighbours. The portrait scales
+  inside its tile (12% vs the tile's 16%), never through the frame — grew-only-
+  the-portrait pushed every fighter's head above the border. Hovering blips the hovered fighter's `voice` register
   (`voiceNotes` in fighters.js, two notes of base + fifth) and prints their
   intro line under the grid; the pick stings the register's low pair and
   carries `NAME — INTRO` from the pick through the pre-fight intro. The card
@@ -222,8 +224,10 @@ the #1096 options switched on.
      `pose()`'s legR/legL hips, zero page errors) + the #2172 select-card gates
      (five unique silhouette hashes — the shared-canvas kill-shot — head
      centroid spread, hover zoom ease + handoff, tap-to-hover with voice blip,
-     zoom reset on exit; distinct card-pose data; self-biting mutants for the
-     shared canvas, flattened zoom, buried hovered card and stripped pose table).
+     zoom reset on exit, and warm-ink containment (no portrait above its own
+     card frame, with a live `__VIPER_SPILL__` prove-fail); distinct card-pose
+     data; self-biting mutants for the shared canvas, flattened zoom, buried
+     hovered card, a portrait outgrowing its tile and the stripped pose table).
 - `npm run viperpitcheck -- --mutate` — proven-fail: removing the guard gate
   must let heavies smash through GUARD; lifting the juggle cap must let the
   third aerial hit connect.
@@ -240,12 +244,13 @@ the #1096 options switched on.
   call-and-response reveal with a loser-register reply sting, all pinned in
   `viperpitcheck`.
 - **CLOSED by #2172:** portrait polish — pose-per-card (five signature `card`
-  poses + per-fighter camera framing), hover/tap portrait zoom (1.16x ease +
-  lift + draw-last), tap-to-hover on the card grid, and the fix underneath it
-  all: portraits are frozen into per-fighter snapshot canvases (the GL surface
-  was shared, so all five tiles showed one fighter). Pinned by silhouette-hash,
-  centroid-spread, zoom-handoff, tap-hover and four self-biting mutants in
-  `viperpitcheck`.
+  poses + per-fighter camera framing), hover/tap portrait zoom (whole-tile pop
+  1.16x + draw-last, portrait contained by its frame), tap-to-hover on the card
+  grid, and the fix underneath it all: portraits are frozen into per-fighter
+  snapshot canvases (the GL surface was shared, so all five tiles showed one
+  fighter). Pinned by silhouette-hash, centroid-spread, zoom-handoff, tap-hover,
+  the tile-containment invariant and four self-biting mutants in `viperpitcheck`
+  (plus a live `__VIPER_SPILL__` prove-fail for the containment gate).
 - Stage midground + fight-reactive sway landed (#1106); heavier interactivity
   (destructible props, pickups) still open.
 - `qcb` counter + guard crush landed (#1106): blocking drains a guard gauge;

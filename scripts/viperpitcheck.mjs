@@ -957,7 +957,8 @@ if (MUT) {
         ['select screen builds the portraits once', /const ensurePortraits = \(\) => \{\s*if \(portraits\) return portraits/],
         ['card body composites the captured rig portrait', /hctx\.drawImage\(pt, x \+ tw \* 0\.5 - pw \/ 2/],
         ['#2172 the hovered tile pops on its zoom', /const zc = 1 \+ 0\.16 \* z/],
-        ['#2172 the portrait grows with the tile', /const ps = 0\.92 \+ 0\.12 \* z/],
+        ['#2172 the portrait grows with the tile', /const ps = \(0\.92 \+ 0\.12 \* z\)/],
+        ['#2172 the spill prove-fail flag is wired into the portrait scale', /globalThis\.__VIPER_SPILL__ \? 1\.3 : 1/],
         ['#2172 zoom eases toward the cursor every frame', /cardZoom\[i\] \+= \(target - cardZoom\[i\]\) \* 0\.22/],
         ['#2172 the hovered card draws last so its zoom rides on top', /ROSTER\.forEach\(\(rd, i\) => \{ if \(i !== cursor\) drawCard\(rd, i\) \}\)\s*drawCard\(ROSTER\[cursor\], cursor\)/],
         ['#2172 tapping another card walks the cursor there', /if \(hit >= 0 && hit !== cursor\) hoverSelect\(hit - cursor\)/],
@@ -987,10 +988,11 @@ if (MUT) {
     // frame bug the select screenshots caught. Read the coefficients live.
     {
         const zcK = +(gsrc.match(/const zc = 1 \+ ([\d.]+) \* z/)?.[1] || 0)
-        const psK = +(gsrc.match(/const ps = [\d.]+ \+ ([\d.]+) \* z/)?.[1] || 0)
+        const psK = +(gsrc.match(/const ps = \(?[\d.]+ \+ ([\d.]+) \* z/)?.[1] || 0)
         ok(zcK > 0 && psK > 0 && psK < zcK, `select gate: portrait growth stays inside the tile growth (${psK} < ${zcK}) (#2172 containment)`)
-        const mutC = gsrc.replace('const ps = 0.92 + 0.12 * z', 'const ps = 0.92 + 0.30 * z')
-        const psC = +(mutC.match(/const ps = [\d.]+ \+ ([\d.]+) \* z/)?.[1] || 0)
+        const mutC = gsrc.replace('const ps = (0.92 + 0.12 * z) * (globalThis.__VIPER_SPILL__ ? 1.3 : 1)', 'const ps = (0.92 + 0.30 * z) * (globalThis.__VIPER_SPILL__ ? 1.3 : 1)')
+        ok(mutC !== gsrc, 'select gate: the containment mutant has a literal to bite (ps line not silently renamed)')
+        const psC = +(mutC.match(/const ps = \(?[\d.]+ \+ ([\d.]+) \* z/)?.[1] || 0)
         ok(!(psC > 0 && psC < zcK), `mutant: a portrait that outgrows its card (${psC}) fails the containment gate (harness bites)`)
     }
     const mutT = gsrc.replace('drawCard(ROSTER[cursor], cursor)', '')
@@ -1134,7 +1136,7 @@ if (!MUT) {
         // 0.82 select overlay is far darker than any lit portrait pixel.
         await page.waitForFunction(() => window.__viperPitTest.selectInfo().zoom > 0.9, null, { timeout: 3000 }).catch(() => {})
         {
-            const spill = await page.evaluate(() => {
+            const measureSpill = () => page.evaluate(() => {
                 const cv = document.querySelector('canvas[data-viperpit-hud]')
                 const c2 = document.createElement('canvas'); c2.width = cv.width; c2.height = cv.height
                 const g2 = c2.getContext('2d'); g2.drawImage(cv, 0, 0)
@@ -1150,7 +1152,19 @@ if (!MUT) {
                     return { id: r.id, warm }
                 })
             })
+            const spill = await measureSpill()
             ok(spill.every((s) => s.warm === 0), `no portrait pokes out of its card (${spill.map((s) => `${s.id}:${s.warm}`).join(' ')})`)
+            // Prove the gate can fail: __VIPER_SPILL__ inflates the portrait past
+            // its tile (the pre-fix geometry) and the same measurement must see a
+            // head above the frame — then restore.
+            await page.evaluate(() => { globalThis.__VIPER_SPILL__ = true })
+            await page.waitForTimeout(120)
+            const spillMut = await measureSpill()
+            await page.evaluate(() => { delete globalThis.__VIPER_SPILL__ })
+            await page.waitForTimeout(120)
+            const spillBack = await measureSpill()
+            ok(spillMut.some((s) => s.warm > 0), `mutant: a portrait bigger than its card pokes warm ink above the frame (${spillMut.map((s) => `${s.id}:${s.warm}`).join(' ')})`)
+            ok(spillBack.every((s) => s.warm === 0), 'mutant: restoring the contained portrait clears the spill again (harness not stuck)')
         }
         const b0 = await page.evaluate(() => ({ ...window.__vpAudio }))
         await page.keyboard.press('ArrowRight')
