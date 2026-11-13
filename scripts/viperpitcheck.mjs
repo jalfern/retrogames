@@ -935,18 +935,20 @@ if (MUT) {
         ['#2172 card yaw comes from the fighter\'s own card pose', /rig\.root\.rotation\.y = c\.yaw/],
         ['pit-teal rim light on the portrait', /new THREE\.DirectionalLight\(0x59e0c8, 1\.6\)/],
         ['card-aspect canvas so the HUD never stretches it', /canvas\.height = Math\.round\(w \* 0\.78\)/],
-        ['full-body framing: camera back far enough to keep the head in', /cam\.position\.set\(0, 1\.6, 7\.4\)/],
+        ['full-body framing: the fit backs the lens off the posed silhouette', /cam\.position\.set\(0, mid\.y \+ size\.y \* 0\.06, Math\.max\(fitV, fitH\) \/ 0\.9\)/],
+        ['#2172 framing derives from the body, not a per-fighter constant', /const fitV = size\.y \/ 2 \/ Math\.tan\(FOV_V \/ 2\)/],
+        ['#2172 the horizontal fit is computed too (yaw widening counts)', /const fitH = size\.x \/ 2 \/ Math\.tan\(FOV_H \/ 2\)/],
     ]
     for (const [label, re] of portGates) ok(re.test(rsrc), `select gate: ${label}`)
     ok((fsrc.match(/\bcard: \{/g) || []).length >= 5, 'select gate: every fighter carries a card pose (#2172)')
-    ok(ROSTER.every((d) => d.card && d.card.yaw > 0 && d.card.yaw < 1.2 && d.card.camZ >= 5.8 && d.card.camZ <= 8.4 && Array.isArray(d.card.arms) && d.card.arms.length === 2 && Array.isArray(d.card.legs) && d.card.legs.length === 2),
-        'select gate: every card pose is a sane yaw + framing cam + two arms + two legs (#2172)')
-    ok(/cam\.position\.z = c\.camZ \|\| 7\.4/.test(rsrc),
-        'select gate: per-fighter portrait framing — slim blades and heavy walls are not framed at one distance (#2172)')
+    ok(ROSTER.every((d) => d.card && d.card.yaw > 0 && d.card.yaw < 1.2 && Array.isArray(d.card.arms) && d.card.arms.length === 2 && Array.isArray(d.card.legs) && d.card.legs.length === 2),
+        'select gate: every card pose is a sane yaw + two arms + two legs (#2172)')
+    ok(!/c\.camZ/.test(rsrc),
+        'select gate: framing is computed, so no per-fighter camZ crept back in (#2172)')
     ok(new Set(ROSTER.map((d) => JSON.stringify(d.card))).size === 5, 'select gate: all five card poses differ (#2172)')
     ok(new Set(ROSTER.map((d) => d.card.yaw)).size === 5, 'select gate: card yaws are five distinct angles (#2172)')
-    const mutC = rsrc.replace('cam.position.set(0, 1.6, 7.4)', 'cam.position.set(0, 1.2, 3.1)')
-    ok(!/cam\.position\.set\(0, 1\.6, 7\.4\)/.test(mutC), 'mutant: portrait camera pushed too close fails the framing gate (harness bites)')
+    const mutC = rsrc.replace('Math.max(fitV, fitH) / 0.9', 'Math.max(fitV, fitH) / 2.4')
+    ok(!/Math\.max\(fitV, fitH\) \/ 0\.9/.test(mutC), 'mutant: portrait camera pushed too close fails the framing gate (harness bites)')
     ok(/out\.getContext\('2d'\)\.drawImage\(canvas, 0, 0\)/.test(rsrc),
         'select gate: each portrait is frozen into its OWN canvas (#2172 — one shared canvas made five identical cards)')
     const mutS = rsrc.replace("            const out = document.createElement('canvas')\n            out.width = canvas.width\n            out.height = canvas.height\n            out.getContext('2d').drawImage(canvas, 0, 0)\n            return out", '            return canvas')

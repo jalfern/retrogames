@@ -195,17 +195,32 @@ export function createPortraitRenderer(w = 240) {
     const cam = new THREE.PerspectiveCamera(30, canvas.width / canvas.height, 0.1, 20)
     cam.position.set(0, 1.6, 7.4)
     cam.lookAt(0, 1.5, 0)
+    // #2172 frame half-extents (radians) for the fit math in render().
+    const FOV_V = (30 * Math.PI) / 180
+    const FOV_H = 2 * Math.atan(Math.tan(FOV_V / 2) * (canvas.width / canvas.height))
     return {
         canvas,
         render(def) {
             const rig = buildFighter(def)
-            const c = (def && def.card) || { yaw: 0.55, camZ: 7.4 }
+            const c = (def && def.card) || { yaw: 0.55 }
             rig.root.rotation.y = c.yaw
-            // #2172 per-fighter framing: the arcade select screen framed each
-            // fighter to fill their tile — a slim blade and a 1.4-bulk wall do
-            // not stand the same distance from the lens.
-            cam.position.z = c.camZ || 7.4
             poseCard(rig, def, 0.25)
+            rig.root.updateMatrixWorld(true)
+            // #2172 arcade framing computed from the POSED silhouette: a 30°
+            // vertical frame spans 2*tan(15°)*d world units at distance d (the
+            // same ratio again horizontally), so back the lens off until the whole
+            // body fits with ~10% margin. Hand-tuned per-fighter camZ could only
+            // trade a cropped head for cropped feet — measured, every portrait sat
+            // at top 0.00, i.e. NYX/RIV/KRAX were losing the top of their heads.
+            const box = new THREE.Box3().setFromObject(rig.root)
+            const size = box.getSize(new THREE.Vector3())
+            const mid = box.getCenter(new THREE.Vector3())
+            const fitV = size.y / 2 / Math.tan(FOV_V / 2)
+            const fitH = size.x / 2 / Math.tan(FOV_H / 2)
+            // Slight top-down bias keeps the feet inside while the head keeps its
+            // margin, the way an arcade select framed a fighter.
+            cam.position.set(0, mid.y + size.y * 0.06, Math.max(fitV, fitH) / 0.9)
+            cam.lookAt(mid.x, mid.y - size.y * 0.02, 0)
             scene.add(rig.root)
             renderer.render(scene, cam)
             scene.remove(rig.root)

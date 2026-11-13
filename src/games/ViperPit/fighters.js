@@ -24,7 +24,7 @@ const defs = [
         taunt: 'STAY DOWN', roundLose: 'ROUND TO YOU', tauntPose: 'beckon',
         // #2172 select-card pose: deep bladed angle, lead hand out front, the
         // blade hand cocked low behind — open enough to read on a 240px card.
-        card: { yaw: 0.85, camZ: 6.4, hipY: -0.1, lean: 0.16, headX: 0.18, arms: [{ sh: -0.95, el: -1.35, z: 0.55 }, { sh: -0.3, el: -2.0, z: -0.45 }], legs: [{ hip: 0.26, kn: -0.3 }, { hip: -0.32, kn: -0.2 }] },
+        card: { yaw: 0.85, hipY: -0.1, lean: 0.16, headX: 0.18, arms: [{ sh: -0.95, el: -1.35, z: 0.55 }, { sh: -0.3, el: -2.0, z: -0.45 }], legs: [{ hip: 0.26, kn: -0.3 }, { hip: -0.32, kn: -0.2 }] },
         cpuStyle: { zone: 0.18, jump: 0.3 },
         build: { h: 1.06, bulk: 0.9, hair: 'hood', gear: 'wrap' },
         color: { skin: 0xcf9a72, top: 0x3d3f4a, pants: 0x23252e, hair: 0x11131a, accent: 0x59e0c8 },
@@ -50,7 +50,7 @@ const defs = [
         intro: 'YOU ASKED FOR HEAT', win: 'BURNT OUT', lose: 'STILL GOT A SPARK',
         taunt: 'IS THAT ALL?', roundLose: 'MORE TO BURN', tauntPose: 'flex',
         // #2172 select-card pose: weight back, both palms raised toward you.
-        card: { yaw: 0.35, camZ: 6.3, hipY: -0.02, lean: -0.04, headX: -0.08, arms: [{ sh: -1.25, el: -0.75, z: 0.78 }, { sh: -1.1, el: -0.75, z: -0.78 }], legs: [{ hip: 0.12, kn: -0.18 }, { hip: -0.18, kn: -0.22 }] },
+        card: { yaw: 0.35, hipY: -0.02, lean: -0.04, headX: -0.08, arms: [{ sh: -1.25, el: -0.75, z: 0.78 }, { sh: -1.1, el: -0.75, z: -0.78 }], legs: [{ hip: 0.12, kn: -0.18 }, { hip: -0.18, kn: -0.22 }] },
         cpuStyle: { zone: 0.55 },
         build: { h: 1.02, bulk: 0.95, hair: 'short', gear: 'jacket' },
         color: { skin: 0xb47a52, top: 0x7e2f22, pants: 0x2c2622, hair: 0x241612, accent: 0xff9a3c },
@@ -75,7 +75,7 @@ const defs = [
         intro: 'CATCH ME IF YOU CAN', win: 'UPSIDE DOWN', lose: 'THAT ONE LANDED',
         taunt: 'CLEANER THAN THAT', roundLose: 'LUCKY SHOT', tauntPose: 'point',
         // #2172 select-card pose: bouncing on his toes, elbows loose and out.
-        card: { yaw: 0.7, camZ: 6.2, hipY: 0.05, lean: 0.08, headX: -0.12, arms: [{ sh: -0.9, el: -0.9, z: 0.62 }, { sh: -0.95, el: -0.85, z: -0.58 }], legs: [{ hip: 0.2, kn: -0.45 }, { hip: -0.22, kn: -0.4 }] },
+        card: { yaw: 0.7, hipY: 0.05, lean: 0.08, headX: -0.12, arms: [{ sh: -0.9, el: -0.9, z: 0.62 }, { sh: -0.95, el: -0.85, z: -0.58 }], legs: [{ hip: 0.2, kn: -0.45 }, { hip: -0.22, kn: -0.4 }] },
         cpuStyle: { zone: 0.22, jump: 0.5 },
         build: { h: 0.98, bulk: 0.85, hair: 'shaven', gear: 'wrap' },
         color: { skin: 0xe4c39b, top: 0x2f5d52, pants: 0x1f2a26, hair: 0x1a1410, accent: 0xb8ff5a },
@@ -101,7 +101,7 @@ const defs = [
         intro: 'I END CONVERSATIONS', win: "LAST WORD'S MINE", lose: 'SAY IT AGAIN',
         taunt: 'SIT DOWN', roundLose: 'NOT FINISHED', tauntPose: 'raise',
         // #2172 select-card pose: squared classic stance, both fists at the chin.
-        card: { yaw: 0.55, camZ: 7.0, hipY: -0.04, lean: 0.06, headX: 0.05, arms: [{ sh: -1.35, el: -2.2, z: 0.45 }, { sh: -1.25, el: -2.35, z: -0.42 }], legs: [{ hip: 0.08, kn: -0.15 }, { hip: -0.1, kn: -0.12 }] },
+        card: { yaw: 0.55, hipY: -0.04, lean: 0.06, headX: 0.05, arms: [{ sh: -1.35, el: -2.2, z: 0.45 }, { sh: -1.25, el: -2.35, z: -0.42 }], legs: [{ hip: 0.08, kn: -0.15 }, { hip: -0.1, kn: -0.12 }] },
         cpuStyle: { zone: 0.4 },
         build: { h: 1.08, bulk: 1.02, hair: 'mohawk', gear: 'jacket' },
         color: { skin: 0xd69a6b, top: 0x44485a, pants: 0x1c1e26, hair: 0x8a2f3f, accent: 0xd8e04a },
@@ -129,7 +129,7 @@ const defs = [
         intro: 'BIG BILL COMING', win: 'PAID IN FULL', lose: "THAT'LL BE EXTRA",
         taunt: 'THAT GOES ON THE BILL', roundLose: 'ADD IT TO THE TAB', tauntPose: 'spit',
         // #2172 select-card pose: hunched wide, arms open for the grab.
-        card: { yaw: 0.22, camZ: 7.7, hipY: -0.12, lean: 0.24, headX: 0.22, arms: [{ sh: -0.5, el: -0.9, z: 1.15 }, { sh: -0.45, el: -1.0, z: -1.15 }], legs: [{ hip: 0.32, kn: -0.4 }, { hip: -0.32, kn: -0.38 }] },
+        card: { yaw: 0.22, hipY: -0.12, lean: 0.24, headX: 0.22, arms: [{ sh: -0.5, el: -0.9, z: 1.15 }, { sh: -0.45, el: -1.0, z: -1.15 }], legs: [{ hip: 0.32, kn: -0.4 }, { hip: -0.32, kn: -0.38 }] },
         cpuStyle: { zone: 0.05, jump: 0.04 },
         build: { h: 1.18, bulk: 1.4, hair: 'bald', gear: 'chain' },
         color: { skin: 0x9a6a44, top: 0x5a4632, pants: 0x33302b, hair: 0x141414, accent: 0xc0c8d0 },
