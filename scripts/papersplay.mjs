@@ -45,6 +45,34 @@ const waitBannerOff = async () => {
         await wait(120)
     }
 }
+// #2145 SETTLED INK SAMPLING — the three nightly-red gates (crowded-shift
+// aside, neighbor callback, five-row bulletin) each sampled pixel ink ONCE
+// after a wall-clock wait. CI's software Chrome walks world ticks at a lower
+// real-time rate than this box, so the same wait catches the booth mid-veil
+// or mid-type: deterministically fewer ink px (identical numbers every run).
+// The fix is state-based: drain the veil on ticks, then poll the ink through
+// the print's dwell and keep the max — both boxes then grade the SAME fully
+// painted frame, and the floors below are the CI-calibrated margins (#2168
+// default A) rather than Mac-only glyph weights.
+const settleInk = async (probeFn, keys, ms = 110, rounds = 8) => {
+    let best = null
+    for (let i = 0; i < rounds; i++) {
+        const v = await page.evaluate(probeFn)
+        if (v) {
+            if (!best) best = { ...v }
+            for (const k of keys) if (typeof v[k] === 'number' && v[k] > best[k]) best[k] = v[k]
+        }
+        await wait(ms)
+    }
+    return best
+}
+// the sheet lives behind the morning banner's veil (y 150..286 overlaps the
+// bulletin rows): drain the banner on ticks, then take the settle-max.
+const settledWantedInk = async () => {
+    await waitBannerOff()
+    const r0 = await settleInk(() => window.__ppTest.wantedInk(), ['ink'], 100, 4)
+    return r0 || { ink: -1, rows: 0 }
+}
 // #2020 the full quiet: banner down, stamp ink faded, and the citation pin
 // released — the booth is showing the CURRENT entrant, not the judged one.
 const waitQuiet = async () => {
@@ -861,7 +889,7 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
             // wait for the booth to be showing the arc face itself.
             await waitQuiet()
             bubbleUp = await page.evaluate(() => window.__ppTest.bubblePix())
-            arcAside = await page.evaluate(() => window.__ppTest.asideInk())
+            arcAside = await settleInk(() => window.__ppTest.asideInk(), ['tag', 'line'])
             arcMugs = await page.evaluate(() => window.__ppTest.queueInk())
             break
         }
@@ -875,9 +903,13 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
         bubbleUp > 4000 && !!sayProbe && sayProbe.say[0] === 'YOU AGAIN.' && /\.\.\./.test(sayProbe.say[1]), `${bubbleUp}`)
     // #2020 the bystander's first beat, live: while the wall works, the line
     // behind comments — tag and line both ink, two known faces wait behind.
+    // #2145: the tag floor is CI-calibrated (Ubuntu FreeType paints ~half the
+    // gold-core px Mac CoreText does; settled max on CI prints ~20, this box
+    // prints ~45). 10 still separates "printed" from the quiet shift's hard 0
+    // (the dark-shift gate above proves 0/0), so paint regressions stay caught.
     r.check(`the line comments on the crowded shift (${sayProbe && JSON.stringify(sayProbe.aside)} prints ${JSON.stringify(arcAside)})`,
         !!sayProbe && !!sayProbe.aside && sayProbe.aside.tag === 'A VOICE BEHIND YOU' && sayProbe.aside.line === 'THE LINE IS LONG TODAY.' &&
-        arcAside.tag > 30 && arcAside.line > 30,
+        arcAside.tag > 10 && arcAside.line > 30,
         JSON.stringify({ aside: sayProbe && sayProbe.aside, ink: arcAside }))
     r.check(`the crowded morning waits two deep (${arcMugs} slate px vs ${soloMugs} solo)`,
         arcMugs > soloMugs + 100 && arcMugs > 300, `${arcMugs}/${soloMugs}`)
@@ -923,7 +955,7 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     crowd6Bubble = await page.evaluate(() => window.__ppTest.bubblePix())
     // #2020 the second beat: the neighbor through the gate calls back by the
     // head's name, and the line behind Sonya is down to her own mug.
-    const crowd6Aside = await page.evaluate(() => window.__ppTest.asideInk())
+    const crowd6Aside = await settleInk(() => window.__ppTest.asideInk(), ['tag', 'line'])
     const tailMugs = await page.evaluate(() => window.__ppTest.queueInk())
     r.check('the crowded shift: Sonya walks the SAME day the arc turn lands (seed 0 day 6 — tail seat s+4)',
         !!crowd6 && crowd6.day === 6 && crowd6.name === 'SONYA MALAK'
@@ -933,7 +965,7 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
         crowd6Bubble > 4000, `${crowd6Bubble}`)
     r.check(`the neighbor through the gate calls back by name (${crowd6 && JSON.stringify(crowd6.aside)} prints ${JSON.stringify(crowd6Aside)})`,
         !!crowd6 && !!crowd6.aside && crowd6.aside.tag === 'A VOICE FROM INSIDE' && crowd6.aside.line === 'VOLEN SAYS HELLO.' &&
-        crowd6Aside.tag > 30 && crowd6Aside.line > 30,
+        crowd6Aside.tag > 10 && crowd6Aside.line > 30,
         JSON.stringify({ aside: crowd6 && crowd6.aside, ink: crowd6Aside }))
     r.check(`the line thins as heads cross — one mug stays behind Sonya (${tailMugs} slate px vs ${arcMugs} at sunrise)`,
         tailMugs > 80 && tailMugs < arcMugs - 100, `${tailMugs}/${arcMugs}`)
@@ -1235,6 +1267,10 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     let dupAcrossDays = 0, framed = 0, offPlanRows = 0, totalRows = 0
     let ink3 = -1, ink5 = -1
     for (let d = 1; d <= 7; d++) {
+        // #2145 morning-veil fix: the bulletin's upper rows sit under the day
+        // banner's dark overlay; the fixed 200ms wait caught CI's slower tick
+        // rate still under the veil (466 vs 516 px, identical every run).
+        await waitBannerOff()
         const sheet = await page.evaluate(() => {
             const p = window.__ppTest.probe()
             const wi = window.__ppTest.wantedInk()
@@ -1251,8 +1287,8 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
                 seenNames.add(w.name)
                 if (weekEntrants.has(w.name)) framed++
             })
-            if (nodeRows.length === 3 && ink3 < 0) ink3 = sheet.ink
-            if (nodeRows.length === 5) ink5 = Math.max(ink5, sheet.ink)
+            if (nodeRows.length === 3 && ink3 < 0) ink3 = Math.max(sheet.ink, (await settledWantedInk()).ink)
+            if (nodeRows.length === 5) ink5 = Math.max(ink5, sheet.ink, (await settledWantedInk()).ink)
         } else {
             r.check(`day ${d} sheet read live`, false, JSON.stringify({ got: sheet.day, rows: sheet.wanted.length }))
         }
