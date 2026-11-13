@@ -52,11 +52,32 @@ function readRoster(rel) {
 // the honest window, then keep probing until a 3x ceiling. The rule is intact —
 // progress is REQUIRED by the ceiling — only its meaning hardened from "exactly
 // at 5 s" to "by the ceiling", which is what the game promises, not Chrome.
+// #601 main-green, the same lesson one level deeper: the ceiling is still REAL
+// milliseconds, and a fixed-timestep world on a loaded runner runs far below the
+// 60 tps those budgets assume. Nightly 43304298124 lost `defender`, nightly
+// 43335817601 lost `fire-crew`, both on `resumes from where the player left it`,
+// both with a note that shows the sim simply had too few TICKS in the window
+// (fire-crew parks crew0 and proves itself with `rescued`, which needs ~700
+// ticks — locally 706 arrive in the window at throttle 64; CI delivered a
+// fraction of them). So: after the real ceiling, keep going until the sim has
+// actually RUN the ticks the budget stands for (waitMs at 60 tps). A genuinely
+// stalled prover still fails — it just fails after the world got its time, which
+// is what AGENTS.md already law: harness budgets are WORLD seconds.
 const pollAdvance = async (page, probe, advanced, a, waitMs) => {
     const t0 = Date.now()
+    const tickBudget = Math.round(waitMs / (1000 / 60))
     await page.waitForTimeout(waitMs)
     let b = await probe()
-    while (!advanced(a, b) && Date.now() - t0 < waitMs * 3) {
+    const hasTicks = a && Number.isFinite(a.tick)
+    // Exit only when the promise landed, or when the world got its time AND the
+    // old real-time ceiling expired. The extension can only ever ADD time — a
+    // prover that legitimately needs more than the mapped budget (the old 3x
+    // window proved those) must never be cut off early.
+    while (!advanced(a, b)) {
+        const real = Date.now() - t0
+        if (real > waitMs * 8) break
+        const owed = hasTicks && (b.tick - a.tick) < tickBudget
+        if (real > waitMs * 3 && !owed) break
         await page.waitForTimeout(250)
         b = await probe()
     }
@@ -3204,6 +3225,18 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     // b31 audit ledger: the honest remainder never grows a silent button.
     for (const p of ['/mario-classic', '/ironkeep', '/raccoon-heist', '/pacman', '/centipede', '/pitfall', '/zork2', '/zork3', '/britannia'])
         rep.check(`audit ledger: ${p} carries no WATCH line (no proven driver to seat)`, !entryHas31(p))
+}
+// #601 main-green: harness budgets are WORLD seconds (AGENTS.md law). The advance
+// ceiling must consult the sim's own tick, or a loaded CI runner starves healthy
+// provers of the ticks their promise needs — defender lost it on 43304298124 and
+// fire-crew on 43335817601, both `resumes from where the player left it`, both
+// with a note that showed too few ticks in the window, not a stalled prover.
+{
+    const self = readRoster('scripts/watchcheck.mjs')
+    rep.check('pollAdvance grants the sim its ticks (world-time ceiling, #601)',
+        /const tickBudget = Math\.round\(waitMs \/ \(1000 \/ 60\)\)/.test(self)
+        && /const owed = hasTicks && \(b\.tick - a\.tick\) < tickBudget/.test(self)
+        && /if \(real > waitMs \* 8\) break/.test(self))
 }
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray
