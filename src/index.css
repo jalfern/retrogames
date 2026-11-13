@@ -32,6 +32,39 @@ body {
   touch-action: manipulation;
 }
 
+/* #2155 — size the app to the area you can SEE, not the tall one. In iOS
+   Safari `100vh` is the LARGE viewport (toolbars hidden), so a shell built on
+   it is ~110px taller than the portrait window while the URL bar and tab bar
+   are up: the bottom band — where the virtual stick lives — is past the fold,
+   and #2092's scroll lock means nothing can be dragged up to reach it. The
+   joystick was not merely cramped, it was gone. `dvh` is the dynamic (visible)
+   height, so the shell, the document and every `position: fixed` anchor inside
+   them land on the visible bottom edge instead of below it.
+   One token for every shell so the sizing has exactly one source, with a
+   `100vh` fallback for engines that predate the dynamic units (#2155 keeps the
+   #2092 lock above untouched — this only changes WHICH height is used). */
+:root {
+  --shell-h: 100vh;
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --shell-h: 100dvh;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100dvh;
+  }
+}
+
+/* The game shell's height (App.jsx). Replaces `h-screen`, which was the raw
+   large-viewport form (#2155). */
+.shell-viewport {
+  height: var(--shell-h);
+}
+
 /* #606 — the arcade is a game surface, not a document. On iPad/iOS Safari a
    press-and-drag (the virtual stick, the d-pad, the canvas, or even the footer
    label) started a text-selection / long-press callout, so drags "turned into

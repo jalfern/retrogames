@@ -1306,7 +1306,7 @@ const IronKeepGame = () => {
             <div
                 ref={containerRef}
                 className="relative border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-black cursor-crosshair"
-                style={{ width: 'min(880px, 94vw, calc((100vh - 15rem) * 4 / 3))', aspectRatio: '4 / 3' }}
+                style={{ width: 'min(880px, 94vw, calc((var(--shell-h) - 15rem) * 4 / 3))', aspectRatio: '4 / 3' }}
             >
                 <canvas
                     ref={canvasRef}

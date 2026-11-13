@@ -319,6 +319,7 @@
     "ssxmodelcheck": "node scripts/ssxmodelcheck.mjs",
     "ssxplay": "node scripts/ssxplay.mjs",
     "audiocheck": "node scripts/audiocheck.mjs",
+    "dvhcheck": "node scripts/dvhcheck.mjs",
     "ciscope": "node scripts/ciscope.mjs --selftest",
     "ciyamlcheck": "node scripts/ciyamlcheck.mjs",
     "shimcheck": "node scripts/shimcheck.mjs",

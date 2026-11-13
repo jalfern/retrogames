@@ -132,7 +132,11 @@ function Layout({ children }) {
 
   return (
     <GameLabelContext.Provider value={contextValue}>
-      <div className="w-full h-screen bg-white overflow-hidden relative">
+      {/* #2155: `shell-viewport` = 100dvh (visible area) with a 100vh fallback.
+          `h-screen` was the raw large viewport, so on iPhone Safari portrait the
+          bottom band — the virtual stick — sat past the fold and could not be
+          reached (#2092's scroll lock means nothing pans up to it). */}
+      <div className="w-full shell-viewport bg-white overflow-hidden relative">
         {children}
 
         {/* Footer Label (a route can opt out — MYST's caption bar owns the bottom) */}

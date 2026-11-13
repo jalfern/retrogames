@@ -501,7 +501,7 @@ export default function Emberwood() {
                 className="max-w-full max-h-full"
                 style={orient === 'port'
                     ? { imageRendering: IS_LITE ? 'pixelated' : 'auto', width: '100%', height: '100%' }
-                    : { imageRendering: IS_LITE ? 'pixelated' : 'auto', width: `min(100vw, calc((100dvh - 140px) * ${(W / H).toFixed(3)}))` }}
+                    : { imageRendering: IS_LITE ? 'pixelated' : 'auto', width: `min(100vw, calc((var(--shell-h) - 140px) * ${(W / H).toFixed(3)}))` }}
             />
             {/* HUD — #773: clears the #437 chrome cluster (ARCADE left, PAUSE+mute
                 right sit at top 0.75rem), so the strip starts below both. */}

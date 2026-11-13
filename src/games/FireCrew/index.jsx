@@ -593,11 +593,11 @@ export default function FireCrew() {
     }, [startPlay, startAttract, finish, listenEvents, endVoice])
 
     return (
-        <div className="min-h-screen bg-black flex items-center justify-center relative select-none">
+        <div className="min-h-[var(--shell-h)] bg-black flex items-center justify-center relative select-none">
             <canvas
                 ref={canvasRef}
-                className="max-w-full max-h-screen"
-                style={{ imageRendering: 'pixelated', aspectRatio: `${VW} / ${VH}`, width: 'min(100vw, calc(100vh * 3 / 2))' }}
+                className="max-w-full max-h-[var(--shell-h)]"
+                style={{ imageRendering: 'pixelated', aspectRatio: `${VW} / ${VH}`, width: 'min(100vw, calc(var(--shell-h) * 3 / 2))' }}
             />
 
             {screen === 'attract' && !rotHint && (

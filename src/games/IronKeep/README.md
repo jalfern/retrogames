@@ -151,7 +151,7 @@ full-height canvas gets its status bar eaten by the thumb pad. IronKeep sizes it
 frame with CSS `min()` instead of `max-w` + `aspect`:
 
 ```jsx
-style={{ width: 'min(880px, 94vw, calc((100vh - 15rem) * 4 / 3))', aspectRatio: '4 / 3' }}
+style={{ width: 'min(880px, 94vw, calc((var(--shell-h) - 15rem) * 4 / 3))', aspectRatio: '4 / 3' }}
 ```
 
 which is the only way to keep a fixed aspect ratio *and* reserve room for the pad.

@@ -12,7 +12,7 @@ export const CORE = {
   lint: ['lint:ai', 'lint:forge', 'lint:pw'],
   checks: ['aicheck', 'zorkcheck', 'vpadcheck', 'steercheck', 'fitcanvascheck',
     'ciyamlcheck', 'shimcheck', 'forgecheck', 'dailylogcheck', 'builtbycheck', 'navcheck', 'visibilitycheck', 'jonqcheck',
-    'pulsecheck', 'shiftreportcheck', 'scrubcheck', 'feedbackcheck', 'feedbackreplay', 'nightlyheal', 'padlayoutcheck', 'nightlybotcheck', 'audiocheck',
+    'pulsecheck', 'shiftreportcheck', 'scrubcheck', 'feedbackcheck', 'feedbackreplay', 'nightlyheal', 'padlayoutcheck', 'nightlybotcheck', 'audiocheck', 'dvhcheck',
     // #1667 moved watchcheck to `smoke` (line below) but left its --mutate entry
 // here; the rewritten check is browser-only (requireDevServer hard-exits, and no
 // --mutate path survives the rewrite), so it froze the browser-free nightly
@@ -21,7 +21,7 @@ export const CORE = {
   smoke: ['vpadboot', 'tapstartcheck', 'watchcheck'],
   paths: [
     'src/components/', 'src/utils/', 'src/config/', 'src/pages/',
-    'src/App.jsx', 'src/main.jsx', 'index.html', 'vite.config.js',
+    'src/App.jsx', 'src/main.jsx', 'src/index.css', 'index.html', 'vite.config.js',
     'package.json', 'package-lock.json', 'vercel.json', '.github/workflows/',
     'public/games/', 'public/js-dos/', 'public/icons/', 'public/sw.js',
     'relay/',
