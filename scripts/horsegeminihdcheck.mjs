@@ -47,6 +47,7 @@ function ok(name, cond, detail = '') {
 console.log('horsegeminihd: demo law')
 const demoPath = resolve(ROOT, 'public/demos/horse-gemini-hd.html')
 const idxPath = resolve(ROOT, 'public/demos/index.html')
+const readmePath = resolve(ROOT, 'public/demos/README.md')
 const gamesPath = resolve(ROOT, 'src/config/games.js')
 
 ok('law: horse-gemini-hd.html exists', existsSync(demoPath))
@@ -54,18 +55,25 @@ ok('law: docs/horse-gemini-hd-design.md exists', existsSync(resolve(ROOT, 'docs/
 
 const html = readFileSync(demoPath, 'utf8')
 const idxHtml = readFileSync(idxPath, 'utf8')
+const readmeMd = readFileSync(readmePath, 'utf8')
 const gamesJs = readFileSync(gamesPath, 'utf8')
 
 const extLinks = html.match(/(src|href)\s*=\s*["']https?:\/\//gi) || []
 ok('law: zero external scripts or asset URLs', extLinks.length === 0, extLinks.join(', '))
 ok('law: zero Three.js / Babylon / external engine imports', !/three(\.min)?\.js|babylon|regl|twgl/i.test(html))
+ok('law: canvas carries visible-viewport 100dvh alongside 100vh',
+  /height:\s*100vh;\s*height:\s*100dvh/.test(html))
 ok('law: loads credits.js and feedback.js relatively',
   /<script src="credits\.js"><\/script>/.test(html) && /<script src="feedback\.js"><\/script>/.test(html))
 ok('law: declares honest Gemini + Antigravity CLI builder credit',
-  /model:\s*'Gemini'/.test(html) && /where:\s*'via Antigravity CLI'/.test(html) && !/Qwen/.test(html))
-ok('law: not registered in src/config/games.js', !/horse-gemini-hd/i.test(gamesJs))
-ok('law: index.html carries card id="horse-gemini-hd" and DEMO_INDEX entry',
-  /<a class="card" id="horse-gemini-hd"/.test(idxHtml) && /el:\s*'horse-gemini-hd'/.test(idxHtml))
+  /model:\s*'Gemini/.test(html) && /where:\s*'via Antigravity CLI'/.test(html) && !/Qwen/.test(html))
+ok('law: not registered in src/config/games.js', !/horse-gemini-hd|THOROUGHBRED/i.test(gamesJs))
+ok('law: index.html carries card id="horse-gemini-hd", href wiring, and DEMO_INDEX entry',
+  /<a class="card" id="horse-gemini-hd"/.test(idxHtml) &&
+  /getElementById\('horse-gemini-hd'\)\.href\s*=/.test(idxHtml) &&
+  /el:\s*'horse-gemini-hd'/.test(idxHtml))
+ok('law: public/demos/README.md inventories horse-gemini-hd.html (THOROUGHBRED)',
+  /horse-gemini-hd\.html/.test(readmeMd) && /THOROUGHBRED/.test(readmeMd))
 
 /* ---------------- Browser Harness ---------------- */
 await requireDevServer(BASE)
@@ -73,14 +81,30 @@ const browser = await launch()
 const pageErrors = []
 
 try {
-  console.log('horsegeminihd: boots')
+  console.log('horsegeminihd: boots & index card')
   const page = await browser.newPage({ viewport: { width: 1080, height: 680 }, deviceScaleFactor: 2 })
   page.setDefaultTimeout(25000)
   page.on('pageerror', e => pageErrors.push('pageerror: ' + e.message))
-  page.on('console', m => { if (m.type() === 'error' && !relayNoise(m.text())) pageErrors.push('console: ' + m.text()) })
+  page.on('response', r => {
+    if (r.status() >= 400 && !/\/favicon\.ico(\?|$)/.test(r.url()) && !relayNoise(null, { url: r.url() })) {
+      pageErrors.push(`http ${r.status()}: ${r.url()}`)
+    }
+  })
+  page.on('console', m => {
+    if (m.type() !== 'error' || relayNoise(m.text())) return
+    if (/Failed to load resource: the server responded with a status of 404/.test(m.text())) return
+    pageErrors.push('console: ' + m.text())
+  })
   page.on('requestfailed', r => {
     if (!relayNoise(null, { url: r.url() }) && !/favicon/i.test(r.url())) pageErrors.push('404: ' + r.url())
   })
+
+  await page.goto(BASE + 'index.html', { waitUntil: 'load' })
+  const cardHref = await page.evaluate(() => {
+    const el = document.getElementById('horse-gemini-hd')
+    return el ? el.href : null
+  })
+  ok('index: #horse-gemini-hd card has live clickable href', !!cardHref && cardHref.endsWith('horse-gemini-hd.html'), String(cardHref))
 
   await page.goto(URL_DEMO, { waitUntil: 'load' })
   await page.waitForFunction(() => !!window.__horsegeminihdTest && window.__horsegeminihdTest.ready && window.__horsegeminihdTest.frames > 4)
