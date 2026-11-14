@@ -31,6 +31,10 @@
 //                  kibble, night sleep with energy payback, the coo law with
 //                  its cooldown, hash carries, attract-bot adoption, and the
 //                  wish still landing with a cat on the lot.
+//   9. PAPER ROUTE (#2238) — hourly news: lands 06:30–10:00, exactly one a
+//                  day (the day stamp is the law), tap-to-read pays FUN and
+//                  consumes, unread rots at midnight, sale refuses, hash and
+//                  determinism carry, and the bot reads it in attract.
 //
 // It proves IT can fail the playbook way: break one load-bearing line in sim.js
 // (content accrual in finishUse, or the relAdd(s,'fern') feed in the visitor
@@ -56,6 +60,7 @@ import {
     CAT_TABS, TAB_CARDS, TAB_OF, tabCards, setSel, flipTab, selectTab, digitCard,   // #2222: catalog shelves
     SPEED_MULT, SPEED_NAMES, setSpeed, cycleSpeed, attractSpeed,   // #2227: the speed dial
     TRI_TELL_CD, TRI_LINES, IVY_SOCIAL,   // #2154: visitor choreography law
+    PAPER, PAPER_LATE, PAPER_LINES,   // #2238: the paper route
 } from '../src/games/Homebody/sim.js'
 import { readFileSync } from 'node:fs'
 
@@ -1280,7 +1285,10 @@ section('PET (#2197): Miso — counter law, cat day, coos, hash')
     check('the attract bot adopts when the till allows', !!anyPet)
     if (anyPet) {
         const h1 = stateHash(dA)
-        if (dA.pet) dA.pet.cd = 3.3; else dA.pet = { ...dB.pet }
+        // #2238: seed 9's cd now lands on exactly 3.3 (the route's rng draw at
+        // move-in shifted the stream) — a FIXED mutation value can collide with
+        // reality. Mutate relative; no stream can dodge that.
+        dA.pet.cd += 1.1
         check('the cat rides the hash — she is state', stateHash(dA) !== h1)
     }
 
@@ -1692,6 +1700,121 @@ section('COURT POLISH (#2135): spoken chat, cooling beats, the ring tell')
     check('pin: spoken lines render as a bubble over the pair (art + shell + all five spoken events)',
         /export function drawSay/.test(cpArt) && /drawSay\(ctx, sayB\)/.test(cpJsx) && (cpJsx.match(/showSay\(s, e\)/g) || []).length === 7)
     check('pin: the marquee teaches C/X and the ring tell', /SAY THE KIND THING \u2014 C coos, X cuts\./.test(cpJsx) && /gold ring/.test(cpJsx))
+}
+
+// ------------------------------------------------- PAPER ROUTE (#2238) ----
+section('PAPER ROUTE (#2238): hourly news, one a day, tap to read')
+{
+    // the object: an appliance the lot owns but nobody buys
+    check('the paper is a walkable FUN object, never a catalog card',
+        PAPER.need === 'fun' && PAPER.solid === false && PAPER.amt > 0.1 && PAPER.dur > 1 && !CATALOG.some((d) => d.id === 'paper'))
+
+    // a fresh street: no news yet, route due mid-morning
+    const s0 = newRun(42)
+    check('a fresh lot has no paper yet; the route is due 06:30–08:00',
+        s0.paper === null && s0.paperDay === 0 && s0.paperAfter >= 6.5 && s0.paperAfter <= 8)
+
+    // delivery lands on the step with its event, stamped today
+    const s1 = newRun(42)
+    let paperEv = null
+    for (let i = 0; i < 60 * 60 && !s1.paper; i++) { advance(s1, DT); const e = drain(s1); if (!paperEv) paperEv = e.find((x) => x.t === 'paper') }
+    check('the daily lands on the step inside the morning window',
+        !!s1.paper && s1.paper.r === 10 && s1.paper.c === 5 && s1.hour >= s1.paperAfter && s1.hour < PAPER_LATE, `@${s1.hour.toFixed(1)}h`)
+    check('the arrival is an event and stamps the day', !!paperEv && s1.paperDay === s1.day)
+
+    // reading: walk over, FUN lifts, the sheet is consumed, content pays.
+    // Seated next to the news first (not on the far side of the lot): the
+    // walk itself costs real decay, and this gate measures the READ, not the commute.
+    const otto = s1.people[0]
+    otto.r = 9; otto.c = 5; otto.x = tileX(5) + 16; otto.y = tileY(9) + 16; otto.path = null; otto.goal = null
+    const fun0 = otto.needs.fun, cont0 = s1.content
+    const started = cmdUse(s1, otto, s1.paper)
+    let satEv = false
+    for (let i = 0; i < 60 * 30 && s1.paper; i++) { advance(s1, DT); const e = drain(s1); if (e.some((x) => x.t === 'satisfied' && x.need === 'fun')) satEv = true }
+    check('commanded, a resident walks down and reads the paper', started && s1.paper === null && !s1.items.some((it) => it.id === 'paper'))
+    check('reading pays FUN, a satisfied event and contentment',
+        otto.needs.fun > fun0 + 0.1 && satEv && s1.content > cont0, `fun ${fun0.toFixed(2)}->${otto.needs.fun.toFixed(2)}`)
+
+    // one paper a day: reading at 07:xx must NOT re-arm the route in-window
+    let more = 0
+    for (let i = 0; i < 60 * 60 && s1.day === 1; i++) { drain(s1); advance(s1, DT); if (s1.paper) more++ }
+    check('one paper a day — reading early does not re-arm the route', more === 0)
+
+    // fresh news: an unread paper rides the evening, and the morning replaces
+    // it. (The evening loop keeps the residents alive — an unattended run
+    // faints by ~16:00 and `done` then stands the clock, which would end the
+    // test before midnight, not the route.)
+    const keepAlive = (g) => { if (!g.done) for (const p of g.people) for (const n of NEEDS) p.needs[n] = Math.max(p.needs[n], 0.9) }
+    const s2 = newRun(7)
+    for (let i = 0; i < 60 * 60 && !s2.paper; i++) { drain(s2); advance(s2, DT) }
+    const uid1 = s2.paper && s2.paper.uid
+    for (let i = 0; i < 60 * 60 && s2.day === 1; i++) { if (i % 300 === 0) keepAlive(s2); drain(s2); advance(s2, DT) }
+    check('an unread paper waits on the step all evening', !!s2.paper && s2.paper.uid === uid1 && s2.hour >= PAPER_LATE, `day ${s2.day} ${s2.hour.toFixed(1)}h`)
+    for (let i = 0; i < 60 * 60 && s2.day === 1; i++) { if (i % 300 === 0) keepAlive(s2); drain(s2); advance(s2, DT) }
+    check('midnight clears the step — yesterday rots', s2.day === 2 && s2.paper === null && !s2.items.some((it) => it.id === 'paper'), `day ${s2.day}`)
+    for (let i = 0; i < 60 * 45 && !s2.paper; i++) { if (i % 300 === 0) keepAlive(s2); drain(s2); advance(s2, DT) }
+    check('a fresh edition arrives on day 2, stamped and exactly one',
+        s2.day === 2 && s2.paperDay === 2 && s2.paper.uid !== uid1 && s2.hour < PAPER_LATE && s2.items.filter((it) => it.id === 'paper').length === 1)
+
+    // the news is not merchandise; furniture on the step tucks it away
+    const s3 = newRun(11)
+    for (let i = 0; i < 60 * 60 && !s3.paper; i++) { drain(s3); advance(s3, DT) }
+    check('the news cannot be sold', sellAt(s3, 10, 5) === false && !!s3.paper && s3.money === newRun(11).money)
+    s3.money = 900
+    setSel(s3, CATALOG.findIndex((d) => d.id === 'fridge'))
+    const tucked = place(s3, 10, 5)
+    check('furniture landing on the step tucks the paper — no dangling reference',
+        tucked && s3.paper === null && !s3.items.some((it) => it.id === 'paper'))
+
+    // a blocked step falls back to its free edge instead of skipping silently
+    const s4 = newRun(13)
+    s4.money = 900
+    setSel(s4, CATALOG.findIndex((d) => d.id === 'fridge'))
+    place(s4, 10, 5)
+    s4.hour = 6.4; s4.paperAfter = 6.5
+    for (let i = 0; i < 60 * 60 && !s4.paper && s4.hour < PAPER_LATE; i++) { drain(s4); advance(s4, DT) }
+    check('a blocked step takes the nearest free edge', !!s4.paper && s4.paper.uid > 0 && !(s4.paper.r === 10 && s4.paper.c === 5), s4.paper ? `${s4.paper.r},${s4.paper.c}` : 'never')
+
+    // the window is honest: past 10:00 the route has passed
+    const s5 = newRun(17)
+    s5.hour = 10.5
+    for (let i = 0; i < 60 * 30; i++) { drain(s5); advance(s5, DT) }
+    check('no news after 10:00 — the route keeps its hours', s5.paper === null)
+
+    // state law: the day stamp rides the hash
+    const h1 = newRun(21), h2 = newRun(21)
+    h2.paperDay = 1
+    check('paperDay rides stateHash', stateHash(h1) !== stateHash(h2))
+
+    // the attract bot reads the paper — the demo teaches the route
+    const m2 = (g) => { autoStep(g, DT); drain(g) }
+    const d1 = newRun(42)
+    for (let i = 0; i < 60 * 60 && !d1.paper; i++) m2(d1)
+    for (let i = 0; i < 60 * 40 && d1.paper; i++) m2(d1)
+    check('the attract bot walks down and reads the news itself', d1.paper === null && d1.paperDay === 1 && !d1.items.some((it) => it.id === 'paper'))
+
+    // determinism + the wish still lands with the route running
+    const w1 = newRun(42), w2 = newRun(42)
+    for (let i = 0; i < 60 * 60 * 2; i++) { autoStep(w1, DT); autoStep(w2, DT); drain(w1); drain(w2) }
+    check('seeds stay exact with the route running', stateHash(w1) === stateHash(w2))
+    const win = play(42)
+    check('the lifetime wish still lands with the route running', win.done === 'win', `content ${win.content}`)
+
+    // source pins — the wiring must not silently drop (same law as STORES)
+    const pSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const pArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    const pJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    check('pin: the route is hour-scheduled on the world clock', /function schedulePaper/.test(pSim) && /paperAfter = 6\.5 \+ s\.rng/.test(pSim) && /updatePaper\(s\)/.test(pSim))
+    check('pin: the day stamp — not mere presence — is the once-a-day law', /s\.paperDay === s\.day/.test(pSim))
+    check('pin: the object is DEF-only (never merchandised)', /DEF\.paper = PAPER/.test(pSim) && !/'paper'/.test(pSim.match(/export const CATALOG = \[[\s\S]*?\]/)[0]))
+    check('pin: read folds it, sale refuses it, newDay replaces it',
+        /def\.id === 'paper'/.test(pSim) && /id === 'paper'/.test(pSim.match(/export function sellAt[\s\S]*?\n}/)[0])
+        && /it !== s\.paper/.test(pSim.match(/function newDay[\s\S]*?\n}/)[0]) && /s\.paper\.r === r && s\.paper\.c === c/.test(pSim))
+    check('pin: the bot teaches it in attract', /if \(s\.paper\) \{ if \(cmdUse\(s, p, s\.paper\)\) return \}/.test(pSim))
+    check('pin: paperDay rides the hash', /mix\(s\.paperDay\)/.test(pSim))
+    check('pin: the shell answers the arrival — flutter, banner, marquee', /case 'paper'/.test(pJsx) && /THE PAPER BOY SWEEPS PAST/.test(pJsx) && /boy sweeps past/.test(pJsx))
+    check('pin: art draws the newsprint; probe + F1 cheat carry the route', /case 'paper'/.test(pArt) && /paperDay: gs\.paperDay/.test(pJsx) && /DROP PAPER/.test(pJsx))
+    check('pin: the teaching lines ship in sim', Array.isArray(PAPER_LINES) && PAPER_LINES.length >= 3)
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)

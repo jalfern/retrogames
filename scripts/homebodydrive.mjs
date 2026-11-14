@@ -55,6 +55,22 @@ let ate = false
 for (let i = 0; i < 40 && !ate; i++) { await wait(250); const s = await st(); ate = s.people.some((p) => p.needs.hunger > 0.75) }
 check('ordered resident eats the fridge', ate)
 
+// #2238 paper route: the daily lands on the step all by itself (the clock
+// scheduled it, nobody ordered it), and one tap sends a resident down to read.
+let pp = await st()
+for (let i = 0; i < 48 && !pp.paper; i++) { await wait(250); pp = await st() }
+check('#2238 the daily lands on the step, hour-scheduled and stamped',
+    !!pp.paper && pp.paper.r === 10 && pp.paper.c === 5 && pp.paperDay === pp.day, pp.paper ? `${pp.paper.r},${pp.paper.c} d${pp.paperDay} @${pp.hour}h` : 'never')
+const funBefore = Math.max(...pp.people.map((p) => p.needs.fun))
+const contBefore = pp.content
+await tap(8 + 5 * 32 + 16, 40 + 10 * 32 + 16)   // the paper tile
+let pr = pp
+for (let i = 0; i < 60 && pr.paper; i++) { await wait(250); pr = await st() }
+// the read's reward is contentment (monotonic); FUN after a half-lot commute is
+// decay soup — the node gate measures the read seated, the drive measures the law.
+check('#2238 tapping the paper walks a resident down; the read folds it away and pays',
+    !pr.paper && pr.content > contBefore && Math.max(...pr.people.map((p) => p.needs.fun)) > funBefore - 0.2, `content ${contBefore}->${pr.content}, fun ${funBefore.toFixed(2)} -> ${Math.max(...pr.people.map((p) => p.needs.fun)).toFixed(2)}`)
+
 // B opens buy mode (time stops)
 await page.keyboard.press('KeyB')
 await wait(200)
