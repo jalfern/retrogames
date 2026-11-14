@@ -67,7 +67,7 @@ import {
     SPEED_MULT, SPEED_NAMES, setSpeed, cycleSpeed, attractSpeed,   // #2227: the speed dial
     TRI_TELL_CD, TRI_LINES, IVY_SOCIAL,   // #2154: visitor choreography law
     PAPER, PAPER_LATE, PAPER_LINES,   // #2238: the paper route
-    MEAL, MEAL_NAMES, MEAL_DUE, MEAL_WINDOW, MEAL_BOND, MEAL_LINES, SHARED_MEAL_LINES,   // #2244: the meal bells
+    MEAL, MEAL_NAMES, MEAL_DUE, MEAL_WINDOW, MEAL_BOND, MEAL_LINES, SHARED_MEAL_LINES, HOUR_SEC,   // #2244: the meal bells
 } from '../src/games/Homebody/sim.js'
 import { readFileSync } from 'node:fs'
 
@@ -1926,6 +1926,23 @@ section('MEAL BELLS (#2244): three bells, one helping each, the table pays socia
     s5.mealAfter = [20.05, 21.0, 22.5]
     for (let i = 0; i < 60 * 60 * 2 && !s5.meal && s5.hour < 21.5; i++) { advance(s5, DT); drain(s5); keepAlive(s5) }
     check('a bell rung late still lands — the window serves, not the due minute', !!s5.meal && s5.hour >= 20.05 && s5.hour < 20.05 + MEAL_WINDOW)
+
+    // the plate dying UNDER the walk is honest refusal, not a broken
+    // actuator: the steps are the cost, the stamp is the law — a corpse
+    // plate feeds nobody and leaves no taken-mark (the drive found this live).
+    const s9 = newRun(11)
+    keepAlive(s9)
+    s9.mealAfter[s9.mealSlot] = s9.hour + DT * 2 / HOUR_SEC   // due in two ticks, deterministic
+    for (let i = 0; i < 60 && !s9.meal; i++) { advance(s9, DT); drain(s9); keepAlive(s9) }
+    const plate9 = s9.meal, ser9 = s9.mealSerial
+    const otto9 = s9.people[0]
+    otto9.r = plate9.r + 1; otto9.c = plate9.c
+    check('the plate is ordered while warm', cmdUse(s9, otto9, plate9) && !!otto9.path)
+    s9.hour = s9.mealAt + MEAL_WINDOW + DT * 2 / HOUR_SEC   // it goes cold mid-stride
+    for (let i = 0; i < 600 && (otto9.path || otto9.use); i++) { advance(s9, DT); drain(s9); keepAlive(s9) }
+    check('a plate that dies under the walk feeds nobody — no stamp, no shared credit',
+        s9.meal === null && otto9.mealTaken !== ser9 && s9.mealEaten.length === 0 && !otto9.use,
+        `taken ${otto9.mealTaken} ser ${ser9} eaten ${s9.mealEaten.length}`)
 
     // the plate cannot be sold, and furniture tucks it (no dangling reference)
     const s6 = newRun(41)

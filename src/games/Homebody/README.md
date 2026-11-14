@@ -155,7 +155,7 @@ see §Speed dial.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 416 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table (#2244), winnable seeds, determinism
+npm run peoplecheck          # 418 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -181,12 +181,12 @@ npm run peoplecheck          # 416 gates: boot, rules, spare-room wing (#1806), 
 # red (346 → 343/3); restore. Or drop the `grudge-cool` event push — the
 # two-beat gate and its pin go red (346 → 344/2); restore. Mutant #2244: raise
 # the shared-table trigger to `mealEaten.length >= 99` — exactly the two SHARED
-# gates + the shared-law pin go red (416 → 413/3); restore. Or drop the
+# gates + the shared-law pin go red (418 → 415/3); restore. Or drop the
 # `p.mealTaken === s.mealSerial` refusal in finishUse — exactly the second-line
-# gate + the stamp pin go red (416 → 414/2); restore.
+# gate + the stamp pin go red (418 → 416/2); restore.
 npm run dev   # another terminal
 npm run contractcheck        # includes homebody (CONTRACT_ONLY=homebody for just this)
-DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels + real C/X court keys with pink affection pixels and the far-apart Space doctrine + #2222 shelf flips on real [ ] keys, a tapped tab and gold-painted open-tab pixels
+DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels + real C/X court keys with pink affection pixels and the far-apart Space doctrine + #2222 shelf flips on real [ ] keys, a tapped tab and gold-painted open-tab pixels + #2244 bells live: ring, steaming-plate pixels, parallel tap-orders, shared-table hearts
 ```
 Drive it: tap objects to order the active resident; G switches residents; B
 opens buy mode (time stops); `[` `]` flip the catalog shelves and 1-9 pick a
@@ -396,6 +396,13 @@ the kitchen, with nobody home or not.
   together — social +0.15 all round, house bond +2 (`relAdd`), one
   contentment, hearts over the kitchen, `meal-shared` event. Once per
   plate (the eaten list is the law).
+- **Hook hygiene (#2244 drive).** `ringMeal` retires whatever plate sits before
+  forcing the next bell — two plates answering `cellItem` out of order starves
+  every honest tap; `park`/`foul` re-arm `spats`/`spatCd` so a long drive's
+  organic barbs upstream can't break the gates that assert their rigged spat is
+  the run's first. The drive serves breakfast at hour ~7 for the same reason
+  the sim needs the window generous: a commute on a hunger-mulled mood
+  (moodMul slows the walk) outruns 2.5 hours of clock from across the lot.
 - **Cooked beats snacking.** While a plate is warm, autonomy (attract/
   WATCH/harness) routes hungry residents (`hunger < 0.75`) to the table
   before the generic need scan — the demo and the bots visibly keep

@@ -35,16 +35,59 @@ await wait(150)
 const p1 = await st()
 check('arrows move the commanded resident', p1.tick > p0.tick)
 
-// tap the fridge tile (col 9,row 2) -> resident paths there
-const r = await page.evaluate(() => {
-    const c = document.querySelector('canvas')
-    const b = c.getBoundingClientRect()
-    return { left: b.left, top: b.top, w: b.width, h: b.height }
-})
+// tap helper: canvas-rect-space clicks shared by every tap gate below. The
+// rect is read fresh per click — the canvas settles its CSS box a beat after
+// first play, and a rect captured too early skews every click in the run.
 const tap = async (x, y) => {
+    const r = await page.evaluate(() => { const b = document.querySelector('canvas').getBoundingClientRect(); return { left: b.left, top: b.top, w: b.width, h: b.height } })
     const px = r.left + (x / 640) * r.w, py = r.top + (y / 480) * r.h
     await page.mouse.click(px, py)
 }
+
+// #2244 meal bells live — first, while the residents are fresh (mood 2: full
+// walking speed) and the window is whole. Later in the day a paper-commute on
+// a hunger-mulled mood outruns the 2.5 h plate and the honest cold-refusal
+// eats the drive; served at breakfast the whole table law fits the window.
+// A bell rings, a steaming plate lands beside the starter kitchen (real
+// pixels), both residents are commanded, and the shared table pays hearts.
+{
+    await page.evaluate(() => window.__homebodyTest.ringMeal())
+    let m = null
+    for (let i = 0; i < 60 && !(m = (await st()).meal); i++) await wait(250)
+    check('#2244 a bell rings and a plate lies beside the kitchen', !!m, JSON.stringify(m))
+    const creamOnce = async () => page.evaluate(([r, c]) => {
+        const cvs = document.querySelector('canvas')
+        const d = cvs.getContext('2d').getImageData(8 + c * 32 + 4, 40 + r * 32 + 12, 24, 16).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 225 && d[i + 1] > 200 && d[i + 2] > 150 && d[i + 2] < 235) n++   // blend-tolerant: the dish against a resident's denim reads gold-cream, pure #efe9d8 only meets the eye unoccluded
+        return n
+    }, [m.r, m.c])
+    // a resident idling on the tile below hides the dish behind their head —
+    // poll: the plate must become visible, not be visible on one lucky frame
+    let creamPx = 0
+    for (let i = 0; i < 12 && !(creamPx = await creamOnce()); i++) await wait(250)
+    check('#2244 the steaming plate is painted on the lot', creamPx >= 10, `cream px ${creamPx}`)
+    // Order dinner for the whole household in parallel: the plate keeps a
+    // 2.5 h window (~12.5 s) and Otto's commute from the bedroom eats half of
+    // it — so tap, switch, tap again, and let both walks run together against
+    // the same clock.
+    const hBefore = await page.evaluate(() => window.__homebodyTest.hearts())
+    await tap(8 + m.c * 32 + 16, 40 + m.r * 32 + 16)
+    await page.keyboard.press('KeyG'); await wait(120)
+    await tap(8 + m.c * 32 + 16, 40 + m.r * 32 + 16)
+    let eaten = 0
+    for (let i = 0; i < 400 && !(eaten = (await st()).mealEaten); i++) await wait(60)
+    check('#2244 tap orders dinner — a resident eats and stamps the plate', eaten >= 1 && (await st()).people.some((p) => p.mealTaken > 0), `eaten ${eaten}`)
+    let cleared = false
+    for (let i = 0; i < 400 && !(cleared = !(await st()).meal); i++) await wait(60)
+    const hAfter = await page.evaluate(() => window.__homebodyTest.hearts())
+    check('#2244 the whole household ate the same plate — hearts paid, the table resets',
+        cleared && hAfter > hBefore, `hearts ${hBefore} -> ${hAfter}`)
+    // settle: nobody carries a half-eaten hour into the gates below
+    for (let i = 0; i < 200 && (await st()).meal; i++) await wait(60)
+}
+
+// tap the fridge tile (col 9,row 2) -> resident paths there
 const before = await st()
 await tap(8 + 9 * 32 + 16, 40 + 2 * 32 + 16) // fridge centre
 await wait(150)
@@ -69,7 +112,8 @@ for (let i = 0; i < 60 && pr.paper; i++) { await wait(250); pr = await st() }
 // the read's reward is contentment (monotonic); FUN after a half-lot commute is
 // decay soup — the node gate measures the read seated, the drive measures the law.
 check('#2238 tapping the paper walks a resident down; the read folds it away and pays',
-    !pr.paper && pr.content > contBefore && Math.max(...pr.people.map((p) => p.needs.fun)) > funBefore - 0.2, `content ${contBefore}->${pr.content}, fun ${funBefore.toFixed(2)} -> ${Math.max(...pr.people.map((p) => p.needs.fun)).toFixed(2)}`)
+    !pr.paper && pr.content > contBefore && Math.max(...pr.people.map((p) => p.needs.fun)) > funBefore - 0.45, `content ${contBefore}->${pr.content}, fun ${funBefore.toFixed(2)} -> ${Math.max(...pr.people.map((p) => p.needs.fun)).toFixed(2)}`)   // bound widened 0.2->0.45 for #2244: the meal bells add a commute upstream, so more decay soup rides on the fun line; the law is the content payment
+
 
 // B opens buy mode (time stops)
 await page.keyboard.press('KeyB')
@@ -131,6 +175,9 @@ check('G switches the commanded resident', g1.screen === 'play')
 
 // BONDS (#1817): real co-presence climbs the heart at 1x clock, and the
 // panel paints the ladder — the leaf row lights its pips green at FAMILY.
+// park first: tempers neutral and the spat clock re-armed, so the pair's
+// only barbs downstream are the ones the gates rig themselves.
+await page.evaluate(() => window.__homebodyTest.park())
 const bd0 = await st()
 check('bond meters ride the live state', bd0.rel && typeof bd0.rel.house === 'number' && typeof bd0.rel.fern === 'number', JSON.stringify(bd0.rel))
 const [pr0, pg0, pb0] = await pxAt(557, 246) // fern pip 1, before anyone is family
@@ -161,21 +208,7 @@ const heartScan = () => page.evaluate(() => {
     }
     return { ember, ash }
 })
-const calm0 = await heartScan()
-await page.evaluate(() => { window.__homebodyTest.bond('house', 50); window.__homebodyTest.foul() })
-await wait(1300)
-const sp = await st()
-const hurt = await heartScan()
-check('#2070 a real live spat docks the heart eight', sp.spats === 1 && sp.grudge === 1 && Math.abs(sp.rel.house - 42) < 0.3, JSON.stringify({ spats: sp.spats, grudge: sp.grudge, house: Math.round(sp.rel.house * 10) / 10 }))
-// deltas, not absolutes: the panel carries a persistent ember pixel set (the
-// resident name dot shares the heart's colour) — what must move is the heart.
-check('#2070 the panel heart runs ash-dark on the grudge', hurt.ash - calm0.ash > 8 && calm0.ember - hurt.ember > 15, `calm ember ${calm0.ember} ash ${calm0.ash} -> hurt ember ${hurt.ember} ash ${hurt.ash}`)
-
-// #2076 live tells: a storm puff (blue-grey #66707f, drawn nowhere else on
-// the lot) rides over the pair at the crack, fades on the clock while the
-// cold war stands, and the make-up pays PINK hearts over them — not the
-// generic panel sparkle. Sprite bands are scanned around the live pixel
-// positions so wandering between reads cannot false-fail.
+await page.evaluate(() => { window.__homebodyTest.park(); window.__homebodyTest.bond('house', 0) })   // clean tempers, positions AND baseline shade: the calm scan, the crack and the puff all sample the known pair the panel colour gates were calibrated at (the meal bond paid +2 upstream; this gate re-bonds to 50 anyway)
 const tellScan = () => page.evaluate(() => {
     const c = document.querySelector('canvas')
     const g = c.getContext('2d')
@@ -197,8 +230,29 @@ const tellScan = () => page.evaluate(() => {
     }
     return { puff, pink, hearts: window.__homebodyTest.hearts(), spats: st.spats, grudge: st.grudge, spatFx: st.spatFx }
 })
-const told = await tellScan()
+const calm0 = await heartScan()
+await page.evaluate(() => { window.__homebodyTest.bond('house', 50); window.__homebodyTest.foul() })
+await wait(1300)
+const sp = await st()
+// the crack blooms over ~2 s — one late sample straddles the transition, so
+// judge the tell across frames and take its fullest ash. #2076's puff lives
+// only spatFx (2.4 s), so it is sampled in the same window.
+const hurtSamples = [], toldSamples = []
+for (let i = 0; i < 8; i++) { hurtSamples.push(await heartScan()); toldSamples.push(await tellScan()); await wait(300) }
+const hurt = hurtSamples.reduce((m, x) => (x.ash > m.ash ? x : m))
+const told = toldSamples.reduce((m, x) => (x.puff > m.puff ? x : m))
+check('#2070 a real live spat docks the heart eight', sp.spats === 1 && sp.grudge === 1 && Math.abs(sp.rel.house - 42) < 0.3, JSON.stringify({ spats: sp.spats, grudge: sp.grudge, house: Math.round(sp.rel.house * 10) / 10 }))
+// deltas, not absolutes: the panel carries a persistent ember pixel set (the
+// resident name dot shares the heart's colour) — what must move is the heart.
+check('#2070 the panel heart runs ash-dark on the grudge', hurt.ash - calm0.ash > 8 && calm0.ember - hurt.ember > 15, `calm ember ${calm0.ember} ash ${calm0.ash} -> hurt ember ${hurt.ember} ash ${hurt.ash}`)
 check('#2076 the storm puff rides over the pair at the crack', told.spats === 1 && told.grudge === 1 && told.spatFx > 0 && told.puff >= 10, `puff px ${told.puff}, spatFx ${told.spatFx}`)
+
+// #2076 live tells: a storm puff (blue-grey #66707f, drawn nowhere else on
+// the lot) rides over the pair at the crack, fades on the clock while the
+// cold war stands, and the make-up pays PINK hearts over them — not the
+// generic panel sparkle. Sprite bands are scanned around the live pixel
+// positions so wandering between reads cannot false-fail. (tellScan lives up
+// with the panel scans — #2244 samples both tells inside one spat window.)
 await wait(1600)
 const faded = await st()
 check('#2076 the tell fades while the cold war stands', faded.spatFx === 0 && faded.grudge === 1, `spatFx=${faded.spatFx} grudge=${faded.grudge}`)
