@@ -1516,7 +1516,6 @@ export function advance(s, dt) {
     updateVisitor(s, simDt)
     updateIvy(s, simDt)
     updatePet(s, simDt)
-    // #2203: the child between the cat and the hearth
     updateKid(s, simDt)
     updateHouseBond(s, simDt)
 

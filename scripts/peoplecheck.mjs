@@ -51,6 +51,7 @@ import {
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court
     ivyChatPool, IVY_CHAT, IVY_FADE, IVY_GIFT_HUNGER, IVY_GIFT_CASH,   // #2143
     adoptPet, adoptOk, PET, PET_COOS,   // #2197: Miso
+    adoptKid, adoptKidOk, KID,   // #2203: Pip
 } from '../src/games/Homebody/sim.js'
 import { readFileSync } from 'node:fs'
 
@@ -1205,6 +1206,138 @@ section('PET (#2197): Miso — counter law, cat day, coos, hash')
     check('pin: P keys the card and the counter events have voices', /PET_KEYS = new Set\(\['KeyP'\]\)/.test(petJsx) && /CATALOG\.findIndex\(\(d\) => d\.pet\)/.test(petJsx) && /case 'pet':/.test(petJsx) && /case 'pet-coo'/.test(petJsx))
     check('pin: the sprite ships — loaf, walk and purr sparks in art', /export function drawPet/.test(petArt) && /purrT/.test(petArt) && /case 'petkit'/.test(petArt))
     check('pin: the probe answers with the cat', petJsx.includes('pet: gs.pet ?'))
+}
+
+section('KIDS (#2203): Pip — counter law, kid day, coos, hash')
+{
+    const kidSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const kidJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const kidArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+
+    // the counter: price, honest refusal, one child per lot
+    const k0 = newRun(11)
+    check('a fresh lot has no child; the counter opens at §150 (card 16)', k0.kid === null && adoptKidOk(k0) && KID.price === 150 && CATALOG[15].id === 'kidkit' && CATALOG[15].kid === true)
+    k0.money = 100
+    check('pennies at the counter: adoptKidOk says no', !adoptKidOk(k0))
+    k0.sel = 15
+    const kRefused = place(k0, 3, 3)
+    check('a refused adoption speaks at the gate', !kRefused && drain(k0).some((e) => e.t === 'refuse' && e.r === 12 && e.c === 5) && k0.kid === null)
+    k0.money = 520
+    const kBought = place(k0, 0, 0)
+    check('the counter sells a child: paid, no furniture, a gate event', kBought && k0.money === 520 - KID.price && !!k0.kid && !k0.items.some((it) => it.id === 'kidkit'))
+    check('one child per lot — the agency answers only once', adoptKid(k0) === false && k0.kid !== null)
+    check('pin: the counter sits in placeOk and place answers at the gate', /if \(def\.kid\) return adoptKidOk\(s\)/.test(kidSim) && /if \(def\.kid\) \{[\s\S]{0,80}adoptKid\(s\)/.test(kidSim))
+
+    // legal wander: every step asks walkable — the kid day, live loop
+    const keepAlive = (g) => { for (const q of g.people) { q.faintT = 0; q.needs.hunger = Math.max(q.needs.hunger, 0.8); q.needs.energy = Math.max(q.needs.energy, 0.8); q.needs.bladder = Math.max(q.needs.bladder, 0.8) } }   // the household being alive is not what these gates test
+    let kBadCell = 0
+    const kSeen = new Set()
+    const kLast = { r: k0.kid.r, c: k0.kid.c }
+    let snacks = 0, plays = 0, tumbles = 0, cries = 0
+    k0.money = 900
+    for (let i = 0; i < 2000; i++) {
+        advance(k0, DT); drain(k0); keepAlive(k0)
+        const k = k0.kid
+        if (!walkable(k0, k.r, k.c) || k0.done) kBadCell++
+        if (k.r !== kLast.r || k.c !== kLast.c) { kSeen.add(`${k.r},${k.c}`); kLast.r = k.r; kLast.c = k.c }
+    }
+    check('the child never steps somewhere illegal (and stays out of trouble)', kBadCell === 0)
+    check('the child really moves through the house', kSeen.size >= 4, `${kSeen.size} cells`)
+
+    // snack law: hunger drives the child to the fridge
+    k0.kid.needs.hunger = 0.1
+    const kH0 = k0.kid.needs.hunger
+    let ateKid = 0
+    for (let i = 0; i < 900 && !ateKid; i++) { advance(k0, DT); keepAlive(k0); if (drain(k0).some((e) => e.t === 'kid-eat')) ateKid = 1 }
+    check('a hungry child works the fridge for a snack', ateKid === 1 && k0.kid.needs.hunger > kH0 + 0.4)
+
+    // play law: boredom sends the child to whatever the living room offers
+    k0.hour = 10
+    k0.kid.needs.fun = 0.1
+    const kF0 = k0.kid.needs.fun
+    let playedKid = 0
+    for (let i = 0; i < 900 && !playedKid; i++) { advance(k0, DT); keepAlive(k0); if (drain(k0).some((e) => e.t === 'kid-play')) playedKid = 1 }
+    check('a bored child finds the fun things — toys, pond, tree, arcade', playedKid === 1 && k0.kid.needs.fun > kF0 + 0.3)
+
+    // night: a child folds up small on the floorboards; dawn wakes them
+    k0.hour = 22.2
+    k0.kid.needs.energy = 0.4
+    let kidSlept = 0
+    for (let i = 0; i < 600 && !kidSlept; i++) { advance(k0, DT); drain(k0); keepAlive(k0); if (k0.kid.asleep) kidSlept = 1 }
+    const kEn1 = k0.kid.needs.energy
+    check('night folds the child up asleep', kidSlept === 1)
+    for (let i = 0; i < 300; i++) { advance(k0, DT); drain(k0); keepAlive(k0) }
+    check('sleep pays the child energy back', k0.kid.asleep && k0.kid.needs.energy > kEn1)
+    k0.hour = 6.5
+    for (let i = 0; i < 20; i++) { advance(k0, DT); drain(k0) }
+    check('dawn stretches Pip awake', !k0.kid.asleep)
+    check('the child never faints', k0.kid.needs.energy > 0)
+
+    // the tumble law: an idle resident nearby means play, not tears (evening:
+    // shift over, nobody mopping the floor)
+    k0.hour = 19.5
+    const kPartner = k0.people[0]
+    k0.kid.needs.fun = Math.max(k0.kid.needs.fun, 0.6)
+    const parkKid = () => { k0.kid.r = kPartner.r; k0.kid.c = kPartner.c + 1; k0.kid.x = tileX(kPartner.c + 1) + TILE / 2; k0.kid.y = kPartner.y; k0.kid.path = null; k0.kid.state = 'roam'; k0.kid.cd = 0 }
+    const stayParked = () => { kPartner.path = null; kPartner.goal = null; kPartner.use = null; kPartner.working = false; kPartner.faintT = 0; parkKid() }
+    stayParked()
+    const kRel0 = k0.rel.kid, kSoc0 = kPartner.needs.social, kCon0 = k0.content
+    for (let i = 0; i < 480; i++) { advance(k0, DT); keepAlive(k0); stayParked(); const ev = drain(k0); cries += ev.filter((e) => e.t === 'kid-cry').length; tumbles += ev.filter((e) => e.t === 'kid-tumble').length }
+    check('tumbles: bond, resident social, content — and the cry never starts next to family', tumbles >= 1 && k0.rel.kid > kRel0 && kPartner.needs.social > kSoc0 && k0.content > kCon0 && cries === 0, JSON.stringify({ tumbles, cries }))
+
+    // the cry law: a red-fun child wails on a cooldown, and the wail stings
+    // the earshot — neglect made audible. Park Pip next to a resident, pin fun
+    // red (a tumble needs fun above red, so only the crying can happen).
+    const k1 = newRun(7); k1.money = 900
+    adoptKid(k1)
+    const kEar = k1.people[0]
+    const parkCry = () => { kEar.path = null; kEar.goal = null; kEar.use = null; kEar.working = false; kEar.faintT = 0; kEar.needs.social = 1; k1.kid.r = kEar.r; k1.kid.c = kEar.c + 1; k1.kid.x = tileX(kEar.c + 1) + TILE / 2; k1.kid.y = kEar.y; k1.kid.path = null; k1.kid.state = 'roam'; k1.kid.needs.fun = 0.05 }
+    let stung = 0
+    for (let i = 0; i < 600; i++) { parkCry(); const soc0 = kEar.needs.social; advance(k1, DT); keepAlive(k1); const ev = drain(k1).filter((e) => e.t === 'kid-cry').length; cries += ev; if (ev && kEar.needs.social < soc0) stung = 1 }
+    check('a red-fun child wails on a cooldown (never faster than KID_CRY_CD)', cries >= 2 && cries <= 4, `cries in 10s: ${cries}`)
+    check('the wail stings the earshot', stung === 1, `social: ${kEar.needs.social.toFixed(2)}`)
+
+    // court reaches the child — kind words cheer, scolds put out the play-fire
+    k1.hour = 10
+    k1.visitor = null; k1.ivy = null; k1.cmdCd = 0
+    const kAct = k1.people[k1.active], kOther = k1.people[1 - k1.active]
+    kOther.faintT = 5   // the partner is out of court; the child should win the glance
+    kAct.path = null; kAct.goal = null; kAct.use = null; kAct.working = false; kAct.faintT = 0
+    k1.kid.r = kAct.r; k1.kid.c = kAct.c + 1; k1.kid.x = tileX(kAct.c + 1) + TILE / 2; k1.kid.y = kAct.y; k1.kid.path = null; k1.kid.state = 'roam'
+    const kCRel0 = k1.rel.kid, kCFun0 = k1.kid.needs.fun
+    const kCoo = court(k1, 'coo')
+    check('the court reaches the child — cooing bonds and cheers', kCoo && kCoo.k === 'kid' && k1.rel.kid > kCRel0 && k1.kid.needs.fun > kCFun0, JSON.stringify(kCoo))
+    k1.cmdCd = 0
+    k1.grudge = 0
+    const kRel1 = k1.rel.kid, kCFun1 = k1.kid.needs.fun
+    const kScold = court(k1, 'insult')
+    check('a scold stings the child but makes no house enemy', kScold && kScold.k === 'kid' && k1.rel.kid < kRel1 && k1.kid.needs.fun < kCFun1 && !k1.grudge, JSON.stringify({ res: kScold, grudge: k1.grudge }))
+    kOther.faintT = 0
+
+    // determinism with the bot adopting mid-shift, and the hash carrying the child
+    const ka = newRun(9), kb = newRun(9)
+    for (let i = 0; i < 3600; i++) { if (i === 600) { ka.money = 900; kb.money = 900; adoptKid(ka); adoptKid(kb) } autoStep(ka, DT); drain(ka); autoStep(kb, DT); drain(kb) }
+    check('attract hours including the counter are seed-exact', stateHash(ka) === stateHash(kb))
+    const hK1 = stateHash(ka)
+    ka.kid.needs.fun = Math.max(0, ka.kid.needs.fun - 0.25)
+    check('the child rides the hash — they are state', stateHash(ka) !== hK1)
+
+    // the lifetime wish still lands with a child on the lot
+    const kw = newRun(1)
+    let kwn = 0
+    while (!kw.done && kwn++ < 60 * 60 * 6) { if (kwn === 600) { kw.money = 900; adoptKid(kw) } autoStep(kw, DT); drain(kw) }
+    check('the wish still lands with a child on the lot', kw.done === 'win' && !!kw.kid, `done=${kw.done}`)
+
+    // source pins — the wiring must not silently drop
+    check('pin: advance ticks the child between the cat and the hearth', /updateKid\(s, simDt\)/.test(kidSim))
+    check('pin: the cry law stings nearby residents', /KID_CRY_STING/.test(kidSim) && /needs\.social = Math\.max\(0,[^)]*- KID_CRY_STING\)/.test(kidSim))
+    check('pin: tumbles feed the kid bond and the resident', /relAdd\(s, 'kid', KID_BOND\)/.test(kidSim) && /needs\.social = Math\.min\(1, partner\.needs\.social \+ KID_SOCIAL\)/.test(kidSim))
+    check('pin: the child rides stateHash', /mix\(s\.kid \? 1 : 0\)/.test(kidSim))
+    check('pin: the bond panel rows the child under the stars', /if \(s\.kid\) bondRow/.test(kidArt) && /'PIP'/.test(kidArt))
+    check('pin: the shell draws Pip in the depth order', /drawKid/.test(kidJsx) && kidJsx.includes('g.kid ? [{ p: g.kid, v: g.kid.y }]'))
+    check('pin: K keys the card and the counter events have voices', /KID_KEYS = new Set\(\['KeyK'\]\)/.test(kidJsx) && /CATALOG\.findIndex\(\(d\) => d\.kid\)/.test(kidJsx) && /case 'kid':/.test(kidJsx) && /case 'kid-tumble'/.test(kidJsx) && /case 'kid-cry'/.test(kidJsx))
+    check('pin: the sprite ships — scamper, Zzz and tears in art', /export function drawKid/.test(kidArt) && /Zzz/.test(kidArt) && /case 'kidkit'/.test(kidArt))
+    check('pin: the probe answers with the child', kidJsx.includes('kid: gs.kid ?'))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)

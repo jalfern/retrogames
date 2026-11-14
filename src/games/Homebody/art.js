@@ -168,6 +168,19 @@ export function drawItemAt(ctx, id, x, y, t) {
             ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1; ctx.strokeRect(x + 3.5, y + 6.5, 25, 21)
             break
         }
+        case 'kidkit': {
+            // adoption card: drafting paper, a small figure in gold with a star
+            ctx.fillStyle = '#2c3e63'; ctx.fillRect(x + 3, y + 6, 26, 22)
+            ctx.fillStyle = '#3d5484'
+            for (let i = 0; i < 4; i++) ctx.fillRect(x + 3, y + 9 + i * 5, 26, 1)
+            ctx.fillStyle = '#ffd24a'
+            ctx.beginPath(); ctx.arc(x + 16, y + 11, 3.6, 0, Math.PI * 2); ctx.fill()
+            ctx.beginPath(); ctx.moveTo(x + 12, y + 15); ctx.lineTo(x + 20, y + 15); ctx.lineTo(x + 18.5, y + 24); ctx.lineTo(x + 13.5, y + 24); ctx.closePath(); ctx.fill()
+            ctx.fillRect(x + 9, y + 16, 2.6, 6); ctx.fillRect(x + 20.4, y + 16, 2.6, 6)
+            star(ctx, x + 24, y + 10, 3.2, '#ffd24a')
+            ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1; ctx.strokeRect(x + 3.5, y + 6.5, 25, 21)
+            break
+        }
         case 'roomkit': {
             // blueprint card: brick Cottage with gold roof on drafting paper
             ctx.fillStyle = '#2c3e63'; ctx.fillRect(x + 3, y + 6, 26, 22)
@@ -503,6 +516,100 @@ export function drawPet(ctx, p, t) {
     }
 }
 
+// ---------------------------------------------------------------- kid (#2203) --
+// Pip — a small person, drawn small on purpose: big head, short quick steps,
+// a daypack that bounces. Walking scamper, a curled-up bedtime bundle with
+// Zzz, tear-arcs while the cry law has them wailing, and gold sparkle-bounces
+// when someone tumbles in to play. Same palette family as the residents.
+export function drawKid(ctx, p, t) {
+    const x = Math.round(p.x), y = Math.round(p.y)
+    // shadow
+    ctx.fillStyle = 'rgba(30,20,10,0.20)'
+    ctx.beginPath(); ctx.ellipse(x, y + 8, 5.5, 2, 0, 0, 7); ctx.fill()
+    if (p.asleep) {
+        // the bedtime bundle: curled on the floorboards, pack as a pillow
+        ctx.fillStyle = '#8a6238'
+        ctx.beginPath(); ctx.ellipse(x - 2, y + 1, 8, 4.4, 0, 0, Math.PI * 2); ctx.fill()
+        ctx.fillStyle = '#e8a13a'
+        ctx.beginPath(); ctx.ellipse(x + 3, y - 1, 6, 4, 0, 0, Math.PI * 2); ctx.fill()
+        ctx.fillStyle = '#3b6ea8'
+        ctx.beginPath(); ctx.ellipse(x - 9, y + 1, 3.4, 2.6, 0, 0, Math.PI * 2); ctx.fill()
+        ctx.fillStyle = '#e8c29a'
+        ctx.beginPath(); ctx.arc(x + 8, y - 3, 4.4, 0, 7); ctx.fill()
+        ctx.fillStyle = '#c9995c'
+        ctx.beginPath(); ctx.arc(x + 8, y - 4.4, 4.4, Math.PI, 0); ctx.fill()
+        ctx.fillStyle = '#241a10'
+        ctx.fillRect(x + 9, y - 3.4, 1.8, 1)
+        if (Math.floor(t) % 2 === 0) {
+            ctx.fillStyle = '#cfe0ff'; ctx.font = 'bold 7px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'
+            ctx.fillText('z', x + 12, y - 8 - (t % 1) * 3)
+        }
+        return
+    }
+    const moving = p.path && p.path.length
+    const bob = moving ? Math.abs(Math.sin(p.walkPhase * 2)) * -1.6 : Math.sin(t * 3 + p.x) * 0.5
+    const leg = moving ? Math.sin(p.walkPhase * 2) * 2.6 : 0
+    ctx.save(); ctx.translate(x, y); ctx.scale(p.face, 1)
+    // legs — quick little pistons
+    ctx.fillStyle = '#8a6238'
+    ctx.fillRect(-3, 1 + Math.max(0, leg), 2.4, 7 - Math.max(0, leg))
+    ctx.fillRect(0.6, 1 + Math.max(0, -leg), 2.4, 7 - Math.max(0, -leg))
+    ctx.fillStyle = '#3c2a17'
+    ctx.fillRect(-3, 7 + Math.max(0, leg), 2.6, 1.4); ctx.fillRect(0.6, 7 + Math.max(0, -leg), 2.6, 1.4)
+    // daypack behind the torso — it bounces on the scamper
+    ctx.fillStyle = '#3b6ea8'
+    ctx.fillRect(-7, -5 + bob + (moving ? Math.sin(p.walkPhase * 2) * 0.8 : 0), 4, 7)
+    ctx.fillStyle = '#2c5aa0'
+    ctx.fillRect(-7, -3 + bob, 4, 1.4)
+    // torso
+    ctx.fillStyle = '#e8a13a'
+    ctx.fillRect(-4.4, -6 + bob, 9, 8)
+    ctx.fillStyle = 'rgba(0,0,0,0.14)'
+    ctx.fillRect(-4.4, 0 + bob, 9, 1.6)
+    // arms
+    ctx.fillStyle = '#e8a13a'
+    ctx.fillRect(-6, -5 + bob - leg * 0.6, 2, 6)
+    ctx.fillRect(4, -5 + bob + leg * 0.6, 2, 6)
+    ctx.fillStyle = '#e8c29a'
+    ctx.fillRect(-6, 0.4 + bob - leg * 0.6, 2, 1.6); ctx.fillRect(4, 0.4 + bob + leg * 0.6, 2, 1.6)
+    // big head, flaxen fringe
+    ctx.fillStyle = '#e8c29a'
+    ctx.beginPath(); ctx.arc(0, -11.4 + bob, 6, 0, 7); ctx.fill()
+    ctx.fillStyle = '#c9995c'
+    ctx.beginPath(); ctx.arc(0, -12.8 + bob, 6, Math.PI, 0); ctx.fill()
+    ctx.fillRect(-6, -13.4 + bob, 12, 2)
+    // eyes — wide and bright, or scrunched shut mid-wail
+    ctx.fillStyle = '#241a10'
+    const crying = p.cryT > 2.6
+    if (crying) {
+        ctx.fillRect(-3.4, -11.6 + bob, 2.4, 1)
+        ctx.fillRect(1, -11.6 + bob, 2.4, 1)
+        ctx.beginPath(); ctx.arc(0, -8.6 + bob, 1.6, 0, Math.PI); ctx.fill()
+    } else {
+        const ex = 1.2
+        ctx.fillRect(-2.6 + ex, -11.8 + bob, 1.6, 1.8)
+        ctx.fillRect(1 + ex, -11.8 + bob, 1.6, 1.8)
+    }
+    ctx.restore()
+    // tears — two blue arcs while the wail lasts
+    if (crying) {
+        const k = (p.cryT - 2.6) / 0.6
+        ctx.globalAlpha = Math.max(0, Math.min(1, k))
+        ctx.fillStyle = '#7fb6e8'
+        const drop = ((t * 14) % 6)
+        ctx.beginPath(); ctx.arc(x - 4, y - 10 + drop, 1.2, 0, 7); ctx.fill()
+        ctx.beginPath(); ctx.arc(x + 4.4, y - 10 + ((drop + 3) % 6), 1.2, 0, 7); ctx.fill()
+        ctx.globalAlpha = 1
+    }
+    // giggle sparkles — gold stars bouncing off the head after play
+    if (p.giggleT > 0) {
+        const k = p.giggleT / 1.4
+        ctx.globalAlpha = Math.min(1, p.giggleT)
+        for (const [px, ph] of [[-6, 0], [0, 0.5], [6, 0.2]]) star(ctx, x + px, y - 20 - (1 - k) * 9 + ph * 2, 2, '#ffd24a')
+        ctx.globalAlpha = 1
+    }
+}
+
 export function nightTint(ctx, hour, ext) {
     let a = 0
     if (hour >= 19) a = Math.min(0.42, (hour - 19) / 3 * 0.42)
@@ -583,6 +690,8 @@ export function drawPanel(ctx, s, t) {
     bondRow(ctx, PANEL_X + 12, by + 26, 'leaf', '#4fae5f', relLevel(s.rel.fern), 'FERN')
     // #2143: the third point of the triangle — flower = Ivy, the market neighbour
     bondRow(ctx, PANEL_X + 12, by + 40, 'flower', '#a3579b', relLevel(s.rel.ivy), 'IVY')
+    // #2203: the child — a gold star once Pip is home
+    if (s.kid) bondRow(ctx, PANEL_X + 12, by + 54, 'star', '#ffd24a', relLevel(s.rel.kid), 'PIP')
     if (relLevel(s.rel.house) === 3 && Math.floor(t * 2.5) % 2 === 0) {
         ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1
         ctx.strokeRect(PANEL_X + 12 + 3 * 8 + 0.5, by + 12 + 0.5, 5, 5)
@@ -643,8 +752,10 @@ function bondRow(ctx, x, y, glyph, col, lv, label) {
         ctx.fill()
         ctx.strokeStyle = col; ctx.lineWidth = 1
         ctx.beginPath(); ctx.moveTo(x + 7.5, y + 3.5); ctx.lineTo(x + 10, y + 6); ctx.stroke()
+    } else if (glyph === 'star') {
+        // #2203: Pip's BONDS glyph — a five-point gold star
+        star(ctx, x + 5.5, y + 3, 4.4, col)
     } else {
-        // #2143: flower — Ivy's BONDS glyph. Four petals, gold heart of it.
         ctx.fillStyle = col
         for (const [dx, dy] of [[0, -2.3], [2.3, 0], [0, 2.3], [-2.3, 0]]) { ctx.beginPath(); ctx.arc(x + 5 + dx, y + 3 + dy, 1.9, 0, 7); ctx.fill() }
         ctx.fillStyle = '#ffd24a'
