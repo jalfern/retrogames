@@ -109,7 +109,7 @@ const ViperPitGame = () => {
         let attractMsg = 0, attractT = 0
         let shake = 0, flashT = 0, bannerT = 0, bannerText = ''
         let finishFx = 0, finishText = ''
-        let quote = null, quoteT = 0
+        let quote = null, quoteT = 0, quoteMax = 0, subShownAt = null, judgeFlash = null
         // #2148 — call-and-response outround replies: the loser's answer
         // reveals a beat after the winner's taunt; `finishJustLanded` hands the
         // finisher event to koQuotes so an IN STYLE judge rides the same KO.
@@ -291,7 +291,7 @@ const ViperPitGame = () => {
             gs = createMatch({ seed: sd, guardButton: true, juggle: true, guardCrush: true, p1: { ...d1, cpu: false }, p2: human2 ? { ...d2raw, cpu: false } : d2raw })
             lagHp = [gs.fighters[0].hp, gs.fighters[1].hp]
             comboFx = [0, 0]; comboVal = [0, 0]
-            chipFx = [0, 0]; shimmerFx = [0, 0]; shatterFx = [0, 0]; koHold = null; koFxRound = 0; quote = null; quoteT = 0; quoteSubAt = null; subFired = false; finishJustLanded = false
+            chipFx = [0, 0]; shimmerFx = [0, 0]; shatterFx = [0, 0]; koHold = null; koFxRound = 0; quote = null; quoteT = 0; quoteMax = 0; quoteSubAt = null; subFired = false; subShownAt = null; finishJustLanded = false
             finishFx = 0; finishText = ''
             padMirror[0].clear(); padMirror[1].clear()
             oursH.clear(); peerH.clear()
@@ -441,7 +441,7 @@ const ViperPitGame = () => {
             rebuildRigs(); rebuildStage()
             audioController.startMusic(stage.bed)
             lagHp = [100, 100]
-            chipFx = [0, 0]; shimmerFx = [0, 0]; shatterFx = [0, 0]; koHold = null; koFxRound = 0; quote = null; quoteT = 0; quoteSubAt = null; subFired = false; finishJustLanded = false
+            chipFx = [0, 0]; shimmerFx = [0, 0]; shatterFx = [0, 0]; koHold = null; koFxRound = 0; quote = null; quoteT = 0; quoteMax = 0; quoteSubAt = null; subFired = false; subShownAt = null; finishJustLanded = false
         }
         attractDemo()
 
@@ -585,8 +585,9 @@ const ViperPitGame = () => {
                 bannerText = m.banner; bannerT = 130
                 const q = koQuotes(m, { finish: finishJustLanded })
                 if (q) {
-                    quote = q; quoteT = 140
-                    quoteSubAt = performance.now() + 520; subFired = false
+                    quote = q; quoteT = 140; quoteMax = 140
+                    quoteSubAt = performance.now() + 520; subFired = false; subShownAt = null
+                    if (q.judge === 'PERFECT' && stageFx) stageFx.flareUntil = performance.now() + 500
                 }
                 finishJustLanded = false
                 const wf = m.fighters.find((f) => f.st === 'win')
@@ -597,7 +598,7 @@ const ViperPitGame = () => {
             } else if (m.phase === 'fight' && prevPhase === 'intro') {
                 bannerText = 'FIGHT!'; bannerT = 50
                 const iq = introQuotes(BY_ID[p1Char], BY_ID[p2Char])
-                if (iq) { quote = iq; quoteT = 60 }
+                if (iq) { quote = iq; quoteT = 60; quoteMax = 60 }
                 audioController.playTone(660, 0.12, 'square', 0.1)
                 setTimeout(() => audioController.playTone(440, 0.16, 'square', 0.1), 140)
             } else if (m.phase === 'intro' && prevRound < m.round) {
@@ -610,8 +611,8 @@ const ViperPitGame = () => {
                 const won = m.winner === 0
                 const q = koQuotes(m)
                 if (q) {
-                    quote = q; quoteT = 240
-                    quoteSubAt = performance.now() + 700; subFired = false
+                    quote = q; quoteT = 240; quoteMax = 240
+                    quoteSubAt = performance.now() + 700; subFired = false; subShownAt = null
                 }
                 if (mode === 'cpu') {
                     if (won && ladderIdx < LADDER.length - 1) {
@@ -816,11 +817,22 @@ const ViperPitGame = () => {
                         hctx.textAlign = 'center'
                         const jcol = quote.judge === 'PERFECT' ? 'rgba(255,210,62,' : quote.judge === 'CLUTCH' ? 'rgba(255,154,60,' : 'rgba(255,64,48,'
                         const jy = finishFx > 0 ? H * 0.47 : H * 0.53
+                        // #2158 — the verdict SLAMS in: 7 frames of scale-down
+                        // (2.3x -> 1x, ease-out) plus a full-screen tint flash
+                        // in the judge's own colour, like the arcade punch-in.
+                        const jp = Math.max(0, Math.min(1, (quoteMax - quoteT) / 7))
+                        const jsc = 1 + 1.3 * Math.pow(1 - jp, 2)
+                        judgeFlash = { s: jsc, a: 0.16 * (1 - jp) }
+                        if (judgeFlash.a > 0) { hctx.fillStyle = jcol + judgeFlash.a.toFixed(3) + ')'; hctx.fillRect(0, 0, W, H) }
+                        hctx.save()
+                        hctx.translate(W / 2, jy)
+                        hctx.scale(jsc, jsc)
                         hctx.strokeStyle = 'rgba(8,5,8,0.9)'; hctx.lineWidth = Math.max(2, H * 0.005)
                         hctx.fillStyle = jcol + Math.min(1, quoteT / 140 + 0.25).toFixed(2) + ')'
-                        hctx.strokeText(`${quote.judge}!`, W / 2, jy)
-                        hctx.fillText(`${quote.judge}!`, W / 2, jy)
-                    }
+                        hctx.strokeText(`${quote.judge}!`, 0, 0)
+                        hctx.fillText(`${quote.judge}!`, 0, 0)
+                        hctx.restore()
+                    } else judgeFlash = null
                     // taunt-on-win: the winner's shout in their own accent,
                     // popping in just under the win line.
                     if (quote.taunt) {
@@ -846,6 +858,7 @@ const ViperPitGame = () => {
                     const subShow = quote.sub && quoteSubAt != null && performance.now() >= quoteSubAt
                     if (subShow && !subFired) {
                         subFired = true
+                        subShownAt = performance.now()
                         const [r0, r1, rwave] = quote.replyVoice || [160, 120, 'square']
                         audioController.playTone(r0, 0.09, rwave, 0.07)
                         audioController.playTone(r1, 0.14, rwave, 0.06, 0.09)
@@ -855,8 +868,21 @@ const ViperPitGame = () => {
                         hctx.textAlign = 'center'
                         hctx.strokeStyle = 'rgba(8,5,8,0.9)'; hctx.lineWidth = Math.max(2, H * 0.005)
                         hctx.fillStyle = `rgba(150,214,200,${Math.min(1, (quoteT + 40) / 40).toFixed(2)})`
-                        hctx.strokeText(quote.sub, W / 2, quote.b ? H * 0.712 : H * 0.675)
-                        hctx.fillText(quote.sub, W / 2, quote.b ? H * 0.712 : H * 0.675)
+                        // #2158 — the answer slides in from the left over ~11
+                        // frames and an accent underline draws on beneath it,
+                        // so the card reads as a conversation, not a stamp.
+                        const rp = subShownAt != null ? Math.min(1, (performance.now() - subShownAt) / 180) : 1
+                        const xe = (1 - rp) * (1 - rp)
+                        const sx = W / 2 - W * 0.035 * xe
+                        const sy = quote.b ? H * 0.712 : H * 0.675
+                        hctx.strokeText(quote.sub, sx, sy)
+                        hctx.fillText(quote.sub, sx, sy)
+                        const uw = Math.max(60, W * 0.16) * rp
+                        const hex2 = '#' + Number(quote.accent || 0x59e0c8).toString(16).padStart(6, '0')
+                        hctx.fillStyle = hex2
+                        hctx.globalAlpha = 0.85 * rp
+                        hctx.fillRect(sx - uw / 2, sy + Math.max(6, H * 0.012), uw, Math.max(2, H * 0.004))
+                        hctx.globalAlpha = 1
                     }
                 }
                 if (flashT > 0) { flashT--; hctx.fillStyle = `rgba(255,235,220,${(flashT / 60).toFixed(2)})`; hctx.fillRect(0, 0, W, H) }
@@ -1195,11 +1221,15 @@ const ViperPitGame = () => {
                 // #2148 — outround card probe: taunt/judge land on the KO, the
                 // answer (loser reply or fight-arc line) reveals `shown` later.
                 outround() {
-                    if (!quote || quoteT <= 0) return { active: false, taunt: null, sub: null, reply: null, judge: null, match: false, shown: false }
+                    if (!quote || quoteT <= 0) return { active: false, taunt: null, sub: null, reply: null, judge: null, match: false, shown: false, judgeScale: 1, judgeTint: 0, flare: 0, replySlide: null }
                     return {
                         active: true, taunt: quote.taunt || null, sub: quote.sub || null, reply: quote.b || null,
                         judge: quote.judge || null, match: !!quote.match, accent: quote.accent || null,
                         shown: !!(quoteSubAt != null && performance.now() >= quoteSubAt),
+                        judgeScale: judgeFlash ? +judgeFlash.s.toFixed(3) : 1,
+                        judgeTint: judgeFlash ? +judgeFlash.a.toFixed(3) : 0,
+                        flare: stageFx && stageFx.flare ? +stageFx.flare.toFixed(3) : 0,
+                        replySlide: subShownAt != null ? +Math.min(1, (performance.now() - subShownAt) / 180).toFixed(3) : null,
                     }
                 },
                 chips() { return chipFx.map((v) => v > 0) },
@@ -1219,6 +1249,7 @@ const ViperPitGame = () => {
                         legL: +rig.legL.hip.rotation.x.toFixed(3),
                         kneeR: +rig.legR.kn.rotation.x.toFixed(3),
                         kneeL: +rig.legL.kn.rotation.x.toFixed(3),
+                        winK: f.st === 'win' && rig.userData ? +(rig.userData.winK ?? 1).toFixed(3) : null,
                     }
                 },
                 forceHit(i, kind) {

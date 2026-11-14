@@ -250,6 +250,19 @@ the #1096 options switched on.
 
 ## Honest gaps (polish-pass candidates)
 
+- **CLOSED by #2158:** KO-card juice — the verdict no longer just appears:
+  PERFECT/CLUTCH/IN STYLE **slams in** over 7 frames (2.3x scale-down, ease
+  out) with a full-screen tint flash in the judge's own colour; a **PERFECT**
+  flares the pit for ~0.5 s (`stageFx.flareUntil` → every crowd phone to full
+  brightness + silhouettes bobbing harder, decaying in `sync`); the winner's
+  **taunt pose blends** in over ~10 frames (`rig.userData.winK`, captured from
+  wherever the KO caught the rig) instead of snapping to the pose table; and
+  the loser's answer **slides in** from the left with an accent underline
+  drawing on under it. Live gates: `outround()` now reports `judgeScale`/
+  `judgeTint`/`flare`/`replySlide` and `pose()` reports `winK` — the check
+  proves slam peak + settle, that the flare is PERFECT's privilege (a non-
+  PERFECT round must NOT flare), blend `winK 0->1` and slide-in from the live
+  cabinet, plus six source wiring gates and an instant-blend mutant marker.
 - **CLOSED by #2148:** deeper outround replies — per-character taunt-on-win
   (shout in the winner's accent + beckon/flex/point/raise/spit rig poses),
   round-end loser sub-lines (own `roundLose` table), PERFECT/CLUTCH/IN STYLE

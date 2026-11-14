@@ -654,6 +654,12 @@ if (MUT) {
         ['the outround probe is a dev hook', /outround\(\) \{/],
         ['outround state resets between matches', /koHold = null; koFxRound = 0; quote = null; quoteT = 0; quoteSubAt = null; subFired = false; finishJustLanded = false/],
         ['the rig taunt pose reads the fighter table', /def && f\.def\.tauntPose/, rsrc],
+        ['the taunt pose blends in over ~10 frames', /ud\.winK = Math\.min\(1, ud\.winK \+ 0\.1\)/, rsrc],
+        ['the crowd flare decays every sync frame', /const flareT = stageFx\.flareUntil/, rsrc],
+        ['PERFECT flares the crowd for half a second', /q\.judge === 'PERFECT' && stageFx\) stageFx\.flareUntil = performance\.now\(\) \+ 500/],
+        ['the verdict slams in with a tint flash', /judgeFlash = \{ s: jsc, a: 0\.16 \* \(1 - jp\) \}/],
+        ['the answer slides in with an accent underline', /const rp = subShownAt != null \? Math\.min\(1, \(performance\.now\(\) - subShownAt\) \/ 180\) : 1/],
+        ['the outround probe exposes the slam/flare/slide', /judgeScale: judgeFlash \? \+judgeFlash\.s\.toFixed\(3\) : 1/],
         ['beckon pose exists', /pose === 'beckon'/, rsrc],
         ['flex pose exists', /pose === 'flex'/, rsrc],
         ['point pose exists', /pose === 'point'/, rsrc],
@@ -665,6 +671,8 @@ if (MUT) {
     }
     const mutReveal = gsrc.replace('quoteSubAt = performance.now() + 520; subFired = false', 'quoteSubAt = performance.now(); subFired = false')
     ok(mutReveal !== gsrc, 'mutant: an instant reveal (no call before response) is a source change the live gate can catch')
+    const mutBlend = rsrc.replace('ud.winK = Math.min(1, ud.winK + 0.1)', 'ud.winK = 1')
+    ok(mutBlend !== rsrc, 'mutant: an instant taunt pose (winK jumps to 1) is a source change the live blend gate can catch')
 }
 
 // ---- #1106 fighter animation-depth gate ---------------------------------------------
@@ -1490,6 +1498,15 @@ if (!MUT) {
         }
         ok(kf.active && kf.by === 0 && kf.name, `K.O. opens a letterbox hold naming the winner (${kf.name} WINS ROUND ${kf.round} "${kf.tag}")`)
         ok(kf.slow, 'the K.O. freeze starts in slow motion')
+        // #2158 — the taunt pose blends in: sampled early it is mid-blend,
+        // later it is held at full gesture (no snap to the pose table).
+        let wkA = null, wkB = null
+        for (let i = 0; i < 14; i++) {
+            const p = await page.evaluate((k) => window.__viperPitTest.pose(k), kf.by)
+            if (p && p.st === 'win') { if (wkA == null) wkA = p.winK; wkB = p.winK }
+            await page.waitForTimeout(16)
+        }
+        ok(wkA != null && wkA < 0.95 && wkB >= 0.99, `the taunt pose blends in over ~10 frames (winK ${wkA} -> ${wkB})`)
         const s0 = await page.evaluate(() => window.__viperPitTest.state.tick)
         await page.waitForTimeout(250)
         const s1 = await page.evaluate(() => window.__viperPitTest.state.tick)
@@ -1510,6 +1527,26 @@ if (!MUT) {
         const wHp = hpAt[kf.by]
         const expectJudge = wHp >= MAXHP_BY_NAME[kf.name] ? 'PERFECT' : wHp <= 25 ? 'CLUTCH' : null
         ok(or1 && or1.judge === expectJudge, `the judge stamp rides the winner's real HP at the KO (hp ${wHp}/${MAXHP_BY_NAME[kf.name]} -> ${or1 && or1.judge})`)
+        // #2158 — the verdict slams in (scale-down + judge-colour tint flash)
+        // and settles; the PERFECT flare is PERFECT's own privilege.
+        let jsMax = 1, jtMax = 0, flareMax = 0, jsSettled = false
+        for (let i = 0; i < 14; i++) {
+            const s = await page.evaluate(() => window.__viperPitTest.outround())
+            if (s.active && s.judge) {
+                jsMax = Math.max(jsMax, s.judgeScale)
+                jtMax = Math.max(jtMax, s.judgeTint)
+                flareMax = Math.max(flareMax, s.flare)
+                if (s.judgeScale <= 1.001 && s.judgeTint === 0) jsSettled = true
+            }
+            await page.waitForTimeout(16)
+        }
+        if (or1 && or1.judge) {
+            ok(jsMax >= 1.25, `the verdict punches in scaled up (peak ${jsMax.toFixed(2)}x)`)
+            ok(jtMax >= 0.08, `the screen flashes in the judge colour (peak tint ${jtMax.toFixed(3)})`)
+            ok(jsSettled, 'the verdict settles back to 1x with the tint gone')
+        }
+        if (expectJudge === 'PERFECT') ok(flareMax > 0.5, `PERFECT flares the crowd phones (peak ${flareMax.toFixed(2)})`)
+        else ok(flareMax === 0, `${expectJudge || 'an unjudged'} round must NOT flare the crowd (the flare is PERFECT's privilege)`)
         ok(or1 && !or1.shown && or1.sub, 'the loser answer is held back behind the taunt (call before response)')
         let or2 = null
         for (let i = 0; i < 40 && !(or2 && or2.shown); i++) {
@@ -1517,6 +1554,14 @@ if (!MUT) {
             if (!(or2 && or2.shown)) await page.waitForTimeout(50)
         }
         ok(or2 && or2.shown && or2.sub && / — /.test(or2.sub), `the loser answers a beat later (${or2 && or2.sub})`)
+        // #2158 — the answer slides in from the left with its accent underline.
+        let rpA = null, rpB = null
+        for (let i = 0; i < 14; i++) {
+            const s = await page.evaluate(() => window.__viperPitTest.outround())
+            if (s.active && s.shown && s.replySlide != null) { if (rpA == null) rpA = s.replySlide; rpB = s.replySlide }
+            await page.waitForTimeout(16)
+        }
+        ok(rpA != null && rpA < 0.95 && rpB >= 0.99, `the answer slides in and settles (slide ${rpA} -> ${rpB})`)
         let released = false
         for (let i = 0; i < 80 && !released; i++) {
             released = await page.evaluate(() => !window.__viperPitTest.koFx().active)

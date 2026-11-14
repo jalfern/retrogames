@@ -433,6 +433,37 @@ export function poseFighter(rig, f, tSec) {
         q.arms = baseArms.map((a, i) => ({ sh: a.sh + (i === 0 ? -1 : 1) * sw * armSwing, el: a.el, z: a.z }))
     }
 
+    // #2158 — the taunt pose BLENDs in: the rig reaches the win gesture from
+    // wherever the KO caught it (guard high, arm extended) over ~10 frames
+    // instead of snapping straight to the pose table on the first 'win' frame.
+    // Presentation only — the engine and hashes never see it.
+    if (st === 'win') {
+        const ud = rig.userData || (rig.userData = {})
+        if (ud.lastSt !== 'win') {
+            ud.preWin = {
+                lean: rig.torso.rotation.x, head: rig.head.rotation.x,
+                arms: [
+                    { sh: rig.armR.sh.rotation.x, z: rig.armR.sh.rotation.z, el: rig.armR.el.rotation.x },
+                    { sh: rig.armL.sh.rotation.x, z: rig.armL.sh.rotation.z, el: rig.armL.el.rotation.x },
+                ],
+            }
+            ud.winK = 0
+            ud.lastSt = 'win'
+        }
+        ud.winK = Math.min(1, ud.winK + 0.1)
+        const e = 1 - Math.pow(1 - ud.winK, 3)
+        const pw = ud.preWin
+        q.lean = pw.lean + (q.lean - pw.lean) * e
+        q.headX = pw.head + (q.headX - pw.head) * e
+        q.arms = q.arms.map((a, i) => ({
+            sh: pw.arms[i].sh + (a.sh - pw.arms[i].sh) * e,
+            z: pw.arms[i].z + (a.z - pw.arms[i].z) * e,
+            el: pw.arms[i].el + (a.el - pw.arms[i].el) * e,
+        }))
+    } else if (rig.userData) {
+        rig.userData.lastSt = st
+    }
+
     const r = rig
     r.body.rotation.x = ease(q.drop) * Math.PI / 2
     r.body.position.y = q.hipY - ease(q.drop) * 0.42
@@ -717,9 +748,14 @@ export function createScene(canvas) {
                 rig.shadow.material.opacity = 0.42 * air
             }
             if (stageFx) {
+                // #2158 — PERFECT crowd beat: a PERFECT verdict flares the pit
+                // for ~0.5 s (stageFx.flareUntil set by the cabinet) — phones
+                // blaze to full and every silhouette bobs harder, decaying out.
+                const flareT = stageFx.flareUntil ? Math.max(0, Math.min(1, (stageFx.flareUntil - performance.now()) / 500)) : 0
+                stageFx.flare = flareT
                 for (const c of stageFx.crowd) {
-                    c.mesh.position.y += Math.sin(tSec * c.speed + c.phase) * 0.0025
-                    if (c.phone) c.phone.material.opacity = 0.5 + 0.5 * Math.abs(Math.sin(tSec * (c.speed * 0.5) + c.phase))
+                    c.mesh.position.y += Math.sin(tSec * c.speed + c.phase) * 0.0025 + flareT * 0.004 * Math.sin(tSec * 21 + c.phase)
+                    if (c.phone) c.phone.material.opacity = Math.max(0.5 + 0.5 * Math.abs(Math.sin(tSec * (c.speed * 0.5) + c.phase)), flareT)
                 }
                 for (const l of stageFx.lamps) {
                     const fl = 0.85 + 0.15 * Math.sin(tSec * 9 + l.phase) * (Math.sin(tSec * 0.7) > 0.9 ? 1 : 0.25)
