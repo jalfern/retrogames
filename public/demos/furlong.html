@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale, viewport-fit=cover">
+<title>FURLONG — a thoroughbred at full gallop · procedural WebGL2</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#141225;overflow:hidden;
+    font-family:ui-monospace,Menlo,Consolas,monospace;-webkit-user-select:none;user-select:none;touch-action:none}
+  #c{position:fixed;inset:0;width:100%;height:100%;display:block}
+  .hud{position:fixed;left:14px;top:calc(10px + env(safe-area-inset-top));color:#ffe9c9;
+    text-shadow:0 1px 4px rgba(0,0,0,.7);pointer-events:none;z-index:5}
+  .hud h1{margin:0;font-size:clamp(20px,4.4vw,34px);letter-spacing:.3em;font-weight:700;color:#ffd9a0}
+  .hud p{margin:2px 0 0;font-size:clamp(9px,2.2vw,12px);letter-spacing:.14em;color:#e9c9a0;opacity:.85}
+  .tip{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%);
+    color:#ffe9c9;opacity:.75;font-size:11px;letter-spacing:.18em;text-shadow:0 1px 4px #000;
+    pointer-events:none;z-index:5;transition:opacity 1s}
+  .tip.off{opacity:0}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud" id="hud"><h1>FURLONG</h1><p>PROCEDURAL GALLOP · WEBGL2 · ZERO LIBRARIES</p></div>
+<div class="tip" id="tip">DRAG TO LOOK · TAP FOR SOUND</div>
+
+<script>
+/* ============================================================================
+   FURLONG — a golden-hour thoroughbred at a true four-beat rotary gallop.
+   Issue #2182 showcase: smooth lofted anatomy, real shadow map, atmosphere.
+   Every visual is a pure function of time t through a periodic body-path
+   X(t), so the whole scene — picture and audio — closes EXACTLY every
+   LOOP strides. Raw WebGL2, no libraries, no imported meshes, no images.
+
+   Gait model (built to be provable):
+   - footfalls LH · RH · LF · RF (left lead), per-leg stance fractions chosen
+     so body travel over a planted hoof never exceeds the limb chord;
+   - forward speed pulses with the stride (fast off the hind push, absorbed
+     under the fore landing) — the pulse is what makes it read as a gallop;
+   - planted hooves are ground-locked in world space (pole-constrained FABRIK
+     ending in a backward pass, so the tip lands exactly on the anchor);
+   - swing arcs start at the lift-off point and land on the exact next
+     touchdown point; mane, tail, tufts and dust ride the same phase.
+   ========================================================================== */
+'use strict';
+const T = 0.50;            // stride period, s
+const V = 12.5;            // mean forward speed, m/s
+const D = T * V;           // metres per stride  (6.25)
+const LOOP = 8;            // strides per scene loop
+const L = LOOP * D;        // ground pattern period (50 m)
+const HOOF_H = 0.05;       // hoof-tip pivot height above ground
+const A_SPEED = 0.30;      // forward-speed pulse amplitude
+const SPHASE = 0.13;       // speed pulse: max at phi .13+.25
+
+/* closed-form body position so everything stays a pure function of t:
+   X(t) = V*( t - A*T/2π · cos(2π(t/T + SPHASE)) )  ⇒ net advance V*T/stride */
+function X(t){ return V*( t - A_SPEED*T/(2*Math.PI)*Math.cos(2*Math.PI*(t/T + SPHASE)) ); }
+function Vt(t){ return V*(1 + A_SPEED*Math.sin(2*Math.PI*(t/T + SPHASE))); }
+
+/* gait timing: leg chains, touchdown phase + stance fraction, body-relative
+   hoof x at touchdown / lift-off, root joint, bone lengths, fold hints */
+const LEGS = [
+  { name:'LH', td:0.00, st:0.18, side: 1, fore:false,
+    root:[-0.52,1.38], L:[0.56,0.52,0.51,0.17], tdX:0.20, liftX:-1.20, pole:[-0.16,0.10], lift:0.34,
+    rest:[ vN([0.30,-0.95,0]), vN([-0.34,-0.94,0]), vN([0.18,-0.98,0]), vN([0.24,-0.97,0]) ] },
+  { name:'RH', td:0.10, st:0.18, side:-1, fore:false,
+    root:[-0.52,1.38], L:[0.56,0.52,0.51,0.17], tdX:0.20, liftX:-1.20, pole:[-0.16,0.10], lift:0.34,
+    rest:[ vN([0.30,-0.95,0]), vN([-0.34,-0.94,0]), vN([0.18,-0.98,0]), vN([0.24,-0.97,0]) ] },
+  { name:'LF', td:0.48, st:0.26, side: 1, fore:true,
+    root:[0.58,1.34], L:[0.48,0.52,0.45,0.17], tdX:1.00, liftX:-0.48, pole:[-0.10,0.06], lift:0.28,
+    rest:[ vN([0.10,-0.99,0]), vN([-0.16,-0.99,0]), vN([-0.02,-1,0]), vN([0.26,-0.97,0]) ] },
+  { name:'RF', td:0.58, st:0.26, side:-1, fore:true,
+    root:[0.58,1.34], L:[0.48,0.52,0.45,0.17], tdX:1.00, liftX:-0.48, pole:[-0.10,0.06], lift:0.28,
+    rest:[ vN([0.10,-0.99,0]), vN([-0.16,-0.99,0]), vN([-0.02,-1,0]), vN([0.26,-0.97,0]) ] },
+];
+
+/* ---------------- math ---------------- */
+function vN(a){ const n=Math.hypot(a[0],a[1],a[2])||1; return [a[0]/n,a[1]/n,a[2]/n]; }
+const vAdd=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
+const vSub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const vMul=(a,k)=>[a[0]*k,a[1]*k,a[2]*k];
+const vLen=a=>Math.hypot(a[0],a[1],a[2]);
+const vMix=(a,b,t)=>[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];
+const clamp=(x,a,b)=>x<a?a:x>b?b:x;
+const smooth=t=>t*t*(3-2*t);
+const frac=x=>x-Math.floor(x);
+const M4={
+  id:()=>new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]),
+  mul(a,b){const o=new Float32Array(16);
+    for(let c=0;c<4;c++)for(let r=0;r<4;r++){let s=0;for(let k=0;k<4;k++)s+=a[k*4+r]*b[c*4+k];o[c*4+r]=s;}return o;},
+  persp(fy,asp,n,f){const t=1/Math.tan(fy/2);
+    return new Float32Array([t/asp,0,0,0, 0,t,0,0, 0,0,(f+n)/(n-f),-1, 0,0,2*f*n/(n-f),0]);},
+  ortho(l,r,b,t,n,f){return new Float32Array([2/(r-l),0,0,0, 0,2/(t-b),0, 0,0,-2/(f-n),0,
+    -(r+l)/(r-l),-(t+b)/(t-b),-(f+n)/(f-n),1]);},
+  look(ex,ey,ez,cx,cy,cz){
+    let fx=cx-ex, fy=cy-ey, fz=cz-ez; const n1=Math.hypot(fx,fy,fz)||1; fx/=n1;fy/=n1;fz/=n1;
+    // right = normalize(cross(f, worldUp=(0,1,0))) = (−fz,0,fx)/n
+    let sx=-fz, sy=0, sz=fx;
+    const nr=Math.hypot(sx,sy,sz)||1; sx/=nr;sy/=nr;sz/=nr;
+    // up = cross(right, f)
+    const upx=sy*fz-sz*fy, upy=sz*fx-sx*fz, upz=sx*fy-sy*fx;
+    return new Float32Array([sx,upx,-fx,0, sy,upy,-fy,0, sz,upz,-fz,0,
+      -(sx*ex+sy*ey+sz*ez), -(upx*ex+upy*ey+upz*ez), (fx*ex+fy*ey+fz*ez), 1]); },
+  xform(m,p){return [m[0]*p[0]+m[4]*p[1]+m[8]*p[2]+m[12],
+                     m[1]*p[0]+m[5]*p[1]+m[9]*p[2]+m[13],
+                     m[2]*p[0]+m[6]*p[1]+m[10]*p[2]+m[14]];},
+};
+function mat4invert(a){
+  // bone matrices are rigid (orthonormal rotation + translation):
+  // inv = [ Rᵀ | -Rᵀ·t ]  (column-major). Column-major layout: the i-th
+  // COLUMN is a[4i..4i+3]; Rᵀ's columns are R's rows, and (Rᵀ·t)[i] is the
+  // dot of R's COLUMN i with t — dot along a[4i..4i+2], not a[i],a[i+4],…
+  const tx=a[12],ty=a[13],tz=a[14];
+  return new Float32Array([
+    a[0],a[4],a[8],0,  a[1],a[5],a[9],0,  a[2],a[6],a[10],0,
+    -(a[0]*tx+a[1]*ty+a[2]*tz), -(a[4]*tx+a[5]*ty+a[6]*tz), -(a[8]*tx+a[9]*ty+a[10]*tz), 1 ]);
+}
+
+/* ---------------- body & spine ---------------- */
+function bodyState(t){
+  const phi=frac(t/T);
+  const x=X(t);
+  const y=1.585 + 0.085*Math.sin(2*Math.PI*(phi+0.34)) + 0.02*Math.sin(4*Math.PI*(phi+0.1));
+  const pitch=0.11*Math.sin(2*Math.PI*(phi+0.12))+0.03;
+  const roll=0.030*Math.sin(2*Math.PI*(phi-0.25));
+  const flex=0.09*Math.sin(2*Math.PI*(phi-0.50));
+  const ay=-0.085*Math.pow(2*Math.PI/T,2)*Math.sin(2*Math.PI*(phi+0.34));
+  return {phi,x,y,pitch,roll,flex,ay};
+}
+const clampP=(p)=>p;
+/* pole-constrained FABRIK; ends with a backward pass so tip==target exactly */
+function fabrik(root,target,L,poles,hints){
+  const n=L.length;
+  const sumL=L.reduce((a,b)=>a+b,0);
+  const clampT=t=>{ const d=vSub(t,root), dl=vLen(d);
+    if(dl>sumL-1e-6) return vAdd(root,vMul(d,sumL/dl));          // unreachable
+    if(dl<1e-4) return vAdd(root,[0,-sumL,0]);
+    return t; };
+  target=clampT(target);
+  const p=[root.slice()];
+  let pos=root.slice();
+  for(let i=0;i<n;i++){ pos=vAdd(pos,vMul(hints[i],L[i])); p.push(pos); }
+  const side0=()=>{ const d=vN(vSub(p[n],p[0])); return vN([d[1],-d[0],0]); }; // perp in x-y
+  for(let it=0;it<24;it++){
+    // backward pass (tip exact, joints re-aimed)
+    p[n]=target.slice();
+    for(let i=n-1;i>=0;i--) p[i]=vAdd(p[i+1],vMul(vN(vSub(p[i],p[i+1])),L[i]));
+    p[0]=root.slice();
+    // forward pass (root exact)
+    for(let i=0;i<n;i++) p[i+1]=vAdd(p[i],vMul(vN(vSub(p[i+1],p[i])),L[i]));
+    // pole nudges (bend direction), then lengths restored by next iteration
+    const s=side0();
+    for(let j=1;j<n&&j-1<poles.length;j++){
+      const along=vMul(vN(vSub(p[n],p[0])), vLen(vSub(p[j],p[0])));
+      const want=vAdd(vAdd(p[0],along), vMul(s, poles[j-1]));
+      p[j]=vMix(p[j],want,0.35);
+    }
+    if(vLen(vSub(p[n],target))<1e-7 && it>3) {
+      // restore exact lengths without moving tip much, then final backward pass
+      for(let i=0;i<n;i++) p[i+1]=vAdd(p[i],vMul(vN(vSub(p[i+1],p[i])),L[i]));
+      p[n]=target.slice();
+      for(let i=n-1;i>=0;i--) p[i]=vAdd(p[i+1],vMul(vN(vSub(p[i],p[i+1])),L[i]));
+      break;
+    }
+  }
+  // guaranteed: final backward pass keeps tip == target
+  p[n]=target.slice();
+  for(let i=n-1;i>=0;i--) p[i]=vAdd(p[i+1],vMul(vN(vSub(p[i],p[i+1])),L[i]));
+  return p;
+}
+
+/* last time at-or-before t at which a touchdown occurred */
+function lastTD(t,td){
+  const n=Math.floor(t/T - td + 1e-9);
+  return T*(n+td);
+}
+function solveLeg(t,leg,body){
+  // ONE stride index drives everything: k = last touchdown at-or-before t
+  const k=Math.floor(t/T - leg.td);
+  const u=t/T - leg.td - k;                       // phase since touchdown, [0,1)
+  const grounded=u<leg.st;
+  const tTd=T*(k+leg.td);
+  // root in world: body-frame offset rotated by pitch, plus body pos
+  const ca=Math.cos(body.pitch), sa=Math.sin(body.pitch);
+  const rx=leg.root[0]*ca+(leg.root[1]-1.585)*sa;
+  const ry=-(leg.root[0])*sa+(leg.root[1]-1.585)*ca;
+  const rootW=[body.x+rx, body.y+ry, leg.side*0.185];
+  let target;
+  if(grounded){
+    target=[ X(tTd) + leg.tdX, HOOF_H, rootW[2] ];
+  }else{
+    const v=(u-leg.st)/(1-leg.st);
+    const xL=X(tTd+T*leg.st)+leg.liftX;          // lift-off point (locked since)
+    const xN=X(tTd+T)+leg.tdX;                   // NEXT touchdown anchor
+    const s=smooth(clamp(v,0,1));
+    target=[ xL+(xN-xL)*s, HOOF_H+leg.lift*Math.sin(Math.PI*clamp(v,0,1)), rootW[2] ];
+  }
+  // clamp ONCE here (fabrik's internal clamp was not visible to the tip-pin
+  // below, so an over-reach target stretched the pastern and broke ground
+  // contact): never aim beyond chord minus a slack margin.
+  { const sumL=leg.L.reduce((a,b)=>a+b,0)-0.006;
+    const dv=vSub(target,rootW), dl=vLen(dv);
+    if(dl>sumL) target=vAdd(rootW,vMul(dv,sumL/dl)); }
+  const p=fabrik(rootW,target,leg.L,leg.pole,leg.rest);
+  // belt-and-braces: the planted hoof tip IS the anchor (sub-mm corrections
+  // only — fabrik already converged the joints; this pins zero slip exactly)
+  p[p.length-1]=target.slice();
+  return {p,grounded,anchor:grounded?target[0]:null};
+}
+function solveSpine(t,body){
+  const ca=Math.cos(body.pitch), sa=Math.sin(body.pitch);
+  const toW=q=>[body.x+q[0]*ca+(q[1]-1.585)*sa, body.y-(q[0])*sa+(q[1]-1.585)*ca, q[2]||0];
+  const pelvisW=toW([0,1.585]), midW=toW([0.42,1.62-body.flex*0.4]), chestW=toW([0.90,1.58]);
+  const withers=toW([0.84,1.82-body.flex]);
+  const phi=body.phi;
+  const headT=[body.x+1.58, 1.80+0.05*Math.sin(2*Math.PI*(phi+0.60))-0.15*(body.y-1.585), 0];
+  const hints=[vN([0.55,0.83,0]),vN([0.72,0.69,0]),vN([0.92,0.39,0])];
+  const np=fabrik(withers,headT,[0.30,0.30,0.16],[0.02,0.01],hints);
+  return {pelvisW,midW,chestW,withers,neck:np};
+}
+
+/* ---------------- geometry ---------------- */
+const B={PELVIS:0,MIDBACK:1,CHEST:2,NECK1:3,NECK2:4,HEAD:5};
+const LEG_BASE=[17,21,9,13];            // LH RH LF RF — bone id of hip/shoulder
+const NBONES=25;
+const C_COAT=[0.42,0.245,0.14], C_DARK=[0.115,0.085,0.06], C_MOON=[0.125,0.088,0.05],
+      C_HOOF=[0.085,0.068,0.054], C_MUZZ=[0.26,0.16,0.13], C_EYE=[0.03,0.025,0.02];
+const shade=(c,k)=>[clamp(c[0]*k,0,1),clamp(c[1]*k,0,1),clamp(c[2]*k,0,1)];
+
+/* loft an elliptical tube along a path; caps close both ends */
+function loft(path,frame,radii,weight,color,N,S){
+  const pos=[],nrm=[],col=[],bid=[],wgt=[],idx=[];
+  const grid=[];
+  for(let i=0;i<=N;i++){
+    const u=i/N, c=path(u), fr=frame(u), r=radii(u);
+    const ring=[];
+    for(let j=0;j<S;j++){
+      const th=j/S*2*Math.PI;
+      const eY=Math.pow(Math.abs(Math.sin(th)),0.85)*(Math.sin(th)<0?-1:1);
+      const eZ=Math.pow(Math.abs(Math.cos(th)),0.85)*(Math.cos(th)<0?-1:1);
+      const p=[ c[0]+fr.up[0]*r[0]*eY+fr.side[0]*r[1]*eZ,
+                c[1]+fr.up[1]*r[0]*eY+fr.side[1]*r[1]*eZ,
+                c[2]+fr.up[2]*r[0]*eY+fr.side[2]*r[1]*eZ ];
+      ring.push(p); pos.push(p[0],p[1],p[2]);
+      const w=weight(u); bid.push(w[0],w[2]); wgt.push(w[1],w[3]);
+      const c3=color(u,th); col.push(c3[0],c3[1],c3[2]);
+    }
+    grid.push(ring);
+  }
+  for(let i=0;i<=N;i++)for(let j=0;j<S;j++){
+    const pu=vSub(grid[Math.min(N,i+1)][(j+2)%S],grid[Math.max(0,i-1)][(j-2+S)%S]);
+    const pv=vSub(grid[i][(j+1)%S],grid[i][(j-1+S)%S]);
+    const n=vN([pu[1]*pv[2]-pu[2]*pv[1], pu[2]*pv[0]-pu[0]*pv[2], pu[0]*pv[1]-pu[1]*pv[0]]);
+    nrm.push(n[0],n[1],n[2]);
+  }
+  for(let i=0;i<N;i++)for(let j=0;j<S;j++){
+    const a=i*S+j,b=i*S+(j+1)%S,c=(i+1)*S+(j+1)%S,d=(i+1)*S+j;
+    idx.push(a,b,c,a,c,d);
+  }
+  // caps
+  const i0=pos.length/3; pos.push(...path(0)); nrm.push(-1,0,0);
+  { const w=weight(0);bid.push(w[0],w[2]);wgt.push(w[1],w[3]);const c3=color(0,0);col.push(c3[0],c3[1],c3[2]); }
+  const i1=pos.length/3; pos.push(...path(1)); nrm.push(1,0,0);
+  { const w=weight(1);bid.push(w[0],w[2]);wgt.push(w[1],w[3]);const c3=color(1,0);col.push(c3[0],c3[1],c3[2]); }
+  for(let j=0;j<S;j++){ idx.push(i0,(j+1)%S,j); idx.push(i1,(N)*S+j,(N)*S+(j+1)%S); }
+  return {pos,nrm,col,bid,wgt,idx};
+}
+const frY=()=>()=>({fwd:[1,0,0],up:[0,1,0],side:[0,0,1]});
+
+function buildHorse(){
+  const P=[];
+  /* hindquarters (pelvis -> midback) */
+  P.push(loft(u=>[-0.95+0.60*u,1.52+0.10*Math.sin(u*2.2),0],frY(),
+    u=>[0.35+0.09*Math.sin(Math.PI*u),0.28+0.09*Math.sin(Math.PI*u)],
+    u=>{const w=smooth(clamp(u*1.5,0,1));return [0,1-w,1,w];},
+    (u,th)=>shade(C_COAT,(0.90+0.16*u)*(Math.sin(th)>0.4?1.12:1)),18,16));
+  /* barrel (midback -> chest) */
+  P.push(loft(u=>[-0.40+1.30*u,1.545+0.02*Math.sin(u*3),0],frY(),
+    u=>[0.355+0.045*Math.sin(Math.PI*Math.min(1,u*1.05))*(1-0.25*u),
+         0.255+0.05*Math.sin(Math.PI*u)*(1-0.25*u)],
+    u=>{const w=smooth(clamp((u-0.40)/0.3,0,1));return [1,1-w,2,w];},
+    (u,th)=>shade(C_COAT,(0.94+0.10*Math.sin(u*2.2))*(Math.sin(th)>0.5?1.16:(Math.sin(th)<-0.7?0.84:1))),22,16));
+  /* neck (chest-top -> poll) */
+  P.push(loft(u=>{const a=u*0.95;return [0.82+0.78*Math.sin(a),1.72+0.50*(1-Math.cos(a*1.02)),0];},
+    u=>{const ang=1.02-u*0.62;return {fwd:vN([Math.cos(ang),Math.sin(ang),0]),up:vN([-Math.sin(ang),Math.cos(ang),0]),side:[0,0,1]};},
+    u=>[0.168*(1-u)+0.075*u+0.026*Math.sin(Math.PI*u),0.096*(1-u)+0.046*u],
+    u=>{const w=smooth(clamp((u-0.50)/0.4,0,1));return [3,1-w,4,w];},
+    (u,th)=>shade(C_COAT,(0.90+0.18*u)*(Math.sin(th)>0.4?1.14:1)),18,12));
+  /* head (skull -> muzzle) */
+  P.push(loft(u=>{const a=u*0.80;return [1.46+0.60*Math.sin(a),1.94-0.24*(1-Math.cos(a*1.05)),0];},
+    u=>{const ang=-0.08-u*0.50;return {fwd:vN([Math.cos(ang),Math.sin(ang),0]),up:vN([-Math.sin(ang),Math.cos(ang),0]),side:[0,0,1]};},
+    u=> u<0.45 ? [0.118,0.104+0.026*Math.sin(u/0.45*Math.PI)] :
+             [0.118-0.050*((u-0.45)/0.55),0.104-0.030*((u-0.45)/0.55)],
+    ()=>[5,1,5,0],
+    (u,th)=> u>0.84 ? shade(C_MUZZ,0.95+0.12*Math.sin(th)) :
+             shade(C_COAT,(0.94+0.10*u)*(Math.sin(th)>0.3?1.12:1)),22,12));
+  /* jaw bulges, ears, eyes */
+  for(const s of[-1,1]){
+    P.push(loft(u=>[1.28-0.10*u,1.77-0.08*u,s*0.070],
+      ()=>({fwd:vN([0.25,-0.97,0]),up:vN([0.97,0.25,0]),side:[0,0,1]}),
+      u=>[0.055*(1-u*0.5),0.048*(1-u*0.5)], ()=>[5,1,5,0], u=>shade(C_COAT,0.92),7,8));
+    P.push(loft(u=>[1.45-0.05*u,1.99+0.17*u,s*(0.052+0.016*u)],
+      ()=>({fwd:vN([-0.16,0.99,0]),up:vN([0.99,0.16,0]),side:[0,0,1]}),
+      u=>[0.030*(1-u*0.72),0.018*(1-u*0.72)], ()=>[5,1,5,0], u=>shade(C_COAT,0.88),7,8));
+    P.push(loft(u=>[1.40,1.875,s*(0.086+0.012*Math.sin(u*Math.PI))],
+      u=>({fwd:[1,0,0],up:vN([0,Math.cos(u*Math.PI),Math.sin(u*Math.PI)*s]),side:[0,0,1]}),
+      u=>[0.026,0.022], ()=>[5,1,5,0], ()=>C_EYE,5,8));
+  }
+  /* shoulder & haunch muscle masses */
+  LEGS.forEach((L,i)=>{
+    if(L.fore){
+      P.push(loft(u=>[0.80-0.16*u,1.46-0.30*u,L.side*0.20],
+        ()=>({fwd:vN([-0.48,-0.88,0]),up:vN([0.88,-0.48,0]),side:[0,0,1]}),
+        u=>[0.130*(1-u*0.55),0.096*(1-u*0.5)],
+        u=>{const w=smooth(clamp(u*1.3,0,1));return [2,1-w,LEG_BASE[i],w];},
+        u=>shade(C_COAT,0.90+0.10*u),9,10));
+    }else{
+      P.push(loft(u=>[-0.62+0.05*u,1.42-0.24*u,L.side*0.24],
+        ()=>({fwd:vN([0.22,-0.98,0]),up:vN([0.98,0.22,0]),side:[0,0,1]}),
+        u=>[0.150*(1-u*0.55),0.112*(1-u*0.5)],
+        u=>{const w=smooth(clamp(u*1.3,0,1));return [0,1-w,LEG_BASE[i],w];},
+        u=>shade(C_COAT,0.88+0.10*u),9,10));
+    }
+  });
+  /* legs — 4 segments each, authored straight along the L.rest chains
+     (= the bind pose, see FR0) */
+  LEGS.forEach((L,i)=>{
+    const zb=L.side*0.185;
+    let base=[L.root[0],L.root[1],zb];
+    const R0=[ [0.096,0.084],[0.066,0.056],[0.046,0.040],[0.048,0.044] ];
+    const R1=[ [0.066,0.056],[0.046,0.040],[0.048,0.044],[0.042,0.040] ];
+    for(let s=0;s<4;s++){
+      const b0=LEG_BASE[i]+s, b1=LEG_BASE[i]+Math.min(3,s+1);
+      const dz=s===3?0.025*L.side:0;
+      P.push(loft(u=>[ base[0]+L.rest[s][0]*L.L[s]*u, base[1]+L.rest[s][1]*L.L[s]*u, base[2]+dz*u ],
+        ()=>({fwd:L.rest[s],up:vN([-L.rest[s][1],L.rest[s][0],0]),side:[0,0,1]}),
+        u=>[R0[s][0]+(R1[s][0]-R0[s][0])*u, R0[s][1]+(R1[s][1]-R0[s][1])*u],
+        u=>{const w=smooth(clamp((u-0.70)/0.30,0,1));return [b0,1-w,b1,w];},
+        u=>{ if(s===3) return shade(C_HOOF,0.92+0.10*L.side*L.side);
+             return s>=2 ? shade(C_DARK,0.9+0.18*u) : shade(C_COAT,0.84+0.14*u); },
+        7,8));
+      base=vAdd(base,[L.rest[s][0]*L.L[s],L.rest[s][1]*L.L[s],dz]);
+    }
+  });
+  const out={P:[],N:[],C:[],Bi:[],W:[],I:[]};
+  for(const q of P){
+    const off=out.P.length/3;
+    out.P.push(...q.pos); out.N.push(...q.nrm); out.C.push(...q.col);
+    out.Bi.push(...q.bid); out.W.push(...q.wgt);
+    for(const k of q.idx) out.I.push(k+off);
+  }
+  return {P:new Float32Array(out.P),N:new Float32Array(out.N),C:new Float32Array(out.C),
+          Bi:new Float32Array(out.Bi),W:new Float32Array(out.W),I:new Uint16Array(out.I)};
+}
+
+/* ---------------------------------------------------------------------------
+   Bone frames + binding reference
+   --------------------------------------------------------------------------- */
+function boneMT(origin,dirX,upHint){
+  const X=vN(dirX);
+  // Planar rig: complete the frame by rotating X +90° in x-y instead of
+  // Gram-Schmidt against a hint vector — GS collapses to noise when X is
+  // near the hint (vertical legs) and flips 180° when a hint-switch crosses
+  // (backward legs). X ↦ (−Xy, Xx, 0) is continuous for every sweep of a
+  // limb in the x-y plane, keeps Z = +z at bind and runtime alike (no
+  // stacked ±0.185 z translations), and is the same pure function of X at
+  // bind, so identity-at-bind is preserved.
+  void upHint;
+  const xy=Math.hypot(X[0],X[1]);
+  const Y = xy>1e-3 ? [ -X[1]/xy, X[0]/xy, 0 ] : [0,-1,0]; // ±z axis: pick any stable Y
+  const Z=vN([X[1]*Y[2]-X[2]*Y[1], X[2]*Y[0]-X[0]*Y[2], X[0]*Y[1]-X[1]*Y[0]]);
+  const m=new Float32Array([X[0],X[1],X[2],0, Y[0],Y[1],Y[2],0, Z[0],Z[1],Z[2],0, origin[0],origin[1],origin[2],1]);
+  return {m, inv:mat4invert(m)};
+}
+/* skeleton frames at a given time (spine + head + 4 legs) */
+function framesOf(t){
+  const body=bodyState(t),sp=solveSpine(t,body);
+  const legs=LEGS.map(L=>solveLeg(t,L,body));
+  const F=new Array(NBONES);
+  for(let i=0;i<NBONES;i++)F[i]={m:M4.id(),inv:M4.id()};
+  const so=[sp.pelvisW,sp.midW,sp.chestW,sp.neck[0],sp.neck[1],sp.neck[2]];
+  const sd=[vSub(sp.midW,sp.pelvisW),vSub(sp.chestW,sp.midW),vSub(sp.neck[0],sp.chestW),
+            vSub(sp.neck[1],sp.neck[0]),vSub(sp.neck[2],sp.neck[1]),vSub(sp.neck[3],sp.neck[2])];
+  for(let i=0;i<6;i++)F[i]=boneMT(so[i],vN(sd[i]),[0,1,0]);
+  legs.forEach((lg,i)=>{for(let j=0;j<4;j++)F[LEG_BASE[i]+j]=boneMT(lg.p[j],vN(vSub(lg.p[j+1],lg.p[j])),[0,1,0]);});
+  return {F,body,sp,legs};
+}
+/* binding reference = the AUTHORED pose: body at origin, no pitch/flex, legs
+   straight along L.rest chains, neck straight to the nominal head target.
+   v(t) = Fkin(t) * inv(Fbind) * v0 → authored verts sit exactly on the bind
+   skeleton (identity at bind), and full-weight parts (hooves, head) move
+   rigidly with their bones at runtime; blends smooth the deltas. */
+const FR0=(function(){
+  const body={phi:0,x:0,y:1.585,pitch:0,roll:0,flex:0,ay:0};
+  const F=new Array(NBONES);
+  for(let i=0;i<NBONES;i++)F[i]={m:M4.id(),inv:M4.id()};
+  const so=[[0,1.585,0],[0.42,1.62,0],[0.90,1.58,0]];
+  const withers=[0.84,1.82,0];
+  const headT=[1.58,1.80,0];
+  const hints=[vN([0.55,0.83,0]),vN([0.72,0.69,0]),vN([0.92,0.39,0])];
+  const np=fabrik(withers,headT,[0.30,0.30,0.16],[0.02,0.01],hints);
+  const sp={pelvisW:so[0],midW:so[1],chestW:so[2],withers,neck:np};
+  const pts=[so[0],so[1],so[2],np[0],np[1],np[2]];
+  const dir=[vSub(so[1],so[0]),vSub(so[2],so[1]),vSub(np[0],so[2]),
+             vSub(np[1],np[0]),vSub(np[2],np[1]),vSub(np[3],np[2])];
+  for(let i=0;i<6;i++)F[i]=boneMT(pts[i],vN(dir[i]),[0,1,0]);
+  const legs=LEGS.map((L,i)=>{
+    const zb=L.side*0.185;
+    let p=[[L.root[0],L.root[1],zb]];
+    for(let s=0;s<4;s++) p.push(vAdd(p[s],vMul(L.rest[s],L.L[s])));
+    for(let j=0;j<4;j++) F[LEG_BASE[i]+j]=boneMT(p[j],vN(L.rest[j]),[0,1,0]);
+    return {p};
+  });
+  return {F,body,sp,legs};
+})();
+
+/* ---------------------------------------------------------------------------
+   WebGL
+   --------------------------------------------------------------------------- */
+const cv=document.getElementById('c');
+const gl=cv.getContext('webgl2',{antialias:true,alpha:false,preserveDrawingBuffer:true});
+if(!gl){ document.body.innerHTML='<p style="color:#fff;font:14px monospace;padding:2em">WebGL2 required</p>'; throw new Error('no webgl2'); }
+function sh(tp,src){const s=gl.createShader(tp);gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;}
+function prog(v,f){const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,v));
+  gl.attachShader(p,sh(gl.FRAGMENT_SHADER,f));gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));return p;}
+
+const LIT_VS=`#version 300 es
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec3 aCol;
+uniform mat4 uVP; uniform mat4 uLightVP;
+out vec3 vN; out vec3 vC; out vec3 vW; out vec4 vLS;
+void main(){ vW=aPos; vN=normalize(aNrm); vC=aCol; vLS=uLightVP*vec4(aPos,1.0);
+  gl_Position=uVP*vec4(aPos,1.0);
+}`;
+const SKIN_FS=`#version 300 es
+precision highp float;
+in vec3 vN; in vec3 vC; in vec3 vW; in vec4 vLS;
+uniform vec3 uLightDir; uniform vec3 uEye; uniform sampler2D uShadow;
+out vec4 o;
+float shadow(){
+  vec3 p=vLS.xyz/vLS.w*0.5+0.5; if(p.z>1.0)return 1.0;
+  vec2 tx=1.0/vec2(textureSize(uShadow,0)); float s=0.0;
+  for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++)
+    s+=(p.z-0.0032>texture(uShadow,p.xy+vec2(float(x),float(y))*tx).r)?0.0:1.0;
+  return s/9.0;
+}
+void main(){
+  vec3 N=normalize(vN),L=normalize(uLightDir),Vv=normalize(uEye-vW);
+  float wrap=clamp((dot(N,L)+0.30)/1.30,0.0,1.0);
+  float sh=mix(0.45,1.0,shadow());
+  vec3 H=normalize(L+Vv);
+  float spec=pow(max(dot(N,H),0.0),30.0)*0.45;
+  float rim=pow(1.0-max(dot(N,Vv),0.0),3.0)*0.22;
+  vec3 hemi=mix(vec3(0.22,0.20,0.26),vec3(0.44,0.50,0.58),N.y*0.5+0.5);
+  vec3 sun=vec3(1.0,0.80,0.55)*wrap*sh*1.5;
+  vec3 col=vC*(hemi+sun)+vec3(1.0,0.88,0.68)*spec*sh+vec3(0.95,0.72,0.45)*rim;
+  float fog=smoothstep(16.0,58.0,length(uEye-vW));
+  col=mix(col,vec3(0.93,0.62,0.40),fog*0.8);
+  o=vec4(col,1.0);
+}`;
+const GROUND_VS=`#version 300 es
+layout(location=0) in vec2 aXZ;
+uniform mat4 uVP; uniform mat4 uLightVP; uniform float uCamX;
+out vec3 vW; out vec4 vLS;
+void main(){ vW=vec3(aXZ.x+uCamX,0.0,aXZ.y); vLS=uLightVP*vec4(vW,1.0); gl_Position=uVP*vec4(vW,1.0); }`;
+const GROUND_FS=`#version 300 es
+precision highp float;
+in vec3 vW; in vec4 vLS;
+uniform sampler2D uShadow; uniform vec3 uEye;
+out vec4 o;
+const float PERIOD=50.0;          // == L: ground pattern loops in exactly 8 strides
+float h2(vec2 p){float s=sin(p.x*127.1+p.y*311.7)*43758.5453;return s-floor(s);}
+/* value noise tiled with integer period P on the x cell grid */
+float vn(vec2 p,vec2 cell,float P){
+  vec2 q=p/cell; vec2 i=floor(q),f=fract(q); f=f*f*(3.0-2.0*f);
+  vec2 wi=vec2(mod(i.x,P),i.y);
+  return mix(mix(h2(wi),h2(wi+vec2(1.0,0.0)),f.x),
+             mix(h2(wi+vec2(0.0,1.0)),h2(wi+vec2(1.0,1.0)),f.x),f.y);
+}
+float shadow(){
+  vec3 p=vLS.xyz/vLS.w*0.5+0.5; if(p.z>1.0)return 1.0;
+  vec2 tx=1.0/vec2(textureSize(uShadow,0)); float s=0.0;
+  for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++)
+    s+=(p.z-0.004>texture(uShadow,p.xy+vec2(float(x),float(y))*tx).r)?0.0:1.0;
+  return s/9.0;
+}
+void main(){
+  float x=vW.x;
+  float p1=vn(vec2(x,vW.z),vec2(5.0,7.0),PERIOD/5.0);
+  float p2=vn(vec2(x+31.0,vW.z*1.3+7.0),vec2(1.7,2.3),PERIOD/1.7);
+  float p3=vn(vec2(x,vW.z),vec2(0.28,0.33),PERIOD/0.28);
+  vec3 g1=vec3(0.305,0.315,0.155), g2=vec3(0.215,0.235,0.115), dry=vec3(0.45,0.375,0.205);
+  vec3 col=mix(g2,g1,p1);
+  col=mix(col,dry,smoothstep(0.62,0.88,p2));
+  col*=0.90+0.20*p3;
+  float sh=mix(0.40,1.0,shadow());
+  col*=vec3(1.0,0.85,0.60)*sh*1.30+vec3(0.155,0.175,0.215);
+  float fog=smoothstep(15.0,72.0,length(uEye-vW));
+  col=mix(col,vec3(0.93,0.62,0.40),fog);
+  o=vec4(col,1.0);
+}`;
+const SKY_VS=`#version 300 es
+out vec2 vU; void main(){ vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2)); vU=p;
+  gl_Position=vec4(p*2.0-1.0,0.0,1.0); }`;
+const SKY_FS=`#version 300 es
+precision highp float; in vec2 vU;
+uniform vec3 uFwd; uniform vec3 uRight; uniform vec3 uUp; uniform vec2 uTan;
+uniform vec3 uLightDir; out vec4 o;
+void main(){
+  vec3 dir=normalize(uFwd + uRight*(vU.x*2.0-1.0)*uTan.x + uUp*(vU.y*2.0-1.0)*uTan.y);
+  float y=dir.y;
+  vec3 zen=vec3(0.155,0.195,0.40), hor=vec3(0.985,0.63,0.34), mid=vec3(0.55,0.36,0.42);
+  float t=max(y,0.0);
+  vec3 col=mix(hor,mid,smoothstep(0.0,0.16,t));
+  col=mix(col,zen,smoothstep(0.12,0.62,t));
+  col=mix(col,vec3(0.62,0.44,0.31),smoothstep(-0.06,0.0,-y)*0.7);
+  float sd=dot(dir,normalize(uLightDir));
+  col+=vec3(1.0,0.75,0.45)*pow(max(sd,0.0),520.0)*1.8;
+  col+=vec3(1.0,0.6,0.30)*pow(max(sd,0.0),14.0)*0.30;
+  float band=smoothstep(0.02,0.24,y)*smoothstep(0.58,0.2,y);
+  float cl=sin(dir.x*9.0+y*26.0)*0.5+0.5; cl*=sin(dir.x*23.0-y*9.0)*0.5+0.5;
+  col=mix(col,vec3(0.99,0.72,0.52),cl*band*0.35);
+  o=vec4(col,1.0);
+}`;
+const DYN_VS=`#version 300 es
+layout(location=0) in vec3 aPos; layout(location=1) in vec4 aCol; layout(location=2) in vec3 aNrm;
+uniform mat4 uVP; out vec4 vC;
+void main(){ float l=max(dot(normalize(aNrm),normalize(vec3(-0.42,0.50,0.30))),0.0);
+  vC=vec4(aCol.rgb*(0.45+0.75*l),aCol.a); gl_Position=uVP*vec4(aPos,1.0); }`;
+const DYN_FS=`#version 300 es
+precision mediump float; in vec4 vC; out vec4 o; void main(){o=vC;}`;
+
+const pSkin=prog(LIT_VS,SKIN_FS), pGround=prog(GROUND_VS,GROUND_FS),
+      pSky=prog(SKY_VS,SKY_FS), pDyn=prog(DYN_VS,DYN_FS);
+
+const HORSE=buildHorse();
+/* CPU skinning: verts authored in bind space; each frame writes world-space
+   positions/normals into a dynamic buffer (≈3.6k verts — engine-proof against
+   driver quirks with integer attributes). */
+const NV=HORSE.P.length/3;
+const dPos=new Float32Array(NV*3), dNrm=new Float32Array(NV*3);
+function upload(){
+  const vao=gl.createVertexArray(); gl.bindVertexArray(vao);
+  const mkDyn=(loc,arr,n)=>{const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);
+    gl.bufferData(gl.ARRAY_BUFFER,arr.byteLength,gl.DYNAMIC_DRAW);gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc,n,gl.FLOAT,false,0,0);return b;};
+  const bP=mkDyn(0,dPos,3), bN=mkDyn(1,dNrm,3);
+  {const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,HORSE.C,gl.STATIC_DRAW);
+   gl.enableVertexAttribArray(2);gl.vertexAttribPointer(2,3,gl.FLOAT,false,0,0);}
+  const ib=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,HORSE.I,gl.STATIC_DRAW);
+  gl.bindVertexArray(null); return {vao,n:HORSE.I.length,bP,bN};
+}
+const HM=upload();
+/* CPU skinning helpers: apply bone matrices directly in skinUpdate */
+function skinUpdate(boneMats){
+  const P=HORSE.P,Nc=HORSE.N,Bi=HORSE.Bi,Wg=HORSE.W;
+  for(let v=0;v<NV;v++){
+    const b0=Bi[2*v]|0, b1=Bi[2*v+1]|0, w0=Wg[2*v], w1=Wg[2*v+1];
+    const ax=P[3*v], ay=P[3*v+1], az=P[3*v+2];
+    const ux=Nc[3*v], uy=Nc[3*v+1], uz=Nc[3*v+2];
+    let px=0,py=0,pz=0,nx=0,ny=0,nz=0,M;
+    if(w0>0){ M=M0(b0);
+      px+=(M[0]*ax+M[4]*ay+M[8]*az+M[12])*w0;
+      py+=(M[1]*ax+M[5]*ay+M[9]*az+M[13])*w0;
+      pz+=(M[2]*ax+M[6]*ay+M[10]*az+M[14])*w0;
+      nx+=(M[0]*ux+M[4]*uy+M[8]*uz)*w0;
+      ny+=(M[1]*ux+M[5]*uy+M[9]*uz)*w0;
+      nz+=(M[2]*ux+M[6]*uy+M[10]*uz)*w0; }
+    if(w1>0){ M=M0(b1);
+      px+=(M[0]*ax+M[4]*ay+M[8]*az+M[12])*w1;
+      py+=(M[1]*ax+M[5]*ay+M[9]*az+M[13])*w1;
+      pz+=(M[2]*ax+M[6]*ay+M[10]*az+M[14])*w1;
+      nx+=(M[0]*ux+M[4]*uy+M[8]*uz)*w1;
+      ny+=(M[1]*ux+M[5]*uy+M[9]*uz)*w1;
+      nz+=(M[2]*ux+M[6]*uy+M[10]*uz)*w1; }
+    dPos[3*v]=px; dPos[3*v+1]=py; dPos[3*v+2]=pz;
+    const nl=Math.hypot(nx,ny,nz)||1;
+    dNrm[3*v]=nx/nl; dNrm[3*v+1]=ny/nl; dNrm[3*v+2]=nz/nl;
+  }
+}
+let CUR_BONES=null;
+const M0=i=>CUR_BONES[i];
+
+const gVao=gl.createVertexArray(); gl.bindVertexArray(gVao);
+{const g=new Float32Array([-140,-70, 140,-70, 140,70, -140,-70, 140,70, -140,70]);
+ const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,g,gl.STATIC_DRAW);
+ gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);}
+gl.bindVertexArray(null);
+
+const dynVao=gl.createVertexArray(); gl.bindVertexArray(dynVao);
+const dynPos=gl.createBuffer(),dynCol=gl.createBuffer(),dynNrm=gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER,dynPos);gl.bufferData(gl.ARRAY_BUFFER,60000,gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+gl.bindBuffer(gl.ARRAY_BUFFER,dynCol);gl.bufferData(gl.ARRAY_BUFFER,80000,gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,4,gl.FLOAT,false,0,0);
+gl.bindBuffer(gl.ARRAY_BUFFER,dynNrm);gl.bufferData(gl.ARRAY_BUFFER,60000,gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(2);gl.vertexAttribPointer(2,3,gl.FLOAT,false,0,0);
+gl.bindVertexArray(null);
+
+const SHS=512;
+const shTex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,shTex);
+gl.texImage2D(gl.TEXTURE_2D,0,gl.DEPTH_COMPONENT24,SHS,SHS,0,gl.DEPTH_COMPONENT,gl.UNSIGNED_INT,null);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+const shFbo=gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER,shFbo);
+gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.TEXTURE_2D,shTex,0);
+gl.drawBuffers([gl.NONE]); gl.readBuffer(gl.NONE);
+gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+
+/* uniform cache */
+const U=(p,names)=>{const o={};for(const n of names)o[n]=gl.getUniformLocation(p,n);return o;};
+const uS=U(pSkin,['uVP','uLightVP','uLightDir','uEye','uShadow']);
+const uG=U(pGround,['uVP','uLightVP','uCamX','uEye','uShadow']);
+const uK=U(pSky,['uFwd','uRight','uUp','uTan','uLightDir']);
+const uD=U(pDyn,['uVP']);
+</script>
+<script>
+'use strict';
+/* ===========================================================================
+   Part 2 — secondary motion, camera, audio, loop, DEV hook
+   =========================================================================== */
+const LIGHT_DIR=vN([-0.42,0.50,0.30]);
+let camRight=[1,0,0],camUp=[0,1,0];
+
+function neckCurve(sp,u){
+  const p=sp.neck, k=u*(p.length-1), i=Math.min(p.length-2,Math.floor(k)), f=k-i;
+  return vMix(p[i],p[i+1],f);
+}
+function pushQ(pos,nrm,col,a,b,c,d,n,cc){
+  pos.push(a[0],a[1],a[2],b[0],b[1],b[2],c[0],c[1],c[2],a[0],a[1],a[2],c[0],c[1],c[2],d[0],d[1],d[2]);
+  nrm.push(n[0],n[1],n[2],n[0],n[1],n[2],n[0],n[1],n[2],n[0],n[1],n[2],n[0],n[1],n[2],n[0],n[1],n[2]);
+  const a4=[cc[0],cc[1],cc[2],cc[3]||1];
+  for(let k=0;k<6;k++)col.push(a4[0],a4[1],a4[2],a4[3]);
+}
+function hair(t,fr){
+  const {body,sp,legs}=fr;
+  const phi=frac(t/T);
+  const ay=clamp(body.ay*0.010,-1.5,1.5);
+  const pos=[],col=[],nrm=[];
+  const MOON=[0.125,0.088,0.05];
+  /* mane: 13 ribbons along the neck crest, wave rides phi + neck lay */
+  const NS=13;
+  for(let s=0;s<NS;s++){
+    const su=0.04+0.90*(s/(NS-1));
+    const base=vAdd(neckCurve(sp,su),[-0.03,0.135,0]);
+    const grow=0.06+0.17*(1-Math.abs(su-0.42));
+    let prev=null;
+    for(let i=0;i<=6;i++){
+      const v=i/6;
+      const wob=Math.sin(2*Math.PI*(phi*2+v*1.15+s*0.37))*0.035*v
+              + Math.sin(2*Math.PI*(phi*1+ v*0.7-s*0.21))*0.015*v;
+      const p=vAdd(base,[ -(0.10+0.34*su)*v - grow*0.55*v*v,
+                          -0.10*v*v - grow*v + 0.02*ay*v*v + wob,
+                          (s-(NS-1)/2)*0.011*(1+v*1.4) ]);
+      if(prev){
+        const w=0.020*(1-v*0.35);
+        const A=[prev[0],prev[1],prev[2]+w],B=[p[0],p[1],p[2]+w],C=[p[0],p[1],p[2]-w],Dd=[prev[0],prev[1],prev[2]-w];
+        pushQ(pos,nrm,col,A,B,C,Dd,[0,0,1],shade(MOON,0.7+0.55*v));
+      }
+      prev=p;
+    }
+  }
+  /* tail: 9 plumes, hang + sway + lift on heave */
+  const anchor=vAdd(sp.pelvisW,[-0.58,0.12,0]);
+  const TS=9;
+  for(let s=0;s<TS;s++){
+    const spn=(s/(TS-1)-0.5);
+    let prev=null;
+    for(let i=0;i<=12;i++){
+      const v=i/12;
+      const sway=Math.sin(2*Math.PI*(phi+v*0.8+s*0.11))*0.08*v*v;
+      const rear=-0.10*Math.sin(2*Math.PI*phi+v)*v*0.35;
+      const lift=Math.max(0,-ay)*0.05*v;
+      const p=[ anchor[0]-0.14*v-0.62*v*v + rear,
+                anchor[1]-0.86*v-0.22*v*v - lift + sway*0.3,
+                anchor[2]+spn*0.16*(1-v*0.4)+sway ];
+      if(prev){
+        const w=0.085*(1-v*0.6);
+        const A=[prev[0],prev[1],prev[2]+w],B=[p[0],p[1],p[2]+w],C=[p[0],p[1],p[2]-w],Dd=[prev[0],prev[1],prev[2]-w];
+        pushQ(pos,nrm,col,A,B,C,Dd,[0,0,1],shade(MOON,0.65+0.55*v));
+      }
+      prev=p;
+    }
+  }
+  /* fetlock tufts */
+  legs.forEach((lg,i)=>{
+    const tip=lg.p[3];
+    for(let s=0;s<3;s++){
+      const a=s/3*Math.PI*2;
+      const q=[tip[0]+0.02*Math.cos(a),tip[1]+0.015,tip[2]+0.02*Math.sin(a)];
+      const r=[tip[0]-0.035,tip[1]-0.05+0.008*Math.sin(2*Math.PI*phi*2+s),tip[2]+0.028*Math.sin(a+1)];
+      const u=[tip[0]-0.005,tip[1]+0.02,tip[2]-0.028*Math.sin(a)];
+      const n=vN([Math.sin(a),0.4,Math.cos(a)]);
+      pos.push(q[0],q[1],q[2],r[0],r[1],r[2],u[0],u[1],u[2]);
+      nrm.push(n[0],n[1],n[2],n[0],n[1],n[2],n[0],n[1],n[2]);
+      const cc=shade(MOON,0.75);
+      col.push(cc[0],cc[1],cc[2],1,cc[0],cc[1],cc[2],1,cc[0],cc[1],cc[2],1);
+    }
+  });
+  /* dust: pure function of phi — 8 ground-locked puffs per hoofbeat cycle */
+  const camB=[camRight,camUp];
+  for(let li=0;li<4;li++){
+    const leg=LEGS[li];
+    const k=frac(phi-leg.td);
+    const K=leg.st;                       // strike happens at k=0
+    if(k>0.40||k<0.0005) continue;
+    const ka=k/0.40;
+    const tTd=lastTD(t,leg.td);
+    const ax=X(tTd)+leg.tdX;
+    for(let s=0;s<7;s++){
+      const hs=frac(Math.sin(li*12.9+s*78.2)*43758.5453);
+      const hs2=frac(Math.sin(li*93.1+s*27.7)*12543.123);
+      const r=(0.020+ka*0.16)*(0.6+hs);
+      const y=HOOF_H*0.35+ka*(0.30+hs2*0.55)*(1-ka*0.65);
+      const x=ax+ka*(-V*0.06)*(0.3+hs)+(hs-0.5)*0.10;
+      const z=leg.side*0.19+(hs2-0.5)*0.15;
+      const al=(1-ka)*0.5*(0.45+0.55*hs);
+      const mk=(sx,sy)=>[x+sx*r*camB[0][0]+sy*r*camB[1][0], y+sy*r*1.0, z+sx*r*camB[0][2]+sy*r*camB[1][2]];
+      const A=mk(-1,-0.3),B=mk(1,-0.3),C=mk(1,1),Dd=mk(-1,1);
+      const cc=[0.83,0.66,0.47,al];
+      pushQ(pos,nrm,col,A,B,C,Dd,[0.4,0.8,0.3],cc);
+    }
+  }
+  return {pos,col,nrm};
+}
+
+/* ---------------- camera ---------------- */
+let yawOff=0,pitchOff=0,zoom=1,dragging=false,lastX=0,lastY=0;
+function camPose(t,body){
+  const yaw=-1.47+yawOff+0.10*Math.sin(2*Math.PI*frac(t/T)+0.4);
+  const pit=0.12+pitchOff;
+  const dist=6.3*zoom;
+  const tx=body.x+0.12,ty=1.20,tz=0;
+  return { ex:tx+dist*Math.cos(pit)*Math.cos(yaw),
+           ey:ty+dist*Math.sin(pit)+0.30*(body.y-1.585),
+           ez:tz+dist*Math.cos(pit)*Math.sin(yaw), tx,ty,tz };
+}
+
+/* ---------------- audio ---------------- */
+let AC=null,windOn=false;
+function unlockAudio(){
+  if(AC)return;
+  try{
+    AC=new (window.AudioContext||window.webkitAudioContext)();
+    const n=AC.sampleRate*2,buf=AC.createBuffer(1,n,AC.sampleRate),d=buf.getChannelData(0);
+    let last=0;for(let i=0;i<n;i++){const w=Math.random()*2-1;last=(last+0.02*w)/1.02;d[i]=last*3;}
+    const src=AC.createBufferSource();src.buffer=buf;src.loop=true;
+    const f=AC.createBiquadFilter();f.type='lowpass';f.frequency.value=420;
+    const g=AC.createGain();g.gain.value=0.028;
+    src.connect(f);f.connect(g);g.connect(AC.destination);src.start();windOn=true;
+  }catch(e){AC=null;}
+}
+function hoofbeat(fore,delay){
+  if(!AC)return;
+  const t0=AC.currentTime+Math.max(0,delay);
+  const o=AC.createOscillator(),g=AC.createGain();
+  o.type='sine';o.frequency.setValueAtTime(fore?92:74,t0);
+  o.frequency.exponentialRampToValueAtTime(fore?40:32,t0+0.09);
+  g.gain.setValueAtTime(fore?0.15:0.21,t0);g.gain.exponentialRampToValueAtTime(0.001,t0+0.14);
+  o.connect(g);g.connect(AC.destination);o.start(t0);o.stop(t0+0.16);
+  const nb=AC.createBuffer(1,Math.floor(AC.sampleRate*0.05),AC.sampleRate),dd=nb.getChannelData(0);
+  for(let i=0;i<dd.length;i++)dd[i]=(Math.random()*2-1)*Math.pow(1-i/dd.length,2);
+  const ns=AC.createBufferSource();ns.buffer=nb;
+  const nf=AC.createBiquadFilter();nf.type='bandpass';nf.frequency.value=fore?1500:1050;nf.Q.value=1.2;
+  const ng=AC.createGain();ng.gain.value=fore?0.05:0.07;
+  ns.connect(nf);nf.connect(ng);ng.connect(AC.destination);ns.start(t0);
+}
+
+/* ---------------- loop ---------------- */
+let simT=0,lastMs=0,frames=0,pinned=null;
+const lastBeat={LH:-9,RH:-9,LF:-9,RF:-9};
+const tipEl=document.getElementById('tip');
+addEventListener('pointerdown',()=>{unlockAudio();tipEl.classList.add('off');},{passive:true});
+cv.addEventListener('pointerdown',e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;});
+addEventListener('pointerup',()=>dragging=false);
+addEventListener('pointermove',e=>{if(!dragging)return;
+  yawOff-=(e.clientX-lastX)*0.005;pitchOff=clamp(pitchOff+(e.clientY-lastY)*0.003,-0.35,0.5);
+  lastX=e.clientX;lastY=e.clientY;});
+addEventListener('wheel',e=>{zoom=clamp(zoom+e.deltaY*0.0012,0.55,1.8);},{passive:true});
+
+function resize(){const dpr=Math.min(devicePixelRatio||1,1.75);
+  const w=Math.round(innerWidth*dpr),h=Math.round(innerHeight*dpr);
+  if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;}}
+
+function beatCheck(t){
+  if(!AC)return;
+  const c=Math.floor(t/T);
+  for(const leg of LEGS){
+    const bt=T*(c+leg.td);
+    if(t>=bt && t-bt<0.05 && lastBeat[leg.name]!==bt){
+      lastBeat[leg.name]=bt; hoofbeat(leg.fore,bt-t);
+    }
+  }
+}
+
+function render(t){
+  resize();
+  gl.viewport(0,0,cv.width,cv.height);
+  const fr=framesOf(t);
+  const body=fr.body;
+  const cam=camPose(t,body);
+  const P=M4.persp(0.72,cv.width/cv.height,0.1,220);
+  const Vm=M4.look(cam.ex,cam.ey,cam.ez,cam.tx,cam.ty,cam.tz);
+  const VP=M4.mul(P,Vm);
+  camRight=[Vm[0],Vm[4],Vm[8]]; camUp=[Vm[1],Vm[5],Vm[9]];
+  const lo=4.4;
+  const Lv=M4.look(body.x+LIGHT_DIR[0]*14,LIGHT_DIR[1]*14,LIGHT_DIR[2]*14, body.x,1.0,0);
+  const LVP=M4.mul(M4.ortho(-lo,lo,-lo,lo,1,30),Lv);
+  const boneMats=new Array(NBONES);
+  for(let i=0;i<NBONES;i++) boneMats[i]=M4.mul(fr.F[i].m,FR0.F[i].inv);
+  CUR_BONES=boneMats;
+  skinUpdate(boneMats);
+  /* shadow pass */
+  gl.bindFramebuffer(gl.FRAMEBUFFER,shFbo);
+  gl.viewport(0,0,SHS,SHS);
+  gl.enable(gl.DEPTH_TEST);gl.depthMask(true);
+  gl.clear(gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(pSkin);
+  gl.uniformMatrix4fv(uS.uVP,false,LVP);
+  gl.uniformMatrix4fv(uS.uLightVP,false,M4.id());
+  gl.uniform3f(uS.uLightDir,LIGHT_DIR[0],LIGHT_DIR[1],LIGHT_DIR[2]);
+  gl.uniform3f(uS.uEye,body.x,6,0);
+  gl.uniform1i(uS.uShadow,0);
+  gl.bindVertexArray(HM.vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER,HM.bP);gl.bufferSubData(gl.ARRAY_BUFFER,0,dPos);
+  gl.bindBuffer(gl.ARRAY_BUFFER,HM.bN);gl.bufferSubData(gl.ARRAY_BUFFER,0,dNrm);
+  gl.drawElements(gl.TRIANGLES,HM.n,gl.UNSIGNED_SHORT,0);
+  /* main pass */
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.viewport(0,0,cv.width,cv.height);
+  gl.disable(gl.DEPTH_TEST);gl.depthMask(true);
+  gl.clearColor(0.15,0.16,0.3,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(pSky);
+  { const fd=vN([cam.tx-cam.ex,cam.ty-cam.ey,cam.tz-cam.ez]);
+    gl.uniform3f(uK.uFwd,fd[0],fd[1],fd[2]);
+    gl.uniform3f(uK.uRight,camRight[0],camRight[1],camRight[2]);
+    gl.uniform3f(uK.uUp,camUp[0],camUp[1],camUp[2]);
+    gl.uniform2f(uK.uTan,Math.tan(0.72/2)*cv.width/cv.height,Math.tan(0.72/2));
+    gl.uniform3f(uK.uLightDir,LIGHT_DIR[0],LIGHT_DIR[1],LIGHT_DIR[2]); }
+  gl.drawArrays(gl.TRIANGLES,0,3);
+  gl.enable(gl.DEPTH_TEST);
+  gl.useProgram(pGround);
+  gl.uniformMatrix4fv(uG.uVP,false,VP);
+  gl.uniformMatrix4fv(uG.uLightVP,false,LVP);
+  gl.uniform1f(uG.uCamX,body.x);
+  gl.uniform3f(uG.uEye,cam.ex,cam.ey,cam.ez);
+  gl.uniform1i(uG.uShadow,0);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,shTex);
+  gl.bindVertexArray(gVao);gl.drawArrays(gl.TRIANGLES,0,6);
+  gl.useProgram(pSkin);
+  gl.uniformMatrix4fv(uS.uVP,false,VP);
+  gl.uniformMatrix4fv(uS.uLightVP,false,LVP);
+  gl.uniform3f(uS.uEye,cam.ex,cam.ey,cam.ez);
+  gl.bindVertexArray(HM.vao);
+  gl.drawElements(gl.TRIANGLES,HM.n,gl.UNSIGNED_SHORT,0);
+  const dyn=hair(t,fr);
+  gl.useProgram(pDyn);
+  gl.uniformMatrix4fv(uD.uVP,false,VP);
+  gl.bindVertexArray(dynVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER,dynPos);gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array(dyn.pos));
+  gl.bindBuffer(gl.ARRAY_BUFFER,dynCol);gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array(dyn.col));
+  gl.bindBuffer(gl.ARRAY_BUFFER,dynNrm);gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array(dyn.nrm));
+  gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+  gl.depthMask(false);
+  gl.drawArrays(gl.TRIANGLES,0,dyn.pos.length/3);
+  gl.depthMask(true);gl.disable(gl.BLEND);
+  gl.bindVertexArray(null);
+  frames++;
+  return fr;
+}
+const framesOfGlobal=framesOf;   /* framesOf lives in part 1 */
+requestAnimationFrame(ms=>{lastMs=ms;loop(ms);});
+function loop(ms){
+  const dt=Math.min(0.05,(ms-lastMs)/1000);lastMs=ms;
+  if(pinned!==null)simT=pinned;else simT+=dt;
+  beatCheck(simT);
+  render(simT);
+  requestAnimationFrame(loop);
+}
+
+/* ---------------- DEV hook ---------------- */
+function keyPoints(t){
+  const fr=framesOf(t);const pts=[];const bx=X(t);
+  LEGS.forEach((L,i)=>{
+    pts.push(vSub(fr.legs[i].p[3],[bx,0,0]));                 // fetlock (body-relative)
+    pts.push(vSub(fr.legs[i].p[4],[bx,0,0]));                 // hoof tip
+  });
+  pts.push(vSub(fr.sp.pelvisW,[bx,0,0]),vSub(fr.sp.chestW,[bx,0,0]),
+           vSub(fr.sp.neck[2],[bx,0,0]),vSub(fr.sp.neck[3],[bx,0,0]));
+  return pts;
+}
+window.__furlongTest={
+  ready:true,
+  get frames(){return frames;},
+  info(){return{T,V,D,LOOP,L,order:LEGS.map(l=>l.name),stance:LEGS.map(l=>l.st),
+    td:LEGS.map(l=>l.td),tris:HM.n/3,bones:NBONES};},
+  setT(t){pinned=t;render(t);},
+  unpin(){pinned=null;},
+  suspension(){let n=0,k=0;for(let i=0;i<400;i++){const f=i/400;
+    let g=0;for(const L of LEGS){const u=frac(f-L.td);if(u<L.st)g++;}
+    n++;if(!g)k++;}return k/n;},
+  slip(){let worst=0;
+    LEGS.forEach((L,i)=>{
+      for(let s=0;s<=40;s++){
+        const t=T*(5+L.td+L.st*s/40*(1-1e-4));
+        const fr=framesOf(t);
+        const tip=fr.legs[i].p[4];
+        const anchor=X(lastTD(t,L.td))+L.tdX;
+        worst=Math.max(worst,Math.abs(tip[0]-anchor));
+      }});
+    return worst;},
+  seam(){const a=keyPoints(T*3),b=keyPoints(T*11);let m=0;
+    for(let i=0;i<a.length;i++)m=Math.max(m,vLen(vSub(a[i],b[i])));return m;},
+  groundedAt(t){const phi=frac(t/T);return LEGS.map(L=>frac(phi-L.td)<L.st);},
+  dustAlive(t){const phi=frac(t/T);return LEGS.some(L=>{const k=frac(phi-L.td);return k>0.0005&&k<0.40;});},
+  strideAdvance(){return {expect:D, got:X(LOOP*T+10*T)-X(10*T)-0, net:X(T)-X(0)};},
+};
+</script>
+<script>
+window.DEMO_CREDITS={
+  name:'FURLONG', accent:'#e8a24a',
+  issues:[2182], span: '~1 h', shipped:'2026-11-14',
+  assist:'solo',
+  note:'no low-poly limit: lofted smooth anatomy, ground-locked hooves, real shadow map — all procedural WebGL2.',
+};
+</script>
+<script src="feedback.js"></script>
+<script src="credits.js"></script>
+<script>
+// #1078: keep the corner tag clear of the HUD caption on narrow screens
+function reserveTag(){
+  var s=document.getElementById('hud').getBoundingClientRect();
+  var t=document.getElementById('credits-tag');
+  var clash=t&&s.right>t.getBoundingClientRect().left&&s.bottom>t.getBoundingClientRect().top;
+  document.documentElement.style.setProperty('--credits-bottom',clash?Math.round(s.height+14)+'px':'0px');
+}
+reserveTag(); window.addEventListener('load',reserveTag); window.addEventListener('resize',reserveTag); setTimeout(reserveTag,0);
+</script>
+</body>
+</html>

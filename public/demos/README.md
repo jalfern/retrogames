@@ -128,7 +128,50 @@ the final policy). Gated by `npm run learnedwalkcheck` (30 gates incl. a
 mirror mutant — flip `hipR: a[0] * CAP` to `hipR: 0` in learnedwalk.core.js
 torquesOf and six gates go RED — demonstrated 2026-10-31, then restored).
 
+## furlong.html engine notes (#2182 — FURLONG)
+
+The no-limit sibling of STRIDELINE: a golden-hour thoroughbred at a true four-beat
+rotary gallop in raw WebGL2 (no libraries, no imported meshes, no image assets).
+
+Anatomy: smooth lofted elliptical tubes along curved spines (~3.6k tris) — barrel,
+hindquarters, curved neck, skull/muzzle, jaw, ears, eyes — CPU-skinned over 25 bones
+(bind pose = authored constants; v(t) = F(t)·inv(F0)·v0). CPU skinning is deliberate:
+integer vertex attributes + mat4 uniform arrays proved unreliable on software GL
+(SwiftShader INVALID_OPERATION), and 3.6k verts/frame is free.
+
+Gait (the provable part): footfalls LH·RH·LF·RF with per-leg stance (hind 0.18,
+fore 0.26) chosen so body travel over a planted hoof never exceeds the limb chord;
+forward speed pulses ±30% via closed-form X(t) (fast off the hind push, absorbed
+under the fore landing) so net advance is exactly V·T per stride; planted hooves are
+ground-locked through pole-constrained FABRIK ending on the anchor; swing arcs run
+from the lift-off point to the exact next touchdown anchor. Mane/tail/tufts/dust are
+pure functions of phase. `__furlongTest`: slip measured 0 m, seam 1.4e-14 m
+(8-stride loop), suspension ≈0.36 of stride.
+
+Rendering: Blinn wrap-light + hemisphere fill + rim, 512² depth sun shadow with 3×3
+PCF (horse self-shadows + ground), gradient dusk sky with sun disc and cloud band,
+tileable procedural turf (period = 8 strides, seamless in-shader), distance haze.
+Synthesized hoof strikes (distinct fore/hind timbres) + wind, unlock on first tap.
+
+Two column-major math traps ate a full session — worth keeping as law:
+`mat4invert` must dot R's COLUMNS (a[4i..4i+2]) with t, not its rows; and bone
+frames must be completed by a continuous function of the bone axis (here X ↦
+(−Xy, Xx, 0)), not Gram-Schmidt against a fixed hint (collapses on
+near-parallel bones, flips 180° across the switch). Both passed every numeric
+gait gate while the render was spider-legs — the render proofs in
+`scripts/furlongcheck.mjs` exist because of it.
+
+Verified by `npm run furlongcheck` — 28/28: boots + sky/ground palette,
+temporal footfall order (up to phase origin) + diagonal-timing gate, suspension
+0.36, slip 0 mm, seam 1.7e-14, stance/swing hoof heights, skinning matrices
+rigid + bind-joints landing on runtime joints to <1 µm, chestnut/dark/sun-glint
+pixels, centre occupancy, demo law, phone 390×844. Mutants proven red (then
+restored, 2026-11-13): grounded target `X(tTd)`→`X(t)` (hoof rides body) —
+exactly the slip gate goes RED (1439 mm); `LF td 0.48→0.05` — temporal-order
+and diagonal-timing gates go RED (plus slip/stance collateral).
+
 ## blackhole.html engine notes
+
 
 Schwarzschild flyby + plunge + probes as before; key `K` (or `?spin=1/-1`)
 switches to a Kerr black hole (a* = 0.9): a separated null-geodesic integrator
