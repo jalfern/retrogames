@@ -50,6 +50,7 @@ applyMut()
 const {
     makeGame, step, autopilot, stateHash,
     BELT_Y, BIN_TOP, BELT_END, CARRY_TIP, CLAW_DOWN, FUSES, SHIFT_TICKS,
+    VIEW_H,
     KINDS, BINS, SHIFTS, WAVES,
 } = s
 
@@ -377,6 +378,52 @@ section('AMB — per-shift ambience (#2234)')
     ok(leaked === 0, 'AMB DOOR: no cue fires while the line is not running (attract/over stay clean)')
 }
 
+section('POLISH — wave read + card clearance (#2223)')
+{
+    // PIP-SOURCE + WAVE-STEP: the lamp row's data (kind count + spawn index)
+    // must stay well-formed, and every announcement carries the line slot its
+    // cue pitch steps to.
+    const gs = makeGame(7, 1)
+    const names = []
+    const bad = []
+    let kiBad = 0
+    while (gs.tick < 1400) {
+        step(gs, [{}])
+        const waves = WAVES[Math.min(gs.shift, WAVES.length - 1)]
+        const w = waves[gs.wave.wi]
+        if (gs.wave.ki > w.kinds.length) kiBad++
+        for (const e of gs.ev) {
+            if (e.type !== 'wave') continue
+            names.push(`${e.name}@${e.wi}`)
+            if (typeof e.wi !== 'number' || !waves[e.wi] || waves[e.wi].name !== e.name) bad.push(e.name)
+        }
+    }
+    ok(bad.length === 0 && names.length >= 2,
+        `WAVE-STEP: every announcement names its slot so the cue steps 0/+2/+4 st (${names.slice(0, 3).join(' → ')})` + (bad.length ? ` — WRONG: ${bad.join(',')}` : ''))
+    ok(kiBad === 0, 'PIP-SOURCE: the spawn index never exceeds the wave length (the lamp row always has a size)')
+}
+{
+    // SHIFT-CARD: the SHIFT CLEAR card owns the middle of the screen for the
+    // whole breather — the wave marquee (belt mouth, lives 46 ticks) must
+    // never be able to fire under it. Bands: card 94–114, marquee 56–74, and
+    // the first announcement after a shift change lands clear of the card.
+    ok(BELT_Y - 40 + 18 <= VIEW_H / 2 - 26,
+        'SHIFT-CARD: the marquee band (belt mouth) sits above the CLEAR card band (screen mid)')
+    const gs = makeGame(1, 2)
+    const gaps = []
+    let pending = null
+    let guard = 0
+    while (!gs.end && guard++ < 60000) {
+        step(gs, [autopilot(gs, 0), autopilot(gs, 1)])
+        for (const e of gs.ev) {
+            if (e.type === 'shift') pending = gs.tick
+            else if (e.type === 'wave' && pending !== null) { gaps.push(gs.tick - pending); pending = null }
+        }
+    }
+    ok(gs.end === 'win' && gaps.length >= 3 && gaps.every((g) => g > 46),
+        `SHIFT-CARD: first marquee of shifts 2–4 lands ${gaps.join('/')} ticks after the CLEAR card — past its 46-tick life`)
+}
+
 section('DETERMINISM — seed + pads = hashes')
 {
     const script = (i) => ({ left: i % 43 < 17, right: i % 43 >= 21 && i % 43 < 38, down: i % 67 < 6, a: i % 13 < 2, b: i % 37 === 0 })
@@ -634,7 +681,6 @@ if (!NODE_ONLY) {
         // exact device rect: caption ink (ice-blue) + the amber plate rim.
         const marquee = await page.evaluate(async () => {
             const g = window.__game
-            const wait = () => new Promise((r) => setTimeout(r, 34))
             g.reset(7, 1)
             let announced = false
             for (let i = 0; i < 520; i++) {
@@ -643,7 +689,11 @@ if (!NODE_ONLY) {
                 if (wv.length && wv[wv.length - 1].k >= 8) { announced = true; break }
             }
             if (!announced) return { announced, ink: 0, rim: 0 }
-            await wait()
+            // wait for a PAINTED frame, not a fixed 34ms: under multi-lane load
+            // a frame takes 60–120ms and the sample used to land before any
+            // rAF paint after the marquee was created (canvas still showed the
+            // post-reset frame — the #2136-family flake, seen on main 2026-11-14).
+            await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 50))))
             const c = window.__pickrushTest.canvas()
             const d = c.getContext('2d').getImageData(250, 112, 352, 36).data
             let ink = 0, rim = 0
@@ -656,6 +706,50 @@ if (!NODE_ONLY) {
         })
         rep.check('WAVE-INK: the wave marquee paints caption ink + amber rim over the belt mouth at the breather',
             marquee.announced && marquee.ink >= 12 && marquee.rim >= 2, JSON.stringify(marquee))
+
+        // PIPS (#2223): the wave-progress lamp row is PAINTED between the belt
+        // and the bins, and DIMS as pieces ride in. Sample the row's device
+        // rect (world 194–232 × 121–133 ×2) before the first spawn and once
+        // two pieces have ridden in — two lamps' worth of ice-blue must go dark.
+        const pips = await page.evaluate(async () => {
+            const g = window.__game
+            const rowLit = () => {
+                const c = window.__pickrushTest.canvas()
+                const d = c.getContext('2d').getImageData(386, 242, 80, 24).data
+                let n = 0
+                for (let p = 0; p < d.length; p += 4) {
+                    if (Math.abs(d[p] - 127) < 50 && Math.abs(d[p + 1] - 212) < 50 && Math.abs(d[p + 2] - 255) < 50) n++
+                }
+                return n
+            }
+            g.reset(7, 1)
+            g.step([{}], 4)
+            const painted = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 50))))
+            await painted()
+            const s0 = g.state()
+            const lit0 = rowLit()
+            for (let i = 0; i < 200 && g.state().waveSpawned < 2; i++) g.step([{}], 1)
+            await painted()
+            const s1 = g.state()
+            return { lit0, lit1: rowLit(), total0: s0.waveTotal, spawn0: s0.waveSpawned, total1: s1.waveTotal, spawn1: s1.waveSpawned }
+        })
+        rep.check('PIPS: the wave lamp row paints full and dims two lamps as two pieces ride in',
+            pips.spawn0 === 0 && pips.total0 === 4 && pips.spawn1 >= 2 && pips.lit0 >= 120 && pips.lit1 <= pips.lit0 - 60,
+            JSON.stringify(pips))
+
+        // WAVE-STEP live (#2223): the component keys the cue's pitch to the
+        // line slot — the first two announcements of a shift step +2 and +4
+        // semitones, and the recorded index matches the name being shown.
+        const stepz = await page.evaluate(() => {
+            const g = window.__game
+            g.reset(7, 1)
+            for (let i = 0; i < 1400 && window.__pickrushTest.waveCues().length < 2; i++) g.step([{}], 1)
+            return window.__pickrushTest.waveCues().slice(0, 3)
+        })
+        rep.check('WAVE-STEP: each wave cue steps its pitch by its slot (0 → +2 → +4 st), index matches the name',
+            stepz.length >= 2 && stepz.every((c) => c.step === Math.round(Math.pow(2, (c.wi * 2) / 12) * 1000) / 1000)
+                && stepz[0].wi === 1 && stepz[1].wi === 2 && stepz[1].step > stepz[0].step,
+            JSON.stringify(stepz))
 
         // determinism through the live contract
         const script = scriptFor('pick-rush')

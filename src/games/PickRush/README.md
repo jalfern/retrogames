@@ -63,7 +63,9 @@ CONTRACT_ONLY=pick-rush npm run contractcheck
 ways, barrel slip vs upright catch, fuse economy, the miss penalty, quota
 verdicts, shift speed-up and the win; the authored line (shift-1 streams are
 the table on every seed, kinds arrive per shift-era, the pacing breathes
-burst→breather, the waves feed quota + 18, wave names ride the event ledger);
+burst→breather, the waves feed quota + 18, wave names ride the event ledger;
+the wave lamp row's source index names its slot and never exceeds the wave
+length, and the CLEAR card owns the breather free of the marquee (#2223);
 determinism (twice identical, seeds differ); the shipped autopilot clears
 every shift quota with headroom on seeds 7/101/2027; and in headless Chrome
 the game boots clean, starts with a real Space, the cable and cargo pixels sit
@@ -107,4 +109,31 @@ to one shift's waves; `amb` flattens the ambience eras (#2234); named gates go r
 - Still open from #2214 (rolled into #2223, the next PickRush polish): per-bin
   fill bars + bin-full thunk, cable whip on gantry reversal, wobble/rotation
   telegraphs for glass clusters and barrel pairs, and a wave-completion tick on
-  the quota gauge.
+  the quota gauge. — the wave-progress tell CLOSED by #2223 as its own lamp row
+  (see below); the quota gauge keeps its own pulse.
+
+## Wave read & rhythm (#2223 — QA polish pass)
+
+- **Wave-progress pips:** a lamp row on the wall between belt and bins — one
+  lamp per piece in the wave on the line. Still-coming pieces glow ice-blue,
+  pieces that have ridden in go dark, and through the breather the row previews
+  the next wave, full and lit. Purely read from `gs.wave` (sim untouched); the
+  contract carries `waveTotal`/`waveSpawned`. Chrome gate `PIPS` samples the
+  row's device rect and counts two lamps' worth of ink going dark as two
+  pieces ride in; Node gate `PIP-SOURCE` pins the index against the wave length.
+- **Per-wave pitch step:** the wave cue's PITCH rides the slot in the shift's
+  line — each later wave in the cycle steps a whole tone up (0/+2/+4 st, motif
+  resets on wrap), so the shift's rhythm is audible as well as visible. The
+  wave event gained `wi` (the announced slot); `WAVE-STEP` checks name ≡ slot
+  in Node and the stepped frequencies live (`PICK_MUT`-style proof: pinning
+  `wi: 0` reddens `WAVE-STEP` by name). `SHIFT-CARD` proves the CLEAR card
+  and the marquee can never share the screen: bands 94–114 vs 56–74, and the
+  first marquee of shifts 2–4 lands 197–297 ticks clear of the card's 46-tick
+  life. RUSH HOUR at ×1.42 playtested seat-0: pieces ride 61–69 px apart (the
+  carriage is 22 px wide), zero faults on seeds 1/7/101/2027 — no gap slack
+  needed; the tightness reads but is never unfair.
+- **WAVE-INK paint-sync:** the gate sampled 34 ms after the pump; under
+  multi-lane load a frame takes 60–120 ms so the canvas often still showed the
+  post-reset frame (red twice on main 2026-11-14, deterministic under load).
+  The gate now waits for a real painted frame (double-rAF + settle);
+  thresholds and colors untouched.

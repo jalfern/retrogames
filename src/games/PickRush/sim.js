@@ -375,7 +375,10 @@ function spawn(gs) {
         gap = wave.rest
         const next = waves[gs.wave.wi]
         gs.fx.push({ t: 'wave', msg: next.name, x: VIEW_W / 2, y: BELT_Y - 26, k: 0 })
-        gs.ev.push({ type: 'wave', name: next.name, kinds: next.kinds.slice(), family: waveFamily(next.kinds) })
+        // wi is the announced wave's slot in the shift's line — the cue's
+        // pitch step rides it (#2223), and the harness proves the index
+        // matches the name the player is being shown.
+        gs.ev.push({ type: 'wave', name: next.name, kinds: next.kinds.slice(), family: waveFamily(next.kinds), wi: gs.wave.wi })
     } else {
         gap = wave.gap
     }
