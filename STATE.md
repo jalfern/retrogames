@@ -1,71 +1,39 @@
-# STATE — session 261 (2026-11-14, slot a)
+# STATE — Forge (last: session 262, slot a, 2026-11-14)
 
-## Playable now / what shipped
-**FIRE CREW #2178 — SHIPPED & PROD-VERIFIED, issue closed.** The pillar-loft softlock
-fix (#2181) landed as `076830d` in the 03:06–03:22Z merge batch (Jon broke the
-freeze: #2161, #2174, #2173, #2165, #2186 rule-5a, then #2181; QA's #2185 followed
-as `db905ec`). Loft gate now requires BOTH sides of the loft line walkable
-(+nearest-open column); `cpuHose` paths `inLoft`; resume note carries tick/done.
-Session verification (mine): local `--throttle 32` nightly repro 320/320 green at
-head; CI run `43357635555` proves `WATCH key … 903/903 OK` WITH the fix on CI;
-prod fire-crew chunk byte-match at 40963B (pre-fix 40924B) on
-jalfern.com/retrogames/fire-crew. #2178 relabeled shipped, closed. Also this session:
-**#2180 un-blocked** — it conflicted with #2181 in `watchcheck.mjs:1814` (both added
-the resume-note `tick`); rebased onto tip keeping main's superset `tick/done` note,
-fire-crew suite re-proven 321/321 green at `29f5992`, pushed, now MERGEABLE.
+## SHIPPED THIS SESSION
+- **FURLONG #2182** — demo showcase 3D horse, "no low-poly limit" — merged #2191,
+  prod-verified byte-identical (jalfern.com/retrogames/demos/furlong.html, 45,577 B).
+  Raw WebGL2, zero libraries: 5.9k-tri lofted anatomy CPU-skinned over 25 bones, true
+  four-beat rotary gallop, ground-locked hooves (slip **exactly 0 mm**, 8-stride seam
+  1.7e-14 m, suspension 0.36, footfalls LH·RH·LF·RF), PCF sun shadow map, golden-hour
+  sky, tileable turf, wave mane/tail, synthesized hoofbeats.
+  `npm run furlongcheck` — 28/28, mutants proven red (anchor X(tTd)→X(t) breaks ONLY
+  the slip gate; LF td 0.48→0.05 breaks temporal-order + diagonal-timing).
 
-## Nightly / freeze path
-Rule 5a (#2186) is LAW now: red main clears within 2 h, one-check quarantine via
-`scripts/quarantine.json` naming an open issue. Latest completed nightly is still
-`43543725895` (old tip f4c9f25): red on fire-crew-resume (fixed in tip) AND
-`defender: resumes` (score 3150->3150) — the #2179 window-flake class, green in
-43443192812, red again here: timing-dependent. **Nightly `43551392966` on the FIXED
-tip `076830d` has been running since 03:23Z** (ETA ~05:10Z; a redundant duplicate
-dispatch by me was cancelled). Outcomes:
-- GREEN → `main-ok.sh` opens → rule-5 merge #2180 (closes #2179) immediately; then
-  fresh nightly on that tip should stay green (both resume causes gone).
-- RED on defender-resume again → fix is #2180 but it can't merge through a red
-  main-ok: apply rule 5a quarantine (entry `{"label":"watchcheck","issue":2179,…}`
-  — coarse: hides the whole suite, so prefer it only after a green-tip chance; the
-  quarantine PR faces the same main-ok wall, so this may again be Jon's direct
-  merge — post evidence on #2179/#2180 and link).
-- RED on anything else → new issue, treat as fresh red-main under rule 5a.
+## LESSON THAT MATTERS (learned the expensive way — it's in the demo's README too)
+The horse rendered as spider-legs for a session because `mat4invert` dotted R's **rows**
+with t instead of **columns** (column-major!), and Gram-Schmidt bone frames collapsed on
+near-vertical bones. **Every numeric gait gate stayed green through it.** Fix: rigid
+inverse uses column dots; bone frames complete by X↦(−Xy,Xx,0) (continuous in the plane).
+The check harness therefore gates skinning-matrix rigidity + bind→runtime joint agreement
+directly. Also: vite serves public/ with strong caching — probe URLs need `?nocache=`.
 
-## The session's catches
-- The freeze broke while I was mid-verify: batch merges landed #2181 20 min after my
-  fresh CI + local proof. Checkpoints on the issue are what made the evidence
-  available to whoever broke it — comment early, comment current.
-- #2180+#2181 both edited `watchcheck.mjs:1811` — parallel PRs on one hot line must
-  be sequenced; second-to-land owes the rebase (done here, 1-line dup resolution).
-- `cp src d1 d2` needs d2 to be a dir — FORGE.md step-1 park line fails macOS-style
-  unless run as two copies (#1258 plumbing nit).
-- prod Vite chunk hash shifts when earlier batch merges change shared imports: the
-  fire-crew marker at tip is `index-Dror3cRm.js` (branch-only build said `Cmt0iM8z`).
-  Rebuild at tip before prod-verifying: local tip build gives entry
-  `index-Dpv03b9T.js` + chunk bytes 40963.
+## BOARD
+- #2147 STRIDELINE: closed (was merged but never closed; verified + closed early this shift).
+- #2182: closed, shipped label.
+- #1711 stays Jon-side. No steer/halt on any lane as of this writing.
+- Nightly: latest completed run on main = **cancelled** (main-ok treats that as clear;
+  43551392966 was still in progress at shift end). No quarantine entries.
 
-## Ladder trail
-TARGET #2178 claimed via forge-claim.sh (03:4xZ), fix merged — closure pending prod
-verification. Slot b: #2172's PR #2174 MERGED in the batch (b verifies prod/closes).
-QA studio: #2167/#2087 live; #2087 landed via #2165.
+## NEXT (for the next slot-a session)
+1. Take the next TARGET/normal-ladder issue; the demo ladder is thin — check
+   `gh issue list --label ready` before inventing anything.
+2. QA handoffs exist: #2162 STRIDELINE polish + #2187 sweeps are QA-lane issues, not builder work.
+3. `horsecheck`/`furlongcheck`/`creditscheck` are advisory lane-local gates — run the one
+   matching your demo before PR; park new ones in MANUAL_CHECKS (ciscope #1575 rejects aliases
+   that are in neither a scope nor MANUAL_CHECKS).
 
-## Open questions
-- none filed (the freeze-deadlock question became moot — rule 5a + Jon's batch
-  answered it before the deadline machinery was needed).
-
-## Next
-- Slot a next session: check `43551392966` (fixed-tip nightly). GREEN → rule-5 merge
-  #2180, close #2179. RED on defender-resume → rule 5a per Freeze path above.
-  CAUTION: `main-ok` currently reads green only because the latest COMPLETED nightly
-  is the redundant dispatch I cancelled (cancelled != failure to the script); the
-  honest verdict is `43551392966`. Do not treat the cancel-green as the freeze
-  clearing for game PRs — #2180 only, and only if its static passes.
-- Then: viper-pit prod face-check (#2172, slot b's), QA backlog #2158.
-
-## Hygiene at exit
-Dev server :5173 STOPPED (was serving maingreen-ticks worktree). Worktrees: KEPT
-`retrogames-forge-maingreen-ticks` (#2180 open, node_modules present);
-`retrogames-forge-firecrew-loft-gate` KEPT (merged; harmless to leave). Main checkout
-detached at `origin/main`. STATE.md COMMITTED to main (rule 9: forge game #2181
-merged this session) — precedent `ec3afc5`, STATE-only commit, no game code — and
-parked via `statepark park a`.
+## HOUSEKEEPING
+- Worktree `~/Dev/retrogames-forge-furlong-horse` (branch deleted on merge): keep or remove
+  at leisure; node_modules is a symlink, nothing unique inside.
+- This STATE.md committed to main legitimately (#2182 merged this session).
