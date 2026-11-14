@@ -1061,6 +1061,7 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
 {
     await page.evaluate(() => window.__ppTest.start(0))
     await wait(300)
+    const seam0 = await page.evaluate(() => window.__ppTest.sfxSeam())
     for (let d = 1; d < 6; d++) { await page.evaluate(() => window.__ppTest.runDay()); await wait(120) }
     await waitBannerOff() // the NEW MONTH banner is a veil — wait it out before sampling
     const wallNow = await page.evaluate(() => window.__ppTest.wallDate())
@@ -1094,6 +1095,12 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
         && quote.includes('EXPIRED OCT 31 1982 < TODAY NOV 01 1982')
         && !/\d{4}\.\d{2}\.\d{2}/.test(quote),
         JSON.stringify({ seated, last: after.last, quote }))
+    // #2133 the seam-crossing deny earns its own tick: the witness printed
+    // OCT…<…NOV, so the ear must hear the calendar turn (2130's audio half).
+    await wait(150)
+    const seamN = await page.evaluate(() => window.__ppTest.sfxSeam()) - seam0
+    r.check(`the seam-crossing deny sounds its own tick (${seamN} seam ticks)`,
+        seated && seamN === 1, `seam=${seamN}`)
     await waitQuiet() // drain before the next section inherits the booth
 }
 
@@ -1570,6 +1577,48 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     r.check(`#2080 lite: marks and bubble read at CI scale (${lp && lp.scar} scar px, ${lp && lp.bubble} ink px, ${lp && lp.bubblePaper} paper px at k=${lp && lp.k})`,
         lScar && !!lp && lp.k < 1 && lp.scar >= 10 && lp.bubble >= 400 && lp.bubblePaper >= 1000,
         JSON.stringify(lp))
+    // #2133 PHONE-SCALE SEAM READ — the week's longest print (the 40-char
+    // EXPIRED OCT 31 1982 < TODAY NOV 01 1982 witness + its wrapped strip
+    // lines) must stay legible at CI's 640×426, not just at 880. Seat the
+    // day-6 paper, deny it with a real key, then count the gold glyph px.
+    // Fresh restart for the same reason the 880 seam section restarts: the
+    // Grubak walk above has already judged (and dropped) the day-6 papers.
+    await lite.evaluate(() => window.__ppTest.start(0))
+    await lite.waitForTimeout(300)
+    for (let d = 1; d < 6; d++) { await lite.evaluate(() => window.__ppTest.runDay()); await lite.waitForTimeout(120) }
+    let lSeam = false
+    for (let g = 0; g < 14 && !lSeam; g++) {
+        lSeam = await lite.evaluate(() => {
+            const p = window.__ppTest.probe()
+            const per = p && p.view && p.view.person
+            return !!(per && per.passport && per.passport.expiry.y === 1982
+                && per.passport.expiry.m === 10 && per.passport.expiry.d === 31
+                && window.__ppTest.verdict() === 'deny')
+        })
+        if (!lSeam) {
+            const v = await lite.evaluate(() => window.__ppTest.verdict())
+            await lite.keyboard.press(v === 'approve' ? 'a' : 'd')
+            await lite.waitForTimeout(300)
+        }
+    }
+    let lGold = null
+    if (lSeam) {
+        await lite.keyboard.press('d')
+        const rMax = { gold: 0, rows: [0, 0] }
+        for (let i = 0; i < 8; i++) {
+            const q = await lite.evaluate(() => window.__ppTest.phonePix())
+            if (q && typeof q.evidenceGold === 'number') {
+                if (q.evidenceGold > rMax.gold) rMax.gold = q.evidenceGold
+                q.evidenceRows.forEach((n, j) => { if (n > rMax.rows[j]) rMax.rows[j] = n })
+                rMax.k = q.k
+            }
+            await lite.waitForTimeout(110)
+        }
+        lGold = rMax
+    }
+    r.check(`#2133 lite: the seam quote lands as legible gold lines at CI scale (${lGold && lGold.gold} px, rows ${lGold && lGold.rows.join('/')} at k=${lGold && lGold.k})`,
+        lSeam && !!lGold && lGold.gold >= 120 && lGold.rows.every((n) => n >= 12),
+        JSON.stringify({ lSeam, lGold }))
     await lite.close()
 }
 
