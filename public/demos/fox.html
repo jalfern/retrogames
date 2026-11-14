@@ -9,17 +9,18 @@
   html, body { margin: 0; height: 100%; background: #0d0f14; overflow: hidden; }
   canvas { display: block; width: 100vw; height: 100dvh; touch-action: none; cursor: grab; }
   canvas:active { cursor: grabbing; }
-  #hint {
-    position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%);
+  #hud {
+    position: fixed; left: 14px; top: 12px;
     font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10px;
-    letter-spacing: .35em; color: #f5e3c8; text-shadow: 0 1px 6px #000;
-    opacity: .85; transition: opacity 1.4s ease; pointer-events: none; white-space: nowrap;
+    letter-spacing: .28em; color: #f5e3c8; text-shadow: 0 1px 6px #000;
+    opacity: .9; pointer-events: none; white-space: nowrap;
   }
+  #hud b { color: #ffd9a0; letter-spacing: .34em; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="hint">DRAG TO LOOK &nbsp;·&nbsp; SPACE SLO-MO &nbsp;·&nbsp; CLICK FOR SOUND</div>
+<div id="hud"><b>RENARD</b><span> · running red fox · drag to look · SPACE slo-mo · click for sound</span></div>
 <script>
 'use strict';
 /* RENARD — a running red fox (Vulpes vulpes), #2261.
@@ -619,9 +620,8 @@ function vixie() {
 /* ---------------- input ---------------- */
 let running = true, slow = false, simT = 0, frames = 0;
 let dragId = null, lastX = 0, lastY = 0;
-const hintEl = document.getElementById('hint');
-let hintFaded = false;
-function fadeHint() { if (!hintFaded) { hintFaded = true; hintEl.style.opacity = '0'; } }
+const hintEl = null, hintFaded = false; void hintEl; void hintFaded;
+function fadeHint() { /* caption stays up — house style for demo titles */ }
 cv.addEventListener('pointerdown', e => {
   ensureAudio(); fadeHint();
   dragId = e.pointerId; lastX = e.clientX; lastY = e.clientY;
