@@ -109,7 +109,7 @@ const ViperPitGame = () => {
         let attractMsg = 0, attractT = 0
         let shake = 0, flashT = 0, bannerT = 0, bannerText = ''
         let finishFx = 0, finishText = ''
-        let quote = null, quoteT = 0, quoteMax = 0, subShownAt = null, judgeFlash = null
+        let quote = null, quoteT = 0, quoteMax = 0, subFrames = 0, judgeFlash = null, koLog = []
         // #2148 — call-and-response outround replies: the loser's answer
         // reveals a beat after the winner's taunt; `finishJustLanded` hands the
         // finisher event to koQuotes so an IN STYLE judge rides the same KO.
@@ -291,7 +291,7 @@ const ViperPitGame = () => {
             gs = createMatch({ seed: sd, guardButton: true, juggle: true, guardCrush: true, p1: { ...d1, cpu: false }, p2: human2 ? { ...d2raw, cpu: false } : d2raw })
             lagHp = [gs.fighters[0].hp, gs.fighters[1].hp]
             comboFx = [0, 0]; comboVal = [0, 0]
-            chipFx = [0, 0]; shimmerFx = [0, 0]; shatterFx = [0, 0]; koHold = null; koFxRound = 0; quote = null; quoteT = 0; quoteMax = 0; quoteSubAt = null; subFired = false; subShownAt = null; finishJustLanded = false
+            chipFx = [0, 0]; shimmerFx = [0, 0]; shatterFx = [0, 0]; koHold = null; koFxRound = 0; quote = null; quoteT = 0; quoteMax = 0; quoteSubAt = null; subFired = false; subFrames = 0; finishJustLanded = false
             finishFx = 0; finishText = ''
             padMirror[0].clear(); padMirror[1].clear()
             oursH.clear(); peerH.clear()
@@ -441,7 +441,7 @@ const ViperPitGame = () => {
             rebuildRigs(); rebuildStage()
             audioController.startMusic(stage.bed)
             lagHp = [100, 100]
-            chipFx = [0, 0]; shimmerFx = [0, 0]; shatterFx = [0, 0]; koHold = null; koFxRound = 0; quote = null; quoteT = 0; quoteMax = 0; quoteSubAt = null; subFired = false; subShownAt = null; finishJustLanded = false
+            chipFx = [0, 0]; shimmerFx = [0, 0]; shatterFx = [0, 0]; koHold = null; koFxRound = 0; quote = null; quoteT = 0; quoteMax = 0; quoteSubAt = null; subFired = false; subFrames = 0; finishJustLanded = false
         }
         attractDemo()
 
@@ -586,7 +586,7 @@ const ViperPitGame = () => {
                 const q = koQuotes(m, { finish: finishJustLanded })
                 if (q) {
                     quote = q; quoteT = 140; quoteMax = 140
-                    quoteSubAt = performance.now() + 520; subFired = false; subShownAt = null
+                    quoteSubAt = performance.now() + 520; subFired = false; subFrames = 0; koLog = []
                     if (q.judge === 'PERFECT' && stageFx) stageFx.flareUntil = performance.now() + 500
                 }
                 finishJustLanded = false
@@ -612,7 +612,7 @@ const ViperPitGame = () => {
                 const q = koQuotes(m)
                 if (q) {
                     quote = q; quoteT = 240; quoteMax = 240
-                    quoteSubAt = performance.now() + 700; subFired = false; subShownAt = null
+                    quoteSubAt = performance.now() + 700; subFired = false; subFrames = 0; koLog = []
                 }
                 if (mode === 'cpu') {
                     if (won && ladderIdx < LADDER.length - 1) {
@@ -858,7 +858,6 @@ const ViperPitGame = () => {
                     const subShow = quote.sub && quoteSubAt != null && performance.now() >= quoteSubAt
                     if (subShow && !subFired) {
                         subFired = true
-                        subShownAt = performance.now()
                         const [r0, r1, rwave] = quote.replyVoice || [160, 120, 'square']
                         audioController.playTone(r0, 0.09, rwave, 0.07)
                         audioController.playTone(r1, 0.14, rwave, 0.06, 0.09)
@@ -869,9 +868,11 @@ const ViperPitGame = () => {
                         hctx.strokeStyle = 'rgba(8,5,8,0.9)'; hctx.lineWidth = Math.max(2, H * 0.005)
                         hctx.fillStyle = `rgba(150,214,200,${Math.min(1, (quoteT + 40) / 40).toFixed(2)})`
                         // #2158 — the answer slides in from the left over ~11
-                        // frames and an accent underline draws on beneath it,
+                        // FRAMES (frame-counted, so the feel is identical at any
+                        // frame rate) and an accent underline draws on under it,
                         // so the card reads as a conversation, not a stamp.
-                        const rp = subShownAt != null ? Math.min(1, (performance.now() - subShownAt) / 180) : 1
+                        subFrames++
+                        const rp = Math.min(1, subFrames / 11)
                         const xe = (1 - rp) * (1 - rp)
                         const sx = W / 2 - W * 0.035 * xe
                         const sy = quote.b ? H * 0.712 : H * 0.675
@@ -883,6 +884,21 @@ const ViperPitGame = () => {
                         hctx.globalAlpha = 0.85 * rp
                         hctx.fillRect(sx - uw / 2, sy + Math.max(6, H * 0.012), uw, Math.max(2, H * 0.004))
                         hctx.globalAlpha = 1
+                    }
+                    // #2158 — DEV frame log: the card's own render-frame record
+                    // of its entrance juice. CDP polling interval under box load
+                    // can straddle whole animations, so the gate reads frames,
+                    // not wall samples.
+                    if (import.meta.env.DEV) {
+                        const wrig = koHold && rigs && rigs[koHold.by] ? rigs[koHold.by].userData : null
+                        koLog.push({
+                            wk: wrig && wrig.winK != null ? +wrig.winK.toFixed(3) : null,
+                            js: judgeFlash ? +judgeFlash.s.toFixed(3) : 1,
+                            jt: judgeFlash ? +judgeFlash.a.toFixed(3) : 0,
+                            fl: stageFx && stageFx.flare ? +stageFx.flare.toFixed(3) : 0,
+                            rp: subFrames > 0 ? +Math.min(1, subFrames / 11).toFixed(3) : null,
+                        })
+                        if (koLog.length > 300) koLog.shift()
                     }
                 }
                 if (flashT > 0) { flashT--; hctx.fillStyle = `rgba(255,235,220,${(flashT / 60).toFixed(2)})`; hctx.fillRect(0, 0, W, H) }
@@ -1229,9 +1245,10 @@ const ViperPitGame = () => {
                         judgeScale: judgeFlash ? +judgeFlash.s.toFixed(3) : 1,
                         judgeTint: judgeFlash ? +judgeFlash.a.toFixed(3) : 0,
                         flare: stageFx && stageFx.flare ? +stageFx.flare.toFixed(3) : 0,
-                        replySlide: subShownAt != null ? +Math.min(1, (performance.now() - subShownAt) / 180).toFixed(3) : null,
+                        replySlide: subFrames > 0 ? +Math.min(1, subFrames / 11).toFixed(3) : null,
                     }
                 },
+                koProbe() { return koLog.slice() },
                 chips() { return chipFx.map((v) => v > 0) },
                 forceQcb() { if (gs) { const f = gs.fighters[0]; if (f.def.moves.qcb) { f.st = 'attack'; f.sf = 0; f.move = 'qcb'; f.phase = 'startup'; f.hitOnce = {}; f.cancelGate = false } } },
                 pose(i) {
