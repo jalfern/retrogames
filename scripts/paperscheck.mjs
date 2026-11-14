@@ -2639,6 +2639,20 @@ if (MUT) {
             }
             return true
         })
+    // #2109 m69 rolls back the aftershock breadth to arc-only — the pin above
+    // (every regular visit carries its line) must see red.
+    await tryMut('only the arc face mourns (the neighborhood breadth is gone)',
+        mutMod('gen.js', 'a.person.seize = c.seize',
+            'if (n === arcForWeek(seed).day && c.id === arcForWeek(seed).id) a.person.seize = c.seize', 'm69'),
+        (m) => {
+            for (const seed of SEEDS) {
+                const w = m.gen.genWeek(seed)
+                for (const day of w.days) for (const a of day.queue) {
+                    if (a.person.regular && !a.person.seize) return false
+                }
+            }
+            return true
+        })
     // m59 drops the desk's upper bounds — a dragged card can be shoved off
     // the counter (behind the strip / off canvas) and lost from the booth.
     await tryMut('the desk clamp loses its upper bounds (papers can leave the counter)',
@@ -2872,6 +2886,12 @@ section('THE POLISHED ARC (#1988) — faces on the wall, a loud turn, many voice
         console.log(`  ..    worst arc day with portrait: bottom y=${f.bottom}, scale box top y=${SCALE.y} — clear`)
     }
     ok(ARC_MUG.s * 68 >= 18, `the bulletin mugshot head is ${ARC_MUG.s * 68}px — below 18px a face is a smudge, not a portrait`)
+    // #2109 MINI PORTRAIT CUT: the crop must actually frame the face — brow row
+    // (unit 38) and mouth bottom (unit 72) land inside the 26px field at ARC_MUG
+    // scale, so eyes/nose/mouth are multi-pixel detail, not a crushed stencil.
+    ok(ARC_MUG.oy + 38 * ARC_MUG.s >= 0 && ARC_MUG.oy + 72 * ARC_MUG.s <= ARC_MUG.h,
+        `the mug crop misses the face: brow row lands at y=${ARC_MUG.oy + 38 * ARC_MUG.s}, mouth bottom at y=${ARC_MUG.oy + 72 * ARC_MUG.s} vs the ${ARC_MUG.h}px field`)
+    ok(ARC_MUG.s * 8 >= 3 && ARC_MUG.s * 16 >= 6, `the mug's eye/mouth strokes are ${(ARC_MUG.s * 8).toFixed(1)}px/${(ARC_MUG.s * 16).toFixed(1)}px — below 3px/6px the portrait is a 20px stencil, the #2109 gap`)
     ok(WALL.x + 114 + 2 + ARC_MUG.w <= PORTRAIT.x - 4, 'the bulletin portrait leaves the wanted column')
 
     // 3) THE TURN ANNOUNCES — view-side doctrine: the highlight keys off the
@@ -2892,16 +2912,19 @@ section('THE POLISHED ARC (#1988) — faces on the wall, a loud turn, many voice
         ok(seq(7) === seq(7) && seq(11) === seq(11), 'repertoire speech drifted between two generations of one seed')
     }
 
-    // 4) DENY AFTERSHOCK: only the arc person carries the seize line; it
+    // 4) DENY AFTERSHOCK (#2109 BREADTH): every regular visit carries its own
+    //    argue line — the arc's taken friend AND the neighbours turned away
+    //    wrongly (a regular's papers are built legal every day, so denying one
+    //    is always the wrong call); only strangers stay voiceless. The line
     //    fits the paper zone under the stamp; its tone is the booth's lowest.
     for (const seed of SEEDS) {
         const w = genWeek(seed)
-        let seized = 0
+        let seized = 0, regVisits = 0
         for (const day of w.days) for (const a of day.queue) {
-            if (a.person.arc) { seized++; ok(a.person.seize === REGULARS.find((k) => k.id === a.person.regular).seize, `seed ${seed}: the arc face has no argue line`) }
-            else ok(!a.person.seize, `seed ${seed} day ${day.n}: a stranger carries a seize line — only a seized friend argues`)
+            if (a.person.regular) { seized++; regVisits++; ok(a.person.seize === REGULARS.find((k) => k.id === a.person.regular).seize, `seed ${seed} day ${day.n}: ${a.person.regular} has no argue line`) }
+            else ok(!a.person.seize, `seed ${seed} day ${day.n}: a stranger carries a seize line — only the neighborhood argues`)
         }
-        ok(seized === 1, `seed ${seed}: ${seized} seize lines in one week — exactly the arc's`)
+        ok(seized === regVisits && seized >= REGULARS.length, `seed ${seed}: ${seized}/${regVisits} visits carry a line but ${REGULARS.length} regulars walk the week — every neighbor must mourn a wrong turn-away`)
     }
     const longestSeize = Math.max(...seizes.map((l) => l.length))
     ok(longestSeize * SEIZE.size * CHAR <= 290, `the longest seize line prints ${longestSeize * SEIZE.size * CHAR}px — the paper corridor under the stamp is 290px`)
@@ -2910,8 +2933,8 @@ section('THE POLISHED ARC (#1988) — faces on the wall, a loud turn, many voice
         const owned = [...idxSrc3.matchAll(/playTone\((\d+)/g)].map((mm) => Number(mm[1]))
         ok(owned.length > 0 && SEIZE.tone < Math.min(...owned, RECOGNITION.notes[0]),
             `SEIZE.tone (${SEIZE.tone}) must sit below every fixed tone the booth owns (lowest ${Math.min(...owned)}) — a heavier deny is a LOWER deny`)
-        ok(/stamped\.arc && action === 'deny'/.test(idxSrc3) && /sfxSeize\+\+/.test(idxSrc3) && /sfxSeize: \(\) => sfxSeize/.test(idxSrc3),
-            'index.jsx must thunk SEIZE.tone, set the argue line and count it when a seized neighbor is denied')
+        ok(/stamped\.regular && action === 'deny'/.test(idxSrc3) && /sfxSeize\+\+/.test(idxSrc3) && /sfxSeize: \(\) => sfxSeize/.test(idxSrc3),
+            'index.jsx must thunk SEIZE.tone, set the argue line and count it when a regular is denied (#2109: the whole neighborhood, not just the arc)')
     }
 
     // 5) THE TAIL IS PINNED: the bubble triangle's band sits above the field

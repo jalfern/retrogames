@@ -966,8 +966,8 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     r.check(`the crowded morning waits two deep (${arcMugs} slate px vs ${soloMugs} solo)`,
         arcMugs > soloMugs + 100 && arcMugs > 300, `${arcMugs}/${soloMugs}`)
     r.check(`#1988 the bubble's tail prints with its voice (${tailUp} paper px above the field)`, tailUp > 60, `${tailUp}`)
-    r.check(`#1988 the turn announces — the bulletin prints Grubak's mugshot (${arcLit && arcLit.paper} paper px) and the row is lit (${arcLit && arcLit.hl} ARC_HL px)`,
-        !!arcLit && arcLit.present && arcLit.paper > 150 && arcLit.hl > 100, JSON.stringify(arcLit))
+    r.check(`#1988 the turn announces — the bulletin prints Grubak's mugshot (${arcLit && arcLit.face} face px on ${arcLit && arcLit.paper} paper px, #2109 zoom-crop) and the row is lit (${arcLit && arcLit.hl} ARC_HL px)`,
+        !!arcLit && arcLit.present && arcLit.face > 400 && arcLit.paper >= 10 && arcLit.hl > 100, JSON.stringify(arcLit))
     r.check('recognition is not safety: the booth denies the familiar face', arcVerdict === 'deny', `${arcVerdict}`)
     const caughtBefore = (await probe()).caught
     const seizeBefore = await page.evaluate(() => window.__ppTest.seizeInk())
@@ -1124,7 +1124,7 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     r.check(`chapter 1 turns the SAME seat — Grubak again, but the protest is new ("${say6 && say6.say && say6.say[1]}" vs week 0's "${TURN_CANONICAL}")`,
         !!say6 && say6.id === weekSeat6.id && say6.say[0] === 'YOU AGAIN.' && say6.say[1] === turnLineFor(weekSeat6, 6) && say6.say[1] !== TURN_CANONICAL,
         JSON.stringify(say6 && say6.say))
-    r.check('the mugshot prints in every chapter, not just week 0', !!lit6 && lit6.present && lit6.paper > 150, JSON.stringify(lit6))
+    r.check('the mugshot prints in every chapter, not just week 0', !!lit6 && lit6.present && lit6.face > 400 && lit6.paper >= 10, JSON.stringify(lit6))
     await page.evaluate(() => window.__ppTest.runDay())    // honest rest of the day
     await wait(250)
 }
@@ -1484,6 +1484,20 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     const mMole = await page.evaluate(() => window.__ppTest.markPix())
     r.check('#2080 day 7 seats Marko aged — mole spread to 5px, markStep 1',
         sMole && mMole.mark === 'mole' && mMole.markStep === 1 && mMole.mole >= 20, JSON.stringify(mMole))
+    // #2109 AFTERSHOCK BREADTH, live: Marko is an honest regular — turning him
+    // away is the wrong call, and the booth mourns with HIS authored line under
+    // the DENIED stamp (the arc-only aftershock was the gap; #1988's gate above
+    // proves the arc's own line, this one proves the neighborhood's).
+    if (sMole) {
+        const bBefore = await page.evaluate(() => window.__ppTest.seizeInk())
+        await page.keyboard.press('d')   // wrongly turn the legal neighbor away
+        await wait(160)
+        const bAfter = await page.evaluate(() => window.__ppTest.seizeInk())
+        r.check(`#2109 a wrongly-turned regular lingers too — Marko argues ${bAfter.ink} px under the stamp, verbatim, tone thudded ${bBefore.sfx}->${bAfter.sfx}`,
+            bBefore.ink === 0 && bAfter.ink > 15 && bAfter.argue === REGULARS[1].seize && bAfter.sfx === bBefore.sfx + 1, JSON.stringify(bAfter))
+    } else {
+        r.check('#2109 the breadth seat walked past — marko never reached the window', false, `sMole=${sMole}`)
+    }
     // the staged trap week: seed 1 demotes t2 and day 7's head Anja ages.
     await page.evaluate(() => window.__ppTest.start(1))
     await wait(300)
