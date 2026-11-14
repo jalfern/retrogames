@@ -66,7 +66,7 @@ const { GW, GW_BIG, BIG_ROOMS, GH, CW, CELL, HUD_H, CH, EXITS, exitsOf, TOTAL_RO
 const { wallCell, NEON_TOP, CHROME, borderRivet } = await import('../src/games/SmashTV/walls.js')
 const { playerFrame, GUN, LAYERS, PLAYER_FRAMES, CARRIAGE, POSE, STOCK, SPREAD_FLOOR, gunPose } = await import('../src/games/SmashTV/sprite.js')
 const { ENEMY_FRAMES, TELEGRAPH, CHARGERS, CHARGE, OUTLINE, enemyFrame, bossMouth, BOSS_MOUTH_FLAP, ADD_TELEGRAPH, BOSS_DEATH_T } = await import('../src/games/SmashTV/enemies.js')
-const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore, recoilKick, RECOIL_TICKS, RECOIL_PX, SHELL_KICK, shellKick, barrelHot, HOT_FLOOR, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, GORE_GRAV, STAIN_TICKS, stainRadius, camPan, CAM_PAN, CAM_SNAP, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, CAM_LEAD, walkHype, camLead, SPAWN_CUE, edgeRow } = await import('../src/games/SmashTV/juice.js')
+const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore, recoilKick, RECOIL_TICKS, RECOIL_PX, SHELL_KICK, shellKick, barrelHot, HOT_FLOOR, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, GORE_GRAV, STAIN_TICKS, stainRadius, camPan, CAM_PAN, CAM_SNAP, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, edgeMarks, MARK_CAP, CAM_LEAD, walkHype, camLead, SPAWN_CUE, edgeRow } = await import('../src/games/SmashTV/juice.js')
 const { PLAYER_PAL, PAULDRON_BOB } = await import('../src/games/SmashTV/art.js')
 const { FIRE, fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_SWELL, MURMUR_HYPE_FREQ, MURMUR_TICKS, WHOOSH, ALERT, ALERT_RADIUS, ALERT_CD } = await import('../src/games/SmashTV/audio.js')
 const { BAR, PIP, POWER_LABEL, labelClearsBar, pipFits, bombReady, RACK_FLASH, hiRoll, respawnState, RESPAWN_BLINK_SHIFT } = await import('../src/games/SmashTV/hud.js')
@@ -1121,8 +1121,74 @@ console.log('polish')
     // borrow the game's own colours so the chip reads without a tutorial.
     ok(markSide(10, 72, 256) === -1 && markSide(330, 72, 256) === 1 && markSide(200, 72, 256) === 0, 'markSide maps board x to the frame edge', `${markSide(10, 72, 256)},${markSide(330, 72, 256)},${markSide(200, 72, 256)}`)
     ok(MARK.spawn === '#ffd23f' && MARK.enemy === '#ff5d5d' && MARK.civ === '#8fff9f', 'the markers reuse the telegraph, kill and exit colours')
-    ok(SRC2.includes('markSide(bx, camX, CW)'), 'the renderer stamps the edge chips')
+    ok(SRC2.includes('edgeMarks(marks, camX, CW)'), 'the renderer stamps the edge chips through the budget filter')
     ok(SRC2.includes("en.kind !== 'boss'"), 'the host is exempt — the host law already keeps him framed')
+
+    // 3a′) #2089 — the edge budget spends itself on the UNSEEN. The old code
+    // capped the raw mark list at six before filtering by side, so a mark
+    // already in frame ate a slot and printed nothing while an off-screen
+    // threat could be truncated with no chip. Across nine seeds that wasted
+    // 70% of the budget and dropped 2,584 far-half threat-ticks. The law
+    // (edgeMarks) filters to the off-screen set first, then ranks live
+    // threats ahead of the bonus crowd ahead of the spawn cells.
+    ok(MARK_CAP >= 6, 'the edge keeps room for a crowd', `${MARK_CAP}`)
+    // a mark already inside the frame never earns a chip and must not spend one
+    ok(edgeMarks([{ x: 200, y: 100, kind: 'enemy' }], 72, 256).length === 0, 'an in-frame mark spends no edge slot')
+    ok(edgeMarks([{ x: 10, y: 100, kind: 'enemy' }], 72, 256)[0]?.side === -1, 'a left threat stamps the left edge')
+    ok(edgeMarks([{ x: 330, y: 100, kind: 'enemy' }], 72, 256)[0]?.side === 1, 'a right threat stamps the right edge')
+    // THE regression: visible marks used to fill the six-cap and starve the one
+    // off-screen threat. Filter-first keeps it, whatever the visible count.
+    {
+        const crowd = []
+        for (let i = 0; i < 10; i++) crowd.push({ x: 80 + i, y: 60 + i, kind: 'spawn' }) // all inside [72,328]
+        crowd.push({ x: 340, y: 100, kind: 'enemy' }) // far-right threat
+        const kept = edgeMarks(crowd, 72, 256)
+        ok(kept.length === 1 && kept[0].kind === 'enemy' && kept[0].side === 1, 'a lone far-half threat survives a frame full of visible marks', `${kept.length}:${kept[0] && kept[0].kind}`)
+    }
+    // when the crowd is bigger than the cap, live threats claim the edge first,
+    // then the bonus targets, then the anticipatory spawn cells.
+    {
+        const many = []
+        for (let i = 0; i < MARK_CAP + 2; i++) many.push({ x: 400 + i, y: 60 + i, kind: 'spawn' })
+        many.push({ x: 420, y: 120, kind: 'enemy' }, { x: 421, y: 140, kind: 'civ' })
+        const kept = edgeMarks(many, 72, 256)
+        ok(kept.length === MARK_CAP, 'the budget caps the crowd at MARK_CAP', `${kept.length}`)
+        ok(kept[0].kind === 'enemy' && kept[1].kind === 'civ', 'threats outrank the bonus crowd and spawn cells', kept.map((k) => k.kind).join(','))
+        ok(kept.every((k) => markSide(k.x, 72, 256)), 'every chip spent marks something actually off-screen')
+    }
+    // live proof across the nine seeds: replay the pilot, replicate the camera,
+    // and confirm no off-screen threat-tick is dropped from the edge budget —
+    // the far-half readability the audit measured at 2,584 lost ticks before.
+    {
+        const camOf = (g) => {
+            const bw = g.roomData.gw * CELL
+            const live = g.players.filter((q) => q.deadT === 0 && !q.out)
+            const seats = live.length ? live : g.players
+            const mid = seats.reduce((s, q) => s + q.x, 0) / seats.length
+            return Math.max(0, Math.min(Math.round(mid - CW / 2), bw - CW))
+        }
+        let dropped = 0, marked = 0
+        for (let seed = 0; seed < 9; seed++) {
+            const r = S.plan(seed)
+            const gs = makeGame(seed)
+            for (const inp of r.script) {
+                step(gs, inp); gs.events.length = 0
+                if (gs.roomData.gw * CELL <= CW) continue
+                const cam = camOf(gs)
+                const marks = []
+                for (const s of gs.roomData.spawns) marks.push({ x: s.c * CELL + 8, y: HUD_H + s.r * CELL + 8, kind: 'spawn' })
+                for (const en of gs.enemies) if (en.kind !== 'boss') marks.push({ x: en.x, y: en.y, kind: 'enemy' })
+                if (gs.roomData.bonus) for (const v of gs.civilians) marks.push({ x: v.x, y: v.y, kind: 'civ' })
+                const kept = new Set(edgeMarks(marks, cam, CW).map((m) => `${Math.round(m.x)},${Math.round(m.y)}`))
+                for (const m of marks) {
+                    if (!markSide(m.x, cam, CW)) continue
+                    if (kept.has(`${Math.round(m.x)},${Math.round(m.y)}`)) marked++
+                    else if (m.kind === 'enemy') dropped++
+                }
+            }
+        }
+        ok(dropped === 0 && marked > 20000, `no far-half threat is dropped from the edge budget (${marked} chips, ${dropped} dropped across 9 seeds)`, JSON.stringify({ marked, dropped }))
+    }
 
     // 3b) #2028 the add-entry cue: the host throws adds anywhere on the wide
     // studio, so with the camera clamped they can materialize OFF frame — the
@@ -1297,6 +1363,8 @@ if (process.argv.includes('--mutate')) {
         ['#2011: the walk-home swell never stirs', 'dPx > FAR_EXIT_PX ? Math.min(1, dPx / boardPx) : 0', '0'],
         ['#2011: the settle leans away from the door', 'Math.sign(doorDx) * Math.min(Math.abs(doorDx), CAM_LEAD)', '-Math.sign(doorDx) * Math.min(Math.abs(doorDx), CAM_LEAD)'],
         ['#2011: the camera stops settling toward the exit', 'export const CAM_LEAD = 8', 'export const CAM_LEAD = 0'],
+        ['#2089: the edge budget re-spends itself on marks already in frame', 'if (side) off.push({ ...m, side })', 'off.push({ ...m, side })'],
+        ['#2089: the edge budget shrinks and drops far-half threats', 'export const MARK_CAP = 8', 'export const MARK_CAP = 2'],
     ]
     const IDX = 'src/games/SmashTV/index.jsx'
     const IDX_MUTANTS = [

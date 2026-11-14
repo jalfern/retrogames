@@ -146,6 +146,29 @@ export const camLead = (doorDx, dPx) => (dPx > FAR_EXIT_PX ? Math.sign(doorDx) *
 export const MARK = { enemy: '#ff5d5d', spawn: '#ffd23f', civ: '#8fff9f' }
 export const markSide = (x, camX, cw) => (x < camX ? -1 : x > camX + cw ? 1 : 0)
 
+// #2089 — the edge budget is for the things you CANNOT see. The old renderer
+// capped the mark list at six BEFORE asking which side each sat on, so marks
+// already inside the frame (markSide === 0, which print no chip) still ate the
+// slots: measured across the nine seeds, 70% of the six-slot budget was spent
+// on visible marks and 2,584 off-screen threat-ticks were dropped with no chip
+// at all — a far-half enemy that should have screamed red on the edge said
+// nothing. The law now: filter to the off-screen set FIRST (only those earn a
+// chip), then let live threats claim the edge before the bonus crowd, and the
+// bonus crowd before the anticipatory spawn cells. MARK_CAP is the widest the
+// 24-column boards ever stack off-camera at once (measured max 8), so a
+// far-half threat is never silently truncated again.
+export const MARK_CAP = 8
+const MARK_RANK = { enemy: 0, civ: 1, spawn: 2 }
+export function edgeMarks(marks, camX, cw, cap = MARK_CAP) {
+    const off = []
+    for (const m of marks) {
+        const side = markSide(m.x, camX, cw)
+        if (side) off.push({ ...m, side })
+    }
+    off.sort((a, b) => (MARK_RANK[a.kind] ?? 9) - (MARK_RANK[b.kind] ?? 9))
+    return off.slice(0, cap)
+}
+
 // #2028 — the add entry cue. THE ANNOUNCER throws adds anywhere along the
 // 384 px studio (24 + rng*(bw-48)); when the camera clamps toward the far
 // edge, the host stays framed but the add and its materialize ring pulse
