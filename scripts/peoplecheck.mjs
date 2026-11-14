@@ -291,6 +291,18 @@ section('WINNABLE (attract autopilot, several seeds)')
     const h = (seed) => stateHash(play(seed))
     check('determinism: seed 7 twice -> identical final hash', h(7) === h(7))
     check('different seeds -> different trajectories', h(7) !== h(8))
+    // #2209: honest attract — the demo must SHOW the child, not only advertise
+    // her in MESSAGES. Before the reorder the §300 wall starved kidkit out of
+    // every run: 9/9 seeds won with Pip unadopted (README honest gap).
+    for (const seed of [7, 42, 1234, 99, 20261023]) {
+        const gk = play(seed)
+        check(`seed ${seed}: the demo sells Pip — the child moves in`, !!gk.kid, `kid=${!!gk.kid} money=${Math.round(gk.money)}`)
+    }
+    const tourSeen = []
+    const gTour = newRun(7)
+    let tTour = 0
+    while (!gTour.done && tTour++ < 60 * 60 * 45) { autoStep(gTour, DT); for (const e of gTour.events) if (e.t === 'pet' || e.t === 'kid') tourSeen.push(e.t); gTour.events.length = 0 }
+    check('the till tours the family in order — cat, then child', tourSeen.join(',') === 'pet,kid', tourSeen.join(','))
 }
 
 section('POLISH (#929): distinct need SFX + red-cross alarm')
@@ -1724,6 +1736,8 @@ section('SPEED (#2227): the clock dial — partition, clamp, cycle, hash')
     check('pin: the thumb-court release freezes when the world freezes', /!gs\.done && gs\.speed > 0/.test(pJsx))
     check('pin: the attract demo teaches the dial', /attractSpeed\(demoG\)/.test(pJsx) && /THE CLOCK IS YOURS/.test(pJsx))
     check('pin: the panel draws the dial and the shell routes taps to it', /export const DIAL/.test(pArt) && /export function speedHit/.test(pArt) && /s\.speed === i/.test(pArt) && /speedHit\(px, py\)/.test(pJsx) && /setSpeed\(gs, dd\)/.test(pJsx))
+    // #2209: the paused tell — the whole lot is the indicator, not just the pip.
+    check('pin: a paused lot breathes a || ghost on the real clock', /live && g\.speed === 0 && !g\.build/.test(pJsx) && /performance\.now\(\)/.test(pJsx))
     check('pin: a new street resets the dial (startPlay) and the contract view carries it', /speedPick = null; speedCycled = 0/.test(pJsx) && /speed: gs\.speed/.test(pJsx))
 }
 

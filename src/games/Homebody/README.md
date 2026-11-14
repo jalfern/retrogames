@@ -174,7 +174,7 @@ see §Speed dial.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 456 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), winnable seeds, determinism
+npm run peoplecheck          # 463 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -288,11 +288,12 @@ The attract bot buys the kid card inside the §300 wall right after the cat; the
 win economy is unchanged with a child on the lot (peoplecheck: the wish still
 lands). Two autonomy fixes the cry law forced: urgency order serves the lowest
 need that HAS a target (a lonely resident still eats), and a demo resident on
-an idle chat walk abandons the chat when a physical need hits red. Honest gap:
-the attract marquee does not yet show Pip arriving (the wish line beats her to
-the airtime), and 9-seed attract runs adopt the cat before the child card is
-ever chosen — the counter works, the demo undersells it.
-Gates: `peoplecheck` section 9 (31 pins).
+an idle chat walk abandons the chat when a physical need hits red. Honest gap
+CLOSED by #2209: the attract bot now tours the till cat → child → roof, so the
+demo shows Pip moving in inside the first demo minute on every WINNABLE seed
+(the old order let roomkit eat the daybreak register and the §300 wall starved
+kidkit out of 9/9 runs). Gates: `peoplecheck` section 9 (31 pins) + the tour
+pins in WINNABLE.
 
 ## Pet polish (#2200) — the cat is seen and greeted
 - **MISO joins the BONDS panel.** Her row is a MOOD, not a ladder —
@@ -362,6 +363,12 @@ the speed timeline; `newRun` moves in at NORMAL and a new street resets it.
   (`DIAL` geometry shared by draw + `speedHit`; the chosen pip is gold, the
   pause pip pulses while the world stands still). VirtualControls is untouched
   — the pips are the pad route, the #2222 tab-row law again.
+- **The paused tell (#2209):** the pip alone hid "why is nobody moving?" — gear
+  || now veils the lot and breathes a `||` ghost over the scene (hidden behind
+  the counter, where time stands still by #1806 law anyway). It rides
+  `performance.now`, not `g.sec`: the world clock it announces is frozen, and
+  the frozen clock also stills the pip's own pulse in play — the ghost is the
+  one paused indicator that provably keeps breathing.
 - **Court law:** the thumb-court release (`onUp`) answers only while the gear
   is running — a paused world takes no orders. The card/act queues still fill
   while paused and land the moment the world walks (driven and pinned).
