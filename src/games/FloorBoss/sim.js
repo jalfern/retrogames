@@ -103,7 +103,7 @@ export const TRUCK_HOME = -90, TRUCK_PARK = 613, TRUCK_EXIT = 830
 const TRUCK_BACK = 2.6, TRUCK_FWD = 3.2
 const JAM_WAIT = 60 // waited this long next to another waiter -> JAM
 const JAM_AUTO = 300 // self-resolve after 5 s
-const REPAIR_TICKS = 1200
+export const REPAIR_TICKS = 1200 // idle repair length; the painter shows it as a ring (#2254)
 const TURBO_CUT = 15
 const CURSOR_STEP = 4 // keyboard/mobile cursor: one cell per 4 ticks
 export const BAY_CELL = { x: 16, y: 2 }

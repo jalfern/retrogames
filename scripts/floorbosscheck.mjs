@@ -712,5 +712,33 @@ console.log('— plaicraft episode —')
     ok(validateEpisode(file) === null, `episode validates (${file.episode.poseCount} poses, ${file.ticks} ticks, success=${file.episode.success})`)
 }
 
+console.log('— first-time-player readability pass (#2254, source pins) —')
+{
+    const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    const simSrc = readFileSync(new URL('../src/games/FloorBoss/sim.js', import.meta.url), 'utf8')
+    // dock messages overprinted into a smear — they must stack per lane at the anchor
+    ok(/lane = Math\.max\(lane, f\.lane \+ 1\)/.test(ui) && /laneKey: key/.test(ui),
+        'fx messages stack one per lane at a shared anchor — no dock smear (#2254 item 2)')
+    ok(/rgba\(4,8,12,0\.78\)/.test(ui), 'floating messages ride a dark plate for contrast (#2254 item 1)')
+    // the budget law is said out loud: spend lands in the footer, spelled with costs
+    ok(/SPEND COMES OUT OF THROUGHPUT/.test(ui) && /RACK −\$\$\{RACK_COST\}/.test(ui) && /BOT −\$\$\{ROBOT_COST\}/.test(ui),
+        'throughput-as-budget is stated on screen, at the moment of spend (#2254 item 3)')
+    ok(/AUTO ROUTES THE BOTS — BREAKDOWNS, JAMS, BUILDING AND PAD CALLS ARE YOURS/.test(ui),
+        'the footer states the manager role beside AUTO (#2254 item 3)')
+    ok(/AUTO-DISPATCH ROUTES THE BOTS — YOU RUN THE FLOOR/.test(ui),
+        'first 15 s of play teaches the division of labour on the floor (#2254 item 3)')
+    // repair progress: ring from the sim clock + a pulse per turbo click
+    ok(/1 - b\.repair \/ REPAIR_TICKS/.test(ui) && /export const REPAIR_TICKS/.test(simSrc),
+        'broken bots show a repair ring driven by the sim repair clock (#2254 item 4)')
+    ok(/repairPulse\.set\(/.test(ui) && /case 'turbo'/.test(ui),
+        'every turbo-repair click lands a visible pulse ring (#2254 item 4)')
+    ok(/t\.kind === 'toRack' \|\| t\.kind === 'toStock'/.test(ui) && /\(dx \/ len\) \* 14/.test(ui),
+        'a selected bot draws a guide line to its target, started outside its own cell (#2254 item 4)')
+    // attract marquee anchored to the canvas, above the footer band
+    ok(/bottom-\[20%\]/.test(ui) && /bottom-\[15%\]/.test(ui), 'attract marquee and watch line are anchored to the stage, clear of the footer (#2254 item 5)')
+    ok(!/bottom-8 inset-x-0 flex justify-center pointer-events-none"/.test(ui),
+        'the wrapper-bottom marquee (footer overlap) cannot come back (#2254 item 5)')
+}
+
 console.log(fails ? `\nFLOOR BOSS CHECK: ${fails} FAILED` : '\nFLOOR BOSS CHECK: all green')
 process.exit(fails ? 1 : 0)
