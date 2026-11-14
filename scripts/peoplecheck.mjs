@@ -22,6 +22,9 @@
 //                  press-DURATION on A/Space: release inside HOLD_INSULT_MS is
 //                  the coo, holding past it hurls the insult mid-hold — world-ms
 //                  clock, one command per cooldown unchanged.
+//   6c. COURT PICK — #2235: a contested ring is the player's choice: tap a
+//                  shared-ring person and they hear the next words until they
+//                  leave the ring; uncontested rings keep the nearest law.
 //   7. SECOND VISITOR — #2143: Ivy, the market neighbour — her own schedule
 //                  window, rel.ivy ladder (growth, one-rel-up law, fade and
 //                  demote), the FRIENDS+/FAMILY gift economy, linger/return
@@ -69,6 +72,7 @@ import {
     manualMove,
     court, courtTarget, COO_BOND, AFFECTION_BOND, INSULT_DROP, CMD_CD, REL_EDGES,   // #2131
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court
+    courtReach, courtPickSet,   // #2235: choose your court target
     ivyChatPool, IVY_CHAT, IVY_FADE, IVY_GIFT_HUNGER, IVY_GIFT_CASH,   // #2143
     adoptPet, adoptOk, PET, PET_COOS,   // #2197: Miso
     petMood, PET_FEED_T, CAT_MEET_BOND, CAT_MEET_DIST,   // #2200: mood row, visible kibble, meet law
@@ -1026,6 +1030,86 @@ section('THUMB COURT')   // #2171 — one pad button, two orders: tap = coo, hol
     check('pin: the heat tell paints only while armed, in the refuse-red', /live && g\.holdT >= 0/.test(tbJsx) && /'#e23b2e'/.test(tbJsx))
     check('pin: the pad contract is untouched — still A=Space and the one ⚒ secondAction', /secondAction=\{\{ label: '⚒', code: 'KeyB' \}\}/.test(tbJsx))
     check('pin: the hold rides the hash like every other live state', /mix\(s\.holdT\)/.test(tbSim))
+}
+
+section('COURT PICK (#2235)')   // when the ring is crowded, tap decides WHO hears you — until they step away
+{
+    const crowd = (g) => {   // me (3,3), partner (3,4) dist 1, Fern (4,4) dist 2 — the ring shares
+        g.people[0].r = 3; g.people[0].c = 3; g.people[1].r = 3; g.people[1].c = 4
+        g.people[0].path = null; g.people[1].path = null
+        g.spatCd = 0; g.grudge = 0; g.cmdCd = 0; g.holdT = -1; g.courtPick = null
+        g.visitor = { name: 'Fern', r: 4, c: 4, x: 0, y: 0, path: null, state: 'hang', t: 5 }
+        return g
+    }
+    const reachKs = (g) => courtReach(g).map((c) => c.k).join(',')
+
+    const solo = newRun(92)
+    solo.people[0].r = 3; solo.people[0].c = 3; solo.people[1].r = 3; solo.people[1].c = 4
+    solo.people[0].path = null; solo.people[1].path = null; solo.cmdCd = 0
+    check('an uncontested ring keeps the old law — nearest wins and a tap picks nobody (switch/walk idioms untouched)',
+        courtTarget(solo).k === 'house' && courtPickSet(solo, 'house') === false && solo.courtPick === null)
+
+    const g0 = crowd(newRun(91))
+    check('a contested ring lists both ears (partner first) and still auto-picks the nearest',
+        reachKs(g0) === 'house,fern' && courtTarget(g0).k === 'house')
+    check('a tap on Fern picks her — the pick is state and outranks the nearest law',
+        courtPickSet(g0, 'fern') === true && g0.courtPick === 'fern' && courtTarget(g0).k === 'fern')
+    const e1 = court(g0, 'coo')
+    check('the word pays Fern: rel.fern, a fern event, the partner stays cold',
+        !!e1 && e1.k === 'fern' && Math.abs(g0.rel.fern - COO_BOND) < 1e-9 && g0.rel.house === 0 && drain(g0).some((e) => e.t === 'coo' && e.k === 'fern'))
+    check('the pick survives the word — until she steps away, Fern stays the ear',
+        g0.courtPick === 'fern' && courtTarget(g0).k === 'fern')
+    for (let i = 0; i < Math.round(3 / DT); i++) {
+        g0.people[0].r = 3; g0.people[0].c = 3; g0.visitor.r = 4; g0.visitor.c = 4   // hold the pair in the ring through the wander
+        g0.visitor.path = null; g0.people[0].path = null
+        courtTick(g0, FIXED_DT); advance(g0, DT)
+    }
+    check('the pick lives across live steps while she shares the ring', g0.courtPick === 'fern' && courtTarget(g0).k === 'fern')
+    g0.visitor.r = 9; g0.visitor.c = 9
+    courtTick(g0, FIXED_DT)
+    check('she steps out of the ring — the pick expires and the nearest law takes the word again',
+        g0.courtPick === null && courtTarget(g0).k === 'house')
+    g0.visitor.r = 4; g0.visitor.c = 4
+    check('her return does not resurrect the pick — until she steps away means until',
+        courtTarget(g0).k === 'house' && courtPickSet(g0, 'fern') === true && courtTarget(g0).k === 'fern')
+
+    const g1 = crowd(newRun(93))
+    g1.visitor.r = 9; g1.visitor.c = 9
+    check('someone out of the ring cannot be picked, and neither can an absent ear',
+        courtPickSet(g1, 'fern') === false && courtPickSet(g1, 'ivy') === false && courtPickSet(g1, 'kid') === false && g1.courtPick === null)
+
+    const g2 = crowd(newRun(94))
+    g2.people[1].r = 4; g2.people[1].c = 4   // partner dist 2
+    g2.visitor.r = 3; g2.visitor.c = 4       // Fern dist 1 — the auto-law would take Fern
+    check('the partner CAN be chosen against a nearer visitor — the crowded ring is where the law hurt',
+        courtTarget(g2).k === 'fern' && courtPickSet(g2, 'house') === true && courtTarget(g2).k === 'house')
+    const e2 = court(g2, 'coo')
+    check('and the chosen word pays the household, not the nearer neighbour',
+        !!e2 && e2.k === 'house' && Math.abs(g2.rel.house - COO_BOND) < 1e-9 && g2.rel.fern === 0)
+
+    const g3 = crowd(newRun(95))
+    courtPickSet(g3, 'fern')
+    g3.visitor.state = 'leaving'
+    check('a visitor leaving takes her pick with her — the stale pick is ignored the same instant',
+        courtTarget(g3).k === 'house' && (courtTick(g3, FIXED_DT), g3.courtPick === null) && courtTarget(g3).k === 'house')
+    const g4 = crowd(newRun(96))
+    courtPickSet(g4, 'house')
+    g4.people[1].faintT = 5
+    check('a fainted partner cannot be addressed — the word falls to the next ear at once',
+        courtTarget(g4).k === 'fern' && (courtTick(g4, FIXED_DT), g4.courtPick === null) && courtTarget(g4).k === 'fern')
+
+    const gH1 = crowd(newRun(97)); courtPickSet(gH1, 'fern')
+    const gH2 = crowd(newRun(97))
+    const pickScript = () => { const g = crowd(newRun(98)); courtPickSet(g, 'fern'); court(g, 'coo'); for (let i = 0; i < Math.round(20 / DT); i++) advance(g, DT); return stateHash(g) }
+    check('the pick rides the hash — a chosen ear differs from an idle one, and it is seed-exact',
+        stateHash(gH1) !== stateHash(gH2) && pickScript() === pickScript())
+
+    const cpSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const cpJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    check('pin: the view spends the tap on a shared-ring person before the switch and walk idioms (#2235)',
+        /for \(const c of courtReach\(gs\)\)[\s\S]{0,240}courtPickSet\(gs, c\.k\)[\s\S]{0,300}\/\/ tap a person to switch/.test(cpJsx))
+    check('pin: the expiry rides every live step alongside the hold clock', /courtPick && !courtReach\(s\)/.test(cpSim))
+    check('pin: the pick rides the hash like every other live state', /mix\(s\.courtPick/.test(cpSim))
 }
 
 section('SECOND VISITOR')   // #2143 — Ivy, the market neighbour

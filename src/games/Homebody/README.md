@@ -97,8 +97,8 @@ see §Speed dial.
   could never fire against a fixed `dt`; Ivy's honest check was the model. And the
   word is legible before it lands: a pulsing gold ring under whoever `courtTarget`
   will address, painted only when the command is ready (cooldown closed, buy mode
-  closed) — with the marquee teaching `C coos, X cuts`. Target *choice* (whom to
-  address when two share the ring) stays open; `courtTarget` keeps its law.
+  closed) — with the marquee teaching `C coos, X cuts`. Target *choice* is the
+  #2235 law below; the nearest/partner-first `courtTarget` law is the fallback.
 - Contentment: +1/+2 per satisfied need (2 = everyone healthy), +1 chat, +3
   payday, +1 per happy ambience hour. 80 grants the wish.
 - Autonomy (needs self-service, clocking in) runs only in `demo` mode — attract
@@ -137,7 +137,20 @@ see §Speed dial.
   scene, alternating `TRI_LINES` wording on a `TRI_TELL_CD` (7 s) world-clock
   throttle — `s.triTell`/`s.triHits` freeze with the sim and ride `stateHash`.
   Court targeting (`courtTarget`) is the player's side of the line and is
-  untouched; choosing your court target stays open (#2235).
+  untouched by the choreography.
+- Court pick (#2235): when the reach ring is CONTESTED, the player chooses the
+  ear. `courtReach(s)` lists everyone the word can find (partner pushed first,
+  fainting and leaving excluded — the old candidate law); when two or more share
+  the ring, a tap on one of them (`courtPickSet(s, k)`, wired in `pointerPx`
+  BEFORE the switch/walk idioms, 18 px like the resident switch) makes that
+  person the preferred addressee — `courtTarget` returns them over the nearer
+  auto-pick, so coo/affection/insult all pay the chosen bond, and the #2135
+  gold ring moves to prove it. The pick lives until that person leaves the ring:
+  `courtTick` (every live step) expires it, and a stale pick falls through to
+  the nearest law the same instant — a return does not resurrect it. An
+  uncontested ring picks nobody (solo taps keep switch/walk untouched — the
+  doctrine of no second pad holds: the existing tap IS the second verb).
+  `s.courtPick` rides `stateHash`. Marquee line + registry controls teach it.
 - Thumb court (#2171): the pad has no third button (AGENTS.md), so the second
   court order rides press-DURATION on the first. An A/Space press that lands on
   a person with no object near calls `courtHoldArm(s)` (arms `s.holdT = 0`,
@@ -174,7 +187,7 @@ see §Speed dial.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 463 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), winnable seeds, determinism
+npm run peoplecheck          # 480 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -205,7 +218,10 @@ npm run peoplecheck          # 463 gates: boot, rules, spare-room wing (#1806), 
 # the shared-table trigger to `mealEaten.length >= 99` — exactly the two SHARED
 # gates + the shared-law pin go red (434 → 431/3); restore. Or drop the
 # `p.mealTaken === s.mealSerial` refusal in finishUse — exactly the second-line
-# gate + the stamp pin go red (434 → 432/2); restore.
+# gate + the stamp pin go red (434 → 432/2); restore. Mutant #2235: neuter the
+# pick priority in courtTarget (`if (false && p)`) — exactly the seven COURT PICK
+# behavioural gates go red (480 → 473/7; the stale-fallthrough and expiry gates
+# correctly stay green — they assert the old law); restore.
 npm run dev   # another terminal
 npm run contractcheck        # includes homebody (CONTRACT_ONLY=homebody for just this)
 DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels + real C/X court keys with pink affection pixels and the far-apart Space doctrine + #2222 shelf flips on real [ ] keys, a tapped tab and gold-painted open-tab pixels + #2244 bells live: ring, steaming-plate pixels, parallel tap-orders, shared-table hearts

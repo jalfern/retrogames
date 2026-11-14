@@ -472,6 +472,7 @@ export function newRun(seed) {
         cooFx: 0,                 // #2131: seconds left of the sparkle/hearts tell over the pair
         cmdCd: 0,                 // #2131: real seconds until the next player command lands
         holdT: -1,                // #2171: armed thumb-court hold (world ms; -1 = no press pending)
+        courtPick: null,          // #2235: preferred addressee while it stays in the reach ring
         houseLineCd: 6,               // co-presence chat line cooldown (s)
         lastToast: 0,               // day of last shared payday toast
         thoughts: [], thoughtT: 0,
@@ -591,21 +592,44 @@ export const HOUSE_LINES = [
 // #2131: player-ordered romance. Who is within arm's reach of the commanded
 // resident — partner first by distance, Fern while she hangs about. Fainted
 // folks are not company (their own and yours).
-export function courtTarget(s) {
+export function courtReach(s) {   // #2235: everyone the word can find, partner pushed first
     const me = s.people[s.active]
-    if (!me || me.faintT > 0) return null
+    if (!me || me.faintT > 0) return []
     const cand = []
     const partner = s.people[1 - s.active]
     if (partner && partner !== me && partner.faintT <= 0) cand.push({ p: partner, k: 'house' })
     if (s.visitor && s.visitor.state !== 'leaving') cand.push({ p: s.visitor, k: 'fern' })
     if (s.ivy && s.ivy.state !== 'leaving') cand.push({ p: s.ivy, k: 'ivy' })   // #2143
     if (s.kid) cand.push({ p: s.kid, k: 'kid' })   // #2203: the court reaches children too
-    let best = null, bd = COURT_REACH + 1
+    return cand.filter((c) => Math.abs(me.r - c.p.r) + Math.abs(me.c - c.p.c) <= COURT_REACH)
+}
+
+export function courtTarget(s) {
+    const cand = courtReach(s)
+    if (!cand.length) return null
+    if (s.courtPick) {   // #2235: the chosen ear outranks the nearest while it shares the ring (expiry: courtTick)
+        const p = cand.find((c) => c.k === s.courtPick)
+        if (p) return p   // stale pick (they left/fainted) simply falls through to the old law
+    }
+    const me = s.people[s.active]
+    let best = cand[0], bd = COURT_REACH + 1   // partner-first on ties: cand[0] is the partner
     for (const c of cand) {
         const d = Math.abs(me.r - c.p.r) + Math.abs(me.c - c.p.c)
-        if (d <= COURT_REACH && d < bd) { bd = d; best = c }
+        if (d < bd) { bd = d; best = c }   // cand is already reach-filtered by courtReach
     }
     return best
+}
+
+// #2235 — CHOOSE YOUR COURT TARGET. When others share the reach ring, a tap on
+// one of them makes that person the preferred addressee until they leave the
+// ring (courtTick expires the pick; the view owns tap priority). The pick rides
+// the hash so replays pin it like every other law.
+export function courtPickSet(s, k) {
+    const cand = courtReach(s)
+    if (cand.length < 2) return false   // nothing to choose — the solo idiom stays switch/walk
+    if (!cand.some((c) => c.k === k)) return false
+    s.courtPick = k
+    return true
 }
 
 const COO_LINES = [
@@ -685,6 +709,7 @@ export function courtHoldArm(s) {          // A press with no object in reach
     return true
 }
 export function courtTick(s, ms) {        // every live play step
+    if (s.courtPick && !courtReach(s).some((c) => c.k === s.courtPick)) s.courtPick = null   // #2235: the pick lasts until they leave the ring
     if (s.holdT < 0) return null
     s.holdT += ms
     if (s.holdT >= HOLD_INSULT_MS) {
@@ -2182,6 +2207,7 @@ export function stateHash(s) {
     mix(s.spats); mix(s.grudge)        // #2070: quarrels and grudges ride it too
     mix(s.cmdCd)                       // #2131: the command cooldown rides it too
     mix(s.holdT)                       // #2171: so does the pending thumb-court hold (-1 = none)
+    mix(s.courtPick === 'house' ? 1 : s.courtPick === 'fern' ? 2 : s.courtPick === 'ivy' ? 3 : s.courtPick === 'kid' ? 4 : 0)   // #2235: so does the preferred addressee
     mix(s.triTell); mix(s.triHits)   // #2154: the choreography tell and its beat count ride it too
     mix(s.paperDay)                    // #2238: today's route stamps the day it landed
     mix(s.mealDay)                     // #2244: so do the bells — the day the plate landed
