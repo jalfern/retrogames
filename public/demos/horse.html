@@ -151,12 +151,21 @@ function hoofBody(leg, phi) {
   return { x: lerp(leg.xLand - STRIDE * leg.d, leg.xLand, ease), y: leg.lift * Math.sin(Math.PI * v) + 0.14, s: 0 };
 }
 // body heave and pitch ride the same clock: dip after the fore pair lands,
-// rise through the hind push, small nod twice per stride.
+// rise through the hind push, small nod twice per stride. Lateral roll and the
+// poll nod are integer harmonics of φ too — the seam stays exact (#2162).
 function bodyMotion(phi) {
   return {
     y: YC + 0.075 * Math.sin(TAU * (phi - 0.62)) + 0.045 * Math.sin(TAU * 2 * (phi - 0.10)),
     pitch: 0.105 * Math.sin(TAU * (phi - 0.30)) + 0.045 * Math.sin(TAU * 2 * (phi - 0.62)),
+    roll: 0.034 * Math.sin(TAU * (phi - 0.34)) + 0.016 * Math.sin(TAU * 2 * (phi - 0.68)),
+    nod: 0.052 * Math.sin(TAU * (phi - 0.38)) + 0.014 * Math.sin(TAU * 2 * (phi - 0.05)),
   };
+}
+// stance flex: the loaded limb springs at touchdown, peaks mid-stance and is
+// straight again at liftoff — zero at both contact edges, so no knee pops.
+function hoofFlex(leg, phi) {
+  const u = inContact(leg, phi);
+  return u >= 0 ? Math.sin(Math.PI * u) : 0;
 }
 
 /* ------------------------------- renderer ------------------------------- */
@@ -315,22 +324,26 @@ function drawLeg(leg, phi, bm, colDark) {
   const hb = hoofBody(leg, phi);          // world point (body-fixed world)
   const hoof = [hb.x, hb.y, joint[2]];
   const ankle = [hoof[0] - Math.sin(bm.pitch) * hip.foot, hoof[1] - Math.cos(bm.pitch) * hip.foot];
-  // two-bone IK in the sagittal plane (elbow trails fore, stifle leads hind)
+  // two-bone IK in the sagittal plane (elbow trails fore, stifle leads hind);
+  // a loaded stance leg springs — the effective reach shortens at the flex
+  // peak, so the knee snaps back/forward instead of locking out (#2162)
+  const flex = hoofFlex(leg, phi);
   const dx = ankle[0] - joint[0], dy = ankle[1] - joint[1];
-  const D = clamp(Math.hypot(dx, dy), Math.abs(hip.l1 - hip.l2) + 1e-4, hip.l1 + hip.l2 - 1e-4);
+  const D = clamp(Math.hypot(dx, dy) - flex * (fore ? 0.05 : 0.075), Math.abs(hip.l1 - hip.l2) + 1e-4, hip.l1 + hip.l2 - 1e-4);
   const ca = clamp((hip.l1 * hip.l1 + D * D - hip.l2 * hip.l2) / (2 * hip.l1 * D), -1, 1);
   const dir = Math.atan2(dy, dx);
   const s1 = dir + (fore ? -1 : 1) * Math.acos(ca);
   const knee = [joint[0] + hip.l1 * Math.cos(s1), joint[1] + hip.l1 * Math.sin(s1)];
   limb(joint[0], joint[1], knee[0], knee[1], fore ? 0.115 : 0.14, 0.075, hip.z * 0.42, joint[2], colDark);
   limb(knee[0], knee[1], ankle[0], ankle[1], 0.075, 0.055, hip.z * 0.34, joint[2], colDark);
-  pbox(hoof[0], hoof[1] - 0.055, hoof[2], 0.105, 0.085, 0.08, 0.065, 0.075, 0.075, bm.pitch, PAL.hoof);
+  pbox(hoof[0], hoof[1] - 0.055, hoof[2], 0.105, 0.085, 0.08, 0.065, 0.075, 0.075, bm.pitch + flex * 0.16, PAL.hoof);
 }
 
 function drawHorse(phi) {
   const bm = bodyMotion(phi);
   const rot = (x, y) => [x * Math.cos(bm.pitch) - y * Math.sin(bm.pitch), x * Math.sin(bm.pitch) + y * Math.cos(bm.pitch)];
-  const R = (x, y, z) => { const p = rot(x, y); return [p[0], p[1] + bm.y, z]; };
+  const crl = Math.cos(bm.roll), srl = Math.sin(bm.roll);   // lateral roll about the spine (#2162)
+  const R = (x, y, z) => { const p = rot(x, y); return [p[0], p[1] * crl - z * srl + bm.y, p[1] * srl + z * crl]; };
   // far-side pair first, then near (painter's aid on top of the depth sort)
   const near = basis.pos[2] >= 0 ? 1 : -1;
   const order = [...LEGS].sort((a, b) => (a.side === near ? 1 : 0) - (b.side === near ? 1 : 0));
@@ -341,27 +354,32 @@ function drawHorse(phi) {
   pbox(...R(0.72, 0.02, 0), 0.28, 0.38, 0.38, 0.34, 0.29, 0.28, bm.pitch - 0.08, PAL.body);
   // belly shadow stripe (dark, slightly below barrel)
   pbox(...R(0.02, -0.36, 0), 0.44, 0.34, 0.09, 0.09, 0.24, 0.26, bm.pitch, PAL.belly);
-  // neck: thick column from chest crest to the poll
-  const nk = R(0.90, 0.30, 0), hd = R(1.28, 0.58, 0);
+  // neck: thick column from chest crest to the poll; the whole head/neck
+  // group hinges at the withers by bm.nod — the head pulls and settles with
+  // the suspension instead of riding rigid (#2162)
+  const nk = R(0.90, 0.30, 0);
+  const nodA = bm.nod, cn = Math.cos(nodA), sn = Math.sin(nodA);
+  const RN = (x, y, z) => { const p = R(x, y, z); const dx = p[0] - nk[0], dy = p[1] - nk[1]; return [nk[0] + dx * cn - dy * sn, nk[1] + dx * sn + dy * cn, p[2]]; };
+  const hd = RN(1.28, 0.58, 0);
   limb(nk[0], nk[1], hd[0], hd[1], 0.23, 0.15, 0.13, 0, PAL.bodyLit);
   // crest: pale beads along the top line, fluttering twice per stride
   for (let k = 0; k < 6; k++) {
     const u = k / 5;
-    const p1 = R(lerp(0.90, 1.26, u), lerp(0.46, 0.70, u), 0);
+    const p1 = RN(lerp(0.90, 1.26, u), lerp(0.46, 0.70, u), 0);
     const sway = Math.sin(TAU * (2 * phi - k * 0.11)) * 0.03;
     limb(p1[0] + sway - 0.02, p1[1] + 0.09, p1[0] + sway + 0.05, p1[1] + 0.02, 0.045, 0.032, 0.045, sway * 3, PAL.maneSh);
   }
   // head: skull wedge, muzzle, blaze chip, eyes, ears
-  pbox(...R(1.42, 0.55, 0), 0.16, 0.22, 0.13, 0.11, 0.095, 0.085, bm.pitch - 0.55, PAL.bodyLit);
-  pbox(...R(1.64, 0.38, 0), 0.10, 0.12, 0.08, 0.065, 0.068, 0.06, bm.pitch - 0.9, PAL.muzzle);
-  pbox(...R(1.50, 0.52, 0), 0.04, 0.05, 0.04, 0.04, 0.09, 0.07, bm.pitch - 0.62, PAL.blaze);
-  pbox(...R(1.40, 0.68, 0.082), 0.028, 0.026, 0.024, 0.024, 0.016, 0.016, bm.pitch - 0.55, PAL.eye);
-  pbox(...R(1.40, 0.68, -0.082), 0.028, 0.026, 0.024, 0.024, 0.016, 0.016, bm.pitch - 0.55, PAL.eye);
-  const e1 = R(1.30, 0.80, 0.055), e2 = R(1.30, 0.80, -0.055);
+  pbox(...RN(1.42, 0.55, 0), 0.16, 0.22, 0.13, 0.11, 0.095, 0.085, bm.pitch - 0.55 + nodA, PAL.bodyLit);
+  pbox(...RN(1.64, 0.38, 0), 0.10, 0.12, 0.08, 0.065, 0.068, 0.06, bm.pitch - 0.9 + nodA, PAL.muzzle);
+  pbox(...RN(1.50, 0.52, 0), 0.04, 0.05, 0.04, 0.04, 0.09, 0.07, bm.pitch - 0.62 + nodA, PAL.blaze);
+  pbox(...RN(1.40, 0.68, 0.082), 0.028, 0.026, 0.024, 0.024, 0.016, 0.016, bm.pitch - 0.55 + nodA, PAL.eye);
+  pbox(...RN(1.40, 0.68, -0.082), 0.028, 0.026, 0.024, 0.024, 0.016, 0.016, bm.pitch - 0.55 + nodA, PAL.eye);
+  const e1 = RN(1.30, 0.80, 0.055), e2 = RN(1.30, 0.80, -0.055);
   limb(e1[0], e1[1], e1[0] - 0.01, e1[1] + 0.10, 0.028, 0.009, 0.024, 0.055, PAL.body);
   limb(e2[0], e2[1], e2[0] - 0.01, e2[1] + 0.10, 0.028, 0.009, 0.024, -0.055, PAL.belly);
   // forelock over the poll
-  const fl = R(1.28, 0.78, 0);
+  const fl = RN(1.28, 0.78, 0);
   for (let k = 0; k < 3; k++) {
     const sw = Math.sin(TAU * (2 * phi - k * 0.16)) * 0.05;
     limb(fl[0] - 0.02 + sw * 0.4, fl[1] + 0.02, fl[0] - 0.09 + sw, fl[1] - 0.11, 0.04, 0.016, 0.028, (k - 1) * 0.05, PAL.mane);
@@ -378,6 +396,12 @@ function drawHorse(phi) {
     const a = pts[k], b = pts[k + 1];
     limb(a[0], a[1], b[0], b[1], lerp(0.16, 0.07, k / 4), lerp(0.16, 0.07, (k + 1) / 4), lerp(0.11, 0.03, k / 4), a[2], k < 2 ? PAL.maneSh : PAL.mane);
   }
+  // frayed tip: three prisms splay off the last segment — the plume no
+  // longer ends blunt (#2162)
+  const tp = pts[4];
+  for (let k = -1; k <= 1; k++)
+    limb(tp[0], tp[1], tp[0] - 0.11 - Math.abs(k) * 0.02, tp[1] - 0.13 - k * 0.09,
+      0.05, 0.012, 0.032, tp[2] + k * 0.075, k === 0 ? PAL.mane : PAL.maneSh);
 }
 
 /* ------------------------------- the land ------------------------------- */
@@ -504,10 +528,10 @@ let orderBuf = '', orderSeen = '';
 
 function computeHooves(p) {
   const bm = bodyMotion(p);
-  const out = { bodyY: bm.y, pitch: bm.pitch };
+  const out = { bodyY: bm.y, pitch: bm.pitch, roll: bm.roll, nod: bm.nod };
   for (const leg of LEGS) {
     const hb = hoofBody(leg, p);
-    out[leg.name] = { x: hb.x, y: hb.y, z: leg.side, contact: hb.s };
+    out[leg.name] = { x: hb.x, y: hb.y, z: leg.side, contact: hb.s, fx: hoofFlex(leg, p) };
   }
   return out;
 }
@@ -587,6 +611,9 @@ function updateHud() {
 
 /* ------------------------------- sound ------------------------------- */
 let AC = null, master = null, windGain = null;
+// hoofbeat layer counters (φ-crossings, independent of AudioContext so the
+// harness can prove the layering headless — #2162)
+const snd = { clk: 0, thd: 0, sub: 0 };
 function ensureAudio() {
   if (AC || !audioOn) return;
   try {
@@ -611,11 +638,35 @@ function thud(heavy) {
   const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = heavy ? 95 : 150; bp.Q.value = 1.1;
   const g = AC.createGain(); g.gain.setValueAtTime(heavy ? 0.55 : 0.38, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
   s.connect(bp); bp.connect(g); g.connect(master); s.start();
+  if (heavy) {   // sub-thump: the hind hooves hit the steppe in the chest (#2162)
+    const o = AC.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(58, t); o.frequency.exponentialRampToValueAtTime(36, t + 0.10);
+    const og = AC.createGain(); og.gain.setValueAtTime(0.40, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+    o.connect(og); og.connect(master); o.start(t); o.stop(t + 0.16);
+  }
+}
+// hard transient on every beat — the hoof-shell click that sits on top of
+// the thump and gives the beat its edge (#2162)
+function click() {
+  if (!AC || !audioOn) return;
+  const t = AC.currentTime;
+  const nb = AC.createBuffer(1, Math.floor(AC.sampleRate * 0.022), AC.sampleRate);
+  const d = nb.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (AC.sampleRate * 0.004));
+  const s = AC.createBufferSource(); s.buffer = nb;
+  const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1900;
+  const g = AC.createGain(); g.gain.value = 0.20;
+  s.connect(hp); hp.connect(g); g.connect(master); s.start();
 }
 // hoofbeats fire on the same φ crossings the picture uses — sound loops too
 function audioTick(prev, cur) {
-  if (!AC) return;
-  for (const leg of LEGS) if (startedC(leg.c, prev, cur)) thud(leg.name[1] === 'H');
+  for (const leg of LEGS) {
+    if (startedC(leg.c, prev, cur)) {
+      const heavy = leg.name[1] === 'H';
+      snd.clk++; snd.thd++; if (heavy) snd.sub++;
+      thud(heavy); click();
+    }
+  }
   if (windGain) windGain.gain.value = 0.05;
 }
 
@@ -652,14 +703,15 @@ window.__horseTest = {
     p = ((p % 1) + 1) % 1;
     const bm = bodyMotion(p);
     const hv = computeHooves(p);
-    const s = { bodyY: bm.y, pitch: bm.pitch, travel: p * STRIDE };
+    const s = { bodyY: bm.y, pitch: bm.pitch, roll: bm.roll, nod: bm.nod, travel: p * STRIDE };
     for (const leg of LEGS) {
-      s[leg.name] = { x: hv[leg.name].x, y: hv[leg.name].y, contact: hv[leg.name].contact };
+      s[leg.name] = { x: hv[leg.name].x, y: hv[leg.name].y, contact: hv[leg.name].contact, fx: hv[leg.name].fx };
     }
     s.prop = [(((3.7 - p * L) % L) + L) % L, (((21.4 - p * L) % L) + L) % L];
     return s;
   },
   hooves() { const hv = computeHooves(phi); const o = {}; for (const l of LEGS) o[l.name] = { x: +hv[l.name].x.toFixed(4), y: +hv[l.name].y.toFixed(4), contact: hv[l.name].contact }; return o; },
+  soundStats() { return { click: snd.clk, thud: snd.thd, sub: snd.sub }; },
   slipMax() { const o = {}; for (const l of LEGS) o[l.name] = +(slipMax[l.name] || 0).toFixed(3); return o; },
   gait() { return { order: orderSeen, stride: STRIDE, period: T_STRIDE, speed: SPEED, loopStrides: LOOPS, seam: L, suspFrac: 1 - LEGS[3].c - LEGS[3].d }; },
   footfall(p) { const out = {}; for (const leg of LEGS) out[leg.name] = { c: leg.c, d: leg.d, contact: inContact(leg, p) >= 0 ? 1 : 0 }; return out; },
@@ -680,7 +732,7 @@ window.__horseTest = {
     }
     return n;
   },
-  reset() { tRun = 0; phi = 0; travel = 0; paused = false; lastTs = 0; orderBuf = ''; orderSeen = ''; Object.assign(cam, camReset); },
+  reset() { tRun = 0; phi = 0; travel = 0; paused = false; lastTs = 0; orderBuf = ''; orderSeen = ''; snd.clk = snd.thd = snd.sub = 0; Object.assign(cam, camReset); },
 };
 
 requestAnimationFrame(frame);
