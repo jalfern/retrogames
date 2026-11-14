@@ -290,6 +290,42 @@ await wait(250)
 const [vr, vg, vb] = await pxAt(557, 260)   // flower row, first pip — FAMILY now
 check('#2143 the panel runs a third BONDS row and paints Ivy pips plum', vr > vg + 24 && vb > vg + 24 && vr > 110, `rgb(${vr},${vg},${vb})`)
 
+// #2222 catalog shelves: [ ] flip, tap a shelf name, digits pick within the shelf
+const stWait = async (pred, cap = 60) => {   // poll instead of fixed sleeps — CI Chrome lags
+    let s = await st()
+    for (let i = 0; i < cap && !pred(s); i++) { await wait(50); s = await st() }
+    return s
+}
+let sv = await st()
+if (!sv.build) { await page.keyboard.press('KeyB'); sv = await stWait((x) => x.build) }
+check('#2222 buy mode opens on the HOME shelf', sv.build === true && sv.tab === 0, `tab=${sv.tab}`)
+await page.keyboard.press('BracketRight')
+let sh = await stWait((x) => x.tab === 1)
+check('#2222 ] flips to FUN and the selection rides the shelf', sh.tab === 1 && sh.sel === 4, `tab=${sh.tab} sel=${sh.sel}`)
+await page.keyboard.press('Digit2')
+sh = await stWait((x) => x.sel === 5)
+check('#2222 digit 2 picks within the open shelf (radio)', sh.sel === 5, `sel=${sh.sel}`)
+await page.keyboard.press('BracketLeft')
+sh = await stWait((x) => x.tab === 0)
+check('#2222 [ flips back to HOME', sh.tab === 0, `tab=${sh.tab}`)
+// tap the SPECIAL tab (4th of 4 across the tray), then verify logic + pixels
+await tap(6 + 3 * 129 + 62, 480 - 56 + 8)
+sh = await stWait((x) => x.tab === 3)
+check('#2222 tapping the SPECIAL tab opens it on its first card', sh.tab === 3 && sh.sel === 13, `tab=${sh.tab} sel=${sh.sel}`)
+// the pointer handler mutates gs synchronously — let the loop paint the new shelf first
+await wait(150)
+const goldIn = (x0, x1) => page.evaluate(([x0, x1]) => {
+    const c = document.querySelector('canvas')
+    const d = c.getContext('2d').getImageData(x0, 426, x1 - x0, 13).data
+    let n = 0
+    for (let i = 0; i < d.length; i += 4) if (d[i] > 230 && d[i + 1] > 180 && d[i + 1] < 236 && d[i + 2] < 110) n++
+    return n
+}, [x0, x1])
+const goldSpecial = await goldIn(6 + 3 * 129, 6 + 3 * 129 + 125)
+const goldHome = await goldIn(6, 6 + 125)
+check('#2222 the open tab is painted gold and the closed one is not', goldSpecial >= 10 && goldHome < 10, `special=${goldSpecial} home=${goldHome}`)
+await page.keyboard.press('KeyB'); await wait(150)
+
 // frame matches: sprite position follows state
 const f0 = await page.evaluate(() => window.__game.state())
 check('contract state ticks', f0.tick > 0 && typeof f0.score === 'number', `tick=${f0.tick} score=${f0.score}`)
