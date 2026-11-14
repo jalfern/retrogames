@@ -45,6 +45,11 @@
 //                  refuses, the shared-table law pays social/bond/content once
 //                  per plate, hash and determinism carry, and the bot eats in
 //                  attract with the wish still landing.
+//  11. FIRST PASS (#2253) — the newcomer's law: day 1 decays at half pace,
+//                  every need crossing into amber raises one named prompt
+//                  (need → fix, re-armed by recovery), an issued order rings
+//                  its target, and the banner sits on the lawn, not over the
+//                  residents.
 //
 // It proves IT can fail the playbook way: break one load-bearing line in sim.js
 // (content accrual in finishUse, or the relAdd(s,'fern') feed in the visitor
@@ -54,7 +59,7 @@
 // Run: node scripts/peoplecheck.mjs
 
 import {
-    FIXED_DT, W, H, COLS, ROWS, MAP, TILE, WIN_CONTENT, NEEDS,
+    FIXED_DT, W, H, COLS, ROWS, MAP, TILE, LOT_X, LOT_Y, WIN_CONTENT, NEEDS,
     CATALOG, DEF, tileOf, tileX, tileY, SFX, RED_AT, EXT_ROOM,
     REL_NAMES, relLevel, chatPool,
     SPAT_DROP, SPAT_SOCIAL, SPAT_CD, MAKEUP_BOND, moodOf, avg,
@@ -73,6 +78,7 @@ import {
     TRI_TELL_CD, TRI_LINES, IVY_SOCIAL,   // #2154: visitor choreography law
     PAPER, PAPER_LATE, PAPER_LINES,   // #2238: the paper route
     MEAL, MEAL_NAMES, MEAL_DUE, MEAL_WINDOW, MEAL_BOND, MEAL_LINES, SHARED_MEAL_LINES, HOUR_SEC,   // #2244: the meal bells
+    AMBER_AT, DAY1_GRACE, NEED_HINT,   // #2253: the first-time player pass
 } from '../src/games/Homebody/sim.js'
 import { readFileSync } from 'node:fs'
 
@@ -551,6 +557,12 @@ section('FEEL — walk surfaces + refusal (#1823)')
 
     // standing still makes no sound (hold Fern back — her footfalls are honest)
     g.visitAfter = 99; g.visitor = null
+    g.noWander = true   // #2253: pin the seeded idle stroll — stillness is law here, not a lucky draw
+    drain(g)
+    // #2253: the step decayer owes one trailing footfall after a short walk;
+    // let it spend, then assert the genuinely quiet window. (Under the grace
+    // the rng re-phase moved this overdue step across the old drain boundary.)
+    for (let i = 0; i < 10; i++) advance(g, DT)
     drain(g)
     for (let i = 0; i < 60; i++) advance(g, DT)
     check('standing still makes no sound', !drain(g).some((e) => e.t === 'step'))
@@ -2101,6 +2113,10 @@ section('MEAL BELLS (#2244): three bells, one helping each, the table pays socia
     check('seeds stay exact with the bells running', stateHash(d1) === stateHash(d2))
     const m2 = (g) => { autoStep(g, DT); drain(g) }
     const a1 = newRun(42)
+    // #2253: the grace slowed day-1 hunger, so a passive cap can no longer
+    // pull the bot off its errands twice — rig the hunger instead. The gate
+    // tests that the bot READS a warm plate, not that it starves on schedule.
+    if (!a1.done) for (const p of a1.people) p.needs.hunger = 0.25
     let took = 0
     for (let i = 0; i < 60 * 60 * 4 && !a1.done && took < 2; i++) { m2(a1); took = a1.people.reduce((n, p) => n + (p.mealTaken > 0 ? 1 : 0), 0) }
     check('the attract bot walks to a warm plate itself — the demo teaches the bells', took >= 2, `taken ${took}`)
@@ -2127,6 +2143,113 @@ section('MEAL BELLS (#2244): three bells, one helping each, the table pays socia
         /case 'meal'/.test(pJsx) && /case 'meal-shared'/.test(pJsx) && /FOOD ON THE COUNTER/.test(pJsx) && /BELLS RING/.test(pJsx))
     check('pin: art draws the steaming plate; probe + F1 cheat carry the bells', /case 'meal'/.test(pArt) && /mealSerial: gs\.mealSerial/.test(pJsx) && /DROP MEAL/.test(pJsx))
     check('pin: the teaching lines ship in sim', Array.isArray(MEAL_LINES) && MEAL_LINES.length === 3 && Array.isArray(SHARED_MEAL_LINES) && SHARED_MEAL_LINES.length >= 3)
+}
+
+section('FIRST PASS (#2253) — grace, amber prompts, order ping')
+{
+
+    // DAY1_GRACE: the learning day decays half pace — day 1 is a tutorial,
+    // not the 2-minute starvation race a cold player lost in the report.
+    const hrs = (g, sec) => { for (let i = 0; i < Math.round(sec / DT) && !g.done; i++) { advance(g, DT); drain(g) } }
+    const g1 = newRun(5), g2 = newRun(5)
+    g2.day = 2
+    const h0 = g1.people[0].needs.hunger
+    hrs(g1, 20); hrs(g2, 20)
+    const dropD1 = h0 - g1.people[0].needs.hunger
+    const dropD2 = h0 - g2.people[0].needs.hunger
+    check('day 1 decays at DAY1_GRACE pace — half of a later day',
+        dropD1 > 0 && Math.abs(dropD1 * 2 - dropD2) < 0.005,
+        `d1=${dropD1.toFixed(3)} d2=${dropD2.toFixed(3)}`)
+    {
+        const g1b = newRun(5), g2b = newRun(5); g2b.day = 2
+        const hb = g1b.people[0].needs.hunger
+        hrs(g1b, 20); hrs(g2b, 20)
+        check('day-2 drop is exactly double the day-1 drop',
+            Math.abs((hb - g1b.people[0].needs.hunger) * 2 - (hb - g2b.people[0].needs.hunger)) < 0.005)
+        // the window closes at noon — the afternoon and the x8 work clock
+        // run on the normal law (a whole-day halving re-phases the bot's day
+        // and stranded seed 20261023's wish; found by the WINNABLE gate)
+        const gw = newRun(5); gw.hour = 12.01
+        const hw = gw.people[0].needs.hunger
+        hrs(gw, 20)
+        check('the grace ends at noon — afternoon day 1 decays full pace',
+            Math.abs((hw - gw.people[0].needs.hunger) - dropD2) < 0.005)
+    }
+
+    // amber crosses BEFORE red, one-shot per crossing, and names the fix
+    const ga = newRun(9)
+    const amberEv = [], redEv = []
+    for (let i = 0; i < 60 * 60 * 4 && !ga.done; i++) {
+        advance(ga, DT); const e = drain(ga)
+        amberEv.push(...e.filter((x) => x.t === 'amber')); redEv.push(...e.filter((x) => x.t === 'redcross'))
+    }
+    check('a starving day speaks early — amber prompts fire before any redcross',
+        amberEv.length > 0 && ga.people.some((p) => p.needs.hunger <= RED_AT || p.faintT > 0) && amberEv.length >= redEv.length,
+        `amber=${amberEv.length} red=${redEv.length}`)
+    const keysOf = (ev) => ev.map((x) => `${x.name}:${x.need}`)
+    const ka = keysOf(amberEv)
+    check('one amber prompt per need-crossing — never spam', new Set(ka).size === ka.length)
+    // every need names a fix, and every fix but social ships on the starter
+    // lot (social is Fern's bell — the phone answers it once she visits)
+    const NAMED_FIX = { hunger: 'FRIDGE', energy: 'BED', fun: 'TV', social: 'PHONE', bladder: 'TOILET' }
+    check('every need has a one-tap fix in the hint map',
+        NEEDS.every((n) => NEED_HINT[n] && NEED_HINT[n].toUpperCase().includes(NAMED_FIX[n])))
+    const names = new Set(newRun(9).people.map((p) => p.name))
+    check('every amber prompt is a resident with a hint the lot can answer',
+        amberEv.every((x) => names.has(x.name) && NEED_HINT[x.need]))
+    check('amber outranks red on the ladder (AMBER_AT above RED_AT)', AMBER_AT > RED_AT && DAY1_GRACE > 0 && DAY1_GRACE < 1)
+
+    // recovery re-arms the stamp
+    const gr = newRun(9)
+    gr.people[0].needs.hunger = AMBER_AT - 0.01; gr.people[0].wasAmber = {}
+    advance(gr, DT); drain(gr)
+    const once = gr.events.filter((x) => x.t === 'amber').length
+    gr.people[0].needs.hunger = 0.9
+    advance(gr, DT); drain(gr)
+    gr.people[0].needs.hunger = AMBER_AT - 0.01
+    advance(gr, DT)
+    check('feeding re-arms the amber prompt — a later slide warns again',
+        once === 0 && gr.events.filter((x) => x.t === 'amber').length === 1)
+
+    // the order ping: a commanded use rings the target the instant it lands
+    const gp = newRun(7)
+    const fridge = gp.items.find((it) => it.id === 'fridge')
+    check('no ping on an idle lot', gp.orderPing.t === 0)
+    check('ordering the fridge arms the ping', cmdUse(gp, gp.people[0], fridge) && gp.orderPing.t > 0 && gp.orderPing.label === 'FRIDGE')
+    const last = gp.people[0].path[gp.people[0].path.length - 1]
+    check('the ping sits on the target cell',
+        Math.abs(gp.orderPing.x - (LOT_X + last.c * TILE + TILE / 2)) < 1 && Math.abs(gp.orderPing.y - (LOT_Y + last.r * TILE + TILE / 2)) < 1)
+    const gp2 = newRun(7)
+    cmdUse(gp2, gp2.people[0], gp2.items.find((it) => it.id === 'fridge'))
+    for (let i = 0; i < 200; i++) { advance(gp2, DT); drain(gp2) }
+    check('the ring fades on the real clock', gp2.orderPing.t === 0)
+    const gd1 = newRun(42), gd2 = newRun(42)
+    for (let i = 0; i < 60 * 60 * 3; i++) { autoStep(gd1, DT); autoStep(gd2, DT); drain(gd1); drain(gd2) }
+    check('seeds stay exact with the first-pass law running', stateHash(gd1) === stateHash(gd2))
+
+    // the wish still lands — grace delays the hazard, it does not remove it
+    const w42 = play(42)
+    check('the lifetime wish still lands with grace + prompts', w42.done === 'win', `content ${w42.content} day ${w42.day}`)
+    const ign = newRun(11)
+    let fainted = false
+    for (let i = 0; i < 60 * 60 * 4 && !fainted; i++) { advance(ign, DT); fainted = drain(ign).some((x) => x.t === 'faint') }
+    check('an ignored household still collapses — the grace teaches, it never wins the game for you', fainted)
+
+    // source pins — the wiring must not silently drop
+    const fSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const fJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const fReg = readFileSync(new URL('../src/config/games.js', import.meta.url), 'utf8')
+    check('pin: the morning grace rides the hourly decay', /if \(s\.day === 1 && s\.hour < 12\) d \*= DAY1_GRACE/.test(fSim))
+    check('pin: the amber crossing is a one-shot event on the same loop as the red alarm',
+        /t: 'amber'/.test(fSim) && /wasAmber/.test(fSim) && /p\.needs\[n\] > 0\.5\) p\.wasAmber\[n\] = false/.test(fSim))
+    check('pin: the shell answers amber and the tap — the tap always answers back',
+        /case 'amber'/.test(fJsx) && /NEED_HINT\[e\.need\]/.test(fJsx) && /✓ \$\{/.test(fJsx))
+    check('pin: the order ring draws on the play screen and fades on the sim clock',
+        /g\.orderPing\.t > 0/.test(fJsx) && /orderPing\.t = Math\.max\(0, s\.orderPing\.t - dt\)/.test(fSim))
+    check('pin: the banner left the house centre for the lawn (below every house row)',
+        /const y = 348/.test(fJsx) && !/const y = H \/ 2 - 90/.test(fJsx))
+    check('pin: HOMEBODY\'s pad names its A button — no FIRE on a life sim',
+        /aLabel: '✓'/.test(fReg.match(/path: '\/homebody'[\s\S]*?\n    \}/)[0]))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)

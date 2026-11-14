@@ -144,6 +144,20 @@ const ADOPT_KID_LINE = 'The agency worker hands over a backpack and a small pers
 export const COLLAPSE_AT = 16       // seconds a red need may go unanswered
 export const FAINT_SEC = 14        // how long a faint lasts
 export const RED_AT = 0.12         // a need at/below this reads red (and alarms the gem)
+// #2253: the first-time player pass. A need at/below AMBER reads the worried
+// colour on the gem — the one-shot `amber` event names the fix BEFORE the red
+// alarm, while there is still time to act. And the whole first day decays at
+// DAY1_GRACE: day 1 is the tutorial, not a starvation race (a cold start lost
+// both residents in ~2 min with nothing on screen saying what to do).
+export const AMBER_AT = 0.45
+export const DAY1_GRACE = 0.5
+export const NEED_HINT = {
+    hunger: 'tap the FRIDGE',
+    energy: 'tap a BED',
+    fun: 'tap the TV',
+    social: 'tap the PHONE',
+    bladder: 'tap the TOILET',
+}
 
 // Per-need satisfaction signature: a distinct frequency, timbre and short note
 // sequence (crunch / snooze / giggle / chatter / splash) plus an optional noise
@@ -401,6 +415,7 @@ const person = (name, r, c, hue, worksOn) => ({
     workedToday: false, working: false,
     mood: 1, walkPhase: 0, face: 1,
     chatT: 0, alarmT: 0, wasRed: {},
+    wasAmber: {},                // #2253: one-shot amber prompt per need crossing
     roomSeen: false,             // #1814: one move-in glance per resident
     mealTaken: 0,              // #2244: serial of the last plate this resident ate
 })
@@ -447,6 +462,7 @@ export function newRun(seed) {
         mealEaten: [],            // #2244: people who have eaten the CURRENT plate
         mealAt: 0,                // #2244: hour the current plate landed (window expiry)
         mealAfter: [7, 12.5, 18.5],   // #2244: today's seeded bell hours
+        orderPing: { x: 0, y: 0, label: '', t: 0 },   // #2253: the last issued order (the view rings its target while t > 0)
         mealName: '',             // #2244: name of the current plate (a word is state the view reads)
         rel: { house: 0, fern: 0, ivy: 0, kid: 0 },   // #1817/#2143/#2203 conversation ladders (0..REL_MAX)
         spats: 0,                 // #2070: quarrels this run (rides the hash)
@@ -772,6 +788,15 @@ export function cmdUse(s, p, it) {
     if (!path) return false
     p.path = path
     p.goal = { kind: 'use', it }
+    // #2253: an issued order must be *visible* the instant it lands — the view
+    // rings the target (and the shell names it) so a registered tap never looks
+    // like a dropped one. The cell arrives with the path's last step; an
+    // already-there order (bfsPath returns []) rings where the person stands.
+    const last = path.length ? path[path.length - 1] : { r: p.r, c: p.c }
+    s.orderPing.x = LOT_X + last.c * TILE + TILE / 2
+    s.orderPing.y = LOT_Y + last.r * TILE + TILE / 2
+    s.orderPing.label = it.id === 'mail' ? 'WORK' : (DEF[it.id] ? DEF[it.id].name.toUpperCase() : 'OBJECT')
+    s.orderPing.t = 1.6
     return true
 }
 
@@ -992,7 +1017,11 @@ function autonomous(s, p) {
         }
     }
     // idle wander (seeded)
-    if (s.rng() < 0.006) {
+    // #2253: s.noWander is a test-only hold (peoplecheck). The gate below the
+    // FEEL walk asserts stillness makes no sound, but the stroll roll depends
+    // on the rng phase at move-in — every feature since has re-phased it, and
+    // the gate has been re-lit by luck four times. Pin it.
+    if (!s.noWander && s.rng() < 0.006) {
         const opts = []
         for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) if (walkable(s, p.r + dr, p.c + dc)) opts.push({ r: p.r + dr, c: p.c + dc })
         if (opts.length) {
@@ -1821,6 +1850,12 @@ function applyHourAt(s, hh) {
             let d = DECAY[n]
             if (night) d *= 0.5
             if (n === 'energy' && night) d = NIGHT_ENERGY
+            // #2253: the learning window — day 1's morning (move-in is 07:00)
+            // decays half pace, enough minutes to learn the taps. It stops at
+            // noon so the afternoon/x8 work clock runs on the normal law: a
+            // whole-day halving re-phases the seeded autopilot's day and can
+            // strand an evening without errands (seed 20261023 lost its wish).
+            if (s.day === 1 && s.hour < 12) d *= DAY1_GRACE
             p.needs[n] = Math.max(0, p.needs[n] - d)
         }
     }
@@ -1874,6 +1909,7 @@ export function advance(s, dt) {
     if (s.cooFx > 0) s.cooFx = Math.max(0, s.cooFx - dt)       // #2131: the warm tell too
     if (s.cmdCd > 0) s.cmdCd = Math.max(0, s.cmdCd - dt)       // #2131: command cooldown rides the real clock
     if (s.triTell > 0) s.triTell = Math.max(0, s.triTell - dt) // #2154: the three-way tell throttles on the world clock
+    if (s.orderPing.t > 0) s.orderPing.t = Math.max(0, s.orderPing.t - dt)   // #2253: the order ring fades on the real clock
     if (s.build) return     // time stands still in buy mode
     if (s.fastT > 0) s.fastT = Math.max(0, s.fastT - dt)
     const anyWork = s.people.some((p) => p.working)
@@ -1922,6 +1958,13 @@ export function advance(s, dt) {
         if (asleep) { for (const n of NEEDS) p.wasRed[n] = false }
         else {
             for (const n of NEEDS) {
+                // #2253: the amber warning fires while the need is still saveable
+                // — a separate one-shot stamp from the red alarm, one event per
+                // crossing, re-arming only when the need recovers past 0.5.
+                if (p.needs[n] <= AMBER_AT && p.needs[n] > RED_AT && !p.wasAmber[n]) {
+                    p.wasAmber[n] = true
+                    s.events.push({ t: 'amber', need: n, name: p.name })
+                } else if (p.needs[n] > 0.5) p.wasAmber[n] = false
                 if (p.needs[n] <= RED_AT && !p.wasRed[n]) {
                     p.wasRed[n] = true
                     p.alarmT = 1.3
