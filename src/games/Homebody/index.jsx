@@ -32,6 +32,7 @@ import {
     setSel, flipTab, selectTab, digitCard,   // #2222: catalog shelves
     SPEED_MULT, SPEED_NAMES, setSpeed, cycleSpeed, attractSpeed,   // #2227: the speed dial
     court, courtTarget,   // #2131: player-ordered romance commands
+    courtReach, courtPickSet,   // #2235: choose your court target — tap a shared-ring person
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court — one pad button, two orders
     scheduleMeals, MEAL_WINDOW, SPAT_CD,   // #2244: the meal bells — the F1 cheat re-seeds today's hours
     NEED_HINT,   // #2253: the amber prompt names the fix
@@ -62,6 +63,7 @@ const MESSAGES = [
     'Buy mode has SHELVES — [ and ] flip HOME / FUN / DECOR / SPECIAL; tap a shelf name on the phone.',
     'THE CLOCK IS YOURS — keys 1-4 set the speed dial (|| ▶ ▶▶ ▶▶▶), or tap SPEED in the panel.',
     'SAY THE KIND THING — C coos, X cuts. The gold ring under a visitor shows who will hear you.',
+    'WHEN THE RING IS CROWDED — tap a person in reach. They hear your next words until they step away.',
     'Adopt a child for §150 — K opens the counter. Pip scampers, snackes, plays and tumbles.',
     'A lonely Pip cries and the whole house feels it. Nearby family, toys and a cozy corner keep the giggles coming.',
     'Bank 80 contentment and the lifetime wish comes true.',
@@ -376,6 +378,18 @@ const HomebodyGame = () => {
                 return
             }
             const p = gs.people[gs.active]
+            // #2235: choose your court target. When others share your reach ring,
+            // a tap on one of them makes that person the preferred addressee — the
+            // word you order from the ring goes to them until they leave the ring
+            // (sim.js courtTick owns the expiry). Only the contested crowd case
+            // spends the tap; solo taps keep the switch and walk idioms untouched.
+            for (const c of courtReach(gs)) {
+                if (Math.hypot(c.p.x - px, c.p.y - py) < 18 && courtPickSet(gs, c.k)) {
+                    audioController.playTone(880, 0.05, 'triangle', 0.04)
+                    say(`${c.p.name.toUpperCase()} WILL HEAR YOU`)
+                    return
+                }
+            }
             // tap a person to switch
             for (const q of gs.people) {
                 if (Math.hypot(q.x - px, q.y - py) < 18) {
@@ -859,6 +873,7 @@ const HomebodyGame = () => {
                     spats: gs.spats, grudge: gs.grudge, spatFx: Math.round(gs.spatFx * 10) / 10,   // #2070/#2076
                     cmdCd: Math.round(gs.cmdCd * 10) / 10, cooFx: Math.round(gs.cooFx * 10) / 10, cooDeep: !!gs.cooDeep,   // #2131
                     courtKind: (() => { const t = courtTarget(gs); return t ? t.k : null })(), active: gs.active,
+                    courtPick: gs.courtPick,   // #2235: the preferred addressee (null = nearest law)
                     holdT: Math.round(gs.holdT), courtArmed: gs.holdT >= 0,   // #2171: the thumb court
                     visitor: gs.visitor ? gs.visitor.name : null,
                     ivy: gs.ivy ? { name: gs.ivy.name, gift: !!gs.ivy.gift, state: gs.ivy.state, x: Math.round(gs.ivy.x), y: Math.round(gs.ivy.y) } : null,   // #2143
