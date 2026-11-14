@@ -171,6 +171,10 @@ function liveLevelTap(stream) {
         window.__voiceLevel = 0
         let raf = 0
         const step = () => {
+            // A fresh AudioContext can be born suspended (autoplay); unlike the
+            // fire-and-forget #1257 bar, this meter is gated on by the harness,
+            // so keep asking for resume until it runs.
+            if (ctx.state !== 'running') { try { ctx.resume() } catch { /* gone */ } raf = requestAnimationFrame(step); return }
             an.getByteTimeDomainData(data)
             let peak = 0
             for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i] - 128))
