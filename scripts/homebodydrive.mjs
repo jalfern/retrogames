@@ -465,9 +465,69 @@ await page.keyboard.press('Digit2')
 sd = await stWait((x) => x.speed === 1)
 check('#2227 the drive leaves the house at NORMAL', sd.speed === 1)
 
+// #2240 — the basket lands with real pixels, then the BONDS panel reads at
+// phone scale. First: FAMILY-tier Ivy is rung in; her gift gets SET DOWN on
+// the kitchen floor (weave + greens + tomato, honey rides the top tier).
+{
+    await page.evaluate(() => { window.__homebodyTest.ivyFamily(); window.__homebodyTest.ringIvy() })
+    let landed = false
+    for (let i = 0; i < 120 && !landed; i++) { landed = (await st()).giftFx > 0; if (!landed) await wait(250) }
+    const gp = landed ? await page.evaluate(() => window.__homebodyTest.giftPix()) : null
+    check('#2240 the gift basket lands on the kitchen floor — weave, greens, tomato and FAMILY honey all paint',
+        !!gp && gp.weave > 20 && gp.greens > 0 && gp.tomato > 0 && gp.honey > 0, JSON.stringify(gp))
+    check('#2240 the set-down times itself (5 s of real clock)', !!gp && gp.t > 0 && gp.t <= 5, gp ? `t=${gp.t}` : 'no landing')
+    // Phone scale: resample at the CSS box the compositor shows on a 390-px
+    // viewport and prove the panel survives the blur — glyph + label ink on
+    // every row, three separated label bands, and the FAMILY gold pulse.
+    const vp = page.viewportSize()
+    await page.setViewportSize({ width: 390, height: 844 })
+    await wait(600)
+    // The gold tile pulses its alpha — sample across phases and keep the best
+    // counts, so the leg asks "does the ink ever read" not "did one frame win
+    // the lottery" (same lesson the dial-gold flake teaches).
+    let bp = null
+    for (let i = 0; i < 10; i++) {
+        const b = await page.evaluate(() => window.__homebodyTest.bondsPix())
+        if (b) bp = !bp ? b : {
+            k: b.k,
+            bands: Math.max(bp.bands, b.bands),
+            rows: b.rows.map((r, j) => {
+                const p = bp.rows[j] || r
+                return { ...r, glyph: Math.max(r.glyph, p.glyph), labelInk: Math.max(r.labelInk, p.labelInk), pips: Math.max(r.pips, p.pips), gold: Math.max(r.gold, p.gold) }
+            }),
+        }
+        if (bp && bp.rows.every((r) => r.glyph > 0 && r.labelInk > 0) && bp.rows.some((r) => r.gold > 0)) break
+        await wait(120)
+    }
+    await page.setViewportSize(vp)
+    await wait(300)
+    check('#2240 BONDS at phone scale — glyph and label ink survive the resample on every row',
+        !!bp && bp.k < 0.65 && bp.rows.length === 3 && bp.rows.every((r) => r.glyph > 0 && r.labelInk > 0),
+        JSON.stringify(bp && { k: bp.k, rows: bp.rows.map((r) => `${r.label}:${r.glyph}/${r.labelInk}/${r.pips}`) }))
+    check('#2240 the three bond rows stay three rows at phone size, and the FAMILY pulse keeps its gold',
+        !!bp && bp.bands >= 3 && bp.rows.some((r) => r.key !== 'kid' && r.gold > 0),
+        JSON.stringify(bp && { bands: bp.bands, gold: bp.rows.map((r) => r.gold) }))
+}
+
 // frame matches: sprite position follows state
 const f0 = await page.evaluate(() => window.__game.state())
 check('contract state ticks', f0.tick > 0 && typeof f0.score === 'number', `tick=${f0.tick} score=${f0.score}`)
+
+// #2240 attract sells Ivy — last, after a reload, so waiting on her never
+// delays the morning windows above. Whatever her schedule rolled, the demo run
+// shows the second neighbour on the lot (her own clock, or the noon rescue
+// when the roll strands her behind 19:00), and the ring has fired once.
+{
+    await page.reload({ waitUntil: 'load' })
+    await wait(1200)
+    let seen = 0, rung = 0, hour = 0
+    for (let i = 0; i < 360 && !(seen && rung); i++) {
+        const a = await page.evaluate(() => (window.__homebodyTest ? window.__homebodyTest.attractIvy() : null))
+        if (a) { seen = a.ivy ? 1 : 0; rung = a.demoIvy || 0; hour = a.hour }
+        await wait(250)
+    }
+    check('#2240 attract shows Ivy on the lot and rings her once', !!seen && rung === 1, `ivy=${seen} demoIvy=${rung} hour=${hour}`)
+}
 
 check('zero page errors across the whole drive', errors.length === 0, JSON.stringify(errors.slice(0, 3)))
 await browser.close()

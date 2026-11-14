@@ -70,6 +70,26 @@ export const IVY_FADE = 0.03         // rel lost per sim-hour of absence
 export const IVY_GIFT_HUNGER = 0.18  // per resident, per basket
 export const IVY_GIFT_CASH = 15      // the FAMILY-tier honey-money (§)
 
+// #2240: THE GIFT LANDS. FRIENDS+ used to pay hunger with a toast and nothing
+// physical; now the basket Ivy carried in gets SET DOWN when she reaches the
+// kitchen — visible on the ground beside the fridge (else stove, else the front
+// step, else her own cell) for a few seconds, and at FAMILY the honey jar rides
+// along. View-only staging like spatFx/cooFx — the pay at arrival (#2143) is
+// untouched; this is the beat the eye was owed.
+export const GIFT_LAND_T = 5         // real seconds the set-down basket stays
+
+// #2240: VISITOR TIMBRES. Fern and Ivy once shared the doorbell register
+// (660/880 vs 587/988 was a start). Each now owns a call motif AND an
+// entrance flourish: Fern the classic two-note rising dinger with two light,
+// quick, even footfall pats; Ivy a three-note lilt that lands DOWN (a
+// gardener's bell) with a slower, heavier, lower pair — steps carrying a
+// basket. The shell plays these tables verbatim; peoplecheck pins that the
+// motifs differ in note count, pitch set and spacing. [freq, dur, delayMs]
+export const VISIT_TIMBRE = {
+    Fern: { call: [[660, 0.14, 0], [880, 0.18, 150]], steps: [[300, 0.05, 430], [262, 0.05, 500]] },
+    Ivy: { call: [[587, 0.12, 0], [988, 0.10, 140], [740, 0.16, 260]], steps: [[208, 0.07, 460], [165, 0.09, 585]] },
+}
+
 // #2197: Miso — the household cat. Adopted at the counter like a piece of
 // furniture, lives by the lot's laws (every step asks walkable) and extends
 // the bond law down to pet scale. A pet is affection, not a burden: the cat
@@ -414,7 +434,7 @@ const person = (name, r, c, hue, worksOn) => ({
     faintT: 0, redT: {},  // per-need seconds spent fully red
     workedToday: false, working: false,
     mood: 1, walkPhase: 0, face: 1,
-    chatT: 0, alarmT: 0, wasRed: {},
+    chatT: 0, chatWith: null, alarmT: 0, wasRed: {},   // #2240: chatT re-arms per guest
     wasAmber: {},                // #2253: one-shot amber prompt per need crossing
     roomSeen: false,             // #1814: one move-in glance per resident
     mealTaken: 0,              // #2244: serial of the last plate this resident ate
@@ -448,6 +468,10 @@ export function newRun(seed) {
         ivy: null,                    // #2143: second neighbour, same shape as `visitor` (+ gift)
         ivyAfter: null,             // hour of Ivy's next visit
         ivyGap: 0,
+        giftFx: 0,                // #2240: real seconds left of the set-down basket on the ground
+        giftAt: null,             // #2240: {x,y} where it landed (px, lot space)
+        giftHoney: false,         // #2240: FAMILY tier — the honey jar lands too
+        demoIvy: 0,               // #2240: the attract has rung (or saw) Ivy this run
         triTell: 0,                 // #2154: world seconds until the next three-way choreography tell
         triHits: 0,                 // #2154: three-way tells fired this run (the line variant rides it)
         pet: null,                  // #2197: the household cat, once adopted
@@ -1119,6 +1143,13 @@ function arbitrateVisitors(s) {
             s.triTell = TRI_TELL_CD
         }
     }
+    // #2240: the hello re-arms per guest — chatT belongs to the company you
+    // are with now, so Ivy's ring speaks even when Fern already spent the
+    // crossing. Meters never relied on the bubble and keep ticking as before.
+    for (const p of s.people) {
+        const who = fv && fv.claim === p ? 'fern' : iv && iv.claim === p ? 'ivy' : p.chatWith
+        if (who !== p.chatWith) { p.chatT = 0; p.chatWith = who }
+    }
 }
 
 // ------------------------------------------------------- paper route ------
@@ -1287,6 +1318,7 @@ function updateIvy(s, dt) {
                     path, state: 'enter', t: 0, hue: IVY_HUE, face: 1, walkPhase: 0, chatT: 0,
                     hangUntil: 40 + s.rng() * 40 + 8 * lv,   // friends linger — harder per level than Fern
                     gift, metCat: false,   // #2200: the greeting re-arms with every visit
+                    honey: lv >= 3,       // #2240: FAMILY is decided at the door — the meter can drift below the edge mid-walk
                 }
                 s.events.push({ t: 'visit', name: 'Ivy' })
                 think(s, gift
@@ -1314,6 +1346,22 @@ function updateIvy(s, dt) {
     walkAlong(s, v, dt, 44)
     if (v.path && !v.path.length) v.path = null
     if (v.state === 'enter' && !v.path) { v.state = 'hang'; v.t = 0 }
+    // #2240: the gift lands. When the basket-carrier arrives at her kitchen
+    // destination, the basket gets PHYSICALLY set down — cell priority fridge →
+    // stove → front step → her own cell — with a soft set-down thunk (distinct
+    // from the arrival ring, which already rang at the gate). The honey jar
+    // rides the FAMILY tier. View-only staging; nothing here re-pays hunger.
+    if (v.state === 'hang' && v.gift && !v.landed) {
+        v.landed = true
+        const pantry = s.items.find((it) => it.id === 'fridge') || s.items.find((it) => it.id === 'stove')
+        let spot = pantry ? (targetsOf(s, pantry).find((t) => walkable(s, t.r, t.c)) || nearestFreeTo(s, pantry.r, pantry.c)) : null
+        if (!spot && walkable(s, 10, 5)) spot = { r: 10, c: 5 }
+        if (!spot) spot = { r: v.r, c: v.c }
+        s.giftFx = GIFT_LAND_T
+        s.giftAt = { x: LOT_X + spot.c * TILE + TILE / 2, y: LOT_Y + spot.r * TILE + TILE / 2 }
+        s.giftHoney = !!v.honey
+        s.events.push({ t: 'gift-land', x: s.giftAt.x, y: s.giftAt.y, honey: s.giftHoney })
+    }
     if (v.state === 'hang') {
         // chat on the #2154 choreography law — nearest resident, contested
         // residents pay the closer visitor; claim settles once per tick.
@@ -1323,6 +1371,11 @@ function updateIvy(s, dt) {
             v.chatT += dt
             partner.needs.social = Math.min(1, partner.needs.social + IVY_SOCIAL * dt)
             relAdd(s, 'ivy', IVY_CHAT * dt)   // a slower burner than Fern, by design
+            // #2240: a resident's bubble re-arms EVERY visit (the lifetime
+            // crossing below belongs to Fern whenever she came first, which
+            // left Ivy's ring silent however long they hung). Resetting the
+            // clock for the visitor switch keeps the honest dt check (#2135)
+            // and gives each guest their own hello; the meters never cared.
             if (partner.chatT > 2.4 && partner.chatT - dt <= 2.4) {
                 think(s, chatLine(s, partner, 'ivy'))
                 s.events.push({ t: 'chat', k: 'ivy', x: (v.x + partner.x) / 2, y: (v.y + partner.y) / 2 })   // #2135
@@ -1932,6 +1985,7 @@ export function advance(s, dt) {
     s.sec += dt
     if (s.spatFx > 0) s.spatFx = Math.max(0, s.spatFx - dt)   // #2076: the sprite tell fades on the real clock
     if (s.cooFx > 0) s.cooFx = Math.max(0, s.cooFx - dt)       // #2131: the warm tell too
+    if (s.giftFx > 0) s.giftFx = Math.max(0, s.giftFx - dt)    // #2240: the set-down basket fades too
     if (s.cmdCd > 0) s.cmdCd = Math.max(0, s.cmdCd - dt)       // #2131: command cooldown rides the real clock
     if (s.triTell > 0) s.triTell = Math.max(0, s.triTell - dt) // #2154: the three-way tell throttles on the world clock
     if (s.orderPing.t > 0) s.orderPing.t = Math.max(0, s.orderPing.t - dt)   // #2253: the order ring fades on the real clock
@@ -2123,6 +2177,28 @@ const KEEP_CELLS = new Set(['8,5', '5,2', '5,8', '12,5'])   // doors and the gat
 
 export function bot(s) {
     if (s.done) return
+    // #2240: attract sells Ivy — ring the second neighbour ONCE per demo (an
+    // organic visit counts as the ring). Without the pull, the demo leaned on
+    // Fern's schedule and Ivy's window (12:00–19:00, own rng, floor 12h) often
+    // fell outside what the loop showed. The stroll half of the issue ships as
+    // autonomy's OWN #2143 law — a lonely resident already routes to the
+    // NEAREST visitor, Ivy included. A forced nudged walk was built and tested
+    // too, and it broke three WINNABLE gates (seed 7's buy-economy wins main by
+    // exactly §10; borrowing even a lonely resident shifts chat/content timing
+    // enough to tip it): the ring, the arrival, the basket landing and the
+    // lonely-chat all sell her honestly — a staging beat never outranks the
+    // economy that proves the game can be won.
+    if (!s.demoIvy) {
+        if (s.ivy) s.demoIvy = 1
+        else if (s.hour >= 12 && s.hour < 19 && s.ivyAfter != null && s.ivyAfter + s.ivyGap >= 19) {
+            // her own schedule can no longer land inside her window (the roll
+            // said 19:00 and the gap pushes past it — nothing re-rolls until a
+            // visit ends, so she would stand the whole run invisible): ring her
+            // in at noon instead. Seeds whose Ivy already comes reach her on
+            // their own clock, untouched.
+            s.ivyAfter = Math.floor(s.hour); s.ivyGap = 0; s.demoIvy = 1
+        }
+    }
     const p = s.people[0]
     if (p.working || p.faintT > 0 || p.path || p.use) return
     // #2238: the attract bot reads the paper left on the step — the demo

@@ -184,10 +184,39 @@ see §Speed dial.
   falling back to FIRE). Residents still collapse when ignored — the grace
   teaches, it never plays for you. `s.noWander` is a test-only hold that pins
   the seeded 0.6%/s idle stroll for the stillness gate.
+- Ivy polish pass part 2 (#2240): four small laws that make the second
+  neighbour feel real. (1) The set-down — a basket Ivy carries in (gift at
+  lv ≥ 2; the honey jar only at FAMILY lv ≥ 3, decided AT THE DOOR because
+  rel drifts below the edge mid-walk) gets physically set down when she
+  reaches her kitchen spot — fridge → stove → front step → her cell — for a
+  low triangle-pair thunk (150/95 Hz) + filtered noise, distinct from the
+  gate bell. Staging `giftFx`/`giftAt`/`giftHoney` is view-only like spatFx
+  (off stateHash): the basket paints on the people's depth line and fades on
+  GIFT_LAND_T (5 real seconds, hop + squash up front). No hunger re-pay —
+  the visit's gift economics still pay at the door.
+  (2) Timbres — VISIT_TIMBRE (sim.js, pure data, gateable in Node): Fern
+  keeps the historic 660→880 two-bell + light steps; Ivy rings a three-note
+  lilt that lands DOWN (587→988→740) with lower, slower basket-steps
+  (208@460 / 165@585). The shell plays the tables verbatim.
+  (3) The stranded rescue — scheduleIvy can roll ivyAfter=19 at ivy lv 0,
+  and the arrival test `hour ≥ ivyAfter+gap && hour < 19` then never passes
+  again while nothing re-rolls until a visit ends: those seeds never show
+  Ivy for the whole run (seed 5). The attract bot rings her exactly once,
+  and ONLY when her own schedule can no longer land (pulled to now, gap 0).
+  Seeds whose Ivy already comes keep their untouched clock — an unconditional
+  pull, and a forced “stroll to Ivy's chat ring”, were both built and CUT:
+  each tipped WINNABLE seed 7 (it wins main by exactly §10) out of the win.
+  Autonomy's lonely-resident nearest-visitor law (#2143) is the honest walk.
+  (4) The per-guest hello — chatT belonged to the resident and Fern always
+  spent the 2.4 s crossing first, so Ivy's ring never got a bubble however
+  long they hung. arbitrateVisitors re-arms chatT when the claim switches
+  (`p.chatWith`), and the honest dt crossing (#2135) survives — the meters
+  never relied on the bubble. The BONDS panel now paints via bondRows(s)
+  (art.js) so the painter and the phone-scale probe cannot drift apart.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 480 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), winnable seeds, determinism
+npm run peoplecheck          # 497 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -221,10 +250,13 @@ npm run peoplecheck          # 480 gates: boot, rules, spare-room wing (#1806), 
 # gate + the stamp pin go red (434 → 432/2); restore. Mutant #2235: neuter the
 # pick priority in courtTarget (`if (false && p)`) — exactly the seven COURT PICK
 # behavioural gates go red (480 → 473/7; the stale-fallthrough and expiry gates
-# correctly stay green — they assert the old law); restore.
+# correctly stay green — they assert the old law); restore. Mutant #2240: zero
+# the `s.giftFx = GIFT_LAND_T` arm — exactly the two set-down staging gates go
+# red (497 → 495/2); restore. Or swap Ivy's call motif onto Fern's two-bell in
+# VISIT_TIMBRE — exactly the lilt gate goes red (497 → 496/1); restore.
 npm run dev   # another terminal
 npm run contractcheck        # includes homebody (CONTRACT_ONLY=homebody for just this)
-DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels + real C/X court keys with pink affection pixels and the far-apart Space doctrine + #2222 shelf flips on real [ ] keys, a tapped tab and gold-painted open-tab pixels + #2244 bells live: ring, steaming-plate pixels, parallel tap-orders, shared-table hearts
+DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels + real C/X court keys with pink affection pixels and the far-apart Space doctrine + #2222 shelf flips on real [ ] keys, a tapped tab and gold-painted open-tab pixels + #2244 bells live: ring, steaming-plate pixels, parallel tap-orders, shared-table hearts + #2240 live: FAMILY basket lands with weave/greens/tomato/honey pixels on the depth line and a 5 s stage, BONDS reads at 390-px phone scale (ink, three rows, FAMILY gold — sampled across the pulse's phases), and the attract run shows Ivy on the lot and rings her once
 ```
 Drive it: tap objects to order the active resident; G switches residents; B
 opens buy mode (time stops); `[` `]` flip the catalog shelves and 1-9 pick a
