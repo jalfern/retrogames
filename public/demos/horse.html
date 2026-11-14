@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>STRIDELINE — procedural low-poly gallop</title>
+<meta name="description" content="A low-poly thoroughbred at full gallop: procedural geometry, custom painter's-algorithm 3D renderer, frame-perfect seamless stride loop. No libraries." />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #10131f; }
+  canvas#c { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; touch-action: none; }
+  .hud {
+    position: fixed; z-index: 3; color: #e9e2d4; pointer-events: none;
+    font: 10px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+    text-shadow: 0 1px 3px rgba(10,8,6,.65);
+  }
+  #title { top: max(14px, env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left)); }
+  #title .k { font-size: 8px; letter-spacing: .42em; color: #c9a37c; }
+  #title h1 { font-size: 26px; font-weight: 900; letter-spacing: .02em; color: #f2e8d8; margin-top: 4px; }
+  #title h1 b { color: #e0a45c; font-weight: 900; }
+  #title .sub { font-size: 9px; letter-spacing: .18em; color: rgba(233,226,212,.62); margin-top: 6px; max-width: 340px; }
+  #hud {
+    left: 50%; transform: translateX(-50%);
+    bottom: calc(18px + env(safe-area-inset-bottom));
+    background: rgba(16,12,9,.52); border: 1px solid rgba(255,255,255,.14);
+    border-radius: 10px; padding: 9px 12px 8px; backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px); width: min(430px, calc(100vw - 32px));
+  }
+  #hud .cap { display: flex; justify-content: space-between; font-size: 8px; letter-spacing: .3em; color: rgba(233,226,212,.55); margin-bottom: 6px; }
+  #hud .cap b { color: #e0a45c; font-weight: 400; }
+  #ff { position: relative; height: 44px; }
+  .ffrow { position: absolute; left: 26px; right: 0; height: 9px; }
+  .fflab { position: absolute; left: 0; top: -1px; width: 22px; font-size: 8px; letter-spacing: .05em; color: rgba(233,226,212,.72); }
+  .fftrack { position: absolute; inset: 0; background: rgba(255,255,255,.07); border-radius: 2px; overflow: hidden; }
+  .ffbar { position: absolute; top: 0; bottom: 0; background: rgba(224,164,92,.78); border-radius: 2px; }
+  #head { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #ffd9a8; box-shadow: 0 0 6px rgba(255,217,168,.8); }
+  #stats { display: flex; gap: 18px; margin-top: 7px; font-size: 8px; letter-spacing: .22em; color: rgba(233,226,212,.55); }
+  #stats b { color: #f2e8d8; font-weight: 700; letter-spacing: .04em; }
+  #hint {
+    top: max(16px, env(safe-area-inset-top)); right: max(14px, env(safe-area-inset-right));
+    font-size: 8px; letter-spacing: .26em; color: rgba(233,226,212,.5);
+    text-align: right; transition: opacity .8s;
+  }
+  @media (max-width: 640px) { #title h1 { font-size: 20px; } #title .sub { max-width: 200px; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="hud" id="title">
+  <div class="k">PROCEDURAL QUADRUPED STUDY · CANVAS 2D, ZERO LIBS</div>
+  <h1>STRIDE<b>LINE</b></h1>
+  <div class="sub">a chestnut thoroughbred built from cuboids, flat-shaded by a hand-written
+    projection — rotary gallop, ground-locked hooves, eight strides per perfect seam.</div>
+</div>
+
+<div class="hud" id="hint">DRAG TO LOOK · WHEEL ZOOM<br />SPACE PAUSE · M SOUND · R VIEW</div>
+
+<div class="hud" id="hud">
+  <div class="cap"><span>FOOTFALL · ROTARY GALLOP</span><b>SEAM · 8 STRIDES</b></div>
+  <div id="ff">
+    <div class="ffrow" style="top:0"><span class="fflab">LF</span><div class="fftrack"><div class="ffbar" id="bar-LF"></div></div></div>
+    <div class="ffrow" style="top:11px"><span class="fflab">RF</span><div class="fftrack"><div class="ffbar" id="bar-RF"></div></div></div>
+    <div class="ffrow" style="top:22px"><span class="fflab">LH</span><div class="fftrack"><div class="ffbar" id="bar-LH"></div></div></div>
+    <div class="ffrow" style="top:33px"><span class="fflab">RH</span><div class="fftrack"><div class="ffbar" id="bar-RH"></div></div></div>
+    <div id="head" style="left:26px"></div>
+  </div>
+  <div id="stats">
+    <span>SPEED <b id="st-v">0</b> KM/H</span>
+    <span>STRIDES <b id="st-s">0</b></span>
+    <span>DIST <b id="st-d">0</b> M</span>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* =========================================================================
+   STRIDELINE — a procedural low-poly horse at a seamless rotary gallop.
+
+   Everything is a pure function of one number: the stride phase φ ∈ [0,1).
+   Gait curves, mane, tail, dust, and the ground pattern (period = 8 strides,
+   one loop length L) — so the loop closes to the bit, not "approximately".
+
+   Renderer: hand-written perspective projection + painter's algorithm over
+   flat-shaded triangles on Canvas 2D. No WebGL, no Three.js, no libraries,
+   no imported meshes — the horse is ~35 tapered cuboids hung on a skeleton
+   of gallop kinematics.
+
+   Gallop laws encoded:
+   • rotary footfall order LF · RF · LH · RH, then a suspension phase with
+     every hoof airborne (a true gallop, not a fast walk);
+   • stance hooves are ground-locked: during contact the hoof's ground-frame
+     position is constant, so planted hooves never slide — the swing path is
+     the only place a hoof moves relative to the ground;
+   • body heave/pitch, mane/tail flutter and dust puffs all ride φ.
+   ========================================================================= */
+
+/* ----------------------------- vector utils ------------------------------ */
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+function norm(a) { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const TAU = Math.PI * 2;
+const lerp = (a, b, u) => a + (b - a) * u;
+function h1(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+function h2(i, j) { const x = Math.sin(i * 269.5 + j * 183.3 + 52.9) * 24634.6345; return x - Math.floor(x); }
+
+/* ------------------------------- world law ------------------------------- */
+const STRIDE = 6.0;        // metres per full stride (rotary gallop overtrack)
+const T_STRIDE = 0.62;     // seconds per stride cycle
+const SPEED = STRIDE / T_STRIDE;
+const LOOPS = 8;           // strides per world-loop pattern
+const L = STRIDE * LOOPS;  // ground pattern period, m
+const CELL = 8.0;          // terrain cell (L / CELL must be an integer)
+const YC = 1.25;           // barrel-centre reference height (withers ≈ 1.6 m)
+
+/* Rotary gallop, duty fractions of one stride. Fore pair, then hind pair,
+   then suspension from RH lift (0.65) back to the next LF touch. */
+const LEGS = [
+  { name: 'LF', c: 0.00, d: 0.17, xLand: 0.88, lift: 0.62, side: 1 },
+  { name: 'RF', c: 0.08, d: 0.16, xLand: 0.80, lift: 0.58, side: -1 },
+  { name: 'LH', c: 0.34, d: 0.25, xLand: -0.05, lift: 0.52, side: 1 },
+  { name: 'RH', c: 0.41, d: 0.24, xLand: 0.05, lift: 0.50, side: -1 },
+];
+// hip anchors, body-centre frame: fore = "elbow" height, hind = stifle
+const HIP = {
+  F: { x: 0.55, y: 1.10 - YC, l1: 0.55, l2: 0.62, foot: 0.15, z: 0.20 },
+  H: { x: -0.70, y: 1.32 - YC, l1: 0.66, l2: 0.78, foot: 0.15, z: 0.24 },
+};
+
+function inContact(leg, phi) {
+  let u = phi - leg.c; if (u < 0) u += 1;
+  return u < leg.d ? u / leg.d : -1;
+}
+// Hoof position in the BODY-FIXED world (the horse stays at the origin; the
+// ground scrolls −STRIDE per cycle behind it).
+// • Stance: the hoof is locked to its ground point — the point simply rides
+//   back with the scrolling ground, so its world position is EXACTLY linear
+//   and its ground-frame position is constant: zero slip, no pitch artifact.
+// • Swing: the hoof is attached to the body again, so it follows the pitched,
+//   heaving body — a cubic reach with a lift arc.
+function hoofBody(leg, phi) {
+  let ur = phi - leg.c; if (ur < 0) ur += 1;                 // raw contact age (stride frac)
+  if (ur < leg.d) return { x: leg.xLand - STRIDE * ur, y: 0.14 + 0.05 * Math.sin(Math.PI * ur / leg.d), s: 1 };
+  const v = (ur - leg.d) / (1 - leg.d);                      // swing progress 0..1
+  const ease = v * v * (3 - 2 * v);
+  // swing runs in world/ground coords: liftoff rides back with the ground,
+  // then the hoof reaches forward to the landing spot — so the swing END
+  // meets the next stance's ground-locked start exactly (continuity gate)
+  return { x: lerp(leg.xLand - STRIDE * leg.d, leg.xLand, ease), y: leg.lift * Math.sin(Math.PI * v) + 0.14, s: 0 };
+}
+// body heave and pitch ride the same clock: dip after the fore pair lands,
+// rise through the hind push, small nod twice per stride.
+function bodyMotion(phi) {
+  return {
+    y: YC + 0.075 * Math.sin(TAU * (phi - 0.62)) + 0.045 * Math.sin(TAU * 2 * (phi - 0.10)),
+    pitch: 0.105 * Math.sin(TAU * (phi - 0.30)) + 0.045 * Math.sin(TAU * 2 * (phi - 0.62)),
+  };
+}
+
+/* ------------------------------- renderer ------------------------------- */
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const lite = new URLSearchParams(location.search).get('lite') === '1';   // CI software-GL size
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, lite ? 1 : 2);
+  W = Math.max(2, Math.floor(window.innerWidth * DPR));
+  H = Math.max(2, Math.floor(window.innerHeight * DPR));
+  cv.width = W; cv.height = H;
+}
+window.addEventListener('resize', resize); resize();
+
+const cam = { yaw: -2.35, pitch: 0.15, dist: 6.2, ty: 1.05 };
+const camReset = Object.assign({}, cam);
+let basis = null;
+function camFrame() {
+  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const dirOut = [cp * sy, sp, cp * cy];
+  const target = [0, cam.ty, 0];
+  const pos = [target[0] + cam.dist * dirOut[0], target[1] + cam.dist * dirOut[1], target[2] + cam.dist * dirOut[2]];
+  const f = [-dirOut[0], -dirOut[1], -dirOut[2]];
+  const r = norm([cy, 0, -sy]);
+  const u = cross(r, f);
+  basis = { pos, f, r, u, focal: (H * 0.5) / Math.tan(0.44) };
+}
+function project(p) {
+  const qx = p[0] - basis.pos[0], qy = p[1] - basis.pos[1], qz = p[2] - basis.pos[2];
+  const z = qx * basis.f[0] + qy * basis.f[1] + qz * basis.f[2];
+  if (z < 0.12) return null;
+  const s = basis.focal / z;
+  return [
+    W * 0.5 + s * (qx * basis.r[0] + qy * basis.r[1] + qz * basis.r[2]),
+    H * 0.5 - s * (qx * basis.u[0] + qy * basis.u[1] + qz * basis.u[2]),
+    z,
+  ];
+}
+
+let tris = [];
+// view-space clip against the near plane, then fan-project: a triangle that
+// merely touches the camera frustum still paints the clipped remainder
+function tri3(a, b, c, col, alpha) {
+  const vs = [a, b, c].map(p => { const q = sub(p, basis.pos); return [dot(q, basis.r), dot(q, basis.u), dot(q, basis.f)]; });
+  const CN = 0.15, pts = [];
+  for (let i = 0; i < 3; i++) {
+    const p = vs[i], n = vs[(i + 1) % 3];
+    const pin = p[2] >= CN, nin = n[2] >= CN;
+    if (pin) pts.push(p);
+    if (pin !== nin) {
+      const t = (CN - p[2]) / (n[2] - p[2]);
+      pts.push([lerp(p[0], n[0], t), lerp(p[1], n[1], t), CN]);
+    }
+  }
+  if (pts.length < 3) return;
+  let nrm = norm(cross(sub(b, a), sub(c, a)));
+  const ccx = (a[0] + b[0] + c[0]) / 3 - basis.pos[0];
+  const ccy = (a[1] + b[1] + c[1]) / 3 - basis.pos[1];
+  const ccz = (a[2] + b[2] + c[2]) / 3 - basis.pos[2];
+  if (nrm[0] * ccx + nrm[1] * ccy + nrm[2] * ccz > 0) nrm = [-nrm[0], -nrm[1], -nrm[2]];  // normal faces the camera
+  const fz = basis.focal;
+  let zsum = 0;
+  const ps = pts.map(p => { zsum += p[2]; return [W * 0.5 + fz * p[0] / p[2], H * 0.5 - fz * p[1] / p[2]]; });
+  for (let i = 1; i < ps.length - 1; i++) {
+    tris.push({ v: [ps[0], ps[i], ps[i + 1]], z: zsum / pts.length, n: nrm, col, alpha: alpha || 1 });
+  }
+}
+function quad4(a, b, c, d, col, alpha) { tri3(a, b, c, col, alpha); tri3(a, c, d, col, alpha); }
+
+const SUN = norm([0.62, 0.42, -0.66]);       // low sun ahead of the horse
+const HAZE = [214, 168, 138];
+function shade(t) {
+  const n = t.n, base = t.col;
+  const key = Math.max(0, n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2]);
+  const sky = 0.5 + 0.5 * n[1];
+  const k = 0.42 + 0.16 * sky + 0.58 * key;
+  const warm = n[1] > 0.5 ? 1 : 0;                    // sun-warmed bounce on up-facing faces
+  let r = base[0] * (k + 0.10 * warm) + key * 26, g = base[1] * (k + 0.07 * warm) + key * 16, b = base[2] * (k + 0.02 * warm) + key * 6;
+  const fg = clamp((t.z - 26) / 46, 0, 1) * 0.82;
+  return 'rgb(' + (lerp(r, HAZE[0], fg) | 0) + ',' + (lerp(g, HAZE[1], fg) | 0) + ',' + (lerp(b, HAZE[2], fg) | 0) + ')';
+}
+function flush() {
+  tris.sort((a, b) => b.z - a.z);
+  ctx.lineWidth = 1;
+  for (let i = 0; i < tris.length; i++) {
+    const t = tris[i], v = t.v;
+    ctx.globalAlpha = t.alpha;
+    ctx.beginPath();
+    ctx.moveTo(v[0][0], v[0][1]); ctx.lineTo(v[1][0], v[1][1]); ctx.lineTo(v[2][0], v[2][1]);
+    ctx.closePath();
+    ctx.fillStyle = shade(t);
+    ctx.fill();
+    if (t.alpha === 1) { ctx.strokeStyle = ctx.fillStyle; ctx.stroke(); }  // kill antialias seams; translucent parts stroke-free
+  }
+  ctx.globalAlpha = 1;
+  tris.length = 0;
+}
+
+/* tapered cuboid: half-length front/tail (fx,tx), half-height front/tail
+   (hhF,hhB), half-width front/tail (hwF,hwB), pitched by rz around Z. */
+function pbox(cx, cy, cz, fx, tx, hhF, hhB, hwF, hwB, rz, col) {
+  const cr = Math.cos(rz || 0), sr = Math.sin(rz || 0);
+  const pts = [];
+  for (let i = 0; i < 8; i++) {
+    const sx = (i & 1) ? 1 : -1, sy = (i & 2) ? 1 : -1, sz = (i & 4) ? 1 : -1;
+    const px = sx * (sx > 0 ? fx : tx);
+    const py = sy * (sx > 0 ? hhF : hhB);
+    const pz = sz * (sx > 0 ? hwF : hwB);
+    pts.push([cx + px * cr - py * sr, cy + px * sr + py * cr, cz + pz]);
+  }
+  quad4(pts[5], pts[1], pts[3], pts[7], col); // +x
+  quad4(pts[0], pts[4], pts[6], pts[2], col); // -x
+  quad4(pts[3], pts[7], pts[6], pts[2], col); // +y
+  quad4(pts[0], pts[1], pts[5], pts[4], col); // -y
+  quad4(pts[4], pts[5], pts[7], pts[6], col); // +z
+  quad4(pts[1], pts[0], pts[2], pts[3], col); // -z
+}
+/* tapered prism between 2D points A,B (x-y plane) at depth zc — limbs, neck, tail */
+function limb(ax, ay, bx, by, ra, rb, w, zc, col) {
+  const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len, ny = dx / len;
+  const A1 = [ax + nx * ra, ay + ny * ra], A2 = [ax - nx * ra, ay - ny * ra];
+  const B1 = [bx + nx * rb, by + ny * rb], B2 = [bx - nx * rb, by - ny * rb];
+  const za = zc - w, zb = zc + w;
+  const s = (p, z) => [p[0], p[1], z];
+  quad4(s(A1, zb), s(B1, zb), s(B2, zb), s(A2, zb), col);
+  quad4(s(A2, za), s(B2, za), s(B1, za), s(A1, za), col);
+  quad4(s(A1, za), s(A2, za), s(A2, zb), s(A1, zb), col);
+  quad4(s(B1, za), s(B2, za), s(B2, zb), s(B1, zb), col);
+  quad4(s(A1, za), s(A1, zb), s(B1, zb), s(B1, za), col);
+  quad4(s(A2, za), s(A2, zb), s(B2, zb), s(B2, za), col);
+}
+function triCone(cx, y0, cz, r, h, col) {
+  const seg = 5, apex = [cx, y0 + h, cz];
+  for (let i = 0; i < seg; i++) {
+    const a = i / seg * TAU, b = (i + 1) / seg * TAU;
+    tri3(apex, [cx + Math.cos(a) * r, y0, cz + Math.sin(a) * r], [cx + Math.cos(b) * r, y0, cz + Math.sin(b) * r], col);
+  }
+}
+
+/* ------------------------------- the horse ------------------------------- */
+const PAL = {
+  body: [168, 108, 62], bodyLit: [186, 126, 74], belly: [120, 76, 46],
+  dark: [74, 50, 34], hoof: [38, 27, 21], mane: [216, 190, 148], maneSh: [184, 156, 116],
+  eye: [18, 12, 10], muzzle: [96, 64, 52], blaze: [238, 224, 202],
+};
+
+function drawLeg(leg, phi, bm, colDark) {
+  const fore = leg.name[1] === 'F';
+  const hip = fore ? HIP.F : HIP.H;
+  const rot = (x, y) => [x * Math.cos(bm.pitch) - y * Math.sin(bm.pitch), x * Math.sin(bm.pitch) + y * Math.cos(bm.pitch)];
+  const j0 = rot(hip.x, hip.y);
+  const joint = [j0[0], j0[1] + bm.y, leg.side * hip.z];
+  const hb = hoofBody(leg, phi);          // world point (body-fixed world)
+  const hoof = [hb.x, hb.y, joint[2]];
+  const ankle = [hoof[0] - Math.sin(bm.pitch) * hip.foot, hoof[1] - Math.cos(bm.pitch) * hip.foot];
+  // two-bone IK in the sagittal plane (elbow trails fore, stifle leads hind)
+  const dx = ankle[0] - joint[0], dy = ankle[1] - joint[1];
+  const D = clamp(Math.hypot(dx, dy), Math.abs(hip.l1 - hip.l2) + 1e-4, hip.l1 + hip.l2 - 1e-4);
+  const ca = clamp((hip.l1 * hip.l1 + D * D - hip.l2 * hip.l2) / (2 * hip.l1 * D), -1, 1);
+  const dir = Math.atan2(dy, dx);
+  const s1 = dir + (fore ? -1 : 1) * Math.acos(ca);
+  const knee = [joint[0] + hip.l1 * Math.cos(s1), joint[1] + hip.l1 * Math.sin(s1)];
+  limb(joint[0], joint[1], knee[0], knee[1], fore ? 0.115 : 0.14, 0.075, hip.z * 0.42, joint[2], colDark);
+  limb(knee[0], knee[1], ankle[0], ankle[1], 0.075, 0.055, hip.z * 0.34, joint[2], colDark);
+  pbox(hoof[0], hoof[1] - 0.055, hoof[2], 0.105, 0.085, 0.08, 0.065, 0.075, 0.075, bm.pitch, PAL.hoof);
+}
+
+function drawHorse(phi) {
+  const bm = bodyMotion(phi);
+  const rot = (x, y) => [x * Math.cos(bm.pitch) - y * Math.sin(bm.pitch), x * Math.sin(bm.pitch) + y * Math.cos(bm.pitch)];
+  const R = (x, y, z) => { const p = rot(x, y); return [p[0], p[1] + bm.y, z]; };
+  // far-side pair first, then near (painter's aid on top of the depth sort)
+  const near = basis.pos[2] >= 0 ? 1 : -1;
+  const order = [...LEGS].sort((a, b) => (a.side === near ? 1 : 0) - (b.side === near ? 1 : 0));
+  for (const leg of order) drawLeg(leg, phi, bm, leg.side === near ? PAL.body : PAL.belly);
+  // torso: haunch, barrel, chest
+  pbox(...R(-0.82, 0.03, 0), 0.42, 0.46, 0.42, 0.38, 0.33, 0.31, bm.pitch + 0.06, PAL.body);
+  pbox(...R(0.02, 0.00, 0), 0.54, 0.50, 0.40, 0.42, 0.30, 0.31, bm.pitch, PAL.bodyLit);
+  pbox(...R(0.72, 0.02, 0), 0.28, 0.38, 0.38, 0.34, 0.29, 0.28, bm.pitch - 0.08, PAL.body);
+  // belly shadow stripe (dark, slightly below barrel)
+  pbox(...R(0.02, -0.36, 0), 0.44, 0.34, 0.09, 0.09, 0.24, 0.26, bm.pitch, PAL.belly);
+  // neck: thick column from chest crest to the poll
+  const nk = R(0.90, 0.30, 0), hd = R(1.28, 0.58, 0);
+  limb(nk[0], nk[1], hd[0], hd[1], 0.23, 0.15, 0.13, 0, PAL.bodyLit);
+  // crest: pale beads along the top line, fluttering twice per stride
+  for (let k = 0; k < 6; k++) {
+    const u = k / 5;
+    const p1 = R(lerp(0.90, 1.26, u), lerp(0.46, 0.70, u), 0);
+    const sway = Math.sin(TAU * (2 * phi - k * 0.11)) * 0.03;
+    limb(p1[0] + sway - 0.02, p1[1] + 0.09, p1[0] + sway + 0.05, p1[1] + 0.02, 0.045, 0.032, 0.045, sway * 3, PAL.maneSh);
+  }
+  // head: skull wedge, muzzle, blaze chip, eyes, ears
+  pbox(...R(1.42, 0.55, 0), 0.16, 0.22, 0.13, 0.11, 0.095, 0.085, bm.pitch - 0.55, PAL.bodyLit);
+  pbox(...R(1.64, 0.38, 0), 0.10, 0.12, 0.08, 0.065, 0.068, 0.06, bm.pitch - 0.9, PAL.muzzle);
+  pbox(...R(1.50, 0.52, 0), 0.04, 0.05, 0.04, 0.04, 0.09, 0.07, bm.pitch - 0.62, PAL.blaze);
+  pbox(...R(1.40, 0.68, 0.082), 0.028, 0.026, 0.024, 0.024, 0.016, 0.016, bm.pitch - 0.55, PAL.eye);
+  pbox(...R(1.40, 0.68, -0.082), 0.028, 0.026, 0.024, 0.024, 0.016, 0.016, bm.pitch - 0.55, PAL.eye);
+  const e1 = R(1.30, 0.80, 0.055), e2 = R(1.30, 0.80, -0.055);
+  limb(e1[0], e1[1], e1[0] - 0.01, e1[1] + 0.10, 0.028, 0.009, 0.024, 0.055, PAL.body);
+  limb(e2[0], e2[1], e2[0] - 0.01, e2[1] + 0.10, 0.028, 0.009, 0.024, -0.055, PAL.belly);
+  // forelock over the poll
+  const fl = R(1.28, 0.78, 0);
+  for (let k = 0; k < 3; k++) {
+    const sw = Math.sin(TAU * (2 * phi - k * 0.16)) * 0.05;
+    limb(fl[0] - 0.02 + sw * 0.4, fl[1] + 0.02, fl[0] - 0.09 + sw, fl[1] - 0.11, 0.04, 0.016, 0.028, (k - 1) * 0.05, PAL.mane);
+  }
+  // tail: bushy plume hung from the croup, lifts with the suspension,
+  // swishes on φ — root thick, tip soft
+  const susp = Math.max(0, Math.sin(TAU * (phi - 0.42)));
+  const pts = [];
+  for (let k = 0; k <= 4; k++) {
+    const u = k / 4;
+    pts.push(R(-1.14 - 0.50 * u, 0.26 - 0.92 * u * u + susp * 0.30 * u, 0.05 * Math.sin(TAU * phi) * u));
+  }
+  for (let k = 0; k < 4; k++) {
+    const a = pts[k], b = pts[k + 1];
+    limb(a[0], a[1], b[0], b[1], lerp(0.16, 0.07, k / 4), lerp(0.16, 0.07, (k + 1) / 4), lerp(0.11, 0.03, k / 4), a[2], k < 2 ? PAL.maneSh : PAL.mane);
+  }
+}
+
+/* ------------------------------- the land ------------------------------- */
+function hNoise(x) {   // undulation, period L by construction
+  return Math.sin(TAU * x / L) * 0.55 + Math.sin(TAU * 2 * x / L + 1.7) * 0.38 + Math.sin(TAU * 3 * x / L + 0.4) * 0.22;
+}
+const ridgeH = z => clamp((Math.abs(z) - 7) / 26, 0, 1);
+
+function drawGround(travel) {
+  const scroll = travel % L;
+  const NX = lite ? 6 : 8, NZ = lite ? 9 : 14;
+  const P = (i, j) => {
+    const wx = (i - NX / 2) * CELL - scroll;
+    const wz = (NZ / 2 - j) * CELL;
+    return [wx, hNoise(wx + travel) * ridgeH(wz) - 0.02, wz];
+  };
+  const A = [224, 216, 198], B = [206, 196, 176], C = [190, 180, 160];
+  for (let i = 0; i < NX; i++) for (let j = 0; j < NZ; j++) {
+    const t = h1(i * 7 + j * 5);
+    const col = t > 0.66 ? B : t > 0.33 ? A : C;
+    tri3(P(i, j), P(i + 1, j), P(i + 1, j + 1), col);
+    tri3(P(i, j), P(i + 1, j + 1), P(i, j + 1), col);
+  }
+}
+
+function drawScenery(travel) {
+  const scroll = travel % L;
+  const slot = x => { let w = (x - scroll) % L; if (w < -L / 2) w += L; return w; };
+  for (let m = 0; m < 5; m++) {                        // far mesas on the forward rim
+    const bx = slot(6 + m * (L / 5)), bz = 62 + h1(m) * 14;
+    const w = 7 + h1(m + 40) * 8, hgt = 8 + h1(m + 80) * 12;
+    pbox(bx, hgt * 0.5 - 0.02, bz, w * 0.5, w * 0.42, hgt * 0.5, hgt * 0.5, w * 0.40, w * 0.42, 0, [176, 158, 150]);
+  }
+  for (let b = 0; b < 14; b++) {                      // sagebrush cones
+    const bx = slot(h1(b + 3) * L), bz = (h2(b, 1) > 0.5 ? 1 : -1) * (9 + h2(b, 2) * 26);
+    const hh = 0.45 + h2(b, 3) * 0.75;
+    const y0 = hNoise(bx + travel) * ridgeH(bz) - 0.02;
+    triCone(bx, y0, bz, hh * 0.55, hh, [104, 116, 78]);
+    triCone(bx + hh * 0.4, y0, bz - hh * 0.25, hh * 0.42, hh * 0.72, [88, 102, 66]);
+  }
+  for (let r = 0; r < 9; r++) {                       // rock wedges
+    const rx = slot(h1(r + 17) * L), rz = (h2(r, 5) > 0.5 ? 1 : -1) * (8 + h2(r, 6) * 30);
+    const s = 0.3 + h2(r, 7) * 0.5;
+    const y0 = hNoise(rx + travel) * ridgeH(rz) - 0.02;
+    const apex = [rx, y0 + s, rz], q = h2(r, 8) * TAU;
+    const p1 = [rx + Math.cos(q) * s * 1.3, y0, rz + Math.sin(q) * s];
+    const p2 = [rx + Math.cos(q + 2.4) * s * 1.2, y0, rz + Math.sin(q + 2.4) * s];
+    const p3 = [rx + Math.cos(q + 4.4) * s * 1.1, y0, rz + Math.sin(q + 4.4) * s];
+    tri3(apex, p1, p2, [150, 140, 132]); tri3(apex, p2, p3, [132, 124, 118]);
+    tri3(apex, p3, p1, [140, 132, 124]); tri3(p1, p3, p2, [110, 104, 98]);
+  }
+}
+
+function drawShadow(bodyY) {
+  // single screen-space polygon (no per-triangle alpha seams), cast toward
+  // the anti-sun so it reads as low golden-hour light
+  const r = 1.22 + (bodyY - YC) * 1.4, cy = 0.012, ox = -0.90, oz = 0.55;
+  const pts = [];
+  for (let i = 0; i < 26; i++) {
+    const a = i / 26 * TAU;
+    const p = project([ox + Math.cos(a) * r, cy, oz + Math.sin(a) * r * 0.58]);
+    if (!p) return;
+    pts.push(p);
+  }
+  ctx.fillStyle = 'rgba(24,30,58,0.34)';
+  ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.closePath(); ctx.fill();
+}
+
+function drawDust(phi) {
+  // each puff spawns at its hoof's touchdown point and rides back with the
+  // ground — pure φ, so dust loops with everything else
+  for (let li = 0; li < LEGS.length; li++) {
+    const leg = LEGS[li];
+    let a = phi - leg.c; if (a < 0) a += 1;
+    const life = 0.22;
+    if (a > life) continue;
+    const u = a / life;
+    const baseX = leg.xLand - STRIDE * a;
+    for (let k = 0; k < 6; k++) {
+      const kk = li * 7 + k;
+      const px = baseX + (h1(kk) - 0.5) * 0.35;
+      const py = 0.02 + u * (0.30 + h1(kk + 3) * 0.35);
+      const pz = leg.side * 0.22 + (h2(kk, 1) - 0.5) * 0.3;
+      const p = project([px, py, pz]);
+      if (!p) continue;
+      const rad = (0.05 + u * 0.17) * (basis.focal / p[2]);
+      ctx.globalAlpha = (1 - u) * (1 - u) * 0.55;
+      ctx.fillStyle = '#e8d9bc';
+      ctx.beginPath(); ctx.arc(p[0], p[1], rad, 0, TAU); ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+/* ------------------------------ sky + frame ------------------------------ */
+function drawSky() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, 'rgb(38,42,84)');
+  g.addColorStop(0.20, 'rgb(84,74,104)');
+  g.addColorStop(0.30, 'rgb(168,120,112)');
+  g.addColorStop(0.34, 'rgb(216,152,116)');
+  g.addColorStop(1, 'rgb(232,176,136)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  const sp = project([-80, 6, 84]);       // low sun bloom where the light comes from
+  if (sp) {
+    const r = H * 0.30;
+    const gg = ctx.createRadialGradient(sp[0], sp[1], 0, sp[0], sp[1], r);
+    gg.addColorStop(0, 'rgba(255,235,190,.95)'); gg.addColorStop(0.25, 'rgba(255,204,140,.55)'); gg.addColorStop(1, 'rgba(255,190,130,0)');
+    ctx.fillStyle = gg; ctx.fillRect(sp[0] - r, sp[1] - r, r * 2, r * 2);
+  }
+  ctx.fillStyle = 'rgba(255,240,220,.55)';
+  for (let s = 0; s < 26; s++) ctx.fillRect(h1(s + 90) * W, h1(s + 140) * H * 0.4, DPR, DPR * 1.5);
+}
+
+/* ------------------------------- sim loop ------------------------------- */
+let tRun = 0, phi = 0, travel = 0, frames = 0, readyFlag = false;
+let paused = false, audioOn = true;
+const lastGround = {};        // ground-frame hoof pos while in stance
+const wasStance = {};
+const slipMax = {};           // mm per hoof, worst over the run
+let orderBuf = '', orderSeen = '';
+
+function computeHooves(p) {
+  const bm = bodyMotion(p);
+  const out = { bodyY: bm.y, pitch: bm.pitch };
+  for (const leg of LEGS) {
+    const hb = hoofBody(leg, p);
+    out[leg.name] = { x: hb.x, y: hb.y, z: leg.side, contact: hb.s };
+  }
+  return out;
+}
+// a contact start is a backward wrap of (φ − c)
+function startedC(c, prev, cur) {
+  const a = (prev - c + 1) % 1, b = (cur - c + 1) % 1;
+  return b < a;
+}
+function audit(prev, cur) {
+  for (const leg of LEGS) {
+    const u = inContact(leg, cur);
+    if (u >= 0) {
+      const gf = hoofBody(leg, cur).x + STRIDE * cur;   // ground-frame: world x + scroll
+      if (!wasStance[leg.name]) { lastGround[leg.name] = gf; wasStance[leg.name] = true; slipMax[leg.name] = slipMax[leg.name] || 0; }
+      const mm = Math.abs(gf - lastGround[leg.name]) * 1000;
+      if (mm > slipMax[leg.name]) slipMax[leg.name] = mm;
+    } else wasStance[leg.name] = false;
+  }
+  // footfall order: stamp contact STARTS this frame in chronological order;
+  // a backward φ-wrap begins a fresh stride
+  if (prev > cur) orderBuf = '';
+  const stamps = [];
+  for (const leg of LEGS) {
+    const crossed = prev <= cur ? (leg.c > prev && leg.c <= cur) : (leg.c > prev || leg.c <= cur);
+    if (crossed) stamps.push([prev > cur && leg.c <= cur ? leg.c + 1 : leg.c, leg.name]);
+  }
+  stamps.sort((a, b) => a[0] - b[0]);
+  for (const s of stamps) if (!orderBuf.includes(s[1])) orderBuf += s[1];
+  if (orderBuf.length === 8) { orderSeen = orderBuf; orderBuf = ''; }
+}
+
+function render() {
+  camFrame();
+  drawSky();
+  drawGround(travel);
+  drawScenery(travel);
+  drawHorse(phi);
+  flush();
+  drawShadow(bodyMotion(phi).y);
+  drawDust(phi);
+}
+
+function frame(ts) {
+  requestAnimationFrame(frame);
+  if (!lastTs) lastTs = ts;
+  let dt = (ts - lastTs) / 1000; lastTs = ts;
+  if (dt > 0.1) dt = 0.1;
+  if (!paused && dt > 0) {
+    const prev = phi;
+    tRun += dt;
+    phi = (tRun / T_STRIDE) % 1;
+    travel += SPEED * dt;
+    audit(prev, phi);
+    audioTick(prev, phi);
+  }
+  render();
+  frames++;
+  readyFlag = true;
+  if (frames % 4 === 0) updateHud();
+}
+let lastTs = 0;
+
+/* ------------------------------- HUD ------------------------------- */
+const elBar = {}, elHead = document.getElementById('head');
+for (const leg of LEGS) elBar[leg.name] = document.getElementById('bar-' + leg.name);
+function updateHud() {
+  const track = elBar.LF.parentElement.clientWidth;
+  for (const leg of LEGS) {
+    elBar[leg.name].style.left = (leg.c * track) + 'px';
+    elBar[leg.name].style.width = Math.max(2, leg.d * track) + 'px';
+  }
+  elHead.style.left = (26 + phi * (track - 2)) + 'px';
+  document.getElementById('st-v').textContent = Math.round(SPEED * 3.6);
+  document.getElementById('st-s').textContent = Math.floor(tRun / T_STRIDE);
+  document.getElementById('st-d').textContent = Math.round(travel);
+}
+
+/* ------------------------------- sound ------------------------------- */
+let AC = null, master = null, windGain = null;
+function ensureAudio() {
+  if (AC || !audioOn) return;
+  try {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    master = AC.createGain(); master.gain.value = 0.5; master.connect(AC.destination);
+    const nb = AC.createBuffer(1, AC.sampleRate * 2, AC.sampleRate);
+    const nd = nb.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * 0.4;
+    const src = AC.createBufferSource(); src.buffer = nb; src.loop = true;
+    const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420;
+    windGain = AC.createGain(); windGain.gain.value = 0.05;
+    src.connect(lp); lp.connect(windGain); windGain.connect(master); src.start();
+  } catch (e) { audioOn = false; }
+}
+function thud(heavy) {
+  if (!AC || !audioOn) return;
+  const t = AC.currentTime;
+  const nb = AC.createBuffer(1, Math.floor(AC.sampleRate * 0.12), AC.sampleRate);
+  const d = nb.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (AC.sampleRate * (heavy ? 0.035 : 0.02)));
+  const s = AC.createBufferSource(); s.buffer = nb;
+  const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = heavy ? 95 : 150; bp.Q.value = 1.1;
+  const g = AC.createGain(); g.gain.setValueAtTime(heavy ? 0.55 : 0.38, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+  s.connect(bp); bp.connect(g); g.connect(master); s.start();
+}
+// hoofbeats fire on the same φ crossings the picture uses — sound loops too
+function audioTick(prev, cur) {
+  if (!AC) return;
+  for (const leg of LEGS) if (startedC(leg.c, prev, cur)) thud(leg.name[1] === 'H');
+  if (windGain) windGain.gain.value = 0.05;
+}
+
+/* ------------------------------ gestures ------------------------------ */
+let dragId = null, lastX = 0, lastY = 0, hintFaded = false;
+function fadeHint() { if (!hintFaded) { hintFaded = true; document.getElementById('hint').style.opacity = '0'; } }
+cv.addEventListener('pointerdown', e => { ensureAudio(); fadeHint(); dragId = e.pointerId; lastX = e.clientX; lastY = e.clientY; });
+cv.addEventListener('pointermove', e => {
+  if (e.pointerId !== dragId) return;
+  cam.yaw += (e.clientX - lastX) * 0.006;
+  cam.pitch = clamp(cam.pitch - (e.clientY - lastY) * 0.004, -0.12, 0.6);
+  lastX = e.clientX; lastY = e.clientY;
+});
+window.addEventListener('pointerup', () => { dragId = null; });
+cv.addEventListener('wheel', e => { e.preventDefault(); cam.dist = clamp(cam.dist + e.deltaY * 0.004, 3.2, 14); }, { passive: false });
+window.addEventListener('keydown', e => {
+  ensureAudio(); fadeHint();
+  if (e.code === 'Space') { e.preventDefault(); paused = !paused; }
+  else if (e.code === 'KeyM') { audioOn = !audioOn; if (master) master.gain.value = audioOn ? 0.5 : 0; }
+  else if (e.code === 'KeyR') { Object.assign(cam, camReset); }
+});
+
+/* ------------------------------ DEV hooks ------------------------------ */
+window.__horseTest = {
+  get ready() { return readyFlag; },
+  frames() { return frames; },
+  paused() { return paused; },
+  phase() { return phi; },
+  setPaused(v) { paused = !!v; },
+  resume() { paused = false; },
+  setPhase(p) { paused = true; tRun = p * T_STRIDE; phi = p; render(); },
+  // pure-function state at any phase — proves the seam without time travel
+  stateAt(p) {
+    p = ((p % 1) + 1) % 1;
+    const bm = bodyMotion(p);
+    const hv = computeHooves(p);
+    const s = { bodyY: bm.y, pitch: bm.pitch, travel: p * STRIDE };
+    for (const leg of LEGS) {
+      s[leg.name] = { x: hv[leg.name].x, y: hv[leg.name].y, contact: hv[leg.name].contact };
+    }
+    s.prop = [(((3.7 - p * L) % L) + L) % L, (((21.4 - p * L) % L) + L) % L];
+    return s;
+  },
+  hooves() { const hv = computeHooves(phi); const o = {}; for (const l of LEGS) o[l.name] = { x: +hv[l.name].x.toFixed(4), y: +hv[l.name].y.toFixed(4), contact: hv[l.name].contact }; return o; },
+  slipMax() { const o = {}; for (const l of LEGS) o[l.name] = +(slipMax[l.name] || 0).toFixed(3); return o; },
+  gait() { return { order: orderSeen, stride: STRIDE, period: T_STRIDE, speed: SPEED, loopStrides: LOOPS, seam: L, suspFrac: 1 - LEGS[3].c - LEGS[3].d }; },
+  footfall(p) { const out = {}; for (const leg of LEGS) out[leg.name] = { c: leg.c, d: leg.d, contact: inContact(leg, p) >= 0 ? 1 : 0 }; return out; },
+  unlock() { ensureAudio(); },
+  audioOn() { return audioOn; },
+  setAudio(v) { audioOn = !!v; if (master) master.gain.value = audioOn ? 0.5 : 0; },
+  cam(yaw, pitch, dist) { if (yaw !== undefined) { cam.yaw = yaw; cam.pitch = clamp(pitch, -0.12, 0.6); cam.dist = clamp(dist, 3.2, 14); } return [cam.yaw, cam.pitch, cam.dist]; },
+  project(p) { camFrame(); const q = project(p); return q ? [Math.round(q[0] / DPR), Math.round(q[1] / DPR)] : null; },
+  // readback ONLY on demand (harness) — never inside the frame loop
+  pixel(x, y) { const d = ctx.getImageData(Math.floor(x * DPR), Math.floor(y * DPR), 1, 1).data; return [d[0], d[1], d[2]]; },
+  countPixels(pred, step) {
+    const s = Math.max(1, step || 2) * DPR;
+    const img = ctx.getImageData(0, 0, W, H).data;
+    let n = 0;
+    for (let y = 0; y < H; y += s) for (let x = 0; x < W; x += s) {
+      const i = (y * W + x) * 4;
+      if (pred(img[i], img[i + 1], img[i + 2])) n++;
+    }
+    return n;
+  },
+  reset() { tRun = 0; phi = 0; travel = 0; paused = false; lastTs = 0; orderBuf = ''; orderSeen = ''; Object.assign(cam, camReset); },
+};
+
+requestAnimationFrame(frame);
+</script>
+
+<script>
+window.DEMO_CREDITS = {
+  name: 'STRIDELINE', accent: '#e0a45c',
+  issues: [2147], span: '~3 h', shipped: '2026-11-12',
+  assist: 'solo', note: 'goal only — own renderer, own gait, no Three.js',
+};
+</script>
+<script src="feedback.js"></script>
+<script src="credits.js"></script>
+<script>
+// #1078: on narrow screens the centred footfall strip reaches the tag column —
+// lift the credits tag clear of it when they would collide
+function reserveTag() {
+  var s = document.getElementById('hud').getBoundingClientRect()
+  var t = document.getElementById('credits-tag')
+  var clash = t && s.right > t.getBoundingClientRect().left && s.bottom > t.getBoundingClientRect().top
+  document.documentElement.style.setProperty('--credits-bottom', clash ? Math.round(s.height + 14) + 'px' : '0px')
+}
+reserveTag()
+window.addEventListener('load', reserveTag)
+window.addEventListener('resize', reserveTag)
+setTimeout(reserveTag, 0)
+</script>
+</body>
+</html>

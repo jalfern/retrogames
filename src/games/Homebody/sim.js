@@ -238,6 +238,7 @@ export function newRun(seed) {
         spatFx: 0,                // #2076: seconds left of the storm-puff tell over the pair
         cooFx: 0,                 // #2131: seconds left of the sparkle/hearts tell over the pair
         cmdCd: 0,                 // #2131: real seconds until the next player command lands
+        holdT: -1,                // #2171: armed thumb-court hold (world ms; -1 = no press pending)
         houseLineCd: 6,               // co-presence chat line cooldown (s)
         lastToast: 0,               // day of last shared payday toast
         thoughts: [], thoughtT: 0,
@@ -395,6 +396,35 @@ export function court(s, kind) {
         return { k }
     }
     return null
+}
+
+// #2171 — the THUMB COURT. The pad has no third button (AGENTS.md), so the
+// second order rides press-DURATION on the first: an A press that lands on a
+// person arms the hold; releasing resolves the compliment, holding past
+// HOLD_INSULT_MS hurls the insult mid-hold. The clock is WORLD ms fed one SIM
+// step at a time (like cmdCd, it freezes with the sim) — a throttled browser
+// and a Node gate run the same law. The keyboard keeps its dedicated C/X.
+export const HOLD_INSULT_MS = 600
+export function courtHoldArm(s) {          // A press with no object in reach
+    if (courtTarget(s) === null) return false
+    s.holdT = 0
+    return true
+}
+export function courtTick(s, ms) {        // every live play step
+    if (s.holdT < 0) return null
+    s.holdT += ms
+    if (s.holdT >= HOLD_INSULT_MS) {
+        s.holdT = -1
+        const r = court(s, 'insult')
+        return r ? { fired: 'insult', ...r } : { refused: true }
+    }
+    return null
+}
+export function courtTap(s) {           // release before the threshold
+    if (s.holdT < 0) return null
+    s.holdT = -1
+    const r = court(s, 'coo')
+    return r ? { fired: 'coo', ...r } : { refused: true }
 }
 
 // ------------------------------------------------------------- occupancy -------
@@ -1312,6 +1342,7 @@ export function stateHash(s) {
     mix(s.rel.ivy)                     // #2143: so does the second neighbour's
     mix(s.spats); mix(s.grudge)        // #2070: quarrels and grudges ride it too
     mix(s.cmdCd)                       // #2131: the command cooldown rides it too
+    mix(s.holdT)                       // #2171: so does the pending thumb-court hold (-1 = none)
     for (const p of s.people) {
         mix(p.r); mix(p.c)
         for (const n of NEEDS) mix(p.needs[n])

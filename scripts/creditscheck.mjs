@@ -38,8 +38,7 @@ try { ({ chromium } = require('playwright-core')) } catch {
 
 const PORT = process.argv.includes('--port') ? process.argv[process.argv.indexOf('--port') + 1] : '9381'
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-const DEMOS = ['ocean', 'shore', 'campfire', 'mountains', 'storm', 'reef', 'blackhole', 'neonrain', 'volcano', 'deepglass', 'stickwalk', 'physicswalk', 'learnedwalk', 'horse-gemini']
-const LAB_PAGES = ['weightsurgery']
+const DEMOS = ['ocean', 'shore', 'campfire', 'mountains', 'storm', 'reef', 'blackhole', 'neonrain', 'volcano', 'deepglass', 'stickwalk', 'physicswalk', 'learnedwalk', 'horse', 'horse-gemini']
 
 const results = []
 const ok = (name, pass, detail) => {
@@ -89,7 +88,6 @@ function staticLayer() {
   const DEMO_FILES = readdirSync(resolve(ROOT, 'public/demos'))
     .filter((f) => f.endsWith('.html') && f !== 'index.html')
     .map((f) => f.replace(/\.html$/, ''))
-    .filter((d) => !LAB_PAGES.includes(d))
   for (const d of DEMO_FILES) {
     const html = readFileSync(resolve(ROOT, `public/demos/${d}.html`), 'utf8')
     ok(`${d}: loads feedback.js (relative)`, /<script src="feedback\.js">/.test(html))
@@ -131,7 +129,6 @@ function staticLayer() {
       idx.demos.every(d => cardIds.includes(d.el)),
       `cards=${cardIds} index=${idx.demos.map(d => d.el)}`)
     for (const d of idx.demos) {
-      if (LAB_PAGES.includes(d.el)) continue
       const c = cfgs[d.el]
       if (!c) { ok(`index agrees with ${d.el}`, false, 'no demo config'); continue }
       ok(`index agrees with ${d.el} (issues/span/assist/builder)`,
@@ -192,7 +189,7 @@ async function browserLayer() {
       }
     })
     ok('index: every card carries a built-by line (solo/guided + builder + origin)',
-      stamped.perCard === DEMOS.length + LAB_PAGES.length && stamped.allStamped, `${stamped.perCard} cards`)
+      stamped.perCard === DEMOS.length && stamped.allStamped, `${stamped.perCard} cards`)
     ok('index: factory line names model + machine',
       /Qwen3\.8-/.test(stamped.factory) && /MAC STUDIO/i.test(stamped.factory), stamped.factory)
     ok('index: every issue link points at the repo',

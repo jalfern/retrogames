@@ -23,6 +23,17 @@ lessons below keep games from shipping broken; they are not the goal.
    **only** with this command, never any other way (waits on the required check — `static` —
    and ignores advisory jobs; `smoke` flaking must not wedge the merge):
    `scripts/main-ok.sh && while s=$(gh pr checks --json name,state --jq 'map(select(.name=="static"))[0].state'); do [ "$s" = SUCCESS ] && break; case "$s" in FAILURE|ERROR|TIMED_OUT) exit 1;; esac; sleep 20; done && gh pr merge --squash --delete-branch`
+5a. **A red main clears within 2 hours (#2176).** Red main outranks everything:
+    the first lane to see it fixes it before any other work. A harness-only fix
+    (thresholds, calibration, timing; no game-behaviour change) is taken without
+    asking Jon — jonq refuses such questions. If there is no clear fix inside
+    2 hours, quarantine the failing check so main goes green: add one entry to
+    `scripts/quarantine.json` naming an **open issue** that owns the fix
+    (`{"label": "<npm alias>", "issue": <n>, "reason": "…"}` —
+    `scripts/run-checks.mjs` skips only those checks and prints why), then fix
+    it properly and delete the entry in the PR that closes the issue.
+    A new nightly gate must pass once on CI (`gh workflow run`) before its PR
+    merges — Mac-only calibration can't reach main.
 6. Don't grow the harness past the code it tests. Prefer a new small check to a longer script.
 7. Every ~4 hours, stop with: what's playable now, what changed. Questions for Jon go in
    issues, never in STATE.md (#605): `node scripts/jonq.mjs ask --lane <lane> --title "…"

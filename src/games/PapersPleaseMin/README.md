@@ -242,6 +242,37 @@ tooth 30; hatted honest photos carry their hat; bare heads paint none; and
 every background face's browser decor equals Node's `accFor(serial)` byte for
 byte.
 
+## REGULAR ECHOES (#2087) — the cast keeps its habits
+
+The original's recurring faces wear identity the way the neighborhood remembers
+it: Jorji's cap sits tilted. Here Grubak's face carries an authored `tilt: 1`
+(the ONLY tilt in the game — `accFor` never emits it, paperscheck pins that and
+that tilting every face moves no verdict). `drawFace` renders the tilt as a
+slouched crown with the brim riding up at the left, same cap/brim inks, hairline
+still reading past both edges. Being face-spread decor, the tilt rides into the
+photo by construction and paperscheck re-pins it every appearance (face == photo
+== authored). The scarf knot rows (x48-62, y74-79, wool-dark `#5f3722`) live in
+the same function, so wrapped heads knot under the chin at the counter AND in the
+photo. papersplay pixel-proves both live: Grubak paints 80 brim px in the
+upper-left tilt window (counter and photo) while every rolled flat cap keeps it
+empty, and every wrapped head paints its knot ink.
+
+### The murmur witness is paint-side (#2087)
+
+Strangers' one-off lines (`mutterFor(pic)`, see "The one-off crowd") print in
+dim slate inside the empty bubble field, and papersplay must prove those pixels
+WITHOUT ever skipping a face. Node-side sampling can: CI's software Chrome paced
+its probes ~1:1 against the walk-up cycle and alias-skipped the 7th stranger of
+seed 0 day 1 twice (`1/5 mm=0`). So the witness moved to the paint side — the
+counter records every face IT paints (`murmurLog`, DEV-only, reads never write):
+murmur-field ink, bubble paper, and the mutter string, keyed by serial, ink and
+paper the MAX across the face's tenure. papersplay then stamps the day and reads
+the log once, grading it against the Node ground truth (`genWeek(0)` day 1: 7
+strangers, exactly 2 murmuring). No harness pace can alias a face out of the
+record — the suite passes unchanged at a hostile 2.6 s cadence (`PP_PACE=2600`),
+the very period that starved the old loop. Kill the accumulator and the witness
+gate goes red (0/7) — the proof the gate can fail.
+
 ## The cast of six (#1997) — the neighborhood grows, and everyone has a line
 
 The original's recurring cast is not four — a dozen faces lean on the glass

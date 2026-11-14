@@ -1,69 +1,71 @@
-# STATE — session 255 (2026-11-12, slot a)
+# STATE — session 261 (2026-11-14, slot a)
 
-## What shipped
-**VIPER PIT — CPU close-range qcb counter restored (#2151)** merged as `21de217`
-(PR #2163). #1735's projectile-only replacement meant no CPU ever threw ANY
-fighter's qcb (all five ViperPit counters are non-projectile) — viperpitcheck
-red on main since. Fix: restored close-range branch (`sp.qcb && f.def.moves.qcb
-&& dist < 2.2 && m.rng() < tier * 0.22`) kept beside #1732's projectile-at-range
-one; scriptMotion has had a qcb case since #1732 so it lands. SABLE's ward now
-walls off point-blank too (what a ward is for; pre-#1735 behavior). Harness:
-source regex re-pinned + projectile branch pinned + NEW behavioural sweep — per
-fighter, foe held at 1.8, 8 seeds, CPU must enter `move === 'qcb'`. Proven-fail:
-`--mutate` kill probe `__VIPER_NOQCB__` — dead branch → CPU never throws the
-counter (5 behavioural gates + regex would go red). Green: viperpitcheck 348/0
-(was 340/1), ironringcheck 134/0 (determinism re-verified with ward change live),
-lint gates + build + contractcheck 724/0. Prod VERIFIED: `fighting-VZEfLrjb.js`
-byte-matches local build, carries `moves.qcb&&<v><2.2`.
+## Playable now / what shipped
+**FIRE CREW #2178 — SHIPPED & PROD-VERIFIED, issue closed.** The pillar-loft softlock
+fix (#2181) landed as `076830d` in the 03:06–03:22Z merge batch (Jon broke the
+freeze: #2161, #2174, #2173, #2165, #2186 rule-5a, then #2181; QA's #2185 followed
+as `db905ec`). Loft gate now requires BOTH sides of the loft line walkable
+(+nearest-open column); `cpuHose` paths `inLoft`; resume note carries tick/done.
+Session verification (mine): local `--throttle 32` nightly repro 320/320 green at
+head; CI run `43357635555` proves `WATCH key … 903/903 OK` WITH the fix on CI;
+prod fire-crew chunk byte-match at 40963B (pre-fix 40924B) on
+jalfern.com/retrogames/fire-crew. #2178 relabeled shipped, closed. Also this session:
+**#2180 un-blocked** — it conflicted with #2181 in `watchcheck.mjs:1814` (both added
+the resume-note `tick`); rebased onto tip keeping main's superset `tick/done` note,
+fire-crew suite re-proven 321/321 green at `29f5992`, pushed, now MERGEABLE.
 
-Also cleared the session-open chore: **#2159** (judge badge lift) merged as
-`4b830fc` once the freeze lifted; `retrogames-forge-viper-reply` worktree removed.
-
-## Freeze status — main is RED again
-Nightly 43285200501 on `7f41097` completed FAILURE 20:22Z — `full-smoke`:
-papersplay crowded-shift ink 20/165 + neighbor-callback ink 23/82 (the #2145
-family, unchanged) PLUS one new line: `defender: resumes from where the player
-left it (score 2400 -> 2400, enemies 2 -> 2)` (watchcheck resume family).
-Detail posted on #2145 (needs-approval, Jon's board). #601 re-armed:
-`main-ok` exits 1 — **no merges until a green nightly lands.** My two merges
-went through in the cancelled-nightly window before it re-armed.
+## Nightly / freeze path
+Rule 5a (#2186) is LAW now: red main clears within 2 h, one-check quarantine via
+`scripts/quarantine.json` naming an open issue. Latest completed nightly is still
+`43543725895` (old tip f4c9f25): red on fire-crew-resume (fixed in tip) AND
+`defender: resumes` (score 3150->3150) — the #2179 window-flake class, green in
+43443192812, red again here: timing-dependent. **Nightly `43551392966` on the FIXED
+tip `076830d` has been running since 03:23Z** (ETA ~05:10Z; a redundant duplicate
+dispatch by me was cancelled). Outcomes:
+- GREEN → `main-ok.sh` opens → rule-5 merge #2180 (closes #2179) immediately; then
+  fresh nightly on that tip should stay green (both resume causes gone).
+- RED on defender-resume again → fix is #2180 but it can't merge through a red
+  main-ok: apply rule 5a quarantine (entry `{"label":"watchcheck","issue":2179,…}`
+  — coarse: hides the whole suite, so prefer it only after a green-tip chance; the
+  quarantine PR faces the same main-ok wall, so this may again be Jon's direct
+  merge — post evidence on #2179/#2180 and link).
+- RED on anything else → new issue, treat as fresh red-main under rule 5a.
 
 ## The session's catches
-- **Prod marker = chunk CONTENT hash match, not entry-hash change.** A shared
-  lazy chunk change can ship with an identical entry hash (entry references the
-  chunk by name). Poll: entry → chunk filename → fetch chunk → pattern/string;
-  better: compare the prod chunk's content hash with your local build's. First
-  poll (entry-must-change gate) reported a false "not live" for 13 min.
-- **Hand-mutants can't survive mutateguard** (plain viperpitcheck runs plant a
-  temp mutant → refuses a dirty tree). The sanctioned prove-fail channel is the
-  check's own `--mutate` global-flag pattern — permanent, no dirty-tree risk.
-- **Behavioural gate over source grep:** the #2151 regression slept for 5 PRs
-  behind a regex that kept looking plausible. Source pins now ride alongside a
-  sim that must SEE the move.
-- **When an issue contradicts itself** (sketch's `!projectile` vs its own
-  "re-pin IRON RING" line), build the reading that makes every sentence true
-  and say so in the design comment — #2151 sketch vs intent.
+- The freeze broke while I was mid-verify: batch merges landed #2181 20 min after my
+  fresh CI + local proof. Checkpoints on the issue are what made the evidence
+  available to whoever broke it — comment early, comment current.
+- #2180+#2181 both edited `watchcheck.mjs:1811` — parallel PRs on one hot line must
+  be sequenced; second-to-land owes the rebase (done here, 1-line dup resolution).
+- `cp src d1 d2` needs d2 to be a dir — FORGE.md step-1 park line fails macOS-style
+  unless run as two copies (#1258 plumbing nit).
+- prod Vite chunk hash shifts when earlier batch merges change shared imports: the
+  fire-crew marker at tip is `index-Dror3cRm.js` (branch-only build said `Cmt0iM8z`).
+  Rebuild at tip before prod-verifying: local tip build gives entry
+  `index-Dpv03b9T.js` + chunk bytes 40963.
 
 ## Ladder trail
-TARGET #2147 REFUSED (b holds it live, horse demo mid-build — do not resume
-`forge/horse` from slot a). No halt/steer; jonq empty; `next` #1711 still
-waiting on Jon. game-queue #2151 claimed first — shipped. game-queue now empty;
-feedback owned by live QA lane; flagship gaps QA-owned → expect never-dry
-`weakestStage` to pick at the next kick (or #2147 once b's lock lapses… b is
-alive, don't touch).
+TARGET #2178 claimed via forge-claim.sh (03:4xZ), fix merged — closure pending prod
+verification. Slot b: #2172's PR #2174 MERGED in the batch (b verifies prod/closes).
+QA studio: #2167/#2087 live; #2087 landed via #2165.
 
 ## Open questions
-- none filed.
+- none filed (the freeze-deadlock question became moot — rule 5a + Jon's batch
+  answered it before the deadline machinery was needed).
 
 ## Next
-- Slot a: main is red (#2145 family) — nothing to merge. If a green nightly
-  lands, run the ladder: no open game-queue items, so derive honestly via
-  idle.mjs `flagshipStage`/`weakestStage`; expect a POLISH issue for the
-  weakest unheld title with a why-weakest line.
-- QA lane: papersplay ink floors (#2145) + the new watchcheck defender-resume
-  failure are the main-green path — builder lanes stay off it unless asked.
+- Slot a next session: check `43551392966` (fixed-tip nightly). GREEN → rule-5 merge
+  #2180, close #2179. RED on defender-resume → rule 5a per Freeze path above.
+  CAUTION: `main-ok` currently reads green only because the latest COMPLETED nightly
+  is the redundant dispatch I cancelled (cancelled != failure to the script); the
+  honest verdict is `43551392966`. Do not treat the cancel-green as the freeze
+  clearing for game PRs — #2180 only, and only if its static passes.
+- Then: viper-pit prod face-check (#2172, slot b's), QA backlog #2158.
 
 ## Hygiene at exit
-Dev server :5173 (mine) STOPPED. Worktree `retrogames-forge-viper-qcb` REMOVE
-after this STATE push (branch merged). Main checkout detached at origin/main.
-STATE committed to main (game merged) + parked `statepark park a`.
+Dev server :5173 STOPPED (was serving maingreen-ticks worktree). Worktrees: KEPT
+`retrogames-forge-maingreen-ticks` (#2180 open, node_modules present);
+`retrogames-forge-firecrew-loft-gate` KEPT (merged; harmless to leave). Main checkout
+detached at `origin/main`. STATE.md COMMITTED to main (rule 9: forge game #2181
+merged this session) — precedent `ec3afc5`, STATE-only commit, no game code — and
+parked via `statepark park a`.

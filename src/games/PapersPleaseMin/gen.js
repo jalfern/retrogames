@@ -69,7 +69,9 @@ const LAST = ['KOSTOV', 'DRENIN', 'VASEK', 'LAGODA', 'ORLOV', 'TOLKA', 'ZEMEK', 
 export const REGULARS = [
     {
         id: 'grubak', name: 'VOLEN GRUBAK', sex: 'M', ageYears: 47, dobM: 3, dobD: 14, height: 178, weight: 86,
-        face: { skin: 2, hairC: 0, shirtC: 2, style: 1, narrow: 0, glasses: 0, must: 1, brow: 1, mouth: 0, hat: 1, uni: 1, ear: 0, gap: 0 },
+        // #2087 REGULAR ECHOES — Jorji's cap sits tilted: authored decor, an
+        // identity mark like the scar, never in FEATURES, never evidence.
+        face: { skin: 2, hairC: 0, shirtC: 2, style: 1, narrow: 0, glasses: 0, must: 1, brow: 1, mouth: 0, hat: 1, uni: 1, ear: 0, gap: 0, tilt: 1 },
         mark: 'scar',
         lines: { greet: 'GOOD DAY, GUARD.', hook: 'THE BREAD LINE WAS LONG.', again: 'BACK AGAIN, HA!', follow: 'STILL NO BREAD, HA!' },
         turnAlt: '...IS MISTAKE, YES?', againAlt: 'BACK AT THE GLASS.', seize: '"I HAVE FAMILY IN OR VECHNA!"',
@@ -282,7 +284,38 @@ export function accFor(pic, country, sex) {
         uni: ((h >>> 7) & 7) === 0 || (country === 'VESKOLE' && (h >>> 19) % 5 === 0) ? 1 : 0,
         ear: ((h >>> 11) & 7) === 0 || (country === 'PARMENISTAN' && (h >>> 21) % 5 === 0) ? 1 : 0,
         gap: ((h >>> 15) & 15) < 2 || (country === 'KIRINIA' && (h >>> 23) % 7 === 0) ? 1 : 0,
+        // #2087 SHADES + BODIES — the original's one-offs also show up in
+        // tinted lenses and different builds. Same doctrine: decor, never in
+        // FEATURES, never evidence; shades ride their OWN ink (drawFace's
+        // SHADES_COL), so the compared glasses family keeps its own pixels.
+        shades: ((h >>> 17) & 15) === 0 || (country === 'ANTEGRIA' && (h >>> 29) % 5 === 0) ? 1 : 0,
+        body: (h >>> 3) % 3,
+        post: (h >>> 27) & 1,
     }
+}
+
+// #2087 THE CROWD MURMURS — the original's line grumbles while it waits:
+// one-offs get half-heard lines ("I have no papers", "My friend is waiting").
+// Same doctrine as the arc speech: atmosphere the booth prints — decide never
+// reads `mutter` (paperscheck verdict-twins it off every paper) — but pure by
+// construction: a hash of the passport serial, ZERO rnd() draws, so the seed
+// stream keeps its sequence and the same number keeps its murmur forever.
+// Regulars speak in full sentences (their authored `say`), so they never
+// mutter; the booth prints murmurs in dim type inside the empty bubble field,
+// never on paper — the recognition bubble stays the neighborhood's own.
+export const MUTTERS = [
+    'I HAVE NO PAPERS.',
+    'MY FRIEND IS WAITING.',
+    '...COLD OUT THERE.',
+    'THE LINE NEVER MOVES.',
+    'IS IT MY TURN?',
+    'I STOOD HERE ALL MORNING.',
+    'THE MAN BEFORE ME LEFT.',
+    'JUST A STAMP, GUARD.',
+]
+export function mutterFor(pic) {
+    const h = Math.imul((pic ^ 0x2545f491) ^ Math.imul(pic >>> 7, 0x9e3779b1), 0x85ebca6b) >>> 0
+    return (h & 127) < 44 ? MUTTERS[(h >>> 9) % MUTTERS.length] : null
 }
 
 let PERSON_ID = 0
@@ -349,6 +382,13 @@ function base(rnd, date, dayRules, used, opts = {}) {
     const pic = Math.floor(rnd() * 1e9)
     const acc = accFor(pic, country, pp.sex)
     face.hat = acc.hat; face.uni = acc.uni; face.ear = acc.ear; face.gap = acc.gap
+    // #2087 the bodies and shades attach the same way — born shared, so the
+    // photo carries the same build and the same dark lenses as the counter.
+    face.shades = acc.shades; face.body = acc.body; face.post = acc.post
+    // #2087 THE CROWD MURMURS — one-offs grumble; the line rides the serial
+    // hash (zero draws). regularApplicant clears it: a neighbor's speech is
+    // authored, never muttered.
+    const mutter = mutterFor(pic)
     pp.photo = { ...face }
     return {
         trap: null,
@@ -359,7 +399,7 @@ function base(rnd, date, dayRules, used, opts = {}) {
         // more of it than of a hat (FEATURES unchanged), papersplay's
         // cross-process witness matches the browser decor against Node's
         // accFor(pic, nation, sex) with it.
-        person: { pic, nation: country, face, papers: wantId ? ['passport', 'idcard'] : ['passport'], passport: pp, idcard },
+        person: { pic, nation: country, mutter, face, papers: wantId ? ['passport', 'idcard'] : ['passport'], passport: pp, idcard },
         truth: {
             hasPassport: true, hasIdCard: !!idcard, trueName: name, idName: idcard ? idcard.name : null,
             country, expiry: pp.expiry, dob, trueWeight: pp.weight, wanted: false, photoMismatch: false,
@@ -528,6 +568,9 @@ function regularApplicant(c, rnd, date, dayRules, day, used, seed, n, aged = fal
     a.person.face = face
     a.person.mark = c.mark
     a.person.regular = c.id
+    // #2087: a neighbor's speech is authored (say/arc lines below) — the
+    // serial-hash murmur is the one-off crowd's voice, never the cast's.
+    a.person.mutter = null
     a.person.passport = { ...a.person.passport, name: c.name, sex: c.sex, dob, height: c.height, weight: c.weight, photo: { ...face } }
     if (a.person.idcard) {
         a.person.idcard = { ...a.person.idcard, name: c.name, dob, height: c.height, weight: c.weight }

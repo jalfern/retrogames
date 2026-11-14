@@ -26,7 +26,7 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, dshow, MON, FEATURES, stampLines, portraitDiffs } from '../src/games/PapersPleaseMin/rules.js'
-import { genWeek, genDay, viewOf, CITY2C, COUNTRIES, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, VISIT_WINDOW, WALL_POOL, wallNameAt, weekWallNames, weekDecoyCount, crowdedDay, repChapter, turnLineFor, againLineFor, TURN_CANONICAL, trapSchedule, day7Demote, neighbourTrapWeek } from '../src/games/PapersPleaseMin/gen.js'
+import { genWeek, genDay, viewOf, CITY2C, COUNTRIES, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, mutterFor, MUTTERS, VISIT_WINDOW, WALL_POOL, wallNameAt, weekWallNames, weekDecoyCount, crowdedDay, repChapter, turnLineFor, againLineFor, TURN_CANONICAL, trapSchedule, day7Demote, neighbourTrapWeek } from '../src/games/PapersPleaseMin/gen.js'
 import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges, monthTurn, isMoneyDeath } from '../src/games/PapersPleaseMin/sim.js'
 import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, RENT, PAYFX, ID, PHOTO, BUBBLE, BUBBLE_TAIL, EVID, SETTLE, QUOTE, RECOGNITION, QUEUE, ASIDE, CROWD_NOTE, ARC_MUG, ARC_HL, SEIZE, DRAG, wallFit, ruleLines, bulletinRows } from '../src/games/PapersPleaseMin/layout.js'
 
@@ -571,7 +571,7 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
                 const v = viewOf(day, a)
                 // #2080: markStep joins the stripped decor — the verdict may
                 // not know whether a neighbour's mark has aged.
-                const stripped = { ...v, person: { ...v.person, say: undefined, seize: undefined, face: v.person.face && { ...v.person.face, markStep: undefined }, passport: v.person.passport && { ...v.person.passport, photo: v.person.passport.photo && { ...v.person.passport.photo, markStep: undefined } } } }
+                const stripped = { ...v, person: { ...v.person, say: undefined, seize: undefined, mutter: undefined, face: v.person.face && { ...v.person.face, markStep: undefined }, passport: v.person.passport && { ...v.person.passport, photo: v.person.passport.photo && { ...v.person.passport.photo, markStep: undefined } } } }
                 ok(decide(v).verdict === decide(stripped).verdict, `seed ${seed} day ${day.n}: say-line leaked into the verdict`)
             }
             for (const a of regs) {
@@ -845,7 +845,8 @@ section('THE CROWD IS PEOPLE (#1989) — hats, unibrows, earrings, missing teeth
         for (const country of COUNTRIES) for (const sex of ['M', 'F']) {
             const a = accFor(pic, country, sex), b = accFor(pic, country, sex)
             if (JSON.stringify(a) !== JSON.stringify(b)) pure = false
-            if (!(a.hat >= 0 && a.hat <= 3) || ![a.uni, a.ear, a.gap].every((v) => v === 0 || v === 1)) pure = false
+            if (!(a.hat >= 0 && a.hat <= 3) || ![a.uni, a.ear, a.gap, a.shades, a.post].every((v) => v === 0 || v === 1)) pure = false
+            if (!(a.body >= 0 && a.body <= 2)) pure = false
         }
     }
     ok(pure, 'accFor is not a pure, shaped function of (serial, nation, sex)')
@@ -856,8 +857,8 @@ section('THE CROWD IS PEOPLE (#1989) — hats, unibrows, earrings, missing teeth
     //    (all decor on): the booth still decides exactly as before, and the
     //    truth path agrees. If any rule ever learns to read a hat, every
     //    hatted honest face becomes an unfair paper and this goes red.
-    let naked = 0, decorated = 0, combos = new Set(), hatKinds = new Set()
-    const fams = { hat: 0, uni: 0, ear: 0, gap: 0 }
+    let naked = 0, decorated = 0, combos = new Set(), hatKinds = new Set(), bodyKinds = new Set(), postN = 0
+    const fams = { hat: 0, uni: 0, ear: 0, gap: 0, shades: 0 }
     for (const seed of SEEDS) {
         const w = genWeek(seed)
         for (const day of w.days) {
@@ -866,27 +867,35 @@ section('THE CROWD IS PEOPLE (#1989) — hats, unibrows, earrings, missing teeth
                 const view = viewOf(day, a)
                 const v0 = decide(view).verdict
                 const j0 = judge({ truth: a.truth, person: a.person, rules: day.rules, date: day.date, allowed: day.allowed, scale: a.scale }).verdict
-                const pf = { ...a.person, face: { ...f, hat: 1, uni: 1, ear: 1, gap: 1 } }
+                const pf = { ...a.person, face: { ...f, hat: 1, uni: 1, ear: 1, gap: 1, shades: 1, body: 2, post: 1, tilt: 1 } }
                 const v1 = decide({ ...view, person: pf }).verdict
                 const j1 = judge({ truth: a.truth, person: pf, rules: day.rules, date: day.date, allowed: day.allowed, scale: a.scale }).verdict
                 ok(v1 === v0 && j1 === j0, `seed ${seed} day ${day.n}: decor moved a verdict (${v0}->${v1}) — a hat became evidence`)
                 const ph = a.person.passport ? a.person.passport.photo : null
-                ok(!ph || ['hat', 'uni', 'ear', 'gap'].every((k) => (f[k] || 0) === (ph[k] || 0)),
+                ok(!ph || ['hat', 'uni', 'ear', 'gap', 'shades', 'body', 'post', 'tilt'].every((k) => (f[k] || 0) === (ph[k] || 0)),
                     `seed ${seed} day ${day.n}: decor drifted between face and photo`)
                 // Variety is graded on the ROLLED heads only — the regulars'
                 // authored decor would mask a flattened hash (three kinds ride
                 // on Grubak, Anja and Petr alone; m31 proved it).
                 if (!a.person.regular) {
-                    for (const k of ['hat', 'uni', 'ear', 'gap']) if (f[k]) fams[k]++
+                    for (const k of ['hat', 'uni', 'ear', 'gap', 'shades']) if (f[k]) fams[k]++
                     if (f.hat) { decorated++; hatKinds.add(f.hat) } else naked++
-                    combos.add([f.hat || 0, f.uni || 0, f.ear || 0, f.gap || 0].join(''))
+                    bodyKinds.add(f.body | 0); if (f.post) postN++
+                    combos.add([f.hat || 0, f.uni || 0, f.ear || 0, f.gap || 0, f.shades || 0].join(''))
                 }
             }
         }
     }
     ok(hatKinds.size === 3, `hat kinds on the line: ${[...hatKinds].join(',')} — the original wears cap, ushanka AND scarf`)
     ok(fams.uni >= 24 && fams.ear >= 24 && fams.gap >= 24, `sparse families ${JSON.stringify(fams)} — the crowd is still combinatorial dust`)
-    ok(combos.size >= 12, `only ${combos.size} distinct looks across ${SEEDS.length} weeks — one-offs must multiply`)
+    // #2087 SHADES + BODIES: the two new families must live on the ROLLED
+    // crowd (the authored cast cannot carry them), and a flattened roll —
+    // nobody in tinted lenses, everyone the same build — reads as décor that
+    // quietly died, the exact m31 pattern for the new families.
+    ok(fams.shades >= 24, `shades family at ${fams.shades} across ${SEEDS.length} weeks — the one-offs do not wear lenses`)
+    ok(bodyKinds.size === 3, `body builds on the line: ${[...bodyKinds].sort().join(',')} — shoulders must come in slim, regular AND broad`)
+    ok(postN >= 24, `leaning postures at ${postN} — everyone stands the same way`)
+    ok(combos.size >= 16, `only ${combos.size} distinct looks across ${SEEDS.length} weeks — one-offs must multiply`)
     ok(naked > 0, 'nobody walks bare — accessories became a uniform, not a crowd')
     console.log(`  ..    ${decorated}/${decorated + naked} decorated, ${combos.size} looks, families ${JSON.stringify(fams)}`)
 
@@ -900,12 +909,25 @@ section('THE CROWD IS PEOPLE (#1989) — hats, unibrows, earrings, missing teeth
         for (const day of genWeek(seed).days) {
             for (const a of day.queue.filter((x) => x.person.regular)) {
                 const c = REGULARS.find((k) => k.id === a.person.regular)
-                ok(['hat', 'uni', 'ear', 'gap'].every((k) => a.person.face[k] === c.face[k] && a.person.passport.photo[k] === c.face[k]),
+                ok(['hat', 'uni', 'ear', 'gap', 'tilt'].every((k) => a.person.face[k] === c.face[k] && a.person.passport.photo[k] === c.face[k]),
                     `seed ${seed} day ${day.n}: ${c.id}'s hat changed by itself — authored decor is identity`)
             }
         }
     }
     ok(new Set(castAcc.map((v) => v[0] > 0 ? 'hatted' : 'bare')).size === 2, 'every regular hatted or every one bare — the neighborhood needs both')
+    // #2087 REGULAR ECHOES — the original's recurring faces wear their habits
+    // (Jorji's cap sits tilted). Authored identity: exactly ONE cast member
+    // tilts, it rides face AND photo every appearance, and the roll cannot
+    // emit it (accFor has no tilt — the neutrality pin above proves tilting
+    // moves no verdict either).
+    const tilters = REGULARS.filter((c) => (c.face.tilt || 0) === 1)
+    ok(tilters.length === 1 && tilters[0].id === 'grubak', `tilted caps on ${tilters.map((c) => c.id).join(',') || 'nobody'} — one neighbour, one habit`)
+    ok(!('tilt' in accFor(0x1234abcd, 'ARSTOTZKA', 'M')) && !('tilt' in accFor(0x5555aaaa, 'KIRINIA', 'F')), 'the roll learned to tilt — the echo is authored, not hashed')
+    let tiltDrift = 0
+    for (const seed of SEEDS) for (const day of genWeek(seed).days) for (const a of day.queue.filter((x) => x.person.regular)) {
+        if (((a.person.face.tilt || 0) !== 1) !== (a.person.regular !== 'grubak') || (a.person.passport.photo.tilt || 0) !== (a.person.face.tilt || 0)) tiltDrift++
+    }
+    ok(tiltDrift === 0, `${tiltDrift} cast rows lost the tilt — Jorji's cap is his identity, every appearance`)
 }
 
 // ---------------------------------------------- #1996 THE NATIONS DRESS ----
@@ -960,6 +982,56 @@ section('THE CROWD WEARS ITS NATION (#1996) — hats correlate with origin, the 
 }
 
 // ---------------------------------------------- clumsy clears / chaos collapses ----
+section('THE CROWD MURMURS (#2087) — one-offs grumble by serial hash, the cast never does, and nothing hears it in the verdict')
+{
+    // #2087 item 2: the original's line mutters ("I have no papers", "My
+    // friend is waiting"). The law: murmur = mutterFor(serial), ZERO rnd —
+    // so the same number keeps its murmur forever and every pre-existing
+    // seed stream replays byte-identical (the DETERMINISM section above is
+    // the stream witness; here we grade the murmur itself). Doctrine: never
+    // evidence (the verdict twin strips `mutter` off every paper at the
+    // fairness prover), regulars stay silent (their speech is authored),
+    // and the booth prints the line in dim type only — never on paper.
+    let str = 0, mut = 0
+    const lines = new Set()
+    for (const seed of SEEDS) {
+        const week = genWeek(seed)
+        const week2 = genWeek(seed)
+        ok(JSON.stringify(week.days.map((d) => d.queue.map((a) => a.person.mutter))) ===
+           JSON.stringify(week2.days.map((d) => d.queue.map((a) => a.person.mutter))),
+        `seed ${seed}: the murmur is not deterministic — two builds of the week differ`)
+        for (const day of week.days) {
+            for (const a of day.queue) {
+                if (a.person.regular) { ok(!a.person.mutter, `seed ${seed} day ${day.n}: regular ${a.person.regular} mutters — the cast speaks in full sentences`); continue }
+                str++
+                ok(a.person.mutter === mutterFor(a.person.pic),
+                    `seed ${seed} day ${day.n}: murmur does not follow the serial law (pic ${a.person.pic}: ${JSON.stringify(a.person.mutter)})`)
+                if (a.person.mutter) {
+                    mut++
+                    ok(MUTTERS.includes(a.person.mutter), `seed ${seed}: murmur ${JSON.stringify(a.person.mutter)} is not from the authored pool`)
+                    ok(a.person.mutter.length <= 25, `seed ${seed}: murmur ${a.person.mutter} outgrows the field`)
+                    lines.add(a.person.mutter)
+                }
+            }
+        }
+    }
+    const rate = mut / str
+    ok(rate >= 0.2 && rate <= 0.5, `murmur rate ${rate.toFixed(3)} outside the grumble band 0.20..0.50 — the line must murmur, not shout or stand silent`)
+    ok(lines.size >= 6, `only ${lines.size} distinct murmurs across the sweep — the pool must not collapse onto one line`)
+    // identity law: the murmur is the LIVE entrant's own — a paper rebuilt
+    // later (name/number swapped by a trap) re-hashes with its serial, and
+    // face/photo carry NO murmur key at all (speech belongs to the person,
+    // not the print).
+    for (const seed of SEEDS) {
+        for (const day of genWeek(seed).days) {
+            for (const a of day.queue) {
+                ok(!('mutter' in a.person.face) && !(a.person.passport && 'mutter' in a.person.passport),
+                    `seed ${seed} day ${day.n}: the murmur leaked into face/photo — the print must not speak`)
+            }
+        }
+    }
+}
+
 section('SLACK (CLUMSY CLEARS) vs CHAOS (COLLAPSES) — every seed')
 {
     for (const seed of SEEDS.slice(0, 6)) {
@@ -2491,6 +2563,36 @@ if (MUT) {
         (m) => {
             const D = m.layout.DRAG
             return D.desk.x0 >= m.layout.PORTRAIT.x + m.layout.PORTRAIT.headCx + m.layout.PORTRAIT.headRx + 1
+        })
+
+    // #2087 THE MURMUR MUTANTS: the crowd must keep grumbling, and the cast
+    // must keep its dignity. m61 silences every murmur (the grumble band and
+    // the papersplay pixels go red); m62 lets the neighbors mutter too (the
+    // cast-silence gate goes red).
+    await tryMut('the line goes mute (murmur law never fires)',
+        mutMod('gen.js', 'return (h & 127) < 44 ? MUTTERS[(h >>> 9) % MUTTERS.length] : null', 'return null', 'm61'),
+        (m) => {
+            let str = 0, mut = 0
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    for (const a of day.queue) {
+                        if (a.person.regular) continue
+                        str++
+                        if (a.person.mutter) mut++
+                    }
+                }
+            }
+            return mut / str >= 0.2 && mut / str <= 0.5
+        })
+    await tryMut('the cast mutters with the strangers (authored speech not exclusive)',
+        mutMod('gen.js', '    a.person.mutter = null\n', '    if (false) a.person.mutter = null\n', 'm62'),
+        (m) => {
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) {
+                    for (const a of day.queue) if (a.person.regular && a.person.mutter) return false
+                }
+            }
+            return true
         })
 }
 

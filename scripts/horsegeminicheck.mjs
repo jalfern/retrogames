@@ -62,7 +62,7 @@ ok('law: zero Three.js / Babylon / external engine imports', !/three(\.min)?\.js
 ok('law: loads credits.js and feedback.js relatively',
   /<script src="credits\.js"><\/script>/.test(html) && /<script src="feedback\.js"><\/script>/.test(html))
 ok('law: declares honest Gemini + Antigravity CLI builder credit',
-  /model:\s*'Gemini'/.test(html) && /where:\s*'via Antigravity CLI'/.test(html) && !/Qwen/.test(html))
+  /model:\s*'Gemini 4 Carbon'/.test(html) && /where:\s*'via Antigravity CLI'/.test(html) && !/Qwen/.test(html))
 ok('law: not registered in src/config/games.js', !/horse-gemini/i.test(gamesJs))
 ok('law: index.html carries card id="horse-gemini" and DEMO_INDEX entry',
   /<a class="card" id="horse-gemini"/.test(idxHtml) && /el:\s*'horse-gemini'/.test(idxHtml))

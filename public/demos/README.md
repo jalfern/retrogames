@@ -37,6 +37,31 @@ loaded by relative `<script src>` — never absolute URLs (the per-demo `*check`
    consistent credit cards (and opens one card in headless Chrome).
 5. `scripts/<name>check.mjs` + npm alias — the demo's own pixel gate.
 
+## horse.html engine notes (#2147 — STRIDELINE)
+
+A procedural low-poly thoroughbred at a seamless rotary gallop, rendered by a
+hand-written perspective painter on Canvas 2D — no WebGL, no Three.js, no
+imported meshes. The horse is ~35 tapered cuboids + prisms hung on gallop
+kinematics; every visual is a pure function of the stride phase φ, and the
+ground pattern period is 8 strides (48 m), so the loop closes exactly.
+
+Gallop laws: rotary footfall LF·RF·LH·RH + a ~35% suspension phase; stance
+hooves are solved **ground-locked** (in ground frame their position is
+constant — measured slip is 0.000 mm), while the body heaves/pitches over the
+planted feet via 2-bone IK per limb; the swing curve reaches the exact
+touchdown point (seam continuity < 1 µm). Mane, tail, dust puffs and the
+hoofbeat sounds all ride φ, so the whole scene — picture *and* audio — loops
+with the stride. Renderer: view-space near-plane clipping, painter depth sort,
+flat Lambert faces with sky/ground bounce and distance haze.
+Known art simplifications: stylised anatomy (block torso, bead crest),
+procedural mane/tail flutter rather than hair sim, hooves are boxes.
+
+Verified by `npm run horsecheck` (32 gates: boots, footfall order, suspension,
+zero-slip audit, seam equality + touchdown continuity, sprite↔state pixel
+probes incl. a control-window dust test, phone viewport, demo law) — two
+by-hand mutants (slack stance lock; fore pair landing after hind pair) each
+kill exactly their intended gates. Credits card `assist: 'solo'`.
+
 ## Files
 
 - `credits.js` — shared credits injector (#674), configured via

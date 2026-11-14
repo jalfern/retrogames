@@ -1811,7 +1811,7 @@ const PILOTS = [
             const c = await probe()
             const d = await pollAdvance(page, probe, adv, c, 14000)
             rep.check('fire-crew: resumes from where the player left it', adv(c, d),
-                `crew0 (${c.cx},${c.cy}) -> (${d.cx},${d.cy}), rescued ${c.rescued} -> ${d.rescued}`)
+                `crew0 (${c.cx},${c.cy}) -> (${d.cx},${d.cy}), rescued ${c.rescued} -> ${d.rescued}, tick ${c.tick} -> ${d.tick}, done ${c.done} -> ${d.done}`) // #2178: tick/done say whether the world stepped
             await key(page, 'KeyY')
             rep.check('fire-crew: Y again releases the hose', !(await watching()))
         },

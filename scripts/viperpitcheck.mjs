@@ -930,18 +930,41 @@ if (MUT) {
     ok(new Set(vN).size === 5, `select gate: hover-note pitches differ per fighter (${vN.join('/')})`)
     const portGates = [
         ['portrait mini-renderer captures frames for the HUD', /preserveDrawingBuffer: true/],
-        ['portrait poses the rig in its own idle stance', /poseFighter\(rig, \{ st: 'idle'/],
-        ['front three-quarter framing for the card', /rig\.root\.rotation\.y = 0\.55/],
+        ['#2172 poseCard holds each fighter in their own select pose', /export function poseCard\(rig, def, tSec\)/],
+        ['#2172 the portrait renderer poses cards with poseCard', /poseCard\(rig, def, 0\.25\)/],
+        ['#2172 card yaw comes from the fighter\'s own card pose', /rig\.root\.rotation\.y = c\.yaw/],
         ['pit-teal rim light on the portrait', /new THREE\.DirectionalLight\(0x59e0c8, 1\.6\)/],
         ['card-aspect canvas so the HUD never stretches it', /canvas\.height = Math\.round\(w \* 0\.78\)/],
-        ['full-body framing: camera back far enough to keep the head in', /cam\.position\.set\(0, 1\.6, 7\.4\)/],
+        ['full-body framing: the fit backs the lens off the posed silhouette', /cam\.position\.set\(0, mid\.y \+ size\.y \* 0\.06, Math\.max\(fitV, fitH\) \/ 0\.86\)/],
+        ['#2172 framing derives from the body, not a per-fighter constant', /const fitV = size\.y \/ 2 \/ Math\.tan\(FOV_V \/ 2\)/],
+        ['#2172 the horizontal fit is computed too (yaw widening counts)', /const fitH = size\.x \/ 2 \/ Math\.tan\(FOV_H \/ 2\)/],
     ]
     for (const [label, re] of portGates) ok(re.test(rsrc), `select gate: ${label}`)
-    const mutC = rsrc.replace('cam.position.set(0, 1.6, 7.4)', 'cam.position.set(0, 1.2, 3.1)')
-    ok(!/cam\.position\.set\(0, 1\.6, 7\.4\)/.test(mutC), 'mutant: portrait camera pushed too close fails the framing gate (harness bites)')
+    ok((fsrc.match(/\bcard: \{/g) || []).length >= 5, 'select gate: every fighter carries a card pose (#2172)')
+    ok(ROSTER.every((d) => d.card && d.card.yaw > 0 && d.card.yaw < 1.2 && Array.isArray(d.card.arms) && d.card.arms.length === 2 && Array.isArray(d.card.legs) && d.card.legs.length === 2),
+        'select gate: every card pose is a sane yaw + two arms + two legs (#2172)')
+    ok(!/c\.camZ/.test(rsrc),
+        'select gate: framing is computed, so no per-fighter camZ crept back in (#2172)')
+    ok(new Set(ROSTER.map((d) => JSON.stringify(d.card))).size === 5, 'select gate: all five card poses differ (#2172)')
+    ok(new Set(ROSTER.map((d) => d.card.yaw)).size === 5, 'select gate: card yaws are five distinct angles (#2172)')
+    const mutC = rsrc.replace('Math.max(fitV, fitH) / 0.86', 'Math.max(fitV, fitH) / 2.4')
+    ok(!/Math\.max\(fitV, fitH\) \/ 0\.86/.test(mutC), 'mutant: portrait camera pushed too close fails the framing gate (harness bites)')
+    ok(/out\.getContext\('2d'\)\.drawImage\(canvas, 0, 0\)/.test(rsrc),
+        'select gate: each portrait is frozen into its OWN canvas (#2172 — one shared canvas made five identical cards)')
+    const mutS = rsrc.replace("            const out = document.createElement('canvas')\n            out.width = canvas.width\n            out.height = canvas.height\n            out.getContext('2d').drawImage(canvas, 0, 0)\n            return out", '            return canvas')
+    ok(!/out\.getContext\('2d'\)\.drawImage\(canvas, 0, 0\)/.test(mutS), 'mutant: portraits sharing one live canvas fails the snapshot gate (harness bites)')
+    const mutK = fsrc.replace(/\bcard: \{/g, 'card__X: {')
+    ok((mutK.match(/\bcard: \{/g) || []).length === 0, 'mutant: stripped card poses empty the pose-data gate (harness bites)')
     const cabGates = [
         ['select screen builds the portraits once', /const ensurePortraits = \(\) => \{\s*if \(portraits\) return portraits/],
-        ['card body composites the captured rig portrait', /hctx\.drawImage\(pt, x \+ cw \* 0\.04/],
+        ['card body composites the captured rig portrait', /hctx\.drawImage\(pt, x \+ tw \* 0\.5 - pw \/ 2/],
+        ['#2172 the hovered tile pops on its zoom', /const zc = 1 \+ 0\.16 \* z/],
+        ['#2172 the portrait grows with the tile', /const ps = \(0\.92 \+ 0\.12 \* z\)/],
+        ['#2172 the spill prove-fail flag is wired into the portrait scale', /globalThis\.__VIPER_SPILL__ \? 1\.3 : 1/],
+        ['#2172 zoom eases toward the cursor every frame', /cardZoom\[i\] \+= \(target - cardZoom\[i\]\) \* 0\.22/],
+        ['#2172 the hovered card draws last so its zoom rides on top', /ROSTER\.forEach\(\(rd, i\) => \{ if \(i !== cursor\) drawCard\(rd, i\) \}\)\s*drawCard\(ROSTER\[cursor\], cursor\)/],
+        ['#2172 tapping another card walks the cursor there', /if \(hit >= 0 && hit !== cursor\) hoverSelect\(hit - cursor\)/],
+        ['#2172 the zoom resets when select closes', /scr !== 'select' && cardZoom\.some\(\(v\) => v !== 0\)\) cardZoom\.fill\(0\)/],
         ['the hovered card glows teal', /shadowColor = 'rgba\(89,224,200,0\.75\)'/],
         ['hovering blips the hovered fighter voice', /const hoverSelect = \(d\) => \{\s*cursor = \(cursor \+ d \+ ROSTER\.length\) % ROSTER\.length\s*hoverBlip\(ROSTER\[cursor\]\)/],
         ['the arrow keys drive the hover blip', /hoverSelect\(-1\)[\s\S]*hoverSelect\(1\)/],
@@ -951,14 +974,33 @@ if (MUT) {
         ['the intro line carries through the pre-fight intro', /pickLine && pickLine\.t > 0 && gs\.phase === 'intro'/],
         ['portraits fall back to colour blocks without WebGL', /catch \{ portraits = null \}/],
         ['all five cards fit the screen', /const cw = Math\.min\(H \* 0\.5, \(W \* 0\.94\) \/ \(total \* 1\.06\)\)/],
-        ['card rects recorded at draw time for the probe', /cardRects\[i\] = \{ id: rd\.id, x, y, w: cw, h: ch \}/],
+        ['card rects recorded at draw time for the probe', /cardRects\[i\] = \{ id: rd\.id, x, y, w: tw, h: th, textBand: Math\.max\(28, H \* 0\.055\) \* zc \+ 6 \}/],
+        ['#2172 names move under the tile so they never cross the fighter', /hctx\.fillText\(rd\.name, x \+ tw \/ 2, y \+ th \+ Math\.max\(14, H \* 0\.03\) \* zc\)/],
+        ['#2172 a tap on the name band still hovers the card', /py <= r\.y \+ r\.h \+ \(r\.textBand \|\| 0\)/],
         ['dev hook reports the card rects', /cardRects\(\) \{ return cardRects\.slice\(\) \}/],
+        ['#2172 dev hooks expose the zoom + head centroid', /zoom: cardZoom\[cursor\] \|\| 0[\s\S]*zoomOf\(i\)[\s\S]*cx: head \? Math\.round\(hx \/ head\) : -1/],
     ]
     for (const [label, re] of cabGates) ok(re.test(gsrc), `select gate: ${label}`)
     ok(/selectInfo\(\) \{/.test(gsrc) && /hover\(d\) \{ hoverSelect\(d \| 0\) \}/.test(gsrc) && /pick\(\) \{ atSelect\(\) \}/.test(gsrc),
         'select gate: dev hooks expose selectInfo/hover/pick')
-    const mutP = gsrc.replace('hctx.drawImage(pt, x + cw * 0.04, y + ch * 0.02, cw * 0.92, ch * 0.92)', '')
+    const mutP = gsrc.replace('hctx.drawImage(pt, x + tw * 0.5 - pw / 2, y + th * 0.5 - ph / 2 - ch * 0.02 * z, pw, ph)', '')
     ok(!/hctx\.drawImage\(pt/.test(mutP), 'mutant: portraits dropped from the cards fails the gate (harness bites)')
+    const mutZ = gsrc.replace('const zc = 1 + 0.16 * z', 'const zc = 1')
+    ok(!/const zc = 1 \+ 0\.16 \* z/.test(mutZ), 'mutant: flattened hover zoom fails the zoom gate (harness bites)')
+    // #2172 containment invariant: portrait growth (ps) must stay UNDER tile
+    // growth (zc) or the figure walks out of its card — the head-through-the-
+    // frame bug the select screenshots caught. Read the coefficients live.
+    {
+        const zcK = +(gsrc.match(/const zc = 1 \+ ([\d.]+) \* z/)?.[1] || 0)
+        const psK = +(gsrc.match(/const ps = \(?[\d.]+ \+ ([\d.]+) \* z/)?.[1] || 0)
+        ok(zcK > 0 && psK > 0 && psK < zcK, `select gate: portrait growth stays inside the tile growth (${psK} < ${zcK}) (#2172 containment)`)
+        const mutC = gsrc.replace('const ps = (0.92 + 0.12 * z) * (globalThis.__VIPER_SPILL__ ? 1.3 : 1)', 'const ps = (0.92 + 0.30 * z) * (globalThis.__VIPER_SPILL__ ? 1.3 : 1)')
+        ok(mutC !== gsrc, 'select gate: the containment mutant has a literal to bite (ps line not silently renamed)')
+        const psC = +(mutC.match(/const ps = \(?[\d.]+ \+ ([\d.]+) \* z/)?.[1] || 0)
+        ok(!(psC > 0 && psC < zcK), `mutant: a portrait that outgrows its card (${psC}) fails the containment gate (harness bites)`)
+    }
+    const mutT = gsrc.replace('drawCard(ROSTER[cursor], cursor)', '')
+    ok(!/drawCard\(ROSTER\[cursor\], cursor\)/.test(mutT), 'mutant: hovered card buried under its neighbours fails the raise gate (harness bites)')
     const mutH = gsrc.replace('hoverBlip(ROSTER[cursor])', '')
     ok(!/hoverBlip\(ROSTER\[cursor\]\)/.test(mutH), 'mutant: silent hover fails the gate (harness bites)')
     const mutV = fsrc.replace(/\bvoice: \{/g, 'voice__X: {')
@@ -1039,6 +1081,131 @@ if (!MUT) {
         })
         ok(fit.length >= 5 && fit.every((c) => c.onScreen), `all five cards sit on screen (${fit.map((c) => c.id).join(',')})`)
         ok(fit.every((c) => c.ink > 0.04), `each card carries its portrait on the HUD (${fit.map((c) => `${c.id}:${c.ink}`).join(' ')})`)
+        // #2172 arcade framing: a select portrait frames the WHOLE fighter with a
+        // margin. The transparent portrait canvas makes this exact — alpha is the
+        // figure — so a head or pair of feet at the canvas edge is a crop, and a
+        // tiny span is a fighter lost in its tile.
+        {
+            const fr = PIDS.map((id) => `${id}:${pstats[id].top}..${pstats[id].bottom}`)
+            ok(PIDS.every((id) => pstats[id].top >= 0.02 && pstats[id].bottom <= 0.98),
+                `no portrait crops its fighter's head or feet (${fr.join(' ')})`)
+            ok(PIDS.every((id) => pstats[id].span >= 0.5),
+                `every fighter fills their tile (${PIDS.map((id) => `${id}:${pstats[id].span}`).join(' ')})`)
+        }
+        // #2172 five cards, five silhouettes: the per-portrait pixel hash must
+        // be unique per fighter — the direct kill-shot for the shared-live-canvas
+        // bug (all five slots composing the same frame). Head centroids add a
+        // corroboration: posing angles/leans most heads to different spots.
+        {
+            const sigs = PIDS.map((id) => pstats[id].sig)
+            ok(new Set(sigs).size === 5, `the five portraits are five distinct pictures (${new Set(sigs).size}/5 unique silhouette hashes)`)
+            let sep = 0, sepAll = 0
+            for (let a = 0; a < PIDS.length; a++) for (let b = a + 1; b < PIDS.length; b++) {
+                sepAll++
+                const da = pstats[PIDS[a]], db = pstats[PIDS[b]]
+                if (da && db && da.cx >= 0 && db.cx >= 0 && Math.hypot(da.cx - db.cx, da.cy - db.cy) >= 3) sep++
+            }
+            const cxy = PIDS.map((id) => `${id}:${pstats[id].cx},${pstats[id].cy}`).join(' ')
+            ok(sep >= 5, `head centroids separate ${sep}/${sepAll} pose pairs by 3px+ (${cxy})`)
+        }
+        // #2172 hover zoom: the hovered card scales its portrait up, and the
+        // zoom hands over to the new card when the cursor moves.
+        await page.waitForFunction(() => window.__viperPitTest.selectInfo().zoom > 0.9, null, { timeout: 3000 }).catch(() => {})
+        const zIn = await page.evaluate(() => window.__viperPitTest.selectInfo().zoom)
+        ok(zIn > 0.9, `the hovered card holds its portrait big (${zIn.toFixed(2)})`)
+        {
+            const oldCur = si.cursor
+            const newCur = (oldCur + 1) % 5
+            await page.evaluate(() => window.__viperPitTest.hover(1))
+            await page.waitForFunction(([o, n]) => window.__viperPitTest.zoomOf(o) < 0.1 && window.__viperPitTest.zoomOf(n) > 0.5,
+                [oldCur, newCur], { timeout: 3000 }).catch(() => {})
+            const zo = await page.evaluate(([o, n]) => [window.__viperPitTest.zoomOf(o), window.__viperPitTest.zoomOf(n)], [oldCur, newCur])
+            ok(zo[0] < 0.1 && zo[1] > 0.5, `hover zoom follows the cursor (${oldCur}->${newCur}: ${zo[0].toFixed(2)} -> ${zo[1].toFixed(2)})`)
+        }
+        // #2172 tap-to-hover: a tap on another card walks the cursor there with
+        // its zoom and blip, and does NOT pick; the same card tapped again does
+        // (the second tap rides the existing Space-pick below).
+        {
+            const tapPt = await page.evaluate(() => {
+                const cv = document.querySelector('canvas[data-viperpit-hud]')
+                const rect = cv.getBoundingClientRect()
+                const r = window.__viperPitTest.cardRects()[0]
+                return { vx: rect.left + (r.x + r.w * 0.5) * (rect.width / cv.width), vy: rect.top + (r.y + r.h * 0.5) * (rect.height / cv.height) }
+            })
+            const bt0 = await page.evaluate(() => ({ ...window.__vpAudio }))
+            await page.mouse.click(tapPt.vx, tapPt.vy)
+            await page.waitForFunction(() => window.__viperPitTest.selectInfo().cursor === 0, null, { timeout: 3000 }).catch(() => {})
+            const t1 = await page.evaluate(() => ({ ...window.__viperPitTest.selectInfo(), osc: window.__vpAudio.osc }))
+            ok(t1.cursor === 0 && !t1.line, `tapping another card hovers instead of picking (cursor -> ${t1.cursor}, no line)`)
+            ok(t1.osc - bt0.osc >= 2, `the tap-to-hover blips that fighter's voice (${t1.osc - bt0.osc} tones)`)
+            await page.waitForFunction(() => window.__viperPitTest.zoomOf(0) > 0.5, null, { timeout: 3000 }).catch(() => {})
+            const zTap = await page.evaluate(() => window.__viperPitTest.zoomOf(0))
+            ok(zTap > 0.5, `the tapped card zooms like a keyboard hover would (${zTap.toFixed(2)})`)
+            await page.evaluate((d) => window.__viperPitTest.hover(d), si.cursor - 0)
+        }
+        // #2172 containment: a hovered tile must CONTAIN its portrait. Warm,
+        // bright (red-led skin/body) ink in the band just ABOVE a card's top
+        // edge is a head poking through the frame — the bug the select
+        // screenshots caught when only the portrait scaled. The teal hover glow
+        // is excluded by construction: it is green-led, and the arena behind the
+        // 0.82 select overlay is far darker than any lit portrait pixel.
+        await page.waitForFunction(() => window.__viperPitTest.selectInfo().zoom > 0.9, null, { timeout: 3000 }).catch(() => {})
+        {
+            const measureSpill = () => page.evaluate(() => {
+                const cv = document.querySelector('canvas[data-viperpit-hud]')
+                const c2 = document.createElement('canvas'); c2.width = cv.width; c2.height = cv.height
+                const g2 = c2.getContext('2d'); g2.drawImage(cv, 0, 0)
+                return window.__viperPitTest.cardRects().map((r) => {
+                    const x0 = Math.max(0, Math.round(r.x))
+                    const w = Math.max(1, Math.min(cv.width - x0, Math.round(r.w)))
+                    const y0 = Math.max(0, Math.round(r.y - r.h * 0.1)), y1 = Math.round(r.y + 1)
+                    let warm = 0
+                    if (y1 > y0) {
+                        const d = g2.getImageData(x0, y0, w, y1 - y0).data
+                        for (let i = 0; i < d.length; i += 4) if (d[i] > 90 && d[i] > d[i + 1] + 22 && d[i] > d[i + 2] + 18) warm++
+                    }
+                    return { id: r.id, warm }
+                })
+            })
+            const spill = await measureSpill()
+            ok(spill.every((s) => s.warm === 0), `no portrait pokes out of its card (${spill.map((s) => `${s.id}:${s.warm}`).join(' ')})`)
+            // #2172 names live UNDER the tile now: white text drawn across the
+            // fighter's shins read as a bug in the screenshots. Near-white pixels
+            // inside a tile = text over the art; near-white below it = the name row
+            // actually got drawn.
+            const txt = await page.evaluate(() => {
+                const cv = document.querySelector('canvas[data-viperpit-hud]')
+                const c2 = document.createElement('canvas'); c2.width = cv.width; c2.height = cv.height
+                const g2 = c2.getContext('2d'); g2.drawImage(cv, 0, 0)
+                const count = (x, y, w, h) => {
+                    const x0 = Math.max(0, Math.round(x)), y0 = Math.max(0, Math.round(y))
+                    const ww = Math.max(1, Math.min(cv.width - x0, Math.round(w)))
+                    const hh = Math.max(1, Math.min(cv.height - y0, Math.round(h)))
+                    const d = g2.getImageData(x0, y0, ww, hh).data
+                    let n = 0
+                    for (let i = 0; i < d.length; i += 4) if (d[i] > 235 && d[i + 1] > 235 && d[i + 2] > 235) n++
+                    return n
+                }
+                return window.__viperPitTest.cardRects().map((r) => ({
+                    id: r.id,
+                    inside: count(r.x + 2, r.y + 2, r.w - 4, r.h - 4),
+                    below: count(r.x, r.y + r.h + 2, r.w, Math.max(8, (r.textBand || 20) - 2)),
+                }))
+            })
+            ok(txt.every((t) => t.inside === 0), `no name text printed over the fighter (${txt.map((t) => `${t.id}:${t.inside}`).join(' ')})`)
+            ok(txt.every((t) => t.below > 8), `every name prints under its own tile (${txt.map((t) => `${t.id}:${t.below}`).join(' ')})`)
+            // Prove the gate can fail: __VIPER_SPILL__ inflates the portrait past
+            // its tile (the pre-fix geometry) and the same measurement must see a
+            // head above the frame — then restore.
+            await page.evaluate(() => { globalThis.__VIPER_SPILL__ = true })
+            await page.waitForTimeout(120)
+            const spillMut = await measureSpill()
+            await page.evaluate(() => { delete globalThis.__VIPER_SPILL__ })
+            await page.waitForTimeout(120)
+            const spillBack = await measureSpill()
+            ok(spillMut.some((s) => s.warm > 0), `mutant: a portrait bigger than its card pokes warm ink above the frame (${spillMut.map((s) => `${s.id}:${s.warm}`).join(' ')})`)
+            ok(spillBack.every((s) => s.warm === 0), 'mutant: restoring the contained portrait clears the spill again (harness not stuck)')
+        }
         const b0 = await page.evaluate(() => ({ ...window.__vpAudio }))
         await page.keyboard.press('ArrowRight')
         await page.waitForTimeout(150)

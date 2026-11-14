@@ -131,6 +131,9 @@ export const MANUAL_CHECKS = [
   "scripts/fpscheck.mjs",
   "scripts/gardencheck.mjs",
   "scripts/gravelcheck.mjs",
+  // #2147: STRIDELINE — browser-driven like the other demo gates (needs the
+  // dev server); advisory from the lane: npm run horsecheck.
+  "scripts/horsecheck.mjs",
   "scripts/horsegeminicheck.mjs",
   "scripts/invaderscheck.mjs",
   "scripts/ironringcheck.mjs",

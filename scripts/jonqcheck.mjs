@@ -24,6 +24,8 @@ import {
     openQuestions, capReached, parseQuestion, steerIssue, validateAsk,
 } from './lib/jonq.mjs'
 import { FLAGSHIPS, FLAGSHIP_DIRS, parseGaps, ownsGap, flagshipStage, heldGames, qaIdleStage, neverDrySlots } from './lib/idle.mjs'
+import { parseQuarantine as qpParse, invalidQuarantine as qpInvalid, isQuarantined } from './lib/quarantine.mjs'
+const qp = { parseQuarantine: qpParse, invalidQuarantine: qpInvalid, isQuarantined }
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (p) => readFileSync(join(here, p), 'utf8')
@@ -65,6 +67,11 @@ ok(validateAsk({ lane: 'games', question: 'q?', options: ['a'], defaultText: 'a'
 ok(validateAsk({ lane: 'games', question: 'q?', options: ['a', 'b'] }).length > 0, 'refuses a question with no Default')
 ok(validateAsk({ lane: null, question: 'q?', options: ['a', 'b'], defaultText: 'a' }).length > 0, 'refuses a question with no lane')
 ok(validateAsk({ lane: 'qa', question: 'q?', options: ['a', 'b'], defaultText: 'a' }).length === 0, 'accepts a complete ask')
+
+// #2176 clause 2: harness-only calls are the lane's, not Jon's — jonq refuses.
+ok(validateAsk({ lane: 'games', title: 'Bump watchcheck timeout threshold?', question: 'CI chrome is flaky on the resume window; calibrate the timing budget?', options: ['a', 'b'], defaultText: 'a' }).length > 0, '#2176 refuses a harness-only question (threshold/calibration/flaky)')
+ok(validateAsk({ lane: 'platform', title: 'Quarantine a nightly check?', question: 'let the lane quarantine the check while it is fixed', options: ['a', 'b'], defaultText: 'a' }).length > 0, '#2176 refuses a quarantine ask too')
+ok(validateAsk({ lane: 'games', title: 'Merge #2181 to unfreeze main?', question: 'the fix PR is static-green and mergeable; merge directly while main is frozen?', options: ['a', 'b'], defaultText: 'a' }).length === 0, '#2176 refusal does not swallow a real merge-authority question')
 
 const LATE = new Date('2026-10-22T12:00:01Z')
 ok(decide(Q(1), NOW).state === 'AWAITING', 'inside the deadline: AWAITING')
@@ -323,6 +330,20 @@ ok(read('forge-qa.sh').includes('jonq.mjs" halt'), 'forge-qa.sh: refuses to star
 const law = read('../AGENTS.md')
 ok(/rule 7|7\. Every ~4 hours/.test(law) && law.includes('jonq.mjs ask') && !law.includes('three questions for Jon'), 'AGENTS.md rule 7: questions are issues now, not STATE lines')
 ok(law.includes('`halt`') && law.includes('`steer`'), 'AGENTS.md: halt + steer are law')
+// #2176: red main clears within 2 h — the rule is law, and the quarantine
+// mechanism it names exists and behaves (skip by label, refuse entry w/o issue).
+ok(/5a\.\s+\*\*A red main clears within 2 hours \(#2176\)\.\*\*/.test(law) && law.includes('scripts/quarantine.json'),
+    'AGENTS.md rule 5a: red main clears within 2 hours (#2176), quarantine file named')
+ok(qp.parseQuarantine(JSON.stringify({ checks: [{ label: 'watchcheck', issue: 2178, reason: 'x' }, { label: 'bad' }] })).length === 1
+    && qp.invalidQuarantine(JSON.stringify({ checks: [{ label: 'watchcheck', issue: 2178 }, { label: 'bad' }] })).length === 1,
+    '#2176 quarantine: valid entries parse; entries with no open issue are flagged, not honoured')
+ok(qp.isQuarantined('watchcheck', [{ label: 'watchcheck', issue: 1 }])
+    && qp.isQuarantined('watchcheck -- --mutate', [{ label: 'watchcheck', issue: 1 }])
+    && !qp.isQuarantined('vipercheck', [{ label: 'watchcheck', issue: 1 }]),
+    '#2176 quarantine: matches the alias and its mutant variant, nothing else')
+const rc = read('run-checks.mjs')
+ok(rc.includes('isQuarantined') && rc.includes('QUARANTINED') && rc.includes('quarantine.json'),
+    '#2176 run-checks.mjs consults the quarantine and prints the skip on the record')
 const playbook = read('FORGE.md')
 ok(playbook.includes('Halt first') && playbook.includes('steer') && playbook.includes('jonq.mjs list'), 'FORGE.md step 2: halt-first, steer-first, questions are not work items')
 ok(!playbook.includes('three questions for Jon') && playbook.includes('jonq.mjs ask'), 'FORGE.md step 9: STATE links questions, never carries them')

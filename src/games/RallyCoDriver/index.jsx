@@ -1293,7 +1293,7 @@ export default function RallyCoDriver() {
         // #1473: production-safe feedback state — the seed IS the stage (rnd=0:
         // createSim drives every curve, pack and grip call from it), and the only
         // score is the clock (ms), so {tick,score,done,seed} pinpoints a run.
-        exposeFeedbackState(() => ({ tick: play.g.tick, score: Math.round(play.g.timeMs), done: !!play.g.done, seed: seedRef.cur, lap: play.g.lap }))
+        exposeFeedbackState(() => ({ tick: play.g.tick, score: Math.round(play.g.timeMs), done: !!play.g.done, seed: seedRef.cur, lap: play.g.lapsDone })) // #2167: gs counts laps in lapsDone
 
         // #1711 S2: arm the live capture for every build. Banking only runs
         // while a consented auto capture is open (autoRecord.js); the honest
@@ -1370,7 +1370,10 @@ export default function RallyCoDriver() {
             coCall: (call) => applyCallEvent(play.g, call, 'human'),
             // #1637 watchcheck pilot drives these.
             watching: () => watchSeat.on,
-            probe: () => { const s = state(play.g); return { tick: s.tick, speed: s.speed, lap: s.lap, progress: s.progress, done: !!s.done } },
+            // #2167: the contract state says `laps` and progress is {total,done};
+            // watchcheck's note wants the lap integer and a numeric fraction —
+            // map honestly here or its note prints "lap NaN/2, progress NaN%".
+            probe: () => { const s = state(play.g); const total = s.progress.total || 0; return { tick: s.tick, speed: s.speed, lap: s.laps, progress: total ? Math.min(1, s.progress.done.length / total) : 0, done: !!s.done } },
             watchSfx: watchSfxLog,
         }
 

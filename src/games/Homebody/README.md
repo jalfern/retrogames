@@ -110,10 +110,24 @@ freezes the rest. Workdays run the clock ×8 while a rostered resident is out
   plum dress `#a3579b`, plum-dark hair, a woven basket that swings on the walk,
   `flower IVY` BONDS row with the FAMILY gold-pulse, gift arpeggio + toast,
   marquee beat, `RING IVY` debug hook.
+- Thumb court (#2171): the pad has no third button (AGENTS.md), so the second
+  court order rides press-DURATION on the first. An A/Space press that lands on
+  a person with no object near calls `courtHoldArm(s)` (arms `s.holdT = 0`,
+  view tells a `#e23b2e` heat arc over the addressed head, closing over the
+  window); the frame loop feeds `courtTick(s, SIM_MS)` every live step, and
+  reaching `HOLD_INSULT_MS` (600) hurls the insult MID-hold on the exact
+  `court(s,'insult')` path; releasing first calls `courtTap(s)` and lands the
+  coo on the `court(s,'coo')` path. The word — fired or refused — spends the
+  hold, so one press pays exactly once; a keyup on the attract/pause/death
+  screens is silent. The clock is WORLD ms like `cmdCd` (freezes with the sim,
+  rides `stateHash`), and the shared `CMD_CD` economy, the grudge law and the
+  #2070 human exit are untouched. Keyboard keeps its dedicated C/X; the pad
+  contract (`VirtualControls` A=Space + one ⚒) is unchanged. Attract line +
+  registry controls teach the hold.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 211 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), winnable seeds, determinism
+npm run peoplecheck          # 228 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), thumb court — tap coos, held A insults (#2171), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -129,7 +143,9 @@ npm run peoplecheck          # 211 gates: boot, rules, spare-room wing (#1806), 
 # feed in Ivy's chat block — exactly the two chat-law gates (grow + crossing) go
 # red; restore. (All proven on this branch: 157/5 → 162/0, 185 → 211 with the
 # SECOND VISITOR section, and the COURT section's reach mutant 172/13 → 185/0;
-# the ivy-chat mutant 211 → 209/2 → 211.)
+# the ivy-chat mutant 211 → 209/2 → 211; and the #2171 thumb-court mutant —
+# delete the `s.holdT = -1` disarm in courtTick — exactly the two double-spend
+# THUMB COURT gates go red, 228 → 226/2; restore.)
 npm run dev   # another terminal
 npm run contractcheck        # includes homebody (CONTRACT_ONLY=homebody for just this)
 DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels + real C/X court keys with pink affection pixels and the far-apart Space doctrine
@@ -183,8 +199,10 @@ source pin go red (~7); restore.
   affection (double, hearts), and `X` hurls an insult — the bond falls and the
   grudge sets, with the #2070 human exit still the only way back. The second
   point of the triangle landed in #2143 (Ivy, the market neighbour — own
-  schedule, own meter, gift economy). Kids/pets and insult on touch remain the
-  open tail of this line.
+  schedule, own meter, gift economy). The pad got its own handle on the line
+(#2171 shipped): one button, two orders — release inside ⅔ s is
+the coo, held past it the insult flies mid-hold, on the same laws and the same
+cooldown as C/X. Kids/pets remain the open tail of this line.
 - Visitors are Fern and Ivy (#2143); no kids/pets; single store catalog.
 - No skippable-speed control for the player; day/night is cosmetic + decay only.
 - Needs panel shows both residents; no per-object queue display like the original.
