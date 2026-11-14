@@ -86,6 +86,19 @@ see §Speed dial.
   event a spat uses: one tell per crossing, silent mid-level, quiet at the
   zero floor. The attract marquee teaches the law: red needs flare tempers,
   a spat cracks BONDS, filling both side by side thaws.
+- Cold-war chatter (#2135): the silence between crack and thaw now speaks. While
+  a grudge holds and the pair stands in reach, a sour line lands every
+  `GRUDGE_COOL_CD` (14 s; the first `GRUDGE_FIRST_CD` 8 s after the crack, never
+  on top of the spat line) — `grudge-cool` event + log line + a fading bubble.
+  Spoken lines now appear ON the lot: every coo, insult, spat, make-up, cool beat
+  and neighbour chat pushes/uses an event with the pair midpoint and renders as a
+  `drawSay` bubble (cream plate, tail, real-clock fade). Fern's chat crossing
+  finally crosses — the threshold read `0.06 · dt` (the social rate, a typo) and
+  could never fire against a fixed `dt`; Ivy's honest check was the model. And the
+  word is legible before it lands: a pulsing gold ring under whoever `courtTarget`
+  will address, painted only when the command is ready (cooldown closed, buy mode
+  closed) — with the marquee teaching `C coos, X cuts`. Target *choice* (whom to
+  address when two share the ring) stays open; `courtTarget` keeps its law.
 - Contentment: +1/+2 per satisfied need (2 = everyone healthy), +1 chat, +3
   payday, +1 per happy ambience hour. 80 grants the wish.
 - Autonomy (needs self-service, clocking in) runs only in `demo` mode — attract
@@ -129,7 +142,7 @@ see §Speed dial.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 308 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), winnable seeds, determinism
+npm run peoplecheck          # 346 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -150,7 +163,10 @@ npm run peoplecheck          # 308 gates: boot, rules, spare-room wing (#1806), 
 # THUMB COURT gates go red, 228 → 226/2; restore. Or zero `KID_CRY_STING` —
 # exactly the wail-sting gate goes red, 283 → 282/1; restore. Or make setSel
 # stop following the shelf (`if (false && t !== undefined)`) — exactly the four
-# shelf-follow gates go red, 308 → 304/4; restore.)
+# shelf-follow gates go red, 308 → 304/4; restore.) Mutant #2135: reinstate the
+# fern `0.06·dt` threshold — exactly the two fern gates + the crossings pin go
+# red (346 → 343/3); restore. Or drop the `grudge-cool` event push — the
+# two-beat gate and its pin go red (346 → 344/2); restore.
 npm run dev   # another terminal
 npm run contractcheck        # includes homebody (CONTRACT_ONLY=homebody for just this)
 DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels + real C/X court keys with pink affection pixels and the far-apart Space doctrine + #2222 shelf flips on real [ ] keys, a tapped tab and gold-painted open-tab pixels
@@ -309,9 +325,9 @@ the speed timeline; `newRun` moves in at NORMAL and a new street resets it.
   with purpose) remains the open tail of this old line.
 - **CLOSED by #1814 (QA pass, partial):** the wing glows at night and the
   residents react to the build. #2076 taught the bond law on the attract
-  marquee (the bonds line of that list). Still open from that pass: catalog
-  thumbnails per item, wing-themed furniture, cooling log lines, chat speech
-  bubbles.
+  marquee (the bonds line of that list). #2135's pass closed chat speech
+  bubbles, the cooling log lines and the C/X marquee + reach-ring tell.
+  Still open: wing-themed furniture, and choosing WHICH two share the ring.
 - **CLOSED by #1823 (QA pass):** walk-surface step timbre (plank/gravel/lawn)
   and the red ghost-cell flash on refused placements.
 - **PARTIAL by #1817 + #2070 + #2131:** bonds climb the chat loop, unlock a topic/

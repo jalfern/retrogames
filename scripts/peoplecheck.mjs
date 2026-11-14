@@ -44,6 +44,7 @@ import {
     CATALOG, DEF, tileOf, tileX, tileY, SFX, RED_AT, EXT_ROOM,
     REL_NAMES, relLevel, chatPool,
     SPAT_DROP, SPAT_SOCIAL, SPAT_CD, MAKEUP_BOND, moodOf, avg,
+    COOL_LINES, HOUSE_LINES, GRUDGE_FIRST_CD, GRUDGE_COOL_CD,   // #2135: the cooling beat
     newRun, advance, autoStep, cmdUse, cmdWalk, cmdWork, tryUse,
     place, sellAt, targetsOf, walkable, bfsPath, stateHash, buildRoom, buildRoomOk,
     manualMove,
@@ -1492,6 +1493,115 @@ section('SPEED (#2227): the clock dial — partition, clamp, cycle, hash')
     check('pin: the attract demo teaches the dial', /attractSpeed\(demoG\)/.test(pJsx) && /THE CLOCK IS YOURS/.test(pJsx))
     check('pin: the panel draws the dial and the shell routes taps to it', /export const DIAL/.test(pArt) && /export function speedHit/.test(pArt) && /s\.speed === i/.test(pArt) && /speedHit\(px, py\)/.test(pJsx) && /setSpeed\(gs, dd\)/.test(pJsx))
     check('pin: a new street resets the dial (startPlay) and the contract view carries it', /speedPick = null; speedCycled = 0/.test(pJsx) && /speed: gs\.speed/.test(pJsx))
+}
+
+// ------------------------------------------------- COURT POLISH (#2135)
+// The polish pass after the court commands: neighbours' spoken chat actually
+// crosses (the fern threshold read 0.06·dt and could never fire), the cold war
+// speaks on a cooling clock, the ring tie keeps its law, and the view carries
+// the word: a chat event with coordinates, a gold reach tell, a speech bubble.
+section('COURT POLISH (#2135): spoken chat, cooling beats, the ring tell')
+{
+    const park = (g, needs) => {
+        g.people[0].r = 3; g.people[0].c = 3; g.people[1].r = 3; g.people[1].c = 4
+        g.people.forEach((p) => { p.path = null; p.use = null; p.goal = null; p.working = false; p.faintT = 0; p.chatT = 0; for (const n of NEEDS) p.needs[n] = needs })
+        g.visitor = null; g.ivy = null; g.grudge = 0; g.spatCd = 0; g.cmdCd = 0
+        return g
+    }
+    const hangFern = (g) => {
+        g.visitor = { name: 'Fern', r: 3, c: 5, x: tileX(5) + TILE / 2, y: tileY(3) + TILE / 2, path: null, state: 'hang', t: 0, hue: '#4fae5f', face: 1, walkPhase: 0, chatT: 0, hangUntil: 999 }
+        g.people[0].r = 3; g.people[0].c = 5; g.people[0].x = tileX(5) + TILE / 2; g.people[0].y = tileY(3) + TILE / 2; g.people[0].path = null; g.people[0].use = null; g.people[0].goal = null; g.people[0].working = false; g.people[0].chatT = 0
+        return g
+    }
+
+    // the fern chat line crossing — the typo (0.06·dt) meant this NEVER fired
+    const gf = hangFern(park(newRun(261), 0.55))
+    let fernChat = null
+    for (let i = 0; i < Math.round(5 / DT); i++) {
+        advance(gf, DT)
+        gf.people[0].path = null
+        const hit = drain(gf).find((e) => e.t === 'chat' && e.k === 'fern')
+        if (hit) fernChat = hit
+    }
+    check('Fern\u2019s spoken chat line actually crosses and lands a bubble event at the pair',
+        !!fernChat && Number.isFinite(fernChat.x) && Number.isFinite(fernChat.y))
+    check('the spoken line is one of Fern\u2019s topics in the log too',
+        gf.thoughts.some((th) => chatPool(gf).includes(th.text)))
+
+    const gi2 = hangFern(park(newRun(263), 0.55))
+    gi2.visitor = null
+    gi2.ivy = { name: 'Ivy', r: 3, c: 5, x: tileX(5) + TILE / 2, y: tileY(3) + TILE / 2, path: null, state: 'hang', t: 0, hue: '#a3579b', face: 1, walkPhase: 0, chatT: 0, hangUntil: 999 }
+    let ivyChat = null
+    for (let i = 0; i < Math.round(5 / DT); i++) {
+        advance(gi2, DT)
+        gi2.people[0].path = null
+        const hit = drain(gi2).find((e) => e.t === 'chat' && e.k === 'ivy')
+        if (hit) ivyChat = hit
+    }
+    check('Ivy\u2019s chat event lands too (the pair midpoint travels with it)',
+        !!ivyChat && Number.isFinite(ivyChat.x) && Number.isFinite(ivyChat.y))
+
+    // the cooling beat: sour lines speak ONLY during the cold war, on GRUDGE clocks
+    const gc = park(newRun(265), 0.3)
+    let cools = 0
+    const coolTexts = []
+    for (let i = 0; i < Math.round(24 / DT); i++) {
+        advance(gc, DT)
+        gc.people.forEach((p) => { p.path = null; p.use = null; p.goal = null; p.working = false; for (const n of NEEDS) p.needs[n] = Math.max(p.needs[n], 0.5) })
+        for (const e of drain(gc)) if (e.t === 'grudge-cool') cools++
+    }
+    check('the crack silences the gossip and starts the cold war', gc.grudge === 1 && gc.spats === 1)
+    check(`the cold war speaks on the cooling clock (${GRUDGE_FIRST_CD}s, then every ${GRUDGE_COOL_CD}s) — two beats in 24 s`,
+        cools === 2, `cools=${cools}`)
+    gc.thoughts.forEach((th) => { if (COOL_LINES.includes(th.text)) coolTexts.push(th.text) })
+    check('a sour beat names itself in the log', coolTexts.length >= 1)
+
+    // make-up is still the only exit — and it silences the sour beats
+    gc.people.forEach((p) => { for (const n of NEEDS) p.needs[n] = 0.9 })
+    let post = 0
+    for (let i = 0; i < Math.round(16 / DT); i++) {
+        advance(gc, DT)
+        gc.people.forEach((p) => { p.path = null; p.use = null; p.goal = null; p.working = false })
+        for (const e of drain(gc)) if (e.t === 'grudge-cool') post++
+    }
+    check('the thaw ends the cold war AND its sour beat', gc.grudge === 0 && post === 0)
+
+    // peacetime: gossip keeps its clock, sourness stays silent
+    const gp = park(newRun(267), 0.55)
+    let pc = 0, gossip = 0
+    for (let i = 0; i < Math.round(24 / DT); i++) {
+        advance(gp, DT)
+        gp.people.forEach((p) => { p.path = null; p.use = null; p.goal = null; p.working = false; for (const n of NEEDS) p.needs[n] = Math.max(p.needs[n], 0.5) })
+        for (const e of drain(gp)) if (e.t === 'grudge-cool') pc++
+    }
+    gp.thoughts.forEach((th) => { if (HOUSE_LINES.includes(th.text)) gossip++ })
+    check('no grudge, no sourness — the cooling beat is grudge-only', pc === 0 && gp.grudge === 0)
+    check('the friendly co-presence line keeps its own clock', gossip >= 1, `gossip=${gossip}`)
+
+    // a COMMANDED insult schedules the cooling too — the law is one law
+    const gci = park(newRun(269), 0.55)
+    court(gci, 'insult')
+    check('an ordered insult sets the grudge and arms the first sour beat', gci.grudge === 1 && gci.houseLineCd === GRUDGE_FIRST_CD)
+
+    // the ring tell must match the law: a tie at reach goes to the partner
+    const gt = park(newRun(271), 0.55)
+    gt.people[1].c = 5
+    gt.visitor = { name: 'Fern', r: 5, c: 3, x: 0, y: 0, path: null, state: 'hang', t: 1, hue: '#4fae5f', face: 1, walkPhase: 0, chatT: 0, hangUntil: 999 }
+    check('a tie at arm\u2019s reach addresses the partner — the gold ring will show exactly that',
+        courtTarget(gt) && courtTarget(gt).k === 'house')
+
+    // source pins: the view wiring and the marquee teaching must not silently drop
+    const cpSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const cpArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    const cpJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    check('pin: both neighbours\u2019 crossings use the honest dt check and speak a chat event',
+        (cpSim.match(/partner\.chatT - dt <= 2\.4/g) || []).length === 2 && (cpSim.match(/t: 'chat'/g) || []).length === 2)
+    check('pin: the cooling beat emits its own event once', (cpSim.match(/t: 'grudge-cool'/g) || []).length === 1)
+    check('pin: the reach ring paints only when a word is ready (cooldown closed, buy mode closed)',
+        /g\.cmdCd <= 0/.test(cpJsx) && /courtTarget\(g\)/.test(cpJsx) && /ctx\.ellipse\(t\.p\.x/.test(cpJsx))
+    check('pin: spoken lines render as a bubble over the pair (art + shell + all five spoken events)',
+        /export function drawSay/.test(cpArt) && /drawSay\(ctx, sayB\)/.test(cpJsx) && (cpJsx.match(/showSay\(s, e\)/g) || []).length === 7)
+    check('pin: the marquee teaches C/X and the ring tell', /SAY THE KIND THING \u2014 C coos, X cuts\./.test(cpJsx) && /gold ring/.test(cpJsx))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)

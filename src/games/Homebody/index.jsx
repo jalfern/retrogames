@@ -40,6 +40,7 @@ import {
     drawCatalog, catalogHit, tabHit, speedHit, drawBuildCursor, drawThoughts, drawClouds,   // #2227: speedHit — the dial's tap route
     drawPet,   // #2197: Miso
     drawKid,   // #2203: Pip
+    drawSay,   // #2135: the spoken-word bubble over the pair
 } from './art.js'
 
 const SIM_MS = FIXED_DT
@@ -55,6 +56,7 @@ const MESSAGES = [
     'Bank §300, then B + R: hammer on a Spare Room and the lot grows.',
     'Buy mode has SHELVES — [ and ] flip HOME / FUN / DECOR / SPECIAL; tap a shelf name on the phone.',
     'THE CLOCK IS YOURS — keys 1-4 set the speed dial (|| ▶ ▶▶ ▶▶▶), or tap SPEED in the panel.',
+    'SAY THE KIND THING — C coos, X cuts. The gold ring under a visitor shows who will hear you.',
     'Adopt a child for §150 — K opens the counter. Pip scampers, snackes, plays and tumbles.',
     'A lonely Pip cries and the whole house feels it. Nearby family, toys and a cozy corner keep the giggles coming.',
     'Bank 80 contentment and the lifetime wish comes true.',
@@ -98,6 +100,9 @@ const HomebodyGame = () => {
         let seed = 20261023
         let particles = [], shake = 0
         const refuses = []   // #1823: red ghost-cell flashes on refused placements
+        // #2135: the spoken-word bubble — quoted lines lift over the pair, not just the log.
+        const sayB = { text: '', x: 0, y: 0, life: 0 }
+        const showSay = (s2, e) => { const t = s2.thoughts[0]; if (t) { sayB.text = t.text; sayB.x = e.x ?? W / 2; sayB.y = e.y ?? H / 2; sayB.life = 4.2 } }
         let toastMsg = '', toast = 0
         const prev = { left: false, right: false, up: false, down: false, a: false, b: false, pdown: false }
         const heldKeys = { left: false, right: false, up: false, down: false }
@@ -179,29 +184,39 @@ const HomebodyGame = () => {
                         audioController.playTone(233, 0.09, 'sawtooth', 0.06)
                         setTimeout(() => audioController.playTone(220, 0.16, 'sawtooth', 0.06), 100)
                         shake = 6
-                        if (live) { say('OTTO AND MIRA SPAT!'); burst(e.x, e.y, 12, '#e23b2e', 3.0) }
+                        if (live) { say('OTTO AND MIRA SPAT!'); burst(e.x, e.y, 12, '#e23b2e', 3.0); showSay(s, e) }
+                        break
+                    case 'grudge-cool': // #2135: the cold war speaks — a low, sour murmur
+                        audioController.playTone(196, 0.16, 'triangle', 0.04)
+                        setTimeout(() => audioController.playTone(185, 0.22, 'triangle', 0.04), 130)
+                        if (live) showSay(s, e)
                         break
                     case 'makeup': // #2070: the thaw — a warm major chord, pink hearts
                         audioController.playTone(523, 0.07, 'triangle', 0.05)
                         setTimeout(() => audioController.playTone(659, 0.07, 'triangle', 0.05), 90)
                         setTimeout(() => audioController.playTone(784, 0.14, 'triangle', 0.05), 180)
-                        if (live) { say('MADE UP ♥'); heartBurst(e.x, e.y - 12) }   // #2076: hearts, named by the BONDS glyph
+                        if (live) { say('MADE UP ♥'); heartBurst(e.x, e.y - 12); showSay(s, e) }   // #2076: hearts, named by the BONDS glyph
+                        break
+                    case 'chat': // #2135: the neighbours talk ON screen now — a soft murmur, then the bubble
+                        audioController.playTone(e.k === 'ivy' ? 494 : 523, 0.05, 'sine', 0.03)
+                        setTimeout(() => audioController.playTone(e.k === 'ivy' ? 392 : 415, 0.07, 'sine', 0.03), 70)
+                        if (live) showSay(s, e)
                         break
                     case 'coo': // #2131: the compliment — a warm two-note and gold glints
                         audioController.playTone(659, 0.06, 'triangle', 0.05)
                         setTimeout(() => audioController.playTone(831, 0.12, 'triangle', 0.05), 80)
-                        if (live) { say(e.k === 'fern' ? 'A WORD FOR FERN ♥' : e.k === 'ivy' ? 'A WORD FOR IVY ♥' : e.k === 'kid' ? 'A WORD FOR PIP ♥' : 'A WORD FOR YOUR BETTER HALF ♥'); burst(e.x, e.y - 10, 5, '#ffe6a8', 2.2, 'flash') }
+                        if (live) { say(e.k === 'fern' ? 'A WORD FOR FERN ♥' : e.k === 'ivy' ? 'A WORD FOR IVY ♥' : e.k === 'kid' ? 'A WORD FOR PIP ♥' : 'A WORD FOR YOUR BETTER HALF ♥'); burst(e.x, e.y - 10, 5, '#ffe6a8', 2.2, 'flash'); showSay(s, e) }
                         break
                     case 'affection': // #2131: the FAMILY tier pays in hearts — full chord
                         audioController.playTone(523, 0.07, 'sine', 0.05)
                         setTimeout(() => audioController.playTone(659, 0.07, 'sine', 0.05), 80)
                         setTimeout(() => audioController.playTone(784, 0.07, 'sine', 0.05), 160)
                         setTimeout(() => audioController.playTone(1047, 0.16, 'sine', 0.05), 240)
-                        if (live) { say('AFFECTION ♥ FAMILY'); heartBurst(e.x, e.y - 12) }
+                        if (live) { say('AFFECTION ♥ FAMILY'); heartBurst(e.x, e.y - 12); showSay(s, e) }
                         break
                     case 'insult': // #2131: the cruel word — sour fall, cold flicker, the grudge sets
                         audioController.playSweep(400, 180, 0.22, 'sawtooth', 0.06)
-                        if (live) { say(e.k === 'fern' ? 'YOU CUT FERN WITH WORDS' : 'YOU INSULTED YOUR BETTER HALF'); burst(e.x, e.y, 8, '#7a92c9', 2.6) }
+                        if (live) { say(e.k === 'fern' ? 'YOU CUT FERN WITH WORDS' : 'YOU INSULTED YOUR BETTER HALF'); burst(e.x, e.y, 8, '#7a92c9', 2.6); showSay(s, e) }
                         break
                     case 'faint': audioController.playNoise(0.3, 0.1); audioController.playSweep(300, 60, 0.5, 'sawtooth', 0.09); shake = 10; if (live) { say(`${e.name.toUpperCase()} COLLAPSED!`); burst(e.x, e.y, 16, '#e23b2e', 3.4) } break
                     case 'wake': audioController.playSweep(440, 760, 0.2, 'triangle', 0.05); break
@@ -442,6 +457,17 @@ const HomebodyGame = () => {
                 }
                 ctx.globalAlpha = 1
             }
+            if (live && !g.build && g.cmdCd <= 0) {
+                // #2135: the reach tell — a gold ring under whoever C/X (or a held A)
+                // will address, so the word is legible BEFORE it is spoken.
+                const t = courtTarget(g)
+                if (t) {
+                    ctx.globalAlpha = 0.55 + 0.35 * Math.sin(g.sec * 5)
+                    ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 2
+                    ctx.beginPath(); ctx.ellipse(t.p.x, t.p.y + 9, 13, 4.5, 0, 0, Math.PI * 2); ctx.stroke()
+                    ctx.globalAlpha = 1
+                }
+            }
             if (live && g.holdT >= 0) {
                 // #2171: the heat tell — angry ticks climb over the addressed
                 // person's head while A is held; a closed arc is a word mid-flight.
@@ -458,6 +484,7 @@ const HomebodyGame = () => {
                     ctx.globalAlpha = 1
                 }
             }
+            if (sayB.life > 0) drawSay(ctx, sayB)   // #2135: the spoken line rides above the pair
             if (live && g.build) drawBuildCursor(ctx, g, placeOk(g, g.cursor.r, g.cursor.c))
             for (const f of refuses) {   // #1823: refused cell — red fill pulsing out
                 const k = f.life / 36
@@ -533,6 +560,7 @@ const HomebodyGame = () => {
             for (let i = refuses.length - 1; i >= 0; i--) if (refuses[i].life <= 0) refuses.splice(i, 1)
             if (shake > 0) shake = Math.max(0, shake - 0.6)
             if (toast > 0) toast--
+            if (sayB.life > 0) sayB.life = Math.max(0, sayB.life - ft / 1000)   // #2135: real-clock fade, like the toast
         }
 
         const frame = (ts) => {
@@ -614,6 +642,7 @@ const HomebodyGame = () => {
             watchingRef.current = false; setWatching(false) // #1637 a new street starts in your hands
             gs = newRun(seed)
             particles = []; shake = 0; toast = 0; refuses.length = 0
+            sayB.life = 0   // #2135: no stale bubble across streets
             prev.left = prev.right = prev.up = prev.down = prev.a = prev.b = prev.pdown = false
             actQueued = buildQueued = switchQueued = false; digitPick = -1; courtQueued = null
             tabQueued = 0; specialPick = null   // #2222
