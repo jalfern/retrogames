@@ -352,6 +352,7 @@
     "plaicraft:train": "node scripts/plaicraft-train.mjs",
     "plaicraft:evidence": "node scripts/plaicraft-evidence.mjs",
     "plaicraft:clap": "node scripts/plaicraft-clap.mjs",
+    "claptestplay": "node scripts/claptestplay.mjs",
     "plaicraft:outbox": "node scripts/plaicraft-outbox.mjs",
     "furlongcheck": "node scripts/furlongcheck.mjs"
   },

@@ -6,6 +6,7 @@ import GamepadBridge from './components/GamepadBridge'
 import GameChrome from './components/GameChrome'
 import LinkPads from './components/LinkPads'
 import PadLink from './pages/PadLink'
+import ClapTest from './pages/ClapTest'
 import { PadContext } from './components/padContext'
 import { GameLabelContext } from './components/gameLabelContext'
 import { padButton, extraButtonsOf } from './components/gamepadMap'
@@ -228,6 +229,8 @@ function App() {
           no mute toggle; phones are controllers, not a browser window. */}
       <Routes>
         <Route path="/pad" element={<PadLink />} />
+        {/* #2156: the clap test is a phone surface too — chromeless, its own page */}
+        <Route path="/claptest" element={<ClapTest />} />
         <Route path="/*" element={<AppShell />} />
       </Routes>
     </BrowserRouter>

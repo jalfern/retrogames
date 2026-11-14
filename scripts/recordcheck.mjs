@@ -439,6 +439,110 @@ const BASE = `http://127.0.0.1:${server.address().port}`
     ok(!matchClapEdges({ sampleRate: SR, onsets, edges: NOISE.map((t) => ({ t, control: 'right' })), clock: realtimeClock(300) }).ok, 'noise edges without a single A-tap -> RED (the named control must be present)')
 }
 
+// --- CLAP TEST screen (#2156): pure core + the acceptance mutants ------------
+// The one-screen slap test grades ITSELF on the phone with the SAME clapSync
+// functions the studio runs. This pins the screen's own decisions (sim
+// determinism, auto-END, honest hints) plus the three mutants #2156 names RED:
+// taps shifted +120 ms; taps with no sound; fewer than 3 slaps. The browser
+// twin — driving the real screen with a synth mic — is scripts/claptestplay.mjs.
+{
+    const { createTestSim, screenVerdict, FIXED_DT, SETTLE_TICKS, TEST_CAP_TICKS, SLAPS_NEEDED } = await import('../src/utils/clapTestCore.js')
+    const { takeEdges } = await import('../src/utils/clapSync.js')
+    const { encodePad } = await import('../src/utils/recording.js')
+    const SR = 48000
+    const TICK_MS = 1000 / 60
+    const HOLD = Math.max(1, Math.round(140 / FIXED_DT)) // a palm slap ~140 ms of contact
+
+    // sim determinism + auto-END rules
+    const driveSim = (seed, tapTicks) => {
+        const sim = createTestSim({ seed })
+        const trace = []
+        sim.start()
+        for (let t = 1; sim.phase === 'testing'; t++) {
+            sim.step({ a: tapTicks.some((tt) => t >= tt && t < tt + HOLD) })
+            trace.push(sim.hash())
+        }
+        return { sim, trace }
+    }
+    const T1 = [61, 145, 229] // three slap taps ~2 s apart
+    const sA = driveSim(12345, T1)
+    const sB = driveSim(12345, T1)
+    ok(SLAPS_NEEDED === 3, 'the physical test is three slaps (#2156)')
+    ok(sA.sim.phase === 'ended' && sA.sim.taps.join() === T1.join(), 'screen sim banks the three slap taps and ends itself')
+    ok(sA.trace.join() === sB.trace.join(), 'same seed + same taps -> identical hash trace (the take replays byte-exact)')
+    ok(sA.trace.length === T1[2] + SETTLE_TICKS, `auto-END fires right after the 3rd tap settles (tick ${sA.trace.length})`)
+    ok(driveSim(7, []).trace.length === TEST_CAP_TICKS, `no slaps at all -> caps at ${TEST_CAP_TICKS} ticks, the screen cannot hang open`)
+
+    // take + PCM builders (int16 samples — screenVerdict takes what the browser
+    // decode produces; clap ms sit exactly at their tap ticks)
+    const mkI16 = (clapsMs, durMs = 8000) => {
+        const n = Math.round((durMs / 1000) * SR)
+        const out = new Array(n).fill(0)
+        let s = 12345
+        const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s / 0x3fffffff) - 1 }
+        for (let i = 0; i < n; i++) out[i] = Math.round((0.03 * Math.sin((2 * Math.PI * 220 * i) / SR) + rnd() * 0.004) * 32767) // mic hum floor
+        for (const ms of clapsMs) {
+            const s0 = Math.round((ms / 1000) * SR)
+            for (let k = 0; k < Math.round(0.05 * SR) && s0 + k < n; k++) {
+                const env = Math.exp(-k / (0.012 * SR))
+                out[s0 + k] = Math.max(-32767, Math.min(32767, Math.round((0.55 * rnd() + 0.55 * Math.sin((k * 2 * Math.PI * 190) / SR) + 0.35 * Math.sin((k * 2 * Math.PI * 760) / SR)) * env * 32767)))
+            }
+        }
+        return out
+    }
+    const mkTake = (tapTicks, wiggle = []) => {
+        const ticks = Math.max(...tapTicks, ...wiggle, 0) + SETTLE_TICKS
+        const pads = []
+        for (let t = 1; t <= ticks; t++) pads.push(encodePad({ a: tapTicks.some((tt) => t >= tt && t < tt + HOLD), right: wiggle.includes(t) }))
+        const clock = []
+        for (let t = 1; t <= ticks; t += 60) clock.push({ t, ms: Math.round((t - 1) * TICK_MS) })
+        if (clock[clock.length - 1].t !== ticks) clock.push({ t: ticks, ms: Math.round((ticks - 1) * TICK_MS) })
+        return {
+            format: 'retrogames-rec/v2', build: 'test', game: 'claptest', method: 'pointer', seed: 4242, players: 1, ticks, hashEvery: 30,
+            slots: [{ source: { kind: 'human' }, pads, raw: pads.map(() => ({})) }],
+            hashes: [],
+            voice: { tracks: [{ slots: [0], clock, b64: 'x' }], declined: [] },
+        }
+    }
+    const CLAPS_AT = (tapTicks) => tapTicks.map((t) => (t - 1) * TICK_MS)
+
+    const clean = screenVerdict({ sampleRate: SR, samples: mkI16(CLAPS_AT(T1)), rec: mkTake(T1) })
+    ok(clean.ok && clean.claps === 3 && clean.matched === 3 && Math.abs(clean.worstMs) <= 50, `clean slap take PASSes on the phone within ±50 ms (worst ${clean.worstMs} ms)`, clean.why)
+    ok(clean.hint === null, 'a PASS carries no hint')
+
+    // MUTANT #1 (#2156): the taps land +120 ms away from their slaps — inside
+    // the ±250 ms window, outside the ±50 ms line: measured RED, not ungradeable.
+    const m1 = screenVerdict({ sampleRate: SR, samples: mkI16(CLAPS_AT(T1)), rec: mkTake(T1.map((t) => t + 7)) })
+    ok(!m1.ok && m1.matched === 3 && m1.pairs.every((p) => Math.abs(p.offsetMs) > 50), 'MUTANT taps +120 ms -> phone grades RED (measured, inside the search window)', m1.why)
+
+    // MUTANT #2: taps with no sound (mic off / too quiet).
+    const m2 = screenVerdict({ sampleRate: SR, samples: mkI16([]), rec: mkTake(T1) })
+    ok(!m2.ok && m2.claps === 0 && m2.hint === "didn't hear the slaps, try louder", 'MUTANT taps with no sound -> RED with the plain hint (#2156 verbatim)', m2.why)
+
+    // MUTANT #3: fewer than 3 slaps — unheard clap for 3 taps, and 2-taps/2-claps.
+    const m3 = screenVerdict({ sampleRate: SR, samples: mkI16(CLAPS_AT(T1.slice(0, 2))), rec: mkTake(T1) })
+    ok(!m3.ok && m3.matched === 2, 'MUTANT only 2 slaps heard for 3 taps -> RED (minPairs 3)', m3.why)
+    const m3b = screenVerdict({ sampleRate: SR, samples: mkI16(CLAPS_AT(T1.slice(0, 2))), rec: mkTake(T1.slice(0, 2)) })
+    ok(!m3b.ok && m3b.matched === 2, 'MUTANT only 2 slaps tapped -> RED (a test is three slaps)', m3b.why)
+
+    // steering context must never launder a lagging take on this screen either
+    const m4 = screenVerdict({ sampleRate: SR, samples: mkI16(CLAPS_AT(T1)), rec: mkTake(T1.map((t) => t + 7), [40, 100, 160, 200, 260]) })
+    ok(!m4.ok && m4.ignoredEdges >= 5, 'MUTANT +120 ms taps with steering edges -> still RED (A-only pairing holds on the screen)', `${m4.why}; ignored ${m4.ignoredEdges}`)
+
+    // honest degradation: no voice half, no PCM
+    const noVoice = screenVerdict({ sampleRate: SR, samples: mkI16(CLAPS_AT(T1)), rec: { ...mkTake(T1), voice: undefined } })
+    ok(!noVoice.ok && /mic|voice/i.test(noVoice.hint || ''), 'voiceless take -> RED naming the microphone (motion-only consent)', noVoice.why)
+    ok(!screenVerdict({ sampleRate: SR, samples: null, rec: mkTake(T1) }).ok, 'no PCM at all -> RED, never vacuous green')
+
+    // studio agreement by CONSTRUCTION: the studio analyzer runs the same
+    // takeEdges + matchClapEdges over the same bytes -> same numbers.
+    const { matchClapEdges, detectClaps: dc2 } = await import('../src/utils/clapSync.js')
+    const take = mkTake(T1)
+    const stOnsets = dc2(Float32Array.from(mkI16(CLAPS_AT(T1)), (v) => v / 32767), { sampleRate: SR })
+    const stV = takeEdges(take).map((c) => matchClapEdges({ sampleRate: SR, onsets: stOnsets, edges: c.edges, clock: take.voice.tracks[0].clock }))
+    ok(stV.length === 1 && stV[0].ok === clean.ok && stV[0].worstMs === clean.worstMs, 'studio-side grading of the same bytes lands the same verdict (shared takeEdges)', stV[0] ? stV[0].why : 'no seats')
+}
+
 // --- query plumbing -----------------------------------------------------------
 {
     ok(storeFromQuery('') === 'https://retrogames.jalfern.workers.dev', 'default store = the relay host')
