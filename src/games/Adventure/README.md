@@ -214,3 +214,42 @@ in `__advTest.watchVoiceLog()`. When the guide runs out of proven road mid-run
 for ~1.5s in attract-green — the blip alone was trivia, the words are the
 lesson. A run that won or died stays silent (batch-13 suppression law), every
 new run clears the lesson; `__advTest.declineMsg()` makes it harness-visible.
+
+## #2255 — two-way doors, stacked gaps, and the key answers the gate (QA pass)
+
+A cold first playthrough (browser, screen-only) confirmed two geometry bugs
+and one fidelity gap:
+
+- **Bottom exits did not line up with top exits.** `makeWalls` pushed the
+  second bottom-wall segment at `x: 0` instead of `gapL + gapW`, so the bottom
+  opening was x 60–160 while the top gap sat at x 60–100 — rooms never
+  stacked, and walking straight down landed you beside the next room's top
+  gap. One-char-class fix; the gap column is now the same on both sides.
+- **One-way doors.** Four rooms declared an EXITS edge on a side their wall
+  bricked: OVERWORLD_4.left, OVERWORLD_5.right, BLUE_LAB_1.right (the OW5
+  entrance), and SECRET.right — the gap was carved on the WRONG side (left),
+  making the easter-egg room a one-way trap. Walking into the neighbour worked
+  because the *neighbour's* side was open; walking back collided before the
+  transition could fire. All four sides are open now. (Black Foyer's solid
+  floor is NOT this bug — that's the by-design bridge door, #1551.)
+- **The portcullis answers a carried key.** The 1993 cart raises the gate the
+  moment the dot touches it WITH the matching key in hand; the port asked for
+  a drop (Space) the original never did. `sim` now opens the gate on
+  carried-key contact inside `GATE_ZONE` (key stays in hand), computed after
+  the affordance so the mat still gets its teaching glint — dropping the key
+  in the zone remains a valid rite. Guide text updated to state the law.
+
+DEFERRED from #2255 (noted honestly): the report's items 4–5 (flat gold start
+screen, HUD text over exits/footer) are art/HUD work; the bat-in-game-1
+fidelity claim could not be verified against the original's scenario table in
+the time box, and removing the bat from V1 would re-pin every determinism
+digest — left as-is with the claim parked on the issue.
+
+Gated in `adventurecheck`: nineteen #2255 gates — the no-one-way-doors graph
+scan (every declared exit has an open side, Black Foyer exempt as the bridge
+door), the top/bottom gap-column equality scan, four walk-the-door round trips
+through real transitions (OW1↔OW2 vertical, OW2↔OW4, OW5↔lab1, lair↔???
+after the rite), and the carried-key law (opens without a drop, key stays in
+hand, walk-through into the foyer, wrong key stays shut) — plus six mutants
+(gap x regression, OW4/OW5/SECRET sides re-bricked, lab1 door lost, carried
+key ignored).

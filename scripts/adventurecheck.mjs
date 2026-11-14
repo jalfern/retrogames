@@ -977,6 +977,100 @@ console.log('#1572 gate-rite affordance: shared zone + renderer gate (static)')
         'state() carries afford so the harness can watch the hint')
 }
 
+// --------------------------------------------------------- #2255 two-way world ----
+console.log('#2255 no one-way doors, stacked gaps, and a gate that answers a carried key')
+{
+    // The bug class: EXITS declares a door but makeWalls bricked that side —
+    // walking into the neighbour works, walking back collides before the
+    // transition can fire, and the way in becomes a dead end. (Black Foyer's
+    // solid floor is the BY-DESIGN bridge door — a side a mechanic can open.
+    // Its neighbours reaching the foyer through the gate is the foyer law.)
+    const solidSide = (room, dir) => room.walls.some((w) => dir === 'up'
+        ? w.y === 0 && w.w === GW
+        : dir === 'down' ? w.y + w.h === GH && w.w === GW
+        : dir === 'left' ? w.x === 0 && w.h === GH
+        : w.x + w.w === GW && w.h === GH)
+    const bricked = []
+    for (const room of ROOMS) {
+        if (room.id === R.BLACK_FOYER) continue // the bridge door
+        const ex = EXITS[room.id] || {}
+        for (const [d, to] of Object.entries(ex)) {
+            if (to >= 0 && solidSide(room, d)) bricked.push(`${room.name}#${room.id}.${d}`)
+        }
+    }
+    ok(bricked.length === 0, 'every declared exit has an open side (no one-way doors)', bricked.join(', '))
+
+    // The world stacks vertically: the bottom gap must sit in the top gap's
+    // column, or descending drops the player beside the next room's door.
+    const WALL_T_ = 4
+    const openRange = (room, isTop) => {
+        const segs = room.walls.filter((w) => (isTop ? w.y === 0 : w.y + w.h === GH))
+        if (!segs.length || segs.some((w) => w.w === GW)) return null // solid side
+        let lo = null, hi = null
+        for (let x = WALL_T_; x <= GW - WALL_T_ - 1; x++) {
+            if (!segs.some((w) => w.x <= x && x < w.x + w.w)) { lo = lo === null ? x : lo; hi = x }
+        }
+        return lo === null ? null : `${lo}-${hi}`
+    }
+    const unstacked = []
+    for (const room of ROOMS) {
+        const t = openRange(room, true)
+        const b = openRange(room, false)
+        if (t && b && t !== b) unstacked.push(`${room.name}#${room.id} top ${t} vs bottom ${b}`)
+    }
+    ok(unstacked.length === 0, 'bottom exits line up with top exits (rooms stack)', unstacked.join(', '))
+
+    // Walk-the-door round trips — the QA repro, driven through real transitions.
+    const v = createSim(seedRng(2255))
+    v.room = R.OVERWORLD_1; v.player.x = 80; v.player.y = GH - 24
+    for (let i = 0; i < 40 && v.room === R.OVERWORLD_1; i++) step(v, { dy: S })
+    ok(v.room === R.OVERWORLD_2, 'walking down the OW1 gap lands in OW2')
+    ok(v.player.x >= 60 && v.player.x + v.player.w <= 100,
+        'and INSIDE OW2\'s top-gap column (stacked rooms, not beside it)', `x=${v.player.x}`)
+    for (let i = 0; i < 40 && v.room === R.OVERWORLD_2; i++) step(v, { dy: -S })
+    ok(v.room === R.OVERWORLD_1, 'the same column carries the player back up')
+
+    const h = createSim(seedRng(7))
+    h.room = R.OVERWORLD_2; h.player.x = GW - 24; h.player.y = SIDE_GAP_Y + SIDE_GAP_H / 2
+    for (let i = 0; i < 60 && h.room === R.OVERWORLD_2; i++) step(h, { dx: S })
+    ok(h.room === R.OVERWORLD_4, 'the OW2 right door leads into OVERWORLD_4')
+    for (let i = 0; i < 60 && h.room === R.OVERWORLD_4; i++) step(h, { dx: -S })
+    ok(h.room === R.OVERWORLD_2, 'OVERWORLD_4 walks back out the way it came (no one-way door)', `room=${h.room}`)
+
+    const l = createSim(seedRng(7))
+    l.room = R.OVERWORLD_5; l.player.x = 16; l.player.y = SIDE_GAP_Y + SIDE_GAP_H / 2
+    for (let i = 0; i < 60 && l.room === R.OVERWORLD_5; i++) step(l, { dx: -S })
+    ok(l.room === R.BLUE_LAB_1, 'the OW5 left door leads into the Blue Labyrinth')
+    for (let i = 0; i < 60 && l.room === R.BLUE_LAB_1; i++) step(l, { dx: S })
+    ok(l.room === R.OVERWORLD_5, 'and lab 1 walks back out right to OW5', `room=${l.room}`)
+
+    const sd = createSim(seedRng(7))
+    sd.secretOpen = true
+    sd.room = R.DRAGON_LAIR; sd.player.x = 16; sd.player.y = SIDE_GAP_Y + SIDE_GAP_H / 2
+    sd.dragons.forEach((d) => { d.alive = false }) // the lair host must not bite mid-gate
+    for (let i = 0; i < 60 && sd.room === R.DRAGON_LAIR; i++) step(sd, { dx: -S })
+    ok(sd.room === R.SECRET, 'the open secret door leads into the ??? room')
+    for (let i = 0; i < 60 && sd.room === R.SECRET; i++) step(sd, { dx: S })
+    ok(sd.room === R.DRAGON_LAIR, 'the easter-egg room walks back out (not a trap)', `room=${sd.room}`)
+
+    // Original law: the dot touching the portcullis WITH THE KEY IN HAND
+    // raises it — no drop asked, key stays in hand.
+    const g = createSim(seedRng(11))
+    g.room = R.GOLD_CASTLE; g.player.x = 80; g.player.y = 70
+    g.carrying = 'goldKey'; g.items.find((i) => i.id === 'goldKey').carried = true
+    for (let i = 0; i < 12 && !g.gateOpen.goldKey; i++) step(g, { dy: -S })
+    ok(g.gateOpen.goldKey, 'walking the gold key up to the Gold Castle raises the portcullis (no drop)')
+    ok(g.carrying === 'goldKey' && g.items.find((i) => i.id === 'goldKey').carried, 'the key stays in hand')
+    for (let i = 0; i < 60 && g.room === R.GOLD_CASTLE; i++) step(g, { dy: -S })
+    ok(g.room === R.GOLD_FOYER, 'and the player walks through into the foyer')
+    ok(g.carrying === 'goldKey', 'key still in hand inside the foyer')
+    const wrong = createSim(seedRng(11))
+    wrong.room = R.GOLD_CASTLE; wrong.player.x = 80; wrong.player.y = 40
+    wrong.carrying = 'blackKey'; wrong.items.find((i) => i.id === 'blackKey').carried = true
+    for (let i = 0; i < 40; i++) step(wrong, { dy: -S })
+    ok(!wrong.gateOpen.goldKey && wrong.room === R.GOLD_CASTLE, 'the WRONG key pushed at the gate stays shut')
+}
+
 // ------------------------------------------------- #1572 guidance tab (static) ----
 console.log('#1572 guidance tab: registry guide content + shared renderer gate (static)')
 {
@@ -1274,8 +1368,8 @@ if (process.argv.includes('--mutant')) {
         ['#1572: the hint persists after the gate opens (stale teaching)', SM,
             '!sim.gateOpen[gateRoom.gateKey] && sim.carrying',
             'true && sim.carrying'],
-        ['#1572: the guidance tab drops the drop-the-key rite (guide lies to first-timers)', GS,
-            `            { text: 'Stand at a gate and DROP its matching key (Space) to open it for good.' },\n`,
+        ['#1572/#2255: the guidance tab drops the key-at-the-gate rite (guide lies to first-timers)', GS,
+            `            { text: 'Walk its matching key up to a gate and it rises — or drop the key in front (Space).' },\n`,
             ''],
         ['#1572: the guide forgets the magnet law', GS,
             `            { text: 'The magnet pulls loose items toward you as you walk.' },\n`,
@@ -1307,6 +1401,24 @@ if (process.argv.includes('--mutant')) {
         ['#1591: stateHash is constant (a live world looks frozen → endurance never proves)', SM,
             '    return h >>> 0\n}',
             '    return 2166136261\n}'],
+        ['#2255: bottom gap x regression (rooms unstack, exits land beside the door)', SM,
+            `        walls.push({ x: gapL + gapW, y: GH - T, w: GW - gapL - gapW, h: T })`,
+            `        walls.push({ x: 0, y: GH - T, w: GW - gapL - gapW, h: T })`],
+        ['#2255: OVERWORLD_4 bricks its left door (the one-way returns)', SM,
+            `{ id: R.OVERWORLD_4, name: 'Overworld', bg: COLORS.green, walls: makeWalls(true, true, true, true) }`,
+            `{ id: R.OVERWORLD_4, name: 'Overworld', bg: COLORS.green, walls: makeWalls(true, true, false, true) }`],
+        ['#2255: OVERWORLD_5 bricks its declared right door', SM,
+            `{ id: R.OVERWORLD_5, name: 'Overworld', bg: COLORS.darkGreen, walls: makeWalls(true, true, true, true) }`,
+            `{ id: R.OVERWORLD_5, name: 'Overworld', bg: COLORS.darkGreen, walls: makeWalls(true, true, true, false) }`],
+        ['#2255: the ??? room gap moves back to the wrong side (the egg traps you)', SM,
+            `{ id: R.SECRET, name: '???', bg: '#000000', walls: makeWalls(false, false, false, true) }`,
+            `{ id: R.SECRET, name: '???', bg: '#000000', walls: makeWalls(false, false, true, false) }`],
+        ['#2255: BLUE_LAB_1 loses its OW5 return door', SM,
+            `{ id: R.BLUE_LAB_1, name: 'Blue Labyrinth', bg: COLORS.darkBlue, walls: makeLabyrinthWalls(1, true) }`,
+            `{ id: R.BLUE_LAB_1, name: 'Blue Labyrinth', bg: COLORS.darkBlue, walls: makeLabyrinthWalls(1) }`],
+        ['#2255: the portcullis ignores a carried key (drop-only returns)', SM,
+            `            sim.gateOpen[gateRoom.gateKey] = true`,
+            `            // carry-open removed`],
         ['#1588: the maw stops chewing (the chew signal is removed)', SM,
             'sim.chew = hunting && (sim.tick % CHEW_TICKS < CHEW_TICKS / 2)',
             'sim.chew = false'],

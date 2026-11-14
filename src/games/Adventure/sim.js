@@ -8,8 +8,9 @@
 // replays the exact world (mulberry32 via seedRng, #1473).
 //
 // Fidelity (Atari 2600 cartridge, Warren Robinett, 1993): an 18-room world —
-// three color-coded castles with portcullis gates (drop the matching key in
-// front of its gate to open it), blue and red labyrinths, walk-transitions;
+// three color-coded castles with portcullis gates (touching a gate while
+// carrying the matching key raises it, #2255; parking the key in front of it
+// works too), blue and red labyrinths, walk-transitions;
 // sword, bridge (partial wall-pass), magnet, the chalice; three dragons that
 // wander their rooms, chase on sight, bite at close range and are slain by
 // the sword within reach; the purple bat roams rooms and swaps items; win by
@@ -120,12 +121,15 @@ const makeWalls = (openTop, openBot, openLeft, openRight) => {
         walls.push({ x: 0, y: 0, w: gapL, h: T })
         walls.push({ x: gapL + gapW, y: 0, w: GW - gapL - gapW, h: T })
     }
-    // Bottom wall
+    // Bottom wall (#2255: the second segment used to be pushed at x:0, so it
+    // covered 0–100 twice and the bottom opening was x 60–160 while the top
+    // gap sat at 60–100 — rooms never stacked and descending landed players
+    // beside the next room's top gap instead of inside it.)
     if (!openBot) {
         walls.push({ x: 0, y: GH - T, w: GW, h: T })
     } else {
         walls.push({ x: 0, y: GH - T, w: gapL, h: T })
-        walls.push({ x: 0, y: GH - T, w: GW - gapL - gapW, h: T })
+        walls.push({ x: gapL + gapW, y: GH - T, w: GW - gapL - gapW, h: T })
     }
     // Left wall
     if (!openLeft) {
@@ -144,8 +148,8 @@ const makeWalls = (openTop, openBot, openLeft, openRight) => {
     return walls
 }
 
-const makeLabyrinthWalls = (variant) => {
-    const base = makeWalls(true, true, false, false)
+const makeLabyrinthWalls = (variant, openRight = false) => {
+    const base = makeWalls(true, true, false, openRight)
     // Add internal maze walls
     if (variant === 1) {
         base.push({ x: 30, y: 30, w: 4, h: 80 })
@@ -216,15 +220,23 @@ export const ROOMS = [
     { id: R.OVERWORLD_1, name: 'Overworld', bg: COLORS.darkGreen, walls: makeWalls(true, true, true, true) },
     { id: R.OVERWORLD_2, name: 'Overworld', bg: COLORS.green, walls: makeWalls(true, true, true, true) },
     { id: R.OVERWORLD_3, name: 'Overworld', bg: COLORS.darkGreen, walls: makeWalls(true, true, true, true) },
-    { id: R.OVERWORLD_4, name: 'Overworld', bg: COLORS.green, walls: makeWalls(true, true, false, true) },
-    { id: R.OVERWORLD_5, name: 'Overworld', bg: COLORS.darkGreen, walls: makeWalls(true, true, true, false) },
+    // #2255: OW4's left and OW5's right were SOLID walls on sides that EXITS
+    // declares — walking in from the neighbour worked, walking back was
+    // blocked by the wall before the transition could fire (one-way doors).
+    { id: R.OVERWORLD_4, name: 'Overworld', bg: COLORS.green, walls: makeWalls(true, true, true, true) },
+    { id: R.OVERWORLD_5, name: 'Overworld', bg: COLORS.darkGreen, walls: makeWalls(true, true, true, true) },
     // 7-9: Blue Labyrinth
-    { id: R.BLUE_LAB_1, name: 'Blue Labyrinth', bg: COLORS.darkBlue, walls: makeLabyrinthWalls(1) },
+    // (#2255) BLUE_LAB_1 opens right: EXITS[OVERWORLD_5].left leads INTO it,
+    // so the return side must exist or OW5's left door is one-way.
+    { id: R.BLUE_LAB_1, name: 'Blue Labyrinth', bg: COLORS.darkBlue, walls: makeLabyrinthWalls(1, true) },
     { id: R.BLUE_LAB_2, name: 'Blue Labyrinth', bg: '#101060', walls: makeLabyrinthWalls(2) },
     { id: R.BLUE_LAB_3, name: 'Blue Labyrinth', bg: COLORS.darkBlue, walls: makeLabyrinthWalls(3) },
     // 10: Black Castle
     { id: R.BLACK_CASTLE, name: 'Black Castle', bg: '#282828', walls: makeWalls(true, true, false, false), gate: true, gateColor: '#555555', gateKey: 'blackKey' },
-    // 11: Black Foyer
+    // 11: Black Foyer — the solid floor with the declared down exit is the
+    // BRIDGE DOOR by design (#1551): the floor is stone until you push the
+    // bridge through it. (A declared exit on a solid side is a one-way bug
+    // only when no mechanic can open that side — this one can.)
     { id: R.BLACK_FOYER, name: 'Black Foyer', bg: '#181818', walls: makeWalls(true, false, false, false) },
     // 12-13: Red Labyrinth (inside black castle area)
     { id: R.RED_LAB_1, name: 'Red Maze', bg: COLORS.darkRed, walls: makeLabyrinthWalls(1) },
@@ -237,7 +249,10 @@ export const ROOMS = [
     { id: R.DRAGON_LAIR, name: 'Dragon Lair', bg: '#300030', walls: makeWalls(true, false, true, false) },
     // 17: Secret room — the creator's room behind the sealed door
     // (the original easter egg; the door opens via the dot rite)
-    { id: R.SECRET, name: '???', bg: '#000000', walls: makeWalls(false, false, true, false) },
+    // (#2255) the gap is on the RIGHT — it faces the Dragon Lair, where the
+    // sealed-door barrier lives. It used to be carved on the left while
+    // EXITS declared right, so the easter-egg room was a one-way trap.
+    { id: R.SECRET, name: '???', bg: '#000000', walls: makeWalls(false, false, false, true) },
 ]
 
 // Room connectivity: exits[roomId] = { up, down, left, right }
@@ -249,7 +264,7 @@ EXITS[R.OVERWORLD_2] =  { up: R.OVERWORLD_1, down: R.OVERWORLD_3, left: R.BLUE_L
 EXITS[R.OVERWORLD_3] =  { up: R.OVERWORLD_2, down: R.BLACK_CASTLE, left: R.BLUE_LAB_3, right: R.OVERWORLD_4 }
 EXITS[R.OVERWORLD_4] =  { up: R.OVERWORLD_1, down: R.OVERWORLD_3, left: R.OVERWORLD_2, right: R.WHITE_CASTLE }
 EXITS[R.OVERWORLD_5] =  { up: R.OVERWORLD_1, down: R.DRAGON_LAIR, left: R.BLUE_LAB_1, right: R.OVERWORLD_1 }
-EXITS[R.BLUE_LAB_1] =   { up: R.OVERWORLD_2, down: R.BLUE_LAB_2, left: -1, right: -1 }
+EXITS[R.BLUE_LAB_1] =   { up: R.OVERWORLD_2, down: R.BLUE_LAB_2, left: -1, right: R.OVERWORLD_5 }
 EXITS[R.BLUE_LAB_2] =   { up: R.BLUE_LAB_1, down: R.BLUE_LAB_3, left: -1, right: -1 }
 EXITS[R.BLUE_LAB_3] =   { up: R.BLUE_LAB_2, down: R.OVERWORLD_3, left: -1, right: -1 }
 EXITS[R.BLACK_CASTLE] = { up: -1, down: R.OVERWORLD_3, left: -1, right: -1 }
@@ -641,6 +656,14 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
             && player.y < GATE_ZONE.y + GATE_ZONE.h
             && player.x + player.w > GATE_ZONE.x && player.x < GATE_ZONE.x + GATE_ZONE.w) {
             sim.afford = gateRoom.gateKey
+            // #2255 fidelity: the 1993 cart raises the portcullis the moment
+            // the dot touches it WITH THE KEY IN HAND — no drop asked. The
+            // drop rite above stays valid (parking the key still opens it, the
+            // glint still teaches it), but a newcomer who walks the key up to
+            // the gate now walks THROUGH it, key still in hand. Computed after
+            // the affordance so the mat gets its last glint on this tick.
+            sim.gateOpen[gateRoom.gateKey] = true
+            sim.events.push('gate')
         }
 
         // ---- SECRET DOOR RITE (original easter egg) ----
