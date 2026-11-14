@@ -218,14 +218,21 @@ const PickRushGame = () => {
                 else if (e.type === 'drop') {
                     audioController.playTone(660 + Math.min(6, e.combo) * 90, 0.07, 'square', 0.06)
                     audioController.playTone(990 + Math.min(6, e.combo) * 90, 0.12, 'square', 0.05, 0.07)
+                    audioController.playTone(120, 0.06, 'square', 0.05) // sheet-metal thud under the ding (#2214)
                     burst(e.x, BIN_TOP, 5, TAG[e.kind], 2)
-                    if (landings.length < 8) landings.push({ kind: e.kind, x: e.x, t: 0 })
+                    const bi = BINS.findIndex((bn) => e.x >= bn.x && e.x <= bn.x + bn.w)
+                    if (landings.length < 8) landings.push({ kind: e.kind, x: e.x, t: 0, bin: bi })
+                    shake = Math.max(shake, 1.6)
                     if (e.combo >= 4) say(`COMBO ×${e.combo}`, '#ffd23f')
                 }
                 else if (e.type === 'miss') { audioController.playSweep(240, 120, 0.2, 'sawtooth', 0.06); shake = 4 }
                 else if (e.type === 'wrong') { audioController.playTone(180, 0.12, 'square', 0.08); audioController.playTone(140, 0.18, 'square', 0.08, 0.1); shake = 6; flash = 8; burst(e.x, BIN_TOP, 8, '#ff5a4f', 2.4) }
                 else if (e.type === 'break') {
                     audioController.playNoise(0.18, 0.09); audioController.playSweep(1600, 300, 0.22, 'triangle', 0.06)
+                    // shards ring after the crash (#2214) — three bright after-tinkles
+                    audioController.playTone(2637, 0.08, 'sine', 0.03, 0.06)
+                    audioController.playTone(3520, 0.07, 'sine', 0.022, 0.11)
+                    audioController.playTone(4186, 0.09, 'sine', 0.018, 0.17)
                     shake = 7; flash = 10
                     for (let i = 0; i < 14; i++) {
                         const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4, sp = 1 + Math.random() * 3.4
@@ -234,9 +241,25 @@ const PickRushGame = () => {
                 }
                 else if (e.type === 'slip') { audioController.playSweep(900, 500, 0.1, 'sawtooth', 0.05); burst(e.x, e.y, 3, '#9aa4b0', 1.2) }
                 else if (e.type === 'wave') {
-                    // the line changes character — a two-note cue over the caption
-                    audioController.playTone(523, 0.06, 'triangle', 0.04)
-                    audioController.playTone(784, 0.08, 'triangle', 0.04, 0.07)
+                    // the line changes character — the cue's VOICE changes with it
+                    // (#2214): glass shimmers high, heavies knock low, scrap gets
+                    // grit, steady keeps the bright two-note twinkle.
+                    const fam = e.family || 'steady'
+                    if (fam === 'glass') {
+                        audioController.playTone(1568, 0.05, 'sine', 0.035)
+                        audioController.playTone(2093, 0.06, 'sine', 0.03, 0.05)
+                        audioController.playTone(2637, 0.09, 'sine', 0.025, 0.1)
+                    } else if (fam === 'heavy') {
+                        audioController.playTone(196, 0.09, 'square', 0.06)
+                        audioController.playTone(147, 0.13, 'square', 0.06, 0.09)
+                        audioController.playNoise(0.05, 0.04)
+                    } else if (fam === 'grim') {
+                        audioController.playNoise(0.06, 0.045)
+                        audioController.playSweep(320, 480, 0.08, 'sawtooth', 0.045, null, 0.07)
+                    } else {
+                        audioController.playTone(784, 0.05, 'triangle', 0.04)
+                        audioController.playTone(1175, 0.07, 'triangle', 0.035, 0.06)
+                    }
                 }
                 else if (e.type === 'shift') {
                     audioController.playSweep(940, 1180, 0.16, 'triangle', 0.07)
@@ -514,6 +537,27 @@ const PickRushGame = () => {
                     ctx.fillStyle = 'rgba(10,14,20,0.8)'; ctx.fillRect(VIEW_W / 2 - 90, VIEW_H / 2 - 26, 180, 20)
                     ctx.fillStyle = col; ctx.font = 'bold 13px monospace'
                     ctx.fillText(f.msg, VIEW_W / 2, VIEW_H / 2 - 12)
+                } else if (f.t === 'wave') {
+                    // marquee (#2214): the incoming wave is announced as a lit
+                    // banner over the belt mouth — plate, corner lamps and a
+                    // light sweep — not a 9px whisper that hides behind the crane.
+                    if (f.k <= 40) {
+                        const a = f.k < 5 ? f.k / 5 : f.k > 32 ? Math.max(0, (40 - f.k) / 8) : 1
+                        ctx.globalAlpha = a
+                        const bw = 176, bx = VIEW_W / 2 - bw / 2, by = BELT_Y - 40
+                        ctx.fillStyle = 'rgba(10,14,20,0.88)'; ctx.fillRect(bx, by, bw, 18)
+                        ctx.strokeStyle = '#c8a11c'; ctx.lineWidth = 1; ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, 17)
+                        ctx.save(); ctx.beginPath(); ctx.rect(bx, by, bw, 18); ctx.clip()
+                        const sw = (f.k / 40) * (bw + 30) - 15
+                        ctx.fillStyle = 'rgba(255,235,190,0.13)'
+                        ctx.beginPath(); ctx.moveTo(bx + sw - 14, by); ctx.lineTo(bx + sw, by); ctx.lineTo(bx + sw - 6, by + 18); ctx.lineTo(bx + sw - 20, by + 18); ctx.closePath(); ctx.fill()
+                        ctx.restore()
+                        ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'
+                        ctx.fillText(f.msg, VIEW_W / 2, by + 12)
+                        const lamp = f.k % 12 < 6
+                        ctx.fillStyle = lamp ? '#ffd23f' : '#7c5a1c'
+                        ctx.fillRect(bx + 3, by + 7, 3, 3); ctx.fillRect(bx + bw - 6, by + 7, 3, 3)
+                    }
                 } else {
                     ctx.fillStyle = col; ctx.fillText(f.msg, f.x, yy)
                 }
@@ -657,7 +701,12 @@ const PickRushGame = () => {
             for (let i = landings.length - 1; i >= 0; i--) {
                 const l = landings[i]; l.t++
                 if (l.t > 10) { landings.splice(i, 1); continue }
-                drawItem(ctx, l.kind, Math.round(l.x), BIN_TOP + 4, 0, false, 0.45 + 0.55 * (l.t / 10))
+                // deeper first-frame squash, quick recovery — the load lands HEAVY (#2214)
+                drawItem(ctx, l.kind, Math.round(l.x), BIN_TOP + 4, 0, false, 0.32 + 0.68 * Math.min(1, l.t / 8))
+                if (l.bin >= 0 && l.bin < BINS.length && l.t <= 4) {
+                    const b = BINS[l.bin]
+                    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(b.x + 4, BIN_TOP + 1 + (4 - l.t) * 0.6, b.w - 8, 2)
+                }
             }
             paintRail()
             for (let s = 0; s < gs.arms.length; s++) paintArm(s, tick)

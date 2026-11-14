@@ -43,8 +43,11 @@ our names, our rules.
   its intra-wave spacing; `rest` is the longer breather between waves, so the
   line breathes in sections. Only ±5 ticks of seeded jitter ride on top. Kinds
   arrive by era (bottles shift 2, barrels shift 3, scrap shift 4), and each
-  incoming wave announces itself over the belt mouth (caption + two-note cue)
-  during its breather.
+  incoming wave announces itself at the belt mouth (#2214): a lit marquee banner
+  — dark plate, amber rim, blinking corner lamps, a light sweep — plus a cue
+  whose VOICE matches the wave family (`waveFamily` in `sim.js`: glass shimmers
+  high, heavies knock low, scrap gets grit, steady twinkles; glass outranks
+  barrels because that's the wave where a hard drop costs a fuse).
 
 ## Verify
 
@@ -67,7 +70,13 @@ the game boots clean, starts with a real Space, the cable and cargo pixels sit
 where the sim says after real keystrokes, and three wrong-bin drops fired via
 the DEV kit end the shift and restart — with zero page errors. A `JUICE` gate
 proves the `quotaNear` contract key flips exactly one pick short of quota (the
-gauge pulse reads it).
+gauge pulse reads it). `CUE FAMILY` pins every announcement's family against a
+name-by-name table (glass > heavy > grim > steady) written independently of the
+sim's derivation; `WAVE-INK` samples the canvas at the breather tick and proves
+the marquee is actually PAINTED — caption ink and plate rim, not just an event.
+Landing juice (#2214): a correct drop adds a low sheet-metal thud under the
+ding, a deeper first-frame squash (0.32) with a faster recovery, a rim dip on
+the struck bin and a light shake; smash gets three bright after-tinkles.
 
 Mutants: `PICK_MUT=judge|glass|roll|quota|wave` — `wave` collapses the table
 to one shift's waves; named gates go red.
@@ -80,3 +89,7 @@ to one shift's waves; named gates go red.
   `retrogames-rec/v1` recorder.
 - No second on-screen touchpad for seat 2 (Jon's rule — keyboard-only 2P).
 - Sound is event-synthesized; no per-shift ambience change yet.
+- Still open from #2214 (rolled into #2223, the next PickRush polish): per-bin
+  fill bars + bin-full thunk, cable whip on gantry reversal, wobble/rotation
+  telegraphs for glass clusters and barrel pairs, and a wave-completion tick on
+  the quota gauge.
