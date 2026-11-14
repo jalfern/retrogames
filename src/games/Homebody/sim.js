@@ -1720,10 +1720,10 @@ export function advance(s, dt) {
     arbitrateVisitors(s)   // #2154: settle the chat claims before either visitor pays
     updateVisitor(s, simDt)
     updateIvy(s, simDt)
-    updatePaper(s)          // #2238: the route rides the same world clock
     updatePet(s, simDt)
     updateKid(s, simDt)
     updateHouseBond(s, simDt)
+    updatePaper(s)          // #2238: the route rides the same world clock, kept behind the documented five-deep chain
 
     for (const p of s.people) {
         p.mood = avg(p)

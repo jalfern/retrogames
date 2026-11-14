@@ -331,6 +331,34 @@ the speed timeline; `newRun` moves in at NORMAL and a new street resets it.
   harness tick is one world step whatever the gear, so harness budgets stay
   world-seconds. The dial belongs to the rAF loop and the player.
 
+## Paper route (#2238) — the lot keeps hours
+
+The original's neighbourhood is a clock: mornings bring the paper without
+anyone ordering it. That clause ("day/night is cosmetic + decay only") gets
+its first true citizen here.
+
+- **One owner-free object.** `PAPER` joins `DEF` but never `CATALOG` — nobody
+  buys the news. Because it carries `need:'fun'` and `solid:false`, every
+  existing law takes it whole: `tryUse`/tap/Space-A target it like an
+  appliance, BFS walks to it, `keepsOpen` ignores it, `finishUse` pays FUN
+  (+0.24) and the quality-scaled contentment, and `sellAt` refuses it (the
+  mailbox belongs to the lot, the news to the route).
+- **Schedule law.** `schedulePaper` sets `paperAfter = 6.5 + rng·1.5` at
+  move-in and every new day; `updatePaper` rides the same `advance` clock as
+  visits and cries. **One paper a day — the day stamp is the law**: reading
+  at 07:30 must not re-arm the route inside the window (a presence-only check
+  did exactly that in the first smoke; `paperDay === day` is the gate).
+- **Fresh news.** `newDay` clears yesterday's sheet before the new window —
+  unread papers never stack. Furniture landing on the step tucks the sheet
+  away (the `s.paper` ref must never dangle under a bookshelf).
+- **Landing.** The step cell (10,5) — the gravel run the mail and the
+  neighbours already walk — or its nearest free edge; if even that is blocked
+  the delivery retries inside the window (until 10:00) rather than walling
+  the law into a silent skip.
+- **Attract teaches it:** the bot walks down and reads the paper the moment
+  one lies on the step; the marquee got a line, and the arrival pays a
+  newsprint flutter + `THE PAPER BOY SWEEPS PAST`.
+
 ## Honest gaps (filed to QA #…)
 - **CLOSED by #1806:** multiple rooms — one expansion ships: the Spare Room kit
   grows a wing on the east lawn (floor/walls/door/windows, connectivity-guarded,
@@ -363,6 +391,8 @@ adoptable child (see Kids (#2203)).
 - **CLOSED by #2227:** no skippable-speed control — the clock dial ships (pause /
   normal / fast / fastest: digits `1`-`4` outside buy mode, `,`/`.` cycle, the
   panel pips are tappable — see §Speed dial).
-- Day/night is cosmetic + decay only — nothing on the lot schedules by the hour
-  beyond work and Ivy's rounds.
+- Day/night is cosmetic + decay only — the paper route (#2238, §Paper route
+  below) is its first hour-scheduled citizen; nothing else on the lot keeps
+  hours beyond work, Ivy's rounds and the morning news (meal bells, garbage
+  day… stay open).
 - Needs panel shows both residents; no per-object queue display like the original.
