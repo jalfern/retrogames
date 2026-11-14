@@ -70,7 +70,11 @@ the game boots clean, starts with a real Space, the cable and cargo pixels sit
 where the sim says after real keystrokes, and three wrong-bin drops fired via
 the DEV kit end the shift and restart — with zero page errors. A `JUICE` gate
 proves the `quotaNear` contract key flips exactly one pick short of quota (the
-gauge pulse reads it). `CUE FAMILY` pins every announcement's family against a
+gauge pulse reads it). `AMB` gates the per-shift ambience (#2234): zone map,
+tightening cadence (beeps 540/420/330), the exact early-floor schedule, era
+bleed and the play-only door in Node, plus Chrome proofs that attract stays
+silent, the running early floor beeps once at its tick, and forcing shift 4
+drops the bed into graveyard chatter. `CUE FAMILY` pins every announcement's family against a
 name-by-name table (glass > heavy > grim > steady) written independently of the
 sim's derivation; `WAVE-INK` samples the canvas at the breather tick and proves
 the marquee is actually PAINTED — caption ink and plate rim, not just an event.
@@ -78,17 +82,28 @@ Landing juice (#2214): a correct drop adds a low sheet-metal thud under the
 ding, a deeper first-frame squash (0.32) with a faster recovery, a rim dip on
 the struck bin and a light shake; smash gets three bright after-tinkles.
 
-Mutants: `PICK_MUT=judge|glass|roll|quota|wave` — `wave` collapses the table
-to one shift's waves; named gates go red.
+Mutants: `PICK_MUT=judge|glass|roll|quota|wave|amb` — `wave` collapses the table
+to one shift's waves; `amb` flattens the ambience eras (#2234); named gates go red.
 
 ## Honest gaps
 
 - Plaicraft/SimReady episode export (labelled grasp-and-place episodes as
-  training data) waits on #1141's robot sim kit — the raw material is already
-  here: seed + per-seat pad streams + per-drop `hit/miss` labels via the
-  `retrogames-rec/v1` recorder.
+  training data) — the raw material is already here: seed + per-seat pad
+  streams + per-drop `hit/miss` labels via the `retrogames-rec/v1` recorder.
+  (Note corrected #2234: this no longer "waits on #1141" — that kit SHIPPED;
+  what's left is wiring PICK RUSH drops through `scripts/plaicraft-export.mjs`,
+  an episode-pipeline task, not a feel task.)
 - No second on-screen touchpad for seat 2 (Jon's rule — keyboard-only 2P).
-- Sound is event-synthesized; no per-shift ambience change yet.
+- Sound is event-synthesized; no per-shift ambience change yet. — **CLOSED by
+  #2234** (`ambience.js`: three eras keyed to the shift — early floor with a
+  distant forklift chirp + far metal roll, glass era adds a pneumatic hiss and
+  wakes a belt-speed sub-harmonic, graveyard peak adds relay chatter at the
+  tightest cadence (beeps 540→420→330 ticks); the motor hum deepens
+  0.05→0.07 per shift and the shift whistle gets an air-brake whoosh. Pure
+  schedule — sim/autopilot/hash never see it; attract and over stay silent.
+  `pickcheck` gates it: AMB zone/cadence/schedule/era-bleed/play-door in Node
+  + attract-silent, live beep and graveyard-chatter proofs in Chrome;
+  `PICK_MUT=amb` goes red on two named gates.)
 - Still open from #2214 (rolled into #2223, the next PickRush polish): per-bin
   fill bars + bin-full thunk, cable whip on gantry reversal, wobble/rotation
   telegraphs for glass clusters and barrel pairs, and a wave-completion tick on
