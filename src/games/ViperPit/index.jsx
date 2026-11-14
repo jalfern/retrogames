@@ -890,9 +890,10 @@ const ViperPitGame = () => {
                     // can straddle whole animations, so the gate reads frames,
                     // not wall samples.
                     if (import.meta.env.DEV) {
-                        const wrig = koHold && rigs && rigs[koHold.by] ? rigs[koHold.by].userData : null
+                        let wk = null
+                        if (rigs) for (const rg of rigs) if (rg.userData && rg.userData.lastSt === 'win' && rg.userData.winK != null) wk = +rg.userData.winK.toFixed(3)
                         koLog.push({
-                            wk: wrig && wrig.winK != null ? +wrig.winK.toFixed(3) : null,
+                            wk,
                             js: judgeFlash ? +judgeFlash.s.toFixed(3) : 1,
                             jt: judgeFlash ? +judgeFlash.a.toFixed(3) : 0,
                             fl: stageFx && stageFx.flare ? +stageFx.flare.toFixed(3) : 0,

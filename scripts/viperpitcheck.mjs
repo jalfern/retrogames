@@ -652,7 +652,7 @@ if (MUT) {
         ['the taunt renders in the winner accent', /Number\(quote\.accent \|\| 0x59e0c8\)\.toString\(16\)/],
         ['the outround probe exposes the exchange ordering', /shown: !!\(quoteSubAt != null && performance\.now\(\) >= quoteSubAt\)/],
         ['the outround probe is a dev hook', /outround\(\) \{/],
-        ['outround state resets between matches', /koHold = null; koFxRound = 0; quote = null; quoteT = 0; quoteSubAt = null; subFired = false; finishJustLanded = false/],
+        ['outround state resets between matches', /koHold = null; koFxRound = 0; quote = null; quoteT = 0; quoteMax = 0; quoteSubAt = null; subFired = false; subFrames = 0; finishJustLanded = false/],
         ['the rig taunt pose reads the fighter table', /def && f\.def\.tauntPose/, rsrc],
         ['the taunt pose blends in over ~10 frames', /ud\.winK = Math\.min\(1, ud\.winK \+ 0\.1\)/, rsrc],
         ['the crowd flare decays every sync frame', /const flareT = stageFx\.flareUntil/, rsrc],
@@ -1210,8 +1210,15 @@ if (!MUT) {
             await page.waitForTimeout(120)
             const spillMut = await measureSpill()
             await page.evaluate(() => { delete globalThis.__VIPER_SPILL__ })
-            await page.waitForTimeout(120)
-            const spillBack = await measureSpill()
+            // The restore can need several render frames under box load (the
+            // snapshot canvases redraw on the select loop, not synchronously)
+            // — poll until clean instead of trusting one 120 ms wait.
+            let spillBack = []
+            for (let i = 0; i < 40; i++) {
+                spillBack = await measureSpill()
+                if (spillBack.every((s) => s.warm === 0)) break
+                await page.waitForTimeout(100)
+            }
             ok(spillMut.some((s) => s.warm > 0), `mutant: a portrait bigger than its card pokes warm ink above the frame (${spillMut.map((s) => `${s.id}:${s.warm}`).join(' ')})`)
             ok(spillBack.every((s) => s.warm === 0), 'mutant: restoring the contained portrait clears the spill again (harness not stuck)')
         }
@@ -1542,7 +1549,7 @@ if (!MUT) {
         for (let i = 0; i < 200; i++) {
             kl = await page.evaluate(() => window.__viperPitTest.koProbe())
             const e = kl[kl.length - 1]
-            if (kl.length > 20 && e && e.js <= 1.001 && e.jt === 0 && e.wk >= 0.99 && e.rp >= 0.99) break
+            if (kl.length > 15 && e && e.js <= 1.001 && e.jt === 0 && e.wk >= 0.99 && e.rp >= 0.99) break
             await page.waitForTimeout(50)
         }
         ok(Array.isArray(kl) && kl.length > 20, `the KO card logged its entrance frames (${kl && kl.length})`)
