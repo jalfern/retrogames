@@ -118,6 +118,7 @@ const PapersPleaseMinGame = () => {
         // #1988 DENY AFTERSHOCK — the stamp on a SEIZED neighbor thuds lower,
         // and their argue line rides the inspector pin. Counted by papersplay.
         let sfxSeize = 0
+        let sfxSeam = 0 // #2133 month-seam-crossing EXPIRED denies that got their tick
         // #2021 THE INSPECTOR STAYS — the booth's case outlives its ink:
         // {ok, witness, evidence, ticks} rides after the stamp fades and ends
         // when the next applicant's papers land on the counter (settle → 0).
@@ -245,6 +246,14 @@ const PapersPleaseMinGame = () => {
                 // when the witness names the face (brows/mouth), add a sharp
                 // tick over the deny thunk so the ear learns what the eye saw.
                 if (gs.last?.ok && action === 'deny' && /BROW|MOUTH/.test(gs.last.evidence || '')) { audioController.playTone(1050, 0.03, 'square', 0.05); sfxTicks++ }
+                // #2133 THE SEAM TICK — a correct EXPIRED deny whose witness
+                // crosses the month seam (expiry month != today month, both
+                // printed on the strip) gets its own tick, per the #1976
+                // pattern: the ear learns the calendar turned, not just that
+                // a date broke. Same family as the brow tick, one step lower
+                // — a three-note ladder (thunk 190 / seam 950 / brow 1050).
+                const seamCross = /([A-Z]{3}) \d{2} \d{4} < TODAY ([A-Z]{3}) \d{2} \d{4}/.exec(gs.last.evidence || '')
+                if (gs.last?.ok && action === 'deny' && seamCross && seamCross[1] !== seamCross[2]) { audioController.playTone(950, 0.03, 'square', 0.05); sfxSeam++ }
                 if (gs.strikes > before) audioController.playSweep(220, 90, 0.35, 'sawtooth', 0.08)
                 else if (gs.last?.ok) audioController.playTone(action === 'deny' ? 760 : 560, 0.07, 'square', 0.05)
                 // #1982 THE RECOGNITION CUE — when the ruling takes the last
@@ -1293,6 +1302,22 @@ const PapersPleaseMinGame = () => {
                         (dd, i) => dd[i] + dd[i + 1] + dd[i + 2] < 260)
                     live.bubblePaper = count(D, ow, BUBBLE.x + 4, BUBBLE.y + 4, BUBBLE.x + BUBBLE.w - 4, BUBBLE.y + 30,
                         (dd, i) => Math.abs(dd[i] - 0xd8) < 24 && Math.abs(dd[i + 1] - 0xd2) < 24 && Math.abs(dd[i + 2] - 0xb8) < 28)
+                    // #2133 PHONE-SCALE EVIDENCE READ — the seam quote is the
+                    // longest line the booth ever prints (EXPIRED OCT 31 1982 <
+                    // TODAY NOV 01 1982); the 880px gates prove the WORDS, this
+                    // proves the GLYPHS survive the bilinear downscale at k.
+                    // Gold witness-family ink (#e8c15a: strong r+b, mid g) in
+                    // the whole corridor — the witness row at y296 plus the
+                    // EVID strip lines below it. Per-row counts decide whether
+                    // each line lands as its own legible line at phone size.
+                    const goldHue = (d, i) => d[i] > 150 && d[i + 2] > 55 && d[i + 1] > d[i + 2] + 30 && d[i] - d[i + 1] > 20
+                    const CORRIDOR = { x0: STAMP.x - 160, x1: STAMP.x + 160, y0: 284, y1: EVID.y + 2 * EVID.line + 4 }
+                    live.evidenceGold = count(D, ow, CORRIDOR.x0, CORRIDOR.y0, CORRIDOR.x1, CORRIDOR.y1, goldHue)
+                    // rows the seam print actually paints: the WITNESS line at
+                    // y296 + the quote's first strip line (the 40-char comparison
+                    // fits wrap 54 — paperscheck pins stampLines for this quote).
+                    live.evidenceRows = [296, EVID.y].map((ry) =>
+                        count(D, ow, CORRIDOR.x0, ry - 6, CORRIDOR.x1, ry + 4, goldHue))
                     live.cast = REGULARS.map((c) => {
                         const out = { id: c.id, mark: c.mark }
                         // the big ear is skin-family ink below the fresh height
@@ -1402,6 +1427,7 @@ const PapersPleaseMinGame = () => {
                 sfxTicks: () => sfxTicks,
                 sfxAgain: () => sfxAgain, // #1982 arrivals the door welcomed
                 sfxSeize: () => sfxSeize, // #1988 stamps that thudded on a seized neighbor
+                sfxSeam: () => sfxSeam, // #2133 EXPIRED denies whose witness crossed the month seam
                 againLog: () => againLog.slice(), // #1982 "day|regular|recall" per ring
                 // #1983 the bubble is pixels: count the bubble's own paper
                 // color in its rect on the LIVE canvas (up ≈ full field,
