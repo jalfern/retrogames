@@ -350,6 +350,112 @@ const BASE = `http://127.0.0.1:${server.address().port}`
     ok(worst <= 50, `clap alignment inside ±50 ms across 30 min + throttle (worst ${worst.toFixed(1)} ms)`)
 }
 
+// --- #2247: the trace rides the audio pipeline's OWN clock, not the wall ----
+// Load physics measured on saturated boxes (#2136 residual b): the delivered-
+// samples clock and the main thread pace apart (starvation spikes ~55 ms)
+// while the recorded bytes stay rock-stable. A wall-stamped trace therefore
+// sits ~55 ms off the byte line mid-session; a content-stamped one agrees by
+// construction. This gate drives the REAL createVoiceSession against a mock
+// browser whose AudioContext.currentTime is a starving pipeline clock while
+// `now()` runs freely — the trace must follow the pipeline.
+// Hand mutant: in src/utils/voiceCapture.js change the hybrid gate to
+// `if (clockCtx && false)` -> SAMPLES RED (stamps fall back to wall, ~55 ms
+// off bytes) and FALLBACK stays green — the fallback half proves the guard.
+{
+    const TICK_MS = 1000 / 60
+    const STARVE = 55 // first starvation spike, ms (the #2136 load-physics term)
+    const STARVE2 = 25 // a second, smaller spike mid-take
+    const MOCK = { wall: 0 }
+    const pipelineAt = (w) => w - (w >= 2000 ? STARVE : 0) - (w >= 8000 ? STARVE2 : 0)
+    const pipeline = () => pipelineAt(MOCK.wall)
+    const el = () => ({ style: { cssText: '', background: '', boxShadow: '', width: '' }, setAttribute() {}, remove() {}, appendChild() {}, querySelector: () => el(), innerHTML: '', isConnected: true })
+    class FakeCtx {
+        constructor() { this.zero = pipeline(); this.state = 'running' }
+        get currentTime() { return (pipeline() - this.zero) / 1000 }
+        resume() { this.state = 'running'; return Promise.resolve() }
+        close() { this.state = 'closed' }
+        createMediaStreamSource() { return { connect() {}, disconnect() {} } }
+        createAnalyser() { return { fftSize: 512, getByteTimeDomainData(b) { b.fill(128) } } }
+    }
+    class FakeRecorder {
+        static isTypeSupported(m) { return m === 'audio/webm;codecs=opus' }
+        constructor(_s, o) { this.mimeType = (o && o.mimeType) || 'audio/webm'; this.state = 'inactive'; this.ondataavailable = null; this.onstop = null }
+        start() { this.state = 'recording' }
+        stop() {
+            this.state = 'inactive'
+            if (this.ondataavailable) this.ondataavailable({ data: new Blob([new Uint8Array([1, 2, 3, 4])], { type: this.mimeType }) })
+            if (this.onstop) this.onstop()
+        }
+    }
+    const stream = { getTracks: () => [{ stop() {} }] }
+    const prev = {
+        window: globalThis.window, document: globalThis.document, navigator: globalThis.navigator,
+        MediaRecorder: globalThis.MediaRecorder, AudioContext: globalThis.AudioContext,
+        webkitAudioContext: globalThis.webkitAudioContext,
+        requestAnimationFrame: globalThis.requestAnimationFrame, cancelAnimationFrame: globalThis.cancelAnimationFrame,
+    }
+    const put = (k, v) => Object.defineProperty(globalThis, k, { value: v, configurable: true, writable: true })
+    const del = (k) => { try { delete globalThis[k] } catch { /* keep */ } if (prev[k] === undefined) put(k, prev[k]) }
+    put('window', {})
+    put('document', { createElement: () => el(), querySelector: () => el(), body: { appendChild() {} }, addEventListener() {}, removeEventListener() {} })
+    put('navigator', { mediaDevices: { getUserMedia: () => Promise.resolve(stream), enumerateDevices: () => Promise.resolve([]) } })
+    put('MediaRecorder', FakeRecorder)
+    put('AudioContext', FakeCtx)
+    put('requestAnimationFrame', () => 1)
+    put('cancelAnimationFrame', () => {})
+    try {
+        const { createVoiceSession } = await import('../src/utils/voiceCapture.js')
+        // open the take with the first starvation already spent (fake wall
+        // 2000, pipeline 1945) so the anchor bias is a single frame, and
+        // measure everything against BYTE TRUTH: bytes delivered since the
+        // take opened = pipeline(now) - pipeline(take open).
+        MOCK.wall = 2000
+        const session = createVoiceSession({ ask: async () => ({ consent: true }), now: () => MOCK.wall })
+        await session.ready
+        ok(session.phase === 'recording', '#2247 mock take opens (voiceSupported on the mock browser)')
+        const startW = MOCK.wall
+        const pipe0 = pipeline()
+        const bytesAt = (wall) => pipelineAt(wall) - pipe0 // honest ms into the audio
+        let midMs = null
+        for (let t = 1; t <= 1200; t++) { // ~20 s near-realtime tick pacing; the pipeline starves 25 ms more at wall >= 8000
+            MOCK.wall += TICK_MS
+            session.onTick(t)
+            if (t === 400) midMs = session.msNow()
+        }
+        const track = await session.finalize()
+        const samples = (track && track.clock) || []
+        ok(samples.length >= 20, `#2247 take sampled (${samples.length} samples)`)
+        let post = 0, worst = 0, worstWall = 0
+        for (const s of samples) {
+            const wall = startW + s.t * TICK_MS
+            if (wall < 8000) continue // exercise the post-second-spike regime
+            post++
+            worst = Math.max(worst, Math.abs(s.ms - bytesAt(wall)))
+            worstWall = Math.max(worstWall, Math.abs((wall - startW) - bytesAt(wall))) // what a WALL stamp would claim
+        }
+        ok(post >= 10, `post-spike regime exercised (${post} samples after the second starvation)`)
+        ok(worst <= 2, `#2247 trace rides the content clock through starvation (worst byte-line error ${worst.toFixed(1)} ms)`)
+        ok(worstWall >= 20, `control: wall stamps miss the byte line by ${worstWall.toFixed(0)} ms after the spike — old behavior fails the line above (this is the ±50 flake family)`)
+        ok(track && Math.abs(track.ms - bytesAt(startW + 1200 * TICK_MS)) <= 2, `#2247 audio length shares the byte origin (${track && track.ms} vs ${Math.round(bytesAt(startW + 1200 * TICK_MS))})`)
+        ok(midMs !== null && Math.abs(midMs - bytesAt(startW + 400 * TICK_MS)) <= 2, `msNow is content-paced mid-take (${midMs} vs byte-line ${Math.round(bytesAt(startW + 400 * TICK_MS))}, wall-stamp ${Math.round(400 * TICK_MS)})`)
+        // fallback: no AudioContext in the room -> wall stamps, exactly the
+        // pre-#2247 capture (old browsers keep working).
+        del('AudioContext'); del('webkitAudioContext')
+        MOCK.wall = 0
+        const s2 = createVoiceSession({ ask: async () => ({ consent: true }), now: () => MOCK.wall })
+        await s2.ready
+        for (let t = 1; t <= 300; t++) { MOCK.wall += TICK_MS; s2.onTick(t) }
+        const tr2 = await s2.finalize()
+        const sc = (tr2 && tr2.clock) || []
+        const off = sc.length ? Math.max(...sc.map((s) => Math.abs(s.ms - s.t * TICK_MS))) : Infinity
+        ok(sc.length > 3 && off <= 2, `no AudioContext -> wall-stamped fallback preserved (${sc.length} samples, max offset ${off === Infinity ? 'n/a' : off.toFixed(1)} ms)`)
+    } finally {
+        for (const k of ['window', 'document', 'navigator', 'MediaRecorder', 'AudioContext', 'webkitAudioContext', 'requestAnimationFrame', 'cancelAnimationFrame']) {
+            if (prev[k] === undefined) del(k); else put(k, prev[k])
+        }
+    }
+}
+
 // --- clap sync: the ±50 ms acceptance line, pure twin of the browser proof --
 // (#1711 S3) scripts/plaicraft-clap.mjs runs these two functions on bytes that
 // came out of the real MediaRecorder; here synthetic PCM pins the same verdicts
