@@ -113,6 +113,10 @@ export const MANUAL_CHECKS = [
   // get system Chrome only, so the ladder's shell fallback can't be proven there.
   "scripts/chromesmokecheck.mjs",
   "scripts/civcheck.mjs",
+  // #2156: drives the /claptest screen with a synth mic + real pointer events
+  // against the relaysim store — needs a dev server + a real browser, so it
+  // runs from the lane (npm run claptestplay), like the other clap proofs.
+  "scripts/claptestplay.mjs",
   "scripts/cometdrifthdcheck.mjs",
   "scripts/cometdrifthdphonecheck.mjs",
   "scripts/cometdrifthdsandcheck.mjs",
