@@ -25,7 +25,7 @@ import { buildSprites, buildFloor } from './art.js'
 import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
 import { playerFrame, GUN, STOCK, gunPose } from './sprite.js'
 import { enemyFrame, CHARGE, TELEGRAPH, OUTLINE, bossMouth, ADD_TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
-import { muzzleFlash, casingCol, killShake, recoilKick, shutterPhase, SHUTTER_TICKS, shellKick, barrelHot, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, STAIN_TICKS, stainRadius, camPan, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, camLead, SPAWN_CUE, edgeRow } from './juice.js'
+import { muzzleFlash, casingCol, killShake, recoilKick, shutterPhase, SHUTTER_TICKS, shellKick, barrelHot, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, STAIN_TICKS, stainRadius, camPan, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, edgeMarks, camLead, SPAWN_CUE, edgeRow } from './juice.js'
 import { BAR, PIP, POWER_LABEL, ICON, bombReady, hiRoll, RACK_FLASH, respawnState } from './hud.js'
 import { fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_SWELL, MURMUR_HYPE_FREQ, WHOOSH, ALERT } from './audio.js'
 import { attractFrame, DIM } from './attract.js'
@@ -789,17 +789,17 @@ const SmashTVGame = () => {
             // they stand, unseen. A blinking chip on the edge they sit on, in the
             // game's own language (spawn-telegraph yellow, kill red, exit green),
             // says which way to look. The host is exempt: the host law keeps him in
-            // frame by construction.
+            // frame by construction. #2089: the budget is spent only on marks that
+            // actually sit past the edge, threats first — never on a mark already in
+            // frame (edgeMarks owns the filter, priority and cap).
             if (camBoard > CW && screenRef.current === 'play' && (gs.tick >> 2) % 2 === 0) {
                 const marks = []
-                for (const s of gs.roomData.spawns) marks.push([s.c * CELL + 8, HUD_H + s.r * CELL + 8, MARK.spawn])
-                for (const en of gs.enemies) if (en.kind !== 'boss') marks.push([en.x, en.y, MARK.enemy])
-                if (gs.roomData.bonus) for (const v of gs.civilians) marks.push([v.x, v.y, MARK.civ])
-                for (const [bx, by, col] of marks.slice(0, 6)) {
-                    const side = markSide(bx, camX, CW)
-                    if (!side) continue
-                    ctx.fillStyle = col
-                    ctx.fillRect(side < 0 ? 2 : CW - 5, Math.round(Math.max(HUD_H + 8, Math.min(CH - 8, by))) - 1, 3, 3)
+                for (const s of gs.roomData.spawns) marks.push({ x: s.c * CELL + 8, y: HUD_H + s.r * CELL + 8, col: MARK.spawn, kind: 'spawn' })
+                for (const en of gs.enemies) if (en.kind !== 'boss') marks.push({ x: en.x, y: en.y, col: MARK.enemy, kind: 'enemy' })
+                if (gs.roomData.bonus) for (const v of gs.civilians) marks.push({ x: v.x, y: v.y, col: MARK.civ, kind: 'civ' })
+                for (const m of edgeMarks(marks, camX, CW)) {
+                    ctx.fillStyle = m.col
+                    ctx.fillRect(m.side < 0 ? 2 : CW - 5, edgeRow(m.y, HUD_H, CH) - 1, 3, 3)
                 }
             }
 
