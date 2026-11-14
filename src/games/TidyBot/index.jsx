@@ -81,6 +81,7 @@ const TIDY_ATTRACT = [
     'TOSS A PLATE ONTO THE TILES AND IT SHATTERS (−40)',
     'GENTLE PLACES PAY TIDY POINTS — THROWN JAMS PAY LESS',
     'TAP OR CLICK THE FLOOR — THE BOT GLIDES THERE AROUND THE DOORS',
+    'CARRY TWO AT ONCE — GRAB A SECOND, PLACE THEM ONE BY ONE',
     'EVERY LEVEL IS A MESSIER HOUSE — BEAT THE CLOCK FOR BONUS',
 ]
 
@@ -398,12 +399,27 @@ const TidyBotGame = () => {
             ctx.strokeStyle = '#2c5f6e'; ctx.lineWidth = 1
             ctx.beginPath(); ctx.moveTo(x + 2.5, y - 5); ctx.lineTo(x + 3.5 + Math.sin(tick * 0.08) * 1.2, y - 9.5); ctx.stroke()
             ctx.fillStyle = '#ff6a5c'; circle(ctx, x + 3.5 + Math.sin(tick * 0.08) * 1.2, y - 10, 1.3); ctx.fill()
-            // held item floats over the head with a bob
-            const held = gs2.items.find((it) => it.state === 'held')
-            if (held) {
+            // held cargo (#2266): front arm floats over the head with a bob;
+            // the tray arm holds a steel serving tray out front that tilts
+            // with every step — carrying two reads as HEAVY at a glance
+            const front = gs2.items.find((it) => it.state === 'held' && it.id === gs2.held)
+            const tray = gs2.items.find((it) => it.state === 'held' && it.id === gs2.held2)
+            if (front) {
                 ctx.fillStyle = 'rgba(255,255,255,0.10)'
                 circle(ctx, x, y - 16 + Math.sin(tick * 0.1) * 1, 5); ctx.fill()
-                drawItem(ctx, held.kind, x, y - 16 + Math.sin(tick * 0.1) * 1, 0.9)
+                drawItem(ctx, front.kind, x, y - 16 + Math.sin(tick * 0.1) * 1, 0.9)
+            }
+            if (tray) {
+                const fd = { up: [0, -11], down: [0, 11], left: [-11, 0], right: [11, 0] }[gs2.facing]
+                const tilt = Math.sin(gs2.walk * 0.3) * 0.14
+                ctx.save(); ctx.translate(x + fd[0], y + fd[1]); ctx.rotate(tilt)
+                ctx.fillStyle = 'rgba(0,0,0,0.18)'
+                ctx.beginPath(); ctx.ellipse(0, 4.4, 8.4, 2, 0, 0, Math.PI * 2); ctx.fill()
+                ctx.fillStyle = '#5c6a74'; ctx.fillRect(-8.5, 1.6, 17, 2.6)
+                ctx.fillStyle = '#b9c4cc'; ctx.fillRect(-8.5, 0.6, 17, 1.4)
+                ctx.fillStyle = '#7e8c96'; ctx.fillRect(-8.5, 0.6, 1.4, 3.6); ctx.fillRect(7.1, 0.6, 1.4, 3.6)
+                drawItem(ctx, tray.kind, 0, -3.4 + Math.sin(tick * 0.13) * 0.5, 0.82)
+                ctx.restore()
             }
         }
 
@@ -654,6 +670,7 @@ const TidyBotGame = () => {
             clock: gs.clock,
             chores: gs.chores.map((c) => (c.done ? 1 : 0)),
             held: gs.held === null ? '' : gs.items.find((i2) => i2.id === gs.held)?.kind || 'x',
+            held2: gs.held2 === null || gs.held2 === undefined ? '' : gs.items.find((i2) => i2.id === gs.held2)?.kind || 'x',
             pos: Math.round(gs.rx * 10) / 10,
             posY: Math.round(gs.ry * 10) / 10,
             dwDoor: Math.round(gs.dw.door * 100) / 100,
@@ -694,7 +711,7 @@ const TidyBotGame = () => {
             canvas: () => canvas,
             snapshot: () => JSON.parse(JSON.stringify({
                 seed: gs.seed, tick: gs.tick, score: gs.score, level: gs.level, clock: gs.clock,
-                rx: gs.rx, ry: gs.ry, facing: gs.facing, walk: gs.walk, held: gs.held,
+                rx: gs.rx, ry: gs.ry, facing: gs.facing, walk: gs.walk, held: gs.held, held2: gs.held2,
                 dw: { door: gs.dw.door, target: gs.dw.target, cd: gs.dw.cd },
                 fr: { door: gs.fr.door, target: gs.fr.target, cd: gs.fr.cd },
                 dwRun: gs.dwRun, opened: { ...gs.opened }, breaks: gs.breaks, wrongs: gs.wrongs, spills: gs.spills, jams: gs.jams, tidies: gs.tidies,
@@ -704,7 +721,7 @@ const TidyBotGame = () => {
                 loadLevel(gs, s.level)
                 Object.assign(gs, {
                     seed: s.seed >>> 0, tick: s.tick, score: s.score, clock: s.clock,
-                    rx: s.rx, ry: s.ry, facing: s.facing, walk: s.walk, held: s.held,
+                    rx: s.rx, ry: s.ry, facing: s.facing, walk: s.walk, held: s.held, held2: s.held2 ?? null,
                     dwRun: s.dwRun, opened: { dw: false, fr: false, ...(s.opened || {}) }, breaks: s.breaks, wrongs: s.wrongs, spills: s.spills, jams: s.jams, tidies: s.tidies,
                     end: s.end, endReason: s.endReason || '', levelsDone: s.levelsDone, timeBonusTotal: s.timeBonusTotal,
                 })
@@ -748,7 +765,7 @@ const TidyBotGame = () => {
                 title: 'TIDY BOT',
                 getState: () => [
                     `tick ${gs.tick} level ${gs.level + 1} | score ${gs.score} clock ${Math.ceil(gs.clock / 60)}s`,
-                    `pos ${Math.round(gs.rx)},${Math.round(gs.ry)} held ${gs.held ?? '-'} dw ${Math.round(gs.dw.door * 100)}% fr ${Math.round(gs.fr.door * 100)}% run ${gs.dwRun ? 'on' : 'off'}`,
+                    `pos ${Math.round(gs.rx)},${Math.round(gs.ry)} held ${gs.held ?? '-'}+${gs.held2 ?? '-'} dw ${Math.round(gs.dw.door * 100)}% fr ${Math.round(gs.fr.door * 100)}% run ${gs.dwRun ? 'on' : 'off'}`,
                     `tidy ${gs.tidies} jam ${gs.jams} spill ${gs.spills} wrong ${gs.wrongs} break ${gs.breaks} | ${gs.end || 'running'} ${gs.endReason}`,
                 ],
                 actions: [
@@ -756,7 +773,7 @@ const TidyBotGame = () => {
                     { label: 'open fridge', run: () => { gs.fr.target = 1; return 'fridge opening' } },
                     { label: 'spawn plate at bot', run: () => { gs.items.push({ id: 9000 + gs.tick, kind: 'plate', x: gs.rx, y: gs.ry + 8, vx: 0, vy: 0, state: 'loose', cont: null }); return 'plate @ bot' } },
                     { label: 'apple into washer', run: () => { gs.items.push({ id: 9000 + gs.tick, kind: 'apple', x: 0, y: 0, vx: 0, vy: 0, state: 'in', cont: 'dw' }); return 'wrong stow armed' } },
-                    { label: 'force win', run: () => { for (const it of gs.items) if (it.state === 'loose' || it.state === 'held') it.state = 'gone'; gs.held = null; gs.dwRun = true; gs.dw.target = 0; gs.fr.target = 0; gs.dw.door = 0; gs.fr.door = 0; return 'house armed for clear' } },
+                    { label: 'force win', run: () => { for (const it of gs.items) if (it.state === 'loose' || it.state === 'held') it.state = 'gone'; gs.held = null; gs.held2 = null; gs.dwRun = true; gs.dw.target = 0; gs.fr.target = 0; gs.dw.door = 0; gs.fr.door = 0; return 'house armed for clear' } },
                     { label: 'reset', run: () => { gs = makeGame(1337, 1); setMode('attract'); return 'rebooted' } },
                 ],
             })

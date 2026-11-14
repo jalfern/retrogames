@@ -202,9 +202,14 @@ const frontId = (gs) => (SIMHOOKS.lifo && gs.held2 !== null && gs.held2 !== unde
 const frontItem = (gs) => gs.items.find((it) => it.id === frontId(gs) && it.state === 'held') || null
 const releaseFront = (gs) => {
     // FIFO: front arm leaves first; the tray slides forward. `lifo` mutant
-    // reverses the queue so the tidycheck order gates can go red.
-    if (SIMHOOKS.lifo) { gs.held = gs.held2; gs.held2 = null }
-    else { gs.held = gs.held2 === null || gs.held2 === undefined ? null : gs.held2; gs.held2 = null }
+    // empties the tray first — same two arms, reversed queue.
+    if (SIMHOOKS.lifo) {
+        if (gs.held2 !== null && gs.held2 !== undefined) gs.held2 = null
+        else gs.held = null
+    } else {
+        gs.held = gs.held2 === null || gs.held2 === undefined ? null : gs.held2
+        gs.held2 = null
+    }
 }
 const looseItems = (gs) => gs.items.filter((it) => it.state === 'loose')
 const wrongInside = (gs) => gs.items.filter((it) => it.state === 'in' && KINDS[it.kind].to !== it.cont)
