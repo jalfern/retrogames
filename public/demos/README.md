@@ -128,7 +128,38 @@ the final policy). Gated by `npm run learnedwalkcheck` (30 gates incl. a
 mirror mutant — flip `hipR: a[0] * CAP` to `hipR: 0` in learnedwalk.core.js
 torquesOf and six gates go RED — demonstrated 2026-10-31, then restored).
 
+## furlong.html engine notes (#2182 — FURLONG, WIP)
+
+The no-limit sibling of STRIDELINE: a golden-hour thoroughbred at a true four-beat
+rotary gallop in raw WebGL2 (no libraries, no imported meshes, no image assets).
+
+Anatomy: smooth lofted elliptical tubes along curved spines (~3.6k tris) — barrel,
+hindquarters, curved neck, skull/muzzle, jaw, ears, eyes — CPU-skinned over 21 bones
+(bind pose = authored constants; v(t) = F(t)·inv(F0)·v0). CPU skinning is deliberate:
+integer vertex attributes + mat4 uniform arrays proved unreliable on software GL
+(SwiftShader INVALID_OPERATION), and 3.6k verts/frame is free.
+
+Gait (the provable part): footfalls LH·RH·LF·RF with per-leg stance (hind 0.18,
+fore 0.26) chosen so body travel over a planted hoof never exceeds the limb chord;
+forward speed pulses ±30% via closed-form X(t) (fast off the hind push, absorbed
+under the fore landing) so net advance is exactly V·T per stride; planted hooves are
+ground-locked through pole-constrained FABRIK ending on the anchor; swing arcs run
+from the lift-off point to the exact next touchdown anchor. Mane/tail/tufts/dust are
+pure functions of phase. `__furlongTest`: slip measured 0 m, seam 1.4e-14 m
+(8-stride loop), suspension ≈0.36 of stride.
+
+Rendering: Blinn wrap-light + hemisphere fill + rim, 512² depth sun shadow with 3×3
+PCF (horse self-shadows + ground), gradient dusk sky with sun disc and cloud band,
+tileable procedural turf (period = 8 strides, seamless in-shader), distance haze.
+Synthesized hoof strikes (distinct fore/hind timbres) + wind, unlock on first tap.
+
+Honest gaps (WIP at this checkpoint): anatomy proportions read foreshortened — leg
+bone directions/roll and neck lay need a tuning pass against reference frames; the
+check harness (`scripts/furlongcheck.mjs`) is not written yet; ear/eye scale and
+shadow bias want a pass; phone perf not yet measured.
+
 ## blackhole.html engine notes
+
 
 Schwarzschild flyby + plunge + probes as before; key `K` (or `?spin=1/-1`)
 switches to a Kerr black hole (a* = 0.9): a separated null-geodesic integrator
