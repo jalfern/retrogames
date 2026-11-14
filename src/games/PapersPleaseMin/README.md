@@ -533,7 +533,7 @@ The fix is variety as construction, not hope — this generator's own doctrine:
   row day — 10px rows since #1943), no name repeats across the seven walls,
   and no row names anyone in the line.
 
-## Mutants (63, all die under `npm run paperscheck -- --mutate`)
+## Mutants (65, all die under `npm run paperscheck -- --mutate`)
 
 
 
@@ -1110,3 +1110,43 @@ paints the month-name comparison on the strip verbatim, serial-free (134/134).
   adds a sharp 1050Hz tick over the deny thunk (#1966's family-of-own-sound
   pattern). papersplay walks seed 2 day 1 (a brow forger) with live keys and
   counts ticks via `sfxTicks`.
+
+## THE WEEK THAT REMEMBERS (#2104) — seed-adjacent continuity
+
+The original's neighborhood is continuous across the campaign: faces remember
+the previous shift. Here seeds ARE campaign weeks (#1988's own language —
+"the same faces, a different week"), and the rotation law makes continuity a
+**construction**: the seat at offset k in seed s stood at offset k+1 in seed
+s−1. The crowded tails (#2012) are exactly the seats whose last week was a
+different KIND of week:
+
+- **offset 4 (day-6 tail)** was last week's day-7 tail — it stood in the line.
+  Its walk-up speaks `greet + remember.line + hook` ("I VISITED LAST WEEK TOO.").
+- **offset 5 (day-7 tail)** was last week's **arc face** (offset 0 — it stood
+  days 2 and 6, and the bulletin carried its name). It remembers the wall
+  ("THE WALL KNOWS MY FACE."). Petr the week after his own arrest is the
+  flagship: seed 3's wanted man is seed 4's honest commuter.
+- **Why not the head-two:** offset 0's week belongs to the arc (#1983),
+  offset 1's return to the thread (#2003); offsets 2–3 were window seats last
+  week too — nothing changed kind. Days 2–5 stay byte-identical.
+- **Seed 0 is week 1:** no previous week walked, so nobody remembers — every
+  fixture that predates the beat replays byte-identical (paperscheck pins the
+  seed-0 silence across the whole cast).
+- `person.remember` carries the kind **structurally** (like #1982's `recall`):
+  the truth is the visit law, not the words. Authored decor doctrine holds —
+  `decide` never reads `say`/`remember`; the purity twin walks every paper
+  every day; zero `rnd()`, so the seed stream is untouched.
+- 12 new authored lines (6 faces × 2 kinds) — the thread pool grows
+  **24 → 36 distinct sentences**, all in the fit law; the tail bubble rides
+  the 47px third row #2003 opened.
+- `paperscheck` adds the **adjacency witness**: every memory is graded against
+  `genWeek(seed−1)` itself — a `'line'` memory must find its face on last
+  week's day 7 (and NOT on the head days), a `'wall'` memory must be named by
+  `arcForWeek(seed−1)` and found on days 2 AND 6. A memory of a week that
+  never walked is a fabricated past. Mutants m67 (memories never fire) and
+  m68 (a memory text swapped while its kind tag rides on — graded against
+  hardcoded ground truth, not the mutated table) both die. **All 65 die.**
+- `papersplay` walks the beat live on seed 4: Anja on the crowded turn-day
+  remembers the line (`I VISITED LAST WEEK TOO.`, three rows, real keys), and
+  Petr on day 7 — last week's arc face — remembers the wall
+  (`THE WALL KNOWS MY FACE.`).

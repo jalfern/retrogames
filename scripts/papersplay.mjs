@@ -1189,10 +1189,12 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     await wait(160)
     // #2012 the crowded turn-day, live on the rotated window: seed 4's day 6
     // pairs SONYA'S arrest with ANJA'S first walk-up (tail seat s+4 = seat 2).
+    // #2104 THE WEEK THAT REMEMBERS: in seed 3 Anja stood on day 7 — she was
+    // in the line last week, and she says so between hello and her hook.
     const aj6 = await walkTo('anja')
-    r.check('the arc day is crowded too (seed 4 day 6 — Anja greets while the wall works, tail seat s+4)',
+    r.check('the arc day is crowded too (seed 4 day 6 — Anja greets while the wall works, tail seat s+4, and remembers the line)',
         !!aj6 && aj6.hit.day === 6 && !aj6.hit.arc && aj6.hit.name === 'ANJA TOLKA'
-        && aj6.hit.say && aj6.hit.say[0] === 'I VISIT MY DAUGHTER.' && aj6.verdict === 'approve' && aj6.bubble > 4000,
+        && aj6.hit.say && aj6.hit.say[0] === 'I VISIT MY DAUGHTER.' && aj6.hit.say[1] === 'I VISITED LAST WEEK TOO.' && aj6.hit.say[2] === 'HER FLAT IS IN THE CITY.' && aj6.verdict === 'approve' && aj6.bubble > 4000,
         JSON.stringify(aj6 && { d: aj6.hit.day, say: aj6.hit.say, b: aj6.bubble, v: aj6.verdict }))
     await page.keyboard.press('a')   // honest papers — the daughter-visiting neighbor goes through
     // Anja is day 6's LAST head now (the crowd took the fill slot): the stamp
@@ -1216,10 +1218,13 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     // #2012 the crowded return again: seed 4's day 7 pairs Tadek's payoff
     // with PETR'S fresh hello (tail seat s+5 = seat 3) — recognition and
     // introduction on one shift, both bubbles printing, the finale denser.
+    // #2104: in seed 3 Petr was the ARC face — the wall printed his name —
+    // and his memory says exactly that. The adjacency here is the whole beat:
+    // what seed 3 lived, seed 4's tail remembers.
     const pt7 = await walkTo('petr')
-    r.check('day 7 carries two neighbors (seed 4 — Petr greets behind Tadek\'s payoff, tail seat s+5)',
+    r.check('day 7 carries two neighbors (seed 4 — Petr greets behind Tadek\'s payoff, tail seat s+5, remembering the wall)',
         !!pt7 && pt7.hit.day === 7 && !pt7.hit.arc && pt7.hit.name === 'PETR ZEMEK'
-        && pt7.hit.say && pt7.hit.say[0] === 'WORK IN THE CITY.' && pt7.hit.say[1] === 'THE TRAIN WAS LATE.' && pt7.verdict === 'approve' && pt7.bubble > 4000,
+        && pt7.hit.say && pt7.hit.say[0] === 'WORK IN THE CITY.' && pt7.hit.say[1] === 'THE WALL KNOWS MY FACE.' && pt7.hit.say[2] === 'THE TRAIN WAS LATE.' && pt7.verdict === 'approve' && pt7.bubble > 4000,
         JSON.stringify(pt7 && { d: pt7.hit.day, say: pt7.hit.say, b: pt7.bubble, v: pt7.verdict }))
     await page.keyboard.press('a')   // stamp the commuter through the finale line
     await page.evaluate(() => window.__ppTest.runDay())    // finish day 7 honestly
