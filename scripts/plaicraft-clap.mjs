@@ -44,6 +44,7 @@ import { detectClaps, clapVerdict, matchClapEdges, takeEdges, CLAP_TOL_MS, CLAP_
 import { containerDurationMs } from '../src/utils/voice.js'
 import { startRelaySim } from './lib/relaysim.mjs'
 import { STORE_DEFAULT } from '../src/utils/sessionStore.js'
+import { readKey } from './lib/localkey.mjs'
 
 const argv = process.argv.slice(2)
 const PORT = process.env.DEV_PORT || 5173
@@ -88,9 +89,9 @@ if (ANALYZE_KEY || ANALYZE_FILE) {
         try { rec = JSON.parse(fs.readFileSync(ANALYZE_FILE, 'utf8')) } catch (e) { console.error(`clap: cannot read ${ANALYZE_FILE}: ${e && e.message}`); process.exit(1) }
         ra.info('take', ANALYZE_FILE)
     } else {
-        const jk = process.env.JON_KEY
+        const jk = readKey('JON_KEY')
         if (!jk) {
-            console.error(`clap: JON_KEY env var required — the store refuses un-keyed reads (#1711 S8): JON_KEY=<secret> npm run plaicraft:clap -- --key=${ANALYZE_KEY} --store=${base}`)
+            console.error(`clap: JON_KEY required — the store refuses un-keyed reads (#1711 S8). Inline (JON_KEY=<secret> npm run plaicraft:clap -- --key=${ANALYZE_KEY} --store=${base}) or once in .env.local at the repo root (#2157).`)
             process.exit(1)
         }
         try {
