@@ -34,6 +34,7 @@ import {
     court, courtTarget,   // #2131: player-ordered romance commands
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court — one pad button, two orders
     scheduleMeals, MEAL_WINDOW, SPAT_CD,   // #2244: the meal bells — the F1 cheat re-seeds today's hours
+    NEED_HINT,   // #2253: the amber prompt names the fix
     stateHash,
 } from './sim.js'
 import {
@@ -48,6 +49,7 @@ const SIM_MS = FIXED_DT
 const MESSAGES = [
     'Two residents, five needs, one little house. You are the voice in their heads.',
     'Tap a fridge, a bed, the TV — they walk over and use it. Feed them, rest them.',
+    'When a resident turns AMBER, the lot says what they need — tap the named object before the red alarm.',
     'The mailbox pays the bills on workdays. § buys furniture to raise the home.',
     'Morning brings the paper — the boy sweeps past and today\'s edition waits on the step. Tap it for a laugh.',
     'THE BELLS RING THREE TIMES A DAY — a warm plate waits by the kitchen. Tap to eat; eat together and BONDS rise.',
@@ -153,6 +155,10 @@ const HomebodyGame = () => {
                         audioController.playTone(300, 0.06, 'square', 0.05, 0)
                         audioController.playTone(230, 0.1, 'square', 0.05, 0.08)
                         if (live) say(`${e.name.toUpperCase()} NEEDS ${e.need.toUpperCase()}`)
+                        break
+                    case 'amber':   // #2253: the worried colour — one gentle line, naming the fix, while the need is still saveable
+                        audioController.playTone(500, 0.07, 'triangle', 0.04)
+                        if (live) say(`${e.name.toUpperCase()} IS ${e.need.toUpperCase()} — ${NEED_HINT[e.need].toUpperCase()}`)
                         break
                     case 'place': audioController.playTone(200, 0.09, 'square', 0.06); if (live) burst(tilePx(e.c), tilePy(e.r) + 16, 8, '#c9b48a', 2.6); break
                     case 'sell': audioController.playSweep(420, 180, 0.12, 'square', 0.05); break
@@ -386,7 +392,7 @@ const HomebodyGame = () => {
             const it = cellItem(gs, t.r, t.c)
             if (it) {
                 if (it.id === 'mail') { if (cmdWork(gs, p)) return; say(p.workedToday ? 'NOT WORK TODAY — IT IS THE WEEKEND' : 'CLOCK IN DURING WORK HOURS'); return }
-                if (cmdUse(gs, p, it)) { audioController.playTone(560, 0.04, 'triangle', 0.03); return }
+                if (cmdUse(gs, p, it)) { audioController.playTone(560, 0.04, 'triangle', 0.03); say(`✓ ${it.id === 'mail' ? 'WORK' : (it.name || 'OBJECT').toUpperCase()}`); return }   // #2253: the tap answers back
                 say('CANNOT REACH THAT')
                 return
             }
@@ -529,6 +535,20 @@ const HomebodyGame = () => {
             drawTopBar(ctx, g)
             drawPanel(ctx, g, g.sec)
             drawThoughts(ctx, g)
+            // #2253: a fresh order rings its target — the player sees the tap
+            // landed the moment it registers, not seconds later at the fridge.
+            if (live && g.orderPing.t > 0) {
+                const pu = 0.55 + 0.45 * Math.sin(g.sec * 9)
+                ctx.strokeStyle = `rgba(72,214,200,${(0.5 + 0.4 * pu).toFixed(3)})`
+                ctx.lineWidth = 2
+                ctx.beginPath(); ctx.arc(g.orderPing.x, g.orderPing.y, 9 + 3 * pu, 0, 7); ctx.stroke()
+                ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'
+                ctx.fillStyle = 'rgba(28,36,54,0.8)'
+                const pw = ctx.measureText(g.orderPing.label).width + 8
+                ctx.fillRect(g.orderPing.x - pw / 2, g.orderPing.y - 24, pw, 11)
+                ctx.fillStyle = '#8ef0e4'
+                ctx.fillText(g.orderPing.label, g.orderPing.x, g.orderPing.y - 14)
+            }
             if (g.build) drawCatalog(ctx, g)
             if (g.fastT > 0) {
                 ctx.fillStyle = 'rgba(18,24,38,0.5)'
@@ -565,7 +585,11 @@ const HomebodyGame = () => {
 
         const banner = (c, text, small = false) => {
             c.textAlign = 'center'; c.textBaseline = 'middle'
-            const y = H / 2 - 90
+            // #2253: the card used to ride at H/2-90 — straight through the roof
+            // line of the rooms, over the residents at exactly the moment the
+            // player is watching them. It now sits on the front lawn, below the
+            // house row, where nothing living is.
+            const y = 348
             c.font = `bold ${small ? 14 : 20}px monospace`
             const w = c.measureText(text).width + 34
             c.fillStyle = 'rgba(28,36,54,0.88)'

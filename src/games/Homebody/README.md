@@ -152,10 +152,29 @@ see §Speed dial.
   #2070 human exit are untouched. Keyboard keeps its dedicated C/X; the pad
   contract (`VirtualControls` A=Space + one ⚒) is unchanged. Attract line +
   registry controls teach the hold.
+- First-time player pass (#2253): a cold player lost both residents on day 1
+  in ~2 minutes with nothing on screen saying what to do. Three laws answer it.
+  (1) The morning grace — while `s.day === 1 && s.hour < 12` every hourly decay
+  runs at `DAY1_GRACE` (0.5); at noon the normal law takes over, because a
+  whole-day halving re-phases the seeded autopilot's evening and stranded seed
+  20261023's wish (the WINNABLE gate caught it).
+  (2) The amber prompt — a need crossing `AMBER_AT` (0.45, above RED_AT) pushes
+  a one-shot `amber` event naming the fix (`NEED_HINT`: hunger→FRIDGE, energy→
+  BED, fun→TV, social→PHONE, bladder→TOILET); the stamp `p.wasAmber[n]` re-arms
+  only past 0.5, so it teaches once per slide, never spams.
+  (3) The order ping — every successful `cmdUse` arms `s.orderPing` (target-cell
+  centre + label + 1.6 real seconds) and the shell names the tap in a toast
+  (`✓ FRIDGE`), so a registered order is visible the instant it lands. The
+  event banner also moved off the house centre (`H/2-90`) to the front lawn
+  (y=348) — it used to paint over the residents at exactly the wrong moment —
+  and the pad's A button finally says ✓ (`aLabel` in the registry; it had been
+  falling back to FIRE). Residents still collapse when ignored — the grace
+  teaches, it never plays for you. `s.noWander` is a test-only hold that pins
+  the seeded 0.6%/s idle stroll for the stillness gate.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 434 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), winnable seeds, determinism
+npm run peoplecheck          # 456 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
