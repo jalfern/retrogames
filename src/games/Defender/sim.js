@@ -38,6 +38,11 @@ export const INVULN_TICKS = 120     // ~2 s blinking grace after respawn
 export const DEATH_FREEZE = 30      // ~0.5 s the machine holds the dead frame
                                     // before the respawn countdown (#1531)
 
+// #2167: thrust-hum pitch from the fighter's speed, finite AT THE SOURCE.
+// A non-finite vx (any physics edge) must not silence the hum into a dropped
+// audio cue — the arcade hum stays pitched, the NaN is named by the gates.
+export const thrustHum = (vx) => 50 + (Number.isFinite(vx) ? Math.abs(vx) : 0) * 8
+
 // Shortest signed distance on the wrap-around planet.
 export function wrapDelta(dx, width = WORLD_WIDTH) {
     let d = dx % width

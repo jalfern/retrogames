@@ -13,6 +13,7 @@
 //
 // Run: npm run rallycheck   (no dev server needed)
 
+import { readFileSync } from 'node:fs'
 import {
     createSim, tickSim, state, stateHash, cpuDriverPad, cpuCoDriverPad,
     visibleAhead, distAhead, gearOf, slopeAt, lapProgress, postsFor, controlS,
@@ -476,6 +477,34 @@ ok('model seat: determinism — identical spine runs digest identical',
 ok('model seat: the spine digest rides the same determinism law on a second seed',
     stateHash(modelRun(11).gs) === stateHash(modelRun(11).gs))
 
+
+// ---- probe shape (#2167) --------------------------------------------------
+// watchcheck's rally note reads { lap, progress } as NUMBERS, but the contract
+// state names them `laps` and `progress: {total, done}` — the old probe passed
+// those raw and the nightly note printed "lap NaN/2, progress NaN%". Pin the
+// mapping the seat exports: runtime shape first, then the source lines.
+{
+    const rx = readFileSync('src/games/RallyCoDriver/index.jsx', 'utf8')
+    ok('index.jsx maps probe + feedback laps from the contract names (#2167)',
+        rx.includes('lap: s.laps') && rx.includes('play.g.lapsDone'))
+    ok('the probe never passes the absent s.lap through (#2167)',
+        !/probe:[^\n]*lap: s\.lap,/.test(rx))
+    let bad = ''
+    for (const seed of SEEDS) {
+        const g = createSim(seed, 2)
+        while (!g.done && g.tick < 60 * 260) {
+            tickSim(g, [cpuDriverPad(g), cpuCoDriverPad(g)])
+            if (g.tick % 97 === 0) {
+                const s = state(g)
+                const total = s.progress.total || 0
+                const frac = total ? Math.min(1, s.progress.done.length / total) : 0
+                if (!Number.isInteger(s.laps) || !Number.isFinite(frac) || frac < 0 || frac > 1) { bad = `seed ${seed} tick ${g.tick}`; break }
+            }
+        }
+        if (bad) break
+    }
+    ok('state stays probe-ready mid-race (laps integer, progress fraction 0..1, 5 seeds)', bad === '', bad)
+}
 
 console.log(`\nrallycheck: ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

@@ -4,7 +4,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
-import { createSim, WORLD_WIDTH, START_LIVES, watchRoute } from './sim.js'
+import { createSim, WORLD_WIDTH, START_LIVES, watchRoute, thrustHum } from './sim.js'
 import { attractFrame, DIM } from './attract.js'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
@@ -172,7 +172,7 @@ const DefenderGame = () => {
             // #1531 feel: thrust was silent — hum while the fighter accelerates,
             // and pulse the abduction telegraph while any lander is diving.
             if (!sim.over && sim.player.dark <= 0 && thrustFacing !== 0 && tickN % 5 === 0) {
-                const hum = 50 + Math.abs(sim.player.vx) * 8
+                const hum = thrustHum(sim.player.vx) // #2167 finite at the source
                 audioController.playTone(hum, 0.1, 'sawtooth', 0.045)
                 // #1907: the arcade layered a rising harmonic over the hum —
                 // speed is now audible, not just visible.

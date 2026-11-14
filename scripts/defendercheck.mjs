@@ -17,6 +17,7 @@ import {
     livesForScore, humansAlive,
     SCORE_LANDER, SCORE_MUTANT, SCORE_CATCH, SCORE_DELIVER, SCORE_WAVE,
     BONUS_LIFE_EVERY, START_LIVES, WORLD_WIDTH, HUMAN_COUNT, DEATH_FREEZE, watchRoute,
+    thrustHum,
 } from '../src/games/Defender/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -486,6 +487,34 @@ console.log('presentation pass #1907: color tells, rescue staging, celebration, 
         'registry advertises WATCH for Defender')
 }
 
+// ---------------------------------------------------------------- hum NaN ----
+// #2167: the nightly page-error family — the thrust hum fed a non-finite
+// freq into setValueAtTime. The hum pitch now lives in sim.js (thrustHum) and
+// is finite AT THE SOURCE: a NaN vx hums idle at 50 Hz instead of dropping
+// the cue behind #2166's global guard.
+console.log('thrust hum is finite at the source (#2167):')
+{
+    ok(thrustHum(0) === 50 && thrustHum(8) === 114 && thrustHum(-8) === 114,
+        'hum tracks speed across the whole ±8 envelope')
+    ok(thrustHum(NaN) === 50 && thrustHum(Infinity) === 50 && thrustHum(-Infinity) === 50,
+        'a non-finite vx hums idle — never NaN, never silent')
+    ok(jsx.includes('thrustHum(sim.player.vx)'),
+        'index.jsx builds the hum through thrustHum (no raw vx near an AudioParam)')
+    // physics finiteness law: an honest patrol never leaks NaN into the ship.
+    let leak = ''
+    outer: for (let sd = 1; sd <= 8; sd++) {
+        const s = newSim(sd * 31)
+        for (let i = 0; i < 1800 && !s.over; i++) {
+            s.step(watchRoute(s))
+            if (![s.player.x, s.player.y, s.player.vx, s.player.vy].every(Number.isFinite)) {
+                leak = `seed ${sd * 31} tick ${i}`
+                break outer
+            }
+        }
+    }
+    ok(leak === '', 'watchRoute patrols keep x/y/vx/vy finite (8 seeds × 30 s)', leak)
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutant')) {
     console.log('mutants (each MUST die)')
@@ -598,6 +627,9 @@ if (process.argv.includes('--mutant')) {
         ['#1907 the celebration banner is blanked', I,
             `ctx.fillText('WAVE CLEARED', viewWidth / 2, viewHeight / 2 - 16)`,
             `/* blanked */`],
+        ['#2167 the hum clamp is peeled off (raw vx reaches the AudioParam)', S,
+            `export const thrustHum = (vx) => 50 + (Number.isFinite(vx) ? Math.abs(vx) : 0) * 8`,
+            `export const thrustHum = (vx) => 50 + Math.abs(vx) * 8`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
