@@ -129,6 +129,9 @@ export const MANUAL_CHECKS = [
   "scripts/filmstripcheck.mjs",
   "scripts/floorbosscheck.mjs",
   "scripts/foxgeminicheck.mjs",
+  // #2261: RENARD — browser-driven demo gate like foxgeminicheck (needs the
+  // dev server); advisory from the lane: npm run foxcheck.
+  "scripts/foxcheck.mjs",
   "scripts/fpscheck.mjs",
   // #2182: FURLONG — browser-driven like the other demo gates (needs the dev
   // server); advisory from the lane: npm run furlongcheck.
