@@ -516,31 +516,115 @@ function drawGround(travel) {
   }
 }
 
+/* Scene law + cache (#2231): the far rim gets TWO mesa rows on parallax clocks.
+   A drifting row closes the eight-stride seam ONLY if its mesas are true twins
+   — equal size AND equal depth — because travel + L slides the row by L/K m
+   (near: one 9.6 m slot, backdrop: one 12 m slot) and the shifted pattern
+   must repaint the unchanged scene. Identical hazy blocks on a horizon read as
+   a ridge line anyway; the two different drift rates (1/5 vs 1/4 of ground)
+   are what the eye reads as depth. Ground-anchored brush/rocks keep the
+   full-speed slot(). Their shapes are static — only the slot offset and the
+   undulation y move per frame — so every prop's vertex list is built ONCE
+   into SC_CACHE and each frame just translates cached points (rebuilds: only
+   on resize/DPR change). */
+const MESA_NEAR = 5, MESA_FAR = 4;     // mesas per loop on each rim row (spacing 9.6 / 12)
+const K_NEAR = 5, K_FAR = 4;          // divisors: K divides MESA → shift = exactly one slot/loop
+const Z_NEAR = 69, Z_FAR = 104;       // row depths — twins keep the seam exact
+const SAGE = lite ? 8 : 14;           // ?lite=1 thins the steppe props for CI
+const ROCKS = lite ? 5 : 9;
+const SC_CACHE = { entry: null, dirty: true, rebuilds: 0 };
+window.addEventListener('resize', () => { SC_CACHE.dirty = true; });
+function emitCached(list, dx, dy) {
+  for (const f of list) {
+    const pts = f.p.map(q => [q[0] + dx, q[1] + dy, q[2]]);
+    if (f.f) quad4(pts[0], pts[1], pts[2], pts[3], f.c);
+    else tri3(pts[0], pts[1], pts[2], f.c);
+  }
+}
+function localBox(fx, tx, hh, hwF, hwB, zc, col) {
+  const pts = [];
+  for (let i = 0; i < 8; i++) {
+    const sx = (i & 1) ? 1 : -1, sy = (i & 2) ? 1 : -1, sz = (i & 4) ? 1 : -1;
+    pts.push([sx * (sx > 0 ? fx : tx), sy * hh, zc + sz * (sx > 0 ? hwF : hwB)]);
+  }
+  const F = [[5, 1, 3, 7], [0, 4, 6, 2], [3, 7, 6, 2], [0, 1, 5, 4], [4, 5, 7, 6], [1, 0, 2, 3]];
+  return F.map(f => ({ f: 1, p: [pts[f[0]], pts[f[1]], pts[f[2]], pts[f[3]]], c: col }));
+}
+function localCone(lx, z, r, h, col) {    // base ring at y = 0, apex at +h; x local, z absolute
+  const pts = [[lx, h, z]];
+  for (let i = 0; i < 5; i++) { const a = i / 5 * TAU; pts.push([lx + Math.cos(a) * r, 0, z + Math.sin(a) * r]); }
+  const fs = [];
+  for (let i = 0; i < 5; i++) fs.push({ f: 0, p: [pts[0], pts[1 + i], pts[1 + (i + 1) % 5]], c: col });
+  fs.push({ f: 0, p: [pts[1], pts[3], pts[2]], c: col });   // base tri (degenerate-flat, like triCone)
+  return fs;
+}
+function buildSceneCache() {
+  const e = { near: [], far: [], sage: [], rocks: [], nearH: [], bz: [], fbz: [] };
+  for (let m = 0; m < MESA_NEAR; m++) {      // cached pbox per near mesa — equal
+    const w = 10, hgt = 14;                 // twins: identical size/depth, slides invisible
+    e.near.push(localBox(w * 0.5, w * 0.42, hgt * 0.5, w * 0.40, w * 0.42, Z_NEAR, [176, 158, 150]));
+    e.nearH.push(hgt); e.bz.push(Z_NEAR);
+  }
+  for (let m = 0; m < MESA_FAR; m++) {      // backdrop blocks: equal size, varied depth
+    const w = 9, hgt = 7;
+    e.far.push(localBox(w * 0.5, w * 0.44, hgt * 0.5, w * 0.40, w * 0.44, Z_FAR, [168, 152, 150]));
+    e.fbz.push(Z_FAR);
+  }
+  for (let b = 0; b < SAGE; b++) {         // double cone, x local at 0 (z absolute)
+    const hh = 0.45 + h2(b, 3) * 0.75;
+    const bzv = (h2(b, 1) > 0.5 ? 1 : -1) * (9 + h2(b, 2) * 26);
+    const parts = [localCone(0, bzv, hh * 0.55, hh, [104, 116, 78])];
+    if (!lite) parts.push(localCone(hh * 0.4, bzv - hh * 0.25, hh * 0.42, hh * 0.72, [88, 102, 66]));
+    e.sage.push({ z: bzv, parts });
+  }
+  for (let r = 0; r < ROCKS; r++) {       // wedge, x local at 0 (z absolute)
+    const s = 0.3 + h2(r, 7) * 0.5, q = h2(r, 8) * TAU;
+    const rz = (h2(r, 5) > 0.5 ? 1 : -1) * (8 + h2(r, 6) * 30);
+    const p1 = [Math.cos(q) * s * 1.3, 0, Math.sin(q) * s];
+    const p2 = [Math.cos(q + 2.4) * s * 1.2, 0, Math.sin(q + 2.4) * s];
+    const p3 = [Math.cos(q + 4.4) * s * 1.1, 0, Math.sin(q + 4.4) * s];
+    e.rocks.push({ z: rz, tris: [
+      { f: 0, p: [[0, s, 0], p1, p2], c: [150, 140, 132] },
+      { f: 0, p: [[0, s, 0], p2, p3], c: [132, 124, 118] },
+      { f: 0, p: [[0, s, 0], p3, p1], c: [140, 132, 124] },
+      { f: 0, p: [p1, p3, p2], c: [110, 104, 98] },   // base tri
+    ] });
+  }
+  SC_CACHE.entry = e; SC_CACHE.dirty = false; SC_CACHE.rebuilds++;
+}
+/* Law hook (#2231): pure function of travel — both rim rows' x offsets, z,
+   size. The harness proves the parallax rates, the seam and row separation. */
+function mesaAnchors(t) {
+  const para = (x, K) => { let w = ((x - t / K) % L + L) % L; if (w >= L / 2) w -= L; return w; };   // canonical (−L/2, L/2] — twin rows make
+  const near = [], far = [];
+  for (let m = 0; m < MESA_NEAR; m++) near.push([+para(6 + m * (L / MESA_NEAR), K_NEAR).toFixed(6), +Z_NEAR.toFixed(2), 10]);
+  for (let m = 0; m < MESA_FAR; m++) far.push([+para(m * (L / MESA_FAR), K_FAR).toFixed(6), +Z_FAR.toFixed(2), 9]);
+  return { near, far };
+}
+
 function drawScenery(travel) {
+  if (SC_CACHE.dirty) { buildSceneCache(); }
+  const e = SC_CACHE.entry;
   const scroll = travel % L;
   const slot = x => { let w = (x - scroll) % L; if (w < -L / 2) w += L; return w; };
-  for (let m = 0; m < 5; m++) {                        // far mesas on the forward rim
-    const bx = slot(6 + m * (L / 5)), bz = 62 + h1(m) * 14;
-    const w = 7 + h1(m + 40) * 8, hgt = 8 + h1(m + 80) * 12;
-    pbox(bx, hgt * 0.5 - 0.02, bz, w * 0.5, w * 0.42, hgt * 0.5, hgt * 0.5, w * 0.40, w * 0.42, 0, [176, 158, 150]);
+  const para = (x, K) => { let w = ((x - scroll / K) % L + L) % L; if (w >= L / 2) w -= L; return w; }   // the L-shift a pure rotation
+  for (let m = 0; m < MESA_FAR; m++)                  // backdrop ridge — K_FAR-slower
+    emitCached(e.far[m], para(m * (L / MESA_FAR), K_FAR), -8.4);
+  for (let m = 0; m < MESA_NEAR; m++) {                // near rim mesas — K_NEAR-slower
+    const bx = para(6 + m * (L / MESA_NEAR), K_NEAR);
+    emitCached(e.near[m], bx, e.nearH[m] * 0.5 - 0.02);
   }
-  for (let b = 0; b < 14; b++) {                      // sagebrush cones
-    const bx = slot(h1(b + 3) * L), bz = (h2(b, 1) > 0.5 ? 1 : -1) * (9 + h2(b, 2) * 26);
-    const hh = 0.45 + h2(b, 3) * 0.75;
-    const y0 = hNoise(bx + travel) * ridgeH(bz) - 0.02;
-    triCone(bx, y0, bz, hh * 0.55, hh, [104, 116, 78]);
-    triCone(bx + hh * 0.4, y0, bz - hh * 0.25, hh * 0.42, hh * 0.72, [88, 102, 66]);
+  for (let b = 0; b < SAGE; b++) {                    // sagebrush cones
+    const g = e.sage[b];
+    const bx = slot(h1(b + 3) * L);
+    const y0 = hNoise(bx + travel) * ridgeH(g.z) - 0.02;
+    for (const p of g.parts) emitCached(p, bx, y0);
   }
-  for (let r = 0; r < 9; r++) {                       // rock wedges
-    const rx = slot(h1(r + 17) * L), rz = (h2(r, 5) > 0.5 ? 1 : -1) * (8 + h2(r, 6) * 30);
-    const s = 0.3 + h2(r, 7) * 0.5;
-    const y0 = hNoise(rx + travel) * ridgeH(rz) - 0.02;
-    const apex = [rx, y0 + s, rz], q = h2(r, 8) * TAU;
-    const p1 = [rx + Math.cos(q) * s * 1.3, y0, rz + Math.sin(q) * s];
-    const p2 = [rx + Math.cos(q + 2.4) * s * 1.2, y0, rz + Math.sin(q + 2.4) * s];
-    const p3 = [rx + Math.cos(q + 4.4) * s * 1.1, y0, rz + Math.sin(q + 4.4) * s];
-    tri3(apex, p1, p2, [150, 140, 132]); tri3(apex, p2, p3, [132, 124, 118]);
-    tri3(apex, p3, p1, [140, 132, 124]); tri3(p1, p3, p2, [110, 104, 98]);
+  for (let r = 0; r < ROCKS; r++) {                   // rock wedges
+    const g = e.rocks[r];
+    const rx = slot(h1(r + 17) * L);
+    const y0 = hNoise(rx + travel) * ridgeH(g.z) - 0.02;
+    emitCached(g.tris, rx, y0);
   }
 }
 
@@ -949,6 +1033,12 @@ window.__horseTest = {
   // torso silhouette row (#2224): [xTail, xFront, topY] — adjacent boxes must
   // overlap (no daylight step) and the top line must climb/step gently
   torsoProfile() { return TORSO.slice(); },
+  // rim-row law (#2231): both mesa rows' anchors at travel m — parallax rates,
+  // seam-commensuration and row separation are all proven from this pure hook
+  mesas(m) { return mesaAnchors(m); },
+  // scene profile + transform-cache counters (#2231): rebuilds must stay flat
+  // once the cache is warm (only resize/DPR may rebuild), while frames advance
+  sceneStats() { return { near: MESA_NEAR, far: MESA_FAR, kNear: K_NEAR, kFar: K_FAR, sage: SAGE, rocks: ROCKS, rebuilds: SC_CACHE.rebuilds, lite }; },
   unlock() { ensureAudio(); },
   audioOn() { return audioOn; },
   setAudio(v) { audioOn = !!v; if (master) master.gain.value = audioOn ? 0.5 : 0; },
@@ -975,7 +1065,7 @@ requestAnimationFrame(frame);
 <script>
 window.DEMO_CREDITS = {
   name: 'STRIDELINE', accent: '#e0a45c',
-  issues: [2147, 2220, 2224], span: '~3 h', shipped: '2026-11-12',
+  issues: [2147, 2220, 2224, 2231], span: '~3 h', shipped: '2026-11-12',
   assist: 'solo', note: 'goal only — own renderer, own gait, no Three.js',
 };
 </script>
