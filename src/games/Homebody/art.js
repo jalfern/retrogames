@@ -11,6 +11,7 @@ import {
     tileX, tileY, CATALOG, DEF, NEEDS, WIN_CONTENT, RED_AT, EXT_ROOM,
     CAT_TABS, tabCards,   // #2222: the catalog's category shelves
     SPEED_MULT,   // #2227: the speed dial
+    petMood, PET_FEED_T,   // #2200: Miso's mood row + the lingering bowl
 } from './sim.js'
 
 const P = {
@@ -545,6 +546,19 @@ export function drawPet(ctx, p, t) {
         for (const [px, py] of [[-5, 0], [0, -2], [5, 0]]) ctx.fillRect(x + px - 1, y - 20 - (1 - k) * 8 + py, 2, 2)
         ctx.globalAlpha = 1
     }
+    if (p.feedT > 0) {
+        // #2200: the kibble moment — a shallow bowl at the eat spot with three
+        // crumbs that get eaten down as the seconds run, then the lot is clean.
+        const k = p.feedT / PET_FEED_T
+        ctx.globalAlpha = Math.min(1, p.feedT)
+        ctx.fillStyle = '#4a3220'
+        ctx.beginPath(); ctx.ellipse(x, y + 7, 5.5, 2.4, 0, 0, 7); ctx.fill()
+        ctx.fillStyle = '#8a5626'
+        ctx.beginPath(); ctx.ellipse(x, y + 6.2, 4.2, 1.6, 0, 0, 7); ctx.fill()
+        ctx.fillStyle = '#5b3a1e'
+        for (let i = 0; i < Math.ceil(k * 3); i++) ctx.fillRect(x - 3 + i * 2.6, y + 5.4, 1.6, 1.4)
+        ctx.globalAlpha = 1
+    }
     if (p.asleep && Math.floor(t) % 2 === 0) {
         ctx.fillStyle = '#cfe0ff'; ctx.font = 'bold 7px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'
         ctx.fillText('z', x + 8, y - 14 - (t % 1) * 3)
@@ -727,6 +741,19 @@ export function drawPanel(ctx, s, t) {
     bondRow(ctx, PANEL_X + 12, by + 40, 'flower', '#a3579b', relLevel(s.rel.ivy), 'IVY')
     // #2203: the child — a gold star once Pip is home
     if (s.kid) bondRow(ctx, PANEL_X + 12, by + 54, 'star', '#ffd24a', relLevel(s.rel.kid), 'PIP')
+    // #2200: the cat — Miso gets her own row, but by cat law: a MOOD, not a
+    // ladder. Four pips carry the average of her three needs; the row alarms
+    // red-blink at the same RED_AT the need bars use, so a hungry tabby is
+    // legible from across the room (the original's pet panel told you this).
+    const mood = petMood(s)
+    if (mood !== null) {
+        const py = by + (s.kid ? 68 : 54)
+        bondRow(ctx, PANEL_X + 12, py, 'paw', '#d98e4a', Math.round(mood * 4), 'MISO')
+        if (mood <= RED_AT && Math.floor(t * 3) % 2 === 0) {
+            ctx.strokeStyle = '#ff6a5c'; ctx.lineWidth = 1
+            ctx.strokeRect(PANEL_X + 12 + 13.5, py + 0.5, 4 * 8, 7)
+        }
+    }
     if (relLevel(s.rel.house) === 3 && Math.floor(t * 2.5) % 2 === 0) {
         ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1
         ctx.strokeRect(PANEL_X + 12 + 3 * 8 + 0.5, by + 12 + 0.5, 5, 5)
@@ -835,6 +862,11 @@ function bondRow(ctx, x, y, glyph, col, lv, label) {
     } else if (glyph === 'star') {
         // #2203: Pip's BONDS glyph — a five-point gold star
         star(ctx, x + 5.5, y + 3, 4.4, col)
+    } else if (glyph === 'paw') {
+        // #2200: Miso's BONDS glyph — three toes over a broad pad
+        ctx.fillStyle = col
+        for (const [dx, dy] of [[-3, 0.4], [0, -1], [3, 0.4]]) { ctx.beginPath(); ctx.arc(x + 5.5 + dx, y + 1.2 + dy, 1.15, 0, 7); ctx.fill() }
+        ctx.beginPath(); ctx.ellipse(x + 5.5, y + 4.6, 2.7, 2.1, 0, 0, 7); ctx.fill()
     } else {
         ctx.fillStyle = col
         for (const [dx, dy] of [[0, -2.3], [2.3, 0], [0, 2.3], [-2.3, 0]]) { ctx.beginPath(); ctx.arc(x + 5 + dx, y + 3 + dy, 1.9, 0, 7); ctx.fill() }

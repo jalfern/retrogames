@@ -1,77 +1,74 @@
-# STATE — session 269 (2026-11-14, slot a)
+# STATE — session 271 (2026-11-14, slot b)
 
 ## Playable now / what shipped
-- **HOMEBODY keeps a paper route** (merge `69570c9`, PR #2241, closes #2238):
-  The Sims (PC 2000) morning law — every day 06:30–08:00 seeded, the boy
-  sweeps past and today's edition lands on the step (10,5) with a flutter +
-  `THE PAPER BOY SWEEPS PAST`. Tap → resident walks down, FUN +0.24, dur 2.8,
-  paper consumed, content pays (quality-scaled). One paper a day — **the day
-  stamp is the law** (`paperDay === day`; a presence-only check let same-day
-  re-delivery ship in smoke). Midnight rots yesterday's; furniture on the step
-  tucks it (no dangling `s.paper`); blocked step falls back to its free edge
-  (retries until 10:00). One owner-free object: `DEF.paper`, never a
-  `CATALOG` card — `need:'fun'`+`solid:false` makes `tryUse`/tap/BFS/
-  `keepsOpen`/`finishUse` take it whole; sale refuses; bot reads it (attract
-  teaches); marquee line; `paperDay` rides `stateHash`; F1 DROP PAPER cheat.
-  **Bonus fix (pre-existing #2135 landmine):** `stepParticles` faded the banner
-  with `ft`, a frame-scoped `const` — ANY say-banner threw every frame and
-  froze the canvas behind an undecaying banner. Now takes the frame dt;
-  Homebody `index.jsx` is finally lint-clean.
-  Proof: peoplecheck **386/386** (+27 gates/pins; mutants twice: day-stamp
-  neutered → 2 red, paperDay-mix dropped → 2 red, restored), homebodydrive
-  **63/63** zero page errors w/ real tap, contractcheck 724/724, lint gates +
-  build green. Prod-verified: served entry `index-BUSHZl4O.js` → route chunk
-  `index-yOnHXeeQ.js` carries the banner string.
-- **TARGET #1711 was REFUSED at claim** (slot b held, 51 min old — newest-wins,
-  yielded per #1258). Normal ladder then. #2243 (`054dcf2`, another lane) has
-  since shipped the audit's relay items 1–2 (no-fallback write door + inline
-  write key) — #1711's remainder is Jon-side (fresh takes, #2218 key file,
-  SESSION_WRITE_KEY secret deploy).
+- **TIDY BOT — GLIDE TO IT** (merge `657a94e`, PR #2251, closes #2250,
+  never-dry weakestStage pick; live at /retrogames/tidy-bot).
+  Tap/click a floor tile and the bot BFS-routes itself there — the roads the
+  attract brain always had are the players' now.
+  - `routeDir(gs,tx,ty)` exported from `sim.js`: pure (reads state, answers
+    next press); shell merges into pads → seed+pads determinism byte-identical
+    (all 4 win seeds still 8322 ticks, same final hashes as pre-change).
+  - Tap snaps ≤3 cells to road; deeper taps refuse `NO WAY` + refusal voice —
+    never a wedge. Cancel law: any arrow/pad/verb, new tap, WATCH, level
+    change, reset, finish — the human is the driver.
+  - Pulsing teal goal ring, arrival bell, attract marquee line, footer hint.
+  - Autopilot & glide share one steering brain (`steerTo` extracted;
+    byte-identical behavior).
+  - Proof: `tidycheck` 56/56 (43 Node + 13 browser, was 44) — new GLIDE
+    section incl. real-mouse gates (tap glides cross-room to 8.7px off the
+    mark, real ArrowUp cancels). `door` mutant reddens exactly the two
+    road-track gates ("never crosses the open door block", "opening the door
+    lengthens the road — 55 shut vs 69 open"). eslint + 3 lint gates + build +
+    `CONTRACT_ONLY=tidy-bot contractcheck` 15/15 green.
+  - Prod verified: entry swapped `lSiKzkMT→BHr21n2w`, TidyBot chunk
+    `index-DCr5JjLS.js` carries the glide code, route 200.
 
 ## Ladder (this session's path)
-- steer/none, next=#1711 refused → game-queue empty → QA-borrow blocked (QA
-  MASTER live, pid 85069) → flagship SPENT (idle.mjs flagshipStage null) →
-  never-dry `weakestStage` = HOMEBODY score 7 (4 QA + 3 unowned gaps).
-  Oldest gap (bonds-line PARTIAL) sanity-skipped per session-268 ruling (all
-  clauses shipped, tail #2209); wing/court tails taken by QA as #2235. Took
-  the day/night clause's missing hourly life → filed #2238 + shipped (#2241).
+- Warden target #2244 claimed first → **REFUSED** (slot a held it, 80 min into
+  the 90-min window; its pushed branch `forge/homebody-meal-bells` is slot a's
+  corpse — resume only after their liveness expires). Normal ladder then:
+  steer none; `next` #1711 Jon-side (see #2218); game-queue empty; QA-borrow
+  blocked (QA MASTER live); flagship stages spent (every flagship gap
+  CLOSED/owned); never-dry `weakestStage` → TIDY BOT score 4 (4 unowned
+  README gaps, 0 QA-naming) → filed #2250, claimed, shipped. Rule 4: game
+  code ✓.
 
 ## BOARD at exit
-- #2238 closed+shipped (auto-closed by PR; labels corrected). #1711 back to
-  `next` (lane:platform, Jon-side remainder — a claim now advances only docs).
-- game-queue EMPTY; no `building`. QA passes on Homebody stay open
-  (#2209/#2200/#2154 landed/#2235); #2223 (PickRush polish feedback).
-- jonq: none open from lane:games. #2218 AWAITING (lane:platform).
-- Nightly green; main-ok at exit. Advisory smokes on #2241 not blocking (rule 3).
+- #2250 shipped+closed (+prod comment); polish pass filed as **#2258**
+  (`feedback`, `lane:qa` — QA's next job on TidyBot).
+- #2244 `building` (slot a, HOMEBODY meal bells — two pushed commits, no PR at
+  last look; if slot a dies, it's the resume-corpse for whoever finds it).
+- #2254 `building-qa` FLOOR BOSS first-time pass; #2247 CLOSED (QA shipped).
+- game-queue EMPTY. #1711 `next`, Jon-side.
+- jonq: #2218 AWAITING (lane:platform, JON_KEY) — nothing from lane:games.
+- Nightly green; `main-ok` clean at exit.
 
 ## Next (slot a or b, in order)
-1. Ladder dry → never-dry again: `weakestStage` — Homebody unowned README
-   gaps now: day/night clause TAIL ("meal bells, garbage day…") and
-   needs-panel per-object queue display; bonds-line stays sanity-skipped.
-   Myst-era titles also carry unowned gaps (score 3–4 band).
-2. #1711: do NOT re-claim from a builder slot — only Jon can move its lines
-   (takes + key deploy). If Jon answers #2218 → platform commands (grade).
+1. Resume check FIRST: #2244's branch `forge/homebody-meal-bells` — if its
+   `FORGE (a):` claim comment is >90 min stale, step 1b resumes it (claim
+   refuses only if slot a is alive).
+2. Else ladder: steer/none → #1711 skip (Jon-side) → game-queue empty →
+   QA-borrow only if no `QA MASTER` live → flagship stages (all four exhausted
+   — go straight to never-dry `weakestStage`; likely candidates: TIDY BOT
+   remaining gaps #2258-adjacent [two-slot carry, aimed retrieve, wash hum],
+   Homebody tails once #2244 releases). Don't duplicate QA #2254/#2258.
 
 ## The session's catches
-- **A merge loop hanging on `null` ≠ CI being slow.** While a PR is
-  CONFLICTING, `static` never starts: `gh pr checks --jq '[0].state'` yields
-  nothing and a `[ "$s" = ... ]` loop idles forever. Guard `// "NONE"` and
-  re-check `mergeable` after force-push; poll it to MERGEABLE before merge.
-- **A lane-mate lands in your files mid-flight.** #2239 (visitor choreography)
-  merged into sim.js while #2241 waited → rebase, keep-both resolutions
-  (watch: a shared trailing `}` closes only one of two add/add blocks), then
-  RE-VERIFY everything — peoplecheck 373→386 green proved the semantic merge.
-- **Cross-feature rng shifts move fixed mutation values.** schedulePaper's
-  draw at move-in put seed 9's cat cd on exactly 3.3 — peoplecheck's own
-  fixed-mutation hash gate went false-red. Mutation values must be RELATIVE.
-- **A pre-existing landmine arms when a new feature trips it first.** The
-  `ft` TDZ froze every banner's frames on main for weeks; only drive-visible
-  when some say() lived long enough to scan — the paper banner tripped it.
-  Fix it in the PR that finds it; drives that read pixels are the proof.
+- **Measure a mutant claim, don't assume it.** "Door blocks the straight line"
+  did NOT mean the detour gate reddened under `door`: BFS tiebreaks equal-length
+  paths around the obstacle anyway. The honest gate pair compares ROUTE LENGTH
+  (55 shut vs 69 open) — that moved; pierce-via-tiebreak never did.
+- **Lazy chunks + machine-specific hashes.** Game strings never live in the
+  entry bundle, and every chunk hash differs between local and CI builds —
+  prod verification = poll for the entry-hash swap, then grep chunk-map content.
+- **Vercel target_url is auth-walled** — verify through the jalfern alias
+  (308 apex→www: always `curl -L`).
+- **A reported write is not a written file**: a /tmp `--body-file` vanished
+  between write and `gh`; `ls` before shipping steps that read it.
 
 ## Hygiene at exit
-- Dev server :5173 (mine) STOPPED; no other lane's port touched.
-- Worktree `~/Dev/retrogames-forge-homebody-paper` — branch merged/deleted by
-  squash, re-detached at origin/main (054dcf2). Tidy-candidate next session.
-- STATE committed to main legitimately (#2241 merged this session) + parked to
-  slot-a path. No open jonq questions from this lane.
+- Dev server :5178 (mine) STOPPED; no other lane's port touched.
+- Worktree `~/Dev/retrogames-forge-tidybot-glide` re-detached at origin/main
+  (`657a94e`). Tidy-candidate.
+- STATE.md committed to main (game merged this session — rule 9 satisfied);
+  parked at slot-b path + shared path.

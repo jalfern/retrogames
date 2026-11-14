@@ -154,8 +154,11 @@ function runVuMeter(stream, ms = 1200) {
 // analyser is a fan-out sink — it consumes nothing, records nothing and plays
 // nothing, so the take bytes are untouched (claptest relies on that). ClapTest
 // renders it as its live mic meter so a too-quiet slap is obvious mid-test.
+// #2247: the handle also carries `ctx` — this context is fed by the recorder's
+// own stream for the whole take, so it doubles as the take's delivered-samples
+// clock (the tick trace stamps from it); null when the tap degrades to a no-op.
 function liveLevelTap(stream) {
-    const noop = { stop() {} }
+    const noop = { stop() {}, ctx: null }
     if (typeof window === 'undefined' || typeof requestAnimationFrame === 'undefined') return noop
     const AC = typeof AudioContext !== 'undefined' ? AudioContext : (globalThis.webkitAudioContext || null)
     if (!AC) return noop
@@ -188,6 +191,7 @@ function liveLevelTap(stream) {
                 window.__voiceLevel = 0
                 try { src.disconnect(); an.disconnect(); ctx.close() } catch { /* gone */ }
             },
+            ctx, // #2247: the take's device clock (see createVoiceSession)
         }
     } catch { try { ctx.close() } catch { /* gone */ } return noop }
 }
@@ -354,7 +358,34 @@ export function createVoiceSession(opts = {}) {
     const ask = typeof opts.ask === 'function' ? opts.ask : askVoiceConsent
     const onData = typeof opts.onData === 'function' ? opts.onData : null
     const bitrate = opts.bitrate || 24000
-    const clock = createVoiceClock({ now })
+    // #2247: stamp the tick trace from AUDIO-CONTENT time, not the wall clock.
+    // On a contended box the audio pipeline and the main thread pace apart (the
+    // sim tick staircases — stall -> catch-up burst — while delivered samples
+    // stall or starve on the audio threads), so wall stamps and byte positions
+    // drift and `tickToMs` chords up to ±50 ms mid-window between honest
+    // 1-per-second samples (#2136 residual b — denser sampling cannot fix a
+    // pacing mismatch, verified). The recorder's own stream lives in a capture
+    // AudioContext (the #2205 live tap): its currentTime is the delivered-
+    // samples clock — the same origin the encoded bytes accrue on — so once it
+    // runs, the trace continues on it and tick->ms and byte->ms share ONE
+    // origin by construction. Continuous hybrid: wall until the first running
+    // read, device pace after (anchored once — no jump, no mid-take origin
+    // swap). No AudioContext (old browsers, Node checks) or never-running
+    // context = every stamp is wall, exactly the pre-#2247 behavior.
+    // voiceDrift keeps its meaning: the device clock runs at realtime rate, so
+    // trace-vs-tick lag is still world-vs-realtime.
+    let clockCtx = null
+    let contentBase = null // { wall, content } captured at the first running read
+    const hybridNow = () => {
+        const wall = now()
+        if (clockCtx && clockCtx.state === 'running') {
+            const content = clockCtx.currentTime * 1000
+            if (!contentBase) contentBase = { wall, content }
+            return contentBase.wall + (content - contentBase.content)
+        }
+        return wall
+    }
+    const clock = createVoiceClock({ now: hybridNow })
     const consent = { consent: false, headset: false, reason: 'unasked' }
     const reg = { get phase() { return phase } } // badge refcount view of this session
     let phase = 'asking' // asking | recording | declined | failed | done
@@ -405,12 +436,18 @@ export function createVoiceSession(opts = {}) {
                 }
             }
             clock.markStart()
+            // #2136: the clock's ABSOLUTE zero, DEV-visible. The clap driver
+            // aims presses against the same origin the stored clock will use;
+            // aiming at mic-creation instead adds a recorder-open gap (tens of
+            // ms, load-dependent) to every offset.
+            if (import.meta.env?.DEV && typeof window !== 'undefined') window.__markStartWall = Date.now() // ?. keeps it Node-import-safe
             startMs = now()
             rec.start(1000)
             phase = 'recording'; dbg('mic-open')
             liveSessions.add(reg); syncMicBadge()
             runVuMeter(s) // #1257: prove this mic hears something, right now
             levelTap = liveLevelTap(s) // #2205: keep a live level visible for the whole take
+            clockCtx = levelTap.ctx || null // #2247: the take's device clock (null -> wall)
             return null
         }).catch(() => { phase = 'failed'; consent.consent = false; consent.reason = 'mic-denied'; liveSessions.add(reg); syncMicBadge(); dbg('mic-denied'); return null })
     })
@@ -422,10 +459,12 @@ export function createVoiceSession(opts = {}) {
         ready,
         // call for every simulated tick; samples the tick->ms trace while live
         onTick(t) { if (phase === 'recording') clock.onTick(t) },
-        // live-stream helpers (guest side): wall ms since the mic opened, and
+        // live-stream helpers (guest side): ms since the mic opened on the
+        // trace's own clock (#2247: content-paced once the capture context
+        // runs, so a guest's audio and its clock stamps share one origin), and
         // the clock samples produced since the last drain (send each exactly
         // once, in order).
-        msNow() { return phase === 'recording' ? Math.round(now() - startMs) : null },
+        msNow() { return phase === 'recording' ? Math.round(hybridNow() - startMs) : null },
         drainClock() {
             const s = clock.samples()
             const out = s.slice(clockCursor)
@@ -442,11 +481,12 @@ export function createVoiceSession(opts = {}) {
             phase = 'done'
             return new Promise((resolve) => {
                 const settle = () => {
-                    if (levelTap) { levelTap.stop(); levelTap = null } // #2205: meter dies with the take
-                    if (stream) stream.getTracks().forEach((t) => { try { t.stop() } catch { /* gone */ } })
-                    stream = null
+                    // #2247: read the trace and the length BEFORE the capture
+                    // context closes — after close() the hybrid would fall back
+                    // to wall and the final stamps would jump off the content
+                    // line the earlier ones sit on.
                     const samples = clock.finish()
-                    // #2058: stamp the wall length HERE, after the encoder's
+                    // #2058: stamp the audio length HERE, after the encoder's
                     // final chunk has landed — not when stop() was called.
                     // iPhone Safari's flush latency (stop -> ondataavailable ->
                     // onstop) is hundreds of ms; stamping before it made every
@@ -454,7 +494,11 @@ export function createVoiceSession(opts = {}) {
                     // clock trace ends at (audioLonger:false on all three of
                     // Jon's first takes). The bytes settle covers are the
                     // bytes the track stores, so this is the honest length.
-                    const ms = Math.round(now() - startMs)
+                    const ms = Math.round(hybridNow() - startMs)
+                    if (levelTap) { levelTap.stop(); levelTap = null } // #2205: meter dies with the take
+                    if (stream) stream.getTracks().forEach((t) => { try { t.stop() } catch { /* gone */ } })
+                    stream = null
+                    clockCtx = null // #2247: the take's device clock is gone with it
                     const b64From = (text) => ({
                         slots, consent: true, headset: consent.headset,
                         mime: mime || rec.mimeType || 'audio/webm',

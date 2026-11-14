@@ -14,6 +14,20 @@ didn't say MODERN.
   contract + DEV hooks. `screen = world` (no camera) is the renderer's only
   spatial contract — tidycheck samples canvas pixels at sim coords.
 
+## Glide routing (#2250) — the BFS is the players' too
+- Tap/click a floor tile during play and the bot routes itself there on the
+  same 8px-grid BFS the autopilot uses. `routeDir(gs, tx, ty)` is pure — it
+  reads the state and answers with the next press; the shell merges that into
+  pads, so seed + pads determinism and every hash gate are untouched.
+- The tapped point snaps to the nearest walkable cell (≤3 cells); anything
+  deeper is refused with `NO WAY` — a tap is never a wedge.
+- The roads TRACK the doors: `walkBit` re-keys per door state, so a route
+  computed at the sink re-plans the instant the rack slides out mid-walk.
+- Cancel law (the human is the driver): any keyboard/arrow direction, any A/B
+  press, a new tap, WATCH, level change, reset or finish ends the glide.
+- Autopilot and glide share one steering brain (`steerTo`): collision-aware
+  axis choice, escape step, arrive radius 3.5px.
+
 ## Core rules (what the harness proves)
 - Containers really open: the washer rack / fridge door slide (`door` 0→1,
   ~22 ticks) and BLOCK the floor while open. A door that finds the robot on
@@ -48,7 +62,7 @@ didn't say MODERN.
 
 ## Verify
 ```
-npm run tidycheck            # 35 Node gates + 9 browser gates (needs npm run dev)
+npm run tidycheck            # 43 Node gates + 13 browser gates (needs npm run dev)
 npm run tidycheck -- --node  # Node-only
 npm run tidycheck -- --mutate   # door mutant (TIDY_MUT=door|glass|run|tidy)
 CONTRACT_ONLY=tidy-bot npm run contractcheck
@@ -58,10 +72,13 @@ Mutants: `door` (open doors stop blocking), `glass` (plates stop shattering),
 NAMED gates red; restore after.
 
 ## Honest gaps
-- No pathfinding improvement for human players — the BFS lives only in the
-  autopilot; a player can walk into the open door and must step around.
+- **CLOSED by #2250**: GLIDE TO IT — tap the floor and the bot BFS-routes
+  there (`routeDir`), re-planning per door state, refused honestly when the
+  spot has no road. The human is always the driver (any key/verb/tap cancels).
 - Single task at a time (one held item); the real BEHAVIOR/Plaicraft robots
   juggle trays — a two-slot carry + tray physics would be the obvious stage 2.
 - Retrieval takes the last-wrong item, not an aimed pick from the rack.
 - No looping wash-cycle hum (START fires a one-shot sweep); attract restarts
   the demo game rather than looping level 2+.
+- Glide walks but never acts — tap-to-open/place would collapse the chore loop
+  into single taps; held back until the verbs feel as good one-handed.

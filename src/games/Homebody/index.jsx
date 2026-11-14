@@ -266,6 +266,12 @@ const HomebodyGame = () => {
                     case 'pet-eat':   // tiny kibble crunches
                         audioController.playTone(660, 0.04, 'square', 0.05)
                         setTimeout(() => audioController.playTone(520, 0.05, 'square', 0.05), 70)
+                        if (live) burst(e.x, e.y + 5, 3, '#8a5626', 1.2)   // #2200: the crumbs fly
+                        break
+                    case 'cat-meet':   // #2200: a curious hello — rising chirp, pink dot
+                        audioController.playSweep(700, 1050, 0.1, 'triangle', 0.04)
+                        setTimeout(() => audioController.playTone(1245, 0.06, 'sine', 0.03), 110)
+                        if (live) burst(e.x, e.y - 6, 3, '#ff9fc4', 1.6)
                         break
                     case 'kid':   // #2203: the agency bell — a bright rising triad and a gold burst at the gate
                         audioController.playTone(659, 0.07, 'triangle', 0.05)

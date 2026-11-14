@@ -88,6 +88,18 @@ const SLEEP_LINES = [
     'Miso curls on the warm floorboards, a comma of cat.',
     'The house dims; Miso pours herself into a sleeping loaf.',
 ]
+// #2200 polish: kibble must be SEEN, and the neighbours must notice the cat
+// they keep walking past. One tan bowl at the eat spot, and a greeting law:
+// a hanging visitor within CAT_MEET_DIST of Miso greets her once per visit —
+// a tiny bond bump, and the meet line warms with the ladder.
+export const PET_FEED_T = 2.2        // world seconds the bowl + crumbs linger
+export const CAT_MEET_DIST = 2      // Manhattan reach of the greeting
+export const CAT_MEET_BOND = 0.5    // a small nod, not a ladder jump
+const CAT_MEET_LINES = [
+    '{n} crouches at the door; Miso sizes her up from the hall, tail high.',
+    '{n} and Miso trade a proper greeting — a sniff, a slow blink.',
+    'Miso weaves straight into {n}\u2019s ankles — the household votes her in.',
+]
 
 // #2203: Pip — the adopted child. The kids half of the companions tail: the
 // agency worker hands the child over at the gate, and Pip lives by the lot's
@@ -1129,6 +1141,7 @@ function updateVisitor(s, dt) {
                     name: 'Fern', r: 12, c: 5, x: tileX(5) + TILE / 2, y: tileY(12) + TILE / 2,
                     path, state: 'enter', t: 0, hue: '#4fae5f', face: 1, walkPhase: 0, chatT: 0,
                     hangUntil: 45 + s.rng() * 45 + 6 * relLevel(s.rel.fern),   // #1817: friends linger
+                    metCat: false,   // #2200: the greeting re-arms with every visit
                 }
                 s.events.push({ t: 'visit', name: 'Fern' })
                 think(s, 'A neighbour rings the bell. Fern drifts in through the gate.')
@@ -1157,6 +1170,7 @@ function updateVisitor(s, dt) {
                 s.events.push({ t: 'chat', k: 'fern', x: (v.x + partner.x) / 2, y: (v.y + partner.y) / 2 })   // #2135: the bubble rides over the pair
             }
         }
+        meetCat(s, v, 'fern')   // #2200: the cat on the lot is not furniture
         if (s.hour > 19 || v.t > v.hangUntil) { v.state = 'leaving'; v.path = bfsPath(s, { r: v.r, c: v.c }, [{ r: 12, c: 5 }]) }
     } else if (v.state === 'leaving' && !v.path) {
         s.visitor = null
@@ -1182,6 +1196,21 @@ function partnerNear(s, v) {
     return false
 }
 
+// #2200: the greeting law — a hanging visitor who stands within the cat's
+// reach says hello to the cat ONCE per visit: a tiny bond bump (the ladder
+// still climbs by talking, this is a nod), a thought line that warms with the
+// level, and an event the shell voices. No rng — every seed stays exact.
+function meetCat(s, v, key) {
+    const p = s.pet
+    if (!p || v.metCat) return
+    if (Math.abs(v.r - p.r) + Math.abs(v.c - p.c) > CAT_MEET_DIST) return
+    v.metCat = true
+    const lv = Math.min(2, relLevel(s.rel[key]))
+    relAdd(s, key, CAT_MEET_BOND)
+    s.events.push({ t: 'cat-meet', name: v.name, x: (v.x + p.x) / 2, y: (v.y + p.y) / 2 })
+    think(s, CAT_MEET_LINES[lv].replace('{n}', v.name))
+}
+
 // ------------------------------------------------------------- ivy (#2143) ---
 // The second neighbour, on her own clock. Fern is untouched — both may share
 // the lot. Ivy enters through the gate toward the kitchen (she shops for a
@@ -1203,7 +1232,7 @@ function updateIvy(s, dt) {
                     name: 'Ivy', r: 12, c: 5, x: tileX(5) + TILE / 2, y: tileY(12) + TILE / 2,
                     path, state: 'enter', t: 0, hue: IVY_HUE, face: 1, walkPhase: 0, chatT: 0,
                     hangUntil: 40 + s.rng() * 40 + 8 * lv,   // friends linger — harder per level than Fern
-                    gift,
+                    gift, metCat: false,   // #2200: the greeting re-arms with every visit
                 }
                 s.events.push({ t: 'visit', name: 'Ivy' })
                 think(s, gift
@@ -1245,6 +1274,7 @@ function updateIvy(s, dt) {
                 s.events.push({ t: 'chat', k: 'ivy', x: (v.x + partner.x) / 2, y: (v.y + partner.y) / 2 })   // #2135
             }
         }
+        meetCat(s, v, 'ivy')   // #2200: the gardener has a favourite ankle
         if (s.hour > 19 || v.t > v.hangUntil) { v.state = 'leaving'; v.path = bfsPath(s, { r: v.r, c: v.c }, [{ r: 12, c: 5 }]) }
     } else if (v.state === 'leaving' && !v.path) {
         s.ivy = null
@@ -1293,6 +1323,15 @@ export function adoptOk(s) {
     return !!dest && walkable(s, 12, 5) && !!bfsPath(s, { r: 12, c: 5 }, [dest])
 }
 
+// #2200: the panel's paw row reads her MOOD, not a ladder — the average of
+// the three cat needs, 0..1. Pure, so peoplecheck can pin it; art maps it to
+// four pips and the red alarm.
+export function petMood(s) {
+    const p = s.pet
+    if (!p) return null
+    return Math.max(0, Math.min(1, (p.needs.hunger + p.needs.fun + p.needs.energy) / 3))
+}
+
 export function adoptPet(s) {
     if (!adoptOk(s)) return false
     s.money -= PET.price
@@ -1301,7 +1340,7 @@ export function adoptPet(s) {
         name: PET.name, r: 12, c: 5, x: tileX(5) + TILE / 2, y: tileY(12) + TILE / 2,
         path: bfsPath(s, { r: 12, c: 5 }, [dest]), state: 'enter', t: 0, face: 1, walkPhase: 0,
         needs: { hunger: 0.8, fun: 0.75, energy: 0.85 },
-        asleep: false, cd: 0, purrT: 0, wanderT: 2, food: false, bedT: 0, stepDist: 0,
+        asleep: false, cd: 0, purrT: 0, wanderT: 2, food: false, bedT: 0, stepDist: 0, feedT: 0,
     }
     s.events.push({ t: 'pet', name: PET.name, x: s.pet.x, y: s.pet.y })
     think(s, 'The carrier clicks open at the gate — Miso stretches, claims the lot, and trots inside.')
@@ -1314,6 +1353,7 @@ function updatePet(s, dt) {
     p.t += dt
     if (p.cd > 0) p.cd = Math.max(0, p.cd - dt)
     if (p.purrT > 0) p.purrT = Math.max(0, p.purrT - dt)
+    if (p.feedT > 0) p.feedT = Math.max(0, p.feedT - dt)   // #2200: the bowl fades on the world clock
     const dh = dt / HOUR_SEC
     p.needs.hunger = Math.max(0, p.needs.hunger - PET_DECAY.hunger * dh)
     p.needs.fun = Math.max(0, p.needs.fun - PET_DECAY.fun * dh * (p.asleep ? 0.3 : 1))
@@ -1366,6 +1406,7 @@ function updatePet(s, dt) {
         p.food = false
         p.needs.hunger = Math.min(1, p.needs.hunger + 0.55)
         p.state = 'roam'
+        p.feedT = PET_FEED_T   // #2200: the kibble moment paints a bowl + crumbs
         s.events.push({ t: 'pet-eat', name: p.name, x: p.x, y: p.y })
         think(s, 'Miso works the fridge latch like a puzzle toy. Kibble: acquired.')
     }

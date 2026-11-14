@@ -100,7 +100,26 @@ export function armLiveCapture(spec) {
     // tick, mirroring the step() bank byte-for-byte so a live capture is the
     // same file the harness would record. rawsFor reads the live device; a
     // keyboard/dpad seat has no analog device so its raw mirrors the pad.
-    liveFeed = (pads) => { if (recorder) { recorder.addTick(pads, rawsFor(pads), hashNow(), pingsNow()); if (voice) voice.onTick(recorder.ticks) } }
+    let prevBankA = false
+    liveFeed = (pads) => {
+        if (recorder) {
+            recorder.addTick(pads, rawsFor(pads), hashNow(), pingsNow()); if (voice) voice.onTick(recorder.ticks)
+            // #2136: stamp the instant THIS tick banked, and LATCH rising `a`
+            // edges, by the game itself. The clap driver aims presses against
+            // landing time, not dispatch time, and needs to see when an input
+            // actually reached the bank on a contended box (CDP dispatch can
+            // lag ~100 ms behind the wall). Edges, not state: a one-tick pulse
+            // can be buried by later same-frame ticks before any poll lands.
+            // DEV-only so production never pays the per-tick writes.
+            if (import.meta.env?.DEV && typeof window !== 'undefined') { // ?. keeps it Node-import-safe (recordcheck)
+                const p0 = (pads && pads[0]) || {}
+                const aNow = !!p0.a
+                window.__liveBank = { tick: recorder.ticks, a: aNow, wall: Date.now() }
+                if (aNow && !prevBankA) window.__aEdge = { tick: recorder.ticks, wall: Date.now() }
+                prevBankA = aNow
+            }
+        }
+    }
     liveCmdFeed = (e) => { if (recorder) recorder.addVoiceCmd(e) }
     armed = { spec, method, BUILD, seatCount, rawsFor, hashNow, pingsNow }
     return true
