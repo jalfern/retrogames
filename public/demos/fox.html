@@ -717,22 +717,25 @@ requestAnimationFrame(frame);
 
 /* ---------------- DEV hook ---------------- */
 function gaitScan() {
-  let order = '';
-  const prevS = {};
-  let suspSteps = 0, total = 0;
-  const STEPS = 2400;
+  let order = ''
+  const prevS = {}
+  let suspSteps = 0, total = 0
+  let times = null
+  const STEPS = 2400
+  const cycle = []
   for (let i = 0; i <= STEPS * 2; i++) {
-    const p = i / STEPS;
-    let allAir = true;
+    const p = i / STEPS
+    let allAir = true
     for (const name of NAMES) {
-      const st = legPhase(name, wrap1(p)).stance;
-      if (st && !prevS[name] && i >= STEPS) order += name;
-      prevS[name] = st;
-      if (st) allAir = false;
+      const st = legPhase(name, wrap1(p)).stance
+      if (st && !prevS[name] && i >= STEPS) { order += name; cycle.push(p - 1) }
+      prevS[name] = st
+      if (st) allAir = false
     }
     if (i >= STEPS && i < STEPS * 2) { total++; if (allAir) suspSteps++; }
   }
-  return { order: order.slice(0, 8), susp: suspSteps / total };
+  if (cycle.length >= 4) times = cycle.slice(0, 4).map(v => Math.round(v * 1000) / 1000)
+  return { order: order.slice(0, 8), susp: suspSteps / total, times }
 }
 function slipAudit() {
   let worst = 0, worstLeg = '';

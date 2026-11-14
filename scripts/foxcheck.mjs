@@ -22,10 +22,10 @@
 //  1. poseAt stance `wx = anchorX(name, n)` -> `wx = anchorX(name, n) + 0.02`
 //     (the paw rides with the body): EXACTLY the slip gate goes RED (20 mm),
 //     everything else green — the stance lock is load-bearing.
-//  2. LEGS LF `c: 0.58` -> `c: 0.30` (fore pair lands inside the hind pair's
-//     window): the footfall-order gate goes RED (saw LHRHLFRF -> wrong) and
-//     the chord gate with it (a front paw asked to reach a stride-window it
-//     no longer owns).
+//  2. LEGS LF `c: 0.58` -> `c: 0.30` (fore paw lands right behind the hind
+//     pair): EXACTLY the new rotary-timing-signature gate goes RED — the name
+//     order is unchanged, which is precisely why the gap pattern is gated and
+//     not just the letter order (learning banked from this run).
 //  3. flex amplitude `0.050` -> `0`: EXACTLY the arch gate goes RED (0.000),
 //     24/25 — the cracking back is provably animated, not painted on.
 //
@@ -77,6 +77,15 @@ ok('bright snow fills the lower field', groundLo > 3000, groundLo + ' bright px'
 await page.evaluate(() => { const t = window.__foxTest; t.reset(); })
 const gait = await page.evaluate(() => window.__foxTest.gait())
 ok('rotary footfall order LH·RH·LF·RF (a true fox gallop)', gait.order === 'LHRHLFRF', 'saw ' + (gait.order || 'nothing'))
+{
+  const t = gait.times || []
+  const okTimes = t.length === 4 &&
+    t[1] - t[0] <= 0.25 && t[1] - t[0] >= 0.04 &&   // hind pair lands close, not simultaneous
+    t[2] - t[1] >= 0.30 &&                            // wide gap between hind push and fore landing
+    t[3] - t[2] <= 0.25 && t[3] - t[2] >= 0.04 &&   // fore pair close
+    (1 - t[3]) + t[0] >= 0.15                        // run-through gap before the next stride
+  ok('rotary timing signature: tight pairs, wide inter-pair gap', okTimes, JSON.stringify(t))
+}
 ok('suspension phase 0.25–0.45 of stride', gait.susp > 0.25 && gait.susp < 0.45, 'susp ' + gait.susp.toFixed(3))
 
 const audit = await page.evaluate(() => window.__foxTest.slipAudit())
