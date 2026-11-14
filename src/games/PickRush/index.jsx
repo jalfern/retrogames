@@ -163,6 +163,7 @@ const PickRushGame = () => {
         let contractSeed = 4242
         const parts = []
         const landings = []
+        const waveCues = [] // #2223 wave-cue ledger {name, fam, wi, step, tick} for the gate
         let boost = 0
         let attractAt = 0
         const keys = { left: false, right: false, down: false }
@@ -275,21 +276,28 @@ const PickRushGame = () => {
                     // the line changes character — the cue's VOICE changes with it
                     // (#2214): glass shimmers high, heavies knock low, scrap gets
                     // grit, steady keeps the bright two-note twinkle.
+                    // #2223: the cue's PITCH rides the line position too — each
+                    // later wave in the shift's cycle steps a whole tone up, so
+                    // the number of waves already rung is audible as well as
+                    // visible, and the motif resets when the line wraps.
                     const fam = e.family || 'steady'
+                    const wi = Math.min(2, Math.max(0, e.wi | 0))
+                    const stepHz = Math.pow(2, (wi * 2) / 12)
+                    if (waveCues.length < 24) waveCues.push({ name: e.name, fam, wi, step: Math.round(stepHz * 1000) / 1000, tick: gs.tick })
                     if (fam === 'glass') {
-                        audioController.playTone(1568, 0.05, 'sine', 0.035)
-                        audioController.playTone(2093, 0.06, 'sine', 0.03, 0.05)
-                        audioController.playTone(2637, 0.09, 'sine', 0.025, 0.1)
+                        audioController.playTone(1568 * stepHz, 0.05, 'sine', 0.035)
+                        audioController.playTone(2093 * stepHz, 0.06, 'sine', 0.03, 0.05)
+                        audioController.playTone(2637 * stepHz, 0.09, 'sine', 0.025, 0.1)
                     } else if (fam === 'heavy') {
-                        audioController.playTone(196, 0.09, 'square', 0.06)
-                        audioController.playTone(147, 0.13, 'square', 0.06, 0.09)
+                        audioController.playTone(196 * stepHz, 0.09, 'square', 0.06)
+                        audioController.playTone(147 * stepHz, 0.13, 'square', 0.06, 0.09)
                         audioController.playNoise(0.05, 0.04)
                     } else if (fam === 'grim') {
                         audioController.playNoise(0.06, 0.045)
-                        audioController.playSweep(320, 480, 0.08, 'sawtooth', 0.045, null, 0.07)
+                        audioController.playSweep(320 * stepHz, 480 * stepHz, 0.08, 'sawtooth', 0.045, null, 0.07)
                     } else {
-                        audioController.playTone(784, 0.05, 'triangle', 0.04)
-                        audioController.playTone(1175, 0.07, 'triangle', 0.035, 0.06)
+                        audioController.playTone(784 * stepHz, 0.05, 'triangle', 0.04)
+                        audioController.playTone(1175 * stepHz, 0.07, 'triangle', 0.035, 0.06)
                     }
                 }
                 else if (e.type === 'shift') {
@@ -641,6 +649,26 @@ const PickRushGame = () => {
                 ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 10px monospace'
                 ctx.fillText(`×${gs.combo}`, 92, 22)
             }
+            // wave-progress pips (#2223): one lamp per piece in the wave on the
+            // line — still-coming pieces glow ice-blue, pieces that have ridden
+            // in go dark, so the burst can be counted before it lands. The row
+            // sits on the wall between belt and bins where nothing else paints
+            // (over the belt-leg crossbar), and previews the next wave, full
+            // and lit, through the breather.
+            {
+                const wv = WAVES[Math.min(gs.shift, WAVES.length - 1)][gs.wave.wi]
+                const pipW = wv.kinds.length * 8 - 4
+                const px0 = Math.round(VIEW_W / 2 - pipW / 2)
+                ctx.fillStyle = 'rgba(8,12,18,0.72)'; ctx.fillRect(px0 - 5, 121, pipW + 10, 12)
+                ctx.strokeStyle = 'rgba(96,120,145,0.35)'; ctx.lineWidth = 1
+                ctx.strokeRect(px0 - 4.5, 121.5, pipW + 9, 11)
+                for (let i = 0; i < wv.kinds.length; i++) {
+                    const coming = i >= gs.wave.ki
+                    ctx.fillStyle = coming ? '#7fd4ff' : '#243140'
+                    circle(ctx, px0 + i * 8 + 2, 127, 2.2); ctx.fill()
+                    if (coming) { ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(px0 + i * 8 + 1, 125, 1, 1) }
+                }
+            }
             ctx.textAlign = 'left'
             void musicZone
         }
@@ -781,6 +809,7 @@ const PickRushGame = () => {
             gs = makeGame(seedFromQuery() ?? ((Math.random() * 2 ** 31) | 0), 2)
             parts.length = 0; gs.fx.length = 0; landings.length = 0; boost = 0
             ambFired.length = 0 // #2234 a new contract starts on the quiet early floor
+            waveCues.length = 0 // #2223 the line's rhythm restarts with it
             watchingRef.current = false; setWatching(false) // #1637 a new shift starts in your hands
             setEnd(null)
             setMode('play')
@@ -861,6 +890,8 @@ const PickRushGame = () => {
             fusesLeft: FUSES - gs.warnings,
             beltV: Math.round(1.05 * SHIFTS[Math.min(gs.shift, SHIFTS.length - 1)].speed * 1000) / 1000,
             waveName: WAVES[Math.min(gs.shift, WAVES.length - 1)][gs.wave.wi].name,
+            waveTotal: WAVES[Math.min(gs.shift, WAVES.length - 1)][gs.wave.wi].kinds.length, // #2223 pips
+            waveSpawned: gs.wave.ki,                                                        // #2223 pips dimmed
             ambZone: zoneForShift(gs.shift), // #2234 era the floor sounds like
             pos: Math.round(gs.arms[0].x * 10) / 10,
             clawY: Math.round(gs.arms[0].tip * 10) / 10,
@@ -880,6 +911,7 @@ const PickRushGame = () => {
                 gs = makeGame(contractSeed, players || 1)
                 parts.length = 0
                 landings.length = 0; boost = 0
+                waveCues.length = 0
                 humanSeat2Ref.current = false
                 setEnd(null)
                 setMode('play')
@@ -934,6 +966,8 @@ const PickRushGame = () => {
                 // has fired this run ({cue, tick, shift}). Gates read this.
                 ambience: () => ({ zone: zoneForShift(gs.shift), shift: gs.shift, fired: ambFired.slice() }),
                 ambZones: AMB_ZONES,
+                // #2223 per-wave pitch step: the cue ledger the gate reads
+                waveCues: () => waveCues.slice(),
                 hash: () => gs.hash,
                 canvas: () => canvas,
                 sim: () => gs,
