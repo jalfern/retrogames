@@ -128,6 +128,11 @@ const TidyBotGame = () => {
         // input and seeded determinism is untouched.
         let goto = null
         let gotoLevel = 0
+        // #2258 polish: expanding ring left at the spot a glide completes;
+        // wash-cycle hum ticker; footfall dust bookkeeping.
+        let ringPop = null
+        let humT = 0
+        let lastWalk = 0
 
         const burst = (x, y, n, col, spd = 3, up = -1) => {
             for (let i = 0; i < n; i++) {
@@ -166,6 +171,12 @@ const TidyBotGame = () => {
                 else if (e.type === 'refuse' || e.type === 'clear') audioController.playTone(120, 0.14, 'square', 0.07)
                 else if (e.type === 'retrieve') audioController.playSweep(760, 440, 0.09, 'square', 0.05)
                 else if (e.type === 'throw') audioController.playSweep(300, 620, 0.09, 'sawtooth', 0.04)
+                else if (e.type === 'heavy') {
+                    // both arms just filled — a low grunt-thud under the grab
+                    audioController.playTone(95, 0.12, 'square', 0.08)
+                    audioController.playNoise(0.04, 0.03)
+                    burst(e.x, e.y + 6, 4, '#9a8a6a', 1)
+                }
                 else if (e.type === 'level') {
                     audioController.playTone(523, 0.1, 'square', 0.07)
                     audioController.playTone(659, 0.1, 'square', 0.07, 0.11)
@@ -196,12 +207,43 @@ const TidyBotGame = () => {
 
         const livePad = () => ({ left: keys.left, right: keys.right, up: keys.up, down: keys.down, a: edgeA, b: edgeB })
 
+        // #2258 feel pass, runs every simulated tick in attract AND play:
+        // footfall dust whose color names the floor (sage tile vs oak plank),
+        // doubled when HEAVY, and the looping wash hum with bubble ticks.
+        const feel = () => {
+            if (gs.walk !== lastWalk) {
+                lastWalk = gs.walk
+                if (gs.walk % 6 === 0) {
+                    const heavy = gs.held !== null && gs.held2 !== null && gs.held2 !== undefined
+                    const plank = gs.rx >= TABLE.x - 20 && gs.ry >= 100
+                    const col = heavy ? (plank ? '#8a6a3e' : '#9aa488') : (plank ? '#b9864e' : '#ccd4bd')
+                    for (let i = 0; i < (heavy ? 2 : 1); i++) {
+                        parts.push({ x: gs.rx + (i ? 4 : -4), y: gs.ry + 6.5, vx: (Math.random() - 0.5) * 0.5, vy: -0.2 - Math.random() * (heavy ? 0.5 : 0.25), t: 0, col, g: 0.02 })
+                    }
+                }
+            }
+            if (gs.dwRun) {
+                humT++
+                if (humT % 36 === 0) audioController.playTone(84, 0.34, 'sine', 0.03)
+                if (humT % 97 === 41) audioController.playTone(560 + (humT % 7) * 55, 0.05, 'sine', 0.028)
+            } else humT = 0
+        }
+
         const doSim = () => {
             const sc = screenRef.current
             if (sc === 'attract') {
-                if (demoAt > 120 && gs.end) { gs = makeGame(1337 + (demoAt % 97), 1); demoAt = 0 }
+                if (demoAt > 120 && gs.end) {
+                    // #2258: a cleared shift clocks into the NEXT room instead of
+                    // hard-rebooting — the demo sells "every level messier".
+                    if (gs.end === 'win' && gs.level < LEVELS.length - 1) {
+                        loadLevel(gs, gs.level + 1)
+                        gs.end = null; gs.endReason = ''
+                        banner(LEVELS[gs.level].name, '#9fe8b4')
+                    } else { gs = makeGame(1337 + (demoAt % 97), 1); demoAt = 0 }
+                }
                 step(gs, [autopilot(gs)])
                 handleEvents(gs.ev)
+                feel()
                 demoAt++
                 return
             }
@@ -216,13 +258,21 @@ const TidyBotGame = () => {
                     const r = routeDir(gs, goto.x, goto.y)
                     if (!r.ok || r.arrived) {
                         goto = null
-                        if (r.ok) audioController.playTone(940, 0.05, 'sine', 0.035)
+                        if (r.ok) {
+                            // #2258 the order visibly COMPLETES: ring scale-out,
+                            // sparks, and a rising two-note instead of one blip.
+                            audioController.playTone(940, 0.05, 'sine', 0.035)
+                            audioController.playTone(1410, 0.07, 'sine', 0.03, 0.06)
+                            burst(r.tx, r.ty, 6, '#8fe0ee', 1.4, -0.4)
+                            ringPop = { x: r.tx, y: r.ty, t: 0 }
+                        }
                     } else if (r.dir) pad[r.dir] = true
                 }
             }
             step(gs, [pad])
             edgeA = false; edgeB = false
             handleEvents(gs.ev)
+            feel()
             if (gs.end) finish()
         }
 
@@ -554,6 +604,16 @@ const TidyBotGame = () => {
                 ctx.fillStyle = 'rgba(143,224,238,0.8)'
                 circle(ctx, goto.x, goto.y, 1.1); ctx.fill()
             }
+            // #2258 arrival ring scale-out where the glide completed
+            if (ringPop) {
+                ringPop.t++
+                if (ringPop.t > 14) ringPop = null
+                else {
+                    ctx.strokeStyle = `rgba(143,224,238,${0.85 * (1 - ringPop.t / 14)})`
+                    ctx.lineWidth = 1.4
+                    circle(ctx, ringPop.x, ringPop.y, 3.4 + ringPop.t * 1.1); ctx.stroke()
+                }
+            }
             paintRobot(gs, tick)
             paintParticles()
             ctx.restore()
@@ -653,7 +713,9 @@ const TidyBotGame = () => {
                     audioController.playTone(660, 0.04, 'sine', 0.03)
                 } else {
                     gs.fx.push({ msg: 'NO WAY', x: wx, y: wy, k: 0, t: 'bad' })
-                    audioController.playTone(120, 0.12, 'square', 0.06)
+                    // #2258: NO WAY is Sadder than STAND CLEAR (the 120 square
+                    // blip stays with the door refusal) — a sagging fall.
+                    audioController.playSweep(240, 110, 0.22, 'triangle', 0.06)
                 }
             }
         }

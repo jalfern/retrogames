@@ -276,6 +276,28 @@ section('two-slot carry + tray (#2266)')
     ok(won && twoTicks > 200, `the autopilot double-loads on the road to victory (${twoTicks} two-carry ticks, seed 7)`)
 }
 
+section('HEAVY announces itself (#2258)')
+{
+    // the moment both arms fill, the sim must say HEAVY (fx + event) — and
+    // not one grab earlier.
+    const gs = makeGame(42)
+    gs.items.push(
+        { id: 9201, kind: 'cup', x: gs.rx + 6, y: gs.ry, vx: 0, vy: 0, state: 'loose', cont: null },
+        { id: 9202, kind: 'plate', x: gs.rx + 12, y: gs.ry, vx: 0, vy: 0, state: 'loose', cont: null },
+    )
+    step(gs, [{ a: true }])
+    ok(gs.held === 9201 && !gs.ev.some((e) => e.type === 'heavy') && !gs.fx.some((f) => f.msg === 'HEAVY'),
+        'one arm loaded = no HEAVY (the grunt means BOTH arms)')
+    step(gs, [{ a: true }])
+    ok(gs.held === 9201 && gs.held2 === 9202 && gs.ev.some((e) => e.type === 'heavy') &&
+        gs.fx.some((f) => f.msg === 'HEAVY'),
+        'the load that fills the tray fires HEAVY (event + on-canvas word)')
+    // and the win run still banks it: the autopilot double-loads, so a full
+    // shift must contain the announcement
+    const gsW = playthrough(7)
+    ok(gsW.end === 'win', 'the win proof still wins with HEAVY in the event stream')
+}
+
 section('win + slack')
 {
     for (const seed of [1, 7, 42, 1337]) {

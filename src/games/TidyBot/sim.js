@@ -194,6 +194,12 @@ const takeInto = (gs, it) => {
     it.vx = 0; it.vy = 0
     if (gs.held === null || gs.held === undefined) gs.held = it.id
     else gs.held2 = it.id
+    // HEAVY announces itself (#2258): the moment BOTH arms are full the
+    // bot grunts it — until now the load only showed in walk speed.
+    if (gs.held !== null && gs.held !== undefined && gs.held2 !== null && gs.held2 !== undefined) {
+        say(gs, 'HEAVY', gs.rx, gs.ry - 14, 'jam')
+        gs.ev.push({ type: 'heavy', x: gs.rx, y: gs.ry })
+    }
     gs.ev.push({ type: 'grab', kind: it.kind, x: it.x, y: it.y })
 }
 // the arm that answers the next verb: FIFO front by rule, tray-first under
