@@ -949,6 +949,14 @@ function autonomous(s, p) {
     if (s.demo && !p.workedToday && !p.working && s.day % 2 === p.worksOn && s.hour >= WORK_START && s.hour < WORK_END - 1) {
         if (cmdWork(s, p)) return
     }
+    // #2244: cooked beats snacking — while a plate is warm and this resident
+    // hasn't had their helping, they head for the table before the generic
+    // need scan (the original prioritises a home-cooked meal over the fridge).
+    if (s.demo && s.meal && p.needs.hunger < 0.75 && p.mealTaken !== s.mealSerial) {
+        const tg = targetsOf(s, s.meal)
+        const path = tg.length ? bfsPath(s, { r: p.r, c: p.c }, tg) : null
+        if (path) { p.path = path; p.goal = { kind: 'use', it: s.meal }; return }
+    }
     let worst = null, wv = 1e9
     for (const n of NEEDS) if (p.needs[n] < wv) { wv = p.needs[n]; worst = n }
     if (s.demo && worst && p.needs[worst] < 0.55) {
@@ -2013,7 +2021,7 @@ export function bot(s) {
     if (s.paper) { if (cmdUse(s, p, s.paper)) return }
     // #2244: and eats what the kitchen served — a hungry resident walks to
     // the plate, so the attract teaches the bells the same silent way.
-    if (s.meal && p.needs.hunger < 0.7 && p.mealTaken !== s.mealSerial) { if (cmdUse(s, p, s.meal)) return }
+    if (s.meal && p.needs.hunger < 0.75 && p.mealTaken !== s.mealSerial) { if (cmdUse(s, p, s.meal)) return }
     if (s.money > 300 && s.content < WIN_CONTENT) {
         const wants = ['phone', 'roomkit', 'petkit', 'kidkit', 'stove', 'tv', 'sofa', 'radio', 'book', 'shower', 'plant', 'lamp', 'rug']
         for (const id of wants) {

@@ -35,6 +35,12 @@
 //                  day (the day stamp is the law), tap-to-read pays FUN and
 //                  consumes, unread rots at midnight, sale refuses, hash and
 //                  determinism carry, and the bot reads it in attract.
+//  10. MEAL BELLS (#2244) — three hour-scheduled plates a day beside the
+//                  kitchen: one helping per resident (the serial stamp), a cold
+//                  window, honest skips without a kitchen, midnight rots, sale
+//                  refuses, the shared-table law pays social/bond/content once
+//                  per plate, hash and determinism carry, and the bot eats in
+//                  attract with the wish still landing.
 //
 // It proves IT can fail the playbook way: break one load-bearing line in sim.js
 // (content accrual in finishUse, or the relAdd(s,'fern') feed in the visitor
@@ -61,6 +67,7 @@ import {
     SPEED_MULT, SPEED_NAMES, setSpeed, cycleSpeed, attractSpeed,   // #2227: the speed dial
     TRI_TELL_CD, TRI_LINES, IVY_SOCIAL,   // #2154: visitor choreography law
     PAPER, PAPER_LATE, PAPER_LINES,   // #2238: the paper route
+    MEAL, MEAL_NAMES, MEAL_DUE, MEAL_WINDOW, MEAL_BOND, MEAL_LINES, SHARED_MEAL_LINES,   // #2244: the meal bells
 } from '../src/games/Homebody/sim.js'
 import { readFileSync } from 'node:fs'
 
@@ -1815,6 +1822,179 @@ section('PAPER ROUTE (#2238): hourly news, one a day, tap to read')
     check('pin: the shell answers the arrival — flutter, banner, marquee', /case 'paper'/.test(pJsx) && /THE PAPER BOY SWEEPS PAST/.test(pJsx) && /boy sweeps past/.test(pJsx))
     check('pin: art draws the newsprint; probe + F1 cheat carry the route', /case 'paper'/.test(pArt) && /paperDay: gs\.paperDay/.test(pJsx) && /DROP PAPER/.test(pJsx))
     check('pin: the teaching lines ship in sim', Array.isArray(PAPER_LINES) && PAPER_LINES.length >= 3)
+}
+
+// ------------------------------------------------------ MEAL BELLS (#2244) ----
+// The day/night clause's second citizen: three hour-scheduled bells a day set
+// a warm plate beside the kitchen — one helping per resident (the serial stamp
+// is the law), a cold window, honest skips — and when the WHOLE household eats
+// the same plate, the table pays socially (social, house bond, content, hearts).
+section('MEAL BELLS (#2244): three bells, one helping each, the table pays socially')
+{
+    const keepAlive = (g) => { if (!g.done) for (const p of g.people) for (const n of NEEDS) p.needs[n] = Math.max(p.needs[n], 0.9) }
+    const eatTill = (g, p) => {   // command p onto the current plate; true if a helping was had
+        const plate = g.meal
+        if (!plate || !cmdUse(g, p, plate)) return false
+        for (let i = 0; i < 60 * 25; i++) { advance(g, DT); drain(g); if (p.mealTaken === g.mealSerial) return true; if (g.meal !== plate) return false }
+        return false
+    }
+
+    check('the plate is a walkable HUNGER object, never a catalog card',
+        MEAL.need === 'hunger' && MEAL.solid === false && MEAL.amt > 0.4 && MEAL.dur > 2 && !CATALOG.some((d) => d.id === 'meal'))
+    check('three bells, seeded inside their windows and in order', (() => {
+        const s = newRun(7)
+        return s.meal === null && s.mealSlot === 0 && s.mealSerial === 0 && s.mealDay === 0 && s.mealEaten.length === 0
+            && MEAL_DUE.length === 3 && s.mealAfter.length === 3
+            && s.mealAfter.every((h, i) => h >= MEAL_DUE[i][0] && h <= MEAL_DUE[i][1])
+            && s.mealAfter[0] < s.mealAfter[1] && s.mealAfter[1] < s.mealAfter[2]
+    })())
+
+    // breakfast lands beside the starter kitchen (fridge at 2,9)
+    const s1 = newRun(7)
+    let mealEv = null
+    for (let i = 0; i < 60 * 60 && !s1.meal; i++) { advance(s1, DT); const e = drain(s1); if (!mealEv) mealEv = e.find((x) => x.t === 'meal') }
+    check('the breakfast bell rings and a plate lands beside the kitchen',
+        !!s1.meal && s1.hour >= s1.mealAfter[0] && Math.abs(s1.meal.r - 2) <= 1 && Math.abs(s1.meal.c - 9) <= 1, `@${s1.hour.toFixed(1)}h ${s1.meal.r},${s1.meal.c}`)
+    check('the arrival is an event — name, slot, serial and day stamp',
+        !!mealEv && mealEv.name === MEAL_NAMES[0] && mealEv.slot === 0 && s1.mealDay === s1.day && s1.mealSlot === 1 && s1.mealSerial === 1)
+
+    // the first helping, then the shared table immediately — while it's warm
+    const otto = s1.people[0], mira = s1.people[1]
+    otto.needs.hunger = 0.5
+    const ate1 = eatTill(s1, otto)
+    check('a commanded resident walks down and eats — hunger pays, the plate stays for the other',
+        ate1 && !!s1.meal && s1.mealEaten.length === 1 && otto.needs.hunger > 0.8 && otto.mealTaken === s1.mealSerial)
+    const house0 = s1.rel.house, soc0 = otto.needs.social, con0 = s1.content
+    let sharedAt = null
+    {
+        const plate = s1.meal
+        cmdUse(s1, mira, plate)
+        for (let i = 0; i < 60 * 25; i++) {
+            advance(s1, DT); const e = drain(s1)
+            sharedAt = e.find((x) => x.t === 'meal-shared') || sharedAt
+            if (sharedAt) break
+        }
+    }
+    check('both residents on one plate: the SHARED TABLE fires once', !!sharedAt && s1.meal === null && s1.mealEaten.length === 0)
+    check('the table pays socially — social up, house bond +MEAL_BOND, content +1',
+        s1.rel.house - house0 >= MEAL_BOND && otto.needs.social > soc0 && s1.content >= con0 + 1)
+
+    // one helping per bell, at the NEXT bell too — the stamp resets per plate
+    // (a breakfast diner is welcome at lunch; a second lunch line is refused).
+    // The resident is parked kitchen-side first — the idle wander may have
+    // taken them out of the window's walking distance, which the cold gate
+    // already proves honest; here we test the stamp, not the stride.
+    let lunch = null
+    for (let i = 0; i < 60 * 60 * 2 && !lunch; i++) {
+        advance(s1, DT); const e = drain(s1); keepAlive(s1)
+        if (s1.mealSerial === 2) {
+            lunch = s1.meal
+            otto.r = 2; otto.c = 8; otto.x = tileX(8) + TILE / 2; otto.y = tileY(2) + TILE / 2
+            otto.path = null; otto.goal = null; otto.use = null
+        }
+    }
+    const ateLunch = lunch && eatTill(s1, otto)
+    let satAgain = false
+    if (lunch && ateLunch) {
+        cmdUse(s1, otto, lunch)
+        for (let i = 0; i < 60 * 25; i++) {
+            advance(s1, DT); const e = drain(s1)
+            if (e.some((x) => x.t === 'satisfied' && x.name === 'Otto')) satAgain = true
+            if (!otto.path && !otto.use && !otto.goal) break
+        }
+    }
+    check('one helping per bell — reset by plate, not by person; a second line is refused', !!lunch && !!ateLunch && !satAgain)
+
+    // the cold window: untouched food goes out, the bell stays rung
+    const s2 = newRun(11)
+    for (let i = 0; i < 60 * 60 && !s2.meal; i++) { advance(s2, DT); drain(s2) }
+    const due2 = s2.mealAt
+    let coldEv = null
+    for (let i = 0; i < 60 * 60 * 2 && !coldEv; i++) { advance(s2, DT); const e = drain(s2); coldEv = e.find((x) => x.t === 'meal-cold') || coldEv }
+    check('nobody ate: the plate goes cold exactly one window later and the counter clears',
+        !!coldEv && s2.meal === null && !s2.items.some((it) => it.id === 'meal') && s2.hour >= due2 + MEAL_WINDOW - 0.02 && s2.mealSlot === 1)
+
+    // honest skip: no kitchen, no cooked meal — and the bell is never banked
+    const s3 = newRun(31)
+    s3.items = s3.items.filter((it) => it.id !== 'fridge')
+    let served3 = false
+    for (let i = 0; i < 60 * 60 * 12 && s3.day === 1 && s3.hour < s3.mealAfter[1] + MEAL_WINDOW + 0.1; i++) { advance(s3, DT); drain(s3); keepAlive(s3); if (s3.meal) served3 = true }
+    check('no kitchen, no cooked meal — and the missed bells skip honestly', !served3 && s3.mealSlot >= 2)
+
+    // late but in-window delivery still serves (the window is the law, not the minute)
+    const s5 = newRun(17)
+    s5.mealAfter = [20.05, 21.0, 22.5]
+    for (let i = 0; i < 60 * 60 * 2 && !s5.meal && s5.hour < 21.5; i++) { advance(s5, DT); drain(s5); keepAlive(s5) }
+    check('a bell rung late still lands — the window serves, not the due minute', !!s5.meal && s5.hour >= 20.05 && s5.hour < 20.05 + MEAL_WINDOW)
+
+    // the plate cannot be sold, and furniture tucks it (no dangling reference)
+    const s6 = newRun(41)
+    for (let i = 0; i < 60 * 60 && !s6.meal; i++) { advance(s6, DT); drain(s6) }
+    const pr = s6.meal.r, pc = s6.meal.c
+    check('the meal cannot be sold — the kitchen serves, nobody sells dinner', sellAt(s6, pr, pc) === false && !!s6.meal)
+    setSel(s6, 0)
+    const tucked = place(s6, pr, pc)
+    check('furniture landing on the plate tucks it — no dangling reference', tucked && s6.meal === null && !s6.items.some((it) => it.id === 'meal'))
+
+    // the whole day keeps hours: three bells, named, and midnight resets the table
+    const s7 = newRun(21)
+    const bells7 = []
+    let slot7 = 0
+    for (let i = 0; i < 60 * 60 * 20 && s7.day === 1; i++) { advance(s7, DT); const e = drain(s7); keepAlive(s7); bells7.push(...e.filter((x) => x.t === 'meal').map((x) => x.name)); slot7 = Math.max(slot7, s7.mealSlot) }
+    check('one day rings three bells — BREAKFAST, LUNCH, DINNER, in that order',
+        bells7.length === 3 && bells7.join(',') === MEAL_NAMES.join(',') && slot7 === 3, bells7.join(','))
+    // rig an untouched plate past midnight (mealAt set far — the cold never arrives, newDay must)
+    const s8 = newRun(23)
+    for (let i = 0; i < 60 * 60 && !s8.meal; i++) { advance(s8, DT); drain(s8) }
+    s8.mealAt = s8.hour + 100
+    const uid8 = s8.meal.uid
+    while (s8.day === 1) { advance(s8, DT); drain(s8); keepAlive(s8) }
+    check('midnight clears the table — yesterday\u2019s plate rots, the slot resets, tomorrow re-seeds',
+        s8.day === 2 && s8.meal === null && !s8.items.some((it) => it.id === 'meal') && s8.mealSlot === 0 && s8.mealSerial >= 1 && uid8 > 0)
+
+    // hash carries: every stamp that matters moves the hash
+    const g1 = newRun(55)
+    const base0 = stateHash(g1)
+    for (let i = 0; i < 60 * 60 && !g1.meal; i++) { advance(g1, DT); drain(g1) }
+    const servedHash = stateHash(g1)
+    check('meal state rides stateHash — serving moves it', servedHash !== base0)
+    const hMut = (fn) => { const g = newRun(55); for (let i = 0; i < 60 * 60 && !g.meal; i++) { advance(g, DT); drain(g) } fn(g); return stateHash(g) !== servedHash }
+    check('mealDay, mealSlot and mealSerial each move the hash',
+        hMut((g) => { g.mealDay += 1 }) && hMut((g) => { g.mealSlot += 1 }) && hMut((g) => { g.mealSerial += 1 }))
+    check('who has sat at the plate moves the hash', hMut((g) => { g.mealEaten.push(g.people[1]) }))
+
+    // determinism + the attract bot learns the bells + the wish still lands
+    const d1 = newRun(42), d2 = newRun(42)
+    for (let i = 0; i < 60 * 60 * 3; i++) { autoStep(d1, DT); autoStep(d2, DT); drain(d1); drain(d2) }
+    check('seeds stay exact with the bells running', stateHash(d1) === stateHash(d2))
+    const m2 = (g) => { autoStep(g, DT); drain(g) }
+    const a1 = newRun(42)
+    let took = 0
+    for (let i = 0; i < 60 * 60 * 4 && !a1.done && took < 2; i++) { m2(a1); took = a1.people.reduce((n, p) => n + (p.mealTaken > 0 ? 1 : 0), 0) }
+    check('the attract bot walks to a warm plate itself — the demo teaches the bells', took >= 2, `taken ${took}`)
+    const win = play(42)
+    check('the lifetime wish still lands with the bells running', win.done === 'win', `content ${win.content}`)
+
+    // source pins — the wiring must not silently drop (same law as PAPER)
+    const pSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const pArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    const pJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    check('pin: the bells are hour-scheduled on the world clock',
+        /function scheduleMeals|export function scheduleMeals/.test(pSim) && /MEAL_DUE\.map/.test(pSim) && /updateMeals\(s\)/.test(pSim))
+    check('pin: the slot+serial stamps — not mere presence — are the once-a-bell law',
+        /s\.hour >= s\.mealAfter\[s\.mealSlot\]/.test(pSim) && /p\.mealTaken === s\.mealSerial/.test(pSim))
+    check('pin: the object is DEF-only (never merchandised)',
+        /DEF\.meal = MEAL/.test(pSim) && !/'meal'/.test(pSim.match(/export const CATALOG = \[[\s\S]*?\]/)[0]))
+    check('pin: sale refuses it, place tucks it, newDay clears it',
+        /id === 'meal'/.test(pSim.match(/export function sellAt[\s\S]*?\n}/)[0])
+        && /s\.meal\.r === r && s\.meal\.c === c/.test(pSim) && /it !== s\.meal/.test(pSim.match(/function newDay[\s\S]*?\n}/)[0]))
+    check('pin: the shared-table law pays social, bond and content once per plate',
+        /meal-shared/.test(pSim) && /relAdd\(s, 'house', MEAL_BOND\)/.test(pSim) && /mealEaten\.length >= s\.people\.length/.test(pSim))
+    check('pin: meal stamps ride the hash', /mix\(s\.mealDay\)/.test(pSim) && /mix\(s\.mealSlot\)/.test(pSim) && /mix\(s\.mealEaten\.length\)/.test(pSim))
+    check('pin: the shell answers the bells — brass ring, banners, marquee',
+        /case 'meal'/.test(pJsx) && /case 'meal-shared'/.test(pJsx) && /FOOD ON THE COUNTER/.test(pJsx) && /BELLS RING/.test(pJsx))
+    check('pin: art draws the steaming plate; probe + F1 cheat carry the bells', /case 'meal'/.test(pArt) && /mealSerial: gs\.mealSerial/.test(pJsx) && /DROP MEAL/.test(pJsx))
+    check('pin: the teaching lines ship in sim', Array.isArray(MEAL_LINES) && MEAL_LINES.length === 3 && Array.isArray(SHARED_MEAL_LINES) && SHARED_MEAL_LINES.length >= 3)
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)
