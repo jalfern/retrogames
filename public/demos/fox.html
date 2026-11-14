@@ -1,0 +1,776 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>RENARD — running fox · jalfern.com demos</title>
+<meta name="description" content="A procedural red fox at a full rotary gallop across a golden-hour snowfield. Canvas 2D, zero libraries." />
+<style>
+  html, body { margin: 0; height: 100%; background: #0d0f14; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100dvh; touch-action: none; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  #hint {
+    position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10px;
+    letter-spacing: .35em; color: #f5e3c8; text-shadow: 0 1px 6px #000;
+    opacity: .85; transition: opacity 1.4s ease; pointer-events: none; white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hint">DRAG TO LOOK &nbsp;·&nbsp; SPACE SLO-MO &nbsp;·&nbsp; CLICK FOR SOUND</div>
+<script>
+'use strict';
+/* RENARD — a running red fox (Vulpes vulpes), #2261.
+   One self-contained file: Canvas 2D perspective painter, zero libraries.
+   Anatomy is lofted elliptical rings skinned over a flexible spine chain;
+   the gait is a four-beat rotary gallop LH·RH·LF·RF with ground-locked
+   stance paws (slip 0 by construction — stance IK works FROM the fixed
+   world anchor), a cracking back (dorsal arch peaks in gathered flight),
+   and a bushy tail streaming with per-stride noise seeded on stride mod K
+   so K = 6 strides close the loop exactly. Scenery lives in fixed world
+   space sampled around the running camera: parallax between ridges, spruce
+   and snow is real perspective, and every layout is periodic with the
+   6-stride travel (26.4 m), so the seam is invisible by construction. */
+
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const lite = new URLSearchParams(location.search).has('lite');
+let DPR = 1, W = 0, H = 0;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, lite ? 1 : 2);
+  W = Math.max(1, Math.round(window.innerWidth * DPR));
+  H = Math.max(1, Math.round(window.innerHeight * DPR));
+  cv.width = W; cv.height = H;
+}
+window.addEventListener('resize', resize); resize();
+
+/* ---------------- gait constants ---------------- */
+const L = 2.6;                                   // stride length (m) — fox limb 0.42 m
+const K = 6;                                   // seamless loop = 6 strides
+const LOOP = L * K;                            // scenery period = 15.6 m
+const T = 0.55;                                // stride period (s) → ≈4.7 m/s
+const XP_A = 0.06, XP_P0 = 0.15;             // gentle speed surge (net = L/stride exactly)
+
+/* Footfall onsets & stance durations, fraction of stride. Rotary gallop:
+   hind pair first, then fore pair; uncovered flight = 0.27 of stride.
+   Constraint honoured: body travel over a planted paw (L·dur) fits inside
+   the limb chord (hind 0.44 ≤ 0.61, fore 0.42 ≤ 0.65). */
+const LEGS = {
+  LH: { side: +1, c: 0.00, dur: 0.17, hind: true },
+  RH: { side: -1, c: 0.20, dur: 0.17, hind: true },
+  LF: { side: +1, c: 0.58, dur: 0.16, hind: false },
+  RF: { side: -1, c: 0.78, dur: 0.16, hind: false },
+};
+const NAMES = ['LH', 'RH', 'LF', 'RF'];
+
+/* body-frame anchors (x forward from hip centre, z up) */
+const HIPJ = { x: 0.00, y: 0.085, z: 0.285 };
+const SHOJ = { x: 0.40, y: 0.055, z: 0.315 };
+const REACH = { hind: 0.24, fore: 0.24 };    // touchdown lead ahead of joint
+const PAWY = { hind: 0.075, fore: 0.045 };
+const LEGLEN = { hind: [0.21, 0.21], fore: [0.225, 0.225] };
+
+/* spine rings: x (body), base z, half-width ry, half-height rz */
+const RINGS = [
+  { x: 0.00, z: 0.300, ry: 0.093, rz: 0.112 },  // hips
+  { x: 0.14, z: 0.286, ry: 0.070, rz: 0.080 },  // waist (tuck-up)
+  { x: 0.28, z: 0.300, ry: 0.084, rz: 0.104 },  // chest barrel
+  { x: 0.42, z: 0.338, ry: 0.072, rz: 0.098 },  // withers
+  { x: 0.52, z: 0.372, ry: 0.052, rz: 0.066 },  // neck base
+  { x: 0.60, z: 0.420, ry: 0.044, rz: 0.054 },  // mid neck
+  { x: 0.66, z: 0.452, ry: 0.041, rz: 0.049 },  // poll
+];
+const ARCH_W = [0.0, 1.0, 0.85, 0.35, -0.15, -0.3, -0.35];
+
+/* head rings beyond the poll (dx, dz in head frame) */
+const HEAD = [
+  { dx: 0.05, dz: -0.004, ry: 0.044, rz: 0.046 },
+  { dx: 0.10, dz: -0.012, ry: 0.033, rz: 0.036 },
+  { dx: 0.145, dz: -0.020, ry: 0.022, rz: 0.024 },
+  { dx: 0.185, dz: -0.026, ry: 0.012, rz: 0.013 },
+];
+
+/* ---------------- math ---------------- */
+const PI = Math.PI, TAU = PI * 2;
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp = (a, b, u) => a + (b - a) * u;
+const smooth = u => u * u * (3 - 2 * u);
+function hash(i) { i = ((i | 0) * 374761393 + 668265263) | 0; i = (i ^ (i >> 13)) * 1274126177 | 0; return ((i ^ (i >> 16)) >>> 0) / 4294967296; }
+const wrap1 = p => p - Math.floor(p);
+const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+function norm3(v) { const m = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / m, v[1] / m, v[2] / m]; }
+const mixc = (a, b, u) => [lerp(a[0], b[0], u), lerp(a[1], b[1], u), lerp(a[2], b[2], u)];
+
+/* ---------------- gait laws (pure functions of φ) ---------------- */
+function Xtrav(t) {                       // exact net L per stride
+  const n = Math.floor(t / T), p = t / T - n;
+  return L * (n + p + (XP_A / TAU) * (1 - Math.cos(TAU * (p - XP_P0))));
+}
+const bodyBob = p => 0.026 * Math.sin(TAU * (p - 0.15)) + 0.010 * Math.sin(2 * TAU * (p - 0.20));
+const bodyPitch = p => 0.055 * Math.sin(TAU * (p - 0.30)) + 0.020 * Math.sin(2 * TAU * (p - 0.10));
+const flex = p => 0.050 * (-Math.cos(TAU * (p - 0.92)));   // dorsal arch, peaks gathered
+
+function legPhase(name, p) {
+  const g = LEGS[name];
+  const d = wrap1(p - g.c);
+  return d < g.dur ? { stance: true, u: d / g.dur } : { stance: false, u: (d - g.dur) / (1 - g.dur) };
+}
+/* world touchdown anchor for foot `name`, stride n */
+function anchorX(name, n) {
+  const g = LEGS[name], j = g.hind ? HIPJ : SHOJ;
+  const r = REACH[g.hind ? 'hind' : 'fore'];
+  const xc = Xtrav((n + g.c) * T);
+  const pitch = bodyPitch(g.c), cosP = Math.cos(pitch), sinP = Math.sin(pitch);
+  return xc + j.x * cosP + (j.z - HIPJ.z) * sinP + r;
+}
+/* 2-bone IK in the vertical (x,z) plane; mid joint bends rearward */
+function ik2(joint, target, a, b) {
+  const dx = target[0] - joint[0], dz = target[2] - joint[2];
+  let dist = Math.hypot(dx, dz);
+  const raw = dist;
+  dist = clamp(dist, Math.abs(a - b) + 1e-4, a + b - 1e-3);
+  const ux = dx / (raw || 1e-6), uz = dz / (raw || 1e-6);
+  // unit along joint→target, rotated by −acos(...) so the mid joint sits BEHIND
+  const ang = Math.acos(clamp((a * a + dist * dist - b * b) / (2 * a * dist), -1, 1));
+  const ca = Math.cos(-ang), sa = Math.sin(-ang);
+  const mx = ux * ca - uz * sa, mz = ux * sa + uz * ca;
+  return [joint[0] + mx * a, joint[1], joint[2] + mz * a];
+}
+
+/* full pose at time t (world seconds) — everything a pure function of (n, φ) */
+function poseAt(t) {
+  const p = wrap1(t / T), n = Math.floor(t / T);
+  const X = Xtrav(t), zc = 0.30 + bodyBob(p), pitch = bodyPitch(p), fl = flex(p);
+  const cosP = Math.cos(pitch), sinP = Math.sin(pitch);
+  const breath = 1 + 0.012 * Math.sin(TAU * (p - 0.5));
+  const spts = RINGS.map((r, i) => {
+    const bz = r.z + fl * ARCH_W[i] - HIPJ.z;
+    return [X + r.x * cosP - bz * sinP, 0, zc + bz * cosP + r.x * sinP, r.ry, r.rz * breath, r.x];
+  });
+  const poll = spts[6];
+  const hp = -0.55 * pitch + 0.015 * Math.sin(TAU * p);
+  const hc = Math.cos(hp), hs = Math.sin(hp);
+  const hpts = HEAD.map(h => [poll[0] + h.dx * hc - h.dz * hs, 0, poll[2] + h.dx * hs + h.dz * hc, h.ry, h.rz]);
+  // tail — per-stride noise seed (mod K) keeps the K-stride seam exact
+  const seed = ((n % K) + K) % K;
+  const tail = [];
+  {
+    const bz0 = 0.31 - HIPJ.z;
+    let px = X - 0.02 * cosP - bz0 * sinP, py = 0, pz = zc + bz0 * cosP - 0.02 * sinP;
+    const SEG = 12, SL = 0.031;
+    for (let i = 0; i < SEG; i++) {
+      const u = i / (SEG - 1);
+      const a = 0.28 - 0.95 * fl * (1 - u * 0.6) + 0.16 * u * u;    // elevation above horizontal (backwards)
+      const wv = 0.13 * Math.sin(TAU * (1.35 * u - p)) * (0.35 + u) + 0.09 * Math.sin(TAU * (2.2 * u - p) + seed * 1.7);
+      px -= Math.cos(a) * SL; pz += Math.sin(a) * SL; py = wv * u;
+      tail.push({ x: px, y: py, z: pz, r: 0.034 + 0.030 * Math.pow(u, 1.5), u });
+    }
+    tail[SEG - 1].r *= 0.5;
+  }
+  // paws: stance locks to the world anchor; swing arcs old anchor → new anchor
+  const paws = {};
+  for (const name of NAMES) {
+    const g = LEGS[name];
+    const jp = g.hind ? HIPJ : SHOJ;
+    const jx = X + jp.x * cosP - (jp.z - HIPJ.z) * sinP;
+    const jz = zc + (jp.z - HIPJ.z) * cosP + jp.x * sinP;
+    const jy = jp.y * g.side;
+    const ph = legPhase(name, p);
+    const yG = PAWY[g.hind ? 'hind' : 'fore'] * g.side;
+    let wx, wy, wz;
+    if (ph.stance) {
+      wx = anchorX(name, n); wy = yG; wz = 0;
+    } else {
+      const xLo = anchorX(name, n - 1) + L * g.dur, xTd = anchorX(name, n);
+      const u = ph.u;
+      wx = lerp(xLo, xTd, smooth(u));
+      wz = (g.hind ? 0.115 : 0.085) * Math.sin(PI * u);
+      wy = yG * (1 - 0.22 * Math.sin(PI * u));
+    }
+    const [a1, b1] = LEGLEN[g.hind ? 'hind' : 'fore'];
+    paws[name] = { joint: [jx, jy, jz], mid: ik2([jx, jy, jz], [wx, wy, wz], a1, b1), paw: [wx, wy, wz], stance: ph.stance };
+  }
+  return { t, n, p, X, zc, pitch, fl, spts, hpts, tail, paws, poll: [poll[0], 0, poll[2]] };
+}
+
+/* ---------------- camera ---------------- */
+let az = 0, el = 0.20, rad = 3.4;             // az=0 → pure side-on from the fox's right (−y)
+let azLock = 0, elLock = 0.20;
+let CAM = [0, -3.4, 1.15], fwd = [0, 1, 0], rgt = [1, 0, 0], upv = [0, 0, 1];
+const SUN = norm3([-0.55, -0.42, 0.52]);      // low warm sun, behind-left of camera
+function camFor(P) {
+  const sway = 0.030 * Math.sin(TAU * P.p), swayE = 0.012 * Math.sin(2 * TAU * P.p + 1);
+  const a = az + sway, e = clamp(el + swayE, 0.03, 0.75);
+  const Tg = [P.X + 0.40, 0, P.zc - 0.01];
+  CAM = [Tg[0] + rad * Math.sin(a) * Math.cos(e), -rad * Math.cos(a) * Math.cos(e), Tg[2] + rad * Math.sin(e)];
+  fwd = norm3(sub3(Tg, CAM)); rgt = norm3(cross3(fwd, [0, 0, 1])); upv = cross3(rgt, fwd);
+}
+function proj(p) {
+  const sx = p[0] - CAM[0], sy = p[1] - CAM[1], sz = p[2] - CAM[2];
+  const cz = sx * fwd[0] + sy * fwd[1] + sz * fwd[2];
+  if (cz < 0.08) return null;
+  const f = H * 1.28;
+  return [W / 2 + f * (sx * rgt[0] + sy * rgt[1] + sz * rgt[2]) / cz,
+    H * 0.54 - f * (sx * upv[0] + sy * upv[1] + sz * upv[2]) / cz, cz];
+}
+
+/* ---------------- painter ---------------- */
+let faces = [];
+/* two=false: closed solid, cull back faces. two=true: flat card, flip normal to camera */
+function pushFace(pts3, col, zbias, two) {
+  const s = [];
+  let zsum = 0;
+  for (let i = 0; i < pts3.length; i++) {
+    const q = proj([pts3[i][0], pts3[i][1], pts3[i][2]]);
+    if (!q) return;
+    s.push(q); zsum += q[2];
+  }
+  let nv = norm3(cross3(sub3(pts3[1], pts3[0]), sub3(pts3[2], pts3[0])));
+  const towardCam = dot3(nv, sub3(pts3[0], CAM));
+  if (!two && towardCam < 0) return;
+  if (two && towardCam < 0) nv = [-nv[0], -nv[1], -nv[2]];
+  const key = Math.pow(Math.max(0, dot3(nv, SUN)), 0.8) * 1.25;
+  const bounce = 0.30 * Math.max(0, nv[2]);
+  const rimv = norm3([-SUN[0], -SUN[1], 0.18]);
+  const rim = Math.pow(Math.max(0, dot3(nv, rimv)), 3.0) * 0.30;
+  let r = col[0] * (0.42 + bounce + key) + 255 * rim * (key + 0.2);
+  let g = col[1] * (0.42 + bounce + key * 0.82) + 230 * rim * (key + 0.2);
+  let b = col[2] * (0.42 + bounce + key * 0.60) + 195 * rim * (key + 0.2);
+  const hf = clamp((zsum / pts3.length - 14) / 55, 0, 0.72);
+  r = lerp(r, 210, hf); g = lerp(g, 198, hf); b = lerp(b, 192, hf);
+  faces.push({ s, z: zsum / pts3.length + (zbias || 0), c: 'rgb(' + (r | 0) + ',' + (g | 0) + ',' + (b | 0) + ')' });
+}
+const RN = 8;
+function ringsOf(pts) {
+  return pts.map(p => {
+    const ring = [];
+    for (let a = 0; a < RN; a++) {
+      const ang = a * TAU / RN;
+      ring.push([p[0], p[1] + p[3] * Math.sin(ang), p[2] + p[4] * Math.cos(ang)]);
+    }
+    return ring;
+  });
+}
+
+/* coat palette */
+const COAT = [202, 108, 46], COAT_D = [150, 73, 30], CREAM = [243, 236, 222], DARK = [44, 30, 22], TAIL_D = [120, 62, 28], WHITE = [244, 239, 228];
+function coatAt(x, ang) {
+  const nz = Math.cos(ang);
+  let c = COAT;
+  if (x > 0.10 && x < 0.46 && nz < -0.2) c = mixc(c, CREAM, clamp((-nz - 0.2) * 1.8, 0, 1) * 0.9);
+  if (x >= 0.10 && x <= 0.46 && nz > 0.4) c = COAT_D;
+  if (x < 0.10 && nz > 0.3) c = COAT_D;
+  if (x > 0.46) c = mixc(COAT, COAT_D, 0.25);
+  return c;
+}
+
+function tube(a, b, ra, rb, col) {
+  const N = 6;
+  const dir = norm3(sub3(b, a));
+  const u = Math.abs(dir[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+  const xA = norm3(cross3(u, dir)), yA = cross3(dir, xA);
+  const A = [], B = [];
+  for (let i = 0; i < N; i++) {
+    const ang = i * TAU / N, cx = Math.cos(ang), cy = Math.sin(ang);
+    A.push([a[0] + (xA[0] * cx + yA[0] * cy) * ra, a[1] + (xA[1] * cx + yA[1] * cy) * ra, a[2] + (xA[2] * cx + yA[2] * cy) * ra]);
+    B.push([b[0] + (xA[0] * cx + yA[0] * cy) * rb, b[1] + (xA[1] * cx + yA[1] * cy) * rb, b[2] + (xA[2] * cx + yA[2] * cy) * rb]);
+  }
+  for (let i = 0; i < N; i++) {
+    const j = (i + 1) % N;
+    pushFace([A[i], A[j], B[j], B[i]], col);
+  }
+}
+
+function drawFox(P) {
+  // torso
+  const rings = ringsOf(P.spts);
+  for (let i = 0; i < rings.length - 1; i++) {
+    for (let a = 0; a < RN; a++) {
+      const b = (a + 1) % RN;
+      const ang = (a + 0.5) * TAU / RN;
+      pushFace([rings[i][a], rings[i][b], rings[i + 1][b], rings[i + 1][a]], coatAt(P.spts[i][5], ang));
+    }
+  }
+  // head
+  const hr = ringsOf(P.hpts);
+  for (let a = 0; a < RN; a++) {
+    const b = (a + 1) % RN;
+    pushFace([rings[6][a], rings[6][b], hr[0][b], hr[0][a]], mixc(COAT, COAT_D, 0.15));
+  }
+  for (let i = 0; i < hr.length - 1; i++) {
+    for (let a = 0; a < RN; a++) {
+      const b = (a + 1) % RN;
+      const ang = (a + 0.5) * TAU / RN;
+      let col = mixc(COAT, COAT_D, 0.1);
+      if (Math.cos(ang) < -0.35) col = mixc(col, CREAM, 0.85);
+      pushFace([hr[i][a], hr[i][b], hr[i + 1][b], hr[i + 1][a]], col);
+    }
+  }
+  // nose cap (black)
+  const nose = hr[hr.length - 1];
+  const ncp = [nose[0][0] + 0.016, nose[0][1], nose[0][2] - 0.004];
+  for (let a = 0; a < RN; a++) pushFace([nose[a], nose[(a + 1) % RN], ncp], [28, 20, 16]);
+  // eyes (dark slivers on the skull sides)
+  const pv = P.poll;
+  for (const sd of [-1, 1]) {
+    const ex = pv[0] + 0.062, ez = pv[2] + 0.028;
+    pushFace([[ex + 0.010, sd * 0.036, ez + 0.006], [ex + 0.020, sd * 0.040, ez], [ex + 0.010, sd * 0.036, ez - 0.006], [ex, sd * 0.034, ez]], [22, 15, 10]);
+  }
+  // ears — pointed, dark-backed, pitching with the head
+  const hp = -0.55 * P.pitch + 0.015 * Math.sin(TAU * P.p);
+  for (const sd of [-1, 1]) {
+    const bx = pv[0] - 0.008, bz = pv[2] + 0.032, by = sd * 0.026;
+    const tip = [bx - 0.096 * Math.sin(hp + PI * 0.14), by + sd * 0.014, bz + 0.096 * Math.cos(hp + PI * 0.14)];
+    const fF = [bx + 0.020, by, bz], fB = [bx - 0.022, by, bz - 0.010];
+    const oF = [bx + 0.020, sd * 0.042, bz], oB = [bx - 0.022, sd * 0.046, bz - 0.010];
+    pushFace([oF, oB, tip], DARK);
+    pushFace([oB, oF, tip], mixc(DARK, [140, 90, 66], 0.22));
+    pushFace([fF, fB, tip], mixc(COAT_D, DARK, 0.55));
+    pushFace([fB, fF, tip], mixc(DARK, COAT, 0.4));
+  }
+  // legs
+  for (const name of NAMES) {
+    const g = LEGS[name];
+    const { joint, mid, paw } = P.paws[name];
+    const wTop = g.hind ? 0.050 : 0.042, wMid = g.hind ? 0.032 : 0.026;
+    tube(joint, mid, wTop, wMid, mixc(DARK, COAT, g.hind ? 0.22 : 0.30));
+    tube(mid, [paw[0], paw[1], 0.028], wMid, 0.015, DARK);
+    const dx = g.hind ? -0.032 : 0.034;
+    const y0 = paw[1] - 0.017, y1 = paw[1] + 0.017;
+    pushFace([[paw[0], y0, 0.030], [paw[0] + dx, y0, 0.030], [paw[0] + dx, y0, 0], [paw[0], y0, 0]], DARK, 0, true);
+    pushFace([[paw[0] + dx, y1, 0.030], [paw[0], y1, 0.030], [paw[0], y1, 0], [paw[0] + dx, y1, 0]], mixc(DARK, [90, 66, 50], 0.2), 0, true);
+    pushFace([[paw[0] + dx, y0, 0.030], [paw[0] + dx, y1, 0.030], [paw[0] + dx, y1, 0], [paw[0] + dx, y0, 0]], mixc(DARK, [70, 50, 38], 0.3), 0, true);
+    pushFace([[paw[0], y0, 0.030], [paw[0] + dx, y0, 0.030], [paw[0] + dx, y1, 0.030], [paw[0], y1, 0.030]], mixc(DARK, COAT_D, 0.35));
+  }
+  // bushy tail
+  const TR = 6;
+  const trings = P.tail.map(tp => {
+    const rr = [];
+    for (let a = 0; a < TR; a++) {
+      const ang = a * TAU / TR;
+      rr.push([tp.x, tp.y + tp.r * Math.sin(ang), tp.z + tp.r * Math.cos(ang) * 0.92]);
+    }
+    return rr;
+  });
+  for (let i = 0; i < trings.length - 1; i++) {
+    const u = (P.tail[i].u + P.tail[i + 1].u) / 2;
+    const col = u > 0.78 ? WHITE : mixc(COAT_D, mixc(TAIL_D, WHITE, clamp((u - 0.5) / 0.28, 0, 1)), clamp((u - 0.25) / 0.5, 0, 1));
+    for (let a = 0; a < TR; a++) pushFace([trings[i][a], trings[i][(a + 1) % TR], trings[i + 1][(a + 1) % TR], trings[i + 1][a]], col);
+  }
+  const tEnd = trings[trings.length - 1];
+  const tipP = [tEnd[0][0] - 0.02, tEnd[0][1], tEnd[0][2]];
+  for (let a = 0; a < TR; a++) pushFace([tEnd[a], tEnd[(a + 1) % TR], tipP], WHITE);
+}
+
+/* ---------------- scenery ---------------- */
+const ridgeH = (wx, per) => {
+  const q = TAU / LOOP * per;
+  return Math.sin(q * wx + 1.7) * 0.55 + Math.sin(q * wx * 2 + 0.4) * 0.3 + Math.sin(q * wx * 3 + 2.9) * 0.15;
+};
+function drawRidge(P, dist, base, amp, col) {
+  const pts = [];
+  for (let q = -40; q <= 40; q += 2.5) {
+    const h = base + ridgeH(P.X + q, amp) * (lite ? 1 : 1);
+    const s = proj([P.X + q, dist, h]);
+    if (s) pts.push(s);
+  }
+  if (pts.length < 3) return;
+  faces.push({ s: pts, z: dist - 0.5 + (dist < 40 ? -0.01 : 0), c: col, ridge: true });
+}
+function drawTree(P, wx, dist, h, seed) {
+  const trunk = [[wx - 0.05, dist, 0], [wx + 0.05, dist, 0], [wx + 0.05, dist, h * 0.35], [wx - 0.05, dist, h * 0.35]];
+  pushFace(trunk, [58, 42, 34], 0, true);
+  for (let tier = 0; tier < 3; tier++) {
+    const z0 = h * (0.22 + tier * 0.24), wid = h * (0.30 - tier * 0.07), z1 = z0 + h * 0.34;
+    pushFace([[wx - wid, dist, z0], [wx + wid, dist, z0], [wx, dist, z1]], mixc([34, 52, 42], [22, 38, 32], tier / 2 + hash(seed + tier) * 0.4), 0, true);
+  }
+}
+function shadeSnow(s, y) {
+  const drift = 0.5 + 0.5 * Math.sin(TAU * s / LOOP * 2 + 0.7) * Math.sin(TAU * s / LOOP * 3 + 2.1);
+  let c = mixc([214, 222, 234], [238, 241, 247], drift);
+  return mixc(c, [255, 214, 168], clamp(1.1 - y / 22, 0, 1) * 0.30);
+}
+function drawGround(P) {
+  const gs = lite ? 2.6 : 1.3;
+  const gt = lite ? [0.2, 1.4, 4, 9, 16] : [0.2, 1.0, 2.2, 4.2, 7.5, 13, 19];
+  const S0 = Math.floor(P.X / gs) * gs;
+  const span = lite ? 6 : 12;
+  for (let k = -span; k <= span; k++) {
+    const wx0 = S0 + k * gs;
+    const s = (((wx0 - P.X) % LOOP) + LOOP) % LOOP;
+    for (let j = 0; j < gt.length - 1; j++) {
+      const y0 = gt[j], y1 = gt[j + 1];
+      const col = shadeSnow(s + gs * 0.5, (y0 + y1) * 0.5);
+      pushFace([[wx0, y0, 0], [wx0 + gs, y0, 0], [wx0 + gs, y1, 0], [wx0, y1, 0]], col, 0.02 + 0.001 * j, true);
+    }
+  }
+}
+function drawSparkle(P) {
+  const gs = lite ? 2.6 : 1.3;
+  const S0 = Math.floor(P.X / gs) * gs;
+  const span = lite ? 6 : 12;
+  const nS = lite ? 3 : 8;
+  for (let k = -span; k <= span; k++) {
+    const wx0 = S0 + k * gs;
+    const s = (((wx0 - P.X) % LOOP) + LOOP) % LOOP;
+    for (let m = 0; m < nS; m++) {
+      const h1 = hash(Math.round(s * 1000) + m * 7919), h2 = hash(Math.round(s * 733) + m * 104729 + 11), h3 = hash(m * 31 + Math.round(s));
+      const q = proj([wx0 + h1 * gs, 0.4 + h2 * 13, 0.002]);
+      if (!q || q[2] > 24) continue;
+      const tw = 0.5 + 0.5 * Math.sin(TAU * (P.p * (1 + (h3 * 2 | 0)) + h1 * 7));
+      ctx.globalAlpha = 0.55 * tw * tw;
+      ctx.fillStyle = '#fff8ea';
+      ctx.beginPath(); ctx.arc(q[0], q[1], Math.max(0.8, (2.6 - q[2] * 0.09)) * DPR * (0.6 + tw * 0.6), 0, TAU); ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+function drawTrees(P) {
+  const pitch = LOOP / 3;
+  const j0 = Math.floor((P.X - 22) / pitch);
+  for (let j = j0; j <= j0 + 3; j++) {
+    const grp = Math.floor(((j % 3) + 3) % 3 / 1);
+    const jj = hash(grp);              // jitter repeats every 3 slots → loop-safe
+    const wx = j * pitch + jj * pitch;
+    const dist = 11 + hash(grp + 5) * 8;
+    const h = 2.6 + hash(grp + 9) * 1.6;
+    drawTree(P, wx, dist, h, grp * 13);
+  }
+}
+function drawClouds(P) {
+  const pitch = LOOP / 3;
+  const j0 = Math.floor((P.X - 40) / pitch);
+  ctx.fillStyle = 'rgba(255,224,196,0.16)';
+  for (let j = j0; j <= j0 + 3; j++) {
+    const grp = ((j % 3) + 3) % 3;
+    const jj = hash(grp + 77);
+    const q = proj([j * pitch + jj * pitch, 48, 10.5 + hash(grp + 3) * 4]);
+    if (!q) continue;
+    ctx.beginPath(); ctx.ellipse(q[0], q[1], 42 * DPR * (0.7 + jj * 0.5), 7 * DPR, -0.06, 0, TAU); ctx.fill();
+  }
+}
+
+/* ---------------- prints & puffs ---------------- */
+const prints = [];   // {x, y, hind, age}
+const puffs = [];    // {x, y, z, vx, vz, r, age, hind}
+const landEvents = [];
+const PRINT_LIFE = 2.4;   // s (< K·T = 3.72 s: prints die before the seam)
+function spawnLand(name) {
+  const g = LEGS[name];
+  const n = Math.floor(simT / T);
+  const x = anchorX(name, n);
+  const y = PAWY[g.hind ? 'hind' : 'fore'] * g.side;
+  prints.push({ x, y, hind: g.hind, age: 0 });
+  if (prints.length > 40) prints.shift();
+  const plume = g.hind ? 1 : 0.55;
+  const nP = lite ? 2 : 4;
+  for (let i = 0; i < nP; i++) {
+    puffs.push({ x: x + (hash(name.length * 13 + i + n) - 0.5) * 0.05, y: y + (hash(i * 7 + n) - 0.5) * 0.05, z: 0.01,
+      vx: -0.4 - hash(i + n * 3) * 0.6, vz: (g.hind ? 1.0 : 0.6) * (0.5 + hash(i * 5 + n)), r: 0.02 + 0.014 * hash(i + n), age: 0, plume });
+  }
+  if (puffs.length > 60) puffs.splice(0, puffs.length - 60);
+  landEvents.push({ name, t: simT, hind: g.hind, x });
+  if (landEvents.length > 24) landEvents.shift();
+  thump(g.hind);
+}
+function stepFX(dt) {
+  for (const pr of prints) pr.age += dt;
+  while (prints.length && prints[0].age > PRINT_LIFE) prints.shift();
+  for (const pf of puffs) { pf.age += dt; pf.x += pf.vx * dt; pf.z += pf.vz * dt; pf.vz -= 4.2 * dt; if (pf.z < 0) { pf.z = 0; pf.vz = 0; } }
+  while (puffs.length && puffs[0].age > 0.34) puffs.shift();
+}
+function drawPrints(P) {
+  for (const pr of prints) {
+    const fade = 1 - pr.age / PRINT_LIFE;
+    const q = proj([pr.x, pr.y, 0.0015]);
+    if (!q) continue;
+    const s = (pr.hind ? 0.030 : 0.026) * (H / 780) * DPR / q[2] * 2.6;
+    ctx.globalAlpha = 0.34 * fade;
+    ctx.fillStyle = '#8b93a8';
+    ctx.beginPath(); ctx.ellipse(q[0], q[1], s * 0.75, s * 1.15, 0.0, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 0.20 * fade;
+    ctx.fillStyle = '#f2f6fb';
+    ctx.beginPath(); ctx.ellipse(q[0], q[1] - s * 0.9, s * 0.7, s * 0.35, 0, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+function drawPuffs() {
+  for (const pf of puffs) {
+    const q = proj([pf.x, pf.y, pf.z]);
+    if (!q) continue;
+    const u = pf.age / 0.34;
+    const r = (pf.r + u * 0.05) * DPR * H * 0.9 / q[2];
+    ctx.globalAlpha = 0.35 * (1 - u) * pf.plume;
+    ctx.fillStyle = '#f6f9fd';
+    ctx.beginPath(); ctx.arc(q[0], q[1], r, 0, TAU); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+/* ---------------- sky ---------------- */
+function drawSky() {
+  const g = ctx.createLinearGradient(0, 0, 0, H * 0.62);
+  g.addColorStop(0, '#33506e');
+  g.addColorStop(0.45, '#7f8ba0');
+  g.addColorStop(0.72, '#d99a6b');
+  g.addColorStop(1, '#f6c98b');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H * 0.62);
+  ctx.fillStyle = '#f2ded0';
+  ctx.fillRect(0, H * 0.615, W, H * 0.01);
+  // low sun, screen-fixed, glow
+  const sx = W * 0.22, sy = H * 0.52;
+  const gg = ctx.createRadialGradient(sx, sy, 0, sx, sy, H * 0.34);
+  gg.addColorStop(0, 'rgba(255,238,196,0.95)');
+  gg.addColorStop(0.12, 'rgba(255,214,150,0.55)');
+  gg.addColorStop(0.4, 'rgba(255,190,130,0.18)');
+  gg.addColorStop(1, 'rgba(255,190,130,0)');
+  ctx.fillStyle = gg;
+  ctx.beginPath(); ctx.arc(sx, sy, H * 0.34, 0, TAU); ctx.fill();
+  ctx.fillStyle = 'rgba(255,246,220,0.95)';
+  ctx.beginPath(); ctx.arc(sx, sy, H * 0.024, 0, TAU); ctx.fill();
+}
+
+/* ---------------- audio ---------------- */
+let AC = null, master = null, windGain = null, noiseBuf = null;
+function ensureAudio() {
+  if (AC) return;
+  try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+  master = AC.createGain(); master.gain.value = 0.9; master.connect(AC.destination);
+  noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
+  const d = noiseBuf.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < d.length; i++) { const w = Math.random() * 2 - 1; last = (last + 0.02 * w) / 1.02; d[i] = last * 3.2 + w * 0.35; }
+  const src = AC.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+  const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420;
+  windGain = AC.createGain(); windGain.gain.value = 0.05;
+  src.connect(lp); lp.connect(windGain); windGain.connect(master); src.start();
+  vixie();
+}
+function thump(hind) {
+  if (!AC) return;
+  const t0 = AC.currentTime;
+  const src = AC.createBufferSource(); src.buffer = noiseBuf;
+  src.playbackRate.value = 0.8 + Math.random() * 0.4;
+  const f = AC.createBiquadFilter(); f.type = 'lowpass';
+  f.frequency.setValueAtTime(hind ? 300 : 640, t0);
+  f.frequency.exponentialRampToValueAtTime(hind ? 130 : 300, t0 + 0.09);
+  const g = AC.createGain();
+  g.gain.setValueAtTime(hind ? 0.5 : 0.26, t0);
+  g.gain.exponentialRampToValueAtTime(0.001, t0 + (hind ? 0.12 : 0.08));
+  src.connect(f); f.connect(g); g.connect(master);
+  src.start(t0, Math.random() * 0.5, 0.16);
+}
+function vixie() {
+  if (!AC) return;
+  const t0 = AC.currentTime + 0.05;
+  const o = AC.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(1950, t0);
+  o.frequency.exponentialRampToValueAtTime(720, t0 + 0.26);
+  const vib = AC.createOscillator(); vib.frequency.value = 21;
+  const vg = AC.createGain(); vg.gain.value = 55;
+  vib.connect(vg); vg.connect(o.frequency);
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.11, t0 + 0.03);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.30);
+  o.connect(g); g.connect(master);
+  o.start(t0); o.stop(t0 + 0.32); vib.start(t0); vib.stop(t0 + 0.32);
+}
+
+/* ---------------- input ---------------- */
+let running = true, slow = false, simT = 0, frames = 0;
+let dragId = null, lastX = 0, lastY = 0;
+const hintEl = document.getElementById('hint');
+let hintFaded = false;
+function fadeHint() { if (!hintFaded) { hintFaded = true; hintEl.style.opacity = '0'; } }
+cv.addEventListener('pointerdown', e => {
+  ensureAudio(); fadeHint();
+  dragId = e.pointerId; lastX = e.clientX; lastY = e.clientY;
+  cv.setPointerCapture(dragId);
+});
+window.addEventListener('pointermove', e => {
+  if (dragId !== e.pointerId) return;
+  azLock = clamp(azLock + (e.clientX - lastX) * 0.005, -0.85, 0.85);
+  elLock = clamp(elLock + (e.clientY - lastY) * 0.004, 0.05, 0.60);
+  lastX = e.clientX; lastY = e.clientY;
+});
+window.addEventListener('pointerup', () => { dragId = null; });
+window.addEventListener('wheel', e => { rad = clamp(rad + e.deltaY * 0.002, 2.2, 6.5); }, { passive: true });
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') { slow = !slow; fadeHint(); e.preventDefault(); }
+  ensureAudio();
+});
+let lastVixie = 0;
+cv.addEventListener('dblclick', () => {
+  if (AC && simT - lastVixie > 1.2) { lastVixie = simT; vixie(); }
+});
+
+/* ---------------- loop ---------------- */
+const FIXED = 1 / 60;
+let acc = 0, prevMs = 0;
+const pawPrev = {};
+function step(dt) {
+  simT += dt;
+  const P = poseAt(simT);
+  for (const name of NAMES) {
+    const st = legPhase(name, P.p).stance;
+    if (st && !pawPrev[name]) spawnLand(name);
+    pawPrev[name] = st;
+  }
+  stepFX(dt);
+}
+function render() {
+  const P = poseAt(simT);
+  az += (azLock - az) * 0.12; el += (elLock - el) * 0.12;
+  camFor(P);
+  faces = [];
+  drawSky();
+  drawClouds(P);
+  drawRidge(P, 58, 2.6, 1, '#97a6c4');
+  drawRidge(P, 27, 1.1, 2, '#77879f');
+  drawGround(P);
+  drawTrees(P);
+  drawFox(P);
+  drawPrints(P);
+  faces.sort((a, b) => b.z - a.z);
+  for (const f of faces) {
+    ctx.fillStyle = f.c;
+    ctx.beginPath();
+    ctx.moveTo(f.s[0][0], f.s[0][1]);
+    for (let i = 1; i < f.s.length; i++) ctx.lineTo(f.s[i][0], f.s[i][1]);
+    ctx.closePath(); ctx.fill();
+    if (f.ridge) { ctx.lineTo(f.s[f.s.length - 1][0], H * 0.63); ctx.lineTo(f.s[0][0], H * 0.63); ctx.closePath(); ctx.fill(); }
+  }
+  drawSparkle(P);
+  drawPuffs();
+  // ground haze band on the horizon line
+  const hz = ctx.createLinearGradient(0, H * 0.50, 0, H * 0.63);
+  hz.addColorStop(0, 'rgba(222,205,190,0)');
+  hz.addColorStop(1, 'rgba(232,214,196,0.35)');
+  ctx.fillStyle = hz;
+  ctx.fillRect(0, H * 0.50, W, H * 0.13);
+}
+function frame(ms) {
+  requestAnimationFrame(frame);
+  if (!prevMs) prevMs = ms;
+  let dt = Math.min((ms - prevMs) / 1000, 0.25); prevMs = ms;
+  if (running) {
+    acc += dt * (slow ? 0.25 : 1);
+    let guard = 0;
+    while (acc >= FIXED && guard++ < 12) { step(FIXED); acc -= FIXED; }
+    render();
+    frames++;
+  }
+}
+requestAnimationFrame(frame);
+
+/* ---------------- DEV hook ---------------- */
+function gaitScan() {
+  let order = '';
+  const prevS = {};
+  let suspSteps = 0, total = 0;
+  const STEPS = 2400;
+  for (let i = 0; i <= STEPS * 2; i++) {
+    const p = i / STEPS;
+    let allAir = true;
+    for (const name of NAMES) {
+      const st = legPhase(name, wrap1(p)).stance;
+      if (st && !prevS[name] && i >= STEPS) order += name;
+      prevS[name] = st;
+      if (st) allAir = false;
+    }
+    if (i >= STEPS && i < STEPS * 2) { total++; if (allAir) suspSteps++; }
+  }
+  return { order: order.slice(0, 8), susp: suspSteps / total };
+}
+function slipAudit() {
+  let worst = 0, worstLeg = '';
+  for (const name of NAMES) {
+    const g = LEGS[name];
+    for (let i = 0; i < 200; i++) {
+      const p = g.c + (i / 199) * g.dur * 0.999;
+      const P = poseAt((2 + p) * T);
+      const dev = Math.abs(P.paws[name].paw[0] - anchorX(name, 2));
+      if (dev > worst) { worst = dev; worstLeg = name; }
+    }
+  }
+  return { slip: worst, leg: worstLeg };
+}
+function seamScan() {
+  const A = poseAt(0), B = poseAt(K * T);
+  let m = 0;
+  m = Math.max(m, Math.abs(A.zc - B.zc), Math.abs(A.pitch - B.pitch), Math.abs(A.fl - B.fl));
+  for (const name of NAMES) {
+    m = Math.max(m, Math.abs(B.paws[name].paw[0] - A.paws[name].paw[0] - L * K), Math.abs(B.paws[name].paw[2] - A.paws[name].paw[2]));
+    m = Math.max(m, Math.abs(B.paws[name].paw[1]) - Math.abs(A.paws[name].paw[1]));
+    m = Math.max(m, Math.abs(B.paws[name].mid[0] - A.paws[name].mid[0] - L * K), Math.abs(B.paws[name].mid[2] - A.paws[name].mid[2]));
+  }
+  for (let i = 0; i < A.tail.length; i++) m = Math.max(m, Math.abs(B.tail[i].x - A.tail[i].x - L * K), Math.abs(B.tail[i].y - A.tail[i].y), Math.abs(B.tail[i].z - A.tail[i].z));
+  for (let i = 0; i < A.spts.length; i++) m = Math.max(m, Math.abs(B.spts[i][0] - A.spts[i][0] - L * K), Math.abs(B.spts[i][2] - A.spts[i][2]));
+  return m;
+}
+function archScan() {
+  let mn = 1e9, mx = -1e9;
+  for (let i = 0; i <= 400; i++) { const f = flex(i / 400); mn = Math.min(mn, f); mx = Math.max(mx, f); }
+  return { min: mn, max: mx, range: mx - mn };
+}
+function pixel(x, y) {
+  const d = ctx.getImageData(Math.round(x * DPR), Math.round(y * DPR), 1, 1).data;
+  return [d[0], d[1], d[2]];
+}
+function countPixels(pred, stepPx) {
+  const st = Math.max(1, (stepPx || 2));
+  const img = ctx.getImageData(0, 0, W, H).data;
+  let n = 0;
+  for (let i = 0; i < img.length; i += 4 * st) { if (pred(img[i], img[i + 1], img[i + 2])) n++; }
+  return n;
+}
+function foxCenterScreen() {
+  const q = proj([poseAt(simT).X + 0.28, 0, poseAt(simT).zc + 0.02]);
+  return q ? [q[0] / DPR, q[1] / DPR] : null;
+}
+window.__foxTest = {
+  ready: true,
+  frames: () => frames,
+  reset() { simT = 0; acc = 0; prints.length = 0; puffs.length = 0; landEvents.length = 0; for (const k in pawPrev) delete pawPrev[k]; slow = false; azLock = 0; elLock = 0.20; },
+  pause() { running = false; },
+  resume() { running = true; },
+  slow(v) { slow = !!v; },
+  setTravel(m) { simT = (m / L) * T; },
+  advance(dt) { simT += dt; render(); frames++; },
+  unlock() { ensureAudio(); },
+  law: { L, K, LOOP, T, onsets: NAMES.reduce((o, n2) => (o[n2] = LEGS[n2].c, o), {}), durs: NAMES.reduce((o, n2) => (o[n2] = LEGS[n2].dur, o), {}) },
+  gait: gaitScan,
+  slipAudit,
+  seam: seamScan,
+  arch: archScan,
+  stateAt(p) {
+    const P = poseAt(wrap1(p) * T);
+    const out = { x: P.X, z: P.zc, pitch: P.pitch, fl: P.fl, paws: {} };
+    for (const name of NAMES) out.paws[name] = { x: P.paws[name].paw[0], y: P.paws[name].paw[1], z: P.paws[name].paw[2], stance: P.paws[name].stance };
+    return out;
+  },
+  pawAt(name) { const P = poseAt(simT); return { x: P.paws[name].paw[0], z: P.paws[name].paw[2], stance: P.paws[name].stance }; },
+  landings: () => landEvents.slice(),
+  prints: () => prints.length,
+  puffs: () => puffs.length,
+  pixel, countPixels, foxCenterScreen,
+  strideOf: () => Math.floor(simT / T),
+};
+</script>
+<script>
+window.DEMO_CREDITS = {
+  name: 'RENARD', accent: '#d2712c',
+  issues: [2261], span: '~2 h', shipped: '2026-11-14',
+  assist: 'solo',
+  note: 'The Qwen corner of the fox battle: one file, no libraries, a cracking rotary gallop on snow.',
+};
+</script>
+<script src="credits.js"></script>
+</body>
+</html>
