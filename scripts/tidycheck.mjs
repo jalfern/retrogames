@@ -226,6 +226,73 @@ section('chores mark')
     ok(seen.includes('level') && gs2.levelsDone === 1, 'completing the chores clears the level (sheet fully ticked)')
 }
 
+section('glide — human BFS routing (#2250)')
+{
+    const doorBlock = { x: DW.x + 2, y: DW.y + DW.h, w: DW.w - 4, h: DW.doorLen }
+    const hitsDoor = (g) => g.rx - 6 < doorBlock.x + doorBlock.w && g.rx + 6 > doorBlock.x &&
+        g.ry - 6 < doorBlock.y + doorBlock.h && g.ry + 6 > doorBlock.y
+    const walkTo = (gs, tx, ty, cap = 1500, from = null, doorOpen = false) => {
+        if (from) { gs.rx = from[0]; gs.ry = from[1] }
+        if (doorOpen) { gs.dw.door = 1; gs.dw.target = 1 }
+        let n = 0, arrived = false
+        let minx = gs.rx, maxx = gs.rx, throughDoor = false
+        while (n < cap) {
+            const r = s.routeDir(gs, tx, ty)
+            if (!r.ok) return { ok: false, arrived: false, n, minx, maxx, throughDoor }
+            if (r.arrived) { arrived = true; break }
+            const pad = {}
+            if (r.dir) pad[r.dir] = true
+            step(gs, [pad])
+            minx = Math.min(minx, gs.rx); maxx = Math.max(maxx, gs.rx)
+            if (hitsDoor(gs)) throughDoor = true
+            n++
+        }
+        return { ok: true, arrived, n, minx, maxx, throughDoor }
+    }
+
+    // tap where you stand = arrived at once, tap deep in furniture = refused
+    const gs0 = makeGame(11)
+    ok(s.routeDir(gs0, gs0.rx, gs0.ry).arrived === true, 'a tap under the bot arrives instantly (no spin-up)')
+    ok(s.routeDir(gs0, 246, 146).ok === false, 'a tap buried in the table is refused NO WAY (never a wedge)')
+
+    // routing is pure: reads the state, never writes it
+    const gsP = makeGame(23)
+    const hP = gsP.hash
+    for (let i = 0; i < 60; i++) s.routeDir(gsP, 60, 200)
+    ok(gsP.hash === hP, 'routeDir never mutates — seed+pads determinism is untouched')
+
+    // the headline: a route exists around an open washer door, and the walker
+    // takes the road, not the shortcut.
+    const gsD = makeGame(31)
+    const runD = walkTo(gsD, 23, 60, 800, [51, 95], true)
+    ok(runD.ok && runD.arrived && !runD.throughDoor, 'a tap behind the open washer door routes around it and arrives')
+
+    // the roads TRACK the doors: shut, the lane in front of the washer is a
+    // shortcut; open, it is a wall and BFS must sink south around it. Under
+    // the `door` mutant (open doors stop blocking) the open run never gets
+    // longer and the walker strolls through — both gates below go RED.
+    const shut = walkTo(makeGame(13), 79, 60, 900, [23, 80], false)
+    const open = walkTo(makeGame(13), 79, 60, 900, [23, 80], true)
+    ok(open.ok && open.arrived && !open.throughDoor, 'glide never crosses the open door block (RED under door mutant)')
+    ok(open.n > shut.n, `opening the door lengthens the road — ${shut.n} ticks shut vs ${open.n} open (RED under door mutant)`)
+
+    // reach the far rooms too: every honest tap on the shelf arrives
+    const TAPS = [[60, 200], [250, 210], [23, 60], [79, 60], [255, 58], [100, 190], [180, 110], [40, 120], [300, 110], [160, 40], [24, 214], [296, 110]]
+    let arrivedAll = true, worst = 0
+    for (const [tx, ty] of TAPS) {
+        const g = makeGame(5)
+        const r = walkTo(g, tx, ty)
+        if (!r.ok || !r.arrived || r.throughDoor) arrivedAll = false
+        worst = Math.max(worst, r.n)
+    }
+    ok(arrivedAll, `all 12 floor taps across both rooms route and arrive (worst ${worst} ticks)`)
+
+    // determinism of the roads: same seed, same tap, same walk
+    const wA = walkTo(makeGame(9), 60, 200)
+    const wB = walkTo(makeGame(9), 60, 200)
+    ok(wA.arrived && wB.arrived && wA.n === wB.n, 'the glide path is deterministic — same seed + tap = same walk')
+}
+
 if (!NODE_ONLY) {
     section('browser — boots, starts, walks, plays')
     const { openGame, launch, requireDevServer } = await import('./lib/harness.mjs')
@@ -281,6 +348,37 @@ if (!NODE_ONLY) {
         await page.waitForTimeout(700)
         st = await page.evaluate(() => window.__tidybotTest.state())
         ok(st.dwDoor > 0.9, 'real A opens the dishwasher rack end-to-end')
+
+        // #2250 GLIDE: a real mouse tap issues a real order and the bot walks
+        // the BFS roads there; a real arrow press takes the wheel back.
+        await page.evaluate(() => { const g = window.__game; g.reset(777); g.release() })
+        await page.waitForTimeout(150)
+        const tapPt = await page.evaluate(() => {
+            const cv = window.__tidybotTest.canvas()
+            const r = cv.getBoundingClientRect()
+            return { x: r.left + (40 / 320) * r.width, y: r.top + (120 / 240) * r.height,
+                home: window.__tidybotTest.probe() }
+        })
+        await page.mouse.click(tapPt.x, tapPt.y)
+        ok(await page.evaluate(() => window.__tidybotTest.gliding()), 'a real floor tap issues a glide order')
+        let arrived = false
+        for (let i = 0; i < 50 && !arrived; i++) {
+            await page.waitForTimeout(100)
+            arrived = !(await page.evaluate(() => window.__tidybotTest.gliding()))
+        }
+        const gPos = await page.evaluate(() => window.__tidybotTest.probe())
+        const gDist = Math.hypot(gPos.x - 40, gPos.y - 120)
+        ok(arrived && gDist < 12 && Math.hypot(gPos.x - tapPt.home.x, gPos.y - tapPt.home.y) > 80,
+            `the tap glides the bot across the room (stopped ${gDist.toFixed(1)}px off the mark)`)
+        await page.evaluate(() => { const g = window.__game; g.reset(778); g.release() })
+        await page.waitForTimeout(120)
+        await page.mouse.click(tapPt.x, tapPt.y)
+        await page.waitForTimeout(250)
+        ok(await page.evaluate(() => window.__tidybotTest.gliding()), 'the second tap is gliding before the cancel')
+        await page.keyboard.down('ArrowUp')
+        const cancelled = await page.evaluate(() => window.__tidybotTest.gliding())
+        await page.keyboard.up('ArrowUp')
+        ok(cancelled === false, 'a real arrow press cancels the glide — the human is the driver')
 
         // scripted chore progress through the contract keeps the clock honest
         const prog = await page.evaluate(async () => {
