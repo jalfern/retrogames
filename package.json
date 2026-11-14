@@ -44,6 +44,7 @@
     "physicswalkcheck": "node scripts/physicswalkcheck.mjs",
     "learnedwalkcheck": "node scripts/learnedwalkcheck.mjs",
     "horsegeminicheck": "node scripts/horsegeminicheck.mjs",
+    "foxgeminicheck": "node scripts/foxgeminicheck.mjs",
     "neverbudrycheck": "node scripts/neverbudrycheck.mjs",
     "keycheck": "node scripts/keycheck.mjs",
     "pickcheck": "node scripts/pickcheck.mjs",
