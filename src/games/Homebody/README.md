@@ -127,7 +127,7 @@ freezes the rest. Workdays run the clock ×8 while a rostered resident is out
 
 ## Verify
 ```bash
-npm run peoplecheck          # 283 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), kids — counter law, kid day, tumbles/cries, court, hash (#2203), winnable seeds, determinism
+npm run peoplecheck          # 308 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -146,13 +146,16 @@ npm run peoplecheck          # 283 gates: boot, rules, spare-room wing (#1806), 
 # the ivy-chat mutant 211 → 209/2 → 211; and the #2171 thumb-court mutant —
 # delete the `s.holdT = -1` disarm in courtTick — exactly the two double-spend
 # THUMB COURT gates go red, 228 → 226/2; restore. Or zero `KID_CRY_STING` —
-# exactly the wail-sting gate goes red, 283 → 282/1; restore.)
+# exactly the wail-sting gate goes red, 283 → 282/1; restore. Or make setSel
+# stop following the shelf (`if (false && t !== undefined)`) — exactly the four
+# shelf-follow gates go red, 308 → 304/4; restore.)
 npm run dev   # another terminal
 npm run contractcheck        # includes homebody (CONTRACT_ONLY=homebody for just this)
-DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels + real C/X court keys with pink affection pixels and the far-apart Space doctrine
+DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels + real C/X court keys with pink affection pixels and the far-apart Space doctrine + #2222 shelf flips on real [ ] keys, a tapped tab and gold-painted open-tab pixels
 ```
 Drive it: tap objects to order the active resident; G switches residents; B
-opens buy mode (time stops); 1-9 pick cards; stick/arrows walk, A uses.
+opens buy mode (time stops); `[` `]` flip the catalog shelves and 1-9 pick a
+card on the open shelf (every card reachable); stick/arrows walk, A uses.
 
 ## WATCH seat (#1637 batch 17)
 
@@ -234,6 +237,35 @@ the airtime), and 9-seed attract runs adopt the cat before the child card is
 ever chosen — the counter works, the demo undersells it.
 Gates: `peoplecheck` section 9 (31 pins).
 
+## Catalog shelves (#2222) — the buy catalog sorts into stores
+
+The original people-sim never showed a flat wall of goods: buy mode is a
+catalog with category tabs — flip a shelf, see few big cards. The 16-card
+strip was 35px wide per card; shelves made each card ~82px and made every
+card reachable by digit.
+
+- **Law (pure in sim.js):** `CAT_TABS` = HOME (bed, fridge, stove, toilet,
+  shower, phone) / FUN (tv, radio, book, sofa) / DECOR (plant, rug, lamp) /
+  SPECIAL (Spare Room, cat, child); their union covers `CATALOG` exactly, no
+  duplicates — STORES pins it, so adding a card without a shelf goes red.
+  `setSel(s, i)` follows the shelf and remembers per shelf (`s.tabSel`);
+  `flipTab(s, ±1)` cycles and lands on that shelf's remembered card;
+  `digitCard(s, n)` picks within the open shelf. `s.tab` rides `stateHash`
+  (`tabSel` is memory-only — flipping round-trips to the same hash).
+- **Shell:** `[` `]` queue a flip onto the same one-driver loop as every other
+  key (drivePad), digits are shelf-local, and the counter keys R/P/K ride
+  `setSel` so the SPECIAL shelf follows them. Pointer: `tabHit` (a 13px row
+  above the cards) selects a tab; `catalogHit(px, py, s)` now resolves within
+  the open shelf. The attract autopilot's counter purchases also go through
+  `setSel` — the demo never desyncs shelf from selection.
+- **Look:** tab row across the tray, open tab gold (#ffd24a) with gold label;
+  cards keep the panel-blue + gold-selection law and gain per-shelf digit
+  badges 1-9 on every card (the old strip only badge-digits 1-9, leaving
+  cards 10-16 keyboard-orphaned — #2209's card-16 concern, closed).
+- **Gotcha learned:** the pointer handler mutates `gs` synchronously, so a
+  probe can read the new tab a loop-frame before the canvas paints it —
+  `homebodydrive` polls logic but must settle ~150 ms before pixel asserts.
+
 ## Honest gaps (filed to QA #…)
 - **CLOSED by #1806:** multiple rooms — one expansion ships: the Spare Room kit
   grows a wing on the east lawn (floor/walls/door/windows, connectivity-guarded,
@@ -261,6 +293,7 @@ cooldown as C/X. **The pet half of that tail landed in #2197 — Miso the
 adoptable cat (see Cat (#2197))**; the kids half landed in #2203 — Pip, the
 adoptable child (see Kids (#2203)).
 - Visitors are Fern and Ivy (#2143); pets landed (#2197, Miso); kids landed
-  (#2203, Pip); single store catalog.
+  (#2203, Pip); **CLOSED by #2222:** the buy catalog got its category shelves
+  (HOME / FUN / DECOR / SPECIAL) — see §Catalog shelves below.
 - No skippable-speed control for the player; day/night is cosmetic + decay only.
 - Needs panel shows both residents; no per-object queue display like the original.

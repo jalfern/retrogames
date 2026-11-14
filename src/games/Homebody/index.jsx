@@ -705,7 +705,7 @@ const HomebodyGame = () => {
             window.__homebodyTest = {
                 probe: () => gs ? ({
                     screen: screenRef.current, tick: gs.tick, done: gs.done, content: gs.content, money: gs.money,
-                    day: gs.day, hour: Math.round(gs.hour * 10) / 10, build: gs.build, sel: gs.sel,
+                    day: gs.day, hour: Math.round(gs.hour * 10) / 10, build: gs.build, sel: gs.sel, tab: gs.tab,   // #2222: the open shelf
                     demo: gs.demo,
                     people: gs.people.map((p) => ({ name: p.name, x: Math.round(p.x), y: Math.round(p.y), needs: { ...p.needs }, working: p.working, fainted: p.faintT > 0 })),
                     items: gs.items.map((it) => ({ id: it.id, r: it.r, c: it.c })),
