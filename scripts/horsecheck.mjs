@@ -60,6 +60,16 @@
 //    wander gate red (drift 0.00) — the seam gate correctly stays green.
 // 7. `const RUTB = [[..],[..]]` -> `const RUTB = []`: the ground-detail law
 //    gate (ruts 0) and the rut pixel gate (0 px) red — tufts stay green, 42/44.
+// #2224 polish-3 mutants (run by hand, 2026-11-14, then restored):
+// 8. hock landmark `hx: hock[0], hy: hock[1]` -> `hx: null, hy: null`:
+//    EXACTLY the hind double-bend gate red, 57/58.
+// 9. withers bridge R(0.86,..)+profile -> R(1.20,..)/[0.96,..]: the overlap law
+//    gate red (+1 collateral: the stranded box paints over the hoof sample —
+//    proof the geometry moved, not a gate coupling), 56/58.
+// 10. audioTick breath crossing neutered (`if (false && ...)`): EXACTLY the two
+//     breath gates red (breath 0 vs click 71), 56/58.
+// Lesson banked: DEV setPhase now WRAPS phi like stateAt does — passing p>1 to
+// the raw leg math produced unwrapped swing values (a fake seam break).
 // Speed streaks are law-proven (anchors + phi-seam) like the #2162 sound
 // layers: their pixel signature sits ~15 luminance points under the sand and
 // a colour gate would be flaky; deleting the model fails the law gates.
