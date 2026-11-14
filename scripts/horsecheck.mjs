@@ -35,6 +35,12 @@
 //               fade with age and loop with φ; hind landings throw grit while
 //               fore landings pat silently; one breath swell per stride rides
 //               the suspension (counted headless like the #2162 layers).
+//   3e. SCENE PASS (#2231) — the far rim runs TWO twin-mesa rows on parallax
+//               clocks (near 1/5 ground, backdrop 1/4): seam-legal because K
+//               divides each row's mesa count and the twins make the per-loop
+//               slot slide invisible (proven on sorted anchor sets);
+//               ?lite=1 thins brush 14→8 and rocks 9→5 for CI; every static
+//               prop's vertex list is cached once (zero rebuilds per frame).
 //   + DEMO LAW — self-contained page, not registered in games.js, credits
 //               card and index entry present.
 //
@@ -68,6 +74,18 @@
 //    proof the geometry moved, not a gate coupling), 56/58.
 // 10. audioTick breath crossing neutered (`if (false && ...)`): EXACTLY the two
 //     breath gates red (breath 0 vs click 71), 56/58.
+// #2231 scene-pass mutants (run by hand, 2026-11-14, then restored):
+// 11. `K_NEAR = 5` -> `7` (7 divides neither MESA nor the slide): the parallax
+//     rate, commensuration, seam and pin gates red (62/66) — every other gate
+//     green, the scene still looks perfect. THAT is why the seam gate exists.
+// 12. `if (SC_CACHE.dirty) buildSceneCache()` -> rebuild every frame: EXACTLY
+//     the transform-cache gate red (449->490 rebuilds), 65/66.
+// 13. `const SAGE = lite ? 8 : 14` -> `14`: EXACTLY the lite-thinning gate red,
+//     65/66.
+// Lesson banked: a drifting row closes the loop ONLY if its props are twins
+// (equal size AND equal depth) — a per-index z or width breaks the seam even
+// when K divides MESA; and the slot window must stay canonical (−L/2, L/2] or
+// a far-side mesa projects as a wall across the frame.
 // Lesson banked: DEV setPhase now WRAPS phi like stateAt does — passing p>1 to
 // the raw leg math produced unwrapped swing values (a fake seam break).
 // Speed streaks are law-proven (anchors + phi-seam) like the #2162 sound
@@ -473,6 +491,61 @@ ok('one breath per stride, riding the suspension (never more than the beats)',
 ok('breath keeps stride-locked cadence: clicks ≈ 4× breath', Math.abs(snd2.breath * 4 - snd2.click) <= 8, JSON.stringify(snd2))
 await page.evaluate(() => window.__horseTest.resume())
 
+/* ---------------- 3e. SCENE PASS (#2231: mesa parallax, lite thinning, transform cache) ---------------- */
+// Rim law from the pure hook: the near row must slide at 1/K_NEAR of the
+// ground and the backdrop at 1/K_FAR (differentiable separation), the shift
+// per loop must be seam-legal (a whole slot step — travel ≡ travel + L paints
+// identical rims), rows must be depth-separated, and the transform cache must
+// not rebuild once warm while frames advance at a still camera.
+const SEAM_M = 48
+const ms = await page.evaluate(seam => {
+  const t = window.__horseTest
+  return { a: t.mesas(0), b: t.mesas(40), s: t.mesas(seam), st: t.sceneStats() }
+}, SEAM_M)
+// a rim anchor may legitimately wrap the row's slot window between samples
+const wrapAt = (d, want, P) => Math.abs(d - want) < 1e-2 || Math.abs((d - want) % P) < 1e-2 || Math.abs((d - want) % P + P) < 1e-2
+const dn = ms.a.near.map((r, i) => ms.b.near[i][0] - r[0])
+const Pn = SEAM_M / ms.a.near.length
+ok('near mesa row parallaxes at one-fifth ground speed (canonical-window wraps tolerated)',
+  dn.length === ms.a.near.length && dn.every(d => wrapAt(d, -40 / ms.st.kNear, SEAM_M)),
+  'shift/40 m ' + dn.map(v => v.toFixed(1)).join(','))
+const df = ms.a.far.map((r, i) => ms.b.far[i][0] - r[0])
+const Pf = SEAM_M / ms.a.far.length
+ok('backdrop ridge drifts on its own slower clock and sits behind the near row',
+  df.length >= 2 && df.every(d => wrapAt(d, -40 / ms.st.kFar, SEAM_M)) &&
+  Math.min(...ms.a.far.map(r => r[1])) > Math.max(...ms.a.near.map(r => r[1])),
+  'shift/40 m ' + df.map(v => v.toFixed(2)).join(','))
+ok('parallax clocks are commensurate: each K ≥ 2 and divides its row\'s mesa count (seam law)',
+  ms.st.kNear >= 2 && ms.st.near % ms.st.kNear === 0 && ms.st.kFar >= 2 && ms.st.far % ms.st.kFar === 0 && ms.st.kNear !== ms.st.kFar,
+  'K ' + ms.st.kNear + '/' + ms.st.kFar + ' on rows of ' + ms.st.near + '/' + ms.st.far)
+// seam check on sorted rows: at the wrap a mesa re-enters on the far slot and
+// exchanges indices with its neighbour — the mesas are interchangeable by law,
+// so scene-identity is the sorted (x, z, w) list, identical at travel ≡ +48 m
+const rowSorted = r => r.map(v => v.join(',')).sort().join(';')   // twin row: identity is the SET
+const seamLegal = rowSorted(ms.a.near) === rowSorted(ms.s.near) && rowSorted(ms.a.far) === rowSorted(ms.s.far)
+ok('parallax rows stay seam-commensurate (rims identical at travel ≡ travel + 48 m)', seamLegal)
+const cacheA = await page.evaluate(() => window.__horseTest.sceneStats().rebuilds)
+const fC0 = await page.evaluate(() => window.__horseTest.frames())
+await page.waitForFunction(f => window.__horseTest.frames() > f + 40, fC0, { timeout: 8000 }).catch(() => {})
+const cacheB = await page.evaluate(() => window.__horseTest.sceneStats().rebuilds)
+ok('mesa/brush/rock transforms are cached — zero rebuilds while frames advance',
+  cacheB === cacheA && cacheA >= 1, 'rebuilds ' + cacheA + ' -> ' + cacheB + ' over ' + (await page.evaluate(() => window.__horseTest.frames()) - fC0) + ' frames')
+// ?lite=1 thins the scene props for CI software-GL (this page booted with lite=1)
+ok('?lite=1 thins steppe props (near mesas 5, backdrop 4, brush 14->8, rocks 9->5)',
+  ms.st.lite && ms.st.near === 5 && ms.st.far === 4 && ms.st.sage === 8 && ms.st.rocks === 5, JSON.stringify(ms.st))
+// phone-size profile: the unthinned build must keep full density
+const full = await (async () => {
+  const p2 = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 })
+  p2.setDefaultTimeout(30000)
+  await p2.goto(URL_DEMO, { waitUntil: 'load' })
+  await p2.waitForFunction(() => window.__horseTest && window.__horseTest.ready, null, { timeout: 15000 })
+  const st = await p2.evaluate(() => window.__horseTest.sceneStats())
+  await p2.close()
+  return st
+})()
+ok('phone profile keeps full density (sage 14, rocks 9)',
+  !full.lite && full.sage === 14 && full.rocks === 9, JSON.stringify(full))
+
 await page.screenshot({ path: resolve(shots, 'gallop.png') })
 
 /* ---------------- 4. DEMO LAW ---------------- */
@@ -482,7 +555,14 @@ ok('self-contained: zero external src/href in the page', external.length === 0, 
 ok('no libraries: zero import/require in the page', !/\bimport\s|\brequire\(/.test(html))
 const reg = readFileSync(resolve('src/config/games.js'), 'utf8')
 ok('demos law: NOT registered in the arcade registry', !/STRIDELINE|'\/horse'|demos\/horse/i.test(reg))
-ok('credits card present, solo, naming #2147 (+ #2220, #2224 polish)', /name:\s*'STRIDELINE'/.test(html) && /assist:\s*'solo'/.test(html) && /issues:\s*\[2147,\s*2220,\s*2224\]/.test(html))
+ok('credits card present, solo, naming #2147 (+ #2220, #2224, #2231 polish)', /name:\s*'STRIDELINE'/.test(html) && /assist:\s*'solo'/.test(html) && /issues:\s*\[2147,\s*2220,\s*2224,\s*2231\]/.test(html))
+// scene law pins (#2231): parallax rows are commensurate by construction, the
+// near rim really rides the para() clock, and the prop transforms are cached
+ok('scene law pins: K divides its MESA, near mesas ride para(), twin rows, transforms cached',
+  /const\s+K_NEAR\s*=\s*5\s*,\s*K_FAR\s*=\s*4/.test(html) &&
+  /para\(6\s*\+\s*m\s*\*\s*\(L\s*\/\s*MESA_NEAR\)/.test(html) &&
+  /const\s+Z_NEAR\s*=\s*\d+\s*,\s*Z_FAR/.test(html) &&
+  /SC_CACHE\.dirty/.test(html) && /emitCached\(e\.near\[m\]/.test(html))
 const idx = readFileSync(resolve('public/demos/index.html'), 'utf8')
 ok('index links the card and DEMO_INDEX carries the facts', /id="horse"/.test(idx) && /el:\s*'horse'/.test(idx))
 
