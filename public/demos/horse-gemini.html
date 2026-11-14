@@ -57,6 +57,19 @@
     text-transform: uppercase; color: #ffb35c; animation: blink 1.6s infinite;
   }
   @keyframes blink { 0%,100% { opacity: 1 } 50% { opacity: .3 } }
+  #pad {
+    position: fixed; left: 14px; bottom: 56px; z-index: 2; display: none; gap: 8px;
+  }
+  @media (pointer: coarse) {
+    #pad { display: flex; }
+  }
+  #pad button {
+    background: rgba(18,11,16,.66); border: 1px solid rgba(255,179,92,.34); border-radius: 8px;
+    padding: 8px 12px; font: 10px/1 ui-monospace, Menlo, monospace; letter-spacing: .14em;
+    text-transform: uppercase; color: rgba(255,224,186,.92); cursor: pointer;
+    touch-action: manipulation; -webkit-user-select: none; user-select: none;
+  }
+  #pad button:active { background: rgba(255,179,92,.25); }
   #fatal {
     position: fixed; inset: 0; display: none; place-items: center; z-index: 5;
     font: 14px/1.6 ui-monospace, Menlo, monospace; color: #f5e6d3; background: #140c14;
@@ -67,6 +80,10 @@
 <body>
 <canvas id="c"></canvas>
 <div id="hud"><b>SUNSTRIDE</b><span class="hints"> · procedural 3D mustang · drag to orbit · ↑↓ tempo · SPACE study · 1–4 views ·</span> <span id="telemetry"></span></div>
+<div id="pad">
+  <button id="btn-study" type="button">study</button>
+  <button id="btn-view" type="button">view</button>
+</div>
 <div id="audiohint">hooves on</div>
 <div id="attract">
   <div>
@@ -388,7 +405,8 @@ function makeMeshBuffer(maxTris) {
 }
 
 const horseBuf = makeMeshBuffer(5120);
-const worldBuf = makeMeshBuffer(8192);
+const worldBuf = makeMeshBuffer(LITE ? 9216 : 20480);
+const casterBuf = makeMeshBuffer(2048);
 
 /* ---------------- Procedural Low-Poly Primitive Builders ---------------- */
 
@@ -1084,48 +1102,571 @@ function buildHorseMesh(buf, st) {
   }
 }
 
-/* ---------------- Minimal Steppe Ground Plane ---------------- */
+/* ---------------- Golden-Hour Red-Mesa Steppe, Hoofprints & Dust FX ---------------- */
 
-function buildCoreGround(buf, centerX, centerZ) {
-  buf.reset();
-  const R = 36, step = 3.0;
-  const x0 = Math.floor((centerX - R) / step) * step;
-  const z0 = Math.floor((centerZ - R) / step) * step;
-  for (let gx = x0; gx < centerX + R; gx += step) {
-    for (let gz = z0; gz < centerZ + R; gz += step) {
-      const checker = ((Math.round(gx / step) + Math.round(gz / step)) & 1) ? 0.96 : 1.04;
-      const c = [0.46 * checker, 0.30 * checker, 0.18 * checker];
+const WORLD_STRIDES = 16;
+const WORLD_PERIOD = WORLD_STRIDES * STRIDE_LEN; // 67.20 m exact repeating loop!
+
+function hash2(ix, iz) {
+  const n = Math.sin(ix * 127.1 + iz * 311.7) * 43758.5453123;
+  return n - Math.floor(n);
+}
+
+function wrapPeriod(x) {
+  const m = x % WORLD_PERIOD;
+  return m < 0 ? m + WORLD_PERIOD : m;
+}
+
+// Flat gallop corridor (|z| <= 2.3 m -> y === 0.000) so planted hooves & planar shadow never float or sink!
+function steppeHeight(wx, wz) {
+  const az = Math.abs(wz);
+  if (az <= 2.3) return 0.0;
+  const px = wrapPeriod(wx);
+  const k1 = TAU / WORLD_PERIOD;
+  const u = clamp((az - 2.3) / 14.0, 0, 1);
+  const ramp = u * u * (3 - 2 * u);
+  const swell =
+    0.85 * Math.sin(px * k1 * 2.0 + wz * 0.14) +
+    0.52 * Math.cos(px * k1 * 3.0 - wz * 0.21) +
+    0.34 * Math.sin(px * k1 * 5.0 + wz * 0.33);
+  const ridge = Math.max(0, az - 13.0) * 0.14 * (0.65 + 0.35 * Math.sin(px * k1 * 2.0 + (wz > 0 ? 1.2 : -0.7)));
+  return Math.max(0.0, ramp * (1.15 + swell) + ridge);
+}
+
+// Pre-seeded repeating steppe props over [0, WORLD_PERIOD)
+const STEPPE_PROPS = (() => {
+  const mesas = [
+    { px:  6.0, z: -44.0, rx: 11.5, rz: 7.5, h:  9.2, top: 0.58, hue: 0 },
+    { px: 22.5, z: -52.0, rx: 15.0, rz: 9.0, h: 12.4, top: 0.64, hue: 1 },
+    { px: 41.0, z: -40.5, rx:  8.8, rz: 6.2, h:  7.8, top: 0.50, hue: 0 },
+    { px: 56.5, z: -48.0, rx: 13.0, rz: 8.4, h: 10.8, top: 0.60, hue: 1 },
+    { px: 13.5, z:  46.0, rx: 13.5, rz: 8.2, h:  9.8, top: 0.60, hue: 1 },
+    { px: 34.0, z:  53.0, rx: 16.0, rz: 9.5, h: 11.8, top: 0.62, hue: 0 },
+    { px: 53.0, z:  42.0, rx:  9.2, rz: 6.8, h:  7.6, top: 0.52, hue: 1 },
+  ];
+  const rocks = [];
+  const shrubs = [];
+  const tufts = [];
+  for (let i = 0; i < 30; i++) {
+    const px = (i + 0.37 * hash2(i, 3)) * (WORLD_PERIOD / 30);
+    const side = (i % 2 === 0) ? -1 : 1;
+    const z = side * (2.8 + 9.6 * hash2(i, 7));
+    const r = 0.26 + 0.38 * hash2(i, 11);
+    rocks.push({
+      px, z, r,
+      h: r * (0.36 + 0.24 * hash2(i, 13)),
+      rot: hash2(i, 17) * TAU,
+    });
+  }
+  for (let i = 0; i < (LITE ? 28 : 52); i++) {
+    const px = (i + 0.61 * hash2(i, 19)) * (WORLD_PERIOD / (LITE ? 28 : 52));
+    const side = (hash2(i, 23) > 0.48) ? -1 : 1;
+    const z = side * (2.25 + 11.5 * hash2(i, 29));
+    shrubs.push({
+      px, z,
+      r: 0.28 + 0.36 * hash2(i, 31),
+      h: 0.24 + 0.30 * hash2(i, 37),
+      tint: hash2(i, 41),
+    });
+  }
+  for (let i = 0; i < (LITE ? 44 : 88); i++) {
+    const px = (i + 0.5 * hash2(i, 43)) * (WORLD_PERIOD / (LITE ? 44 : 88));
+    const side = (i % 2 === 0) ? -1 : 1;
+    const z = side * (1.58 + 7.2 * hash2(i, 47));
+    tufts.push({
+      px, z,
+      h: 0.22 + 0.24 * hash2(i, 53),
+      phase: hash2(i, 59) * TAU,
+    });
+  }
+  // 12 weathered cedar fence posts along the far range line (67.20 / 12 = 5.60 m spacing)
+  const posts = [];
+  const postStep = WORLD_PERIOD / 12;
+  for (let i = 0; i < 12; i++) {
+    posts.push({ px: i * postStep + 1.4, z: -2.65, lean: (hash2(i, 71) - 0.5) * 0.08 });
+  }
+  return { mesas, rocks, shrubs, tufts, posts, postStep };
+})();
+
+function emitMesa(buf, cx, cz, rx, rz, h, topScale, hue) {
+  const sides = 7;
+  const baseY = -0.3;
+  const midY = h * 0.42;
+  const topY = h;
+  const colTalus = hue ? [0.54, 0.27, 0.16] : [0.58, 0.30, 0.18];
+  const colCliff = hue ? [0.68, 0.32, 0.18] : [0.73, 0.36, 0.20];
+  const colCap   = [0.79, 0.43, 0.23];
+  const r0 = [], r1 = [], r2 = [];
+  for (let k = 0; k < sides; k++) {
+    const a = (TAU * k) / sides + 0.25;
+    const wob = 0.88 + 0.22 * Math.sin(k * 2.3 + cx * 0.1);
+    const ca = Math.cos(a) * wob, sa = Math.sin(a) * wob;
+    r0.push([cx + ca * rx * 1.38, baseY, cz + sa * rz * 1.38]);
+    r1.push([cx + ca * rx * 0.86, midY,  cz + sa * rz * 0.86]);
+    r2.push([cx + ca * rx * topScale, topY, cz + sa * rz * topScale]);
+  }
+  const topC = [cx, topY + 0.15, cz];
+  for (let k = 0; k < sides; k++) {
+    const k1 = (k + 1) % sides;
+    // Outward CCW (a increases +X -> +Z, so bottom->top needs k, k1 order swapped for +outward)
+    buf.tri(r0[k], r1[k], r0[k1], colTalus);
+    buf.tri(r0[k1], r1[k], r1[k1], colTalus);
+    buf.tri(r1[k], r2[k], r1[k1], colCliff);
+    buf.tri(r1[k1], r2[k], r2[k1], colCliff);
+    buf.tri(topC, r2[k1], r2[k], colCap);
+  }
+}
+
+function emitLowRock(buf, cx, y0, cz, r, h, rot, col) {
+  const sides = 6;
+  const base = [], cap = [];
+  const colCap = [col[0] * 1.12, col[1] * 1.12, col[2] * 1.10];
+  for (let k = 0; k < sides; k++) {
+    const a = rot + (TAU * k) / sides;
+    const wob = 0.82 + 0.28 * Math.sin(k * 2.1 + rot);
+    const rr = r * wob;
+    base.push([cx + Math.cos(a) * rr, y0 - 0.03, cz + Math.sin(a) * rr]);
+    cap.push([cx + Math.cos(a) * rr * 0.56 + 0.05 * r, y0 + h, cz + Math.sin(a) * rr * 0.56]);
+  }
+  const topC = [cx + 0.05 * r, y0 + h + 0.02 * r, cz];
+  for (let k = 0; k < sides; k++) {
+    const k1 = (k + 1) % sides;
+    buf.tri(base[k], cap[k], base[k1], col);
+    buf.tri(base[k1], cap[k], cap[k1], col);
+    buf.tri(topC, cap[k1], cap[k], colCap);
+  }
+}
+
+function emitSageShrub(buf, cx, y0, cz, r, h, colMain, colTop) {
+  const sides = 6;
+  const ring = [];
+  for (let k = 0; k < sides; k++) {
+    const a = (TAU * k) / sides + 0.4;
+    const rr = r * (0.85 + 0.25 * ((k & 1) ? 1 : -0.5));
+    ring.push([cx + Math.cos(a) * rr, y0 + h * 0.35, cz + Math.sin(a) * rr]);
+  }
+  const bot = [cx, y0 - 0.02, cz];
+  const top = [cx, y0 + h, cz];
+  for (let k = 0; k < sides; k++) {
+    const k1 = (k + 1) % sides;
+    buf.tri(top, ring[k1], ring[k], colTop);
+    buf.tri(bot, ring[k], ring[k1], colMain);
+  }
+}
+
+function emitFencePost(buf, cx, y0, cz, lean, nextX) {
+  const colWood = [0.34, 0.22, 0.14];
+  const colTop  = [0.44, 0.29, 0.19];
+  const hw = 0.055, topH = 0.92;
+  const dx = lean * 0.4;
+  const b0 = [cx - hw, y0 - 0.02, cz - hw], b1 = [cx + hw, y0 - 0.02, cz - hw];
+  const b2 = [cx + hw, y0 - 0.02, cz + hw], b3 = [cx - hw, y0 - 0.02, cz + hw];
+  const t0 = [cx - hw * 0.85 + dx, y0 + topH, cz - hw * 0.85];
+  const t1 = [cx + hw * 0.85 + dx, y0 + topH, cz - hw * 0.85];
+  const t2 = [cx + hw * 0.85 + dx, y0 + topH, cz + hw * 0.85];
+  const t3 = [cx - hw * 0.85 + dx, y0 + topH, cz + hw * 0.85];
+  buf.quad(b0, b1, t1, t0, colWood);
+  buf.quad(b1, b2, t2, t1, colWood);
+  buf.quad(b2, b3, t3, t2, colWood);
+  buf.quad(b3, b0, t0, t3, colWood);
+  buf.quad(t0, t1, t2, t3, colTop);
+
+  // Split weathered range rail connecting to next post
+  if (nextX !== null) {
+    for (const ry of [0.42, 0.72]) {
+      const rA = [cx, y0 + ry, cz + 0.03];
+      const rB = [nextX, y0 + ry, cz + 0.03];
+      const rh = 0.028;
       buf.quad(
-        [gx, 0, gz],
-        [gx, 0, gz + step],
-        [gx + step, 0, gz + step],
-        [gx + step, 0, gz],
-        c
+        [rA[0], rA[1] - rh, rA[2]], [rB[0], rB[1] - rh, rB[2]],
+        [rB[0], rB[1] + rh, rB[2]], [rA[0], rA[1] + rh, rA[2]],
+        colWood
+      );
+      buf.quad(
+        [rB[0], rB[1] - rh, rB[2] - 0.02], [rA[0], rA[1] - rh, rA[2] - 0.02],
+        [rA[0], rA[1] + rh, rA[2] - 0.02], [rB[0], rB[1] + rh, rB[2] - 0.02],
+        colWood
       );
     }
   }
 }
 
-/* ---------------- Camera, Controls & Render Loop ---------------- */
+// World-locked hoofprint ring buffer & kicked golden dust clods
+const hoofprints = [];
+const dustPuffs = [];
+const MAX_PRINTS = 28;
+const MAX_DUST = LITE ? 36 : 72;
+const prevLegStance = { LH: false, RH: false, LF: false, RF: false };
+
+function stampHoofprint(wx, wz, legId) {
+  // Avoid duplicate stamp if already stamped within 8 cm
+  for (let i = hoofprints.length - 1; i >= 0; i--) {
+    if (Math.abs(hoofprints[i].x - wx) < 0.08 && Math.abs(hoofprints[i].z - wz) < 0.08) return;
+  }
+  hoofprints.push({ x: wx, z: wz, legId });
+  if (hoofprints.length > MAX_PRINTS) hoofprints.shift();
+}
+
+function spawnHoofDust(wx, wz, scale = 1.0) {
+  const count = LITE ? 3 : 5;
+  for (let i = 0; i < count; i++) {
+    if (dustPuffs.length >= MAX_DUST) dustPuffs.shift();
+    const ang = (Math.random() - 0.5) * 1.2;
+    const spd = (1.1 + Math.random() * 1.4) * scale;
+    dustPuffs.push({
+      x: wx - 0.04 + (Math.random() - 0.5) * 0.06,
+      y: 0.03 + Math.random() * 0.03,
+      z: wz + Math.sin(ang) * 0.05,
+      vx: -spd * (0.75 + Math.random() * 0.45),
+      vy: 0.72 + Math.random() * 0.75,
+      vz: Math.sin(ang) * 0.55,
+      age: 0,
+      life: 0.46 + Math.random() * 0.28,
+      r0: 0.028 + Math.random() * 0.022,
+    });
+  }
+}
+
+function shiftWorldEffects(dx) {
+  for (const hp of hoofprints) hp.x += dx;
+  for (const dp of dustPuffs) dp.x += dx;
+}
+
+function updateDust(dt) {
+  for (let i = dustPuffs.length - 1; i >= 0; i--) {
+    const p = dustPuffs[i];
+    p.age += dt;
+    if (p.age >= p.life) {
+      dustPuffs.splice(i, 1);
+      continue;
+    }
+    p.x += p.vx * dt;
+    p.y = Math.max(0.015, p.y + p.vy * dt);
+    p.z += p.vz * dt;
+    p.vx *= (1 - 2.2 * dt);
+    p.vy -= 2.4 * dt;
+  }
+}
+
+function buildSteppeScene(buf, cBuf, centerX, windTime) {
+  buf.reset();
+  cBuf.reset();
+
+  // 1. Faceted Steppe Terrain Grid (fine packed trail near z=0, broader steppe flanks outside)
+  const xSpan = LITE ? 34 : 46;
+  const xStep = 1.40; // 4.20 / 3 = 1.40 m exact stride sub-harmonic!
+  const zBands = [-28, -19, -12, -7.5, -4.4, -2.3, -1.0, 0.0, 1.0, 2.3, 4.4, 7.5, 12, 19, 28];
+  const xStart = Math.floor((centerX - xSpan) / xStep) * xStep;
+  const xEnd   = centerX + xSpan;
+
+  for (let gx = xStart; gx < xEnd; gx += xStep) {
+    const ix = Math.round(wrapPeriod(gx) / xStep);
+    for (let zi = 0; zi < zBands.length - 1; zi++) {
+      const z0 = zBands[zi], z1 = zBands[zi + 1];
+      const y00 = steppeHeight(gx, z0),         y01 = steppeHeight(gx, z1);
+      const y11 = steppeHeight(gx + xStep, z1), y10 = steppeHeight(gx + xStep, z0);
+
+      const midZ = Math.abs((z0 + z1) * 0.5);
+      const n = hash2(ix, zi + 11);
+      let baseCol;
+      if (midZ < 1.15) {
+        // Sun-baked packed mustang trail (warm terracotta/ochre dirt with subtle pebble variation)
+        const v = 0.94 + 0.12 * n;
+        baseCol = [0.54 * v, 0.34 * v, 0.20 * v];
+      } else if (midZ < 2.35) {
+        const v = 0.93 + 0.13 * n;
+        baseCol = [0.49 * v, 0.31 * v, 0.18 * v];
+      } else {
+        // Sage-dusted red-earth prairie swells
+        const v = 0.90 + 0.18 * n;
+        const sageMix = clamp((midZ - 2.3) / 16.0, 0, 0.35);
+        baseCol = [
+          (0.47 * (1 - sageMix) + 0.39 * sageMix) * v,
+          (0.29 * (1 - sageMix) + 0.31 * sageMix) * v,
+          (0.17 * (1 - sageMix) + 0.18 * sageMix) * v,
+        ];
+      }
+      buf.quad(
+        [gx, y00, z0],
+        [gx, y01, z1],
+        [gx + xStep, y11, z1],
+        [gx + xStep, y10, z0],
+        baseCol
+      );
+    }
+  }
+
+  // Tile periodic props around centerX across [-1, 0, +1] periods
+  const baseTile = Math.floor(centerX / WORLD_PERIOD);
+  for (let k = -1; k <= 1; k++) {
+    const tileX = (baseTile + k) * WORLD_PERIOD;
+
+    // 2. Distant Red-Sandstone Mesas & Buttes
+    for (const m of STEPPE_PROPS.mesas) {
+      const wx = tileX + m.px;
+      if (Math.abs(wx - centerX) > 68) continue;
+      emitMesa(buf, wx, m.z, m.rx, m.rz, m.h, m.top, m.hue);
+    }
+
+    // 3. Weathered Cedar Range Fence Posts (cast real golden-hour shadows onto the trail!)
+    for (let pi = 0; pi < STEPPE_PROPS.posts.length; pi++) {
+      const p = STEPPE_PROPS.posts[pi];
+      const wx = tileX + p.px;
+      if (Math.abs(wx - centerX) > xSpan) continue;
+      const y0 = steppeHeight(wx, p.z);
+      emitFencePost(cBuf, wx, y0, p.z, p.lean, wx + STEPPE_PROPS.postStep);
+    }
+
+    // 4. Faceted Desert Sandstone Boulders
+    for (const rk of STEPPE_PROPS.rocks) {
+      const wx = tileX + rk.px;
+      if (Math.abs(wx - centerX) > xSpan) continue;
+      const y0 = steppeHeight(wx, rk.z);
+      const targetBuf = Math.abs(rk.z) < 4.2 ? cBuf : buf;
+      emitLowRock(targetBuf, wx, y0, rk.z, rk.r, rk.h, rk.rot, [0.58, 0.32, 0.19]);
+    }
+
+    // 5. Silvery-Olive Steppe Sagebrush Domes
+    for (const sh of STEPPE_PROPS.shrubs) {
+      const wx = tileX + sh.px;
+      if (Math.abs(wx - centerX) > xSpan - 4) continue;
+      const y0 = steppeHeight(wx, sh.z);
+      const g = 0.88 + 0.22 * sh.tint;
+      emitSageShrub(buf, wx, y0, sh.z, sh.r, sh.h, [0.24 * g, 0.28 * g, 0.19 * g], [0.35 * g, 0.40 * g, 0.27 * g]);
+    }
+
+    // 6. Golden Prairie Grass Tufts swaying in the breeze
+    for (const tf of STEPPE_PROPS.tufts) {
+      const wx = tileX + tf.px;
+      if (Math.abs(wx - centerX) > 26) continue;
+      const y0 = steppeHeight(wx, tf.z);
+      const sway = 0.06 * Math.sin(windTime * 2.6 + tf.phase);
+      const colG = [0.68, 0.50, 0.22];
+      for (let b = -1; b <= 1; b++) {
+        const bx = wx + b * 0.045;
+        const bz = tf.z + (b === 0 ? 0.03 : -0.02);
+        const tip = [bx - 0.07 + sway, y0 + tf.h * (b === 0 ? 1.0 : 0.82), bz + b * 0.06];
+        buf.tri([bx - 0.018, y0, bz], [bx + 0.018, y0, bz], tip, colG);
+        buf.tri([bx + 0.018, y0, bz], [bx - 0.018, y0, bz], tip, colG);
+      }
+    }
+  }
+
+  // 7. World-Pinned Horseshoe Hoofprints along the trail (+Y upward-wound quads!)
+  const printCol = [0.22, 0.13, 0.08];
+  for (let i = 0; i < hoofprints.length; i++) {
+    const hp = hoofprints[i];
+    if (Math.abs(hp.x - centerX) > 24) continue;
+    const x = hp.x, z = hp.z, y = 0.003;
+    const rx = 0.058, rz = 0.048;
+    buf.quad([x - rx * 0.6, y, z - rz], [x - rx * 0.6, y, z - rz * 0.50], [x + rx * 0.5, y, z - rz * 0.44], [x + rx * 0.7, y, z - rz * 0.82], printCol);
+    buf.quad([x - rx * 0.6, y, z + rz * 0.50], [x - rx * 0.6, y, z + rz], [x + rx * 0.7, y, z + rz * 0.82], [x + rx * 0.5, y, z + rz * 0.44], printCol);
+    buf.quad([x + rx * 0.44, y, z - rz * 0.76], [x + rx * 0.44, y, z + rz * 0.76], [x + rx, y, z + rz * 0.36], [x + rx, y, z - rz * 0.36], printCol);
+  }
+
+  // 8. Kicked Golden Turf Dust Clods
+  for (let i = 0; i < dustPuffs.length; i++) {
+    const p = dustPuffs[i];
+    const u = p.age / p.life;
+    const r = p.r0 * (1.0 + 2.1 * u) * (1.0 - 0.65 * u * u);
+    const bright = 1.0 - 0.30 * u;
+    emitJointBall(buf, [p.x, p.y, p.z], r * 1.15, r * 0.85, r, [0.76 * bright, 0.53 * bright, 0.33 * bright]);
+  }
+}
+
+/* ---------------- Synthesized Web Audio 4-Beat Gallop Soundtrack ---------------- */
+
+const audio = {
+  ctx: null,
+  noiseBuf: null,
+  windGain: null,
+  windFilter: null,
+  muted: false,
+  unlocked: false,
+  strikes: 0,
+};
+
+const audioHintEl = document.getElementById('audiohint');
+
+function initAudioOnGesture() {
+  if (audio.ctx) {
+    if (audio.ctx.state === 'suspended') audio.ctx.resume().catch(() => {});
+    audio.unlocked = true;
+    return;
+  }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  try {
+    const ctx = new AC();
+    audio.ctx = ctx;
+    const len = Math.floor(ctx.sampleRate * 1.5);
+    const nb = ctx.createBuffer(1, len, ctx.sampleRate);
+    const ch = nb.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++) {
+      const w = Math.random() * 2 - 1;
+      last = (last + 0.08 * w) / 1.08;
+      ch[i] = w * 0.65 + last * 1.4;
+    }
+    audio.noiseBuf = nb;
+
+    // Continuous subtle prairie breeze bed
+    const src = ctx.createBufferSource();
+    src.buffer = nb;
+    src.loop = true;
+    const flt = ctx.createBiquadFilter();
+    flt.type = 'bandpass';
+    flt.frequency.value = 310;
+    flt.Q.value = 0.8;
+    const gn = ctx.createGain();
+    gn.gain.value = audio.muted ? 0 : 0.022;
+    src.connect(flt);
+    flt.connect(gn);
+    gn.connect(ctx.destination);
+    src.start();
+
+    audio.windFilter = flt;
+    audio.windGain = gn;
+    audio.unlocked = true;
+  } catch {
+    // Ignore sandboxed / headless audio errors cleanly
+  }
+}
+
+function playHoofStrike(legId) {
+  audio.strikes++;
+  if (audio.muted || !audio.ctx || audio.ctx.state !== 'running') return;
+  const ctx = audio.ctx;
+  const t = ctx.currentTime;
+  const pitchMap = { LH: 96, RH: 104, LF: 112, RF: 122 };
+  const f0 = (pitchMap[legId] || 108) * (0.94 + Math.random() * 0.10);
+  const vol = timeScale < 0.5 ? 0.13 : 0.21;
+
+  // 1. Deep packed-earth turf thud
+  const osc = ctx.createOscillator();
+  const og = ctx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(f0, t);
+  osc.frequency.exponentialRampToValueAtTime(36, t + 0.072);
+  og.gain.setValueAtTime(0.001, t);
+  og.gain.linearRampToValueAtTime(vol, t + 0.005);
+  og.gain.exponentialRampToValueAtTime(0.0008, t + 0.085);
+  osc.connect(og);
+  og.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.09);
+
+  // 2. Crisp sandy soil & gravel crunch
+  if (audio.noiseBuf) {
+    const ns = ctx.createBufferSource();
+    ns.buffer = audio.noiseBuf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(780 + (legId === 'RF' ? 180 : 0), t);
+    bp.Q.value = 1.4;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.001, t);
+    ng.gain.linearRampToValueAtTime(vol * 0.48, t + 0.004);
+    ng.gain.exponentialRampToValueAtTime(0.0008, t + 0.056);
+    ns.connect(bp);
+    bp.connect(ng);
+    ng.connect(ctx.destination);
+    ns.start(t, Math.random() * 0.8, 0.065);
+  }
+}
+
+function playFlightBreath() {
+  if (audio.muted || !audio.ctx || audio.ctx.state !== 'running' || !audio.noiseBuf || timeScale < 0.6) return;
+  const ctx = audio.ctx;
+  const t = ctx.currentTime;
+  const ns = ctx.createBufferSource();
+  ns.buffer = audio.noiseBuf;
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.setValueAtTime(920, t);
+  bp.Q.value = 2.2;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0008, t);
+  g.gain.linearRampToValueAtTime(0.032, t + 0.03);
+  g.gain.exponentialRampToValueAtTime(0.0008, t + 0.13);
+  ns.connect(bp);
+  bp.connect(g);
+  g.connect(ctx.destination);
+  ns.start(t, Math.random() * 0.5, 0.14);
+}
+
+audioHintEl.addEventListener('click', e => {
+  e.stopPropagation();
+  initAudioOnGesture();
+  audio.muted = !audio.muted;
+  audioHintEl.textContent = audio.muted ? 'hooves off' : 'hooves on';
+  audioHintEl.classList.toggle('off', audio.muted);
+  if (audio.windGain && audio.ctx) {
+    audio.windGain.gain.setTargetAtTime(audio.muted ? 0 : 0.022, audio.ctx.currentTime, 0.05);
+  }
+});
+
+/* ---------------- Camera, Controls, Attract Cycling & Render Loop ---------------- */
 
 const SUN_DIR = norm3([-0.42, 0.34, 0.84]);
+const CAM_PRESETS = [
+  { yaw:  0.00, pitch: 0.06, dist: 3.55 }, // 1: Pure Muybridge lateral profile
+  { yaw:  0.46, pitch: 0.13, dist: 3.75 }, // 2: Heroic three-quarter lead view
+  { yaw:  0.24, pitch: -0.01, dist: 2.95 }, // 3: Low ground-level hoof-lock angle
+  { yaw: -0.44, pitch: 0.24, dist: 4.35 }, // 4: Trailing desert chase angle
+];
+let presetIdx = 1;
+
 const cam = {
-  yaw: 0.32, pitch: 0.11, dist: 3.75,
-  tYaw: 0.32, tPitch: 0.11, tDist: 3.75,
+  yaw: 0.36, pitch: 0.11, dist: 3.75,
+  tYaw: 0.36, tPitch: 0.11, tDist: 3.75,
   auto: true,
 };
 
 let screenMode = 'attract';
 let strideIndex = 0;
 let phase = 0.0;
-let strideFreq = 1.75; // Hz
+let strideFreq = 1.75; // Hz (7.35 m/s gallop)
 let timeScale = 1.0;
 let paused = false;
 let frames = 0;
 let readyFlag = false;
 let lastNow = 0;
+let worldClock = 0;
 let W = 0, H = 0, DPR = 1;
 let currentState = evaluateHorse(0, 0);
+
+// Seed initial trail prints behind starting stride so initial frame looks lived-in
+for (let s = -2; s <= -1; s++) {
+  for (const d of LEGS_DEF) {
+    stampHoofprint(s * STRIDE_LEN + d.on * STRIDE_LEN + d.tdX, d.zOff, d.id);
+  }
+}
+
+const ATTRACT_MSGS = [
+  'procedural anatomy · flat-faceted WebGL2',
+  'LH → RH → LF → RF · gathered flight suspension',
+  'analytic 2-bone IK · zero stance hoof slip',
+  'drag to orbit · space for Muybridge study',
+];
+let attractMsgIdx = 0;
+const amsgEl = document.getElementById('amsg');
+setInterval(() => {
+  if (screenMode !== 'attract' || !amsgEl) return;
+  amsgEl.style.opacity = '0';
+  setTimeout(() => {
+    attractMsgIdx = (attractMsgIdx + 1) % ATTRACT_MSGS.length;
+    amsgEl.textContent = ATTRACT_MSGS[attractMsgIdx];
+    amsgEl.style.opacity = '1';
+  }, 320);
+}, 3200);
+
+function dismissAttract() {
+  if (screenMode === 'attract') {
+    screenMode = 'play';
+    document.getElementById('attract').classList.add('gone');
+  }
+}
 
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, LITE ? 1 : 2);
@@ -1138,60 +1679,116 @@ function resize() {
 resize();
 addEventListener('resize', resize);
 
-let drag = null;
+// Multi-pointer drag orbit + two-finger pinch zoom
+const pointers = new Map();
+let pinchDist0 = 0;
+
 canvas.addEventListener('pointerdown', e => {
-  drag = { x: e.clientX, y: e.clientY };
+  initAudioOnGesture();
+  dismissAttract();
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   cam.auto = false;
-  canvas.setPointerCapture(e.pointerId);
-  if (screenMode === 'attract') {
-    screenMode = 'play';
-    document.getElementById('attract').classList.add('gone');
+  try { canvas.setPointerCapture(e.pointerId); } catch {}
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    pinchDist0 = Math.hypot(a.x - b.x, a.y - b.y) || 1;
   }
 });
 canvas.addEventListener('pointermove', e => {
-  if (!drag) return;
-  cam.tYaw -= (e.clientX - drag.x) * 0.006;
-  cam.tPitch = clamp(cam.tPitch + (e.clientY - drag.y) * 0.005, -0.03, 1.15);
-  drag = { x: e.clientX, y: e.clientY };
+  const prev = pointers.get(e.pointerId);
+  if (!prev) return;
+  const cur = { x: e.clientX, y: e.clientY };
+  pointers.set(e.pointerId, cur);
+  if (pointers.size === 1) {
+    cam.tYaw -= (cur.x - prev.x) * 0.0065;
+    cam.tPitch = clamp(cam.tPitch + (cur.y - prev.y) * 0.005, -0.02, 1.12);
+  } else if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    if (pinchDist0 > 0) {
+      cam.tDist = clamp(cam.tDist * (pinchDist0 / d), 2.1, 8.5);
+    }
+    pinchDist0 = d;
+  }
 });
-addEventListener('pointerup', () => { drag = null; });
+function endPointer(e) {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinchDist0 = 0;
+}
+addEventListener('pointerup', endPointer);
+addEventListener('pointercancel', endPointer);
+
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
   cam.tDist = clamp(cam.tDist + e.deltaY * 0.003, 2.1, 8.5);
 }, { passive: false });
 
-addEventListener('keydown', e => {
-  if (screenMode === 'attract') {
-    screenMode = 'play';
-    document.getElementById('attract').classList.add('gone');
-  }
-  if (e.code === 'Space') { e.preventDefault(); timeScale = timeScale < 0.5 ? 1.0 : 0.22; }
-  if (e.code === 'ArrowUp')   { e.preventDefault(); strideFreq = clamp(strideFreq + 0.12, 1.15, 2.35); }
-  if (e.code === 'ArrowDown') { e.preventDefault(); strideFreq = clamp(strideFreq - 0.12, 1.15, 2.35); }
-  if (e.key === '1') { cam.auto = false; cam.tYaw = 0.0;  cam.tPitch = 0.07; cam.tDist = 3.55; }
-  if (e.key === '2') { cam.auto = false; cam.tYaw = 0.48; cam.tPitch = 0.14; cam.tDist = 3.75; }
-  if (e.key === '3') { cam.auto = false; cam.tYaw = 0.22; cam.tPitch = -0.01; cam.tDist = 3.0; }
-  if (e.key === '4') { cam.auto = false; cam.tYaw = 0.05; cam.tPitch = 1.02; cam.tDist = 5.0; }
+document.getElementById('btn-study').addEventListener('click', e => {
+  e.stopPropagation();
+  initAudioOnGesture();
+  dismissAttract();
+  timeScale = timeScale < 0.5 ? 1.0 : 0.22;
 });
+document.getElementById('btn-view').addEventListener('click', e => {
+  e.stopPropagation();
+  initAudioOnGesture();
+  dismissAttract();
+  presetIdx = (presetIdx + 1) % CAM_PRESETS.length;
+  const p = CAM_PRESETS[presetIdx];
+  cam.auto = false; cam.tYaw = p.yaw; cam.tPitch = p.pitch; cam.tDist = p.dist;
+});
+
+addEventListener('keydown', e => {
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+  initAudioOnGesture();
+  dismissAttract();
+  if (e.code === 'Space') { e.preventDefault(); timeScale = timeScale < 0.5 ? 1.0 : 0.22; }
+  if (e.code === 'ArrowUp')    { e.preventDefault(); strideFreq = clamp(strideFreq + 0.12, 1.15, 2.35); }
+  if (e.code === 'ArrowDown')  { e.preventDefault(); strideFreq = clamp(strideFreq - 0.12, 1.15, 2.35); }
+  if (e.code === 'ArrowLeft')  { e.preventDefault(); cam.auto = false; cam.tYaw -= 0.14; }
+  if (e.code === 'ArrowRight') { e.preventDefault(); cam.auto = false; cam.tYaw += 0.14; }
+  if (e.key >= '1' && e.key <= '4') {
+    presetIdx = (+e.key) - 1;
+    const p = CAM_PRESETS[presetIdx];
+    cam.auto = false; cam.tYaw = p.yaw; cam.tPitch = p.pitch; cam.tDist = p.dist;
+  }
+});
+
+function syncFootfallEffects(st, emitParticles) {
+  for (const d of LEGS_DEF) {
+    const inS = st.legs[d.id].inStance;
+    if (inS && !prevLegStance[d.id]) {
+      const h = st.legs[d.id].hoof;
+      stampHoofprint(h[0], h[2], d.id);
+      if (emitParticles) {
+        spawnHoofDust(h[0], h[2], timeScale < 0.5 ? 0.65 : 1.0);
+        playHoofStrike(d.id);
+      }
+    }
+    prevLegStance[d.id] = inS;
+  }
+}
 
 function renderScene() {
   resize();
   currentState = evaluateHorse(strideIndex, phase, 0);
   buildHorseMesh(horseBuf, currentState);
-  buildCoreGround(worldBuf, currentState.refX, 0);
+  buildSteppeScene(worldBuf, casterBuf, currentState.refX, worldClock);
 
+  const aspect = W / H;
+  const portraitScale = aspect < 1 ? clamp(1.04 / aspect, 1.0, 2.35) : 1.0;
+  const effDist = cam.dist * portraitScale;
   const target = [currentState.refX + 0.06, 0.98, 0];
   const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
   const sy = Math.sin(cam.yaw),   cy = Math.cos(cam.yaw);
   const eye = [
-    target[0] + sy * cp * cam.dist,
-    Math.max(0.14, target[1] + sp * cam.dist),
-    target[2] + cy * cp * cam.dist,
+    target[0] + sy * cp * effDist,
+    Math.max(0.16, target[1] + sp * effDist),
+    target[2] + cy * cp * effDist,
   ];
 
-  const fovY = 0.70;
-  const aspect = W / H;
-  const proj = mat4Perspective(fovY, aspect, 0.12, 140.0);
+  const fovY = 0.68;
+  const proj = mat4Perspective(fovY, aspect, 0.12, 160.0);
   const view = mat4LookAt(eye, target, [0, 1, 0]);
   const vp = mat4Mul(proj, view);
 
@@ -1204,6 +1801,7 @@ function renderScene() {
   gl.clearStencil(0);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
 
+  // 1. Atmospheric Golden-Hour Sky Dome
   gl.disable(gl.DEPTH_TEST);
   gl.disable(gl.CULL_FACE);
   gl.useProgram(progSky);
@@ -1216,7 +1814,10 @@ function renderScene() {
   gl.bindVertexArray(vaoEmpty);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
+  // 2. Opaque Steppe Terrain, Mesas, Hoofprints & Props
   gl.enable(gl.DEPTH_TEST);
+  gl.enable(gl.CULL_FACE);
+  gl.cullFace(gl.BACK);
   gl.depthMask(true);
   gl.useProgram(progMesh);
   gl.uniformMatrix4fv(uMesh.viewProj, false, vp);
@@ -1224,9 +1825,12 @@ function renderScene() {
   gl.uniform3fv(uMesh.camPos, eye);
   gl.uniform3f(uMesh.refCenter, currentState.refX, 0, 0);
   gl.uniform1i(uMesh.shadowPass, 0);
-  gl.uniform1f(uMesh.shadowGroundY, 0.003);
+  gl.uniform1f(uMesh.shadowGroundY, 0.0035);
   worldBuf.uploadAndDraw();
+  casterBuf.uploadAndDraw();
 
+  // 3. Stencil-Guarded Planar Projected Sun Shadows (Horse + Roadside Fence/Boulders)
+  gl.disable(gl.CULL_FACE);
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   gl.enable(gl.STENCIL_TEST);
@@ -1234,16 +1838,24 @@ function renderScene() {
   gl.stencilOp(gl.KEEP, gl.KEEP, gl.INCR);
   gl.depthMask(false);
   gl.uniform1i(uMesh.shadowPass, 1);
+  casterBuf.uploadAndDraw();
   horseBuf.uploadAndDraw();
   gl.disable(gl.STENCIL_TEST);
   gl.disable(gl.BLEND);
   gl.depthMask(true);
 
+  // 4. Flat-Faceted Low-Poly Mustang
+  gl.enable(gl.CULL_FACE);
   gl.uniform1i(uMesh.shadowPass, 0);
   horseBuf.uploadAndDraw();
 }
 
 const telemetryEl = document.getElementById('telemetry');
+function updateTelemetry() {
+  const contacts = LEGS_DEF.filter(d => currentState.legs[d.id].inStance).map(d => d.id).join('+') || 'FLIGHT';
+  const modeTag = timeScale < 0.5 ? 'STUDY · ' : '';
+  telemetryEl.textContent = `${modeTag}phase ${phase.toFixed(2)} · ${contacts} · ${(strideFreq * STRIDE_LEN * timeScale).toFixed(1)} m/s`;
+}
 
 function frame(now) {
   if (!lastNow) lastNow = now;
@@ -1251,24 +1863,41 @@ function frame(now) {
   lastNow = now;
 
   if (!paused) {
-    phase += dt * strideFreq * timeScale;
-    while (phase >= 1) { phase -= 1; strideIndex++; }
+    const prevPhi = phase;
+    const dPhase = dt * strideFreq * timeScale;
+    phase += dPhase;
+    worldClock += dt * timeScale;
+
+    if (prevPhi < 0.74 && phase >= 0.74) playFlightBreath();
+
+    while (phase >= 1) {
+      phase -= 1;
+      strideIndex++;
+      if (strideIndex >= WORLD_STRIDES) {
+        strideIndex -= WORLD_STRIDES;
+        shiftWorldEffects(-WORLD_PERIOD);
+      }
+    }
+    updateDust(dt * timeScale);
     if (cam.auto) {
-      cam.tYaw += dt * 0.14;
+      cam.tYaw += dt * 0.13;
       cam.yaw = cam.tYaw;
     }
+    if (audio.windFilter && audio.ctx && !audio.muted) {
+      const targetFreq = 240 + 140 * timeScale + 55 * Math.sin(worldClock * 0.9);
+      audio.windFilter.frequency.setTargetAtTime(targetFreq, audio.ctx.currentTime, 0.08);
+    }
   }
-  cam.yaw += (cam.tYaw - cam.yaw) * 0.12;
-  cam.pitch += (cam.tPitch - cam.pitch) * 0.12;
-  cam.dist += (cam.tDist - cam.dist) * 0.12;
+  cam.yaw += (cam.tYaw - cam.yaw) * 0.14;
+  cam.pitch += (cam.tPitch - cam.pitch) * 0.14;
+  cam.dist += (cam.tDist - cam.dist) * 0.14;
 
   renderScene();
+  syncFootfallEffects(currentState, !paused);
+
   frames++;
   readyFlag = true;
-  if (frames % 6 === 0) {
-    const contacts = LEGS_DEF.filter(d => currentState.legs[d.id].inStance).map(d => d.id).join('+') || 'FLIGHT';
-    telemetryEl.textContent = `phase ${phase.toFixed(2)} · ${contacts} · ${(strideFreq * STRIDE_LEN * timeScale).toFixed(1)} m/s`;
-  }
+  if (frames % 5 === 0) updateTelemetry();
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -1281,12 +1910,22 @@ function auditGait(stepsPerStride = 240, numStrides = 2) {
   let maxIkRatio = 0;
   let flightFrames = 0;
   let minSwingClearance = Infinity;
+  let minHeave = Infinity, maxHeave = -Infinity;
+  let minPitch = Infinity, maxPitch = -Infinity;
+  let minHeadY = Infinity, maxHeadY = -Infinity;
+  let minTailY = Infinity, maxTailY = -Infinity;
   const anchors = {};
 
   for (let s = 0; s < numStrides; s++) {
     for (let i = 0; i < stepsPerStride; i++) {
       const ph = i / stepsPerStride;
       const st = evaluateHorse(s, ph, 0);
+      minHeave = Math.min(minHeave, st.heaveY); maxHeave = Math.max(maxHeave, st.heaveY);
+      minPitch = Math.min(minPitch, st.pitch);  maxPitch = Math.max(maxPitch, st.pitch);
+      minHeadY = Math.min(minHeadY, st.muzzle[1]); maxHeadY = Math.max(maxHeadY, st.muzzle[1]);
+      const tailTipY = st.tailPts[st.tailPts.length - 1][1];
+      minTailY = Math.min(minTailY, tailTipY); maxTailY = Math.max(maxTailY, tailTipY);
+
       let anyStance = false;
       for (const d of LEGS_DEF) {
         const L = st.legs[d.id];
@@ -1312,11 +1951,15 @@ function auditGait(stepsPerStride = 240, numStrides = 2) {
     }
   }
 
-  // Seamless loop check: body-relative pose at phi = 0 vs phi -> 1 (evaluated at rawPhase 0 vs 1 in body space)
+  // Seamless loop check: body-relative pose at phi = 0 vs phi -> 1
   const p0 = evaluateHorse(0, 0.0, 0);
-  const p1 = evaluateHorse(1, 0.0, 0); // start of next stride === end of stride 0
+  const p1 = evaluateHorse(1, 0.0, 0);
   const pEnd = evaluateHorse(0, 1 - 1e-7, 0);
-  let loopSeamMm = Math.abs((pEnd.poll[1] - p0.poll[1])) * 1000;
+  let loopSeamMm = Math.max(
+    Math.abs(pEnd.poll[1] - p0.poll[1]) * 1000,
+    Math.abs(pEnd.muzzle[1] - p0.muzzle[1]) * 1000,
+    Math.abs(pEnd.tailPts[6][1] - p0.tailPts[6][1]) * 1000
+  );
   for (const d of LEGS_DEF) {
     const rel0 = [p0.legs[d.id].hoof[0] - p0.refX, p0.legs[d.id].hoof[1], p0.legs[d.id].hoof[2]];
     const rel1 = [p1.legs[d.id].hoof[0] - p1.refX, p1.legs[d.id].hoof[1], p1.legs[d.id].hoof[2]];
@@ -1331,6 +1974,12 @@ function auditGait(stepsPerStride = 240, numStrides = 2) {
     flightFraction: +(flightFrames / stepsPerStride).toFixed(3),
     minMidSwingClearanceM: +minSwingClearance.toFixed(4),
     loopSeamMm: +loopSeamMm.toFixed(6),
+    ranges: {
+      bodyHeaveM: +(maxHeave - minHeave).toFixed(4),
+      bodyPitchRad: +(maxPitch - minPitch).toFixed(4),
+      headMuzzleM: +(maxHeadY - minHeadY).toFixed(4),
+      tailTipM: +(maxTailY - minTailY).toFixed(4),
+    },
   };
 }
 
@@ -1338,21 +1987,48 @@ window.__horsegeminiTest = {
   get ready() { return readyFlag; },
   get frames() { return frames; },
   setPose(opts = {}) {
-    if (opts.stride !== undefined) strideIndex = opts.stride | 0;
+    if (opts.stride !== undefined) strideIndex = ((opts.stride | 0) % WORLD_STRIDES + WORLD_STRIDES) % WORLD_STRIDES;
     if (opts.phase !== undefined) phase = wrapPhase(opts.phase);
     if (opts.paused !== undefined) paused = !!opts.paused;
-    if (opts.yaw !== undefined) { cam.yaw = cam.tYaw = opts.yaw; cam.auto = false; }
-    if (opts.pitch !== undefined) { cam.pitch = cam.tPitch = opts.pitch; cam.auto = false; }
-    if (opts.dist !== undefined) { cam.dist = cam.tDist = opts.dist; }
-    if (opts.attract === false && screenMode === 'attract') {
-      screenMode = 'play';
-      document.getElementById('attract').classList.add('gone');
-    }
+    if (opts.timeScale !== undefined) timeScale = clamp(+opts.timeScale, 0.05, 2.5);
+    if (opts.yaw !== undefined) { cam.yaw = cam.tYaw = +opts.yaw; cam.auto = false; }
+    if (opts.pitch !== undefined) { cam.pitch = cam.tPitch = +opts.pitch; cam.auto = false; }
+    if (opts.dist !== undefined) { cam.dist = cam.tDist = +opts.dist; }
+    if (opts.attract === false) dismissAttract();
     renderScene();
+    syncFootfallEffects(currentState, false);
+    updateTelemetry();
     frames++;
     return this.state();
   },
   audit: auditGait,
+  samplePixels(gridX = 24, gridY = 16) {
+    const px = new Uint8Array(4);
+    let warmHorse = 0, darkShadow = 0, skyPixels = 0, lumaSum = 0;
+    const samples = [];
+    for (let gy = 0; gy < gridY; gy++) {
+      for (let gx = 0; gx < gridX; gx++) {
+        const x = Math.floor(((gx + 0.5) / gridX) * W);
+        const y = Math.floor(((gy + 0.5) / gridY) * H);
+        gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        const r = px[0], g = px[1], b = px[2];
+        lumaSum += 0.299 * r + 0.587 * g + 0.114 * b;
+        samples.push(r, g, b);
+        if (gy > gridY * 0.58 && b > 55) skyPixels++;
+        if (gy >= gridY * 0.25 && gy <= gridY * 0.78 && r > 125 && r > g * 1.45 && g > b * 1.35) warmHorse++;
+        if (gy < gridY * 0.42 && r < 72 && g < 50 && b < 42) darkShadow++;
+      }
+    }
+    return {
+      width: W,
+      height: H,
+      meanLuma: +(lumaSum / (gridX * gridY)).toFixed(2),
+      warmHorseSamples: warmHorse,
+      darkShadowSamples: darkShadow,
+      skySamples: skyPixels,
+      hash: samples.reduce((acc, v, idx) => ((acc * 31 + v + idx) >>> 0), 7),
+    };
+  },
   state() {
     const legs = {};
     for (const d of LEGS_DEF) {
@@ -1367,6 +2043,7 @@ window.__horsegeminiTest = {
       };
     }
     return {
+      screenMode,
       phase: +currentState.phi.toFixed(5),
       strideIndex: currentState.strideIndex,
       refX: +currentState.refX.toFixed(4),
@@ -1375,7 +2052,13 @@ window.__horsegeminiTest = {
       poll: currentState.poll.slice(),
       muzzle: currentState.muzzle.slice(),
       tailTip: currentState.tailPts[currentState.tailPts.length - 1].slice(),
-      tris: horseBuf.triCount,
+      cam: { yaw: +cam.yaw.toFixed(4), pitch: +cam.pitch.toFixed(4), dist: +cam.dist.toFixed(4), auto: cam.auto },
+      horseTris: horseBuf.triCount,
+      worldTris: worldBuf.triCount + casterBuf.triCount,
+      hoofprints: hoofprints.length,
+      dustPuffs: dustPuffs.length,
+      audioUnlocked: audio.unlocked,
+      audioMuted: audio.muted,
       legs,
     };
   },
