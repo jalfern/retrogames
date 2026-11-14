@@ -17,6 +17,11 @@
 //               sprite matches the logical state (project the barrel centre,
 //               find body colour there); the cast shadow darkens the ground;
 //               dust appears just after a hooffall; mesas sit on the horizon.
+//   3b. POLISH (#2162) — lateral body roll and poll nod ride φ (integer
+//               harmonics, so the seam gate covers them); the loaded stance
+//               leg springs (flex peaks mid-stance, zero at both contact
+//               edges); hoofbeats are layered — click+thump on every beat,
+//               sub-thump on the heavy hind pair.
 //   + DEMO LAW — self-contained page, not registered in games.js, credits
 //               card and index entry present.
 //
@@ -27,6 +32,16 @@
 // 2. LEGS LF contact `c: 0.00` -> `c: 0.60` (fore pair lands after the hind
 //    pair): the footfall-order gate goes RED (saw RFLHRHLF — a pace-like gait)
 //    and the dust gate with it (both probe the LF hooffall) — 30/32.
+// #2162 polish mutants (run by hand, 2026-11-14, then restored):
+// 3. bodyMotion `roll: <both harmonics>` -> `roll: 0`: EXACTLY the roll gate
+//    red (0.000 rad), 36/37. (Zeroing only the first harmonic is NOT caught —
+//    the second keeps |roll| in band; that is by design, the gate proves the
+//    law, not the constant.)
+// 4. audioTick `snd.clk++` deleted: EXACTLY the two hoofbeat-layer gates red
+//    (click 0 vs thud 77), 35/37.
+// 5. hoofFlex `return u >= 0 ? Math.sin(...)` -> `return 0`: the flex gate and
+//    the hoof-pixel gate red (fetlock rotation was load-bearing for the dark
+//    hoof sample), 35/37.
 //
 // Usage: node scripts/horsecheck.mjs [--shots <dir>] [--json]
 // Needs a dev server serving public/demos (DEV_PORT, default 5173).
@@ -149,6 +164,30 @@ const contOk = Object.values(ffC).every(v => Math.abs(v[0] - v[1]) < 1e-3)
 ok('stride continuity at every touchdown (swing reaches the landing spot)', contOk, JSON.stringify(ffC))
 ok('loop law: 8 strides × 6 m = 48 m pattern, speed = stride ÷ period', gait.seam === 48 && gait.loopStrides === 8 && Math.abs(gait.speed - gait.stride / gait.period) < 1e-9)
 
+/* ---------------- 2b. POLISH LAWS (#2162: roll, nod, stance flex) ---------------- */
+const rollAmp = Math.max(...hoovesSeam.map(s => Math.abs(s.roll)))
+ok('lateral body roll rides the stride — present but subtle (10–120 mrad)', rollAmp > 0.010 && rollAmp < 0.12, rollAmp.toFixed(3) + ' rad')
+const nodAmp = Math.max(...hoovesSeam.map(s => Math.abs(s.nod)))
+ok('head/neck nods on the suspension (20–150 mrad)', nodAmp > 0.020 && nodAmp < 0.15, nodAmp.toFixed(3) + ' rad')
+// the loaded limb springs (knee-snap + fetlock flex): flex peaks mid-stance
+// and is ZERO at both contact edges — a non-zero edge would pop the knee at
+// touchdown — and swings carry no stance flex at all
+const flex = await page.evaluate(() => {
+  const t = window.__horseTest, ff = t.footfall(0), out = {}
+  for (const n of Object.keys(ff)) {
+    const { c, d } = ff[n]
+    out[n] = {
+      mid: +t.stateAt(c + d / 2)[n].fx.toFixed(4),
+      atLand: +t.stateAt(c + 1e-9)[n].fx.toFixed(6),
+      atLift: +t.stateAt(c + d - 1e-9)[n].fx.toFixed(6),
+      swing: t.stateAt(c + d + (1 - d) / 2)[n].fx,
+    }
+  }
+  return out
+})
+const flexOk = Object.values(flex).every(v => v.mid > 0.9 && Math.abs(v.atLand) < 1e-5 && Math.abs(v.atLift) < 1e-3 && v.swing === 0)
+ok('stance legs spring mid-stance, rigid at touchdown/liftoff, swing unflexed', flexOk, JSON.stringify(flex))
+
 const dA = await page.evaluate(() => document.getElementById('st-d').textContent)
 await page.waitForFunction(v => +document.getElementById('st-d').textContent > +v + 1, dA, { timeout: 8000 })
 const dB = await page.evaluate(() => document.getElementById('st-d').textContent)
@@ -241,6 +280,16 @@ await page.evaluate(() => window.__horseTest.resume())
 
 const mesa = await page.evaluate(() => window.__horseTest.countPixels((r, g, b) => r > 150 && r < 230 && r - b > 28 && Math.abs(r - g) < 40 && b > 110, 2))
 ok('mesas stand on the far rim', mesa > 150, mesa + ' px')
+
+/* ---------------- 3b. LAYERED HOOFBEATS (#2162) ---------------- */
+// run the sim from a clean reset and count the φ-crossing beat layers:
+// every hoofbeat = click + thump, heavy hind landings also get the sub-thump
+await page.evaluate(() => { const t = window.__horseTest; t.reset(); t.unlock(); t.resume(); })
+const f0 = await page.evaluate(() => window.__horseTest.frames())
+await page.waitForFunction(f => window.__horseTest.frames() > f + 170, f0, { timeout: 15000 }).catch(() => {})
+const snd = await page.evaluate(() => window.__horseTest.soundStats())
+ok('every hoofbeat is layered — click and thump fire together (≥12 beats)', snd.click === snd.thud && snd.click >= 12, JSON.stringify(snd))
+ok('heavy hind landings add a sub-thump (half the beats)', Math.abs(snd.sub * 2 - snd.click) <= 2 && snd.sub >= 6, JSON.stringify(snd))
 
 await page.screenshot({ path: resolve(shots, 'gallop.png') })
 
