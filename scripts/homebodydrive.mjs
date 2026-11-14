@@ -326,6 +326,75 @@ const goldHome = await goldIn(6, 6 + 125)
 check('#2222 the open tab is painted gold and the closed one is not', goldSpecial >= 10 && goldHome < 10, `special=${goldSpecial} home=${goldHome}`)
 await page.keyboard.press('KeyB'); await wait(150)
 
+// #2227 speed dial: keys set gears, pause freezes the world clock, `,` `.`
+// cycle and wrap, the panel pips answer taps — and buy-mode digits keep their
+// #2222 card law while the dial still turns under a finger.
+let sd = await st()
+if (sd.build) { await page.keyboard.press('KeyB'); sd = await stWait((x) => !x.build) }
+check('#2227 a fresh street starts at NORMAL', sd.speed === 1, `speed=${sd.speed}`)
+await page.keyboard.press('Digit3')
+sd = await stWait((x) => x.speed === 2)
+check('#2227 digit 3 outside buy sets FAST', sd.speed === 2 && sd.speedName === 'FAST', `speed=${sd.speed}`)
+const hk0 = (await st()).hour
+await wait(500)
+const hk1 = (await st()).hour
+check('#2227 FAST hurries the clock', hk1 > hk0, `hour ${hk0} -> ${hk1}`)
+await page.keyboard.press('Digit1')
+sd = await stWait((x) => x.speed === 0)
+const hkP = (await st()).hour
+await wait(500)
+const hkQ = (await st()).hour
+check('#2227 digit 1 pauses — the clock stands still', sd.speed === 0 && hkQ === hkP, `hour ${hkP} -> ${hkQ}`)
+// drawn dial follows logic: the pause pip glows gold, the fast pip does not
+const dialGold = (x0, x1) => page.evaluate(([x0, x1]) => {
+    const c = document.querySelector('canvas')
+    const d = c.getContext('2d').getImageData(x0, 480 - 124, x1 - x0, 14).data
+    let n = 0
+    for (let i = 0; i < d.length; i += 4) if (d[i] > 230 && d[i + 1] > 180 && d[i + 1] < 236 && d[i + 2] < 110) n++
+    return n
+}, [x0, x1])
+const goldPause = await dialGold(540, 559)
+const goldFast = await dialGold(586, 605)
+check('#2227 the chosen pip is painted gold and its neighbour is not', goldPause >= 12 && goldFast < 12, `pause=${goldPause} fast=${goldFast}`)
+await page.keyboard.press('Period')
+sd = await stWait((x) => x.speed === 1)
+check('#2227 . cycles up from PAUSED and the world walks again', sd.speed === 1, `speed=${sd.speed}`)
+await page.keyboard.press('Comma')
+sd = await stWait((x) => x.speed === 0)
+await page.keyboard.press('Comma')
+sd = await stWait((x) => x.speed === 3)
+check('#2227 , wraps PAUSED into FASTEST', sd.speed === 3, `speed=${sd.speed}`)
+await tap(572, 363)   // the NORMAL pip, second cell of the panel dial
+sd = await stWait((x) => x.speed === 1)
+check('#2227 a tap on the panel dial turns it — the pad route', sd.speed === 1, `speed=${sd.speed}`)
+// buy mode: digits keep the shelf law; the dial still answers taps while paused
+await page.keyboard.press('KeyB')
+sd = await stWait((x) => x.build)
+await tap(549, 363)   // tap PAUSE (first pip) — digits are cards here, the dial takes taps
+sd = await stWait((x) => x.speed === 0)
+await page.keyboard.press('Digit2')
+await wait(150)
+sd = await st()
+check('#2227 paused + buying: digit 2 never turns the dial', sd.speed === 0 && sd.build, `speed=${sd.speed}`)
+await tap(595, 363)   // FAST pip — the tap route turns the gear even while paused
+sd = await stWait((x) => x.speed === 2)
+check('#2227 paused + buying, the dial tap still answers', sd.speed === 2 && sd.build, `speed=${sd.speed}`)
+let sLand = sd
+for (let i = 0; i < 40 && sLand.sel === 13; i++) { await wait(50); sLand = await st() }
+check('#2227 the paused digit lands the moment the world walks — the card law queued, not lost', sLand.sel === 14, `sel=${sLand.sel}`)
+// buy mode keeps its own time-out (#1806 law: advance() stands still at the
+// counter, the original's build/buy pause). The dial's law behind the counter
+// is that it still ANSWERS and its state survives the visit.
+await wait(500)
+const hkR = (await st()).hour
+await wait(500)
+check('#2227 buy mode keeps its time-out — the clock waits at the counter, gear held', (await st()).hour === hkR && (await st()).speed === 2, `hour ${hkR}`)
+await page.keyboard.press('KeyB')
+await wait(150)
+await page.keyboard.press('Digit2')
+sd = await stWait((x) => x.speed === 1)
+check('#2227 the drive leaves the house at NORMAL', sd.speed === 1)
+
 // frame matches: sprite position follows state
 const f0 = await page.evaluate(() => window.__game.state())
 check('contract state ticks', f0.tick > 0 && typeof f0.score === 'number', `tick=${f0.tick} score=${f0.score}`)
