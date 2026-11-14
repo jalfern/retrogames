@@ -556,6 +556,20 @@ const HomebodyGame = () => {
                 ctx.fillStyle = '#ffd24a'; ctx.font = 'bold 20px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
                 ctx.fillText('· · · AT WORK · · ·', W / 2, H / 2)
             }
+            // #2209: the paused tell — gear || stops the world clock, and with it
+            // every mid-screen motion, so "why is nobody moving?" used to hide in a
+            // 19px pip. A veil + breathing || ghost answers at a glance; it rides
+            // performance.now because the world clock it announces is frozen.
+            if (live && g.speed === 0 && !g.build) {
+                ctx.fillStyle = 'rgba(10,14,24,0.30)'
+                ctx.fillRect(0, 0, W, H)
+                const pu = 0.5 + 0.5 * Math.sin(performance.now() / 1000 * 3)
+                ctx.globalAlpha = 0.38 + 0.27 * pu
+                ctx.fillStyle = '#eef3ff'
+                ctx.fillRect(W / 2 - 8, H / 2 - 11, 5, 22)
+                ctx.fillRect(W / 2 + 3, H / 2 - 11, 5, 22)
+                ctx.globalAlpha = 1
+            }
             if (toast > 0 && live) banner(ctx, toastMsg)
             stepParticlesDraw(sx, sy)   // #2149: last layer — a make-up at the centre column had its hearts buried under the MADE UP card for their whole life; keep riding the shake offset the save-block used to carry
         }

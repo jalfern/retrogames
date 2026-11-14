@@ -2107,7 +2107,11 @@ export function bot(s) {
     // the plate, so the attract teaches the bells the same silent way.
     if (s.meal && p.needs.hunger < 0.75 && p.mealTaken !== s.mealSerial) { if (cmdUse(s, p, s.meal)) return }
     if (s.money > 300 && s.content < WIN_CONTENT) {
-        const wants = ['phone', 'roomkit', 'petkit', 'kidkit', 'stove', 'tv', 'sofa', 'radio', 'book', 'shower', 'plant', 'lamp', 'rug']
+        // #2209: the till sells the family first — cat, child, then roof (the
+        // issue's own tour). Roomkit used to eat the whole register at daybreak,
+        // the cat ate the next payday, and the §300 wall starved the kid card
+        // out of every demo: 9/9 seeds won with Pip unadopted (README gap).
+        const wants = ['phone', 'petkit', 'kidkit', 'roomkit', 'stove', 'tv', 'sofa', 'radio', 'book', 'shower', 'plant', 'lamp', 'rug']
         for (const id of wants) {
             const def = DEF[id]
             // #1814: the attract build grows the lot so the demo sells the
