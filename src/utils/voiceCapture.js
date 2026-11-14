@@ -405,6 +405,11 @@ export function createVoiceSession(opts = {}) {
                 }
             }
             clock.markStart()
+            // #2136: the clock's ABSOLUTE zero, DEV-visible. The clap driver
+            // aims presses against the same origin the stored clock will use;
+            // aiming at mic-creation instead adds a recorder-open gap (tens of
+            // ms, load-dependent) to every offset.
+            if (import.meta.env?.DEV && typeof window !== 'undefined') window.__markStartWall = Date.now() // ?. keeps it Node-import-safe
             startMs = now()
             rec.start(1000)
             phase = 'recording'; dbg('mic-open')
