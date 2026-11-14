@@ -15,6 +15,7 @@ import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
+import { AMB_ZONES, zoneForShift, fireAt } from './ambience'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -177,8 +178,10 @@ const PickRushGame = () => {
         }
 
         // belt motor: one quiet band-passed noise loop whose pitch tracks belt
-        // speed — the factory floor hum under everything else
-        const hum = { src: null, gain: null, filter: null }
+        // speed — the factory floor hum under everything else. #2234 adds a
+        // sub-harmonic sine that only the later zones wake, and per-shift
+        // depth: the same room hums LOUDER as the night wears on.
+        const hum = { src: null, gain: null, filter: null, sub: null, subGain: null }
         const ensureHum = () => {
             if (hum.src || !audioController.ctx || audioController.muted) return
             const actx = audioController.ctx, sr = actx.sampleRate
@@ -190,13 +193,41 @@ const PickRushGame = () => {
             const gain = actx.createGain(); gain.gain.value = 0
             src.connect(filter); filter.connect(gain); gain.connect(actx.destination)
             src.start()
-            hum.src = src; hum.gain = gain; hum.filter = filter
+            const sub = actx.createOscillator(); sub.type = 'sine'; sub.frequency.value = 46
+            const subGain = actx.createGain(); subGain.gain.value = 0
+            sub.connect(subGain); subGain.connect(actx.destination)
+            sub.start()
+            hum.src = src; hum.gain = gain; hum.filter = filter; hum.sub = sub; hum.subGain = subGain
         }
-        const setHum = (on, spd) => {
+        const setHum = (on, spd, zone = 0) => {
             if (!hum.gain) return
             const t = audioController.ctx.currentTime
-            hum.gain.gain.setTargetAtTime(on && !audioController.muted ? 0.05 : 0, t, 0.12)
+            const z = AMB_ZONES[Math.min(zone, AMB_ZONES.length - 1)]
+            hum.gain.gain.setTargetAtTime(on && !audioController.muted ? z.hum : 0, t, 0.12)
+            hum.subGain.gain.setTargetAtTime(on && !audioController.muted ? z.sub : 0, t, 0.18)
+            hum.sub.frequency.setTargetAtTime(42 + spd * 12, t, 0.2)
             hum.filter.frequency.setTargetAtTime(120 + spd * 110, t, 0.12)
+        }
+
+        // ambience cue player (#2234): named scheduled events from ambience.js,
+        // mixed LOW — the floor is always quieter than the crane.
+        const ambFired = []
+        const playAmb = (cue) => {
+            if (cue === 'beep') {
+                audioController.playTone(880, 0.06, 'sine', 0.016)
+                audioController.playTone(830, 0.06, 'sine', 0.014, 0.16) // detuned = distance
+            } else if (cue === 'roll') {
+                audioController.playNoise(0.09, 0.018)
+                audioController.playTone(70, 0.13, 'sine', 0.028, 0.03)   // far metal thud
+            } else if (cue === 'hiss') {
+                audioController.playSweep(1600, 900, 0.18, 'triangle', 0.022)
+                audioController.playNoise(0.14, 0.016, null)
+            } else if (cue === 'chatter') {
+                audioController.playTone(220, 0.02, 'square', 0.018)
+                audioController.playTone(220, 0.02, 'square', 0.018, 0.05)
+                audioController.playTone(180, 0.02, 'square', 0.018, 0.1)
+            }
+            if (ambFired.length < 48) ambFired.push({ cue, tick: gs.tick, shift: gs.shift })
         }
 
         const burst = (x, y, n, col, spd = 3, up = -1) => {
@@ -262,6 +293,10 @@ const PickRushGame = () => {
                     }
                 }
                 else if (e.type === 'shift') {
+                    // #2234: the bed steps with the night — an air-brake whoosh
+                    // under the whistle as the line gears up.
+                    audioController.playNoise(0.2, 0.04)
+                    audioController.playSweep(620, 150, 0.3, 'sawtooth', 0.022)
                     audioController.playSweep(940, 1180, 0.16, 'triangle', 0.07)
                     audioController.playSweep(1180, 920, 0.2, 'triangle', 0.07, 0.2)
                     audioController.playTone(523, 0.1, 'square', 0.07)
@@ -322,6 +357,8 @@ const PickRushGame = () => {
             step(gs, livePads())
             edgeA = false; edgeB = false; edge2A = false
             handleEvents(gs.ev)
+            // #2234: scheduled ambience — the floor's era follows the shift.
+            for (const cue of fireAt(zoneForShift(gs.shift), gs.tick, true)) playAmb(cue)
             if (gs.end) finish()
         }
 
@@ -718,7 +755,7 @@ const PickRushGame = () => {
             if (screenRef.current === 'over') paintOver(tick)
             // toast
             if (hudRef.current.toastT > 0) { hudRef.current.toastT--; if (hudRef.current.toastT === 0 && hudRef.current.toast) hudRef.current.toast.textContent = '' }
-            setHum(screenRef.current === 'play' || screenRef.current === 'attract', SHIFTS[Math.min(gs.shift, SHIFTS.length - 1)].speed)
+            setHum(screenRef.current === 'play' || screenRef.current === 'attract', SHIFTS[Math.min(gs.shift, SHIFTS.length - 1)].speed, screenRef.current === 'play' ? zoneForShift(gs.shift) : 0)
             // live HUD text
             if (hudRef.current.seats) hudRef.current.seats.textContent = gs.players > 1 ? (humanSeat2Ref.current ? 'P1 vs P2' : 'P1 vs FOREMAN') : 'SOLO LINE'
             if (hudRef.current.speedTag) hudRef.current.speedTag.textContent = `×${SHIFTS[Math.min(gs.shift, SHIFTS.length - 1)].speed.toFixed(2)}`
@@ -743,6 +780,7 @@ const PickRushGame = () => {
             // #737: honor ?seed=N so a filed feedback report's seed replays this exact world.
             gs = makeGame(seedFromQuery() ?? ((Math.random() * 2 ** 31) | 0), 2)
             parts.length = 0; gs.fx.length = 0; landings.length = 0; boost = 0
+            ambFired.length = 0 // #2234 a new contract starts on the quiet early floor
             watchingRef.current = false; setWatching(false) // #1637 a new shift starts in your hands
             setEnd(null)
             setMode('play')
@@ -823,6 +861,7 @@ const PickRushGame = () => {
             fusesLeft: FUSES - gs.warnings,
             beltV: Math.round(1.05 * SHIFTS[Math.min(gs.shift, SHIFTS.length - 1)].speed * 1000) / 1000,
             waveName: WAVES[Math.min(gs.shift, WAVES.length - 1)][gs.wave.wi].name,
+            ambZone: zoneForShift(gs.shift), // #2234 era the floor sounds like
             pos: Math.round(gs.arms[0].x * 10) / 10,
             clawY: Math.round(gs.arms[0].tip * 10) / 10,
             carried: gs.arms[0].held !== null ? gs.items.find((i2) => i2.id === gs.arms[0].held)?.kind || 'x' : '',
@@ -891,6 +930,10 @@ const PickRushGame = () => {
                 }),
                 watching: () => watchingRef.current,
                 watchSfx: watchSfxLog,
+                // #2234 per-shift ambience: zone the floor is in + the cues it
+                // has fired this run ({cue, tick, shift}). Gates read this.
+                ambience: () => ({ zone: zoneForShift(gs.shift), shift: gs.shift, fired: ambFired.slice() }),
+                ambZones: AMB_ZONES,
                 hash: () => gs.hash,
                 canvas: () => canvas,
                 sim: () => gs,
@@ -928,6 +971,7 @@ const PickRushGame = () => {
             window.removeEventListener('keyup', onKeyUp)
             canvas.removeEventListener('pointerdown', onPointerDown)
             if (hum.src) { try { hum.src.stop() } catch { /* already dead */ } }
+            if (hum.sub) { try { hum.sub.stop() } catch { /* already dead */ } }
             unexposeGame()
             unmountDbg()
             canvas.remove()

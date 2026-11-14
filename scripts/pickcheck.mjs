@@ -12,14 +12,16 @@
 // cable and cargo pixels land exactly where the sim says after real strokes,
 // and three wrong-bin drops fire the line and clock you back in.
 //
-// Mutants (PICK_MUT=judge|glass|roll|quota|wave):
+// Mutants (PICK_MUT=judge|glass|roll|quota|wave|amb):
 //   judge — CRATE stops belonging to its bin
 //   glass — bottles stop being fragile
 //   roll  — barrels stop rolling (nothing can ever slip)
 //   quota — shift 1's quota becomes unreachable
 //   wave  — the authored line collapses to one shift's waves (#2210)
+//   amb   — the ambience eras collapse (early beeps at graveyard cadence, #2234)
 
 import * as s from '../src/games/PickRush/sim.js'
+import { AMB_ZONES, zoneForShift, fireAt } from '../src/games/PickRush/ambience.js'
 import { scriptFor } from './lib/contractGames.mjs'
 
 const args = process.argv.slice(2)
@@ -32,7 +34,7 @@ const ok = (c, m) => { if (c) { pass++; console.log(`  PASS  ${m}`) } else { fai
 const section = (t) => console.log(`\n\x1b[1m${t}\x1b[0m`)
 
 if (MUT) {
-    if (!['judge', 'glass', 'roll', 'quota', 'wave'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
+    if (!['judge', 'glass', 'roll', 'quota', 'wave', 'amb'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
     console.log(`\x1b[33mMUTANT ACTIVE: ${MUT}\x1b[0m`)
 }
 const applyMut = () => {
@@ -41,6 +43,7 @@ const applyMut = () => {
     if (MUT === 'roll') s.KINDS.barrel.roll = false
     if (MUT === 'quota') s.SHIFTS[0].quota = 99999
     if (MUT === 'wave') s.WAVES.length = 1
+    if (MUT === 'amb') AMB_ZONES[0].cues.beep.every = 330 // early floor beeps at graveyard cadence — the night stops changing
 }
 applyMut()
 
@@ -346,6 +349,34 @@ section('WAVES — the authored line (#2210)')
     }
 }
 
+section('AMB — per-shift ambience (#2234)')
+{
+    ok(zoneForShift(0) === 0 && zoneForShift(1) === 0 && zoneForShift(2) === 1 && zoneForShift(3) === 2 && zoneForShift(9) === 2,
+        `AMB ZONE: eras map shifts 1–2/3/4+ to early/glass/graveyard (${[0, 1, 2, 3, 9].map(zoneForShift).join('/')})`)
+
+    const zA = AMB_ZONES[0], zB = AMB_ZONES[1], zC = AMB_ZONES[2]
+    ok(zA.cues.beep.every > zB.cues.beep.every && zB.cues.beep.every > zC.cues.beep.every
+        && zA.hum < zB.hum && zB.hum < zC.hum
+        && zA.sub === 0 && zB.sub > 0 && zC.sub > zB.sub,
+        `AMB CADENCE: beeps tighten ${zA.cues.beep.every}/${zB.cues.beep.every}/${zC.cues.beep.every} and the bed deepens ${zA.hum}/${zB.hum}/${zC.hum} across the night`)
+
+    const beepTicks = []
+    for (let t = 0; t <= 1620; t++) if (fireAt(0, t, true).includes('beep')) beepTicks.push(t)
+    ok(JSON.stringify(beepTicks) === '[90,630,1170]',
+        `AMB SCHEDULE: the quiet floor beeps at exact ticks ${beepTicks.join('/')} — pure schedule, no rng`)
+
+    let bleed = 0
+    for (let t = 0; t <= SHIFT_TICKS; t++) {
+        if (fireAt(0, t, true).includes('hiss') || fireAt(0, t, true).includes('chatter')) bleed++
+        if (fireAt(1, t, true).includes('chatter')) bleed++
+    }
+    ok(bleed === 0, 'AMB ERAS: no pneumatics on the early floor, no chatter before the graveyard peak')
+
+    let leaked = 0
+    for (let t = 0; t <= 2000; t++) if (fireAt(t % 3, t, false).length) leaked++
+    ok(leaked === 0, 'AMB DOOR: no cue fires while the line is not running (attract/over stay clean)')
+}
+
 section('DETERMINISM — seed + pads = hashes')
 {
     const script = (i) => ({ left: i % 43 < 17, right: i % 43 >= 21 && i % 43 < 38, down: i % 67 < 6, a: i % 13 < 2, b: i % 37 === 0 })
@@ -541,6 +572,28 @@ if (!NODE_ONLY) {
         await page.keyboard.press('Space')
         await page.waitForTimeout(300)
         rep.check('RESTART: a Space after the firing card clocks back in', await page.evaluate(() => window.__pickrushTest.state().mode === 'attract'))
+
+        // AMB live (#2234): the demo floor never sells a mood the player has
+        // not bought — then the running line BEEPs (quiet early zone), and
+        // putting the night at shift 4 drops the bed into the graveyard zone
+        // where the relay chatter lives.
+        const ambAttract = await page.evaluate(() => ({ before: window.__pickrushTest.ambience().fired.length, tick: window.__pickrushTest.state().tick }))
+        await page.waitForFunction((t0) => window.__pickrushTest.state().tick > t0 + 240, ambAttract.tick, { timeout: 10000 })
+        const ambAttract2 = await page.evaluate(() => window.__pickrushTest.ambience())
+        rep.check('AMB attract: the attract demo adds no ambience cues (the floor waits for a player)',
+            ambAttract2.fired.length === ambAttract.before, JSON.stringify({ before: ambAttract.before, after: ambAttract2.fired.length }))
+        await page.keyboard.press('Space')
+        await page.waitForFunction(() => window.__pickrushTest.state().tick > 140, null, { timeout: 8000 })
+        const ambPlay = await page.evaluate(() => window.__pickrushTest.ambience())
+        rep.check('AMB live: the running early floor beeps once, far away (zone early, first scheduled cue)',
+            ambPlay.zone === 0 && ambPlay.fired.filter((f) => f.cue === 'beep').length === 1 && ambPlay.fired.every((f) => f.cue === 'beep'),
+            JSON.stringify(ambPlay))
+        await page.evaluate(() => { window.__pickrushTest.sim().shift = 3 }) // clock forward to the graveyard peak
+        await page.waitForFunction(() => window.__pickrushTest.ambience().fired.some((f) => f.cue === 'chatter'), null, { timeout: 10000 })
+        const ambGrave = await page.evaluate(() => ({ ...window.__pickrushTest.ambience(), stateZone: window.__game.state().ambZone }))
+        rep.check('AMB eras: shift 4 drops the floor into graveyard — chatter + hiss join at the tighter cadence',
+            ambGrave.zone === 2 && ambGrave.stateZone === 2 && ambGrave.fired.some((f) => f.cue === 'chatter' && f.shift === 3),
+            JSON.stringify({ zone: ambGrave.zone, fired: ambGrave.fired.map((f) => `${f.cue}@${f.tick}/${f.shift}`) }))
 
         // juice carrier: the quota gauge flags near-clear at exactly one pick short
         const near = await page.evaluate(() => {
