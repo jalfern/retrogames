@@ -443,6 +443,13 @@ if (!NODE_ONLY) {
         const attract = await page.evaluate(() => window.__pickrushTest.state())
         rep.check('ATTRACT: the demo line runs before anyone touches it', attract.mode === 'attract' && attract.tick > 0)
 
+        // AMB attract-door (#2234), pinned at boot before any play can dirty
+        // the log: the demo line runs and the cue log stays empty — the
+        // schedule waits for a player.
+        const ambBoot = await page.evaluate(() => window.__pickrushTest.ambience())
+        rep.check('AMB attract: the demo line runs, yet the floor stays silent (no cues before play)',
+            ambBoot.fired.length === 0, JSON.stringify({ tick: attract.tick, fired: ambBoot.fired.length }))
+
         // real Space clocks in
         await page.keyboard.press('Space')
         await page.waitForTimeout(200)
@@ -576,7 +583,9 @@ if (!NODE_ONLY) {
         // AMB live (#2234): the demo floor never sells a mood the player has
         // not bought — then the running line BEEPs (quiet early zone), and
         // putting the night at shift 4 drops the bed into the graveyard zone
-        // where the relay chatter lives.
+        // where the relay chatter lives. The FIRE gate left the contract on
+        // the loop — release it so rAF drives the line again first.
+        await page.evaluate(() => window.__game.release())
         const ambAttract = await page.evaluate(() => ({ before: window.__pickrushTest.ambience().fired.length, tick: window.__pickrushTest.state().tick }))
         await page.waitForFunction((t0) => window.__pickrushTest.state().tick > t0 + 240, ambAttract.tick, { timeout: 10000 })
         const ambAttract2 = await page.evaluate(() => window.__pickrushTest.ambience())
@@ -594,6 +603,13 @@ if (!NODE_ONLY) {
         rep.check('AMB eras: shift 4 drops the floor into graveyard — chatter + hiss join at the tighter cadence',
             ambGrave.zone === 2 && ambGrave.stateZone === 2 && ambGrave.fired.some((f) => f.cue === 'chatter' && f.shift === 3),
             JSON.stringify({ zone: ambGrave.zone, fired: ambGrave.fired.map((f) => `${f.cue}@${f.tick}/${f.shift}`) }))
+        // clock out of the line so the gates downstream still find attract,
+        // exactly where they expect it (same over-card walk the RESTART gate uses)
+        await page.evaluate(() => { const q = window.__pickrushTest.sim(); q.end = 'fire'; q.endReason = 'AMB AUDIT' })
+        await page.waitForFunction(() => window.__pickrushTest.state().mode === 'over', null, { timeout: 5000 })
+        await page.waitForTimeout(750)
+        await page.keyboard.press('Space')
+        await page.waitForTimeout(300)
 
         // juice carrier: the quota gauge flags near-clear at exactly one pick short
         const near = await page.evaluate(() => {
