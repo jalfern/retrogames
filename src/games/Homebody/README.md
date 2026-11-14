@@ -19,6 +19,8 @@ needs, one suburban lot, one clock. Tap to command; lifetime wish = win.
 rate; night (22:00–06:00) halves decay and sleep in the bed recovers energy and
 freezes the rest. Workdays run the clock ×8 while a rostered resident is out
 (Otto odd days, Mira even), pay at 17:00, career rank every two workdays.
+The player's speed dial (#2227) multiplies the whole world above this model —
+see §Speed dial.
 
 ## Rules worth knowing
 - Physical needs (hunger, energy, bladder) left red for `COLLAPSE_AT` sim-seconds
@@ -266,6 +268,40 @@ card reachable by digit.
   probe can read the new tab a loop-frame before the canvas paints it —
   `homebodydrive` polls logic but must settle ~150 ms before pixel asserts.
 
+## Speed dial (#2227) — the clock is yours
+
+The original's UI bar carried pause / normal / fast / fastest. Homebody ran at
+one speed; now the dial turns. `SPEED_MULT = [0, 1, 2, 4]` gears live in
+sim.js (`setSpeed` clamps + reports change, `cycleSpeed` wraps, `attractSpeed`
+is the marquee's teaching law); `s.speed` rides `stateHash`, so a replay pins
+the speed timeline; `newRun` moves in at NORMAL and a new street resets it.
+
+- **One driver, one dt:** the fixed timestep never changes — the shell's loop
+  buys `SPEED_MULT[s.speed]` world steps per frame tick. Decay, schedules,
+  visits, cries and purrs all ride plain `advance`, so gear changes need no
+  per-law cooperation. Gear 0 buys nothing: the world stands still.
+- **Keys:** digits `1`-`4` set the gears **outside buy mode**; inside buy
+  they keep the #2222 card law (the dial is tap-only there). `,` / `.` walk
+  the dial down/up in every mode, wrapping PAUSED↔FASTEST. The dial consumptions
+  sit ABOVE the step multiplier in the loop — put them below and pause would
+  eat the very keys meant to release it.
+- **Phone:** the panel paints a four-pip dial above the wish meter
+  (`DIAL` geometry shared by draw + `speedHit`; the chosen pip is gold, the
+  pause pip pulses while the world stands still). VirtualControls is untouched
+  — the pips are the pad route, the #2222 tab-row law again.
+- **Court law:** the thumb-court release (`onUp`) answers only while the gear
+  is running — a paused world takes no orders. The card/act queues still fill
+  while paused and land the moment the world walks (driven and pinned).
+- **Attract teaches it:** the demo hurries the 08:00–10:00 chores stretch and
+  eases back (the panel pip rides along); no cue tone there — attract runs
+  before the audio unlock. The marquee got a line ("THE CLOCK IS YOURS…").
+- **Known interaction:** buy mode keeps its own time-out (#1806: `advance`
+  stands still behind the counter — the original's build/buy pause). The dial
+  still turns there; state survives the visit and the clock resumes on exit.
+- **Harness note:** the contract `tick()` deliberately ignores the dial — a
+  harness tick is one world step whatever the gear, so harness budgets stay
+  world-seconds. The dial belongs to the rAF loop and the player.
+
 ## Honest gaps (filed to QA #…)
 - **CLOSED by #1806:** multiple rooms — one expansion ships: the Spare Room kit
   grows a wing on the east lawn (floor/walls/door/windows, connectivity-guarded,
@@ -295,5 +331,9 @@ adoptable child (see Kids (#2203)).
 - Visitors are Fern and Ivy (#2143); pets landed (#2197, Miso); kids landed
   (#2203, Pip); **CLOSED by #2222:** the buy catalog got its category shelves
   (HOME / FUN / DECOR / SPECIAL) — see §Catalog shelves below.
-- No skippable-speed control for the player; day/night is cosmetic + decay only.
+- **CLOSED by #2227:** no skippable-speed control — the clock dial ships (pause /
+  normal / fast / fastest: digits `1`-`4` outside buy mode, `,`/`.` cycle, the
+  panel pips are tappable — see §Speed dial).
+- Day/night is cosmetic + decay only — nothing on the lot schedules by the hour
+  beyond work and Ivy's rounds.
 - Needs panel shows both residents; no per-object queue display like the original.
