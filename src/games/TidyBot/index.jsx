@@ -21,7 +21,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexp
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import {
-    makeGame, step, autopilot, loadLevel, markChores, stateHash,
+    makeGame, step, autopilot, loadLevel, markChores, stateHash, routeDir,
     VIEW_W, VIEW_H, WALL, COUNTER, STOVE, TABLE, PLANTS, DW, FR, LEVELS,
 } from './sim.js'
 
@@ -80,6 +80,7 @@ const TIDY_ATTRACT = [
     'APPLES IN THE WASHER? WRONG STOW — RESCUE IT AND RE-STOW',
     'TOSS A PLATE ONTO THE TILES AND IT SHATTERS (−40)',
     'GENTLE PLACES PAY TIDY POINTS — THROWN JAMS PAY LESS',
+    'TAP OR CLICK THE FLOOR — THE BOT GLIDES THERE AROUND THE DOORS',
     'EVERY LEVEL IS A MESSIER HOUSE — BEAT THE CLOCK FOR BONUS',
 ]
 
@@ -119,6 +120,13 @@ const TidyBotGame = () => {
         let edgeA = false, edgeB = false
         const evLog = []
         let overAt = 0
+        // #2250 GLIDE: a tapped floor point the bot routes itself to with the
+        // BFS (routeDir). The human is always the driver — any direction key,
+        // any verb press, a new tap, WATCH or a level change cancels it. The
+        // route is derived from live state each tick, so pads stay the only
+        // input and seeded determinism is untouched.
+        let goto = null
+        let gotoLevel = 0
 
         const burst = (x, y, n, col, spd = 3, up = -1) => {
             for (let i = 0; i < n; i++) {
@@ -178,6 +186,7 @@ const TidyBotGame = () => {
             const won = gs.end === 'win'
             overAt = performance.now()
             watchingRef.current = false; setWatching(false) // #1637 the shift ends in your hands
+            goto = null // #2250
             setEnd({ won, score: gs.score, tidy: gs.tidies, breaks: gs.breaks, wrongs: gs.wrongs, spills: gs.spills, jams: gs.jams, reason: gs.endReason })
             const board = (() => { try { return JSON.parse(localStorage.getItem('tidybot.board') || '[]') } catch { return [] } })()
             if (gs.score > 0) localStorage.setItem('tidybot.board', JSON.stringify([...board, { score: gs.score, date: new Date().toISOString().slice(2, 10) }].sort((a, b) => b.score - a.score).slice(0, 8)))
@@ -199,7 +208,18 @@ const TidyBotGame = () => {
             // #1637 WATCH: seat tidycheck's autopilot — the same brain its
             // playthrough clears all three rooms with, re-deciding from live
             // state every tick (never a script match).
-            step(gs, [watchingRef.current ? autopilot(gs) : livePad()])
+            const pad = watchingRef.current ? autopilot(gs) : livePad()
+            if (!watchingRef.current && goto) {
+                if (gs.level !== gotoLevel) goto = null // new room, new plans
+                else {
+                    const r = routeDir(gs, goto.x, goto.y)
+                    if (!r.ok || r.arrived) {
+                        goto = null
+                        if (r.ok) audioController.playTone(940, 0.05, 'sine', 0.035)
+                    } else if (r.dir) pad[r.dir] = true
+                }
+            }
+            step(gs, [pad])
             edgeA = false; edgeB = false
             handleEvents(gs.ev)
             if (gs.end) finish()
@@ -507,6 +527,17 @@ const TidyBotGame = () => {
                 if (it.state === 'loose') drawItem(ctx, it.kind, it.x, it.y)
                 else if (it.state === 'fly') drawItem(ctx, it.kind, it.x, it.y)
             }
+            // #2250 GLIDE marker: a pulsing teal ring at the tapped spot, in
+            // the bot's own chrome colors so it reads as an order, not furniture.
+            if (goto && screenRef.current === 'play') {
+                const pulse = 3.4 + Math.sin(tick * 0.22) * 1.6
+                ctx.strokeStyle = 'rgba(95,200,222,0.85)'; ctx.lineWidth = 1.4
+                circle(ctx, goto.x, goto.y, pulse); ctx.stroke()
+                ctx.strokeStyle = 'rgba(95,200,222,0.35)'
+                circle(ctx, goto.x, goto.y, pulse + 2.6); ctx.stroke()
+                ctx.fillStyle = 'rgba(143,224,238,0.8)'
+                circle(ctx, goto.x, goto.y, 1.1); ctx.fill()
+            }
             paintRobot(gs, tick)
             paintParticles()
             ctx.restore()
@@ -539,6 +570,7 @@ const TidyBotGame = () => {
             gs = makeGame(pin != null ? pin >>> 0 : (Math.random() * 2 ** 31) | 0, 1)
             parts.length = 0; gs.fx.length = 0
             watchingRef.current = false; setWatching(false) // #1637 a new shift starts in your hands
+            goto = null; gotoLevel = 0 // #2250 fresh shift, no stale orders
             setEnd(null)
             setMode('play')
             audioController.playTone(262, 0.08, 'square', 0.06)
@@ -563,11 +595,14 @@ const TidyBotGame = () => {
             // #1637 WATCH: Y seats the proven brain at any live shift state
             // (autopilot re-decides from live); any driving key takes the bot back.
             if (isWatchKey(e)) {
+                goto = null // #2250 the prover takes the wheel; the glide steps down
                 if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
                 else if (!gs.end) { watchingRef.current = true; setWatching(true); playWatchStart() }
                 return
             }
             if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
+            // #2250 GLIDE: keys are the human speaking — a glide yields at once.
+            goto = null
             if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = true
             if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = true
             if (e.code === 'ArrowUp' || e.code === 'KeyW') keys.up = true
@@ -581,13 +616,30 @@ const TidyBotGame = () => {
             if (e.code === 'ArrowUp' || e.code === 'KeyW') keys.up = false
             if (e.code === 'ArrowDown' || e.code === 'KeyS') keys.down = false
         }
-        const onPointerDown = () => {
+        const onPointerDown = (e) => {
             if (screenRef.current === 'attract') startPlay()
             else if (screenRef.current === 'over' && performance.now() - overAt > 600) { setMode('attract'); gs = makeGame(1337, 1) }
             // #1637 WATCH: a touch on the rooms means you want the bot — hand back.
             // (The WATCH pill stopPropagations its press; the pad's own keydowns
             // already take over.)
             else if (screenRef.current === 'play' && watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+            // #2250 GLIDE: a tap on the floor is "walk there". Buried taps get
+            // an honest NO WAY (same refusal voice as STAND CLEAR), never a wedge.
+            else if (screenRef.current === 'play' && !pausedRef.current && !gs.end) {
+                const rect = canvas.getBoundingClientRect()
+                if (!rect.width || !rect.height) return
+                const wx = (e.clientX - rect.left) * (VIEW_W / rect.width)
+                const wy = (e.clientY - rect.top) * (VIEW_H / rect.height)
+                const r = routeDir(gs, wx, wy)
+                if (r.ok) {
+                    goto = { x: wx, y: wy }
+                    gotoLevel = gs.level
+                    audioController.playTone(660, 0.04, 'sine', 0.03)
+                } else {
+                    gs.fx.push({ msg: 'NO WAY', x: wx, y: wy, k: 0, t: 'bad' })
+                    audioController.playTone(120, 0.12, 'square', 0.06)
+                }
+            }
         }
 
         // ---- contract (QA bots / replays / RL) ----
@@ -625,6 +677,7 @@ const TidyBotGame = () => {
                 contractSeed = seed >>> 0
                 gs = makeGame(contractSeed, 1)
                 parts.length = 0
+                goto = null // #2250 contract resets clear the glide too
                 setEnd(null)
                 setMode('play')
             },
@@ -682,6 +735,13 @@ const TidyBotGame = () => {
                 step: (n = 1, pad = {}) => { for (let i = 0; i < n; i++) step(gs, [pad]) },
                 press: (code) => onKeyDown({ code, preventDefault() {}, repeat: false }),
                 release: (code) => onKeyUp({ code }),
+                // #2250 GLIDE: harness taps (world coords) + glide introspection.
+                glide: (x, y) => {
+                    const r = routeDir(gs, x, y)
+                    if (r.ok) { goto = { x, y }; gotoLevel = gs.level }
+                    return r
+                },
+                gliding: () => !!goto,
                 DW, FR, TABLE, COUNTER, VIEW_W, VIEW_H,
             }
             mountDbg({
@@ -730,7 +790,7 @@ const TidyBotGame = () => {
             <div ref={stageRef} className="relative w-full max-w-[720px] aspect-[320/240]" style={{ imageRendering: 'pixelated' }} />
             <div className="absolute top-2 left-1/2 -translate-x-1/2 pointer-events-none font-mono text-[11px] tracking-widest" ref={setHud('toast')} style={{ color: '#ffd23f', textShadow: '0 1px 0 #000' }} />
             <div className="absolute bottom-1 left-2 font-mono text-[10px] text-amber-200/60 pointer-events-none">
-                <span ref={setHud('levelTag')}>KITCHEN / LIGHT DRIZZLE</span> · A: use · B: toss
+                <span ref={setHud('levelTag')}>KITCHEN / LIGHT DRIZZLE</span> · A: use · B: toss · tap floor to glide
             </div>
             {screen === 'attract' && (
                 <div className="absolute bottom-8 inset-x-0 flex flex-col items-center gap-2 pointer-events-none">

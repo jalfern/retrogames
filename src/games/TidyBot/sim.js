@@ -555,6 +555,52 @@ const freeCell = (bit, gx, gy) => {
     return null
 }
 
+// One steering step toward a STANDABLE goal: BFS for the next cell, then the
+// collision-aware axis choice (press what actually moves) so a corner graze at
+// cell granularity can never wedge the walker. Shared by the autopilot and the
+// human glide routing (#2250) — one steering brain, two drivers.
+const steerTo = (gs, goal) => {
+    const p = {}
+    const dx = goal.x - gs.rx, dy = goal.y - gs.ry
+    if (Math.hypot(dx, dy) <= 2.5) return p
+    const nxt = bfsNext(gs, goal.x, goal.y)
+    const t = nxt || goal
+    const mx = t.x - gs.rx, my = t.y - gs.ry
+    const px = mx > 0 ? 1 : mx < 0 ? -1 : 0
+    const py = my > 0 ? 1 : my < 0 ? -1 : 0
+    const axes = Math.abs(mx) >= Math.abs(my) ? ['x', 'y'] : ['y', 'x']
+    let moved = false
+    for (const ax of axes) {
+        if (ax === 'x' && px && canStandRel(gs, gs.rx + px * 2.5, gs.ry)) { p[px > 0 ? 'right' : 'left'] = true; moved = true; break }
+        if (ax === 'y' && py && canStandRel(gs, gs.rx, gs.ry + py * 2.5)) { p[py > 0 ? 'down' : 'up'] = true; moved = true; break }
+    }
+    if (!moved) {
+        const esc = [[0, 1], [0, -1], [1, 0], [-1, 0]].find(([ex, ey]) => canStandRel(gs, gs.rx + ex * 2.5, gs.ry + ey * 2.5))
+        if (esc) {
+            if (esc[0]) p[esc[0] > 0 ? 'right' : 'left'] = true
+            else if (esc[1]) p[esc[1] > 0 ? 'down' : 'up'] = true
+        }
+    }
+    return p
+}
+
+// Human routing (#2250): the pure half of tap-to-glide. Given a tap anywhere,
+// snap it to the nearest walkable cell (a tap buried in furniture is refused,
+// never a wedge) and answer with the next direction the walker would press.
+// Pure (gs, tx, ty) — never mutates, so seed+pads determinism is untouched;
+// the shell merges the answer into pads like any other input.
+export const ARRIVE_R = 3.5
+export function routeDir(gs, tx, ty) {
+    const bit = walkBit(gs)
+    const e = freeCell(bit, Math.floor(tx / CELL), Math.floor(ty / CELL))
+    if (!e) return { ok: false, arrived: false, dir: null, tx: 0, ty: 0 }
+    const ex = e[0] * CELL + CELL / 2, ey = e[1] * CELL + CELL / 2
+    if (Math.hypot(gs.rx - ex, gs.ry - ey) <= ARRIVE_R) return { ok: true, arrived: true, dir: null, tx: ex, ty: ey }
+    const p = steerTo(gs, { x: ex, y: ey })
+    const dir = p.left ? 'left' : p.right ? 'right' : p.up ? 'up' : p.down ? 'down' : null
+    return { ok: true, arrived: false, dir, tx: ex, ty: ey }
+}
+
 const bfsNext = (gs, tx, ty) => {
     const bit = walkBit(gs)
     const s = freeCell(bit, Math.floor(gs.rx / CELL), Math.floor(gs.ry / CELL))
@@ -656,31 +702,7 @@ export function autopilot(gs) {
 
     if (act === 'a') pad.a = press()
     if (act === 'b') pad.b = press()
-    if (goal) {
-        const dx = goal.x - gs.rx, dy = goal.y - gs.ry
-        if (Math.hypot(dx, dy) > 2.5) {
-            const nxt = bfsNext(gs, goal.x, goal.y)
-            const t = nxt || goal
-            const mx = t.x - gs.rx, my = t.y - gs.ry
-            const px = mx > 0 ? 1 : mx < 0 ? -1 : 0
-            const py = my > 0 ? 1 : my < 0 ? -1 : 0
-            // collision-aware axis choice: press what actually moves, so a
-            // corner graze at cell granularity can never wedge the robot
-            const axes = Math.abs(mx) >= Math.abs(my) ? ['x', 'y'] : ['y', 'x']
-            let moved = false
-            for (const ax of axes) {
-                if (ax === 'x' && px && canStandRel(gs, gs.rx + px * 2.5, gs.ry)) { pad[px > 0 ? 'right' : 'left'] = true; moved = true; break }
-                if (ax === 'y' && py && canStandRel(gs, gs.rx, gs.ry + py * 2.5)) { pad[py > 0 ? 'down' : 'up'] = true; moved = true; break }
-            }
-            if (!moved) {
-                const esc = [[0, 1], [0, -1], [1, 0], [-1, 0]].find(([ex, ey]) => canStandRel(gs, gs.rx + ex * 2.5, gs.ry + ey * 2.5))
-                if (esc) {
-                    if (esc[0]) pad[esc[0] > 0 ? 'right' : 'left'] = true
-                    else pad[esc[1] > 0 ? 'down' : 'up'] = true
-                }
-            }
-        }
-    }
+    if (goal) Object.assign(pad, steerTo(gs, goal))
     return pad
 }
 
