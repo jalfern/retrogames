@@ -125,6 +125,19 @@ see §Speed dial.
   plum dress `#a3579b`, plum-dark hair, a woven basket that swings on the walk,
   `flower IVY` BONDS row with the FAMILY gold-pulse, gift arpeggio + toast,
   marquee beat, `RING IVY` debug hook.
+- Visitor choreography (#2154): when both neighbours share the lot, chat is
+  arbitrated once per tick (`arbitrateVisitors`, before `updateVisitor`/
+  `updateIvy`) and BOTH chat blocks just read `v.claim`. Law: a visitor chats
+  with the NEAREST eligible resident (Manhattan ≤2, not fainting, not working
+  — the old loop let the LAST resident in array order win); a resident pays
+  only ONE visitor per tick; a resident contested by both pays the CLOSER
+  visitor, the loser falling back to its own next-nearest. A tie gives Fern,
+  the first neighbour, the ear (#2143's order). When arbitration actually
+  splits a pair, a three-way `think` line sells the neighbourhood as one
+  scene, alternating `TRI_LINES` wording on a `TRI_TELL_CD` (7 s) world-clock
+  throttle — `s.triTell`/`s.triHits` freeze with the sim and ride `stateHash`.
+  Court targeting (`courtTarget`) is the player's side of the line and is
+  untouched; choosing your court target stays open (#2235).
 - Thumb court (#2171): the pad has no third button (AGENTS.md), so the second
   court order rides press-DURATION on the first. An A/Space press that lands on
   a person with no object near calls `courtHoldArm(s)` (arms `s.holdT = 0`,
@@ -142,7 +155,7 @@ see §Speed dial.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 346 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), winnable seeds, determinism
+npm run peoplecheck          # 359 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.

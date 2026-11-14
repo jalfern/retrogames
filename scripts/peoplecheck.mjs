@@ -55,6 +55,7 @@ import {
     adoptKid, adoptKidOk, KID,   // #2203: Pip
     CAT_TABS, TAB_CARDS, TAB_OF, tabCards, setSel, flipTab, selectTab, digitCard,   // #2222: catalog shelves
     SPEED_MULT, SPEED_NAMES, setSpeed, cycleSpeed, attractSpeed,   // #2227: the speed dial
+    TRI_TELL_CD, TRI_LINES, IVY_SOCIAL,   // #2154: visitor choreography law
 } from '../src/games/Homebody/sim.js'
 import { readFileSync } from 'node:fs'
 
@@ -1119,6 +1120,94 @@ section('SECOND VISITOR')   // #2143 — Ivy, the market neighbour
     check('pin: the panel runs the flower IVY row with its FAMILY pulse', /'flower', '#a3579b', relLevel\(s\.rel\.ivy\), 'IVY'/.test(ivArt) && /relLevel\(s\.rel\.ivy\) === 3/.test(ivArt))
     check('pin: Ivy rides the draw order and the basket is painted', ivJsx.includes('g.ivy ? [{ p: g.ivy, v: g.ivy.y }]') && /if \(p\.gift\) \{/.test(ivArt))
     check('pin: the shell names her arrival, her gift and her bond lines', /case 'gift'/.test(ivJsx) && /IVY AT THE GATE/.test(ivJsx) && /ivy: 'IVY'/.test(ivJsx))
+}
+
+// ------------------------------------------------ CHOREOGRAPHY (#2154) -------
+section('CHOREOGRAPHY (#2154): nearest resident, contested pays closer, three-way tell')
+{
+    const hang = (g, key, name, r, c, hue) => {
+        g.visitAfter = 99; g.ivyAfter = 99; g.ivyGap = 0
+        g[key] = { name, r, c, x: tileX(c) + TILE / 2, y: tileY(r) + TILE / 2, path: null, state: 'hang',
+            t: 0, hue, face: 1, walkPhase: 0, chatT: 0, hangUntil: 9999 }
+        return g[key]
+    }
+    const park = (p, r, c) => { p.r = r; p.c = c; p.x = tileX(c) + TILE / 2; p.y = tileY(r) + TILE / 2; p.path = null; p.goal = null; p.use = null; p.working = false; p.faintT = 0 }
+    const hold = (pairs) => pairs.forEach(([p, r, c]) => park(p, r, c))
+    const soak = (g, pairs, sec) => { for (let i = 0; i < Math.round(sec / DT); i++) { hold(pairs); advance(g, DT); drain(g) } }
+
+    // Nearest, not last: the old loop let the LAST eligible resident in array
+    // order win the ring. The nearer one (people[0]) must now get the chat.
+    const a = newRun(101); hang(a, 'visitor', 'Fern', 3, 6, '#4fae5f')
+    const a0s = a.people[0].needs.social, af0 = a.rel.fern
+    soak(a, [[a.people[0], 3, 5], [a.people[1], 3, 8]], 2)   // d1 and d2 — both eligible
+    check('nearest resident wins the ring, not the last one in array order',
+        a.people[0].needs.social - a0s > 0.05 && a.people[1].chatT === 0 && a.rel.fern - af0 > 2 * 0.07 - 0.05,
+        `near=${(a.people[0].needs.social - a0s).toFixed(3)} farChatT=${a.people[1].chatT}`)
+    check('no contest, no three-way tell (solo visitor stays quiet)', a.triHits === 0)
+
+    // Contested: one resident in BOTH rings (Fern d1, Ivy d2) — the closer
+    // visitor gets the ear; the loser pays nothing, and the resident is paid
+    // by ONE visitor only (single 0.06 rate, never 0.06+IVY_SOCIAL stacked).
+    const b = newRun(103); hang(b, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(b, 'ivy', 'Ivy', 3, 8, '#a3579b')
+    const b0s = b.people[0].needs.social
+    soak(b, [[b.people[0], 3, 6], [b.people[1], 1, 12]], 2)
+    check('contested resident pays the CLOSER visitor — Fern wins the d1/d2 split',
+        b.rel.fern > 2 * 0.07 - 0.05 && b.rel.ivy === 0 && b0s < b.people[0].needs.social,
+        `fern=${b.rel.fern.toFixed(3)} ivy=${b.rel.ivy.toFixed(3)}`)
+    const bGain = b.people[0].needs.social - b0s
+    check('a resident pays only ONE visitor per tick (no stacked social from both rings)',
+        bGain > 2 * 0.06 - 0.05 && bGain < 2 * 0.06 + 0.04, `gain=${bGain.toFixed(3)}`)
+
+    // Loser fallback: put a second resident in Ivy's ring only — she re-aims
+    // at her own next-nearest instead of idling.
+    const c = newRun(107); hang(c, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(c, 'ivy', 'Ivy', 3, 8, '#a3579b')
+    soak(c, [[c.people[0], 3, 6], [c.people[1], 3, 10]], 2)   // people[1]: Ivy d2, Fern d5
+    check('the losing visitor falls back to its own next-nearest',
+        c.rel.fern > 2 * 0.07 - 0.05 && c.rel.ivy > 2 * IVY_CHAT - 0.05,
+        `fern=${c.rel.fern.toFixed(3)} ivy=${c.rel.ivy.toFixed(3)}`)
+
+    // Tie law: equidistant resident goes to Fern, the first neighbour (#2143 order).
+    const t = newRun(109); hang(t, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(t, 'ivy', 'Ivy', 3, 9, '#a3579b')
+    soak(t, [[t.people[0], 3, 7], [t.people[1], 1, 12]], 2)   // d2/d2 tie
+    check('a tie gives Fern, the first neighbour, the ear',
+        t.rel.fern > 2 * 0.07 - 0.05 && t.rel.ivy === 0,
+        `fern=${t.rel.fern.toFixed(3)} ivy=${t.rel.ivy.toFixed(3)}`)
+
+    // The three-way tell: fires on a live contest, alternates wording, and
+    // throttles at TRI_TELL_CD so 17 s of quarrelling lands exactly 3 beats.
+    const w = newRun(113); hang(w, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(w, 'ivy', 'Ivy', 3, 8, '#a3579b')
+    const tells = []
+    let lastHits = 0
+    for (let i = 0; i < Math.round(17 / DT); i++) {
+        hold([[w.people[0], 3, 6], [w.people[1], 1, 12]]); advance(w, DT); drain(w)
+        if (w.triHits !== lastHits) { lastHits = w.triHits; tells.push({ tick: i, line: w.thoughts[0] ? w.thoughts[0].text : '' }) }
+    }
+    const cdOk = tells.every((x, i) => i === 0 || x.tick - tells[i - 1].tick >= Math.floor(TRI_TELL_CD / DT) - 1)
+    check('a live contest tells the neighbourhood — 3 beats in 17 s, spaced ≥ the throttle',
+        tells.length === 3 && cdOk, `tells=${tells.length}`)
+    check('the tell alternates its two wordings',
+        TRI_LINES.includes(tells[0].line) && TRI_LINES.includes(tells[1].line) && tells[0].line !== tells[1].line && tells[2].line === tells[0].line)
+
+    // Determinism through a scripted contest, and the throttle rides the hash.
+    const contest = (seed) => {
+        const g = newRun(seed); hang(g, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(g, 'ivy', 'Ivy', 3, 8, '#a3579b')
+        soak(g, [[g.people[0], 3, 6], [g.people[1], 3, 10]], 12)
+        return stateHash(g)
+    }
+    check('a contested hour is seed-exact', contest(2154) === contest(2154) && contest(7) === contest(7))
+    const hz0 = newRun(5), hz1 = newRun(5); hz1.triTell = 4.5
+    const hz2 = newRun(5); hz2.triHits = 1
+    check('the tell throttle and its beat count ride the hash',
+        stateHash(hz1) !== stateHash(hz0) && stateHash(hz2) !== stateHash(hz0))
+
+    // Source pins: the law must not be silently unwired.
+    const chSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    check('pin: BOTH chat blocks read the arbitrated claim, once each',
+        (chSim.match(/const partner = v\.claim \|\| null/g) || []).length === 2)
+    check('pin: claims settle BEFORE either visitor is updated',
+        /arbitrateVisitors\(s\)[^\n]*\n\s*updateVisitor\(s, simDt\)\n\s*updateIvy\(s, simDt\)/.test(chSim))
+    check('pin: eligibility keeps the faint/working gate and the reach ring ≤2',
+        /\.filter\(\(e\) => e\.d <= 2 && e\.p\.faintT <= 0 && !e\.p\.working\)/.test(chSim))
 }
 
 // ----------------------------------------------------------- PET (#2197) -----

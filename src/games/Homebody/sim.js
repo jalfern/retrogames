@@ -368,6 +368,8 @@ export function newRun(seed) {
         ivy: null,                    // #2143: second neighbour, same shape as `visitor` (+ gift)
         ivyAfter: null,             // hour of Ivy's next visit
         ivyGap: 0,
+        triTell: 0,                 // #2154: world seconds until the next three-way choreography tell
+        triHits: 0,                 // #2154: three-way tells fired this run (the line variant rides it)
         pet: null,                  // #2197: the household cat, once adopted
         kid: null,                  // #2203: the adopted child, once the agency calls
         rel: { house: 0, fern: 0, ivy: 0, kid: 0 },   // #1817/#2143/#2203 conversation ladders (0..REL_MAX)
@@ -919,6 +921,50 @@ function nearestFreeTo(s, r, c) {
     return null
 }
 
+// ------------------------------------------------ visitor choreography (#2154) ---
+// The politeness law. While hanging on the lot a visitor chats with the
+// NEAREST eligible resident — not the last one the array happened to offer —
+// a resident pays only ONE visitor per tick, and when both neighbours reach
+// the same person, the contested resident pays the CLOSER visitor; the loser
+// falls back to its own next-nearest unclaimed resident. A tie gives Fern,
+// the first neighbour, the ear (#2143's order). When arbitration actually
+// splits a pair, a three-way thought line sells the neighbourhood as one
+// scene instead of two timers — throttled so the beat stays punctuation.
+export const TRI_TELL_CD = 7   // world seconds between three-way tells
+export const TRI_LINES = [
+    'Fern and Ivy both want a word — the house learns to take turns.',
+    'Two neighbours, one listening ear: the closer foot gets the first word.',
+]
+function eligibleNear(s, v) {
+    return s.people
+        .map((p, i) => ({ p, i, d: Math.abs(p.r - v.r) + Math.abs(p.c - v.c) }))
+        .filter((e) => e.d <= 2 && e.p.faintT <= 0 && !e.p.working)
+        .sort((a, b) => (a.d - b.d) || (a.i - b.i))
+        .map((e) => e.p)
+}
+function arbitrateVisitors(s) {
+    const fv = hasVisitor(s) && s.visitor.state === 'hang' ? s.visitor : null
+    const iv = hasIvy(s) && s.ivy.state === 'hang' ? s.ivy : null
+    if (fv) fv.claim = null
+    if (iv) iv.claim = null
+    if (!fv && !iv) return
+    const fNear = fv ? eligibleNear(s, fv) : []
+    const iNear = iv ? eligibleNear(s, iv) : []
+    if (fv && fNear.length) fv.claim = fNear[0]
+    if (iv && iNear.length) iv.claim = iNear[0]
+    if (fv && iv && fv.claim && fv.claim === iv.claim) {
+        const df = Math.abs(fv.claim.r - fv.r) + Math.abs(fv.claim.c - fv.c)
+        const di = Math.abs(iv.claim.r - iv.r) + Math.abs(iv.claim.c - iv.c)
+        if (di < df) fv.claim = fNear[1] || null     // Ivy stands closer — Fern yields
+        else iv.claim = iNear[1] || null               // Fern closer, or a tie: first neighbour wins
+        if (s.triTell <= 0) {
+            s.triHits += 1                             // #2154: tells alternate wording, cleanly
+            think(s, TRI_LINES[s.triHits % TRI_LINES.length])
+            s.triTell = TRI_TELL_CD
+        }
+    }
+}
+
 // ----------------------------------------------------------- visitor ------
 function updateVisitor(s, dt) {
     const v = s.visitor
@@ -944,9 +990,10 @@ function updateVisitor(s, dt) {
     if (v.path && !v.path.length) v.path = null
     if (v.state === 'enter' && !v.path) { v.state = 'hang'; v.t = 0 }
     if (v.state === 'hang') {
-        // chat with any resident standing close
-        let partner = null
-        for (const p of s.people) if (p.faintT <= 0 && !p.working && Math.abs(p.r - v.r) + Math.abs(p.c - v.c) <= 2) partner = p
+        // #2154 choreography law: chat with the NEAREST resident; when both
+        // neighbours reach the same person the contested one pays the closer
+        // visitor (claims settle in arbitrateVisitors, once per tick).
+        const partner = v.claim || null
         if (partner) {
             partner.chatT += dt
             v.chatT += dt
@@ -1034,9 +1081,9 @@ function updateIvy(s, dt) {
     if (v.path && !v.path.length) v.path = null
     if (v.state === 'enter' && !v.path) { v.state = 'hang'; v.t = 0 }
     if (v.state === 'hang') {
-        // chat with any resident standing close — the same ring Fern uses
-        let partner = null
-        for (const p of s.people) if (p.faintT <= 0 && !p.working && Math.abs(p.r - v.r) + Math.abs(p.c - v.c) <= 2) partner = p
+        // chat on the #2154 choreography law — nearest resident, contested
+        // residents pay the closer visitor; claim settles once per tick.
+        const partner = v.claim || null
         if (partner) {
             partner.chatT += dt
             v.chatT += dt
@@ -1598,6 +1645,7 @@ export function advance(s, dt) {
     if (s.spatFx > 0) s.spatFx = Math.max(0, s.spatFx - dt)   // #2076: the sprite tell fades on the real clock
     if (s.cooFx > 0) s.cooFx = Math.max(0, s.cooFx - dt)       // #2131: the warm tell too
     if (s.cmdCd > 0) s.cmdCd = Math.max(0, s.cmdCd - dt)       // #2131: command cooldown rides the real clock
+    if (s.triTell > 0) s.triTell = Math.max(0, s.triTell - dt) // #2154: the three-way tell throttles on the world clock
     if (s.build) return     // time stands still in buy mode
     if (s.fastT > 0) s.fastT = Math.max(0, s.fastT - dt)
     const anyWork = s.people.some((p) => p.working)
@@ -1612,6 +1660,7 @@ export function advance(s, dt) {
         b++
     }
 
+    arbitrateVisitors(s)   // #2154: settle the chat claims before either visitor pays
     updateVisitor(s, simDt)
     updateIvy(s, simDt)
     updatePet(s, simDt)
@@ -1850,6 +1899,7 @@ export function stateHash(s) {
     mix(s.spats); mix(s.grudge)        // #2070: quarrels and grudges ride it too
     mix(s.cmdCd)                       // #2131: the command cooldown rides it too
     mix(s.holdT)                       // #2171: so does the pending thumb-court hold (-1 = none)
+    mix(s.triTell); mix(s.triHits)   // #2154: the choreography tell and its beat count ride it too
     for (const p of s.people) {
         mix(p.r); mix(p.c)
         for (const n of NEEDS) mix(p.needs[n])
