@@ -615,7 +615,8 @@ text-only again — the pass's signature feature); m56 freezes the chapter mixer
 friend is taken without a word); m58 hangs mugshots on every decoy — three
 portrait bumps push day 6 past the scale box, and the per-row fit law (which
 m58's first draft dodged, because the bump was `some(faced)` not
-`count(faced)` — one surviving mutant, then sharpened) names it (#1988). The
+`count(faced)` — one surviving mutant, then sharpened) names it (#1988). #2109
+adds m69, which rolls the aftershock breadth back to arc-only (#2109). The
 hand year added two: m59 drops the upper bounds of the desk clamp (a released
 card lands over the wall or below the controls — the extremes law names it);
 m60 stretches the desk over the glass (a laid document becomes a blindfold
@@ -725,10 +726,16 @@ pins the bubble tail that had been drawn-but-unpinned.
   mugshot IS the neighbor, every feature and the mark compared), and the wall
   paints it as a 26px paper mugshot under the name (`ARC_MUG`, drawFace at
   s=0.30 — the third surface after counter and passport photo, same function).
+  #2109 MINI PORTRAIT CUT: at s=0.30 the whole figure crushed the features to
+  a ~20px stencil; the mug now runs the PHOTO crop law at thumbnail scale
+  (s=0.44, `oy` centers the head, clip already framed) so brow/eyes/nose/mouth
+  stay multi-pixel. Fit law unchanged (the frame stays 26px; paperscheck pins
+  the crop frames brow-row..mouth-row and stroke floors 3px/6px).
   Fit: `wallRows` grows every faced row by the frame + seam, per ROW — day 6
   (always the arc day) worst sweep bottom y=353 vs the SCALE-box law y=358.
   Decoys stay text-only: a face for a name that never walks is a lie with no
-  witness. `bulletinPix()` proves frame+portrait pixels live.
+  witness (a decoy roster is a future design call, #2109 item 1 — parked).
+  `bulletinPix()` proves frame+portrait pixels live.
 - **The turn announces.** While the arc entrant is AT the window, the bulletin
   underlines the arc row and frames its mugshot in `ARC_HL #ff3b30` — chosen
   outside the wallRed hue family (gg<80 vs the sheet's 80..150) so the sheet
@@ -747,14 +754,18 @@ pins the bubble tail that had been drawn-but-unpinned.
   every paper, every day). The say-line law relaxes from one literal to the
   authored set; new distinctness laws keep the 43-sentence repertoire echo-free;
   sweep witnesses require every alternate spoken across the 12 weeks.
-- **The deny aftershock.** `person.seize` (authored per id, arc branch only —
-  `else` nobody carries it) prints under the DENIED stamp in the corridor
+- **The deny aftershock.** `person.seize` (authored per id; #2109 BREADTH — the
+  attach hoists to EVERY regular visit, `else` strangers carry nothing: the
+  original mourns any regular you turn away wrongly, and their papers are built
+  legal every day, so denying one is always wrong; the arc keeps the same line
+  on the right call) prints under the DENIED stamp in the corridor
   below the rotated stroke (SEIZE = x STAMP.x+4, y 154: cap ink top 149 clears
   the stamp's lowest stroke at y≈147/x≈425, descender stays on the paper)
   for the lifetime of the #2021 inspector pin, and the stamp thunks at
   `SEIZE.tone` 147 Hz — below every fixed tone the booth owns (stamps
   300/190…, recognitions 523/784). Evidence-style, no new rule; `sfxSeize`
-  counts it for papersplay.
+  counts it for papersplay. m69 rolls the breadth back to arc-only and dies;
+  papersplay turns Marko away wrongly and reads HIS line live.
 - **The tail is pinned.** `bubbleTailPix()` counts paper in the triangle band
   above the field (the apex-up tail toward the glass was drawn since #1983
   but only the field was measured); papersplay: strangers dark (<20px), a

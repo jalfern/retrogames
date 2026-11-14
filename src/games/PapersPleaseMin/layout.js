@@ -94,7 +94,12 @@ export const STAMP = { x: 506, y: 110 }
 // ride ONLY while the arc entrant is at the window. Its hue sits outside the
 // wallRed family (gg < 80 vs the sheet's 80..150) so the wantedInk sheet gate
 // keeps counting sheet rows and nothing else, and clear of the stamp ink.
-export const ARC_MUG = { w: 26, h: 26, s: 0.30 }
+// #2109 MINI PORTRAIT CUT: the mug runs the PHOTO crop law at thumbnail
+// scale — drawFace at ARC_MUG.s, clipped to the frame, head centered by oy.
+// At the old s=0.30 the whole 110×122 figure shrank into the frame and the
+// features crushed to a 20px stencil; the tight crop keeps eyes/brow/nose/
+// mouth multi-pixel, so the wall photo carries detail like the original's.
+export const ARC_MUG = { w: 26, h: 26, s: 0.44, oy: -13 }
 export const ARC_HL = '#ff3b30'
 // #1988 DENY AFTERSHOCK — the original lingers when a familiar face is taken:
 // the seized argue line prints under the DENIED stamp while the #2021 pin

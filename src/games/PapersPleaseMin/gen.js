@@ -593,6 +593,12 @@ function regularApplicant(c, rnd, date, dayRules, day, used, seed, n, aged = fal
     // #2087: a neighbor's speech is authored (say/arc lines below) — the
     // serial-hash murmur is the one-off crowd's voice, never the cast's.
     a.person.mutter = null
+    // #2109 AFTERSHOCK BREADTH: EVERY visit of a regular carries its argue line,
+    // not just the arc's. The original mourns any regular you turn away wrongly
+    // (their papers are built legal every day, so a deny is always wrong), and
+    // the arc's taken friend argues too. Decor by doctrine — decide never reads
+    // it (the purity twin strips say AND seize on every paper, every day).
+    a.person.seize = c.seize
     a.person.passport = { ...a.person.passport, name: c.name, sex: c.sex, dob, height: c.height, weight: c.weight, photo: { ...face } }
     if (a.person.idcard) {
         a.person.idcard = { ...a.person.idcard, name: c.name, dob, height: c.height, weight: c.weight }
@@ -612,10 +618,10 @@ function regularApplicant(c, rnd, date, dayRules, day, used, seed, n, aged = fal
     if (n === arc.day && c.id === arc.id) {
         a.person.arc = true
         a.person.recall = 'turn' // #1982 the wall interrupts the welcome — still a returning face
-        // #1988 REPERTOIRE: the turn's protest rides the chapter, and the
-        // person carries the argue line the booth prints when they're taken.
+        // #1988 REPERTOIRE: the turn's protest rides the chapter; the argue
+        // line the booth prints when they're taken hoists with #2109 to every
+        // regular visit, and the arc keeps the same authored line.
         a.person.say = ['YOU AGAIN.', turnLineFor(c, seed)]
-        a.person.seize = c.seize
         // #1988 THE BULLETIN PRINTS A FACE: the arc's sheet entry carries the
         // authored descriptor (identity law — the mugshot IS the neighbor), so
         // the wall prints the portrait next to the name like the original.

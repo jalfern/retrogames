@@ -231,7 +231,11 @@ const PapersPleaseMinGame = () => {
                 // The authored line rides under the DENIED stamp for the life of
                 // the #2021 pin, and the stamp lands with a lower thunk than any
                 // fixed tone the booth owns. Decor for the shell — gs untouched.
-                if (insp && stamped.arc && action === 'deny') {
+                // #2109 BREADTH: the whole neighborhood mourns, not just the arc —
+                // any regular denied (their papers are always legal, so the deny
+                // is always wrong) argues with its own authored line; the arc's
+                // taken friend keeps thudding the same seize tone on the right call.
+                if (insp && stamped.regular && action === 'deny') {
                     insp.argue = stamped.seize || null
                     audioController.playTone(SEIZE.tone, 0.10, 'square', 0.07)
                     sfxSeize++
@@ -698,7 +702,7 @@ const PapersPleaseMinGame = () => {
                     box(row.mug.x, row.mug.y, row.mug.w, row.mug.h, COL.paper, COL.paperLine)
                     ctx.save()
                     ctx.beginPath(); ctx.rect(row.mug.x, row.mug.y, row.mug.w, row.mug.h); ctx.clip()
-                    drawFace(ctx, row.w.face, row.mug.x + row.mug.w / 2 - 55 * ARC_MUG.s, row.mug.y - 1, ARC_MUG.s)
+                    drawFace(ctx, row.w.face, row.mug.x + row.mug.w / 2 - 55 * ARC_MUG.s, row.mug.y + ARC_MUG.oy, ARC_MUG.s)
                     ctx.restore()
                     if (row.hl) {
                         ctx.strokeStyle = ARC_HL; ctx.lineWidth = 2
@@ -1481,12 +1485,17 @@ const PapersPleaseMinGame = () => {
                     const rulesT = day.rules.map((r) => RULES[r].text)
                     const rows = wallRows(day, rulesT)
                     const arcRow = bulletinRows(day, rulesT, false).find((x) => x.w.face)
-                    let paper = 0
+                    let paper = 0, face = 0
                     if (arcRow) {
                         const d = ctx.getImageData(arcRow.mug.x, arcRow.mug.y, arcRow.mug.w, arcRow.mug.h).data
                         for (let i = 0; i < d.length; i += 4) {
-                            const k = (d[i] << 16) | (d[i + 1] << 8) | d[i + 2]
+                            const [rr, gg, bb] = [d[i], d[i + 1], d[i + 2]]
+                            const k = (rr << 16) | (gg << 8) | bb
                             if (k === 0xd8d2b8 || k === 0x8f8a70) paper++
+                            // #2109 MINI PORTRAIT CUT: the zoom-crop paints the face
+                            // across the frame — portrait presence is measured by face
+                            // ink (non-paper, non-announcement), not background paper.
+                            else if (!(rr > 170 && gg < 80 && bb < 80)) face++
                         }
                     }
                     let hl = 0
@@ -1497,7 +1506,7 @@ const PapersPleaseMinGame = () => {
                         const [rr, gg, bb] = [d2[i], d2[i + 1], d2[i + 2]]
                         if (rr > 170 && gg < 80 && bb < 80) hl++
                     }
-                    return { present: !!arcRow, paper, hl }
+                    return { present: !!arcRow, paper, face, hl }
                 },
                 // #1988 THE DENY AFTERSHOCK: the argue line's red ink in the
                 // zone under the stamp (cap ink y−5..descender y+1 at the SEIZE
