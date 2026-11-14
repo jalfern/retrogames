@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import VirtualControls from '../../components/VirtualControls'
-import { useRotateHint } from '../../components/RotateHint'
+import { useRotateHint } from '../../components/useRotateHint'
 import PauseOverlay from '../../components/PauseOverlay'
 import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
