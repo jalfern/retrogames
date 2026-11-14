@@ -20,7 +20,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="hud"><h1>FURLONG</h1><p>PROCEDURAL GALLOP · WEBGL2 · ZERO LIBRARIES</p></div>
+<div class="hud" id="hud"><h1>FURLONG</h1><p>PROCEDURAL GALLOP · WEBGL2 · ZERO LIBRARIES</p></div>
 <div class="tip" id="tip">DRAG TO LOOK · TAP FOR SOUND</div>
 
 <script>
@@ -929,5 +929,15 @@ window.DEMO_CREDITS={
 </script>
 <script src="feedback.js"></script>
 <script src="credits.js"></script>
+<script>
+// #1078: keep the corner tag clear of the HUD caption on narrow screens
+function reserveTag(){
+  var s=document.getElementById('hud').getBoundingClientRect();
+  var t=document.getElementById('credits-tag');
+  var clash=t&&s.right>t.getBoundingClientRect().left&&s.bottom>t.getBoundingClientRect().top;
+  document.documentElement.style.setProperty('--credits-bottom',clash?Math.round(s.height+14)+'px':'0px');
+}
+reserveTag(); window.addEventListener('load',reserveTag); window.addEventListener('resize',reserveTag); setTimeout(reserveTag,0);
+</script>
 </body>
 </html>
