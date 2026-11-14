@@ -37,6 +37,14 @@ our names, our rules.
 - Determinism: seed + pad streams ⇒ identical `state.hash`; the sim reports
   `pos`/`clawY`/`arm2Pos` (motion carriers per #1184) so the boredom map can
   watch the crane really move.
+- **The authored line (#2210):** each shift cycles a named sequence of waves
+  (`WAVES` in `sim.js`) instead of one flat seeded hum. A wave fixes the kind
+  ORDER (authored — seed 7 and seed 2027 run the identical shift-1 script) and
+  its intra-wave spacing; `rest` is the longer breather between waves, so the
+  line breathes in sections. Only ±5 ticks of seeded jitter ride on top. Kinds
+  arrive by era (bottles shift 2, barrels shift 3, scrap shift 4), and each
+  incoming wave announces itself over the belt mouth (caption + two-note cue)
+  during its breather.
 
 ## Verify
 
@@ -50,13 +58,19 @@ CONTRACT_ONLY=pick-rush npm run contractcheck
 
 `pickcheck` proves: clamp/carry/release, bin judging, the glass threshold both
 ways, barrel slip vs upright catch, fuse economy, the miss penalty, quota
-verdicts, shift speed-up and the win; determinism (twice identical, seeds
-differ); the shipped autopilot clears every shift quota with headroom on
-seeds 7/101/2027; and in headless Chrome the game boots clean, starts with a
-real Space, the cable and cargo pixels sit where the sim says after real
-keystrokes, and three wrong-bin drops fired via the DEV kit end the shift and
-restart — with zero page errors. A `JUICE` gate proves the `quotaNear` contract
-key flips exactly one pick short of quota (the gauge pulse reads it).
+verdicts, shift speed-up and the win; the authored line (shift-1 streams are
+the table on every seed, kinds arrive per shift-era, the pacing breathes
+burst→breather, the waves feed quota + 18, wave names ride the event ledger);
+determinism (twice identical, seeds differ); the shipped autopilot clears
+every shift quota with headroom on seeds 7/101/2027; and in headless Chrome
+the game boots clean, starts with a real Space, the cable and cargo pixels sit
+where the sim says after real keystrokes, and three wrong-bin drops fired via
+the DEV kit end the shift and restart — with zero page errors. A `JUICE` gate
+proves the `quotaNear` contract key flips exactly one pick short of quota (the
+gauge pulse reads it).
+
+Mutants: `PICK_MUT=judge|glass|roll|quota|wave` — `wave` collapses the table
+to one shift's waves; named gates go red.
 
 ## Honest gaps
 
@@ -65,5 +79,4 @@ key flips exactly one pick short of quota (the gauge pulse reads it).
   here: seed + per-seat pad streams + per-drop `hit/miss` labels via the
   `retrogames-rec/v1` recorder.
 - No second on-screen touchpad for seat 2 (Jon's rule — keyboard-only 2P).
-- One belt pattern only: spawn pacing is seeded, not hand-authored waves.
 - Sound is event-synthesized; no per-shift ambience change yet.

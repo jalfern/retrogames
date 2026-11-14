@@ -12,11 +12,12 @@
 // cable and cargo pixels land exactly where the sim says after real strokes,
 // and three wrong-bin drops fire the line and clock you back in.
 //
-// Mutants (PICK_MUT=judge|glass|roll|quota):
+// Mutants (PICK_MUT=judge|glass|roll|quota|wave):
 //   judge — CRATE stops belonging to its bin
 //   glass — bottles stop being fragile
 //   roll  — barrels stop rolling (nothing can ever slip)
 //   quota — shift 1's quota becomes unreachable
+//   wave  — the authored line collapses to one shift's waves (#2210)
 
 import * as s from '../src/games/PickRush/sim.js'
 import { scriptFor } from './lib/contractGames.mjs'
@@ -31,7 +32,7 @@ const ok = (c, m) => { if (c) { pass++; console.log(`  PASS  ${m}`) } else { fai
 const section = (t) => console.log(`\n\x1b[1m${t}\x1b[0m`)
 
 if (MUT) {
-    if (!['judge', 'glass', 'roll', 'quota'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
+    if (!['judge', 'glass', 'roll', 'quota', 'wave'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
     console.log(`\x1b[33mMUTANT ACTIVE: ${MUT}\x1b[0m`)
 }
 const applyMut = () => {
@@ -39,13 +40,14 @@ const applyMut = () => {
     if (MUT === 'glass') s.KINDS.bottle.fragile = false
     if (MUT === 'roll') s.KINDS.barrel.roll = false
     if (MUT === 'quota') s.SHIFTS[0].quota = 99999
+    if (MUT === 'wave') s.WAVES.length = 1
 }
 applyMut()
 
 const {
     makeGame, step, autopilot, stateHash,
     BELT_Y, BIN_TOP, BELT_END, CARRY_TIP, CLAW_DOWN, FUSES, SHIFT_TICKS,
-    KINDS, BINS, SHIFTS,
+    KINDS, BINS, SHIFTS, WAVES,
 } = s
 
 const CAN_BIN = BINS[1]
@@ -101,6 +103,11 @@ const spawnAt = (gs, kind, x) => {
     return it
 }
 
+// manual-injection gates must see ONLY what they inject — since #2210 the
+// authored line is dense enough that a natural spawn used to wander into a
+// grab window mid-gate. The line itself has its own section now.
+const clearLine = (gs) => { gs.items.length = 0; gs.nextSpawn = Number.MAX_SAFE_INTEGER }
+
 // drive free-fall out of the system: step until the item resolves
 const resolve = (gs, cap = 120) => {
     const n0 = gs.tick
@@ -111,7 +118,7 @@ const resolve = (gs, cap = 120) => {
 section('RULES — the crane')
 {
     const gs = makeGame(11, 1)
-    while (gs.tick < 40) step(gs, [{}])
+    while (gs.tick < 40) step(gs, [{}]); clearLine(gs)
     const it = spawnAt(gs, 'can', 200)
     gs.arms[0].x = it.x
     const grabbed = grabFrom(gs, it)
@@ -129,7 +136,7 @@ section('RULES — the crane')
 section('RULES — wrong bin, floor, fuses')
 {
     const gs = makeGame(12, 1)
-    while (gs.tick < 40) step(gs, [{}])
+    while (gs.tick < 40) step(gs, [{}]); clearLine(gs)
     const it = spawnAt(gs, 'crate', 200)
     gs.arms[0].x = it.x
     grabFrom(gs, it)
@@ -148,7 +155,7 @@ section('RULES — wrong bin, floor, fuses')
 }
 {
     const gs = makeGame(13, 1)
-    while (gs.tick < 40) step(gs, [{}])
+    while (gs.tick < 40) step(gs, [{}]); clearLine(gs)
     const it = spawnAt(gs, 'coil', 200)
     gs.arms[0].x = it.x
     grabFrom(gs, it)
@@ -168,7 +175,7 @@ section('RULES — wrong bin, floor, fuses')
 section('RULES — fragile glass')
 {
     const slam = makeGame(14, 1)
-    while (slam.tick < 40) step(slam, [{}])
+    while (slam.tick < 40) step(slam, [{}]); clearLine(slam)
     const b1 = spawnAt(slam, 'bottle', 200)
     slam.arms[0].x = b1.x
     grabFrom(slam, b1)
@@ -179,7 +186,7 @@ section('RULES — fragile glass')
 }
 {
     const soft = makeGame(15, 1)
-    while (soft.tick < 40) step(soft, [{}])
+    while (soft.tick < 40) step(soft, [{}]); clearLine(soft)
     const b = spawnAt(soft, 'bottle', 200)
     soft.arms[0].x = b.x
     grabFrom(soft, b)
@@ -195,7 +202,7 @@ section('RULES — fragile glass')
 section('RULES — barrels and the line')
 {
     const gs = makeGame(16, 1)
-    while (gs.tick < 40) step(gs, [{}])
+    while (gs.tick < 40) step(gs, [{}]); clearLine(gs)
     const br = spawnAt(gs, 'barrel', 200)
     br.rot = 1.1
     gs.arms[0].x = br.x
@@ -206,7 +213,7 @@ section('RULES — barrels and the line')
     ok(gs.fx.some((f) => f.t === 'slip') && gs.arms[0].held === null,
         'SLIP: an off-axis barrel squirts out of the jaws')
     const gs2 = makeGame(16.5 >>> 0, 1)
-    while (gs2.tick < 40) step(gs2, [{}])
+    while (gs2.tick < 40) step(gs2, [{}]); clearLine(gs2)
     const br2 = spawnAt(gs2, 'barrel', 200)
     br2.rot = 0.1
     gs2.arms[0].x = br2.x
@@ -217,7 +224,7 @@ section('RULES — barrels and the line')
 }
 {
     const gs = makeGame(17, 1)
-    while (gs.tick < 40) step(gs, [{}])
+    while (gs.tick < 40) step(gs, [{}]); clearLine(gs)
     const it = spawnAt(gs, 'can', BELT_END - 4)
     gs.combo = 5
     const s0 = gs.score
@@ -253,6 +260,64 @@ section('ECONOMY — shifts, quota, win')
     gs.shiftTick = SHIFT_TICKS - 1
     step(gs, [{ a: false }])
     ok(gs.end === 'win', 'WIN: clearing the last shift completes the contract')
+}
+
+section('WAVES — the authored line (#2210)')
+{
+    // Collect (shift, kind, tick) for every piece the sim puts on the belt.
+    const lineRun = (seed, players = 1) => {
+        const gs = makeGame(seed, players)
+        const out = []
+        let lastId = 0
+        while (!gs.end && gs.tick < SHIFTS.length * SHIFT_TICKS + 900) {
+            step(gs, players > 1 ? [autopilot(gs, 0), autopilot(gs, 1)] : [autopilot(gs, 0)])
+            for (const it of gs.items) {
+                if (it.id > lastId) { lastId = it.id; out.push({ shift: gs.shift, kind: it.kind, tick: gs.tick }) }
+            }
+        }
+        return { gs, out }
+    }
+    const flat = (shift) => WAVES[Math.min(shift, WAVES.length - 1)].flatMap((w) => w.kinds)
+
+    const a = lineRun(7), b = lineRun(2027)
+    const kA = a.out.filter((x) => x.shift === 0).map((x) => x.kind)
+    const kB = b.out.filter((x) => x.shift === 0).map((x) => x.kind)
+    const want = flat(0)
+    const n0 = Math.min(kA.length, kB.length)   // jitter may land one extra tail piece
+    const cyc = Array.from({ length: n0 }, (_, i) => want[i % want.length])
+    ok(n0 >= 2 * want.length && kA.slice(0, n0).join() === kB.slice(0, n0).join()
+        && kA.slice(0, n0).join() === cyc.join(),
+        `AUTHORED ORDER: shift-1 streams seed 7 ≡ seed 2027 ≡ the WAVES table cycled (${n0} pieces, ${(n0 / want.length).toFixed(1)} cycles)`)
+
+    const byShift = [0, 1, 2, 3].map((sh) => new Set(a.out.filter((x) => x.shift === sh).map((x) => x.kind)))
+    const eraOk = ['crate', 'can', 'coil'].every((k) => byShift[0].has(k)) && !['bottle', 'barrel', 'scrap'].some((k) => byShift[0].has(k))
+        && byShift[1].has('bottle') && !byShift[1].has('scrap')
+        && byShift[2].has('barrel') && !byShift[2].has('scrap')
+        && byShift[3].has('scrap') && byShift[3].has('bottle')
+    ok(eraOk, `ERA LADDER: waves introduce kinds per shift (${byShift.map((x) => [...x].sort().join('+')).join(' | ')})`)
+
+    const gaps0 = a.out.filter((x) => x.shift === 0).map((x) => x.tick)
+    const dg = gaps0.slice(1).map((t, i) => t - gaps0[i])
+    const dset = [...new Set(dg)].sort((p, q) => p - q)
+    const med = dset[Math.floor(dset.length / 2)]
+    ok(dset.length >= 3 && Math.max(...dg) - med >= 40,
+        `BREATHING: shift-1 pacing runs ${dset.length} distinct gaps, burst ${Math.min(...dg)}–${med} mid, breather ${Math.max(...dg)} — not one flat hum`)
+
+    const supply = [0, 1, 2, 3].map((sh) => a.out.filter((x) => x.shift === sh).length)
+    ok(supply.every((n, i) => n >= SHIFTS[i].quota + 18),
+        `SUPPLY: the waves feed ${supply.join('/')} vs quota ${SHIFTS.map((q) => q.quota).join('/')} (≥18 headroom of pieces)`)
+
+    {
+        const gs = makeGame(7, 1)
+        const names = []
+        while (!gs.end && gs.tick < SHIFT_TICKS + 600) {
+            step(gs, [autopilot(gs, 0)])
+            for (const e of gs.ev) if (e.type === 'wave') names.push(e.name)
+            if (gs.shift > 0) break
+        }
+        ok(names.length >= 2 && names[0] === WAVES[0][1].name,
+            `WAVE CUE: the carry announces incoming waves by name (${names.slice(0, 3).join(' → ')})`)
+    }
 }
 
 section('DETERMINISM — seed + pads = hashes')

@@ -23,7 +23,7 @@ import {
     makeGame, step, autopilot,
     VIEW_W, VIEW_H, RAIL_Y, BELT_Y, BELT_END,
     BIN_TOP, FLOOR_Y, SHIFT_TICKS, FUSES,
-    BINS, SHIFTS,
+    BINS, SHIFTS, WAVES,
 } from './sim.js'
 
 const SIM_MS = 1000 / 60
@@ -233,6 +233,11 @@ const PickRushGame = () => {
                     }
                 }
                 else if (e.type === 'slip') { audioController.playSweep(900, 500, 0.1, 'sawtooth', 0.05); burst(e.x, e.y, 3, '#9aa4b0', 1.2) }
+                else if (e.type === 'wave') {
+                    // the line changes character — a two-note cue over the caption
+                    audioController.playTone(523, 0.06, 'triangle', 0.04)
+                    audioController.playTone(784, 0.08, 'triangle', 0.04, 0.07)
+                }
                 else if (e.type === 'shift') {
                     audioController.playSweep(940, 1180, 0.16, 'triangle', 0.07)
                     audioController.playSweep(1180, 920, 0.2, 'triangle', 0.07, 0.2)
@@ -502,7 +507,7 @@ const PickRushGame = () => {
                 if (f.k > 46) { gs.fx.splice(i, 1); continue }
                 ctx.globalAlpha = Math.max(0, 1 - f.k / 46)
                 ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'
-                const col = f.t === 'ok' ? '#5dff8f' : f.t === 'shift' ? '#ffd23f' : '#ff5a4f'
+                const col = f.t === 'ok' ? '#5dff8f' : f.t === 'shift' ? '#ffd23f' : f.t === 'wave' ? '#7fd4ff' : '#ff5a4f'
                 const yy = f.y - f.k * 0.4
                 if (f.t === 'shift') {
                     ctx.globalAlpha = Math.min(1, f.k / 8)
@@ -768,6 +773,7 @@ const PickRushGame = () => {
             combo: gs.combo,
             fusesLeft: FUSES - gs.warnings,
             beltV: Math.round(1.05 * SHIFTS[Math.min(gs.shift, SHIFTS.length - 1)].speed * 1000) / 1000,
+            waveName: WAVES[Math.min(gs.shift, WAVES.length - 1)][gs.wave.wi].name,
             pos: Math.round(gs.arms[0].x * 10) / 10,
             clawY: Math.round(gs.arms[0].tip * 10) / 10,
             carried: gs.arms[0].held !== null ? gs.items.find((i2) => i2.id === gs.arms[0].held)?.kind || 'x' : '',
