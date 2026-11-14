@@ -74,22 +74,26 @@ const LEGLEN = { hind: [0.21, 0.21], fore: [0.225, 0.225] };
 
 /* spine rings: x (body), base z, half-width ry, half-height rz */
 const RINGS = [
-  { x: 0.00, z: 0.300, ry: 0.093, rz: 0.112 },  // hips
-  { x: 0.14, z: 0.286, ry: 0.070, rz: 0.080 },  // waist (tuck-up)
-  { x: 0.28, z: 0.300, ry: 0.084, rz: 0.104 },  // chest barrel
-  { x: 0.42, z: 0.338, ry: 0.072, rz: 0.098 },  // withers
-  { x: 0.52, z: 0.372, ry: 0.052, rz: 0.066 },  // neck base
-  { x: 0.60, z: 0.420, ry: 0.044, rz: 0.054 },  // mid neck
-  { x: 0.66, z: 0.452, ry: 0.041, rz: 0.049 },  // poll
+  { x: 0.00, z: 0.298, ry: 0.098, rz: 0.116 },  // hips
+  { x: 0.09, z: 0.290, ry: 0.082, rz: 0.096 },
+  { x: 0.17, z: 0.286, ry: 0.072, rz: 0.084 },  // waist (tuck-up)
+  { x: 0.25, z: 0.292, ry: 0.080, rz: 0.098 },
+  { x: 0.32, z: 0.304, ry: 0.088, rz: 0.110 },  // chest barrel
+  { x: 0.38, z: 0.322, ry: 0.082, rz: 0.104 },
+  { x: 0.42, z: 0.338, ry: 0.074, rz: 0.098 },  // withers
+  { x: 0.48, z: 0.346, ry: 0.062, rz: 0.078 },
+  { x: 0.53, z: 0.354, ry: 0.052, rz: 0.066 },  // neck base
+  { x: 0.575, z: 0.368, ry: 0.046, rz: 0.058 },
+  { x: 0.61, z: 0.384, ry: 0.042, rz: 0.052 },  // poll
 ];
-const ARCH_W = [0.0, 1.0, 0.85, 0.35, -0.15, -0.3, -0.35];
+const ARCH_W = [0.0, 0.35, 1.0, 0.85, 0.5, 0.2, 0.0, -0.15, -0.3, -0.35, -0.4];
 
 /* head rings beyond the poll (dx, dz in head frame) */
 const HEAD = [
-  { dx: 0.05, dz: -0.004, ry: 0.044, rz: 0.046 },
-  { dx: 0.10, dz: -0.012, ry: 0.033, rz: 0.036 },
-  { dx: 0.145, dz: -0.020, ry: 0.022, rz: 0.024 },
-  { dx: 0.185, dz: -0.026, ry: 0.012, rz: 0.013 },
+  { dx: 0.05, dz: -0.006, ry: 0.044, rz: 0.046 },
+  { dx: 0.10, dz: -0.016, ry: 0.033, rz: 0.036 },
+  { dx: 0.145, dz: -0.026, ry: 0.022, rz: 0.024 },
+  { dx: 0.185, dz: -0.034, ry: 0.012, rz: 0.013 },
 ];
 
 /* ---------------- math ---------------- */
@@ -151,7 +155,7 @@ function poseAt(t) {
     const bz = r.z + fl * ARCH_W[i] - HIPJ.z;
     return [X + r.x * cosP - bz * sinP, 0, zc + bz * cosP + r.x * sinP, r.ry, r.rz * breath, r.x];
   });
-  const poll = spts[6];
+  const poll = spts[spts.length - 1];
   const hp = -0.55 * pitch + 0.015 * Math.sin(TAU * p);
   const hc = Math.cos(hp), hs = Math.sin(hp);
   const hpts = HEAD.map(h => [poll[0] + h.dx * hc - h.dz * hs, 0, poll[2] + h.dx * hs + h.dz * hc, h.ry, h.rz]);
@@ -159,17 +163,17 @@ function poseAt(t) {
   const seed = ((n % K) + K) % K;
   const tail = [];
   {
-    const bz0 = 0.31 - HIPJ.z;
+    const bz0 = 0.33 - HIPJ.z;
     let px = X - 0.02 * cosP - bz0 * sinP, py = 0, pz = zc + bz0 * cosP - 0.02 * sinP;
-    const SEG = 12, SL = 0.031;
+    const SEG = 13, SL = 0.033;
     for (let i = 0; i < SEG; i++) {
       const u = i / (SEG - 1);
-      const a = 0.28 - 0.95 * fl * (1 - u * 0.6) + 0.16 * u * u;    // elevation above horizontal (backwards)
-      const wv = 0.13 * Math.sin(TAU * (1.35 * u - p)) * (0.35 + u) + 0.09 * Math.sin(TAU * (2.2 * u - p) + seed * 1.7);
+      const a = 0.14 - 0.55 * fl * (1 - u * 0.6) + 0.30 * u * u;    // elevation above horizontal (backwards)
+      const wv = 0.11 * Math.sin(TAU * (1.35 * u - p)) * (0.35 + u) + 0.08 * Math.sin(TAU * (2.2 * u - p) + seed * 1.7);
       px -= Math.cos(a) * SL; pz += Math.sin(a) * SL; py = wv * u;
-      tail.push({ x: px, y: py, z: pz, r: 0.034 + 0.030 * Math.pow(u, 1.5), u });
+      tail.push({ x: px, y: py, z: pz, r: 0.040 + 0.034 * Math.pow(u, 1.4), u });
     }
-    tail[SEG - 1].r *= 0.5;
+    tail[SEG - 1].r *= 0.55;
   }
   // paws: stance locks to the world anchor; swing arcs old anchor → new anchor
   const paws = {};
@@ -185,7 +189,9 @@ function poseAt(t) {
     if (ph.stance) {
       wx = anchorX(name, n); wy = yG; wz = 0;
     } else {
-      const xLo = anchorX(name, n - 1) + L * g.dur, xTd = anchorX(name, n);
+      // swing from THIS contact's lift-off anchor to the NEXT touchdown anchor
+      const k = p > g.c ? n : n - 1;
+      const xLo = anchorX(name, k), xTd = anchorX(name, k + 1);
       const u = ph.u;
       wx = lerp(xLo, xTd, smooth(u));
       wz = (g.hind ? 0.115 : 0.085) * Math.sin(PI * u);
@@ -198,7 +204,7 @@ function poseAt(t) {
 }
 
 /* ---------------- camera ---------------- */
-let az = 0, el = 0.20, rad = 3.4;             // az=0 → pure side-on from the fox's right (−y)
+let az = 0, el = 0.20, rad = 2.95;             // az=0 → pure side-on from the fox's right (−y)
 let azLock = 0, elLock = 0.20;
 let CAM = [0, -3.4, 1.15], fwd = [0, 1, 0], rgt = [1, 0, 0], upv = [0, 0, 1];
 const SUN = norm3([-0.55, -0.42, 0.52]);      // low warm sun, behind-left of camera
@@ -221,7 +227,7 @@ function proj(p) {
 /* ---------------- painter ---------------- */
 let faces = [];
 /* two=false: closed solid, cull back faces. two=true: flat card, flip normal to camera */
-function pushFace(pts3, col, zbias, two) {
+function pushFace(pts3, col, zbias, two, dim) {
   const s = [];
   let zsum = 0;
   for (let i = 0; i < pts3.length; i++) {
@@ -232,17 +238,23 @@ function pushFace(pts3, col, zbias, two) {
   let nv = norm3(cross3(sub3(pts3[1], pts3[0]), sub3(pts3[2], pts3[0])));
   const towardCam = dot3(nv, sub3(pts3[0], CAM));
   if (!two && towardCam < 0) return;
-  if (two && towardCam < 0) nv = [-nv[0], -nv[1], -nv[2]];
-  const key = Math.pow(Math.max(0, dot3(nv, SUN)), 0.8) * 1.25;
-  const bounce = 0.30 * Math.max(0, nv[2]);
+  if (two) {
+    // flat cards: horizontal faces keep their normal skyward (snow bounce!),
+    // vertical faces flip to the camera
+    if (nv[2] < -0.05) nv = [-nv[0], -nv[1], -nv[2]];
+    else if (nv[2] < 0.05 && towardCam < 0) nv = [-nv[0], -nv[1], -nv[2]];
+  }
+  const key = Math.pow(Math.max(0, dot3(nv, SUN)), 0.8);
+  const bounce = 0.28 * Math.max(0, nv[2]);
   const rimv = norm3([-SUN[0], -SUN[1], 0.18]);
-  const rim = Math.pow(Math.max(0, dot3(nv, rimv)), 3.0) * 0.30;
-  let r = col[0] * (0.42 + bounce + key) + 255 * rim * (key + 0.2);
-  let g = col[1] * (0.42 + bounce + key * 0.82) + 230 * rim * (key + 0.2);
-  let b = col[2] * (0.42 + bounce + key * 0.60) + 195 * rim * (key + 0.2);
+  const rim = Math.pow(Math.max(0, dot3(nv, rimv)), 3.0) * 0.22;
+  let r = col[0] * (0.54 + bounce + key * 0.80) + 255 * rim * 0.65;
+  let g = col[1] * (0.52 + bounce + key * 0.64) + 230 * rim * 0.50;
+  let b = col[2] * (0.50 + bounce + key * 0.48) + 200 * rim * 0.38;
   const hf = clamp((zsum / pts3.length - 14) / 55, 0, 0.72);
   r = lerp(r, 210, hf); g = lerp(g, 198, hf); b = lerp(b, 192, hf);
-  faces.push({ s, z: zsum / pts3.length + (zbias || 0), c: 'rgb(' + (r | 0) + ',' + (g | 0) + ',' + (b | 0) + ')' });
+  const dm = dim || 1;
+  faces.push({ s, z: zsum / pts3.length + (zbias || 0), c: 'rgb(' + ((r * dm) | 0) + ',' + ((g * dm) | 0) + ',' + ((b * dm) | 0) + ')' });
 }
 const RN = 8;
 function ringsOf(pts) {
@@ -256,15 +268,16 @@ function ringsOf(pts) {
   });
 }
 
-/* coat palette */
-const COAT = [202, 108, 46], COAT_D = [150, 73, 30], CREAM = [243, 236, 222], DARK = [44, 30, 22], TAIL_D = [120, 62, 28], WHITE = [244, 239, 228];
+/* coat palette — golden-hour red fox */
+const COAT = [214, 118, 52], COAT_D = [168, 84, 36], CREAM = [243, 236, 222], DARK = [44, 30, 22], TAIL_D = [148, 76, 34], WHITE = [244, 239, 228];
 function coatAt(x, ang) {
   const nz = Math.cos(ang);
   let c = COAT;
-  if (x > 0.10 && x < 0.46 && nz < -0.2) c = mixc(c, CREAM, clamp((-nz - 0.2) * 1.8, 0, 1) * 0.9);
-  if (x >= 0.10 && x <= 0.46 && nz > 0.4) c = COAT_D;
-  if (x < 0.10 && nz > 0.3) c = COAT_D;
-  if (x > 0.46) c = mixc(COAT, COAT_D, 0.25);
+  if (x > 0.10 && x < 0.44 && nz < -0.45) c = mixc(c, CREAM, clamp((-nz - 0.45) * 2.4, 0, 1) * 0.9);
+  if (x >= 0.44 && x < 0.62 && nz < -0.55) c = mixc(c, CREAM, 0.8);
+  if (x >= 0.13 && x <= 0.40 && nz > 0.55) c = mixc(c, COAT_D, 0.7);
+  if (x < 0.10 && nz > 0.3) c = mixc(c, COAT_D, 0.8);
+  if (x > 0.44) c = mixc(COAT, COAT_D, 0.25);
   return c;
 }
 
@@ -286,6 +299,16 @@ function tube(a, b, ra, rb, col) {
 }
 
 function drawFox(P) {
+  // contact shadow — an anchored dark ellipse under the body, offset with the sun
+  {
+    const cx = P.X + 0.36, cy = 0.08;
+    const ring = [];
+    for (let i = 0; i < 10; i++) {
+      const an = i * TAU / 10;
+      ring.push([cx + 0.55 * Math.cos(an), cy + 0.19 * Math.sin(an), 0.0012]);
+    }
+    pushFace(ring, [178, 182, 196], 0.0195, true, 0.52);
+  }
   // torso
   const rings = ringsOf(P.spts);
   for (let i = 0; i < rings.length - 1; i++) {
@@ -297,9 +320,10 @@ function drawFox(P) {
   }
   // head
   const hr = ringsOf(P.hpts);
+  const pollR = rings[rings.length - 1];
   for (let a = 0; a < RN; a++) {
     const b = (a + 1) % RN;
-    pushFace([rings[6][a], rings[6][b], hr[0][b], hr[0][a]], mixc(COAT, COAT_D, 0.15));
+    pushFace([pollR[a], pollR[b], hr[0][b], hr[0][a]], mixc(COAT, COAT_D, 0.15));
   }
   for (let i = 0; i < hr.length - 1; i++) {
     for (let a = 0; a < RN; a++) {
@@ -332,13 +356,15 @@ function drawFox(P) {
     pushFace([fF, fB, tip], mixc(COAT_D, DARK, 0.55));
     pushFace([fB, fF, tip], mixc(DARK, COAT, 0.4));
   }
-  // legs
+  // legs — near pair dark, far pair hazed for depth
   for (const name of NAMES) {
     const g = LEGS[name];
+    const near = g.side < 0;          // camera sits on the −y side
+    const legC = near ? DARK : mixc(DARK, [120, 100, 88], 0.28);
     const { joint, mid, paw } = P.paws[name];
-    const wTop = g.hind ? 0.050 : 0.042, wMid = g.hind ? 0.032 : 0.026;
-    tube(joint, mid, wTop, wMid, mixc(DARK, COAT, g.hind ? 0.22 : 0.30));
-    tube(mid, [paw[0], paw[1], 0.028], wMid, 0.015, DARK);
+    const wTop = g.hind ? 0.056 : 0.048, wMid = g.hind ? 0.034 : 0.028;
+    tube(joint, mid, wTop, wMid, mixc(legC, COAT, near ? 0.18 : 0.26));
+    tube(mid, [paw[0], paw[1], 0.028], wMid, 0.015, legC);
     const dx = g.hind ? -0.032 : 0.034;
     const y0 = paw[1] - 0.017, y1 = paw[1] + 0.017;
     pushFace([[paw[0], y0, 0.030], [paw[0] + dx, y0, 0.030], [paw[0] + dx, y0, 0], [paw[0], y0, 0]], DARK, 0, true);
@@ -346,7 +372,7 @@ function drawFox(P) {
     pushFace([[paw[0] + dx, y0, 0.030], [paw[0] + dx, y1, 0.030], [paw[0] + dx, y1, 0], [paw[0] + dx, y0, 0]], mixc(DARK, [70, 50, 38], 0.3), 0, true);
     pushFace([[paw[0], y0, 0.030], [paw[0] + dx, y0, 0.030], [paw[0] + dx, y1, 0.030], [paw[0], y1, 0.030]], mixc(DARK, COAT_D, 0.35));
   }
-  // bushy tail
+  // bushy tail — thick base swelling to a broad white tip
   const TR = 6;
   const trings = P.tail.map(tp => {
     const rr = [];
@@ -358,7 +384,7 @@ function drawFox(P) {
   });
   for (let i = 0; i < trings.length - 1; i++) {
     const u = (P.tail[i].u + P.tail[i + 1].u) / 2;
-    const col = u > 0.78 ? WHITE : mixc(COAT_D, mixc(TAIL_D, WHITE, clamp((u - 0.5) / 0.28, 0, 1)), clamp((u - 0.25) / 0.5, 0, 1));
+    const col = u > 0.72 ? mixc(TAIL_D, WHITE, clamp((u - 0.72) / 0.14, 0, 1)) : COAT_D;
     for (let a = 0; a < TR; a++) pushFace([trings[i][a], trings[i][(a + 1) % TR], trings[i + 1][(a + 1) % TR], trings[i + 1][a]], col);
   }
   const tEnd = trings[trings.length - 1];
@@ -371,6 +397,7 @@ const ridgeH = (wx, per) => {
   const q = TAU / LOOP * per;
   return Math.sin(q * wx + 1.7) * 0.55 + Math.sin(q * wx * 2 + 0.4) * 0.3 + Math.sin(q * wx * 3 + 2.9) * 0.15;
 };
+let HZ = 0;
 function drawRidge(P, dist, base, amp, col) {
   const pts = [];
   for (let q = -40; q <= 40; q += 2.5) {
@@ -379,24 +406,25 @@ function drawRidge(P, dist, base, amp, col) {
     if (s) pts.push(s);
   }
   if (pts.length < 3) return;
-  faces.push({ s: pts, z: dist - 0.5 + (dist < 40 ? -0.01 : 0), c: col, ridge: true });
+  faces.push({ s: pts, z: dist - 0.5 + (dist < 40 ? -0.01 : 0), c: col, ridge: true, closeY: HZ });
 }
 function drawTree(P, wx, dist, h, seed) {
   const trunk = [[wx - 0.05, dist, 0], [wx + 0.05, dist, 0], [wx + 0.05, dist, h * 0.35], [wx - 0.05, dist, h * 0.35]];
   pushFace(trunk, [58, 42, 34], 0, true);
   for (let tier = 0; tier < 3; tier++) {
     const z0 = h * (0.22 + tier * 0.24), wid = h * (0.30 - tier * 0.07), z1 = z0 + h * 0.34;
-    pushFace([[wx - wid, dist, z0], [wx + wid, dist, z0], [wx, dist, z1]], mixc([34, 52, 42], [22, 38, 32], tier / 2 + hash(seed + tier) * 0.4), 0, true);
+    pushFace([[wx - wid, dist, z0], [wx + wid, dist, z0], [wx, dist, z1]], mixc(mixc([34, 52, 42], [22, 38, 32], tier / 2 + hash(seed + tier) * 0.4), [86, 78, 96], 0.22), 0, true);
   }
 }
 function shadeSnow(s, y) {
   const drift = 0.5 + 0.5 * Math.sin(TAU * s / LOOP * 2 + 0.7) * Math.sin(TAU * s / LOOP * 3 + 2.1);
-  let c = mixc([214, 222, 234], [238, 241, 247], drift);
-  return mixc(c, [255, 214, 168], clamp(1.1 - y / 22, 0, 1) * 0.30);
+  let c = mixc([222, 228, 240], [248, 246, 248], drift);
+  const warm = clamp(1.1 - y / 26, 0, 1);
+  return mixc(c, [255, 216, 172], warm * 0.30);
 }
 function drawGround(P) {
   const gs = lite ? 2.6 : 1.3;
-  const gt = lite ? [0.2, 1.4, 4, 9, 16] : [0.2, 1.0, 2.2, 4.2, 7.5, 13, 19];
+  const gt = lite ? [-7, -2.5, 0.2, 2.5, 7, 13, 19] : [-7, -3.6, -1.8, -0.8, -0.2, 0.2, 1.0, 2.2, 4.2, 7.5, 13, 19];
   const S0 = Math.floor(P.X / gs) * gs;
   const span = lite ? 6 : 12;
   for (let k = -span; k <= span; k++) {
@@ -422,9 +450,9 @@ function drawSparkle(P) {
       const q = proj([wx0 + h1 * gs, 0.4 + h2 * 13, 0.002]);
       if (!q || q[2] > 24) continue;
       const tw = 0.5 + 0.5 * Math.sin(TAU * (P.p * (1 + (h3 * 2 | 0)) + h1 * 7));
-      ctx.globalAlpha = 0.55 * tw * tw;
-      ctx.fillStyle = '#fff8ea';
-      ctx.beginPath(); ctx.arc(q[0], q[1], Math.max(0.8, (2.6 - q[2] * 0.09)) * DPR * (0.6 + tw * 0.6), 0, TAU); ctx.fill();
+      ctx.globalAlpha = 0.40 * tw * tw;
+      ctx.fillStyle = '#ffe9c8';
+      ctx.beginPath(); ctx.arc(q[0], q[1], Math.max(0.7, (2.0 - q[2] * 0.07)) * DPR * (0.5 + tw * 0.6), 0, TAU); ctx.fill();
     }
   }
   ctx.globalAlpha = 1;
@@ -436,8 +464,8 @@ function drawTrees(P) {
     const grp = Math.floor(((j % 3) + 3) % 3 / 1);
     const jj = hash(grp);              // jitter repeats every 3 slots → loop-safe
     const wx = j * pitch + jj * pitch;
-    const dist = 11 + hash(grp + 5) * 8;
-    const h = 2.6 + hash(grp + 9) * 1.6;
+    const dist = 17 + hash(grp + 5) * 11;
+    const h = 2.2 + hash(grp + 9) * 1.1;
     drawTree(P, wx, dist, h, grp * 13);
   }
 }
@@ -488,11 +516,11 @@ function drawPrints(P) {
     const fade = 1 - pr.age / PRINT_LIFE;
     const q = proj([pr.x, pr.y, 0.0015]);
     if (!q) continue;
-    const s = (pr.hind ? 0.030 : 0.026) * (H / 780) * DPR / q[2] * 2.6;
-    ctx.globalAlpha = 0.34 * fade;
-    ctx.fillStyle = '#8b93a8';
-    ctx.beginPath(); ctx.ellipse(q[0], q[1], s * 0.75, s * 1.15, 0.0, 0, TAU); ctx.fill();
-    ctx.globalAlpha = 0.20 * fade;
+    const s = (pr.hind ? 0.034 : 0.030) * (H / 780) * DPR / q[2] * 2.6;
+    ctx.globalAlpha = 0.50 * fade;
+    ctx.fillStyle = '#9aa2b8';
+    ctx.beginPath(); ctx.ellipse(q[0], q[1], s * 0.72, s * 1.15, 0.0, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 0.30 * fade;
     ctx.fillStyle = '#f2f6fb';
     ctx.beginPath(); ctx.ellipse(q[0], q[1] - s * 0.9, s * 0.7, s * 0.35, 0, 0, TAU); ctx.fill();
     ctx.globalAlpha = 1;
@@ -512,27 +540,33 @@ function drawPuffs() {
 }
 
 /* ---------------- sky ---------------- */
-function drawSky() {
-  const g = ctx.createLinearGradient(0, 0, 0, H * 0.62);
+function horizonY(P) {
+  const q = proj([P.X, 4000, 0]);
+  const q2 = proj([P.X, -4000, 0]);
+  if (q && q2) return Math.min(q[1], q2[1]);
+  if (q) return q[1];
+  return H * 0.42;
+}
+function drawSky(hzY) {
+  const top = Math.max(2, hzY);
+  const g = ctx.createLinearGradient(0, 0, 0, top);
   g.addColorStop(0, '#33506e');
   g.addColorStop(0.45, '#7f8ba0');
   g.addColorStop(0.72, '#d99a6b');
   g.addColorStop(1, '#f6c98b');
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H * 0.62);
-  ctx.fillStyle = '#f2ded0';
-  ctx.fillRect(0, H * 0.615, W, H * 0.01);
-  // low sun, screen-fixed, glow
-  const sx = W * 0.22, sy = H * 0.52;
-  const gg = ctx.createRadialGradient(sx, sy, 0, sx, sy, H * 0.34);
-  gg.addColorStop(0, 'rgba(255,238,196,0.95)');
-  gg.addColorStop(0.12, 'rgba(255,214,150,0.55)');
-  gg.addColorStop(0.4, 'rgba(255,190,130,0.18)');
+  ctx.fillRect(0, 0, W, top + 2);
+  // low sun riding the horizon line, with glow
+  const sx = W * 0.18, sy = clamp(hzY - H * 0.012, H * 0.08, H * 0.80);
+  const gg = ctx.createRadialGradient(sx, sy, 0, sx, sy, H * 0.30);
+  gg.addColorStop(0, 'rgba(255,238,196,0.9)');
+  gg.addColorStop(0.14, 'rgba(255,214,150,0.45)');
+  gg.addColorStop(0.45, 'rgba(255,190,130,0.14)');
   gg.addColorStop(1, 'rgba(255,190,130,0)');
   ctx.fillStyle = gg;
-  ctx.beginPath(); ctx.arc(sx, sy, H * 0.34, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(sx, sy, H * 0.30, 0, TAU); ctx.fill();
   ctx.fillStyle = 'rgba(255,246,220,0.95)';
-  ctx.beginPath(); ctx.arc(sx, sy, H * 0.024, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(sx, sy, H * 0.021, 0, TAU); ctx.fill();
 }
 
 /* ---------------- audio ---------------- */
@@ -629,14 +663,24 @@ function render() {
   az += (azLock - az) * 0.12; el += (elLock - el) * 0.12;
   camFor(P);
   faces = [];
-  drawSky();
+  const hzY = horizonY(P);
+  HZ = hzY;
+  drawSky(hzY);
   drawClouds(P);
   drawRidge(P, 58, 2.6, 1, '#97a6c4');
   drawRidge(P, 27, 1.1, 2, '#77879f');
+  // snow base fill under the horizon — guarantees no sliver at the frame bottom
+  {
+    const g2 = ctx.createLinearGradient(0, hzY, 0, H);
+    g2.addColorStop(0, '#dcc9b8');
+    g2.addColorStop(0.35, '#d3cfcf');
+    g2.addColorStop(1, '#b9bec9');
+    ctx.fillStyle = g2;
+    ctx.fillRect(0, Math.max(0, hzY - 1), W, H - Math.max(0, hzY - 1));
+  }
   drawGround(P);
   drawTrees(P);
   drawFox(P);
-  drawPrints(P);
   faces.sort((a, b) => b.z - a.z);
   for (const f of faces) {
     ctx.fillStyle = f.c;
@@ -644,16 +688,18 @@ function render() {
     ctx.moveTo(f.s[0][0], f.s[0][1]);
     for (let i = 1; i < f.s.length; i++) ctx.lineTo(f.s[i][0], f.s[i][1]);
     ctx.closePath(); ctx.fill();
-    if (f.ridge) { ctx.lineTo(f.s[f.s.length - 1][0], H * 0.63); ctx.lineTo(f.s[0][0], H * 0.63); ctx.closePath(); ctx.fill(); }
+    if (f.ridge) { ctx.lineTo(f.s[f.s.length - 1][0], f.closeY + 2); ctx.lineTo(f.s[0][0], f.closeY + 2); ctx.closePath(); ctx.fill(); }
   }
   drawSparkle(P);
+  drawPrints(P);
   drawPuffs();
-  // ground haze band on the horizon line
-  const hz = ctx.createLinearGradient(0, H * 0.50, 0, H * 0.63);
-  hz.addColorStop(0, 'rgba(222,205,190,0)');
-  hz.addColorStop(1, 'rgba(232,214,196,0.35)');
+  // ground haze band softening the horizon
+  const hz0 = clamp(hzY - H * 0.03, 0, H);
+  const hz = ctx.createLinearGradient(0, hz0, 0, hz0 + H * 0.14);
+  hz.addColorStop(0, 'rgba(232,214,196,0.60)');
+  hz.addColorStop(1, 'rgba(232,214,196,0)');
   ctx.fillStyle = hz;
-  ctx.fillRect(0, H * 0.50, W, H * 0.13);
+  ctx.fillRect(0, hz0, W, H * 0.14);
 }
 function frame(ms) {
   requestAnimationFrame(frame);
@@ -741,6 +787,7 @@ window.__foxTest = {
   pause() { running = false; },
   resume() { running = true; },
   slow(v) { slow = !!v; },
+  setPhase(p) { running = false; simT = wrap1(p) * T; render(); },
   setTravel(m) { simT = (m / L) * T; },
   advance(dt) { simT += dt; render(); frames++; },
   unlock() { ensureAudio(); },
