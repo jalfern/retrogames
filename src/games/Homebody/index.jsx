@@ -558,14 +558,18 @@ const HomebodyGame = () => {
         }
 
         // -------------------------------------------------------------- loop ----
-        const stepParticles = () => {
+        const stepParticles = (dtMs = 16) => {
             for (const pt of particles) { pt.x += pt.vx; pt.y += pt.vy; pt.vy += pt.kind === 'flash' ? 0.02 : 0.14; pt.life-- }
             particles = particles.filter((pt) => pt.life > 0)
             for (const f of refuses) f.life--
             for (let i = refuses.length - 1; i >= 0; i--) if (refuses[i].life <= 0) refuses.splice(i, 1)
             if (shake > 0) shake = Math.max(0, shake - 0.6)
             if (toast > 0) toast--
-            if (sayB.life > 0) sayB.life = Math.max(0, sayB.life - ft / 1000)   // #2135: real-clock fade, like the toast
+            // #2238 fix: this line read `ft`, a const that lives inside frame()
+            // — once ANY banner lit sayB, every frame threw and the canvas froze
+            // while the banner (undecaying) lived forever. Found by the paper
+            // banner; the landmine predates it (#2135). Take the frame's dt.
+            if (sayB.life > 0) sayB.life = Math.max(0, sayB.life - dtMs / 1000)   // #2135: real-clock fade, like the toast
         }
 
         const frame = (ts) => {
@@ -628,7 +632,7 @@ const HomebodyGame = () => {
                     }
                 }
                 }
-                stepParticles()
+                stepParticles(ft)
             }
             if (screenRef.current === 'attract') paintAttract()
             else if (gs) paintScene(gs, screenRef.current === 'play')
