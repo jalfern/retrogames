@@ -652,8 +652,15 @@ if (MUT) {
         ['the taunt renders in the winner accent', /Number\(quote\.accent \|\| 0x59e0c8\)\.toString\(16\)/],
         ['the outround probe exposes the exchange ordering', /shown: !!\(quoteSubAt != null && performance\.now\(\) >= quoteSubAt\)/],
         ['the outround probe is a dev hook', /outround\(\) \{/],
-        ['outround state resets between matches', /koHold = null; koFxRound = 0; quote = null; quoteT = 0; quoteSubAt = null; subFired = false; finishJustLanded = false/],
+        ['outround state resets between matches', /koHold = null; koFxRound = 0; quote = null; quoteT = 0; quoteMax = 0; quoteSubAt = null; subFired = false; subFrames = 0; finishJustLanded = false/],
         ['the rig taunt pose reads the fighter table', /def && f\.def\.tauntPose/, rsrc],
+        ['the taunt pose blends in over ~10 frames', /ud\.winK = Math\.min\(1, ud\.winK \+ 0\.1\)/, rsrc],
+        ['the crowd flare decays every sync frame', /const flareT = stageFx\.flareUntil/, rsrc],
+        ['PERFECT flares the crowd for half a second', /q\.judge === 'PERFECT' && stageFx\) stageFx\.flareUntil = performance\.now\(\) \+ 500/],
+        ['the verdict slams in with a tint flash', /judgeFlash = \{ s: jsc, a: 0\.16 \* \(1 - jp\) \}/],
+        ['the answer slides in with an accent underline', /subFrames\+\+\s+const rp = Math\.min\(1, subFrames \/ 11\)/],
+        ['the KO card logs its entrance per render frame', /koProbe\(\) \{ return koLog\.slice\(\) \}/],
+        ['the outround probe exposes the slam/flare/slide', /judgeScale: judgeFlash \? \+judgeFlash\.s\.toFixed\(3\) : 1/],
         ['beckon pose exists', /pose === 'beckon'/, rsrc],
         ['flex pose exists', /pose === 'flex'/, rsrc],
         ['point pose exists', /pose === 'point'/, rsrc],
@@ -665,6 +672,8 @@ if (MUT) {
     }
     const mutReveal = gsrc.replace('quoteSubAt = performance.now() + 520; subFired = false', 'quoteSubAt = performance.now(); subFired = false')
     ok(mutReveal !== gsrc, 'mutant: an instant reveal (no call before response) is a source change the live gate can catch')
+    const mutBlend = rsrc.replace('ud.winK = Math.min(1, ud.winK + 0.1)', 'ud.winK = 1')
+    ok(mutBlend !== rsrc, 'mutant: an instant taunt pose (winK jumps to 1) is a source change the live blend gate can catch')
 }
 
 // ---- #1106 fighter animation-depth gate ---------------------------------------------
@@ -1201,8 +1210,15 @@ if (!MUT) {
             await page.waitForTimeout(120)
             const spillMut = await measureSpill()
             await page.evaluate(() => { delete globalThis.__VIPER_SPILL__ })
-            await page.waitForTimeout(120)
-            const spillBack = await measureSpill()
+            // The restore can need several render frames under box load (the
+            // snapshot canvases redraw on the select loop, not synchronously)
+            // — poll until clean instead of trusting one 120 ms wait.
+            let spillBack = []
+            for (let i = 0; i < 40; i++) {
+                spillBack = await measureSpill()
+                if (spillBack.every((s) => s.warm === 0)) break
+                await page.waitForTimeout(100)
+            }
             ok(spillMut.some((s) => s.warm > 0), `mutant: a portrait bigger than its card pokes warm ink above the frame (${spillMut.map((s) => `${s.id}:${s.warm}`).join(' ')})`)
             ok(spillBack.every((s) => s.warm === 0), 'mutant: restoring the contained portrait clears the spill again (harness not stuck)')
         }
@@ -1523,6 +1539,33 @@ if (!MUT) {
             if (!released) await page.waitForTimeout(50)
         }
         ok(released, 'the letterbox hold releases after the freeze')
+        // #2158 — frame-accurate juice gates: the card records its own render
+        // frames (koProbe). Wall-clock CDP polling on a loaded box straddles
+        // whole animations (winK crawled 0.1->0.3 across 14 wall samples), so
+        // every entrance is judged on frames, never on poll spacing. Poll the
+        // log until the entrance has settled (the slam is 7 frames; at a few
+        // fps that is still seconds of wall time — the cap is generous).
+        let kl = []
+        for (let i = 0; i < 200; i++) {
+            kl = await page.evaluate(() => window.__viperPitTest.koProbe())
+            const e = kl[kl.length - 1]
+            if (kl.length > 15 && e && e.js <= 1.001 && e.jt === 0 && e.wk >= 0.99 && e.rp >= 0.99) break
+            await page.waitForTimeout(50)
+        }
+        ok(Array.isArray(kl) && kl.length > 15, `the KO card logged its entrance frames (${kl && kl.length})`)
+        const wks = kl.filter((e) => e.wk != null).map((e) => e.wk)
+        ok(wks.length > 0 && Math.min(...wks) < 0.95 && Math.max(...wks) >= 0.99,
+            `the taunt pose blends in over ~10 frames (mid-blend ${Math.min(...wks)} -> held ${Math.max(...wks)})`)
+        if (expectJudge) {
+            const jsPk = Math.max(...kl.map((e) => e.js))
+            const jtPk = Math.max(...kl.map((e) => e.jt))
+            ok(jsPk >= 1.5, `the verdict punches in scaled up (peak ${jsPk.toFixed(2)}x across frames)`)
+            ok(jtPk >= 0.1, `the screen flashes in the judge colour (peak tint ${jtPk.toFixed(3)})`)
+            ok(kl[kl.length - 1].js <= 1.001 && kl[kl.length - 1].jt === 0, 'the verdict settles to 1x with the tint gone')
+        }
+        if (expectJudge === 'PERFECT') ok(Math.max(...kl.map((e) => e.fl)) > 0.05, `PERFECT flares the crowd phones (peak ${Math.max(...kl.map((e) => e.fl))})`)
+        else ok(kl.every((e) => e.fl === 0), `${expectJudge || 'an unjudged'} round must NOT flare the crowd (the flare is PERFECT's privilege)`)
+        ok(kl.some((e) => e.rp != null && e.rp < 0.95) && kl.some((e) => e.rp != null && e.rp >= 0.99), 'the answer slides in and settles (~11 frames)')
     }
 
     // #1106 fighter animation depth: all five idle stances differ in the live
