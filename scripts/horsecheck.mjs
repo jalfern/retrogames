@@ -22,6 +22,11 @@
 //               leg springs (flex peaks mid-stance, zero at both contact
 //               edges); hoofbeats are layered — click+thump on every beat,
 //               sub-thump on the heavy hind pair.
+//   3c. POLISH 2 (#2220) — mane/tail flutter carries cross-stride noise
+//               seeded on stride mod 8 (seam-safe: stride 0 ≡ stride 8, yet
+//               neighbours differ); speed streaks whip backward every stride
+//               (law + φ-seam); foreground shows painted track ruts and the
+//               mid ground carries olive sage tufts (band pixel probes).
 //   + DEMO LAW — self-contained page, not registered in games.js, credits
 //               card and index entry present.
 //
@@ -291,6 +296,61 @@ const snd = await page.evaluate(() => window.__horseTest.soundStats())
 ok('every hoofbeat is layered — click and thump fire together (≥12 beats)', snd.click === snd.thud && snd.click >= 12, JSON.stringify(snd))
 ok('heavy hind landings add a sub-thump (half the beats)', Math.abs(snd.sub * 2 - snd.click) <= 2 && snd.sub >= 6, JSON.stringify(snd))
 
+/* ---------------- 3c. POLISH PASS 2 (#2220: cross-stride mane, ground detail, speed cue) ---------------- */
+// cross-stride mane/tail noise: seeded on stride index mod LOOPS with a
+// crossfade — stride n and n+8 must be BITWISE identical (the seam), while
+// consecutive strides must visibly differ (the metronome feel breaks).
+const mm = await page.evaluate(() => {
+  const t = window.__horseTest
+  return { c0: t.maneCoeff(0), c8: t.maneCoeff(8), c1: t.maneCoeff(1), c3: t.maneCoeff(3) }
+})
+ok('mane/tail noise is seam-commensurate: stride 0 ≡ stride 8 coefficients', JSON.stringify(mm.c0) === JSON.stringify(mm.c8), 'n=' + mm.c0.length)
+const drift = mm.c0.reduce((s, v, i) => s + Math.abs(mm.c1[i] - v) + Math.abs(mm.c3[i] - v), 0)
+const bounded = mm.c0.concat(mm.c1, mm.c3).every(v => v > 0.25 && v < 1.75)
+ok('mane/tail amplitude wanders stride-to-stride, coefficients bounded', drift > 2.4 && bounded, 'drift ' + drift.toFixed(2))
+
+// speed streaks: ground-hugging dashes whip backward every stride — law gate
+// (anchor band + alpha bounds) and the φ = 0 ≡ φ = 1 seam.
+const sk = await page.evaluate(() => {
+  const t = window.__horseTest
+  return { s: t.streaks(0.5), seam: JSON.stringify(t.streaks(0)) === JSON.stringify(t.streaks(1)) }
+})
+const skOk = sk.s.length === 6 && sk.s.every(a => a[0] > -2.6 && a[0] < 2.6 && a[1] > 0.04 && a[1] < 0.20 && Math.abs(a[2]) <= 1.35 && a[3] > 0.09 && a[3] < 0.19)
+ok('speed streaks hug the ground behind the horse, alpha subtle', skOk, JSON.stringify(sk.s[0]))
+ok('speed streaks loop with the stride (φ 0 ≡ φ 1)', sk.seam)
+
+// ground detail: ruts + tufts are law-provable (per-frame anchors) and
+// visible in a foreground pixel band. Probed at a pinned travel (the ground
+// window slides with the loop, so a fixed offset makes the pixel counts
+// deterministic): measured rut ≈600, tuft ≈790 px at 1180×780 lite.
+await page.evaluate(() => window.__horseTest.setTravel(12))
+const glaw = await page.evaluate(() => {
+  const t = window.__horseTest
+  return { tufts: t.tufts(), ruts: t.ruts() }
+})
+ok('ground detail law: ~100 tufts track-side, 12 rut segments, outside the camera corridor',
+  glaw.tufts.length >= 90 && glaw.tufts.length <= 112 && glaw.ruts.length === 12 &&
+  glaw.tufts.every(v => Math.abs(v[1]) > 2.2 && Math.abs(v[1]) < 8 && Math.hypot(v[0] + 4.2, v[1] + 4.2) >= 5) &&
+  glaw.ruts.every(v => Math.abs(v[1] + 0.75) < 2),
+  'tufts ' + glaw.tufts.length + ', ruts ' + glaw.ruts.length)
+const gd = await page.evaluate(() => {
+  const cv = document.querySelector('canvas#c')
+  const g = cv.getContext('2d')
+  const yR0 = Math.round(cv.height * 0.72), yT0 = Math.round(cv.height * 0.40), yT1 = Math.round(cv.height * 0.72)
+  const scan = (y0, h, pred) => {
+    const img = g.getImageData(0, y0, cv.width, h).data
+    let n = 0
+    for (let i = 0; i < img.length; i += 8) if (pred(img[i], img[i + 1], img[i + 2])) n++
+    return n
+  }
+  const rut = scan(yR0, cv.height - yR0, (r, gg, b) => r >= 140 && r <= 178 && gg >= 110 && gg <= 152 && b >= 85 && b <= 135 && r - gg >= 18 && r - gg <= 40 && r - b >= 45)
+  const tuft = scan(yT0, yT1 - yT0, (r, gg, b) => gg - r >= 2 && gg - b >= 40 && gg > 100 && r <= 175)
+  return { rut, tuft }
+})
+ok('track ruts paint dark ribbons through the foreground corridor', gd.rut > 300, gd.rut + ' px')
+ok('sage brush tufts stand beside the track (olive tones)', gd.tuft > 400, gd.tuft + ' px')
+await page.evaluate(() => window.__horseTest.resume())
+
 await page.screenshot({ path: resolve(shots, 'gallop.png') })
 
 /* ---------------- 4. DEMO LAW ---------------- */
@@ -300,7 +360,7 @@ ok('self-contained: zero external src/href in the page', external.length === 0, 
 ok('no libraries: zero import/require in the page', !/\bimport\s|\brequire\(/.test(html))
 const reg = readFileSync(resolve('src/config/games.js'), 'utf8')
 ok('demos law: NOT registered in the arcade registry', !/STRIDELINE|'\/horse'|demos\/horse/i.test(reg))
-ok('credits card present, solo, naming #2147', /name:\s*'STRIDELINE'/.test(html) && /assist:\s*'solo'/.test(html) && /issues:\s*\[2147\]/.test(html))
+ok('credits card present, solo, naming #2147 (+ #2220 polish)', /name:\s*'STRIDELINE'/.test(html) && /assist:\s*'solo'/.test(html) && /issues:\s*\[2147,\s*2220\]/.test(html))
 const idx = readFileSync(resolve('public/demos/index.html'), 'utf8')
 ok('index links the card and DEMO_INDEX carries the facts', /id="horse"/.test(idx) && /el:\s*'horse'/.test(idx))
 
