@@ -81,7 +81,7 @@
 'use strict';
 
 /* ============================================================================
- * SUNSTRIDE (horse-gemini) — Engine Core & Procedural Equine Mesh (WebGL2)
+ * SUNSTRIDE (horse-gemini) — Transverse Gallop Biomechanics & Equine Rig
  * Zero external libraries, zero imported meshes, zero image/audio assets.
  * Coordinate frame: +X forward (direction of travel), +Y up (ground y = 0),
  * +Z horse's right flank (right-handed: X x Y = Z).
@@ -109,14 +109,13 @@ if (!gl) {
 
 const TAU = Math.PI * 2;
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
-const lerp = (a, b, t) => a + (b - a) * t;
 
-function v3(x = 0, y = 0, z = 0) { return [x, y, z]; }
 function add3(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
 function sub3(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
 function scale3(a, s) { return [a[0] * s, a[1] * s, a[2] * s]; }
 function mix3(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
 function dot3(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function dist3(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]); }
 function cross3(a, b) {
   return [
     a[1] * b[2] - a[2] * b[1],
@@ -193,6 +192,7 @@ function linkProgram(vsSrc, fsSrc) {
 }
 
 const VS_SKY = `#version 300 es
+precision highp float;
 out vec2 vUv;
 void main() {
   vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
@@ -288,15 +288,15 @@ void main() {
   float ndl = max(dot(N, uSunDir), 0.0);
   float wrap = max(dot(N, uSunDir) * 0.5 + 0.5, 0.0);
 
-  vec3 sunLight = vec3(1.08, 0.84, 0.62) * (ndl * 0.78 + wrap * 0.16);
-  vec3 skyFill  = mix(vec3(0.36, 0.21, 0.15), vec3(0.30, 0.34, 0.52), N.y * 0.5 + 0.5) * 0.58;
-  float rim = pow(1.0 - max(dot(N, V), 0.0), 3.2) * (0.22 + 0.32 * max(dot(-V, uSunDir), 0.0));
+  vec3 sunLight = vec3(1.08, 0.84, 0.62) * (ndl * 0.80 + wrap * 0.15);
+  vec3 skyFill  = mix(vec3(0.36, 0.21, 0.15), vec3(0.30, 0.34, 0.52), N.y * 0.5 + 0.5) * 0.56;
+  float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0) * (0.20 + 0.34 * max(dot(-V, uSunDir), 0.0));
   vec3 rimLight = vec3(1.0, 0.72, 0.42) * rim * clamp(vPos.y * 0.65, 0.1, 1.0);
 
-  vec3 lit = vCol * (sunLight + skyFill) + rimLight * 0.35;
+  vec3 lit = vCol * (sunLight + skyFill) + rimLight * 0.34;
 
   float camDist = length(vPos - uCamPos);
-  float haze = 1.0 - exp(-max(0.0, camDist - 6.0) * 0.016);
+  float haze = 1.0 - exp(-max(0.0, camDist - 6.0) * 0.015);
   vec3 hazeCol = vec3(0.86, 0.53, 0.32);
   lit = mix(lit, hazeCol, clamp(haze, 0.0, 0.78));
 
@@ -387,13 +387,11 @@ function makeMeshBuffer(maxTris) {
   };
 }
 
-const horseBuf = makeMeshBuffer(4096);
+const horseBuf = makeMeshBuffer(5120);
 const worldBuf = makeMeshBuffer(8192);
 
 /* ---------------- Procedural Low-Poly Primitive Builders ---------------- */
 
-// Loft a watertight faceted low-poly tube across station rings.
-// Each station: { p: [x,y,z], up: [ux,uy,uz], right: [rx,ry,rz], w, rTop, rBot, topPinch, backSpur, col, topCol }
 function emitLoft(buf, stations, sides, capStart = true, capEnd = true) {
   const rings = [];
   for (let si = 0; si < stations.length; si++) {
@@ -406,12 +404,11 @@ function emitLoft(buf, stations, sides, capStart = true, capEnd = true) {
       const ct = Math.cos(th), st = Math.sin(th);
       const ry = st >= 0 ? s.rTop : s.rBot;
       const pinch = st > 0 && s.topPinch ? (1 - s.topPinch * st * st) : 1;
-      let rx = s.w * pinch;
-      let uOff = st * ry;
+      const rx = s.w * pinch;
+      const uOff = st * ry;
       let fOff = 0;
-      if (s.backSpur && st < -0.25) {
-        // Asymmetric spur along s.spurDir (e.g. calcaneal hock point or chest keel)
-        fOff = s.backSpur * (-st - 0.25) / 0.75;
+      if (s.backSpur && st < -0.20) {
+        fOff = s.backSpur * (-st - 0.20) / 0.80;
       }
       const sd = s.spurDir || [0, 0, 0];
       pts.push([
@@ -450,18 +447,14 @@ function emitLoft(buf, stations, sides, capStart = true, capEnd = true) {
   }
 }
 
-// Build an orthonormal limb cross-section frame for segment A -> B (mostly vertical/sagittal)
 function limbStation(p, dirAB, latRight, wLat, rAnt, rPost, col, backSpur = 0) {
-  const F = norm3(dirAB); // along bone A -> B
-  const R = norm3(sub3(latRight, scale3(F, dot3(latRight, F)))); // lateral (+Z)
-  // Cranial/anterior (+X-ish) normal in sagittal plane: R x F or F x R:
-  // For F = (0,-1,0) downward and R = (0,0,1) right: cross3(F, R) = (-1)*1 => (-1,0,0) posterior,
-  // so cross3(R, F) = (+1, 0, 0) ANTERIOR (+X)!
+  const F = norm3(dirAB);
+  const R = norm3(sub3(latRight, scale3(F, dot3(latRight, F))));
   const Ant = norm3(cross3(R, F));
   return {
     p,
     right: R,
-    up: Ant, // st > 0 = anterior/cranial (+X), st < 0 = posterior/caudal (-X)
+    up: Ant,
     w: wLat,
     rTop: rAnt,
     rBot: rPost,
@@ -471,33 +464,69 @@ function limbStation(p, dirAB, latRight, wLat, rAnt, rPost, col, backSpur = 0) {
   };
 }
 
+// Sculpted single-bone capsule segment (never twists or bowties across sharp joint hinges!)
+function emitLimbSegment(buf, A, B, specs, sides = 7) {
+  const dir = sub3(B, A);
+  const F = norm3(dir);
+  const latRef = [0, 0, 1];
+  const stations = specs.map(sp => {
+    const p = mix3(A, B, sp.t);
+    return limbStation(p, F, latRef, sp.w, sp.rAnt, sp.rPost, sp.col, sp.spur || 0);
+  });
+  emitLoft(buf, stations, sides, true, true);
+}
+
+// Low-poly octahedral/icosahedral-style faceted joint ball to seal sharp hinges cleanly
+function emitJointBall(buf, center, rx, ry, rz, col) {
+  const lat = 4, lon = 7;
+  const rings = [];
+  for (let i = 0; i <= lat; i++) {
+    const v = (i / lat) * Math.PI;
+    const y = Math.cos(v) * ry;
+    const sr = Math.sin(v);
+    const row = [];
+    for (let j = 0; j < lon; j++) {
+      const th = (TAU * j) / lon;
+      row.push([center[0] + Math.cos(th) * sr * rx, center[1] + y, center[2] + Math.sin(th) * sr * rz]);
+    }
+    rings.push(row);
+  }
+  for (let i = 0; i < lat; i++) {
+    for (let j = 0; j < lon; j++) {
+      const j1 = (j + 1) % lon;
+      // Outward-facing CCW winding (th increases +X -> +Z, i increases +Y -> -Y)
+      if (i > 0) buf.tri(rings[i][j], rings[i + 1][j1], rings[i + 1][j], col);
+      if (i < lat - 1) buf.tri(rings[i][j], rings[i][j1], rings[i + 1][j1], col);
+    }
+  }
+}
+
 /* ---------------- Equine Palette (Warm Copper-Bay Mustang) ---------------- */
 
 const PAL = {
   coatBright: [0.76, 0.36, 0.16],
-  coatMid:    [0.66, 0.29, 0.13],
-  coatDeep:   [0.48, 0.20, 0.09],
-  coatBelly:  [0.42, 0.18, 0.09],
-  darkPoint:  [0.14, 0.10, 0.09],
-  blackMane:  [0.09, 0.08, 0.09],
+  coatMid:    [0.65, 0.29, 0.13],
+  coatDeep:   [0.47, 0.20, 0.09],
+  coatBelly:  [0.40, 0.17, 0.09],
+  coatFar:    [0.54, 0.23, 0.11], // subtle tonal separation on off-side limbs
+  darkPoint:  [0.13, 0.10, 0.09],
+  blackMane:  [0.08, 0.07, 0.09],
   whiteBlaze: [0.93, 0.89, 0.82],
   whiteSock:  [0.91, 0.87, 0.79],
-  muzzleSoft: [0.22, 0.17, 0.16],
-  nostril:    [0.08, 0.05, 0.06],
-  eyeDark:    [0.06, 0.05, 0.06],
-  earInner:   [0.52, 0.28, 0.20],
-  hoofHorn:   [0.15, 0.13, 0.14],
-  hoofSole:   [0.10, 0.09, 0.09],
+  whiteSockFar:[0.79, 0.75, 0.68],
+  muzzleSoft: [0.21, 0.16, 0.15],
+  nostril:    [0.07, 0.05, 0.06],
+  eyeDark:    [0.05, 0.04, 0.05],
+  hoofHorn:   [0.16, 0.14, 0.15],
+  hoofSole:   [0.09, 0.08, 0.09],
 };
 
-/* ---------------- Analytical 2-Bone Sagittal/3D IK ---------------- */
+/* ---------------- Analytical 2-Bone IK ---------------- */
 
-// Solve joint M between root A and target B with bone lengths L1, L2.
-// bendDir is the preferred bend direction in world space (+X for fore-carpus, -X for hind-hock).
 function solve2BoneIK(A, B, L1, L2, bendDir) {
   const dVec = sub3(B, A);
   const rawDist = Math.hypot(dVec[0], dVec[1], dVec[2]) || 1e-6;
-  const maxReach = (L1 + L2) * 0.996;
+  const maxReach = (L1 + L2) * 0.994;
   const minReach = Math.abs(L1 - L2) + 0.02;
   const d = clamp(rawDist, minReach, maxReach);
   const dir = scale3(dVec, 1 / rawDist);
@@ -518,15 +547,12 @@ function solve2BoneIK(A, B, L1, L2, bendDir) {
   return { M, ratio: rawDist / (L1 + L2) };
 }
 
-/* ---------------- Equine Pose & Articulated Mesh Synthesis ---------------- */
+/* ---------------- Transverse Gallop Biomechanics & Pose Synthesis ---------------- */
 
-// Transform local body offset (lx, ly, lz) around body pivot with pitch, roll, yaw
 function bodyTransform(origin, pitch, roll, yaw) {
   const cp = Math.cos(pitch), sp = Math.sin(pitch);
   const cr = Math.cos(roll),  sr = Math.sin(roll);
   const cy = Math.cos(yaw),   sy = Math.sin(yaw);
-  // Local axes in world space:
-  // Pitch rotates around +Z (positive pitch lifts +X nose up: F = (cp, sp, 0), U = (-sp, cp, 0))
   const f0 = [cp, sp, 0];
   const u0 = [-sp * cr, cp * cr, sr];
   const r0 = cross3(f0, u0);
@@ -546,15 +572,18 @@ function bodyTransform(origin, pitch, roll, yaw) {
   };
 }
 
-// Compute complete articulated horse skeleton at stride phase phi in [0, 1)
-const STRIDE_LEN = 4.60;
+// Calibrated thoroughbred/mustang transverse right-lead gallop:
+// Footfall sequence: LH [0.00..0.22) -> RH [0.12..0.34) -> LF [0.30..0.52) -> RF [0.43..0.65) -> FLIGHT [0.65..1.00)
+const STRIDE_LEN = 4.20;
 const DUTY = 0.22;
-// Transverse right-lead gallop footfall table: LH -> RH -> LF -> RF -> suspension [0.65, 1.00)
+const FORE_L1 = 0.48, FORE_L2 = 0.39; // Forearm (radius) + Fore cannon = 0.87 m
+const HIND_L1 = 0.49, HIND_L2 = 0.42; // Gaskin (tibia)  + Hind cannon = 0.91 m
+
 const LEGS_DEF = [
-  { id: 'LH', fore: false, side: -1, on: 0.00, tdX:  0.03, zOff: -0.145 },
-  { id: 'RH', fore: false, side: +1, on: 0.12, tdX:  0.09, zOff: +0.145 },
-  { id: 'LF', fore: true,  side: -1, on: 0.30, tdX:  1.01, zOff: -0.140 },
-  { id: 'RF', fore: true,  side: +1, on: 0.43, tdX:  1.07, zOff: +0.140 },
+  { id: 'LH', fore: false, side: -1, on: 0.00, tdX: -0.02, zOff: -0.135 },
+  { id: 'RH', fore: false, side: +1, on: 0.12, tdX:  0.05, zOff: +0.135 },
+  { id: 'LF', fore: true,  side: -1, on: 0.30, tdX:  0.85, zOff: -0.130 },
+  { id: 'RF', fore: true,  side: +1, on: 0.43, tdX:  0.92, zOff: +0.130 },
 ];
 
 function wrapPhase(p) {
@@ -562,7 +591,6 @@ function wrapPhase(p) {
   return m < 0 ? m + 1 : m;
 }
 
-// Periodic C1 Hermite interpolation h(0)=y0, h(1)=y1, h'(0)=m0, h'(1)=m1
 function hermite(s, y0, y1, m0, m1) {
   const s2 = s * s, s3 = s2 * s;
   return (2 * s3 - 3 * s2 + 1) * y0 +
@@ -577,77 +605,69 @@ function evaluateHorse(strideIndex, rawPhase, baseZ = 0) {
   const refX = strideOriginX + phi * STRIDE_LEN;
   const th = TAU * phi;
 
-  // Whole-body gallop dynamics (strictly 1-periodic in phi!)
-  // Hind stance [0..0.34] pitches forehand UP (+pitch); fore stance [0.30..0.65] vaults & pitches DOWN;
-  // Suspension [0.65..1.00] collects spine and lifts CoM into flight.
-  const heaveY = 0.055 * Math.sin(th - 1.15) + 0.022 * Math.sin(2 * th + 0.4);
-  const pitch  = 0.095 * Math.sin(th - 0.55) + 0.024 * Math.cos(2 * th);
-  const spineFlex = 0.065 * Math.max(0, Math.sin(th - 3.55)); // collection in gathered flight
-  const roll   = 0.032 * Math.sin(th - 0.3);
-  const yaw    = 0.018 * Math.cos(th - 0.5);
-  const breath = 0.014 * Math.sin(th - 0.9); // 1:1 respiratory-locomotor coupling
-  const surgeX = 0.028 * Math.sin(th - 0.2);
+  // Whole-body gallop dynamics (strictly 1-periodic in phi so pose(0) === pose(1)!)
+  // Hind drive lifts forehand (+pitch around phi~0.20), fore stance vaults croup (-pitch around phi~0.52),
+  // Gathered flight [0.65..1.00) collects spine and carries CoM through suspension.
+  const heaveY = 0.048 * Math.sin(th - 1.10) + 0.018 * Math.sin(2 * th + 0.35);
+  const pitch  = 0.088 * Math.sin(th - 0.55) + 0.020 * Math.cos(2 * th);
+  const spineFlex = 0.058 * Math.max(0, Math.sin(th - 3.60));
+  const roll   = 0.028 * Math.sin(th - 0.30);
+  const yaw    = 0.015 * Math.cos(th - 0.50);
+  const breath = 0.014 * Math.sin(th - 0.90);
+  const surgeX = 0.022 * Math.sin(th - 0.20);
 
-  const bodyPivotY = 1.16 + heaveY;
-  const foreFrame = bodyTransform([refX + surgeX, bodyPivotY, baseZ], pitch - spineFlex * 0.45, roll, yaw);
-  const hindFrame = bodyTransform([refX + surgeX, bodyPivotY, baseZ], pitch + spineFlex * 0.65, -roll * 0.6, yaw);
+  const bodyPivotY = 1.09 + heaveY;
+  const foreFrame = bodyTransform([refX + surgeX, bodyPivotY, baseZ], pitch - spineFlex * 0.42, roll, yaw);
+  const hindFrame = bodyTransform([refX + surgeX, bodyPivotY, baseZ], pitch + spineFlex * 0.62, -roll * 0.55, yaw);
 
-  // Articulated 3-segment neck + head bascule (counter-nodding with natural phase lag)
-  const neckBase = foreFrame.pt(0.46, 0.20, 0);
-  const neckAngle = 0.76 - 0.14 * Math.sin(th - 1.35) - pitch * 0.55;
+  // Articulated 3-segment neck + head bascule
+  const neckBase = foreFrame.pt(0.45, 0.20, 0);
+  const neckAngle = 0.74 - 0.13 * Math.sin(th - 1.35) - pitch * 0.52;
   const neckMidAngle = neckAngle + 0.06 - 0.05 * Math.sin(th - 1.75);
   const pollAngle = neckMidAngle + 0.05 - 0.04 * Math.sin(th - 2.05);
-
-  const stepAlong = (p, ang, len, latSway = 0) => [
-    p[0] + Math.cos(ang) * len * foreFrame.F[0] - Math.sin(ang) * len * foreFrame.U[0] + latSway * foreFrame.R[0],
-    p[1] + Math.cos(ang) * len * foreFrame.F[1] - Math.sin(ang) * len * foreFrame.U[1] + latSway * foreFrame.R[1], // wait: U is +Y!
-    p[2] + Math.cos(ang) * len * foreFrame.F[2] - Math.sin(ang) * len * foreFrame.U[2] + latSway * foreFrame.R[2],
-  ];
-  void stepAlong;
 
   const neckStep = (p, ang, len, sway) => [
     p[0] + (Math.cos(ang) * foreFrame.F[0] + Math.sin(ang) * foreFrame.U[0]) * len + sway * foreFrame.R[0],
     p[1] + (Math.cos(ang) * foreFrame.F[1] + Math.sin(ang) * foreFrame.U[1]) * len + sway * foreFrame.R[1],
     p[2] + (Math.cos(ang) * foreFrame.F[2] + Math.sin(ang) * foreFrame.U[2]) * len + sway * foreFrame.R[2],
   ];
-  const nSway = 0.014 * Math.sin(th - 1.1);
+  const nSway = 0.013 * Math.sin(th - 1.1);
   const neck1 = neckStep(neckBase, neckAngle, 0.22, nSway * 0.4);
   const neck2 = neckStep(neck1, neckMidAngle, 0.21, nSway * 0.8);
   const poll  = neckStep(neck2, pollAngle, 0.19, nSway);
 
-  // Head pitches forward-down ~48 deg below horizontal, stabilizing gaze during bascule
-  const headAngle = -0.86 + 0.13 * Math.sin(th - 1.85) - pitch * 0.35;
+  const headAngle = -0.85 + 0.12 * Math.sin(th - 1.85) - pitch * 0.35;
   const headFwd = norm3([
     Math.cos(headAngle) * foreFrame.F[0] + Math.sin(headAngle) * foreFrame.U[0],
     Math.cos(headAngle) * foreFrame.F[1] + Math.sin(headAngle) * foreFrame.U[1],
-    Math.cos(headAngle) * foreFrame.F[2] + Math.sin(headAngle) * foreFrame.U[2] + 0.02 * Math.sin(th - 1.4),
+    Math.cos(headAngle) * foreFrame.F[2] + Math.sin(headAngle) * foreFrame.U[2] + 0.018 * Math.sin(th - 1.4),
   ]);
   const headRight = norm3(foreFrame.R);
   const headUp = norm3(cross3(headRight, headFwd));
-  const muzzle = add3(poll, scale3(headFwd, 0.53));
+  const muzzle = add3(poll, scale3(headFwd, 0.52));
 
-  // Tail S-curve (6 articulated stations streaming from dock with traveling wave)
-  const dock = hindFrame.pt(-0.77, 0.24, 0);
+  // Proud S-curve streaming tail (6 articulated stations with traveling wave)
+  const dock = hindFrame.pt(-0.75, 0.25, 0);
   const tailPts = [dock];
   let tp = dock;
-  const tailBaseAng = -0.22 + 0.16 * Math.sin(th - 1.9);
+  const tailBaseAng = -0.18 + 0.15 * Math.sin(th - 1.9);
   for (let ti = 1; ti <= 6; ti++) {
     const f = ti / 6;
-    const wave = 0.22 * Math.sin(th - 1.7 - ti * 0.52) * (0.35 + 0.65 * f);
-    const droop = tailBaseAng - 0.52 * f * f + wave;
-    const lat = 0.045 * Math.sin(th - 1.2 - ti * 0.45) * f;
-    const segL = 0.135;
+    const wave = 0.20 * Math.sin(th - 1.7 - ti * 0.54) * (0.32 + 0.68 * f);
+    const droop = tailBaseAng - 0.48 * f * f + wave;
+    const lat = 0.042 * Math.sin(th - 1.2 - ti * 0.46) * f;
+    const segL = 0.14;
     tp = [
       tp[0] - Math.cos(droop) * segL + hindFrame.R[0] * lat,
-      Math.max(0.28, tp[1] + Math.sin(droop) * segL),
+      Math.max(0.26, tp[1] + Math.sin(droop) * segL),
       tp[2] + lat,
     ];
     tailPts.push(tp);
   }
 
-  // Solve all 4 limbs with EXACT world-pinned zero-slip stance
+  // Solve all 4 limbs with EXACT world-pinned zero-slip stance & C1 swing retraction
   const legs = {};
-  const stanceSpan = DUTY * STRIDE_LEN; // 1.012 m
+  const stanceSpan = DUTY * STRIDE_LEN; // 0.924 m
 
   for (const def of LEGS_DEF) {
     const off = def.on + DUTY;
@@ -657,7 +677,7 @@ function evaluateHorse(strideIndex, rawPhase, baseZ = 0) {
     if (inStance) {
       u = (phi - def.on) / DUTY;
       load = Math.sin(Math.PI * u);
-      // World X is algebraically independent of u (phi): exact 0.000 mm slip!
+      // Algebraically independent of u (phi): exact 0.000 mm world slip throughout stance!
       const anchorX = strideOriginX + def.on * STRIDE_LEN + def.tdX;
       hoofW = [anchorX, 0.0, baseZ + def.zOff];
       hoofPitch = 0.0;
@@ -667,78 +687,77 @@ function evaluateHorse(strideIndex, rawPhase, baseZ = 0) {
       s = dPhi / swingDur;
       const xLo = def.tdX - stanceSpan;
       const xTd = def.tdX;
-      // Match ground speed at liftoff & touchdown (retraction), scaled gently so IK stays well inside reach
-      const mEnd = -STRIDE_LEN * swingDur * 0.58;
+      const mEnd = -STRIDE_LEN * swingDur * 0.50;
       const relX = hermite(s, xLo, xTd, mEnd, mEnd);
 
-      // Lift curve: brisk snap-up after liftoff, folded flight, smooth tangent landing (sin^2 at ends)
       const bell = Math.sin(Math.PI * s);
-      const skew = Math.sin(Math.PI * Math.pow(s, 0.74));
-      const peakLift = def.fore ? 0.34 : 0.30;
-      const relY = peakLift * (0.45 * bell * bell + 0.55 * skew * bell);
+      const skew = Math.sin(Math.PI * Math.pow(s, 0.72));
+      const peakLift = def.fore ? 0.34 : 0.28;
+      const relY = peakLift * (0.42 * bell * bell + 0.58 * skew * bell);
 
-      // Swing hoof pitch: snaps backward after liftoff (-1.15 rad), extends forward (+0.18 rad) before strike
-      hoofPitch = -1.12 * Math.sin(Math.PI * Math.pow(s, 0.68)) * (1 - s * 0.65) + 0.16 * Math.sin(Math.PI * s * s);
+      // Swing hoof flexion: curls backward during swing, uncurls cleanly into flat strike
+      const flexFold = Math.sin(Math.PI * Math.pow(s, 0.65)) * (1 - 0.55 * s);
+      hoofPitch = (def.fore ? -1.25 : -0.95) * flexFold + 0.14 * Math.sin(Math.PI * Math.pow(s, 2.2));
       hoofW = [refX + relX, Math.max(0, relY), baseZ + def.zOff];
     }
 
+    // Pastern vector (hoof -> fetlock):
+    // In stance ( angle ~ 2.15..2.45 rad, i.e. up-and-back (-X, +Y) so pastern slopes forward-down (+X, -Y) to hoof! ).
+    // In swing, curls smoothly backward-up so fetlock -> hoof continues the cannon's C-fold without a Z-kink!
+    const pasternLen = 0.155;
+    let pasternAng;
+    if (inStance) {
+      pasternAng = 2.18 + 0.26 * load - 0.34 * u;
+    } else {
+      // Smoothly transition from liftoff (~1.84 rad, up-and-slightly-back) through curled fold (~0.95 rad, up-and-forward of hoof!)
+      // back to touchdown (~2.18 rad, up-and-back of hoof!)
+      const foldBell = Math.sin(Math.PI * Math.pow(s, 0.70));
+      pasternAng = (1.84 * (1 - s) + 2.18 * s) - (def.fore ? 1.05 : 0.78) * foldBell;
+    }
+    const fetlock = [
+      hoofW[0] + Math.cos(pasternAng) * pasternLen,
+      hoofW[1] + Math.sin(pasternAng) * pasternLen,
+      hoofW[2],
+    ];
+
     if (def.fore) {
-      // Foreleg: Scapula top -> Point of Shoulder -> Elbow -> Carpus ("Knee", +X bend) -> Fetlock -> Hoof
-      const reachNorm = clamp(((hoofW[0] - refX) - 0.54) / 0.62, -1.1, 1.1);
-      const scapTop = foreFrame.pt(0.34, 0.34, def.side * 0.135);
-      const shoulder = foreFrame.pt(0.51 + 0.08 * reachNorm, -0.04 + 0.02 * Math.abs(reachNorm), def.side * 0.168);
+      const reachNorm = clamp(((hoofW[0] - refX) - 0.42) / 0.52, -1.1, 1.1);
+      const scapTop = foreFrame.pt(0.32, 0.35, def.side * 0.088); // tucked cleanly inside upper ribcage!
+      const shoulder = foreFrame.pt(0.49 + 0.08 * reachNorm, -0.02 + 0.02 * Math.abs(reachNorm), def.side * 0.152);
 
-      // Humerus swings elbow forward in protraction and back in retraction (constant length 0.29m)
-      const humAng = -1.92 + 0.52 * reachNorm + (inStance ? 0 : 0.22 * Math.sin(Math.PI * s));
+      const humAng = -1.88 + 0.54 * reachNorm + (inStance ? -0.04 * load : 0.24 * Math.sin(Math.PI * s));
       const elbow = [
-        shoulder[0] + Math.cos(humAng) * 0.29,
-        shoulder[1] + Math.sin(humAng) * 0.29,
-        shoulder[2] - def.side * 0.012,
+        shoulder[0] + Math.cos(humAng) * 0.30,
+        shoulder[1] + Math.sin(humAng) * 0.30,
+        shoulder[2] - def.side * 0.015,
       ];
 
-      // Pastern + fetlock compliance: hyperextends (drops) under stance load, flexes backward in swing
-      const pasternLen = 0.165;
-      const pasternAng = inStance
-        ? (2.22 + 0.28 * load - 0.36 * u) // ~127 deg (up-and-back from hoof) sinking under load, upright at pushoff
-        : (2.05 + 0.88 * Math.sin(Math.PI * Math.pow(s, 0.72))); // folds back in swing
-      const fetlock = [
-        hoofW[0] + Math.cos(pasternAng) * pasternLen,
-        hoofW[1] + Math.sin(pasternAng) * pasternLen,
-        hoofW[2],
-      ];
-
-      const ik = solve2BoneIK(elbow, fetlock, 0.45, 0.36, [1, 0.08, 0]); // Carpus bends +X (anterior!)
+      const ik = solve2BoneIK(elbow, fetlock, FORE_L1, FORE_L2, [1, 0.10, 0]);
       legs[def.id] = {
         id: def.id, fore: true, side: def.side, inStance, u, s, load, hoofPitch,
-        scapTop, shoulder, elbow, carpus: ik.M, fetlock, hoof: hoofW, ikRatio: ik.ratio,
+        scapTop, shoulder, elbow, carpus: ik.M, fetlock, hoof: hoofW,
+        ikRatio: ik.ratio,
+        forearmLen: dist3(elbow, ik.M),
+        cannonLen: dist3(ik.M, fetlock),
       };
     } else {
-      // Hindleg: Hip -> Stifle (+X bend) -> Hock (-X bend + calcaneal point) -> Fetlock -> Hoof
-      const reachNorm = clamp(((hoofW[0] - refX) + 0.48) / 0.62, -1.1, 1.1);
-      const hip = hindFrame.pt(-0.50, 0.07, def.side * 0.168);
+      const reachNorm = clamp(((hoofW[0] - refX) + 0.44) / 0.52, -1.1, 1.1);
+      const hip = hindFrame.pt(-0.48, 0.10, def.side * 0.138); // embedded inside muscular croup!
 
-      // Equine reciprocal apparatus: femur swings forward when limb protracts/lifts, extends back in push-off
-      const femAng = -0.92 + 0.48 * reachNorm + (inStance ? -0.06 * load : 0.28 * Math.sin(Math.PI * s));
+      const femAng = -0.94 + 0.48 * reachNorm + (inStance ? -0.05 * load : 0.26 * Math.sin(Math.PI * s));
       const stifle = [
-        hip[0] + Math.cos(femAng) * 0.39,
-        hip[1] + Math.sin(femAng) * 0.39,
-        hip[2] + def.side * 0.008,
+        hip[0] + Math.cos(femAng) * 0.40,
+        hip[1] + Math.sin(femAng) * 0.40,
+        hip[2] + def.side * 0.006,
       ];
 
-      const pasternLen = 0.165;
-      const pasternAng = inStance
-        ? (2.18 + 0.26 * load - 0.38 * u)
-        : (2.08 + 0.78 * Math.sin(Math.PI * Math.pow(s, 0.72)));
-      const fetlock = [
-        hoofW[0] + Math.cos(pasternAng) * pasternLen,
-        hoofW[1] + Math.sin(pasternAng) * pasternLen,
-        hoofW[2],
-      ];
-
-      const ik = solve2BoneIK(stifle, fetlock, 0.48, 0.41, [-1, 0.12, 0]); // Hock bends -X (posterior!)
+      const ik = solve2BoneIK(stifle, fetlock, HIND_L1, HIND_L2, [-1, 0.14, 0]);
       legs[def.id] = {
         id: def.id, fore: false, side: def.side, inStance, u, s, load, hoofPitch,
-        hip, stifle, hock: ik.M, fetlock, hoof: hoofW, ikRatio: ik.ratio,
+        hip, stifle, hock: ik.M, fetlock, hoof: hoofW,
+        ikRatio: ik.ratio,
+        gaskinLen: dist3(stifle, ik.M),
+        cannonLen: dist3(ik.M, fetlock),
       };
     }
   }
@@ -757,17 +776,16 @@ function buildHorseMesh(buf, st) {
   const { foreFrame: fF, hindFrame: hF, breath, phi } = st;
   const th = TAU * phi;
 
-  // 1. Sculpted Trunk (8 stations from Dock/Buttock to Point of Chest, seamless hind->fore blend)
-  // Body pivot is at y = 1.16m in standing; station yTop/yBot are offsets from bodyPivotY (1.16m).
+  // 1. Sculpted Trunk (9 stations from Buttock/Dock through Croup, Loin, Barrel, Withers, Breast)
   const trunkSpec = [
-    { fr: hF, x: -0.78, yT:  0.27, yB:  0.02, w: 0.105, p: 0.10, col: PAL.coatDeep,   bot: PAL.coatBelly },
-    { fr: hF, x: -0.60, yT:  0.40, yB: -0.13, w: 0.245, p: 0.12, col: PAL.coatBright, bot: PAL.coatDeep },
-    { fr: hF, x: -0.40, yT:  0.37, yB: -0.19, w: 0.235, p: 0.14, col: PAL.coatBright, bot: PAL.coatBelly },
-    { fr: hF, x: -0.18, yT:  0.33, yB: -0.24 - breath * 0.4, w: 0.238 + breath * 0.5, p: 0.16, col: PAL.coatMid, bot: PAL.coatBelly },
-    { fr: fF, x:  0.07, yT:  0.34, yB: -0.31 - breath,       w: 0.262 + breath,       p: 0.22, col: PAL.coatBright, bot: PAL.coatBelly },
-    { fr: fF, x:  0.34, yT:  0.44, yB: -0.34 - breath * 0.6, w: 0.228 + breath * 0.4, p: 0.42, col: PAL.coatBright, bot: PAL.coatDeep },
-    { fr: fF, x:  0.55, yT:  0.33, yB: -0.24, w: 0.205, p: 0.28, col: PAL.coatMid,    bot: PAL.coatDeep },
-    { fr: fF, x:  0.67, yT:  0.20, yB: -0.09, w: 0.125, p: 0.18, col: PAL.coatDeep,   bot: PAL.coatDeep },
+    { fr: hF, x: -0.78, yT:  0.27, yB:  0.00, w: 0.105, p: 0.10, col: PAL.coatDeep,   bot: PAL.coatBelly },
+    { fr: hF, x: -0.62, yT:  0.41, yB: -0.15, w: 0.238, p: 0.12, col: PAL.coatBright, bot: PAL.coatDeep },
+    { fr: hF, x: -0.42, yT:  0.39, yB: -0.19, w: 0.232, p: 0.14, col: PAL.coatBright, bot: PAL.coatBelly },
+    { fr: hF, x: -0.20, yT:  0.34, yB: -0.23 - breath * 0.4, w: 0.236 + breath * 0.5, p: 0.16, col: PAL.coatMid, bot: PAL.coatBelly },
+    { fr: fF, x:  0.05, yT:  0.35, yB: -0.30 - breath,       w: 0.258 + breath,       p: 0.22, col: PAL.coatBright, bot: PAL.coatBelly },
+    { fr: fF, x:  0.32, yT:  0.45, yB: -0.33 - breath * 0.6, w: 0.225 + breath * 0.4, p: 0.44, col: PAL.coatBright, bot: PAL.coatDeep },
+    { fr: fF, x:  0.52, yT:  0.35, yB: -0.24, w: 0.202, p: 0.30, col: PAL.coatMid,    bot: PAL.coatDeep },
+    { fr: fF, x:  0.66, yT:  0.21, yB: -0.08, w: 0.122, p: 0.18, col: PAL.coatDeep,   bot: PAL.coatDeep },
   ];
   const trunkStations = trunkSpec.map(s => {
     const midY = (s.yT + s.yB) * 0.5;
@@ -786,14 +804,14 @@ function buildHorseMesh(buf, st) {
   });
   emitLoft(buf, trunkStations, 10, true, true);
 
-  // 2. Sculpted Crested Neck (4 stations from inside chest/withers to poll)
-  const nPts = [fF.pt(0.36, 0.14, 0), st.neckBase, st.neck1, st.neck2, st.poll];
+  // 2. Sculpted Crested Neck
+  const nPts = [fF.pt(0.32, 0.15, 0), st.neckBase, st.neck1, st.neck2, st.poll];
   const nSpec = [
-    { w: 0.175, rT: 0.26, rB: 0.20, p: 0.38, col: PAL.coatMid },
-    { w: 0.155, rT: 0.24, rB: 0.18, p: 0.36, col: PAL.coatBright },
-    { w: 0.132, rT: 0.20, rB: 0.15, p: 0.34, col: PAL.coatBright },
-    { w: 0.108, rT: 0.16, rB: 0.12, p: 0.30, col: PAL.coatMid },
-    { w: 0.088, rT: 0.11, rB: 0.10, p: 0.20, col: PAL.coatDeep },
+    { w: 0.175, rT: 0.27, rB: 0.20, p: 0.40, col: PAL.coatMid },
+    { w: 0.154, rT: 0.24, rB: 0.18, p: 0.36, col: PAL.coatBright },
+    { w: 0.130, rT: 0.20, rB: 0.145, p: 0.34, col: PAL.coatBright },
+    { w: 0.105, rT: 0.155, rB: 0.115, p: 0.30, col: PAL.coatMid },
+    { w: 0.085, rT: 0.108, rB: 0.095, p: 0.20, col: PAL.coatDeep },
   ];
   const neckStations = nPts.map((p, i) => {
     const dir = i < nPts.length - 1 ? sub3(nPts[i + 1], p) : sub3(p, nPts[i - 1]);
@@ -808,7 +826,7 @@ function buildHorseMesh(buf, st) {
   });
   emitLoft(buf, neckStations, 8, false, true);
 
-  // 3. Sculpted Equine Head (6 stations: poll -> brow -> ganache jowl -> nasal bridge -> nostrils -> muzzle)
+  // 3. Sculpted Equine Head (poll -> brow -> round ganache jowl -> nasal bridge -> nostrils -> muzzle)
   const { headFwd: hFwd, headUp: hUp, headRight: hR, poll } = st;
   const hPt = (s, u, r) => [
     poll[0] + hFwd[0] * s + hUp[0] * u + hR[0] * r,
@@ -816,12 +834,12 @@ function buildHorseMesh(buf, st) {
     poll[2] + hFwd[2] * s + hUp[2] * u + hR[2] * r,
   ];
   const headSpec = [
-    { s: -0.03, uOff:  0.00, rT: 0.075, rB: 0.085, w: 0.082, col: PAL.coatDeep,   top: null },
-    { s:  0.10, uOff:  0.01, rT: 0.082, rB: 0.125, w: 0.106, col: PAL.coatBright, top: PAL.whiteBlaze },
-    { s:  0.20, uOff: -0.02, rT: 0.086, rB: 0.148, w: 0.098, col: PAL.coatMid,    top: PAL.whiteBlaze }, // deep round ganache jowl!
-    { s:  0.33, uOff:  0.00, rT: 0.058, rB: 0.072, w: 0.066, col: PAL.coatBright, top: PAL.whiteBlaze }, // crisp step-in to nasal bridge!
-    { s:  0.45, uOff: -0.005, rT: 0.054, rB: 0.062, w: 0.072, col: PAL.muzzleSoft, top: PAL.whiteBlaze },
-    { s:  0.53, uOff: -0.012, rT: 0.038, rB: 0.046, w: 0.052, col: PAL.muzzleSoft, top: null },
+    { s: -0.03, uOff:  0.00,  rT: 0.074, rB: 0.082, w: 0.080, col: PAL.coatDeep,   top: null },
+    { s:  0.10, uOff:  0.01,  rT: 0.080, rB: 0.122, w: 0.104, col: PAL.coatBright, top: PAL.whiteBlaze },
+    { s:  0.20, uOff: -0.02,  rT: 0.084, rB: 0.144, w: 0.095, col: PAL.coatMid,    top: PAL.whiteBlaze },
+    { s:  0.33, uOff:  0.00,  rT: 0.056, rB: 0.070, w: 0.064, col: PAL.coatBright, top: PAL.whiteBlaze },
+    { s:  0.45, uOff: -0.005, rT: 0.052, rB: 0.060, w: 0.070, col: PAL.muzzleSoft, top: PAL.whiteBlaze },
+    { s:  0.52, uOff: -0.012, rT: 0.036, rB: 0.044, w: 0.050, col: PAL.muzzleSoft, top: null },
   ];
   const headStations = headSpec.map(hs => ({
     p: hPt(hs.s, hs.uOff, 0),
@@ -837,14 +855,13 @@ function buildHorseMesh(buf, st) {
   }));
   emitLoft(buf, headStations, 8, true, true);
 
-  // Expressive lateral low-poly eyes + flared nostrils + pointed swiveling ears
   for (const side of [-1, 1]) {
-    // Eye diamond on supraorbital ridge
-    const eC = hPt(0.135, 0.032, side * 0.102);
-    const eF = hPt(0.162, 0.028, side * 0.096);
-    const eB = hPt(0.108, 0.034, side * 0.096);
-    const eT = hPt(0.135, 0.052, side * 0.095);
-    const eD = hPt(0.135, 0.012, side * 0.098);
+    // Sleek almond-diamond lateral eye
+    const eC = hPt(0.135, 0.032, side * 0.099);
+    const eF = hPt(0.156, 0.029, side * 0.094);
+    const eB = hPt(0.114, 0.034, side * 0.094);
+    const eT = hPt(0.135, 0.046, side * 0.093);
+    const eD = hPt(0.135, 0.018, side * 0.095);
     if (side > 0) {
       buf.tri(eC, eF, eT, PAL.eyeDark); buf.tri(eC, eT, eB, PAL.eyeDark);
       buf.tri(eC, eB, eD, PAL.eyeDark); buf.tri(eC, eD, eF, PAL.eyeDark);
@@ -853,74 +870,104 @@ function buildHorseMesh(buf, st) {
       buf.tri(eC, eD, eB, PAL.eyeDark); buf.tri(eC, eF, eD, PAL.eyeDark);
     }
 
-    // Flared nostril facet
-    const nC = hPt(0.465, 0.018, side * 0.071);
-    const n1 = hPt(0.492, 0.012, side * 0.062);
-    const n2 = hPt(0.448, 0.034, side * 0.065);
-    const n3 = hPt(0.452, -0.004, side * 0.066);
+    // Flared nostril
+    const nC = hPt(0.460, 0.016, side * 0.068);
+    const n1 = hPt(0.486, 0.010, side * 0.060);
+    const n2 = hPt(0.444, 0.031, side * 0.063);
+    const n3 = hPt(0.448, -0.003, side * 0.064);
     if (side > 0) { buf.tri(nC, n1, n2, PAL.nostril); buf.tri(nC, n3, n1, PAL.nostril); }
     else { buf.tri(nC, n2, n1, PAL.nostril); buf.tri(nC, n1, n3, PAL.nostril); }
 
-    // Articulated pointed equine ear (pivots with stride rhythm)
-    const earFlick = 0.12 * Math.sin(th - 0.8 + side * 0.7);
-    const eBase = hPt(0.025, 0.068, side * 0.054);
+    // Alert pointed equine ear (cupped upright on poll, subtle stride rhythm)
+    const earFlick = 0.10 * Math.sin(th - 0.8 + side * 0.7);
+    const eBase = hPt(0.018, 0.064, side * 0.050);
+    // Point primarily world-up + slightly forward so ears prick alertly rather than laying horizontal
     const earDir = norm3([
-      hUp[0] * 0.92 + hFwd[0] * (0.28 + earFlick) + hR[0] * side * 0.24,
-      hUp[1] * 0.92 + hFwd[1] * (0.28 + earFlick) + hR[1] * side * 0.24,
-      hUp[2] * 0.92 + hFwd[2] * (0.28 + earFlick) + hR[2] * side * 0.24,
+      hUp[0] * 0.86 - hFwd[0] * (0.28 - earFlick) + hR[0] * side * 0.22,
+      hUp[1] * 0.86 - hFwd[1] * (0.28 - earFlick) + hR[1] * side * 0.22,
+      hUp[2] * 0.86 - hFwd[2] * (0.28 - earFlick) + hR[2] * side * 0.22,
     ]);
-    const eMid = add3(eBase, scale3(earDir, 0.082));
-    const eTip = add3(eBase, scale3(earDir, 0.158));
+    const eMid = add3(eBase, scale3(earDir, 0.088));
+    const eTip = add3(eBase, scale3(earDir, 0.168));
     emitLoft(buf, [
-      limbStation(eBase, earDir, hR, 0.024, 0.020, 0.024, PAL.coatMid),
-      limbStation(eMid,  earDir, hR, 0.021, 0.015, 0.020, PAL.coatDeep),
-      limbStation(eTip,  earDir, hR, 0.005, 0.005, 0.006, PAL.darkPoint),
+      limbStation(eBase, earDir, hR, 0.022, 0.018, 0.022, PAL.coatMid),
+      limbStation(eMid,  earDir, hR, 0.019, 0.014, 0.018, PAL.coatDeep),
+      limbStation(eTip,  earDir, hR, 0.004, 0.004, 0.005, PAL.darkPoint),
     ], 5, false, true);
   }
 
-  // 4. Flowing Faceted Crest Mane & Forelock (traveling wave along dorsal neck crest)
-  const maneRootPts = [fF.pt(0.30, 0.43, 0), ...nPts.slice(1).map((p, idx) => add3(p, scale3(neckStations[idx + 1].up, neckStations[idx + 1].rTop * 0.92)))];
-  for (let mi = 0; mi < 8; mi++) {
-    const u0 = mi / 8, u1 = (mi + 1.18) / 8;
-    const sampleCrest = (u) => {
-      const f = clamp(u, 0, 0.999) * (maneRootPts.length - 1);
-      const i = Math.floor(f);
-      return mix3(maneRootPts[i], maneRootPts[i + 1], f - i);
+  // 4. Windswept Layered Horsehair Mane (embedded along dorsal neck crest, draped cleanly on right side)
+  const crestPts = neckStations.map((ns) =>
+    add3(ns.p, scale3(ns.up, ns.rTop * 0.86))
+  );
+  // Sculpted crest ridge loft + overlapping draped locks (zero floating gap at withers!)
+  const crestStations = crestPts.map((p, i) => {
+    const dir = i < crestPts.length - 1 ? sub3(crestPts[i + 1], p) : sub3(p, crestPts[i - 1]);
+    const F = norm3(dir);
+    const R = norm3(fF.R);
+    const U = norm3(cross3(R, F));
+    const archH = i === 0 ? 0.022 : i === crestPts.length - 1 ? 0.028 : 0.042;
+    return {
+      p: add3(p, scale3(U, archH * 0.35)),
+      right: R, up: U,
+      w: 0.022, rTop: archH, rBot: 0.024,
+      topPinch: 0.45, col: PAL.blackMane,
     };
-    const r0 = sampleCrest(u0), r1 = sampleCrest(u1);
-    const rm = mix3(r0, r1, 0.5);
-    const wave = 0.055 * Math.sin(th - 1.2 - mi * 0.55);
-    const lift = 0.085 + 0.03 * Math.sin(th - 0.9 - mi * 0.4);
-    const tip = [
-      rm[0] - 0.075 + fF.U[0] * lift + fF.R[0] * (0.045 + wave),
-      rm[1] + lift,
-      rm[2] + 0.042 + wave,
-    ];
-    const thick = [0, 0, -0.022];
-    buf.tri(r0, r1, tip, PAL.blackMane);
-    buf.tri(r1, r0, add3(tip, thick), PAL.blackMane);
-  }
-  // Forelock plume between ears over forehead
-  const flBaseL = hPt(0.03, 0.082, -0.025);
-  const flBaseR = hPt(0.03, 0.082,  0.025);
-  const flTip = add3(hPt(0.16, 0.095, 0.015 * Math.sin(th - 1.5)), scale3(hUp, 0.018));
-  buf.tri(flBaseL, flBaseR, flTip, PAL.blackMane);
-  buf.tri(flBaseR, flBaseL, add3(flTip, scale3(hUp, -0.012)), PAL.blackMane);
+  });
+  emitLoft(buf, crestStations, 5, true, true);
 
-  // 5. Streaming Articulated Low-Poly Tail Plume (6 stations along S-curve)
+  const maneLocks = 8;
+  for (let mi = 0; mi < maneLocks; mi++) {
+    const u0 = 0.24 + (mi / maneLocks) * 0.72;
+    const u1 = Math.min(0.98, u0 + 0.11);
+    const sampleCrest = (u) => {
+      const f = clamp(u, 0, 0.999) * (crestPts.length - 1);
+      const i = Math.floor(f);
+      return mix3(crestPts[i], crestPts[i + 1], f - i);
+    };
+    const sampleWidth = (u) => {
+      const f = clamp(u, 0, 0.999) * (neckStations.length - 1);
+      const i = Math.floor(f);
+      return neckStations[i].w * (1 - (f - i)) + neckStations[i + 1].w * (f - i);
+    };
+    const c0 = sampleCrest(u0), c1 = sampleCrest(u1);
+    const cm = mix3(c0, c1, 0.5);
+    const nw = sampleWidth((u0 + u1) * 0.5);
+    const wave = 0.026 * Math.sin(th - 1.3 - mi * 0.62);
+    const flutterY = 0.022 * Math.sin(th - 0.8 - mi * 0.50);
+    const root0 = [c0[0], c0[1] + 0.024, c0[2] + 0.010];
+    const root1 = [c1[0], c1[1] + 0.024, c1[2] + 0.010];
+    const lockLen = 0.15 + 0.04 * Math.sin(mi * 1.4 + 0.5);
+    const tip = add3(
+      cm,
+      add3(
+        scale3(fF.F, -lockLen * 0.72),
+        add3(scale3(fF.U, -lockLen * 0.58 + flutterY), scale3(fF.R, nw * 0.92 + 0.018 + wave))
+      )
+    );
+    buf.tri(root0, root1, tip, PAL.blackMane);
+    buf.tri(root1, root0, add3(tip, scale3(fF.R, -0.012)), PAL.blackMane);
+  }
+  // Windswept forelock draped down forehead between the ears
+  const flL = hPt(0.01, 0.076, -0.024), flR = hPt(0.01, 0.076, 0.024);
+  const flTip = hPt(0.14, 0.088, 0.014 * Math.sin(th - 1.6));
+  buf.tri(flL, flR, flTip, PAL.blackMane);
+  buf.tri(flR, flL, hPt(0.13, 0.078, 0), PAL.blackMane);
+
+  // 5. Streaming Articulated Low-Poly Tail Plume
   const tailRadii = [
-    [0.038, 0.040],
-    [0.058, 0.078],
-    [0.068, 0.105],
-    [0.062, 0.098],
-    [0.046, 0.072],
-    [0.026, 0.040],
-    [0.007, 0.010],
+    [0.036, 0.038],
+    [0.055, 0.076],
+    [0.066, 0.102],
+    [0.060, 0.095],
+    [0.044, 0.070],
+    [0.025, 0.038],
+    [0.006, 0.009],
   ];
   const tailStations = st.tailPts.map((p, i) => {
     const dir = i < st.tailPts.length - 1 ? sub3(st.tailPts[i + 1], p) : sub3(p, st.tailPts[i - 1]);
     const F = norm3(dir);
-    const R = norm3([0, 0, 1]);
+    const R = [0, 0, 1];
     const U = norm3(cross3(R, F));
     return {
       p, right: R, up: U,
@@ -930,71 +977,114 @@ function buildHorseMesh(buf, st) {
   });
   emitLoft(buf, tailStations, 6, true, true);
 
-  // 6. Sculpted Equine Forelimbs & Hindlimbs + Flared Hooves
-  const latRef = [0, 0, 1];
+  // 6. Articulated Segment-Capsule Limbs + Outward-Wound Joint Caps + Welded Hooves
   for (const id of ['LH', 'LF', 'RH', 'RF']) {
     const L = st.legs[id];
+    const nearSide = L.side > 0;
+    const cUpper = nearSide ? PAL.coatBright : PAL.coatFar;
+    const cMid   = nearSide ? PAL.coatMid    : PAL.coatDeep;
+    const cSock  = nearSide ? PAL.whiteSock  : PAL.whiteSockFar;
+
+    // Coronet anchor sits 62% down from fetlock to hoof, welding pastern cleanly into hoof!
+    const coronet = mix3(L.fetlock, L.hoof, 0.62);
+
     if (L.fore) {
-      const dScap = sub3(L.shoulder, L.scapTop);
-      const dHum  = sub3(L.elbow, L.shoulder);
-      const dRad  = sub3(L.carpus, L.elbow);
-      const dCan  = sub3(L.fetlock, L.carpus);
-      const dPas  = sub3(L.hoof, L.fetlock);
+      // Scapula (blended inside upper shoulder)
+      emitLimbSegment(buf, L.scapTop, L.shoulder, [
+        { t: 0.00, w: 0.046, rAnt: 0.082, rPost: 0.078, col: cMid },
+        { t: 0.85, w: 0.074, rAnt: 0.096, rPost: 0.090, col: cUpper },
+        { t: 1.00, w: 0.064, rAnt: 0.080, rPost: 0.078, col: cUpper },
+      ], 7);
+      emitJointBall(buf, L.shoulder, 0.084, 0.084, 0.070, cUpper);
 
-      const foreStations = [
-        limbStation(L.scapTop,  dScap, latRef, 0.062, 0.095, 0.085, PAL.coatMid),
-        limbStation(L.shoulder, dHum,  latRef, 0.082, 0.105, 0.092, PAL.coatBright),
-        limbStation(L.elbow,    dRad,  latRef, 0.068, 0.078, 0.090, PAL.coatMid, 0.022), // olecranon point of elbow!
-        limbStation(mix3(L.elbow, L.carpus, 0.55), dRad, latRef, 0.046, 0.052, 0.056, PAL.coatDeep),
-        limbStation(L.carpus,   dCan,  latRef, 0.040, 0.044, 0.042, PAL.darkPoint),       // flat-fronted carpus!
-        limbStation(mix3(L.carpus, L.fetlock, 0.5), dCan, latRef, 0.026, 0.029, 0.032, PAL.darkPoint),
-        limbStation(L.fetlock,  dPas,  latRef, 0.033, 0.034, 0.040, PAL.darkPoint, 0.014), // fetlock + ergot!
-        limbStation(mix3(L.fetlock, L.hoof, 0.72), dPas, latRef, 0.026, 0.028, 0.028, PAL.darkPoint),
-      ];
-      emitLoft(buf, foreStations, 7, true, true);
+      // Humerus (point of shoulder -> elbow, tapered cleanly into elbow joint ball)
+      emitLimbSegment(buf, L.shoulder, L.elbow, [
+        { t: 0.00, w: 0.064, rAnt: 0.080, rPost: 0.078, col: cUpper },
+        { t: 0.78, w: 0.062, rAnt: 0.070, rPost: 0.080, col: cMid },
+        { t: 1.00, w: 0.050, rAnt: 0.056, rPost: 0.060, col: cMid },
+      ], 7);
+      emitJointBall(buf, L.elbow, 0.068, 0.068, 0.056, cMid);
+
+      // Forearm / Radius (nested inside elbow ball -> muscular belly -> tapered into carpus ball)
+      emitLimbSegment(buf, L.elbow, L.carpus, [
+        { t: 0.00, w: 0.050, rAnt: 0.056, rPost: 0.060, col: cMid },
+        { t: 0.18, w: 0.058, rAnt: 0.066, rPost: 0.074, col: cMid },
+        { t: 0.58, w: 0.043, rAnt: 0.046, rPost: 0.050, col: PAL.coatDeep },
+        { t: 1.00, w: 0.034, rAnt: 0.036, rPost: 0.036, col: PAL.darkPoint },
+      ], 7);
+      emitJointBall(buf, L.carpus, 0.042, 0.042, 0.038, PAL.darkPoint);
+
+      // Fore Cannon (carpus -> fetlock)
+      emitLimbSegment(buf, L.carpus, L.fetlock, [
+        { t: 0.00, w: 0.032, rAnt: 0.034, rPost: 0.035, col: PAL.darkPoint },
+        { t: 0.50, w: 0.025, rAnt: 0.027, rPost: 0.031, col: PAL.darkPoint },
+        { t: 1.00, w: 0.029, rAnt: 0.030, rPost: 0.032, col: PAL.darkPoint },
+      ], 7);
+      emitJointBall(buf, L.fetlock, 0.035, 0.035, 0.033, PAL.darkPoint);
+
+      // Fore Pastern (fetlock -> coronet)
+      emitLimbSegment(buf, L.fetlock, coronet, [
+        { t: 0.00, w: 0.028, rAnt: 0.029, rPost: 0.031, col: PAL.darkPoint },
+        { t: 1.00, w: 0.032, rAnt: 0.033, rPost: 0.033, col: PAL.darkPoint },
+      ], 7);
     } else {
-      const dFem = sub3(L.stifle, L.hip);
-      const dTib = sub3(L.hock, L.stifle);
-      const dCan = sub3(L.fetlock, L.hock);
-      const dPas = sub3(L.hoof, L.fetlock);
+      // Haunch / Thigh (deeply rooted in croup -> tapered cleanly into stifle joint ball)
+      emitLimbSegment(buf, L.hip, L.stifle, [
+        { t: 0.00, w: 0.106, rAnt: 0.145, rPost: 0.165, col: cUpper },
+        { t: 0.65, w: 0.086, rAnt: 0.108, rPost: 0.118, col: cUpper },
+        { t: 0.85, w: 0.072, rAnt: 0.084, rPost: 0.088, col: cMid },
+        { t: 1.00, w: 0.056, rAnt: 0.062, rPost: 0.062, col: cMid },
+      ], 8);
+      emitJointBall(buf, L.stifle, 0.074, 0.074, 0.064, cMid);
 
-      const hindStations = [
-        limbStation(L.hip,    dFem, latRef, 0.108, 0.145, 0.155, PAL.coatBright), // muscular quarter!
-        limbStation(L.stifle, dTib, latRef, 0.076, 0.092, 0.084, PAL.coatMid),    // forward stifle!
-        limbStation(mix3(L.stifle, L.hock, 0.55), dTib, latRef, 0.055, 0.062, 0.074, PAL.coatMid), // muscular gaskin!
-        limbStation(L.hock,   dCan, latRef, 0.038, 0.042, 0.052, PAL.darkPoint, 0.042), // prominent calcaneal hock point!
-        limbStation(mix3(L.hock, L.fetlock, 0.38), dCan, latRef, 0.027, 0.030, 0.033, PAL.darkPoint),
-        limbStation(mix3(L.hock, L.fetlock, 0.46), dCan, latRef, 0.027, 0.030, 0.032, PAL.whiteSock), // crisp white hind sock!
-        limbStation(L.fetlock, dPas, latRef, 0.034, 0.035, 0.040, PAL.whiteSock, 0.014),
-        limbStation(mix3(L.fetlock, L.hoof, 0.72), dPas, latRef, 0.027, 0.029, 0.029, PAL.whiteSock),
-      ];
-      emitLoft(buf, hindStations, 7, true, true);
+      // Gaskin / Tibia (nested inside stifle ball -> muscular calf -> tapered into hock)
+      emitLimbSegment(buf, L.stifle, L.hock, [
+        { t: 0.00, w: 0.056, rAnt: 0.060, rPost: 0.062, col: cMid },
+        { t: 0.22, w: 0.066, rAnt: 0.072, rPost: 0.082, col: cMid },
+        { t: 0.60, w: 0.046, rAnt: 0.050, rPost: 0.062, col: PAL.coatDeep },
+        { t: 1.00, w: 0.033, rAnt: 0.035, rPost: 0.038, col: PAL.darkPoint },
+      ], 7);
+      // True anatomical calcaneal hock point along outward hinge bisector
+      const gDir = norm3(sub3(L.hock, L.stifle));
+      const cDir = norm3(sub3(L.fetlock, L.hock));
+      const calcDir = norm3(sub3(gDir, cDir));
+      emitJointBall(buf, L.hock, 0.042, 0.042, 0.036, PAL.darkPoint);
+      emitJointBall(buf, add3(L.hock, scale3(calcDir, 0.022)), 0.034, 0.034, 0.028, PAL.darkPoint);
+
+      // Hind Cannon (dark upper cannon -> crisp white hind sock!)
+      const sockStart = mix3(L.hock, L.fetlock, 0.36);
+      emitLimbSegment(buf, L.hock, sockStart, [
+        { t: 0.00, w: 0.032, rAnt: 0.033, rPost: 0.036, col: PAL.darkPoint },
+        { t: 1.00, w: 0.026, rAnt: 0.028, rPost: 0.032, col: PAL.darkPoint },
+      ], 7);
+      emitLimbSegment(buf, sockStart, L.fetlock, [
+        { t: 0.00, w: 0.026, rAnt: 0.028, rPost: 0.032, col: cSock },
+        { t: 1.00, w: 0.029, rAnt: 0.030, rPost: 0.032, col: cSock },
+      ], 7);
+      emitJointBall(buf, L.fetlock, 0.035, 0.035, 0.033, cSock);
+
+      // Hind Pastern
+      emitLimbSegment(buf, L.fetlock, coronet, [
+        { t: 0.00, w: 0.028, rAnt: 0.029, rPost: 0.031, col: cSock },
+        { t: 1.00, w: 0.033, rAnt: 0.034, rPost: 0.034, col: cSock },
+      ], 7);
     }
 
-    // Sculpted Flared Equine Hoof (coronet ring -> wider sole ring oriented by hoofPitch)
+    // Welded Flared Equine Hoof (coronet -> sole, never detaches at any swing angle!)
     const hp = L.hoofPitch;
-    const chp = Math.cos(hp), shp = Math.sin(hp);
-    const hFwd2 = [chp, shp, 0];     // toe direction (+X when flat on ground)
-    const hUp2  = [-shp, chp, 0];    // sole-up normal (+Y when flat on ground)
+    const hFwd2 = [Math.cos(hp), Math.sin(hp), 0];
     const hLat  = [0, 0, 1];
-    const coronetC = [
-      L.hoof[0] - hFwd2[0] * 0.012 + hUp2[0] * 0.068,
-      L.hoof[1] - hFwd2[1] * 0.012 + hUp2[1] * 0.068,
-      L.hoof[2],
-    ];
-    const soleC = [
-      L.hoof[0] + hFwd2[0] * 0.014 + hUp2[0] * 0.002,
-      L.hoof[1] + hFwd2[1] * 0.014 + hUp2[1] * 0.002,
-      L.hoof[2],
-    ];
+    const soleC = L.inStance
+      ? [L.hoof[0] + 0.016, 0.002, L.hoof[2]]
+      : [L.hoof[0] + hFwd2[0] * 0.014, Math.max(0.002, L.hoof[1] + hFwd2[1] * 0.014), L.hoof[2]];
     emitLoft(buf, [
-      { p: coronetC, right: hLat, up: hFwd2, w: 0.036, rTop: 0.040, rBot: 0.036, col: PAL.hoofHorn },
-      { p: soleC,    right: hLat, up: hFwd2, w: 0.048, rTop: 0.060, rBot: 0.044, col: PAL.hoofSole },
+      { p: coronet, right: hLat, up: hFwd2, w: 0.035, rTop: 0.038, rBot: 0.035, col: PAL.hoofHorn },
+      { p: soleC,   right: hLat, up: hFwd2, w: 0.048, rTop: 0.062, rBot: 0.044, col: PAL.hoofSole },
     ], 7, true, true);
   }
 }
 
-/* ---------------- Minimal Steppe Ground Plane (Engine Core Baseline) ---------------- */
+/* ---------------- Minimal Steppe Ground Plane ---------------- */
 
 function buildCoreGround(buf, centerX, centerZ) {
   buf.reset();
@@ -1020,15 +1110,15 @@ function buildCoreGround(buf, centerX, centerZ) {
 
 const SUN_DIR = norm3([-0.42, 0.34, 0.84]);
 const cam = {
-  yaw: 0.32, pitch: 0.11, dist: 3.85,
-  tYaw: 0.32, tPitch: 0.11, tDist: 3.85,
+  yaw: 0.32, pitch: 0.11, dist: 3.75,
+  tYaw: 0.32, tPitch: 0.11, tDist: 3.75,
   auto: true,
 };
 
 let screenMode = 'attract';
 let strideIndex = 0;
 let phase = 0.0;
-let strideFreq = 1.72; // Hz (~7.9 m/s default gallop)
+let strideFreq = 1.75; // Hz
 let timeScale = 1.0;
 let paused = false;
 let frames = 0;
@@ -1076,10 +1166,12 @@ addEventListener('keydown', e => {
     document.getElementById('attract').classList.add('gone');
   }
   if (e.code === 'Space') { e.preventDefault(); timeScale = timeScale < 0.5 ? 1.0 : 0.22; }
-  if (e.key === '1') { cam.auto = false; cam.tYaw = 0.0;  cam.tPitch = 0.07; cam.tDist = 3.7; }
-  if (e.key === '2') { cam.auto = false; cam.tYaw = 0.48; cam.tPitch = 0.14; cam.tDist = 3.85; }
-  if (e.key === '3') { cam.auto = false; cam.tYaw = 0.22; cam.tPitch = -0.01; cam.tDist = 3.1; }
-  if (e.key === '4') { cam.auto = false; cam.tYaw = 0.05; cam.tPitch = 1.02; cam.tDist = 5.2; }
+  if (e.code === 'ArrowUp')   { e.preventDefault(); strideFreq = clamp(strideFreq + 0.12, 1.15, 2.35); }
+  if (e.code === 'ArrowDown') { e.preventDefault(); strideFreq = clamp(strideFreq - 0.12, 1.15, 2.35); }
+  if (e.key === '1') { cam.auto = false; cam.tYaw = 0.0;  cam.tPitch = 0.07; cam.tDist = 3.55; }
+  if (e.key === '2') { cam.auto = false; cam.tYaw = 0.48; cam.tPitch = 0.14; cam.tDist = 3.75; }
+  if (e.key === '3') { cam.auto = false; cam.tYaw = 0.22; cam.tPitch = -0.01; cam.tDist = 3.0; }
+  if (e.key === '4') { cam.auto = false; cam.tYaw = 0.05; cam.tPitch = 1.02; cam.tDist = 5.0; }
 });
 
 function renderScene() {
@@ -1088,7 +1180,7 @@ function renderScene() {
   buildHorseMesh(horseBuf, currentState);
   buildCoreGround(worldBuf, currentState.refX, 0);
 
-  const target = [currentState.refX + 0.10, 1.02, 0];
+  const target = [currentState.refX + 0.06, 0.98, 0];
   const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
   const sy = Math.sin(cam.yaw),   cy = Math.cos(cam.yaw);
   const eye = [
@@ -1097,7 +1189,7 @@ function renderScene() {
     target[2] + cy * cp * cam.dist,
   ];
 
-  const fovY = 0.72;
+  const fovY = 0.70;
   const aspect = W / H;
   const proj = mat4Perspective(fovY, aspect, 0.12, 140.0);
   const view = mat4LookAt(eye, target, [0, 1, 0]);
@@ -1112,7 +1204,6 @@ function renderScene() {
   gl.clearStencil(0);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
 
-  // 1. Sky backdrop
   gl.disable(gl.DEPTH_TEST);
   gl.disable(gl.CULL_FACE);
   gl.useProgram(progSky);
@@ -1125,7 +1216,6 @@ function renderScene() {
   gl.bindVertexArray(vaoEmpty);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-  // 2. Ground + Horse
   gl.enable(gl.DEPTH_TEST);
   gl.depthMask(true);
   gl.useProgram(progMesh);
@@ -1137,7 +1227,6 @@ function renderScene() {
   gl.uniform1f(uMesh.shadowGroundY, 0.003);
   worldBuf.uploadAndDraw();
 
-  // 3. Stencil-guarded planar projected shadow of the 3D horse onto y = 0.003
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   gl.enable(gl.STENCIL_TEST);
@@ -1150,7 +1239,6 @@ function renderScene() {
   gl.disable(gl.BLEND);
   gl.depthMask(true);
 
-  // 4. Opaque flat-faceted 3D horse
   gl.uniform1i(uMesh.shadowPass, 0);
   horseBuf.uploadAndDraw();
 }
@@ -1185,7 +1273,66 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 
-/* ---------------- DEV Test Hook ---------------- */
+/* ---------------- Gait Audit & DEV Test Hook ---------------- */
+
+function auditGait(stepsPerStride = 240, numStrides = 2) {
+  const footfallOrder = [];
+  let maxSlipMm = 0;
+  let maxIkRatio = 0;
+  let flightFrames = 0;
+  let minSwingClearance = Infinity;
+  const anchors = {};
+
+  for (let s = 0; s < numStrides; s++) {
+    for (let i = 0; i < stepsPerStride; i++) {
+      const ph = i / stepsPerStride;
+      const st = evaluateHorse(s, ph, 0);
+      let anyStance = false;
+      for (const d of LEGS_DEF) {
+        const L = st.legs[d.id];
+        if (L.ikRatio > maxIkRatio) maxIkRatio = L.ikRatio;
+        if (L.inStance) {
+          anyStance = true;
+          const key = `${d.id}:${s}`;
+          if (!anchors[key]) {
+            anchors[key] = L.hoof.slice();
+            if (s === 0) footfallOrder.push(d.id);
+          } else {
+            const slip = dist3(L.hoof, anchors[key]) * 1000;
+            if (slip > maxSlipMm) maxSlipMm = slip;
+          }
+        } else {
+          delete anchors[`${d.id}:${s}`];
+          if (L.u === 0 && L.s > 0.12 && L.s < 0.88 && L.hoof[1] < minSwingClearance) {
+            minSwingClearance = L.hoof[1];
+          }
+        }
+      }
+      if (!anyStance && s === 0) flightFrames++;
+    }
+  }
+
+  // Seamless loop check: body-relative pose at phi = 0 vs phi -> 1 (evaluated at rawPhase 0 vs 1 in body space)
+  const p0 = evaluateHorse(0, 0.0, 0);
+  const p1 = evaluateHorse(1, 0.0, 0); // start of next stride === end of stride 0
+  const pEnd = evaluateHorse(0, 1 - 1e-7, 0);
+  let loopSeamMm = Math.abs((pEnd.poll[1] - p0.poll[1])) * 1000;
+  for (const d of LEGS_DEF) {
+    const rel0 = [p0.legs[d.id].hoof[0] - p0.refX, p0.legs[d.id].hoof[1], p0.legs[d.id].hoof[2]];
+    const rel1 = [p1.legs[d.id].hoof[0] - p1.refX, p1.legs[d.id].hoof[1], p1.legs[d.id].hoof[2]];
+    const relE = [pEnd.legs[d.id].hoof[0] - pEnd.refX, pEnd.legs[d.id].hoof[1], pEnd.legs[d.id].hoof[2]];
+    loopSeamMm = Math.max(loopSeamMm, dist3(rel0, rel1) * 1000, dist3(rel0, relE) * 1000);
+  }
+
+  return {
+    footfallOrder,
+    maxSlipMm: +maxSlipMm.toFixed(6),
+    maxIkRatio: +maxIkRatio.toFixed(4),
+    flightFraction: +(flightFrames / stepsPerStride).toFixed(3),
+    minMidSwingClearanceM: +minSwingClearance.toFixed(4),
+    loopSeamMm: +loopSeamMm.toFixed(6),
+  };
+}
 
 window.__horsegeminiTest = {
   get ready() { return readyFlag; },
@@ -1205,6 +1352,7 @@ window.__horsegeminiTest = {
     frames++;
     return this.state();
   },
+  audit: auditGait,
   state() {
     const legs = {};
     for (const d of LEGS_DEF) {
