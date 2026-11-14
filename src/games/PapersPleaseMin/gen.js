@@ -74,6 +74,7 @@ export const REGULARS = [
         face: { skin: 2, hairC: 0, shirtC: 2, style: 1, narrow: 0, glasses: 0, must: 1, brow: 1, mouth: 0, hat: 1, uni: 1, ear: 0, gap: 0, tilt: 1 },
         mark: 'scar',
         lines: { greet: 'GOOD DAY, GUARD.', hook: 'THE BREAD LINE WAS LONG.', again: 'BACK AGAIN, HA!', follow: 'STILL NO BREAD, HA!' },
+        remember: { line: 'I STOOD HERE LAST WEEK.', wall: 'THE WALL ASKED FOR ME.' },
         turnAlt: '...IS MISTAKE, YES?', againAlt: 'BACK AT THE GLASS.', seize: '"I HAVE FAMILY IN OR VECHNA!"',
     },
     {
@@ -81,6 +82,7 @@ export const REGULARS = [
         face: { skin: 0, hairC: 1, shirtC: 0, style: 2, narrow: 1, glasses: 1, must: 0, brow: 0, mouth: 1, hat: 0, uni: 0, ear: 1, gap: 0 },
         mark: 'mole',
         lines: { greet: 'IS MY PAPER OK?', hook: 'I CHECKED IT TWICE.', again: 'NOTHING WRONG THIS TIME.', follow: 'I CHECKED IT THREE TIMES.' },
+        remember: { line: 'I WAS IN THIS LINE LAST WEEK.', wall: 'YOUR BOARD HAS MY FACE.' },
         turnAlt: '...TWO WEEKS STRAIGHT!', againAlt: 'BACK AGAIN, GUARD.', seize: '"NOTHING WRONG, I TELL YOU!"',
     },
     {
@@ -88,6 +90,7 @@ export const REGULARS = [
         face: { skin: 4, hairC: 2, shirtC: 3, style: 0, narrow: 0, glasses: 0, must: 0, brow: 1, mouth: 0, hat: 3, uni: 0, ear: 0, gap: 1 },
         mark: 'wrinkle',
         lines: { greet: 'I VISIT MY DAUGHTER.', hook: 'HER FLAT IS IN THE CITY.', again: 'THE LINE IS SHORT TODAY.', follow: 'SHE SENDS HER THANKS.' },
+        remember: { line: 'I VISITED LAST WEEK TOO.', wall: 'THE SHEET PRINTED MY NAME.' },
         turnAlt: '...I COME TO SEE FAMILY!', againAlt: 'THE LINE IS LONG AGAIN.', seize: '"YOU CANNOT DO THIS TO ME!"',
     },
     {
@@ -95,6 +98,7 @@ export const REGULARS = [
         face: { skin: 1, hairC: 4, shirtC: 1, style: 3, narrow: 1, glasses: 0, must: 1, brow: 0, mouth: 1, hat: 2, uni: 0, ear: 0, gap: 0 },
         mark: 'ear',
         lines: { greet: 'WORK IN THE CITY.', hook: 'THE TRAIN WAS LATE.', again: 'SAME BOOTH, SAME GUARD.', follow: 'THE TRAIN IS ON TIME.' },
+        remember: { line: 'THE TRAIN RAN LAST WEEK.', wall: 'THE WALL KNOWS MY FACE.' },
         turnAlt: '...WRONG MAN, COMRADE.', againAlt: 'THE TRAIN WAS LATE AGAIN.', seize: '"I CLOCK IN AT SIX, GUARD!"',
     },
     // #1997 THE FIFTH AND SIXTH — the original's neighborhood is not four:
@@ -110,6 +114,7 @@ export const REGULARS = [
         face: { skin: 3, hairC: 1, shirtC: 2, style: 0, narrow: 1, glasses: 0, must: 0, brow: 0, mouth: 0, hat: 3, uni: 0, ear: 1, gap: 0 },
         mark: 'freckles',
         lines: { greet: 'MY SON LIVES IN OR VECHNA.', hook: 'I SELL MY KNITS AT MARKET.', again: 'HE SAYS HELLO, YES?', follow: 'THE KNITS SOLD, GUARD.' },
+        remember: { line: 'MY KNITS TRAVELLED LAST WEEK.', wall: 'THE BOARD CALLED ME OUT.' },
         turnAlt: '...SOMETHING WRONG, YES?', againAlt: 'HELLO AGAIN, GUARD.', seize: '"MY KNITS, MY SON, PLEASE!"',
     },
     {
@@ -117,6 +122,7 @@ export const REGULARS = [
         face: { skin: 4, hairC: 3, shirtC: 0, style: 1, narrow: 0, glasses: 1, must: 1, brow: 1, mouth: 1, hat: 0, uni: 0, ear: 0, gap: 1 },
         mark: 'patch',
         lines: { greet: 'I AM RETIRED, GUARD.', hook: 'THE PENSION BUYS LITTLE.', again: 'YOU LET ME THROUGH.', follow: 'LITTLE, BUT IT BUYS.' },
+        remember: { line: 'THE LINE WAS COLD LAST WEEK.', wall: 'THE WALL AND THE BOOTH.' },
         turnAlt: '...I AM ONLY RETIRED.', againAlt: 'THE BOOTH REMEMBERS ME.', seize: '"PAPERS ARE HONEST, GUARD!"',
     },
 ]
@@ -187,6 +193,22 @@ export const crowdedDay = (seed, n) => regularsForDay(seed, n).length >= 2
 // walk again on days 6, 7. (Pre-#2012 the tail seats were -1, unseen; the
 // crowded return retired that special case.)
 export const firstVisitDay = (seed, regIdx) => 2 + seatOff(seed, regIdx)
+
+// #2104 THE WEEK THAT REMEMBERS — seed-adjacent continuity. By the rotation
+// law the seat at offset k in week s stood at offset k+1 in week s−1, so the
+// crowded tails are exactly the seats whose last week was DIFFERENT in kind:
+// offset 4 (day-6 tail) was last week's day-7 tail — it stood in the line —
+// and offset 5 (day-7 tail) was last week's head seat, which is that week's
+// ARC face (arcForWeek rides offset 0): the bulletin carried its name. The
+// head-two seats cannot remember honestly as a new beat: offset 0's week is
+// the arc's drama (#1983), offset 1's return is the thread's payoff (#2003),
+// and offsets 2-3 were window seats last week too — nothing changed kind.
+// Seed 0 is campaign week 1: no previous week walked, so it remembers nothing.
+export const memoryKind = (seed, regIdx) => {
+    if (seed < 1) return null
+    const prev = (((regIdx - (seed - 1)) % REGULARS.length) + REGULARS.length) % REGULARS.length
+    return prev === 5 ? 'line' : prev === 0 ? 'wall' : null
+}
 
 // #1983 THE ARC — one regular per week turns wanted, Jorji-style. In the
 // original the neighborhood is not safe: a familiar face can land on the
@@ -624,7 +646,16 @@ function regularApplicant(c, rnd, date, dayRules, day, used, seed, n, aged = fal
         // seat's first walk-up lands on a return day, so one shift carries
         // both a "YOU AGAIN." and a fresh introduction.
         a.person.recall = null // #1982 a first walk-up has no memory to ring
-        a.person.say = [c.lines.greet, c.lines.hook]
+        // #2104 THE WEEK THAT REMEMBERS: the crowded tails greet a week the
+        // guard did not see — but THEY were here for it. The memory kind is
+        // derived from the adjacency law (memoryKind), never from rnd; the
+        // person carries it structurally (`remember`), like #1982's `recall`,
+        // so the truth is the visit law, not the words. The hook still rides
+        // (#2003 keeps its thread — tail topics stay the excused once-a-week
+        // class); the bubble gains its third row, the height #2003 opened.
+        const mem = memoryKind(seed, regIdx)
+        a.person.remember = mem
+        a.person.say = mem ? [c.lines.greet, c.remember[mem], c.lines.hook] : [c.lines.greet, c.lines.hook]
     }
     // #2080 THE AGED PHOTO WEARS A NEIGHBOUR'S FACE — once a week the
     // #1938 trap rides a familiar face, not a stranger: the day-7 returning

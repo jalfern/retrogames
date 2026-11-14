@@ -26,7 +26,7 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt, dshow, MON, FEATURES, stampLines, portraitDiffs } from '../src/games/PapersPleaseMin/rules.js'
-import { genWeek, genDay, viewOf, CITY2C, COUNTRIES, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, accFor, mutterFor, MUTTERS, VISIT_WINDOW, WALL_POOL, wallNameAt, weekWallNames, weekDecoyCount, crowdedDay, repChapter, turnLineFor, againLineFor, TURN_CANONICAL, trapSchedule, day7Demote, neighbourTrapWeek } from '../src/games/PapersPleaseMin/gen.js'
+import { genWeek, genDay, viewOf, CITY2C, COUNTRIES, TRAPS, GREY, REGULARS, arcForWeek, firstVisitDay, memoryKind, accFor, mutterFor, MUTTERS, VISIT_WINDOW, WALL_POOL, wallNameAt, weekWallNames, weekDecoyCount, crowdedDay, repChapter, turnLineFor, againLineFor, TURN_CANONICAL, trapSchedule, day7Demote, neighbourTrapWeek } from '../src/games/PapersPleaseMin/gen.js'
 import { CFG, newRun, step, tick, stateHash, current, autopilot, dayTicks, gameClock, settle, rentDue, weekCharges, monthTurn, isMoneyDeath } from '../src/games/PapersPleaseMin/sim.js'
 import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, CLOCK, SLIP, RENT, PAYFX, ID, PHOTO, BUBBLE, BUBBLE_TAIL, EVID, SETTLE, QUOTE, RECOGNITION, QUEUE, ASIDE, CROWD_NOTE, ARC_MUG, ARC_HL, SEIZE, DRAG, wallFit, ruleLines, bulletinRows } from '../src/games/PapersPleaseMin/layout.js'
 
@@ -534,6 +534,7 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
     // seed:regular, so the payoff must follow the plant in the SAME week.
     const hooked = new Set()
     const paid = new Set()
+    const weekBy = new Map() // #2104: last week's walk is the ledger memories are checked against
     for (const seed of SEEDS) {
         const w = genWeek(seed)
         const arc = arcForWeek(seed)
@@ -612,8 +613,18 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
                     ok(say.length === 2 && say[0] === 'YOU AGAIN.' && say[1] === turnLineFor(c, seed) && /\.\.\./.test(say[1]),
                         `seed ${seed} day ${day.n}: the turn lost its canonical pair — ${JSON.stringify(say)}`)
                 } else if (day.n === firstVisitDay(seed, REGULARS.findIndex((k) => k.id === c.id))) {
-                    ok(say.length === 2 && say[0] === c.lines.greet && say[1] === c.lines.hook,
-                        `seed ${seed} day ${day.n}: ${c.id}'s first walk-up forgot its greeting thread — ${JSON.stringify(say)}`)
+                    // #2104 THE WEEK THAT REMEMBERS: the crowded tails (offsets
+                    // 4, 5 — the only seats whose LAST week was a different kind
+                    // of week) greet with a memory between hello and hook.
+                    const mem0 = memoryKind(seed, REGULARS.findIndex((k) => k.id === c.id))
+                    if (mem0) {
+                        ok(say.length === 3 && say[0] === c.lines.greet && say[1] === c.remember[mem0] && say[2] === c.lines.hook &&
+                           a.person.remember === mem0,
+                            `seed ${seed} day ${day.n}: ${c.id}'s crowded-tail walk-up forgot its memory — ${JSON.stringify(say)} (tag ${a.person.remember})`)
+                    } else {
+                        ok(say.length === 2 && say[0] === c.lines.greet && say[1] === c.lines.hook && a.person.remember == null,
+                            `seed ${seed} day ${day.n}: ${c.id}'s first walk-up forgot its greeting thread — ${JSON.stringify(say)}`)
+                    }
                     hooked.add(`${seed}:${c.id}`)
                 } else {
                     ok(say.length === 3 && say[0] === 'YOU AGAIN.' && say[1] === againLineFor(c, seed) && say[2] === c.lines.follow,
@@ -657,6 +668,44 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
         }
         const back = Object.entries(byCast).filter(([, n]) => n >= 2)
         ok(back.length === 2, `seed ${seed}: ${back.length} seats came back twice — exactly the window head two (s, s+1) return`)
+        // #2104 THE WEEK THAT REMEMBERS — the ADJACENCY TRUTH. A memory is a
+        // claim about the PREVIOUS seed's walk, so the pin is that walk itself,
+        // read from genWeek(seed−1): the day-6 tail ('line') must have stood on
+        // last week's day 7, and the day-7 tail ('wall') must be last week's
+        // ARC face — named by arcForWeek(seed−1), walking days 2 and 6. A
+        // memory of a week that never walked is a fabricated past, and a face
+        // that met the wall last week claiming only the line (or vice versa)
+        // is the rotation misread. Seed 0 is campaign week 1: no last week
+        // exists, so the whole cast stays unremembering and every fixture
+        // that predates the beat replays byte-identical.
+        weekBy.set(seed, w)
+        if (seed === 0) {
+            for (const day of w.days) for (const a of day.queue)
+                ok(a.person.remember == null, `seed 0 day ${day.n}: week 1 remembers a week that never happened`)
+        } else {
+            const wp = weekBy.get(seed - 1)
+            ok(!!wp, `seed ${seed}: no previous week to check its memories against`)
+            for (const [dn, kind] of [[6, 'line'], [7, 'wall']]) {
+                const tail = w.days[dn - 1].queue.filter((a) => a.person.regular)[1]
+                const tid = tail.person.regular
+                ok(tail.person.remember === kind,
+                    `seed ${seed} day ${dn}: the tail seat claims "${tail.person.remember}", the rotation says ${kind}`)
+                const memLine = kind === 'line' ? REGULARS.find((c) => c.id === tid).remember.line : REGULARS.find((c) => c.id === tid).remember.wall
+                ok(Array.isArray(tail.person.say) && tail.person.say.length === 3 && tail.person.say[1] === memLine,
+                    `seed ${seed} day ${dn}: the tail's memory line and its kind disagree — ${JSON.stringify(tail.person.say)}`)
+                if (kind === 'line') {
+                    ok(wp.days[6].queue.some((a) => a.person.regular === tid),
+                        `seed ${seed}: day 6's tail says it stood in line last week — but seat ${tid} never walked seed ${seed - 1}'s day 7`)
+                    ok(!wp.days[1].queue.some((a) => a.person.regular === tid) && !wp.days[5].queue.some((a) => a.person.regular === tid),
+                        `seed ${seed}: day 6's tail remembers the line, but last week it rode the head — the rotation is not adjacent`)
+                } else {
+                    ok(arcForWeek(seed - 1).id === tid,
+                        `seed ${seed}: day 7's tail remembers the wall — but the wall did not call ${tid} in week ${seed - 1}`)
+                    ok(wp.days[1].queue.some((a) => a.person.regular === tid) && wp.days[5].queue.some((a) => a.person.regular === tid),
+                        `seed ${seed}: day 7's tail says the wall knew it last week — but ${tid} did not walk both days of week ${seed - 1}`)
+                }
+            }
+        }
     }
     ok(appearances >= SEEDS.length * 8, `only ${appearances} regular appearances across ${SEEDS.length} weeks — the injection is theatre`)
     ok(seatsWalked.size === REGULARS.length, `${seatsWalked.size}/${REGULARS.length} cast seats ever walked across the sweep — a seat nobody meets is dead letter`)
@@ -667,9 +716,9 @@ section('THE LINE HAS REGULARS (#1979) — authored faces that come back')
     // and every paid-off topic was planted in the same week. An arc face's
     // hook is the one unpaid thread: its return belonged to the wall, not
     // to breakfast.
-    const allLines = REGULARS.flatMap((c) => [c.lines.greet, c.lines.hook, c.lines.again, c.lines.follow])
-    ok(allLines.length === REGULARS.length * 4 && new Set(allLines).size === allLines.length,
-        'the cast threads repeat a sentence — 24 authored lines, 24 different voices required')
+    const allLines = REGULARS.flatMap((c) => [c.lines.greet, c.lines.hook, c.lines.again, c.lines.follow, c.remember.line, c.remember.wall])
+    ok(allLines.length === REGULARS.length * 6 && new Set(allLines).size === allLines.length,
+        'the cast threads repeat a sentence — 36 authored lines, 36 different voices required')
     ok([...paid].every((k) => hooked.has(k)), 'a payoff was spoken for a topic never planted — a fabricated memory')
     // A planted topic goes unpaid only two honest ways: its face TURNED (the
     // arc return belongs to the wall, not to breakfast) or its seat walks ONCE
@@ -1448,7 +1497,7 @@ section('THE WALL FITS THE BOOTH (#410) — nothing hides, nothing is postage')
     // #1988 the REPERTOIRE pool joins the fit law: every authored line the
     // cast can carry — threads, canonical pair, chapter alternates — fits the
     // field it will ever print into at 10px monospace.
-    for (const ln of [...REGULARS.flatMap((c) => [c.lines.greet, c.lines.hook, c.lines.again, c.lines.follow, c.turnAlt, c.againAlt]), 'YOU AGAIN.', TURN_CANONICAL])
+    for (const ln of [...REGULARS.flatMap((c) => [c.lines.greet, c.lines.hook, c.lines.again, c.lines.follow, c.turnAlt, c.againAlt, c.remember.line, c.remember.wall]), 'YOU AGAIN.', TURN_CANONICAL])
         ok(ln.length * 10 * CHAR <= BUBBLE.w - 14, `speech line "${ln}" overflows the bubble (${ln.length * 10 * CHAR}px in ${BUBBLE.w - 14}px)`)
     // and the theoretical worst day the generator is allowed to build: the
     // full 8-rule sheet, four countries, five wanted names (#410: the old
@@ -2152,9 +2201,11 @@ if (MUT) {
     //     booth only ever says the canonical pair — six neighbors, one voice.
     //     Verdicts stay fair (say was never evidence); the speech-shape and
     //     distinct-lines witnesses in REGULARS are what kill it here.
-    //     (#2003 re-anchors it: the greeting beat is a pair now.)
+    //     (#2003 re-anchors it: the greeting beat is a pair now. #2104
+    //     re-anchors again: the greeting is a ternary — tail seats add a
+    //     memory row — and flattening it back to null is the same mutance.)
     await tryMut('personal speech flattened (first walk-ups go mute)',
-        mutMod('gen.js', 'a.person.say = [c.lines.greet, c.lines.hook]', 'a.person.say = null', 'm34'),
+        mutMod('gen.js', 'a.person.say = mem ? [c.lines.greet, c.remember[mem], c.lines.hook] : [c.lines.greet, c.lines.hook]', 'a.person.say = null', 'm34'),
         (m) => {
             for (const seed of SEEDS) {
                 for (const day of m.gen.genWeek(seed).days) {
@@ -2195,7 +2246,7 @@ if (MUT) {
     //     intact to a mute-check. Only the greeting-shape pin (say[1]===hook)
     //     sees the swap.
     await tryMut('threads swapped (greetings speak their payoff)',
-        mutMod('gen.js', 'a.person.say = [c.lines.greet, c.lines.hook]', 'a.person.say = [c.lines.greet, c.lines.follow]', 'm36'),
+        mutMod('gen.js', 'a.person.say = mem ? [c.lines.greet, c.remember[mem], c.lines.hook] : [c.lines.greet, c.lines.hook]', 'a.person.say = mem ? [c.lines.greet, c.remember[mem], c.lines.follow] : [c.lines.greet, c.lines.follow]', 'm36'),
         (m) => {
             for (const seed of SEEDS) {
                 for (const day of m.gen.genWeek(seed).days) {
@@ -2366,6 +2417,50 @@ if (MUT) {
                     const regs = w.days[dn - 1].queue.filter((a) => a.person.regular).map((a) => a.person.regular)
                     if (regs[0] !== m.gen.REGULARS[(seed + offHead) % m.gen.REGULARS.length].id ||
                         regs[1] !== m.gen.REGULARS[(seed + offTail) % m.gen.REGULARS.length].id) return false
+                }
+            }
+            return true
+        })
+
+    // #2104 THE WEEK THAT REMEMBERS adds two: m67 never lets a memory fire —
+    // the tails greet flat like window seats and the campaign loses its past
+    // (the tail speech-shape bites: a seed ≥ 1 tail without a memory row is a
+    // stranger where an old face stands). m68 swaps a memory's TEXT while the
+    // kind tag rides on — the face points at the wrong past; the witness
+    // grades the spoken text against the PREVIOUS week's actual walk, so a
+    // swapped pair cannot hide behind its own (mutated) authoring table.
+    await tryMut('the week never remembers (tail memories never fire)',
+        mutMod('gen.js', 'a.person.say = mem ? [c.lines.greet, c.remember[mem], c.lines.hook] : [c.lines.greet, c.lines.hook]', 'a.person.say = [c.lines.greet, c.lines.hook]', 'm67'),
+        (m) => {
+            for (const seed of SEEDS) {
+                if (seed < 1) continue
+                const w = m.gen.genWeek(seed)
+                for (const dn of [6, 7]) {
+                    const tail = w.days[dn - 1].queue.filter((a) => a.person.regular)[1]
+                    if (!tail || !Array.isArray(tail.person.say) || tail.person.say.length !== 3) return false
+                }
+            }
+            return true
+        })
+    await tryMut('a memory text is swapped (line claims the wall)',
+        mutMod('gen.js', "remember: { line: 'I STOOD HERE LAST WEEK.', wall: 'THE WALL ASKED FOR ME.' },", "remember: { line: 'THE WALL ASKED FOR ME.', wall: 'I STOOD HERE LAST WEEK.' },", 'm68'),
+        (m) => {
+            for (const seed of SEEDS) {
+                if (seed < 1) continue
+                const w = m.gen.genWeek(seed)
+                const wp = m.gen.genWeek(seed - 1)
+                for (const [dn, kind] of [[6, 'line'], [7, 'wall']]) {
+                    const tail = w.days[dn - 1].queue.filter((a) => a.person.regular)[1]
+                    if (!tail || !tail.person.say) return false
+                    const id = tail.person.regular
+                    if (id === 'grubak') {
+                        // Grubak's authored pair, verbatim from the untouched
+                        // source — the ground truth the swapped table cannot move.
+                        const walkedLine = wp.days[6].queue.some((a) => a.person.regular === 'grubak')
+                        const walkedWall = m.gen.arcForWeek(seed - 1).id === 'grubak'
+                        if (walkedLine && kind === 'line' && tail.person.say[1] !== 'I STOOD HERE LAST WEEK.') return false
+                        if (walkedWall && kind === 'wall' && tail.person.say[1] !== 'THE WALL ASKED FOR ME.') return false
+                    }
                 }
             }
             return true
