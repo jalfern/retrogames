@@ -134,7 +134,7 @@ export async function relabelSession(key, opts = {}) {
         let j = null
         try { j = await res.json() } catch { /* non-json answer is itself the finding */ }
         if (!res.ok) return { ok: false, reason: (j && j.err) || `http ${res.status}` }
-        return { ok: true, key: (j && j.key) || key, seat: (j && j.seat) ?? seat }
+        return { ok: true, key: (j && j.key) || key, seat: (j && j.seat) ?? seat, relabeledAt: (j && j.relabeledAt) || null }
     } catch (e) {
         return { ok: false, reason: `store unreachable: ${String((e && e.message) || e)}` }
     }

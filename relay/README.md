@@ -76,17 +76,31 @@ after 1 h).
   Every admin read tool sends it from the environment:
   `JON_KEY=<secret> npm run sessions`, `JON_KEY=… npm run plaicraft:evidence`,
   `JON_KEY=… npm run plaicraft:clap -- --key=<sessionKey>`.
-- **RELABEL WRITE (#2093 item 1):** `PATCH /sessions/<key>` rides the SAME
-  door as the reads (store edits are exactly as private as store reads).
-  It performs the store's ONE permitted write-after-upload — repairing seat
+- **WRITE-KEY SEPARATION (#2142 audit finding 1b):** `PATCH /sessions/<key>`
+  authenticates against a SEPARATE secret `SESSION_WRITE_KEY` when deployed
+  (`wrangler secret put SESSION_WRITE_KEY`), so the read key can be handed to
+  lanes (#2157) without ever opening the store's only write. While the secret
+  is NOT yet deployed, PATCH falls back to `JON_KEY` (status quo);
+  `/status writeKey:true|false` makes the deploy state detectable — set the
+  secret BEFORE #2157 ships JON_KEY in a lane-readable file, but AFTER the
+  #2093 one-off relabel has run (once the secret is on, JON_KEY alone cannot
+  relabel). The tool prefers
+  it: `SESSION_WRITE_KEY=<secret> npm run sessions -- relabel …`.
+- **RELABEL WRITE (#2093 item 1, audited by #2142):** `PATCH /sessions/<key>`
+  performs the store's ONE permitted write-after-upload — repairing seat
   provenance `model`→`human` (auto-record only captures human starts, so the
   three 2026-11-11 iPhone takes that store seat 0 as `model` are honest human
   evidence). The operation is FIXED (`applySessionRelabel`, core.js): body is
-  exactly `{seat}`; the reverse is refused (provenance cannot be laundered);
-  the stale `modelId` drops; every byte outside the seat stays byte-identical.
-  The tool: `JON_KEY=<secret> npm run sessions -- relabel <key> [<key>…]
-  [--seat N]` — the #2093 one-off:
-  `JON_KEY=<secret> npm run sessions -- relabel gauntlet/2026-11-11-seed15-8fdbfeef08.json gauntlet/2026-11-11-seed59-182a1f4459.json gauntlet/2026-11-11-seed59-5a9737e569.json`
+  exactly `{seat}`; the reverse is refused; every byte outside the seat stays
+  byte-identical. **model→human is the laundering direction, so the edit
+  leaves a trace IN THE FILE:** the seat becomes
+  `{kind:'human', relabeledFrom:'model', modelId, relabeledAt}` (the old
+  `modelId` is KEPT — evidence of what drove it). Grading (`auditTakeSources`,
+  used by `plaicraft:evidence`) never counts a stamped seat as human evidence:
+  relabeled takes verify and replay but do NOT count toward "Jon plays 3
+  sessions". The tool: `SESSION_WRITE_KEY=<secret> npm run sessions -- relabel
+  <key> [<key>…] [--seat N]` — the #2093 one-off:
+  `SESSION_WRITE_KEY=<secret> npm run sessions -- relabel gauntlet/2026-11-11-seed15-8fdbfeef08.json gauntlet/2026-11-11-seed59-182a1f4459.json gauntlet/2026-11-11-seed59-5a9737e569.json`
 - **Jon's clap session:** play GAUNTLET on the phone with both consent
   switches ON, and three times during the run CLAP sharply and tap RIGHT at
   the same instant (clap + tap together, ~1 s apart, the way the harness

@@ -9,7 +9,7 @@
 // Served at https://retrogames.jalfern.workers.dev/room/<CODE> (wss).
 
 import { DurableObject } from 'cloudflare:workers'
-import { CODE_RE, MAX_MSG, IDLE_MS, RATE_WINDOW, ROOM_CAP_MAX, relay, validateFeedback, buildFeedbackIssue, corsHeaders, FB_SHOT_PLACEHOLDER, screenshotMarkdown, uploadScreenshot, SES_MAX_BODY, validateSessionEnvelope, sessionKey, sessionMeta, sessionRow, SES_READ_HEADER, sessionReadOk, SES_KEY_RE, validateSessionPatch, applySessionRelabel } from './core.js'
+import { CODE_RE, MAX_MSG, IDLE_MS, RATE_WINDOW, ROOM_CAP_MAX, relay, validateFeedback, buildFeedbackIssue, corsHeaders, FB_SHOT_PLACEHOLDER, screenshotMarkdown, uploadScreenshot, SES_MAX_BODY, validateSessionEnvelope, sessionKey, sessionMeta, sessionRow, SES_READ_HEADER, sessionReadOk, sessionWriteOk, SES_KEY_RE, validateSessionPatch, applySessionRelabel } from './core.js'
 
 const GH_API = 'https://api.github.com'
 
@@ -117,6 +117,16 @@ function readDenied(req, env, origin) {
     return json({ ok: false, err: env && env.JON_KEY ? 'unauthorized' : 'read lock not configured' }, origin, 401)
 }
 
+// WRITE DOOR (#2142 audit finding 1b) — the relabel PATCH authenticates against
+// SESSION_WRITE_KEY when deployed, so the lanes' read key (#2157) can never
+// open it. With no write key deployed it falls back to JON_KEY (status quo);
+// /status `writeKey` says which side of the deploy you're on. Fail-closed.
+function writeDenied(req, env, origin) {
+    if (sessionWriteOk(req && req.headers.get(SES_READ_HEADER), env && env.SESSION_WRITE_KEY, env && env.JON_KEY)) return null
+    const armed = (env && env.SESSION_WRITE_KEY) || (env && env.JON_KEY)
+    return json({ ok: false, err: armed ? 'unauthorized' : 'write lock not configured' }, origin, 401)
+}
+
 async function handleSessionList(req, env, origin) {
     if (!env || !env.SESSIONS) return json({ ok: false, err: 'store not configured' }, origin, 503)
     const d = readDenied(req, env, origin)
@@ -144,15 +154,18 @@ async function handleSessionGet(req, env, origin, pathname) {
 
 // RELABEL WRITE (#2093 item 1) — the store tool for repairing provenance on
 // stored takes (the three iPhone files whose seat 0 says 'model' although auto-
-// record only captures human starts). JON_KEY-gated by the same door as the
-// reads; the operation is fixed and auditable — core.applySessionRelabel
-// refuses everything except model→human on one seat, drops the stale modelId,
-// and returns a NEW object so a stored file is never half-edited. Metadata is
-// rebuilt with sessionMeta and the original uploadedAt/player survive; the
-// response names the exact change so the run is auditable from the answer.
+// record only captures human starts). Gated by the WRITE door (#2142 audit:
+// SESSION_WRITE_KEY when deployed — the lanes' read key edits nothing); the
+// operation is fixed and auditable — core.applySessionRelabel refuses
+// everything except model→human on one seat, STAMPS the edit into the stored
+// file (relabeledFrom, kept modelId, relabeledAt — the trace that makes
+// laundering impossible), and returns a NEW object so a stored file is never
+// half-edited. Metadata is rebuilt with sessionMeta and the original
+// uploadedAt/player survive; the response names the exact change so the run is
+// auditable from the answer.
 async function handleSessionPatch(req, env, origin, pathname) {
     if (!env || !env.SESSIONS) return json({ ok: false, err: 'store not configured' }, origin, 503)
-    const d = readDenied(req, env, origin)
+    const d = writeDenied(req, env, origin)
     if (d) return d
     const key = decodeURIComponent(pathname.slice('/sessions/'.length))
     if (!SES_KEY_RE.test(key)) return json({ ok: false, err: 'bad key' }, origin, 400)
@@ -166,14 +179,14 @@ async function handleSessionPatch(req, env, origin, pathname) {
     if (!obj) return json({ ok: false, err: 'not found' }, origin, 404)
     let rec
     try { rec = JSON.parse(await new Response(obj.body).text()) } catch { return json({ ok: false, err: 'stored file unreadable' }, origin, 500) }
-    const p = applySessionRelabel(rec, v.seat)
+    const p = applySessionRelabel(rec, v.seat, { now: Date.now() })
     if (!p.ok) return json({ ok: false, err: p.err }, origin, 422)
     const head = await env.SESSIONS.head(key)
     const meta = (head && head.customMetadata) || {}
     const fresh = sessionMeta(p.rec, meta.player || 'player')
     if (meta.uploadedAt) fresh.uploadedAt = meta.uploadedAt
     await env.SESSIONS.put(key, JSON.stringify(p.rec), { httpMetadata: { contentType: 'application/json' }, customMetadata: fresh })
-    return json({ ok: true, key, seat: v.seat, from: 'model', to: 'human' }, origin, 200)
+    return json({ ok: true, key, seat: v.seat, from: 'model', to: 'human', relabeledAt: p.stamped.relabeledAt || null }, origin, 200)
 }
 
 export class Registry extends DurableObject {
@@ -346,7 +359,7 @@ export default {
             // deployed" must be checkable with one curl, without leaking the key.
             const feedback = !!(env.GITHUB_TOKEN && env.GH_REPO)
             // sessions (#1711): R2 store bound? Clients hide upload affordances until true.
-            return json({ ok: true, service: 'retrogames-relay', rooms, feedback, jonKey: !!env.JON_KEY, sessions: !!(env.SESSIONS && env.SESSIONS.put) }, origin, 200)
+            return json({ ok: true, service: 'retrogames-relay', rooms, feedback, jonKey: !!env.JON_KEY, writeKey: !!env.SESSION_WRITE_KEY, sessions: !!(env.SESSIONS && env.SESSIONS.put) }, origin, 200)
         }
         const m = url.pathname.match(/^\/room\/([A-Za-z0-9]{4})$/)
         if (!m) return new Response('use /room/CODE', { status: 400 })

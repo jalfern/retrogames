@@ -41,12 +41,15 @@ const MUTANT_FILE = path.join(RELAY_DIR, '.relaycheck-mutant.mjs')
 // The exact door inside handleSessionUpload (the same text exists in
 // handleFeedback — anchor on the validate call above it to hit only sessions).
 const DOOR = "    const v = validateSessionEnvelope(body)\n    if (!v.ok) return json({ ok: false, err: v.err }, origin, 400)"
-// The identical two-line door in handleSessionList, handleSessionGet AND
-// handleSessionPatch (#2093 item 1: relabel writes ride the same lockdown —
-// stripping it opens reads AND writes, and both mutant gates go red).
+// The identical two-line door in handleSessionList and handleSessionGet
+// (#2093 item 1: relabel writes rode the same lockdown; #2142 split the door
+// — stripping the readlock here must open reads AND writes, so WRITE_DOOR is
+// stripped in the same mutant run and all gates go red together).
 const READ_DOOR = "    const d = readDenied(req, env, origin)\n    if (d) return d"
+const WRITE_DOOR = "    const d = writeDenied(req, env, origin)\n    if (d) return d"
 
 export const SIM_READ_KEY = 'test-jon-key'
+export const SIM_WRITE_KEY = 'test-write-key'
 
 let hooksDone = false
 const ensureHooks = () => {
@@ -97,6 +100,8 @@ async function loadWorker({ mutate = false, mutateReadlock = false } = {}) {
     if (mutateReadlock) {
         if (!src.includes(READ_DOOR)) throw new Error('relaysim: read-lock door anchor not found in worker.js — update relaysim READ_DOOR to match')
         src = src.split(READ_DOOR).join('    // MUTANT: read-lock door stripped')
+        if (!src.includes(WRITE_DOOR)) throw new Error('relaysim: write-lock door anchor not found in worker.js — update relaysim WRITE_DOOR to match')
+        src = src.split(WRITE_DOOR).join('    // MUTANT: write-lock door stripped')
     }
     fs.writeFileSync(MUTANT_FILE, src)
     try {
@@ -106,7 +111,7 @@ async function loadWorker({ mutate = false, mutateReadlock = false } = {}) {
     }
 }
 
-export async function startRelaySim({ bind = true, registry = 'ok', mutate = false, mutateReadlock = false, readKey = SIM_READ_KEY } = {}) {
+export async function startRelaySim({ bind = true, registry = 'ok', mutate = false, mutateReadlock = false, readKey = SIM_READ_KEY, writeKey = null } = {}) {
     const worker = await loadWorker({ mutate, mutateReadlock })
     const bucket = bind ? mkR2() : null
     const env = {
@@ -116,8 +121,11 @@ export async function startRelaySim({ bind = true, registry = 'ok', mutate = fal
             : { idFromName: (n) => n, get: () => ({ count: async () => 0 }) },
         // Jon's deploy carries JON_KEY (feedback already uses it) — the read
         // lockdown pins the deployed shape. Pass readKey:null for the
-        // fail-closed pre-deploy worker.
+        // fail-closed pre-deploy worker. SESSION_WRITE_KEY (#2142 separation)
+        // is deliberately UNset by default — the pins see the status-quo
+        // fallback (JON_KEY opens writes); pass writeKey for the separated door.
         JON_KEY: readKey || undefined,
+        SESSION_WRITE_KEY: writeKey || undefined,
         // GITHUB_TOKEN/GH_REPO deliberately unset → /status feedback:false (the
         // honest "not configured" half of the capability flag).
     }
@@ -146,6 +154,9 @@ export async function startRelaySim({ bind = true, registry = 'ok', mutate = fal
         base: `http://127.0.0.1:${server.address().port}`,
         bucket,
         readHeaders: readKey ? { 'x-session-key': readKey } : {},
+        writeHeaders: { 'x-session-key': writeKey || readKey || '' },
+        writeKey: writeKey || readKey || null,
+        readKey: readKey || null,
         close() { server.closeAllConnections(); server.close() },
     }
 }
