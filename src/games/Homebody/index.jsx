@@ -576,7 +576,11 @@ const HomebodyGame = () => {
             // performance.now because the world clock it announces is frozen.
             if (live && g.speed === 0 && !g.build) {
                 ctx.fillStyle = 'rgba(10,14,24,0.30)'
-                ctx.fillRect(0, 0, W, H)
+                // #2275: the veil announces a frozen world on the LOT, but it painted
+                // 0,0,W,H AFTER drawPanel — washing the panel's gold speed pip (the very
+                // gear that says "you are paused") below legibility, and the top bar too.
+                // Keep it to the scene column: left of the panel, below the top bar.
+                ctx.fillRect(0, LOT_Y - 4, PANEL_X, H - (LOT_Y - 4))
                 const pu = 0.5 + 0.5 * Math.sin(performance.now() / 1000 * 3)
                 ctx.globalAlpha = 0.38 + 0.27 * pu
                 ctx.fillStyle = '#eef3ff'
