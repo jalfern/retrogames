@@ -1186,7 +1186,8 @@ section('CHOREOGRAPHY (#2154): nearest resident, contested pays closer, three-wa
     check('a live contest tells the neighbourhood — 3 beats in 17 s, spaced ≥ the throttle',
         tells.length === 3 && cdOk, `tells=${tells.length}`)
     check('the tell alternates its two wordings',
-        TRI_LINES.includes(tells[0].line) && TRI_LINES.includes(tells[1].line) && tells[0].line !== tells[1].line && tells[2].line === tells[0].line)
+        tells.length >= 2 && TRI_LINES.includes(tells[0].line) && TRI_LINES.includes(tells[1].line) &&
+        tells[0].line !== tells[1].line && (tells.length < 3 || tells[2].line === tells[0].line))
 
     // Determinism through a scripted contest, and the throttle rides the hash.
     const contest = (seed) => {
