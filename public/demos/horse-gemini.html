@@ -1,0 +1,1247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>SUNSTRIDE — low-poly 3D mustang in WebGL2</title>
+<link rel="icon" href="data:,">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #140c14; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  #hud {
+    position: fixed; left: 14px; bottom: 12px; z-index: 2; pointer-events: none;
+    font: 11px/1.7 ui-monospace, Menlo, monospace; letter-spacing: .13em;
+    color: rgba(244,228,208,.76); text-shadow: 0 1px 4px rgba(0,0,0,.88);
+    text-transform: uppercase;
+    max-width: calc(100vw - 190px);
+  }
+  #hud b { color: #ffb35c; font-weight: 700; }
+  @media (max-width: 560px) {
+    #hud { font-size: 10px; letter-spacing: .08em; }
+    #hud .hints { display: none; }
+  }
+  #audiohint {
+    position: fixed; top: 12px; right: 14px; z-index: 2;
+    background: rgba(18,11,16,.62); border: 1px solid rgba(255,179,92,.32); border-radius: 8px;
+    padding: 7px 12px; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    font: 11px/1.5 ui-monospace, Menlo, monospace; letter-spacing: .14em; text-transform: uppercase;
+    color: rgba(255,222,182,.9); text-shadow: 0 1px 3px rgba(0,0,0,.85); cursor: pointer;
+    user-select: none; -webkit-user-select: none;
+  }
+  #audiohint.off { color: rgba(190,178,170,.48); border-color: rgba(160,150,145,.2); }
+  #attract {
+    position: fixed; inset: 0; z-index: 3; display: grid; place-items: center;
+    pointer-events: none; text-align: center;
+    background: radial-gradient(115% 88% at 50% 45%, rgba(20,12,20,0) 0%, rgba(14,8,14,.58) 100%);
+    transition: opacity .5s ease;
+  }
+  #attract.gone { opacity: 0; }
+  #attract h1 {
+    margin: 0; font: 900 clamp(32px, 6.6vw, 62px)/1 ui-monospace, Menlo, monospace;
+    letter-spacing: .16em; color: #fff3e2;
+    text-shadow: 0 2px 28px rgba(255,148,66,.45), 0 2px 6px rgba(0,0,0,.8);
+  }
+  #attract h1 i { font-style: normal; color: #ffb35c; }
+  #attract .sub {
+    margin-top: 14px; font: 11px/1.8 ui-monospace, Menlo, monospace; letter-spacing: .28em;
+    text-transform: uppercase; color: rgba(244,224,200,.78);
+  }
+  #attract .msg {
+    margin-top: 20px; height: 1.6em; font: 12px/1.6 ui-monospace, Menlo, monospace;
+    letter-spacing: .3em; text-transform: uppercase; color: #ffd089;
+    transition: opacity .35s;
+  }
+  #attract .start {
+    margin-top: 28px; font: 11px/1 ui-monospace, Menlo, monospace; letter-spacing: .38em;
+    text-transform: uppercase; color: #ffb35c; animation: blink 1.6s infinite;
+  }
+  @keyframes blink { 0%,100% { opacity: 1 } 50% { opacity: .3 } }
+  #fatal {
+    position: fixed; inset: 0; display: none; place-items: center; z-index: 5;
+    font: 14px/1.6 ui-monospace, Menlo, monospace; color: #f5e6d3; background: #140c14;
+    text-align: center; padding: 2em; white-space: pre;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"><b>SUNSTRIDE</b><span class="hints"> · procedural 3D mustang · drag to orbit · ↑↓ tempo · SPACE study · 1–4 views ·</span> <span id="telemetry"></span></div>
+<div id="audiohint">hooves on</div>
+<div id="attract">
+  <div>
+    <h1>SUN<i>STRIDE</i></h1>
+    <div class="sub">low-poly 3D mustang · four-beat transverse gallop · zero hoof slip</div>
+    <div class="msg" id="amsg">procedural anatomy · flat-faceted WebGL2</div>
+    <div class="start">▶ tap or press any key</div>
+  </div>
+</div>
+<div id="fatal"></div>
+<script>
+'use strict';
+
+/* ============================================================================
+ * SUNSTRIDE (horse-gemini) — Engine Core & Procedural Equine Mesh (WebGL2)
+ * Zero external libraries, zero imported meshes, zero image/audio assets.
+ * Coordinate frame: +X forward (direction of travel), +Y up (ground y = 0),
+ * +Z horse's right flank (right-handed: X x Y = Z).
+ * ========================================================================== */
+
+const qs = new URLSearchParams(location.search);
+const LITE = qs.get('lite') === '1';
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', {
+  antialias: !LITE,
+  alpha: false,
+  depth: true,
+  stencil: true,
+  preserveDrawingBuffer: true,
+});
+if (!gl) {
+  const f = document.getElementById('fatal');
+  f.style.display = 'grid';
+  f.textContent = 'WebGL2 required.\nThis demo needs a WebGL2-capable browser.';
+  throw new Error('WebGL2 unavailable');
+}
+
+/* ---------------- Linear algebra & vector helpers ---------------- */
+
+const TAU = Math.PI * 2;
+const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+function v3(x = 0, y = 0, z = 0) { return [x, y, z]; }
+function add3(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
+function sub3(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+function scale3(a, s) { return [a[0] * s, a[1] * s, a[2] * s]; }
+function mix3(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
+function dot3(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function cross3(a, b) {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+function norm3(a) {
+  const l = Math.hypot(a[0], a[1], a[2]) || 1;
+  return [a[0] / l, a[1] / l, a[2] / l];
+}
+
+function mat4Perspective(fovY, aspect, near, far) {
+  const f = 1 / Math.tan(fovY * 0.5);
+  const nf = 1 / (near - far);
+  const m = new Float32Array(16);
+  m[0] = f / aspect;
+  m[5] = f;
+  m[10] = (far + near) * nf;
+  m[11] = -1;
+  m[14] = 2 * far * near * nf;
+  return m;
+}
+
+function mat4LookAt(eye, target, up) {
+  const z = norm3(sub3(eye, target));
+  const x = norm3(cross3(up, z));
+  const y = cross3(z, x);
+  const m = new Float32Array(16);
+  m[0] = x[0]; m[4] = x[1]; m[8] = x[2];   m[12] = -dot3(x, eye);
+  m[1] = y[0]; m[5] = y[1]; m[9] = y[2];   m[13] = -dot3(y, eye);
+  m[2] = z[0]; m[6] = z[1]; m[10] = z[2];  m[14] = -dot3(z, eye);
+  m[3] = 0;    m[7] = 0;    m[11] = 0;     m[15] = 1;
+  return m;
+}
+
+function mat4Mul(a, b) {
+  const o = new Float32Array(16);
+  for (let c = 0; c < 4; c++) {
+    const b0 = b[c * 4], b1 = b[c * 4 + 1], b2 = b[c * 4 + 2], b3 = b[c * 4 + 3];
+    o[c * 4]     = a[0] * b0 + a[4] * b1 + a[8]  * b2 + a[12] * b3;
+    o[c * 4 + 1] = a[1] * b0 + a[5] * b1 + a[9]  * b2 + a[13] * b3;
+    o[c * 4 + 2] = a[2] * b0 + a[6] * b1 + a[10] * b2 + a[14] * b3;
+    o[c * 4 + 3] = a[3] * b0 + a[7] * b1 + a[11] * b2 + a[15] * b3;
+  }
+  return o;
+}
+
+/* ---------------- WebGL2 Shaders ---------------- */
+
+function compileShader(type, src) {
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(sh);
+    gl.deleteShader(sh);
+    throw new Error('Shader compile error: ' + log);
+  }
+  return sh;
+}
+
+function linkProgram(vsSrc, fsSrc) {
+  const p = gl.createProgram();
+  const vs = compileShader(gl.VERTEX_SHADER, vsSrc);
+  const fs = compileShader(gl.FRAGMENT_SHADER, fsSrc);
+  gl.attachShader(p, vs);
+  gl.attachShader(p, fs);
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    throw new Error('Program link error: ' + gl.getProgramInfoLog(p));
+  }
+  return p;
+}
+
+const VS_SKY = `#version 300 es
+out vec2 vUv;
+void main() {
+  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.9999, 1.0);
+}`;
+
+const FS_SKY = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform vec3 uCamFwd;
+uniform vec3 uCamRight;
+uniform vec3 uCamUp;
+uniform float uTanHalfFov;
+uniform float uAspect;
+uniform vec3 uSunDir;
+out vec4 fragColor;
+
+void main() {
+  vec2 ndc = vUv * 2.0 - 1.0;
+  vec3 rd = normalize(uCamFwd + ndc.x * uAspect * uTanHalfFov * uCamRight + ndc.y * uTanHalfFov * uCamUp);
+  float h = clamp(rd.y, -0.25, 1.0);
+  vec3 zenith  = vec3(0.11, 0.13, 0.28);
+  vec3 midSky  = vec3(0.38, 0.24, 0.34);
+  vec3 horizon = vec3(0.95, 0.56, 0.30);
+  vec3 ground  = vec3(0.32, 0.19, 0.13);
+
+  vec3 col = h >= 0.0
+    ? mix(horizon, mix(midSky, zenith, pow(clamp(h * 1.45, 0.0, 1.0), 0.72)), pow(h, 0.48))
+    : mix(horizon * 0.78, ground, clamp(-h * 5.0, 0.0, 1.0));
+
+  float sDot = max(dot(rd, uSunDir), 0.0);
+  col += vec3(1.0, 0.68, 0.32) * pow(sDot, 14.0) * 0.38;
+  col += vec3(1.0, 0.90, 0.68) * smoothstep(0.9982, 0.9995, sDot) * 0.95;
+  fragColor = vec4(pow(clamp(col, 0.0, 1.35), vec3(1.0 / 1.06)), 1.0);
+}`;
+
+const VS_MESH = `#version 300 es
+precision highp float;
+precision highp int;
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNorm;
+layout(location = 2) in vec3 aCol;
+
+uniform mat4 uViewProj;
+uniform vec3 uSunDir;
+uniform int uShadowPass;
+uniform float uShadowGroundY;
+
+out vec3 vPos;
+flat out vec3 vNorm;
+out vec3 vCol;
+
+void main() {
+  if (uShadowPass == 1) {
+    float h = max(0.0, aPos.y - uShadowGroundY);
+    float t = h / max(0.18, uSunDir.y);
+    vec3 sp = vec3(aPos.x - uSunDir.x * t, uShadowGroundY, aPos.z - uSunDir.z * t);
+    vPos = sp;
+    vNorm = vec3(0.0, 1.0, 0.0);
+    vCol = vec3(0.0);
+    gl_Position = uViewProj * vec4(sp, 1.0);
+  } else {
+    vPos = aPos;
+    vNorm = aNorm;
+    vCol = aCol;
+    gl_Position = uViewProj * vec4(aPos, 1.0);
+  }
+}`;
+
+const FS_MESH = `#version 300 es
+precision highp float;
+precision highp int;
+in vec3 vPos;
+flat in vec3 vNorm;
+in vec3 vCol;
+
+uniform vec3 uSunDir;
+uniform vec3 uCamPos;
+uniform vec3 uRefCenter;
+uniform int uShadowPass;
+
+out vec4 fragColor;
+
+void main() {
+  if (uShadowPass == 1) {
+    float distFade = 1.0 - smoothstep(14.0, 42.0, length(vPos.xz - uRefCenter.xz));
+    fragColor = vec4(0.13, 0.07, 0.09, 0.44 * distFade);
+    return;
+  }
+  vec3 N = normalize(vNorm);
+  vec3 V = normalize(uCamPos - vPos);
+  float ndl = max(dot(N, uSunDir), 0.0);
+  float wrap = max(dot(N, uSunDir) * 0.5 + 0.5, 0.0);
+
+  vec3 sunLight = vec3(1.08, 0.84, 0.62) * (ndl * 0.78 + wrap * 0.16);
+  vec3 skyFill  = mix(vec3(0.36, 0.21, 0.15), vec3(0.30, 0.34, 0.52), N.y * 0.5 + 0.5) * 0.58;
+  float rim = pow(1.0 - max(dot(N, V), 0.0), 3.2) * (0.22 + 0.32 * max(dot(-V, uSunDir), 0.0));
+  vec3 rimLight = vec3(1.0, 0.72, 0.42) * rim * clamp(vPos.y * 0.65, 0.1, 1.0);
+
+  vec3 lit = vCol * (sunLight + skyFill) + rimLight * 0.35;
+
+  float camDist = length(vPos - uCamPos);
+  float haze = 1.0 - exp(-max(0.0, camDist - 6.0) * 0.016);
+  vec3 hazeCol = vec3(0.86, 0.53, 0.32);
+  lit = mix(lit, hazeCol, clamp(haze, 0.0, 0.78));
+
+  fragColor = vec4(lit, 1.0);
+}`;
+
+const progSky = linkProgram(VS_SKY, FS_SKY);
+const progMesh = linkProgram(VS_MESH, FS_MESH);
+const vaoEmpty = gl.createVertexArray();
+
+const uSky = {
+  camFwd: gl.getUniformLocation(progSky, 'uCamFwd'),
+  camRight: gl.getUniformLocation(progSky, 'uCamRight'),
+  camUp: gl.getUniformLocation(progSky, 'uCamUp'),
+  tanHalfFov: gl.getUniformLocation(progSky, 'uTanHalfFov'),
+  aspect: gl.getUniformLocation(progSky, 'uAspect'),
+  sunDir: gl.getUniformLocation(progSky, 'uSunDir'),
+};
+const uMesh = {
+  viewProj: gl.getUniformLocation(progMesh, 'uViewProj'),
+  sunDir: gl.getUniformLocation(progMesh, 'uSunDir'),
+  camPos: gl.getUniformLocation(progMesh, 'uCamPos'),
+  refCenter: gl.getUniformLocation(progMesh, 'uRefCenter'),
+  shadowPass: gl.getUniformLocation(progMesh, 'uShadowPass'),
+  shadowGroundY: gl.getUniformLocation(progMesh, 'uShadowGroundY'),
+};
+
+/* ---------------- Dynamic Triangle Stream Buffer ---------------- */
+
+function makeMeshBuffer(maxTris) {
+  const data = new Float32Array(maxTris * 3 * 9);
+  let ptr = 0;
+  const vao = gl.createVertexArray();
+  const vbo = gl.createBuffer();
+  gl.bindVertexArray(vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  gl.bufferData(gl.ARRAY_BUFFER, data.byteLength, gl.DYNAMIC_DRAW);
+  const stride = 9 * 4;
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, stride, 0);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, stride, 12);
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 3, gl.FLOAT, false, stride, 24);
+  gl.bindVertexArray(null);
+
+  return {
+    data,
+    vao,
+    vbo,
+    reset() { ptr = 0; },
+    get vertCount() { return ptr / 9; },
+    get triCount() { return ptr / 27; },
+    tri(a, b, c, colA, colB, colC) {
+      if (ptr + 27 > data.length) return;
+      const e1x = b[0] - a[0], e1y = b[1] - a[1], e1z = b[2] - a[2];
+      const e2x = c[0] - a[0], e2y = c[1] - a[1], e2z = c[2] - a[2];
+      let nx = e1y * e2z - e1z * e2y;
+      let ny = e1z * e2x - e1x * e2z;
+      let nz = e1x * e2y - e1y * e2x;
+      const nl = Math.hypot(nx, ny, nz) || 1;
+      nx /= nl; ny /= nl; nz /= nl;
+      const c1 = colA, c2 = colB || colA, c3 = colC || colA;
+      data[ptr++] = a[0]; data[ptr++] = a[1]; data[ptr++] = a[2];
+      data[ptr++] = nx;   data[ptr++] = ny;   data[ptr++] = nz;
+      data[ptr++] = c1[0]; data[ptr++] = c1[1]; data[ptr++] = c1[2];
+
+      data[ptr++] = b[0]; data[ptr++] = b[1]; data[ptr++] = b[2];
+      data[ptr++] = nx;   data[ptr++] = ny;   data[ptr++] = nz;
+      data[ptr++] = c2[0]; data[ptr++] = c2[1]; data[ptr++] = c2[2];
+
+      data[ptr++] = c[0]; data[ptr++] = c[1]; data[ptr++] = c[2];
+      data[ptr++] = nx;   data[ptr++] = ny;   data[ptr++] = nz;
+      data[ptr++] = c3[0]; data[ptr++] = c3[1]; data[ptr++] = c3[2];
+    },
+    quad(a, b, c, d, col) {
+      this.tri(a, b, c, col);
+      this.tri(a, c, d, col);
+    },
+    uploadAndDraw(mode = gl.TRIANGLES) {
+      const vc = ptr / 9;
+      if (!vc) return;
+      gl.bindVertexArray(vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, data.subarray(0, ptr));
+      gl.drawArrays(mode, 0, vc);
+    },
+  };
+}
+
+const horseBuf = makeMeshBuffer(4096);
+const worldBuf = makeMeshBuffer(8192);
+
+/* ---------------- Procedural Low-Poly Primitive Builders ---------------- */
+
+// Loft a watertight faceted low-poly tube across station rings.
+// Each station: { p: [x,y,z], up: [ux,uy,uz], right: [rx,ry,rz], w, rTop, rBot, topPinch, backSpur, col, topCol }
+function emitLoft(buf, stations, sides, capStart = true, capEnd = true) {
+  const rings = [];
+  for (let si = 0; si < stations.length; si++) {
+    const s = stations[si];
+    const R = s.right, U = s.up, C = s.p;
+    const pts = [];
+    const cols = [];
+    for (let k = 0; k < sides; k++) {
+      const th = (TAU * k) / sides;
+      const ct = Math.cos(th), st = Math.sin(th);
+      const ry = st >= 0 ? s.rTop : s.rBot;
+      const pinch = st > 0 && s.topPinch ? (1 - s.topPinch * st * st) : 1;
+      let rx = s.w * pinch;
+      let uOff = st * ry;
+      let fOff = 0;
+      if (s.backSpur && st < -0.25) {
+        // Asymmetric spur along s.spurDir (e.g. calcaneal hock point or chest keel)
+        fOff = s.backSpur * (-st - 0.25) / 0.75;
+      }
+      const sd = s.spurDir || [0, 0, 0];
+      pts.push([
+        C[0] + R[0] * ct * rx + U[0] * uOff + sd[0] * fOff,
+        C[1] + R[1] * ct * rx + U[1] * uOff + sd[1] * fOff,
+        C[2] + R[2] * ct * rx + U[2] * uOff + sd[2] * fOff,
+      ]);
+      const useTop = s.topCol && st > 0.55 && Math.abs(ct) < 0.52;
+      const useBelly = s.botCol && st < -0.35;
+      cols.push(useTop ? s.topCol : useBelly ? s.botCol : s.col);
+    }
+    rings.push({ center: C, pts, cols, col: s.col });
+  }
+
+  for (let si = 0; si < rings.length - 1; si++) {
+    const A = rings[si], B = rings[si + 1];
+    for (let k = 0; k < sides; k++) {
+      const k1 = (k + 1) % sides;
+      const col = A.cols[k];
+      const colB = B.cols[k];
+      buf.tri(A.pts[k], B.pts[k], B.pts[k1], col, colB, B.cols[k1]);
+      buf.tri(A.pts[k], B.pts[k1], A.pts[k1], col, B.cols[k1], A.cols[k1]);
+    }
+  }
+  if (capStart && rings.length) {
+    const A = rings[0];
+    for (let k = 0; k < sides; k++) {
+      buf.tri(A.center, A.pts[k], A.pts[(k + 1) % sides], A.col);
+    }
+  }
+  if (capEnd && rings.length) {
+    const B = rings[rings.length - 1];
+    for (let k = 0; k < sides; k++) {
+      buf.tri(B.center, B.pts[(k + 1) % sides], B.pts[k], B.col);
+    }
+  }
+}
+
+// Build an orthonormal limb cross-section frame for segment A -> B (mostly vertical/sagittal)
+function limbStation(p, dirAB, latRight, wLat, rAnt, rPost, col, backSpur = 0) {
+  const F = norm3(dirAB); // along bone A -> B
+  const R = norm3(sub3(latRight, scale3(F, dot3(latRight, F)))); // lateral (+Z)
+  // Cranial/anterior (+X-ish) normal in sagittal plane: R x F or F x R:
+  // For F = (0,-1,0) downward and R = (0,0,1) right: cross3(F, R) = (-1)*1 => (-1,0,0) posterior,
+  // so cross3(R, F) = (+1, 0, 0) ANTERIOR (+X)!
+  const Ant = norm3(cross3(R, F));
+  return {
+    p,
+    right: R,
+    up: Ant, // st > 0 = anterior/cranial (+X), st < 0 = posterior/caudal (-X)
+    w: wLat,
+    rTop: rAnt,
+    rBot: rPost,
+    backSpur,
+    spurDir: scale3(Ant, -1),
+    col,
+  };
+}
+
+/* ---------------- Equine Palette (Warm Copper-Bay Mustang) ---------------- */
+
+const PAL = {
+  coatBright: [0.76, 0.36, 0.16],
+  coatMid:    [0.66, 0.29, 0.13],
+  coatDeep:   [0.48, 0.20, 0.09],
+  coatBelly:  [0.42, 0.18, 0.09],
+  darkPoint:  [0.14, 0.10, 0.09],
+  blackMane:  [0.09, 0.08, 0.09],
+  whiteBlaze: [0.93, 0.89, 0.82],
+  whiteSock:  [0.91, 0.87, 0.79],
+  muzzleSoft: [0.22, 0.17, 0.16],
+  nostril:    [0.08, 0.05, 0.06],
+  eyeDark:    [0.06, 0.05, 0.06],
+  earInner:   [0.52, 0.28, 0.20],
+  hoofHorn:   [0.15, 0.13, 0.14],
+  hoofSole:   [0.10, 0.09, 0.09],
+};
+
+/* ---------------- Analytical 2-Bone Sagittal/3D IK ---------------- */
+
+// Solve joint M between root A and target B with bone lengths L1, L2.
+// bendDir is the preferred bend direction in world space (+X for fore-carpus, -X for hind-hock).
+function solve2BoneIK(A, B, L1, L2, bendDir) {
+  const dVec = sub3(B, A);
+  const rawDist = Math.hypot(dVec[0], dVec[1], dVec[2]) || 1e-6;
+  const maxReach = (L1 + L2) * 0.996;
+  const minReach = Math.abs(L1 - L2) + 0.02;
+  const d = clamp(rawDist, minReach, maxReach);
+  const dir = scale3(dVec, 1 / rawDist);
+
+  const cosA = clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1);
+  const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
+
+  let perp = sub3(bendDir, scale3(dir, dot3(bendDir, dir)));
+  const pl = Math.hypot(perp[0], perp[1], perp[2]);
+  if (pl < 1e-5) perp = [1, 0, 0];
+  else perp = scale3(perp, 1 / pl);
+
+  const M = [
+    A[0] + (dir[0] * cosA + perp[0] * sinA) * L1,
+    A[1] + (dir[1] * cosA + perp[1] * sinA) * L1,
+    A[2] + (dir[2] * cosA + perp[2] * sinA) * L1,
+  ];
+  return { M, ratio: rawDist / (L1 + L2) };
+}
+
+/* ---------------- Equine Pose & Articulated Mesh Synthesis ---------------- */
+
+// Transform local body offset (lx, ly, lz) around body pivot with pitch, roll, yaw
+function bodyTransform(origin, pitch, roll, yaw) {
+  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const cr = Math.cos(roll),  sr = Math.sin(roll);
+  const cy = Math.cos(yaw),   sy = Math.sin(yaw);
+  // Local axes in world space:
+  // Pitch rotates around +Z (positive pitch lifts +X nose up: F = (cp, sp, 0), U = (-sp, cp, 0))
+  const f0 = [cp, sp, 0];
+  const u0 = [-sp * cr, cp * cr, sr];
+  const r0 = cross3(f0, u0);
+  const rotY = (v) => [v[0] * cy + v[2] * sy, v[1], -v[0] * sy + v[2] * cy];
+  const F = norm3(rotY(f0));
+  const U = norm3(rotY(u0));
+  const R = norm3(rotY(r0));
+  return {
+    F, U, R,
+    pt(lx, ly, lz) {
+      return [
+        origin[0] + F[0] * lx + U[0] * ly + R[0] * lz,
+        origin[1] + F[1] * lx + U[1] * ly + R[1] * lz,
+        origin[2] + F[2] * lx + U[2] * ly + R[2] * lz,
+      ];
+    },
+  };
+}
+
+// Compute complete articulated horse skeleton at stride phase phi in [0, 1)
+const STRIDE_LEN = 4.60;
+const DUTY = 0.22;
+// Transverse right-lead gallop footfall table: LH -> RH -> LF -> RF -> suspension [0.65, 1.00)
+const LEGS_DEF = [
+  { id: 'LH', fore: false, side: -1, on: 0.00, tdX:  0.03, zOff: -0.145 },
+  { id: 'RH', fore: false, side: +1, on: 0.12, tdX:  0.09, zOff: +0.145 },
+  { id: 'LF', fore: true,  side: -1, on: 0.30, tdX:  1.01, zOff: -0.140 },
+  { id: 'RF', fore: true,  side: +1, on: 0.43, tdX:  1.07, zOff: +0.140 },
+];
+
+function wrapPhase(p) {
+  const m = p % 1;
+  return m < 0 ? m + 1 : m;
+}
+
+// Periodic C1 Hermite interpolation h(0)=y0, h(1)=y1, h'(0)=m0, h'(1)=m1
+function hermite(s, y0, y1, m0, m1) {
+  const s2 = s * s, s3 = s2 * s;
+  return (2 * s3 - 3 * s2 + 1) * y0 +
+         (s3 - 2 * s2 + s) * m0 +
+         (-2 * s3 + 3 * s2) * y1 +
+         (s3 - s2) * m1;
+}
+
+function evaluateHorse(strideIndex, rawPhase, baseZ = 0) {
+  const phi = wrapPhase(rawPhase);
+  const strideOriginX = strideIndex * STRIDE_LEN;
+  const refX = strideOriginX + phi * STRIDE_LEN;
+  const th = TAU * phi;
+
+  // Whole-body gallop dynamics (strictly 1-periodic in phi!)
+  // Hind stance [0..0.34] pitches forehand UP (+pitch); fore stance [0.30..0.65] vaults & pitches DOWN;
+  // Suspension [0.65..1.00] collects spine and lifts CoM into flight.
+  const heaveY = 0.055 * Math.sin(th - 1.15) + 0.022 * Math.sin(2 * th + 0.4);
+  const pitch  = 0.095 * Math.sin(th - 0.55) + 0.024 * Math.cos(2 * th);
+  const spineFlex = 0.065 * Math.max(0, Math.sin(th - 3.55)); // collection in gathered flight
+  const roll   = 0.032 * Math.sin(th - 0.3);
+  const yaw    = 0.018 * Math.cos(th - 0.5);
+  const breath = 0.014 * Math.sin(th - 0.9); // 1:1 respiratory-locomotor coupling
+  const surgeX = 0.028 * Math.sin(th - 0.2);
+
+  const bodyPivotY = 1.16 + heaveY;
+  const foreFrame = bodyTransform([refX + surgeX, bodyPivotY, baseZ], pitch - spineFlex * 0.45, roll, yaw);
+  const hindFrame = bodyTransform([refX + surgeX, bodyPivotY, baseZ], pitch + spineFlex * 0.65, -roll * 0.6, yaw);
+
+  // Articulated 3-segment neck + head bascule (counter-nodding with natural phase lag)
+  const neckBase = foreFrame.pt(0.46, 0.20, 0);
+  const neckAngle = 0.76 - 0.14 * Math.sin(th - 1.35) - pitch * 0.55;
+  const neckMidAngle = neckAngle + 0.06 - 0.05 * Math.sin(th - 1.75);
+  const pollAngle = neckMidAngle + 0.05 - 0.04 * Math.sin(th - 2.05);
+
+  const stepAlong = (p, ang, len, latSway = 0) => [
+    p[0] + Math.cos(ang) * len * foreFrame.F[0] - Math.sin(ang) * len * foreFrame.U[0] + latSway * foreFrame.R[0],
+    p[1] + Math.cos(ang) * len * foreFrame.F[1] - Math.sin(ang) * len * foreFrame.U[1] + latSway * foreFrame.R[1], // wait: U is +Y!
+    p[2] + Math.cos(ang) * len * foreFrame.F[2] - Math.sin(ang) * len * foreFrame.U[2] + latSway * foreFrame.R[2],
+  ];
+  void stepAlong;
+
+  const neckStep = (p, ang, len, sway) => [
+    p[0] + (Math.cos(ang) * foreFrame.F[0] + Math.sin(ang) * foreFrame.U[0]) * len + sway * foreFrame.R[0],
+    p[1] + (Math.cos(ang) * foreFrame.F[1] + Math.sin(ang) * foreFrame.U[1]) * len + sway * foreFrame.R[1],
+    p[2] + (Math.cos(ang) * foreFrame.F[2] + Math.sin(ang) * foreFrame.U[2]) * len + sway * foreFrame.R[2],
+  ];
+  const nSway = 0.014 * Math.sin(th - 1.1);
+  const neck1 = neckStep(neckBase, neckAngle, 0.22, nSway * 0.4);
+  const neck2 = neckStep(neck1, neckMidAngle, 0.21, nSway * 0.8);
+  const poll  = neckStep(neck2, pollAngle, 0.19, nSway);
+
+  // Head pitches forward-down ~48 deg below horizontal, stabilizing gaze during bascule
+  const headAngle = -0.86 + 0.13 * Math.sin(th - 1.85) - pitch * 0.35;
+  const headFwd = norm3([
+    Math.cos(headAngle) * foreFrame.F[0] + Math.sin(headAngle) * foreFrame.U[0],
+    Math.cos(headAngle) * foreFrame.F[1] + Math.sin(headAngle) * foreFrame.U[1],
+    Math.cos(headAngle) * foreFrame.F[2] + Math.sin(headAngle) * foreFrame.U[2] + 0.02 * Math.sin(th - 1.4),
+  ]);
+  const headRight = norm3(foreFrame.R);
+  const headUp = norm3(cross3(headRight, headFwd));
+  const muzzle = add3(poll, scale3(headFwd, 0.53));
+
+  // Tail S-curve (6 articulated stations streaming from dock with traveling wave)
+  const dock = hindFrame.pt(-0.77, 0.24, 0);
+  const tailPts = [dock];
+  let tp = dock;
+  const tailBaseAng = -0.22 + 0.16 * Math.sin(th - 1.9);
+  for (let ti = 1; ti <= 6; ti++) {
+    const f = ti / 6;
+    const wave = 0.22 * Math.sin(th - 1.7 - ti * 0.52) * (0.35 + 0.65 * f);
+    const droop = tailBaseAng - 0.52 * f * f + wave;
+    const lat = 0.045 * Math.sin(th - 1.2 - ti * 0.45) * f;
+    const segL = 0.135;
+    tp = [
+      tp[0] - Math.cos(droop) * segL + hindFrame.R[0] * lat,
+      Math.max(0.28, tp[1] + Math.sin(droop) * segL),
+      tp[2] + lat,
+    ];
+    tailPts.push(tp);
+  }
+
+  // Solve all 4 limbs with EXACT world-pinned zero-slip stance
+  const legs = {};
+  const stanceSpan = DUTY * STRIDE_LEN; // 1.012 m
+
+  for (const def of LEGS_DEF) {
+    const off = def.on + DUTY;
+    const inStance = phi >= def.on && phi < off;
+    let hoofW, u = 0, s = 0, load = 0, hoofPitch = 0;
+
+    if (inStance) {
+      u = (phi - def.on) / DUTY;
+      load = Math.sin(Math.PI * u);
+      // World X is algebraically independent of u (phi): exact 0.000 mm slip!
+      const anchorX = strideOriginX + def.on * STRIDE_LEN + def.tdX;
+      hoofW = [anchorX, 0.0, baseZ + def.zOff];
+      hoofPitch = 0.0;
+    } else {
+      const swingDur = 1 - DUTY;
+      const dPhi = phi >= off ? (phi - off) : (phi + 1 - off);
+      s = dPhi / swingDur;
+      const xLo = def.tdX - stanceSpan;
+      const xTd = def.tdX;
+      // Match ground speed at liftoff & touchdown (retraction), scaled gently so IK stays well inside reach
+      const mEnd = -STRIDE_LEN * swingDur * 0.58;
+      const relX = hermite(s, xLo, xTd, mEnd, mEnd);
+
+      // Lift curve: brisk snap-up after liftoff, folded flight, smooth tangent landing (sin^2 at ends)
+      const bell = Math.sin(Math.PI * s);
+      const skew = Math.sin(Math.PI * Math.pow(s, 0.74));
+      const peakLift = def.fore ? 0.34 : 0.30;
+      const relY = peakLift * (0.45 * bell * bell + 0.55 * skew * bell);
+
+      // Swing hoof pitch: snaps backward after liftoff (-1.15 rad), extends forward (+0.18 rad) before strike
+      hoofPitch = -1.12 * Math.sin(Math.PI * Math.pow(s, 0.68)) * (1 - s * 0.65) + 0.16 * Math.sin(Math.PI * s * s);
+      hoofW = [refX + relX, Math.max(0, relY), baseZ + def.zOff];
+    }
+
+    if (def.fore) {
+      // Foreleg: Scapula top -> Point of Shoulder -> Elbow -> Carpus ("Knee", +X bend) -> Fetlock -> Hoof
+      const reachNorm = clamp(((hoofW[0] - refX) - 0.54) / 0.62, -1.1, 1.1);
+      const scapTop = foreFrame.pt(0.34, 0.34, def.side * 0.135);
+      const shoulder = foreFrame.pt(0.51 + 0.08 * reachNorm, -0.04 + 0.02 * Math.abs(reachNorm), def.side * 0.168);
+
+      // Humerus swings elbow forward in protraction and back in retraction (constant length 0.29m)
+      const humAng = -1.92 + 0.52 * reachNorm + (inStance ? 0 : 0.22 * Math.sin(Math.PI * s));
+      const elbow = [
+        shoulder[0] + Math.cos(humAng) * 0.29,
+        shoulder[1] + Math.sin(humAng) * 0.29,
+        shoulder[2] - def.side * 0.012,
+      ];
+
+      // Pastern + fetlock compliance: hyperextends (drops) under stance load, flexes backward in swing
+      const pasternLen = 0.165;
+      const pasternAng = inStance
+        ? (2.22 + 0.28 * load - 0.36 * u) // ~127 deg (up-and-back from hoof) sinking under load, upright at pushoff
+        : (2.05 + 0.88 * Math.sin(Math.PI * Math.pow(s, 0.72))); // folds back in swing
+      const fetlock = [
+        hoofW[0] + Math.cos(pasternAng) * pasternLen,
+        hoofW[1] + Math.sin(pasternAng) * pasternLen,
+        hoofW[2],
+      ];
+
+      const ik = solve2BoneIK(elbow, fetlock, 0.45, 0.36, [1, 0.08, 0]); // Carpus bends +X (anterior!)
+      legs[def.id] = {
+        id: def.id, fore: true, side: def.side, inStance, u, s, load, hoofPitch,
+        scapTop, shoulder, elbow, carpus: ik.M, fetlock, hoof: hoofW, ikRatio: ik.ratio,
+      };
+    } else {
+      // Hindleg: Hip -> Stifle (+X bend) -> Hock (-X bend + calcaneal point) -> Fetlock -> Hoof
+      const reachNorm = clamp(((hoofW[0] - refX) + 0.48) / 0.62, -1.1, 1.1);
+      const hip = hindFrame.pt(-0.50, 0.07, def.side * 0.168);
+
+      // Equine reciprocal apparatus: femur swings forward when limb protracts/lifts, extends back in push-off
+      const femAng = -0.92 + 0.48 * reachNorm + (inStance ? -0.06 * load : 0.28 * Math.sin(Math.PI * s));
+      const stifle = [
+        hip[0] + Math.cos(femAng) * 0.39,
+        hip[1] + Math.sin(femAng) * 0.39,
+        hip[2] + def.side * 0.008,
+      ];
+
+      const pasternLen = 0.165;
+      const pasternAng = inStance
+        ? (2.18 + 0.26 * load - 0.38 * u)
+        : (2.08 + 0.78 * Math.sin(Math.PI * Math.pow(s, 0.72)));
+      const fetlock = [
+        hoofW[0] + Math.cos(pasternAng) * pasternLen,
+        hoofW[1] + Math.sin(pasternAng) * pasternLen,
+        hoofW[2],
+      ];
+
+      const ik = solve2BoneIK(stifle, fetlock, 0.48, 0.41, [-1, 0.12, 0]); // Hock bends -X (posterior!)
+      legs[def.id] = {
+        id: def.id, fore: false, side: def.side, inStance, u, s, load, hoofPitch,
+        hip, stifle, hock: ik.M, fetlock, hoof: hoofW, ikRatio: ik.ratio,
+      };
+    }
+  }
+
+  return {
+    phi, strideIndex, refX, baseZ, heaveY, pitch, spineFlex, roll, yaw, breath,
+    foreFrame, hindFrame, neckBase, neck1, neck2, poll, headFwd, headUp, headRight, muzzle,
+    dock, tailPts, legs,
+  };
+}
+
+/* ---------------- Emit Full Sculpted Horse Into Triangle Buffer ---------------- */
+
+function buildHorseMesh(buf, st) {
+  buf.reset();
+  const { foreFrame: fF, hindFrame: hF, breath, phi } = st;
+  const th = TAU * phi;
+
+  // 1. Sculpted Trunk (8 stations from Dock/Buttock to Point of Chest, seamless hind->fore blend)
+  // Body pivot is at y = 1.16m in standing; station yTop/yBot are offsets from bodyPivotY (1.16m).
+  const trunkSpec = [
+    { fr: hF, x: -0.78, yT:  0.27, yB:  0.02, w: 0.105, p: 0.10, col: PAL.coatDeep,   bot: PAL.coatBelly },
+    { fr: hF, x: -0.60, yT:  0.40, yB: -0.13, w: 0.245, p: 0.12, col: PAL.coatBright, bot: PAL.coatDeep },
+    { fr: hF, x: -0.40, yT:  0.37, yB: -0.19, w: 0.235, p: 0.14, col: PAL.coatBright, bot: PAL.coatBelly },
+    { fr: hF, x: -0.18, yT:  0.33, yB: -0.24 - breath * 0.4, w: 0.238 + breath * 0.5, p: 0.16, col: PAL.coatMid, bot: PAL.coatBelly },
+    { fr: fF, x:  0.07, yT:  0.34, yB: -0.31 - breath,       w: 0.262 + breath,       p: 0.22, col: PAL.coatBright, bot: PAL.coatBelly },
+    { fr: fF, x:  0.34, yT:  0.44, yB: -0.34 - breath * 0.6, w: 0.228 + breath * 0.4, p: 0.42, col: PAL.coatBright, bot: PAL.coatDeep },
+    { fr: fF, x:  0.55, yT:  0.33, yB: -0.24, w: 0.205, p: 0.28, col: PAL.coatMid,    bot: PAL.coatDeep },
+    { fr: fF, x:  0.67, yT:  0.20, yB: -0.09, w: 0.125, p: 0.18, col: PAL.coatDeep,   bot: PAL.coatDeep },
+  ];
+  const trunkStations = trunkSpec.map(s => {
+    const midY = (s.yT + s.yB) * 0.5;
+    const halfH = (s.yT - s.yB) * 0.5;
+    return {
+      p: s.fr.pt(s.x, midY, 0),
+      up: s.fr.U,
+      right: s.fr.R,
+      w: s.w,
+      rTop: halfH,
+      rBot: halfH,
+      topPinch: s.p,
+      col: s.col,
+      botCol: s.bot,
+    };
+  });
+  emitLoft(buf, trunkStations, 10, true, true);
+
+  // 2. Sculpted Crested Neck (4 stations from inside chest/withers to poll)
+  const nPts = [fF.pt(0.36, 0.14, 0), st.neckBase, st.neck1, st.neck2, st.poll];
+  const nSpec = [
+    { w: 0.175, rT: 0.26, rB: 0.20, p: 0.38, col: PAL.coatMid },
+    { w: 0.155, rT: 0.24, rB: 0.18, p: 0.36, col: PAL.coatBright },
+    { w: 0.132, rT: 0.20, rB: 0.15, p: 0.34, col: PAL.coatBright },
+    { w: 0.108, rT: 0.16, rB: 0.12, p: 0.30, col: PAL.coatMid },
+    { w: 0.088, rT: 0.11, rB: 0.10, p: 0.20, col: PAL.coatDeep },
+  ];
+  const neckStations = nPts.map((p, i) => {
+    const dir = i < nPts.length - 1 ? sub3(nPts[i + 1], p) : sub3(p, nPts[i - 1]);
+    const F = norm3(dir);
+    const R = norm3(fF.R);
+    const U = norm3(cross3(R, F));
+    return {
+      p, right: R, up: U,
+      w: nSpec[i].w, rTop: nSpec[i].rT, rBot: nSpec[i].rB, topPinch: nSpec[i].p,
+      col: nSpec[i].col, botCol: PAL.coatDeep,
+    };
+  });
+  emitLoft(buf, neckStations, 8, false, true);
+
+  // 3. Sculpted Equine Head (6 stations: poll -> brow -> ganache jowl -> nasal bridge -> nostrils -> muzzle)
+  const { headFwd: hFwd, headUp: hUp, headRight: hR, poll } = st;
+  const hPt = (s, u, r) => [
+    poll[0] + hFwd[0] * s + hUp[0] * u + hR[0] * r,
+    poll[1] + hFwd[1] * s + hUp[1] * u + hR[1] * r,
+    poll[2] + hFwd[2] * s + hUp[2] * u + hR[2] * r,
+  ];
+  const headSpec = [
+    { s: -0.03, uOff:  0.00, rT: 0.075, rB: 0.085, w: 0.082, col: PAL.coatDeep,   top: null },
+    { s:  0.10, uOff:  0.01, rT: 0.082, rB: 0.125, w: 0.106, col: PAL.coatBright, top: PAL.whiteBlaze },
+    { s:  0.20, uOff: -0.02, rT: 0.086, rB: 0.148, w: 0.098, col: PAL.coatMid,    top: PAL.whiteBlaze }, // deep round ganache jowl!
+    { s:  0.33, uOff:  0.00, rT: 0.058, rB: 0.072, w: 0.066, col: PAL.coatBright, top: PAL.whiteBlaze }, // crisp step-in to nasal bridge!
+    { s:  0.45, uOff: -0.005, rT: 0.054, rB: 0.062, w: 0.072, col: PAL.muzzleSoft, top: PAL.whiteBlaze },
+    { s:  0.53, uOff: -0.012, rT: 0.038, rB: 0.046, w: 0.052, col: PAL.muzzleSoft, top: null },
+  ];
+  const headStations = headSpec.map(hs => ({
+    p: hPt(hs.s, hs.uOff, 0),
+    right: hR,
+    up: hUp,
+    w: hs.w,
+    rTop: hs.rT,
+    rBot: hs.rB,
+    topPinch: 0.12,
+    col: hs.col,
+    topCol: hs.top,
+    botCol: hs.s > 0.38 ? PAL.muzzleSoft : PAL.coatDeep,
+  }));
+  emitLoft(buf, headStations, 8, true, true);
+
+  // Expressive lateral low-poly eyes + flared nostrils + pointed swiveling ears
+  for (const side of [-1, 1]) {
+    // Eye diamond on supraorbital ridge
+    const eC = hPt(0.135, 0.032, side * 0.102);
+    const eF = hPt(0.162, 0.028, side * 0.096);
+    const eB = hPt(0.108, 0.034, side * 0.096);
+    const eT = hPt(0.135, 0.052, side * 0.095);
+    const eD = hPt(0.135, 0.012, side * 0.098);
+    if (side > 0) {
+      buf.tri(eC, eF, eT, PAL.eyeDark); buf.tri(eC, eT, eB, PAL.eyeDark);
+      buf.tri(eC, eB, eD, PAL.eyeDark); buf.tri(eC, eD, eF, PAL.eyeDark);
+    } else {
+      buf.tri(eC, eT, eF, PAL.eyeDark); buf.tri(eC, eB, eT, PAL.eyeDark);
+      buf.tri(eC, eD, eB, PAL.eyeDark); buf.tri(eC, eF, eD, PAL.eyeDark);
+    }
+
+    // Flared nostril facet
+    const nC = hPt(0.465, 0.018, side * 0.071);
+    const n1 = hPt(0.492, 0.012, side * 0.062);
+    const n2 = hPt(0.448, 0.034, side * 0.065);
+    const n3 = hPt(0.452, -0.004, side * 0.066);
+    if (side > 0) { buf.tri(nC, n1, n2, PAL.nostril); buf.tri(nC, n3, n1, PAL.nostril); }
+    else { buf.tri(nC, n2, n1, PAL.nostril); buf.tri(nC, n1, n3, PAL.nostril); }
+
+    // Articulated pointed equine ear (pivots with stride rhythm)
+    const earFlick = 0.12 * Math.sin(th - 0.8 + side * 0.7);
+    const eBase = hPt(0.025, 0.068, side * 0.054);
+    const earDir = norm3([
+      hUp[0] * 0.92 + hFwd[0] * (0.28 + earFlick) + hR[0] * side * 0.24,
+      hUp[1] * 0.92 + hFwd[1] * (0.28 + earFlick) + hR[1] * side * 0.24,
+      hUp[2] * 0.92 + hFwd[2] * (0.28 + earFlick) + hR[2] * side * 0.24,
+    ]);
+    const eMid = add3(eBase, scale3(earDir, 0.082));
+    const eTip = add3(eBase, scale3(earDir, 0.158));
+    emitLoft(buf, [
+      limbStation(eBase, earDir, hR, 0.024, 0.020, 0.024, PAL.coatMid),
+      limbStation(eMid,  earDir, hR, 0.021, 0.015, 0.020, PAL.coatDeep),
+      limbStation(eTip,  earDir, hR, 0.005, 0.005, 0.006, PAL.darkPoint),
+    ], 5, false, true);
+  }
+
+  // 4. Flowing Faceted Crest Mane & Forelock (traveling wave along dorsal neck crest)
+  const maneRootPts = [fF.pt(0.30, 0.43, 0), ...nPts.slice(1).map((p, idx) => add3(p, scale3(neckStations[idx + 1].up, neckStations[idx + 1].rTop * 0.92)))];
+  for (let mi = 0; mi < 8; mi++) {
+    const u0 = mi / 8, u1 = (mi + 1.18) / 8;
+    const sampleCrest = (u) => {
+      const f = clamp(u, 0, 0.999) * (maneRootPts.length - 1);
+      const i = Math.floor(f);
+      return mix3(maneRootPts[i], maneRootPts[i + 1], f - i);
+    };
+    const r0 = sampleCrest(u0), r1 = sampleCrest(u1);
+    const rm = mix3(r0, r1, 0.5);
+    const wave = 0.055 * Math.sin(th - 1.2 - mi * 0.55);
+    const lift = 0.085 + 0.03 * Math.sin(th - 0.9 - mi * 0.4);
+    const tip = [
+      rm[0] - 0.075 + fF.U[0] * lift + fF.R[0] * (0.045 + wave),
+      rm[1] + lift,
+      rm[2] + 0.042 + wave,
+    ];
+    const thick = [0, 0, -0.022];
+    buf.tri(r0, r1, tip, PAL.blackMane);
+    buf.tri(r1, r0, add3(tip, thick), PAL.blackMane);
+  }
+  // Forelock plume between ears over forehead
+  const flBaseL = hPt(0.03, 0.082, -0.025);
+  const flBaseR = hPt(0.03, 0.082,  0.025);
+  const flTip = add3(hPt(0.16, 0.095, 0.015 * Math.sin(th - 1.5)), scale3(hUp, 0.018));
+  buf.tri(flBaseL, flBaseR, flTip, PAL.blackMane);
+  buf.tri(flBaseR, flBaseL, add3(flTip, scale3(hUp, -0.012)), PAL.blackMane);
+
+  // 5. Streaming Articulated Low-Poly Tail Plume (6 stations along S-curve)
+  const tailRadii = [
+    [0.038, 0.040],
+    [0.058, 0.078],
+    [0.068, 0.105],
+    [0.062, 0.098],
+    [0.046, 0.072],
+    [0.026, 0.040],
+    [0.007, 0.010],
+  ];
+  const tailStations = st.tailPts.map((p, i) => {
+    const dir = i < st.tailPts.length - 1 ? sub3(st.tailPts[i + 1], p) : sub3(p, st.tailPts[i - 1]);
+    const F = norm3(dir);
+    const R = norm3([0, 0, 1]);
+    const U = norm3(cross3(R, F));
+    return {
+      p, right: R, up: U,
+      w: tailRadii[i][0], rTop: tailRadii[i][1], rBot: tailRadii[i][1] * 0.85,
+      topPinch: 0.25, col: PAL.blackMane,
+    };
+  });
+  emitLoft(buf, tailStations, 6, true, true);
+
+  // 6. Sculpted Equine Forelimbs & Hindlimbs + Flared Hooves
+  const latRef = [0, 0, 1];
+  for (const id of ['LH', 'LF', 'RH', 'RF']) {
+    const L = st.legs[id];
+    if (L.fore) {
+      const dScap = sub3(L.shoulder, L.scapTop);
+      const dHum  = sub3(L.elbow, L.shoulder);
+      const dRad  = sub3(L.carpus, L.elbow);
+      const dCan  = sub3(L.fetlock, L.carpus);
+      const dPas  = sub3(L.hoof, L.fetlock);
+
+      const foreStations = [
+        limbStation(L.scapTop,  dScap, latRef, 0.062, 0.095, 0.085, PAL.coatMid),
+        limbStation(L.shoulder, dHum,  latRef, 0.082, 0.105, 0.092, PAL.coatBright),
+        limbStation(L.elbow,    dRad,  latRef, 0.068, 0.078, 0.090, PAL.coatMid, 0.022), // olecranon point of elbow!
+        limbStation(mix3(L.elbow, L.carpus, 0.55), dRad, latRef, 0.046, 0.052, 0.056, PAL.coatDeep),
+        limbStation(L.carpus,   dCan,  latRef, 0.040, 0.044, 0.042, PAL.darkPoint),       // flat-fronted carpus!
+        limbStation(mix3(L.carpus, L.fetlock, 0.5), dCan, latRef, 0.026, 0.029, 0.032, PAL.darkPoint),
+        limbStation(L.fetlock,  dPas,  latRef, 0.033, 0.034, 0.040, PAL.darkPoint, 0.014), // fetlock + ergot!
+        limbStation(mix3(L.fetlock, L.hoof, 0.72), dPas, latRef, 0.026, 0.028, 0.028, PAL.darkPoint),
+      ];
+      emitLoft(buf, foreStations, 7, true, true);
+    } else {
+      const dFem = sub3(L.stifle, L.hip);
+      const dTib = sub3(L.hock, L.stifle);
+      const dCan = sub3(L.fetlock, L.hock);
+      const dPas = sub3(L.hoof, L.fetlock);
+
+      const hindStations = [
+        limbStation(L.hip,    dFem, latRef, 0.108, 0.145, 0.155, PAL.coatBright), // muscular quarter!
+        limbStation(L.stifle, dTib, latRef, 0.076, 0.092, 0.084, PAL.coatMid),    // forward stifle!
+        limbStation(mix3(L.stifle, L.hock, 0.55), dTib, latRef, 0.055, 0.062, 0.074, PAL.coatMid), // muscular gaskin!
+        limbStation(L.hock,   dCan, latRef, 0.038, 0.042, 0.052, PAL.darkPoint, 0.042), // prominent calcaneal hock point!
+        limbStation(mix3(L.hock, L.fetlock, 0.38), dCan, latRef, 0.027, 0.030, 0.033, PAL.darkPoint),
+        limbStation(mix3(L.hock, L.fetlock, 0.46), dCan, latRef, 0.027, 0.030, 0.032, PAL.whiteSock), // crisp white hind sock!
+        limbStation(L.fetlock, dPas, latRef, 0.034, 0.035, 0.040, PAL.whiteSock, 0.014),
+        limbStation(mix3(L.fetlock, L.hoof, 0.72), dPas, latRef, 0.027, 0.029, 0.029, PAL.whiteSock),
+      ];
+      emitLoft(buf, hindStations, 7, true, true);
+    }
+
+    // Sculpted Flared Equine Hoof (coronet ring -> wider sole ring oriented by hoofPitch)
+    const hp = L.hoofPitch;
+    const chp = Math.cos(hp), shp = Math.sin(hp);
+    const hFwd2 = [chp, shp, 0];     // toe direction (+X when flat on ground)
+    const hUp2  = [-shp, chp, 0];    // sole-up normal (+Y when flat on ground)
+    const hLat  = [0, 0, 1];
+    const coronetC = [
+      L.hoof[0] - hFwd2[0] * 0.012 + hUp2[0] * 0.068,
+      L.hoof[1] - hFwd2[1] * 0.012 + hUp2[1] * 0.068,
+      L.hoof[2],
+    ];
+    const soleC = [
+      L.hoof[0] + hFwd2[0] * 0.014 + hUp2[0] * 0.002,
+      L.hoof[1] + hFwd2[1] * 0.014 + hUp2[1] * 0.002,
+      L.hoof[2],
+    ];
+    emitLoft(buf, [
+      { p: coronetC, right: hLat, up: hFwd2, w: 0.036, rTop: 0.040, rBot: 0.036, col: PAL.hoofHorn },
+      { p: soleC,    right: hLat, up: hFwd2, w: 0.048, rTop: 0.060, rBot: 0.044, col: PAL.hoofSole },
+    ], 7, true, true);
+  }
+}
+
+/* ---------------- Minimal Steppe Ground Plane (Engine Core Baseline) ---------------- */
+
+function buildCoreGround(buf, centerX, centerZ) {
+  buf.reset();
+  const R = 36, step = 3.0;
+  const x0 = Math.floor((centerX - R) / step) * step;
+  const z0 = Math.floor((centerZ - R) / step) * step;
+  for (let gx = x0; gx < centerX + R; gx += step) {
+    for (let gz = z0; gz < centerZ + R; gz += step) {
+      const checker = ((Math.round(gx / step) + Math.round(gz / step)) & 1) ? 0.96 : 1.04;
+      const c = [0.46 * checker, 0.30 * checker, 0.18 * checker];
+      buf.quad(
+        [gx, 0, gz],
+        [gx, 0, gz + step],
+        [gx + step, 0, gz + step],
+        [gx + step, 0, gz],
+        c
+      );
+    }
+  }
+}
+
+/* ---------------- Camera, Controls & Render Loop ---------------- */
+
+const SUN_DIR = norm3([-0.42, 0.34, 0.84]);
+const cam = {
+  yaw: 0.32, pitch: 0.11, dist: 3.85,
+  tYaw: 0.32, tPitch: 0.11, tDist: 3.85,
+  auto: true,
+};
+
+let screenMode = 'attract';
+let strideIndex = 0;
+let phase = 0.0;
+let strideFreq = 1.72; // Hz (~7.9 m/s default gallop)
+let timeScale = 1.0;
+let paused = false;
+let frames = 0;
+let readyFlag = false;
+let lastNow = 0;
+let W = 0, H = 0, DPR = 1;
+let currentState = evaluateHorse(0, 0);
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, LITE ? 1 : 2);
+  const cw = Math.max(2, Math.floor(canvas.clientWidth * DPR));
+  const ch = Math.max(2, Math.floor(canvas.clientHeight * DPR));
+  if (cw === W && ch === H) return;
+  W = cw; H = ch;
+  canvas.width = W; canvas.height = H;
+}
+resize();
+addEventListener('resize', resize);
+
+let drag = null;
+canvas.addEventListener('pointerdown', e => {
+  drag = { x: e.clientX, y: e.clientY };
+  cam.auto = false;
+  canvas.setPointerCapture(e.pointerId);
+  if (screenMode === 'attract') {
+    screenMode = 'play';
+    document.getElementById('attract').classList.add('gone');
+  }
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  cam.tYaw -= (e.clientX - drag.x) * 0.006;
+  cam.tPitch = clamp(cam.tPitch + (e.clientY - drag.y) * 0.005, -0.03, 1.15);
+  drag = { x: e.clientX, y: e.clientY };
+});
+addEventListener('pointerup', () => { drag = null; });
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  cam.tDist = clamp(cam.tDist + e.deltaY * 0.003, 2.1, 8.5);
+}, { passive: false });
+
+addEventListener('keydown', e => {
+  if (screenMode === 'attract') {
+    screenMode = 'play';
+    document.getElementById('attract').classList.add('gone');
+  }
+  if (e.code === 'Space') { e.preventDefault(); timeScale = timeScale < 0.5 ? 1.0 : 0.22; }
+  if (e.key === '1') { cam.auto = false; cam.tYaw = 0.0;  cam.tPitch = 0.07; cam.tDist = 3.7; }
+  if (e.key === '2') { cam.auto = false; cam.tYaw = 0.48; cam.tPitch = 0.14; cam.tDist = 3.85; }
+  if (e.key === '3') { cam.auto = false; cam.tYaw = 0.22; cam.tPitch = -0.01; cam.tDist = 3.1; }
+  if (e.key === '4') { cam.auto = false; cam.tYaw = 0.05; cam.tPitch = 1.02; cam.tDist = 5.2; }
+});
+
+function renderScene() {
+  resize();
+  currentState = evaluateHorse(strideIndex, phase, 0);
+  buildHorseMesh(horseBuf, currentState);
+  buildCoreGround(worldBuf, currentState.refX, 0);
+
+  const target = [currentState.refX + 0.10, 1.02, 0];
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const sy = Math.sin(cam.yaw),   cy = Math.cos(cam.yaw);
+  const eye = [
+    target[0] + sy * cp * cam.dist,
+    Math.max(0.14, target[1] + sp * cam.dist),
+    target[2] + cy * cp * cam.dist,
+  ];
+
+  const fovY = 0.72;
+  const aspect = W / H;
+  const proj = mat4Perspective(fovY, aspect, 0.12, 140.0);
+  const view = mat4LookAt(eye, target, [0, 1, 0]);
+  const vp = mat4Mul(proj, view);
+
+  const fwd = norm3(sub3(target, eye));
+  const right = norm3(cross3(fwd, [0, 1, 0]));
+  const up = cross3(right, fwd);
+
+  gl.viewport(0, 0, W, H);
+  gl.clearColor(0.1, 0.06, 0.08, 1);
+  gl.clearStencil(0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+
+  // 1. Sky backdrop
+  gl.disable(gl.DEPTH_TEST);
+  gl.disable(gl.CULL_FACE);
+  gl.useProgram(progSky);
+  gl.uniform3fv(uSky.camFwd, fwd);
+  gl.uniform3fv(uSky.camRight, right);
+  gl.uniform3fv(uSky.camUp, up);
+  gl.uniform1f(uSky.tanHalfFov, Math.tan(fovY * 0.5));
+  gl.uniform1f(uSky.aspect, aspect);
+  gl.uniform3fv(uSky.sunDir, SUN_DIR);
+  gl.bindVertexArray(vaoEmpty);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // 2. Ground + Horse
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthMask(true);
+  gl.useProgram(progMesh);
+  gl.uniformMatrix4fv(uMesh.viewProj, false, vp);
+  gl.uniform3fv(uMesh.sunDir, SUN_DIR);
+  gl.uniform3fv(uMesh.camPos, eye);
+  gl.uniform3f(uMesh.refCenter, currentState.refX, 0, 0);
+  gl.uniform1i(uMesh.shadowPass, 0);
+  gl.uniform1f(uMesh.shadowGroundY, 0.003);
+  worldBuf.uploadAndDraw();
+
+  // 3. Stencil-guarded planar projected shadow of the 3D horse onto y = 0.003
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.enable(gl.STENCIL_TEST);
+  gl.stencilFunc(gl.EQUAL, 0, 0xff);
+  gl.stencilOp(gl.KEEP, gl.KEEP, gl.INCR);
+  gl.depthMask(false);
+  gl.uniform1i(uMesh.shadowPass, 1);
+  horseBuf.uploadAndDraw();
+  gl.disable(gl.STENCIL_TEST);
+  gl.disable(gl.BLEND);
+  gl.depthMask(true);
+
+  // 4. Opaque flat-faceted 3D horse
+  gl.uniform1i(uMesh.shadowPass, 0);
+  horseBuf.uploadAndDraw();
+}
+
+const telemetryEl = document.getElementById('telemetry');
+
+function frame(now) {
+  if (!lastNow) lastNow = now;
+  const dt = Math.min(0.05, Math.max(0, (now - lastNow) / 1000));
+  lastNow = now;
+
+  if (!paused) {
+    phase += dt * strideFreq * timeScale;
+    while (phase >= 1) { phase -= 1; strideIndex++; }
+    if (cam.auto) {
+      cam.tYaw += dt * 0.14;
+      cam.yaw = cam.tYaw;
+    }
+  }
+  cam.yaw += (cam.tYaw - cam.yaw) * 0.12;
+  cam.pitch += (cam.tPitch - cam.pitch) * 0.12;
+  cam.dist += (cam.tDist - cam.dist) * 0.12;
+
+  renderScene();
+  frames++;
+  readyFlag = true;
+  if (frames % 6 === 0) {
+    const contacts = LEGS_DEF.filter(d => currentState.legs[d.id].inStance).map(d => d.id).join('+') || 'FLIGHT';
+    telemetryEl.textContent = `phase ${phase.toFixed(2)} · ${contacts} · ${(strideFreq * STRIDE_LEN * timeScale).toFixed(1)} m/s`;
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------------- DEV Test Hook ---------------- */
+
+window.__horsegeminiTest = {
+  get ready() { return readyFlag; },
+  get frames() { return frames; },
+  setPose(opts = {}) {
+    if (opts.stride !== undefined) strideIndex = opts.stride | 0;
+    if (opts.phase !== undefined) phase = wrapPhase(opts.phase);
+    if (opts.paused !== undefined) paused = !!opts.paused;
+    if (opts.yaw !== undefined) { cam.yaw = cam.tYaw = opts.yaw; cam.auto = false; }
+    if (opts.pitch !== undefined) { cam.pitch = cam.tPitch = opts.pitch; cam.auto = false; }
+    if (opts.dist !== undefined) { cam.dist = cam.tDist = opts.dist; }
+    if (opts.attract === false && screenMode === 'attract') {
+      screenMode = 'play';
+      document.getElementById('attract').classList.add('gone');
+    }
+    renderScene();
+    frames++;
+    return this.state();
+  },
+  state() {
+    const legs = {};
+    for (const d of LEGS_DEF) {
+      const L = currentState.legs[d.id];
+      legs[d.id] = {
+        inStance: L.inStance,
+        hoof: L.hoof.slice(),
+        fetlock: L.fetlock.slice(),
+        midJoint: (L.fore ? L.carpus : L.hock).slice(),
+        upperJoint: (L.fore ? L.elbow : L.stifle).slice(),
+        ikRatio: +L.ikRatio.toFixed(4),
+      };
+    }
+    return {
+      phase: +currentState.phi.toFixed(5),
+      strideIndex: currentState.strideIndex,
+      refX: +currentState.refX.toFixed(4),
+      pitch: +currentState.pitch.toFixed(4),
+      heaveY: +currentState.heaveY.toFixed(4),
+      poll: currentState.poll.slice(),
+      muzzle: currentState.muzzle.slice(),
+      tailTip: currentState.tailPts[currentState.tailPts.length - 1].slice(),
+      tris: horseBuf.triCount,
+      legs,
+    };
+  },
+};
+</script>
+<script>
+window.DEMO_CREDITS = {
+  name: 'SUNSTRIDE', accent: '#ffb35c',
+  builder: { tag: 'GEMINI', model: 'Gemini', where: 'via Antigravity CLI' },
+  issues: [], span: '~2 h', shipped: '2026-11-13',
+  assist: 'solo', note: 'guest build brief: procedural low-poly 3D horse running in a seamless loop, zero libraries, planted hooves',
+};
+</script>
+<script src="credits.js"></script>
+<script src="feedback.js"></script>
+</body>
+</html>
