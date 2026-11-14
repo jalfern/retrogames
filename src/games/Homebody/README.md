@@ -155,7 +155,7 @@ see §Speed dial.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 359 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), winnable seeds, determinism
+npm run peoplecheck          # 402 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -179,7 +179,10 @@ npm run peoplecheck          # 359 gates: boot, rules, spare-room wing (#1806), 
 # shelf-follow gates go red, 308 → 304/4; restore.) Mutant #2135: reinstate the
 # fern `0.06·dt` threshold — exactly the two fern gates + the crossings pin go
 # red (346 → 343/3); restore. Or drop the `grudge-cool` event push — the
-# two-beat gate and its pin go red (346 → 344/2); restore.
+# two-beat gate and its pin go red (346 → 344/2); restore. Mutant #2200: put
+# `if (true) return` atop `meetCat` — exactly the two greeting gates go red
+# (402 → 400/2); restore. Or zero the `p.feedT = PET_FEED_T` arm — the bowl-arm
+# gate and its sim pin go red; restore.
 npm run dev   # another terminal
 npm run contractcheck        # includes homebody (CONTRACT_ONLY=homebody for just this)
 DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels + real C/X court keys with pink affection pixels and the far-apart Space doctrine + #2222 shelf flips on real [ ] keys, a tapped tab and gold-painted open-tab pixels
@@ -231,8 +234,8 @@ ignores her). State: `s.pet` (needs/position/asleep/cd) rides `stateHash`;
 no rng outside the shared `s.rng` stream, seeds stay exact. Sprite: tabby with
 tail-sway walk, sleep Zzz, pink purr sparks (`drawPet`); sounds: twin-chirp
 adoption, purr-chime coo, kibble crunches. The attract bot adopts right after
-the room kit so the demo sells her. Open tail unchanged: kids; the panel has
-no pet row (honest gaps). Gates: `peoplecheck` section 8 (27 pins).
+the room kit so the demo sells her. Open tail unchanged: kids; the panel pet
+row landed in #2200 (see Pet polish). Gates: `peoplecheck` section 8 (27 pins).
 
 ## Kids (#2203) — Pip, the adoptable child
 The open tail of the bond line, closed. Catalog card 16 / `KeyK`, §150, one
@@ -267,6 +270,24 @@ the attract marquee does not yet show Pip arriving (the wish line beats her to
 the airtime), and 9-seed attract runs adopt the cat before the child card is
 ever chosen — the counter works, the demo undersells it.
 Gates: `peoplecheck` section 9 (31 pins).
+
+## Pet polish (#2200) — the cat is seen and greeted
+- **MISO joins the BONDS panel.** Her row is a MOOD, not a ladder —
+  `petMood(s)` averages hunger/fun/energy (pure in sim.js, 0..1), the paw
+  glyph rows `round(mood·4)` pips, and the row red-blinks at `RED_AT` like
+  the need bars. The row never rides `stateHash` — it's a read of needs that
+  already ride it.
+- **Kibble paints.** The `pet-eat` moment arms `pet.feedT = 2.2` (world
+  seconds, view-only like `purrT`): a shallow bowl at the eat spot with three
+  crumbs that get eaten down as the seconds run; the shell adds a tan crumb
+  burst on the crunches.
+- **The greeting law.** A hanging visitor within `CAT_MEET_DIST` (2) of Miso
+  greets her ONCE per visit: `cat-meet` event, `CAT_MEET_BOND` (+0.5) on
+  that neighbour's ladder, a thought line that warms with the level (small
+  talk → slow blink → ankle-weave). Fern and Ivy share the law; the flag
+  rides the visit record, so every new visit re-arms. No rng — seeds stay
+  exact. Still open from #2200: cat commands (order play via a pet-tier toy),
+  richer cat sprite states (stretch/sit/window-sill), kibble at a placed bowl.
 
 ## Catalog shelves (#2222) — the buy catalog sorts into stores
 
@@ -385,7 +406,8 @@ the coo, held past it the insult flies mid-hold, on the same laws and the same
 cooldown as C/X. **The pet half of that tail landed in #2197 — Miso the
 adoptable cat (see Cat (#2197))**; the kids half landed in #2203 — Pip, the
 adoptable child (see Kids (#2203)).
-- Visitors are Fern and Ivy (#2143); pets landed (#2197, Miso); kids landed
+- Visitors are Fern and Ivy (#2143); pets landed (#2197, Miso — and #2200 gave
+  her a mood row on the panel and neighbours who greet her); kids landed
   (#2203, Pip); **CLOSED by #2222:** the buy catalog got its category shelves
   (HOME / FUN / DECOR / SPECIAL) — see §Catalog shelves below.
 - **CLOSED by #2227:** no skippable-speed control — the clock dial ships (pause /
