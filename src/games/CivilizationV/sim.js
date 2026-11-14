@@ -1820,6 +1820,39 @@ export function cultureBeats(gs, civ, rid) {
     return (gs.civs[civ].tourism || 0) * eraCurve(gs.civs[civ].era, gs.civs[rid].era) > (gs.civs[rid].tourism || 0)
 }
 
+// #2128 item 1+4: era crossings ride the log, they don't whisper. When a civ
+// enters an era the note says what changed on the curve: a court ahead of every
+// living rival now books double against the young; a rival catching or passing
+// Rome's age closes (or flips) Rome's own ×2. Crossings that change nobody's
+// standing return '' — silence for noise, news for the board. Pure law over
+// stored state; the component only paints what this returns.
+export function eraCrossNote(gs, civ, era) {
+    const mark = (c) => (c.era == null ? -1 : c.era)
+    const rivals = gs.civs.filter((c) => !c.barb && !c.cs && c.alive && c.id !== civ)
+    if (civ === 0) return rivals.length && rivals.every((c) => mark(c) < era) ? 'your tourists now count double against younger courts' : ''
+    const parts = []
+    if (rivals.length && rivals.every((c) => mark(c) < era)) parts.push('their tourists now count double against younger courts')
+    const pEra = mark(gs.civs[0])
+    if (era === pEra) parts.push('they have closed the age gap with Rome — neither book counts double')
+    else if (era > pEra) parts.push('they have outaged Rome — their book counts double against yours')
+    return parts.join(' · ')
+}
+
+// #2128 items 3+4: the era-bought culture crown, in numbers. When your tourism
+// crowns only because the curve lifted you over a RAW leader, the victory panel
+// says so — raw trail vs adjusted win — and the sting rides the era gap.
+// null when the raw book led everyone (a plain crown keeps the #375-4 copy).
+// Mirrors victoryFor's neededCurve test (index.jsx and this walk one road).
+export function eraBoughtInfo(gs) {
+    const mine = Math.floor(gs.civs[0].tourism || 0)
+    const rivals = gs.civs.filter((c) => !c.barb && !c.cs && c.alive && c.id !== 0)
+    const above = rivals.filter((c) => Math.floor(c.tourism || 0) >= mine)
+    if (!above.length) return null
+    const worst = above.reduce((a, b) => ((b.tourism || 0) > (a.tourism || 0) ? b : a))
+    const theirs = Math.floor(worst.tourism || 0)
+    return { raw: mine, theirs, name: CIVS[worst.id].name, mult: eraCurve(gs.civs[0].era, worst.era), gap: Math.max(1, (gs.civs[0].era == null ? -1 : gs.civs[0].era) - (worst.era == null ? -1 : worst.era)) }
+}
+
 function victoryFor(gs, civ) {
     if (!gs.civs[civ].alive) return null
     // #1777: DOMINATION counts ORIGINAL capitals, forever fallen — whoever

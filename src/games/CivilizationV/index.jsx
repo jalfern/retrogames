@@ -21,7 +21,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import * as THREE from 'three'
-import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP, canDeclareWar, canMakePeace, canTrade, canGift, csInfo, CS_IDS, coastalCityOf, canEmbark, canLand, hullSupplied, suppliedSea, canQueue, queueDeny, arkKind, ARK_PARTS, arkPartsOf, arkPartsDone, eraCurve, cultureBeats } from './sim.js'
+import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP, canDeclareWar, canMakePeace, canTrade, canGift, csInfo, CS_IDS, coastalCityOf, canEmbark, canLand, hullSupplied, suppliedSea, canQueue, queueDeny, arkKind, ARK_PARTS, arkPartsOf, arkPartsDone, eraCurve, cultureBeats, eraCrossNote, eraBoughtInfo } from './sim.js'
 import { decide, RESEARCH_ORDER } from './planner.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -261,10 +261,19 @@ const CivilizationVGame = () => {
                     shake.v = 7
                     audioController.playSweep(330, 110, 0.5, 'sawtooth', 0.08)
                 }
-                else if (e.type === 'era' && e.civ === 0) {
-                    say(`THE ${ERAS[e.era]} DAWNS`)
-                    audioController.playSweep(392, 523, 0.4, 'triangle', 0.08)
-                    audioController.playTone(659, 0.18, 'sine', 0.05); audioController.playTone(784, 0.28, 'sine', 0.04)
+                else if (e.type === 'era') {
+                    const note = eraCrossNote(gs, e.civ, e.era)
+                    if (e.civ === 0) {
+                        say(`THE ${ERAS[e.era]} DAWNS${note ? ` — ${note}` : ''}`)
+                        audioController.playSweep(392, 523, 0.4, 'triangle', 0.08)
+                        audioController.playTone(659, 0.18, 'sine', 0.05); audioController.playTone(784, 0.28, 'sine', 0.04)
+                    } else if (note) {
+                        // #2128 item 1: a rival age-crown that moves the curve is NAMED —
+                        // quieter than Rome's fanfare, but the board never lets a doubling pass in silence.
+                        say(`${CIVS[e.civ].name.toUpperCase()} ENTERS THE ${ERAS[e.era]} — ${note}`)
+                        audioController.playSweep(330, 440, 0.35, 'triangle', 0.05)
+                        audioController.playTone(587, 0.14, 'sine', 0.03)
+                    }
                 }
                 else if (e.type === 'ark' && e.civ === 0 && e.prog >= lastArkToast + 20) {
                     lastArkToast = e.prog
@@ -327,7 +336,11 @@ const CivilizationVGame = () => {
             const why = gs.endWhy || ''
             const type = /Domination/.test(why) ? 'domination' : /Science/.test(why) ? 'science' : /Culture/.test(why) ? 'culture' : win ? 'golden' : 'fall'
             watchingRef.current = false; setWatching(false) // #1656 pattern: watch never lingers past the end of a run (#1705-nightly-fix)
-            panelOpenRef.current = false; setPanelOpen(false); setEnd({ win, why, turn: gs.turn, size: capSize(), domination: type === 'domination', type }); overAtRef.current = performance.now(); setMode('over'); if (win) audioController.playFanfare(); else audioController.playDeath()
+            const curve = win && type === 'culture' ? eraBoughtInfo(gs) : null // #2128 item 3+4: was this crown era-bought?
+            panelOpenRef.current = false; setPanelOpen(false); setEnd({ win, why, turn: gs.turn, size: capSize(), domination: type === 'domination', type, curve }); overAtRef.current = performance.now(); setMode('over'); if (win) audioController.playFanfare(); else audioController.playDeath()
+            // #2128 item 3: culture a RAW book did not win gets its own voice — a rising
+            // sweep keyed to the era gap (one era vs two or more); a plain crown stays the plain fanfare.
+            if (curve) { const up = curve.gap >= 2 ? 1174 : 784; audioController.playSweep(523, up, curve.gap >= 2 ? 0.7 : 0.5, 'triangle', 0.08); audioController.playTone(up * 1.5, 0.22, 'sine', 0.04) }
         }
         const capSize = () => { const cap = gs.cities.find((c) => c.civ === 0 && c.capital); return cap ? cap.size : 0 }
 
@@ -1398,6 +1411,8 @@ const CivilizationVGame = () => {
                             </div>
                         </div>
                         <div className="text-[10px] tracking-[0.3em] text-yellow-400/80 border-b border-yellow-300/20 pb-1 mb-2">THE RIVAL TRACKS</div>
+                        {/* #2128 item 2: multiplier badges flip in when the ×N changes (the span is keyed on its value, so React remounts it at the crossing). */}
+                        <style>{`@keyframes civv-pop { from { opacity: 0; transform: rotateX(80deg) scale(1.6); } 60% { opacity: 1; transform: rotateX(-12deg) scale(1.15); } to { opacity: 1; transform: none; } } .civv-badge { animation: civv-pop .45s ease-out; transform-origin: 50% 0; }`}</style>
                         {vpanel.rivals.map((r) => (
                             <div key={r.id} className={`mb-1 rounded border px-2 py-1 text-[11px] ${!r.alive ? 'border-white/10 bg-black/30 text-white/30' : 'border-white/15 bg-black/20'}`}>
                                 <span className="inline-block w-2.5 h-2.5 rounded-sm mr-1.5 align-middle" style={{ background: r.hex }} />{r.name}
@@ -1405,15 +1420,15 @@ const CivilizationVGame = () => {
                                     <>
                                         <span className="ml-2 text-amber-300">— VASSAL of {CIVS[r.vassal]?.name || 'a rival'} · tribute flows, puppet peace</span>
                                         <span className="ml-2 opacity-80">☼ {r.tour}</span>
-                                        {r.mult > 1 && <span className="ml-1 text-emerald-300">×{r.mult} vs them</span>}
-                                        {r.back > 1 && <span className="ml-1 text-red-300">×{r.back} vs you</span>}
+                                        {r.mult > 1 && <span key={`tm${r.id}-${r.mult}`} className="civv-badge inline-block ml-1 text-emerald-300">×{r.mult} vs them</span>}
+                                        {r.back > 1 && <span key={`ym${r.id}-${r.back}`} className="civv-badge inline-block ml-1 text-red-400 animate-pulse">×{r.back} vs you</span>}
                                         {r.ark > 0 && <span className="ml-2 text-sky-300">ARK {r.partsDone}/4</span>}
                                     </>
                                 ) : (
                                     <>
                                         <span className="ml-2 opacity-80">☼ {r.tour}</span>
-                                        {r.mult > 1 && <span className="ml-1 text-emerald-300">×{r.mult} vs them</span>}
-                                        {r.back > 1 && <span className="ml-1 text-red-300">×{r.back} vs you</span>}
+                                        {r.mult > 1 && <span key={`tm${r.id}-${r.mult}`} className="civv-badge inline-block ml-1 text-emerald-300">×{r.mult} vs them</span>}
+                                        {r.back > 1 && <span key={`ym${r.id}-${r.back}`} className="civv-badge inline-block ml-1 text-red-400 animate-pulse">×{r.back} vs you</span>}
                                         {r.ark > 0 && <span className="ml-2 text-sky-300">ARK {r.partsDone}/4</span>}
                                         {r.space && r.ark === 0 && <span className="ml-2 text-sky-300">SPACEFLIGHT!</span>}
                                         {r.origFall && <span className="ml-2 text-red-300">original capital fallen</span>}
@@ -1466,6 +1481,7 @@ const CivilizationVGame = () => {
                                 : end.type === 'culture' ? 'Travelers cross every sea for your wonders — the world sings in Latin.'
                                     : `Your capital reached size ${end.size} by turn ${end.turn}`)
                         : `${end.why}`}</p>
+                    {end.curve ? <p className="text-[11px] text-amber-200/85 mb-3 max-w-[560px] leading-5">TEACHING — THE CROWN WAS ERA-BOUGHT: your raw book ☼ {end.curve.raw} trailed {end.curve.name}&apos;s {end.curve.theirs}; the age gap counts it ×{end.curve.mult}, and {Math.floor(end.curve.raw * end.curve.mult)} vs {end.curve.theirs} won the courts. End an age ahead and every younger court is worth double.</p> : null}
                     <p className="text-sm text-amber-200/80 mb-4">Eight stages of the arcade campaign, all live: the world of Civilization V, from the first settler to the last rocket.</p>
                     <p className="animate-pulse font-bold">TAP / PRESS ANY KEY</p>
                 </div>

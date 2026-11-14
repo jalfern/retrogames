@@ -2,7 +2,7 @@
 // boots, its core rules hold, and it can be won. No browser, no three.
 // Run: npm run civcheck. Proven red-able (mutant) by hand — see README.
 
-import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, hasWonder, gpReady, gpThreshold, gpCost, canRecruit, recruitGP, canUseGP, spendGP, canDeclareWar, canMakePeace, makePeace, canTrade, makeTrade, cityStates, csInfo, canGift, giftCS, CS_IDS, CS0, isCS, coastalTile, coastalCityOf, isWater, findPath, orderMove, tileBlocked, canEmbark, embark, canLand, land, transportFor, portsOfRealm, suppliedSea, hullSupplied, ARK_PARTS, arkPartsOf, arkPartsDone, eraCurve, cultureBeats } from '../src/games/CivilizationV/sim.js'
+import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, hasWonder, gpReady, gpThreshold, gpCost, canRecruit, recruitGP, canUseGP, spendGP, canDeclareWar, canMakePeace, makeTrade, canTrade, cityStates, csInfo, canGift, giftCS, CS_IDS, CS0, isCS, coastalTile, coastalCityOf, isWater, findPath, orderMove, tileBlocked, canEmbark, embark, canLand, land, transportFor, portsOfRealm, suppliedSea, hullSupplied, ARK_PARTS, arkPartsOf, arkPartsDone, eraCurve, cultureBeats, eraCrossNote, eraBoughtInfo } from '../src/games/CivilizationV/sim.js'
 import { decide, plan, RESEARCH_ORDER } from '../src/games/CivilizationV/planner.js'
 import { readFileSync } from 'fs'
 
@@ -2416,6 +2416,77 @@ console.log('42. the era curve — younger courts are dazzled double over')
         'the VICTORY panel lead and the ×N badges read the same exported helpers — paint cannot drift from the law')
 
     CFG.capitalSizeToWin = keepCap; CFG.cultureWin = keepCult; CFG.tourismWin = keepTour; CFG.turnLimit = keepTurn
+}
+
+// ---- 43. era-curve polish — crossings speak, crowns teach (#2128) ----
+console.log('43. era-curve polish — crossings speak, crowns teach (#2128)')
+{
+    const keepCap = CFG.capitalSizeToWin, keepTour = CFG.tourismWin, keepTurn = CFG.turnLimit
+    CFG.capitalSizeToWin = 99; CFG.tourismWin = 120; CFG.turnLimit = 9999
+    const booth = () => {
+        const g = newGame(2, 0)
+        const s = g.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+        step(g, { select: s.id, found: true })
+        step(g, { endTurn: true })
+        return g
+    }
+    const setEras = (g, mine, theirs) => { g.civs[0].era = mine; for (const c of [1, 2, 3]) g.civs[c].era = theirs }
+
+    // (a) Rome's crossing names the reward only when the whole board is younger
+    const g1 = booth()
+    setEras(g1, 3, 2)
+    ok(/your tourists now count double/.test(eraCrossNote(g1, 0, 3)), 'Rome ahead of every living court — the DAWNS log teaches the ×2')
+    setEras(g1, 3, 3)
+    eq(eraCrossNote(g1, 0, 3), '', 'a rival same-era — the crossing changes nothing, so it says nothing')
+
+    // (b) rival crossings: named when they move the curve against Rome, silent when they don't
+    const g2 = booth()
+    setEras(g2, 2, 1); g2.civs[1].era = 3
+    let n = eraCrossNote(g2, 1, 3)
+    ok(/their tourists now count double/.test(n) && /outaged Rome/.test(n), 'China past Rome — tourists double AND the age gap flipped against Rome, both named')
+    setEras(g2, 3, 3) // now level: a crossing INTO era 2 stays silent; into era 3 closes the gap
+    eq(eraCrossNote(g2, 1, 2), '', 'a mid-pack crossing that out-shines no one is noise, not news')
+    setEras(g2, 3, 1)
+    n = eraCrossNote(g2, 1, 3)
+    ok(/closed the age gap with Rome/.test(n) && !/count double/.test(n), 'China level with Rome — the close is named, but a level board books no doubles')
+
+    // (c) dead courts are skipped by the note exactly as the crown skips them
+    const g3 = booth()
+    setEras(g3, 1, 1)
+    g3.civs[2].alive = false; g3.civs[3].alive = false
+    ok(/their tourists now count double/.test(eraCrossNote(g3, 1, 2)), 'the last two rivals are dust — China at era 2 stands alone above the living and is called for it')
+
+    // (d) eraBoughtInfo: null for a raw lead, the ledger for a curve-crown
+    const g4 = booth()
+    setEras(g4, 3, 3)
+    g4.civs[0].tourism = 200; g4.civs[1].tourism = 100; g4.civs[2].tourism = 2; g4.civs[3].tourism = 1
+    eq(eraBoughtInfo(g4), null, 'a raw book that leads every court buys nothing at the era shop — no lesson line')
+    const g5 = booth()
+    setEras(g5, 4, 2)
+    g5.civs[0].tourism = 130; g5.civs[1].tourism = 515; g5.civs[2].tourism = 2; g5.civs[3].tourism = 1
+    const eb = eraBoughtInfo(g5)
+    ok(eb && eb.raw === 130 && eb.theirs === 515 && eb.name === CIVS[1].name && eb.mult === 4 && eb.gap === 2,
+        `the era-bought crown says the numbers: raw ${eb && eb.raw} trailed ${eb && eb.name} ${eb && eb.theirs}, ×${eb && eb.mult} over a ${eb && eb.gap}-era gap`)
+    g5.civs[1].alive = false
+    eq(eraBoughtInfo(g5), null, 'the raw leader was destroyed mid-run — the ghost book buys no lesson line either')
+
+    // (e) the crown and the lesson walk one road: the same ge that WINS era-bought is era-bought to the panel
+    const g6 = booth()
+    setEras(g6, 4, 2)
+    g6.civs[0].tourism = 130; g6.civs[1].tourism = 515; g6.civs[2].tourism = 2; g6.civs[3].tourism = 1
+    step(g6, { endTurn: true })
+    ok(g6.end === 'win' && /younger age/.test(g6.endWhy || '') && eraBoughtInfo(g6) !== null, 'the victory copy and the teaching numbers light on the SAME board — law and paint cannot drift (#2122 doctrine, extended)')
+
+    // (f) the paint is wired to the law (the (k) convention): rival crossings, gap-keyed sting, teaching panel, popping badges
+    const view = readFileSync(new URL('../src/games/CivilizationV/index.jsx', import.meta.url), 'utf8')
+    ok(/eraCrossNote\(gs, e\.civ, e\.era\)/.test(view), 'the era event asks the exported note — crossings are law, not copy')
+    ok(/ENTERS THE \$\{ERAS\[e\.era\]\}/.test(view), 'a rival crossing prints "NAME ENTERS THE ERA"')
+    ok(/eraBoughtInfo\(gs\)/.test(view) && /end\.curve/.test(view), 'finish() computes the era-bought ledger once and the VICTORY panel teaches from it')
+    ok(/curve\.gap >= 2 \? 1174 : 784/.test(view), 'the culture sting keys its rise to the era gap (1 step vs 2+)')
+    ok(/civv-pop/.test(view) && /animate-pulse/.test(view), 'badges flip in on multiplier change (civv-pop) and the vs-you warning pulses like the supply family')
+    ok(!/className="ml-1 text-red-300">×\{r\.back\}/.test(view), 'the ×N vs you badge left its static grey-red behind')
+
+    CFG.capitalSizeToWin = keepCap; CFG.tourismWin = keepTour; CFG.turnLimit = keepTurn
 }
 
 console.log(`\ncivcheck: ${pass} passed, ${fail} failed`)
