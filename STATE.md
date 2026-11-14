@@ -1,59 +1,79 @@
-# STATE — session 265 (2026-11-14, slot a)
+# STATE — session 267 (2026-11-14, slot a)
 
 ## Playable now / what shipped
-- **PICK RUSH got WAVES** (`3e83fe0`, PR #2211, closes #2210): the belt breathes.
-  `WAVES` in `sim.js` — 3 named waves per shift, authored (seed-independent)
-  kind order + intra-wave gap + longer `rest`; ±5 ticks seeded jitter on top.
-  Shift line: teaching singles→weave→burst; glass from S2, barrels S3, scrap S4
-  (era ladder honoured). Each incoming wave announces itself over the belt mouth
-  — ice-blue caption + two-note cue during the breather. Quota promise kept:
-  supply 48/55/56/65 vs quotas 18/19/20/21, autopilot clears on 7/101/2027,
-  rival ratio ~1:1. `pickcheck` **30/30 node** (5 new WAVES gates: authored
-  order across seeds, era ladder, breathing, supply, wave cue) + **12/12 browser**,
-  zero page errors; new mutant `PICK_MUT=wave` caught by ERA LADDER (judge/
-  glass/roll/quota still caught). contractcheck 16/16, lint gates + build green.
-  Prod-verified: lazy chunk `index-Bjyv5Zww.js` carries `GLASS RUN` on
-  jalfern.com (entry `index-CIFUrahm.js`). QA polish pass filed: **#2223**.
-- **Main green (#601 cleared):** the failing nightly 43568372143 died on
-  `dvhcheck` — two FURLONG demos sized `100vh`; fix merged as #2208 (`fa1faa3`)
-  before my waiter even started. Nightly **43576441057 SUCCESS** on `fa1faa3` =
-  full suite green on main. No quarantine entries.
+- **HOMEBODY got catalog SHELVES** (merge `91b1ca8`, PR #2226, closes #2222):
+  buy mode is no longer a flat 16-card strip — HOME / FUN / DECOR / SPECIAL
+  tabs, open tab gold, cards ~82px (was ~35px). `[` `]` flip on keyboard, tab
+  row tappable on phones, digits pick **within** the open shelf so all 16
+  cards are reachable by shelf+digit (closes #2209's card-16 orphan). Law pure
+  in sim.js (`CAT_TABS`, `setSel` shelf-follow + per-shelf memory,
+  `flipTab`/`selectTab`, `digitCard`); `s.tab` rides `stateHash` (flip
+  round-trips same hash); R/P/K and the attract counter purchases ride
+  `setSel` — demo never desyncs shelf from selection.
+  Proof: `peoplecheck` **308/308** (new STORES 25 gates: partition both ways,
+  cycle, selection-in-shelf invariant, memory, digit map 16/16, purchase laws
+  unchanged, hash, 6 source pins) + mutant: `setSel` shelf-follow neutered →
+  exactly 4 gates red (304/4), restored. `homebodydrive` **48/48** real Chrome
+  (real [ ] keys, tapped tab, open-tab gold 351px vs closed 0). eslint +
+  lint:mario/fps/ai + contractcheck 14/14 + build green.
+  Live: https://jalfern.com/retrogames/homebody — prod-verified: entry flipped
+  to `index-UzJKDDwU.js`, Homebody chunk `index-BLxZXTxC.js` carries the
+  shelves (DECOR + Otto markers).
+- **How the pick went (#1258 ladder):** warden TARGET #2157 REFUSED at claim —
+  slot b live (pid alive) held it with a 32-min-old claim and PR #2219 was
+  already landing; never touch a live lane. Ladder then: no steer/next,
+  `game-queue` empty, QA-borrow blocked (QA MASTER live on studio), flagship
+  stage SPENT (every SSX/Emberwood/CometDriftHD/Myst gap CLOSED-marked or
+  QA-owned) → never-dry `weakestStage` = HOMEBODY score 8 (4 feedback naming
+  it + 4 unowned gaps). Oldest gap (bonds PARTIAL line) treated as OWNED: its
+  parts all record shipped (#2171/#2197/#2203) and its tail belongs to QA
+  #2209 — FORGE's "when unsure, owned" + last STATE's warning. Shipped the
+  next unowned: the single-store catalog tail. Filed #2222 + claimed the
+  normal way.
 
-## Ladder
-- TARGET #2203 (warden) claim **REFUSED** — b live, 61-min checkpoint; b's
-  HOMEBODY kids shipped meanwhile (**#2207 MERGED**).
-- Ladder: steer/next/game-queue empty; feedback all QA items with a live QA
-  master (no borrow); flagshipStage null → never-dry: `weakestStage` scored
-  **PICK RUSH 4** (4 unowned README gaps, 0 QA naming it, no lane inside).
-  Gap chosen = item 3 (hand-authored waves): item 1 is instrumentation (dry
-  rung demands player-feel) and item 2 is barred by Jon's no-second-pad rule.
-  Filed #2210 with the why-weakest line, claimed, shipped in-session.
+## LESSONS (the expensive kind)
+- **The pointer handler mutates `gs` synchronously** — a logic probe can read
+  the new state a loop-frame before the canvas paints it. Pixel asserts after a
+  tap must settle (~150 ms) or poll pixels; key-press flows are safe (they
+  queue and flip inside the loop, paint same frame). Banked in Homebody README.
+- **Dev servers die of adoption**: launched via `( cmd & )` the vite got reaped
+  mid-session (symptom: Vite HMR WebSocket error counted as page error in a
+  drive). Use `nohup npm run dev … &`; and remember an HMR socket error in a
+  browser drive is harness collateral, not game.
+- **My own gate arithmetic flaked twice before the code did** (cycle test
+  expected 5 pushes from a 4-loop; "flip back" assumed ±1 returns where you
+  came from — it doesn't when a `setSel` moved the shelf between). When a
+  fresh gate is red but a hand-replica passes, audit the test first.
+- **STATE.md on main regressed to session-265 content** after midday merges
+  (slot b's #2219 merge carried the older file). The top-of-file number is not
+  authority; the issue board is. Later lanes: re-read the BOARD, not just STATE.
 
-## Next (slot a or b, in order)
-1. **#2157 tail / #1711**: PLAICRAFT lanes-grade-takes shipped by a later lane
-   (`ac6501f`, #2219) — when Jon's phone takes appear, run `plaicraft:evidence`
-   /`plaicraft:clap --key=` and post numbers on #1711 (#2156 can then close).
-2. #2223 is QA's (PickRush polish). Builders keep off it.
-3. #2203 sits with b (#2207 merged — check whether that session closed it;
-   if not, b finishes its own paperwork).
-4. Ladder is otherwise empty — `weakestStage` again at the next kick; Homebody
-   kids/pet-row and Myst gaps are candidates.
+## BOARD
+- **#2222 shipped + closed.** QA lane holds #2214 (PickRush polish), #2205
+  (ClapTest polish); the Homebody QA passes (#2200/#2209/#2154/#2135/#2220)
+  closed during the day. #1711 stays `building` (slot b: #2157 landed as
+  #2219; JON_KEY jonq #2218 AWAITING, default = keep inline key).
+- Nightly: last completed success (#2096 @ `45e3699`); run for `0f4b2ce`/
+  `91b1ca8` in flight at wrap — check at next kick. No quarantine entries.
+  No steer/halt on any board.
 
-## The session's catches
-- **Two dispatched nightlies serialize** (queue ~90 min before the second
-  starts). A merge waiter on `gh run list --limit 1` watches its OWN pending run
-  and misses a sibling's green — main-ok uses `--status completed`; waiters
-  should too (or just use main-ok itself as the loop condition).
-- A PR whose body says `Closes #n` auto-closes at merge — the step-8
-  `gh issue close` then reports "already closed"; harmless, but keep the
-  label edit (close failing must not skip `--add-label shipped`).
-- `weakestStage` returns the OLDEST unowned gap even when the gap's own text
-  names a platform dependency — sanity-read the gap against "a fix a player
-  feels" before claiming.
-- zsh: `status` is a read-only shell variable; name waiter-loop vars something else.
+## NEXT (next slot)
+1. Ladder is likely empty again → never-dry `weakestStage`. Homebody now
+   carries two fresh unowned gaps from this README edit-window: *no
+   skippable-speed control* (the original has pause/fast-forward — a real
+   player-facing mechanic) and *no per-object queue display on the needs
+   panel*. Both are legitimate one-stage candidates.
+2. Watch the nightly for `91b1ca8` at the next kick; red main outranks all.
+3. If Jon answers #2218 (JON_KEY file), run `npm run plaicraft:grade` and put
+   take verdicts on #1711 (platform lane's tail, not this slot's — unless the
+   warden assigns).
 
-## Hygiene at exit
-Dev server on 5173 STOPPED (mine). Worktree `~/Dev/retrogames-forge-pickrush-waves`
-kept (branch merged; auto-detached at tip, re-detached to origin/main `ac6501f`).
-STATE committed to main legitimately (#2211 merged this session) + parked to the
-slot-a path. No open jonq questions this session.
+## Open questions
+- none filed this session (taste bar not reached; jonq games lane empty).
+
+## HOUSEKEEPING
+- Slot-a worktree `~/Dev/retrogames-forge-homebody-stores` (branch merged;
+  detached at `91b1ca8`, node_modules symlink) — keep for the record.
+  Vite on :5173 (mine) stopped at session end; no other lane's port touched.
+- `git worktree list` shows no worktree holding `[main]`; main checkout
+  detached after the STATE push; STATE parked to slot-a path.
