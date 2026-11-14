@@ -36,6 +36,7 @@ import {
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court — one pad button, two orders
     scheduleMeals, MEAL_WINDOW, SPAT_CD,   // #2244: the meal bells — the F1 cheat re-seeds today's hours
     NEED_HINT,   // #2253: the amber prompt names the fix
+    VISIT_TIMBRE,   // #2240: each neighbour owns a call motif + entrance footfalls
     stateHash,
 } from './sim.js'
 import {
@@ -44,6 +45,7 @@ import {
     drawPet,   // #2197: Miso
     drawKid,   // #2203: Pip
     drawSay,   // #2135: the spoken-word bubble over the pair
+    drawGroundGift, bondRows,   // #2240: the set-down basket + the BONDS rows as data
 } from './art.js'
 
 const SIM_MS = FIXED_DT
@@ -166,13 +168,12 @@ const HomebodyGame = () => {
                     case 'sell': audioController.playSweep(420, 180, 0.12, 'square', 0.05); break
                     case 'work-go': audioController.playSweep(260, 620, 0.3, 'square', 0.06); if (live) say(`${e.name.toUpperCase()} LEAVES FOR WORK`); break
                     case 'pay': audioController.playTone(880, 0.06, 'triangle', 0.05); audioController.playTone(1175, 0.06, 'triangle', 0.05); audioController.playTone(1568, 0.1, 'triangle', 0.05); if (live) say(`PAYDAY  §${e.pay}`); break
-                    case 'visit':   // #2143: two neighbours now — each gets her own ring
-                        if (e.name === 'Ivy') {
-                            audioController.playTone(587, 0.14, 'sine', 0.06); setTimeout(() => audioController.playTone(988, 0.18, 'sine', 0.06), 150)
-                            if (live) say('IVY AT THE GATE')
-                        } else {
-                            audioController.playTone(660, 0.14, 'sine', 0.06); setTimeout(() => audioController.playTone(880, 0.18, 'sine', 0.06), 150)
-                            if (live) say('THE NEIGHBOUR RINGS')
+                    case 'visit':   // #2143/#2240: each neighbour owns a motif — her call AND her footfalls
+                        {
+                            const tb = VISIT_TIMBRE[e.name] || VISIT_TIMBRE.Fern
+                            tb.call.forEach(([f, d, ms]) => { if (ms) setTimeout(() => audioController.playTone(f, d, 'sine', 0.06), ms); else audioController.playTone(f, d, 'sine', 0.06) })
+                            tb.steps.forEach(([f, d, ms]) => setTimeout(() => audioController.playTone(f, d, 'triangle', 0.03), ms))
+                            if (live) say(e.name === 'Ivy' ? 'IVY AT THE GATE' : 'THE NEIGHBOUR RINGS')
                         }
                         break
                     case 'visit-end': audioController.playSweep(520, 300, 0.2, 'sine', 0.04); break
@@ -200,6 +201,12 @@ const HomebodyGame = () => {
                         setTimeout(() => audioController.playTone(659, 0.07, 'triangle', 0.05), 90)
                         setTimeout(() => audioController.playTone(880, 0.14, 'triangle', 0.05), 180)
                         if (live) { say(e.money ? `IVY BRINGS A GIFT — §${e.money}` : 'IVY BRINGS A GIFT ♥'); sparkles() }
+                        break
+                    case 'gift-land':   // #2240: the basket is SET DOWN — a soft low thunk, distinct from every bell here, plus a dust puff
+                        audioController.playTone(150, 0.07, 'triangle', 0.05)
+                        audioController.playTone(95, 0.12, 'triangle', 0.045, 0.06)
+                        audioController.playFilteredNoise(0.05, 0.025, 420)
+                        if (live) { burst(e.x, e.y + 6, 5, '#c9b48a', 1.6); if (e.honey) say('IVY LEFT HONEY BY THE TILL') }
                         break
                     case 'rel-up':
                         audioController.playTone(659, 0.07, 'sine', 0.05)
@@ -473,8 +480,9 @@ const HomebodyGame = () => {
             drawGate(ctx, g.sec)
             drawClouds(ctx, g.sec)
             for (const it of g.items) drawItem(ctx, it, g.sec)
-            const order = [...g.people.map((p) => ({ p, v: p.y })), ...(g.visitor ? [{ p: g.visitor, v: g.visitor.y }] : []), ...(g.ivy ? [{ p: g.ivy, v: g.ivy.y }] : []), ...(g.pet ? [{ p: g.pet, v: g.pet.y }] : []), ...(g.kid ? [{ p: g.kid, v: g.kid.y }] : [])].sort((a, b) => a.v - b.v)   // #2143: both neighbours share the lot; #2197: so does the cat; #2203: and the child
+            const order = [...g.people.map((p) => ({ p, v: p.y })), ...(g.visitor ? [{ p: g.visitor, v: g.visitor.y }] : []), ...(g.ivy ? [{ p: g.ivy, v: g.ivy.y }] : []), ...(g.pet ? [{ p: g.pet, v: g.pet.y }] : []), ...(g.kid ? [{ p: g.kid, v: g.kid.y }] : []), ...(g.giftFx > 0 && g.giftAt ? [{ p: { x: g.giftAt.x, y: g.giftAt.y }, giftLanded: true }] : [])].sort((a, b) => a.v - b.v)   // #2143: both neighbours share the lot; #2197: so does the cat; #2203: and the child; #2240: so the set-down basket rides the depth line
             for (const o of order) {
+                if (o.giftLanded) { drawGroundGift(ctx, g); continue }   // #2240
                 if (g.pet && o.p === g.pet) { drawPet(ctx, o.p, g.sec); continue }   // #2197: its own sprite, same depth line
                 if (g.kid && o.p === g.kid) { drawKid(ctx, o.p, g.sec); continue }   // #2203: Pip on the same depth line
                 // #2076: the pair argues and sulks ON screen — storm puff at the
@@ -877,6 +885,7 @@ const HomebodyGame = () => {
                     holdT: Math.round(gs.holdT), courtArmed: gs.holdT >= 0,   // #2171: the thumb court
                     visitor: gs.visitor ? gs.visitor.name : null,
                     ivy: gs.ivy ? { name: gs.ivy.name, gift: !!gs.ivy.gift, state: gs.ivy.state, x: Math.round(gs.ivy.x), y: Math.round(gs.ivy.y) } : null,   // #2143
+                    giftFx: Math.round(gs.giftFx * 10) / 10, giftHoney: !!gs.giftHoney, demoIvy: gs.demoIvy,   // #2240: the set-down + the attract's ring
                     pet: gs.pet ? { name: gs.pet.name, r: gs.pet.r, c: gs.pet.c, state: gs.pet.state, asleep: gs.pet.asleep, needs: { ...gs.pet.needs }, cd: Math.round(gs.pet.cd * 10) / 10, x: Math.round(gs.pet.x), y: Math.round(gs.pet.y) } : null,   // #2197
                     kid: gs.kid ? { name: gs.kid.name, r: gs.kid.r, c: gs.kid.c, state: gs.kid.state, asleep: gs.kid.asleep, needs: { ...gs.kid.needs }, cd: Math.round(gs.kid.cd * 10) / 10, x: Math.round(gs.kid.x), y: Math.round(gs.kid.y) } : null,   // #2203
                     paper: gs.paper ? { r: gs.paper.r, c: gs.paper.c } : null, paperDay: gs.paperDay,   // #2238: the route
@@ -909,6 +918,77 @@ const HomebodyGame = () => {
                 thaw: () => { if (gs) for (const p of gs.people) for (const n of NEEDS) p.needs[n] = 0.9 },
                 stand: (who, r, c) => { if (gs) { const p = gs.people[who]; p.r = r; p.c = c; p.path = null; p.use = null; p.goal = null; p.working = false; p.x = LOT_X + c * TILE + TILE / 2; p.y = LOT_Y + r * TILE + TILE / 2 } },   // #2171: park() seats the pair by the radio — the thumb-court drive needs a cell with a clear hand
                 hearts: () => particles.filter((pt) => pt.kind === 'heart').length,   // #2076: the make-up paid hearts?
+                // #2240: the SET-DOWN, counted on the live canvas at the landing
+                // cell — greens + tomato are the basket's own signature (the floor's
+                // plank tan deliberately does NOT match them), honey amber only ever
+                // rides the FAMILY tier. Local rects; nothing else red/green lives on
+                // a kitchen floor cell.
+                giftPix: () => {
+                    if (!canvas || !gs || !gs.giftAt || gs.giftFx <= 0) return null
+                    const d = ctx.getImageData(0, 0, W, H).data
+                    const x = Math.round(gs.giftAt.x), y = Math.round(gs.giftAt.y)
+                    let weave = 0, greens = 0, tomato = 0, honey = 0
+                    for (let yy = y - 10; yy <= y + 10; yy++) for (let xx = x - 12; xx <= x + 18; xx++) {
+                        if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue
+                        const i = (yy * W + xx) * 4
+                        const r = d[i], gg = d[i + 1], b = d[i + 2]
+                        if (Math.abs(r - 0x8a) < 22 && Math.abs(gg - 0x62) < 22 && Math.abs(b - 0x38) < 22) weave++
+                        else if (Math.abs(r - 0x4f) < 28 && Math.abs(gg - 0xae) < 28 && Math.abs(b - 0x5f) < 28) greens++
+                        else if (Math.abs(r - 0xd1) < 26 && gg < 110 && b < 100) tomato++
+                        else if (Math.abs(r - 0xe8) < 24 && Math.abs(gg - 0xa1) < 26 && Math.abs(b - 0x3a) < 26) honey++
+                    }
+                    return { weave, greens, tomato, honey, x, y, t: Math.round(gs.giftFx * 10) / 10 }
+                },
+                // #2240: BONDS AT PHONE SCALE — papersplay's method (#2080/#2133):
+                // resample the live canvas at its CSS scale (the compositor's own
+                // bilinear path) and count what survives the blur: each bond row's
+                // glyph ink (own hue per row), the 7px label ink, filled pips, the
+                // FAMILY gold pulse cell — plus how many separated label BANDS the
+                // column resolves (three rows must stay three rows at phone size).
+                bondsPix: () => {
+                    if (!canvas || !gs) return null
+                    const rect = canvas.getBoundingClientRect()
+                    const k = Math.min(1, rect.width / canvas.width)
+                    const ow = Math.max(8, Math.round(W * k)), oh = Math.max(8, Math.round(H * k))
+                    const cv = document.createElement('canvas'); cv.width = ow; cv.height = oh
+                    const cc = cv.getContext('2d'); cc.imageSmoothingEnabled = true
+                    cc.drawImage(canvas, 0, 0, ow, oh)
+                    const D = cc.getImageData(0, 0, ow, oh).data
+                    const at = (d, i) => i + 2 < d.length
+                    const count = (x0, y0, x1, y1, pred) => {
+                        let n = 0
+                        for (let yy = Math.floor(y0 * k); yy < Math.ceil(y1 * k); yy++) for (let xx = Math.floor(x0 * k); xx < Math.ceil(x1 * k); xx++) {
+                            const i = (yy * ow + xx) * 4
+                            if (at(D, i) && pred(D, i)) n++
+                        }
+                        return n
+                    }
+                    const hueOf = (hex, tol) => {
+                        const R = parseInt(hex.slice(1, 3), 16), G = parseInt(hex.slice(3, 5), 16), B = parseInt(hex.slice(5, 7), 16)
+                        return (d, i) => Math.abs(d[i] - R) + Math.abs(d[i + 1] - G) + Math.abs(d[i + 2] - B) < tol
+                    }
+                    const labelHue = hueOf('#8fa2c8', 90)
+                    const rows = bondRows(gs).filter((r) => r.key !== 'kid').map((r) => ({
+                        label: r.label,
+                        glyph: count(r.x, r.y, r.x + 12, r.y + 8, hueOf(r.col, 60)),
+                        labelInk: count(r.x + 50, r.y, r.x + 96, r.y + 8, labelHue),
+                        pips: count(r.x + 14, r.y, r.x + 46, r.y + 8, hueOf(r.col, 60)),
+                        gold: count(r.x + 23, r.y - 1, r.x + 31, r.y + 7, hueOf('#ffd24a', 70)),
+                    }))
+                    let bands = 0, prevBand = false
+                    const yTop = LOT_Y + 26 + gs.people.length * 74 + 12 - 2
+                    const yBot = yTop + 2 * 14 + 12
+                    for (let yy = Math.floor(yTop * k); yy < Math.ceil(yBot * k); yy++) {
+                        let ink = false
+                        for (let xx = Math.floor((PANEL_X + 62) * k); xx < Math.ceil((PANEL_X + 108) * k); xx++) {
+                            const i = (yy * ow + xx) * 4
+                            if (at(D, i) && labelHue(D, i)) { ink = true; break }
+                        }
+                        if (ink && !prevBand) bands++
+                        prevBand = ink
+                    }
+                    return { k: +k.toFixed(3), rows, bands }
+                },
                 hash: () => (gs ? stateHash(gs) : 0),
             }
             exposeGame({

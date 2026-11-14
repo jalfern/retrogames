@@ -12,6 +12,7 @@ import {
     CAT_TABS, tabCards,   // #2222: the catalog's category shelves
     SPEED_MULT,   // #2227: the speed dial
     petMood, PET_FEED_T,   // #2200: Miso's mood row + the lingering bowl
+    GIFT_LAND_T,   // #2240: the set-down basket's stage time
 } from './sim.js'
 
 const P = {
@@ -352,6 +353,42 @@ export function drawItem(ctx, it, t) {
 // shakes itself away from its partner; fx 'cold' — a lasting sullen lean the
 // other way, eyes averted, while the grudge holds. `lean` is the direction to
 // recoil (−1 left, +1 right), computed by the caller from the partner's side.
+// #2240: THE SET-DOWN. A gift basket Ivy carried in now sits on the ground
+// where it landed — woven pixels in the carried-basket palette (#2143), one
+// soft hop and squash at the moment it drops, greens + tomato over the rim,
+// and at FAMILY a small amber honey jar with a gold lid beside it. Fades on
+// the last 0.8 s of giftFx. Painted on the people's depth line.
+export function drawGroundGift(ctx, g) {
+    const at = g.giftAt
+    if (!at) return
+    const k = Math.max(0, Math.min(1, g.giftFx / GIFT_LAND_T))
+    const u = 1 - k
+    const bounce = u < 0.32 ? Math.abs(Math.sin((u / 0.32) * Math.PI)) * 6 * (1 - u / 0.32) : 0
+    const squash = u < 0.16 ? 1 - 0.22 * Math.sin((u / 0.16) * Math.PI) : 1
+    const x = Math.round(at.x), y = Math.round(at.y - bounce)
+    ctx.globalAlpha = Math.min(1, g.giftFx / 0.8)
+    ctx.fillStyle = 'rgba(30,20,10,0.22)'
+    ctx.beginPath(); ctx.ellipse(at.x, at.y + 9, 8, 2.6, 0, 0, 7); ctx.fill()
+    ctx.save(); ctx.translate(x, y); ctx.scale(1 + (1 - squash) * 0.8, squash)
+    ctx.fillStyle = '#c9995c'
+    ctx.fillRect(-7, 0, 14, 8)
+    ctx.fillStyle = '#8a6238'
+    ctx.fillRect(-7, 0, 14, 1); ctx.fillRect(-7, 4, 14, 1); ctx.fillRect(-1, 0, 1, 8)
+    ctx.fillStyle = '#4fae5f'
+    ctx.fillRect(-6, -4, 4, 4); ctx.fillRect(2, -3, 4, 3)
+    ctx.fillStyle = '#d1483f'
+    ctx.beginPath(); ctx.arc(0.5, -2, 2, 0, 7); ctx.fill()
+    ctx.restore()
+    if (g.giftHoney) {
+        const hx = x + 11, hy = y + 2
+        ctx.fillStyle = '#e8a13a'; ctx.fillRect(hx - 3, hy - 5, 6, 7)
+        ctx.fillStyle = '#c9821f'; ctx.fillRect(hx - 3, hy + 1, 6, 1)
+        ctx.fillStyle = '#ffd24a'; ctx.fillRect(hx - 3.5, hy - 7, 7, 2)
+        ctx.fillStyle = 'rgba(255,233,168,0.8)'; ctx.fillRect(hx - 2, hy - 4, 1, 3)
+    }
+    ctx.globalAlpha = 1
+}
+
 export function drawPerson(ctx, p, t, active, fx = null, lean = 0) {
     const bob = p.path && p.path.length ? Math.sin(p.walkPhase) * 1.6 : Math.sin(t * 2 + p.x) * 0.6
     const x = Math.round(p.x), y = Math.round(p.y)
@@ -735,16 +772,15 @@ export function drawPanel(ctx, s, t) {
     ctx.fillText('BONDS', PANEL_X + 12, by)
     // #2070: a grudge runs the household heart ash-dark — the panel shows the
     // chill until the pair makes up (the spark comes back with the level).
-    bondRow(ctx, PANEL_X + 12, by + 12, 'heart', s.grudge ? '#8c3b34' : '#e2574c', relLevel(s.rel.house), 'HOUSE')
-    bondRow(ctx, PANEL_X + 12, by + 26, 'leaf', '#4fae5f', relLevel(s.rel.fern), 'FERN')
-    // #2143: the third point of the triangle — flower = Ivy, the market neighbour
-    bondRow(ctx, PANEL_X + 12, by + 40, 'flower', '#a3579b', relLevel(s.rel.ivy), 'IVY')
-    // #2203: the child — a gold star once Pip is home
-    if (s.kid) bondRow(ctx, PANEL_X + 12, by + 54, 'star', '#ffd24a', relLevel(s.rel.kid), 'PIP')
-    // #2200: the cat — Miso gets her own row, but by cat law: a MOOD, not a
-    // ladder. Four pips carry the average of her three needs; the row alarms
-    // red-blink at the same RED_AT the need bars use, so a hungry tabby is
-    // legible from across the room (the original's pet panel told you this).
+    // #2240: rows + FAMILY pulses derive from bondRows(s) so the painter and
+    // the phone-scale probe (bondsPix) can never drift apart.
+    for (const row of bondRows(s)) {
+        bondRow(ctx, row.x, row.y, row.glyph, row.col, row.lv, row.label)
+        if (row.pulse && Math.floor(t * 2.5) % 2 === 0) {
+            ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1
+            ctx.strokeRect(row.x + 3 * 8 + 0.5, row.y + 0.5, 5, 5)
+        }
+    }
     const mood = petMood(s)
     if (mood !== null) {
         const py = by + (s.kid ? 68 : 54)
@@ -753,18 +789,6 @@ export function drawPanel(ctx, s, t) {
             ctx.strokeStyle = '#ff6a5c'; ctx.lineWidth = 1
             ctx.strokeRect(PANEL_X + 12 + 13.5, py + 0.5, 4 * 8, 7)
         }
-    }
-    if (relLevel(s.rel.house) === 3 && Math.floor(t * 2.5) % 2 === 0) {
-        ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1
-        ctx.strokeRect(PANEL_X + 12 + 3 * 8 + 0.5, by + 12 + 0.5, 5, 5)
-    }
-    if (relLevel(s.rel.fern) === 3 && Math.floor(t * 2.5) % 2 === 0) {
-        ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1
-        ctx.strokeRect(PANEL_X + 12 + 3 * 8 + 0.5, by + 26 + 0.5, 5, 5)
-    }
-    if (relLevel(s.rel.ivy) === 3 && Math.floor(t * 2.5) % 2 === 0) {   // #2143
-        ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1
-        ctx.strokeRect(PANEL_X + 12 + 3 * 8 + 0.5, by + 40 + 0.5, 5, 5)
     }
     // speed dial (#2227): the original's clock control, sitting above the wish
     // meter — four gears, the chosen one gold; the pause pip pulses while the
@@ -844,6 +868,20 @@ function needIcon(ctx, x, y, kind, col) {
 }
 
 // #1817 — bond row: a glyph (heart/leaf), four level pips, target label.
+// #2240 — bondRows(s): the panel's bond-line layout as DATA (painter and the
+// phone-scale legibility probe read the same numbers; drift between the two is
+// how legibility gates start lying). `pulse` = FAMILY gold blink on pip 4.
+export function bondRows(s) {
+    const by = LOT_Y + 26 + s.people.length * 74 + 2
+    const rows = [
+        { key: 'house', glyph: 'heart', col: s.grudge ? '#8c3b34' : '#e2574c', lv: relLevel(s.rel.house), label: 'HOUSE', x: PANEL_X + 12, y: by + 12, pulse: relLevel(s.rel.house) === 3 },
+        { key: 'fern', glyph: 'leaf', col: '#4fae5f', lv: relLevel(s.rel.fern), label: 'FERN', x: PANEL_X + 12, y: by + 26, pulse: relLevel(s.rel.fern) === 3 },
+        { key: 'ivy', glyph: 'flower', col: '#a3579b', lv: relLevel(s.rel.ivy), label: 'IVY', x: PANEL_X + 12, y: by + 40, pulse: relLevel(s.rel.ivy) === 3 },
+    ]
+    if (s.kid) rows.push({ key: 'kid', glyph: 'star', col: '#ffd24a', lv: relLevel(s.rel.kid), label: 'PIP', x: PANEL_X + 12, y: by + 54, pulse: false })
+    return rows
+}
+
 function bondRow(ctx, x, y, glyph, col, lv, label) {
     if (glyph === 'heart') {
         ctx.fillStyle = col
