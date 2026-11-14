@@ -14,6 +14,7 @@
 // offset, encoder priming, clock interpolation, throttled-box drift).
 
 import { tickToMs } from './voice.js'
+import { DIR_FIELDS, AIM_FIELDS } from './onePad.js'
 
 export const CLAP_TOL_MS = 50 // the acceptance line, verbatim from #1711
 
@@ -144,4 +145,41 @@ export function matchClapEdges(r) {
         worstMs: +worst.toFixed(1),
         why: broke.length ? `${broke.length}/${matched} clap(s) outside ±${tol} ms` : `${matched} clap(s) inside ±${tol} ms`,
     }
+}
+
+// takeEdges(rec) — the per-seat edge flattening the studio analyzer uses
+// (#2156: the phone screen must grade with the SAME code, so the extraction
+// moves here from scripts/plaicraft-clap.mjs and both surfaces call it).
+// Digital bits as rising edges tagged by their own control name; analog
+// channels (post-zone and raw) as |value| threshold crossings tagged
+// `ana:`/`raw:` so matchClapEdges sees them as CONTEXT only — pairing stays
+// exclusive to the `a` taps (#2056's named control, audit 2026-11-12).
+// Semantics byte-identical to the inline block this replaced.
+const TAKE_DIG = [...DIR_FIELDS, 'a', 'b', 'start', ...AIM_FIELDS]
+const TAKE_ANA = ['x', 'y', 'ax', 'ay']
+const TAKE_RAW = ['x', 'y', 'ax', 'ay', 'px', 'py']
+const TAKE_CROSS = 0.5
+
+export function takeEdges(rec) {
+    const out = []
+    ;(rec && rec.slots || []).forEach((slot, seat) => {
+        const pads = (slot && slot.pads) || []
+        const raws = (slot && slot.raw) || []
+        const edges = []
+        const seen = new Set()
+        const add = (t, control) => { const k = `${t}|${control}`; if (!seen.has(k)) { seen.add(k); edges.push({ t, control }) } }
+        for (let i = 0; i < pads.length; i++) {
+            const p = pads[i] || {}
+            const q = i ? pads[i - 1] || {} : {}
+            for (const f of TAKE_DIG) if (p[f] && !q[f]) add(i + 1, f)
+            for (const f of TAKE_ANA) if (Math.abs(p[f] || 0) >= TAKE_CROSS && Math.abs(q[f] || 0) < TAKE_CROSS) add(i + 1, `ana:${f}`)
+        }
+        for (let i = 0; i < raws.length; i++) {
+            const p = raws[i] || {}
+            const q = i ? raws[i - 1] || {} : {}
+            for (const f of TAKE_RAW) if (Math.abs(p[f] || 0) >= TAKE_CROSS && Math.abs(q[f] || 0) < TAKE_CROSS) add(i + 1, `raw:${f}`)
+        }
+        if (edges.length) out.push({ seat, edges, taps: edges.filter((e) => e.control === 'a').length })
+    })
+    return out
 }

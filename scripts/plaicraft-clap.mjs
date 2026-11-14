@@ -40,9 +40,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { validate } from '../src/utils/recording.js'
-import { detectClaps, clapVerdict, matchClapEdges, CLAP_TOL_MS, CLAP_SEARCH_MS, CLAP_MIN_PAIRS } from '../src/utils/clapSync.js'
+import { detectClaps, clapVerdict, matchClapEdges, takeEdges, CLAP_TOL_MS, CLAP_SEARCH_MS, CLAP_MIN_PAIRS } from '../src/utils/clapSync.js'
 import { containerDurationMs } from '../src/utils/voice.js'
-import { DIR_FIELDS, AIM_FIELDS } from '../src/utils/onePad.js'
 import { startRelaySim } from './lib/relaysim.mjs'
 import { STORE_DEFAULT } from '../src/utils/sessionStore.js'
 
@@ -138,36 +137,14 @@ if (ANALYZE_KEY || ANALYZE_FILE) {
     if (!(pcm && track)) { await ra.exit(browser) }
     const aOnsets = detectClaps(Float32Array.from(pcm.samples, (v) => v / 32767), { sampleRate: pcm.sr })
     ra.info('claps heard in the take', `${aOnsets.length}`)
-    // #2056 + the 2026-11-12 AUDIT fix: build per-seat edges TAGGED by control.
-    // Digital bits (direction, a/b/start, aim) as rising edges under their own
-    // name; analog channels (post-zone x/y, ax/ay, pointer) as |value| threshold
-    // crossings tagged `ana:`/`raw:`. matchClapEdges pairs onsets ONLY with the
-    // `a` taps — the control #2056 instructions name — the rest is reported as
-    // context so a seat's steering still shows up in the verdict line.
-    const A_DIG = [...DIR_FIELDS, 'a', 'b', 'start', ...AIM_FIELDS]
-    const A_ANA = ['x', 'y', 'ax', 'ay']
-    const A_RAW = ['x', 'y', 'ax', 'ay', 'px', 'py']
-    const CROSS = 0.5
-    const aCands = []
-    ;(rec.slots || []).forEach((slot, seat) => {
-        const pads = (slot && slot.pads) || []
-        const raws = (slot && slot.raw) || []
-        const edges = []
-        const seen = new Set()
-        const add = (t, control) => { const k = `${t}|${control}`; if (!seen.has(k)) { seen.add(k); edges.push({ t, control }) } }
-        for (let i = 0; i < pads.length; i++) {
-            const p = pads[i] || {}
-            const q = i ? pads[i - 1] || {} : {}
-            for (const f of A_DIG) if (p[f] && !q[f]) add(i + 1, f)
-            for (const f of A_ANA) if (Math.abs(p[f] || 0) >= CROSS && Math.abs(q[f] || 0) < CROSS) add(i + 1, `ana:${f}`)
-        }
-        for (let i = 0; i < raws.length; i++) {
-            const p = raws[i] || {}
-            const q = i ? raws[i - 1] || {} : {}
-            for (const f of A_RAW) if (Math.abs(p[f] || 0) >= CROSS && Math.abs(q[f] || 0) < CROSS) add(i + 1, `raw:${f}`)
-        }
-        if (edges.length) aCands.push({ seat, edges, taps: edges.filter((e) => e.control === 'a').length })
-    })
+    // #2056 + the 2026-11-12 AUDIT fix: per-seat edges TAGGED by control, via
+    // the shared clapSync.takeEdges (#2156: the phone screen grades with the
+    // exact same extraction). Digital bits under their own control name;
+    // analog channels tagged `ana:`/`raw:`. matchClapEdges pairs onsets ONLY
+    // with the `a` taps — the control #2056 instructions name — the rest is
+    // reported as context so a seat's steering still shows up in the verdict
+    // line.
+    const aCands = takeEdges(rec)
     const aGraded = aCands
         .map((c) => ({ ...c, verdict: matchClapEdges({ sampleRate: pcm.sr, onsets: aOnsets, edges: c.edges, clock: track.clock, minPairs: ANALYZE_MIN }) }))
         .sort((a, b) => (b.verdict.ok - a.verdict.ok)
