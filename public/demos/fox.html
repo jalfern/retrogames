@@ -517,8 +517,8 @@ function drawPrints(P) {
     const q = proj([pr.x, pr.y, 0.0015]);
     if (!q) continue;
     const s = (pr.hind ? 0.034 : 0.030) * (H / 780) * DPR / q[2] * 2.6;
-    ctx.globalAlpha = 0.50 * fade;
-    ctx.fillStyle = '#9aa2b8';
+    ctx.globalAlpha = 0.55 * fade;
+    ctx.fillStyle = '#6f7788';
     ctx.beginPath(); ctx.ellipse(q[0], q[1], s * 0.72, s * 1.15, 0.0, 0, TAU); ctx.fill();
     ctx.globalAlpha = 0.30 * fade;
     ctx.fillStyle = '#f2f6fb';
@@ -807,6 +807,26 @@ window.__foxTest = {
   prints: () => prints.length,
   puffs: () => puffs.length,
   pixel, countPixels, foxCenterScreen,
+  horizonPx: () => HZ / DPR,
+  partScreen(which) {
+    const P = poseAt(simT);
+    let q = null;
+    if (which === 'tail') { const tp = P.tail[P.tail.length - 1]; q = proj([tp.x, tp.y, tp.z]); }
+    else if (which === 'nose') { const h = P.hpts[P.hpts.length - 1]; q = proj([h[0], h[1], h[2]]); }
+    else q = proj([P.X + 0.30, 0, P.zc + 0.02]);
+    return q ? [q[0] / DPR, q[1] / DPR] : null;
+  },
+  countNear(x, y, rad, spec) {
+    const x0 = Math.max(0, Math.round((x - rad) * DPR)), y0 = Math.max(0, Math.round((y - rad) * DPR));
+    const w = Math.max(1, Math.round(2 * rad * DPR)), h = Math.max(1, Math.round(2 * rad * DPR));
+    const img = ctx.getImageData(x0, y0, w, h).data;
+    let n = 0;
+    for (let i = 0; i < img.length; i += 8) {
+      const r = img[i], g = img[i + 1], b = img[i + 2];
+      if (r >= spec.rMin && r <= spec.rMax && g >= spec.gMin && g <= spec.gMax && b >= spec.bMin && b <= spec.bMax) n++;
+    }
+    return n;
+  },
   strideOf: () => Math.floor(simT / T),
 };
 </script>
