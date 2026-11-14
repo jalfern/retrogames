@@ -460,6 +460,17 @@ export default function FireCrew() {
         if (import.meta.env.DEV) {
             window.__firecrewTest = {
                 start: (seed, players) => startPlay(seed >>> 0 || 1, players || 1),
+                // #2194 — the browser mirror of the Node gate's
+                // setSources(makeRun(s), ['human','human','human']): every
+                // seat human, empty pads idle all crews (b28 seat law). Without
+                // this the cpu partners rescue and the losing route is never
+                // actually run — the tell cannot be proven on a winning shift.
+                unmanned: () => {
+                    const g = gsRef.current
+                    if (!g) return { error: 'no run' }
+                    g.sources = ['human', 'human', 'human']
+                    return { sources: g.sources.slice(), tick: g.tick, done: !!g.done }
+                },
                 screen: () => screenRef.current,
                 state: () => (gsRef.current ? state(gsRef.current) : null),
                 // WATCH (#1637 b28): pilot-visible seat truth + the fallback the

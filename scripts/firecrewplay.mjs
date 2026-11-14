@@ -2,15 +2,19 @@
 // game, plays with actual keydown/keyup, proves start→play→restart works with
 // zero page errors, and that the drawn frame changes when the logical state
 // changes (and stays put when it doesn't).
-import { launch } from './lib/harness.mjs'
+import { launch, opt, throttleCPU } from './lib/harness.mjs'
 
 const PORT = process.env.DEV_PORT || 5173
 const BASE = `http://localhost:${PORT}/retrogames/fire-crew`
+// `--throttle 8` reproduces a GitHub runner on a laptop (#1744 pattern); the
+// gates here are tick-pinned, so throttling tests patience, never semantics.
+const THROTTLE = +opt(process.argv, '--throttle', 0)
 let fails = 0
 const ok = (c, name, d = '') => { if (c) console.log(`  ok   ${name}`); else { fails++; console.log(`  FAIL ${name}${d ? ` — ${d}` : ''}`) } }
 
 const browser = await launch()
 const page = await browser.newPage()
+if (THROTTLE) await throttleCPU(page, THROTTLE)
 const errors = []
 page.on('pageerror', (e) => errors.push(String(e)))
 await page.goto(BASE, { waitUntil: 'domcontentloaded' })
@@ -141,7 +145,8 @@ ok(spy.whistleFired && spy.whistleFired.f0 === 240 && spy.whistleFired.f1 >= 500
 // #2029 — watch-seat polish, live in Chrome.
 // (a) phone viewports: the WATCH pill must not crowd the canvas/HUD column;
 // (b) seated B: releases AND flares the same press (the pinned ruling);
-// (c) losing route: ember edges light on the proven losing seed before expiry;
+// (c) #2178 canary: seed 1 seated WINS 6/6 (resumed autopilot);
+// (c2) the ember edges light live at 6601 on the unmanned idle route;
 // (d) 2P select + a real pill tap: only seat 1 seats, partners stay human;
 // (e) the seated radio hint is on screen while the sheet is flipped.
 const pillAndHud = async () => page.evaluate(() => {
@@ -180,27 +185,51 @@ ok(afterB && afterB.cpuSeat === false, 'seated B releases the seat (takeover rul
 ok(afterB && afterB.flares > beforeB.flares && afterB.battery <= beforeB.battery - 30,
     'the same press flares — B releases AND flares (#2029 ruling)', JSON.stringify({ beforeB, afterB }))
 
-// (c) losing route: seed 1 loses at the clock; the ember tell must be drawn
-// by tick 6601 — sample the left edge before and after the tell.
+// (c) #2178 regression canary: seed 1 (the pillar seed) WINS seated. This
+// route used to be pinned as a proven loser "riding to the clock" — but that
+// was bug #2178 (the autopilot froze at a sealed loft pillar 3 victims short).
+// #2181 fixed the freeze, so the seat now finishes 6/6 at ~tick 2175. Pin the
+// RULE, not the bug's symptom: a seated seat that completes the rescue proves
+// the autopilot resumes.
 await page.evaluate(() => window.__firecrewTest.start(1, 1))
 await new Promise((r) => setTimeout(r, 200))
-await press('KeyY', 120) // seated: ride the proven (losing here) route
+await press('KeyY', 120) // WATCH seats the autopilot on the pillar seed
+const seated1 = await page.evaluate(() => window.__firecrewTest.probe())
+ok(seated1 && seated1.cpuSeat === true, 'canary-leg: Y seats the watcher on seed 1', JSON.stringify(seated1))
+const canary = await page.evaluate(() => {
+    let n = 0
+    while (n++ < 6650 && !window.__firecrewTest.probe().done) window.__game.step({})
+    return window.__firecrewTest.probe()
+})
+ok(canary && canary.done === true && canary.rescued === 6 && canary.tick < 6601,
+    'seed 1 WINS seated — the autopilot resumes, 6/6 clear of the tell (#2178 canary)', JSON.stringify(canary))
+await page.evaluate(() => window.__game.release())
+
+// (c2) the ember tell, honestly — the UNMANNED route (the #2029 tell still
+// has to be proven). Fresh shift, no seat press: human sources with empty pads
+// idle the crew (the b28 seat law), nobody is rescued, and the red-zone tell
+// crosses live at tick 6601 — the same litAt the Node gate pins. Sampling the
+// edge just below and just above the threshold makes the red gain a transition,
+// not a constant.
 const edge = () => page.evaluate(() => {
     const c = document.querySelector('canvas')
     const d = c.getContext('2d').getImageData(1, Math.floor(c.height / 2), 1, 1).data
     return { r: d[0], g: d[1], b: d[2] }
 })
+await page.evaluate(() => window.__firecrewTest.start(1, 1))
+await new Promise((r) => setTimeout(r, 200))
+const idle0 = await page.evaluate(() => window.__firecrewTest.unmanned())
+ok(idle0 && JSON.stringify(idle0.sources) === JSON.stringify(['human', 'human', 'human']),
+    'ember-leg: every seat unmanned — human sources with empty pads idle the crew', JSON.stringify(idle0))
+const calmTick = await page.evaluate(() => { let n = 0; while (n++ < 7000 && window.__firecrewTest.probe().tick < 6590) window.__game.step({}); return window.__firecrewTest.probe().tick })
+await new Promise((r) => setTimeout(r, 200))
 const calmEdge = await edge()
-const lateTick = await page.evaluate(() => {
-    let t = 0
-    while (t++ < 6650) window.__game.step({})
-    return window.__firecrewTest.probe().tick
-})
+const lateTick = await page.evaluate(() => { let n = 0; while (n++ < 200 && window.__firecrewTest.probe().tick <= 6610) window.__game.step({}); return window.__firecrewTest.probe().tick })
 await new Promise((r) => setTimeout(r, 200))
 const lateEdge = await edge()
-ok(lateTick > 6601, 'seed 1 rides past the tell threshold while seated', String(lateTick))
+ok(calmTick < 6601 && lateTick > 6601, 'the unmanned shift crosses the tell threshold live', JSON.stringify({ calmTick, lateTick }))
 ok(lateEdge.r - lateEdge.b > calmEdge.r - calmEdge.b + 20,
-    'the losing-route ember edge is drawn (red gain at the screen edge)', JSON.stringify({ calmEdge, lateEdge }))
+    'the ember edge lights when the tell crosses 6601 (red gain at the screen edge)', JSON.stringify({ calmEdge, lateEdge }))
 await page.evaluate(() => window.__game.release())
 
 // (d) 2P on the picker + a real pill tap: seat 1 seats, the partner stays.
