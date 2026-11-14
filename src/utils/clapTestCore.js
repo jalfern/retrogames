@@ -72,6 +72,39 @@ export function createTestSim({ seed }) {
 // studio runs over the downloaded bytes — phone and studio can only disagree
 // if the bytes differ, which is the point of uploading first.
 
+// pacing readout (#2205): measured ms gap to the PREVIOUS slap, so the player
+// corrects the ~2 s rhythm mid-test instead of after the verdict. null until a
+// second slap exists. Pure over the sim's tick bank.
+export function lastGapMs(taps) {
+    if (!Array.isArray(taps) || taps.length < 2) return null
+    return Math.round((taps[taps.length - 1] - taps[taps.length - 2]) * FIXED_DT)
+}
+
+// verdict history (#2205): pure list ops the page runs over localStorage so the
+// pins stay DOM-free. newest first, capped; entries are {d, ok, worstMs, key}.
+export function pushHistory(list, entry, cap = 5) {
+    const l = Array.isArray(list) ? list.filter((e) => e && typeof e.ok === 'boolean') : []
+    return [entry, ...l].slice(0, cap)
+}
+export function formatHistory(list) {
+    const l = Array.isArray(list) ? list.filter((e) => e && typeof e.ok === 'boolean') : []
+    return l.map((e) => {
+        const d = new Date(e.d || 0)
+        const day = Number.isNaN(d.getTime()) ? '?' : `${d.getMonth() + 1}/${d.getDate()}`
+        const w = e.worstMs === null || e.worstMs === undefined ? '—' : `${Math.abs(e.worstMs)}ms`
+        return `${day} ${e.ok ? 'PASS' : 'FAIL'} ${w}`
+    }).join(' · ')
+}
+
+// hard-fail flavor (#2205): when nothing paired there is no worst gap to show,
+// and a dead take must read differently from an instrumented partial. null when
+// a value exists or the run passed — callers show the number then.
+export function hardFailNote(v) {
+    if (!v || v.ok || (v.worstMs !== null && v.worstMs !== undefined)) return null
+    if ((v.claps || 0) === 0) return 'no slaps heard — the take is dead, nothing paired'
+    return `mic heard ${v.claps} slaps but ${v.matched || 0} touches paired — no gap measured`
+}
+
 export function screenVerdict({ sampleRate, samples, rec, minPairs = CLAP_MIN_PAIRS, tolMs = CLAP_TOL_MS }) {
     if (!rec || !rec.voice || !Array.isArray(rec.voice.tracks) || !rec.voice.tracks.length || !rec.voice.tracks[0].clock || rec.voice.tracks[0].clock.length < 2) {
         return { ok: false, claps: 0, pairs: [], matched: 0, worstMs: null, why: 'no audio track in the take', hint: 'no microphone audio — say YES to the voice switch, and check the mic permission for this site' }
@@ -88,9 +121,15 @@ export function screenVerdict({ sampleRate, samples, rec, minPairs = CLAP_MIN_PA
             || (b.verdict.matched - a.verdict.matched))
     const best = seats[0]
     const v = (best && best.verdict) || { ok: false, pairs: [], matched: 0, unmatchedOnsets: onsets.length, ignoredEdges: 0, worstMs: null, why: 'no controls recorded — slap the screen 3 times' }
+    // #2205 item 3: zero registered touches is its own failure mode (never hit
+    // START / wrong page) — say it plainly instead of the generic minPairs line.
+    const noTouches = !seats.some((c) => c.edges && c.edges.length)
     let hint = null
     if (!v.ok) {
-        if (!onsets.length) hint = "didn't hear the slaps, try louder"
+        if (noTouches) hint = onsets.length
+            ? `the mic heard ${onsets.length} sound${onsets.length === 1 ? '' : 's'} but no slaps registered — did you hit START, and is this the right page?`
+            : 'no slaps registered — did you hit START, and is this the right page? (the mic heard nothing either)'
+        else if (!onsets.length) hint = "didn't hear the slaps, try louder"
         else if (v.matched < minPairs) hint = 'each slap must TOUCH the screen — slap it 3 times, about 2 s apart'
         else hint = 'the sound and the touch were apart — let your palm hit the screen itself'
     }
@@ -101,6 +140,7 @@ export function screenVerdict({ sampleRate, samples, rec, minPairs = CLAP_MIN_PA
         matched: v.matched || 0,
         unmatchedOnsets: v.unmatchedOnsets || 0,
         ignoredEdges: v.ignoredEdges || 0,
+        noTouches,
         worstMs: v.worstMs === undefined ? null : v.worstMs,
         why: v.why,
         hint,
