@@ -82,6 +82,8 @@ travel; mutants (flat mane noise, no rut strips) each kill exactly their gates.
 - `physicswalk.core.js` — PHYSICS WALK engine (#1204), below.
 - `learnedwalk.core.js` + `learnedwalk.policy.js` + `learnedwalk.html` —
   LEARNED WALK, the rig steered by a trained MLP (#1205), below.
+- `fox-gemini.html` — FROSTBRUSH, procedural 3D red fox rotary gallop in WebGL2
+  (#2261, guest Gemini 4 Carbon build), below.
 
 ## physicswalk.core.js engine notes (#1204)
 
@@ -192,3 +194,34 @@ emerge from physics. Honest gaps (also on the QA pass issue #1082): the
 photon-ring glow uses the Schwarzschild b_crit locus; the plunge cone/Doppler
 formulas and the probe-beacon integrators stay Schwarzschild; the disk inner
 edge stays at 3rs rather than the Kerr ISCO (2.32M prograde).
+
+## fox-gemini.html engine notes (#2261 — FROSTBRUSH)
+
+Guest Gemini 4 Carbon entry for #2261: a procedural 3D red fox (*Vulpes vulpes*)
+running a rotary double-suspension gallop down a frosted boreal silver-birch
+glade at dawn in raw WebGL2 (zero external libraries, zero imported meshes or
+image/audio assets; design note in `docs/fox-gemini-design.md`).
+
+Anatomy & lofting: a single continuous 15-station elliptical tube spans rump to
+chest ruff, diamond cheek flares, narrow rostrum and glossy nose button with
+zero neck seam (`cross([0,0,1], T)` sagittal frame completion avoids parallel
+roll flips across +X, -X and -Y chains); paired with slanted amber eyes,
+black-backed / cream-inner pinnae, an 8-station 50 cm snow-tipped brush riding
+a phase-lagged S-wave, and four digitigrade limbs with black stockings solved
+by analytical 2-bone IK (`maxIkRatio = 0.974 < 1.0`).
+
+Gait & loop laws (`window.__foxTest`): 4-beat carnivore rotary footfall order
+`LH -> RH -> RF -> LF` with two suspension phases per stride — extended flight
+(~19% of stride, 0.84 m paw span) after hind pushoff and gathered coiled flight
+(~25% of stride, wider-tracking hindpaws crossing ahead of forepaws under the
+arched lumbar spine) after fore pushoff. Stance paws lock to world touchdown
+anchors (measured slip 0.000 mm analytic and live rAF) with C1 Hermite swing
+curves over an 18.0 m (12-stride) periodic terrain + birch glade (0.000 mm
+seam). Rendered with a 1024² `DEPTH_COMPONENT24` 3×3 PCF sun shadow map,
+guard-hair rim sheen, four-toed frost pawprints, kick-up clods, warm breath
+plumes, and Web Audio cushioned paw strikes + hoarfrost crunch.
+
+Verified by `npm run foxgeminicheck` (34/34 gates across demo law, index href,
+boot, rotary gait, double suspension, zero-slip, IK reach, loop seam, pixels,
+pointer orbit, mute toggle, and 390×844 phone layout; stance-slip and
+transverse-swap mutants proven red and restored).

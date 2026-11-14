@@ -1,0 +1,2353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>FROSTBRUSH — procedural 3D red fox in WebGL2</title>
+<link rel="icon" href="data:,">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1320; }
+  canvas { display: block; width: 100vw; height: 100vh; height: 100dvh; touch-action: none; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  #hud {
+    position: fixed; left: 14px; bottom: 12px; z-index: 2; pointer-events: none;
+    font: 11px/1.7 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .13em;
+    color: rgba(232,240,248,.80); text-shadow: 0 1px 4px rgba(4,8,16,.92);
+    text-transform: uppercase;
+    max-width: calc(100vw - 195px);
+  }
+  #hud b { color: #ff7a33; font-weight: 700; }
+  @media (max-width: 560px) {
+    #hud { font-size: 10px; letter-spacing: .08em; }
+    #hud .hints { display: none; }
+  }
+  #audiohint {
+    position: fixed; top: max(12px, env(safe-area-inset-top)); right: max(14px, env(safe-area-inset-right)); z-index: 2;
+    background: rgba(11,17,28,.64); border: 1px solid rgba(255,122,51,.36); border-radius: 8px;
+    padding: 7px 12px; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    font: 11px/1.5 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .14em; text-transform: uppercase;
+    color: rgba(255,224,202,.92); text-shadow: 0 1px 3px rgba(0,0,0,.85); cursor: pointer;
+    user-select: none; -webkit-user-select: none;
+  }
+  #audiohint.off { color: rgba(176,188,204,.48); border-color: rgba(140,156,176,.22); }
+  #attract {
+    position: fixed; inset: 0; z-index: 3; display: grid; place-items: center;
+    pointer-events: none; text-align: center; padding: 20px;
+    background: radial-gradient(115% 88% at 50% 46%, rgba(13,19,32,0) 0%, rgba(9,14,24,.56) 100%);
+    transition: opacity .48s ease;
+  }
+  #attract.gone { opacity: 0; }
+  #attract h1 {
+    margin: 0; font: 900 clamp(30px, 6.4vw, 60px)/1 ui-monospace, "SF Mono", Menlo, monospace;
+    letter-spacing: .16em; color: #f4f7fb;
+    text-shadow: 0 2px 28px rgba(255,112,42,.42), 0 2px 8px rgba(0,0,0,.85);
+  }
+  #attract h1 i { font-style: normal; color: #ff7a33; }
+  #attract .sub {
+    margin-top: 14px; font: 11px/1.8 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .26em;
+    text-transform: uppercase; color: rgba(224,234,246,.82);
+  }
+  #attract .msg {
+    margin-top: 18px; min-height: 1.6em; font: 11px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
+    letter-spacing: .26em; text-transform: uppercase; color: #ffb480;
+    transition: opacity .32s;
+  }
+  #attract .start {
+    margin-top: 26px; font: 11px/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .36em;
+    text-transform: uppercase; color: #ff7a33; animation: blink 1.6s infinite;
+  }
+  @keyframes blink { 0%,100% { opacity: 1 } 50% { opacity: .32 } }
+  #pad {
+    position: fixed; left: 14px; bottom: 56px; z-index: 2; display: none; gap: 8px;
+  }
+  @media (pointer: coarse) {
+    #pad { display: flex; }
+  }
+  #pad button {
+    background: rgba(11,17,28,.68); border: 1px solid rgba(255,122,51,.36); border-radius: 8px;
+    padding: 8px 12px; min-height: 32px; font: 10px/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .14em;
+    text-transform: uppercase; color: rgba(255,228,208,.94); cursor: pointer;
+    touch-action: manipulation; -webkit-user-select: none; user-select: none;
+  }
+  #pad button:active { background: rgba(255,122,51,.26); }
+  #fatal {
+    position: fixed; inset: 0; display: none; place-items: center; z-index: 5;
+    font: 14px/1.6 ui-monospace, "SF Mono", Menlo, monospace; color: #e8eff8; background: #0d1320;
+    text-align: center; padding: 2em; white-space: pre;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"><b>FROSTBRUSH</b><span class="hints"> · procedural 3D red fox · drag to orbit · ↑↓ tempo · SPACE study · 1–4 views ·</span> <span id="telemetry"></span></div>
+<div id="pad">
+  <button id="btn-study" type="button">study</button>
+  <button id="btn-view" type="button">view</button>
+</div>
+<div id="audiohint">paws on</div>
+<div id="attract">
+  <div>
+    <h1>FROST<i>BRUSH</i></h1>
+    <div class="sub">red fox · rotary double-suspension gallop · zero paw slip</div>
+    <div class="msg" id="amsg">extended &amp; gathered flight · digitigrade IK</div>
+    <div class="start">▶ tap or press any key</div>
+  </div>
+</div>
+<div id="fatal"></div>
+<script>
+'use strict';
+
+/* ============================================================================
+ * FROSTBRUSH (fox-gemini.html) — Procedural 3D Red Fox (Vulpes vulpes) in Raw WebGL2
+ * Zero external libraries, zero imported meshes, zero image/audio assets.
+ * Coordinate frame: +X forward (direction of travel), +Y up (ground y = terrain),
+ * +Z fox's right flank (right-handed: X x Y = Z).
+ * ========================================================================== */
+
+const qs = new URLSearchParams(location.search);
+const LITE = qs.get('lite') === '1';
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', {
+  antialias: !LITE,
+  alpha: false,
+  depth: true,
+  stencil: false,
+  preserveDrawingBuffer: true,
+});
+if (!gl) {
+  const f = document.getElementById('fatal');
+  f.style.display = 'grid';
+  f.textContent = 'WebGL2 required.\nThis demo needs a WebGL2-capable browser.';
+  throw new Error('WebGL2 unavailable');
+}
+
+/* ---------------- Math & Vector / Matrix Helpers ---------------- */
+
+const TAU = Math.PI * 2;
+const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+const smoothstep = (e0, e1, x) => {
+  const t = clamp((x - e0) / (e1 - e0), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+
+function add3(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
+function sub3(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+function scale3(a, s) { return [a[0] * s, a[1] * s, a[2] * s]; }
+function mix3(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
+function dot3(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function cross3(a, b) {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+function norm3(a) {
+  const l = Math.hypot(a[0], a[1], a[2]) || 1;
+  return [a[0] / l, a[1] / l, a[2] / l];
+}
+
+function mat4Identity() {
+  const m = new Float32Array(16);
+  m[0] = m[5] = m[10] = m[15] = 1;
+  return m;
+}
+
+function mat4Mul(a, b) {
+  const o = new Float32Array(16);
+  for (let c = 0; c < 4; c++) {
+    const b0 = b[c * 4], b1 = b[c * 4 + 1], b2 = b[c * 4 + 2], b3 = b[c * 4 + 3];
+    o[c * 4]     = a[0] * b0 + a[4] * b1 + a[8]  * b2 + a[12] * b3;
+    o[c * 4 + 1] = a[1] * b0 + a[5] * b1 + a[9]  * b2 + a[13] * b3;
+    o[c * 4 + 2] = a[2] * b0 + a[6] * b1 + a[10] * b2 + a[14] * b3;
+    o[c * 4 + 3] = a[3] * b0 + a[7] * b1 + a[11] * b2 + a[15] * b3;
+  }
+  return o;
+}
+
+function mat4Perspective(fovY, aspect, near, far) {
+  const f = 1 / Math.tan(fovY * 0.5);
+  const nf = 1 / (near - far);
+  const m = new Float32Array(16);
+  m[0] = f / aspect;
+  m[5] = f;
+  m[10] = (far + near) * nf;
+  m[11] = -1;
+  m[14] = 2 * far * near * nf;
+  return m;
+}
+
+function mat4Ortho(l, r, b, t, near, far) {
+  const m = new Float32Array(16);
+  m[0] = 2 / (r - l);
+  m[5] = 2 / (t - b);
+  m[10] = -2 / (far - near);
+  m[12] = -(r + l) / (r - l);
+  m[13] = -(t + b) / (t - b);
+  m[14] = -(far + near) / (far - near);
+  m[15] = 1;
+  return m;
+}
+
+function mat4LookAt(eye, target, up) {
+  const z = norm3(sub3(eye, target));
+  const x = norm3(cross3(up, z));
+  const y = cross3(z, x);
+  const m = new Float32Array(16);
+  m[0] = x[0]; m[4] = x[1]; m[8]  = x[2]; m[12] = -dot3(x, eye);
+  m[1] = y[0]; m[5] = y[1]; m[9]  = y[2]; m[13] = -dot3(y, eye);
+  m[2] = z[0]; m[6] = z[1]; m[10] = z[2]; m[14] = -dot3(z, eye);
+  m[15] = 1;
+  return m;
+}
+
+/* Deterministic PRNG + Periodic Value Noise */
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hash2(ix, iz) {
+  let h = Math.imul(ix, 374761393) ^ Math.imul(iz, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/* ============================================================================
+ * 1. WORLD CONSTANTS & SEAMLESS TERRAIN HEIGHTFIELD
+ * ========================================================================== */
+
+const STRIDE_LEN = 1.50;             // m per gallop stride
+const STRIDE_PERIOD = 0.345;         // s per stride (~4.35 m/s brisk fox run)
+const WORLD_STRIDES = 12;            // 12 strides = 18.0 m seamless world period
+const WORLD_LEN = STRIDE_LEN * WORLD_STRIDES;
+const PAD_CLEAR = 0.018;             // cushioned paw pad center height above ground
+
+function wrapPhase(p) {
+  const r = p - Math.floor(p);
+  return r < 0 ? r + 1 : r;
+}
+
+function wrapWorldX(x) {
+  const r = x % WORLD_LEN;
+  return r < 0 ? r + WORLD_LEN : r;
+}
+
+// Seamless in X (period WORLD_LEN = 18.0 m); flat packed trail near z = 0 so stance
+// anchors sit cleanly on the frosty game trail, rolling mossy banks for |z| > 0.45 m.
+function groundHeight(x, z) {
+  const wx = (TAU * x) / WORLD_LEN;
+  const az = Math.abs(z);
+  const bank = smoothstep(0.38, 3.6, az);
+  const farHill = smoothstep(3.2, 13.5, az);
+  const h1 = Math.sin(wx * 2 + z * 0.42) * 0.14 + Math.cos(wx * 3 - z * 0.55) * 0.09;
+  const h2 = Math.sin(wx * 5 + z * 1.15) * 0.035;
+  const ridge = farHill * (0.68 + 0.34 * Math.sin(wx * 1 + z * 0.22) + 0.22 * Math.cos(wx * 2 - z * 0.31));
+  // Subtle crown along the trail verges
+  const rut = -0.008 * Math.exp(-(z * z) / 0.09);
+  return bank * (h1 + h2 + 0.06) + ridge + rut;
+}
+
+function groundNormal(x, z) {
+  const eps = 0.08;
+  const hx = (groundHeight(x + eps, z) - groundHeight(x - eps, z)) / (2 * eps);
+  const hz = (groundHeight(x, z + eps) - groundHeight(x, z - eps)) / (2 * eps);
+  return norm3([-hx, 1, -hz]);
+}
+
+/* ============================================================================
+ * 2. RED FOX DOUBLE-SUSPENSION ROTARY GALLOP KINEMATICS & DIGITIGRADE IK
+ * ========================================================================== */
+
+// Rotary footfall order: LH -> RH -> (Extended Flight I) -> RF -> LF -> (Gathered Flight II)
+// Note: forelimbs track narrower (±0.044m) than hindlimbs (±0.066m) so hindpaws straddle cleanly
+// outside the forelimbs during gathered flight — true cursorial carnivore footfall geometry!
+const LEGS_DEF = [
+  { id: 'LH', fore: false, side: -1, td: 0.03, dur: 0.19, xLand: -0.02, zLand: -0.066 },
+  { id: 'RH', fore: false, side: +1, td: 0.12, dur: 0.19, xLand:  0.00, zLand: +0.066 },
+  { id: 'RF', fore: true,  side: +1, td: 0.50, dur: 0.19, xLand:  0.36, zLand: +0.044 },
+  { id: 'LF', fore: true,  side: -1, td: 0.59, dur: 0.19, xLand:  0.38, zLand: -0.044 },
+];
+
+// Cross-stride organic brush/ear variation that repeats seamlessly every WORLD_STRIDES!
+function strideNoise(sIdx, salt) {
+  const m = ((sIdx % WORLD_STRIDES) + WORLD_STRIDES) % WORLD_STRIDES;
+  return Math.sin(m * 2.39996 + salt * 4.17) * 0.6 + Math.cos(m * 1.0472 + salt * 2.71) * 0.4;
+}
+
+function smoothStrideMod(strideIdx, phi, salt) {
+  const a = strideNoise(strideIdx, salt);
+  const b = strideNoise(strideIdx + 1, salt);
+  const s = phi * phi * (3 - 2 * phi);
+  return a + (b - a) * s;
+}
+
+function refXAt(uGlobal) {
+  const phi = wrapPhase(uGlobal);
+  // Subtle forward surge off hind propulsion, slight absorption under fore landing
+  return uGlobal * STRIDE_LEN + 0.014 * Math.sin(TAU * (phi - 0.13));
+}
+
+function anchorWorld(strideIdx, leg) {
+  const uTd = strideIdx + leg.td;
+  const ax = refXAt(uTd) + leg.xLand;
+  const az = leg.zLand;
+  const ay = groundHeight(ax, az) + PAD_CLEAR;
+  return [ax, ay, az];
+}
+
+function solve2Bone(root, target, L1, L2, bendSign) {
+  const dx = target[0] - root[0];
+  const dy = target[1] - root[1];
+  const dz = target[2] - root[2];
+  const dRaw = Math.hypot(dx, dy, dz) || 1e-6;
+  const maxR = (L1 + L2) * 0.992;
+  const minR = Math.abs(L1 - L2) + 0.018;
+  const d = clamp(dRaw, minR, maxR);
+  const cosA = clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1);
+  const angA = Math.acos(cosA);
+  const dXY = Math.hypot(dx, dy) || 1e-6;
+  const ux = dx / dXY, uy = dy / dXY;
+  // When dy < 0 (limb pointing downward), (-uy, ux) points toward +X (anterior/forward).
+  // bendSign = +1 -> forward stifle knee; bendSign = -1 -> backward elbow!
+  const px = -uy * bendSign;
+  const py = ux * bendSign;
+  const dirX = ux * Math.cos(angA) + px * Math.sin(angA);
+  const dirY = uy * Math.cos(angA) + py * Math.sin(angA);
+  const midZ = root[2] + dz * (L1 / (L1 + L2));
+  return {
+    joint: [root[0] + dirX * L1, root[1] + dirY * L1, midZ],
+    ikRatio: dRaw / (L1 + L2),
+  };
+}
+
+function evaluateFox(strideIdx, phiRaw) {
+  const phi = wrapPhase(phiRaw);
+  const uGlobal = strideIdx + phi;
+  const rx = refXAt(uGlobal);
+  const groundY = groundHeight(rx, 0);
+
+  // Double-suspension carnivore spinal flex/extension:
+  // Peak EXTENSION at phi = 0.405 (Extended Flight I: spine stretched open, forelegs reaching)
+  // Peak FLEXION/COIL at phi = 0.905 (Gathered Flight II: lumbar arched upward, hindpaws tucked under chest)
+  const spineExt = Math.cos(TAU * (phi - 0.405));
+  const heaveY = groundY + 0.318
+    + 0.020 * Math.cos(TAU * (phi - 0.40))
+    + 0.016 * Math.cos(2 * TAU * (phi - 0.405));
+
+  const pitch = 0.090 * Math.sin(TAU * (phi - 0.06)) + 0.028 * Math.sin(2 * TAU * (phi - 0.20));
+  const roll = 0.036 * Math.sin(TAU * (phi - 0.08));
+  const latSway = 0.008 * Math.cos(TAU * (phi - 0.12));
+  const arch = -0.038 * spineExt;
+  const halfSpan = 0.198 + 0.026 * spineExt;
+
+  const cosP = Math.cos(pitch), sinP = Math.sin(pitch);
+  const center = [rx, heaveY, latSway];
+  const hipCenter = [center[0] - halfSpan * cosP, center[1] - halfSpan * sinP - 0.006, latSway - 0.004 * Math.sin(TAU * phi)];
+  const shoulderCenter = [center[0] + halfSpan * cosP, center[1] + halfSpan * sinP + 0.006, latSway + 0.004 * Math.sin(TAU * phi)];
+  const lumbar = [center[0], center[1] + arch, latSway];
+  const rump = [hipCenter[0] - 0.052 * cosP, hipCenter[1] - 0.052 * sinP - 0.008, hipCenter[2]];
+
+  // Neck & Vulpine Head (counter-nodding bascule stabilizes sightline along the trail)
+  const neckAng = 0.56 - 0.42 * pitch + 0.09 * spineExt + 0.05 * Math.sin(TAU * (phi - 0.30));
+  const neckMid = [
+    shoulderCenter[0] + Math.cos(neckAng) * 0.082,
+    shoulderCenter[1] + Math.sin(neckAng) * 0.082 + 0.016,
+    shoulderCenter[2] * 0.6,
+  ];
+  const atlas = [
+    shoulderCenter[0] + Math.cos(neckAng) * 0.156,
+    shoulderCenter[1] + Math.sin(neckAng) * 0.156 + 0.028,
+    shoulderCenter[2] * 0.3,
+  ];
+  // Head angle stays sleek & level-reaching in extended flight, dips subtly on fore vault
+  const headPitch = -0.10 + 0.08 * spineExt - 0.05 * Math.sin(TAU * (phi - 0.52));
+  const headYaw = 0.025 * smoothStrideMod(strideIdx, phi, 1.3);
+  const ch = Math.cos(headPitch), sh = Math.sin(headPitch);
+  const cy = Math.cos(headYaw), sy = Math.sin(headYaw);
+  const headFwd = [ch * cy, sh, ch * sy];
+  const headUp = [-sh * cy, ch, -sh * sy];
+  const headRight = cross3(headFwd, headUp);
+
+  const poll = add3(atlas, add3(scale3(headFwd, 0.028), scale3(headUp, 0.044)));
+  const muzzle = add3(atlas, add3(scale3(headFwd, 0.194), scale3(headUp, -0.008)));
+
+  // Plumed 8-station Fox Brush (traveling S-curve inertial wave + cross-stride breeze mod 12)
+  const flutter = smoothStrideMod(strideIdx, phi, 3.7);
+  const tailPts = [];
+  let tx = rump[0] + 0.010, ty = rump[1] + 0.016, tz = rump[2];
+  const tailSegLen = 0.072; // 7 segments * 0.072 = 0.504 m lush vulpine brush!
+  tailPts.push([tx, ty, tz]);
+  for (let i = 1; i <= 7; i++) {
+    const f = i / 7;
+    const wavePhase = TAU * (phi - 0.14 - f * 0.42);
+    // Flowing S-curve brush: arches gently out of croup, sweeps with hip heave, white tip flicks!
+    const archBase = 0.10 * (1 - f * 1.45);
+    const tAng = archBase + (0.20 * f + 0.05) * Math.sin(wavePhase) + 0.07 * spineExt * f + 0.045 * flutter * f;
+    const tLat = (0.046 * f * f) * Math.cos(TAU * (phi - f * 0.32)) + 0.024 * flutter * f;
+    tx -= Math.cos(tAng) * tailSegLen;
+    ty += Math.sin(tAng) * tailSegLen;
+    tz = rump[2] + tLat;
+    const minTailY = groundHeight(tx, tz) + 0.065;
+    if (ty < minTailY) ty = minTailY;
+    tailPts.push([tx, ty, tz]);
+  }
+
+  // Four Digitigrade Legs (0.000 mm world-pinned stance + C1 Hermite swing)
+  const legs = {};
+  for (const leg of LEGS_DEF) {
+    const inStance = phi >= leg.td && phi <= leg.td + leg.dur;
+    let paw, uStance = 0, wSwing = 0, pawPitch = 0, splay = 0;
+
+    if (inStance) {
+      uStance = (phi - leg.td) / leg.dur;
+      paw = anchorWorld(strideIdx, leg);
+      pawPitch = -0.08 * Math.sin(Math.PI * uStance);
+      splay = Math.sin(Math.PI * uStance); // cushioned pad compression at mid-stance
+    } else {
+      const sFrom = phi > leg.td + leg.dur ? strideIdx : strideIdx - 1;
+      const a0 = anchorWorld(sFrom, leg);
+      const a1 = anchorWorld(sFrom + 1, leg);
+      wSwing = (phi > leg.td + leg.dur)
+        ? (phi - (leg.td + leg.dur)) / (1 - leg.dur)
+        : (phi + 1 - (leg.td + leg.dur)) / (1 - leg.dur);
+      // C1-continuous Hermite progress (zero world velocity at w=0 and w=1)
+      const h = wSwing * wSwing * (3 - 2 * wSwing);
+      const bell = Math.sin(Math.PI * wSwing);
+      const lift = (leg.fore ? 0.082 : 0.118) * Math.pow(bell, 1.45);
+      // Hindlegs tuck well forward under the coiled belly in gathered flight; forelegs fold cleanly
+      const swingBias = leg.fore
+        ? -0.024 * Math.sin(TAU * wSwing) * bell * bell
+        : 0.046 * bell * bell;
+      // Hindpaws bow slightly wider laterally during mid-swing so they pass cleanly outside forelimbs
+      const latClear = leg.fore ? 0 : leg.side * 0.014 * bell;
+      const px = a0[0] + (a1[0] - a0[0]) * h + swingBias;
+      const pz = a0[2] + (a1[2] - a0[2]) * h + latClear;
+      const gY = groundHeight(px, pz) + PAD_CLEAR;
+      paw = [px, gY + lift, pz];
+      pawPitch = -0.82 * bell * (1 - 0.32 * wSwing);
+    }
+
+    if (leg.fore) {
+      const scapDrop = inStance ? -0.008 * Math.sin(Math.PI * uStance) : 0.006 * Math.sin(Math.PI * wSwing);
+      const shoulder = [
+        shoulderCenter[0] + (inStance ? 0.016 * (0.5 - uStance) : 0.022 * Math.sin(Math.PI * (wSwing - 0.15))),
+        shoulderCenter[1] - 0.016 + scapDrop + roll * leg.side * 0.04,
+        shoulderCenter[2] + leg.side * 0.052,
+      ];
+      const scapulaTop = [
+        shoulder[0] - 0.026,
+        shoulder[1] + 0.056,
+        shoulderCenter[2] + leg.side * 0.024,
+      ];
+      const dxR = shoulder[0] - paw[0], dyR = shoulder[1] - paw[1];
+      const baseAng = Math.atan2(dxR, dyR);
+      const foldAng = inStance
+        ? (baseAng * 0.72 - 0.10)
+        : (baseAng * 0.85 - 0.28 * Math.sin(Math.PI * (1 - wSwing)) * Math.sin(Math.PI * wSwing));
+      const pasternLen = 0.066;
+      const carpus = [
+        paw[0] + Math.sin(foldAng) * pasternLen,
+        paw[1] + Math.cos(foldAng) * pasternLen,
+        lerp(paw[2], shoulder[2], 0.28),
+      ];
+      const ik = solve2Bone(shoulder, carpus, 0.164, 0.168, -1); // elbow bends backward (-1)
+      legs[leg.id] = {
+        fore: true, side: leg.side, inStance, uStance, wSwing, splay, pawPitch,
+        scapulaTop, root: shoulder, elbow: ik.joint, carpus, paw, ikRatio: ik.ikRatio,
+      };
+    } else {
+      const hip = [
+        hipCenter[0] + 0.010 + (inStance ? 0.014 * (0.5 - uStance) : -0.014 * Math.sin(Math.PI * wSwing)),
+        hipCenter[1] - 0.010 + roll * leg.side * 0.05,
+        hipCenter[2] + leg.side * 0.054,
+      ];
+      const dxR = hip[0] - paw[0], dyR = hip[1] - paw[1];
+      const baseAng = Math.atan2(dxR, dyR);
+      const hockBack = inStance
+        ? (baseAng * 0.72 - 0.30)
+        : (baseAng * 0.78 - 0.38 * Math.sin(Math.PI * wSwing) - 0.18);
+      const pesLen = 0.108;
+      const hock = [
+        paw[0] + Math.sin(hockBack) * pesLen,
+        paw[1] + Math.cos(hockBack) * pesLen,
+        lerp(paw[2], hip[2], 0.25),
+      ];
+      const ik = solve2Bone(hip, hock, 0.162, 0.172, +1); // stifle bends forward (+1)
+      legs[leg.id] = {
+        fore: false, side: leg.side, inStance, uStance, wSwing, splay, pawPitch,
+        root: hip, stifle: ik.joint, hock, paw, ikRatio: ik.ikRatio,
+      };
+    }
+  }
+
+  // Ear radar swivel (subtle asymmetric flick + slight aerodynamic pin-back in extended flight)
+  const earPin = 0.18 * Math.max(0, spineExt);
+  const earFlickL = 0.08 * smoothStrideMod(strideIdx, phi, 5.1);
+  const earFlickR = -0.07 * smoothStrideMod(strideIdx, phi, 7.9);
+  // Subtle jaw breath opening during forelimb vault exhalation (phi ~ 0.55)
+  const breathOpen = 0.06 + 0.08 * Math.max(0, Math.sin(TAU * (phi - 0.42)));
+  const ribBreath = 1 + 0.032 * Math.sin(TAU * (phi - 0.18));
+
+  return {
+    strideIndex: strideIdx,
+    phi, uGlobal, rx, groundY, heaveY, pitch, roll, spineExt, ribBreath,
+    rump, hipCenter, lumbar, shoulderCenter, neckMid, atlas, poll, muzzle,
+    headFwd, headUp, headRight, earPin, earFlickL, earFlickR, breathOpen,
+    tailPts, legs,
+  };
+}
+
+/* ============================================================================
+ * 3. PROCEDURAL MESH BUILDER (11 floats/vertex: pos3, norm3, col3, rim, rough)
+ * ========================================================================== */
+
+const FLOATS_PER_VERT = 11;
+
+class MeshBuilder {
+  constructor(initialTris = 4096) {
+    this.data = new Float32Array(initialTris * 3 * FLOATS_PER_VERT);
+    this.floats = 0;
+  }
+  reset() {
+    this.floats = 0;
+  }
+  ensure(extraFloats) {
+    if (this.floats + extraFloats <= this.data.length) return;
+    let next = this.data.length * 2;
+    while (next < this.floats + extraFloats) next *= 2;
+    const n = new Float32Array(next);
+    n.set(this.data.subarray(0, this.floats));
+    this.data = n;
+  }
+  pushVert(p, n, c, rim, rough) {
+    let o = this.floats;
+    const d = this.data;
+    d[o] = p[0]; d[o + 1] = p[1]; d[o + 2] = p[2];
+    d[o + 3] = n[0]; d[o + 4] = n[1]; d[o + 5] = n[2];
+    d[o + 6] = c[0]; d[o + 7] = c[1]; d[o + 8] = c[2];
+    d[o + 9] = rim; d[o + 10] = rough;
+    this.floats = o + 11;
+  }
+  // Smooth-shaded triangle with per-vertex normals and colors
+  triSmooth(p0, n0, c0, p1, n1, c1, p2, n2, c2, rim = 0.35, rough = 0.7) {
+    this.ensure(33);
+    this.pushVert(p0, n0, c0, rim, rough);
+    this.pushVert(p1, n1, c1, rim, rough);
+    this.pushVert(p2, n2, c2, rim, rough);
+  }
+  // Flat-faceted triangle (computes crisp geometric face normal)
+  triFlat(p0, p1, p2, c0, c1, c2, rim = 0.25, rough = 0.8) {
+    const e1 = sub3(p1, p0), e2 = sub3(p2, p0);
+    const fn = norm3(cross3(e1, e2));
+    this.triSmooth(p0, fn, c0, p1, fn, c1 || c0, p2, fn, c2 || c0, rim, rough);
+  }
+  quadFlat(p0, p1, p2, p3, c0, c1, c2, c3, rim = 0.25, rough = 0.8) {
+    const ca = c0, cb = c1 || c0, cc = c2 || c0, cd = c3 || c0;
+    this.triFlat(p0, p1, p2, ca, cb, cc, rim, rough);
+    this.triFlat(p0, p2, p3, ca, cc, cd, rim, rough);
+  }
+  get vertCount() { return (this.floats / FLOATS_PER_VERT) | 0; }
+  get triCount() { return (this.vertCount / 3) | 0; }
+}
+
+/* Fox Coat Palette (sRGB-like rich values, tonemapped cleanly in shader) */
+const COL = {
+  russetDeep:  [0.62, 0.18, 0.07],   // dorsal mahogany-russet cape
+  russetBright:[0.88, 0.35, 0.11],   // vibrant flame-orange flank
+  russetGold:  [0.94, 0.49, 0.17],   // warm golden-apricot shoulder/cheek highlight
+  creamWhite:  [0.96, 0.94, 0.89],   // snow-ivory throat, chest ruff, belly & tail tag
+  warmBuff:    [0.86, 0.74, 0.60],   // soft buff transition fur
+  stockingBlk: [0.10, 0.09, 0.11],   // jet-black lower legs & outer ear backs
+  darkChoc:    [0.24, 0.13, 0.10],   // transition above black stockings & tear-line
+  noseBlack:   [0.07, 0.07, 0.09],   // glossy wet nose button
+  amberEye:    [0.96, 0.66, 0.14],   // glowing amber-gold fox iris
+  earInner:    [0.92, 0.88, 0.82],   // pale cream inner pinna fur
+};
+
+// Continuous, singularity-free tube lofting for +X, -X, or -Y chains!
+// Since all fox chains stay near the sagittal XY plane (|T.z| < 0.35), Z_AXIS = [0,0,1]
+// is NEVER parallel to T: cross([0,0,1], T) is smoothly dorsal/anterior everywhere!
+function loftChain(mb, stations, radialSegs, flipZCross, colorFn, rim = 0.55, rough = 0.65, flatFacet = false) {
+  const nS = stations.length;
+  const ringsP = new Array(nS);
+  const ringsN = new Array(nS);
+  const ringsC = new Array(nS);
+
+  for (let i = 0; i < nS; i++) {
+    const st = stations[i];
+    const pPrev = stations[Math.max(0, i - 1)].p;
+    const pNext = stations[Math.min(nS - 1, i + 1)].p;
+    let T = norm3(sub3(pNext, pPrev));
+    if (st.dir) T = st.dir;
+    // Z-cross frame completion (never flips!)
+    const Z_REF = [0, 0, 1];
+    const up = flipZCross ? norm3(cross3(T, Z_REF)) : norm3(cross3(Z_REF, T));
+    const side = norm3(cross3(T, up)); // points toward +Z (right flank) for +X/-Y chains
+
+    const pts = new Array(radialSegs);
+    const nms = new Array(radialSegs);
+    const cls = new Array(radialSegs);
+    const sFrac = i / (nS - 1);
+
+    for (let j = 0; j < radialSegs; j++) {
+      const th = (j / radialSegs) * TAU;
+      const cy = Math.cos(th); // +1 = dorsal (up), -1 = ventral (belly)
+      const sz = Math.sin(th); // +1 = right (+z), -1 = left (-z)
+      const tuft = st.tuft ? (1 + st.tuft * Math.cos(radialSegs * 0.5 * th)) : 1;
+      // Optional ventral keel or cheek flare shaping
+      const wy = (cy >= 0 ? st.ryTop ?? st.ry : st.ryBot ?? st.ry) * tuft;
+      const wz = st.rz * (1 + (st.cheekFlare || 0) * Math.max(0, -cy * 0.4 + 0.6) * Math.abs(sz)) * tuft;
+      const yOff = (st.yShift || 0);
+
+      const localP = add3(
+        st.p,
+        add3(scale3(up, cy * wy + yOff), scale3(side, sz * wz))
+      );
+      const localN = norm3(add3(scale3(up, cy / Math.max(0.004, wy)), scale3(side, sz / Math.max(0.004, wz))));
+      pts[j] = localP;
+      nms[j] = localN;
+      cls[j] = colorFn(sFrac, cy, sz, i);
+    }
+    ringsP[i] = pts;
+    ringsN[i] = nms;
+    ringsC[i] = cls;
+  }
+
+  for (let i = 0; i < nS - 1; i++) {
+    const pA = ringsP[i], pB = ringsP[i + 1];
+    const nA = ringsN[i], nB = ringsN[i + 1];
+    const cA = ringsC[i], cB = ringsC[i + 1];
+    for (let j = 0; j < radialSegs; j++) {
+      const j1 = (j + 1) % radialSegs;
+      // Winding check: T goes from i to i+1, th goes from up(+Y) toward side(+Z).
+      // From outside looking at right flank (+Z): +X is right, +Y is up -> pA[j], pB[j], pB[j1] has outward normal!
+      // Wait: for flipZCross (tail going -X): T = -X, up = +Y, side = T x up = (-X) x (+Y) = -Z!
+      // Since side = T x up is ALWAYS right-handed (up x side = -T, side x T = up),
+      // (pB[j] - pA[j]) ~ +T and (pA[j1] - pA[j]) ~ +side (at th=0):
+      // cross(pB[j] - pA[j], pB[j1] - pA[j]) ~ T x side = -up (INWARD)!
+      // Therefore outward winding is ALWAYS (pA[j], pA[j1], pB[j1]) and (pA[j], pB[j1], pB[j])!
+      if (flatFacet) {
+        mb.triFlat(pA[j], pA[j1], pB[j1], cA[j], cA[j1], cB[j1], rim, rough);
+        mb.triFlat(pA[j], pB[j1], pB[j],  cA[j], cB[j1], cB[j],  rim, rough);
+      } else {
+        mb.triSmooth(pA[j], nA[j], cA[j], pA[j1], nA[j1], cA[j1], pB[j1], nB[j1], cB[j1], rim, rough);
+        mb.triSmooth(pA[j], nA[j], cA[j], pB[j1], nB[j1], cB[j1], pB[j],  nB[j],  cB[j],  rim, rough);
+      }
+    }
+  }
+
+  // Cap start and end cleanly
+  const cStart = stations[0].p, cEnd = stations[nS - 1].p;
+  const nStart = norm3(sub3(stations[0].p, stations[1].p));
+  const nEnd = norm3(sub3(stations[nS - 1].p, stations[nS - 2].p));
+  for (let j = 0; j < radialSegs; j++) {
+    const j1 = (j + 1) % radialSegs;
+    mb.triSmooth(cStart, nStart, ringsC[0][j], ringsP[0][j1], ringsN[0][j1], ringsC[0][j1], ringsP[0][j], ringsN[0][j], ringsC[0][j], rim, rough);
+    mb.triSmooth(cEnd, nEnd, ringsC[nS - 1][j], ringsP[nS - 1][j], ringsN[nS - 1][j], ringsC[nS - 1][j], ringsP[nS - 1][j1], ringsN[nS - 1][j1], ringsC[nS - 1][j1], rim, rough);
+  }
+}
+
+// Quadratic Bezier evaluation for smooth spinal curvature
+function bezier3(a, b, c, t) {
+  const u = 1 - t;
+  return [
+    u * u * a[0] + 2 * u * t * b[0] + t * t * c[0],
+    u * u * a[1] + 2 * u * t * b[1] + t * t * c[1],
+    u * u * a[2] + 2 * u * t * b[2] + t * t * c[2],
+  ];
+}
+
+function buildFoxMesh(mb, st) {
+  mb.reset();
+  const segBody = LITE ? 12 : 18;
+  const segLimb = LITE ? 8 : 10;
+  const segTail = LITE ? 10 : 14;
+
+  /* ---- 1+2. Seamless Continuous Body -> Neck -> Cheek Ruff -> Snout -> Nose ---- */
+  const br = st.ribBreath;
+  const hP = (fx, uy, rz) => add3(st.atlas, add3(scale3(st.headFwd, fx), add3(scale3(st.headUp, uy), scale3(st.headRight, rz))));
+
+  // 15 continuous stations from rump (0) to atlas (8) to black nose button (14) — ZERO neck seam!
+  const bodyHeadStations = [
+    { p: st.rump,                                          ryTop: 0.044, ryBot: 0.044, rz: 0.044 },
+    { p: st.hipCenter,                                     ryTop: 0.068, ryBot: 0.068, rz: 0.063 },
+    { p: bezier3(st.hipCenter, st.lumbar, st.shoulderCenter, 0.28), ryTop: 0.066, ryBot: 0.054, rz: 0.056 }, // sleek carnivore loin tuck
+    { p: bezier3(st.hipCenter, st.lumbar, st.shoulderCenter, 0.54), ryTop: 0.072, ryBot: 0.068 * br, rz: 0.063 * br },
+    { p: bezier3(st.hipCenter, st.lumbar, st.shoulderCenter, 0.80), ryTop: 0.078, ryBot: 0.085 * br, rz: 0.068 * br }, // deep chest keel
+    { p: st.shoulderCenter,                                ryTop: 0.079, ryBot: 0.082, rz: 0.066, tuft: 0.04 },
+    { p: mix3(st.shoulderCenter, st.neckMid, 0.55),        ryTop: 0.067, ryBot: 0.076, rz: 0.062, tuft: 0.07 }, // fluffy white chest ruff!
+    { p: st.neckMid,                                       ryTop: 0.056, ryBot: 0.058, rz: 0.053, tuft: 0.06 },
+    { p: hP( 0.002, 0.008, 0),                             ryTop: 0.050, ryBot: 0.044, rz: 0.048 }, // occiput / atlas blend
+    { p: hP( 0.034, 0.015, 0), dir: st.headFwd,            ryTop: 0.052, ryBot: 0.044, rz: 0.058, cheekFlare: 0.28, tuft: 0.07 }, // diamond fox cheek ruff!
+    { p: hP( 0.068, 0.011, 0), dir: st.headFwd,            ryTop: 0.045, ryBot: 0.034, rz: 0.048, cheekFlare: 0.16 },
+    { p: hP( 0.104, 0.003, 0), dir: st.headFwd,            ryTop: 0.028, ryBot: 0.020, rz: 0.028 }, // crisp vulpine stop/bridge
+    { p: hP( 0.146,-0.003, 0), dir: st.headFwd,            ryTop: 0.020, ryBot: 0.015, rz: 0.019 }, // long narrow rostrum
+    { p: hP( 0.184,-0.006, 0), dir: st.headFwd,            ryTop: 0.014, ryBot: 0.012, rz: 0.014 }, // muzzle tip
+    { p: hP( 0.200,-0.005, 0), dir: st.headFwd,            ryTop: 0.009, ryBot: 0.008, rz: 0.010 }, // glossy black nose button
+  ];
+
+  loftChain(mb, bodyHeadStations, segBody, false, (s, cy, sz, idx) => {
+    // Nose button at the very tip (idx >= 13)
+    if (idx >= 14 || s > 0.955) return COL.noseBlack;
+    // Head region (idx >= 9)
+    if (idx >= 9) {
+      const hs = (idx - 9) / 5;
+      const lipLine = hs > 0.42 ? 0.14 : 0.02;
+      const whiteCheek = smoothstep(lipLine, lipLine - 0.34, cy);
+      // Dark vulpine tear-streak from inner eye down snout side
+      const tearMark = (idx >= 10 && idx <= 12 && cy > -0.05 && cy < 0.48 && Math.abs(sz) > 0.56) ? 0.62 : 0;
+      let c = mix3(COL.russetBright, COL.russetDeep, smoothstep(0.42, 0.95, cy) * 0.48);
+      c = mix3(c, COL.russetGold, Math.abs(sz) * (1 - hs) * 0.35);
+      c = mix3(c, COL.darkChoc, tearMark);
+      return mix3(c, COL.creamWhite, whiteCheek);
+    }
+    // Trunk & Neck countershading (white belly + prominent white chest/throat bib!)
+    const ts = idx / 8;
+    const bibBoost = 0.38 * smoothstep(0.32, 0.68, ts);
+    const whiteMask = smoothstep(-0.18 + bibBoost, -0.50 + bibBoost, cy);
+    const dorsalMask = smoothstep(0.28, 0.82, cy);
+    const shoulderGold = Math.exp(-Math.pow((ts - 0.62) / 0.18, 2)) * (1 - dorsalMask * 0.6) * Math.abs(sz);
+    let base = mix3(COL.russetBright, COL.russetDeep, dorsalMask * 0.78);
+    base = mix3(base, COL.russetGold, shoulderGold * 0.55);
+    const buffEdge = smoothstep(-0.02 + bibBoost, -0.24 + bibBoost, cy) * (1 - whiteMask);
+    base = mix3(base, COL.warmBuff, buffEdge * 0.5);
+    return mix3(base, COL.creamWhite, whiteMask);
+  }, 0.60, 0.64);
+
+  // Sleek, tucked white lower jaw (subtle breath pant, never gaping!)
+  const jawDrop = st.breathOpen * 0.045;
+  const jawStations = [
+    { p: hP(0.058, -0.015, 0), dir: st.headFwd, ryTop: 0.010, ryBot: 0.014, rz: 0.024 },
+    { p: hP(0.118, -0.014 - jawDrop * 0.5, 0), dir: st.headFwd, ryTop: 0.008, ryBot: 0.011, rz: 0.015 },
+    { p: hP(0.172, -0.013 - jawDrop, 0), dir: st.headFwd, ryTop: 0.005, ryBot: 0.007, rz: 0.009 },
+  ];
+  loftChain(mb, jawStations, 8, false, (s, cy) => cy > 0.35 ? COL.darkChoc : COL.creamWhite, 0.35, 0.70);
+
+  // Expressive Slanted Amber-Gold Eyes (proud of skull surface so they always shine!)
+  for (const side of [-1, +1]) {
+    const eC = hP(0.078, 0.022, side * 0.044);
+    const eF = hP(0.095, 0.015, side * 0.033);
+    const eB = hP(0.062, 0.028, side * 0.048);
+    const eT = hP(0.078, 0.031, side * 0.041);
+    const eD = hP(0.079, 0.013, side * 0.042);
+    const eOut = add3(eC, add3(scale3(st.headRight, side * 0.006), scale3(st.headUp, 0.002)));
+    const glint = hP(0.082, 0.025, side * 0.049);
+    if (side > 0) {
+      mb.triFlat(eOut, eF, eT, COL.amberEye, COL.amberEye, COL.noseBlack, 0.85, 0.15);
+      mb.triFlat(eOut, eD, eF, COL.amberEye, COL.noseBlack, COL.amberEye, 0.85, 0.15);
+      mb.triFlat(eOut, eB, eD, COL.amberEye, COL.noseBlack, COL.noseBlack, 0.85, 0.15);
+      mb.triFlat(eOut, eT, eB, COL.creamWhite, COL.noseBlack, COL.noseBlack, 0.9, 0.1);
+      mb.triFlat(glint, hP(0.086, 0.022, side * 0.046), hP(0.080, 0.027, side * 0.046), COL.creamWhite, COL.amberEye, COL.creamWhite, 0.95, 0.1);
+    } else {
+      mb.triFlat(eOut, eT, eF, COL.amberEye, COL.noseBlack, COL.amberEye, 0.85, 0.15);
+      mb.triFlat(eOut, eF, eD, COL.amberEye, COL.amberEye, COL.noseBlack, 0.85, 0.15);
+      mb.triFlat(eOut, eD, eB, COL.amberEye, COL.noseBlack, COL.noseBlack, 0.85, 0.15);
+      mb.triFlat(eOut, eB, eT, COL.creamWhite, COL.noseBlack, COL.noseBlack, 0.9, 0.1);
+      mb.triFlat(glint, hP(0.080, 0.027, side * 0.046), hP(0.086, 0.022, side * 0.046), COL.creamWhite, COL.creamWhite, COL.amberEye, 0.95, 0.1);
+    }
+  }
+
+  /* ---- 3. Tall Pointed Triangular Fox Ears (Black Backs + Cream Inner Pinna) ---- */
+  for (const side of [-1, +1]) {
+    const flick = side < 0 ? st.earFlickL : st.earFlickR;
+    const base = hP(0.026, 0.041, side * 0.031);
+    const tiltBack = -0.15 - st.earPin + flick;
+    const tiltOut = side * (0.29 + 0.05 * flick);
+    const earDir = norm3(add3(
+      add3(scale3(st.headUp, Math.cos(tiltBack)), scale3(st.headFwd, Math.sin(tiltBack))),
+      scale3(st.headRight, tiltOut)
+    ));
+    const earTip = add3(base, scale3(earDir, 0.112));
+    const earMid = add3(base, scale3(earDir, 0.054));
+    // Base vertices of triangular shell: medial, lateral, posterior, anterior-hollow
+    const mBase = add3(base, add3(scale3(st.headRight, -side * 0.014), scale3(st.headFwd, 0.018)));
+    const lBase = add3(base, add3(scale3(st.headRight,  side * 0.025), scale3(st.headFwd, 0.005)));
+    const pBase = add3(base, add3(scale3(st.headFwd, -0.025), scale3(st.headRight, side * 0.006)));
+    const iHollow = add3(earMid, add3(scale3(st.headFwd, 0.012), scale3(st.headRight, side * 0.003)));
+
+    const mMid = mix3(mBase, earTip, 0.46);
+    const lMid = mix3(lBase, earTip, 0.46);
+    const pMid = add3(mix3(pBase, earTip, 0.46), scale3(st.headFwd, -0.006));
+
+    // Back of ear (russet base transitioning rapidly to jet-black fox ear tips!)
+    if (side > 0) {
+      // Back outer shell
+      mb.quadFlat(pBase, lBase, lMid, pMid, COL.russetDeep, COL.russetDeep, COL.stockingBlk, COL.stockingBlk, 0.45, 0.75);
+      mb.quadFlat(mBase, pBase, pMid, mMid, COL.russetDeep, COL.russetDeep, COL.stockingBlk, COL.stockingBlk, 0.45, 0.75);
+      mb.triFlat(pMid, lMid, earTip, COL.stockingBlk, COL.stockingBlk, COL.stockingBlk, 0.45, 0.75);
+      mb.triFlat(mMid, pMid, earTip, COL.stockingBlk, COL.stockingBlk, COL.stockingBlk, 0.45, 0.75);
+      // Concave cream-white inner pinna facing forward!
+      mb.triFlat(mBase, iHollow, lBase, COL.earInner, COL.earInner, COL.earInner, 0.35, 0.8);
+      mb.triFlat(mBase, mMid, iHollow, COL.russetBright, COL.stockingBlk, COL.earInner, 0.35, 0.8);
+      mb.triFlat(lBase, iHollow, lMid, COL.russetBright, COL.earInner, COL.stockingBlk, 0.35, 0.8);
+      mb.triFlat(mMid, earTip, iHollow, COL.stockingBlk, COL.stockingBlk, COL.earInner, 0.35, 0.8);
+      mb.triFlat(iHollow, earTip, lMid, COL.earInner, COL.stockingBlk, COL.stockingBlk, 0.35, 0.8);
+    } else {
+      mb.quadFlat(lBase, pBase, pMid, lMid, COL.russetDeep, COL.russetDeep, COL.stockingBlk, COL.stockingBlk, 0.45, 0.75);
+      mb.quadFlat(pBase, mBase, mMid, pMid, COL.russetDeep, COL.russetDeep, COL.stockingBlk, COL.stockingBlk, 0.45, 0.75);
+      mb.triFlat(lMid, pMid, earTip, COL.stockingBlk, COL.stockingBlk, COL.stockingBlk, 0.45, 0.75);
+      mb.triFlat(pMid, mMid, earTip, COL.stockingBlk, COL.stockingBlk, COL.stockingBlk, 0.45, 0.75);
+      mb.triFlat(lBase, iHollow, mBase, COL.earInner, COL.earInner, COL.earInner, 0.35, 0.8);
+      mb.triFlat(mMid, mBase, iHollow, COL.stockingBlk, COL.russetBright, COL.earInner, 0.35, 0.8);
+      mb.triFlat(iHollow, lBase, lMid, COL.earInner, COL.russetBright, COL.stockingBlk, 0.35, 0.8);
+      mb.triFlat(earTip, mMid, iHollow, COL.stockingBlk, COL.stockingBlk, COL.earInner, 0.35, 0.8);
+      mb.triFlat(earTip, iHollow, lMid, COL.stockingBlk, COL.earInner, COL.stockingBlk, 0.35, 0.8);
+    }
+  }
+
+  /* ---- 4. Magnificent Plumed Fox Brush (8 stations + Snow-White Tip) ---- */
+  const tailRadii = [0.028, 0.050, 0.068, 0.074, 0.068, 0.054, 0.032, 0.005];
+  const tailStations = st.tailPts.map((p, i) => ({
+    p,
+    ryTop: tailRadii[i] * 1.04,
+    ryBot: tailRadii[i] * 0.98,
+    rz: tailRadii[i] * 0.96,
+    tuft: i > 0 && i < 7 ? 0.09 : 0,
+  }));
+
+  loftChain(mb, tailStations, segTail, true, (s, cy, sz) => {
+    // Feathered zig-zag transition into the iconic snow-white fox brush tip!
+    const feather = 0.055 * Math.cos(3 * Math.atan2(sz, cy));
+    const whiteTag = smoothstep(0.66 + feather, 0.75 + feather, s);
+    let coat = mix3(COL.russetBright, COL.russetDeep, smoothstep(0.25, 0.9, cy) * 0.75);
+    // Subtle dark guard-hair shading along dorsal mid-brush, warm buff underside
+    coat = mix3(coat, COL.darkChoc, smoothstep(0.65, 1.0, cy) * (1 - whiteTag) * 0.32);
+    coat = mix3(coat, COL.warmBuff, smoothstep(-0.2, -0.85, cy) * 0.55);
+    return mix3(coat, COL.creamWhite, whiteTag);
+  }, 0.78, 0.60);
+
+  /* ---- 5. Four Articulated Digitigrade Legs + Black Stockings + 4-Toed Paws ---- */
+  for (const id of ['LH', 'RH', 'RF', 'LF']) {
+    const L = st.legs[id];
+    const pawFwdAng = L.pawPitch;
+    const pawTip = [
+      L.paw[0] + Math.cos(pawFwdAng) * 0.036,
+      Math.max(groundHeight(L.paw[0] + 0.03, L.paw[2]) + 0.006, L.paw[1] + Math.sin(pawFwdAng) * 0.028 - 0.008),
+      L.paw[2],
+    ];
+    const pawHeel = [
+      L.paw[0] - Math.cos(pawFwdAng) * 0.016,
+      L.paw[1] - Math.sin(pawFwdAng) * 0.012 + 0.004,
+      L.paw[2],
+    ];
+    const pawW = 0.019 * (1 + 0.14 * L.splay);
+
+    if (L.fore) {
+      const stations = [
+        { p: L.scapulaTop,                   ry: 0.030, rz: 0.022 },
+        { p: L.root,                         ry: 0.038, rz: 0.028 },
+        { p: mix3(L.root, L.elbow, 0.55),    ry: 0.031, rz: 0.024 },
+        { p: L.elbow,                        ry: 0.025, rz: 0.020 },
+        { p: mix3(L.elbow, L.carpus, 0.50),  ry: 0.019, rz: 0.016 },
+        { p: L.carpus,                       ry: 0.017, rz: 0.015 },
+        { p: pawHeel,                        ry: 0.014, rz: pawW * 0.88 },
+        { p: L.paw,                          ry: 0.014, rz: pawW, tuft: 0.08 },
+        { p: pawTip,                         ry: 0.008, rz: pawW * 0.72 },
+      ];
+      loftChain(mb, stations, segLimb, false, (s, cy) => {
+        const blk = smoothstep(0.38, 0.54, s);
+        const choc = smoothstep(0.30, 0.44, s) * (1 - blk);
+        let upper = mix3(COL.russetBright, COL.russetGold, Math.max(0, cy) * 0.35);
+        if (s < 0.25 && cy < -0.3) upper = mix3(upper, COL.creamWhite, 0.45);
+        upper = mix3(upper, COL.darkChoc, choc * 0.65);
+        return mix3(upper, COL.stockingBlk, blk);
+      }, 0.45, 0.72);
+    } else {
+      // Prominent backward calcaneus heel point on hock + smooth tucked pelvis haunch!
+      const pelvisTuck = [L.root[0] + 0.012, L.root[1] + 0.026, L.root[2] * 0.52];
+      const hockTuber = [L.hock[0] - 0.015, L.hock[1] + 0.012, L.hock[2]];
+      const stations = [
+        { p: pelvisTuck,                     ry: 0.042, rz: 0.028 },
+        { p: L.root,                         ry: 0.052, rz: 0.036 }, // sleek muscular haunch
+        { p: mix3(L.root, L.stifle, 0.55),   ry: 0.042, rz: 0.030 },
+        { p: L.stifle,                       ry: 0.032, rz: 0.024 },
+        { p: mix3(L.stifle, L.hock, 0.55),   ry: 0.023, rz: 0.018 }, // sleek tibia/gaskin
+        { p: hockTuber,                      ry: 0.022, rz: 0.017 }, // calcaneal hock!
+        { p: mix3(L.hock, pawHeel, 0.50),    ry: 0.016, rz: 0.014 }, // digitigrade metatarsus
+        { p: pawHeel,                        ry: 0.014, rz: pawW * 0.88 },
+        { p: L.paw,                          ry: 0.014, rz: pawW, tuft: 0.08 },
+        { p: pawTip,                         ry: 0.008, rz: pawW * 0.72 },
+      ];
+      loftChain(mb, stations, segLimb, false, (s, cy) => {
+        // Black stockings from just above hock (s ~ 0.48) down through pes & paw!
+        const blk = smoothstep(0.44, 0.58, s);
+        const choc = smoothstep(0.36, 0.48, s) * (1 - blk);
+        let upper = mix3(COL.russetBright, COL.russetDeep, Math.max(0, -cy) * 0.35);
+        if (s < 0.28 && cy < -0.35) upper = mix3(upper, COL.creamWhite, 0.40);
+        upper = mix3(upper, COL.darkChoc, choc * 0.65);
+        return mix3(upper, COL.stockingBlk, blk);
+      }, 0.45, 0.72);
+    }
+  }
+}
+
+/* ============================================================================
+ * 4. STATIC BOREAL FROST-DAWN GLADE (Seamless 12-Stride Tile = 18.0 m)
+ * ========================================================================== */
+
+function addIcosphere(mb, center, rx, ry, rz, baseCol, topCol, rng, rim = 0.35, rough = 0.82) {
+  // Low-poly faceted organic cluster (12-az x 6-el dome/ellipsoid with deterministic jitter)
+  const NA = LITE ? 8 : 10, NE = LITE ? 5 : 6;
+  const ring = [];
+  for (let ie = 0; ie <= NE; ie++) {
+    const v = ie / NE;
+    const phi = v * Math.PI;
+    const sp = Math.sin(phi), cp = Math.cos(phi);
+    const row = [];
+    for (let ia = 0; ia < NA; ia++) {
+      const th = (ia / NA) * TAU;
+      const jit = (ie === 0 || ie === NE) ? 1 : (0.86 + 0.26 * rng());
+      row.push([
+        center[0] + sp * Math.cos(th) * rx * jit,
+        center[1] + cp * ry * jit,
+        center[2] + sp * Math.sin(th) * rz * jit,
+      ]);
+    }
+    ring.push(row);
+  }
+  for (let ie = 0; ie < NE; ie++) {
+    const tCol = mix3(topCol, baseCol, ie / NE);
+    const bCol = mix3(topCol, baseCol, (ie + 1) / NE);
+    for (let ia = 0; ia < NA; ia++) {
+      const ia1 = (ia + 1) % NA;
+      const p00 = ring[ie][ia], p01 = ring[ie][ia1];
+      const p10 = ring[ie + 1][ia], p11 = ring[ie + 1][ia1];
+      if (ie > 0) mb.triFlat(p00, p10, p11, tCol, bCol, bCol, rim, rough);
+      if (ie < NE - 1) mb.triFlat(p00, p11, p01, tCol, bCol, tCol, rim, rough);
+      else mb.triFlat(p00, p10, p01, tCol, bCol, tCol, rim, rough);
+      if (ie === 0) mb.triFlat(p00, p10, p11, tCol, bCol, bCol, rim, rough);
+    }
+  }
+}
+
+function addBirchTree(mb, x, z, height, leanZ, rng) {
+  const gy = groundHeight(x, z) - 0.05;
+  const segs = 6;
+  const stations = [];
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    const r = lerp(0.115, 0.032, Math.pow(t, 0.78));
+    stations.push({
+      p: [x + Math.sin(t * 2.1) * 0.08, gy + t * height, z + leanZ * t * t],
+      dir: norm3([0.04, 1, leanZ * 0.25]),
+      ry: r, rz: r,
+    });
+  }
+  // Chalk-white silver birch bark with dark charcoal lenticel bands!
+  loftChain(mb, stations, LITE ? 6 : 8, false, (s, cy, sz, idx) => {
+    const darkBase = s < 0.14 ? 0.72 : 0;
+    const lenticel = Math.sin(s * 34 + sz * 2.5) > 0.74 ? 0.68 : 0;
+    const bark = [0.85, 0.86, 0.89];
+    const knot = [0.16, 0.15, 0.18];
+    return mix3(bark, knot, Math.max(darkBase, lenticel));
+  }, 0.28, 0.85, true);
+
+  // Golden-amber & russet autumn birch canopy clouds (low enough to frame the glade!)
+  const top = stations[segs].p;
+  const mid = stations[3].p;
+  const leafGold = [0.90, 0.62, 0.16];
+  const leafAmber = [0.78, 0.36, 0.12];
+  const leafSun = [0.98, 0.78, 0.30];
+  const nClouds = LITE ? 2 : 4;
+  for (let c = 0; c < nClouds; c++) {
+    const baseP = c === 0 ? mid : top;
+    const ox = (rng() - 0.5) * 0.85;
+    const oy = (c === 0 ? 0.15 : -0.55 + (c - 1) * 0.34) + (rng() - 0.5) * 0.18;
+    const oz = (rng() - 0.5) * 0.85;
+    addIcosphere(
+      mb,
+      [baseP[0] + ox, baseP[1] + oy, baseP[2] + oz],
+      0.66 + rng() * 0.30,
+      0.42 + rng() * 0.18,
+      0.66 + rng() * 0.30,
+      mix3(leafAmber, leafGold, rng()),
+      leafSun,
+      rng,
+      0.55, 0.72
+    );
+  }
+}
+
+function addSpruceTree(mb, x, z, h, rng) {
+  const gy = groundHeight(x, z) - 0.06;
+  const tiers = LITE ? 3 : 4;
+  const darkPine = [0.10, 0.20, 0.20];
+  const frostPine = [0.28, 0.44, 0.48];
+  const sides = LITE ? 6 : 7;
+  for (let t = 0; t < tiers; t++) {
+    const f = t / tiers;
+    const y0 = gy + 0.30 + f * h * 0.62;
+    const y1 = y0 + h * (0.44 - f * 0.06);
+    const rad = (0.78 - f * 0.17) * (h / 3.4);
+    const apex = [x, y1, z];
+    for (let s = 0; s < sides; s++) {
+      const a0 = (s / sides) * TAU, a1 = ((s + 1) / sides) * TAU;
+      const p0 = [x + Math.cos(a0) * rad, y0, z + Math.sin(a0) * rad];
+      const p1 = [x + Math.cos(a1) * rad, y0, z + Math.sin(a1) * rad];
+      // Winding: apex, p1, p0 faces outward (+Y/+radial)! Let's check:
+      // e1 = p1 - apex (down + a1), e2 = p0 - apex (down + a0). At s=0 (a0=0 -> +X, a1>0 -> +Z):
+      // e1 ~ (+X, -Y, +Z), e2 ~ (+X, -Y, 0) -> e1 x e2: y = e1.z*e2.x - e1.x*e2.z = (+)*(+) > 0 (+Y UP & OUTWARD)!
+      mb.triFlat(apex, p1, p0, frostPine, darkPine, darkPine, 0.30, 0.88);
+    }
+  }
+}
+
+function addFrostTuft(mb, x, z, scale, rng) {
+  const gy = groundHeight(x, z) - 0.01;
+  const blades = LITE ? 4 : 6;
+  const baseC = [0.22, 0.34, 0.30];
+  const tipC = rng() > 0.32 ? [0.68, 0.80, 0.86] : [0.76, 0.46, 0.20]; // frosted sage/fern or russet heather!
+  for (let b = 0; b < blades; b++) {
+    const ang = (b / blades) * TAU + rng() * 0.5;
+    const rOut = (0.12 + rng() * 0.10) * scale;
+    const h = (0.14 + rng() * 0.12) * scale;
+    const p0 = [x - Math.sin(ang) * 0.022, gy, z + Math.cos(ang) * 0.022];
+    const p1 = [x + Math.sin(ang) * 0.022, gy, z - Math.cos(ang) * 0.022];
+    const tip = [x + Math.cos(ang) * rOut, gy + h, z + Math.sin(ang) * rOut];
+    mb.triFlat(p0, p1, tip, baseC, baseC, tipC, 0.45, 0.78);
+    mb.triFlat(p1, p0, tip, baseC, baseC, tipC, 0.45, 0.78);
+  }
+}
+
+function buildWorldTile(mbTerrain, mbProps) {
+  mbTerrain.reset();
+  mbProps.reset();
+  const rng = mulberry32(20261114);
+
+  // 1. Seamless Terrain Grid over [0, WORLD_LEN] x [-16, +16]
+  // Notice: camera orbit stays inside |z| < 4.5, and we render 3 tiles (k = -1, 0, +1 -> 54 m span!)
+  const NX = LITE ? 54 : 84;
+  const NZ = LITE ? 42 : 64;
+  const Z_MAX = 16.0;
+
+  function terrainCol(x, z, nrm) {
+    const wx = (TAU * x) / WORLD_LEN;
+    const az = Math.abs(z);
+    // Winding trail mask around z = 0
+    const trailWiggle = 0.08 * Math.sin(wx * 2);
+    const dTrail = Math.abs(z - trailWiggle);
+    const onTrail = 1 - smoothstep(0.22, 0.68, dTrail);
+
+    const earth = [0.27, 0.23, 0.21];
+    const trailRime = [0.46, 0.50, 0.55];
+    const deepMoss = [0.16, 0.29, 0.25];
+    const meadowMoss = [0.23, 0.38, 0.33];
+    const hoarFrost = [0.64, 0.76, 0.84];
+    const autumnLeaf = [0.68, 0.34, 0.13];
+
+    const patch = 0.5 + 0.5 * Math.sin(wx * 4 + z * 1.3) * Math.cos(wx * 3 - z * 0.9);
+    const frostFactor = clamp((nrm[2] * 0.35 + 0.48) * patch + smoothstep(0.55, 0.85, dTrail) * 0.22, 0, 1);
+    let turf = mix3(deepMoss, meadowMoss, patch);
+    turf = mix3(turf, hoarFrost, smoothstep(0.42, 0.86, frostFactor) * 0.62);
+    // Occasional fallen golden-russet leaf patches under birches
+    const leafPatch = smoothstep(0.76, 0.94, Math.sin(wx * 7 + z * 2.4) * Math.cos(wx * 5 - z * 1.8)) * smoothstep(1.2, 3.2, az);
+    turf = mix3(turf, autumnLeaf, leafPatch * 0.48);
+
+    const trailCol = mix3(earth, trailRime, smoothstep(0.18, 0.55, dTrail) * 0.45);
+    return mix3(turf, trailCol, onTrail);
+  }
+
+  // Non-linear Z spacing: finer resolution near the trail (|z| < 2.5m), wider in the far meadow
+  const zCoords = [];
+  for (let iz = 0; iz <= NZ; iz++) {
+    const u = (iz / NZ) * 2 - 1; // [-1, 1]
+    zCoords.push(Math.sign(u) * Math.pow(Math.abs(u), 1.45) * Z_MAX);
+  }
+
+  const gridP = [], gridN = [], gridC = [];
+  for (let ix = 0; ix <= NX; ix++) {
+    const x = (ix / NX) * WORLD_LEN;
+    // Exact periodic X wrap at ix === NX so normals/colors match ix === 0 bit-for-bit!
+    const xSample = ix === NX ? 0 : x;
+    const colP = [], colN = [], colC = [];
+    for (let iz = 0; iz <= NZ; iz++) {
+      const z = zCoords[iz];
+      const y = groundHeight(xSample, z);
+      const n = groundNormal(xSample, z);
+      colP.push([x, y, z]);
+      colN.push(n);
+      colC.push(terrainCol(xSample, z, n));
+    }
+    gridP.push(colP); gridN.push(colN); gridC.push(colC);
+  }
+
+  for (let ix = 0; ix < NX; ix++) {
+    for (let iz = 0; iz < NZ; iz++) {
+      const p00 = gridP[ix][iz],     p10 = gridP[ix + 1][iz];
+      const p01 = gridP[ix][iz + 1], p11 = gridP[ix + 1][iz + 1];
+      const n00 = gridN[ix][iz],     n10 = gridN[ix + 1][iz];
+      const n01 = gridN[ix][iz + 1], n11 = gridN[ix + 1][iz + 1];
+      const c00 = gridC[ix][iz],     c10 = gridC[ix + 1][iz];
+      const c01 = gridC[ix][iz + 1], c11 = gridC[ix + 1][iz + 1];
+      // Winding: p00(x,z) -> p01(x,z+dz) -> p11(x+dx,z+dz): (+Z) x (+X) = +Y UP!
+      mbTerrain.triSmooth(p00, n00, c00, p01, n01, c01, p11, n11, c11, 0.18, 0.90);
+      mbTerrain.triSmooth(p00, n00, c00, p11, n11, c11, p10, n10, c10, 0.18, 0.90);
+    }
+  }
+
+  // 2. Silver Birch Trees (kept outside |z| > 3.1m so camera orbit corridor is 100% clear)
+  const nBirches = LITE ? 10 : 16;
+  for (let i = 0; i < nBirches; i++) {
+    const bx = ((i + 0.18 + rng() * 0.64) / nBirches) * WORLD_LEN;
+    const side = (i % 2 === 0) ? -1 : 1;
+    const bz = side * ((side > 0 ? 5.2 : 3.3) + rng() * 4.8);
+    const bh = 3.1 + rng() * 1.5;
+    addBirchTree(mbProps, bx, bz, bh, (rng() - 0.5) * 0.45, rng);
+  }
+
+  // 3. Distant Boreal Spruce Treeline (|z| in 8.5 .. 14.5m)
+  const nSpruce = LITE ? 14 : 24;
+  for (let i = 0; i < nSpruce; i++) {
+    const sx = ((i + rng() * 0.85) / nSpruce) * WORLD_LEN;
+    const side = (i % 2 === 0) ? 1 : -1;
+    const sz = side * (8.4 + rng() * 5.8);
+    addSpruceTree(mbProps, sx, sz, 3.2 + rng() * 2.1, rng);
+  }
+
+  // 4. Mossy Frost-Rimed Granite Boulders & Fallen Birch Logs (|z| in 1.25 .. 4.8m)
+  const nRocks = LITE ? 8 : 14;
+  for (let i = 0; i < nRocks; i++) {
+    const rx = rng() * WORLD_LEN;
+    const side = rng() > 0.5 ? 1 : -1;
+    const rz = side * (1.35 + rng() * 3.4);
+    const ry = groundHeight(rx, rz) + 0.06;
+    const s = 0.18 + rng() * 0.24;
+    addIcosphere(
+      mbProps,
+      [rx, ry, rz],
+      s * 1.35, s * 0.82, s * 1.15,
+      [0.26, 0.29, 0.34],
+      [0.54, 0.66, 0.70], // frost & lichen cap
+      rng, 0.25, 0.88
+    );
+  }
+
+  // 5. Frosted Sage / Heather / Fern Tufts along trail verges (|z| in 0.62 .. 3.6m)
+  const nTufts = LITE ? 28 : 52;
+  for (let i = 0; i < nTufts; i++) {
+    const tx = rng() * WORLD_LEN;
+    const side = (i % 2 === 0) ? -1 : 1;
+    const tz = side * (0.62 + Math.pow(rng(), 1.4) * 3.2);
+    addFrostTuft(mbProps, tx, tz, 0.75 + rng() * 0.65, rng);
+  }
+}
+
+/* ============================================================================
+ * 5. DYNAMIC EFFECTS: PAWPRINTS IN FROST, HOARFROST PUFFS, BREATH & LEAVES
+ * ========================================================================== */
+
+const pawprints = [];      // { x, y, z, side, age }
+const frostPuffs = [];     // { x, y, z, vx, vy, vz, age, maxAge, size }
+const breathPuffs = [];    // { x, y, z, vx, vy, vz, age, maxAge, size }
+const MAX_PRINTS = 36;
+
+// Pre-seeded drifting golden birch leaves (periodic & deterministic)
+const LEAVES = (() => {
+  const rng = mulberry32(99173);
+  const count = LITE ? 18 : 34;
+  const arr = [];
+  for (let i = 0; i < count; i++) {
+    arr.push({
+      x0: rng() * WORLD_LEN,
+      y0: 0.45 + rng() * 2.4,
+      z0: (rng() - 0.5) * 6.8,
+      fall: 0.32 + rng() * 0.28,
+      driftX: -0.7 - rng() * 0.8,
+      swayAmp: 0.18 + rng() * 0.22,
+      swayFreq: 1.8 + rng() * 1.6,
+      phase: rng() * TAU,
+      col: rng() > 0.35 ? [0.92, 0.62, 0.16] : [0.84, 0.36, 0.12],
+    });
+  }
+  return arr;
+})();
+
+function spawnPawprint(paw, side) {
+  pawprints.push({ x: paw[0], y: paw[1] - PAD_CLEAR + 0.005, z: paw[2], side, age: 0 });
+  if (pawprints.length > MAX_PRINTS) pawprints.shift();
+}
+
+function spawnFrostKick(paw, side) {
+  const n = LITE ? 3 : 5;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * TAU + paw[0] * 3.1;
+    frostPuffs.push({
+      x: paw[0] - 0.02,
+      y: paw[1] + 0.01,
+      z: paw[2] + Math.sin(a) * 0.015,
+      vx: -1.15 - (i % 3) * 0.38,
+      vy: 0.42 + (i % 2) * 0.26,
+      vz: side * 0.18 + Math.cos(a) * 0.22,
+      age: 0,
+      maxAge: 0.36 + (i % 3) * 0.08,
+      size: 0.018 + (i % 2) * 0.008,
+    });
+  }
+}
+
+function spawnBreathPlume(muzzle, headFwd) {
+  const n = LITE ? 2 : 4;
+  for (let i = 0; i < n; i++) {
+    breathPuffs.push({
+      x: muzzle[0] + headFwd[0] * 0.02,
+      y: muzzle[1] - 0.005,
+      z: muzzle[2] + (i - 1.5) * 0.008,
+      vx: 0.85 - i * 0.18, // blown forward relative to air, quickly trails behind moving fox
+      vy: 0.16 + i * 0.05,
+      vz: (i % 2 === 0 ? 1 : -1) * 0.09,
+      age: 0,
+      maxAge: 0.48 + i * 0.08,
+      size: 0.018 + i * 0.005,
+    });
+  }
+}
+
+function stepParticles(dt) {
+  for (let i = pawprints.length - 1; i >= 0; i--) {
+    pawprints[i].age += dt;
+    if (pawprints[i].age > 4.2) pawprints.splice(i, 1);
+  }
+  for (let i = frostPuffs.length - 1; i >= 0; i--) {
+    const p = frostPuffs[i];
+    p.age += dt;
+    if (p.age >= p.maxAge) { frostPuffs.splice(i, 1); continue; }
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.z += p.vz * dt;
+    p.vy -= 2.6 * dt;
+  }
+  for (let i = breathPuffs.length - 1; i >= 0; i--) {
+    const p = breathPuffs[i];
+    p.age += dt;
+    if (p.age >= p.maxAge) { breathPuffs.splice(i, 1); continue; }
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.z += p.vz * dt;
+    p.vx *= Math.exp(-3.2 * dt);
+    p.size += 0.045 * dt;
+  }
+}
+
+function buildEffectsMesh(mb, foxX, worldTime) {
+  mb.reset();
+  // 1. Four-toed frost pawprints stamped along the trail
+  const printCol = [0.16, 0.21, 0.28];
+  for (const pr of pawprints) {
+    if (Math.abs(pr.x - foxX) > 9.0) continue;
+    const fade = 1 - pr.age / 4.2;
+    const r = 0.022 * (0.7 + 0.3 * fade);
+    const p0 = [pr.x - r, pr.y, pr.z], p1 = [pr.x, pr.y, pr.z + r * 0.85];
+    const p2 = [pr.x + r * 1.25, pr.y, pr.z], p3 = [pr.x, pr.y, pr.z - r * 0.85];
+    mb.quadFlat(p0, p1, p2, p3, printCol, printCol, printCol, printCol, 0.05, 0.95);
+  }
+
+  // 2. Sparkling frost kick-up clods
+  const frostC = [0.84, 0.92, 0.98];
+  for (const p of frostPuffs) {
+    const k = 1 - p.age / p.maxAge;
+    const s = p.size * k;
+    const a = [p.x, p.y + s, p.z], b = [p.x - s, p.y - s * 0.6, p.z + s];
+    const c = [p.x + s, p.y - s * 0.6, p.z + s], d = [p.x, p.y - s * 0.6, p.z - s];
+    mb.triFlat(a, b, c, frostC, frostC, frostC, 0.8, 0.3);
+    mb.triFlat(a, c, d, frostC, frostC, frostC, 0.8, 0.3);
+    mb.triFlat(a, d, b, frostC, frostC, frostC, 0.8, 0.3);
+  }
+
+  // 3. Warm dawn breath mist octahedra
+  const mistC = [0.86, 0.90, 0.96];
+  for (const p of breathPuffs) {
+    const k = Math.sin(Math.PI * (p.age / p.maxAge));
+    const s = p.size * k;
+    if (s < 0.002) continue;
+    const top = [p.x, p.y + s * 0.75, p.z], bot = [p.x, p.y - s * 0.75, p.z];
+    const r0 = [p.x + s, p.y, p.z], r1 = [p.x, p.y, p.z + s];
+    const r2 = [p.x - s, p.y, p.z], r3 = [p.x, p.y, p.z - s];
+    mb.triFlat(top, r1, r0, mistC, mistC, mistC, 0.7, 0.5);
+    mb.triFlat(top, r2, r1, mistC, mistC, mistC, 0.7, 0.5);
+    mb.triFlat(top, r3, r2, mistC, mistC, mistC, 0.7, 0.5);
+    mb.triFlat(top, r0, r3, mistC, mistC, mistC, 0.7, 0.5);
+    mb.triFlat(bot, r0, r1, mistC, mistC, mistC, 0.7, 0.5);
+    mb.triFlat(bot, r1, r2, mistC, mistC, mistC, 0.7, 0.5);
+  }
+
+  // 4. Drifting golden birch leaves around the fox
+  const baseTile = Math.floor(foxX / WORLD_LEN) * WORLD_LEN;
+  for (const lf of LEAVES) {
+    let lx = wrapWorldX(lf.x0 + worldTime * lf.driftX) + baseTile;
+    if (lx - foxX > WORLD_LEN * 0.5) lx -= WORLD_LEN;
+    if (lx - foxX < -WORLD_LEN * 0.5) lx += WORLD_LEN;
+    const ly = 0.18 + ((lf.y0 - worldTime * lf.fall) % 2.6 + 2.6) % 2.6;
+    const lz = lf.z0 + Math.sin(worldTime * lf.swayFreq + lf.phase) * lf.swayAmp;
+    const spin = worldTime * 3.1 + lf.phase;
+    const dx = Math.cos(spin) * 0.032, dz = Math.sin(spin) * 0.032;
+    const dy = Math.sin(spin * 1.3) * 0.018;
+    const p0 = [lx - dx, ly - dy, lz - dz];
+    const p1 = [lx + dz * 0.6, ly + dy, lz - dx * 0.6];
+    const p2 = [lx + dx, ly + dy * 0.5, lz + dz];
+    const p3 = [lx - dz * 0.6, ly - dy, lz + dx * 0.6];
+    mb.quadFlat(p0, p1, p2, p3, lf.col, lf.col, lf.col, lf.col, 0.65, 0.5);
+    mb.quadFlat(p2, p1, p0, p3, lf.col, lf.col, lf.col, lf.col, 0.65, 0.5);
+  }
+}
+
+/* ============================================================================
+ * 6. WEBGL2 SHADERS, VAO BUFFERS & REAL PCF DIRECTIONAL SHADOW MAP
+ * ========================================================================== */
+
+function compileShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    const info = gl.getShaderInfoLog(s);
+    gl.deleteShader(s);
+    throw new Error('Shader compile failed: ' + info);
+  }
+  return s;
+}
+
+function createProgram(vsSrc, fsSrc) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compileShader(gl.VERTEX_SHADER, vsSrc));
+  gl.attachShader(p, compileShader(gl.FRAGMENT_SHADER, fsSrc));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    throw new Error('Program link failed: ' + gl.getProgramInfoLog(p));
+  }
+  return p;
+}
+
+/* --- Sky Shader (Boreal Frost Dawn + Low Rose-Gold Sun + Misty Mountain Rim) --- */
+const SKY_VS = `#version 300 es
+precision highp float;
+const vec2 POS[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
+out vec2 vNDC;
+void main() {
+  vNDC = POS[gl_VertexID];
+  gl_Position = vec4(vNDC, 0.9999, 1.0);
+}`;
+
+const SKY_FS = `#version 300 es
+precision highp float;
+in vec2 vNDC;
+uniform vec3 uCamFwd;
+uniform vec3 uCamRight;
+uniform vec3 uCamUp;
+uniform vec2 uTanHalfFov;
+uniform vec3 uSunDir;
+uniform float uWorldShift;
+out vec4 fragColor;
+
+float hash1(float n) { return fract(sin(n) * 43758.5453123); }
+float vnoise(float x) {
+  float i = floor(x), f = fract(x);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(hash1(i), hash1(i + 1.0), f);
+}
+
+void main() {
+  vec3 rd = normalize(uCamFwd + vNDC.x * uTanHalfFov.x * uCamRight + vNDC.y * uTanHalfFov.y * uCamUp);
+  float y = clamp(rd.y, -0.25, 1.0);
+
+  // Boreal dawn sky gradient: deep indigo-slate zenith -> cool periwinkle -> warm rose-apricot horizon!
+  vec3 zenith  = vec3(0.08, 0.14, 0.28);
+  vec3 midSky  = vec3(0.24, 0.36, 0.54);
+  vec3 horizon = vec3(0.86, 0.56, 0.44);
+  vec3 sky = mix(horizon, midSky, smoothstep(0.0, 0.26, max(y, 0.0)));
+  sky = mix(sky, zenith, smoothstep(0.22, 0.82, max(y, 0.0)));
+
+  // Warm golden-rose glow toward the low dawn sun
+  float sunDot = max(dot(rd, uSunDir), 0.0);
+  sky += vec3(0.95, 0.54, 0.24) * pow(sunDot, 5.0) * 0.48;
+  sky += vec3(1.00, 0.82, 0.55) * pow(sunDot, 42.0) * 0.55;
+  // Crisp low sun disc
+  float sunDisc = smoothstep(0.9982, 0.9994, dot(rd, uSunDir));
+  sky = mix(sky, vec3(1.0, 0.94, 0.80), sunDisc * 0.92);
+
+  // Subtle high dawn cirrus bands
+  if (y > 0.03) {
+    float az = atan(rd.z, rd.x);
+    float cBand = vnoise(az * 7.0 + y * 16.0) * vnoise(az * 15.0 - y * 24.0);
+    float mask = smoothstep(0.04, 0.18, y) * (1.0 - smoothstep(0.32, 0.65, y));
+    sky = mix(sky, vec3(0.98, 0.72, 0.54), smoothstep(0.24, 0.58, cBand) * mask * (0.28 + 0.45 * pow(sunDot, 2.0)));
+  }
+
+  // Distant twin boreal mountain ridges wrapped cleanly with parallax
+  float az = atan(rd.z, rd.x);
+  float ridgeFar = 0.058 + 0.036 * vnoise(az * 6.0 + uWorldShift * 0.004) + 0.016 * vnoise(az * 15.0);
+  float ridgeNear = 0.026 + 0.024 * vnoise(az * 9.0 + 4.2 + uWorldShift * 0.010) + 0.010 * vnoise(az * 22.0);
+  if (y < ridgeFar) {
+    vec3 farCol = mix(vec3(0.28, 0.34, 0.48), vec3(0.58, 0.45, 0.48), pow(sunDot, 2.0) * 0.65);
+    sky = mix(sky, farCol, smoothstep(ridgeFar, ridgeFar - 0.006, y));
+  }
+  if (y < ridgeNear) {
+    vec3 nearCol = mix(vec3(0.16, 0.23, 0.33), vec3(0.38, 0.32, 0.38), pow(sunDot, 2.0) * 0.5);
+    sky = mix(sky, nearCol, smoothstep(ridgeNear, ridgeNear - 0.005, y));
+  }
+
+  // Below horizon mist floor fallback
+  if (y < 0.0) {
+    sky = mix(sky, vec3(0.20, 0.27, 0.34), smoothstep(0.0, -0.12, y));
+  }
+
+  fragColor = vec4(sky, 1.0);
+}`;
+
+/* --- Shadow Depth Pass Shader --- */
+const SHADOW_VS = `#version 300 es
+precision highp float;
+layout(location = 0) in vec3 aPos;
+uniform mat4 uLightVP;
+uniform vec3 uOffset;
+void main() {
+  gl_Position = uLightVP * vec4(aPos + uOffset, 1.0);
+}`;
+
+const SHADOW_FS = `#version 300 es
+precision highp float;
+void main() {}`;
+
+/* --- Main Lit Fur & Frosted Glade Shader (Wrap Sun + Sky Fill + Rim Sheen + 3x3 PCF Shadow + Mist) --- */
+const MAIN_VS = `#version 300 es
+precision highp float;
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNorm;
+layout(location = 2) in vec3 aCol;
+layout(location = 3) in vec2 aMat;
+
+uniform mat4 uVP;
+uniform mat4 uLightVP;
+uniform vec3 uOffset;
+
+out vec3 vWorldPos;
+out vec3 vNorm;
+out vec3 vCol;
+out vec2 vMat;
+out vec4 vShadowPos;
+
+void main() {
+  vec3 wp = aPos + uOffset;
+  vWorldPos = wp;
+  vNorm = aNorm;
+  vCol = aCol;
+  vMat = aMat;
+  vShadowPos = uLightVP * vec4(wp + aNorm * 0.008, 1.0);
+  gl_Position = uVP * vec4(wp, 1.0);
+}`;
+
+const MAIN_FS = `#version 300 es
+precision highp float;
+in vec3 vWorldPos;
+in vec3 vNorm;
+in vec3 vCol;
+in vec2 vMat;
+in vec4 vShadowPos;
+
+uniform vec3 uCamPos;
+uniform vec3 uSunDir;
+uniform sampler2D uShadowTex;
+uniform float uShadowTexel;
+
+out vec4 fragColor;
+
+float sampleShadow(vec4 sc) {
+  vec3 proj = sc.xyz / max(sc.w, 0.0001);
+  vec3 uvz = proj * 0.5 + 0.5;
+  if (uvz.x <= 0.01 || uvz.x >= 0.99 || uvz.y <= 0.01 || uvz.y >= 0.99 || uvz.z >= 0.998 || uvz.z <= 0.0) {
+    return 1.0;
+  }
+  float bias = 0.0028;
+  float lit = 0.0;
+  for (int dy = -1; dy <= 1; dy++) {
+    for (int dx = -1; dx <= 1; dx++) {
+      vec2 suv = uvz.xy + vec2(float(dx), float(dy)) * uShadowTexel;
+      float d = texture(uShadowTex, suv).r;
+      lit += (uvz.z - bias <= d) ? 1.0 : 0.0;
+    }
+  }
+  // Fade shadow cleanly near frustum border
+  float edge = min(min(uvz.x, 1.0 - uvz.x), min(uvz.y, 1.0 - uvz.y));
+  float fade = smoothstep(0.01, 0.09, edge);
+  return mix(1.0, lit / 9.0, fade);
+}
+
+void main() {
+  vec3 N = normalize(vNorm);
+  vec3 V = normalize(uCamPos - vWorldPos);
+  vec3 L = uSunDir;
+
+  float shadow = sampleShadow(vShadowPos);
+
+  // Soft fur wrap-Lambert sun lighting + crisp shadow modulation
+  float ndl = dot(N, L);
+  float wrapDiff = max((ndl + 0.22) / 1.22, 0.0);
+  float direct = wrapDiff * (0.30 + 0.70 * shadow);
+
+  // Boreal sky hemisphere fill + cool frosted ground bounce
+  float hemi = 0.5 + 0.5 * N.y;
+  vec3 skyAmb = mix(vec3(0.18, 0.25, 0.34), vec3(0.34, 0.46, 0.66), hemi);
+  vec3 sunCol = vec3(1.16, 0.88, 0.66);
+
+  // Golden guard-hair rim sheen (backlit brush, ears & cheek ruff glow in dawn sun!)
+  float rimTerm = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+  float sunBack = 0.35 + 0.65 * max(dot(-V, L), 0.0);
+  vec3 rimGlow = vec3(1.05, 0.68, 0.36) * rimTerm * vMat.x * sunBack * (0.35 + 0.65 * shadow);
+
+  // Subtle specular glint on glossy nose/eyes & hoarfrost crystals
+  vec3 H = normalize(L + V);
+  float spec = pow(max(dot(N, H), 0.0), mix(48.0, 10.0, vMat.y)) * (1.0 - vMat.y) * shadow;
+
+  vec3 litCol = vCol * (skyAmb + sunCol * direct) + rimGlow + vec3(1.0, 0.92, 0.84) * spec * 0.45;
+
+  // Atmospheric morning mist haze with distance
+  float dist = length(vWorldPos - uCamPos);
+  float fog = 1.0 - exp(-max(dist - 2.6, 0.0) * 0.062);
+  float sunFog = max(dot(-V, L), 0.0);
+  vec3 fogCol = mix(vec3(0.38, 0.48, 0.62), vec3(0.84, 0.58, 0.46), pow(sunFog, 3.0) * 0.72);
+  litCol = mix(litCol, fogCol, clamp(fog, 0.0, 0.92));
+
+  // Filmic contrast curve so fiery russet and snow-white both retain rich detail
+  litCol = litCol / (1.0 + 0.24 * litCol);
+  litCol = pow(max(litCol, 0.0), vec3(0.95));
+
+  fragColor = vec4(litCol, 1.0);
+}`;
+
+const skyProg = createProgram(SKY_VS, SKY_FS);
+const shadowProg = createProgram(SHADOW_VS, SHADOW_FS);
+const mainProg = createProgram(MAIN_VS, MAIN_FS);
+
+const uSky = {
+  camFwd: gl.getUniformLocation(skyProg, 'uCamFwd'),
+  camRight: gl.getUniformLocation(skyProg, 'uCamRight'),
+  camUp: gl.getUniformLocation(skyProg, 'uCamUp'),
+  tanHalfFov: gl.getUniformLocation(skyProg, 'uTanHalfFov'),
+  sunDir: gl.getUniformLocation(skyProg, 'uSunDir'),
+  worldShift: gl.getUniformLocation(skyProg, 'uWorldShift'),
+};
+
+const uShadow = {
+  lightVP: gl.getUniformLocation(shadowProg, 'uLightVP'),
+  offset: gl.getUniformLocation(shadowProg, 'uOffset'),
+};
+
+const uMain = {
+  vp: gl.getUniformLocation(mainProg, 'uVP'),
+  lightVP: gl.getUniformLocation(mainProg, 'uLightVP'),
+  offset: gl.getUniformLocation(mainProg, 'uOffset'),
+  camPos: gl.getUniformLocation(mainProg, 'uCamPos'),
+  sunDir: gl.getUniformLocation(mainProg, 'uSunDir'),
+  shadowTex: gl.getUniformLocation(mainProg, 'uShadowTex'),
+  shadowTexel: gl.getUniformLocation(mainProg, 'uShadowTexel'),
+};
+
+const emptyVao = gl.createVertexArray();
+
+function createGpuMesh(usage) {
+  const vao = gl.createVertexArray();
+  const vbo = gl.createBuffer();
+  gl.bindVertexArray(vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  const stride = FLOATS_PER_VERT * 4;
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, stride, 0);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, stride, 12);
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 3, gl.FLOAT, false, stride, 24);
+  gl.enableVertexAttribArray(3);
+  gl.vertexAttribPointer(3, 2, gl.FLOAT, false, stride, 36);
+  gl.bindVertexArray(null);
+  return {
+    vao, vbo, usage, vertCount: 0, triCount: 0,
+    upload(mb) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+      gl.bufferData(gl.ARRAY_BUFFER, mb.data.subarray(0, mb.floats), usage);
+      this.vertCount = mb.vertCount;
+      this.triCount = mb.triCount;
+    },
+  };
+}
+
+// Shadow Map FBO (DEPTH_COMPONENT24 + NEAREST = universally valid in WebGL2 core!)
+const SHADOW_RES = LITE ? 512 : 1024;
+const shadowTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, shadowTex);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, SHADOW_RES, SHADOW_RES, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+const shadowFbo = gl.createFramebuffer();
+gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFbo);
+gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, shadowTex, 0);
+gl.drawBuffers([gl.NONE]);
+gl.readBuffer(gl.NONE);
+gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+// Build static world buffers & dynamic fox/effects builders
+const foxMB = new MeshBuilder(4200);
+const fxMB = new MeshBuilder(1200);
+const terrainMB = new MeshBuilder(12000);
+const propsMB = new MeshBuilder(8000);
+
+buildWorldTile(terrainMB, propsMB);
+
+const foxGpu = createGpuMesh(gl.DYNAMIC_DRAW);
+const fxGpu = createGpuMesh(gl.DYNAMIC_DRAW);
+const terrainGpu = createGpuMesh(gl.STATIC_DRAW);
+const propsGpu = createGpuMesh(gl.STATIC_DRAW);
+terrainGpu.upload(terrainMB);
+propsGpu.upload(propsMB);
+
+/* ============================================================================
+ * 7. SYNTHESIZED WEB AUDIO (4-Beat Cushioned Paw Strikes + Frost Crunch + Breath)
+ * ========================================================================== */
+
+const audio = {
+  ctx: null,
+  unlocked: false,
+  muted: false,
+  master: null,
+  windGain: null,
+  unlock() {
+    if (this.unlocked) {
+      if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+      return;
+    }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try {
+      const ctx = new AC();
+      const master = ctx.createGain();
+      master.gain.value = this.muted ? 0 : 0.75;
+      master.connect(ctx.destination);
+
+      // Gentle boreal dawn breeze (bandpass pink-ish noise)
+      const len = ctx.sampleRate * 2;
+      const nBuf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const ch = nBuf.getChannelData(0);
+      let b0 = 0, b1 = 0, b2 = 0;
+      const rng = mulberry32(7719);
+      for (let i = 0; i < len; i++) {
+        const w = rng() * 2 - 1;
+        b0 = 0.997 * b0 + w * 0.029;
+        b1 = 0.985 * b1 + w * 0.032;
+        b2 = 0.950 * b2 + w * 0.048;
+        ch[i] = (b0 + b1 + b2 + w * 0.018) * 0.35;
+      }
+      const windSrc = ctx.createBufferSource();
+      windSrc.buffer = nBuf;
+      windSrc.loop = true;
+      const windFilter = ctx.createBiquadFilter();
+      windFilter.type = 'bandpass';
+      windFilter.frequency.value = 520;
+      windFilter.Q.value = 0.7;
+      const windGain = ctx.createGain();
+      windGain.gain.value = 0.09;
+      windSrc.connect(windFilter);
+      windFilter.connect(windGain);
+      windGain.connect(master);
+      windSrc.start();
+
+      this.noiseBuf = nBuf;
+      this.ctx = ctx;
+      this.master = master;
+      this.windGain = windGain;
+      this.unlocked = true;
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    } catch { /* ignore autoplay restrictions */ }
+  },
+  setMuted(m) {
+    this.muted = !!m;
+    if (this.master && this.ctx) {
+      const t = this.ctx.currentTime;
+      if (Number.isFinite(t)) this.master.gain.setTargetAtTime(this.muted ? 0 : 0.75, t, 0.03);
+    }
+  },
+  playPawStrike(fore, side) {
+    if (!this.unlocked || this.muted || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    if (!Number.isFinite(t)) return;
+
+    // 1. Soft cushioned digitigrade pad thud (nimble & light, distinct fore/hind pitch)
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    const f0 = fore ? 132 : 108;
+    const f1 = fore ? 52 : 44;
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(f0, t);
+    osc.frequency.exponentialRampToValueAtTime(f1, t + 0.048);
+    g.gain.setValueAtTime(0.001, t);
+    g.gain.linearRampToValueAtTime(fore ? 0.14 : 0.11, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0008, t + 0.062);
+    osc.connect(g);
+    g.connect(this.master);
+    osc.start(t);
+    osc.stop(t + 0.068);
+
+    // 2. Crisp hoarfrost crystal crunch on turf contact
+    if (this.noiseBuf) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.noiseBuf;
+      const bp = this.ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.setValueAtTime(fore ? 3200 : 2650, t);
+      bp.Q.setValueAtTime(1.4, t);
+      const ng = this.ctx.createGain();
+      ng.gain.setValueAtTime(0.001, t);
+      ng.gain.linearRampToValueAtTime(0.09, t + 0.004);
+      ng.gain.exponentialRampToValueAtTime(0.0008, t + 0.045);
+      src.connect(bp);
+      bp.connect(ng);
+      if (this.ctx.createStereoPanner && Number.isFinite(side)) {
+        const pan = this.ctx.createStereoPanner();
+        pan.pan.setValueAtTime(clamp(side * 0.25, -1, 1), t);
+        ng.connect(pan);
+        pan.connect(this.master);
+      } else {
+        ng.connect(this.master);
+      }
+      src.start(t, (Math.abs(side) * 0.37) % 1.5, 0.055);
+    }
+  },
+  playBreath() {
+    if (!this.unlocked || this.muted || !this.ctx || !this.noiseBuf) return;
+    const t = this.ctx.currentTime;
+    if (!Number.isFinite(t)) return;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    const lp = this.ctx.createBiquadFilter();
+    lp.type = 'bandpass';
+    lp.frequency.setValueAtTime(980, t);
+    lp.Q.setValueAtTime(1.8, t);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0008, t);
+    g.gain.linearRampToValueAtTime(0.032, t + 0.025);
+    g.gain.exponentialRampToValueAtTime(0.0008, t + 0.11);
+    src.connect(lp);
+    lp.connect(g);
+    g.connect(this.master);
+    src.start(t, 0.2, 0.12);
+  },
+};
+
+/* ============================================================================
+ * 8. CAMERA, INTERACTION, ATTRACT MODE & RENDER LOOP
+ * ========================================================================== */
+
+const VIEWS = [
+  { name: 'TRACK',    yaw:  0.44, pitch: 0.13, dist: 1.92 }, // hero 3/4 lead profile
+  { name: 'STUDY',    yaw:  0.00, pitch: 0.07, dist: 2.05 }, // Muybridge pure lateral side view
+  { name: 'CHASE',    yaw:  2.35, pitch: 0.11, dist: 1.78 }, // low trailing brush view
+  { name: 'OVERHEAD', yaw:  0.15, pitch: 1.18, dist: 2.45 }, // top-down rotary footfall study
+];
+
+let screenMode = 'attract';
+let viewIdx = 0;
+let paused = false;
+let studySlow = false;
+let timeScale = 1.0;
+let strideIndex = 0;
+let phase = 0.38; // start right in gorgeous Extended Flight silhouette!
+let worldTime = 0;
+let frames = 0;
+let readyFlag = false;
+let W = 1, H = 1;
+
+const cam = {
+  yaw: VIEWS[0].yaw,
+  pitch: VIEWS[0].pitch,
+  dist: VIEWS[0].dist,
+  tYaw: VIEWS[0].yaw,
+  tPitch: VIEWS[0].pitch,
+  tDist: VIEWS[0].dist,
+  auto: true,
+};
+
+// Low boreal dawn sun shining from front-right horizon so warm rim + clear foreground shadow both read!
+const SUN_DIR = norm3([0.52, 0.27, 0.81]);
+
+const attractEl = document.getElementById('attract');
+const amsgEl = document.getElementById('amsg');
+const telemetryEl = document.getElementById('telemetry');
+const audioHintEl = document.getElementById('audiohint');
+
+const ATTRACT_MSGS = [
+  'extended & gathered flight · digitigrade IK',
+  'rotary footfall LH · RH · RF · LF · 0.0 mm slip',
+  'drag to orbit · space slow-mo · 1–4 camera views',
+];
+let attractMsgIdx = 0;
+setInterval(() => {
+  if (screenMode !== 'attract') return;
+  attractMsgIdx = (attractMsgIdx + 1) % ATTRACT_MSGS.length;
+  amsgEl.textContent = ATTRACT_MSGS[attractMsgIdx];
+}, 2800);
+
+function dismissAttract() {
+  if (screenMode === 'play') return;
+  screenMode = 'play';
+  attractEl.classList.add('gone');
+  audio.unlock();
+  updateAudioPill();
+}
+
+function updateAudioPill() {
+  audioHintEl.textContent = audio.muted ? 'paws muted' : 'paws on';
+  audioHintEl.classList.toggle('off', audio.muted);
+}
+
+audioHintEl.addEventListener('pointerdown', e => e.stopPropagation());
+audioHintEl.addEventListener('click', e => {
+  e.stopPropagation();
+  audio.unlock();
+  audio.setMuted(!audio.muted);
+  updateAudioPill();
+});
+
+function cycleView(idx) {
+  viewIdx = ((idx % VIEWS.length) + VIEWS.length) % VIEWS.length;
+  const v = VIEWS[viewIdx];
+  cam.tYaw = v.yaw;
+  cam.tPitch = v.pitch;
+  cam.tDist = v.dist;
+  cam.auto = false;
+}
+
+function toggleStudy() {
+  studySlow = !studySlow;
+  timeScale = studySlow ? 0.22 : 1.0;
+}
+
+document.getElementById('btn-study').addEventListener('pointerdown', e => e.stopPropagation());
+document.getElementById('btn-study').addEventListener('click', e => {
+  e.stopPropagation();
+  dismissAttract();
+  toggleStudy();
+});
+
+document.getElementById('btn-view').addEventListener('pointerdown', e => e.stopPropagation());
+document.getElementById('btn-view').addEventListener('click', e => {
+  e.stopPropagation();
+  dismissAttract();
+  cycleView(viewIdx + 1);
+});
+
+// Pointer orbit + pinch/wheel zoom
+let dragging = false, lastX = 0, lastY = 0;
+canvas.addEventListener('pointerdown', e => {
+  dismissAttract();
+  dragging = true;
+  lastX = e.clientX;
+  lastY = e.clientY;
+  cam.auto = false;
+  try { canvas.setPointerCapture(e.pointerId); } catch {}
+});
+window.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  const dx = e.clientX - lastX;
+  const dy = e.clientY - lastY;
+  lastX = e.clientX;
+  lastY = e.clientY;
+  cam.tYaw -= dx * 0.0075;
+  cam.tPitch = clamp(cam.tPitch + dy * 0.0065, -0.05, 1.32);
+});
+window.addEventListener('pointerup', () => { dragging = false; });
+window.addEventListener('pointercancel', () => { dragging = false; });
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  dismissAttract();
+  cam.tDist = clamp(cam.tDist * Math.exp(e.deltaY * 0.001), 1.05, 4.2);
+}, { passive: false });
+
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape') return;
+  const wasAttract = screenMode === 'attract';
+  dismissAttract();
+  if (wasAttract && (e.key === 'Enter' || e.code === 'Space')) {
+    e.preventDefault();
+    return;
+  }
+  if (e.code === 'Space') { e.preventDefault(); toggleStudy(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); studySlow = false; timeScale = clamp(timeScale + 0.15, 0.15, 1.75); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); studySlow = false; timeScale = clamp(timeScale - 0.15, 0.15, 1.75); }
+  else if (e.key === '1') cycleView(0);
+  else if (e.key === '2') cycleView(1);
+  else if (e.key === '3') cycleView(2);
+  else if (e.key === '4') cycleView(3);
+  else if (e.key === 'g' || e.key === 'G') { cam.auto = true; }
+  else if (e.key === 'm' || e.key === 'M') { audio.setMuted(!audio.muted); updateAudioPill(); }
+});
+
+function resize() {
+  const dpr = LITE ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+  const cw = Math.max(1, Math.floor(window.innerWidth * dpr));
+  const ch = Math.max(1, Math.floor(window.innerHeight * dpr));
+  if (cw !== W || ch !== H) {
+    W = canvas.width = cw;
+    H = canvas.height = ch;
+  }
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Footfall & breath edge detectors
+let prevStance = { LH: false, RH: false, RF: false, LF: false };
+let prevBreathGate = false;
+let currentState = evaluateFox(strideIndex, phase);
+
+function syncStrideEvents(st, allowAudio) {
+  for (const d of LEGS_DEF) {
+    const L = st.legs[d.id];
+    const was = prevStance[d.id];
+    if (!was && L.inStance) {
+      spawnPawprint(L.paw, d.side);
+      if (allowAudio) audio.playPawStrike(d.fore, d.side);
+    } else if (was && !L.inStance) {
+      spawnFrostKick(L.paw, d.side);
+    }
+    prevStance[d.id] = L.inStance;
+  }
+  const breathNow = st.phi >= 0.53 && st.phi < 0.65;
+  if (!prevBreathGate && breathNow) {
+    spawnBreathPlume(st.muzzle, st.headFwd);
+    if (allowAudio) audio.playBreath();
+  }
+  prevBreathGate = breathNow;
+}
+
+// Pre-seed a few pawprints behind the fox at boot so the frost trail already tells the story
+for (let s = -2; s <= -1; s++) {
+  for (const d of LEGS_DEF) {
+    const aw = anchorWorld(s, d);
+    pawprints.push({ x: aw[0], y: aw[1] - PAD_CLEAR + 0.005, z: aw[2], side: d.side, age: (-s) * 0.4 });
+  }
+}
+
+function updateTelemetry() {
+  const gCount = LEGS_DEF.reduce((n, d) => n + (currentState.legs[d.id].inStance ? 1 : 0), 0);
+  const gaitPhase = gCount === 0
+    ? (currentState.spineExt > 0 ? 'EXTENDED FLIGHT' : 'GATHERED FLIGHT')
+    : LEGS_DEF.filter(d => currentState.legs[d.id].inStance).map(d => d.id).join('+');
+  const spd = (STRIDE_LEN / STRIDE_PERIOD) * timeScale;
+  telemetryEl.textContent = `${gaitPhase} · ${spd.toFixed(1)} M/S`;
+}
+
+function renderScene() {
+  resize();
+  currentState = evaluateFox(strideIndex, phase);
+  buildFoxMesh(foxMB, currentState);
+  foxGpu.upload(foxMB);
+
+  buildEffectsMesh(fxMB, currentState.rx, worldTime);
+  fxGpu.upload(fxMB);
+
+  const aspect = W / H;
+  // Generous portrait framing so nose-to-white-brush-tip stays 100% inside 390x844!
+  const isPortrait = aspect < 0.86;
+  const portraitScale = isPortrait ? (0.86 / Math.max(aspect, 0.42)) * 1.28 : 1.0;
+  const effDist = cam.dist * portraitScale;
+
+  const target = [
+    currentState.rx + (isPortrait ? -0.06 : 0.00),
+    currentState.groundY + 0.27,
+    0,
+  ];
+  // Yaw = 0 views right flank (+Z -> looks from +Z toward 0); yaw rotates around Y
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+  const eyeOffset = [
+    Math.sin(cam.yaw) * cp * effDist,
+    sp * effDist,
+    Math.cos(cam.yaw) * cp * effDist,
+  ];
+  const eye = add3(target, eyeOffset);
+  const minEyeY = groundHeight(eye[0], eye[2]) + 0.14;
+  if (eye[1] < minEyeY) eye[1] = minEyeY;
+
+  const fovY = 0.68; // ~39 deg crisp portrait-friendly lens
+  const viewMat = mat4LookAt(eye, target, [0, 1, 0]);
+  const projMat = mat4Perspective(fovY, aspect, 0.12, 52.0);
+  const vpMat = mat4Mul(projMat, viewMat);
+
+  // Tight directional shadow frustum centered on the running fox
+  const lightEye = add3(target, scale3(SUN_DIR, 10.0));
+  const lightView = mat4LookAt(lightEye, target, [0, 1, 0]);
+  const lightProj = mat4Ortho(-3.2, 3.2, -2.4, 2.4, 1.0, 22.0);
+  const lightVP = mat4Mul(lightProj, lightView);
+
+  // Determine which 3 world tiles surround fox's current X
+  const centerTile = Math.floor(currentState.rx / WORLD_LEN);
+  const zeroOff = [0, 0, 0];
+
+  /* ---- Pass 1: Directional Sun Shadow Map ---- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFbo);
+  gl.viewport(0, 0, SHADOW_RES, SHADOW_RES);
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthMask(true);
+  gl.enable(gl.CULL_FACE);
+  gl.cullFace(gl.BACK);
+  gl.clear(gl.DEPTH_BUFFER_BIT);
+
+  gl.useProgram(shadowProg);
+  gl.uniformMatrix4fv(uShadow.lightVP, false, lightVP);
+
+  // Fox casts crisp self & ground shadows
+  gl.uniform3fv(uShadow.offset, zeroOff);
+  gl.bindVertexArray(foxGpu.vao);
+  gl.drawArrays(gl.TRIANGLES, 0, foxGpu.vertCount);
+
+  // Nearby birch trees & boulders also cast dawn shadows across the glade
+  gl.bindVertexArray(propsGpu.vao);
+  for (let k = -1; k <= 1; k++) {
+    gl.uniform3f(uShadow.offset, (centerTile + k) * WORLD_LEN, 0, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, propsGpu.vertCount);
+  }
+
+  /* ---- Pass 2: Main Viewport Sky + Shadowed Glade + Fox ---- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, W, H);
+  gl.clear(gl.DEPTH_BUFFER_BIT);
+
+  // 2a. Boreal Dawn Sky
+  const camFwd = norm3(sub3(target, eye));
+  const camRight = norm3(cross3(camFwd, [0, 1, 0]));
+  const camUp = cross3(camRight, camFwd);
+  const tanHalfY = Math.tan(fovY * 0.5);
+
+  gl.disable(gl.DEPTH_TEST);
+  gl.depthMask(false);
+  gl.disable(gl.CULL_FACE);
+  gl.useProgram(skyProg);
+  gl.uniform3fv(uSky.camFwd, camFwd);
+  gl.uniform3fv(uSky.camRight, camRight);
+  gl.uniform3fv(uSky.camUp, camUp);
+  gl.uniform2f(uSky.tanHalfFov, tanHalfY * aspect, tanHalfY);
+  gl.uniform3fv(uSky.sunDir, SUN_DIR);
+  gl.uniform1f(uSky.worldShift, wrapWorldX(currentState.rx));
+  gl.bindVertexArray(emptyVao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // 2b. Lit 3D World & Fox
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthMask(true);
+  gl.enable(gl.CULL_FACE);
+  gl.cullFace(gl.BACK);
+
+  gl.useProgram(mainProg);
+  gl.uniformMatrix4fv(uMain.vp, false, vpMat);
+  gl.uniformMatrix4fv(uMain.lightVP, false, lightVP);
+  gl.uniform3fv(uMain.camPos, eye);
+  gl.uniform3fv(uMain.sunDir, SUN_DIR);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, shadowTex);
+  gl.uniform1i(uMain.shadowTex, 0);
+  gl.uniform1f(uMain.shadowTexel, 1 / SHADOW_RES);
+
+  // Draw 3 seamless tiles of terrain + birch/spruce scenery
+  for (let k = -1; k <= 1; k++) {
+    const tx = (centerTile + k) * WORLD_LEN;
+    gl.uniform3f(uMain.offset, tx, 0, 0);
+    gl.bindVertexArray(terrainGpu.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, terrainGpu.vertCount);
+    gl.bindVertexArray(propsGpu.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, propsGpu.vertCount);
+  }
+
+  // Draw the Red Fox!
+  gl.uniform3fv(uMain.offset, zeroOff);
+  gl.bindVertexArray(foxGpu.vao);
+  gl.drawArrays(gl.TRIANGLES, 0, foxGpu.vertCount);
+
+  // Draw pawprints, frost puffs, breath plume & golden birch leaves
+  if (fxGpu.vertCount > 0) {
+    gl.disable(gl.CULL_FACE);
+    gl.bindVertexArray(fxGpu.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, fxGpu.vertCount);
+    gl.enable(gl.CULL_FACE);
+  }
+
+  gl.bindVertexArray(null);
+}
+
+/* ---------------- Main Fixed-Bounded rAF Loop ---------------- */
+
+let lastTs = performance.now();
+function tick(now) {
+  const rawDt = Math.min(0.05, Math.max(0, (now - lastTs) * 0.001));
+  lastTs = now;
+
+  if (!paused) {
+    const dt = rawDt * timeScale;
+    worldTime += dt;
+    const dPhi = dt / STRIDE_PERIOD;
+    const nextP = phase + dPhi;
+    const advStrides = Math.floor(nextP);
+    strideIndex += advStrides;
+    phase = nextP - advStrides;
+
+    if (cam.auto) {
+      // Gentle cinematic lead-angle breathing orbit
+      cam.tYaw = 0.42 + 0.24 * Math.sin(worldTime * 0.26);
+      cam.tPitch = 0.13 + 0.04 * Math.cos(worldTime * 0.34);
+    }
+    stepParticles(dt);
+  }
+
+  const kLerp = 1 - Math.exp(-rawDt * 8.5);
+  cam.yaw += (cam.tYaw - cam.yaw) * kLerp;
+  cam.pitch += (cam.tPitch - cam.pitch) * kLerp;
+  cam.dist += (cam.tDist - cam.dist) * kLerp;
+
+  renderScene();
+  if (!paused) syncStrideEvents(currentState, true);
+  updateTelemetry();
+  frames++;
+  readyFlag = true;
+  requestAnimationFrame(tick);
+}
+
+/* ============================================================================
+ * 9. DEV HARNESS HOOK (window.__foxTest) — GAIT, IK, SEAM & PIXEL AUDIT
+ * ========================================================================== */
+
+function auditGait(samplesPerStride = 360, strides = 3) {
+  let maxSlipMm = 0;
+  let maxIkRatio = 0;
+  let minPawY = 1e9;
+  let minSwingClearance = 1e9;
+  let flightSamples = 0, extSamples = 0, gathSamples = 0;
+  let minHeave = 1e9, maxHeave = -1e9;
+  let minSpineSpan = 1e9, maxSpineSpan = -1e9;
+  let minHeadY = 1e9, maxHeadY = -1e9;
+  let minTailY = 1e9, maxTailY = -1e9;
+
+  // 1. Footfall order & suspension phase count over 1 clean stride
+  const footfallOrder = [];
+  let suspensionPhases = 0;
+  const stEnd = evaluateFox(2, (samplesPerStride - 1) / samplesPerStride);
+  let prevG = LEGS_DEF.map(d => stEnd.legs[d.id].inStance);
+  let prevAllAir = prevG.every(x => !x);
+
+  for (let i = 0; i < samplesPerStride; i++) {
+    const phi = i / samplesPerStride;
+    const s = evaluateFox(2, phi);
+    const g = LEGS_DEF.map(d => s.legs[d.id].inStance);
+    for (let k = 0; k < 4; k++) {
+      if (!prevG[k] && g[k]) footfallOrder.push(LEGS_DEF[k].id);
+    }
+    const allAir = g.every(x => !x);
+    if (!prevAllAir && allAir) suspensionPhases++;
+    prevG = g;
+    prevAllAir = allAir;
+  }
+
+  // 2. Multi-stride zero-slip, IK reach, clearance & motion ranges
+  const anchors = {};
+  const totalSamples = samplesPerStride * strides;
+  for (let n = 0; n < totalSamples; n++) {
+    const sIdx = Math.floor(n / samplesPerStride);
+    const phi = (n % samplesPerStride) / samplesPerStride;
+    const s = evaluateFox(sIdx, phi);
+    const g = LEGS_DEF.map(d => s.legs[d.id].inStance);
+    if (g.every(x => !x)) {
+      flightSamples++;
+      if (s.spineExt > 0) extSamples++;
+      else gathSamples++;
+    }
+
+    const heaveRel = s.heaveY - s.groundY;
+    minHeave = Math.min(minHeave, heaveRel);
+    maxHeave = Math.max(maxHeave, heaveRel);
+    const trunkSpan = Math.hypot(s.shoulderCenter[0] - s.hipCenter[0], s.shoulderCenter[1] - s.hipCenter[1]);
+    minSpineSpan = Math.min(minSpineSpan, trunkSpan);
+    maxSpineSpan = Math.max(maxSpineSpan, trunkSpan);
+    minHeadY = Math.min(minHeadY, s.muzzle[1] - s.groundY);
+    maxHeadY = Math.max(maxHeadY, s.muzzle[1] - s.groundY);
+    const tTip = s.tailPts[s.tailPts.length - 1];
+    minTailY = Math.min(minTailY, tTip[1] - s.groundY);
+    maxTailY = Math.max(maxTailY, tTip[1] - s.groundY);
+
+    for (const d of LEGS_DEF) {
+      const L = s.legs[d.id];
+      maxIkRatio = Math.max(maxIkRatio, L.ikRatio);
+      const relPawY = L.paw[1] - groundHeight(L.paw[0], L.paw[2]);
+      minPawY = Math.min(minPawY, relPawY);
+      if (L.inStance) {
+        const key = `${d.id}:${sIdx}`;
+        if (!anchors[key]) anchors[key] = L.paw;
+        else {
+          const slipMm = Math.hypot(
+            L.paw[0] - anchors[key][0],
+            L.paw[1] - anchors[key][1],
+            L.paw[2] - anchors[key][2]
+          ) * 1000;
+          if (slipMm > maxSlipMm) maxSlipMm = slipMm;
+        }
+      } else if (L.wSwing > 0.25 && L.wSwing < 0.75) {
+        minSwingClearance = Math.min(minSwingClearance, relPawY - PAD_CLEAR);
+      }
+    }
+  }
+
+  // 3. Extended vs Gathered paw span + 12-stride world loop seam
+  const sExt = evaluateFox(2, 0.405);
+  const sGath = evaluateFox(2, 0.895);
+  const extSpanM = Math.max(sExt.legs.RF.paw[0], sExt.legs.LF.paw[0]) - Math.min(sExt.legs.LH.paw[0], sExt.legs.RH.paw[0]);
+  const gathSpanM = Math.min(sGath.legs.RF.paw[0], sGath.legs.LF.paw[0]) - Math.max(sGath.legs.LH.paw[0], sGath.legs.RH.paw[0]);
+
+  const s0 = evaluateFox(0, 0.37);
+  const sLoop = evaluateFox(WORLD_STRIDES, 0.37);
+  const seamBodyMm = Math.hypot(
+    (sLoop.muzzle[0] - WORLD_LEN) - s0.muzzle[0],
+    sLoop.muzzle[1] - s0.muzzle[1],
+    sLoop.muzzle[2] - s0.muzzle[2]
+  ) * 1000;
+  const t0 = s0.tailPts[7], tL = sLoop.tailPts[7];
+  const seamTailMm = Math.hypot((tL[0] - WORLD_LEN) - t0[0], tL[1] - t0[1], tL[2] - t0[2]) * 1000;
+
+  return {
+    footfallOrder,
+    suspensionPhases,
+    maxSlipMm: +maxSlipMm.toFixed(5),
+    flightFraction: +(flightSamples / totalSamples).toFixed(4),
+    extFlightFraction: +(extSamples / totalSamples).toFixed(4),
+    gathFlightFraction: +(gathSamples / totalSamples).toFixed(4),
+    extSpanM: +extSpanM.toFixed(4),
+    gathSpanM: +gathSpanM.toFixed(4),
+    minSwingClearanceM: +minSwingClearance.toFixed(4),
+    minPawY: +minPawY.toFixed(4),
+    maxIkRatio: +maxIkRatio.toFixed(4),
+    loopSeamMm: +Math.max(seamBodyMm, seamTailMm).toFixed(6),
+    ranges: {
+      bodyHeaveM: +(maxHeave - minHeave).toFixed(4),
+      spineFlexM: +(maxSpineSpan - minSpineSpan).toFixed(4),
+      headMuzzleM: +(maxHeadY - minHeadY).toFixed(4),
+      tailTipM: +(maxTailY - minTailY).toFixed(4),
+    },
+  };
+}
+
+window.__foxTest = {
+  get ready() { return readyFlag; },
+  get frames() { return frames; },
+  setPose(opts = {}) {
+    if (opts.stride !== undefined) strideIndex = opts.stride | 0;
+    if (opts.phase !== undefined) phase = wrapPhase(opts.phase);
+    if (opts.paused !== undefined) paused = !!opts.paused;
+    if (opts.timeScale !== undefined) timeScale = clamp(+opts.timeScale, 0.05, 2.5);
+    if (opts.view !== undefined) cycleView(opts.view | 0);
+    if (opts.yaw !== undefined) { cam.yaw = cam.tYaw = +opts.yaw; cam.auto = false; }
+    if (opts.pitch !== undefined) { cam.pitch = cam.tPitch = +opts.pitch; cam.auto = false; }
+    if (opts.dist !== undefined) { cam.dist = cam.tDist = +opts.dist; }
+    if (opts.attract === false) {
+      attractEl.style.transition = 'none';
+      dismissAttract();
+    }
+    renderScene();
+    syncStrideEvents(currentState, false);
+    updateTelemetry();
+    frames++;
+    return this.state();
+  },
+  audit: auditGait,
+  samplePixels(gridX = 32, gridY = 22) {
+    const buf = new Uint8Array(W * H * 4);
+    gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    let skySamples = 0, russetFoxSamples = 0, whiteFurSamples = 0, darkStockingSamples = 0, frostTurfSamples = 0;
+    let lumaSum = 0, hash = 7;
+
+    for (let gy = 0; gy < gridY; gy++) {
+      const y = Math.min(H - 1, Math.floor(((gy + 0.5) / gridY) * H)); // WebGL y=0 is bottom
+      const inCenterY = gy >= gridY * 0.22 && gy <= gridY * 0.78;
+      for (let gx = 0; gx < gridX; gx++) {
+        const x = Math.min(W - 1, Math.floor(((gx + 0.5) / gridX) * W));
+        const inCenterX = gx >= gridX * 0.20 && gx <= gridX * 0.80;
+        const i = (y * W + x) * 4;
+        const r = buf[i], g = buf[i + 1], b = buf[i + 2];
+        lumaSum += 0.299 * r + 0.587 * g + 0.114 * b;
+        hash = ((hash * 31 + r * 3 + g * 5 + b * 7 + gy * 13 + gx) >>> 0);
+
+        if (gy > gridY * 0.62 && (b > 75 || r > 120)) skySamples++;
+        if (gy < gridY * 0.36 && g >= r * 0.88 && b >= r * 0.85 && g > 42) frostTurfSamples++;
+        if (inCenterX && inCenterY) {
+          if (r > 125 && r > g * 1.38 && g > b * 1.25 && (r - b) > 55) russetFoxSamples++;
+          if (r > 175 && g > 170 && b > 162 && Math.abs(r - b) < 42) whiteFurSamples++;
+          if (r < 54 && g < 52 && b < 58) darkStockingSamples++;
+        }
+      }
+    }
+    return {
+      width: W,
+      height: H,
+      meanLuma: +(lumaSum / (gridX * gridY)).toFixed(2),
+      skySamples,
+      russetFoxSamples,
+      whiteFurSamples,
+      darkStockingSamples,
+      frostTurfSamples,
+      hash,
+    };
+  },
+  state() {
+    const legs = {};
+    for (const d of LEGS_DEF) {
+      const L = currentState.legs[d.id];
+      legs[d.id] = {
+        inStance: L.inStance,
+        paw: L.paw.slice(),
+        midJoint: (L.fore ? L.carpus : L.hock).slice(),
+        upperJoint: (L.fore ? L.elbow : L.stifle).slice(),
+        ikRatio: +L.ikRatio.toFixed(4),
+      };
+    }
+    return {
+      screenMode,
+      phase: +currentState.phi.toFixed(5),
+      strideIndex: currentState.strideIndex,
+      refX: +currentState.rx.toFixed(4),
+      heaveY: +currentState.heaveY.toFixed(4),
+      pitch: +currentState.pitch.toFixed(4),
+      spineExt: +currentState.spineExt.toFixed(4),
+      muzzle: currentState.muzzle.slice(),
+      tailTip: currentState.tailPts[currentState.tailPts.length - 1].slice(),
+      cam: { yaw: +cam.yaw.toFixed(4), pitch: +cam.pitch.toFixed(4), dist: +cam.dist.toFixed(4), auto: cam.auto },
+      foxTris: foxGpu.triCount,
+      worldTris: terrainGpu.triCount + propsGpu.triCount,
+      pawprints: pawprints.length,
+      frostPuffs: frostPuffs.length,
+      breathPuffs: breathPuffs.length,
+      audioUnlocked: audio.unlocked,
+      audioMuted: audio.muted,
+      legs,
+    };
+  },
+};
+
+renderScene();
+readyFlag = true;
+requestAnimationFrame(tick);
+</script>
+<script>
+window.DEMO_CREDITS = {
+  name: 'FROSTBRUSH', accent: '#ff7a33',
+  builder: { tag: 'GEMINI', model: 'Gemini 4 Carbon', where: 'via Antigravity CLI' },
+  issues: [2261], span: '~1 h', shipped: '2026-11-14',
+  assist: 'solo', note: 'guest build brief: Build a demo of a fox running.',
+};
+</script>
+<script src="credits.js"></script>
+<script src="feedback.js"></script>
+</body>
+</html>
