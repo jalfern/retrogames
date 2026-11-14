@@ -66,18 +66,42 @@ const mulberry32 = (a) => {
     }
 }
 
-const KIND_MIX = [
-    [['crate', 0.40], ['can', 0.35], ['coil', 0.25]],
-    [['crate', 0.32], ['can', 0.28], ['coil', 0.20], ['bottle', 0.20]],
-    [['crate', 0.26], ['can', 0.22], ['coil', 0.17], ['bottle', 0.18], ['barrel', 0.17]],
-    [['crate', 0.22], ['can', 0.18], ['coil', 0.15], ['bottle', 0.17], ['barrel', 0.16], ['scrap', 0.12]],
+// ---- the authored line (#2210) -------------------------------------------
+// The belt breathes: each shift cycles a named sequence of waves instead of
+// one flat seeded hum. A wave fixes the KIND ORDER (authored, seed-independent
+// — a player who learns shift 1 learns it on every machine) and its intra-wave
+// spacing; `rest` is the breather after the wave's last piece, always longer
+// than the in-wave gap so sections read as sections. Only ±5 ticks of seeded
+// jitter rides on top, so repeats vary but never lose the rhythm. Each shift
+// only ever names kinds its era has introduced (bottles from shift 2, barrels
+// from 3, scrap from 4), and the piece count stays above quota + headroom so
+// the tuned promise on the quotas is untouched.
+export const WAVES = [
+    // shift 1 — warm-up: singles, a crate/coil weave, then the first burst
+    [
+        { name: 'SINGLE FILE', gap: 92, rest: 84, kinds: ['crate', 'can', 'crate', 'can'] },
+        { name: 'CRATE & COIL', gap: 84, rest: 96, kinds: ['crate', 'coil', 'can', 'coil'] },
+        { name: 'EARLY BURST', gap: 64, rest: 160, kinds: ['can', 'crate', 'can', 'crate', 'can'] },
+    ],
+    // shift 2 — glass enters: twins, a feathered bottle run, steady line
+    [
+        { name: 'TWIN PACK', gap: 52, rest: 150, kinds: ['can', 'can', 'crate', 'crate', 'coil', 'coil'] },
+        { name: 'GLASS RUN', gap: 86, rest: 70, kinds: ['crate', 'bottle', 'coil', 'bottle', 'can'] },
+        { name: 'LINE STEADY', gap: 82, rest: 88, kinds: ['crate', 'can', 'coil', 'crate', 'can'] },
+    ],
+    // shift 3 — heavy goods: rolling barrels, a bottle pair, the heavy line
+    [
+        { name: 'BARREL ROLL', gap: 70, rest: 92, kinds: ['barrel', 'crate', 'barrel', 'can'] },
+        { name: 'GLASS PAIR', gap: 66, rest: 96, kinds: ['crate', 'bottle', 'bottle', 'crate'] },
+        { name: 'HEAVY LINE', gap: 62, rest: 118, kinds: ['crate', 'coil', 'can', 'crate', 'coil'] },
+    ],
+    // shift 4 — the late rush: scrap heaps, tight hour, a glass gamble
+    [
+        { name: 'SCRAP HEAPS', gap: 60, rest: 88, kinds: ['scrap', 'crate', 'scrap', 'can'] },
+        { name: 'RUSH HOUR', gap: 46, rest: 132, kinds: ['crate', 'can', 'coil', 'crate', 'can'] },
+        { name: 'GLASS GAMBLE', gap: 56, rest: 96, kinds: ['bottle', 'bottle', 'crate', 'barrel'] },
+    ],
 ]
-const pickKind = (rnd, shift) => {
-    const mix = KIND_MIX[Math.min(shift, KIND_MIX.length - 1)]
-    let r = rnd(), acc = 0
-    for (const [k, p] of mix) { acc += p; if (r < acc) return k }
-    return mix[mix.length - 1][0]
-}
 
 const fnv = (h, n) => {
     let x = (h ^ Math.round(n)) >>> 0
@@ -111,6 +135,7 @@ export function makeGame(seed = 1, players = 1) {
         rng: mulberry32(seed >>> 0),
         nextSpawn: 30,
         spawnN: 0,
+        wave: { wi: 0, ki: 0 },   // authored line position (#2210)
         binFill: BINS.map(() => 0),
     }
     for (let i = 0; i < gs.players; i++) {
@@ -164,6 +189,7 @@ function endShift(gs) {
         gs.correct = 0
         gs.warnings = 0
         gs.score += 500
+        gs.wave = { wi: 0, ki: 0 }   // next shift starts on its own line
     } else {
         gs.end = 'fired'
         gs.endReason = `QUOTA MISSED (${gs.correct}/${q})`
@@ -321,15 +347,29 @@ function stepItems(gs) {
 
 function spawn(gs) {
     if (gs.tick < gs.nextSpawn) return
-    const kind = pickKind(gs.rng, gs.shift)
+    const waves = WAVES[Math.min(gs.shift, WAVES.length - 1)]
+    const wave = waves[gs.wave.wi]
+    const kind = wave.kinds[gs.wave.ki]
     const K = KINDS[kind]
     gs.items.push({
         id: NEXT_ID++, n: gs.spawnN++, kind, x: -12, y: BELT_Y - K.h / 2,
         vx: 0, vy: 0, rot: gs.rng() * Math.PI, onBelt: true,
         carriedBy: -1, fragile: K.fragile, landed: false,
     })
-    const gapBase = Math.max(42, 84 - gs.shift * 9)
-    gs.nextSpawn = gs.tick + gapBase + Math.floor(gs.rng() * 34)
+    gs.wave.ki++
+    let gap
+    if (gs.wave.ki >= wave.kinds.length) {
+        // wave complete — breathe, then name what's coming in over the
+        // belt mouth so the player can read the next section
+        gs.wave.ki = 0
+        gs.wave.wi = (gs.wave.wi + 1) % waves.length
+        gap = wave.rest
+        gs.fx.push({ t: 'wave', msg: waves[gs.wave.wi].name, x: 66, y: BELT_Y - 26, k: 0 })
+        gs.ev.push({ type: 'wave', name: waves[gs.wave.wi].name })
+    } else {
+        gap = wave.gap
+    }
+    gs.nextSpawn = gs.tick + gap + Math.floor(gs.rng() * 11) - 5
 }
 
 // ---------------- autopilot (CPU seat + attract demo + win proof) ------------
