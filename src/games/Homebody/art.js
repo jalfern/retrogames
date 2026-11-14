@@ -9,6 +9,7 @@
 import {
     W, H, TILE, COLS, ROWS, LOT_Y, PANEL_X, MAP, relLevel,
     tileX, tileY, CATALOG, DEF, NEEDS, WIN_CONTENT, RED_AT, EXT_ROOM,
+    CAT_TABS, tabCards,   // #2222: the catalog's category shelves
 } from './sim.js'
 
 const P = {
@@ -792,39 +793,68 @@ export function drawTopBar(ctx, s) {
 
 // -------------------------------------------------------------- catalog ----
 export const TRAY_H = 56
-// tray geometry shared by draw + hit-test; sized to the catalog so a 14th
-// card (Spare Room, #1806) never overflows the stage
-const TRAY_CW = Math.floor((W - 12 - (CATALOG.length - 1) * 4) / CATALOG.length)
+// tray geometry shared by draw + hit-test. #2222: cards are sized to the
+// widest shelf (6) — flipping shelves beats the old 35px wall of sixteen.
+const TRAY_CW = Math.floor((PANEL_X - 12 - 5 * 4) / 6)
+const TAB_H = 13
+const CARD_Y = 17     // card row top, below the tab row
+
 export function drawCatalog(ctx, s) {
     const y = H - TRAY_H
     ctx.fillStyle = 'rgba(20,26,40,0.92)'; ctx.fillRect(0, y, PANEL_X, TRAY_H)
     ctx.strokeStyle = P.panelEdge; ctx.strokeRect(0.5, y + 0.5, PANEL_X - 1, TRAY_H - 1)
+    // shelf tabs — the original's catalog chrome: four tabs, one open shelf
+    const tw = Math.floor((PANEL_X - 12) / CAT_TABS.length)
+    CAT_TABS.forEach((t, i) => {
+        const x = 6 + i * tw
+        const on = s.tab === i
+        ctx.fillStyle = on ? '#2c3c5e' : '#1a2336'
+        ctx.fillRect(x, y + 2, tw - 4, TAB_H)
+        if (on) { ctx.strokeStyle = '#ffd24a'; ctx.strokeRect(x + 0.5, y + 2.5, tw - 5, TAB_H - 1) }
+        ctx.fillStyle = on ? '#ffd24a' : '#7186ad'
+        ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+        ctx.fillText(t.id, x + (tw - 4) / 2, y + 2 + TAB_H / 2 + 0.5)
+    })
+    const cards = tabCards(s)
     const cw = TRAY_CW, gap = 4
-    CATALOG.forEach((d, i) => {
-        const x = 6 + i * (cw + gap)
+    cards.forEach((gi, k) => {
+        const d = CATALOG[gi]
+        const x = 6 + k * (cw + gap)
+        const cy = y + CARD_Y
         const afford = s.money >= d.price
-        ctx.fillStyle = i === s.sel ? '#3a4c74' : '#232d44'
-        ctx.fillRect(x, y + 4, cw, TRAY_H - 8)
-        ctx.strokeStyle = i === s.sel ? '#ffd24a' : afford ? '#41527a' : '#31405e'
-        ctx.strokeRect(x + 0.5, y + 4.5, cw - 1, TRAY_H - 9)
+        ctx.fillStyle = gi === s.sel ? '#3a4c74' : '#232d44'
+        ctx.fillRect(x, cy, cw, TRAY_H - CARD_Y - 4)
+        ctx.strokeStyle = gi === s.sel ? '#ffd24a' : afford ? '#41527a' : '#31405e'
+        ctx.strokeRect(x + 0.5, cy + 0.5, cw - 1, TRAY_H - CARD_Y - 5)
         ctx.globalAlpha = afford ? 1 : 0.45
-        drawItemAt(ctx, d.id, x + cw / 2 - 16, y + 2, 0)
+        drawItemAt(ctx, d.id, x + cw / 2 - 16, cy + 1, 0)
         ctx.globalAlpha = 1
         ctx.fillStyle = afford ? '#cfe0ff' : '#5f7095'
         ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top'
-        ctx.fillText(`§${d.price}`, x + cw / 2, y + TRAY_H - 14)
-        if (i < 9) { ctx.fillStyle = '#7186ad'; ctx.fillText(String(i + 1), x + 4, y + 6) }
+        ctx.fillText(`§${d.price}`, x + cw / 2, cy + TRAY_H - CARD_Y - 16)
+        ctx.fillStyle = '#7186ad'; ctx.textAlign = 'left'
+        ctx.fillText(String(k + 1), x + 3, cy + 2)   // digit badges — per shelf, every card
     })
     ctx.globalAlpha = 1
 }
 
-export function catalogHit(px, py) {
-    if (py < H - TRAY_H) return -1
+// tap a shelf tab -> its index, or -1
+export function tabHit(px, py) {
+    const y = H - TRAY_H
+    if (py < y + 2 || py > y + 2 + TAB_H) return -1
+    const tw = Math.floor((PANEL_X - 12) / CAT_TABS.length)
+    const i = Math.floor((px - 6) / tw)
+    return i >= 0 && i < CAT_TABS.length ? i : -1
+}
+
+export function catalogHit(px, py, s) {
+    if (py < H - TRAY_H + CARD_Y) return -1
+    const cards = tabCards(s)
     const cw = TRAY_CW, gap = 4
-    const i = Math.floor((px - 6) / (cw + gap))
-    if (i < 0 || i >= CATALOG.length) return -1
-    if (px - 6 - i * (cw + gap) > cw) return -1
-    return i
+    const k = Math.floor((px - 6) / (cw + gap))
+    if (k >= cards.length) return -1
+    if (k < 0 || px - 6 - k * (cw + gap) > cw) return -1
+    return cards[k]
 }
 
 // -------------------------------------------------------------- cursor ----

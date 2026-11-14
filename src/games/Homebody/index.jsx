@@ -28,13 +28,14 @@ import {
     place, sellAt, cellItem, targetsOf, walkable, manualMove, placeOk, buildRoom,
     adoptPet, adoptOk, PET,   // #2197: the cat counter
     adoptKid, adoptKidOk, KID,   // #2203: the child counter
+    setSel, flipTab, selectTab, digitCard,   // #2222: catalog shelves
     court, courtTarget,   // #2131: player-ordered romance commands
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court — one pad button, two orders
     stateHash,
 } from './sim.js'
 import {
     drawGround, drawGate, drawItem, drawPerson, nightTint, drawPanel, drawTopBar,
-    drawCatalog, catalogHit, drawBuildCursor, drawThoughts, drawClouds,
+    drawCatalog, catalogHit, tabHit, drawBuildCursor, drawThoughts, drawClouds,
     drawPet,   // #2197: Miso
     drawKid,   // #2203: Pip
 } from './art.js'
@@ -49,7 +50,8 @@ const MESSAGES = [
     'Ivy shops the market — chat grows HER bond too. At FRIENDS she brings a basket; FAMILY adds honey-money.',
     'Order the court on glass: tap ✓ for the kind word — hold ✓ on someone and the insult flies.',
     'Red needs flare tempers — a SPAT cracks BONDS. Fill both, side by side, to thaw.',
-    'Bank §300, then B + card 9: hammer on a Spare Room and the lot grows.',
+    'Bank §300, then B + R: hammer on a Spare Room and the lot grows.',
+    'Buy mode has SHELVES — [ and ] flip HOME / FUN / DECOR / SPECIAL; tap a shelf name on the phone.',
     'Adopt a child for §150 — K opens the counter. Pip scampers, snackes, plays and tumbles.',
     'A lonely Pip cries and the whole house feels it. Nearby family, toys and a cozy corner keep the giggles coming.',
     'Bank 80 contentment and the lifetime wish comes true.',
@@ -97,8 +99,10 @@ const HomebodyGame = () => {
         const prev = { left: false, right: false, up: false, down: false, a: false, b: false, pdown: false }
         const heldKeys = { left: false, right: false, up: false, down: false }
         let actQueued = false, buildQueued = false, switchQueued = false
+        let tabQueued = 0         // #2222: [ / ] pending shelf flip
+        let specialPick = null    // #2197/#2203: R/K ids route through the shelf now
         let courtQueued = null    // #2131: 'coo' | 'insult' pending from C/X
-        let digitPick = -1
+        let digitPick = -1        // #2222: digit picks within the open shelf
         const say = (m) => { toastMsg = m; toast = 120 }
 
         const buildCanvas = () => {
@@ -298,8 +302,10 @@ const HomebodyGame = () => {
         const pointerPx = (px, py) => {
             if (!gs || gs.done || screenRef.current !== 'play' || pausedRef.current) return
             if (gs.build) {
-                const i = catalogHit(px, py)
-                if (i >= 0) { gs.sel = i; audioController.playTone(640, 0.04, 'square', 0.04); return }
+                const tb = tabHit(px, py)   // #2222: tap a shelf name to flip
+                if (tb >= 0) { if (selectTab(gs, tb)) audioController.playTone(500 + tb * 70, 0.05, 'square', 0.04); return }
+                const i = catalogHit(px, py, gs)
+                if (i >= 0) { setSel(gs, i); audioController.playTone(640, 0.04, 'square', 0.04); return }
                 const t = tileOf(px, py)
                 if (!t) return
                 const occ = cellItem(gs, t.r, t.c)
@@ -375,7 +381,10 @@ const HomebodyGame = () => {
                 courtQueued = null
             }
             if (switchQueued) { gs.active = (gs.active + 1) % gs.people.length; switchQueued = false; audioController.playTone(720, 0.05, 'triangle', 0.04) }
-            if (digitPick >= 0) { if (gs.build && digitPick < CATALOG.length) { gs.sel = digitPick; audioController.playTone(640, 0.04, 'square', 0.04) } digitPick = -1 }
+            if (tabQueued && gs.build) { flipTab(gs, tabQueued); audioController.playTone(gs.tab % 2 ? 460 : 580, 0.05, 'square', 0.04) }   // #2222: shelves flip on the pad route too
+            tabQueued = 0
+            if (digitPick >= 0) { if (gs.build) { const i = digitCard(gs, digitPick); if (i >= 0) { setSel(gs, i); audioController.playTone(640, 0.04, 'square', 0.04) } } digitPick = -1 }
+            if (specialPick) { if (gs.build) { const i = CATALOG.findIndex((d) => d.id === specialPick); if (i >= 0) { setSel(gs, i); audioController.playTone(640, 0.04, 'square', 0.04) } } specialPick = null }
             prev.left = pad.left; prev.right = pad.right; prev.up = pad.up; prev.down = pad.down; prev.a = pad.a; prev.b = pad.b; prev.pdown = pdown
         }
 
@@ -569,6 +578,7 @@ const HomebodyGame = () => {
             particles = []; shake = 0; toast = 0; refuses.length = 0
             prev.left = prev.right = prev.up = prev.down = prev.a = prev.b = prev.pdown = false
             actQueued = buildQueued = switchQueued = false; digitPick = -1; courtQueued = null
+            tabQueued = 0; specialPick = null   // #2222
             setEndInfo(null)
             setSc('play')
             audioController.playSweep(262, 523, 0.24, 'square', 0.07)
@@ -616,10 +626,12 @@ const HomebodyGame = () => {
             if (BUILD_KEYS.has(e.code)) buildQueued = true
             if (COURT_KEYS.has(e.code)) courtQueued = e.code === 'KeyC' ? 'coo' : 'insult'   // #2131
             if (SWITCH_KEYS.has(e.code)) switchQueued = true
-            if (ROOM_KEYS.has(e.code)) digitPick = CATALOG.findIndex((d) => d.room)
-            if (PET_KEYS.has(e.code)) digitPick = CATALOG.findIndex((d) => d.pet)   // #2197
-            if (KID_KEYS.has(e.code)) digitPick = CATALOG.findIndex((d) => d.kid)   // #2203
-            if (/^Digit[1-9]$/.test(e.code)) digitPick = parseInt(e.code.slice(5), 10) - 1
+            if (ROOM_KEYS.has(e.code)) specialPick = 'roomkit'   // #2222: counter keys ride setSel so the shelf follows
+            if (PET_KEYS.has(e.code)) specialPick = 'petkit'   // #2197
+            if (KID_KEYS.has(e.code)) specialPick = 'kidkit'   // #2203
+            if (/^Digit[1-9]$/.test(e.code)) digitPick = parseInt(e.code.slice(5), 10)   // #2222: digits pick within the open shelf
+            if (e.code === 'BracketLeft') tabQueued = -1   // #2222: flip shelves
+            if (e.code === 'BracketRight') tabQueued = 1
         }
         const onUp = (e) => {
             if (CUR.l.includes(e.code)) heldKeys.left = false
@@ -723,7 +735,7 @@ const HomebodyGame = () => {
                 win: () => { if (gs) { gs.content = WIN_CONTENT; gs.done = 'win'; gs.endMsg = 'forced' } },
                 collapseAll: () => { if (gs) for (const p of gs.people) p.faintT = 2 },
                 money: (v) => { if (gs) gs.money = v },
-                select: (i) => { if (gs) gs.sel = i },
+                select: (i) => { if (gs) setSel(gs, i) },   // #2222: the shelf follows the pick
                 bond: (k, v) => { if (gs && gs.rel[k] !== undefined) gs.rel[k] = v },
                 ringIvy: () => { if (gs) { gs.ivyAfter = Math.min(gs.ivyAfter, Math.floor(gs.hour)); gs.ivyGap = 0 } return 'Ivy rings soon' },   // #2143
                 ivyHome: () => { if (gs && gs.ivy) { gs.ivy.state = 'leaving'; gs.ivy.path = null } },   // #2143: rig the next visit (scenario setup, like park/foul)

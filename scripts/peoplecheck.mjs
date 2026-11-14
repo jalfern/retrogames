@@ -52,6 +52,7 @@ import {
     ivyChatPool, IVY_CHAT, IVY_FADE, IVY_GIFT_HUNGER, IVY_GIFT_CASH,   // #2143
     adoptPet, adoptOk, PET, PET_COOS,   // #2197: Miso
     adoptKid, adoptKidOk, KID,   // #2203: Pip
+    CAT_TABS, TAB_CARDS, TAB_OF, tabCards, setSel, flipTab, selectTab, digitCard,   // #2222: catalog shelves
 } from '../src/games/Homebody/sim.js'
 import { readFileSync } from 'node:fs'
 
@@ -1203,7 +1204,7 @@ section('PET (#2197): Miso — counter law, cat day, coos, hash')
     check('pin: the coo law feeds house bond and resident social', /partner\.needs\.social = Math\.min\(1, partner\.needs\.social \+ PET_SOCIAL\)/.test(petSim) && /relAdd\(s, 'house', PET_BOND\)/.test(petSim))
     check('pin: the cat rides stateHash', /mix\(s\.pet \? 1 : 0\)/.test(petSim))
     check('pin: the shell draws Miso in the depth order', /drawPet/.test(petJsx) && petJsx.includes('g.pet ? [{ p: g.pet, v: g.pet.y }]'))
-    check('pin: P keys the card and the counter events have voices', /PET_KEYS = new Set\(\['KeyP'\]\)/.test(petJsx) && /CATALOG\.findIndex\(\(d\) => d\.pet\)/.test(petJsx) && /case 'pet':/.test(petJsx) && /case 'pet-coo'/.test(petJsx))
+    check('pin: P keys the card and the counter events have voices', /PET_KEYS = new Set\(\['KeyP'\]\)/.test(petJsx) && /specialPick = 'petkit'/.test(petJsx) && /case 'pet':/.test(petJsx) && /case 'pet-coo'/.test(petJsx))   // #2222: the P key now rides setSel
     check('pin: the sprite ships — loaf, walk and purr sparks in art', /export function drawPet/.test(petArt) && /purrT/.test(petArt) && /case 'petkit'/.test(petArt))
     check('pin: the probe answers with the cat', petJsx.includes('pet: gs.pet ?'))
 }
@@ -1335,9 +1336,101 @@ section('KIDS (#2203): Pip — counter law, kid day, coos, hash')
     check('pin: the child rides stateHash', /mix\(s\.kid \? 1 : 0\)/.test(kidSim))
     check('pin: the bond panel rows the child under the stars', /if \(s\.kid\) bondRow/.test(kidArt) && /'PIP'/.test(kidArt))
     check('pin: the shell draws Pip in the depth order', /drawKid/.test(kidJsx) && kidJsx.includes('g.kid ? [{ p: g.kid, v: g.kid.y }]'))
-    check('pin: K keys the card and the counter events have voices', /KID_KEYS = new Set\(\['KeyK'\]\)/.test(kidJsx) && /CATALOG\.findIndex\(\(d\) => d\.kid\)/.test(kidJsx) && /case 'kid':/.test(kidJsx) && /case 'kid-tumble'/.test(kidJsx) && /case 'kid-cry'/.test(kidJsx))
+    check('pin: K keys the card and the counter events have voices', /KID_KEYS = new Set\(\['KeyK'\]\)/.test(kidJsx) && /specialPick = 'kidkit'/.test(kidJsx) && /case 'kid':/.test(kidJsx) && /case 'kid-tumble'/.test(kidJsx) && /case 'kid-cry'/.test(kidJsx))   // #2222: the K key now rides setSel
     check('pin: the sprite ships — scamper, Zzz and tears in art', /export function drawKid/.test(kidArt) && /Zzz/.test(kidArt) && /case 'kidkit'/.test(kidArt))
     check('pin: the probe answers with the child', kidJsx.includes('kid: gs.kid ?'))
+}
+
+// --------------------------------------------------------- STORES (#2222) ----
+section('STORES (#2222): catalog shelves — partition, flip, digits, hash')
+{
+    // partition integrity: shelves cover CATALOG exactly, no duplicates
+    const flat = TAB_CARDS.flat()
+    check('shelves partition the catalog — nothing lost, nothing doubled',
+        flat.length === CATALOG.length && CATALOG.every((d, i) => flat.includes(i)) && TAB_CARDS.every((cards) => cards.every((i) => i >= 0)),
+        `flat=${flat.length}/${CATALOG.length}`)
+    check('TAB_OF agrees with the shelves both ways',
+        TAB_CARDS.every((cards, t) => cards.every((i) => TAB_OF[i] === t)) && CATALOG.every((d, i) => TAB_OF[i] !== undefined))
+
+    // cycling
+    const a = newRun(11)
+    check('a fresh run opens on the first shelf', a.tab === 0 && tabCards(a).length === CAT_TABS[0].ids.length)
+    let seq = []
+    for (let i = 0; i < CAT_TABS.length; i++) { flipTab(a, 1); seq.push(a.tab) }
+    check('flipping forward cycles every shelf and lands back where it started', seq.join(',') === '1,2,3,0')
+    seq = []
+    for (let i = 0; i < CAT_TABS.length; i++) { flipTab(a, -1); seq.push(a.tab) }
+    check('flipping backward cycles too', seq.join(',') === '3,2,1,0')
+
+    // selection always lands on the open shelf
+    const b = newRun(12)
+    check('the selection always sits on the open shelf', CAT_TABS.every((t, ti) => { selectTab(b, ti); return TAB_OF[b.sel] === ti }))
+    check('each shelf defaults its selection to its first card', TAB_CARDS.every((cards, ti) => { selectTab(b, ti); return b.sel === cards[0] }))
+
+    // per-shelf memory
+    const c = newRun(13)
+    const plantI = CATALOG.findIndex((d) => d.id === 'plant')
+    const lampI = CATALOG.findIndex((d) => d.id === 'lamp')
+    const tvI = CATALOG.findIndex((d) => d.id === 'tv')
+    setSel(c, plantI)
+    check('picking a card follows it to its shelf', c.tab === TAB_OF[plantI] && c.tabSel[TAB_OF[plantI]] === plantI)
+    flipTab(c, 1)
+    setSel(c, tvI)
+    check('each shelf remembers its own last pick', c.tabSel[TAB_OF[tvI]] === tvI && c.tabSel[TAB_OF[plantI]] === plantI)
+    selectTab(c, TAB_OF[plantI])
+    check('coming back recalls the shelf\'s last pick, not its first card', c.tab === TAB_OF[plantI] && c.sel === plantI)
+    setSel(c, lampI)
+    flipTab(c, 1); flipTab(c, -1)
+    check('memory updates when the shelf is picked again', c.sel === lampI)
+
+    // digits within the shelf — every card reachable
+    const d1 = newRun(14)
+    const reach = new Set()
+    for (let t = 0; t < CAT_TABS.length; t++) { selectTab(d1, t); for (let n = 1; n <= 9; n++) { const i = digitCard(d1, n); if (i >= 0) reach.add(i) } }
+    check('every catalog card is reachable by shelf + digit 1-9', reach.size === CATALOG.length, `${reach.size}/${CATALOG.length}`)
+    selectTab(d1, 2)
+    check('a digit past the shelf picks nothing', digitCard(d1, CAT_TABS[2].ids.length + 1) === -1)
+    selectTab(d1, 0)
+    check('digit 4 on HOME is the Porcelain Throne', digitCard(d1, 4) === CATALOG.findIndex((d) => d.id === 'toilet'))
+
+    // purchase laws unchanged by shelves
+    const e = newRun(15)
+    setSel(e, tvI)
+    check('the TV selects onto the FUN shelf', e.tab === 1 && e.sel === tvI)
+    const moneyBefore = e.money
+    let tvPlaced = false
+    for (let r = 1; r < ROWS && !tvPlaced; r++) {
+        for (let cx = 0; cx < COLS && !tvPlaced; cx++) {
+            if (e.money - DEF.tv.price < 0) break
+            if (place(e, r, cx)) tvPlaced = e.money === moneyBefore - DEF.tv.price
+        }
+    }
+    check('placing from a non-first shelf bills the card', tvPlaced)
+    const f = newRun(16)
+    const roomI = CATALOG.findIndex((d) => d.id === 'roomkit')
+    setSel(f, roomI)
+    check('the Spare Room kit opens the SPECIAL shelf', f.tab === TAB_OF[roomI])
+    f.money = 100
+    check('short money still refuses at the gate', place(f, 0, 0) === false && f.ext === 0)
+
+    // the shelf rides the hash
+    const hA = newRun(17)
+    const h0 = stateHash(hA)
+    const hB = newRun(17); hB.tab = 2
+    check('the open shelf rides stateHash — flipping is state', stateHash(hB) !== h0)
+    flipTab(hA, 1); flipTab(hA, -1)
+    const hC = newRun(17)
+    check('a full flip cycle returns the same hash', stateHash(hA) === stateHash(hC))
+
+    // source pins — the wiring must not silently drop
+    const stSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const stArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    const stJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    check('pin: the shelf law is pure in sim.js', /export const CAT_TABS/.test(stSim) && /export function setSel/.test(stSim) && /export function flipTab/.test(stSim) && /export function digitCard/.test(stSim))
+    check('pin: the shelf rides stateHash', /mix\(s\.tab\)/.test(stSim))
+    check('pin: attract purchases ride setSel (the shelf follows the demo)', (stSim.match(/setSel\(s, CATALOG\.findIndex/g) || []).length >= 4)
+    check('pin: the view draws tabs and shelf cards', stArt.includes('CAT_TABS.forEach') && /export function tabHit/.test(stArt) && /tabCards\(s\)/.test(stArt))
+    check('pin: the shell wires [ ] flips, per-shelf digits and tab taps', /BracketLeft/.test(stJsx) && /BracketRight/.test(stJsx) && /digitCard\(gs, digitPick\)/.test(stJsx) && /tabHit\(px, py\)/.test(stJsx) && /selectTab\(gs, tb\)/.test(stJsx))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)

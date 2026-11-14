@@ -204,6 +204,52 @@ export const NEEDS = ['hunger', 'energy', 'fun', 'social', 'bladder']
 export const PHYS = ['hunger', 'energy', 'bladder']
 export const DECOR = ['plant', 'rug', 'lamp', 'book', 'sofa', 'tv', 'radio', 'phone']
 
+// ------------------------------------------------- catalog shelves (#2222) ----
+// The original people-sim never showed a flat wall of goods: buy mode is a
+// catalog with category tabs — flip shelves, each shelf few big cards.
+// Union of these shelves covers CATALOG exactly, no duplicates (STORES gate).
+export const CAT_TABS = [
+    { id: 'HOME', ids: ['bed', 'fridge', 'stove', 'toilet', 'shower', 'phone'] },
+    { id: 'FUN', ids: ['tv', 'radio', 'book', 'sofa'] },
+    { id: 'DECOR', ids: ['plant', 'rug', 'lamp'] },
+    { id: 'SPECIAL', ids: ['roomkit', 'petkit', 'kidkit'] },
+]
+export const TAB_CARDS = CAT_TABS.map((t) => t.ids.map((id) => CATALOG.findIndex((d) => d.id === id)))
+export const TAB_OF = {}
+TAB_CARDS.forEach((cards, t) => cards.forEach((i) => { TAB_OF[i] = t }))
+
+export function tabCards(s) { return TAB_CARDS[s.tab] || [] }
+
+// Selecting a card follows its shelf and remembers it per shelf.
+export function setSel(s, i) {
+    if (i < 0 || i >= CATALOG.length) return false
+    s.sel = i
+    const t = TAB_OF[i]
+    if (t !== undefined) { s.tab = t; s.tabSel[t] = i }
+    return true
+}
+
+// Flip shelves (±1, cycling); selection lands on that shelf's remembered card.
+export function flipTab(s, dir) {
+    return selectTab(s, (s.tab + dir + CAT_TABS.length) % CAT_TABS.length)
+}
+
+export function selectTab(s, t) {
+    if (t < 0 || t >= CAT_TABS.length) return false
+    s.tab = t
+    const cards = TAB_CARDS[t]
+    const mem = s.tabSel[t]
+    s.sel = cards.includes(mem) ? mem : cards[0]
+    return true
+}
+
+// digits 1-9 pick WITHIN the open shelf — with the flip, every one of the
+// 16 cards is reachable by shelf+digit (#2209's card-16 worry, answered).
+export function digitCard(s, n) {
+    const cards = tabCards(s)
+    return n >= 1 && n <= cards.length ? cards[n - 1] : -1
+}
+
 // ------------------------------------------------------- spare room (#1806) --
 // The lot grows once: buy the Spare Room kit and the house's east wall gains a
 // 3×4 room — plank floor, brick band walls, a doorway punched into the shared
@@ -274,6 +320,8 @@ export function newRun(seed) {
         tick: 0, sec: 0, hour: 7, day: 1,
         money: 520, rank: 1, workDays: 0, content: 0,
         build: false, sel: 0,
+        tab: 0,                                     // #2222: open catalog shelf
+        tabSel: TAB_CARDS.map((c) => c[0]),       // last pick remembered per shelf
         cursor: { r: 6, c: 8 },          // build cursor
         cursorA: { r: 2, c: 3 },        // dpad "use" cursor
         items: [
@@ -1689,27 +1737,27 @@ export function bot(s) {
             if (id === 'roomkit') {
                 if (s.ext || s.money < EXT_ROOM.price || !roomClear(s)) continue
                 const keep = s.sel
-                s.sel = CATALOG.findIndex((d) => d.id === 'roomkit')
+                setSel(s, CATALOG.findIndex((d) => d.id === 'roomkit'))   // #2222: the shelf follows the pick
                 place(s, 0, 0)   // the room ignores the cursor; the lot owns the spot
-                s.sel = keep
+                setSel(s, keep)
                 return
             }
             // #2197: the cat owns herself — no cursor, no cell, just the counter
             if (id === 'petkit') {
                 if (s.pet || s.money < PET.price) continue
                 const keep = s.sel
-                s.sel = CATALOG.findIndex((d) => d.id === 'petkit')
+                setSel(s, CATALOG.findIndex((d) => d.id === 'petkit'))   // #2222
                 place(s, 0, 0)
-                s.sel = keep
+                setSel(s, keep)
                 return
             }
             // #2203: so does the child — same counter law, right behind the cat
             if (id === 'kidkit') {
                 if (s.kid || s.money < KID.price) continue
                 const keep = s.sel
-                s.sel = CATALOG.findIndex((d) => d.id === 'kidkit')
+                setSel(s, CATALOG.findIndex((d) => d.id === 'kidkit'))   // #2222
                 place(s, 0, 0)
-                s.sel = keep
+                setSel(s, keep)
                 return
             }
             if (s.items.some((it) => it.id === id) || s.money < def.price) continue
@@ -1721,9 +1769,9 @@ export function bot(s) {
                     if (def.solid && g !== 'floor') continue
                     if (!canPlace(s, def, r, c)) continue
                     const keep = s.sel
-                    s.sel = CATALOG.findIndex((d) => d.id === id)
+                    setSel(s, CATALOG.findIndex((d) => d.id === id))   // #2222: the shelf follows the pick
                     place(s, r, c)
-                    s.sel = keep
+                    setSel(s, keep)
                     return
                 }
             }
@@ -1743,6 +1791,7 @@ export function stateHash(s) {
     const mix = (v) => { h ^= Math.round(v * 1000) | 0; h = Math.imul(h, 16777619) }
     mix(s.tick); mix(s.day); mix(s.hour); mix(s.money); mix(s.content); mix(s.rank)
     mix(s.ext)
+    mix(s.tab)                       // #2222: the open catalog shelf is state too
     mix(s.rel.house); mix(s.rel.fern)   // #1817: bonds ride the hash
     mix(s.rel.ivy)                     // #2143: so does the second neighbour's
     mix(s.rel.kid)                     // #2203: and the child's
