@@ -1,73 +1,73 @@
-# STATE — session 273 (2026-11-14, slot a)
+# STATE — session 274 (2026-11-14, slot b)
 
 ## Playable now / what shipped
-- **TIDY BOT: two-slot carry + tray physics** (merge `f4f8c4b`, PR #2268,
-  closes #2266 — never-dry POLISH stage). Live: /retrogames/tidy-bot.
-  Two arms (`held`/`held2`): `A` fills an empty slot, third grab refuses
-  `ARMS FULL` (named, consumes nothing); FIFO release — place/throw empty
-  the FIRST grabbed, one press one item; carrying two walks at ×0.82 with a
-  drawn tilting tray; level closes only when both arms empty; hash carries
-  both slots. Autopilot double-loads same-destination only → attract +
-  win-proof use the mechanic (~800 two-carry ticks/seed) WRONG-STOW-free.
-  - tidycheck **56/56 Node + 73/73 full** (13 new Node carry gates, 4 new
-    real-key browser gates incl. tray apple pixel-proven at the arm),
-    zero page errors; contractcheck 15/15.
-  - New `order` mutant (FIFO→LIFO): exactly the two load-order gates go
-    RED, wins stay green. Mutant first-cut had a double-free (promoted the
-    just-placed item back to held and bricked all wins) — fixed by making
-    lifo empty the tray arm; a mutant must bend the rule, not break physics.
-  - README: §Two-slot carry, Honest-gap 0 CLOSED, verify counts honest.
-  - QA handoff: 5 specific stage-2 polish notes commented on **#2258**.
-- Slot b shipped FROSTBRUSH (#2261 fox demo, #2269) while I built — no
-  collision (lane:demos vs lane:games).
+- **RENARD** (merge `044be3d`, PR #2271, closes #2261): a running red fox —
+  the Qwen corner of the model battle. Canvas 2D perspective painter, no
+  WebGL, one file: /retrogames/demos/fox.html (prod-verified: RENARD code in
+  the served page). Four-beat rotary gallop LH·RH·LF·RF at 2.6 m stride /
+  0.55 s — sized so stance travel fits the limb chord (hind 0.44 ≤ 0.61,
+  fore 0.42 ≤ 0.65), the precondition for ground-locked paws (measured slip
+  0.000 mm). Cracking back ±0.05 m, bushy white-tip tail (wave + noise seed
+  stride mod 6), 6-stride seam measured 3.6e-15. Golden-hour snow: fading
+  print trail, puffs, sparkle, contact shadow, sun on the ridge; paw thumps
+  + wind + vixie call on first click. foxcheck **30/30**, three mutants each
+  kill exactly one gate; credits/index/README wired; lint gates + build green.
+- The battle: Gemini's **FROSTBRUSH** (WebGL2 + PCF, #2269) landed mid-session
+  while my branch was open; rebased onto it, resolved the index keep-both
+  (both cards + DEMO_INDEX entries live), my PR closed #2261 for both corners
+  (theirs said `Part of`, mine `Closes`). QA polish pass filed as **#2270**.
+- Hygiene PR **#2274**: removed `scripts/.scratch-fox*.mjs` I had accidentally
+  swept into main via `git add -A -- scripts` (see catches).
 
 ## Ladder (this session's path)
-- Warden target #2261 REFUSED at claim (slot b alive, 19 min) → normal
-  ladder: halt none, steer none, next #1711 = Jon-side (AWAITING #2228,
-  don't wait), QA MASTER live → no feedback borrow → idle-kick said
-  `KICK TIDY BOT 0 weak` → filed POLISH **#2266** (why-weakest line in
-  body) → claimed clean.
-- Caveat taken honestly: minutes after my derivation the QA lane closed
-  #2253 and idle-kick flipped to HOMEBODY 0 weak — Homebody's top unowned
-  gap is a PARTIAL-marker whose defined tails are already open QA issues
-  (#2264/#2256/#2209…) and 5 QA issues name the game; TIDY BOT was the
-  scoped, collision-free pick at pick-time.
+- Warden target #2261 claimed CLEAN on slot b before Gemini's lane filed
+  theirs — both ships coexist (the issue title IS the battle).
 
 ## BOARD at exit
-- game-queue EMPTY. #2266 shipped+closed; #2261 shipped by slot b (#2269).
-- building: none. next: #1711 (Jon-side, lane:platform).
+- #2261 closed (+prod comment with both live URLs). #2270 `feedback lane:qa`
+  (RENARD polish); #2264/#2258/#2256 remain QA-open from earlier sessions.
+- game-queue: EMPTY. No `building`, no `steer`/`next`, no `halt`.
 - jonq: nothing open from lane:games. Nightly green; main-ok clean at exit.
+- creditscheck on main: 198/202 — the 4 reds (weightsurgery ×2, horse index
+  agreement, built-by count) are IDENTICAL to the pre-fox baseline (proved
+  189/193 on `5cd3434` in a throwaway worktree). Not mine; not mine to fix.
 
 ## Next (slot a or b, in order)
-1. Ladder will land on the never-dry rung: re-run `node scripts/idle-kick.mjs`
-   at claim time (board shifts fast: expect HOMEBODY 0 weak now that #2253
-   shipped — but its gap 0 is the PARTIAL monster; check what's really
-   un-owned and scoped before filing; TIDY BOT gap 1 (aimed pick from rack)
-   and gap 2 (wash-cycle hum) are clean little stages nobody owns).
-2. #1711 stays Jon-side; QA-borrow only if `pgrep -f "QA MASTER"` is empty.
-3. Don't duplicate QA #2258 (now incl. my stage-2 addendum) / #2264 / #2256.
+1. Queue is empty → ladder: steer/none → #1711 skip (Jon-side) →
+   QA-borrow only if no `QA MASTER` live → flagship stages (SSX, Emberwood,
+   COMET DRIFT HD, Myst) via `idle.mjs`, skipping QA-held gaps → weakestStage.
+   Don't duplicate QA #2270/#2264/#2258/#2256.
+2. If a lane wants the fox battle graded, both demos + their harnesses
+   (foxcheck 30/30, foxgeminicheck 34/34) are on the board and in prod.
 
 ## The session's catches
-- **Two claims, two answers, five minutes apart.** idle-kick (and my ad-hoc
-  rescore) disagreed because `weakestStage` skips QA-held games and #2253
-  closed between runs. Derive at claim time, then commit — the board is a
-  moving target; a re-derivation per probe is thrash (rule 8).
-- **Zone-priority bites naive carry tests**: standing in an open container's
-  place-zone, `A` PLACES — it can never grab there. Double-pickup gates must
-  grab at the litter, then step into the zone (my first gate draft grabbed
-  nothing and my plate/cup coords were exact distance-ties).
-- **jalfern.com 308-redirects everything**: prod-verify `curl` needs `-L`
-  everywhere or assets read as 15-byte "not found" (three identical
-  no-hash polls before I read the response — rule 8 again).
-- A warden/lane cleanup SIGTERM'd my :5173 dev server mid-session; my
-  browser gates had already banked green, so I let it go rather than fight
-  over the port.
+- **A name-order gait gate cannot see a collapsed gait.** Mutant `LF c
+  0.58→0.30` passed order AND suspension — the letters stay in sequence, only
+  the gaps change. Added a timing-signature gate (tight pairs ≤0.25, wide
+  inter-pair ≥0.30) and the mutant died. Mutants are the gate's test, not a
+  formality.
+- **Two stride-index bugs hid in the swing arc** (target = previous anchor → a
+  2 m leg-spike; then liftoff point needing the just-left anchor). Numerical
+  probes (rel-x per phase vs chord budget) found both in minutes; squinting at
+  frames cost two rounds first. Measure first.
+- **Densifying the ring array left `poll = spts[6]` stale** — the head hung off
+  the withers and vanished. Derived indices: `spts[spts.length-1]`.
+- **Flat-card normals must flip skyward, not camera-ward** — flipping the snow
+  quads toward the camera aimed their normals into the earth: no sun, no
+  bounce, night at golden hour. Rule now: horizontal cards keep n up.
+- **ctx-drawn overlays must run AFTER the painter-sort loop** — prints were
+  pushed straight to canvas before the sorted ground cells painted over them.
+- **`git add -A -- <dir>` sweeps untracked scratch** — my dotfile probes went
+  into the branch and squash-merged to main despite being deleted from disk
+  before the push (the deletion was never committed). Delete-then-COMMIT, or
+  stage explicit paths. Cleaned in #2274.
+- **mid-session merges of the same issue**: rebase keep-both, and let the
+  multi-corner issue's Closes keyword sit with the last ship.
 
 ## Hygiene at exit
-- Dev server :5173 already down (killed by cleanup, not me); no other
-  lane's port touched.
-- Worktree `~/Dev/retrogames-forge-tidy-tray` re-detached at origin/main
-  (`5cd3434`). Tidy-candidate (branch deleted upstream by squash).
-- Main checkout detached at origin/main. STATE.md committed to main
-  legitimately (game merged this session — rule 9) + parked at slot-a path
-  and shared path.
+- Dev server :5178 (mine) STOPPED; no other lane's port touched.
+- Worktree `~/Dev/retrogames-forge-running-fox` re-detached at origin/main
+  (`f799c86`). Tidy-candidate (branch deleted upstream by squash). Same for
+  the chore worktree (already removed).
+- STATE.md committed to main legitimately (game merged this session — rule 9)
+  + parked at slot-b path and shared path.
