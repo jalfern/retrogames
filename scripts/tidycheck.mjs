@@ -438,6 +438,43 @@ if (!NODE_ONLY) {
         st = await page.evaluate(() => window.__tidybotTest.state())
         ok(st.dwDoor > 0.9, 'real A opens the dishwasher rack end-to-end')
 
+        // #2266 CARRY with real keys: two SPACE presses load both arms and the
+        // tray cargo is PAINTED at the arm; a third press adds nothing.
+        await page.evaluate(() => {
+            const g = window.__game
+            g.reset(3141)
+            const gs = window.__tidybotTest.sim()
+            gs.items.push(
+                { id: 9101, kind: 'cup', x: gs.rx + 5, y: gs.ry, vx: 0, vy: 0, state: 'loose', cont: null },
+                { id: 9102, kind: 'apple', x: gs.rx + 12, y: gs.ry, vx: 0, vy: 0, state: 'loose', cont: null },
+                { id: 9103, kind: 'milk', x: gs.rx + 18, y: gs.ry, vx: 0, vy: 0, state: 'loose', cont: null },
+            )
+        })
+        await page.waitForTimeout(80)
+        await page.keyboard.press('Space')
+        await page.waitForTimeout(80)
+        let carry = await page.evaluate(() => window.__tidybotTest.state())
+        ok(carry.held === 'cup' && carry.held2 === '', 'a real SPACE lifts the nearest litter into the front arm')
+        await page.keyboard.press('Space')
+        await page.waitForTimeout(80)
+        carry = await page.evaluate(() => window.__tidybotTest.state())
+        ok(carry.held === 'cup' && carry.held2 === 'apple', 'a second real SPACE loads the tray arm too')
+        const trayPx = await page.evaluate(() => {
+            const cv = window.__tidybotTest.canvas()
+            const gs = window.__tidybotTest.sim()
+            const g = cv.getContext('2d')
+            const X = Math.round(gs.rx * 2), Y = Math.round((gs.ry + 11) * 2)
+            const d = g.getImageData(X - 6, Y - 9, 13, 14).data
+            let red = 0
+            for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i + 1] < 110 && d[i + 2] < 110) red++
+            return { red, X, Y }
+        })
+        ok(trayPx.red >= 4, `the tray apple is painted at the arm (${trayPx.red} red px at ${trayPx.X},${trayPx.Y})`)
+        await page.keyboard.press('Space')
+        await page.waitForTimeout(80)
+        carry = await page.evaluate(() => window.__tidybotTest.state())
+        ok(carry.held === 'cup' && carry.held2 === 'apple', 'a third press beside litter adds nothing (ARMS FULL end-to-end)')
+
         // #2250 GLIDE: a real mouse tap issues a real order and the bot walks
         // the BFS roads there; a real arrow press takes the wheel back.
         await page.evaluate(() => { const g = window.__game; g.reset(777); g.release() })
