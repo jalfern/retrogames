@@ -1248,11 +1248,11 @@ export default function TalkMeDown() {
     }, [startPlay, startAttract, toggleVoice, voiceCall])
 
     return (
-        <div className="min-h-screen bg-black flex items-center justify-center relative select-none">
+        <div className="min-h-[var(--shell-h)] bg-black flex items-center justify-center relative select-none">
             <canvas
                 ref={canvasRef}
-                className="max-w-full max-h-screen"
-                style={{ imageRendering: 'pixelated', aspectRatio: `${ART.W} / ${ART.H}`, width: 'min(100vw, calc(100vh * 16 / 9))' }}
+                className="max-w-full max-h-[var(--shell-h)]"
+                style={{ imageRendering: 'pixelated', aspectRatio: `${ART.W} / ${ART.H}`, width: 'min(100vw, calc(var(--shell-h) * 16 / 9))' }}
             />
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'TALK ME DOWN')} onResume={() => setPaused(false)} />}
             {/* #1880 — ONE join flow, the shared waiting room: the host opens
