@@ -82,8 +82,8 @@ travel; mutants (flat mane noise, no rut strips) each kill exactly their gates.
 - `physicswalk.core.js` — PHYSICS WALK engine (#1204), below.
 - `learnedwalk.core.js` + `learnedwalk.policy.js` + `learnedwalk.html` —
   LEARNED WALK, the rig steered by a trained MLP (#1205), below.
-- `fox-gemini.html` — FROSTBRUSH, procedural 3D red fox rotary gallop in WebGL2
-  (#2261, guest Gemini 4 Carbon build), below.
+- `fox-gemini.html` — FROSTBRUSH, procedural 3D red fox rotary gallop in WebGL2  (#2261, guest Gemini 4 Carbon build), below.
+- `fox.html` — RENARD, procedural red fox rotary gallop on Canvas 2D (#2261, the Qwen corner of the fox battle), below.
 
 ## physicswalk.core.js engine notes (#1204)
 
@@ -225,3 +225,47 @@ Verified by `npm run foxgeminicheck` (34/34 gates across demo law, index href,
 boot, rotary gait, double suspension, zero-slip, IK reach, loop seam, pixels,
 pointer orbit, mute toggle, and 390×844 phone layout; stance-slip and
 transverse-swap mutants proven red and restored).
+
+## fox.html engine notes (#2261 — RENARD)
+
+The Qwen corner of the fox battle: a procedural red fox at a true four-beat
+rotary gallop (LH·RH·LF·RF) across a golden-hour snowfield, rendered by a
+hand-written perspective painter on Canvas 2D — no WebGL, no libraries, no
+assets. Where FROSTBRUSH is geometry-processing (WebGL2, depth-texture PCF),
+RENARD is arithmetic-only: every face is a flat-shaded projected polygon and
+every pixel comes from two lambert wraps + snow bounce + sun rim computed in JS.
+
+Anatomy: ~380 quads — an 11-station lofted elliptical spine (hips → poll) with
+a deep chest, tucked waist and flat running neckline; wedge head with dark nose
+cap, amber eye slivers and dark pinnae that pitch with the head; four limbs as
+tapered 6-sided tubes on 2-bone rearward-pole IK (near pair dark, far pair
+hazied); a 13-station bushy tail swelling to a broad white tip, driven by a
+S-wave plus per-stride noise seeded on stride mod 6 (loop-safe wander).
+
+Gait laws (`__foxTest`): stride 2.6 m @ 0.55 s (≈4.7 m/s — a real fox gallop,
+sized so stance travel never exceeds the limb chord: hind 0.44 ≤ 0.61 m, fore
+0.42 ≤ 0.65 m). Onsets LH 0 · RH 0.20 · LF 0.58 · RF 0.78, suspension 0.34 of
+stride (two flight gaps: extended and gathered). Stance paws are world-pinned
+touchdown anchors (measured slip 0.000 mm) — the IK works FROM the fixed anchor
+as the body travels over it; swing is a smootherstep ground-track arc from the
+just-left anchor to the next. The back cracks: dorsal arch ±0.05 m peaking just
+before the hind gather, with the neck counter-flexed so the gaze stays steady.
+All pose is a pure function of φ (+ stride-mod-6 noise), so 6 strides = 15.6 m
+close the seam exactly (measured 3.6e-15). Scenery lives in fixed world space
+periodic with the loop (ground lattice 1.3 m × 12 slots, ridge harmonics
+m·2π/LOOP, spruce/cloud jitter hashed on slot mod 3 — twin-slot rule) so every
+parallax difference between sky, ridges, trees and snow is physical AND
+seam-closed by construction. Snow keeps a fading paw-print trail (life 2.4 s <
+loop), snow-puffs burst at each landing, sparkle twinkles on φ; audio is
+layered paw thumps (heavier hind pair), wind, and a descending vixie call.
+
+Verified by `npm run foxcheck` (29 gates: boot/paint/sky/snow, footfall order,
+suspension band, slip, 6-stride seam, arch range, chord budget, mid-swing
+clearance, footfalls exactly on-plane, sprite↔state coat/head/tail-tip/shadow
+pixel probes, print accumulation + trail pixels, horizon spruces, phone
+390×844, demo law). By-hand mutants proven red then restored: stance anchor
++20 mm (only slip gate red — the lock is load-bearing), LF onset 0.58→0.30
+(order + chord red), flex amplitude 0 (only arch gate red).
+Honest gaps: stylised low-poly coat (no fur, no ruff fluff), face detail is
+silhouette-grade at default zoom, breath visible only as the coat swell, and
+the tail wave is kinematic rather than flocked.

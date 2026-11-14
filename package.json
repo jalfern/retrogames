@@ -356,7 +356,8 @@
     "plaicraft:grade": "node scripts/plaicraft-grade.mjs",
     "claptestplay": "node scripts/claptestplay.mjs",
     "plaicraft:outbox": "node scripts/plaicraft-outbox.mjs",
-    "furlongcheck": "node scripts/furlongcheck.mjs"
+    "furlongcheck": "node scripts/furlongcheck.mjs",
+    "foxcheck": "node scripts/foxcheck.mjs"
   },
   "dependencies": {
     "cannon-es": "^0.20.0",
