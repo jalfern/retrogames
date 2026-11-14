@@ -1,83 +1,76 @@
-# STATE — session 268 (2026-11-14, slot a)
+# STATE — Forge (last: session 268, slot b, 2026-11-14)
 
-## Playable now / what shipped
-- **HOMEBODY got a SPEED DIAL** (merge `cb3e3a6`, PR #2230, closes #2227):
-  pause / normal / fast / fastest, The Sims (PC 2000) style. Gears
-  `SPEED_MULT=[0,1,2,4]` live in sim.js (`setSpeed` clamp, `cycleSpeed` wrap,
-  `attractSpeed` teach law); `s.speed` rides `stateHash`; a new street resets
-  to NORMAL. One driver, one fixed dt — the rAF loop buys gear-many world
-  steps per tick, so decay/schedules/visits/cries/purrs all ride plain
-  `advance`; gear 0 stands the world still. Keys `1`-`4` outside buy mode
-  (inside, digits keep the #2222 card law), `,` `.` cycle+wrap everywhere,
-  panel pips tappable (`DIAL`+`speedHit`, gold pip, pulsing pause pip — no
-  third VirtualControls button). Court release freezes with the world; the
-  attract demo hurries 08:00–10:00 to teach it (+ marquee line).
-  Proof: peoplecheck **330/330** (12 sim gates + 10 pins), homebodydrive
-  **61/61** zero page errors, contractcheck 724/724, lint gates + build green.
-  Mutants: loop multiplier neutered → drive pause-gate RED (clock walked
-  8.1→8.2 while "paused"); `mix(s.speed)` dropped → peoplecheck 329/1 exactly
-  the hash gate; both restored.
-  Prod-verified: served entry `index-GZyYCA-t.js`, Homebody chunk
-  `index-FZE5lLCs.js` carries the dial marquee (PAUSED/FASTEST labels are
-  DEV-probe strings, tree-shaken from prod; logic ships).
-- **The TARGET was already shipped:** warden aimed my slot at #2222; claim
-  answered "already yours: resume it" — but the issuing session (267) was
-  mid-merge, not dead: #2226 landed (`91b1ca8`) ~3 min into my session and its
-  STATE commit followed. Stale idle-kick ≠ corpse; when the TARGET merges, run
-  the ladder, don't re-drive a landing merge.
+## SHIPPED THIS SESSION
+- **PICK RUSH: per-shift ambience — #2234 via PR #2237** (squash **ee10390**,
+  static SUCCESS, prod-verified chunk `index-DmwFWObq.js` carries early/glass/
+  graveyard eras at jalfern.com/retrogames/pick-rush): the night now changes
+  character — shifts 1–2 quiet floor (distant forklift chirps, far metal rolls),
+  shift 3 glass era (pneumatic hiss + belt-speed sub-harmonic wakes), shift 4
+  graveyard peak (relay chatter); beeps tighten 540→420→330 ticks; hum bed
+  deepens 0.05→0.07 per shift; whistle gets an air-brake whoosh. Pure module
+  `ambience.js` — sim/autopilot/hash never see it; attract/over silent, mute
+  honoured. Harness: pickcheck **+9 AMB gates** (5 Node + 4 Chrome),
+  **36/36 node, 17/17 browser**; can-fail proven `PICK_MUT=amb` → 2 NAMED red.
+  - Pick path (never-dry #1571): ladder/next/steer/game-queue empty, QA lane
+    live (borrow off), flagship stage SPENT (every SSX/Emberwood/COMET HD/Myst
+    README gap CLOSED) → `weakestStage` scored PICK RUSH 5 (top of shelf).
+    Gap #0 skipped honestly: episode-export wiring is invisible data work (and
+    its "waits on #1141" note is stale — kit shipped); README corrected.
+- **#1711 (warden target, claimed and held):** cp1 audit posted — all remaining
+  lines Jon-side: his 3 takes (#2156), read-key file jonq **#2218** (AWAITING,
+  due 11-16), and NEW **jonq #2233**: deploy `SESSION_WRITE_KEY` (wrangler) —
+  audit #2142 orders it BEFORE #2218's file; `/status writeKey:false` live.
+  relabel #2093 still waits on that. Issue stays `building` (lane:platform).
 
-## Ladder
-- No steer/next, game-queue empty, QA-borrow blocked (QA MASTER live),
-  flagship stage SPENT (every SSX/Emberwood/CometDriftHD/Myst gap owned) →
-  never-dry `weakestStage` = HOMEBODY score 7 (4 open QA naming it +
-  3 unowned gaps). Oldest gap (bonds-line PARTIAL) sanity-skipped: every
-  clause records shipped work, tail owned by #2209 (same ruling as #2222).
-  Took the next unowned — "no skippable-speed control" (STATE 267 NEXT#1
-  named it). Filed #2227 with the why-weakest line, claimed, shipped in-session.
+## LESSONS (the expensive kind)
+- **Release the contract before a live-rAF gate.** The FIRE gate drives via
+  `__game.step` and leaves `contractHoldsLoop()` set — my live-beep wait timed
+  out until I added `__game.release()`. Any new Chrome gate that needs real
+  frames after a contract section must release first.
+- **Restore the screen for downstream gates.** My section left the game in
+  `play`; the WAVE-INK marquee gate expects attract and went red. End your
+  section the way you found it (over-card walk: set end → Space).
+- **Prod verification on jalfern: scan the entry's chunk list, not the hash.**
+  CI hashes ≠ local hashes sometimes, and games ride lazy chunks; grep every
+  chunk referenced from the live entry for a runtime string of yours
+  (`graveyard`) instead of waiting on your local `index-*.js` name.
+- Vercel deployment URLs are auth-protected — `curl` gets the dashboard, not
+  the app. Verify through jalfern.com only.
+- Three lanes' Chrome at once makes timing gates (WAVE-INK, PIXELS) flake —
+  green on every rerun here; rerun once, per law, no thresholds touched.
 
-## BOARD at exit
-- #2227 closed+shipped (auto-closed by PR `Closes #2227`; labels corrected).
-- Fresh queue item for the next kick: **#2234 POLISH — PICK RUSH: per-shift
-  ambience** (game-queue, lane:games — claimable the normal way).
-- QA holds #2214 (PickRush polish); #2205/#2224 closed via #2229/#2232 (slot b/studio).
-  #2209 got a
-  dial-polish addendum from this session (pip tap sizes, pause ghost, cue
-  shrillness, attract-caption).
-- jonq: #2218/#2233 AWAITING (lane:platform — plaicraft key-file tails).
-  Nothing new for lane:games; none filed this session.
-- Nightly (schedule) last completed SUCCESS; main-ok green at exit. Advisory
-  PR smokes flaked on #2230 post-merge (static passed — rule 3, noise).
+## BOARD
+- #1711 `building` (b) — remaining ALL Jon-side: #2156 takes, #2218, #2233,
+  then the relabel one-off (relay/README has the command).
+- QA lane very busy on HOMEBODY/STRIDELINE: shipped #2236, #2239 this window
+  (#2154 closed); #2135 was `building-qa` at 13:17Z. Open `feedback`: HOMEBODY
+  passes #2200/#2209, PICK RUSH polish #2223 (still QA's; my ambience
+  PR notes the remaining #2223 items are visual), claptest flake #2136 (detail).
+- Nightly: main-ok at claim AND merge; QA merged ee10390..f704bf8 after me.
+  No quarantine entries, no steer/halt seen.
 
-## Next (slot a or b, in order)
-1. **#2234** PICK RUSH per-shift ambience — oldest game-queue item, take it the
-   normal way (claim + worktree).
-2. If Jon answers #2218/#2233: plaicraft grade/key-deploy tails belong to the
-   platform lane — only if the warden assigns them to a builder slot.
-3. Ladder then: `weakestStage` again (Homebody day/night clause, Myst gaps).
+## NEXT (next slot)
+1. Check jonq: **#2218 / #2233 answered?** If either is answered/defaulted,
+   execute: write-key deployed + file exists → run the relabel one-off, then
+   `npm run plaicraft:grade` on your slot port to grade any takes that landed;
+   greens on 3 human takes → close #2156 and the S1 acceptance lines on #1711.
+2. Ladder likely thin again — flagship stage spent; expect weakestStage.
+   Next-weakest after PICK RUSH was TIDY BOT / TALK ME DOWN (4 unowned gaps
+   each, tie → older registry = TIDY BOT). Verify scores fresh; don't trust
+   this line — re-run `weakestStage` (label objects need `.name` mapping —
+   heldDirs expects strings).
+3. #2136: claptest synth ±50ms flake — the SKIP-on-slow-box fix shipped in
+   #2229; check whether closing needs only a pointer comment.
 
-## The session's catches
-- **A stale idle-kick can point at a merge in flight.** Verify against the
-  board before resuming a "corpse"; a pushed branch ahead of main that IS the
-  pending merge needs no second driver.
-- **Keys that multiply time must be consumed above the multiplier.** Consume
-  the dial below the world-step loop and pause eats the very keys meant to
-  release it. (Banked in Homebody README §Speed dial.)
-- `hour` probes round to 0.1h — a fast/slow clock gate needs ≥0.5 s windows or
-  it flakes at granularity (two such fixes were test bugs, not game bugs).
-- Buy mode has its own #1806 time-out (`advance` stands still behind the
-  counter) — the dial's law there is "state answers and survives"; pinned.
-- **Prod verify has two false-red traps:** jalfern.com's edge held `HIT age>2000`
-  for ~35 min after merge while the Production deployment was already SUCCESS
-  (`gh api repos/jalfern/retrogames/deployments` = the honest mid-window answer);
-  and the lazy-chunk sweep must cover ALL `assets/*.js` names (`art-*`, `sim-*`…),
-  not just `index-*` — the game's marquee lives in a plain-`index` chunk but
-  names vary per build. DEV-only strings are tree-shaken from prod — verify on
-  player-visible strings only.
+## QUESTIONS FOR JON
+- #2218 (read key file) and **#2233 (SESSION_WRITE_KEY deploy)** — both
+  lane:platform, both open; #2233 outranks by ordering risk. (STATE.md never
+  carries the questions — read the issues.)
 
-## Hygiene at exit
-- Dev server on :5173 (mine) STOPPED; no other lane's port touched.
-- Worktree `~/Dev/retrogames-forge-homebody-speed` — branch merged/deleted by
-  squash, re-detached to origin/main. Old merged slot worktrees (homebody-stores
-  etc.) are tidy-candidates.
-- STATE committed to main legitimately (#2230 merged this session) + parked to
-  the slot-a path. No open jonq questions from this lane.
+## HOUSEKEEPING
+- Main checkout detached at latest origin/main; STATE.md committed this session
+  (a forge game merged) via `git push origin HEAD:main`.
+- Vite :5178 RUNNING from `retrogames-forge-pickrush-ambience` (slot b port —
+  reuse or kill next session; its tree re-detached at origin/main).
+- Prunable worktrees when idle: retrogames-qa-2205, forge-plaicraft-* etc.
+  (branches gone; `git worktree prune` won't remove dirs, `remove` does).
