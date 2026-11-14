@@ -15,6 +15,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
+import { useRotateHint } from '../../components/RotateHint'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, NO_GUIDE, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import { GAMES } from '../../config/games'
@@ -44,6 +45,9 @@ const provenScript = () => {
 const MetroidGame = () => {
     const stageRef = useRef(null)
     const [screen, setScreen] = useState('attract')
+    // #2187: attract copy over the rotate card's dismiss button fails #1099
+    // on phones at CI font widths — get out of the card's way (#1748).
+    const rotHint = useRotateHint()
     const [paused, setPaused] = useState(false)
     const [end, setEnd] = useState(null)
     const screenRef = useRef('attract')
@@ -604,7 +608,7 @@ const MetroidGame = () => {
                 <div ref={setHud('toast')} className="absolute inset-x-0 top-1/3 text-center text-amber-200 font-mono font-bold text-2xl transition-opacity duration-500" style={{ opacity: 0, textShadow: '0 0 12px #fa0' }} />
             </div>
 
-            {screen === 'attract' && (
+            {screen === 'attract' && !rotHint && (
                 <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
                     <h1 className="text-5xl font-black text-emerald-300 mb-6" style={{ textShadow: '0 4px 0 #0a3a2a, 0 10px 24px #000' }}>METROID-LITE</h1>
                     <AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />

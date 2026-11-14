@@ -109,7 +109,9 @@ const PauseOverlay = ({ game, badge, onResume }) => {
         const body = bodyRef.current
         const mirror = mirrorRef.current
         if (!body || !mirror) return
-        const avail = body.clientHeight
+        const avail = body.clientHeight - 12 // #2187: slack for CI-font reflow
+        // (DejaVu wraps/measures a hair wider than the mirror's first pass —
+        // packing to the last pixel clipped paged help on phones)
         const heights = Array.from(mirror.children).map((el) => el.getBoundingClientRect().height)
         const g = packPages(heights, avail, 8)
         setGroups(g)
