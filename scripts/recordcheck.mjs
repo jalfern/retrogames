@@ -541,6 +541,44 @@ const BASE = `http://127.0.0.1:${server.address().port}`
     const stOnsets = dc2(Float32Array.from(mkI16(CLAPS_AT(T1)), (v) => v / 32767), { sampleRate: SR })
     const stV = takeEdges(take).map((c) => matchClapEdges({ sampleRate: SR, onsets: stOnsets, edges: c.edges, clock: take.voice.tracks[0].clock }))
     ok(stV.length === 1 && stV[0].ok === clean.ok && stV[0].worstMs === clean.worstMs, 'studio-side grading of the same bytes lands the same verdict (shared takeEdges)', stV[0] ? stV[0].why : 'no seats')
+
+    // --- #2205 polish pins -----------------------------------------------------
+    const { lastGapMs, pushHistory, formatHistory, hardFailNote } = await import('../src/utils/clapTestCore.js')
+
+    // item 2: pacing readout is pure over the tick bank
+    ok(lastGapMs(null) === null && lastGapMs([]) === null && lastGapMs([61]) === null, 'pacing gap: null until a second slap exists')
+    ok(lastGapMs(T1) === Math.round((T1[2] - T1[1]) * TICK_MS), `pacing gap reports ms since the previous slap (${lastGapMs(T1)} ms)`, String(lastGapMs(T1)))
+
+    // item 6 (pure half): honest green survives human rhythm variance — 1.6 s
+    // and 2.4 s spacing, not just the baked cadence.
+    const T2 = [61, 157, 301] // 96 + 144 ticks = 1.6 s / 2.4 s apart
+    const off = screenVerdict({ sampleRate: SR, samples: mkI16(CLAPS_AT(T2)), rec: mkTake(T2) })
+    ok(off.ok && off.claps === 3 && off.matched === 3 && Math.abs(off.worstMs) <= 50, `off-nominal spacing 1.6/2.4 s PASSes too (worst ${off.worstMs} ms) — the line is about sync, not tempo`, off.why)
+    ok(!clean.noTouches && !off.noTouches, 'a take with real taps is not flagged no-touches')
+
+    // item 3: zero registered touches gets its own plain-language hint, with
+    // and without sound — never the generic minPairs line.
+    const zeroTapSound = screenVerdict({ sampleRate: SR, samples: mkI16(CLAPS_AT(T1)), rec: mkTake([]) })
+    ok(!zeroTapSound.ok && zeroTapSound.noTouches && /no slaps registered|did you hit START/i.test(zeroTapSound.hint || '') && /3 sounds/.test(zeroTapSound.hint || ''),
+        'MUTANT taps never registered, mic heard slaps -> RED naming START and the page', zeroTapSound.hint)
+    const zeroTapDead = screenVerdict({ sampleRate: SR, samples: mkI16([]), rec: mkTake([]) })
+    ok(!zeroTapDead.ok && zeroTapDead.noTouches && /did you hit START/i.test(zeroTapDead.hint || '') && /heard nothing/i.test(zeroTapDead.hint || ''),
+        'MUTANT zero taps AND no sound -> RED, hint names START + dead mic', zeroTapDead.hint)
+
+    // item 7: a hard fail reads differently dead vs instrumented-partial.
+    ok(hardFailNote(clean) === null, 'a PASS has no hard-fail note (the number speaks)')
+    ok(/dead/.test(hardFailNote(m2) || ''), 'silent no-pair take -> dead-take note', hardFailNote(m2))
+    ok(/heard 3 slaps but 0 touches paired/.test(hardFailNote(zeroTapSound) || ''), 'heard-but-unpaired take -> instrumented partial note', hardFailNote(zeroTapSound))
+
+    // item 4: verdict history shape — newest first, capped, junk-tolerant.
+    const h5 = pushHistory(pushHistory(null, { d: 2, ok: false, worstMs: -84, key: 'b' }), { d: 1, ok: true, worstMs: 12, key: 'a' })
+    ok(h5.length === 2 && h5[0].key === 'a', 'history prepends newest first')
+    let hAcc = null
+    for (let i = 0; i < 8; i++) hAcc = pushHistory(hAcc, { d: i, ok: i % 2 === 0, worstMs: i, key: `k${i}` })
+    ok(hAcc.length === 5 && hAcc[0].key === 'k7', 'history caps at the last 5 verdicts')
+    ok(pushHistory([null, 7, { nope: true }], { d: 1, ok: true, worstMs: 1, key: 'x' }).length === 1, 'corrupt stored history is dropped, not fatal')
+    ok(/PASS 12ms.*FAIL 84ms/.test(formatHistory([{ d: Date.now(), ok: true, worstMs: 12, key: 'a' }, { d: Date.now(), ok: false, worstMs: -84, key: 'b' }])), 'history line renders day + verdict + |worst| ms, newest first')
+    ok(formatHistory(null) === '', 'no history -> empty line')
 }
 
 // --- query plumbing -----------------------------------------------------------
