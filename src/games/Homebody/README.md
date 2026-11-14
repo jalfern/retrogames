@@ -155,7 +155,7 @@ see §Speed dial.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 402 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), winnable seeds, determinism
+npm run peoplecheck          # 434 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -182,10 +182,14 @@ npm run peoplecheck          # 402 gates: boot, rules, spare-room wing (#1806), 
 # two-beat gate and its pin go red (346 → 344/2); restore. Mutant #2200: put
 # `if (true) return` atop `meetCat` — exactly the two greeting gates go red
 # (402 → 400/2); restore. Or zero the `p.feedT = PET_FEED_T` arm — the bowl-arm
-# gate and its sim pin go red; restore.
+# gate and its sim pin go red; restore. Mutant #2244: raise
+# the shared-table trigger to `mealEaten.length >= 99` — exactly the two SHARED
+# gates + the shared-law pin go red (434 → 431/3); restore. Or drop the
+# `p.mealTaken === s.mealSerial` refusal in finishUse — exactly the second-line
+# gate + the stamp pin go red (434 → 432/2); restore.
 npm run dev   # another terminal
 npm run contractcheck        # includes homebody (CONTRACT_ONLY=homebody for just this)
-DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels + real C/X court keys with pink affection pixels and the far-apart Space doctrine + #2222 shelf flips on real [ ] keys, a tapped tab and gold-painted open-tab pixels
+DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels + real C/X court keys with pink affection pixels and the far-apart Space doctrine + #2222 shelf flips on real [ ] keys, a tapped tab and gold-painted open-tab pixels + #2244 bells live: ring, steaming-plate pixels, parallel tap-orders, shared-table hearts
 ```
 Drive it: tap objects to order the active resident; G switches residents; B
 opens buy mode (time stops); `[` `]` flip the catalog shelves and 1-9 pick a
@@ -380,6 +384,57 @@ its first true citizen here.
   one lies on the step; the marquee got a line, and the arrival pays a
   newsprint flutter + `THE PAPER BOY SWEEPS PAST`.
 
+## Meal bells (#2244) — the lot sits down to its hours
+
+The original's day turns on meals (The Sims, PC 2000: breakfast, lunch,
+supper). The day/night clause gets its second and third hour-scheduled
+citizens after the paper route: three bells a day set a warm plate beside
+the kitchen, with nobody home or not.
+
+- **One owner-free object.** `MEAL` joins `DEF` but never `CATALOG` —
+  nobody buys dinner. Because it carries `need:'hunger'` and `solid:false`,
+  every existing law takes it whole: `tryUse`/tap/Space-A target it, BFS
+  walks to it, `keepsOpen` ignores it, and `finishUse` pays HUNGER (+0.55)
+  and the quality-scaled contentment. `sellAt` refuses it — the kitchen
+  serves, nobody sells dinner.
+- **Schedule law.** `scheduleMeals` seeds `mealAfter = [breakfast, lunch,
+  supper]` inside windows 07:00–07:45 / 12:30–13:15 / 18:30–19:15 at
+  move-in and every `newDay`; `updateMeals` rides the same `advance` clock
+  as visits and the route. **One plate per bell** — the slot advances when
+  the plate lands; a bell whose late bound passed is skipped honestly
+  (never banked, never re-rung), and with no kitchen (stove or fridge) the
+  whole day of bells skips the same way.
+- **Warm window.** The plate waits `MEAL_WINDOW` (2.5 sim-hours); after
+  that it goes cold (`meal-cold` event, sad low tone) and the counter
+  clears. Midnight rots whatever remains — the news law, at the table.
+- **One helping per bell.** `finishUse` stamps `mealTaken = mealSerial` —
+  a resident who already ate the current plate gets nothing (the wasted
+  walk is the cost; the stamp resets per plate, so a breakfast diner is
+  welcome at lunch). A walk whose plate vanished (cold, shared, rotted,
+  tucked under furniture) is refused the same way.
+- **The shared-table law.** A plate belongs to the household, not one
+  stomach: when EVERY resident has eaten the same plate they sat down
+  together — social +0.15 all round, house bond +2 (`relAdd`), one
+  contentment, hearts over the kitchen, `meal-shared` event. Once per
+  plate (the eaten list is the law).
+- **Hook hygiene (#2244 drive).** `ringMeal` retires whatever plate sits before
+  forcing the next bell — two plates answering `cellItem` out of order starves
+  every honest tap; `park`/`foul` re-arm `spats`/`spatCd` so a long drive's
+  organic barbs upstream can't break the gates that assert their rigged spat is
+  the run's first. The drive serves breakfast at hour ~7 for the same reason
+  the sim needs the window generous: a commute on a hunger-mulled mood
+  (moodMul slows the walk) outruns 2.5 hours of clock from across the lot.
+- **Cooked beats snacking.** While a plate is warm, autonomy (attract/
+  WATCH/harness) routes hungry residents (`hunger < 0.75`) to the table
+  before the generic need scan — the demo and the bots visibly keep
+  hours, and both neighbours of the household actually share the plate.
+- **Landing.** Beside the stove, else the fridge, else the nearest free
+  edge; every approach blocked retries inside the window rather than wall
+  the law into a silent skip. Furniture landing on the plate tucks it.
+- **Attract teaches it:** the marquee got a line, the arrival rings a
+  brass bell + `BREAKFAST BELL — FOOD ON THE COUNTER`, and the F1 cheat
+  `DROP MEAL` rings any bell on demand.
+
 ## Honest gaps (filed to QA #…)
 - **CLOSED by #1806:** multiple rooms — one expansion ships: the Spare Room kit
   grows a wing on the east lawn (floor/walls/door/windows, connectivity-guarded,
@@ -414,7 +469,7 @@ adoptable child (see Kids (#2203)).
   normal / fast / fastest: digits `1`-`4` outside buy mode, `,`/`.` cycle, the
   panel pips are tappable — see §Speed dial).
 - Day/night is cosmetic + decay only — the paper route (#2238, §Paper route
-  below) is its first hour-scheduled citizen; nothing else on the lot keeps
-  hours beyond work, Ivy's rounds and the morning news (meal bells, garbage
-  day… stay open).
+  below) is its first hour-scheduled citizen and the meal bells (#2244,
+  §Meal bells below) its next; nothing else on the lot keeps hours beyond
+  work, Ivy's rounds and the morning news (garbage day… stays open).
 - Needs panel shows both residents; no per-object queue display like the original.

@@ -33,6 +33,7 @@ import {
     SPEED_MULT, SPEED_NAMES, setSpeed, cycleSpeed, attractSpeed,   // #2227: the speed dial
     court, courtTarget,   // #2131: player-ordered romance commands
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court — one pad button, two orders
+    scheduleMeals, MEAL_WINDOW, SPAT_CD,   // #2244: the meal bells — the F1 cheat re-seeds today's hours
     stateHash,
 } from './sim.js'
 import {
@@ -49,6 +50,7 @@ const MESSAGES = [
     'Tap a fridge, a bed, the TV — they walk over and use it. Feed them, rest them.',
     'The mailbox pays the bills on workdays. § buys furniture to raise the home.',
     'Morning brings the paper — the boy sweeps past and today\'s edition waits on the step. Tap it for a laugh.',
+    'THE BELLS RING THREE TIMES A DAY — a warm plate waits by the kitchen. Tap to eat; eat together and BONDS rise.',
     'Fern the neighbour wanders in by day — chat fills the blue bar.',
     'CHAT builds BONDS — Fern at FAMILY visits sooner and lingers. Neglect cools them.',
     'Ivy shops the market — chat grows HER bond too. At FRIENDS she brings a basket; FAMILY adds honey-money.',
@@ -169,6 +171,21 @@ const HomebodyGame = () => {
                     case 'paper':   // #2238: the route arrives — newsprint flutter and a chalk-bright drop on the step
                         audioController.playNoise(0.14, 0.05); audioController.playTone(330, 0.05, 'triangle', 0.03)
                         if (live) { say('THE PAPER BOY SWEEPS PAST'); burst(tilePx(e.c), tilePy(e.r) + 14, 6, '#efe9d8', 2) }
+                        break
+                    case 'meal':   // #2244: the bell rings — brass strike and a cream steam puff at the plate
+                        audioController.playTone(1046, 0.16, 'sine', 0.055)
+                        setTimeout(() => audioController.playTone(1318, 0.22, 'sine', 0.055), 170)
+                        if (live) { say(`${e.name} BELL — FOOD ON THE COUNTER`); burst(tilePx(e.c), tilePy(e.r) + 10, 6, '#efe9d8', 1.8) }
+                        break
+                    case 'meal-shared':   // #2244: the whole table came — warm chord and hearts over the kitchen
+                        audioController.playTone(523, 0.07, 'triangle', 0.05)
+                        setTimeout(() => audioController.playTone(659, 0.07, 'triangle', 0.05), 90)
+                        setTimeout(() => audioController.playTone(784, 0.14, 'triangle', 0.05), 180)
+                        if (live) { say('SHARED TABLE ♥'); heartBurst(e.x, e.y - 12) }
+                        break
+                    case 'meal-cold':   // #2244: nobody came to the table — a soft, sad low
+                        audioController.playSweep(392, 262, 0.24, 'triangle', 0.04)
+                        if (live) say('THE MEAL WENT COLD')
                         break
                     case 'gift':   // #2143: the market basket lands — warm arpeggio, gold glints
                         audioController.playTone(523, 0.07, 'triangle', 0.05)
@@ -797,7 +814,7 @@ const HomebodyGame = () => {
                     day: gs.day, hour: Math.round(gs.hour * 10) / 10, build: gs.build, sel: gs.sel, tab: gs.tab,   // #2222: the open shelf
                     speed: gs.speed, speedName: SPEED_NAMES[gs.speed],   // #2227: the dial
                     demo: gs.demo,
-                    people: gs.people.map((p) => ({ name: p.name, x: Math.round(p.x), y: Math.round(p.y), needs: { ...p.needs }, working: p.working, fainted: p.faintT > 0 })),
+                    people: gs.people.map((p) => ({ name: p.name, x: Math.round(p.x), y: Math.round(p.y), needs: { ...p.needs }, working: p.working, fainted: p.faintT > 0, mealTaken: p.mealTaken })),
                     items: gs.items.map((it) => ({ id: it.id, r: it.r, c: it.c })),
                     ext: gs.ext,
                     rel: { house: gs.rel.house, fern: gs.rel.fern, ivy: gs.rel.ivy },   // #2143: third meter
@@ -810,6 +827,7 @@ const HomebodyGame = () => {
                     pet: gs.pet ? { name: gs.pet.name, r: gs.pet.r, c: gs.pet.c, state: gs.pet.state, asleep: gs.pet.asleep, needs: { ...gs.pet.needs }, cd: Math.round(gs.pet.cd * 10) / 10, x: Math.round(gs.pet.x), y: Math.round(gs.pet.y) } : null,   // #2197
                     kid: gs.kid ? { name: gs.kid.name, r: gs.kid.r, c: gs.kid.c, state: gs.kid.state, asleep: gs.kid.asleep, needs: { ...gs.kid.needs }, cd: Math.round(gs.kid.cd * 10) / 10, x: Math.round(gs.kid.x), y: Math.round(gs.kid.y) } : null,   // #2203
                     paper: gs.paper ? { r: gs.paper.r, c: gs.paper.c } : null, paperDay: gs.paperDay,   // #2238: the route
+                    meal: gs.meal ? { r: gs.meal.r, c: gs.meal.c, name: gs.mealName } : null, mealDay: gs.mealDay, mealSlot: gs.mealSlot, mealSerial: gs.mealSerial, mealEaten: gs.mealEaten.length,   // #2244: the bells
                 }) : { screen: screenRef.current, seed },
                 // #1637 watchcheck pilot drives these.
                 watching: () => watchingRef.current,
@@ -829,11 +847,12 @@ const HomebodyGame = () => {
                 select: (i) => { if (gs) setSel(gs, i) },   // #2222: the shelf follows the pick
                 bond: (k, v) => { if (gs && gs.rel[k] !== undefined) gs.rel[k] = v },
                 ringIvy: () => { if (gs) { gs.ivyAfter = Math.min(gs.ivyAfter, Math.floor(gs.hour)); gs.ivyGap = 0 } return 'Ivy rings soon' },   // #2143
+                ringMeal: () => { if (gs) { if (gs.meal) { gs.items = gs.items.filter((x) => x !== gs.meal); gs.meal = null; gs.mealEaten = [] } if (gs.mealSlot >= 3) { gs.mealSlot = 0; scheduleMeals(gs) } const sl = gs.mealSlot; gs.mealAfter[sl] = Math.max(Math.floor(gs.hour), gs.hour - MEAL_WINDOW + 0.05) } return 'a bell is due' },   // #2244: ring any bell now (scenario setup, like ringIvy) — retires whatever plate sits so the taps order the fresh one, and the window opens wide even if the clock passed the slot
                 ivyHome: () => { if (gs && gs.ivy) { gs.ivy.state = 'leaving'; gs.ivy.path = null } },   // #2143: rig the next visit (scenario setup, like park/foul)
                 // #2070: rig the spat scenario — park the pair beside each
                 // other, both in the red; `thaw` lifts their tempers up.
-                foul: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; b.r = 3; b.c = 4; b.path = null; for (const p of gs.people) { for (const n of NEEDS) p.needs[n] = 0.3; p.working = false; p.faintT = 0 } gs.grudge = 0; gs.spatCd = 0 } },
-                park: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; a.path = null; b.r = 3; b.c = 4; b.path = null; a.x = LOT_X + 3 * TILE + TILE / 2; a.y = LOT_Y + 3 * TILE + TILE / 2; b.x = LOT_X + 4 * TILE + TILE / 2; b.y = LOT_Y + 3 * TILE + TILE / 2; for (const p of gs.people) { p.use = null; p.goal = null; p.working = false; p.faintT = 0; for (const n of NEEDS) p.needs[n] = 0.5 } gs.visitor = null; gs.ivy = null; gs.cmdCd = 0 } },   // #2131/#2143/#2149: adjacency, idle for real, tempers NEUTRAL (mood 1: no organic spat, no instant make-up — the law itself is pinned in peoplecheck), nobody else to address, cooldown ready — and the SPRITES land where the logic was parked (#2149: cells without pixels left the pair standing apart, so make-up hearts burst at the stale midpoint, where the MADE UP toast card paints over them)
+                foul: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; b.r = 3; b.c = 4; b.path = null; for (const p of gs.people) { for (const n of NEEDS) p.needs[n] = 0.3; p.working = false; p.faintT = 0 } gs.grudge = 0; gs.spatCd = 0; gs.spats = 0 } },   // the rigged spat counts as the run's first — earlier organic barbs in a long drive are clock noise, not the law
+                park: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; a.path = null; b.r = 3; b.c = 4; b.path = null; a.x = LOT_X + 3 * TILE + TILE / 2; a.y = LOT_Y + 3 * TILE + TILE / 2; b.x = LOT_X + 4 * TILE + TILE / 2; b.y = LOT_Y + 3 * TILE + TILE / 2; for (const p of gs.people) { p.use = null; p.goal = null; p.working = false; p.faintT = 0; for (const n of NEEDS) p.needs[n] = 0.5 } gs.visitor = null; gs.ivy = null; gs.cmdCd = 0; gs.spats = 0; gs.spatCd = SPAT_CD } },   // #2131/#2143/#2149: adjacency, idle for real, tempers NEUTRAL (mood 1: no organic spat, no instant make-up — the law itself is pinned in peoplecheck), nobody else to address, cooldown ready — and the SPRITES land where the logic was parked (#2149: cells without pixels left the pair standing apart, so make-up hearts burst at the stale midpoint, where the MADE UP toast card paints over them). #2244: the spat counter and its cooldown re-arm too — a long drive may have collected organic barbs upstream, and the gates downstream assert the rigged one is the run's first
                 thaw: () => { if (gs) for (const p of gs.people) for (const n of NEEDS) p.needs[n] = 0.9 },
                 stand: (who, r, c) => { if (gs) { const p = gs.people[who]; p.r = r; p.c = c; p.path = null; p.use = null; p.goal = null; p.working = false; p.x = LOT_X + c * TILE + TILE / 2; p.y = LOT_Y + r * TILE + TILE / 2 } },   // #2171: park() seats the pair by the radio — the thumb-court drive needs a cell with a clear hand
                 hearts: () => particles.filter((pt) => pt.kind === 'heart').length,   // #2076: the make-up paid hearts?
@@ -871,6 +890,7 @@ const HomebodyGame = () => {
                     { label: 'RING FERN', run: () => { if (gs) { gs.visitAfter = Math.min(gs.visitAfter, Math.floor(gs.hour)); gs.visitGap = 0 } return 'the bell rings soon' } },
                     { label: 'RING IVY', run: () => { if (gs) { gs.ivyAfter = Math.min(gs.ivyAfter, Math.floor(gs.hour)); gs.ivyGap = 0 } return 'Ivy swings by soon' } },   // #2143
                 { label: 'DROP PAPER', run: () => { if (gs) { gs.paperDay = -1; gs.paperAfter = Math.min(gs.paperAfter, Math.floor(gs.hour)) } return gs ? 'the route is due — news hits the step' : 'no sim' } },   // #2238
+                { label: 'DROP MEAL', run: () => { if (gs) { if (gs.mealSlot >= 3) { gs.mealSlot = 0; scheduleMeals(gs) } const sl = gs.mealSlot; if (gs.hour < gs.mealAfter[sl]) gs.mealAfter[sl] = Math.floor(gs.hour) } return gs ? 'the bell is due — food hits the kitchen (unless one is already out)' : 'no sim' } },   // #2244
                     { label: 'DIAL PAUSE', run: () => { if (gs) setSpeed(gs, 0); return gs ? `dial ${SPEED_NAMES[gs.speed]} — the world stands still` : 'no sim' } },   // #2227
                     { label: 'DIAL FASTEST', run: () => { if (gs) setSpeed(gs, 3); return gs ? `dial ${SPEED_NAMES[gs.speed]} — the world hurries` : 'no sim' } },   // #2227
                     { label: 'NEW SEED', run: () => { seed = nextSeed(seed); startPlay(); return `reseeded ${seed}` } },

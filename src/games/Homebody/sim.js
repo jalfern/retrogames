@@ -234,6 +234,40 @@ export const PAPER_LINES = [
     'Somebody\'s crossword waits on the path, pencil-sharp.',
 ]
 
+// ------------------------------------------------------------- meals (#2244) --
+// The day/night clause keeps its hours. The original's day turns on meals
+// (The Sims, Maxis, PC 2000): breakfast, lunch, dinner. Three bells a day
+// set a plate by the kitchen whether anyone is awake or not — hour-scheduled
+// life nobody commands, the clause's second true citizen after the paper
+// route. Like the news, nobody buys dinner: MEAL joins DEF but never
+// CATALOG — walkable (solid:false) and usable (hunger), so tryUse, the tap
+// route and BFS treat it exactly like an appliance the lot owns, and the
+// sale refuses. And unlike the news, a meal is a TABLE law: when both
+// residents eat the same plate they sat down together — social, bond, hearts.
+export const MEAL = { id: 'meal', name: 'Home Meal', price: 0, h: 1, solid: false, decor: true, need: 'hunger', amt: 0.55, dur: 3.6 }
+DEF.meal = MEAL
+export const MEAL_NAMES = ['BREAKFAST', 'LUNCH', 'DINNER']
+// due windows [earliest, latest] per bell — seeded inside them on s.rng, so
+// every day keeps hours but no two days land on the same minute.
+export const MEAL_DUE = [[7, 7.75], [12.5, 13.25], [18.5, 19.25]]
+export const MEAL_WINDOW = 2.5   // sim-hours the food stays warm; after that it goes cold
+export const MEAL_SOCIAL = 0.15  // social each resident pockets at the shared table
+export const MEAL_BOND = 2       // house bond per shared table
+export const MEAL_LINES = [
+    'The breakfast bell rings — a plate waits by the kitchen, still steaming.',
+    'The lunch bell rings — something warm appeared on the counter while nobody looked.',
+    'The supper bell rings — a home plate lands where the kitchen is busiest.',
+]
+export const SHARED_MEAL_LINES = [
+    '{m} shared at the same plate, elbow to elbow — the table beats the menu.',
+    'Two forks, one {m}: the little kitchen hums.',
+    'A {m} eaten together is worth two eaten alone — the household agrees.',
+]
+export const MEAL_COLD_LINES = [
+    'The plate went cold — nobody came to the table.',
+    'The clock beat the appetite; the meal goes to the cold shelf.',
+]
+
 // ------------------------------------------------- catalog shelves (#2222) ----
 // The original people-sim never showed a flat wall of goods: buy mode is a
 // catalog with category tabs — flip shelves, each shelf few big cards.
@@ -368,6 +402,7 @@ const person = (name, r, c, hue, worksOn) => ({
     mood: 1, walkPhase: 0, face: 1,
     chatT: 0, alarmT: 0, wasRed: {},
     roomSeen: false,             // #1814: one move-in glance per resident
+    mealTaken: 0,              // #2244: serial of the last plate this resident ate
 })
 
 export function newRun(seed) {
@@ -405,6 +440,14 @@ export function newRun(seed) {
         paper: null,                // #2238: today's news on the step (item ref | null)
         paperDay: 0,              // #2238: day stamp of the last delivery (rides the hash)
         paperAfter: 0,            // #2238: hour the route is due today
+        meal: null,                 // #2244: the plate the kitchen set (item ref | null)
+        mealDay: 0,               // #2244: day stamp of the last served plate (rides the hash)
+        mealSlot: 0,              // #2244: index of the next bell due today (3 = all rung)
+        mealSerial: 0,            // #2244: counts plates ever served (per-plate identity)
+        mealEaten: [],            // #2244: people who have eaten the CURRENT plate
+        mealAt: 0,                // #2244: hour the current plate landed (window expiry)
+        mealAfter: [7, 12.5, 18.5],   // #2244: today's seeded bell hours
+        mealName: '',             // #2244: name of the current plate (a word is state the view reads)
         rel: { house: 0, fern: 0, ivy: 0, kid: 0 },   // #1817/#2143/#2203 conversation ladders (0..REL_MAX)
         spats: 0,                 // #2070: quarrels this run (rides the hash)
         grudge: 0,                // #2070: 1 = cold war until the pair makes up
@@ -427,6 +470,7 @@ export function newRun(seed) {
     scheduleVisit(s)
     scheduleIvy(s)
     schedulePaper(s)
+    scheduleMeals(s)
     return s
 }
 
@@ -449,6 +493,12 @@ function scheduleIvy(s) {
 // ~08:00, seeded, whether anyone is awake or not. This is the clause the
 // README kept calling cosmetic: the lot now schedules by the hour on its own.
 function schedulePaper(s) { s.paperAfter = 6.5 + s.rng() * 1.5 }
+
+// #2244: the bells keep their hours — breakfast, lunch and dinner each land
+// inside their window, seeded, so the lot's day has three fixed meals exactly
+// like the original's. The kitchen needs a kitchen (a fridge or a stove);
+// without one the bells are honestly skipped, not silently eaten.
+export function scheduleMeals(s) { s.mealAfter = MEAL_DUE.map(([a, b]) => a + s.rng() * (b - a)) }
 
 // #1817: every conversation minute stacks the meter; crossing an edge is a
 // moment — one thought-log line, a small contentment bonus, one harness event.
@@ -850,6 +900,8 @@ export function place(s, r, c) {
     // #2238: furniture landing on the step tucks yesterday's news away —
     // the paper reference must never dangle under a bookshelf.
     if (s.paper && s.paper.r === r && s.paper.c === c) { s.items = s.items.filter((x) => x !== s.paper); s.paper = null }
+    // #2244: same law for a plate — no meal may be buried under furniture.
+    if (s.meal && s.meal.r === r && s.meal.c === c) { s.items = s.items.filter((x) => x !== s.meal); s.meal = null; s.mealEaten = [] }
     s.items.push({ uid: s.nextUid++, id: def.id, r, c })
     s.events.push({ t: 'place', r, c, id: def.id })
     reflow(s)
@@ -869,7 +921,7 @@ export function placeOk(s, r, c) {
 
 export function sellAt(s, r, c) {
     const it = cellItem(s, r, c)
-    if (!it || it.id === 'mail' || it.id === 'paper') return false   // #2238: the mailbox belongs to the lot, the news to the route
+    if (!it || it.id === 'mail' || it.id === 'paper' || it.id === 'meal') return false   // #2238/#2244: the mailbox belongs to the lot, the news to the route, the meal to the table
     const def = DEF[it.id]
     s.items = s.items.filter((x) => x !== it)
     s.money += Math.floor(def.price / 2)
@@ -908,6 +960,14 @@ function autonomous(s, p) {
     if (p.faintT > 0 || p.use || p.path || p.goal) return
     if (s.demo && !p.workedToday && !p.working && s.day % 2 === p.worksOn && s.hour >= WORK_START && s.hour < WORK_END - 1) {
         if (cmdWork(s, p)) return
+    }
+    // #2244: cooked beats snacking — while a plate is warm and this resident
+    // hasn't had their helping, they head for the table before the generic
+    // need scan (the original prioritises a home-cooked meal over the fridge).
+    if (s.demo && s.meal && p.needs.hunger < 0.75 && p.mealTaken !== s.mealSerial) {
+        const tg = targetsOf(s, s.meal)
+        const path = tg.length ? bfsPath(s, { r: p.r, c: p.c }, tg) : null
+        if (path) { p.path = path; p.goal = { kind: 'use', it: s.meal }; return }
     }
     let worst = null, wv = 1e9
     for (const n of NEEDS) if (p.needs[n] < wv) { wv = p.needs[n]; worst = n }
@@ -1024,6 +1084,48 @@ function updatePaper(s) {
     s.paperDay = s.day
     s.events.push({ t: 'paper', r: spot.r, c: spot.c })
     think(s, pick(s, PAPER_LINES))
+}
+
+// ------------------------------------------------------------- meal bells ------
+// #2244: the day/night clause's second citizen. Three bells a day set a warm
+// plate beside the kitchen — breakfast, lunch, dinner — on schedule, with
+// nobody home or not (the paper route's law, at the table). One plate per
+// bell: the day+serial stamps are the law; a bell missed because the kitchen
+// was blocked or the hour ran out is skipped honestly, never banked. The
+// table is where the clause pays socially: when both residents have eaten
+// the SAME plate the household sat down together — social, bond, hearts.
+function updateMeals(s) {
+    if (s.meal) {
+        if (s.hour >= s.mealAt + MEAL_WINDOW) {
+            const it = s.meal
+            s.items = s.items.filter((x) => x !== it)
+            s.meal = null
+            s.mealEaten = []
+            s.events.push({ t: 'meal-cold', name: s.mealName, r: it.r, c: it.c })
+            think(s, pick(s, MEAL_COLD_LINES))
+        }
+        return
+    }
+    // skipped bells: a bell whose late bound passed is gone (never re-rung
+    // late into the day, never banked for tomorrow)
+    while (s.mealSlot < 3 && s.hour >= s.mealAfter[s.mealSlot] + MEAL_WINDOW) s.mealSlot++
+    if (s.mealSlot >= 3 || s.hour < s.mealAfter[s.mealSlot]) return
+    const kitchen = s.items.find((it) => it.id === 'stove') || s.items.find((it) => it.id === 'fridge')
+    if (!kitchen) { s.mealSlot++; return }   // no kitchen, no cooked meal — honestly skipped
+    const spot = targetsOf(s, kitchen)[0] || nearestFreeTo(s, kitchen.r, kitchen.c)
+    if (!spot) return   // every approach blocked — retry inside the window rather than wall the law into a silent skip
+    const slot = s.mealSlot
+    const it = { uid: s.nextUid++, id: 'meal', r: spot.r, c: spot.c }
+    s.items.push(it)
+    s.meal = it
+    s.mealDay = s.day
+    s.mealSlot = slot + 1
+    s.mealSerial++
+    s.mealEaten = []
+    s.mealAt = s.hour
+    s.mealName = MEAL_NAMES[slot]
+    s.events.push({ t: 'meal', slot, name: s.mealName, r: spot.r, c: spot.c })
+    think(s, pick(s, MEAL_LINES))
 }
 
 // ----------------------------------------------------------- visitor ------
@@ -1570,6 +1672,10 @@ const moodMul = (p) => (p.needs.energy < 0.2 ? 0.6 : p.needs.hunger < 0.2 ? 0.75
 function finishUse(s, p) {
     const { def } = p.use
     const it = p.use.it
+    // #2244: one helping per bell — the plate this resident already ate (or a
+    // phantom whose plate went cold, shared away or rotted out from under the
+    // walk) feeds nothing; the wasted steps are the cost, the stamp is the law.
+    if (def.id === 'meal' && (s.meal !== it || p.mealTaken === s.mealSerial)) { p.use = null; return }
     const before = p.needs[def.need]
     p.needs[def.need] = Math.min(1, p.needs[def.need] + def.amt)
     p.use = null
@@ -1582,6 +1688,24 @@ function finishUse(s, p) {
     s.events.push({ t: 'content', n, id: def.id })
     s.events.push({ t: 'satisfied', need: def.need, name: p.name })
     think(s, doneLine(s, p, def, before))
+    // #2244: the table law. A plate is claimed by the household, not by one
+    // stomach — when EVERY resident has eaten the same plate they sat down
+    // together: social all round, the house bond climbs, one contentment,
+    // hearts over the kitchen. Once per plate (the eaten list is the law).
+    if (def.id === 'meal' && s.meal === it) {
+        p.mealTaken = s.mealSerial
+        if (!s.mealEaten.includes(p)) s.mealEaten.push(p)
+        if (s.mealEaten.length >= s.people.length) {
+            for (const q of s.people) q.needs.social = Math.min(1, q.needs.social + MEAL_SOCIAL)
+            relAdd(s, 'house', MEAL_BOND)
+            s.content = Math.min(WIN_CONTENT, s.content + 1)
+            s.events.push({ t: 'meal-shared', name: s.mealName, x: tileX(it.c) + TILE / 2, y: tileY(it.r) + TILE / 2 })
+            think(s, pick(s, SHARED_MEAL_LINES).replace(/\{m\}/g, s.mealName.toLowerCase()))
+            s.items = s.items.filter((x) => x !== it)
+            s.meal = null
+            s.mealEaten = []
+        }
+    }
 }
 
 // -------------------------------------------------------------- work ------
@@ -1663,6 +1787,7 @@ function doneLine(s, p, def, before) {
     if (def.id === 'bed') return pick(s, [`${p.name} sleeps like a log.`, `${p.name} dreamed about flying.`])
     if (def.id === 'mail') return ''
     if (def.id === 'paper') return pick(s, [`${p.name} reads the funny pages, front to back.`, `${p.name} does the crossword in two minutes flat.`, `${p.name} folds the paper with the comics left out.`])
+    if (def.id === 'meal') return pick(s, [`${p.name} eats every bite, fingers and all.`, `${p.name} licks the plate — the bells outdid themselves.`, `${p.name} sits down and gets up slower and happier.`])
     if (def.id === 'phone') return `${p.name} chats for ages on the phone.`
     if (def.id === 'toilet') return `${p.name} feels enormously relieved.`
     if (before < 0.25) return pick(s, [`${p.name} needed that.`, `${p.name} sighs with relief.`])
@@ -1725,6 +1850,11 @@ function newDay(s) {
     // fresh route is due, so the step never stacks up a week of papers.
     if (s.paper) { s.items = s.items.filter((it) => it !== s.paper); s.paper = null }
     schedulePaper(s)
+    // #2244: and forgotten plates go out with the night — the table resets,
+    // the slot stamps start over, and tomorrow's bells re-seed.
+    if (s.meal) { s.items = s.items.filter((it) => it !== s.meal); s.meal = null; s.mealEaten = [] }
+    s.mealSlot = 0
+    scheduleMeals(s)
     s.day++
     s.events.push({ t: 'day', day: s.day })
 }
@@ -1765,6 +1895,7 @@ export function advance(s, dt) {
     updateKid(s, simDt)
     updateHouseBond(s, simDt)
     updatePaper(s)          // #2238: the route rides the same world clock, kept behind the documented five-deep chain
+    updateMeals(s)          // #2244: so do the bells, right behind the news
 
     for (const p of s.people) {
         p.mood = avg(p)
@@ -1929,6 +2060,9 @@ export function bot(s) {
     // #2238: the attract bot reads the paper left on the step — the demo
     // teaches the route without a word. If the walk can't be had, carry on.
     if (s.paper) { if (cmdUse(s, p, s.paper)) return }
+    // #2244: and eats what the kitchen served — a hungry resident walks to
+    // the plate, so the attract teaches the bells the same silent way.
+    if (s.meal && p.needs.hunger < 0.75 && p.mealTaken !== s.mealSerial) { if (cmdUse(s, p, s.meal)) return }
     if (s.money > 300 && s.content < WIN_CONTENT) {
         const wants = ['phone', 'roomkit', 'petkit', 'kidkit', 'stove', 'tv', 'sofa', 'radio', 'book', 'shower', 'plant', 'lamp', 'rug']
         for (const id of wants) {
@@ -2003,6 +2137,10 @@ export function stateHash(s) {
     mix(s.holdT)                       // #2171: so does the pending thumb-court hold (-1 = none)
     mix(s.triTell); mix(s.triHits)   // #2154: the choreography tell and its beat count ride it too
     mix(s.paperDay)                    // #2238: today's route stamps the day it landed
+    mix(s.mealDay)                     // #2244: so do the bells — the day the plate landed
+    mix(s.mealSlot); mix(s.mealSerial) // and which bell rang, and how many ever rang
+    mix(s.mealEaten.length)            // who has sat down at the current plate
+    mix(s.meal ? 1 : 0)              // the plate itself is state (its cell rides the items loop)
     for (const p of s.people) {
         mix(p.r); mix(p.c)
         for (const n of NEEDS) mix(p.needs[n])

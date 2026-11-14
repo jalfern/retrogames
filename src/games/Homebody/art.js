@@ -312,6 +312,27 @@ export function drawItemAt(ctx, id, x, y, t) {
             ctx.fillStyle = '#d9d2bc'; ctx.fillRect(x + 4, y + 18, 24, 1)
             break
         }
+        case 'meal': {
+            // #2244: a home plate set on the floor — cream dish, a hot mound
+            // (gold crust, green greens, a red tomato), and three steam curls
+            // that rise, drift and dissolve on the clock.
+            ctx.fillStyle = '#efe9d8'; ctx.beginPath(); ctx.ellipse(x + 16, y + 23, 11, 5.5, 0, 0, 7); ctx.fill()
+            ctx.fillStyle = '#d9d2bc'; ctx.beginPath(); ctx.ellipse(x + 16, y + 22, 8, 3.8, 0, 0, 7); ctx.fill()
+            ctx.fillStyle = '#e0a23c'; ctx.beginPath(); ctx.arc(x + 14, y + 20, 3.6, 0, 7); ctx.fill()
+            ctx.fillStyle = '#7fb24a'; ctx.beginPath(); ctx.arc(x + 19.5, y + 21, 2.8, 0, 7); ctx.fill()
+            ctx.fillStyle = '#c94f43'; ctx.beginPath(); ctx.arc(x + 16.5, y + 18, 1.9, 0, 7); ctx.fill()
+            ctx.lineWidth = 1.4
+            for (let i = 0; i < 3; i++) {
+                const ph = t * 1.4 + i * 1.9
+                const rise = ph % 1
+                ctx.strokeStyle = `rgba(239,233,216,${(0.7 * (1 - rise)).toFixed(3)})`
+                ctx.beginPath()
+                ctx.moveTo(x + 12 + i * 4, y + 15 - rise * 9)
+                ctx.quadraticCurveTo(x + 13.5 + i * 4, y + 11 - rise * 9, x + 11.5 + i * 4 + Math.sin(ph * 2) * 2, y + 7 - rise * 9)
+                ctx.stroke()
+            }
+            break
+        }
         default: break
     }
     // soft ground shadow under solids
