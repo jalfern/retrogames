@@ -1,74 +1,74 @@
-# STATE — session 271 (2026-11-14, slot b)
+# STATE — session 272 (2026-11-14, slot b)
 
 ## Playable now / what shipped
-- **TIDY BOT — GLIDE TO IT** (merge `657a94e`, PR #2251, closes #2250,
-  never-dry weakestStage pick; live at /retrogames/tidy-bot).
-  Tap/click a floor tile and the bot BFS-routes itself there — the roads the
-  attract brain always had are the players' now.
-  - `routeDir(gs,tx,ty)` exported from `sim.js`: pure (reads state, answers
-    next press); shell merges into pads → seed+pads determinism byte-identical
-    (all 4 win seeds still 8322 ticks, same final hashes as pre-change).
-  - Tap snaps ≤3 cells to road; deeper taps refuse `NO WAY` + refusal voice —
-    never a wedge. Cancel law: any arrow/pad/verb, new tap, WATCH, level
-    change, reset, finish — the human is the driver.
-  - Pulsing teal goal ring, arrival bell, attract marquee line, footer hint.
-  - Autopilot & glide share one steering brain (`steerTo` extracted;
-    byte-identical behavior).
-  - Proof: `tidycheck` 56/56 (43 Node + 13 browser, was 44) — new GLIDE
-    section incl. real-mouse gates (tap glides cross-room to 8.7px off the
-    mark, real ArrowUp cancels). `door` mutant reddens exactly the two
-    road-track gates ("never crosses the open door block", "opening the door
-    lengthens the road — 55 shut vs 69 open"). eslint + 3 lint gates + build +
-    `CONTRACT_ONLY=tidy-bot contractcheck` 15/15 green.
-  - Prod verified: entry swapped `lSiKzkMT→BHr21n2w`, TidyBot chunk
-    `index-DCr5JjLS.js` carries the glide code, route 200.
+- **HOMEBODY: meal bells** (merge `e7f5402`, PR #2260, closes #2244 — the
+  warden's target, resumed from slot a's corpse). Live: /retrogames/homebody.
+  Three bells a day (07:00 / 12:30 / 18:30 windows, seeded) set a steaming
+  plate beside the kitchen nobody commands; warm 2.5 h or `meal-cold`; one
+  helping per bell via `mealTaken === mealSerial`; the shared-table law —
+  whole household on one plate pays social +0.15 each, house bond +2,
+  content +1, hearts. DEF-only object (never merchandised).
+- **What this session actually did** (slot a had sim+art+shell+harness done
+  but its PR CONFLICTING when the lane hung past its timebox): merged
+  `origin/main` in, resolved the README keep-both (main's #2252 had dropped
+  the paper-route verify line — restored), re-verified everything, shipped.
+  - peoplecheck **434/434** after merge (418 branch + 16 pet-polish #2200);
+    shared-table mutant re-proven ON THE MERGED TREE: exactly 431/3, restore
+    434/0 (README pins bumped 418→434 honestly).
+    `homebodydrive` **67/67** zero page errors; contractcheck 14/14;
+    eslint + 3 lint gates + build green.
+  - Prod verified: chunk `index-CB_Xq2bY.js` carries `meal-shared` + paper
+    banner; route 200.
+  - QA polish pass filed as **#2264** (bell timbre variety, night-scale
+    steam, hearts-anchor, cold-plate tell, garbage-day tail may spin out).
 
 ## Ladder (this session's path)
-- Warden target #2244 claimed first → **REFUSED** (slot a held it, 80 min into
-  the 90-min window; its pushed branch `forge/homebody-meal-bells` is slot a's
-  corpse — resume only after their liveness expires). Normal ladder then:
-  steer none; `next` #1711 Jon-side (see #2218); game-queue empty; QA-borrow
-  blocked (QA MASTER live); flagship stages spent (every flagship gap
-  CLOSED/owned); never-dry `weakestStage` → TIDY BOT score 4 (4 unowned
-  README gaps, 0 QA-naming) → filed #2250, claimed, shipped. Rule 4: game
-  code ✓.
+- Warden target #2244 claimed CLEAN (slot a's last VALID checkpoint 170 min
+  old — its 18:37/18:38 comments were non-namespace formats; the lane was
+  hung: 3h06m elapsed, 0% CPU, no children). Step-1b resume, no new claim.
 
 ## BOARD at exit
-- #2250 shipped+closed (+prod comment); polish pass filed as **#2258**
-  (`feedback`, `lane:qa` — QA's next job on TidyBot).
-- #2244 `building` (slot a, HOMEBODY meal bells — two pushed commits, no PR at
-  last look; if slot a dies, it's the resume-corpse for whoever finds it).
-- #2254 `building-qa` FLOOR BOSS first-time pass; #2247 CLOSED (QA shipped).
-- game-queue EMPTY. #1711 `next`, Jon-side.
-- jonq: #2218 AWAITING (lane:platform, JON_KEY) — nothing from lane:games.
-- Nightly green; `main-ok` clean at exit.
+- #2244 shipped+closed (+prod comment). #2264 `feedback lane:qa` (meal polish).
+- Other lanes landed while I worked: #2254 FLOOR BOSS via #2259, #2255
+  ADVENTURE via #2263 — both merged to main before my exit.
+- game-queue: **#2261 DEMO: running fox (model battle: Qwen vs Gemini)**.
+- No `building`. #1711 `next`, Jon-side (#2218 AWAITING is lane:platform).
+- jonq: nothing open from lane:games. Nightly green; main-ok clean at exit.
 
 ## Next (slot a or b, in order)
-1. Resume check FIRST: #2244's branch `forge/homebody-meal-bells` — if its
-   `FORGE (a):` claim comment is >90 min stale, step 1b resumes it (claim
-   refuses only if slot a is alive).
-2. Else ladder: steer/none → #1711 skip (Jon-side) → game-queue empty →
-   QA-borrow only if no `QA MASTER` live → flagship stages (all four exhausted
-   — go straight to never-dry `weakestStage`; likely candidates: TIDY BOT
-   remaining gaps #2258-adjacent [two-slot carry, aimed retrieve, wash hum],
-   Homebody tails once #2244 releases). Don't duplicate QA #2254/#2258.
+1. game-queue #2261 (DEMO running fox) is the only queued item — claim it
+   normally (demos are self-contained in public/demos/, no registry — #1258
+   decision 2026-10-19; check the issue body for the battle rules).
+2. Else ladder: steer/none → #1711 skip (Jon-side) → QA-borrow only if no
+   `QA MASTER` live → flagship stages → never-dry `weakestStage` (Homebody
+   unowned tails left: needs-panel per-object queue display; garbage day
+   now owned by #2264; Myst-era titles carry 3–4 band gaps).
+   Don't duplicate QA #2258/#2264/#2256.
 
 ## The session's catches
-- **Measure a mutant claim, don't assume it.** "Door blocks the straight line"
-  did NOT mean the detour gate reddened under `door`: BFS tiebreaks equal-length
-  paths around the obstacle anyway. The honest gate pair compares ROUTE LENGTH
-  (55 shut vs 69 open) — that moved; pierce-via-tiebreak never did.
-- **Lazy chunks + machine-specific hashes.** Game strings never live in the
-  entry bundle, and every chunk hash differs between local and CI builds —
-  prod verification = poll for the entry-hash swap, then grep chunk-map content.
-- **Vercel target_url is auth-walled** — verify through the jalfern alias
-  (308 apex→www: always `curl -L`).
-- **A reported write is not a written file**: a /tmp `--body-file` vanished
-  between write and `gh`; `ls` before shipping steps that read it.
+- **An orphan mutant run can hijack your FRESH worktree.** Someone's
+  `froggercheck.mjs --mutate` (PPID 1) had cwd = the worktree I had just
+  added — it planted Frogger mutants under me and stamped `.mutant-running`
+  for ~8 min. Rule: `ls .mutant-running` before staging; pushing ALREADY
+  committed work is safe during a freeze (the stamp blocks staging, not
+  transport), which is how I shipped the conflict-resolve through it.
+- **Cold Vite races your first drive.** `Re-optimizing dependencies because
+  lockfile has changed` fires on the first game page load and one-off'd a
+  page-exception crash in drive run #1. Warm the server (a contractcheck
+  pass) and only trust drives after; one transient + two greens = measured,
+  not assumed (rule 8).
+- **Detached worktrees + `gh pr merge`**: no-arg merge dies on branch
+  inference — pass the PR number explicitly.
+- **`mergeable=UNKNOWN` can persist after `static` SUCCESS** (main kept
+  moving). Authoritative sequence: main-ok + static SUCCESS + let the
+  server-side merge adjudicate; "already merged" = verify state, don't retry
+  blind (another lane's loop fired first — my pushed tip was the squash).
+- **PR bodies need the `Closes #n` keyword** — #2260 said "(#2244)" only, so
+  the issue survived the merge; closed by hand.
 
 ## Hygiene at exit
 - Dev server :5178 (mine) STOPPED; no other lane's port touched.
-- Worktree `~/Dev/retrogames-forge-tidybot-glide` re-detached at origin/main
-  (`657a94e`). Tidy-candidate.
-- STATE.md committed to main (game merged this session — rule 9 satisfied);
-  parked at slot-b path + shared path.
+- Worktree `~/Dev/retrogames-forge-meal-bells-b` re-detached at origin/main
+  (`bcccce1`). Tidy-candidate (branch deleted upstream by squash).
+- STATE.md committed to main legitimately (game merged this session — rule 9)
+  + parked at slot-b path and shared path.
