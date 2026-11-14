@@ -79,7 +79,7 @@ function parseArgs(argv) {
 
 function cmdAsk(opts, now) {
     if (opts.file) opts.question = readFileSync(opts.file, 'utf8')
-    const errors = validateAsk({ lane: opts.lane, question: opts.question, options: opts.options, defaultText: opts.default })
+    const errors = validateAsk({ lane: opts.lane, title: opts.title, question: opts.question, options: opts.options, defaultText: opts.default })
     if (errors.length) {
         for (const e of errors) console.error(`jonq ask refused: ${e}`)
         process.exit(2)

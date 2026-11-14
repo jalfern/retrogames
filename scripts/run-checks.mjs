@@ -4,13 +4,38 @@
 // mutant-free). Runs in series, keeps going past failures, exits 1 if any
 // deterministic check died. `--smoke` replays the browser steps instead.
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { CORE, SCOPES } from './checks.mjs';
+import { parseQuarantine, invalidQuarantine, isQuarantined } from './lib/quarantine.mjs';
 
 const smokeMode = process.argv.includes('--smoke');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const failed = [];
+const quarantined = [];
+
+// #2176: a red main must clear within 2 hours. While a red main is being
+// fixed properly, at most the listed checks are skipped — each entry names
+// the open issue that owns the fix, and the skip prints on the record.
+let QUARANTINE = [];
+try {
+  const text = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'quarantine.json'), 'utf8');
+  QUARANTINE = parseQuarantine(text);
+  for (const bad of invalidQuarantine(text)) {
+    console.log(`::warning::quarantine entry ${JSON.stringify(bad)} ignored — it names no open issue (#2176)`);
+  }
+} catch { /* no quarantine file = nothing skipped */ }
 
 function run(label, args) {
+  if (isQuarantined(label, QUARANTINE)) {
+    const e = QUARANTINE.find((q) => label === q.label || label.startsWith(q.label + ' '));
+    console.log(`::group::${label}`);
+    console.log(`QUARANTINED ${label} — skipped (#2176): see #${e.issue}${e.reason ? ` — ${e.reason}` : ''}`);
+    console.log('::endgroup::');
+    quarantined.push(label);
+    return;
+  }
   process.stdout.write(`\n::group::${label}\n`);
   const r = spawnSync(npm, ['run', ...args], { stdio: 'inherit' });
   const code = r.status ?? 1;
@@ -36,5 +61,6 @@ if (smokeMode) {
   }
 }
 
-console.log(failed.length ? `NIGHTLY RED (${failed.length}): ${failed.join(', ')}` : 'NIGHTLY GREEN');
+const qNote = quarantined.length ? ` [QUARANTINED ${quarantined.length}: ${quarantined.join(', ')} — red-main-2h #2176]` : '';
+console.log(failed.length ? `NIGHTLY RED (${failed.length}): ${failed.join(', ')}` : `NIGHTLY GREEN${qNote}`);
 process.exit(failed.length ? 1 : 0);
