@@ -1,67 +1,71 @@
-# STATE — Forge (last: session 265, slot b, 2026-11-14)
+# STATE — Forge (last: session 266, slot a, 2026-11-14)
 
 ## SHIPPED THIS SESSION
-- **HOMEBODY KIDS #2203** — merged **#2207** → `cf4b82d`, prod-verified
-  (`www.jalfern.com/retrogames`, chunk `index-D2gP6X5X.js` carries `kidkit`).
-  Pip the adoptable child: card 16 / `KeyK`, §150, one per lot, honest refusal at the gate.
-  Kid needs (hunger/fun/energy/social); self-served snack (fridge/stove), self-found play
-  (nearest `need:'fun'` item), night fold-up + dawn wake, never faints, never blocks.
-  **Tumble law**: idle resident ≤1 tile → kid fun +0.3, resident social +0.12, rel.kid +0.5,
-  content +1, 6 s cooldown. **Cry law**: fun ≤ RED_AT wails every 4 s, stings residents ≤3
-  tiles −0.10 social. Court reaches kid (coo cheers +fun, insult stings, no house grudge).
-  rel.kid fades via relSub; `s.kid` rides stateHash; seeds seed-exact. Sprite + sound:
-  scamper/daypack/Zzz/tears/giggle-stars; move-in triad, giggle arpeggio, wail sweeps.
-  BONDS star row **PIP**. `peoplecheck` **283/0** (section 9 = 31 gates); mutant-proven
-  (`KID_CRY_STING=0` → exactly the sting gate red, restored). 9/9 seeds still win with
-  kidkit behind petkit in the bot wall; wish lands with a child on the lot.
-- **RED MAIN fixed (#2176)** — nightly 43568372143 (291988a) died on `dvhcheck`:
-  `public/demos/horse{,-gemini}.html` sized the canvas `100vh` with no `100dvh` sibling.
-  One line each (`height:100vh; height:100dvh;`) → merged **#2208**, dvhcheck 7/7.
-  Dispatched nightly 43576364789 on main: **success** (full-static + full-smoke) —
-  freeze lifted, #2207 merged behind it.
+- **PICK RUSH — hand-authored belt waves #2210** → merged **#2211** → `3e83fe0` (10:13Z,
+  rule-5), prod-verified: served index refreshed to `index-BONU6URW.js` and the PickRush
+  chunk `assets/index-CkEav0yA.js` carries the wave table (`SINGLE FILE`).
+  Live: https://jalfern.com/retrogames/pick-rush.
+  `WAVES` in `sim.js`: 3 named waves per shift (SINGLE FILE / CRATE & COIL / EARLY
+  BURST → … → GLASS GAMBLE), kind order authored seed-independently (learn shift 1,
+  know it on every machine), intra-wave gap + longer `rest` per wave, ±5 ticks seeded
+  jitter kept, era ladder honoured (bottles shift 2, barrels 3, scrap 4), wave caption
+  over the belt mouth + two-note cue at each breather. Quota promise untouched:
+  waves feed 48/55/56/65 vs quotas 18/19/20/21.
+  **This session resumed a corpse**: #2210 was already slot-a's, build pushed (`fa88b5a`)
+  by the session that died waiting on the #601 merge. This session: claim refresh,
+  independent re-verify (`pickcheck` 30/30 node incl. 5 WAVES gates + 12/12 browser zero
+  page errors; eslint + lint:mario/fps/ai green; gates read and confirmed honest),
+  background rule-5 merge loop → main-ok green at 10:13:42Z → squash-merge → prod poll →
+  #2210 closed shipped.
+- **Merge freeze #601 cleared by waiting**: red nightly 43568372143 died on `dvhcheck`
+  (horse demos, fixed by slot b's #2208 already in main HEAD); verified `dvhcheck` 7/7
+  locally, watched the in-flight nightly on `fa1faa3` to success — no quarantine needed.
 
 ## LESSONS (the expensive kind)
-- **`drain()` consumes.** `cries += drain(s)…; tumbles += drain(s)…` — the second drain
-  sees nothing, tumbles silently 0. One drain per tick, filter the array twice.
-- **The bot's `money > 300` wall serializes purchases** (one buy per payday crossing).
-  Hoisting kid/pet cards above it destabilized the win economy four ways; *inside* the
-  wall, right after petkit, keeps 9/9 wins. Don't hoist again without re-proving wins.
-- **Nightly-only gates catch demo CSS** — dvhcheck runs only in nightly, so a PR can land
-  a shell violation; when main goes red, read `--log-failed` for the `NIGHTLY RED (n)` line.
-- **`court(s, kind)` auto-targets** (courtTarget picks nearest in reach) — tests must park
-  rivals out (faintT) instead of passing coordinates.
-- Two autonomy fixes the cry law forced, both narrow: urgency order serves the lowest need
-  that HAS a target; demo chat-plans abandon at physical red. Broad walk-abandon regressed
-  4 seeds — keep the shape specific.
+- **Zombie lane redux (#2182).** The 09:08 “resumed” session did NOT die at the 09:19
+  warden kick — it wrapped #2210 concurrently: filed duplicate QA pass **#2214** (10:14Z,
+  22 s after my merge) and STATE `7980efa` (10:17Z, since overwritten by slot b).
+  My duplicate #2217 closed onto #2214 (unique items merged into it). Before ANY
+  wrap-up step (QA issue, STATE commit), re-list open `feedback` + read main’s
+  STATE.md — never assume the corpse stayed dead.
+- **Wrapper cache outlives the deploy.** jalfern.com kept serving the pre-merge index
+  ~40 min after Vercel reported success for `3e83fe0`; hashed new assets 404 through the
+  wrapper until it flipped (it proxies the OLD deployment). Verify: poll the served
+  index’s entry name for change, then sweep the chunks referenced by the NEW entry for
+  your marker. Predicting entry hashes locally is wrong across other lanes’ merges.
+- **Games are lazy chunks now** — wave markers live in `index-<hash>.js` game chunks,
+  not the entry bundle (the fa88b5a-era single-bundle probe shape is stale).
+- **Prove the dev server before trusting browser gates**: `:5173` held a corpse’s vite;
+  `lsof -p <pid>` cwd showed it served MY worktree (fine this time) — check anyway.
 
 ## BOARD
-- **#1711** stays `building` (slot a — S1 remaining: Jon's 3 phone takes incl. one slap
-  test, + **#2157** lanes-grade-takes, the last builder line; deploy ORDER in
-  relay/README: SESSION_WRITE_KEY secret AFTER the #2093 relabel one-off, BEFORE
-  distributing JON_KEY; reads are locked on prod already). **#2156** stays open for the
-  live phone numbers; **#2205** (clap QA polish) filed.
-- **#2203** closed by #2207 (prod-verified). Homebody QA polish pass: **#2209** (feedback).
-- Nightly: 43576364789 **success** on main (full-static + full-smoke). No quarantine
-  entries. No steer/halt on any board.
+- **#2210 closed (shipped).** QA polish keeper **#2214** (PickRush waves presentation +
+  WAVE-INK harness gate). QA lane also holds #2200/#2205/#2209.
+- **#1711 stays `building`** (platform): tail = **#2157** (lanes grade takes; JON_KEY
+  step per its body) + Jon’s 3 phone takes (#2156 stays open for live numbers).
+- Nightly: last completed on main = **success** (43576364789 @ `fa1faa3`). Newer shas
+  (`3e83fe0`…`72cb973`) await their nightly — check at the next kick.
+  No quarantine entries. No steer/halt on any board.
 
 ## NEXT (next slot)
 1. **#2157** (lane:platform, unclaimed): JON_KEY from gitignored `.env.local`, evidence
-   download retry+backoff, verdict posted on #1711 per new take (exact command in the
-   issue). The #2188 audit fix is already merged — safe to build.
-2. When Jon's phone takes appear: `plaicraft:evidence`/`plaicraft:clap --key=` numbers
+   download retry+backoff, verdict posted on #1711 per new take. #2188 audit fix is in —
+   safe to build.
+2. When Jon’s phone takes appear: `plaicraft:evidence`/`plaicraft:clap --key=` numbers
    onto #1711 (then #2156 can close).
-3. Homebody tail for a future polish lane (only if the ladder is empty — QA owns #2200/#2209):
-   attract marquee line + demo moment showing Pip arriving (README honest gap); panel pet
-   row belongs to #2200 (QA lane), not a builder lane.
-4. `claptestplay`/`plaicraft:clap` need a dev server on DEV_PORT (slot port) — keep lane-run.
+3. Builder ladder otherwise empty → `weakestStage` at the next kick; Homebody marquee
+   tail is slot b’s note — treat as owned if unsure (#2200/#2209 QA territory).
+4. `claptestplay`/`plaicraft:clap` need a dev server on DEV_PORT (slot port); keep them
+   lane-run.
 
-## QUESTIONS FOR JON
-- none open from this lane (see issue board).
+## Open questions
+- none (jonq list games: no open questions; taste bar not reached).
 
 ## HOUSEKEEPING
-- Slot b worktrees `~/Dev/retrogames-forge-homebody-kids` (#2207) and
-  `~/Dev/retrogames-fix-dvh` (#2208): branches merged, worktrees kept for the record —
-  remove when idle. Never let a worktree hold `[main]`; main checkout `~/Dev/retrogames`
-  stays detached: `git fetch && git checkout --detach origin/main`.
-- STATE committed to main legitimately (this session's #2207 merged) + parked to the
-  slot-b path. Slot-a vite port convention: own slot port only (b used :5178).
+- Slot-a worktree `~/Dev/retrogames-forge-pickrush-waves` (branch merged; detached at
+  newer shas by later lanes, node_modules symlink) — kept for the record, remove when
+  idle. Vite on :5173 STOPPED at session end (own port only).
+- `git worktree list` shows no worktree holding `[main]`; main checkout detached after
+  the STATE push.
+- STATE committed to main legitimately (this lane’s #2211 merged this session) + parked
+  to the slot-a path (`statepark.mjs park a`).
