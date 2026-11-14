@@ -61,6 +61,13 @@ const SCARF_KNOT = '#5f3722'
 const UNI_COL = '#262b36'
 const EAR_COL = '#d8b23a'
 const TOOTH_COL = '#e6ebf2'
+// #2087 SHADES — tinted lenses are their OWN decor family: a dedicated dark
+// ink, distinct from the compared glasses' rim (#10151f), its glass (#5a6b8a),
+// the brow ink (#20242e), the unibrow (UNI_COL) and every shirt. Never a
+// compared feature, never evidence.
+const SHADES_COL = '#1b2b3e'
+// #2087 collar/placket shade for the body — off every other ink in the file.
+const SHIRT_DARK = '#28304a'
 
 const PapersPleaseMinGame = () => {
     const stageRef = useRef(null)
@@ -98,6 +105,12 @@ const PapersPleaseMinGame = () => {
         // #1982 THE RECOGNITION CUE — count of arrivals that rang the door's
         // welcome (a familiar face stepped up). Counted by papersplay.
         let sfxAgain = 0
+        // #2087 the paint-side witness log: every face the counter shows is
+        // pixel-counted IN THE FRAME IT PAINTS (DEV only), keyed by serial.
+        // CI's software Chrome paced its Node-side probes 1:1 against the
+        // walk-up cycle and alias-skipped the 7th stranger (1/5 mm=0, twice);
+        // a paint-side record cannot be paced out of existence.
+        const murmurLog = new Map() // pic -> { mutter, say, ink, paper }
         const againLog = []
         // #2020 arrivals that stepped up on a CROWDED day — the recognition
         // pair carries its low third note only then. Counted by papersplay.
@@ -393,8 +406,40 @@ const PapersPleaseMinGame = () => {
             // gets a fresh pad, the big ear grows taller. Decor doctrine —
             // step 0 repaints byte-identical faces (castPix baselines stand).
             const ms = f.markStep ? 1 : 0
+            // #2087 BODIES ARRIVE PROPER — the counter figure was head + a
+            // flat shirt band; the original shows shoulders and posture.
+            // `body` (0 slim / 1 regular / 2 broad) sets the shoulder line,
+            // `post` leans one shoulder lower — a pure serial hash from
+            // accFor, so it is decor by doctrine (never compared, never
+            // evidence) and face==photo carry the same torso. Shoulders draw
+            // BEFORE the head ellipse so the chin overlaps them naturally,
+            // and every pixel stays inside the old band's column (x..x+110).
+            // #2087 SHADES+BODIES scale law: below s = 0.6 (the ARC_MUG
+            // thumbnail) the shoulder steps are sub-pixel noise and the torso
+            // eats the mug frame's paper — mugshots stay head-only, like the
+            // original's wall photos. The byte-identity probes render at s = 1,
+            // where counter and photo both draw the body — doctrine intact.
+            const showBody = s >= 0.6
+            const so = Math.max(P(1), 1)
+            const body = f.body | 0
+            const shL = [86, 83, 80][body], shR = shL + (f.post | 0) * 3
+            if (showBody) {
+                c.fillStyle = SHIRTS[f.shirtC]
+                c.fillRect(x, y + P(shL), P(14), P(92 - shL))
+                c.fillRect(x + P(14), y + P(shL + 5), P(12), P(87 - shL))
+                c.fillRect(x + P(96), y + P(shR), P(14), P(92 - shR))
+                c.fillRect(x + P(84), y + P(shR + 5), P(12), P(87 - shR))
+                c.fillStyle = SHIRT_DARK
+                c.fillRect(x, y + P(shL), P(14), so); c.fillRect(x + P(14), y + P(shL + 5), P(12), so)
+                c.fillRect(x + P(96), y + P(shR), P(14), so); c.fillRect(x + P(84), y + P(shR + 5), P(12), so)
+            }
             c.fillStyle = SHIRTS[f.shirtC]; c.fillRect(x, y + P(92), P(110), P(30))
             c.strokeStyle = '#141824'; c.lineWidth = 1; c.strokeRect(x + 0.5, y + P(92) + 0.5, P(110) - 1, P(30) - 1)
+            // collar + placket — a shirt, not a stripe
+            if (showBody) {
+                c.fillStyle = SHIRT_DARK
+                c.fillRect(x + P(47), y + P(92), P(16), P(3)); c.fillRect(x + P(52), y + P(95), P(6), P(10))
+            }
             c.fillStyle = SKINS[f.skin]
             c.beginPath(); c.ellipse(x + P(55), y + P(52), P(f.narrow ? 27 : 34), P(40), 0, 0, Math.PI * 2); c.fill()
             // #1972 ears, painted BEFORE the hair so a sideburn cut buries
@@ -444,8 +489,18 @@ const PapersPleaseMinGame = () => {
             // aged photo or a flipped cut still READS through the hat), and
             // the ushanka flaps stop above every compared band.
             if (f.hat === 1) {
-                c.fillStyle = HAT_COLS[1]; c.fillRect(x + P(24), y + P(4), P(62), P(12))
-                c.fillStyle = CAP_BRIM; c.fillRect(x + P(14), y + P(16), P(54), P(4))
+                // #2087 REGULAR ECHOES — the Jorji tilt: Grubak's flat cap
+                // slouches to one side, the brim riding up at the left and
+                // staying low at the right. Same two inks, same crown area,
+                // hairline still reads past both edges — authored decor only
+                // (only a cast face carries `tilt`; the roll never sets it).
+                if (f.tilt) {
+                    c.fillStyle = HAT_COLS[1]; c.fillRect(x + P(18), y + P(2), P(62), P(12))
+                    c.fillStyle = CAP_BRIM; c.fillRect(x + P(8), y + P(14), P(40), P(4)); c.fillRect(x + P(48), y + P(16), P(20), P(4))
+                } else {
+                    c.fillStyle = HAT_COLS[1]; c.fillRect(x + P(24), y + P(4), P(62), P(12))
+                    c.fillStyle = CAP_BRIM; c.fillRect(x + P(14), y + P(16), P(54), P(4))
+                }
             } else if (f.hat === 2) {
                 c.fillStyle = HAT_COLS[2]
                 c.fillRect(x + P(18), y + P(2), P(74), P(18))
@@ -494,6 +549,17 @@ const PapersPleaseMinGame = () => {
                 c.fillRect(x + P(49), y + P(46), P(12), PL(2))
                 c.fillStyle = '#5a6b8a'
                 c.fillRect(x + P(39), y + P(44), P(8), P(6)); c.fillRect(x + P(63), y + P(44), P(8), P(6))
+            }
+            // #2087 SHADES sit on their own — a slightly wider frame, dark
+            // tinted lenses in SHADES_COL, and a gloss tick. Their ink is
+            // disjoint from every existing counter (glasses rim/glass, brow,
+            // unibrow, eye whites), so a face wearing BOTH glasses and
+            // shades still keeps its compared-glasses pixels under the tint.
+            if (f.shades) {
+                c.fillStyle = SHADES_COL
+                c.fillRect(x + P(36), y + P(43), P(14), P(10)); c.fillRect(x + P(60), y + P(43), P(14), P(10))
+                c.fillRect(x + P(48), y + P(44), P(14), P(3))
+                c.fillStyle = '#3d5273'; c.fillRect(x + P(38), y + P(44), P(3), P(2)); c.fillRect(x + P(62), y + P(44), P(3), P(2))
             }
             // #1979 SIGNATURE MARKS — the authored regulars' scars of a life.
             // One ink, five shapes (the big ear grows above); decor by
@@ -782,6 +848,34 @@ const PapersPleaseMinGame = () => {
                 ctx.strokeStyle = COL.paperLine; ctx.lineWidth = 1
                 ctx.beginPath(); ctx.moveTo(BUBBLE.x + 18, BUBBLE.y + 1); ctx.lineTo(BUBBLE.x + 22, BUBBLE.y - 16); ctx.lineTo(BUBBLE.x + 38, BUBBLE.y + 1); ctx.stroke()
                 shown.say.forEach((ln, i) => text(ln, BUBBLE.x + 8, BUBBLE.y + 15 + i * 13, 10, COL.ink))
+            }
+            // #2087 THE CROWD MURMURS — a one-off's half-heard line in dim
+            // slate INSIDE the empty bubble field: no paper, no tail (the
+            // bubble stays the neighborhood's own — papersplay keeps its
+            // paper-quiet witnesses). Decor by doctrine: the generator
+            // attaches it, decide never reads it (paperscheck strips it from
+            // every paper), and papersplay proves both those pixels and the
+            // quiet stranger's empty field.
+            if (shown && shown.mutter && !shown.say) {
+                text(shown.mutter, BUBBLE.x + 6, BUBBLE.y + 16, 9, '#9fb0d6')
+            }
+            // #2087 the same-frame witness: count the murmur field while THIS
+            // face is on the glass (same hue/paper law as bubblePix), so every
+            // walked-up face is recorded exactly once no matter how the harness
+            // paces its own probes. Dev-only cost; the paint stays pixel-
+            // identical either way (reads never write).
+            if (import.meta.env.DEV && shown && shown.pic) {
+                let ink = 0, paper = 0
+                const md = ctx.getImageData(BUBBLE.x + 2, BUBBLE.y + 4, BUBBLE.w - 4, BUBBLE.h - 8).data
+                for (let i = 0; i < md.length; i += 4) {
+                    const rr = md[i], bb = md[i + 2]
+                    if (bb - rr >= 30 && rr >= 120 && rr <= 200) ink++
+                }
+                const pd = ctx.getImageData(BUBBLE.x, BUBBLE.y, BUBBLE.w, BUBBLE.h).data
+                for (let i = 0; i < pd.length; i += 4) if (((pd[i] << 16) | (pd[i + 1] << 8) | pd[i + 2]) === 0xd8d2b8) paper++
+                const rec = murmurLog.get(shown.pic)
+                if (rec) { if (ink > rec.ink) rec.ink = ink; if (paper > rec.paper) rec.paper = paper }
+                else murmurLog.set(shown.pic, { mutter: shown.mutter || null, say: !!(shown && shown.say), ink, paper })
             }
             // #2020 A BYSTANDER ASIDE — the crowded shift's second speaker:
             // a gold tag naming who calls across the line, and their line in
@@ -1225,6 +1319,7 @@ const PapersPleaseMinGame = () => {
                     const HEXES = {
                         hat: [0x3a4257, 0x2b3243, 0x6b4a2f, 0x7d4a33, 0x5f3722],
                         uni: [0x262b36], ear: [0xd8b23a], gap: [0xe6ebf2],
+                        shades: [0x1b2b3e],
                     }
                     const hexN = (d, hexes) => {
                         let n = 0
@@ -1239,13 +1334,41 @@ const PapersPleaseMinGame = () => {
                         drawFace(cc, f, 0, 0, 1)
                         return cc.getImageData(0, 0, PIX.w, PIX.h).data
                     }
-                    const out = { acc: { hat: p.face.hat || 0, uni: p.face.uni || 0, ear: p.face.ear || 0, gap: p.face.gap || 0 } }
+                    const out = { acc: { hat: p.face.hat || 0, uni: p.face.uni || 0, ear: p.face.ear || 0, gap: p.face.gap || 0, shades: p.face.shades || 0, body: p.face.body | 0, post: p.face.post | 0, tilt: p.face.tilt || 0 } }
                     const A = render(p.face)
-                    for (const k of ['hat', 'uni', 'ear', 'gap']) out[k] = hexN(A, HEXES[k])
+                    for (const k of ['hat', 'uni', 'ear', 'gap', 'shades']) out[k] = hexN(A, HEXES[k])
+                    // #2087 REGULAR ECHOES witnesses, both scales:
+                    // tiltBr counts brim ink (CAP_BRIM, a color the brim owns)
+                    // in the UPPER-LEFT window rows 14-16 x8..48 — only a
+                    // tilted cap reaches there (a flat brim starts at x14 and
+                    // at row 16, disjoint from this window's rows), so the
+                    // Jorji echo separates from every flat cap by geometry.
+                    // knot counts SCARF_KNOT ink (the knot owns its color).
+                    const regHex = (d, x0, y0, x1, y1, hex) => {
+                        let n = 0
+                        for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) {
+                            const i = (yy * PIX.w + xx) * 4
+                            if (((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]) === hex) n++
+                        }
+                        return n
+                    }
+                    out.tiltBr = regHex(A, 8, 14, 48, 16, 0x2b3243)
+                    out.knot = hexN(A, [0x5f3722])
+                    // #2087 BODIES: shirt ink on rows 80..91 — the band starts
+                    // at 92, so anything up there is a shoulder.
+                    const SHIRT_HEX = SHIRTS.map((h) => parseInt(h.slice(1), 16))
+                    let sh = 0
+                    for (let yy = 80; yy < 92; yy++) for (let xx = 0; xx < PIX.w; xx++) {
+                        const i = (yy * PIX.w + xx) * 4
+                        if (SHIRT_HEX.includes((A[i] << 16) | (A[i + 1] << 8) | A[i + 2])) sh++
+                    }
+                    out.shoulders = sh
                     if (p.passport && p.passport.photo) {
                         const B = render(p.passport.photo)
-                        for (const k of ['hat', 'uni', 'ear', 'gap']) out[k + 'Photo'] = hexN(B, HEXES[k])
-                        out.photoAcc = { hat: p.passport.photo.hat || 0, uni: p.passport.photo.uni || 0, ear: p.passport.photo.ear || 0, gap: p.passport.photo.gap || 0 }
+                        for (const k of ['hat', 'uni', 'ear', 'gap', 'shades']) out[k + 'Photo'] = hexN(B, HEXES[k])
+                        out.tiltBrPhoto = regHex(B, 8, 14, 48, 16, 0x2b3243)
+                        out.knotPhoto = hexN(B, [0x5f3722])
+                        out.photoAcc = { hat: p.passport.photo.hat || 0, uni: p.passport.photo.uni || 0, ear: p.passport.photo.ear || 0, gap: p.passport.photo.gap || 0, shades: p.passport.photo.shades || 0, body: p.passport.photo.body | 0, post: p.passport.photo.post | 0, tilt: p.passport.photo.tilt || 0 }
                     }
                     return out
                 },
@@ -1294,6 +1417,17 @@ const PapersPleaseMinGame = () => {
                     for (let i = 0; i < d.length; i += 4) if (((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]) === 0xd8d2b8) paper++
                     return paper
                 },
+                // #2087 THE MURMUR IS PIXELS, paint-side: the counter records
+                // every face it paints with the murmur-field ink (dim slate
+                // family: cool, b−r >= 30, mid brightness — same hue law as the
+                // aside line) and the bubble paper, keyed by serial, ink/paper
+                // the MAX seen while that face held the glass. A murmuring
+                // one-off lights it; the dark booth, gold type and paper ink all
+                // fail the hue test, so a quiet stranger's field reads 0 even
+                // where a bubble would print. Because the counting happens on
+                // the paint side, no harness probe-pacing can skip a stranger
+                // (the CI 1/5 alias the old mutterPix+paintedMug sampling had).
+                murmurLog: () => Object.fromEntries([...murmurLog].map(([k, v]) => [k, { ...v }])),
                 // #2020 THE LINE SHOWS ITSELF: mug-slate ink (the cool family
                 // r 100..160, g 110..170, b >= r+30) in the strip rect — the
                 // gold dots and every warm hue fail it, so one count measures
@@ -1450,7 +1584,7 @@ const PapersPleaseMinGame = () => {
                     }
                 },
                 ff: (n) => { tick(gs, n || CFG.SEAT_TICKS * 2); drainEvents(); return { clock: gs.clock, day: gs.day, end: gs.end, why: gs.endWhy, credits: gs.credits, slip: gs.slip && { ...gs.slip } } }, // #1960 wind the shift forward
-                start: startPlay,
+                start: (seed) => { murmurLog.clear(); return startPlay(seed) }, // #2087 the witness log rides the run
                 // #1891 THE STAMP SPEAKS: the exact strings paint() prints with
                 // the live stamp. #2021 THE INSPECTOR STAYS: they now ride the
                 // pin too — `inked` says the stamp hold still runs, `pinned`

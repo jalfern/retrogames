@@ -6,7 +6,7 @@
 //
 //   npm run papersplay     (needs `npm run dev`)
 import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
-import { accFor, genWeek, wallNameAt, weekDecoyCount, REGULARS, arcForWeek, turnLineFor, TURN_CANONICAL } from '../src/games/PapersPleaseMin/gen.js'
+import { accFor, mutterFor, genWeek, wallNameAt, weekDecoyCount, REGULARS, arcForWeek, turnLineFor, TURN_CANONICAL } from '../src/games/PapersPleaseMin/gen.js'
 
 const URL = process.env.PP_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/papers-please`
 await requireDevServer(URL)
@@ -825,6 +825,58 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     await wait(250)
 }
 
+// #2087 THE CROWD MURMURS, live: seed 0's day 1 is all strangers, and the
+// serial law says which of them grumble. paperscheck proved the law in Node;
+// this proves the pixels: a murmuring face lights the dim slate family inside
+// the bubble field, a quiet stranger leaves it empty, and NO murmur ever gets
+// paper — the line talks, it does not shout (the recognition bubble stays
+// the neighborhood's own).
+{
+    await page.evaluate(() => window.__ppTest.start(0))
+    await wait(300)
+    // Ground truth for seed 0's day 1, computed in Node through the same
+    // genWeek the game replays byte-identically: the serials of every
+    // stranger in the queue, and which of them the serial law murmurs for.
+    const law = new Map(genWeek(0).days[0].queue
+        .filter((a) => !a.person.regular)
+        .map((a) => [a.person.pic, mutterFor(a.person.pic)]))
+    // Stamp day 1 out. This loop sees NO pixels — its only job is to stamp
+    // each walk-up (120 is just the runaway guard; the day rollover ends it).
+    // The paint-side log counted every face IN the frame it painted (index.jsx),
+    // so no harness pacing — however CI's software Chrome aliases its round
+    // trips against the walk-up cycle — can alias a stranger out of the
+    // witness (the 1/5 mm=0 failure family, twice on Ubuntu).
+    for (let g = 0; g < 120; g++) {
+        const v = await page.evaluate(() => {
+            const p = window.__ppTest.probe()
+            if (!p || p.day !== 1 || p.end) return null
+            return window.__ppTest.verdict()
+        })
+        if (v === null) break
+        if (v) await page.keyboard.press(v === 'approve' ? 'a' : 'd')
+        await wait(Number(process.env.PP_PACE || 500))
+    }
+    const log = await page.evaluate(() => window.__ppTest.murmurLog())
+    const muting = new Set(), quiet = new Set()
+    let mismatches = 0, mutPixOn = -1, mutPixOff = 1e9, paperMax = 0
+    for (const [pic, mm] of law) {
+        const rec = log[pic]
+        if (!rec || rec.say) continue
+        if (rec.mutter !== mm) mismatches++
+        if (mm) { muting.add(pic); if (rec.ink > mutPixOn) mutPixOn = rec.ink }
+        else { quiet.add(pic); if (rec.ink < mutPixOff) mutPixOff = rec.ink }
+        if (rec.paper > paperMax) paperMax = rec.paper
+    }
+    const expMut = [...law.values()].filter(Boolean).length
+    r.check(`every stranger on day 1's line is witnessed (${muting.size + quiet.size}/${law.size} logged, none paced out)`,
+        muting.size + quiet.size === law.size, `${muting.size + quiet.size}/${law.size}`)
+    r.check(`the crowd murmurs live — ${muting.size} murmuring and ${quiet.size} quiet strangers all follow the serial law`,
+        mismatches === 0 && muting.size === expMut && quiet.size === law.size - expMut, `${muting.size}/${quiet.size} mm=${mismatches}`)
+    r.check(`a murmur prints in dim type (${mutPixOn} cool px in the empty field)`, mutPixOn >= 40, `${mutPixOn}`)
+    r.check(`a quiet stranger leaves the field empty (${mutPixOff} px) and no murmur gets paper (${paperMax} px)`,
+        mutPixOff < 20 && paperMax < 100, `${mutPixOff}/${paperMax}`)
+}
+
 // #1983 THE ARC, live: the familiar face comes back WANTED. seed 0's day 6
 // carries Volen Grubak again — the bulletin pairs his name with the number he
 // carries, every paper stays honest, and DENY is the right call the face makes
@@ -1210,16 +1262,21 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     }
     r.check(`the live walk saw ${rows.length} faces across the week`, rows.length >= 30, `${rows.length}`)
     const maxOf = (k) => Math.max(...rows.map((x) => x.cp[k] || 0))
-    for (const fam of ['hat', 'uni', 'ear', 'gap']) {
+    for (const fam of ['hat', 'uni', 'ear', 'gap', 'shades']) {
         r.check(`${fam}s paint their own pixels at the counter (max ${maxOf(fam)} px)`, maxOf(fam) > 0)
     }
+    // #2087 BODIES: every face must paint shirt ink ABOVE row 92 (the old
+    // flat band started at 92) — shoulders on every entrant, any build.
+    const shMin = Math.min(...rows.map((x) => x.cp.shoulders || 0))
+    r.check(`shoulders stand above the old flat band (min ${shMin} px of shirt on rows 80-91)`, shMin > 40)
     const hatRows = rows.filter((x) => x.cp.acc.hat > 0)
     r.check(`three hat kinds walk the line live (${[...new Set(hatRows.map((x) => x.cp.acc.hat))].sort().join(',')})`,
         new Set(hatRows.map((x) => x.cp.acc.hat)).size === 3, JSON.stringify(hatRows.map((x) => x.cp.acc.hat)))
     const photoRows = rows.filter((x) => x.cp.photoAcc)
     r.check(`the photo carries the hat too (${photoRows.filter((x) => x.cp.hatPhoto > 0).length} hatted photos)`,
-        photoRows.every((x) => ['hat', 'uni', 'ear', 'gap'].every((k) => x.cp.photoAcc[k] === x.cp.acc[k])) &&
-        photoRows.some((x) => x.cp.acc.hat > 0 && x.cp.hatPhoto > 0),
+        photoRows.every((x) => ['hat', 'uni', 'ear', 'gap', 'shades', 'body', 'post', 'tilt'].every((k) => x.cp.photoAcc[k] === x.cp.acc[k])) &&
+        photoRows.some((x) => x.cp.acc.hat > 0 && x.cp.hatPhoto > 0) &&
+        photoRows.some((x) => x.cp.acc.shades > 0 && x.cp.shadesPhoto > 0),
         JSON.stringify(photoRows.slice(0, 3).map((x) => [x.name, x.cp.acc, x.cp.hatPhoto])))
     const bare = rows.filter((x) => x.cp.acc.hat === 0)
     r.check(`bare heads paint no hat ink (${bare.length} bare rows)`, bare.length >= 3 && bare.every((x) => x.cp.hat === 0))
@@ -1233,7 +1290,11 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
         // grade a sex from; its decor was rolled from the sex BEHIND the
         // missing papers — no witness, no comparison.
         checked++
-        if (JSON.stringify(x.cp.acc) !== JSON.stringify(accFor(x.pic, x.nation, x.sex))) mismatch++
+        // #2087 REGULAR ECHOES: the tilt is authored-only — the roll never
+        // emits it — so the serial-law twin compares the rolled families and
+        // separately pins that no rolled head tilts.
+        const { tilt: rowTilt, ...rowAcc } = x.cp.acc
+        if (JSON.stringify(rowAcc) !== JSON.stringify(accFor(x.pic, x.nation, x.sex)) || rowTilt !== 0) mismatch++
         // #1996: the same pixels must also read by NATION — a hatted rolled
         // head wears its home kind (women wrap in scarves, Veskole in fur).
         if (x.cp.acc.hat > 0 && x.sex) {
@@ -1249,6 +1310,20 @@ r.check(`photo brows survive at photo scale (${art.pbMin}..${art.pbMax} ink px o
     const grub = rows.find((x) => x.name === 'VOLEN GRUBAK')
     r.check(`Grubak walks the line in his authored cap and unibrow ${grub ? JSON.stringify({ hat: grub.cp.hat, uni: grub.cp.uni }) : ''}`,
         !!grub && grub.cp.hat > 0 && grub.cp.uni > 0)
+    // #2087 REGULAR ECHOES, pixel-proved live: the Jorji tilt — Grubak's
+    // brim ink reaches the upper-left window at the counter AND in his photo,
+    // while every ROLLED flat cap keeps that window empty (geometry, not a
+    // color claim); the scarf knot paints its own ink for the wrapped heads
+    // and nowhere else.
+    const flatCaps = rows.filter((x) => !x.reg && x.cp.acc.hat === 1)
+    r.check(`the tilt is Grubak's alone (${flatCaps.length} rolled flat caps)`,
+        !!grub && grub.cp.tiltBr >= 60 && grub.cp.tiltBrPhoto >= 60 && flatCaps.every((x) => x.cp.tiltBr === 0),
+        grub ? JSON.stringify({ g: grub.cp.tiltBr, gp: grub.cp.tiltBrPhoto, f: flatCaps.map((x) => x.cp.tiltBr) }) : 'no grubak')
+    const wrapped = rows.filter((x) => x.cp.acc.hat === 3)
+    r.check(`the scarf knots under every wrapped chin (${wrapped.length} wraps)`,
+        wrapped.length >= 2 && wrapped.every((x) => x.cp.knot > 0 && (!x.cp.photoAcc || x.cp.knotPhoto > 0)) &&
+        rows.filter((x) => x.cp.acc.hat !== 3).every((x) => x.cp.knot === 0),
+        JSON.stringify(wrapped.slice(0, 3).map((x) => [x.name, x.cp.knot, x.cp.knotPhoto])))
     await page.evaluate(() => window.__ppTest.runDay())
     await wait(200)
 }
