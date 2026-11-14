@@ -53,6 +53,7 @@ import {
     adoptPet, adoptOk, PET, PET_COOS,   // #2197: Miso
     adoptKid, adoptKidOk, KID,   // #2203: Pip
     CAT_TABS, TAB_CARDS, TAB_OF, tabCards, setSel, flipTab, selectTab, digitCard,   // #2222: catalog shelves
+    SPEED_MULT, SPEED_NAMES, setSpeed, cycleSpeed, attractSpeed,   // #2227: the speed dial
 } from '../src/games/Homebody/sim.js'
 import { readFileSync } from 'node:fs'
 
@@ -1431,6 +1432,51 @@ section('STORES (#2222): catalog shelves — partition, flip, digits, hash')
     check('pin: attract purchases ride setSel (the shelf follows the demo)', (stSim.match(/setSel\(s, CATALOG\.findIndex/g) || []).length >= 4)
     check('pin: the view draws tabs and shelf cards', stArt.includes('CAT_TABS.forEach') && /export function tabHit/.test(stArt) && /tabCards\(s\)/.test(stArt))
     check('pin: the shell wires [ ] flips, per-shelf digits and tab taps', /BracketLeft/.test(stJsx) && /BracketRight/.test(stJsx) && /digitCard\(gs, digitPick\)/.test(stJsx) && /tabHit\(px, py\)/.test(stJsx) && /selectTab\(gs, tb\)/.test(stJsx))
+}
+
+// --------------------------------------------------------- SPEED (#2227) ----
+section('SPEED (#2227): the clock dial — partition, clamp, cycle, hash')
+{
+    // the dial: four named gears, pause through fastest
+    check('the dial has four gears: pause, normal, x2, x4',
+        JSON.stringify(SPEED_MULT) === '[0,1,2,4]' && SPEED_NAMES.length === 4 && SPEED_NAMES[0] === 'PAUSED' && SPEED_NAMES[3] === 'FASTEST')
+    check('a fresh run moves in at NORMAL', newRun(31).speed === 1)
+
+    // setSpeed clamps and reports change
+    const s1 = newRun(32)
+    check('setSpeed accepts the four gears', setSpeed(s1, 3) && s1.speed === 3 && setSpeed(s1, 0) && s1.speed === 0)
+    check('setSpeed clamps past the ends', (setSpeed(s1, 9), s1.speed === 3) && (setSpeed(s1, -9), s1.speed === 0))
+    check('setSpeed to the current gear reports no change', !setSpeed(s1, 0) && setSpeed(s1, 2))
+
+    // cycle wraps both ways
+    const s2 = newRun(33)
+    setSpeed(s2, 3)
+    check('cycling up from fastest wraps to pause', cycleSpeed(s2, 1) && s2.speed === 0)
+    check('cycling down from pause wraps to fastest', cycleSpeed(s2, -1) && s2.speed === 3)
+
+    // the dial rides the hash — pausing is state, not decoration
+    const h1 = newRun(34)
+    const hh0 = stateHash(h1)
+    setSpeed(h1, 0)
+    const hhP = stateHash(h1)
+    setSpeed(h1, 1)
+    check('the speed dial rides stateHash', hhP !== hh0)
+    check('resume at normal returns the run to its old hash', stateHash(h1) === hh0)
+
+    // the day boundary keeps the player's gear (the original persists speed)
+    const s3 = newRun(35)
+    setSpeed(s3, 2)
+    s3.hour = 23.9
+    const d0 = s3.day
+    for (let i = 0; i < 60 * 6 && s3.day === d0; i++) advance(s3, DT)
+    check('speed persists across the day boundary', s3.day === d0 + 1 && s3.speed === 2, `day ${d0}->${s3.day} speed ${s3.speed}`)
+
+    // the attract teaching law: hurry the morning, ease back, never freeze
+    const s4 = newRun(36)
+    const gears = [7, 8, 9, 10, 11].map((h) => { s4.hour = h; return attractSpeed(s4) })
+    check('attract rushes 8h-10h and eases back', gears.join(',') === '1,2,2,1,1', gears.join(','))
+    check('attract never pauses — the marquee always moves',
+        [0, 6, 12, 18, 23].every((h) => { s4.hour = h; return attractSpeed(s4) > 0 }))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)
