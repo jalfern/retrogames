@@ -1477,6 +1477,21 @@ section('SPEED (#2227): the clock dial — partition, clamp, cycle, hash')
     check('attract rushes 8h-10h and eases back', gears.join(',') === '1,2,2,1,1', gears.join(','))
     check('attract never pauses — the marquee always moves',
         [0, 6, 12, 18, 23].every((h) => { s4.hour = h; return attractSpeed(s4) > 0 }))
+
+    // source pins — the wiring must not silently drop (same law as STORES)
+    const pSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const pArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    const pJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    check('pin: the dial law is pure in sim.js', /export const SPEED_MULT/.test(pSim) && /export function setSpeed/.test(pSim) && /export function cycleSpeed/.test(pSim) && /export const attractSpeed/.test(pSim))
+    check('pin: the dial rides stateHash', /mix\(s\.speed\)/.test(pSim))
+    check('pin: the loop buys world steps by the gear — one driver, one dt', /const steps = SPEED_MULT\[/.test(pJsx) && /for \(let sp = 0; sp < steps; sp\+\+\)/.test(pJsx))
+    check('pin: dial keys are consumed ABOVE the multiplier — pause still answers', pJsx.indexOf('speedPick !== null') < pJsx.indexOf('while (acc >= SIM_MS)') && pJsx.indexOf('if (speedCycled)') < pJsx.indexOf('while (acc >= SIM_MS)'))
+    check('pin: digits 1-4 drive the dial outside buy; the #2222 card law stays for shelves', /\^Digit\[1-4\]\$\/\.test\(e\.code\) && gs && !gs\.build\) speedPick/.test(pJsx) && /Digit\[1-9\]/.test(pJsx))
+    check('pin: , and . cycle the dial', /'Comma'/.test(pJsx) && /'Period'/.test(pJsx) && /cycleSpeed\(gs, speedCycled\)/.test(pJsx))
+    check('pin: the thumb-court release freezes when the world freezes', /!gs\.done && gs\.speed > 0/.test(pJsx))
+    check('pin: the attract demo teaches the dial', /attractSpeed\(demoG\)/.test(pJsx) && /THE CLOCK IS YOURS/.test(pJsx))
+    check('pin: the panel draws the dial and the shell routes taps to it', /export const DIAL/.test(pArt) && /export function speedHit/.test(pArt) && /s\.speed === i/.test(pArt) && /speedHit\(px, py\)/.test(pJsx) && /setSpeed\(gs, dd\)/.test(pJsx))
+    check('pin: a new street resets the dial (startPlay) and the contract view carries it', /speedPick = null; speedCycled = 0/.test(pJsx) && /speed: gs\.speed/.test(pJsx))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)
