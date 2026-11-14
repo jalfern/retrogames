@@ -180,8 +180,8 @@ npm run peoplecheck          # 402 gates: boot, rules, spare-room wing (#1806), 
 # fern `0.06·dt` threshold — exactly the two fern gates + the crossings pin go
 # red (346 → 343/3); restore. Or drop the `grudge-cool` event push — the
 # two-beat gate and its pin go red (346 → 344/2); restore. Mutant #2200: put
-# `if (true) return` atop `meetCat` — exactly the three greeting gates go red
-# (402 → 399/3); restore. Or zero the `p.feedT = PET_FEED_T` arm — the bowl-arm
+# `if (true) return` atop `meetCat` — exactly the two greeting gates go red
+# (402 → 400/2); restore. Or zero the `p.feedT = PET_FEED_T` arm — the bowl-arm
 # gate and its sim pin go red; restore.
 npm run dev   # another terminal
 npm run contractcheck        # includes homebody (CONTRACT_ONLY=homebody for just this)
