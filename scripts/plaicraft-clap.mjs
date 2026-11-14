@@ -5,6 +5,11 @@
 //   npm run plaicraft:clap
 //   npm run plaicraft:clap -- --mutate             # presses land 500 ms from
 //                                                  # their claps — must go RED
+//   npm run plaicraft:clap -- --throttle=8         # #2136: reproduce a
+//                                                  # contended box (CPU x8) —
+//                                                  # must STILL go green: presses
+//                                                  # aim at the landing, not the
+//                                                  # wall clock
 //
 // How it works: the store is the PRODUCTION worker running in Node (#1711 S5,
 // scripts/lib/relaysim.mjs — cfworkers shim + faithful R2 mock), so the whole
@@ -35,7 +40,7 @@
 // plaicraft:clap writes the synth run's stored bytes; analyzing them must
 // land the same verdict).
 
-import { requireDevServer, launch, Report } from './lib/harness.mjs'
+import { requireDevServer, launch, Report, throttleCPU } from './lib/harness.mjs'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -58,6 +63,7 @@ const flagVal = (name, dflt) => {
 const ANALYZE_KEY = flagVal('key', null)
 const ANALYZE_FILE = flagVal('file', null)
 const ANALYZE_MIN = Number(flagVal('min', CLAP_MIN_PAIRS)) || CLAP_MIN_PAIRS // #2056: clap count a phone take must match
+const THROTTLE = Number(flagVal('throttle', 1)) || 1 // #2136: reproduce a contended box (Emulation.setCPUThrottlingRate)
 // Clap schedule: from mic-open (wall). First clap >= 1.2 s after YES so the
 // seed-birth + recorder-open storm settles; spacing > minGap for the detector.
 const CLAP_MS = [1200, 2600, 4000]
@@ -195,6 +201,10 @@ const errors = []
 const context = await browser.newContext({ viewport: { width: 900, height: 760 } })
 await context.addInitScript(() => {
     window.__CLAP = { clapMs: [] }
+    // #2136: probe target — 'Minus' is read by no game input path; the driver
+    // stamps its arrival to measure the live input-pipeline latency.
+    window.__probeAt = 0
+    window.addEventListener('keydown', (e) => { if (e.code === 'Minus') window.__probeAt = Date.now() }, true)
     const synth = async () => {
         const AC = window.AudioContext || window.webkitAudioContext
         const ctx = new AC()
@@ -235,6 +245,7 @@ page.setDefaultTimeout(60000)
 page.on('pageerror', (e) => errors.push(String(e)))
 await page.goto(PAGE_URL, { waitUntil: 'load' })
 await page.waitForFunction(() => !!window.__gauntletTest, null, { timeout: 15000 })
+if (THROTTLE > 1) await throttleCPU(page, THROTTLE) // #2136: run the gate on a reproduced slow box
 
 // arm the claps BEFORE the mic opens (the gate is still up; the wrapper reads
 // __CLAP when the real recorder asks for the device)
@@ -264,8 +275,18 @@ try {
 r.check('recorder opens at seed-birth after YES+YES', micOpen, await page.evaluate(() => JSON.stringify(window.__autoCapture || null)))
 if (!micOpen) await r.exit(browser)
 
-const clapWall = await page.evaluate(() => window.__clapWall || [])
+let clapWall = await page.evaluate(() => window.__clapWall || [])
 r.check('claps scheduled from mic-open', clapWall.length === CLAP_MS.length, JSON.stringify(clapWall.map((w) => w - clapWall[0])))
+// #2136: re-anchor the aim at the CLOCK's zero (clock.markStart, stamped in
+// voiceCapture) instead of the synth's AudioContext creation. The gap between
+// the two is the recorder-open storm — a few ms on a cool box, tens-to-100+ ms
+// of wobble on a contended one, and it was the load-dependent constant error
+// hiding in every clap offset (the stored expectedMs counts from markStart).
+const markWall = await page.evaluate(() => window.__markStartWall || 0)
+if (markWall && clapWall.length === CLAP_MS.length) {
+    r.info('aim re-anchored to clock zero (#2136)', `recorder-open gap ${markWall - clapWall[0]} ms`)
+    clapWall = CLAP_MS.map((ms) => markWall + ms)
+}
 r.check('green mic badge while the take is live', await page.locator('[data-voice-mic][data-state="rec"]').count() === 1)
 
 // play + clap-and-tap: real key events aimed at the clap instants (offset
@@ -273,16 +294,85 @@ r.check('green mic badge while the take is live', await page.locator('[data-voic
 // "smack the orange A button") — Space is Gauntlet's sword → pad `a`. Right
 // after each tap, a steering hold keeps it visibly a run AND puts normal-play
 // edges in the take — the audit's context: those edges must never absorb a clap.
+//
+// #2136 — CLOSE-LOOP aiming. The old wall-clock timeout dispatched blind: on
+// a contended box the renderer took the input up to ~100 ms later, the edge
+// banked at that LATER tick, and the ±50 ms acceptance line went red on
+// HARNESS arrival jitter while the audio side stayed rock-stable (heardMs was
+// identical across every logged run). The line must measure the capture
+// pipeline, not Chrome's input queue, so the driver aims at the LANDING:
+//   * gameContract stamps window.__liveBank {tick, a, wall} at the exact bank
+//     instant (DEV-only) — ground truth for when an input reached the bank;
+//   * each press dispatches `comp` ms early and verifies its landing stamp;
+//     the residual feeds forward, so comp converges onto the box's real
+//     input latency and presses land at the clap instant regardless of load;
+//   * press 1 seeds `comp` by probing the same pipeline with 'Minus', a key
+//     Gauntlet never reads — no phantom pad edges enter the take;
+//   * comp is clamped at ±150 ms and EVERY pair is still graded individually
+//     against ±50 ms, so a genuinely lagging pipeline cannot be laundered
+//     green — the --mutate 500 ms desync stays RED by construction.
+const PRIME_MS = 7 // measured synth-mic priming (#1622): sound sits ~7 ms late
+const COMP_CLAMP = 150
+const clampComp = (v) => Math.max(-COMP_CLAMP, Math.min(COMP_CLAMP, v))
+const pollBank = () => page.evaluate(() => window.__liveBank || null)
+const pollEdge = () => page.evaluate(() => window.__aEdge || null)
+let frameEst = 17
+let lastBank = await pollBank()
+async function cadence() {
+    const b = await pollBank()
+    if (b && lastBank && b.tick > lastBank.tick) {
+        frameEst = Math.max(8, Math.min(120, Math.round((b.wall - lastBank.wall) / (b.tick - lastBank.tick))))
+    }
+    if (b) lastBank = b
+}
+async function probeLatency() {
+    const t = Date.now()
+    page.keyboard.press('Minus').catch(() => {})
+    for (let k = 0; k < 80; k++) {
+        await nap(4)
+        const seen = await page.evaluate(() => window.__probeAt || 0)
+        if (seen >= t) return seen - t
+        if (Date.now() - t > COMP_CLAMP + 100) break
+    }
+    return COMP_CLAMP
+}
+let comp = 0
+const landings = []
+if (process.env.DEBUG2136) { const cA = await page.evaluate(() => Date.now()); const nA = Date.now(); console.log(`DBG clocks: node ${nA} page ${cA} skew~${nA - cA} | clapWall rel-now [${clapWall.map((w) => w - Date.now()).join(',')}]`) }
+const nap = (ms) => new Promise((res) => setTimeout(res, Math.max(0, ms)))
+// seed the compensation before press 1: learn the frame cadence while the
+// first clap is still ahead, then probe the live input-pipeline latency once.
+await nap(clapWall[0] + PRIME_MS - 60 - Date.now())
+for (let k = 0; k < 4; k++) await cadence() // a few tick-pairs to learn the cadence
+comp = clampComp((await probeLatency()) + frameEst)
 for (let i = 0; i < clapWall.length; i++) {
-    const aim = clapWall[i] + PRESS_OFFSET_MS
-    await new Promise((res) => setTimeout(res, Math.max(0, aim - Date.now())))
+    const target = clapWall[i] + PRIME_MS + PRESS_OFFSET_MS
+    // Sleep (zero interference) until the aim window opens: dense evaluate
+    // polling here would itself jitter the frame cadence the clock must trace.
+    await nap(target - comp - 15 - Date.now())
+    while (Date.now() < target - comp - 15) await cadence()
+    const edgeBefore = ((await pollEdge()) || { tick: 0 }).tick
+    while (Date.now() < target - comp) await cadence()
+    const tDown = Date.now()
     await page.keyboard.down('Space')
+    // watch the LATCHED edge stamp — a late poll still sees it, so this loop
+    // can afford gentle spacing instead of hammering the evaluate queue
+    let landWall = null
+    for (let k = 0; k < 40 && landWall === null && Date.now() - tDown < 800; k++) {
+        await nap(8)
+        const e = await pollEdge()
+        if (e && e.tick > edgeBefore) landWall = e.wall
+    }
+    if (landWall !== null) comp = clampComp(comp + Math.max(-60, Math.min(60, landWall - target)))
+    if (process.env.DEBUG2136) console.log(`DBG press${i}: dispatch@${tDown - clapWall[0]} (target ${PRIME_MS + PRESS_OFFSET_MS - comp}) landWall@${landWall === null ? 'null' : landWall - clapWall[0]} lastTick=${lastBank && lastBank.tick}`)
+    landings.push({ press: i + 1, landedMs: landWall === null ? null : +(landWall - clapWall[0]).toFixed(1), errMs: landWall === null ? null : +(landWall - target).toFixed(1), compMs: Math.round(comp) })
     await page.waitForTimeout(130)
     await page.keyboard.up('Space')
     await page.keyboard.down('ArrowRight')
     await page.waitForTimeout(350)
     await page.keyboard.up('ArrowRight')
 }
+r.info('press landing trace (#2136)', JSON.stringify(landings))
 await page.waitForTimeout(500)
 // end the take like the cabinet does — the sim declares the loss, the game's
 // own over-transition closes the recorder and uploads.
