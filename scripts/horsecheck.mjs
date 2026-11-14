@@ -35,6 +35,12 @@
 //               fade with age and loop with φ; hind landings throw grit while
 //               fore landings pat silently; one breath swell per stride rides
 //               the suspension (counted headless like the #2162 layers).
+//   3e. SCENE PASS (#2231) — the far rim runs TWO twin-mesa rows on parallax
+//               clocks (near 1/5 ground, backdrop 1/4): seam-legal because K
+//               divides each row's mesa count and the twins make the per-loop
+//               slot slide invisible (proven on sorted anchor sets);
+//               ?lite=1 thins brush 14→8 and rocks 9→5 for CI; every static
+//               prop's vertex list is cached once (zero rebuilds per frame).
 //   + DEMO LAW — self-contained page, not registered in games.js, credits
 //               card and index entry present.
 //
@@ -68,6 +74,18 @@
 //    proof the geometry moved, not a gate coupling), 56/58.
 // 10. audioTick breath crossing neutered (`if (false && ...)`): EXACTLY the two
 //     breath gates red (breath 0 vs click 71), 56/58.
+// #2231 scene-pass mutants (run by hand, 2026-11-14, then restored):
+// 11. `K_NEAR = 5` -> `7` (7 divides neither MESA nor the slide): the parallax
+//     rate, commensuration, seam and pin gates red (62/66) — every other gate
+//     green, the scene still looks perfect. THAT is why the seam gate exists.
+// 12. `if (SC_CACHE.dirty) buildSceneCache()` -> rebuild every frame: EXACTLY
+//     the transform-cache gate red (449->490 rebuilds), 65/66.
+// 13. `const SAGE = lite ? 8 : 14` -> `14`: EXACTLY the lite-thinning gate red,
+//     65/66.
+// Lesson banked: a drifting row closes the loop ONLY if its props are twins
+// (equal size AND equal depth) — a per-index z or width breaks the seam even
+// when K divides MESA; and the slot window must stay canonical (−L/2, L/2] or
+// a far-side mesa projects as a wall across the frame.
 // Lesson banked: DEV setPhase now WRAPS phi like stateAt does — passing p>1 to
 // the raw leg math produced unwrapped swing values (a fake seam break).
 // Speed streaks are law-proven (anchors + phi-seam) like the #2162 sound
