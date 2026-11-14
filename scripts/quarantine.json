@@ -1,0 +1,4 @@
+{
+  "doc": "#2176 — red-main-2h quarantine list. One nightly check may be quarantined (skipped by scripts/run-checks.mjs in both modes) while a red main is fixed properly. Every entry MUST name an OPEN issue: {\"label\": \"<npm alias, or alias -- --mutate>\", \"issue\": <n>, \"reason\": \"<one line>\"}. Entries without an issue number are ignored (with a warning). Remove the entry in the PR that fixes the check.",
+  "checks": []
+}

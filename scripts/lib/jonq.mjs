@@ -101,7 +101,7 @@ export function parseQuestion(body) {
 }
 
 // `ask` refuses anything the sweep could not resolve on its own.
-export function validateAsk({ lane, question, options = [], defaultText }) {
+export function validateAsk({ lane, title, question, options = [], defaultText }) {
     const errors = []
     if (!lane) errors.push('a question needs a lane (--lane games|qa|demos|platform)')
     if (!question || !question.trim()) errors.push('a question needs the question text')
@@ -110,6 +110,12 @@ export function validateAsk({ lane, question, options = [], defaultText }) {
     // #1571: a dry queue is not a question — the never-dry rung decides.
     if (DRY_QUEUE_SHAPE.test(String(question || ''))) {
         errors.push('a dry queue is not a question for Jon (#1571): run the never-dry rung — pick the weakest game on the shelf and ship one gameplay fix (FORGE.md step 2); ask only for a NEW FLAGSHIP TITLE when the whole shelf is gap-free')
+    }
+    // #2176 clause 2: a harness-only fix (thresholds, calibration, timing —
+    // no game-behaviour change) is taken without asking Jon, so it must not
+    // reach him as a question either. The lane makes the call and ships.
+    if (HARNESS_ONLY_SHAPE.test(`${title || ''}\n${question || ''}`)) {
+        errors.push('a harness-only call is not a question for Jon (#2176): thresholds, calibration and timing fixes are taken without asking — make the change, prove it on CI, ship it')
     }
     return errors
 }
@@ -187,6 +193,12 @@ export const DRY_QUEUE_SHAPE = /\b(queue|board|ladder)\b[\s\S]{0,48}\b(empty|dry
 
 // A new-title ask — the only dry-queue question a lane may file.
 export const TITLE_ASK_SHAPE = /\bnew (?:flagship )?title\b|\bnext flagship\b|\bnew game (?:title|for the arcade)\b|which new (?:game|title)/i
+
+// #2176 clause 2: harness-only decisions — thresholds, calibration, flaky
+// timing, quarantine, retries — belong to the lane, not to Jon. `ask`
+// refuses this shape so the 2-hour red-main rule is never parked 48 h
+// behind a question (#2168 waited two days for exactly this kind of call).
+export const HARNESS_ONLY_SHAPE = /\b(threshold|calibrat\w*|flak\w+|advisory|quarantin\w*|retry|rerun|time-?out budget|test[- ]only)\b/i
 export const TITLE_ASK_DAYS = 7
 
 export function titleAskBlocked(issues, lane, now = new Date()) {
