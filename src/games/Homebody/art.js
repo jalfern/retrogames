@@ -916,6 +916,36 @@ export function drawBuildCursor(ctx, s, ok) {
     }
 }
 
+// -------------------------------------------------------------- say -------
+// #2135: the spoken-word bubble — the original showed dialogue over the
+// speakers, not just in a log. A cream plate with a tail, wrapped to two
+// lines, fading on the real clock. Sits in world space so it rides the jolt.
+export function drawSay(ctx, b) {
+    const a = Math.min(1, b.life / 0.8)
+    ctx.font = '9px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    const lines = []; let cur = ''
+    for (const w of b.text.split(' ')) {
+        const t = cur ? cur + ' ' + w : w
+        if (ctx.measureText(t).width > 150 && cur) { lines.push(cur); cur = w } else cur = t
+    }
+    if (cur) lines.push(cur)
+    const bw = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 16
+    const bh = lines.length * 12 + 9
+    const x = Math.max(4, Math.min(W - bw - 4, b.x - bw / 2))
+    let y = b.y - 34 - bh
+    if (y < 6) y = b.y + 24
+    ctx.globalAlpha = a
+    ctx.fillStyle = 'rgba(248,244,230,0.93)'
+    rr(ctx, x, y, bw, bh, 5); ctx.fill()
+    const tx = Math.max(x + 8, Math.min(x + bw - 8, b.x))
+    ctx.beginPath(); ctx.moveTo(tx - 4, y + bh - 1); ctx.lineTo(tx + 4, y + bh - 1); ctx.lineTo(tx, y + bh + 6); ctx.closePath(); ctx.fill()
+    ctx.strokeStyle = `rgba(122,92,44,${(0.8 * a).toFixed(3)})`; ctx.lineWidth = 1
+    rr(ctx, x + 0.5, y + 0.5, bw - 1, bh - 1, 5); ctx.stroke()
+    ctx.fillStyle = `rgba(60,42,23,${a.toFixed(3)})`
+    lines.forEach((l, i) => ctx.fillText(l, x + bw / 2, y + 9 + i * 12 + 1))
+    ctx.globalAlpha = 1
+}
+
 // -------------------------------------------------------------- thoughts ---
 export function drawThoughts(ctx, s) {
     ctx.textAlign = 'left'; ctx.textBaseline = 'top'

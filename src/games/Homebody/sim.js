@@ -467,6 +467,19 @@ const MAKEUP_LINES = [
     'The grudge thaws — somebody puts the kettle on for two.',
     'A sigh, a shrug, a hand on the arm: the spat is over, for now.',
 ]
+// #2135: the cooling beat — between the crack and the thaw the sourness speaks.
+export const GRUDGE_FIRST_CD = 8      // s after the crack before the first sour line
+export const GRUDGE_COOL_CD = 14     // s between sour lines while the cold war holds
+export const COOL_LINES = [
+    'The kitchen is still sour — nobody starts the first sentence.',
+    'The cold war holds. Two chairs, one table, not a word.',
+    'Somebody sighs loudly; the other pretends not to hear.',
+]
+export const HOUSE_LINES = [
+    'Otto and Mira trade gossip nobody else is home to hear.',
+    'A shared joke bounces between the two of them.',
+    'Otto and Mira plan the weekend out loud, together.',
+]
 
 // #2131: player-ordered romance. Who is within arm's reach of the commanded
 // resident — partner first by distance, Fern while she hangs about. Fainted
@@ -539,7 +552,7 @@ export function court(s, kind) {
     }
     if (kind === 'insult') {
         relSub(s, k, INSULT_DROP)
-        if (k === 'house') s.grudge = 1     // cold war on command; the #2070 exit still ends it
+        if (k === 'house') { s.grudge = 1; s.houseLineCd = GRUDGE_FIRST_CD }   // cold war on command; the #2070 exit still ends it (#2135: its sour beats included)
         if (other.needs && other.needs.social !== undefined) other.needs.social = Math.max(0, other.needs.social - SPAT_SOCIAL)
         if (k === 'kid') other.needs.fun = Math.max(0, other.needs.fun - 0.2)   // #2203: a scold puts out a child's play-fire (no house grudge — Ivy's rule)
         me.needs.social = Math.max(0, me.needs.social - SPAT_SOCIAL / 2)
@@ -939,7 +952,12 @@ function updateVisitor(s, dt) {
             v.chatT += dt
             partner.needs.social = Math.min(1, partner.needs.social + 0.06 * dt)
             relAdd(s, 'fern', 0.07 * dt)   // #1817: the bond climbs while they talk
-            if (partner.chatT > 2.4 && partner.chatT - 0.06 * dt <= 2.4) think(s, chatLine(s, partner))
+            // #2135: the crossing check read 0.06·dt (the social rate, a typo) —
+            // with a fixed dt the line NEVER fired. Ivy's law was the honest one.
+            if (partner.chatT > 2.4 && partner.chatT - dt <= 2.4) {
+                think(s, chatLine(s, partner))
+                s.events.push({ t: 'chat', k: 'fern', x: (v.x + partner.x) / 2, y: (v.y + partner.y) / 2 })   // #2135: the bubble rides over the pair
+            }
         }
         if (s.hour > 19 || v.t > v.hangUntil) { v.state = 'leaving'; v.path = bfsPath(s, { r: v.r, c: v.c }, [{ r: 12, c: 5 }]) }
     } else if (v.state === 'leaving' && !v.path) {
@@ -1024,7 +1042,10 @@ function updateIvy(s, dt) {
             v.chatT += dt
             partner.needs.social = Math.min(1, partner.needs.social + IVY_SOCIAL * dt)
             relAdd(s, 'ivy', IVY_CHAT * dt)   // a slower burner than Fern, by design
-            if (partner.chatT > 2.4 && partner.chatT - dt <= 2.4) think(s, chatLine(s, partner, 'ivy'))
+            if (partner.chatT > 2.4 && partner.chatT - dt <= 2.4) {
+                think(s, chatLine(s, partner, 'ivy'))
+                s.events.push({ t: 'chat', k: 'ivy', x: (v.x + partner.x) / 2, y: (v.y + partner.y) / 2 })   // #2135
+            }
         }
         if (s.hour > 19 || v.t > v.hangUntil) { v.state = 'leaving'; v.path = bfsPath(s, { r: v.r, c: v.c }, [{ r: 12, c: 5 }]) }
     } else if (v.state === 'leaving' && !v.path) {
@@ -1337,6 +1358,7 @@ function updateHouseBond(s, dt) {
         s.spats++
         s.spatCd = SPAT_CD
         s.spatFx = 2.4   // #2076: the pair argues ON the lot — storm puff over their heads
+        s.houseLineCd = GRUDGE_FIRST_CD   // #2135: the sour beats start after the crack, not on top of it
         a.needs.social = Math.max(0, a.needs.social - SPAT_SOCIAL)
         b.needs.social = Math.max(0, b.needs.social - SPAT_SOCIAL)
         relSub(s, 'house', SPAT_DROP)
@@ -1353,7 +1375,12 @@ function updateHouseBond(s, dt) {
             s.content = Math.min(WIN_CONTENT, s.content + 1)
             s.events.push({ t: 'makeup', x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 })
             think(s, pick(s, MAKEUP_LINES))
-        } else if (s.houseLineCd > 0) s.houseLineCd -= dt
+        } else if (s.houseLineCd <= 0) {
+            // #2135: the cold war is not silent — the sourness speaks on a clock
+            s.houseLineCd = GRUDGE_COOL_CD
+            think(s, pick(s, COOL_LINES))
+            s.events.push({ t: 'grudge-cool', x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 })
+        } else s.houseLineCd -= dt
         return
     }
     a.needs.social = Math.min(1, a.needs.social + 0.03 * dt)
@@ -1361,11 +1388,7 @@ function updateHouseBond(s, dt) {
     relAdd(s, 'house', 0.05 * dt)
     if (s.houseLineCd <= 0) {
         s.houseLineCd = 11
-        think(s, pick(s, [
-            'Otto and Mira trade gossip nobody else is home to hear.',
-            'A shared joke bounces between the two of them.',
-            'Otto and Mira plan the weekend out loud, together.',
-        ]))
+        think(s, pick(s, HOUSE_LINES))
     } else s.houseLineCd -= dt
 }
 
