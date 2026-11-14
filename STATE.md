@@ -1,61 +1,67 @@
-# STATE — Forge (last: session 265, slot a, 2026-11-14)
+# STATE — Forge (last: session 265, slot b, 2026-11-14)
 
 ## SHIPPED THIS SESSION
-- **PICK RUSH — hand-authored belt waves (#2210)** — merged **3e83fe0** (PR **#2211**).
-  Resumed as a corpse: the prior slot-a session claimed 08:38Z, built, pushed and
-  opened the PR, then died at the red-main wait. One flat seeded hum is now a
-  breathing line: `WAVES` in `sim.js` — 3 named waves per shift fixing the kind
-  ORDER (seed-independent) + intra-wave gap + longer `rest`; ±5 ticks seeded jitter
-  on top; era ladder honoured (bottles shift 2, barrels 3, scrap 4); each incoming
-  wave announces itself (ice-blue caption + two-note cue) during its breather.
-  Quota promise untouched (feed 48/55/56/65 vs 18/19/20/21).
-  Evidence (re-verified independently before merge): `pickcheck` 30/30 node
-  (5 new WAVES gates: authored-order-across-seeds, era ladder, breathing, supply,
-  wave cue) + 12/12 browser zero page errors; mutants `wave` (ERA LADDER red) and
-  `judge` (2 gates) caught; `contractcheck` 16/16; eslint + lint:mario/fps/ai +
-  build green; PR `static` SUCCESS. Issue closed `shipped`; QA polish pass filed
-  **#2214**.
+- **HOMEBODY KIDS #2203** — merged **#2207** → `cf4b82d`, prod-verified
+  (`www.jalfern.com/retrogames`, chunk `index-D2gP6X5X.js` carries `kidkit`).
+  Pip the adoptable child: card 16 / `KeyK`, §150, one per lot, honest refusal at the gate.
+  Kid needs (hunger/fun/energy/social); self-served snack (fridge/stove), self-found play
+  (nearest `need:'fun'` item), night fold-up + dawn wake, never faints, never blocks.
+  **Tumble law**: idle resident ≤1 tile → kid fun +0.3, resident social +0.12, rel.kid +0.5,
+  content +1, 6 s cooldown. **Cry law**: fun ≤ RED_AT wails every 4 s, stings residents ≤3
+  tiles −0.10 social. Court reaches kid (coo cheers +fun, insult stings, no house grudge).
+  rel.kid fades via relSub; `s.kid` rides stateHash; seeds seed-exact. Sprite + sound:
+  scamper/daypack/Zzz/tears/giggle-stars; move-in triad, giggle arpeggio, wail sweeps.
+  BONDS star row **PIP**. `peoplecheck` **283/0** (section 9 = 31 gates); mutant-proven
+  (`KID_CRY_STING=0` → exactly the sting gate red, restored). 9/9 seeds still win with
+  kidkit behind petkit in the bot wall; wish lands with a child on the lot.
+- **RED MAIN fixed (#2176)** — nightly 43568372143 (291988a) died on `dvhcheck`:
+  `public/demos/horse{,-gemini}.html` sized the canvas `100vh` with no `100dvh` sibling.
+  One line each (`height:100vh; height:100dvh;`) → merged **#2208**, dvhcheck 7/7.
+  Dispatched nightly 43576364789 on main: **success** (full-static + full-smoke) —
+  freeze lifted, #2207 merged behind it.
 
-## MAIN
-- **#601 freeze LIFTED this session.** Red nightly 43568372143 = `dvhcheck` only;
-  fix #2208 (`fa1faa3`, horse demos dvh form) verified locally 7/7; confirming
-  nightly on `fa1faa3` went GREEN (≈65 min) → merge proceeded. Quarantine untouched
-  (empty).
+## LESSONS (the expensive kind)
+- **`drain()` consumes.** `cries += drain(s)…; tumbles += drain(s)…` — the second drain
+  sees nothing, tumbles silently 0. One drain per tick, filter the array twice.
+- **The bot's `money > 300` wall serializes purchases** (one buy per payday crossing).
+  Hoisting kid/pet cards above it destabilized the win economy four ways; *inside* the
+  wall, right after petkit, keeps 9/9 wins. Don't hoist again without re-proving wins.
+- **Nightly-only gates catch demo CSS** — dvhcheck runs only in nightly, so a PR can land
+  a shell violation; when main goes red, read `--log-failed` for the `NIGHTLY RED (n)` line.
+- **`court(s, kind)` auto-targets** (courtTarget picks nearest in reach) — tests must park
+  rivals out (faintT) instead of passing coordinates.
+- Two autonomy fixes the cry law forced, both narrow: urgency order serves the lowest need
+  that HAS a target; demo chat-plans abandon at physical red. Broad walk-abandon regressed
+  4 seeds — keep the shape specific.
 
 ## BOARD
-- **#1711 stays open** — PLAICRAFT S1 tail: Jon's 3 phone takes (+ #2156 live numbers)
-  + **#2157** (lane:platform, unclaimed; buildable — #2188 is in). Deploy ORDER in
+- **#1711** stays `building` (slot a — S1 remaining: Jon's 3 phone takes incl. one slap
+  test, + **#2157** lanes-grade-takes, the last builder line; deploy ORDER in
   relay/README: SESSION_WRITE_KEY secret AFTER the #2093 relabel one-off, BEFORE
-  distributing JON_KEY.
-- Slot b shipped VIPER #2212 (`a6e1d42`) mid-session; slot b's STATE (session 263
-  park) folded in — nothing evaporated.
-- No quarantine entries, no steer/halt on any board, no open jonq questions.
+  distributing JON_KEY; reads are locked on prod already). **#2156** stays open for the
+  live phone numbers; **#2205** (clap QA polish) filed.
+- **#2203** closed by #2207 (prod-verified). Homebody QA polish pass: **#2209** (feedback).
+- Nightly: 43576364789 **success** on main (full-static + full-smoke). No quarantine
+  entries. No steer/halt on any board.
 
 ## NEXT (next slot)
-1. **#2157** (lane:platform, unclaimed): JON_KEY from gitignored `.env.local`,
-   evidence download retry+backoff, verdict posted on #1711 per new take; jonq ask
-   for the one-time key step (exact command in the issue body).
-2. When Jon's phone takes appear: `plaicraft:evidence`/`plaicraft:clap --key=`
-   numbers onto #1711 (then #2156 can close).
-3. Ladder for builders is otherwise empty — `weakestStage` at the next kick;
-   **#2214** is QA's pick-rush polish (builders keep off); flagship gaps all shipped.
+1. **#2157** (lane:platform, unclaimed): JON_KEY from gitignored `.env.local`, evidence
+   download retry+backoff, verdict posted on #1711 per new take (exact command in the
+   issue). The #2188 audit fix is already merged — safe to build.
+2. When Jon's phone takes appear: `plaicraft:evidence`/`plaicraft:clap --key=` numbers
+   onto #1711 (then #2156 can close).
+3. Homebody tail for a future polish lane (only if the ladder is empty — QA owns #2200/#2209):
+   attract marquee line + demo moment showing Pip arriving (README honest gap); panel pet
+   row belongs to #2200 (QA lane), not a builder lane.
+4. `claptestplay`/`plaicraft:clap` need a dev server on DEV_PORT (slot port) — keep lane-run.
 
-## LESSONS (the cheap kind we kept)
-- **A corpse that died AT the merge wait is the cheapest resume there is** —
-  the whole build existed; this session added verification + a green-main wait,
-  zero new code. Step 1b + BUILD FLOOR comments made that decodable in minutes.
-- **Red main has a 2-hour clock (#2176), not a veto**: read the failing job, check
-  whether the fix is already merged, and gate the merge on the confirming nightly
-  instead of idling (background watcher; no polling loop).
-- Mutant mode exits 0 on a CAUGHT mutant — verify the verdict line, not just the
-  exit code, when grepping mutant output.
-
-## Open questions
-- none (jonq list games empty; #1711's blockers are Jon-side takes, tracked there).
+## QUESTIONS FOR JON
+- none open from this lane (see issue board).
 
 ## HOUSEKEEPING
-- Worktree `~/Dev/retrogames-forge-pickrush-waves` kept, re-detached to `origin/main`
-  tip after merge (branch deleted by squash-merge). Slot-a vite (:5173) reclaimed from
-  the dead session, still serving; leave or reclaim, own port only.
-- STATE committed to main legitimately (this session's #2210 merged) + parked to the
-  slot-a path.
+- Slot b worktrees `~/Dev/retrogames-forge-homebody-kids` (#2207) and
+  `~/Dev/retrogames-fix-dvh` (#2208): branches merged, worktrees kept for the record —
+  remove when idle. Never let a worktree hold `[main]`; main checkout `~/Dev/retrogames`
+  stays detached: `git fetch && git checkout --detach origin/main`.
+- STATE committed to main legitimately (this session's #2207 merged) + parked to the
+  slot-b path. Slot-a vite port convention: own slot port only (b used :5178).
