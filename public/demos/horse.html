@@ -329,6 +329,8 @@ const PAL = {
   eye: [18, 12, 10], muzzle: [96, 64, 52], blaze: [238, 224, 202],
 };
 
+const LAND = [];   // per-frame skeletal landmarks (harness): knee knob + hind hock
+const TORSO = [];  // per-frame torso row [xTail, xFront, topY] for the silhouette gate
 function drawLeg(leg, phi, bm, colDark) {
   const fore = leg.name[1] === 'F';
   const hip = fore ? HIP.F : HIP.H;
@@ -351,6 +353,23 @@ function drawLeg(leg, phi, bm, colDark) {
   limb(joint[0], joint[1], knee[0], knee[1], fore ? 0.115 : 0.14, 0.075, hip.z * 0.42, joint[2], colDark);
   limb(knee[0], knee[1], ankle[0], ankle[1], 0.075, 0.055, hip.z * 0.34, joint[2], colDark);
   pbox(hoof[0], hoof[1] - 0.055, hoof[2], 0.105, 0.085, 0.08, 0.065, 0.075, 0.075, bm.pitch + flex * 0.16, PAL.hoof);
+  // skeletal landmarks (#2224): the fore knee gets a small forward knob at the
+  // joint; the hind gets the true double-bend read — a rearward hock point
+  // between stifle and fetlock. Pure IK outputs, so stance/swing and the seam
+  // are untouched; the harness proves hock.x trails the knee→fetlock chord.
+  if (fore) {
+    pbox(knee[0] + 0.045, knee[1] + 0.012, joint[2], 0.055, 0.055, 0.062, 0.062, 0.095, 0.095, bm.pitch, colDark);
+    LAND.push({ n: leg.name, kx: knee[0], ky: knee[1], hx: null, hy: null });
+  } else {
+    const hock = [
+      (knee[0] + ankle[0]) / 2 - 0.115,
+      (knee[1] + ankle[1]) / 2 + 0.015,
+    ];
+    limb(knee[0], knee[1], hock[0], hock[1], 0.075, 0.062, hip.z * 0.34, joint[2], colDark);
+    limb(hock[0], hock[1], ankle[0], ankle[1], 0.062, 0.05, hip.z * 0.30, joint[2], colDark);
+    pbox(hock[0] - 0.03, hock[1] + 0.015, joint[2], 0.055, 0.055, 0.06, 0.06, 0.088, 0.088, bm.pitch, colDark);
+    LAND.push({ n: leg.name, kx: knee[0], ky: knee[1], hx: hock[0], hy: hock[1] });
+  }
 }
 
 function drawHorse(phi) {
@@ -363,10 +382,18 @@ function drawHorse(phi) {
   const near = basis.pos[2] >= 0 ? 1 : -1;
   const order = [...LEGS].sort((a, b) => (a.side === near ? 1 : 0) - (b.side === near ? 1 : 0));
   for (const leg of order) drawLeg(leg, phi, bm, leg.side === near ? PAL.body : PAL.belly);
-  // torso: haunch, barrel, chest
+  // torso: haunch, barrel, chest — plus two blend cuboids (#2224): a mid-barrel
+  // block that overlaps haunch↔barrel so the profile stops reading as separate
+  // boxes, and a withers wedge that bridges the chest top line into the neck
+  // root (the visible step at ~x 0.9 from non-default angles).
+  LAND.length = 0; TORSO.length = 0;
+  for (const leg of order) drawLeg(leg, phi, bm, leg.side === near ? PAL.body : PAL.belly);
   pbox(...R(-0.82, 0.03, 0), 0.42, 0.46, 0.42, 0.38, 0.33, 0.31, bm.pitch + 0.06, PAL.body);
+  pbox(...R(-0.40, 0.015, 0), 0.32, 0.34, 0.41, 0.40, 0.315, 0.325, bm.pitch + 0.03, PAL.body);
   pbox(...R(0.02, 0.00, 0), 0.54, 0.50, 0.40, 0.42, 0.30, 0.31, bm.pitch, PAL.bodyLit);
   pbox(...R(0.72, 0.02, 0), 0.28, 0.38, 0.38, 0.34, 0.29, 0.28, bm.pitch - 0.08, PAL.body);
+  pbox(...R(0.86, 0.28, 0), 0.15, 0.24, 0.16, 0.26, 0.15, 0.27, bm.pitch, PAL.bodyLit);
+  TORSO.push([-1.28, -0.40, 0.45], [-0.74, -0.08, 0.425], [-0.48, 0.56, 0.42], [0.34, 1.00, 0.40], [0.62, 1.01, 0.54]);
   // belly shadow stripe (dark, slightly below barrel)
   pbox(...R(0.02, -0.36, 0), 0.44, 0.34, 0.09, 0.09, 0.24, 0.26, bm.pitch, PAL.belly);
   // neck: thick column from chest crest to the poll; the whole head/neck
@@ -532,6 +559,48 @@ function streakAnchor(s, p) {
   const x = 2.4 - ((p + s.o) % 1) * 4.6;
   return [x, s.y, s.z];
 }
+/* Hoofprint decals + landing grit (#2224): each hoof presses a dark, short-lived
+   print at its touchdown spot; the print rides back with the ground exactly like
+   the dust, so it is pure φ and loops with everything else. Lifetime < 1 stride
+   keeps the 8-stride seam untouched. The ground line y() is evaluated at the
+   print's live x, so prints settle into the same undulation the ground paints
+   (travel shifts by L per loop ⇒ identical at the seam). */
+const P_LIFE = 0.50;                    // strides a hoofprint stays visible
+const D_LIFE = 0.22;                   // the dust-burst window (shared with drawDust)
+const G_LIFE = 0.16;                   // strides grit skitters after a hind slam
+const PRINTS = [];                     // per-frame law anchors [name, x, z, alpha]
+const GRIT = [];                       // per-frame grit specks [name, x, z]
+function groundAt(x, z) { return hNoise(x + travel) * ridgeH(z) - 0.02; }
+function printAnchor(leg, p) {
+  let a = p - leg.c; if (a < 0) a += 1;
+  // the print appears only once the dust has settled — while the burst is up
+  // there is nothing to see, and the shared D_LIFE keeps it honest
+  if (a <= D_LIFE || a >= P_LIFE) return null;
+  const u = (a - D_LIFE) / (P_LIFE - D_LIFE);
+  return { x: leg.xLand - STRIDE * a, z: leg.side * (leg.name[1] === 'F' ? 0.20 : 0.24), al: 0.34 * (1 - u) };
+}
+function drawPrints(p) {
+  PRINTS.length = 0;
+  for (const leg of LEGS) {
+    const q = printAnchor(leg, p);
+    if (!q) continue;
+    PRINTS.push([leg.name, +q.x.toFixed(3), +q.z.toFixed(2), +q.al.toFixed(3)]);
+    const pts = [];
+    let live = true;
+    for (let i = 0; i < 14; i++) {
+      const a = i / 14 * TAU;
+      const pt = project([q.x + Math.cos(a) * 0.135, groundAt(q.x, q.z) + 0.006, q.z + Math.sin(a) * 0.085]);
+      if (!pt) { live = false; break; }
+      pts.push(pt);
+    }
+    if (!live || pts.length < 3) continue;
+    ctx.fillStyle = 'rgba(58,38,26,' + q.al.toFixed(3) + ')';
+    ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath(); ctx.fill();
+  }
+}
+
 function groundSpeedStreaks(p) {
   for (const s of STREAK) {
     const a = streakAnchor(s, p);
@@ -561,10 +630,11 @@ function drawShadow(bodyY) {
 function drawDust(phi) {
   // each puff spawns at its hoof's touchdown point and rides back with the
   // ground — pure φ, so dust loops with everything else
+  GRIT.length = 0;
   for (let li = 0; li < LEGS.length; li++) {
     const leg = LEGS[li];
     let a = phi - leg.c; if (a < 0) a += 1;
-    const life = 0.22;
+    const life = D_LIFE;
     if (a > life) continue;
     const u = a / life;
     const baseX = leg.xLand - STRIDE * a;
@@ -579,6 +649,41 @@ function drawDust(phi) {
       ctx.globalAlpha = (1 - u) * (1 - u) * 0.55;
       ctx.fillStyle = '#e8d9bc';
       ctx.beginPath(); ctx.arc(p[0], p[1], rad, 0, TAU); ctx.fill();
+    }
+    // hind hooves hit the steppe hard (#2224): dark grit specks skittering low
+    // plus a ground-hugging sheet that spreads and fades — fore hooves pat,
+    // hind hooves slam. Same φ clock, same seam.
+    if (leg.name[1] === 'H' && a < G_LIFE) {
+      const gu = a / G_LIFE;
+      const sz = leg.side * 0.24;
+      const pts = [];
+      let live = true;
+      for (let i = 0; i < 12; i++) {
+        const an = i / 12 * TAU;
+        const pt = project([baseX + Math.cos(an) * (0.18 + gu * 0.30), groundAt(baseX, sz) + 0.012, sz + Math.sin(an) * (0.10 + gu * 0.16)]);
+        if (!pt) { live = false; break; }
+        pts.push(pt);
+      }
+      if (live) {
+        ctx.globalAlpha = (1 - gu) * 0.20;
+        ctx.fillStyle = '#d9c49c';
+        ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+        ctx.closePath(); ctx.fill();
+      }
+      for (let k = 0; k < 4; k++) {
+        const kk = li * 11 + k;
+        const gx = baseX + (h1(kk + 40) - 0.5) * 0.5;
+        const gy = 0.015 + gu * (0.10 + h1(kk + 43) * 0.10);
+        const gz = sz + (h2(kk, 3) - 0.5) * 0.4;
+        GRIT.push([leg.name, +gx.toFixed(3), +gz.toFixed(2)]);
+        const p = project([gx, gy, gz]);
+        if (!p) continue;
+        const rad = (0.02 + gu * 0.05) * (basis.focal / p[2]);
+        ctx.globalAlpha = (1 - gu) * 0.5;
+        ctx.fillStyle = '#8a6c4c';
+        ctx.beginPath(); ctx.arc(p[0], p[1], rad, 0, TAU); ctx.fill();
+      }
     }
   }
   ctx.globalAlpha = 1;
@@ -659,6 +764,7 @@ function render() {
   flush();
   drawShadow(bodyMotion(phi).y);
   drawDust(phi);
+  drawPrints(phi);
 }
 
 function frame(ts) {
@@ -700,7 +806,7 @@ function updateHud() {
 let AC = null, master = null, windGain = null;
 // hoofbeat layer counters (φ-crossings, independent of AudioContext so the
 // harness can prove the layering headless — #2162)
-const snd = { clk: 0, thd: 0, sub: 0 };
+const snd = { clk: 0, thd: 0, sub: 0, bre: 0 };
 function ensureAudio() {
   if (AC || !audioOn) return;
   try {
@@ -745,6 +851,24 @@ function click() {
   const g = AC.createGain(); g.gain.value = 0.20;
   s.connect(hp); hp.connect(g); g.connect(master); s.start();
 }
+// the breath (#2224): one soft winded swell per stride, riding the suspension
+// — a filtered noise sigh that swells as all four hooves leave the ground and
+// dies before the next fore landing. φ-crossing like every other layer.
+const BREATH_C = 0.70;             // inside the suspension window (0.65 → 1.0)
+function breath() {
+  if (!AC || !audioOn) return;
+  const t = AC.currentTime;
+  const nb = AC.createBuffer(1, Math.floor(AC.sampleRate * 0.30), AC.sampleRate);
+  const d = nb.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * 0.5;
+  const s = AC.createBufferSource(); s.buffer = nb;
+  const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 520; bp.Q.value = 0.7;
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0.001, t);
+  g.gain.exponentialRampToValueAtTime(0.045, t + 0.09);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.26);
+  s.connect(bp); bp.connect(g); g.connect(master); s.start(t); s.stop(t + 0.30);
+}
 // hoofbeats fire on the same φ crossings the picture uses — sound loops too
 function audioTick(prev, cur) {
   for (const leg of LEGS) {
@@ -754,6 +878,7 @@ function audioTick(prev, cur) {
       thud(heavy); click();
     }
   }
+  if (startedC(BREATH_C, prev, cur)) { snd.bre++; breath(); }
   if (windGain) windGain.gain.value = 0.05;
 }
 
@@ -784,7 +909,7 @@ window.__horseTest = {
   phase() { return phi; },
   setPaused(v) { paused = !!v; },
   resume() { paused = false; },
-  setPhase(p) { paused = true; tRun = p * T_STRIDE; phi = p; render(); },
+  setPhase(p) { paused = true; tRun = p * T_STRIDE; phi = ((p % 1) + 1) % 1; render(); },
   // deterministic travel for pixel probes of ground-anchored features (#2220)
   setTravel(m) { paused = true; travel = m; render(); },
   // pure-function state at any phase — proves the seam without time travel
@@ -800,7 +925,7 @@ window.__horseTest = {
     return s;
   },
   hooves() { const hv = computeHooves(phi); const o = {}; for (const l of LEGS) o[l.name] = { x: +hv[l.name].x.toFixed(4), y: +hv[l.name].y.toFixed(4), contact: hv[l.name].contact }; return o; },
-  soundStats() { return { click: snd.clk, thud: snd.thd, sub: snd.sub }; },
+  soundStats() { return { click: snd.clk, thud: snd.thd, sub: snd.sub, breath: snd.bre }; },
   slipMax() { const o = {}; for (const l of LEGS) o[l.name] = +(slipMax[l.name] || 0).toFixed(3); return o; },
   gait() { return { order: orderSeen, stride: STRIDE, period: T_STRIDE, speed: SPEED, loopStrides: LOOPS, seam: L, suspFrac: 1 - LEGS[3].c - LEGS[3].d }; },
   footfall(p) { const out = {}; for (const leg of LEGS) out[leg.name] = { c: leg.c, d: leg.d, contact: inContact(leg, p) >= 0 ? 1 : 0 }; return out; },
@@ -813,6 +938,17 @@ window.__horseTest = {
   // travel offset, so the counts/geometry are provable without pixel guesses
   tufts() { return TUFTS.slice(); },
   ruts() { return RUTS.slice(); },
+  // hoofprint law (#2224): anchors + alpha are pure φ — visible only after the
+  // dust settles, riding back at STRIDE/stride, seam-safe at p ≡ p+1
+  prints(p) { p = ((p % 1) + 1) % 1; const out = []; for (const leg of LEGS) { const q = printAnchor(leg, p); if (q) out.push([leg.name, +q.x.toFixed(3), +q.z.toFixed(2), +q.al.toFixed(3)]); } return out; },
+  // grit specks painted at the last hind hooffall (from the last rendered frame)
+  grit() { return GRIT.slice(); },
+  // skeletal landmarks from the last rendered frame: knee knob per leg, hock x/y
+  // on the hind pair (null hock = fore — the double-bend is a hind-limb law)
+  landmarks() { return LAND.map(l => ({ n: l.n, kx: +l.kx.toFixed(3), ky: +l.ky.toFixed(3), hx: l.hx === null ? null : +l.hx.toFixed(3), hy: l.hy === null ? null : +l.hy.toFixed(3) })); },
+  // torso silhouette row (#2224): [xTail, xFront, topY] — adjacent boxes must
+  // overlap (no daylight step) and the top line must climb/step gently
+  torsoProfile() { return TORSO.slice(); },
   unlock() { ensureAudio(); },
   audioOn() { return audioOn; },
   setAudio(v) { audioOn = !!v; if (master) master.gain.value = audioOn ? 0.5 : 0; },
@@ -830,7 +966,7 @@ window.__horseTest = {
     }
     return n;
   },
-  reset() { tRun = 0; phi = 0; travel = 0; paused = false; lastTs = 0; orderBuf = ''; orderSeen = ''; snd.clk = snd.thd = snd.sub = 0; Object.assign(cam, camReset); },
+  reset() { tRun = 0; phi = 0; travel = 0; paused = false; lastTs = 0; orderBuf = ''; orderSeen = ''; snd.clk = snd.thd = snd.sub = snd.bre = 0; Object.assign(cam, camReset); },
 };
 
 requestAnimationFrame(frame);
@@ -839,7 +975,7 @@ requestAnimationFrame(frame);
 <script>
 window.DEMO_CREDITS = {
   name: 'STRIDELINE', accent: '#e0a45c',
-  issues: [2147, 2220], span: '~3 h', shipped: '2026-11-12',
+  issues: [2147, 2220, 2224], span: '~3 h', shipped: '2026-11-12',
   assist: 'solo', note: 'goal only — own renderer, own gait, no Three.js',
 };
 </script>

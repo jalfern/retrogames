@@ -27,6 +27,14 @@
 //               neighbours differ); speed streaks whip backward every stride
 //               (law + φ-seam); foreground shows painted track ruts and the
 //               mid ground carries olive sage tufts (band pixel probes).
+//   3d. POLISH 3 (#2224) — the torso row reads as one mass: blend cuboids
+//               overlap tail→front with no daylight step and the top line
+//               bridges to the withers gently; every limb carries a knee knob
+//               and the hind pair the rearward hock (double-bend, φ-pure);
+//               hoofprints appear behind the landings once the dust settles,
+//               fade with age and loop with φ; hind landings throw grit while
+//               fore landings pat silently; one breath swell per stride rides
+//               the suspension (counted headless like the #2162 layers).
 //   + DEMO LAW — self-contained page, not registered in games.js, credits
 //               card and index entry present.
 //
@@ -359,6 +367,102 @@ ok('track ruts paint dark ribbons through the foreground corridor', gd.rut > 300
 ok('sage brush tufts stand beside the track (olive tones)', gd.tuft > 400, gd.tuft + ' px')
 await page.evaluate(() => window.__horseTest.resume())
 
+/* ---------------- 3d. POLISH PASS 3 (#2224: blend, landmarks, prints, grit, breath) ---------------- */
+// Torso silhouette row: the blend cuboids must overlap their neighbours (no
+// daylight between haunch/barrel/chest) and span the whole body; the top line
+// climbs to the withers without a visible step (>0.15 m was the reported fault).
+const torso = await page.evaluate(() => window.__horseTest.torsoProfile())
+const torShape = torso.length >= 5 && torso.every(b => b[1] - b[0] > 0.3 && b[2] > 0.3 && b[2] < 0.6)
+const torOverlap = torso.slice(1).every((b, i) => b[0] < torso[i][1] - 0.10)
+const torCovers = torso.length >= 5 && torso[0][0] <= -1.2 && torso[torso.length - 1][1] >= 0.95
+ok('torso row: haunch/blend/barrel/chest/withers overlap — no daylight step', torShape && torOverlap && torCovers, JSON.stringify(torso))
+const torSteps = torso.slice(1).map((b, i) => Math.abs(b[2] - torso[i][2]))
+ok('top line bridges chest → withers gently (max step ≤ 0.15 m)', torSteps.length === 4 && Math.max(...torSteps) <= 0.155,
+  'steps ' + torSteps.map(v => v.toFixed(3)).join(','))
+
+// Skeletal landmarks: a knee knob on every limb; the hind pair additionally
+// carries the hock — lower AND behind the stifle, the true double-bend read.
+// The record must be φ-deterministic (0.10 ≡ 1.10) so the seam covers it.
+const lm = await page.evaluate(() => {
+  const t = window.__horseTest
+  t.setPhase(0.10); const a = t.landmarks()
+  t.setPhase(1.10); const b = t.landmarks()
+  t.resume()
+  return { a, b }
+})
+const fore = lm.a.filter(l => l.n[1] === 'F'), hind = lm.a.filter(l => l.n[1] === 'H')
+ok('fore limbs carry a knee knob at the joint (no hock — single bend)',
+  lm.a.length === 4 && fore.length === 2 && hind.length === 2 && fore.every(l => l.hx === null && l.ky > 0.3 && l.ky < 1.2),
+  JSON.stringify(fore))
+ok('hind limbs show the double-bend: hock behind and below the stifle',
+  hind.every(l => l.hx !== null && l.hx < l.kx - 0.05 && l.hy < l.ky - 0.1 && l.hy > 0.4),
+  JSON.stringify(hind))
+// seam compare with a small tolerance: setPhase carries tRun float noise through
+// acos-based IK, so JSON equality would be flaky where 5 mm is structural.
+const lmDiff = lm.a.length === lm.b.length ? lm.a.reduce((s, l, i) => {
+  const o = lm.b[i]
+  if (l.n !== o.n) return s + 1
+  return s + Math.abs(l.kx - o.kx) + Math.abs(l.ky - o.ky) + (l.hx === null ? 0 : Math.abs(l.hx - o.hx)) + (l.hy === null ? 0 : Math.abs(l.hy - o.hy))
+}, 0) : 99
+ok('landmarks are seam-commensurate (φ 0.10 ≡ φ 1.10)', lmDiff < 5e-3, 'drift ' + lmDiff.toFixed(6))
+
+// Hoofprints: law-provable anchors — appear behind the touchdown point once the
+// dust settles, fade with age, never coexist with the burst, loop with φ.
+const pr = await page.evaluate(() => {
+  const t = window.__horseTest
+  return {
+    mid: t.prints(0.35), late: t.prints(0.45), early: t.prints(0.05), zero: t.prints(0),
+    seam: JSON.stringify(t.prints(0.35)) === JSON.stringify(t.prints(1.35)),
+  }
+})
+ok('hoofprints trail the landings, riding back at STRIDE per stride',
+  pr.mid.length === 2 && pr.mid.every(v => v[1] < -0.5 && Math.abs(v[2]) > 0.19 && Math.abs(v[2]) < 0.25 && v[3] > 0.02 && v[3] <= 0.34),
+  JSON.stringify(pr.mid))
+const fadeOk = pr.mid.length === 2 && pr.late.length === 2 &&
+  pr.late.every(l => { const m = pr.mid.find(v => v[0] === l[0]); return m && l[3] < m[3] })
+ok('prints fade as they age toward the end of their life', fadeOk, JSON.stringify(pr.late))
+ok('no print while the dust burst is still up (same φ window)', pr.early.length === 0 && pr.zero.length === 0)
+ok('hoofprints loop with the stride (φ 0.35 ≡ φ 1.35)', pr.seam)
+// pixel proof: the RF print darkens the ground vs the same spot free of prints
+const prpx = await page.evaluate(() => {
+  const t = window.__horseTest
+  t.setPhase(0.35); t.setTravel(12)
+  const a = t.prints(0.35).find(v => v[0] === 'RF')
+  if (!a) return null
+  const p = t.project([a[1], 0.012, a[2]])
+  const q = t.project([a[1], 0.012, a[2] - 1.5])   // same x, open ground well off the racing line
+  if (!p || !q) return null
+  const sample = (c) => { let s = 0, n = 0; for (let dy = -4; dy <= 4; dy += 2) for (let dx = -4; dx <= 4; dx += 2) { const px = t.pixel(c[0] + dx, c[1] + dy); s += px[0] + px[1] + px[2]; n++ } return s / n }
+  const out = { print: sample(p), free: sample(q) }
+  t.resume()
+  return out
+})
+ok('a fresh print visibly darkens the ground (vs an unprinted control)',
+  prpx && prpx.free - prpx.print > 20, JSON.stringify(prpx))
+
+// Hind landings skitter grit + spread a ground sheet; fore pat silently.
+const gr = await page.evaluate(() => {
+  const t = window.__horseTest
+  t.setPhase(0.50); const a = t.grit()
+  t.setPhase(0.60); const b = t.grit()
+  t.resume()
+  return { a, b }
+})
+ok('hind hooffall throws low grit (≤8 specks, hinds only; fore add none)',
+  gr.a.length >= 1 && gr.a.length <= 8 && gr.a.every(v => v[0][1] === 'H'), JSON.stringify(gr.a.map(v => v[0])))
+ok('grit settles fast — nothing skitters mid-suspension', gr.b.length === 0, JSON.stringify(gr.b))
+
+// breath: one soft swell per stride riding the suspension (φ 0.70 crossing),
+// counted headless like the other layers (#2162 pattern)
+await page.evaluate(() => { const t = window.__horseTest; t.reset(); t.unlock(); t.resume(); })
+const fb = await page.evaluate(() => window.__horseTest.frames())
+await page.waitForFunction(f => window.__horseTest.frames() > f + 170, fb, { timeout: 15000 }).catch(() => {})
+const snd2 = await page.evaluate(() => window.__horseTest.soundStats())
+ok('one breath per stride, riding the suspension (never more than the beats)',
+  snd2.breath >= Math.max(3, Math.floor(snd2.click / 4) - 2) && snd2.breath <= Math.ceil(snd2.click / 4) + 2 && snd2.breath * 4 <= snd2.click + 4, JSON.stringify(snd2))
+ok('breath keeps stride-locked cadence: clicks ≈ 4× breath', Math.abs(snd2.breath * 4 - snd2.click) <= 8, JSON.stringify(snd2))
+await page.evaluate(() => window.__horseTest.resume())
+
 await page.screenshot({ path: resolve(shots, 'gallop.png') })
 
 /* ---------------- 4. DEMO LAW ---------------- */
@@ -368,7 +472,7 @@ ok('self-contained: zero external src/href in the page', external.length === 0, 
 ok('no libraries: zero import/require in the page', !/\bimport\s|\brequire\(/.test(html))
 const reg = readFileSync(resolve('src/config/games.js'), 'utf8')
 ok('demos law: NOT registered in the arcade registry', !/STRIDELINE|'\/horse'|demos\/horse/i.test(reg))
-ok('credits card present, solo, naming #2147 (+ #2220 polish)', /name:\s*'STRIDELINE'/.test(html) && /assist:\s*'solo'/.test(html) && /issues:\s*\[2147,\s*2220\]/.test(html))
+ok('credits card present, solo, naming #2147 (+ #2220, #2224 polish)', /name:\s*'STRIDELINE'/.test(html) && /assist:\s*'solo'/.test(html) && /issues:\s*\[2147,\s*2220,\s*2224\]/.test(html))
 const idx = readFileSync(resolve('public/demos/index.html'), 'utf8')
 ok('index links the card and DEMO_INDEX carries the facts', /id="horse"/.test(idx) && /el:\s*'horse'/.test(idx))
 
