@@ -34,6 +34,7 @@ import { validate, verifyRecording, createRecorder, REC_FORMAT_V2 } from '../src
 import { auditTakeSources } from '../relay/core.js'
 import { tickToMs, voiceDrift, VOICE_CLOCK_EVERY, containerDurationMs, TICK_MS } from '../src/utils/voice.js'
 import { probeStore, listSessions, storeFromQuery } from '../src/utils/sessionStore.js'
+import { readKey } from './lib/localkey.mjs'
 import { startRelaySim, SIM_READ_KEY } from './lib/relaysim.mjs'
 import { collectRun, makeReplayDriver } from './plaicraft-export.mjs'
 import { createGame as tmdCreate, step as tmdStep, hash as tmdHash, solvePad } from '../src/games/TalkMeDown/engine.js'
@@ -131,14 +132,44 @@ function driverFor(rec) {
 // still catches iOS tail-drops, which run in hundreds of ms (Jon's took −900).
 const VOICE_CONTAINER_TOL_MS = 150
 
+// #2157 (seed42 lesson): a dropped download is not a failed take. Network
+// throws and 5xx answers are retried with backoff (400/800/1600 ms, 4
+// attempts total); 4xx stays an immediate FAIL — 404/401 do not heal.
+// PLAICRAFT_TEST_FAIL_DOWNLOADS=n fails the first n attempts; the self-test
+// forces both directions: transient -> retried to green, permanent -> still
+// FAIL, naming the attempt count (the mutant pair the issue demands).
+const DOWNLOAD_ATTEMPTS = 4
+const DOWNLOAD_BACKOFF_MS = 400
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+async function downloadText(url, headers) {
+    let lastErr = null
+    for (let attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt++) {
+        const forced = Number(process.env.PLAICRAFT_TEST_FAIL_DOWNLOADS || 0)
+        try {
+            if (attempt <= forced) throw new Error('simulated download drop')
+            const r = await fetch(url, { headers })
+            if (r.ok) return { text: await r.text(), attempts: attempt }
+            if (r.status >= 500 && attempt < DOWNLOAD_ATTEMPTS) {
+                lastErr = `http ${r.status}`
+                await sleep(DOWNLOAD_BACKOFF_MS * 2 ** (attempt - 1))
+                continue
+            }
+            return { error: `download http ${r.status}`, attempts: attempt }
+        } catch (e) {
+            lastErr = e && e.message ? e.message : String(e)
+            if (attempt < DOWNLOAD_ATTEMPTS) await sleep(DOWNLOAD_BACKOFF_MS * 2 ** (attempt - 1))
+        }
+    }
+    return { error: `download failed after ${DOWNLOAD_ATTEMPTS} attempts: ${lastErr}`, attempts: DOWNLOAD_ATTEMPTS }
+}
+
 async function verifyKey(key, base, readHeaders = {}) {
-    const res = { key, ok: false, replayOk: false, voiceOk: null, error: null, ticks: 0, game: '?', player: '?', audio: false, humanSeats: 0, relabeledSeats: 0, note: '', voice: null }
-    let text
-    try {
-        const r = await fetch(`${base}/sessions/${encodeURIComponent(key)}`, { headers: readHeaders })
-        if (!r.ok) { res.error = `download http ${r.status}`; return res }
-        text = await r.text()
-    } catch (e) { res.error = `download failed: ${e.message}`; return res }
+    const res = { key, ok: false, replayOk: false, voiceOk: null, error: null, ticks: 0, game: '?', player: '?', audio: false, humanSeats: 0, relabeledSeats: 0, note: '', voice: null, attempts: 0 }
+    const dl = await downloadText(`${base}/sessions/${encodeURIComponent(key)}`, readHeaders)
+    res.attempts = dl.attempts || 0
+    if (dl.error) { res.error = dl.error; return res }
+    const text = dl.text
     let rec
     try { rec = JSON.parse(text) } catch { res.error = 'not json'; return res }
     res.game = rec.game || '?'
@@ -260,9 +291,9 @@ async function runLive() {
         console.log(`store not provisioned (${probe.err || 'sessions:false'} @ ${base}) — the R2 bucket awaits #1730; run --self-test to prove the pipeline meanwhile`)
         return 2
     }
-    const key = process.env.JON_KEY || null // read lockdown (#1711 S8): sends x-session-key
+    const key = readKey('JON_KEY') // read lockdown (#1711 S8): sends x-session-key; env or .env.local (#2157)
     const listed = await listSessions({ base, limit: Number(flagVal('limit', 50)) || 50, key })
-    if (!listed.ok) { console.log(`list failed: ${listed.reason}${listed.reason === 'unauthorized' ? ' — set JON_KEY (reads are locked, #1711 S8)' : ''}`); return 1 }
+    if (!listed.ok) { console.log(`list failed: ${listed.reason}${listed.reason === 'unauthorized' ? ' — set JON_KEY (reads are locked, #1711 S8; #2157: inline or .env.local at the repo root)' : ''}`); return 1 }
     let rows = listed.sessions
     const player = flagVal('player', null)
     const game = flagVal('game', null)
@@ -588,6 +619,16 @@ async function runSelfTest() {
     }
     ok(caught >= 1 && caught === mutantKeys, `every pad-flip mutant was CAUGHT (${caught}/${mutantKeys})`, caughtAt.join(' | '))
     if (caughtAt.length) ok(caughtAt.some((e) => /diverged at tick/.test(e)), 'a mutant names its divergence tick', caughtAt[0])
+
+    // #2157 download-retry gates: the seed42 shape — a transient drop must be
+    // retried to green; a permanent failure must still FAIL, naming attempts.
+    process.env.PLAICRAFT_TEST_FAIL_DOWNLOADS = '2'
+    const sRetry = await verifyKey(gKey, base, sim.readHeaders)
+    ok(sRetry.ok === true && sRetry.attempts === 3, 'transient download failure is RETRIED (2 drops, verifies on attempt 3 — the seed42 case)', `${sRetry.error || ''} attempts=${sRetry.attempts}`)
+    process.env.PLAICRAFT_TEST_FAIL_DOWNLOADS = '99'
+    const sPerm = await verifyKey(gKey, base, sim.readHeaders)
+    ok(sPerm.ok === false && /after 4 attempts/.test(sPerm.error || '') && sPerm.attempts === 4, 'permanent download failure still FAILs, naming attempts', sPerm.error || '')
+    delete process.env.PLAICRAFT_TEST_FAIL_DOWNLOADS
 
     sim.close()
     console.log(`\nevidence self-test: ${pass}/${pass + fail} — ${fail ? 'FAILED' : 'OK (and the mutant proved it can fail)'}`)

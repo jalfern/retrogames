@@ -18,6 +18,8 @@ scripts/.strips/**/*.jpg
 .muteguard-tmp/
 # #2049 stamp: a --mutate run is live in this worktree (the tree is frozen)
 .mutant-running
+# #2157: local store secrets (JON_KEY, SESSION_WRITE_KEY) — never committed
+.env.local
 __pycache__/
 *.pyc
 

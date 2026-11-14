@@ -76,6 +76,15 @@ after 1 h).
   Every admin read tool sends it from the environment:
   `JON_KEY=<secret> npm run sessions`, `JON_KEY=… npm run plaicraft:evidence`,
   `JON_KEY=… npm run plaicraft:clap -- --key=<sessionKey>`.
+- **KEY IN A LOCAL FILE (#2157):** all three tools (plus `plaicraft:grade`)
+  resolve `JON_KEY`/`SESSION_WRITE_KEY` env-first, else `.env.local` at the
+  worktree root or the shared repo root (`~/Dev/retrogames/.env.local` serves
+  every lane worktree). One-time setup for Jon (also filed as the jonq ask):
+  `umask 077 && printf 'JON_KEY=<secret>\n' >> ~/Dev/retrogames/.env.local`.
+  The file is gitignored; nothing prints the value. With it in place the lanes
+  grade new takes WITHOUT Jon running anything: `npm run plaicraft:grade`
+  posts a `PLAIGRADE <key>` verdict (replay / voice / clap / seats) on #1711
+  for every take not yet marked there.
 - **WRITE-KEY SEPARATION (#2142 audit finding 1b):** `PATCH /sessions/<key>`
   authenticates against a SEPARATE secret `SESSION_WRITE_KEY` when deployed
   (`wrangler secret put SESSION_WRITE_KEY`), so the read key can be handed to

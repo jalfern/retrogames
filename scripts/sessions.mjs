@@ -27,6 +27,7 @@
 // watch it.
 
 import { listSessions, relabelSession, storeFromQuery, tickSeconds } from '../src/utils/sessionStore.js'
+import { readKey } from './lib/localkey.mjs'
 
 const argv = process.argv.slice(2)
 const flagVal = (name, dflt) => {
@@ -38,11 +39,11 @@ const flagVal = (name, dflt) => {
 const base = flagVal('store', process.env.SESSION_STORE || storeFromQuery(''))
 const limit = Number(flagVal('limit', 50)) || 50
 const asJson = argv.includes('--json')
-const key = process.env.JON_KEY || null
+const key = readKey('JON_KEY') // env or gitignored .env.local (#2157)
 // #2142 separation: the relabel write prefers the dedicated write secret;
 // JON_KEY remains the fallback for pre-separation deploys (list reads always
 // use JON_KEY).
-const writeKey = process.env.SESSION_WRITE_KEY || process.env.JON_KEY || null
+const writeKey = readKey('SESSION_WRITE_KEY') || readKey('JON_KEY')
 const command = argv.find((a) => !a.startsWith('--'))
 
 if (command === 'relabel') {
