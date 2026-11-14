@@ -179,6 +179,26 @@ SAME autoStep). Mutant: swap `autoStep(gs, SIM_MS / 1000)` for `advance(gs,
 SIM_MS / 1000)` in the play tick — the demo, wake, resume gates and the seat's
 source pin go red (~7); restore.
 
+## Cat (#2197) — Miso, the adoptable pet
+The open kids/pets tail of the bond line, pet half first. Catalog card 15 /
+`KeyP`, §150, one cat per lot — like the room kit it is consumed at the
+counter, never placed. `adoptPet` refuses honestly (no money, already home,
+or the gate can't reach the house) and a refusal speaks at the gate cell.
+`updatePet` lives by the lot's laws: every wander pick asks `walkable()` AND
+pathfinds before committing; hunger under 0.3 walks her to the fridge's use
+spots for kibble (+0.55, `pet-eat`); night finds the nearest free floor tile
+and pours her into a loaf (energy back at night pace), dawn unspools her. The
+bond law reaches pet scale — a resident standing within arm's reach (Manhattan
+≤1, not fainted, not working) coos: cat fun +0.25, resident social +0.08,
+house bond +0.5, content +1, one per `PET_COOS` (6 s) — love, on a cooldown.
+The cat can never faint and never blocks anyone (non-solid; `keepsOpen`
+ignores her). State: `s.pet` (needs/position/asleep/cd) rides `stateHash`;
+no rng outside the shared `s.rng` stream, seeds stay exact. Sprite: tabby with
+tail-sway walk, sleep Zzz, pink purr sparks (`drawPet`); sounds: twin-chirp
+adoption, purr-chime coo, kibble crunches. The attract bot adopts right after
+the room kit so the demo sells her. Open tail unchanged: kids; the panel has
+no pet row (honest gaps). Gates: `peoplecheck` section 8 (27 pins).
+
 ## Honest gaps (filed to QA #…)
 - **CLOSED by #1806:** multiple rooms — one expansion ships: the Spare Room kit
   grows a wing on the east lawn (floor/walls/door/windows, connectivity-guarded,
@@ -202,7 +222,9 @@ source pin go red (~7); restore.
   schedule, own meter, gift economy). The pad got its own handle on the line
 (#2171 shipped): one button, two orders — release inside ⅔ s is
 the coo, held past it the insult flies mid-hold, on the same laws and the same
-cooldown as C/X. Kids/pets remain the open tail of this line.
-- Visitors are Fern and Ivy (#2143); no kids/pets; single store catalog.
+cooldown as C/X. **The pet half of that tail landed in #2197 — Miso the
+adoptable cat (see Cat (#2197))**; kids remain the open tail of this line.
+- Visitors are Fern and Ivy (#2143); pets landed (#2197, Miso); no kids yet;
+  single store catalog.
 - No skippable-speed control for the player; day/night is cosmetic + decay only.
 - Needs panel shows both residents; no per-object queue display like the original.
