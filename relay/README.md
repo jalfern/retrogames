@@ -76,25 +76,30 @@ after 1 h).
   Every admin read tool sends it from the environment:
   `JON_KEY=<secret> npm run sessions`, `JON_KEY=… npm run plaicraft:evidence`,
   `JON_KEY=… npm run plaicraft:clap -- --key=<sessionKey>`.
-- **KEY IN A LOCAL FILE (#2157):** all three tools (plus `plaicraft:grade`)
-  resolve `JON_KEY`/`SESSION_WRITE_KEY` env-first, else `.env.local` at the
-  worktree root or the shared repo root (`~/Dev/retrogames/.env.local` serves
-  every lane worktree). One-time setup for Jon (also filed as the jonq ask):
+- **KEY IN A LOCAL FILE (#2157):** the read tools (plus `plaicraft:grade`)
+  resolve `JON_KEY` env-first, else `.env.local` at the worktree root or the
+  shared repo root (`~/Dev/retrogames/.env.local` serves every lane worktree).
+  One-time setup for Jon (also filed as the jonq ask):
   `umask 077 && printf 'JON_KEY=<secret>\n' >> ~/Dev/retrogames/.env.local`.
-  The file is gitignored; nothing prints the value. With it in place the lanes
+  The file is gitignored; nothing prints the value. **`SESSION_WRITE_KEY` is
+  deliberately EXCLUDED from file resolution** (#1711 audit item 2): that file
+  is lane-readable, and the write key never lives where lanes can read — inline
+  prefix only. With the read key in place the lanes
   grade new takes WITHOUT Jon running anything: `npm run plaicraft:grade`
   posts a `PLAIGRADE <key>` verdict (replay / voice / clap / seats) on #1711
   for every take not yet marked there.
-- **WRITE-KEY SEPARATION (#2142 audit finding 1b):** `PATCH /sessions/<key>`
-  authenticates against a SEPARATE secret `SESSION_WRITE_KEY` when deployed
-  (`wrangler secret put SESSION_WRITE_KEY`), so the read key can be handed to
-  lanes (#2157) without ever opening the store's only write. While the secret
-  is NOT yet deployed, PATCH falls back to `JON_KEY` (status quo);
-  `/status writeKey:true|false` makes the deploy state detectable — set the
-  secret BEFORE #2157 ships JON_KEY in a lane-readable file, but AFTER the
-  #2093 one-off relabel has run (once the secret is on, JON_KEY alone cannot
-  relabel). The tool prefers
-  it: `SESSION_WRITE_KEY=<secret> npm run sessions -- relabel …`.
+- **WRITE-KEY SEPARATION (#2142 audit finding 1b; NO-FALLBACK #1711 audit
+  item 1):** `PATCH /sessions/<key>` authenticates ONLY against the separate
+  secret `SESSION_WRITE_KEY` (`wrangler secret put SESSION_WRITE_KEY`), so the
+  read key handed to lanes (#2157) can never open the store's only write. The
+  old JON_KEY fallback is REMOVED: while `/status` says `writeKey:false` the
+  store takes no edits at all — PATCH answers 401 `err:'write lock not
+  configured'` to every caller, JON_KEY included (wrong key against an ARMED
+  door answers `err:'unauthorized'`). Deploying the secret is therefore the
+  gate for the #2093 relabel one-off: until `wrangler secret put
+  SESSION_WRITE_KEY` has run, nothing can relabel; once it has, Jon runs
+  the repair himself with the key inline (the lanes never hold it):
+  `SESSION_WRITE_KEY=<secret> npm run sessions -- relabel …`.
 - **RELABEL WRITE (#2093 item 1, audited by #2142):** `PATCH /sessions/<key>`
   performs the store's ONE permitted write-after-upload — repairing seat
   provenance `model`→`human` (auto-record only captures human starts, so the

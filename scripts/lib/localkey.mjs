@@ -1,12 +1,18 @@
 // LOCALKEY (#2157) — the store secrets a lane needs, resolved from gitignored
 // local config instead of forcing Jon (or the lane) to prefix every command.
 //
-// Resolution order, per name (JON_KEY, SESSION_WRITE_KEY):
+// Resolution order, per name (JON_KEY):
 //   1. process.env[name]                      — explicit inline always wins;
 //   2. `.env.local` at the CURRENT worktree root;
 //   3. `.env.local` at the SHARED repo root — the parent of
 //      `git rev-parse --git-common-dir`, i.e. ~/Dev/retrogames for every
-//      lane worktree. Jon drops the key ONCE there; all worktrees read it.
+//      lane worktree. Jon drops the read key ONCE there; all worktrees read it.
+//
+// EXCEPTION (#1711 audit 2026-11-14, item 2): SESSION_WRITE_KEY is INLINE-ONLY
+// (see INLINE_ONLY below). The write key lives only in `wrangler secret put`
+// (server-side) and in Jon's own prefix (`SESSION_WRITE_KEY=… npm run sessions
+// -- relabel …`); it must NEVER be resolvable from a file, because every lane
+// worktree reads those files — the file that #2157 shares is a READ-key file.
 //
 // The VALUE never leaves this module except to its caller: nothing here logs
 // it, keySource() names the source (env / file path / null) for diagnostics,
@@ -64,15 +70,21 @@ function localEnv() {
     return merged
 }
 
+// Secrets that must never resolve from a file (#1711 audit item 2): the write
+// key stays inline-only so no lane-readable .env.local can ever carry it.
+const INLINE_ONLY = new Set(['SESSION_WRITE_KEY'])
+
 /** Secret value for `name`, or null. Never log the return value. */
 export function readKey(name) {
     if (process.env[name]) return process.env[name]
+    if (INLINE_ONLY.has(name)) return null
     return localEnv()[name] || null
 }
 
 /** Where a resolved secret came from — safe to print (never the value). */
 export function keySource(name) {
     if (process.env[name]) return 'env'
+    if (INLINE_ONLY.has(name)) return null
     if (localEnv()[name]) return localEnvFileFor(name) || '.env.local'
     return null
 }

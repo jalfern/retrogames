@@ -202,9 +202,10 @@ const post = async (base, body, headers = {}) => {
 // --- RELABEL WRITE (#2093 item 1) — the fixed model->human repair ----------
 // The three iPhone takes stored before #2090 carry seat 0 as 'model' although
 // auto-record only captures human starts. The store's one permitted write:
-// JON_KEY-gated (the same door as reads — under --mutate-readlock the no-key
-// PATCH lands and these gates go red), operation FIXED (core pins every other
-// edit refused), auditable (the answer names the change; GET shows it).
+// WRITE-KEY-gated (#2142 split; no-fallback per the #1711 audit — under
+// --mutate-readlock the no-key PATCH lands and these gates go red), operation
+// FIXED (core pins every other edit refused), auditable (the answer names the
+// change; GET shows it).
 {
     // the rule pure first — what the worker is allowed to do at all:
     const pOk = validateSessionPatch({ seat: 0 })
@@ -242,19 +243,20 @@ const post = async (base, body, headers = {}) => {
     // fresh take B — under --mutate-readlock the unlocks LAND (that is the
     // mutant signal, all 3 gates red) and never cascade through the feature
     // checks as confusing 422s.
-    const sim = await startRelaySim({ mutateReadlock: MUTATE_RL })
+    const sim = await startRelaySim({ mutateReadlock: MUTATE_RL, writeKey: SIM_WRITE_KEY })
     const pUp = await uploadSession(modelRec, { player: 'jon', consent: { motion: true, voice: true, at: 1 }, base: sim.base })
     ok(pUp.ok && !!pUp.key, 'a model-sourced take uploads (the broken provenance the repair exists for)', JSON.stringify(pUp))
-    const badShape = await fetch(`${sim.base}/sessions/${encodeURIComponent('gauntlet/nope.json')}`, { method: 'PATCH', headers: sim.readHeaders, body: '{"seat":0}' })
+    const badShape = await fetch(`${sim.base}/sessions/${encodeURIComponent('gauntlet/nope.json')}`, { method: 'PATCH', headers: sim.writeHeaders, body: '{"seat":0}' })
     ok(badShape.status === 400, 'malformed key refused by the PATCH route regex', `http ${badShape.status}`)
-    const pMissing = await fetch(`${sim.base}/sessions/${encodeURIComponent('gauntlet/2026-11-06-seed1-deadbeefca.json')}`, { method: 'PATCH', headers: sim.readHeaders, body: '{"seat":0}' })
+    const pMissing = await fetch(`${sim.base}/sessions/${encodeURIComponent('gauntlet/2026-11-06-seed1-deadbeefca.json')}`, { method: 'PATCH', headers: sim.writeHeaders, body: '{"seat":0}' })
     ok(pMissing.status === 404, 'unknown key answers an honest 404 to PATCH too')
-    const badBody = await fetch(`${sim.base}/sessions/${encodeURIComponent(pUp.key)}`, { method: 'PATCH', headers: sim.readHeaders, body: '{"seat":0,"kind":"cpu"}' })
+    const badBody = await fetch(`${sim.base}/sessions/${encodeURIComponent(pUp.key)}`, { method: 'PATCH', headers: sim.writeHeaders, body: '{"seat":0,"kind":"cpu"}' })
     ok(badBody.status === 400 && badBody.headers.get('content-type'), 'a general-editor body refused at the door (unknown patch field)', `http ${badBody.status}`)
 
-    // the real client composing with the real server — the tool's exact path:
-    const relClient = await relabelSession(pUp.key, { seat: 0, base: sim.base, key: SIM_READ_KEY })
-    ok(relClient.ok === true, 'client relabelSession applied through worker.js', JSON.stringify(relClient))
+    // the real client composing with the real server — the tool's exact path
+    // (write key inline, #2142; GET/list still ride the read key):
+    const relClient = await relabelSession(pUp.key, { seat: 0, base: sim.base, key: SIM_WRITE_KEY })
+    ok(relClient.ok === true, 'client relabelSession applied through worker.js with the write key', JSON.stringify(relClient))
     const after = await (await fetch(`${sim.base}/sessions/${encodeURIComponent(pUp.key)}`, { headers: sim.readHeaders })).json()
     ok(after.slots[0].source.kind === 'human' && after.slots[0].source.relabeledFrom === 'model' && after.slots[0].source.modelId === 'qwen-x' && !!after.slots[0].source.relabeledAt,
         'GET back: the relabel landed on the stored FILE and carries the audit stamp (#2142)', JSON.stringify(after.slots[0].source))
@@ -263,9 +265,9 @@ const post = async (base, body, headers = {}) => {
     ok(JSON.stringify(after.voice) === JSON.stringify(modelRec.voice), 'GET back: voice bytes untouched by the write')
     const rowAfter = (await listSessions({ base: sim.base, key: SIM_READ_KEY })).sessions.find((s) => s.key === pUp.key)
     ok(rowAfter && rowAfter.audio === true && rowAfter.player === 'jon' && !!rowAfter.uploadedAt, 'metadata survives the rewrite (player, audio flag, uploadedAt)', JSON.stringify(rowAfter))
-    const twice = await relabelSession(pUp.key, { seat: 0, base: sim.base, key: SIM_READ_KEY })
+    const twice = await relabelSession(pUp.key, { seat: 0, base: sim.base, key: SIM_WRITE_KEY })
     ok(twice.ok === false && /only 'model'/.test(twice.reason || ''), 'relabeling the same seat twice refused — the repair is one-way', JSON.stringify(twice))
-    const seat1 = await relabelSession(pUp.key, { seat: 1, base: sim.base, key: SIM_READ_KEY })
+    const seat1 = await relabelSession(pUp.key, { seat: 1, base: sim.base, key: SIM_WRITE_KEY })
     ok(seat1.ok === false && /kind is 'human'/.test(seat1.reason || ''), 'PATCHing an already-human seat refused with the reason verbatim', JSON.stringify(seat1))
 
     // security probes on a FRESH model-sourced take B: these are the gates
@@ -282,19 +284,18 @@ const post = async (base, body, headers = {}) => {
     sim.close()
 }
 
-// --- WRITE-KEY SEPARATION (#2142 finding 1b) ----------------------------------
-// #2157 will put the lanes' READ key into a lane-readable file. The relabel
-// PATCH must survive that: when SESSION_WRITE_KEY is deployed, ONLY the write
-// key opens it — the read key degrades to exactly what its name promises.
-// Pre-deploy, JON_KEY still opens the door (status quo), but the stamp in the
-// file keeps any relabel in that window visible, and /status `writeKey` makes
-// the window itself detectable.
+// --- WRITE-KEY SEPARATION (#2142 finding 1b, no-fallback #1711 audit) -------
+// #2157 puts the lanes' READ key into a lane-readable file. The relabel PATCH
+// must survive that: ONLY the write key opens it — the read key degrades to
+// exactly what its name promises. The pre-deploy window is the LOCKED side, not
+// a fallback: while /status says `writeKey:false` the store takes no edits at
+// all, so the window a wrong-key answer could exploit does not exist.
 {
     // the rule pure first (constant-time, fail-closed on both edges):
-    ok(sessionWriteOk(SIM_WRITE_KEY, SIM_WRITE_KEY, SIM_READ_KEY) === true, 'audit: separation deployed — the write key opens PATCH')
-    ok(sessionWriteOk(SIM_READ_KEY, SIM_WRITE_KEY, SIM_READ_KEY) === false, 'audit: separation deployed — the READ key alone edits nothing (the #2157 shape)')
-    ok(sessionWriteOk(SIM_READ_KEY, null, SIM_READ_KEY) === true, 'audit: separation not deployed — JON_KEY fallback keeps the tool working')
-    ok(sessionWriteOk(null, SIM_WRITE_KEY, SIM_READ_KEY) === false && sessionWriteOk('x', null, null) === false, 'audit: no key offered / no secret deployed — fail closed')
+    ok(sessionWriteOk(SIM_WRITE_KEY, SIM_WRITE_KEY) === true, 'audit: separation deployed — the write key opens PATCH')
+    ok(sessionWriteOk(SIM_READ_KEY, SIM_WRITE_KEY) === false, 'audit: separation deployed — the READ key alone edits nothing (the #2157 shape)')
+    ok(sessionWriteOk(SIM_READ_KEY, null) === false, 'audit mutant (#1711 item 1): write key unset, JON_KEY sent — REFUSED, the fallback is gone')
+    ok(sessionWriteOk(null, SIM_WRITE_KEY) === false && sessionWriteOk('x', null) === false, 'audit: no key offered / no secret deployed — fail closed')
 
     const simW = await startRelaySim({ writeKey: SIM_WRITE_KEY })
     const stW = await (await fetch(`${simW.base}/status`)).json()
@@ -318,11 +319,17 @@ const post = async (base, body, headers = {}) => {
 
     const simFb = await startRelaySim()
     const stFb = await (await fetch(`${simFb.base}/status`)).json()
-    ok(stFb.jonKey === true && stFb.writeKey === false, 'pre-separation status: writeKey:false — the fallback window is detectable, never silent', JSON.stringify(stFb))
+    ok(stFb.jonKey === true && stFb.writeKey === false, 'pre-deploy status: writeKey:false — /status names the locked side before Jon deploys the secret', JSON.stringify(stFb))
     const upFb = await uploadSession(sepRec, { player: 'jon', consent: { motion: true, voice: true, at: 1 }, base: simFb.base })
+    ok(upFb.ok && !!upFb.key, 'uploads unaffected by the write-lock state (phones never carry keys, locked side too)')
     const fbRel = await relabelSession(upFb.key, { seat: 0, base: simFb.base, key: SIM_READ_KEY })
-    ok(fbRel.ok === true && !!fbRel.relabeledAt, 'pre-separation deploy: the JON_KEY tool keeps working (status quo), WITH the stamp')
-    ok(JSON.parse(simFb.bucket._map.get(upFb.key).value).slots[0].source.relabeledFrom === 'model', 'even during the fallback window the trace lands in the file')
+    ok(fbRel.ok === false && fbRel.reason === 'write lock not configured',
+        'no-fallback end-to-end: write key UNSET + JON_KEY presented -> 401 naming the arm state, never the read key (#1711 audit mutant)', JSON.stringify(fbRel))
+    const fbRelRandom = await relabelSession(upFb.key, { seat: 0, base: simFb.base, key: 'not-a-key-at-all' })
+    ok(fbRelRandom.ok === false && fbRelRandom.reason === 'write lock not configured', 'unarmed door answers the arm state to any key — no probing signal about the read key')
+    const fbList = await listSessions({ base: simFb.base, key: SIM_READ_KEY })
+    ok(fbList.ok === true, 'pre-deploy: read-only access fully works while the write door is locked (lanes grade, nobody edits)', JSON.stringify(fbList.ok))
+    ok(JSON.parse(simFb.bucket._map.get(upFb.key).value).slots[0].source.kind === 'model', 'the locked pre-deploy window edits NOTHING — provenance untouched in the stored file')
     simFb.close()
 }
 

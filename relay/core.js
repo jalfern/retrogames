@@ -472,22 +472,21 @@ export function sessionReadOk(provided, jonKey) {
     return constTimeEq(provided, jonKey)
 }
 
-// WRITE DOOR SEPARATION (audit #2142 finding 1b) — the relabel PATCH must not
-// ride the same key the lanes are about to hold. #2157 puts JON_KEY (the READ
-// key) into a lane-readable file; if reads and writes shared it, that file
-// would open the store's only write. So PATCH authenticates against a separate
-// `writeKey` (worker secret SESSION_WRITE_KEY):
-//   - writeKey deployed  -> ONLY the write key opens PATCH; the read key is
+// WRITE DOOR SEPARATION (audit #2142 finding 1b; NO-FALLBACK per the #1711
+// audit of 2026-11-14, item 1) — the relabel PATCH must not ride the same key
+// the lanes hold. #2157 puts JON_KEY (the READ key) into a lane-readable file;
+// if reads and writes shared it, that file would open the store's only write.
+// PATCH authenticates ONLY against `writeKey` (worker secret SESSION_WRITE_KEY):
+//   - writeKey deployed -> ONLY the write key opens PATCH; the read key is
 //     refused there (lanes holding it stay read-only);
-//   - writeKey NOT deployed -> fall back to jonKey (the pre-separation deploy,
-//     status quo until Jon sets the secret; /status `writeKey` says which side
-//     of that deploy you're on, and every relabel still stamps its trace, so
-//     even during the window the laundering the audit feared is detectable).
-export function sessionWriteOk(provided, writeKey, jonKey) {
-    const effective = (typeof writeKey === 'string' && writeKey) ? writeKey : jonKey
-    if (typeof effective !== 'string' || !effective) return false
+//   - writeKey NOT deployed -> NOTHING opens it. The old jonKey fallback is
+//     removed: while `writeKey:false` on /status, the store takes no edits at
+//     all, and a caller waving the read key at the write door gets the same
+//     refusal as any wrong key. A deploy window must never be a side door.
+export function sessionWriteOk(provided, writeKey) {
+    if (typeof writeKey !== 'string' || !writeKey) return false
     if (typeof provided !== 'string' || !provided) return false
-    return constTimeEq(provided, effective)
+    return constTimeEq(provided, writeKey)
 }
 
 export function sessionRow(key, meta, uploadedAt) {

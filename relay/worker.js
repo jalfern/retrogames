@@ -104,9 +104,10 @@ async function handleSessionUpload(req, env, origin) {
 // the private store require the JON_KEY secret in the x-session-key header —
 // before this, anyone with the worker URL could list and download every
 // voice recording. The rule itself is core.sessionReadOk (pure, Node-pinned
-// by relaycheck); this is the door on each PRIVILEGED route — the reads and
-// the relabel write (#2093 item 1): store edits are exactly as private as
-// store reads. POST /sessions is
+// by relaycheck); this is the door on the privileged READ routes — the relabel
+// write (#2093 item 1) rides its own stricter door after the #2142 split (see
+// writeDenied below): store edits are at least as private as store
+// reads. POST /sessions is
 // deliberately NOT gated beyond the consent envelope ("Uploads stay as
 // they are" — phones upload without the key). Fail-closed: no JON_KEY
 // deployed = reads refused ('read lock not configured', distinguishable
@@ -117,14 +118,15 @@ function readDenied(req, env, origin) {
     return json({ ok: false, err: env && env.JON_KEY ? 'unauthorized' : 'read lock not configured' }, origin, 401)
 }
 
-// WRITE DOOR (#2142 audit finding 1b) — the relabel PATCH authenticates against
-// SESSION_WRITE_KEY when deployed, so the lanes' read key (#2157) can never
-// open it. With no write key deployed it falls back to JON_KEY (status quo);
-// /status `writeKey` says which side of the deploy you're on. Fail-closed.
+// WRITE DOOR (#2142 audit finding 1b; no-fallback #1711 audit item 1) — the
+// relabel PATCH authenticates ONLY against SESSION_WRITE_KEY, so the lanes'
+// read key (#2157) can never open it. With no write secret deployed the store
+// takes NO edits: `write lock not configured` (JON_KEY included is refused —
+// the pre-deploy window is the locked side, never a fallback). /status
+// `writeKey` says which side of the deploy you're on. Fail-closed.
 function writeDenied(req, env, origin) {
-    if (sessionWriteOk(req && req.headers.get(SES_READ_HEADER), env && env.SESSION_WRITE_KEY, env && env.JON_KEY)) return null
-    const armed = (env && env.SESSION_WRITE_KEY) || (env && env.JON_KEY)
-    return json({ ok: false, err: armed ? 'unauthorized' : 'write lock not configured' }, origin, 401)
+    if (sessionWriteOk(req && req.headers.get(SES_READ_HEADER), env && env.SESSION_WRITE_KEY)) return null
+    return json({ ok: false, err: env && env.SESSION_WRITE_KEY ? 'unauthorized' : 'write lock not configured' }, origin, 401)
 }
 
 async function handleSessionList(req, env, origin) {

@@ -235,14 +235,22 @@ async function runSelfTest() {
 
     // 1) localkey resolution (#2157): .env.local parsing, precedence, no leaks.
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'plaigrade-lk-'))
-    fs.writeFileSync(path.join(tmp, '.env.local'), "# local store secrets\nJON_KEY=local-test-key\nOTHER='quoted val'\nBARE\n")
+    fs.writeFileSync(path.join(tmp, '.env.local'), "# local store secrets\nJON_KEY=local-test-key\nSESSION_WRITE_KEY=leaky-file-key\nOTHER='quoted val'\nBARE\n")
     const savedKey = process.env.JON_KEY
     const savedCwd = process.cwd()
     delete process.env.JON_KEY
+    delete process.env.SESSION_WRITE_KEY
     process.chdir(tmp)
     resetLocalKeyCache()
     ok(readKey('JON_KEY') === 'local-test-key', 'localkey: JON_KEY resolves from .env.local', String(readKey('JON_KEY')))
     ok(String(keySource('JON_KEY') || '').endsWith('.env.local'), 'localkey: source names the FILE, never the value', keySource('JON_KEY') || '')
+    // #1711 audit item 2 (2026-11-14): every lane worktree reads .env.local, so
+    // the WRITE key must never resolve from a file — inline or nothing.
+    ok(readKey('SESSION_WRITE_KEY') === null && keySource('SESSION_WRITE_KEY') === null,
+        'localkey: SESSION_WRITE_KEY never resolves from .env.local (inline-only, even when a file carries it)', String(keySource('SESSION_WRITE_KEY')))
+    process.env.SESSION_WRITE_KEY = 'env-only-write-key'
+    ok(readKey('SESSION_WRITE_KEY') === 'env-only-write-key' && keySource('SESSION_WRITE_KEY') === 'env', "localkey: SESSION_WRITE_KEY resolves inline (Jon's prefix)")
+    delete process.env.SESSION_WRITE_KEY
     ok(readKey('OTHER') === 'quoted val', 'localkey: quotes stripped, comments/BARE lines handled', JSON.stringify(readKey('OTHER')))
     ok(readKey('BARE') === null && readKey('ABSENT_NAME') === null, 'localkey: keyless lines and absent names answer null')
     process.env.JON_KEY = 'env-beats-file'
