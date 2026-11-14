@@ -28,6 +28,24 @@ didn't say MODERN.
 - Autopilot and glide share one steering brain (`steerTo`): collision-aware
   axis choice, escape step, arrive radius 3.5px.
 
+## Two-slot carry + tray (#2266) — stage 2 of the chores kit
+- Two arms: `gs.held` is the FRONT arm (first grabbed), `gs.held2` the TRAY
+  arm (second). `A` fills an empty slot with the nearest litter; a third grab
+  refuses with `ARMS FULL` (named, never silent) and consumes nothing.
+- **FIFO release**: placements, throws and drops empty the front arm first —
+  the order you grabbed is the order that leaves, so a double-pickup never
+  hides a surprise WRONG STOW. One press releases exactly one item.
+- **Tray drag**: carrying two walks at `ROBOT_SPEED × 0.82` — the tray rides
+  out front and tilts with every step. Double-carry is a trade-off, not a
+  free upgrade.
+- `finishable` now requires BOTH arms empty; the hash carries both slots
+  (determinism unchanged — seed + pads still replay identically).
+- The autopilot double-loads: it takes a second item only when its container
+  matches what it already carries, so the attract demo and the win-proof run
+  WRONG-STOW-free and visibly use the mechanic (~800 two-carry ticks/seed).
+- Retrieve (B at an open container) still requires empty arms and lands in
+  the front arm — the wrong-stow rescue law is untouched.
+
 ## Core rules (what the harness proves)
 - Containers really open: the washer rack / fridge door slide (`door` 0→1,
   ~22 ticks) and BLOCK the floor while open. A door that finds the robot on
@@ -62,21 +80,24 @@ didn't say MODERN.
 
 ## Verify
 ```
-npm run tidycheck            # 43 Node gates + 13 browser gates (needs npm run dev)
+npm run tidycheck            # 56 Node gates + browser gates (needs npm run dev)
 npm run tidycheck -- --node  # Node-only
-npm run tidycheck -- --mutate   # door mutant (TIDY_MUT=door|glass|run|tidy)
+npm run tidycheck -- --mutate   # door mutant (TIDY_MUT=door|glass|run|tidy|order)
 CONTRACT_ONLY=tidy-bot npm run contractcheck
 ```
 Mutants: `door` (open doors stop blocking), `glass` (plates stop shattering),
-`run` (empty washer starts), `tidy` (wrong stows stop costing) — each turns
-NAMED gates red; restore after.
+`run` (empty washer starts), `tidy` (wrong stows stop costing),
+`order` (carry queue flips FIFO→LIFO) — each turns NAMED gates red; restore
+after.
 
 ## Honest gaps
 - **CLOSED by #2250**: GLIDE TO IT — tap the floor and the bot BFS-routes
   there (`routeDir`), re-planning per door state, refused honestly when the
   spot has no road. The human is always the driver (any key/verb/tap cancels).
-- Single task at a time (one held item); the real BEHAVIOR/Plaicraft robots
-  juggle trays — a two-slot carry + tray physics would be the obvious stage 2.
+- **CLOSED by #2266**: TWO-SLOT CARRY — two arms, FIFO release, tray drag
+  (see §Two-slot carry above). What stays open: tray physics with fragile
+  juggle risk (turning too hard spilling the tray), and a two-at-a-time
+  place at the container mouth.
 - Retrieval takes the last-wrong item, not an aimed pick from the rack.
 - No looping wash-cycle hum (START fires a one-shot sweep); attract restarts
   the demo game rather than looping level 2+.

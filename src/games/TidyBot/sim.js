@@ -28,6 +28,7 @@ export const REACH = 18
 export const GRAB_R = 26
 export const THROW_V = 3.2
 export const THROW_DEC = 0.075
+export const CARRY_SLOW = 0.82 // two arms full = HEAVY: the walker drags (#2266)
 export const LEVEL_TIME = [9600, 11400, 12600]
 
 // ---- furniture (static blockers; robot AABB vs these) ----
@@ -139,7 +140,7 @@ const distToRect = (px, py, r) => {
 const overlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
 
 // mutant hooks (tidycheck --mutate only; production never sets these)
-export const SIMHOOKS = { noBlock: false, freeRun: false, softStow: false }
+export const SIMHOOKS = { noBlock: false, freeRun: false, softStow: false, lifo: false }
 
 export const blockers = (gs) => {
     const out = [...WALLS, COUNTER, STOVE, TABLE, ...PLANTS]
@@ -180,6 +181,36 @@ const isOpen = (c) => c.door >= 0.9
 const isShut = (c) => c.door <= 0.01
 
 export const heldItem = (gs) => gs.items.find((it) => it.state === 'held') || null
+// Two arms (#2266): gs.held is the FRONT arm (first grabbed), gs.held2 the
+// tray arm (second). Release order is FIFO — the order you grabbed is the
+// order that leaves — so a double-pickup can never hide a surprise stow.
+export const heldItems = (gs) => [gs.held, gs.held2]
+    .filter((id) => id !== null && id !== undefined)
+    .map((id) => gs.items.find((it) => it.id === id))
+    .filter(Boolean)
+const carryTwo = (gs) => gs.held !== null && gs.held !== undefined && gs.held2 !== null && gs.held2 !== undefined
+const takeInto = (gs, it) => {
+    it.state = 'held'
+    it.vx = 0; it.vy = 0
+    if (gs.held === null || gs.held === undefined) gs.held = it.id
+    else gs.held2 = it.id
+    gs.ev.push({ type: 'grab', kind: it.kind, x: it.x, y: it.y })
+}
+// the arm that answers the next verb: FIFO front by rule, tray-first under
+// the `lifo` mutant
+const frontId = (gs) => (SIMHOOKS.lifo && gs.held2 !== null && gs.held2 !== undefined ? gs.held2 : gs.held)
+const frontItem = (gs) => gs.items.find((it) => it.id === frontId(gs) && it.state === 'held') || null
+const releaseFront = (gs) => {
+    // FIFO: front arm leaves first; the tray slides forward. `lifo` mutant
+    // empties the tray first — same two arms, reversed queue.
+    if (SIMHOOKS.lifo) {
+        if (gs.held2 !== null && gs.held2 !== undefined) gs.held2 = null
+        else gs.held = null
+    } else {
+        gs.held = gs.held2 === null || gs.held2 === undefined ? null : gs.held2
+        gs.held2 = null
+    }
+}
 const looseItems = (gs) => gs.items.filter((it) => it.state === 'loose')
 const wrongInside = (gs) => gs.items.filter((it) => it.state === 'in' && KINDS[it.kind].to !== it.cont)
 export const dwLoaded = (gs) => gs.items.filter((it) => it.state === 'in' && it.cont === 'dw').length
@@ -194,7 +225,7 @@ export function makeGame(seed, players = 1) {
         level: 0,
         clock: LEVEL_TIME[0],
         rx: HOME.x, ry: HOME.y, facing: 'down', walk: 0,
-        held: null,
+        held: null, held2: null,
         items: [],
         dw: { ...DW, door: 0, target: 0, cd: 0 },
         fr: { ...FR, door: 0, target: 0, cd: 0 },
@@ -235,6 +266,7 @@ export function loadLevel(gs, level) {
     gs.dwRun = false
     gs.opened = { dw: false, fr: false }
     gs.held = null
+    gs.held2 = null
     gs.rx = HOME.x; gs.ry = HOME.y; gs.facing = 'down'
     gs.auto = { cd: 0 }
     gs.chores = computeChores(gs)
@@ -338,9 +370,10 @@ export function step(gs, pads) {
     let vx = (pad.right ? 1 : 0) - (pad.left ? 1 : 0)
     let vy = (pad.down ? 1 : 0) - (pad.up ? 1 : 0)
     if (vx && vy) { vx *= 0.7071; vy *= 0.7071 }
+    const spd = ROBOT_SPEED * (carryTwo(gs) ? CARRY_SLOW : 1)
     if (vx || vy) {
-        const nx = gs.rx + vx * ROBOT_SPEED
-        const ny = gs.ry + vy * ROBOT_SPEED
+        const nx = gs.rx + vx * spd
+        const ny = gs.ry + vy * spd
         if (canStandRel(gs, nx, gs.ry)) gs.rx = nx
         if (canStandRel(gs, gs.rx, ny)) gs.ry = ny
         gs.facing = Math.abs(vx) >= Math.abs(vy) ? (vx > 0 ? 'right' : 'left') : (vy > 0 ? 'down' : 'up')
@@ -385,31 +418,35 @@ export function step(gs, pads) {
     // retrieve from an open container, or START a shut loaded washer.
     const allC = [gs.dw, gs.fr]
     if (pad.a) {
-        const held = heldItem(gs)
+        const held = frontItem(gs)
         if (held) {
             const openC = allC.find((c) => isOpen(c) && inZone(c, gs.rx, gs.ry))
-            if (openC) { placeInto(gs, openC, held, true); gs.held = null }
+            if (openC) { placeInto(gs, openC, held, true); releaseFront(gs) }
             else {
                 const shutC = allC.find((c) => isShut(c) && nearBody(c, gs.rx, gs.ry))
                 if (shutC) toggleDoor(gs, shutC, true)
-                else softBuzz(gs)
+                else {
+                    // second arm (#2266): litter at your feet rides onto the tray
+                    const near = looseItems(gs).filter((i2) => Math.hypot(i2.x - gs.rx, i2.y - gs.ry) <= GRAB_R)
+                        .sort((a, b) => Math.hypot(a.x - gs.rx, a.y - gs.ry) - Math.hypot(b.x - gs.rx, b.y - gs.ry))[0]
+                    if (near && gs.held2 === null) takeInto(gs, near)
+                    else if (near) { say(gs, 'ARMS FULL', gs.rx, gs.ry - 12, 'bad'); gs.ev.push({ type: 'refuse', x: gs.rx, y: gs.ry }) }
+                    else softBuzz(gs)
+                }
             }
         } else {
             const it = looseItems(gs).filter((i2) => Math.hypot(i2.x - gs.rx, i2.y - gs.ry) <= GRAB_R)
                 .sort((a, b) => Math.hypot(a.x - gs.rx, a.y - gs.ry) - Math.hypot(b.x - gs.rx, b.y - gs.ry))[0]
             const shutC = allC.find((c) => isShut(c) && nearBody(c, gs.rx, gs.ry))
             const openNear = allC.find((c) => isOpen(c) && nearBody(c, gs.rx, gs.ry))
-            if (it) {
-                it.state = 'held'
-                gs.held = it.id
-                gs.ev.push({ type: 'grab', kind: it.kind, x: it.x, y: it.y })
-            } else if (shutC) toggleDoor(gs, shutC, true)
+            if (it) takeInto(gs, it)
+            else if (shutC) toggleDoor(gs, shutC, true)
             else if (openNear) toggleDoor(gs, openNear, false)
             else softBuzz(gs)
         }
     }
     if (pad.b) {
-        const held = heldItem(gs)
+        const held = frontItem(gs)
         if (held) {
             const d = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[gs.facing]
             held.state = 'fly'
@@ -417,15 +454,14 @@ export function step(gs, pads) {
             held.y = gs.ry + d[1] * 8
             held.vx = d[0] * THROW_V
             held.vy = d[1] * THROW_V
-            gs.held = null
+            releaseFront(gs)
             gs.ev.push({ type: 'throw', kind: held.kind, x: held.x, y: held.y })
         } else {
             const openC = allC.find((c) => isOpen(c) && nearBody(c, gs.rx, gs.ry))
             if (openC && stowTargets(gs, openC).length) {
                 const pool = stowTargets(gs, openC)
                 const it = pool.find((i2) => KINDS[i2.kind].to !== openC.id) || pool[pool.length - 1]
-                it.state = 'held'
-                gs.held = it.id
+                takeInto(gs, it)
                 gs.ev.push({ type: 'retrieve', kind: it.kind, x: gs.rx, y: gs.ry })
             } else if (gs.dwRun) softBuzz(gs)
             else if (nearBody(gs.dw, gs.rx, gs.ry)) {
@@ -445,7 +481,7 @@ export function step(gs, pads) {
     // ---- verdicts ----
     const flags = markChores(gs)
     const loose = looseItems(gs).length + gs.items.filter((i) => i.state === 'fly').length
-    const finishable = loose === 0 && !gs.held && wrongInside(gs).length === 0 &&
+    const finishable = loose === 0 && gs.held === null && gs.held2 === null && wrongInside(gs).length === 0 &&
         isShut(gs.dw) && isShut(gs.fr) && (!flags.hasDw || gs.dwRun)
     if (finishable) {
         const bonus = Math.max(0, Math.ceil(gs.clock / 6))
@@ -482,6 +518,7 @@ export function stateHash(gs) {
         Math.round(gs.rx * 8), Math.round(gs.ry * 8), gs.facing,
         Math.round(gs.dw.door * 100), Math.round(gs.fr.door * 100),
         gs.dwRun ? 1 : 0, gs.held === null ? -1 : gs.held,
+        gs.held2 === null || gs.held2 === undefined ? -1 : gs.held2,
         gs.breaks, gs.wrongs, gs.spills, gs.jams, gs.tidies)
     for (const it of gs.items) p.push(it.id, it.state, Math.round(it.x * 8), Math.round(it.y * 8), it.cont || '-', it.state === 'fly' ? Math.round(it.vx * 100) : 0)
     for (const c of gs.chores) p.push(c.label, c.done ? 1 : 0)
@@ -641,10 +678,13 @@ export function autopilot(gs) {
     const cc = (id) => (id === 'dw' ? gs.dw : gs.fr)
     const stepTo = (g) => { goal = g }
 
-    // 1) carrying something
-    const held = heldItem(gs)
-    if (held) {
-        const c = cc(KINDS[held.kind].to)
+    // 1) carrying something — front arm sets the destination; while walking,
+    //    same-destination litter at the feet rides onto the tray (#2266: the
+    //    prover double-loads, but only what the same container wants, so a
+    //    loaded trip is never a wrong stow)
+    const carried = heldItems(gs)
+    if (carried.length) {
+        const c = cc(KINDS[carried[0].kind].to)
         if (isOpen(c)) {
             if (inZone(c, gs.rx, gs.ry)) act = 'a'
             else stepTo(zoneCenter(c, gs))
@@ -652,6 +692,11 @@ export function autopilot(gs) {
             if (nearBody(c, gs.rx, gs.ry)) act = 'a'
             else stepTo(bodyApproach(c, gs))
         } else stepTo(zoneCenter(c, gs))
+        if (!act && carried.length === 1) {
+            const mate = looseItems(gs).find((it) => KINDS[it.kind].to === KINDS[carried[0].kind].to &&
+                Math.hypot(it.x - gs.rx, it.y - gs.ry) <= GRAB_R)
+            if (mate) act = 'a'
+        }
     } else if (wrongInside(gs).length) {
         // 2) wrong stows get rescued first (retrieve is a B-verb)
         const bad = wrongInside(gs)

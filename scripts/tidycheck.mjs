@@ -13,30 +13,31 @@
 // on a real Space, the robot pixels land where the sim says after real
 // strokes, and a scripted chore run banks points with zero page errors.
 //
-// Mutants (TIDY_MUT=door|glass|run|tidy):
+// Mutants (TIDY_MUT=door|glass|run|tidy|order):
 //   door  — open doors stop blocking the floor
 //   glass — plates stop being fragile
 //   run   — the washer starts even when empty
 //   tidy  — wrong stows stop costing points
+//   order — the carry queue flips FIFO→LIFO (#2266 order gates go red)
 
 import * as s from '../src/games/TidyBot/sim.js'
 
 const args = process.argv.slice(2)
 const NODE_ONLY = args.includes('--node')
 const MUT = process.env.TIDY_MUT || (args.includes('--mutate') ? 'door' : null)
-
 let pass = 0
 const fails = []
 const ok = (c, m) => { if (c) { pass++; console.log(`  PASS  ${m}`) } else { fails.push(m); console.log(`  \x1b[31mFAIL\x1b[0m  ${m}`) } }
 const section = (t) => console.log(`\n\x1b[1m${t}\x1b[0m`)
 
-if (MUT && !['door', 'glass', 'run', 'tidy'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
+if (MUT && !['door', 'glass', 'run', 'tidy', 'order'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
 if (MUT) console.log(`\x1b[33mMUTANT ACTIVE: ${MUT}\x1b[0m`)
 const applyMut = () => {
     if (MUT === 'door') s.SIMHOOKS.noBlock = true
     if (MUT === 'glass') s.KINDS.plate.fragile = false
     if (MUT === 'run') s.SIMHOOKS.freeRun = true
     if (MUT === 'tidy') s.SIMHOOKS.softStow = true
+    if (MUT === 'order') s.SIMHOOKS.lifo = true
 }
 applyMut()
 
@@ -185,6 +186,94 @@ section('throw, jam, spill, shatter')
     gs4.dwRun = true
     step(gs4, [{}])
     ok(gs4.level === 1, 'a level with every item smashed still CLEARS — the game never bricks')
+}
+
+section('two-slot carry + tray (#2266)')
+{
+    // grabs fill the arms in order: nearest first, then the second
+    const gs = makeGame(42)
+    gs.items.push(
+        { id: 9001, kind: 'cup', x: gs.rx + 6, y: gs.ry, vx: 0, vy: 0, state: 'loose', cont: null },
+        { id: 9002, kind: 'plate', x: gs.rx + 12, y: gs.ry, vx: 0, vy: 0, state: 'loose', cont: null },
+        { id: 9003, kind: 'apple', x: gs.rx + 18, y: gs.ry, vx: 0, vy: 0, state: 'loose', cont: null },
+    )
+    step(gs, [{ a: true }])
+    ok(gs.held === 9001 && gs.held2 === null, 'first grab fills the front arm with the nearest litter')
+    step(gs, [{ a: true }])
+    ok(gs.held === 9001 && gs.held2 === 9002, 'a second grab while loaded rides onto the tray (two slots)')
+    // refusal is named, never silent — and it consumes nothing
+    const heldBefore = `${gs.held}:${gs.held2}`
+    step(gs, [{ a: true }])
+    ok(gs.ev.some((e) => e.type === 'refuse') && gs.fx.some((f) => f.msg === 'ARMS FULL') &&
+        `${gs.held}:${gs.held2}` === heldBefore,
+        'a third grab refuses with ARMS FULL and consumes nothing')
+    // FIFO release at the container: the FIRST grabbed is the FIRST placed
+    const gs2 = makeGame(42)
+    const plate = gs2.items.find((it) => it.kind === 'plate')
+    const cup = gs2.items.find((it) => it.kind === 'cup')
+    plate.x = 152; plate.y = 150; cup.x = 164; cup.y = 150
+    gs2.rx = 156; gs2.ry = 150
+    step(gs2, [{ a: true }]) // grab plate (nearer)
+    step(gs2, [{ a: true }]) // grab cup onto the tray
+    ok(gs2.held === plate.id && gs2.held2 === cup.id, 'double-pickup keeps grab order (front=plate, tray=cup)')
+    gs2.dw.door = 1; gs2.dw.target = 1; gs2.dw.cd = 0
+    gs2.rx = 79; gs2.ry = 58 // step into the open washer's place zone
+    const t0 = gs2.tidies
+    step(gs2, [{ a: true }]) // place in the open zone: plate leaves first
+    ok(gs2.tidies === t0 + 1 && plate.state === 'in' && gs2.held === cup.id && gs2.held2 === null,
+        'FIFO: the front arm places first and the tray slides forward (RED under order mutant)')
+    step(gs2, [{ a: true }])
+    ok(gs2.tidies === t0 + 2 && cup.state === 'in' && gs2.held === null,
+        'the second press empties the tray — one release per press')
+    // FIFO throw: B tosses the front item, the tray holds
+    const gs3 = makeGame(42)
+    const p2 = gs3.items.find((it) => it.kind === 'plate')
+    const c2 = gs3.items.find((it) => it.kind === 'cup')
+    p2.x = 152; p2.y = 150; c2.x = 164; c2.y = 150
+    gs3.rx = 156; gs3.ry = 150; gs3.facing = 'right'
+    step(gs3, [{ a: true }]); step(gs3, [{ a: true }])
+    ok(gs3.held === p2.id && gs3.held2 === c2.id, 'two loaded on the floor before the toss')
+    step(gs3, [{ b: true }])
+    ok(p2.state === 'fly' && gs3.held === c2.id && gs3.held2 === null && gs3.ev.some((e) => e.type === 'throw' && e.kind === 'plate'),
+        'HEAVY bot throws only the front item — the tray stays held (RED under order mutant)')
+    while (gs3.items.some((it) => it.state === 'fly')) step(gs3, [{}])
+    // carrying two drags the legs
+    const gE = makeGame(42); const gH = makeGame(42)
+    const hArr = gH.items.filter((it) => it.state === 'loose')
+    hArr[0].state = 'held'; gH.held = hArr[0].id
+    hArr[1].state = 'held'; gH.held2 = hArr[1].id
+    const ex0 = gE.rx, hx0 = gH.rx
+    for (let i = 0; i < 20; i++) { step(gE, [{ right: true }]); step(gH, [{ right: true }]) }
+    const dxE = gE.rx - ex0, dxH = gH.rx - hx0
+    ok(dxE > 0 && dxH > 0 && dxH < dxE, `carrying two is HEAVY — ${dxH.toFixed(1)}px vs ${dxE.toFixed(1)}px in 20 ticks`)
+    // the level cannot close with cargo still aboard either arm
+    const gs5 = makeGame(42)
+    for (const it of gs5.items) it.state = 'gone'
+    const ride = gs5.items.find((it) => it.kind === 'milk')
+    ride.state = 'held'; gs5.held2 = ride.id // tray-only load: held null, held2 set
+    gs5.dwRun = true; gs5.dw.target = 0; gs5.fr.target = 0
+    step(gs5, [{}])
+    ok(gs5.level === 0 && !gs5.end, 'a level refuses to close while the tray arm still carries cargo')
+    ride.state = 'in'; ride.cont = 'fr'
+    gs5.held2 = null
+    step(gs5, [{}])
+    ok(gs5.levelsDone === 1, 'putting the tray cargo away closes the level — both arms must empty')
+    // retrieve lands in the front arm (arms were empty; rescue law unchanged)
+    const gs6 = makeGame(42)
+    gs6.dw.door = 1; gs6.dw.target = 1; gs6.dw.cd = 0
+    const stuck = gs6.items.find((it) => it.kind === 'apple')
+    stuck.state = 'in'; stuck.cont = 'dw'
+    gs6.rx = DW.x + DW.w + 12; gs6.ry = DW.y + DW.h / 2
+    step(gs6, [{ b: true }])
+    ok(stuck.state === 'held' && gs6.held === stuck.id && gs6.held2 === null, 'a retrieve fills the front arm of an empty bot')
+    // the prover uses the new mechanic: double-carry ticks show up in the win
+    let twoTicks = 0, won = false
+    {
+        const gA = makeGame(7)
+        while (!gA.end && gA.tick < 40000) { step(gA, [autopilot(gA)]); if (gA.held !== null && gA.held2 !== null) twoTicks++ }
+        won = gA.end === 'win'
+    }
+    ok(won && twoTicks > 200, `the autopilot double-loads on the road to victory (${twoTicks} two-carry ticks, seed 7)`)
 }
 
 section('win + slack')
@@ -348,6 +437,43 @@ if (!NODE_ONLY) {
         await page.waitForTimeout(700)
         st = await page.evaluate(() => window.__tidybotTest.state())
         ok(st.dwDoor > 0.9, 'real A opens the dishwasher rack end-to-end')
+
+        // #2266 CARRY with real keys: two SPACE presses load both arms and the
+        // tray cargo is PAINTED at the arm; a third press adds nothing.
+        await page.evaluate(() => {
+            const g = window.__game
+            g.reset(3141)
+            const gs = window.__tidybotTest.sim()
+            gs.items.push(
+                { id: 9101, kind: 'cup', x: gs.rx + 5, y: gs.ry, vx: 0, vy: 0, state: 'loose', cont: null },
+                { id: 9102, kind: 'apple', x: gs.rx + 12, y: gs.ry, vx: 0, vy: 0, state: 'loose', cont: null },
+                { id: 9103, kind: 'milk', x: gs.rx + 18, y: gs.ry, vx: 0, vy: 0, state: 'loose', cont: null },
+            )
+        })
+        await page.waitForTimeout(80)
+        await page.keyboard.press('Space')
+        await page.waitForTimeout(80)
+        let carry = await page.evaluate(() => window.__tidybotTest.state())
+        ok(carry.held === 'cup' && carry.held2 === '', 'a real SPACE lifts the nearest litter into the front arm')
+        await page.keyboard.press('Space')
+        await page.waitForTimeout(80)
+        carry = await page.evaluate(() => window.__tidybotTest.state())
+        ok(carry.held === 'cup' && carry.held2 === 'apple', 'a second real SPACE loads the tray arm too')
+        const trayPx = await page.evaluate(() => {
+            const cv = window.__tidybotTest.canvas()
+            const gs = window.__tidybotTest.sim()
+            const g = cv.getContext('2d')
+            const X = Math.round(gs.rx * 2), Y = Math.round((gs.ry + 11) * 2)
+            const d = g.getImageData(X - 6, Y - 9, 13, 14).data
+            let red = 0
+            for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i + 1] < 110 && d[i + 2] < 110) red++
+            return { red, X, Y }
+        })
+        ok(trayPx.red >= 4, `the tray apple is painted at the arm (${trayPx.red} red px at ${trayPx.X},${trayPx.Y})`)
+        await page.keyboard.press('Space')
+        await page.waitForTimeout(80)
+        carry = await page.evaluate(() => window.__tidybotTest.state())
+        ok(carry.held === 'cup' && carry.held2 === 'apple', 'a third press beside litter adds nothing (ARMS FULL end-to-end)')
 
         // #2250 GLIDE: a real mouse tap issues a real order and the bot walks
         // the BFS roads there; a real arrow press takes the wheel back.
