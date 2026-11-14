@@ -20,6 +20,9 @@ new_sqlite_classes = ["Room", "Registry"]
 # only step left is `wrangler deploy` from relay/ (or the merge-driven
 # deploy-relay workflow). Reads are locked (#1711 S8): JON_KEY must be set as
 # a worker secret for any admin read to succeed; until then reads fail closed.
+# WRITE SEPARATION (#2142): run `wrangler secret put SESSION_WRITE_KEY` when
+# deploying this build — until that secret exists PATCH falls back to JON_KEY
+# (/status `writeKey` shows which); set it before #2157 hands JON_KEY to lanes.
 [[r2_buckets]]
 binding = "SESSIONS"
 bucket_name = "retrogames-sessions"

@@ -458,14 +458,36 @@ export function sessionMeta(rec, player) {
 // bucket is never readable un-authenticated, capability or not.
 export const SES_READ_HEADER = 'x-session-key'
 
-export function sessionReadOk(provided, jonKey) {
-    if (typeof jonKey !== 'string' || !jonKey) return false
-    if (typeof provided !== 'string' || !provided) return false
-    const a = new TextEncoder().encode(provided)
-    const b = new TextEncoder().encode(jonKey)
+function constTimeEq(aStr, bStr) {
+    const a = new TextEncoder().encode(aStr)
+    const b = new TextEncoder().encode(bStr)
     let diff = a.length ^ b.length
     for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i % b.length]
     return diff === 0
+}
+
+export function sessionReadOk(provided, jonKey) {
+    if (typeof jonKey !== 'string' || !jonKey) return false
+    if (typeof provided !== 'string' || !provided) return false
+    return constTimeEq(provided, jonKey)
+}
+
+// WRITE DOOR SEPARATION (audit #2142 finding 1b) — the relabel PATCH must not
+// ride the same key the lanes are about to hold. #2157 puts JON_KEY (the READ
+// key) into a lane-readable file; if reads and writes shared it, that file
+// would open the store's only write. So PATCH authenticates against a separate
+// `writeKey` (worker secret SESSION_WRITE_KEY):
+//   - writeKey deployed  -> ONLY the write key opens PATCH; the read key is
+//     refused there (lanes holding it stay read-only);
+//   - writeKey NOT deployed -> fall back to jonKey (the pre-separation deploy,
+//     status quo until Jon sets the secret; /status `writeKey` says which side
+//     of that deploy you're on, and every relabel still stamps its trace, so
+//     even during the window the laundering the audit feared is detectable).
+export function sessionWriteOk(provided, writeKey, jonKey) {
+    const effective = (typeof writeKey === 'string' && writeKey) ? writeKey : jonKey
+    if (typeof effective !== 'string' || !effective) return false
+    if (typeof provided !== 'string' || !provided) return false
+    return constTimeEq(provided, effective)
 }
 
 export function sessionRow(key, meta, uploadedAt) {
@@ -490,12 +512,17 @@ export function sessionRow(key, meta, uploadedAt) {
 // door can never become a general editor:
 //   - body is exactly { seat } — any other field is refused (SHAPE law,
 //     fail-closed: an unknown patch field means a client we did not design);
-//   - the only kind that may change is 'model', and only to 'human' — the
-//     reverse (human→model) would launder provenance and is refused;
-//   - the seat's modelId is dropped with the relabel (no model drove it);
+//   - the only kind that may change is 'model', and only to 'human';
+//   - model→human IS the laundering direction (audit #2142): a bot drive that
+//     gets relabelled would otherwise read as human play forever. So the edit
+//     is NOT silent — the seat carries `relabeledFrom: 'model'`, the old
+//     `modelId` (kept, not dropped: evidence of what drove it) and
+//     `relabeledAt`. Grading (auditTakeSources) never counts a stamped seat
+//     as human evidence; the human→model reverse is refused outright.
 //   - pads, raw, ping, voice and metadata live outside the patch entirely.
-// The route itself rides the READ LOCKDOWN door: JON_KEY in x-session-key,
-// constant-time, fail-closed — a worker without the secret can write nothing.
+// The route authenticates with the separate write key (sessionWriteOk above,
+// audit #2142 finding 1b) — constant-time, fail-closed: without any key
+// deployed the worker can write nothing.
 
 export const SES_KEY_RE = /^[a-z0-9][a-z0-9-]{0,40}\/[0-9-]{10}-seed\d+-[a-f0-9]{10}\.json$/
 export const SES_MAX_SEATS = 4
@@ -512,14 +539,43 @@ export function validateSessionPatch(body) {
 
 // applySessionRelabel returns { ok, rec } with a NEW object (the stored parse
 // is never half-mutated) or { ok:false, err } naming why the edit is refused.
-export function applySessionRelabel(rec, seat) {
+// opts.now (epoch ms) pins relabeledAt for deterministic Node pins; the worker
+// passes Date.now(), and omitting it still stamps real time — the trace is
+// never omissible, only testable.
+export function applySessionRelabel(rec, seat, opts = {}) {
     if (!rec || typeof rec !== 'object') return { ok: false, err: 'bad recording' }
     if (!Array.isArray(rec.slots)) return { ok: false, err: 'recording has no slots array' }
     const slot = rec.slots[seat]
     if (!slot || typeof slot !== 'object') return { ok: false, err: `seat ${seat}: no such seat in this take` }
     if (!slot.source || typeof slot.source !== 'object') return { ok: false, err: `seat ${seat}: source missing — nothing to relabel` }
+    if (slot.source.relabeledFrom !== undefined) return { ok: false, err: `seat ${seat}: already relabeled (${slot.source.relabeledFrom}->${slot.source.kind}) — one-way repair, only 'model' may become 'human'` }
     if (slot.source.kind !== 'model') return { ok: false, err: `seat ${seat}: kind is '${slot.source.kind}', only 'model' may become 'human'` }
+    // The audit stamp (#2142 finding 1a): the edit leaves a trace IN THE FILE.
+    const stamp = { kind: 'human', relabeledFrom: 'model' }
+    if (slot.source.modelId !== undefined) stamp.modelId = slot.source.modelId
+    const at = Number(opts.now)
+    stamp.relabeledAt = new Date(Number.isFinite(at) ? at : Date.now()).toISOString()
     const out = { ...rec }
-    out.slots = rec.slots.map((s, i) => (i === seat ? { ...s, source: { kind: 'human' } } : s))
-    return { ok: true, rec: out }
+    out.slots = rec.slots.map((s, i) => (i === seat ? { ...s, source: stamp } : s))
+    return { ok: true, rec: out, stamped: stamp }
+}
+
+// HUMAN EVIDENCE (#1711 acceptance, audit #2142 finding 1c) — "Jon plays 3
+// sessions" counts NATIVE human seats only. A relabeled seat carries the audit
+// stamp, so grading sees it as what it is: repaired provenance, not proof of
+// thumbs. auditTakeSources splits a take's seats three ways so the evidence
+// report can flag relabeled takes instead of counting them.
+export function countsAsHumanSource(source) {
+    return !!(source && typeof source === 'object' && source.kind === 'human' && source.relabeledFrom === undefined)
+}
+
+export function auditTakeSources(rec) {
+    const out = { human: 0, relabeled: 0, other: 0 }
+    for (const s of ((rec && rec.slots) || [])) {
+        if (s && s.source && s.source.kind === 'human') {
+            if (s.source.relabeledFrom === undefined) out.human++
+            else out.relabeled++
+        } else out.other++
+    }
+    return out
 }

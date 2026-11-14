@@ -22,9 +22,9 @@
 // The worker runs via scripts/lib/relaysim.mjs (cloudflare:workers shim + a
 // faithful in-memory R2). Node >= 22 (module.register).
 
-import { startRelaySim, SIM_READ_KEY } from './lib/relaysim.mjs'
+import { startRelaySim, SIM_READ_KEY, SIM_WRITE_KEY } from './lib/relaysim.mjs'
 import { validate, REC_FORMAT, REC_FORMAT_V2 } from '../src/utils/recording.js'
-import { validateSessionEnvelope, sessionReadOk, validateSessionPatch, applySessionRelabel } from '../relay/core.js'
+import { validateSessionEnvelope, sessionReadOk, sessionWriteOk, validateSessionPatch, applySessionRelabel, countsAsHumanSource, auditTakeSources } from '../relay/core.js'
 import { uploadSession, listSessions, probeStore, relabelSession } from '../src/utils/sessionStore.js'
 
 const MUTATE = process.argv.includes('--mutate')
@@ -213,14 +213,29 @@ const post = async (base, body, headers = {}) => {
     ok(validateSessionPatch({ seat: '0' }).ok === false && validateSessionPatch({ seat: 4 }).ok === false && validateSessionPatch({}).ok === false, 'core: non-integer / out-of-range / missing seat refused')
     const modelRec = mkRec(true)
     modelRec.slots[0].source = { kind: 'model', modelId: 'qwen-x' }
-    const rel = applySessionRelabel(modelRec, 0)
-    ok(rel.ok === true && rel.rec.slots[0].source.kind === 'human' && rel.rec.slots[0].source.modelId === undefined, 'core: model->human applied, stale modelId dropped', JSON.stringify(rel.rec.slots[0].source))
+    const rel = applySessionRelabel(modelRec, 0, { now: 1763000000000 })
+    const src0 = rel.rec.slots[0].source
+    ok(rel.ok === true && src0.kind === 'human' && src0.relabeledFrom === 'model' && src0.modelId === 'qwen-x' && src0.relabeledAt === new Date(1763000000000).toISOString(),
+        'core: model->human applied WITH the audit stamp #2142 — relabeledFrom, modelId KEPT, relabeledAt', JSON.stringify(src0))
     ok(modelRec.slots[0].source.kind === 'model', 'core: the input object is never half-mutated (a NEW rec comes back)')
     ok(rel.rec.slots[1].source.kind === 'human' && rel.rec.voice === modelRec.voice, 'core: every byte outside the patched seat survives untouched')
     ok(applySessionRelabel(rel.rec, 0).ok === false, 'core: the reverse (human->model) is REFUSED — provenance cannot be laundered')
     ok(applySessionRelabel(modelRec, 1).ok === false && applySessionRelabel(modelRec, 7).ok === false, 'core: non-model kinds and out-of-take seats refused')
     ok(applySessionRelabel({ ...modelRec, slots: [modelRec.slots[0]] }, 1).ok === false, 'core: a seat the take does not have is refused')
     ok(applySessionRelabel({ ...modelRec, slots: [{ source: null, pads: [], raw: [] }] }, 0).ok === false, 'core: a seat with no source is refused (nothing to relabel)')
+
+    // HUMAN-EVIDENCE GRADING (#2142 finding 1c) — a relabeled seat carries its
+    // stamp, and grading refuses to read a stamp as thumbs. This is the rule
+    // that makes "relabel a CPU/model take" worthless for the acceptance line.
+    ok(countsAsHumanSource({ kind: 'human' }) === true, 'audit: native human counts')
+    ok(countsAsHumanSource({ kind: 'human', relabeledFrom: 'model', modelId: 'qwen-x', relabeledAt: 'x' }) === false, 'audit: a RELABELED seat does NOT count as human evidence')
+    ok(countsAsHumanSource({ kind: 'cpu' }) === false && countsAsHumanSource({ kind: 'model' }) === false && countsAsHumanSource(null) === false, 'audit: cpu/model/no-source never count')
+    const auditMixed = auditTakeSources({ slots: [{ source: { kind: 'human' } }, { source: { kind: 'cpu' } }, { source: { kind: 'model' } }] })
+    ok(auditMixed.human === 1 && auditMixed.relabeled === 0 && auditMixed.other === 2, 'audit: mixed take graded 1 native human / 2 other', JSON.stringify(auditMixed))
+    const launderTry = auditTakeSources(applySessionRelabel(modelRec, 0, { now: 1 }).rec)
+    ok(launderTry.human === 1 && launderTry.relabeled === 1, 'audit: relabeling seat 0 of a model take yields 0 EXTRA native human seats — the relabeled seat is flagged, not laundered', JSON.stringify(launderTry))
+    const allBot = { slots: [{ source: { kind: 'model', modelId: 'qwen-x' } }, { source: { kind: 'cpu' } }] }
+    ok(auditTakeSources(allBot).human === 0 && auditTakeSources(applySessionRelabel(allBot, 0, { now: 1 }).rec).human === 0, 'audit: a bot-driven take never reaches human:1, relabeled or not — it cannot satisfy "Jon plays 3 sessions"')
 
     // the deployed file, transport end. Order matters for honest mutant grading:
     // the FEATURE round-trip runs first on take A; the security probes get a
@@ -241,7 +256,9 @@ const post = async (base, body, headers = {}) => {
     const relClient = await relabelSession(pUp.key, { seat: 0, base: sim.base, key: SIM_READ_KEY })
     ok(relClient.ok === true, 'client relabelSession applied through worker.js', JSON.stringify(relClient))
     const after = await (await fetch(`${sim.base}/sessions/${encodeURIComponent(pUp.key)}`, { headers: sim.readHeaders })).json()
-    ok(after.slots[0].source.kind === 'human' && after.slots[0].source.modelId === undefined, 'GET back: the relabel landed where the listing points')
+    ok(after.slots[0].source.kind === 'human' && after.slots[0].source.relabeledFrom === 'model' && after.slots[0].source.modelId === 'qwen-x' && !!after.slots[0].source.relabeledAt,
+        'GET back: the relabel landed on the stored FILE and carries the audit stamp (#2142)', JSON.stringify(after.slots[0].source))
+    ok(auditTakeSources(after).relabeled === 1, 'GET back: the deployed file grades the relabeled seat as flagged, not laundered', JSON.stringify(auditTakeSources(after)))
     ok(JSON.stringify(after.slots[1]) === JSON.stringify(modelRec.slots[1]), 'GET back: the other seat byte-identical')
     ok(JSON.stringify(after.voice) === JSON.stringify(modelRec.voice), 'GET back: voice bytes untouched by the write')
     const rowAfter = (await listSessions({ base: sim.base, key: SIM_READ_KEY })).sessions.find((s) => s.key === pUp.key)
@@ -263,6 +280,50 @@ const post = async (base, body, headers = {}) => {
     const afterB = JSON.parse(sim.bucket._map.get(pUp2.key).value)
     ok(afterB.slots[0].source.kind === 'model', 'the refused probes wrote NOTHING to take B', JSON.stringify(afterB.slots[0].source))
     sim.close()
+}
+
+// --- WRITE-KEY SEPARATION (#2142 finding 1b) ----------------------------------
+// #2157 will put the lanes' READ key into a lane-readable file. The relabel
+// PATCH must survive that: when SESSION_WRITE_KEY is deployed, ONLY the write
+// key opens it — the read key degrades to exactly what its name promises.
+// Pre-deploy, JON_KEY still opens the door (status quo), but the stamp in the
+// file keeps any relabel in that window visible, and /status `writeKey` makes
+// the window itself detectable.
+{
+    // the rule pure first (constant-time, fail-closed on both edges):
+    ok(sessionWriteOk(SIM_WRITE_KEY, SIM_WRITE_KEY, SIM_READ_KEY) === true, 'audit: separation deployed — the write key opens PATCH')
+    ok(sessionWriteOk(SIM_READ_KEY, SIM_WRITE_KEY, SIM_READ_KEY) === false, 'audit: separation deployed — the READ key alone edits nothing (the #2157 shape)')
+    ok(sessionWriteOk(SIM_READ_KEY, null, SIM_READ_KEY) === true, 'audit: separation not deployed — JON_KEY fallback keeps the tool working')
+    ok(sessionWriteOk(null, SIM_WRITE_KEY, SIM_READ_KEY) === false && sessionWriteOk('x', null, null) === false, 'audit: no key offered / no secret deployed — fail closed')
+
+    const simW = await startRelaySim({ writeKey: SIM_WRITE_KEY })
+    const stW = await (await fetch(`${simW.base}/status`)).json()
+    ok(stW.ok === true && stW.jonKey === true && stW.writeKey === true, 'status announces both secrets presence-only so callers can check separation', JSON.stringify(stW))
+    const sepRec = mkRec(true)
+    sepRec.slots[0].source = { kind: 'model', modelId: 'qwen-x' }
+    const upW = await uploadSession(sepRec, { player: 'jon', consent: { motion: true, voice: true, at: 1 }, base: simW.base })
+    ok(upW.ok && !!upW.key, 'the separated worker still accepts uploads (phones never carry keys)')
+    const readKeyPatch = await relabelSession(upW.key, { seat: 0, base: simW.base, key: SIM_READ_KEY })
+    ok(readKeyPatch.ok === false && readKeyPatch.reason === 'unauthorized', 'read-key relabel REFUSED once separation is deployed — the key #2157 distributes cannot launder', JSON.stringify(readKeyPatch))
+    ok(JSON.parse(simW.bucket._map.get(upW.key).value).slots[0].source.kind === 'model', 'the refused read-key attempt wrote nothing')
+    const withWrite = await relabelSession(upW.key, { seat: 0, base: simW.base, key: SIM_WRITE_KEY })
+    ok(withWrite.ok === true && !!withWrite.relabeledAt, 'write-key relabel succeeds and reports relabeledAt', JSON.stringify(withWrite))
+    ok(JSON.parse(simW.bucket._map.get(upW.key).value).slots[0].source.relabeledFrom === 'model', 'write-key relabel stored the audit stamp end-to-end')
+
+    // reads still ride the READ key while separation is on (lanes grade,
+    // lanes never edit):
+    const listW = await listSessions({ base: simW.base, key: SIM_READ_KEY })
+    ok(listW.ok === true && listW.sessions.length >= 1, 'read key still lists after separation — read-only access is intact (#2157 dependency)')
+    simW.close()
+
+    const simFb = await startRelaySim()
+    const stFb = await (await fetch(`${simFb.base}/status`)).json()
+    ok(stFb.jonKey === true && stFb.writeKey === false, 'pre-separation status: writeKey:false — the fallback window is detectable, never silent', JSON.stringify(stFb))
+    const upFb = await uploadSession(sepRec, { player: 'jon', consent: { motion: true, voice: true, at: 1 }, base: simFb.base })
+    const fbRel = await relabelSession(upFb.key, { seat: 0, base: simFb.base, key: SIM_READ_KEY })
+    ok(fbRel.ok === true && !!fbRel.relabeledAt, 'pre-separation deploy: the JON_KEY tool keeps working (status quo), WITH the stamp')
+    ok(JSON.parse(simFb.bucket._map.get(upFb.key).value).slots[0].source.relabeledFrom === 'model', 'even during the fallback window the trace lands in the file')
+    simFb.close()
 }
 
 // --- unbound store: the honest 503 pair + dead registry ------------------------

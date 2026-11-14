@@ -31,6 +31,7 @@
 // Exit codes: 0 all verified, 1 any failure, 2 store not provisioned (live).
 
 import { validate, verifyRecording, createRecorder, REC_FORMAT_V2 } from '../src/utils/recording.js'
+import { auditTakeSources } from '../relay/core.js'
 import { tickToMs, voiceDrift, VOICE_CLOCK_EVERY, containerDurationMs, TICK_MS } from '../src/utils/voice.js'
 import { probeStore, listSessions, storeFromQuery } from '../src/utils/sessionStore.js'
 import { startRelaySim, SIM_READ_KEY } from './lib/relaysim.mjs'
@@ -131,7 +132,7 @@ function driverFor(rec) {
 const VOICE_CONTAINER_TOL_MS = 150
 
 async function verifyKey(key, base, readHeaders = {}) {
-    const res = { key, ok: false, replayOk: false, voiceOk: null, error: null, ticks: 0, game: '?', player: '?', audio: false, humanSeats: 0, note: '', voice: null }
+    const res = { key, ok: false, replayOk: false, voiceOk: null, error: null, ticks: 0, game: '?', player: '?', audio: false, humanSeats: 0, relabeledSeats: 0, note: '', voice: null }
     let text
     try {
         const r = await fetch(`${base}/sessions/${encodeURIComponent(key)}`, { headers: readHeaders })
@@ -143,7 +144,9 @@ async function verifyKey(key, base, readHeaders = {}) {
     res.game = rec.game || '?'
     res.ticks = rec.ticks || 0
     res.audio = rec.voice !== undefined && (rec.voice.tracks || []).length > 0
-    res.humanSeats = (rec.slots || []).filter((s) => s.source && s.source.kind === 'human').length
+    const src = auditTakeSources(rec)
+    res.humanSeats = src.human
+    res.relabeledSeats = src.relabeled
     const bad = validate(rec)
     if (bad) { res.error = `validate: ${bad}`; return res }
     const d = driverFor(rec)
@@ -212,11 +215,18 @@ function report(sessions) {
         // VOICE = the replay verified but the audio clock did not (#2058: one
         // verdict per axis — a voice failure is not a replay failure).
         const verdict = s.ok ? 'PASS' : s.replayOk ? 'VOICE' : 'FAIL'
-        console.log(`${pad(verdict, 6)}${pad(s.game, 20)}${pad(s.player, 12)}${pad(s.ticks, 8)}${pad(s.humanSeats, 4)}${pad(s.audio ? 'yes' : 'no', 6)}${s.ok ? s.note : s.error || s.note}`)
+        // #2142: a relabeled seat carries its audit stamp — the take verifies
+        // and replays, but it is NOT human evidence. Loud in the note, counted
+        // apart in the summary; it never inflates the "Jon plays 3 sessions"
+        // tally.
+        const flag = s.relabeledSeats > 0 ? ` [RELABELED x${s.relabeledSeats} — not human evidence #2142]` : ''
+        console.log(`${pad(verdict, 6)}${pad(s.game, 20)}${pad(s.player, 12)}${pad(s.ticks, 8)}${pad(s.humanSeats, 4)}${pad(s.audio ? 'yes' : 'no', 6)}${s.ok ? s.note : s.error || s.note}${flag}`)
     }
     const good = sessions.filter((s) => s.ok).length
     const replayGood = sessions.filter((s) => s.replayOk).length
+    const nativeHuman = sessions.filter((s) => s.replayOk && s.humanSeats > 0).length
     console.log(`\nevidence: ${replayGood}/${sessions.length} replay-verified${replayGood === sessions.length && sessions.length ? ' — 100% (acceptance line #2 holds for these files)' : ''}`)
+    console.log(`human takes: ${nativeHuman}/${sessions.length} replay-verified with a NATIVE human seat (relabeled seats do not count — #2142)`)
     const voiced = sessions.filter((s) => s.audio)
     if (voiced.length) {
         const voiceGood = voiced.filter((s) => s.voiceOk).length

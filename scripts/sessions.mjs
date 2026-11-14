@@ -16,8 +16,11 @@
 //       #   gauntlet/2026-11-11-seed59-5a9737e569.json
 //
 // The read lockdown (#1711 S8): the store refuses reads AND relabel writes
-// without the key, so run as `JON_KEY=<secret> npm run sessions` (the same
-// secret the worker deploys with; uploads from phones do not need it).
+// without a key, so run as `JON_KEY=<secret> npm run sessions`. With the
+// #2142 write-key separation deployed, relabel additionally takes
+// `SESSION_WRITE_KEY=<secret> npm run sessions -- relabel …` — the WRITE door
+// prefers it, and the read key alone stops being enough (the lanes hold only
+// the read key, so they can grade but never relabel — that's the point).
 //
 // Exit codes: 0 listing succeeded (even when empty) / every relabel applied,
 // 1 store unreachable, not configured, or any relabel refused — a cron can
@@ -36,6 +39,10 @@ const base = flagVal('store', process.env.SESSION_STORE || storeFromQuery(''))
 const limit = Number(flagVal('limit', 50)) || 50
 const asJson = argv.includes('--json')
 const key = process.env.JON_KEY || null
+// #2142 separation: the relabel write prefers the dedicated write secret;
+// JON_KEY remains the fallback for pre-separation deploys (list reads always
+// use JON_KEY).
+const writeKey = process.env.SESSION_WRITE_KEY || process.env.JON_KEY || null
 const command = argv.find((a) => !a.startsWith('--'))
 
 if (command === 'relabel') {
@@ -45,14 +52,14 @@ if (command === 'relabel') {
         console.error('relabel: give at least one stored key (see `npm run sessions -- --help` shape above)')
         process.exit(1)
     }
-    if (!key) {
-        console.error('relabel: set JON_KEY (the write rides the read lockdown, #1711 S8)')
+    if (!writeKey) {
+        console.error('relabel: set SESSION_WRITE_KEY (deployed separation, #2142) or JON_KEY (pre-separation deploy)')
         process.exit(1)
     }
     let bad = 0
     for (const target of targets) {
-        const res = await relabelSession(target, { seat, base, key })
-        if (res.ok) console.log(`relabeled  ${target}  seat ${seat}: model -> human`)
+        const res = await relabelSession(target, { seat, base, key: writeKey })
+        if (res.ok) console.log(`relabeled  ${target}  seat ${seat}: model -> human (stamped relabeledFrom/relabeledAt ${res.relabeledAt || ''} — audit #2142)`)
         else { bad++; console.error(`REFUSED    ${target}  — ${res.reason}`) }
     }
     process.exit(bad ? 1 : 0)
