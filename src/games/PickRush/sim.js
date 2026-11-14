@@ -103,6 +103,15 @@ export const WAVES = [
     ],
 ]
 
+// announce character for a wave (#2214): the ear must read the section the
+// eye is about to see. Glass outranks barrels — a wave with bottles is the
+// one where a hard drop costs you a fuse.
+export const waveFamily = (kinds) =>
+    kinds.includes('bottle') ? 'glass'
+        : kinds.includes('barrel') ? 'heavy'
+            : kinds.includes('scrap') ? 'grim'
+                : 'steady'
+
 const fnv = (h, n) => {
     let x = (h ^ Math.round(n)) >>> 0
     x = Math.imul(x, 0x01000193) >>> 0
@@ -364,8 +373,9 @@ function spawn(gs) {
         gs.wave.ki = 0
         gs.wave.wi = (gs.wave.wi + 1) % waves.length
         gap = wave.rest
-        gs.fx.push({ t: 'wave', msg: waves[gs.wave.wi].name, x: 66, y: BELT_Y - 26, k: 0 })
-        gs.ev.push({ type: 'wave', name: waves[gs.wave.wi].name })
+        const next = waves[gs.wave.wi]
+        gs.fx.push({ t: 'wave', msg: next.name, x: VIEW_W / 2, y: BELT_Y - 26, k: 0 })
+        gs.ev.push({ type: 'wave', name: next.name, kinds: next.kinds.slice(), family: waveFamily(next.kinds) })
     } else {
         gap = wave.gap
     }

@@ -318,6 +318,32 @@ section('WAVES — the authored line (#2210)')
         ok(names.length >= 2 && names[0] === WAVES[0][1].name,
             `WAVE CUE: the carry announces incoming waves by name (${names.slice(0, 3).join(' → ')})`)
     }
+    {
+        // CUE FAMILY (#2214): every announcement carries the section's voice so
+        // the synth can vary per family. Pinned name-by-name against an
+        // expectation table written independently of the sim's derivation —
+        // glass outranks barrels, the rest read by their own goods.
+        const FAMILY = {
+            'SINGLE FILE': 'steady', 'CRATE & COIL': 'steady', 'EARLY BURST': 'steady',
+            'TWIN PACK': 'steady', 'GLASS RUN': 'glass', 'LINE STEADY': 'steady',
+            'BARREL ROLL': 'heavy', 'GLASS PAIR': 'glass', 'HEAVY LINE': 'steady',
+            'SCRAP HEAPS': 'grim', 'RUSH HOUR': 'steady', 'GLASS GAMBLE': 'glass',
+        }
+        const gs = makeGame(7, 1)
+        const seen = []
+        const bad = []
+        while (!gs.end && gs.tick < SHIFTS.length * SHIFT_TICKS + 900) {
+            step(gs, [autopilot(gs, 0)])
+            for (const e of gs.ev) if (e.type === 'wave') {
+                seen.push(e.family)
+                const w = WAVES.flat().find((x) => x.name === e.name)
+                if (!w || e.family !== FAMILY[e.name] || e.kinds.join() !== w.kinds.join()) bad.push(e.name)
+            }
+        }
+        const fams = [...new Set(seen)].sort()
+        ok(seen.length >= 4 && fams.length >= 3 && bad.length === 0,
+            `CUE FAMILY: each announcement names the next wave AND its voice (${fams.join('+')} across ${seen.length})` + (bad.length ? ` — WRONG: ${bad.join(',')}` : ''))
+    }
 }
 
 section('DETERMINISM — seed + pads = hashes')
@@ -532,6 +558,35 @@ if (!NODE_ONLY) {
         })
         rep.check('JUICE: quotaNear flips true at exactly one pick short of quota',
             !near.base && near.on === true && near.over === false, JSON.stringify(near))
+
+        // WAVE-INK (#2214): the marquee is not just evented — it is PAINTED at
+        // the breather tick. Drive seed 7 with an idle crane to the first wave
+        // announcement, let the page paint, and sample the banner band at the
+        // exact device rect: caption ink (ice-blue) + the amber plate rim.
+        const marquee = await page.evaluate(async () => {
+            const g = window.__game
+            const wait = () => new Promise((r) => setTimeout(r, 34))
+            g.reset(7, 1)
+            let announced = false
+            for (let i = 0; i < 520; i++) {
+                g.step([{}], 1)
+                const wv = window.__pickrushTest.sim().fx.filter((f) => f.t === 'wave')
+                if (wv.length && wv[wv.length - 1].k >= 8) { announced = true; break }
+            }
+            if (!announced) return { announced, ink: 0, rim: 0 }
+            await wait()
+            const c = window.__pickrushTest.canvas()
+            const d = c.getContext('2d').getImageData(250, 112, 352, 36).data
+            let ink = 0, rim = 0
+            for (let p = 0; p < d.length; p += 4) {
+                if (Math.abs(d[p] - 127) < 50 && Math.abs(d[p + 1] - 212) < 50 && Math.abs(d[p + 2] - 255) < 50) ink++
+                if (Math.abs(d[p] - 200) < 40 && Math.abs(d[p + 1] - 161) < 40 && Math.abs(d[p + 2] - 28) < 40) rim++
+            }
+            const k = window.__pickrushTest.sim().fx.filter((f) => f.t === 'wave').slice(-1)[0].k
+            return { announced, ink, rim, k }
+        })
+        rep.check('WAVE-INK: the wave marquee paints caption ink + amber rim over the belt mouth at the breather',
+            marquee.announced && marquee.ink >= 12 && marquee.rim >= 2, JSON.stringify(marquee))
 
         // determinism through the live contract
         const script = scriptFor('pick-rush')
