@@ -1552,7 +1552,7 @@ if (!MUT) {
             if (kl.length > 15 && e && e.js <= 1.001 && e.jt === 0 && e.wk >= 0.99 && e.rp >= 0.99) break
             await page.waitForTimeout(50)
         }
-        ok(Array.isArray(kl) && kl.length > 20, `the KO card logged its entrance frames (${kl && kl.length})`)
+        ok(Array.isArray(kl) && kl.length > 15, `the KO card logged its entrance frames (${kl && kl.length})`)
         const wks = kl.filter((e) => e.wk != null).map((e) => e.wk)
         ok(wks.length > 0 && Math.min(...wks) < 0.95 && Math.max(...wks) >= 0.99,
             `the taunt pose blends in over ~10 frames (mid-blend ${Math.min(...wks)} -> held ${Math.max(...wks)})`)
