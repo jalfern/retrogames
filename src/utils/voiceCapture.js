@@ -148,6 +148,46 @@ function runVuMeter(stream, ms = 1200) {
 }
 
 
+// liveLevelTap (#2205) — a passive level read on the RECORDER'S OWN stream for
+// as long as the take is open: window.__voiceLevel is the same peak scale the
+// #1257 bar uses (peak/128 × 2.5, capped at 1), refreshed every frame. The
+// analyser is a fan-out sink — it consumes nothing, records nothing and plays
+// nothing, so the take bytes are untouched (claptest relies on that). ClapTest
+// renders it as its live mic meter so a too-quiet slap is obvious mid-test.
+function liveLevelTap(stream) {
+    const noop = { stop() {} }
+    if (typeof window === 'undefined' || typeof requestAnimationFrame === 'undefined') return noop
+    const AC = typeof AudioContext !== 'undefined' ? AudioContext : (globalThis.webkitAudioContext || null)
+    if (!AC) return noop
+    let ctx = null
+    try { ctx = new AC() } catch { return noop }
+    try {
+        const src = ctx.createMediaStreamSource(stream)
+        if (!ctx.createAnalyser) { try { src.disconnect(); ctx.close() } catch { /* gone */ } return noop }
+        const an = ctx.createAnalyser()
+        an.fftSize = 512
+        src.connect(an)
+        const data = new Uint8Array(an.fftSize)
+        window.__voiceLevel = 0
+        let raf = 0
+        const step = () => {
+            an.getByteTimeDomainData(data)
+            let peak = 0
+            for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i] - 128))
+            window.__voiceLevel = Math.min(1, (peak / 128) * 2.5)
+            raf = requestAnimationFrame(step)
+        }
+        raf = requestAnimationFrame(step)
+        return {
+            stop() {
+                if (raf) cancelAnimationFrame(raf)
+                window.__voiceLevel = 0
+                try { src.disconnect(); an.disconnect(); ctx.close() } catch { /* gone */ }
+            },
+        }
+    } catch { try { ctx.close() } catch { /* gone */ } return noop }
+}
+
 // startLevelMeter (#1448) — a LIVE meter without the recorder. Games whose
 // mic is held by speech recognition (Rally's V mode: speechListen exposes no
 // stream of its own) still owe the #1257 proof mid-game — "is the mic hearing
@@ -320,6 +360,7 @@ export function createVoiceSession(opts = {}) {
     let chunks = []
     let startMs = 0
     let clockCursor = 0
+    let levelTap = null // #2205: passive live-level handle, stopped at finalize
     // QA/prod-safe breadcrumbs: the last voice session's outcome, no secrets —
     // "why is there no audio in my recording?" answers itself.
     const dbg = (where) => {
@@ -365,6 +406,7 @@ export function createVoiceSession(opts = {}) {
             phase = 'recording'; dbg('mic-open')
             liveSessions.add(reg); syncMicBadge()
             runVuMeter(s) // #1257: prove this mic hears something, right now
+            levelTap = liveLevelTap(s) // #2205: keep a live level visible for the whole take
             return null
         }).catch(() => { phase = 'failed'; consent.consent = false; consent.reason = 'mic-denied'; liveSessions.add(reg); syncMicBadge(); dbg('mic-denied'); return null })
     })
@@ -396,6 +438,7 @@ export function createVoiceSession(opts = {}) {
             phase = 'done'
             return new Promise((resolve) => {
                 const settle = () => {
+                    if (levelTap) { levelTap.stop(); levelTap = null } // #2205: meter dies with the take
                     if (stream) stream.getTracks().forEach((t) => { try { t.stop() } catch { /* gone */ } })
                     stream = null
                     const samples = clock.finish()

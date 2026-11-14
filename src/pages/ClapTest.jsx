@@ -22,14 +22,26 @@ import {
     armLiveCapture, unexposeGame, exposeGame, contractHoldsLoop, recordLiveTick, isRecording,
     exposeFeedbackState, unexposeFeedbackState, seedFromQuery,
 } from '../utils/gameContract'
-import { createTestSim, screenVerdict, FIXED_DT, SLAPS_NEEDED } from '../utils/clapTestCore'
+import { createTestSim, screenVerdict, FIXED_DT, SLAPS_NEEDED, lastGapMs, pushHistory, formatHistory, hardFailNote } from '../utils/clapTestCore'
 
 const NEON = '#39ff14'
 const AMBER = '#ffd840'
+// #2205 item 1: the shared live-level scale (peak/128 × 2.5) runs 0..1; a slap
+// registering below this is too quiet to survive the detector reliably. Kept
+// well under a real palm slap (~1.0 on the meter) so it never false-scolds.
+const QUIET_LEVEL = 0.25
+const HISTORY_KEY = 'claptest.history' // #2205 item 4 — local only, revocable, never uploaded beyond normal takes
+
+const loadHistory = () => {
+    try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]') } catch { return [] }
+}
 
 const ClapTest = () => {
     const [phase, setPhaseState] = useState('attract') // attract | testing | grading | graded
     const [taps, setTaps] = useState(0)
+    const [gapMs, setGapMs] = useState(null) // #2205 item 2: pacing readout
+    const [quiet, setQuiet] = useState(false) // #2205 item 1: too-quiet slap flash
+    const [history, setHistory] = useState(loadHistory) // #2205 item 4
     const [result, setResult] = useState(null)
     const [upload, setUpload] = useState(null)
     const [flash, setFlash] = useState(0)
@@ -40,6 +52,22 @@ const ClapTest = () => {
     const tapsRef = useRef(0)
     const resultRef = useRef(null)
     const uploadRef = useRef(null)
+    const meterFillRef = useRef(null)
+    const quietTimerRef = useRef(0)
+
+    // #2205: one edge handler for both drivers (loop + DEV tick) — refresh the
+    // pacing readout from the sim's own tick bank and flash the quiet warning
+    // from the recorder's live level. Level is NOT sim state: the hash and the
+    // replay stay deterministic; only the meters read it.
+    const onTapEdge = useCallback(() => {
+        setGapMs(lastGapMs(simRef.current ? simRef.current.taps : []))
+        const lvl = typeof window !== 'undefined' && typeof window.__voiceLevel === 'number' ? window.__voiceLevel : 1
+        if (lvl < QUIET_LEVEL) {
+            setQuiet(true)
+            if (quietTimerRef.current) clearTimeout(quietTimerRef.current)
+            quietTimerRef.current = setTimeout(() => setQuiet(false), 900)
+        }
+    }, [])
 
     const setPhase = useCallback((p) => { phaseRef.current = p; setPhaseState(p) }, [])
     const mirror = useCallback(() => {
@@ -96,6 +124,15 @@ const ClapTest = () => {
         setResult(v)
         setUpload(uploadRef.current)
         setPhase('graded')
+        // #2205 item 4: the verdict stays on THIS phone (localStorage, cap 5,
+        // revocable — nothing beyond the normal take upload).
+        const h = pushHistory(loadHistory(), { d: Date.now(), ok: !!v.ok, worstMs: v.worstMs === undefined ? null : v.worstMs, key: (res && res.key) || null })
+        setHistory(h)
+        try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h)) } catch { /* private mode — history just won't persist */ }
+        // #2205 item 5: the verdict lands in the hand too, not only the eyes.
+        if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+            try { navigator.vibrate(v.ok ? [60] : [140, 70, 140]) } catch { /* unsupported */ }
+        }
         mirror()
     }, [mirror, setPhase])
     const finishRef = useRef(finish)
@@ -131,14 +168,17 @@ const ClapTest = () => {
                     resultRef.current = null
                     uploadRef.current = null
                     setResult(null); setUpload(null); setTaps(0); tapsRef.current = 0
+                    setGapMs(null); setQuiet(false)
                     setPhase('attract')
                     mirror()
                 },
                 tick: (pad) => {
                     if (phaseRef.current !== 'testing') return
+                    const before = tapsRef.current
                     const ph = simRef.current.step(pad || {})
                     tapsRef.current = simRef.current.taps.length
                     setTaps(tapsRef.current)
+                    if (tapsRef.current > before) onTapEdge()
                     if (ph === 'ended') finishRef.current()
                 },
                 canvas: () => null,
@@ -149,6 +189,12 @@ const ClapTest = () => {
         let acc = 0
         const loop = (now) => {
             raf = requestAnimationFrame(loop)
+            // #2205 item 1: live mic meter, straight off the recorder's level tap
+            // — a too-quiet slap is obvious at the moment it happens.
+            if (meterFillRef.current) {
+                const lvl = phaseRef.current === 'testing' && typeof window.__voiceLevel === 'number' ? window.__voiceLevel : 0
+                meterFillRef.current.style.width = `${Math.round(Math.max(0, Math.min(1, lvl)) * 100)}%`
+            }
             acc += now - last
             last = now
             if (acc > 250) acc = 250 // one driver per loop; catch-up capped like every game shell
@@ -162,6 +208,7 @@ const ClapTest = () => {
                         tapsRef.current = simRef.current.taps.length
                         setTaps(tapsRef.current)
                         setFlash((f) => f + 1)
+                        onTapEdge()
                         mirror()
                     }
                     if (ph === 'ended') { finishRef.current(); break }
@@ -172,6 +219,7 @@ const ClapTest = () => {
         mirror()
         return () => {
             cancelAnimationFrame(raf)
+            if (quietTimerRef.current) clearTimeout(quietTimerRef.current)
             endRun() // an unmount mid-take ends it the honest way
             unexposeGame()
             unexposeFeedbackState()
@@ -192,6 +240,7 @@ const ClapTest = () => {
                 uploadRef.current = null
                 tapsRef.current = 0
                 setResult(null); setUpload(null); setTaps(0)
+                setGapMs(null); setQuiet(false)
                 beginRun() // opens at seed-birth when the plan says record
                 setPhase('testing')
                 mirror()
@@ -232,6 +281,7 @@ const ClapTest = () => {
             onPointerDown={slapDown}
             onPointerUp={slapUp}
             onPointerCancel={slapUp}
+            aria-label={phase === 'testing' ? 'Slap target — slap the screen three times, about 2 seconds apart' : 'clap test'}
             style={{ touchAction: 'none' }}
             className="fixed inset-0 z-[80] bg-black font-mono text-gray-100 flex flex-col items-center justify-center px-6 select-none overflow-hidden"
         >
@@ -254,6 +304,9 @@ const ClapTest = () => {
                         START
                     </button>
                     <div className="mt-3 text-[11px] text-gray-500">Records only with consent — the same gate as your game takes. Revocable anytime.</div>
+                    {history.length > 0 && (
+                        <div className="mt-3 text-[10px] text-gray-500" data-clap-history="">your last: {formatHistory(history)}</div>
+                    )}
                 </div>
             )}
 
@@ -264,7 +317,17 @@ const ClapTest = () => {
                     <div key={flash} className="mt-10 mx-auto w-56 h-56 rounded-full border-4 flex items-center justify-center" style={{ borderColor: NEON, background: flash ? 'rgba(57,255,20,0.22)' : 'rgba(57,255,20,0.06)', boxShadow: `0 0 40px rgba(57,255,20,0.25) inset` }}>
                         <span className="text-7xl font-bold" style={{ color: NEON }}>{taps}<span className="text-3xl text-gray-400">/{SLAPS_NEEDED}</span></span>
                     </div>
-                    <div className="mt-8 text-xs text-gray-500">ends by itself after the {SLAPS_NEEDED}rd slap</div>
+                    <div className="mt-8 mx-auto w-56" data-clap-meter="" aria-hidden="true" style={{ height: 10, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(57,255,20,0.35)', borderRadius: 5, overflow: 'hidden' }}>
+                        <i ref={meterFillRef} style={{ display: 'block', height: '100%', width: '0%', background: NEON }} />
+                    </div>
+                    <div className="mt-1 text-[10px] text-gray-500">mic level — your slaps must push this bar</div>
+                    {gapMs !== null && (
+                        <div className="mt-3 text-sm" data-clap-gap={String(gapMs)} style={{ color: AMBER }}>last gap {(gapMs / 1000).toFixed(1)} s — aim for ~2&nbsp;s</div>
+                    )}
+                    {quiet && (
+                        <div className="mt-3 text-sm font-bold" data-clap-quiet="1" style={{ color: '#ff8040' }}>TOO QUIET — slap harder</div>
+                    )}
+                    <div className="mt-3 text-xs text-gray-500">ends by itself after the {SLAPS_NEEDED}rd slap</div>
                 </div>
             )}
 
@@ -277,6 +340,7 @@ const ClapTest = () => {
 
             {phase === 'graded' && result && (
                 <div className="w-full max-w-md text-center">
+                    <p className="sr-only" aria-live="assertive">{`${verdict}. ${result.why || ''}${result.hint ? ` — ${result.hint}` : ''}`}</p>
                     <div className="text-6xl font-bold tracking-widest" style={{ color: result.ok ? NEON : '#ff4040' }}>{verdict}</div>
                     <div className="mt-4 text-sm text-gray-300">{result.why}</div>
                     <div className="mt-6 grid grid-cols-3 gap-2 text-center">
@@ -286,6 +350,9 @@ const ClapTest = () => {
                     </div>
                     {result.pairs && result.pairs.length > 0 && (
                         <div className="mt-3 text-[10px] text-gray-500">{result.pairs.map((p, i) => `#${i + 1} ${p.offsetMs > 0 ? '+' : ''}${p.offsetMs} ms`).join('   ')}</div>
+                    )}
+                    {hardFailNote(result) && (
+                        <div className="mt-3 text-[10px] text-gray-400" data-clap-worst-note="">{hardFailNote(result)}</div>
                     )}
                     {result.hint && (
                         <div className="mt-5 border rounded-lg p-4 text-sm" style={{ borderColor: '#ff4040', color: '#ffb4b4', background: 'rgba(255,64,64,0.07)' }}>
