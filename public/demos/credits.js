@@ -90,18 +90,24 @@
     if (idx) {
       var wrap = document.querySelector('.wrap')
       if (!wrap) return
+      var hasGuest = false
       idx.demos.forEach(function (d) {
         var card = document.getElementById(d.el)
         if (!card) return
         var l = line(d)
+        var b = d.builder
+        if (b) hasGuest = true
+        var whoTxt = b ? (b.model + (b.where ? ' (' + b.where + ')' : '')) : 'QWEN'
+        var reqTxt = l.issues ? (d.span + ' ISSUE→SHIP · ' + l.issues) : (d.span + ' · GUEST BRIEF')
         card.appendChild(el('p', 'credits-built',
           '<span class="' + (d.assist === 'solo' ? 'cc-solo' : 'cc-guided') + '">' +
-          (d.assist === 'solo' ? 'SOLO' : 'GUIDED') + '</span> · BUILT BY QWEN · ' +
-          d.span + ' ISSUE→SHIP · ' + l.issues))
+          (d.assist === 'solo' ? 'SOLO' : 'GUIDED') + '</span> · BUILT BY ' + whoTxt + ' · ' + reqTxt))
       })
       var foot = wrap.querySelector('footer')
+      var prefix = hasGuest ? 'HOUSE DEMOS BUILT BY ' : 'ALL DEMOS BUILT BY '
+      var suffix = hasGuest ? ' · GUEST BUILDS CREDITED ON CARD' : ''
       var fact = el('p', 'credits-built',
-        'ALL DEMOS BUILT BY <a href="https://github.com/jalfern/retrogames" target="_blank" rel="noopener">QWEN ' + MODEL + '</a> · ' + MACHINE.toUpperCase())
+        prefix + '<a href="https://github.com/jalfern/retrogames" target="_blank" rel="noopener">QWEN ' + MODEL + '</a> · ' + MACHINE.toUpperCase() + suffix)
       fact.id = 'credits-factory'
       if (foot) wrap.insertBefore(fact, foot)
       return
@@ -111,16 +117,22 @@
     var root = document.documentElement
     if (cfg.accent) root.style.setProperty('--credits-accent', cfg.accent)
     var l = line(cfg)
+    var b = cfg.builder
+    var tagLabel = 'BUILT BY ' + (b ? (b.tag || b.model) : 'QWEN') + ' ▸'
+    var builtByVal = b ? b.model : ('QWEN ' + MODEL)
+    var whereVal = b ? b.where : MACHINE
+    var reqVal = l.issues || 'GUEST BRIEF'
+    var spanVal = cfg.span + (l.issues ? ' ISSUE → SHIP' : '') + ' · SHIPPED ' + cfg.shipped
 
-    var tag = el('button', null, 'BUILT BY QWEN ▸')
+    var tag = el('button', null, tagLabel)
     tag.id = 'credits-tag'
     tag.setAttribute('aria-label', 'Credits for ' + cfg.name)
     var box = el('div', 'cc-box',
       '<div class="cc-name"><i>' + cfg.name + '</i> — DEMO</div>' +
-      '<div><span class="cc-k">Built by</span> QWEN ' + MODEL + '</div>' +
-      '<div><span class="cc-k">Where</span> ' + MACHINE + '</div>' +
-      '<div><span class="cc-k">Requested in</span> ' + l.issues + '</div>' +
-      '<div><span class="cc-k">Build time</span> ' + cfg.span + ' ISSUE → SHIP · SHIPPED ' + cfg.shipped + '</div>' +
+      '<div><span class="cc-k">Built by</span> ' + builtByVal + '</div>' +
+      '<div><span class="cc-k">Where</span> ' + whereVal + '</div>' +
+      '<div><span class="cc-k">Requested in</span> ' + reqVal + '</div>' +
+      '<div><span class="cc-k">Build time</span> ' + spanVal + '</div>' +
       '<div><span class="cc-k">Help</span> <span class="' + (cfg.assist === 'solo' ? 'cc-solo' : 'cc-guided') + '">' + l.assist + '</span></div>' +
       '<div class="cc-close">TAP ANYWHERE TO CLOSE ✕</div>')
     var card = el('div')

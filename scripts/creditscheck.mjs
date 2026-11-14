@@ -38,7 +38,8 @@ try { ({ chromium } = require('playwright-core')) } catch {
 
 const PORT = process.argv.includes('--port') ? process.argv[process.argv.indexOf('--port') + 1] : '9381'
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-const DEMOS = ['ocean', 'shore', 'campfire', 'mountains', 'storm', 'reef', 'blackhole', 'neonrain', 'volcano', 'deepglass', 'stickwalk', 'physicswalk', 'learnedwalk']
+const DEMOS = ['ocean', 'shore', 'campfire', 'mountains', 'storm', 'reef', 'blackhole', 'neonrain', 'volcano', 'deepglass', 'stickwalk', 'physicswalk', 'learnedwalk', 'horse-gemini']
+const LAB_PAGES = ['weightsurgery']
 
 const results = []
 const ok = (name, pass, detail) => {
@@ -88,6 +89,7 @@ function staticLayer() {
   const DEMO_FILES = readdirSync(resolve(ROOT, 'public/demos'))
     .filter((f) => f.endsWith('.html') && f !== 'index.html')
     .map((f) => f.replace(/\.html$/, ''))
+    .filter((d) => !LAB_PAGES.includes(d))
   for (const d of DEMO_FILES) {
     const html = readFileSync(resolve(ROOT, `public/demos/${d}.html`), 'utf8')
     ok(`${d}: loads feedback.js (relative)`, /<script src="feedback\.js">/.test(html))
@@ -103,14 +105,17 @@ function staticLayer() {
     ok(`${d}: has a DEMO_CREDITS config`, !!cfgs[d])
     if (!cfgs[d]) continue
     const c = cfgs[d]
+    const guestOk = !c.builder || (typeof c.builder.model === 'string' && c.builder.model.length > 1 &&
+      typeof c.builder.where === 'string' && c.builder.where.length > 2)
+    const issuesOk = Array.isArray(c.issues) && (c.builder ? true : c.issues.length > 0)
     const complete = c.name && /^#[0-9a-fA-F]{6}$/.test(c.accent || '') &&
-      Array.isArray(c.issues) && c.issues.length > 0 &&
+      guestOk && issuesOk &&
       typeof c.span === 'string' && /~\d+ h/.test(c.span) &&
       /^\d{4}-\d{2}-\d{2}$/.test(c.shipped || '') &&
       ['solo', 'guided'].includes(c.assist) && (c.note || '').length > 8
     ok(`${d}: config complete (name/accent/issues/span/shipped/assist/note)`, complete, JSON.stringify(c))
-    ok(`${d}: does not hardcode the model or machine`, !/Qwen3\.8-|Mac Studio/.test(html))
-    ok(`${d}: not registered in games.js (demos law)`, !new RegExp(`path:\\s*['\"][^'\"]*${d}`, 'i').test(reg))
+    ok(`${d}: does not hardcode house model or machine`, !/Qwen3\.8-|Mac Studio/.test(html))
+    ok(`${d}: not registered in games.js (demos law)`, !new RegExp(`path:\\s*['"][^'"]*${d}`, 'i').test(reg))
     const ext = html.match(/(src|href)\s*=\s*["']https?:\/\//g) || []
     ok(`${d}: self-contained (no absolute external scripts/links)`, ext.length === 0, ext.join(' '))
   }
@@ -120,17 +125,20 @@ function staticLayer() {
   ok('index: has a DEMO_INDEX config', !!idx && Array.isArray(idx.demos))
   ok('index: loads credits.js', /<script src="credits\.js">/.test(idxHtml))
   if (idx) {
-    const cardIds = [...idxHtml.matchAll(/<a class="card" id="(\w+)"/g)].map(m => m[1])
+    const cardIds = [...idxHtml.matchAll(/<a class="card" id="([\w-]+)"/g)].map(m => m[1])
     ok('index: DEMO_INDEX covers every card',
       cardIds.length > 0 && cardIds.every(id => idx.demos.some(d => d.el === id)) &&
       idx.demos.every(d => cardIds.includes(d.el)),
       `cards=${cardIds} index=${idx.demos.map(d => d.el)}`)
     for (const d of idx.demos) {
+      if (LAB_PAGES.includes(d.el)) continue
       const c = cfgs[d.el]
       if (!c) { ok(`index agrees with ${d.el}`, false, 'no demo config'); continue }
-      ok(`index agrees with ${d.el} (issues/span/assist)`,
-        JSON.stringify(d.issues) === JSON.stringify(c.issues) && d.span === c.span && d.assist === c.assist,
-        `${JSON.stringify(d)} vs ${JSON.stringify({ issues: c.issues, span: c.span, assist: c.assist })}`)
+      ok(`index agrees with ${d.el} (issues/span/assist/builder)`,
+        JSON.stringify(d.issues) === JSON.stringify(c.issues) &&
+        d.span === c.span && d.assist === c.assist &&
+        JSON.stringify(d.builder || null) === JSON.stringify(c.builder || null),
+        `${JSON.stringify(d)} vs ${JSON.stringify({ builder: c.builder, issues: c.issues, span: c.span, assist: c.assist })}`)
     }
   }
 }
@@ -160,17 +168,31 @@ async function browserLayer() {
     ok('index boots with zero page errors', errs.length === 0, errs[0])
     const stamped = await page.evaluate(() => {
       const cards = [...document.querySelectorAll('a.card')]
-      const lines = cards.map(c => (c.querySelector('.credits-built') || {}).textContent || '')
+      const entries = (window.DEMO_INDEX && window.DEMO_INDEX.demos) || []
+      const byId = Object.fromEntries(entries.map(e => [e.el, e]))
+      const rows = cards.map(c => ({
+        id: c.id,
+        text: (c.querySelector('.credits-built') || {}).textContent || '',
+        guest: !!(byId[c.id] && byId[c.id].builder),
+        builderModel: byId[c.id] && byId[c.id].builder ? byId[c.id].builder.model : null,
+      }))
       const fact = document.getElementById('credits-factory')
       return {
-        perCard: lines.length,
-        allStamped: lines.every(t => /(SOLO|GUIDED)/.test(t) && /#\d+/.test(t) && /BUILT BY QWEN/.test(t)),
+        perCard: rows.length,
+        allStamped: rows.every(r => {
+          if (!/(SOLO|GUIDED)/.test(r.text)) return false
+          if (r.guest) {
+            return r.text.toUpperCase().includes('BUILT BY ' + r.builderModel.toUpperCase()) &&
+              (/(#\d+|GUEST BRIEF)/.test(r.text))
+          }
+          return /#\d+/.test(r.text) && /BUILT BY QWEN/.test(r.text)
+        }),
         factory: fact ? fact.textContent : '',
         links: [...document.querySelectorAll('a.card .credits-built a')].map(a => a.getAttribute('href')),
       }
     })
-    ok('index: every card carries a built-by line (solo/guided + issue #)',
-      stamped.perCard === DEMOS.length && stamped.allStamped, `${stamped.perCard} cards`)
+    ok('index: every card carries a built-by line (solo/guided + builder + origin)',
+      stamped.perCard === DEMOS.length + LAB_PAGES.length && stamped.allStamped, `${stamped.perCard} cards`)
     ok('index: factory line names model + machine',
       /Qwen3\.8-/.test(stamped.factory) && /MAC STUDIO/i.test(stamped.factory), stamped.factory)
     ok('index: every issue link points at the repo',
@@ -222,7 +244,7 @@ async function browserLayer() {
       return { open: c.classList.contains('open'), hasNote: !!c.querySelector('[data-feedback="note"]'), hasSend: !!c.querySelector('[data-feedback="send"]') }
     })
     ok('demo FEEDBACK tag opens the panel (note + send)', fbPanel.open && fbPanel.hasNote && fbPanel.hasSend)
-    await fpage.click('#dfeedback-card')
+    await fpage.click('#dfeedback-card', { position: { x: 8, y: 8 } })
     ok('demo FEEDBACK panel closes on tap-out', await fpage.evaluate(() => !document.getElementById('dfeedback-card').classList.contains('open')))
     ok('demo feedback mounts with zero page errors', fErrs.length === 0, fErrs[0])
     pageErrsTotal += fErrs.length
@@ -247,6 +269,21 @@ async function browserLayer() {
     ok('ESC closes the card', await page2.evaluate(() => !document.getElementById('credits-card').classList.contains('open')))
     ok('demo boots with zero page errors (credits included)', errs2.length === 0, errs2[0])
     pageErrsTotal += errs2.length
+
+    // --- guest builder demo: declares its own builder honestly without false Qwen credit ---
+    const gpage = await ctx.newPage()
+    const gErrs = []
+    gpage.on('pageerror', e => gErrs.push('pageerror: ' + e.message))
+    gpage.on('console', m => { if (m.type() === 'error') gErrs.push('console: ' + m.text().split('\n')[0]) })
+    await gpage.goto('file://' + resolve(ROOT, 'public/demos/horse-gemini.html') + '?feedback=1', { waitUntil: 'load' })
+    const gTag = await gpage.evaluate(() => (document.getElementById('credits-tag') || {}).textContent || '')
+    ok('guest demo tag names its own builder (BUILT BY GEMINI)', /BUILT BY GEMINI/.test(gTag) && !/QWEN/.test(gTag), gTag)
+    await gpage.click('#credits-tag')
+    const gTxt = (await gpage.evaluate(() => (document.getElementById('credits-card') || {}).textContent || '')).replace(/\s+/g, ' ')
+    ok('guest demo card names Gemini + via Antigravity CLI',
+      /Gemini/i.test(gTxt) && /via Antigravity CLI/i.test(gTxt) && !/Qwen/.test(gTxt), gTxt.slice(0, 160))
+    pageErrsTotal += gErrs.length
+    await gpage.close()
 
     // --- phone: 390px tap target, card fits portrait + landscape ---
     const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })

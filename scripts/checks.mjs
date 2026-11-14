@@ -131,6 +131,7 @@ export const MANUAL_CHECKS = [
   "scripts/fpscheck.mjs",
   "scripts/gardencheck.mjs",
   "scripts/gravelcheck.mjs",
+  "scripts/horsegeminicheck.mjs",
   "scripts/invaderscheck.mjs",
   "scripts/ironringcheck.mjs",
   "scripts/juicecheck.mjs",
