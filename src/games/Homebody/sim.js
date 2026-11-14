@@ -250,6 +250,33 @@ export function digitCard(s, n) {
     return n >= 1 && n <= cards.length ? cards[n - 1] : -1
 }
 
+// ------------------------------------------------------------ speed (#2227) --
+// The original's dial (The Sims, PC 2000): pause, normal, fast, fastest. The
+// dial is sim state — it rides the hash, so replays pin the speed timeline.
+// Multiplying steps per frame is the shell's job; every extra step is a plain
+// advance, so decay, schedules, visits, cries and purrs all ride one law.
+// The loop keeps exactly ONE driver: the fixed timestep never changes, only
+// how many world steps one frame tick buys.
+export const SPEED_MULT = [0, 1, 2, 4]          // world steps per frame tick
+export const SPEED_NAMES = ['PAUSED', 'NORMAL', 'FAST', 'FASTEST']
+
+export function setSpeed(s, n) {
+    const v = Math.max(0, Math.min(SPEED_MULT.length - 1, Math.round(n)))
+    const changed = s.speed !== v
+    s.speed = v
+    return changed
+}
+
+export function cycleSpeed(s, dir) {
+    return setSpeed(s, (s.speed + dir + SPEED_MULT.length) % SPEED_MULT.length)
+}
+
+// The marquee teaching: the attract demo rushes the morning-chores stretch
+// (8h–10h) and eases back — the dial visibly turns in the demo, teaching the
+// mechanic without a word. Never returns 0: an attract that stands still
+// reads as a broken page, not as a feature.
+export const attractSpeed = (s) => (s.hour >= 8 && s.hour < 10 ? 2 : 1)
+
 // ------------------------------------------------------- spare room (#1806) --
 // The lot grows once: buy the Spare Room kit and the house's east wall gains a
 // 3×4 room — plank floor, brick band walls, a doorway punched into the shared
@@ -321,6 +348,7 @@ export function newRun(seed) {
         money: 520, rank: 1, workDays: 0, content: 0,
         build: false, sel: 0,
         tab: 0,                                     // #2222: open catalog shelf
+        speed: 1,                                   // #2227: the dial sits at normal on move-in
         tabSel: TAB_CARDS.map((c) => c[0]),       // last pick remembered per shelf
         cursor: { r: 6, c: 8 },          // build cursor
         cursorA: { r: 2, c: 3 },        // dpad "use" cursor
@@ -1792,6 +1820,7 @@ export function stateHash(s) {
     mix(s.tick); mix(s.day); mix(s.hour); mix(s.money); mix(s.content); mix(s.rank)
     mix(s.ext)
     mix(s.tab)                       // #2222: the open catalog shelf is state too
+    mix(s.speed)                     // #2227: so is the speed dial — replays pin it
     mix(s.rel.house); mix(s.rel.fern)   // #1817: bonds ride the hash
     mix(s.rel.ivy)                     // #2143: so does the second neighbour's
     mix(s.rel.kid)                     // #2203: and the child's

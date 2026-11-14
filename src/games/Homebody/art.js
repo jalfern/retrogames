@@ -10,6 +10,7 @@ import {
     W, H, TILE, COLS, ROWS, LOT_Y, PANEL_X, MAP, relLevel,
     tileX, tileY, CATALOG, DEF, NEEDS, WIN_CONTENT, RED_AT, EXT_ROOM,
     CAT_TABS, tabCards,   // #2222: the catalog's category shelves
+    SPEED_MULT,   // #2227: the speed dial
 } from './sim.js'
 
 const P = {
@@ -705,6 +706,39 @@ export function drawPanel(ctx, s, t) {
         ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1
         ctx.strokeRect(PANEL_X + 12 + 3 * 8 + 0.5, by + 40 + 0.5, 5, 5)
     }
+    // speed dial (#2227): the original's clock control, sitting above the wish
+    // meter — four gears, the chosen one gold; the pause pip pulses while the
+    // world stands still. DIAL is shared with speedHit() so the tap route can
+    // never drift from what's painted, and generous 19×14 cells keep it legal
+    // thumbs on a phone (the same lesson the #2222 tab row learned).
+    ctx.lineWidth = 1
+    ctx.fillStyle = '#9fb4d8'; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top'
+    ctx.fillText('SPEED', DIAL.x, DIAL.y - 11)
+    for (let i = 0; i < SPEED_MULT.length; i++) {
+        const x = DIAL.x + i * (DIAL.cw + DIAL.gap)
+        const on = s.speed === i
+        ctx.fillStyle = on ? '#2c3c5e' : '#1a2336'
+        ctx.fillRect(x, DIAL.y, DIAL.cw, DIAL.ch)
+        ctx.strokeStyle = on ? (i === 0 && Math.floor(t * 2.5) % 2 === 0 ? '#8c6a2e' : '#ffd24a') : '#31405e'
+        ctx.strokeRect(x + 0.5, DIAL.y + 0.5, DIAL.cw - 1, DIAL.ch - 1)
+        ctx.fillStyle = on ? '#ffd24a' : '#7186ad'
+        if (i === 0) {
+            ctx.fillRect(x + 6, DIAL.y + 3, 2, DIAL.ch - 6)
+            ctx.fillRect(x + 11, DIAL.y + 3, 2, DIAL.ch - 6)
+        } else {
+            const tw = 5 * i - 1
+            const ox = x + (DIAL.cw - tw) / 2
+            ctx.beginPath()
+            for (let k = 0; k < i; k++) {
+                const bx = ox + k * 5
+                ctx.moveTo(bx, DIAL.y + 3.5)
+                ctx.lineTo(bx + 4, DIAL.y + DIAL.ch / 2)
+                ctx.lineTo(bx, DIAL.y + DIAL.ch - 3.5)
+                ctx.closePath()
+            }
+            ctx.fill()
+        }
+    }
     // lifetime wish meter
     ctx.fillStyle = '#9fb4d8'; ctx.font = 'bold 9px monospace'
     ctx.fillText('LIFETIME WISH', PANEL_X + 12, H - 92)
@@ -712,6 +746,18 @@ export function drawPanel(ctx, s, t) {
     ctx.fillStyle = '#ffd24a'; ctx.fillRect(PANEL_X + 13, H - 79, 88 * Math.min(1, s.content / WIN_CONTENT), 7)
     ctx.fillStyle = '#ffe9a8'; ctx.font = 'bold 8px monospace'
     ctx.fillText(`${Math.floor(s.content)}/${WIN_CONTENT}`, PANEL_X + 62, H - 78)
+}
+
+// #2227 — dial geometry shared by draw and hit-test; speedHit -> gear 0..3, -1 off.
+export const DIAL = { x: PANEL_X + 12, y: H - 124, cw: 19, ch: 14, gap: 4 }
+
+export function speedHit(px, py) {
+    if (px < DIAL.x || px > DIAL.x + SPEED_MULT.length * (DIAL.cw + DIAL.gap) - DIAL.gap) return -1
+    if (py < DIAL.y || py > DIAL.y + DIAL.ch) return -1
+    const i = Math.floor((px - DIAL.x) / (DIAL.cw + DIAL.gap))
+    if (i < 0 || i >= SPEED_MULT.length) return -1
+    if (px - DIAL.x - i * (DIAL.cw + DIAL.gap) > DIAL.cw) return -1
+    return i
 }
 
 function needIcon(ctx, x, y, kind, col) {

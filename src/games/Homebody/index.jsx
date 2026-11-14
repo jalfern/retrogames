@@ -3,9 +3,10 @@
 // An original people sim in the spirit of The Sims (Maxis, PC 2000) — its own
 // IP, names and art. Command two residents on a little suburban lot: tap an
 // object to order them (they pathfind and use it), juggle five needs against a
-// clock that never stops, work at the mailbox for §, buy furniture to raise the
-// home's ambience, and bank 80 contentment to grant the lifetime wish. Ignore
-// the household and it collapses.
+// clock you control — the speed dial (#2227) pauses, hurries and races it —
+// work at the mailbox for §, buy furniture to raise the
+// home's ambience, and bank 80 contentment to grant the lifetime wish.
+// Ignore the household and it collapses.
 //
 // One useEffect owns the fixed-timestep loop; the contract hands the clock to a
 // driver while it holds it. Attract runs the sim's own demo autopilot.
@@ -29,13 +30,14 @@ import {
     adoptPet, adoptOk, PET,   // #2197: the cat counter
     adoptKid, adoptKidOk, KID,   // #2203: the child counter
     setSel, flipTab, selectTab, digitCard,   // #2222: catalog shelves
+    SPEED_MULT, SPEED_NAMES, setSpeed, cycleSpeed, attractSpeed,   // #2227: the speed dial
     court, courtTarget,   // #2131: player-ordered romance commands
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court — one pad button, two orders
     stateHash,
 } from './sim.js'
 import {
     drawGround, drawGate, drawItem, drawPerson, nightTint, drawPanel, drawTopBar,
-    drawCatalog, catalogHit, tabHit, drawBuildCursor, drawThoughts, drawClouds,
+    drawCatalog, catalogHit, tabHit, speedHit, drawBuildCursor, drawThoughts, drawClouds,   // #2227: speedHit — the dial's tap route
     drawPet,   // #2197: Miso
     drawKid,   // #2203: Pip
 } from './art.js'
@@ -52,6 +54,7 @@ const MESSAGES = [
     'Red needs flare tempers — a SPAT cracks BONDS. Fill both, side by side, to thaw.',
     'Bank §300, then B + R: hammer on a Spare Room and the lot grows.',
     'Buy mode has SHELVES — [ and ] flip HOME / FUN / DECOR / SPECIAL; tap a shelf name on the phone.',
+    'THE CLOCK IS YOURS — keys 1-4 set the speed dial (|| ▶ ▶▶ ▶▶▶), or tap SPEED in the panel.',
     'Adopt a child for §150 — K opens the counter. Pip scampers, snackes, plays and tumbles.',
     'A lonely Pip cries and the whole house feels it. Nearby family, toys and a cozy corner keep the giggles coming.',
     'Bank 80 contentment and the lifetime wish comes true.',
@@ -103,7 +106,14 @@ const HomebodyGame = () => {
         let specialPick = null    // #2197/#2203: R/K ids route through the shelf now
         let courtQueued = null    // #2131: 'coo' | 'insult' pending from C/X
         let digitPick = -1        // #2222: digit picks within the open shelf
+        let speedPick = null      // #2227: digits 1-4 outside buy mode set the dial
+        let speedCycled = 0       // #2227: , / . cycle the dial in every mode
         const say = (m) => { toastMsg = m; toast = 120 }
+        const speedBlip = (n, up) => {
+            if (n === 0) audioController.playTone(200, 0.09, 'square', 0.05)
+            else if (up) audioController.playSweep(440, 880, 0.12, 'square', 0.05)
+            else audioController.playSweep(660, 330, 0.12, 'square', 0.05)
+        }
 
         const buildCanvas = () => {
             if (canvas) canvas.remove()
@@ -301,6 +311,8 @@ const HomebodyGame = () => {
         // ---------------------------------------------------------- pointer ----
         const pointerPx = (px, py) => {
             if (!gs || gs.done || screenRef.current !== 'play' || pausedRef.current) return
+            const dd = speedHit(px, py)   // #2227: the dial is always tappable — the pad route to the gears, above every other hit
+            if (dd >= 0) { const pv = gs.speed; if (setSpeed(gs, dd)) speedBlip(dd, dd > pv); return }
             if (gs.build) {
                 const tb = tabHit(px, py)   // #2222: tap a shelf name to flip
                 if (tb >= 0) { if (selectTab(gs, tb)) audioController.playTone(500 + tb * 70, 0.05, 'square', 0.04); return }
@@ -529,12 +541,37 @@ const HomebodyGame = () => {
             const ft = Math.min(ts - last, 250)
             last = ts
             if (pausedRef.current) return
+            // #2227: the dial answers even while the world stands still — these
+            // consumptions sit ABOVE the step multiplier on purpose; swallow them
+            // below it and pause would eat the very keys meant to release it.
+            if (gs && screenRef.current === 'play') {
+                if (speedPick !== null) {
+                    const pv = gs.speed
+                    const v = Math.max(0, Math.min(SPEED_MULT.length - 1, speedPick - 1))
+                    if (setSpeed(gs, v)) speedBlip(v, v > pv)
+                    speedPick = null
+                }
+                if (speedCycled) {
+                    const pv = gs.speed
+                    if (cycleSpeed(gs, speedCycled)) speedBlip(gs.speed, gs.speed > pv)
+                    speedCycled = 0
+                }
+            }
             acc += ft
             while (acc >= SIM_MS) {
                 acc -= SIM_MS
+                // #2227: the gear buys extra WORLD steps per frame tick — one
+                // driver, one fixed dt; gear 0 (pause) simply buys none.
+                const steps = SPEED_MULT[screenRef.current === 'attract' ? (demoG ? demoG.speed : 1) : (gs ? gs.speed : 1)]
+                for (let sp = 0; sp < steps; sp++) {
                 if (screenRef.current === 'attract') {
                     autoStep(demoG, SIM_MS / 1000)
                     handleEvents(demoG, false)
+                    // #2227: the marquee teaches the dial — the demo hurries the
+                    // morning chores stretch and eases back, the panel pip riding
+                    // along. No cue tone here: attract runs before the audio unlock.
+                    const want = attractSpeed(demoG)
+                    if (want !== demoG.speed) demoG.speed = want
                     if (demoG.done) demoG = freshDemo()
                 } else if (screenRef.current === 'play' && gs && !gs.done) {
                     if (!contractHoldsLoop()) {
@@ -556,6 +593,7 @@ const HomebodyGame = () => {
                         handleEvents(gs, true)
                         finish(gs)
                     }
+                }
                 }
                 stepParticles()
             }
@@ -579,6 +617,7 @@ const HomebodyGame = () => {
             prev.left = prev.right = prev.up = prev.down = prev.a = prev.b = prev.pdown = false
             actQueued = buildQueued = switchQueued = false; digitPick = -1; courtQueued = null
             tabQueued = 0; specialPick = null   // #2222
+            speedPick = null; speedCycled = 0   // #2227: a new street moves in at normal
             setEndInfo(null)
             setSc('play')
             audioController.playSweep(262, 523, 0.24, 'square', 0.07)
@@ -632,6 +671,11 @@ const HomebodyGame = () => {
             if (/^Digit[1-9]$/.test(e.code)) digitPick = parseInt(e.code.slice(5), 10)   // #2222: digits pick within the open shelf
             if (e.code === 'BracketLeft') tabQueued = -1   // #2222: flip shelves
             if (e.code === 'BracketRight') tabQueued = 1
+            if (e.code === 'Comma') speedCycled = -1   // #2227: , / . walk the dial down/up in every mode
+            if (e.code === 'Period') speedCycled = 1
+            // #2227: the original's number-key binding — outside buy mode the
+            // digits drive the dial; inside, they keep the #2222 card law.
+            if (/^Digit[1-4]$/.test(e.code) && gs && !gs.build) speedPick = parseInt(e.code.slice(5), 10)
         }
         const onUp = (e) => {
             if (CUR.l.includes(e.code)) heldKeys.left = false
@@ -642,7 +686,7 @@ const HomebodyGame = () => {
             // peaks and the press lands as the compliment. A release with no
             // armed hold says nothing (courtTap returns null), so random keys
             // and the death screen stay quiet.
-            if (ACTION_KEYS.has(e.code) && gs && screenRef.current === 'play' && !pausedRef.current && !gs.done) {
+            if (ACTION_KEYS.has(e.code) && gs && screenRef.current === 'play' && !pausedRef.current && !gs.done && gs.speed > 0) {   // #2227: a paused world takes no orders
                 const t = courtTap(gs)
                 if (t && t.refused) say('NOT SO FAST — LET IT LAND')
             }
@@ -693,6 +737,7 @@ const HomebodyGame = () => {
         function state() {
             return {
                 tick: gs.tick, score: gs.content, done: gs.done || false, seed: gs.seed,
+                speed: gs.speed,   // #2227: the dial is part of the contract view too
                 money: gs.money, content: gs.content, day: gs.day, hour: Math.round(gs.hour * 10) / 10,
                 items: gs.items.length, visitors: (gs.visitor ? 1 : 0) + (gs.ivy ? 1 : 0), ext: gs.ext,   // #2143: the lot can hold two neighbours
                 hero: [Math.round(gs.people[gs.active].x), Math.round(gs.people[gs.active].y)], cursor: [gs.cursor.r, gs.cursor.c],
@@ -706,6 +751,7 @@ const HomebodyGame = () => {
                 probe: () => gs ? ({
                     screen: screenRef.current, tick: gs.tick, done: gs.done, content: gs.content, money: gs.money,
                     day: gs.day, hour: Math.round(gs.hour * 10) / 10, build: gs.build, sel: gs.sel, tab: gs.tab,   // #2222: the open shelf
+                    speed: gs.speed, speedName: SPEED_NAMES[gs.speed],   // #2227: the dial
                     demo: gs.demo,
                     people: gs.people.map((p) => ({ name: p.name, x: Math.round(p.x), y: Math.round(p.y), needs: { ...p.needs }, working: p.working, fainted: p.faintT > 0 })),
                     items: gs.items.map((it) => ({ id: it.id, r: it.r, c: it.c })),
@@ -768,7 +814,7 @@ const HomebodyGame = () => {
             mountDbg({
                 title: 'HOMEBODY',
                 getState: () => gs ? [
-                    `d${gs.day} ${gs.hour.toFixed(1)}h §${gs.money} wish ${gs.content}/${WIN_CONTENT} items=${gs.items.length} build=${gs.build}${gs.visitor ? ' Fern!' : ''}${gs.ivy ? ` Ivy${gs.ivy.gift ? '🧺' : ''}!` : ''}${gs.pet ? ' 🐈 Miso' : ''}${gs.kid ? ' ★ Pip' : ''}`,
+                    `d${gs.day} ${gs.hour.toFixed(1)}h §${gs.money} wish ${gs.content}/${WIN_CONTENT} items=${gs.items.length} build=${gs.build}${gs.visitor ? ' Fern!' : ''}${gs.ivy ? ` Ivy${gs.ivy.gift ? '🧺' : ''}!` : ''}${gs.pet ? ' 🐈 Miso' : ''}${gs.kid ? ' ★ Pip' : ''} ⏱${SPEED_NAMES[gs.speed]}`,   // #2227: the dial reads here
                     gs.people.map((p) => `${p.name}:${NEEDS.map((n) => Math.round(p.needs[n] * 100)).join('/')}${p.working ? ' @work' : ''}${p.faintT > 0 ? ' FAINT' : ''}`).join('  '),
                 ] : ['attract'],
                 actions: [
@@ -779,6 +825,8 @@ const HomebodyGame = () => {
                     { label: 'GRANT WISH', run: () => { if (gs) { gs.content = WIN_CONTENT } return 'wish banked — next content tick wins' } },
                     { label: 'RING FERN', run: () => { if (gs) { gs.visitAfter = Math.min(gs.visitAfter, Math.floor(gs.hour)); gs.visitGap = 0 } return 'the bell rings soon' } },
                     { label: 'RING IVY', run: () => { if (gs) { gs.ivyAfter = Math.min(gs.ivyAfter, Math.floor(gs.hour)); gs.ivyGap = 0 } return 'Ivy swings by soon' } },   // #2143
+                    { label: 'DIAL PAUSE', run: () => { if (gs) setSpeed(gs, 0); return gs ? `dial ${SPEED_NAMES[gs.speed]} — the world stands still` : 'no sim' } },   // #2227
+                    { label: 'DIAL FASTEST', run: () => { if (gs) setSpeed(gs, 3); return gs ? `dial ${SPEED_NAMES[gs.speed]} — the world hurries` : 'no sim' } },   // #2227
                     { label: 'NEW SEED', run: () => { seed = nextSeed(seed); startPlay(); return `reseeded ${seed}` } },
                 ],
             })
