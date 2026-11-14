@@ -204,6 +204,24 @@ export const NEEDS = ['hunger', 'energy', 'fun', 'social', 'bladder']
 export const PHYS = ['hunger', 'energy', 'bladder']
 export const DECOR = ['plant', 'rug', 'lamp', 'book', 'sofa', 'tv', 'radio', 'phone']
 
+// ------------------------------------------------------- paper route (#2238) --
+// The neighbourhood keeps a clock (the original's daily rhythm, The Sims, PC
+// 2000): every morning the paper boy sweeps past the gate and the daily lands
+// on the path — hour-scheduled life nobody commands. It is not a catalog
+// piece (nobody buys the news), so DEF gains one owner-free entry: walkable
+// (solid:false) and usable (fun) — which lets tryUse, the tap route and BFS
+// treat it exactly like an appliance the lot owns. One paper a day; morning
+// replaces yesterday's — news rots.
+export const PAPER = { id: 'paper', name: 'Daily Paper', price: 0, h: 1, solid: false, decor: true, need: 'fun', amt: 0.24, dur: 2.8 }
+DEF.paper = PAPER
+export const PAPER_LATE = 10          // the route is over by 10:00
+export const PAPER_LINES = [
+    'The paper boy sweeps past the gate — today\'s edition lands on the path.',
+    'Fresh news hits the step: the funny pages face up.',
+    'The morning edition sails in, comics on top.',
+    'Somebody\'s crossword waits on the path, pencil-sharp.',
+]
+
 // ------------------------------------------------- catalog shelves (#2222) ----
 // The original people-sim never showed a flat wall of goods: buy mode is a
 // catalog with category tabs — flip shelves, each shelf few big cards.
@@ -372,6 +390,9 @@ export function newRun(seed) {
         triHits: 0,                 // #2154: three-way tells fired this run (the line variant rides it)
         pet: null,                  // #2197: the household cat, once adopted
         kid: null,                  // #2203: the adopted child, once the agency calls
+        paper: null,                // #2238: today's news on the step (item ref | null)
+        paperDay: 0,              // #2238: day stamp of the last delivery (rides the hash)
+        paperAfter: 0,            // #2238: hour the route is due today
         rel: { house: 0, fern: 0, ivy: 0, kid: 0 },   // #1817/#2143/#2203 conversation ladders (0..REL_MAX)
         spats: 0,                 // #2070: quarrels this run (rides the hash)
         grudge: 0,                // #2070: 1 = cold war until the pair makes up
@@ -393,6 +414,7 @@ export function newRun(seed) {
     }
     scheduleVisit(s)
     scheduleIvy(s)
+    schedulePaper(s)
     return s
 }
 
@@ -410,6 +432,11 @@ function scheduleIvy(s) {
     s.ivyAfter = Math.max(12, 14 + Math.floor(s.rng() * 6) - lv)
     s.ivyGap = s.rng()
 }
+
+// #2238: the paper route keeps its hours — news lands between ~06:30 and
+// ~08:00, seeded, whether anyone is awake or not. This is the clause the
+// README kept calling cosmetic: the lot now schedules by the hour on its own.
+function schedulePaper(s) { s.paperAfter = 6.5 + s.rng() * 1.5 }
 
 // #1817: every conversation minute stacks the meter; crossing an edge is a
 // moment — one thought-log line, a small contentment bonus, one harness event.
@@ -808,6 +835,9 @@ export function place(s, r, c) {
     if (s.money < def.price || !canPlace(s, def, r, c)) { s.events.push({ t: 'refuse', r, c }); return false }
     if (def.solid && !keepsOpen(s, r, c)) { s.events.push({ t: 'refuse', r, c }); return false }
     s.money -= def.price
+    // #2238: furniture landing on the step tucks yesterday's news away —
+    // the paper reference must never dangle under a bookshelf.
+    if (s.paper && s.paper.r === r && s.paper.c === c) { s.items = s.items.filter((x) => x !== s.paper); s.paper = null }
     s.items.push({ uid: s.nextUid++, id: def.id, r, c })
     s.events.push({ t: 'place', r, c, id: def.id })
     reflow(s)
@@ -827,7 +857,7 @@ export function placeOk(s, r, c) {
 
 export function sellAt(s, r, c) {
     const it = cellItem(s, r, c)
-    if (!it || it.id === 'mail') return false
+    if (!it || it.id === 'mail' || it.id === 'paper') return false   // #2238: the mailbox belongs to the lot, the news to the route
     const def = DEF[it.id]
     s.items = s.items.filter((x) => x !== it)
     s.money += Math.floor(def.price / 2)
@@ -963,6 +993,25 @@ function arbitrateVisitors(s) {
             s.triTell = TRI_TELL_CD
         }
     }
+}
+
+// ------------------------------------------------------- paper route ------
+// #2238: the lot's first hourly citizen. The boy rides past off-screen; only
+// the news and a flutter arrive, on schedule, with nobody home or not. The
+// landing spot is the path just inside the gate (the gravel run the mail and
+// the neighbours already walk); a blocked step falls back to its free edge.
+function updatePaper(s) {
+    // one paper a day, full stop: reading it early must not re-arm the route
+    // inside the window (the day stamp is the law; newDay clears it afresh).
+    if (s.paper || s.paperDay === s.day || s.hour < s.paperAfter || s.hour >= PAPER_LATE) return
+    const spot = walkable(s, 10, 5) ? { r: 10, c: 5 } : nearestFreeTo(s, 10, 5)
+    if (!spot) return
+    const it = { uid: s.nextUid++, id: 'paper', r: spot.r, c: spot.c }
+    s.items.push(it)
+    s.paper = it
+    s.paperDay = s.day
+    s.events.push({ t: 'paper', r: spot.r, c: spot.c })
+    think(s, pick(s, PAPER_LINES))
 }
 
 // ----------------------------------------------------------- visitor ------
@@ -1479,9 +1528,12 @@ const moodMul = (p) => (p.needs.energy < 0.2 ? 0.6 : p.needs.hunger < 0.2 ? 0.75
 // --------------------------------------------------------- interactions ----
 function finishUse(s, p) {
     const { def } = p.use
+    const it = p.use.it
     const before = p.needs[def.need]
     p.needs[def.need] = Math.min(1, p.needs[def.need] + def.amt)
     p.use = null
+    // #2238: the news is read once — today's paper folds away with the last page.
+    if (def.id === 'paper' && s.paper === it) { s.items = s.items.filter((x) => x !== it); s.paper = null }
     const quality = avg(p) > 0.55
     let n = quality ? 2 : 1
     if (def.social && (hasVisitor(s) || hasIvy(s))) { p.needs.social = Math.min(1, p.needs.social + 0.25); n += 1 }   // #2143: any company counts
@@ -1569,6 +1621,7 @@ export function ivyChatPool(s) {
 function doneLine(s, p, def, before) {
     if (def.id === 'bed') return pick(s, [`${p.name} sleeps like a log.`, `${p.name} dreamed about flying.`])
     if (def.id === 'mail') return ''
+    if (def.id === 'paper') return pick(s, [`${p.name} reads the funny pages, front to back.`, `${p.name} does the crossword in two minutes flat.`, `${p.name} folds the paper with the comics left out.`])
     if (def.id === 'phone') return `${p.name} chats for ages on the phone.`
     if (def.id === 'toilet') return `${p.name} feels enormously relieved.`
     if (before < 0.25) return pick(s, [`${p.name} needed that.`, `${p.name} sighs with relief.`])
@@ -1627,6 +1680,10 @@ function applyHourAt(s, hh) {
 }
 function newDay(s) {
     for (const p of s.people) p.workedToday = false
+    // #2238: yesterday's news rots — the stale edition goes out before the
+    // fresh route is due, so the step never stacks up a week of papers.
+    if (s.paper) { s.items = s.items.filter((it) => it !== s.paper); s.paper = null }
+    schedulePaper(s)
     s.day++
     s.events.push({ t: 'day', day: s.day })
 }
@@ -1663,6 +1720,7 @@ export function advance(s, dt) {
     arbitrateVisitors(s)   // #2154: settle the chat claims before either visitor pays
     updateVisitor(s, simDt)
     updateIvy(s, simDt)
+    updatePaper(s)          // #2238: the route rides the same world clock
     updatePet(s, simDt)
     updateKid(s, simDt)
     updateHouseBond(s, simDt)
@@ -1827,6 +1885,9 @@ export function bot(s) {
     if (s.done) return
     const p = s.people[0]
     if (p.working || p.faintT > 0 || p.path || p.use) return
+    // #2238: the attract bot reads the paper left on the step — the demo
+    // teaches the route without a word. If the walk can't be had, carry on.
+    if (s.paper) { if (cmdUse(s, p, s.paper)) return }
     if (s.money > 300 && s.content < WIN_CONTENT) {
         const wants = ['phone', 'roomkit', 'petkit', 'kidkit', 'stove', 'tv', 'sofa', 'radio', 'book', 'shower', 'plant', 'lamp', 'rug']
         for (const id of wants) {
@@ -1900,6 +1961,7 @@ export function stateHash(s) {
     mix(s.cmdCd)                       // #2131: the command cooldown rides it too
     mix(s.holdT)                       // #2171: so does the pending thumb-court hold (-1 = none)
     mix(s.triTell); mix(s.triHits)   // #2154: the choreography tell and its beat count ride it too
+    mix(s.paperDay)                    // #2238: today's route stamps the day it landed
     for (const p of s.people) {
         mix(p.r); mix(p.c)
         for (const n of NEEDS) mix(p.needs[n])

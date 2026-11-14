@@ -299,6 +299,18 @@ export function drawItemAt(ctx, id, x, y, t) {
             ctx.fillStyle = '#e8eef2'; ctx.fillRect(x + 21, y + 7, 2, 4)
             break
         }
+        case 'paper': {
+            // #2238: two sheets tossed on the gravel — cream newsprint, dark
+            // masthead, grey text rows, folded twice.
+            ctx.fillStyle = '#e2dbc6'; ctx.fillRect(x + 6, y + 11, 22, 5)
+            ctx.fillStyle = '#efe9d8'; ctx.fillRect(x + 4, y + 13, 24, 13)
+            ctx.fillStyle = '#4a4034'; ctx.fillRect(x + 7, y + 15, 18, 3)
+            ctx.fillStyle = '#8d8571'
+            ctx.fillRect(x + 7, y + 20, 8, 1); ctx.fillRect(x + 17, y + 20, 8, 1)
+            ctx.fillRect(x + 7, y + 22, 6, 1); ctx.fillRect(x + 15, y + 22, 10, 1)
+            ctx.fillStyle = '#d9d2bc'; ctx.fillRect(x + 4, y + 18, 24, 1)
+            break
+        }
         default: break
     }
     // soft ground shadow under solids

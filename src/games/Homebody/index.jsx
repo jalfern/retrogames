@@ -48,6 +48,7 @@ const MESSAGES = [
     'Two residents, five needs, one little house. You are the voice in their heads.',
     'Tap a fridge, a bed, the TV — they walk over and use it. Feed them, rest them.',
     'The mailbox pays the bills on workdays. § buys furniture to raise the home.',
+    'Morning brings the paper — the boy sweeps past and today\'s edition waits on the step. Tap it for a laugh.',
     'Fern the neighbour wanders in by day — chat fills the blue bar.',
     'CHAT builds BONDS — Fern at FAMILY visits sooner and lingers. Neglect cools them.',
     'Ivy shops the market — chat grows HER bond too. At FRIENDS she brings a basket; FAMILY adds honey-money.',
@@ -165,6 +166,10 @@ const HomebodyGame = () => {
                         }
                         break
                     case 'visit-end': audioController.playSweep(520, 300, 0.2, 'sine', 0.04); break
+                    case 'paper':   // #2238: the route arrives — newsprint flutter and a chalk-bright drop on the step
+                        audioController.playNoise(0.14, 0.05); audioController.playTone(330, 0.05, 'triangle', 0.03)
+                        if (live) { say('THE PAPER BOY SWEEPS PAST'); burst(tilePx(e.c), tilePy(e.r) + 14, 6, '#efe9d8', 2) }
+                        break
                     case 'gift':   // #2143: the market basket lands — warm arpeggio, gold glints
                         audioController.playTone(523, 0.07, 'triangle', 0.05)
                         setTimeout(() => audioController.playTone(659, 0.07, 'triangle', 0.05), 90)
@@ -794,6 +799,7 @@ const HomebodyGame = () => {
                     ivy: gs.ivy ? { name: gs.ivy.name, gift: !!gs.ivy.gift, state: gs.ivy.state, x: Math.round(gs.ivy.x), y: Math.round(gs.ivy.y) } : null,   // #2143
                     pet: gs.pet ? { name: gs.pet.name, r: gs.pet.r, c: gs.pet.c, state: gs.pet.state, asleep: gs.pet.asleep, needs: { ...gs.pet.needs }, cd: Math.round(gs.pet.cd * 10) / 10, x: Math.round(gs.pet.x), y: Math.round(gs.pet.y) } : null,   // #2197
                     kid: gs.kid ? { name: gs.kid.name, r: gs.kid.r, c: gs.kid.c, state: gs.kid.state, asleep: gs.kid.asleep, needs: { ...gs.kid.needs }, cd: Math.round(gs.kid.cd * 10) / 10, x: Math.round(gs.kid.x), y: Math.round(gs.kid.y) } : null,   // #2203
+                    paper: gs.paper ? { r: gs.paper.r, c: gs.paper.c } : null, paperDay: gs.paperDay,   // #2238: the route
                 }) : { screen: screenRef.current, seed },
                 // #1637 watchcheck pilot drives these.
                 watching: () => watchingRef.current,
@@ -854,6 +860,7 @@ const HomebodyGame = () => {
                     { label: 'GRANT WISH', run: () => { if (gs) { gs.content = WIN_CONTENT } return 'wish banked — next content tick wins' } },
                     { label: 'RING FERN', run: () => { if (gs) { gs.visitAfter = Math.min(gs.visitAfter, Math.floor(gs.hour)); gs.visitGap = 0 } return 'the bell rings soon' } },
                     { label: 'RING IVY', run: () => { if (gs) { gs.ivyAfter = Math.min(gs.ivyAfter, Math.floor(gs.hour)); gs.ivyGap = 0 } return 'Ivy swings by soon' } },   // #2143
+                { label: 'DROP PAPER', run: () => { if (gs) { gs.paperDay = -1; gs.paperAfter = Math.min(gs.paperAfter, Math.floor(gs.hour)) } return gs ? 'the route is due — news hits the step' : 'no sim' } },   // #2238
                     { label: 'DIAL PAUSE', run: () => { if (gs) setSpeed(gs, 0); return gs ? `dial ${SPEED_NAMES[gs.speed]} — the world stands still` : 'no sim' } },   // #2227
                     { label: 'DIAL FASTEST', run: () => { if (gs) setSpeed(gs, 3); return gs ? `dial ${SPEED_NAMES[gs.speed]} — the world hurries` : 'no sim' } },   // #2227
                     { label: 'NEW SEED', run: () => { seed = nextSeed(seed); startPlay(); return `reseeded ${seed}` } },
