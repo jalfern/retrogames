@@ -89,6 +89,46 @@ const SLEEP_LINES = [
     'The house dims; Miso pours herself into a sleeping loaf.',
 ]
 
+// #2203: Pip — the adopted child. The kids half of the companions tail: the
+// agency worker hands the child over at the gate, and Pip lives by the lot's
+// laws like the cat (every step asks walkable) — but a child is not a pet. FUN
+// burns fastest (kids burn bright), PLAY is the verb: a bored Pip hunts the fun
+// objects, a hungry Pip finds the fridge, night puts a child to bed. And unlike
+// the cat, neglect is loud: a red-fun Pip CRIES, and the wail stings every
+// resident nearby. Care is still love — tumbling beside an idle resident and a
+// word on the court climb rel.kid. A child never faints and never blocks.
+export const KID = { name: 'Pip', price: 150 }
+export const KID_DECAY = { hunger: 0.12, fun: 0.16, energy: 0.05, social: 0.10 }  // per sim-hour — fun fastest
+export const KID_PLAY = 6          // real seconds between tumble ticks (the pet law, kid scale)
+export const KID_SOCIAL = 0.06    // social the resident pockets per tumble
+export const KID_BOND = 0.5       // rel.kid per tumble tick — friendship, one fall at a time
+export const KID_FADE = 0.015     // rel.kid lost per sim-hour of quiet (home pace — slowest)
+export const KID_CRY_CD = 4       // real seconds between cries while fun stays red
+export const KID_CRY_STING = 0.10 // social each nearby resident pays per wail (neglect is loud)
+const KID_TUMBLE_LINES = [
+    '{n} and Pip chase each other in tight circles until one falls over giggling.',
+    'Pip tackles {n}\u2019s legs; it counts as wrestling and as love.',
+    'Pip shows {n} a rock that is definitely valuable. Both agree it is.',
+]
+const KID_PLAY_LINES = [
+    'Pip works the radio dial like it owes money. The cartoons win.',
+    'Pip presses a nose almost into the screen. The pictures are that good.',
+    'Pip builds a fort out of nothing and defends it brilliantly.',
+]
+const KID_SNACK_LINES = [
+    'Pip negotiates with the fridge and wins twice.',
+    'A snack acquired the way children acquire everything: decisively.',
+]
+const KID_CRY_LINES = [
+    'Pip is crying, and the whole house hears it.',
+    'Someone forgot a child is a person with feelings — Pip says so, loudly.',
+]
+const KID_BED_LINES = [
+    'Pip curls up on the floorboards, still halfway to a game.',
+    'The house dims; a child folds up small and sleeps like only children do.',
+]
+const ADOPT_KID_LINE = 'The agency worker hands over a backpack and a small person — Pip claims the lot, already grinning.'
+
 export const COLLAPSE_AT = 16       // seconds a red need may go unanswered
 export const FAINT_SEC = 14        // how long a faint lasts
 export const RED_AT = 0.12         // a need at/below this reads red (and alarms the gem)
@@ -157,6 +197,7 @@ export const CATALOG = [
     { id: 'lamp', name: 'Floor Lamp', price: 80, h: 1, solid: false, decor: true },
     { id: 'roomkit', name: 'Spare Room', price: 300, h: 1, solid: false, room: true },
     { id: 'petkit', name: 'Adopt a Cat', price: PET.price, h: 1, solid: false, pet: true },
+    { id: 'kidkit', name: 'Adopt a Child', price: KID.price, h: 1, solid: false, kid: true },
 ]
 export const DEF = Object.fromEntries(CATALOG.map((d) => [d.id, d]))
 export const NEEDS = ['hunger', 'energy', 'fun', 'social', 'bladder']
@@ -252,7 +293,8 @@ export function newRun(seed) {
         ivyAfter: null,             // hour of Ivy's next visit
         ivyGap: 0,
         pet: null,                  // #2197: the household cat, once adopted
-        rel: { house: 0, fern: 0, ivy: 0 },   // #1817/#2143 conversation ladder (0..REL_MAX)
+        kid: null,                  // #2203: the adopted child, once the agency calls
+        rel: { house: 0, fern: 0, ivy: 0, kid: 0 },   // #1817/#2143/#2203 conversation ladders (0..REL_MAX)
         spats: 0,                 // #2070: quarrels this run (rides the hash)
         grudge: 0,                // #2070: 1 = cold war until the pair makes up
         spatCd: 0,                // #2070: real seconds until the next spat may fire
@@ -321,6 +363,13 @@ const REL_UP_LINES = {
         2: ['Ivy lets herself in with a basket and an opinion about the tomatoes.', 'Ivy and the household swap market news before the kettle is on.'],
         3: ['Ivy is practically family — two baskets now, one for each side of the house.'],
     },
+    // #2203: a child's ladder climbs fastest of all — kids give their whole
+    // friendship, no installments.
+    kid: {
+        1: ['Pip picked this one. Pip tells everyone so, unprompted.', 'Pip follows you room to room like a small determined shadow.'],
+        2: ['Pip saved you the good seat, the one with the best view of the radio.', 'Pip shows you their secret cave under the stairs. You are sworn to secrecy.'],
+        3: ['Pip signed your drawing — "BEST FRIENDS FOREVER" — and framed it on the fridge.'],
+    },
 }
 
 // #2070: the mirror of relAdd — a bond can FALL, and crossing an edge downward
@@ -354,6 +403,7 @@ export function courtTarget(s) {
     if (partner && partner !== me && partner.faintT <= 0) cand.push({ p: partner, k: 'house' })
     if (s.visitor && s.visitor.state !== 'leaving') cand.push({ p: s.visitor, k: 'fern' })
     if (s.ivy && s.ivy.state !== 'leaving') cand.push({ p: s.ivy, k: 'ivy' })   // #2143
+    if (s.kid) cand.push({ p: s.kid, k: 'kid' })   // #2203: the court reaches children too
     let best = null, bd = COURT_REACH + 1
     for (const c of cand) {
         const d = Math.abs(me.r - c.p.r) + Math.abs(me.c - c.p.c)
@@ -374,6 +424,11 @@ const COO_LINES_FERN = [
 const COO_LINES_IVY = [
     'You tell Ivy her garden is the best on the street. She glows plum-bright.',
     'A compliment about the roses — Ivy takes it like sunlight on leaves.',
+]
+// #2203: a word to a child lands like sunshine — and a scold lands harder.
+const COO_LINES_KID = [
+    'You tell Pip they are the bravest kid on the street. They believe you, completely.',
+    'A kind word to a child — Pip beams like a lighthouse.',
 ]
 const AFFECTION_LINES = [
     'Otto and Mira — the whole house watches the two of you mean it.',
@@ -397,11 +452,12 @@ export function court(s, kind) {
         relAdd(s, k, deep ? AFFECTION_BOND : COO_BOND)
         me.needs.social = Math.min(1, me.needs.social + 0.05)
         if (other.needs && other.needs.social !== undefined) other.needs.social = Math.min(1, other.needs.social + 0.05)
+        if (k === 'kid') other.needs.fun = Math.min(1, other.needs.fun + 0.15)   // #2203: a kind word cheers a child
         s.cooFx = deep ? 2.6 : 1.8   // sparkle/hearts over the pair (index paint)
         s.cooAt = { x: mx, y: my }
         s.cooDeep = deep
         s.events.push({ t: deep ? 'affection' : 'coo', k, x: mx, y: my })
-        think(s, pick(s, deep ? AFFECTION_LINES : k === 'fern' ? COO_LINES_FERN : k === 'ivy' ? COO_LINES_IVY : COO_LINES))
+        think(s, pick(s, deep ? AFFECTION_LINES : k === 'fern' ? COO_LINES_FERN : k === 'ivy' ? COO_LINES_IVY : k === 'kid' ? COO_LINES_KID : COO_LINES))
         s.cmdCd = CMD_CD
         return { deep, k }
     }
@@ -409,6 +465,7 @@ export function court(s, kind) {
         relSub(s, k, INSULT_DROP)
         if (k === 'house') s.grudge = 1     // cold war on command; the #2070 exit still ends it
         if (other.needs && other.needs.social !== undefined) other.needs.social = Math.max(0, other.needs.social - SPAT_SOCIAL)
+        if (k === 'kid') other.needs.fun = Math.max(0, other.needs.fun - 0.2)   // #2203: a scold puts out a child's play-fire (no house grudge — Ivy's rule)
         me.needs.social = Math.max(0, me.needs.social - SPAT_SOCIAL / 2)
         s.spatFx = 2.4                      // the storm puff rides the #2076 tell
         s.events.push({ t: 'insult', k, x: mx, y: my })
@@ -650,6 +707,12 @@ export function place(s, r, c) {
         s.events.push({ t: 'refuse', r: 12, c: 5 })
         return false
     }
+    // #2203: the same counter law for kids — the agency worker comes to the gate
+    if (def.kid) {
+        if (adoptKid(s)) return true
+        s.events.push({ t: 'refuse', r: 12, c: 5 })
+        return false
+    }
     // #1823: a refused placement speaks — the view flashes the ghost cell red
     if (s.money < def.price || !canPlace(s, def, r, c)) { s.events.push({ t: 'refuse', r, c }); return false }
     if (def.solid && !keepsOpen(s, r, c)) { s.events.push({ t: 'refuse', r, c }); return false }
@@ -665,6 +728,7 @@ export function placeOk(s, r, c) {
     if (!def) return false
     if (def.room) return buildRoomOk(s)
     if (def.pet) return adoptOk(s)
+    if (def.kid) return adoptKidOk(s)
     if (s.money < def.price || !canPlace(s, def, r, c)) return false
     if (def.solid && !keepsOpen(s, r, c)) return false
     return true
@@ -715,13 +779,22 @@ function autonomous(s, p) {
     let worst = null, wv = 1e9
     for (const n of NEEDS) if (p.needs[n] < wv) { wv = p.needs[n]; worst = n }
     if (s.demo && worst && p.needs[worst] < 0.55) {
-        const t = needTarget(s, p, worst)
-        if (t) { p.path = t.path; p.goal = { kind: 'use', it: t.it }; return }
-        if (worst === 'social') {           // #2143: chat with whichever neighbour is around
-            const nv = nearestVisitor(s)
-            if (nv) {
-                const cell = nearestFreeTo(s, nv.v.r, nv.v.c)
-                if (cell) { const path = bfsPath(s, { r: p.r, c: p.c }, [cell]); if (path) { p.path = path; p.goal = { kind: 'chat', v: nv.k }; return } }
+        // #2203: urgency order, not lowest-only. Serve the lowest need that
+        // HAS a target, then step up the list — when social is the bottom but
+        // nobody is home to talk to, the stomach still gets its turn. (The cry
+        // law keeps social pinned low; under strict lowest-only a lonely Sim
+        // moped through the x8 work clock straight into a faint.)
+        const order = [...NEEDS].sort((a, b) => p.needs[a] - p.needs[b])
+        for (const n of order) {
+            if (p.needs[n] >= 0.55) break
+            const t = needTarget(s, p, n)
+            if (t) { p.path = t.path; p.goal = { kind: 'use', it: t.it }; return }
+            if (n === 'social') {           // #2143: chat with whichever neighbour is around
+                const nv = nearestVisitor(s)
+                if (nv) {
+                    const cell = nearestFreeTo(s, nv.v.r, nv.v.c)
+                    if (cell) { const path = bfsPath(s, { r: p.r, c: p.c }, [cell]); if (path) { p.path = path; p.goal = { kind: 'chat', v: nv.k }; return } }
+                }
             }
         }
     }
@@ -1019,6 +1092,160 @@ function updatePet(s, dt) {
     if (p.path && !p.path.length) p.path = null
 }
 
+// -------------------------------------------------------------- kid (#2203) --
+// Pip lives by the lot's laws exactly like the cat — every pick asks walkable
+// AND pathfinds before committing, nothing is ever blocked — but by a child's
+// rules: FUN burns fastest, PLAY is the verb (a bored child hunts the fun
+// objects), night puts the child to bed, and neglect is LOUD: red fun means a
+// wail every KID_CRY_CD that stings the social of every resident in earshot.
+// Love is a law too: an idle resident within arm's reach tumbles into play on
+// the pet's cooldown (fun, social, rel.kid, content), and the court (C/X or
+// the held thumb) speaks kind or cruel. A child never faints — the same engine
+// doctrine as the cat: sad and bored is life, not death.
+export function adoptKidOk(s) {
+    if (s.done || s.kid || s.money < KID.price) return false
+    const dest = nearestFloorCell(s, 5, 5)
+    return !!dest && walkable(s, 12, 5) && !!bfsPath(s, { r: 12, c: 5 }, [dest])
+}
+
+export function adoptKid(s) {
+    if (!adoptKidOk(s)) return false
+    s.money -= KID.price
+    const dest = nearestFloorCell(s, 5, 5)
+    s.kid = {
+        name: KID.name, r: 12, c: 5, x: tileX(5) + TILE / 2, y: tileY(12) + TILE / 2,
+        path: bfsPath(s, { r: 12, c: 5 }, [dest]), state: 'enter', t: 0, face: 1, walkPhase: 0,
+        needs: { hunger: 0.8, fun: 0.7, energy: 0.85, social: 0.75 },
+        asleep: false, cd: 0, giggleT: 0, cryT: 0, wanderT: 2, food: false, playObj: false, bedT: 0, stepDist: 0,
+    }
+    s.events.push({ t: 'kid', name: KID.name, x: s.kid.x, y: s.kid.y })
+    think(s, ADOPT_KID_LINE)
+    return true
+}
+
+// the nearest item whose use feeds FUN — whatever the living room offers
+function funTarget(s, k) {
+    let best = null, bd = 1e9
+    for (const it of s.items) {
+        const d = DEF[it.id]
+        if (!d || d.need !== 'fun') continue
+        const tg = targetsOf(s, it)
+        if (!tg.length) continue
+        const dist = Math.min(...tg.map((t) => Math.abs(t.r - k.r) + Math.abs(t.c - k.c)))
+        if (dist < bd) { bd = dist; best = { it, tg } }
+    }
+    return best
+}
+
+function updateKid(s, dt) {
+    const k = s.kid
+    if (!k) return
+    k.t += dt
+    if (k.cd > 0) k.cd = Math.max(0, k.cd - dt)
+    if (k.giggleT > 0) k.giggleT = Math.max(0, k.giggleT - dt)
+    if (k.cryT > 0) k.cryT = Math.max(0, k.cryT - dt)
+    const dh = dt / HOUR_SEC
+    k.needs.hunger = Math.max(0, k.needs.hunger - KID_DECAY.hunger * dh)
+    k.needs.fun = Math.max(0, k.needs.fun - KID_DECAY.fun * dh * (k.asleep ? 0.3 : 1))
+    k.needs.social = Math.max(0, k.needs.social - KID_DECAY.social * dh)
+    const night = isNight(s)
+    if (k.asleep) k.needs.energy = Math.min(1, k.needs.energy + 0.34 * dh * 8)
+    else k.needs.energy = Math.max(0, k.needs.energy - KID_DECAY.energy * dh)
+
+    // the tumble law: an idle resident in arm's reach drops into play — the
+    // pet coo at kid scale, one fall of friendship per cooldown
+    if (k.cd === 0 && !k.asleep && k.needs.fun > RED_AT) {
+        let partner = null
+        for (const q of s.people) if (q.faintT <= 0 && !q.working && Math.abs(q.r - k.r) + Math.abs(q.c - k.c) <= 1) partner = q
+        if (partner) {
+            partner.needs.social = Math.min(1, partner.needs.social + KID_SOCIAL)
+            k.needs.fun = Math.min(1, k.needs.fun + 0.3)
+            k.needs.social = Math.min(1, k.needs.social + 0.12)
+            relAdd(s, 'kid', KID_BOND)
+            s.content = Math.min(WIN_CONTENT, s.content + 1)
+            k.cd = KID_PLAY
+            k.giggleT = 1.2
+            s.events.push({ t: 'kid-tumble', name: partner.name, x: k.x, y: k.y })
+            if (s.rng() < 0.5) think(s, pick(s, KID_TUMBLE_LINES).replace('{n}', partner.name))
+        }
+    }
+
+    // the cry law: a red-fun child wails, and the wail stings everyone within
+    // earshot — neglect made audible. Never fatal; attention (a tumble, a coo,
+    // a play session) lifts fun over RED_AT and the crying stops.
+    if (k.needs.fun <= RED_AT && !k.asleep && k.cryT === 0) {
+        k.cryT = KID_CRY_CD
+        for (const q of s.people) if (q.faintT <= 0 && !q.working && Math.abs(q.r - k.r) + Math.abs(q.c - k.c) <= 3) q.needs.social = Math.max(0, q.needs.social - KID_CRY_STING)
+        s.events.push({ t: 'kid-cry', name: k.name, x: k.x, y: k.y })
+        if (s.rng() < 0.6) think(s, pick(s, KID_CRY_LINES))
+    }
+
+    if (k.asleep) {
+        if (!night) { k.asleep = false; k.state = 'roam'; think(s, 'Pip wakes with the sun, already planning the day.') }
+        return
+    }
+    // bedtime: night finds the nearest free floor tile, and a child folds up small
+    if (night) {
+        if (k.state === 'bed' && k.path && k.path.length) { walkAlong(s, k, dt, 44); return }
+        if (k.state === 'bed') { k.asleep = true; k.state = 'sleep'; if (s.rng() < 0.6) think(s, pick(s, KID_BED_LINES)); return }
+        k.bedT -= dt
+        if (k.bedT <= 0) {
+            k.bedT = 1
+            const cell = nearestFloorCell(s, k.r, k.c)
+            const path = cell ? bfsPath(s, { r: k.r, c: k.c }, [cell]) : null
+            if (path) { k.path = path; k.state = 'bed' } else { k.asleep = true; k.state = 'sleep' }
+        }
+        return
+    }
+    // snacks: a hungry child works the fridge (or whatever the kitchen offers)
+    if (!k.food && k.needs.hunger < 0.3) {
+        const fr = findNearest(s, k, 'fridge') || findNearest(s, k, 'stove')
+        if (fr) {
+            const path = bfsPath(s, { r: k.r, c: k.c }, fr.tg)
+            if (path) { k.path = path; k.food = true; k.state = 'food' }
+        }
+    }
+    if (k.food && !k.path) {
+        k.food = false
+        k.needs.hunger = Math.min(1, k.needs.hunger + 0.5)
+        k.state = 'roam'
+        s.events.push({ t: 'kid-eat', name: k.name, x: k.x, y: k.y })
+        think(s, pick(s, KID_SNACK_LINES))
+    }
+    // play: a bored child hunts the fun objects — the kid's own need loop
+    if (!k.playObj && !k.food && k.needs.fun < 0.3) {
+        const ft = funTarget(s, k)
+        if (ft) {
+            const path = bfsPath(s, { r: k.r, c: k.c }, ft.tg)
+            if (path) { k.path = path; k.playObj = true; k.state = 'play' }
+        }
+    }
+    if (k.playObj && !k.path) {
+        k.playObj = false
+        k.needs.fun = Math.min(1, k.needs.fun + 0.45)
+        k.state = 'roam'
+        k.giggleT = 1.4
+        s.events.push({ t: 'kid-play', name: k.name, x: k.x, y: k.y })
+        think(s, pick(s, KID_PLAY_LINES))
+    }
+    // scamper the lot — every pick asks walkable AND reachable, every seed the same
+    if (!k.path) {
+        k.wanderT -= dt
+        if (k.wanderT <= 0) {
+            k.wanderT = 2.5 + s.rng() * 3.5
+            const rr = Math.max(0, Math.min(ROWS - 1, k.r + Math.floor(s.rng() * 9) - 4))
+            const cc = Math.max(0, Math.min(COLS - 1, k.c + Math.floor(s.rng() * 9) - 4))
+            if (walkable(s, rr, cc)) {
+                const path = bfsPath(s, { r: k.r, c: k.c }, [{ r: rr, c: cc }])
+                if (path) k.path = path
+            }
+            k.state = 'roam'
+        }
+    }
+    walkAlong(s, k, dt, 52)
+    if (k.path && !k.path.length) k.path = null
+}
+
 function updateHouseBond(s, dt) {
     const [a, b] = s.people
     const idle = (p) => p.faintT <= 0 && !p.working && !p.use
@@ -1250,6 +1477,7 @@ function applyHourAt(s, hh) {
     relSub(s, 'house', 0.02)
     relSub(s, 'fern', 0.035)
     relSub(s, 'ivy', IVY_FADE)     // #2143: Ivy cools slower than Fern, faster than home
+    relSub(s, 'kid', KID_FADE)     // #2203: a child at home barely cools at all — but silence still counts
 }
 function newDay(s) {
     for (const p of s.people) p.workedToday = false
@@ -1288,6 +1516,7 @@ export function advance(s, dt) {
     updateVisitor(s, simDt)
     updateIvy(s, simDt)
     updatePet(s, simDt)
+    updateKid(s, simDt)
     updateHouseBond(s, simDt)
 
     for (const p of s.people) {
@@ -1335,6 +1564,14 @@ export function advance(s, dt) {
             } else p.redT[n] = 0
         }
         if (p.faintT > 0) continue
+
+        // #2203: a chat plan bows to a physical emergency — the x8 work clock
+        // makes a long hang at Fern's sofa fatally expensive, and a lonely
+        // resident can visit after eating. Walks (whatever their goal) and
+        // in-hand uses are never interrupted; walkAlong already asks walkable.
+        if (s.demo && !p.use && p.goal && p.goal.kind === 'chat' && (p.needs.hunger <= 0.15 || p.needs.energy <= 0.15 || p.needs.bladder <= 0.15)) {
+            p.path = null; p.goal = null
+        }
 
         // executing an interaction
         if (p.use) {
@@ -1443,7 +1680,7 @@ export function bot(s) {
     const p = s.people[0]
     if (p.working || p.faintT > 0 || p.path || p.use) return
     if (s.money > 300 && s.content < WIN_CONTENT) {
-        const wants = ['phone', 'roomkit', 'petkit', 'stove', 'tv', 'sofa', 'radio', 'book', 'shower', 'plant', 'lamp', 'rug']
+        const wants = ['phone', 'roomkit', 'petkit', 'kidkit', 'stove', 'tv', 'sofa', 'radio', 'book', 'shower', 'plant', 'lamp', 'rug']
         for (const id of wants) {
             const def = DEF[id]
             // #1814: the attract build grows the lot so the demo sells the
@@ -1462,6 +1699,15 @@ export function bot(s) {
                 if (s.pet || s.money < PET.price) continue
                 const keep = s.sel
                 s.sel = CATALOG.findIndex((d) => d.id === 'petkit')
+                place(s, 0, 0)
+                s.sel = keep
+                return
+            }
+            // #2203: so does the child — same counter law, right behind the cat
+            if (id === 'kidkit') {
+                if (s.kid || s.money < KID.price) continue
+                const keep = s.sel
+                s.sel = CATALOG.findIndex((d) => d.id === 'kidkit')
                 place(s, 0, 0)
                 s.sel = keep
                 return
@@ -1499,6 +1745,7 @@ export function stateHash(s) {
     mix(s.ext)
     mix(s.rel.house); mix(s.rel.fern)   // #1817: bonds ride the hash
     mix(s.rel.ivy)                     // #2143: so does the second neighbour's
+    mix(s.rel.kid)                     // #2203: and the child's
     mix(s.spats); mix(s.grudge)        // #2070: quarrels and grudges ride it too
     mix(s.cmdCd)                       // #2131: the command cooldown rides it too
     mix(s.holdT)                       // #2171: so does the pending thumb-court hold (-1 = none)
@@ -1517,6 +1764,12 @@ export function stateHash(s) {
         mix(s.pet.r); mix(s.pet.c)
         mix(s.pet.needs.hunger); mix(s.pet.needs.fun); mix(s.pet.needs.energy)
         mix(s.pet.asleep ? 1 : 0); mix(s.pet.cd)
+    }
+    mix(s.kid ? 1 : 0)                              // #2203: so is the child
+    if (s.kid) {
+        mix(s.kid.r); mix(s.kid.c)
+        mix(s.kid.needs.hunger); mix(s.kid.needs.fun); mix(s.kid.needs.energy); mix(s.kid.needs.social)
+        mix(s.kid.asleep ? 1 : 0); mix(s.kid.cd)
     }
     return h >>> 0
 }

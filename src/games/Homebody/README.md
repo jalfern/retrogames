@@ -127,7 +127,7 @@ freezes the rest. Workdays run the clock ×8 while a rostered resident is out
 
 ## Verify
 ```bash
-npm run peoplecheck          # 228 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), thumb court — tap coos, held A insults (#2171), winnable seeds, determinism
+npm run peoplecheck          # 283 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), kids — counter law, kid day, tumbles/cries, court, hash (#2203), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -145,7 +145,8 @@ npm run peoplecheck          # 228 gates: boot, rules, spare-room wing (#1806), 
 # SECOND VISITOR section, and the COURT section's reach mutant 172/13 → 185/0;
 # the ivy-chat mutant 211 → 209/2 → 211; and the #2171 thumb-court mutant —
 # delete the `s.holdT = -1` disarm in courtTick — exactly the two double-spend
-# THUMB COURT gates go red, 228 → 226/2; restore.)
+# THUMB COURT gates go red, 228 → 226/2; restore. Or zero `KID_CRY_STING` —
+# exactly the wail-sting gate goes red, 283 → 282/1; restore.)
 npm run dev   # another terminal
 npm run contractcheck        # includes homebody (CONTRACT_ONLY=homebody for just this)
 DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels + real C/X court keys with pink affection pixels and the far-apart Space doctrine
@@ -199,6 +200,40 @@ adoption, purr-chime coo, kibble crunches. The attract bot adopts right after
 the room kit so the demo sells her. Open tail unchanged: kids; the panel has
 no pet row (honest gaps). Gates: `peoplecheck` section 8 (27 pins).
 
+## Kids (#2203) — Pip, the adoptable child
+The open tail of the bond line, closed. Catalog card 16 / `KeyK`, §150, one
+child per lot — consumed at the counter like the cat card; a refusal speaks at
+the gate. `adoptKid` also refuses when the gate can't path into the house.
+`updateKid` lives by the lot's laws: every wander pick asks `walkable()` AND
+pathfinds; hunger under 0.3 walks Pip to the fridge (or stove) for a snack
+(+0.5, `kid-eat`); fun under 0.3 sends her to the nearest FUN item the living
+room offers — radio, TV, toys, whatever carries `need:'fun'` (+0.45,
+`kid-play`); night finds a free floor tile and folds her small (energy back at
+night pace, Zzz), dawn stretches her awake. Two laws make the child change the
+household, not just decorate it: the **tumble law** — an idle resident within
+arm's reach (≤1, not fainted, not working) drops into play on a `KID_PLAY`
+(6 s) cooldown: kid fun +0.3, resident social +0.12, `rel.kid` +0.5, content
++1 (`kid-tumble`); and the **cry law** — a child with fun at or below
+`RED_AT` wails every `KID_CRY_CD` (4 s), and the wail costs every resident
+within 3 tiles 0.10 social (`kid-cry`). Neglect is loud; a lapful of play
+silences it. A child never faints and never blocks (non-solid; `keepsOpen`
+ignores her). The court reaches children: coo pays COO_BOND + 0.15 fun, an
+insult cuts INSULT_DROP + 0.2 fun and makes no household grudge (Ivy's rule).
+`rel.kid` fades 0.015/sim-hour through `relSub` and rides `stateHash` with the
+whole `s.kid` record; seeds stay exact. Look & sound: small scamper with a
+daypack, giggle stars, tear drops, wail sweeps (`drawKid`); bright triad at
+move-in, giggle arpeggio at tumbles, music-box twinkle at play, apple crunch,
+banner lines. The BONDS panel rows a gold star PIP under the hearts and leaves.
+The attract bot buys the kid card inside the §300 wall right after the cat; the
+win economy is unchanged with a child on the lot (peoplecheck: the wish still
+lands). Two autonomy fixes the cry law forced: urgency order serves the lowest
+need that HAS a target (a lonely resident still eats), and a demo resident on
+an idle chat walk abandons the chat when a physical need hits red. Honest gap:
+the attract marquee does not yet show Pip arriving (the wish line beats her to
+the airtime), and 9-seed attract runs adopt the cat before the child card is
+ever chosen — the counter works, the demo undersells it.
+Gates: `peoplecheck` section 9 (31 pins).
+
 ## Honest gaps (filed to QA #…)
 - **CLOSED by #1806:** multiple rooms — one expansion ships: the Spare Room kit
   grows a wing on the east lawn (floor/walls/door/windows, connectivity-guarded,
@@ -223,8 +258,9 @@ no pet row (honest gaps). Gates: `peoplecheck` section 8 (27 pins).
 (#2171 shipped): one button, two orders — release inside ⅔ s is
 the coo, held past it the insult flies mid-hold, on the same laws and the same
 cooldown as C/X. **The pet half of that tail landed in #2197 — Miso the
-adoptable cat (see Cat (#2197))**; kids remain the open tail of this line.
-- Visitors are Fern and Ivy (#2143); pets landed (#2197, Miso); no kids yet;
-  single store catalog.
+adoptable cat (see Cat (#2197))**; the kids half landed in #2203 — Pip, the
+adoptable child (see Kids (#2203)).
+- Visitors are Fern and Ivy (#2143); pets landed (#2197, Miso); kids landed
+  (#2203, Pip); single store catalog.
 - No skippable-speed control for the player; day/night is cosmetic + decay only.
 - Needs panel shows both residents; no per-object queue display like the original.
