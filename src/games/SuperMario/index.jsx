@@ -2291,6 +2291,9 @@ const SuperMarioGame = () => {
                 // WATCH (#1637 b31): the seat truth + the shared handoff log.
                 watching: () => watchingRef.current,
                 watchSfx: watchSfxLog,
+                // #2139: the live key-holds, so the nightly flagpole-release gate can
+                // prove handback is CLEAN — a held run button must never leak into 1-3.
+                held: () => ({ left: keys.left, right: keys.right, run: keys.run, down: keys.down, jump: keys.jump }),
                 evolve: () => startEvolve(),
                 evoTrain: (g) => evoTrain(g || 5),
                 evoBest: () => bestEverWeights ? Array.from(bestEverWeights) : null,
