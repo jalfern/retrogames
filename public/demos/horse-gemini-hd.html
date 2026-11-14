@@ -1,0 +1,3204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>THOROUGHBRED — procedural HD 3D gallop in WebGL2</title>
+<link rel="icon" href="data:,">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0c1017; }
+  canvas { display: block; width: 100vw; height: 100vh; height: 100dvh; touch-action: none; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  #hud {
+    position: fixed; left: 14px; bottom: 12px; z-index: 2; pointer-events: none;
+    font: 11px/1.7 ui-monospace, Menlo, monospace; letter-spacing: .13em;
+    color: rgba(242,236,226,.82); text-shadow: 0 1px 4px rgba(0,0,0,.88);
+    text-transform: uppercase;
+    max-width: calc(100vw - 195px);
+  }
+  #hud b { color: #f5a646; font-weight: 700; }
+  @media (max-width: 580px) {
+    #hud { font-size: 10px; letter-spacing: .08em; }
+    #hud .hints { display: none; }
+  }
+  #audiohint {
+    position: fixed; top: 12px; right: 14px; z-index: 2;
+    background: rgba(10,14,22,.62); border: 1px solid rgba(245,166,70,.34); border-radius: 8px;
+    padding: 7px 12px; backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+    font: 11px/1.5 ui-monospace, Menlo, monospace; letter-spacing: .14em; text-transform: uppercase;
+    color: rgba(252,232,202,.92); text-shadow: 0 1px 3px rgba(0,0,0,.85); cursor: pointer;
+    user-select: none; -webkit-user-select: none;
+  }
+  #audiohint.off { color: rgba(185,182,178,.48); border-color: rgba(155,155,160,.2); }
+  #coatbtn {
+    position: fixed; top: 12px; left: 14px; z-index: 2;
+    background: rgba(10,14,22,.56); border: 1px solid rgba(245,166,70,.28); border-radius: 8px;
+    padding: 7px 11px; backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+    font: 10px/1.5 ui-monospace, Menlo, monospace; letter-spacing: .15em; text-transform: uppercase;
+    color: rgba(244,228,205,.86); text-shadow: 0 1px 3px rgba(0,0,0,.85); cursor: pointer;
+    user-select: none; -webkit-user-select: none;
+  }
+  #coatbtn:hover, #audiohint:hover { border-color: #f5a646; color: #fff; }
+  #attract {
+    position: fixed; inset: 0; z-index: 3; display: grid; place-items: center;
+    pointer-events: none; text-align: center;
+    background: radial-gradient(110% 85% at 50% 46%, rgba(10,14,22,0) 0%, rgba(8,11,18,.58) 100%);
+    transition: opacity .55s ease;
+  }
+  #attract.gone { opacity: 0; }
+  #attract h1 {
+    margin: 0; font: 900 clamp(28px, 6.2vw, 58px)/1 ui-monospace, Menlo, monospace;
+    letter-spacing: .16em; color: #fff7ec;
+    text-shadow: 0 2px 30px rgba(245,166,70,.42), 0 2px 8px rgba(0,0,0,.85);
+  }
+  #attract h1 i { font-style: normal; color: #f5a646; }
+  #attract .sub {
+    margin-top: 14px; font: 11px/1.8 ui-monospace, Menlo, monospace; letter-spacing: .26em;
+    text-transform: uppercase; color: rgba(242,232,216,.82);
+  }
+  #attract .msg {
+    margin-top: 18px; height: 1.6em; font: 11px/1.6 ui-monospace, Menlo, monospace;
+    letter-spacing: .28em; text-transform: uppercase; color: #ffd18b;
+    transition: opacity .35s;
+  }
+  #attract .start {
+    margin-top: 26px; font: 11px/1 ui-monospace, Menlo, monospace; letter-spacing: .36em;
+    text-transform: uppercase; color: #f5a646; animation: blink 1.6s infinite;
+  }
+  @keyframes blink { 0%,100% { opacity: 1 } 50% { opacity: .32 } }
+  #pad {
+    position: fixed; left: 14px; bottom: 56px; z-index: 2; display: none; gap: 8px;
+  }
+  @media (pointer: coarse) {
+    #pad { display: flex; }
+  }
+  #pad button {
+    background: rgba(10,14,22,.68); border: 1px solid rgba(245,166,70,.34); border-radius: 8px;
+    padding: 8px 12px; font: 10px/1 ui-monospace, Menlo, monospace; letter-spacing: .14em;
+    text-transform: uppercase; color: rgba(252,232,202,.92); cursor: pointer;
+    touch-action: manipulation; -webkit-user-select: none; user-select: none;
+  }
+  #pad button:active { background: rgba(245,166,70,.26); }
+  #fatal {
+    position: fixed; inset: 0; display: none; place-items: center; z-index: 5;
+    font: 14px/1.6 ui-monospace, Menlo, monospace; color: #f5e6d3; background: #0c1017;
+    text-align: center; padding: 2em; white-space: pre;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="coatbtn">coat: bay</div>
+<div id="audiohint">hooves on</div>
+<div id="hud"><b>THOROUGHBRED</b><span class="hints"> · HD 3D gallop · drag orbit · SPACE study · 1–4 views · C coat ·</span> <span id="telemetry"></span></div>
+<div id="pad">
+  <button id="btn-study" type="button">study</button>
+  <button id="btn-view" type="button">view</button>
+  <button id="btn-coat" type="button">coat</button>
+</div>
+<div id="attract">
+  <div>
+    <h1>THOROUGH<i>BRED</i></h1>
+    <div class="sub">procedural smooth-skinned 3D equine · shadow-mapped WebGL2 · zero hoof slip</div>
+    <div class="msg" id="amsg">continuous spline anatomy · flexing musculature · Kajiya-Kay hair</div>
+    <div class="start">▶ tap or press any key</div>
+  </div>
+</div>
+<div id="fatal"></div>
+<script>
+'use strict';
+
+/* ============================================================================
+ * THOROUGHBRED (horse-gemini-hd)
+ * Procedural Smooth-Surface 3D Equine Gallop, Biomechanics & Shadow-Mapped HDR
+ * Zero libraries, zero imported meshes, zero image/audio assets.
+ * Coordinate frame: +X forward (direction of travel), +Y up (track y = 0),
+ * +Z horse's right/near flank (right-handed: X x Y = Z).
+ * ========================================================================== */
+
+const qs = new URLSearchParams(location.search);
+const IS_COARSE = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+const LITE = qs.get('lite') === '1';
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', {
+  antialias: true,
+  alpha: false,
+  depth: true,
+  stencil: false,
+  powerPreference: 'high-performance',
+  preserveDrawingBuffer: true,
+});
+if (!gl) {
+  const f = document.getElementById('fatal');
+  f.style.display = 'grid';
+  f.textContent = 'WebGL2 required.\nThis demo needs a WebGL2-capable browser.';
+  throw new Error('WebGL2 unavailable');
+}
+const EXT_FLOAT = gl.getExtension('EXT_color_buffer_float');
+
+/* ---------------- Math & Linear Algebra ---------------- */
+
+const TAU = Math.PI * 2;
+const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const smoothstep = (e0, e1, x) => {
+  const t = clamp((x - e0) / (e1 - e0 || 1e-6), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+const lerp = (a, b, t) => a + (b - a) * t;
+
+function add3(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
+function sub3(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+function scale3(a, s) { return [a[0] * s, a[1] * s, a[2] * s]; }
+function mix3(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
+function dot3(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function dist3(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]); }
+function cross3(a, b) {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+function norm3(a) {
+  const l = Math.hypot(a[0], a[1], a[2]) || 1;
+  return [a[0] / l, a[1] / l, a[2] / l];
+}
+
+function mat4Perspective(fovY, aspect, near, far) {
+  const f = 1 / Math.tan(fovY * 0.5);
+  const nf = 1 / (near - far);
+  const m = new Float32Array(16);
+  m[0] = f / aspect;
+  m[5] = f;
+  m[10] = (far + near) * nf;
+  m[11] = -1;
+  m[14] = 2 * far * near * nf;
+  return m;
+}
+
+function mat4Ortho(l, r, b, t, n, f) {
+  const m = new Float32Array(16);
+  m[0] = 2 / (r - l);
+  m[5] = 2 / (t - b);
+  m[10] = -2 / (f - n);
+  m[12] = -(r + l) / (r - l);
+  m[13] = -(t + b) / (t - b);
+  m[14] = -(f + n) / (f - n);
+  m[15] = 1;
+  return m;
+}
+
+function mat4LookAt(eye, target, up) {
+  const z = norm3(sub3(eye, target));
+  const x = norm3(cross3(up, z));
+  const y = cross3(z, x);
+  const m = new Float32Array(16);
+  m[0] = x[0]; m[4] = x[1]; m[8] = x[2];   m[12] = -dot3(x, eye);
+  m[1] = y[0]; m[5] = y[1]; m[9] = y[2];   m[13] = -dot3(y, eye);
+  m[2] = z[0]; m[6] = z[1]; m[10] = z[2];  m[14] = -dot3(z, eye);
+  m[15] = 1;
+  return m;
+}
+
+function mat4Mul(a, b) {
+  const o = new Float32Array(16);
+  for (let c = 0; c < 4; c++) {
+    const b0 = b[c * 4], b1 = b[c * 4 + 1], b2 = b[c * 4 + 2], b3 = b[c * 4 + 3];
+    o[c * 4]     = a[0] * b0 + a[4] * b1 + a[8]  * b2 + a[12] * b3;
+    o[c * 4 + 1] = a[1] * b0 + a[5] * b1 + a[9]  * b2 + a[13] * b3;
+    o[c * 4 + 2] = a[2] * b0 + a[6] * b1 + a[10] * b2 + a[14] * b3;
+    o[c * 4 + 3] = a[3] * b0 + a[7] * b1 + a[11] * b2 + a[15] * b3;
+  }
+  return o;
+}
+
+function catmullRom1(p0, p1, p2, p3, t) {
+  const t2 = t * t, t3 = t2 * t;
+  return 0.5 * (
+    (2 * p1) +
+    (-p0 + p2) * t +
+    (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+    (-p0 + 3 * p1 - 3 * p2 + p3) * t3
+  );
+}
+
+function sampleSpline3(pts, u, out) {
+  const n = pts.length - 1;
+  const f = clamp(u, 0, 1) * n;
+  const i = Math.min(n - 1, Math.floor(f));
+  const t = f - i;
+  const p0 = pts[Math.max(0, i - 1)];
+  const p1 = pts[i];
+  const p2 = pts[i + 1];
+  const p3 = pts[Math.min(n, i + 2)];
+  out[0] = catmullRom1(p0[0], p1[0], p2[0], p3[0], t);
+  out[1] = catmullRom1(p0[1], p1[1], p2[1], p3[1], t);
+  out[2] = catmullRom1(p0[2], p1[2], p2[2], p3[2], t);
+  return out;
+}
+
+/* ---------------- Coat Palettes ---------------- */
+
+const COATS = [
+  {
+    key: 'bay',
+    label: 'coat: bay',
+    coatBright: [0.285, 0.062, 0.017],
+    coatMid:    [0.190, 0.039, 0.011],
+    coatDeep:   [0.092, 0.018, 0.006],
+    coatBelly:  [0.130, 0.028, 0.009],
+    pointDark:  [0.010, 0.008, 0.010],
+    maneRoot:   [0.007, 0.006, 0.008],
+    maneTip:    [0.014, 0.010, 0.009],
+    hairSpec:   [0.16, 0.12, 0.095],
+    subsurface: [0.74, 0.17, 0.035],
+    dappleAmt:  0.14,
+    whiteBlaze: [0.76, 0.72, 0.66],
+    whiteSock:  [0.75, 0.71, 0.65],
+    hasSocks:   true,
+    hasBlaze:   true,
+    muzzle:     [0.026, 0.020, 0.021],
+    hoofHorn:   [0.024, 0.020, 0.022],
+  },
+  {
+    key: 'dapple',
+    label: 'coat: dapple grey',
+    coatBright: [0.46, 0.48, 0.52],
+    coatMid:    [0.29, 0.31, 0.35],
+    coatDeep:   [0.14, 0.16, 0.20],
+    coatBelly:  [0.23, 0.25, 0.29],
+    pointDark:  [0.070, 0.078, 0.094],
+    maneRoot:   [0.38, 0.40, 0.44],
+    maneTip:    [0.66, 0.65, 0.62],
+    hairSpec:   [0.64, 0.62, 0.58],
+    subsurface: [0.36, 0.34, 0.35],
+    dappleAmt:  0.42,
+    whiteBlaze: [0.78, 0.77, 0.75],
+    whiteSock:  [0.72, 0.72, 0.71],
+    hasSocks:   false,
+    hasBlaze:   false,
+    muzzle:     [0.044, 0.040, 0.046],
+    hoofHorn:   [0.040, 0.038, 0.044],
+  },
+  {
+    key: 'friesian',
+    label: 'coat: sable black',
+    coatBright: [0.025, 0.023, 0.030],
+    coatMid:    [0.015, 0.014, 0.019],
+    coatDeep:   [0.008, 0.008, 0.011],
+    coatBelly:  [0.012, 0.011, 0.015],
+    pointDark:  [0.008, 0.008, 0.010],
+    maneRoot:   [0.007, 0.007, 0.009],
+    maneTip:    [0.016, 0.013, 0.012],
+    hairSpec:   [0.34, 0.36, 0.45],
+    subsurface: [0.12, 0.07, 0.06],
+    dappleAmt:  0.05,
+    whiteBlaze: [0.76, 0.74, 0.68],
+    whiteSock:  [0.012, 0.012, 0.015],
+    hasSocks:   false,
+    hasBlaze:   true,
+    muzzle:     [0.016, 0.015, 0.018],
+    hoofHorn:   [0.018, 0.017, 0.020],
+  },
+  {
+    key: 'palomino',
+    label: 'coat: palomino',
+    coatBright: [0.45, 0.23, 0.055],
+    coatMid:    [0.32, 0.155, 0.036],
+    coatDeep:   [0.17, 0.078, 0.018],
+    coatBelly:  [0.25, 0.125, 0.030],
+    pointDark:  [0.23, 0.112, 0.026],
+    maneRoot:   [0.62, 0.56, 0.42],
+    maneTip:    [0.82, 0.78, 0.66],
+    hairSpec:   [0.76, 0.68, 0.52],
+    subsurface: [0.78, 0.38, 0.08],
+    dappleAmt:  0.18,
+    whiteBlaze: [0.84, 0.81, 0.76],
+    whiteSock:  [0.80, 0.77, 0.71],
+    hasSocks:   true,
+    hasBlaze:   true,
+    muzzle:     [0.052, 0.038, 0.036],
+    hoofHorn:   [0.082, 0.062, 0.044],
+  },
+];
+let coatIdx = 0;
+
+/* ---------------- WebGL2 Shaders (Shadow + HDR PBR/Coat/Hair + Grass + Bloom/ACES) ---------------- */
+
+function compileShader(type, src) {
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(sh);
+    gl.deleteShader(sh);
+    throw new Error('Shader compile error: ' + log);
+  }
+  return sh;
+}
+
+function linkProgram(vsSrc, fsSrc) {
+  const p = gl.createProgram();
+  const vs = compileShader(gl.VERTEX_SHADER, vsSrc);
+  const fs = compileShader(gl.FRAGMENT_SHADER, fsSrc);
+  gl.attachShader(p, vs);
+  gl.attachShader(p, fs);
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    throw new Error('Program link error: ' + gl.getProgramInfoLog(p));
+  }
+  return p;
+}
+
+// 1. Atmospheric Sky & Cloud Deck Shader
+const VS_QUAD = `#version 300 es
+precision highp float;
+out vec2 vUv;
+void main() {
+  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.9999, 1.0);
+}`;
+
+const FS_SKY = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform vec3 uCamFwd;
+uniform vec3 uCamRight;
+uniform vec3 uCamUp;
+uniform float uTanHalfFov;
+uniform float uAspect;
+uniform vec3 uSunDir;
+uniform float uTime;
+out vec4 fragColor;
+
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x),
+    mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x),
+    f.y
+  );
+}
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  mat2 rot = mat2(0.80, 0.60, -0.60, 0.80);
+  for (int i = 0; i < 4; i++) {
+    s += a * vnoise(p);
+    p = rot * p * 2.04 + vec2(3.1, 1.7);
+    a *= 0.5;
+  }
+  return s;
+}
+
+void main() {
+  vec2 ndc = vUv * 2.0 - 1.0;
+  vec3 rd = normalize(uCamFwd + ndc.x * uAspect * uTanHalfFov * uCamRight + ndc.y * uTanHalfFov * uCamUp);
+  float h = clamp(rd.y, -0.2, 1.0);
+  float sDot = max(dot(rd, uSunDir), 0.0);
+
+  // Rayleigh + golden-hour Mie sky gradient
+  vec3 zenith  = vec3(0.085, 0.165, 0.36);
+  vec3 midSky  = vec3(0.24, 0.35, 0.54);
+  vec3 horizon = vec3(0.88, 0.69, 0.48);
+  vec3 sunWarm = vec3(1.15, 0.72, 0.36);
+
+  vec3 sky = h >= 0.0
+    ? mix(horizon, mix(midSky, zenith, pow(clamp(h * 1.35, 0.0, 1.0), 0.72)), pow(h, 0.44))
+    : mix(horizon * 0.82, vec3(0.24, 0.22, 0.18), clamp(-h * 6.0, 0.0, 1.0));
+
+  sky += sunWarm * pow(sDot, 5.0) * (0.28 * (1.0 - 0.55 * max(h, 0.0)));
+  sky += vec3(1.35, 0.92, 0.52) * pow(sDot, 36.0) * 0.55;
+
+  // High-altitude sunlit cirrus wisps
+  if (rd.y > 0.025) {
+    vec2 cUv = rd.xz / (rd.y + 0.16) * 0.65 + vec2(uTime * 0.006, -uTime * 0.003);
+    float c1 = fbm(cUv * vec2(1.4, 2.6));
+    float c2 = fbm(cUv * vec2(3.2, 5.0) + c1 * 0.9);
+    float cloud = smoothstep(0.47, 0.78, 0.55 * c1 + 0.45 * c2) * smoothstep(0.025, 0.22, rd.y);
+    vec3 cloudLit = mix(vec3(0.76, 0.78, 0.85), vec3(1.32, 0.96, 0.66), pow(sDot, 2.2) * 0.85 + 0.15);
+    sky = mix(sky, cloudLit, cloud * 0.58);
+  }
+
+  // Crisp solar disc
+  sky += vec3(2.4, 1.85, 1.15) * smoothstep(0.9986, 0.9996, sDot);
+  fragColor = vec4(sky, 1.0);
+}`;
+
+// 2. Shadow Depth Pass Shader (Vertex layout matches main 14-float interleaved vertex!)
+const VS_SHADOW = `#version 300 es
+precision highp float;
+layout(location = 0) in vec3 aPos;
+uniform mat4 uLightVP;
+void main() {
+  gl_Position = uLightVP * vec4(aPos, 1.0);
+}`;
+
+const FS_SHADOW = `#version 300 es
+precision highp float;
+void main() {}`;
+
+// 3. Main HDR Equine Coat / Hair / Highland Terrain & World Shader
+// Interleaved vertex (14 floats = 56 bytes):
+//   0: aPos (vec3)
+//   1: aNorm (vec3)
+//   2: aTan (vec3)  — hair/fur direction or surface tangent
+//   3: aCol (vec3)  — linear base albedo
+//   4: aParam (vec2) — x = matId (0=coat, 1=hair, 2=glossEyeHoof, 3=ground, 4=world), y = roughness/ao packed or coatUV
+const VS_MAIN = `#version 300 es
+precision highp float;
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNorm;
+layout(location = 2) in vec3 aTan;
+layout(location = 3) in vec3 aCol;
+layout(location = 4) in vec2 aParam;
+
+uniform mat4 uViewProj;
+uniform mat4 uLightVP;
+
+out vec3 vPos;
+out vec3 vNorm;
+out vec3 vTan;
+out vec3 vCol;
+out vec2 vParam;
+out vec4 vShadowCoord;
+
+void main() {
+  vPos = aPos;
+  vNorm = aNorm;
+  vTan = aTan;
+  vCol = aCol;
+  vParam = aParam;
+  // Slight normal offset for acne-free self-shadowing
+  vec3 shadowWorld = aPos + aNorm * 0.008;
+  vShadowCoord = uLightVP * vec4(shadowWorld, 1.0);
+  gl_Position = uViewProj * vec4(aPos, 1.0);
+}`;
+
+const FS_MAIN = `#version 300 es
+precision highp float;
+in vec3 vPos;
+in vec3 vNorm;
+in vec3 vTan;
+in vec3 vCol;
+in vec2 vParam;
+in vec4 vShadowCoord;
+
+uniform vec3 uSunDir;
+uniform vec3 uCamPos;
+uniform vec3 uRefCenter;
+uniform vec3 uSubsurface;
+uniform vec3 uHairSpec;
+uniform float uDappleAmt;
+uniform highp sampler2DShadow uShadowMap;
+uniform vec4 uPrints[24]; // (x, z, age01, active)
+
+out vec4 fragColor;
+
+float hash31(vec3 p) {
+  p = fract(p * 0.1031);
+  p += dot(p, p.zyx + 31.32);
+  return fract((p.x + p.y) * p.z);
+}
+
+float noise3(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float n000 = hash31(i);
+  float n100 = hash31(i + vec3(1, 0, 0));
+  float n010 = hash31(i + vec3(0, 1, 0));
+  float n110 = hash31(i + vec3(1, 1, 0));
+  float n001 = hash31(i + vec3(0, 0, 1));
+  float n101 = hash31(i + vec3(1, 0, 1));
+  float n011 = hash31(i + vec3(0, 1, 1));
+  float n111 = hash31(i + vec3(1, 1, 1));
+  return mix(
+    mix(mix(n000, n100, f.x), mix(n010, n110, f.x), f.y),
+    mix(mix(n001, n101, f.x), mix(n011, n111, f.x), f.y),
+    f.z
+  );
+}
+
+float sampleShadowPCF(vec4 sc, float ndl) {
+  vec3 proj = sc.xyz / max(sc.w, 1e-5) * 0.5 + 0.5;
+  if (proj.x <= 0.01 || proj.x >= 0.99 || proj.y <= 0.01 || proj.y >= 0.99 || proj.z >= 0.998) {
+    return 1.0;
+  }
+  float edgeFade = smoothstep(0.01, 0.08, min(min(proj.x, 1.0 - proj.x), min(proj.y, 1.0 - proj.y)));
+  float bias = mix(0.0018, 0.00045, clamp(ndl, 0.0, 1.0));
+  vec2 texel = vec2(1.0 / 2048.0);
+  const vec2 poisson[9] = vec2[9](
+    vec2( 0.00,  0.00),
+    vec2(-0.84, -0.34),
+    vec2( 0.68, -0.62),
+    vec2(-0.32,  0.88),
+    vec2( 0.88,  0.38),
+    vec2(-0.72,  0.46),
+    vec2( 0.24, -0.92),
+    vec2(-0.18, -0.52),
+    vec2( 0.42,  0.74)
+  );
+  float sum = 0.0;
+  for (int i = 0; i < 9; i++) {
+    sum += texture(uShadowMap, vec3(proj.xy + poisson[i] * texel * 1.85, proj.z - bias));
+  }
+  return mix(1.0, sum / 9.0, edgeFade);
+}
+
+float ggxSpec(vec3 N, vec3 V, vec3 L, float rough) {
+  vec3 H = normalize(V + L);
+  float ndh = max(dot(N, H), 0.0);
+  float ndv = max(dot(N, V), 0.001);
+  float ndl = max(dot(N, L), 0.0);
+  if (ndl <= 0.0) return 0.0;
+  float a = rough * rough;
+  float a2 = a * a;
+  float d = (ndh * ndh) * (a2 - 1.0) + 1.0;
+  float D = a2 / (3.14159265 * d * d + 1e-5);
+  float k = (rough + 1.0) * (rough + 1.0) * 0.125;
+  float G = (ndv / (ndv * (1.0 - k) + k)) * (ndl / (ndl * (1.0 - k) + k));
+  float F = 0.04 + 0.96 * pow(1.0 - max(dot(H, V), 0.0), 5.0);
+  return (D * G * F) / max(4.0 * ndv * ndl, 0.001);
+}
+
+void main() {
+  int mat = int(vParam.x + 0.5);
+  float ao = clamp(vParam.y, 0.15, 1.0);
+  vec3 N = normalize(vNorm);
+  vec3 T = normalize(vTan - N * dot(vTan, N) + vec3(1e-5, 0.0, 0.0));
+  vec3 B = cross(N, T);
+  vec3 V = normalize(uCamPos - vPos);
+  vec3 L = uSunDir;
+
+  vec3 albedo = vCol;
+  float rough = 0.45;
+
+  // Procedural surface micro-detail & horseshoe track prints
+  if (mat == 0) {
+    // Equine short-coat guard-hair grain + subtle organic dapples on quarters/barrel
+    vec3 bodyLocal = vPos - uRefCenter;
+    float grain = noise3(vec3(bodyLocal.x * 46.0, bodyLocal.y * 85.0, bodyLocal.z * 85.0)) - 0.5;
+    N = normalize(N + B * (grain * 0.045));
+    if (uDappleAmt > 0.01) {
+      float dp1 = noise3(bodyLocal * 13.5);
+      float dp2 = noise3(bodyLocal * 27.0 + 4.3);
+      float ring = smoothstep(0.36, 0.66, dp1) * (0.65 + 0.35 * dp2);
+      float mask = smoothstep(0.68, 1.08, vPos.y) * (1.0 - smoothstep(1.52, 1.72, vPos.y));
+      albedo *= 1.0 + uDappleAmt * (ring - 0.44) * mask;
+    }
+    rough = 0.34;
+  } else if (mat == 2) {
+    // Glossy corneal eye / damp nostril / polished hoof horn
+    rough = vCol.r < 0.06 ? 0.055 : 0.21;
+  } else if (mat == 3) {
+    // Packed loam gallop track + emerald highland meadow + indented damp hoofprints
+    float g1 = noise3(vec3(vPos.x * 5.2, 0.0, vPos.z * 5.2));
+    float g2 = noise3(vec3(vPos.x * 22.0, 0.5, vPos.z * 22.0));
+    float g3 = noise3(vec3(vPos.x * 68.0, 1.3, vPos.z * 68.0));
+    float bumpX = (g2 - 0.5) * 0.08 + (g3 - 0.5) * 0.05;
+    float bumpZ = (noise3(vec3(vPos.x * 22.0 + 7.1, 0.5, vPos.z * 22.0)) - 0.5) * 0.08;
+    albedo *= (0.88 + 0.24 * g1) * (0.94 + 0.12 * g2);
+    rough = 0.78 - 0.14 * g2;
+
+    // Check world-pinned horseshoe craters on the packed track
+    if (abs(vPos.z) < 0.65 && abs(vPos.x - uRefCenter.x) < 16.0) {
+      for (int i = 0; i < 24; i++) {
+        vec4 pr = uPrints[i];
+        if (pr.w < 0.5) continue;
+        vec2 d = (vPos.xz - pr.xy) / vec2(0.068, 0.058);
+        float r = length(d);
+        if (r < 1.35) {
+          // Equine U-shaped shoe wall + central frog
+          float uRing = exp(-pow((r - 0.78) / 0.24, 2.0)) * smoothstep(-0.85, -0.35, d.x);
+          float frog  = exp(-pow(length(d - vec2(-0.18, 0.0)) / 0.32, 2.0)) * 0.55;
+          float indent = clamp(uRing + frog, 0.0, 1.0) * (1.0 - pr.z * 0.65);
+          albedo *= 1.0 - 0.42 * indent;
+          rough = mix(rough, 0.38, indent * 0.7);
+          bumpX -= d.x * indent * 0.28;
+          bumpZ -= d.y * indent * 0.28;
+        }
+      }
+    }
+    N = normalize(N + vec3(bumpX, 0.0, bumpZ));
+  } else if (mat == 4) {
+    float rk = noise3(vPos * 1.4);
+    albedo *= 0.90 + 0.20 * rk;
+    rough = 0.72;
+  }
+
+  float rawNdl = dot(N, L);
+  float ndl = max(rawNdl, 0.0);
+  float shadow = sampleShadowPCF(vShadowCoord, ndl);
+
+  // Sun + Hemisphere Sky + Warm Turf Bounce
+  vec3 sunColor = vec3(1.68, 1.26, 0.86);
+  vec3 skyTop   = vec3(0.18, 0.27, 0.46);
+  vec3 groundBounce = vec3(0.20, 0.14, 0.08);
+  vec3 hemi = mix(groundBounce, skyTop, clamp(N.y * 0.5 + 0.5, 0.0, 1.0)) * ao;
+
+  vec3 lit;
+  if (mat == 1) {
+    // Kajiya-Kay Anisotropic Horsehair (Mane, Forelock, Tail)
+    vec3 H = normalize(L + V);
+    float tdoth1 = clamp(dot(T, H) - 0.14, -1.0, 1.0);
+    float tdoth2 = clamp(dot(T, H) + 0.22, -1.0, 1.0);
+    float sinTH1 = sqrt(max(0.0, 1.0 - tdoth1 * tdoth1));
+    float sinTH2 = sqrt(max(0.0, 1.0 - tdoth2 * tdoth2));
+    float spec1 = pow(sinTH1, 64.0) * 0.22;
+    float spec2 = pow(sinTH2, 28.0) * 0.15;
+    float hairWrap = clamp(rawNdl * 0.55 + 0.45, 0.0, 1.0);
+    float backScatter = pow(max(dot(-V, L), 0.0), 4.0) * 0.18;
+    float shMix = 0.25 + 0.75 * shadow;
+    lit = albedo * (hemi * 0.90 + sunColor * hairWrap * shMix * 0.90)
+        + sunColor * shMix * (vec3(spec1) * 0.26 + uHairSpec * spec2)
+        + uHairSpec * sunColor * backScatter * 0.18;
+  } else {
+    float spec = ggxSpec(N, V, L, rough) * ndl * shadow;
+    vec3 sss = vec3(0.0);
+    vec3 velvet = vec3(0.0);
+    if (mat == 0) {
+      // Equine coat warm subsurface wrap + grazing satin/velvet sheen
+      float wrap = max(0.0, (rawNdl + 0.38) / 1.38);
+      sss = uSubsurface * (wrap * (1.0 - ndl) * 0.26) * (0.32 + 0.68 * shadow);
+      float rim = pow(1.0 - max(dot(N, V), 0.0), 3.6);
+      float sunRim = 0.28 + 0.72 * max(dot(-V, L), 0.0);
+      velvet = mix(albedo * 1.65 + vec3(0.016), sunColor * 0.36, 0.40) * rim * sunRim * ao * (0.30 + 0.70 * shadow);
+      spec *= 1.25;
+    } else if (mat == 2) {
+      spec *= 2.20;
+      float rim = pow(1.0 - max(dot(N, V), 0.0), 4.2) * 0.22;
+      velvet = vec3(0.24, 0.26, 0.32) * rim;
+    }
+    lit = albedo * (hemi + sunColor * ndl * shadow) + sss * albedo + sunColor * spec + velvet;
+  }
+
+  // Atmospheric valley mist & golden aerial perspective
+  float dist = length(vPos - uCamPos);
+  float heightFactor = exp(-max(vPos.y, 0.0) * 0.08);
+  float fogAmt = (1.0 - exp(-max(0.0, dist - 10.0) * 0.0085)) * (0.50 + 0.50 * heightFactor);
+  float sView = max(dot(normalize(vPos - uCamPos), L), 0.0);
+  vec3 fogCol = mix(vec3(0.38, 0.48, 0.66), vec3(0.92, 0.70, 0.44), pow(sView, 3.0) * 0.68 + 0.16);
+  lit = mix(lit, fogCol, clamp(fogAmt, 0.0, 0.84));
+
+  fragColor = vec4(max(lit, vec3(0.0)), 1.0);
+}`;
+
+// 4. GPU-Instanced Wind-Rippled Fescue Grass & Wildflower Shader
+const VS_GRASS = `#version 300 es
+precision highp float;
+layout(location = 0) in vec2 aBlade;      // x in [-0.5, 0.5], y in [0, 1] along blade
+layout(location = 1) in vec4 aInstPos;    // x, y, z, height
+layout(location = 2) in vec4 aInstStyle;  // yaw, bend, phase, tint (tint > 0.86 = wildflower tip!)
+
+uniform mat4 uViewProj;
+uniform mat4 uLightVP;
+uniform float uCenterX;
+uniform float uPeriod;
+uniform float uTime;
+
+out vec3 vPos;
+out vec3 vNorm;
+out vec3 vCol;
+out float vTip;
+out vec4 vShadowCoord;
+
+void main() {
+  // Wrap instance X seamlessly around uCenterX within [-0.5*uPeriod, +0.5*uPeriod)
+  float dx = mod(aInstPos.x - uCenterX + 0.5 * uPeriod, uPeriod) - 0.5 * uPeriod;
+  vec3 root = vec3(uCenterX + dx, aInstPos.y, aInstPos.z);
+
+  float h = aInstPos.w;
+  float v = aBlade.y;
+  float taper = 1.0 - 0.86 * v * v;
+  float width = 0.024 * taper * (aInstStyle.w > 0.88 && v > 0.78 ? 2.1 : 1.0);
+
+  float yaw = aInstStyle.x;
+  vec3 side = vec3(cos(yaw), 0.0, sin(yaw));
+  vec3 fwd  = vec3(-sin(yaw), 0.0, cos(yaw));
+
+  float gust = sin(uTime * 2.4 - root.x * 0.35 + root.z * 0.25 + aInstStyle.z) * 0.14
+             + sin(uTime * 5.1 + aInstStyle.z * 1.7) * 0.04;
+  float arch = (aInstStyle.y + gust) * v * v;
+
+  vec3 pos = root
+           + side * (aBlade.x * width)
+           + fwd * (arch * h)
+           + vec3(0.0, h * v * (1.0 - 0.22 * arch * arch), 0.0);
+
+  vec3 tang = normalize(vec3(fwd.x * 2.0 * (aInstStyle.y + gust) * v, 1.0, fwd.z * 2.0 * (aInstStyle.y + gust) * v));
+  vec3 norm = normalize(cross(side, tang) + vec3(0.0, 0.45, 0.0));
+
+  vec3 baseGreen = mix(vec3(0.028, 0.068, 0.016), vec3(0.052, 0.112, 0.024), aInstStyle.w);
+  vec3 tipGold   = mix(vec3(0.11, 0.175, 0.036), vec3(0.24, 0.20, 0.048), aInstStyle.w);
+  vec3 col = mix(baseGreen, tipGold, pow(v, 0.85));
+  if (aInstStyle.w > 0.92 && v > 0.76) {
+    col = vec3(0.76, 0.48, 0.05); // Golden highland buttercup
+  } else if (aInstStyle.w > 0.87 && aInstStyle.w <= 0.92 && v > 0.76) {
+    col = vec3(0.28, 0.16, 0.62); // Wild mountain lupine
+  }
+
+  vPos = pos;
+  vNorm = norm;
+  vCol = col;
+  vTip = v;
+  vShadowCoord = uLightVP * vec4(pos + vec3(0.0, 0.02, 0.0), 1.0);
+  gl_Position = uViewProj * vec4(pos, 1.0);
+}`;
+
+const FS_GRASS = `#version 300 es
+precision highp float;
+in vec3 vPos;
+in vec3 vNorm;
+in vec3 vCol;
+in float vTip;
+in vec4 vShadowCoord;
+
+uniform vec3 uSunDir;
+uniform vec3 uCamPos;
+uniform highp sampler2DShadow uShadowMap;
+
+out vec4 fragColor;
+
+void main() {
+  vec3 N = normalize(vNorm);
+  vec3 V = normalize(uCamPos - vPos);
+  float ndl = max(dot(N, uSunDir), 0.0);
+
+  vec3 proj = vShadowCoord.xyz / max(vShadowCoord.w, 1e-5) * 0.5 + 0.5;
+  float sh = 1.0;
+  if (proj.x > 0.01 && proj.x < 0.99 && proj.y > 0.01 && proj.y < 0.99 && proj.z < 0.998) {
+    sh = texture(uShadowMap, vec3(proj.xy, proj.z - 0.0016));
+  }
+
+  vec3 sunCol = vec3(1.48, 1.15, 0.80);
+  vec3 skyCol = vec3(0.20, 0.28, 0.44);
+  float ao = mix(0.42, 1.0, vTip);
+  float trans = pow(max(dot(-V, uSunDir), 0.0), 2.5) * 0.45 * vTip;
+
+  vec3 lit = vCol * (skyCol * ao + sunCol * (ndl * 0.75 + 0.25 + trans) * (0.28 + 0.72 * sh));
+
+  float dist = length(vPos - uCamPos);
+  float fade = 1.0 - smoothstep(26.0, 36.0, dist);
+  float fogAmt = 1.0 - exp(-max(0.0, dist - 8.0) * 0.0085);
+  lit = mix(lit, vec3(0.68, 0.67, 0.68), clamp(fogAmt, 0.0, 0.8));
+  fragColor = vec4(lit, fade);
+}`;
+
+// 5. Post-Processing: Bright-Pass Bloom Extract & ACES Filmic Composite
+const FS_BLOOM = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uHdrTex;
+uniform vec2 uTexel;
+out vec4 fragColor;
+
+void main() {
+  vec3 acc = vec3(0.0);
+  const vec2 offs[5] = vec2[5](
+    vec2(0.0, 0.0), vec2(-1.5, -1.5), vec2(1.5, -1.5), vec2(-1.5, 1.5), vec2(1.5, 1.5)
+  );
+  for (int i = 0; i < 5; i++) {
+    vec3 c = texture(uHdrTex, vUv + offs[i] * uTexel).rgb;
+    float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    float w = smoothstep(0.92, 2.10, lum);
+    acc += c * w;
+  }
+  fragColor = vec4(acc * 0.2, 1.0);
+}`;
+
+const FS_POST = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uHdrTex;
+uniform sampler2D uBloomTex;
+uniform vec2 uBloomTexel;
+out vec4 fragColor;
+
+vec3 acesFilm(vec3 x) {
+  float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+void main() {
+  vec3 hdr = texture(uHdrTex, vUv).rgb;
+  // Soft 9-tap tent blur on half-res bloom buffer
+  vec3 bl = texture(uBloomTex, vUv).rgb * 0.28;
+  bl += texture(uBloomTex, vUv + vec2( 2.0,  0.0) * uBloomTexel).rgb * 0.12;
+  bl += texture(uBloomTex, vUv + vec2(-2.0,  0.0) * uBloomTexel).rgb * 0.12;
+  bl += texture(uBloomTex, vUv + vec2( 0.0,  2.0) * uBloomTexel).rgb * 0.12;
+  bl += texture(uBloomTex, vUv + vec2( 0.0, -2.0) * uBloomTexel).rgb * 0.12;
+  bl += texture(uBloomTex, vUv + vec2( 1.5,  1.5) * uBloomTexel).rgb * 0.06;
+  bl += texture(uBloomTex, vUv + vec2(-1.5,  1.5) * uBloomTexel).rgb * 0.06;
+  bl += texture(uBloomTex, vUv + vec2( 1.5, -1.5) * uBloomTexel).rgb * 0.06;
+  bl += texture(uBloomTex, vUv + vec2(-1.5, -1.5) * uBloomTexel).rgb * 0.06;
+
+  vec3 col = (hdr + bl * 0.24) * 1.04;
+  // Subtle cinematic edge vignette
+  vec2 d = vUv - 0.5;
+  col *= 1.0 - 0.22 * dot(d, d);
+  vec3 mapped = acesFilm(col);
+  fragColor = vec4(pow(mapped, vec3(1.0 / 2.2)), 1.0);
+}`;
+
+const progSky    = linkProgram(VS_QUAD, FS_SKY);
+const progShadow = linkProgram(VS_SHADOW, FS_SHADOW);
+const progMain   = linkProgram(VS_MAIN, FS_MAIN);
+const progGrass  = linkProgram(VS_GRASS, FS_GRASS);
+const progBloom  = linkProgram(VS_QUAD, FS_BLOOM);
+const progPost   = linkProgram(VS_QUAD, FS_POST);
+const vaoEmpty   = gl.createVertexArray();
+
+const uSky = {
+  camFwd: gl.getUniformLocation(progSky, 'uCamFwd'),
+  camRight: gl.getUniformLocation(progSky, 'uCamRight'),
+  camUp: gl.getUniformLocation(progSky, 'uCamUp'),
+  tanHalfFov: gl.getUniformLocation(progSky, 'uTanHalfFov'),
+  aspect: gl.getUniformLocation(progSky, 'uAspect'),
+  sunDir: gl.getUniformLocation(progSky, 'uSunDir'),
+  time: gl.getUniformLocation(progSky, 'uTime'),
+};
+const uShadow = {
+  lightVP: gl.getUniformLocation(progShadow, 'uLightVP'),
+};
+const uMain = {
+  viewProj: gl.getUniformLocation(progMain, 'uViewProj'),
+  lightVP: gl.getUniformLocation(progMain, 'uLightVP'),
+  sunDir: gl.getUniformLocation(progMain, 'uSunDir'),
+  camPos: gl.getUniformLocation(progMain, 'uCamPos'),
+  refCenter: gl.getUniformLocation(progMain, 'uRefCenter'),
+  subsurface: gl.getUniformLocation(progMain, 'uSubsurface'),
+  hairSpec: gl.getUniformLocation(progMain, 'uHairSpec'),
+  dappleAmt: gl.getUniformLocation(progMain, 'uDappleAmt'),
+  shadowMap: gl.getUniformLocation(progMain, 'uShadowMap'),
+  prints: gl.getUniformLocation(progMain, 'uPrints'),
+};
+const uGrass = {
+  viewProj: gl.getUniformLocation(progGrass, 'uViewProj'),
+  lightVP: gl.getUniformLocation(progGrass, 'uLightVP'),
+  centerX: gl.getUniformLocation(progGrass, 'uCenterX'),
+  period: gl.getUniformLocation(progGrass, 'uPeriod'),
+  time: gl.getUniformLocation(progGrass, 'uTime'),
+  sunDir: gl.getUniformLocation(progGrass, 'uSunDir'),
+  camPos: gl.getUniformLocation(progGrass, 'uCamPos'),
+  shadowMap: gl.getUniformLocation(progGrass, 'uShadowMap'),
+};
+const uBloom = {
+  hdrTex: gl.getUniformLocation(progBloom, 'uHdrTex'),
+  texel: gl.getUniformLocation(progBloom, 'uTexel'),
+};
+const uPost = {
+  hdrTex: gl.getUniformLocation(progPost, 'uHdrTex'),
+  bloomTex: gl.getUniformLocation(progPost, 'uBloomTex'),
+  bloomTexel: gl.getUniformLocation(progPost, 'uBloomTexel'),
+};
+
+/* ---------------- Shadow Map & Multisampled HDR FBO Pipeline ---------------- */
+
+const SHADOW_RES = (LITE || IS_COARSE) ? 1024 : 2048;
+const shadowFbo = gl.createFramebuffer();
+const shadowTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, shadowTex);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, SHADOW_RES, SHADOW_RES, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFbo);
+gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, shadowTex, 0);
+gl.drawBuffers([gl.NONE]);
+gl.readBuffer(gl.NONE);
+gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+let fboMsaa = null, rbColor = null, rbDepth = null;
+let fboResolve = null, texHdr = null;
+let fboBloom = null, texBloom = null;
+let fboW = 0, fboH = 0, useHdrFloat = false;
+
+function rebuildHdrTargets(w, h) {
+  if (w === fboW && h === fboH && fboResolve) return;
+  fboW = w; fboH = h;
+  if (fboMsaa) {
+    gl.deleteFramebuffer(fboMsaa); gl.deleteRenderbuffer(rbColor); gl.deleteRenderbuffer(rbDepth);
+    gl.deleteFramebuffer(fboResolve); gl.deleteTexture(texHdr);
+    gl.deleteFramebuffer(fboBloom); gl.deleteTexture(texBloom);
+  }
+
+  const samples = LITE ? 0 : Math.min(4, gl.getParameter(gl.MAX_SAMPLES) || 0);
+  const tryBuild = (useFloat) => {
+    const intFmt = useFloat ? gl.RGBA16F : gl.RGBA8;
+    const fmt = gl.RGBA;
+    const typ = useFloat ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;
+
+    fboResolve = gl.createFramebuffer();
+    texHdr = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texHdr);
+    gl.texImage2D(gl.TEXTURE_2D, 0, intFmt, w, h, 0, fmt, typ, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboResolve);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texHdr, 0);
+
+    if (samples >= 2) {
+      fboMsaa = gl.createFramebuffer();
+      rbColor = gl.createRenderbuffer();
+      rbDepth = gl.createRenderbuffer();
+      gl.bindRenderbuffer(gl.RENDERBUFFER, rbColor);
+      gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, intFmt, w, h);
+      gl.bindRenderbuffer(gl.RENDERBUFFER, rbDepth);
+      gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.DEPTH_COMPONENT24, w, h);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fboMsaa);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rbColor);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rbDepth);
+      const ok1 = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fboResolve);
+      const ok2 = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+      if (!ok1 || !ok2) return false;
+    } else {
+      fboMsaa = null;
+      rbDepth = gl.createRenderbuffer();
+      gl.bindRenderbuffer(gl.RENDERBUFFER, rbDepth);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fboResolve);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rbDepth);
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) return false;
+    }
+
+    const bw = Math.max(2, w >> 1), bh = Math.max(2, h >> 1);
+    fboBloom = gl.createFramebuffer();
+    texBloom = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texBloom);
+    gl.texImage2D(gl.TEXTURE_2D, 0, intFmt, bw, bh, 0, fmt, typ, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboBloom);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texBloom, 0);
+    return gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  };
+
+  if (EXT_FLOAT && tryBuild(true)) {
+    useHdrFloat = true;
+  } else {
+    if (fboMsaa) gl.deleteFramebuffer(fboMsaa);
+    if (fboResolve) gl.deleteFramebuffer(fboResolve);
+    if (fboBloom) gl.deleteFramebuffer(fboBloom);
+    tryBuild(false);
+    useHdrFloat = false;
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+
+/* ---------------- Indexed Smooth-Surface Mesh Builder (Zero-GC Hot Path) ---------------- */
+
+const VERT_FLOATS = 14; // pos(3) + norm(3) + tan(3) + col(3) + param(2)
+
+function setupVertexAttributes() {
+  const stride = VERT_FLOATS * 4;
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, stride, 0);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, stride, 12);
+  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 3, gl.FLOAT, false, stride, 24);
+  gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 3, gl.FLOAT, false, stride, 36);
+  gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4, 2, gl.FLOAT, false, stride, 48);
+}
+
+function createIndexedMesh(maxVerts, maxIndices, dynamic = true) {
+  const vData = new Float32Array(maxVerts * VERT_FLOATS);
+  const iData = new Uint32Array(maxIndices);
+  let vCount = 0, iCount = 0;
+
+  const vao = gl.createVertexArray();
+  const vbo = gl.createBuffer();
+  const ibo = gl.createBuffer();
+  gl.bindVertexArray(vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  gl.bufferData(gl.ARRAY_BUFFER, vData.byteLength, dynamic ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW);
+  setupVertexAttributes();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, iData.byteLength, dynamic ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW);
+  gl.bindVertexArray(null);
+
+  return {
+    vData, iData, vao, vbo, ibo,
+    get vertCount() { return vCount; },
+    get triCount() { return (iCount / 3) | 0; },
+    reset() { vCount = 0; iCount = 0; },
+    resetVertsOnly() { vCount = 0; },
+    allocVerts(n) {
+      const base = vCount;
+      vCount += n;
+      return base;
+    },
+    pushTri(a, b, c) {
+      iData[iCount++] = a;
+      iData[iCount++] = b;
+      iData[iCount++] = c;
+    },
+    pushQuad(a, b, c, d) {
+      iData[iCount++] = a; iData[iCount++] = b; iData[iCount++] = c;
+      iData[iCount++] = a; iData[iCount++] = c; iData[iCount++] = d;
+    },
+    uploadAll() {
+      gl.bindVertexArray(vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, vData.subarray(0, vCount * VERT_FLOATS));
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+      gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, iData.subarray(0, iCount));
+    },
+    uploadVerts() {
+      gl.bindVertexArray(vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, vData.subarray(0, vCount * VERT_FLOATS));
+    },
+    draw() {
+      if (!iCount) return;
+      gl.bindVertexArray(vao);
+      gl.drawElements(gl.TRIANGLES, iCount, gl.UNSIGNED_INT, 0);
+    },
+  };
+}
+
+// Welds a smooth (rings x segs) closed cylindrical grid into mesh, computing exact smooth
+// area-weighted vertex normals across the periodic seam!
+// If topologyBuilt === false, emits index triangles too; otherwise reuses static indices!
+function writeSmoothTube(mesh, rings, segs, posBuf, colBuf, tanBuf, matId, aoBuf, capStart, capEnd, emitIndices, rootNormBlend) {
+  const baseV = mesh.allocVerts(rings * segs + (capStart ? 1 : 0) + (capEnd ? 1 : 0));
+  const vData = mesh.vData;
+
+  // Write positions, tangents, colors, params; zero normals first
+  for (let r = 0; r < rings; r++) {
+    const ao = aoBuf ? aoBuf[r] : 1.0;
+    for (let s = 0; s < segs; s++) {
+      const idx = r * segs + s;
+      const vo = (baseV + idx) * VERT_FLOATS;
+      const po = idx * 3;
+      vData[vo]     = posBuf[po];
+      vData[vo + 1] = posBuf[po + 1];
+      vData[vo + 2] = posBuf[po + 2];
+      vData[vo + 3] = 0; vData[vo + 4] = 0; vData[vo + 5] = 0;
+      vData[vo + 6] = tanBuf[po];
+      vData[vo + 7] = tanBuf[po + 1];
+      vData[vo + 8] = tanBuf[po + 2];
+      vData[vo + 9]  = colBuf[po];
+      vData[vo + 10] = colBuf[po + 1];
+      vData[vo + 11] = colBuf[po + 2];
+      vData[vo + 12] = matId;
+      vData[vo + 13] = ao;
+    }
+  }
+
+  // Accumulate face normals across every quad on the closed seam
+  for (let r = 0; r < rings - 1; r++) {
+    for (let s = 0; s < segs; s++) {
+      const s1 = (s + 1) % segs;
+      const i00 = baseV + r * segs + s;
+      const i10 = baseV + (r + 1) * segs + s;
+      const i11 = baseV + (r + 1) * segs + s1;
+      const i01 = baseV + r * segs + s1;
+      if (emitIndices) {
+        mesh.pushQuad(i00, i10, i11, i01);
+      }
+      // Tri 1: (i00, i10, i11)
+      const o00 = i00 * VERT_FLOATS, o10 = i10 * VERT_FLOATS, o11 = i11 * VERT_FLOATS, o01 = i01 * VERT_FLOATS;
+      let ax = vData[o10] - vData[o00], ay = vData[o10 + 1] - vData[o00 + 1], az = vData[o10 + 2] - vData[o00 + 2];
+      let bx = vData[o11] - vData[o00], by = vData[o11 + 1] - vData[o00 + 1], bz = vData[o11 + 2] - vData[o00 + 2];
+      let nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
+      vData[o00 + 3] += nx; vData[o00 + 4] += ny; vData[o00 + 5] += nz;
+      vData[o10 + 3] += nx; vData[o10 + 4] += ny; vData[o10 + 5] += nz;
+      vData[o11 + 3] += nx; vData[o11 + 4] += ny; vData[o11 + 5] += nz;
+
+      // Tri 2: (i00, i11, i01)
+      ax = bx; ay = by; az = bz;
+      bx = vData[o01] - vData[o00]; by = vData[o01 + 1] - vData[o00 + 1]; bz = vData[o01 + 2] - vData[o00 + 2];
+      nx = ay * bz - az * by; ny = az * bx - ax * bz; nz = ax * by - ay * bx;
+      vData[o00 + 3] += nx; vData[o00 + 4] += ny; vData[o00 + 5] += nz;
+      vData[o11 + 3] += nx; vData[o11 + 4] += ny; vData[o11 + 5] += nz;
+      vData[o01 + 3] += nx; vData[o01 + 4] += ny; vData[o01 + 5] += nz;
+    }
+  }
+
+  let capIdx = baseV + rings * segs;
+  if (capStart) {
+    let cx = 0, cy = 0, cz = 0, cr = 0, cg = 0, cb = 0;
+    for (let s = 0; s < segs; s++) {
+      const o = (baseV + s) * VERT_FLOATS;
+      cx += vData[o]; cy += vData[o + 1]; cz += vData[o + 2];
+      cr += vData[o + 9]; cg += vData[o + 10]; cb += vData[o + 11];
+    }
+    cx /= segs; cy /= segs; cz /= segs;
+    const co = capIdx * VERT_FLOATS;
+    const t0 = baseV * VERT_FLOATS;
+    vData[co] = cx; vData[co + 1] = cy; vData[co + 2] = cz;
+    vData[co + 3] = -vData[t0 + 6]; vData[co + 4] = -vData[t0 + 7]; vData[co + 5] = -vData[t0 + 8];
+    vData[co + 6] = vData[t0 + 6]; vData[co + 7] = vData[t0 + 7]; vData[co + 8] = vData[t0 + 8];
+    vData[co + 9] = cr / segs; vData[co + 10] = cg / segs; vData[co + 11] = cb / segs;
+    vData[co + 12] = matId; vData[co + 13] = aoBuf ? aoBuf[0] : 1.0;
+    if (emitIndices) {
+      for (let s = 0; s < segs; s++) {
+        mesh.pushTri(capIdx, baseV + s, baseV + ((s + 1) % segs));
+      }
+    }
+    capIdx++;
+  }
+
+  if (capEnd) {
+    const lastBase = baseV + (rings - 1) * segs;
+    let cx = 0, cy = 0, cz = 0, cr = 0, cg = 0, cb = 0;
+    for (let s = 0; s < segs; s++) {
+      const o = (lastBase + s) * VERT_FLOATS;
+      cx += vData[o]; cy += vData[o + 1]; cz += vData[o + 2];
+      cr += vData[o + 9]; cg += vData[o + 10]; cb += vData[o + 11];
+    }
+    cx /= segs; cy /= segs; cz /= segs;
+    const co = capIdx * VERT_FLOATS;
+    const tN = lastBase * VERT_FLOATS;
+    vData[co] = cx; vData[co + 1] = cy; vData[co + 2] = cz;
+    vData[co + 3] = vData[tN + 6]; vData[co + 4] = vData[tN + 7]; vData[co + 5] = vData[tN + 8];
+    vData[co + 6] = vData[tN + 6]; vData[co + 7] = vData[tN + 7]; vData[co + 8] = vData[tN + 8];
+    vData[co + 9] = cr / segs; vData[co + 10] = cg / segs; vData[co + 11] = cb / segs;
+    vData[co + 12] = matId; vData[co + 13] = aoBuf ? aoBuf[rings - 1] : 1.0;
+    if (emitIndices) {
+      for (let s = 0; s < segs; s++) {
+        mesh.pushTri(capIdx, lastBase + ((s + 1) % segs), lastBase + s);
+      }
+    }
+  }
+
+  // Normalize all vertex normals + apply optional root-skirt normal transfer for seamless joins!
+  for (let r = 0; r < rings; r++) {
+    const blendW = (rootNormBlend && r < rootNormBlend.count)
+      ? rootNormBlend.weights[r]
+      : 0;
+    for (let s = 0; s < segs; s++) {
+      const o = (baseV + r * segs + s) * VERT_FLOATS;
+      let nx = vData[o + 3], ny = vData[o + 4], nz = vData[o + 5];
+      const nl = Math.hypot(nx, ny, nz) || 1;
+      nx /= nl; ny /= nl; nz /= nl;
+      if (blendW > 0) {
+        nx = nx * (1 - blendW) + rootNormBlend.dir[0] * blendW;
+        ny = ny * (1 - blendW) + rootNormBlend.dir[1] * blendW;
+        nz = nz * (1 - blendW) + rootNormBlend.dir[2] * blendW;
+        const bl = Math.hypot(nx, ny, nz) || 1;
+        nx /= nl ? bl : 1; ny /= bl; nz /= bl;
+      }
+      vData[o + 3] = nx; vData[o + 4] = ny; vData[o + 5] = nz;
+    }
+  }
+}
+
+/* ---------------- Transverse Gallop Biomechanics & Analytical IK ---------------- */
+
+function solve2BoneIK(A, B, L1, L2, bendDir) {
+  const dx = B[0] - A[0], dy = B[1] - A[1], dz = B[2] - A[2];
+  const rawDist = Math.hypot(dx, dy, dz) || 1e-6;
+  const maxReach = (L1 + L2) * 0.994;
+  const minReach = Math.abs(L1 - L2) + 0.02;
+  const d = clamp(rawDist, minReach, maxReach);
+  const invD = 1 / rawDist;
+  const dirX = dx * invD, dirY = dy * invD, dirZ = dz * invD;
+
+  const cosA = clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1);
+  const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
+
+  const bdDot = bendDir[0] * dirX + bendDir[1] * dirY + bendDir[2] * dirZ;
+  let px = bendDir[0] - dirX * bdDot;
+  let py = bendDir[1] - dirY * bdDot;
+  let pz = bendDir[2] - dirZ * bdDot;
+  const pl = Math.hypot(px, py, pz);
+  if (pl < 1e-5) { px = 1; py = 0; pz = 0; }
+  else { px /= pl; py /= pl; pz /= pl; }
+
+  return {
+    M: [
+      A[0] + (dirX * cosA + px * sinA) * L1,
+      A[1] + (dirY * cosA + py * sinA) * L1,
+      A[2] + (dirZ * cosA + pz * sinA) * L1,
+    ],
+    ratio: rawDist / (L1 + L2),
+  };
+}
+
+function bodyTransform(origin, pitch, roll, yaw) {
+  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const cr = Math.cos(roll),  sr = Math.sin(roll);
+  const cy = Math.cos(yaw),   sy = Math.sin(yaw);
+  const f0 = [cp, sp, 0];
+  const u0 = [-sp * cr, cp * cr, sr];
+  const r0 = cross3(f0, u0);
+  const rotY = (v) => [v[0] * cy + v[2] * sy, v[1], -v[0] * sy + v[2] * cy];
+  const F = norm3(rotY(f0));
+  const U = norm3(rotY(u0));
+  const R = norm3(rotY(r0));
+  return {
+    origin, F, U, R,
+    pt(lx, ly, lz) {
+      return [
+        origin[0] + F[0] * lx + U[0] * ly + R[0] * lz,
+        origin[1] + F[1] * lx + U[1] * ly + R[1] * lz,
+        origin[2] + F[2] * lx + U[2] * ly + R[2] * lz,
+      ];
+    },
+  };
+}
+
+// Calibrated 16-hand thoroughbred right-lead transverse gallop:
+// Beat 1: LH [0.00..0.225) -> Beat 2: RH [0.11..0.335) -> Beat 3: LF [0.29..0.515) -> Beat 4: RF [0.41..0.635) -> Gathered Suspension [0.635..1.00)
+const STRIDE_LEN = 4.14;
+const DUTY = 0.225;
+const FORE_L1 = 0.495, FORE_L2 = 0.405; // Forearm (radius) + Fore cannon = 0.90 m
+const HIND_L1 = 0.525, HIND_L2 = 0.440; // Gaskin (tibia)  + Hind cannon = 0.965 m
+
+const LEGS_DEF = [
+  { id: 'LH', fore: false, side: -1, on: 0.00, tdX: -0.02, zOff: -0.132 },
+  { id: 'RH', fore: false, side: +1, on: 0.11, tdX:  0.07, zOff: +0.132 },
+  { id: 'LF', fore: true,  side: -1, on: 0.29, tdX:  0.83, zOff: -0.128 },
+  { id: 'RF', fore: true,  side: +1, on: 0.41, tdX:  0.91, zOff: +0.128 },
+];
+
+function wrapPhase(p) {
+  const m = p % 1;
+  return m < 0 ? m + 1 : m;
+}
+
+function hermite(s, y0, y1, m0, m1) {
+  const s2 = s * s, s3 = s2 * s;
+  return (2 * s3 - 3 * s2 + 1) * y0 +
+         (s3 - 2 * s2 + s) * m0 +
+         (-2 * s3 + 3 * s2) * y1 +
+         (s3 - s2) * m1;
+}
+
+function evaluateHorse(strideIndex, rawPhase, baseZ = 0) {
+  const phi = wrapPhase(rawPhase);
+  const strideOriginX = strideIndex * STRIDE_LEN;
+  const refX = strideOriginX + phi * STRIDE_LEN;
+  const th = TAU * phi;
+
+  // Strictly 1-periodic whole-body gallop bascule (pose(0) === pose(1) to machine precision!)
+  const heaveY = 0.052 * Math.sin(th - 1.05) + 0.018 * Math.sin(2 * th + 0.38);
+  const pitch  = 0.090 * Math.sin(th - 0.52) + 0.020 * Math.cos(2 * th + 0.10);
+  // Gathered flight spine dorsoflexion (collection during [0.64..0.98]) vs hind-thrust extension
+  const spineFlex = 0.068 * Math.max(0, Math.sin(th - 3.55)) - 0.024 * Math.max(0, Math.sin(th - 0.55));
+  const roll   = 0.028 * Math.sin(th - 0.28);
+  const yaw    = 0.015 * Math.cos(th - 0.48);
+  const breath = 0.015 * Math.sin(th - 0.85);
+  const nostrilFlare = 0.5 + 0.5 * Math.sin(th - 0.95);
+  const surgeX = 0.022 * Math.sin(th - 0.18);
+
+  const bodyPivotY = 1.12 + heaveY;
+  const midFrame  = bodyTransform([refX + surgeX, bodyPivotY, baseZ], pitch, roll * 0.5, yaw);
+  const foreFrame = bodyTransform([refX + surgeX, bodyPivotY, baseZ], pitch - spineFlex * 0.42, roll, yaw);
+  const hindFrame = bodyTransform([refX + surgeX, bodyPivotY, baseZ], pitch + spineFlex * 0.58, -roll * 0.55, yaw);
+
+  // Convexly arched cervical curve + head bascule (rises out of withers at ~50 deg, arches over into poll at ~25 deg!)
+  const neckBase = foreFrame.pt(0.53, 0.21, 0);
+  const basculeNod = -0.13 * Math.sin(th - 1.32) - pitch * 0.50;
+  const neckAng0 = 0.86 + basculeNod;
+  const neckAng1 = 0.68 + basculeNod - 0.04 * Math.sin(th - 1.68);
+  const neckAng2 = 0.45 + basculeNod - 0.05 * Math.sin(th - 1.98);
+  const neckStep = (p, ang, len, sway) => [
+    p[0] + (Math.cos(ang) * foreFrame.F[0] + Math.sin(ang) * foreFrame.U[0]) * len + sway * foreFrame.R[0],
+    p[1] + (Math.cos(ang) * foreFrame.F[1] + Math.sin(ang) * foreFrame.U[1]) * len + sway * foreFrame.R[1],
+    p[2] + (Math.cos(ang) * foreFrame.F[2] + Math.sin(ang) * foreFrame.U[2]) * len + sway * foreFrame.R[2],
+  ];
+  const nSway = 0.013 * Math.sin(th - 1.10);
+  const neck1 = neckStep(neckBase, neckAng0, 0.19, nSway * 0.35);
+  const neck2 = neckStep(neck1,    neckAng1, 0.18, nSway * 0.72);
+  const poll  = neckStep(neck2,    neckAng2, 0.16, nSway);
+
+  // Cranial-nasal axis (~45 deg downward from horizontal, opening forward on extension)
+  const headAngle = -0.78 + 0.13 * Math.sin(th - 1.82) - pitch * 0.36;
+  const headFwd = norm3([
+    Math.cos(headAngle) * foreFrame.F[0] + Math.sin(headAngle) * foreFrame.U[0],
+    Math.cos(headAngle) * foreFrame.F[1] + Math.sin(headAngle) * foreFrame.U[1],
+    Math.cos(headAngle) * foreFrame.F[2] + Math.sin(headAngle) * foreFrame.U[2] + 0.016 * Math.sin(th - 1.4),
+  ]);
+  const headRight = norm3(foreFrame.R);
+  const headUp = norm3(cross3(headRight, headFwd));
+  const muzzle = add3(poll, scale3(headFwd, 0.43));
+
+  // Streaming S-curve tail spine (8 stations from croup dock)
+  const dock = hindFrame.pt(-0.84, 0.22, 0);
+  const tailPts = [dock];
+  let tp = dock;
+  const tailBaseAng = 0.04 + 0.16 * Math.sin(th - 1.88);
+  for (let ti = 1; ti <= 7; ti++) {
+    const f = ti / 7;
+    const wave = 0.22 * Math.sin(th - 1.65 - ti * 0.48) * (0.25 + 0.75 * f);
+    const droop = tailBaseAng - 0.58 * f * f + wave;
+    const lat = 0.044 * Math.sin(th - 1.15 - ti * 0.42) * f;
+    const segL = 0.138;
+    tp = [
+      tp[0] - Math.cos(droop) * segL + hindFrame.R[0] * lat * 0.4,
+      Math.max(0.28, tp[1] + Math.sin(droop) * segL),
+      tp[2] + lat,
+    ];
+    tailPts.push(tp);
+  }
+
+  // Solve all 4 limbs with EXACT zero-slip world-pinned stance + C-arc swing fold + toe breakover
+  const legs = {};
+  const stanceSpan = DUTY * STRIDE_LEN; // 0.9315 m
+
+  for (const def of LEGS_DEF) {
+    const off = def.on + DUTY;
+    const inStance = phi >= def.on && phi < off;
+    let hoofW, hoofHeelLift = 0, u = 0, s = 0, load = 0, hoofPitch = 0;
+
+    if (inStance) {
+      u = (phi - def.on) / DUTY;
+      load = Math.sin(Math.PI * u);
+      // Algebraically independent of phi/u: 0.000000 mm world contact slip across entire stance!
+      const anchorX = strideOriginX + def.on * STRIDE_LEN + def.tdX;
+      hoofW = [anchorX, 0.0, baseZ + def.zOff];
+      // Last 22% of stance: heel peels around pinned toe (breakover) while contact point stays locked!
+      if (u > 0.78) {
+        const b = smoothstep(0.78, 1.0, u);
+        hoofPitch = -0.42 * b;
+        hoofHeelLift = 0.026 * b;
+      } else {
+        hoofPitch = 0.0;
+      }
+    } else {
+      const swingDur = 1 - DUTY;
+      const dPhi = phi >= off ? (phi - off) : (phi + 1 - off);
+      s = dPhi / swingDur;
+      const xLo = def.tdX - stanceSpan;
+      const xTd = def.tdX;
+      // Calibrated C1 terminal swing retraction without forward reach over-extension
+      const mLo = -STRIDE_LEN * swingDur * 0.50;
+      const mTd = -STRIDE_LEN * swingDur * 0.56;
+      const relX = hermite(s, xLo, xTd, mLo, mTd);
+
+      // Immediate upward heel/fetlock fold right at liftoff, skimming gently into touchdown
+      const peakLift = def.fore ? 0.37 : 0.32;
+      const relY = peakLift * Math.sin(Math.PI * Math.pow(s, 0.58)) * (1 - 0.24 * s * s);
+
+      const startPitch = -0.42 * (1 - smoothstep(0.0, 0.24, s));
+      const flexFold = Math.sin(Math.PI * Math.pow(s, 0.62)) * (1 - 0.54 * s);
+      hoofPitch = startPitch + (def.fore ? -1.05 : -0.82) * flexFold;
+      hoofW = [refX + relX, Math.max(0, relY), baseZ + def.zOff];
+    }
+
+    // Anatomically coupled pastern & fetlock rotation:
+    // Stance: pivots smoothly from 123 deg (touchdown) + suspensory hyperextension -> 64 deg (breakover liftoff)
+    // Swing:  tucks smoothly backward in gathered suspension (C-arc) -> extends out to 123 deg before impact!
+    const pasternLen = 0.146;
+    let pasternAng;
+    if (inStance) {
+      pasternAng = lerp(2.15, 1.24, u) + 0.28 * Math.sin(Math.PI * Math.pow(u, 0.72));
+    } else {
+      const swingBase = lerp(1.24, 2.15, smoothstep(0.42, 0.96, s));
+      const tuck = Math.sin(Math.PI * Math.pow(s, 0.52)) * (1 - smoothstep(0.50, 0.94, s));
+      pasternAng = swingBase - (def.fore ? 0.88 : 0.60) * tuck;
+    }
+    const baseY = hoofW[1] + hoofHeelLift;
+    const fetlock = [
+      hoofW[0] + Math.cos(pasternAng) * pasternLen,
+      baseY + Math.sin(pasternAng) * pasternLen,
+      hoofW[2],
+    ];
+
+    if (def.fore) {
+      const reachNorm = clamp(((hoofW[0] - refX) - 0.40) / 0.50, -1.10, 1.10);
+      const scapTop  = foreFrame.pt(0.32, 0.33, def.side * 0.042);
+      const shoulder = foreFrame.pt(0.52 + 0.060 * reachNorm, -0.02 + 0.015 * Math.abs(reachNorm), def.side * 0.112);
+      // Humerus slopes anatomically downward & backward from point-of-shoulder to olecranon elbow at sternum
+      const humAng = -2.16 + 0.30 * reachNorm + (inStance ? -0.04 * load : 0.12 * Math.sin(Math.PI * s));
+      const elbow = [
+        shoulder[0] + Math.cos(humAng) * 0.30,
+        shoulder[1] + Math.sin(humAng) * 0.30,
+        def.side * 0.126,
+      ];
+      const ik = solve2BoneIK(elbow, fetlock, FORE_L1, FORE_L2, [1, 0.14, 0]);
+      legs[def.id] = {
+        id: def.id, fore: true, side: def.side, inStance, u, s, load, hoofPitch, hoofHeelLift,
+        scapTop, shoulder, elbow, carpus: ik.M, fetlock, hoof: hoofW,
+        ikRatio: ik.ratio,
+      };
+    } else {
+      const reachNorm = clamp(((hoofW[0] - refX) + 0.44) / 0.52, -1.10, 1.10);
+      const pelvisRoot = hindFrame.pt(-0.54, 0.25, def.side * 0.045);
+      const hip = hindFrame.pt(-0.52, 0.05, def.side * 0.105);
+      const femAng = -0.96 + 0.44 * reachNorm + (inStance ? -0.05 * load : 0.24 * Math.sin(Math.PI * s));
+      const stifle = [
+        hip[0] + Math.cos(femAng) * 0.39,
+        hip[1] + Math.sin(femAng) * 0.39,
+        def.side * 0.130,
+      ];
+      const ik = solve2BoneIK(stifle, fetlock, HIND_L1, HIND_L2, [-1, 0.16, 0]);
+      legs[def.id] = {
+        id: def.id, fore: false, side: def.side, inStance, u, s, load, hoofPitch, hoofHeelLift,
+        pelvisRoot, hip, stifle, hock: ik.M, fetlock, hoof: hoofW,
+        ikRatio: ik.ratio,
+      };
+    }
+  }
+
+  return {
+    phi, strideIndex, refX, baseZ, heaveY, pitch, spineFlex, roll, yaw, breath, nostrilFlare,
+    midFrame, foreFrame, hindFrame, neckBase, neck1, neck2, poll, headFwd, headUp, headRight, muzzle,
+    dock, tailPts, legs,
+  };
+}
+
+/* ---------------- Smooth High-Definition Equine Mesh Synthesizer ---------------- */
+
+const horseMesh = createIndexedMesh(16384, 81920, true);
+let horseTopologyBuilt = false;
+
+// Pre-allocated scratch buffers so buildHorseHD allocates ZERO typed arrays per frame!
+const AXIAL_RINGS = LITE ? 34 : 46;
+const AXIAL_SEGS  = LITE ? 22 : 30;
+const HEAD_RINGS  = LITE ? 18 : 26;
+const HEAD_SEGS   = LITE ? 20 : 28;
+const LIMB_RINGS  = LITE ? 26 : 36;
+const LIMB_SEGS   = LITE ? 14 : 20;
+const EAR_RINGS   = 9, EAR_SEGS = 12;
+const EYE_RINGS   = 7, EYE_SEGS = 10;
+const DOCK_RINGS  = 8, DOCK_SEGS = 10;
+
+const scratchPos = new Float32Array(52 * 32 * 3);
+const scratchCol = new Float32Array(52 * 32 * 3);
+const scratchTan = new Float32Array(52 * 32 * 3);
+const scratchAo  = new Float32Array(52);
+const tmpPt = [0, 0, 0], tmpPt2 = [0, 0, 0];
+
+// Pre-computed axial trunk->withers->neck->poll key stations (normalized u in [0, 1])
+const AXIAL_CTRL = [
+  // Point of Buttock -> Croup -> Loin/Flank -> Barrel -> Withers/Heart-Girth -> Neck -> Throatlatch -> Poll
+  { t: 0.00, yT: 0.15, yB: -0.05, w: 0.062, pinch: 0.05, cleft: 0.04, jug: 0.0, stern: 0.0 }, // Point of buttock
+  { t: 0.07, yT: 0.33, yB: -0.22, w: 0.212, pinch: 0.05, cleft: 0.09, jug: 0.0, stern: 0.0 }, // Sweeping hamstring / quarter
+  { t: 0.16, yT: 0.38, yB: -0.21, w: 0.238, pinch: 0.08, cleft: 0.08, jug: 0.0, stern: 0.0 }, // Peak croup (tuber sacrale)
+  { t: 0.28, yT: 0.30, yB: -0.17, w: 0.206, pinch: 0.14, cleft: 0.02, jug: 0.0, stern: 0.0 }, // Loin & high athletic inguinal flank!
+  { t: 0.41, yT: 0.29, yB: -0.27, w: 0.244, pinch: 0.18, cleft: 0.00, jug: 0.0, stern: 0.0 }, // Mid barrel / sprung ribs
+  { t: 0.54, yT: 0.39, yB: -0.32, w: 0.218, pinch: 0.45, cleft: 0.00, jug: 0.0, stern: 0.06 }, // Prominent thoroughbred withers & deep heart girth!
+  { t: 0.66, yT: 0.29, yB: -0.23, w: 0.166, pinch: 0.40, cleft: 0.00, jug: 0.06, stern: 0.13 }, // Base of cervical neck / pectoral chest
+  { t: 0.78, yT: 0.22, yB: -0.145, w: 0.122, pinch: 0.38, cleft: 0.00, jug: 0.11, stern: 0.02 }, // Muscular arched crest + jugular groove
+  { t: 0.89, yT: 0.16, yB: -0.105, w: 0.096, pinch: 0.34, cleft: 0.00, jug: 0.10, stern: 0.0 }, // Upper neck arch
+  { t: 0.96, yT: 0.112, yB: -0.075, w: 0.078, pinch: 0.26, cleft: 0.00, jug: 0.05, stern: 0.0 }, // Clean throatlatch!
+  { t: 1.00, yT: 0.086, yB: -0.064, w: 0.068, pinch: 0.20, cleft: 0.00, jug: 0.00, stern: 0.0 }, // Rounded poll dome
+];
+
+function interpCtrl(table, u) {
+  let i = 0;
+  while (i < table.length - 2 && u > table[i + 1].t) i++;
+  const a = table[i], b = table[i + 1];
+  const f = smoothstep(a.t, b.t, u);
+  return {
+    yT: lerp(a.yT, b.yT, f),
+    yB: lerp(a.yB, b.yB, f),
+    w: lerp(a.w, b.w, f),
+    pinch: lerp(a.pinch, b.pinch, f),
+    cleft: lerp(a.cleft, b.cleft, f),
+    jug: lerp(a.jug, b.jug, f),
+    stern: lerp(a.stern, b.stern, f),
+  };
+}
+
+// Noble wedge-shaped thoroughbred head profile along cranial parameter v in [0, 1] (-0.05 m poll to +0.42 m muzzle)
+const HEAD_CTRL = [
+  { t: 0.00, uOff:  0.012, rT: 0.068, rB: 0.068, w: 0.066, jowl: 0.00, bridge: 0.05, nostril: 0.0 }, // Rounded poll cranium back
+  { t: 0.16, uOff:  0.010, rT: 0.082, rB: 0.114, w: 0.088, jowl: 0.70, bridge: 0.14, nostril: 0.0 }, // Broad forehead & upper ganache
+  { t: 0.30, uOff: -0.004, rT: 0.080, rB: 0.132, w: 0.085, jowl: 1.00, bridge: 0.20, nostril: 0.0 }, // Deep circular mandibular ganache cheek!
+  { t: 0.46, uOff:  0.000, rT: 0.068, rB: 0.098, w: 0.068, jowl: 0.35, bridge: 0.26, nostril: 0.0 }, // Straight mandibular jaw ramus & facial crest
+  { t: 0.66, uOff:  0.002, rT: 0.056, rB: 0.072, w: 0.054, jowl: 0.05, bridge: 0.28, nostril: 0.0 }, // Chiseled nasal bridge & jaw taper
+  { t: 0.84, uOff: -0.001, rT: 0.054, rB: 0.056, w: 0.060, jowl: 0.00, bridge: 0.12, nostril: 1.0 }, // Dilated thoroughbred nostrils!
+  { t: 0.95, uOff: -0.007, rT: 0.042, rB: 0.045, w: 0.048, jowl: 0.00, bridge: 0.04, nostril: 0.1 }, // Squared velvety upper lip & firm chin
+  { t: 1.00, uOff: -0.010, rT: 0.020, rB: 0.022, w: 0.028, jowl: 0.00, bridge: 0.00, nostril: 0.0 }, // Muzzle tip
+];
+
+function interpHeadCtrl(u) {
+  let i = 0;
+  while (i < HEAD_CTRL.length - 2 && u > HEAD_CTRL[i + 1].t) i++;
+  const a = HEAD_CTRL[i], b = HEAD_CTRL[i + 1];
+  const f = smoothstep(a.t, b.t, u);
+  return {
+    uOff: lerp(a.uOff, b.uOff, f),
+    rT: lerp(a.rT, b.rT, f),
+    rB: lerp(a.rB, b.rB, f),
+    w: lerp(a.w, b.w, f),
+    jowl: lerp(a.jowl, b.jowl, f),
+    bridge: lerp(a.bridge, b.bridge, f),
+    nostril: lerp(a.nostril, b.nostril, f),
+  };
+}
+
+// Emits a single smooth curved 3D horsehair ribbon (cambered diamond cross-section so it catches anisotropic sheen from every angle!)
+function writeHairRibbon(mesh, pts, halfW, halfThick, sideNormal, colRoot, colTip, emitIndices) {
+  const rings = pts.length;
+  const segs = 4; // 4-sided cambered diamond hair lock
+  const baseV = mesh.allocVerts(rings * segs);
+  const vData = mesh.vData;
+
+  for (let r = 0; r < rings; r++) {
+    const f = r / (rings - 1);
+    const taper = Math.sin(Math.PI * Math.min(0.97, 0.14 + 0.86 * f)) * (1 - 0.68 * f * f);
+    const w = halfW * Math.max(0.08, taper);
+    const thk = halfThick * Math.max(0.10, 1 - 0.78 * f);
+
+    const p = pts[r];
+    const pNext = pts[Math.min(rings - 1, r + 1)];
+    const pPrev = pts[Math.max(0, r - 1)];
+    let tx = pNext[0] - pPrev[0], ty = pNext[1] - pPrev[1], tz = pNext[2] - pPrev[2];
+    const tl = Math.hypot(tx, ty, tz) || 1;
+    tx /= tl; ty /= tl; tz /= tl;
+
+    // Orthonormal ribbon frame: T along strand, N0 = sideNormal orthogonalized, B0 = T x N0
+    const dSN = sideNormal[0] * tx + sideNormal[1] * ty + sideNormal[2] * tz;
+    let nx = sideNormal[0] - tx * dSN, ny = sideNormal[1] - ty * dSN, nz = sideNormal[2] - tz * dSN;
+    const nl = Math.hypot(nx, ny, nz) || 1;
+    nx /= nl; ny /= nl; nz /= nl;
+    const bx = ty * nz - tz * ny, by = tz * nx - tx * nz, bz = tx * ny - ty * nx;
+
+    const cr = lerp(colRoot[0], colTip[0], f);
+    const cg = lerp(colRoot[1], colTip[1], f);
+    const cb = lerp(colRoot[2], colTip[2], f);
+    const ao = lerp(0.60, 1.0, f);
+
+    const offsets = [
+      [ bx * w,  by * w,  bz * w,  bx * 0.7 + nx * 0.7,  by * 0.7 + ny * 0.7,  bz * 0.7 + nz * 0.7],
+      [ nx * thk, ny * thk, nz * thk, nx, ny, nz],
+      [-bx * w, -by * w, -bz * w, -bx * 0.7 + nx * 0.7, -by * 0.7 + ny * 0.7, -bz * 0.7 + nz * 0.7],
+      [-nx * thk, -ny * thk, -nz * thk, -nx, -ny, -nz],
+    ];
+    for (let s = 0; s < 4; s++) {
+      const o = (baseV + r * 4 + s) * VERT_FLOATS;
+      const off = offsets[s];
+      vData[o]     = p[0] + off[0];
+      vData[o + 1] = p[1] + off[1];
+      vData[o + 2] = p[2] + off[2];
+      const onl = Math.hypot(off[3], off[4], off[5]) || 1;
+      vData[o + 3] = off[3] / onl;
+      vData[o + 4] = off[4] / onl;
+      vData[o + 5] = off[5] / onl;
+      vData[o + 6] = tx; vData[o + 7] = ty; vData[o + 8] = tz;
+      vData[o + 9] = cr; vData[o + 10] = cg; vData[o + 11] = cb;
+      vData[o + 12] = 1; // MAT_HAIR
+      vData[o + 13] = ao;
+    }
+  }
+  if (emitIndices) {
+    for (let r = 0; r < rings - 1; r++) {
+      for (let s = 0; s < 4; s++) {
+        const s1 = (s + 1) & 3;
+        mesh.pushQuad(baseV + r * 4 + s, baseV + (r + 1) * 4 + s, baseV + (r + 1) * 4 + s1, baseV + r * 4 + s1);
+      }
+    }
+  }
+}
+
+const ROOT_BLEND_LIMB = { count: 5, weights: [0.92, 0.72, 0.45, 0.22, 0.08], dir: [0, 0.35, 1] };
+const ROOT_BLEND_HEAD = { count: 4, weights: [0.85, 0.55, 0.25, 0.08], dir: [-0.7, 0.7, 0] };
+
+function buildHorseHD(st) {
+  const emitIdx = !horseTopologyBuilt;
+  if (emitIdx) horseMesh.reset();
+  else horseMesh.resetVertsOnly();
+
+  const pal = COATS[coatIdx];
+  const { foreFrame: fF, midFrame: mF, hindFrame: hF, breath, nostrilFlare, phi } = st;
+  const th = TAU * phi;
+
+  const gluteLoad = Math.max(st.legs.LH.load, st.legs.RH.load);
+  const pectLoad  = Math.max(st.legs.LF.load, st.legs.RF.load);
+
+  /* ---- 1. Continuous Smooth Axial Body (Buttock -> Croup -> Loin -> Barrel -> Withers -> Neck -> Poll) ---- */
+  // Strictly monotonic in X and Y so spine tangent T never twists or inverts!
+  const spineCtrlPts = [
+    hF.pt(-0.88, 0.13, 0),  // 0: Point of buttock
+    hF.pt(-0.68, 0.13, 0),  // 1: Croup rear
+    hF.pt(-0.44, 0.12, 0),  // 2: Croup / hip
+    mF.pt(-0.16, 0.08, 0),  // 3: Loin / flank coupling
+    mF.pt( 0.10, 0.05, 0),  // 4: Mid barrel
+    fF.pt( 0.35, 0.11, 0),  // 5: Withers / heart girth
+    st.neckBase,            // 6: Cervical base (0.53, 0.21)
+    st.neck1,               // 7: Lower-mid neck
+    st.neck2,               // 8: Upper-mid neck
+    st.poll,                // 9: Poll
+  ];
+
+  const neckCrestPts = [];
+  for (let r = 0; r < AXIAL_RINGS; r++) {
+    const u = r / (AXIAL_RINGS - 1);
+    sampleSpline3(spineCtrlPts, u, tmpPt);
+    sampleSpline3(spineCtrlPts, Math.min(1, u + 0.015), tmpPt2);
+    let tx = tmpPt2[0] - tmpPt[0], ty = tmpPt2[1] - tmpPt[1], tz = tmpPt2[2] - tmpPt[2];
+    if (u >= 0.985) {
+      sampleSpline3(spineCtrlPts, u - 0.015, tmpPt2);
+      tx = tmpPt[0] - tmpPt2[0]; ty = tmpPt[1] - tmpPt2[1]; tz = tmpPt[2] - tmpPt2[2];
+    }
+    const tl = Math.hypot(tx, ty, tz) || 1;
+    tx /= tl; ty /= tl; tz /= tl;
+
+    // Smooth lateral right vector blended from hindFrame -> foreFrame
+    const latMix = smoothstep(0.20, 0.55, u);
+    const rx0 = lerp(hF.R[0], fF.R[0], latMix);
+    const ry0 = lerp(hF.R[1], fF.R[1], latMix);
+    const rz0 = lerp(hF.R[2], fF.R[2], latMix);
+    const dRT = rx0 * tx + ry0 * ty + rz0 * tz;
+    let rx = rx0 - tx * dRT, ry = ry0 - ty * dRT, rz = rz0 - tz * dRT;
+    const rl = Math.hypot(rx, ry, rz) || 1;
+    rx /= rl; ry /= rl; rz /= rl;
+    // Dorsal up = R x T
+    const ux = ry * tz - rz * ty, uy = rz * tx - rx * tz, uz = rx * ty - ry * tx;
+
+    const c = interpCtrl(AXIAL_CTRL, u);
+    // Dynamic breathing in barrel + gluteal/pectoral flexing under stance load!
+    const barrelMask = Math.exp(-Math.pow((u - 0.42) / 0.13, 2));
+    const croupMask  = Math.exp(-Math.pow((u - 0.15) / 0.09, 2));
+    const breastMask = Math.exp(-Math.pow((u - 0.58) / 0.085, 2));
+
+    const yT = c.yT + 0.016 * gluteLoad * croupMask;
+    const yB = c.yB - breath * 1.15 * barrelMask;
+    const midOff = 0.5 * (yT + yB);
+    const halfH  = 0.5 * (yT - yB);
+    const baseW  = c.w + breath * 0.85 * barrelMask + 0.014 * gluteLoad * croupMask + 0.012 * pectLoad * breastMask;
+
+    const cx = tmpPt[0] + ux * midOff;
+    const cy = tmpPt[1] + uy * midOff;
+    const cz = tmpPt[2] + uz * midOff;
+
+    if (u >= 0.57) {
+      neckCrestPts.push([cx + ux * halfH * 0.95, cy + uy * halfH * 0.95, cz + uz * halfH * 0.95, baseW, ux, uy, uz]);
+    }
+    scratchAo[r] = 0.96;
+
+    for (let s = 0; s < AXIAL_SEGS; s++) {
+      const ang = (TAU * s) / AXIAL_SEGS;
+      const ct = Math.cos(ang), stA = Math.sin(ang);
+
+      // Polar anatomical harmonics:
+      const pinch = stA > 0 ? (1 - c.pinch * stA * stA * 0.72) : 1.0;
+      const croupLobe = stA > 0.2 ? c.cleft * (Math.sin(2 * ang) * Math.sin(2 * ang) - 0.45 * Math.pow(stA, 4)) : 0;
+      const jugIndent = c.jug * Math.exp(-Math.pow((stA + 0.44) / 0.28, 2)) * Math.abs(ct);
+      const sternIndent = stA < -0.55 ? c.stern * Math.pow((-stA - 0.55) / 0.45, 2) * (1 - Math.min(1, ct * ct * 3.5)) : 0;
+      const ribSwell = barrelMask * 0.06 * Math.exp(-Math.pow((stA + 0.18) / 0.45, 2));
+      // Proud thoroughbred pectoral breast (prosternum) protruding forward beneath neck base!
+      const breastFwd = breastMask * (0.105 + 0.016 * pectLoad) * Math.exp(-Math.pow((stA + 0.48) / 0.46, 2)) * (1 - 0.42 * ct * ct);
+
+      const radW = baseW * pinch * (1 + ribSwell - jugIndent);
+      const radU = halfH * (1 + croupLobe - sternIndent);
+
+      const px = cx + rx * (ct * radW) + ux * (stA * radU) + fF.F[0] * breastFwd;
+      const py = cy + ry * (ct * radW) + uy * (stA * radU) + fF.F[1] * breastFwd;
+      const pz = cz + rz * (ct * radW) + uz * (stA * radU) + fF.F[2] * breastFwd;
+
+      const idx3 = (r * AXIAL_SEGS + s) * 3;
+      scratchPos[idx3]     = px;
+      scratchPos[idx3 + 1] = py;
+      scratchPos[idx3 + 2] = pz;
+      scratchTan[idx3]     = tx;
+      scratchTan[idx3 + 1] = ty;
+      scratchTan[idx3 + 2] = tz;
+
+      // Smooth coat shading gradient (sunlit topline -> rich mid flank -> warm shaded belly)
+      const topMix = smoothstep(0.05, 0.75, stA);
+      const botMix = smoothstep(-0.15, -0.85, stA);
+      let cr = lerp(pal.coatMid[0], pal.coatBright[0], topMix);
+      let cg = lerp(pal.coatMid[1], pal.coatBright[1], topMix);
+      let cb = lerp(pal.coatMid[2], pal.coatBright[2], topMix);
+      cr = lerp(cr, pal.coatBelly[0], botMix * 0.85);
+      cg = lerp(cg, pal.coatBelly[1], botMix * 0.85);
+      cb = lerp(cb, pal.coatBelly[2], botMix * 0.85);
+      scratchCol[idx3] = cr; scratchCol[idx3 + 1] = cg; scratchCol[idx3 + 2] = cb;
+    }
+  }
+  writeSmoothTube(horseMesh, AXIAL_RINGS, AXIAL_SEGS, scratchPos, scratchCol, scratchTan, 0, scratchAo, true, true, emitIdx, null);
+
+  /* ---- 2. Noble Wedge-Shaped Thoroughbred Head (Poll -> Forehead & Ganache -> Jaw Ramus -> Nostrils -> Muzzle) ---- */
+  const { headFwd: hFwd, headUp: hUp, headRight: hR, poll } = st;
+  const hPt = (s, u, r) => [
+    poll[0] + hFwd[0] * s + hUp[0] * u + hR[0] * r,
+    poll[1] + hFwd[1] * s + hUp[1] * u + hR[1] * r,
+    poll[2] + hFwd[2] * s + hUp[2] * u + hR[2] * r,
+  ];
+  ROOT_BLEND_HEAD.dir[0] = -hFwd[0] * 0.45 + hUp[0] * 0.88;
+  ROOT_BLEND_HEAD.dir[1] = -hFwd[1] * 0.45 + hUp[1] * 0.88;
+  ROOT_BLEND_HEAD.dir[2] = -hFwd[2] * 0.45 + hUp[2] * 0.88;
+
+  for (let r = 0; r < HEAD_RINGS; r++) {
+    const v = r / (HEAD_RINGS - 1);
+    const sDist = -0.050 + v * 0.470;
+    const hc = interpHeadCtrl(v);
+    const c = hPt(sDist, hc.uOff, 0);
+    scratchAo[r] = v > 0.80 ? 0.88 : 0.96;
+
+    for (let s = 0; s < HEAD_SEGS; s++) {
+      const ang = (TAU * s) / HEAD_SEGS;
+      const ct = Math.cos(ang), stA = Math.sin(ang);
+
+      let wScale = 1.0;
+      if (stA < -0.05 && hc.jowl > 0) {
+        // Ganache cheek is deep vertically (rB) and flat-planed laterally with clean intermandibular groove
+        wScale *= 1.0 - 0.28 * hc.jowl * Math.pow(-stA, 0.85);
+      }
+      if (stA > 0.35 && hc.bridge > 0) {
+        wScale *= 1.0 - hc.bridge * Math.pow((stA - 0.35) / 0.65, 1.45);
+      }
+      // Nostril alar wing flare + recessed dark nostril cavity!
+      let nostrilWing = 0, inNostril = 0;
+      if (hc.nostril > 0.05) {
+        const wingSpot = Math.exp(-Math.pow((Math.abs(ct) - 0.78) / 0.20, 2)) * Math.exp(-Math.pow((stA - 0.32) / 0.28, 2));
+        const cavSpot  = Math.exp(-Math.pow((Math.abs(ct) - 0.72) / 0.13, 2)) * Math.exp(-Math.pow((stA - 0.26) / 0.16, 2));
+        nostrilWing = hc.nostril * (0.013 + 0.006 * nostrilFlare) * wingSpot - hc.nostril * 0.011 * cavSpot;
+        inNostril = clamp(hc.nostril * cavSpot * 1.4, 0, 1);
+      }
+      // Supraorbital brow ridge around v ~ 0.25 + zygomatic facial crest
+      const browArch = Math.exp(-Math.pow((v - 0.25) / 0.075, 2)) * Math.exp(-Math.pow((Math.abs(ct) - 0.84) / 0.18, 2)) * Math.exp(-Math.pow((stA - 0.44) / 0.24, 2)) * 0.012;
+
+      const radW = hc.w * wScale + nostrilWing + browArch;
+      const radU = (stA >= 0 ? hc.rT : hc.rB) + nostrilWing * 0.5 + browArch * 0.65;
+
+      const idx3 = (r * HEAD_SEGS + s) * 3;
+      scratchPos[idx3]     = c[0] + hR[0] * (ct * radW) + hUp[0] * (stA * radU);
+      scratchPos[idx3 + 1] = c[1] + hR[1] * (ct * radW) + hUp[1] * (stA * radU);
+      scratchPos[idx3 + 2] = c[2] + hR[2] * (ct * radW) + hUp[2] * (stA * radU);
+      scratchTan[idx3]     = hFwd[0];
+      scratchTan[idx3 + 1] = hFwd[1];
+      scratchTan[idx3 + 2] = hFwd[2];
+
+      // Coat color + white forehead star/stripe blaze + velvety muzzle + dark nostril cavity
+      const muzzleMix = smoothstep(0.68, 0.88, v);
+      let cr = lerp(pal.coatMid[0], pal.coatBright[0], smoothstep(-0.2, 0.7, stA));
+      let cg = lerp(pal.coatMid[1], pal.coatBright[1], smoothstep(-0.2, 0.7, stA));
+      let cb = lerp(pal.coatMid[2], pal.coatBright[2], smoothstep(-0.2, 0.7, stA));
+      if (stA < -0.3) {
+        const jm = smoothstep(-0.3, -0.9, stA) * 0.7;
+        cr = lerp(cr, pal.coatDeep[0], jm);
+        cg = lerp(cg, pal.coatDeep[1], jm);
+        cb = lerp(cb, pal.coatDeep[2], jm);
+      }
+      if (pal.hasBlaze && v > 0.16 && v < 0.82 && stA > 0.68) {
+        const starW = v < 0.36 ? 0.34 : 0.18;
+        const bMask = smoothstep(starW, starW * 0.45, Math.abs(ct)) * smoothstep(0.68, 0.84, stA);
+        cr = lerp(cr, pal.whiteBlaze[0], bMask);
+        cg = lerp(cg, pal.whiteBlaze[1], bMask);
+        cb = lerp(cb, pal.whiteBlaze[2], bMask);
+      }
+      cr = lerp(cr, pal.muzzle[0], muzzleMix);
+      cg = lerp(cg, pal.muzzle[1], muzzleMix);
+      cb = lerp(cb, pal.muzzle[2], muzzleMix);
+      if (inNostril > 0.05) {
+        cr = lerp(cr, 0.008, inNostril);
+        cg = lerp(cg, 0.005, inNostril);
+        cb = lerp(cb, 0.006, inNostril);
+      }
+      scratchCol[idx3] = cr; scratchCol[idx3 + 1] = cg; scratchCol[idx3 + 2] = cb;
+    }
+  }
+  writeSmoothTube(horseMesh, HEAD_RINGS, HEAD_SEGS, scratchPos, scratchCol, scratchTan, 0, scratchAo, true, true, emitIdx, ROOT_BLEND_HEAD);
+
+  /* ---- 3. Glossy 3D Corneal Eyes & Forward-Pricked Cupped Pinna Ears ---- */
+  for (const side of [-1, 1]) {
+    // 3a. Glossy lateral eye ellipsoid oriented in head frame beneath supraorbital brow arch
+    const eyeC = hPt(0.072, 0.028, side * 0.082);
+    for (let r = 0; r < EYE_RINGS; r++) {
+      const v = (r / (EYE_RINGS - 1)) * Math.PI;
+      const cv = Math.cos(v), sv = Math.sin(v);
+      scratchAo[r] = 1.0;
+      for (let s = 0; s < EYE_SEGS; s++) {
+        const a = (TAU * s) / EYE_SEGS;
+        const lf = Math.cos(a) * sv * 0.024;
+        const lu = cv * 0.020;
+        const lr = Math.sin(a) * sv * 0.019;
+        const idx3 = (r * EYE_SEGS + s) * 3;
+        scratchPos[idx3]     = eyeC[0] + hFwd[0] * lf + hUp[0] * lu + hR[0] * lr;
+        scratchPos[idx3 + 1] = eyeC[1] + hFwd[1] * lf + hUp[1] * lu + hR[1] * lr;
+        scratchPos[idx3 + 2] = eyeC[2] + hFwd[2] * lf + hUp[2] * lu + hR[2] * lr;
+        scratchTan[idx3] = hFwd[0]; scratchTan[idx3 + 1] = hFwd[1]; scratchTan[idx3 + 2] = hFwd[2];
+        scratchCol[idx3] = 0.010; scratchCol[idx3 + 1] = 0.006; scratchCol[idx3 + 2] = 0.005;
+      }
+    }
+    writeSmoothTube(horseMesh, EYE_RINGS, EYE_SEGS, scratchPos, scratchCol, scratchTan, 2, scratchAo, false, false, emitIdx, null);
+
+    // 3b. Alert forward-pricked cupped equine ear (concave inner pinna facing forward/outward!)
+    const earFlick = 0.09 * Math.sin(th - 0.82 + side * 0.68);
+    const eBase = hPt(-0.008, 0.056, side * 0.044);
+    const earDir = norm3([
+      hUp[0] * 0.92 - hFwd[0] * (0.14 - earFlick) + hR[0] * side * 0.18,
+      hUp[1] * 0.92 - hFwd[1] * (0.14 - earFlick) + hR[1] * side * 0.18,
+      hUp[2] * 0.92 - hFwd[2] * (0.14 - earFlick) + hR[2] * side * 0.18,
+    ]);
+    const cupFace = norm3([
+      hFwd[0] * 0.84 + hR[0] * side * 0.54,
+      hFwd[1] * 0.84 + hR[1] * side * 0.54,
+      hFwd[2] * 0.84 + hR[2] * side * 0.54,
+    ]);
+    const earLat = norm3(cross3(earDir, cupFace));
+    const earAnt = norm3(cross3(earLat, earDir));
+
+    for (let r = 0; r < EAR_RINGS; r++) {
+      const f = r / (EAR_RINGS - 1);
+      const len = f * 0.156;
+      const profile = Math.sin(Math.PI * Math.pow(f, 0.60)) * (1 - 0.34 * f) + 0.36 * (1 - f);
+      const w = 0.023 * Math.max(0.10, profile);
+      const d = 0.019 * Math.max(0.10, profile);
+      const curveFwd = 0.012 * f * f;
+      const cx = eBase[0] + earDir[0] * len + earAnt[0] * curveFwd;
+      const cy = eBase[1] + earDir[1] * len + earAnt[1] * curveFwd;
+      const cz = eBase[2] + earDir[2] * len + earAnt[2] * curveFwd;
+      scratchAo[r] = lerp(0.75, 1.0, f);
+
+      for (let s = 0; s < EAR_SEGS; s++) {
+        const a = (TAU * s) / EAR_SEGS;
+        const ct = Math.cos(a), stA = Math.sin(a);
+        const cup = (f > 0.15 && f < 0.92 && stA > 0.15)
+          ? -1.25 * stA * stA * Math.sin(Math.PI * ((f - 0.15) / 0.77))
+          : stA;
+        const idx3 = (r * EAR_SEGS + s) * 3;
+        scratchPos[idx3]     = cx + earLat[0] * (ct * w) + earAnt[0] * (cup * d);
+        scratchPos[idx3 + 1] = cy + earLat[1] * (ct * w) + earAnt[1] * (cup * d);
+        scratchPos[idx3 + 2] = cz + earLat[2] * (ct * w) + earAnt[2] * (cup * d);
+        scratchTan[idx3] = earDir[0]; scratchTan[idx3 + 1] = earDir[1]; scratchTan[idx3 + 2] = earDir[2];
+
+        const tipDark = smoothstep(0.66, 0.96, f);
+        const innerShade = (stA > 0.25 && f > 0.18 && f < 0.90) ? 0.55 : 0.0;
+        let cr = lerp(pal.coatMid[0], pal.pointDark[0], tipDark);
+        let cg = lerp(pal.coatMid[1], pal.pointDark[1], tipDark);
+        let cb = lerp(pal.coatMid[2], pal.pointDark[2], tipDark);
+        cr = lerp(cr, pal.coatBelly[0] * 0.70, innerShade);
+        cg = lerp(cg, pal.coatBelly[1] * 0.70, innerShade);
+        cb = lerp(cb, pal.coatBelly[2] * 0.70, innerShade);
+        scratchCol[idx3] = cr; scratchCol[idx3 + 1] = cg; scratchCol[idx3 + 2] = cb;
+      }
+    }
+    writeSmoothTube(horseMesh, EAR_RINGS, EAR_SEGS, scratchPos, scratchCol, scratchTan, 0, scratchAo, false, true, emitIdx, null);
+  }
+
+  /* ---- 4. Four Continuous Smooth-Skinned Limbs (Buried Muscular Root -> Filleted Joints -> Tendon Groove -> Hoof) ---- */
+  for (const id of ['LH', 'LF', 'RH', 'RF']) {
+    const L = st.legs[id];
+    const pastVec = norm3(sub3(L.hoof, L.fetlock));
+    const coronet = mix3(L.fetlock, L.hoof, 0.64);
+    const solePt = L.inStance
+      ? [L.hoof[0] + 0.020, 0.002 + L.hoofHeelLift * 0.25, L.hoof[2]]
+      : [L.hoof[0] + pastVec[0] * 0.032, Math.max(0.003, L.hoof[1] + pastVec[1] * 0.032), L.hoof[2]];
+
+    ROOT_BLEND_LIMB.dir[0] = L.fore ? 0.26 : -0.26;
+    ROOT_BLEND_LIMB.dir[1] = 0.42;
+    ROOT_BLEND_LIMB.dir[2] = L.side * 0.87;
+
+    let chainPts, profTable;
+    const mFlex = 1 + 0.08 * L.load;
+
+    if (L.fore) {
+      const shMid   = mix3(L.scapTop, L.shoulder, 0.56);
+      const humMid  = mix3(L.shoulder, L.elbow, 0.52);
+      const faUpper = mix3(L.elbow, L.carpus, 0.28);
+      const faLower = mix3(L.elbow, L.carpus, 0.82);
+      const canUpper = mix3(L.carpus, L.fetlock, 0.20);
+      const canMid   = mix3(L.carpus, L.fetlock, 0.62);
+      chainPts = [L.scapTop, shMid, L.shoulder, humMid, L.elbow, faUpper, faLower, L.carpus, canUpper, canMid, L.fetlock, coronet, solePt];
+      // [t, wLat, rAnt, rPost, tendonGroove, darkMix, sockMix]
+      profTable = [
+        [0.000, 0.048, 0.110, 0.115, 0.0, 0.0, 0.0], // Deep scapular root buried inside withers!
+        [0.083, 0.072 * mFlex, 0.125, 0.145 * mFlex, 0.0, 0.0, 0.0], // Scapular spine & triceps mass
+        [0.167, 0.076 * mFlex, 0.105, 0.122 * mFlex, 0.0, 0.0, 0.0], // Point of shoulder
+        [0.250, 0.072 * mFlex, 0.088, 0.118 * mFlex, 0.0, 0.0, 0.0], // Brachialis / triceps belly
+        [0.333, 0.060, 0.068, 0.098, 0.0, 0.0, 0.0], // Elbow + posterior olecranon point!
+        [0.417, 0.060 * mFlex, 0.072 * mFlex, 0.084 * mFlex, 0.04, 0.05, 0.0], // Muscular upper forearm (extensor carpi)
+        [0.500, 0.043, 0.046, 0.054, 0.10, 0.55, 0.0], // Distal forearm taper
+        [0.583, 0.039, 0.043, 0.048, 0.10, 0.92, 0.0], // Flat-fronted carpus (knee) + posterior pisiform!
+        [0.667, 0.028, 0.030, 0.036, 0.25, 1.00, 0.0], // Proximal fore cannon
+        [0.750, 0.025, 0.027, 0.033, 0.30, 1.00, 0.0], // Slender tendon-grooved fore cannon!
+        [0.833, 0.033, 0.034, 0.042, 0.08, 1.00, 0.0], // Fetlock joint + posterior sesamoid/ergot
+        [0.917, 0.034, 0.037, 0.036, 0.00, 1.00, 0.0], // Pastern -> coronet band
+        [1.000, 0.050, 0.066, 0.044, 0.00, 1.00, 0.0], // Flared equine bell hoof sole!
+      ];
+    } else {
+      const thighUpper = mix3(L.hip, L.stifle, 0.35);
+      const thighLower = mix3(L.hip, L.stifle, 0.78);
+      const gasUpper   = mix3(L.stifle, L.hock, 0.28);
+      const gasLower   = mix3(L.stifle, L.hock, 0.80);
+      // Offset hock spline station slightly backward so calcaneal tuber ("point of hock") reads crisply!
+      const hockSpur   = [L.hock[0] - 0.012, L.hock[1] + 0.006, L.hock[2]];
+      const canUpper   = mix3(L.hock, L.fetlock, 0.22);
+      const canMid     = mix3(L.hock, L.fetlock, 0.62);
+      chainPts = [L.pelvisRoot, L.hip, thighUpper, thighLower, L.stifle, gasUpper, gasLower, hockSpur, canUpper, canMid, L.fetlock, coronet, solePt];
+      profTable = [
+        [0.000, 0.056, 0.135, 0.165, 0.0, 0.0, 0.0], // Deep pelvic root buried inside croup!
+        [0.083, 0.092 * mFlex, 0.155, 0.205 * mFlex, 0.0, 0.0, 0.0], // Sweeping haunch / hamstring quarter!
+        [0.167, 0.094 * mFlex, 0.135, 0.172 * mFlex, 0.05, 0.0, 0.0], // Muscular upper thigh
+        [0.250, 0.076 * mFlex, 0.102, 0.124 * mFlex, 0.06, 0.0, 0.0], // Lower thigh taper
+        [0.333, 0.066, 0.088, 0.082, 0.0, 0.0, 0.0], // Forward patellar stifle!
+        [0.417, 0.064 * mFlex, 0.072, 0.092 * mFlex, 0.08, 0.08, 0.0], // Muscular gaskin + Achilles cord
+        [0.500, 0.042, 0.044, 0.062, 0.18, 0.60, 0.0], // Distal gaskin / Achilles hollow
+        [0.583, 0.038, 0.040, 0.068, 0.20, 0.92, 0.0], // Sharp calcaneal point of hock!
+        [0.667, 0.029, 0.031, 0.038, 0.26, 0.85, pal.hasSocks ? 0.92 : 0.0], // Proximal hind cannon + crisp white stocking!
+        [0.750, 0.027, 0.029, 0.035, 0.30, 0.85, pal.hasSocks ? 1.00 : 0.0], // Slender hind cannon
+        [0.833, 0.034, 0.035, 0.043, 0.08, 0.85, pal.hasSocks ? 1.00 : 0.0], // Hind fetlock
+        [0.917, 0.035, 0.038, 0.036, 0.00, 0.85, pal.hasSocks ? 1.00 : 0.0], // Hind pastern -> coronet
+        [1.000, 0.050, 0.064, 0.044, 0.00, 1.00, 0.0], // Flared hind hoof sole
+      ];
+    }
+
+    const latBase = [0, 0, 1];
+    const stanceHoofDir = [Math.cos(L.hoofPitch), Math.sin(L.hoofPitch), 0];
+    for (let r = 0; r < LIMB_RINGS; r++) {
+      const u = r / (LIMB_RINGS - 1);
+      sampleSpline3(chainPts, u, tmpPt);
+      sampleSpline3(chainPts, Math.min(1, u + 0.016), tmpPt2);
+      let tx = tmpPt2[0] - tmpPt[0], ty = tmpPt2[1] - tmpPt[1], tz = tmpPt2[2] - tmpPt[2];
+      if (u >= 0.984) {
+        sampleSpline3(chainPts, u - 0.016, tmpPt2);
+        tx = tmpPt[0] - tmpPt2[0]; ty = tmpPt[1] - tmpPt2[1]; tz = tmpPt[2] - tmpPt2[2];
+      }
+      const tl = Math.hypot(tx, ty, tz) || 1;
+      tx /= tl; ty /= tl; tz /= tl;
+
+      let pi = 0;
+      while (pi < profTable.length - 2 && u > profTable[pi + 1][0]) pi++;
+      const pA = profTable[pi], pB = profTable[pi + 1];
+      const pf = smoothstep(pA[0], pB[0], u);
+      const wLat = lerp(pA[1], pB[1], pf);
+      const rAnt = lerp(pA[2], pB[2], pf);
+      const rPost = lerp(pA[3], pB[3], pf);
+      const groove = lerp(pA[4], pB[4], pf);
+      const darkMix = lerp(pA[5], pB[5], pf);
+      const sockMix = lerp(pA[6], pB[6], pf);
+      const hoofMix = smoothstep(0.90, 0.94, u);
+
+      const dLT = latBase[0] * tx + latBase[1] * ty + latBase[2] * tz;
+      let rx = latBase[0] - tx * dLT, ry = latBase[1] - ty * dLT, rz = latBase[2] - tz * dLT;
+      const rl = Math.hypot(rx, ry, rz) || 1;
+      rx /= rl; ry /= rl; rz /= rl;
+      // cross(R, T) naturally points toward the dorsal/anterior face of the limb & flexed hoof!
+      let ax = ry * tz - rz * ty, ay = rz * tx - rx * tz, az = rx * ty - ry * tx;
+      // Only level the hoof ring to the ground plane when planted in stance!
+      if (L.inStance && hoofMix > 0.01) {
+        ax = lerp(ax, stanceHoofDir[0], hoofMix);
+        ay = lerp(ay, stanceHoofDir[1], hoofMix);
+        az = lerp(az, stanceHoofDir[2], hoofMix);
+        const al = Math.hypot(ax, ay, az) || 1;
+        ax /= al; ay /= al; az /= al;
+      }
+
+      scratchAo[r] = lerp(0.86, 0.98, 0.5 + 0.5 * L.side);
+
+      for (let s = 0; s < LIMB_SEGS; s++) {
+        const ang = (TAU * s) / LIMB_SEGS;
+        const ct = Math.cos(ang), stA = Math.sin(ang);
+
+        const tendonPinch = 1 - groove * Math.exp(-Math.pow((stA + 0.08) / 0.36, 2));
+        const radW = wLat * tendonPinch;
+        const radA = stA >= 0 ? rAnt : rPost;
+
+        let px = tmpPt[0] + rx * (ct * radW) + ax * (stA * radA);
+        let py = tmpPt[1] + ry * (ct * radW) + ay * (stA * radA);
+        let pz = tmpPt[2] + rz * (ct * radW) + az * (stA * radA);
+        if (L.inStance && u > 0.92 && py < 0.001) py = 0.001;
+
+        const idx3 = (r * LIMB_SEGS + s) * 3;
+        scratchPos[idx3] = px; scratchPos[idx3 + 1] = py; scratchPos[idx3 + 2] = pz;
+        scratchTan[idx3] = tx; scratchTan[idx3 + 1] = ty; scratchTan[idx3 + 2] = tz;
+
+        const shade = smoothstep(-0.6, 0.7, stA * 0.7 + ct * L.side * 0.3);
+        let cr = lerp(pal.coatDeep[0], pal.coatBright[0], shade);
+        let cg = lerp(pal.coatDeep[1], pal.coatBright[1], shade);
+        let cb = lerp(pal.coatDeep[2], pal.coatBright[2], shade);
+        cr = lerp(cr, pal.pointDark[0], darkMix);
+        cg = lerp(cg, pal.pointDark[1], darkMix);
+        cb = lerp(cb, pal.pointDark[2], darkMix);
+        if (sockMix > 0.01) {
+          cr = lerp(cr, pal.whiteSock[0], sockMix);
+          cg = lerp(cg, pal.whiteSock[1], sockMix);
+          cb = lerp(cb, pal.whiteSock[2], sockMix);
+        }
+        if (hoofMix > 0.01) {
+          cr = lerp(cr, pal.hoofHorn[0], hoofMix);
+          cg = lerp(cg, pal.hoofHorn[1], hoofMix);
+          cb = lerp(cb, pal.hoofHorn[2], hoofMix);
+        }
+        scratchCol[idx3] = cr; scratchCol[idx3 + 1] = cg; scratchCol[idx3 + 2] = cb;
+      }
+    }
+    const limbMat = 0;
+    writeSmoothTube(horseMesh, LIMB_RINGS, LIMB_SEGS, scratchPos, scratchCol, scratchTan, limbMat, scratchAo, false, true, emitIdx, ROOT_BLEND_LIMB);
+  }
+
+  /* ---- 5. Continuous Mane Crest, Layered Wind-Whipped Mane, Forelock, Tail Dock & 28-Plume Tail ---- */
+  // 5a. Continuous sculpted hair crest along neck topline so locks emerge from a solid thick mane base!
+  const crestRibbon = [];
+  for (let ci = 0; ci < neckCrestPts.length; ci++) {
+    const cp = neckCrestPts[ci];
+    const f = ci / (neckCrestPts.length - 1);
+    const archH = 0.028 * Math.sin(Math.PI * Math.pow(f, 0.75)) + 0.008;
+    crestRibbon.push([cp[0] + cp[4] * archH, cp[1] + cp[5] * archH, cp[2] + cp[6] * archH + 0.006]);
+  }
+  if (crestRibbon.length >= 4) {
+    writeHairRibbon(horseMesh, crestRibbon, 0.028, 0.018, fF.R, pal.maneRoot, pal.maneTip, emitIdx);
+  }
+
+  // 5b. 28 overlapping curved 3D mane locks draping naturally with traveling stride wave
+  const MANE_COUNT = LITE ? 16 : 28;
+  const ribbonPts = [[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0]];
+  for (let mi = 0; mi < MANE_COUNT; mi++) {
+    const u = mi / (MANE_COUNT - 1);
+    const cf = u * (neckCrestPts.length - 1);
+    const ci = Math.min(neckCrestPts.length - 2, Math.floor(cf));
+    const ct = cf - ci;
+    const cA = neckCrestPts[ci], cB = neckCrestPts[ci + 1];
+    const rootX = lerp(cA[0], cB[0], ct);
+    const rootY = lerp(cA[1], cB[1], ct) - 0.006;
+    const rootZ = lerp(cA[2], cB[2], ct);
+    const neckW = lerp(cA[3], cB[3], ct);
+
+    const sideSign = (mi % 8 === 4) ? -1 : 1;
+    const lockLen = 0.22 + 0.07 * Math.sin(u * Math.PI) + 0.025 * Math.sin(mi * 2.3);
+    const lift = Math.max(0, -st.heaveY * 2.1) + 0.058 * Math.sin(th - 1.15 - u * 2.5 - (mi % 3) * 0.22);
+
+    for (let k = 0; k < 5; k++) {
+      const f = k / 4;
+      const waveZ = 0.028 * Math.sin(th - 1.35 - u * 2.1 - f * 1.9 + mi * 0.35) * f;
+      const waveY = lift * f * (1.2 - 0.35 * f);
+      const backStream = -lockLen * (0.48 * f + 0.34 * f * f);
+      const dropY = -lockLen * (0.20 * f + 0.62 * f * f) + waveY + 0.024 * (1 - f);
+      const outZ = sideSign * (neckW * (0.22 + 0.86 * Math.pow(f, 0.62)) + 0.015 * f) + waveZ;
+
+      ribbonPts[k][0] = rootX + fF.F[0] * backStream + fF.U[0] * dropY + fF.R[0] * outZ;
+      ribbonPts[k][1] = rootY + fF.F[1] * backStream + fF.U[1] * dropY + fF.R[1] * outZ;
+      ribbonPts[k][2] = rootZ + fF.F[2] * backStream + fF.U[2] * dropY + fF.R[2] * outZ;
+    }
+    writeHairRibbon(horseMesh, ribbonPts, 0.032, 0.009, scale3(fF.R, sideSign), pal.maneRoot, pal.maneTip, emitIdx);
+  }
+
+  // 5c. 6-lock windswept forelock tossing between the ears over the forehead
+  const FORELOCK_COUNT = LITE ? 4 : 6;
+  for (let fi = 0; fi < FORELOCK_COUNT; fi++) {
+    const sOff = (fi / (FORELOCK_COUNT - 1) - 0.5) * 0.042;
+    const bounce = 0.022 * Math.sin(th - 1.55 - fi * 0.42);
+    for (let k = 0; k < 5; k++) {
+      const f = k / 4;
+      const p = hPt(-0.010 + f * 0.145, 0.072 + 0.018 * Math.sin(f * Math.PI) - 0.010 * f * f + bounce * f, sOff * (1 + 0.5 * f) + 0.010 * Math.sin(th - 1.2 + fi) * f);
+      ribbonPts[k][0] = p[0]; ribbonPts[k][1] = p[1]; ribbonPts[k][2] = p[2];
+    }
+    writeHairRibbon(horseMesh, ribbonPts, 0.018, 0.006, hUp, pal.maneRoot, pal.maneTip, emitIdx);
+  }
+
+  // 5d. Muscular tapered tail dock core + 28 voluminous overlapping 7-segment streaming tail plumes!
+  for (let r = 0; r < DOCK_RINGS; r++) {
+    const f = r / (DOCK_RINGS - 1);
+    const tf = (f * 0.45) * (st.tailPts.length - 1);
+    const ti = Math.min(st.tailPts.length - 2, Math.floor(tf));
+    const cP = mix3(st.tailPts[ti], st.tailPts[ti + 1], tf - ti);
+    const rad = lerp(0.046, 0.016, f);
+    scratchAo[r] = lerp(0.85, 1.0, f);
+    for (let s = 0; s < DOCK_SEGS; s++) {
+      const a = (TAU * s) / DOCK_SEGS;
+      const idx3 = (r * DOCK_SEGS + s) * 3;
+      scratchPos[idx3]     = cP[0];
+      scratchPos[idx3 + 1] = cP[1] + Math.sin(a) * rad;
+      scratchPos[idx3 + 2] = cP[2] + Math.cos(a) * rad;
+      scratchTan[idx3] = -1; scratchTan[idx3 + 1] = 0; scratchTan[idx3 + 2] = 0;
+      scratchCol[idx3] = pal.maneRoot[0]; scratchCol[idx3 + 1] = pal.maneRoot[1]; scratchCol[idx3 + 2] = pal.maneRoot[2];
+    }
+  }
+  writeSmoothTube(horseMesh, DOCK_RINGS, DOCK_SEGS, scratchPos, scratchCol, scratchTan, 1, scratchAo, true, true, emitIdx, null);
+
+  const TAIL_PLUMES = LITE ? 14 : 28;
+  const tailRibbon = [[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0]];
+  for (let pi = 0; pi < TAIL_PLUMES; pi++) {
+    const az = (TAU * pi) / TAIL_PLUMES + 0.15;
+    const cz = Math.cos(az), sz = Math.sin(az);
+    const lenScale = 0.80 + 0.28 * (0.5 + 0.5 * Math.sin(pi * 2.7));
+    for (let k = 0; k < 7; k++) {
+      const f = k / 6;
+      const tf = Math.min(1, f * lenScale) * (st.tailPts.length - 1);
+      const ti = Math.min(st.tailPts.length - 2, Math.floor(tf));
+      const tt = tf - ti;
+      const cP = mix3(st.tailPts[ti], st.tailPts[ti + 1], tt);
+
+      const fan = Math.sin(Math.PI * Math.pow(f, 0.56)) * 0.088 + 0.026 * (1 - f);
+      const flutterY = 0.026 * Math.sin(th - 2.1 - f * 2.6 + pi * 0.85) * f * f;
+      const flutterZ = 0.022 * Math.cos(th - 1.6 - f * 2.3 + pi * 1.15) * f * f;
+
+      tailRibbon[k][0] = cP[0] - 0.04 * f * (1 - Math.abs(sz) * 0.3);
+      tailRibbon[k][1] = Math.max(0.18, cP[1] + sz * fan * 1.18 + flutterY);
+      tailRibbon[k][2] = cP[2] + cz * fan * 0.94 + flutterZ;
+    }
+    const radialN = norm3([0.15, sz, cz]);
+    writeHairRibbon(horseMesh, tailRibbon, 0.034, 0.012, radialN, pal.maneRoot, pal.maneTip, emitIdx);
+  }
+
+  if (emitIdx) {
+    horseMesh.uploadAll();
+    horseTopologyBuilt = true;
+  } else {
+    horseMesh.uploadVerts();
+  }
+}
+
+/* ---------------- Highland Meadow Track, Mountains, Props & GPU-Instanced Grass ---------------- */
+
+const WORLD_STRIDES = 16;
+const WORLD_PERIOD = WORLD_STRIDES * STRIDE_LEN; // 69.12 m exact seamless period!
+
+function hash2(ix, iz) {
+  const n = Math.sin(ix * 127.1 + iz * 311.7) * 43758.5453123;
+  return n - Math.floor(n);
+}
+
+function wrapPeriod(x) {
+  const m = x % WORLD_PERIOD;
+  return m < 0 ? m + WORLD_PERIOD : m;
+}
+
+// Flat packed-loam gallop corridor (|z| <= 1.85 m -> y === 0.000) -> rolling meadow -> ridged alpine sierra!
+function highlandHeight(wx, wz) {
+  const az = Math.abs(wz);
+  if (az <= 1.85) return 0.0;
+  const px = wrapPeriod(wx);
+  const k1 = TAU / WORLD_PERIOD;
+  const sgn = wz > 0 ? 1.0 : -1.0;
+
+  // Smooth meadow swells (|z| = 1.85..22 m)
+  const u = clamp((az - 1.85) / 14.0, 0, 1);
+  const ramp = u * u * (3 - 2 * u);
+  const swell =
+    0.88 * Math.sin(px * k1 * 2.0 + wz * 0.13) +
+    0.52 * Math.cos(px * k1 * 3.0 - wz * 0.19) +
+    0.28 * Math.sin(px * k1 * 5.0 + wz * 0.31);
+  let y = Math.max(0.0, ramp * (0.95 + swell));
+
+  // Continuous ridged-multifractal highland sierra rising beyond |z| > 18 m
+  if (az > 18.0) {
+    const mEnv = smoothstep(18.0, 56.0, az) * (1.0 - 0.35 * smoothstep(66.0, 84.0, az));
+    const r1 = 1.0 - Math.abs(Math.sin(px * k1 * 2.0 + sgn * 0.9 + az * 0.045));
+    const r2 = 1.0 - Math.abs(Math.sin(px * k1 * 5.0 - sgn * 1.7 - az * 0.085));
+    const r3 = 1.0 - Math.abs(Math.cos(px * k1 * 9.0 + sgn * 2.4 + az * 0.14));
+    const ridge = (r1 * r1 * 0.54 + r2 * r2 * 0.30 + r3 * 0.16);
+    y += mEnv * (3.6 + 13.2 * ridge);
+  }
+  return y;
+}
+
+const terrainMesh = createIndexedMesh(16384, 65536, true);
+const propMesh    = createIndexedMesh(8192, 32768, true);
+
+// Build GPU-instanced wind-swaying fescue grass & wildflower VAO once at boot!
+const GRASS_COUNT = LITE ? 1100 : (IS_COARSE ? 1800 : 3400);
+const grassVao = gl.createVertexArray();
+let grassIndexCount = 0;
+(function initInstancedGrass() {
+  // 5-level tapered blade (10 verts, 8 tris = 24 indices)
+  const bladeVerts = new Float32Array([
+    -0.5, 0.00,  0.5, 0.00,
+    -0.5, 0.28,  0.5, 0.28,
+    -0.5, 0.56,  0.5, 0.56,
+    -0.5, 0.82,  0.5, 0.82,
+     0.0, 1.00,  0.0, 1.00,
+  ]);
+  const bladeIdx = new Uint16Array([
+    0,1,3, 0,3,2,
+    2,3,5, 2,5,4,
+    4,5,7, 4,7,6,
+    6,7,8,
+  ]);
+  grassIndexCount = bladeIdx.length;
+
+  const instPos   = new Float32Array(GRASS_COUNT * 4);
+  const instStyle = new Float32Array(GRASS_COUNT * 4);
+  for (let i = 0; i < GRASS_COUNT; i++) {
+    const px = hash2(i, 3) * WORLD_PERIOD;
+    const side = (i & 1) ? 1 : -1;
+    // Dense verge right along the track border (|z| = 1.48..14.5 m), never blocking hooves on |z| < 0.5!
+    const u = Math.pow(hash2(i, 7), 1.55);
+    const z = side * (1.46 + u * 13.5);
+    const y = highlandHeight(px, z);
+    const h = (0.20 + 0.28 * hash2(i, 11)) * (Math.abs(z) < 2.2 ? 0.78 : 1.0);
+    instPos[i * 4]     = px;
+    instPos[i * 4 + 1] = y - 0.015;
+    instPos[i * 4 + 2] = z;
+    instPos[i * 4 + 3] = h;
+
+    instStyle[i * 4]     = hash2(i, 17) * TAU;
+    instStyle[i * 4 + 1] = 0.16 + 0.30 * hash2(i, 23);
+    instStyle[i * 4 + 2] = hash2(i, 29) * TAU;
+    instStyle[i * 4 + 3] = hash2(i, 37);
+  }
+
+  gl.bindVertexArray(grassVao);
+  const bVbo = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bVbo);
+  gl.bufferData(gl.ARRAY_BUFFER, bladeVerts, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 8, 0);
+
+  const bIbo = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bIbo);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, bladeIdx, gl.STATIC_DRAW);
+
+  const pVbo = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, pVbo);
+  gl.bufferData(gl.ARRAY_BUFFER, instPos, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 16, 0);
+  gl.vertexAttribDivisor(1, 1);
+
+  const sVbo = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, sVbo);
+  gl.bufferData(gl.ARRAY_BUFFER, instStyle, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 16, 0);
+  gl.vertexAttribDivisor(2, 1);
+
+  gl.bindVertexArray(null);
+})();
+
+// Pre-seeded granite boulders and split-rail timber paddock fence
+const HIGHLAND_PROPS = (() => {
+  const boulders = [];
+  for (let i = 0; i < 28; i++) {
+    const px = (i + 0.39 * hash2(i, 41)) * (WORLD_PERIOD / 28);
+    const side = (i % 2 === 0) ? -1 : 1;
+    const z = side * (3.2 + 11.5 * hash2(i, 43));
+    const r = 0.26 + 0.42 * hash2(i, 47);
+    boulders.push({ px, z, r, h: r * (0.48 + 0.26 * hash2(i, 53)), rot: hash2(i, 59) * TAU });
+  }
+  const postCount = 12;
+  const postStep = WORLD_PERIOD / postCount;
+  const posts = [];
+  for (let i = 0; i < postCount; i++) {
+    posts.push({ px: i * postStep + 1.2, z: -2.85, lean: (hash2(i, 71) - 0.5) * 0.05 });
+  }
+  return { boulders, posts, postStep };
+})();
+
+function pushFlatQuad(mesh, a, b, c, d, col, matId, ao = 1.0) {
+  const base = mesh.allocVerts(4);
+  const v = mesh.vData;
+  const e1x = b[0] - a[0], e1y = b[1] - a[1], e1z = b[2] - a[2];
+  const e2x = c[0] - a[0], e2y = c[1] - a[1], e2z = c[2] - a[2];
+  let nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+  const nl = Math.hypot(nx, ny, nz) || 1;
+  nx /= nl; ny /= nl; nz /= nl;
+  const tl = Math.hypot(e1x, e1y, e1z) || 1;
+  const tx = e1x / tl, ty = e1y / tl, tz = e1z / tl;
+  const pts = [a, b, c, d];
+  for (let i = 0; i < 4; i++) {
+    const o = (base + i) * VERT_FLOATS;
+    v[o] = pts[i][0]; v[o + 1] = pts[i][1]; v[o + 2] = pts[i][2];
+    v[o + 3] = nx; v[o + 4] = ny; v[o + 5] = nz;
+    v[o + 6] = tx; v[o + 7] = ty; v[o + 8] = tz;
+    v[o + 9] = col[0]; v[o + 10] = col[1]; v[o + 11] = col[2];
+    v[o + 12] = matId; v[o + 13] = ao;
+  }
+  mesh.pushQuad(base, base + 1, base + 2, base + 3);
+}
+
+function emitGraniteBoulder(mesh, cx, y0, cz, r, h, rot) {
+  const rings = 4, segs = 8;
+  for (let rI = 0; rI < rings; rI++) {
+    const f = rI / (rings - 1);
+    const y = y0 - 0.04 + h * Math.sin(f * Math.PI * 0.52);
+    const sc = Math.cos(f * Math.PI * 0.46);
+    scratchAo[rI] = lerp(0.65, 1.0, f);
+    for (let s = 0; s < segs; s++) {
+      const a = rot + (TAU * s) / segs;
+      const wob = 0.84 + 0.22 * Math.sin(s * 2.3 + rot);
+      const idx3 = (rI * segs + s) * 3;
+      scratchPos[idx3]     = cx + Math.cos(a) * r * sc * wob;
+      scratchPos[idx3 + 1] = y;
+      scratchPos[idx3 + 2] = cz + Math.sin(a) * r * sc * wob;
+      scratchTan[idx3] = 1; scratchTan[idx3 + 1] = 0; scratchTan[idx3 + 2] = 0;
+      const moss = smoothstep(0.55, 0.95, f);
+      scratchCol[idx3]     = lerp(0.115, 0.068, moss);
+      scratchCol[idx3 + 1] = lerp(0.110, 0.095, moss);
+      scratchCol[idx3 + 2] = lerp(0.105, 0.045, moss);
+    }
+  }
+  writeSmoothTube(mesh, rings, segs, scratchPos, scratchCol, scratchTan, 4, scratchAo, false, true, true, null);
+}
+
+function emitTimberFence(mesh, cx, y0, cz, lean, nextX) {
+  const wood = [0.092, 0.052, 0.028];
+  const cap  = [0.130, 0.078, 0.044];
+  const hw = 0.052, topH = 0.94, dx = lean * 0.4;
+  const b0 = [cx - hw, y0 - 0.03, cz - hw], b1 = [cx + hw, y0 - 0.03, cz - hw];
+  const b2 = [cx + hw, y0 - 0.03, cz + hw], b3 = [cx - hw, y0 - 0.03, cz + hw];
+  const t0 = [cx - hw * 0.86 + dx, y0 + topH, cz - hw * 0.86];
+  const t1 = [cx + hw * 0.86 + dx, y0 + topH, cz - hw * 0.86];
+  const t2 = [cx + hw * 0.86 + dx, y0 + topH, cz + hw * 0.86];
+  const t3 = [cx - hw * 0.86 + dx, y0 + topH, cz + hw * 0.86];
+  pushFlatQuad(mesh, b0, b1, t1, t0, wood, 4, 0.88);
+  pushFlatQuad(mesh, b1, b2, t2, t1, wood, 4, 0.88);
+  pushFlatQuad(mesh, b2, b3, t3, t2, wood, 4, 0.88);
+  pushFlatQuad(mesh, b3, b0, t0, t3, wood, 4, 0.88);
+  pushFlatQuad(mesh, t0, t1, t2, t3, cap,  4, 0.98);
+
+  for (const ry of [0.41, 0.75]) {
+    const rh = 0.028, rd = 0.017;
+    const a0 = [cx, y0 + ry - rh, cz + rd], a1 = [nextX, y0 + ry - rh, cz + rd];
+    const a2 = [nextX, y0 + ry + rh, cz + rd], a3 = [cx, y0 + ry + rh, cz + rd];
+    const c0 = [nextX, y0 + ry - rh, cz - rd], c1 = [cx, y0 + ry - rh, cz - rd];
+    const c2 = [cx, y0 + ry + rh, cz - rd], c3 = [nextX, y0 + ry + rh, cz - rd];
+    pushFlatQuad(mesh, a0, a1, a2, a3, wood, 4, 0.90);
+    pushFlatQuad(mesh, c0, c1, c2, c3, wood, 4, 0.90);
+    pushFlatQuad(mesh, a3, a2, c3, c2, cap,  4, 0.96);
+  }
+}
+
+// World-pinned hoofprints (fed into terrain shader uniform uPrints[24]) & backlit turf clods
+const hoofprints = [];
+const dustPuffs = [];
+const MAX_PRINTS = 24;
+const MAX_DUST = LITE ? 32 : 64;
+const prevLegStance = { LH: false, RH: false, LF: false, RF: false };
+const printUniformData = new Float32Array(24 * 4);
+
+function stampHoofprint(wx, wz, legId) {
+  for (let i = hoofprints.length - 1; i >= 0; i--) {
+    if (Math.abs(hoofprints[i].x - wx) < 0.08 && Math.abs(hoofprints[i].z - wz) < 0.08) return;
+  }
+  hoofprints.push({ x: wx, z: wz, legId, age: 0 });
+  if (hoofprints.length > MAX_PRINTS) hoofprints.shift();
+}
+
+function spawnHoofDust(wx, wz, scale = 1.0) {
+  const count = LITE ? 3 : 5;
+  for (let i = 0; i < count; i++) {
+    if (dustPuffs.length >= MAX_DUST) dustPuffs.shift();
+    const ang = (Math.random() - 0.5) * 1.25;
+    const spd = (1.15 + Math.random() * 1.45) * scale;
+    dustPuffs.push({
+      x: wx - 0.04 + (Math.random() - 0.5) * 0.06,
+      y: 0.028 + Math.random() * 0.03,
+      z: wz + Math.sin(ang) * 0.05,
+      vx: -spd * (0.78 + Math.random() * 0.42),
+      vy: 0.78 + Math.random() * 0.85,
+      vz: Math.sin(ang) * 0.58,
+      age: 0,
+      life: 0.45 + Math.random() * 0.28,
+      r0: 0.024 + Math.random() * 0.020,
+    });
+  }
+}
+
+function shiftWorldEffects(dx) {
+  for (const hp of hoofprints) hp.x += dx;
+  for (const dp of dustPuffs) dp.x += dx;
+}
+
+function updateWorldEffects(dt) {
+  for (const hp of hoofprints) hp.age = Math.min(1, hp.age + dt * 0.04);
+  for (let i = dustPuffs.length - 1; i >= 0; i--) {
+    const p = dustPuffs[i];
+    p.age += dt;
+    if (p.age >= p.life) { dustPuffs.splice(i, 1); continue; }
+    p.x += p.vx * dt;
+    p.y = Math.max(0.012, p.y + p.vy * dt);
+    p.z += p.vz * dt;
+    p.vx *= (1 - 2.2 * dt);
+    p.vy -= 2.8 * dt;
+  }
+}
+
+function buildHighlandScene(centerX) {
+  terrainMesh.reset();
+  propMesh.reset();
+
+  // 1. Continuous Welded Highland Valley -> Rolling Meadow -> Ridged Alpine Sierra
+  const xSpan = LITE ? 46 : 62;
+  const xStep = 1.38; // 4.14 / 3 = 1.38 m exact stride sub-harmonic!
+  const zBands = [-80, -70, -61, -53, -45, -37, -29, -21, -14, -8.5, -4.8, -2.85, -1.85, -1.25, -0.65, 0.0, 0.65, 1.25, 1.85, 2.85, 4.8, 8.5, 14, 21, 29, 37, 45, 53, 61, 70, 80];
+  const nxCols = Math.ceil((xSpan * 2) / xStep) + 1;
+  const nzRows = zBands.length;
+  const xStart = Math.floor((centerX - xSpan) / xStep) * xStep;
+
+  const baseV = terrainMesh.allocVerts(nxCols * nzRows);
+  const v = terrainMesh.vData;
+
+  for (let ix = 0; ix < nxCols; ix++) {
+    const gx = xStart + ix * xStep;
+    for (let iz = 0; iz < nzRows; iz++) {
+      const gz = zBands[iz];
+      const gy = highlandHeight(gx, gz);
+      const eps = Math.abs(gz) > 20 ? 0.85 : 0.35;
+      const hx = highlandHeight(gx + eps, gz) - highlandHeight(gx - eps, gz);
+      const hz = highlandHeight(gx, gz + eps) - highlandHeight(gx, gz - eps);
+      const nrm = norm3([-hx, 2 * eps, -hz]);
+
+      const az = Math.abs(gz);
+      const grassMix = smoothstep(1.05, 2.15, az);
+      const foothillMix = smoothstep(12.0, 28.0, az);
+      const rockMix = clamp(smoothstep(24.0, 44.0, az) * 0.72 + (1.0 - nrm[1]) * 1.45, 0, 1) * smoothstep(16.0, 24.0, az);
+      const snowMix = smoothstep(12.5, 17.5, gy + 1.4 * nrm[1]) * smoothstep(32.0, 44.0, az);
+
+      const loam    = [0.135, 0.082, 0.046];
+      const meadow  = [0.038, 0.092, 0.022];
+      const heather = [0.046, 0.068, 0.032];
+      const slate   = [0.082, 0.088, 0.106];
+      const snow    = [0.58,  0.62,  0.70];
+
+      let cr = lerp(loam[0], meadow[0], grassMix);
+      let cg = lerp(loam[1], meadow[1], grassMix);
+      let cb = lerp(loam[2], meadow[2], grassMix);
+      cr = lerp(cr, heather[0], foothillMix * 0.65);
+      cg = lerp(cg, heather[1], foothillMix * 0.65);
+      cb = lerp(cb, heather[2], foothillMix * 0.65);
+      cr = lerp(cr, slate[0], rockMix);
+      cg = lerp(cg, slate[1], rockMix);
+      cb = lerp(cb, slate[2], rockMix);
+      cr = lerp(cr, snow[0], snowMix);
+      cg = lerp(cg, snow[1], snowMix);
+      cb = lerp(cb, snow[2], snowMix);
+
+      const o = (baseV + ix * nzRows + iz) * VERT_FLOATS;
+      v[o] = gx; v[o + 1] = gy; v[o + 2] = gz;
+      v[o + 3] = nrm[0]; v[o + 4] = nrm[1]; v[o + 5] = nrm[2];
+      v[o + 6] = 1; v[o + 7] = 0; v[o + 8] = 0;
+      v[o + 9] = cr; v[o + 10] = cg; v[o + 11] = cb;
+      v[o + 12] = az > 24.0 ? 4 : 3;
+      v[o + 13] = az > 24.0 ? lerp(0.75, 1.0, clamp(gy / 16.0, 0, 1)) : 0.96;
+    }
+  }
+  for (let ix = 0; ix < nxCols - 1; ix++) {
+    for (let iz = 0; iz < nzRows - 1; iz++) {
+      const a = baseV + ix * nzRows + iz;
+      const b = baseV + ix * nzRows + (iz + 1);
+      const c = baseV + (ix + 1) * nzRows + (iz + 1);
+      const d = baseV + (ix + 1) * nzRows + iz;
+      terrainMesh.pushQuad(a, b, c, d);
+    }
+  }
+
+  // 2. Periodic Granite Boulders & Split-Rail Paddock Fence
+  const propSpan = LITE ? 34 : 46;
+  const baseTile = Math.floor(centerX / WORLD_PERIOD);
+  for (let k = -1; k <= 1; k++) {
+    const tileX = (baseTile + k) * WORLD_PERIOD;
+    for (const p of HIGHLAND_PROPS.posts) {
+      const wx = tileX + p.px;
+      if (Math.abs(wx - centerX) > propSpan) continue;
+      emitTimberFence(propMesh, wx, highlandHeight(wx, p.z), p.z, p.lean, wx + HIGHLAND_PROPS.postStep);
+    }
+    for (const b of HIGHLAND_PROPS.boulders) {
+      const wx = tileX + b.px;
+      if (Math.abs(wx - centerX) > propSpan) continue;
+      emitGraniteBoulder(propMesh, wx, highlandHeight(wx, b.z), b.z, b.r, b.h, b.rot);
+    }
+  }
+
+  // 3. Kicked Turf Clods & Dust Puffs
+  for (let i = 0; i < dustPuffs.length; i++) {
+    const p = dustPuffs[i];
+    const u = p.age / p.life;
+    const r = p.r0 * (1.0 + 1.8 * u) * (1.0 - 0.65 * u * u);
+    emitGraniteBoulder(propMesh, p.x, p.y - r * 0.3, p.z, r, r * 0.9, u * 3.0);
+  }
+
+  // Sync hoofprint uniform array
+  printUniformData.fill(0);
+  for (let i = 0; i < hoofprints.length && i < 24; i++) {
+    const hp = hoofprints[i];
+    printUniformData[i * 4]     = hp.x;
+    printUniformData[i * 4 + 1] = hp.z;
+    printUniformData[i * 4 + 2] = hp.age;
+    printUniformData[i * 4 + 3] = 1.0;
+  }
+
+  terrainMesh.uploadAll();
+  propMesh.uploadAll();
+}
+
+/* ---------------- Synthesized Web Audio 4-Beat Gallop, Grit & Breath ---------------- */
+
+const audio = {
+  ctx: null,
+  noiseBuf: null,
+  windGain: null,
+  windFilter: null,
+  muted: false,
+  unlocked: false,
+  strikes: 0,
+};
+const audioHintEl = document.getElementById('audiohint');
+
+function initAudioOnGesture() {
+  if (audio.ctx) {
+    if (audio.ctx.state === 'suspended') audio.ctx.resume().catch(() => {});
+    audio.unlocked = true;
+    return;
+  }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  try {
+    const ctx = new AC();
+    audio.ctx = ctx;
+    const len = Math.floor(ctx.sampleRate * 1.6);
+    const nb = ctx.createBuffer(1, len, ctx.sampleRate);
+    const ch = nb.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++) {
+      const w = Math.random() * 2 - 1;
+      last = (last + 0.08 * w) / 1.08;
+      ch[i] = w * 0.62 + last * 1.45;
+    }
+    audio.noiseBuf = nb;
+
+    // Highland valley breeze
+    const src = ctx.createBufferSource();
+    src.buffer = nb;
+    src.loop = true;
+    const flt = ctx.createBiquadFilter();
+    flt.type = 'bandpass';
+    flt.frequency.value = 330;
+    flt.Q.value = 0.85;
+    const gn = ctx.createGain();
+    gn.gain.value = audio.muted ? 0 : 0.020;
+    src.connect(flt);
+    flt.connect(gn);
+    gn.connect(ctx.destination);
+    src.start();
+
+    audio.windFilter = flt;
+    audio.windGain = gn;
+    audio.unlocked = true;
+  } catch {
+    // Cleanly ignore headless / restricted audio errors
+  }
+}
+
+function playHoofStrike(legId) {
+  audio.strikes++;
+  if (audio.muted || !audio.ctx || audio.ctx.state !== 'running') return;
+  const ctx = audio.ctx;
+  const t = ctx.currentTime;
+  const pitchMap = { LH: 92, RH: 100, LF: 109, RF: 118 };
+  const f0 = (pitchMap[legId] || 105) * (0.95 + Math.random() * 0.10);
+  const vol = timeScale < 0.5 ? 0.14 : 0.22;
+
+  // Deep resonant loam turf thud
+  const osc = ctx.createOscillator();
+  const og = ctx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(f0, t);
+  osc.frequency.exponentialRampToValueAtTime(34, t + 0.078);
+  og.gain.setValueAtTime(0.001, t);
+  og.gain.linearRampToValueAtTime(vol, t + 0.005);
+  og.gain.exponentialRampToValueAtTime(0.0008, t + 0.09);
+  osc.connect(og);
+  og.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.095);
+
+  // Crisp soil & turf shear transient
+  if (audio.noiseBuf) {
+    const ns = ctx.createBufferSource();
+    ns.buffer = audio.noiseBuf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(740 + (legId === 'RF' ? 160 : 0), t);
+    bp.Q.value = 1.35;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.001, t);
+    ng.gain.linearRampToValueAtTime(vol * 0.45, t + 0.004);
+    ng.gain.exponentialRampToValueAtTime(0.0008, t + 0.058);
+    ns.connect(bp);
+    bp.connect(ng);
+    ng.connect(ctx.destination);
+    ns.start(t, Math.random() * 0.8, 0.065);
+  }
+}
+
+function playFlightExhale() {
+  if (audio.muted || !audio.ctx || audio.ctx.state !== 'running' || !audio.noiseBuf || timeScale < 0.6) return;
+  const ctx = audio.ctx;
+  const t = ctx.currentTime;
+  const ns = ctx.createBufferSource();
+  ns.buffer = audio.noiseBuf;
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.setValueAtTime(880, t);
+  bp.Q.value = 2.3;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0008, t);
+  g.gain.linearRampToValueAtTime(0.030, t + 0.028);
+  g.gain.exponentialRampToValueAtTime(0.0008, t + 0.135);
+  ns.connect(bp);
+  bp.connect(g);
+  g.connect(ctx.destination);
+  ns.start(t, Math.random() * 0.5, 0.145);
+}
+
+audioHintEl.addEventListener('click', e => {
+  e.stopPropagation();
+  initAudioOnGesture();
+  audio.muted = !audio.muted;
+  audioHintEl.textContent = audio.muted ? 'hooves off' : 'hooves on';
+  audioHintEl.classList.toggle('off', audio.muted);
+  if (audio.windGain && audio.ctx) {
+    audio.windGain.gain.setTargetAtTime(audio.muted ? 0 : 0.020, audio.ctx.currentTime, 0.05);
+  }
+});
+
+/* ---------------- Camera, Controls, Coat Switcher & Render Loop ---------------- */
+
+const SUN_DIR = norm3([-0.38, 0.42, 0.82]);
+const CAM_PRESETS = [
+  { yaw:  0.00, pitch: 0.06, dist: 3.60 }, // 1: Pure Muybridge lateral profile
+  { yaw:  0.48, pitch: 0.13, dist: 3.75 }, // 2: Heroic three-quarter lead view
+  { yaw:  0.22, pitch: -0.01, dist: 2.90 }, // 3: Low ground-level hoof-lock study
+  { yaw: -0.50, pitch: 0.20, dist: 4.25 }, // 4: Trailing quarter & tail plume angle
+];
+let presetIdx = 1;
+
+const cam = {
+  yaw: 0.34, pitch: 0.10, dist: 3.70,
+  tYaw: 0.34, tPitch: 0.10, tDist: 3.70,
+  auto: true,
+};
+
+let screenMode = 'attract';
+let strideIndex = 0;
+let phase = 0.0;
+let strideFreq = 1.76;
+let timeScale = 1.0;
+let paused = false;
+let frames = 0;
+let readyFlag = false;
+let lastNow = 0;
+let worldClock = 0;
+let W = 0, H = 0, DPR = 1;
+let currentState = evaluateHorse(0, 0);
+
+// Seed initial horseshoe prints behind start
+for (let s = -2; s <= -1; s++) {
+  for (const d of LEGS_DEF) {
+    stampHoofprint(s * STRIDE_LEN + d.on * STRIDE_LEN + d.tdX, d.zOff, d.id);
+  }
+}
+
+const coatBtnEl = document.getElementById('coatbtn');
+function cycleCoat(nextIdx) {
+  coatIdx = ((nextIdx !== undefined ? nextIdx : coatIdx + 1) % COATS.length + COATS.length) % COATS.length;
+  coatBtnEl.textContent = COATS[coatIdx].label;
+}
+coatBtnEl.addEventListener('click', e => {
+  e.stopPropagation();
+  initAudioOnGesture();
+  dismissAttract();
+  cycleCoat();
+});
+
+const ATTRACT_MSGS = [
+  'continuous spline anatomy · flexing musculature · Kajiya-Kay hair',
+  'LH → RH → LF → RF · gathered suspension flight',
+  '2048² PCF shadow map · zero stance hoof slip',
+  'drag to orbit · space for Muybridge study · C cycles coat',
+];
+let attractMsgIdx = 0;
+const amsgEl = document.getElementById('amsg');
+setInterval(() => {
+  if (screenMode !== 'attract' || !amsgEl) return;
+  amsgEl.style.opacity = '0';
+  setTimeout(() => {
+    attractMsgIdx = (attractMsgIdx + 1) % ATTRACT_MSGS.length;
+    amsgEl.textContent = ATTRACT_MSGS[attractMsgIdx];
+    amsgEl.style.opacity = '1';
+  }, 320);
+}, 3200);
+
+function dismissAttract() {
+  if (screenMode === 'attract') {
+    screenMode = 'play';
+    document.getElementById('attract').classList.add('gone');
+  }
+}
+
+function resize() {
+  const maxDpr = LITE ? 1 : (IS_COARSE ? 1.5 : 2);
+  DPR = Math.min(window.devicePixelRatio || 1, maxDpr);
+  const cw = Math.max(4, Math.floor(canvas.clientWidth * DPR));
+  const ch = Math.max(4, Math.floor(canvas.clientHeight * DPR));
+  if (cw === W && ch === H) return;
+  W = cw; H = ch;
+  canvas.width = W; canvas.height = H;
+  rebuildHdrTargets(W, H);
+}
+resize();
+addEventListener('resize', resize);
+
+// Multi-pointer drag orbit + two-finger pinch zoom
+const pointers = new Map();
+let pinchDist0 = 0;
+
+canvas.addEventListener('pointerdown', e => {
+  initAudioOnGesture();
+  dismissAttract();
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  cam.auto = false;
+  try { canvas.setPointerCapture(e.pointerId); } catch {}
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    pinchDist0 = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+  }
+});
+canvas.addEventListener('pointermove', e => {
+  const prev = pointers.get(e.pointerId);
+  if (!prev) return;
+  const cur = { x: e.clientX, y: e.clientY };
+  pointers.set(e.pointerId, cur);
+  if (pointers.size === 1) {
+    cam.tYaw -= (cur.x - prev.x) * 0.0065;
+    cam.tPitch = clamp(cam.tPitch + (cur.y - prev.y) * 0.005, -0.02, 1.12);
+  } else if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    if (pinchDist0 > 0) cam.tDist = clamp(cam.tDist * (pinchDist0 / d), 2.1, 8.5);
+    pinchDist0 = d;
+  }
+});
+function endPointer(e) {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinchDist0 = 0;
+}
+addEventListener('pointerup', endPointer);
+addEventListener('pointercancel', endPointer);
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  cam.tDist = clamp(cam.tDist + e.deltaY * 0.003, 2.1, 8.5);
+}, { passive: false });
+
+document.getElementById('btn-study').addEventListener('click', e => {
+  e.stopPropagation();
+  initAudioOnGesture();
+  dismissAttract();
+  timeScale = timeScale < 0.5 ? 1.0 : 0.22;
+});
+document.getElementById('btn-view').addEventListener('click', e => {
+  e.stopPropagation();
+  initAudioOnGesture();
+  dismissAttract();
+  presetIdx = (presetIdx + 1) % CAM_PRESETS.length;
+  const p = CAM_PRESETS[presetIdx];
+  cam.auto = false; cam.tYaw = p.yaw; cam.tPitch = p.pitch; cam.tDist = p.dist;
+});
+document.getElementById('btn-coat').addEventListener('click', e => {
+  e.stopPropagation();
+  initAudioOnGesture();
+  dismissAttract();
+  cycleCoat();
+});
+
+addEventListener('keydown', e => {
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+  initAudioOnGesture();
+  dismissAttract();
+  if (e.code === 'Space') { e.preventDefault(); timeScale = timeScale < 0.5 ? 1.0 : 0.22; }
+  if (e.code === 'KeyC')  { e.preventDefault(); cycleCoat(); }
+  if (e.code === 'ArrowUp')    { e.preventDefault(); strideFreq = clamp(strideFreq + 0.12, 1.15, 2.35); }
+  if (e.code === 'ArrowDown')  { e.preventDefault(); strideFreq = clamp(strideFreq - 0.12, 1.15, 2.35); }
+  if (e.code === 'ArrowLeft')  { e.preventDefault(); cam.auto = false; cam.tYaw -= 0.14; }
+  if (e.code === 'ArrowRight') { e.preventDefault(); cam.auto = false; cam.tYaw += 0.14; }
+  if (e.key >= '1' && e.key <= '4') {
+    presetIdx = (+e.key) - 1;
+    const p = CAM_PRESETS[presetIdx];
+    cam.auto = false; cam.tYaw = p.yaw; cam.tPitch = p.pitch; cam.tDist = p.dist;
+  }
+});
+
+function syncFootfallEffects(st, emitParticles) {
+  for (const d of LEGS_DEF) {
+    const inS = st.legs[d.id].inStance;
+    if (inS && !prevLegStance[d.id]) {
+      const h = st.legs[d.id].hoof;
+      stampHoofprint(h[0], h[2], d.id);
+      if (emitParticles) {
+        spawnHoofDust(h[0], h[2], timeScale < 0.5 ? 0.65 : 1.0);
+        playHoofStrike(d.id);
+      }
+    }
+    prevLegStance[d.id] = inS;
+  }
+}
+
+function renderScene() {
+  resize();
+  currentState = evaluateHorse(strideIndex, phase, 0);
+  buildHorseHD(currentState);
+  buildHighlandScene(currentState.refX);
+
+  const pal = COATS[coatIdx];
+  const aspect = W / H;
+  const portraitScale = aspect < 1 ? clamp(1.04 / aspect, 1.0, 2.35) : 1.0;
+  const effDist = cam.dist * portraitScale;
+  const target = [currentState.refX + 0.08, 1.02, 0];
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const sy = Math.sin(cam.yaw),   cy = Math.cos(cam.yaw);
+  const eye = [
+    target[0] + sy * cp * effDist,
+    Math.max(0.18, target[1] + sp * effDist),
+    target[2] + cy * cp * effDist,
+  ];
+
+  const fovY = 0.66;
+  const proj = mat4Perspective(fovY, aspect, 0.12, 180.0);
+  const view = mat4LookAt(eye, target, [0, 1, 0]);
+  const vp = mat4Mul(proj, view);
+
+  // Tightly fitted sun orthographic shadow frustum following the horse
+  const sunCenter = [currentState.refX + 0.1, 0.85, 0];
+  const sunEye = add3(sunCenter, scale3(SUN_DIR, 14.0));
+  const lightView = mat4LookAt(sunEye, sunCenter, [0, 1, 0]);
+  const lightProj = mat4Ortho(-4.2, 4.2, -3.2, 3.2, 1.0, 28.0);
+  const lightVP = mat4Mul(lightProj, lightView);
+
+  // ---- PASS 1: 2048x2048 Directional Depth Shadow Map ----
+  gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFbo);
+  gl.viewport(0, 0, SHADOW_RES, SHADOW_RES);
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthMask(true);
+  gl.clear(gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.CULL_FACE);
+  gl.cullFace(gl.BACK);
+  gl.useProgram(progShadow);
+  gl.uniformMatrix4fv(uShadow.lightVP, false, lightVP);
+  horseMesh.draw();
+  propMesh.draw();
+
+  // ---- PASS 2: Multisampled HDR Scene Pass ----
+  const sceneFbo = fboMsaa || fboResolve;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sceneFbo);
+  gl.viewport(0, 0, W, H);
+  gl.clearColor(0.05, 0.07, 0.11, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  // 2a. Atmospheric Sky & Drifting Cirrus
+  const fwd = norm3(sub3(target, eye));
+  const right = norm3(cross3(fwd, [0, 1, 0]));
+  const up = cross3(right, fwd);
+  gl.disable(gl.DEPTH_TEST);
+  gl.disable(gl.CULL_FACE);
+  gl.useProgram(progSky);
+  gl.uniform3fv(uSky.camFwd, fwd);
+  gl.uniform3fv(uSky.camRight, right);
+  gl.uniform3fv(uSky.camUp, up);
+  gl.uniform1f(uSky.tanHalfFov, Math.tan(fovY * 0.5));
+  gl.uniform1f(uSky.aspect, aspect);
+  gl.uniform3fv(uSky.sunDir, SUN_DIR);
+  gl.uniform1f(uSky.time, worldClock);
+  gl.bindVertexArray(vaoEmpty);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // 2b. Highland Terrain, Mountains, Fence, Boulders & Smooth HD Thoroughbred
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthMask(true);
+  gl.enable(gl.CULL_FACE);
+  gl.cullFace(gl.BACK);
+  gl.useProgram(progMain);
+  gl.uniformMatrix4fv(uMain.viewProj, false, vp);
+  gl.uniformMatrix4fv(uMain.lightVP, false, lightVP);
+  gl.uniform3fv(uMain.sunDir, SUN_DIR);
+  gl.uniform3fv(uMain.camPos, eye);
+  gl.uniform3f(uMain.refCenter, currentState.refX, 0, 0);
+  gl.uniform3fv(uMain.subsurface, pal.subsurface);
+  gl.uniform3fv(uMain.hairSpec, pal.hairSpec);
+  gl.uniform1f(uMain.dappleAmt, pal.dappleAmt);
+  gl.uniform4fv(uMain.prints, printUniformData);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, shadowTex);
+  gl.uniform1i(uMain.shadowMap, 0);
+
+  terrainMesh.draw();
+  propMesh.draw();
+  horseMesh.draw();
+
+  // 2c. GPU-Instanced Wind-Rippled Fescue Grass & Wildflowers
+  gl.disable(gl.CULL_FACE);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.useProgram(progGrass);
+  gl.uniformMatrix4fv(uGrass.viewProj, false, vp);
+  gl.uniformMatrix4fv(uGrass.lightVP, false, lightVP);
+  gl.uniform1f(uGrass.centerX, currentState.refX);
+  gl.uniform1f(uGrass.period, WORLD_PERIOD);
+  gl.uniform1f(uGrass.time, worldClock);
+  gl.uniform3fv(uGrass.sunDir, SUN_DIR);
+  gl.uniform3fv(uGrass.camPos, eye);
+  gl.uniform1i(uGrass.shadowMap, 0);
+  gl.bindVertexArray(grassVao);
+  gl.drawElementsInstanced(gl.TRIANGLES, grassIndexCount, gl.UNSIGNED_SHORT, 0, GRASS_COUNT);
+  gl.disable(gl.BLEND);
+
+  // Resolve 4x MSAA -> HDR texture
+  if (fboMsaa) {
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, fboMsaa);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, fboResolve);
+    gl.blitFramebuffer(0, 0, W, H, 0, 0, W, H, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+  }
+
+  // ---- PASS 3: Half-Res HDR Bright-Pass Bloom + ACES Filmic Composite ----
+  gl.disable(gl.DEPTH_TEST);
+  const bw = Math.max(2, W >> 1), bh = Math.max(2, H >> 1);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fboBloom);
+  gl.viewport(0, 0, bw, bh);
+  gl.useProgram(progBloom);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, texHdr);
+  gl.uniform1i(uBloom.hdrTex, 0);
+  gl.uniform2f(uBloom.texel, 1 / W, 1 / H);
+  gl.bindVertexArray(vaoEmpty);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(progPost);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, texHdr);
+  gl.uniform1i(uPost.hdrTex, 0);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, texBloom);
+  gl.uniform1i(uPost.bloomTex, 1);
+  gl.uniform2f(uPost.bloomTexel, 1 / bw, 1 / bh);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+const telemetryEl = document.getElementById('telemetry');
+function updateTelemetry() {
+  const contacts = LEGS_DEF.filter(d => currentState.legs[d.id].inStance).map(d => d.id).join('+') || 'FLIGHT';
+  const modeTag = timeScale < 0.5 ? 'STUDY · ' : '';
+  telemetryEl.textContent = `${modeTag}phase ${phase.toFixed(2)} · ${contacts} · ${(strideFreq * STRIDE_LEN * timeScale).toFixed(1)} m/s`;
+}
+
+function frame(now) {
+  if (!lastNow) lastNow = now;
+  const dt = Math.min(0.05, Math.max(0, (now - lastNow) / 1000));
+  lastNow = now;
+
+  if (!paused) {
+    const prevPhi = phase;
+    phase += dt * strideFreq * timeScale;
+    worldClock += dt * timeScale;
+
+    if (prevPhi < 0.72 && phase >= 0.72) playFlightExhale();
+
+    while (phase >= 1) {
+      phase -= 1;
+      strideIndex++;
+      if (strideIndex >= WORLD_STRIDES) {
+        strideIndex -= WORLD_STRIDES;
+        shiftWorldEffects(-WORLD_PERIOD);
+      }
+    }
+    updateWorldEffects(dt * timeScale);
+    if (cam.auto) {
+      cam.tYaw += dt * 0.12;
+      cam.yaw = cam.tYaw;
+    }
+    if (audio.windFilter && audio.ctx && !audio.muted) {
+      const targetFreq = 250 + 145 * timeScale + 55 * Math.sin(worldClock * 0.85);
+      audio.windFilter.frequency.setTargetAtTime(targetFreq, audio.ctx.currentTime, 0.08);
+    }
+  }
+  cam.yaw += (cam.tYaw - cam.yaw) * 0.14;
+  cam.pitch += (cam.tPitch - cam.pitch) * 0.14;
+  cam.dist += (cam.tDist - cam.dist) * 0.14;
+
+  renderScene();
+  syncFootfallEffects(currentState, !paused);
+
+  frames++;
+  readyFlag = true;
+  if (frames % 5 === 0) updateTelemetry();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------------- Gait Audit & DEV Test Hook (__horsegeminihdTest) ---------------- */
+
+function auditGait(stepsPerStride = 240, numStrides = 2) {
+  const footfallOrder = [];
+  let maxSlipMm = 0;
+  let maxIkRatio = 0;
+  let flightFrames = 0;
+  let minSwingClearance = Infinity;
+  let minHeave = Infinity, maxHeave = -Infinity;
+  let minPitch = Infinity, maxPitch = -Infinity;
+  let minHeadY = Infinity, maxHeadY = -Infinity;
+  let minTailY = Infinity, maxTailY = -Infinity;
+  const anchors = {};
+
+  for (let s = 0; s < numStrides; s++) {
+    for (let i = 0; i < stepsPerStride; i++) {
+      const ph = i / stepsPerStride;
+      const st = evaluateHorse(s, ph, 0);
+      minHeave = Math.min(minHeave, st.heaveY); maxHeave = Math.max(maxHeave, st.heaveY);
+      minPitch = Math.min(minPitch, st.pitch);  maxPitch = Math.max(maxPitch, st.pitch);
+      minHeadY = Math.min(minHeadY, st.muzzle[1]); maxHeadY = Math.max(maxHeadY, st.muzzle[1]);
+      const tailTipY = st.tailPts[st.tailPts.length - 1][1];
+      minTailY = Math.min(minTailY, tailTipY); maxTailY = Math.max(maxTailY, tailTipY);
+
+      let anyStance = false;
+      for (const d of LEGS_DEF) {
+        const L = st.legs[d.id];
+        if (L.ikRatio > maxIkRatio) maxIkRatio = L.ikRatio;
+        if (L.inStance) {
+          anyStance = true;
+          const key = `${d.id}:${s}`;
+          if (!anchors[key]) {
+            anchors[key] = L.hoof.slice();
+            if (s === 0) footfallOrder.push(d.id);
+          } else {
+            const slip = dist3(L.hoof, anchors[key]) * 1000;
+            if (slip > maxSlipMm) maxSlipMm = slip;
+          }
+        } else {
+          delete anchors[`${d.id}:${s}`];
+          if (L.u === 0 && L.s > 0.12 && L.s < 0.88 && L.hoof[1] < minSwingClearance) {
+            minSwingClearance = L.hoof[1];
+          }
+        }
+      }
+      if (!anyStance && s === 0) flightFrames++;
+    }
+  }
+
+  // Seamless periodic loop check: body-relative pose at phi = 0 vs phi -> 1
+  const p0 = evaluateHorse(0, 0.0, 0);
+  const p1 = evaluateHorse(1, 0.0, 0);
+  const pEnd = evaluateHorse(0, 1 - 1e-7, 0);
+  const lastTi = p0.tailPts.length - 1;
+  let loopSeamMm = Math.max(
+    Math.abs(pEnd.poll[1] - p0.poll[1]) * 1000,
+    Math.abs(pEnd.muzzle[1] - p0.muzzle[1]) * 1000,
+    Math.abs(pEnd.tailPts[lastTi][1] - p0.tailPts[lastTi][1]) * 1000
+  );
+  for (const d of LEGS_DEF) {
+    const rel0 = [p0.legs[d.id].hoof[0] - p0.refX, p0.legs[d.id].hoof[1], p0.legs[d.id].hoof[2]];
+    const rel1 = [p1.legs[d.id].hoof[0] - p1.refX, p1.legs[d.id].hoof[1], p1.legs[d.id].hoof[2]];
+    const relE = [pEnd.legs[d.id].hoof[0] - pEnd.refX, pEnd.legs[d.id].hoof[1], pEnd.legs[d.id].hoof[2]];
+    loopSeamMm = Math.max(loopSeamMm, dist3(rel0, rel1) * 1000, dist3(rel0, relE) * 1000);
+  }
+
+  return {
+    footfallOrder,
+    maxSlipMm: +maxSlipMm.toFixed(6),
+    maxIkRatio: +maxIkRatio.toFixed(4),
+    flightFraction: +(flightFrames / stepsPerStride).toFixed(3),
+    minMidSwingClearanceM: +minSwingClearance.toFixed(4),
+    loopSeamMm: +loopSeamMm.toFixed(6),
+    ranges: {
+      bodyHeaveM: +(maxHeave - minHeave).toFixed(4),
+      bodyPitchRad: +(maxPitch - minPitch).toFixed(4),
+      headMuzzleM: +(maxHeadY - minHeadY).toFixed(4),
+      tailTipM: +(maxTailY - minTailY).toFixed(4),
+    },
+  };
+}
+
+window.__horsegeminihdTest = {
+  get ready() { return readyFlag; },
+  get frames() { return frames; },
+  setPose(opts = {}) {
+    if (opts.stride !== undefined) strideIndex = ((opts.stride | 0) % WORLD_STRIDES + WORLD_STRIDES) % WORLD_STRIDES;
+    if (opts.phase !== undefined) phase = wrapPhase(opts.phase);
+    if (opts.paused !== undefined) paused = !!opts.paused;
+    if (opts.timeScale !== undefined) timeScale = clamp(+opts.timeScale, 0.05, 2.5);
+    if (opts.yaw !== undefined) { cam.yaw = cam.tYaw = +opts.yaw; cam.auto = false; }
+    if (opts.pitch !== undefined) { cam.pitch = cam.tPitch = +opts.pitch; cam.auto = false; }
+    if (opts.dist !== undefined) { cam.dist = cam.tDist = +opts.dist; }
+    if (opts.coat !== undefined) cycleCoat(+opts.coat);
+    if (opts.attract === false) dismissAttract();
+    renderScene();
+    syncFootfallEffects(currentState, false);
+    updateTelemetry();
+    frames++;
+    return this.state();
+  },
+  audit: auditGait,
+  samplePixels(gridX = 24, gridY = 16) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const px = new Uint8Array(4);
+    let warmHorse = 0, darkShadow = 0, skyPixels = 0, meadowPixels = 0, lumaSum = 0;
+    const samples = [];
+    for (let gy = 0; gy < gridY; gy++) {
+      for (let gx = 0; gx < gridX; gx++) {
+        const x = Math.floor(((gx + 0.5) / gridX) * W);
+        const y = Math.floor(((gy + 0.5) / gridY) * H);
+        gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        const r = px[0], g = px[1], b = px[2];
+        lumaSum += 0.299 * r + 0.587 * g + 0.114 * b;
+        samples.push(r, g, b);
+        if (gy > gridY * 0.62 && b > 88) skyPixels++;
+        if (gy >= gridY * 0.24 && gy <= gridY * 0.80 && r > 78 && r > g * 1.30 && g > b * 1.18) warmHorse++;
+        if (gy < gridY * 0.50 && g > r * 0.90 && g > b * 1.20) meadowPixels++;
+        if (gy < gridY * 0.44 && r < 82 && g < 68 && b < 58) darkShadow++;
+      }
+    }
+    return {
+      width: W,
+      height: H,
+      useHdrFloat,
+      meanLuma: +(lumaSum / (gridX * gridY)).toFixed(2),
+      warmHorseSamples: warmHorse,
+      meadowSamples: meadowPixels,
+      darkShadowSamples: darkShadow,
+      skySamples: skyPixels,
+      hash: samples.reduce((acc, v, idx) => ((acc * 31 + v + idx) >>> 0), 7),
+    };
+  },
+  state() {
+    const legs = {};
+    for (const d of LEGS_DEF) {
+      const L = currentState.legs[d.id];
+      legs[d.id] = {
+        inStance: L.inStance,
+        hoof: L.hoof.slice(),
+        fetlock: L.fetlock.slice(),
+        midJoint: (L.fore ? L.carpus : L.hock).slice(),
+        upperJoint: (L.fore ? L.elbow : L.stifle).slice(),
+        ikRatio: +L.ikRatio.toFixed(4),
+      };
+    }
+    return {
+      screenMode,
+      coat: COATS[coatIdx].key,
+      phase: +currentState.phi.toFixed(5),
+      strideIndex: currentState.strideIndex,
+      refX: +currentState.refX.toFixed(4),
+      pitch: +currentState.pitch.toFixed(4),
+      heaveY: +currentState.heaveY.toFixed(4),
+      poll: currentState.poll.slice(),
+      muzzle: currentState.muzzle.slice(),
+      tailTip: currentState.tailPts[currentState.tailPts.length - 1].slice(),
+      cam: { yaw: +cam.yaw.toFixed(4), pitch: +cam.pitch.toFixed(4), dist: +cam.dist.toFixed(4), auto: cam.auto },
+      horseVerts: horseMesh.vertCount,
+      horseTris: horseMesh.triCount,
+      worldTris: terrainMesh.triCount + propMesh.triCount,
+      grassBlades: GRASS_COUNT,
+      shadowRes: SHADOW_RES,
+      hoofprints: hoofprints.length,
+      dustPuffs: dustPuffs.length,
+      audioUnlocked: audio.unlocked,
+      audioMuted: audio.muted,
+      legs,
+    };
+  },
+};
+</script>
+<script>
+window.DEMO_CREDITS = {
+  name: 'THOROUGHBRED', accent: '#f5a646',
+  builder: { tag: 'GEMINI', model: 'Gemini 4 Carbon', where: 'via Antigravity CLI' },
+  issues: [], span: '~2 h', shipped: '2026-11-14',
+  assist: 'solo', note: 'guest build brief: procedural HD 3D horse running in a seamless loop, zero libraries, planted hooves',
+};
+</script>
+<script src="credits.js"></script>
+<script src="feedback.js"></script>
+</body>
+</html>

@@ -84,6 +84,8 @@ travel; mutants (flat mane noise, no rut strips) each kill exactly their gates.
   LEARNED WALK, the rig steered by a trained MLP (#1205), below.
 - `fox-gemini.html` — FROSTBRUSH, procedural 3D red fox rotary gallop in WebGL2  (#2261, guest Gemini 4 Carbon build), below.
 - `fox.html` — RENARD, procedural red fox rotary gallop on Canvas 2D (#2261, the Qwen corner of the fox battle), below.
+- `horse-gemini-hd.html` — THOROUGHBRED, procedural smooth-skinned HD 3D
+  thoroughbred transverse gallop in WebGL2 (guest Gemini 4 Carbon build), below.
 
 ## physicswalk.core.js engine notes (#1204)
 
@@ -269,3 +271,38 @@ pixel probes, print accumulation + trail pixels, horizon spruces, phone
 Honest gaps: stylised low-poly coat (no fur, no ruff fluff), face detail is
 silhouette-grade at default zoom, breath visible only as the coat swell, and
 the tail wave is kinematic rather than flocked.
+
+## horse-gemini-hd.html engine notes (THOROUGHBRED)
+
+Guest Gemini 4 Carbon showcase horse: a procedural smooth-skinned HD 3D
+thoroughbred running a seamless four-beat transverse gallop down a sunlit
+highland meadow track in raw WebGL2 (zero external libraries, zero imported
+meshes or image/audio assets; design note in `docs/horse-gemini-hd-design.md`).
+
+Anatomy & lofting: a continuous Catmull-Rom axial spline mesh (`muzzle -> head
+-> neck -> withers -> barrel -> flank -> croup`) lofted with polar-harmonic
+cross-sections, breathing ribcage, and stride-driven muscle bulge, paired with
+four continuous high-resolution limb skins whose shoulder and haunch skirts
+blend normals into the trunk, cupped pinnae, glossy eyes, 24 curved 3D
+mane/forelock ribbons, and a 28-plume wind-streamed tail (~8k+ horse tris).
+
+Gait & loop laws (`window.__horsegeminihdTest`): 4-beat right-lead transverse
+gallop (`LH -> RH -> LF -> RF`) with ~30% gathered suspension flight, terminal
+swing retraction matching ground speed at touchdown, world-pinned stance hooves
+(`0.000 mm` slip across analytic sweeps and live rAF frames), suspensory pastern
+hyperextension under vertical load, toe-pinned breakover, analytical 2-bone IK
+strictly within reach (`maxIkRatio <= 1.0`), and exact `pose(0) === pose(1)`
+loop closure across the periodic highland track.
+
+Rendering & audio: 2048² PCF directional shadow map (horse self-shadows +
+ground), dual-lobe satin/velvet equine coat shading across 4 selectable coats
+(`C` / `#coatbtn`), Kajiya-Kay anisotropic horsehair, Rayleigh/Mie sky, GPU-
+instanced wind-swaying fescue grass, damp horseshoe prints, turf clods, ACES HDR
+bloom, and synthesized Web Audio four-beat turf impacts, gravel crunch, nostril
+exhalations, and valley wind.
+
+Verified by `npm run horsegeminihdcheck` (34/34 gates across demo law, README
+inventory, live index card href, boot, 4-beat transverse gait, flight phase,
+analytic + live rAF zero-slip, IK reach, loop seam, WebGL2 coat/meadow/shadow
+pixels, coat cycling, pointer orbit, mute toggle, and 390×844 phone layout;
+stance-slip mutant proven red and restored).

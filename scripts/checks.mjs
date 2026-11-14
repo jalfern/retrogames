@@ -142,6 +142,7 @@ export const MANUAL_CHECKS = [
   // dev server); advisory from the lane: npm run horsecheck.
   "scripts/horsecheck.mjs",
   "scripts/horsegeminicheck.mjs",
+  "scripts/horsegeminihdcheck.mjs",
   "scripts/invaderscheck.mjs",
   "scripts/ironringcheck.mjs",
   "scripts/juicecheck.mjs",
