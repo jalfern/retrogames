@@ -47,6 +47,14 @@
 // 5. hoofFlex `return u >= 0 ? Math.sin(...)` -> `return 0`: the flex gate and
 //    the hoof-pixel gate red (fetlock rotation was load-bearing for the dark
 //    hoof sample), 35/37.
+// #2220 polish-2 mutants (run by hand, 2026-11-14, then restored):
+// 6. maneCoeff `return 1 + 0.95 * lerp(a, b, e)` -> `return 1`: EXACTLY the
+//    wander gate red (drift 0.00) — the seam gate correctly stays green.
+// 7. `const RUTB = [[..],[..]]` -> `const RUTB = []`: the ground-detail law
+//    gate (ruts 0) and the rut pixel gate (0 px) red — tufts stay green, 42/44.
+// Speed streaks are law-proven (anchors + phi-seam) like the #2162 sound
+// layers: their pixel signature sits ~15 luminance points under the sand and
+// a colour gate would be flaky; deleting the model fails the law gates.
 //
 // Usage: node scripts/horsecheck.mjs [--shots <dir>] [--json]
 // Needs a dev server serving public/demos (DEV_PORT, default 5173).

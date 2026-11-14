@@ -56,11 +56,22 @@ flat Lambert faces with sky/ground bounce and distance haze.
 Known art simplifications: stylised anatomy (block torso, bead crest),
 procedural mane/tail flutter rather than hair sim, hooves are boxes.
 
-Verified by `npm run horsecheck` (32 gates: boots, footfall order, suspension,
+Verified by `npm run horsecheck` (44 gates: boots, footfall order, suspension,
 zero-slip audit, seam equality + touchdown continuity, sprite↔state pixel
 probes incl. a control-window dust test, phone viewport, demo law) — two
 by-hand mutants (slack stance lock; fore pair landing after hind pair) each
 kill exactly their intended gates. Credits card `assist: 'solo'`.
+
+Polish pass 2 (#2220): mane/forelock/tail flutter carries cross-stride noise
+seeded on stride-index mod 8 with a smoothed crossfade — the gallop loop stays
+bitwise exact while no two strides flutter alike. The ground gained sage tufts
+and two worn ruts; ruts are tiled INTO the ground grid as z-strips (coplanar
+overlay quads lose the painter sort to the big cell triangles — the tufts
+hug the track but never inside the camera's blow-up corridor). Six subtle
+speed streaks whip backward every stride; the muzzle grew a jaw step and the
+ears got taller. Proven by law hooks (`maneCoeff(n)`, `tufts()`, `ruts()`,
+`streaks(p)`, `setTravel(m)`) plus pixel bands pinned at a deterministic
+travel; mutants (flat mane noise, no rut strips) each kill exactly their gates.
 
 ## Files
 
