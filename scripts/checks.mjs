@@ -129,6 +129,9 @@ export const MANUAL_CHECKS = [
   "scripts/filmstripcheck.mjs",
   "scripts/floorbosscheck.mjs",
   "scripts/fpscheck.mjs",
+  // #2182: FURLONG — browser-driven like the other demo gates (needs the dev
+  // server); advisory from the lane: npm run furlongcheck.
+  "scripts/furlongcheck.mjs",
   "scripts/gardencheck.mjs",
   "scripts/gravelcheck.mjs",
   // #2147: STRIDELINE — browser-driven like the other demo gates (needs the
