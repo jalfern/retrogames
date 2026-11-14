@@ -26,6 +26,7 @@ import {
     tileOf, CATALOG, NEEDS, SFX, EXT_ROOM,
     newRun, advance, autoStep, cmdUse, cmdWalk, cmdWork, tryUse,
     place, sellAt, cellItem, targetsOf, walkable, manualMove, placeOk, buildRoom,
+    adoptPet, adoptOk, PET,   // #2197: the cat counter
     court, courtTarget,   // #2131: player-ordered romance commands
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court — one pad button, two orders
     stateHash,
@@ -33,6 +34,7 @@ import {
 import {
     drawGround, drawGate, drawItem, drawPerson, nightTint, drawPanel, drawTopBar,
     drawCatalog, catalogHit, drawBuildCursor, drawThoughts, drawClouds,
+    drawPet,   // #2197: Miso
 } from './art.js'
 
 const SIM_MS = FIXED_DT
@@ -59,7 +61,8 @@ const BUILD_KEYS = new Set(['KeyB'])
 const COURT_KEYS = new Set(['KeyC', 'KeyX'])   // #2131: coo / insult
 const SWITCH_KEYS = new Set(['KeyG', 'Tab'])
 const ROOM_KEYS = new Set(['KeyR'])
-const KEY_SET = new Set([...MOVE_KEYS, ...ACTION_KEYS, ...BUILD_KEYS, ...COURT_KEYS, ...SWITCH_KEYS, ...ROOM_KEYS, ...'123456789'])
+const PET_KEYS = new Set(['KeyP'])   // #2197: pounce on the adoption card
+const KEY_SET = new Set([...MOVE_KEYS, ...ACTION_KEYS, ...BUILD_KEYS, ...COURT_KEYS, ...SWITCH_KEYS, ...ROOM_KEYS, ...PET_KEYS, ...'123456789'])
 
 const nextSeed = (s) => (Math.imul(s, 1664525) + 1013904223) >>> 0
 
@@ -193,6 +196,20 @@ const HomebodyGame = () => {
                         audioController.playTone(740, 0.06, 'triangle', 0.04)
                         setTimeout(() => audioController.playTone(988, 0.09, 'triangle', 0.04), 90)
                         if (live) { say(`${e.name.toUpperCase()} MOVES IN`); burst(LOT_X + 13 * TILE, LOT_Y + 5 * TILE, 8, '#ffd24a', 2.2) }
+                        break
+                    case 'pet':   // #2197: the adoption bell — twin chirps and a gold burst at the gate
+                        audioController.playSweep(880, 1245, 0.12, 'triangle', 0.05)
+                        setTimeout(() => audioController.playSweep(988, 1480, 0.14, 'triangle', 0.05), 120)
+                        if (live) { say('MISO MOVES IN'); burst(e.x, e.y, 10, '#ffd24a', 2.4) }
+                        break
+                    case 'pet-coo':   // a soft two-note purr-chime and pink sparks
+                        audioController.playTone(1319, 0.05, 'sine', 0.035)
+                        setTimeout(() => audioController.playTone(1568, 0.07, 'sine', 0.03), 70)
+                        if (live) burst(e.x, e.y - 8, 4, '#ff9fc4', 1.8)
+                        break
+                    case 'pet-eat':   // tiny kibble crunches
+                        audioController.playTone(660, 0.04, 'square', 0.05)
+                        setTimeout(() => audioController.playTone(520, 0.05, 'square', 0.05), 70)
                         break
                     case 'step': // #1823: the ground answers the foot — plank creak, crisp gravel, soft lawn
                         if (e.surf === 'floor') audioController.playSweep(175, 118, 0.06, 'triangle', 0.022)
@@ -341,8 +358,9 @@ const HomebodyGame = () => {
             drawGate(ctx, g.sec)
             drawClouds(ctx, g.sec)
             for (const it of g.items) drawItem(ctx, it, g.sec)
-            const order = [...g.people.map((p) => ({ p, v: p.y })), ...(g.visitor ? [{ p: g.visitor, v: g.visitor.y }] : []), ...(g.ivy ? [{ p: g.ivy, v: g.ivy.y }] : [])].sort((a, b) => a.v - b.v)   // #2143: both neighbours share the lot
+            const order = [...g.people.map((p) => ({ p, v: p.y })), ...(g.visitor ? [{ p: g.visitor, v: g.visitor.y }] : []), ...(g.ivy ? [{ p: g.ivy, v: g.ivy.y }] : []), ...(g.pet ? [{ p: g.pet, v: g.pet.y }] : [])].sort((a, b) => a.v - b.v)   // #2143: both neighbours share the lot; #2197: so does the cat
             for (const o of order) {
+                if (g.pet && o.p === g.pet) { drawPet(ctx, o.p, g.sec); continue }   // #2197: its own sprite, same depth line
                 // #2076: the pair argues and sulks ON screen — storm puff at the
                 // crack, a lasting away-lean through the cold war (residents only).
                 let fx = null, lean = 0
@@ -567,6 +585,7 @@ const HomebodyGame = () => {
             if (COURT_KEYS.has(e.code)) courtQueued = e.code === 'KeyC' ? 'coo' : 'insult'   // #2131
             if (SWITCH_KEYS.has(e.code)) switchQueued = true
             if (ROOM_KEYS.has(e.code)) digitPick = CATALOG.findIndex((d) => d.room)
+            if (PET_KEYS.has(e.code)) digitPick = CATALOG.findIndex((d) => d.pet)   // #2197
             if (/^Digit[1-9]$/.test(e.code)) digitPick = parseInt(e.code.slice(5), 10) - 1
         }
         const onUp = (e) => {
@@ -653,6 +672,7 @@ const HomebodyGame = () => {
                     holdT: Math.round(gs.holdT), courtArmed: gs.holdT >= 0,   // #2171: the thumb court
                     visitor: gs.visitor ? gs.visitor.name : null,
                     ivy: gs.ivy ? { name: gs.ivy.name, gift: !!gs.ivy.gift, state: gs.ivy.state, x: Math.round(gs.ivy.x), y: Math.round(gs.ivy.y) } : null,   // #2143
+                    pet: gs.pet ? { name: gs.pet.name, r: gs.pet.r, c: gs.pet.c, state: gs.pet.state, asleep: gs.pet.asleep, needs: { ...gs.pet.needs }, cd: Math.round(gs.pet.cd * 10) / 10, x: Math.round(gs.pet.x), y: Math.round(gs.pet.y) } : null,   // #2197
                 }) : { screen: screenRef.current, seed },
                 // #1637 watchcheck pilot drives these.
                 watching: () => watchingRef.current,
@@ -662,6 +682,8 @@ const HomebodyGame = () => {
                 press: (code) => onDown({ code, preventDefault: () => {} }),
                 release: (code) => onUp({ code }),   // #2171: the release half of the thumb-court gesture
                 room: () => (gs ? buildRoom(gs) : false),
+                adopt: () => (gs ? adoptPet(gs) : false),   // #2197: the counter, straight
+                adoptOk: () => (gs ? adoptOk(gs) : false),
                 win: () => { if (gs) { gs.content = WIN_CONTENT; gs.done = 'win'; gs.endMsg = 'forced' } },
                 collapseAll: () => { if (gs) for (const p of gs.people) p.faintT = 2 },
                 money: (v) => { if (gs) gs.money = v },
@@ -698,12 +720,13 @@ const HomebodyGame = () => {
             mountDbg({
                 title: 'HOMEBODY',
                 getState: () => gs ? [
-                    `d${gs.day} ${gs.hour.toFixed(1)}h §${gs.money} wish ${gs.content}/${WIN_CONTENT} items=${gs.items.length} build=${gs.build}${gs.visitor ? ' Fern!' : ''}${gs.ivy ? ` Ivy${gs.ivy.gift ? '🧺' : ''}!` : ''}`,
+                    `d${gs.day} ${gs.hour.toFixed(1)}h §${gs.money} wish ${gs.content}/${WIN_CONTENT} items=${gs.items.length} build=${gs.build}${gs.visitor ? ' Fern!' : ''}${gs.ivy ? ` Ivy${gs.ivy.gift ? '🧺' : ''}!` : ''}${gs.pet ? ' 🐈 Miso' : ''}`,
                     gs.people.map((p) => `${p.name}:${NEEDS.map((n) => Math.round(p.needs[n] * 100)).join('/')}${p.working ? ' @work' : ''}${p.faintT > 0 ? ' FAINT' : ''}`).join('  '),
                 ] : ['attract'],
                 actions: [
                     { label: 'GIVE §500', run: () => { if (gs) gs.money += 500; return 'rent money' } },
                     { label: 'BUILD ROOM', run: () => { if (gs && !gs.ext) { gs.money = Math.max(gs.money, EXT_ROOM.price); buildRoom(gs) } return gs && gs.ext ? 'spare room up — the lot grew' : 'already built / no sim' } },
+                    { label: 'ADOPT CAT', run: () => { if (gs && !gs.pet) { gs.money = Math.max(gs.money, PET.price); adoptPet(gs) } return gs && gs.pet ? 'Miso trots in through the gate' : 'already home / no sim' } },   // #2197
                     { label: 'GRANT WISH', run: () => { if (gs) { gs.content = WIN_CONTENT } return 'wish banked — next content tick wins' } },
                     { label: 'RING FERN', run: () => { if (gs) { gs.visitAfter = Math.min(gs.visitAfter, Math.floor(gs.hour)); gs.visitGap = 0 } return 'the bell rings soon' } },
                     { label: 'RING IVY', run: () => { if (gs) { gs.ivyAfter = Math.min(gs.ivyAfter, Math.floor(gs.hour)); gs.ivyGap = 0 } return 'Ivy swings by soon' } },   // #2143

@@ -26,6 +26,11 @@
 //                  window, rel.ivy ladder (growth, one-rel-up law, fade and
 //                  demote), the FRIENDS+/FAMILY gift economy, linger/return
 //                  ladder math, court + roomClear + hash carries, determinism.
+//   8. PET (#2197) — Miso, the adoptable cat: counter law (price, one cat,
+//                  honest refusal at the gate), legal wandering, self-served
+//                  kibble, night sleep with energy payback, the coo law with
+//                  its cooldown, hash carries, attract-bot adoption, and the
+//                  wish still landing with a cat on the lot.
 //
 // It proves IT can fail the playbook way: break one load-bearing line in sim.js
 // (content accrual in finishUse, or the relAdd(s,'fern') feed in the visitor
@@ -45,6 +50,7 @@ import {
     court, courtTarget, COO_BOND, AFFECTION_BOND, INSULT_DROP, CMD_CD, REL_EDGES,   // #2131
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court
     ivyChatPool, IVY_CHAT, IVY_FADE, IVY_GIFT_HUNGER, IVY_GIFT_CASH,   // #2143
+    adoptPet, adoptOk, PET, PET_COOS,   // #2197: Miso
 } from '../src/games/Homebody/sim.js'
 import { readFileSync } from 'node:fs'
 
@@ -77,7 +83,7 @@ section('BOOT')
     check('five needs per resident, all positive', g.people.every((p) => NEEDS.length === 5 && NEEDS.every((n) => p.needs[n] > 0.5)))
     check('starter house has bed/fridge/toilet/mail/radio', ['bed', 'fridge', 'toilet', 'mail', 'radio'].every((id) => g.items.some((it) => it.id === id)))
     check('starter items never wall anyone in', g.items.every((it) => targetsOf(g, it).length > 0))
-    check('fourteen catalog pieces with prices; Spare Room card 14 keyed R', CATALOG.length === 14 && CATALOG.every((d) => d.price > 0) && CATALOG[13].id === 'roomkit' && CATALOG.filter((d) => d.room).length === 1)
+    check('fifteen catalog pieces with prices; Spare Room card 14 keyed R, Adopt a Cat card 15 keyed P', CATALOG.length === 15 && CATALOG.every((d) => d.price > 0) && CATALOG[13].id === 'roomkit' && CATALOG.filter((d) => d.room).length === 1 && CATALOG[14].id === 'petkit' && CATALOG.filter((d) => d.pet).length === 1)   // #2197
     check('tileOf maps pixels to cells', tileOf(tileX(3) + 4, tileY(2) + 4)?.c === 3 && tileOf(tileX(3), tileY(2))?.r === 2)
 }
 
@@ -397,7 +403,7 @@ section('BONDS (#1817): the chat loop deepens')
     check('either meter rides the hash', stateHash(ha) !== h0 && stateHash(hb) !== h0)
     const simSrc = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
     check('pin: the Fern-chat block feeds the leaf meter', /if \(partner\) \{[^}]*relAdd\(s, 'fern'/.test(simSrc))
-    check('pin: advance drives the household bond tick', /updateVisitor\(s, simDt\)\s*\n\s*updateIvy\(s, simDt\)\s*\n\s*updateHouseBond\(s, simDt\)/.test(simSrc))   // #2143: the chain is three deep now — Ivy ticks between the neighbours
+    check('pin: advance drives the household bond tick', /updateVisitor\(s, simDt\)\s*\n\s*updateIvy\(s, simDt\)\s*\n\s*updatePet\(s, simDt\)\s*\n\s*updateHouseBond\(s, simDt\)/.test(simSrc))   // #2143/#2197: the chain is four deep — Ivy ticks between the neighbours, the cat between Ivy and the hearth
 
     check('pin: scheduleVisit answers the bond level', /function scheduleVisit\(s\)\s*\{[^}]*Math\.max\(8, 9 \+ Math\.floor\(s\.rng\(\) \* 5\) - lv\)/.test(simSrc))
     check('pin: stateHash mixes both meters', /mix\(s\.rel\.house\); mix\(s\.rel\.fern\)/.test(simSrc))
@@ -578,7 +584,7 @@ section('FEEL — walk surfaces + refusal (#1823)')
     const feelJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
     check('pin: footfalls carry their surface', /t: 'step', surf: groundOf\(s, p\.r, p\.c\)/.test(feelSim))
     check('pin: both walk routes feed the footfall meter', /footstep\(s, p, budget - step\)/.test(feelSim) && /footstep\(s, p, Math\.abs\(p\.x - ox\)/.test(feelSim))
-    check('pin: every refusal branch emits its event', (feelSim.match(/t: 'refuse'/g) || []).length === 3)
+    check('pin: every refusal branch emits its event', (feelSim.match(/t: 'refuse'/g) || []).length === 4)   // #2197: the adoption counter is the fourth door that answers
     check('pin: the shell plays three distinct step timbres', /e\.surf === 'floor'[\s\S]*e\.surf === 'path'/.test(feelJsx))
     check('pin: the refusal flashes a red ghost cell', /refuses\.push\(\{ r: e\.r, c: e\.c/.test(feelJsx) && /fillStyle = '#e23b2e'/.test(feelJsx))
 }
@@ -1109,6 +1115,96 @@ section('SECOND VISITOR')   // #2143 — Ivy, the market neighbour
     check('pin: the panel runs the flower IVY row with its FAMILY pulse', /'flower', '#a3579b', relLevel\(s\.rel\.ivy\), 'IVY'/.test(ivArt) && /relLevel\(s\.rel\.ivy\) === 3/.test(ivArt))
     check('pin: Ivy rides the draw order and the basket is painted', ivJsx.includes('g.ivy ? [{ p: g.ivy, v: g.ivy.y }]') && /if \(p\.gift\) \{/.test(ivArt))
     check('pin: the shell names her arrival, her gift and her bond lines', /case 'gift'/.test(ivJsx) && /IVY AT THE GATE/.test(ivJsx) && /ivy: 'IVY'/.test(ivJsx))
+}
+
+// ----------------------------------------------------------- PET (#2197) -----
+section('PET (#2197): Miso — counter law, cat day, coos, hash')
+{
+    const petSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const petJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const petArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+
+    // the counter: price, honest refusal, one cat per lot
+    const s0 = newRun(11)
+    check('a fresh lot has no cat; the counter opens at §150 (card 15)', s0.pet === null && adoptOk(s0) && PET.price === DEF.petkit.price && CATALOG[14].id === 'petkit' && CATALOG[14].pet === true)
+    s0.money = 100
+    check('pennies at the counter: adoptOk says no', !adoptOk(s0))
+    s0.sel = 14
+    const refused = place(s0, 3, 3)
+    check('a refused adoption speaks at the gate', !refused && drain(s0).some((e) => e.t === 'refuse' && e.r === 12 && e.c === 5) && s0.pet === null)
+    s0.money = 520
+    const bought = place(s0, 0, 0)
+    check('the counter sells a cat: paid, no furniture, a gate event', bought && s0.money === 520 - PET.price && !!s0.pet && !s0.items.some((it) => it.id === 'petkit'))
+    check('one cat per lot — the carrier is already empty', adoptPet(s0) === false && s0.pet !== null)
+
+    // legal wander: every step asks walkable — 33 sim-minutes on the lot
+    let badCell = 0
+    for (let i = 0; i < 2000; i++) { advance(s0, DT); drain(s0); if (s0.pet && (!walkable(s0, s0.pet.r, s0.pet.c) || s0.done)) badCell++ }
+    check('the cat never steps somewhere illegal (and stays out of trouble)', badCell === 0)
+
+    // kibble: a hungry cat walks herself to the fridge
+    s0.pet.needs.hunger = 0.1
+    const h0 = s0.pet.needs.hunger
+    let ate = 0
+    for (let i = 0; i < 900 && !ate; i++) { advance(s0, DT); if (drain(s0).some((e) => e.t === 'pet-eat')) ate = 1 }
+    check('a hungry cat works the fridge for kibble', ate === 1 && s0.pet.needs.hunger > h0 + 0.4)
+
+    // night: sleep on the floorboards, energy paid back; dawn wakes her
+    s0.hour = 22.2
+    s0.pet.needs.energy = 0.4
+    let slept = 0
+    for (let i = 0; i < 600 && !slept; i++) { advance(s0, DT); drain(s0); if (s0.pet.asleep) slept = 1 }
+    const en1 = s0.pet.needs.energy
+    check('night pours her into a sleeping loaf', slept === 1)
+    for (let i = 0; i < 300; i++) { advance(s0, DT); drain(s0) }
+    check('sleep pays her energy back', s0.pet.asleep && s0.pet.needs.energy > en1)
+    s0.hour = 6.5
+    for (let i = 0; i < 20; i++) { advance(s0, DT); drain(s0) }
+    check('dawn unspools the cat', !s0.pet.asleep)
+
+    // the coo law + its cooldown: park the cat beside an idle resident
+    s0.hour = 10
+    const o = s0.people[0]
+    o.path = null; o.goal = null; o.use = null; o.working = false; o.faintT = 0
+    const parkCat = () => { s0.pet.r = o.r; s0.pet.c = o.c + 1; s0.pet.x = tileX(o.c + 1) + TILE / 2; s0.pet.y = o.y; s0.pet.path = null; s0.pet.state = 'roam' }
+    s0.pet.cd = 0
+    parkCat()
+    const rel0 = s0.rel.house, soc0 = o.needs.social, c0 = s0.content
+    let coos = 0
+    for (let i = 0; i < 60; i++) { advance(s0, DT); coos += drain(s0).filter((e) => e.t === 'pet-coo').length }
+    check('an arm\u2019s-reach resident coos: bond, social, content and an event', coos >= 1 && s0.rel.house > rel0 && o.needs.social > soc0 && s0.content > c0)
+    parkCat()
+    let coos2 = 0
+    for (let i = 0; i < Math.round((PET_COOS - 1.5) * 60); i++) { advance(s0, DT); parkCat(); o.path = null; coos2 += drain(s0).filter((e) => e.t === 'pet-coo').length }
+    check('the coo economy: at most one coo per PET_COOS seconds', coos2 === 0)
+
+    // determinism with the bot adopting mid-shift, and the hash carrying her
+    const dA = newRun(9), dB = newRun(9)
+    for (let i = 0; i < 3600; i++) { if (i === 600) { dA.money = 900; dB.money = 900 } autoStep(dA, DT); drain(dA); autoStep(dB, DT); drain(dB) }
+    check('attract hours including the counter are seed-exact', stateHash(dA) === stateHash(dB))
+    const anyPet = dA.pet || dB.pet
+    check('the attract bot adopts when the till allows', !!anyPet)
+    if (anyPet) {
+        const h1 = stateHash(dA)
+        if (dA.pet) dA.pet.cd = 3.3; else dA.pet = { ...dB.pet }
+        check('the cat rides the hash — she is state', stateHash(dA) !== h1)
+    }
+
+    // the lifetime wish still lands with a cat on the lot
+    const w = newRun(1)
+    let wn = 0
+    while (!w.done && wn++ < 60 * 60 * 6) { autoStep(w, DT); drain(w) }
+    check('the wish still lands with a cat on the lot', w.done === 'win' && !!w.pet)
+
+    // source pins — the wiring must not silently drop
+    check('pin: advance ticks the cat between Ivy and the hearth', /updatePet\(s, simDt\)/.test(petSim))
+    check('pin: every wander pick asks walkable AND pathfinds before it commits', /if \(walkable\(s, rr, cc\)\)/.test(petSim))
+    check('pin: the coo law feeds house bond and resident social', /partner\.needs\.social = Math\.min\(1, partner\.needs\.social \+ PET_SOCIAL\)/.test(petSim) && /relAdd\(s, 'house', PET_BOND\)/.test(petSim))
+    check('pin: the cat rides stateHash', /mix\(s\.pet \? 1 : 0\)/.test(petSim))
+    check('pin: the shell draws Miso in the depth order', /drawPet/.test(petJsx) && petJsx.includes('g.pet ? [{ p: g.pet, v: g.pet.y }]'))
+    check('pin: P keys the card and the counter events have voices', /PET_KEYS = new Set\(\['KeyP'\]\)/.test(petJsx) && /CATALOG\.findIndex\(\(d\) => d\.pet\)/.test(petJsx) && /case 'pet':/.test(petJsx) && /case 'pet-coo'/.test(petJsx))
+    check('pin: the sprite ships — loaf, walk and purr sparks in art', /export function drawPet/.test(petArt) && /purrT/.test(petArt) && /case 'petkit'/.test(petArt))
+    check('pin: the probe answers with the cat', petJsx.includes('pet: gs.pet ?'))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)

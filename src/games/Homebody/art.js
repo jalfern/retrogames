@@ -152,6 +152,22 @@ export function drawGate(ctx, _t) {
 // ------------------------------------------------------------ furniture ----
 export function drawItemAt(ctx, id, x, y, t) {
     switch (id) {
+        case 'petkit': {
+            // adoption card: drafting paper, a cat silhouette in gold
+            ctx.fillStyle = '#2c3e63'; ctx.fillRect(x + 3, y + 6, 26, 22)
+            ctx.fillStyle = '#3d5484'
+            for (let i = 0; i < 4; i++) ctx.fillRect(x + 3, y + 9 + i * 5, 26, 1)
+            ctx.fillStyle = '#ffd24a'
+            // ears + head
+            ctx.beginPath(); ctx.moveTo(x + 11, y + 10); ctx.lineTo(x + 13, y + 6); ctx.lineTo(x + 15, y + 10); ctx.closePath(); ctx.fill()
+            ctx.beginPath(); ctx.moveTo(x + 17, y + 10); ctx.lineTo(x + 19, y + 6); ctx.lineTo(x + 21, y + 10); ctx.closePath(); ctx.fill()
+            ctx.beginPath(); ctx.arc(x + 16, y + 14, 5, 0, Math.PI * 2); ctx.fill()
+            // body + curled tail
+            ctx.beginPath(); ctx.ellipse(x + 16, y + 23, 8, 4, 0, 0, Math.PI * 2); ctx.fill()
+            ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x + 24, y + 22, 3, -Math.PI / 2, Math.PI); ctx.stroke()
+            ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1; ctx.strokeRect(x + 3.5, y + 6.5, 25, 21)
+            break
+        }
         case 'roomkit': {
             // blueprint card: brick Cottage with gold roof on drafting paper
             ctx.fillStyle = '#2c3e63'; ctx.fillRect(x + 3, y + 6, 26, 22)
@@ -425,6 +441,68 @@ function star(ctx, x, y, r, col) {
 }
 
 // ----------------------------------------------------------------- night ---
+// --------------------------------------------------------------- pet (#2197) --
+// Miso — a tabby loaf with a life of her own: stripe-backed walk with a
+// swaying tail, a sleeping comma with rising Zzz, and pink purr sparks while
+// someone coos at her. One sprite for every state; flip by facing.
+export function drawPet(ctx, p, t) {
+    const x = p.x, y = p.y
+    ctx.save(); ctx.translate(x, y); ctx.scale(p.face, 1)
+    if (p.asleep) {
+        // the loaf: a low mound, ears pricked, tail curling around the front
+        ctx.fillStyle = '#d98e4a'
+        ctx.beginPath(); ctx.ellipse(0, -5, 11, 6, 0, 0, Math.PI * 2); ctx.fill()
+        ctx.beginPath(); ctx.arc(-8, -9, 4.5, 0, Math.PI * 2); ctx.fill()
+        ctx.fillStyle = '#b56f31'
+        ctx.beginPath(); ctx.moveTo(-11, -12); ctx.lineTo(-9.5, -15.5); ctx.lineTo(-8, -12); ctx.closePath(); ctx.fill()
+        ctx.beginPath(); ctx.moveTo(-6, -12.5); ctx.lineTo(-4.5, -15.5); ctx.lineTo(-3, -12); ctx.closePath(); ctx.fill()
+        ctx.strokeStyle = '#8a5626'; ctx.lineWidth = 2
+        ctx.beginPath(); ctx.arc(9, -4, 3.5, -Math.PI * 0.9, Math.PI * 0.4); ctx.stroke()
+        ctx.strokeStyle = '#5b3a1e'; ctx.lineWidth = 1
+        ctx.beginPath(); ctx.moveTo(-10.5, -9); ctx.lineTo(-8, -9); ctx.stroke()   // closed eye
+        ctx.fillStyle = '#b56f31'
+        ctx.fillRect(-2, -8, 3, 1.5); ctx.fillRect(3, -7, 3, 1.5)                    // stripes
+    } else {
+        const step = Math.sin(p.walkPhase * 2) * 1.5
+        const moving = p.path && p.path.length
+        // legs: two-pixel pistons while the path runs
+        ctx.fillStyle = '#8a5626'
+        const l1 = moving ? Math.round(step) : 0, l2 = moving ? -l1 : 0
+        ctx.fillRect(-6, -4, 2, 4 + l1); ctx.fillRect(-1, -4, 2, 4 + l2)
+        ctx.fillRect(4, -4, 2, 4 + l2)
+        // body + head
+        ctx.fillStyle = '#d98e4a'
+        ctx.beginPath(); ctx.ellipse(0, -8, 9, 4.5, 0, 0, Math.PI * 2); ctx.fill()
+        ctx.beginPath(); ctx.arc(8, -11, 4, 0, Math.PI * 2); ctx.fill()
+        // ears
+        ctx.fillStyle = '#b56f31'
+        ctx.beginPath(); ctx.moveTo(5.5, -13.5); ctx.lineTo(6.5, -17); ctx.lineTo(8, -13.8); ctx.closePath(); ctx.fill()
+        ctx.beginPath(); ctx.moveTo(9, -13.8); ctx.lineTo(10.5, -17); ctx.lineTo(11.5, -13.5); ctx.closePath(); ctx.fill()
+        // tail: a sine wave off the back
+        ctx.strokeStyle = '#d98e4a'; ctx.lineWidth = 2
+        const sway = Math.sin(t * 3 + p.walkPhase) * 2.5
+        ctx.beginPath(); ctx.moveTo(-8, -10); ctx.quadraticCurveTo(-13, -12 + sway, -12, -17 + sway); ctx.stroke()
+        // stripes + eye
+        ctx.fillStyle = '#b56f31'
+        ctx.fillRect(-3, -11, 3, 1.5); ctx.fillRect(1, -11.5, 3, 1.5)
+        ctx.fillStyle = '#241305'
+        ctx.fillRect(9, -12, 1.5, 1.5)
+    }
+    ctx.restore()
+    if (p.purrT > 0) {
+        // pink sparks lifting off the head on the real clock
+        const k = p.purrT / 1.4
+        ctx.globalAlpha = Math.min(1, p.purrT)
+        ctx.fillStyle = '#ff9fc4'
+        for (const [px, py] of [[-5, 0], [0, -2], [5, 0]]) ctx.fillRect(x + px - 1, y - 20 - (1 - k) * 8 + py, 2, 2)
+        ctx.globalAlpha = 1
+    }
+    if (p.asleep && Math.floor(t) % 2 === 0) {
+        ctx.fillStyle = '#cfe0ff'; ctx.font = 'bold 7px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'
+        ctx.fillText('z', x + 8, y - 14 - (t % 1) * 3)
+    }
+}
+
 export function nightTint(ctx, hour, ext) {
     let a = 0
     if (hour >= 19) a = Math.min(0.42, (hour - 19) / 3 * 0.42)

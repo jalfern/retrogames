@@ -70,6 +70,25 @@ export const IVY_FADE = 0.03         // rel lost per sim-hour of absence
 export const IVY_GIFT_HUNGER = 0.18  // per resident, per basket
 export const IVY_GIFT_CASH = 15      // the FAMILY-tier honey-money (§)
 
+// #2197: Miso — the household cat. Adopted at the counter like a piece of
+// furniture, lives by the lot's laws (every step asks walkable) and extends
+// the bond law down to pet scale. A pet is affection, not a burden: the cat
+// never faints, never blocks, and refusing an adoption is the only bad day.
+export const PET = { name: 'Miso', price: 150 }
+export const PET_DECAY = { hunger: 0.10, fun: 0.08, energy: 0.05 }   // per sim-hour, cat pace
+export const PET_COOS = 6            // real seconds between coos
+export const PET_SOCIAL = 0.08     // social the resident pockets per coo
+export const PET_BOND = 0.5        // house bond per coo — love is a slow ladder
+const PET_COO_LINES = [
+    '{n} coos at Miso and the whole kitchen gets warmer.',
+    'Miso headbutts {n}\u2019s ankle. Rent-free residency confirmed.',
+    'Miso purrs like a small engine; {n} cannot stay mad at any of it.',
+]
+const SLEEP_LINES = [
+    'Miso curls on the warm floorboards, a comma of cat.',
+    'The house dims; Miso pours herself into a sleeping loaf.',
+]
+
 export const COLLAPSE_AT = 16       // seconds a red need may go unanswered
 export const FAINT_SEC = 14        // how long a faint lasts
 export const RED_AT = 0.12         // a need at/below this reads red (and alarms the gem)
@@ -137,6 +156,7 @@ export const CATALOG = [
     { id: 'rug', name: 'Round Rug', price: 60, h: 1, solid: false, decor: true },
     { id: 'lamp', name: 'Floor Lamp', price: 80, h: 1, solid: false, decor: true },
     { id: 'roomkit', name: 'Spare Room', price: 300, h: 1, solid: false, room: true },
+    { id: 'petkit', name: 'Adopt a Cat', price: PET.price, h: 1, solid: false, pet: true },
 ]
 export const DEF = Object.fromEntries(CATALOG.map((d) => [d.id, d]))
 export const NEEDS = ['hunger', 'energy', 'fun', 'social', 'bladder']
@@ -231,6 +251,7 @@ export function newRun(seed) {
         ivy: null,                    // #2143: second neighbour, same shape as `visitor` (+ gift)
         ivyAfter: null,             // hour of Ivy's next visit
         ivyGap: 0,
+        pet: null,                  // #2197: the household cat, once adopted
         rel: { house: 0, fern: 0, ivy: 0 },   // #1817/#2143 conversation ladder (0..REL_MAX)
         spats: 0,                 // #2070: quarrels this run (rides the hash)
         grudge: 0,                // #2070: 1 = cold war until the pair makes up
@@ -622,6 +643,13 @@ export function place(s, r, c) {
         s.events.push({ t: 'refuse', r: EXT_ROOM.door[0], c: EXT_ROOM.door[1] })
         return false
     }
+    // #2197: the adoption counter — the cat arrives through the gate, so the
+    // refusal speaks at the gate, not at the cursor
+    if (def.pet) {
+        if (adoptPet(s)) return true
+        s.events.push({ t: 'refuse', r: 12, c: 5 })
+        return false
+    }
     // #1823: a refused placement speaks — the view flashes the ghost cell red
     if (s.money < def.price || !canPlace(s, def, r, c)) { s.events.push({ t: 'refuse', r, c }); return false }
     if (def.solid && !keepsOpen(s, r, c)) { s.events.push({ t: 'refuse', r, c }); return false }
@@ -636,6 +664,7 @@ export function placeOk(s, r, c) {
     const def = CATALOG[s.sel]
     if (!def) return false
     if (def.room) return buildRoomOk(s)
+    if (def.pet) return adoptOk(s)
     if (s.money < def.price || !canPlace(s, def, r, c)) return false
     if (def.solid && !keepsOpen(s, r, c)) return false
     return true
@@ -870,6 +899,126 @@ function updateIvy(s, dt) {
 // #1817: two residents idling within arm's reach share the moment — the
 // household bond climbs on co-presence chat (the original raises relationship
 // bars just by talking), on its own slower tick with its own small talk.
+// -------------------------------------------------------------- pet (#2197) --
+// Miso lives by the lot's laws: every move asks walkable() (walls, solids and
+// the #1806 wing for free), she never blocks anything, and night curls her up
+// asleep on the nearest free floor tile. Hunger walks her to the fridge's use
+// spots. The bond law reaches pet scale: a resident standing in arm's reach
+// coos — fun, social trickle, a slow house-bond climb, sparks. She can never
+// faint: neglect costs a cat embarrassment, never a run.
+const FLOOR_CELLS = []
+for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (MAP[r][c] === 'F') FLOOR_CELLS.push([r, c])
+
+function nearestFloorCell(s, r, c) {
+    let best = null, bd = 1e9
+    for (const [rr, cc] of FLOOR_CELLS) {
+        if (!walkable(s, rr, cc)) continue
+        const d = Math.abs(rr - r) + Math.abs(cc - c)
+        if (d < bd) { bd = d; best = { r: rr, c: cc } }
+    }
+    return best
+}
+
+export function adoptOk(s) {
+    if (s.done || s.pet || s.money < PET.price) return false
+    const dest = nearestFloorCell(s, 6, 7)
+    return !!dest && walkable(s, 12, 5) && !!bfsPath(s, { r: 12, c: 5 }, [dest])
+}
+
+export function adoptPet(s) {
+    if (!adoptOk(s)) return false
+    s.money -= PET.price
+    const dest = nearestFloorCell(s, 6, 7)
+    s.pet = {
+        name: PET.name, r: 12, c: 5, x: tileX(5) + TILE / 2, y: tileY(12) + TILE / 2,
+        path: bfsPath(s, { r: 12, c: 5 }, [dest]), state: 'enter', t: 0, face: 1, walkPhase: 0,
+        needs: { hunger: 0.8, fun: 0.75, energy: 0.85 },
+        asleep: false, cd: 0, purrT: 0, wanderT: 2, food: false, bedT: 0, stepDist: 0,
+    }
+    s.events.push({ t: 'pet', name: PET.name, x: s.pet.x, y: s.pet.y })
+    think(s, 'The carrier clicks open at the gate — Miso stretches, claims the lot, and trots inside.')
+    return true
+}
+
+function updatePet(s, dt) {
+    const p = s.pet
+    if (!p) return
+    p.t += dt
+    if (p.cd > 0) p.cd = Math.max(0, p.cd - dt)
+    if (p.purrT > 0) p.purrT = Math.max(0, p.purrT - dt)
+    const dh = dt / HOUR_SEC
+    p.needs.hunger = Math.max(0, p.needs.hunger - PET_DECAY.hunger * dh)
+    p.needs.fun = Math.max(0, p.needs.fun - PET_DECAY.fun * dh * (p.asleep ? 0.3 : 1))
+    const night = isNight(s)
+    if (p.asleep) p.needs.energy = Math.min(1, p.needs.energy + 0.34 * dh * 8)
+    else p.needs.energy = Math.max(0, p.needs.energy - PET_DECAY.energy * dh)
+
+    // the coo law: a resident in arm's reach pays love both ways
+    if (p.cd === 0) {
+        let partner = null
+        for (const q of s.people) if (q.faintT <= 0 && !q.working && Math.abs(q.r - p.r) + Math.abs(q.c - p.c) <= 1) partner = q
+        if (partner) {
+            partner.needs.social = Math.min(1, partner.needs.social + PET_SOCIAL)
+            p.needs.fun = Math.min(1, p.needs.fun + 0.25)
+            relAdd(s, 'house', PET_BOND)
+            s.content = Math.min(WIN_CONTENT, s.content + 1)
+            p.cd = PET_COOS
+            p.purrT = 1.4
+            s.events.push({ t: 'pet-coo', name: partner.name, x: p.x, y: p.y })
+            if (s.rng() < 0.5) think(s, pick(s, PET_COO_LINES).replace('{n}', partner.name))
+        }
+    }
+
+    if (p.asleep) {
+        if (!night) { p.asleep = false; p.state = 'roam'; think(s, 'Miso unspools at dawn and stretches down the whole hallway.') }
+        return
+    }
+    // night: find a warm floor tile and pour herself into a loaf
+    if (night) {
+        if (p.state === 'bed' && p.path && p.path.length) { walkAlong(s, p, dt, 44); return }
+        if (p.state === 'bed') { p.asleep = true; p.state = 'sleep'; if (s.rng() < 0.6) think(s, pick(s, SLEEP_LINES)); return }
+        p.bedT -= dt
+        if (p.bedT <= 0) {
+            p.bedT = 1
+            const cell = nearestFloorCell(s, p.r, p.c)
+            const path = cell ? bfsPath(s, { r: p.r, c: p.c }, [cell]) : null
+            if (path) { p.path = path; p.state = 'bed' } else { p.asleep = true; p.state = 'sleep' }
+        }
+        return
+    }
+    // kibble: a hungry cat works the fridge (or whatever the kitchen offers)
+    if (!p.food && p.needs.hunger < 0.3) {
+        const fr = findNearest(s, p, 'fridge') || findNearest(s, p, 'stove')
+        if (fr) {
+            const path = bfsPath(s, { r: p.r, c: p.c }, fr.tg)
+            if (path) { p.path = path; p.food = true; p.state = 'food' }
+        }
+    }
+    if (p.food && !p.path) {
+        p.food = false
+        p.needs.hunger = Math.min(1, p.needs.hunger + 0.55)
+        p.state = 'roam'
+        s.events.push({ t: 'pet-eat', name: p.name, x: p.x, y: p.y })
+        think(s, 'Miso works the fridge latch like a puzzle toy. Kibble: acquired.')
+    }
+    // wander the lot — every pick asks walkable AND reachable, every seed the same
+    if (!p.path) {
+        p.wanderT -= dt
+        if (p.wanderT <= 0) {
+            p.wanderT = 3 + s.rng() * 4
+            const rr = Math.max(0, Math.min(ROWS - 1, p.r + Math.floor(s.rng() * 7) - 3))
+            const cc = Math.max(0, Math.min(COLS - 1, p.c + Math.floor(s.rng() * 7) - 3))
+            if (walkable(s, rr, cc)) {
+                const path = bfsPath(s, { r: p.r, c: p.c }, [{ r: rr, c: cc }])
+                if (path) p.path = path
+            }
+            p.state = 'roam'
+        }
+    }
+    walkAlong(s, p, dt, 48)
+    if (p.path && !p.path.length) p.path = null
+}
+
 function updateHouseBond(s, dt) {
     const [a, b] = s.people
     const idle = (p) => p.faintT <= 0 && !p.working && !p.use
@@ -1138,6 +1287,7 @@ export function advance(s, dt) {
 
     updateVisitor(s, simDt)
     updateIvy(s, simDt)
+    updatePet(s, simDt)
     updateHouseBond(s, simDt)
 
     for (const p of s.people) {
@@ -1293,7 +1443,7 @@ export function bot(s) {
     const p = s.people[0]
     if (p.working || p.faintT > 0 || p.path || p.use) return
     if (s.money > 300 && s.content < WIN_CONTENT) {
-        const wants = ['phone', 'roomkit', 'stove', 'tv', 'sofa', 'radio', 'book', 'shower', 'plant', 'lamp', 'rug']
+        const wants = ['phone', 'roomkit', 'petkit', 'stove', 'tv', 'sofa', 'radio', 'book', 'shower', 'plant', 'lamp', 'rug']
         for (const id of wants) {
             const def = DEF[id]
             // #1814: the attract build grows the lot so the demo sells the
@@ -1304,6 +1454,15 @@ export function bot(s) {
                 const keep = s.sel
                 s.sel = CATALOG.findIndex((d) => d.id === 'roomkit')
                 place(s, 0, 0)   // the room ignores the cursor; the lot owns the spot
+                s.sel = keep
+                return
+            }
+            // #2197: the cat owns herself — no cursor, no cell, just the counter
+            if (id === 'petkit') {
+                if (s.pet || s.money < PET.price) continue
+                const keep = s.sel
+                s.sel = CATALOG.findIndex((d) => d.id === 'petkit')
+                place(s, 0, 0)
                 s.sel = keep
                 return
             }
@@ -1353,5 +1512,11 @@ export function stateHash(s) {
     mix(s.visitor ? 1 : 0)
     mix(s.ivy ? 1 : 0)                                // #2143
     mix(s.ivy && s.ivy.gift ? 1 : 0)                // the basket is state too
+    mix(s.pet ? 1 : 0)                              // #2197: so is the cat
+    if (s.pet) {
+        mix(s.pet.r); mix(s.pet.c)
+        mix(s.pet.needs.hunger); mix(s.pet.needs.fun); mix(s.pet.needs.energy)
+        mix(s.pet.asleep ? 1 : 0); mix(s.pet.cd)
+    }
     return h >>> 0
 }
