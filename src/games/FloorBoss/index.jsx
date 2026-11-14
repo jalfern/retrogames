@@ -27,7 +27,7 @@ import {
     makeGame, step, state, stateHash, createAutopilot, clickCell, setTool,
     toggleAuto, clickOrder, hireRobot,
     COLS, ROWS, SHIFT, QUOTA, STRIKES, RACK_COST, ROBOT_COST, RACK_CAP,
-    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS,
+    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS,
 } from './sim.js'
 
 const SIM_MS = 1000 / 60
@@ -68,6 +68,8 @@ const FB_ATTRACT = [
     'CLICK BROKEN BOTS REPEATEDLY TO TURBO-REPAIR',
     'JAMMED AISLES: CLICK ONE BOT TO BACK IT OFF',
     'BUILD RACKS ($60) AND HIRE ROBOTS ($150) FROM THE TOP BAR',
+    'THROUGHPUT IS ALSO YOUR BUDGET — EVERY RACK AND BOT COMES OUT OF IT',
+    'AUTO ROUTES THE BOTS — YOUR JOB IS TRIAGE: FIX, UNJAM, BUILD, CALL TRUCKS',
     'B CYCLES THE BUILD TOOL · F TOGGLES AUTO-DISPATCH',
     'THE SERVO SELF-STOWS WHEN BOTS ARE ALL BUSY',
     'PACKED ORDERS STAGE ON THE PAD — TAP THE DOCK TO CALL THE TRUCK EARLY',
@@ -222,11 +224,11 @@ const FloorBossGame = () => {
                     case 'jam': audioController.playTone(140, 0.12, 'square', 0.08); audioController.playTone(110, 0.1, 'square', 0.06, 0.12); audioController.playNoise(0.06, 0.05); fx('JAM!', PX(e.x) + 13, PY(e.y) + 8); break
                     case 'jamclear': audioController.playSweep(220, 480, 0.09, 'square', 0.05); burst(PX(e.x) + 13, PY(e.y) + 13, 3, '#7ec8ff', 1.2); break
                     case 'jamauto': audioController.playSweep(200, 380, 0.12, 'square', 0.04); break
-                    case 'turbo': audioController.playTone(900 + Math.random() * 300, 0.03, 'square', 0.03); break
+                    case 'turbo': audioController.playTone(900 + Math.random() * 300, 0.03, 'square', 0.03); repairPulse.set(`${e.x},${e.y}`, gs.tick); break
                     case 'break': audioController.playNoise(0.18, 0.09); audioController.playSweep(300, 90, 0.24, 'sawtooth', 0.07); shake = 7; fx('BREAKDOWN', '#ff5a4f', PX(e.x) + 13, PY(e.y) + 8); break
                     case 'repaired': audioController.playSweep(400, 900, 0.14, 'triangle', 0.06); burst(PX(e.x) + 13, PY(e.y) + 13, 5, '#7ec8ff', 1.5); break
-                    case 'build': audioController.playTone(180, 0.1, 'square', 0.07); burst(PX(e.x) + 13, PY(e.y) + 13, 5, '#e0954e', 1.5); break
-                    case 'hire': audioController.playTone(480, 0.07, 'square', 0.06); audioController.playTone(600, 0.1, 'square', 0.05, 0.08); break
+                    case 'build': audioController.playTone(180, 0.1, 'square', 0.07); burst(PX(e.x) + 13, PY(e.y) + 13, 5, '#e0954e', 1.5); spendFlash = { label: `RACK −$${RACK_COST} — SPEND COMES OUT OF THROUGHPUT`, until: gs.tick + 180 }; break
+                    case 'hire': audioController.playTone(480, 0.07, 'square', 0.06); audioController.playTone(600, 0.1, 'square', 0.05, 0.08); spendFlash = { label: `BOT −$${ROBOT_COST} — SPEND COMES OUT OF THROUGHPUT`, until: gs.tick + 180 }; break
                     case 'poor': audioController.playTone(120, 0.12, 'square', 0.06); fx('NO BUDGET', '#ff9a4f', PX(e.x) + 13, PY(e.y) + 8); break
                     case 'refuse': audioController.playTone(110, 0.1, 'square', 0.05); break
                     case 'dispatch': audioController.playSweep(500, 700, 0.05, 'square', 0.04); break
@@ -240,7 +242,19 @@ const FloorBossGame = () => {
             }
         }
 
-        const fx = (msg, col, x, y) => { gs.fx.push({ msg, col, x, y, k: 0 }) }
+        const fx = (msg, col, x, y) => {
+            // #2254 item 2: dock messages all anchored at the same spot overprinted
+            // into a smear. Stack them one per lane above the anchor (lane frees when
+            // the message fades), so a busy dock reads as a list, not a pile.
+            const key = Math.round(x / 24)
+            let lane = 0
+            for (const f of gs.fx) if (f.laneKey === key && f.k <= 50) lane = Math.max(lane, f.lane + 1)
+            gs.fx.push({ msg, col, x, y: y - lane * 11, k: 0, lane, laneKey: key })
+        }
+        // #2254 item 4: a turbo-repair click must visibly count — a pulse ring per
+        // click at the bot, painter-only like the rest of the fx.
+        const repairPulse = new Map() // "x,y" -> tick of the last turbo click
+        let spendFlash = null // { label, until } — #2254 item 3: buying reads as a cost
 
         const finish = () => {
             const won = gs.end === 'win'
@@ -494,6 +508,8 @@ const FloorBossGame = () => {
                 ctx.fillStyle = edge; ctx.fillRect(-9, -8, 18, 16)
                 ctx.fillStyle = body; ctx.fillRect(-8, -7, 16, 14)
                 ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(-8, -7, 16, 3)
+                // #2254 item 1: a bright rim so haulers never read as dark crates
+                if (!b.broken && !b.jam) { ctx.strokeStyle = '#7fe9f5'; ctx.lineWidth = 1; ctx.strokeRect(-8.5, -7.5, 17, 15) }
                 // wheel nubs
                 ctx.fillStyle = '#12262e'
                 ctx.fillRect(-10, -6, 2, 5); ctx.fillRect(8, -6, 2, 5)
@@ -514,7 +530,51 @@ const FloorBossGame = () => {
                     ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'
                     ctx.fillText('JAM', bx, by - 11); ctx.textAlign = 'left'
                 }
-                if (gs.sel === b.id) { ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 1.4; ctx.strokeRect(bx - 11.5, by - 10.5, 23, 21) }
+                if (gs.sel === b.id) {
+                    // #2254 item 4: a selected bot must read instantly — bold pulsing
+                    // corner brackets, plus a dashed route line to whatever it is
+                    // heading for, so dispatch shows where the bot is going.
+                    const bp = 4 + (tick % 30 < 15 ? 2 : 0)
+                    ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 2
+                    for (const [cx, cy, sx, sy] of [[bx - 12, by - 11, 1, 1], [bx + 12, by - 11, -1, 1], [bx - 12, by + 11, 1, -1], [bx + 12, by + 11, -1, -1]]) {
+                        ctx.beginPath(); ctx.moveTo(cx + bp * sx, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + bp * sy); ctx.stroke()
+                    }
+                    const t = b.task
+                    let tx = null, ty = null
+                    if ((t.kind === 'toRack' || t.kind === 'toStock') && t.rx != null) { tx = PX(t.rx) + TILE / 2; ty = PY(t.ry) + TILE / 2 }
+                    else if (t.kind === 'toArm') { tx = PX(ARM_CELL.x) + TILE / 2; ty = PY(ARM_CELL.y) + TILE / 2 }
+                    else if (t.kind === 'toOut') { tx = PX(OUT_CELLS[0].x) + TILE / 2; ty = PY(OUT_CELLS[0].y) + TILE / 2 }
+                    if (tx != null) {
+                        const dx = tx - bx, dy = ty - by, len = Math.hypot(dx, dy) || 1
+                        if (len > 30) { // start outside the body so the bot's own cell reads clean
+                            ctx.strokeStyle = 'rgba(255,210,63,0.55)'; ctx.lineWidth = 1.5
+                            ctx.setLineDash([4, 4]); ctx.lineDashOffset = -(tick % 8)
+                            ctx.beginPath(); ctx.moveTo(bx + (dx / len) * 14, by + (dy / len) * 14); ctx.lineTo(tx, ty); ctx.stroke()
+                            ctx.setLineDash([]); ctx.lineDashOffset = 0
+                            ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(tx, ty, 2.6, 0, Math.PI * 2); ctx.fill()
+                        }
+                    }
+                }
+                if (b.broken) {
+                    // #2254 item 4: repair progress is a ring around the bot — it fills
+                    // as the idle clock runs, and every turbo click lands a pulse
+                    const prog = Math.max(0, Math.min(1, 1 - b.repair / REPAIR_TICKS))
+                    ctx.strokeStyle = 'rgba(255,90,79,0.45)'; ctx.lineWidth = 2.4
+                    ctx.beginPath(); ctx.arc(bx, by, 13, 0, Math.PI * 2); ctx.stroke()
+                    ctx.strokeStyle = '#5dff8f'
+                    ctx.beginPath(); ctx.arc(bx, by, 13, -Math.PI / 2, -Math.PI / 2 + prog * Math.PI * 2); ctx.stroke()
+                    const pulseAt = repairPulse.get(`${b.x},${b.y}`)
+                    if (pulseAt != null) {
+                        const pk = tick - pulseAt
+                        if (pk > 20) repairPulse.delete(`${b.x},${b.y}`)
+                        else {
+                            ctx.globalAlpha = 1 - pk / 20
+                            ctx.strokeStyle = '#7ec8ff'; ctx.lineWidth = 2
+                            ctx.beginPath(); ctx.arc(bx, by, 10 + pk * 0.5, 0, Math.PI * 2); ctx.stroke()
+                            ctx.globalAlpha = 1
+                        }
+                    }
+                }
                 if (b.carry) drawItem(ctx, b.carry, bx, by - 14 + Math.sin(tick * 0.12) * 1, 0.85)
             }
         }
@@ -554,8 +614,14 @@ const FloorBossGame = () => {
             for (let i = gs.fx.length - 1; i >= 0; i--) {
                 const f = gs.fx[i]
                 if (f.k > 50) { gs.fx.splice(i, 1); continue }
-                ctx.globalAlpha = Math.max(0, 1 - f.k / 50)
+                const a = Math.max(0, 1 - f.k / 50)
+                ctx.globalAlpha = a
                 ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'
+                // #2254 item 1: bare glyphs on the dark floor were unreadable — every
+                // floating message now rides a dark plate that fades with it.
+                const tw = ctx.measureText(f.msg).width
+                ctx.fillStyle = 'rgba(4,8,12,0.78)'
+                ctx.fillRect(f.x - tw / 2 - 3, f.y - f.k * 0.35 - 9, tw + 6, 12)
                 ctx.fillStyle = f.col
                 ctx.fillText(f.msg, f.x, f.y - f.k * 0.35)
                 ctx.globalAlpha = 1
@@ -578,11 +644,11 @@ const FloorBossGame = () => {
         const paintHud = (tick) => {
             ctx.fillStyle = 'rgba(8,12,18,0.92)'; ctx.fillRect(0, 0, W, 36)
             ctx.fillStyle = 'rgba(126,200,255,0.12)'; ctx.fillRect(0, 35, W, 1)
-            ctx.fillStyle = '#7e9cb0'; ctx.font = 'bold 8px monospace'
+            ctx.fillStyle = '#cfe6f5'; ctx.font = 'bold 9px monospace'
             ctx.fillText('THROUGHPUT', 10, 11)
             ctx.fillStyle = '#ffffff'; ctx.font = 'bold 15px monospace'
             ctx.fillText(String(gs.score).padStart(4, '0'), 10, 28)
-            ctx.fillStyle = '#5d7284'; ctx.font = 'bold 8px monospace'
+            ctx.fillStyle = '#a8c8dc'; ctx.font = 'bold 9px monospace'
             ctx.fillText(`QUOTA ${QUOTA}`, 72, 28)
             // quota bar
             ctx.fillStyle = '#14212c'; ctx.fillRect(72, 8, 120, 8)
@@ -594,7 +660,7 @@ const FloorBossGame = () => {
                 ctx.fillStyle = i < gs.strikes ? '#ff5a4f' : '#2c3a44'
                 ctx.beginPath(); ctx.arc(210 + i * 14, 12, 4.5, 0, Math.PI * 2); ctx.fill()
             }
-            ctx.fillStyle = '#7e9cb0'; ctx.font = 'bold 7px monospace'
+            ctx.fillStyle = '#cfe6f5'; ctx.font = 'bold 8px monospace'
             ctx.fillText('EXPIRED', 204, 28)
             // freight line (#1921): escrow is money the pack booked but the dock
             // hasn't shipped — it only becomes THROUGHPUT when the trailer hauls.
@@ -615,7 +681,7 @@ const FloorBossGame = () => {
             ctx.font = 'bold 13px monospace'
             ctx.textAlign = 'center'
             ctx.fillText(`${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`, 300, 23)
-            ctx.font = 'bold 7px monospace'; ctx.fillStyle = '#7e9cb0'
+            ctx.font = 'bold 8px monospace'; ctx.fillStyle = '#cfe6f5'
             ctx.fillText('SHIFT', 300, 9)
             // rush lamp — a rotating beacon glow while the wave is on
             const rush = gs.tick % (2700 + 1200) >= 2700
@@ -631,7 +697,7 @@ const FloorBossGame = () => {
             }
             ctx.fillStyle = rush ? (tick % 30 < 16 ? '#ffd23f' : '#8a6a17') : '#243038'
             ctx.beginPath(); ctx.arc(346, 17, 7, 0, Math.PI * 2); ctx.fill()
-            ctx.fillStyle = '#7e9cb0'; ctx.font = 'bold 7px monospace'
+            ctx.fillStyle = '#cfe6f5'; ctx.font = 'bold 8px monospace'
             ctx.fillText('RUSH', 346, 30)
             ctx.textAlign = 'left'
             chip('auto', gs.auto ? 'AUTO ✓' : 'AUTO', gs.auto, '#5dff8f')
@@ -640,7 +706,7 @@ const FloorBossGame = () => {
         }
 
         const paintOrders = () => {
-            ctx.fillStyle = '#7e9cb0'; ctx.font = 'bold 8px monospace'
+            ctx.fillStyle = '#cfe6f5'; ctx.font = 'bold 10px monospace'
             ctx.fillText('ORDERS', 694, 38)
             const open = gs.orders.slice(0, 5)
             open.forEach((o, i) => {
@@ -662,8 +728,8 @@ const FloorBossGame = () => {
                 ctx.fillStyle = '#14212c'; ctx.fillRect(rx + 6, r.y + r.h - 14, r.w - 12, 5)
                 ctx.fillStyle = late ? '#ff5a4f' : '#3d9fd8'
                 ctx.fillRect(rx + 6, r.y + r.h - 14, (r.w - 12) * frac, 5)
-                ctx.fillStyle = o.prio ? '#ffd23f' : '#5d7284'
-                ctx.font = 'bold 6px monospace'
+                ctx.fillStyle = o.prio ? '#ffd23f' : '#cfe6f5'
+                ctx.font = 'bold 8px monospace'
                 ctx.fillText(o.prio ? 'PRIORITY' : `#${o.id}`, rx + 6, r.y + r.h - 4)
             })
             if (orderEnter.size > 40) for (const id of [...orderEnter.keys()]) if (!gs.orders.some((o) => o.id === id)) orderEnter.delete(id)
@@ -674,18 +740,28 @@ const FloorBossGame = () => {
             ctx.fillStyle = 'rgba(8,12,18,0.88)'; ctx.fillRect(0, y, W - 104, H - y)
             gs.robots.forEach((b, i) => {
                 const x = 12 + i * 140
-                ctx.fillStyle = '#5d7284'; ctx.font = 'bold 7px monospace'
+                ctx.fillStyle = '#a8c8dc'; ctx.font = 'bold 9px monospace'
                 ctx.fillText(`BOT ${i + 1}`, x, y + 14)
-                ctx.fillStyle = '#14212c'; ctx.fillRect(x + 30, y + 8, 60, 6)
+                ctx.fillStyle = '#14212c'; ctx.fillRect(x + 34, y + 7, 60, 7)
                 ctx.fillStyle = b.wear > 75 ? '#ff5a4f' : b.wear > 45 ? '#ffd23f' : '#3d9fd8'
-                ctx.fillRect(x + 30, y + 8, (60 * b.wear) / 100, 6)
+                ctx.fillRect(x + 34, y + 7, (60 * b.wear) / 100, 7)
                 ctx.fillStyle = b.broken ? '#ff5a4f' : b.jam ? '#ffd23f' : '#7ee0a0'
-                ctx.fillText(b.broken ? 'DOWN' : b.jam ? 'JAM' : b.carry ? b.carry.toUpperCase() : b.task === 'idle' ? 'IDLE' : 'MOVING', x + 96, y + 14)
+                ctx.fillText(b.broken ? 'DOWN' : b.jam ? 'JAM' : b.carry ? b.carry.toUpperCase() : b.task === 'idle' ? 'IDLE' : 'MOVING', x + 100, y + 14)
             })
-            ctx.fillStyle = '#44586a'; ctx.font = '6.5px monospace'
-            ctx.fillText('CLICK BOT THEN RACK = DISPATCH · CLICK DOWN BOT = TURBO FIX · CLICK JAM = BACK OFF · SIMREADY MANIFEST: ' + MANIFEST_REV, 12, y + 34)
+            // #2254 item 3: a purchase dropped THROUGHPUT with no explanation — the
+            // spend lands in the footer for 3 world-seconds, spelled out.
+            if (spendFlash && gs.tick < spendFlash.until) {
+                ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 10px monospace'
+                ctx.fillText(spendFlash.label, 12, y + 28)
+            } else spendFlash = null
+            ctx.fillStyle = '#cfe6f5'; ctx.font = 'bold 9px monospace'
+            ctx.fillText('AUTO ROUTES THE BOTS — BREAKDOWNS, JAMS, BUILDING AND PAD CALLS ARE YOURS', 12, y + 40)
+            ctx.fillStyle = '#b8d4e8'; ctx.font = 'bold 9px monospace'
+            ctx.fillText('CLICK BOT THEN RACK = DISPATCH · CLICK DOWN BOT = TURBO FIX · CLICK JAM = BACK OFF', 12, y + 52)
+            ctx.fillStyle = '#9fc0d8'; ctx.font = 'bold 8px monospace'
+            ctx.fillText('SPEND COMES OUT OF THROUGHPUT — RACK $60 · BOT $150 · SIMREADY MANIFEST: ' + MANIFEST_REV, 12, y + 64)
             const st = episodeStats()
-            if (st.saved) { ctx.fillStyle = '#3d5d72'; ctx.fillText(`PLAICRAFT EPISODES STORED: ${st.saved} (${st.won} won)`, 12, y + 44) }
+            if (st.saved) { ctx.fillStyle = '#8fb8d0'; ctx.textAlign = 'right'; ctx.fillText(`PLAICRAFT EPISODES STORED: ${st.saved} (${st.won} won)`, W - 112, y + 64); ctx.textAlign = 'left' }
         }
 
         const paintRushWash = (tick) => {
@@ -788,6 +864,19 @@ const FloorBossGame = () => {
         // so click-select-dispatch teaches itself without attract lines
         const paintTutorial = (tick) => {
             if (screenRef.current !== 'play' || gs.tick > 900) return
+            // #2254 item 3: the player's job was unclear — AUTO looks like it runs
+            // the whole shift. For the first 15 s the floor states the division:
+            // auto routes the bots, the manager handles everything else.
+            ctx.fillStyle = 'rgba(4,8,12,0.8)'
+            ctx.fillRect(GX + COLS * TILE / 2 - 214, GY + 2, 428, 34)
+            ctx.strokeStyle = 'rgba(255,210,63,0.5)'; ctx.lineWidth = 1
+            ctx.strokeRect(GX + COLS * TILE / 2 - 214, GY + 2, 428, 34)
+            ctx.textAlign = 'center'
+            ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 10px monospace'
+            ctx.fillText('AUTO-DISPATCH ROUTES THE BOTS — YOU RUN THE FLOOR', GX + COLS * TILE / 2, GY + 15)
+            ctx.fillStyle = '#cfe6f5'; ctx.font = 'bold 9px monospace'
+            ctx.fillText('FIX DOWN BOTS · CLEAR JAMS · BUY RACKS AND BOTS · TAP THE PAD TO CALL THE TRUCK', GX + COLS * TILE / 2, GY + 29)
+            ctx.textAlign = 'left'
             const bot = gs.sel != null ? gs.robots.find((b) => b.id === gs.sel) : null
             const target = bot || gs.robots.find((b) => !b.broken)
             if (!target) return
@@ -1104,19 +1193,24 @@ const FloorBossGame = () => {
 
     return (
         <div className="relative w-full h-full flex flex-col items-center justify-center bg-black select-none">
-            <div ref={stageRef} className="relative w-full max-w-[800px] aspect-[800/520]" />
+            <div ref={stageRef} className="relative w-full max-w-[800px] aspect-[800/520]">
+                {/* #2254 item 5: the attract lines anchored to the wrapper, not the
+                    letterboxed canvas, and sat over the footer. Inside the stage they
+                    scale with the canvas; % heights keep them above the footer band
+                    (the canvas footer starts at 446/520 ≈ 14% from the bottom). */}
+                {screen === 'attract' && (
+                    <div className="absolute bottom-[20%] inset-x-0 flex justify-center pointer-events-none z-10">
+                        <AttractMessage messages={FB_ATTRACT} ms={2600} className="text-cyan-200/80" />
+                    </div>
+                )}
+                {/* #1663 discoverability: the watch line is static, never cycles away. */}
+                {screen === 'attract' && (
+                    <div className="absolute bottom-[15%] inset-x-0 flex justify-center pointer-events-none z-10 font-mono text-[10px] tracking-widest text-cyan-200/70">
+                        PRESS Y TO WATCH THE PROVEN SHIFT
+                    </div>
+                )}
+            </div>
             <div className="absolute top-2 left-1/2 -translate-x-1/2 pointer-events-none font-mono text-[11px] tracking-widest" ref={setHud('toast')} style={{ color: '#ffd23f', textShadow: '0 1px 0 #000' }} />
-            {screen === 'attract' && (
-                <div className="absolute bottom-8 inset-x-0 flex justify-center pointer-events-none">
-                    <AttractMessage messages={FB_ATTRACT} ms={2600} className="text-cyan-200/80" />
-                </div>
-            )}
-            {/* #1663 discoverability: the watch line is static, never cycles away. */}
-            {screen === 'attract' && (
-                <div className="absolute bottom-2 inset-x-0 flex justify-center pointer-events-none font-mono text-[10px] tracking-widest text-cyan-200/60">
-                    PRESS Y TO WATCH THE PROVEN SHIFT
-                </div>
-            )}
             {screen === 'over' && end && (
                 <div className="absolute inset-0 flex items-end justify-center pb-24 pointer-events-none">
                     <p className="font-mono text-[11px] text-white/60">
