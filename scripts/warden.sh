@@ -138,6 +138,22 @@ main() {
     git -C "$REPO" show origin/main:scripts/lib/keysync.mjs > "$KEYSYNC" 2>/dev/null \
         || cp "$REPO/scripts/lib/keysync.mjs" "$KEYSYNC" 2>/dev/null || true
 
+    # ---- 1c. LANE-BUSY LIB (#2121) ----------------------------------------
+    # pgrep names `opencode run` sessions, but a session hosted by
+    # `opencode serve` hides inside the serve process: the warden double-kicks
+    # and two drivers share one worktree/port (#2036 slot a; 2026-11-14 studio
+    # QA, whose ghost kept committing after the duplicate's vite died on
+    # strictPort). The lane's pinned DEV port is the witness: lanebusy.mjs
+    # answers BUSY when a young dev server on that port descends from a live
+    # opencode process. FREE (or a broken probe) never blocks a kick.
+    LBJ="$LOG_DIR/lanebusy.mjs"
+    git -C "$REPO" show origin/main:scripts/lib/lanebusy.mjs > "$LBJ" 2>/dev/null \
+        || cp "$REPO/scripts/lib/lanebusy.mjs" "$LBJ" 2>/dev/null || true
+    lane_driven() {  # $1 = the lane's pinned dev port
+        [[ -s "$LBJ" ]] || return 1
+        [[ "$(node "$LBJ" --port "$1" --cap 5400 2>/dev/null | tail -1)" == BUSY* ]]
+    }
+
     # Every open issue (REST lists PRs as issues too; drop them).
     ISSUES=$(gh api "repos/$GH/issues?state=open&per_page=100" \
              --jq '[.[] | select(.pull_request | not)]') || { log "gh failed"; return 1; }
@@ -413,6 +429,14 @@ main() {
     kick_slot() {   # $1 = slot a|b, $2 = issue number, $3 = launchd job
         local s=$1 n=$2 job=$3
         [[ -z "$n" ]] && return 0
+        # #2121: a session invisible to pgrep (serve-hosted) but driving this
+        # slot's pinned port means the slot is NOT idle — kick another tick.
+        local dev=5173; [[ "$s" == b ]] && dev=5178
+        if lane_driven "$dev"; then
+            log "#$n: slot $s skip-kick — dev :$dev driven by a live session (invisible to pgrep?)"
+            ACTIONS+=("lane-busy:$s")
+            return 0
+        fi
         # Three kicks with no FORGE: comment in between = the slot keeps dying
         # before it reports anything. Stop kicking; that is Jon's call. Any
         # non-WARDEN comment restarts the count (per-slot since #1258: two
@@ -522,28 +546,35 @@ main() {
     #             game waiting: QA spills into the builder's slot, and step 4
     #             holds the next game until that one item is done.
     #   mbp     — PARKED 2026-10-19 (Jon). To bring it back, add:
-    #             "mbp 18001 UNCLAIMED 2 com.jalfern.forge-qa-mbp"
+    #             "mbp 18001 UNCLAIMED 2 com.jalfern.forge-qa-mbp 5175"
     QA_WAITING=$(print -r -- "$ISSUES" | jq '[.[] | select(any(.labels[]; .name == "feedback"))
                                           | select(any(.labels[]; .name == "needs-approval") | not)] | length')
     UNCLAIMED=$(print -r -- "$ISSUES" | jq '[.[] | select(any(.labels[]; .name == "feedback"))
         | select(any(.labels[]; .name == "needs-approval" or .name == "building-qa" or .name == "waiting-jon") | not)] | length')
-    LANES=("mini 18000 QA_WAITING 1 com.jalfern.forge-qa"
-           "studio 8000 UNCLAIMED 1 com.jalfern.forge-qa-studio")
+    LANES=("mini 18000 QA_WAITING 1 com.jalfern.forge-qa 5174"
+           "studio 8000 UNCLAIMED 1 com.jalfern.forge-qa-studio 5176")
     # #1258: the builder-slot QA spill is superseded while slot b is loaded —
     # a free second builder is worth more than a QA item, and the whole-queue
     # rule reaches feedback through slot b anyway. Reverting the trial restores
     # the spill (B_LOADED stays 0, nothing else to do).
-    [[ "$ALIVE" == no && -z "$TARGET" && "$B_LOADED" == 0 ]] && LANES+=("builder 8000 UNCLAIMED 2 com.jalfern.forge-qa-builder")
+    [[ "$ALIVE" == no && -z "$TARGET" && "$B_LOADED" == 0 ]] && LANES+=("builder 8000 UNCLAIMED 2 com.jalfern.forge-qa-builder 5177")
     [[ "$HALTED" == yes ]] && LANES=()   # #605: halt freezes every lane, not just the builder
     # #1372: STUDIO_FLAGSHIPPED marks studio taking the flagship gap THIS tick —
     # the gap then does not survive to mini. Studio down, busy, or queue/feedback-
     # bound does NOT consume it (that is exactly when mini must step up).
     STUDIO_KICKED=0; MINI_KICKED=0; STUDIO_FLAGSHIPPED=0
     for spec in "${LANES[@]}"; do
-        lane=(${=spec}); node=${lane[1]} port=${lane[2]} var=${lane[3]} need=${lane[4]} job=${lane[5]}
+        lane=(${=spec}); node=${lane[1]} port=${lane[2]} var=${lane[3]} need=${lane[4]} job=${lane[5]} dev=${lane[6]}
         have=${(P)var}
         curl -s -m 3 "http://127.0.0.1:$port/v1/models" >/dev/null 2>&1 || continue
         pgrep -f "opencode run.*QA MASTER on node $node\\." >/dev/null && continue
+        # #2121: the port witness catches what pgrep cannot — a serve-hosted
+        # session already driving this node's pinned DEV port.
+        if [[ -n "$dev" ]] && lane_driven "$dev"; then
+            log "QA $node skip-kick — dev :$dev driven by a live session (invisible to pgrep?)"
+            ACTIONS+=("lane-busy:qa-$node")
+            continue
+        fi
         # studio also earns a session for the QUEUE (#1258 whole queue): no
         # free feedback but more queued games than free builder slots — the
         # QA session takes the oldest one (FORGE-QA.md 2f), and qa-claim.sh's
@@ -570,6 +601,7 @@ main() {
     # lane per game, enforced in qaIdleStage).
     if [[ "$HALTED" != yes && "$ALIVE" == yes && "$QA_STUDIO_QUEUE" != 1 ]] && (( ! STUDIO_KICKED )); then
         pgrep -f "opencode run.*QA MASTER on node studio\\." >/dev/null \
+            || lane_driven 5176 \
             || ! curl -s -m 3 "http://127.0.0.1:8000/v1/models" >/dev/null 2>&1 \
             || ! launchctl print "gui/$(id -u)/com.jalfern.forge-qa-studio" >/dev/null 2>&1 \
             || { STAGE=$(node "$REPO/scripts/idle-kick.mjs" qa 2>>"$LOG" | tail -1)
@@ -592,6 +624,7 @@ main() {
     if [[ "$HALTED" != yes && "$ALIVE" == yes && "$QA_MINI_FLAGSHIP" == 1 ]] \
         && (( ! MINI_KICKED )) && (( ! STUDIO_FLAGSHIPPED )); then
         pgrep -f "opencode run.*QA MASTER on node mini\\." >/dev/null \
+            || lane_driven 5174 \
             || ! curl -s -m 3 "http://127.0.0.1:18000/v1/models" >/dev/null 2>&1 \
             || ! launchctl print "gui/$(id -u)/com.jalfern.forge-qa" >/dev/null 2>&1 \
             || { [[ -n "${STAGE:-}" ]] || STAGE=$(node "$REPO/scripts/idle-kick.mjs" qa 2>>"$LOG" | tail -1)

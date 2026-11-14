@@ -20,7 +20,9 @@
 // across a server reboot is nonsense, never a rate). For #1430 drop the
 // `content !== headContent` guard in lib/statepark.mjs newestReport — D2a goes
 // red (a checkout-reverted STATE.md is the newest file on disk and would
-// masquerade as the fresh report).
+// masquerade as the fresh report). For #2121 flip `age > capSec` to `false`
+// in scripts/lib/lanebusy.mjs — E3 goes red (a server that outlived every cap
+// would wedge the lane's kicks forever).
 
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, utimesSync } from 'node:fs'
@@ -28,6 +30,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { builderLadder, lanePlan } from './lib/lanes.mjs'
+import { laneVerdict } from './lib/lanebusy.mjs'
 import { parkPath, newestReport, readReport, parkReport } from './lib/statepark.mjs'
 import { slotsLine, throughputLine } from '../src/pages/floor.js'
 import { trialVerdict, reportText, laneSplit, VERDICT_FILE,
@@ -544,6 +547,35 @@ section('D. statepark — race-proof STATE.md handoff (#1430)')
         { cwd: cliDir, encoding: 'utf8', env: { ...process.env, STATEPARK_DIR: cliDir } })
     ok(out.trim() === 'NO-REPORT', `D4d empty checkout reads honest NO-REPORT: got ${out.trim()}`)
     rmSync(cliDir, { recursive: true, force: true })
+}
+
+// ---- E. LANE-BUSY WITNESS (#2121) ------------------------------------------
+// pgrep misses serve-hosted sessions; the pinned DEV port + live opencode
+// ancestry is what the warden kicks behind. E1-E5 pin the pure decision,
+// E6-E9 pin that warden.sh actually consults it at every kick site.
+{
+    const now = 1000000
+    const live = { pid: 100, startedSec: now - 600, chain: ['zsh -s', 'node vite --port 5176 --strictPort'] }
+    const ghost = { pid: 101, startedSec: now - 600, chain: ['/opt/homebrew/bin/opencode.exe serve --service', 'npm run dev --port 5176 --strictPort', 'node vite --port 5176 --strictPort'] }
+    ok(laneVerdict([ghost], 5400, now).driven === true,
+        'E1 serve-hosted dev server on the pinned port blocks the kick (the #2121 sighting)')
+    ok(laneVerdict([live], 5400, now).driven === false,
+        'E2 orphaned server (chain without opencode — reparented to launchd) is FREE: crash recovery must still kick')
+    ok(laneVerdict([{ ...ghost, startedSec: now - 5401 }], 5400, now).driven === false,
+        'E3 a server older than the cap is FREE even with live ancestry — the guard cannot wedge kicks forever')
+    ok(laneVerdict([], 5400, now).driven === false && laneVerdict(undefined, 5400, now).driven === false,
+        'E4 no listeners (and no witness at all) is FREE')
+    ok(laneVerdict([{ pid: 3, startedSec: now + 50, chain: ['opencode serve', 'vite'] }], 5400, now).driven === false,
+        'E5 clock-skew nonsense (negative age) never blocks a kick')
+    ok(warden.includes('origin/main:scripts/lib/lanebusy.mjs'),
+        'E6 warden materialises lanebusy from origin/main (sleepwatch law)')
+    ok(warden.includes('[[ -s "$LBJ" ]] || return 1'),
+        'E7 a broken/missing probe cannot block a kick (fail-open, the other direction from E1)')
+    ok(/LANES=\(\s*\n?\s*"mini 18000[^"]*5174"[\s\S]*"studio 8000[^"]*5176"/.test(warden)
+        && warden.includes('lane_driven "$dev"'),
+        'E8 every QA lane spec carries its pinned DEV port (forge-qa.sh map) and the loop consults it')
+    ok(warden.includes('lane_driven "$dev"') && (warden.match(/lane_driven/g) || []).length >= 5,
+        'E9 guard sits at kick_slot, the QA loop AND both flagship fallbacks (>=5 sites incl. definition)')
 }
 
 console.log(`\x1b[1m\nlanecheck: ${pass} gates, ${fails.length} failures\x1b[0m`)
