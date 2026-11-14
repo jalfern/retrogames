@@ -11,6 +11,7 @@ import { GAMES } from '../../config/games'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
+import { useRotateHint } from '../../components/useRotateHint'
 import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { MESSAGES, PRESS } from './attract.js'
@@ -66,6 +67,9 @@ const humanSeed = () => {
 export default function FireCrew() {
     const canvasRef = useRef(null)
     const [screen, setScreen] = useState('attract')
+    // #2187: the rotate card's dismiss button is chrome — attract copy over it
+    // fails the #1099 sweep on phones (#1748 rule: get out of the card's way).
+    const rotHint = useRotateHint()
     const [uiScreen, setUiScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [end, setEnd] = useState(null)
@@ -585,7 +589,7 @@ export default function FireCrew() {
                 style={{ imageRendering: 'pixelated', aspectRatio: `${VW} / ${VH}`, width: 'min(100vw, calc(100vh * 3 / 2))' }}
             />
 
-            {screen === 'attract' && (
+            {screen === 'attract' && !rotHint && (
                 <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center font-mono px-6">
                     <h1 className="text-5xl font-black tracking-widest mb-2" style={{ color: '#ff7a1a', textShadow: '3px 3px 0 #7a1400, 0 10px 28px #000' }}>FIRE CREW</h1>
                     <span className="mb-6 inline-block" style={{ textShadow: '0 2px 8px #000, 0 0 22px #000' }}>

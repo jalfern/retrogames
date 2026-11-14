@@ -93,6 +93,18 @@ for (const g of ['MagicCarpet', 'CivilizationV']) {
         /import AttractMessage/.test(src) && !/<br\s*\/>/.test(src))
 }
 
+// #2187: fire-crew/metroid/robot-lab attract copy sat over the RotateHint
+// card's dismiss button at CI font widths (the sweep's chrome rule). The
+// #1748 fix — hide centered attract copy while data-rotate-hint is published
+// — must stay wired on the three titles that went red.
+const rh = readFileSync(resolve(ROOT, 'src/components/useRotateHint.js'), 'utf8')
+ok('the #1748 hide-hook exists', /export function useRotateHint/.test(rh))
+for (const g of ['FireCrew', 'MetroidLite', 'RobotLab']) {
+    const src = readFileSync(resolve(ROOT, `src/games/${g}/index.jsx`), 'utf8')
+    ok(`${g}: attract copy steps aside for the rotate hint (#2187)`,
+        /useRotateHint/.test(src) && /!rotHint/.test(src))
+}
+
 // ---- games list ------------------------------------------------------------
 
 const reg = readFileSync(resolve(ROOT, 'src/config/games.js'), 'utf8')

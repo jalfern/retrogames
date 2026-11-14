@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import VirtualControls from '../../components/VirtualControls'
+import { useRotateHint } from '../../components/useRotateHint'
 import PauseOverlay from '../../components/PauseOverlay'
 import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -34,6 +35,9 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
             const mountRef = useRef(null)
             const canvasRef = useRef(null)
             const [phase, setPhase] = useState('attract')
+            // #2187: attract copy over the rotate card's dismiss button fails
+            // #1099 on phones at CI font widths — get out of its way (#1748).
+            const rotHint = useRotateHint()
             const [paused, setPaused] = useState(false)
             const [tq, setTq] = useState(null)
             const [runs, setRuns] = useState(() => episodeStats())
@@ -532,7 +536,7 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                     <span className="absolute left-1/2 top-1/2 h-px w-2 -translate-x-1/2 -translate-y-1/2 bg-emerald-300/40" />
                 </div>
             )}
-            {phase === 'attract' && (
+            {phase === 'attract' && !rotHint && (
                 <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/40 font-mono text-center">
                     <div className="text-3xl font-bold tracking-widest text-emerald-300">ROBOT LAB</div>
                     <div className="mt-2 text-xs text-slate-300">A PLAICRAFT MANIPULATION SANDBOX</div>
@@ -565,7 +569,7 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                 </div>
             )}
             {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
-            {phase === 'attract' && (
+            {phase === 'attract' && !rotHint && (
                 <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
                     <AttractWatchButton />
                 </div>
