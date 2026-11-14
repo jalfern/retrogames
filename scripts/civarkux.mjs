@@ -47,7 +47,26 @@ r.check('Spaceflight learned (ask 1 precondition)', s.victory.spaceflight === tr
 
 // ASK 1 — touch the HUD victory button at the phone shape
 const hudBtn = page.locator('button', { hasText: 'I · VICTORY' })
-await hudBtn.tap()
+// #2085 regression pin: vpad mounts after the FIRST touch on screen, and its
+// invisible stick layer is a fixed z-40 half-screen surface; chrome MUST stack
+// above it (shell convention z-50) or every left-half button dies — the pad
+// mounts mid-gesture and Chrome's synthesized mousedown/mouseup retargets to
+// [data-vc="stick"], so the button never gets its click. Wake the pad first;
+// checking before any touch would pass vacuously.
+await page.touchscreen.tap(100, 700) // harmless stick-region tap: mounts vpad
+await wait(250)
+const aboveStick = async (label) => page.evaluate((txt) => {
+    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes(txt))
+    if (!b) return false
+    const r = b.getBoundingClientRect()
+    const el = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+    return !!el && (el === b || b.contains(el))
+}, label)
+r.check('HUD victory button receives touches (above the vpad stick layer)', await aboveStick('I · VICTORY'))
+// Raw coordinate tap — exactly what a finger does. locator.tap() would burn its
+// 180 s actionability timeout on this interception instead of failing the gate.
+const hudBox = await hudBtn.boundingBox()
+if (hudBox) await page.touchscreen.tap(hudBox.x + hudBox.width / 2, hudBox.y + hudBox.height / 2)
 await wait(350)
 let body = await page.evaluate(() => document.body.innerText)
 r.check('the phone touch button opens VICTORY', body.includes('VICTORY') && body.includes('THE RIVAL TRACKS'))
