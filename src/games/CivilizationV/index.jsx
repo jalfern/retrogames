@@ -1118,7 +1118,10 @@ const CivilizationVGame = () => {
         <div className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none" style={{ touchAction: 'none' }}>
             <div ref={stageRef} className="absolute inset-0" />
 
-            <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
+            {/* #2085: chrome must sit ABOVE vpad's z-40 stick layer (shell
+                convention, see VirtualControls) or every left-half button dies
+                at the phone shape — hit-test lands on data-vc="stick". */}
+            <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100 z-50' : 'opacity-0'}`}>
                 <div className="absolute top-2 left-3 right-3 flex flex-wrap items-center gap-2 text-white font-mono text-xs">
                     <span className="px-2 py-0.5 rounded bg-red-700/70 border border-red-300/50 text-red-50 font-bold">ROME</span>
                     <span ref={setHud('turn')} className="text-cyan-200">TURN 1/40</span>
