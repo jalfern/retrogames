@@ -36,7 +36,7 @@ import {
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court — one pad button, two orders
     scheduleMeals, MEAL_WINDOW, SPAT_CD,   // #2244: the meal bells — the F1 cheat re-seeds today's hours
     NEED_HINT,   // #2253: the amber prompt names the fix
-    VISIT_TIMBRE,   // #2240: each neighbour owns a call motif + entrance footfalls
+    VISIT_TIMBRE, REL_EDGES,   // #2240: each neighbour owns a call motif + entrance footfalls; FAMILY tier for scenario legs
     stateHash,
 } from './sim.js'
 import {
@@ -912,7 +912,9 @@ const HomebodyGame = () => {
                 money: (v) => { if (gs) gs.money = v },
                 select: (i) => { if (gs) setSel(gs, i) },   // #2222: the shelf follows the pick
                 bond: (k, v) => { if (gs && gs.rel[k] !== undefined) gs.rel[k] = v },
+                attractIvy: () => (demoG ? { ivy: !!demoG.ivy, demoIvy: demoG.demoIvy, hour: +demoG.hour.toFixed(1), rungFx: demoG.ivy ? demoG.ivy.state : null } : null),   // #2240: the attract's own sim is demoG, not gs
                 ringIvy: () => { if (gs) { gs.ivyAfter = Math.min(gs.ivyAfter, Math.floor(gs.hour)); gs.ivyGap = 0 } return 'Ivy rings soon' },   // #2143
+                ivyFamily: () => { if (gs) { gs.rel.ivy = Math.max(gs.rel.ivy, REL_EDGES[2] + 5); if (gs.ivy) gs.ivy.honey = true } return 'FAMILY' },   // #2240: the top tier for scenario legs (basket + honey + gold pulse) — a visitor already inside re-declares her jar
                 ringMeal: () => { if (gs) { if (gs.meal) { gs.items = gs.items.filter((x) => x !== gs.meal); gs.meal = null; gs.mealEaten = [] } if (gs.mealSlot >= 3) { gs.mealSlot = 0; scheduleMeals(gs) } const sl = gs.mealSlot; gs.mealAfter[sl] = Math.max(Math.floor(gs.hour), gs.hour - MEAL_WINDOW + 0.05) } return 'a bell is due' },   // #2244: ring any bell now (scenario setup, like ringIvy) — retires whatever plate sits so the taps order the fresh one, and the window opens wide even if the clock passed the slot
                 ivyHome: () => { if (gs && gs.ivy) { gs.ivy.state = 'leaving'; gs.ivy.path = null } },   // #2143: rig the next visit (scenario setup, like park/foul)
                 // #2070: rig the spat scenario — park the pair beside each

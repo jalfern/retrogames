@@ -53,6 +53,11 @@
 //                  (need → fix, re-armed by recovery), an issued order rings
 //                  its target, and the banner sits on the lawn, not over the
 //                  residents.
+//  12. GIFT LANDS & TIMBRES (#2240) — the FRIENDS+ basket is PHYSICALLY set
+//                  down beside the fridge (honey rides FAMILY) with its own
+//                  event, timer and hash-silence; Fern and Ivy own distinct
+//                  call motifs and entrance footfalls; the attract rings Ivy
+//                  once per run and a chat at her ring actually lands.
 //
 // It proves IT can fail the playbook way: break one load-bearing line in sim.js
 // (content accrual in finishUse, or the relAdd(s,'fern') feed in the visitor
@@ -83,6 +88,7 @@ import {
     PAPER, PAPER_LATE, PAPER_LINES,   // #2238: the paper route
     MEAL, MEAL_NAMES, MEAL_DUE, MEAL_WINDOW, MEAL_BOND, MEAL_LINES, SHARED_MEAL_LINES, HOUR_SEC,   // #2244: the meal bells
     AMBER_AT, DAY1_GRACE, NEED_HINT,   // #2253: the first-time player pass
+    GIFT_LAND_T, VISIT_TIMBRE,   // #2240: the set-down basket + the visitor timbres
 } from '../src/games/Homebody/sim.js'
 import { readFileSync } from 'node:fs'
 
@@ -1242,7 +1248,7 @@ section('SECOND VISITOR')   // #2143 — Ivy, the market neighbour
     const ivArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
     check('pin: the Ivy-chat block feeds the flower meter', /if \(partner\) \{[^}]*relAdd\(s, 'ivy'/.test(ivSim))
     check('pin: gift tiers are FRIENDS/FAMILY and the window closes at dusk', /const gift = lv >= 2/.test(ivSim) && /lv >= 3/.test(ivSim) && /s\.hour < 19/.test(ivSim))
-    check('pin: the panel runs the flower IVY row with its FAMILY pulse', /'flower', '#a3579b', relLevel\(s\.rel\.ivy\), 'IVY'/.test(ivArt) && /relLevel\(s\.rel\.ivy\) === 3/.test(ivArt))
+    check('pin: the panel runs the flower IVY row with its FAMILY pulse', /glyph: 'flower', col: '#a3579b', lv: relLevel\(s\.rel\.ivy\)/.test(ivArt) && /pulse: relLevel\(s\.rel\.ivy\) === 3/.test(ivArt))   // #2240: rows now ship as bondRows data
     check('pin: Ivy rides the draw order and the basket is painted', ivJsx.includes('g.ivy ? [{ p: g.ivy, v: g.ivy.y }]') && /if \(p\.gift\) \{/.test(ivArt))
     check('pin: the shell names her arrival, her gift and her bond lines', /case 'gift'/.test(ivJsx) && /IVY AT THE GATE/.test(ivJsx) && /ivy: 'IVY'/.test(ivJsx))
 }
@@ -1664,7 +1670,7 @@ section('KIDS (#2203): Pip — counter law, kid day, coos, hash')
     check('pin: the cry law stings nearby residents', /KID_CRY_STING/.test(kidSim) && /needs\.social = Math\.max\(0,[^)]*- KID_CRY_STING\)/.test(kidSim))
     check('pin: tumbles feed the kid bond and the resident', /relAdd\(s, 'kid', KID_BOND\)/.test(kidSim) && /needs\.social = Math\.min\(1, partner\.needs\.social \+ KID_SOCIAL\)/.test(kidSim))
     check('pin: the child rides stateHash', /mix\(s\.kid \? 1 : 0\)/.test(kidSim))
-    check('pin: the bond panel rows the child under the stars', /if \(s\.kid\) bondRow/.test(kidArt) && /'PIP'/.test(kidArt))
+    check('pin: the bond panel rows the child under the stars', /rows\.push\(\{ key: 'kid', glyph: 'star'/.test(kidArt) && /'PIP'/.test(kidArt))   // #2240: the rows ship as bondRows data now
     check('pin: the shell draws Pip in the depth order', /drawKid/.test(kidJsx) && kidJsx.includes('g.kid ? [{ p: g.kid, v: g.kid.y }]'))
     check('pin: K keys the card and the counter events have voices', /KID_KEYS = new Set\(\['KeyK'\]\)/.test(kidJsx) && /specialPick = 'kidkit'/.test(kidJsx) && /case 'kid':/.test(kidJsx) && /case 'kid-tumble'/.test(kidJsx) && /case 'kid-cry'/.test(kidJsx))   // #2222: the K key now rides setSel
     check('pin: the sprite ships — scamper, Zzz and tears in art', /export function drawKid/.test(kidArt) && /Zzz/.test(kidArt) && /case 'kidkit'/.test(kidArt))
@@ -2348,6 +2354,123 @@ section('FIRST PASS (#2253) — grace, amber prompts, order ping')
         /const y = 348/.test(fJsx) && !/const y = H \/ 2 - 90/.test(fJsx))
     check('pin: HOMEBODY\'s pad names its A button — no FIRE on a life sim',
         /aLabel: '✓'/.test(fReg.match(/path: '\/homebody'[\s\S]*?\n    \}/)[0]))
+}
+
+section('GIFT LANDS & TIMBRES')   // #2240 — the basket that lands, the two bells that differ, the attract that sells Ivy
+{
+    // The set-down: a FRIENDS+ gift no longer ends at the toast — when Ivy
+    // reaches her kitchen destination the basket lands with its own event.
+    const ivyRing = (g, lv) => { g.visitAfter = 99; g.ivyAfter = Math.min(g.ivyAfter ?? 99, Math.floor(g.hour)); g.ivyGap = 0; g.rel.ivy = lv }
+    const landRun = (lv, seed = 17) => {
+        const g = newRun(seed); ivyRing(g, lv)
+        const ev = []
+        let land = null, visitAt = -1, landAt = -1, armed = 0
+        for (let i = 0; i < 60 * 40 && !land; i++) {
+            advance(g, DT)
+            for (const e of drain(g)) {
+                ev.push(e)
+                if (e.t === 'visit' && e.name === 'Ivy' && visitAt < 0) visitAt = i
+                if (e.t === 'gift-land') { land = e; landAt = i; armed = g.giftFx }
+            }
+        }
+        return { g, ev, land, visitAt, landAt, armed }
+    }
+    const L2 = landRun(30), L3 = landRun(60), L0 = landRun(0)
+    check('#2240 the FRIENDS basket LANDS when Ivy reaches the kitchen — its own event after the ring',
+        !!L2.land && L2.landAt > L2.visitAt, `ring@${L2.visitAt} land@${L2.landAt}`)
+    {
+        const fridge = L2.g.items.find((it) => it.id === 'fridge')
+        const want = targetsOf(L2.g, fridge).find((t) => walkable(L2.g, t.r, t.c))
+        const ok = want && Math.abs(L2.land.x - (LOT_X + want.c * TILE + TILE / 2)) < 1 && Math.abs(L2.land.y - (LOT_Y + want.r * TILE + TILE / 2)) < 1
+        check('#2240 the basket lands beside the fridge (the thought line always promised the kitchen step)', ok, JSON.stringify(L2.land))
+    }
+    check('#2240 the set-down arms its stage timer at GIFT_LAND_T', L2.armed === GIFT_LAND_T)
+    check('#2240 FAMILY sends honey too; FRIENDS sends greens only', L3.land?.honey === true && L2.land?.honey === false)
+    check('#2240 below FRIENDS nothing lands — no gift, no beat', !L0.land && L0.g.giftFx === 0)
+    {
+        // no kitchen → the front step takes the gift; and the timer fades.
+        const g = newRun(19); g.items = g.items.filter((it) => it.id !== 'fridge'); ivyRing(g, 30)
+        let land = null
+        for (let i = 0; i < 60 * 40 && !land; i++) { advance(g, DT); land = drain(g).find((e) => e.t === 'gift-land') || null }
+        const stepOk = land && walkable(g, 10, 5)
+            ? Math.abs(land.x - (LOT_X + 5 * TILE + TILE / 2)) < 1 && Math.abs(land.y - (LOT_Y + 10 * TILE + TILE / 2)) < 1
+            : false
+        check('#2240 with no fridge left standing the basket takes the front step', !!land && stepOk, JSON.stringify(land))
+        const g2 = newRun(17); ivyRing(g2, 30)
+        let landed = false, faded = false
+        for (let i = 0; i < 60 * 60; i++) {
+            advance(g2, DT); drain(g2)
+            if (!landed && g2.giftFx > 0) landed = true
+            if (landed && g2.giftFx === 0) { faded = true; break }
+        }
+        check('#2240 the basket fades on the real clock and never re-arms unbidden', landed && faded && g2.giftFx === 0)
+    }
+    // Hash-silence: the staging is a view beat, not a rule — the run that
+    // "sees" the basket and the run that drained it early hash identical.
+    {
+        const h1 = newRun(17); ivyRing(h1, 30)
+        for (let i = 0; i < 60 * 40; i++) { advance(h1, DT); drain(h1) }
+        const h2 = newRun(17); ivyRing(h2, 30)
+        for (let i = 0; i < 60 * 40; i++) { advance(h2, DT); drain(h2) }
+        h2.giftFx = 0; h2.giftAt = null
+        check('#2240 the set-down is view-only — giftFx/giftAt stay off the hash', stateHash(h1) === stateHash(h2))
+    }
+
+    // Visitor timbres: two neighbours, two voices. Fern keeps the historic
+    // dinger; Ivy earns her own lilt; both take their entrance by foot.
+    {
+        const F = VISIT_TIMBRE.Fern, I = VISIT_TIMBRE.Ivy
+        check('#2240 Fern keeps the historic two-note rising dinger (660 → 880)',
+            F.call.length === 2 && F.call[0][0] === 660 && F.call[1][0] === 880 && F.call[1][0] > F.call[0][0])
+        check('#2240 Ivy rings a three-note lilt that LANDS DOWN — her own motif, not Fern\'s register',
+            I.call.length === 3 && I.call[2][0] < I.call[1][0] && I.call.every(([f]) => !F.call.some(([ff]) => ff === f)))
+        check('#2240 both come in on foot — a two-pat flourish each, Ivy lower and slower (the basket arm)',
+            F.steps.length === 2 && I.steps.length === 2
+            && I.steps.every(([f]) => f < Math.min(F.steps[0][0], F.steps[1][0]))
+            && (I.steps[1][2] - I.steps[0][2]) > (F.steps[1][2] - F.steps[0][2]),
+            `fern ${F.steps.map((s) => `${s[0]}@${s[2]}`).join(' ')} | ivy ${I.steps.map((s) => `${s[0]}@${s[2]}`).join(' ')}`)
+        const fJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+        const fArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+        check('#2240 pin: the shell plays the motif tables verbatim — no hardcoded rings left',
+            /VISIT_TIMBRE\[e\.name\]/.test(fJsx) && !/playTone\(660, 0\.14/.test(fJsx))
+        check('#2240 pin: the set-down thunk is its own event case, and the basket painter rides the depth line',
+            /case 'gift-land'/.test(fJsx) && /drawGroundGift\(ctx, g\)/.test(fJsx) && /export function drawGroundGift/.test(fArt))
+    }
+
+    // Attract sells Ivy: every demo run rings her once, and a resident who
+    // strolls into her ring actually chats.
+    {
+        const attract = (seed) => {
+            const g = newRun(seed)
+            let present = 0, chats = 0, ivyMax = 0
+            const seen = { ring: 0 }
+            for (let i = 0; i < 60 * 60 * 6 && !g.done; i++) {
+                autoStep(g, DT)
+                if (g.ivy) present++
+                seen.ring = Math.max(seen.ring, g.demoIvy)
+                ivyMax = Math.max(ivyMax, g.rel.ivy)
+                for (const e of drain(g)) { if (e.t === 'chat' && e.k === 'ivy') chats++; if (e.t === 'visit' && e.name === 'Ivy') seen.coo = (seen.coo || 0) + 1 }
+            }
+            return { g, present, chats, ivyMax, rung: seen.ring, coos: seen.coo || 0 }
+        }
+        const A = attract(20261023), B = attract(5), C = attract(99)
+        check('#2240 attract rings Ivy once per run — every seed shows the second neighbour (3 seeds)',
+            A.rung === 1 && B.rung === 1 && C.rung === 1 && A.coos >= 1 && B.coos >= 1 && C.coos >= 1,
+            `coos ${A.coos}/${B.coos}/${C.coos}`)
+        // A chat beside Ivy means her meter actually ticked (rel.ivy grows ONLY
+        // while claimed in the ring). The lonely-resident law (#2143) is the
+        // walker — autonomy's own nearest-visitor route — because seed 7's
+        // knife-edge economy (§10 left at the win) broke when the demo forced
+        // extra walks; the ring, the arrival and the lonely chats sell her.
+        check('#2240 her law speaks in attract — across seeds a resident reaches Ivy, the meter ticks and a bubble lands',
+            A.ivyMax + B.ivyMax + C.ivyMax > 0 && A.chats + B.chats + C.chats >= 1,
+            `rel.ivy ${A.ivyMax.toFixed(2)}/${B.ivyMax.toFixed(2)}/${C.ivyMax.toFixed(2)}, chats ${A.chats}/${B.chats}/${C.chats}`)
+        const dA = newRun(2026), dB = newRun(2026)
+        for (let i = 0; i < 60 * 60; i++) { autoStep(dA, DT); drain(dA); autoStep(dB, DT); drain(dB) }
+        check('#2240 the Ivy-biased attract stays seed-exact', stateHash(dA) === stateHash(dB))
+        const w = play(20261023)
+        check('#2240 the wish still lands with the Ivy ring and the stroll law running', w.done === 'win', `content ${w.content} day ${w.day}`)
+    }
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)
