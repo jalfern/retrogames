@@ -18,6 +18,10 @@
 //   6. COURT     — #2131: player-ordered romance — coo/affection/insult on the
 //                  chat ring, the FAMILY-tier deepening, the shared cooldown
 //                  economy, grudge-on-command with the human exit intact.
+//   6b. THUMB COURT — #2171: the pad has no third button, so the court rides
+//                  press-DURATION on A/Space: release inside HOLD_INSULT_MS is
+//                  the coo, holding past it hurls the insult mid-hold — world-ms
+//                  clock, one command per cooldown unchanged.
 //   7. SECOND VISITOR — #2143: Ivy, the market neighbour — her own schedule
 //                  window, rel.ivy ladder (growth, one-rel-up law, fade and
 //                  demote), the FRIENDS+/FAMILY gift economy, linger/return
@@ -39,6 +43,7 @@ import {
     place, sellAt, targetsOf, walkable, bfsPath, stateHash, buildRoom, buildRoomOk,
     manualMove,
     court, courtTarget, COO_BOND, AFFECTION_BOND, INSULT_DROP, CMD_CD, REL_EDGES,   // #2131
+    courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court
     ivyChatPool, IVY_CHAT, IVY_FADE, IVY_GIFT_HUNGER, IVY_GIFT_CASH,   // #2143
 } from '../src/games/Homebody/sim.js'
 import { readFileSync } from 'node:fs'
@@ -881,11 +886,94 @@ section('COURT')
     const ctSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
     const ctJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
     check('pin: both commands arm the cooldown', (ctSim.match(/s\.cmdCd = CMD_CD/g) || []).length === 2)
-    check('pin: the empty press rides the compliment (Space/A), objects still win', /else if \(!tryUse\(gs, p\)\)[\s\S]*court\(gs, 'coo'\)/.test(ctJsx))
+    check('pin: the empty press rides the compliment (Space/A), objects still win (#2171: the press arms, the release pays)',
+        /else if \(!tryUse\(gs, p\)\)[\s\S]*courtHoldArm\(gs\)/.test(ctJsx) && /courtTap\(gs\)/.test(ctJsx))
     check('pin: C/X are real keys, not stray ones', /COURT_KEYS = new Set\(\['KeyC', 'KeyX'\]\)/.test(ctJsx) && /KeyC'\s*\?\s*'coo'\s*:\s*'insult'/.test(ctJsx))
     check('pin: affection pays its own chord and hearts, insult its own sour fall',
         /case 'affection'/.test(ctJsx) && /case 'insult'/.test(ctJsx) && /AFFECTION ♥ FAMILY/.test(ctJsx))
     check('pin: the warm tell lifts off the pair', /g\.cooFx > 0 && g\.cooAt/.test(ctJsx) && /s\.cooAt = \{ x: mx, y: my \}/.test(ctSim))
+}
+
+section('THUMB COURT')   // #2171 — one pad button, two orders: tap = coo, hold past HOLD_INSULT_MS = insult
+{
+    const pair = (g) => { g.people[0].r = 3; g.people[0].c = 3; g.people[1].r = 3; g.people[1].c = 4; g.people[0].path = null; g.people[1].path = null; g.spatCd = 0; g.grudge = 0; g.cmdCd = 0; g.holdT = -1; return g }
+    const holdOver = (g) => { let r = null; while (!r && g.holdT >= 0) r = courtTick(g, FIXED_DT); return r }
+
+    const t0 = pair(newRun(71))
+    const alone = newRun(72)
+    check('nobody in reach — the press cannot arm the heat, and a bare release stays quiet',
+        courtHoldArm(alone) === false && alone.holdT === -1 && courtTap(alone) === null && courtTick(alone, FIXED_DT) === null)
+    check('a fresh run holds no pending word', t0.holdT === -1 && courtTap(t0) === null)
+
+    const g1 = pair(newRun(73))
+    g1.rel.house = 20
+    check('the press finds the person and starts the clock cold', courtHoldArm(g1) === true && g1.holdT === 0)
+    const r1 = courtTap(g1)
+    check('release inside the window lands the coo exactly as C did, and disarms',
+        !!r1 && r1.fired === 'coo' && Math.abs(g1.rel.house - (20 + COO_BOND)) < 1e-9 && g1.cmdCd === CMD_CD && g1.holdT === -1 && drain(g1).some((e) => e.t === 'coo' && e.k === 'house'))
+    check('the release after a landed coo is quiet (a tap pays once)', courtTap(g1) === null && Math.abs(g1.rel.house - (20 + COO_BOND)) < 1e-9)
+
+    const g2 = pair(newRun(74))
+    g2.rel.house = 20
+    courtHoldArm(g2)
+    const r2 = holdOver(g2)
+    check('held past the window the insult flies MID-hold — cut, grudge, its own event',
+        !!r2 && r2.fired === 'insult' && Math.abs(g2.rel.house - (20 - INSULT_DROP)) < 1e-9 && g2.grudge === 1 && g2.cmdCd === CMD_CD && drain(g2).some((e) => e.t === 'insult' && e.k === 'house'))
+    check('…and the release that follows hurls nothing twice (no coo piled on the cruelty)',
+        courtTap(g2) === null && courtTick(g2, FIXED_DT) === null && Math.abs(g2.rel.house - (20 - INSULT_DROP)) < 1e-9)
+
+    const g3 = pair(newRun(75))
+    g3.rel.house = 20
+    courtHoldArm(g3)
+    let short = 0
+    while (g3.holdT < HOLD_INSULT_MS - FIXED_DT) { courtTick(g3, FIXED_DT); short++ }
+    check('one step short of the window it is still kind — nothing has fired',
+        courtTap(g3) && courtTap(g3) === null && g3.rel.house === 20 + COO_BOND && g3.grudge === 0 && short * FIXED_DT < HOLD_INSULT_MS)
+
+    const g4 = pair(newRun(76))
+    g4.rel.house = 20
+    court(g4, 'coo')                                   // the shared cooldown is still the economy
+    courtHoldArm(g4)
+    const r4 = holdOver(g4)
+    check('inside the cooldown the cruel word refuses (NOT SO FAST) and spends nothing',
+        !!r4 && r4.refused === true && g4.rel.house === 20 + COO_BOND && g4.grudge === 0 && g4.holdT === -1)
+
+    const g5 = pair(newRun(77))
+    let landed = 0, refused = 0
+    for (let i = 0; i < Math.round(25 / DT); i++) {
+        g5.people[0].r = 3; g5.people[0].c = 3; g5.people[1].r = 3; g5.people[1].c = 4   // hold the aim through the walk
+        if (g5.holdT < 0) courtHoldArm(g5)
+        const r = courtTick(g5, FIXED_DT)
+        if (r && r.fired === 'insult') landed++
+        if (r && r.refused) refused++
+        // the word spends the hold at the threshold (fired or refused) — the
+        // next iteration's re-arm is the thumb pressing angry again
+        g5.people[0].path = null; g5.people[1].path = null
+        advance(g5, DT)
+    }
+    check('endless angry thumbs cannot outrun the economy — at most one order per cooldown window, and refusals prove it',
+        landed > 0 && landed <= Math.ceil(25 / CMD_CD) && refused > 0 && g5.rel.house >= 0, `landed=${landed} ceiling=${Math.ceil(25 / CMD_CD)} refused=${refused}`)
+
+    const script = () => {
+        const g = pair(newRun(78)); courtHoldArm(g)
+        for (let i = 0; i < Math.round(1 / DT); i++) { courtTick(g, FIXED_DT); advance(g, DT) }
+        courtTap(g)
+        for (let i = 0; i < Math.round(20 / DT); i++) advance(g, DT)
+        return stateHash(g)
+    }
+    const scriptIdle = () => { const g = pair(newRun(78)); for (let i = 0; i < Math.round(21 / DT); i++) advance(g, DT); return stateHash(g) }
+    check('the thumb-court run is seed-exact, and a pressed thumb weighs differently than an idle one',
+        script() === script() && script() !== scriptIdle())
+
+    const tbSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const tbJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    check('pin: the window is ONE number, and it is the hold law in the sim', /HOLD_INSULT_MS = 600/.test(tbSim))
+    check('pin: the clock feeds every live step, whichever seat drives', /courtTick\(gs, SIM_MS\)/.test(tbJsx))
+    check('pin: the release lands only in play — paused, attract and death stay quiet',
+        /ACTION_KEYS\.has\(e\.code\)[\s\S]{0,120}screenRef\.current === 'play' && !pausedRef\.current && !gs\.done/.test(tbJsx) && /courtTap\(gs\)/.test(tbJsx))
+    check('pin: the heat tell paints only while armed, in the refuse-red', /live && g\.holdT >= 0/.test(tbJsx) && /'#e23b2e'/.test(tbJsx))
+    check('pin: the pad contract is untouched — still A=Space and the one ⚒ secondAction', /secondAction=\{\{ label: '⚒', code: 'KeyB' \}\}/.test(tbJsx))
+    check('pin: the hold rides the hash like every other live state', /mix\(s\.holdT\)/.test(tbSim))
 }
 
 section('SECOND VISITOR')   // #2143 — Ivy, the market neighbour
