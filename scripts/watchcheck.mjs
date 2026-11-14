@@ -2474,6 +2474,62 @@ for (const pilot of run) {
     await page.close().catch(() => {})
     await browser.close().catch(() => {})
 }
+// #2139 — SUPER MARIO flagpole-release slow gate (#2111 item 2). The seat rides
+// the engine's OWN autopilot through the certified sector 1-1; when it reaches the
+// flagpole the watcher's job is done and it must hand the overalls back BY ITSELF,
+// with CLEAN keys — a held run button leaking into 1-3 is the failure proven here.
+// autopilotcheck certifies the autopilot WINS 1-1, but its autoplay() never sets
+// the watch seat, so the `release(false)` at the flag (index.jsx) had no live
+// coverage. Nightly-only: watchcheck lives in CORE.smoke, never the per-PR gate.
+if (!ONLY || ONLY === 'mario') {
+    console.log('\n— mario flagpole-release (slow gate)')
+    const browser = await launch()
+    let page = null
+    for (let attempt = 0; attempt < 2 && !page; attempt++) {
+        try { page = await openGameNoExit(browser, { url: `${BASE}/mario`, hook: '__marioTest' }) }
+        catch { if (attempt === 1) rep.check('mario flagpole-release: DEV hook present', false, 'window.__marioTest missing') }
+    }
+    if (page) {
+        const H = '__marioTest'
+        const g = () => page.evaluate((h) => window[h].getState(), H)
+        const watching = () => page.evaluate((h) => window[h].watching(), H)
+        const held = () => page.evaluate((h) => window[h].held(), H)
+        const heldAny = (k) => !!(k.left || k.right || k.run || k.down || k.jump)
+        try {
+            await key(page, 'KeyY')                 // b24 law: Y at attract starts AND seats the watcher
+            await seatPoll(page, H, 4000)
+            const seated = await watching()
+            rep.check('mario flagpole-release: the watch seat drives 1-1 (watching, autopilot mode)',
+                seated && (await g()).mode === 'autopilot', `mode=${(await g()).mode}`)
+            // Drive to the flag (the autopilot is deterministic; ~12 cols/s, flag at
+            // col 174). The same ceiling autopilotcheck gives this exact run, generous
+            // for CI's software render. While still on 1-1 mid-sector the seat MUST stay
+            // watching — anything else is the seat quitting early, not at the flag.
+            const t0 = Date.now()
+            let end = null, midQuit = false
+            while ((Date.now() - t0) / 1000 < 120) {
+                await page.waitForTimeout(40)
+                const st = await g(), w = await watching()
+                if (st.state === 'flag' || st.level !== '1-1') { end = { st, w, k: await held() }; break }
+                if (seated && st.state === 'play' && st.level === '1-1' && st.col > 6 && !w) midQuit = true
+            }
+            rep.check('mario flagpole-release: the watcher reached the flagpole on 1-1',
+                !!end && (end.st.state === 'flag' || end.st.level !== '1-1'),
+                end ? `state=${end.st.state} level=${end.st.level} col=${end.st.col}` : 'timeout before the flag')
+            rep.check('mario flagpole-release: the seat stayed engaged until the flag (no early quit)',
+                seated && !midQuit, `seated=${seated} midQuit=${midQuit}`)
+            rep.check('mario flagpole-release: the seat SELF-released at the flag (watch never lingers)',
+                !!end && !end.w, `watching=${end ? end.w : 'n/a'}`)
+            rep.check('mario flagpole-release: handback is CLEAN — mode flipped to play, no driving key leaks into 1-3',
+                !!end && end.st.mode === 'play' && !heldAny(end.k),
+                end ? `mode=${end.st.mode} keys=${JSON.stringify(end.k)}` : 'n/a')
+        } catch (e) {
+            rep.check('mario flagpole-release: drove to the flag without page error', false, e.message)
+        }
+        await page.close().catch(() => {})
+        await browser.close().catch(() => {})
+    }
+}
 // #1638 source gates — one shared voice for the handoff, discoverable copy:
 // a game that stops blipping (or ships an attract screen without the hint)
 // goes red without needing Chrome to catch the audio.
