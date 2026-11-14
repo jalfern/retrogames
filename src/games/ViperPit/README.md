@@ -257,12 +257,17 @@ the #1096 options switched on.
   brightness + silhouettes bobbing harder, decaying in `sync`); the winner's
   **taunt pose blends** in over ~10 frames (`rig.userData.winK`, captured from
   wherever the KO caught the rig) instead of snapping to the pose table; and
-  the loser's answer **slides in** from the left with an accent underline
-  drawing on under it. Live gates: `outround()` now reports `judgeScale`/
-  `judgeTint`/`flare`/`replySlide` and `pose()` reports `winK` — the check
-  proves slam peak + settle, that the flare is PERFECT's privilege (a non-
-  PERFECT round must NOT flare), blend `winK 0->1` and slide-in from the live
-  cabinet, plus six source wiring gates and an instant-blend mutant marker.
+  the loser's answer **slides in** from the left over ~11 frames (frame-counted,
+  so the feel is frame-rate independent) with an accent underline drawing on
+  under it. Live gates: the DEV card log `koProbe()` records every entrance
+  **per render frame** (`wk`/`js`/`jt`/`fl`/`rp`) — wall-clock CDP polling on a
+  loaded box straddles whole animations, so the gates judge frames, not poll
+  spacing: blend mid-way (<0.95) to held (1.00), verdict peak ≥1.5x with a
+  tint peak then settling to 1x/tint 0, flare seen **only** when the round's
+  judge is PERFECT (non-PERFECT rounds must log zero flare), reply slide 0→1.
+  `outround()` also reports `judgeScale`/`judgeTint`/`flare`/`replySlide` and
+  `pose()` reports `winK`. Six source wiring gates + an instant-blend mutant
+  marker alongside the instant-reveal one.
 - **CLOSED by #2148:** deeper outround replies — per-character taunt-on-win
   (shout in the winner's accent + beckon/flex/point/raise/spit rig poses),
   round-end loser sub-lines (own `roundLose` table), PERFECT/CLUTCH/IN STYLE
