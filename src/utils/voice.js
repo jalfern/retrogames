@@ -21,6 +21,10 @@
 // measured ms since the mic started. Consumers interpolate (`tickToMs`) to find
 // where any pad event sits in the audio, and `voiceDrift` reports how far the
 // world drifted from realtime across the session — the 30-min drift check.
+// Since #2247 the stamp source is the capture AudioContext's delivered-samples
+// clock once it runs (voiceCapture.js), so the trace and the bytes accrue on
+// ONE origin and pacing apart of main thread vs audio pipeline stops moving the
+// mapping; wall time remains the fallback where no AudioContext exists.
 //
 // RELAY (remote seats): the production relay forwards an allowlist of message
 // types with a 512-byte budget (relay/core.js) and is deliberately NOT
