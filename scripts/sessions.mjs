@@ -9,18 +9,21 @@
 //   npm run sessions -- relabel <key> [<key>…] [--seat N]
 //       # repair seat provenance on stored takes (#2093 item 1): the store's
 //       # ONE allowed write, model→human on one seat (fixed operation — see
-//       # relay/core.js applySessionRelabel). The #2093 one-off:
-//       # JON_KEY=<secret> npm run sessions -- relabel \
+//       # relay/core.js applySessionRelabel). The #2093 one-off (write key
+//       # inline — SESSION_WRITE_KEY is inline-only, #1711 audit item 2):
+//       # SESSION_WRITE_KEY=<secret> npm run sessions -- relabel \
 //       #   gauntlet/2026-11-11-seed15-8fdbfeef08.json \
 //       #   gauntlet/2026-11-11-seed59-182a1f4459.json \
 //       #   gauntlet/2026-11-11-seed59-5a9737e569.json
 //
-// The read lockdown (#1711 S8): the store refuses reads AND relabel writes
-// without a key, so run as `JON_KEY=<secret> npm run sessions`. With the
-// #2142 write-key separation deployed, relabel additionally takes
-// `SESSION_WRITE_KEY=<secret> npm run sessions -- relabel …` — the WRITE door
-// prefers it, and the read key alone stops being enough (the lanes hold only
-// the read key, so they can grade but never relabel — that's the point).
+// The read lockdown (#1711 S8): the store refuses reads without a key, so run
+// as `JON_KEY=<secret> npm run sessions`. Relabel writes are stricter still
+// (#2142 split + the #1711 audit's no-fallback ruling of 2026-11-14): the
+// write door authenticates ONLY against SESSION_WRITE_KEY, inline in your
+// environment — it deliberately never resolves from .env.local (every lane
+// worktree reads that file; Jon keeps the write key himself). With the secret
+// undeployed server-side, relabel refuses everything: `write lock not
+// configured`.
 //
 // Exit codes: 0 listing succeeded (even when empty) / every relabel applied,
 // 1 store unreachable, not configured, or any relabel refused — a cron can
@@ -40,10 +43,10 @@ const base = flagVal('store', process.env.SESSION_STORE || storeFromQuery(''))
 const limit = Number(flagVal('limit', 50)) || 50
 const asJson = argv.includes('--json')
 const key = readKey('JON_KEY') // env or gitignored .env.local (#2157)
-// #2142 separation: the relabel write prefers the dedicated write secret;
-// JON_KEY remains the fallback for pre-separation deploys (list reads always
-// use JON_KEY).
-const writeKey = readKey('SESSION_WRITE_KEY') || readKey('JON_KEY')
+// #2142 separation + no-fallback (#1711 audit item 1): the relabel write takes
+// ONLY the dedicated write secret, and localkey resolves it from process.env
+// only — never from a lane-readable file (item 2). JON_KEY opens reads, ever.
+const writeKey = readKey('SESSION_WRITE_KEY')
 const command = argv.find((a) => !a.startsWith('--'))
 
 if (command === 'relabel') {
@@ -54,7 +57,7 @@ if (command === 'relabel') {
         process.exit(1)
     }
     if (!writeKey) {
-        console.error('relabel: set SESSION_WRITE_KEY (deployed separation, #2142) or JON_KEY (pre-separation deploy)')
+        console.error('relabel: prefix the command with SESSION_WRITE_KEY=<secret> (the dedicated write door, #2142; inline-only since the #1711 audit — JON_KEY never opens writes)')
         process.exit(1)
     }
     let bad = 0

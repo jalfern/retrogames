@@ -121,9 +121,10 @@ export async function startRelaySim({ bind = true, registry = 'ok', mutate = fal
             : { idFromName: (n) => n, get: () => ({ count: async () => 0 }) },
         // Jon's deploy carries JON_KEY (feedback already uses it) — the read
         // lockdown pins the deployed shape. Pass readKey:null for the
-        // fail-closed pre-deploy worker. SESSION_WRITE_KEY (#2142 separation)
-        // is deliberately UNset by default — the pins see the status-quo
-        // fallback (JON_KEY opens writes); pass writeKey for the separated door.
+        // fail-closed pre-deploy worker. SESSION_WRITE_KEY (#2142 separation,
+        // no-fallback #1711 audit item 1) is deliberately UNset by default —
+        // the pins see the locked side (PATCH refused, `write lock not
+        // configured`, even with the read key); pass writeKey for the armed door.
         JON_KEY: readKey || undefined,
         SESSION_WRITE_KEY: writeKey || undefined,
         // GITHUB_TOKEN/GH_REPO deliberately unset → /status feedback:false (the
@@ -154,8 +155,10 @@ export async function startRelaySim({ bind = true, registry = 'ok', mutate = fal
         base: `http://127.0.0.1:${server.address().port}`,
         bucket,
         readHeaders: readKey ? { 'x-session-key': readKey } : {},
-        writeHeaders: { 'x-session-key': writeKey || readKey || '' },
-        writeKey: writeKey || readKey || null,
+        // no-fallback (#1711 audit item 1): the write door is the WRITE key
+        // only — the sim hands out no read-key-as-write-key convenience.
+        writeHeaders: writeKey ? { 'x-session-key': writeKey } : {},
+        writeKey: writeKey || null,
         readKey: readKey || null,
         close() { server.closeAllConnections(); server.close() },
     }
