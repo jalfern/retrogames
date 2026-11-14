@@ -31,6 +31,10 @@
 //                  kibble, night sleep with energy payback, the coo law with
 //                  its cooldown, hash carries, attract-bot adoption, and the
 //                  wish still landing with a cat on the lot.
+//   8b. PET POLISH (#2200) — mood law (petMood average, alarm at RED_AT),
+//                  the visible kibble bowl (feedT arms and fades), the
+//                  greeting law (once per visit, Fern and Ivy, ladder bump,
+//                  seed-exact), and the panel/shell source pins.
 //   9. PAPER ROUTE (#2238) — hourly news: lands 06:30–10:00, exactly one a
 //                  day (the day stamp is the law), tap-to-read pays FUN and
 //                  consumes, unread rots at midnight, sale refuses, hash and
@@ -56,6 +60,7 @@ import {
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court
     ivyChatPool, IVY_CHAT, IVY_FADE, IVY_GIFT_HUNGER, IVY_GIFT_CASH,   // #2143
     adoptPet, adoptOk, PET, PET_COOS,   // #2197: Miso
+    petMood, PET_FEED_T, CAT_MEET_BOND, CAT_MEET_DIST,   // #2200: mood row, visible kibble, meet law
     adoptKid, adoptKidOk, KID,   // #2203: Pip
     CAT_TABS, TAB_CARDS, TAB_OF, tabCards, setSel, flipTab, selectTab, digitCard,   // #2222: catalog shelves
     SPEED_MULT, SPEED_NAMES, setSpeed, cycleSpeed, attractSpeed,   // #2227: the speed dial
@@ -1307,6 +1312,116 @@ section('PET (#2197): Miso — counter law, cat day, coos, hash')
     check('pin: P keys the card and the counter events have voices', /PET_KEYS = new Set\(\['KeyP'\]\)/.test(petJsx) && /specialPick = 'petkit'/.test(petJsx) && /case 'pet':/.test(petJsx) && /case 'pet-coo'/.test(petJsx))   // #2222: the P key now rides setSel
     check('pin: the sprite ships — loaf, walk and purr sparks in art', /export function drawPet/.test(petArt) && /purrT/.test(petArt) && /case 'petkit'/.test(petArt))
     check('pin: the probe answers with the cat', petJsx.includes('pet: gs.pet ?'))
+}
+
+section('PET POLISH (#2200): Miso — mood law, visible kibble, neighbours meet the cat')
+{
+    const ppSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const ppJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const ppArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+
+    // keep the household alive while a test runs the clock through the day
+    const upkeep = (s) => {
+        for (const q of s.people) { q.needs.hunger = 1; q.needs.energy = 1; q.needs.bladder = 1; q.faintT = 0 }
+        if (s.pet) { s.pet.needs.energy = 1; s.pet.asleep = false }
+    }
+
+    // --- mood law (#2200): the panel's paw row reads the average of her needs
+    const n0 = newRun(3)
+    check('no cat, no mood', petMood(n0) === null)
+    n0.money = 900; n0.sel = 14; place(n0, 0, 0)
+    n0.pet.needs.hunger = 1; n0.pet.needs.fun = 0.5; n0.pet.needs.energy = 0.75
+    check('MISO\u2019s mood is the plain average of her three needs', Math.abs(petMood(n0) - (1 + 0.5 + 0.75) / 3) < 1e-9)
+    n0.pet.needs.hunger = 1; n0.pet.needs.fun = 1; n0.pet.needs.energy = 1
+    check('a blissful tabby caps at one', petMood(n0) === 1)
+    n0.pet.needs.hunger = 0; n0.pet.needs.fun = 0.1; n0.pet.needs.energy = 0.2
+    check('a neglected cat reads low', petMood(n0) < 0.15)
+
+    // --- visible kibble: the eat moment paints a bowl that fades
+    n0.pet.needs.hunger = 0.1
+    let fed = 0, armed = 0
+    for (let i = 0; i < 900 && !fed; i++) { upkeep(n0); advance(n0, DT); if (drain(n0).some((e) => e.t === 'pet-eat')) { fed = 1; armed = n0.pet.feedT } }
+    check('kibble is seen: the bowl arms the tick she eats', fed === 1 && armed === PET_FEED_T)
+    for (let i = 0; i < Math.round(PET_FEED_T * 60) + 10; i++) { advance(n0, DT); drain(n0) }
+    check('the bowl fades — the lot is clean after', n0.pet.feedT === 0)
+
+    // --- the greeting law: Fern meets Miso once per visit, again next visit
+    const mv = newRun(7)
+    mv.money = 900; mv.sel = 14; place(mv, 0, 0)
+    const sofaCell = { r: 3, c: 4 }   // Fern's no-sofa destination — park the cat ON it
+    const parkMiso = () => {
+        mv.pet.r = sofaCell.r; mv.pet.c = sofaCell.c
+        mv.pet.x = tileX(sofaCell.c) + TILE / 2; mv.pet.y = tileY(sofaCell.r) + TILE / 2
+        mv.pet.path = null; mv.pet.wanderT = 1e9; mv.pet.state = 'roam'; mv.pet.asleep = false
+    }
+    const relFern0 = mv.rel.fern
+    let visits = 0, meets = 0
+    for (let visit = 0; visit < 2; visit++) {
+        mv.visitAfter = 9; mv.visitGap = 0; mv.hour = 9
+        let seen = false
+        for (let i = 0; i < 60 * 120; i++) {
+            if (i > 2400) mv.hour = Math.max(mv.hour, 19.5)   // evening sends her home
+            advance(mv, DT)
+            const ev = drain(mv)
+            meets += ev.filter((e) => e.t === 'cat-meet' && e.name === 'Fern').length
+            parkMiso(); upkeep(mv)
+            if (mv.visitor) seen = true
+            else if (seen) { visits++; break }
+            if (mv.done) break
+        }
+    }
+    check('a hanging visitor greets Miso once per visit — twice across two visits', visits === 2 && meets === 2)
+    check('the greeting warms the ladder — a bump, not a jump', mv.rel.fern > relFern0 && mv.rel.fern - relFern0 < REL_EDGES[0] + 2 * CAT_MEET_BOND + 20)
+
+    // no cat on the lot -> the law stays silent
+    const nc = newRun(4)
+    nc.visitAfter = 9; nc.visitGap = 0; nc.hour = 9
+    let ghostMeets = 0, ncSeen = false
+    for (let i = 0; i < 60 * 120; i++) {
+        if (i > 2400) nc.hour = Math.max(nc.hour, 19.5)
+        advance(nc, DT)
+        ghostMeets += drain(nc).filter((e) => e.t === 'cat-meet').length
+        upkeep(nc)
+        if (nc.visitor) ncSeen = true
+        else if (ncSeen) break
+        if (nc.done) break
+    }
+    check('an empty lot meets nobody', ghostMeets === 0 && !nc.pet)
+
+    // Ivy gets the same law on her own clock, at her own doorway
+    const iv = newRun(5)
+    iv.money = 900; iv.sel = 14; place(iv, 0, 0)
+    const fridge = iv.items.find((it) => it.id === 'fridge')
+    const ft = targetsOf(iv, fridge)[0]
+    const parkAt = (r, c) => {
+        iv.pet.r = r; iv.pet.c = c; iv.pet.x = tileX(c) + TILE / 2; iv.pet.y = tileY(r) + TILE / 2
+        iv.pet.path = null; iv.pet.wanderT = 1e9; iv.pet.state = 'roam'; iv.pet.asleep = false
+    }
+    iv.ivyAfter = 12; iv.ivyGap = 0; iv.hour = 12
+    let ivyMeets = 0, ivySeen = false
+    const relIvy0 = iv.rel.ivy
+    for (let i = 0; i < 60 * 120; i++) {
+        if (i > 2400) iv.hour = Math.max(iv.hour, 19.5)
+        advance(iv, DT)
+        ivyMeets += drain(iv).filter((e) => e.t === 'cat-meet' && e.name === 'Ivy').length
+        parkAt(ft.r, ft.c); upkeep(iv)
+        if (iv.ivy) ivySeen = true
+        else if (ivySeen) break
+        if (iv.done) break
+    }
+    check('the gardener has a favourite ankle: Ivy meets Miso at the kitchen', ivyMeets === 1 && iv.rel.ivy > relIvy0)
+
+    // determinism: the greeting spends no rng
+    const dA = newRun(9), dB = newRun(9)
+    for (let i = 0; i < 3600; i++) { if (i === 600) { dA.money = 900; dB.money = 900 } autoStep(dA, DT); drain(dA); autoStep(dB, DT); drain(dB) }
+    check('meet-law hours stay seed-exact', stateHash(dA) === stateHash(dB))
+
+    // source pins — the wiring must not silently drop
+    check('pin: the panel rows Miso with the paw glyph and the mood law', /petMood\(s\)/.test(ppArt) && /'paw'/.test(ppArt) && /'MISO'/.test(ppArt))
+    check('pin: the mood row alarms at RED_AT like the need bars', /mood <= RED_AT/.test(ppArt))
+    check('pin: the paw glyph ships — three toes over a pad', /glyph === 'paw'/.test(ppArt))
+    check('pin: the bowl paints while feedT runs, and the sim arms it at the eat', /p\.feedT > 0/.test(ppArt) && /feedT = PET_FEED_T/.test(ppSim))
+    check('pin: the shell voices the meet and the crumbs', /case 'cat-meet'/.test(ppJsx) && /burst\(e\.x, e\.y \+ 5, 3, '#8a5626'/.test(ppJsx))
 }
 
 section('KIDS (#2203): Pip — counter law, kid day, coos, hash')
