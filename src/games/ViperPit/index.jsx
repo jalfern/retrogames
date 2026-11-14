@@ -103,6 +103,9 @@ const ViperPitGame = () => {
         let p2Picked = false
         let cursor = 3
         let portraits = null, portraitR = null, pickLine = null, cardRects = []
+        // #2172 hover portrait zoom: per-card 0..1 ease, driven by the cursor
+        // (arrows AND tap-to-hover), so the hovered card breathes bigger.
+        const cardZoom = new Array(ROSTER.length).fill(0)
         let attractMsg = 0, attractT = 0
         let shake = 0, flashT = 0, bannerT = 0, bannerText = ''
         let finishFx = 0, finishText = ''
@@ -402,12 +405,26 @@ const ViperPitGame = () => {
             window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyO', key: 'KeyO', bubbles: true }))
         }
         guardRef.current = { down: guardDown, up: guardUp }
-        const onPointer = () => {
+        const onPointer = (ev) => {
             const scr = screenRef.current
             // #1637 b30 WATCH: a touch on the cabinet hands seat 1 back mid-bout.
             if (scr === 'play') { seatOff(); return }
             if (scr === 'attract') atAttract()
-            else if (scr === 'select') atSelect()
+            else if (scr === 'select') {
+                // #2172 tap-to-hover: tapping a card that isn't hovered walks the
+                // cursor there (zoom + blip + intro line); tapping the hovered
+                // card picks it — the keyboard arrow/Space pairing, on touch.
+                const cv = wrap.querySelector('canvas[data-viperpit-hud]')
+                const rect = cv ? cv.getBoundingClientRect() : null
+                let hit = -1
+                if (rect && rect.width > 0 && rect.height > 0) {
+                    const px = (ev.clientX - rect.left) * (cv.width / rect.width)
+                    const py = (ev.clientY - rect.top) * (cv.height / rect.height)
+                    hit = cardRects.findIndex((r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h + (r.textBand || 0))
+                }
+                if (hit >= 0 && hit !== cursor) hoverSelect(hit - cursor)
+                else atSelect()
+            }
             else if (scr === 'champion') atAttract()
         }
         window.addEventListener('keydown', onKeyDown)
@@ -879,6 +896,7 @@ const ViperPitGame = () => {
                     hctx.fillText('PRESS Y TO WATCH THE PIT', W / 2, H * 0.52)
                 }
             }
+            if (scr !== 'select' && cardZoom.some((v) => v !== 0)) cardZoom.fill(0)
             if (scr === 'select') {
                 ensurePortraits()
                 hctx.fillStyle = 'rgba(5,4,10,0.82)'; hctx.fillRect(0, 0, W, H)
@@ -888,38 +906,69 @@ const ViperPitGame = () => {
                 hctx.fillText(p2Picked ? 'PLAYER 2 — CHOOSE' : net.active ? (net.role === 'host' ? 'HOST — CHOOSE' : 'GUEST — CHOOSE') : 'CHOOSE YOUR FIGHTER', W / 2, H * 0.12)
                 const total = ROSTER.length
                 const cw = Math.min(H * 0.5, (W * 0.94) / (total * 1.06)), ch = cw * 0.78
+                // #2172 ease every card toward its zoom target (hovered = 1)
+                // every frame; the hovered card is drawn LAST so its enlarged
+                // portrait rides over its neighbours instead of under them.
                 ROSTER.forEach((rd, i) => {
-                    const col = i % 5
-                    const x = W / 2 - (cw * 1.06 * total) / 2 + col * (cw * 1.06), y = H * 0.24
-                    cardRects[i] = { id: rd.id, x, y, w: cw, h: ch }
+                    const target = i === cursor ? 1 : 0
+                    cardZoom[i] += (target - cardZoom[i]) * 0.22
+                    if (Math.abs(cardZoom[i] - target) < 0.01) cardZoom[i] = target
+                })
+                const drawCard = (rd, i) => {
                     const hovered = i === cursor
-                    hctx.fillStyle = '#12121c'; hctx.fillRect(x, y, cw, ch)
+                    const z = cardZoom[i]
+                    // #2172 the WHOLE tile pops with its zoom — frame, art and
+                    // text all scale by zc. Growing only the portrait shoved every
+                    // fighter's head through the card frame at full hover (you can
+                    // see it on RIV and NYX: the head above the teal border); the
+                    // tile contains its portrait at every zoom now, and the hovered
+                    // card still reads biggest on a phone.
+                    const zc = 1 + 0.16 * z
+                    const tw = cw * zc, th = ch * zc
+                    const x = W / 2 - (cw * 1.06 * total) / 2 + (i % 5) * (cw * 1.06) - (tw - cw) / 2
+                    const y = H * 0.24 - (th - ch) / 2 - ch * 0.02 * z
+                    cardRects[i] = { id: rd.id, x, y, w: tw, h: th, textBand: Math.max(28, H * 0.055) * zc + 6 }
+                    hctx.fillStyle = '#12121c'; hctx.fillRect(x, y, tw, th)
                     const pt = portraits && portraits[rd.id]
                     if (pt) {
                         if (hovered) { hctx.shadowColor = 'rgba(89,224,200,0.75)'; hctx.shadowBlur = Math.max(10, W * 0.014) }
-                        hctx.drawImage(pt, x + cw * 0.04, y + ch * 0.02, cw * 0.92, ch * 0.92)
+                        // Portrait grows with the tile (12% at full hover) but
+                        // stays inside it: th - ph = 0.12*ch*zc - 0.12*ch > 0.
+                        // __VIPER_SPILL__ is the harness's prove-fail flag (#2172):
+                        // inflate the portrait past the tile and the warm-ink
+                        // containment gate must go red.
+                        const ps = (0.92 + 0.12 * z) * (globalThis.__VIPER_SPILL__ ? 1.3 : 1)
+                        const pw = cw * ps, ph = ch * ps
+                        hctx.drawImage(pt, x + tw * 0.5 - pw / 2, y + th * 0.5 - ph / 2 - ch * 0.02 * z, pw, ph)
                         hctx.shadowBlur = 0
                     } else {
-                        hctx.fillStyle = hex(rd.color.skin); hctx.fillRect(x + cw * 0.4, y + ch * 0.12, cw * 0.2, ch * 0.2)
-                        hctx.fillStyle = hex(rd.color.top); hctx.fillRect(x + cw * 0.32, y + ch * 0.36, cw * 0.36, ch * 0.28)
-                        hctx.fillStyle = hex(rd.color.accent); hctx.fillRect(x + cw * 0.32, y + ch * 0.36, cw * 0.36, ch * 0.05)
-                        hctx.fillStyle = hex(rd.color.pants); hctx.fillRect(x + cw * 0.36, y + ch * 0.64, cw * 0.28, ch * 0.1)
+                        hctx.fillStyle = hex(rd.color.skin); hctx.fillRect(x + tw * 0.4, y + th * 0.12, tw * 0.2, th * 0.2)
+                        hctx.fillStyle = hex(rd.color.top); hctx.fillRect(x + tw * 0.32, y + th * 0.36, tw * 0.36, th * 0.28)
+                        hctx.fillStyle = hex(rd.color.accent); hctx.fillRect(x + tw * 0.32, y + th * 0.36, tw * 0.36, th * 0.05)
+                        hctx.fillStyle = hex(rd.color.pants); hctx.fillRect(x + tw * 0.36, y + th * 0.64, tw * 0.28, th * 0.1)
                     }
                     hctx.strokeStyle = hovered ? '#59e0c8' : '#31364a'
                     hctx.lineWidth = hovered ? 3 : 1
-                    hctx.strokeRect(x, y, cw, ch)
-                    ui(Math.max(11, H * 0.022))
+                    hctx.strokeRect(x, y, tw, th)
+                    ui(Math.max(11, H * 0.022) * zc)
                     hctx.textAlign = 'center'
                     hctx.fillStyle = '#fff'
-                    hctx.fillText(rd.name, x + cw / 2, y + ch * 0.85)
-                    ui(Math.max(8, H * 0.014))
+                    // #2172 names sit UNDER the tile, arcade-style — the fit fills
+                    // the card with the fighter, so a name at 0.85 landed on their
+                    // shins and read as a bug in the screenshots.
+                    hctx.fillText(rd.name, x + tw / 2, y + th + Math.max(14, H * 0.03) * zc)
+                    ui(Math.max(8, H * 0.014) * zc)
                     hctx.fillStyle = 'rgba(190,195,215,0.85)'
-                    hctx.fillText(rd.tag, x + cw / 2, y + ch * 0.95)
-                })
+                    hctx.fillText(rd.tag, x + tw / 2, y + th + Math.max(28, H * 0.055) * zc)
+                }
+                ROSTER.forEach((rd, i) => { if (i !== cursor) drawCard(rd, i) })
+                drawCard(ROSTER[cursor], cursor)
                 ui(Math.max(10, H * 0.019))
                 hctx.textAlign = 'center'
                 hctx.fillStyle = 'rgba(89,224,200,0.85)'
-                hctx.fillText(`"${ROSTER[cursor].intro}"`, W / 2, H * 0.24 + ch + Math.max(22, H * 0.042))
+                // #2172: names/tags now sit under each tile, so the hovered
+                // fighter's intro blurb drops below the whole name row.
+                hctx.fillText(`"${ROSTER[cursor].intro}"`, W / 2, H * 0.24 + ch + Math.max(52, H * 0.115))
                 if (pickLine && pickLine.t > 0) {
                     ui(Math.max(13, H * 0.03))
                     hctx.strokeStyle = 'rgba(8,5,8,0.92)'; hctx.lineWidth = Math.max(2, H * 0.006)
@@ -1074,8 +1123,10 @@ const ViperPitGame = () => {
                         id: ROSTER[cursor] ? ROSTER[cursor].id : null,
                         portraits: portraits ? Object.keys(portraits).length : 0,
                         line: pickLine && pickLine.t > 0 ? pickLine.text : null,
+                        zoom: cardZoom[cursor] || 0,
                     }
                 },
+                zoomOf(i) { return cardZoom[i | 0] ?? 0 },
                 hover(d) { hoverSelect(d | 0) },
                 pick() { atSelect() },
                 cardRects() { return cardRects.slice() },
@@ -1088,13 +1139,38 @@ const ViperPitGame = () => {
                         const g2 = c2.getContext('2d')
                         g2.drawImage(cv, 0, 0)
                         const d = g2.getImageData(0, 0, c2.width, c2.height).data
-                        let ink = 0, head = 0
+                        let ink = 0, head = 0, hx = 0, hy = 0, sig = 0, top = -1, bottom = -1
                         for (let y = 0; y < c2.height; y++) {
                             for (let x = 0; x < c2.width; x++) {
-                                if (d[(y * c2.width + x) * 4 + 3] > 24) { ink++; if (y < c2.height * 0.4) head++ }
+                                const i = (y * c2.width + x) * 4
+                                if (d[i + 3] > 24) {
+                                    ink++
+                                    // #2172 figure extents on the transparent portrait
+                                    // canvas: alpha is exactly "is this the fighter",
+                                    // so these are true head/feet rows — no border or
+                                    // name text to pollute them.
+                                    if (top < 0) top = y
+                                    bottom = y
+                                    if (y < c2.height * 0.4) { head++; hx += x; hy += y }
+                                }
+                                // #2172 quantised silhouette hash (FNV-1a): two
+                                // cards sharing a live canvas hash IDENTICAL — the
+                                // exact bug this kills.
+                                const q = d[i + 3] > 24 ? ((0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) >> 4) + 1 : 0
+                                sig = ((sig ^ q) * 16777619) >>> 0
                             }
                         }
-                        out[id] = { ink: +(ink / (c2.width * c2.height)).toFixed(3), head }
+                        // #2172 head centroid: card poses angle and lean the head to
+                        // a different spot per fighter — corroborating proof that
+                        // the five portraits are five poses, not one pose five times.
+                        out[id] = {
+                            ink: +(ink / (c2.width * c2.height)).toFixed(3), head,
+                            cx: head ? Math.round(hx / head) : -1, cy: head ? Math.round(hy / head) : -1, sig,
+                            // #2172 head/feet position as a fraction of the canvas —
+                            // 0 and 1 mean the framing CROPS the fighter.
+                            top: +(top / c2.height).toFixed(3), bottom: +(bottom / c2.height).toFixed(3),
+                            span: +((bottom - top) / c2.height).toFixed(3),
+                        }
                     }
                     return out
                 },
