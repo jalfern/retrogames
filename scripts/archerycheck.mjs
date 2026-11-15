@@ -13,7 +13,7 @@
 // with one fewer arrow of quiver AND the foe gifted the first point.
 //
 //   npm run archerycheck              the audit (~1 s)
-//   npm run archerycheck -- --mutate  + seven mutants that MUST die
+//   npm run archerycheck -- --mutate  + ten mutants that MUST die
 //   npm run archerycheck -- --arena 1 dump an arena as ASCII
 //
 // #2307 adds the third muscle — CLIMBS: the autopilot gains rows on purpose.
@@ -61,7 +61,7 @@ function driveMatch(opts = {}) {
     const g = makeGame(buildArena(opts.arena || 0), opts)
     const skills = opts.skills || [1, 0]
     const cap = opts.maxTicks || CFG.matchTicks + 240
-    const receipts = { jumps: 0, sticks: 0, knocks: 0, pulls: 0, dryouts: 0, ledBreaks: 0, stuckPeak: 0, worstGap: 0, climbs: [[], []], gain: [0, 0] }
+    const receipts = { jumps: 0, sticks: 0, knocks: 0, pulls: 0, dryouts: 0, ledBreaks: 0, stuckPeak: 0, worstGap: 0, heatSeen: false, firstHit: 0, climbs: [[], []], gain: [0, 0] }
     // #2307 climb receipts: a CLIMB is leaving the ground going up and
     // landing on the ground some rows higher — grounded-row to grounded-row,
     // the only metric that can't be faked by a mid-air min-row brush-past.
@@ -97,6 +97,8 @@ function driveMatch(opts = {}) {
             else if (e.type === 'knockout') receipts.knocks++
             else if (e.type === 'pull') receipts.pulls++
             else if (e.type === 'dryout') receipts.dryouts++
+            else if (e.type === 'heat') receipts.heatSeen = true
+            else if (e.type === 'hit' && !receipts.firstHit) receipts.firstHit = g.tick
         }
         g.events.length = 0
     }
@@ -238,6 +240,12 @@ for (let i = 0; i < ARENAS_COUNT; i++) {
     // the player sees as a broken game. The lob-and-walk-in basic bot sat
     // here ~20 s until the stuck-arrow TTL reopened the quiver economy.
     ok(r.worstGap < 150, `arena ${i}: the duel sat ${r.worstGap} ticks (${(r.worstGap / 30).toFixed(1)} s) with no shot after the first kill — a dry quiver economy froze the demo (#1685)`)
+    // #2377 tempo invariant: pressure is for stalemates ONLY. The gate sits
+    // at heatTicks (450); every honest autopilot duel draws first blood at
+    // least three seconds earlier, so the attract demo never heats and the
+    // receipts above describe the SAME match as before the rule existed.
+    ok(!r.heatSeen && r.firstHit > 0 && r.firstHit <= CFG.heatTicks - 90,
+        `arena ${i}: heatSeen=${r.heatSeen}, first hit at tick ${r.firstHit} (gate ${CFG.heatTicks}) — the autopilot's tempo must stay clear of the heat gate (#2377)`)
     // #2307 — the issue's muscle: the autopilot climbs ledge chains ON PURPOSE.
     // Receipts are grounded-row → grounded-row (a landing two rows up is a
     // deliberate 2-cell step; the physics apex is 51 px, so a +2 is the
@@ -275,7 +283,7 @@ for (let i = 0; i < ARENAS_COUNT; i++) {
         `arena ${i}: SLACK FAILED — with quiver ${CFG.quiver - 1} and the foe gifted a point the autopilot ended ${sl.g.p[0].score}-${sl.g.p[1].score}; a perfect-solver win is not a human-winning design`)
     ok(sl.receipts.ledBreaks === 0, `arena ${i}: the slack match broke the ledger`)
 
-    receipts[i] = { ticks: g.tick, scores: `${g.p[0].score}-${g.p[1].score}`, sticks: r.sticks, pulls: r.pulls, knocks: r.knocks, climbs: r.gain[0], ms: Date.now() - t0 }
+    receipts[i] = { ticks: g.tick, scores: `${g.p[0].score}-${g.p[1].score}`, sticks: r.sticks, pulls: r.pulls, knocks: r.knocks, climbs: r.gain[0], firstHit: r.firstHit, heat: r.heatSeen, ms: Date.now() - t0 }
 }
 
 // ---------------------------------------------- dry-quiver honesty check ----
@@ -289,6 +297,111 @@ section('DRY — an empty quiver clicks, never fires')
     step(g, { mx: 0, my: 0, fire: false }, null)
     ok(g.arrows.length === ar, 'script: a dry archer fired an arrow from nothing')
     ok(g.p[0].quiver === 0, 'script: the dry shot went negative-ammo')
+}
+
+// ------------------------------------------- HEAT — dry spells rot cover ----
+// #2377: the honest gap said "a very defensive duel could get boring near
+// the wall — the wander keeps it honest, not fast". The rule: heatTicks
+// without a HIT makes the arena HOT and stuck cover drains heatRot times
+// faster; first blood cools it the same tick. These pins own the algebra.
+section('HEAT — a dry spell bakes the arena; first blood cools it (#2377)')
+{
+    const FLOOR = 11 * CFG.cell + 16
+    // one scripted flat shot; returns stick tick, arrow age right after the
+    // stick frame, and the dryout tick — all through the real step()
+    const shootAndWatch = (g, { keepCool = false, cap = 900 } = {}) => {
+        g.p[0].x = 300; g.p[0].y = FLOOR; g.p[0].grounded = true
+        g.p[0].firing = true; g.p[0].charge = 0.35
+        step(g, { mx: 0, my: 0, fire: false, aim: { x: 1, y: 0 } }, null)
+        let stick = -1, dry = -1, age0 = -1
+        for (let t = 0; t < cap && dry < 0; t++) {
+            step(g, null, null)
+            if (keepCool) g.lastHit = g.tick   // the referee stamps out dry spells (plain data, like the ghost-arrow precedent)
+            for (const e of g.events) {
+                if (e.type === 'stick' && stick < 0) { stick = g.tick; age0 = g.stuck[g.stuck.length - 1].age }
+                else if (e.type === 'dryout' && dry < 0) dry = g.tick
+            }
+            g.events.length = 0
+        }
+        return { stick, dry, age0 }
+    }
+    // the drain law: each tick adds 1 + rot to a stuck arrow's age; dryout
+    // is the first tick where the ttl leg pushes it past stuckTTL
+    const expectLife = (age0, rot) => { let n = 0; while (age0 + n * (1 + rot) + rot <= CFG.stuckTTL) n++; return n + 1 }
+
+    // 1) the gate: a match with no blood heats on exactly heatTicks
+    {
+        const g = scratch()
+        let heatTick = -1
+        for (let t = 0; t < CFG.heatTicks + 30 && heatTick < 0; t++) {
+            step(g, null, null)
+            for (const e of g.events) if (e.type === 'heat') heatTick = e.tick
+            g.events.length = 0
+        }
+        ok(heatTick === CFG.heatTicks && g.heat === true,
+            `heat gate: fired at tick ${heatTick} (expected ${CFG.heatTicks}), heat=${g.heat} — the dry-spell switch is off the clock it claims`)
+    }
+
+    // 2) the drain, cool vs hot: identical shots, constant rot each. Cool
+    // cover lives N ticks; hot cover must live the exact integer the
+    // (1 + heatRot)/(1 + 1) drain predicts off the observed stick age.
+    {
+        const cool = (() => { const g = scratch(); return shootAndWatch(g, { keepCool: true }) })()
+        const hot = (() => { const g = scratch(); for (let t = 0; t < CFG.heatTicks; t++) step(g, null, null); return shootAndWatch(g) })()
+        ok(cool.dry > cool.stick && hot.dry > hot.stick, `heat drain: missing dryouts (cool ${JSON.stringify(cool)}, hot ${JSON.stringify(hot)})`)
+        const wantCool = expectLife(cool.age0, 1), wantHot = expectLife(hot.age0, CFG.heatRot)
+        ok(cool.dry - cool.stick === wantCool, `cool drain: cover lived ${cool.dry - cool.stick} ticks, the age-${cool.age0}+2/tick law says ${wantCool}`)
+        ok(hot.dry - hot.stick === wantHot, `hot drain: cover lived ${hot.dry - hot.stick} ticks, the age-${hot.age0}+${1 + CFG.heatRot}/tick law says ${wantHot}`)
+        ok((hot.dry - hot.stick) * (1 + CFG.heatRot) >= (cool.dry - cool.stick) * 2 - 2 && (hot.dry - hot.stick) * (1 + CFG.heatRot) <= (cool.dry - cool.stick) * 2 + 2,
+            `heat ratio: cool ${(cool.dry - cool.stick)} vs hot ${(hot.dry - hot.stick)} — hot cover drains (1+heatRot) where cool drains 2, so hot×${1 + CFG.heatRot} must match cool×2 (±2 for the stick-age offset)`)
+        // dryout still pays the owner: the rotted shaft walks home
+        ok(hot.stick >= 0 && (hot.dry - hot.stick) > 0, 'hot dryout never returned its arrow — ledger legs stay counted in the MATCH receipts')
+    }
+
+    // 3) first blood cools SYNCHRONOUSLY: the hit and the cool drop the same tick
+    {
+        const g = scratch()
+        for (let t = 0; t < CFG.heatTicks + 5; t++) step(g, null, null)
+        ok(g.heat === true, 'heat: pre-cooled arena for the hit probe')
+        g.p[0].x = 200; g.p[0].y = FLOOR; g.p[0].grounded = true
+        g.p[1].x = 240; g.p[1].y = FLOOR; g.p[1].invuln = 0
+        g.p[0].firing = true; g.p[0].charge = 0.3
+        step(g, { mx: 0, my: 0, fire: false, aim: { x: 1, y: 0 } }, null)
+        let hitTick = -1, coolTick = -1
+        for (let t = 0; t < 60 && coolTick < 0; t++) {
+            step(g, null, null)
+            for (const e of g.events) {
+                if (e.type === 'hit' && hitTick < 0) hitTick = g.tick
+                if (e.type === 'cool') coolTick = g.tick
+            }
+            g.events.length = 0
+        }
+        ok(hitTick > 0 && coolTick === hitTick && g.heat === false && g.lastHit === hitTick - 1,
+            `cool-sync: hit@${hitTick} cool@${coolTick} heat=${g.heat} lastHit=${g.lastHit} — first blood must end the heat the same tick`)
+        // and the dry spell restarts from the blood: no re-heat until the
+        // drain refills. The heat event stamps the sim tick inside step(),
+        // lastHit the pre-increment tick of its frame — measured from the
+        // blood's sim-tick they sit exactly heatTicks apart.
+        const blood = g.lastHit
+        let reheat = -1
+        for (let t = 0; t < CFG.heatTicks + 40 && reheat < 0; t++) {
+            step(g, null, null)
+            for (const e of g.events) if (e.type === 'heat') reheat = e.tick
+            g.events.length = 0
+        }
+        ok(reheat - blood === CFG.heatTicks, `re-heat: arena baked again at +${reheat - blood} ticks after blood (expected ${CFG.heatTicks})`)
+    }
+
+    // 4) the ledger survives a hot stretch: rot returns arrows to owners,
+    // never conjures or eats one
+    {
+        const g = scratch()
+        for (let t = 0; t < CFG.heatTicks + 5; t++) step(g, null, null)
+        shootAndWatch(g)
+        const now = g.p[0].quiver + g.p[1].quiver + g.arrows.filter((a) => a.state !== 'stuck').length + g.stuck.length + g.ledger.hit + g.ledger.lost
+        ok(now === g.total + g.supplied, `hot dryout broke the arrow ledger (${now} vs ${g.total + g.supplied})`)
+        ok(g.p[0].quiver === CFG.quiver && g.receipts[0] > 0, `hot dryout should have walked the shaft home: quiver ${g.p[0].quiver}, receipts ${g.receipts[0]}`)
+    }
 }
 
 // --------------------------------------------------------------- mutants ----
@@ -384,6 +497,35 @@ if (MUT) {
         // fall to 0 on every arena. Evasive jumps alone never settle a +2.
         const a = driveMatch({ arena: 0 }), b = driveMatch({ arena: 1 })
         return a.receipts.gain[0] >= 4 && b.receipts.gain[0] >= 4
+    })
+    tryMut('no-heat (a dry spell never bakes the arena — #2377)', { heat: false }, () => {
+        const g = scratch()
+        for (let t = 0; t < CFG.heatTicks + 30; t++) { step(g, null, null); g.events.length = 0 }
+        return g.heat === true
+    })
+    tryMut('heat-rot off (the arena heats but the cover never rots — #2377)', { heatRot: 1 }, () => {
+        // the gate still fires; only the drain dies. Catch it on a ratio the
+        // patched constant cannot sign for itself: cool cover must live ~2×
+        // as long as hot cover (2 vs 1+heatRot age per tick). Reading
+        // CFG.heatRot here would let the mutant vouch for its own decay.
+        const life = (hot) => {
+            const g = scratch()
+            if (!hot) g.lastHit = 1_000_000   // pinned-future blood: referee-cooled (plain data)
+            else for (let t = 0; t < CFG.heatTicks; t++) step(g, null, null)
+            g.p[0].x = 300; g.p[0].y = FLOOR_Y; g.p[0].grounded = true
+            g.p[0].firing = true; g.p[0].charge = 0.35
+            step(g, { mx: 0, my: 0, fire: false, aim: { x: 1, y: 0 } }, null)
+            let s = -1, d = -1
+            for (let t = 0; t < 900 && d < 0; t++) {
+                step(g, null, null)
+                if (!hot) g.lastHit = 1_000_000
+                for (const e of g.events) { if (e.type === 'stick' && s < 0) s = g.tick; if (e.type === 'dryout') d = g.tick }
+                g.events.length = 0
+            }
+            return d > 0 && s > 0 ? d - s : -1
+        }
+        const coolL = life(false), hotL = life(true)
+        return coolL > 0 && hotL > 0 && coolL / hotL >= 1.8
     })
 }
 
