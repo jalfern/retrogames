@@ -70,7 +70,7 @@ for (const [name, facts, action, why] of U) {
 // ---- B + C. sandbox ----------------------------------------------------------
 const sh = (dir, args, opt = {}) =>
     execFileSync('git', args[0] === '-C' ? args : ['-C', dir, ...args],
-        { encoding: 'utf8', timeout: 30000, stdio: ['ignore', 'pipe', 'ignore'], ...opt })
+        { encoding: 'utf8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'], ...opt })
 const commit = (dir, msg) => {
     sh(dir, ['add', '-A']) // --all alone skips untracked; the first commit needs add
     sh(dir, ['-c', 'user.name=wtcheck', '-c', 'user.email=wtcheck@local', 'commit', '-qm', msg])
@@ -92,7 +92,7 @@ function sandbox(root) {
     writeFileSync(join(merged, 'b.txt'), 'feat\n')
     commit(merged, 'feat work')
     sh(merged, ['push', '-q', '-u', 'origin', 'feat-done'])
-    sh(main, ['merge', '-q', '--no-ff', 'feat-done', '-m', 'merge feat'])
+    sh(main, ['-c', 'user.name=wtcheck', '-c', 'user.email=wtcheck@local', 'merge', '-q', '--no-ff', 'feat-done', '-m', 'merge feat'])
     sh(main, ['push', '-q', 'origin', 'main'])
     // the law's after-merge state: re-detached at origin/main (#2293 — the
     // sweep's ancestry rule is for DETACHED trees; a branch still bound to a
@@ -186,7 +186,8 @@ try {
     }
 } catch (e) {
     fail += 1
-    console.log(`FAIL sandbox crashed — ${String(e).split('\n')[0]}`)
+    const why = (e.stderr || String(e)).toString().trim().split('\n')[0]
+    console.log(`FAIL sandbox crashed — ${why}`)
 }
 
 console.log(`\nworktreepurgecheck: ${pass} passed, ${fail} failed`)
