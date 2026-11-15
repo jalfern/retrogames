@@ -25,8 +25,8 @@ a real scout), a pull from 90 m/s must buy metres AND pay for them, and a
 glide's total energy `h + v²/2g` may never rise, not for one tick.
 
 Below `stall` (33 m/s) the wing stops flying: elevator authority fades with
-speed, the nose drops by itself, the ASI tape is in the red and the STALL
-light blinks. The deck is the only enemy that never misses.
+speed, the nose drops by itself, the ASI needle lies in the stall arc and the
+STALL light blinks. The deck is the only enemy that never misses.
 
 ## The guns
 
@@ -102,7 +102,10 @@ way from where the deflection already aims.
   (−20 rounds AND −40 m must still win), and `--mutate` for ten mutants
   that must die.
 - `npm run dogfightplay` — Chrome, real key events only. Instruments
-  (ASI/altimeter/belt DOM) read the probe to the unit; a projected bandit
+  (ASI/altimeter/belt DOM) read the probe to the unit; the painted dials
+  (#2316) must carry ink and their needles (`dataset.needle`, canvas deg)
+  must match the sim's knots/metres through the same scale the painters use;
+  a projected bandit
   is confirmed in painted pixels; a real pull drains m/s into metres; a
   3 s spray reddens the GUNS tape and a 6 s wait cools it back to zero;
   the live stream replays hash-identical in the tab; death → R is clean.
@@ -125,9 +128,11 @@ way from where the deflection already aims.
   belt −40). It is meant to be close; if it becomes a coin flip for Jon, the
   honest knob is the lead's gun range (300), not the player's hull. No blind
   tune made.
-- 2D instrument knobs are DOM, not painted gauges — ASI/altimeter still want
-  round dials with needles at period look (bar 1); filed as its own follow-up
-  (this pass took the meat: heat-in-world, sound, sight bloom, jam, smoke).
+- (CLOSED by #2316: ASI and altimeter are painted round period dials now —
+  canvas faces (stall arc + red band on the ASI, two-hand hundreds/thousands
+  on the altimeter), needles driven from gs.p in syncHud; `#dog-asi`/`#dog-alt`
+  stay DOM numbers for the harness, and dogfightplay grades the needle angles
+  against the sim. The GUNS/belt/throttle bars stay bars — cockpit panel look.)
   No observer/tail-gunner third party; one wing colour per side.
 
 ## WATCH (#1637 batch 5)

@@ -115,6 +115,36 @@ async function main() {
     r.check('belt counter reads the sim belt', parseInt(inst.belt) === iState.p.belt,
         `belt DOM ${inst.belt} vs sim ${iState.p.belt}`)
 
+    // ---- painted round dials (#2316) ----------------------------------------
+    // The faces must carry ink, and the needles must be the sim: the ASI
+    // needle (dataset.needle, canvas degrees) must sit exactly where the
+    // scale puts the current knots, same instant for the altimeter long
+    // hand. A frozen or hard-coded needle, or a dial that stops being
+    // painted, fails here — not on a screenshot's vibe.
+    const dial = await page.evaluate(() => {
+        const info = (sel) => {
+            const c = document.querySelector(sel)
+            if (!c) return null
+            const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data
+            let ink = 0
+            for (let i = 3; i < d.length; i += 4) if (d[i] > 0) ink++
+            return { ink, total: c.width * c.height, needle: parseFloat(c.dataset.needle) }
+        }
+        return { asi: info('canvas[data-dial="asi"]'), alt: info('canvas[data-dial="alt"]') }
+    })
+    r.check('ASI and altimeter are painted round dials',
+        !!dial.asi && !!dial.alt && dial.asi.ink > dial.asi.total * 0.5 && dial.alt.ink > dial.alt.total * 0.5,
+        `ink asi=${dial.asi ? (dial.asi.ink / dial.asi.total).toFixed(2) : 'missing'}, alt=${dial.alt ? (dial.alt.ink / dial.alt.total).toFixed(2) : 'missing'}`)
+    const angDist = (a, b) => Math.abs(((a - b + 540) % 360) - 180)
+    const predAsi = (kt) => 135 + 270 * Math.min(1, Math.max(0, kt / 260))
+    const predAlt = (m) => -90 + 360 * ((Math.max(0, m) % 1000) / 1000)
+    r.check('ASI needle tracks the sim speed',
+        angDist(dial.asi ? dial.asi.needle : NaN, predAsi(iState.p.v * 1.944)) <= 8,
+        `needle ${dial.asi && dial.asi.needle}° vs sim ${(iState.p.v * 1.944).toFixed(0)} kt`)
+    r.check('altimeter needle tracks the sim altitude',
+        angDist(dial.alt ? dial.alt.needle : NaN, predAlt(iState.p.y)) <= 8,
+        `needle ${dial.alt && dial.alt.needle}° vs sim ${iState.p.y.toFixed(0)} m`)
+
     // ---- the drawn bandit is where the sim says he is --------------------
     // tested against a FRESH spawn: bandits dead ahead against clean sky,
     // no merge geometry to argue with. Steering between samples is real
