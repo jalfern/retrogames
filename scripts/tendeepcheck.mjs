@@ -22,7 +22,7 @@ import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePric
 import { RACES, ALIGNMENTS, compose, classOk, rollCandidates } from '../src/games/TenDeep/people.js'
 import { genFloor, FLOORS, MOBS } from '../src/games/TenDeep/dungeon.js'
 import { solveRun, nextAction } from '../src/games/TenDeep/solver.js'
-import { sightedMobs, forwardMonster, MOB_MAT, MOB_SIZE, MOB_TINT, SIGHT } from '../src/games/TenDeep/view.js'
+import { sightedMobs, forwardMonster, packNotices, MOB_MAT, MOB_SIZE, MOB_TINT, SIGHT } from '../src/games/TenDeep/view.js'
 import { fitSize, fitTwoCols, estWidth } from '../src/games/TenDeep/hudfit.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -329,6 +329,53 @@ for (let fi = 0; fi < FLOORS.length; fi++) {
     ok(r1.driftFrames > 0, `DEEP ${fi + 1}: packs actually move — at least ${r1.driftFrames} drift events`)
     ok(r1.closes > 0, `DEEP ${fi + 1}: sighted packs close on the party (${r1.closes} closing steps)`)
     ok(r1.hash === r2.hash && r1.pos === r2.pos, `DEEP ${fi + 1}: the drift is deterministic — replay hashes and pack tiles alike`)
+}
+
+// ---------------------------------------------------------------- #2321 sting ----
+// The dark says SO. The moment a pack (or its drift) enters the cone, one low
+// dry sting fires — shell only (#2321 pt1). The chain has three links: the
+// sim asks view.js `packNotices` whether a pack at (cx,cy) has clocked the
+// party (the eye's own honest test — in front, within torchlight, nothing
+// through stone — PLUS a near guard: a pack breathing on you is not a
+// sighting, it is about to spring, and it must not "notice", which is what
+// keeps the closing step from bulldozing onto the party's tile); the shell
+// then keeps a floor-keyed ledger so a pack swaying at the cone edge cannot
+// machine-gun the sting. The view law is unit-testable right here in Node;
+// the wiring cannot be observed without a browser, so it is pinned at the
+// source — and every link of the chain carries a mutant that must die.
+section('THE DARK SAYS SO (#2321) — notice law and the sight-sting wiring')
+{
+    const notice = (cx, cy, x = 2, y = 3, dir = 0) =>
+        packNotices({ map: roamMap([], []), x, y, dir }, cx, cy)
+    ok(notice(6, 3) === true, 'a pack mid-corridor in the torchlight is noticed — the closing link opens')
+    ok(notice(11, 3) === false, 'a pack 9 tiles off stays un-noticed — no telepathy across the deep')
+    ok(notice(6, 3, 2, 3, 2) === false, 'a pack BEHIND the facing is un-noticed — the ear is as honest as the eye')
+    ok(notice(3, 3) === false, 'a pack breathing on you is un-noticed — point-blank packs spring, they do not sneak')
+    ok(notice(4, 3) === true, 'the near guard stops at one tile of air: a pack 2 cells off does notice')
+    // due abeam: an open alcove south of the corridor; facing east, the pack
+    // sits at dot 0 — nothing the party looks at. This is the gate the
+    // facing-law mutant must trip.
+    const alcove = roamMap([4 * SIZE + 2, 5 * SIZE + 2], [])
+    ok(packNotices({ map: alcove, x: 2, y: 3, dir: 0 }, 2, 5) === false,
+        'a pack due ABEAM is un-noticed — no ears behind the eyes')
+    // through stone: a split hall (x=4..5 in wall) hides a pack the range and
+    // facing would otherwise accept.
+    const hallSplit = { wall: (x, y) => !(y === 3 && ((x >= 1 && x <= 3) || (x >= 6 && x <= 12))) }
+    ok(packNotices({ map: hallSplit, x: 2, y: 3, dir: 0 }, 7, 3) === false,
+        'a pack behind a wall is un-noticed — no hearing through stone')
+    ok(packNotices({ map: roamMap([], []), x: 2, y: 3, dir: 0 }, 7, 3) === true,
+        'the same pack IS noticed with the stone removed — the wall, not the geometry, held the gate')
+
+    // The shell wiring is React — no browser, no driving — so its three laws
+    // ride as source pins: fresh ledger per floor, one sting keyed by floor +
+    // spawn key, and the sting gated on there being fresh eyes this frame.
+    const idxSrc = readFileSync(join(HERE, '..', 'src', 'games', 'TenDeep', 'index.jsx'), 'utf8')
+    ok(/if \(gs\.floor !== sightFloor\) \{ sightFloor = gs\.floor; sightKeys\.clear\(\) \}/.test(idxSrc),
+        'the sight ledger stopped turning its page on a new floor — deeper packs would enter the cone in silence')
+    ok(/const sk = gs\.floor \+ ':' \+ m\.key/.test(idxSrc),
+        'the sting lost its floor+spawn key — every deep would inherit the last floor’s silence')
+    ok(/if \(freshSights\) audioController\.playSweep\(150, 85/.test(idxSrc),
+        'the fresh-sighting sting is gone — packs drift into the torchlight unheard')
 }
 
 
@@ -1842,6 +1889,40 @@ if (MUT) {
         pull(idxFile)
         console.log(`  mut ${name}: ${res.status !== 0 ? 'caught' : 'SURVIVED (BAD)'}`)
         ok(res.status !== 0, `${name} SURVIVED — the modern-combat pins stopped touching this rule`)
+    }
+}
+
+// #2321 pt5 — every link of the notice→sting chain must be load-bearing:
+// break the law, deafen the sim, or loose the shell's wiring, and at least
+// one probe above goes red.
+if (MUT) {
+    const viewFile = join(HERE, '..', 'src', 'games', 'TenDeep', 'view.js')
+    const idxFile2 = join(HERE, '..', 'src', 'games', 'TenDeep', 'index.jsx')
+    const simFile2 = join(HERE, '..', 'src', 'games', 'TenDeep', 'sim.js')
+    const viewOrig2 = readFileSync(viewFile, 'utf8')
+    const idxOrig2 = readFileSync(idxFile2, 'utf8')
+    const simOrig2 = readFileSync(simFile2, 'utf8')
+    const stingMutants = [
+        [viewFile, viewOrig2, 'packs notice what breathes on them (near guard lifted)',
+            'if (range < 1.5 || range > SIGHT) return false', 'if (range > SIGHT) return false'],
+        [viewFile, viewOrig2, 'notice reaches past the torchlight',
+            'if (range < 1.5 || range > SIGHT) return false', 'if (range < 1.5) return false'],
+        [viewFile, viewOrig2, 'notice ignores the facing (packs clock what you cannot see)',
+            'if (dx * fx + dy * fy < 0.5) return false\n    return losClear', 'return losClear'],
+        [simFile2, simOrig2, 'the sim stopped asking the notice law (packs go deaf)',
+            'if (packNotices(st, cx, cy)) {', 'if (false) {'],
+        [idxFile2, idxOrig2, 'the sight ledger never turns the page (sting-silent deeps)',
+            'sightFloor = gs.floor; sightKeys.clear()', 'sightFloor = gs.floor'],
+        [idxFile2, idxOrig2, 'the sting lost its fresh-eyes gate (machine-gun the cone)',
+            'if (freshSights) audioController.playSweep(150, 85', 'if (true) audioController.playSweep(150, 85'],
+    ]
+    for (const [file, orig, name, from, to] of stingMutants) {
+        ok(orig.includes(from), `sting mutant anchor missing: ${name}`)
+        plant(file, orig.replace(from, to))
+        const res = spawnSync(process.execPath, [join(HERE, 'tendeepcheck.mjs')], { encoding: 'utf8' })
+        pull(file)
+        console.log(`  mut ${name}: ${res.status !== 0 ? 'caught' : 'SURVIVED (BAD)'}`)
+        ok(res.status !== 0, `${name} SURVIVED — the notice/sting gates stopped touching this rule`)
     }
 }
 

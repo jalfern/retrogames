@@ -237,6 +237,13 @@ npm run dev && npm run tendeepplay   # headless Chrome, real key events,
   A pack newly entering the cone gets a low synthesized warning sting (shell
   only, keyed by floor + spawn key so it never machine-guns). **The sim's
   proofs still referee nothing sighted** — sightings stay a view-layer question.
+  **#2321 pt5:** the view layer now referees ITSELF in tendeepcheck —
+  §THE DARK SAYS SO unit-tests `packNotices` (mid-torchlight yes, past the
+  flame no, behind/abeam no, through stone no, point-blank no) and source-
+  pins the shell's sting wiring (fresh ledger per floor, floor+spawn key,
+  one sting on fresh eyes). 6 mutants — near guard lifted, range past the
+  torchlight, facing law dropped, sim deaf to the notice law, ledger page
+  stuck, sting gate loose — all die.
   Per-species silhouettes **CLOSED by #2332**: the whole bestiary got its own
   atlas shape (`SPR_UV` table in the shared renderer; the Ghoul still shares the
   skeleton's bones on purpose, under a dead-flesh tint).
