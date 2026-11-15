@@ -26,6 +26,7 @@ import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy
 import { RACES, ALIGNMENTS, ALIGN_ORDER, compose } from './people.js'
 import { mulberry32 } from './dungeon.js'
 import { nextAction, playOut } from './solver.js'
+import { sightedMobs, MOB_TINT } from './view.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import AttractMessage from '../../components/AttractMessage'
@@ -540,6 +541,17 @@ const TenDeepGame = () => {
                 if (d < 6) { R.light(sx + 0.5, sy + 0.5, 0, 0.22, 0.62, 0.72, 3.5, 90); bc++ }
             }
             lastBeacons = bc
+            // roaming monsters: every ambush the party can honestly see (LOS +
+            // forward + torch range) stands as a billboard on its tile. Bigger
+            // packs read bigger; the shared atlas carries the silhouettes. The
+            // sim never learns this happens — sightedMobs reads only poses the
+            // sim already took, so stateHash and every proof ride unchanged.
+            mobAnim += dt
+            const mobs = sightedMobs(gs)
+            R.setSprites(mobs.map((m, i) => {
+                const size = 0.62 + Math.min(m.count - 1, 3) * 0.07
+                return { x: m.x + 0.5, y: m.y + 0.5, z: 0, mat: m.mat, w: size, h: size, anim: mobAnim + i * 140 }
+            }))
             R.frame(dt)
         }
 
@@ -558,6 +570,9 @@ const TenDeepGame = () => {
         let windWas = 0
         const evLog = []
         let shake = 0, flashHit = 0
+        // roaming-monster billboards sway on a presentation-only clock (the
+        // atlas's two-frame idle flip) — never mixed into stateHash
+        let mobAnim = 0
         // #1351: a wall bump gets a short darken beat — "wall", not "stuck"
         let bumpFade = 0
         // presentation-only combat feedback (never in gs/stateHash): a bolt on a
@@ -773,7 +788,27 @@ const TenDeepGame = () => {
                     ctx.fillStyle = '#ffd54f'
                     ctx.fillRect(n.l + (n.r - n.l) * 0.4, n.t + (n.b - n.t) * 0.25, (n.r - n.l) * 0.2, (n.b - n.t) * 0.5)
                 }
-                // an ambush-still-hidden tile has no tell — honest darkness
+                if (gs.ambushes.has(t)) {
+                    // a roaming pack stands in the corridor —Wizardry let you
+                    // see it coming. The loop stops at the first wall, so a
+                    // tile it reaches is honest forward line-of-sight.
+                    const amb = gs.map.ambushes.find((q) => q.y * SIZE + q.x === cell.y * SIZE + cell.x)
+                    const lead = amb && amb.group && amb.group[0]
+                    const tint = MOB_TINT[lead] || MOB_TINT.RAT
+                    const phase = Math.floor(bob / 9) & 1
+                    const bw = 8 + 4 / i + (amb && amb.group ? Math.min(amb.group.length - 1, 3) * 1.5 : 0)
+                    const bh = 10 + 6 / i
+                    const fx = n.l + (n.r - n.l) * 0.5
+                    const fy = n.b - 2 - phase
+                    ctx.fillStyle = tint
+                    ctx.fillRect(fx - bw / 2, fy - bh, bw, bh)                 // body
+                    ctx.fillRect(fx - bw / 4, fy - bh - 3 / i - 2, bw / 2, 3 / i + 2)   // head
+                    ctx.fillStyle = '#ff5a44'
+                    ctx.fillRect(fx - bw / 3, fy - bh - 1, 1.5, 1.5)            // eyes
+                    ctx.fillRect(fx + bw / 3 - 1.5, fy - bh - 1, 1.5, 1.5)
+                    ctx.fillStyle = 'rgba(0,0,0,0.5)'
+                    ctx.fillRect(fx - bw / 2, fy, bw, 1.5)                       // ground shadow
+                }
             }
             // crosshair
             ctx.fillStyle = 'rgba(255,255,255,0.35)'
@@ -1297,19 +1332,23 @@ const TenDeepGame = () => {
                     view: (() => {
                         // what the wireframe can see: first solid depth + features
                         // in front, exactly as paintMap walks the corridor
-                        let wallDist = 7, pots = 0, springs = 0, stairs = false
-                        if (!gs.map) return { wallDist: 0, pots, springs, stairs }
+                        let wallDist = 7, pots = 0, springs = 0, stairs = false, monsters = 0, monRange = 0
+                        if (!gs.map) return { wallDist: 0, pots, springs, stairs, monsters, monRange }
                         for (let i = 1; i <= DEPTH; i++) {
                             const cell = { x: gs.x + DX[gs.dir] * i, y: gs.y + DY[gs.dir] * i }
                             if (gs.map.wall(cell.x, cell.y)) { wallDist = i; break }
                             const t = cell.y * SIZE + cell.x
                             if (gs.pots.has(t)) pots = i
                             if (gs.springs.has(t)) springs = i
+                            if (gs.ambushes.has(t) && !monsters) { monsters = 1; monRange = i }
                             if ((gs.map.stairs && gs.map.stairs.y === cell.y && gs.map.stairs.x === cell.x) ||
                                 (gs.map.throne && gs.map.throne.y === cell.y && gs.map.throne.x === cell.x)) stairs = true
                         }
-                        return { wallDist, pots, springs, stairs }
+                        return { wallDist, pots, springs, stairs, monsters, monRange }
                     })(),
+                    // every roaming monster the party can honestly see (LOS +
+                    // forward + torch range) — the harness's witness of #2315
+                    sighted: sightedMobs(gs).map((m) => ({ x: m.x, y: m.y, range: Math.round(m.range * 100) / 100, count: m.count, mat: m.mat })),
                     mobPx: gs.combat ? gs.combat.mobs.map((m, i) => {
                         const liveN = gs.combat.mobs.filter((q) => q.hp > 0).length
                         const n = Math.max(liveN, gs.combat.mobs.length)

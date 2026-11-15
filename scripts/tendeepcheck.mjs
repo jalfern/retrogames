@@ -21,7 +21,8 @@ import { dirname, join } from 'node:path'
 import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, SPELLS, CLASSES, ALIGN_ORDER, canCast, DX as DXC, DY as DYC, automapRing, automapShade, RIM_STREET, rimBlocked, rimDoorAt, makeRimFolk, rimFolkAt, rimFolkShares, RIM_FOLK_NAMES, RIM_FLAMES, RIM_WELL_FLAME, rimFlame, RIM_WIND, rimWind, rimWellNear, RIM_CUT, rimCut, rimTrail } from '../src/games/TenDeep/sim.js'
 import { RACES, ALIGNMENTS, compose, classOk, rollCandidates } from '../src/games/TenDeep/people.js'
 import { genFloor, FLOORS, MOBS } from '../src/games/TenDeep/dungeon.js'
-import { solveRun } from '../src/games/TenDeep/solver.js'
+import { solveRun, nextAction } from '../src/games/TenDeep/solver.js'
+import { sightedMobs, forwardMonster, MOB_MAT, SIGHT } from '../src/games/TenDeep/view.js'
 import { fitSize, fitTwoCols, estWidth } from '../src/games/TenDeep/hudfit.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -65,7 +66,7 @@ const walkEnter = (g, key) => {
 
 // ---------------------------------------------------------------- math is banned ----
 section('MATH.RANDOM IS A SIM CRIME')
-for (const f of ['sim.js', 'dungeon.js', 'solver.js', 'town.js']) {
+for (const f of ['sim.js', 'dungeon.js', 'solver.js', 'town.js', 'view.js']) {
     const raw = readFileSync(join(HERE, '../src/games/TenDeep', f), 'utf8')
     const src = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
     ok(!/Math\s*\.\s*random/.test(src), `${f} contains Math.random — the dungeon may never be luck`)
@@ -84,6 +85,114 @@ try {
 }
 Math.random = realRandom
 ok(froze, 'floor generation and a 300-step walk run with Math.random THROWN at the call site')
+
+// ---------------------------------------------------------------- sighted mobs ----
+// #2315 — roaming monsters are now visible in the corridor. sightedMobs is the
+// single source of truth for which ambushes are IN THE LIGHT; the GL billboards,
+// the wireframe painter, the probe and this section all read it. The sim rule is
+// unchanged (ambushes stay trigger-tiles the solver never dodges), so this only
+// proves the PRESENTATION is honest: nothing seen through a wall, nothing behind
+// you, nothing beyond the torch, and it never mutates the sim.
+section('SIGHTED MOB GATES (#2315) — honest line of sight, no wall-hacks')
+{
+    // view.js keeps its own dir vectors (no sim dependency); pin them to sim's.
+    ok(DXC.join(',') === '1,0,-1,0' && DYC.join(',') === '0,1,0,-1',
+        'view dir vectors match sim DX/DY (0=E 1=S 2=W 3=N)')
+    // every bestiary member has an atlas material and a tint
+    ok(Object.keys(MOB_MAT).every((k) => k in MOBS), 'MOB_MAT covers the whole bestiary')
+    ok(SIGHT >= 3 && SIGHT <= 8, `torch sight is ${SIGHT} cells (a pack reveals itself before you reach it)`)
+
+    // a synthetic map helper: walls everywhere except the open cells passed in.
+    const mkMap = (open, ambushes) => ({
+        ambushes,
+        wall: (x, y) => x < 0 || y < 0 || x >= SIZE || y >= SIZE || !open.has(y * SIZE + x),
+    })
+    const ambushAt = (x, y, group = ['RAT', 'RAT']) => ({ x, y, id: 0, group })
+    const setActive = (list) => new Set(list.filter(Boolean).map((a) => a.y * SIZE + a.x))
+
+    // a 7-cell east corridor with a pack at the far end, party facing east.
+    const corridor = new Set()
+    for (let x = 1; x <= 7; x++) corridor.add(3 * SIZE + x)
+    const ahead = ambushAt(5, 3)
+    const st1 = { map: mkMap(corridor, [ahead]), ambushes: setActive([ahead]), x: 1, y: 3, dir: 0 }
+    const s1 = sightedMobs(st1)
+    ok(s1.length === 1 && s1[0].x === 5 && s1[0].y === 3 && s1[0].count === 2,
+        `a pack straight ahead in an open corridor is sighted (${JSON.stringify(s1)})`)
+    ok(s1[0].mat === MOB_MAT.RAT, `a rat pack maps to the rat atlas mat (${s1[0].mat})`)
+
+    // behind the facing (party faces east, monster lies west) → not sighted
+    const stBack = { ...st1, dir: 2 }
+    ok(sightedMobs(stBack).length === 0, 'a pack BEHIND you is not sighted')
+
+    // beyond torch range → not sighted
+    const far = ambushAt(15, 3)
+    const stFar = { map: mkMap(new Set([...corridor, ...[9, 11, 13, 15].map((x) => 3 * SIZE + x)]), [far]), ambushes: setActive([far]), x: 1, y: 3, dir: 0 }
+    ok(sightedMobs(stFar).length === 0, `a pack beyond ${SIGHT} cells stays in the dark`)
+
+    // a wall between party and pack → honest darkness (no seeing through stone)
+    const blockedOpen = new Set([...[1, 2, 5, 6, 7].map((x) => 3 * SIZE + x)])
+    const walled = ambushAt(5, 3)
+    const stWall = { map: mkMap(blockedOpen, [walled]), ambushes: setActive([walled]), x: 1, y: 3, dir: 0 }
+    ok(sightedMobs(stWall).length === 0, 'a pack behind a wall is NOT sighted — no wall-hacks')
+
+    // a sprung ambush (removed from the active set) never shows, even if open
+    const sprung = ambushAt(5, 3)
+    const stSprung = { map: mkMap(corridor, [sprung]), ambushes: new Set(), x: 1, y: 3, dir: 0 }
+    ok(sightedMobs(stSprung).length === 0, 'a sprung ambush never shows again')
+
+    // nearest-first ordering
+    const near = ambushAt(3, 3, ['RAT']), midF = ambushAt(6, 3, ['RAT'])
+    const stTwo = { map: mkMap(corridor, [midF, near]), ambushes: setActive([midF, near]), x: 1, y: 3, dir: 0 }
+    const sTwo = sightedMobs(stTwo)
+    ok(sTwo.length === 2 && sTwo[0].range <= sTwo[1].range, 'sightings sort nearest-first')
+
+    // forwardMonster agrees with sightedMobs: it returns the nearest ON-AXIS
+    // pack, ignoring an off-axis one the (forward-only) wireframe cannot show.
+    const onAxis = ambushAt(6, 3, ['RAT'])
+    const offAxis = ambushAt(3, 5, ['RAT'])                       // straight south, open stub
+    const corridorPlus = new Set([...corridor, 4 * SIZE + 3, 5 * SIZE + 3])   // corridor + a stub down to (3,5)
+    const stMix = { map: mkMap(corridorPlus, [onAxis, offAxis]), ambushes: setActive([onAxis, offAxis]), x: 3, y: 3, dir: 0 }
+    const fm = forwardMonster(stMix)
+    ok(fm && fm.x === 6 && fm.y === 3, `forwardMonster returns the on-axis pack (${fm ? fm.x + ',' + fm.y : 'none'})`)
+    ok(sightedMobs(stMix).some((m) => m.x === 3 && m.y === 5), 'sightedMobs still lists the off-axis pack (the GL cone sees it)')
+}
+
+// independent re-derivation on every REAL seeded floor: no sighted pack may have
+// a wall on its sight line, be behind the facing, exceed range, or be sprung —
+// and sightedMobs must be pure (a repeat call is identical; the sim is intact).
+section('SIGHTED MOB CROSS-CHECK — every seeded deep, no wall-hacks in practice')
+for (let fi = 0; fi < FLOORS.length; fi++) {
+    const g = makeRun({ seed: fi + 1 })
+    step(g, 'down')
+    let checked = 0, bad = 0
+    const hashBefore = stateHash(g)
+    for (let n = 0; n < 400 && !g.end && g.mode === 'map'; n++) {
+        const sighted = sightedMobs(g)
+        const again = sightedMobs(g)
+        if (JSON.stringify(sighted) !== JSON.stringify(again)) bad++
+        for (const m of sighted) {
+            checked++
+            if (!g.ambushes.has(m.y * SIZE + m.x)) bad++                 // sprung must not show
+            if (m.range > SIGHT + 1e-9) bad++                             // range respected
+            const fx = DXC[g.dir], fy = DYC[g.dir]
+            if ((m.x - g.x) * fx + (m.y - g.y) * fy < -0.25) bad++        // forward respected
+            // independent LOS: sample centre→centre exactly as view.js does —
+            // every cell strictly between the party and the pack must be open
+            const pdx = m.x - g.x, pdy = m.y - g.y
+            const steps = Math.max(2, Math.round(Math.hypot(pdx, pdy) * 4))
+            for (let k = 1; k < steps; k++) {
+                const t = k / steps
+                const cx = Math.floor(g.x + 0.5 + pdx * t), cy = Math.floor(g.y + 0.5 + pdy * t)
+                if ((cx !== m.x || cy !== m.y) && g.map.wall(cx, cy)) bad++
+            }
+        }
+        // wander a deterministic path to exercise many poses
+        step(g, g.mode === 'map' && nextAction(g) || 'fwd')
+    }
+    ok(stateHash(g) === hashBefore || g.mode !== 'map' || g.tick > 0, 'sightedMobs is pure — the sim hash still rides the walk')
+    ok(bad === 0, `DEEP ${fi + 1}: no honest-LOS violation among ${checked} sightings`)
+}
+
 
 // ---------------------------------------------------------------- floor audit ----
 section('FLOOR AUDIT — an independent BFS re-proves every seeded maze')
@@ -1290,7 +1399,39 @@ if (MUT) {
         ok(v, 'ladder drift SURVIVED — spells-by-level became a decoration')
     }
 
-    // 9. source-patch mutants: the automap fog ring and the memory ledger.
+    // 9b. the roaming-monster sight law (#2315): each sight constraint is
+    //     load-bearing. Kill honest LOS and packs show through walls; kill the
+    //     forward cone and monsters appear behind you; kill the torch range and
+    //     the whole floor is scouted; forget sprung ambushes and dead packs
+    //     haunt the corridor. Each must turn an honest SIGHTED gate red.
+    {
+        const viewFile = join(HERE, '..', 'src', 'games', 'TenDeep', 'view.js')
+        const viewOrig = readFileSync(viewFile, 'utf8')
+        const viewMutants = [
+            ['honest line of sight is dead (packs see through stone)',
+                'if ((sx !== tx || sy !== ty) && wall(sx, sy)) return false',
+                'if (false) return false'],
+            ['the forward cone opens (monsters behind you are sighted)',
+                'if (dx * fx + dy * fy < -0.25) continue',
+                'if (dx * fx + dy * fy < -1e9) continue'],
+            ['the torch sees everything (sight range is a myth)',
+                'if (range < 0.5 || range > SIGHT) continue',
+                'if (range < 0.5) continue'],
+            ['sprung ambushes never clear (a dead pack haunts the hall)',
+                'if (!st.ambushes.has(a.y * SIZE + a.x)) continue',
+                'if (false) continue'],
+        ]
+        for (const [name, from, to] of viewMutants) {
+            ok(viewOrig.includes(from), `view mutant anchor missing: ${name}`)
+            plant(viewFile, viewOrig.replace(from, to))
+            const res = spawnSync(process.execPath, [join(HERE, 'tendeepcheck.mjs')], { encoding: 'utf8' })
+            pull(viewFile)
+            console.log(`  mut ${name}: ${res.status !== 0 ? 'caught by a probe' : 'SURVIVED (BAD)'}`)
+            ok(res.status !== 0, `${name} SURVIVED — the SIGHTED gates stopped touching this rule`)
+        }
+    }
+
+    // 9c. source-patch mutants: the automap fog ring and the memory ledger.
     {
         const simFile = join(HERE, '..', 'src', 'games', 'TenDeep', 'sim.js')
         const orig = readFileSync(simFile, 'utf8')

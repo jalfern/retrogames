@@ -202,10 +202,25 @@ npm run dev && npm run tendeepplay   # headless Chrome, real key events,
   strict door, all-doors-reachable + threshold on leave, hash rides the walk,
   determinism, source pins); mutants: kill `rimBlocked`'s lane lookup → street
   gates red, kill the `rimDoorAt` guard → strict-door gate red, restored.
-- Monsters do not stand in the corridor before combat — the original showed
-  roaming groups in the 3D view; ours are hidden ambush tiles (a sim rule
-  since stage 1; the #1129 billboard pipeline is where this would land, and
-  making ambushes visible would re-open the solver/proof).
+- ~~Monsters do not stand in the corridor before combat~~ **PARTIAL by #2315**:
+  roaming packs are now VISIBLE in the first-person view before they spring. The
+  single source of truth is `view.js · sightedMobs(st)` — pure, deterministic, no
+  RNG, no browser — reused by the WebGL billboards, the wireframe painter, the
+  harness probe and tendeepcheck. A pack is sighted when it is within the torch
+  (`SIGHT = 6`), in front of the facing, and honest line-of-sight (no seeing
+  through a wall — `losClear` mirrors `dungeon.core.js` `viewCells`). The GL
+  corridor feeds the renderer's built-in monster atlas (8 rat, 9 skeleton, 10
+  goblin), sized up for a bigger pack, swaying on a presentation-only clock; the
+  wireframe paints a tinted glyph with two red eyes on the forward column
+  (paintMap stops at the first wall, so a tile it reaches is honest forward LOS).
+  **The sim is untouched** — ambushes stay hidden trigger-tiles and the solver
+  still never dodges them, so every proof, the slack rule and determinism ride
+  unchanged (tendeepcheck pins sightedMobs purity + no-wall-hacks across all ten
+  seeded deeps; 9603/9603; four view.js mutants die). Still open: true roaming
+  *movement* (the original's groups drift; ours stand on their seeded tile) and
+  per-species silhouettes (ten bestiary members fold onto three atlas shapes,
+  keyed by the group's lead — a richer atlas would re-open the shared renderer).
+  The automap stays clean — Wizardry never drew monsters on paper, neither do we.
 - Combat keeps its 2D bitmap plates on the HUD layer (the original also cut
   to a separate combat screen, but the plates want their own MODERN pass).
 - No between-run persistence (Wizardry saved to disk; we don't).

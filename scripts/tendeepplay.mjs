@@ -97,6 +97,12 @@ const glmean = (x, y, w, h) => page.evaluate(([sx, sy, sw, sh]) => {
 // always wait for the eye to settle on the sim's pose before pixels.
 const settleGl = async () => { for (let i = 0; i < 25; i++) { if ((await probe()).glLag < 0.02) return true; await wait(40) } return false }
 
+// #2315 — the dead-centre brightness of an honestly empty hall, recorded in
+// section 3, is the baseline the roaming-monster gate is graded against: GL via
+// readPixels mean, wireframe via lit-pixel count over the same tall centre box
+let hallLitSeen = -1, hallPixSeen = 0
+const MONBOX = [110, 84, 36, 120]
+
 await page.goto(URL, { waitUntil: 'load' })
 try {
     await page.waitForFunction(() => !!window.__deepTest, null, { timeout: 30000 })
@@ -274,13 +280,18 @@ r.check('the party strip prints HP numbers on the cards', hpLit > 40, `lit px in
     for (let t = 0; t < 40; t++) {
         const p = await probe()
         if (p.mode !== 'map') break
-        if (p.view.wallDist >= 5 && !p.view.pots && !p.view.springs && !p.view.stairs) break
+        // a roaming pack in the sightline lights the centre column too (it is a
+        // floor feature for this gate, like pots/springs) — keep walking until
+        // the centre is honestly empty
+        if (p.view.wallDist >= 5 && !p.view.pots && !p.view.springs && !p.view.stairs && !p.view.monsters) break
         await page.keyboard.press(p.view.wallDist <= 2 ? 'ArrowRight' : 'ArrowUp')
         if (useGl) await settleGl(); else await wait(80)
     }
     const p2 = await probe()
-    r.check('driver reached a clear long hall', p2.view.wallDist >= 5 && !p2.view.pots && !p2.view.springs && !p2.view.stairs, `wallDist=${p2.view.wallDist} pot=${p2.view.pots} spring=${p2.view.springs} stairs=${p2.view.stairs}`)
+    r.check('driver reached a clear long hall', p2.view.wallDist >= 5 && !p2.view.pots && !p2.view.springs && !p2.view.stairs && !p2.view.monsters, `wallDist=${p2.view.wallDist} pot=${p2.view.pots} spring=${p2.view.springs} stair=${p2.view.stairs} mon=${p2.view.monsters}`)
     const hallLit = useGl ? await glmean(...COL) : -1
+    hallLitSeen = hallLit
+    hallPixSeen = await px(...MONBOX, 'canvas[data-deep-view]', (R, G, B) => R + G + B > 150)
     const blueFar = await px(126, 30, 5, 140, 'canvas[data-deep-view]', (R, G, B) => B > 90 && B > R + 30)
     r.check(useGl
         ? 'a clear hall falls off into darkness — the light is the grid'
@@ -451,14 +462,36 @@ r.check('the party strip prints HP numbers on the cards', hpLit > 40, `lit px in
 const catchMid = (p) => (p.slide > 0 && p.slideX && p.slideX.x - p.slideX.sx > 12) ? p : null
 let ambush = null
 let mid = null
+// #2315 — grade that a roaming pack is DRAWN before it springs. The walk
+// already steps forward while the hall is open; when the probe reports a
+// monster dead ahead, read the centre column. In the GL corridor the billboard
+// lights it; in the wireframe the painted glyph does. Both must beat the empty
+// hall baseline, and the sighting must land BEFORE the fight begins.
+const MONCOL = [110, 92, 36, 20]
+let monLit = null, monLitRange = 0, monPix = 0
 for (let stepN = 0; stepN < 130 && !ambush; stepN++) {
     const p = await probe()
     if (p.mode === 'combat') { ambush = p; mid = catchMid(p); break }
+    if (p.mode === 'map' && p.view.monsters && (monLit == null || p.view.monRange < monLitRange)) {
+        // keep the CLOSEST sighting — at arm's length the pack fills the corridor
+        await settleGl()
+        monLit = await glmean(...MONCOL)
+        monPix = await px(...MONBOX, 'canvas[data-deep-view]', (R, G, B) => R + G + B > 150)
+        monLitRange = p.view.monRange
+    }
     await page.keyboard.press(p.view.wallDist === 1 ? 'ArrowRight' : 'ArrowUp')
     await wait(80)
 }
 ambush = ambush || ((await probe()).mode === 'combat' ? await probe() : null)
 r.check('a real step onto an ambush tile starts combat', !!ambush, ambush ? `mode=${ambush.mode}` : 'never met an ambush walking')
+if ((await probe()).gl) {
+    r.check('a roaming pack is visible in the corridor BEFORE it springs (#2315)',
+        monLit != null && hallLitSeen >= 0 && monLit > hallLitSeen + 8,
+        `centre brightness at monster (range ${monLitRange})=${monLit} vs empty hall=${hallLitSeen}`)
+} else {
+    r.check('a roaming pack is painted on the wireframe corridor before it springs (#2315)',
+        monPix > hallPixSeen + 40, `lit px over the monster glyph=${monPix} vs empty hall=${hallPixSeen} (range ${monLitRange})`)
+}
 if (ambush && !mid) {
     // slow tab: the first frame landed after the slide had mostly run. One
     // fresh run, walk to a fresh ambush, and try to catch the slide in time.
