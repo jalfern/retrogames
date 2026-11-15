@@ -18,9 +18,12 @@ export const CFG = {
 
 // #1740: the original ran a long campaign of 45 levels; the atmospheres repeat
 // every third world (the renderer cycles its three PALs the same way), so the
-// named worlds below are six arcs of three — each arc stricter than the last
+// named worlds below are nine arcs of three — each arc stricter than the last
 // (#1925 item 3 grew the campaign from nine to eighteen: arcs four to six keep
-// the same three-atmosphere cycle and the +15 vault ramp).
+// the same three-atmosphere cycle and the +15 vault ramp; #2419 grew it to
+// twenty-seven: arcs seven to nine keep the +15 vault ramp, and the deeper
+// arcs ride pearls at +5/world so quota stays under ~3.5x the pearl yield —
+// the economy policy below outranks the old +4 step).
 // Quota policy (learned in the sweep: seeds 41/54 stalled when world 9's
 // demand outran the pearl yield): every quota stays well under what the pearls
 // alone realistically pay (~pearls x 3.5 against the 2..6 roll), because the
@@ -48,6 +51,19 @@ export const LEVELS = [
     { name: 'SABLE WILD', quota: 370, hoard: 320, wizHp: 290, pearls: 120 },
     { name: 'LAST LIGHT', quota: 385, hoard: 335, wizHp: 305, pearls: 124 },
     { name: 'THE ENDLESS SKY', quota: 400, hoard: 350, wizHp: 320, pearls: 128 },
+    // #2419 — the third campaign. Arc seven (green/ember/frost as above; pearls
+    // ride +5/world from here, the yield-margin law above outranking the +4 step):
+    { name: 'IRONWOOD', quota: 415, hoard: 365, wizHp: 335, pearls: 133 },
+    { name: 'EMBER GULCH', quota: 430, hoard: 380, wizHp: 350, pearls: 138 },
+    { name: 'HOARFROST', quota: 445, hoard: 395, wizHp: 365, pearls: 143 },
+    // arc eight — stricter still:
+    { name: 'MOSSVALE', quota: 460, hoard: 410, wizHp: 380, pearls: 148 },
+    { name: 'MAGMA WAKE', quota: 475, hoard: 425, wizHp: 395, pearls: 153 },
+    { name: 'WHITEWALL', quota: 490, hoard: 440, wizHp: 410, pearls: 158 },
+    // arc nine — the far country: the deepest vaults, the largest hoards.
+    { name: 'HOLLOW GREEN', quota: 505, hoard: 455, wizHp: 425, pearls: 163 },
+    { name: 'LAST CINDER', quota: 520, hoard: 470, wizHp: 440, pearls: 168 },
+    { name: 'THE FARTHEST SKY', quota: 535, hoard: 485, wizHp: 455, pearls: 173 },
 ]
 export const QUOTA = LEVELS[LEVELS.length - 1].quota
 
@@ -55,7 +71,7 @@ export const QUOTA = LEVELS[LEVELS.length - 1].quota
 // Pure selector plumbing so the whole pick path is Node-provable, like hudTap.
 // Thumb-sized chevron zones sit at the bottom corners of the 320x200 title
 // surface (48x48 HUD px = >=44 CSS px on a 390px phone); the cursor cycles
-// through the eighteen worlds and any other start key/tap launches from it.
+// through the twenty-seven worlds and any other start key/tap launches from it.
 export const SEL = { y: 112, h: 48, zw: 48 }
 export function selectTap(x, y) {
     if (y < SEL.y || y > SEL.y + SEL.h) return null

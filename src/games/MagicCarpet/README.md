@@ -335,10 +335,11 @@ see item 5).
   Invisibility shipped #1610, volcano #1612 item 5, shatter + raise #1639,
   dissolve #1668, **clone #1680** — the roster tail of #1612 item 5
   (clone/dissolve/shatter/volcano) is now fully shipped.
-- **PARTIAL by #1740, grown by #1925 item 3:** the title carries a WORLD SELECT
-  (◀ ▶ / chevron taps, eighteen startable worlds) — the campaign runs eighteen
-  worlds (six arcs of three atmospheres), not the original's 45;
-  scoring is banked mana + kills + clears + time bonus.
+- **PARTIAL by #1740, grown by #1925 item 3 and #2419:** the title carries a WORLD SELECT
+  (◀ ▶ / chevron taps, twenty-seven startable worlds) — the campaign runs twenty-seven
+  worlds (nine arcs of three atmospheres), not the original's 45;
+  scoring is banked mana + kills + clears + time bonus. The remaining growth
+  (worlds 28–45) and the scoring-model delta stay open.
 - **Castle-spell menu closed by #1764 item 1:** the original's spell selection was
   a browseable book, and the book lives at home. `B` (or a tap on the glowing
   prompt) opens it ONLY inside the castle's 26u reach — away from it the refusal
@@ -763,3 +764,35 @@ index.jsx call sites (pan last, prox×vol) are unchanged. eslint + lint:mario/fp
 green, build green, the full Node battery green (#1746 / #1764-7 blocks all pass),
 sim hash unmoved (presentation only — nothing rule-facing changed, so the seed sweep
 is unchanged).
+
+## #2419 campaign to twenty-seven worlds (2026-11-15, forge slot b): THE FAR COUNTRY
+
+The never-dry stage against this README's oldest unowned gap (#1571 pick, score 2):
+the campaign grows from eighteen to **twenty-seven worlds** — the original ran 45.
+
+- Arcs seven to nine keep the house laws: the three-atmosphere cycle (green/ember/
+  frost — 27 divides three, so every arc closes on frost), the +15 ramp on
+  quota/hoard/wizHp, strict escalation. **Pearls ride +5/world from world 19**:
+  the economy policy ("quota well under ~3.5x the pearl yield — the hoard is
+  never load-bearing", #1740) outranks the old +4 step; at +4 the tail would
+  demand 93% of expected yield where mid-campaign asks 89%.
+- Nine named worlds: IRONWOOD, EMBER GULCH, HOARFROST / MOSSVALE, MAGMA WAKE,
+  WHITEWALL / HOLLOW GREEN, LAST CINDER, THE FARTHEST SKY — closing each arc on
+  the SKY finale pattern (THE LAST SKY → THE ENDLESS SKY → THE FARTHEST SKY).
+- The plumbing was already generic: WORLD SELECT, cursor wrap, HUD `WORLD n/27`
+  and the attract copy ride `LEVELS.length`; only the title tagline changed.
+- Caps ride the campaign: the carpetcheck sweep cap and the DebugKit PROGNOSIS
+  budget become `LEVELS.length * 26000` ticks (measured slowest full win
+  ~474k at 27 worlds; the old 300k cap is already ~88% consumed by seed 7 at
+  18). Balance bar unchanged: **60/60 seeds win all twenty-seven worlds**.
+- carpetcheck: campaign gates re-targeted eighteen→twenty-seven (incl. the
+  seed-7/seed-88 full clears, live name-order campaign on seed 3, the sweep);
+  cursor wrap re-proven generically (±n round-trips + full cycle both
+  directions — the old ±18 literals would have *passed wrong* at n=27); two new
+  law pins: the arc seven-nine ramp table + SKY trio + cycle closure, and the
+  yield cap `quota <= floor(pearls * 3.5)` across all worlds.
+- Mutation guide (prove it can fail): drop the last LEVELS entry (THE FARTHEST
+  SKY) → the campaign table (length/names/escalation), the QUOTA export, seed-7
+  and seed-88 full clears, the live name-order campaign, the yield cap and the
+  cursor wrap all go red together; restore. (Or clamp the arc-nine pearls back
+  to +4 — the new ramp-table pin goes red alone.)
