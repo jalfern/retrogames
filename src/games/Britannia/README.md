@@ -58,7 +58,15 @@ transcribed into source:
   **CLOSED by #2345** on the toll half: the purse is live (GOLD 250 at the
   start, as the original's HUD carried it), every boarding pays the captain
   5 gold, and a light purse is refused on the sand. Distance fares for named
-  port pairs and the shops themselves stay stage 2.
+  port pairs and the shops themselves stay stage 2. — **SEEN by #2351**: the
+  toll now reads without sound — a moored boat waits off any coast you face
+  (at the waterline when the purse can pay the fare, an honest tile further
+  out when it cannot — `moorReach` in purse.js), coins arc from sand to deck
+  as the keel goes in, the HUD carries a minted coin glyph that dims when
+  unpayable and flashes whenever gold moves, and the captain refuses in his
+  own two-tone deny instead of borrowing the chapel thud. The under-way sail
+  obeys the wind class (`sailState` in hull.js): full canvas in FRESH/GALE,
+  reefed in STEADY, furled on a becalmed sea.
 - Town walls/buildings are still tile terrain; enterable buildings are stage 2.
 - Classic mode (`C`) stamps the ORIGINAL terrain tiles: Origin's own
   terrain-named tilesets (`GRASS/MARSH/BRUSH/HILL/FOREST/SHORE.CON`, 192B =

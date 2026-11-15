@@ -29,8 +29,8 @@ import { AVATARS, shrineTitle, plotShrines } from './shrines.js'
 import { buildClassicStamps, variantOf } from './ega.js'
 import { PHASES, moonPhase, moonName, phaseLit, gateFlavor, routeDest } from './moons.js'
 import { crest, crestLane, foam, landSides, foamPatches, splatIntensity, dimples, splashStrikes, SPLAT_GAP, seaRough, crestGain, foamGain, shipCd, surfDue } from './swell.js'
-import { HULL_MAX, wear, repair, nearestCoast, GROAN_GAP } from './hull.js'
-import { START_GOLD, FARE, TRIBUTE, payToll, tribute } from './purse.js'
+import { HULL_MAX, wear, repair, nearestCoast, GROAN_GAP, sailState } from './hull.js'
+import { START_GOLD, FARE, TRIBUTE, payToll, tribute, moorReach } from './purse.js'
 
 const SIM_MS = 1000 / 60
 const VIEW_W = 1280
@@ -38,6 +38,7 @@ const VIEW_H = 720
 const DAY = 7200
 const WALK_CD = 7
 const SHIP_CD = 5
+const COIN_ARC = 28 // #2351: ticks a paid fare spends arcing from sand to deck
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII']
 
 const ATTRACT = [
@@ -101,6 +102,7 @@ const BritanniaGame = () => {
             splat: -99, // #1829: last tick the sea spoke a drop
             hull: HULL_MAX, worn: 0, groan: -99, // #1829 hazard: strain on the planks (integer + fraction) + groan throttle
             gold: START_GOLD, day: 0, // #2345 purse: the original's 250, and the day whose tithe has already been paid
+            coins: null, purseFlash: 0, // #2351: the toll made seen — coin arc + HUD flash (cosmetic, never hashed)
         })
 
         const load = async () => {
@@ -160,6 +162,10 @@ const BritanniaGame = () => {
 
         const step = (pad) => {
             S.tick++
+            // #2351: the coin arc and the purse flash decay on the world clock
+            // (before the cooldown return — they animate even while she waits).
+            if (S.coins) { S.coins.t++; if (S.coins.t > COIN_ARC) S.coins = null }
+            if (S.purseFlash > 0) S.purseFlash--
             const sky = weatherAt(S.x, S.y, S.tick, S.seed, terrainAt)
             if (sky !== S.wx) {
                 S.wx = sky
@@ -220,6 +226,7 @@ const BritanniaGame = () => {
                 S.day = day
                 if (S.gold < START_GOLD) {
                     S.gold = tribute(S.gold)
+                    S.purseFlash = 30 // #2351: gold arriving reads too, not only gold leaving
                     if (!/^GOAL/.test(S.toastMsg || '')) {
                         S.toast = 110; S.toastMsg = `New day: the gate-towns tithe ${TRIBUTE} gold into thy purse.`
                         audioController.playTone(880, 0.07, 'square', 0.07)
@@ -349,12 +356,20 @@ const BritanniaGame = () => {
                 // chapel-stone pattern (cooldown + named refusal), the pilgrim
                 // stays on dry land, the gold stays in the purse.
                 const toll = payToll(S.gold)
+                // #2351: the captain gets his own voice — a two-tone deny
+                // (high ask, low no), not the chapel-stone thud. Same law
+                // (cooldown + named refusal), his own sound, a longer pause.
                 if (!toll.paid) {
                     S.cd = 26
-                    audioController.playSweep(96, 60, 0.14, 'square', 0.16)
-                    S.toast = 120; S.toastMsg = `The captain asketh ${FARE} gold — thy purse is light.`
+                    audioController.playTone(300, 0.09, 'square', 0.10)
+                    audioController.playTone(190, 0.16, 'square', 0.10)
+                    S.toast = 150; S.toastMsg = `The captain asketh ${FARE} gold — thy purse is light.`
                 } else {
                     S.gold = toll.gold
+                    S.purseFlash = 30 // #2351: the HUD purse ticks down with a flash
+                    // #2351: the fare flies — coins arc from the sand onto the
+                    // deck as the keel goes in, so the payment reads with sound off.
+                    S.coins = { ox: nx - dx, oy: ny - dy, dx, dy, t: 0 }
                     S.ship = true; S.x = nx; S.y = ny; S.cd = shipCd(seaRough(nx, ny, S.tick, S.seed, terrainAt), SHIP_CD)
                     // #1829 hazard: the first leg strains too — her keel is in the
                     // water the moment she's boarded. Cannot finish her (a boarded
@@ -620,11 +635,23 @@ const BritanniaGame = () => {
                 if (hurt) { ctx.fillStyle = '#241708'; ctx.fillRect(-8, 8, 3, 3); ctx.fillRect(2, 7, 3, 3) }
                 ctx.strokeStyle = '#d9c9a0'; ctx.lineWidth = 2
                 ctx.beginPath(); ctx.moveTo(0, 6); ctx.lineTo(0, -12); ctx.stroke()
-                ctx.fillStyle = S.hull < HULL_MAX ? '#d8cfb4' : '#e8e0c8'
-                ctx.beginPath(); ctx.moveTo(1, -12); ctx.lineTo(12, -2); ctx.lineTo(1, -2); ctx.closePath(); ctx.fill()
-                if (hurt) {
-                    ctx.fillStyle = 'rgba(10,12,26,0.55)'
-                    ctx.beginPath(); ctx.moveTo(7, -5); ctx.lineTo(12, -2); ctx.lineTo(7, -2); ctx.closePath(); ctx.fill()
+                // #2351: the canvas obeys the wind the HUD already names —
+                // set in a fresh breeze or gale, reefed in a steady air,
+                // and come down to a bundled yard when the sea lies becalmed.
+                const sail = sailState(S.wind)
+                if (sail > 0) {
+                    const spread = sail === 2 ? 12 : 6
+                    ctx.fillStyle = S.hull < HULL_MAX ? '#d8cfb4' : '#e8e0c8'
+                    ctx.beginPath(); ctx.moveTo(1, -12); ctx.lineTo(1 + spread, -2); ctx.lineTo(1, -2); ctx.closePath(); ctx.fill()
+                    if (hurt) {
+                        ctx.fillStyle = 'rgba(10,12,26,0.55)'
+                        ctx.beginPath(); ctx.moveTo(1 + spread - 5, -5); ctx.lineTo(1 + spread, -2); ctx.lineTo(1 + spread - 5, -2); ctx.closePath(); ctx.fill()
+                    }
+                } else {
+                    ctx.fillStyle = '#c9bd9c'
+                    ctx.fillRect(-5, -9, 10, 3) // the furled canvas, lashed to the yard
+                    ctx.fillStyle = '#8f8367'
+                    ctx.fillRect(-5, -8, 10, 1) // its shadow line
                 }
                 ctx.restore()
             } else {
@@ -632,6 +659,67 @@ const BritanniaGame = () => {
                 ctx.translate(px, py)
                 drawAvatar(ctx, S.face, walkFrame(S.anim, S.cd > 0), S.cd > 0 ? Math.sin(t / 5) * 1.2 : 0)
                 ctx.restore()
+            }
+            // #2351: the toll's stage, seen before the step. Aboat waits off
+            // the first sea tile in the pilgrim's face — at the waterline when
+            // the purse can pay, an honest tile further out when it cannot.
+            // The captain is a person with a price, not a doorway with a rule.
+            if (!S.ship && !classicOn) {
+                const FD = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] }
+                const fd = FD[S.face] || [0, -1]
+                let seaD = -1
+                for (let d = 1; d <= 3; d++) {
+                    const txw = ((S.x + fd[0] * d) % MAPW + MAPW) % MAPW
+                    const tyw = ((S.y + fd[1] * d) % MAPW + MAPW) % MAPW
+                    if (isSea(terrainAt(txw, tyw))) { seaD = d; break }
+                }
+                if (seaD > 0) {
+                    const reach = moorReach(S.gold)
+                    let bd = seaD + reach - 1
+                    const bxw = ((S.x + fd[0] * bd) % MAPW + MAPW) % MAPW
+                    const byw = ((S.y + fd[1] * bd) % MAPW + MAPW) % MAPW
+                    if (!isSea(terrainAt(bxw, byw))) bd = seaD
+                    const bsx = ((S.x + fd[0] * bd) % MAPW + MAPW) % MAPW * TILE - camX + 16
+                    const bsy = ((S.y + fd[1] * bd) % MAPW + MAPW) % MAPW * TILE - camY + 16 + Math.sin(t / 7 + bd) * 1.5
+                    const afloat = fd[0] !== 0
+                    ctx.save()
+                    ctx.translate(bsx, bsy)
+                    if (afloat) ctx.rotate(0.06 * Math.sin(t / 7))
+                    else ctx.rotate(0.1 * Math.sin(t / 6))
+                    ctx.fillStyle = '#4a2f16' // moored hull: blunt, deck low in the water
+                    ctx.beginPath(); ctx.moveTo(-11, 2); ctx.lineTo(11, 2); ctx.lineTo(7, 8); ctx.lineTo(-7, 8); ctx.closePath(); ctx.fill()
+                    ctx.fillStyle = '#6d4726'
+                    ctx.fillRect(-9, 2, 18, 2) // plank of gunwale light
+                    ctx.strokeStyle = '#c9bd9c'; ctx.lineWidth = 1.5
+                    ctx.beginPath(); ctx.moveTo(0, 2); ctx.lineTo(0, -8); ctx.stroke() // stub mast
+                    ctx.fillStyle = '#d8cfb4'
+                    ctx.beginPath(); ctx.moveTo(1, -8); ctx.lineTo(7, -3); ctx.lineTo(1, -3); ctx.closePath(); ctx.fill() // small setsail
+                    if (reach === 1) { // paid: she's made fast to the sand
+                        ctx.strokeStyle = 'rgba(201,189,156,0.7)'
+                        ctx.beginPath(); ctx.moveTo(-fd[0] * 11, 3 - fd[1] * 6); ctx.lineTo(-fd[0] * 19, 5 - fd[1] * 10); ctx.stroke()
+                    } else { // light purse: she rides out of the step, honest
+                        ctx.strokeStyle = 'rgba(159,180,216,0.4)'; ctx.lineWidth = 1
+                        ctx.beginPath(); ctx.arc(0, 9, 12, 3.4, 6.0); ctx.stroke()
+                    }
+                    ctx.restore()
+                }
+            }
+            // #2351: the fare in flight — three gold coins arc from the sand
+            // onto the deck as the keel goes in. Cosmetic, deterministic, unhashed.
+            if (S.coins) {
+                const k0 = Math.min(1, S.coins.t / COIN_ARC)
+                const osx = (((S.coins.ox % MAPW) + MAPW) % MAPW) * TILE - camX + 16
+                const osy = (((S.coins.oy % MAPW) + MAPW) % MAPW) * TILE - camY + 16
+                for (let i = 0; i < 3; i++) {
+                    const k = Math.max(0, Math.min(1, k0 * 1.25 - i * 0.08))
+                    if (k <= 0) continue
+                    const cxp = osx + S.coins.dx * TILE * k + (i - 1) * 3
+                    const cyp = osy + S.coins.dy * TILE * k - Math.sin(Math.PI * k) * 11 - (i - 1) * 1.5 * Math.cos(S.coins.dx !== 0 ? 0 : 1)
+                    ctx.fillStyle = '#ffd760'
+                    ctx.beginPath(); ctx.arc(cxp, cyp, 2.4, 0, 7); ctx.fill()
+                    ctx.strokeStyle = '#8a6a20'; ctx.lineWidth = 1
+                    ctx.beginPath(); ctx.arc(cxp, cyp, 2.4, 0, 7); ctx.stroke()
+                }
             }
             // darkness + torchlight
             if (n > 0.02) {
@@ -852,8 +940,21 @@ const BritanniaGame = () => {
             ctx.fillText(`MOONGATES ${S.visited.size}/${gates.length}`, Math.max(540, tx + 490), baseY - 1)
             // #2345 purse: gold ink even when empty — the HUD carries the purse
             // as the original's did, so the toll and the tithe stay legible.
-            ctx.fillStyle = S.gold < FARE ? '#e06060' : '#e8d9a0'
-            ctx.fillText(`PURSE ${S.gold}`, Math.max(700, tx + 650), baseY - 1)
+            // #2351: the purse looks MINTED — a coin glyph before the number,
+            // bright when the next fare is payable, dimmed when it is not, and
+            // a brief flash whenever gold moves (paid out or tithe in), so the
+            // ledger reads with sound off.
+            const px_ = Math.max(700, tx + 650)
+            const payeable = S.gold >= FARE
+            const fl = S.purseFlash > 0
+            ctx.beginPath(); ctx.arc(px_ - 13, baseY - 6, fl ? 5.6 : 5, 0, 7)
+            ctx.fillStyle = payeable ? (fl ? '#ffe9a0' : '#e8c860') : '#6a5a3c'
+            ctx.fill()
+            ctx.strokeStyle = payeable ? '#8a6a20' : '#4a3f2a'; ctx.lineWidth = 1.5; ctx.stroke()
+            ctx.fillStyle = payeable ? '#b8912e' : '#544730'
+            ctx.beginPath(); ctx.arc(px_ - 13, baseY - 6, 2.2, 0, 7); ctx.fill() // the struck center
+            ctx.fillStyle = fl ? '#fff3c8' : (S.gold < FARE ? '#e06060' : '#e8d9a0')
+            ctx.fillText(`PURSE ${S.gold}`, px_, baseY - 1)
             ctx.textAlign = 'right'
             ctx.fillStyle = '#6a7b9a'
             ctx.fillText('C classic · ? help', VIEW_W - rx, baseY - 1)
@@ -1133,6 +1234,11 @@ const BritanniaGame = () => {
                     // #2345: gold in the purse + the standing fare, so a harness
                     // can prove the toll bites and the tithe lands
                     gold: S.gold, fare: FARE, day: S.day,
+                    // #2351: the toll made seen — the arc is live, the HUD
+                    // flashed within the last tick, the mooring reach the
+                    // pilgrim's purse earns, and the sail the wind sets.
+                    coinFx: S.coins ? 1 : 0, purseFlash: S.purseFlash,
+                    moor: S.ship ? -1 : moorReach(S.gold), sail: sailState(S.wind),
                     town: townScore(S.x, S.y, gates, terrainAt),
                     // #1876: the eight consecrated plots (null where no plot was
                     // found) + how many shrines the pilgrim has touched
