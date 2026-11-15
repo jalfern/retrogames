@@ -59,11 +59,17 @@ function spawnEnemy(g, spec) {
     const tx = resolveTarget(g, spec.ti)
     const vy = spec.kind === 'bomber' ? 0 : (CFG.groundY + 4) / spec.spd
     const vx = spec.kind === 'bomber' ? spec.vx : (tx - spec.x0) / spec.spd
-    if (!(vy <= CFG.maxVY) || !Number.isFinite(vy) || !Number.isFinite(vx) || !Number.isFinite(spec.x0)) {
-        throw new Error(`wave script unusable: kind ${spec.kind} spd ${spec.spd} x0 ${spec.x0}`)
+    if (!(vy <= CFG.maxVY) || !Number.isFinite(vy) || !Number.isFinite(vx) || !Number.isFinite(spec.x0) ||
+        (spec.kind === 'bomber' && !(spec.y > 0 && spec.y < CFG.killLine))) {
+        throw new Error(`wave script unusable: kind ${spec.kind} spd ${spec.spd} x0 ${spec.x0} y ${spec.y}`)
     }
     const e = pushEnemy(g, {
-        kind: spec.kind, x: spec.x0, px: spec.x0, y: -4,
+        kind: spec.kind, x: spec.x0, px: spec.x0,
+        // a bomber cruises at its SCRIPTED altitude — the arcade's bomber is a
+        // visible, hittable target (#2306: y:-4 for all kinds made bombers
+        // invisible and effectively invulnerable, and the audit read spec.y
+        // blindly so the lie survived the gate)
+        y: spec.kind === 'bomber' ? spec.y : -4,
         vx, vy,
         ti: spec.ti ?? -1,
         split: spec.split ? { ...spec.split, done: false } : null,

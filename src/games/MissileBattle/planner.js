@@ -4,7 +4,9 @@
 // threats: least ground-ETA first, intercept scanned tick by tick against the
 // exact enemy motion law (including the smart bomb's weave), batteries chosen
 // to keep their ammo balances even — that balance is what the slack rule
-// (one fewer interceptor in EVERY battery) grades.
+// (one fewer interceptor in EVERY battery) grades. When the sky holds no
+// unanswered work it hunts loaded bombers — a pre-drop kill cancels every
+// drop they still carry (issue #2306).
 
 import { CFG } from './sim.js'
 import { step } from './sim.js'
@@ -13,7 +15,6 @@ export const MAX_TAU = 340
 
 export function decide(g, held) {
     const live = g.enemies.filter((e) => e.kind !== 'bomber')
-    if (!live.length) return {}
     const inBlast = (e) => g.blasts.some((b) => {
         const dx = e.x - b.x, dy = e.y - b.y
         return dx * dx + dy * dy <= b.r * b.r
@@ -28,11 +29,26 @@ export function decide(g, held) {
         if (!pick || eta(e) < eta(pick)) pick = e
     }
     if (!pick) {
-        // no falling work — pop a fat easy shot at a loaded bomber if we can
-        // still afford the intercept AND its own battery
-        const bomber = g.enemies.find((e) => e.kind === 'bomber' && e.drops.some((d) => !d.done))
-        if (!bomber || Math.max(...g.bases.map((b) => (b.alive ? b.ammo : 0))) < 7) return {}
-        pick = bomber
+        // The sky holds no work that must be answered THIS tick — hunt bombers
+        // ON PURPOSE. A bomber is the best target on screen: one round on it
+        // cancels every drop it still carries (2-4 future intercepts in these
+        // scripts), so the pre-drop kill denies the delivery instead of
+        // chasing the fall. The old branch gated on a fixed `ammo >= 7`
+        // surplus that almost never held while bombers flew; the honest
+        // reserve counts the threats still open on screen — warheads not yet
+        // dying in a blast and not yet reserved by a shot in the air, each
+        // of which will want a round when it comes into range. Hunting is
+        // legal while the tubes can cover that reserve after spending one
+        // round on the bomber (chains make this conservative, never loose).
+        const reserve = live.filter((e) => !inBlast(e) && !(held.get(e.id) > g.tick)).length
+        const ammo = g.bases.reduce((n, b) => n + (b.alive ? b.ammo : 0), 0)
+        if (ammo <= reserve) return {}
+        const dropETA = (e) => Math.min(...e.drops.filter((d) => !d.done).map((d) => d.t - (g.playT - e.spawnAt)))
+        const bombs = g.enemies.filter((e) => e.kind === 'bomber' && e.alive &&
+            e.drops.some((d) => !d.done) && !(held.get(e.id) > g.tick))
+        if (!bombs.length) return {}
+        // the one whose next drop is soonest first — cancel the most imminent delivery
+        pick = bombs.slice().sort((a, b) => dropETA(a) - dropETA(b) || a.id - b.id)[0]
     }
     if (!pick) return {}
     const e = pick

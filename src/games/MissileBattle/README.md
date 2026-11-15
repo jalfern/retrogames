@@ -35,6 +35,14 @@ attack waves."*
   chase a receder; intercept math (and the browser driver) must aim at
   `dist/ivSpeed × vy` ahead. The harness that aims at the *current* enemy
   position fails the game honestly.
+- **A spec field is not a fact until the sim compiles it.** The wave scripts
+  declare bomber altitudes and the audit read them lovingly — while
+  `spawnEnemy` hardcoded `y:-4` for every kind and bombers cruised invisible
+  above the aim band, unkillable by anyone (#2306). The audit's numbers were
+  true of the script and false of the world. What a spec promises must be
+  pinned against the spawned state (`missilecheck` BOMBER HUNT: `e.y` must
+  equal the script's `y`, and the cruising altitude must sit inside the aim
+  band).
 
 ## Harness
 
@@ -53,7 +61,20 @@ attack waves."*
 ## Honest gaps
 
 - The autopilot never shoots bombers on purpose (it shoots their drops); the
-  opportunistic branch is gated on ammo surplus and rarely fires.
+  opportunistic branch is gated on ammo surplus and rarely fires. — **CLOSED
+  by #2306** (two root causes: `decide()` opened with `if (!live.length)
+  return {}`, so the bomber branch was unreachable whenever a bomber flew
+  alone, and the branch itself gated on a fixed `ammo >= 7` surplus that
+  almost never held. Now the doctrine is *deny the delivery*: when nothing
+  needs answering this tick, hunt the loaded bomber whose next drop is soonest
+  — legal only while total tube ammo exceeds the open-threat reserve (warheads
+  not dying in a blast and not reserved by a shot in the air), so a held-back
+  tube can never be spent on a fancy kill. A pre-drop kill cancels every drop
+  it still carries: the proven run fires 49 interceptors (was 60), bags all
+  four bombers, and every scripted drop is denied before delivery. Gates in
+  `missilecheck` BOMBER HUNT: quiet-sky kill at 3 rounds/tube (below the old
+  gate), held-tube refusal, whole-game denial count, two named manual
+  mutants.)
 - Smart-bomb weave is a fixed sine, not an evasion of interceptors.
 - No two-player; the arcade's alternating batteries is one `input` object
   away, but nobody asked yet.
