@@ -258,6 +258,92 @@ function drawCardPose(ctx, id, fx, fy, sec) {
     }
 }
 
+// ------------------------------------------------- level-clear ceremony ----
+// #2336 gap 4: clearing a level used to unlock quietly. The lineage's dance
+// moment was missing — so in the ~3.2s window between `clear` and the next raid
+// the orchard gets a warm gold wash, a sparkle rain drifting over the lawn, and,
+// when a defender unlocks, that defender's portrait plate (#2328) presented big
+// and centre-lawn on a ribbon board — popping in, gilded, breathing on the sim
+// clock. All deterministic (rnd(i,k) + sin of g.sec): the attract demo replays
+// the ceremony byte-identically.
+function sparkle(ctx, x, y, r) {
+    ctx.fillStyle = '#fff6c9'
+    ctx.beginPath()
+    ctx.moveTo(x, y - r); ctx.lineTo(x + r * 0.45, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r * 0.45, y)
+    ctx.closePath(); ctx.fill()
+}
+
+export function drawClearCeremony(ctx, g) {
+    if (!(g.levelClearAt > 0) || g.done) return
+    const k = g.sec - g.levelClearAt
+    const t = g.sec
+    // the gold wash, pulsing out as the ceremony fades toward the next raid
+    ctx.globalAlpha = Math.max(0, (0.10 + Math.sin(t * 3) * 0.03) * (1 - k / 3.4))
+    ctx.fillStyle = '#ffdf8a'
+    ctx.fillRect(0, 0, W, H)
+    // sparkle rain — 14 diamonds on their own lanes, twinkling
+    for (let i = 0; i < 14; i++) {
+        const sx = 90 + rnd(i, 17) * (W - 140)
+        const fall = (rnd(i, 31) + k * (0.28 + rnd(i, 53) * 0.22)) % 1
+        const sy = 110 + fall * (H - 150)
+        const tw = 0.5 + 0.5 * Math.sin(t * 6 + i * 1.7)
+        ctx.globalAlpha = 0.35 + tw * 0.5
+        sparkle(ctx, sx + Math.sin(t * 2 + i) * 8, sy, 3 + tw * 2.4)
+    }
+    ctx.globalAlpha = 1
+    // new-defender presentation (final level unlocks nothing — wash + sparkles only)
+    const nid = Object.keys(PLANTS).find((pid) => PLANTS[pid].unlock === g.level + 1)
+    if (!nid) return
+    const def = PLANTS[nid]
+    const cw = 150, ch = 176
+    const cx = Math.round(GLX + (COLS * CW) / 2), cy = 330
+    const pop = Math.min(1, k / 0.45)
+    const sc = pop < 1 ? 0.35 + 0.65 * pop : 1 + Math.sin(t * 2.6) * 0.02
+    ctx.globalAlpha = Math.min(1, pop * 1.8)
+    ctx.save()
+    ctx.translate(cx, cy); ctx.scale(sc, sc); ctx.translate(-cx, -cy)
+    // classic banner: gold ribbon band with V-notched tails + dark folds behind
+    // the board, the headline riding the band
+    const ry = cy - ch / 2 - 10
+    ctx.fillStyle = '#8a5a1c'
+    for (const s of [-1, 1]) {
+        const ex = cx + s * (cw / 2 + 34)
+        ctx.beginPath()
+        ctx.moveTo(cx + s * (cw / 2 - 2), ry - 13); ctx.lineTo(ex, ry - 13)
+        ctx.lineTo(ex - s * 12, ry); ctx.lineTo(ex, ry + 13)
+        ctx.lineTo(cx + s * (cw / 2 - 2), ry + 13)
+        ctx.closePath(); ctx.fill()
+    }
+    ctx.fillStyle = '#5a3410'
+    for (const s of [-1, 1]) {
+        ctx.beginPath()
+        ctx.moveTo(cx + s * (cw / 2 + 10), ry + 13); ctx.lineTo(cx + s * (cw / 2 + 10), ry + 21)
+        ctx.lineTo(cx + s * (cw / 2 + 2), ry + 13)
+        ctx.closePath(); ctx.fill()
+    }
+    ctx.fillStyle = 'rgba(43,29,18,0.88)'
+    rr(ctx, cx - cw / 2 - 10, cy - ch / 2 - 26, cw + 20, ch + 42, 12); ctx.fill()
+    ctx.strokeStyle = '#e4a52b'; ctx.lineWidth = 2
+    rr(ctx, cx - cw / 2 - 10, cy - ch / 2 - 26, cw + 20, ch + 42, 12); ctx.stroke()
+    ctx.fillStyle = '#ffd24a'
+    rr(ctx, cx - cw / 2 - 10, ry - 13, cw + 20, 26, 5); ctx.fill()
+    ctx.strokeStyle = '#8a5a1c'; ctx.lineWidth = 1
+    rr(ctx, cx - cw / 2 - 10, ry - 13, cw + 20, 26, 5); ctx.stroke()
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillStyle = '#4c2f1a'; ctx.font = 'bold 15px system-ui, sans-serif'
+    ctx.fillText('NEW DEFENDER', cx, ry + 1)
+    // the defender's own portrait plate at presentation scale, gilded (sel=true)
+    drawCardPortrait(ctx, nid, cx - cw / 2, cy - ch / 2 + 14, cw, 96, t, true)
+    // name + cost under the plate
+    ctx.fillStyle = C.cream; ctx.font = 'bold 15px system-ui, sans-serif'
+    ctx.fillText(def.name.toUpperCase(), cx, cy + ch / 2 - 8)
+    drawAcornIcon(ctx, cx - 22, cy + ch / 2 + 4, 16)
+    ctx.fillStyle = C.cream; ctx.font = 'bold 14px system-ui, sans-serif'; ctx.textAlign = 'left'
+    ctx.fillText(String(def.cost), cx - 10, cy + ch / 2 + 4)
+    ctx.restore()
+    ctx.globalAlpha = 1
+}
+
 // ---------------------------------------------------------- card tray ----
 // #1832: the board contents sit right of x=128 — the site's top-left chrome
 // (ARCADE at y 12-38, FEEDBACK at y 44-70, each ~95px wide) owns the corner,

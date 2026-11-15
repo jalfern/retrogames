@@ -66,6 +66,10 @@ export const LEVELS = [
     { pool: ['grunt', 'sprinter', 'pup', 'brute', 'warlord'], waves: 5, perWave: 3, boss: true },
 ]
 
+// the level-clear acorn shower (#2336 gap 4): drops × value, exported so the
+// ceremony gates can pin the payout.
+export const SHOWER = { n: 7, val: 25 }
+
 // ------------------------------------------------------------ rng ----
 export const roll = (g) => { g.rs = (Math.imul(g.rs, 1664525) + 1013904223) >>> 0; return g.rs / 4294967296 }
 export const pick = (g, arr) => arr[Math.floor(roll(g) * arr.length) % arr.length]
@@ -431,6 +435,21 @@ function checkLevelDone(g) {
         g.levelClearAt = g.sec
         g.score += 250
         g.events.push({ t: 'clear', level: g.level, next: g.level >= LEVELS.length ? null : g.level + 1 })
+        // #2336 gap 4: the orchard celebrates a held lane — an acorn SHOWER
+        // rains onto the lawn (the lineage's victory-screen sun shower, its own
+        // take). Fast fall + a short settle timer so every drop banks inside the
+        // ~3.2s ceremony window, before startLevel wipes the board. Pure roll()
+        // so the shower is deterministic — attract and replays rain identically.
+        for (let i = 0; i < SHOWER.n; i++) {
+            g.acornDrops.push({
+                x: GLX + 30 + roll(g) * (W - GLX - 80),
+                y: TRAY_H + 6 + roll(g) * 28,
+                ty: GLY + 30 + roll(g) * (ROWS * CH - 60),
+                vy: 200 + roll(g) * 60,
+                rest: 0, bankT: 0.35, val: SHOWER.val, taken: false,
+            })
+        }
+        g.events.push({ t: 'shower', n: SHOWER.n })
     }
 }
 

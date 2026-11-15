@@ -7,7 +7,9 @@ currency is **acorns**, defenders are critters, every sprite is drawn in code.
 ## Files
 - `sim.js` — the pure, deterministic simulation (no DOM): grid, acorn economy,
   card cooldowns, defenders/enemies/projectiles, scarecrow-mowers, the wave
-  machine, level progression + unlocks, the autopilot `bot`, and `stateHash`.
+  machine, level progression + unlocks, the level-clear acorn shower (#2336
+  `SHOWER`: seven fast-falling drops that all bank inside the ceremony window),
+  the autopilot `bot`, and `stateHash`.
   Every random comes from one seed (`roll`/LCG); `Math.random()` is never used
   here, so the harness and the attract demo replay byte-identically.
 - `art.js` — procedural look: gradient dusk sky, cottage + scarecrow-mowers
@@ -20,7 +22,9 @@ currency is **acorns**, defenders are critters, every sprite is drawn in code.
   deterministic), per-defender and per-goblin sprites (walk/eat/slow animation),
   projectiles, particles hooks, cursor (the ghost defender only shows once the
   keyboard cursor is used — #1832), HUD (level + wave bar + five scarecrow pips,
-  in the 28px strip BELOW the lawn so nothing paints over row 5 — #1832).
+  in the 28px strip BELOW the lawn so nothing paints over row 5 — #1832), and
+   the **level-clear ceremony** (#2336: gold wash + sparkle rain + the new
+   defender's portrait plate presented big and centre-lawn on a ribbon board).
 - `index.jsx` — the arcade shell: one fixed-timestep loop, attract (driven by the
   sim's own `bot`), keyboard / pointer / VirtualControls all funneled through the
   same `drivePad` → sim actions, juice (particles + shake), PauseOverlay,
@@ -40,8 +44,9 @@ currency is **acorns**, defenders are critters, every sprite is drawn in code.
 Daisy (economy) · Squirrel (shooter) · **L2** Hedgerow (wall) · **L3** Chili Bomb
 (splash) · **L4** Frostcap (slow) · **L5** Pumpkin Catapult (lob).
 Enemies: Grunt · Sprinter · Pup (swarm) · Brute · **Warlord** (final-wave boss).
-Five levels; clearing one wipes the lawn, hands a sunlight cache, and unlocks the
-next defender; the last ends with the Warlord.
+Five levels; clearing one rains an acorn shower, dances a new-defender card on
+the lawn (#2336), wipes, hands a sunlight cache, and unlocks the next defender;
+the last ends with the Warlord.
 
 ## Verify
 ```bash
@@ -50,6 +55,9 @@ npm run gardencheck                 # pure Node: boot + core rules + winnable on
                                     # + the #2328 card-portrait contract (8 gates)
                                     # + the #2336 sound spine (17 gates: bed pattern,
                                     #   win/lose sting mapping, recorder-driven real runs)
+                                    # + the #2336 clear ceremony (12 gates: the acorn
+                                    #   shower pays out inside the ~3s window, the look
+                                    #   on the mock canvas, determinism, shell wiring)
 npm run dev                        # then, another shell:
 CONTRACT_ONLY=garden-guard npm run contractcheck   # window.__game contract, determinism
 ```
@@ -97,6 +105,17 @@ stale: per-action SFX landed with #1839. What the lawn genuinely lacked was a
   lost lane. The mapping lives in `sound.js` as data so gardencheck §6 drives a
   REAL won run and a REAL breached run through a recorder and counts the cues.
   Failure-proved: emptying the win mapping reddens two gates.
+
+## Clear ceremony (#2336 gap 4)
+A cleared level used to unlock quietly. Now the ~3.2s between `clear` and the
+next raid is the dance moment: an acorn shower rains the lawn (7 fast drops,
+each banking inside the window — `SHOWER` in `sim.js`), gold wash + sparkle rain
+over the board, and the newly unlocked defender's portrait plate presented big
+and centre-lawn on a gilded ribbon (`drawClearCeremony` in `art.js`, reusing
+the #2328 plate so the presentation and the tray card are the same object).
+The attract demo shows the ceremony when its autopilot clears a level.
+Failure-proved: short-circuiting `drawClearCeremony` and dropping the `shower`
+event reddens 4 of the 12 gates (shower fires, glitter, big card, final wash).
 
 ## Notes
 - State is plain JSON (arrays of plain objects), so the contract's
