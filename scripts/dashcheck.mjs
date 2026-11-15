@@ -464,6 +464,27 @@ for (let i = 0; i < LEVELS.length; i++) {
         const allDirt = (meta.dust || []).every(([x, y]) => grid[y * sim.W + x] === DIRT)
         ok(allDirt, 'a dust-marked cell is not DIRT — the seam must stay ignitable, not steel')
     }
+
+    // (e) #2417 readability data pins: the bolt arrows and the pocket-lid
+    // green are painted from meta, NOT read off the grid — so meta must stay
+    // truthful about the vault. Bolts = exactly the pushwalls, each giving
+    // east into a pit or boulder; lids = the whole dirt row capping the slime
+    // pocket, two cells under the tube. Re-carve the vault and these go red
+    // instead of the cues quietly starting to lie.
+    {
+        const { meta, grid } = buildLevel(4)
+        const bolts = meta.bolts || []
+        const walls = []
+        for (let y = 0; y < sim.H; y++) for (let x = 0; x < sim.W; x++) if (grid[y * sim.W + x] === PUSHWALL) walls.push(`${x},${y}`)
+        const bs = bolts.map(([x, y]) => `${x},${y}`).sort().join('|')
+        ok(bs === walls.sort().join('|'), `SLIME VAULT bolt marks (${bs}) drifted off its pushwalls (${walls.join('|')}) — an arrow on a cell that cannot move is a lie`)
+        ok(bolts.every(([, , d]) => d === 'E'), 'a vault bolt is marked to give a direction other than east — gravity holds every other face')
+        ok(bolts.every(([x, y, d]) => d === 'E' && (grid[y * sim.W + x + 1] === EMPTY || grid[y * sim.W + x + 1] === BOULDER)), 'a bolt marked EAST has a wall on its give side — the arrow promises a slide that cannot happen')
+        const lids = meta.lids || []
+        const ls = lids.map(([x, y]) => `${x},${y}`).sort().join('|')
+        ok(ls === '24,12|25,12|26,12|27,12|28,12', `pocket-lid marks drifted (got "${ls}") — the green telegraph would sit over the wrong rock`)
+        ok(lids.every(([x, y]) => grid[y * sim.W + x] === DIRT && grid[(y + 1) * sim.W + x] === EMPTY), 'a lid-marked cell is not DIRT over pocket air — the telegraph must cap the pocket, not hover beside it')
+    }
 }
 
 // -------------------------------------------------------------- mutation gate ----
