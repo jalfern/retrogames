@@ -62,6 +62,21 @@ let hid = 0
     r.check('dark eels exist on the attract screen (truth not drawn)', hid > 2, `hidden on ${hid}/12 samples`)
 }
 
+// ---- #2383 attract showcase: the demo joins its proven replay ~3 s before
+// its first NEAR contact, so a hot (ring ≤5) mark paints within seconds of
+// landing on the attract screen — the heat cue sells itself inside five. ----
+{
+    let hotT = -1
+    for (let i = 0; i < 30 && hotT < 0; i++) {
+        const s = await probe()
+        if (s.screen !== 'attract') break
+        if ((s.contactMarks || []).some((m) => m.ring >= 0 && m.ring <= 5)) hotT = s.t
+        else await wait(120)
+    }
+    r.check('attract showcases a HOT near mark within seconds (join)', hotT >= 0,
+        hotT >= 0 ? `hot mark live at attract t=${hotT.toFixed(1)}s` : 'no ring<=5 contact mark appeared')
+}
+
 // ---- a real key starts a fresh run ----
 await tap('KeyX')
 await wait(400)
@@ -158,6 +173,12 @@ for (let i = 0; i < 900; i++) {
     }
     const o = await probe()
     r.check('a real run dies to eels and shows the ledger', o.screen === 'over', `screen=${o.screen}`)
+    // #2383 haptics: the hits on the way down must have rung the long pulse.
+    {
+        const hl2 = await page.evaluate(() => window.__sonarTest.haptics())
+        r.check('a hit buzzes the phone (long pulse intent logged)', hl2.some((e) => e.endsWith(':90,40,90')),
+            hl2.slice(-6).join(' ') || 'no pulses logged')
+    }
     await wait(1000)
     await tap('KeyL')
     await wait(300)
@@ -172,17 +193,35 @@ for (let i = 0; i < 900; i++) {
 
 // ---- #2365 distance cue: a contact mark's COLOR must read the ring it came
 // in on. Hot marks (ring ≤5, ≈10 cells) must be red-dominant in pixels; cold
-// marks (ring ≥9, ≈18+ cells) must stay blue-dominant. Sampled as max(r−b)
-// across the mark's cell so the stroke lands no matter where it crosses. ----
+// marks (ring ≥9, ≈18+ cells) must stay blue-dominant.
+// #2383 discriminator rewrite: the old metric was max(r−b) over the cell, and
+// a pearl (rgba(255,220,240,.85), r−b ≈ +15 over dark ground) landing in the
+// same cell flipped a genuinely-blue sample red — it broke 4/4 local runs.
+// Counted pixels instead, thresholds measured on the real renderer:
+//   hot  = pixels with r−b >= 30   (the hot stroke composites ≈ +70 fresh;
+//          pearls top out ≈ +21 — they cannot fake it)
+//   cold = purple mark pixels r >= 85 && b−r >= 25 && g <= 170
+//          (cold stroke ≈ (145,111,178) on lit water; the frontier stroke
+//          (g ≈ 215), plain water (r < 13), rock/sparkle (r ≤ 74) and pearls
+//          (b−r ≈ 0) all fail one leg — measured, not assumed)
+// The mean-r−b check below keeps the old metric for the near/far separation. ----
 {
-    const seen = new Map()                     // "x,y,ring" -> max r−b observed
+    const seen = new Map()                     // "x,y,ring" -> pixel counts {max,red,cold,low}
     let pings = 0
     const sampleCell = (x, y) => page.evaluate(([x, y]) => {
         const c = document.querySelector('canvas[data-sonar-stage]')
         const d = c.getContext('2d').getImageData(x * 16, y * 16, 16, 16).data
-        let mx = -255
-        for (let i = 0; i < d.length; i += 4) mx = Math.max(mx, d[i] - d[i + 2])
-        return mx
+        let mx = -255, red = 0, cold = 0, low = 0
+        for (let p = 0; p < d.length; p += 4) {
+            const rb = d[p] - d[p + 2]
+            mx = Math.max(mx, rb)
+            if (rb >= 30) {
+                red++
+                if ((p / 4) % 16 >= 11) low++          // #2383: below row 10 — chevron country
+            }
+            if (d[p] >= 85 && d[p + 2] - d[p] >= 25 && d[p + 1] <= 170) cold++
+        }
+        return { max: mx, red, cold, low }
     }, [x, y])
     const collect = async (s) => {
         if (s.screen !== 'play') return
@@ -198,8 +237,8 @@ for (let i = 0; i < 900; i++) {
         let hotN = 0, hotOk = 0, coldN = 0, coldOk = 0
         for (const [key, v] of seen) {
             const ring = Number(key.split(',')[2])
-            if (ring <= 5) { hotN++; if (v >= 30) hotOk++ }
-            else if (ring >= 9) { coldN++; if (v <= -20) coldOk++ }
+            if (ring <= 5) { hotN++; if (v.red >= 15) hotOk++ }
+            else if (ring >= 9) { coldN++; if (v.cold >= 15) coldOk++ }
         }
         return { hotN, hotOk, coldN, coldOk }
     }
@@ -220,16 +259,34 @@ for (let i = 0; i < 900; i++) {
         await wait(70)
     }
     const c = classify()
-    r.check('far contacts really paint cold (blue-dominant pixels)', c.coldN >= 1 && c.coldOk === c.coldN,
-        `${c.coldOk}/${c.coldN} cold samples, ${pings} pings`)
-    r.check('near contacts really paint hot (red-dominant pixels)', c.hotN >= 1 && c.hotOk === c.hotN,
-        `${c.hotOk}/${c.hotN} hot samples`)
+    r.check('far contacts really paint cold (counted blue-dominant pixels)', c.coldN >= 1 && c.coldOk === c.coldN,
+        `${c.coldOk}/${c.coldN} cold samples [${[...seen].filter(([k]) => Number(k.split(',')[2]) >= 9).map(([, v]) => `c${v.cold}`).join(' ')}], ${pings} pings`)
+    r.check('near contacts really paint hot (counted red-dominant pixels)', c.hotN >= 1 && c.hotOk === c.hotN,
+        `${c.hotOk}/${c.hotN} hot samples [${[...seen].filter(([k]) => Number(k.split(',')[2]) <= 5).map(([, v]) => `r${v.red}`).join(' ')}]`)
+    // #2383 colourblind SHAPE cue: hot marks grow a chevron below row 10 of
+    // their cell; cold marks stay single. Counted in the lower band as red px.
+    let hLowOk = 0, cLowBad = 0
+    for (const [key, v] of seen) {
+        const ring = Number(key.split(',')[2])
+        if (ring <= 5 && v.low >= 6) hLowOk++
+        if (ring >= 9 && v.low > 2) cLowBad++
+    }
+    r.check('hot marks grow the double-stroke chevron (shape cue, pixels)', c.hotN >= 1 && hLowOk === c.hotN,
+        `${hLowOk}/${c.hotN} hot samples carry the chevron`)
+    r.check('cold marks stay single (shape cue, pixels)', c.coldN >= 1 && cLowBad === 0,
+        `${cLowBad}/${c.coldN} cold samples leaked lower-band red`)
+    // #2383 haptics: the hot contact must have rung a short pulse. The motors
+    // stay silent under the harness (window.__game); the logged intent proves
+    // the rule fired. (hit's long pulse is proven after the death section.)
+    const hl = await page.evaluate(() => window.__sonarTest.haptics())
+    r.check('a HOT contact buzzes the phone (short pulse intent logged)', hl.some((e) => e.endsWith(':30')),
+        hl.slice(-6).join(' ') || 'no pulses logged')
     // monotonic in pixels too: mean hot excess must exceed mean cold excess
     let hotSum = 0, hotCnt2 = 0, coldSum = 0, coldCnt2 = 0
     for (const [key, v] of seen) {
         const ring = Number(key.split(',')[2])
-        if (ring <= 5) { hotSum += v; hotCnt2++ }
-        else if (ring >= 9) { coldSum += v; coldCnt2++ }
+        if (ring <= 5) { hotSum += v.max; hotCnt2++ }
+        else if (ring >= 9) { coldSum += v.max; coldCnt2++ }
     }
     r.check('pixel heat separates near from far', hotCnt2 > 0 && coldCnt2 > 0 && (hotSum / hotCnt2) > (coldSum / coldCnt2) + 40,
         `hot mean ${(hotSum / Math.max(1, hotCnt2)).toFixed(0)} vs cold mean ${(coldSum / Math.max(1, coldCnt2)).toFixed(0)}`)

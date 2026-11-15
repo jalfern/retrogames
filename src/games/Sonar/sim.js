@@ -55,6 +55,7 @@ export const CFG = {
     cue: true,           // #2365: a contact's ring maps to heat/pitch (false = frozen cue)
     ventRipple: true,    // #2367: the vent swirl RIPPLES only on fresh vent knowledge (false = old always-on swirl)
     swirlFresh: 6,       // #2367: ticks a wavefront arrival still counts as fresh (≈300 ms — a readable beat at 60 fps)
+    attractJoin: true,   // #2383: the attract joins its proven replay just before the first NEAR contact (false = always start at tick 0)
 }
 
 export const DIRS = {
@@ -634,4 +635,36 @@ export function replay(cave, cmds, opts = {}) {
         if (opts.onTick) opts.onTick(g)
     }
     return g
+}
+
+// ------------------------------------------------------- attract showcase ----
+// #2383: the demo route lights eels only briefly, and on the shallow demo
+// depths the first NEAR (ring ≤ 5) contact lands ~6 s in — a viewer who
+// watches five seconds never sees what a HOT mark looks like. The showcase is
+// honest because it invents nothing: the attract joins the SAME proven replay
+// a few seconds before its first near contact. Every cell lit at the join was
+// lit by a real wavefront arrival (the join runs replay's own machinery), and
+// the contact that follows arrives on the plan's own pings — knowledge, not truth.
+export const NEAR_RING = 5           // ring at/below which a mark paints hot
+export const ATTRACT_LEAD = 60      // ticks (≈3 s) the join sits ahead of that contact
+
+// The tick at which this script's first NEAR contact lands (-1 when none does
+// inside maxTick). Pure: replay + the sim's own events.
+export function firstNearContact(cave, cmds, maxTick = 320) {
+    let hot = -1
+    replay(cave, cmds, { onTick: (g) => {
+        if (hot >= 0 || g.tick > maxTick) return
+        for (const ev of g.events) {
+            if (ev.type === 'contact' && ev.ring >= 0 && ev.ring <= NEAR_RING) { hot = g.tick; break }
+        }
+    } })
+    return hot
+}
+
+// Which tick of the replay the attract view starts on: ATTRACT_LEAD ticks
+// before the first near contact, 0 when nothing near happens early enough.
+export function attractJoinAt(cave, cmds) {
+    if (!CFG.attractJoin) return 0   // MUTANT (see the switch comment): no showcase join
+    const hot = firstNearContact(cave, cmds)
+    return hot > ATTRACT_LEAD ? hot - ATTRACT_LEAD : 0
 }
