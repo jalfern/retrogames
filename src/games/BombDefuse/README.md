@@ -301,6 +301,22 @@ restore → 201/201.
   pixels). On phones the HOLD pad finally arrives with a lesson that says what
   it is for. Remaining here: the pad label itself is still the static `HOLD`
   verb (VirtualControls is shared); the canvas carries the teaching.
-- Boom animation is 2D flash + debris; no chunk-of-bomb shrapnel physics.
+- **CLOSED by #2357**: the boom now breaks the BODY — chunk-of-bomb shrapnel
+  physics. 4 steel-plate chunks (plate colour + highlight lip + the chassis
+  rivet motif, 16-38 px — clearly heavier than the 2-5 px spark dots) spawn
+  from the real chassis rect (`BOMB_BODY`, single-sourced and reused by
+  `drawBombView`'s plate fill), get kicked radially OUTWARD from the blast
+  centre with an upbias, fall under gravity 0.32/frame (between the spark
+  dots' 0.3 and the lid's 0.35: this is heavier metal), and hit the deck at
+  y=322 with a damped bounce — 0.45 restitution, friction skid, two bounces
+  — then settle and fade where they land. Lid and spark-shrapnel now anchor to
+  the same geometry, so the whole burst emanates from the object. All
+  paint-frame physics, Math.random-only — `spawnBoom` still names no sim state
+  and the hash is untouched (the clean-run replay pin holds). Proof:
+  defusecheck +10 source pins (spawn-from-rect, radial kick, size floor,
+  gravity, bounce law, settle law, hud/probe wiring); defusedrive gates the
+  live 4-chunk launch, a real ground bounce mid-flight, and expiry across the
+  restart. Remaining: per-material fragments (bakelite vs steel) and chunks
+  colliding with rack geometry stay polish ideas.
 - Voice grammar is ~20 words; no accent tolerance.
 - No haptics/vibration hooks on phones.

@@ -186,13 +186,18 @@ await page.evaluate(() => window.__bdTest.boomNow())
 await sleep(150)
 const fxLive = await page.evaluate(() => window.__bdTest.boomFx())
 r.check('boom launches the lid and arcing shrapnel', fxLive.lid && fxLive.shrap >= 6 && fxLive.scorch >= 3, `lid=${fxLive.lid} shrap=${fxLive.shrap} scorch=${fxLive.scorch}`)
+// #2357: the BODY breaks too — plate chunks fly with the lid, and a moment
+// later at least one has hit the deck and bounced (vy flipped sign).
+r.check('#2357 boom breaks the body: 4 chassis chunks launch with it', fxLive.chunks === 4, `chunks=${fxLive.chunks}`)
 await sleep(900)
+const fxB = await page.evaluate(() => window.__bdTest.boomFx())
+r.check('#2357 chunks hit the deck and bounce (damped, vy sign flipped)', fxB.bounced >= 1, `bounced=${fxB.bounced} chunks=${fxB.chunks}`)
 r.check('the FX ride across the screen change (over while soot lands)', (await page.evaluate(() => window.__bdTest.screen())) === 'over')
 await page.keyboard.press('KeyX')
 await sleep(1200)
 const fxAft = await page.evaluate(() => window.__bdTest.boomFx())
 const scrAft = await page.evaluate(() => window.__bdTest.screen())
-r.check('next run opens scorched but lid-free (decals carry, fx expire)', scrAft === 'play' && fxAft.scorch >= 3 && fxAft.lid === false && fxAft.shrap === 0, `scr=${fxAft.scorch} lid=${fxAft.lid} shrap=${fxAft.shrap}`)
+r.check('next run opens scorched but lid-free (decals carry, fx expire)', scrAft === 'play' && fxAft.scorch >= 3 && fxAft.lid === false && fxAft.shrap === 0 && fxAft.chunks === 0 && fxAft.bounced === 0, `scr=${fxAft.scorch} lid=${fxAft.lid} shrap=${fxAft.shrap} chunks=${fxAft.chunks}`)
 
 // #1812 item 2 — the press-tick law in the REAL view stack, stepped tick-exact
 // (wall-clock rAF sampling is too coarse on software-rendered Chrome — the

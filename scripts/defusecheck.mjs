@@ -772,6 +772,29 @@ console.log('\n— the boom (#1812 item 3) —')
     ok(/L\.vy \+= 0\.35/.test(jsx) && /s\.vy \+= 0\.3/.test(jsx), 'lid and shrapnel arc under gravity (paint-frame physics)')
     ok(jsx.includes('lid: null, shrap: []'), 'the hud carries the fx state')
     ok(jsx.includes('boomFx: () => ({ lid:') && jsx.includes('boomNow: () =>'), '__bdTest.boomFx/boomNow expose the FX for the drive harness')
+
+    // #2357 — chunk-of-bomb: the boom breaks the BODY. Chassis-plate chunks spawn
+    // from the real chassis rect, get kicked outward from the blast centre, fall
+    // heavier than the spark dots (gravity 0.32 between shrapnel 0.3 and lid 0.35)
+    // and hit the deck with a damped bounce the dots never do. Kill proofs:
+    // dropping the chunk spawn reddens the spawn gate; zeroing the gravity line
+    // reddens the fall gate; refusing the bounce (bounces => 0) reddens the
+    // bounce gate; referencing gs inside spawnBoom still reddens the purity pin.
+    ok(/const BOMB_BODY = \{ x: 100, y: 78, w: 440, h: 242 \}/.test(jsx), '#2357 chassis geometry single-sourced — the plate the view paints')
+    ok(spawn.includes('hud.chunks = Array.from') && spawn.includes('BOMB_BODY.x + Math.random() * BOMB_BODY.w'),
+        '#2357 chunks spawn from the chassis rect, not screen centre')
+    ok(spawn.includes('px - BLAST_X') && spawn.includes('py - BLAST_Y') && spawn.includes('dy / d'),
+        '#2357 blast-outward velocity is radial from the blast centre')
+    ok(/w: 16 \+ Math\.floor/.test(spawn), '#2357 chunks are plate-sized (>=16 px) — distinct from the 2-5 px spark dots')
+    ok(/c\.vy \+= 0\.32/.test(jsx), '#2357 chunks fall under gravity (heavier than spark-dot shrapnel)')
+    ok(/c\.bounces > 0/.test(jsx) && /c\.vy = -c\.vy \* 0\.45/.test(jsx),
+        '#2357 damped ground bounce (0.45 restitution) — spark-dot shrapnel never bounces')
+    ok(/c\.vy = 0; c\.vx \*= 0\.86/.test(jsx), '#2357 spent chunks settle on the deck and skid out, not fall off-screen')
+    ok(jsx.includes('lid: null, shrap: [], chunks: []'), '#2357 the hud carries the chunk state')
+    ok(spawn.includes('hud.chunks') && spawn.includes('hud.lid') && spawn.includes('hud.shrap'),
+        '#2357 the boom spawn carries lid + spark-shrapnel + body chunks together')
+    ok(jsx.includes('chunks: hudRef.current.chunks.length') && jsx.includes('bounced: hudRef.current.chunks.reduce'),
+        '#2357 boomFx exposes chunks + a bounce counter for the drive harness')
     // determinism untouched: two won runs, no boom, no decals, hash law holds.
     const g = createGame(11, 2)
     let n = 0
