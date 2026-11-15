@@ -193,6 +193,10 @@ export const MANUAL_CHECKS = [
   "scripts/textfitcheck.mjs",
   "scripts/tidycheck.mjs",
   "scripts/tmdlinkcheck.mjs",
+  // #2287: phone-viewport drive — needs the dev server + a touch-capable
+  // Chrome page, so it runs on the lanes' boxes, not on CI runners
+  // (same park as cometdrifthdphonecheck; run it via `npm run tmdphonecheck`).
+  "scripts/tmdphonecheck.mjs",
   "scripts/touchselectcheck.mjs",
   "scripts/viperpitcheck.mjs",
   "scripts/voicecheck.mjs",
