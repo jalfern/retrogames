@@ -83,6 +83,24 @@ export const CFG = {
     rivalRollEase: 0.25,                   // ground pitch tracking (player's)
     rivalLookK: 5,                         // lookahead depth per skill (px per v)
     rivalTolMul: 1,                        // harness mutant knob on the window
+    // CONTACT (#2391): the league turns solid. A bike occupies a body box
+    // ±contactBody px along the track and contactClear px of height; crossing
+    // it with height clearance is a scored FLYBY, crossing it on the level is
+    // physics: closing onto a riding back bumps (momentum transfers, the
+    // striker pays), closing onto a DOWNED rider slams or wipes out — the
+    // wreck blocks the lane until its rider walks the bike back. A rival
+    // that catches the player's back swerves. contactCool is the anti-derby
+    // law (one drama per pair, the rivalCool lesson); contactK is the harness
+    // mutant knob — 0 switches the whole law off.
+    contactBody: 12,
+    contactClear: 14,
+    contactBump: 1.6,                      // closing speed that makes it a bump
+    contactCrash: 3.4,                     // onto a riding back = over the bars
+    contactSwap: 0.34,                     // closing speed the striker loses
+    wreckV: 0.8,                           // slower than this and the wreck just holds you
+    contactCool: 90,                       // ticks between contacts of one pair
+    flybyPts: 150,
+    contactK: 1,
     clock: 70,                             // start clock, seconds
     lapBonus: 34,                          // seconds at the line
     laps: 2,
@@ -127,6 +145,7 @@ export function makeGame(trackIdx = 0, opts = {}) {
         rivals: RIVALS.map((r) => ({
             ...r, d: 0, v: r.base, alt: groundY(tr.ground, 0),
             vy: 0, air: false, pitch: 0, down: 0, cool: 0, crashes: 0,
+            tk: 0, flown: false,          // contact cooldown / flyby-once flag (#2391)
         })),
         score: 0,
         end: null,
@@ -205,6 +224,87 @@ export function rankOf(g) {
     return ahead + 1
 }
 
+// CONTACT (#2391): the league turns solid. The law per rival, once per
+// `contactCool` per pair (the rivalCool lesson — one drama, not a derby):
+// • flyby — wheels ≥ contactClear above the rider while inside the body box
+//   pays flybyPts (once per airborne pass, so over-jumping the pack is a
+//   skill, and the score only grows where a body actually was);
+// • wreck — a DOWNED rider is solid: any ground speed above wreckV on the
+//   bars is a wipeout, slower and the wreck simply holds you (the lane is
+//   blocked until its rider walks the bike back — brake or hop);
+// • bump — closing on a riding back faster than contactBump transfers
+//   momentum (the striker pays contactSwap of the closing speed, the pushed
+//   rider gains half that and 3px of track); over contactCrash it is over
+//   the bars;
+// • jolt — a rival catching YOUR back swerves (v × 0.55 — visible
+//   intelligence, no rival-vs-rival lines yet, the README says so) and
+//   shoves you forward.
+// Only a speed-matched draft (|relV| ≤ 0.3) glides silently past a body —
+// the sim has no lateral axis, so at any closing pace you either hop the
+// rider (clean, scored) or scrape through it (one bump per pass;
+// contactCool is the one-drama-per-pair law). Deterministic: no
+// Math.random, everything derived from live state.
+function contact(g) {
+    if (!CFG.contactK || g.end) return
+    for (const r of g.rivals) {
+        if (r.tk > 0) r.tk--
+        const gap = r.d - g.total
+        const ag = Math.abs(gap)
+        const clear = g.alt - r.alt
+        if (ag >= CFG.contactBody) {
+            r.gapPrev = gap
+            if (!g.air) r.flown = false
+            continue
+        }
+        const prev = r.gapPrev === undefined ? gap : r.gapPrev
+        r.gapPrev = gap
+        if (clear >= CFG.contactClear) {
+            if (g.air && !r.flown) {
+                r.flown = true
+                g.score += CFG.flybyPts
+                emit(g, { type: 'flyby', name: r.name, pts: CFG.flybyPts, x: g.x })
+            }
+            continue
+        }
+        if (r.tk > 0) continue
+        const relV = g.v - r.v
+        if (r.down > 0) {
+            if (g.crash > 0 || g.stall > 0) continue
+            if (g.v > CFG.wreckV) {
+                crash(g, 'wreck')
+                g.total -= 8
+                r.tk = CFG.contactCool
+            } else {
+                g.v = 0
+            }
+            continue
+        }
+        if (g.crash > 0 || g.stall > 0) continue
+        if (gap > 0) {
+            if (relV > CFG.contactCrash) {
+                crash(g, 'contact')
+                r.tk = CFG.contactCool
+            } else if (relV > CFG.contactBump || (ag < 8 && relV > 0.3)) {
+                const cv = Math.max(relV, CFG.contactBump)
+                g.v -= cv * CFG.contactSwap
+                r.v += cv * CFG.contactSwap * 0.5
+                r.d += 3
+                emit(g, { type: 'bump', name: r.name, cv: +cv.toFixed(2), x: g.x })
+                r.tk = CFG.contactCool
+            }
+            // a gentle close stays a clean pass: the sim has no lateral axis,
+            // so politeness at pace-difference belongs to the open gap list,
+            // not to silent speed theft (ranks must not leak invisibly).
+        } else if (relV < -CFG.contactBump) {
+            r.v *= 0.55
+            g.v = Math.min(CFG.boostV + 0.1, g.v + 0.35)
+            g.total += 3
+            emit(g, { type: 'jolt', name: r.name, x: g.x })
+            r.tk = CFG.contactCool
+        }
+    }
+}
+
 // landing slope a ballistic hop WOULD find at x (used only for event truth;
 // the planner gets its own answer by rolling this same step())
 function emit(g, e) { g.events.push(e) }
@@ -252,7 +352,7 @@ export function step(g, inp) {
         g.alt = groundY(tr.ground, g.x)
         g.pitch *= 0.8
         g.x += g.v; g.total += g.v
-        if (g.crash === 0) { g.v = 1.6; g.pitch = 0; emit(g, { type: 'recover' }) }
+        if (g.crash === 0) { g.v = 1.6; g.pitch = Math.atan(slopeAt(tr.ground, g.x)); emit(g, { type: 'recover' }) }
         g.heat = Math.max(0, g.heat - CFG.heatCool * 0.5)
         rivalTick(g); g.rank = rankOf(g)
         return
@@ -447,6 +547,7 @@ export function step(g, inp) {
     }
 
     rivalTick(g)
+    contact(g)
     g.rank = rankOf(g)
 }
 
