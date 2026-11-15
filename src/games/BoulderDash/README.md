@@ -7,8 +7,9 @@ just paints and listens.
 
 ## Layout
 - `sim.js` — cell types, the CA (fall/roll boulders and gems, fire spread from
-  the firefly, crush rules, gem-to-dirt when the paydirt goes), quota + exit,
-  timer, `stateHash`. Zero RNG — caves are hand-carved grids (`levels.js`).
+  the firefly, crush rules, gem-to-dirt when the paydirt goes, the amoeba wave
+  and push walls — #2411), quota + exit, timer, `stateHash`. Zero RNG — caves
+  are hand-carved grids (`levels.js`).
 - `index.jsx` — the shell: painter, fixed-timestep loop (`CA_MS = 1000/caHz`),
   input (tap steps instantly, hold auto-steps every `MOVE_STEP`), HUD, DEV hooks.
 - `attract.js` — cycling attract copy.
@@ -52,17 +53,46 @@ mid-cave. Any driving key or tap hands back (shared blips); the exit door or a
 crush releases the seat silently. DEV probes: `__dashTest.watching()`,
 `watchSfx()`, `hint()` (planner's next arrow).
 
+## Slime & bolts (#2411 — the later-variant elements)
+- **Amoeba** (Boulder Dash II, Origin 1985): `AMO_HEAD/AMO_BODY` cells driven by
+  a generation clock (`amoGen`, `amoPass`). Every `CFG.amoEvery` ticks one growth
+  pass: heads (the newest generation) extend along `meta.amoebaDir`; a head whose
+  way ahead is shut branches perpendicular, so the blob flows around corners.
+  Growth claims only EMPTY and DIAMOND — a touched diamond dissolves; uncarved
+  DIRT, steel, boulders and fire are walls. Bodies expire after `CFG.amoGens`
+  generations, so the wave *advances* rather than fills. Growing onto the digger
+  engulfs them; stepping into slime is fatal either way.
+- **Push walls** (`PUSHWALL`): solid to gravity and rolling, one arrow-shove
+  slides them one cell horizontally (BD law: nothing is lifted — vertical shoves
+  fail). The shove crushes a boulder or gem in its path — crushed loot is lost,
+  not collected. A pushed wall obeys gravity: SLIME VAULT's doors are bolts over
+  pits; shove them off the ledge and they drop out of the corridor. A resting
+  bolt never crushes; a falling bolt crushes like a boulder (`deathCause`).
+- **SLIME VAULT (cave 5)**: a full-height steel divide — the only way east is a
+  two-bolt tube. Push + gravity opens bolt one; push + crush + gravity opens the
+  choke. Below the tube, a dirt-ringed slime pocket eats its bait vein. The
+  harvest sits west of the divide, and the wave can only claim EMPTY/DIAMOND —
+  dirt walls are absolute — so dashcheck proves across the planner win-run that
+  slime never leaves its pocket and both bolts are genuinely worked
+  (`push`≥4, `crush`===1, pushwall `fell`≥2).
+
 ## Verify
 ```bash
-npm run dashcheck             # 56 checks: every cave winnable, replay
+npm run dashcheck             # 92 checks: every cave winnable, replay
                               # determinism, rule pins (crush, gem-dirt, fire),
                               # FLY RELEASE (#2364: escape, containment, chicken;
-                              # #2374: dust-mark seam pin)
-npm run dashcheck -- --mutate # 63: +7 — every CFG switch silenced goes red
+                              # #2374: dust-mark seam pin),
+                              # SLIME & BOLTS (#2411: wave growth/dissolve/decay/
+                              # engulf, shove slide/crush/lift-refusal, vault
+                              # end-to-end + pocket containment)
+npm run dashcheck -- --mutate # 102: +10 — every CFG switch silenced goes red
 DEV_PORT=<p> npm run watchcheck -- --only boulder-dash  # 182: seat pilot + pins
 ```
 
 ## Honest gaps
-- No amoeboid/push walls from later BD variants — four classic-style caves only.
+- The amoeba runs one wave with perpendicular branching only; the second BD II
+  variant (a dropping two-phase amoeba) and mirrored dual waves are not here.
+- A push wall slides on flat ground only — there is no "wall falls and keeps
+  sliding" combo, and no pull mechanics (faithful to the era, but a simplification).
 - The corridor patrol is a fixed shuttle (the fly turns only against steel, so
   it never weaves into the cavern proper the way an original butterfly could).

@@ -21,7 +21,8 @@ import { PRESS, MESSAGES } from './attract.js'
 import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { LEVELS, buildLevel } from './levels.js'
-import { makeGame, planRun, planStep, step, playerMove, stateHash, CFG, W, H, EMPTY, DIRT, BOULDER, DIAMOND, STEEL, FIRE } from './sim.js'
+import { makeGame, planRun, planStep, step, playerMove, stateHash, CFG, W, H, EMPTY, DIRT, BOULDER, DIAMOND, STEEL, FIRE, AMO_HEAD, AMO_BODY, PUSHWALL } from './sim.js'
+import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 
@@ -110,6 +111,10 @@ const DashGame = () => {
                 else if (e.type === 'fell') audioController.playTone(150, 0.05, 'triangle', 0.04)
                 else if (e.type === 'gemlost') audioController.playSweep(500, 200, 0.2, 'sawtooth', 0.07)
                 else if (e.type === 'ignite' || e.type === 'spread') audioController.playNoise(0.08, 0.06)
+                else if (e.type === 'push') { audioController.playTone(90, 0.06, 'square', 0.05); audioController.playNoise(0.04, 0.03) }
+                else if (e.type === 'crush') { audioController.playNoise(0.1, 0.08); audioController.playTone(70, 0.1, 'triangle', 0.06) }
+                else if (e.type === 'amoeba') audioController.playTone(170 + ((e.x * 7 + e.y * 13) % 60), 0.03, 'sine', 0.022)
+                else if (e.type === 'dissolve') audioController.playSweep(1200, 300, 0.18, 'sawtooth', 0.05)
                 else if (e.type === 'locked') audioController.playTone(160, 0.08, 'sawtooth', 0.06)
                 else if (e.type === 'die') audioController.playDeath()
                 else if (e.type === 'win') audioController.playFanfare()
@@ -121,7 +126,8 @@ const DashGame = () => {
             const won = gs.win
             const entry = { score: gs.score, gems: gs.have, level: meta.name, date: new Date().toISOString().slice(2, 10) }
             if (won || gs.score > 0) localStorage.setItem('boulderdash.board', JSON.stringify([...board(), entry].sort((a, b) => b.score - a.score).slice(0, 8)))
-            const cause = won ? (levelIdx >= LEVELS.length - 1 ? 'EVERY CAVE CRACKED' : 'CAVE CLEARED') : gs.end === 'time' ? 'THE CLOCK RAN OUT' : 'BURIED'
+            const causeNames = { boulder: 'BURIED', pushwall: 'FLATTENED', amoeba: 'ENGULFED', fire: 'INCINERATED', fly: 'COOKED' }
+            const cause = won ? (levelIdx >= LEVELS.length - 1 ? 'EVERY CAVE CRACKED' : 'CAVE CLEARED') : gs.end === 'time' ? 'THE CLOCK RAN OUT' : (causeNames[gs.deathCause] || 'BURIED')
             setEnd({ score: gs.score, gems: gs.have, need: meta.need, won, cause, last: won && levelIdx >= LEVELS.length - 1 })
             overAtRef.current = performance.now()
             // #1637 WATCH: the exit door (or the grave) ends the route — the
@@ -238,6 +244,25 @@ const DashGame = () => {
                         ctx.fillRect(px + 2, py + 4, 12, 10)
                         ctx.fillStyle = '#ffec9a'
                         ctx.fillRect(px + 5 + (gs.tick % 3), py + 6, 4, 5)
+                    } else if (t === AMO_HEAD) {
+                        // the wave front — a bright, wobbling green blob (BD II)
+                        ctx.fillStyle = '#1f8f2c'; ctx.fillRect(px, py, TS, TS)
+                        const wob = (gs.tick + x + y) % 3
+                        ctx.fillStyle = '#66e04a'
+                        ctx.beginPath(); ctx.arc(px + 8 + wob - 1, py + 8 + (wob === 1 ? 1 : -1), 6, 0, Math.PI * 2); ctx.fill()
+                        ctx.fillStyle = '#b6ff8e'; ctx.fillRect(px + 5 + wob, py + 4, 3, 3)
+                    } else if (t === AMO_BODY) {
+                        ctx.fillStyle = '#187024'; ctx.fillRect(px, py, TS, TS)
+                        ctx.fillStyle = '#2ea83e'
+                        ctx.fillRect(px + 2, py + 3, 4, 4); ctx.fillRect(px + 9, py + 8, 4, 4)
+                        ctx.fillStyle = '#0f4c18'; ctx.fillRect(px + 8, py + 2, 3, 3); ctx.fillRect(px + 3, py + 11, 3, 2)
+                    } else if (t === PUSHWALL) {
+                        // a brick bolt: warm iron banding + rivets, unmistakable
+                        // against cold steel and brown dirt at a glance.
+                        ctx.fillStyle = '#8a5a26'; ctx.fillRect(px, py, TS, TS)
+                        ctx.fillStyle = '#b07c38'; ctx.fillRect(px, py, TS, 3); ctx.fillRect(px, py, 3, TS)
+                        ctx.fillStyle = '#5c3a14'; ctx.fillRect(px + 2, py + 8, TS - 4, 2); ctx.fillRect(px + 8, py + 2, 2, 6)
+                        ctx.fillStyle = '#e0b06a'; ctx.fillRect(px + 3, py + 3, 2, 2); ctx.fillRect(px + 11, py + 3, 2, 2); ctx.fillRect(px + 3, py + 11, 2, 2); ctx.fillRect(px + 11, py + 11, 2, 2)
                     }
                 }
             }
@@ -356,18 +381,21 @@ const DashGame = () => {
         if (import.meta.env.DEV) {
             window.__dashTest = {
                 probe: () => {
-                    let boulders = 0, gems = 0, fires = 0
+                    let boulders = 0, gems = 0, fires = 0, slime = 0, bolts = 0
+                    const boltAt = []
                     for (let i = 0; i < gs.grid.length; i++) {
                         if (gs.grid[i] === BOULDER) boulders++
                         else if (gs.grid[i] === DIAMOND) gems++
                         else if (gs.grid[i] === FIRE) fires++
+                        else if (gs.grid[i] === AMO_HEAD || gs.grid[i] === AMO_BODY) slime++
+                        else if (gs.grid[i] === PUSHWALL) { bolts++; boltAt.push([i % W, (i - (i % W)) / W]) }
                     }
                     return {
                         screen: screenRef.current, tick: gs.tick, t: gs.tick / CFG.caHz, level: levelIdx, name: meta.name,
                         player: { ...gs.player }, have: gs.have, need: meta.need, score: gs.score,
                         end: gs.end, win: gs.win, hash: stateHash(gs), moves: runMoves,
                         exit: { ...gs.exit, open: gs.have >= meta.need },
-                        boulders, gems, fires, flies: gs.flies.map(f => ({ ...f })), board: board(),
+                        boulders, gems, fires, slime, bolts, boltAt, flies: gs.flies.map(f => ({ ...f })), board: board(),
                         // #2374 polish observability (DEV-only): comet length and
                         // whether the corridor-entry chirp has fired this level.
                         trail: trail.size, alarmed,
@@ -391,6 +419,25 @@ const DashGame = () => {
                 },
                 start: startPlay,
             }
+            // AGENTS.md rule 4: the DEV-only F1 surgery kit. Live state lines +
+            // the planner's prognosis re-run against the MUTATED cave: "can this
+            // still be brought home from here?" — the puzzle-game diagnosis.
+            mountDbg({
+                title: 'BOULDER DASH',
+                getState: () => {
+                    const p = window.__dashTest.probe()
+                    const hint = planStep(gs) || 'no route!'
+                    return [
+                        `cave ${levelIdx + 1} ${meta.name} tick ${p.tick} have ${p.have}/${p.need} score ${p.score}`,
+                        `player ${p.player.x},${p.player.y} alive=${p.player.alive} end=${p.end || '-'}`,
+                        `grid: slime=${p.slime} bolts=${p.bolts} boulders=${p.boulders} gems=${p.gems} fire=${p.fires}`,
+                        `planner prognosis: ${hint}`,
+                    ]
+                },
+                actions: [
+                    { label: 'loosen a rock overhead', run: () => { window.__dashTest.crush() } },
+                ],
+            })
             exposeGame({
                 id: 'boulder-dash',
                 buttons: ['left', 'right', 'up', 'down', 'a'],
@@ -425,6 +472,7 @@ const DashGame = () => {
         exposeFeedbackState(() => ({ tick: gs ? gs.tick : 0, score: gs ? gs.score : 0, done: !!gs && gs.end != null, gold: gs ? gs.have : 0 }))
 
         return () => {
+            unmountDbg()
             unexposeFeedbackState()
             if (import.meta.env.DEV) { delete window.__dashTest; unexposeGame() }
             window.removeEventListener('keydown', onDown)
