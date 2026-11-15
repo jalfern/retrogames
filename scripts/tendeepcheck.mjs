@@ -1522,7 +1522,10 @@ if (MUT) {
                 'if (range < 0.5 || range > SIGHT) continue',
                 'if (range < 0.5) continue'],
             ['sprung ambushes never clear (a dead pack haunts the hall)',
-                'if (!st.ambushes.has(a.y * SIZE + a.x)) continue',
+                // #2323 refactored view.js to `const k = a.y * SIZE + a.x` —
+                // the anchor must track the source or plant() is a silent no-op
+                // and the mutant "survives" without existing (flagged on #2318).
+                'if (!st.ambushes.has(k)) continue',
                 'if (false) continue'],
         ]
         for (const [name, from, to] of viewMutants) {
