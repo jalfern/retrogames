@@ -309,6 +309,7 @@ section('VENT SIGNAL (fresh knowledge ripples, remembered knowledge ghosts, #236
     ok(/ventSignal\(gs\)/.test(pSrc), 'the painter does not gate the swirl through ventSignal — freshness is decoration elsewhere')
     ok(!/known\(gs, gs\.vent\)/.test(pSrc), 'the painter still draws the swirl straight off known() — the old always-on vent is back')
     ok(/gs\.pings/.test(pSrc) && /p\.maxK/.test(pSrc), 'no expanding wavefront ring is drawn from the live pings — the ring→distance teach is missing')
+    ok(/arc\(sx, sy, lead \* CFG\.waveSpeed \* TS/.test(pSrc), 'the live ping ring never strokes an arc at the wavefront radius — the ring is declared but not drawn')
     ok(!/eelCell\(|gs\.eels\b/.test(pSrc), 'the paint path reaches a LIVE eel cell — knowledge law broken')
 }
 
@@ -495,8 +496,8 @@ if (MUT) {
     const jsxOrig = readFileSync(jsxPath, 'utf8')
     const ringMutants = [
         ['the ping wavefront ring stops being drawn — ring→distance is sound-only again', jsxPath, jsxOrig,
-            'if (k < 0 || k > p.maxK + RING_TRAIL) continue',
-            'if (k < 0 || k > p.maxK + RING_TRAIL || true) continue'],
+            'ctx.beginPath(); ctx.arc(sx, sy, lead * CFG.waveSpeed * TS + 4, 0, Math.PI * 2); ctx.stroke()',
+            'void 0'],
         ['the vent swirl reverts to always-on for any known cell (#2367 gap)', jsxPath, jsxOrig,
             'const sig = ventSignal(gs)',
             'const sig = known(gs, gs.vent) ? 2 : 0'],
