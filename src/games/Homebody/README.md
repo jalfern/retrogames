@@ -216,7 +216,7 @@ see §Speed dial.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 553 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), winnable seeds, determinism
+npm run peoplecheck          # 585 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), garbage day — roster, eve set-out, dawn collection, honest skip, hash (#2303), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -583,6 +583,55 @@ plate-cell anchor → the cluster gate goes red (552 → 551/1); constant
 `sharedChord` → the rotation gate red; the shell pin refuses a lit lot that
 passes night `0` to the sprite.
 
+## Garbage day (#2303) — the truck keeps the street
+
+The clause's third hour-scheduled citizen after the paper and the bells
+(The Sims, PC 2000: collection day). **BIN** joins `DEF` but never `CATALOG`
+(nobody buys a bin): `solid:false, binOnly:true, need:'fun', amt:0` — walkable
+and tappable like the other owner-free pieces, generic self-service skips it
+(the same `continue` lines that carry `catOnly`), the sale refuses, and
+`finishUse` answers it with its own branch before the generic pay, so the
+chore never feeds the win economy by accident.
+
+- **The roster.** `collectionDay` starts at 3 and steps by `GARBAGE_EVERY` (3).
+  The **eve** (`day + 1 === collectionDay`) opens at `SET_OUT_EARLY` 18:00 and
+  shuts at `SET_OUT_LATE` 20:30: it announces once (`bin-eve` event, banner
+  "GARBAGE TOMORROW — WHEEL OUT THE BIN") and fixes the dawn hour. The hour
+  and the wording are arithmetic off `collectionDay`, **never `s.rng`** — an
+  extra draw per cycle re-phases the seeded autopilot and tipped all three
+  WINNABLE seeds; this is #2240's lesson paid for again in full.
+- **The set-out.** Tap the bin inside the eve (pad-A doctrine: `tryUse` takes
+  the order only while it stands, out-of-season taps answer in words) or let
+  autonomy route it: a resident with every need ≥ the scan floor and **no
+  neighbour on the lot** wheels it to the curb cell (12,5) after the need
+  scan, replacing what an idle stroll would have spent. The bot never borrows
+  for the chore — every placement that outranked the scan or the till broke
+  seeds 7/1234/20261023 (built, tested, cut; the marquee and eve banner
+  teach the player to order it instead). Arriving pays the wheeler
+  `BIN_SET_SOCIAL`, stamps `binSetDay`, moves the item's cell (which rides
+  `stateHash` through the items loop) and fires `bin-out` (thumps + gravel).
+  A second order at the curb refuses honestly — the wasted walk is the cost.
+- **The collection.** At dawn (`truckHour` 05:00–07:00) the truck passes: bin
+  at the curb → `garbage-collected`, the bin rolls home, fun +`BIN_FUN` all
+  round, house bond +`BIN_BOND`, one contentment — never more (the WINNABLE
+  gates are the guard).
+- **The skip.** Bin never made the curb → `garbage-skipped`: grey puff at the
+  empty curb, a thought line naming the forgotten chore, and the lot waits a
+  whole cycle — a missed day collects nothing late, the roster has moved on.
+  `collections`/`skips` ride the hash, the view tells (which cell the bin
+  stands on, which banner lands) derives from state the hash already covers.
+
+Gates: `peoplecheck` §GARBAGE DAY (32 pins: lot-owned object, roster law, eve
+announce-once, windowed order + honest refusals, the paid collection at dawn,
+skip honesty and the un-flaggable truck, quiet-eve autonomy, hash carries for
+position/roster/stamp/ledger, determinism, wish-still-lands, source pins).
+Mutants proven: `s.binAuto = true → false` at the eve — exactly the seven
+eve/collection/autonomy gates go red (585 → 578/7); `s.skips++ → s.skips = 0`
+— exactly the two skip-honesty gates go red (585 → 583/2); restore both.
+`watchcheck`'s idle-street proxy now ignores owner-free arrivals (post, plates,
+the bin) — the law it owns is BUYING, and the paper/bells/bin eras made the
+raw item count a stale proxy (the gate flaked red on main for exactly that).
+
 ## Honest gaps (filed to QA #…)
 - **CLOSED by #1806:** multiple rooms — one expansion ships: the Spare Room kit
   grows a wing on the east lawn (floor/walls/door/windows, connectivity-guarded,
@@ -618,7 +667,8 @@ adoptable child (see Kids (#2203)).
   normal / fast / fastest: digits `1`-`4` outside buy mode, `,`/`.` cycle, the
   panel pips are tappable — see §Speed dial).
 - Day/night is cosmetic + decay only — the paper route (#2238, §Paper route
-  below) is its first hour-scheduled citizen and the meal bells (#2244,
-  §Meal bells below) its next; nothing else on the lot keeps hours beyond
-  work, Ivy's rounds and the morning news (garbage day… stays open).
+  below) is its first hour-scheduled citizen, the meal bells (#2244,
+  §Meal bells below) its next two, and **CLOSED by #2303** the garbage truck
+  (§Garbage day below) keeps the street. Nothing else on the lot keeps hours
+  beyond work, Ivy's rounds and the morning news.
 - Needs panel shows both residents; no per-object queue display like the original.

@@ -360,6 +360,26 @@ export function drawItemAt(ctx, id, x, y, t, night = 0) {
             }
             break
         }
+        case 'bin': {
+            // #2303: the lot's wheelie bin — deep green body, darker lid with a
+            // raised lip, two wheels and a hint of ribs. Full and honest: it is
+            // the same bin at the gate and at the curb; the law moves it, not
+            // the paint (the cell it stands on rides the hash).
+            ctx.fillStyle = '#2f5e3a'
+            ctx.fillRect(x + 8, y + 8, 16, 17)
+            ctx.fillStyle = '#26492f'
+            ctx.fillRect(x + 8, y + 5, 16, 4)          // lid
+            ctx.fillRect(x + 10, y + 4, 12, 2)          // lid lip
+            ctx.fillStyle = '#3d7a4b'
+            ctx.fillRect(x + 10, y + 10, 12, 2)         // rib
+            ctx.fillRect(x + 10, y + 18, 12, 2)         // rib
+            ctx.fillStyle = '#1d1f24'
+            ctx.fillRect(x + 10, y + 25, 4, 3)          // wheels
+            ctx.fillRect(x + 18, y + 25, 4, 3)
+            ctx.fillStyle = '#57472f'
+            ctx.fillRect(x + 6, y + 8, 2, 8)            // handle side
+            break
+        }
         case 'yarn': {
             // #2256: the cat's ball — a coral wound ball with crossing wraps,
             // a loose thread trailing on the boards, and a shadow of its own.

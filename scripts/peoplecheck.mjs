@@ -58,6 +58,12 @@
 //                  event, timer and hash-silence; Fern and Ivy own distinct
 //                  call motifs and entrance footfalls; the attract rings Ivy
 //                  once per run and a chat at her ring actually lands.
+//  13. GARBAGE DAY (#2303) — the truck keeps the street: every third day,
+//                  the eve announces once and fixes a dawn hour, the bin is
+//                  wheeled to the curb (order or quiet-lot autonomy), the
+//                  collection pays fun/bond/one content, and a missed set-out
+//                  skips the whole cycle honestly; hash carries and the wish
+//                  still lands.
 //
 // It proves IT can fail the playbook way: break one load-bearing line in sim.js
 // (content accrual in finishUse, or the relAdd(s,'fern') feed in the visitor
@@ -91,6 +97,7 @@ import {
     AMBER_AT, DAY1_GRACE, NEED_HINT,   // #2253: the first-time player pass
     GIFT_LAND_T, VISIT_TIMBRE,   // #2240: the set-down basket + the visitor timbres
     YARN_CD, YARN_CAT_FUN, YARN_BOND, YARN_SOCIAL, YARN_PLAY_T, PET_SELF_FUN, PET_BORED, yarnOrderOk,   // #2256: the yarn ball — ordered play + the cat's own game
+    BIN, BIN_HOME, BIN_CURB, GARBAGE_EVERY, TRUCK_DUE, BIN_FUN, BIN_BOND, binOrderOk,   // #2303: garbage day — the eve, the curb, the truck
 } from '../src/games/Homebody/sim.js'
 import { readFileSync } from 'node:fs'
 
@@ -704,7 +711,7 @@ section('FEEL — walk surfaces + refusal (#1823)')
     const feelJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
     check('pin: footfalls carry their surface', /t: 'step', surf: groundOf\(s, p\.r, p\.c\)/.test(feelSim))
     check('pin: both walk routes feed the footfall meter', /footstep\(s, p, budget - step\)/.test(feelSim) && /footstep\(s, p, Math\.abs\(p\.x - ox\)/.test(feelSim))
-    check('pin: every refusal branch emits its event', (feelSim.match(/t: 'refuse'/g) || []).length === 7)   // #2197/#2203: the two adoption counters make the fifth door that answers; #2256: the yarn ball answers twice — at the order and at the finish
+    check('pin: every refusal branch emits its event', (feelSim.match(/t: 'refuse'/g) || []).length === 9)   // #2197/#2203: the two adoption counters make the fifth door that answers; #2256: the yarn ball answers twice — at the order and at the finish; #2303: the bin answers twice too
     check('pin: the shell plays three distinct step timbres', /e\.surf === 'floor'[\s\S]*e\.surf === 'path'/.test(feelJsx))
     check('pin: the refusal flashes a red ghost cell', /refuses\.push\(\{ r: e\.r, c: e\.c/.test(feelJsx) && /fillStyle = '#e23b2e'/.test(feelJsx))
 }
@@ -2746,12 +2753,143 @@ section('YARN BALL (#2256): ordered play, honest refusals, the cat\u2019s own ga
     check('the lifetime wish still lands with the yarn shelf open', w.done === 'win')
 
     // source pins — the wiring must not silently drop
-    check('pin: cat-only is skipped by BOTH generic fun hunts', (yarnSim.match(/d\.catOnly\) continue/g) || []).length >= 2)
+    check('pin: cat-only is skipped by BOTH generic fun hunts', (yarnSim.match(/d\.catOnly \|\| d\.binOnly\) continue/g) || []).length >= 2)   // #2303: the bin's exclusion rides the same lines
     check('pin: the order gate is one honest voice', /catOnly && !yarnOrderOk\(s\)/.test(yarnSim) && /export function yarnOrderOk/.test(yarnSim))
     check('pin: the finish pays cat fun, social, bond and content', /cat\.needs\.fun = Math\.min\(1, cat\.needs\.fun \+ YARN_CAT_FUN\)/.test(yarnSim) && /relAdd\(s, 'house', YARN_BOND\)/.test(yarnSim))
     check('pin: the cooldown rides advance and the hash', /if \(s\.yarnCd > 0\) s\.yarnCd = Math\.max\(0, s\.yarnCd - dt\)/.test(yarnSim) && /mix\(s\.yarnCd\)/.test(yarnSim))
     check('pin: the shell names the honest refusals and voices the session', /NO CAT ON THE LOT/.test(yarnJsx) && /MISO IS NOT FEELING IT/.test(yarnJsx) && /case 'pet-play'/.test(yarnJsx) && /MISO WANTS A GAME/.test(yarnJsx))
     check('pin: the art ships — ball, spin staging, and the new cat states', /case 'yarn'/.test(yarnArt) && /it\.playT/.test(yarnArt) && /sitT/.test(yarnArt) && /stretchT/.test(yarnArt))
+}
+
+// ------------------------------------------------- GARBAGE DAY (#2303) ----
+section('GARBAGE DAY (#2303): the eve sets out, dawn resolves, a miss is honest')
+{
+    // the bin is the lot's own object — never a card, never for sale
+    const s0 = newRun(31)
+    const bin0 = s0.items.find((it) => it.id === 'bin')
+    check('the bin is a walkable lot-owned object, never a catalog card',
+        BIN.need === 'fun' && BIN.solid === false && BIN.binOnly === true && !CATALOG.some((d) => d.id === 'bin'))
+    check('a fresh lot has the bin by the gate and the truck three days out',
+        !!bin0 && bin0.r === BIN_HOME.r && bin0.c === BIN_HOME.c && s0.binAt === 'home'
+        && s0.collectionDay === GARBAGE_EVERY && s0.collections === 0 && s0.skips === 0)
+    check('no order before the eve — the refusal is seen at the cell',
+        !binOrderOk(s0) && !cmdUse(s0, s0.people[0], bin0) && drain(s0).some((e) => e.t === 'refuse' && e.r === BIN_HOME.r && e.c === BIN_HOME.c))
+    check('the bin cannot be sold', sellAt(s0, BIN_HOME.r, BIN_HOME.c) === false && s0.money === newRun(31).money)
+
+    // the eve law: one announcement, a seeded dawn hour, order only in-window
+    const keepAlive = (g) => { for (const q of g.people) { q.faintT = 0; q.needs.hunger = Math.max(q.needs.hunger, 0.8); q.needs.energy = Math.max(q.needs.energy, 0.8); q.needs.bladder = Math.max(q.needs.bladder, 0.8) } }   // the household being alive is not what these gates test
+    const s1 = newRun(32)
+    s1.day = 2
+    let eveEv = null
+    for (let i = 0; i < 60 * 60 && !eveEv; i++) { advance(s1, DT); keepAlive(s1); eveEv = drain(s1).find((x) => x.t === 'bin-eve') || null }
+    check('the eve before collection announces itself and arms the chore', !!eveEv && s1.day === 2 && s1.binAuto === true)
+    const truck1 = s1.truckHour
+    check('the dawn hour seeds inside the truck window', truck1 >= TRUCK_DUE[0] && truck1 <= TRUCK_DUE[1], `${truck1.toFixed(2)}h`)
+    s1.hour = 12
+    check('noon is not eve — the order waits', !binOrderOk(s1))
+    s1.hour = 23
+    check('midnight is not eve either — the bin goes out before dark', !binOrderOk(s1))
+    s1.hour = 18
+    keepAlive(s1)
+    check('in the eve window the order stands', binOrderOk(s1) && cmdUse(s1, s1.people[0], s1.items.find((it) => it.id === 'bin')))
+    let outEv = null
+    for (let i = 0; i < 60 * 30 && !outEv; i++) { advance(s1, DT); keepAlive(s1); outEv = drain(s1).find((x) => x.t === 'bin-out') || null }
+    const bin1 = s1.items.find((it) => it.id === 'bin')
+    check('the resident wheels the bin to the curb and stamps the day',
+        !!outEv && s1.binAt === 'curb' && bin1.r === BIN_CURB.r && bin1.c === BIN_CURB.c && s1.binSetDay === 2 && s1.binAuto === false)
+    let extraEve = 0
+    for (let i = 0; i < 60 * 40; i++) { advance(s1, DT); keepAlive(s1); extraEve += drain(s1).filter((x) => x.t === 'bin-eve').length }
+    check('the eve announces once per cycle — never re-arms after the trip', extraEve === 0)
+    check('the bin at the curb refuses a second order at the cell',
+        !binOrderOk(s1) && !cmdUse(s1, s1.people[1], bin1) && drain(s1).some((e) => e.t === 'refuse'))
+
+    // dawn collection: the truck keeps its hours
+    const rel0 = s1.rel.house
+    let colEv = null, cntAtTick = s1.content, funAtTick = s1.people.map((p) => p.needs.fun), relAtTick = rel0
+    for (let i = 0; i < 60 * 60 * 2 && !colEv; i++) {
+        cntAtTick = s1.content; funAtTick = s1.people.map((p) => p.needs.fun); relAtTick = s1.rel.house
+        advance(s1, DT); keepAlive(s1); colEv = drain(s1).find((x) => x.t === 'garbage-collected') || null
+    }
+    check('the truck takes it at dawn and wheels the bin home',
+        !!colEv && s1.day === 3 && s1.binAt === 'home' && bin1.r === BIN_HOME.r && bin1.c === BIN_HOME.c && s1.collections === 1 && s1.collectionDay === GARBAGE_EVERY * 2)
+    check('collection pays honestly — fun up, bond up, never more than one content',
+        s1.people.every((p, k) => p.needs.fun >= funAtTick[k] + BIN_FUN - 0.01)
+        && s1.rel.house >= relAtTick + BIN_BOND - 0.01 && s1.content <= cntAtTick + 1)
+    check('the next eve re-arms on schedule', (() => {
+        let e = null
+        for (let i = 0; i < 60 * 60 * 5 && !e; i++) { advance(s1, DT); keepAlive(s1); e = drain(s1).find((x) => x.t === 'bin-eve') || null }
+        return !!e && s1.day === 5 && s1.binAuto === true
+    })())
+
+    // the honest skip: a forgotten set-out costs the whole cycle
+    const s2 = newRun(33)
+    let skipEv = null, colBefore = null
+    for (let i = 0; i < 60 * 60 * 5 && !skipEv; i++) {
+        advance(s2, DT); keepAlive(s2); const ev = drain(s2)
+        if (!colBefore) colBefore = ev.find((x) => x.t === 'garbage-collected') || null
+        skipEv = ev.find((x) => x.t === 'garbage-skipped') || null
+    }
+    check('a forgotten set-out skips the collection honestly and visibly',
+        !!skipEv && s2.skips === 1 && s2.binAt === 'home' && !colBefore && s2.collections === 0)
+    check('a skipped day cannot be collected late — the roster moves on',
+        s2.collectionDay === GARBAGE_EVERY * 2 && s2.day === 3)
+    let lateCol = null
+    for (let i = 0; i < 60 * 60 * 3 && !lateCol && s2.day === 3; i++) { advance(s2, DT); keepAlive(s2); lateCol = drain(s2).find((x) => x.t === 'garbage-collected') || null }
+    check('the passed truck cannot be flagged down — the missed day collects nothing',
+        !lateCol && s2.day >= 4 && s2.collectionDay === GARBAGE_EVERY * 2 && s2.skips === 1)
+
+    // autonomy: the quiet-lot law — a resident with needs in hand and nobody
+    // on the lot wheels the bin out unasked (rigged honest: demo seeds keep
+    // Fern or Ivy into the evening and the chore yields to chat by law, so
+    // the law is proven on a lot with the neighbours away and needs banked —
+    // not by stealing a chat minute)
+    const s3 = newRun(34)
+    let autoOut = null
+    for (let i = 0; i < 60 * 60 * 8 && !autoOut; i++) {
+        if (s3.day === 2 && s3.hour >= 18 && s3.binAuto) {
+            s3.visitor = null; s3.ivy = null
+            for (const q of s3.people) for (const n of NEEDS) q.needs[n] = 0.9
+        }
+        autoStep(s3, DT)
+        autoOut = drain(s3).find((x) => x.t === 'bin-out') || null
+        if (s3.day >= 3) break
+    }
+    check('on a quiet eve a resident with needs in hand wheels the bin out unasked', !!autoOut && s3.binAt === 'curb')
+
+    // determinism and the hash
+    const dA = newRun(35), dB = newRun(35)
+    for (const d of [dA, dB]) for (let i = 0; i < 60 * 60 * 3; i++) { autoStep(d, DT); drain(d) }
+    check('seeds stay exact with the truck running', stateHash(dA) === stateHash(dB))
+    const hy = stateHash(dA)
+    dA.binAt = dA.binAt === 'curb' ? 'home' : 'curb'
+    check('where the bin stands rides the hash', stateHash(dA) !== hy)
+    const hz = stateHash(dA)
+    dA.collectionDay += 1; dA.truckHour += 0.5
+    check('the truck roster rides the hash', stateHash(dA) !== hz)
+    const hw = stateHash(dA)
+    dA.binSetDay += 1; dA.collections += 1; dA.skips += 1
+    check('the set-out stamp and the ledger ride the hash', stateHash(dA) !== hw)
+
+    // the win economy is untouched: the wish still lands with the truck running
+    const w = newRun(1)
+    let wn = 0
+    while (!w.done && wn++ < 60 * 60 * 6) { autoStep(w, DT); drain(w) }
+    check('the lifetime wish still lands with garbage day in the lot', w.done === 'win')
+
+    // source pins — the wiring must not silently drop
+    const gSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const gJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const gArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    check('pin: the order gate is one honest voice', /binOnly && !binOrderOk\(s\)/.test(gSim) && /export function binOrderOk/.test(gSim))
+    check('pin: the eve arms and dawn resolves on the world clock', /function updateBin\(s\)/.test(gSim) && /updateBin\(s\)/.test(gSim) && /s\.collectionDay \+= GARBAGE_EVERY/.test(gSim))
+    check('pin: collection pays fun, bond and one content — never more', /q\.needs\.fun = Math\.min\(1, q\.needs\.fun \+ BIN_FUN\)/.test(gSim) && /relAdd\(s, 'house', BIN_BOND\)/.test(gSim) && !/garbage[\s\S]{0,400}content \+ 2/.test(gSim))
+    check('pin: the sale refuses and the stamp refuses', /it\.id === 'meal' \|\| it\.id === 'bin'/.test(gSim) && /s\.binSetDay === s\.day/.test(gSim))
+    check('pin: the demo autonomy keeps the eve chore', /s\.demo && s\.binAuto/.test(gSim))
+    check('pin: the shell voices the whole cycle and the marquee teaches it',
+        /case 'bin-eve'/.test(gJsx) && /case 'bin-out'/.test(gJsx) && /case 'garbage-collected'/.test(gJsx) && /case 'garbage-skipped'/.test(gJsx)
+        && /GARBAGE TOMORROW — WHEEL OUT THE BIN/.test(gJsx) && /THE TRUCK PASSED US BY/.test(gJsx) && /GARBAGE DAY EVERY THIRD DAY/.test(gJsx))
+    check('pin: the tap answers honestly out of season', /DEF\[it\.id\]\.binOnly/.test(gJsx) && /NO COLLECTION TONIGHT/.test(gJsx))
+    check('pin: the art ships the bin', /case 'bin'/.test(gArt))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)
