@@ -1,95 +1,82 @@
-# STATE — session 289 (2026-11-15, slot b)
+# STATE — session 290 (2026-11-15, slot a)
 
 ## Playable now / what shipped
-- **FLOOR BOSS gets a career ladder (#2346 → PR #2349, merge `02dd5ca`).**
-  Clearing the quota clocks you into the NEXT shift instead of ending the run.
-  `shiftParams(n)` is the whole ladder, pure in n: quota +200/rung, order wire
-  540→380 (rush 320→220), deadlines −4%/rung (floor 0.72), wear −15/rung
-  (floor −70). Quota law moved to EARNINGS-vs-rung (`score − shiftBase ≥
-  quota(n)`; shift 1 = bit-identical to the old absolute law). `nextShift`:
-  floor persists (hires/racks/freight-in-gripper), bots wear-reset, strike
-  sheet new, orders/pad/belt/truck clean, escrow follows freight out (#1921).
-  Fired/short ends the career; every cleared night banks. HUD `SHIFT n` + bank
-  tally, earnings bar, rung-named win screen, BEST SHIFT→BEST RUN, contract
-  pad-A advance, DebugKit rungs. Measured ramp: autopilot banks 5–8 nights
-  across 5 seeds, then the ladder out-earns it — winnable early, bites late.
-- Gates at ship: floorbosscheck 431→462 (+31: params/caps/clamp, three HEAD
-  parity traces literal-embedded, earnings quota, nextShift carry law, hash/
-  state rungs, 5 career ramps, 10 UI pins). Mutants killed: `--mutate-ladder`,
-  `--mutate-advance`, `--mutate-bank`. floorbossplay 36/36 real keys (win →
-  Enter → live shift 2, career 1689, quota 1200; short ends run; clean
-  restart). lint v/mario/fps/ai + eslint + build green. Prod verified: ladder
-  markers in `assets/index-CkxdkbMr.js` (entry `index-BYQmNat0.js`), live at
-  jalfern.com/retrogames/floorboss.
+- **BOMB DEFUSE's boom breaks the body (#2357 → PR #2361, merge `0c2b928`).**
+  4 riveted steel-plate chunks (16–38 px — heavier than the 2–5 px spark dots)
+  spawn from the real chassis rect: `BOMB_BODY` is new & single-sourced, and
+  `drawBombView`'s plate fill now shares it — view and gates can't drift.
+  Radial outward kick from the blast centre with upbias, gravity 0.32/frame
+  (dots 0.3 < chunks < lid 0.35), two damped deck bounces at y=322 (0.45
+  restitution, friction skid), settle + fade where they land. Lid and spark
+  shrapnel re-anchored to the same geometry. All paint-frame, Math.random-only;
+  `spawnBoom` still names no sim state — hash untouched (clean-run pin holds).
+- Gates at ship: defusecheck 290→300 (+10 #2357 pins: spawn-from-rect, radial
+  kick, size floor, gravity law, bounce law, settle law, spawn trinity, hud +
+  probe wiring). Hand mutants die by name: gravity→0 reds the fall pin;
+  `bounces:0` reds the live drive gate (bounced=0); spawn→0 reds launch
+  (chunks=0). defusedrive 41/41 real clock — live bounce counted (bounced=3),
+  fx expire across restart while scorch carries; zero page errors. lint
+  mario/fps/ai + eslint + build green. Prod verified: `bounces:2` marker in
+  `assets/index-BP7d2OZb.js`. Live at jalfern.com/retrogames/bomb-defuse.
 - Rule 4: game code shipped.
 
 ## Ladder (this session's path)
-- Warden target **#1711**: claim REFUSED — slot a holds the liveness namespace
-  (claimed 11:14Z, released 11:17Z; their fresh audit twice: store 7 takes all
-  graded, `/status writeKey:false`, jonq #2305 AWAITING). Jon-side-only; not
-  re-litigated, went to the ladder per the slot notes.
-- No halt/steer; game-queue empty; feedback all `building-qa` (#2336, #2330)
-  or with live QA MASTER sessions on mini/mini2/studio → no borrow; flagship
-  stage spent (`flagshipStage` null).
-- Never-dry: `weakestStage` → BRITANNIA (score 3, oldest). Audited its gap 0
-  against the ORIGINAL data before building: boarding-free is Ultima IV's real
-  rule (`AVATAR.EXE` ships SHIPSHOR/SHIPSEA transition tilesets + bare
-  `Board:` prompt; every gold string belongs to town NPC dialogs). Gaps 1–2
-  are stage-2 milestones / check-only → nothing shippable as stage-1 gameplay.
-  Audit filed as **#2353** (feedback; also owns the gap so future picks aim
-  elsewhere) and cross-posted on **#2345** (slot a shipped Britannia tolls —
-  QA should weigh the strings before polishing them).
-- Next weakest: FLOOR BOSS (score 3) — oldest unowned gap = one-shift template.
-  Filed POLISH **#2346**, claimed, shipped.
+- Warden target **#1711** claimed first, audited live (nothing moved, 4x):
+  `/status` writeKey:false; store identical — 7 graded takes, newest
+  2026-11-14T17:36Z, no clap-test take; jonq #2305 AWAITING (11-17, default
+  hold). Released to `next` with evidence. Jon-side remainder unchanged.
+- No halt/steer; game-queue empty; 3 QA MASTER sessions live → feedback borrow
+  blocked; flagship stage spent (every flagship README gap carries CLOSED).
+- Never-dry: weakestStage #1 SHORT ORDER SHOUT (score 3) — audited before
+  building: the voice remainder is deferred full-duplex infra (live half-duplex
+  PTT shipped #1432); ops gap is browser-tier verification (check-only); seats
+  3–4 need online / collide with the no-second-pad rule. GRAVEL YARD: seat
+  bullet self-refuses (pad crowd); the reverse clause needs new input semantics
+  on a replay/hash-gated game — own design stage; #1306/#1390 bullets are
+  shipped-work text. TALK ME DOWN: D4 bullet says itself structurally
+  untestable; drain-shorthand shipped #1923; third bullet is a
+  "CLOSED by THE #1915" regex miss; leftovers are named design calls. All
+  three owned via audit issues **#2354/#2355/#2356** (quote each gap's 40-char
+  handle; ownership verified locally with ownsGap before filing).
+- Next pick BOMB DEFUSE (score 3): gap 0 partially stale (#1812 shipped lid +
+  dots + scorch); honest delta = the body itself. Filed POLISH #2357 with
+  why-weakest line, claimed, shipped.
 
 ## BOARD at exit
 - building: NONE. game-queue: empty.
-- building-qa: **#2336** (GardenGuard), **#2330** (PoP polish).
-- feedback: **#2352** (FloorBoss polish pass — mine: clock-in ceremony,
-  carry-over rules text, rung pricing, per-rung rush watch, deepest-shift
-  board), **#2353** (Britannia audit note — mine), #2343 (TidyBot attract,
-  expect the QA lanes at it).
-- jonq open: **#2305** (lane:platform, AWAITING, deadline 11-17, default hold
-  — not ours to wait on).
-- #1711 `next` — Jon-side remainder unchanged: his phone claptest (#2156) +
-  `wrangler secret put SESSION_WRITE_KEY` → then the #2093 relabel one-off.
-  No halt, no steer.
+- building-qa: **#2336** (GardenGuard), **#2330** (PoP).
+- feedback: **#2363** (BOMB DEFUSE polish — mine: per-material fragments,
+  deck occlusion, accent tolerance, haptics), #2354/#2355/#2356 (audit-owned),
+  #2352 (FloorBoss), #2353 (Britannia audit), #2351, #2343, #2344.
+- jonq open: **#2305** (lane:platform, AWAITING — not ours to wait on).
+- #1711 `next` — Jon-side only: phone clap-test (#2156) + `wrangler secret put
+  SESSION_WRITE_KEY`, then the #2093 relabel one-off. No halt, no steer.
 
 ## Next (slot a or b, in order)
-1. Ladder as usual. #1711: verify `/status` + store fresh at claim time; a
-   clap-test take on the store means grade it + post #1711/#2156; a writeKey
-   lands → execute the #2093 relabel one-off (only after jonq #2305 answers).
-2. never-dry scores moved: FloorBoss gap 0 shipped (its two leftovers are
-   big — 2P seats, aisle physics) and #2352 names it; Britannia gap 0 now
-   owned by #2353. Candidates: SHORT ORDER SHOUT, GRAVEL YARD, TALK ME DOWN,
-   BOMB DEFUSE (score 3 each), or whatever QA files after its sweep. Read
-   #2353 before touching any Britannia gap.
-3. Prod markers: entry HTML names the entry chunk only — walk its ~60 chunks
-   with STRING-LITERAL markers (identifiers minify away; see catches).
+1. Ladder as usual. BombDefuse now scores 2 (accent tolerance — build a small
+   mishearing battery into the parse layer first; haptics — navigator.vibrate
+   gate, quick win). Then score-2 tier: BoulderDash firefly escape, Sonar
+   distance cue, MissileBattle alternating batteries, Excitebike EDIT TRACK…
+   run `weakestStage` — don't copy this line. #2354–#2356 keep SOS/GY/TMD honest.
+2. If jonq #2305 answers → execute; a clap-test take in the store → grade it +
+   post #1711/#2156; writeKey at /status → the #2093 relabel one-off.
+3. Britannia polish #2351 is QA's; read #2353 before touching Britannia gaps.
 
 ## The session's catches
-- **Zero-footprint proofs must survive their own hash.** Once `stateHash`
-  gains bits, pre-change hash literals can't be reused. Extract the pre-PR
-  engine (`git show HEAD:path`, re-point its imports), diff BEHAVIOR
-  side-by-side per tick, and embed literal behavior traces (tick:score:shipped:
-  expired marks) as the portable parity pin — that's what floorbosscheck now
-  carries vs HEAD `359e062`.
-- **Prod markers: literals, not identifiers.** Minification keeps
-  `'NIGHTS BANKED'`/`'shiftstart'` but renames `shiftParams`/`nextShift` —
-  scan chunks for strings or you'll pollute the poll forever.
-- **Commit before mutants.** mutateguard refuses a `--mutate` run on a dirty
-  tree (#2047 law, by design): the guard's refusal, not a bug — commit the
-  gate first, then plant.
-- **Old copy leaks design.** FloorBoss's over screen already promised "PRESS
-  ANY KEY FOR THE NEXT SHIFT" when no next shift existed. The ladder inherited
-  the promise — and `floorbossplay` pinned the old win→attract law, so a flow
-  change must re-pin its own play suite in the same PR.
-- **Warden pings go stale; the claim script is the authority.** The target
-  ping repeated #1711 twice after slot a's fresh releases; claim-time liveness
-  correctly refused — trust `forge-claim.sh`, not the prompt.
+- **jalfern.com 308s to www.jalfern.com.** curl without `-L` gets a 15-byte
+  "Redirecting…" stub: entry grep finds nothing and the marker poll spins green-
+  free for 10 minutes. Always `-L` in prod polls.
+- **Comments are source-pinned.** #1812's purity gate asserts `!/\bgs\b/` on
+  spawnBoom's source slice — my own comment prose "no gs" tripped it. Write
+  "no sim state" in pinned regions.
+- **`gh pr merge --repo X` needs the explicit PR number** — the branch-inferred
+  form works without `--repo`; passing both without a number dies on usage.
+- **Audit-before-pick pays.** Three consecutive weakestStage winners were
+  unshippable on inspection; ~30 min of ownsGap-handle audit notes stops the
+  board from re-kicking those lanes onto the same gaps.
 
 ## Hygiene at exit
-- Dev server 5178 stopped; foreign ports (5173/5174/5179) untouched.
-- Slot-b forge worktree removed; branch `forge/fb-ladder` gone via squash;
-  main checkout detached at origin/main. STATE committed to main (game merged
-  — rule 9) + statepark slot b.
+- Dev server 5173 stopped; foreign ports untouched.
+- Slot-a forge worktree removed; branch gone via squash; main checkout detached
+  at origin/main (`0c2b928`). STATE committed to main (game merged — rule 9)
+  + statepark slot a.
