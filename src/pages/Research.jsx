@@ -38,14 +38,14 @@ export default function Research() {
                 <ol style={{ fontSize: 13, lineHeight: 1.8, paddingLeft: 20 }}>
                     <li><b style={{ color: '#5dff8f' }}>Export</b> — <code>npm run plaicraft:export</code>: 20 recorded runs (12 practice
                         seeds 0–11, 8 held-out seeds 100–107) as <code>retrogames-rec/v1</code> files, each replay-verified against
-                        the sim (state-hash match every 30 ticks), then a JSONL dataset: per tick, the seat&apos;s own 32 senses
+                        the sim (state-hash match every 30 ticks), then a JSONL dataset: per tick, the seat&apos;s own 31 senses
                         (range-finder rays, hero bearing + headings + look-ahead prediction, nearest monster and food, last
                         action) and the expert&apos;s pad. <code>data/plaicraft/README.md</code> documents the format.</li>
-                    <li><b style={{ color: '#5dff8f' }}>Train</b> — <code>npm run plaicraft:train</code>: one 32-24-24-5 MLP, deterministic
+                    <li><b style={{ color: '#5dff8f' }}>Train</b> — <code>npm run plaicraft:train</code>: one 31-24-24-5 MLP, deterministic
                         (zero dependencies, fixed seed, fixed hyperparameters — no sweeps). Choose on practice, score once on
                         held-out — the discipline from weight surgery.</li>
                     <li><b style={{ color: '#5dff8f' }}>Seat</b> — the quantized weights ship with the game (<code>src/games/Gauntlet/policy.js</code>,
-                        1517 numbers). On the hero-select screen, <b>M</b> seats the BRAIN in slot 2; C and P still work; any
+                        1493 numbers). On the hero-select screen, <b>M</b> seats the BRAIN in slot 2; C and P still work; any
                         input takes the seat back like any partner source.</li>
                     <li><b style={{ color: '#5dff8f' }}>Gate</b> — <code>npm run plaicraftcheck</code>: recordings replay exact, the seat
                         predicts the expert &gt;90% of movement ticks, the seated brain follows the hero and survives, and a
@@ -76,6 +76,12 @@ export default function Research() {
 
                 <h2 style={h2}>HONEST NOTES</h2>
                 <ul style={{ fontSize: 12.5, lineHeight: 1.8, paddingLeft: 18, color: '#aab8d8' }}>
+                    <li><b style={{ color: '#ffd23f' }}>Why v2 (#2299):</b> v1&apos;s 100% swing-intent agreement was a leak, not
+                        learning — the feature <code>monReach</code> (&quot;nearest monster inside blade reach&quot;) was bit-identical
+                        to the intent label on all export rows (stage-1 audit #2277). Jon chose drop-and-retrain (#2285): v2 drops
+                        the flag, so distance reaches the net only through <code>monDx/monDy</code> — the swing head has to infer
+                        the threshold now, and the agreement number above is honest. <code>plaicraftcheck</code> gates that no input
+                        column may equal the label.</li>
                     <li>The teacher is the studio&apos;s own CPU partner — the clone learns the CPU&apos;s doctrine, not a human&apos;s.
                         That was deliberate for the pilot: the comparison &quot;model vs CPU on the same seeds&quot; is then exact.</li>
                     <li>Score lands above the CPU partly because the net&apos;s swing trigger is a touch more eager — it clears more

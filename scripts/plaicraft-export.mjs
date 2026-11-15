@@ -8,7 +8,7 @@
 // driver — hash match at every checkpoint), then converts them into a JSONL
 // training set: one row per tick —
 //
-//   { s: seed, t: tick, lvl: level, f: [27 features], p: cpuPad, a: swingIntent }
+//   { s: seed, t: tick, lvl: level, f: [31 features], p: cpuPad, a: swingIntent }
 //
 // f = the seat's own senses (src/games/Gauntlet/model.js featurize — ONE
 // definition shared by export, trainer and the live seat). p = what the CPU
@@ -212,7 +212,7 @@ checkpoint or the export fails.
 | \`s\`   | seed of the run this row came from |
 | \`t\`   | tick within that run |
 | \`lvl\` | maze index |
-| \`f\`   | 27 features — THE seat's senses: hp frac; 8 range-finder rays (N..NW, 1/8-cell steps, capped 8 cells); hero bearing (dx, dy /8-clamped) + both headings as sin/cos; nearest monster bearing + drain flag + inside-blade-reach flag; nearest food bearing + present flag; motion memory — the hero's smoothed-velocity look-ahead target (the CPU doctrine's own prediction) + hero speed + the seat's own last-tick velocity |
+| \`f\`   | 31 features — THE seat's senses: hp frac; 8 range-finder rays (N..NW, 1/8-cell steps, capped 8 cells); hero bearing (dx, dy /8-clamped) + both headings as sin/cos; nearest monster bearing + drain flag; nearest food bearing + present flag; motion memory — the hero's smoothed-velocity look-ahead target (the CPU doctrine's own prediction) + hero speed + the seat's own last-tick velocity. v2 (#2299): the old inside-blade-reach flag is GONE — it was bit-identical to the swing-intent label (audit #2277, Jon's answer #2285); reach is inferable from monDx/monDy |
 | \`p\`   | the expert pad emitted this tick: \`{left,right,up,down,a}\` (a is a thumb pulse) |
 | \`a\`   | sustained swing intent (0/1) — the label the net trains on; the seat rebuilds the pulse from intent so the net never has to learn a thumb's tick-phase |
 

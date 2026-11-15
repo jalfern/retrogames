@@ -1,8 +1,8 @@
 {
  "meta": {
-  "name": "plaicraft-bc/v1",
+  "name": "plaicraft-bc/v2",
   "game": "gauntlet",
-  "trained": "2026-11-06",
+  "trained": "2026-11-15",
   "epochs": 24,
   "seed": 7,
   "rows": 134852,
@@ -10,72 +10,76 @@
   "sources": {
    "practice": "seeds 0..11",
    "heldout": "seeds 100..107 (scored once, below)"
+  },
+  "heldout": {
+   "wins": 8,
+   "of": 8
   }
  },
  "teacherForcing": {
   "practice": {
    "rows": 134852,
-   "moveAcc": 0.9773,
-   "intentAcc": 1,
-   "padAcc": 0.9301,
-   "loss": 0.1021
+   "moveAcc": 0.973,
+   "intentAcc": 0.9876,
+   "padAcc": 0.901,
+   "loss": 0.1274
   },
   "heldout": {
    "rows": 86566,
-   "moveAcc": 0.9775,
-   "intentAcc": 1,
-   "padAcc": 0.9316,
-   "loss": 0.1015
+   "moveAcc": 0.9732,
+   "intentAcc": 0.986,
+   "padAcc": 0.9016,
+   "loss": 0.1305
   }
  },
  "curve": [
   {
    "epoch": 4,
    "rows": 20000,
-   "moveAcc": 0.9674,
-   "intentAcc": 1,
-   "padAcc": 0.902,
-   "loss": 0.1468
+   "moveAcc": 0.9692,
+   "intentAcc": 0.983,
+   "padAcc": 0.8969,
+   "loss": 0.1784
   },
   {
    "epoch": 8,
    "rows": 20000,
-   "moveAcc": 0.9727,
-   "intentAcc": 1,
-   "padAcc": 0.9168,
-   "loss": 0.1257
+   "moveAcc": 0.9696,
+   "intentAcc": 0.9843,
+   "padAcc": 0.8893,
+   "loss": 0.1531
   },
   {
    "epoch": 12,
    "rows": 20000,
-   "moveAcc": 0.9749,
-   "intentAcc": 1,
-   "padAcc": 0.9226,
-   "loss": 0.1151
+   "moveAcc": 0.9737,
+   "intentAcc": 0.9823,
+   "padAcc": 0.9036,
+   "loss": 0.1366
   },
   {
    "epoch": 16,
    "rows": 20000,
-   "moveAcc": 0.9764,
-   "intentAcc": 1,
-   "padAcc": 0.9277,
-   "loss": 0.1081
+   "moveAcc": 0.9765,
+   "intentAcc": 0.9889,
+   "padAcc": 0.9183,
+   "loss": 0.1268
   },
   {
    "epoch": 20,
    "rows": 20000,
-   "moveAcc": 0.977,
-   "intentAcc": 1,
-   "padAcc": 0.9274,
-   "loss": 0.1025
+   "moveAcc": 0.9765,
+   "intentAcc": 0.9825,
+   "padAcc": 0.9103,
+   "loss": 0.1208
   },
   {
    "epoch": 24,
    "rows": 20000,
-   "moveAcc": 0.9786,
-   "intentAcc": 1,
-   "padAcc": 0.9336,
-   "loss": 0.0985
+   "moveAcc": 0.9747,
+   "intentAcc": 0.9885,
+   "padAcc": 0.9066,
+   "loss": 0.1215
   }
  ],
  "rollout": {
@@ -91,19 +95,19 @@
    },
    "avgScore": {
     "cpu": 114883.3,
-    "model": 116604.2
+    "model": 162908.3
    },
    "avgKills": {
     "cpu": 111.2,
-    "model": 111.9
+    "model": 202.5
    },
    "partnerDeaths": {
     "cpu": 0,
-    "model": 1
+    "model": 3
    },
    "goldByPartner": {
     "cpu": 1.4,
-    "model": 1.6
+    "model": 5.3
    },
    "perSeed": [
     {
@@ -216,19 +220,19 @@
    },
    "avgScore": {
     "cpu": 111275,
-    "model": 121306.3
+    "model": 155487.5
    },
    "avgKills": {
     "cpu": 103.4,
-    "model": 121.1
+    "model": 187.4
    },
    "partnerDeaths": {
     "cpu": 0,
-    "model": 1
+    "model": 2
    },
    "goldByPartner": {
     "cpu": 1.1,
-    "model": 1.3
+    "model": 4.6
    },
    "perSeed": [
     {

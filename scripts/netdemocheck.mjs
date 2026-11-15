@@ -1,7 +1,8 @@
 // netdemocheck — Node gates for the net-driven attract demo (#1641):
-// plaicraft-bc/v1 sits seat 2 of the attract game and PLAYS it live beside
+// plaicraft-bc/v2 sits seat 2 of the attract game and PLAYS it live beside
 // the reactive expert pilot — no plan(), no script replay. The demo's caption
-// on screen claims HELD-OUT 8/8, so the gates re-run every held-out seed
+// states the shipped model's held-out record (#2299: meta-derived, not a
+// hardcoded 8/8), so the gates re-run every held-out seed
 // through the shipped driver: a claim on screen a check cannot re-prove is
 // the lie this file exists to catch. This does NOT re-score the model (no
 // selection happens here — the weights are frozen, shipped, and the same
@@ -151,12 +152,15 @@ check('DEV reset clears the demo route', /netDemo\.reset\(\)/.test(jsx))
 {
     const { attractFrame, INFO_MSGS, NET_MSGS, HOLD, HUD } = attract
     const CW = 320, CH = 240
-    check('NET_MSGS extends INFO_MSGS with the brain lines', NET_MSGS.length === INFO_MSGS.length + 2 && NET_MSGS.includes('BC NET PLAYS SEAT 2') && NET_MSGS.includes('HELD-OUT 8/8 WINS'))
+    // #2299: the held-out line is meta-derived (a retrain can't strand a stale
+    // 8/8) — the check recomputes the same string from the shipped weights.
+    const HO = POLICY.meta && POLICY.meta.heldout ? `HELD-OUT ${POLICY.meta.heldout.wins}/${POLICY.meta.heldout.of} WINS` : 'BC NET PLAYS HELD-OUT'
+    check('NET_MSGS extends INFO_MSGS with the brain lines', NET_MSGS.length === INFO_MSGS.length + 2 && NET_MSGS.includes('BC NET PLAYS SEAT 2') && NET_MSGS.includes(HO))
     check('net lines fit one short line', [...NET_MSGS].every((s) => s.length <= 28))
     const span = HOLD * NET_MSGS.length + 5
     const seen = new Set(); let overHud = 0
     for (let t = 0; t < span; t++) for (const l of attractFrame(t, CW, CH, HUD, 0, NET_MSGS)) {
-        if (INFO_MSGS.includes(l.text) || ['BC NET PLAYS SEAT 2', 'HELD-OUT 8/8 WINS'].includes(l.text)) seen.add(l.text)
+        if (INFO_MSGS.includes(l.text) || ['BC NET PLAYS SEAT 2', HO].includes(l.text)) seen.add(l.text)
         if (l.y + l.size > CH - HUD) overHud++
     }
     check('the net ticker cycles every message', seen.size === NET_MSGS.length, `${seen.size}/${NET_MSGS.length}`)
@@ -164,7 +168,7 @@ check('DEV reset clears the demo route', /netDemo\.reset\(\)/.test(jsx))
     const fallbackSeen = new Set()
     for (let t = 0; t < HOLD * INFO_MSGS.length + 5; t++) for (const l of attractFrame(t, CW, CH, HUD, 0)) fallbackSeen.add(l.text)
     check('default frame stays INFO_MSGS (fallback never claims the brain)',
-        !fallbackSeen.has('BC NET PLAYS SEAT 2') && !fallbackSeen.has('HELD-OUT 8/8 WINS'))
+        !fallbackSeen.has('BC NET PLAYS SEAT 2') && !fallbackSeen.has(HO))
 }
 
 // 10 — #1655 polish: the attract camera looks at the NET (periodic pull to

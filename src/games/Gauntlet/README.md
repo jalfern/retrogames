@@ -47,10 +47,14 @@ engine, pinned to the original four mazes (`levelCount: 4`).
     dark recess + a light bevel). drawView renders exactly its decisions;
     gauntletcheck proves them in plain Node.
 - `model.js` / `policy.js` — PLAICRAFT (#1625): `model.js` is the one
-    definition of the seat's 32 senses (`featurize`) + the tiny MLP forward
+    definition of the seat's 31 senses (`featurize`) + the tiny MLP forward
     pass + `createModelPolicy()` — export, trainer and the live seat all use
     it, so a model can never train on one world and play on another.
-    `policy.js` is GENERATED weights (1517 numbers, quantized to 4 decimals) —
+    v2 (#2299): `monReach` (32nd sense) dropped — it was bit-identical to the
+    swing-intent label (#2277 audit); Jon chose drop-and-retrain (#2285). The
+    intent head now infers distance from monDx/monDy: agreement 0.987 learned,
+    not 1.000 copied; `plaicraftcheck` gates that no column equals the label.
+    `policy.js` is GENERATED weights (1493 numbers, quantized to 4 decimals) —
     never hand-edit; `npm run plaicraft:train` regenerates. M on the hero
     select seats the brain in slot 2 (`plaicraftcheck` gates the pipeline:
     recordings replay exact, seat predicts the expert ≥90% moves, dead-weight
@@ -130,14 +134,17 @@ npm run netdemocheck            # #1641 net-driven attract: seeds mirror the
 ## Attract — the net plays (#1641)
 
 The attract demo is LIVE play, not a script replay (`netdemo.js`):
-plaicraft-bc/v1 holds seat 2 and makes every movement and swing itself, while
+plaicraft-bc/v2 holds seat 2 and makes every movement and swing itself, while
 the reactive expert pilot (`decide`) walks seat 1 — the exact seat config that
 scored 8/8 held-out wins (`data/plaicraft/results.json`). The demo cycles the
 held-out board itself (seeds 100..107) and ends each run with
 `NET CLEARS THE QUEST!` held ~4 s on the frozen victory board. Honesty glue:
 
 - the ticker only shows `BC NET PLAYS SEAT 2 / HELD-OUT 8/8 WINS` while the
-  net really drives; the BC-1 veil (from #1636) marks the seat;
+  net really drives; the BC-1 veil (from #1636) marks the seat. #2299: the
+  win count is read from the shipped weights' `meta.heldout` (written by the
+  train run after its once-scored rollouts), so a retrain can never strand a
+  stale claim;
 - if the policy ever throws, `advance()` fails once and permanently (sticky —
   no flapping): the shell rebuilds the attract onto the OLD route — the
   `plan(2, {topDown:true})` proven-run script — and the caption stops
@@ -158,7 +165,7 @@ held-out board itself (seeds 100..107) and ends each run with
   `viewBounds` call passes none, so the #524 screen-edge rule is untouched —
   the camera pans, the world does not. Wide pairs get pull 0 (a pan could
   push a hero off-frame); play, online, and the planner fallback never pull.
-- The win banner carries `SEED n · t TICKS · plaicraft-bc/v1` under NET
+- The win banner carries `SEED n · t TICKS · plaicraft-bc/v2` under NET
   CLEARS THE QUEST!, the cycling ticker pauses while the banner is up
   (#365), and the demo win plays `DEMO_STING` (sound.js) — brighter and
   faster than the stairs fanfare, so demo ≠ game by ear.

@@ -10,8 +10,14 @@
 // knowledge): health, 8 short range-finder rays at 1/8-cell steps (walls,
 // unopened locked doors and blocks stop the ray, exactly like the CPU's own
 // padPassable), the hero as a bearing+range with both headings, the nearest
-// monster (+ whether it drains, + whether it is inside blade reach) and the
-// nearest food. That is what a player can NOTICE; it is all the net gets.
+// monster (+ whether it drains) and the nearest food. That is what a player
+// can NOTICE; it is all the net gets.
+//
+// v2 (#2299, executing Jon's answer to #2285): the `monReach` feature is
+// GONE. It was `nearest monster <= 1.25` — bit-identical to the exported
+// swing-intent label (stage-1 audit #2277: 1.000 intentAcc was structural,
+// the net was copying an input, not learning). Distance still reaches the
+// net through monDx/monDy magnitude — now it has to USE it.
 //
 // The `a` output is a sustained SWING INTENT; the seat pulses it like a
 // thumb (`a = intent && !prev`), matching how the CPU emits its cut pulse —
@@ -25,7 +31,7 @@ export const FEAT_NAMES = [
     'rayN', 'rayNE', 'rayE', 'raySE', 'rayS', 'raySW', 'rayW', 'rayNW',
     'heroDx', 'heroDy', 'heroSin', 'heroCos',
     'selfSin', 'selfCos',
-    'monDx', 'monDy', 'monDrain', 'monReach',
+    'monDx', 'monDy', 'monDrain',
     'foodDx', 'foodDy', 'foodHere',
     'predDx', 'predDy', 'heroSpeed',
     'selfDx', 'selfDy',
@@ -86,8 +92,7 @@ export function featurize(gs, who, mem) {
         f[15] = clamp8(bm.x - who.x)
         f[16] = clamp8(bm.y - who.y)
         f[17] = MONSTERS[bm.kind] && MONSTERS[bm.kind].drain ? 1 : 0
-        f[18] = bd <= 1.25 * 1.25 ? 1 : 0
-    } else { f[15] = 0; f[16] = 0; f[17] = 0; f[18] = 0 }
+    } else { f[15] = 0; f[16] = 0; f[17] = 0 }
     let fd = 1e9, fi = null
     for (const it of gs.items) {
         if (it.taken || it.t !== 'food') continue
@@ -95,10 +100,10 @@ export function featurize(gs, who, mem) {
         if (d < fd) { fd = d; fi = it }
     }
     if (fi && fd <= 12) {
-        f[19] = clamp8(fi.x - who.x)
-        f[20] = clamp8(fi.y - who.y)
-        f[21] = 1
-    } else { f[19] = 0; f[20] = 0; f[21] = 0 }
+        f[18] = clamp8(fi.x - who.x)
+        f[19] = clamp8(fi.y - who.y)
+        f[20] = 1
+    } else { f[18] = 0; f[19] = 0; f[20] = 0 }
     // motion memory (mem = {hx,hy,vx,vy,wx,wy}): hero velocity EMA (0.4 old +
     // 0.6 new, the CPU's own smoothing) -> a look-ahead target up to 1.8 cells
     // down the hero's line; when the hero stands, the target is one cell BEHIND
@@ -120,21 +125,21 @@ export function featurize(gs, who, mem) {
             tx = h.x - Math.cos(h.a) * 1.0
             ty = h.y - Math.sin(h.a) * 1.0
         }
-        f[22] = clamp8(tx - who.x)
-        f[23] = clamp8(ty - who.y)
-        f[24] = Math.min(1, vs / 0.06)
-        f[25] = Math.max(-1, Math.min(1, (who.x - (mem.wx ?? who.x)) / 0.06))
-        f[26] = Math.max(-1, Math.min(1, (who.y - (mem.wy ?? who.y)) / 0.06))
+        f[21] = clamp8(tx - who.x)
+        f[22] = clamp8(ty - who.y)
+        f[23] = Math.min(1, vs / 0.06)
+        f[24] = Math.max(-1, Math.min(1, (who.x - (mem.wx ?? who.x)) / 0.06))
+        f[25] = Math.max(-1, Math.min(1, (who.y - (mem.wy ?? who.y)) / 0.06))
         mem.wx = who.x; mem.wy = who.y
         // autoregressive: the last emitted pad. Momentum of intent — the
         // teacher's lane is a path, and a path continues.
         const pa = mem.pa
-        f[27] = pa && pa.left ? 1 : 0
-        f[28] = pa && pa.right ? 1 : 0
-        f[29] = pa && pa.up ? 1 : 0
-        f[30] = pa && pa.down ? 1 : 0
-        f[31] = pa && pa.a ? 1 : 0
-    } else { f.fill(0, 22, 32) }
+        f[26] = pa && pa.left ? 1 : 0
+        f[27] = pa && pa.right ? 1 : 0
+        f[28] = pa && pa.up ? 1 : 0
+        f[29] = pa && pa.down ? 1 : 0
+        f[30] = pa && pa.a ? 1 : 0
+    } else { f.fill(0, 21, 31) }
     return f
 }
 

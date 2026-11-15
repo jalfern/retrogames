@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { step, stateHash } from '../src/games/Gauntlet/sim.js'
 import { partnerPad, decide } from '../src/games/Gauntlet/planner.js'
-import { createModelPolicy, featurize, forward, N_FEAT, seatSources } from '../src/games/Gauntlet/model.js'
+import { createModelPolicy, featurize, forward, N_FEAT, FEAT_NAMES, seatSources } from '../src/games/Gauntlet/model.js'
 import { POLICY } from '../src/games/Gauntlet/policy.js'
 import { collectRun, makeHeroPadCodec, heroFromPad, p2FromPad, newGame, makeReplayDriver } from './plaicraft-export.mjs'
 import { createRecorder, verifyRecording, decodePad } from '../src/utils/recording.js'
@@ -20,8 +20,10 @@ import { makeSlot, setSlotKind, padFor, pushPad } from '../src/utils/slotSources
 const ok = []
 const check = (name, cond, info = '') => { ok.push(`${cond ? 'PASS' : 'FAIL'} ${name}${info ? ' — ' + info : ''}`); return cond }
 
-// 1 — shipped policy is real, shaped, finite
-check('policy shipped & shaped', POLICY.arch && POLICY.arch[0] === N_FEAT && POLICY.w.length === 32 * 24 + 24 * 24 + 24 * 5 && POLICY.b.length === 24 + 24 + 5
+// 1 — shipped policy is real, shaped, finite (#2299: 31 senses — monReach is
+// gone; if arch[0] ever equals N_FEAT+1 again, someone re-added the leak)
+check('policy shipped & shaped', POLICY.arch && POLICY.arch[0] === N_FEAT && N_FEAT === 31 && !FEAT_NAMES.includes('monReach')
+    && POLICY.w.length === 31 * 24 + 24 * 24 + 24 * 5 && POLICY.b.length === 24 + 24 + 5
     && POLICY.w.every(Number.isFinite) && POLICY.b.every(Number.isFinite) && !POLICY.meta?.zero,
 `${POLICY.meta?.name || '?'} arch=${(POLICY.arch || []).join('-')}`)
 
@@ -94,16 +96,16 @@ function agreement(seed, cap, policy) {
     const row0 = JSON.parse(sample[0])
     const results = JSON.parse(readFileSync(resolve('data/plaicraft/results.json'), 'utf8'))
     const h = results.rollout.heldout
-    check('dataset sample rows carry 32 features + label', row0.f.length === 32 && row0.p && 'a' in row0, `${sample.length} sample rows`)
+    check('dataset sample rows carry 31 features + label', row0.f.length === 31 && row0.p && 'a' in row0, `${sample.length} sample rows`)
     check('held-out results recorded once', h.wins.of > 0 && Number.isFinite(h.avgLevels.model),
-        `held-out model ${h.wins.model}/${h.wins.of} wins, avg lvl ${h.avgLevels.model} (cpu ${h.avgLevels.cpu})`)
+        `held-out model ${h.wins.model}/${h.wins.of} wins, avg lvl ${h.avgLevels.model} (cpu ${h.avgLevels.cpu}), intent tf ${(results.teacherForcing?.practice?.intentAcc ?? NaN)}`)
 }
 
 // 7 — #1636 seat-stamp: a seat the trained net drove carries its modelId in
 // the recording header; externally-driven contract seats stay anonymous.
 {
     const S = seatSources({ seat2Kind: 'model', brainSeated: true, brainName: POLICY.meta.name })
-    check('seat-stamp: brain seat carries modelId', S[1].kind === 'model' && S[1].modelId === 'plaicraft-bc/v1', JSON.stringify(S[1]))
+    check('seat-stamp: brain seat carries modelId', S[1].kind === 'model' && S[1].modelId === 'plaicraft-bc/v2', JSON.stringify(S[1]))
     const E = seatSources({ seat2Kind: 'model', brainSeated: false })
     check('seat-stamp: external contract seat stays anonymous', E[1].kind === 'model' && !('modelId' in E[1]), JSON.stringify(E[1]))
     const O = seatSources({ seat2Kind: 'off' })
@@ -150,6 +152,30 @@ function agreement(seed, cap, policy) {
     const dead = { arch: POLICY.arch, w: POLICY.w.map(() => 0), b: POLICY.b.map(() => 0) }
     const a = agreement(3, 1200, dead)
     check('MUTANT: dead weights fall below the gate', a < 0.9, `dead-brain agreement ${(a * 100).toFixed(1)}%`)
+}
+
+// 10 — #2299 NO-LABEL-LEAK gate. v1 shipped monReach bit-identical to the
+// swing-intent label (audit #2277): intentAcc 1.000 was the net copying an
+// input, not learning. Freshly collected rows must contain NO input column
+// equal to the label on every row — structurally, the copy cannot exist.
+// The mutant injects exactly that column and must be caught: the proof this
+// gate can fail.
+{
+    const leakCols = (rows) => {
+        const cols = rows[0].f.length
+        const out = []
+        for (let c = 0; c < cols; c++) if (rows.every((r) => (r.f[c] ? 1 : 0) === r.a)) out.push(c)
+        return out
+    }
+    const rows = [...collectRun(3, { maxTicks: 2500 }).rows, ...collectRun(7, { maxTicks: 2500 }).rows]
+    const cols = rows[0].f.length
+    const clean = leakCols(rows)
+    check(`no feature equals the intent label (${rows.length} live rows)`, clean.length === 0 && cols === N_FEAT,
+        clean.length ? `label copies: ${clean.map((c) => FEAT_NAMES[c] || `col${c}`).join(',')}` : `${cols} senses, none equals a`)
+    const leaky = rows.map((r) => ({ f: [...r.f, r.a], a: r.a }))
+    const caught = leakCols(leaky)
+    check('MUTANT: re-adding the reach copy trips the leak gate', caught.includes(cols),
+        caught.length ? `injected copy caught at col ${caught.join(',')}` : 'injected leak went UNDETECTED')
 }
 
 console.log(ok.join('\n'))

@@ -90,7 +90,7 @@ const GauntletGame = () => {
         const ctx = canvas.getContext('2d')
         ctx.imageSmoothingEnabled = false
 
-        // #1641: the attract demo the TRAINED NET plays — plaicraft-bc/v1
+        // #1641: the attract demo the TRAINED NET plays — plaicraft-bc/v2
         // drives seat 2 live beside the reactive expert pilot (netdemo.js).
         const netDemo = createNetDemo()
         let demoWin = 0 // ticks left showing NET CLEARS THE QUEST! on a frozen board
