@@ -355,14 +355,14 @@ section('CONTACT (the league is solid — receipts exact, #2391)')
     }
     // jolt: a faster rival catching the player's back swerves at t8 (v x ~0.55)
     {
-        const { g, q } = rig(1, -40, 5, 0)
+        const { g, q } = rig(1.6, -40, 5, 0)
         let hit = null
         for (let t = 1; t <= 30 && !hit; t++) {
             step(g, {})
             for (const e of g.events) if (e.type === 'jolt') hit = { t, name: e.name, rv: +q.v.toFixed(2) }
             g.events.length = 0
         }
-        ok(hit && hit.t === 8 && hit.rv < 3, `the catching rival did not swerve (${JSON.stringify(hit)}) — run-over theatre`)
+        ok(hit && hit.t === 9 && hit.rv < 3, `the catching rival did not swerve (${JSON.stringify(hit)}) — run-over theatre`)
     }
     // flyby pays ONCE per airborne pass (hover across the zone: one event)
     {

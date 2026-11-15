@@ -16,6 +16,9 @@
 //      and loops back through the attract — which is the autopilot's proven lap.
 //   6. THE CRASH LEAGUE — rivals fly real parabolas, wipe out at the big-jump
 //      lip and remount on screen, announced (#2384).
+//   7. CONTACT — a downed rival blocks the lane (real gas into it = WRECK!),
+//      a real SPACE hop pays a FLYBY, the hazard chevron is painted, and the
+//      attract demo replays its pinned contact receipt tick-for-tick (#2391).
 // The terrain, ledger, slack rule and nine mutants live in excitecheck.mjs.
 import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
 
@@ -178,7 +181,80 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     r.check('the wreck is announced on screen ("<name> DOWN!")', toastHit)
 }
 
-// ---- the water hole bites IN THE TAB, and real SPACE + throttle drive you out ----
+// ---- CONTACT (#2391): the league is solid IN THE TAB ----
+{
+    // park a rider on the start-stride with IVAN downed 70px ahead (rig via
+    // the DEV hook — the DOWN and the freeze are the sim's own). Real gas
+    // toward the wreck must end in a wipeout with the tab shouting about it:
+    // the ride-through is gone.
+    await page.evaluate(() => window.__bikeTest.setup({ track: 0, x: 600, v: 0, rivals: { IVAN: { d: 670, v: 0, down: 400 } } }))
+    let wrecked = null, toastWreck = false
+    await page.keyboard.down('ArrowUp')
+    for (let i = 0; i < 120 && !wrecked; i++) {
+        const s = await probe()
+        const w = (s.contact || []).find((e) => e.type === 'crash' && e.why === 'wreck')
+        if (w) wrecked = { ...w, v: s.v }
+        if (!toastWreck) {
+            const txt = await page.evaluate(() => document.body.innerText)
+            if (/WRECK!/.test(txt)) toastWreck = true
+        }
+        await wait(60)
+    }
+    await page.keyboard.up('ArrowUp')
+    if (wrecked) {
+        for (let i = 0; i < 25 && !toastWreck; i++) {
+            const txt = await page.evaluate(() => document.body.innerText)
+            if (/WRECK!/.test(txt)) toastWreck = true
+            await wait(40)
+        }
+    }
+    r.check('a downed rival BLOCKS the lane in the tab — charging it wipes you out (why:wreck)', !!wrecked, JSON.stringify(wrecked))
+    r.check('the wreck wipeout is announced on screen ("WRECK!")', toastWreck)
+    // same rig, hop it instead: real SPACE over the same frozen rider must
+    // pay a flyby, not eat dirt. Rig on the flat straight (x430, IVAN at
+    // 500): the press lands 2-6 ticks behind setup, every one of them a
+    // ≥14px apex over the body — no crest-skim lottery.
+    await page.evaluate(() => window.__bikeTest.setup({ track: 0, x: 430, v: 6, crash: 0, rivals: { IVAN: { d: 500, v: 0, down: 400 } } }))
+    // hold, not press: a press's down+up can land inside one rAF frame and
+    // the fixed-timestep sim never sees it (the water-pump loop survives the
+    // same race only by spamming).
+    await page.keyboard.down('Space')
+    let flew = null
+    for (let i = 0; i < 80 && !flew; i++) {
+        const s = await probe()
+        flew = (s.contact || []).find((e) => e.type === 'flyby') || null
+        if (!flew && (s.contact || []).some((e) => e.type === 'crash')) break
+        if (!flew) await wait(40)
+    }
+    await page.keyboard.up('Space')
+    r.check('hopping the wreck with a real SPACE keys a scored FLYBY instead', !!flew, flew ? `${flew.name}@t${flew.t}` : 'no flyby / crashed')
+}
+
+// ---- the solid-wreck hazard cue is PAINTED (amber chevron over a downed rider) ----
+{
+    await page.evaluate(() => window.__bikeTest.setup({ track: 0, x: 1200, v: 0 }))
+    let sawDownHere = false, chevron = 0
+    for (let i = 0; i < 220 && !(sawDownHere && chevron > 0); i++) {
+        const s = await probe()
+        const d0 = (s.rivals || []).find((q) => q.down > 0)
+        if (d0) {
+            sawDownHere = true
+            const sx = Math.round(((d0.d % 6400) + 6400) % 6400 - Math.max(0, s.x - 84))
+            chevron = await page.evaluate((col) => {
+                const g = document.querySelector('canvas[data-bike-stage]').getContext('2d')
+                const d = g.getImageData(Math.max(0, col - 14), 0, 28, 240).data
+                let n = 0
+                for (let y = 0; y < 240; y++) for (let x = 0; x < 28; x++) {
+                    const i = (y * 28 + x) * 4
+                    if (d[i] >= 235 && d[i + 1] >= 155 && d[i + 1] <= 205 && d[i + 2] <= 95) n++
+                }
+                return n
+            }, sx)
+        }
+        if (!sawDownHere || chevron === 0) await wait(60)
+    }
+    r.check('a downed rider flies an amber hazard chevron (the solidity cue is pixels, not theory)', chevron > 0, `${chevron} amber px`)
+}
 {
     const WATER_END = 3580
     // drop a slow bike just inside the water band -> it must stall on real physics
@@ -248,6 +324,19 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     await page.keyboard.press('Shift+Slash')
     await wait(250)
     r.check('a real ? closes it again', (await page.locator('text=RESUME GAME').count()) === 0)
+}
+
+// ---- the attract demo replays its contact receipts byte-exact IN THE TAB ----
+{
+    await page.goto(URL, { waitUntil: 'load' })
+    await page.waitForFunction(() => !!window.__bikeTest, null, { timeout: 30000 })
+    let fb = null
+    for (let i = 0; i < 260 && !fb; i++) {
+        const s = await probe()
+        fb = (s.contact || []).find((e) => e.type === 'flyby' && e.name === 'SONJA' && e.t === 553) || null
+        if (!fb) await wait(60)
+    }
+    r.check('attract replays the pinned contact receipt (SONJA flyby t553) tick-for-tick in the browser', !!fb, fb ? `t=${fb.t}` : 'not seen within 15s')
 }
 
 r.check('zero page errors across the whole ride', errors.length === 0, errors.slice(0, 4).join(' | '))

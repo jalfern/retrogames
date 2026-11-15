@@ -252,12 +252,9 @@ function contact(g) {
         const ag = Math.abs(gap)
         const clear = g.alt - r.alt
         if (ag >= CFG.contactBody) {
-            r.gapPrev = gap
             if (!g.air) r.flown = false
             continue
         }
-        const prev = r.gapPrev === undefined ? gap : r.gapPrev
-        r.gapPrev = gap
         if (clear >= CFG.contactClear) {
             if (g.air && !r.flown) {
                 r.flown = true
@@ -295,7 +292,11 @@ function contact(g) {
             // a gentle close stays a clean pass: the sim has no lateral axis,
             // so politeness at pace-difference belongs to the open gap list,
             // not to silent speed theft (ranks must not leak invisibly).
-        } else if (relV < -CFG.contactBump) {
+        } else if (relV < -CFG.contactBump && g.v > 1.0) {
+            // jolt = a wheel-to-wheel incident at racing speed. A nearly
+            // stopped bike is a marshalled corner, not a race contact (the
+            // spectator-park pattern in exciteplay and the forgiving down/
+            // stall states ride on this).
             r.v *= 0.55
             g.v = Math.min(CFG.boostV + 0.1, g.v + 0.35)
             g.total += 3

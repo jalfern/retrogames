@@ -33,10 +33,20 @@ faster heat.
   `excitecheck`. `groundY/slopeAt/featureAt` are the only readers. Node-safe.
 - `sim.js` — pure `step(state, input)`, zero `Math.random`. Heightmap
   ground, ballistic air with pitch/lean, heat, mud pump, water stall,
-  boost, crash/recover, laps, clock, rivals, ledger. Node-safe.
+  boost, crash/recover, laps, clock, rivals, ledger, and the CONTACT law
+  (#2391): a downed rival is solid (wipeout above `wreckV`, a hold below —
+  never a ride-through), a close onto a riding back ≥ `contactBump` bumps
+  with two-way momentum transfer (`contactSwap`; over `contactCrash` it is
+  over the bars), a rival catching your back swerves (jolt), crossing a
+  body with ≥ `contactClear` of air pays a once-per-pass `flybyPts`. One
+  drama per pair per `contactCool`; `contactK` is the harness mutant knob.
+  Node-safe.
 - `planner.js` — the autopilot. Decisions every few ticks; each candidate
   (gas/brake × jump now/later × lean) is **rolled through the real sim**
-  before it is allowed to drive. The attract demo is its output.
+  before it is allowed to drive. The attract demo is its output. Since
+  #2391 a DOWNED rival ahead stretches the horizon past the remount and
+  adds a coast candidate plus a delayed-hop sweep — the planner discovers
+  the flyby over the wreck instead of braking to a stop behind it.
 - `index.jsx` — the shell. Renderer draws the heightmap column-by-column,
   the HUD (speed dial with needle, heat gauge, position, course bar) and
   the bikes rotated by pitch. DEV hook `__bikeTest` for `exciteplay`.
@@ -51,11 +61,16 @@ faster heat.
 
 ## Honest gaps
 
-- Rivals are riding bodies since #2384 — they fly real parabolas, wipe out at
-  the big-jump lip and remount, with skill tiers pinned by `excitecheck`
-  CRASH LEAGUE receipts. But their throttle is still a pace line: they choose
-  no lines, brake into nothing, and there is no bike-vs-bike contact — you can
-  ride straight through a wreck. A full physics league stays open.
+- Bike-vs-bike contact landed on the player side in #2391 — wrecks are
+  SOLID (wipeout above `wreckV`, a hold below it, never a ride-through),
+  closing onto a riding back bumps with two-way momentum transfer (over
+  `contactCrash` it is over the bars), a rival catching your back swerves,
+  and crossing a body airborne pays a once-per-pass flyby — receipts pinned
+  by `excitecheck` CONTACT. What stays open from the full-physics-league
+  wish: rival-vs-rival contact (the pack still ghosts through each other,
+  chooses no lines, and never chain-wrecks) and same-line passes at matched
+  speed (relV ≤ 0.3 glides ghost — the sim has no lateral axis; a lane
+  axis would close both halves).
 - The NES splash screen (EDIT TRACK / 6 tracks) is not here: two carved
   tracks, 2 laps each, which is where the fidelity muscle (controls,
   feel, terrain) actually lives.

@@ -82,6 +82,7 @@ const ExcitebikeGame = () => {
         let raf = 0, last = 0, acc = 0
         let demoAt = 0, demoReady = false, toast = 0, toastMsg = '', shake = 0
         let noteAt = 0, heatBeep = 0
+        const lastContact = []
         const keys = { g: false, b: false, j: false }
         let bikeMem = { pump: 0 } // #1637 decide()'s per-seat memory (pump taps)
         const parts = []
@@ -102,7 +103,25 @@ const ExcitebikeGame = () => {
                 else if (e.type === 'cooled') { say('ENGINE COOLED'); audioController.playTone(520, 0.1, 'triangle', 0.05) }
                 else if (e.type === 'stall') { say('STALLED — PUMP!'); audioController.playNoise(0.2, 0.07) }
                 else if (e.type === 'unstall') { say('BACK ON!'); audioController.playSweep(240, 620, 0.2, 'square', 0.06) }
-                else if (e.type === 'crash') { say('CRASH!'); audioController.playNoise(0.3, 0.09); burst(scrX, g2s(gs.alt) - 6, 16, '#d07c30'); shake = 9 }
+                else if (e.type === 'crash') {
+                    say(e.why === 'wreck' ? 'WRECK!' : e.why === 'contact' ? 'BIKE VS BIKE!' : 'CRASH!')
+                    audioController.playNoise(0.3, 0.09); burst(scrX, g2s(gs.alt) - 6, 16, '#d07c30'); shake = 9
+                }
+                else if (e.type === 'flyby') {
+                    say('FLYBY +' + e.pts)
+                    audioController.playSweep(520, 980, 0.22, 'square', 0.06)
+                    burst(scrX, g2s(gs.alt) - 14, 6, '#f8f8f8')
+                }
+                else if (e.type === 'bump') {
+                    say('BUMP!')
+                    audioController.playNoise(0.18, 0.08); audioController.playTone(140, 0.12, 'sawtooth', 0.06)
+                    burst(scrX + 12, g2s(gs.alt) - 8, 10, '#c98a3a'); shake = 6
+                }
+                else if (e.type === 'jolt') {
+                    say('JOLT!')
+                    audioController.playTone(110, 0.14, 'sawtooth', 0.06)
+                    burst(scrX - 12, g2s(gs.alt) - 8, 8, '#c98a3a'); shake = 5
+                }
                 else if (e.type === 'rcrash') {
                     // a rival wiped out (#2384): dd is the lap-aware gap from
                     // the player; on screen the rival sits at 84+dd (the draw
@@ -136,7 +155,13 @@ const ExcitebikeGame = () => {
         const doSim = (inp) => {
             step(gs, inp)
             const scrX = 84
-            handleEvents(gs.events.splice(0), scrX)
+            const evts = gs.events.splice(0)
+            for (const e of evts) {
+                if (['flyby', 'bump', 'jolt'].includes(e.type) || (e.type === 'crash' && (e.why === 'wreck' || e.why === 'contact'))) {
+                    lastContact.push({ t: gs.tick, type: e.type, name: e.name || '', why: e.why || '' })
+                }
+            }
+            handleEvents(evts, scrX)
             if (gs.end) finish(gs.end === 'win')
         }
         const tickDemo = () => {
@@ -274,8 +299,17 @@ const ExcitebikeGame = () => {
                     const col = RIDE.rivals[gs.rivals.indexOf(r) % 5]
                     if (r.down > 0) {
                         // wiped out (#2384): nose in the dirt, rider flickers
-                        // while walking the bike back
+                        // while walking the bike back. #2391: the wreck is
+                        // SOLID — a bobbing amber chevron says "do not ride
+                        // through this", brake or hop.
                         if (gs.tick % 20 < 12) drawBike(ddx, g2s(groundY(tr.ground, rx)) - 4, 1.15, col, r.name)
+                        const wy = g2s(groundY(tr.ground, rx)) - 34 + Math.sin(gs.tick * 0.15) * 2
+                        if (gs.tick % 24 < 16) {
+                            ctx.fillStyle = '#ffb347'
+                            ctx.beginPath(); ctx.moveTo(ddx, wy + 7); ctx.lineTo(ddx - 5, wy); ctx.lineTo(ddx + 5, wy); ctx.closePath(); ctx.fill()
+                            ctx.fillStyle = '#101010'; ctx.fillRect(ddx - 1, wy + 2, 2, 3)
+                        }
+                        if (gs.tick % 6 === 0) { parts.push({ x: ddx - 8, y: g2s(groundY(tr.ground, rx)) - 4, vx: -0.4, vy: -0.7, t: 0, col: '#8a5a1a' }) }
                     } else {
                         const py = g2s(r.air ? r.alt : groundY(tr.ground, rx)) - 6
                         drawBike(ddx, py, r.pitch, col, r.name)
@@ -342,6 +376,7 @@ const ExcitebikeGame = () => {
             bikeMem = { pump: 0 }
             noteAt = gs.tick
             parts.length = 0
+            lastContact.length = 0
             keys.g = keys.b = keys.j = false
             setMode('play')
             audioController.playSweep(220, 660, 0.25, 'sawtooth', 0.07)
@@ -406,7 +441,8 @@ const ExcitebikeGame = () => {
                     air: gs.air, airT: gs.airT, crash: gs.crash, stall: gs.stall, pumpT: gs.pumpT,
                     heat: gs.heat, hot: gs.hot, gear: gs.gear, rank: gs.rank, score: gs.score,
                     lap: gs.lap, laps: gs.laps, clock: gs.clock, count: gs.count, inBand: gs.inBand,
-                    rivals: gs.rivals.map((r) => ({ name: r.name, d: Math.round(r.d), air: r.air, down: r.down, crashes: r.crashes })),
+                    rivals: gs.rivals.map((r) => ({ name: r.name, d: Math.round(r.d), air: r.air, down: r.down, crashes: r.crashes, tk: r.tk })),
+                    contact: lastContact.slice(-14),
                     screenX: Math.max(0, gs.x - 84) ? 84 : gs.x, screenY: g2s(gs.alt) - 6,
                 }),
                 start: () => startPlay(0),
@@ -417,8 +453,10 @@ const ExcitebikeGame = () => {
                 setup: (opts = {}) => {
                     if (screenRef.current !== 'play') return false
                     if (opts.track !== undefined) { gs = makeGame(opts.track, { gear: gs.gear, count: 0 }) }
+                    lastContact.length = 0
                     Object.assign(gs, {
                         ...(opts.x !== undefined && { x: opts.x }),
+                        ...(opts.x !== undefined && { total: opts.x }),
                         ...(opts.alt !== undefined && { alt: opts.alt }),
                         ...(opts.v !== undefined && { v: opts.v }),
                         ...(opts.air !== undefined && { air: opts.air, onGround: !opts.air }),
@@ -430,6 +468,15 @@ const ExcitebikeGame = () => {
                         ...(opts.clock !== undefined && { clock: opts.clock }),
                     })
                     if (opts.alt === undefined) gs.alt = groundY(track(gs.track).ground, gs.x)
+                    // #2391 test rigs: park rivals (downed or rolling) so the
+                    // contact law can be driven in-tab with real keys.
+                    if (opts.rivals) for (const [nm, pat] of Object.entries(opts.rivals)) {
+                        const q = gs.rivals.find((x) => x.name === nm)
+                        if (q) {
+                            Object.assign(q, pat)
+                            if (pat.alt === undefined && pat.d !== undefined) q.alt = groundY(track(gs.track).ground, q.d % LAP)
+                        }
+                    }
                     return true
                 },
             }
@@ -457,6 +504,8 @@ const ExcitebikeGame = () => {
                         },
                     },
                     { label: '+15s CLOCK', run: () => { gs.clock += 15 * 60; return `clock ${(gs.clock / 60).toFixed(0)}s` } },
+                    { label: 'WRECK DRILL', run: () => { const q = gs.rivals.find((r) => r.name === 'IVAN'); q.d = gs.total + 70; q.v = 0; q.down = 50; q.alt = groundY(track(gs.track).ground, q.d % LAP); return 'IVAN down 70px ahead — the lane is blocked' } },
+                    { label: 'PACK AHEAD', run: () => { gs.rivals.forEach((q, ix) => { q.d = gs.total + 60 + ix * 26; q.v = 4.4; q.alt = groundY(track(gs.track).ground, q.d % LAP) }); return 'the whole pack is in front — pass on the air' } },
                     { label: 'COOL ENGINE', run: () => { gs.heat = 0; gs.hot = false; return 'cooled' } },
                     { label: 'WARP TO BOOST', run: () => { gs.x = 3950; gs.alt = groundY(track(gs.track).ground, 3950); gs.v = 6; return 'boost straight' } },
                     { label: 'WARP TO MUD', run: () => { const m = track(gs.track).bands.find((b) => b[0] === MUD); gs.x = m[1]; gs.alt = groundY(track(gs.track).ground, m[1]); return 'mud pit' } },
