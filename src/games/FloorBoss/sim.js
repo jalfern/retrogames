@@ -22,6 +22,26 @@ export const SHIFT = 9000 // 150 s @ 60 fps
 export const QUOTA = 1000
 export const STRIKES = 3
 
+// Shift ladder (#2346): the night shift becomes a career. Clearing a shift
+// advances to the next one instead of ending the run, and each rung is an
+// honest level-design step, not dice: quota climbs +200, the order wire
+// tightens, deadlines shorten, drive-wear accrues sooner. Pure in n (no rng),
+// so Node and Chrome book the same ladder — and shift 1 lands exactly on the
+// pre-ladder constants (orderBase 540 / orderRush 320 / dueMult 1 / wearCut 0
+// / quota QUOTA), so single-shift play is bit-for-bit the old floor (#1917
+// zero-footprint law).
+export const LADDER_QUOTA_STEP = 200
+export function shiftParams(n) {
+    const k = Math.max(1, n | 0)
+    return {
+        quota: QUOTA + LADDER_QUOTA_STEP * (k - 1),
+        orderBase: Math.max(380, 540 - 20 * (k - 1)),
+        orderRush: Math.max(220, 320 - 20 * (k - 1)),
+        dueMult: Math.max(0.72, 1 - 0.04 * (k - 1)),
+        wearCut: Math.min(70, 15 * (k - 1)),
+    }
+}
+
 export const CELL = {
     FLOOR: 0, WALL: 1, CONVEYOR: 2, ARM: 3, OUT: 4, INTAKE: 5,
 }
@@ -322,7 +342,7 @@ function newRobot(gs, x, y) {
         id: gs.nextBotId++, x, y, carry: null,
         task: { kind: 'idle' }, path: [], moveT: 0, wait: 0, jam: false,
         pickT: 0, broken: false, repair: 0, wear: 0,
-        wearMax: 260 + Math.floor(gs.rng() * 180), dir: 0, hist: [], stall: 0,
+        wearMax: 260 + Math.floor(gs.rng() * 180) - gs.params.wearCut, dir: 0, hist: [], stall: 0,
     }
 }
 
@@ -416,6 +436,7 @@ export function makeGame(seed = 1337) {
         seed: seed >>> 0, rng, tick: 0,
         score: 100, // opening float — SimCity lets you lay pipe before the tax base exists
         strikes: 0, auto: true,
+        shift: 1, params: shiftParams(1), shiftBase: 0, cleared: 0, // ladder (#2346): quota is measured against shiftBase, cleared counts the nights banked
         tool: null, sel: null, cursor: { x: 12, y: 7 }, cursorT: 0,
         prevA: false, prevB: false,
         robots: [], racks: [], staging: [], orders: [], conv: [],
@@ -445,7 +466,7 @@ function spawnOrder(gs) {
     const n = gs.tick > 3000 || gs.rng() < 0.4 ? (gs.rng() < 0.22 ? 3 : 2) : 1
     const items = []
     for (let i = 0; i < n; i++) items.push(KINDS[Math.floor(gs.rng() * KINDS.length)])
-    const due = gs.tick + Math.round((items.length === 1 ? 1800 : 2400) * (rush ? 0.85 : 1))
+    const due = gs.tick + Math.round((items.length === 1 ? 1800 : 2400) * (rush ? 0.85 : 1) * gs.params.dueMult)
     gs.orders.push({ id: gs.nextOrderId++, items, due, prio: false, shipped: false, expired: false })
     gs.ev.push({ type: 'order' })
 }
@@ -736,7 +757,7 @@ export function step(gs, pads = [{}]) {
     // orders
     gs.orderT--
     if (gs.orderT <= 0) {
-        gs.orderT = (rush ? 320 : 540) + Math.floor(gs.rng() * 200)
+        gs.orderT = (rush ? gs.params.orderRush : gs.params.orderBase) + Math.floor(gs.rng() * 200)
         spawnOrder(gs)
     }
     for (const o of gs.orders) {
@@ -809,18 +830,71 @@ export function step(gs, pads = [{}]) {
         if (tr.x >= TRUCK_EXIT) { tr.x = TRUCK_HOME; tr.mode = 'out'; tr.carry = 0; tr.tiers = [0, 0, 0]; tr.grid = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]; tr.far = -1 } // empty at the depot, ready for the next call (#1927/#1931)
     }
 
-    // quota rings whenever the score crosses it (the till now rings at the
-    // trailer, not the pack line — #1921; the DebugKit budget cheat rings it too)
-    if (!gs.quotaHit && gs.score >= QUOTA) { gs.quotaHit = true; gs.ev.push({ type: 'quota' }) }
+    // quota rings whenever the shift's EARNINGS cross it (the till now rings at
+    // the trailer, not the pack line — #1921; the DebugKit budget cheat rings it
+    // too). #2346: earnings, not the raw score — on shift 1 (shiftBase 0) this
+    // is bit-for-bit the old absolute law.
+    if (!gs.quotaHit && gs.score - gs.shiftBase >= gs.params.quota) { gs.quotaHit = true; gs.ev.push({ type: 'quota' }) }
 
-    // shift end
+    // shift end — a cleared shift banks the night (#2346) and the run advances
+    // via nextShift; a short or fired night ends it.
     if (!gs.end && gs.tick >= SHIFT) {
-        gs.end = gs.score >= QUOTA ? 'win' : 'short'
-        gs.endReason = gs.score >= QUOTA
-            ? 'quota cleared — the floor hums'
-            : `shift over, ${QUOTA - gs.score} units short of quota`
+        const earned = gs.score - gs.shiftBase
+        if (earned >= gs.params.quota) {
+            gs.end = 'win'
+            gs.cleared++
+            gs.endReason = gs.shift === 1
+                ? 'quota cleared — the floor hums'
+                : `shift ${gs.shift} cleared — the floor hums on`
+        } else {
+            gs.end = 'short'
+            gs.endReason = gs.shift === 1
+                ? `shift over, ${QUOTA - gs.score} units short of quota`
+                : `shift ${gs.shift} over, ${gs.params.quota - earned} units short of quota`
+        }
     }
     return gs
+}
+
+// Advance the career to the next night (#2346). The floor persists — hires stay
+// hired, racks keep their stock, a bot that ended the night holding freight
+// still carries it (morning dispatch takes it home) — and comes out of the
+// maintenance bay wear-reset. The career score carries; the quota is now
+// measured against what THIS shift earns (shiftBase). Orders, pad, belt and
+// truck wipe clean for a fresh night, the strike sheet is new, and escrow
+// follows the parcels out (#1921 law: money follows freight — the pad left with
+// the night). The ladder params re-book from shiftParams(n), deterministic.
+export function nextShift(gs) {
+    if (gs.end !== 'win') return false
+    gs.shift += 1
+    gs.params = shiftParams(gs.shift)
+    gs.shiftBase = gs.score
+    gs.end = null
+    gs.endReason = ''
+    gs.quotaHit = false
+    gs.tick = 0
+    gs.strikes = 0
+    gs.spawnT = 60
+    gs.orderT = 240
+    gs.convT = 0
+    gs.packT = 30
+    gs.orders = []
+    gs.staging = []
+    gs.conv = []
+    gs.pad = []
+    gs.escrow = 0
+    gs.arm = { held: null, pose: 0, swing: 0, swingT0: 0, target: null, heldT: 0 }
+    gs.truck = { x: TRUCK_HOME, mode: 'out', dwell: 0, loadT: 0, carry: 0, away: 0, far: -1, tiers: [0, 0, 0], grid: [[0, 0, 0], [0, 0, 0], [0, 0, 0]] }
+    gs.fx.length = 0
+    for (const b of gs.robots) {
+        b.broken = false; b.repair = 0; b.wear = 0
+        b.jam = false; b.wait = 0; b.pickT = 0; b.stall = 0; b.hist = []
+        b.task = b.carry ? { kind: 'toOut' } : { kind: 'idle' }
+        b.path = []
+    }
+    gs.ev.length = 0
+    gs.ev.push({ type: 'shiftstart', shift: gs.shift, quota: gs.params.quota })
+    return true
 }
 
 // --- state / hash ----------------------------------------------------------
@@ -833,6 +907,7 @@ export function stateHash(gs) {
     s += `E[${gs.escrow}:${gs.paid}:${gs.freight}:${gs.fees}]|` // freight ledger, additive (#1373 law, #1921)
     for (const o of gs.orders) s += `${o.id}{${o.items.join(',')}}${o.due - gs.tick}${o.prio ? '!' : ''};`
     for (const c of gs.conv) s += `${c.kind}@${c.x};`
+    s += `|SH${gs.shift}:${gs.shiftBase}:${gs.cleared}:${gs.params.quota}:${gs.params.orderBase}:${gs.params.dueMult}:${gs.params.wearCut}` // ladder (#2346), additive (#1373 law)
     return hashString(s)
 }
 
@@ -840,7 +915,10 @@ export function state(gs) {
     return {
         tick: gs.tick,
         score: gs.score,
-        quota: QUOTA,
+        quota: gs.params.quota, // ladder (#2346): shift 1 reads the classic 1000
+        shift: gs.shift,
+        cleared: gs.cleared,
+        earned: gs.score - gs.shiftBase,
         strikes: gs.strikes,
         done: !!gs.end,
         players: 1,
