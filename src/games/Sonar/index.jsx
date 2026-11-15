@@ -23,7 +23,7 @@ import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import {
     CFG, W, H, ROCK, DIRS, idx, cx, cy,
-    genCave, makeGame, planRun, planStep, playerMove, ping, step, stateHash, known, eelContacts, eelCell,
+    genCave, makeGame, planRun, planStep, playerMove, ping, step, stateHash, known, eelContacts, eelCell, contactHeat,
 } from './sim.js'
 
 const TS = 16
@@ -100,12 +100,24 @@ const SonarGame = () => {
         loadDepth(1, true)
 
         const handleEvents = (evts) => {
+            // #2365: sonar RETURNS. A contact rings back the instant the
+            // wavefront touches — nearer returns read lower and harder (two
+            // stacked ticks), far ones a thin high blip. The ring is the
+            // wavefront delay recorded in the sim; nothing here sees an eel.
+            let nearestRing = -1
             for (const e of evts) {
                 if (e.type === 'ping') audioController.playSweep(1050, 240, 0.5, 'sine', 0.07)
                 else if (e.type === 'pearl') { audioController.playSweep(880, 1760, 0.14, 'square', 0.07); audioController.playTone(2093, 0.08, 'square', 0.03) }
                 else if (e.type === 'hit') { audioController.playNoise(0.18, 0.1); audioController.playSweep(300, 90, 0.3, 'sawtooth', 0.08) }
                 else if (e.type === 'die') audioController.playDeath()
                 else if (e.type === 'descend') { audioController.playSweep(220, 880, 0.5, 'triangle', 0.08); toast = 40 }
+                else if (e.type === 'contact') nearestRing = nearestRing < 0 ? e.ring : Math.min(nearestRing, e.ring)
+            }
+            if (nearestRing >= 0) {
+                const h = contactHeat(nearestRing)
+                const f = Math.round(170 + (1 - h) * 730)          // near ≈170 Hz → far ≈900 Hz
+                audioController.playTone(f, 0.07, 'sine', 0.03 + h * 0.05)
+                if (h > 0.55) audioController.playTone(Math.round(f * 0.72), 0.09, 'sine', 0.02 + h * 0.045)
             }
         }
 
@@ -232,16 +244,31 @@ const SonarGame = () => {
                 ctx.fillRect(px + 6, py + 5, 2, 2)
             }
             // eels: contact blips at the cell where a wavefront TOUCHED them —
-            // this loop literally has no access to a live eel position.
+            // this loop literally has no access to a live eel position. #2365:
+            // the mark's heat reads the ring that lit it (knowledge) — a near
+            // touch burns red, thick and fast-pulsing with a warning halo; a
+            // far one sits cold violet-blue, thin and slow. Same glyph, threat
+            // distance now readable at a glance; the sim's eel cells are still
+            // nowhere in reach of this code path.
             for (const b of eelContacts(gs)) {
                 const a = 1 - (gs.tick - b.t) / CFG.fade
+                const h = contactHeat(b.ring)
                 const ex = b.x * TS, ey = b.y * TS
-                ctx.strokeStyle = `rgba(255,90,90,${(0.3 + a * 0.6).toFixed(2)})`; ctx.lineWidth = 3
+                const cr = Math.round(110 + h * 145)
+                const cg = Math.round(140 - h * 70)
+                const cb = Math.round(255 - h * 200)
+                if (h > 0.55) {                                    // danger halo, fast heartbeat when near
+                    const puls = 0.55 + 0.45 * Math.sin(t * (h > 0.8 ? 0.9 : 0.45))
+                    ctx.strokeStyle = `rgba(255,80,60,${(a * 0.35 * puls).toFixed(3)})`; ctx.lineWidth = 1.5
+                    ctx.beginPath(); ctx.arc(ex + 8, ey + 8, 9 + h * 5, 0, Math.PI * 2); ctx.stroke()
+                }
+                ctx.strokeStyle = `rgba(${cr},${cg},${cb},${(0.3 + a * 0.6).toFixed(2)})`
+                ctx.lineWidth = 2 + h * 1.5
                 ctx.beginPath()
                 ctx.moveTo(ex + 1, ey + 5)
                 ctx.quadraticCurveTo(ex + 8, ey + 1 + (b.t % 3) * 3, ex + 15, ey + 9)
                 ctx.stroke()
-                ctx.fillStyle = `rgba(255,200,120,${a.toFixed(2)})`
+                ctx.fillStyle = `rgba(${Math.min(255, cr + 60)},${Math.min(255, cg + 80)},${cb},${a.toFixed(2)})`
                 ctx.fillRect(ex + 12, ey + 7, 2, 2)
             }
             // the diver — you always know your own lungs
@@ -362,6 +389,7 @@ const SonarGame = () => {
                         end: gs.end, hash: stateHash(gs),
                         cooldown: Math.max(0, CFG.pingCd - (gs.tick - gs.lastPing)),
                         litOpen, litRock, contacts: contacts.length, hiddenEels,
+                        contactRings: contacts.map(b => (b.ring == null ? -1 : b.ring)),
                         eels: gs.eels.map(e => ({ x: cx(eelCell(e)), y: cy(eelCell(e)) })),
                         ventKnown: known(gs, gs.vent),
                         vent: { x: cx(gs.vent), y: cy(gs.vent) },

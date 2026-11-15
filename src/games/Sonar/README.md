@@ -21,6 +21,16 @@ reads truth (it is a prover, not a player) but emits only arrows and pings on
 the player's own cadence (`CFG.moveEvery`, `CFG.pingCd`), so the cave its
 route lights is lit honestly.
 
+## Distance cue (#2365)
+A contact blip records `ring` — the wavefront delay (ping bucket) at which sound
+physically touched the eel. That is knowledge, captured inside `light()` at the
+same BFS arrival that lights the cell, so heat/pitch can read nearness without
+the draw path ever touching a live eel cell. `contactHeat(ring)` (sim.js) is
+the pure, strictly monotonic map 1 → 0.12 over `CFG.cueRange` rings; frozen by
+mutant switch `CFG.cue`. The painter lerps the mark cold violet-blue → hot red
+with it (thicker, haloed, fast-pulsing when hot), and `handleEvents` rings an
+echo per contact — nearer returns read lower and stack two ticks.
+
 ## WATCH (#1637 batch 14)
 Y seats `planStep` into the real `playerMove`/`ping` on the sim's own cadence
 (`watchingRef` gates the play branch of `doSim`). Reactive per tick — honest
@@ -30,12 +40,15 @@ releases the seat silently. DEV probes: `__sonarTest.watching()`,
 
 ## Verify
 ```bash
-npm run sonarcheck            # 184 checks: gen, wavefront honesty, determinism,
-                              # eel timelines, vent-win crossings (20/20 seeds)
+npm run sonarcheck            # 198 checks: gen, wavefront honesty, determinism,
+                              # eel timelines, distance-cue ring/heat (#2365),
+                              # vent-win crossings (20/20 seeds)
 DEV_PORT=<p> npm run watchcheck -- --only sonar   # 182: seat pilot + source pins
 ```
 
 ## Honest gaps
-- Eels telegraph only via contacts; no distance cue on a ping's first lit ring.
+- **CLOSED by #2365:** eels telegraph only via contacts; no distance cue on a
+  ping's first lit ring — contacts now carry the ring that lit them and
+  heat/pitch maps nearness (#2365).
 - The vent swirl is drawn as soon as its cell is known — a Pearl jam can hide it
   in plain light.

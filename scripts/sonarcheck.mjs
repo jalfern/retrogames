@@ -23,6 +23,9 @@
 //                the eel that tick (the harness re-derives the eel's position
 //                from its deterministic route), and real eels ARE hidden most
 //                of the time — a suite that never saw darkness proves nothing.
+//   DISTANCE CUE contacts carry the ring (wavefront delay) that touched them;
+//                heat/pitch maps it monotonically near→hot (#2365), and the
+//                paint path still cannot reach a live eel cell.
 //   DEATH/DESCEND  a touching eel takes a life; the vent takes you down.
 //   DETERMINISM  replays match, a dropped command does not (tamper probe).
 //   MUTATIONS    six rules silenced in children, each must turn a NAMED check
@@ -53,6 +56,7 @@ const MUTANTS = {
     carve: 'caves stop being carved to the vent — the win becomes unfinishable',
     eelKill: 'eels stop taking lives — the dark becomes a museum',
     descend: 'the vent stops descending — depths become wallpaper',
+    cue: 'distance cue frozen — every contact reads the same nearness; the ring→heat map is dead',
 }
 if (MUT_NAME) {
     if (!(MUT_NAME in MUTANTS)) { console.error(`unknown mutant ${MUT_NAME}`); process.exit(2) }
@@ -181,6 +185,71 @@ section('INTEGRITY (every lit cell = one recomputed wavefront arrival)')
     ok(blipsSeen > 4, `only ${blipsSeen} eel contacts ever happened — the touch-the-eel path never ran`)
     ok(blipBad === 0, `${blipBad} contacts appeared where no wavefront arrived / no eel stood — knowledge invented an eel`)
     void g
+}
+
+section('DISTANCE CUE (the ring that touched the eel reads as nearness, #2365)')
+{
+    // The pure mapping first: hot near, cold far, strictly monotonic across the
+    // whole cue range, clamped at both ends. Under SONAR_MUT=cue the map is
+    // frozen at 0.5 and the strict check goes red BY NAME.
+    ok(CFG.cueRange > 2, `cueRange=${CFG.cueRange} too small to read a gradient`)
+    ok(s.contactHeat(0) === 1, 'ring 0 (touched at the source) is not max heat — the map does not top out hot')
+    ok(Math.abs(s.contactHeat(CFG.cueRange) - 0.12) < 1e-9, 'farthest ring is not the floor — the map does not bottom out cold')
+    let mono = true, strict = true
+    for (let r = 0; r <= CFG.cueRange + 6; r++) {
+        const a = s.contactHeat(r), z = s.contactHeat(r + 1)
+        if (z > a) mono = false
+        if (r < CFG.cueRange && !(z < a)) strict = false
+    }
+    ok(mono, 'heat grows with ring distance — a far eel would read hotter than a near one')
+    ok(strict, 'heat is flat somewhere inside cueRange — the cue does not actually read distance')
+    ok(Math.abs(s.contactHeat(9999) - 0.12) < 1e-9, 'past-range rings escape the floor — the scale is unbounded')
+    ok(Math.abs(s.contactHeat(null) - 0.5) < 1e-9 && Math.abs(s.contactHeat(-1) - 0.5) < 1e-9, 'ringless contacts do not read neutral')
+
+    // Ring CAPTURE: every fresh blip carries the same wavefront delay an
+    // independent BFS from the emitting ping recomputes — the same grading the
+    // INTEGRITY section applies to cell lighting, now applied to nearness.
+    const cave = s.genCave(0xC0FFEE, 2)
+    const plan = s.planRun(cave).cmds
+    const pings = []
+    let ringBad = 0, ringSeen = 0, evtBad = 0, evtsSeen = 0
+    const grids = new Map()
+    s.replay(cave, plan, {
+        onTick: (gg) => {
+            for (const p of gg.pings) if (!pings.includes(p)) pings.push(p)
+            for (const b of gg.blips) {
+                if (b.t !== gg.tick) continue
+                ringSeen++
+                if (typeof b.ring !== 'number' || b.ring < 0) { ringBad++; continue }
+                const c = s.idx(b.x, b.y)
+                if (!grids.has(pings.length)) grids.set(pings.length, pings.map(p => s.bfsField(gg.grid, p.src)))
+                const fields = grids.get(pings.length)
+                const match = pings.some((p, pi) => gg.tick - p.t0 === b.ring
+                    && fields[pi][c] >= 0 && Math.ceil(fields[pi][c] / CFG.waveSpeed) === b.ring)
+                if (!match) ringBad++
+            }
+            // the echo event rides with the blip: a fresh contact must also
+            // appear as a 'contact' event with the same ring (sound channel).
+            const fresh = gg.blips.filter(b => b.t === gg.tick)
+            for (const ev of gg.events.filter(e => e.type === 'contact')) {
+                evtsSeen++
+                if (!fresh.some(b => b.ring === ev.ring)) evtBad++
+            }
+        },
+    })
+    ok(ringSeen > 4, `only ${ringSeen} contacts sampled — the ring-capture pin never ran (vacuous)`)
+    ok(ringBad === 0, `${ringBad} contacts carry a ring that disagrees with the recomputed wavefront arrival — the distance cue is lying about physics`)
+    ok(evtsSeen > 4, `only ${evtsSeen} contact events fired — the echo channel never ran`)
+    ok(evtBad === 0, `${evtBad} contact events disagree with their blip's ring — sound and heat would disagree about nearness`)
+
+    // Painter law (#2365): the shell derives heat from the CONTACT's ring and
+    // still cannot reach a live eel cell from the draw path.
+    const cueJsx = readFileSync(new URL('../src/games/Sonar/index.jsx', import.meta.url), 'utf8')
+    const paintAt = cueJsx.indexOf('const paint = ')
+    const paintSrc = cueJsx.slice(paintAt, paintAt + cueJsx.slice(paintAt).indexOf('const hud ='))
+    ok(paintSrc.length > 500, 'paint source slice found')
+    ok(/contactHeat\(b\.ring\)/.test(paintSrc), 'painter does not derive mark heat from the contact ring — the cue is decoration elsewhere')
+    ok(!/eelCell\(|gs\.eels\b/.test(paintSrc), 'the paint path reaches a LIVE eel cell — knowledge law broken')
 }
 
 section('OCCLUSION (a sealed pocket is dark until the echo walks in the door)')
@@ -332,6 +401,29 @@ if (MUT) {
         try {
             const child = spawnSync(process.execPath, [process.argv[1]], { encoding: 'utf8' })
             ok(child.status !== 0, `attract mutant SURVIVED: ${name}`)
+        } finally {
+            pull(path)
+        }
+    }
+}
+
+if (MUT) {
+    const simPath = new URL('../src/games/Sonar/sim.js', import.meta.url).pathname
+    const simOrig = readFileSync(simPath, 'utf8')
+    const cueMutants = [
+        ['contacts forget which ring lit them — heat reads constant', simPath, simOrig,
+            'g.blips.push({ x, y, t, id: e.id, ring })',
+            'g.blips.push({ x, y, t, id: e.id, ring: 0 })'],
+        ['the per-contact echo stops firing — sound stops carrying nearness', simPath, simOrig,
+            "g.events.push({ type: 'contact', ring })",
+            'void 0'],
+    ]
+    for (const [name, path, orig, from, to] of cueMutants) {
+        if (!orig.includes(from)) { ok(false, `cue mutant anchor: ${name}`); continue }
+        plant(path, orig.replace(from, to))
+        try {
+            const child = spawnSync(process.execPath, [process.argv[1]], { encoding: 'utf8' })
+            ok(child.status !== 0, `cue mutant SURVIVED: ${name}`)
         } finally {
             pull(path)
         }
