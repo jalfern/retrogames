@@ -195,14 +195,18 @@ function craterAt(g, k) {
 // wpress===1 means the kart just arrived at the cliff (a pinned grind climbs
 // to speed along the face but never scars it), and SAND.chipV carries the
 // speed law. Slow scuffs leave the sand dent alone — the strata stay pristine.
+// #2388 scatters the debris INWARD (negative outward): the strata now stand
+// as geometry at the rim loop, so chips that fell into the rock would stand
+// behind the wall and never be seen — knocked loose, they pile at the foot
+// on the sand the wall shades, which is where debris actually lands anyway.
 function chipAt(g, k, nx, ny) {
     if (k.wpress !== 1 || k.v < SAND.chipV) return
-    markCell(g, k.x + nx * 3, k.y + ny * 3, SAND.chip)
+    markCell(g, k.x - nx * 3, k.y - ny * 3, SAND.chip)
     let h = (Math.floor(k.x * 13) ^ Math.floor(k.y * 7) ^ (g.tick * 29)) >>> 0
     const tx0 = -ny; const ty0 = nx // wall tangent for the dash scatter
     for (let i = 0; i < 4; i++) {
         h = (Math.imul(h, 1103515245) + 12345) >>> 0
-        const out = 5 + i * 3 + (h >>> 27) // outward px into the strata (5..21)
+        const out = -(5 + i * 3 + (h >>> 27)) // inward px at the wall foot (−5..−21)
         h >>>= 3
         const tan = ((h >>> 24) % 13) - 6 // tangential px
         markCell(g, k.x + nx * out + tx0 * tan, k.y + ny * out + ty0 * tan, SAND.crack)

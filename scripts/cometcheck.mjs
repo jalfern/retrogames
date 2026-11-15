@@ -13,6 +13,7 @@
 // must go RED (and restore the file whatever happens).
 
 import { readFileSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { plant, pull } from './lib/mutateguard.mjs'
 import { inflateSync } from 'node:zlib'
 import { deflateSync } from 'node:zlib'
@@ -141,6 +142,29 @@ const lawGates = (c, T, A, check) => {
         rimBad === 0, `${rimBad} points where the painted rim ≠ the clamp`)
     check(`${c.id}: rock strata stay monotone through the hairpin folds (#1498)`,
         monoBad === 0, `${monoBad} folded strata`)
+    // #2388: the same rim loop now STANDS UP. Literals (118 foot = ROAD_R+
+    // KERB margins+8, K 0.3, floor 18) are pinned here on purpose — a mutant
+    // that edits STRATA_K/WALL_MIN_RISE/ROCK_FOOT must not sign for itself
+    // through the module constants (#2377 heat-rot lesson).
+    let riseBad = 0; let breakBad = 0; let riseLo = Infinity; let riseHi = -Infinity
+    for (let i = 0; i < T.TRACK.N; i++) {
+        for (const s of [1, -1]) {
+            const b = A.strataAt(i, s)
+            const want = Math.max(18, (b[0] - 118) * 0.3)
+            const rise = A.wallRise(i, s)
+            if (!(Math.abs(rise - want) < 1e-9 && rise >= 18)) riseBad++
+            const br = A.strataBreaks(i, s)
+            if (!(br[0] >= 0 && br[1] - br[0] >= 0.04 - 1e-9 && br[2] - br[1] >= 0.04 - 1e-9 && br[2] <= 0.94)) breakBad++
+            riseLo = Math.min(riseLo, rise); riseHi = Math.max(riseHi, rise)
+        }
+    }
+    check(`${c.id}: canyon walls rise on the escape law — height = (rim − foot)·0.3, floored at 18u (#2388)`,
+        riseBad === 0, `${riseBad} points off the rise law`)
+    check(`${c.id}: strata breaks stay monotone with gradient gaps (dark<mid<light<rim) (#2388)`,
+        breakBad === 0, `${breakBad} bad break sets`)
+    check(c.id === 'gulch' ? 'gulch: Sunset Gulch keeps its uniform flat canyon walls (#2388, mirrors the #502 flat-canyon spec)' : `${c.id}: a wider run-off stands a taller canyon (#2388)`,
+        c.id === 'gulch' ? riseHi - riseLo < 1e-9 : riseHi > riseLo + 8,
+        `rise spans ${riseLo.toFixed(1)}..${riseHi.toFixed(1)}u`)
 }
 
 // ---- per-course audits ------------------------------------------------------
@@ -1667,8 +1691,10 @@ selectorGate(await loadSelector())
     check('#1696 determinism: same seed, same drive — identical marks, identical hash',
         JSON.stringify([...roll.g.marks]) === JSON.stringify([...roll2.g.marks]) && m.stateHash(roll.g) === m.stateHash(roll2.g))
     // ---- #1718 cliff chips: a FAST bump scars the rock strata too ----------
-    // coal chip at the contact + crack dashes outward into the face, stamped
-    // on the same texel queue; an impact the sand could carry on its own
+    // coal chip at the contact + crack dashes at the wall foot (#2388 moved
+    // the strata into true geometry — debris now scatters inward, where it
+    // actually piles), stamped on the same texel queue; an impact the sand
+    // could carry on its own
     // never chips; deterministic; and the #1702 flow decays chip → crack →
     // dents → pristine. A plain-throttle sand run HOVERS at sandTop (measured
     // 3.19..3.40 — acc cancels the sink), so the fast rig rides a live blue
@@ -1701,10 +1727,24 @@ selectorGate(await loadSelector())
             const dx = (tx + 0.5) / TEXSn - bp.x; const dy = (ty + 0.5) / TEXSn - bp.y
             return Math.sqrt(dx * dx + dy * dy) >= lo && Math.sqrt(dx * dx + dy * dy) <= hi
         }).length
+        const chipPos = (() => {
+            const [k] = decals.find(([, d]) => d === S.chip) || []
+            if (k === undefined) return null
+            const tx = k % TEXn; const ty = (k - tx) / TEXn
+            return { x: (tx + 0.5) / TEXSn, y: (ty + 0.5) / TEXSn }
+        })()
+        const nearChip = (lo, hi) => {
+            if (!chipPos) return 0
+            return decals.filter(([k, d]) => {
+                if (d !== S.crack) return 0
+                const tx = k % TEXn; const ty = (k - tx) / TEXn
+                return Math.hypot((tx + 0.5) / TEXSn - chipPos.x, (ty + 0.5) / TEXSn - chipPos.y) >= lo && Math.hypot((tx + 0.5) / TEXSn - chipPos.x, (ty + 0.5) / TEXSn - chipPos.y) <= hi
+            }).length
+        }
         check('#1718 chip rig: a fast bump stamps a coal chip at the contact',
-            decals.length > 0 && nearD(S.chip, 0, 9) >= 1, `chips within 9px: ${nearD(S.chip, 0, 9)} (${decals.length} decals)`)
-        check('#1718 chip rig: crack dashes radiate into the strata around the chip',
-            nearD(S.crack, 4, 24) >= 2, `crack dashes in the 4..24px window: ${nearD(S.crack, 4, 24)}`)
+            decals.length > 0 && nearD(S.chip, 0, 12) >= 1, `chips within 12px: ${nearD(S.chip, 0, 12)} (${decals.length} decals)`)
+        check('#2388 chip rig: crack dashes scatter at the wall FOOT around the chip (debris falls inward, not into the now-3D strata)',
+            nearChip(2, 30) >= 2, `crack dashes within 30px of the chip: ${nearChip(2, 30)}`)
         check('#1718 chip law: no decal texel sits on asphalt (markCell law)',
             decals.every(([k]) => surfTex(k) !== 'road'), `${decals.filter(([k]) => surfTex(k) === 'road').length} decals on road`)
         const imp2 = chipRun(7, 178, true)
@@ -1892,6 +1932,40 @@ selectorGate(await loadSelector())
         /const tx0 = key % TEX/.test(idxSrcSD))
 }
 
+// ---- #2388: the strata stand up — bake, shell and painter wiring ----------
+// The rock annulus must be GONE from the bake (it is geometry now); the
+// renderer must merge wall quads into the sprite far→near sort and project
+// height the pinhole way; the chip debris must scatter toward the road.
+// Source-scan gates (the #502/#1718 precedent — DOM painting is unobservable
+// in Node). Wrapped so the --mutate pass can re-run the exact same eyes on
+// mutated files.
+const IDX_PATH_SC = fileURLToPath(new URL('../src/games/CometDrift/index.jsx', import.meta.url))
+const ART_PATH_SC = fileURLToPath(new URL('../src/games/CometDrift/art.js', import.meta.url))
+const SIM_PATH_SC = fileURLToPath(new URL('../src/games/CometDrift/sim.js', import.meta.url))
+const wallShellGates = (check) => {
+    const artSrc = readFileSync(ART_PATH_SC, 'utf8')
+    const idxSrc = readFileSync(IDX_PATH_SC, 'utf8')
+    const simSrc = readFileSync(SIM_PATH_SC, 'utf8')
+    const bakeFn = artSrc.slice(artSrc.indexOf('export function buildGround'), artSrc.indexOf('// ---- sky:'))
+    check('#2388 bake paints NO rock: the strata fills + radial cracks left the bake',
+        !/fillLaw|cracks\(\s*0|P\.rimLit|lawBand/.test(bakeFn),
+        'rock paint found in buildGround' )
+    check('#2388 bake keeps the wall\'s cast shade and apron (shadow is still ground)',
+        /band\(P\.rockShadow, KERB_R \+ 8\)/.test(bakeFn) && /band\(P\.apronShade, ROAD_R \+ 16\)/.test(bakeFn))
+    check('#2388 the renderer merges wall quads into the sprite far→near sort (honest occlusion)',
+        /for \(const w of buildWalls\(\)\) items\.push\(w\)/.test(idxSrc) &&
+        /if \(it\.kind === 'w'\) \{ drawWallQuad\(it\); continue \}/.test(idxSrc) &&
+        /\(a\.kind === 'w' \? 0 : 1\) - \(b\.kind === 'w' \? 0 : 1\)/.test(idxSrc))
+    check('#2388 height rides the pinhole: crest y = HZ + (CAM_H − rise)·s',
+        /yt0 = HZ \+ \(CAM_H - h0\) \* sA/.test(idxSrc) && /yt1 = HZ \+ \(CAM_H - h1\) \* sB/.test(idxSrc))
+    check('#2388 faces paint the strata vertically: dark→mid→light→rim gradient stops',
+        /addColorStop\(0, P\.rockDark\)/.test(idxSrc) && /addColorStop\(br\[2\], P\.rimLit\)/.test(idxSrc))
+    check('#2388 collision debris scatters inward: chip and dashes fall to the wall foot',
+        /markCell\(g, k\.x - nx \* 3, k\.y - ny \* 3, SAND\.chip\)/.test(simSrc) &&
+        /const out = -\(5 \+ i \* 3/.test(simSrc))
+}
+wallShellGates(check)
+
 if (process.argv.includes('--mutate')) {
     // #1498 mutants: (1) restore the narrow 132px clamp — the corridor the
     // maps drew escapes *past* the paint at race speed, and the autopilot's
@@ -1936,6 +2010,38 @@ if (process.argv.includes('--mutate')) {
                 }
             })
         } finally { pull(artPath) }
+    }
+
+    // #2388 mutants: (1) zero the rise law — the canyon must be caught lying
+    // flat on the escape law; (2) decouple the quads from the sprite sort —
+    // the honest-occlusion merge gate must notice rock and karts no longer
+    // depth-sort together.
+    {
+        const { fileURLToPath } = await import('node:url')
+        const artPathW = fileURLToPath(new URL('../src/games/CometDrift/art.js', import.meta.url))
+        const idxPathW = fileURLToPath(new URL('../src/games/CometDrift/index.jsx', import.meta.url))
+        const artSrcW = readFileSync(artPathW, 'utf8')
+        const idxSrcW = readFileSync(idxPathW, 'utf8')
+        const diedW = async (label, run) => {
+            const before = R.fail
+            await run()
+            if (R.fail > before) console.log(`  MUTANT DIED — ${label}: the #2388 wall gates are load-bearing`)
+            else console.log(`  MUTANT SURVIVED — ${label}: the #2388 wall gates are BLIND`)
+        }
+        try {
+            plant(artPathW, artSrcW.replace('(strataAt(i, side)[0] - ROCK_FOOT) * STRATA_K', '0'))
+            await diedW('the walls stay flat (rise law zeroed)', async () => {
+                const A2 = await import('../src/games/CometDrift/art.js' + '?m=' + Math.random())
+                for (const c of COURSES) {
+                    selectCourse(c.id); selectCourse(c.id)
+                    lawGates(c, Tmod, A2, check)
+                }
+            })
+        } finally { pull(artPathW) }
+        try {
+            plant(idxPathW, idxSrcW.replace('for (const w of buildWalls()) items.push(w)', ''))
+            await diedW('walls drawn outside the sprite sort (merge removed)', async () => wallShellGates(check))
+        } finally { pull(idxPathW) }
     }
 
     // #1687 mutant: restore the pre-change rival drift rule — hold every bend
