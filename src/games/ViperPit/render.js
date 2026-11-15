@@ -685,6 +685,35 @@ export function createScene(canvas) {
     const shardGeo = new THREE.BoxGeometry(0.18, 0.05, 0.02)
     const shieldFx = []
     const shatterFx = []
+    // #2334 destructible props + pickups: these views FOLLOW the engine's prop
+    // list (the sim owns positions, hp and loot — this only draws them), tip a
+    // prop over when it breaks, float the loot orbs, and fly shards on a break.
+    const propFx = []
+    let breaksTotal = 0
+    const propViews = new Map()
+    const orbViews = new Map()
+    let propSig = null
+    const OCT = new THREE.OctahedronGeometry(0.22, 0)
+    const makePropView = (p) => {
+        const g = new THREE.Group()
+        g.position.set(p.x, 0, -1.0)
+        let crack = null
+        if (p.kind === 'barrel') {
+            const b = limb(CYL, 0.42, 1.05, std(0x59402f, { metal: 0.35, rough: 0.55 })); b.position.y = 0.53; g.add(b)
+            const band = limb(CYL, 0.44, 0.09, std(0x38271c, { metal: 0.5 })); band.position.y = 0.86; g.add(band)
+            const lid = limb(CYL, 0.4, 0.05, std(0x6d5138)); lid.position.y = 1.06; g.add(lid)
+        } else {
+            const b = new THREE.Mesh(BOX, std(0x6a4f2c, { rough: 0.85 })); b.scale.set(0.95, 0.9, 0.9); b.position.y = 0.45; g.add(b)
+            const pl1 = new THREE.Mesh(BOX, std(0x4e3920, { rough: 0.9 })); pl1.scale.set(1.0, 0.11, 0.94); pl1.position.y = 0.62; pl1.rotation.z = 0.5; g.add(pl1)
+            const pl2 = new THREE.Mesh(BOX, std(0x4e3920, { rough: 0.9 })); pl2.scale.set(1.0, 0.11, 0.94); pl2.position.y = 0.62; pl2.rotation.z = -0.5; g.add(pl2)
+            crack = new THREE.Mesh(BOX, new THREE.MeshBasicMaterial({ color: 0x1a1108, transparent: true, opacity: 0.85 }))
+            crack.scale.set(0.82, 0.05, 0.94); crack.position.set(0.04, 0.52, 0.02); crack.rotation.z = 0.7
+            crack.visible = false
+            g.add(crack)
+        }
+        scene.add(g)
+        return { g, crack, broke: -1, dir: 1 }
+    }
 
     return {
         renderer, scene, cam,
@@ -721,7 +750,37 @@ export function createScene(canvas) {
             }
             shatterFx.push({ ring, shards, t: SHATTER_FRAMES, x, y })
         },
-        fxCount() { return { shields: shieldFx.length, bursts: shatterFx.length } },
+        fxCount() { return { shields: shieldFx.length, bursts: shatterFx.length, propBreaks: propFx.length, breaksTotal, propsLive: propViews.size, orbsLive: orbViews.size } },
+        // #2334: the sim says a prop broke — splinter it. Shards fly away from
+        // the hitter (dir), the standing view tips over that way too.
+        propBreak(x, kind, dir = 1) {
+            breaksTotal++
+            for (const v of propViews.values()) {
+                if (v.broke < 0 && Math.abs(v.g.position.x - x) < 0.35) { v.dir = dir; v.broke = Math.max(v.broke, 0) }
+            }
+            const col = kind === 'barrel' ? 0x59402f : 0x6a4f2c
+            for (let i = 0; i < 7; i++) {
+                const m = new THREE.Mesh(BOX, new THREE.MeshStandardMaterial({ color: col, rough: 0.8, metalness: 0.2, transparent: true }))
+                m.scale.set(0.2 + Math.random() * 0.16, 0.09 + Math.random() * 0.11, 0.15)
+                m.position.set(x, 0.4 + Math.random() * 0.6, -0.7)
+                scene.add(m)
+                propFx.push({ mesh: m, vx: dir * (0.04 + Math.random() * 0.09), vy: 0.03 + Math.random() * 0.07, vr: (Math.random() - 0.5) * 0.3, t: 26 })
+            }
+            for (let i = 0; i < 4; i++) {
+                const m = new THREE.Mesh(sparkGeo, new THREE.MeshBasicMaterial({ color: kind === 'barrel' ? 0xffb050 : 0xd8c090, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }))
+                const a = Math.random() * Math.PI * 2
+                m.position.set(x, 0.6, -0.5)
+                scene.add(m)
+                propFx.push({ mesh: m, vx: Math.cos(a) * 0.05, vy: 0.03 + Math.abs(Math.sin(a)) * 0.05, vr: 0, t: 16 })
+            }
+        },
+        // an orb banked: teal ring pulse at the collector
+        collectOrb(x, y = 0.85) {
+            const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0x68ffe0, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }))
+            ring.position.set(x, y, -0.4)
+            scene.add(ring)
+            propFx.push({ mesh: ring, ring: true, t: 16 })
+        },
         sync(m, rigs, stageFx, tSec, shake, cine) {
             const [fa, fb] = m.fighters
             const mid = (fa.x + fb.x) / 2
@@ -746,6 +805,50 @@ export function createScene(canvas) {
                 const air = clamp(1 - f.y * 0.25, 0.4, 1)
                 rig.shadow.scale.set(0.8 * f.def.build.bulk * air, 1.3 * air, 1)
                 rig.shadow.material.opacity = 0.42 * air
+            }
+            // #2334 — props follow the sim: rebuild views on layout change
+            // (round respawn), tip broken ones over, float the loot orbs.
+            if (m.props) {
+                const sig = m.props.map((p) => p.id + ':' + p.x.toFixed(2)).join('|')
+                if (sig !== propSig) {
+                    propSig = sig
+                    for (const v of propViews.values()) scene.remove(v.g)
+                    propViews.clear()
+                    for (const p of m.props) propViews.set(p.id, makePropView(p))
+                }
+                for (const p of m.props) {
+                    const v = propViews.get(p.id)
+                    if (!v) continue
+                    if (p.broken) {
+                        if (v.broke < 0) { v.broke = 0; v.dir = p.x >= 0 ? 1 : -1 }
+                        const k = Math.min(1, ++v.broke / 14)
+                        v.g.rotation.z = v.dir * 1.15 * k * k
+                        v.g.position.y = -0.25 * k
+                        v.g.scale.setScalar(1 - 0.45 * k)
+                        if (k >= 1) v.g.visible = false
+                    } else if (v.crack) v.crack.visible = p.hp <= 1
+                }
+                const liveIds = new Set(m.orbs.map((o) => o.id))
+                for (const [id, v] of orbViews) {
+                    if (!liveIds.has(id)) { scene.remove(v.mesh); scene.remove(v.halo); orbViews.delete(id) }
+                }
+                for (const o of m.orbs) {
+                    let v = orbViews.get(o.id)
+                    if (!v) {
+                        const mesh = new THREE.Mesh(OCT, new THREE.MeshBasicMaterial({ color: 0x68ffe0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }))
+                        const halo = new THREE.Mesh(SPH, new THREE.MeshBasicMaterial({ color: 0x2fd8c0, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false }))
+                        halo.scale.setScalar(1.7)
+                        scene.add(mesh); scene.add(halo)
+                        v = { mesh, halo }; orbViews.set(o.id, v)
+                    }
+                    v.mesh.position.set(o.x, o.y + Math.sin(tSec * 3.1 + o.x) * 0.08, -0.6)
+                    v.halo.position.copy(v.mesh.position)
+                    v.mesh.rotation.y = tSec * 2.2
+                    v.mesh.rotation.x = tSec * 1.4
+                    const fade = o.ttl < 60 ? o.ttl / 60 : 1
+                    v.mesh.material.opacity = (0.75 + 0.25 * Math.sin(tSec * 8)) * fade
+                    v.halo.material.opacity = 0.25 * fade
+                }
             }
             if (stageFx) {
                 // #2158 — PERFECT crowd beat: a PERFECT verdict flares the pit
@@ -842,6 +945,20 @@ export function createScene(canvas) {
                 s.mesh.position.x += s.vx; s.mesh.position.y += s.vy; s.vy -= 0.004
                 s.mesh.material.opacity = s.t / 14
                 if (s.t <= 0) { scene.remove(s.mesh); sparks.splice(i, 1) }
+            }
+            for (let i = propFx.length - 1; i >= 0; i--) {
+                const s = propFx[i]
+                s.t--
+                if (s.ring) {
+                    const k = 1 - s.t / 16
+                    s.mesh.scale.setScalar(1 + k * 1.8)
+                    s.mesh.material.opacity = 0.8 * (s.t / 16)
+                } else {
+                    if (s.vy !== undefined) { s.vy -= 0.004; s.mesh.position.x += s.vx; s.mesh.position.y += s.vy }
+                    if (s.vr) s.mesh.rotation.z += s.vr
+                    s.mesh.material.opacity = clamp(s.t / 26, 0, 1)
+                }
+                if (s.t <= 0) { scene.remove(s.mesh); propFx.splice(i, 1) }
             }
             for (let i = shieldFx.length - 1; i >= 0; i--) {
                 const s = shieldFx[i]

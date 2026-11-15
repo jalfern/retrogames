@@ -21,7 +21,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { isWatchKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
-import { createMatch, step, emptyPad, matchHash, fightersState, forceKO, FIXED_DT } from '../../engine/fighting.js'
+import { createMatch, step, emptyPad, matchHash, fightersState, forceKO, propsState, FIXED_DT } from '../../engine/fighting.js'
 import { ROSTER, BY_ID, LADDER, introQuotes, koQuotes, voiceNotes } from './fighters.js'
 import { createScene, buildFighter, buildStage, createPortraitRenderer, guardShimmer, guardShatter, SHIMMER_FRAMES, SHATTER_FRAMES } from './render.js'
 import { STAGES } from './stages.js'
@@ -288,7 +288,7 @@ const ViperPitGame = () => {
             const d1 = BY_ID[p1Char] || ROSTER[0]
             const d2raw = BY_ID[p2Char] || ROSTER[1]
             const human2 = m !== 'cpu'
-            gs = createMatch({ seed: sd, guardButton: true, juggle: true, guardCrush: true, p1: { ...d1, cpu: false }, p2: human2 ? { ...d2raw, cpu: false } : d2raw })
+            gs = createMatch({ seed: sd, guardButton: true, juggle: true, guardCrush: true, props: true, p1: { ...d1, cpu: false }, p2: human2 ? { ...d2raw, cpu: false } : d2raw })
             lagHp = [gs.fighters[0].hp, gs.fighters[1].hp]
             comboFx = [0, 0]; comboVal = [0, 0]
             chipFx = [0, 0]; shimmerFx = [0, 0]; shatterFx = [0, 0]; koHold = null; koFxRound = 0; quote = null; quoteT = 0; quoteMax = 0; quoteSubAt = null; subFired = false; subFrames = 0; finishJustLanded = false
@@ -435,7 +435,7 @@ const ViperPitGame = () => {
         const attractDemo = () => {
             seedCounter = (seedCounter + 0x9e3779b9) >>> 0
             const a = BY_ID.riv, b = BY_ID.krax
-            gs = createMatch({ seed: seedCounter | 1, guardButton: true, juggle: true, guardCrush: true, p1: { ...a, cpu: true }, p2: { ...b, cpu: true } })
+            gs = createMatch({ seed: seedCounter | 1, guardButton: true, juggle: true, guardCrush: true, props: true, p1: { ...a, cpu: true }, p2: { ...b, cpu: true } })
             stage = STAGES[seedCounter % STAGES.length]
             p1Char = 'riv'; p2Char = 'krax'
             rebuildRigs(); rebuildStage()
@@ -537,6 +537,23 @@ const ViperPitGame = () => {
                     const qcbf = m.fighters[e.by].def.moves.qcbf
                     finishCine = { beats: (qcbf && qcbf.beats) || ['stitch', 'stitch', 'slam'], by: e.by, startedAt: performance.now(), fired: -1 }
                     finishJustLanded = true
+                } else if (e.kind === 'propbreak') {
+                    // #2334 — the furniture goes down: a dry splinter crack,
+                    // shards away from the hitter, a small jolt.
+                    const dir = Math.sign(e.x - m.fighters[e.by].x) || 1
+                    audioController.playNoise(0.14, 0.2)
+                    audioController.playTone(e.prop === 'barrel' ? 98 : 74, 0.16, 'square', 0.11)
+                    if (e.prop === 'barrel') audioController.playSweep(220, 60, 0.18, 'sawtooth', 0.07)
+                    shake = Math.max(shake, 5)
+                    scene.propBreak(e.x, e.prop, dir)
+                } else if (e.kind === 'orbdrop') {
+                    audioController.playTone(520, 0.05, 'triangle', 0.05)
+                    audioController.playTone(780, 0.05, 'triangle', 0.05, 0.06)
+                } else if (e.kind === 'orbtake') {
+                    audioController.playSweep(440, 880, 0.16, 'sine', 0.1)
+                    audioController.playTone(1320, 0.06, 'triangle', 0.06, 0.1)
+                    scene.collectOrb(e.x)
+                    scene.spark(e.x, 1.0, 0x59e8d0)
                 }
             }
         }
@@ -1224,6 +1241,7 @@ const ViperPitGame = () => {
                 blockFx() { return shimmerFx.map((v) => v > 0) },
                 breakFx() { return shatterFx.map((v) => v > 0) },
                 shieldFx() { return scene ? scene.fxCount() : null },
+                props() { return gs ? propsState(gs) : null },
                 cine() { return finishCine ? { active: true, by: finishCine.by, i: finishCine.fired, kind: finishCine.beats[finishCine.fired], beats: finishCine.beats } : { active: false, beats: null } },
                 forceFinish() { if (gs) { const d = gs.fighters[0].def.moves.qcbf; finishCine = { beats: (d && d.beats) || ['stitch', 'stitch', 'slam'], by: 0, startedAt: performance.now(), fired: -1 } } },
                 koFx() {
