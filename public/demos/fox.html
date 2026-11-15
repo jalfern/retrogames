@@ -50,6 +50,7 @@ window.addEventListener('resize', resize); resize();
 /* ---------------- gait constants ---------------- */
 const L = 2.6;                                   // stride length (m) — fox limb 0.42 m
 const K = 6;                                   // seamless loop = 6 strides
+const BLINK_SEED = 3;                        // one stride in six the fox blinks (n mod K)
 const LOOP = L * K;                            // scenery period = 15.6 m
 const T = 0.55;                                // stride period (s) → ≈4.7 m/s
 const XP_A = 0.06, XP_P0 = 0.15;             // gentle speed surge (net = L/stride exactly)
@@ -227,6 +228,7 @@ function proj(p) {
 
 /* ---------------- painter ---------------- */
 let faces = [];
+let lastTuft = 0;                            // zig-zag tail modulation seen last frame
 /* two=false: closed solid, cull back faces. two=true: flat card, flip normal to camera */
 function pushFace(pts3, col, zbias, two, dim) {
   const s = [];
@@ -279,6 +281,16 @@ function coatAt(x, ang) {
   if (x >= 0.13 && x <= 0.40 && nz > 0.55) c = mixc(c, COAT_D, 0.7);
   if (x < 0.10 && nz > 0.3) c = mixc(c, COAT_D, 0.8);
   if (x > 0.44) c = mixc(COAT, COAT_D, 0.25);
+  // #2270: darker saddle streak over the shoulders, distinct from the back line
+  if (x >= 0.27 && x <= 0.47 && nz > 0.55) c = mixc(c, [132, 62, 28], clamp((nz - 0.55) * 2.2, 0, 1) * 0.8);
+  // grizzle: static dark speckles through the neck ruff (pure function of the
+  // ring's x + angle — deterministic per face, seam-safe by construction)
+  if (x >= 0.50 && x <= 0.62 && nz > -0.6) {
+    const hv = hash(Math.round(x * 1000) * 7 + Math.round(ang * 100));
+    if (hv > 0.52) c = mixc(c, [112, 66, 38], (hv - 0.52) * 1.1);
+  }
+  // cream sweeps through the hindquarters flanks (side-facing faces only)
+  if (x < 0.11 && Math.abs(nz) < 0.45) c = mixc(c, CREAM, (0.45 - Math.abs(nz)) * 0.9);
   return c;
 }
 
@@ -300,16 +312,6 @@ function tube(a, b, ra, rb, col) {
 }
 
 function drawFox(P) {
-  // contact shadow — an anchored dark ellipse under the body, offset with the sun
-  {
-    const cx = P.X + 0.36, cy = 0.08;
-    const ring = [];
-    for (let i = 0; i < 10; i++) {
-      const an = i * TAU / 10;
-      ring.push([cx + 0.55 * Math.cos(an), cy + 0.19 * Math.sin(an), 0.0012]);
-    }
-    pushFace(ring, [178, 182, 196], 0.0195, true, 0.52);
-  }
   // torso
   const rings = ringsOf(P.spts);
   for (let i = 0; i < rings.length - 1; i++) {
@@ -339,23 +341,47 @@ function drawFox(P) {
   const nose = hr[hr.length - 1];
   const ncp = [nose[0][0] + 0.016, nose[0][1], nose[0][2] - 0.004];
   for (let a = 0; a < RN; a++) pushFace([nose[a], nose[(a + 1) % RN], ncp], [28, 20, 16]);
-  // eyes (dark slivers on the skull sides)
+  // head details share the head pitch frame (#2270 — face must read at default zoom)
   const pv = P.poll;
+  const hp = -0.55 * P.pitch + 0.015 * Math.sin(TAU * P.p);
+  const hc = Math.cos(hp), hs = Math.sin(hp);
+  const hl = (dx, dz, yy) => [pv[0] + dx * hc - dz * hs, yy, pv[2] + dx * hs + dz * hc];
+  // eyes (dark slivers on the skull sides) — one seed in six blinks (a pure
+  // function of stride mod K: seam-safe, and proof the blink is scheduled not random)
+  const blink = (((P.n % K) + K) % K) === BLINK_SEED;
   for (const sd of [-1, 1]) {
     const ex = pv[0] + 0.062, ez = pv[2] + 0.028;
-    pushFace([[ex + 0.010, sd * 0.036, ez + 0.006], [ex + 0.020, sd * 0.040, ez], [ex + 0.010, sd * 0.036, ez - 0.006], [ex, sd * 0.034, ez]], [22, 15, 10]);
+    if (blink) {
+      pushFace([[ex - 0.004, sd * 0.037, ez + 0.0025], [ex + 0.024, sd * 0.037, ez + 0.001],
+        [ex + 0.024, sd * 0.037, ez - 0.0025], [ex - 0.004, sd * 0.037, ez - 0.0015]], [22, 15, 10], 0, true);
+    } else {
+      pushFace([[ex + 0.010, sd * 0.036, ez + 0.006], [ex + 0.020, sd * 0.040, ez], [ex + 0.010, sd * 0.036, ez - 0.006], [ex, sd * 0.034, ez]], [22, 15, 10]);
+    }
+    // diamond cheek flares — pale fur widens the face below and behind the eye
+    pushFace([hl(0.032, 0.012, sd * 0.033), hl(0.066, -0.004, sd * 0.041),
+      hl(0.032, -0.024, sd * 0.037), hl(0.006, -0.004, sd * 0.031)], mixc(CREAM, COAT, 0.28), 0, true);
   }
-  // ears — pointed, dark-backed, pitching with the head
-  const hp = -0.55 * P.pitch + 0.015 * Math.sin(TAU * P.p);
+  // jaw step — a darker under-jaw plate hangs below the muzzle line so the
+  // jaw/break reads as silhouette instead of merging into the cheek
+  for (const sd of [-1, 1]) {
+    pushFace([hl(0.018, -0.052, sd * 0.022), hl(0.118, -0.034, sd * 0.015),
+      hl(0.118, -0.046, sd * 0.015), hl(0.018, -0.066, sd * 0.022)], mixc(COAT_D, DARK, 0.55), -0.0015, true);
+  }
+  pushFace([hl(0.112, -0.030, -0.012), hl(0.148, -0.036, 0), hl(0.140, -0.048, 0), hl(0.112, -0.046, 0.012)], mixc(COAT_D, DARK, 0.4), -0.0015, true);
+  // ears — pointed, dark-backed, pitching with the head, frond-serrated back edge
   for (const sd of [-1, 1]) {
     const bx = pv[0] - 0.008, bz = pv[2] + 0.032, by = sd * 0.026;
-    const tip = [bx - 0.096 * Math.sin(hp + PI * 0.14), by + sd * 0.014, bz + 0.096 * Math.cos(hp + PI * 0.14)];
+    const tip = [bx - 0.104 * Math.sin(hp + PI * 0.14), by + sd * 0.014, bz + 0.104 * Math.cos(hp + PI * 0.14)];
     const fF = [bx + 0.020, by, bz], fB = [bx - 0.022, by, bz - 0.010];
     const oF = [bx + 0.020, sd * 0.042, bz], oB = [bx - 0.022, sd * 0.046, bz - 0.010];
     pushFace([oF, oB, tip], DARK);
     pushFace([oB, oF, tip], mixc(DARK, [140, 90, 66], 0.22));
     pushFace([fF, fB, tip], mixc(COAT_D, DARK, 0.55));
     pushFace([fB, fF, tip], mixc(DARK, COAT, 0.4));
+    // fronds: two spikes along the outer back edge break the smooth triangle
+    const k1 = [bx - 0.052, sd * 0.052, bz + 0.026], k2 = [bx - 0.074, sd * 0.046, bz + 0.058];
+    pushFace([oB, k1, [bx - 0.030, sd * 0.036, bz + 0.034]], DARK);
+    pushFace([k1, k2, [bx - 0.056, sd * 0.032, bz + 0.062]], DARK);
   }
   // legs — near pair dark, far pair hazed for depth
   for (const name of NAMES) {
@@ -367,22 +393,34 @@ function drawFox(P) {
     tube(joint, mid, wTop, wMid, mixc(legC, COAT, near ? 0.18 : 0.26));
     tube(mid, [paw[0], paw[1], 0.028], wMid, 0.015, legC);
     const dx = g.hind ? -0.032 : 0.034;
+    // fetlock knob at the tube-to-paw joint (knee-knob precedent #2224)
+    tube([paw[0] - dx * 0.55, paw[1], 0.034], [paw[0] + dx * 0.10, paw[1], 0.026], wMid * 0.72, 0.017, legC);
     const y0 = paw[1] - 0.017, y1 = paw[1] + 0.017;
     pushFace([[paw[0], y0, 0.030], [paw[0] + dx, y0, 0.030], [paw[0] + dx, y0, 0], [paw[0], y0, 0]], DARK, 0, true);
     pushFace([[paw[0] + dx, y1, 0.030], [paw[0], y1, 0.030], [paw[0], y1, 0], [paw[0] + dx, y1, 0]], mixc(DARK, [90, 66, 50], 0.2), 0, true);
     pushFace([[paw[0] + dx, y0, 0.030], [paw[0] + dx, y1, 0.030], [paw[0] + dx, y1, 0], [paw[0] + dx, y0, 0]], mixc(DARK, [70, 50, 38], 0.3), 0, true);
     pushFace([[paw[0], y0, 0.030], [paw[0] + dx, y0, 0.030], [paw[0] + dx, y1, 0.030], [paw[0], y1, 0.030]], mixc(DARK, COAT_D, 0.35));
+    // toe division — a dark notch across the top of the box splits it into two toes
+    pushFace([[paw[0] + dx * 0.52, y0 + 0.002, 0.0308], [paw[0] + dx * 0.52, y1 - 0.002, 0.0308],
+      [paw[0] + dx * 0.52 + dx * 0.16, y1 - 0.002, 0.0308], [paw[0] + dx * 0.52 + dx * 0.16, y0 + 0.002, 0.0308]], mixc(DARK, [20, 14, 10], 0.5), 0, true);
   }
-  // bushy tail — thick base swelling to a broad white tip
+  // bushy tail — thick base swelling to a broad white tip; the last rings carry
+  // zig-zag tufts, a pure function of φ + seed mod K (seam-safe, painter-side only)
   const TR = 6;
+  const tSeed = ((P.n % K) + K) % K;
+  let tuftFrame = 0;
   const trings = P.tail.map(tp => {
+    const zig = tp.u > 0.66 ? 0.20 * Math.pow((tp.u - 0.66) / 0.34, 1.3) : 0;
     const rr = [];
     for (let a = 0; a < TR; a++) {
       const ang = a * TAU / TR;
-      rr.push([tp.x, tp.y + tp.r * Math.sin(ang), tp.z + tp.r * Math.cos(ang) * 0.92]);
+      const m = 1 + zig * Math.sin(3 * ang + tSeed * 1.7 + TAU * P.p);
+      if (Math.abs(m - 1) > tuftFrame) tuftFrame = Math.abs(m - 1);
+      rr.push([tp.x, tp.y + tp.r * Math.sin(ang) * m, tp.z + tp.r * Math.cos(ang) * 0.92 * m]);
     }
     return rr;
   });
+  lastTuft = tuftFrame;
   for (let i = 0; i < trings.length - 1; i++) {
     const u = (P.tail[i].u + P.tail[i + 1].u) / 2;
     const col = u > 0.72 ? mixc(TAIL_D, WHITE, clamp((u - 0.72) / 0.14, 0, 1)) : COAT_D;
@@ -438,6 +476,35 @@ function drawGround(P) {
     }
   }
 }
+function drawVapes(P) {
+  for (const vp of vapes) {
+    const q = proj([vp.x, vp.y, vp.z]);
+    if (!q) continue;
+    const u = vp.age / VAPE_LIFE;
+    const r = (vp.r + u * 0.055) * DPR * H * 0.9 / q[2];
+    ctx.globalAlpha = 0.24 * (1 - u) * (1 - u * 0.6);
+    ctx.fillStyle = '#eaf2fb';
+    ctx.beginPath(); ctx.arc(q[0], q[1], r, 0, TAU); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+function drawShadow(P) {
+  // contact shadow as a two-band alpha overlay (#2270): penumbra ring + umbra
+  // core. Drawn post-faces on purpose — a depth-sorted ground card lands at the
+  // same centroid z as the snow tiles under it and got painted over (the old hard
+  // ellipse survived only as a 313 px sliver); the overlay is deterministic.
+  const cx = P.X + 0.36, cy = 0.08;
+  const q = proj([cx, cy, 0.0012]);
+  const qx = proj([cx + 0.10, cy, 0.0012]);
+  const qy = proj([cx, cy + 0.10, 0.0012]);
+  if (!q || !qx || !qy) return;
+  const ex = Math.hypot(qx[0] - q[0], qx[1] - q[1]) / 0.10;   // px per metre across
+  const ey = Math.hypot(qy[0] - q[0], qy[1] - q[1]) / 0.10;    // px per metre in depth
+  ctx.fillStyle = 'rgba(58,66,96,0.30)';
+  ctx.beginPath(); ctx.ellipse(q[0], q[1], 0.72 * ex, 0.26 * ey, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = 'rgba(48,54,82,0.34)';
+  ctx.beginPath(); ctx.ellipse(q[0], q[1], 0.40 * ex, 0.14 * ey, 0, 0, TAU); ctx.fill();
+}
 function drawSparkle(P) {
   const gs = lite ? 2.6 : 1.3;
   const S0 = Math.floor(P.X / gs) * gs;
@@ -459,6 +526,16 @@ function drawSparkle(P) {
   ctx.globalAlpha = 1;
 }
 function drawTrees(P) {
+  // near row (#2270): twin-slot rule — pitch LOOP/2, both slots identical
+  // size AND depth; travel over the loop shifts exactly two slots, so the
+  // shifted pattern repaints the unchanged scene (seam-safe parallax layer).
+  const pitchN = LOOP / 2;
+  const n0 = Math.floor((P.X - 16) / pitchN);
+  for (let j = n0; j <= n0 + 2; j++) {
+    const grp = ((j % 2) + 2) % 2;
+    const wx = j * pitchN + hash(grp + 31) * pitchN;
+    drawTree(P, wx, 12.5, 2.4, grp * 5);
+  }
   const pitch = LOOP / 3;
   const j0 = Math.floor((P.X - 22) / pitch);
   for (let j = j0; j <= j0 + 3; j++) {
@@ -486,8 +563,10 @@ function drawClouds(P) {
 /* ---------------- prints & puffs ---------------- */
 const prints = [];   // {x, y, hind, age}
 const puffs = [];    // {x, y, z, vx, vz, r, age, hind}
+const vapes = [];    // {x, y, z, vx, vz, r, age} — breath in the cold air (#2270)
 const landEvents = [];
 const PRINT_LIFE = 2.4;   // s (< K·T = 3.72 s: prints die before the seam)
+const VAPE_LIFE = 0.55;   // s (< K·T too: breath never survives the seam)
 function spawnLand(name) {
   const g = LEGS[name];
   const n = Math.floor(simT / T);
@@ -511,6 +590,12 @@ function stepFX(dt) {
   while (prints.length && prints[0].age > PRINT_LIFE) prints.shift();
   for (const pf of puffs) { pf.age += dt; pf.x += pf.vx * dt; pf.z += pf.vz * dt; pf.vz -= 4.2 * dt; if (pf.z < 0) { pf.z = 0; pf.vz = 0; } }
   while (puffs.length && puffs[0].age > 0.34) puffs.shift();
+  for (const vp of vapes) {
+    vp.age += dt; vp.x += vp.vx * dt; vp.z += vp.vz * dt;
+    vp.vz -= 0.55 * dt;                       // buoyant, then settling
+    if (vp.vz < -0.05) vp.vz = -0.05;
+  }
+  while (vapes.length && vapes[0].age > VAPE_LIFE) vapes.shift();
 }
 function drawPrints(P) {
   for (const pr of prints) {
@@ -656,6 +741,20 @@ function step(dt) {
     if (st && !pawPrev[name]) spawnLand(name);
     pawPrev[name] = st;
   }
+  // breath vapour, phase-locked to the suspension window (the wide air gap
+  // 0.37–0.58; one exhale per stride at its apex) — #2270
+  if (P.p >= 0.42 && P.p - dt / T < 0.42) {
+    const h = P.hpts[P.hpts.length - 1];
+    const dn = norm3([h[0] - P.poll[0], 0, h[2] - P.poll[2]]);
+    const n = P.n;
+    for (let i = 0; i < 3; i++) {
+      const hs1 = hash(i * 17 + ((n % K) + K) % K), hs2 = hash(i * 29 + n);
+      vapes.push({ x: h[0] + dn[0] * 0.022 + (hs1 - 0.5) * 0.010, y: h[1] + (hs2 - 0.5) * 0.008,
+        z: h[2] - 0.008 + hs1 * 0.004, vx: -0.9 - hs2 * 0.5, vz: 0.10 + hs1 * 0.08,
+        r: 0.010 + 0.006 * hs2, age: 0 });
+    }
+    if (vapes.length > 24) vapes.splice(0, vapes.length - 24);
+  }
   stepFX(dt);
 }
 function render() {
@@ -690,9 +789,11 @@ function render() {
     ctx.closePath(); ctx.fill();
     if (f.ridge) { ctx.lineTo(f.s[f.s.length - 1][0], f.closeY + 2); ctx.lineTo(f.s[0][0], f.closeY + 2); ctx.closePath(); ctx.fill(); }
   }
+  drawShadow(P);
   drawSparkle(P);
   drawPrints(P);
   drawPuffs();
+  drawVapes(P);
   // ground haze band softening the horizon
   const hz0 = clamp(hzY - H * 0.03, 0, H);
   const hz = ctx.createLinearGradient(0, hz0, 0, hz0 + H * 0.14);
@@ -786,7 +887,7 @@ function foxCenterScreen() {
 window.__foxTest = {
   ready: true,
   frames: () => frames,
-  reset() { simT = 0; acc = 0; prints.length = 0; puffs.length = 0; landEvents.length = 0; for (const k in pawPrev) delete pawPrev[k]; slow = false; azLock = 0; elLock = 0.20; },
+  reset() { simT = 0; acc = 0; prints.length = 0; puffs.length = 0; vapes.length = 0; landEvents.length = 0; for (const k in pawPrev) delete pawPrev[k]; slow = false; azLock = 0; elLock = 0.20; },
   pause() { running = false; },
   resume() { running = true; },
   slow(v) { slow = !!v; },
@@ -809,6 +910,16 @@ window.__foxTest = {
   landings: () => landEvents.slice(),
   prints: () => prints.length,
   puffs: () => puffs.length,
+  vapes: () => vapes.length,
+  tuft: () => lastTuft,
+  blinkAt: (n) => (((n % K) + K) % K) === BLINK_SEED,
+  shadowBands() {                       // [inner-umbra RGB, outer-penumbra RGB] on the snow
+    const P = poseAt(simT);
+    const qi = proj([P.X + 0.36, 0.08, 0.004]);
+    const qo = proj([P.X + 0.36, 0.25, 0.004]);
+    if (!qi || !qo) return null;
+    return [pixel(qi[0] / DPR, qi[1] / DPR), pixel(qo[0] / DPR, qo[1] / DPR)];
+  },
   pixel, countPixels, foxCenterScreen,
   horizonPx: () => HZ / DPR,
   partScreen(which) {

@@ -29,6 +29,12 @@
 //  3. flex amplitude `0.050` -> `0`: EXACTLY the arch gate goes RED (0.000),
 //     24/25 — the cracking back is provably animated, not painted on.
 //
+// #2270 polish gates (vapour / tuft / blink / shadow-bands) — proven-fail as
+// one combined mutant (2026-11-14): zig amplitude 0.20 -> 0, BLINK_SEED 3 -> -1,
+// vapour spawn block removed, penumbra alpha 0.30 -> 0 and umbra drawn with the
+// penumbra's colour: EXACTLY the four new gates go RED (33/4), all 30 original
+// gates green — the polish layer is provably present and the gait laws untouched.
+//
 // Usage: node scripts/foxcheck.mjs [--shots <dir>]
 // Needs a dev server serving public/demos (DEV_PORT, default 5173).
 
@@ -176,6 +182,9 @@ const boxBehind = null; void boxBehind
 await page.waitForFunction(() => window.__foxTest.prints() >= 6, null, { timeout: 8000 }).catch(() => {})
 const printN = await page.evaluate(() => window.__foxTest.prints())
 ok('paw prints accumulate behind the runner (≥ 6 after two strides)', printN >= 6, printN + ' prints')
+// breath vapour (#2270): one exhale per stride, spawned in the suspension window
+const vaped = await page.waitForFunction(() => window.__foxTest.vapes() >= 1, null, { timeout: 8000 }).then(() => true).catch(() => false)
+ok('breath vapour forms once per stride at suspension', vaped, await page.evaluate(() => window.__foxTest.vapes()) + ' vapes live')
 await page.evaluate(() => window.__foxTest.setPhase(0.66))
 const trailDark = await page.evaluate(`(()=>{const t=window.__foxTest;const c=t.foxCenterScreen();const dpr=window.devicePixelRatio||1;const cv=document.querySelector('canvas#c');const x0=Math.round((c[0]-330)*dpr),y0=Math.round((c[1]+40)*dpr),w=Math.round(220*dpr),h=Math.round(70*dpr);const img=cv.getContext('2d').getImageData(Math.max(0,x0),Math.max(0,y0),w,h).data;let n=0;for(let i=0;i<img.length;i+=12){const r=img[i],g=img[i+1],b=img[i+2];if(r+g+b<560)n++}return n})()`)
 ok('the print trail reads on the snow behind the fox', trailDark > 120, trailDark + ' dark px')
@@ -183,6 +192,18 @@ ok('the print trail reads on the snow behind the fox', trailDark > 120, trailDar
 // spruce silhouettes on the horizon band
 const spruce = await page.evaluate(`(()=>{const t=window.__foxTest;const dpr=window.devicePixelRatio||1;const cv=document.querySelector('canvas#c');const hz=t.horizonPx();const y0=Math.max(0,Math.round((hz-70)*dpr)),h=Math.round(80*dpr);const img=cv.getContext('2d').getImageData(0,y0,cv.width,h).data;let n=0;for(let i=0;i<img.length;i+=12){const r=img[i],g=img[i+1],b=img[i+2];if(r<95&&g<115&&b<130)n++}return n})()`)
 ok('distant spruce silhouettes stand on the horizon band', spruce > 150, spruce + ' dark px')
+
+// #2270 polish gates — face/coat/breath/tail/paws/shadow/parallax pass
+{
+  const tuftV = await page.evaluate(() => window.__foxTest.tuft())
+  ok('tail rings carry zig-zag tufts (φ · seed modulation > 0.1)', tuftV > 0.1, tuftV.toFixed(3))
+  const blinkSeeds = await page.evaluate(() => [0, 1, 2, 3, 4, 5].map(n => window.__foxTest.blinkAt(n)))
+  ok('blink is scheduled on exactly one stride seed of six', blinkSeeds.filter(Boolean).length === 1, JSON.stringify(blinkSeeds))
+  const bands = await page.evaluate(() => window.__foxTest.shadowBands())
+  const lum = c => (c[0] + c[1] + c[2]) / 3
+  ok('contact shadow reads as umbra inside a softer penumbra', !!bands && lum(bands[0]) + 10 < lum(bands[1]) && lum(bands[1]) < 208,
+    bands ? 'umbra ' + Math.round(lum(bands[0])) + ' / penumbra ' + Math.round(lum(bands[1])) : 'no probe')
+}
 
 /* ---------------- 4. PHONE ---------------- */
 {
