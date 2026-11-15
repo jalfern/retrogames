@@ -47,6 +47,14 @@ export const CFG = {
     bulletLife: 3.4,      // seconds — bullets that find no dirt retire as 'miss'
     deck: 6,              // ground plane
     ceil: 620,
+    // burst discipline: an air-cooled Vickers held closed-belt glows red and
+    // starts to walk. ~13 rounds to redline (1.7 s of trigger), ~5.5 s of
+    // silence back to cold, a soft band where the aim is untouched, and at
+    // full heat ±0.045 rad — ~7 m across at 250 m, wider than the biplane.
+    heatShot: 0.077,
+    heatCool: 0.006,      // per tick
+    heatSoft: 0.25,
+    heatSpread: 0.045,    // rad at full heat
     // test-only switches so the harness can prove each muscle is load-bearing
     stallOn: true,
     bulletGravity: true,
@@ -54,6 +62,7 @@ export const CFG = {
     consume: true,        // false: the belt feeds air — a machine gun on a statue
     turnOn: true,         // false: the bank flies nowhere
     hitScale: 1,
+    heatOn: true,         // false: the barrel never warms — spray is free
 }
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v)
@@ -82,6 +91,7 @@ export function newGame(missionIdx = 0) {
         // is false — the simulation would look "peaceful", not broken.
         belt: src.belt ?? 240, total: src.belt ?? 240, hp: src.hp ?? 2,
         alive: true, deadT: 0, cooldown: 0, stalled: false,
+        heat: 0,
         skill: src.skill ?? 0, slot: src.slot ?? 0,
         hits: 0, missed: 0, fired: 0,
     })
@@ -149,7 +159,38 @@ function flyPlane(g, pl, inp) {
 }
 
 // ------------------------------------------------------------- synchronized guns ----
+// Burst discipline. An air-cooled Vickers held closed-belt overheats: the
+// barrel glows, sags and walks its tracers across the sky. The cone is
+// deterministic — each round steps around it by the golden angle (Math.random
+// is banned here, and even a real hot barrel does not put every round in the
+// same sector). `predictHit` folds in the SAME deviation with the SAME
+// azimuth, so the receipt stays exact: when the barrel runs hot, the sky
+// stops honouring long shots, and spray buys misses instead of hits.
+const GOLD = 2.399963229728653 // golden angle in radians
+
+export function heatDev(pl) {
+    return CFG.heatOn ? CFG.heatSpread * Math.max(0, (pl.heat || 0) - CFG.heatSoft) : 0
+}
+
+// Rotate the spawn velocity by `dev` radians off the bore: u is the horizon
+// perpendicular (|pitch| ≤ 1.25 keeps the bore off vertical), n = f × u.
+// seq is the id the round is about to take (own fired counter — a foe's gun
+// on the same tick must not shift a plane's own cone).
+function coneVel(f, seq, dev, v) {
+    if (!dev) return v
+    let ux = f.z, uz = -f.x
+    const un = Math.hypot(ux, uz) || 1
+    ux /= un; uz /= un
+    const n = { x: f.y * uz, y: f.z * ux - f.x * uz, z: -f.y * ux }
+    const ang = seq * GOLD
+    const sp = Math.hypot(v.x, v.y, v.z)
+    const c = Math.cos(ang) * sp * dev
+    const s = Math.sin(ang) * sp * dev
+    return { x: v.x + c * ux + s * n.x, y: v.y + s * n.y, z: v.z + c * uz + s * n.z }
+}
+
 function flyGun(g, pl, fire) {
+    if (CFG.heatOn) pl.heat = Math.max(0, pl.heat - CFG.heatCool)   // a silent barrel cools
     if (pl.cooldown > 0) pl.cooldown--
     if (!fire || !pl.alive || pl.cooldown > 0) return
     if (pl.belt <= 0) {
@@ -157,16 +198,28 @@ function flyGun(g, pl, fire) {
         return
     }
     const f = fwd(pl)
+    // the round flies with the heat it leaves behind, not the heat it adds
+    const dev = heatDev(pl)
+    const seq = pl.fired + 1
     pl.belt--
     pl.fired++
     if (!CFG.consume) pl.belt++          // mutant: the belt feeds air
     pl.cooldown = CFG.rofTicks
+    if (CFG.heatOn) {
+        const before = pl.heat
+        pl.heat = Math.min(1, pl.heat + CFG.heatShot)
+        if (before < 0.75 && pl.heat >= 0.75) g.events.push({ type: 'overheat', who: pl.id })
+    }
+    const v = coneVel(f, seq, dev, {
+        x: f.x * CFG.muzzle + f.x * pl.v * 0.4,
+        y: f.y * CFG.muzzle + f.y * pl.v * 0.4,
+        z: f.z * CFG.muzzle + f.z * pl.v * 0.4,
+    })
     g.bullets.push({
         id: ++g.bulletSeq, faction: pl.faction, owner: pl.id,
         x: pl.x + f.x * 5, y: pl.y + f.y * 5, z: pl.z + f.z * 5,
-        vx: f.x * CFG.muzzle + f.x * pl.v * 0.4,
-        vy: f.y * CFG.muzzle + f.y * pl.v * 0.4,
-        vz: f.z * CFG.muzzle + f.z * pl.v * 0.4,
+        vx: v.x, vy: v.y, vz: v.z,
+        dev,
         age: 0,
     })
     g.events.push({ type: 'shot', who: pl.id })
@@ -381,9 +434,17 @@ export function pilotInput(g) {
 export function predictHit(g, me, tgt) {
     const f = fwd(me)
     let x = me.x + f.x * 5, y = me.y + f.y * 5, z = me.z + f.z * 5
-    const vx = f.x * CFG.muzzle + f.x * me.v * 0.4
-    let vy = f.y * CFG.muzzle + f.y * me.v * 0.4
-    const vz = f.z * CFG.muzzle + f.z * me.v * 0.4
+    // the receipt simulates the round the trigger would ACTUALLY spawn —
+    // barrel heat and cone azimuth included (own fired counter, +1: this is
+    // the id the round takes if the pilot commits it this tick)
+    const v0 = coneVel(f, me.fired + 1, heatDev(me), {
+        x: f.x * CFG.muzzle + f.x * me.v * 0.4,
+        y: f.y * CFG.muzzle + f.y * me.v * 0.4,
+        z: f.z * CFG.muzzle + f.z * me.v * 0.4,
+    })
+    const vx = v0.x
+    let vy = v0.y
+    const vz = v0.z
     const ttx = Math.sin(tgt.yaw) * Math.cos(tgt.pitch) * tgt.v
     const tty = Math.sin(tgt.pitch) * tgt.v
     const ttz = Math.cos(tgt.yaw) * Math.cos(tgt.pitch) * tgt.v
@@ -444,7 +505,7 @@ export function stateHash(g) {
     mix(g.tick)
     for (const q of all(g)) {
         mix(q.x); mix(q.y); mix(q.z); mix(q.v); mix(q.yaw); mix(q.pitch)
-        mix(q.belt); mix(q.hp); mix(q.alive ? 1 : 0)
+        mix(q.belt); mix(q.hp); mix(q.alive ? 1 : 0); mix(q.heat)
     }
     mix(g.bullets.length); mix(g.bulletSeq)
     for (const b of g.bullets) { mix(b.id); mix(b.x); mix(b.y); mix(b.z) }

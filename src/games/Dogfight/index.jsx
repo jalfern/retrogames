@@ -237,6 +237,10 @@ const DogfightGame = () => {
                     if (e.who === 0) { audioController.playNoise(0.05, 0.06); shake = Math.min(0.4, shake + 0.12) }
                     else audioController.playTone(180, 0.05, 'square', 0.02)
                 } else if (e.type === 'dry') audioController.playTone(220, 0.05, 'square', 0.04)
+                else if (e.type === 'overheat') {
+                    // the Vickers is red: keep holding and the tracers walk
+                    if (e.who === 0) { audioController.playTone(96, 0.18, 'square', 0.05); say('BARRELS RED HOT — BREAK YOUR BURSTS') }
+                }
                 else if (e.type === 'hit') {
                     if (e.victim === 0) { audioController.playNoise(0.1, 0.09); flash = 1; shake = 0.5; say('YOU HIT — EVASIVE!') } else { audioController.playTone(130, 0.08, 'square', 0.06); say('DIRECT HIT') }
                 } else if (e.type === 'down') {
@@ -400,6 +404,12 @@ const DogfightGame = () => {
             if (h.alt) h.alt.textContent = String(Math.max(0, Math.round(p.y)))
             if (h.belt) h.belt.textContent = String(Math.max(0, p.belt))
             if (h.beltBar) h.beltBar.style.width = `${(Math.max(0, p.belt) / p.total) * 100}%`
+            if (h.gunBar) {
+                // the gun-heat tape: what the player sprays, the sky answers
+                const ht = Math.min(1, Math.max(0, p.heat))
+                h.gunBar.style.width = `${Math.round(ht * 100)}%`
+                h.gunBar.style.background = ht >= 0.75 ? '#ef4444' : ht > CFG.heatSoft ? '#fb923c' : '#fde047'
+            }
             if (h.thr) h.thr.style.height = `${Math.round(throttle * 100)}%`
             if (h.clock) h.clock.textContent = `${Math.max(0, Math.ceil(gs.clock - gs.tick / 30))}`
             if (h.stall) h.stall.style.opacity = p.alive && p.stalled ? (Math.floor(now / 160) % 2 ? '1' : '0.2') : '0'
@@ -488,7 +498,7 @@ const DogfightGame = () => {
             window.__dogTest = {
                 probe: () => ({
                     screen: screenRef.current, tick: gs.tick, end: gs.end, why: gs.why, mission,
-                    p: { x: gs.p.x, y: gs.p.y, z: gs.p.z, yaw: gs.p.yaw, pitch: gs.p.pitch, roll: gs.p.roll, v: gs.p.v, belt: gs.p.belt, hp: gs.p.hp, alive: gs.p.alive, stalled: gs.p.stalled, throttle },
+                    p: { x: gs.p.x, y: gs.p.y, z: gs.p.z, yaw: gs.p.yaw, pitch: gs.p.pitch, roll: gs.p.roll, v: gs.p.v, belt: gs.p.belt, hp: gs.p.hp, alive: gs.p.alive, stalled: gs.p.stalled, heat: gs.p.heat, throttle },
                     foes: gs.foes.map((q) => ({ x: q.x, y: q.y, z: q.z, v: q.v, alive: q.alive, hp: q.hp })),
                     bullets: gs.bullets.length,
                     ledger: ledgerOk(),
@@ -547,7 +557,7 @@ const DogfightGame = () => {
                 state: () => ({
                     tick: gs.tick, score: gs.foes.filter((f) => !f.alive).length, done: !!gs.end,
                     seed: contractSeed, mission, end: gs.end, why: gs.why,
-                    hp: gs.p.hp, belt: gs.p.belt, bullets: gs.bullets.length,
+                    hp: gs.p.hp, belt: gs.p.belt, bullets: gs.bullets.length, heat: gs.p.heat,
                     hash: stateHash(gs),
                 }),
                 canvas: () => canvas,
@@ -556,12 +566,13 @@ const DogfightGame = () => {
                 title: 'WWI DOGFIGHT',
                 getState: () => [
                     `${gs.name} tick ${gs.tick} end ${gs.end || '-'} throttle ${throttle.toFixed(2)}`,
-                    `v ${gs.p.v.toFixed(1)} m/s  alt ${gs.p.y.toFixed(0)} m  hp ${gs.p.hp}  belt ${gs.p.belt}/${gs.p.total}`,
+                    `v ${gs.p.v.toFixed(1)} m/s  alt ${gs.p.y.toFixed(0)} m  hp ${gs.p.hp}  belt ${gs.p.belt}/${gs.p.total}  guns ${Math.round(gs.p.heat * 100)}%`,
                     `bullets ${gs.bullets.length}  bandits ${gs.foes.filter((f) => f.alive).length}/${gs.foes.length}  ledger ${ledgerOk() ? 'exact' : 'BROKEN'}`,
                 ],
                 actions: [
                     { label: 'PROGNOSIS', run: () => window.__dogTest.prognose() },
                     { label: '+1 ROUND', run: () => { gs.p.belt++; gs.p.total++; return `belt ${gs.p.belt} — slack the solver is NOT allowed to assume` } },
+                    { label: 'REDLINE GUNS', run: () => { gs.p.heat = 1; return 'barrel at 100% — hold the trigger and watch the tracers walk' } },
                     { label: 'HIT ME', run: () => { gs.p.hp--; if (gs.p.hp <= 0) { gs.p.alive = false; gs.p.deadT = 0; gs.events.push({ type: 'crash', who: 0 }) } return `hp ${gs.p.hp}` } },
                 ],
             })
@@ -618,6 +629,10 @@ const DogfightGame = () => {
                         <div id="dog-belt" ref={setHud('belt')} className="text-xl font-bold text-yellow-100">0</div>
                         <div className="w-10 h-1.5 bg-black/50 mt-1 rounded overflow-hidden">
                             <div ref={setHud('beltBar')} className="h-full bg-yellow-300" style={{ width: '100%' }} />
+                        </div>
+                        <div className="text-[9px] tracking-widest opacity-70 mt-1">GUNS</div>
+                        <div className="w-10 h-1.5 bg-black/50 rounded overflow-hidden">
+                            <div id="dog-gunheat" ref={setHud('gunBar')} className="h-full bg-yellow-300" style={{ width: '0%' }} />
                         </div>
                         <div className="text-[9px] tracking-widest opacity-70 mt-1">THR</div>
                         <div className="w-10 h-2 bg-black/50 rounded overflow-hidden flex items-end">
