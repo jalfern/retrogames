@@ -13,6 +13,21 @@ just paints and listens.
   input (tap steps instantly, hold auto-steps every `MOVE_STEP`), HUD, DEV hooks.
 - `attract.js` — cycling attract copy.
 
+## The firefly's door (#2364)
+`CFG.flyTravel`: the fly HOLDS its heading and turns in the fixed cycle
+(down, right, up, left) only when steel, boulder, diamond or the world edge
+blocks it — so it patrols every reachable cell instead of orbiting one pocket.
+FLY PIT ships with a door for that: a two-cell dust seam in the pit's east
+wall and a steel-lined flight corridor (rows 7/9 steel, dead end col 29)
+across the cavern roof. The fly's first eastbound pass bores the seam (~tick
+6) and shuttles pit<->corridor forever. Two laws keep it fair: fire never
+crosses steel, so the chain stays inside pit+seam; the fly turns only against
+steel, so its patrol never leaves the corridor dust-free — the harvest at
+row 18 provably cannot burn (dashcheck's containment invariant). The corridor
+cells the fly passes stay lit ~5 ticks (it ignites what it touches — even
+air), and the gap in the tube floor at col 22 lets the player climb up and
+play chicken: enter between the trail cooling and the next pass, or die.
+
 ## The planner (`planStep` / `planRun` in sim.js)
 BFS over diggable cells to the nearest gem (gems are doors, never corridors —
 tunneling through a vein drops it), then to the exit; one arrow every
@@ -28,12 +43,14 @@ crush releases the seat silently. DEV probes: `__dashTest.watching()`,
 
 ## Verify
 ```bash
-npm run dashcheck             # 47 checks: every cave winnable, replay
-                              # determinism, rule pins (crush, gem-dirt, fire)
+npm run dashcheck             # 54 checks: every cave winnable, replay
+                              # determinism, rule pins (crush, gem-dirt, fire),
+                              # FLY RELEASE (#2364: escape, containment, chicken)
+npm run dashcheck -- --mutate # 61: +7 — every CFG switch silenced goes red
 DEV_PORT=<p> npm run watchcheck -- --only boulder-dash  # 182: seat pilot + pins
 ```
 
 ## Honest gaps
 - No amoeboid/push walls from later BD variants — four classic-style caves only.
-- The firefly wanders its steel cell; it never escapes it as the original's
-  firefly sometimes could through open corridors.
+- The corridor patrol is a fixed shuttle (the fly turns only against steel, so
+  it never weaves into the cavern proper the way an original butterfly could).
