@@ -44,6 +44,30 @@ function nearColor(w) {
     return null
 }
 
+// #2363 accent tolerance for the verb tiers. The recogniser spells an accent
+// the way it sounds — a vowel shift, a dropped or swapped letter — and dmax
+// already prices each slip as one edit. The leash chooses how far a slip may
+// reach before an ordinary word invents a command:
+//   2 letters   — exact only (NO: a 1-edit slip is half the word)
+//   3-4 letters — 1 edit (vunt→vent, stahp→stop, wier→wire). The verb tiers
+//                 read BEFORE the colour tiers and shadow them, so they ride
+//                 TIGHTER than nearColor: "pear" is 2 from SEAT and stays
+//                 silent, while "blew" (2 from BLUE) lands.
+//   5+ letters  — 2 edits (homophones mis-spell wide: neddle→needle,
+//                 herri→hurry, kwick→quick).
+const LEASH = (len) => (len >= 5 ? 2 : 1)
+
+// nearWord(w, words) — does the heard word slip within any target's leash?
+// Exact hits never arrive here (the caller runs the exact tier first, so a
+// real word always wins) and 2-letter inputs never fuzzy-match anything.
+function nearWord(w, words) {
+    if (w.length < 3) return false
+    for (const target of words) {
+        if (target.length > 2 && dmax(w, target, LEASH(target.length))) return true
+    }
+    return false
+}
+
 // parseCall(text) -> { kind:'color', color } | { kind:'sync' } | { kind:'hold', seat }
 //                  | { kind:'seat', seat } | { kind:'warn' } | null
 export function parseCall(text, holder = 0) {
