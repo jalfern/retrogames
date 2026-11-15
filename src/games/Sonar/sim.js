@@ -36,6 +36,7 @@ export const ROCK = 1
 
 export const CFG = {
     waveSpeed: 2,        // cells per tick the sonar front travels (40 cells/s)
+    cueRange: 12,        // #2365: rings (≈24 cells) over which a contact's heat falls to floor
     fade: 90,            // ticks a lit cell stays known (4.5 s), then black
     pingCd: 30,          // ticks between pings (1.5 s) — silence is forced planning
     moveEvery: 3,        // ticks between player steps (~6.7 cells/s)
@@ -51,6 +52,7 @@ export const CFG = {
     carve: true,         // caves are carved all the way to the vent (false = plug it)
     eelKill: true,       // an eel that touches you takes a life
     descend: true,       // the vent takes you down a depth
+    cue: true,           // #2365: a contact's ring maps to heat/pitch (false = frozen cue)
 }
 
 export const DIRS = {
@@ -235,6 +237,17 @@ export function eelNext(e) {
 }
 
 // --------------------------------------------------------------- the game ----
+// #2365 — the distance cue. A contact blip carries `ring`: the wavefront delay
+// (in ping buckets) at which the sound physically reached the eel. That number
+// is KNOWLEDGE — it is recorded by the same BFS arrival the cell lighting uses,
+// and the renderer derives threat-heat from it, never from a live eel cell.
+// Pure and monotonic so sonarcheck can pin it in Node: closer ⇒ hotter.
+export function contactHeat(ring) {
+    if (!CFG.cue) return 0.5                     // MUTANT (see the switch comment): cue frozen flat
+    if (ring == null || ring < 0) return 0.5     // shape without ring knowledge reads neutral
+    return 1 - Math.min(1, ring / CFG.cueRange) * 0.88
+}
+
 export function makeGame(cave, opts = {}) {
     const g = {
         seed: cave.seed,
@@ -257,7 +270,8 @@ export function makeGame(cave, opts = {}) {
         pings: [],
         lastPing: -999,
         mem: new Int32Array(N).fill(-1),   // KNOWLEDGE: tick the front last reached a cell, -1 never
-        blips: [],                        // KNOWLEDGE: {x,y,t,id} — eel contacts, fading
+        blips: [],                        // KNOWLEDGE: {x,y,t,id,ring} — eel contacts with the ring
+                                        //   (ping-bucket delay) that touched them, fading
         cmds: [],
         events: [],
     }
@@ -322,7 +336,10 @@ export function ping(g, opts = {}) {
 
 // one cell entering knowledge: light it, light the ROCK faces standing in the
 // already-heard water, and touch every eel that is physically in that cell.
-function light(g, c, t) {
+// `ring` (the wavefront's ping-bucket delay, #2365) rides along on the contact
+// — knowledge recorded at the instant the sound arrives, so heat/pitch can read
+// nearness without anyone in the draw path ever seeing where an eel LIVES.
+function light(g, c, t, ring) {
     g.mem[c] = t
     if (g.grid[c] === ROCK) return
     const x = cx(c), y = cy(c)
@@ -330,7 +347,10 @@ function light(g, c, t) {
         if (inB(x + dx, y + dy) && g.grid[idx(x + dx, y + dy)] === ROCK) g.mem[idx(x + dx, y + dy)] = t
     }
     for (const e of g.eels) {
-        if (eelCell(e) === c) g.blips.push({ x, y, t, id: e.id })
+        if (eelCell(e) === c) {
+            g.blips.push({ x, y, t, id: e.id, ring })
+            g.events.push({ type: 'contact', ring })
+        }
     }
 }
 
@@ -398,7 +418,7 @@ export function step(g) {
         const k = g.tick - p.t0
         if (k > p.maxK) continue
         const list = p.buckets[k]
-        if (list) for (const c of list) light(g, c, g.tick)
+        if (list) for (const c of list) light(g, c, g.tick, k)
     }
     g.pings = g.pings.filter(p => g.tick - p.t0 <= p.maxK)
 

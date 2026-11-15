@@ -170,5 +170,70 @@ for (let i = 0; i < 900; i++) {
     }
 }
 
+// ---- #2365 distance cue: a contact mark's COLOR must read the ring it came
+// in on. Hot marks (ring ≤5, ≈10 cells) must be red-dominant in pixels; cold
+// marks (ring ≥9, ≈18+ cells) must stay blue-dominant. Sampled as max(r−b)
+// across the mark's cell so the stroke lands no matter where it crosses. ----
+{
+    const seen = new Map()                     // "x,y,ring" -> max r−b observed
+    let pings = 0
+    const sampleCell = (x, y) => page.evaluate(([x, y]) => {
+        const c = document.querySelector('canvas[data-sonar-stage]')
+        const d = c.getContext('2d').getImageData(x * 16, y * 16, 16, 16).data
+        let mx = -255
+        for (let i = 0; i < d.length; i += 4) mx = Math.max(mx, d[i] - d[i + 2])
+        return mx
+    }, [x, y])
+    const collect = async (s) => {
+        if (s.screen !== 'play') return
+        for (const m of (s.contactMarks || [])) {
+            if (m.ring < 0) continue
+            if (m.x === s.player.x && m.y === s.player.y) continue
+            const key = `${m.x},${m.y},${m.ring}`
+            if (seen.has(key)) continue
+            seen.set(key, await sampleCell(m.x, m.y))
+        }
+    }
+    const classify = () => {
+        let hotN = 0, hotOk = 0, coldN = 0, coldOk = 0
+        for (const [key, v] of seen) {
+            const ring = Number(key.split(',')[2])
+            if (ring <= 5) { hotN++; if (v >= 30) hotOk++ }
+            else if (ring >= 9) { coldN++; if (v <= -20) coldOk++ }
+        }
+        return { hotN, hotOk, coldN, coldOk }
+    }
+    // make sure we're in a run with pings falling; the planner swim above
+    // has already produced far contacts — harvest them from a fresh run too.
+    let st = await probe()
+    if (st.screen !== 'play') { await tap('KeyN'); await wait(500) }
+    for (let i = 0; i < 260; i++) {
+        st = await probe()
+        if (st.screen !== 'play') break
+        await collect(st)
+        const c0 = classify()
+        if (c0.coldN >= 1 && c0.hotN >= 1) break
+        if (st.cooldown <= 1) { await tap('Space'); pings++ }
+        // rig a patrol to walk at the diver: its contact must arrive on a
+        // NEAR ring (setup-only — the wavefront touch itself stays honest).
+        if (c0.hotN === 0 && st.cooldown <= 1 && i % 12 === 11 && st.lives === 3) await page.evaluate(() => window.__sonarTest.trailEel())
+        await wait(70)
+    }
+    const c = classify()
+    r.check('far contacts really paint cold (blue-dominant pixels)', c.coldN >= 1 && c.coldOk === c.coldN,
+        `${c.coldOk}/${c.coldN} cold samples, ${pings} pings`)
+    r.check('near contacts really paint hot (red-dominant pixels)', c.hotN >= 1 && c.hotOk === c.hotN,
+        `${c.hotOk}/${c.hotN} hot samples`)
+    // monotonic in pixels too: mean hot excess must exceed mean cold excess
+    let hotSum = 0, hotCnt2 = 0, coldSum = 0, coldCnt2 = 0
+    for (const [key, v] of seen) {
+        const ring = Number(key.split(',')[2])
+        if (ring <= 5) { hotSum += v; hotCnt2++ }
+        else if (ring >= 9) { coldSum += v; coldCnt2++ }
+    }
+    r.check('pixel heat separates near from far', hotCnt2 > 0 && coldCnt2 > 0 && (hotSum / hotCnt2) > (coldSum / coldCnt2) + 40,
+        `hot mean ${(hotSum / Math.max(1, hotCnt2)).toFixed(0)} vs cold mean ${(coldSum / Math.max(1, coldCnt2)).toFixed(0)}`)
+}
+
 r.check('zero page errors across the whole playthrough', errors.length === 0, errors.slice(0, 4).join(' | '))
 r.exit(browser)
