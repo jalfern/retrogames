@@ -55,7 +55,9 @@ engine, pinned to the original four mazes (`levelCount: 4`).
     intent head now infers distance from monDx/monDy: agreement 0.987 learned,
     not 1.000 copied; `plaicraftcheck` gates that no column equals the label.
     `policy.js` is GENERATED weights (1493 numbers, quantized to 4 decimals) —
-    never hand-edit; `npm run plaicraft:train` regenerates. M on the hero
+    never hand-edit; training lives in retrogames-rl since stage 2 (#2394)
+    (`train.mjs` on the 3090; the export that feeds it is `npm run
+    plaicraft:export`). M on the hero
     select seats the brain in slot 2 (`plaicraftcheck` gates the pipeline:
     recordings replay exact, seat predicts the expert ≥90% moves, dead-weight
     mutant collapses). Dataset format: `data/plaicraft/README.md`; write-up:
