@@ -171,6 +171,16 @@ export const LEVELS = [
         spawn: { x: 3, y: 18 }, exit: { x: 36, y: 10 },
         amoebaDir: [1, 0],
         proves: ['dig', 'push', 'fell', 'crush', 'amoeba', 'dissolve'],
+        // #2417 readability data (painter-only — the grid is untouched, the
+        // sim never sees it). bolts: every pushwall and the way it gives, so
+        // the painter can shade a one-cell arrow on the give side — the
+        // mechanic teaches itself, no tutorial. dashcheck pins both lists to
+        // the grid: if the vault is re-carved and the data lags, red.
+        bolts: [[22, 10, 'E'], [26, 10, 'E']],
+        // lids: the dirt row directly above the slime pocket — two cells under
+        // the tube. A green grain telegraph reads "danger below" BEFORE the
+        // player digs in (the pocket was invisible until the second dig).
+        lids: [[24, 12], [25, 12], [26, 12], [27, 12], [28, 12]],
         build() {
             const c = new Carve()
             c.shell()

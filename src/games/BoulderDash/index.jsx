@@ -86,6 +86,13 @@ const DashGame = () => {
         // cellIndex -> strength for the fly's fading comet; alarmed fires the
         // distant chirp once per level when the fly first enters the corridor.
         let dustSet = new Set()
+        // #2417 polish (renderer/audio only — sim untouched): lidSet tints the
+        // pocket-lid cells green, boltDir gives each pushwall the way it gives
+        // (painted as an arrow), amoBorn remembers the tick each slime head
+        // spawned so it can flash on that generation (fed by 'amoeba' events).
+        let lidSet = new Set()
+        const boltDir = new Map()
+        const amoBorn = new Map()
         const TRAIL_LIFE = 10
         const trail = new Map()
         let alarmed = false
@@ -100,6 +107,9 @@ const DashGame = () => {
             runMoves = 0; lastMoveTick = -99
             held.length = 0
             dustSet = new Set((meta.dust || []).map(([x, y]) => y * W + x))
+            lidSet = new Set((meta.lids || []).map(([x, y]) => y * W + x))
+            boltDir.clear(); (meta.bolts || []).forEach(([x, y, d]) => boltDir.set(y * W + x, d))
+            amoBorn.clear()
             trail.clear(); alarmed = false
         }
         loadLevel(0, true)
@@ -111,9 +121,15 @@ const DashGame = () => {
                 else if (e.type === 'fell') audioController.playTone(150, 0.05, 'triangle', 0.04)
                 else if (e.type === 'gemlost') audioController.playSweep(500, 200, 0.2, 'sawtooth', 0.07)
                 else if (e.type === 'ignite' || e.type === 'spread') audioController.playNoise(0.08, 0.06)
-                else if (e.type === 'push') { audioController.playTone(90, 0.06, 'square', 0.05); audioController.playNoise(0.04, 0.03) }
-                else if (e.type === 'crush') { audioController.playNoise(0.1, 0.08); audioController.playTone(70, 0.1, 'triangle', 0.06) }
-                else if (e.type === 'amoeba') audioController.playTone(170 + ((e.x * 7 + e.y * 13) % 60), 0.03, 'sine', 0.022)
+                // #2417 vault audio: push/crush used to share fell/dig's range.
+                // A bolt now sounds like a BOLT — a sub-bass thud below every
+                // rock noise plus a short metallic ring nothing else owns.
+                else if (e.type === 'push') { audioController.playTone(55, 0.07, 'triangle', 0.05); audioController.playTone(1245, 0.05, 'square', 0.018); audioController.playNoise(0.03, 0.02) }
+                else if (e.type === 'crush') { audioController.playNoise(0.1, 0.08); audioController.playTone(46, 0.12, 'triangle', 0.07); audioController.playTone(980, 0.09, 'square', 0.022) }
+                else if (e.type === 'amoeba') {
+                    audioController.playTone(170 + ((e.x * 7 + e.y * 13) % 60), 0.03, 'sine', 0.022)
+                    amoBorn.set(e.y * W + e.x, gs.tick)   // painter: flash fresh heads (#2417)
+                }
                 else if (e.type === 'dissolve') audioController.playSweep(1200, 300, 0.18, 'sawtooth', 0.05)
                 else if (e.type === 'locked') audioController.playTone(160, 0.08, 'sawtooth', 0.06)
                 else if (e.type === 'die') audioController.playDeath()
@@ -225,6 +241,14 @@ const DashGame = () => {
                             ctx.fillStyle = '#ffe08a'
                             ctx.fillRect(px + 3, py + 4, 2, 2); ctx.fillRect(px + 9, py + 2, 2, 2); ctx.fillRect(px + 11, py + 11, 2, 2)
                         }
+                        // #2417 pocket telegraph: green grains seep through the
+                        // lid cells — the slime below is honest foreshadowing,
+                        // painted from meta.lids (dashcheck pins them to the lid).
+                        if (lidSet.has(y * W + x)) {
+                            ctx.fillStyle = 'rgba(96,224,96,0.15)'; ctx.fillRect(px, py, TS, TS)
+                            ctx.fillStyle = '#6fbf5a'
+                            ctx.fillRect(px + 4, py + 5, 2, 2); ctx.fillRect(px + 10, py + 9, 2, 2); ctx.fillRect(px + 7, py + 12, 2, 1)
+                        }
                     } else if (t === STEEL) {
                         ctx.fillStyle = '#5b6b7a'; ctx.fillRect(px, py, TS, TS)
                         ctx.fillStyle = '#8595a4'; ctx.fillRect(px, py, TS, 3); ctx.fillRect(px, py, 3, TS)
@@ -251,11 +275,24 @@ const DashGame = () => {
                         ctx.fillStyle = '#66e04a'
                         ctx.beginPath(); ctx.arc(px + 8 + wob - 1, py + 8 + (wob === 1 ? 1 : -1), 6, 0, Math.PI * 2); ctx.fill()
                         ctx.fillStyle = '#b6ff8e'; ctx.fillRect(px + 5 + wob, py + 4, 3, 3)
+                        // #2417 birth flash: a head the tick it spawns lights up
+                        // pale-white for a few CA ticks — the wave's direction
+                        // reads as motion, not just colour, in lit corridors too.
+                        const born = amoBorn.get(y * W + x)
+                        if (born !== undefined && gs.tick - born <= 3) {
+                            ctx.fillStyle = 'rgba(235,255,205,0.55)'; ctx.fillRect(px + 1, py + 1, TS - 2, TS - 2)
+                            ctx.fillStyle = '#ffffff'; ctx.fillRect(px + 7, py + 7, 2, 2)
+                        }
                     } else if (t === AMO_BODY) {
                         ctx.fillStyle = '#187024'; ctx.fillRect(px, py, TS, TS)
                         ctx.fillStyle = '#2ea83e'
                         ctx.fillRect(px + 2, py + 3, 4, 4); ctx.fillRect(px + 9, py + 8, 4, 4)
                         ctx.fillStyle = '#0f4c18'; ctx.fillRect(px + 8, py + 2, 3, 3); ctx.fillRect(px + 3, py + 11, 3, 2)
+                        // #2417 contrast rim (the original outlines the amoeba):
+                        // a dark 1px border separates the wave from lit dirt.
+                        ctx.fillStyle = '#0b3a12'
+                        ctx.fillRect(px, py, TS, 1); ctx.fillRect(px, py + TS - 1, TS, 1)
+                        ctx.fillRect(px, py, 1, TS); ctx.fillRect(px + TS - 1, py, 1, TS)
                     } else if (t === PUSHWALL) {
                         // a brick bolt: warm iron banding + rivets, unmistakable
                         // against cold steel and brown dirt at a glance.
@@ -263,6 +300,18 @@ const DashGame = () => {
                         ctx.fillStyle = '#b07c38'; ctx.fillRect(px, py, TS, 3); ctx.fillRect(px, py, 3, TS)
                         ctx.fillStyle = '#5c3a14'; ctx.fillRect(px + 2, py + 8, TS - 4, 2); ctx.fillRect(px + 8, py + 2, 2, 6)
                         ctx.fillStyle = '#e0b06a'; ctx.fillRect(px + 3, py + 3, 2, 2); ctx.fillRect(px + 11, py + 3, 2, 2); ctx.fillRect(px + 3, py + 11, 2, 2); ctx.fillRect(px + 11, py + 11, 2, 2)
+                        // #2417 direction cue: an embossed arrow on the side the
+                        // bolt gives (meta.bolts tells the truth; dashcheck pins
+                        // the marks to the grid, so the hint can never lie).
+                        const bd = boltDir.get(y * W + x)
+                        if (bd === 'E' || bd === 'W') {
+                            const m = (a) => (bd === 'E' ? a : TS - a)   // mirror around the cell centre
+                            ctx.fillStyle = '#3a2208'
+                            ctx.beginPath(); ctx.moveTo(px + m(10), py + 3); ctx.lineTo(px + m(15), py + 8); ctx.lineTo(px + m(10), py + 13); ctx.closePath(); ctx.fill()
+                            ctx.fillRect(px + Math.min(m(10), m(4)), py + 7, 7, 2)
+                            ctx.fillStyle = '#f0c884'
+                            ctx.fillRect(px + m(12), py + 7, 1, 2)        // highlight step on the arrowhead
+                        }
                     }
                 }
             }
