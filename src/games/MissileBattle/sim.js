@@ -30,6 +30,13 @@ export const CFG = {
     maxBlasts: 26,
     score: { icbm: 25, smart: 60, bomber: 45, chain: 40 },
     spans: [[0, 104], [40, 216], [152, 256]],
+    // JINK (#2375): the smart bomb reads the sky for a short-fused detonation
+    // bearing down on it and commits sideways, away from the blast point. One
+    // committed escape per bomb, then the jink is spent for its lifetime — the
+    // arcade lesson: the yellow bomb makes you EARN the kill (feint, then lead
+    // the escape). Deterministic: same sky, same jink, every replay.
+    dodge: { r: 30, horizon: 26, v: 1.1, ticks: 14, cool: 20, budget: 1 },
+    dodgeOn: true,
 }
 
 
@@ -247,6 +254,36 @@ export function step(g, input = {}) {
     for (const e of g.enemies) {
         if (!e.alive) continue
         e.t++
+        // JINK (#2375): a smart bomb dodges a short-fused blast that will
+        // arrive on top of it — away from the detonation point, committed for
+        // CFG.dodge.ticks, once per bomb (then a cooldown; when the budget is
+        // spent the weave is naked again). The first interceptor learns where
+        // it runs; the next one is aimed there. Pure geometry, no luck.
+        if (e.kind === 'smart' && CFG.dodgeOn) {
+            if (e.dodgeT === undefined) { e.dodgeT = 0; e.dodgeCool = 0; e.dodgeLeft = CFG.dodge.budget }
+            if (e.dodgeT > 0) {
+                e.dodgeT--
+                e.px += e.dodgeDir * CFG.dodge.v
+                if (e.dodgeT === 0) { e.dodgeLeft--; e.dodgeCool = CFG.dodge.cool }
+            } else {
+                if (e.dodgeCool > 0) e.dodgeCool--
+                if (e.dodgeLeft > 0 && e.dodgeCool === 0) {
+                    let bd = CFG.dodge.r, dir = 0
+                    for (const m of g.intc) {
+                        const rem = m.eta - m.t
+                        if (rem < 1 || rem > CFG.dodge.horizon) continue
+                        const dx = e.x - m.tx, dy = e.y - m.ty
+                        const d = Math.hypot(dx, dy)
+                        if (d < bd) { bd = d; dir = dx >= 0 ? 1 : -1 }
+                    }
+                    if (dir !== 0) {
+                        e.dodgeDir = dir
+                        e.dodgeT = CFG.dodge.ticks
+                        g.events.push({ type: 'jink', x: Math.round(e.x), y: Math.round(e.y), dir, tick: g.tick })
+                    }
+                }
+            }
+        }
         e.px += e.vx
         e.y += e.vy
         e.x = e.px + (e.amp ? Math.sin(e.t * 0.07) * e.amp : 0)
