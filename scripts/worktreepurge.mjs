@@ -7,8 +7,12 @@
 // lanebusy shape (#2121): pure decision + thin OS collector + a runner.
 //
 // A worktree is LANDED (purgeable) when one of these PROVES it:
-//   - HEAD is an ancestor of origin/main   (re-detached merged worktree,
-//     or a detached HEAD that main already carries);
+//   - a DETACHED HEAD that is an ancestor of origin/main — the re-detached
+//     post-merge state the law prescribes (`git checkout --detach
+//     origin/main`). Branch worktrees never land on ancestry alone: a fresh
+//     `worktree add -b forge/<slug> origin/main` is clean, branch-bound and
+//     at the tip (#2293 ate a live builder workspace this way minutes after
+//     #2279 merged); its proof must be a PR state or a pushed ref;
 //   - its branch's GitHub PR is MERGED    (squash-merge rewrites history,
 //     so ancestry alone misses these);
 //   - its PR was CLOSED unmerged and the branch is pushed (dead decision-
@@ -49,7 +53,11 @@ export function purgeVerdict(wt) {
     if (wt.dirty) return { action: 'keep', why: 'uncommitted work' }
     if (wt.driven) return { action: 'keep', why: 'lane process inside' }
     if (wt.branch && wt.prState === 'OPEN') return { action: 'keep', why: 'PR open' }
-    if (wt.ancestor) return { action: 'purge', why: 'HEAD on origin/main' }
+    // Ancestry proves landing only for a DETACHED worktree (#2293): a fresh
+    // `add -b <slug> origin/main` lane worktree is clean, at the tip, and has
+    // no PR yet — mid-build, not landed. A branch worktree must prove landing
+    // through GitHub (MERGED / CLOSED+pushed) or its pushed ref below.
+    if (wt.ancestor && !wt.branch) return { action: 'purge', why: 'detached HEAD on origin/main' }
     if (wt.branch && wt.prState === 'MERGED') return { action: 'purge', why: `PR merged (${wt.branch})` }
     if (wt.branch && wt.prState === 'CLOSED' && wt.pushed) {
         return { action: 'purge', why: `PR closed unmerged, pushed (${wt.branch})` }
