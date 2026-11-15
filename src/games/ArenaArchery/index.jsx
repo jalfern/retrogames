@@ -190,14 +190,24 @@ const ArenaArcheryGame = () => {
             bgDirty = false
         }
 
-        const drawArrowShape = (c, x, y, ang, dim) => {
+        const drawArrowShape = (c, x, y, ang, dim, hot, t = 0) => {
             c.save()
             c.translate(x, y); c.rotate(ang)
-            c.strokeStyle = dim ? '#8a7a55' : '#e8d9a0'
+            c.strokeStyle = hot ? '#ff9a4a' : dim ? '#8a7a55' : '#e8d9a0'
             c.lineWidth = 2
             c.beginPath(); c.moveTo(-8, 0); c.lineTo(6, 0); c.stroke()
-            c.fillStyle = dim ? '#b9a06a' : '#ffd23e'
+            c.fillStyle = hot ? '#ff4a1e' : dim ? '#b9a06a' : '#ffd23e'
             c.beginPath(); c.moveTo(8, 0); c.lineTo(3, -3); c.lineTo(3, 3); c.closePath(); c.fill()
+            if (hot) {
+                // #2377 an ember on a burning shaft: a spark that hops
+                // between spots driven by the shaft's cell and the SIM tick
+                // — never by wall-clock, so pause freezes the fire like the
+                // stone.
+                const k = Math.floor(x + y + t) % 3
+                c.fillStyle = k === 0 ? '#ffd23e' : '#ff7a2e'
+                c.fillRect(1, -5 - k, 1, 1)
+                c.fillRect(-4 + k, -4, 1, 1)
+            }
             c.restore()
         }
 
@@ -256,8 +266,26 @@ const ArenaArcheryGame = () => {
                 }
                 ctx.globalAlpha = 1
             }
+            const hot = g.heat
             for (const s of g.stuck) {
-                drawArrowShape(ctx, (s.cell % g.W) * CW + CW / 2, Math.floor(s.cell / g.W) * CW + CW / 2, s.ang || 0.6, true)
+                const sx = (s.cell % g.W) * CW + CW / 2
+                const sy = Math.floor(s.cell / g.W) * CW + CW / 2
+                if (hot) {
+                    // #2377 cover is burning out: the cell breathes an ember
+                    // glow (brighter the closer the shaft is to rotting), the
+                    // shaft rattles ±1 px and smoulders orange. Every term is
+                    // sim-state only — cell, age, tick — so a paused arena
+                    // freezes the fire with the stone.
+                    const j = ((s.cell * 7 + g.tick * 5) % 3) - 1
+                    const burn = Math.min(1, s.age / CFG.stuckTTL)
+                    ctx.globalAlpha = 0.22 + 0.16 * Math.sin(g.tick * 0.35 + s.cell) ** 2 + burn * 0.22
+                    ctx.fillStyle = '#ff5a24'
+                    ctx.fillRect(sx - CW / 2 + 3, sy - CW / 2 + 3, CW - 6, CW - 6)
+                    ctx.globalAlpha = 1
+                    drawArrowShape(ctx, sx + j, sy - j, s.ang || 0.6, false, true, g.tick)
+                } else {
+                    drawArrowShape(ctx, sx, sy, s.ang || 0.6, true)
+                }
             }
             for (const ar of g.arrows) {
                 if (ar.state === 'stuck') continue
@@ -265,6 +293,17 @@ const ArenaArcheryGame = () => {
             }
             drawArcher(ctx, g.p[0], '#ff5d6c', play ? squash[0] : 0)
             drawArcher(ctx, g.p[1], '#4ad7ff', play ? squash[1] : 0)
+            if (hot) {
+                // the arena itself sweats: a breathing ember frame top and
+                // bottom says "re-engage" before any text has to
+                ctx.globalAlpha = 0.05 + 0.035 * Math.sin(g.tick * 0.2)
+                const grd = ctx.createLinearGradient(0, 0, 0, PXH)
+                grd.addColorStop(0, 'rgba(255,90,36,1)'); grd.addColorStop(0.32, 'rgba(255,90,36,0)')
+                grd.addColorStop(0.68, 'rgba(255,90,36,0)'); grd.addColorStop(1, 'rgba(255,90,36,1)')
+                ctx.fillStyle = grd
+                ctx.fillRect(0, 0, PXW, PXH)
+                ctx.globalAlpha = 1
+            }
         }
 
         const handleEvents = (evts) => {
@@ -276,6 +315,11 @@ const ArenaArcheryGame = () => {
                 else if (e.type === 'hit') { say(e.who === 0 || mode === '2p' ? `PLAYER ${e.who + 1} HITS!` : 'THE BOT HITS YOU'); audioController.playNoise(0.09, 0.08) }
                 else if (e.type === 'respawn') audioController.playSweep(200, 420, 0.2, 'sine', 0.04)
                 else if (e.type === 'jump') audioController.playTone(300, 0.03, 'square', 0.02)
+                // #2377 heat: a low rumble climbing out of the floor when
+                // the dry spell bakes the arena; a relieved hiss when blood
+                // finally cools it.
+                else if (e.type === 'heat') { say('THE ARENA HEATS UP'); audioController.playSweep(85, 210, 0.55, 'sawtooth', 0.045) }
+                else if (e.type === 'cool') { say('FIRST BLOOD — COVER COOLS'); audioController.playSweep(560, 170, 0.28, 'triangle', 0.05) }
             }
         }
 
@@ -340,7 +384,7 @@ const ArenaArcheryGame = () => {
             if (h.p2) h.p2.textContent = `${modeRef.current === '1p' ? 'BOT' : 'P2'} ${g.p[1].score}`
             if (h.q1) h.q1.textContent = '▮'.repeat(g.p[0].quiver) + '▯'.repeat(Math.max(0, CFG.quiver - g.p[0].quiver))
             if (h.q2) h.q2.textContent = '▮'.repeat(g.p[1].quiver) + '▯'.repeat(Math.max(0, CFG.quiver - g.p[1].quiver))
-            if (h.time) h.time.textContent = `${Math.max(0, Math.ceil((CFG.matchTicks - g.tick) / 30))}s`
+            if (h.time) { h.time.textContent = `${Math.max(0, Math.ceil((CFG.matchTicks - g.tick) / 30))}s`; h.time.style.color = g.heat ? '#ff7a4a' : '#a5f3fc' }
             if (h.arena) h.arena.textContent = g.name
             if (h.toast) { h.toast.textContent = toastMsg; h.toast.style.opacity = toast > 0 ? '1' : '0' }
             if (toast > 0 && !pausedRef.current) toast--
@@ -425,6 +469,9 @@ const ArenaArcheryGame = () => {
                     p2: { x: gs.p[1].x, y: gs.p[1].y, alive: gs.p[1].alive, quiver: gs.p[1].quiver, receipts: gs.receipts[1] },
                     flying: gs.arrows.filter((a) => a.state === 'fly').length,
                     stuck: gs.stuck.length,
+                    // #2377 the heat engine, visible to the browser harness
+                    heat: gs.heat, lastHit: gs.lastHit, dryTicks: gs.tick - gs.lastHit,
+                    stuckCells: gs.stuck.map((s) => ({ cell: s.cell, age: s.age, x: (s.cell % gs.W) * CW + CW / 2, y: Math.floor(s.cell / gs.W) * CW + CW / 2 })),
                     arrows: gs.arrows.map((a) => ({ id: a.id, state: a.state, owner: a.owner })),
                     ledger: { ...gs.ledger, total: gs.total + gs.supplied, now: gs.p[0].quiver + gs.p[1].quiver + gs.arrows.filter((a) => a.state !== 'stuck').length + gs.stuck.length + gs.ledger.hit + gs.ledger.lost },
                     // attract is a separate sim instance — the harness grades
@@ -454,6 +501,10 @@ const ArenaArcheryGame = () => {
                 },
                 keysDown: (codes) => { for (const c of codes) held.add(c) },
                 keysUp: (codes) => { for (const c of codes) held.delete(c) },
+                // #2377 DEV cheat for the browser harness: make the arena
+                // remember no blood for an age — the gate itself then fires
+                // on the next REAL tick (state → step → paint, uncheated).
+                forceHeat: () => { gs.lastHit = Math.min(gs.lastHit, gs.tick - CFG.heatTicks) },
                 replayCheck: () => {
                     // +1 so a match that ENDED on the last recorded command
                     // gets that command applied in the twin too — stopping the
@@ -491,6 +542,7 @@ const ArenaArcheryGame = () => {
                 actions: [
                     { label: 'PROGNOSIS', run: () => window.__archeryTest.prognose() },
                     { label: '+1 ARROW', run: () => { gs.p[0].quiver++; gs.total++; return `P1 quiver ${gs.p[0].quiver} — extra slack the solver is NOT allowed to assume` } },
+                    { label: 'FORCE HEAT', run: () => { gs.lastHit = Math.min(gs.lastHit, gs.tick - CFG.heatTicks); return 'dry spell forced — the arena bakes on the next tick, and cover starts rotting' } },
                 ],
             })
         }
