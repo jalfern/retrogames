@@ -300,9 +300,8 @@ if (!MUT) {
                 mm.fighters[0].x = pr.x - 1.2
                 e.step(mm, [P({ lp: true }), P()])
                 for (let i = 0; i < 40 && mm.fighters[0].st === 'attack'; i++) e.step(mm, [P(), P()])
-                ok(MUT ? !pr.broken : (pr.broken && mm.events.some((x) => x.kind === 'propbreak')),
-                    MUT ? 'MUTANT: prop damage stripped -> the barrel survives the punch (harness bites)'
-                        : 'one light punch breaks a barrel (hp 1) and the propbreak event fires')
+                ok(pr.broken && mm.events.some((x) => x.kind === 'propbreak'),
+                    'one light punch breaks a barrel (hp 1) and the propbreak event fires')
             }
         }
         {
@@ -315,9 +314,9 @@ if (!MUT) {
                     for (let i = 0; i < 40 && mm.fighters[0].st === 'attack'; i++) e.step(mm, [P(), P()])
                 }
                 swing()
-                ok(MUT ? pr.hp === 2 : pr.hp === 1 && !pr.broken, 'the first light CRACKS a crate (hp 2 -> 1)')
+                ok(pr.hp === 1 && !pr.broken, 'the first light CRACKS a crate (hp 2 -> 1)')
                 swing()
-                ok(MUT ? !pr.broken : pr.broken, 'the second light breaks the crate')
+                ok(pr.broken, 'the second light breaks the crate')
             }
         }
         {
@@ -333,7 +332,7 @@ if (!MUT) {
                 mm.fighters[0].x = pr.x - 1.2
                 e.step(mm, [P({ hp: true }), P()])
                 for (let i = 0; i < 30 && mm.orbs.length === 0 && mm.fighters[0].st === 'attack'; i++) e.step(mm, [P(), P()])
-                ok(MUT ? mm.orbs.length === 0 : (mm.orbs.length === 1 && mm.events.some((x) => x.kind === 'orbdrop')), 'breaking an orb prop drops the pickup')
+                ok(mm.orbs.length === 1 && mm.events.some((x) => x.kind === 'orbdrop'), 'breaking an orb prop drops the pickup')
                 if (mm.orbs.length) {
                     const o = mm.orbs[0]
                     const m0 = mm.fighters[0].meter
@@ -355,7 +354,7 @@ if (!MUT) {
                 e.step(mm, [P({ right: true, lp: true }), P()])
                 let gone = false
                 for (let i = 0; i < 120; i++) { e.step(mm, [P(), P()]); if (pr.broken) { gone = true; break } }
-                ok(MUT ? !gone : gone, MUT ? 'MUTANT: no prop damage -> the fireball flies past' : 'a fireball smashes a barrel before the foe')
+                ok(gone, 'a fireball smashes a barrel before the foe')
                 ok(mm.projectiles.length === 0, 'the furniture eats the projectile either way')
             }
             const hit2 = layoutWith((p) => p.kind === 'crate' && p.x < -3.5, 'cinder')
@@ -367,7 +366,7 @@ if (!MUT) {
                 e.step(mm, [P({ right: true, lp: true }), P()])
                 let cracked = false
                 for (let i = 0; i < 120; i++) { e.step(mm, [P(), P()]); if (pr.hp < 2) { cracked = true; break } }
-                ok(MUT ? !cracked : (cracked && !pr.broken), 'one fireball CRACKS a crate (2 hp) and dies at it')
+                ok(cracked && !pr.broken, 'one fireball CRACKS a crate (2 hp) and dies at it')
                 ok(mm.projectiles.length === 0, 'the crate eats that shot too')
             }
         }
@@ -520,6 +519,27 @@ if (MUT) {
         }
     }
     ok(!mutSawQcb, 'MUTANT check: close-range qcb branch removed → CPU never throws the counter (harness bites)')
+    // #2334: both prop-damage paths stripped — the furniture must visibly
+    // survive what breaks it in the shipped engine.
+    {
+        let hit = null
+        for (let seed = 1; seed < 120 && !hit; seed++) {
+            const t = e.createMatch({ seed, guardButton: true, juggle: true, props: true, p1: { ...BY_ID.riv, cpu: false }, p2: { ...BY_ID.nyx, cpu: false } })
+            let w = 0
+            while (t.phase !== 'fight' && w++ < 300) e.step(t, [P(), P()])
+            const pr = t.props.find((p) => p.kind === 'barrel' && p.x < -3)
+            if (pr) hit = { m: t, pr }
+        }
+        let survived = false
+        if (hit) {
+            const { m: mm, pr } = hit
+            mm.fighters[0].x = pr.x - 1.2
+            e.step(mm, [P({ lp: true }), P()])
+            for (let i = 0; i < 40 && mm.fighters[0].st === 'attack'; i++) e.step(mm, [P(), P()])
+            survived = !pr.broken
+        }
+        ok(survived, 'MUTANT: prop damage stripped -> the barrel survives the punch (harness bites)')
+    }
     globalThis.__VIPER_NOQCB__ = false
     pull(path.join(HERE, '../src/engine/.mutant-fighting.mjs'))
 }
