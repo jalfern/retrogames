@@ -1773,6 +1773,39 @@ selectorGate(await loadSelector())
     } else {
         check('#1718 chip rig: the short run-up lands a cliff bump', false, 'no bump at lat 178 either direction')
     }
+    // ---- #2395 item 6: a grind is not one impact — grit piles at the foot --
+    // A pinned kart at asphalt speed sheds stone every GRIT.every ticks until
+    // it escapes: the crack-depth count at the wall must GROW through the
+    // grind (not just at the first chip), the pile must be pose-hash
+    // deterministic (banked replays byte-identical), and a rock crawl under
+    // GRIT.v must stay silent like the #1718 slow-bump law demands.
+    {
+        const crackCount = (g) => [...g.marks.values()].filter((d) => d === S.crack).length
+        const grindRun = () => {
+            const g = m.makeGame(9)
+            g.phase = 'race'; g.count = 0
+            const P = placeSand(g, 7, 178, 0)
+            P.boostT = 90; P.boostTier = 0
+            let early = 0; let pinnedTicks = 0
+            for (let i = 0; i < 120; i++) {
+                m.step(g, { u: true, steer: 0.32 })
+                if ((P.wpress || 0) >= 2) pinnedTicks++
+                if (i === 40) early = crackCount(g)
+            }
+            return { g, early, late: crackCount(g), pinnedTicks }
+        }
+        const grind = grindRun()
+        check('#2395 grind rig: a pinned rock-speed grind PILES grit at the wall foot (grows between the bounces)',
+            grind.pinnedTicks >= 8 && grind.late >= grind.early + 4,
+            `cracks t40 ${grind.early} → t120 ${grind.late}, pinned ${grind.pinnedTicks} ticks`)
+        const grind2 = grindRun()
+        check('#2395 grind law: the pile is a pose+tick hash — same seed, same drive, identical debris',
+            JSON.stringify([...grind.g.marks]) === JSON.stringify([...grind2.g.marks]))
+        const crawl = chipRun(4, 178)
+        check('#2395 grit law: a crawl under GRIT.v scuffs but throws no stone (slow-bump law stays pristine)',
+            crawl !== null && [...crawl.g.marks.values()].every((v) => v < S.crack),
+            crawl ? `bumps ${crawl.bumpPos.length}, max depth ${[...crawl.g.marks.values()].reduce((a, v) => Math.max(a, v), 0)}` : 'no bump')
+    }
     // #1702 self-heal rig: drive a hot pass, then leave the kart coasting on
     // asphalt. A live cell must lose one depth step each SAND.healT ticks of
     // age (a lip at depth 1 goes straight to pristine), and a pass that is
@@ -1963,8 +1996,57 @@ const wallShellGates = (check) => {
     check('#2388 collision debris scatters inward: chip and dashes fall to the wall foot',
         /markCell\(g, k\.x - nx \* 3, k\.y - ny \* 3, SAND\.chip\)/.test(simSrc) &&
         /const out = -\(5 \+ i \* 3/.test(simSrc))
+    // #2395 polish: sun-side faces, adaptive stride, index-pinned cracks,
+    // per-course crest over a coal edge, grind grit. Source-scan gates (the
+    // #2388 precedent) so --mutate can re-run these eyes on planted files.
+    check('#2395 sun-side law paints faces: warm down-sun, cool up-sun, both capped by SUN_TINT',
+        /wallSun\(i, s\)/.test(idxSrc) && /SUN_TINT\.maxWarm/.test(idxSrc) && /SUN_TINT\.maxCool/.test(idxSrc) &&
+        /rgbaS\(P\.sun,/.test(idxSrc) && /rgbaS\(P\.skyTop,/.test(idxSrc))
+    check('#2395 near segments break stride 1 (smooth crest up close), far segments stay stride 2',
+        /pr0\.f > 0 && pr0\.f < WALL_STRIDE_NEAR \? 1 : WALL_STRIDE/.test(idxSrc))
+    check('#2395 cracks are a per-index pick — the per-frame stride carry is gone (no strobe)',
+        /crack: wallCrack\(i, s\)/.test(idxSrc) && !/nextCrack/.test(idxSrc))
+    check('#2395 the crest runs its own tint over a coal depth-edge (mesas cannot read through)',
+        /rgbaS\(P\.outline, 0\.5\)/.test(idxSrc) && /ctx\.strokeStyle = P\.crest/.test(idxSrc))
+    check('#2395 a pinned grind feeds grit at the foot between the bounces (sim-side)',
+        /grindGrit\(g, k, nx, ny\)/.test(simSrc) && /\(k\.wpress \|\| 0\) < 2/.test(simSrc) &&
+        /g\.tick % GRIT\.every/.test(simSrc))
 }
 wallShellGates(check)
+
+// ---- #2395 polish laws in Node: sun-side cosine, crack cadence, crest roles
+{
+    const A = await import('../src/games/CometDrift/art.js')
+    const N = (await import('../src/games/CometDrift/track.js')).TRACK.N
+    const rgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]
+    const lum = (h) => { const [r, g, b] = rgb(h); return r * 0.299 + g * 0.587 + b * 0.114 }
+    let symBad = 0; let warm = 0; let cool = 0
+    for (let i = 0; i < N; i++) {
+        const sd1 = A.wallSun(i, 1); const sd2 = A.wallSun(i, -1)
+        if (Math.abs(sd1 + sd2) > 1e-9) symBad++
+        if (sd1 > 0.3) warm++
+        if (sd1 < -0.3) cool++
+    }
+    check('#2395 sun-side law: faces opposite each other are exact opposites of sun-dot',
+        symBad === 0, `${symBad} asymmetric points`)
+    check('#2395 sun-side law: a full lap shows both a lit and a shaded canyon side',
+        warm > N * 0.15 && cool > N * 0.15, `warm ${warm}, cool ${cool} of ${N}`)
+    let crackN = 0
+    for (let i = 0; i < N; i++) if (A.wallCrack(i, 1)) crackN++
+    const dens = crackN / N
+    check('#2395 crack law is a pure pick per track index (tick-persistent by construction)',
+        dens > 0.1 && dens < 0.5, `density ${(dens * 100).toFixed(1)}%`)
+    check('#2395 crack cadence reads as occasional fractures, not a cracked face on every quad',
+        dens < 0.5, `cracks on ${crackN} of ${N} segments (~every ${(1 / dens).toFixed(1)} faces, was every face)`)
+    const crestBad = []
+    for (const id of ['dusk', 'noon', 'dawn', 'heat']) {
+        const P = A.paletteFor(id)
+        if (!P.crest) crestBad.push(`${id}: no crest role`)
+        else if (!(lum(P.crest) > lum(P.rimLit))) crestBad.push(`${id}: crest not brighter than rim`)
+    }
+    check('#2395 every course carries its own crest tint, hotter than its rim stratum',
+        crestBad.length === 0, crestBad.join('; ') || 'dusk/noon/dawn/heat crests pinned')
+}
 
 if (process.argv.includes('--mutate')) {
     // #1498 mutants: (1) restore the narrow 132px clamp — the corridor the
@@ -2042,6 +2124,72 @@ if (process.argv.includes('--mutate')) {
             plant(idxPathW, idxSrcW.replace('for (const w of buildWalls()) items.push(w)', ''))
             await diedW('walls drawn outside the sprite sort (merge removed)', async () => wallShellGates(check))
         } finally { pull(idxPathW) }
+    }
+
+    // #2395 mutants: (1) never-crack threshold — the cadence gate must see a
+    // wall with no fractures at all; (2) strip a crest tint — the crest-role
+    // gate must name the course; (3) constant stride — the faceting gate must
+    // catch the camera-side chord widening again; (4) grit past every grind —
+    // the pile rig must notice the foot going silent mid-grind.
+    {
+        const { fileURLToPath } = await import('node:url')
+        const artPathP = fileURLToPath(new URL('../src/games/CometDrift/art.js', import.meta.url))
+        const idxPathP = fileURLToPath(new URL('../src/games/CometDrift/index.jsx', import.meta.url))
+        const simPathP = fileURLToPath(new URL('../src/games/CometDrift/sim.js', import.meta.url))
+        const diedP = async (label, run) => {
+            const before = R.fail
+            await run()
+            if (R.fail > before) console.log(`  MUTANT DIED — ${label}: the #2395 polish gates are load-bearing`)
+            else console.log(`  MUTANT SURVIVED — ${label}: the #2395 polish gates are BLIND`)
+        }
+        try {
+            plant(artPathP, readFileSync(artPathP, 'utf8').replace('export const WALL_CRACK_AT = 0.66', 'export const WALL_CRACK_AT = 1.5'))
+            await diedP('fractures are switched off track-wide', async () => {
+                const A2 = await import('../src/games/CometDrift/art.js' + '?p=' + Math.random())
+                const N2 = (await import('../src/games/CometDrift/track.js' + '?p=' + Math.random())).TRACK.N
+                let n = 0
+                for (let i = 0; i < N2; i++) if (A2.wallCrack(i, 1)) n++
+                check('#2395 crack cadence: the wall keeps a believable fracture rate', n > N2 * 0.1, `cracks on ${n} of ${N2}`)
+            })
+        } finally { pull(artPathP) }
+        try {
+            plant(artPathP, readFileSync(artPathP, 'utf8').replace("    crest:     '#e8ac68',\n", ''))
+            await diedP('Sunset Gulch loses its crest role', async () => {
+                const A2 = await import('../src/games/CometDrift/art.js' + '?p=' + Math.random())
+                const P2 = A2.paletteFor('dusk')
+                check('#2395 dusk keeps its crest tint', Boolean(P2.crest), P2.crest || 'missing')
+            })
+        } finally { pull(artPathP) }
+        try {
+            plant(idxPathP, readFileSync(idxPathP, 'utf8').replace('pr0.f > 0 && pr0.f < WALL_STRIDE_NEAR ? 1 : WALL_STRIDE', 'WALL_STRIDE'))
+            await diedP('the near-camera stride-1 break is removed (crest facets return)', async () => wallShellGates(check))
+        } finally { pull(idxPathP) }
+        try {
+            plant(simPathP, readFileSync(simPathP, 'utf8').replace('v: 3.6, every: 4', 'v: 99, every: 4'))
+            await diedP('grit speed raised past every grind (the pile never grows)', async () => {
+                const Mg = await import('../src/games/CometDrift/sim.js' + '?p=' + Math.random())
+                const Tk = await import('../src/games/CometDrift/track.js' + '?p=' + Math.random())
+                const e = Tk.TRACK.pts[0]
+                const g = Mg.makeGame(9)
+                g.phase = 'race'; g.count = 0
+                const P = g.karts[0]
+                P.x = e.x - Math.sin(e.a) * 178; P.y = e.y + Math.cos(e.a) * 178
+                P.a = e.a; P.idx = 0; P.hint = 0
+                P.v = 7; P.spinT = 0; P.driftT = 0; P.charge = -1; P.driftG = 0
+                P.boostT = 90; P.boostTier = 0; P.offroad = true; P.surf = 'sand'
+                // crack-depth cells on a PINNED tick (wpress>=2) are grit: chips
+                // fire only on the arrival tick (wpress===1), and no other law
+                // writes 3.5 (SAND ring=1, crater=3, chip=4.5).
+                let prev = 0; let gritTicks = 0
+                for (let i = 0; i < 120; i++) {
+                    Mg.step(g, { u: true, steer: 0.32 })
+                    const n = [...g.marks.values()].filter((d) => d === 3.5).length
+                    if (n > prev && (P.wpress || 0) >= 2) gritTicks++
+                    prev = n
+                }
+                check('#2395 grind rig: stone drops DURING the pin, not just at the arrival (grit ticks)', gritTicks >= 1, `crack-depth deposits on pinned ticks: ${gritTicks}`)
+            })
+        } finally { pull(simPathP) }
     }
 
     // #1687 mutant: restore the pre-change rival drift rule — hold every bend

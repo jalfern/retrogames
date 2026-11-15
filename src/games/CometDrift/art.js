@@ -28,6 +28,9 @@ export const PALETTE = {
     rockMid:   '#7c3e2c',
     rockLight: '#a45838',
     rimLit:    '#d09050',
+    // #2395 item 3: the crest line carries its own sun-line, a shade hotter
+    // than the top stratum — Sunset Gulch's is ember-gold over the rim.
+    crest:     '#e8ac68',
     crack:     '#33160f',
     // the sand apron between asphalt and cliff: lit near the road, shaded at
     // the wall foot, with grain and scattered pebbles
@@ -84,6 +87,8 @@ export const PALETTES = {
         rockMid:   '#b06840',
         rockLight: '#d08c58',
         rimLit:    '#f0c080',
+        // #2395 item 3: noon's crest is white-hot gold, sandier than the rim
+        crest:     '#ffe0a8',
         crack:     '#4a2416',
         apron:     '#e8c088',
         apronMid:  '#d8a868',
@@ -127,6 +132,9 @@ export const PALETTES = {
         rockMid:   '#8c4a34',
         rockLight: '#b46440',
         rimLit:    '#e0a260',
+        // #2395 item 3: the Dunes' crest is sandier than the Gulch's ember
+        // line — dawn first-light on a wind-carved dune crest.
+        crest:     '#f2d094',
         crack:     '#321410',
         apron:     '#d8a474',
         apronMid:  '#c08a54',
@@ -170,6 +178,8 @@ export const PALETTES = {
         rockMid:   '#cc9a64',
         rockLight: '#e4bc84',
         rimLit:    '#f8e0ac',
+        // #2395 item 3: the heat-hazed course bleaches its crest near-white
+        crest:     '#fff0c8',
         crack:     '#5a3418',
         apron:     '#f0dcc0',
         apronMid:  '#e0c49c',
@@ -348,6 +358,18 @@ export function strataBreaks(i, side) {
     const x2 = Math.max(x3 + 0.04, Math.min(0.86, (b[2] - ROCK_FOOT) / t))
     const x1 = Math.max(x2 + 0.04, Math.min(0.94, (b[1] - ROCK_FOOT) / t))
     return [x3, x2, x1]
+}
+
+// #2395 item 5: fractures are tick-persistent. The renderer used to walk the
+// rim each frame with a distance carry (crack every ~30 units of arc); on the
+// stride-2 quads that landed a crack on EVERY face and the hash-slant changed
+// per quad, so near faces strobed at racing speed. The pick is now a pure
+// function of (track index, side): stable forever, ~1 face in 3, cracks every
+// ~150px of arc. Node-gated (cometcheck measures the density and stability).
+const crackHash = (n) => { const v = Math.sin(n * 78.233) * 43758.5453; return v - Math.floor(v) }
+export const WALL_CRACK_AT = 0.66
+export function wallCrack(i, side) {
+    return crackHash(i * 6 + (side > 0 ? 5 : 3)) > WALL_CRACK_AT
 }
 
 // #502 item 4: rim shadow through the banked sweepers. Where bankAt() says
@@ -598,6 +620,21 @@ export function sunLayout(camA, W, pp, u, HZ, sunLift) {
     const sunX = half + pp * Math.tan(d)
     const sunY = HZ - Math.round(sunLift * u)
     return { sunX, sunY, discR, glowR, visible }
+}
+
+// ---- #2395 item 2: the dusk sun has a SIDE. Faces used to shade identically
+// whatever way they pointed; the low sun sits at one world azimuth, so a wall
+// face whose road-facing normal points down-sun catches the warm light and an
+// up-sun face sits in cool skylight. wallSun(i, side) is that cosine: the dot
+// of the face's inward normal with the sun direction. Pure, so the renderer
+// (index.jsx) and cometcheck read the same law; SUN_TINT caps how much either
+// pass may shift (the strata stay readable underneath).
+export const SUN_TINT = { floor: 0.18, maxWarm: 0.11, maxCool: 0.13 }
+export function wallSun(i, side) {
+    const q = TRACK.pts[i]
+    const nx = Math.cos(q.a + Math.PI / 2) * side
+    const ny = Math.sin(q.a + Math.PI / 2) * side
+    return -(nx * Math.cos(SUN_AZ) + ny * Math.sin(SUN_AZ))
 }
 
 // ---- #440 item 2: an overtaking rival must not blind the chase camera. At

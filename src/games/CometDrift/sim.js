@@ -213,6 +213,31 @@ function chipAt(g, k, nx, ny) {
     }
 }
 
+// #2395 item 6: a GRIND is not one impact. A kart pinned to the cliff at
+// racing speed sheds stone the whole time it's on the rock, so grit must
+// PILE at the wall foot between the bounces — the chip law above fires once
+// per fresh contact, then the grind was silent and the debris looked freshly
+// scattered every hit. While wpress climbs (pinned contact ticks) above the
+// grit speed, two crack-depth cells drop at the foot every GRIT.every ticks,
+// hash-jittered along the face. GRIT.v sits just above SAND.chipV: the same
+// "only asphalt/boost speed touches the rock" law — a sand-speed crawl
+// (plain-throttle hovers 3.19..3.40) throws nothing, so the #1718 slow-bump
+// law stays pristine. rng-free (pose + tick hash), banked replays stay
+// byte-identical; the #1702 flow heals the pile like every other decal.
+export const GRIT = { v: 3.6, every: 4 }
+function grindGrit(g, k, nx, ny) {
+    if ((k.wpress || 0) < 2 || k.v < GRIT.v || g.tick % GRIT.every !== 0) return
+    let h = (Math.floor(k.x * 13) ^ Math.floor(k.y * 7) ^ (g.tick * 37)) >>> 0
+    const tx0 = -ny; const ty0 = nx
+    for (let i = 0; i < 2; i++) {
+        h = (Math.imul(h, 1103515245) + 12345) >>> 0
+        const out = -(4 + (h % 9)) // inward px at the wall foot (−4..−12)
+        h >>>= 5
+        const tan = (h % 15) - 7 // tangential px
+        markCell(g, k.x + nx * out + tx0 * tan, k.y + ny * out + ty0 * tan, SAND.crack)
+    }
+}
+
 // #1687 deliberate drift-economy for the field (used by brain(), rivals only):
 // a skill-scaled tier target — the front markers chase gold, the back markers
 // bank blue early — a hard hold cap (steer authority bottoms at
@@ -501,10 +526,13 @@ function drive(g, k, inp) {
             while (daT > Math.PI) daT -= Math.PI * 2
             while (daT < -Math.PI) daT += Math.PI * 2
             k.a += daT * 0.12
+            const nx = Math.cos(p.a + Math.PI / 2) * side
+            const ny = Math.sin(p.a + Math.PI / 2) * side
+            grindGrit(g, k, nx, ny)
             if (k.bumpCd === 0) {
                 // #1718: chip the rock at the raw impact speed, before the
                 // bump damping — the cliff feels the hit the kart arrived with.
-                chipAt(g, k, Math.cos(p.a + Math.PI / 2) * side, Math.sin(p.a + Math.PI / 2) * side)
+                chipAt(g, k, nx, ny)
                 k.v *= CFG.bumpV
                 k.bumpCd = CFG.bumpCd
                 craterAt(g, k)
