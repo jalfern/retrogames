@@ -358,6 +358,27 @@ export function starField(seed = 0, n = 4) {
     }
     return out
 }
+// QA #2330-4: ART.md asks for a horizon and a moon disc where the theme has
+// windows. Both are pure functions of the window's seed, so the same window
+// keeps the same night — the moon never hops between panes or reshuffles
+// between frames. fy is fractional across the sky column and always sits
+// above the horizon line.
+export const HORIZON_F = 0.74                    // horizon as a fraction of the pane's sky column
+export function moonSpot(seed = 0) {
+    return {
+        fx: 0.18 + hash(seed * 5.1 + 2.3) * 0.64,
+        fy: 0.10 + hash(seed * 3.7 + 1.1) * (HORIZON_F - 0.3),
+    }
+}
+// distant towers standing on the horizon — two hash-pinned silhouettes so the
+// night outside has a skyline, not just a gradient. Heights stay well below the
+// moon band so the disc never sits on a rooftop.
+export function skyline(seed = 0) {
+    return [0, 1].map((i) => ({
+        fx: 0.10 + hash(seed * 1.7 + i * 4.3) * 0.7,
+        h: 3 + Math.round(hash(seed * 6.1 + i * 2.9) * 3),
+    }))
+}
 // a star's twinkle: never fully dark, a soft pulse, so the sky shimmers, not strobes.
 export function skyTwinkle(tick, ph = 0) {
     return 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(tick * 0.05 + ph * Math.PI * 2))
@@ -722,6 +743,26 @@ function palaceWall(ctx, c0, decos, tick) {
         // a cloud crossing the pane, denser mid-transit, clipped to the glass column
         ctx.save()
         ctx.beginPath(); ctx.rect(wx + 2, 44, 12, 40); ctx.clip()
+        // QA #2330-4: the night outside — a hash-pinned moon disc and a distant
+        // skyline standing on the horizon. Same seed as stars/cloud, so every
+        // window keeps its own fixed night; clouds cross in front of both.
+        const ms = moonSpot(pseed)
+        const mx = wx + 2 + Math.round(ms.fx * 11)
+        const my = 58 + Math.round(ms.fy * 12)
+        ctx.fillStyle = '#e8ecf8'
+        ctx.fillRect(mx - 1, my - 1, 3, 3)
+        ctx.fillRect(mx, my - 2, 1, 1)
+        ctx.fillRect(mx, my + 2, 1, 1)
+        ctx.fillRect(mx - 2, my, 1, 1)
+        ctx.fillRect(mx + 2, my, 1, 1)
+        ctx.fillStyle = 'rgba(150,155,190,0.8)'
+        ctx.fillRect(mx, my, 1, 1)
+        const hy = 44 + Math.round(HORIZON_F * 40)
+        ctx.fillStyle = 'rgba(12,14,32,0.92)'
+        ctx.fillRect(wx + 2, hy, 12, 84 - hy)
+        for (const twr of skyline(pseed)) ctx.fillRect(wx + 2 + Math.round(twr.fx * 10), hy - twr.h, 2, twr.h)
+        ctx.fillStyle = 'rgba(150,160,210,0.22)'
+        ctx.fillRect(wx + 2, hy, 12, 1)
         const cp = cloudCross(tick, pseed)
         if (cp > 0.02) {
             const cxp = wx - 4 + cp * 24

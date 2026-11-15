@@ -28,6 +28,9 @@ export const CFG = {
     walk: 1.45, run: 2.6, accel: 0.11, runAfter: 26, skid: 0.45, friction: 0.2,
     g: 0.45, jumpV: 8.4, holdG: 0.22, holdMax: 12, levG: 0.14, maxFall: 12,
     climbT: 56, shimmy: 0.9,
+    // QA #2330-2: while the prince hangs, the stone grinds under him — one low
+    // strain cue per strainPeriod ticks, starting after the first strainLead.
+    strainLead: 36, strainPeriod: 48,
     clock: 60 * 60 * 60, startHP: 2,
     reach: 44,
     strikeDur: 24, strikeHit0: 8, strikeHit1: 16, lunge: 1.6, lungeT: 10,
@@ -86,7 +89,7 @@ function princeAt(g, pos) {
     return {
         x: (pos.c + 0.5) * T, y: pos.r * T,
         vx: 0, vy: 0, facing: 1, dirTicks: 0,
-        onGround: false, crouch: false, hang: null, climb: 0,
+        onGround: false, crouch: false, hang: null, climb: 0, hangT: 0,
         anim: 'idle', animT: 0,
         hp: CFG.startHP, maxHP: CFG.startHP + g.bonusMax,
         invuln: 0, hurtT: 0, block: false,
@@ -433,18 +436,23 @@ export function step(g, inp = {}) {
     if (p.hang) {
         p.vx = 0; p.vy = 0; p.anim = 'hang'
         const hg = p.hang
+        // QA #2330-2: the stone grinds under a hanging prince — a low strain
+        // cue on fixed tick arithmetic, silent for the first strainLead ticks
+        // (the grip is the grab sound, the hoist is the climb sound).
+        p.hangT++
+        if (p.hangT > CFG.strainLead && p.hangT % CFG.strainPeriod === 0) g.events.push({ t: g.tick, type: 'strain' })
         if (up) {
             p.climb++; p.anim = 'climb'
             if (p.climb > CFG.climbT) {
-                p.hang = null; p.climb = 0
+                p.hang = null; p.climb = 0; p.hangT = 0
                 p.y = hg.r * T
                 p.x = clamp(p.x + hg.side * 6, CFG.HW, (g.level.W - 1) * T)
                 p.onGround = false; p.vy = -0.01
                 g.events.push({ t: g.tick, type: 'climb' }); p.noGrabUntil = g.tick + 30
                 moveY(g, p)
             }
-        } else if (down) { p.hang = null; p.climb = 0; p.fallFrom = p.y }
-        else if (dj) { p.hang = null; p.climb = 0; p.vy = -CFG.jumpV; p.vx = hg.side * 1.4; p.fallFrom = p.y; g.events.push({ t: g.tick, type: 'hangjump' }) }
+        } else if (down) { p.hang = null; p.climb = 0; p.hangT = 0; p.fallFrom = p.y }
+        else if (dj) { p.hang = null; p.climb = 0; p.hangT = 0; p.vy = -CFG.jumpV; p.vx = hg.side * 1.4; p.fallFrom = p.y; g.events.push({ t: g.tick, type: 'hangjump' }) }
         else if (left || right) {
             const d = right ? 1 : -1
             const edgeCol = hg.side > 0 ? Math.floor((p.x + CFG.HW + 1) / T) : Math.floor((p.x - CFG.HW - 1) / T)
@@ -452,8 +460,8 @@ export function step(g, inp = {}) {
             const stillWall = (below === SOLID || below === PLATFORM || below === LOOSE || below === GATE)
             const moveOk = (hg.side > 0 && d === 1) || (hg.side < 0 && d === -1)
             if (moveOk && stillWall) { moveX(g, p, p.x + d * CFG.shimmy); p.anim = 'shimmy' }
-            else if (moveOk && !stillWall) { p.hang = null; p.fallFrom = p.y }
-            else if (!moveOk) { p.hang = null; p.climb = 0; p.fallFrom = p.y }
+            else if (moveOk && !stillWall) { p.hang = null; p.hangT = 0; p.fallFrom = p.y }
+            else if (!moveOk) { p.hang = null; p.climb = 0; p.hangT = 0; p.fallFrom = p.y }
         }
         syncRoom(g)
         g.prev = { left, right, up, down, jump, shift, atk }
@@ -520,7 +528,7 @@ export function step(g, inp = {}) {
             if ((edge || under) && p.y > handR * T + 12 && p.y < (handR + 2) * T) {
                 p.hang = { side, c: col, r: handR }
                 p.x = side > 0 ? col * T - CFG.HW - 0.01 : (col + 1) * T + CFG.HW + 0.01
-                p.vy = 0; p.climb = 0; p.anim = 'hang'
+                p.vy = 0; p.climb = 0; p.hangT = 0; p.anim = 'hang'
                 g.events.push({ t: g.tick, type: 'grab' })
                 break
             }

@@ -89,6 +89,9 @@ const PrinceOfPersiaGame = () => {
         let attract = true
         let attractT = 0
         let endAttract = 0
+        // QA #2330-1: ticks spent in the CURRENT hang (−1 = not hanging) — the
+        // CLIMB/DROP grammar strip is transient, teaching on the first hang.
+        let hangHintT = -1
         const keys = { left: false, right: false, up: false, down: false, jump: false, shift: false, atk: false }
         let endSeen = false
 
@@ -254,7 +257,13 @@ const PrinceOfPersiaGame = () => {
             const before = g.events.length
             if (attract) {
                 attractT++
-                step(g, decide(g))
+                // QA #2330-5: attract sells the ledge grammar — hold Shift through
+                // falls so the loop shows grab → strain → climb on a phone's first
+                // look. The WATCH pilot keeps decide()'s tuned clean route (the
+                // slack budget lives there); shadow levels stay grab-free as well.
+                const inp = decide(g)
+                if (!g.shadow && !g.p.hang && !g.p.onGround && g.p.vy > 0) inp.shift = true
+                step(g, inp)
                 if (g.status === 'win' || g.status === 'lost') {
                     endAttract++
                     if (endAttract > 100 || attractT > 60 * 60 * 3) { g = makeGame(0); attractT = 0; endAttract = 0 }
@@ -268,6 +277,8 @@ const PrinceOfPersiaGame = () => {
             sfx(before)
             music()
             ambience()
+            // a fresh hang re-teaches the ledge grammar (transient, ~2 s)
+            hangHintT = g.p.hang ? (hangHintT < 0 ? 0 : hangHintT + 1) : -1
         }
 
         const draw = () => {
@@ -349,16 +360,23 @@ const PrinceOfPersiaGame = () => {
             if (g.status === 'play' && !attract) {
                 const firstRoom = g.levelIndex === 0 && g.room === 0
                 const guardEngaged = g.guards.some((q) => !q.dead && q.engaged)
-                if (firstRoom || guardEngaged) {
-                    const strip = guardEngaged ? 'X STRIKE  ·  UP BLOCK  ·  SHIFT GRAB'
+                // QA #2330-1: while hanging the d-pad IS the ledge grammar — a
+                // transient gold strip on every fresh hang (~2 s) teaches that
+                // climb/drop/shimmy are live, the way the first-room strip does.
+                const hangHint = !!g.p.hang && hangHintT < 132
+                const strip = hangHint
+                    ? 'CLIMB ↑  ·  DROP ↓  ·  ← → SHIMMY'
+                    : guardEngaged
+                        ? 'X STRIKE  ·  UP BLOCK  ·  SHIFT GRAB'
                         : '← → MOVE  ·  SPACE JUMP  ·  X STRIKE  ·  SHIFT GRAB'
+                if (hangHint || firstRoom || guardEngaged) {
                     ctx.font = '9px monospace'
                     ctx.textAlign = 'center'
                     const w = ctx.measureText(strip).width + 12
                     const cy = 22 + 15
                     ctx.fillStyle = 'rgba(6,6,14,0.72)'
                     ctx.fillRect(VW / 2 - w / 2, cy - 11, w, 14)
-                    ctx.fillStyle = guardEngaged ? '#e8b04a' : '#9aa0c0'
+                    ctx.fillStyle = (hangHint || guardEngaged) ? '#e8b04a' : '#9aa0c0'
                     ctx.fillText(strip, VW / 2, cy)
                 }
             }

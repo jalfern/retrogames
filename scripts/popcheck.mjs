@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path'
 import { makeGame, step, CFG, cloneGame, stateHash, chompDown, GUARD_STYLE, gateOpenHere, platePressed } from '../src/games/PrinceOfPersia/sim.js'
 import { decide, P } from '../src/games/PrinceOfPersia/planner.js'
 import { LEVEL_COUNT, makeLevel, RW, FH, GROUND, roomOf, SOLID, SPIKE, LOOSE, GATE, EXITPLATE } from '../src/games/PrinceOfPersia/levels.js'
-import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR, lightAt, torchGlow, facet, darkAlpha, LIGHT_AMBIENT, TORCH_RADIUS, LIGHT_DIR, escortSilhouettes, DOOR_ZONE, LIGHT_AMBIENT_LITE, HUD_LINE, torchSum, tempAt, bounceAt, poolVisibleAt, ambientFor, coolGlow, coolAt, moonSources, rimColor, bandAt, propShade, MOON_RADIUS, MOON_STRENGTH, VW, MOON_DILUTE, moonTint, coolBandAt, rimAlpha, paneKeyY, paneShift, WINDOW_ROW_PX, cloudCross, SKY_DRIFT, starField, skyTwinkle, shaftMotes, SHAFT_MOTES, archPath, fitAttractFont } from '../src/games/PrinceOfPersia/art.js'
+import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR, lightAt, torchGlow, facet, darkAlpha, LIGHT_AMBIENT, TORCH_RADIUS, LIGHT_DIR, escortSilhouettes, DOOR_ZONE, LIGHT_AMBIENT_LITE, HUD_LINE, torchSum, tempAt, bounceAt, poolVisibleAt, ambientFor, coolGlow, coolAt, moonSources, rimColor, bandAt, propShade, MOON_RADIUS, MOON_STRENGTH, VW, MOON_DILUTE, moonTint, coolBandAt, rimAlpha, paneKeyY, paneShift, WINDOW_ROW_PX, cloudCross, SKY_DRIFT, starField, skyTwinkle, shaftMotes, SHAFT_MOTES, archPath, fitAttractFont, moonSpot, skyline, HORIZON_F } from '../src/games/PrinceOfPersia/art.js'
 import { SFX, trackFor, TRACKS, duckFor, DUCK_LEVEL, DUEL_DUCK, ROOM_DUCK, BED_VOICE, CHASE_CUES, stepFor, PRESSURE_MIN, FINAL_MIN } from '../src/games/PrinceOfPersia/music.js'
 import { MUSIC, MUSIC_BUS } from '../src/utils/AudioController.js'
 
@@ -1458,6 +1458,123 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
         /const releaseAll[\s\S]{0,500}cPtr\.current = null[\s\S]{0,120}keyup/.test(vcSrc))
     ok('PRINCE OF PERSIA wires ✋ to ShiftLeft',
         /thirdAction=\{\{ label: '✋', code: 'ShiftLeft' \}\}/.test(idxSrc))
+}
+
+// ---- 24. QA #2330 polish: hang teaching, strain grind, clash split, pane night, attract grab ----
+{
+    const here = dirname(fileURLToPath(import.meta.url))
+    const idxSrc24 = readFileSync(join(here, '..', 'src', 'games', 'PrinceOfPersia', 'index.jsx'), 'utf8')
+    const artSrc24 = readFileSync(join(here, '..', 'src', 'games', 'PrinceOfPersia', 'art.js'), 'utf8')
+
+    // 24-1 the hang teaches itself: while hanging, a transient gold strip shows
+    // the ledge grammar (CLIMB/DROP/SHIMMY) — the phone's first hang is never silent.
+    ok('#2330-1 the shell shows a CLIMB/DROP grammar strip keyed to the hang',
+        /const hangHint = !!g\.p\.hang && hangHintT < \d+/.test(idxSrc24)
+        && /CLIMB ↑\s*·\s*DROP ↓\s*·\s*← → SHIMMY/.test(idxSrc24))
+    ok('#2330-1 the strip is transient: a long hang drops it again', /hangHintT < (\d+)/.test(idxSrc24) && Number(RegExp.$1) <= 240)
+
+    // 24-2 the stone grinds under a hanging prince — fixed tick arithmetic, the
+    // sim's own clock, silent while the grab's own drag is still the story.
+    const grind = () => {
+        const g = makeGame(0)
+        setGround(g, 14.5 * T, 4 * T)
+        let t = 0
+        while (g.tick < 600 && !g.p.hang && t++ < 240) step(g, { right: true, shift: true })
+        clearEv(g)
+        const times = []
+        for (let i = 0; i < 220; i++) {
+            step(g, {})
+            for (const e of g.events) if (e.type === 'strain') times.push(g.p.hangT)
+            g.events.length = 0
+        }
+        return { g, times }
+    }
+    {
+        const { g, times } = grind()
+        ok('#2330-2 hanging grinds strain cues on a fixed period, never during the first lead',
+            g.p.hang !== null && times.length >= 3
+            && times.every((v, i) => v > CFG.strainLead && (i === 0 || v - times[i - 1] === CFG.strainPeriod)))
+        ok('#2330-2 the strain voice is a long low grind, not the grab drag',
+            'strain' in SFX && (() => {
+                const sw = SFX.strain({}).find((st) => st[0] === 'sweep')
+                return !!sw && sw[1] <= 200 && sw[2] < sw[1] && sw[3] >= 0.18
+            })())
+        ok('#2330-2 the climb-up finish caps with a bright hoist note',
+            SFX.climb({}).length >= 2 && SFX.climb({}).some((st) => st[0] === 'tone' && st[1] >= 600))
+        ok('#2330-2 dropping off a hang silences the grind counter',
+            (() => { const h = grind(); const t0 = h.times.length; h.g.p.hang = null; h.g.p.hangT = 0
+                h.g.p.onGround = true; return h.g.p.hangT === 0 && t0 >= 3 })())
+    }
+
+    // 24-3 clash vs thud: on a phone the parry ring IS the timing cue, so it
+    // must be bright steel AND carry at least as far as the thuds it answers.
+    {
+        const tones = (t) => SFX[t]({}).filter((st) => st[0] === 'tone').map((st) => st[1])
+        const peak = (t) => Math.max(...SFX[t]({}).map((st) => (st[0] === 'noise' ? st[2] : st[0] === 'sweep' ? st[5] : st[4])))
+        ok('#2330-3 the parry rings on steel partials ≥1100 Hz', tones('parry').some((f) => f >= 1100))
+        ok('#2330-3 hit and hitPlayer stay low single-tone thuds ≤200 Hz',
+            tones('hit').every((f) => f <= 200) && tones('hitPlayer').every((f) => f <= 200))
+        ok('#2330-3 the clash carries at least as loud as either thud',
+            peak('parry') >= peak('hit') && peak('parry') >= peak('hitPlayer'))
+    }
+
+    // 24-4 the pane holds a night: hash-pinned moon disc over a pinned skyline —
+    // same window, same night, forever; the disc never sits on the horizon.
+    ok('#2330-4 the moon disc is seed-pinned stable, seed-varied across windows',
+        (() => {
+            const a = moonSpot(3), b = moonSpot(3), c = moonSpot(9)
+            return a.fx === b.fx && a.fy === b.fy && (c.fx !== a.fx || c.fy !== a.fy)
+        })())
+    ok('#2330-4 the disc stays above the horizon line (drawn px)',
+        (() => {
+            for (let s = 0; s < 40; s++) {
+                const m = moonSpot(s)
+                const discBottom = 58 + Math.round(m.fy * 12) + 2
+                if (discBottom >= 44 + Math.round(HORIZON_F * 40)) return false
+            }
+            return true
+        })())
+    ok('#2330-4 the skyline is pinned, low, and inside the pane',
+        (() => {
+            const a = skyline(5), b = skyline(5)
+            return JSON.stringify(a) === JSON.stringify(b) && a.length === 2
+                && skyline(1).concat(a).every((t) => t.fx >= 0 && t.fx + 2 <= 12 && t.h >= 1 && t.h <= 6)
+        })())
+    ok('#2330-4 the glass column actually paints disc, skyline and horizon',
+        /moonSpot\(pseed\)/.test(artSrc24) && /skyline\(pseed\)/.test(artSrc24) && /HORIZON_F \* 40/.test(artSrc24))
+
+    // 24-5 attract sells the grab without touching the pilot: decide() stays the
+    // tuned clean route (the SLACK gate depends on it), while the attract loop
+    // holds Shift through falls and shows grab → strain → climb on level 0.
+    {
+        const planSrc24 = readFileSync(join(here, '..', 'src', 'games', 'PrinceOfPersia', 'planner.js'), 'utf8')
+        ok('#2330-5 the pilot route stays clean: decide never holds Shift on a fall',
+            !/inp\.shift = true/.test(planSrc24) &&
+            (() => {
+                for (let i = 0; i < LEVEL_COUNT; i++) {
+                    const g = makeGame(i)
+                    g.p.onGround = false; g.p.hang = null; g.p.vy = 2
+                    if (decide(g).shift) return false
+                }
+                return true
+            })())
+        ok('#2330-5 attract holds Shift on falls, shadow levels exempt',
+            /const inp = decide\(g\)[\s\S]{0,140}!g\.shadow && !g\.p\.hang && !g\.p\.onGround && g\.p\.vy > 0[\s\S]{0,60}inp\.shift = true/.test(idxSrc24))
+        ok('#2330-5 the attract route clears level 0 showing grab, strain and climb',
+            (() => {
+                const g = makeGame(0)
+                const seen = {}
+                let t = 0
+                while (g.levelIndex === 0 && !(g.status === 'win' || g.status === 'lost') && t++ < 60 * 60 * 8) {
+                    const inp = decide(g)
+                    if (!g.shadow && !g.p.hang && !g.p.onGround && g.p.vy > 0) inp.shift = true
+                    step(g, inp)
+                    for (const e of g.events) seen[e.type] = (seen[e.type] || 0) + 1
+                    g.events.length = 0
+                }
+                return g.levelIndex > 0 && (seen.grab || 0) >= 1 && (seen.strain || 0) >= 1 && (seen.climb || 0) >= 1
+            })())
+    }
 }
 
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)

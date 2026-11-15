@@ -90,12 +90,22 @@ export const SFX = {
     // #326-3: fingers scraping stone as weight goes onto the ledge — grit plus a
     // short downward drag, not the old single 220 Hz blip.
     grab: () => [noise(0.05, 0.09), sweep(300, 190, 0.09, 'triangle', 0.07)],
-    climb: () => [sweep(240, 420, 0.12, 'triangle', 0.12)],
+    // QA #2330-2: the stone grinds under a hanging prince — a long low saw grind.
+    // Low-registered and long, so it never reads as the grab's short high drag or
+    // the chain's tick rattle; it is the hang itself, audible from the first second.
+    strain: () => [noise(0.09, 0.13), sweep(150, 58, 0.22, 'sawtooth', 0.09)],
+    // QA #2330-2: the climb-up FINISH — a real hoist sweep capped with a bright
+    // note, not the old soft blip the phone never heard.
+    climb: () => [sweep(240, 540, 0.16, 'triangle', 0.14), tone(660, 0.08, 'sine', 0.08, 0.05)],
     swing: () => [sweep(900, 300, 0.08, 'sawtooth', 0.06)],
     hit: () => [noise(0.08, 0.2), tone(180, 0.1, 'square', 0.14)],
     hitPlayer: () => [noise(0.1, 0.22), tone(140, 0.14, 'square', 0.16), tone(90, 0.2, 'sine', 0.12, 0.04)],
     hurtoffall: () => [noise(0.12, 0.2), tone(110, 0.18, 'square', 0.14)],
-    parry: () => [noise(0.06, 0.25), tone(1150, 0.1, 'square', 0.07), tone(1720, 0.07, 'sine', 0.05, 0.01)],
+    // QA #2330-3: the clash IS the timing cue on a phone, so it must carry over
+    // the thuds: a bright steel ring (1150/1720/2300 Hz stack, the third partial
+    // is new sparkle) whose peak ≥ the hit's — while hit/hitPlayer stay low
+    // single-tone thuds ≤200 Hz. Popcheck §24 pins the brightness split.
+    parry: () => [noise(0.07, 0.3), tone(1150, 0.11, 'square', 0.12), tone(1720, 0.09, 'sine', 0.09, 0.01), tone(2300, 0.06, 'sine', 0.05, 0.02)],
     guardWind: (e) => [tone(e.boss ? 190 : 140, 0.06, 'square', 0.07)],
     guardDown: (e) => [sweep(e.boss ? 400 : 400, 80, e.boss ? 0.45 : 0.25, 'sawtooth', 0.18), noise(0.12, 0.14)],
 
