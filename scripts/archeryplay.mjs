@@ -71,6 +71,15 @@ page.on('pageerror', () => { pageErrors++ })
 
 // ------------------------------------------------------ draw + loose ----
 {
+    // #2381 the walk/jump phase above ate ~2.6 s of real time, so bot0
+    // (flat-shot since #1707/#2307) has already loosed and its arrow lands
+    // mid-phase: a dead archer cannot charge (charge 0.00, quiver 6->6).
+    // Restart the duel at the top of this phase so the charge lands at low
+    // ticks, before the bot's first arrow reaches home. startPlay() is
+    // synchronous — the 900 ms restart lock is key-handler-only — and the
+    // fresh duel is already on 'play', so the next RAF steps it. Harness-
+    // only: the sim and the bot stay honest.
+    await page.evaluate(() => window.__archeryTest.start('1p', 0))
     const a = await probe()
     await page.keyboard.down('Space')
     await sleep(350)
