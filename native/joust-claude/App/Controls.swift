@@ -68,14 +68,25 @@ final class Controls {
 
     private func isVirtual(_ c: GCController) -> Bool {
         #if os(iOS)
-        return c.vendorName == "Apple Touch Controller" || (virtual?.controller === c)
+        if virtual?.controller === c { return true }
+        let tags = [(c.vendorName ?? ""), c.productCategory].joined(separator: " ").lowercased()
+        return tags.contains("touch") || tags.contains("virtual")
         #else
         return false
         #endif
     }
 
     #if os(iOS)
+    // The on-screen pad may only connect once the view is in a window
+    // (viewDidAppear); before that GCVirtualController draws nothing.
+    private var screenReady = false
+    func screenAppeared() { screenReady = true; updateVirtual() }
+
     private func updateVirtual() {
+        guard screenReady else { return }
+        for c in GCController.controllers() {
+            print("JOUST PAD \(c.vendorName ?? "?") / \(c.productCategory) virtual=\(isVirtual(c))")
+        }
         let real = GCController.controllers().contains { $0.extendedGamepad != nil && !isVirtual($0) }
         if real {
             virtual?.disconnect(); virtual = nil
