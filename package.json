@@ -99,6 +99,7 @@
     "watchphonecheck": "node scripts/watchphonecheck.mjs",
     "watchpillcheck": "node scripts/watchpillcheck.mjs",
     "watchrespawncheck": "node scripts/watchrespawncheck.mjs",
+    "watchlayoutcheck": "node scripts/watchlayoutcheck.mjs",
     "prodsmoke": "node scripts/prodsmoke.mjs",
     "heistsmoke": "node scripts/heistsmoke.mjs",
     "heisttiming": "node scripts/heisttiming.mjs",

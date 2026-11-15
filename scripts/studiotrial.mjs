@@ -14,7 +14,7 @@
 // #1299 — the aggregate-throughput ask. tokens/s is now persisted (tps.mjs
 // sums EVERY stream, telemetry keeps a ~7-day ledger), and the oMLX servers'
 // own usage API returns hourly token buckets with 400-day retention — so the
-// report can measure total tokens/hr per box (ALL streams, Jon's RETRO chat
+// report can measure total tokens/hr per box (ALL streams, Jon's QWEN chat
 // included) for BEFORE and after, plus how many streams were active, plus
 // sessions that hit their time box without shipping (spans from the session
 // logs, ships attributed by claim lineage), with a sparkline chart.
@@ -207,7 +207,7 @@ export function reportText({ since, until, verdict, split, perf }) {
     if (perf) {
         lines.push('',
             'Metric honesty: tokens/hr come from the servers\' own usage counters (hourly buckets,',
-            'every stream on the box — Jon\'s RETRO chat included, active-stream counts from the',
+            'every stream on the box — Jon\'s QWEN chat included, active-stream counts from the',
             'telemetry ledger). Items/day counts issues closed carrying building/feedback.',
         )
         if (perf.honesty && perf.honesty.length) lines.push(...perf.honesty)

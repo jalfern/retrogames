@@ -9,7 +9,7 @@
 //    "omlxmini":{"state":"idle","tps":0,"ctx":0,"gen":0,"p":0,"n":0,"tot":...},"omlxmbp":{...}}
 // Keys are the provider names in ~/.config/opencode/opencode.json; ports are
 // the same ones watch.sh reads (:8000 Studio, :18000/:18001 tunnels).
-// #1299 (Jon): a box runs several streams at once — often 4, his own RETRO
+// #1299 (Jon): a box runs several streams at once — often 4, his own QWEN
 // chat included — so one stream's t/s under-reads the machine. Every stream
 // counts now, and the server's own cumulative counter (tot) makes exact
 // tokens-per-hour differences possible over any interval.

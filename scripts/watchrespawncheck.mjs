@@ -54,10 +54,10 @@ const tsvRows = () => readFileSync(join(WDIR, 'panes.tsv'), 'utf8').trim().split
 const wdirFiles = () => readdirSync(WDIR, { withFileTypes: true }).filter((d) => d.isFile()).map((d) => d.name)
 
 let built = false
-// The RETRO pane runs `tmux new-session -A -s retro` — a nested session with
-// its own lifecycle. Only remove it if THIS run created it; if it predates us,
-// it may be a live chat and stays untouched.
-const retroPre = sh('tmux', ['has-session', '-t', 'retro']).status === 0
+// The QWEN pane runs `tmux new-session -A -s qwen` — a nested session with
+// its own lifecycle (#2286: renamed from "retro"). Only remove it if THIS run
+// created it; if it predates us, it may be a live chat and stays untouched.
+const qwenPre = sh('tmux', ['has-session', '-t', 'qwen']).status === 0
 try {
     // Start clean: a corpse from a crashed check run must not fake a pass.
     sh('zsh', [join('scripts', 'watch.sh'), '--kill'], { env: { ...process.env, FORGE_WATCH_SESSION: SESSION } })
@@ -79,7 +79,7 @@ try {
         await sleep(6000) // let the supervisor complete at least one full cycle
 
         const rows = tsvRows()
-        rep.check('panes.tsv records every pane (6 lanes + RETRO)', rows.length >= 7, `${rows.length} rows`)
+        rep.check('panes.tsv records every pane (5 lanes + WARDEN + QWEN)', rows.length >= 7, `${rows.length} rows`)
         rep.check('every recorded pane script exists on disk', rows.every((r) => existsSync(r[2])),
             rows.map((r) => r[2].split('/').pop()).join(' '))
         rep.check('supervise.zsh is baked and running', existsSync(join(WDIR, 'supervise.zsh')) &&
@@ -135,8 +135,9 @@ try {
     const watch = readFileSync('scripts/watch.sh', 'utf8')
     rep.check('watch.sh: supervisor sweeps touch over spec/log/scripts/dir',
         // line-anchored: a commented-out sweep (the exact mutant this lane ran)
-        // must not satisfy the pin — only a live command counts.
-        /^[ \t]*touch "\$W" "\$0" "\$spec" "\$log" "\$W"\/\*\.zsh/m.test(watch))
+        // must not satisfy the pin — only a live command counts. Both globs
+        // must be there: *.mjs carries the #2286 width filter.
+        /^[ \t]*touch "\$W" "\$0" "\$spec" "\$log" "\$W"\/\*\.zsh "\$W"\/\*\.mjs/m.test(watch))
     rep.check('watch.sh: bake_supervisor() exists and runs on every invocation (build AND adopt)',
         /bake_supervisor\(\) \{/.test(watch) && /\nbake_supervisor\n/.test(watch) &&
         watch.indexOf('bake_supervisor\n') < watch.indexOf('if tmux has-session'))
@@ -146,7 +147,7 @@ try {
         /"watchrespawncheck"/.test(pkg) && /watchrespawncheck/.test(checks))
 } finally {
     sh('zsh', [join('scripts', 'watch.sh'), '--kill'], { env: { ...process.env, FORGE_WATCH_SESSION: SESSION } })
-    if (!retroPre && sh('tmux', ['has-session', '-t', 'retro']).status === 0) sh('tmux', ['kill-session', '-t', 'retro'])
+    if (!qwenPre && sh('tmux', ['has-session', '-t', 'qwen']).status === 0) sh('tmux', ['kill-session', '-t', 'qwen'])
     for (let t = 0; t < 10 && sh('pgrep', ['-f', `${WDIR}/supervise.zsh`]).status === 0; t++) await sleep(500)
     rmSync(WDIR, { recursive: true, force: true })
 }
