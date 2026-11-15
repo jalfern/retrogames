@@ -190,12 +190,17 @@ export function stepsOf(cps) {
 // rival pace lines: speed (px/tick) as a function of distance through the lap,
 // so rank is computable in Node without running rival physics. Tuned per track
 // so a near-optimal drive beats them with slack and a sloppy one does not.
+// `skill` (0..1) is the rider, not the engine: attitude control in the air.
+// The front of the pack reads the landing early and lands clean; the tail
+// reacts late and eats the rising ground after the big ramps (see rivalTick
+// in sim.js — the landing law is the player's own, with a skill-scaled
+// window). Skill tiers, pinned receipts: scripts/excitecheck.mjs CRASH LEAGUE.
 export const RIVALS = [
-    { name: 'MARIO', base: 5.30 },
-    { name: 'KATO', base: 5.18 },
-    { name: 'GORDON', base: 5.05 },
-    { name: 'SONJA', base: 4.88 },
-    { name: 'IVAN', base: 4.66 },
+    { name: 'MARIO', base: 5.30, skill: 1.00 },
+    { name: 'KATO', base: 5.18, skill: 0.92 },
+    { name: 'GORDON', base: 5.05, skill: 0.80 },
+    { name: 'SONJA', base: 4.88, skill: 0.66 },
+    { name: 'IVAN', base: 4.66, skill: 0.52 },
 ]
 
 // rival speed at distance d: they ease through the same terrain the player
