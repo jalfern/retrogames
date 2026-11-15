@@ -22,6 +22,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { loadDungeonRenderer } from '../../utils/dungeonRenderer'
+import { mobSprites } from './mobview'
 import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, TOWN, SPELLS, CLASSES, canCast, automapRing, automapShade, RIM_STREET, rimDoorAt, freshTown, makeRimFolk, rimFolkAt, rimFolkShares, RIM_FLAMES, RIM_WELL_FLAME, rimFlame, rimWind, rimWellNear, RIM_CUT, rimCut, rimTrail } from './sim.js'
 import { RACES, ALIGNMENTS, ALIGN_ORDER, compose } from './people.js'
 import { mulberry32 } from './dungeon.js'
@@ -495,6 +496,7 @@ const TenDeepGame = () => {
         const glOn = () => !!R && (screenRef.current === 'play' || screenRef.current === 'attract') && gs.mode === 'map' && !!gs.map
         let glWasOn = false
         let lastBeacons = 0
+        let mobMs = 0   // #2318: presentation clock for the shambling billboards — never the sim tick
         const syncGl = () => {
             if (!R) return
             const on = glOn()
@@ -540,6 +542,14 @@ const TenDeepGame = () => {
                 if (d < 6) { R.light(sx + 0.5, sy + 0.5, 0, 0.22, 0.62, 0.72, 3.5, 90); bc++ }
             }
             lastBeacons = bc
+            // #2318: the roaming packs stand in the corridor — lit billboards
+            // shambling on the presentation clock (never the sim tick), depth
+            // -tested against the masonry so a pack around a corner hides until
+            // you can truly see it. Spent groups are gone; the King's wardens
+            // watch their beacon. The tile under a monster is the tile that
+            // takes your step — sight and trigger agree (mobview caps).
+            mobMs += dt
+            R.setSprites(mobSprites(gs, mobMs))
             R.frame(dt)
         }
 
@@ -1252,6 +1262,7 @@ const TenDeepGame = () => {
                     trail: walkHist.length,
                     ease: easeOff(),
                     gl: !!R,
+                    mobs: mobSprites(gs, 0).length,
                     glFrames: R ? R.frameCount : 0,
                     glLag: (() => {
                         if (!R) return 0

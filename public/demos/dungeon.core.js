@@ -28,7 +28,9 @@
  *   R.frameCount, R.drawing
  *
  * Sprite materials 8..10 are the built-in monster atlas (8 rat, 9 skeleton,
- * 10 goblyn; two-frame shamble selected by `anim`). The pure helpers
+ * 10 goblyn; two-frame shamble selected by `anim`). A sprite's optional
+ * `tint` [r,g,b] multiplies the atlas colour (default white — callers that
+ * omit it draw exactly as before). The pure helpers
  * DungeonRenderer.cellBlocks / DungeonRenderer.viewCells work headless in Node.
  */
 'use strict';
@@ -392,11 +394,12 @@ in vec2 vUv;
 in vec3 vLight;
 uniform sampler2D uAtlas;
 uniform float uRim;
+uniform vec3 uTint;
 out vec4 o;
 void main(){
   vec4 t = texture(uAtlas, vUv);
   if (t.a < 0.35) discard;
-  vec3 c = (uRim > 0.5) ? vec3(0.020, 0.016, 0.012) : t.rgb * vLight;
+  vec3 c = (uRim > 0.5) ? vec3(0.020, 0.016, 0.012) : t.rgb * vLight * uTint;
   o = vec4(c, 1.0);
 }`;
 
@@ -469,7 +472,7 @@ void main(){
     const pSpr = program(gl, VS_SPR, FS_SPR);
     const uM = {}, uS = {};
     for (const n of ['uVP', 'uCamPos', 'uTime', 'uLC', 'uLCol', 'uLPR', 'uLPC', 'uLI', 'uAtlas']) uM[n] = gl.getUniformLocation(pMaze, n);
-    for (const n of ['uVP', 'uCamPos', 'uRight', 'uTime', 'uLC', 'uLCol', 'uLPR', 'uLPC', 'uLI', 'uAtlas', 'uBase', 'uSize', 'uUvO', 'uUvS', 'uAnim', 'uRim']) uS[n] = gl.getUniformLocation(pSpr, n);
+    for (const n of ['uVP', 'uCamPos', 'uRight', 'uTime', 'uLC', 'uLCol', 'uLPR', 'uLPC', 'uLI', 'uAtlas', 'uBase', 'uSize', 'uUvO', 'uUvS', 'uAnim', 'uRim', 'uTint']) uS[n] = gl.getUniformLocation(pSpr, n);
 
     const STRIDE = 9 * 4;
     const vaoM = gl.createVertexArray();
@@ -842,6 +845,8 @@ void main(){
           gl.uniform2f(uS.uUvS, u.uvS[0], u.uvS[1]);
           gl.uniform1f(uS.uAnim, u.anim);
           gl.uniform1f(uS.uRim, 0.0);
+          const ti = s.tint || [1, 1, 1];
+          gl.uniform3f(uS.uTint, ti[0], ti[1], ti[2]);
           gl.drawArrays(gl.TRIANGLES, 0, 6);
         }
         gl.depthMask(true);

@@ -23,6 +23,7 @@ import { RACES, ALIGNMENTS, compose, classOk, rollCandidates } from '../src/game
 import { genFloor, FLOORS, MOBS } from '../src/games/TenDeep/dungeon.js'
 import { solveRun } from '../src/games/TenDeep/solver.js'
 import { fitSize, fitTwoCols, estWidth } from '../src/games/TenDeep/hudfit.js'
+import { MOB_LOOK, mobSprites } from '../src/games/TenDeep/mobview.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -1483,6 +1484,126 @@ if (MUT) {
     g.mode = 'combat'   // padB reads only mode/town/dmgId — last section, no rewind needed
     ok(padB(g, 'firebolt').label === SPELLS.firebolt.name && padB(g, 'firebolt').code === 'KeyF', `battle B with fire must carry the spell, got ${JSON.stringify(padB(g, 'firebolt'))}`)
     ok(padB(g, null).label === 'GUARD' && padB(g, null).code === 'KeyG', `battle B without a letter must carry GUARD/KeyG, got ${JSON.stringify(padB(g, null))}`)
+}
+
+// #2318 — the monsters STAND in the corridor. mobview derives the lit
+// billboard list from LIVE sim state; these gates prove sight cannot lie:
+// every sprite belongs to an untriggered ambush, stands inside its tile,
+// covers the whole bestiary, and re-derives identically in a second Node
+// process's view of the same floor. The sim trigger never moved — the view
+// grew honest. Mutants below re-break each law and must go red.
+{
+    section('MOBS IN THE VIEW (#2318)')
+    const gf = genFloor
+
+    // every bestiary member walks: shape on the atlas + tint + sane size
+    for (const k of Object.keys(MOBS)) {
+        const L = MOB_LOOK[k]
+        ok(!!L, `MOB_LOOK has no entry for ${k} — it would be invisible`)
+        if (L) {
+            ok([8, 9, 10].includes(L.mat), `${k}: mat ${L.mat} is not a monster atlas tile`)
+            ok(Array.isArray(L.tint) && L.tint.length === 3 && L.tint.every((v) => v > 0 && v <= 1.5), `${k}: bad tint`)
+            ok(L.w > 0 && L.w <= 1 && L.h > 0 && L.h <= 1, `${k}: bad sprite size`)
+        }
+    }
+
+    const stFor = (fi) => {
+        const d = gf(fi)
+        return { mode: 'map', floor: fi, map: d, ambushes: new Set(d.ambushes.map((a) => a.y * SIZE + a.x)) }
+    }
+
+    // outside the dungeon the view is blank
+    {
+        const g = makeRun()
+        ok(mobSprites(g, 0).length === 0, 'the RIM street grew monsters — mobSprites must be blank outside map mode')
+    }
+
+    // per floor: one sprite per living mob of every untriggered group (+3
+    // wardens standing at the throne on the last deep)
+    for (let fi = 0; fi < FLOORS.length; fi++) {
+        const d = FLOORS[fi] ? gf(fi) : null
+        const st = stFor(fi)
+        const list = mobSprites(st, 0)
+        const want = d.ambushes.reduce((n, a) => n + a.group.length, 0) + (d.throne ? 3 : 0)
+        ok(list.length === want, `floor ${fi}: ${list.length} billboards, want ${want}`)
+        // sight never lies about the trigger tile: every billboard stands
+        // INSIDE the cell its group triggers on
+        const cells = new Map()
+        for (const a of d.ambushes) cells.set(`${a.x},${a.y}`, a.group.length)
+        if (d.throne) cells.set(`${d.throne.x},${d.throne.y}`, 3)
+        for (const s of list) {
+            const cx = Math.floor(s.x), cy = Math.floor(s.y)
+            ok(cells.has(`${cx},${cy}`), `floor ${fi}: a monster drawn at (${s.x.toFixed(2)},${s.y.toFixed(2)}) stands off its ambush tile`)
+            const cands = [...cells.keys()].filter((k) => { const [x, y] = k.split(',').map(Number); return Math.abs(s.x - (x + 0.5)) <= 0.301 && Math.abs(s.y - (y + 0.5)) <= 0.301 })
+            ok(cands.length === 1, `floor ${fi}: sprite at (${s.x.toFixed(2)},${s.y.toFixed(2)}) not inside one den centre ±0.30`)
+        }
+        // spent groups vanish: trigger every den, the corridor empties
+        for (const a of d.ambushes) st.ambushes.delete(a.y * SIZE + a.x)
+        const after = mobSprites(st, 0)
+        ok(after.length === (d.throne ? 3 : 0), `floor ${fi}: spent packs still stand in the corridor (${after.length})`)
+    }
+
+    // the shamble is a clock, not a wander: positions hold, frames change
+    {
+        const st = stFor(0)
+        const a = mobSprites(st, 0)
+        const b = mobSprites(st, 600)
+        ok(a.length === b.length && a.every((s, i) => s.x === b[i].x && s.y === b[i].y), 'the shamble moved a monster off its tile — positions must hold')
+        ok(a.some((s, i) => s.anim !== b[i].anim), 'the pack never shambles — anim must ride the presentation clock')
+        const c = mobSprites(stFor(0), 0)
+        ok(JSON.stringify(a) === JSON.stringify(c), 'mobview re-derivation differs on the same floor — the harness cannot trust the pixels')
+    }
+
+    // no dice near the view (the whole game bans them; this file joins)
+    {
+        const src = readFileSync(join(HERE, '../src/games/TenDeep/mobview.js'), 'utf8')
+        ok(!/Math\.random/.test(src), 'Math.random near the billboards — sight would stop being reproducible')
+        const idxSrc = readFileSync(join(HERE, '../src/games/TenDeep/index.jsx'), 'utf8')
+        ok(/R\.setSprites\(mobSprites\(gs, mobMs\)\)/.test(idxSrc), 'the corridor stopped being told who stands in it (setSprites call gone)')
+        ok(/let mobMs = 0/.test(idxSrc), 'the shamble clock is gone — billboards would freeze on frame 0')
+        const core = readFileSync(join(HERE, '../public/demos/dungeon.core.js'), 'utf8')
+        ok(/uniform vec3 uTint;/.test(core) && /t\.rgb \* vLight \* uTint/.test(core), 'the sprite tint contract left the shared renderer')
+        ok(/s\.tint \|\| \[1, 1, 1\]/.test(core), 'tint lost its white default — old callers would draw black')
+    }
+
+    if (MUT) {
+        const mvFile = join(HERE, '../src/games/TenDeep/mobview.js')
+        const mvOrig = readFileSync(mvFile, 'utf8')
+        const idxFile = join(HERE, '../src/games/TenDeep/index.jsx')
+        const idxOrig = readFileSync(idxFile, 'utf8')
+        const coreFile = join(HERE, '../public/demos/dungeon.core.js')
+        const coreOrig = readFileSync(coreFile, 'utf8')
+        const mvMutants = [
+            ['offset cap loose — a monster reads as standing on the next tile',
+                'const OFFSET_CAP = 0.30', 'const OFFSET_CAP = 1.5'],
+            ['spent packs linger — the view says a dead group still stands',
+                'if (!st.ambushes.has(a.y * SIZE + a.x)) continue', 'if (false) continue'],
+            ['throne wardens dropped — the King stands unguarded in the view',
+                "if (st.map.throne) put(st.floor, 99, ['WYRM', 'KING', 'WYRM'], st.map.throne.x + 0.5, st.map.throne.y + 0.5)", ''],
+        ]
+        for (const [name, from, to] of mvMutants) {
+            ok(mvOrig.includes(from), `mobview mutant anchor missing: ${name}`)
+            plant(mvFile, mvOrig.replace(from, to))
+            const res = spawnSync(process.execPath, [join(HERE, 'tendeepcheck.mjs')], { encoding: 'utf8' })
+            pull(mvFile)
+            console.log(`  mut ${name}: ${res.status !== 0 ? 'caught' : 'SURVIVED (BAD)'}`)
+            ok(res.status !== 0, `${name} SURVIVED — a billboard law went unenforced`)
+        }
+        {
+            plant(idxFile, idxOrig.replace('R.setSprites(mobSprites(gs, mobMs))', 'R.setSprites([])'))
+            const res = spawnSync(process.execPath, [join(HERE, 'tendeepcheck.mjs')], { encoding: 'utf8' })
+            pull(idxFile)
+            console.log(`  mut corridor emptied of monsters: ${res.status !== 0 ? 'caught' : 'SURVIVED (BAD)'}`)
+            ok(res.status !== 0, 'corridor emptied of monsters SURVIVED — the shell feed is unproven')
+        }
+        {
+            plant(coreFile, coreOrig.replace('t.rgb * vLight * uTint', 't.rgb * vLight'))
+            const res = spawnSync(process.execPath, [join(HERE, 'tendeepcheck.mjs')], { encoding: 'utf8' })
+            pull(coreFile)
+            console.log(`  mut tint unwired: ${res.status !== 0 ? 'caught' : 'SURVIVED (BAD)'}`)
+            ok(res.status !== 0, 'tint unwired SURVIVED — the bestiary would walk grey')
+        }
+    }
 }
 
 console.log(`\ntendeepcheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)
