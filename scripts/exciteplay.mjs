@@ -255,6 +255,42 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     }
     r.check('a downed rider flies an amber hazard chevron (the solidity cue is pixels, not theory)', chevron > 0, `${chevron} amber px`)
 }
+
+// ---- JUICE (#2387): the polish layer is live state in the tab, not wishful README ----
+{
+    // charge the same solid-wreck rig: the wipeout must leave a terrain scar.
+    await page.evaluate(() => window.__bikeTest.setup({ track: 0, x: 600, v: 0, crash: 0, rivals: { IVAN: { d: 670, v: 0, down: 400 } } }))
+    await page.keyboard.down('ArrowUp')
+    let scarred = 0
+    for (let i = 0; i < 140 && !(scarred > 0); i++) {
+        const s = await probe()
+        scarred = (s.juice || {}).scars || 0
+        await wait(50)
+    }
+    await page.keyboard.up('ArrowUp')
+    r.check('charging a wreck leaves a dirt-mound scar on the ground (juice.scars > 0)', scarred > 0, `${scarred} scars`)
+    // hop the frozen rider: the scored flyby must pop (+n pop states alive).
+    await page.evaluate(() => window.__bikeTest.setup({ track: 0, x: 430, v: 6, crash: 0, rivals: { IVAN: { d: 500, v: 0, down: 400 } } }))
+    await page.keyboard.down('Space')
+    let popped = 0
+    for (let i = 0; i < 80 && !(popped > 0); i++) {
+        const s = await probe()
+        if ((s.contact || []).some((e) => e.type === 'crash')) break
+        popped = (s.juice || {}).pops || 0
+        if (!popped) await wait(40)
+    }
+    await page.keyboard.up('Space')
+    r.check('a scored flyby pops +150 over the rival (juice.pops > 0)', popped > 0, `${popped} pops`)
+    // pre-tell: a rival closing on your back arms the warning BEFORE contact.
+    await page.evaluate(() => window.__bikeTest.setup({ track: 0, x: 1500, v: 5, crash: 0, rivals: { IVAN: { d: 1440, v: 6.4, down: 0 } } }))
+    let told = false
+    for (let i = 0; i < 40 && !told; i++) {
+        const s = await probe()
+        told = !!(s.juice || {}).preTell
+        if (!told) await wait(40)
+    }
+    r.check('a rival closing from behind arms the jolt pre-tell before contact', told, told ? 'preTell up' : 'never armed')
+}
 {
     const WATER_END = 3580
     // drop a slow bike just inside the water band -> it must stall on real physics
