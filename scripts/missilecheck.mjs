@@ -289,6 +289,102 @@ section('BOMBER HUNT (#2306) — deny the delivery, not just the fall')
     }
 }
 
+// --------------------------------------------------------------------- jink ----
+section('JINK (#2375) — the smart bomb makes you earn the kill')
+{
+    const mkSmart = (g, x, y, vx, amp) => {
+        const e = { id: g.nextId++, kind: 'smart', x, px: x, y, vx, vy: 0.5, ti: -1, t: 0,
+            alive: true, split: null, amp, drops: null, spawnAt: g.playT, score: CFG.score.smart }
+        g.enemies.push(e)
+        return e
+    }
+    const quietSky = (w = 0) => {
+        const g = toPlay(makeGame(w))
+        g.queue.length = 0; g.enemies.length = 0; g.blasts.length = 0; g.intc.length = 0
+        return g
+    }
+    // a missile whose blast point is a bomb's EXACT predicted position at tau —
+    // the same prediction law the planner uses, so what follows is the honest
+    // autopilot encounter: feint, dodge, miss.
+    const aimAt = (g, e, tau) => {
+        const tx = e.px + e.vx * tau + Math.sin((e.t + tau) * 0.07) * e.amp
+        const ty = e.y + e.vy * tau
+        g.intc.push({ id: g.nextId++, x: 128, y: 200, tx, ty, vx: (tx - 128) / tau, vy: (ty - 200) / tau, eta: tau, t: 0, bat: 1 })
+        return { tx, ty }
+    }
+    const oneEncounter = () => {
+        const g = quietSky()
+        const e = mkSmart(g, 200, 60, -0.3, 12)
+        const { tx } = aimAt(g, e, 72)
+        const seen = []
+        let jinked = false, xAtBlast = null
+        for (let t = 0; t < 110 && e.alive; t++) {
+            step(g, {})
+            for (const ev of g.events) {
+                if (ev.type === 'jink') { jinked = true; seen.push(ev.dir) }
+                if (ev.type === 'boom') xAtBlast = e.x
+            }
+        }
+        return { g, e, tx, jinked, seen, xAtBlast }
+    }
+
+    // 1. no sky threat — no jink. The weave stays pure sine.
+    {
+        const g = quietSky()
+        mkSmart(g, 200, 60, -0.3, 12)
+        let jinks = 0
+        for (let t = 0; t < 120; t++) { step(g, {}); for (const ev of g.events) if (ev.type === 'jink') jinks++ }
+        ok(jinks === 0, `a smart bomb jinked ${jinks} times with NOTHING in the sky — the dodge is not threat-gated`)
+    }
+
+    // 2. a far-target missile is not a threat: blast point 60px away, no jink.
+    {
+        const g = quietSky()
+        const e = mkSmart(g, 200, 60, -0.3, 12)
+        g.intc.push({ id: g.nextId++, x: 128, y: 200, tx: 80, ty: 140, vx: (80 - 128) / 72, vy: (140 - 200) / 72, eta: 72, t: 0, bat: 1 })
+        let jinks = 0
+        for (let t = 0; t < 110 && e.alive; t++) { step(g, {}); for (const ev of g.events) if (ev.type === 'jink') jinks++ }
+        ok(jinks === 0, `a bomb dodged a missile aimed ${60}px away — everything would dodge if far shots read as threats`)
+    }
+
+    // 3. THE ESCAPE: the first interceptor arrives at the predicted point and
+    //    the bomb is gone — jink event fired, displacement AWAY from the blast
+    //    point, survival by more than the blast radius.
+    {
+        const { e, tx, jinked, seen, xAtBlast } = oneEncounter()
+        ok(jinked, 'a blast aimed at the smart bomb\'s exact predicted position was never dodged — the jink does not fire')
+        ok(seen.length >= 1 && seen[0] === (tx <= 200 ? 1 : -1), `the jink went TOWARD the blast (dir ${seen[0]}, blast tx ${tx.toFixed(0)}) — an escape must run away from the detonation`)
+        ok(e.alive, 'the smart bomb rode the first interceptor — nothing was earned')
+        ok(xAtBlast !== null && Math.abs(xAtBlast - tx) > CFG.blastR, `it survived INSIDE the blast reach (${xAtBlast === null ? '?' : (xAtBlast - tx).toFixed(1)}px vs r ${CFG.blastR}) — a survival outside the physics is not a dodge`)
+    }
+
+    // 4. THE FOLLOW-UP: one committed escape per bomb. The second round,
+    //    aimed where the first taught the shooter, kills with no second jink.
+    {
+        const { g, e, tx, seen } = oneEncounter()
+        ok(e.alive, 'harness: the escape scenario must end with the bomb alive')
+        aimAt(g, e, 72) // fire the follow-up at the NEW predicted position
+        let jinks = 0
+        for (let t = 0; t < 110 && e.alive; t++) { step(g, {}); for (const ev of g.events) if (ev.type === 'jink') jinks++ }
+        ok(jinks === 0, `the spent bomb jinked ${jinks} more times — the budget is one committed escape, not an evasive god`)
+        ok(!e.alive, 'the second round at the escape point missed too — the cooldown/budget doctrine does not converge; the kill cannot be earned')
+    }
+
+    // 5. across the proven run the dodge actually shapes the fight.
+    {
+        const gj = makeGame(0)
+        const held = new Map()
+        let jinks = 0
+        const smartCount = WAVES.reduce((n, w) => n + w.entries.filter((x) => x.kind === 'smart').length, 0)
+        for (let t = 0; t < 40000 && !gj.end; t++) {
+            step(gj, decide(gj, held))
+            for (const ev of gj.events) if (ev.type === 'jink') jinks++
+        }
+        ok(jinks >= 3 && jinks <= smartCount, `the three barrages produced ${jinks} jinks (${smartCount} smart bombs aloft) — the escape never joins the real fight`)
+        console.log(`  ..    ${jinks} jinks across ${smartCount} smart bombs — the autopilot spends its feint rounds and still cleans house`)
+    }
+}
+
 // ------------------------------------------------------------------- the slack rule ----
 section('SLACK RULE — one fewer interceptor in EVERY battery')
 {
@@ -414,6 +510,29 @@ if (MUT) {
         CFG.groundY = save
         console.log(`  mut groundY 192 -> 400 (warheads phase through cities): ${v === true ? 'SURVIVED (BAD)' : 'caught by the audit'}`)
         ok(v !== true, 'the ground-impact rule SURVIVED underground — no check watches the floor')
+    }
+    // 7. jink switches (#2375): each must go red through its own pin.
+    {
+        const escape = () => {
+            const g = toPlay(makeGame(0))
+            g.queue.length = 0; g.enemies.length = 0; g.blasts.length = 0; g.intc.length = 0
+            const e = { id: g.nextId++, kind: 'smart', x: 200, px: 200, y: 60, vx: -0.3, vy: 0.5, ti: -1, t: 0,
+                alive: true, split: null, amp: 12, drops: null, spawnAt: g.playT, score: CFG.score.smart }
+            g.enemies.push(e)
+            const tau = 72
+            const tx = e.px + e.vx * tau + Math.sin((e.t + tau) * 0.07) * e.amp
+            const ty = e.y + e.vy * tau
+            g.intc.push({ id: g.nextId++, x: 128, y: 200, tx, ty, vx: (tx - 128) / tau, vy: (ty - 200) / tau, eta: tau, t: 0, bat: 1 })
+            let jinked = false
+            for (let t = 0; t < 110 && e.alive; t++) {
+                step(g, {})
+                for (const ev of g.events) if (ev.type === 'jink') jinked = true
+            }
+            return jinked && e.alive
+        }
+        tryMut('dodgeOn true -> false (no jink at all)', { dodge: { ...CFG.dodge }, dodgeOn: false }, escape)
+        tryMut('jink budget 1 -> 0 (never commits)', { dodge: { ...CFG.dodge, budget: 0 } }, escape)
+        tryMut('jink ticks 14 -> 0 (event fires, px never moves)', { dodge: { ...CFG.dodge, ticks: 0 } }, escape)
     }
 }
 

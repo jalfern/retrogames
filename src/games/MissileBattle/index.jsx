@@ -94,6 +94,7 @@ const MissileBattleGame = () => {
                 else if (e.type === 'boom') { audioController.playNoise(0.08, 0.05); shake = Math.max(shake, 2) }
                 else if (e.type === 'kill') { audioController.playTone(e.chain ? 980 : 520, 0.05, 'square', 0.04); burst(e.x, e.y, e.chain ? 10 : 6, e.chain ? '#ffe27a' : '#ffb37a'); shake = Math.max(shake, e.chain ? 3 : 2) }
                 else if (e.type === 'split') audioController.playTone(340, 0.06, 'sawtooth', 0.03)
+                else if (e.type === 'jink') audioController.playSweep(760, 240, 0.14, 'triangle', 0.035)
                 else if (e.type === 'drop') audioController.playTone(180, 0.05, 'triangle', 0.03)
                 else if (e.type === 'launch') audioController.playTone(e.kind === 'bomber' ? 140 : 240, 0.04, 'triangle', 0.02)
                 else if (e.type === 'cityHit') { say('CITY LOST'); audioController.playSweep(220, 40, 0.5, 'sawtooth', 0.09); burst(e.x, CFG.groundY - 4, 16, '#ff5d5d'); shake = 7 }
@@ -208,7 +209,15 @@ const MissileBattleGame = () => {
                 ctx.globalAlpha = 1
                 ctx.fillStyle = col
                 if (e.kind === 'bomber') { ctx.fillRect(e.x - 6, e.y - 1, 12, 3); ctx.fillRect(e.x - 2, e.y - 3, 4, 2) }
-                else if (e.kind === 'smart') { ctx.beginPath(); ctx.arc(e.x, e.y, 3, 0, Math.PI * 2); ctx.fill() }
+                else if (e.kind === 'smart') {
+                    ctx.beginPath(); ctx.arc(e.x, e.y, 3, 0, Math.PI * 2); ctx.fill()
+                    if (e.dodgeT > 0) { // #2375 the jink streak — the escape reads on screen
+                        ctx.globalAlpha = 0.55
+                        ctx.strokeStyle = col
+                        ctx.beginPath(); ctx.moveTo(e.x - e.dodgeDir * 10, e.y + 1); ctx.lineTo(e.x - e.dodgeDir * 4, e.y + 1); ctx.stroke()
+                        ctx.globalAlpha = 1
+                    }
+                }
                 else ctx.fillRect(e.x - 1.5, e.y - 3, 3, 6)
             }
             for (const id of trails.keys()) if (!liveIds.has(id)) trails.delete(id)
@@ -415,6 +424,16 @@ const MissileBattleGame = () => {
                         return 'five warheads converging on one city'
                     } },
                     { label: 'SMARTEST BOMB', run: () => { gs.enemies.push({ id: 8100, kind: 'smart', x: 128, px: 128, y: 20, vx: 0, vy: 0.6, ti: 3, t: 0, alive: true, split: null, amp: 13, drops: null, spawnAt: gs.playT, score: CFG.score.smart }); return 'weaving at the middle city' } },
+                    { label: 'JINK PROOF', run: () => {
+                        // the scripted earn-the-kill: round one is feinted, round two is yours
+                        const e = { id: 8101, kind: 'smart', x: 200, px: 200, y: 60, vx: -0.3, vy: 0.5, ti: 1, t: 0, alive: true, split: null, amp: 12, drops: null, spawnAt: gs.playT, score: CFG.score.smart }
+                        gs.enemies.push(e)
+                        const tau = 72
+                        const tx = e.px + e.vx * tau + Math.sin((e.t + tau) * 0.07) * e.amp
+                        const ty = e.y + e.vy * tau
+                        gs.intc.push({ id: 8102, x: 128, y: CFG.groundY + 8, tx, ty, vx: (tx - 128) / tau, vy: (ty - (CFG.groundY + 8)) / tau, eta: tau, t: 0, bat: 1 })
+                        return 'watch the yellow bomb leave the blast point — then lead its escape'
+                    } },
                 ],
             })
             let prevA = false, contractSeed = 0

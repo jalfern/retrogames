@@ -75,6 +75,14 @@ attack waves."*
   `missilecheck` BOMBER HUNT: quiet-sky kill at 3 rounds/tube (below the old
   gate), held-tube refusal, whole-game denial count, two named manual
   mutants.)
-- Smart-bomb weave is a fixed sine, not an evasion of interceptors.
+- Smart-bomb weave is a fixed sine, not an evasion of interceptors. —
+  **CLOSED by #2375** (the *jink*: a short-fused blast arriving within 30px
+  of the bomb provokes a committed lateral escape away from the detonation
+  point, one per bomb plus a cooldown. The first interceptor is a feint that
+  learns where it runs; the next round is aimed there. `CFG.dodge`,
+  `dodgeOn` mutant switch; JINK section in `missilecheck`. It still reads a
+  blast-in-flight, not a *launch* — a battery firing the instant the bomb
+  appears outruns nothing; the reaction is to the missile, as the original's
+  felt).
 - No two-player; the arcade's alternating batteries is one `input` object
   away, but nobody asked yet.
