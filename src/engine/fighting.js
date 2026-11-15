@@ -11,6 +11,9 @@
 // already-wounded opponent). #1106 adds `juggle`: launched victims hang in a
 // pocket instead of flinging away, exactly ONE aerial follow-up connects per
 // launch, and the juggle lock clears when the victim's back touches the floor.
+// #2334 adds `props`: seeded destructible crates/barrels in the pit — attack
+// boxes and projectiles smash them, and some breaks drop a collectable meter
+// orb. Off by default, like every option here.
 //
 // Determinism law (#494/#495): createMatch(seed) + identical pad streams ⇒
 // identical matchHash every tick. Every random the SIM consumes comes from the
@@ -52,6 +55,17 @@ export const STUN_REGEN = 0.3
 // window closes the throw lands. A helpless (hitair) victim still eats it.
 // Off by default; createMatch({ airThrow: true }) turns it on.
 export const AIR_GRAB_FRAMES = 10
+// Destructible props + meter orbs (#2334, VIPER PIT): the pit furniture goes
+// LIVE — seeded crates and barrels stand at the fight's edges; any active
+// attack box or projectile that overlaps one damages it (heavy = 2 dmg,
+// light = 1 — crates take two lights or one heavy, barrels pop at once).
+// A break can drop a meter orb (crates hold loot more often than barrels,
+// the 1992 arcade rule) that either fighter collects by touch for ORB_METER
+// meter. Off by default so IRON RING stays bit-identical; createMatch
+// ({ props: true }) turns it on. Prop/orb state folds into matchHash when
+// on — both seats agree, and replays verify against the sim.
+export const ORB_METER = 20
+export const ORB_TTL = 420
 
 // ---- rng (mulberry32 — the repo's seeded stream) ------------------------------
 export function mulberry32(a) {
@@ -114,6 +128,7 @@ export function createMatch(cfg) {
         guardCrush: !!cfg.guardCrush,
         inputStun: !!cfg.inputStun,
         airThrow: !!cfg.airThrow,
+        propsOn: !!cfg.props,
         rng: mulberry32((seed >>> 0) ^ 0x1234abc9),
         tick: 0, phase: 'intro', phaseT: INTRO_FREEZE,
         timer: time * 60, hitstop: 0, round: 1,
@@ -121,9 +136,12 @@ export function createMatch(cfg) {
         fx: [],
         fighters: [createFighter(p1, 0), createFighter(p2, 1)],
         projectiles: [],
+        props: [],
+        orbs: [],
         winner: null,
         events: [],
     }
+    spawnProps(m)
     return m
 }
 
@@ -142,10 +160,70 @@ export function resetRound(m) {
         f.cpuScript = []; f.cpuCool = 40
     }
     m.projectiles = []
+    spawnProps(m)
     m.timer = ROUND_TIME * 60
     m.phase = 'intro'; m.phaseT = INTRO_FREEZE
     m.banner = `ROUND ${m.round}`; m.bannerT = INTRO_FREEZE
     m.hitstop = 0
+}
+
+// ---- destructible props + pickups (#2334, VIPER PIT) ---------------------------
+// Positions ride a seeded template on a DEDICATED rng stream (seed ^ salt ^
+// round) — the layout is reproducible from the seed alone and never consumes
+// m.rng, so CPU rolls are untouched. Fighters stand at ±2.6, so the slots
+// hug the pit edges; a fifth slot sometimes drops between them like the
+// barrels of the 1992 arcade.
+function spawnProps(m) {
+    if (!m.propsOn) { m.props = []; m.orbs = []; return }
+    const r = mulberry32((m.seed ^ 0xb105f00d ^ (m.round * 7919)) >>> 0)
+    const slots = [-5.8, -4.2, 4.2, 5.8]
+    if (r() < 0.7) slots.push(-1.4 + r() * 2.8)
+    m.props = slots.map((sx, i) => {
+        const barrel = r() < 0.55
+        return {
+            id: i, kind: barrel ? 'barrel' : 'crate',
+            x: sx + (r() - 0.5) * 0.6, w: barrel ? 0.75 : 0.95, h: barrel ? 1.0 : 0.9,
+            hp: barrel ? 1 : 2, broken: false, brokeT: -1,
+            orb: r() < (barrel ? 0.35 : 0.6),
+        }
+    })
+    m.orbs = []
+}
+
+function propBox(p) {
+    // the smash zone rides a hand's width above the rim so punches as well as
+    // kicks land on the furniture (chest-high boxes would sail over a barrel)
+    return { x0: p.x - p.w / 2, x1: p.x + p.w / 2, y0: 0, y1: p.h + 0.35 }
+}
+
+function hurtProp(m, p, dmg, bySide) {
+    p.hp -= dmg
+    if (p.hp > 0) return false
+    p.broken = true; p.brokeT = m.tick
+    m.events.push({ t: m.tick, kind: 'propbreak', by: bySide, id: p.id, prop: p.kind, x: +p.x.toFixed(2) })
+    if (p.orb) {
+        m.orbs.push({ id: `o${p.id}`, x: p.x, y: 0.85, ttl: ORB_TTL })
+        m.events.push({ t: m.tick, kind: 'orbdrop', x: +p.x.toFixed(2) })
+    }
+    return true
+}
+
+// an orb is collectable while it floats; a body walking through it banks the
+// meter (helpless bodies cannot — down/win/lose do not collect)
+function updateOrbs(m) {
+    for (const o of m.orbs) {
+        o.ttl--
+        for (const f of m.fighters) {
+            if (f.st === 'down' || f.st === 'win' || f.st === 'lose') continue
+            if (overlap({ x0: o.x - 0.3, x1: o.x + 0.3, y0: o.y - 0.3, y1: o.y + 0.3 }, hurtBox(f))) {
+                o.ttl = 0
+                f.meter = Math.min(100, f.meter + ORB_METER)
+                m.events.push({ t: m.tick, kind: 'orbtake', by: f.side, x: +o.x.toFixed(2) })
+                break
+            }
+        }
+    }
+    m.orbs = m.orbs.filter((o) => o.ttl > 0)
 }
 
 // ---- motion inputs ---------------------------------------------------------------
@@ -594,6 +672,20 @@ function updateProjectiles(m) {
         if (p.x < -WALL - 2 || p.x > WALL + 2 || p.ttl <= 0 || (p.grav && p.y < 0.05)) { dead.push(p); continue }
         const def = m.fighters[p.owner === 0 ? 1 : 0]
         const pb = { x0: p.x - 0.35, x1: p.x + 0.35, y0: p.y - 0.3, y1: p.y + 0.3 }
+        // #2334: a fireball smashes into the furniture before it reaches the
+        // fighter behind it — the prop eats the projectile (1992 arcade law).
+        if (m.propsOn) {
+            let smashed = false
+            for (const pr of m.props) {
+                if (pr.broken) continue
+                if (overlap(pb, propBox(pr))) {
+                    hurtProp(m, pr, p.dmg >= 9 ? 2 : 1, p.owner)
+                    smashed = true
+                    break
+                }
+            }
+            if (smashed) { dead.push(p); continue }
+        }
         if (overlap(pb, hurtBox(def)) && def.st !== 'down' && def.st !== 'getup') {
             const mv = { dmg: p.dmg, hitstun: p.hitstun, blockstun: p.blockstun, push: p.push, type: 'special', low: false }
             resolveHit(m, m.fighters[p.owner], def, mv, 'proj')
@@ -805,6 +897,26 @@ export function step(m, pads) {
         }
     }
 
+    // prop hits (#2334): an active attack box smashes the pit furniture —
+    // heavy 2 dmg, light 1; one registered hit per move instance (canHit).
+    if (m.propsOn) {
+        for (let i = 0; i < 2; i++) {
+            const atk = m.fighters[i]
+            const box = moveBox(atk)
+            if (!box) continue
+            const mv = atk.def.moves[atk.move]
+            for (const pr of m.props) {
+                if (pr.broken) continue
+                if (overlap(box, propBox(pr)) && canHit(atk.hitOnce['p' + pr.id], mv, m.tick)) {
+                    const lg = atk.hitOnce['p' + pr.id] || (atk.hitOnce['p' + pr.id] = { n: 0, last: -99 })
+                    lg.n++; lg.last = m.tick
+                    hurtProp(m, pr, mv.dmg >= 9 ? 2 : 1, atk.side)
+                }
+            }
+        }
+        updateOrbs(m)
+    }
+
     updateProjectiles(m)
     m.tick++
     return m
@@ -849,6 +961,15 @@ export function matchHash(m) {
     mix(q(m.timer))
     mix(m.projectiles.length)
     for (const p of m.projectiles) { mix(p.owner); mix(q(p.x)); mix(q(p.y)) }
+    if (m.propsOn) {
+        // #2334: what's standing, how hurt it is, and what loot floats — both
+        // seats must agree on the furniture, so it rides the hash.
+        let alive = 0
+        for (const pr of m.props) if (!pr.broken) { alive++; mix(q(pr.x)); mix(pr.hp) }
+        mix(alive)
+        mix(m.orbs.length)
+        for (const o of m.orbs) mix(q(o.x))
+    }
     for (const f of m.fighters) {
         mix(q(f.x)); mix(q(f.y)); mix(q(f.hp)); mix(q(f.meter))
         mix(f.wins); mix(hashStr(f.st + (f.move || '') + f.phase))
@@ -873,3 +994,13 @@ export function fightersState(m) {
 }
 
 export { CPU_TIER }
+
+// propsState (#2334) — harness/renderer snapshot of the live furniture and
+// floating loot; null when the option is off (IRON RING has no props).
+export function propsState(m) {
+    if (!m.propsOn) return null
+    return {
+        props: m.props.map((p) => ({ id: p.id, kind: p.kind, x: +p.x.toFixed(2), hp: p.hp, broken: p.broken, orb: p.orb })),
+        orbs: m.orbs.map((o) => ({ id: o.id, x: +o.x.toFixed(2), ttl: o.ttl })),
+    }
+}
