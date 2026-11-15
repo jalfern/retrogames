@@ -35,6 +35,8 @@
 //   node scripts/floorbosscheck.mjs --mutate-ladder   # the quota stops climbing (one flat rung), demand RED (#2346)
 //   node scripts/floorbosscheck.mjs --mutate-advance  # a cleared night refuses to clock in (one night ever), demand RED (#2346)
 //   node scripts/floorbosscheck.mjs --mutate-bank     # the career score resets each night, demand RED (#2346)
+//   node scripts/floorbosscheck.mjs --mutate-rush     # the measured-pinned rush clock shifts without a re-measure, demand RED (#2352)
+//   node scripts/floorbosscheck.mjs --mutate-price     # the clock-in card claims a free rung, demand RED (#2352)
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -45,7 +47,7 @@ import {
     SHIFT, QUOTA, STRIKES, RACK_CAP, OVERFLOW_FINE, EXPIRE_FINE, BREAK_FINE, BASE_PAY,
     STOW_PAY, RACK_COST, ROBOT_COST, ARM_PATIENCE, ARM_CELL, PAD_CAP, PAD_AGE,
     FREIGHT_PER_BOX, FULL_TRAILER, DISPATCH_FEE,
-    shiftParams, nextShift, LADDER_QUOTA_STEP,
+    shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice,
 } from '../src/games/FloorBoss/sim.js'
 import { createEpisode, validateEpisode } from '../src/utils/robot/episode.js'
 import { hashString } from '../src/utils/robot/physics.js'
@@ -68,7 +70,9 @@ const MUT_BANDS = ARGS.includes('--mutate-bands')
 const MUT_LADDER = ARGS.includes('--mutate-ladder')
 const MUT_ADVANCE = ARGS.includes('--mutate-advance')
 const MUT_BANK = ARGS.includes('--mutate-bank')
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK) {
+const MUT_RUSH = ARGS.includes('--mutate-rush')
+const MUT_PRICE = ARGS.includes('--mutate-price')
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const src = readFileSync(sim, 'utf8')
     const [from, to, name] = MUT_YIELD
@@ -95,7 +99,11 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                 ? ['if (gs.end !== \'win\') return false', 'if (gs.end !== \'win\') return true', 'nextShift claims it advanced without a cleared night (#2346)']
                                                 : MUT_BANK
                                                     ? ['gs.shiftBase = gs.score', 'gs.shiftBase = 0', 'banked money evaporates — the career resets to zero each night (#2346)']
-                                                    : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
+                                                    : MUT_RUSH
+                                                        ? ['rushOn: 2700,', 'rushOn: 2500,', 'the measured-pinned rush clock shifts without a re-measure — unannounced difficulty drift (#2352)']
+                                                        : MUT_PRICE
+                                                            ? ['due: Math.round((1 - p.dueMult) * 100)', 'due: 0', 'the clock-in card claims the deadlines stayed put — the pricing lies (#2352)']
+                                                            : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(sim, src.replace(from, to))
     console.log(`  ..    mutated: ${name} — this run MUST report FAILs`)
@@ -832,6 +840,73 @@ console.log('— shift ladder (#2346) —')
     ok(/CLEAR THE QUOTA AND THE NEXT SHIFT RUNS HOTTER/.test(ui), 'the attract marquee teaches the ladder before the first clock-in')
     ok(/BEST RUN: \$\{board\[0\]\.score\}/.test(ui), 'the leaderboard renamed for runs that span the ladder')
     ok(/shiftInfo: \(\) =>/.test(ui), 'the DEV harness eye exposes the rung, base, bank and params')
+}
+
+console.log('— ladder polish: rung-parameterised rush clock + clock-in ceremony + depth board (#2352) —')
+{
+    // the wave is rung-PARAMETERISED but measured-pinned flat (#2352): the clock
+    // rides the params; the values stay classic until a shape survives the ramp.
+    const p1 = shiftParams(1), p9 = shiftParams(9)
+    ok(p1.rushOn === 2700 && p1.rushLen === 1200, 'shift 1 keeps the classic rush clock 2700/1200 — zero footprint (#2352)')
+    ok(p9.rushOn === 2700 && p9.rushLen === 1200 && shiftParams(99).rushLen === 1200,
+        'the wave is measured-pinned at the classic on every rung — late-biased shapes cost freight home, early-biased ones fired the ramp (#2352)')
+    // the mechanism is live: an artificial rung clock steers lamp, stamps and sim
+    const gs = makeGame(7)
+    gs.tick = 2700
+    ok(rushNow(gs), 'shift 1 still opens the wave at tick 2700')
+    gs.params = { ...shiftParams(3), rushOn: 2500, rushLen: 1400 }
+    gs.tick = 2499
+    ok(!rushNow(gs), 'a rung clock holds the floor quiet until its own start (#2352 mechanism)')
+    gs.tick = 2500
+    ok(rushNow(gs), 'rushNow answers the rung clock, not a hardcoded classic (#2352 mechanism)')
+    gs.tick = 3899
+    ok(rushNow(gs), 'the rung clock keeps its own longer wave open')
+    gs.tick = 3900
+    ok(!rushNow(gs), 'and closes on its own clock')
+    // and stepped sim stamps the rush event at the rung's own tick
+    const s3 = makeGame(4242)
+    s3.params = { ...shiftParams(3), rushOn: 2500, rushLen: 1400 }
+    let stamps = []
+    while (s3.tick <= 2501) { step(s3, [{}]); if (s3.ev.some((e) => e.type === 'rush')) stamps.push(s3.tick) }
+    ok(stamps.length === 1 && stamps[0] === 2500, `stepped sim rings rush at the rung's own tick (${stamps.join(',')})`)
+}
+{
+    // rungPrice: the tightening the ceremony prices — pure, free at rung 1, honest after
+    const p1 = rungPrice(1)
+    ok(p1.wire === 0 && p1.due === 0 && p1.wear === 0, 'rung 1 is priced free — the classic floor charges nothing extra (#2352)')
+    const p2 = rungPrice(2)
+    ok(p2.wire === 4 && p2.due === 4 && p2.wear === 15, 'rung 2 is literally +4% wire, −4% deadlines, −15 wear (#2352)')
+    const p9 = rungPrice(9)
+    ok(p9.wire === 42 && p9.due === 28 && p9.wear === 70, 'deep rung 9 reads the clamped price 42/28/70 (#2352)')
+    let mono = true
+    for (let n = 2; n <= 12; n++) {
+        const a = rungPrice(n - 1), b = rungPrice(n)
+        if (b.wire < a.wire || b.due < a.due || b.wear < a.wear) mono = false
+    }
+    ok(mono, 'the price never falls with the rung — the ladder stays honest in both engine and card (#2352)')
+}
+{
+    // presentation pins: the ceremony says what nextShift actually does
+    const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    ok(/case 'shiftstart':/.test(ui) && /clockIn = \{ shift: e\.shift, quota: e\.quota/.test(ui),
+        'the painter reacts to the sim shiftstart stamp — the rung number comes from the sim (#2352)')
+    ok(/handleEvents\(gs\.ev, gs\.tick\) \/\/ #2352/.test(ui), 'advanceShift hands the stamp to the painter (#2352)')
+    ok(/`NIGHT \$\{clockIn\.shift\}`/.test(ui), 'the clock-in slams NIGHT n onto the floor (#2352)')
+    ok(/QUOTA \$\{clockIn\.quota\}/.test(ui), 'the ceremony reprices the quota at the desk (#2352)')
+    ok(/BOTS MAINTAINED · STRIKES WIPED · FREIGHT STAYS/.test(ui),
+        'the carry-over is said out loud at clock-in — the persistence is taught, not silent (#2352)')
+    ok(/WIRE \+\$\{price\.wire\}% · DEADLINES −\$\{price\.due\}% · WEAR −\$\{price\.wear\}/.test(ui),
+        'the HUD prices the rung at clock-in so the tightening is legible (#2352)')
+    ok(/rungPrice\(clockIn\.shift\)/.test(ui), 'the card prices itself from the pure rung law, not a painter guess (#2352)')
+    ok(/if \(screenRef\.current === 'play' && clockIn\) paintClockIn\(\)/.test(ui),
+        'the ceremony paints on the live floor, never over attract or over (#2352)')
+    ok(!/gs\.tick % \(2700 \+ 1200\)/.test(ui), 'the painter cannot hardcode the classic rush clock again (#2352)')
+    ok(/rushNow\(gs\)/.test(ui), 'lamp, wash and scan all ask the rung clock — never a hardcoded classic (#2352)')
+    // the depth board
+    ok(/shift: gs\.shift, date:/.test(ui), 'board entries remember how deep the run climbed (#2352)')
+    ok(/floorboss\.deep/.test(ui) && /DEEPEST SHIFT \$\{deep\}/.test(ui),
+        'the career board names the deepest rung, so the ladder itself is the scoreboard (#2352)')
+    ok(/clockIn = null \/\/ #2352: a fresh run gets no stale ceremony/.test(ui), 'a fresh run clocks in clean — no stale NIGHT card (#2352)')
 }
 
 console.log('— first-time-player readability pass (#2254, source pins) —')

@@ -25,7 +25,7 @@ import { createEpisode, saveEpisode, episodeStats } from '../../utils/robot/epis
 import { MANIFEST_REV } from '../../utils/robot/assets.js'
 import {
     makeGame, step, state, stateHash, createAutopilot, clickCell, setTool,
-    toggleAuto, clickOrder, hireRobot, nextShift,
+    toggleAuto, clickOrder, hireRobot, nextShift, rungPrice, rushNow,
     COLS, ROWS, SHIFT, STRIKES, RACK_COST, ROBOT_COST, RACK_CAP,
     BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS,
 } from './sim.js'
@@ -238,6 +238,9 @@ const FloorBossGame = () => {
                     case 'auto': audioController.playTone(e.on ? 700 : 420, 0.05, 'square', 0.04); break
                     case 'overflow': audioController.playNoise(0.08, 0.04); if (tick % 3 === 0) fx('BELT FULL', '#ff9a4f', PX(1) + 13, PY(1)); break
                     case 'rush': audioController.playSweep(420, 880, 0.3, 'sawtooth', 0.06); audioController.playSweep(880, 420, 0.3, 'sawtooth', 0.05, 0.3); fx('RUSH HOUR', '#ffd23f', W / 2, 170); break
+                    // #2352: the sim stamps the clock-in — the painter takes the stamp
+                    // and slams the rung onto the floor (paintClockIn).
+                    case 'shiftstart': clockIn = { shift: e.shift, quota: e.quota, until: gs.tick + 130 }; break
                     default: break
                 }
             }
@@ -256,6 +259,7 @@ const FloorBossGame = () => {
         // click at the bot, painter-only like the rest of the fx.
         const repairPulse = new Map() // "x,y" -> tick of the last turbo click
         let spendFlash = null // { label, until } — #2254 item 3: buying reads as a cost
+        let clockIn = null // { shift, quota, until } — #2352: the night number slams in on advance
 
         const finish = () => {
             const won = gs.end === 'win'
@@ -263,7 +267,10 @@ const FloorBossGame = () => {
             watchingRef.current = false; setWatching(false) // #1637 the shift ends in your hands
             setEnd({ won, kind: gs.end, score: gs.score, shipped: gs.shipped, expired: gs.expired, stows: gs.stows, reason: gs.endReason })
             const board = (() => { try { return JSON.parse(localStorage.getItem('floorboss.board') || '[]') } catch { return [] } })()
-            if (gs.score > 0) localStorage.setItem('floorboss.board', JSON.stringify([...board, { score: gs.score, date: new Date().toISOString().slice(2, 10) }].sort((a, b) => b.score - a.score).slice(0, 8)))
+            if (gs.score > 0) localStorage.setItem('floorboss.board', JSON.stringify([...board, { score: gs.score, shift: gs.shift, date: new Date().toISOString().slice(2, 10) }].sort((a, b) => b.score - a.score).slice(0, 8))) // #2352: entries remember how deep the run climbed
+            // #2352: the ladder itself is a scoreboard — remember the deepest rung any
+            // run reached, so the board reads "how deep did you get", not just points.
+            if (gs.shift > 1) { const deep = +(localStorage.getItem('floorboss.deep') || 0); if (gs.shift > deep) localStorage.setItem('floorboss.deep', String(gs.shift)) }
             closeEpisode(won)
             if (won) audioController.playFanfare(); else audioController.playDeath()
             setMode('over')
@@ -691,7 +698,7 @@ const FloorBossGame = () => {
                 ctx.textAlign = 'center'
             }
             // rush lamp — a rotating beacon glow while the wave is on
-            const rush = gs.tick % (2700 + 1200) >= 2700
+            const rush = rushNow(gs)
             if (rush) {
                 ctx.save()
                 ctx.translate(346, 17)
@@ -772,16 +779,51 @@ const FloorBossGame = () => {
         }
 
         const paintRushWash = (tick) => {
-            if (gs.tick % (2700 + 1200) < 2700) return
+            if (!rushNow(gs)) return
             ctx.fillStyle = `rgba(255,180,40,${0.05 + (tick % 40 < 20 ? 0.03 : 0)})`
             ctx.fillRect(GX, GY, COLS * TILE, ROWS * TILE)
         }
 
         const paintRushScan = (tick) => {
-            if (gs.tick % (2700 + 1200) < 2700) return
+            if (!rushNow(gs)) return
             const sy = GY + ((tick * 1.5) % (ROWS * TILE))
             ctx.fillStyle = 'rgba(255,190,60,0.05)'; ctx.fillRect(GX, sy - 2, COLS * TILE, 5)
             ctx.fillStyle = 'rgba(255,210,90,0.14)'; ctx.fillRect(GX, sy, COLS * TILE, 1)
+        }
+
+        // #2352 clock-in ceremony: the rung SLAMS onto the floor the way rush hour
+        // bathes it — a NIGHT n wash, the quota repriced, the carry-over said out
+        // loud (what persists and what the bay wipes), and the rung's price so each
+        // night's tightening is legible at the desk, not just felt on the floor.
+        const paintClockIn = () => {
+            if (!clockIn || gs.tick >= clockIn.until) { clockIn = null; return }
+            const life = clockIn.until - gs.tick
+            const slam = Math.min(1, (130 - life) / 14)
+            const alpha = Math.min(1, slam * 1.6) * Math.min(1, life / 25)
+            ctx.fillStyle = `rgba(30,42,80,${0.34 * Math.min(1, slam * 2)})`
+            ctx.fillRect(GX, GY, COLS * TILE, ROWS * TILE)
+            ctx.save()
+            ctx.translate(W / 2, 150)
+            const scale = 1 + (1 - slam) * (1 - slam) * 1.6
+            ctx.scale(scale, scale)
+            ctx.textAlign = 'center'
+            ctx.font = 'bold 44px monospace'
+            ctx.fillStyle = `rgba(255,210,63,${alpha})`
+            ctx.fillText(`NIGHT ${clockIn.shift}`, 0, 0)
+            ctx.restore()
+            ctx.textAlign = 'center'
+            ctx.fillStyle = `rgba(8,14,20,${0.82 * Math.min(1, slam * 2)})`
+            ctx.fillRect(W / 2 - 190, 170, 380, 58)
+            ctx.strokeStyle = `rgba(126,200,255,${0.5 * alpha})`; ctx.lineWidth = 1.5
+            ctx.strokeRect(W / 2 - 190.5, 169.5, 381, 59)
+            ctx.font = 'bold 14px monospace'; ctx.fillStyle = `rgba(255,255,255,${alpha})`
+            ctx.fillText(`QUOTA ${clockIn.quota}`, W / 2, 190)
+            ctx.font = 'bold 8px monospace'; ctx.fillStyle = `rgba(159,232,180,${alpha})`
+            ctx.fillText('BOTS MAINTAINED · STRIKES WIPED · FREIGHT STAYS', W / 2, 207)
+            const price = rungPrice(clockIn.shift)
+            ctx.fillStyle = `rgba(255,154,79,${alpha})`
+            ctx.fillText(`WIRE +${price.wire}% · DEADLINES −${price.due}% · WEAR −${price.wear}`, W / 2, 221)
+            ctx.textAlign = 'left'
         }
 
         // The dock's truck (#1911): position, mode and load are SIM truth now
@@ -933,7 +975,8 @@ const FloorBossGame = () => {
             const board = (() => { try { return JSON.parse(localStorage.getItem('floorboss.board') || '[]') } catch { return [] } })()
             if (board.length) {
                 ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 9px monospace'
-                ctx.fillText(`BEST RUN: ${board[0].score}`, W / 2, 206) // #2346: runs now span the ladder
+                const deep = Math.max(1, ...board.map((e) => e.shift || 1), +(localStorage.getItem('floorboss.deep') || 0)) // #2352: the ladder is the scoreboard
+                ctx.fillText(`BEST RUN: ${board[0].score}${deep > 1 ? ` · DEEPEST SHIFT ${deep}` : ''}`, W / 2, 206) // #2346: runs now span the ladder
             }
             ctx.textAlign = 'left'
         }
@@ -994,6 +1037,7 @@ const FloorBossGame = () => {
             paintOrders()
             paintFooter()
             if (flash > 0) { ctx.fillStyle = `rgba(255,60,50,${flash / 40})`; ctx.fillRect(0, 0, W, H); flash-- }
+            if (screenRef.current === 'play' && clockIn) paintClockIn()
             if (screenRef.current === 'attract') paintAttract(tick)
             if (screenRef.current === 'over') paintOver(tick)
         }
@@ -1019,6 +1063,7 @@ const FloorBossGame = () => {
             gs = makeGame(pin != null ? pin >>> 0 : (Math.random() * 2 ** 31) | 0)
             parts.length = 0
             setEnd(null)
+            clockIn = null // #2352: a fresh run gets no stale ceremony
             watchingRef.current = false; setWatching(false) // #1637 a new shift starts in your hands
             setMode('play')
             beginEpisode()
@@ -1036,6 +1081,7 @@ const FloorBossGame = () => {
             setEnd(null)
             watchingRef.current = false; setWatching(false)
             setMode('play')
+            handleEvents(gs.ev, gs.tick) // #2352: the painter reacts to the sim's shiftstart stamp
             audioController.playTone(330, 0.08, 'square', 0.06)
             audioController.playTone(494, 0.08, 'square', 0.06, 0.09)
             audioController.playTone(659, 0.12, 'square', 0.06, 0.18)
