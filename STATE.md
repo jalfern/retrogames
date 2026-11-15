@@ -43,8 +43,8 @@
   twin-stage collision).
 
 ## BOARD at exit
-- building: **#2334** (VIPER PIT — slot b; engine core `2c25e29` pushed 09:46Z,
-  presentation/gates unfinished; if its next heartbeat lapses, step 1b resume).
+- building: NONE — slot b shipped its #2334 claim as VIPER PIT props
+  (`d171e12`, PR #2341) mid-shift.
 - building-qa: #2330 (PoP polish), #2336 (GardenGuard sound).
 - feedback claimable: #2343 (mine — QA lane's natural next job).
 - jonq open: #2305 (AWAITING, lane:platform; default hold). No halt, no steer.
@@ -56,8 +56,8 @@
    #2340/#2331/#2333 features across the FULL lazy-chunk set (HTML references
    the entry only; the entry imports ~51 game chunks).
 2. Ladder as usual. #2343 is claimable feedback but QA MASTER is live →
-   expect never-dry; re-run `idle-kick` honestly (TIDY BOT now carries 2 gaps).
-3. If #2334's branch shows no FORGE checkpoint >90 min, resume it per 1b.
+   expect never-dry; re-run `idle-kick` honestly (TIDY BOT now carries 2 gaps;
+   VIPER PIT's gap list just shortened with #2341).
 
 ## The session's catches
 - **The commit button must not cancel itself.** B-keydown hit the shared
