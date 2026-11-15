@@ -87,7 +87,7 @@ async function leftCtrl(page) {
 // plan.ask goes false, no gate. (gauntletplay keeps clicking the real button —
 // the gate's own behaviour stays proven there.)
 const DECLINED_CONSENT = () => {
-    try { localStorage.setItem('retrogames-consent-v1', JSON.stringify({ player: { motion: false, voice: false, at: Date.now() } })) } catch { /* private mode */ }
+    try { localStorage.setItem('retrogames-consent-v1', JSON.stringify({ anon: { motion: false, voice: false, at: Date.now() } })) } catch { /* private mode */ }
 }
 
 // Try generic start gestures until a left control is on screen. Bounded, so a

@@ -94,7 +94,7 @@ const pollAdvance = async (page, probe, advanced, a, waitMs) => {
 // pilot drives a player who opted out of recording — which changes nothing
 // about the WATCH promises this suite proves.
 const DECLINED_CONSENT = () => {
-    try { localStorage.setItem('retrogames-consent-v1', JSON.stringify({ player: { motion: false, voice: false, at: Date.now() } })) } catch { /* private mode: the gate stays, as on a real declined-to-store device */ }
+    try { localStorage.setItem('retrogames-consent-v1', JSON.stringify({ anon: { motion: false, voice: false, at: Date.now() } })) } catch { /* private mode: the gate stays, as on a real declined-to-store device */ }
 }
 
 async function openGameNoExit(browser, pilot) {

@@ -36,7 +36,7 @@ const T = (pg, fn, arg) => pg.evaluate(fn, arg)
 // #2095 boot parity: seed the honest DECLINED consent before page scripts run,
 // or the auto-record gate swallows the start taps (same law as watchcheck).
 const DECLINED_CONSENT = () => {
-    try { localStorage.setItem('retrogames-consent-v1', JSON.stringify({ player: { motion: false, voice: false, at: Date.now() } })) } catch { /* private mode */ }
+    try { localStorage.setItem('retrogames-consent-v1', JSON.stringify({ anon: { motion: false, voice: false, at: Date.now() } })) } catch { /* private mode */ }
 }
 const callLine = (pg) => T(pg, () => window.__tmdTest.callLine())
 const typeUI = (pg) => T(pg, () => window.__tmdTest.typeUI())
