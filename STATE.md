@@ -1,77 +1,79 @@
-# STATE — session 286 (2026-11-15, slot a)
+# STATE — session 287 (2026-11-15, slot b)
 
 ## Playable now / what shipped
-- **TIDY BOT aimed retrieve (#2338 → PR #2340, merge `b06f7b9`; prod
-  pending #2335).** The never-dry pick (`weakestStage` score 3: three README
-  gaps, no QA feedback naming it, oldest unheld at that score). Gap 0
-  ("retrieval takes the last-wrong item") CLOSED:
-  - **Rack slots are engine state** — `it.slot` lowest-free on stow, cleared
-    while carried, freed slot reused, deterministic heal for slotless
-    `in`-states; the cavity paints items at THEIR slot (neighbours never shift;
-    all nine DW dwellers visible — the old 2-row paint could clip L3's ninth).
-    Slot rides `stateHash`.
-  - **`aimAt(gs,tx,ty)`** (pure, like `routeDir`): tap an item in an OPEN
-    cavity → pulsing teal brackets + `AIMED` + double ping, glide to the rack
-    front, B pulls THAT item (outranks wrong-first). Tap never fires a verb —
-    the #2250 two-step law stands.
-  - **Keyboard parity:** B + held direction pulls the stow furthest that way
-    (ties lowest slot). No aim given → wrong-first byte-for-byte — the
-    autopilot never aims, every win-proof rides unchanged.
-  - **Cancel law mirrors glide:** movement keys, new taps, landed verbs, WATCH,
-    level change, reset clear the mark; B commits it. Aim rides `pad.aim` —
-    seed + pads replays hash-identical.
-  - Gates: tidycheck **103/103** (+18 Node clauses, +5 browser: real tap
-    marks, 83 bracket px read from canvas, real KeyB pulls the marked plate,
-    re-tap re-marks, real arrow cancels). `aim` mutant turns the three aiming
-    clauses NAMED-red (proved). contractcheck 15/15; scoped lints + build green.
-- Rule 4: game code shipped. QA polish pass filed: **#2343** (attract never
-  shows the signature pull — the prover never aims; reach-animation, flash,
-  glyph scale).
-
-## PROD (#2335)
-- Still stalled at exit — but it MOVED this shift: alias flipped
-  `index-CaYNshLC.js` → `index-Bus6Zyw-.js` mid-session, yet all 51 chunks
-  the entry references lack the `AIMED` marker → still serving pre-`b06f7b9`.
-  Recovery in progress or partial flip; dashboard eyes still needed (#2335).
+- **VIPER PIT hits back (#2334 → PR #2341, merge `d171e12`).** Destructible
+  props + meter pickups, engine-side: seeded crates/barrels in the fight zone
+  (barrel = any one hit; crate = one heavy or two lights; smash zone +0.35 m
+  above the rim so punches land too); projectiles smash AND are eaten by the
+  furniture; kills on loot props drop a bobbing orb — walk-through banks +20
+  meter (capped; feeds the super/finisher economy). Layout seeds per round on
+  a dedicated stream (CPU rolls untouched); respawn each round; prop/orb state
+  folds into `matchHash` when on (seats agree, replays verify). Option
+  `createMatch({ props: true })`, default off. Presentation: shards fly away
+  from the hitter, crates show the crack, orbs bob/spin/fade; crack/drop/bank
+  audio stings.
+- Gates at ship: viperpitcheck **431/431** (+25 clauses: seeding, damage
+  tiers, crack→break, smash-and-eat, orb drop/collect/ttl, respawn, hash
+  coverage, ladder winnable WITH props, IRON RING golden streams
+  `[1332719598, 1991399977, 3133682145]` pinned vs the pre-PR engine =
+  options-off zero footprint). Prop-damage mutant (both paths stripped) caught.
+  lint v/mario/fps/ai + eslint + build green.
+- Also landed around the shift (other lanes): TIDY BOT aimed retrieve
+  (#2338/#2340, slot a), GARDEN GUARD clear ceremony (#2336 pt2/#2342, QA).
+- **#2335 PROD STALL CLOSED** with evidence at exit: entry `index-CFtOh-EZ.js`,
+  full 60-chunk sweep finds `AIMED` (`index-tn0WIXuq.js`) and `propbreak`
+  (`fighting-Csewj1eB.js`, `index-CekvXgWk.js`) — both stalled features now
+  verified serving.
+- Rule 4: game code shipped.
 
 ## Ladder (this session's path)
-- Warden target **#2334** (VIPER PIT props): claim REFUSED (slot b live, 32
-  min) → normal ladder: no halt/steer; `next` #1711 Jon-side only (twice
-  audited); game-queue EMPTY; feedback all `building-qa`; QA MASTER live →
-  no borrow; flagship stage spent → **never-dry**: `idle-kick` → TIDY BOT 0
-  weak. Filed #2338 with the why-weakest line and claimed IMMEDIATELY (no
-  twin-stage collision).
+- Warden target **#1711** claimed, audited live, released: store still 7 takes
+  all PLAIGRADEd, no claptest take, `/status` `writeKey:false`, jonq **#2305**
+  AWAITING (deadline 11-17, default hold — not taken). Jon-side lines: his
+  phone claptest (#2156) + `wrangler secret put SESSION_WRITE_KEY` → then the
+  #2093 relabel one-off.
+- game-queue empty; feedback all QA-held at claim time; flagship stage spent →
+  never-dry: `idle-kick` → VIPER PIT gap 0 (weakest unheld, score 3; TEN-DEEP
+  4, BRITANNIA 4, PoP 3 all held). Filed #2334 with the why-weakest line,
+  claimed, shipped.
 
 ## BOARD at exit
-- building: NONE — slot b shipped its #2334 claim as VIPER PIT props
-  (`d171e12`, PR #2341) mid-shift.
-- building-qa: #2330 (PoP polish), #2336 (GardenGuard sound).
-- feedback claimable: #2343 (mine — QA lane's natural next job).
-- jonq open: #2305 (AWAITING, lane:platform; default hold). No halt, no steer.
-- game-queue: empty.
+- building: NONE. game-queue: empty.
+- building-qa: **#2336** (GardenGuard), **#2330** (PoP polish).
+- feedback claimable by builders: **#2343** (TidyBot attract) — but QA MASTER
+  nodes were live all shift; expect them at it.
+- jonq open: **#2305** (lane:platform, AWAITING — not ours to wait on).
+- #1711 `next` — Jon-side remainder unchanged. No halt, no steer.
 
 ## Next (slot a or b, in order)
-1. #2335: the alias moved but didn't catch `b06f7b9`. Whoever has Vercel
-   dashboard access — push the alias/pullprod; then string-marker-verify
-   #2340/#2331/#2333 features across the FULL lazy-chunk set (HTML references
-   the entry only; the entry imports ~51 game chunks).
-2. Ladder as usual. #2343 is claimable feedback but QA MASTER is live →
-   expect never-dry; re-run `idle-kick` honestly (TIDY BOT now carries 2 gaps;
-   VIPER PIT's gap list just shortened with #2341).
+1. Ladder as usual; expect never-dry. Re-run `idle-kick` honestly — scores
+   moved: VIPER PIT and TIDY BOT now carry 2 gaps each. Candidates ≈ GARDEN
+   GUARD (gap 0 is an explained non-gap — take its NEXT bullet), FLOOR BOSS,
+   SHORT ORDER SHOUT, GRAVEL YARD, TALK ME DOWN, BOMB DEFUSE …
+2. If a jonq answer lands for #2305 (write key), execute the #2093 relabel
+   one-off; a clap-test take on the store means grade it + post #1711/#2156.
+3. Prod markers are green now; if #2335 reopens, re-run the full-chunk sweep
+   (entry HTML references the entry only — walk its ~60 chunks for markers).
 
 ## The session's catches
-- **The commit button must not cancel itself.** B-keydown hit the shared
-  "human speaks → glide yields" path and cleared the aim ref BEFORE the pad
-  could carry it. Movement keys cancel; verbs end the mark where they LAND
-  (doSim edge). Browser gates earned their keep — unit thinking missed it.
-- **Dump state before trusting a red.** Two probe "failures" this session were
-  the probe author's arithmetic (slot-reuse expectation, re-tapping a vacated
-  slot), not the engine. One state dump beat three more probes.
-- **Prod marker-scan must follow the entry chunk's imports**, not HTML refs:
-  every game is a lazy chunk named `index-*.js`; an entry-hash flip can still
-  predate the merge.
+- **A checker section can be silently dead under `--mutate`.** The new Node
+  rules landed inside the giant `if (!MUT)` block: the plant gate printed but
+  the rule clauses never ran mutant-side. House pattern: full rules in the
+  !MUT scope, flipped one-liners beside the other "MUTANT check:" bites in
+  `if (MUT)`. Cross-check WHERE a clause lives, not just that it was planted.
+- **New mechanics can break old live clauses legitimately.** The gait clause
+  rode a fixed window and main happened to enjoy a passive CPU; with orbs, RIV
+  banks +20 meter and engages sooner → NYX hitstunned mid-sample (4/22
+  samples, twice — not flake). Fixed honestly: sample back-walk FIRST (fresh
+  positions) + wider window; the law (presentation) unchanged.
+- **`gh` beats the ping.** Warden re-kicks carried stale board states twice;
+  fresh audits confirmed #1711 unchanged in both directions — release + ladder
+  with evidence, per the 11-14 audit precedent.
+- **Prod markers live in lazy chunks** (`fighting-*.js`, per-game `index-*.js`),
+  not the entry bundle — grep the chunks the entry references, with `-L`.
 
 ## Hygiene at exit
-- Dev server :5173 (slot a's own) stopped; nothing else touched.
-- Slot-a worktree removed after merge; main checkout re-detached at origin/main.
-- STATE.md committed to main (game merged — rule 9) + `statepark.mjs park a`.
+- Dev servers 5178 + 5181 (mine) stopped; 5174/5179 (foreign) untouched.
+- Slot-b forge worktree + /tmp/rt-main-check removed; branch gone via squash;
+  main checkout at origin/main. STATE committed to main (game merged — rule 9)
+  + statepark slot b.
