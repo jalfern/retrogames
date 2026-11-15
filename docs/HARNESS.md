@@ -325,9 +325,15 @@ against open ones. Port ownership is proved before a single page loads (#1355): 
 before spawn is a squatter by definition, and the post-spawn answering PID must descend (lsof + `ps`
 ancestor walk) from the `npm run dev` leader the bot spawned — otherwise the run aborts *before* playing
 and files ONE `nightly-bot: :5199 is squatted by pid N` infra issue (digit-masked dedupe), never
-per-game ones (#1312 filed 37 in 48 s against an orphan vite). `npm run nightlybotcheck` (pure
-selftest, 33 checks: policy purity, verdicts incl. endurance-vs-stuck, filing dedup, squatter states
-incl. chain membership + infra dedupe, streaks, roster pinned against
+per-game ones (#1312 filed 37 in 48 s against an orphan vite). The abort self-heals when the wreckage is
+provably ours: a pidfile leader matching the listener's pgid/chain reclaims a crashed run's own leak
+(#1799), and since #2344 a listener that is our *own launch signature* (`node <repo>/node_modules/.bin/
+vite --port 5199 --strictPort`) under a **dead process-group leader** is abandoned wreckage — the bot
+kills the group, rebinds and plays, and any completed non-mutated run closes open squatter alarms
+(`classifyOrphan`/`planSquatterCloses`; a live group leader is still a squatter — the #1312 gate holds).
+`npm run nightlybotcheck` (pure
+selftest, 50 checks: policy purity, verdicts incl. endurance-vs-stuck, filing dedup, squatter states
+incl. chain membership + infra dedupe + orphan reclaim/heal, streaks, roster pinned against
 contractcheck's GAMES) runs in `static`; `NIGHTLY_MUTATE=stuck` proves the softlock gate is
 load-bearing (it goes silent and a frozen run flips red→green); `NIGHTLY_MUTATE=squatter` does the
 same for the ownership gate. launchd

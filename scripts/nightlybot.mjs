@@ -229,6 +229,27 @@ export function classifyStale(prePid, chain, pgid, rec, mutate) {
     return { state: 'squatted', pid: prePid }
 }
 
+// #2344 — the pidfile proves OURS; a dead group leader plus our own launch
+// signature proves ABANDONED WRECKAGE from our own ecosystem, and on OUR port
+// that is reclaimable without a pidfile. All three must hold at once:
+//   1. it answers on OUR port (startDev only ever consults this on PORT),
+//   2. the listener's own argv is our launch signature — `node <repo>/node_modules/
+//      .bin/vite --port <PORT> --strictPort`, emitted only by this bot's spawn path
+//      (lanes live on 5173/5178/…, never 5199),
+//   3. the process-group leader is DEAD: whoever launched it is gone, so no live
+//      session owns it — a stranger hosted by a still-running session stays a
+//      squatter and the run aborts and pings a human, exactly as before.
+// A wrong reap still cannot file bogus per-game issues: the #1355 stage-2 ancestry
+// proof must pass before any game is played, and a reap whose rebind fails aborts
+// like any squatter night.
+export function classifyOrphan(prePid, listenerArgv, pgid, leaderAlive, port, mutate) {
+    if (mutate === 'squatter') return { state: 'port-ok', pid: null }
+    if (pgid == null || leaderAlive) return { state: 'squatted', pid: prePid }
+    const sig = new RegExp(`^node [^ ]*node_modules/\\.bin/vite --port ${port} --strictPort\\b`)
+    if (!sig.test(listenerArgv || '')) return { state: 'squatted', pid: prePid }
+    return { state: 'reclaim-orphan', pid: prePid, pgid }
+}
+
 // One infra issue per squatter condition, never per-game. Digits are masked on
 // both sides (same shape math as failureShape), so pid churn night-to-night — or
 // a re-spawned squatter with a new pid — does not re-file.
@@ -237,6 +258,16 @@ export function planInfraFiling(squatter, openTitles) {
     const shape = failureShape(squatterTitle(squatter.port, squatter.pid))
     if (openTitles.some(t => failureShape(t) === shape)) return null
     return { title: squatterTitle(squatter.port, squatter.pid), shape }
+}
+
+// #2344 — a squat alarm expires with the squat: any completed (non-aborted,
+// non-mutated) run bound OUR port and passed the #1355 stage-2 proof, which
+// disproves every still-open `:port is squatted` issue. Without this the alarm
+// outlives its own root cause and the board reads a healed port as haunted.
+export function planSquatterCloses(openIssues) {
+    return (openIssues || [])
+        .filter(i => /^nightly-bot: :\d+ is squatted by pid \d+$/.test(i.title || ''))
+        .map(i => i.number)
 }
 
 // Consecutive fully-green runs. #1040's Done line is "3 nights unattended":
@@ -321,6 +352,28 @@ function selftest() {
         'stale-check: foreign pgid with a stale pidfile is still a squatter — the gate stays load-bearing')
     ok(classifyStale(4242, [4242, 1], 900, { leader: 900 }, 'squatter').state === 'port-ok',
         'mutant squatter swallows the reclaim verdict too — the bot would play against its own leak')
+    // #2344 — orphan reclaim verdicts, pure: our signature with a dead launcher.
+    ok(classifyOrphan(4242, 'node /repo/retrogames/node_modules/.bin/vite --port 5199 --strictPort', 4200, false, 5199).state === 'reclaim-orphan',
+        'orphan-check: our launch signature on our port with a dead group leader is abandoned wreckage')
+    ok(classifyOrphan(4242, 'node /repo/retrogames/node_modules/.bin/vite --port 5199 --strictPort', 4200, true, 5199).state === 'squatted',
+        'orphan-check: the same server under a LIVE group leader belongs to a live session — still a squatter')
+    ok(classifyOrphan(4242, 'node /somewhere/else/server.js --port 5199 --strictPort', 4200, false, 5199).state === 'squatted',
+        'orphan-check: dead leader but foreign argv stays a squatter (#1312 untouched)')
+    ok(classifyOrphan(4242, 'node /repo/node_modules/.bin/vite --port 8080 --strictPort', 4200, false, 5199).state === 'squatted',
+        'orphan-check: our vite on a different port is someone else still working')
+    ok(classifyOrphan(4242, 'node /repo/node_modules/.bin/vite --port 5199', 4200, false, 5199).state === 'squatted',
+        'orphan-check: argv without strictPort is not our launch signature')
+    ok(classifyOrphan(4242, null, null, false, 5199).state === 'squatted',
+        'orphan-check: no argv, no pgid — no proof, stay a squatter')
+    ok(classifyOrphan(4242, 'node /repo/node_modules/.bin/vite --port 5199 --strictPort', 4242, true, 5199).state === 'squatted',
+        'orphan-check: a listener that IS its group leader is alive by definition — the stranger case')
+    ok(classifyOrphan(4242, 'node /repo/node_modules/.bin/vite --port 5199 --strictPort', 4200, false, 5199, 'squatter').state === 'port-ok',
+        'mutant squatter swallows the orphan verdict too — the gate is load-bearing')
+    ok(planSquatterCloses([{ number: 2344, title: 'nightly-bot: :5199 is squatted by pid 91316' }]).join() === '2344',
+        'heal-check: a port we just proved ours closes its stale squat alarm')
+    ok(planSquatterCloses([{ number: 1040, title: 'SOAK: nightly bot end-to-end' },
+        { number: 7, title: 'QA — tetris: nightly softlock' }]).length === 0,
+        'heal-check: unrelated open issues untouched')
     ok(planInfraFiling({ port: 5199, pid: 4242 }, []).title === 'nightly-bot: :5199 is squatted by pid 4242',
         'a fresh squatter files one infra issue naming the pid')
     ok(planInfraFiling({ port: 5199, pid: 9021 }, ['nightly-bot: :5199 is squatted by pid 4242']) === null,
@@ -418,6 +471,18 @@ function portPgid(pid) {
     try { return parseInt(execFileSync('ps', ['-o', 'pgid=', '-p', String(pid)], { encoding: 'utf8' }).trim(), 10) || null } catch { return null }
 }
 
+// #2344 facts for classifyOrphan: the listener's full argv, and whether the
+// group leader still exists (ps exit status — launchd reaps quickly, so a dead
+// leader here means the launcher is really gone, not a zombie awaiting a wait).
+function procArgv(pid) {
+    if (pid == null) return ''
+    try { return execFileSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }).trim() } catch { return '' }
+}
+function pidAlive(pid) {
+    if (pid == null) return false
+    try { execFileSync('ps', ['-p', String(pid)]); return true } catch { return false }
+}
+
 async function waitPortFree(port, tries) {
     for (let i = 0; i < tries; i++) {
         if (portListenerPid(port) == null) return true
@@ -432,7 +497,18 @@ async function startDev(mutate) {
     // pidfile proves it is OUR leaked server from a crashed run — then reclaim.
     let pre = portListenerPid(PORT)
     const early = classifyStale(pre, pre == null ? [] : ancestorChain(pre), portPgid(pre), readPidfile(), mutate)
-    if (early.state === 'squatted') throw squatterError(PORT, early.pid, early.state, [])
+    if (early.state === 'squatted') {
+        // No pidfile proof — but if it is OUR launch signature on OUR port under a
+        // DEAD group leader, it is abandoned wreckage from a vanished session and
+        // we heal instead of wedging nightly until a human shows up (#2344).
+        const pgid = portPgid(pre)
+        const orph = classifyOrphan(pre, procArgv(pre), pgid, pidAlive(pgid), PORT, mutate)
+        if (orph.state !== 'reclaim-orphan') throw squatterError(PORT, early.pid, early.state, [])
+        try { process.kill(-pgid, 'SIGKILL') } catch { /* group already gone */ }
+        if (!(await waitPortFree(PORT, 20))) throw squatterError(PORT, early.pid, 'reclaim-orphan-stuck', [])
+        console.log(`nightlybot: reclaimed orphaned own-signature server on :${PORT} (pid ${pre}, pgid ${pgid})`)
+        pre = null
+    }
     if (early.state === 'reclaim') {
         try { process.kill(-early.leader, 'SIGKILL') } catch { /* group already gone */ }
         if (!(await waitPortFree(PORT, 20))) throw squatterError(PORT, early.pid, 'reclaim-stuck', [])
@@ -626,6 +702,22 @@ async function main() {
     writeFileSync('/tmp/forge/nightly.json', JSON.stringify(doc, null, 1))
     console.log(`\nnightlybot: ${results.length - failed.length}/${results.length} games passed` +
         (failed.length ? ` — ${failed.map(f => f.id).join(', ')} RED` : ' — OK'))
+
+    // #2344 — reaching here means :PORT was bound and proven ours (stage 2),
+    // so any open squatter alarm describes a condition this run disproved.
+    // Never under a mutant: the mutant skipped the very proof being claimed.
+    if (process.env.NIGHTLY_FILE && !MUTATE) {
+        const openIssues = JSON.parse(execFileSync('gh', ['issue', 'list', '--repo', 'jalfern/retrogames', '--state', 'open',
+            '--label', 'feedback', '--json', 'number,title'], { encoding: 'utf8' }))
+        for (const n of planSquatterCloses(openIssues)) {
+            try {
+                execFileSync('gh', ['issue', 'close', String(n), '--repo', 'jalfern/retrogames', '--reason', 'completed',
+                    '--comment', `HEAL: nightly ${doc.generated} bound :${PORT} and passed the #1355 stage-2 ownership proof — ` +
+                    `the squat this issue filed is gone; the bot now reclaims such orphans itself (classifyOrphan).`])
+                console.log(`healed — closed stale squatter issue #${n}`)
+            } catch (e) { console.log(`squatter heal skipped #${n}: ${e.message.split('\n')[0]}`) }
+        }
+    }
 
     if (failed.length && process.env.NIGHTLY_FILE) {
         const open = JSON.parse(execFileSync('gh', ['issue', 'list', '--repo', 'jalfern/retrogames', '--state', 'open',
