@@ -47,6 +47,12 @@ const page = await browser.newPage({ viewport: { width: 900, height: 760 } })
 const errs = []
 page.on('pageerror', (e) => errs.push(String(e)))
 page.on('console', (m) => { if (m.type() === 'error' && !/favicon|DevTools|AutoPlayback|favicon.ico/i.test(m.text())) errs.push(m.text()) })
+// #2095 boot parity (watchcheck/vpadboot law): seed the honest DECLINED answer
+// before page scripts run, or the auto-record gate swallows the start keys and
+// the drive never leaves select on boxes where the rec store probes live.
+await page.addInitScript(() => {
+    try { localStorage.setItem('retrogames-consent-v1', JSON.stringify({ player: { motion: false, voice: false, at: Date.now() } })) } catch { /* private mode */ }
+})
 
 await page.goto(URL, { waitUntil: 'load' })
 await page.waitForFunction('!!window.__tmdTest', null, { timeout: 15000 })

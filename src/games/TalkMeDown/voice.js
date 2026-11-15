@@ -105,7 +105,9 @@ export const KEY_CALL_HINT = 'NO MIC? PRESS X, TYPE THE CALL, ENTER SHOUTS IT'
 // (the typed line is the physical-keyboard channel), so on a touch surface the
 // footer names the pill instead. One-source law unchanged: the shapes stay
 // ACCEPTED_HINT's alone; this names the CHANNEL the phone actually owns.
-export const TOUCH_CALL_HINT = 'NO MIC? TAP MIC · TAP TO LISTEN, THEN SHOUT'
+// #2287 made it name TWO true channels: the phone now also owns a TYPE pill
+// whose soft keyboard feeds the same CALL line X opens on a keyboard box.
+export const TOUCH_CALL_HINT = 'NO MIC? TAP MIC TO SHOUT, OR TYPE + GO'
 
 // applyCallKey — the whole line law, pure. Returns null when the key is not
 // the line's (the caller lets seat keys live); otherwise the new buffer and
