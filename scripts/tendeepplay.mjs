@@ -71,6 +71,13 @@ const px = (x, y, w, h, sel, filter) => page.evaluate(([sx, sy, sw, sh, slct, fl
     return n
 }, [x, y, w, h, sel, filter.toString()])
 
+// #2321: alpha of one pixel on the 2D layer — where the old opaque combat
+// gradient sat, the layer must now be clear so the lit corridor shows through.
+const pxAlpha = (x, y) => page.evaluate(([sx, sy]) => {
+    const cv = document.querySelector('canvas[data-deep-view]')
+    return cv.getContext('2d').getImageData(sx, sy, 1, 1).data[3]
+}, [x, y])
+
 // Sample the WebGL corridor canvas. WebGL has no getImageData — this reads
 // the framebuffer with gl.readPixels (bottom-left origin, flipped here);
 // the shared renderer sets preserveDrawingBuffer (#1129), so readback sees
@@ -525,6 +532,25 @@ if (mid && mid.slideX) {
 for (let i = 0; i < 50 && (await probe()).slide > 0; i++) await wait(40)
 // the retry run may have lost the fight: a stale ambush has nothing to grade
 if (ambush && !(await probe()).combat) ambush = null
+// #2321 MODERN COMBAT — the corridor keeps painting behind the fight. The 2D
+// layer must be transparent where the old opaque gradient sat, the renderer
+// must keep advancing frames mid-fight, and the wireframe fallback must paint
+// its hall. Before this fix everything froze behind a purple cut.
+if (ambush && (await probe()).combat) {
+    if ((await probe()).gl) {
+        const aTL = await pxAlpha(8, 4)
+        const aFM = await pxAlpha(4, 196)
+        r.check('combat shows the lit corridor through the 2D layer — no opaque cut (#2321)',
+            aTL === 0 && aFM === 0, `alpha top-left=${aTL} floor-mid=${aFM} (want 0/0)`)
+        const f0 = (await probe()).glFrames
+        await wait(240)
+        const f1 = (await probe()).glFrames
+        r.check('the GL corridor keeps rendering during the fight (#2321)', f1 > f0 + 4, `glFrames ${f0} -> ${f1}`)
+    } else {
+        const lit = await px(...MONBOX, 'canvas[data-deep-view]', (R, G, B) => R + G + B > 150)
+        r.check('the wireframe hall paints behind the plates (#2321)', lit > 20, `lit px centre box=${lit}`)
+    }
+}
 if (ambush) {
     let p = await probe()
     r.check('the fight opens with mobs on the ledger', !!p.combat && p.combat.mobs.length >= 1, JSON.stringify((p.combat || {}).mobs || []))

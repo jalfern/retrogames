@@ -237,12 +237,23 @@ npm run dev && npm run tendeepplay   # headless Chrome, real key events,
   A pack newly entering the cone gets a low synthesized warning sting (shell
   only, keyed by floor + spawn key so it never machine-guns). **The sim's
   proofs still referee nothing sighted** — sightings stay a view-layer question.
-  Still open: per-species silhouettes (ten bestiary members fold onto three
-  atlas shapes, keyed by the group's lead — a richer atlas would re-open the
-  shared renderer).
+  Per-species silhouettes **CLOSED by #2332**: the whole bestiary got its own
+  atlas shape (`SPR_UV` table in the shared renderer; the Ghoul still shares the
+  skeleton's bones on purpose, under a dead-flesh tint).
   The automap stays clean — Wizardry never drew monsters on paper, neither do we.
-- Combat keeps its 2D bitmap plates on the HUD layer (the original also cut
-  to a separate combat screen, but the plates want their own MODERN pass).
+- ~~Combat keeps its 2D bitmap plates on the HUD layer (the original also cut
+  to a separate combat screen, but the plates want their own MODERN pass)~~
+  **CLOSED by #2321**: the ambush no longer cuts to a separate screen. The
+  corridor keeps painting behind the fight — the WebGL view draws through a
+  cleared 2D band (`glOn` covers combat mode; without GL, `paintMap` paints
+  the same hall) — and the plates ride that lit view wearing the bestiary's
+  own coats: `shadePixel` pulls each bitmap toward the same `MOB_TINT` the GL
+  billboards and wireframe glyph use, with a torch falloff toward the floor
+  (eyes stay raw). The slay dissolve carries the tint too. Pins: tendeeppcheck
+  §MODERN COMBAT (branch structure, no opaque backdrop, tint load-bearing,
+  MOB_TINT covers every `MOBS` key; 5 mutants all die); tendeeppplay reads the
+  2D-layer alpha at the old gradient's corners (must be 0) and proves
+  `glFrames` advance mid-fight.
 - **No between-run persistence — DECIDED stateless (#2321):** the run is one
   sitting; a wipe drags the bodies to the RIM and taxes the purse, and that
   grief IS the economy (temple gold, hire posts, the dead-purse end). A
