@@ -15,7 +15,6 @@ export const MAX_TAU = 340
 
 export function decide(g, held) {
     const live = g.enemies.filter((e) => e.kind !== 'bomber')
-    if (!live.length) return {}
     const inBlast = (e) => g.blasts.some((b) => {
         const dx = e.x - b.x, dy = e.y - b.y
         return dx * dx + dy * dy <= b.r * b.r

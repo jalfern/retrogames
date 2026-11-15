@@ -7,8 +7,10 @@
 //
 // Sections: script audit (every warhead is legal and coverable) · frozen
 // Math.random · engine pins (exact intercept, chain, spans, rebuild, banner)
-// · the planner's proven run · the SLACK RULE (every wave re-solved with ONE
-// FEWER interceptor in EVERY battery) · determinism.
+// · the planner's proven run · bomber hunt (#2306 — altitude is real, the
+// doctrine shoots loaded bombers when the reserve allows) · the SLACK RULE
+// (every wave re-solved with ONE FEWER interceptor in EVERY battery) ·
+// determinism.
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -188,6 +190,103 @@ let provenFired = 0
     for (const w of r.receipts.perWave) ok(w.lost === 0 && w.kills > 0, `wave ${w.wave} receipts wrong: ${JSON.stringify(w)}`)
     console.log(`  ..    ${provenFired} fired, ${r.receipts.kills} kills, ${Date.now() - t0} ms, score ${r.receipts.score}`)
     ok(r.receipts.perWave.length === 3, `run ended after ${r.receipts.perWave.length} waves — must walk all three`)
+}
+
+// -------------------------------------------------------------------- bomber hunt ----
+section('BOMBER HUNT (#2306) — deny the delivery, not just the fall')
+{
+    // A bomber must fly at the altitude ITS SCRIPT declares: the audit reads
+    // spec.y, the sim once hardcoded y:-4 for every kind, and the lie shipped
+    // as invisible, unhittable aircraft while the gate printed 14/14 legal.
+    const specB = WAVES[1].entries.find((e) => e.kind === 'bomber')
+    const gA = toPlay(makeGame(1))
+    let cruised = null
+    for (let t = 0; t < 2000 && !cruised; t++) {
+        step(gA, {})
+        cruised = gA.enemies.find((e) => e.kind === 'bomber') || null
+    }
+    ok(!!cruised, 'no bomber ever appeared in SATURATION')
+    ok(!!cruised && cruised.y === specB.y, `bomber cruises at y=${cruised?.y}, the script declares ${specB.y}`)
+    ok(!!cruised && cruised.y > CFG.aimMinY && cruised.y < CFG.killLine, 'the cruising bomber sits outside the aim band — an invulnerable target shipped again')
+
+    // the altitude guard refuses a nonsense script — the audit is no longer the
+    // only witness (NaN at the spawn would poison the whole drop line)
+    {
+        const gB = toPlay(makeGame(0))
+        gB.queue.push({ t: gB.playT + 1, kind: 'bomber', y: NaN, x0: 40, vx: 0.4, drops: [] })
+        let threw = false
+        try { for (let t = 0; t < 5 && !threw; t++) step(gB, {}) } catch { threw = true }
+        ok(threw, 'a bomber spec with a NaN altitude entered the world instead of throwing')
+    }
+
+    // The doctrine's fat shot: quiet sky, a loaded bomber in the arc, THREE
+    // rounds per tube — below the old `ammo >= 7` surplus gate that almost
+    // never held. The autopilot must still take the kill, and take it BEFORE
+    // the bomber's first delivery.
+    {
+        const g = toPlay(makeGame(0))
+        g.queue.length = 0; g.enemies.length = 0; g.blasts.length = 0; g.intc.length = 0
+        g.bases.forEach((b) => { b.ammo = 3 })
+        g.enemies.push({ id: g.nextId++, kind: 'bomber', x: 40, px: 40, y: 42, vx: 0.4, vy: 0, ti: -1, t: 0, alive: true, split: null, amp: 0,
+            drops: [{ t: 200, ti: 1, done: false }, { t: 300, ti: 2, done: false }], spawnAt: g.playT, score: CFG.score.bomber })
+        const held = new Map()
+        let killed = null, dropSeen = false, fired = false
+        for (let t = 0; t < 400 && !killed; t++) {
+            const inp = decide(g, held)
+            if (inp.fire) fired = true
+            step(g, inp)
+            for (const ev of g.events) {
+                if (ev.type === 'kill' && ev.kind === 'bomber') killed = ev
+                if (ev.type === 'drop') dropSeen = true
+            }
+        }
+        ok(fired, 'loaded bomber, quiet sky, 3 rounds per tube — a surplus gate is back and the autopilot refused the free kill')
+        ok(!!killed, 'the hunted bomber survived a quiet sky — the doctrine does not actually shoot bombers')
+        ok(!dropSeen, 'the bomber delivered before it died — a late hunt is not a denial')
+    }
+
+    // The reserve is REAL, not decoration: one tube left and one unanswered
+    // warhead means that tube belongs to the warhead, never to a fancy kill.
+    {
+        const g = toPlay(makeGame(0))
+        g.queue.length = 0; g.enemies.length = 0; g.blasts.length = 0; g.intc.length = 0
+        g.bases[0].ammo = 1; g.bases[1].ammo = 0; g.bases[2].ammo = 0
+        g.enemies.push({ id: g.nextId++, kind: 'icbm', x: 240, px: 240, y: 20, vx: 0, vy: 1, ti: -1, t: 0, alive: true, split: null, amp: 0, drops: null, spawnAt: g.playT, score: CFG.score.icbm })
+        g.enemies.push({ id: g.nextId++, kind: 'bomber', x: 40, px: 40, y: 42, vx: 0.4, vy: 0, ti: -1, t: 0, alive: true, split: null, amp: 0,
+            drops: [{ t: 200, ti: 1, done: false }], spawnAt: g.playT, score: CFG.score.bomber })
+        const held = new Map()
+        let bomberKill = false, shots = 0
+        for (let t = 0; t < 150; t++) {
+            const inp = decide(g, held)
+            if (inp.fire) shots++
+            step(g, inp)
+            for (const ev of g.events) if (ev.type === 'kill' && ev.kind === 'bomber') bomberKill = true
+        }
+        ok(!bomberKill && shots === 0, `the autopilot spent the held-back tube on the bomber (${shots} shots, kill=${bomberKill}) — the reserve does not hold`)
+    }
+
+    // Across the whole game: the autopilot BAGS bombers and whole deliveries
+    // never happen. (Before #2306 this run scored 60 fired, zero bomber kills,
+    // every scripted drop delivered or escaped-with.)
+    {
+        const g = makeGame(0)
+        const held = new Map()
+        let bk = 0, drops = 0, lost = 0
+        for (let t = 0; t < 40000 && !g.end; t++) {
+            const inp = decide(g, held)
+            step(g, inp)
+            for (const ev of g.events) {
+                if (ev.type === 'kill' && ev.kind === 'bomber') bk++
+                if (ev.type === 'drop') drops++
+                if (ev.type === 'cityHit') lost++
+            }
+        }
+        const scriptedDrops = WAVES.reduce((n, w) => n + w.entries.filter((e) => e.kind === 'bomber').reduce((m, e) => m + e.drops.length, 0), 0)
+        ok(g.end === 'win' && lost === 0, `bombing doctrine made the game unwinnable or messy (end=${g.end}, lost=${lost})`)
+        ok(bk >= 2, `only ${bk} bombers bagged across three barrages — the autopilot still avoids them on purpose`)
+        ok(scriptedDrops - drops >= 4, `${drops}/${scriptedDrops} scripted drops happened — hunting denies barely any deliveries`)
+        console.log(`  ..    ${bk} bombers bagged, ${scriptedDrops - drops}/${scriptedDrops} scripted drops denied before delivery`)
+    }
 }
 
 // ------------------------------------------------------------------- the slack rule ----
