@@ -762,7 +762,7 @@ console.log('\n— the boom (#1812 item 3) —')
     // clearing scorchDecals on restart reddens the carry pin; referencing gs
     // inside spawnBoom reddens the purity pin.
     const jsx = readFileSync(join(here, '../src/games/BombDefuse/index.jsx'), 'utf8')
-    ok(/k === 'boom'[\s\S]{0,120}spawnBoom\(hud\)/.test(jsx), 'the boom event spawns lid + shrapnel + scorch')
+    ok(/k === 'boom'[\s\S]{0,120}spawnBoom\(hud, gsRef\.current/.test(jsx), 'the boom event spawns lid + shrapnel + scorch (carrying the bomb number)')
     const spawn = jsx.slice(jsx.indexOf('const spawnBoom'), jsx.indexOf('function drawHudFrame'))
     ok(spawn.includes('hud.lid') && spawn.includes('hud.shrap') && spawn.includes('scorchDecals = Array.from'), 'the spawn sets lid, shrapnel and decals')
     ok(spawn.includes('Math.random') && !/\bgs\b/.test(spawn), 'spawnBoom reads only Math.random — no gs, hash law intact (ART.md 5)')
@@ -800,6 +800,57 @@ console.log('\n— the boom (#1812 item 3) —')
     let n = 0
     while (!g.done && n++ < 6000) { g.events.length = 0; step(g, solvePads(g)) }
     ok(g.won && hash(g) === hash((() => { const h = createGame(11, 2); let m = 0; while (!h.done && m++ < 6000) step(h, solvePads(h)); return h })()), 'a clean run replays hash-equal — the boom FX added no sim state')
+}
+
+console.log('\n— haptics (#2363) —')
+{
+    // The deck lands on a phone that can feel it: strike/surge/boom/defused
+    // buzz through navigator.vibrate — permission-free where it exists
+    // (Android), absent on iOS Safari, so the helper PROBES both the API and a
+    // touch screen and never blocks. Kill proofs: unwiring a buzz call
+    // reddens its event pin; dropping the touch/API gate reddens the gate pin.
+    const jsx = readFileSync(join(here, '../src/games/BombDefuse/index.jsx'), 'utf8')
+    ok(/'ontouchstart' in navigator && typeof navigator\.vibrate === 'function'/.test(jsx),
+        'the buzz gate probes touch + API presence — never a permission, never an assumption')
+    ok(/function buzz\(pattern\)[\s\S]{0,260}navigator\.vibrate\(pattern\)/.test(jsx),
+        'buzz(pattern) hands the pattern to navigator.vibrate inside the gate')
+    ok(/try \{[\s\S]{0,420}catch/.test(jsx.slice(jsx.indexOf('function buzz'), jsx.indexOf('function buzz') + 480)),
+        'the buzz is try/catch — a dead deck never breaks the fx pump')
+    ok(/k === 'strike'[\s\S]{0,80}buzz\(\[40, 60, 40\]\)/.test(jsx), 'a strike is a double thump [40,60,40]')
+    ok(/k === 'surge'[\s\S]{0,80}buzz\(\[100\]\)/.test(jsx), 'a surge is one heavy thud [100]')
+    ok(/k === 'defused'[\s\S]{0,80}buzz\(\[30, 40, 30\]\)/.test(jsx), 'a defused bomb ticks out clean [30,40,30]')
+    ok(/k === 'boom'[\s\S]{0,80}buzz\(\[120, 60, 200\]\)/.test(jsx), 'the boom is the big decaying one [120,60,200]')
+}
+
+console.log('\n— #2363 material families + rack clank —')
+{
+    // The boom spits the case's MATERIALS (steel / bakelite / brass / glass),
+    // chunks clank off the rack silhouettes instead of ghosting through, and
+    // the charge grows with the bomb (3 → 6). Kill proofs: flattening the
+    // roll back to one family reddens the family pin; deleting the clank
+    // branch reddens the bank pin and the drive's clankProbe; pinning the
+    // count at a constant reddens the variety pin.
+    const jsx = readFileSync(join(here, '../src/games/BombDefuse/index.jsx'), 'utf8')
+    const spawn = jsx.slice(jsx.indexOf('const spawnBoom'), jsx.indexOf('function drawHudFrame'))
+    ok(/const MAT_ZONES = \{[\s\S]{0,600}bakelite[\s\S]{0,300}brass[\s\S]{0,300}glass/.test(jsx),
+        '#2363 material source rects exist — bakelite, brass, glass (besides the steel body)')
+    ok(spawn.includes('MAT_ROLL()') && /MAT_ROLL = \(\) =>[\s\S]*'bakelite'/.test(jsx),
+        '#2363 every chunk rolls a material family at spawn — the burst reads mixed')
+    ok(spawn.includes('mat, bankHit: 0'), '#2363 chunks carry their material + clank counter')
+    ok(spawn.includes("zone[Math.floor(Math.random() * zone.length)]") && spawn.includes('z.x + Math.random() * z.w'),
+        '#2363 non-steel chunks tear from their material zone, not the whole body')
+    ok(/mat === 'glass'[\s\S]{0,700}rgba\(196,232,224/.test(jsx) && /sparkle tail/.test(jsx),
+        '#2363 glass shards paint as pale wedges with a sparkle tail')
+    ok(/mat === 'brass'[\s\S]{0,200}C\.brass/.test(jsx) && /mat === 'bakelite'/.test(jsx),
+        '#2363 brass and bakelite families get their own paint (specular gold / matte seam)')
+    ok(/const RACK_BANKS = \[[\s\S]{0,400}\]/.test(jsx), '#2363 the rack banks are declared (lamp/dot/cutter silhouettes)')
+    ok(/prevY <= b\.y && c\.y >= b\.y/.test(jsx) && /hud\.banked\+\+/.test(jsx),
+        '#2363 a falling chunk crossing a bank top clanks and is counted')
+    ok(/c\.vy = -c\.vy \* 0\.34/.test(jsx), '#2363 the clank is a damped deflect, not a stop')
+    ok(/Math\.min\(6, 3 \+ bomb\)/.test(spawn), '#2363 chunk count grows with the bomb (3 → 6 ceiling)')
+    ok(jsx.includes('banked: hudRef.current.banked'), '#2363 boomFx exposes the clank counter')
+    ok(/clankProbe: \(\) =>/.test(jsx), '#2363 clankProbe exposes the clank law for deterministic pinning')
+    ok(/matProbe: \(\) =>[\s\S]{0,500}spawnBoom\(hud, bomb\)/.test(jsx), '#2363 matProbe spawns the body per bomb index — the count + material laws are probeable')
 }
 
 console.log('\n— win tally (#1812 item 6) —')
@@ -1021,6 +1072,47 @@ console.log('\n— voice grammar (#1812 item 9) —')
     ok(/strokeRect\(110, 140, 420, 152\)[\s\S]{0,220}WAIT/.test(jsx), 'the warning paints its own red frame + word')
     // determinism: same words, same verdict, twice.
     ok(JSON.stringify(parseCall('CUT THE BLUE WIRE', 1)) === JSON.stringify(parseCall('cut the blue wire', 1)), 'grammar is deterministic across casings')
+}
+
+console.log('\n— accent tolerance battery (#2363) —')
+{
+    // The mishearing battery: measure before widening. Every rung is a word a
+    // recogniser actually spells for this grammar (vowel shift, dropped or
+    // swapped letter), graded against the leash the verb tiers ride.
+    const C = (k, extra = {}) => JSON.stringify({ kind: k, ...extra })
+    const got = (t, h = 0) => JSON.stringify(parseCall(t, h))
+    // hold tier: the vowel shift, the v/b swap, the -ise spelling.
+    ok(got('bent') === C('hold', { seat: 0 }) && got('bent the red bar', 1) === C('hold', { seat: 1 }), 'BENT/VUNT rescue VENT (1 edit, 4-letter leash 1)', got('bent'))
+    ok(got('hole') === C('hold', { seat: 0 }) && got('bear the bar') === C('hold', { seat: 0 }), 'HOLE→HOLD, BEAR→BAR — the classic vowel slips land', got('hole'))
+    ok(got('pen the bar') === C('hold', { seat: 0 }) && got('steadie') === C('hold', { seat: 0 }), 'PEN→PIN, STEADIE→STEADY (1-edit rescues at both leash sizes)', got('pen the bar'))
+    ok(got('stabilise') === C('hold', { seat: 0 }), 'STABILISE→STABILIZE — the z/s slip rides the 2-edit leash', got('stabilise'))
+    // sync tier.
+    ok(got('herri') === C('sync') && got('kwick') === C('sync'), 'HERRI→HURRY, KWICK→QUICK — homophones mis-spell wide, leash 2', got('herri'))
+    ok(got('booth') === C('sync') && got('fasts') === C('sync'), 'inflections one letter out still pulse the window', got('booth'))
+    // seat tier (GREEN excluded — its fuzzy slips are the colour tier's).
+    ok(got('sead the needle') === C('seat', { seat: 1 }) && got('neddle') === C('seat', { seat: 1 }), 'SEAD→SEAT, NEDDLE→NEEDLE', got('sead the needle'))
+    ok(got('pleas') === C('seat', { seat: 1 }), 'PLEAS→PRESS — the r/l swap + missing s ride the 2-edit leash', got('pleas'))
+    // the fuzzy WIRE pair: "cut the green wier" must coach the WIRE, not the needle.
+    ok(got('cut the green wier') === C('color', { color: 2 }), 'WIER still names the wire — GREEN-in-SEAT_WORDS would otherwise win', got('cut the green wier'))
+    ok(got('the green wier') === C('color', { color: 2 }), 'a mis-heard pair alone is enough to own GREEN as a wire', got('the green wier'))
+    // the fuzzy warn rides the exact warn's outrange — a missed shout is still heard.
+    ok(got('waite') === C('warn') && got('stopp') === C('warn'), 'WAITE→WAIT, STOPP→STOP — the shout with the extra letter lands the pulse', got('waite'))
+    // the leash holds: 2-edit slips of 4-letter targets stay OUTSIDE. Widening
+    // to 2 would let "heat" (→SEAT lands anyway, 1 edit), "waist", "farts" in —
+    // these pins are the leash's teeth.
+    ok(parseCall('stahp') === null && parseCall('seated') === null, 'STAHP/SEATED are 2 edits from STOP/SEAT — outside the 1-edit leash', JSON.stringify(parseCall('stahp')))
+    ok(parseCall('pear') === null && parseCall('tear') === null, 'PEAR/TEAR sit 2 out from SEAT — ordinary words stay silent', JSON.stringify(parseCall('pear')))
+    ok(got('stahp red') === C('color', { color: 0 }), 'a missed STOP never shadows a REAL word — "stahp red" still coaches the red wire', got('stahp red'))
+    // the documented cost: 1 edit from SEAT is the same leash that saves HOLE→
+    // HOLD, so HEAT→seat is the price (a coaching pulse, not an action — #1247).
+    ok(got('heat') === C('seat', { seat: 1 }), 'HEAT→SEAT is a known 1-edit cost, pinned so a retightening is deliberate', got('heat'))
+    // ordinary words a defusing crew actually shouts stay silent.
+    for (const w of ['yes', 'go', 'ok', 'one', 'yeah', 'cut', 'please', 'and', 'the']) {
+        ok(parseCall(w) === null, `ordinary word "${w.toUpperCase()}" invents no command`)
+    }
+    // the pre-existing colour rescues survive the verb tiers above them.
+    ok(got('read the wire') === C('color', { color: 0 }) && got('blew') === C('color', { color: 1 }), 'READ→RED, BLEW→BLUE still land after the fuzzy verb scan', got('read the wire'))
+    ok(got('gren') === C('color', { color: 2 }) && got('yello') === C('color', { color: 3 }), 'GRENE→GREEN, YELLO→YELLOW — fuzzy green-slip is the COLOUR tier (exact GREEN reads the needle)', got('gren'))
 }
 
 console.log('\n— attract marquee camera (#1812 item 8) —')

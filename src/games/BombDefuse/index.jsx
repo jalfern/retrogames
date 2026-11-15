@@ -56,6 +56,18 @@ const humanSeed = () => {
     return pin != null ? (pin >>> 0 || 1) : 1 + Math.floor(Math.random() * 65535)
 }
 
+// #2363 haptics: the deck lands on a phone that can feel it. navigator.vibrate
+// is permission-free where it exists (Android) and absent on iOS Safari, so
+// probe the API and a touch screen — never ask, never block, never assume.
+// The sound still tells the whole story; the buzz is the weight.
+function buzz(pattern) {
+    try {
+        if (typeof navigator !== 'undefined' && 'ontouchstart' in navigator && typeof navigator.vibrate === 'function') {
+            navigator.vibrate(pattern)
+        }
+    } catch { /* a silent deck is fine — the sound carries */ }
+}
+
 // seven-segment digit map (a, b, c, d, e, f, g)
 const SEG = [[1, 1, 1, 1, 1, 1, 0], [0, 1, 1, 0, 0, 0, 0], [1, 1, 0, 1, 1, 0, 1], [1, 1, 1, 1, 0, 0, 1],
     [0, 1, 1, 0, 0, 1, 1], [1, 0, 1, 1, 0, 1, 1], [1, 0, 1, 1, 1, 1, 1], [1, 1, 1, 0, 0, 0, 0],
@@ -138,6 +150,57 @@ const BLAST_X = BOMB_BODY.x + BOMB_BODY.w / 2
 const BLAST_Y = BOMB_BODY.y + BOMB_BODY.h / 2
 // the deck the chunks slam onto — the unit's bench lip, clear of the HUD strip
 const CHUNK_FLOOR = 322
+
+// #2363: MATERIAL MAP — the case is not one metal. A torn chunk carries the
+// MATERIAL of the region it came off: the steel chassis, the bakelite arm
+// panels, the brass step-dot fittings, the fuse glass. Source rects match the
+// silhouettes drawBombView paints, so a shard reads AS the part it tore off.
+// View-only: these constants are paint law, never sim state.
+const MAT_ZONES = {
+    bakelite: [{ x: 124, y: 206, w: 52, h: 44 }, { x: 464, y: 206, w: 52, h: 44 }],
+    brass: [{ x: 418, y: 96, w: 88, h: 18 }],
+    glass: [{ x: 228, y: 86, w: 184, h: 44 }],
+}
+// weighted family roll — steel still owns the boom, but every burst reads mixed
+const MAT_ROLL = () => (Math.random() < 0.5 ? 'steel' : Math.random() < 0.72 ? 'bakelite' : Math.random() < 0.5 ? 'brass' : 'glass')
+// RACK BANKS — the raised silhouettes on the case face. A falling chunk that
+// crosses a bank's top edge CLANKS off it instead of ghosting through the
+// lamp bank / step dots / cutter columns. Cheap AABB against the y it fell
+// from; the counters ride boomFx so the harness can pin the law.
+const RACK_BANKS = [
+    { x: 114, y: 200, w: 66, h: 104 },  // cutter/key column, seat 1
+    { x: 458, y: 200, w: 66, h: 104 },  // cutter/key column, seat 2
+    { x: 114, y: 96, w: 62, h: 24 },    // strike-lamp bank
+    { x: 414, y: 92, w: 96, h: 28 },    // step-dot bank
+]
+
+// #2363: one chunk's paint-frame step, factored out of the draw loop so the
+// drive harness can prove a rack clank deterministically (clankProbe) instead
+// of gambling on where Math.random threw the body. Deck bounce keeps its
+// #2357 law: 2 damped bounces (0.45), then settle and skid.
+const stepChunk = (c, hud) => {
+    const prevY = c.y
+    c.x += c.vx; c.y += c.vy; c.vy += 0.32; c.rot += c.vr; c.life--
+    if (c.vy > 0) {
+        // rack clank: the chunk's flight crossed a bank's top edge this frame
+        for (const b of RACK_BANKS) {
+            if (prevY <= b.y && c.y >= b.y && c.x > b.x && c.x < b.x + b.w) {
+                c.y = b.y - 1
+                c.vy = -c.vy * 0.34; c.vx *= 0.8; c.vr = c.vr * 0.5 + (Math.random() - 0.5) * 0.12
+                c.bankHit++; hud.banked++
+                hud.sparks.push(...Array.from({ length: 3 }, () => ({ x: c.x + (Math.random() - 0.5) * c.w, y: b.y, vx: (Math.random() - 0.5) * 2.4, vy: -Math.random() * 1.6, life: 10 })))
+                break
+            }
+        }
+        if (c.vy > 0 && c.y >= CHUNK_FLOOR) {
+            if (c.bounces > 0) {
+                c.y = CHUNK_FLOOR; c.vy = -c.vy * 0.45; c.vx *= 0.72; c.vr *= 0.5; c.bounces--
+            } else {
+                c.y = CHUNK_FLOOR; c.vy = 0; c.vx *= 0.86; c.vr *= 0.9
+            }
+        }
+    }
+}
 
 // ---- the bomb face -----------------------------------------------------------
 function drawBombView(g, gs, now, opts = {}) {
@@ -514,7 +577,7 @@ function drawVentPanel(g, p, youSeat, now) {
 // (E.ventCoach, pure) then goes silent for the rest of the run.
 const newHud = () => ({
     flash: 0, shake: 0, sparks: [], banner: null, bannerT: 0, boomT: 0, dudT: 0,
-    lid: null, shrap: [], chunks: [],
+    lid: null, shrap: [], chunks: [], banked: 0,
     ventTaught: false, coach: null, pf: null,
     // #1812 item 1: full first-vent teach panel — dismissed by any input for
     // the whole run (panelGone), re-armed only by a new run (newHud).
@@ -556,7 +619,7 @@ function chipInk(opts, seat, now) {
 // does. `spawnBoom` reads only Math.random; the gate pins that it names no gs.
 let scorchDecals = []
 
-const spawnBoom = (hud) => {
+const spawnBoom = (hud, bomb = 0) => {
     hud.lid = { x: BLAST_X, y: BOMB_BODY.y + 72, vx: (Math.random() - 0.5) * 4, vy: -9 - Math.random() * 3, rot: 0, vr: (Math.random() - 0.5) * 0.35, life: 46 }
     hud.shrap = Array.from({ length: 9 }, () => ({
         x: BLAST_X + (Math.random() - 0.5) * 120, y: BLAST_Y + (Math.random() - 0.5) * 60,
@@ -564,24 +627,41 @@ const spawnBoom = (hud) => {
         rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.5,
         s: 2 + Math.floor(Math.random() * 4), life: 34 + Math.floor(Math.random() * 22),
     }))
-    // #2357: chunk-of-bomb — the BODY breaks. Steel plate chunks torn from the
-    // chassis rect, kicked radially OUTWARD from the blast centre with an upbias;
-    // heavier than the tap-sparks family (slower spin, longer flight, they hit
-    // the deck and BOUNCE). Plate-sized (>=16 px) so a chunk reads as a piece of
+    // #2357: chunk-of-bomb — the BODY breaks. Chunks torn from the chassis,
+    // kicked radially OUTWARD from the blast centre with an upbias; heavier
+    // than the tap-sparks family (slower spin, longer flight, they hit the
+    // deck and BOUNCE). Plate-sized (>=16 px) so a chunk reads as a piece of
     // THIS bomb, not another spark. View-only: Math.random, no sim state — hash law intact.
-    hud.chunks = Array.from({ length: 4 }, () => {
-        const px = BOMB_BODY.x + Math.random() * BOMB_BODY.w
-        const py = BOMB_BODY.y + Math.random() * BOMB_BODY.h
+    // #2363: the body breaks in MATERIALS — each chunk rolls a family and
+    // tears from that family's source rect (steel chassis, bakelite panel,
+    // brass fittings, fuse glass). And the charge scales: BOMB 1 spits 3
+    // chunks, growing to the 6-chunk ceiling — later bombs feel bigger.
+    hud.banked = 0
+    hud.chunks = Array.from({ length: Math.min(6, 3 + bomb) }, () => {
+        const mat = MAT_ROLL()
+        const zone = MAT_ZONES[mat]
+        let px, py
+        if (zone) {
+            const z = zone[Math.floor(Math.random() * zone.length)]
+            px = z.x + Math.random() * z.w
+            py = z.y + Math.random() * z.h
+        } else {
+            px = BOMB_BODY.x + Math.random() * BOMB_BODY.w
+            py = BOMB_BODY.y + Math.random() * BOMB_BODY.h
+        }
         const dx = px - BLAST_X, dy = py - BLAST_Y
         const d = Math.max(1, Math.hypot(dx, dy))
         const kick = 2.6 + Math.random() * 1.8
+        const sw = { steel: 22, bakelite: 16, brass: 10, glass: 12 }[mat]
+        const sh = { steel: 12, bakelite: 10, brass: 8, glass: 8 }[mat]
         return {
             x: px, y: py,
             vx: (dx / d) * kick + (Math.random() - 0.5) * 2,
             vy: (dy / d) * kick - 3.5 - Math.random() * 2.5,
-            w: 16 + Math.floor(Math.random() * 22), h: 10 + Math.floor(Math.random() * 12),
+            w: 16 + Math.floor(Math.random() * sw), h: 10 + Math.floor(Math.random() * sh),
             rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.28,
             bounces: 2, life: 70 + Math.floor(Math.random() * 26),
+            mat, bankHit: 0,
         }
     })
     scorchDecals = Array.from({ length: 5 }, () => ({
@@ -733,10 +813,10 @@ export default function BombDefuseGame() {
             hud.sparks.push(...Array.from({ length: 8 }, () => ({ x: (f.seat === 0 ? 150 : 490) + (Math.random() - 0.5) * 24, y: 240 + (Math.random() - 0.5) * 30, vx: (Math.random() - 0.5) * 4, vy: -Math.random() * 3, life: 12 })))
             hud.banner = { text: 'WIRES NICKED −2S', ok: false }; hud.bannerT = 40
         }
-        else if (f.k === 'strike') { sfx.strike(); hud.flash = 26; hud.shake = 12; hud.banner = { text: `STRIKE! ${f.why}`, ok: false }; hud.bannerT = 60 }
-        else if (f.k === 'surge') { sfx.surge(); hud.flash = 34; hud.shake = 16; hud.banner = { text: 'PRESSURE SURGE', ok: false }; hud.bannerT = 60 }
-        else if (f.k === 'defused') { sfx.defused(); hud.banner = { text: `BOMB ${f.bomb} DOWN`, ok: true }; hud.bannerT = 80 }
-        else if (f.k === 'boom') { sfx.boom(); hud.boomT = 70; hud.shake = 24; spawnBoom(hud) }
+        else if (f.k === 'strike') { sfx.strike(); buzz([40, 60, 40]); hud.flash = 26; hud.shake = 12; hud.banner = { text: `STRIKE! ${f.why}`, ok: false }; hud.bannerT = 60 }
+        else if (f.k === 'surge') { sfx.surge(); buzz([100]); hud.flash = 34; hud.shake = 16; hud.banner = { text: 'PRESSURE SURGE', ok: false }; hud.bannerT = 60 }
+        else if (f.k === 'defused') { sfx.defused(); buzz([30, 40, 30]); hud.banner = { text: `BOMB ${f.bomb} DOWN`, ok: true }; hud.bannerT = 80 }
+        else if (f.k === 'boom') { sfx.boom(); buzz([120, 60, 200]); hud.boomT = 70; hud.shake = 24; spawnBoom(hud, gsRef.current ? gsRef.current.bomb : 0) }
         else if (f.k === 'win') sfx.win()
     }, [])
 
@@ -1344,27 +1424,50 @@ export default function BombDefuseGame() {
                 // spark-dot shrapnel never bounces — the mass reads different.
                 if (hud.chunks.length) {
                     for (const c of hud.chunks) {
-                        c.x += c.vx; c.y += c.vy; c.vy += 0.32; c.rot += c.vr; c.life--
-                        if (c.vy > 0 && c.y >= CHUNK_FLOOR) {
-                            if (c.bounces > 0) {
-                                c.y = CHUNK_FLOOR; c.vy = -c.vy * 0.45; c.vx *= 0.72; c.vr *= 0.5; c.bounces--
-                            } else {
-                                c.y = CHUNK_FLOOR; c.vy = 0; c.vx *= 0.86; c.vr *= 0.9
-                            }
-                        }
+                        stepChunk(c, hud)
                         const cf = c.life > 14 ? 1 : c.life / 14
                         g.save(); g.translate(c.x, c.y); g.rotate(c.rot); g.globalAlpha = cf
-                        g.fillStyle = C.steel; g.fillRect(-c.w / 2, -c.h / 2, c.w, c.h)
-                        g.strokeStyle = C.ink; g.strokeRect(-c.w / 2, -c.h / 2, c.w, c.h)
-                        g.fillStyle = C.steelHi; g.fillRect(-c.w / 2 + 2, -c.h / 2 + 2, c.w - 4, 2)
-                        // the chassis rivet motif — torn plates carry their rivets out
-                        g.fillStyle = '#181b12'
-                        g.beginPath(); g.arc(-c.w / 2 + 5, -c.h / 2 + 5, 2.4, 0, 7); g.fill()
-                        g.beginPath(); g.arc(c.w / 2 - 5, c.h / 2 - 5, 2.4, 0, 7); g.fill()
-                        g.fillStyle = '#575e4b'
-                        g.beginPath(); g.arc(-c.w / 2 + 4, -c.h / 2 + 4, 1.2, 0, 7); g.fill()
-                        g.beginPath(); g.arc(c.w / 2 - 6, c.h / 2 - 6, 1.2, 0, 7); g.fill()
+                        if (c.mat === 'glass') {
+                            // fuse-glass shard: a pale translucent wedge — the only
+                            // family that glints; its sparkle tail trails screen-space
+                            g.beginPath()
+                            g.moveTo(-c.w / 2, -c.h * 0.2); g.lineTo(-c.w * 0.1, -c.h / 2)
+                            g.lineTo(c.w / 2, c.h * 0.1); g.lineTo(c.w * 0.15, c.h / 2)
+                            g.closePath()
+                            g.fillStyle = 'rgba(196,232,224,0.72)'; g.fill()
+                            g.strokeStyle = 'rgba(255,255,255,0.85)'; g.stroke()
+                        } else if (c.mat === 'bakelite') {
+                            // dull bakelite flake: matte brown, panel seam, no gloss
+                            g.fillStyle = '#241a13'; g.fillRect(-c.w / 2, -c.h / 2, c.w, c.h)
+                            g.strokeStyle = '#120c08'; g.strokeRect(-c.w / 2, -c.h / 2, c.w, c.h)
+                            g.fillStyle = 'rgba(122,86,52,0.5)'; g.fillRect(-c.w / 2 + 3, -1, c.w - 6, 2)
+                        } else if (c.mat === 'brass') {
+                            // brass fitting: bright gold with a hard specular line
+                            g.fillStyle = C.brass; g.fillRect(-c.w / 2, -c.h / 2, c.w, c.h)
+                            g.strokeStyle = '#6b5310'; g.strokeRect(-c.w / 2, -c.h / 2, c.w, c.h)
+                            g.fillStyle = 'rgba(255,240,180,0.9)'; g.fillRect(-c.w / 2 + 2, -c.h / 2 + 2, c.w - 4, 2)
+                        } else {
+                            g.fillStyle = C.steel; g.fillRect(-c.w / 2, -c.h / 2, c.w, c.h)
+                            g.strokeStyle = C.ink; g.strokeRect(-c.w / 2, -c.h / 2, c.w, c.h)
+                            g.fillStyle = C.steelHi; g.fillRect(-c.w / 2 + 2, -c.h / 2 + 2, c.w - 4, 2)
+                            // the chassis rivet motif — torn plates carry their rivets out
+                            g.fillStyle = '#181b12'
+                            g.beginPath(); g.arc(-c.w / 2 + 5, -c.h / 2 + 5, 2.4, 0, 7); g.fill()
+                            g.beginPath(); g.arc(c.w / 2 - 5, c.h / 2 - 5, 2.4, 0, 7); g.fill()
+                            g.fillStyle = '#575e4b'
+                            g.beginPath(); g.arc(-c.w / 2 + 4, -c.h / 2 + 4, 1.2, 0, 7); g.fill()
+                            g.beginPath(); g.arc(c.w / 2 - 6, c.h / 2 - 6, 1.2, 0, 7); g.fill()
+                        }
                         g.restore(); g.globalAlpha = 1
+                        if (c.mat === 'glass') {
+                            const tl = Math.hypot(c.vx, c.vy) || 1
+                            for (let i = 1; i <= 3; i++) {
+                                if (Math.random() < 0.7) {
+                                    g.fillStyle = `rgba(255,255,240,${(0.55 / i).toFixed(2)})`
+                                    g.fillRect(c.x - (c.vx / tl) * i * 5 + (Math.random() - 0.5) * 3, c.y - (c.vy / tl) * i * 5 + (Math.random() - 0.5) * 3, 2, 2)
+                                }
+                            }
+                        }
                     }
                     hud.chunks = hud.chunks.filter(c => c.life > 0)
                 }
@@ -1582,7 +1685,36 @@ export default function BombDefuseGame() {
                     : null),
                 // #1812 item 3: the boom FX, live-probeable — lid/shrapnel in
                 // flight + the scorch decals the chassis carries between runs.
-                boomFx: () => ({ lid: !!hudRef.current.lid, shrap: hudRef.current.shrap.length, chunks: hudRef.current.chunks.length, bounced: hudRef.current.chunks.reduce((n, c) => n + (2 - c.bounces), 0), scorch: scorchDecals.length, boomT: hudRef.current.boomT }),
+                boomFx: () => ({ lid: !!hudRef.current.lid, shrap: hudRef.current.shrap.length, chunks: hudRef.current.chunks.length, bounced: hudRef.current.chunks.reduce((n, c) => n + (2 - c.bounces), 0), banked: hudRef.current.banked, mats: [...new Set(hudRef.current.chunks.map(c => c.mat))].sort().join(','), scorch: scorchDecals.length, boomT: hudRef.current.boomT }),
+                // #2363: the rack-clank law proven deterministically — a chunk
+                // aimed over the seat-1 column MUST clank (vy flips, counters
+                // tick), no Math.random gambling. Restores the counters it uses.
+                clankProbe: () => {
+                    const hud = hudRef.current
+                    const c = { x: 150, y: 197, vx: -1.5, vy: 3.2, vr: 0.1, rot: 0, w: 20, h: 12, bounces: 2, life: 40, mat: 'steel', bankHit: 0 }
+                    const b = hud.banked
+                    stepChunk(c, hud)
+                    const out = { hit: c.bankHit, banked: hud.banked - b, vyUp: c.vy < 0, settled: c.y < 200 }
+                    hud.banked = b; if (c.bankHit) hud.sparks.splice(-3)
+                    return out
+                },
+                // #2363: deterministic multi-bomb chunk probe — spawns the
+                // body for each bomb index (0–5) and collects the material
+                // union + count, then clears. No screen restarts, no page
+                // disturbance — the STAGGER/press-tick gates stay on their
+                // own untouched timeline.
+                matProbe: () => {
+                    const hud = hudRef.current
+                    const mats = new Set()
+                    const counts = []
+                    for (let bomb = 0; bomb < 6; bomb++) {
+                        spawnBoom(hud, bomb)
+                        counts.push(hud.chunks.length)
+                        for (const c of hud.chunks) mats.add(c.mat)
+                    }
+                    hud.chunks = []; hud.shrap = []; hud.lid = null; hud.banked = 0
+                    return { mats: [...mats].sort().join(','), counts }
+                },
                 boomNow: () => { const gb = gsRef.current; if (gb && !gb.done) gb.fuse = 1 },
                 ventTaught: () => hudRef.current.ventTaught,
                 // #1812 item 1: the live teach panel + its dismissal latch.

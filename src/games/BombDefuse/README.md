@@ -55,8 +55,12 @@ priority: WARN (wait/no/stop → red frame + blip) > wire-pair colour ("cut the
 blue wire") > action verbs (sync/hold/seat — an action beats a colour, and
 bare GREEN means *needle to green*) > bare colours > one-to-two-edit mis-hear
 tolerance (read→red, blew→blue; 3-letter colours keep a leash of 1 so "said"
-stays silent). Urgency words (faster/quick) ride the SYNC pulse.
-defusecheck's voice-grammar section pins every rung (#1812 item 9).
+stays silent). Urgency words (faster/quick) ride the SYNC pulse. Since #2363
+the verb tiers carry the same leash (bent→vent, hole→hold, herri→hurry,
+kwick→quick; 3-4 letters 1 edit, 5+ two — "pear" stays silent) and the wire
+pair hears its own slips (wier), so "cut the green wier" coaches the wire,
+not the needle; defusecheck's voice-grammar + accent-tolerance battery pin
+every rung (#1812 item 9, #2363), including the documented HEAT→seat cost.
 
 ## Online room (#1819 — `net.js` + shared Lobby)
 
@@ -105,7 +109,7 @@ lockstep-by-sampling-law (#531), same shape as the other four co-op titles:
 ## Verify
 
 ```bash
-npm run defusecheck                      # 290 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline, first-VENT coaching, the first-vent teach panel, powered-device bed, window pre-flash, active-seat chips, the boom FX, the win tally, the attract marquee camera
+npm run defusecheck                      # 345 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline, first-VENT coaching, the first-vent teach panel, powered-device bed, window pre-flash, active-seat chips, the boom FX, the win tally, the attract marquee camera, the accent-tolerance battery, the haptics, material families + rack clank
 npm run defuselinkcheck                # 75 gates: online protocol incl. in-flight reseat (7b/7c/7d)
 CONTRACT_ONLY=bomb-defuse npm run contractcheck
 DEV_PORT=5178 npm run plaicraft:evidence -- --self-test   # fifth-title synths + mutants
@@ -316,7 +320,32 @@ restore → 201/201.
   defusecheck +10 source pins (spawn-from-rect, radial kick, size floor,
   gravity, bounce law, settle law, hud/probe wiring); defusedrive gates the
   live 4-chunk launch, a real ground bounce mid-flight, and expiry across the
-  restart. Remaining: per-material fragments (bakelite vs steel) and chunks
-  colliding with rack geometry stay polish ideas.
-- Voice grammar is ~20 words; no accent tolerance.
-- No haptics/vibration hooks on phones.
+  restart.
+
+- **CLOSED by #2363**: per-material fragments — each chunk rolls a family
+  (steel chassis, bakelite arm panel, brass step-dot fittings, fuse glass) and
+  tears from that family's source rect, so a shard reads as the part it came
+  off: steel keeps the rivet motif, bakelite is matte brown with a panel seam,
+  brass is gold with a hard specular line, glass is a pale translucent wedge
+  with a screen-space sparkle tail (the only family that glints). Rack clank —
+  chunks that fall onto the lamp bank / step-dot bank / cutter-column
+  silhouettes CLANK off the top edge (damped 0.34 deflect + 3 spark dots)
+  instead of ghosting through; `hud.banked` counts it (`boomFx.banked`), and
+  `__bdTest.clankProbe` proves the law deterministically. Chunk-count variety:
+  BOMB 1 spits 3 chunks, growing `Math.min(6, 3 + bomb)` — later bombs feel
+  bigger. All view-only (Math.random, no sim state; the hash pins stay green).
+- **CLOSED by #2363**: voice grammar accent tolerance — the verb tiers (and
+  the warn + wire tiers) now ride the dmax leash the colour rescues already
+  used: 3-4-letter words 1 edit (bent→vent, hole→hold, bear→bar, waite→wait,
+  wier→wire), 5+ two (herri→hurry, kwick→quick, neddle→needle, stabilise).
+  Measured, not guessed: the mishearing battery in defusecheck pins 40+
+  rungs including the misses that stay OUTSIDE (stahp, seated, pear, tear —
+  widening the 4-letter leash to 2 would let "heat", "waist" and "farts"
+  coach) and the one documented cost (heat→seat, 1 edit from SEAT — the same
+  leash that saves hole→hold; a coaching pulse, never an action, #1247).
+- **CLOSED by #2363**: haptics — strike/surge/boom/defused buzz through
+  `navigator.vibrate` (permission-free on Android, absent on iOS Safari, so
+  `buzz()` probes touch + API and never blocks): strike [40,60,40] double
+  thump, surge [100] one heavy thud, boom [120,60,200] the big decaying one,
+  defused [30,40,30] the clean tick-out. The sound still tells the whole
+  story; the buzz is the weight. Pinned by defusecheck source gates.

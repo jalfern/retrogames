@@ -188,7 +188,9 @@ const fxLive = await page.evaluate(() => window.__bdTest.boomFx())
 r.check('boom launches the lid and arcing shrapnel', fxLive.lid && fxLive.shrap >= 6 && fxLive.scorch >= 3, `lid=${fxLive.lid} shrap=${fxLive.shrap} scorch=${fxLive.scorch}`)
 // #2357: the BODY breaks too — plate chunks fly with the lid, and a moment
 // later at least one has hit the deck and bounced (vy flipped sign).
-r.check('#2357 boom breaks the body: 4 chassis chunks launch with it', fxLive.chunks === 4, `chunks=${fxLive.chunks}`)
+r.check('#2357 boom breaks the body: chassis chunks launch with it (#2363: BOMB 1 spits 3)', fxLive.chunks === 3, `chunks=${fxLive.chunks}`)
+const clank = await page.evaluate(() => window.__bdTest.clankProbe())
+r.check('#2363 clankProbe: a falling chunk clanks off the seat column (vy flips, counted, stays up)', clank.hit >= 1 && clank.banked === clank.hit && clank.vyUp && clank.settled, JSON.stringify(clank))
 await sleep(900)
 const fxB = await page.evaluate(() => window.__bdTest.boomFx())
 r.check('#2357 chunks hit the deck and bounce (damped, vy sign flipped)', fxB.bounced >= 1, `bounced=${fxB.bounced} chunks=${fxB.chunks}`)
@@ -198,6 +200,13 @@ await sleep(1200)
 const fxAft = await page.evaluate(() => window.__bdTest.boomFx())
 const scrAft = await page.evaluate(() => window.__bdTest.screen())
 r.check('next run opens scorched but lid-free (decals carry, fx expire)', scrAft === 'play' && fxAft.scorch >= 3 && fxAft.lid === false && fxAft.shrap === 0 && fxAft.chunks === 0 && fxAft.bounced === 0, `scr=${fxAft.scorch} lid=${fxAft.lid} shrap=${fxAft.shrap} chunks=${fxAft.chunks}`)
+
+// #2363: bursts read MIXED and scale with the bomb — deterministic probe
+// across bomb indices 0-5 (no screen restarts: the gates below keep their
+// own untouched timeline). Union of families ≥ 2 with ~30 rolls is certain.
+const mp = await page.evaluate(() => window.__bdTest.matProbe())
+r.check('#2363 booms spit more than one material family (probe union ≥2)', mp.mats.split(',').filter(Boolean).length >= 2, mp.mats)
+r.check('#2363 chunk count grows 3→6 with the bomb (ceiling 6)', JSON.stringify(mp.counts) === JSON.stringify([3, 4, 5, 6, 6, 6]), JSON.stringify(mp.counts))
 
 // #1812 item 2 — the press-tick law in the REAL view stack, stepped tick-exact
 // (wall-clock rAF sampling is too coarse on software-rendered Chrome — the
