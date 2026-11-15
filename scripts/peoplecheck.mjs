@@ -73,7 +73,7 @@ import {
     SPAT_DROP, SPAT_SOCIAL, SPAT_CD, MAKEUP_BOND, moodOf, avg,
     COOL_LINES, HOUSE_LINES, GRUDGE_FIRST_CD, GRUDGE_COOL_CD,   // #2135: the cooling beat
     newRun, advance, autoStep, cmdUse, cmdWalk, cmdWork, tryUse,
-    place, sellAt, targetsOf, walkable, bfsPath, stateHash, buildRoom, buildRoomOk,
+    place, placeOk, sellAt, targetsOf, walkable, bfsPath, stateHash, buildRoom, buildRoomOk,
     manualMove,
     court, courtTarget, COO_BOND, AFFECTION_BOND, INSULT_DROP, CMD_CD, REL_EDGES,   // #2131
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court
@@ -122,7 +122,7 @@ section('BOOT')
     check('five needs per resident, all positive', g.people.every((p) => NEEDS.length === 5 && NEEDS.every((n) => p.needs[n] > 0.5)))
     check('starter house has bed/fridge/toilet/mail/radio', ['bed', 'fridge', 'toilet', 'mail', 'radio'].every((id) => g.items.some((it) => it.id === id)))
     check('starter items never wall anyone in', g.items.every((it) => targetsOf(g, it).length > 0))
-    check('seventeen catalog pieces with prices; Spare Room card 14 keyed R, Adopt a Cat card 15 keyed P, Adopt a Child card 16 keyed K, Yarn Ball card 17 cat-only', CATALOG.length === 17 && CATALOG.every((d) => d.price > 0) && CATALOG[13].id === 'roomkit' && CATALOG.filter((d) => d.room).length === 1 && CATALOG[14].id === 'petkit' && CATALOG.filter((d) => d.pet).length === 1 && CATALOG[15].id === 'kidkit' && CATALOG.filter((d) => d.kid).length === 1 && CATALOG[16].id === 'yarn' && CATALOG[16].catOnly === true)   // #2197/#2203/#2256
+    check('eighteen catalog pieces with prices; Spare Room card 14 keyed R, Adopt a Cat card 15 keyed P, Adopt a Child card 16 keyed K, Yarn Ball card 17 cat-only, Canopy Bed card 18 wing-only', CATALOG.length === 18 && CATALOG.every((d) => d.price > 0) && CATALOG[13].id === 'roomkit' && CATALOG.filter((d) => d.room).length === 1 && CATALOG[14].id === 'petkit' && CATALOG.filter((d) => d.pet).length === 1 && CATALOG[15].id === 'kidkit' && CATALOG.filter((d) => d.kid).length === 1 && CATALOG[16].id === 'yarn' && CATALOG[16].catOnly === true && CATALOG[17].id === 'canopy' && CATALOG.filter((d) => d.wingOnly).length === 1)   // #2197/#2203/#2256/#2272
     check('tileOf maps pixels to cells', tileOf(tileX(3) + 4, tileY(2) + 4)?.c === 3 && tileOf(tileX(3), tileY(2))?.r === 2)
 }
 
@@ -544,6 +544,68 @@ section('MOVE-IN (#1814): reactions, glow, honest edges')
     check('pin: the shell passes the live ext flag into the tint', /nightTint\(ctx, g\.hour, g\.ext\)/.test(jsxSrc))
     check('pin: the bot buys the kit only onto a clear lot', /if \(id === 'roomkit'\)[\s\S]*?!roomClear\(s\)/.test(sim2Src))
     check('pin: the hammer arms the reaction ledger', /s\.roomReact = s\.people\.length/.test(sim2Src))
+}
+
+section('CANOPY (#2272): wing-only bedroom bed, premium sleep')
+{
+    // The Spare Room finally sells furniture that reads bedroom: the Canopy
+    // Bed lives on the wing's floorboards and nowhere else, shares the bed's
+    // night law, and sleeps deeper (cozy rides the def, not the id).
+    const g = newRun(31)
+    g.money = 1000
+    drain(g)
+    setSel(g, CATALOG.findIndex((d) => d.id === 'canopy'))
+    check('before the hammer the canopy fits nowhere — lawn is not a bedroom', !place(g, 3, 12) && !place(g, 6, 13) && !placeOk(g, 5, 3) && g.money === 1000 && !g.items.some((it) => it.id === 'canopy'))
+    buildRoom(g)
+    check('card 18: premium furniture law — priced, solid, sleeps', DEF.canopy.price === 260 && DEF.canopy.solid === true && DEF.canopy.need === 'energy' && DEF.canopy.sleep === true && DEF.canopy.wingOnly === true)
+    check('bed shares the sleep law (id tests promoted to def)', DEF.bed.sleep === true && DEF.bed.cozy === 0.03 && DEF.canopy.cozy > DEF.bed.cozy)
+    check('the house floor still refuses it — it belongs to the wing', !place(g, 5, 3) && !place(g, 6, 3) && !g.items.some((it) => it.id === 'canopy'))
+    check('the wing accepts it on its floorboards', place(g, 5, 13) && g.items.some((it) => it.id === 'canopy' && it.r === 5 && it.c === 13) && g.money === 1000 - EXT_ROOM.price - DEF.canopy.price)
+    check('HOME + digit 7 reaches card 18', selectTab(g, 0) && digitCard(g, 7) === CATALOG.findIndex((d) => d.id === 'canopy'))
+
+    // premium nap: a full midday sleep on the canopy wakes fuller than the
+    // plain bed's arithmetic (bed: amt + cozy*dur = 0.87 from 0.3)
+    const p = g.people[0]
+    p.r = 5; p.c = 12; p.path = null; p.goal = null; p.use = null
+    p.needs.energy = 0.3
+    check('the bed orders a canopy nap from next door', cmdUse(g, p, g.items.find((it) => it.id === 'canopy')))
+    for (let i = 0; i < 60 * 30 && (p.path || p.use); i++) advance(g, DT)
+    check('a canopy nap tops the tank — deeper than any bed nap', !p.use && p.needs.energy >= 0.999, `energy=${p.needs.energy.toFixed(3)}`)
+    check('the premium is real arithmetic', DEF.canopy.amt + DEF.canopy.cozy * DEF.canopy.dur > DEF.bed.amt + DEF.bed.cozy * DEF.bed.dur)
+
+    // night law rides sleep too: a canopy bed at 23:00 holds until dawn
+    const g2 = newRun(31)
+    g2.money = 1000
+    buildRoom(g2)
+    setSel(g2, CATALOG.findIndex((d) => d.id === 'canopy'))
+    place(g2, 5, 13)
+    const q = g2.people[0]
+    q.r = 5; q.c = 12; q.path = null; q.goal = null; q.use = null
+    g2.hour = 23
+    cmdUse(g2, q, g2.items.find((it) => it.id === 'canopy'))
+    for (let i = 0; i < 60 * 14 && (q.path || !q.use); i++) advance(g2, DT)   // walk in and settle
+    for (let i = 0; i < 60 * 13; i++) advance(g2, DT)   // past dur (9s), still night
+    check('a canopy night-sleep rides past its duration until morning', q.use && q.use.night === true && q.use.t > q.use.dur && (g2.hour < 6 || g2.hour >= 22))
+    for (let i = 0; i < 60 * 60 && (q.path || q.use); i++) advance(g2, DT)
+    check('dawn lets the canopy sleeper up, fully rested', !q.use && q.needs.energy >= 0.999, `hour=${g2.hour} energy=${q.needs.energy.toFixed(3)}`)
+
+    // economy + hash
+    const moneyBefore = g2.money
+    check('selling the canopy frees the cell and pays half back', sellAt(g2, 5, 13) && g2.money === moneyBefore + Math.floor(DEF.canopy.price / 2) && !g2.items.some((it) => it.id === 'canopy'))
+    const gA = newRun(77), gB = newRun(77)
+    gA.money = 1000; gB.money = 1000
+    buildRoom(gA); buildRoom(gB)
+    setSel(gB, CATALOG.findIndex((d) => d.id === 'canopy'))
+    place(gB, 6, 14)
+    check('stateHash carries the canopy bed', stateHash(gA) !== stateHash(gB))
+
+    // source pins: the laws must not silently drop
+    const cSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const cArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    check('pin: canPlace asks wingOnly against the wing floor under ext', /def\.wingOnly && !\(s\.ext && EXT_ROOM\.floor\.some/.test(cSim))
+    check('pin: the sleep laws ride def.sleep, no bed-id checks left', /p\.use\.def\.sleep/.test(cSim) && !/p\.use\.def\.id === 'bed'/.test(cSim))
+    check('pin: the view draws the canopy sprite and zzz-s every sleeper', /case 'canopy'/.test(cArt) && /p\.use\.def\.sleep/.test(cArt))
+    check('pin: shelf cards size to the shelf, so HOME carries seven', /const shelfCW = \(n\)/.test(cArt) && /shelfCW\(cards\.length\)/.test(cArt) && CAT_TABS[0].ids.length === 7)
 }
 
 section('FEEL — walk surfaces + refusal (#1823)')
