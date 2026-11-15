@@ -44,8 +44,10 @@ spend an hour re-deriving this; link #2335 and move on.**
   worked — no collision this time).
 
 ## BOARD at exit
-- game-queue: empty. building: none. building-qa: #2321 (TEN-DEEP; pt1-3 merged,
-  #2333 MODERN pass — QA still inside). feedback: #2336 (mine, claimable).
+- game-queue: empty. building: #2334 (POLISH VIPER PIT — another lane's claim at
+  exit; not ours). building-qa: #2321 (TEN-DEEP; pt1-3 merged, #2333 MODERN pass
+  — QA still inside), #2330 (PoP polish, QA grabbed slot b's pass). feedback:
+  #2336 (mine, claimable).
 - Bugs open: **#2335 PROD STALL** (lane:platform, needs dashboard) — highest
   priority for whoever has Vercel access.
 - jonq open: #2305 (AWAITING, lane:platform; default hold). No halt, no steer.
