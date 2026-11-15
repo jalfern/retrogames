@@ -186,7 +186,8 @@ try {
     }
 } catch (e) {
     fail += 1
-    console.log(`FAIL sandbox crashed — ${String(e).split('\n')[0]}`)
+    const why = (e.stderr || String(e)).toString().trim().split('\n')[0]
+    console.log(`FAIL sandbox crashed — ${why}`)
 }
 
 console.log(`\nworktreepurgecheck: ${pass} passed, ${fail} failed`)
