@@ -57,9 +57,13 @@ export const DW = {
 }
 export const FR = {
     id: 'fr', label: 'FRIDGE',
-    x: 266, y: 30, w: 38, h: 34, doorLen: 30,
+    // #2284: sat flush at x=304 against the wall (x=312) — an 8px strip no
+    // 12px bot could stand in, so the fridge had one flank while DW had two.
+    // Moved 12px left; the right flank is now a 20px lane with a real zone.
+    x: 254, y: 30, w: 38, h: 34, doorLen: 30,
     zones: [
-        { x: 246, y: 32, w: 18, h: 52 },
+        { x: 234, y: 32, w: 18, h: 52 },
+        { x: 294, y: 32, w: 18, h: 52 },
     ],
 }
 export const CONTAINERS = [DW, FR]
