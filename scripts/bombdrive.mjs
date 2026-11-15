@@ -51,7 +51,7 @@ page.on('console', (m) => { if (m.type() === 'error' && !/favicon|DevTools|AutoP
 // before page scripts run, or the auto-record gate swallows the start keys and
 // the drive never leaves select on boxes where the rec store probes live.
 await page.addInitScript(() => {
-    try { localStorage.setItem('retrogames-consent-v1', JSON.stringify({ player: { motion: false, voice: false, at: Date.now() } })) } catch { /* private mode */ }
+    try { localStorage.setItem('retrogames-consent-v1', JSON.stringify({ anon: { motion: false, voice: false, at: Date.now() } })) } catch { /* private mode */ }
 })
 
 await page.goto(URL, { waitUntil: 'load' })

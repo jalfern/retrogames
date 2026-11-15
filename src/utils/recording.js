@@ -22,6 +22,11 @@
 //                       // attract, not derived from the seed. Without it a file
 //                       // under a non-default rule can't replay-verify exactly.
 //                       // Optional; primitives only; replay tools consume it.
+//     player?,          // #1711 audit 1: normalized id of the consenting human
+//                       // ("jon"), stamped by auto-capture at seed-birth. The
+//                       // take is evidence of THAT player's consent, so the
+//                       // name belongs in the file, not only the envelope.
+//                       // Additive: files without it stay valid v1.
 //     slots: [ { source: { kind, modelId? },          // #494 kinds: human/cpu/model/remote/off
 //                pads: [ compactPad x ticks ],         // THE one pad, one per tick
 //                raw:  [ compactRaw x ticks ],         // pre-dead-zone device analog
@@ -124,11 +129,14 @@ export function decodeRaw(compact) {
 // pad is one slot), hash is the game's state.hash when one is due (or null).
 
 export function createRecorder(opts = {}) {
-    const { gameId, method = 'stick', seed, players = 1, build = 'dev', hashEvery = DEFAULT_HASH_EVERY, rules = null } = opts
+    const { gameId, method = 'stick', seed, players = 1, build = 'dev', hashEvery = DEFAULT_HASH_EVERY, rules = null, player = null } = opts
     if (!gameId) throw new Error('recorder: gameId required')
     if (!METHODS.includes(method)) throw new Error(`recorder: unknown method ${method}`)
     if (!Number.isInteger(seed)) throw new Error('recorder: seed must be an integer')
     if (!Number.isInteger(hashEvery) || hashEvery < 1) throw new Error('recorder: hashEvery must be a positive integer')
+    if (player !== null && player !== undefined && (typeof player !== 'string' || !player || player.length > 64)) {
+        throw new Error('recorder: player must be a 1..64-char string or null')
+    }
     const seats = Math.max(1, players | 0)
     // Sources may be a function — seat kinds live at record-STOP time (seats
     // flip while the game runs); an array is accepted for static callers.
@@ -200,6 +208,8 @@ export function createRecorder(opts = {}) {
             // A function is resolved at stop time — the rule is a live choice.
             const rulesOut = typeof rules === 'function' ? rules() : rules
             if (rulesOut && typeof rulesOut === 'object' && Object.keys(rulesOut).length) rec.rules = { ...rulesOut }
+            // #1711 audit 1: the consenting human's id rides the file itself.
+            if (player) rec.player = String(player).slice(0, 64)
             const cmds = voiceCmd.filter((c) => c.t <= ticks) // calls before the first bank carry no tick — drop, not corrupt
             if (cmds.length) rec.voiceCmd = cmds
             if (finalHash !== null && finalHash !== undefined && (hashes.length === 0 || hashes[hashes.length - 1].t !== ticks) && ticks > 0) {
@@ -231,6 +241,11 @@ export function validate(rec) {
         for (const [k, v] of Object.entries(rec.rules)) {
             if (!(typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')) return `rules.${k} must be a primitive`
         }
+    }
+    if (rec.player !== undefined) {
+        // #1711 audit 1: optional player stamp — a normalized id. Additive:
+        // files without it stay valid (old takes predate named consent).
+        if (typeof rec.player !== 'string' || !rec.player || rec.player.length > 64) return 'player must be a 1..64-char string'
     }
     if (!Array.isArray(rec.slots) || rec.slots.length !== rec.players) return 'slots must match players'
     for (const s of rec.slots) {

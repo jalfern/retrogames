@@ -99,6 +99,8 @@ async function startRun(page) {
     } catch { return null }
     if (await page.locator('[data-consent-gate]').count()) {
         await page.click('#consent-motion')
+        await page.click('#consent-name')
+        await page.type('#consent-name', 'qabot')
         await page.click('#consent-yes')
         await page.waitForFunction(() => !!(window.__autoCapture && window.__autoCapture.recording), null, { timeout: 4000 }).catch(() => null)
         return 'gate'
@@ -141,7 +143,7 @@ const watch = (page) => page.on('pageerror', (e) => errors.push(String(e)))
 
 // --- mutant setup (scenario A only) --------------------------------------------
 const AUTO = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/utils/autoRecord.js')
-const PERSIST = 'const entry = await queueRun(rec, opts.player || PLAYER_ID)'
+const PERSIST = 'const entry = await queueRun(rec, id)'
 const servedMutant = async () => {
     try { return (await (await fetch(`http://localhost:${PORT}/retrogames/src/utils/autoRecord.js`)).text()).includes('MUTANT: persist-before-upload stripped') } catch { return false }
 }
@@ -217,7 +219,7 @@ try {
     r.check('S7: relaunch drain says N TAKE(S) SYNCED on the attract screen', !!pillSyncA, pillSyncA || 'no synced pill')
 
     const row = rowsA.find((s) => s.game === 'gauntlet')
-    r.check('store row names the game and player', !!row && row.player === 'player', JSON.stringify(row))
+    r.check('store row names the game and player', !!row && row.player === 'qabot', JSON.stringify(row))
     const text = await (await fetch(`${sim.base}/sessions/${encodeURIComponent(row.key)}`, { headers: sim.readHeaders })).text()
     const rec = JSON.parse(text)
     r.check('stored file validates', validate(rec) === null, validate(rec) || '')
@@ -280,7 +282,7 @@ try {
     await page.evaluate(() => {
         const k = 'retrogames-consent-v1'
         const m = JSON.parse(localStorage.getItem(k) || '{}')
-        m.player = { motion: false, voice: false, at: Date.now() }
+        m.qabot = { motion: false, voice: false, at: Date.now() }
         localStorage.setItem(k, JSON.stringify(m))
     })
     await page.evaluate(() => window.dispatchEvent(new Event('online')))

@@ -182,6 +182,10 @@ async function runOnce(cfg, { requireGate, sink }) {
         r.check(`${pfx}both switches default OFF (Jon's rule)`, !!offByDefault)
         await page.click('#consent-motion')
         await page.click('#consent-voice')
+        const saveDisabled = await page.evaluate(() => document.querySelector('#consent-yes')?.disabled === true)
+        r.check(`${pfx}SAVE refuses while the WHO field is empty (#1711 audit 1)`, saveDisabled)
+        await page.click('#consent-name')
+        await page.type('#consent-name', 'qabot')
         await page.click('#consent-yes')
     }
 
@@ -284,6 +288,8 @@ async function runOnce(cfg, { requireGate, sink }) {
     const listed = await (await fetch(`${BASE}/sessions`, { headers: sim.readHeaders })).json()
     const row = (listed.sessions || []).find((s) => s.key === last.key)
     r.check(`${pfx}the store lists the take with audio, game=claptest`, !!(row && row.audio === true && row.game === 'claptest'), JSON.stringify(row))
+    r.check(`${pfx}the typed name reached the store and the mirror (#1711 audit 1)`,
+        row && row.player === 'qabot' && last.player === 'qabot', JSON.stringify({ row: row && row.player, last: last && last.player }))
 
     if (!cfg.studio) return { page, v, last, coreOk, fast }
 

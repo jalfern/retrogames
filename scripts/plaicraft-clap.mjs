@@ -264,6 +264,8 @@ r.check('voice is its own switch and the fake mic makes it available',
     await page.locator('#consent-voice').isEnabled())
 await page.click('#consent-motion')
 await page.click('#consent-voice')
+await page.click('#consent-name')
+await page.type('#consent-name', 'qabot')
 await page.click('#consent-yes')
 
 // recorder + mic open at seed-birth

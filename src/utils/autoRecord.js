@@ -12,11 +12,21 @@
 // no store -> nothing happens and nothing is asked; no mic -> motion-only
 // files; consent declined -> the game plays exactly the same.
 //
+// #1711 audit 1 — IDENTITY: consent, takes and uploads are keyed by the
+// consenting human's normalized id (player.js), never by a device-wide
+// constant. The gate asks WHO; a name is required to save anything, so the
+// store can tell players apart. An unnamed NO THANKS is honored as a decline
+// under 'anon' — decline-only, nothing may ever upload for an id nobody
+// owns. The last-used name is a prefill, not consent; the legacy 'player'
+// key is no longer consulted, so old unnamed grants die inert and the gate
+// re-asks with a name.
+//
 // Online lockstep runs are NOT auto-recorded in S2 (the wire owns the seats;
 // honest gap in the Gauntlet/Gravel README) — offline human runs, which is
 // what the acceptance table asks for (Jon's phone, solo or vs CPU).
 
-import { consentFor, grantConsent } from './consent.js'
+import { consentFor, grantConsent, ANON_ID } from './consent.js'
+import { playerId, loadLastPlayer, rememberPlayer, planGate, canGrant } from './player.js'
 import { probeStore, uploadSession, storeFromQuery } from './sessionStore.js'
 import { queueRun, dropEntry, drain as drainOutbox, countQueue } from './outbox.js'
 import { classifyFailure } from './outboxCore.js'
@@ -29,10 +39,6 @@ import { createRoot } from 'react-dom/client'
 import ConsentGate from '../components/ConsentGate.jsx'
 import SyncBadge from '../components/SyncBadge.jsx'
 
-// One local human per device in S2; remote seats keep their own device's
-// consent story (and are not auto-recorded yet).
-export const PLAYER_ID = 'player'
-
 const st = {
     probe: null, // { ok, sessions } — newest probe wins; refreshed when stale-false
     probeAt: 0,
@@ -43,10 +49,18 @@ const st = {
     badge: null, // S7: { root, host } for the sync pill — mounted on first need
     badgeSeq: 0, // S7: a faded view may not overwrite a newer fact
     badgeTimer: null,
+    id: null, // audit 1: the id the CURRENT run belongs to (resolved at the gate)
 }
 
 const ls = () => { try { return localStorage } catch { return null } }
 const base = () => st.base || (st.base = storeFromQuery(typeof window !== 'undefined' ? window.location.search : ''))
+
+// currentPlayerId — who we would record as right now: the id the gate
+// resolved this session, else the device's last-used name, else 'anon'.
+export function currentPlayerId() {
+    if (typeof window === 'undefined') return ANON_ID
+    return st.id || (loadLastPlayer(ls()) || {}).id || ANON_ID
+}
 
 // publishBadge (#1711 S7) — the one honest line the phone says about the
 // store. Mounts the pill host once (ConsentGate's createRoot pattern), mirrors
@@ -94,33 +108,40 @@ export function initAutoRecord() {
 }
 
 // drainNow — retry the outbox against the live store. Consent is read FRESH
-// (last-moment rule unchanged: motion revoked = nothing uploads, and
-// planDrain purges the pile). Stats land on window.__outbox for the harness.
+// per ENTRY, keyed by the name the take was queued under (audit 1: one device
+// may hold takes from two humans; revoking `mia` purges her pile while
+// `jon`'s ship) — last-moment rule unchanged: motion revoked = nothing
+// uploads. Stats land on window.__outbox for the harness.
 // S7: the phone narrates — only when the pen has work (no empty-queue
 // theater), and the closing view comes from badgeView over the pass facts.
 export async function drainNow() {
     if (typeof window === 'undefined') return null
-    const consent = consentFor(ls(), PLAYER_ID)
+    const consentOf = (e) => consentFor(ls(), (e && e.player) || ANON_ID)
     const storeLive = !!(st.probe && st.probe.sessions)
     const before = await countQueue()
     if (storeLive && before > 0) publishBadge(badgeView({ storeLive, phase: 'drain', left: before }))
     const out = await drainOutbox({
-        motion: consent.motion,
-        upload: (e) => uploadSession(e.rec, { player: e.player, consent: consentFor(ls(), PLAYER_ID), base: base() }),
+        motion: (e) => consentOf(e).motion,
+        upload: (e) => uploadSession(e.rec, { player: (e && e.player) || ANON_ID, consent: consentOf(e), base: base() }),
     })
     window.__outbox = { ...out, at: Date.now() }
     if (storeLive) publishBadge(badgeView({ storeLive, sent: out.sent.length, left: out.queued }))
     return out
 }
 
-// askConsent — resolve the player's stored decision, asking once if the store
-// is live and the player is undecided (or the 90-day grace expired).
+// askConsent — resolve the CURRENT player's stored decision, asking once if
+// the store is live and that player is undecided (or the 90-day grace
+// expired). The gate answers WHO too: saving anything requires a valid name,
+// and consent keys to it. A named answer becomes the device's prefill for
+// the next ask (prefill, not consent).
 export async function askConsent() {
     if (typeof window === 'undefined') return { motion: false, voice: false, at: 0 }
     if (!st.probe) st.probe = await probeStore(base()).catch(() => ({ ok: false, sessions: false }))
-    const plan = planRun(st.probe, consentFor(ls(), PLAYER_ID))
-    if (!plan.ask) return consentFor(ls(), PLAYER_ID)
-    if (st.gate) { await st.gate; return consentFor(ls(), PLAYER_ID) }
+    const last = loadLastPlayer(ls())
+    const plan = planGate({ probe: st.probe, lastPlayer: last, consentForId: (id) => consentFor(ls(), id) })
+    st.id = plan.id
+    if (!plan.ask) return consentFor(ls(), plan.id)
+    if (st.gate) { await st.gate; return consentFor(ls(), st.id || plan.id) }
     st.gate = new Promise((resolve) => {
         const host = document.createElement('div')
         host.setAttribute('data-auto-record-gate', '')
@@ -131,12 +152,32 @@ export async function askConsent() {
             st.gate = null
             root.unmount()
             host.remove()
-            const prev = consentFor(ls(), PLAYER_ID)
-            const m = decideMerge(prev, answer)
-            grantConsent(ls(), PLAYER_ID, m)
-            resolve(consentFor(ls(), PLAYER_ID))
+            const a = answer || {}
+            const pid = playerId(a.name)
+            const wantsSave = !!a.motion || !!a.voice
+            let id
+            if (wantsSave && pid && canGrant(pid)) {
+                id = pid
+                rememberPlayer(ls(), a.name)
+                const prev = consentFor(ls(), id)
+                grantConsent(ls(), id, decideMerge(prev, a))
+            } else if (!wantsSave && pid) {
+                // named decline: the name is useful as prefill; the DECLINE
+                // keys to the name so this person's NO silences THIS person's
+                // gate (someone else on the phone gets asked their own).
+                id = pid
+                rememberPlayer(ls(), a.name)
+                grantConsent(ls(), id, decideMerge(consentFor(ls(), id), { motion: false, voice: false }))
+            } else {
+                // unnamed decline (or a save with no name — the gate's UI
+                // refuses that; this is the honest fallback): decline anon.
+                id = ANON_ID
+                grantConsent(ls(), ANON_ID, decideMerge(consentFor(ls(), ANON_ID), { motion: false, voice: false }))
+            }
+            st.id = id
+            resolve(consentFor(ls(), id))
         }
-        root.render(React.createElement(ConsentGate, { player: 'PLAYER', hasMic: voiceSupported(), onDecide: finish }))
+        root.render(React.createElement(ConsentGate, { defaultName: last ? last.name : '', hasMic: voiceSupported(), onDecide: finish }))
     })
     return st.gate
 }
@@ -149,13 +190,16 @@ export const setStartBusy = (v) => { st.busy = !!v }
 // beginRun — sync, call IMMEDIATELY after the game object for the new run is
 // created (before its first tick). Returns true when a recorder is now bank.
 // Records only when the stored plan says so; never asks here (asking belongs
-// at start, before seed-birth).
+// at start, before seed-birth). The run's take is stamped with the player id
+// (audit 1) so consent evidence lives in the file, not only the envelope.
 export function beginRun(opts = {}) {
     if (typeof window === 'undefined') return false
-    const plan = planRun(st.probe || { ok: false, sessions: false }, consentFor(ls(), PLAYER_ID))
+    const id = (opts.player && playerId(opts.player)) || (st.id && st.id !== ANON_ID && st.id) || (loadLastPlayer(ls()) || {}).id || ANON_ID
+    const consent = consentFor(ls(), id)
+    const plan = planRun(st.probe || { ok: false, sessions: false }, consent)
     if (!plan.record) return false
-    const c = consentFor(ls(), PLAYER_ID)
-    return autoStart({ voiceConsent: c.voice, sources: opts.sources, humanSeats: opts.humanSeats })
+    st.id = id
+    return autoStart({ voiceConsent: consent.voice, sources: opts.sources, humanSeats: opts.humanSeats, player: id === ANON_ID ? null : id })
 }
 
 // endRun — async, call at the over-transition (and unmount). Stops the
@@ -179,18 +223,21 @@ export async function endRun(opts = {}) {
         voiceFlushTimedOut = !flushed
         if (voiceFlushTimedOut) window.__autoCapture = { ...(window.__autoCapture || {}), voiceFlushTimedOut: true }
     }
-    const consent = consentFor(ls(), PLAYER_ID)
+    // audit 1: identity order — explicit opt, the take's own stamp (seed-
+    // birth truth), the session's gate answer, the device prefill name.
+    const id = (opts.player && playerId(opts.player)) || rec.player || st.id || (loadLastPlayer(ls()) || {}).id || ANON_ID
+    const consent = consentFor(ls(), id)
     // S6: persist BEFORE the first attempt — the crash window is exactly the
     // await on fetch (iOS cancels in-flight uploads when the tab backgrounds,
     // and OVER-to-close is a thumb's width). Removed only when the store has
     // it or a permanent-failure rule says it never can.
-    const entry = await queueRun(rec, opts.player || PLAYER_ID)
+    const entry = await queueRun(rec, id)
     const storeLive = !!(st.probe && st.probe.sessions)
     // S7: saved first, said first — a persisted take IS pending-sync before
     // the network ever answers, and the hang window is exactly where the
     // player is left wondering.
     if (storeLive && entry) publishBadge(badgeView({ storeLive, requeued: true, left: 1 }))
-    const res = await uploadSession(rec, { player: opts.player || PLAYER_ID, consent, base: base() })
+    const res = await uploadSession(rec, { player: id, consent, base: base() })
     if (entry) {
         if (res.uploaded || classifyFailure(res.reason) === 'drop') await dropEntry(entry.id)
         res.requeued = !res.uploaded && classifyFailure(res.reason) !== 'drop'
@@ -203,6 +250,7 @@ export async function endRun(opts = {}) {
     window.__autoRecord = {
         last: {
             game: rec.game, seed: rec.seed, ticks: rec.ticks,
+            player: id, // audit 1: the label this take went up under
             voice: !!rec.voice, uploaded: !!res.uploaded,
             reason: res.reason || null, key: res.key || null,
             requeued: !!res.requeued, queued: entry ? 1 : 0,

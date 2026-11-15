@@ -16,6 +16,7 @@
 
 import { validate } from './recording.js'
 import { uploadAllowed } from './consent.js'
+import { playerId } from './player.js'
 
 export const STORE_DEFAULT = 'https://retrogames.jalfern.workers.dev'
 
@@ -47,10 +48,17 @@ export async function probeStore(base = STORE_DEFAULT, { fetchImpl = null } = {}
 // uploadSession(rec, { player, consent, base, fetchImpl }) — the only path to
 // the store. Returns { ok, uploaded, reason?, key? }; `uploaded:false` with a
 // reason is a normal outcome (no consent / store absent), not a throw.
+// #1711 audit 1: the player label has NO default anymore — a valid named
+// identity (from opts or the take's own stamp) is required before the fetch
+// (no-fallback, the same ruling as #2142's write door). The store stays
+// lenient so cached old bundles keep working; the client can no longer send
+// the fixed label 'player'.
 export async function uploadSession(rec, opts = {}) {
-    const { player = 'player', consent = null, base = STORE_DEFAULT, fetchImpl = null } = opts
+    const { consent = null, base = STORE_DEFAULT, fetchImpl = null } = opts
     const bad = validate(rec)
     if (bad) return { ok: false, uploaded: false, reason: `invalid recording: ${bad}` }
+    const pid = opts.player ? playerId(opts.player) : (rec.player ? playerId(rec.player) : null)
+    if (!pid) return { ok: false, uploaded: false, reason: 'named player required' }
     const gate = uploadAllowed(rec, consent)
     if (!gate.ok) return { ok: false, uploaded: false, reason: gate.reason }
     const strips = gate.strips || []
@@ -71,7 +79,7 @@ export async function uploadSession(rec, opts = {}) {
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
                 recording: payload,
-                player: String(player),
+                player: pid,
                 consent: { motion: true, voice: consent ? !!consent.voice : false, at: (consent && consent.at) || null },
             }),
         })

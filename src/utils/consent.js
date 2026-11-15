@@ -26,6 +26,11 @@
 export const CONSENT_LS_KEY = 'retrogames-consent-v1'
 export const CONSENT_GRACE_MS = 1000 * 60 * 60 * 24 * 90 // re-ask after 90 quiet days
 
+// #1711 audit 1 — ANON is the DECLINE-ONLY id: a person who won't say who
+// they are can say NO (so the gate stops nagging) but nothing may ever be
+// granted under it: an upload cannot name an identity nobody owns.
+export const ANON_ID = 'anon'
+
 // --- store-shaped pure helpers ----------------------------------------------
 
 export function loadConsent(store) {
@@ -44,17 +49,23 @@ function saveConsent(store, map) {
 // grant(playerId, { motion, voice }) — a channel omitted keeps its previous
 // value (the consent modal sends both, but a voice re-ask must not silently
 // revoke the motion grant). Unknown ids are created.
+// #1711 audit 1: the fallback id is 'anon', not 'player' — an id-less call
+// can record a DECLINE only; the identity layer (player.js#canGrant) keeps
+// 'anon' from ever holding a grant, and the legacy device-wide 'player' key
+// is no longer consulted by any caller (old unnamed grants die inert; the
+// gate re-asks with a name).
 export function grantConsent(store, playerId, { motion = false, voice = false } = {}) {
-    const id = String(playerId || 'player')
+    const id = String(playerId || ANON_ID)
+    if (id === ANON_ID && (motion || voice)) return { motion: false, voice: false, at: 0 } // decline-only: an unowned id cannot hold a grant
     const map = loadConsent(store)
-    const prev = map[id] || { motion: false, voice: false }
+    const prev = id === ANON_ID ? { motion: false, voice: false } : (map[id] || { motion: false, voice: false })
     map[id] = { motion: !!motion || !!prev.motion, voice: !!voice || !!prev.voice, at: Date.now() }
     saveConsent(store, map)
     return map[id]
 }
 
 export function revokeConsent(store, playerId) {
-    const id = String(playerId || 'player')
+    const id = String(playerId || ANON_ID)
     const map = loadConsent(store)
     map[id] = { motion: false, voice: false, at: Date.now() }
     saveConsent(store, map)
@@ -62,7 +73,7 @@ export function revokeConsent(store, playerId) {
 }
 
 export function consentFor(store, playerId, { now = Date.now() } = {}) {
-    const id = String(playerId || 'player')
+    const id = String(playerId || ANON_ID)
     const c = loadConsent(store)[id]
     if (!c) return { motion: false, voice: false, at: 0 }
     if (c.at && now - c.at > CONSENT_GRACE_MS) return { motion: false, voice: false, at: c.at, expired: true }
