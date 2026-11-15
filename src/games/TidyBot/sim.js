@@ -5,8 +5,11 @@
 //
 // A house robot with a chore list. Containers really open: the dishwasher rack
 // slides out (and blocks the floor while it's out), the fridge door swings
-// down; open cavities show racks holding every stowed item, and anything
-// stowed can be retrieved. Order matters: a closed washer refuses cargo, an
+// down; open cavities show racks holding every stowed item in a STABLE slot
+// (#2338), and anything stowed can be retrieved — aimed: tap the item on the
+// rack (aimAt) or hold a direction with B to name which one leaves; with no
+// aim given, wrong stows still surface first. Order matters: a closed washer
+// refuses cargo, an
 // empty washer refuses to start, food in the dishwasher is a WRONG STOW you
 // must fix. Gentle placements pay tidy points; throws jam, spill or shatter.
 // Smashed dishes count as cleared, so a level can never brick — the game is
@@ -67,6 +70,21 @@ export const FR = {
     ],
 }
 export const CONTAINERS = [DW, FR]
+
+// ---- rack slots (#2338): a stowed item OWNS a slot until it leaves ----
+// The cavity paints a 3×3 rack; every stow takes the lowest free slot and
+// keeps it (no leftward shift when a neighbour is retrieved, and DW's nine
+// possible lodgers all stay visible — the old index-based paint clipped row
+// three). Slots are deterministic engine state: they ride the items and the
+// hash, so seed + pads still replay identically.
+export const RACK_COLS = 3
+export const RACK_ROWS = 3
+export const RACK_CAP = RACK_COLS * RACK_ROWS
+export const rackSlot = (c, i) => ({
+    x: c.x + 8 + (i % RACK_COLS) * ((c.w - 16) / 2),
+    y: c.y + 6 + Math.floor(i / RACK_COLS) * ((c.h - 13) / 2),
+})
+
 
 export const KINDS = {
     plate: { to: 'dw', fragile: true, tidy: 10 },
@@ -144,7 +162,7 @@ const distToRect = (px, py, r) => {
 const overlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
 
 // mutant hooks (tidycheck --mutate only; production never sets these)
-export const SIMHOOKS = { noBlock: false, freeRun: false, softStow: false, lifo: false }
+export const SIMHOOKS = { noBlock: false, freeRun: false, softStow: false, lifo: false, noAim: false }
 
 export const blockers = (gs) => {
     const out = [...WALLS, COUNTER, STOVE, TABLE, ...PLANTS]
@@ -195,6 +213,7 @@ export const heldItems = (gs) => [gs.held, gs.held2]
 const carryTwo = (gs) => gs.held !== null && gs.held !== undefined && gs.held2 !== null && gs.held2 !== undefined
 const takeInto = (gs, it) => {
     it.state = 'held'
+    it.slot = null // #2338: cargo in hand occupies no rack slot
     it.vx = 0; it.vy = 0
     if (gs.held === null || gs.held === undefined) gs.held = it.id
     else gs.held2 = it.id
@@ -224,6 +243,16 @@ const releaseFront = (gs) => {
 const looseItems = (gs) => gs.items.filter((it) => it.state === 'loose')
 const wrongInside = (gs) => gs.items.filter((it) => it.state === 'in' && KINDS[it.kind].to !== it.cont)
 export const dwLoaded = (gs) => gs.items.filter((it) => it.state === 'in' && it.cont === 'dw').length
+
+// lowest free rack slot in a container (#2338); overflow wraps (levels ship at
+// most nine dwellers per container, so the wrap is a brick-proof, not a look)
+const nextSlot = (gs, contId) => {
+    const used = new Set(gs.items
+        .filter((it) => it.state === 'in' && it.cont === contId && it.slot !== null && it.slot !== undefined)
+        .map((it) => it.slot))
+    for (let i = 0; i < RACK_CAP; i++) if (!used.has(i)) return i
+    return used.size % RACK_CAP
+}
 
 export function makeGame(seed, players = 1) {
     void players
@@ -263,12 +292,15 @@ export function loadLevel(gs, level) {
     gs.clock = LEVEL_TIME[Math.min(level, LEVEL_TIME.length - 1)]
     gs.items = []
     let id = 1
+    const pre = { dw: 0, fr: 0 } // pre-stowed items get slots in load order (#2338)
     for (const spec of LEVELS[level].items) {
+        const state = spec.state || 'loose'
         gs.items.push({
             id: id++, kind: spec.kind,
             x: spec.x, y: spec.y, vx: 0, vy: 0,
-            state: spec.state || 'loose',
+            state,
             cont: spec.cont || null,
+            slot: state === 'in' && spec.cont ? pre[spec.cont]++ : null,
         })
     }
     gs.dw.door = 0; gs.dw.target = 0; gs.dw.cd = 0
@@ -316,6 +348,8 @@ const say = (gs, msg, x, y, t = 'ok') => { gs.fx.push({ msg, x, y, k: 0, t }) }
 const placeInto = (gs, c, it, gentle) => {
     it.state = 'in'
     it.cont = c.id
+    it.slot = null // own stale slot must not occupy the rack during selection
+    it.slot = nextSlot(gs, c.id) // #2338: the item owns this rack slot until it leaves
     it.vx = 0; it.vy = 0
     const correct = KINDS[it.kind].to === c.id
     if (correct && gentle) {
@@ -367,6 +401,11 @@ export function step(gs, pads) {
     for (let i = gs.fx.length - 1; i >= 0; i--) if (gs.fx[i].k > 50) gs.fx.splice(i, 1)
     if (gs.end) { gs.hash = stateHash(gs); return }
     const pad = (pads && pads[0]) || {}
+    // #2338 heal: anything that entered a container without a slot (cheats,
+    // harness writes, pre-#2338 snapshots) takes the lowest free one at the
+    // tick boundary — deterministic, so replays through old snapshots heal the
+    // same way twice.
+    for (const it of gs.items) if (it.state === 'in' && (it.slot === null || it.slot === undefined)) it.slot = nextSlot(gs, it.cont)
     gs.tick++
     gs.clock--
     for (const c of CONTAINERS) {
@@ -470,9 +509,38 @@ export function step(gs, pads) {
             const openC = allC.find((c) => isOpen(c) && nearBody(c, gs.rx, gs.ry))
             if (openC && stowTargets(gs, openC).length) {
                 const pool = stowTargets(gs, openC)
-                const it = pool.find((i2) => KINDS[i2.kind].to !== openC.id) || pool[pool.length - 1]
+                // #2338 AIMED RETRIEVE: a named target (pad.aim — the item the
+                // player tapped on the rack) or a held direction (B + arrow pulls
+                // the stow furthest that way, ties to the lowest slot) outranks
+                // the rescue default. No aim, no direction: the wrong-stow-first
+                // law, byte-for-byte — the autopilot never aims.
+                let it = null
+                let aimed = false
+                if (!SIMHOOKS.noAim && pad.aim !== null && pad.aim !== undefined) {
+                    const a = pool.find((i2) => i2.id === pad.aim)
+                    if (a) { it = a; aimed = true }
+                }
+                if (!it && !SIMHOOKS.noAim) {
+                    const dv = pad.up ? [0, -1] : pad.down ? [0, 1] : pad.left ? [-1, 0] : pad.right ? [1, 0] : null
+                    if (dv) {
+                        const cx = openC.x + openC.w / 2
+                        const cy = openC.y + openC.h / 2
+                        let bestD = -Infinity
+                        let bestS = Infinity
+                        for (const i2 of pool) {
+                            const sl = i2.slot === null || i2.slot === undefined ? 0 : i2.slot
+                            const p = rackSlot(openC, sl)
+                            const dot = (p.x - cx) * dv[0] + (p.y - cy) * dv[1]
+                            if (dot > bestD + 1e-9 || (Math.abs(dot - bestD) <= 1e-9 && sl < bestS)) {
+                                bestD = dot; bestS = sl; it = i2; aimed = true
+                            }
+                        }
+                    }
+                }
+                if (!it) it = pool.find((i2) => KINDS[i2.kind].to !== openC.id) || pool[pool.length - 1]
                 takeInto(gs, it)
-                gs.ev.push({ type: 'retrieve', kind: it.kind, x: gs.rx, y: gs.ry })
+                gs.ev.push({ type: 'retrieve', kind: it.kind, x: gs.rx, y: gs.ry, aimed,
+                    slot: it.slot === null || it.slot === undefined ? -1 : it.slot })
             } else if (gs.dwRun) softBuzz(gs)
             else if (nearBody(gs.dw, gs.rx, gs.ry)) {
                 if (dwLoaded(gs) > 0 || SIMHOOKS.freeRun) {
@@ -530,7 +598,7 @@ export function stateHash(gs) {
         gs.dwRun ? 1 : 0, gs.held === null ? -1 : gs.held,
         gs.held2 === null || gs.held2 === undefined ? -1 : gs.held2,
         gs.breaks, gs.wrongs, gs.spills, gs.jams, gs.tidies)
-    for (const it of gs.items) p.push(it.id, it.state, Math.round(it.x * 8), Math.round(it.y * 8), it.cont || '-', it.state === 'fly' ? Math.round(it.vx * 100) : 0)
+    for (const it of gs.items) p.push(it.id, it.state, Math.round(it.x * 8), Math.round(it.y * 8), it.cont || '-', it.state === 'fly' ? Math.round(it.vx * 100) : 0, it.state === 'in' ? (it.slot === null || it.slot === undefined ? -1 : it.slot) : -1)
     for (const c of gs.chores) p.push(c.label, c.done ? 1 : 0)
     const str = p.join('|')
     let h = 0x811c9dc5
@@ -637,6 +705,36 @@ const steerTo = (gs, goal) => {
 // Pure (gs, tx, ty) — never mutates, so seed+pads determinism is untouched;
 // the shell merges the answer into pads like any other input.
 export const ARRIVE_R = 3.5
+
+// Human aiming (#2338): the pure half of tap-the-rack. A tap inside an OPEN
+// cavity that lands near a stowed item names THAT item as the next retrieve
+// target; the shell marks it and B pulls it (aim outranks the wrong-stow-first
+// default). Pure like routeDir — reads state, never writes — so seed + pads
+// determinism is untouched. Any other tap answers ok:false and the shell falls
+// through to the floor-glide law.
+export function aimAt(gs, tx, ty) {
+    const miss = { ok: false, c: null, id: null, x: 0, y: 0 }
+    for (const c of CONTAINERS) {
+        const cc = c.id === 'dw' ? gs.dw : gs.fr
+        if (tx < c.x + 2 || tx > c.x + c.w - 2 || ty < c.y + 2 || ty > c.y + c.h - 2) continue
+        if (!isOpen(cc)) return { ...miss, c: c.id }
+        let best = null
+        let bd = 6.5
+        let bs = 0
+        for (const it of gs.items) {
+            if (it.state !== 'in' || it.cont !== c.id) continue
+            const sl = it.slot === null || it.slot === undefined ? 0 : it.slot
+            const p = rackSlot(c, sl)
+            const d = Math.hypot(p.x - tx, p.y - ty)
+            if (d < bd) { bd = d; best = it; bs = sl }
+        }
+        if (!best) return { ...miss, c: c.id }
+        const p = rackSlot(c, bs)
+        return { ok: true, c: c.id, id: best.id, x: p.x, y: p.y }
+    }
+    return miss
+}
+
 export function routeDir(gs, tx, ty) {
     const bit = walkBit(gs)
     const e = freeCell(bit, Math.floor(tx / CELL), Math.floor(ty / CELL))

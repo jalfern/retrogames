@@ -13,12 +13,14 @@
 // on a real Space, the robot pixels land where the sim says after real
 // strokes, and a scripted chore run banks points with zero page errors.
 //
-// Mutants (TIDY_MUT=door|glass|run|tidy|order):
+// Mutants (TIDY_MUT=door|glass|run|tidy|order|aim):
 //   door  — open doors stop blocking the floor
 //   glass — plates stop being fragile
 //   run   — the washer starts even when empty
 //   tidy  — wrong stows stop costing points
 //   order — the carry queue flips FIFO→LIFO (#2266 order gates go red)
+//   aim   — aiming is ignored; every pull falls back to the default (#2338
+//           aimed-retrieve gates go red)
 
 import * as s from '../src/games/TidyBot/sim.js'
 
@@ -30,7 +32,7 @@ const fails = []
 const ok = (c, m) => { if (c) { pass++; console.log(`  PASS  ${m}`) } else { fails.push(m); console.log(`  \x1b[31mFAIL\x1b[0m  ${m}`) } }
 const section = (t) => console.log(`\n\x1b[1m${t}\x1b[0m`)
 
-if (MUT && !['door', 'glass', 'run', 'tidy', 'order'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
+if (MUT && !['door', 'glass', 'run', 'tidy', 'order', 'aim'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
 if (MUT) console.log(`\x1b[33mMUTANT ACTIVE: ${MUT}\x1b[0m`)
 const applyMut = () => {
     if (MUT === 'door') s.SIMHOOKS.noBlock = true
@@ -38,12 +40,14 @@ const applyMut = () => {
     if (MUT === 'run') s.SIMHOOKS.freeRun = true
     if (MUT === 'tidy') s.SIMHOOKS.softStow = true
     if (MUT === 'order') s.SIMHOOKS.lifo = true
+    if (MUT === 'aim') s.SIMHOOKS.noAim = true
 }
 applyMut()
 
 const {
     makeGame, step, autopilot, playthrough, loadLevel, blockers,
     DW, FR, CONTAINERS, LEVEL_TIME, KINDS, LEVELS, ROBOT_R, REACH,
+    rackSlot, aimAt, RACK_CAP,
 } = s
 
 
@@ -433,6 +437,113 @@ section('fridge flank is two zones (#2284)')
         'the right-of-fridge zone has a road to it (RED: tap refused)')
 }
 
+section('aimed retrieve + rack slots (#2338)')
+{
+    const atZone = (g) => { g.dw.door = 1; g.dw.target = 1; g.dw.cd = 0; g.rx = 79; g.ry = 58 }
+    const stow = (g, it) => { it.state = 'held'; g.held = it.id; step(g, [{ a: true }]) }
+
+    // slots in lowest-free order, and the rescue default stays byte-for-byte
+    const gs = makeGame(42)
+    atZone(gs)
+    const plate = gs.items.find((it) => it.kind === 'plate')
+    const cup = gs.items.find((it) => it.kind === 'cup')
+    const apple = gs.items.find((it) => it.kind === 'apple')
+    stow(gs, plate); stow(gs, cup); stow(gs, apple)
+    ok(plate.slot === 0 && cup.slot === 1 && apple.slot === 2, 'stows take rack slots in lowest-free order (0,1,2)')
+    step(gs, [{ b: true }])
+    ok(heldOf(gs)?.kind === 'apple' && apple.slot === null && gs.ev.some((e) => e.type === 'retrieve' && e.aimed === false),
+        'no aim given: the wrong stow still surfaces first and vacates its slot')
+    ok(plate.slot === 0 && cup.slot === 1, 'a retrieved neighbour never shifts the rest of the rack')
+    stow(gs, apple)
+    ok(apple.slot === 2, 'the freed slot is the next one filled')
+
+    // aimAt resolves taps honestly
+    const sp = rackSlot(DW, plate.slot)
+    const hit = aimAt(gs, sp.x, sp.y)
+    ok(hit.ok && hit.id === plate.id && hit.c === 'dw', 'aimAt names the item sitting at the tapped slot')
+    const em = rackSlot(DW, 8)
+    ok(!aimAt(gs, em.x, em.y).ok, 'a tap on an empty rack position names nothing')
+    gs.dw.door = 0; gs.dw.target = 0
+    ok(!aimAt(gs, sp.x, sp.y).ok, 'taps do not aim through a SHUT door')
+    gs.dw.door = 1; gs.dw.target = 1
+    ok(!aimAt(gs, 246, 146).ok, 'a tap on the table is not an aim')
+
+    // an aimed pull outranks the wrong-stow-first default (RED under aim mutant)
+    const gA = makeGame(42); atZone(gA)
+    const aA = gA.items.find((it) => it.kind === 'apple')
+    const pA = gA.items.find((it) => it.kind === 'plate')
+    stow(gA, aA); stow(gA, pA)
+    step(gA, [{ b: true, aim: pA.id }])
+    ok(heldOf(gA)?.kind === 'plate' && aA.state === 'in' && gA.ev.some((e) => e.type === 'retrieve' && e.aimed === true),
+        'an aimed pull takes the NAMED item, not the wrong-stow default (RED under aim mutant)')
+    // a stale aim id (item gone) falls through to the default, never a wedge
+    step(gA, [{ a: true }]) // put the plate back — apple is still wrong-inside
+    step(gA, [{ b: true, aim: 9999 }])
+    ok(heldOf(gA)?.kind === 'apple', 'a stale aim id falls through to the rescue default, never a wedge')
+
+    // direction aim: B + held arrow pulls the stow furthest that way,
+    // wrong-first outranked (RED under aim mutant)
+    const gU = makeGame(42); atZone(gU)
+    const aU = gU.items.find((it) => it.kind === 'apple')
+    const pU = gU.items.find((it) => it.kind === 'plate')
+    aU.state = 'in'; aU.cont = 'dw'; aU.slot = 8 // col3,row3 — the bottom-right corner
+    pU.state = 'in'; pU.cont = 'dw'; pU.slot = null
+    step(gU, [{}]) // heal: pU takes the lowest free slot (0)
+    ok(pU.slot === 0, 'slotless in-states heal to the lowest free slot at the tick boundary')
+    step(gU, [{ b: true, up: true }])
+    ok(heldOf(gU)?.kind === 'plate' && gU.ev.some((e) => e.type === 'retrieve' && e.aimed === true),
+        'B + UP pulls the stow furthest up the rack — wrong-first outranked (RED under aim mutant)')
+    pU.state = 'gone'; gU.held = null
+    step(gU, [{ b: true }])
+    ok(heldOf(gU)?.kind === 'apple', 'with the aimed pick gone the rescue default still stands')
+
+    // capacity: level 3's worst case is nine dw dwellers — every one owns a
+    // distinct visible slot (the pre-#2338 2-row paint clipped the ninth)
+    const g9 = makeGame(1); loadLevel(g9, 2)
+    const preApple = g9.items.find((it) => it.state === 'in' && it.cont === 'dw')
+    ok(preApple && preApple.slot === 0, 'level 3 ships its pre-stow owning rack slot 0')
+    g9.items.filter((it) => (it.kind === 'plate' || it.kind === 'cup') && it.state === 'loose')
+        .forEach((it) => { it.state = 'in'; it.cont = 'dw'; it.slot = null })
+    step(g9, [{}])
+    const nine = new Set(g9.items.filter((it) => it.state === 'in' && it.cont === 'dw').map((it) => it.slot))
+    ok(nine.size === 9 && [...nine].every((v) => v >= 0 && v < RACK_CAP),
+        'all nine washer dwellers own distinct visible slots (RED: clipped rows)')
+
+    // slots ride the hash: drift in slot placement is visible
+    const gH1 = makeGame(42); atZone(gH1); stow(gH1, gH1.items.find((it) => it.kind === 'plate'))
+    const gH2 = makeGame(42); atZone(gH2); stow(gH2, gH2.items.find((it) => it.kind === 'plate'))
+    gH2.items.find((it) => it.state === 'in').slot = 4
+    step(gH1, [{}]); step(gH2, [{}])
+    ok(gH1.hash !== gH2.hash, 'rack slot placement is covered by the state hash')
+
+    // determinism: aims ride the pads — seed + pads replay hash-identical
+    const aimRun = () => {
+        const g = makeGame(4242); atZone(g)
+        const a = g.items.find((it) => it.kind === 'apple')
+        const p = g.items.find((it) => it.kind === 'plate')
+        stow(g, a); stow(g, p)
+        const pulls = []
+        let h = 0
+        for (const pd of [{ b: true, aim: p.id }, { a: true }, { b: true }]) {
+            h = step(g, [pd]).hash
+            pulls.push(...g.ev.filter((e) => e.type === 'retrieve').map((e) => e.kind))
+        }
+        return { h, pulls: pulls.join('+') }
+    }
+    const rA = aimRun(); const rB = aimRun()
+    ok(rA.pulls === 'plate+apple' && rA.h === rB.h, 'seed + pads (aims included) replay plate-then-apple, hash-identical')
+
+    // the autopilot never aims — the win-proof rides the unchanged default law
+    const gW = makeGame(7)
+    let pureDefault = true
+    while (!gW.end && gW.tick < 40000) {
+        const pd = autopilot(gW)
+        if ('aim' in pd) pureDefault = false
+        step(gW, [pd])
+    }
+    ok(pureDefault && gW.end === 'win', 'the autopilot never aims and still wins — the default law is the prover law')
+}
+
 if (!NODE_ONLY) {
     section('browser — boots, starts, walks, plays')
     const { openGame, launch, requireDevServer } = await import('./lib/harness.mjs')
@@ -556,6 +667,79 @@ if (!NODE_ONLY) {
         const cancelled = await page.evaluate(() => window.__tidybotTest.gliding())
         await page.keyboard.up('ArrowUp')
         ok(cancelled === false, 'a real arrow press cancels the glide — the human is the driver')
+
+        // #2338 AIM: a real mouse tap on a rack item marks it (teal brackets
+        // painted at the slot), pad B pulls THE NAMED item — not the wrong-stow
+        // default — and a real arrow press clears the mark (human drives).
+        await page.evaluate(() => {
+            const g = window.__game
+            g.reset(31415)
+            const gs = window.__tidybotTest.sim()
+            gs.dw.door = 1; gs.dw.target = 1; gs.dw.cd = 0
+            gs.rx = 79; gs.ry = 58
+            const apple = gs.items.find((it) => it.kind === 'apple')
+            const plate = gs.items.find((it) => it.kind === 'plate')
+            apple.state = 'in'; apple.cont = 'dw'; apple.slot = null
+            plate.state = 'in'; plate.cont = 'dw'; plate.slot = null
+        })
+        await page.waitForTimeout(150) // let a tick heal the slots (apple 0, plate 1)
+        const aimPt = await page.evaluate(() => {
+            const gs = window.__tidybotTest.sim()
+            const plate = gs.items.find((it) => it.kind === 'plate')
+            const cv = window.__tidybotTest.canvas()
+            const r = cv.getBoundingClientRect()
+            const p = window.__tidybotTest.rackSlot(window.__tidybotTest.DW, plate.slot)
+            return { x: r.left + (p.x / 320) * r.width, y: r.top + (p.y / 240) * r.height, plateId: plate.id }
+        })
+        await page.mouse.click(aimPt.x, aimPt.y)
+        let st2 = await page.evaluate(() => window.__tidybotTest.state())
+        ok(st2.aim === aimPt.plateId, 'a real tap on a rack item marks it for retrieval')
+        // wait out the glide + arrival ring so the only teal left is the bracket
+        for (let i = 0; i < 60 && (await page.evaluate(() => window.__tidybotTest.gliding())); i++) await page.waitForTimeout(100)
+        await page.waitForTimeout(400)
+        const brPx = await page.evaluate((pt) => {
+            const cv = window.__tidybotTest.canvas()
+            const g = cv.getContext('2d')
+            const r = cv.getBoundingClientRect()
+            const X = Math.round((pt.x - r.left) * (cv.width / r.width))
+            const Y = Math.round((pt.y - r.top) * (cv.height / r.height))
+            const d = g.getImageData(X - 9, Y - 9, 19, 19).data
+            let teal = 0
+            for (let i = 0; i < d.length; i += 4) if (d[i + 1] > 150 && d[i + 2] > 150 && d[i] < 160) teal++
+            return { teal, X, Y }
+        }, aimPt)
+        ok(brPx.teal >= 4, `aim brackets are painted at the slot (${brPx.teal} teal px at ${brPx.X},${brPx.Y})`)
+        await page.keyboard.press('KeyB')
+        await page.waitForTimeout(120)
+        st2 = await page.evaluate(() => window.__tidybotTest.state())
+        ok(st2.held === 'plate' && st2.aim === -1, 'real B pulls THE MARKED plate — the wrong stow waits its turn')
+        // cancel law mirrors the glide: any movement key drops the mark
+        await page.evaluate(() => { const g = window.__game; g.reset(31415) })
+        await page.evaluate(() => {
+            const gs = window.__tidybotTest.sim()
+            gs.dw.door = 1; gs.dw.target = 1; gs.dw.cd = 0
+            gs.rx = 79; gs.ry = 58
+            const apple = gs.items.find((it) => it.kind === 'apple')
+            apple.state = 'in'; apple.cont = 'dw'; apple.slot = null
+        })
+        await page.waitForTimeout(150)
+        const applePt = await page.evaluate(() => {
+            const gs = window.__tidybotTest.sim()
+            const apple = gs.items.find((it) => it.kind === 'apple')
+            const cv = window.__tidybotTest.canvas()
+            const r = cv.getBoundingClientRect()
+            const p = window.__tidybotTest.rackSlot(window.__tidybotTest.DW, apple.slot)
+            return { x: r.left + (p.x / 320) * r.width, y: r.top + (p.y / 240) * r.height, appleId: apple.id }
+        })
+        await page.mouse.click(applePt.x, applePt.y)
+        await page.waitForTimeout(80)
+        let st3 = await page.evaluate(() => window.__tidybotTest.state())
+        ok(st3.aim === applePt.appleId, 'the re-tap marks the apple for retrieval')
+        await page.keyboard.down('ArrowUp')
+        const cleared = (await page.evaluate(() => window.__tidybotTest.state())).aim === -1
+        await page.keyboard.up('ArrowUp')
+        ok(cleared, 'a real arrow press cancels the mark — the human is the driver')
+        await page.evaluate(() => { const g = window.__game; g.reset(31415); g.release() })
 
         // scripted chore progress through the contract keeps the clock honest
         const prog = await page.evaluate(async () => {

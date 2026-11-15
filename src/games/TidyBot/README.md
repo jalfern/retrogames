@@ -46,6 +46,29 @@ didn't say MODERN.
 - Retrieve (B at an open container) still requires empty arms and lands in
   the front arm — the wrong-stow rescue law is untouched.
 
+## Aimed retrieve (#2338) — name it, then pull it
+- **Rack slots are engine state**: `it.slot` is assigned at stow (lowest free
+  in the container), cleared while carried, and the freed slot is the next one
+  filled. The cavity paints items at THEIR slot — retrieving a neighbour never
+  shifts the rack, and all nine washer dwellers stay visible (the old
+  index-based paint clipped row three; level 3's nine-dweller worst case could
+  hide one). Slots ride `stateHash`, and `in`-states without a slot (cheats,
+  pre-#2338 snapshots) heal deterministically at the tick boundary.
+- **Tap-the-rack**: `aimAt(gs, tx, ty)` is pure like `routeDir` — a tap inside
+  an OPEN cavity near a stowed item names it. The shell marks it (teal corner
+  brackets pulsing at the slot, `AIMED` + a double ping) and glides to the rack
+  front, but never fires the verb itself: the #2250 two-step law stands. While
+  marked, B retrieves THAT item — the mark outranks the wrong-stow-first default.
+- **Keyboard parity**: B + a held direction retrieves the stow furthest along
+  that direction from the cavity centre (ties to the lowest slot). No aim, no
+  direction: the wrong-stow-first default, byte-for-byte — the autopilot never
+  aims, so every attract demo and win-proof rides the unchanged law.
+- **Cancel law mirrors the glide**: any movement key, any verb landing, a new
+  tap, WATCH, a level change or a reset clears the mark; B consumes it. The aim
+  rides the pads (`pad.aim` = item id), so seed + pads replays stay identical.
+  B is the COMMIT gesture — it must never clear the mark at keydown (a harness
+  bug the browser gate caught by name).
+
 ## Core rules (what the harness proves)
 - Containers really open: the washer rack / fridge door slide (`door` 0→1,
   ~22 ticks) and BLOCK the floor while open. A door that finds the robot on
@@ -57,7 +80,8 @@ didn't say MODERN.
   WRONG STOW (−20, stored) that must be rescued with B (wrong kinds first)
   and re-stowed — level 3 ships one pre-loaded.
 - Verbs: A = grab / place / open / close. B = throw / retrieve / start.
-  Holding nothing at an open container + B retrieves.
+  Empty-handed B at an open container retrieves — which item leaves the rack is
+  yours to name (#2338, above); the wrong-stow rescue still leads the default.
 - Throw physics: fixed launch speed with decay; lands inside an open body
   rect → JAM (+6); on floor a PLATE SMASHES (−40, `gone`) else SPILL (−5).
   Smashed dishes count as cleared — the game can never brick.
@@ -87,14 +111,15 @@ didn't say MODERN.
 
 ## Verify
 ```
-npm run tidycheck            # 63 Node gates + browser gates (needs npm run dev)
+npm run tidycheck            # 103 Node gates + browser gates (needs npm run dev)
 npm run tidycheck -- --node  # Node-only
-npm run tidycheck -- --mutate   # door mutant (TIDY_MUT=door|glass|run|tidy|order)
+npm run tidycheck -- --mutate   # door mutant (TIDY_MUT=door|glass|run|tidy|order|aim)
 CONTRACT_ONLY=tidy-bot npm run contractcheck
 ```
 Mutants: `door` (open doors stop blocking), `glass` (plates stop shattering),
 `run` (empty washer starts), `tidy` (wrong stows stop costing),
-`order` (carry queue flips FIFO→LIFO) — each turns NAMED gates red; restore
+`order` (carry queue flips FIFO→LIFO), `aim` (#2338 aiming ignored — the three
+aimed-retrieve clauses go NAMED-red) — each turns NAMED gates red; restore
 after.
 
 ## Honest gaps
@@ -105,7 +130,12 @@ after.
   (see §Two-slot carry above). What stays open: tray physics with fragile
   juggle risk (turning too hard spilling the tray), and a two-at-a-time
   place at the container mouth.
-- Retrieval takes the last-wrong item, not an aimed pick from the rack.
+- **CLOSED by #2338**: AIMED RETRIEVE — every stow owns a rack slot (engine
+  state, lowest-free, freed slot reused, heal for slotless states), taps on an
+  open cavity name the item (`aimAt`, pure), B + a held direction pulls the stow
+  furthest that way, and both outrank the wrong-stow-first default; with no aim
+  given the old law is byte-for-byte, so the autopilot and every win-proof ride
+  unchanged. See §Aimed retrieve below.
 - No looping wash-cycle hum (START fires a one-shot sweep); attract restarts
   the demo game rather than looping level 2+.
 - Glide walks but never acts — tap-to-open/place would collapse the chore loop

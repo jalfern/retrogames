@@ -21,8 +21,8 @@ import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexp
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import {
-    makeGame, step, autopilot, loadLevel, markChores, stateHash, routeDir,
-    VIEW_W, VIEW_H, WALL, COUNTER, STOVE, TABLE, PLANTS, DW, FR, LEVELS,
+    makeGame, step, autopilot, loadLevel, markChores, stateHash, routeDir, aimAt, rackSlot,
+    VIEW_W, VIEW_H, WALL, COUNTER, STOVE, TABLE, PLANTS, DW, FR, LEVELS, RACK_CAP, RACK_ROWS, RACK_COLS,
 } from './sim.js'
 
 const SIM_MS = 1000 / 60
@@ -82,6 +82,7 @@ const TIDY_ATTRACT = [
     'GENTLE PLACES PAY TIDY POINTS — THROWN JAMS PAY LESS',
     'TAP OR CLICK THE FLOOR — THE BOT GLIDES THERE AROUND THE DOORS',
     'CARRY TWO AT ONCE — GRAB A SECOND, PLACE THEM ONE BY ONE',
+    'TAP AN ITEM ON AN OPEN RACK — B PULLS OUT THAT ONE',
     'EVERY LEVEL IS A MESSIER HOUSE — BEAT THE CLOCK FOR BONUS',
 ]
 
@@ -128,6 +129,14 @@ const TidyBotGame = () => {
         // input and seeded determinism is untouched.
         let goto = null
         let gotoLevel = 0
+        // #2338 AIM: an item tapped on an open rack is MARKED (teal brackets)
+        // and B retrieves THAT one instead of the rescue default. The tap never
+        // fires the verb itself — the #2250 two-step law stands. Cancel law
+        // mirrors the glide: any verb, any movement key, a new tap, WATCH, a
+        // level change or a reset clears the mark; B consumes it.
+        let aim = null
+        let aimLevel = 0
+        const clearAim = () => { aim = null }
         // #2258 polish: expanding ring left at the spot a glide completes;
         // wash-cycle hum ticker; footfall dust bookkeeping.
         let ringPop = null
@@ -169,7 +178,12 @@ const TidyBotGame = () => {
                     audioController.playTone(660, 0.1, 'square', 0.05, 0.12)
                 }
                 else if (e.type === 'refuse' || e.type === 'clear') audioController.playTone(120, 0.14, 'square', 0.07)
-                else if (e.type === 'retrieve') audioController.playSweep(760, 440, 0.09, 'square', 0.05)
+                else if (e.type === 'retrieve') {
+                    // #2338 an aimed pull gets the brighter take — the rack gave
+                    // up the item YOU named, not just whoever was on top
+                    if (e.aimed) { audioController.playSweep(880, 560, 0.09, 'square', 0.05); audioController.playTone(1320, 0.05, 'sine', 0.03, 0.04) }
+                    else audioController.playSweep(760, 440, 0.09, 'square', 0.05)
+                }
                 else if (e.type === 'throw') audioController.playSweep(300, 620, 0.09, 'sawtooth', 0.04)
                 else if (e.type === 'heavy') {
                     // both arms just filled — a low grunt-thud under the grab
@@ -199,13 +213,18 @@ const TidyBotGame = () => {
             overAt = performance.now()
             watchingRef.current = false; setWatching(false) // #1637 the shift ends in your hands
             goto = null // #2250
+            clearAim() // #2338
             setEnd({ won, score: gs.score, tidy: gs.tidies, breaks: gs.breaks, wrongs: gs.wrongs, spills: gs.spills, jams: gs.jams, reason: gs.endReason })
             const board = (() => { try { return JSON.parse(localStorage.getItem('tidybot.board') || '[]') } catch { return [] } })()
             if (gs.score > 0) localStorage.setItem('tidybot.board', JSON.stringify([...board, { score: gs.score, date: new Date().toISOString().slice(2, 10) }].sort((a, b) => b.score - a.score).slice(0, 8)))
             setMode('over')
         }
 
-        const livePad = () => ({ left: keys.left, right: keys.right, up: keys.up, down: keys.down, a: edgeA, b: edgeB })
+        const livePad = () => {
+            const p = { left: keys.left, right: keys.right, up: keys.up, down: keys.down, a: edgeA, b: edgeB }
+            if (aim && aimLevel === gs.level) p.aim = aim // #2338: the marked item rides the pad
+            return p
+        }
 
         // #2258 feel pass, runs every simulated tick in attract AND play:
         // footfall dust whose color names the floor (sage tile vs oak plank),
@@ -270,7 +289,9 @@ const TidyBotGame = () => {
                 }
             }
             step(gs, [pad])
+            const verbPressed = edgeA || edgeB // #2338: any verb press ends the mark (B consumed it, A spoke elsewhere)
             edgeA = false; edgeB = false
+            if (verbPressed || (aim && aimLevel !== gs.level)) clearAim()
             handleEvents(gs.ev)
             feel()
             if (gs.end) finish()
@@ -339,13 +360,21 @@ const TidyBotGame = () => {
             ctx.fillRect(c.x + 2, c.y + 2, c.w - 4, c.h - 4)
             ctx.strokeStyle = c.id === 'dw' ? 'rgba(140,170,190,0.4)' : 'rgba(150,160,150,0.6)'
             ctx.lineWidth = 1
-            for (let ry = c.y + 8; ry < c.y + c.h - 4; ry += 8) { ctx.beginPath(); ctx.moveTo(c.x + 4, ry); ctx.lineTo(c.x + c.w - 4, ry); ctx.stroke() }
-            // stowed items inside, small
+            // rack shelves sit under slot rows 1..n-1 (#2338); the bottom row
+            // rides the cavity floor, so its line lands on the lip and is skipped
+            for (let r = 0; r < RACK_ROWS; r++) {
+                const ry = rackSlot(c, r * RACK_COLS).y + 5
+                if (ry > c.y + c.h - 3) continue
+                ctx.beginPath(); ctx.moveTo(c.x + 4, ry); ctx.lineTo(c.x + c.w - 4, ry); ctx.stroke()
+            }
+            // stowed items inside, small — each at ITS slot (#2338): retrieving
+            // a neighbour never shifts the rest of the rack, and all nine DW
+            // lodgers stay visible
             const inside = gs2.items.filter((it) => it.state === 'in' && it.cont === c.id)
             inside.forEach((it, i) => {
-                const ix = c.x + 8 + (i % 3) * 10
-                const iy = c.y + 8 + Math.floor(i / 3) * 11
-                if (iy < c.y + c.h - 4) drawItem(ctx, it.kind, ix, iy, 0.7)
+                const sl = it.slot === null || it.slot === undefined ? i : it.slot
+                const p = rackSlot(c, sl % RACK_CAP)
+                drawItem(ctx, it.kind, p.x, p.y, 0.62)
             })
             // door: slides down over the cavity front
             const dy = c.y + c.h - 2 - (c.h + c.doorLen - 4) * openT
@@ -604,6 +633,26 @@ const TidyBotGame = () => {
                 ctx.fillStyle = 'rgba(143,224,238,0.8)'
                 circle(ctx, goto.x, goto.y, 1.1); ctx.fill()
             }
+            // #2338 AIM marker: teal corner brackets pulsing around the marked
+            // rack item — the bot's own chrome says THIS one is next for B.
+            if (aim && screenRef.current === 'play') {
+                const it = gs.items.find((i2) => i2.id === aim && i2.state === 'in')
+                if (!it) clearAim()
+                else {
+                    const cc = it.cont === 'dw' ? DW : FR
+                    const sl = it.slot === null || it.slot === undefined ? 0 : it.slot
+                    const p = rackSlot(cc, sl % RACK_CAP)
+                    const q = 5.5 + Math.sin(tick * 0.22) * 1.1
+                    ctx.strokeStyle = 'rgba(95,200,222,0.9)'; ctx.lineWidth = 1.3
+                    for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+                        ctx.beginPath()
+                        ctx.moveTo(p.x + sx * q, p.y + sy * q - sy * 2.6)
+                        ctx.lineTo(p.x + sx * q, p.y + sy * q)
+                        ctx.lineTo(p.x + sx * q - sx * 2.6, p.y + sy * q)
+                        ctx.stroke()
+                    }
+                }
+            }
             // #2258 arrival ring scale-out where the glide completed
             if (ringPop) {
                 ringPop.t++
@@ -647,6 +696,7 @@ const TidyBotGame = () => {
             parts.length = 0; gs.fx.length = 0
             watchingRef.current = false; setWatching(false) // #1637 a new shift starts in your hands
             goto = null; gotoLevel = 0 // #2250 fresh shift, no stale orders
+            clearAim() // #2338
             setEnd(null)
             setMode('play')
             audioController.playTone(262, 0.08, 'square', 0.06)
@@ -672,6 +722,7 @@ const TidyBotGame = () => {
             // (autopilot re-decides from live); any driving key takes the bot back.
             if (isWatchKey(e)) {
                 goto = null // #2250 the prover takes the wheel; the glide steps down
+                clearAim() // #2338 and so does a pending mark
                 if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
                 else if (!gs.end) { watchingRef.current = true; setWatching(true); playWatchStart() }
                 return
@@ -679,6 +730,11 @@ const TidyBotGame = () => {
             if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             // #2250 GLIDE: keys are the human speaking — a glide yields at once.
             goto = null
+            // #2338 mark cancel law: MOVEMENT interrupts the mark; B is the
+            // COMMIT gesture, so it must not be cleared at keydown — doSim
+            // ends the mark when the press lands (consume or refuse, never a
+            // stale order).
+            if (e.code === 'ArrowLeft' || e.code === 'ArrowRight' || e.code === 'ArrowUp' || e.code === 'ArrowDown') clearAim()
             if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = true
             if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = true
             if (e.code === 'ArrowUp' || e.code === 'KeyW') keys.up = true
@@ -706,16 +762,30 @@ const TidyBotGame = () => {
                 if (!rect.width || !rect.height) return
                 const wx = (e.clientX - rect.left) * (VIEW_W / rect.width)
                 const wy = (e.clientY - rect.top) * (VIEW_H / rect.height)
-                const r = routeDir(gs, wx, wy)
-                if (r.ok) {
-                    goto = { x: wx, y: wy }
-                    gotoLevel = gs.level
-                    audioController.playTone(660, 0.04, 'sine', 0.03)
+                clearAim() // #2338 a new tap is a new order, same law as the glide
+                const a = aimAt(gs, wx, wy)
+                if (a.ok) {
+                    // tap-the-rack: NAME the item, then B pulls it. The tap
+                    // itself never fires the verb (#2250 two-step law stands),
+                    // but it walks you to the rack like any floor tap would.
+                    aim = a.id; aimLevel = gs.level
+                    audioController.playTone(980, 0.05, 'sine', 0.035)
+                    audioController.playTone(1470, 0.06, 'sine', 0.03, 0.05)
+                    gs.fx.push({ msg: 'AIMED', x: a.x, y: a.y - 7, k: 0, t: 'ok' })
+                    const r = routeDir(gs, wx, wy)
+                    if (r.ok && !r.arrived) { goto = { x: wx, y: wy }; gotoLevel = gs.level }
                 } else {
-                    gs.fx.push({ msg: 'NO WAY', x: wx, y: wy, k: 0, t: 'bad' })
-                    // #2258: NO WAY is Sadder than STAND CLEAR (the 120 square
-                    // blip stays with the door refusal) — a sagging fall.
-                    audioController.playSweep(240, 110, 0.22, 'triangle', 0.06)
+                    const r = routeDir(gs, wx, wy)
+                    if (r.ok) {
+                        goto = { x: wx, y: wy }
+                        gotoLevel = gs.level
+                        audioController.playTone(660, 0.04, 'sine', 0.03)
+                    } else {
+                        gs.fx.push({ msg: 'NO WAY', x: wx, y: wy, k: 0, t: 'bad' })
+                        // #2258: NO WAY is Sadder than STAND CLEAR (the 120 square
+                        // blip stays with the door refusal) — a sagging fall.
+                        audioController.playSweep(240, 110, 0.22, 'triangle', 0.06)
+                    }
                 }
             }
         }
@@ -744,6 +814,7 @@ const TidyBotGame = () => {
             wrongs: gs.wrongs,
             breaks: gs.breaks,
             items: gs.items.map((it) => [it.kind, Math.round(it.x), Math.round(it.y), it.state, it.cont || '']),
+            aim: aim === null ? -1 : aim, // #2338 marked item (-1 = none)
             endReason: gs.endReason,
         })
         const testState = () => ({ ...simState(), mode: screenRef.current })
@@ -757,6 +828,7 @@ const TidyBotGame = () => {
                 gs = makeGame(contractSeed, 1)
                 parts.length = 0
                 goto = null // #2250 contract resets clear the glide too
+                clearAim() // #2338 and the aim mark
                 setEnd(null)
                 setMode('play')
             },
@@ -766,6 +838,7 @@ const TidyBotGame = () => {
                     setMode('play')
                 }
                 step(gs, [pad])
+                if (pad && (pad.a || pad.b)) clearAim() // #2338 verbs end the mark here too
                 handleEvents(gs.ev)
                 if (gs.end && screenRef.current === 'play') finish()
             },
@@ -821,6 +894,15 @@ const TidyBotGame = () => {
                     return r
                 },
                 gliding: () => !!goto,
+                // #2338 AIM: harness taps (world coords) name a rack item; the
+                // mark then rides live pads like the real pointer does.
+                aim: (x, y) => {
+                    const a = aimAt(gs, x, y)
+                    if (a.ok) { aim = a.id; aimLevel = gs.level }
+                    return a
+                },
+                aimed: () => aim,
+                rackSlot,
                 DW, FR, TABLE, COUNTER, VIEW_W, VIEW_H,
             }
             mountDbg({
@@ -869,7 +951,7 @@ const TidyBotGame = () => {
             <div ref={stageRef} className="relative w-full max-w-[720px] aspect-[320/240]" style={{ imageRendering: 'pixelated' }} />
             <div className="absolute top-2 left-1/2 -translate-x-1/2 pointer-events-none font-mono text-[11px] tracking-widest" ref={setHud('toast')} style={{ color: '#ffd23f', textShadow: '0 1px 0 #000' }} />
             <div className="absolute bottom-1 left-2 font-mono text-[10px] text-amber-200/60 pointer-events-none">
-                <span ref={setHud('levelTag')}>KITCHEN / LIGHT DRIZZLE</span> · A: use · B: toss · tap floor to glide
+                <span ref={setHud('levelTag')}>KITCHEN / LIGHT DRIZZLE</span> · A: use · B: toss/pull · tap floor to glide · tap rack item to aim
             </div>
             {screen === 'attract' && (
                 <div className="absolute bottom-8 inset-x-0 flex flex-col items-center gap-2 pointer-events-none">
