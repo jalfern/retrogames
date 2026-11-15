@@ -213,6 +213,10 @@ npm run dev && npm run tendeepplay   # headless Chrome, real key events,
   goblin), sized up for a bigger pack, swaying on a presentation-only clock; the
   wireframe paints a tinted glyph with two red eyes on the forward column
   (paintMap stops at the first wall, so a tile it reaches is honest forward LOS).
+  **#2324:** the renderer documented sprite `tint` since #1129 but never read
+  it — `uTint` now multiplies the lit core (white default, deepglass
+  byte-identical), so the per-mob tints in `view.js` finally reach the screen;
+  tendeepcheck pins the wiring + default and kills an unwired-tint mutant.
   **ROAMING MOVEMENT by #2321** — packs drift like the original's groups.
   `st.packPos` (spawn tile key -> live tile, plain JSON so `cloneState` carries
   it) is sim truth: once per honest party step each unsprung pack takes at most

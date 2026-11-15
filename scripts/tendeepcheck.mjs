@@ -101,6 +101,16 @@ section('SIGHTED MOB GATES (#2315) — honest line of sight, no wall-hacks')
     // every bestiary member has an atlas material and a tint
     ok(Object.keys(MOB_MAT).every((k) => k in MOBS), 'MOB_MAT covers the whole bestiary')
     ok(SIGHT >= 3 && SIGHT <= 8, `torch sight is ${SIGHT} cells (a pack reveals itself before you reach it)`)
+    // #2324 — and the tint must actually REACH the screen: the renderer
+    // documented `tint` since #1129 but never wired it, so every bestiary
+    // member drew in the three atlas colours. uTint multiplies the lit core.
+    {
+        const core = readFileSync(join(HERE, '../public/demos/dungeon.core.js'), 'utf8')
+        ok(/uniform vec3 uTint;/.test(core) && /t\.rgb \* vLight \* uTint/.test(core),
+            'the sprite tint contract is unwired in the shared renderer — the bestiary would walk grey')
+        ok(/s\.tint \|\| \[1, 1, 1\]/.test(core),
+            'tint lost its white default — callers that omit it (deepglass) would draw black')
+    }
 
     // a synthetic map helper: walls everywhere except the open cells passed in.
     const mkMap = (open, ambushes) => ({
@@ -1718,6 +1728,19 @@ if (MUT) {
     g.mode = 'combat'   // padB reads only mode/town/dmgId — last section, no rewind needed
     ok(padB(g, 'firebolt').label === SPELLS.firebolt.name && padB(g, 'firebolt').code === 'KeyF', `battle B with fire must carry the spell, got ${JSON.stringify(padB(g, 'firebolt'))}`)
     ok(padB(g, null).label === 'GUARD' && padB(g, null).code === 'KeyG', `battle B without a letter must carry GUARD/KeyG, got ${JSON.stringify(padB(g, null))}`)
+}
+
+// #2324 (salvage of #2318) — the tint wiring must be load-bearing: pull the
+// multiply out of the sprite shader and the contract pin goes red.
+if (MUT) {
+    const coreFile = join(HERE, '../public/demos/dungeon.core.js')
+    const coreOrig = readFileSync(coreFile, 'utf8')
+    ok(coreOrig.includes('t.rgb * vLight * uTint'), 'tint mutant anchor missing')
+    plant(coreFile, coreOrig.replace('t.rgb * vLight * uTint', 't.rgb * vLight'))
+    const res = spawnSync(process.execPath, [join(HERE, 'tendeepcheck.mjs')], { encoding: 'utf8' })
+    pull(coreFile)
+    console.log(`  mut tint unwired: ${res.status !== 0 ? 'caught' : 'SURVIVED (BAD)'}`)
+    ok(res.status !== 0, 'tint unwired SURVIVED — the bestiary could go grey unnoticed')
 }
 
 console.log(`\ntendeepcheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)
