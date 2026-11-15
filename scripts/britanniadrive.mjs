@@ -287,15 +287,22 @@ await sleep(120)
 s2 = await st()
 r.check('back on the gate tile the menu still shows the new-moon road (IV)',
     s2.gate === gi && s2.moonRoute === 3 && s2.x === 161 && s2.y === 21, JSON.stringify(s2))
-// Fixed sleeps under-wait a throttled frame loop (the walk-cd FREEZES while
-// a menu is open, so a cancel must first burn ~8 real ticks; on a loaded box
-// 160-240ms delivered fewer). Press, then POLL for the outcome (bounded);
-// the assertions themselves are untouched.
+// The walk-cd FREEZES mid-step while a gate menu is open: the arrival step
+// that whirls the menu sets cd=WALK_CD, and the menu branch returns before
+// the cd drain (index.jsx:272-303), so the drain never starts until the menu
+// closes. A zero-delay tap after a cancel therefore burns against the frozen
+// cd and dies in taps.clear() before the drain finishes — the avatar never
+// moves and a tap+poll times out (#2359: all five pre-existing failures).
+// Hold the key until the polled outcome lands (bounded), release promptly:
+// WALK_CD's ~117ms floor between steps is wider than poll+release latency,
+// so a held key cannot overshoot the predicate tile. The assertions
+// themselves are untouched.
 const pressFor = async (key, pred, ms = 3000) => {
-    await page.keyboard.press(key)
+    await page.keyboard.down(key)
     const t0 = Date.now()
     let s = await st()
     while (!pred(s) && Date.now() - t0 < ms) { await sleep(60); s = await st() }
+    await page.keyboard.up(key)
     return s
 }
 s2 = await pressFor('KeyZ', (s) => s.gate === -1)
@@ -531,6 +538,40 @@ await page.screenshot({ path: '/tmp/forge/britannia-shrine.png' })
     r.check('the live toll agrees with the booked rule (payToll(250) == the driven debit)',
         !!paid && paid.gold === 245, JSON.stringify(paid && paid.gold))
     await page.screenshot({ path: '/tmp/forge/britannia-purse.png' })
+}
+
+// #2359 dawn-tithe survival: on seed 7 the pressure cycle turns FRESH -> GALE
+// exactly at the day-turn tick 7200 (windNow(7199,7)=2, windNow(7200,7)=3),
+// so the gale notice and the tithe speak on the SAME tick — the collision the
+// #2351 sea playtest flagged. Staged at gate VI: the chapel bump is the one
+// toast not kinged by GOAL, so it clears the GOAL text; the frozen cd drains
+// on the world clock; the dawn lands the collision. The tithe must win the
+// tick (it writes after the wind block) and keep the screen on the next frame
+// — sky and wind are epoch-stable at 7201, so nothing may speak again.
+{
+    const dawn = await page.evaluate(() => {
+        window.__game.reset(7); window.__britanniaTest.setTime(7180)
+        window.__britanniaTest.setGold(0)
+        window.__britanniaTest.teleport(6)
+        window.__game.step({}, 0)
+        window.__game.step({ left: true }, 1) // x 231->230: gate VI whirls, cd=7
+        window.__game.step({ b: true }, 1)    // dismiss; the stone is one west
+        window.__game.step({}, 7)             // the frozen cd drains on the clock
+        window.__game.step({ left: true }, 1) // the chapel is stone — GOAL text gone
+        window.__game.step({}, 10)            // the world turns up to the dawn tick
+        const s = window.__britanniaTest.state()
+        const hit = { wind: s.wind, day: s.day, gold: s.gold, toast: s.toastMsg }
+        window.__game.step({}, 1)             // the next frame
+        const later = { toast: window.__britanniaTest.state().toastMsg }
+        window.__game.release()
+        return { hit, later }
+    })
+    r.check('dawn-storm collision is real: gale onset lands on the day-turn tick (seed 7)',
+        dawn.hit.wind === 3 && dawn.hit.day === 1, JSON.stringify(dawn.hit))
+    r.check('the tithe survives a same-tick gale: its words out-order the wind notice (#2359)',
+        dawn.hit.gold === 20 && /tithe 20 gold/.test(dawn.hit.toast) && !/gale/i.test(dawn.hit.toast), JSON.stringify(dawn.hit))
+    r.check('nothing speaks over the tithe on the next frame (#2359)',
+        /tithe 20 gold/.test(dawn.later.toast), JSON.stringify(dawn.later))
 }
 
 // restart path stays clean
