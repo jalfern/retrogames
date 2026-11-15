@@ -548,6 +548,18 @@ const TenDeepGame = () => {
             // sim already took, so stateHash and every proof ride unchanged.
             mobAnim += dt
             const mobs = sightedMobs(gs)
+            // #2321 — the moment a pack (or its drift) enters the cone, the
+            // dark says so: one low dry sting per newly-sighted pack, keyed by
+            // floor + spawn key so a pack that sways in and out of the edge
+            // can't machine-gun it, and a new floor starts a fresh ledger.
+            // Presentation-only — the sim is never told.
+            if (gs.floor !== sightFloor) { sightFloor = gs.floor; sightKeys.clear() }
+            let freshSights = 0
+            for (const m of mobs) {
+                const sk = gs.floor + ':' + m.key
+                if (!sightKeys.has(sk)) { sightKeys.add(sk); freshSights++ }
+            }
+            if (freshSights) audioController.playSweep(150, 85, 0.28, 'triangle', 0.05)
             R.setSprites(mobs.map((m, i) => {
                 const size = 0.62 + Math.min(m.count - 1, 3) * 0.07
                 return { x: m.x + 0.5, y: m.y + 0.5, z: 0, mat: m.mat, w: size, h: size, anim: mobAnim + i * 140 }
@@ -562,6 +574,9 @@ const TenDeepGame = () => {
         let raf = 0, last = 0, acc = 0, demoAcc = 0, watchAcc = 0, bob = 0
         let toast = 0, toastMsg = ''
         let barkId = -1   // #1756: which wanderer last spoke, so a bark fires once per meeting
+        // #2321: packs already heard entering the cone this floor (spawn keys).
+        let sightFloor = -1
+        const sightKeys = new Set()
         // #1756: the door-cut beat ({ kind, f }, paint frames) and the night
         // ambience scheduler (wind period tick + gust-edge memory). Both live
         // only in the shell — the sim switched truth the instant it was told.

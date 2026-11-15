@@ -213,17 +213,39 @@ npm run dev && npm run tendeepplay   # headless Chrome, real key events,
   goblin), sized up for a bigger pack, swaying on a presentation-only clock; the
   wireframe paints a tinted glyph with two red eyes on the forward column
   (paintMap stops at the first wall, so a tile it reaches is honest forward LOS).
-  **The sim is untouched** — ambushes stay hidden trigger-tiles and the solver
-  still never dodges them, so every proof, the slack rule and determinism ride
-  unchanged (tendeepcheck pins sightedMobs purity + no-wall-hacks across all ten
-  seeded deeps; 9603/9603; four view.js mutants die). Still open: true roaming
-  *movement* (the original's groups drift; ours stand on their seeded tile) and
-  per-species silhouettes (ten bestiary members fold onto three atlas shapes,
-  keyed by the group's lead — a richer atlas would re-open the shared renderer).
+  **ROAMING MOVEMENT by #2321** — packs drift like the original's groups.
+  `st.packPos` (spawn tile key -> live tile, plain JSON so `cloneState` carries
+  it) is sim truth: once per honest party step each unsprung pack takes at most
+  one tile, direction chosen by a hash of (spawn key, `st.tick`) — no RNG, so
+  replays reproduce every drift — and a pack that NOTICES the party
+  (`view.js · packNotices`, the view's own honest test) closes the gap.
+  Legality law: never through walls, never on a spring, throne, the party's
+  tile or another live pack's tile; never further than ONE tile from the spawn
+  (the pack keeps its beat — and a pack seeded on the road stays findable on
+  the road). The ambush springs on the pack's live tile **or its post** (a pack
+  that sidesteps as you walk onto its post still lunges — it is right there and
+  visible), so no seeded encounter can be skipped and XP never leaks: the
+  no-spring slack economy still closes (WINS in 1133 ticks). `stateHash` mixes
+  every live pack tile; the solver never dodges and each pack still fights at
+  most once, so the proven campaign, the slack rule and determinism ride
+  (tendeepcheck +14 gates: synthetic closure/freeze/spring-refusal/party-tile/
+  live-sighting, and per-deep legality + closing-steps + replay determinism).
+  A pack newly entering the cone gets a low synthesized warning sting (shell
+  only, keyed by floor + spawn key so it never machine-guns). **The sim's
+  proofs still referee nothing sighted** — sightings stay a view-layer question.
+  Still open: per-species silhouettes (ten bestiary members fold onto three
+  atlas shapes, keyed by the group's lead — a richer atlas would re-open the
+  shared renderer).
   The automap stays clean — Wizardry never drew monsters on paper, neither do we.
 - Combat keeps its 2D bitmap plates on the HUD layer (the original also cut
   to a separate combat screen, but the plates want their own MODERN pass).
-- No between-run persistence (Wizardry saved to disk; we don't).
+- **No between-run persistence — DECIDED stateless (#2321):** the run is one
+  sitting; a wipe drags the bodies to the RIM and taxes the purse, and that
+  grief IS the economy (temple gold, hire posts, the dead-purse end). A
+  localStorage snapshot would let players bank around the tax and split the
+  campaign from its own consequences, so we do not save — the gap is
+  intentional. Wizardry saved to disk because the Apple II couldn't hold the
+  party between sessions; the browser tab holds ours.
 - ~~The pad carries arrows + A + F~~ **CLOSED by #1275**: B is mode-aware (`padB` in
   `sim.js`, pinned in tendeepcheck, graded in tendeeppplay) — DRINK in the
   corridor, LEAVE inside a building, DESCEND on the street, fire in battle
