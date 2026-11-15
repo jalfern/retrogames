@@ -518,20 +518,34 @@ export function drawPlant(ctx, p, t) {
 }
 
 // ----------------------------------------------------------- goblins ----
+// #2336 gap 5 — per-type POSTURE. Five raiders must read apart at a 5-second
+// glance, not one round blob at five sizes. Each type gets its own body
+// proportions (rx/ry), head set (hx/hy), leg stride + gait rate and ear size;
+// the ears/eyes/teeth now hang off the head, so the pose carries the face.
+// rx/ry stays distinct at 2dp per type (the gardencheck silhouette gate pins it).
+const POSE = {
+    grunt:    { rx: 0.74, ry: 0.88, hx: -0.35, hy: -0.58, stride: 5,   legRate: 1,   ear: 1.0 },
+    sprinter: { rx: 0.98, ry: 0.60, hx: -0.42, hy: -0.50, stride: 8,   legRate: 2,   ear: 0.75 },
+    pup:      { rx: 0.82, ry: 0.74, hx: -0.30, hy: -0.52, stride: 3.6, legRate: 1.7, ear: 1.35 },
+    brute:    { rx: 0.94, ry: 0.76, hx: -0.30, hy: -0.44, stride: 7,   legRate: 1,   ear: 0.9 },
+    warlord:  { rx: 0.68, ry: 0.95, hx: -0.35, hy: -0.66, stride: 6,   legRate: 1,   ear: 1.05 },
+}
 export function drawEnemy(ctx, e, t) {
     const def = ENEMIES[e.id]
     const cy = rowY(e.r)
     const type = e.id
+    const p = POSE[type]
     const sprint = type === 'sprinter'
     const heavy = type === 'brute' || type === 'warlord'
     const ph = e.anim
-    // gait: Sprinter = quick low bob, Brute = slow heavy dip, Grunt/Pup = the classic roll
+    // gait: Sprinter = quick low bob, Pup = fast little skitter, Brute = slow heavy dip, Grunt = the classic roll
     let bob
     if (heavy) bob = e.eat ? Math.sin(t * 11) * 2.4 : Math.sin(ph) * 3.2
     else if (sprint) bob = e.eat ? Math.sin(t * 18) * 2 : Math.sin(ph * 2) * 1.4
+    else if (type === 'pup') bob = e.eat ? Math.sin(t * 16) * 1.6 : Math.sin(ph * 1.7) * 1.8
     else bob = e.eat ? Math.sin(t * 16) * 2 : Math.sin(ph) * 2.2
-    // Sprinter leans into the run; eaters lunge at the plant
-    let lean = e.eat ? 0.12 : (sprint ? -0.14 : heavy ? 0.04 : 0)
+    // Sprinter pitches deep into the run; the Warlord stands tall; eaters lunge
+    let lean = e.eat ? 0.12 : (sprint ? -0.18 : type === 'warlord' ? 0 : heavy ? 0.05 : 0)
     ctx.save(); ctx.translate(e.x, cy + bob)
     ctx.rotate(lean)
     const slowed = e.slowT > 0
@@ -543,9 +557,9 @@ export function drawEnemy(ctx, e, t) {
         ctx.fillStyle = 'rgba(120,90,55,0.32)'
         for (let k = 0; k < 3; k++) { const dx = (k - 1) * 5 + rnd(e.r, k) * 3; ctx.beginPath(); ctx.arc(dx, def.r * 0.72, 2.6 - k * 0.6, 0, 7); ctx.fill() }
     }
-    // legs — per-gait cycle (Sprinter quickens, Brute drives wider)
-    const stride = heavy ? 7 : sprint ? 6 : 5
-    const legPhase = sprint ? ph * 2 : ph
+    // legs — per-gait cycle (stride and rate come from the pose table)
+    const stride = p.stride
+    const legPhase = ph * p.legRate
     const step = Math.sin(legPhase)
     const step2 = Math.sin(legPhase + Math.PI * 0.6)
     ctx.strokeStyle = '#3a5a20'; ctx.lineWidth = def.r * (heavy ? 0.32 : 0.26); ctx.lineCap = 'round'
@@ -561,34 +575,44 @@ export function drawEnemy(ctx, e, t) {
         ctx.quadraticCurveTo(def.r * 1.0, -def.r * 0.2 + wag * def.r * 0.35, def.r * 1.15, -def.r * 0.5 + wag * def.r * 0.5)
         ctx.stroke()
     }
-    // body
+    // body — the pose silhouette
     ctx.fillStyle = flash
-    ctx.beginPath(); ctx.ellipse(0, 0, def.r * 0.78, def.r * 0.82, 0, 0, 7); ctx.fill()
+    ctx.beginPath(); ctx.ellipse(0, 0, def.r * p.rx, def.r * p.ry, 0, 0, 7); ctx.fill()
     ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.beginPath(); ctx.ellipse(-def.r * 0.25, -def.r * 0.2, def.r * 0.34, def.r * 0.36, 0, 0, 7); ctx.fill()
-    // head
+    // head (+ eyes, teeth, ears) hangs off the pose's head-set
     const hr = def.r * 0.5
+    const ex = def.r * p.hx, ey = def.r * p.hy
     ctx.fillStyle = flash
-    ctx.beginPath(); ctx.arc(-def.r * 0.35, -def.r * 0.5, hr, 0, 7); ctx.fill()
-    // ears
-    ctx.beginPath(); ctx.moveTo(-def.r * 0.7, -def.r * 0.7); ctx.lineTo(-def.r * 1.15, -def.r * 0.95); ctx.lineTo(-def.r * 0.55, -def.r * 0.35); ctx.closePath(); ctx.fill()
+    ctx.beginPath(); ctx.arc(ex, ey, hr, 0, 7); ctx.fill()
+    // ears — one to three times the Grunt's sweep (the Pup's stand up huge)
+    ctx.beginPath()
+    ctx.moveTo(ex - hr * 0.7, ey - hr * 0.4)
+    ctx.lineTo(ex - hr * 1.6 * p.ear, ey - hr * 0.9 * p.ear)
+    ctx.lineTo(ex - hr * 0.4, ey + hr * 0.3)
+    ctx.closePath(); ctx.fill()
     // eyes (menacing, facing left toward the cottage)
-    ctx.fillStyle = '#ffe14a'; ctx.beginPath(); ctx.arc(-def.r * 0.55, -def.r * 0.55, hr * 0.26, 0, 7); ctx.fill()
-    ctx.fillStyle = '#1a1208'; ctx.beginPath(); ctx.arc(-def.r * 0.62, -def.r * 0.55, hr * 0.13, 0, 7); ctx.fill()
+    ctx.fillStyle = '#ffe14a'; ctx.beginPath(); ctx.arc(ex - hr * 0.4, ey - hr * 0.1, hr * 0.26, 0, 7); ctx.fill()
+    ctx.fillStyle = '#1a1208'; ctx.beginPath(); ctx.arc(ex - hr * 0.54, ey - hr * 0.1, hr * 0.13, 0, 7); ctx.fill()
     // teeth
     ctx.fillStyle = '#fff'
-    ctx.beginPath(); ctx.moveTo(-def.r * 0.7, -def.r * 0.32); ctx.lineTo(-def.r * 0.58, -def.r * 0.16); ctx.lineTo(-def.r * 0.46, -def.r * 0.32); ctx.closePath(); ctx.fill()
+    ctx.beginPath(); ctx.moveTo(ex - hr * 0.7, ey + hr * 0.36); ctx.lineTo(ex - hr * 0.46, ey + hr * 0.68); ctx.lineTo(ex - hr * 0.22, ey + hr * 0.36); ctx.closePath(); ctx.fill()
     // per-type gear
     if (e.id === 'brute') {
-        ctx.fillStyle = '#7d7d86'; ctx.beginPath(); ctx.arc(-def.r * 0.35, -def.r * 0.55, hr * 1.05, Math.PI, 0); ctx.fill() // helmet
+        ctx.fillStyle = '#7d7d86'; ctx.beginPath(); ctx.arc(ex, ey - hr * 0.1, hr * 1.05, Math.PI, 0); ctx.fill() // helmet rides the hunched head
         ctx.strokeStyle = '#55555f'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-def.r * 1.1, -def.r * 0.2); ctx.lineTo(-def.r * 1.5, def.r * 0.3); ctx.stroke() // club
     } else if (e.id === 'warlord') {
-        ctx.fillStyle = '#6a6a72'; ctx.beginPath(); ctx.arc(-def.r * 0.35, -def.r * 0.55, hr * 1.1, Math.PI, 0); ctx.fill()
-        ctx.fillStyle = '#d9d2c4' // horns
-        ctx.beginPath(); ctx.moveTo(-def.r * 0.9, -def.r * 0.8); ctx.lineTo(-def.r * 1.35, -def.r * 1.2); ctx.lineTo(-def.r * 0.75, -def.r * 0.95); ctx.closePath(); ctx.fill()
-        ctx.beginPath(); ctx.moveTo(0, -def.r * 0.9); ctx.lineTo(0.3 * def.r, -def.r * 1.25); ctx.lineTo(0.2, -def.r * 0.8); ctx.closePath(); ctx.fill()
+        ctx.fillStyle = '#6a6a72'; ctx.beginPath(); ctx.arc(ex, ey - hr * 0.1, hr * 1.1, Math.PI, 0); ctx.fill()
+        ctx.fillStyle = '#d9d2c4' // horns off the tall head
+        ctx.beginPath(); ctx.moveTo(ex - hr * 1.1, ey - hr * 0.6); ctx.lineTo(ex - hr * 2.0, ey - hr * 1.4); ctx.lineTo(ex - hr * 0.8, ey - hr * 0.9); ctx.closePath(); ctx.fill()
+        ctx.beginPath(); ctx.moveTo(ex + hr * 0.7, ey - hr * 0.8); ctx.lineTo(ex + hr * 1.3, ey - hr * 1.5); ctx.lineTo(ex + hr * 1.1, ey - hr * 0.6); ctx.closePath(); ctx.fill()
         ctx.fillStyle = '#5a3a1c'; rr(ctx, -def.r * 1.5, -def.r * 0.4, def.r * 0.5, def.r * 1.0, 4); ctx.fill() // shield
     } else if (e.id === 'sprinter') {
         ctx.fillStyle = '#e6f08a'; ctx.beginPath(); ctx.moveTo(def.r * 0.6, 0); ctx.lineTo(def.r * 1.1, -def.r * 0.3); ctx.lineTo(def.r * 1.0, def.r * 0.3); ctx.closePath(); ctx.fill() // motion tuft
+        ctx.strokeStyle = '#d9534f'; ctx.lineWidth = 3; ctx.lineCap = 'round' // scarf streaming behind the run
+        const flut = Math.sin(ph * 2) * def.r * 0.18
+        ctx.beginPath(); ctx.moveTo(ex + hr * 0.5, ey + hr * 0.3)
+        ctx.quadraticCurveTo(def.r * 0.9, ey + flut, def.r * 1.45, ey + hr * 0.5 + flut)
+        ctx.stroke()
     } else if (e.id === 'pup') {
         ctx.fillStyle = flash; ctx.beginPath(); ctx.ellipse(def.r * 0.2, def.r * 0.1, def.r * 0.5, def.r * 0.35, 0, 0, 7); ctx.fill()
     }

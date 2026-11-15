@@ -58,6 +58,9 @@ npm run gardencheck                 # pure Node: boot + core rules + winnable on
                                     # + the #2336 clear ceremony (12 gates: the acorn
                                     #   shower pays out inside the ~3s window, the look
                                     #   on the mock canvas, determinism, shell wiring)
+                                    # + the #2336 goblin posture (9 gates: per-type
+                                    #   silhouette proportions, ear poke, the streaming
+                                    #   scarf, gait liveness, determinism)
 npm run dev                        # then, another shell:
 CONTRACT_ONLY=garden-guard npm run contractcheck   # window.__game contract, determinism
 ```
@@ -116,6 +119,19 @@ the #2328 plate so the presentation and the tray card are the same object).
 The attract demo shows the ceremony when its autopilot clears a level.
 Failure-proved: short-circuiting `drawClearCeremony` and dropping the `shower`
 event reddens 4 of the 12 gates (shower fires, glitter, big card, final wash).
+
+## Goblin posture (#2336 gap 5)
+The five raiders used to be one round blob at five sizes. `art.js` now carries a
+`POSE` table — per-type body proportions, head-set, leg stride/gait rate and ear
+size, with the face (eyes/teeth/ears) hanging off the head-set so the pose
+carries it: the **Grunt** stands upright (ry>rx), the **Sprinter** runs low and
+long with a deep forward pitch and a red scarf streaming behind it, the **Pup**
+is a round ball on stubby legs with huge upright ears and a fast skitter gait,
+the **Brute** hunches broad under its helmet, and the **Warlord** towers on
+straight legs with horns off its tall head. The old per-type gear (helmet, club,
+horns, shield, tuft, belly, tails) rides the new head/body anchors.
+Failure-proved: flattening the `POSE` table back to one blob reddens 6 of the 9
+gardencheck §8 gates (silhouette aspect ratios, ear poke, scarf, uniqueness).
 
 ## Notes
 - State is plain JSON (arrays of plain objects), so the contract's

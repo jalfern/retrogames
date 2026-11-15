@@ -23,6 +23,9 @@
 //                  shower inside the ~3s window, the gold+card ceremony paints
 //                  (mock canvas) only on a clear, never on the final level's
 //                  unlock, deterministically, and the shell wires lawn + attract.
+//   8. #2336     — goblin posture: five raiders, five silhouettes at a glance —
+//                  per-type body proportions, ear size, gait and the sprinter's
+//                  streaming scarf, all pinned from mock-canvas recordings.
 //
 // It also proves IT can fail: run with `--mutant` and one load-bearing rule
 // (the breach-does-not-lose) is flipped; the harness must go red on it. This is
@@ -35,12 +38,12 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
     FIXED_DT, W, H, ROWS, COLS, colX, rowY, tileOf,
-    LEVELS, CARD_ORDER, SHOWER,
+    LEVELS, CARD_ORDER, SHOWER, ENEMIES,
     newRun, advance, autoStep, plant, spawnEnemy,
     occupied, waveProgress, stateHash,
     actAt, toggleTrowel, bankTap,
 } from '../src/games/GardenGuard/sim.js'
-import { drawHud, drawTray, drawMower, drawCursor, drawClearCeremony } from '../src/games/GardenGuard/art.js'
+import { drawHud, drawTray, drawMower, drawCursor, drawClearCeremony, drawEnemy } from '../src/games/GardenGuard/art.js'
 import { BED, endSteps, endCue } from '../src/games/GardenGuard/sound.js'
 import { MUSIC } from '../src/utils/AudioController.js'
 
@@ -534,6 +537,51 @@ section('CLEAR CEREMONY (#2336)')
     check('the shell paints the ceremony on the live lawn', src.includes('drawClearCeremony(ctx, g)'))
     check('the attract board shows the ceremony too (gap 2 spectacle)', src.includes('drawClearCeremony(ctx, demoG)'))
     check("the shower rings its chime (case 'shower')", src.includes("case 'shower'"))
+}
+
+// ---- 8. #2336 gap 5 — goblin posture at a glance ---------------------------
+section('GOBLIN POSTURE (#2336)')
+{
+    // A 5-second glance must separate the raid types (the original's silhouettes
+    // did). Drive drawEnemy for each type on the recording mock and measure the
+    // BODY ellipse (the biggest non-rect fill), ear poke over the body, and the
+    // sprinter's scarf. Reverting the POSE table to one blob reddens 1-4.
+    const EX = 520, EROW = 2
+    const draw = (id, anim = 1.1) => {
+        const def = ENEMIES[id]
+        const e = { id, r: EROW, x: EX, hp: def.hp, maxHp: def.hp, slow: 1, slowT: 0, anim, eat: 0 }
+        const c = mockCtx(); drawEnemy(c, e, 3.3)
+        const body = c.fills.filter((f) => !f.rect).reduce((a, f) =>
+            ((f.x1 - f.x0) * (f.y1 - f.y0) > (a ? (a.x1 - a.x0) * (a.y1 - a.y0) : -1) ? f : a), null)
+        const all = [...c.fills, ...c.strokes]
+        const y0 = Math.min(...all.map((f) => f.y0))
+        return { c, def, body,
+            asp: (body.x1 - body.x0) / (body.y1 - body.y0),
+            poke: (body.y0 - y0) / def.r }
+    }
+    const S = Object.fromEntries(Object.keys(ENEMIES).map((id) => [id, draw(id)]))
+    check('the Sprinter runs low and long (body wider than tall, w/h >= 1.5)',
+        S.sprinter.asp >= 1.5, `asp=${S.sprinter.asp.toFixed(2)}`)
+    check('the Grunt stands upright (body taller than wide, w/h <= 0.95)',
+        S.grunt.asp <= 0.95, `asp=${S.grunt.asp.toFixed(2)}`)
+    check('the Warlord towers (w/h <= 0.8) and the Brute hunches broad (w/h >= 1.15)',
+        S.warlord.asp <= 0.8 && S.brute.asp >= 1.15,
+        `war=${S.warlord.asp.toFixed(2)} brute=${S.brute.asp.toFixed(2)}`)
+    check('the Pup\'s ears stand up huge (>= 0.3 body-radii above its body)',
+        S.pup.poke >= 0.3, `poke=${S.pup.poke.toFixed(2)}`)
+    check('the Grunt\'s ears stay a low sweep by comparison (<= 0.25r)',
+        S.grunt.poke <= 0.25, `poke=${S.grunt.poke.toFixed(2)}`)
+    const asps = Object.values(S).map((s) => Math.round(s.asp * 100) / 100)
+    check('five raiders, five silhouettes (body proportions distinct at 2dp)',
+        new Set(asps).size === 5, JSON.stringify(asps))
+    const scarf = S.sprinter.c.strokes.filter((s) => s.style === '#d9534f')
+    check('the Sprinter trails a scarf streaming behind the run (>= 14px)',
+        scarf.length === 1 && scarf[0].x1 - scarf[0].x0 >= 14, JSON.stringify(scarf))
+    const moved = Object.keys(ENEMIES).map((id) => JSON.stringify(draw(id, 0).c.fills) !== JSON.stringify(draw(id, 2.5).c.fills))
+    check('every type\'s gait moves (silhouette changes across the cycle)', moved.every(Boolean), JSON.stringify(moved))
+    const dA = draw('grunt', 1.7), dB = draw('grunt', 1.7)
+    check('posture drawing is deterministic (same state, same recording)',
+        JSON.stringify(dA.c.fills) === JSON.stringify(dB.c.fills) && JSON.stringify(dA.c.strokes) === JSON.stringify(dB.c.strokes))
 }
 
 console.log(`\n=== gardencheck: ${pass} pass, ${fail} fail ===`)
