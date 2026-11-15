@@ -21,7 +21,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexp
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import {
-    makeGame, step, autopilot, loadLevel, markChores, stateHash, routeDir, aimAt, rackSlot,
+    makeGame, step, autopilot, loadLevel, markChores, stateHash, routeDir, aimAt, rackSlot, flourishPick,
     VIEW_W, VIEW_H, WALL, COUNTER, STOVE, TABLE, PLANTS, DW, FR, LEVELS, RACK_CAP, RACK_ROWS, RACK_COLS,
 } from './sim.js'
 
@@ -142,6 +142,15 @@ const TidyBotGame = () => {
         let ringPop = null
         let humT = 0
         let lastWalk = 0
+        // #2343 polish: an attract-only aim flourish — the demo MARKS a stow
+        // (brackets + AIMED) and its own B pulls it, teaching tap-the-rack
+        // without touching the autopilot's aim-free pads (win-proof untouched).
+        // pullAnim is the presentation-only reach arc: the retrieved item arcs
+        // from its vacated slot into the front arm over 8 ticks (the sim's
+        // pull stays one tick).
+        let flourish = null // {id, kind, c, slot} — attract-only marked stow
+        let flourishT = 0
+        let pullAnim = null // {c, slot, kind, t}
 
         const burst = (x, y, n, col, spd = 3, up = -1) => {
             for (let i = 0; i < n; i++) {
@@ -179,6 +188,9 @@ const TidyBotGame = () => {
                 }
                 else if (e.type === 'refuse' || e.type === 'clear') audioController.playTone(120, 0.14, 'square', 0.07)
                 else if (e.type === 'retrieve') {
+                    // #2343 the rack just gave up an item — animate the pull
+                    // (arc slot→front arm) and name the vacated slot for a flash.
+                    if (e.slot >= 0 && e.c) pullAnim = { c: e.c, slot: e.slot, kind: e.kind, t: 0 }
                     // #2338 an aimed pull gets the brighter take — the rack gave
                     // up the item YOU named, not just whoever was on top
                     if (e.aimed) { audioController.playSweep(880, 560, 0.09, 'square', 0.05); audioController.playTone(1320, 0.05, 'sine', 0.03, 0.04) }
@@ -257,11 +269,23 @@ const TidyBotGame = () => {
                     if (gs.end === 'win' && gs.level < LEVELS.length - 1) {
                         loadLevel(gs, gs.level + 1)
                         gs.end = null; gs.endReason = ''
+                        flourish = null // #2343 new room, re-pick the flourish target
                         banner(LEVELS[gs.level].name, '#9fe8b4')
-                    } else { gs = makeGame(1337 + (demoAt % 97), 1); demoAt = 0 }
+                    } else { gs = makeGame(1337 + (demoAt % 97), 1); demoAt = 0; flourish = null }
                 }
-                step(gs, [autopilot(gs)])
+                const p = autopilot(gs)
+                // #2343 the demo sells aim-the-rack: overlay a MARKED stow on the
+                // attract pad so the autopilot's own B pulls the named item while
+                // brackets pulse on it. Attract-only — the autopilot never aims,
+                // so WATCH, contracts and the win-proof ride the unchanged law.
+                if (flourish === null) {
+                    const f = flourishPick(gs)
+                    if (f) { flourish = f; flourishT = 0 }
+                } else if (++flourishT > 900) flourish = null // watchdog: the loop missed it, re-pick
+                if (flourish !== null) p.aim = flourish.id
+                step(gs, [p])
                 handleEvents(gs.ev)
+                if (flourish !== null && !gs.items.some((i2) => i2.id === flourish.id && i2.state === 'in')) flourish = null // pulled — the mark is spent
                 feel()
                 demoAt++
                 return
@@ -373,8 +397,9 @@ const TidyBotGame = () => {
             const inside = gs2.items.filter((it) => it.state === 'in' && it.cont === c.id)
             inside.forEach((it, i) => {
                 const sl = it.slot === null || it.slot === undefined ? i : it.slot
+                if (pullAnim && pullAnim.c === c.id && pullAnim.slot === sl % RACK_CAP && pullAnim.kind === it.kind) return // #2343 it left the rack — it rides the reach arc now
                 const p = rackSlot(c, sl % RACK_CAP)
-                drawItem(ctx, it.kind, p.x, p.y, 0.62)
+                drawItem(ctx, it.kind, p.x, p.y, 0.78) // #2343 0.62 → 0.78: slots guarantee spacing, small glyphs read far better (GardenGuard #2331 precedent)
             })
             // door: slides down over the cavity front
             const dy = c.y + c.h - 2 - (c.h + c.doorLen - 4) * openT
@@ -483,7 +508,7 @@ const TidyBotGame = () => {
             // with every step — carrying two reads as HEAVY at a glance
             const front = gs2.items.find((it) => it.state === 'held' && it.id === gs2.held)
             const tray = gs2.items.find((it) => it.state === 'held' && it.id === gs2.held2)
-            if (front) {
+            if (front && !(pullAnim && pullAnim.kind === front.kind)) { // #2343 while its reach arc flies, the arc IS the front cargo
                 ctx.fillStyle = 'rgba(255,255,255,0.10)'
                 circle(ctx, x, y - 16 + Math.sin(tick * 0.1) * 1, 5); ctx.fill()
                 drawItem(ctx, front.kind, x, y - 16 + Math.sin(tick * 0.1) * 1, 0.9)
@@ -653,6 +678,59 @@ const TidyBotGame = () => {
                     }
                 }
             }
+            // #2343 attract flourish marker: the same teal brackets + an AIMED
+            // tag pulse on the stow the demo is about to pull — tap-the-rack,
+            // taught mid-demo without one fake keypress.
+            if (flourish && screenRef.current === 'attract') {
+                const it = gs.items.find((i2) => i2.id === flourish.id && i2.state === 'in')
+                if (!it) flourish = null
+                else {
+                    const cc = it.cont === 'dw' ? DW : FR
+                    const sl = it.slot === null || it.slot === undefined ? 0 : it.slot
+                    const p = rackSlot(cc, sl % RACK_CAP)
+                    const q = 5.5 + Math.sin(tick * 0.22) * 1.1
+                    ctx.strokeStyle = 'rgba(95,200,222,0.9)'; ctx.lineWidth = 1.3
+                    for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+                        ctx.beginPath()
+                        ctx.moveTo(p.x + sx * q, p.y + sy * q - sy * 2.6)
+                        ctx.lineTo(p.x + sx * q, p.y + sy * q)
+                        ctx.lineTo(p.x + sx * q - sx * 2.6, p.y + sy * q)
+                        ctx.stroke()
+                    }
+                    ctx.font = 'bold 5px monospace'; ctx.textAlign = 'center'
+                    ctx.fillStyle = 'rgba(143,224,238,0.9)'
+                    ctx.fillText('AIMED', p.x, p.y - q - 2.5)
+                }
+            }
+            // #2343 reach arc (presentation-only): the retrieved item flies from
+            // its slot into the front arm over 8 ticks with a small dip-arc and
+            // a fading tail. The sim resolved the pull in one tick — only the
+            // show changed. The vacated slot blinks amber so the eye catches
+            // WHICH stow left (the direction-pull teaching beat).
+            if (pullAnim) {
+                pullAnim.t++
+                const cc = pullAnim.c === 'dw' ? DW : FR
+                const sp = rackSlot(cc, pullAnim.slot % RACK_CAP)
+                if (pullAnim.t <= 4) {
+                    ctx.fillStyle = `rgba(255,210,63,${0.75 * (1 - pullAnim.t / 4)})`
+                    circle(ctx, sp.x, sp.y, 3.6 + pullAnim.t * 0.9); ctx.fill()
+                }
+                if (pullAnim.t > 8) pullAnim = null
+                else {
+                    const k = pullAnim.t / 8
+                    const hx = gs.rx, hy = gs.ry - 16
+                    const ax = sp.x + (hx - sp.x) * k
+                    const ay = sp.y + (hy - sp.y) * k - Math.sin(k * Math.PI) * 9
+                    for (let i = 1; i <= 3; i++) {
+                        const kk = Math.max(0, k - i * 0.09)
+                        const tx2 = sp.x + (hx - sp.x) * kk
+                        const ty2 = sp.y + (hy - sp.y) * kk - Math.sin(kk * Math.PI) * 9
+                        ctx.fillStyle = `rgba(255,233,168,${0.22 - i * 0.06})`
+                        circle(ctx, tx2, ty2, 2.4 - i * 0.5); ctx.fill()
+                    }
+                    drawItem(ctx, pullAnim.kind, ax, ay, 0.72)
+                }
+            }
             // #2258 arrival ring scale-out where the glide completed
             if (ringPop) {
                 ringPop.t++
@@ -697,6 +775,7 @@ const TidyBotGame = () => {
             watchingRef.current = false; setWatching(false) // #1637 a new shift starts in your hands
             goto = null; gotoLevel = 0 // #2250 fresh shift, no stale orders
             clearAim() // #2338
+            flourish = null; pullAnim = null // #2343
             setEnd(null)
             setMode('play')
             audioController.playTone(262, 0.08, 'square', 0.06)
@@ -829,6 +908,7 @@ const TidyBotGame = () => {
                 parts.length = 0
                 goto = null // #2250 contract resets clear the glide too
                 clearAim() // #2338 and the aim mark
+                flourish = null; pullAnim = null // #2343
                 setEnd(null)
                 setMode('play')
             },
@@ -902,6 +982,11 @@ const TidyBotGame = () => {
                     return a
                 },
                 aimed: () => aim,
+                // #2343 QA hooks: the attract mark (item id or -1) and the live
+                // reach-arc (null when nothing is in flight).
+                flourish: () => (flourish ? flourish.id : -1),
+                attractNow: () => setMode('attract'), // #2343 QA: hand the screen to the demo, keep this gs
+                pullAnim: () => (pullAnim ? { c: pullAnim.c, slot: pullAnim.slot, kind: pullAnim.kind, t: pullAnim.t } : null),
                 rackSlot,
                 DW, FR, TABLE, COUNTER, VIEW_W, VIEW_H,
             }

@@ -538,9 +538,12 @@ export function step(gs, pads) {
                     }
                 }
                 if (!it) it = pool.find((i2) => KINDS[i2.kind].to !== openC.id) || pool[pool.length - 1]
+                const fromSlot = it.slot === null || it.slot === undefined ? -1 : it.slot // #2343 read it BEFORE takeInto clears the slot
                 takeInto(gs, it)
+                // #2343: the ev names WHICH cavity gave it up — the shell's reach-arc
+                // and vacated-slot flash need the rack position, not just the slot.
                 gs.ev.push({ type: 'retrieve', kind: it.kind, x: gs.rx, y: gs.ry, aimed,
-                    slot: it.slot === null || it.slot === undefined ? -1 : it.slot })
+                    slot: fromSlot, c: openC.id })
             } else if (gs.dwRun) softBuzz(gs)
             else if (nearBody(gs.dw, gs.rx, gs.ry)) {
                 if (dwLoaded(gs) > 0 || SIMHOOKS.freeRun) {
@@ -733,6 +736,28 @@ export function aimAt(gs, tx, ty) {
         return { ok: true, c: c.id, id: best.id, x: p.x, y: p.y }
     }
     return miss
+}
+
+// #2343 attract flourish picker (presentation-only): names the stow the attract
+// demo should MARK and visibly pull next — the lowest-slot stow in an open cavity
+// (washer first). Pure like aimAt: it never writes, so seed + pads determinism is
+// untouched, and the shell overlays the id on pad.aim only in attract — the
+// autopilot itself keeps emitting aim-free pads, so the win-proof rides the
+// unchanged law byte-for-byte. null = nothing stowed to name yet.
+export function flourishPick(gs) {
+    for (const c of CONTAINERS) {
+        const cc = c.id === 'dw' ? gs.dw : gs.fr
+        if (!isOpen(cc)) continue
+        let best = null
+        let bs = Infinity
+        for (const it of gs.items) {
+            if (it.state !== 'in' || it.cont !== c.id) continue
+            const sl = it.slot === null || it.slot === undefined ? 0 : it.slot
+            if (sl < bs) { bs = sl; best = it }
+        }
+        if (best) return { id: best.id, kind: best.kind, c: c.id, slot: bs }
+    }
+    return null
 }
 
 export function routeDir(gs, tx, ty) {

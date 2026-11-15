@@ -69,6 +69,26 @@ didn't say MODERN.
   B is the COMMIT gesture — it must never clear the mark at keydown (a harness
   bug the browser gate caught by name).
 
+## Polish pass (#2343): the demo sells the aim, the pull shows the reach
+- **Attract flourish (overlay, not autopilot).** `flourishPick(gs)` (pure, in
+  `sim.js`) names the lowest-slot stow in an open cavity; the attract loop
+  overlays its id on the pad (`p.aim`), so the demo MARKS the stow (teal
+  brackets + AIMED) and the autopilot's own B pulls it. The autopilot itself
+  still never emits an aim (the #2338 purity gate protects that law), so WATCH,
+  contracts and every win-proof ride the unchanged pads byte-for-byte. A
+  900-tick watchdog re-picks when a loop misses; level changes reset the mark.
+- **Reach arc + vacated-slot flash (presentation-only, shell).** The `retrieve`
+  ev now carries `c` (the cavity) AND fixes a latent bug: `slot` was read AFTER
+  `takeInto` cleared it — every ev said `-1`. The shell arcs the item from the
+  slot into the front arm over 8 draw ticks (with a fading tail + amber blink on
+  the empty slot); the sim still resolves the pull in one tick. QA hooks
+  `pullAnim()` / `flourish()` / `attractNow()` drive the gates.
+- **Rack glyphs 0.62 → 0.78** — slots guarantee spacing since #2338, and small
+  glyphs read poorly (GardenGuard #2331 precedent).
+- Gates: `tidycheck` 103→113 (picker purity/determinism/shut-door, ev
+  cavity+slot plumbing, overlay source-pin, live arc lifecycle, attract marks
+  the cup by itself); mutants `overlay-stripped` and `ev-c-dropped` die by name.
+
 ## Core rules (what the harness proves)
 - Containers really open: the washer rack / fridge door slide (`door` 0→1,
   ~22 ticks) and BLOCK the floor while open. A door that finds the robot on

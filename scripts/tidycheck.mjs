@@ -23,6 +23,7 @@
 //           aimed-retrieve gates go red)
 
 import * as s from '../src/games/TidyBot/sim.js'
+import { readFileSync } from 'node:fs'
 
 const args = process.argv.slice(2)
 const NODE_ONLY = args.includes('--node')
@@ -47,7 +48,7 @@ applyMut()
 const {
     makeGame, step, autopilot, playthrough, loadLevel, blockers,
     DW, FR, CONTAINERS, LEVEL_TIME, KINDS, LEVELS, ROBOT_R, REACH,
-    rackSlot, aimAt, RACK_CAP,
+    rackSlot, aimAt, RACK_CAP, flourishPick,
 } = s
 
 
@@ -544,6 +545,51 @@ section('aimed retrieve + rack slots (#2338)')
     ok(pureDefault && gW.end === 'win', 'the autopilot never aims and still wins — the default law is the prover law')
 }
 
+section('polish pass (#2343): flourish picker + pull-anim plumbing')
+{
+    const atZoneP = (g) => { g.dw.door = 1; g.dw.target = 1; g.dw.cd = 0; g.rx = 79; g.ry = 58 }
+    const stowP = (g, it) => { it.state = 'held'; g.held = it.id; step(g, [{ a: true }]) }
+
+    const g0 = makeGame(42)
+    ok(flourishPick(g0) === null, 'flourishPick names nothing while no cavity is open with a stow inside')
+
+    const gf = makeGame(42); atZoneP(gf)
+    const pF = gf.items.find((it) => it.kind === 'plate')
+    const cF = gf.items.find((it) => it.kind === 'cup')
+    stowP(gf, pF); stowP(gf, cF)
+    const pk = flourishPick(gf)
+    ok(pk && pk.id === pF.id && pk.slot === 0 && pk.c === 'dw', 'flourishPick names the lowest-slot stow in the open cavity')
+    gf.dw.door = 0; gf.dw.target = 0
+    ok(flourishPick(gf) === null, 'flourishPick marks nothing through a SHUT door — the brackets would be buried')
+    gf.dw.door = 1; gf.dw.target = 1
+
+    // determinism + purity: the pick rides attract pads, so hash replay must not move
+    const gP = makeGame(42); atZoneP(gP)
+    stowP(gP, gP.items.find((it) => it.kind === 'plate')); stowP(gP, gP.items.find((it) => it.kind === 'cup'))
+    const p2 = flourishPick(gP)
+    ok(pk && p2 && pk.id === p2.id && pk.kind === p2.kind, 'the flourish pick is deterministic under the same seed')
+    const hashRun = (withPick) => {
+        const g = makeGame(7)
+        let h = 0
+        for (let i = 0; i < 120; i++) { if (withPick) flourishPick(g); h = step(g, [autopilot(g)]).hash }
+        return h
+    }
+    ok(hashRun(true) === hashRun(false), 'flourishPick never writes — seed + autopilot replay hash-identical with the picker running')
+
+    // the flourish rides attract pads ONLY: pin the overlay in the shell source.
+    // (the gate above pins that autopilot itself never emits an aim — move the
+    // aim into the autopilot and THAT gate goes red, protecting the win-proof)
+    const shellSrc = readFileSync(new URL('../src/games/TidyBot/index.jsx', import.meta.url), 'utf8')
+    ok(/if \(flourish !== null\) p\.aim = flourish\.id/.test(shellSrc), 'the demo aims only through the attract overlay (source-pinned #2343)')
+
+    // the retrieve ev names the cavity — the arc and the slot-flash place by it
+    const gE = makeGame(42); atZoneP(gE)
+    stowP(gE, gE.items.find((it) => it.kind === 'apple'))
+    step(gE, [{ b: true }])
+    const rv = gE.ev.find((e) => e.type === 'retrieve')
+    ok(rv && rv.c === 'dw' && rv.slot >= 0, 'the retrieve ev names the cavity AND the vacated slot (#2343 arc plumbing)')
+}
+
 if (!NODE_ONLY) {
     section('browser — boots, starts, walks, plays')
     const { openGame, launch, requireDevServer } = await import('./lib/harness.mjs')
@@ -769,6 +815,53 @@ if (!NODE_ONLY) {
             return { a, b }
         })
         ok(det.a === det.b, 'live contract: seed 4242 + pads = identical hash twice')
+
+        // #2343 reach arc: after a pull the animation lives ~8 draw ticks,
+        // names the vacated dw slot, and hands off to the front arm; then the
+        // attract loop (released) marks a stow of its own.
+        const arc = await page.evaluate(async () => {
+            const g = window.__game
+            const t = window.__tidybotTest
+            g.reset(31415)
+            const gs = t.sim()
+            gs.dw.door = 1; gs.dw.target = 1; gs.dw.cd = 0
+            gs.rx = 79; gs.ry = 58
+            const apple = gs.items.find((it) => it.kind === 'apple')
+            apple.state = 'in'; apple.cont = 'dw'; apple.slot = null
+            await new Promise((r) => setTimeout(r, 80)) // one live frame heals the slot
+            g.step({ b: true }, 1)
+            const a1 = t.pullAnim()
+            let n = 0
+            while (t.pullAnim() && n < 40) {
+                g.step({}, 1)
+                await new Promise((r) => setTimeout(r, 16))
+                n++
+            }
+            const a2 = t.pullAnim()
+            const held = g.state().held
+            g.release()
+            // attract proof: stow into an OPEN cavity, hand the screen to the
+            // demo, and watch it mark the cup on its own first tick.
+            g.reset(42)
+            const gs2 = t.sim()
+            gs2.dw.door = 1; gs2.dw.target = 1; gs2.dw.cd = 0
+            const cup2 = gs2.items.find((it) => it.kind === 'cup')
+            cup2.state = 'in'; cup2.cont = 'dw'; cup2.slot = null
+            t.attractNow()
+            g.release()
+            let fl = -1
+            let flKind = null
+            for (let i = 0; i < 90 && fl < 0; i++) {
+                await new Promise((r) => setTimeout(r, 50))
+                fl = t.flourish()
+                if (fl >= 0) flKind = t.sim().items.find((it) => it.id === fl)?.kind || '?'
+            }
+            return { a1, a2, held, n, fl, flKind, mode: g.state().mode || '' }
+        })
+        ok(arc.a1 && arc.a1.c === 'dw' && arc.a1.slot >= 0 && arc.a1.kind === 'apple' && arc.held === 'apple',
+            `a retrieve animates the item from its slot (${JSON.stringify(arc.a1)})`)
+        ok(arc.a2 === null && arc.n >= 2, 'the reach arc dies when the front arm takes the item')
+        ok(arc.fl >= 0 && arc.flKind === 'cup', `the attract demo marks the stowed cup on its own (${arc.flKind}@${arc.fl})`)
 
         ok(errors.length === 0, `zero page errors through the whole drive${errors.length ? ` (${errors[0]})` : ''}`)
     } finally {
