@@ -537,6 +537,23 @@ the kitchen, with nobody home or not.
   lands, source pins). Mutant: zero `s.yarnCd = YARN_CD` — exactly the two
   cooldown gates go red (521 → 519/2); restore.
 
+## Canopy bed (#2272) — the wing gets a bedroom
+
+The Spare Room finally sells furniture that reads bedroom. **Canopy Bed** is
+catalog card 18 (`DEF.canopy`): `§260`, solid, and `wingOnly` — `canPlace`
+accepts it only on `EXT_ROOM.floor` once `ext` stands, so before the hammer
+it fits no cell and after it the house floor still refuses. It shares the
+bed's sleep law via `def.sleep` (night rides to dawn, the sleeper ignores
+need decay, `applyHourAt` pays `+0.13` energy per hour, Zzz and the slow
+wake ring draw for every sleeper — the old `id === 'bed'` checks are gone),
+and it is premium: `cozy 0.055` vs the bed's `0.03` per second, so a midday
+nap tops the tank where a bed nap can't. The sprite is walnut posts, gold
+finials, a wine canopy with a scalloped hem and a rose quilt. The shelf
+chrome grew with it: card widths are `shelfCW(n)` per open shelf, so HOME
+carries seven. The attract bot buys it behind `roomkit`. Gates: `npm run
+peoplecheck` §CANOPY (fit law, economy incl. half-back sell, premium nap
+arithmetic, night clause, hash, pins).
+
 ## Honest gaps (filed to QA #…)
 - **CLOSED by #1806:** multiple rooms — one expansion ships: the Spare Room kit
   grows a wing on the east lawn (floor/walls/door/windows, connectivity-guarded,
@@ -546,7 +563,8 @@ the kitchen, with nobody home or not.
   residents react to the build. #2076 taught the bond law on the attract
   marquee (the bonds line of that list). #2135's pass closed chat speech
   bubbles, the cooling log lines and the C/X marquee + reach-ring tell.
-  Still open: wing-themed furniture, and choosing WHICH two share the ring.
+  **CLOSED by #2272:** wing-themed furniture — the Canopy Bed (§ above).
+  Still open: choosing WHICH two share the ring.
 - **CLOSED by #1823 (QA pass):** walk-surface step timbre (plank/gravel/lawn)
   and the red ghost-cell flash on refused placements.
 - **PARTIAL by #1817 + #2070 + #2131:** bonds climb the chat loop, unlock a topic/

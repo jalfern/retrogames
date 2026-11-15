@@ -262,7 +262,7 @@ export const tileOf = (px, py) => {
 // ------------------------------------------------------------- catalog ------
 // solid pieces block walking; décor pieces don't. `need`/`amt`/`dur` drive use.
 export const CATALOG = [
-    { id: 'bed', name: 'Cozy Bed', price: 210, h: 1, solid: true, need: 'energy', amt: 0.3, dur: 9 },
+    { id: 'bed', name: 'Cozy Bed', price: 210, h: 1, solid: true, need: 'energy', amt: 0.3, dur: 9, sleep: true, cozy: 0.03 },
     { id: 'fridge', name: 'Fridge', price: 160, h: 1, solid: true, need: 'hunger', amt: 0.5, dur: 3 },
     { id: 'stove', name: 'Stove', price: 200, h: 1, solid: true, need: 'hunger', amt: 0.9, dur: 6 },
     { id: 'toilet', name: 'Porcelain Throne', price: 120, h: 1, solid: true, need: 'bladder', amt: 0.95, dur: 3 },
@@ -279,6 +279,7 @@ export const CATALOG = [
     { id: 'petkit', name: 'Adopt a Cat', price: PET.price, h: 1, solid: false, pet: true },
     { id: 'kidkit', name: 'Adopt a Child', price: KID.price, h: 1, solid: false, kid: true },
     { id: 'yarn', name: 'Yarn Ball', price: 60, h: 1, solid: false, decor: true, need: 'fun', amt: 0.25, dur: 3, catOnly: true },   // #2256: card 17, the cat's own toy
+    { id: 'canopy', name: 'Canopy Bed', price: 260, h: 1, solid: true, need: 'energy', amt: 0.3, dur: 9, sleep: true, cozy: 0.055, wingOnly: true },   // #2272: card 18, the wing's bedroom bed — sleeps deeper, fits nowhere else
 ]
 export const DEF = Object.fromEntries(CATALOG.map((d) => [d.id, d]))
 export const NEEDS = ['hunger', 'energy', 'fun', 'social', 'bladder']
@@ -342,7 +343,7 @@ export const MEAL_COLD_LINES = [
 // catalog with category tabs — flip shelves, each shelf few big cards.
 // Union of these shelves covers CATALOG exactly, no duplicates (STORES gate).
 export const CAT_TABS = [
-    { id: 'HOME', ids: ['bed', 'fridge', 'stove', 'toilet', 'shower', 'phone'] },
+    { id: 'HOME', ids: ['bed', 'fridge', 'stove', 'toilet', 'shower', 'phone', 'canopy'] },
     { id: 'FUN', ids: ['tv', 'radio', 'book', 'sofa', 'yarn'] },
     { id: 'DECOR', ids: ['plant', 'rug', 'lamp'] },
     { id: 'SPECIAL', ids: ['roomkit', 'petkit', 'kidkit'] },
@@ -934,6 +935,11 @@ export function tryUse(s, p) {
 // ---------------------------------------------------------- building ------
 export function canPlace(s, def, r, c) {
     if (r < 0 || c < 0 || r + def.h - 1 >= ROWS || c >= COLS) return false
+    // #2272: the wing's bedroom bed — it fits ONLY on the wing's floorboards.
+    // Before the hammer falls those cells are lawn; after it, they are the
+    // room. Either way the refusal is the same rule: the bed belongs to the
+    // bedroom, so the Spare Room finally sells furniture that reads bedroom.
+    if (def.wingOnly && !(s.ext && EXT_ROOM.floor.some(([fr, fc]) => fr === r && fc === c))) return false
     for (let rr = r; rr < r + def.h; rr++) {
         if (groundOf(s, rr, c) === 'wall') return false
         if (solidAt(s, rr, c)) return false
@@ -1992,7 +1998,8 @@ export function ivyChatPool(s) {
     return base
 }
 function doneLine(s, p, def, before) {
-    if (def.id === 'bed') return pick(s, [`${p.name} sleeps like a log.`, `${p.name} dreamed about flying.`])
+    if (def.id === 'canopy') return pick(s, [`${p.name} sleeps under the canopy — deep, dark, wonderful.`, `${p.name} wakes slow; the canopy kept the morning out.`, `${p.name} comes down from the wing stretched and grinning.`])
+    if (def.sleep) return pick(s, [`${p.name} sleeps like a log.`, `${p.name} dreamed about flying.`])
     if (def.id === 'mail') return ''
     if (def.id === 'paper') return pick(s, [`${p.name} reads the funny pages, front to back.`, `${p.name} does the crossword in two minutes flat.`, `${p.name} folds the paper with the comics left out.`])
     if (def.id === 'meal') return pick(s, [`${p.name} eats every bite, fingers and all.`, `${p.name} licks the plate — the bells outdid themselves.`, `${p.name} sits down and gets up slower and happier.`])
@@ -2020,7 +2027,7 @@ function applyHourAt(s, hh) {
     const night = hh >= 22 || hh < 6
     for (const p of s.people) {
         if (p.working) continue
-        const sleeping = !!(p.use && p.use.def.id === 'bed')
+        const sleeping = !!(p.use && p.use.def.sleep)
         for (const n of NEEDS) {
             if (sleeping) {
                 if (n === 'energy') p.needs.energy = Math.min(1, p.needs.energy + 0.13)
@@ -2133,7 +2140,7 @@ export function advance(s, dt) {
         }
         // emergencies: only PHYSICAL needs unattended collapse into a faint
         // (sad and bored is life, not death — like the original)
-        const asleep = !!(p.use && p.use.def.id === 'bed')
+        const asleep = !!(p.use && p.use.def.sleep)
         // any need crossing into red raises a one-shot alarm pulse on the mood gem
         // (advisory only — collapse is still governed by PHYS redT below)
         if (asleep) { for (const n of NEEDS) p.wasRed[n] = false }
@@ -2178,8 +2185,8 @@ export function advance(s, dt) {
         // executing an interaction
         if (p.use) {
             p.use.t += simDt
-            if (p.use.def.id === 'bed') p.needs.energy = Math.min(1, p.needs.energy + 0.03 * simDt)
-            const done = p.use.def.id === 'bed' ? (p.use.night ? (s.hour >= 6 && s.hour < 22) : p.use.t >= p.use.dur) : p.use.t >= p.use.dur
+            if (p.use.def.sleep) p.needs.energy = Math.min(1, p.needs.energy + p.use.def.cozy * simDt)
+            const done = p.use.def.sleep ? (p.use.night ? (s.hour >= 6 && s.hour < 22) : p.use.t >= p.use.dur) : p.use.t >= p.use.dur
             if (done) finishUse(s, p)
             continue
         }
@@ -2314,7 +2321,7 @@ export function bot(s) {
         // issue's own tour). Roomkit used to eat the whole register at daybreak,
         // the cat ate the next payday, and the §300 wall starved the kid card
         // out of every demo: 9/9 seeds won with Pip unadopted (README gap).
-        const wants = ['phone', 'petkit', 'kidkit', 'roomkit', 'stove', 'tv', 'sofa', 'radio', 'book', 'shower', 'plant', 'lamp', 'rug']
+        const wants = ['phone', 'petkit', 'kidkit', 'roomkit', 'canopy', 'stove', 'tv', 'sofa', 'radio', 'book', 'shower', 'plant', 'lamp', 'rug']
         for (const id of wants) {
             const def = DEF[id]
             // #1814: the attract build grows the lot so the demo sells the

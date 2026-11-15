@@ -207,6 +207,22 @@ export function drawItemAt(ctx, id, x, y, t) {
             ctx.fillStyle = '#3c5f92'; ctx.fillRect(x + 5, y + 24, 22, 2)
             break
         }
+        case 'canopy': {
+            // #2272: four walnut posts, gold finials, a wine canopy with a
+            // scalloped hem, rose quilt — reads bedroom at a glance.
+            ctx.fillStyle = '#4a2f1b'
+            ctx.fillRect(x + 2, y + 1, 3, 29); ctx.fillRect(x + 27, y + 1, 3, 29)
+            ctx.fillStyle = '#ffd24a'; ctx.fillRect(x + 2, y, 3, 2); ctx.fillRect(x + 27, y, 3, 2)
+            ctx.fillStyle = '#7e3b5e'; ctx.fillRect(x + 2, y + 1, 28, 6)
+            ctx.fillStyle = '#9c4a74'
+            for (let i = 0; i < 4; i++) ctx.fillRect(x + 3 + i * 7, y + 7, 5, 2)
+            ctx.fillStyle = '#efe4d0'; ctx.fillRect(x + 5, y + 12, 22, 8)
+            ctx.fillStyle = '#fff7e6'; ctx.fillRect(x + 7, y + 13, 8, 5)
+            ctx.fillStyle = '#a34a68'; ctx.fillRect(x + 5, y + 19, 22, 10)
+            ctx.fillStyle = '#c25e80'; ctx.fillRect(x + 5, y + 19, 22, 2)
+            ctx.fillStyle = '#7e3350'; ctx.fillRect(x + 5, y + 26, 22, 1)
+            break
+        }
         case 'fridge': {
             ctx.fillStyle = '#e8eef2'; ctx.fillRect(x + 6, y + 3, 20, 26)
             ctx.fillStyle = '#c2cdd6'; ctx.fillRect(x + 6, y + 12, 20, 2)
@@ -502,11 +518,11 @@ export function drawPerson(ctx, p, t, active, fx = null, lean = 0) {
     }
     // working tie peek / interaction ring
     if (p.use) {
-        const frac = Math.min(1, p.use.t / (p.use.def.id === 'bed' ? 20 : p.use.dur))
+        const frac = Math.min(1, p.use.t / (p.use.def.sleep ? 20 : p.use.dur))
         ctx.strokeStyle = active ? '#ffd24a' : '#ffffff'
         ctx.lineWidth = 2
         ctx.beginPath(); ctx.arc(x, y + 14, 9, -1.57, -1.57 + frac * 6.283); ctx.stroke()
-        if (p.use.def.id === 'bed') {
+        if (p.use.def.sleep) {
             ctx.fillStyle = '#cfe0f2'
             ctx.font = 'bold 9px monospace'
             ctx.fillText('z', x + 8 + (Math.floor(t * 2) % 2) * 2, y - 14 - (Math.floor(t * 2) % 2) * 2)
@@ -1022,9 +1038,12 @@ export function drawTopBar(ctx, s) {
 export const TRAY_H = 56
 // tray geometry shared by draw + hit-test. #2222: cards are sized to the
 // widest shelf (6) — flipping shelves beats the old 35px wall of sixteen.
-const TRAY_CW = Math.floor((PANEL_X - 12 - 5 * 4) / 6)
 const TAB_H = 13
 const CARD_Y = 17     // card row top, below the tab row
+// #2272: shelves hold different counts now (HOME carries the Canopy Bed) —
+// cards fill the tray whichever shelf is open, so a seventh card never runs
+// off the panel edge.
+const shelfCW = (n) => Math.max(48, Math.floor((PANEL_X - 12 - (n - 1) * 4) / n))
 
 export function drawCatalog(ctx, s) {
     const y = H - TRAY_H
@@ -1043,7 +1062,7 @@ export function drawCatalog(ctx, s) {
         ctx.fillText(t.id, x + (tw - 4) / 2, y + 2 + TAB_H / 2 + 0.5)
     })
     const cards = tabCards(s)
-    const cw = TRAY_CW, gap = 4
+    const cw = shelfCW(cards.length), gap = 4
     cards.forEach((gi, k) => {
         const d = CATALOG[gi]
         const x = 6 + k * (cw + gap)
@@ -1077,7 +1096,7 @@ export function tabHit(px, py) {
 export function catalogHit(px, py, s) {
     if (py < H - TRAY_H + CARD_Y) return -1
     const cards = tabCards(s)
-    const cw = TRAY_CW, gap = 4
+    const cw = shelfCW(cards.length), gap = 4
     const k = Math.floor((px - 6) / (cw + gap))
     if (k >= cards.length) return -1
     if (k < 0 || px - 6 - k * (cw + gap) > cw) return -1
