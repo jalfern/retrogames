@@ -28,6 +28,17 @@ cells the fly passes stay lit ~5 ticks (it ignites what it touches — even
 air), and the gap in the tube floor at col 22 lets the player climb up and
 play chicken: enter between the trail cooling and the next pass, or die.
 
+## Firefly polish (#2374, renderer only — the sim is untouched)
+- **Dust tint**: `meta.dust` lists the seam cells; the painter gives them a dry
+  gold sparkle so the bored-open door reads before it ignites. dashcheck pins
+  the marks stay exactly the two ignitable seam cells.
+- **Comet trail**: the shell keeps the fly's last 10 cells (`trail`, decays per
+  CA tick) and paints them as fading amber — the shuttle lane is telegraphed.
+- **Corridor chirp**: the fly's first corridor entry per level plays a distant
+  two-tone warning (`alarmed`). Attract runs the same loop, so the demo teaches
+  the escape unprompted. Mobile at 640x426 `?lite=1`: pad mounted, stick push
+  or canvas tap each step one cell (verified 8/8, zero page errors).
+
 ## The planner (`planStep` / `planRun` in sim.js)
 BFS over diggable cells to the nearest gem (gems are doors, never corridors —
 tunneling through a vein drops it), then to the exit; one arrow every
@@ -43,10 +54,11 @@ crush releases the seat silently. DEV probes: `__dashTest.watching()`,
 
 ## Verify
 ```bash
-npm run dashcheck             # 54 checks: every cave winnable, replay
+npm run dashcheck             # 56 checks: every cave winnable, replay
                               # determinism, rule pins (crush, gem-dirt, fire),
-                              # FLY RELEASE (#2364: escape, containment, chicken)
-npm run dashcheck -- --mutate # 61: +7 — every CFG switch silenced goes red
+                              # FLY RELEASE (#2364: escape, containment, chicken;
+                              # #2374: dust-mark seam pin)
+npm run dashcheck -- --mutate # 63: +7 — every CFG switch silenced goes red
 DEV_PORT=<p> npm run watchcheck -- --only boulder-dash  # 182: seat pilot + pins
 ```
 
