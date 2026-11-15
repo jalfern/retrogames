@@ -98,6 +98,75 @@ const ArenaArcheryGame = () => {
         const held = new Set()
         let demo = null, demoG = null, demoBy = null
 
+        // #2314 climb juice: the world must SAY the climb happened. Every
+        // effect is DERIVED from the sim's own transitions (the sim stays
+        // pure — it never knows a puff exists):
+        //   land:    air -> grounded; the fall is measured from the air's top,
+        //            so a one-row step lands true. Puff ring at the feet,
+        //            squash, and a thud whose pitch drops with the fall.
+        //   take-off: grounded -> air on a jump press — a stretch.
+        //   head-bump: a jump press that CANNOT leave the ground. The sim's
+        //            'jump' event only fires on success, so a wasted press is
+        //            derived from the input: one dull tock per airtime,
+        //            latched, so a held key doesn't rattle.
+        // Dust ages in WORLD time (per sim tick): it freezes on pause, like
+        // the stone.
+        const puffs = []            // {x, y, r, age, life}
+        const squash = [0, 0]       // sim ticks: >0 land squash, <0 take-off stretch
+        const airTop = [null, null]
+        const prevGrounded = [true, true]
+        const prevAlive = [true, true]
+        const airPress = [false, false]
+        let landCount = 0, blockCount = 0
+
+        const resetJuice = () => {
+            puffs.length = 0
+            for (let i = 0; i < 2; i++) {
+                squash[i] = 0; airTop[i] = null
+                prevGrounded[i] = true; prevAlive[i] = true; airPress[i] = false
+            }
+            landCount = 0; blockCount = 0
+        }
+
+        const detectJuice = (in1, in2) => {
+            for (const u of puffs) u.age++
+            while (puffs.length && puffs[0].age >= puffs[0].life) puffs.shift()
+            for (let i = 0; i < 2; i++) {
+                const p = gs.p[i]
+                const inp = [in1, in2][i]
+                if (squash[i] > 0) squash[i]--
+                else if (squash[i] < 0) squash[i]++
+                if (!p.alive || !prevAlive[i]) {
+                    prevAlive[i] = p.alive; prevGrounded[i] = p.grounded; airPress[i] = false
+                    continue
+                }
+                if (!prevGrounded[i] && p.grounded) {
+                    const drop = airTop[i] != null ? p.y - airTop[i] : 0
+                    landCount++
+                    if (drop >= 12) {
+                        puffs.push({ x: p.x, y: p.y + 8, r: 4 + Math.min(8, drop * 0.12), age: 0, life: 42 })
+                        squash[i] = 6
+                        // the thud: a harder fall drops the pitch and holds it longer
+                        const d = Math.min(drop, 96)
+                        audioController.playTone(150 - (d - 8) * 0.7, 0.05 + d * 0.0004, 'sine', 0.05 + d * 0.0003)
+                    }
+                    airTop[i] = null
+                } else if (!p.grounded) {
+                    if (prevGrounded[i] && inp && inp.my > 0) squash[i] = -5 // take-off
+                    airTop[i] = Math.min(airTop[i] ?? p.y, p.y)
+                }
+                if (inp && inp.my > 0 && !prevGrounded[i] && !p.grounded && !airPress[i]) {
+                    blockCount++
+                    airPress[i] = true
+                    if (squash[i] >= 0) squash[i] = -3
+                    audioController.playTone(90, 0.04, 'sine', 0.035) // dull tock against stone
+                }
+                if (p.grounded) airPress[i] = false
+                prevAlive[i] = true
+                prevGrounded[i] = p.grounded
+            }
+        }
+
         const say = (m) => { toastMsg = m; toast = 110 }
 
         const paintBg = (g) => {
@@ -132,37 +201,61 @@ const ArenaArcheryGame = () => {
             c.restore()
         }
 
-        const drawArcher = (c, p, color) => {
+        const drawArcher = (c, p, color, sq) => {
             if (!p.alive) return
             if (p.invuln > 0 && Math.floor(p.invuln / 4) % 2) return
+            // #2314 squash on land, stretch on take-off — around the FEET, so
+            // the archer pushes into the stone instead of floating
+            const k = sq > 0 ? sq / 6 : sq < 0 ? -sq / 5 : 0
+            const sy = sq > 0 ? 1 - 0.22 * k : 1 + 0.18 * k
+            const sx = 2 - sy
+            c.save()
+            c.translate(p.x, p.y + 8)
+            c.scale(sx, sy)
             c.fillStyle = color
-            c.fillRect(p.x - 6, p.y - 4, 12, 12)
-            c.fillRect(p.x - 4, p.y - 12, 8, 7)
+            c.fillRect(-6, -12, 12, 12)
+            c.fillRect(-4, -20, 8, 7)
             c.strokeStyle = '#f2f5ff'
             c.lineWidth = 2
             const m = Math.hypot(p.aimX, p.aimY) || 1
             const ax = p.aimX / m, ay = p.aimY / m
             c.beginPath()
-            c.moveTo(p.x + ax * 10 - ay * 7, p.y + ay * 10 + ax * 7)
-            c.lineTo(p.x + ax * 10 + ay * 7, p.y + ay * 10 - ax * 7)
+            c.moveTo(ax * 10 - ay * 7, ay * 10 + ax * 7 - 8)
+            c.lineTo(ax * 10 + ay * 7, ay * 10 - ax * 7 - 8)
             c.stroke()
             if (p.firing && p.charge > 0.02) {
                 c.strokeStyle = '#ffd23e'
                 c.beginPath()
-                c.moveTo(p.x + ax * 10 - ay * 7, p.y + ay * 10 + ax * 7)
-                c.lineTo(p.x + ax * (10 - p.charge * 8), p.y + ay * (10 - p.charge * 8))
-                c.lineTo(p.x + ax * 10 + ay * 7, p.y + ay * 10 - ax * 7)
+                c.moveTo(ax * 10 - ay * 7, ay * 10 + ax * 7 - 8)
+                c.lineTo(ax * (10 - p.charge * 8), ay * (10 - p.charge * 8) - 8)
+                c.lineTo(ax * 10 + ay * 7, ay * 10 - ax * 7 - 8)
                 c.stroke()
                 c.fillStyle = '#ffd23e'
-                c.fillRect(p.x - 10, p.y - 20, Math.max(2, p.charge * 20), 3)
+                c.fillRect(-10, -28, Math.max(2, p.charge * 20), 3)
             }
+            c.restore()
         }
 
         const paint = () => {
             const g = screenRef.current === 'attract' && demoG ? demoG : gs
+            const play = screenRef.current === 'play'
             if (bgDirty) paintBg(g)
             ctx.clearRect(0, 0, PXW, PXH)
             ctx.drawImage(bg, 0, 0)
+            // #2314 landing dust: a ring that widens and thins at the feet
+            if (play) {
+                for (let i = puffs.length - 1; i >= 0; i--) {
+                    const u = puffs[i]
+                    if (u.age >= u.life) { puffs.splice(i, 1); continue }
+                    const t = u.age / u.life
+                    ctx.globalAlpha = 0.5 * (1 - t)
+                    ctx.fillStyle = '#b9c2d8'
+                    ctx.beginPath()
+                    ctx.arc(u.x, u.y - 2, u.r + t * 9, 0, Math.PI * 2)
+                    ctx.fill()
+                }
+                ctx.globalAlpha = 1
+            }
             for (const s of g.stuck) {
                 drawArrowShape(ctx, (s.cell % g.W) * CW + CW / 2, Math.floor(s.cell / g.W) * CW + CW / 2, s.ang || 0.6, true)
             }
@@ -170,8 +263,8 @@ const ArenaArcheryGame = () => {
                 if (ar.state === 'stuck') continue
                 drawArrowShape(ctx, ar.x, ar.y, Math.atan2(ar.vy, ar.vx), ar.state === 'fall')
             }
-            drawArcher(ctx, g.p[0], '#ff5d6c')
-            drawArcher(ctx, g.p[1], '#4ad7ff')
+            drawArcher(ctx, g.p[0], '#ff5d6c', play ? squash[0] : 0)
+            drawArcher(ctx, g.p[1], '#4ad7ff', play ? squash[1] : 0)
         }
 
         const handleEvents = (evts) => {
@@ -201,6 +294,7 @@ const ArenaArcheryGame = () => {
             arenaIdx = ((idx % ARENAS_COUNT) + ARENAS_COUNT) % ARENAS_COUNT
             gs = makeGame(buildArena(arenaIdx))
             held.clear()
+            resetJuice()
             bgDirty = true
             setMode('play')
             say(m === '2p' ? 'DUEL — FIRST TO 3' : 'YOU vs THE BOT — FIRST TO 3')
@@ -234,6 +328,7 @@ const ArenaArcheryGame = () => {
             gs.cmds.push({ tick: gs.tick, p1: in1, p2: in2 })
             const before = gs.events.length
             step(gs, in1, in2)
+            detectJuice(in1, in2)
             handleEvents(gs.events.splice(before))
             if (gs.end) gameOver()
         }
@@ -335,6 +430,8 @@ const ArenaArcheryGame = () => {
                     // attract is a separate sim instance — the harness grades
                     // THAT moving, not the idle gs
                     demo: demoG ? { tick: demoG.tick, end: demoG.end, scores: [demoG.p[0].score, demoG.p[1].score] } : null,
+                    // #2314 juice is derived-only — the counters are its receipt
+                    juice: { puffs: puffs.length, landings: landCount, blocked: blockCount },
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),
@@ -350,6 +447,7 @@ const ArenaArcheryGame = () => {
                         gs.cmds.push({ tick: gs.tick, p1: i1, p2: i2 })
                         const before = gs.events.length
                         step(gs, i1, i2)
+                        detectJuice(i1, i2)
                         handleEvents(gs.events.splice(before))
                     }
                     if (gs.end) gameOver()

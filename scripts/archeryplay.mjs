@@ -154,5 +154,30 @@ page.on('pageerror', () => { pageErrors++ })
     r.check('R restarts a fresh duel', re.screen === 'play' && re.scores.join() === '0,0', `${re.screen} ${re.scores.join()}`)
 }
 
+// ------------------------------------------------- climb juice (#2314) ----
+{
+    // juice is DERIVED from the sim's grounded transitions — the sim stays
+    // pure, the component owns the dust. Receipt: drive real step() ticks
+    // (both seats on the proven skill-1 brain, which climbs arena 0), and a
+    // landing inside a 30-tick chunk MUST still be wearing its puff when the
+    // chunk's probe lands (puff life 42 > chunk 30, and the probe runs in
+    // the same evaluate — no RAF tick can age it out in between).
+    const res = await page.evaluate(() => {
+        const t = window.__archeryTest
+        let seenPuff = false, landed = 0, blocked = 0
+        for (let k = 0; k < 40; k++) {
+            if (t.probe().screen !== 'play') break
+            t.drive(30)
+            const j = t.probe().juice
+            if (j.landings > landed && j.puffs > 0) seenPuff = true
+            landed = j.landings; blocked = j.blocked
+        }
+        return { seenPuff, landed, blocked, over: t.probe().screen !== 'play' }
+    })
+    r.check('landings are counted through a real match', res.landed > 0, `landings=${res.landed}`)
+    r.check('a climb landing puffs dust at the feet (derived, not scripted)', res.seenPuff, `landings=${res.landed} puff=${res.seenPuff}`)
+    if (res.blocked > 0) console.log(`  (head-bumps tocked: ${res.blocked})`)
+}
+
 r.check('zero page errors across the whole session', pageErrors === 0, `errors=${pageErrors}`)
 r.exit(browser)
