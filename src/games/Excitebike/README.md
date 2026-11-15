@@ -74,3 +74,27 @@ faster heat.
 - The NES splash screen (EDIT TRACK / 6 tracks) is not here: two carved
   tracks, 2 laps each, which is where the fidelity muscle (controls,
   feel, terrain) actually lives.
+
+## Juice layer (#2387)
+
+All presentation, zero sim state — `excitecheck` receipts are untouched by
+design and re-ran 103/103 after the pass:
+
+- **Flyby** pays its pop at the RIVAL's position (`+150` floats off their
+  position with a white ring flash + gold sparkle), not just your nose.
+- **Rank churn** flashes like the NES: every net position gained/lost pops
+  `+n POS` / `-n POS` over your bike with a rising/falling tone.
+- **Per-rival engines**: every rival in earshot gets a synth hum — volume
+  from the probe gap (`r.d - g.total`), pitch from ITS speed — and a rival
+  closing on your back winds its pitch UP as the jolt pre-tell, paired with
+  a flashing amber rear chevron.
+- **Hit riders lean**: a bumped rival tips a decaying sinewave a few frames
+  (`leans[name]`); the jolted player snaps their own wheel (`leanYou`).
+- **Wreck scars**: a wipeout (rival or you) leaves a dirt mound + oiled skid
+  mark ON THE TERRAIN (world-x pinned, lap-wrapped) while the rider walks
+  the bike back; it dries out after the remount (`rup`).
+- **Tumble is a story, not a flicker**: rider comes OFF and flips a few
+  frames, bike parks nose-in-dirt while they walk it back, then a hop and
+  they're on. The `#2391` amber chevron stays through all three phases.
+- **Landing dust for everyone**: player and rivals puff on a firm touchdown
+  (pre-step `vy < -1.4`; rivals also on a nose-high `|pitch| > 0.2` slap).
