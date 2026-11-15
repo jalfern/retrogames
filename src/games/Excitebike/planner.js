@@ -22,6 +22,7 @@ function score(g) {
     if (g.stall > 0) s -= 9000
     if (g.hot) s -= 40
     s -= g.heat * 3
+    s += g.score * 0.05            // #2391: booked points (boosts, flybys) count a little
     if (g.end === 'win') s += 999999
     if (g.end === 'time') s -= 888888
     return s
@@ -79,22 +80,49 @@ export function decide(g, mem) {
     // ("nudge it to hop when a lip is near") manufactured a trap where the
     // bike hopped impotently in front of the wall forever.
     const Hh = Math.max(H, Math.round(150 / Math.max(1.2, g.v)) + 26)
+    // #2391: a downed rival BLOCKS the lane (wrecks are solid). At the normal
+    // horizon the slam looks inevitable and the least-bad candidate still eats
+    // it; stretched past the remount, the rollout genuinely sees "brake, wait
+    // for the rider to walk the bike back, ride on" — and that wins on points.
+    let Hw = Hh
+    let solidAhead = false
+    for (const r of g.rivals) {
+        const gap = r.d - g.total
+        if (r.down > 0 && gap > 0 && gap < 360) { Hw = Math.max(Hw, r.down + 60); solidAhead = true }
+    }
     const lip = lipAhead(tr, x, 60)
     void lip
     const opts = []
     opts.push({ g: true })
     opts.push({ g: true, j: true })                       // hop now
     if (g.v > CFG.maxHigh * 0.7) opts.push({ g: true, b: true })   // lift off the gas into heat
+    if (solidAhead) opts.push({ b: true })                // #2391: coast to a stop before the wreck
     const cand = opts.map((o) => ({ ...inp, ...o }))
     let best = null
     for (const c of cand) {
         const st = structuredClone(g)
-        for (let k = 0; k < Hh; k++) {
+        for (let k = 0; k < Hw; k++) {
             step(st, { ...c, j: k === 0 && c.j })
             if (st.end) break
         }
         const s = score(st)
         if (best === null || s > best.s) best = { s, inp: c }
+    }
+    // #2391: "hop NOW" only flies over a wreck if the geometry lines up at
+    // this exact tick. Sweep delayed takeoffs (gas for k, then hop) so the
+    // rollout LEARNS the launch point — the FLYBY then beats braking to a
+    // full stop in front of the pack. The answer this tick stays plain gas;
+    // as the gap shrinks the sweep converges onto the immediate hop.
+    if (solidAhead && !g.air) {
+        for (let d = 4; d <= 52; d += 4) {
+            const st = structuredClone(g)
+            for (let k = 0; k < Hw; k++) {
+                step(st, { g: true, j: k === d })
+                if (st.end) break
+            }
+            const s = score(st)
+            if (best === null || s > best.s) best = { s, inp: { ...inp, g: true } }
+        }
     }
     return best.inp
 }

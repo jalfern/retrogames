@@ -83,7 +83,7 @@ for (let i = 0; i < 2; i++) {
     const r = plan({
         track: i,
         onEvent: (e) => {
-            if (e.type === 'air' || e.type === 'boost' || e.type === 'lap' || e.type === 'finish') ledger += e.pts
+            if (e.type === 'air' || e.type === 'boost' || e.type === 'lap' || e.type === 'finish' || e.type === 'flyby') ledger += e.pts
         },
     })
     runs.push({ r, ledger })
@@ -140,10 +140,14 @@ const LEAGUE = []
     // on both tracks; SONJA repeats the MOTOCROSS jump lip every lap; IVAN
     // eats the SUPERCROSS whoop field twice. If the terrain, pace lines or
     // skill tiers move, these receipts move — and this section says so loudly.
+    // Skill tiers move, these receipts move — and this section says so loudly.
+    // #2391 update: the league now reacts to the player. On MOTOCROSS the
+    // bump at t818 (IVAN) changes his phase, and he lands CLEAN at the lip on
+    // lap 2 — IVAN's old lap-2 receipt retired honestly as a consequence of
+    // contact, SONJA keeps hers. SUPERCROSS receipts unchanged.
     const RECEIPTS = {
         0: [
             { t: 480, name: 'SONJA', x: 1367 },
-            { t: 1908, name: 'IVAN', x: 1365 },
             { t: 1951, name: 'SONJA', x: 1367 },
         ],
         1: [
@@ -218,6 +222,177 @@ const LEAGUE = []
     {
         const again = replay(0)
         ok(JSON.stringify(again.crashes.map((c) => [c.t, c.name])) === JSON.stringify(LEAGUE[0].crashes.map((c) => [c.t, c.name])), 'rival wipeouts are not deterministic — attract lies')
+    }
+}
+
+// ------------------------------------------------------- contact (#2391) ----
+section('CONTACT (the league is solid — receipts exact, #2391)')
+{
+    // The law: flybys pay for crossing bodies airborne, downed rivals are
+    // SOLID (wipeout or hold, never a ride-through), a fast close onto a
+    // riding back bumps (momentum transfers) and over the crash line wipes
+    // out, a rival catching your back swerves. One drama per pair per
+    // contactCool. The campaign replay above shows the pack engaged:
+    // exact counts, exact first-crossings, both tracks.
+    const replayContact = (i) => {
+        const g = makeGame(i, {})
+        const hits = []
+        for (let k = 0; k < runs[i].r.script.length; k++) {
+            step(g, runs[i].r.script[k])
+            for (const e of g.events) {
+                if (e.type === 'flyby' || e.type === 'bump' || e.type === 'jolt') {
+                    const q = g.rivals.find((x) => x.name === e.name)
+                    hits.push({ t: g.tick, type: e.type, name: e.name, down: q ? q.down > 0 : false })
+                }
+                if (e.type === 'crash') hits.push({ t: g.tick, type: 'crash', name: '', why: e.why })
+            }
+            g.events.length = 0
+        }
+        return hits
+    }
+    const WANTS = {
+        0: {
+            flybys: 5, bumps: 4, jolts: 0, crashes: 0,
+            firstFlyby: { t: 553, name: 'SONJA', overWreck: true },
+            overAllFive: true,
+        },
+        1: {
+            flybys: 9, bumps: 3, jolts: 0, crashes: 0,
+            firstFlyby: { t: 573, name: 'IVAN', overWreck: true },
+        },
+    }
+    const contactRuns = [0, 1].map(replayContact)
+    contactRuns.forEach((hits, i) => {
+        const w = WANTS[i]
+        const fl = hits.filter((h) => h.type === 'flyby')
+        const bu = hits.filter((h) => h.type === 'bump')
+        const jo = hits.filter((h) => h.type === 'jolt')
+        const cr = hits.filter((h) => h.type === 'crash')
+        ok(fl.length === w.flybys, `track ${i + 1}: ${fl.length} flybys, want ${w.flybys}`)
+        ok(bu.length === w.bumps, `track ${i + 1}: ${bu.length} bumps, want ${w.bumps}`)
+        ok(jo.length === w.jolts && cr.length === w.crashes, `track ${i + 1}: jolt ${jo.length}/crash ${cr.length}, want 0/0 — the autopilot eats the new law`)
+        const f0 = fl[0]
+        ok(f0 && f0.t === w.firstFlyby.t && f0.name === w.firstFlyby.name,
+            `track ${i + 1}: first flyby was ${f0 ? `${f0.name}@t${f0.t}` : 'none'}, want ${w.firstFlyby.name}@t${w.firstFlyby.t}`)
+        ok(f0 && f0.down === w.firstFlyby.overWreck, `track ${i + 1}: the first flyby must clear a DOWNED rider (the wreck showcase)`)
+        if (w.overAllFive) {
+            const names = new Set(fl.map((h) => h.name))
+            ok(names.size === 5, `track 1: the pack was not fully passed on the air (${[...names].join(',')})`)
+        }
+        // one drama per pair: same-rival bumps never land inside contactCool
+        for (let a = 0; a < bu.length; a++) for (let b = a + 1; b < bu.length; b++) {
+            if (bu[a].name === bu[b].name) ok(bu[b].t - bu[a].t >= 90, `track ${i + 1}: ${bu[a].name} bumped twice in ${bu[b].t - bu[a].t} ticks — the derby clause is dead`)
+        }
+    })
+    // ---- synthetic rigs: each fires one rule at an exact tick ----------------
+    const rig = (v, gap, rv, down, airAlt) => {
+        const g = makeGame(0, { count: 0 })
+        const q = g.rivals.find((r) => r.name === 'KATO')
+        g.x = 2000; g.total = 2000
+        g.alt = groundY(track(0).ground, 2000) + (airAlt || 0)
+        g.v = v; g.onGround = !airAlt
+        q.d = 2000 + gap; q.v = rv; q.down = down
+        q.alt = groundY(track(0).ground, q.d % LAP); q.cool = 0
+        return { g, q }
+    }
+    // wreck solid: v5 closes on a frozen rival -> wipeout at t10, why wreck
+    {
+        const { g } = rig(5, 60, 0, 40)
+        let hit = null
+        for (let t = 1; t <= 30 && !hit; t++) {
+            step(g, { g: true })
+            for (const e of g.events) if (e.type === 'crash') hit = { t, why: e.why }
+            g.events.length = 0
+        }
+        ok(hit && hit.t === 10 && hit.why === 'wreck', `the wreck did not bite as scripted (${JSON.stringify(hit)}) — solid rivals are theatre`)
+    }
+    // the same rig with 20px of air is a clean flyby at the same tick, +150
+    {
+        const { g } = rig(5, 60, 0, 40, 20)
+        let hit = null
+        for (let t = 1; t <= 30 && !hit; t++) {
+            g.v = 5
+            step(g, {})
+            for (const e of g.events) if (e.type === 'flyby' || e.type === 'crash') hit = { t, type: e.type, score: g.score }
+            g.events.length = 0
+        }
+        ok(hit && hit.type === 'flyby' && hit.t === 10 && hit.score === 150, `flying the same line paid ${JSON.stringify(hit)}, want flyby@t10 150pts`)
+    }
+    // slow arrival at a wreck holds the bike (v→0) without a crash
+    {
+        const { g } = rig(0.5, 24, 0, 40)
+        let held = 0
+        for (let t = 1; t <= 40 && !held; t++) {
+            step(g, {})
+            if (g.v === 0 && g.crash === 0) held = t
+            g.events.length = 0
+        }
+        ok(held > 0 && held <= 30 && g.crash === 0, `a crawling bike at a wreck neither stopped nor crashed (held=${held}, crash=${g.crash}) — the lane is neither blocked nor solid`)
+    }
+    // bump: momentum transfers both ways at t4 (v 6.05 -> 5.04, KATO gains)
+    {
+        const { g, q } = rig(6, 24, 2, 0)
+        let hit = null
+        for (let t = 1; t <= 30 && !hit; t++) {
+            const v0 = g.v; const dv0 = q.v
+            step(g, { g: true })
+            for (const e of g.events) if (e.type === 'bump') hit = { t, cv: e.cv, lost: +(v0 - g.v).toFixed(2), rivalGain: +(q.v - dv0).toFixed(2) }
+            g.events.length = 0
+        }
+        ok(hit && hit.t === 4 && hit.cv > 1.6 && hit.cv < 3.4, `close onto a riding back did not bump as scripted (${JSON.stringify(hit)})`)
+        ok(hit && hit.lost > 0.8 && hit.rivalGain > 0.4, `the bump moved no one (${JSON.stringify(hit)}) — momentum transfer is theatre`)
+    }
+    // closing above the crash line wipes out: 'contact' at t2
+    {
+        const { g } = rig(6, 20, 0.2, 0)
+        let hit = null
+        for (let t = 1; t <= 30 && !hit; t++) {
+            step(g, { g: true })
+            for (const e of g.events) if (e.type === 'crash') hit = { t, why: e.why }
+            g.events.length = 0
+        }
+        ok(hit && hit.t === 2 && hit.why === 'contact', `slamming a crawling rival did not wipe the rider out (${JSON.stringify(hit)})`)
+    }
+    // jolt: a faster rival catching the player's back swerves at t8 (v x ~0.55)
+    {
+        const { g, q } = rig(1.6, -40, 5, 0)
+        let hit = null
+        for (let t = 1; t <= 30 && !hit; t++) {
+            step(g, {})
+            for (const e of g.events) if (e.type === 'jolt') hit = { t, name: e.name, rv: +q.v.toFixed(2) }
+            g.events.length = 0
+        }
+        ok(hit && hit.t === 9 && hit.rv < 3, `the catching rival did not swerve (${JSON.stringify(hit)}) — run-over theatre`)
+    }
+    // flyby pays ONCE per airborne pass (hover across the zone: one event)
+    {
+        const { g } = rig(2, 8, 2, 0, 20)
+        let n = 0
+        for (let t = 1; t <= 30; t++) {
+            g.v = 2
+            step(g, {})
+            g.alt = groundY(track(0).ground, g.x) + 20; g.air = true
+            for (const e of g.events) if (e.type === 'flyby') n++
+            g.events.length = 0
+        }
+        ok(n === 1 && g.score === 150, `hovering across a rider paid ${n} flybys (${g.score} pts) — the once-per-pass law is dead`)
+    }
+    // a ground pass at pace is exactly ONE rub (cooldown) — never a spam, and never silent
+    {
+        const { g } = rig(6, 30, 5, 0)
+        let n = 0
+        for (let t = 1; t <= 40; t++) {
+            step(g, { g: true })
+            n += g.events.filter((e) => ['bump', 'flyby', 'jolt', 'crash'].includes(e.type)).length
+            g.events.length = 0
+        }
+        ok(n === 1, `a ground pass made ${n} contact events, want exactly one rub per pass`)
+    }
+    // determinism: replay the campaign scripts twice — same contact receipts
+    {
+        const a = JSON.stringify(contactRuns[0].map((h) => [h.t, h.type, h.name]))
+        const b = JSON.stringify(replayContact(0).map((h) => [h.t, h.type, h.name]))
+        ok(a === b, 'contact receipts are not deterministic — attract lies')
     }
 }
 
@@ -464,7 +639,7 @@ if (MUT) {
         for (let k = 0; k <= c.k + 150 && k < LEAGUE[0].script.length; k++) { step(st, LEAGUE[0].script[k]); st.events.length = 0 }
         return st.rivals.find((x) => x.name === c.name).d - c.d < 250   // baseline: frozen + slow remount
     })
-    tryMut('rivalTolMul=9 (the league is crash-proof)', flat({ rivalTolMul: 9 }), () => replay0Crashes().hits.length === 3)
+    tryMut('rivalTolMul=9 (the league is crash-proof)', flat({ rivalTolMul: 9 }), () => replay0Crashes().hits.length === 2)
     tryMut('rivalTolMul=0.2 (even the front office falls)', flat({ rivalTolMul: 0.2 }), () => {
         for (const { i, script } of LEAGUE) {
             const g = makeGame(i, {})
@@ -475,6 +650,69 @@ if (MUT) {
             }
         }
         return true
+    })
+    // ---- contact mutants (#2391) — each edits one load-bearing clause ----
+    const rigMut = (v, gap, rv, down, airAlt) => {
+        const g = makeGame(0, { count: 0 })
+        const q = g.rivals.find((r) => r.name === 'KATO')
+        g.x = 2000; g.total = 2000
+        g.alt = groundY(track(0).ground, 2000) + (airAlt || 0)
+        g.v = v; g.onGround = !airAlt
+        q.d = 2000 + gap; q.v = rv; q.down = down
+        q.alt = groundY(track(0).ground, q.d % LAP); q.cool = 0
+        return { g, q }
+    }
+    const probeWreck = () => {
+        const { g } = rigMut(5, 60, 0, 40)
+        for (let t = 1; t <= 30; t++) {
+            step(g, { g: true })
+            if (g.events.some((e) => e.type === 'crash' && e.why === 'wreck')) return true
+            g.events.length = 0
+        }
+        return false
+    }
+    const probeFlyPts = () => {
+        const { g } = rigMut(5, 60, 0, 40, 20)
+        for (let t = 1; t <= 30; t++) {
+            g.v = 5
+            step(g, {})
+            if (g.events.some((e) => e.type === 'flyby') && g.score >= 150) return true
+            g.events.length = 0
+        }
+        return false
+    }
+    tryMut('contactK=0 (the whole contact law is paint — wrecks)', flat({ contactK: 0 }), probeWreck)
+    tryMut('contactK=0 (the whole contact law is paint — flyby pay)', flat({ contactK: 0 }), probeFlyPts)
+    tryMut('wreckV=9 (you can ride through a downed rider)', flat({ wreckV: 9 }), probeWreck)
+    tryMut('contactSwap=0 (the bump moves no one)', flat({ contactSwap: 0 }), () => {
+        const { g } = rigMut(6, 24, 2, 0)
+        for (let t = 1; t <= 30; t++) {
+            const v0 = g.v
+            step(g, { g: true })
+            if (g.events.some((e) => e.type === 'bump')) return v0 - g.v > 0.8
+            g.events.length = 0
+        }
+        return false
+    })
+    tryMut('contactCrash=9 (slamming a back is free)', flat({ contactCrash: 9 }), () => {
+        const { g } = rigMut(6, 20, 0.2, 0)
+        for (let t = 1; t <= 30; t++) {
+            step(g, { g: true })
+            if (g.events.some((e) => e.type === 'crash' && e.why === 'contact')) return true
+            if (g.events.some((e) => e.type === 'bump')) return false
+            g.events.length = 0
+        }
+        return false
+    })
+    tryMut('contactCool=0 (one pass, many drams)', flat({ contactCool: 0 }), () => {
+        const { g } = rigMut(6, 30, 5, 0)
+        let n = 0
+        for (let t = 1; t <= 40; t++) {
+            step(g, { g: true })
+            n += g.events.filter((e) => ['bump', 'jolt', 'flyby'].includes(e.type)).length
+            g.events.length = 0
+        }
+        return n === 1
     })
 }
 
