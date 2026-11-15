@@ -157,5 +157,78 @@ await page.waitForTimeout(1200)
 const mEnd = await mus()
 r.check('the rescued hour drops the bed at the princess door', mEnd.track !== 'pop' || !mEnd.playing, `track ${mEnd.track} playing ${mEnd.playing}`)
 
+// --- the phone page (#2324): ✋ GRAB = Shift by thumb, end to end -------------
+// A fresh touch page (keyboard untouched — trusted keys hide the pad by law).
+// Real CDP touch on [data-vc="c"] must reach the sim's Shift law: held, the
+// prince is capped to a walk (CFG.walk 1.45 vs run 2.6); released, he builds
+// back to a run. That single discriminator proves the whole chain — button →
+// synthesized keydown/keyup → the game's listener → the sim's walk cap — the
+// exact chain the hang/climb grammar stands on (the grab LAW is popcheck's).
+const phone = await openGame(browser, { url: URL, hook: '__popTest', viewport: { width: 390, height: 780 }, touch: true })
+const pErrors = []
+phone.on('pageerror', (e) => pErrors.push(String(e)))
+await phone.evaluate(() => {
+    window.__shiftLog = []
+    window.addEventListener('keydown', (e) => { if (e.code === 'ShiftLeft') window.__shiftLog.push('down') })
+    window.addEventListener('keyup', (e) => { if (e.code === 'ShiftLeft') window.__shiftLog.push('up') })
+})
+const pProbe = () => phone.evaluate(() => window.__popTest.probe())
+// tap-to-start on the canvas (no keys): the pad must survive its first tap
+const pcdp = await phone.context().newCDPSession(phone)
+const tapCanvas = async () => {
+    const r = await phone.evaluate(() => {
+        const b = document.querySelector('canvas').getBoundingClientRect()
+        return { x: b.x + b.width / 2, y: b.y + b.height / 2 }
+    })
+    await pcdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: r.x, y: r.y, id: 1 }] })
+    await phone.waitForTimeout(60)
+    await pcdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+}
+await tapCanvas()
+r.check('the phone page starts by TAP (attract gone, pad shown)',
+    (await pProbe()).attract === false && !!(await phone.$('[data-vc="c"]')))
+const cRect = await phone.evaluate(() => {
+    const b = document.querySelector('[data-vc="c"]')
+    if (!b) return null
+    const r = b.getBoundingClientRect()
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, key: b.dataset.key }
+})
+r.check('the pad carries a third held button, key ShiftLeft',
+    !!cRect && cRect.key === 'ShiftLeft', cRect ? `data-key ${cRect.key}` : 'no [data-vc="c"]')
+
+// stick anchor (left half) + the C button, both live at once
+const sAnchor = { x: 90, y: 600 }
+const pushRight = (pts) => pcdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts })
+const stickMove = (pts) => pcdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts })
+const touchEndBoth = (pts) => pcdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: pts })
+
+// baseline: thumb right, no grab — he must build to a run
+await pushRight([{ x: sAnchor.x, y: sAnchor.y, id: 1 }])
+await stickMove([{ x: sAnchor.x + 70, y: sAnchor.y, id: 1 }])
+await phone.waitForTimeout(620)
+const vxRun = Math.abs((await pProbe()).vx)
+r.check('thumb-right alone builds to a run', vxRun > 1.8, `vx ${vxRun.toFixed(2)}`)
+
+// hold ✋ while still pushed — Shift must cap him to a walk (both points live)
+await pushRight([{ x: sAnchor.x + 70, y: sAnchor.y, id: 1 }, { x: cRect.x, y: cRect.y, id: 2 }])
+const shiftsAfterDown = await phone.evaluate(() => window.__shiftLog.filter((k) => k === 'down').length)
+await phone.waitForTimeout(700)
+const vxGrab = Math.abs((await pProbe()).vx)
+r.check('holding ✋ caps him to a walk (Shift reaches the sim)', vxGrab <= 1.7, `vx ${vxGrab.toFixed(2)}`)
+r.check('one held press dispatches exactly one ShiftLeft keydown', shiftsAfterDown === 1, `downs ${shiftsAfterDown}`)
+
+// release ✋ but keep the thumb on the stick — the run must return (keyup law)
+await pcdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [{ x: sAnchor.x + 70, y: sAnchor.y, id: 1 }] })
+await touchEndBoth([{ x: cRect.x, y: cRect.y, id: 2 }])
+await pushRight([{ x: sAnchor.x, y: sAnchor.y, id: 1 }])
+await stickMove([{ x: sAnchor.x + 70, y: sAnchor.y, id: 1 }])
+await phone.waitForTimeout(700)
+const vxAFTER = Math.abs((await pProbe()).vx)
+const shiftsUp = await phone.evaluate(() => window.__shiftLog.filter((k) => k === 'up').length)
+r.check('lifting ✋ hands the run back (keyup reaches the sim)', vxAFTER > 1.8 && shiftsUp === 1, `vx ${vxAFTER.toFixed(2)}, ups ${shiftsUp}`)
+await touchEndBoth([])
+
+r.check('the phone page ran clean', pErrors.length === 0, pErrors.join(' | '))
+
 r.check('zero page errors', errors.length === 0, errors.join(' | '))
 r.exit(browser)

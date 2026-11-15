@@ -1442,5 +1442,23 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
         && SFX.gateClose({}).every((st) => ['tone', 'sweep', 'noise'].includes(st[0])))
 }
 
+// ---- 23. Phone GRAB (#2324): the pad's third held button, wired to Shift ----
+{
+    const here = dirname(fileURLToPath(import.meta.url))
+    const vcSrc = readFileSync(join(here, '..', 'src', 'components', 'VirtualControls.jsx'), 'utf8')
+    const idxSrc = readFileSync(join(here, '..', 'src', 'games', 'PrinceOfPersia', 'index.jsx'), 'utf8')
+    ok('VirtualControls accepts a thirdAction prop (default off)', /thirdAction\s*=\s*null/.test(vcSrc))
+    ok('C rides outside the pinned actzone, its own data-vc + code',
+        /data-vc="c"[\s\S]{0,120}data-key=\{thirdAction\.code\}/.test(vcSrc)
+        && !/<div data-vc="actzone"[\s\S]{0,600}data-vc="c"/.test(vcSrc))
+    ok('C hold dispatches keydown; release dispatches keyup',
+        /fire\(thirdAction\.code,\s*'keydown'\)/.test(vcSrc)
+        && /fire\(thirdAction\.code,\s*'keyup'\)/.test(vcSrc))
+    ok('blur/hide/touchcancel release a held C',
+        /const releaseAll[\s\S]{0,500}cPtr\.current = null[\s\S]{0,120}keyup/.test(vcSrc))
+    ok('PRINCE OF PERSIA wires ✋ to ShiftLeft',
+        /thirdAction=\{\{ label: '✋', code: 'ShiftLeft' \}\}/.test(idxSrc))
+}
+
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
 process.exit(fail ? 1 : 0)
