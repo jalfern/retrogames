@@ -276,7 +276,7 @@ for (let i = 0; i < 900; i++) {
 // multiple distances/attempts; a cell the discrete rings skip on one ping is
 // hit on the next (the trail rings interleave the 32-px jumps). ----
 {
-    let ringOk = false, ringPeak = -1, ringPlain = -1
+    let ringOk = false, ringPeak = -1, ringPlain = -1, recoveries = 0
     const innerGreen = (x, y) => page.evaluate(([x, y]) => {
         const c = document.querySelector('canvas[data-sonar-stage]')
         const d = c.getContext('2d').getImageData(x * 16 + 4, y * 16 + 4, 8, 8).data
@@ -286,7 +286,13 @@ for (let i = 0; i < 900; i++) {
     }, [x, y])
     for (let attempt = 0; attempt < 8 && !ringOk; attempt++) {
         const s0 = await probe()
-        if (s0.screen !== 'play') { await tap('KeyT'); await wait(500); continue }
+        if (s0.screen !== 'play') {
+            // the over screen eats keys for 900 ms — recover the run without
+            // burning measurement attempts on swallowed taps
+            if (++recoveries > 4) break
+            await tap('KeyT'); await wait(1100); attempt--
+            continue
+        }
         if (s0.cooldown > 1) { await wait(150); continue }
         let tx = -1, ty = -1
         for (const off of [[3, 0], [4, 0], [-3, 0], [-4, 0], [0, 3], [0, -3], [2, 0], [-2, 0]]) {
