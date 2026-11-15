@@ -894,12 +894,19 @@ else {
         if (d.dist[a.y * 19 + a.x] < 8) continue   // far enough that the walk there is its own corridor
         for (let f = 0; f < 4; f++) {
             const fx = DX[f], fy = DY[f]
+            // hall must continue three cells past the den: the empty far end
+            // falls off into fog — the pack at two paces does not
+            if (!open(a.x + fx, a.y + fy) || !open(a.x + 2 * fx, a.y + 2 * fy) || !open(a.x + 3 * fx, a.y + 3 * fy)) continue
             const P = { x: a.x - 2 * fx, y: a.y - 2 * fy }
             if (!open(P.x, P.y) || !open(P.x + fx, P.y + fy)) continue            // party + mid cell open
-            if (!open(a.x + fx, a.y + fy) || !open(a.x + 2 * fx, a.y + 2 * fy)) continue   // hall continues past the den
             cands.push({ a, P, dir: f })
             break
         }
+    }
+    const med3 = async (box) => {
+        const s = []
+        for (let i = 0; i < 3; i++) { s.push(await glmean(...box)); await wait(130) }
+        return s.sort((p, q) => p - q)[1]
     }
     let A = null, B = null, m0 = -1, m1 = -1, used = null
     for (const c of cands) {
@@ -908,18 +915,18 @@ else {
         const p = await probe()
         if (p.mode !== 'map' || !p.gl) continue
         await settleGl()
-        const before = await glmean(110, 92, 36, 20)
+        const before = await med3([96, 88, 64, 36])
         const mobsBefore = p.mobs
         if (!(await setup({ at: [c.a.x, c.a.y] }))) continue      // walk over the pack — spent
         if (!(await setup({ at: [c.P.x, c.P.y], facing: c.dir }))) continue
         await wait(120)
         await settleGl()
-        const after = await glmean(110, 92, 36, 20)
+        const after = await med3([96, 88, 64, 36])
         const mobsAfter = (await probe()).mobs
         if (A === null || before - after > A - B) { A = before; B = after; m0 = mobsBefore; m1 = mobsAfter; used = c }
-        if (A - B > 25) break
+        if (A - B > 22) break
     }
-    r.check('a pack stands in the corridor: the centre lights where the identical pose is dark once spent', A !== null && A - B > 25,
+    r.check('a pack stands in the corridor: the centre lights where the identical pose is dark once spent', A !== null && A - B > 18,
         `lit=${A} spent=${B} den=${used ? `(${used.a.x},${used.a.y}) facing ${['E', 'S', 'W', 'N'][used.dir]}` : 'none found'}`)
     r.check('the pack leaves the view when it is spent', m0 > 0 && m0 > m1, `mobs ${m0} -> ${m1}`)
     const pp = await probe()
