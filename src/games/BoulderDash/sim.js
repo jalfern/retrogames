@@ -11,8 +11,11 @@
 // you; a gem gives up and becomes dirt). Fire is a second automaton with a
 // timer: a burning cell ignites its flammable neighbours for a few ticks, then
 // burns out to empty — a chain that consumes a whole dust pocket. A firefly is
-// a third automaton: a fixed four-move cycle that touches everything it flies
-// over into flame, so standing still near one is fatal and the clock is shared.
+// a third automaton: it flies with momentum on the fixed four-direction cycle
+// (#2364), keeping its heading while the way is open and bouncing off obstacles
+// in cycle order — so it patrols every cell it can reach and ignites everything
+// it touches. Standing still near one is fatal, the clock is shared, and a pit
+// with an open corridor (FLY PIT's bored seam) lets it out into the cavern.
 //
 // Geometry, so the fall math reads clearly: cell (col,row), row 0 at the top,
 // gravity pulls toward larger row. A cell falls when the cell straight below it
@@ -35,8 +38,10 @@
 //   planner that actually digs the route, not a diamond count.
 // - Fire never lights STEEL. That is the one surface a chain reaction respects,
 //   and it is what makes a wall a strategy rather than decoration.
-// - The firefly cycle is fixed (down, right, up, left): its path is therefore
-//   knowable, and the level can be built so the planned route outruns it.
+// - The firefly's turn order is fixed (down, right, up, left) and its heading
+//   holds while the way is open (#2364): its path is therefore knowable, and
+//   the level can be built so the planned route outruns it — steel bounds its
+//   whole patrol, down to the last cell of its corridor.
 
 export const W = 40
 export const H = 22
@@ -65,6 +70,7 @@ export const CFG = {
     convert: true,                      // a fallen gem gives up and becomes dirt
     fireSpread: true,                   // fire lights flammable neighbours
     flyIgnite: true,                    // the firefly sets what it touches alight
+    flyTravel: true,                    // #2364: the fly holds its heading and bounces — it can leave the pit
     fallKill: true,                     // a falling boulder crushes the player
 }
 
@@ -254,17 +260,42 @@ function fire(g) {
 }
 
 // ------------------------------------------------------------- CA: firefly ----
-// Fixed four-move cycle; ignites whatever it flies onto (never steel). Because
-// the cycle never varies, the planner can be built to outrun it — and if the
-// cycle is disturbed the dashcheck firefly pin goes red.
+// Momentum (#2364): the fly HOLDS its heading while the way is open, and when
+// an obstacle — steel, boulder, diamond, the world edge — blocks it, it turns
+// in the fixed cycle order (down, right, up, left) until a heading opens. So
+// it patrols every cell it can reach, and escapes through any corridor the
+// player opens into its pit, igniting whatever it flies onto (never steel).
+// The turn order never varies, so the planner can still be built to outrun it;
+// if travel is silenced the dashcheck FLY RELEASE scenario goes red.
+// CFG.flyTravel = false reverts to the original net-zero orbit (rotate every
+// tick, steel-only block) — a firefly that could never leave a sealed box.
 function fireflies(g) {
     for (const f of g.flies) {
         g.flyAt[idx(f.x, f.y)] = -1
     }
+    // obstacles stop the fly dead; open space (air, fire) and dust let it pass.
+    const blocked = (x, y) => {
+        if (!inBounds(x, y)) return true
+        const t = g.grid[idx(x, y)]
+        return t === STEEL || t === BOULDER || t === DIAMOND
+    }
     for (const f of g.flies) {
-        const d = CFG.fireflyDirs[f.dir]
-        const nx = f.x + d[0], ny = f.y + d[1]
-        if (inBounds(nx, ny) && cell(g, nx, ny) !== STEEL) {
+        let nx, ny
+        if (CFG.flyTravel) {
+            let d = CFG.fireflyDirs[f.dir]
+            for (let tries = 1; blocked(f.x + d[0], f.y + d[1]) && tries < CFG.fireflyDirs.length; tries++) {
+                f.dir = (f.dir + 1) % CFG.fireflyDirs.length
+                d = CFG.fireflyDirs[f.dir]
+            }
+            nx = f.x + d[0]; ny = f.y + d[1]
+            if (blocked(nx, ny)) { nx = f.x; ny = f.y }          // boxed on all sides: wait it out
+        } else {
+            const d = CFG.fireflyDirs[f.dir]
+            nx = f.x + d[0]; ny = f.y + d[1]
+            if (!inBounds(nx, ny) || g.grid[idx(nx, ny)] === STEEL) { nx = f.x; ny = f.y }
+            f.dir = (f.dir + 1) % CFG.fireflyDirs.length
+        }
+        if (nx !== f.x || ny !== f.y) {
             f.x = nx; f.y = ny
             if (CFG.flyIgnite && g.grid[idx(nx, ny)] !== FIRE) {
                 g.grid[idx(nx, ny)] = FIRE
@@ -273,7 +304,6 @@ function fireflies(g) {
             }
             if (g.player.alive && g.player.x === nx && g.player.y === ny) killPlayer(g, 'fire')
         }
-        f.dir = (f.dir + 1) % CFG.fireflyDirs.length
     }
     for (const f of g.flies) if (inBounds(f.x, f.y)) g.flyAt[idx(f.x, f.y)] = f.id
 }

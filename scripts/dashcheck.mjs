@@ -53,6 +53,7 @@ const MUTANTS = {
     convert: 'fallen gems stay gems — the greed tax vanishes',
     fireSpread: 'fire stops spreading — there is no chain, only a match',
     flyIgnite: 'the firefly stops lighting things — no explosion at all',
+    flyTravel: 'the firefly stops holding its heading — the orbit never reaches the seam, the corridor stays empty',
     fallKill: 'a falling boulder stops crushing — the hazard is theatre',
 }
 
@@ -252,6 +253,71 @@ for (let i = 0; i < LEVELS.length; i++) {
         sim.playerMove(g, 'ArrowRight')
         ok(g.win === true && g.end === 'clear', 'the exit did not open when the quota WAS met — the win path is broken')
     }
+}
+
+// ------------------------------------------------------------ FLY RELEASE (#2364) ----
+{
+    section('FLY RELEASE (#2364) — momentum patrol out of the pit, cave still cannot burn')
+
+    // (a) the escape: the fly's first eastbound pass bores the dust seam and
+    // enters the roof corridor; the seam cells burn; the shuttle keeps coming
+    // back — a one-off lurch is not a patrol.
+    {
+        const { meta, grid } = buildLevel(3)
+        const g = sim.makeGame(meta, grid)
+        let escapeTick = -1, bored = false, prevIn = false, visits = 0
+        for (let t = 0; t < 140; t++) {
+            sim.step(g)
+            const f = g.flies[0]
+            if (escapeTick < 0 && f.x >= 17) escapeTick = g.tick
+            for (const e of g.events) if (e.type === 'ignite' && e.y === 8 && (e.x === 15 || e.x === 16)) bored = true
+            const inC = f.x >= 17
+            if (inC && !prevIn) visits++
+            prevIn = inC
+        }
+        ok(escapeTick >= 1 && escapeTick <= 10, `the fly did not reach the corridor within 10 ticks (got ${escapeTick}) — flyTravel or the seam is broken`)
+        ok(bored, 'the seam cells never ignited — the escape door was never bored open')
+        ok(visits >= 3, `the patrol entered the corridor only ${visits}× in 140 ticks — the shuttle dead-ended`)
+    }
+
+    // (b) containment invariant across the REAL planner win-run: the fly stays
+    // inside pit ∪ seam ∪ corridor every tick — neither fire nor fly can ever
+    // reach the harvest at row 18.
+    {
+        const { meta, grid } = buildLevel(3)
+        const g = sim.makeGame(meta, grid)
+        let viol = null
+        while (!g.end && g.tick < meta.timeTicks) {
+            if (g.tick % CFG.moveEvery === 0) { const d = sim.planStep(g); if (d) sim.playerMove(g, d) }
+            sim.step(g)
+            const f = g.flies[0]
+            const zone = (f.x >= 11 && f.x <= 28 && f.y === 8) || (f.x >= 11 && f.x <= 14 && f.y >= 4 && f.y <= 8)
+            if (!zone) viol = `tick ${g.tick} fly at ${f.x},${f.y}`
+        }
+        ok(g.win === true && g.have >= meta.need, `FLY PIT is not winnable with the corridor open (have ${g.have}/${meta.need}, end ${g.end})`)
+        ok(!viol, `the fly left pit∪seam∪corridor during a win-run (${viol}) — the harvest could burn`)
+    }
+
+    // (c) the gap game: the harness places the player at the shaft top under
+    // the floor gap (a real player digs there — the audit tests the collision
+    // law, not the dig). A climb that times the passes survives; a climb that
+    // stands in the corridor in the fly's path dies.
+    const climb = (upTick, downTick) => {
+        const { meta, grid } = buildLevel(3)
+        const g = sim.makeGame(meta, grid)
+        g.player.x = 22; g.player.y = 10
+        for (let t = 0; t < 120 && g.player.alive && !g.end; t++) {
+            if (g.tick === upTick) { sim.playerMove(g, 'ArrowUp'); sim.playerMove(g, 'ArrowUp') }   // shaft -> gap -> corridor
+            if (downTick >= 0 && g.tick === downTick) sim.playerMove(g, 'ArrowDown')                 // back down the shaft
+            sim.step(g)
+        }
+        return g.player.alive
+    }
+    // The corridor column stays lit for a few ticks after the fly passes (it
+    // ignites what it touches — even air), so the winning line threads
+    // between the trail cooling and the next pass arriving.
+    ok(climb(51, 56), 'a climb through the gap between two fly passes was fatal — the game of chicken has no winning line')
+    ok(!climb(44, -1), 'a player standing in the corridor survived the fly running over them — the gap is theatre, not hazard')
 }
 
 // -------------------------------------------------------------- mutation gate ----
