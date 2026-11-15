@@ -136,6 +136,7 @@ export const slotsLine = (slots) => {
         cell('builder-b', slots.b),
         cell('qa·studio', slots.qaStudio),
         cell('qa·mini', slots.qaMini),
+        cell('qa·mini·2', slots.qaMini2),
     ]
     const busy = [slots.a, slots.b].filter((s) => s && s.pid).length
     let fleet = null

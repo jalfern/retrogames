@@ -95,6 +95,7 @@ T_UP=false; pgrep -f 'opencode run.*THE FORGE on slot b\.' >/dev/null 2>&1 && T_
 # trial report can reconstruct session spans (who was alive, for how long).
 Q_UP=false; pgrep -f 'opencode run.*QA MASTER on node studio\.' >/dev/null 2>&1 && Q_UP=true
 M_UP=false; pgrep -f 'opencode run.*QA MASTER on node mini\.' >/dev/null 2>&1 && M_UP=true
+M2_UP=false; pgrep -f 'opencode run.*QA MASTER on node mini2\.' >/dev/null 2>&1 && M2_UP=true
 
 # Three panes, same names as the home terminal: Builder / QA·Mini / QA·MBP.
 # The studio's own oMLX server and the warden are plumbing, not lanes — they
@@ -108,7 +109,7 @@ S="{\"t\":\"$(date +%H:%M:%S)\",\"ts\":$(date +%s),\"load\":$LOAD,\"free\":${FRE
 \"tasks\":{$(task 'opencode run.*THE FORGE' builder),\
 \"mini\":{\"cpu\":$MC,\"rss\":$MR},\"mbp\":{\"cpu\":$BC,\"rss\":$BR}},\
 \"tps\":$TPS,\
-\"slots\":{\"a\":$S_UP,\"b\":$T_UP,\"qaStudio\":$Q_UP,\"qaMini\":$M_UP},\
+\"slots\":{\"a\":$S_UP,\"b\":$T_UP,\"qaStudio\":$Q_UP,\"qaMini\":$M_UP,\"qaMini2\":$M2_UP},\
 \"commit\":$(printf '%s' "$COMMIT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),\"act\":{\"builder\":$(act "$(readlink /tmp/forge/last.log)"),\"qa\":$(act "$(readlink /tmp/forge/last-qa.log)"),\"mbp\":$(act "$(readlink /tmp/forge/last-qa-mbp.log)")}}"
 
 python3 - "$LOCAL" "$S" <<'PYS'
@@ -285,6 +286,7 @@ slots = {
     'b': live('opencode run.*THE FORGE on slot b\\.'),
     'qaStudio': live('opencode run.*QA MASTER on node studio\\.'),
     'qaMini': live('opencode run.*QA MASTER on node mini\\.'),
+    'qaMini2': live('opencode run.*QA MASTER on node mini2\\.'),
 }
 try:
     v = open('/tmp/forge/studio-lanes.verdict').read().strip()

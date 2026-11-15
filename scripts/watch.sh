@@ -5,7 +5,8 @@
 #   scripts/watch.sh --kill   # close it
 #   scripts/watch.sh --live   # also show the model's tokens as they generate
 #                             # (a live pane right of BUILDER·A, BUILDER·B,
-#                             # QA·MINI and QA·STUDIO — one tap per stream, see
+#                             # QA·MINI, QA·MINI·2 and QA·STUDIO — one tap per
+#                             # stream, see
 #                             # scripts/tap.mjs and the com.jalfern.tap-*.plist
 #                             # jobs. Switching layouts: --kill first.)
 #
@@ -23,6 +24,9 @@
 #             and this pane shows that session instead.
 #   BUILDER·B (Studio, #1258) — the second builder slot, same model feed.
 #   QA·MINI  (model via the :18000 tunnel) — the session using omlxmini/...
+#             and naming node mini. (the \. matters: mini2 is its own pane)
+#   QA·MINI·2 (#2280, model via the :18000 tunnel too) — the mini's second
+#             QA slot; naming node mini2., tap :8014, dev :5179.
 #   QA·MBP   (model via the :18001 tunnel) — the session using omlxmbp/...
 #             (parked 2026-10-19; the pane stays and shows idle/DOWN)
 #   QA·STUDIO (Studio, model on :8000) — the second stream on the Studio
@@ -244,12 +248,13 @@ while true; do
     echo "WARDEN ${w##*/}"
     ln=$(tput lines 2>/dev/null); [[ $ln == <-> ]] || ln=6; (( ln < 6 )) && ln=6
     [[ -n "$w" ]] && tail -n $(( ln - 2 )) "$w" | cut -c1-$(tput cols)
-    state="$(live "$A1" "$Z1")$(live "$A2" "$Z2")$(live "$A3" "$Z3")$(live "$A4" "$Z4")$(live "$A5" "$Z5")"
+    state="$(live "$A1" "$Z1")$(live "$A2" "$Z2")$(live "$A3" "$Z3")$(live "$A4" "$Z4")$(live "$A5" "$Z5")$(live "$A6" "$Z6")"
     if [[ "$state" != "$last" ]]; then
         last=$state
-        # left-column panes, top to bottom: builder-a, builder-b, mini, mbp, studio, warden
+        # left-column panes, top to bottom: builder-a, builder-b, mini, mini2,
+        # mbp, studio, warden
         cols=("${(@f)$(tmux list-panes -F '#{pane_left} #{pane_top} #{pane_id} #{pane_height}' | awk '$1==0' | sort -n -k2)}")
-        n=5
+        n=6
         if (( ${#cols} != n + 1 )); then
             print -r -- "$(date '+%F %T') warden: ${#cols} panes at x=0, expected $(( n + 1 )) — a lane pane vanished" >> "${PWLOG:-/tmp/forge/watch/pane.log}"
         else
@@ -289,7 +294,7 @@ touch "$f"; exec tail -n 400 -F "$f"
 PANE
 }
 
-# Left column, top to bottom: BUILDER·A, BUILDER·B, QA·MINI, QA·MBP,
+# Left column, top to bottom: BUILDER·A, BUILDER·B, QA·MINI, QA·MINI·2, QA·MBP,
 # QA·STUDIO, WARDEN (sizes are set by the warden pane, above). A's pattern
 # matches slot a (or a pre-#1258 session) OR a QA item spilled into the
 # builder's slot; B is the second Studio builder (#1258).
@@ -310,17 +315,20 @@ tmux set-option -t "$SESSION" remain-on-exit on
 
 ENVK=(L='BUILDER·B' PORT=8000 PROV=omlx P1='opencode run.*THE FORGE on slot b' P2='\.')
 pane builder-b 'BUILDER·B' "$LANE_BODY" -v -l 70% -t "${PANEID[builder-a]}"
-ENVK=(L='QA·MINI' PORT=18000 PROV=omlxmini P1='opencode run.*omlx' P2='mini')
+ENVK=(L='QA·MINI' PORT=18000 PROV=omlxmini P1='opencode run.*omlx' P2='mini\.')
 pane qa-mini 'QA·MINI' "$LANE_BODY" -v -l 75% -t "${PANEID[builder-b]}"
+ENVK=(L='QA·MINI·2' PORT=18000 PROV=omlxmini P1='opencode run.*QA MASTER on node ' P2='mini2\.')
+pane qa-mini2 'QA·MINI·2' "$LANE_BODY" -v -l 75% -t "${PANEID[qa-mini]}"
 ENVK=(L='QA·MBP' PORT=18001 PROV=omlxmbp P1='opencode run.*omlx' P2='mbp')
-pane qa-mbp 'QA·MBP' "$LANE_BODY" -v -l 66% -t "${PANEID[qa-mini]}"
+pane qa-mbp 'QA·MBP' "$LANE_BODY" -v -l 66% -t "${PANEID[qa-mini2]}"
 ENVK=(L='QA·STUDIO' PORT=8000 PROV=omlx P1='opencode run.*QA MASTER on node ' P2='studio\.')
 pane qa-studio 'QA·STUDIO' "$LANE_BODY" -v -l 50% -t "${PANEID[qa-mbp]}"
 ENVK=(A1='opencode run.*(THE FORGE( on slot a)?|QA MASTER on node builder)' Z1='\.'
       A2='opencode run.*THE FORGE on slot b' Z2='\.'
-      A3='opencode run.*omlx' Z3='mini'
+      A3='opencode run.*omlx' Z3='mini\.'
       A4='opencode run.*omlx' Z4='mbp'
-      A5='opencode run.*QA MASTER on node ' Z5='studio\.' PWLOG=$WDIR/pane.log)
+      A5='opencode run.*QA MASTER on node ' Z5='studio\.'
+      A6='opencode run.*QA MASTER on node ' Z6='mini2\.' PWLOG=$WDIR/pane.log)
 pane warden 'WARDEN' "$WARDEN_BODY" -v -l 4 -t "${PANEID[qa-studio]}"
 
 # RETRO: a full-height pane on the right, 60% wide. `env -u TMUX` lets tmux
@@ -345,6 +353,8 @@ if (( LIVE )); then
     pane live-builderb 'LIVE-BUILDER·B' "$LIVE_BODY" -h -l 50% -t "${PANEID[builder-b]}"
     ENVK=(L='QA·MINI' LANE=mini TAPPORT=8013)
     pane live-mini 'LIVE-QA·MINI' "$LIVE_BODY" -h -l 50% -t "${PANEID[qa-mini]}"
+    ENVK=(L='QA·MINI·2' LANE=mini2 TAPPORT=8014)
+    pane live-mini2 'LIVE-QA·MINI·2' "$LIVE_BODY" -h -l 50% -t "${PANEID[qa-mini2]}"
     ENVK=(L='QA·STUDIO' LANE=studio TAPPORT=8011)
     pane live-studio 'LIVE-STUDIO' "$LIVE_BODY" -h -l 50% -t "${PANEID[qa-studio]}"
 fi
