@@ -90,7 +90,13 @@ export const SFX = {
     // #326-3: fingers scraping stone as weight goes onto the ledge — grit plus a
     // short downward drag, not the old single 220 Hz blip.
     grab: () => [noise(0.05, 0.09), sweep(300, 190, 0.09, 'triangle', 0.07)],
-    climb: () => [sweep(240, 420, 0.12, 'triangle', 0.12)],
+    // QA #2330-2: the stone grinds under a hanging prince — a long low saw grind.
+    // Low-registered and long, so it never reads as the grab's short high drag or
+    // the chain's tick rattle; it is the hang itself, audible from the first second.
+    strain: () => [noise(0.09, 0.13), sweep(150, 58, 0.22, 'sawtooth', 0.09)],
+    // QA #2330-2: the climb-up FINISH — a real hoist sweep capped with a bright
+    // note, not the old soft blip the phone never heard.
+    climb: () => [sweep(240, 540, 0.16, 'triangle', 0.14), tone(660, 0.08, 'sine', 0.08, 0.05)],
     swing: () => [sweep(900, 300, 0.08, 'sawtooth', 0.06)],
     hit: () => [noise(0.08, 0.2), tone(180, 0.1, 'square', 0.14)],
     hitPlayer: () => [noise(0.1, 0.22), tone(140, 0.14, 'square', 0.16), tone(90, 0.2, 'sine', 0.12, 0.04)],

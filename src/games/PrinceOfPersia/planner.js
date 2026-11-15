@@ -44,6 +44,14 @@ export function decide(g) {
     const room = Math.floor(fc / RW)
 
     if (p.hang) { inp.up = true; return inp }
+    // QA #2330-5: sell the ledge grammar. While falling, hold Shift so the early
+    // dungeon's drops catch a ledge and climb back up — the attract screen
+    // (and the WATCH pilot) then shows the whole grab → strain → climb chain a
+    // phone first-tap would otherwise never see. On shadow levels the shadow
+    // re-enacts these inputs 210 ticks late and the hang's extra delay breaks
+    // the pilot's shadow-lag budget (it loops on the spikes behind the ledge),
+    // so there the pilot jumps clean instead of grabbing.
+    if (!g.shadow && !p.onGround && p.vy > 0) inp.shift = true
     if (fc >= g.level.W - 1) return inp   // at the far wall
 
     // ---- lair of the shadow: at the exit threshold stand and let it merge ---
