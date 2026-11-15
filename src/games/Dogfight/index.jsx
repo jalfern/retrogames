@@ -5,9 +5,11 @@
 //   - flight model  → the chase cam is mounted to the SIM's own yaw/pitch/
 //     roll; whatever the sim says the nose is doing, that is where the world
 //     swings, so "pixels vs state" is the same audit in a browser as in Node,
-//   - instruments   → ASI (with the stall arc), altimeter, belt counter and
-//     throttle are DOM refs written straight from the sim each frame — the
-//     numbers a pilot actually flies by, never a React re-render storm,
+//   - instruments   → painted round period dials (#2316): ASI with stall arc
+//     and red band, two-hand altimeter — canvas faces from ./index.jsx's
+//     painters, needles driven straight from gs.p; the belt counter, throttle
+//     and the ASI/ALT number readouts stay DOM refs written each frame —
+//     the numbers a pilot actually flies by, never a React re-render storm,
 //   - determinism   → attract mode IS recordMission()'s proven witness fed
 //     back through the real step(), tick for tick; the DEV hook re-replays
 //     your live stream and compares hashes.
@@ -32,6 +34,138 @@ import { CFG, FIXED_DT, newGame, step, pilotInput, recordMission, replay, stateH
 import { MISSION_COUNT } from './levels.js'
 
 const GOLD = 2.399963229728653 // golden angle — deterministic puff offsets
+
+// ---- painted instruments (#2316) — round period dials, not text + bars ----
+// The face is static (bezel, cream dial, ticks, numerals, arcs) and cached per
+// canvas; only the needles move, painted straight from gs.p inside syncHud —
+// the same DOM-ref-from-sim pattern as the numbers (no React re-render storm).
+// The harness reads the needle angle off dataset.needle (deg, canvas coords:
+// 0° = 3 o'clock, clockwise) and demands ink on the face.
+const DIAL_PX = 96
+const RAD = Math.PI / 180
+const FACE_CACHE = new WeakMap()
+
+const ASI_MAX = 260 // kt on the dial
+const ASI_START = 135 // 0 kt sits at 7-8 o'clock, sweeping 270° clockwise
+const ASI_SWEEP = 270
+const ASI_STALL_KT = CFG.stall * 1.944 // ≈64 kt: below this the wing stops flying
+const ASI_RED = 200 // never-exceed band starts here
+const asiAngle = (kt) => ASI_START + ASI_SWEEP * Math.min(1, Math.max(0, kt / ASI_MAX))
+
+const paintDial = (c, build, needles) => {
+    if (!c) return
+    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    const px = Math.round(DIAL_PX * dpr)
+    if (c.width !== px) { c.width = px; c.height = px }
+    let e = FACE_CACHE.get(c)
+    if (!e || e.dpr !== dpr) {
+        e = { dpr, f: document.createElement('canvas') }
+        e.f.width = px; e.f.height = px
+        const f = e.f.getContext('2d')
+        f.setTransform(dpr, 0, 0, dpr, 0, 0)
+        build(f, DIAL_PX)
+        FACE_CACHE.set(c, e)
+    }
+    const ctx = c.getContext('2d')
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.clearRect(0, 0, px, px)
+    ctx.drawImage(e.f, 0, 0)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    needles(ctx, DIAL_PX)
+}
+
+// brass-rimmed cream face shared by both instruments
+const dialBody = (g, S) => {
+    const cx = S / 2, cy = S / 2
+    g.fillStyle = '#171310'; g.beginPath(); g.arc(cx, cy, S / 2 - 1, 0, 7); g.fill()
+    g.strokeStyle = '#8a6b33'; g.lineWidth = 2.5
+    g.beginPath(); g.arc(cx, cy, S / 2 - 2.5, 0, 7); g.stroke()
+    const faceR = S / 2 - 7
+    const rg = g.createRadialGradient(cx, cy * 0.75, 4, cx, cy, faceR)
+    rg.addColorStop(0, '#f2e7c4'); rg.addColorStop(1, '#d9c69a')
+    g.fillStyle = rg; g.beginPath(); g.arc(cx, cy, faceR, 0, 7); g.fill()
+    return { cx, cy, faceR }
+}
+
+const buildAsi = (g, S) => {
+    const { cx, cy, faceR } = dialBody(g, S)
+    g.lineCap = 'butt'
+    g.strokeStyle = '#b0201a'; g.lineWidth = 3.5 // stall arc + red band
+    g.beginPath(); g.arc(cx, cy, faceR - 4, asiAngle(0) * RAD, asiAngle(ASI_STALL_KT) * RAD); g.stroke()
+    g.beginPath(); g.arc(cx, cy, faceR - 4, asiAngle(ASI_RED) * RAD, asiAngle(ASI_MAX) * RAD); g.stroke()
+    for (let kt = 0; kt <= ASI_MAX; kt += 10) {
+        const major = kt % 40 === 0
+        const a = asiAngle(kt) * RAD
+        const r0 = faceR - (major ? 9 : 5.5)
+        g.strokeStyle = '#241c10'; g.lineWidth = major ? 1.6 : 1
+        g.beginPath()
+        g.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0)
+        g.lineTo(cx + Math.cos(a) * (faceR - 1.5), cy + Math.sin(a) * (faceR - 1.5))
+        g.stroke()
+        if (major && kt < ASI_MAX) {
+            g.fillStyle = '#241c10'
+            g.font = `bold ${Math.round(S * 0.1)}px ui-monospace, Menlo, monospace`
+            g.textAlign = 'center'; g.textBaseline = 'middle'
+            g.fillText(String(kt), cx + Math.cos(a) * (faceR - 16), cy + Math.sin(a) * (faceR - 16))
+        }
+    }
+}
+
+// altimeter: one turn = 1000 m (numerals = 100 m), short hand counts thousands
+const altAngle = (m) => -90 + 360 * ((m % 1000) / 1000)
+
+const buildAlt = (g, S) => {
+    const { cx, cy, faceR } = dialBody(g, S)
+    g.lineCap = 'butt'
+    for (let m = 0; m < 1000; m += 20) {
+        const major = m % 100 === 0
+        const a = altAngle(m) * RAD
+        const r0 = faceR - (major ? 9 : 5.5)
+        g.strokeStyle = '#241c10'; g.lineWidth = major ? 1.6 : 1
+        g.beginPath()
+        g.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0)
+        g.lineTo(cx + Math.cos(a) * (faceR - 1.5), cy + Math.sin(a) * (faceR - 1.5))
+        g.stroke()
+        if (major) {
+            g.fillStyle = '#241c10'
+            g.font = `bold ${Math.round(S * 0.1)}px ui-monospace, Menlo, monospace`
+            g.textAlign = 'center'; g.textBaseline = 'middle'
+            g.fillText(String(m / 100), cx + Math.cos(a) * (faceR - 16), cy + Math.sin(a) * (faceR - 16))
+        }
+    }
+}
+
+const dialNeedle = (g, cx, cy, deg, len, tail, w, color) => {
+    const a = deg * RAD
+    g.save(); g.translate(cx, cy); g.rotate(a)
+    g.strokeStyle = color; g.lineWidth = w; g.lineCap = 'round'
+    g.beginPath(); g.moveTo(-tail, 0); g.lineTo(len, 0); g.stroke()
+    g.restore()
+}
+
+const paintAsi = (c, kt) => {
+    if (!c) return
+    const deg = asiAngle(kt)
+    c.dataset.needle = deg.toFixed(1)
+    paintDial(c, buildAsi, (g, S) => {
+        const cx = S / 2, cy = S / 2, faceR = S / 2 - 7
+        dialNeedle(g, cx, cy, deg, faceR - 9, 9, 2, '#7c1208')
+        g.fillStyle = '#3b2f1d'; g.beginPath(); g.arc(cx, cy, 3.5, 0, 7); g.fill()
+    })
+}
+
+const paintAlt = (c, m) => {
+    if (!c) return
+    const deg = altAngle(m), deg2 = -90 + 360 * ((m % 10000) / 10000)
+    c.dataset.needle = deg.toFixed(1)
+    c.dataset.needle2 = deg2.toFixed(1)
+    paintDial(c, buildAlt, (g, S) => {
+        const cx = S / 2, cy = S / 2, faceR = S / 2 - 7
+        dialNeedle(g, cx, cy, deg2, faceR - 22, 7, 4, '#141210')
+        dialNeedle(g, cx, cy, deg, faceR - 8, 10, 2, '#141210')
+        g.fillStyle = '#3b2f1d'; g.beginPath(); g.arc(cx, cy, 3.5, 0, 7); g.fill()
+    })
+}
 
 const texFrom = (w, h, paint) => {
     const c = document.createElement('canvas')
@@ -472,8 +606,10 @@ const DogfightGame = () => {
             const h = hudRef.current
             const knots = Math.max(0, Math.round(p.v * 1.944))
             if (h.asi) h.asi.textContent = String(knots)
-            if (h.asiTape) h.asiTape.style.height = `${Math.min(100, (p.v / 130) * 100)}%`
-            if (h.alt) h.alt.textContent = String(Math.max(0, Math.round(p.y)))
+            paintAsi(h.asiDial, knots)
+            const altM = Math.max(0, p.y)
+            if (h.alt) h.alt.textContent = String(Math.round(altM))
+            paintAlt(h.altDial, altM)
             if (h.belt) h.belt.textContent = String(Math.max(0, p.belt))
             if (h.beltBar) h.beltBar.style.width = `${(Math.max(0, p.belt) / p.total) * 100}%`
             if (h.gunBar) {
@@ -694,16 +830,15 @@ const DogfightGame = () => {
             <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
                 <div className="absolute top-2 left-3 flex items-start gap-4 text-amber-50 font-mono">
                     <div className="bg-black/40 border border-amber-200/30 rounded px-2 py-1 text-center">
-                        <div className="text-[9px] tracking-widest opacity-70">AIRSPEED kt</div>
-                        <div id="dog-asi" ref={setHud('asi')} className="text-2xl font-bold text-amber-200 leading-6">0</div>
-                        <div className="w-3 h-24 bg-black/40 mt-1 relative overflow-hidden mx-auto rounded-sm">
-                            <div ref={setHud('asiTape')} className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-red-500 via-amber-300 to-emerald-300" style={{ height: '0%' }} />
-                        </div>
+                        <canvas data-dial="asi" ref={setHud('asiDial')} className="block" style={{ width: '96px', height: '96px' }} />
+                        <div className="text-[9px] tracking-widest opacity-70 mt-0.5">AIRSPEED kt</div>
+                        <div id="dog-asi" ref={setHud('asi')} className="text-lg font-bold text-amber-200 leading-5">0</div>
                     </div>
                     <div className="bg-black/40 border border-amber-200/30 rounded px-2 py-1 text-center">
-                        <div className="text-[9px] tracking-widest opacity-70">ALT m</div>
-                        <div id="dog-alt" ref={setHud('alt')} className="text-2xl font-bold text-sky-200 leading-6">0</div>
-                        <div ref={setHud('bank')} className="text-xl leading-6" style={{ transform: 'rotate(0deg)' }}>◹</div>
+                        <canvas data-dial="alt" ref={setHud('altDial')} className="block" style={{ width: '96px', height: '96px' }} />
+                        <div className="text-[9px] tracking-widest opacity-70 mt-0.5">ALT m</div>
+                        <div id="dog-alt" ref={setHud('alt')} className="text-lg font-bold text-sky-200 leading-5">0</div>
+                        <div ref={setHud('bank')} className="text-base leading-5" style={{ transform: 'rotate(0deg)' }}>◹</div>
                     </div>
                     <div className="bg-black/40 border border-amber-200/30 rounded px-2 py-1">
                         <div className="text-[9px] tracking-widest opacity-70">BELT</div>
