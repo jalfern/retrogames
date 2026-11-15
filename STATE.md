@@ -9,7 +9,8 @@
   aimed at the escape. Planner untouched — it re-aims from live px, so slack
   provably survives: 9/battery wins all three waves, proven run 49→54 (cap 84).
   Whoosh sfx + escape streak + `JINK PROOF` dev button. Live:
-  jalfern.com/retrogames/missile-battle (marker "JINK PROOF" in the lazy chunk).
+  jalfern.com/retrogames/missile-battle (Vercel commit-status success on
+  `56fcaf5`; `JINK PROOF` is DEV-only, not a prod marker — see catches).
 - Gates: `missilecheck` 366→376 (JINK section: quiet-sky silence, far-missile
   silence, away-direction, survive-outside-blast, spent-budget follow-up kill,
   5/5 smart bombs join the fight) + 3 named mutants die (`dodgeOn:false`,
@@ -70,6 +71,11 @@
   cancelled-latest as "unproven", dispatch a fresh one after landing a fix.
 - Slot b's #2364 comments were `FORGE:` without the slot prefix; the claim
   script still honoured liveness. My claims used the proper `FORGE (a):` shape.
+- **Prod-verify for jalfern.com: `curl -L` is mandatory** (apex 308→www; every
+  bare curl silently fetched 15 bytes of "Redirecting..."). And DEV-only strings
+  (`JINK PROOF`, DebugKit labels) never ship — the authoritative prod signal is
+  `gh api .../commits/<sha>/status` = `success Vercel` plus a 200 on the game
+  route (property-name greps through the SPA proxy proved unreliable here).
 
 ## Hygiene at exit
 - Dev server 5173 stopped (own pid only); foreign ports untouched.
