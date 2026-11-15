@@ -103,6 +103,22 @@ const ExcitebikeGame = () => {
                 else if (e.type === 'stall') { say('STALLED — PUMP!'); audioController.playNoise(0.2, 0.07) }
                 else if (e.type === 'unstall') { say('BACK ON!'); audioController.playSweep(240, 620, 0.2, 'square', 0.06) }
                 else if (e.type === 'crash') { say('CRASH!'); audioController.playNoise(0.3, 0.09); burst(scrX, g2s(gs.alt) - 6, 16, '#d07c30'); shake = 9 }
+                else if (e.type === 'rcrash') {
+                    // a rival wiped out (#2384): dd is the lap-aware gap from
+                    // the player; on screen the rival sits at 84+dd (the draw
+                    // window is (-20, W+20), i.e. dd in (-104, W-64+20)).
+                    const dd = ((e.x - gs.x + LAP * 1.5) % LAP) - LAP / 2
+                    if (dd > -104 && dd < W - 64) {
+                        say(e.name + ' DOWN!')
+                        audioController.playNoise(0.22, 0.07); audioController.playTone(130, 0.18, 'sawtooth', 0.05)
+                        burst(scrX + dd, g2s(groundY(track(gs.track).ground, e.x)) - 6, 12, '#8a5a1a')
+                        if (Math.abs(dd) < 90) shake = 5
+                    }
+                }
+                else if (e.type === 'rup') {
+                    const dd = ((e.x - gs.x + LAP * 1.5) % LAP) - LAP / 2
+                    if (dd > -104 && dd < W - 64) audioController.playTone(240, 0.08, 'square', 0.04)
+                }
                 else if (e.type === 'slam') { say('SLAM!'); audioController.playNoise(0.14, 0.06); shake = 5 }
                 else if (e.type === 'lap') { say('LAP ' + e.lap + '  +' + e.bonus + 's'); audioController.playSweep(392, 784, 0.3, 'square', 0.07) }
                 else if (e.type === 'recover') audioController.playTone(300, 0.06, 'square', 0.04)
@@ -255,9 +271,15 @@ const ExcitebikeGame = () => {
                 const rx = r.d % LAP
                 const ddx = rx - camX
                 if (ddx > -20 && ddx < W + 20) {
-                    const onGround = true
-                    const py = g2s(groundY(tr.ground, rx)) - (onGround ? 6 : 0)
-                    drawBike(ddx, py, Math.atan((groundY(tr.ground, rx + 6) - groundY(tr.ground, rx - 6)) / 12), RIDE.rivals[gs.rivals.indexOf(r) % 5], r.name)
+                    const col = RIDE.rivals[gs.rivals.indexOf(r) % 5]
+                    if (r.down > 0) {
+                        // wiped out (#2384): nose in the dirt, rider flickers
+                        // while walking the bike back
+                        if (gs.tick % 20 < 12) drawBike(ddx, g2s(groundY(tr.ground, rx)) - 4, 1.15, col, r.name)
+                    } else {
+                        const py = g2s(r.air ? r.alt : groundY(tr.ground, rx)) - 6
+                        drawBike(ddx, py, r.pitch, col, r.name)
+                    }
                 }
             }
             if (!(gs.crash > 0 && gs.tick % 6 < 3)) drawBike(gs.x - camX, g2s(gs.alt) - 6, gs.pitch, RIDE.you)
@@ -384,7 +406,7 @@ const ExcitebikeGame = () => {
                     air: gs.air, airT: gs.airT, crash: gs.crash, stall: gs.stall, pumpT: gs.pumpT,
                     heat: gs.heat, hot: gs.hot, gear: gs.gear, rank: gs.rank, score: gs.score,
                     lap: gs.lap, laps: gs.laps, clock: gs.clock, count: gs.count, inBand: gs.inBand,
-                    rivals: gs.rivals.map((r) => ({ name: r.name, d: Math.round(r.d) })),
+                    rivals: gs.rivals.map((r) => ({ name: r.name, d: Math.round(r.d), air: r.air, down: r.down, crashes: r.crashes })),
                     screenX: Math.max(0, gs.x - 84) ? 84 : gs.x, screenY: g2s(gs.alt) - 6,
                 }),
                 start: () => startPlay(0),
@@ -417,6 +439,7 @@ const ExcitebikeGame = () => {
                     `${track(gs.track).name}  ${gs.rank}${['st', 'nd', 'rd'][gs.rank - 1] || 'th'}/6  lap ${gs.lap}/${gs.laps}  ${gs.gear}  clock ${(gs.clock / 60).toFixed(1)}s`,
                     `v ${gs.v.toFixed(2)}  alt ${gs.alt.toFixed(0)}  vy ${gs.vy.toFixed(2)}  pitch ${gs.pitch.toFixed(2)}  ${gs.air ? 'AIR ' + gs.airT : 'ground'}`,
                     `heat ${gs.heat.toFixed(0)}${gs.hot ? ' BOILED' : ''}  crash ${gs.crash}  stall ${gs.stall}  band ${gs.inBand || '-'}`,
+                    `league ${gs.rivals.map((r) => `${r.name}${r.down > 0 ? ' DOWN' : ''}${r.air ? ' air' : ''}${r.crashes ? `↺${r.crashes}` : ''}`).join(' ')}`,
                     `screen ${screenRef.current}  paused ${pausedRef.current}  end ${gs.end}  score ${gs.score}`,
                 ],
                 actions: [

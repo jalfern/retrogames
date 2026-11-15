@@ -14,6 +14,8 @@
 //      real SPACE pumps walk it back to life faster than idle would.
 //   5. THE ENGINE BOILS off a held throttle, and a drained clock ends the race
 //      and loops back through the attract — which is the autopilot's proven lap.
+//   6. THE CRASH LEAGUE — rivals fly real parabolas, wipe out at the big-jump
+//      lip and remount on screen, announced (#2384).
 // The terrain, ledger, slack rule and nine mutants live in excitecheck.mjs.
 import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
 
@@ -147,6 +149,33 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     const p2 = await probe()
     await page.keyboard.up('ArrowDown')
     r.check('airborne, ArrowDown LEANS the nose down', p2.pitch < b2 - 0.08, `pitch ${b2.toFixed(3)} -> ${p2.pitch.toFixed(3)}`)
+}
+
+// ---- THE CRASH LEAGUE (#2384): rivals fly, wipe out and remount in the tab ----
+{
+    // Re-seat the race and park the player AT the big-jump lip (x1200: the
+    // near-flat slope reading holds v at 0 with no gas — the bike watches).
+    // Rivals stream past from the start line; SONJA takes the lip at lap-x
+    // ~1367, ~5 s in, straight in front of the camera (screen x ~250).
+    await page.evaluate(() => window.__bikeTest.setup({ track: 0, x: 1200, v: 0 }))
+    let sawAir = false, sawDown = false, sawUp = false, toastHit = false, downName = ''
+    for (let i = 0; i < 220 && !(sawAir && sawDown && sawUp && toastHit); i++) {
+        const s = await probe()
+        for (const q of s.rivals) {
+            if (q.air) sawAir = true
+            if (q.down > 0 && q.crashes >= 1) { sawDown = true; downName = q.name }
+            if (sawDown && q.name === downName && q.down === 0 && q.crashes >= 1) sawUp = true
+        }
+        if (!toastHit) {
+            const txt = await page.evaluate(() => document.body.innerText)
+            if (/DOWN!/.test(txt)) toastHit = true
+        }
+        await wait(60)
+    }
+    r.check('rivals really leave the ground in the browser (real parabolas, not ground-bob)', sawAir)
+    r.check('a rival wipes out in the tab (down state, crash counted)', sawDown, downName || 'no rival went down')
+    r.check('the wiped-out rival remounts (down clears, crash remembered)', sawUp, `${downName || '?'} stayed down?`)
+    r.check('the wreck is announced on screen ("<name> DOWN!")', toastHit)
 }
 
 // ---- the water hole bites IN THE TAB, and real SPACE + throttle drive you out ----
