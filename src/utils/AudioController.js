@@ -509,6 +509,27 @@ export const MUSIC = {
             1, 0, 2, 0, 1, 0, 2, 0, 1, 0, 2, 0, 1, 0, 2, 0,
         ],
     },
+    // GARDEN GUARD (#2336) — an ORIGINAL autumn-folk bed, composed for this
+    // build (our own melody, none from any cabinet). The orchard at dusk in
+    // G major: a bouncy chord-tone skip over an alternating bass (the folk
+    // "boom-chick"), with one drier, brighter colour on IV so the loop
+    // leans like the lanes do. Lighter than the racer beds — it sits under
+    // the pop of the squirrels, not over them.
+    garden: {
+        step: 0.13,
+        lead: [
+            67, 0, 71, 0, 74, 76, 74, 71, 67, 0, 76, 0, 74, 71, 67, 0,
+            72, 0, 76, 0, 79, 76, 74, 71, 72, 0, 74, 0, 71, 0, 67, 0,
+        ],
+        bass: [
+            43, 0, 50, 0, 43, 0, 50, 0, 40, 0, 47, 0, 40, 0, 47, 0,
+            38, 0, 45, 0, 38, 0, 45, 0, 38, 0, 45, 0, 38, 0, 50, 0,
+        ],
+        perc: [
+            1, 0, 0, 2, 1, 0, 0, 2, 1, 0, 0, 2, 1, 0, 2, 2,
+            1, 0, 0, 2, 1, 0, 0, 2, 1, 0, 0, 2, 1, 2, 1, 0,
+        ],
+    },
 }
 
 class AudioController {
