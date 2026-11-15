@@ -17,7 +17,7 @@
 // belt AND metres off the deck must still be won.
 //
 //   npm run dogfightcheck              the audit (~1 s)
-//   npm run dogfightcheck -- --mutate  + nine mutants that MUST die
+//   npm run dogfightcheck -- --mutate  + ten mutants that MUST die
 import { MISSION_COUNT, buildMission } from '../src/games/Dogfight/levels.js'
 import {
     CFG, FIXED_DT, G, newGame, step, pilotInput, replay, stateHash, predictHit,
@@ -57,7 +57,7 @@ function scratch(idx = 0) {
     // the physics lab needs an EMPTY sky but a LIVE patrol: clearing the
     // foes entirely would trip the win condition on tick one and freeze
     // the whole sim — a harness that grades a frozen world is green theatre.
-    g.foes.forEach((f, k) => { f.x = 6000 + k * 50; f.z = 6000; f.belt = 0 })
+    g.foes.forEach((f, k) => { f.x = 6000 + k * 50; f.z = 6000; f.belt = f.total = 0 })
     return g
 }
 
@@ -187,7 +187,7 @@ function drivePatrol(i, opts = {}) {
     const g = newGame(i)
     if (opts.belt) g.p.belt = g.p.total = opts.belt
     if (opts.alt) g.p.y = opts.alt
-    let ledBreaks = 0, nans = 0, maxHeat = 0
+    let ledBreaks = 0, nans = 0, maxHeat = 0, pilotJam = false
     const cap = g.clock * 30 + 60
     while (!g.end && g.tick < cap) {
         const inp = pilotInput(g)
@@ -196,16 +196,17 @@ function drivePatrol(i, opts = {}) {
         if (!ledgerOk(g)) ledBreaks++
         if (!finiteOk(g)) nans++
         maxHeat = Math.max(maxHeat, g.p.heat)
+        if (g.events.some((e) => e.type === 'jam' && e.who === g.p.id)) pilotJam = true
         g.events.length = 0
     }
-    return { g, ledBreaks, nans, maxHeat }
+    return { g, ledBreaks, nans, maxHeat, pilotJam }
 }
 
 const receipts = {}
 for (let i = 0; i < MISSION_COUNT; i++) {
     section(`PATROL ${i} — ${buildMission(i).name}: the autopilot IS the attract demo, and it wins`)
     const t0 = Date.now()
-    const { g, ledBreaks, nans, maxHeat } = drivePatrol(i)
+    const { g, ledBreaks, nans, maxHeat, pilotJam } = drivePatrol(i)
     ok(g.end === 'win', `patrol ${i}: the autopilot did not WIN: end=${g.end} why="${g.why}" at tick ${g.tick}`)
     ok(g.tick < g.clock * 30, `patrol ${i}: the fuel died first (${g.tick} ticks) — a timed-out demo is a tie nobody asked for`)
     ok(g.foes.every((f) => !f.alive && f.hp <= 0), `patrol ${i}: a bandit survived the witness`)
@@ -214,6 +215,7 @@ for (let i = 0; i < MISSION_COUNT; i++) {
     ok(g.p.fired > 0 && g.p.fired < 40, `patrol ${i}: the pilot spent ${g.p.fired} rounds — the receipt gate must shoot like a duellist, not spray`)
     ok(g.p.missed <= 3, `patrol ${i}: ${g.p.missed} rounds missed — predictHit is a receipt, not a suggestion`)
     ok(maxHeat <= 0.5, `patrol ${i}: the duellist's barrel reached ${(maxHeat * 100).toFixed(0)}% — receipt-gated bursts must live inside the discipline band, else heat is decorative for the pilot too`)
+    ok(!pilotJam, `patrol ${i}: the receipt-gated pilot JAMMED the gear — bursts that never touch redline must never touch the stop zone either`)
     ok(ledBreaks === 0, `patrol ${i}: the rounds ledger broke on ${ledBreaks} ticks`)
     ok(nans === 0, `patrol ${i}: ${nans} NaN ticks`)
     const foeShots = g.foes.reduce((s, f) => s + f.fired, 0)
@@ -242,8 +244,7 @@ for (let i = 0; i < MISSION_COUNT; i++) {
         ok(slB.g.end === 'win', `patrol ${i}: belt ${base - cut} ended ${slB.g.end} "${slB.g.why}"`)
     }
     ok(Date.now() - t0 < 5000, `patrol ${i}: ${Date.now() - t0} ms — this audit must stay a second, not a minute`)
-    receipts[i] = { ticks: g.tick, rounds: g.p.fired, missed: g.p.missed, hp: g.p.hp, maxHeat: +maxHeat.toFixed(3), foeShots, slackTicks: sl.g.tick, slackHp: sl.g.p.hp, ms: Date.now() - t0 }
-}
+    receipts[i] = { ticks: g.tick, rounds: g.p.fired, missed: g.p.missed, hp: g.p.hp, maxHeat: +maxHeat.toFixed(3), foeShots, slackTicks: sl.g.tick, slackHp: sl.g.p.hp, ms: Date.now() - t0 }}
 
 // --------------------------------------------------------------------- heat ----
 section('HEAT — sustained fire reddens the Vickers; spray buys misses, and receipts dry up')
@@ -254,47 +255,63 @@ section('HEAT — sustained fire reddens the Vickers; spray buys misses, and rec
     const cold = g.bullets[g.bullets.length - 1]
     ok(cold && cold.dev === 0, `heat: a COLD gun spawned a ${(cold ? cold.dev : -1)} rad deviation — the discipline band must shoot dead straight`)
 
-    // spray: 200 ticks of held trigger — the barrel must redden and say so
-    let sawOverheat = false
-    for (let t = 0; t < 200; t++) {
+    // spray: hold the trigger from tick 0. The barrel reddens, says so, walks
+    // its tracers — and past redline the synchronization gear SEIZES (jam
+    // epilogue). Fresh spawns are captured the tick they leave the muzzle,
+    // so the cone-equivalence undo is exactly one tick of gravity (age 1).
+    let sawOverheat = false, sawJam = false, peakHeat = 0
+    let hotExists = false, hotConeOk = true
+    const walkSigns = []
+    let prevSeq = g.bulletSeq
+    for (let t = 0; t < 120 && !sawJam; t++) {
         step(g, { roll: 0, pitch: 0, throttle: 0.85, fire: true })
         sawOverheat = sawOverheat || g.events.some((e) => e.type === 'overheat')
+        sawJam = sawJam || g.events.some((e) => e.type === 'jam' && e.who === g.p.id)
+        peakHeat = Math.max(peakHeat, g.p.heat)
+        if (g.bulletSeq !== prevSeq) {
+            prevSeq = g.bulletSeq
+            const b = g.bullets[g.bullets.length - 1]
+            if (b && b.dev > CFG.heatSpread * 0.5) {
+                hotExists = true
+                const f = { x: Math.sin(g.p.yaw), y: Math.sin(g.p.pitch), z: Math.cos(g.p.yaw) * Math.cos(g.p.pitch) }
+                const vy0 = b.vy + G * FIXED_DT * b.age
+                const ax = b.vx * f.x + vy0 * f.y + b.vz * f.z
+                const perp = Math.hypot(b.vx - f.x * ax, vy0 - f.y * ax, b.vz - f.z * ax)
+                hotConeOk = hotConeOk && Math.abs(perp - ax * b.dev) < 1e-6
+                walkSigns.push(Math.sign(b.vx - f.x * ax))
+            }
+        }
         g.events.length = 0
     }
-    ok(g.p.fired >= 20, `heat: the spray only got ${g.p.fired} rounds off in 200 ticks`)
-    ok(g.p.heat >= 0.9, `heat: ${g.p.fired} rounds downrange left the barrel at ${(g.p.heat * 100).toFixed(0)}% — it should be glowing`)
+    ok(g.p.fired >= 12, `heat: the spray only got ${g.p.fired} rounds off — a held trigger must at least reach the stop zone`)
+    ok(peakHeat >= 0.9, `heat: ${g.p.fired} rounds downrange peaked the barrel at ${(peakHeat * 100).toFixed(0)}% — it should be glowing`)
     ok(sawOverheat, 'heat: the barrel went red without a word — the overheat event never fired')
-    const hot = g.bullets[g.bullets.length - 1]
-    ok(hot && hot.dev > CFG.heatSpread * 0.5, `heat: the spray's last round deviated ${hot ? hot.dev : -1} rad — tracers must walk`)
+    ok(sawJam, `jam: 120 ticks of held redline trigger never seized the gear — the heat rule has no epilogue (got ${g.p.fired} rounds)`)
+    ok(hotExists, 'heat: no redline round ever left the muzzle — nothing to judge the cone on')
+    ok(hotConeOk, 'heat: a hot bullet sideways speed ≠ its recorded cone — the tracer flies a different lie than the gauge tells')
+    ok(new Set(walkSigns).size > 1, 'heat: redline rounds all drifted the same way — the cone must walk, not bias')
+
     {
-        // the recorded cone must BE the tracer's truth: sideways speed at
-        // spawn == axial speed × dev. (stepBullets integrates the round once
-        // even on its own tick, so undo one G before comparing; the bore is
-        // f from the live attitude, not an assumed +z.)
-        const f = { x: Math.sin(g.p.yaw), y: Math.sin(g.p.pitch), z: Math.cos(g.p.yaw) * Math.cos(g.p.pitch) }
-        const vy0 = hot.vy + G * FIXED_DT
-        const ax = hot.vx * f.x + vy0 * f.y + hot.vz * f.z
-        const perp = Math.hypot(hot.vx - f.x * ax, vy0 - f.y * ax, hot.vz - f.z * ax)
-        ok(Math.abs(perp - ax * hot.dev) < 1e-6,
-            `heat: hot bullet sideways ${perp.toFixed(3)} m/s ≠ its recorded cone ${(ax * hot.dev).toFixed(3)} — the tracer flies a different lie than the gauge tells`)
-    }
-    {
-        // the cone WALKS: consecutive redline rounds drift different ways
-        // (golden angle), so spray is chaos around the bore, not a drag-sight
-        const walk = []
-        for (let t = 0; t < 16 && walk.length < 3; t++) {
+        // the seizure is REAL: holding the trigger now produces nothing — no
+        // bullet, no belt draw, ledger intact — until the gear frees itself
+        const belt0 = g.p.belt, seq0 = g.bulletSeq
+        let jamLedger = true
+        for (let t = 0; t < 60; t++) {
             step(g, { roll: 0, pitch: 0, throttle: 0.85, fire: true })
-            const last = g.bullets[g.bullets.length - 1]
-            if (last && last.dev > CFG.heatSpread * 0.5 && !walk.some((b) => b.id === last.id)) walk.push(last)
+            if (!ledgerOk(g)) jamLedger = false
             g.events.length = 0
         }
-        ok(walk.length === 3 && new Set(walk.map((b) => {
-            // sideways-vs-bore x (raw vx is dominated by the spawn yaw's axial share)
-            const fx = Math.sin(g.p.yaw), fz = Math.cos(g.p.yaw)
-            const ax = b.vx * fx + (b.vy + G * FIXED_DT) * 0 + b.vz * fz
-            return Math.sign(b.vx - fx * ax)
-        })).size > 1,
-            'heat: redline rounds all drifted the same way — the cone must walk, not bias')
+        ok(g.p.belt === belt0 && g.bulletSeq === seq0, `jam: the seized gun still drew rounds (belt ${belt0} -> ${g.p.belt}) — the seizure is theatre`)
+        ok(jamLedger, 'jam: the rounds ledger broke while the gear was seized')
+        let cleared = false
+        for (let t = 0; t < CFG.jamTicks + 30 && !cleared; t++) {
+            step(g, { roll: 0, pitch: 0, throttle: 0.85, fire: true })
+            cleared = cleared || g.events.some((e) => e.type === 'jamclear' && e.who === g.p.id)
+            g.events.length = 0
+        }
+        ok(cleared, `jam: gear still seized ${CFG.jamTicks + 30} ticks after the seizure — the stopper never comes out`)
+        for (let t = 0; t < 12; t++) step(g, { roll: 0, pitch: 0, throttle: 0.85, fire: true })
+        ok(g.p.belt < belt0, 'jam: the gun stayed shut after jamclear — the clear never fed back into the trigger')
     }
 
     // silence cools: six seconds hands back a cold, honest gun
@@ -314,6 +331,10 @@ section('HEAT — sustained fire reddens the Vickers; spray buys misses, and rec
     ok(predictHit(gp, gp.p, foe) < 0, 'heat: a red-hot barrel still got a 250 m receipt — spray is still free after all')
     gp.p.heat = 0
     ok(predictHit(gp, gp.p, foe) >= 0, 'heat: receipts did not return with a cold barrel — the heat never was in the aim')
+    gp.p.jamT = 50
+    ok(predictHit(gp, gp.p, foe) < 0, 'jam: a seized gear still issued a 250 m receipt — the pilot would fire a bullet that cannot exist')
+    gp.p.jamT = 0
+    ok(predictHit(gp, gp.p, foe) >= 0, 'jam: receipts stayed away after the clear — the seizure outstayed its welcome in the solver')
 }
 
 // --------------------------------------------------------------------- danger ----
@@ -390,23 +411,39 @@ if (MUT) {
         const { g } = drivePatrol(0)
         return g.end === 'win'
     })
+    tryMut('soft-hands (jamOn off — the redline gear never seizes, the trigger is free)', { jamOn: false }, () => {        const g = scratch()
+        g.p.y = 300; g.p.v = 60; g.p.belt = 60; g.p.total = 60
+        let ev = false
+        for (let t = 0; t < 120; t++) {
+            step(g, { roll: 0, pitch: 0, throttle: 0.85, fire: true })
+            ev = ev || g.events.some((e) => e.type === 'jam')
+            g.events.length = 0
+        }
+        return ev
+    })
     tryMut('cold-for-ever (heatOn off — the barrel never warms, spray is free)', { heatOn: false }, () => {
         const g = scratch()
         g.p.y = 300; g.p.v = 60; g.p.belt = 60; g.p.total = 60
-        let ev = false
-        for (let t = 0; t < 200; t++) {
+        let ev = false, peak = 0
+        for (let t = 0; t < 250; t++) {
             step(g, { roll: 0, pitch: 0, throttle: 0.85, fire: true })
             ev = ev || g.events.some((e) => e.type === 'overheat')
+            peak = Math.max(peak, g.p.heat)   // peak, not end: a seized barrel cools mid-hold
             g.events.length = 0
         }
-        return ev && g.p.heat >= 0.9
+        return ev && peak >= 0.9
     })
     tryMut('stiff-barrel (heat climbs but tracers stay flat — the gauge is theatre)', { heatSpread: 0 }, () => {
         const g = scratch()
         g.p.y = 300; g.p.v = 60; g.p.belt = 60; g.p.total = 60
-        for (let t = 0; t < 200; t++) step(g, { roll: 0, pitch: 0, throttle: 0.85, fire: true })
-        const last = g.bullets[g.bullets.length - 1]
-        return g.p.heat >= 0.9 && !!last && last.dev > 0
+        let peak = 0, lastDev = -1, prevSeq = g.bulletSeq
+        for (let t = 0; t < 90; t++) {
+            step(g, { roll: 0, pitch: 0, throttle: 0.85, fire: true })
+            peak = Math.max(peak, g.p.heat)
+            if (g.bulletSeq !== prevSeq) { prevSeq = g.bulletSeq; lastDev = g.bullets[g.bullets.length - 1].dev }
+            g.events.length = 0
+        }
+        return peak >= 0.9 && lastDev > 0
     })
 }
 

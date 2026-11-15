@@ -55,6 +55,13 @@ export const CFG = {
     heatCool: 0.006,      // per tick
     heatSoft: 0.25,
     heatSpread: 0.045,    // rad at full heat
+    // jam epilogue: a redline Vickers held closed-belt doesn't just walk —
+    // the synchronization gear overheats and seizes. 6 rounds fired while the
+    // barrel sits at ≥ jamHeat (rounds 13–18 of a held trigger, ~0.8 s past
+    // redline) stop the gun for 5 s: strip the stopper, then back to work.
+    jamHeat: 0.9,
+    jamRounds: 6,
+    jamTicks: 150,        // 5 s at 30 Hz
     // test-only switches so the harness can prove each muscle is load-bearing
     stallOn: true,
     bulletGravity: true,
@@ -63,6 +70,7 @@ export const CFG = {
     turnOn: true,         // false: the bank flies nowhere
     hitScale: 1,
     heatOn: true,         // false: the barrel never warms — spray is free
+    jamOn: true,          // false: a redline barrel never jams — the trigger is free
 }
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v)
@@ -91,7 +99,7 @@ export function newGame(missionIdx = 0) {
         // is false — the simulation would look "peaceful", not broken.
         belt: src.belt ?? 240, total: src.belt ?? 240, hp: src.hp ?? 2,
         alive: true, deadT: 0, cooldown: 0, stalled: false,
-        heat: 0,
+        heat: 0, jamT: 0, hotShots: 0,
         skill: src.skill ?? 0, slot: src.slot ?? 0,
         hits: 0, missed: 0, fired: 0,
     })
@@ -191,6 +199,13 @@ function coneVel(f, seq, dev, v) {
 
 function flyGun(g, pl, fire) {
     if (CFG.heatOn) pl.heat = Math.max(0, pl.heat - CFG.heatCool)   // a silent barrel cools
+    if (CFG.jamOn && pl.heat < CFG.jamHeat) pl.hotShots = 0          // cooled back under the stop zone
+    if (pl.jamT > 0) {
+        // seized: the gear is stripping, no round leaves however hard the trigger is held
+        pl.jamT--
+        if (pl.jamT === 0) g.events.push({ type: 'jamclear', who: pl.id })
+        return
+    }
     if (pl.cooldown > 0) pl.cooldown--
     if (!fire || !pl.alive || pl.cooldown > 0) return
     if (pl.belt <= 0) {
@@ -209,6 +224,14 @@ function flyGun(g, pl, fire) {
         const before = pl.heat
         pl.heat = Math.min(1, pl.heat + CFG.heatShot)
         if (before < 0.75 && pl.heat >= 0.75) g.events.push({ type: 'overheat', who: pl.id })
+    }
+    if (CFG.jamOn && pl.heat >= CFG.jamHeat) {
+        pl.hotShots++
+        if (pl.hotShots >= CFG.jamRounds) {
+            pl.jamT = CFG.jamTicks
+            pl.hotShots = 0
+            g.events.push({ type: 'jam', who: pl.id })
+        }
     }
     const v = coneVel(f, seq, dev, {
         x: f.x * CFG.muzzle + f.x * pl.v * 0.4,
@@ -432,6 +455,9 @@ export function pilotInput(g) {
 // point the caller aims at is NOT re-led here — that double-counted the foe's
 // motion and put every "proven" shot behind him.
 export function predictHit(g, me, tgt) {
+    // a seized gear issues no receipts: no round can leave, so no round may
+    // be promised — the pilot holds the trigger instead of spraying at a jam
+    if (CFG.jamOn && me.jamT > 0) return -1
     const f = fwd(me)
     let x = me.x + f.x * 5, y = me.y + f.y * 5, z = me.z + f.z * 5
     // the receipt simulates the round the trigger would ACTUALLY spawn —
@@ -505,7 +531,7 @@ export function stateHash(g) {
     mix(g.tick)
     for (const q of all(g)) {
         mix(q.x); mix(q.y); mix(q.z); mix(q.v); mix(q.yaw); mix(q.pitch)
-        mix(q.belt); mix(q.hp); mix(q.alive ? 1 : 0); mix(q.heat)
+        mix(q.belt); mix(q.hp); mix(q.alive ? 1 : 0); mix(q.heat); mix(q.jamT)
     }
     mix(g.bullets.length); mix(g.bulletSeq)
     for (const b of g.bullets) { mix(b.id); mix(b.x); mix(b.y); mix(b.z) }

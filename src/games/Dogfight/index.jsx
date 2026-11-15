@@ -31,6 +31,8 @@ import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, 
 import { CFG, FIXED_DT, newGame, step, pilotInput, recordMission, replay, stateHash, cloneGame } from './sim.js'
 import { MISSION_COUNT } from './levels.js'
 
+const GOLD = 2.399963229728653 // golden angle — deterministic puff offsets
+
 const texFrom = (w, h, paint) => {
     const c = document.createElement('canvas')
     c.width = w; c.height = h
@@ -181,6 +183,31 @@ const DogfightGame = () => {
         const bandits = [buildBiplane(1), buildBiplane(1), buildBiplane(1)]
         scene.add(scout, ...bandits)
 
+        // heat lives in the world, not just on the tape: the breech glows as
+        // the barrel reddens and, past redline, throws cooling wisps off the
+        // shroud. A pilot glancing at the aircraft mid-merge sees the gun die.
+        const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: keep(sparkTex()), transparent: true, depthWrite: false,
+            blending: THREE.AdditiveBlending, opacity: 0,
+        }))
+        glow.position.set(0, 0.05, 2.75)
+        scout.add(glow)
+
+        const smokeTex = keep(texFrom(64, 64, (x, w) => {
+            const g = x.createRadialGradient(w / 2, w / 2, 2, w / 2, w / 2, w / 2)
+            g.addColorStop(0, 'rgba(70,66,60,0.55)'); g.addColorStop(0.6, 'rgba(60,58,54,0.28)')
+            g.addColorStop(1, 'rgba(60,58,54,0)')
+            x.fillStyle = g; x.fillRect(0, 0, w, w)
+        }))
+        const puffs = []
+        const PUFF_MAX = 56
+        const spawnPuff = (x, y, z, sc) => {
+            if (puffs.length >= PUFF_MAX) return
+            const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, transparent: true, depthWrite: false, opacity: 0.5 }))
+            s.position.set(x, y, z); s.scale.set(sc, sc, 1)
+            scene.add(s); puffs.push({ s, t: 0, life: 1.1 + ((puffs.length * 7) % 5) / 10, grow: sc * 3.2 })
+        }
+
         // tracers: one Points cloud per faction, recycled from the sim's bullets
         const MAXB = 160
         const mkTracers = (color) => {
@@ -235,9 +262,22 @@ const DogfightGame = () => {
         const handleEvents = (evts) => {
             for (const e of evts) {
                 if (e.type === 'shot') {
-                    if (e.who === 0) { audioController.playNoise(0.05, 0.06); shake = Math.min(0.4, shake + 0.12) }
+                    if (e.who === 0) {
+                        // the report tells the truth about the barrel: a hot
+                        // Vickers cracks thin and high, discipline stays deep
+                        const hot = gs.p.heat >= 0.75
+                        audioController.playNoise(hot ? 0.032 : 0.05, hot ? 0.075 : 0.06)
+                        if (hot) audioController.playTone(900 + gs.p.heat * 600, 0.03, 'square', 0.022)
+                        shake = Math.min(0.4, shake + 0.12)
+                    }
                     else audioController.playTone(180, 0.05, 'square', 0.02)
                 } else if (e.type === 'dry') audioController.playTone(220, 0.05, 'square', 0.04)
+                else if (e.type === 'jam') {
+                    if (e.who === 0) { audioController.playTone(140, 0.14, 'square', 0.06); say('GUNS JAMMED — STRIP THE STOPPER') }
+                }
+                else if (e.type === 'jamclear') {
+                    if (e.who === 0) { audioController.playTone(520, 0.06, 'square', 0.04); say('STOPPER CLEAR — GUNS BACK') }
+                }
                 else if (e.type === 'overheat') {
                     // the Vickers is red: keep holding and the tracers walk
                     if (e.who === 0) { overheatSeen++; audioController.playTone(96, 0.18, 'square', 0.05); say('BARRELS RED HOT — BREAK YOUR BURSTS') }
@@ -374,6 +414,36 @@ const DogfightGame = () => {
             })
             paintTracers(T0, gs.bullets, 0)
             paintTracers(T1, gs.bullets, 1)
+
+            // in-world heat: the breech glows with the barrel, and past the
+            // redline the cooling shroud throws wisps. Spawn positions come
+            // off gs.tick (golden-angle offsets), never Math.random.
+            const ht = Math.min(1, Math.max(0, p.heat))
+            const playLive = screenRef.current === 'play' && p.alive
+            glow.material.opacity = playLive && ht >= 0.3 ? Math.min(0.95, (ht - 0.25) * 1.25) : 0
+            glow.scale.set(1.1 + ht * 1.8, 1.1 + ht * 1.8, 1)
+            glow.material.color.setRGB(1, 1 - ht * 0.55, Math.max(0.08, 1 - ht * 0.9))
+            if (playLive && ht > 0.6 && gs.tick % 5 === 0) {
+                const a = gs.tick * GOLD
+                spawnPuff(p.x + f.x * 2.2 + Math.cos(a) * 0.5, p.y + f.y * 2.2 + 0.35, p.z + f.z * 2.2 + Math.sin(a) * 0.5, 1.6)
+            }
+            // damaged bandits fly dirty: an airframe at one wound trails smoke
+            if (screenRef.current === 'play') {
+                for (const q of gs.foes) {
+                    if (q.alive && q.hp <= 1 && gs.tick % 4 === q.id % 4) {
+                        const a = gs.tick * GOLD + q.id
+                        spawnPuff(q.x - Math.sin(q.yaw) * 2 + Math.cos(a) * 0.6, q.y + 0.3, q.z - Math.cos(q.yaw) * 2 + Math.sin(a) * 0.6, 2.2)
+                    }
+                }
+            }
+            for (let i = puffs.length - 1; i >= 0; i--) {
+                const b = puffs[i]
+                b.t += ft / 1000
+                const k = b.t / b.life
+                b.s.scale.set(b.grow * (0.5 + k), b.grow * (0.5 + k), 1)
+                b.s.material.opacity = Math.max(0, 0.5 * (1 - k))
+                if (k >= 1) { scene.remove(b.s); b.s.material.dispose(); puffs.splice(i, 1) }
+            }
             for (let i = booms.length - 1; i >= 0; i--) {
                 const b = booms[i]
                 b.t += ft / 1000
@@ -412,6 +482,7 @@ const DogfightGame = () => {
                 h.gunBar.style.width = `${Math.round(ht * 100)}%`
                 h.gunBar.style.background = ht >= 0.75 ? '#ef4444' : ht > CFG.heatSoft ? '#fb923c' : '#fde047'
             }
+            if (h.jam) h.jam.style.opacity = p.alive && p.jamT > 0 ? (Math.floor(now / 160) % 2 ? '1' : '0.15') : '0'
             if (h.thr) h.thr.style.height = `${Math.round(throttle * 100)}%`
             if (h.clock) h.clock.textContent = `${Math.max(0, Math.ceil(gs.clock - gs.tick / 30))}`
             if (h.stall) h.stall.style.opacity = p.alive && p.stalled ? (Math.floor(now / 160) % 2 ? '1' : '0.2') : '0'
@@ -432,6 +503,10 @@ const DogfightGame = () => {
                 const nx = tgt ? v2px(tgt) : null
                 h.ret.style.opacity = nx ? '1' : '0'
                 if (nx) { h.ret.style.left = `${nx.x}%`; h.ret.style.top = `${nx.y}%` }
+                // the gun-sight answers the gun: the ring blooms as the barrel
+                // heats — the burst rule taught in the world, without any text
+                h.ret.style.transform = `translate(-50%,-50%) scale(${(1 + Math.min(1, p.heat) * 0.9).toFixed(3)})`
+                h.ret.style.color = p.heat >= 0.75 ? '#f87171' : 'rgba(253,224,71,0.8)'
             }
         }
         const v2px = (q) => {
@@ -500,7 +575,7 @@ const DogfightGame = () => {
             window.__dogTest = {
                 probe: () => ({
                     screen: screenRef.current, tick: gs.tick, end: gs.end, why: gs.why, mission,
-                    p: { x: gs.p.x, y: gs.p.y, z: gs.p.z, yaw: gs.p.yaw, pitch: gs.p.pitch, roll: gs.p.roll, v: gs.p.v, belt: gs.p.belt, hp: gs.p.hp, alive: gs.p.alive, stalled: gs.p.stalled, heat: gs.p.heat, throttle },
+                    p: { x: gs.p.x, y: gs.p.y, z: gs.p.z, yaw: gs.p.yaw, pitch: gs.p.pitch, roll: gs.p.roll, v: gs.p.v, belt: gs.p.belt, hp: gs.p.hp, alive: gs.p.alive, stalled: gs.p.stalled, heat: gs.p.heat, jam: gs.p.jamT, throttle },
                     foes: gs.foes.map((q) => ({ x: q.x, y: q.y, z: q.z, v: q.v, alive: q.alive, hp: q.hp })),
                     bullets: gs.bullets.length,
                     ledger: ledgerOk(),
@@ -560,7 +635,7 @@ const DogfightGame = () => {
                 state: () => ({
                     tick: gs.tick, score: gs.foes.filter((f) => !f.alive).length, done: !!gs.end,
                     seed: contractSeed, mission, end: gs.end, why: gs.why,
-                    hp: gs.p.hp, belt: gs.p.belt, bullets: gs.bullets.length, heat: gs.p.heat,
+                    hp: gs.p.hp, belt: gs.p.belt, bullets: gs.bullets.length, heat: gs.p.heat, jam: gs.p.jamT,
                     hash: stateHash(gs),
                 }),
                 canvas: () => canvas,
@@ -569,13 +644,14 @@ const DogfightGame = () => {
                 title: 'WWI DOGFIGHT',
                 getState: () => [
                     `${gs.name} tick ${gs.tick} end ${gs.end || '-'} throttle ${throttle.toFixed(2)}`,
-                    `v ${gs.p.v.toFixed(1)} m/s  alt ${gs.p.y.toFixed(0)} m  hp ${gs.p.hp}  belt ${gs.p.belt}/${gs.p.total}  guns ${Math.round(gs.p.heat * 100)}%`,
+                    `v ${gs.p.v.toFixed(1)} m/s  alt ${gs.p.y.toFixed(0)} m  hp ${gs.p.hp}  belt ${gs.p.belt}/${gs.p.total}  guns ${Math.round(gs.p.heat * 100)}%${gs.p.jamT > 0 ? '  JAMMED' : ''}`,
                     `bullets ${gs.bullets.length}  bandits ${gs.foes.filter((f) => f.alive).length}/${gs.foes.length}  ledger ${ledgerOk() ? 'exact' : 'BROKEN'}`,
                 ],
                 actions: [
                     { label: 'PROGNOSIS', run: () => window.__dogTest.prognose() },
                     { label: '+1 ROUND', run: () => { gs.p.belt++; gs.p.total++; return `belt ${gs.p.belt} — slack the solver is NOT allowed to assume` } },
                     { label: 'REDLINE GUNS', run: () => { gs.p.heat = 1; return 'barrel at 100% — hold the trigger and watch the tracers walk' } },
+                    { label: 'FORCE JAM', run: () => { gs.p.jamT = 150; gs.p.heat = 1; return 'gear seized for 5 s — the trigger is dead until the stopper comes out' } },
                     { label: 'HIT ME', run: () => { gs.p.hp--; if (gs.p.hp <= 0) { gs.p.alive = false; gs.p.deadT = 0; gs.events.push({ type: 'crash', who: 0 }) } return `hp ${gs.p.hp}` } },
                 ],
             })
@@ -599,6 +675,8 @@ const DogfightGame = () => {
             canvas.removeEventListener('pointerdown', onStagePointer)
             cancelAnimationFrame(raf)
             for (const b of booms) scene.remove(b.s)
+            for (const b of puffs) { scene.remove(b.s); b.s.material.dispose() }
+            scene.remove(glow); glow.material.dispose()
             disposables.forEach((d) => { if (d.dispose) d.dispose() })
             renderer.forceContextLoss()
             renderer.dispose()
@@ -637,6 +715,7 @@ const DogfightGame = () => {
                         <div className="w-10 h-1.5 bg-black/50 rounded overflow-hidden">
                             <div id="dog-gunheat" ref={setHud('gunBar')} className="h-full bg-yellow-300" style={{ width: '0%' }} />
                         </div>
+                        <div ref={setHud('jam')} className="text-[8px] font-bold text-red-400 leading-3 transition-opacity duration-100" style={{ opacity: 0 }}>JAM</div>
                         <div className="text-[9px] tracking-widest opacity-70 mt-1">THR</div>
                         <div className="w-10 h-2 bg-black/50 rounded overflow-hidden flex items-end">
                             <div ref={setHud('thr')} className="w-full bg-orange-400" style={{ height: '85%' }} />
