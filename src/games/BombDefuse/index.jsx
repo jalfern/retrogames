@@ -129,6 +129,16 @@ function chassis() {
     return cv
 }
 
+// #2357 — chassis geometry, single source of truth: the steel plate drawBombView
+// paints the body on. The boom's fragments spawn FROM this rect (blast centre
+// derived), so the burst emanates from the object, and the gates can pin chunk
+// origins inside it. Values match drawBombView's plate fill exactly.
+const BOMB_BODY = { x: 100, y: 78, w: 440, h: 242 }
+const BLAST_X = BOMB_BODY.x + BOMB_BODY.w / 2
+const BLAST_Y = BOMB_BODY.y + BOMB_BODY.h / 2
+// the deck the chunks slam onto — the unit's bench lip, clear of the HUD strip
+const CHUNK_FLOOR = 322
+
 // ---- the bomb face -----------------------------------------------------------
 function drawBombView(g, gs, now, opts = {}) {
     const dim = opts.dim || 0
@@ -137,10 +147,11 @@ function drawBombView(g, gs, now, opts = {}) {
     const live = !gs.done && gs.intro <= 0 && opts.paused !== true
     const cx = 320, cy = 200
 
-    // bomb body — steel case
+    // bomb body — steel case (#2357: the plate fill is BOMB_BODY — the same rect
+    // the boom spawns its chunks from, so origin gates can trust the geometry)
     g.save()
     g.fillStyle = C.steelLo; g.fillRect(96, 74, 448, 250)
-    g.fillStyle = C.steel; g.fillRect(100, 78, 440, 242)
+    g.fillStyle = C.steel; g.fillRect(BOMB_BODY.x, BOMB_BODY.y, BOMB_BODY.w, BOMB_BODY.h)
     g.strokeStyle = C.steelHi; g.lineWidth = 2; g.strokeRect(104, 82, 432, 234)
     g.strokeStyle = C.ink; g.strokeRect(96, 74, 448, 250)
 
@@ -503,7 +514,7 @@ function drawVentPanel(g, p, youSeat, now) {
 // (E.ventCoach, pure) then goes silent for the rest of the run.
 const newHud = () => ({
     flash: 0, shake: 0, sparks: [], banner: null, bannerT: 0, boomT: 0, dudT: 0,
-    lid: null, shrap: [],
+    lid: null, shrap: [], chunks: [],
     ventTaught: false, coach: null, pf: null,
     // #1812 item 1: full first-vent teach panel — dismissed by any input for
     // the whole run (panelGone), re-armed only by a new run (newHud).
@@ -546,13 +557,33 @@ function chipInk(opts, seat, now) {
 let scorchDecals = []
 
 const spawnBoom = (hud) => {
-    hud.lid = { x: 320, y: 150, vx: (Math.random() - 0.5) * 4, vy: -9 - Math.random() * 3, rot: 0, vr: (Math.random() - 0.5) * 0.35, life: 46 }
+    hud.lid = { x: BLAST_X, y: BOMB_BODY.y + 72, vx: (Math.random() - 0.5) * 4, vy: -9 - Math.random() * 3, rot: 0, vr: (Math.random() - 0.5) * 0.35, life: 46 }
     hud.shrap = Array.from({ length: 9 }, () => ({
-        x: 320 + (Math.random() - 0.5) * 120, y: 200 + (Math.random() - 0.5) * 60,
+        x: BLAST_X + (Math.random() - 0.5) * 120, y: BLAST_Y + (Math.random() - 0.5) * 60,
         vx: (Math.random() - 0.5) * 7, vy: -1 - Math.random() * 7,
         rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.5,
         s: 2 + Math.floor(Math.random() * 4), life: 34 + Math.floor(Math.random() * 22),
     }))
+    // #2357: chunk-of-bomb — the BODY breaks. Steel plate chunks torn from the
+    // chassis rect, kicked radially OUTWARD from the blast centre with an upbias;
+    // heavier than the tap-sparks family (slower spin, longer flight, they hit
+    // the deck and BOUNCE). Plate-sized (>=16 px) so a chunk reads as a piece of
+    // THIS bomb, not another spark. View-only: Math.random, no sim state — hash law intact.
+    hud.chunks = Array.from({ length: 4 }, () => {
+        const px = BOMB_BODY.x + Math.random() * BOMB_BODY.w
+        const py = BOMB_BODY.y + Math.random() * BOMB_BODY.h
+        const dx = px - BLAST_X, dy = py - BLAST_Y
+        const d = Math.max(1, Math.hypot(dx, dy))
+        const kick = 2.6 + Math.random() * 1.8
+        return {
+            x: px, y: py,
+            vx: (dx / d) * kick + (Math.random() - 0.5) * 2,
+            vy: (dy / d) * kick - 3.5 - Math.random() * 2.5,
+            w: 16 + Math.floor(Math.random() * 22), h: 10 + Math.floor(Math.random() * 12),
+            rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.28,
+            bounces: 2, life: 70 + Math.floor(Math.random() * 26),
+        }
+    })
     scorchDecals = Array.from({ length: 5 }, () => ({
         x: 130 + Math.random() * 380, y: 160 + Math.random() * 130, r: 7 + Math.random() * 10, a: 0.5 + Math.random() * 0.3,
     }))
@@ -1305,6 +1336,38 @@ export default function BombDefuseGame() {
                 // change — the case is already "over" while its lid is still
                 // tumbling, exactly like the movies. Physics here (gravity
                 // 0.35/0.3 per frame) is paint-frame, never sim-tick.
+                // #2357: the body's chunks fly under the same paint-frame law —
+                // gravity 0.32/frame (between shrapnel's 0.3 and the lid's 0.35:
+                // this is heavier metal), spin, and a DAMPED ground bounce off the
+                // deck (2 bounces, 0.45 restitution, friction on the slide), then
+                // they settle and fade where they land. A bounce sign-flips vy;
+                // spark-dot shrapnel never bounces — the mass reads different.
+                if (hud.chunks.length) {
+                    for (const c of hud.chunks) {
+                        c.x += c.vx; c.y += c.vy; c.vy += 0.32; c.rot += c.vr; c.life--
+                        if (c.vy > 0 && c.y >= CHUNK_FLOOR) {
+                            if (c.bounces > 0) {
+                                c.y = CHUNK_FLOOR; c.vy = -c.vy * 0.45; c.vx *= 0.72; c.vr *= 0.5; c.bounces--
+                            } else {
+                                c.y = CHUNK_FLOOR; c.vy = 0; c.vx *= 0.86; c.vr *= 0.9
+                            }
+                        }
+                        const cf = c.life > 14 ? 1 : c.life / 14
+                        g.save(); g.translate(c.x, c.y); g.rotate(c.rot); g.globalAlpha = cf
+                        g.fillStyle = C.steel; g.fillRect(-c.w / 2, -c.h / 2, c.w, c.h)
+                        g.strokeStyle = C.ink; g.strokeRect(-c.w / 2, -c.h / 2, c.w, c.h)
+                        g.fillStyle = C.steelHi; g.fillRect(-c.w / 2 + 2, -c.h / 2 + 2, c.w - 4, 2)
+                        // the chassis rivet motif — torn plates carry their rivets out
+                        g.fillStyle = '#181b12'
+                        g.beginPath(); g.arc(-c.w / 2 + 5, -c.h / 2 + 5, 2.4, 0, 7); g.fill()
+                        g.beginPath(); g.arc(c.w / 2 - 5, c.h / 2 - 5, 2.4, 0, 7); g.fill()
+                        g.fillStyle = '#575e4b'
+                        g.beginPath(); g.arc(-c.w / 2 + 4, -c.h / 2 + 4, 1.2, 0, 7); g.fill()
+                        g.beginPath(); g.arc(c.w / 2 - 6, c.h / 2 - 6, 1.2, 0, 7); g.fill()
+                        g.restore(); g.globalAlpha = 1
+                    }
+                    hud.chunks = hud.chunks.filter(c => c.life > 0)
+                }
                 if (hud.lid) {
                     const L = hud.lid
                     L.x += L.vx; L.y += L.vy; L.vy += 0.35; L.rot += L.vr
@@ -1519,7 +1582,7 @@ export default function BombDefuseGame() {
                     : null),
                 // #1812 item 3: the boom FX, live-probeable — lid/shrapnel in
                 // flight + the scorch decals the chassis carries between runs.
-                boomFx: () => ({ lid: !!hudRef.current.lid, shrap: hudRef.current.shrap.length, scorch: scorchDecals.length, boomT: hudRef.current.boomT }),
+                boomFx: () => ({ lid: !!hudRef.current.lid, shrap: hudRef.current.shrap.length, chunks: hudRef.current.chunks.length, bounced: hudRef.current.chunks.reduce((n, c) => n + (2 - c.bounces), 0), scorch: scorchDecals.length, boomT: hudRef.current.boomT }),
                 boomNow: () => { const gb = gsRef.current; if (gb && !gb.done) gb.fuse = 1 },
                 ventTaught: () => hudRef.current.ventTaught,
                 // #1812 item 1: the live teach panel + its dismissal latch.
