@@ -68,9 +68,20 @@ for (const [name, facts, action, why] of U) {
 }
 
 // ---- B + C. sandbox ----------------------------------------------------------
+// The sandbox owns its git identity (#main-red 2026-11-15): `merge` creates a
+// commit and takes its identity from the machine's config — on a runner whose
+// global config has no usable identity that merge died with exit 128 while the
+// `commit()` helper's `-c` flags sailed past. GIT_* env vars outrank every
+// config level and cover every subcommand, so the fixture is actually hermetic
+// as its header claims. stderr is piped so a future crash names git's reason
+// instead of a bare "Command failed: git ...".
+const GIT_ENV = {
+    GIT_AUTHOR_NAME: 'wtcheck', GIT_AUTHOR_EMAIL: 'wtcheck@local',
+    GIT_COMMITTER_NAME: 'wtcheck', GIT_COMMITTER_EMAIL: 'wtcheck@local',
+}
 const sh = (dir, args, opt = {}) =>
     execFileSync('git', args[0] === '-C' ? args : ['-C', dir, ...args],
-        { encoding: 'utf8', timeout: 30000, stdio: ['ignore', 'pipe', 'ignore'], ...opt })
+        { encoding: 'utf8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...GIT_ENV }, ...opt })
 const commit = (dir, msg) => {
     sh(dir, ['add', '-A']) // --all alone skips untracked; the first commit needs add
     sh(dir, ['-c', 'user.name=wtcheck', '-c', 'user.email=wtcheck@local', 'commit', '-qm', msg])
@@ -186,7 +197,9 @@ try {
     }
 } catch (e) {
     fail += 1
-    console.log(`FAIL sandbox crashed — ${String(e).split('\n')[0]}`)
+    const stderr = e.stderr ? String(e.stderr).trim().split('\n').slice(-3).join(' / ') : ''
+    console.log(`FAIL sandbox crashed — ${String(e).split('\n')[0]}` +
+        (stderr ? ` — git said: ${stderr}` : '') + (e.signal ? ` (killed by ${e.signal})` : ''))
 }
 
 console.log(`\nworktreepurgecheck: ${pass} passed, ${fail} failed`)
