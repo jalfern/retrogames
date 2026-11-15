@@ -2722,8 +2722,13 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     // The seat IS the attract call — each pin names the exact swap in the play tick.
     rep.check('BEEZEE: the watcher seats autopilot(gs) in the play tick and the probe counts consumed thrust',
         /const pad = watchingRef\.current \? autopilot\(gs\) : input[\s\S]{0,80}if \(pad\.thrust\) padThrust\+\+/.test(readFileSync(B8_SRC.BEEZEE, 'utf8')))
+    // #2251 extracted the seat into `const pad = ...` ~900 chars before
+    // step(gs, [pad]); the old single-line regex died on that inert refactor
+    // (nightly 43729749985 — landed after the last green nightly, surfaced at
+    // the next one). Pin the semantic pair instead of one line layout: the
+    // seat ternary exists AND its pad is what reaches step() in the tick.
     rep.check('TIDYBOT: the watcher seats autopilot(gs) in the play tick',
-        /step\(gs, \[watchingRef\.current \? autopilot\(gs\) : livePad\(\)\]\)/.test(readFileSync(B8_SRC.TIDYBOT, 'utf8')))
+        (() => { const s = readFileSync(B8_SRC.TIDYBOT, 'utf8'); return /const pad = watchingRef\.current \? autopilot\(gs\) : livePad\(\)/.test(s) && /step\(gs, \[pad\]\)/.test(s) })())
     {
         const prSrc = readFileSync(B8_SRC.PICKRUSH, 'utf8')
         rep.check('PICKRUSH: seat 1 becomes autopilot(gs, 0) under watch',
