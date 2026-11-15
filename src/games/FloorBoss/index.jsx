@@ -25,8 +25,8 @@ import { createEpisode, saveEpisode, episodeStats } from '../../utils/robot/epis
 import { MANIFEST_REV } from '../../utils/robot/assets.js'
 import {
     makeGame, step, state, stateHash, createAutopilot, clickCell, setTool,
-    toggleAuto, clickOrder, hireRobot,
-    COLS, ROWS, SHIFT, QUOTA, STRIKES, RACK_COST, ROBOT_COST, RACK_CAP,
+    toggleAuto, clickOrder, hireRobot, nextShift,
+    COLS, ROWS, SHIFT, STRIKES, RACK_COST, ROBOT_COST, RACK_CAP,
     BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS,
 } from './sim.js'
 
@@ -76,6 +76,7 @@ const FB_ATTRACT = [
     'FULL TRAILERS EARN FREIGHT — FAR POSTS PAY MORE, THE ROAD COSTS PICKUPS',
     'RUSH HOUR PAYS 1.5x — RUSH ORDERS ALSO RUN COLD',
     'THREE EXPIRED ORDERS AND THE BOSS ENDS YOUR SHIFT',
+    'CLEAR THE QUOTA AND THE NEXT SHIFT RUNS HOTTER — HOW LONG CAN YOU LAST?', // ladder (#2346)
 ]
 
 const FloorBossGame = () => {
@@ -649,10 +650,11 @@ const FloorBossGame = () => {
             ctx.fillStyle = '#ffffff'; ctx.font = 'bold 15px monospace'
             ctx.fillText(String(gs.score).padStart(4, '0'), 10, 28)
             ctx.fillStyle = '#a8c8dc'; ctx.font = 'bold 9px monospace'
-            ctx.fillText(`QUOTA ${QUOTA}`, 72, 28)
+            // #2346: the bar tracks THIS shift's earnings against THIS shift's quota
+            ctx.fillText(`QUOTA ${gs.params.quota}`, 72, 28)
             // quota bar
             ctx.fillStyle = '#14212c'; ctx.fillRect(72, 8, 120, 8)
-            const pct = Math.max(0, Math.min(1, gs.score / QUOTA))
+            const pct = Math.max(0, Math.min(1, (gs.score - gs.shiftBase) / gs.params.quota))
             ctx.fillStyle = pct >= 1 ? '#5dff8f' : '#3d9fd8'
             ctx.fillRect(72, 8, 120 * pct, 8)
             // strike lamps
@@ -682,7 +684,12 @@ const FloorBossGame = () => {
             ctx.textAlign = 'center'
             ctx.fillText(`${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`, 300, 23)
             ctx.font = 'bold 8px monospace'; ctx.fillStyle = '#cfe6f5'
-            ctx.fillText('SHIFT', 300, 9)
+            ctx.fillText(`SHIFT ${gs.shift}`, 300, 9) // #2346: the ladder number rides the clock
+            if (gs.cleared > 0) { // banked nights, steady green tally by the clock
+                ctx.fillStyle = '#5dff8f'; ctx.textAlign = 'right'
+                ctx.fillText(`✓${gs.cleared}`, 466, 23)
+                ctx.textAlign = 'center'
+            }
             // rush lamp — a rotating beacon glow while the wave is on
             const rush = gs.tick % (2700 + 1200) >= 2700
             if (rush) {
@@ -863,7 +870,9 @@ const FloorBossGame = () => {
         // first 15 s: spotlight the selected bot (or bot 1) with a ghost trail
         // so click-select-dispatch teaches itself without attract lines
         const paintTutorial = (tick) => {
-            if (screenRef.current !== 'play' || gs.tick > 900) return
+            // #2346: the division-of-labour lesson is a first-night lesson — a
+            // returning manager on shift 2 does not need it again.
+            if (screenRef.current !== 'play' || gs.tick > 900 || gs.shift > 1) return
             // #2254 item 3: the player's job was unclear — AUTO looks like it runs
             // the whole shift. For the first 15 s the floor states the division:
             // auto routes the bots, the manager handles everything else.
@@ -924,7 +933,7 @@ const FloorBossGame = () => {
             const board = (() => { try { return JSON.parse(localStorage.getItem('floorboss.board') || '[]') } catch { return [] } })()
             if (board.length) {
                 ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 9px monospace'
-                ctx.fillText(`BEST SHIFT: ${board[0].score}`, W / 2, 206)
+                ctx.fillText(`BEST RUN: ${board[0].score}`, W / 2, 206) // #2346: runs now span the ladder
             }
             ctx.textAlign = 'left'
         }
@@ -935,19 +944,23 @@ const FloorBossGame = () => {
             const won = gs.end === 'win'
             ctx.font = 'bold 20px monospace'
             ctx.fillStyle = won ? '#5dff8f' : '#ff5a4f'
-            ctx.fillText(won ? 'QUOTA CLEARED' : gs.end === 'fired' ? "YOU'RE FIRED" : 'BELOW QUOTA', W / 2, 130)
+            // #2346: name the rung the night died or climbed
+            ctx.fillText(won ? (gs.shift === 1 ? 'QUOTA CLEARED' : `SHIFT ${gs.shift} CLEARED`)
+                : gs.end === 'fired' ? "YOU'RE FIRED" : 'BELOW QUOTA', W / 2, 130)
             ctx.font = '8px monospace'; ctx.fillStyle = '#7e9cb0'
             ctx.fillText(gs.endReason, W / 2, 150)
             ctx.font = 'bold 15px monospace'; ctx.fillStyle = '#ffffff'
             ctx.fillText(`THROUGHPUT ${gs.score}`, W / 2, 190)
             ctx.font = '8px monospace'; ctx.fillStyle = '#9fc0d8'
-            ctx.fillText(`SHIPPED ${gs.shipped} · STOWS ${gs.stows} · EXPIRED ${gs.expired}/${STRIKES}`, W / 2, 210)
+            ctx.fillText(`NIGHTS BANKED ${gs.cleared} · CAREER ${gs.score}`, W / 2, 210)
+            ctx.fillText(`SHIPPED ${gs.shipped} · STOWS ${gs.stows} · EXPIRED ${gs.expired}/${STRIKES}`, W / 2, 226)
             // #1921: the freight ledger — what the trailers earned, cost and left behind
             ctx.fillStyle = '#7e9cb0'
-            ctx.fillText(`FREIGHT +${gs.freight} · EXPRESS −${gs.fees}${gs.escrow ? ` · ${gs.escrow} STRANDED ON THE PAD` : ' · PAD CLEAN'}`, W / 2, 226)
+            ctx.fillText(`FREIGHT +${gs.freight} · EXPRESS −${gs.fees}${gs.escrow ? ` · ${gs.escrow} STRANDED ON THE PAD` : ' · PAD CLEAN'}`, W / 2, 242)
             if (tick % 60 < 40) {
                 ctx.font = 'bold 10px monospace'; ctx.fillStyle = '#ffffff'
-                ctx.fillText('PRESS ANY KEY FOR THE NEXT SHIFT', W / 2, 250)
+                // #2346: a cleared night promises the ladder; a lost one the attract
+                ctx.fillText(won ? `PRESS ANY KEY FOR SHIFT ${gs.shift + 1} — QUOTA ${gs.params.quota + 200}` : 'PRESS ANY KEY', W / 2, 266)
             }
             ctx.textAlign = 'left'
         }
@@ -1014,6 +1027,21 @@ const FloorBossGame = () => {
             audioController.playTone(523, 0.12, 'square', 0.06, 0.18)
         }
 
+        // #2346 shift ladder: a cleared night clocks into the next one — the
+        // floor persists (hires, racks, freight), the params tighten, and the
+        // promise the over screen already made ("NEXT SHIFT") becomes the law.
+        const advanceShift = () => {
+            if (!nextShift(gs)) return false
+            parts.length = 0
+            setEnd(null)
+            watchingRef.current = false; setWatching(false)
+            setMode('play')
+            audioController.playTone(330, 0.08, 'square', 0.06)
+            audioController.playTone(494, 0.08, 'square', 0.06, 0.09)
+            audioController.playTone(659, 0.12, 'square', 0.06, 0.18)
+            return true
+        }
+
         const toGrid = (ev) => {
             const r = canvas.getBoundingClientRect()
             const px = ((ev.clientX - r.left) / r.width) * W
@@ -1049,6 +1077,7 @@ const FloorBossGame = () => {
             if (screenRef.current === 'attract') { startPlay(); return }
             if (screenRef.current === 'over') {
                 if (performance.now() - overAt < 600) return
+                if (advanceShift()) return // #2346: a cleared night clocks into the next
                 setMode('attract')
                 gs = makeGame(1337)
                 return
@@ -1079,7 +1108,10 @@ const FloorBossGame = () => {
         }
         const onPointerDown = (ev) => {
             if (screenRef.current === 'attract') { startPlay(); return }
-            if (screenRef.current === 'over' && performance.now() - overAt > 600) { setMode('attract'); gs = makeGame(1337); return }
+            if (screenRef.current === 'over' && performance.now() - overAt > 600) {
+                if (advanceShift()) return // #2346: tap clocks into the next night
+                setMode('attract'); gs = makeGame(1337); return
+            }
             onCanvasClick(ev)
         }
 
@@ -1103,6 +1135,14 @@ const FloorBossGame = () => {
             },
             tick: (pad) => {
                 if (screenRef.current !== 'play') { screenRef.current = 'play'; setMode('play') }
+                // #2346: pad A on a cleared night clocks into the next shift —
+                // the ladder is contract-drivable (QA bots / replays / RL).
+                if (gs.end === 'win' && pad && pad.a) {
+                    nextShift(gs)
+                    parts.length = 0
+                    setEnd(null)
+                    return state(gs)
+                }
                 step(gs, [pad || {}])
                 handleEvents(gs.ev, gs.tick)
                 if (gs.end && screenRef.current === 'play') finish()
@@ -1133,6 +1173,9 @@ const FloorBossGame = () => {
                     return o.id
                 },
                 truck: () => ({ ...gs.truck }),
+                // #2346 harness eyes on the ladder
+                shiftInfo: () => ({ shift: gs.shift, quota: gs.params.quota, cleared: gs.cleared, earned: gs.score - gs.shiftBase, params: { ...gs.params } }),
+                nextShift: () => nextShift(gs),
                 pad: () => gs.pad.map((p) => p.n), // #1911 harness eye on the staged parcels
                 padDest: () => gs.pad.map((p) => p.d || 0), // #1927 eye on the destination classes
                 padWeight: () => gs.pad.map((p) => p.w || 0), // #1931 eye on the weight classes
@@ -1150,8 +1193,8 @@ const FloorBossGame = () => {
             mountDbg({
                 title: 'FLOOR BOSS',
                 getState: () => [
-                    `tick ${gs.tick}/${SHIFT} | score ${gs.score}/${QUOTA} strikes ${gs.strikes}/${STRIKES} | ${gs.end || 'running'} ${gs.endReason}`,
-                    `shipped ${gs.shipped} staging [${gs.staging.join('')}] escrow ${gs.escrow} paid ${gs.paid} freight +${gs.freight} express −${gs.fees} | stows ${gs.stows} arm ${gs.arm.held || '-'} servo ${gs.arm.swing > 0 ? `swing→${gs.arm.target.x},${gs.arm.target.y} (${gs.arm.swing})` : `wait ${gs.arm.heldT}`} auto ${gs.auto ? 'on' : 'off'} tool ${gs.tool || '-'}`,
+                    `shift ${gs.shift} | tick ${gs.tick}/${SHIFT} | earned ${gs.score - gs.shiftBase}/${gs.params.quota} strikes ${gs.strikes}/${STRIKES} | ${gs.end || 'running'} ${gs.endReason}`,
+                    `banked ${gs.cleared} | score ${gs.score} | flow ${gs.params.orderBase} due x${gs.params.dueMult} wear −${gs.params.wearCut} | shipped ${gs.shipped} staging [${gs.staging.join('')}] escrow ${gs.escrow} paid ${gs.paid} freight +${gs.freight} express −${gs.fees} | stows ${gs.stows} arm ${gs.arm.held || '-'} servo ${gs.arm.swing > 0 ? `swing→${gs.arm.target.x},${gs.arm.target.y} (${gs.arm.swing})` : `wait ${gs.arm.heldT}`} auto ${gs.auto ? 'on' : 'off'} tool ${gs.tool || '-'}`,
                     `road ${gs.truck.away} far ${gs.truck.far} tiers [${gs.truck.tiers.join('')}] pad [${gs.pad.map((p) => `${p.n}x${(p.d || 0) + 1}${(p.w || 0) > 0 ? `w${(p.w || 0) + 1}` : ''}`).join(' ')}] heavy ${gs.truck.grid.reduce((s, r) => s + r[2], 0)}`, // #1927 freight tiers, #1931 weight classes
                     gs.robots.map((b, i) => `bot${i + 1} (${b.x},${b.y}) ${b.task.kind}${b.carry ? ' ' + b.carry : ''}${b.broken ? ' DOWN' : ''}${b.jam ? ' JAM' : ''} wear ${Math.round((b.wear / b.wearMax) * 100)}%`).join(' | '),
                 ],
@@ -1162,7 +1205,9 @@ const FloorBossGame = () => {
                     { label: 'force jam', run: () => { if (gs.robots.length > 1) { gs.robots[0].jam = true; gs.robots[1].jam = true; return 'jam armed' } return 'need 2 bots' } },
                     { label: 'spawn order', run: () => { gs.orderT = 0; return 'order due' } },
                     { label: 'fill staging', run: () => { gs.staging.push('crate', 'can', 'coil'); return 'staging stocked' } },
-                    { label: 'force quota', run: () => { gs.score = QUOTA; return 'quota armed' } },
+                    { label: 'force quota', run: () => { gs.score = gs.shiftBase + gs.params.quota; return 'quota armed' } }, // #2346: arms THIS shift's rung
+                    { label: 'clear shift', run: () => { gs.score = gs.shiftBase + gs.params.quota; gs.tick = SHIFT; return `shift ${gs.shift} quota at the whistle` } }, // #2346: lands the win screen next tick
+                    { label: 'next shift', run: () => (nextShift(gs) ? `shift ${gs.shift} clocked in (quota ${gs.params.quota})` : 'not cleared yet') }, // #2346
                     { label: 'reset', run: () => { gs = makeGame(1337); setMode('attract'); return 'rebooted' } },
                 ],
             })
@@ -1173,7 +1218,7 @@ const FloorBossGame = () => {
         canvas.addEventListener('pointerdown', onPointerDown)
         raf = requestAnimationFrame(loop)
         // #1473: production-safe feedback state (seed for replay), every build
-        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.score, done: !!gs.end, seed: gs.seed }))
+        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.score, done: !!gs.end, seed: gs.seed, shift: gs.shift })) // shift additive #2346
 
         return () => {
             unexposeFeedbackState()

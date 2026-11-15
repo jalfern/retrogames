@@ -375,11 +375,21 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     r.check('reaches the shift report', await waitMode('over', 4000))
     await new Promise((res) => setTimeout(res, 900))
     await page.keyboard.press('Enter')
-    r.check('a real key returns to attract', await waitMode('attract'))
+    // #2346: a cleared night does NOT drop to attract — the ladder clocks in
+    const advOk = await waitMode('play', 4000)
+    const adv = advOk ? await st() : null
+    r.check('a cleared night clocks into shift 2, not attract (#2346)', !!adv && adv.shift === 2 && adv.tick < 120 && adv.score >= 1000 && adv.quota === 1200,
+        adv ? `shift ${adv.shift}, tick ${adv.tick}, career ${adv.score}, quota ${adv.quota}` : 'still on the report')
+    // and a LOST night still ends the run — drop the floor below the rung at the whistle
+    await page.evaluate(() => { const gs = window.__floorbossTest.sim(); gs.tick = 9000; gs.score = gs.shiftBase })
+    r.check('a short night ends the run', await waitMode('over', 4000))
+    await new Promise((res) => setTimeout(res, 900))
+    await page.keyboard.press('Enter')
+    r.check('a lost run returns to attract', await waitMode('attract'))
     await page.keyboard.press('Space')
     r.check('restart into a fresh shift', await waitMode('play'))
     const fresh = await st()
-    r.check('fresh shift starts clean', fresh.tick < 120 && fresh.score < 130, `${fresh.tick} ticks, score ${fresh.score}`)
+    r.check('fresh shift starts clean', fresh.tick < 120 && fresh.score < 130 && fresh.shift === 1 && fresh.quota === 1000, `${fresh.tick} ticks, score ${fresh.score}, shift ${fresh.shift}`)
 }
 
 r.check('zero page errors', errors.length === 0, errors.join(' | '))

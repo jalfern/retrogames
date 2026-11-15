@@ -133,6 +133,41 @@ score; three expired orders and you're fired. Quota: 1000.
 - `snapshot/restore` are intentionally absent from the contract: the seeded
   rng is a closure JSON cannot copy (#391 family).
 
+## Shift ladder — the night shift becomes a career (#2346)
+
+- `sim.js`: `shiftParams(n)` is the whole ladder, pure in n — quota `1000 +
+  200(n−1)`, the order wire tightens 540→380 (rush 320→220), deadlines shorten
+  −4%/rung to a 0.72 floor, drive-wear cuts 15/rung to −70. Shift 1 lands
+  exactly on the pre-ladder constants, so single-shift play is bit-for-bit the
+  old floor (#1917 zero-footprint law — proven against git HEAD's engine with
+  literal behavior traces, not vibes). `nextShift(gs)` clocks the career into
+  the next night: the floor persists (hires stay hired, racks keep stock,
+  freight caught in a gripper rides morning dispatch), bots come out
+  wear-reset, the strike sheet is new, orders/pad/belt/truck wipe clean,
+  escrow follows the parcels out (#1921 law) — and the quota is now measured
+  against what THIS shift earns (`score − shiftBase`); on shift 1 (`shiftBase
+  0`) that is bit-identical to the old absolute law.
+- The run ends when a night is LOST (fired mid-shift, or short at the
+  whistle); every cleared night banks (`cleared++`) and the over screen names
+  the next rung and its price. The HUD carries the rung (`SHIFT n` + a green
+  bank tally), the quota bar tracks earnings-vs-rung, the first-night lesson
+  does not repeat on shift 2, and the leaderboard renamed BEST SHIFT → BEST
+  RUN (runs now span the ladder). Contract: pad A on a cleared night advances
+  (QA bots / replays / RL can climb it); `shiftInfo` is the DEV eye.
+- Honest shape of the ramp (measured, autopilot): seeds 4242/1337/777/7/99
+  bank 5–8 nights before the ladder out-earns the proven manager — winnable
+  early, it bites late. Nothing here is scripted difficulty: the same
+  determinism law (seeded streams, fixed BFS, integer clocks) covers every
+  rung, and the shift bits join `stateHash` additively (#1373 law).
+- Proof: `floorbosscheck` +31 gates (params law + caps + clamp, three HEAD
+  parity traces, earnings-not-score quota, the full nextShift carry-over law,
+  hash/state rungs, five career ramps, ten UI pins); mutants
+  `--mutate-ladder` (quota stops climbing), `--mutate-advance` (advance
+  without a cleared night), `--mutate-bank` (career resets to zero) — each
+  dies, tree restores green. `floorbossplay` drives the ladder with real
+  keys: win → Enter → shift 2 live (career 1689, quota 1200), a short night
+  ends the run, restart lands a clean shift 1, zero page errors.
+
 ## Verify
 ```bash
 npm run floorbosscheck          # Node: boots/rules/win/determinism/episode (mutant-proven) + servo presentation source pins (#1877) + load-out (#1911) + freight-line conservation/bonus/express laws (#1921) + freight tiers: side-stream golden, tiered bonus, road law, dest spread (#1927) + load weight: dest+weight goldens, mix sentinels, rate literals 60/54, dock speed 14/14/28 (#1931)
@@ -179,7 +214,9 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
   trailers pay 6x[1,2,3]dest x[1,2,3]weight per box, heavies load at 2x
   TRUCK_LOAD — see Engine notes). The rate ladder stays flat on LOCAL dribbles:
   dribbles ride free, distance AND weight only pay aboard a full trailer.
-- Only one shift template; difficulty varies by seed, not by level ladder.
+- ~~Only one shift template; difficulty varies by seed, not by level ladder~~
+  **CLOSED by #2346**: the career ladder — clearing a shift clocks into the next
+  with an honest, pure ramp (see "Shift ladder" below).
 - Two-player manager seats (model vs human, one slot each) are the #1144
   follow-up: the episode format already pins `sources`.
 - Rack placement is 1-cell blocks; real warehouse aisle-clearance rules
