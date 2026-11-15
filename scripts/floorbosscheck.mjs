@@ -32,6 +32,9 @@
 //   node scripts/floorbosscheck.mjs --mutate-weight   # heavy crates pay the LIGHT rate, demand RED (#1931)
 //   node scripts/floorbosscheck.mjs --mutate-slow     # heavies load at light speed, demand RED (#1931)
 //   node scripts/floorbosscheck.mjs --mutate-bands    # the inverted dest band returns, demand RED (#1931)
+//   node scripts/floorbosscheck.mjs --mutate-ladder   # the quota stops climbing (one flat rung), demand RED (#2346)
+//   node scripts/floorbosscheck.mjs --mutate-advance  # a cleared night refuses to clock in (one night ever), demand RED (#2346)
+//   node scripts/floorbosscheck.mjs --mutate-bank     # the career score resets each night, demand RED (#2346)
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -42,6 +45,7 @@ import {
     SHIFT, QUOTA, STRIKES, RACK_CAP, OVERFLOW_FINE, EXPIRE_FINE, BREAK_FINE, BASE_PAY,
     STOW_PAY, RACK_COST, ROBOT_COST, ARM_PATIENCE, ARM_CELL, PAD_CAP, PAD_AGE,
     FREIGHT_PER_BOX, FULL_TRAILER, DISPATCH_FEE,
+    shiftParams, nextShift, LADDER_QUOTA_STEP,
 } from '../src/games/FloorBoss/sim.js'
 import { createEpisode, validateEpisode } from '../src/utils/robot/episode.js'
 import { hashString } from '../src/utils/robot/physics.js'
@@ -61,7 +65,10 @@ const MUT_MILES = ARGS.includes('--mutate-miles')
 const MUT_WEIGHT = ARGS.includes('--mutate-weight')
 const MUT_SLOW = ARGS.includes('--mutate-slow')
 const MUT_BANDS = ARGS.includes('--mutate-bands')
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS) {
+const MUT_LADDER = ARGS.includes('--mutate-ladder')
+const MUT_ADVANCE = ARGS.includes('--mutate-advance')
+const MUT_BANK = ARGS.includes('--mutate-bank')
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const src = readFileSync(sim, 'utf8')
     const [from, to, name] = MUT_YIELD
@@ -82,7 +89,13 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                     ? ['export const WEIGHT_LOAD = [1, 1, 2]', 'export const WEIGHT_LOAD = [1, 1, 1]', 'the dock never slows for a heavy crate — free speed (#1931)']
                                     : MUT_BANDS
                                         ? ['dr < DEST_ODDS[DEST_LONGHAUL] + DEST_ODDS[DEST_REGIONAL] ? DEST_REGIONAL : DEST_LOCAL', 'dr < DEST_ODDS[DEST_LOCAL] + DEST_ODDS[DEST_REGIONAL] ? DEST_REGIONAL : DEST_LOCAL', 'the inverted band is back — REGIONAL hoards LOCAL\'s share (#1931 fix)']
-                                        : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
+                                        : MUT_LADDER
+                                            ? ['quota: QUOTA + LADDER_QUOTA_STEP * (k - 1)', 'quota: QUOTA', 'the ladder stops climbing — every night stays 1000 (#2346)']
+                                            : MUT_ADVANCE
+                                                ? ['if (gs.end !== \'win\') return false', 'if (gs.end !== \'win\') return true', 'nextShift claims it advanced without a cleared night (#2346)']
+                                                : MUT_BANK
+                                                    ? ['gs.shiftBase = gs.score', 'gs.shiftBase = 0', 'banked money evaporates — the career resets to zero each night (#2346)']
+                                                    : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(sim, src.replace(from, to))
     console.log(`  ..    mutated: ${name} — this run MUST report FAILs`)
@@ -105,7 +118,7 @@ for (const seed of [7, 1337, 4242, 99]) {
 }
 {
     const s = state(makeGame(7))
-    const keys = ['tick', 'score', 'quota', 'strikes', 'done', 'robots', 'racks', 'orders', 'staging', 'conveyor', 'armHeld', 'auto', 'cursor', 'hash', 'seed', 'pad', 'truck', 'carry', 'escrow', 'freight', 'fees', 'padAge']
+    const keys = ['tick', 'score', 'quota', 'strikes', 'done', 'robots', 'racks', 'orders', 'staging', 'conveyor', 'armHeld', 'auto', 'cursor', 'hash', 'seed', 'pad', 'truck', 'carry', 'escrow', 'freight', 'fees', 'padAge', 'shift', 'cleared', 'earned']
     ok(keys.every((k) => k in s), 'state shape complete')
 }
 
@@ -710,6 +723,115 @@ console.log('— plaicraft episode —')
     }
     const file = ep.finish({ success: gs.end === 'win', score: gs.score, finalHash: stateHash(gs) })
     ok(validateEpisode(file) === null, `episode validates (${file.episode.poseCount} poses, ${file.ticks} ticks, success=${file.episode.success})`)
+}
+
+console.log('— shift ladder (#2346) —')
+{
+    // the pure ladder books itself: night one IS the classic floor, every rung
+    // an honest step, and each tighten lands on a cap and stays
+    const p1 = shiftParams(1)
+    ok(p1.quota === QUOTA && p1.orderBase === 540 && p1.orderRush === 320 && p1.dueMult === 1 && p1.wearCut === 0,
+        'shift 1 params land exactly on the pre-ladder constants — zero footprint')
+    let mono = true, capped = true, prev = p1
+    for (let n = 2; n <= 14; n++) {
+        const p = shiftParams(n)
+        if (!(p.quota === prev.quota + LADDER_QUOTA_STEP && p.orderBase <= prev.orderBase && p.orderRush <= prev.orderRush && p.dueMult <= prev.dueMult && p.wearCut >= prev.wearCut)) mono = false
+        if (!(p.orderBase >= 380 && p.orderRush >= 220 && p.dueMult >= 0.72 && p.wearCut <= 70)) capped = false
+        prev = p
+    }
+    ok(mono, 'every rung an honest step — quota +200, wire/deadlines/wear only tighten')
+    ok(capped, 'tightening lands on caps and stays (380/220/0.72/70) — the ladder cannot compress to zero')
+    ok(shiftParams(0).quota === QUOTA && shiftParams(-3).orderBase === 540, 'clamped at n<1 — never books below night one')
+}
+{
+    // Zero-footprint against the PRE-PR engine: literal behavior traces recorded
+    // from git HEAD's sim (seed 359e062, autopilot; score/shipped/expired at
+    // every 600-tick mark plus the whistle). The live engine must match at the
+    // comma — the hash may differ only by the documented additive shift bits.
+    const TRACE = {
+        4242: '600:45:1:0|1200:144:2:0|1800:109:2:0|2400:114:3:0|3000:79:4:0|3600:110:5:0|4200:135:7:0|4800:273:8:0|5400:373:9:0|6000:503:10:0|6600:533:11:0|7200:823:12:0|7800:948:13:0|8400:968:15:0|9000:1395:15:0|END win 1395',
+        1337: '600:45:1:0|1200:118:2:0|1800:138:3:0|2400:93:4:0|3000:53:4:0|3600:122:6:0|4200:147:7:0|4800:2:8:0|5400:130:9:0|6000:697:10:0|6600:727:11:0|7200:1104:13:0|7800:1134:14:0|8400:1397:14:0|9000:1577:16:0|END win 1577',
+        777: '600:50:1:0|1200:50:2:0|1800:20:3:0|2400:45:4:0|3000:50:4:0|3600:21:5:0|4200:26:6:0|4800:46:7:0|5400:427:9:0|6000:457:10:0|6600:798:11:0|7200:913:11:0|7800:938:13:0|8400:1291:15:0|9000:1301:16:0|END win 1301',
+    }
+    let bad = null
+    for (const seed of Object.keys(TRACE)) {
+        const gs = makeGame(+seed)
+        const ap = createAutopilot()
+        const got = []
+        while (!gs.end && gs.tick < SHIFT + 10) { step(gs, [ap(gs)]); if (gs.tick % 600 === 0) got.push(`${gs.tick}:${gs.score}:${gs.shipped}:${gs.expired}`) }
+        got.push(`END ${gs.end} ${gs.score}`)
+        if (got.join('|') !== TRACE[seed]) bad = bad || `seed ${seed} diverges (${got.slice(-2).join(' ')})`
+    }
+    ok(!bad, 'shift 1 replays the pre-PR engine at the comma — 3 autopilot careers, marks literal-exact vs HEAD (#2346)')
+}
+{
+    // quota is EARNINGS-based, not raw score: a banked fortune still goes short
+    const gs = makeGame(7)
+    gs.shift = 2; gs.params = shiftParams(2); gs.shiftBase = gs.score + 5000
+    while (!gs.end && gs.tick < SHIFT + 10) step(gs, [{}])
+    ok(gs.end === 'short' && !gs.quotaHit, 'a pre-banked fortune ends SHORT — the rung is measured by what THIS shift earns')
+}
+{
+    // nextShift law
+    const gs = makeGame(4242)
+    ok(!nextShift(gs), 'nextShift refuses while the night is still running')
+    const ap = createAutopilot()
+    while (!gs.end && gs.tick < SHIFT + 10) step(gs, [ap(gs)])
+    ok(gs.end === 'win' && gs.cleared === 1, 'night one banks on clearing')
+    const scoreAt = gs.score, racksAt = JSON.stringify(gs.racks), robotsAt = gs.robots.length
+    gs.robots[0].carry = 'crate' // caught mid-haul at the whistle
+    ok(nextShift(gs) === true, 'a cleared night clocks into the next')
+    ok(gs.shift === 2 && gs.params.quota === 1200 && gs.tick === 0 && gs.strikes === 0 && gs.end === null && !gs.quotaHit,
+        'shift 2 books quota 1200 on a fresh clock and a new strike sheet')
+    ok(gs.shiftBase === scoreAt && gs.score === scoreAt, 'the career score carries — banked money stays banked')
+    ok(gs.robots.length === robotsAt && JSON.stringify(gs.racks) === racksAt, 'hires stay hired and racks keep their stock — the floor persists')
+    ok(gs.robots.every((b) => !b.broken && !b.jam && b.wear === 0 && b.repair === 0), 'bots come out of the maintenance bay wear-reset')
+    ok(gs.robots.every((b) => !b.carry || b.task.kind === 'toOut'), 'freight caught in a gripper rides morning dispatch, not the trash')
+    ok(gs.orders.length === 0 && gs.pad.length === 0 && gs.staging.length === 0 && gs.conv.length === 0 && gs.escrow === 0 && gs.truck.mode === 'out' && gs.truck.carry === 0,
+        'orders, pad, staging, belt, escrow and truck wipe clean for a fresh night (escrow follows freight out)')
+    ok(gs.ev.some((e) => e.type === 'shiftstart' && e.shift === 2 && e.quota === 1200), 'the clock-in rings a shiftstart event')
+}
+{
+    // hash + state carry the rung (additive, #1373 law)
+    const simSrc = readFileSync(new URL('../src/games/FloorBoss/sim.js', import.meta.url), 'utf8')
+    ok(/SH\$\{gs\.shift\}/.test(simSrc), 'hash carries the shift bits (#2346, additive)')
+    const a = makeGame(7), b = makeGame(7)
+    for (let i = 0; i < 300; i++) { step(a, [{}]); step(b, [{}]) }
+    b.shift = 2
+    ok(stateHash(a) !== stateHash(b), 'a floor booked at shift 2 hashes apart from shift 1')
+    const s = state(a)
+    ok(s.quota === QUOTA && s.shift === 1 && s.cleared === 0 && s.earned === s.score, 'state exposes the rung (params quota, earned vs base)')
+    const c = makeGame(7); c.params = shiftParams(3)
+    ok(state(c).quota === 1400, 'state.quota rides the params — shift 3 reads 1400')
+}
+{
+    // the ramp is honest both ways: winnable early, it bites by shift ~9
+    for (const seed of [4242, 1337, 777, 7, 99]) {
+        const gs = makeGame(seed)
+        const ap = createAutopilot()
+        let runs = 0, end = null
+        while (runs < 12) {
+            while (!gs.end && gs.tick < SHIFT + 10) step(gs, [ap(gs)])
+            if (gs.end !== 'win') { end = `${gs.end}@shift ${gs.shift}`; break }
+            runs++
+            nextShift(gs)
+        }
+        ok(runs >= 5, `career seed ${seed}: the ladder climbs rung by rung (${runs} banked${end ? `, the ramp bites: ${end}` : ''})`)
+    }
+}
+{
+    // UI wiring pins (#2346)
+    const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    ok(/const advanceShift = \(\) => \{/.test(ui), 'the shell owns one clock-in verb every over-screen path shares')
+    ok(/if \(advanceShift\(\)\) return/.test(ui), 'key AND tap on a cleared night clock into the next shift')
+    ok(/gs\.end === 'win' && pad && pad\.a/.test(ui), 'contract tick: pad A advances the ladder (QA bots / replays / RL)')
+    ok(/`SHIFT \$\{gs\.shift\}`/.test(ui), 'the HUD clock carries the rung number every shift')
+    ok(/PRESS ANY KEY FOR SHIFT \$\{gs\.shift \+ 1\} — QUOTA \$\{gs\.params\.quota \+ 200\}/.test(ui), 'the win screen names the next rung and its price')
+    ok(/NIGHTS BANKED \$\{gs\.cleared\} · CAREER \$\{gs\.score\}/.test(ui), 'the over screen reports the career, not just the night')
+    ok(/gs\.tick > 900 \|\| gs\.shift > 1/.test(ui), 'the first-night lesson does not repeat on shift 2')
+    ok(/CLEAR THE QUOTA AND THE NEXT SHIFT RUNS HOTTER/.test(ui), 'the attract marquee teaches the ladder before the first clock-in')
+    ok(/BEST RUN: \$\{board\[0\]\.score\}/.test(ui), 'the leaderboard renamed for runs that span the ladder')
+    ok(/shiftInfo: \(\) =>/.test(ui), 'the DEV harness eye exposes the rung, base, bank and params')
 }
 
 console.log('— first-time-player readability pass (#2254, source pins) —')
