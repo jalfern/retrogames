@@ -116,6 +116,11 @@ export const LEVELS = [
         name: 'FLY PIT', timeTicks: 2200, need: 6,
         spawn: { x: 3, y: 18 }, exit: { x: 36, y: 3 },
         flies: [{ x: 11, y: 8, dir: 1 }],
+        // #2374 readability: the two seam cells are still plain DIRT in the CA
+        // (behaviour unchanged), but the painter tints cells listed here so the
+        // dust door reads differently from ordinary rock BEFORE it ignites.
+        // dashcheck pins that this list stays exactly the bored seam.
+        dust: [[15, 8], [16, 8]],
         proves: ['fly', 'burn'],
         build() {
             const c = new Carve()

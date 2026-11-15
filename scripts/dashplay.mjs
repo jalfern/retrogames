@@ -149,5 +149,21 @@ r.check('another key starts a fresh play (clock reset)', (await probe()).screen 
     r.check('a real key restarts after death', (await probe()).screen === 'attract')
 }
 
+// ---- #2374 FLY PIT juice: the comet trail and the corridor chirp are live ----
+{
+    await page.evaluate(() => window.__game && window.__game.reset && window.__game.reset(3))
+    await wait(1500)                                     // ~18 CA ticks; escape ~tick 6
+    const s = await probe()
+    r.check('the contract reset loaded FLY PIT', s.name === 'FLY PIT', `name=${s.name} screen=${s.screen}`)
+    r.check('the fly drags a fading comet trail', s.trail > 3, `trail=${s.trail} — corridor lane is not being painted`)
+    r.check('the corridor-entry chirp fired once the fly escaped', s.alarmed === true, `alarmed=${s.alarmed} fly=${JSON.stringify(s.flies[0])}`)
+    // the trail follows the fly: a tick later it has shifted along the shuttle
+    const flyX = s.flies[0] && s.flies[0].x
+    await wait(500)
+    const s2 = await probe()
+    r.check('the trail stays glued to the patrol (still painting)', s2.trail > 3 && s2.flies[0].x !== undefined,
+        `trail=${s2.trail} fly ${flyX}->${s2.flies[0] && s2.flies[0].x}`)
+}
+
 r.check('zero page errors across the whole playthrough', errors.length === 0, errors.slice(0, 4).join(' | '))
 r.exit(browser)

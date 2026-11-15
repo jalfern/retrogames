@@ -318,6 +318,18 @@ for (let i = 0; i < LEVELS.length; i++) {
     // between the trail cooling and the next pass arriving.
     ok(climb(51, 56), 'a climb through the gap between two fly passes was fatal — the game of chicken has no winning line')
     ok(!climb(44, -1), 'a player standing in the corridor survived the fly running over them — the gap is theatre, not hazard')
+
+    // (d) #2374 readability data pin: the dust-seam cells the painter tints
+    // must stay exactly the two DIRT cells the fly can bore open, in the pit's
+    // east wall. If someone later re-carves the seam, the old sparkle would
+    // mislead the player — and this check goes red instead.
+    {
+        const { meta, grid } = buildLevel(3)
+        const dust = (meta.dust || []).map(([x, y]) => `${x},${y}`).sort().join('|')
+        ok(dust === '15,8|16,8', `FLY PIT dust marks drifted off the bored seam (got "${dust}") — the readability tint lies`)
+        const allDirt = (meta.dust || []).every(([x, y]) => grid[y * sim.W + x] === DIRT)
+        ok(allDirt, 'a dust-marked cell is not DIRT — the seam must stay ignitable, not steel')
+    }
 }
 
 // -------------------------------------------------------------- mutation gate ----

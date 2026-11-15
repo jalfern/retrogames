@@ -80,6 +80,14 @@ const DashGame = () => {
         let runMoves = 0
         let lastMoveTick = -99
         const held = []                                   // ordered held arrow codes
+        // #2374 polish (renderer only — the sim never sees any of this):
+        // dustSet marks the seam cells for the readability tint; trail holds
+        // cellIndex -> strength for the fly's fading comet; alarmed fires the
+        // distant chirp once per level when the fly first enters the corridor.
+        let dustSet = new Set()
+        const TRAIL_LIFE = 10
+        const trail = new Map()
+        let alarmed = false
 
         const loadLevel = (idx, freshScore) => {
             levelIdx = idx % LEVELS.length
@@ -90,6 +98,8 @@ const DashGame = () => {
             plan = planFor(levelIdx)
             runMoves = 0; lastMoveTick = -99
             held.length = 0
+            dustSet = new Set((meta.dust || []).map(([x, y]) => y * W + x))
+            trail.clear(); alarmed = false
         }
         loadLevel(0, true)
 
@@ -129,6 +139,23 @@ const DashGame = () => {
             handleEvents(gs.events.slice(before))
         }
 
+        // #2374 juice, per CA tick: the fly drags a fading amber comet so its
+        // patrol lane is telegraphed while the corridor still reads as dark rock,
+        // and the first corridor entry of a level chirps a distant warning (the
+        // seam flicker alone was easy to miss). Both watch only gs — the sim is
+        // untouched. Attract runs them too, so the demo teaches the mechanic.
+        const trailAndCue = () => {
+            for (const [i, s] of trail) { if (s <= 1) trail.delete(i); else trail.set(i, s - 1) }
+            for (const f of gs.flies) {
+                trail.set(f.y * W + f.x, TRAIL_LIFE)
+                if (!alarmed && f.y === 8 && f.x >= 17) {
+                    alarmed = true
+                    audioController.playSweep(1560, 1040, 0.16, 'square', 0.03)
+                    audioController.playTone(780, 0.12, 'triangle', 0.03)
+                }
+            }
+        }
+
         const doSim = () => {
             if (screenRef.current === 'attract') {
                 const c = plan.find(cc => cc.tick === gs.tick)
@@ -153,6 +180,7 @@ const DashGame = () => {
                 handleEvents(ev)
                 if (gs.end) finish()
             }
+            if (gs) trailAndCue()
         }
 
         const frame = (ts) => {
@@ -184,6 +212,13 @@ const DashGame = () => {
                         ctx.fillStyle = '#6d3c18'
                         ctx.fillRect(px + 2, py + 3, 2, 2); ctx.fillRect(px + 10, py + 9, 3, 2)
                         if (gs.grid[(y - 1) * W + x] === 0) { ctx.fillStyle = '#3f7d3a'; ctx.fillRect(px, py, TS, 2) }
+                        // #2374 readability: the dust-seam cells carry a dry gold
+                        // sparkle so the bored-open door reads before it ignites.
+                        if (dustSet.has(y * W + x)) {
+                            ctx.fillStyle = 'rgba(255,190,80,0.22)'; ctx.fillRect(px, py, TS, TS)
+                            ctx.fillStyle = '#ffe08a'
+                            ctx.fillRect(px + 3, py + 4, 2, 2); ctx.fillRect(px + 9, py + 2, 2, 2); ctx.fillRect(px + 11, py + 11, 2, 2)
+                        }
                     } else if (t === STEEL) {
                         ctx.fillStyle = '#5b6b7a'; ctx.fillRect(px, py, TS, TS)
                         ctx.fillStyle = '#8595a4'; ctx.fillRect(px, py, TS, 3); ctx.fillRect(px, py, 3, TS)
@@ -205,6 +240,14 @@ const DashGame = () => {
                         ctx.fillRect(px + 5 + (gs.tick % 3), py + 6, 4, 5)
                     }
                 }
+            }
+
+            // #2374 trail: the fly's last TRAIL_LIFE cells as a fading amber
+            // comet — the patrol lane becomes readable motion, not just a sprite.
+            for (const [i, s] of trail) {
+                const tx = (i % W) * TS, ty = ((i - (i % W)) / W) * TS
+                ctx.fillStyle = `rgba(255,214,110,${Math.min(0.3, s * 0.035).toFixed(3)})`
+                ctx.fillRect(tx + 3, ty + 3, TS - 6, TS - 6)
             }
 
             // exit door + spawn marker
@@ -325,6 +368,9 @@ const DashGame = () => {
                         end: gs.end, win: gs.win, hash: stateHash(gs), moves: runMoves,
                         exit: { ...gs.exit, open: gs.have >= meta.need },
                         boulders, gems, fires, flies: gs.flies.map(f => ({ ...f })), board: board(),
+                        // #2374 polish observability (DEV-only): comet length and
+                        // whether the corridor-entry chirp has fired this level.
+                        trail: trail.size, alarmed,
                     }
                 },
                 // the next arrow the PROVEN planner would press from here — the
@@ -358,6 +404,7 @@ const DashGame = () => {
                     const heldDirs = [[pad.up, 'ArrowUp'], [pad.down, 'ArrowDown'], [pad.left, 'ArrowLeft'], [pad.right, 'ArrowRight']].filter((d) => d[0])
                     if (heldDirs.length && gs.tick - lastMoveTick >= MOVE_STEP) movePlayer(heldDirs[heldDirs.length - 1][1])
                     handleEvents(step(gs).events)
+                    trailAndCue()
                 },
                 state: () => ({
                     tick: gs.tick, score: gs.score, done: gs.end !== null,
