@@ -53,6 +53,8 @@ export const CFG = {
     eelKill: true,       // an eel that touches you takes a life
     descend: true,       // the vent takes you down a depth
     cue: true,           // #2365: a contact's ring maps to heat/pitch (false = frozen cue)
+    ventRipple: true,    // #2367: the vent swirl RIPPLES only on fresh vent knowledge (false = old always-on swirl)
+    swirlFresh: 6,       // #2367: ticks a wavefront arrival still counts as fresh (≈300 ms — a readable beat at 60 fps)
 }
 
 export const DIRS = {
@@ -246,6 +248,20 @@ export function contactHeat(ring) {
     if (!CFG.cue) return 0.5                     // MUTANT (see the switch comment): cue frozen flat
     if (ring == null || ring < 0) return 0.5     // shape without ring knowledge reads neutral
     return 1 - Math.min(1, ring / CFG.cueRange) * 0.88
+}
+
+// #2367 — what the painter may do with the vent cell: 0 = never heard,
+// 1 = remembered (dim ghost), 2 = a front arrived within CFG.swirlFresh ticks
+// (the swirl ripples). The vent is FIXED geometry, so remembering it is
+// ordinary knowledge — the freshness signal is what keeps the exit TEACHING:
+// "sound just confirmed this" vs "a map remembered from long ago". Gated
+// through known() exactly like every other draw; there is no live-truth path
+// here any more than there is for the eels.
+export function ventSignal(g) {
+    if (!known(g, g.vent)) return 0
+    if (!CFG.ventRipple) return 2                 // MUTANT (see the switch comment): freshness ignored
+    if (g.mem[g.vent] < 0) return 2               // standing on it is hearing it (own lungs)
+    return g.tick - g.mem[g.vent] <= CFG.swirlFresh ? 2 : 1
 }
 
 export function makeGame(cave, opts = {}) {

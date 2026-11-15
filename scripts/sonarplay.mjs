@@ -235,5 +235,93 @@ for (let i = 0; i < 900; i++) {
         `hot mean ${(hotSum / Math.max(1, hotCnt2)).toFixed(0)} vs cold mean ${(coldSum / Math.max(1, coldCnt2)).toFixed(0)}`)
 }
 
+// ---- #2367 vent signal + wavefront ring, in pixels. Sampled as max green
+// over the INNER 8x8 of a cell: the frontier edge stroke lives on the outer
+// ring of a cell, so whatever brightens the interior is the swirl, the ghost
+// or the passing ring — nothing else the renderer draws. ----
+{
+    const innerGreen = (x, y) => page.evaluate(([x, y]) => {
+        const c = document.querySelector('canvas[data-sonar-stage]')
+        const d = c.getContext('2d').getImageData(x * 16 + 4, y * 16 + 4, 8, 8).data
+        let g = 0
+        for (let i = 1; i < d.length; i += 4) g = Math.max(g, d[i])
+        return g
+    }, [x, y])
+
+    // A fresh front must RIPPLE (bright swirl) and remembered knowledge must
+    // sit as a dimmer GHOST — sampled against the sim's own signal state so
+    // the pixel claim is paired with the knowledge claim, not a lucky frame.
+    let st = await probe()
+    if (st.screen !== 'play') { await tap('KeyQ'); await wait(500) }
+    let ripG = -1, ghostG = -1
+    for (let i = 0; i < 600; i++) {
+        st = await probe()
+        if (st.screen !== 'play') break
+        if (ripG < 0 && st.ventSignal === 2) ripG = await innerGreen(st.vent.x, st.vent.y)
+        else if (ripG >= 0 && ghostG < 0 && st.ventSignal === 1) ghostG = await innerGreen(st.vent.x, st.vent.y)
+        if (ripG >= 0 && ghostG >= 0) break
+        const h = await hint()
+        if (h === 'PING') await tap('Space')
+        else if (h) await swim(h)
+        await wait(30)
+    }
+    r.check('fresh vent knowledge ripples; remembered vent ghosts (pixels)',
+        ripG >= 90 && ghostG >= 0 && ripG >= ghostG + 30,
+        `ripple=${ripG} ghost=${ghostG}`)
+}
+
+// ---- #2367 ping wavefront ring: right after a real SPACE ping, an open cell
+// the ping newly lights must briefly read brighter than the plain lit water
+// that follows — that spike is the ring crossing the cell interior. Peaks at
+// multiple distances/attempts; a cell the discrete rings skip on one ping is
+// hit on the next (the trail rings interleave the 32-px jumps). ----
+{
+    let ringOk = false, ringPeak = -1, ringPlain = -1, recoveries = 0
+    const innerGreen = (x, y) => page.evaluate(([x, y]) => {
+        const c = document.querySelector('canvas[data-sonar-stage]')
+        const d = c.getContext('2d').getImageData(x * 16 + 4, y * 16 + 4, 8, 8).data
+        let g = 0
+        for (let i = 1; i < d.length; i += 4) g = Math.max(g, d[i])
+        return g
+    }, [x, y])
+    for (let attempt = 0; attempt < 14 && !ringOk; attempt++) {
+        const s0 = await probe()
+        if (s0.screen !== 'play') {
+            // the over screen eats keys for 900 ms — recover the run without
+            // burning measurement attempts on swallowed taps
+            if (++recoveries > 4) break
+            await tap('KeyT'); await wait(1100); attempt--
+            continue
+        }
+        if (s0.cooldown > 1) { await wait(150); continue }
+        let tx = -1, ty = -1
+        for (const off of [[3, 0], [4, 0], [5, 0], [-3, 0], [-4, 0], [-5, 0], [0, 3], [0, 4], [0, -3], [0, -4]]) {
+            const x = s0.player.x + off[0], y = s0.player.y + off[1]
+            if (x < 1 || y < 1 || x > 47 || y > 25) continue
+            if (await knownAt(x, y)) continue
+            tx = x; ty = y; break
+        }
+        if (tx < 0) {
+            // whole horizon remembered — walk toward the dark and try again
+            const h = await hint()
+            if (h && h !== 'PING') await swim(h)
+            await wait(120)
+            continue
+        }
+        await tap('Space')
+        const t0 = Date.now()
+        let peak = 0
+        while (Date.now() - t0 < 500) {
+            const v = await innerGreen(tx, ty)
+            if (v > peak) peak = v
+        }
+        const plain = await innerGreen(tx, ty)
+        ringPeak = peak; ringPlain = plain
+        if (peak >= 45 && peak >= plain + 35) ringOk = true
+    }
+    r.check('the ping paints a visible expanding wavefront ring (pixels)', ringOk,
+        `peak=${ringPeak} plain=${ringPlain}`)
+}
+
 r.check('zero page errors across the whole playthrough', errors.length === 0, errors.slice(0, 4).join(' | '))
 r.exit(browser)
