@@ -216,7 +216,7 @@ see §Speed dial.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 497 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), winnable seeds, determinism
+npm run peoplecheck          # 553 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -553,6 +553,35 @@ chrome grew with it: card widths are `shelfCW(n)` per open shelf, so HOME
 carries seven. The attract bot buys it behind `roomkit`. Gates: `npm run
 peoplecheck` §CANOPY (fit law, economy incl. half-back sell, premium nap
 arithmetic, night clause, hash, pins).
+
+## Meal polish (#2264) — the bells get voices, the cold gets seen, hearts sit at the table
+
+Four feel laws on the #2244 bells, no rule change:
+- **Three timbres.** MEAL_TIMBRE (sim.js, pure data, #2240's VISIT_TIMBRE
+  pattern): breakfast keeps the historic bright rising strike (1046→1318 —
+  the shipped 07:00 dinger, pinned); lunch is a quick bright ascending
+  triplet (880/1174/1568); dinner is an evening swell-and-fall — four notes,
+  lowest start, longest toll. Distinct in note count, pitch set AND spacing,
+  which the gates prove. The shared-table arpeggio rotates by plate too:
+  SHARED_TABLE_CHORDS + `sharedChord(mealSerial % 3)` — repeat days ring
+  three shapes, not one loop. The `meal-shared` event carries `serial` so the
+  shell picks the chord verbatim.
+- **Night-scaled steam.** The tint curve is hoisted to `nightLevel(hour)`
+  (sim.js, pure; art.js `nightTint` paints from it — one source, no drift).
+  The plate sprite takes the night level: steam dims and its rise slows
+  (`k = 1 − night/0.42·0.72`), and a warm plate on a dark lot breathes a
+  faint gold halo so supper at dusk still reads WARM.
+- **Hearts at the table.** The shared-table burst anchors over the EATER
+  CLUSTER — the mean of where the residents actually stood when the last fork
+  landed — not a fixed kitchen point (the #2076 pair-tell doctrine: the law
+  seen, not just felt). The gate rigs diners at the front step and asserts
+  the event x/y is their midpoint, far from the step.
+- **The cold tell.** A missed meal now leaves a grey puff + crumbs on the
+  spot (storm-puff doctrine) instead of silently vanishing.
+Gates: `peoplecheck` §MEAL POLISH (16 pins). Mutants proven: hardcode the
+plate-cell anchor → the cluster gate goes red (552 → 551/1); constant
+`sharedChord` → the rotation gate red; the shell pin refuses a lit lot that
+passes night `0` to the sprite.
 
 ## Honest gaps (filed to QA #…)
 - **CLOSED by #1806:** multiple rooms — one expansion ships: the Spare Room kit

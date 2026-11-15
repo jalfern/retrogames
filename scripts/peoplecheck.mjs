@@ -87,6 +87,7 @@ import {
     TRI_TELL_CD, TRI_LINES, IVY_SOCIAL,   // #2154: visitor choreography law
     PAPER, PAPER_LATE, PAPER_LINES,   // #2238: the paper route
     MEAL, MEAL_NAMES, MEAL_DUE, MEAL_WINDOW, MEAL_BOND, MEAL_LINES, SHARED_MEAL_LINES, HOUR_SEC,   // #2244: the meal bells
+    MEAL_TIMBRE, SHARED_TABLE_CHORDS, sharedChord, nightLevel,   // #2264: per-bell timbres, the rotating table chord, one night curve
     AMBER_AT, DAY1_GRACE, NEED_HINT,   // #2253: the first-time player pass
     GIFT_LAND_T, VISIT_TIMBRE,   // #2240: the set-down basket + the visitor timbres
     YARN_CD, YARN_CAT_FUN, YARN_BOND, YARN_SOCIAL, YARN_PLAY_T, PET_SELF_FUN, PET_BORED, yarnOrderOk,   // #2256: the yarn ball — ordered play + the cat's own game
@@ -2310,6 +2311,91 @@ section('MEAL BELLS (#2244): three bells, one helping each, the table pays socia
         /case 'meal'/.test(pJsx) && /case 'meal-shared'/.test(pJsx) && /FOOD ON THE COUNTER/.test(pJsx) && /BELLS RING/.test(pJsx))
     check('pin: art draws the steaming plate; probe + F1 cheat carry the bells', /case 'meal'/.test(pArt) && /mealSerial: gs\.mealSerial/.test(pJsx) && /DROP MEAL/.test(pJsx))
     check('pin: the teaching lines ship in sim', Array.isArray(MEAL_LINES) && MEAL_LINES.length === 3 && Array.isArray(SHARED_MEAL_LINES) && SHARED_MEAL_LINES.length >= 3)
+}
+
+section('MEAL POLISH (#2264) — three timbres, rotating chords, seen cold, night steam, hearts at the table')
+{
+    // Three timbres (#2240's VISIT_TIMBRE pattern): one dinger three times a
+    // day reads as a loop, not a clock. Motifs must be provably apart.
+    check('MEAL_TIMBRE: three motifs, distinct note counts, pitch sets and spacing',
+        MEAL_TIMBRE.length === 3
+        && new Set(MEAL_TIMBRE.map((m) => m.call.length)).size === 3
+        && new Set(MEAL_TIMBRE.map((m) => m.call.map(([f]) => f).join('/'))).size === 3
+        && new Set(MEAL_TIMBRE.map((m) => m.call.map(([, , d]) => d).join('/'))).size === 3)
+    check('breakfast keeps the historic rising strike — the 07:00 dinger is unchanged',
+        MEAL_TIMBRE[0].call[0][0] === 1046 && MEAL_TIMBRE[0].call[1][0] === 1318 && MEAL_TIMBRE[0].call[1][2] === 170)
+    check('dinner sits lower and slower than breakfast; lunch is the brighter midday pair',
+        MEAL_TIMBRE[2].call[0][0] < MEAL_TIMBRE[0].call[0][0]
+        && MEAL_TIMBRE[2].call.map(([f]) => f).every((f) => f <= 988)
+        && MEAL_TIMBRE[1].call[0][0] > MEAL_TIMBRE[2].call[0][0]
+        && Math.max(...MEAL_TIMBRE[2].call.map(([, d]) => d)) > Math.max(...MEAL_TIMBRE[0].call.map(([, d]) => d)))
+    // The shared-table arpeggio rotates by plate — repeat days feel fresh.
+    check('the shared-table chord rotates by plate — three shapes, then the table repeats',
+        SHARED_TABLE_CHORDS.length === 3
+        && new Set(SHARED_TABLE_CHORDS.map((c) => c.map(([f]) => f).join('/'))).size === 3
+        && SHARED_TABLE_CHORDS[0][0][0] === 523 && SHARED_TABLE_CHORDS[2][2][0] === 880)
+    check('sharedChord keys the rotation to the plate serial and wraps honestly',
+        sharedChord(1) === SHARED_TABLE_CHORDS[1] && sharedChord(2) === SHARED_TABLE_CHORDS[2]
+        && sharedChord(3) === SHARED_TABLE_CHORDS[0] && sharedChord(7) === SHARED_TABLE_CHORDS[1])
+    // One night curve, hoisted from nightTint so tint, steam and halo cannot drift.
+    check('nightLevel answers the tint curve exactly',
+        nightLevel(12) === 0 && nightLevel(19) === 0 && Math.abs(nightLevel(22) - 0.42) < 1e-9 && nightLevel(4) === 0.42
+        && Math.abs(nightLevel(20.5) - 0.21) < 1e-9 && Math.abs(nightLevel(6) - 0.21) < 1e-9
+        && Math.abs(nightLevel(18.9) - 0) < 1e-12)
+    // The shared-table hearts anchor over the EATER CLUSTER — the average of
+    // where the residents actually stood the instant the last fork landed —
+    // never a hardcoded kitchen point. Rig: residents start on the step far
+    // from the kitchen; whatever spots they settle on, the event x/y must be
+    // exactly their midpoint (the old law hardcoded the plate cell; the new
+    // law follows the people, so any cluster shift moves the hearts).
+    const pSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const pJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const pArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    const keepAlive264 = (g) => { if (!g.done) for (const p of g.people) for (const n of NEEDS) p.needs[n] = Math.max(p.needs[n], 0.9) }
+    const sA = newRun(55)
+    for (let i = 0; i < 60 * 60 && !sA.meal; i++) { advance(sA, DT); drain(sA) }
+    const plateA = sA.meal
+    const orderA = sA.people.map((p) => {   // both dine from the far end of the lot — orders issued together, like two taps
+        p.r = 9; p.c = 5; p.x = tileX(5) + TILE / 2; p.y = tileY(9) + TILE / 2; p.path = null; p.goal = null; p.use = null
+        keepAlive264(sA)
+        return cmdUse(sA, p, plateA)
+    })
+    // The event fires on the LAST helping; lift meal-shared out of every drain.
+    let sharedA = null
+    const sEv = (g) => { const o = [...g.events]; g.events.length = 0; for (const e of o) if (e.t === 'meal-shared') sharedA = sharedA || e; return o }
+    for (let i = 0; i < 60 * 60 * 4 && !sharedA && !sA.done; i++) { advance(sA, DT); sEv(sA); keepAlive264(sA) }
+    sEv(sA)
+    const spotA = sA.people.map((p) => [p.x, p.y])
+    check('the shared table anchors its hearts over the eaters, not over a fixed kitchen point',
+        orderA.every(Boolean) && !!sharedA
+        && Math.abs(sharedA.x - (spotA[0][0] + spotA[1][0]) / 2) < 26 && Math.abs(sharedA.y - (spotA[0][1] + spotA[1][1]) / 2) < 26
+        && Math.hypot(sharedA.x - (tileX(5) + TILE / 2), sharedA.y - (tileY(9) + TILE / 2)) > 40,
+        `orders ${orderA.join('/')} shared ${sharedA ? `${sharedA.x.toFixed(0)},${sharedA.y.toFixed(0)}` : 'no'} spots ${spotA.map(([x, y]) => `${x.toFixed(0)},${y.toFixed(0)}`).join(' ')}`)
+    check('the shared event carries its plate serial — the shell can vary the chord',
+        !!sharedA && sharedA.serial >= 1)
+    // The cold plate leaves a tell (asserted here at the source; the drive can
+    // screenshot the grey puff — the storm-puff doctrine names this pattern).
+    check('pin: the bells read their timbre table and the chord table in the shell',
+        /MEAL_TIMBRE\[e\.slot\]/.test(pJsx) && /sharedChord\(e\.serial\)/.test(pJsx))
+    check('pin: breakfast\u2019s historic notes still ring (no hardcoded 1046 left in the bell case)',
+        /const tb = MEAL_TIMBRE\[e\.slot\]/.test(pJsx)
+        && !/case 'meal' \{[\s\S]{0,400}playTone\(1046/.test(pJsx))
+    check('pin: the shared anchor rides the event coords — the shell draws no kitchen-plate point',
+        xCase(pJsx, 'meal-shared').includes('heartBurst(e.x, e.y - 12)') && !xCase(pJsx, 'meal-shared').includes('tileX(e.c)'))
+    check('pin: cold leaves a grey puff + crumbs on the spot',
+        /'#9a958a'/.test(pJsx) && /'#d9d2bc'/.test(pJsx) && /case 'meal-cold'/.test(pJsx))
+    check('pin: the shell feeds the sprite the live night level (lit lots cannot pin 0)',
+        /drawItem\(ctx, it, g\.sec, nightLevel\(g\.hour\)\)/.test(pJsx))
+    check('pin: the plate sprite keeps night hours — dim/slow steam and a warm halo, one source for the curve',
+        /nightLevel/.test(pArt) && /const k = 1 - night \/ 0\.42 \* 0\.72/.test(pArt)
+        && /t \* 1\.4 \* k/.test(pArt) && /rgba\(255,200,120/.test(pArt) && /drawItemAt\(ctx, it\.id, tileX\(it\.c\), tileY\(it\.r\), t, night\)/.test(pArt))
+    check('pin: nightTint paints from the same hoisted curve',
+        /const a = nightLevel\(hour\)/.test(pArt) && !/let a = 0/.test(pArt))
+}
+function xCase(src, name) {
+    const i = src.indexOf(`case '${name}'`)
+    const j = src.indexOf("case '", i + 10)
+    return src.slice(i, j < 0 ? i + 600 : j)
 }
 
 section('FIRST PASS (#2253) — grace, amber prompts, order ping')

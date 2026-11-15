@@ -317,6 +317,17 @@ export const PAPER_LINES = [
 export const MEAL = { id: 'meal', name: 'Home Meal', price: 0, h: 1, solid: false, decor: true, need: 'hunger', amt: 0.55, dur: 3.6 }
 DEF.meal = MEAL
 export const MEAL_NAMES = ['BREAKFAST', 'LUNCH', 'DINNER']
+// #2264: MEAL TIMBRES. The original keyed the three bells apart — one dinger
+// three times a day reads as a loop, not a clock. Breakfast stays the historic
+// bright rising strike (07:00 energy); lunch is a quick bright ascending
+// triplet (midday, lighter); dinner is an evening swell and fall — four notes,
+// the lowest start, the longest toll. The shell plays these tables verbatim —
+// #2240's VISIT_TIMBRE pattern. [freq, dur, delayMs]
+export const MEAL_TIMBRE = [
+    { call: [[1046, 0.16, 0], [1318, 0.22, 170]] },
+    { call: [[880, 0.10, 0], [1174, 0.10, 110], [1568, 0.26, 220]] },
+    { call: [[784, 0.18, 0], [988, 0.14, 210], [659, 0.24, 430], [523, 0.34, 640]] },
+]
 // due windows [earliest, latest] per bell — seeded inside them on s.rng, so
 // every day keeps hours but no two days land on the same minute.
 export const MEAL_DUE = [[7, 7.75], [12.5, 13.25], [18.5, 19.25]]
@@ -337,6 +348,22 @@ export const MEAL_COLD_LINES = [
     'The plate went cold — nobody came to the table.',
     'The clock beat the appetite; the meal goes to the cold shelf.',
 ]
+// #2264: the shared-table arpeggio rotates by plate (mealSerial % 3). Three
+// repeat days once rang the identical C-major triad, which felt looped; three
+// tables, three shapes — straight up, up-then-over, and a warmer sixth. The
+// shell plays the table verbatim; the pattern stays pure and deterministic.
+export const SHARED_TABLE_CHORDS = [
+    [[523, 0.07], [659, 0.07], [784, 0.14]],
+    [[659, 0.07], [784, 0.07], [523, 0.14]],
+    [[523, 0.07], [659, 0.07], [880, 0.14]],
+]
+export const sharedChord = (serial) => SHARED_TABLE_CHORDS[Math.max(0, serial | 0) % SHARED_TABLE_CHORDS.length]
+
+// #2264: the night level from the hour — the exact curve nightTint paints
+// with, hoisted to one source (art.js re-uses it) so the steam law, the
+// plate glow and the tint can never drift apart. 0 at day, 0.42 at deep dark.
+export const nightLevel = (hour) => hour >= 19 ? Math.min(0.42, (hour - 19) / 3 * 0.42)
+    : hour < 7 ? (hour < 5 ? 0.42 : (7 - hour) / 2 * 0.42) : 0
 
 // ------------------------------------------------- catalog shelves (#2222) ----
 // The original people-sim never showed a flat wall of goods: buy mode is a
@@ -1874,7 +1901,10 @@ function finishUse(s, p) {
     // #2244: the table law. A plate is claimed by the household, not by one
     // stomach — when EVERY resident has eaten the same plate they sat down
     // together: social all round, the house bond climbs, one contentment,
-    // hearts over the kitchen. Once per plate (the eaten list is the law).
+    // hearts. Once per plate (the eaten list is the law).
+    // #2264: the hearts anchor over the EATER CLUSTER — where the residents
+    // actually stood the moment the last fork landed — not over the kitchen,
+    // so the law is seen, not just felt (the #2076 pair-tell doctrine).
     if (def.id === 'meal' && s.meal === it) {
         p.mealTaken = s.mealSerial
         if (!s.mealEaten.includes(p)) s.mealEaten.push(p)
@@ -1882,7 +1912,10 @@ function finishUse(s, p) {
             for (const q of s.people) q.needs.social = Math.min(1, q.needs.social + MEAL_SOCIAL)
             relAdd(s, 'house', MEAL_BOND)
             s.content = Math.min(WIN_CONTENT, s.content + 1)
-            s.events.push({ t: 'meal-shared', name: s.mealName, x: tileX(it.c) + TILE / 2, y: tileY(it.r) + TILE / 2 })
+            let cx = 0, cy = 0
+            for (const q of s.mealEaten) { cx += q.x; cy += q.y }
+            cx /= s.mealEaten.length; cy /= s.mealEaten.length
+            s.events.push({ t: 'meal-shared', name: s.mealName, serial: s.mealSerial, x: cx, y: cy })   // #2264: serial picks the chord variant
             think(s, pick(s, SHARED_MEAL_LINES).replace(/\{m\}/g, s.mealName.toLowerCase()))
             s.items = s.items.filter((x) => x !== it)
             s.meal = null

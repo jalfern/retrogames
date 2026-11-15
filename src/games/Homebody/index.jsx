@@ -35,6 +35,7 @@ import {
     courtReach, courtPickSet,   // #2235: choose your court target — tap a shared-ring person
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court — one pad button, two orders
     scheduleMeals, MEAL_WINDOW, SPAT_CD,   // #2244: the meal bells — the F1 cheat re-seeds today's hours
+    MEAL_TIMBRE, sharedChord, nightLevel,   // #2264: per-bell motifs, the rotating table chord, one night curve
     DEF, yarnOrderOk,   // #2256: the yarn ball — cat-only piece, honest refusal on tap
     NEED_HINT,   // #2253: the amber prompt names the fix
     VISIT_TIMBRE, REL_EDGES,   // #2240: each neighbour owns a call motif + entrance footfalls; FAMILY tier for scenario legs
@@ -183,20 +184,21 @@ const HomebodyGame = () => {
                         audioController.playNoise(0.14, 0.05); audioController.playTone(330, 0.05, 'triangle', 0.03)
                         if (live) { say('THE PAPER BOY SWEEPS PAST'); burst(tilePx(e.c), tilePy(e.r) + 14, 6, '#efe9d8', 2) }
                         break
-                    case 'meal':   // #2244: the bell rings — brass strike and a cream steam puff at the plate
-                        audioController.playTone(1046, 0.16, 'sine', 0.055)
-                        setTimeout(() => audioController.playTone(1318, 0.22, 'sine', 0.055), 170)
+                    case 'meal': {   // #2244/#2264: the bell rings — each bell owns its motif (#2240's VISIT_TIMBRE pattern), cream steam puff at the plate
+                        const tb = MEAL_TIMBRE[e.slot] || MEAL_TIMBRE[0]
+                        tb.call.forEach(([f, d, ms]) => { if (ms) setTimeout(() => audioController.playTone(f, d, 'sine', 0.055), ms); else audioController.playTone(f, d, 'sine', 0.055) })
                         if (live) { say(`${e.name} BELL — FOOD ON THE COUNTER`); burst(tilePx(e.c), tilePy(e.r) + 10, 6, '#efe9d8', 1.8) }
                         break
-                    case 'meal-shared':   // #2244: the whole table came — warm chord and hearts over the kitchen
-                        audioController.playTone(523, 0.07, 'triangle', 0.05)
-                        setTimeout(() => audioController.playTone(659, 0.07, 'triangle', 0.05), 90)
-                        setTimeout(() => audioController.playTone(784, 0.14, 'triangle', 0.05), 180)
+                    }
+                    case 'meal-shared': {   // #2244/#2264: the whole table came — the chord rotates by plate, hearts over the eater cluster (the sim anchors x/y where the forks landed)
+                        const ch = sharedChord(e.serial)
+                        ch.forEach(([f, d], i) => setTimeout(() => audioController.playTone(f, d, 'triangle', 0.05), i * 90))
                         if (live) { say('SHARED TABLE ♥'); heartBurst(e.x, e.y - 12) }
                         break
-                    case 'meal-cold':   // #2244: nobody came to the table — a soft, sad low
+                    }
+                    case 'meal-cold':   // #2244/#2264: nobody came to the table — a soft, sad low, and the cold is SEEN: a grey puff settles on the spot, crumbs where the plate was (the storm-puff doctrine)
                         audioController.playSweep(392, 262, 0.24, 'triangle', 0.04)
-                        if (live) say('THE MEAL WENT COLD')
+                        if (live) { say('THE MEAL WENT COLD'); burst(tilePx(e.c), tilePy(e.r) + 12, 7, '#9a958a', 1.4); burst(tilePx(e.c), tilePy(e.r) + 20, 4, '#d9d2bc', 0.8) }
                         break
                     case 'gift':   // #2143: the market basket lands — warm arpeggio, gold glints
                         audioController.playTone(523, 0.07, 'triangle', 0.05)
@@ -491,7 +493,7 @@ const HomebodyGame = () => {
             drawGround(ctx, g)
             drawGate(ctx, g.sec)
             drawClouds(ctx, g.sec)
-            for (const it of g.items) drawItem(ctx, it, g.sec)
+            for (const it of g.items) drawItem(ctx, it, g.sec, nightLevel(g.hour))   // #2264: the meal sprite keeps night hours (steam dim/slow, warm halo)
             const order = [...g.people.map((p) => ({ p, v: p.y })), ...(g.visitor ? [{ p: g.visitor, v: g.visitor.y }] : []), ...(g.ivy ? [{ p: g.ivy, v: g.ivy.y }] : []), ...(g.pet ? [{ p: g.pet, v: g.pet.y }] : []), ...(g.kid ? [{ p: g.kid, v: g.kid.y }] : []), ...(g.giftFx > 0 && g.giftAt ? [{ p: { x: g.giftAt.x, y: g.giftAt.y }, giftLanded: true }] : [])].sort((a, b) => a.v - b.v)   // #2143: both neighbours share the lot; #2197: so does the cat; #2203: and the child; #2240: so the set-down basket rides the depth line
             for (const o of order) {
                 if (o.giftLanded) { drawGroundGift(ctx, g); continue }   // #2240

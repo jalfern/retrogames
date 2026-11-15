@@ -14,6 +14,7 @@ import {
     petMood, PET_FEED_T,   // #2200: Miso's mood row + the lingering bowl
     YARN_PLAY_T,   // #2256: the yarn session's stage time
     GIFT_LAND_T,   // #2240: the set-down basket's stage time
+    nightLevel,   // #2264: one night curve for the tint, the steam and the plate halo
 } from './sim.js'
 
 const P = {
@@ -155,7 +156,7 @@ export function drawGate(ctx, _t) {
 }
 
 // ------------------------------------------------------------ furniture ----
-export function drawItemAt(ctx, id, x, y, t) {
+export function drawItemAt(ctx, id, x, y, t, night = 0) {
     switch (id) {
         case 'petkit': {
             // adoption card: drafting paper, a cat silhouette in gold
@@ -334,6 +335,14 @@ export function drawItemAt(ctx, id, x, y, t) {
             // #2244: a home plate set on the floor — cream dish, a hot mound
             // (gold crust, green greens, a red tomato), and three steam curls
             // that rise, drift and dissolve on the clock.
+            // #2264: the steam keeps night hours like the wing-glow law — the
+            // night palette dims it and drags its rise; and a warm plate on a
+            // dark lot breathes a faint halo so supper at dusk still reads WARM.
+            const k = 1 - night / 0.42 * 0.72
+            if (night > 0.12) {
+                ctx.fillStyle = `rgba(255,200,120,${(night * 0.34).toFixed(3)})`
+                ctx.beginPath(); ctx.ellipse(x + 16, y + 21, 15, 8, 0, 0, 7); ctx.fill()
+            }
             ctx.fillStyle = '#efe9d8'; ctx.beginPath(); ctx.ellipse(x + 16, y + 23, 11, 5.5, 0, 0, 7); ctx.fill()
             ctx.fillStyle = '#d9d2bc'; ctx.beginPath(); ctx.ellipse(x + 16, y + 22, 8, 3.8, 0, 0, 7); ctx.fill()
             ctx.fillStyle = '#e0a23c'; ctx.beginPath(); ctx.arc(x + 14, y + 20, 3.6, 0, 7); ctx.fill()
@@ -341,9 +350,9 @@ export function drawItemAt(ctx, id, x, y, t) {
             ctx.fillStyle = '#c94f43'; ctx.beginPath(); ctx.arc(x + 16.5, y + 18, 1.9, 0, 7); ctx.fill()
             ctx.lineWidth = 1.4
             for (let i = 0; i < 3; i++) {
-                const ph = t * 1.4 + i * 1.9
+                const ph = t * 1.4 * k + i * 1.9
                 const rise = ph % 1
-                ctx.strokeStyle = `rgba(239,233,216,${(0.7 * (1 - rise)).toFixed(3)})`
+                ctx.strokeStyle = `rgba(239,233,216,${(0.7 * (1 - rise) * k).toFixed(3)})`
                 ctx.beginPath()
                 ctx.moveTo(x + 12 + i * 4, y + 15 - rise * 9)
                 ctx.quadraticCurveTo(x + 13.5 + i * 4, y + 11 - rise * 9, x + 11.5 + i * 4 + Math.sin(ph * 2) * 2, y + 7 - rise * 9)
@@ -377,8 +386,8 @@ export function drawItemAt(ctx, id, x, y, t) {
     }
 }
 
-export function drawItem(ctx, it, t) {
-    drawItemAt(ctx, it.id, tileX(it.c), tileY(it.r), t)
+export function drawItem(ctx, it, t, night = 0) {
+    drawItemAt(ctx, it.id, tileX(it.c), tileY(it.r), t, night)
     // #2256: the session staging — while playT runs the ball rolls in place,
     // the loose thread whipping; fades on the last second like the bowl does.
     if (it.id === 'yarn' && it.playT > 0) {
@@ -790,10 +799,10 @@ export function drawKid(ctx, p, t) {
     }
 }
 
+// #2264: the tint curve is one source with the steam/glow law — nightLevel
+// lives in sim.js (pure, gateable) and this pass paints exactly what it says.
 export function nightTint(ctx, hour, ext) {
-    let a = 0
-    if (hour >= 19) a = Math.min(0.42, (hour - 19) / 3 * 0.42)
-    else if (hour < 7) a = hour < 5 ? 0.42 : (7 - hour) / 2 * 0.42
+    const a = nightLevel(hour)
     if (a <= 0) return
     ctx.fillStyle = `rgba(24,32,72,${a.toFixed(3)})`
     ctx.fillRect(0, 0, W, H)
