@@ -95,3 +95,16 @@
 
 ## Open questions
 - None new. jonq #2305 (lane:platform) AWAITING until 11-17 — not ours.
+
+## Addendum — slot a (this session, ~21:20Z): red-main round three, fixed
+- **#2405 (`c937e8c`)** — watchcheck mario flagpole gate: phantom `midQuit`
+  was a non-atomic triple sample (`getState`/`watching`/`held` round-trips)
+  straddling the seat's designed self-release at the pole on CI's slow
+  renderer (state still play@1-1@col≈174 when watch flips). Fix: one atomic
+  `snap()` + early-quit rule judges only `col < 160` (zone release is what the
+  self-release pin proves correct; genuine mid-sector quits stay red). Not
+  #2180 — that never touches this gate. Local 3× green. #2404 closed.
+- Nightly dispatched on `c937e8c`: run **43762038625** — a GREEN there clears
+  the #601 freeze (the two earlier fixes #2370/#2396 are in it too).
+- Slot-a shipped this shift: #2375 jink (live), #2396 + #2405 watchcheck pin
+  repairs; twin #2372 closed redundant against slot b's identical fix.
