@@ -20,6 +20,7 @@ import { decodeCon, decodeRecord, CON_TERR, FLAT } from '../src/games/Britannia/
 import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches, SPLAT, splatIntensity, dimples, splashStrikes, SPLAT_GAP, ROUGH_MEMORY, seaRough, crestGain, foamGain, SAIL_DRAG, shipCd, SURF_FLOOR, surfVoice, surfDue } from '../src/games/Britannia/swell.js'
 import { SHRINE_DIST, AVATARS, shrineTitle, shrineSpot, plotShrines } from '../src/games/Britannia/shrines.js'
 import { HULL_MAX, STRAIN_STORM, strain, wear, repair, nearestCoast, GROAN_GAP } from '../src/games/Britannia/hull.js'
+import { START_GOLD, FARE, TRIBUTE, payToll, tribute } from '../src/games/Britannia/purse.js'
 
 // Prove-it-can-fail mutants (#1876): --mutate-shrine shrinks SHRINE_DIST to 1
 // (sanctums onto the gate's approach ring), --mutate-block deletes the foot
@@ -36,6 +37,12 @@ const MUT = {
     '--mutate-hull-zero': { target: 'src/games/Britannia/hull.js', from: 'export const STRAIN_STORM = 0.5', to: 'export const STRAIN_STORM = 0', name: 'storm strain zeroed' },
     '--mutate-hull-sky': { target: 'src/games/Britannia/hull.js', from: 'if (wx !== WX.STORM) return 0', to: 'if (false) return 0', name: 'storm-sky requirement dropped' },
     '--mutate-founder': { target: 'src/games/Britannia/index.jsx', from: 'if (S.hull <= 0 && S.worn <= 0) {', to: 'if (false) {', name: 'founder branch deleted' },
+    // #2345 purse: --mutate-toll-free makes boarding free again (the gap the
+    // stage closes, re-opened); --mutate-purse-hollow empties the starting
+    // bounty; --mutate-tithe-mint lets the tithe mint gold past the cap.
+    '--mutate-toll-free': { target: 'src/games/Britannia/index.jsx', from: 'if (!toll.paid) {', to: 'if (false) {', name: 'boarding toll refusal deleted' },
+    '--mutate-purse-hollow': { target: 'src/games/Britannia/purse.js', from: 'export const START_GOLD = 250', to: 'export const START_GOLD = 0', name: 'starting purse emptied' },
+    '--mutate-tithe-mint': { target: 'src/games/Britannia/purse.js', from: 'return Math.min(START_GOLD, g + TRIBUTE)', to: 'return g + TRIBUTE', name: 'tithe minting past the cap' },
 }
 const mutKey = Object.keys(MUT).find(k => ARGS.includes(k))
 if (mutKey) {
@@ -1375,6 +1382,100 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     ok(/shrines: shrines\.map\(s => \(s \? \[s\.x, s\.y\] : null\)\)/.test(src),
         'index.jsx: the eight plots ride the harness state (panel can be compared with the Node sweep)')
     ok(/bumped: S\.bumped\.size/.test(src), 'index.jsx: shrine touches are countable by the harness')
+}
+
+// PURSE LAW (#2345) — gold rides with the pilgrim and passage is not free.
+// Literal expectations (250 / 5 / 20 / day-25) live HERE, not in purse.js —
+// a harness that re-reads the module's constants can never go red (#1822).
+{
+    ok(START_GOLD === 250, 'the purse starts at the original\'s bounty: 250 gold (spec value pinned)')
+    ok(FARE === 5, 'the standing fare is 5 gold a passage (spec value pinned)')
+    ok(TRIBUTE === 20, 'the day-turn tithe is 20 gold (spec value pinned)')
+    // toll law: sound purse pays, light purse is refused, the refusal keeps
+    // every coin (refusal is a door, not a fine)
+    const t250 = payToll(250)
+    ok(t250.paid === true && t250.gold === 245, 'a full purse pays exactly the fare (250 -> 245)')
+    const tExact = payToll(FARE)
+    ok(tExact.paid === true && tExact.gold === 0, 'the last five gold buy the last passage (exactly zero is enough)')
+    const tLight = payToll(FARE - 1)
+    ok(tLight.paid === false && tLight.gold === FARE - 1, 'four gold refuseth: no passage and no robbed discount (4 stays 4)')
+    const tEmpty = payToll(0)
+    ok(tEmpty.paid === false && tEmpty.gold === 0, 'an empty purse refuseth clean (0 stays 0)')
+    ok(payToll(-9).gold === 0 && payToll(-9).paid === false, 'a negative purse clamps to zero (no gold debts)')
+    const tDet = JSON.stringify(payToll(FARE + 5))
+    let tDetOk = true
+    for (let i = 0; i < 40; i++) if (JSON.stringify(payToll(FARE + 5)) !== tDet) tDetOk = false
+    ok(tDetOk, 'the toll is deterministic (40 recomputes, byte-identical)')
+    // tithe law: lands at the bounty, never above it, monotone
+    ok(tribute(0) === TRIBUTE, 'the tithe lifts an empty purse by the full tribute (0 -> 20)')
+    ok(tribute(START_GOLD - TRIBUTE) === START_GOLD, 'the tithe lands exactly on the starting bounty (230 -> 250)')
+    ok(tribute(START_GOLD) === START_GOLD, 'the tithe never mints past the cap (250 stays 250)')
+    ok(tribute(-5) === TRIBUTE, 'a negative purse still gets the full tithe (clamped, then tithed)')
+    let mon = true, prevT = -1
+    for (let g = 0; g <= 300; g++) { const tr = tribute(g); if (tr < prevT) mon = false; prevT = tr }
+    ok(mon, 'the tithe is monotone in the purse across 0..300')
+    // economy at scale — the two pilgrims: moderate lives on the tithe, a
+    // spendthrift drains the bounty and pays the literal day it runs dry.
+    let mod = START_GOLD, modOk = true
+    for (let d = 1; d <= 30; d++) { for (let n = 0; n < 2; n++) mod = payToll(mod).gold; mod = tribute(mod) }
+    modOk = mod === START_GOLD
+    ok(modOk, 'a moderate pilgrim (2 boardings a day) rides the tithe forever — the purse never dips from 250')
+    // Two computations of the drain, per the #1822 doctrine: a BOOKED loop
+    // with the literal constants spelled out here (250 gold, +20 tithe at
+    // each dawn after day 0, -5 a toll, 6 a day), and the module-run loop.
+    // They must agree, and the booked day must match the hand count: day 23
+    // opens with 20 gold (250 - 10*23), so the fifth boarding refuseth.
+    let gb = 250, refuseB = -1
+    outerBooked: for (let d = 0; d <= 60; d++) {
+        if (d > 0) gb = Math.min(250, gb + 20)
+        for (let n = 0; n < 6; n++) { if (gb < 5) { refuseB = d; break outerBooked } gb -= 5 }
+    }
+    let sp = START_GOLD, refusedAt = -1
+    outerSpend: for (let d = 0; d <= 60; d++) {
+        if (d > 0) sp = tribute(sp)
+        for (let n = 0; n < 6; n++) { const t = payToll(sp); if (!t.paid) { refusedAt = d; break outerSpend } sp = t.gold }
+    }
+    ok(refuseB === 23 && refusedAt === refuseB,
+        `a spendthrift (6 boardings a day, net -10) is refused on day ${refusedAt} — booked 23 (day 23 opens with 20 gold, the fifth fare fails), module agrees`)
+    let capOk = true, cp = START_GOLD
+    for (let d = 1; d <= 40; d++) { cp = tribute(cp); if (cp > START_GOLD) capOk = false }
+    ok(capOk, 'the tithe alone can never climb past the bounty across 40 days')
+    // the empty purse: the sea is closed until the land pays again
+    let shut = true, ep = 0
+    for (let i = 0; i < 100; i++) { const t = payToll(ep); if (t.paid) shut = false; ep = t.gold }
+    ok(shut, 'a zero purse is refused a hundred boardings on end — the sea is closed to penniless')
+    ok(payToll(tribute(0)).paid === true, 'the first tithe reopens the sea (20 gold >= one fare)')
+    // winnable with an empty purse: the pilgrimage is the moon's, not the
+    // captain's — seven moonlit rides at new moon visit all 8 gates without
+    // ever asking a ship (the #1862 chain, re-asserted under purse law).
+    const chain = [0]
+    for (let ride = 0; ride < 7; ride++) chain.push(routeDest(chain[chain.length - 1], 0, 8))
+    ok(new Set(chain).size === 8 && payToll(0).paid === false,
+        'winnable with an empty purse: the moon chain reaches all 8 gates while every boarding is refused')
+    // purity: purse.js judges numbers only — no positions, no flags, no S.
+    const purseSrc = readFileSync('src/games/Britannia/purse.js', 'utf8')
+    ok(!/\bS\./.test(purseSrc) && !/\b(ship|x|y)\s*=/.test(purseSrc),
+        'purse.js purity: numbers in, numbers out — the purse never touches the walk')
+    // wiring: boarding asks the purse BEFORE the keel touches water; the
+    // refusal keeps the pilgrim dry and names the fare; payment debits.
+    const idx = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+    ok(/const toll = payToll\(S\.gold\)/.test(idx), 'index.jsx: boarding asks the purse before the keel goes in')
+    const refBlock = idx.match(/if \(!toll\.paid\) \{([\s\S]{0,240})\}/)
+    ok(!!refBlock && refBlock[1].includes('The captain asketh'),
+        'index.jsx: the light-purse refusal names the fare the captain asketh')
+    ok(!!refBlock && !refBlock[1].includes('S.ship = true') && !refBlock[1].includes('S.x = nx'),
+        'index.jsx: the refusal boards nobody — the pilgrim stays dry and where they stood')
+    ok(/S\.gold = toll\.gold/.test(idx), 'index.jsx: a paid passage debits the purse')
+    ok(/S\.gold < FARE \? '#e06060'/.test(idx), 'index.jsx: the HUD reddens the purse when the next fare cannot be paid')
+    ok(/`Aye, a ship! \$\{FARE\} gold to the captain/.test(idx), 'index.jsx: the boarding toast names the fare paid')
+    ok(/const day = Math\.floor\(S\.tick \/ DAY\)/.test(idx) && /S\.gold = tribute\(S\.gold\)/.test(idx),
+        'index.jsx: the day turn pays the tithe (boundary read + tribute wired)')
+    ok(/New day: the gate-towns tithe \$\{TRIBUTE\} gold into thy purse\./.test(idx),
+        'index.jsx: the tithe announces itself in words')
+    ok(/PURSE \$\{S\.gold\}/.test(idx), 'index.jsx: the HUD carries the purse as the original did')
+    ok(/gold: S\.gold,/.test(idx) && /fare: FARE,/.test(idx), 'index.jsx: gold and the standing fare ride the harness state')
+    ok(/\+ S\.gold \* 13\) >>> 0/.test(idx), 'index.jsx: the state hash carries the purse (tolls are hash-visible)')
+    ok(/setGold: g => \{ S\.gold = Math\.max\(0, g \| 0\) \}/.test(idx), 'index.jsx: the DEV hook can drive the refusal')
 }
 
 console.log(fails ? `\nBRITANNIA: ${fails} FAILURES` : '\nBRITANNIA: all checks pass')

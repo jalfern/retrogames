@@ -30,6 +30,7 @@ import { buildClassicStamps, variantOf } from './ega.js'
 import { PHASES, moonPhase, moonName, phaseLit, gateFlavor, routeDest } from './moons.js'
 import { crest, crestLane, foam, landSides, foamPatches, splatIntensity, dimples, splashStrikes, SPLAT_GAP, seaRough, crestGain, foamGain, shipCd, surfDue } from './swell.js'
 import { HULL_MAX, wear, repair, nearestCoast, GROAN_GAP } from './hull.js'
+import { START_GOLD, FARE, TRIBUTE, payToll, tribute } from './purse.js'
 
 const SIM_MS = 1000 / 60
 const VIEW_W = 1280
@@ -99,6 +100,7 @@ const BritanniaGame = () => {
             wind: windNow(0, seed >>> 0), // #1853: the day's first pressure reading
             splat: -99, // #1829: last tick the sea spoke a drop
             hull: HULL_MAX, worn: 0, groan: -99, // #1829 hazard: strain on the planks (integer + fraction) + groan throttle
+            gold: START_GOLD, day: 0, // #2345 purse: the original's 250, and the day whose tithe has already been paid
         })
 
         const load = async () => {
@@ -205,6 +207,24 @@ const BritanniaGame = () => {
                     else if (wind === 2) { S.toast = 110; S.toastMsg = 'A fresh wind takes hold.'; audioController.playSweep(160, 240, 0.7, 'triangle', 0.06) }
                     else if (wind === 0) { S.toast = 110; S.toastMsg = 'A high settles — the fronts stall.'; audioController.playTone(220, 0.6, 'sine', 0.05) }
                     else { S.toast = 110; S.toastMsg = 'The wind eases to steady.'; audioController.playTone(260, 0.4, 'sine', 0.04) }
+                }
+            }
+            // #2345 purse: the day turn pays the tithe — the eight gate-towns
+            // keep their Avatar liquid until stage 2's shops replace the land
+            // (the tribute caps at the starting bounty; a full purse hears
+            // nothing, and GOAL stays king of the toast). It lands after the
+            // wind-shift block so the tithe's own words outlive a same-tick
+            // gale notice — the purse is the newer news the player must read.
+            const day = Math.floor(S.tick / DAY)
+            if (day !== S.day) {
+                S.day = day
+                if (S.gold < START_GOLD) {
+                    S.gold = tribute(S.gold)
+                    if (!/^GOAL/.test(S.toastMsg || '')) {
+                        S.toast = 110; S.toastMsg = `New day: the gate-towns tithe ${TRIBUTE} gold into thy purse.`
+                        audioController.playTone(880, 0.07, 'square', 0.07)
+                        audioController.playTone(1320, 0.09, 'square', 0.06)
+                    }
                 }
             }
             S.fl = flashAt(S.x, S.y, S.tick, tod(), S.seed, terrainAt)
@@ -324,19 +344,33 @@ const BritanniaGame = () => {
                     S.toast = 120; S.toastMsg = `The ${shrineTitle(si)} is stone — about face.`
                 }
             } else if (isSea(v)) {
-                S.ship = true; S.x = nx; S.y = ny; S.cd = shipCd(seaRough(nx, ny, S.tick, S.seed, terrainAt), SHIP_CD)
-                // #1829 hazard: the first leg strains too — her keel is in the
-                // water the moment she's boarded. Cannot finish her (a boarded
-                // hull is at least a plank; ashore she repairs every tick), so
-                // the founder branch lives in the mid-sea move alone.
-                {
-                    const wb = wear(S.hull, S.worn, seaRough(nx, ny, S.tick, S.seed, terrainAt), weatherAt(nx, ny, S.tick, S.seed, terrainAt))
-                    if (wb.hull < S.hull && S.tick - S.groan >= GROAN_GAP) { S.groan = S.tick; audioController.playSweep(96, 52, 0.2, 'triangle', 0.11) }
-                    S.hull = wb.hull; S.worn = wb.worn
+                // #2345 purse: no gold, no passage. The captain is paid before
+                // the keel touches water — a light purse is refused with the
+                // chapel-stone pattern (cooldown + named refusal), the pilgrim
+                // stays on dry land, the gold stays in the purse.
+                const toll = payToll(S.gold)
+                if (!toll.paid) {
+                    S.cd = 26
+                    audioController.playSweep(96, 60, 0.14, 'square', 0.16)
+                    S.toast = 120; S.toastMsg = `The captain asketh ${FARE} gold — thy purse is light.`
+                } else {
+                    S.gold = toll.gold
+                    S.ship = true; S.x = nx; S.y = ny; S.cd = shipCd(seaRough(nx, ny, S.tick, S.seed, terrainAt), SHIP_CD)
+                    // #1829 hazard: the first leg strains too — her keel is in the
+                    // water the moment she's boarded. Cannot finish her (a boarded
+                    // hull is at least a plank; ashore she repairs every tick), so
+                    // the founder branch lives in the mid-sea move alone.
+                    {
+                        const wb = wear(S.hull, S.worn, seaRough(nx, ny, S.tick, S.seed, terrainAt), weatherAt(nx, ny, S.tick, S.seed, terrainAt))
+                        if (wb.hull < S.hull && S.tick - S.groan >= GROAN_GAP) { S.groan = S.tick; audioController.playSweep(96, 52, 0.2, 'triangle', 0.11) }
+                        S.hull = wb.hull; S.worn = wb.worn
+                    }
+                    S.face = faceFor(dx, dy); S.anim++
+                    audioController.playSweep(140, 90, 0.5, 'sawtooth', 0.18)
+                    audioController.playTone(1180, 0.05, 'square', 0.08) // #2345: the fare chinks over the creak
+                    audioController.playTone(1560, 0.07, 'square', 0.07)
+                    S.toast = 90; S.toastMsg = `Aye, a ship! ${FARE} gold to the captain — the sea is thine.`
                 }
-                S.face = faceFor(dx, dy); S.anim++
-                audioController.playSweep(140, 90, 0.5, 'sawtooth', 0.18)
-                S.toast = 90; S.toastMsg = 'Aye, a ship! The open sea lies ahead.'
             } else {
                 S.x = nx; S.y = ny; S.cd = WALK_CD
                 S.face = faceFor(dx, dy); S.anim++
@@ -816,6 +850,10 @@ const BritanniaGame = () => {
             ctx.fillText(`${String(hrs).padStart(2, '0')}:00 ${n > 0.5 ? 'NIGHT' : 'DAY'}`, Math.max(380, tx + 330), baseY - 1)
             ctx.fillStyle = '#7fe8ff'
             ctx.fillText(`MOONGATES ${S.visited.size}/${gates.length}`, Math.max(540, tx + 490), baseY - 1)
+            // #2345 purse: gold ink even when empty — the HUD carries the purse
+            // as the original's did, so the toll and the tithe stay legible.
+            ctx.fillStyle = S.gold < FARE ? '#e06060' : '#e8d9a0'
+            ctx.fillText(`PURSE ${S.gold}`, Math.max(700, tx + 650), baseY - 1)
             ctx.textAlign = 'right'
             ctx.fillStyle = '#6a7b9a'
             ctx.fillText('C classic · ? help', VIEW_W - rx, baseY - 1)
@@ -1078,7 +1116,7 @@ const BritanniaGame = () => {
                 if (!S) return { tick: 0, score: 0, done: false, ready: false }
                 return {
                     tick: S.tick, score: S.visited.size, done: S.done, ready: true, seed: S.seed,
-                    hash: ((S.x * 256 + S.y) * 31 + S.visited.size * 7 + (S.ship ? 1 : 0) + S.gate * 997) >>> 0,
+                    hash: ((S.x * 256 + S.y) * 31 + S.visited.size * 7 + (S.ship ? 1 : 0) + S.gate * 997 + S.gold * 13) >>> 0,
                     x: S.x, y: S.y, ship: S.ship, gate: S.gate,
                     face: S.face, frame: walkFrame(S.anim, S.cd > 0), anim: S.anim,
                     gates: gates.map(g => [g.x, g.y]), tod: tod(),
@@ -1092,6 +1130,9 @@ const BritanniaGame = () => {
                     shipCd: S.ship ? shipCd(seaRough(S.x, S.y, S.tick, S.seed, terrainAt), SHIP_CD) : 0,
                     // #1829 hazard: planks left in the ship (0 = founder's tide)
                     hull: S.hull,
+                    // #2345: gold in the purse + the standing fare, so a harness
+                    // can prove the toll bites and the tithe lands
+                    gold: S.gold, fare: FARE, day: S.day,
                     town: townScore(S.x, S.y, gates, terrainAt),
                     // #1876: the eight consecrated plots (null where no plot was
                     // found) + how many shrines the pilgrim has touched
@@ -1115,14 +1156,16 @@ const BritanniaGame = () => {
                 release: (k) => { held.delete(k) },
                 teleport: i => { const g = gates[i]; if (g) { S.x = g.x; S.y = g.y; S.visited.add(i); if (S.visited.size >= gates.length) S.done = true } },
                 setTime: t => { S.tick = t },
+                setGold: g => { S.gold = Math.max(0, g | 0) }, // #2345: drive the refusal
             }
             mountDbg({
                 title: 'BRITANNIA',
-                getState: () => exports_state().ready ? [`pos ${S.x},${S.y} ${S.ship ? `SHIP ${S.hull}` : 'FOOT'}`, `tod ${tod().toFixed(2)}`, `wx ${WX_NAME[S.wx]}`, `gates ${S.visited.size}/${gates.length}`, `done ${S.done}`] : ['loading…'],
+                getState: () => exports_state().ready ? [`pos ${S.x},${S.y} ${S.ship ? `SHIP ${S.hull}` : 'FOOT'}`, `tod ${tod().toFixed(2)}`, `wx ${WX_NAME[S.wx]}`, `gates ${S.visited.size}/${gates.length}`, `purse ${S.gold}`, `done ${S.done}`] : ['loading…'],
                 actions: [
                     { label: 'to gate I', run: () => { S.x = gates[0].x; S.y = gates[0].y } },
                     { label: 'night', run: () => { S.tick = Math.floor(DAY * 0.5) } },
                     { label: 'full moon', run: () => { S.tick = Math.floor(DAY * 4) } },
+                    { label: 'empty purse', run: () => { S.gold = 0 } },
                     { label: 'all gates', run: () => { gates.forEach((g, i) => S.visited.add(i)); S.done = true; setMode('end') } },
                 ],
             })
