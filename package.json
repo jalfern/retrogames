@@ -98,6 +98,7 @@
     "watchsoakcheck": "node scripts/watchsoakcheck.mjs",
     "watchphonecheck": "node scripts/watchphonecheck.mjs",
     "watchpillcheck": "node scripts/watchpillcheck.mjs",
+    "watchrespawncheck": "node scripts/watchrespawncheck.mjs",
     "prodsmoke": "node scripts/prodsmoke.mjs",
     "heistsmoke": "node scripts/heistsmoke.mjs",
     "heisttiming": "node scripts/heisttiming.mjs",

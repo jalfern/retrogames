@@ -145,8 +145,12 @@ proved; main's full proof is the nightly. Before ANY merge a lane runs
 
 ```bash
 scripts/main-ok.sh                        # merge-freeze check (rule 5)
-node scripts/watchcheck.mjs               # watch.sh pane self-heal proof (#1259; skips where no zsh)
+node scripts/watchcheck.mjs             # the WATCH key, driven in Chrome (#1624; browser suite)
                                         #   --throttle N reproduces nightly tick debt on one pilot (#2036)
+node scripts/watchrespawncheck.mjs      # #2278: respawn recipe survives tmp_cleaner (macOS
+                                        #   deletes /tmp files at -atime+3 -mtime+3 -ctime+3, 00:00
+                                        #   daily); + #1259's pane-respawn e2e; sandboxes under
+                                        #   FORGE_WATCH_SESSION, skips green where no tmux/zsh
 node scripts/watchbudgetcheck.mjs         # #2036: tick-scaled resume budgets, pinned deterministically
 node scripts/nightlyverdictcheck.mjs    # the verdict workflow stays advisory-free (#1358)
 node scripts/muteguardcheck.mjs         # #1359: killed --mutate runs restore every planted file
