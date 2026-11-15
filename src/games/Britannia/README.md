@@ -54,8 +54,14 @@ transcribed into source:
   for the shrine half: gates now land at named chapels with their keeper in
   the toast (see "Shrines" below). The town names (Britain, Trinsic…) still
   wait for stage 2/5's town/talk data — that tail stays open (#1829 item 5).
-- Boarding is free at any coast (the purchase lives in stage 2's shops). —
-  **CLOSED by #2345** on the toll half: the purse is live (GOLD 250 at the
+- **Boarding is free at any coast — DECIDED, the original's law (#2353 audit
+  of the bundled `AVATAR.EXE`):** the original ships boarding as terrain
+  transitions (`SHIPSHOR/SHIPSEA/SHORSHIP/SHIPSHIP.CON` strings) plus a bare
+  `Board:` command — no fare on the port path, and every gold string in the
+  exe is town NPC dialog (shops, bars, seers: the economy is stage-2 TLK
+  work). Distance fares would CHANGE the original's rules, so they stay
+  stage 2. The 5-gold captain's toll is OURS (stage-1 presentation law, not
+  Origin's) — **CLOSED by #2345** on the toll half: the purse is live (GOLD 250 at the
   start, as the original's HUD carried it), every boarding pays the captain
   5 gold, and a light purse is refused on the sand. Distance fares for named
   port pairs and the shops themselves stay stage 2. — **SEEN by #2351**: the
