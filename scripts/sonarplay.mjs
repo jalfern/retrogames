@@ -284,7 +284,7 @@ for (let i = 0; i < 900; i++) {
         for (let i = 1; i < d.length; i += 4) g = Math.max(g, d[i])
         return g
     }, [x, y])
-    for (let attempt = 0; attempt < 8 && !ringOk; attempt++) {
+    for (let attempt = 0; attempt < 14 && !ringOk; attempt++) {
         const s0 = await probe()
         if (s0.screen !== 'play') {
             // the over screen eats keys for 900 ms — recover the run without
@@ -295,13 +295,19 @@ for (let i = 0; i < 900; i++) {
         }
         if (s0.cooldown > 1) { await wait(150); continue }
         let tx = -1, ty = -1
-        for (const off of [[3, 0], [4, 0], [-3, 0], [-4, 0], [0, 3], [0, -3], [2, 0], [-2, 0]]) {
+        for (const off of [[3, 0], [4, 0], [5, 0], [-3, 0], [-4, 0], [-5, 0], [0, 3], [0, 4], [0, -3], [0, -4]]) {
             const x = s0.player.x + off[0], y = s0.player.y + off[1]
             if (x < 1 || y < 1 || x > 47 || y > 25) continue
             if (await knownAt(x, y)) continue
             tx = x; ty = y; break
         }
-        if (tx < 0) { await wait(200); continue }
+        if (tx < 0) {
+            // whole horizon remembered — walk toward the dark and try again
+            const h = await hint()
+            if (h && h !== 'PING') await swim(h)
+            await wait(120)
+            continue
+        }
         await tap('Space')
         const t0 = Date.now()
         let peak = 0
