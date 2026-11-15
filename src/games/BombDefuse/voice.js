@@ -49,10 +49,14 @@ function nearColor(w) {
 // already prices each slip as one edit. The leash chooses how far a slip may
 // reach before an ordinary word invents a command:
 //   2 letters   — exact only (NO: a 1-edit slip is half the word)
-//   3-4 letters — 1 edit (vunt→vent, stahp→stop, wier→wire). The verb tiers
+//   3-4 letters — 1 edit (bent→vent, hole→hold, wier→wire). The verb tiers
 //                 read BEFORE the colour tiers and shadow them, so they ride
 //                 TIGHTER than nearColor: "pear" is 2 from SEAT and stays
-//                 silent, while "blew" (2 from BLUE) lands.
+//                 silent, while "blew" (2 from BLUE) lands. Measured (the
+//                 mishearing battery in defusecheck): 2-edit slips of 4-letter
+//                 targets (stahp→stop, seated→seat) stay OUTSIDE — widening to
+//                 2 would let "heat", "waist" and "farts" coach, which is
+//                 exactly the leash's job preventing.
 //   5+ letters  — 2 edits (homophones mis-spell wide: neddle→needle,
 //                 herri→hurry, kwick→quick).
 const LEASH = (len) => (len >= 5 ? 2 : 1)
@@ -76,8 +80,13 @@ export function parseCall(text, holder = 0) {
     const words = up.split(/\s+/)
     // A warning outranges everything: "NO, not that one!" must never coach a wire.
     if (words.some((w) => WARN_WORDS.includes(w))) return { kind: 'warn' }
+    // #2363: the accent version of the shout. WAIT/STOP/EASE ride the 1-edit
+    // leash; NO is 2 letters and exact-only (a slip would be half the word).
+    if (words.some((w) => nearWord(w, WARN_WORDS))) return { kind: 'warn' }
     // A phrase that NAMES a wire coaches its colour first — that IS the step.
-    const paired = words.some((w) => WIRE_WORDS.includes(w))
+    // #2363: a mis-heard "wier" still names the wire — without the fuzzy pair,
+    // "cut the green wier" would land SEAT (GREEN reads the verb tier first).
+    const paired = words.some((w) => WIRE_WORDS.includes(w) || nearWord(w, WIRE_WORDS))
     if (paired) {
         for (const w of words) {
             const c = COLOR_WORDS[w]
@@ -96,6 +105,15 @@ export function parseCall(text, holder = 0) {
         if (HOLD_WORDS.includes(w)) return { kind: 'hold', seat: holder }
         if (SEAT_WORDS.includes(w)) return { kind: 'seat', seat: 1 - holder }
     }
+    // #2363: accent slips of the action words — "bent the bar" still holds,
+    // "herri!" still pulses the window. The leash is TIGHTER than nearColor's
+    // (see above): the verb tiers shadow bare colours, so ordinary words that
+    // sit 2 edits out stay silent. GREEN is the one verb that is ALSO a colour,
+    // and its fuzzy slips belong to the colour tier: exact GREEN reads the
+    // needle, a mis-heard "gren" still reaches the WIRE (#1812 item 9 law).
+    if (words.some((w) => nearWord(w, SYNC_WORDS))) return { kind: 'sync' }
+    if (words.some((w) => nearWord(w, HOLD_WORDS))) return { kind: 'hold', seat: holder }
+    if (words.some((w) => nearWord(w, SEAT_WORDS.filter((x) => x !== 'GREEN')))) return { kind: 'seat', seat: 1 - holder }
     // Bare colours coach the blade: "red!" → red.
     for (const w of words) {
         const c = COLOR_WORDS[w]

@@ -56,6 +56,18 @@ const humanSeed = () => {
     return pin != null ? (pin >>> 0 || 1) : 1 + Math.floor(Math.random() * 65535)
 }
 
+// #2363 haptics: the deck lands on a phone that can feel it. navigator.vibrate
+// is permission-free where it exists (Android) and absent on iOS Safari, so
+// probe the API and a touch screen — never ask, never block, never assume.
+// The sound still tells the whole story; the buzz is the weight.
+function buzz(pattern) {
+    try {
+        if (typeof navigator !== 'undefined' && 'ontouchstart' in navigator && typeof navigator.vibrate === 'function') {
+            navigator.vibrate(pattern)
+        }
+    } catch { /* a silent deck is fine — the sound carries */ }
+}
+
 // seven-segment digit map (a, b, c, d, e, f, g)
 const SEG = [[1, 1, 1, 1, 1, 1, 0], [0, 1, 1, 0, 0, 0, 0], [1, 1, 0, 1, 1, 0, 1], [1, 1, 1, 1, 0, 0, 1],
     [0, 1, 1, 0, 0, 1, 1], [1, 0, 1, 1, 0, 1, 1], [1, 0, 1, 1, 1, 1, 1], [1, 1, 1, 0, 0, 0, 0],
@@ -733,10 +745,10 @@ export default function BombDefuseGame() {
             hud.sparks.push(...Array.from({ length: 8 }, () => ({ x: (f.seat === 0 ? 150 : 490) + (Math.random() - 0.5) * 24, y: 240 + (Math.random() - 0.5) * 30, vx: (Math.random() - 0.5) * 4, vy: -Math.random() * 3, life: 12 })))
             hud.banner = { text: 'WIRES NICKED −2S', ok: false }; hud.bannerT = 40
         }
-        else if (f.k === 'strike') { sfx.strike(); hud.flash = 26; hud.shake = 12; hud.banner = { text: `STRIKE! ${f.why}`, ok: false }; hud.bannerT = 60 }
-        else if (f.k === 'surge') { sfx.surge(); hud.flash = 34; hud.shake = 16; hud.banner = { text: 'PRESSURE SURGE', ok: false }; hud.bannerT = 60 }
-        else if (f.k === 'defused') { sfx.defused(); hud.banner = { text: `BOMB ${f.bomb} DOWN`, ok: true }; hud.bannerT = 80 }
-        else if (f.k === 'boom') { sfx.boom(); hud.boomT = 70; hud.shake = 24; spawnBoom(hud) }
+        else if (f.k === 'strike') { sfx.strike(); buzz([40, 60, 40]); hud.flash = 26; hud.shake = 12; hud.banner = { text: `STRIKE! ${f.why}`, ok: false }; hud.bannerT = 60 }
+        else if (f.k === 'surge') { sfx.surge(); buzz([100]); hud.flash = 34; hud.shake = 16; hud.banner = { text: 'PRESSURE SURGE', ok: false }; hud.bannerT = 60 }
+        else if (f.k === 'defused') { sfx.defused(); buzz([30, 40, 30]); hud.banner = { text: `BOMB ${f.bomb} DOWN`, ok: true }; hud.bannerT = 80 }
+        else if (f.k === 'boom') { sfx.boom(); buzz([120, 60, 200]); hud.boomT = 70; hud.shake = 24; spawnBoom(hud) }
         else if (f.k === 'win') sfx.win()
     }, [])
 
