@@ -219,6 +219,18 @@ const DashGame = () => {
         }
 
         // ---------- painter ----------
+        // #2417 contrast rim (the original outlines the amoeba): a dark 1px
+        // border ONLY against non-amoeba neighbours — the wave reads as one
+        // outlined creature, not a tile grid, at any corridor lighting.
+        const amoebaOutline = (px, py, x, y) => {
+            const am = (tt) => tt === AMO_HEAD || tt === AMO_BODY
+            ctx.fillStyle = '#0b3a12'
+            if (!am(gs.grid[(y - 1) * W + x])) ctx.fillRect(px, py, TS, 1)
+            if (!am(gs.grid[(y + 1) * W + x])) ctx.fillRect(px, py + TS - 1, TS, 1)
+            if (!am(gs.grid[y * W + x - 1])) ctx.fillRect(px, py, 1, TS)
+            if (!am(gs.grid[y * W + x + 1])) ctx.fillRect(px + TS - 1, py, 1, TS)
+        }
+
         const paint = () => {
             ctx.fillStyle = '#241a12'
             ctx.fillRect(0, 0, CW, CH)
@@ -283,16 +295,13 @@ const DashGame = () => {
                             ctx.fillStyle = 'rgba(235,255,205,0.55)'; ctx.fillRect(px + 1, py + 1, TS - 2, TS - 2)
                             ctx.fillStyle = '#ffffff'; ctx.fillRect(px + 7, py + 7, 2, 2)
                         }
+                        amoebaOutline(px, py, x, y)
                     } else if (t === AMO_BODY) {
                         ctx.fillStyle = '#187024'; ctx.fillRect(px, py, TS, TS)
                         ctx.fillStyle = '#2ea83e'
                         ctx.fillRect(px + 2, py + 3, 4, 4); ctx.fillRect(px + 9, py + 8, 4, 4)
                         ctx.fillStyle = '#0f4c18'; ctx.fillRect(px + 8, py + 2, 3, 3); ctx.fillRect(px + 3, py + 11, 3, 2)
-                        // #2417 contrast rim (the original outlines the amoeba):
-                        // a dark 1px border separates the wave from lit dirt.
-                        ctx.fillStyle = '#0b3a12'
-                        ctx.fillRect(px, py, TS, 1); ctx.fillRect(px, py + TS - 1, TS, 1)
-                        ctx.fillRect(px, py, 1, TS); ctx.fillRect(px + TS - 1, py, 1, TS)
+                        amoebaOutline(px, py, x, y)
                     } else if (t === PUSHWALL) {
                         // a brick bolt: warm iron banding + rivets, unmistakable
                         // against cold steel and brown dirt at a glance.
