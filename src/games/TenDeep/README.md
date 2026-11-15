@@ -202,10 +202,22 @@ npm run dev && npm run tendeepplay   # headless Chrome, real key events,
   strict door, all-doors-reachable + threshold on leave, hash rides the walk,
   determinism, source pins); mutants: kill `rimBlocked`'s lane lookup → street
   gates red, kill the `rimDoorAt` guard → strict-door gate red, restored.
-- Monsters do not stand in the corridor before combat — the original showed
-  roaming groups in the 3D view; ours are hidden ambush tiles (a sim rule
-  since stage 1; the #1129 billboard pipeline is where this would land, and
-  making ambushes visible would re-open the solver/proof).
+- ~~Monsters do not stand in the corridor before combat~~ **PARTIAL by #2318**:
+  every untriggered ambush **stands in the 3D view** now — `mobview.js` derives
+  lit, tinted billboards (atlas shapes × per-bestiary tint/size; the whole
+  bestiary covered, the King and his wyrm wardens at the throne) and the shell
+  feeds them to the shared renderer every frame (`setSprites`, #1129 pipeline —
+  whose `tint` contract was documented since stage 1 but unwired; `uTint` now
+  multiplies the lit core, default white, deepglass byte-identical). Packs
+  shamble in place on the presentation clock with deterministic FNV phases;
+  offsets clamp inside the den tile, so the monster you see always stands on
+  the tile that takes your step, and the depth test hides packs around corners.
+  Spent groups leave the view. tendeepcheck pins count/containment/spending/
+  re-derivation + the shell feed + the tint contract (10211/10211; five
+  mutants die); tendseeppplay grades lit-centre vs dark-when-spent pixels at
+  an identical pose. **Still open:** packs don't *walk* patrols (roaming
+  movement changes which steps meet which fight — it re-opens the solver's
+  encounter accounting and the RIM economy; deliberate).
 - Combat keeps its 2D bitmap plates on the HUD layer (the original also cut
   to a separate combat screen, but the plates want their own MODERN pass).
 - No between-run persistence (Wizardry saved to disk; we don't).

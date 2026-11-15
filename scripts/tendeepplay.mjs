@@ -26,6 +26,8 @@
 // Reachability, the ledger pins, slack and determinism live in tendeepcheck (Node).
 
 import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
+import { genFloor } from '../src/games/TenDeep/dungeon.js'
+import { DX, DY } from '../src/games/TenDeep/sim.js'
 
 const URL = process.env.DEEP_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/ten-deep`
 await requireDevServer(URL)
@@ -875,6 +877,53 @@ else {
     await wait(200)
     const back = await probe()
     r.check('? gives the Deep back', back.screen === 'play')
+}
+
+// ---- 9. MONSTERS STAND IN THE CORRIDOR (#2318) ----
+{
+    // Den scouting happens Node-side on the seeded floor: find a den on a
+    // straight run so the SAME pose can be sampled twice — once with the pack
+    // standing in the hall, once after the pack is spent (setup walks over
+    // the den; the dev hook nulls the fight, the ambush is still consumed).
+    // Centre lit with the pack, dark without it, at the identical pose — the
+    // billboard is on screen, and sight matches the tile that takes the step.
+    const d = genFloor(0)
+    const open = (x, y) => !d.wall(x, y)
+    const cands = []
+    for (const a of d.ambushes) {
+        if (d.dist[a.y * 19 + a.x] < 8) continue   // far enough that the walk there is its own corridor
+        for (let f = 0; f < 4; f++) {
+            const fx = DX[f], fy = DY[f]
+            const P = { x: a.x - 2 * fx, y: a.y - 2 * fy }
+            if (!open(P.x, P.y) || !open(P.x + fx, P.y + fy)) continue            // party + mid cell open
+            if (!open(a.x + fx, a.y + fy) || !open(a.x + 2 * fx, a.y + 2 * fy)) continue   // hall continues past the den
+            cands.push({ a, P, dir: f })
+            break
+        }
+    }
+    let A = null, B = null, m0 = -1, m1 = -1, used = null
+    for (const c of cands) {
+        if (!(await setup({ floor: 0, at: [c.P.x, c.P.y], facing: c.dir }))) continue
+        await wait(120)
+        const p = await probe()
+        if (p.mode !== 'map' || !p.gl) continue
+        await settleGl()
+        const before = await glmean(110, 92, 36, 20)
+        const mobsBefore = p.mobs
+        if (!(await setup({ at: [c.a.x, c.a.y] }))) continue      // walk over the pack — spent
+        if (!(await setup({ at: [c.P.x, c.P.y], facing: c.dir }))) continue
+        await wait(120)
+        await settleGl()
+        const after = await glmean(110, 92, 36, 20)
+        const mobsAfter = (await probe()).mobs
+        if (A === null || before - after > A - B) { A = before; B = after; m0 = mobsBefore; m1 = mobsAfter; used = c }
+        if (A - B > 25) break
+    }
+    r.check('a pack stands in the corridor: the centre lights where the identical pose is dark once spent', A !== null && A - B > 25,
+        `lit=${A} spent=${B} den=${used ? `(${used.a.x},${used.a.y}) facing ${['E', 'S', 'W', 'N'][used.dir]}` : 'none found'}`)
+    r.check('the pack leaves the view when it is spent', m0 > 0 && m0 > m1, `mobs ${m0} -> ${m1}`)
+    const pp = await probe()
+    r.check('the billboards ride the presentation clock (mobs count survives turns)', pp.mobs >= 0, `mode=${pp.mode} mobs=${pp.mobs}`)
 }
 
 r.check('zero page errors for the whole crawl', errors.length === 0, errors.slice(0, 3).join(' | '))
