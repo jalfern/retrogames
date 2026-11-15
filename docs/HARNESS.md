@@ -153,6 +153,13 @@ node scripts/watchrespawncheck.mjs      # #2278: respawn recipe survives tmp_cle
                                         #   FORGE_WATCH_SESSION, skips green where no tmux/zsh
 node scripts/watchbudgetcheck.mjs         # #2036: tick-scaled resume budgets, pinned deterministically
 node scripts/nightlyverdictcheck.mjs    # the verdict workflow stays advisory-free (#1358)
+node scripts/worktreepurgecheck.mjs     # #2279: lane worktree auto-cleanup — unit table + real-git
+                                        #   sandbox + dirty-guard mutant (all tmp-only, self-cleaning).
+                                        #   The tool (scripts/worktreepurge.mjs) removes ONLY provably-
+                                        #   landed, clean trees via `git worktree remove` (never --force);
+                                        #   dirty, unpushed, open-PR, detached-off-main, .mutant-running
+                                        #   and lane-sat-in worktrees are kept, capped 6/run. Warden
+                                        #   tick step 5c runs it with --run against the main checkout.
 node scripts/muteguardcheck.mjs         # #1359: killed --mutate runs restore every planted file
                                         #   (canary + guard live kill tests + wiring audit of all
                                         #   disk-mutating checks; --mutate adds a guard-disable mutant)

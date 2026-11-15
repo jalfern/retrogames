@@ -340,6 +340,7 @@
     "chromesmoke": "node scripts/chromesmoke.mjs",
     "chromesmokecheck": "node scripts/chromesmokecheck.mjs",
     "tpscheck": "node scripts/tpscheck.mjs",
+    "worktreepurgecheck": "node scripts/worktreepurgecheck.mjs",
     "lobbycheck": "node scripts/lobbycheck.mjs",
     "nightlybot": "node scripts/nightlybot.mjs",
     "nightlybotcheck": "node scripts/nightlybot.mjs --selftest",
