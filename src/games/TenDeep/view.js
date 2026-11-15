@@ -20,19 +20,34 @@ import { SIZE } from './dungeon.js'
 const DX = [1, 0, -1, 0]
 const DY = [0, 1, 0, -1]
 
-// The shared WebGL dungeon renderer ships a built-in monster atlas at these
-// material ids (public/demos/dungeon.core.js: 8 rat, 9 skeleton, 10 goblin).
-// Each bestiary member maps onto the closest silhouette; the tint is the
-// wireframe fallback's ink (and the automap stays clean — Wizardry never drew
-// monsters on paper, so neither do we).
+// The shared WebGL dungeon renderer ships a built-in monster atlas (#1129,
+// extended by #2321: the whole bestiary now has its own silhouette — only
+// the Grave Ghoul still borrows the Bone Sentry's plate, on purpose: same
+// humanoid bones, dead-flesh tint below). Each material maps onto a shape;
+// the tint is the wireframe fallback's ink (and the automap stays clean —
+// Wizardry never drew monsters on paper, so neither do we). MOB_SIZE is the
+// billboard's base world size per species: a snake slinks, the King towers;
+// the pack-count growth still rides on top (index.jsx).
 export const MOB_MAT = {
-    RAT: 8, SNAKE: 10, GOBLIN: 10, SKELET: 9, WRAITH: 9, GHOUL: 10,
-    TROLL: 10, MINOTAUR: 10, WYRM: 10, KING: 9,
+    RAT: 8, SNAKE: 11, GOBLIN: 10, SKELET: 9, WRAITH: 13, GHOUL: 9,
+    TROLL: 15, MINOTAUR: 16, WYRM: 12, KING: 14,
 }
 export const MOB_TINT = {
     RAT: '#9a7a52', SNAKE: '#5f9a54', GOBLIN: '#6fae55', SKELET: '#e2dcc8',
     WRAITH: '#c2ccf0', GHOUL: '#a89878', TROLL: '#5a8a60', MINOTAUR: '#a3663f',
     WYRM: '#46899a', KING: '#ecd36a',
+}
+export const MOB_SIZE = {
+    RAT: { w: 0.62, h: 0.62 },          // calibration: the #2315 GL gate is graded on this
+    SNAKE: { w: 0.62, h: 0.44 },
+    GOBLIN: { w: 0.62, h: 0.70 },
+    SKELET: { w: 0.62, h: 0.92 },
+    WRAITH: { w: 0.58, h: 0.78, fz: 0.10 },
+    GHOUL: { w: 0.62, h: 0.82 },
+    TROLL: { w: 0.76, h: 0.95 },
+    MINOTAUR: { w: 0.72, h: 0.98 },
+    WYRM: { w: 0.80, h: 0.62 },
+    KING: { w: 0.88, h: 1.05 },
 }
 
 // How far the torch carries a monster's shape: a pack reveals itself a few
@@ -95,6 +110,7 @@ export function sightedMobs (st) {
             x: mx, y: my, key: k,
             mat: MOB_MAT[lead] != null ? MOB_MAT[lead] : 8,
             tint: MOB_TINT[lead] || MOB_TINT.RAT,
+            size: MOB_SIZE[lead] || MOB_SIZE.RAT,
             count: group.length || 1,
             range,
         })
