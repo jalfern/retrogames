@@ -13,8 +13,13 @@
 // with one fewer arrow of quiver AND the foe gifted the first point.
 //
 //   npm run archerycheck              the audit (~1 s)
-//   npm run archerycheck -- --mutate  + six mutants that MUST die
+//   npm run archerycheck -- --mutate  + seven mutants that MUST die
 //   npm run archerycheck -- --arena 1 dump an arena as ASCII
+//
+// #2307 adds the third muscle — CLIMBS: the autopilot gains rows on purpose.
+// A climb receipt is grounded-row → grounded-row (no mid-air brush-past), the
+// oracle hopGrants is held against the real moveBody, and killing the
+// climbSeek flag must turn the receipts red.
 import { ARENAS_COUNT, buildArena } from '../src/games/ArenaArchery/levels.js'
 import {
     CFG, makeGame, step, botInput, recordMatch, replay, stateHash,
@@ -56,13 +61,28 @@ function driveMatch(opts = {}) {
     const g = makeGame(buildArena(opts.arena || 0), opts)
     const skills = opts.skills || [1, 0]
     const cap = opts.maxTicks || CFG.matchTicks + 240
-    const receipts = { jumps: 0, sticks: 0, knocks: 0, pulls: 0, dryouts: 0, ledBreaks: 0, stuckPeak: 0, worstGap: 0 }
+    const receipts = { jumps: 0, sticks: 0, knocks: 0, pulls: 0, dryouts: 0, ledBreaks: 0, stuckPeak: 0, worstGap: 0, climbs: [[], []], gain: [0, 0] }
+    // #2307 climb receipts: a CLIMB is leaving the ground going up and
+    // landing on the ground some rows higher — grounded-row to grounded-row,
+    // the only metric that can't be faked by a mid-air min-row brush-past.
+    const crow = (p) => Math.floor(p.y / CFG.cell)
+    const prev = g.p.map((p) => ({ grounded: p.grounded, row: crow(p), takeoff: -1 }))
     // the #1685 stalemate meter: the longest run of ticks with NO action
     // (loose|hit) after the first kill. A dry quiver economy sits here ~20 s.
     let armed = false, prevAction = -1
     while (!g.end && g.tick < cap) {
         const i1 = botInput(g, 0, skills[0])
         const i2 = botInput(g, 1, skills[1])
+        for (let pi = 0; pi < 2; pi++) {
+            const p = g.p[pi]
+            if (prev[pi].grounded && !p.grounded && p.vy < 0) prev[pi].takeoff = prev[pi].row
+            if (!prev[pi].grounded && p.grounded && prev[pi].takeoff >= 0) {
+                if (crow(p) < prev[pi].takeoff) { receipts.climbs[pi].push([prev[pi].takeoff, crow(p)]); receipts.gain[pi] += prev[pi].takeoff - crow(p) }
+                prev[pi].takeoff = -1
+            }
+            prev[pi].grounded = p.grounded
+            prev[pi].row = crow(p)
+        }
         g.cmds.push({ tick: g.tick, p1: i1, p2: i2 })
         step(g, i1, i2)
         if (ledger(g) !== g.total + g.supplied) receipts.ledBreaks++
@@ -218,6 +238,15 @@ for (let i = 0; i < ARENAS_COUNT; i++) {
     // the player sees as a broken game. The lob-and-walk-in basic bot sat
     // here ~20 s until the stuck-arrow TTL reopened the quiver economy.
     ok(r.worstGap < 150, `arena ${i}: the duel sat ${r.worstGap} ticks (${(r.worstGap / 30).toFixed(1)} s) with no shot after the first kill — a dry quiver economy froze the demo (#1685)`)
+    // #2307 — the issue's muscle: the autopilot climbs ledge chains ON PURPOSE.
+    // Receipts are grounded-row → grounded-row (a landing two rows up is a
+    // deliberate 2-cell step; the physics apex is 51 px, so a +2 is the
+    // maximum a granted hop can pay and stay honest).
+    ok(r.climbs[0].length >= 2, `arena ${i}: the autopilot climbed ${r.climbs[0].length} ledges — the bot never climbs ledge chains deliberately (#2307)`)
+    ok(r.gain[0] >= 4, `arena ${i}: total ascent ${r.gain[0]} rows — a bot that only skirts the floor does not own this arena (#2307)`)
+    ok(Math.min(...r.climbs[0].map(([, t]) => t)) <= 7, `arena ${i}: highest landing row ${Math.min(...r.climbs[0].map(([, t]) => t))} — the upper tiers were never touched (#2307)`)
+    if (i === 1) ok(Math.min(...r.climbs[0].map(([, t]) => t)) <= 3, `arena ${i}: KNOCKBACK's inner balconies (row ≤3) never reached — the chain dead-ends mid-tower (#2307)`)
+    ok(r.climbs[1].length === 0, `arena ${i}: the skill-0 bot climbed ${r.climbs[1].length} ledges — climb doctrine is skill>0; the loser stealing the high ground inverts the demo (#2307)`)
     ok(Date.now() - t0 < 4000, `arena ${i}: ${Date.now() - t0} ms — this audit must stay a second, not a minute`)
 
     // determinism, three ways: recorded stream re-replayed; re-driven from
@@ -246,7 +275,7 @@ for (let i = 0; i < ARENAS_COUNT; i++) {
         `arena ${i}: SLACK FAILED — with quiver ${CFG.quiver - 1} and the foe gifted a point the autopilot ended ${sl.g.p[0].score}-${sl.g.p[1].score}; a perfect-solver win is not a human-winning design`)
     ok(sl.receipts.ledBreaks === 0, `arena ${i}: the slack match broke the ledger`)
 
-    receipts[i] = { ticks: g.tick, scores: `${g.p[0].score}-${g.p[1].score}`, sticks: r.sticks, pulls: r.pulls, knocks: r.knocks, ms: Date.now() - t0 }
+    receipts[i] = { ticks: g.tick, scores: `${g.p[0].score}-${g.p[1].score}`, sticks: r.sticks, pulls: r.pulls, knocks: r.knocks, climbs: r.gain[0], ms: Date.now() - t0 }
 }
 
 // ---------------------------------------------- dry-quiver honesty check ----
@@ -342,10 +371,19 @@ if (MUT) {
         const { g } = driveMatch({ arena: 0, maxTicks: CFG.matchTicks + 240 })
         return g.end === 'win' && g.winner === 0
     })
-    tryMut('lob-bot (the basic bot dumps arrows on unreachable ledges — #1685)', { bot0Lobs: true, bot0Range: 90, bot0Release: 0.55 }, () => {
-        // KNOCKBACK: the original lob-and-walk-in bot dried the duel out ~20 s
+    tryMut('lob-bot (the basic bot dumps arrows on unreachable ledges — #1685)', { bot0Lobs: true, bot0Range: 90, bot0Release: 0.55, climbSeek: false }, () => {
+        // KNOCKBACK: the original lob-and-walk-in bot dried the duel out ~20 s.
+        // climbSeek joins the patch because the climbing autopilot re-opens
+        // firing lanes the lobs used to freeze — the mutant must regress the
+        // doctrine as it actually ships, not as it shipped in #1685.
         const { receipts: r } = driveMatch({ arena: 1 })
         return r.worstGap < 150
+    })
+    tryMut('no-climb-seek (the autopilot stops seeking ledge chains — #2307)', { climbSeek: false }, () => {
+        // doctrine off ⇒ the physics oracle never runs ⇒ grounded-row receipts
+        // fall to 0 on every arena. Evasive jumps alone never settle a +2.
+        const a = driveMatch({ arena: 0 }), b = driveMatch({ arena: 1 })
+        return a.receipts.gain[0] >= 4 && b.receipts.gain[0] >= 4
     })
 }
 

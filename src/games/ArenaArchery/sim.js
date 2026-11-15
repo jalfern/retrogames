@@ -57,6 +57,11 @@ export const CFG = {
     bot0Lobs: false,      // false: flat (the fix); true: the #1685 lob
     bot0Release: 0.5,     // the basic bot's draw release — flat-shot power
     bot0Range: 130,       // stops walking in here — beyond flat-shot reach
+    // #2307 the climb doctrine (TowerFall's soul): the autopilot takes the
+    // high ground ON PURPOSE — walks to the base of a reachable step and
+    // hops the ledge chain instead of fighting on the floor and hopping at
+    // walls. false (harness mutant) parks the bot back on the flat.
+    climbSeek: true,
 }
 
 export const SOLID = 1
@@ -75,6 +80,11 @@ export function makeGame(arena, opts = {}) {
         quiver: opts.quiver ?? CFG.quiver, quiverMax: opts.quiverMax ?? CFG.quiver,
         score: id === 1 ? (opts.p2Gift || 0) : 0,
         alive: true, deadT: 0, invuln: 0,
+        // #2307 climb commitment (plain data — cloneGame/DebugKit carry it):
+        // the step cell this archer is mid-climb toward, the lateral it holds
+        // until landing, the tick it may next re-pick after an abort, and the
+        // centre-row at lift-off (landing minus lift = the rows gained).
+        climbTo: -1, climbDir: 0, climbHoldUntil: 0, climbCooldown: 0, liftRow: -1, climbAir: false, climbNo: -1, climbAim: 0, climbOff: 0, climbTried: -99,
         spawnX: sp.x * CFG.cell + CFG.cell / 2, spawnY: sp.y * CFG.cell + CFG.cell / 2 + (CFG.cell / 2 - R),
     })
     const g = {
@@ -381,10 +391,164 @@ function predictHit(g, me, tx, ty, ax, ay, charge) {
 // no RNG, ties break by id, and the lob aim is the closed 45° form the
 // harness pins to the cell — so a hit here is the SAME hit on screen.
 
+// ---------------------------------------------- deliberate climbing (#2307) ----
+// TowerFall doctrine: the high ground is the soul of the duel, and the
+// levels contract guarantees every chain step is <= the jump apex (exactly
+// 2 cells). So a climb is a NAMEABLE move, not a hopeful hop.
+// Standing geometry, verified tick-by-tick against moveBody/groundedAt:
+// an archer's CENTRE row equals the row it stands at — on the floor the
+// centre is in the floor's own border row; on a one-row slab of row S the
+// centre rests in row S (feet on the slab's top face, edge probes into the
+// slab's end cells). A step is therefore: slab row = cur - gain (gain >= 1,
+// <= apex 2 rows), that row stone at the landing column, the headroom row
+// above open, and an unobstructed walk to the take-off at the body's row
+// now. Take-off discipline (same empirical run): jump when the landing
+// column centre is ~1.5 cells ahead — closer grazes the lip, further
+// arrives below it.
+function reachableStep(g, p, prefCx, maxRise, maxCols, banCell = -1, grants = null) {
+    if (!p.grounded) return null
+    const cur = Math.floor(p.y / CFG.cell)
+    const c0 = Math.floor(p.x / CFG.cell)
+    const open = (cx, r) => cx >= 1 && cx <= g.W - 2 && r >= 1 && r <= g.H - 2 && g.grid[r * g.W + cx] === 0
+    const stone = (cx, r) => cx >= 0 && cx <= g.W - 1 && r >= 0 && r <= g.H - 1 && g.grid[r * g.W + cx] === SOLID
+    // a stuck arrow is solid to the flying arrow AND to the jumping body:
+    // its cell at head height (the row the head occupies above the feet)
+    // turns the hop into a ceiling-bump. The route must be sky-clear.
+    const sky = (cx, r) => !g.stuck.some((s) => s.cell === r * g.W + cx)
+    const cand = []
+    for (let gain = 1; gain <= maxRise; gain++) {
+        const slab = cur - gain
+        if (slab < 2) break
+        const lo = Math.max(1, c0 - maxCols), hi = Math.min(g.W - 2, c0 + maxCols)
+        for (let cx = lo; cx <= hi; cx++) {
+            if (!stone(cx, slab)) continue                        // the slab you land on
+            if (!open(cx, slab - 1)) continue                     // headroom above the slab
+            if (slab * g.W + cx === banCell) continue
+            if (!sky(cx, slab) || !sky(cx, slab - 1)) continue   // landing approach clear
+            if (prefCx != null && cx !== prefCx) continue
+            const dir = cx > c0 ? 1 : cx < c0 ? -1 : 0
+            if (dir === 0) continue                              // straight-up cannot cross a riser
+            // walking to the take-off must be clear at the body's row now,
+            // and the two columns before the riser need head-room sky too
+            let blocked = false
+            for (let c = Math.min(c0, cx) + (dir > 0 ? 1 : 0); dir > 0 ? c < cx : c > cx; c += dir) {
+                if (!open(c, cur) || !sky(c, cur) || !sky(c, cur - 1)) { blocked = true; break }
+            }
+            if (blocked) continue
+            const d = Math.abs(cx - c0) * CFG.cell + gain * 2
+            cand.push({ d, cell: slab * g.W + cx, cx, stand: slab, gain, dir })
+        }
+    }
+    // nearest-first, but only a hop the integrator grants may win
+    cand.sort((a, b) => a.d - b.d)
+    for (const c of cand) if (!grants || grants(c)) return c
+    return null
+}
+
+// Physics, not optimism: before committing, replay the hop's own legs
+// through moveBody on a body-shaped clone (read-only over g — the clone
+// carries the live grid and stuck list). A step is climbable when the real
+// integrator says so: the clone leaves the ground, and next lands with its
+// centre a row ABOVE the lift-off. 15 candidates x ~40 cheap steps at pick
+// time only; this is also what makes the receipts honest — the doctrine
+// commits ONLY to hops the world will grant.
+function hopGrants(g, p, cx, slabRow, dir, out) {
+    // Physics of a granted hop: a jump taken AT SPEED near the slab's near
+    // edge puts the apex above the slab's top face, and the ~17 airborne
+    // ticks at 2.6 px glide the body ONTO the slab before the descent
+    // finishes. The plan is (near edge, off, aim): sweep aim 1..2 cells
+    // into the slab and take-off 2..5 cells out on the approach side; the
+    // first combination the real moveBody lands high is the plan.
+    const slabAt = (c) => c >= 0 && c <= g.W - 1 && g.grid[slabRow * g.W + c] === SOLID
+    let near = cx
+    for (let k = 0; k < 8; k++) if (slabAt(near - dir)) near -= dir
+    const startRow = Math.floor(p.y / CFG.cell)
+    for (let into = 1; into <= 2; into++) {
+        const aim = near + dir * into
+        const lx = aim * CFG.cell + CFG.cell / 2
+        for (let off = 2; off <= 5; off++) {
+            const tx = lx - dir * off * CFG.cell
+            if ((tx - p.x) * dir < -CFG.cell / 2) continue   // behind the bot for this approach
+            const sim = {
+                W: g.W, H: g.H, grid: g.grid, stuck: g.stuck,
+                p: [{ id: p.id, x: p.x, y: p.y, vx: 0, vy: 0, grounded: true }],
+            }
+            const b = sim.p[0]
+            let air = false
+            let ok = false
+            for (let t = 0; t < 52; t++) {
+                const to = (tx - b.x) * dir
+                if (b.grounded) {
+                    if (air) { ok = Math.floor(b.y / CFG.cell) <= startRow - 1; break }
+                    b.vx += ((to > 0.5 * CFG.cell ? dir * CFG.move : 0) - b.vx) * CFG.accel
+                    if (to <= 0.5 * CFG.cell) b.vy = -CFG.jump
+                    else b.vy += CFG.gravity
+                } else {
+                    b.vx += ((dir * CFG.move) - b.vx) * CFG.accel
+                    b.vy += CFG.gravity
+                }
+                moveBody(sim, b)
+                if (!b.grounded) air = true
+            }
+            if (ok) { if (out) { out.off = off; out.ax = aim; out.near = near } return true }
+        }
+    }
+    return false
+}
+
+// One climb decision per tick: hold a committed step, or pick a new one.
+// Writes ONLY the p.climb* bookkeeping (plain data; the sim never reads it),
+// and returns { mx, my } when the climb owns the feet this tick.
+function climbStep(g, p) {
+    // a commitment ends only after real airtime: the pick tick itself is
+    // still grounded (the jump executes inside step, after this returned),
+    // and a release without lift was a mis-read, not a landing
+    if (p.climbTo >= 0 && p.grounded && p.climbAir) {
+        const gained = p.liftRow - Math.floor(p.y / CFG.cell)
+        p.climbNo = gained <= 0 ? p.climbTo : -1
+        p.climbTo = -1; p.liftRow = -1; p.climbHoldUntil = 0; p.climbAir = false
+        if (gained <= 0) p.climbCooldown = g.tick + 20   // the riser won: park the plan, keep the duel
+    }
+    // A committed climb owns the feet outright — the shot/distance blocks
+    // must not steal the input mid-hop (they still solve and FIRE above:
+    // only the legs are spoken for). Take-off discipline: walk until the
+    // landing column is ~1.5 cells ahead, then jump — a jump taken from too
+    // far arrives at the slab below its lip, and one taken from under it is
+    // a hop against a wall.
+    if (p.climbTo >= 0) {
+        const lx = p.climbAim * CFG.cell + CFG.cell / 2
+        const tx = lx - p.climbDir * p.climbOff * CFG.cell
+        if (!p.grounded) { p.climbHoldUntil = g.tick; p.climbAir = true }
+        const to = (tx - p.x) * p.climbDir
+        const mx = p.grounded ? (to > 0.5 * CFG.cell ? p.climbDir : 0) : p.climbDir
+        const jump = !p.grounded ? 1 : (to <= 0.5 * CFG.cell ? 1 : 0)
+        return { mx, my: jump }
+    }
+    if (!p.grounded || !CFG.climbSeek || g.tick < p.climbCooldown) return null
+    // the oracle is not cheap; re-plan at most every 12 ticks — a window
+    // the duel can afford, and far below the 30 Hz frame budget
+    if (g.tick - p.climbTried < 12) return null
+    p.climbTried = g.tick
+    const prefer = Math.floor(g.p[1 - p.id].x / CFG.cell)
+    const plan = {}
+    const step = reachableStep(g, p, prefer, 2, 6, p.climbNo, (c) => hopGrants(g, p, c.cx, c.stand, c.dir, plan))
+        || reachableStep(g, p, null, 1, 6, p.climbNo, (c) => hopGrants(g, p, c.cx, c.stand, c.dir, plan))
+    if (!step) return null
+    p.climbTo = step.cell
+    p.climbAim = plan.ax
+    p.climbOff = plan.off
+    p.climbDir = step.dir
+    p.liftRow = Math.floor(p.y / CFG.cell)
+    p.climbAir = false
+    return { mx: step.dir, my: 0 }
+}
+
 export function botInput(g, meId, skill) {
     const me = g.p[meId], foe = g.p[1 - meId]
     if (!me.alive) return { mx: 0, my: 0, fire: false }
     let mx = 0, my = 0, fire = false
+    let climbed = false
+    const above = foe.alive && foe.y < me.y - CFG.cell / 2
 
     // a low-ammo archer is a scavenger: nearest PULLABLE stuck arrow,
     // first. The pull probes the bot's centre row, and this bot never
@@ -414,7 +578,23 @@ export function botInput(g, meId, skill) {
         }
     }
 
-    if (!scavenging && foe.alive) {
+    // #2307 climb phase A: the feet belong to the chain before the duel
+    // distances are considered — a committed hop that dodges sideways is
+    // not climbing the ledge it committed to. But climbing is TEMPO, not
+    // survival: a perched bot cannot reach floor-level stuck arrows, so a
+    // thinning quiver (≤ 2) releases the climb and the feet go back to the
+    // ground economy — the slack rule (#1685 lineage) would otherwise lose
+    // matches by sitting high on dry ammo.
+    if (!scavenging && !dry && foe.alive && skill > 0 && me.quiver > 2) {
+        const c = climbStep(g, me)
+        if (c) {
+            climbed = true
+            mx = c.mx
+            my = c.my
+        }
+    }
+
+    if (!scavenging && !climbed && foe.alive) {
         // autopilot keeps a fighting distance and steps aside from fire
         const dx = foe.x - me.x, adx = Math.abs(dx)
         if (skill > 0) {
@@ -431,7 +611,11 @@ export function botInput(g, meId, skill) {
     // the shot: lead once, solve both angles, forward-simulate each, take
     // whichever arc actually reaches the foe
     let want = null, aimUp = 1, aim = null
-    if (!scavenging && foe.alive && me.quiver > 0 && skill > 0) {
+    // #2307 perched honesty: once the bot stands above the foe, only a
+    // SOLVED arc (rain included) may burn an arrow — the floor habits
+    // (blind flat misses, hopeful lobs at the canopy) waste ammo upward.
+    const hopelessHigh = above && !me.firing
+    if (!scavenging && !climbed && !hopelessHigh && foe.alive && me.quiver > 0 && skill > 0) {
         const t = 26
         let tx = foe.x + foe.vx * t
         const mk = (v) => clamp((v - CFG.arrowMin) / (CFG.arrowMax - CFG.arrowMin), 0.04, 1)
@@ -451,6 +635,13 @@ export function botInput(g, meId, skill) {
                 out.push({ up: 0, c: mk(ladx * Math.sqrt(CFG.arrowGravity / (2 * drop))) })
             }
             if (ladx > 30 && ladx - lrise > 10) out.push({ up: 1, c: mk(Math.sqrt(CFG.arrowGravity * ((ladx * ladx) / (ladx - lrise)))) })
+            // #2307 the rain shot: from the high ground the foe sits BELOW,
+            // and the 45° up-lob's own range r = v²/g covers the chord
+            // (2*down at full charge = 96 px). The arcade duelist on the
+            // balcony does not lob over the tower — it rains down.
+            if (lrise > CFG.cell && ladx > 8 && 2 * lrise < (CFG.arrowMax * CFG.arrowMax) / CFG.arrowGravity - 8) {
+                out.push({ up: 2, c: mk(Math.sqrt(CFG.arrowGravity * (ladx * ladx) / (2 * lrise))) })
+            }
             return out
         }
         // iterate the lead on the arrow's OWN measured flight time: solve,
@@ -459,8 +650,8 @@ export function botInput(g, meId, skill) {
         let px = foe.x, py = foe.y, pt = 26
         for (let pass = 0; pass < 3 && want === null; pass++) {
             for (const cd of solve(px, py)) {
-                const ax = cd.up ? (px >= me.x ? 1 : -1) : Math.sign(px - me.x) || 1
-                const ay = cd.up ? -1 : 0
+                const ax = cd.up === 1 ? (px >= me.x ? 1 : -1) : (Math.sign(px - me.x) || 1)
+                const ay = cd.up === 1 ? -1 : cd.up === 2 ? 1 : 0
                 const v = CFG.arrowMin + (CFG.arrowMax - CFG.arrowMin) * cd.c
                 if (v < CFG.arrowMin || v > CFG.arrowMax) continue
                 if (predictHit(g, me, px, py, ax, ay, cd.c) >= 0) { want = cd.c; aimUp = cd.up; break }
@@ -473,26 +664,31 @@ export function botInput(g, meId, skill) {
         }
         if (want !== null) {
             // plant for the lob (release the frame both feet are down and
-            // the solver still agrees); walk the flat shot INTO the line
-            fire = !me.firing || me.charge < want || (aimUp && !me.grounded && me.charge < 1)
-            mx = aimUp ? 0 : (tx > me.x ? 1 : -1)
+            // the solver still agrees); walk the flat shot INTO the line;
+            // the rain shot plants too — a balcony archer holds its ground
+            fire = !me.firing || me.charge < want || ((aimUp === 1 || aimUp === 2) && !me.grounded && me.charge < 1)
+            mx = aimUp === 0 ? (tx > me.x ? 1 : -1) : 0
             my = 0
-            aim = { x: aimUp ? (tx >= me.x ? 1 : -1) : (tx > me.x ? 1 : -1), y: aimUp ? -1 : 0 }
-        } else if (me.firing) {
+            aim = {
+                x: tx > me.x ? 1 : -1,
+                y: aimUp === 1 ? -1 : aimUp === 2 ? 1 : 0,
+            }
+        } else if (me.firing && !(above && climbed)) {
             // A released draw can never be un-nocked: once the string is
             // drawn it holds until the solver agrees or the draw is full.
             // (An "abort" here used to spit unaimed point-blank junk.)
+            // #2307 exception: a draw committed while sprinting at a shot
+            // that died may be dropped UNLESS the foe is above and the feet
+            // belong to a climb — firing-up during a hop spits junk at the
+            // ceiling, and the climb should finish before the next solve.
             fire = me.charge < 1
             if (fire && !aimUp) mx = tx > me.x ? 1 : -1
-        } else if (skill > 0 && foe.alive && me.grounded && foe.y < me.y - 24 &&
-                   Math.abs(foe.x - me.x) < 150) {
-            // foe perched high and close: neither stick angle solves from
-            // the floor — hop, and let the airborne solver find the arc
-            my = 1
-        } else if (skill > 0 && !fire && mx === 0) {
+        } else if (!climbed && skill > 0 && !fire && mx === 0) {
             // nothing to shoot and nothing to walk: footwork. Sweeping the
             // floor in tick-parity direction beats parking in a geometry
             // dead spot forever — the arena always reopens eventually.
+            // (#2307: the old in-place hop at a perched foe lives here no
+            // more — climb phase A routes that duel up the ledge chain.)
             mx = Math.floor(g.tick / 45) % 2 ? 1 : -1
         }
     } else if (!scavenging && foe.alive && me.quiver > 0 && skill === 0) {
