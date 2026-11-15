@@ -79,6 +79,7 @@
     "defusedrive": "node scripts/defusedrive.mjs",
     "britannidrive": "node scripts/britanniadrive.mjs",
     "bombdrive": "node scripts/bombdrive.mjs",
+    "tmdphonecheck": "node scripts/tmdphonecheck.mjs",
     "sosplay": "node scripts/sosplay.mjs",
     "rallycheck": "node scripts/rallycheck.mjs",
     "rallylinkcheck": "node scripts/rallylinkcheck.mjs",

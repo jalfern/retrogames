@@ -684,6 +684,7 @@ export default function TalkMeDown() {
             }
         }
         const onKeyUp = (e) => {
+            if (e.target === typeInputRef.current) return // #2287: the line owns its keys, up and down
             const f1 = S1[e.code]
             if (f1) releaseMin(keys1, f1)
             if (net.active) {

@@ -45,6 +45,19 @@ the couch — or the mic.
   ride hash/simState and the net snapshot (additive `hp`). A GLYPH mirror
   (G6) is impossible by the seat law — GLYPH seats only at round 4/depth 5 —
   so the drain rides the dial alone.
+- **THE PHONE'S TYPED MOUTH (#2287):** touch surfaces own a second channel
+  besides the mic pill: a TYPE pill (play only, never on a keyboard box) that
+  focuses a real `<input>` — the soft keyboard rises and feeds the SAME
+  shell-side line #1894 made (`cl.open/cl.buf` -> `drawCallLine`, per-char
+  tick, `CALL_LINE_MAX` cap). GO (Enter) shouts through `voiceCall` — the
+  mic's own entry, so grammar, obey-pulse, refuse-why and the #1415 bank are
+  one path (#1415 one-source law). Words are not hands (#1247 extended to
+  pads), wearing two belts: the input stops its own key propagation AND both
+  global handlers refuse `INPUT` targets (keyup too — `b_rel` learned the hard
+  way). With a keyboard down, keys are swallowed whole: Escape closes the
+  mouth before it can mean pause; blur (keyboard dismissed) puts the line
+  away; pause/screen-leaves also close it. `TOUCH_CALL_HINT` names both true
+  channels; desktop X is byte-identical and sees no pill at all.
 - **THE RAIL (#1917)**: the back plate's three holders are a physical
   slide-rail tray with a SEEDED cell layout, and the tray opens at its right
   end — only the cell nearest the opening can leave the plate. `<`/`>` pick
@@ -292,6 +305,23 @@ npm run tmdlinkdrive   # 24 gates (#1880 + #1888), TWO REAL BROWSERS over a
                        # PHONE SEAT (#1888): touch guest gets the cream rulebook
                        # across the bomb bay (x200+x390 cream, plate on the rail,
                        # LCD band kept); ?touch=0 pins the narrow rail back
+npm run tmdphonecheck  # 39 gates (#2287), phone viewport (390x844, touch) +
+                       # a desktop control page, REAL taps and keystrokes only:
+                       # pill screen-gating (never at attract, never on a
+                       # keyboard box), tap opens the canvas CALL line +
+                       # focuses the <input>, amber line pixels, words-never-
+                       # hands (KeyB/W/A/D/F/Space through the mouth leave the
+                       # pads cold — and stay cold after the shout), a typed
+                       # call shouts exactly ONE voiceCmd bank entry with the
+                       # grammar run (intent cut), nonsense reaches the mic
+                       # path once and refuses intent-null, Escape/blur/pause
+                       # all put the line away, resume restores the pill;
+                       # desktop side: no pill/input at all, X opens/composes/
+                       # closes byte-as-before. Zero page errors across both
+                       # boxes. Mutant proof: remove BOTH belts of the words-
+                       # not-hands law (target guards + stopPropagation) and
+                       # 11 gates go red — leaked Escape pauses mid-typing,
+                       # the shout doubles in the bank.
 ```
 
 Mutant proof (step 5): commenting `gs.fuse -= 1` in `step()` goes red twice
@@ -354,12 +384,13 @@ red on main while `bombcheck` stays green. Filed for the QA lane.
   the pocket state rides the contract snapshot (`hp`) and the hash. G6 was
   ruled out before writing it: GLYPH seats only at rounds 4/5 and N/G are
   taken at modules 0/1, so the glyph pool at depth 5 holds no 6th stamp.
-- Headless CI can hear nothing (no speech service): mic *delivery* is still
-  proved by badge state and an injected phrase (#1249). Since #1894 the
-  grammar + obey/refuse + bank path also runs end-to-end on REAL keystrokes
-  (X opens, ENTER shouts — to pixels and to `voiceCmd`); what remains open is
-  a live speech-service delivery in CI, and typed calls on phones
-  (VirtualControls has no X — the pill stays the phone's only mouth).
+- **CLOSED by #2287 (typed half):** Headless CI can hear nothing (no speech
+  service): mic *delivery* is still proved by badge state and an injected
+  phrase (#1249). Since #1894 the grammar + obey/refuse + bank path also runs
+  end-to-end on REAL keystrokes (X opens, ENTER shouts — to pixels and to
+  `voiceCmd`), and since #2287 PHONES type calls too: a TYPE pill opens the
+  soft keyboard into the same CALL line (`tmdphonecheck`). Still open: a live
+  speech-service delivery in CI (no such service exists headless).
 - DIAL's "another module has wires" rule (D4) reads the bomb layout; a second
   dial module is intentionally not cross-referenced (first dial wins). This is
   structurally untestable, not just unwritten: the seat law puts NEON at
