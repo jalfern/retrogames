@@ -54,7 +54,11 @@ transcribed into source:
   for the shrine half: gates now land at named chapels with their keeper in
   the toast (see "Shrines" below). The town names (Britain, Trinsic…) still
   wait for stage 2/5's town/talk data — that tail stays open (#1829 item 5).
-- Boarding is free at any coast (the purchase lives in stage 2's shops).
+- Boarding is free at any coast (the purchase lives in stage 2's shops). —
+  **CLOSED by #2345** on the toll half: the purse is live (GOLD 250 at the
+  start, as the original's HUD carried it), every boarding pays the captain
+  5 gold, and a light purse is refused on the sand. Distance fares for named
+  port pairs and the shops themselves stay stage 2.
 - Town walls/buildings are still tile terrain; enterable buildings are stage 2.
 - Classic mode (`C`) stamps the ORIGINAL terrain tiles: Origin's own
   terrain-named tilesets (`GRASS/MARSH/BRUSH/HILL/FOREST/SHORE.CON`, 192B =
@@ -265,6 +269,47 @@ keeper-toast check.
 - Honest tail: hull is per-ship and invisible to the storm-free landlubber —
   which is the point; combat-style attrition and ship purchase/repair shops
   stay stage 2.
+
+## Purse & passage toll (#2345)
+
+In the original (Ultima IV, Origin 1985) the party carries gold from the first
+minute — the HUD's `GOLD 250` — and no captain weighs anchor unpaid. Until this
+stage Britannia's sea was free at any beach; now the economy's first organ
+lives:
+
+- `purse.js` (pure + deterministic): `START_GOLD` = 250 (the original's starting
+  purse), `FARE` = 5 gold a boarding, `TRIBUTE` = 20 at each day turn.
+  The original's fares ran by port distance (5/10/25); stage 1 has no port
+  pairs, so we honour its RULE (every passage is paid, in gold) rather than
+  fake its rows — the #1862 doctrine again.
+- **The toll bites at the beach:** boarding asks `payToll(S.gold)` before the
+  keel goes in. Paid: the creak plus two square-wave coin chinks, the toast
+  names the fare. Refused: the chapel-stone pattern (cooldown, buzz, refusal
+  names the fare), the pilgrim stays dry and the gold stays — refusal is a
+  door, not a fine.
+- **The dawn tribute is OURS, not Origin's**: the eight gate-towns tithe their
+  Avatar 20 gold at every day turn (capped at the bounty — the land taxes, it
+  does not mint). It exists because stage 2's chests/trade are not here yet;
+  replace it then (see tail). With it, two boardings a day live on the land
+  forever; six a day drains the bounty by day 23 and the captain shutteth the
+  sea until thrift returns.
+- **Presentation:** `PURSE n` rides the HUD bar in gold ink (red when the next
+  fare cannot be paid), the toast speaks toll and tithe, and `gold/fare/day`
+  ride the harness state (`setGold` + an `empty purse` DebugKit cheat drive
+  the refusal). The state hash carries gold, so a replay that dodged a toll
+  hashes differently.
+- `britanniacheck` +28 gates: spec values pinned literal (250/5/20), the toll
+  law (exact-zero pays, four refuseth, no gold debts, determinism), the tithe
+  law (cap, clamps, monotone), the economy at scale — moderate pilgrim rides
+  the tithe forever, and a spendthrift's refusal day is booked twice (a
+  literal loop written beside the module-run one, #1822: they must agree on
+  day 23), the closed sea for penniless and its reopening, winnable-with-an-
+  empty-purse (the moon chain never asks a captain), purity, and wiring pins.
+  Mutants: `--mutate-toll-free` (refusal deleted, 2 red),
+  `--mutate-purse-hollow` (bounty emptied, 5 red), `--mutate-tithe-mint`
+  (cap lifted, 3 red) — each restored green.
+- Honest tail: the tithe is invented glue (see above); per-port distance fares,
+  purchase, repair and plunder all wait for stage 2's shops.
 
 ## Verify
 
