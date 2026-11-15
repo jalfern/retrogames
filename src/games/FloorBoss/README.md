@@ -168,6 +168,34 @@ score; three expired orders and you're fired. Quota: 1000.
   keys: win → Enter → shift 2 live (career 1689, quota 1200), a short night
   ends the run, restart lands a clean shift 1, zero page errors.
 
+## Ladder polish — the clock-in reads the rung (#2352)
+
+- **Clock-in ceremony** (#2352): advancing used to be instant — the sim stamped
+  `shiftstart` and the painter ignored it. Now `advanceShift` hands the stamp to
+  `handleEvents` and the floor gets a ~2 s ceremony: NIGHT n slams in over the
+  rush-style wash, the quota reprices on a card, the carry-over is said out loud
+  (`BOTS MAINTAINED · STRIKES WIPED · FREIGHT STAYS` — exactly what `nextShift`
+  does), and the rung prices itself: `WIRE +n% · DEADLINES −n% · WEAR −n` from
+  `rungPrice(n)` — pure in n, derived from `shiftParams`, zero at rung 1.
+  Painter-only: no sim state, no hash change, non-blocking (inputs steer during the
+  wash; the ceremony never paints over attract or over).
+- **DEEPEST SHIFT** (#2352): board entries carry the rung the run reached and the
+  attract board shows `BEST RUN n · DEEPEST SHIFT n` (`floorboss.deep`) — the
+  ladder itself is the scoreboard. Old entries without a rung read as shift 1.
+- **Rung-parameterised rush clock, measured-pinned** (#2352): `rushOn/rushLen`
+  ride `gs.params`; `rushNow`, the rush-event stamp, the HUD lamp, the wash and
+  the scan all ask the rung clock instead of hardcoding 2700/1200. Two rung-shaped
+  variants were MEASURED against the career ramp and rejected: late-biased waves
+  cost seed 4242 a banked night (rush freight can't get home before the whistle),
+  early-biased waves fired seed 1337 at shift 5. The #2346 ladder law outranks
+  polish, so the values ship pinned at the classic and `--mutate-rush` kills any
+  un-measured nudge. The mechanism is proof-tested with an artificial rung clock
+  (2500/1400); one line varies it once a shape survives 5-seed careers.
+- Proof: `floorbosscheck` +24 gates (rung-clock literals + pin law + mechanism,
+  `rungPrice` laws 0/0/0 · 4/4/15 · 42/28/70 monotone, ceremony/carry-over/board
+  source pins, no-hardcode guard); mutants `--mutate-rush` (clock drifts without a
+  re-measure), `--mutate-price` (the card claims a free rung) — each dies.
+
 ## Verify
 ```bash
 npm run floorbosscheck          # Node: boots/rules/win/determinism/episode (mutant-proven) + servo presentation source pins (#1877) + load-out (#1911) + freight-line conservation/bonus/express laws (#1921) + freight tiers: side-stream golden, tiered bonus, road law, dest spread (#1927) + load weight: dest+weight goldens, mix sentinels, rate literals 60/54, dock speed 14/14/28 (#1931)

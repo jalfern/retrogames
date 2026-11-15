@@ -39,6 +39,27 @@ export function shiftParams(n) {
         orderRush: Math.max(220, 320 - 20 * (k - 1)),
         dueMult: Math.max(0.72, 1 - 0.04 * (k - 1)),
         wearCut: Math.min(70, 15 * (k - 1)),
+        // #2352: the rush clock is now rung-PARAMETERISED (rushOn/rushLen ride the
+        // params; lamp, wash, scan and stamps all ask rushNow). Measured at QA, two
+        // rung-shaped attempts re-rolled the autopilot ramp — late-biased waves cost
+        // 4242 a banked night (rush freight can't get home before the whistle),
+        // early-biased waves fired 1337 at shift 5 — so the wave ships pinned on the
+        // classic clock: the ladder law (#2346) outranks polish. The mechanism is
+        // live and proof-tested; one line varies it once a shape is measured to hold.
+        rushOn: 2700,
+        rushLen: 1200,
+    }
+}
+
+// How much tighter rung n is than the classic floor — the clock-in card prices
+// the tightening so the ladder reads on screen, not just in the feet (#2352).
+// Pure in n, derived from shiftParams; rung 1 is free of charge (0/0/0).
+export function rungPrice(n) {
+    const p = shiftParams(n)
+    return {
+        wire: Math.round((shiftParams(1).orderBase / p.orderBase - 1) * 100),
+        due: Math.round((1 - p.dueMult) * 100),
+        wear: p.wearCut,
     }
 }
 
@@ -459,7 +480,10 @@ export function makeGame(seed = 1337) {
     return gs
 }
 
-export function rushNow(gs) { return (gs.tick % (RUSH_ON + RUSH_LEN)) >= RUSH_ON }
+// #2352: the wave is rung-shaped (rushOn/rushLen ride gs.params); the fallbacks
+// keep pre-ladder states honest to the classic clock.
+const rushClock = (gs) => [gs.params.rushOn ?? RUSH_ON, gs.params.rushLen ?? RUSH_LEN]
+export function rushNow(gs) { const [on, len] = rushClock(gs); return (gs.tick % (on + len)) >= on }
 
 function spawnOrder(gs) {
     const rush = rushNow(gs)
@@ -689,7 +713,7 @@ export function step(gs, pads = [{}]) {
     gs.prevB = !!pad.b
 
     // clocked world: rush siren at the front edge of each wave
-    if (rush && (gs.tick % (RUSH_ON + RUSH_LEN)) === RUSH_ON) gs.ev.push({ type: 'rush' })
+    if (rush) { const [ron, rlen] = rushClock(gs); if (gs.tick % (ron + rlen) === ron) gs.ev.push({ type: 'rush' }) }
 
     // intake
     gs.spawnT--
