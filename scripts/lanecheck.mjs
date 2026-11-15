@@ -170,6 +170,26 @@ section('A. pure planner')
         'A9f board fully dry -> flagship fallback is mini\'s tail')
 }
 
+// A10 — #2280: mini2 reserves mini's share too (same ladder shape, one step
+// down). Mutant note: flip `miniReserve` to 0 or drop miniUp and these reddens.
+{
+    const q = (n, day) => iss(n, ['game-queue'], { created_at: `2026-10-${day}T00:00:00Z` })
+    ok(lanePlan({ issues: [q(4, 10)], freeA: false, freeB: false, studioUp: true, miniUp: true }).qaMini2Queue === false,
+        'A10a queue 1 absorbed by studio reserve -> nothing left for mini2')
+    ok(lanePlan({ issues: [q(4, 10), q(5, 11)], freeA: false, freeB: false, studioUp: true, miniUp: true }).qaMini2Queue === false,
+        'A10b queue 2: studio + mini take theirs -> mini2 stays out (mutant line: miniReserve dropped)')
+    ok(lanePlan({ issues: [q(4, 10), q(5, 11), q(6, 12)], freeA: false, freeB: false, studioUp: true, miniUp: true }).qaMini2Queue === true,
+        'A10c queue 3 survives builders+studio+mini shares -> mini2 joins the queue')
+    ok(lanePlan({ issues: [q(4, 10), q(5, 11)], freeA: false, freeB: false, studioUp: true, miniUp: false }).qaMini2Queue === true,
+        'A10d mini down -> its share passes to mini2 (no idle while a game waits)')
+    ok(lanePlan({ issues: [q(4, 10)], freeA: false, freeB: false, studioUp: true, miniUp: true }).qaMini2Flagship === true,
+        'A10e all shares consumed -> mini2 flagship-eligible (tail rule)')
+    ok(lanePlan({ issues: [q(4, 10), q(5, 11), q(6, 12)], freeA: false, freeB: false, studioUp: true, miniUp: true }).qaMini2Flagship === false,
+        'A10f queue reaches mini2 -> queue wins the tick, not flagship')
+    ok(lanePlan({ issues: [] }).qaMini2Flagship === true,
+        'A10g fully dry -> both mini lanes flagship-eligible (warden sequences them, claims collide safely)')
+}
+
 section('B. board slots + trial verdict')
 
 // B1 — slotsLine pure: null-safe, honest idle/up, trial/fleet word
@@ -421,7 +441,7 @@ ok(warden.includes('builders=$nb/2'), 'pulse line carries slot liveness')
 ok(read('forge-claim.sh').includes('yielding to') && qac.includes('(QA|FORGE)'),
     'claim scripts share one liveness namespace and yield on collision')
 
-ok(watch.includes('BUILDER·B') && watch.includes('n=5'), 'watch.sh shows slot b (pane + resize bits)')
+ok(watch.includes('BUILDER·B') && watch.includes('n=6'), 'watch.sh shows slot b (pane + resize bits; n=6 since the mini2 pane #2280)')
 const qafa = read('forge-qa.sh'), tapStudio = read('com.jalfern.tap-studio.plist')
 ok(tapStudio.includes('<string>com.jalfern.tap-studio</string>') && /<string>8011<\/string>/.test(tapStudio)
     && /<string>8000<\/string>/.test(tapStudio) && tapStudio.includes('stream-studio.log')
@@ -456,6 +476,60 @@ ok(watch.includes('typeset -A PANEID') && watch.includes('PANEID[$key]=$id')
 ok(watch.includes('LANE=builderb') && watch.includes('TAPPORT=8012')
     && watch.includes('LANE=mini') && watch.includes('TAPPORT=8013'),
     'watch.sh --live gives BUILDER·B and QA·MINI their own live panes (#1356)')
+
+// #2280 — the mini's second QA slot: node, ports, tap, pane, board, trial.
+{
+    const tapMini2 = read('com.jalfern.tap-mini2.plist')
+    const qaMini2Pl = read('com.jalfern.forge-qa-mini2.plist')
+    ok(qaMini2Pl.includes('<string>com.jalfern.forge-qa-mini2</string>')
+        && qaMini2Pl.includes('<string>mini2</string>') && qaMini2Pl.includes('--foreground')
+        && qaMini2Pl.includes('origin/main:scripts/forge-qa.sh') && qaMini2Pl.includes('qa-mini2-launchd.log'),
+        'forge-qa-mini2 plist: foreground launchd job running origin/main forge-qa.sh mini2')
+    ok(tapMini2.includes('<string>com.jalfern.tap-mini2</string>') && /<string>8014<\/string>/.test(tapMini2)
+        && /<string>18000<\/string>/.test(tapMini2) && tapMini2.includes('stream-mini2.log')
+        && tapMini2.includes('<key>KeepAlive</key>'),
+        'tap-mini2 plist: :8014 -> :18000 -> stream-mini2.log, KeepAlive (#2280)')
+    ok(qafa.includes('mini2)') && qafa.includes('DEV=5179') && qafa.includes('QA MASTER on node $NODE'),
+        'forge-qa.sh knows the mini2 node (own identity, dev port 5179)')
+    ok(qafa.includes('JOB=com.jalfern.tap-mini2') && qafa.includes('TAPPORT=8014')
+        && qafa.includes('omlxtapmini2') && qafa.includes('SRC_PROV=omlxmini'),
+        'forge-qa.sh routes mini2 through its own tap :8014 cloned from omlxmini (#2280)')
+    // lane ports must be one per lane — the prompt's "never another lane's port" law
+    {
+        const ports = qafa.match(/DEV=\d+/g) || []
+        ok(new Set(ports).size === ports.length && ports.length >= 5,
+            `forge-qa.sh: every node has a unique DEV port (${ports.join(' ')})`)
+    }
+    ok(warden.includes('mini2 18000 QA_WAITING 1 com.jalfern.forge-qa-mini2 5179'),
+        'warden step 5 LANES carries the mini2 lane (#2280)')
+    ok(warden.includes('--mini-up "$MINI_UP"') && warden.includes('MINI_UP=1') && warden.includes('tail -11'),
+        'warden computes MINI_UP (idle+up+job), passes it to the planner, and evals the two new vars')
+    ok(warden.includes('"$node" == mini2 && "$QA_MINI2_QUEUE" == 1'),
+        'mini2 earns the queue fallthrough from the planner flag (#2280)')
+    ok(warden.includes('QA MASTER on node mini2\\\\.') && warden.includes('lane_driven 5179'),
+        'warden watches mini2 identity (pgrep + port witness)')
+    ok(warden.includes('! MINI_FLAGSHIPPED') && warden.includes('QA_MINI2_FLAGSHIP')
+        && warden.includes('qa-flagship:mini2'),
+        'mini2 flagship fallback runs only after studio AND mini declined the gap (#2280)')
+    ok(qaMini2Pl.includes('StartInterval') && /<integer>900<\/integer>/.test(qaMini2Pl),
+        'forge-qa-mini2 job self-ticks every 15 min like its mini sibling')
+    ok(watch.includes('QA·MINI·2') && watch.includes('pane qa-mini2') && watch.includes('PANEID[qa-mini]'),
+        'watch.sh opens a QA·MINI·2 pane below QA·MINI (#2280)')
+    ok(watch.includes('LANE=mini2') && watch.includes('TAPPORT=8014'),
+        'watch.sh --live gives QA·MINI·2 its own live pane over tap :8014 (#2280)')
+    ok(/P2='mini\\\.'/.test(watch) && /Z3='mini\\\.'/.test(watch),
+        'QA·MINI matches node mini. exactly — mini2 never lands in its pane (#2280)')
+    ok(telem.includes("'qaMini2': live('opencode run.*QA MASTER on node mini2\\\\.')"),
+        'board.json slots carries qaMini2 live (#2280)')
+    ok(floor.includes("cell('qa·mini·2', slots.qaMini2)"),
+        'floor.js slotsLine names the qa·mini·2 lane (#2280)')
+    ok(laneOfClaims(['QA (mini2): claimed x']) === 'qaMini2',
+        'trial attribution: mini2 claims map to qaMini2 (#2280)')
+    ok(parseSpanName('qa-mini2-20261115-021212.log')?.lane === 'qaMini2'
+        && parseSpanName('qa-20261115-021212.log')?.lane === 'qaMini',
+        'span names: qa-mini2-* is its own lane, plain qa-* stays mini (#2280)')
+    ok(BOX_MIN.qaMini2 === 60, 'mini2 time-box 60 min like mini QA (#2280)')
+}
 ok(telem.includes("board['slots']") && telem.includes('opencode run.*THE FORGE on slot b'),
     'telemetry bakes live slots into board.json')
 ok(floor.includes('export const slotsLine'), 'floor.js owns the pure slotsLine')

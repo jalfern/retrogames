@@ -371,6 +371,7 @@ main() {
     fi
 
     A_TARGET=""; B_TARGET=""; QA_STUDIO_QUEUE=0; QA_MINI_QUEUE=0; QA_MINI_FLAGSHIP=0; TARGET=""
+    QA_MINI2_QUEUE=0; QA_MINI2_FLAGSHIP=0
     # #1290: is the studio QA lane able to take a queue item this tick? Idle
     # (no session), model answers on :8000, job installed. The planner gives
     # mini the queue only after builders AND studio have taken theirs — unless
@@ -381,9 +382,16 @@ main() {
        && launchctl print "gui/$(id -u)/com.jalfern.forge-qa-studio" >/dev/null 2>&1; then
         STUDIO_UP=1
     fi
+    # #2280: same question for the mini lane, so mini2 reserves mini's share.
+    MINI_UP=0
+    if ! pgrep -f "opencode run.*QA MASTER on node mini\\." >/dev/null 2>&1 \
+       && curl -s -m 3 "http://127.0.0.1:18000/v1/models" >/dev/null 2>&1 \
+       && launchctl print "gui/$(id -u)/com.jalfern.forge-qa" >/dev/null 2>&1; then
+        MINI_UP=1
+    fi
     if [[ "$HALTED" != yes ]]; then
         PLAN=$(print -r -- "$ISSUES" | node "$REPO/scripts/lanes.mjs" \
-              --free-a "$A_IDLE" --free-b "$B_IDLE" --b-loaded "$B_LOADED" --studio-up "$STUDIO_UP" 2>>"$LOG" | tail -9)
+              --free-a "$A_IDLE" --free-b "$B_IDLE" --b-loaded "$B_LOADED" --studio-up "$STUDIO_UP" --mini-up "$MINI_UP" 2>>"$LOG" | tail -11)
         if [[ -n "$PLAN" ]]; then
             eval "$PLAN"   # int/- values only; lanes.mjs guarantees
             [[ "${A_TARGET:-}" == "-" ]] && A_TARGET=""
@@ -404,7 +412,7 @@ main() {
             log "lanes.mjs failed — legacy single-slot ladder: ${A_TARGET:-none}"
         fi
         TARGET=${A_TARGET:-}
-        log "lane plan: ladder=${LADDER:-?} a=${A_TARGET:-none} b=${B_TARGET:-none} qb=$B_LOADED qsq=$QA_STUDIO_QUEUE qmq=$QA_MINI_QUEUE qmf=$QA_MINI_FLAGSHIP sup=$STUDIO_UP"
+        log "lane plan: ladder=${LADDER:-?} a=${A_TARGET:-none} b=${B_TARGET:-none} qb=$B_LOADED qsq=$QA_STUDIO_QUEUE qmq=$QA_MINI_QUEUE qmf=$QA_MINI_FLAGSHIP qm2q=$QA_MINI2_QUEUE qm2f=$QA_MINI2_FLAGSHIP sup=$STUDIO_UP mup=$MINI_UP"
     fi
 
     key_dead() {   # $1 = slot a|b — does that lane's newest session log carry a
@@ -543,6 +551,11 @@ main() {
     #             builders and studio take theirs (QA_MINI_QUEUE from lanes.mjs),
     #             or a flagship gap (#1372) once feedback and queue are both dry
     #             for mini and studio did not take the gap (block below step 5)
+    #   mini2   — the mini's second QA slot (#2280): same shape one step behind
+    #             mini — any feedback item, the queue when QA_MINI2_QUEUE says
+    #             items survive builders+studio+mini shares, or the flagship gap
+    #             when QA_MINI2_FLAGSHIP says nothing is left. Shared inference
+    #             with mini is accepted (Jon); collisions land on qa-claim.sh.
     #   studio  — 1+ UNCLAIMED item (a second stream on the Studio's model)
     #   builder — 2+ UNCLAIMED, and only while the builder is idle with no
     #             game waiting: QA spills into the builder's slot, and step 4
@@ -554,6 +567,7 @@ main() {
     UNCLAIMED=$(print -r -- "$ISSUES" | jq '[.[] | select(any(.labels[]; .name == "feedback"))
         | select(any(.labels[]; .name == "needs-approval" or .name == "building-qa" or .name == "waiting-jon") | not)] | length')
     LANES=("mini 18000 QA_WAITING 1 com.jalfern.forge-qa 5174"
+           "mini2 18000 QA_WAITING 1 com.jalfern.forge-qa-mini2 5179"
            "studio 8000 UNCLAIMED 1 com.jalfern.forge-qa-studio 5176")
     # #1258: the builder-slot QA spill is superseded while slot b is loaded —
     # a free second builder is worth more than a QA item, and the whole-queue
@@ -564,7 +578,7 @@ main() {
     # #1372: STUDIO_FLAGSHIPPED marks studio taking the flagship gap THIS tick —
     # the gap then does not survive to mini. Studio down, busy, or queue/feedback-
     # bound does NOT consume it (that is exactly when mini must step up).
-    STUDIO_KICKED=0; MINI_KICKED=0; STUDIO_FLAGSHIPPED=0
+    STUDIO_KICKED=0; MINI_KICKED=0; STUDIO_FLAGSHIPPED=0; MINI2_KICKED=0; MINI_FLAGSHIPPED=0
     for spec in "${LANES[@]}"; do
         lane=(${=spec}); node=${lane[1]} port=${lane[2]} var=${lane[3]} need=${lane[4]} job=${lane[5]} dev=${lane[6]}
         have=${(P)var}
@@ -584,11 +598,12 @@ main() {
         # #1290: mini earns the same right one step behind studio — the planner
         # already reserved studio's share, so both QA lanes can be in the queue
         # at once without aiming at the same item.
-        (( have >= need )) || { [[ ( "$node" == studio && "$QA_STUDIO_QUEUE" == 1 ) || ( "$node" == mini && "$QA_MINI_QUEUE" == 1 ) ]] || continue; }
+        (( have >= need )) || { [[ ( "$node" == studio && "$QA_STUDIO_QUEUE" == 1 ) || ( "$node" == mini && "$QA_MINI_QUEUE" == 1 ) || ( "$node" == mini2 && "$QA_MINI2_QUEUE" == 1 ) ]] || continue; }
         launchctl print "gui/$(id -u)/$job" >/dev/null 2>&1 || continue
         act launchctl kickstart "gui/$(id -u)/$job" >> "$LOG" 2>&1
         [[ "$node" == studio ]] && STUDIO_KICKED=1
         [[ "$node" == mini ]] && MINI_KICKED=1
+        [[ "$node" == mini2 ]] && MINI2_KICKED=1
         ACTIONS+=("qa-kicked:$node"); log "kicked QA on $node ($have waiting)"
     done
 
@@ -634,6 +649,27 @@ main() {
                      act launchctl kickstart "gui/$(id -u)/com.jalfern.forge-qa" >> "$LOG" 2>&1
                      comment "$PULSE" "WARDEN: feedback and queue dry for mini, ${STAGE#KICK } unowned — kicked mini QA to the flagship gap (#1372)"
                      ACTIONS+=("qa-flagship:mini"); log "kicked mini QA to flagship ${STAGE#KICK }"
+                     MINI_FLAGSHIPPED=1
+                 fi; }
+    fi
+
+    # #2280 — the flagship fallback reaches mini2 as the last lane: the planner
+    # says feedback AND queue leave mini2 nothing (QA_MINI2_FLAGSHIP — after
+    # builders, studio and mini shares), and the gap survived both earlier
+    # flagship takers (STUDIO_FLAGSHIPPED / MINI_FLAGSHIPPED consume it; a lane
+    # down or busy is exactly when mini2 steps up). Same reuse of idle-kick qa
+    # mode: one lane per game is enforced inside it, claim time owns collisions.
+    if [[ "$HALTED" != yes && "$ALIVE" == yes && "$QA_MINI2_FLAGSHIP" == 1 ]] \
+        && (( ! MINI2_KICKED )) && (( ! MINI_FLAGSHIPPED )) && (( ! STUDIO_FLAGSHIPPED )); then
+        pgrep -f "opencode run.*QA MASTER on node mini2\\." >/dev/null \
+            || lane_driven 5179 \
+            || ! curl -s -m 3 "http://127.0.0.1:18000/v1/models" >/dev/null 2>&1 \
+            || ! launchctl print "gui/$(id -u)/com.jalfern.forge-qa-mini2" >/dev/null 2>&1 \
+            || { [[ -n "${STAGE:-}" ]] || STAGE=$(node "$REPO/scripts/idle-kick.mjs" qa 2>>"$LOG" | tail -1)
+                 if [[ "$STAGE" == KICK* ]]; then
+                     act launchctl kickstart "gui/$(id -u)/com.jalfern.forge-qa-mini2" >> "$LOG" 2>&1
+                     comment "$PULSE" "WARDEN: feedback and queue dry for mini2, ${STAGE#KICK } unowned — kicked mini2 QA to the flagship gap (#2280)"
+                     ACTIONS+=("qa-flagship:mini2"); log "kicked mini2 QA to flagship ${STAGE#KICK }"
                  fi; }
     fi
 

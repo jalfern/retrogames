@@ -18,6 +18,8 @@
 //
 // --studio-up 0|1 (#1290): the studio QA lane is idle, up, and will consume
 // one queue item this tick — mini reserves it before falling through itself.
+// --mini-up 0|1 (#2280): the same fact for the mini lane — mini2 reserves
+// mini's share before falling through itself.
 
 import { lanePlan } from './lib/lanes.mjs'
 
@@ -27,7 +29,7 @@ const flag = (name, dflt) => {
     return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : dflt
 }
 if (argv.includes('--help')) {
-    console.log('usage: <issues.json> lanes.mjs --free-a 0|1 --free-b 0|1 --b-loaded 0|1 --studio-up 0|1')
+    console.log('usage: <issues.json> lanes.mjs --free-a 0|1 --free-b 0|1 --b-loaded 0|1 --studio-up 0|1 --mini-up 0|1')
     process.exit(0)
 }
 
@@ -52,6 +54,7 @@ const plan = lanePlan({
     freeB: flag('free-b', '0') === '1',
     bLoaded: flag('b-loaded', '1') === '1',
     studioUp: flag('studio-up', '1') === '1',
+    miniUp: flag('mini-up', '1') === '1',
 })
 console.log(`A_TARGET=${plan.targets.a ?? '-'}`)
 console.log(`B_TARGET=${plan.targets.b ?? '-'}`)
@@ -60,4 +63,6 @@ console.log(`KICK_B=${plan.kick.b ? 1 : 0}`)
 console.log(`QA_STUDIO_QUEUE=${plan.qaStudioQueue ? 1 : 0}`)
 console.log(`QA_MINI_QUEUE=${plan.qaMiniQueue ? 1 : 0}`)
 console.log(`QA_MINI_FLAGSHIP=${plan.qaMiniFlagship ? 1 : 0}`)
+console.log(`QA_MINI2_QUEUE=${plan.qaMini2Queue ? 1 : 0}`)
+console.log(`QA_MINI2_FLAGSHIP=${plan.qaMini2Flagship ? 1 : 0}`)
 console.log(`LADDER=${plan.counts.ladder}`)

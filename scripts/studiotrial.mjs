@@ -38,7 +38,7 @@ const LOG_DIR = '/tmp/forge'
 // shipping is the hidden cost of a slower stream. Tolerance: the warden re-
 // kicks on its ~10-min tick, and SIGTERM lands at the cap — anything from
 // (box − 12) min on counts as having hit the box.
-export const BOX_MIN = { a: 180, b: 180, qaStudio: 60, qaMini: 60 }
+export const BOX_MIN = { a: 180, b: 180, qaStudio: 60, qaMini: 60, qaMini2: 60 } // qaMini2 #2280
 const BOX_TOL_MIN = 12
 
 // verdict — pure: two closed-issue lists (ISO closed_at strings), the later
@@ -120,6 +120,7 @@ export function laneOfClaims(bodies) {
     const [lane, node] = last.match(LINEAGE).slice(1)
     if (lane === 'FORGE') return node === 'b' ? 'b' : 'a'
     if (node === 'mini') return 'qaMini'
+    if (node === 'mini2') return 'qaMini2' // #2280
     if (node === 'studio' || node === 'builder') return 'qaStudio'
     return null // parked mbp etc. — not a lane this metric measures
 }
@@ -152,6 +153,7 @@ function spanLine(label, m) {
     if (builders) bits.push(`builders ${builders}`)
     if (fmt('qaStudio')) bits.push(`studio QA ${fmt('qaStudio')}`)
     if (fmt('qaMini')) bits.push(`mini QA ${fmt('qaMini')}`)
+    if (fmt('qaMini2')) bits.push(`mini2 QA ${fmt('qaMini2')}`)
     return bits.length ? `${label}: ${bits.join(' · ')} missed their box` : null
 }
 
@@ -310,6 +312,7 @@ export function parseSpanName(name) {
     const local = (y, mo, d, h, mi, s) => new Date(y, mo - 1, d, h, mi, s).getTime()
     let m, lane
     if ((m = name.match(/^qa-studio-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})\.log$/))) lane = 'qaStudio'
+    else if ((m = name.match(/^qa-mini2-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})\.log$/))) lane = 'qaMini2' // #2280
     else if ((m = name.match(/^qa-(?!studio)(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})\.log$/))) lane = 'qaMini'
     else if ((m = name.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})\.log$/))) lane = 'builder'
     else return null

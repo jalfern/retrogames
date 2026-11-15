@@ -3,9 +3,11 @@
 # the forge. Every session runs here on the Studio; the node named is where
 # its model runs.
 #
-#   forge-qa.sh [--foreground] [mini|mbp|studio|builder]      (default: mini)
+#   forge-qa.sh [--foreground] [mini|mini2|mbp|studio|builder]      (default: mini)
 #
 #   mini    — Mac mini, omlxmini via the :18000 tunnel  (launchd: com.jalfern.forge-qa)
+#   mini2   — the mini's SECOND QA slot (#2280): same model stream, its own
+#             session identity, port, tap and launchd job  (launchd: com.jalfern.forge-qa-mini2)
 #   mbp     — MacBook Pro, omlxmbp via the :18001 tunnel (launchd: com.jalfern.forge-qa-mbp).
 #             PARKED 2026-10-19: the warden no longer kicks it. Re-enable in warden.sh step 5.
 #   studio  — the Studio's own model on :8000, a second stream beside the builder
@@ -29,7 +31,7 @@ FG=0; NODE=mini
 for a in "$@"; do
     case "$a" in
         --foreground) FG=1 ;;
-        mini|mbp|studio|builder) NODE=$a ;;
+        mini|mini2|mbp|studio|builder) NODE=$a ;;
     esac
 done
 
@@ -38,6 +40,11 @@ STUDIO_MODEL=$(jq -r '.model' "$REPO/opencode.json" 2>/dev/null)
 EXTRA=""
 case "$NODE" in
     mini)    MODEL="omlxmini/Qwen3.8-27B-oQ8e-mtp"; PORT=18000; TAG="";         DEV=5174 ;;
+    mini2)   MODEL="omlxmini/Qwen3.8-27B-oQ8e-mtp"; PORT=18000; TAG="mini2-";   DEV=5179
+             # #2280: the mini's second QA slot — same model stream as mini (Jon
+             # accepted shared inference for the two; back off to one slot in
+             # warden.sh step 5 if it does not pay).
+             EXTRA=" You are QA slot mini2: the mini's model stream is shared with the mini lane, so keep prompts and contexts lean." ;;
     mbp)     MODEL="omlxmbp/Qwen3.8-27B-oQ4e-mtp";  PORT=18001; TAG="mbp-";     DEV=5175
              # The MBP is slow, so it never drives a browser.
              EXTRA=" Node checks only: never run browser suites (*play scripts, npm run verify, shot.mjs). So pick only an item you can finish and verify with Node checks in one session; skip items that need screenshots or a browser, or touch many games, and leave those to the other nodes." ;;
@@ -101,7 +108,7 @@ git -C "$REPO" show origin/main:scripts/lib/keysync.mjs > "$KEYSYNC" 2>/dev/null
 
 PROMPT="You are THE QA MASTER on node $NODE. Open scripts/FORGE-QA.md and execute its session procedure exactly, end to end, without asking questions. AGENTS.md is the law. Time-box yourself to 60 minutes.$EXTRA"
 
-# TAP (#1268 studio, #1356 mini): lanes with their own model stream get their
+# TAP (#1268 studio, #1356 mini, #2280 mini2): lanes with their own model stream get their
 # own live stream, like the builders' :8010 tap. Merge = install, warden's
 # slot-b pattern: the job plist comes from origin/main (never the lagging
 # working tree), and the provider is cloned from a provider with only the port
@@ -115,6 +122,10 @@ if [[ "$NODE" == studio ]]; then
     JOB=com.jalfern.tap-studio; TAPPROV=omlxtapstudio; TAPPORT=8011; SRC_PROV=omlxtap
 elif [[ "$NODE" == mini ]]; then
     JOB=com.jalfern.tap-mini; TAPPROV=omlxtapmini; TAPPORT=8013; SRC_PROV=omlxmini
+elif [[ "$NODE" == mini2 ]]; then
+    # #2280: own tap, same upstream (:18000) — the two mini lanes get separate
+    # stream logs so watch's LIVE panes never mix their generations.
+    JOB=com.jalfern.tap-mini2; TAPPROV=omlxtapmini2; TAPPORT=8014; SRC_PROV=omlxmini
 fi
 if [[ -n "$TAPPORT" ]]; then
     LA="$HOME/Library/LaunchAgents/$JOB.plist"
