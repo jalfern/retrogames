@@ -103,11 +103,19 @@ export const LEVELS = [
         // Respect the walls. A param crucium — the firefly automaton — burns in a
         // steel-lined dirt cell, turning everything it touches into a spreading
         // chain. Steel is the one surface the chain respects: the harvest lies on
-        // the safe side of that glowing partition, and the exit beyond it. The
-        // only thing the fire asks of you is that you do not stand in its room.
+        // the safe side of that glowing partition, and the exit beyond it. Since
+        // #2364 the pit also has a door: a two-cell DUST SEAM in the east wall
+        // catches fire the moment the fly first bores through it (the ring still
+        // contains the chain — steel is the surface fire respects), and beyond
+        // lies a steel-lined flight corridor across the cavern roof with a steel
+        // dead end at col 29. The fly only ever turns against steel, so its
+        // patrol shuttles pit<->corridor forever and can never dive into dust:
+        // the harvest at row 18 provably stays cool. The gap in the tube floor at
+        // col 22 is the invitation — climb into the corridor and it becomes a
+        // game of chicken with the fire line.
         name: 'FLY PIT', timeTicks: 2200, need: 6,
         spawn: { x: 3, y: 18 }, exit: { x: 36, y: 3 },
-        flies: [{ x: 12, y: 5, dir: 0 }],
+        flies: [{ x: 11, y: 8, dir: 1 }],
         proves: ['fly', 'burn'],
         build() {
             const c = new Carve()
@@ -118,6 +126,15 @@ export const LEVELS = [
             // back inside it — the fly burns the core, the ring holds the fire in
             c.rect(9, 2, 16, 10, STEEL)
             c.rect(11, 4, 14, 8, DIRT)
+            // the escape seam (#2364): dust through the east wall, opening onto
+            // a roof corridor lined top and bottom with steel and dead-ended at
+            // col 29. Fire never crosses steel, so the chain stays in pit+seam;
+            // the fly turns only when blocked, so the patrol stays in air.
+            c.set(15, 8, DIRT); c.set(16, 8, DIRT)
+            c.rect(17, 7, 29, 7, STEEL)                 // corridor ceiling
+            c.rect(17, 9, 29, 9, STEEL)                 // corridor floor
+            c.set(29, 8, STEEL)                        // dead end — the turn-around
+            c.set(22, 9, EMPTY)                        // the gap — the climb-in point
             // the harvest: a supported seam along the START row, east of the
             // steel cell — the player tunnels along it laterally and never digs
             // beneath a gem, so nothing of the paydirt ever drains away.
