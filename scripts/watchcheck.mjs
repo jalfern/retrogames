@@ -2522,6 +2522,21 @@ if (!ONLY || ONLY === 'mario') {
         const g = () => page.evaluate((h) => window[h].getState(), H)
         const watching = () => page.evaluate((h) => window[h].watching(), H)
         const held = () => page.evaluate((h) => window[h].held(), H)
+        // #2404: ONE atomic snapshot. The old triple round-trip (getState, then
+        // watching, then held) could straddle the flagpole SELF-release on CI's
+        // slow renderer: the seat releases at the pole while state still reads
+        // play@1-1@col>6, and the split reads stitched that designed handback
+        // into a phantom "early quit" (nightly 43747595201, flake 1-in-3 CI,
+        // never locally). Atomic state+watch+keys, and the mid-level quit rule
+        // only judges the field BEFORE the flagpole zone (col < 160) — a quit
+        // inside the zone is exactly what the self-release pin below proves is
+        // correct, and the leak this gate exists to catch (held run -> 1-3)
+        // needs the seat gone mid-sector, far from the pole, still covered.
+        const snap = () => page.evaluate((h) => {
+            const t = window[h]
+            return { ...t.getState(), watch: t.watching(), keys: t.held() }
+        }, H)
+        const POLE_ZONE = 160
         const heldAny = (k) => !!(k.left || k.right || k.run || k.down || k.jump)
         try {
             await key(page, 'KeyY')                 // b24 law: Y at attract starts AND seats the watcher
@@ -2537,20 +2552,20 @@ if (!ONLY || ONLY === 'mario') {
             let end = null, midQuit = false
             while ((Date.now() - t0) / 1000 < 120) {
                 await page.waitForTimeout(40)
-                const st = await g(), w = await watching()
-                if (st.state === 'flag' || st.level !== '1-1') { end = { st, w, k: await held() }; break }
-                if (seated && st.state === 'play' && st.level === '1-1' && st.col > 6 && !w) midQuit = true
+                const s = await snap()
+                if (s.state === 'flag' || s.level !== '1-1') { end = s; break }
+                if (seated && s.state === 'play' && s.level === '1-1' && s.col > 6 && s.col < POLE_ZONE && !s.watch) midQuit = true
             }
             rep.check('mario flagpole-release: the watcher reached the flagpole on 1-1',
-                !!end && (end.st.state === 'flag' || end.st.level !== '1-1'),
-                end ? `state=${end.st.state} level=${end.st.level} col=${end.st.col}` : 'timeout before the flag')
+                !!end && (end.state === 'flag' || end.level !== '1-1'),
+                end ? `state=${end.state} level=${end.level} col=${end.col}` : 'timeout before the flag')
             rep.check('mario flagpole-release: the seat stayed engaged until the flag (no early quit)',
                 seated && !midQuit, `seated=${seated} midQuit=${midQuit}`)
             rep.check('mario flagpole-release: the seat SELF-released at the flag (watch never lingers)',
-                !!end && !end.w, `watching=${end ? end.w : 'n/a'}`)
+                !!end && !end.watch, `watching=${end ? end.watch : 'n/a'}`)
             rep.check('mario flagpole-release: handback is CLEAN — mode flipped to play, no driving key leaks into 1-3',
-                !!end && end.st.mode === 'play' && !heldAny(end.k),
-                end ? `mode=${end.st.mode} keys=${JSON.stringify(end.k)}` : 'n/a')
+                !!end && end.mode === 'play' && !heldAny(end.keys),
+                end ? `mode=${end.mode} keys=${JSON.stringify(end.keys)}` : 'n/a')
         } catch (e) {
             rep.check('mario flagpole-release: drove to the flag without page error', false, e.message)
         }
