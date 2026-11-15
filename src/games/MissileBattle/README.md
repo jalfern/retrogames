@@ -12,9 +12,9 @@ attack waves."*
 
 | file | job |
 |---|---|
-| `waves.js` | the attack scripts: `{t, kind, x0, ti, spd, split}` entries. Three barrages: FIRST SALVO, SATURATION (two bombers), GRAND BARRAGE (weavers). No random exists in this file. |
+| `waves.js` | the attack scripts: `{t, kind, x0, ti, spd, split}` entries. Three barrages: FIRST SALVO, SATURATION (two bombers + the first weaver), GRAND BARRAGE (weavers that shed MIRVs; two `jinks: 2` veterans). No random exists in this file. |
 | `sim.js` | pure `step(state, input)`. Batteries with coverage arcs, interceptors that fly to a point, a blast that expands and **chains**, MIRV siblings that converge on their parent's city with a speed spread so their arrivals stagger into each other's chain blast. Cities rebuild between waves (classic), which is what makes every wave a closed, re-solvable puzzle. |
-| `planner.js` | the autopilot: least-ground-ETA first, intercept scanned tick-by-tick against the *exact* enemy motion law (including the weaver's sine), batteries picked least-loaded so every tube keeps its slack. |
+| `planner.js` | the autopilot: least-ground-ETA first — but a warhead with an unspent split is answered by its SPLIT-ETA (mothers die before they multiply, #2379), intercept scanned tick-by-tick against the *exact* enemy motion law (the weaver's sine and its committed jink), batteries picked least-loaded so every tube keeps its slack. |
 | `index.jsx` | shell + renderer at 1:1 pixel-per-sim-unit, the `__mbTest` hook, DebugKit with a PROGNOSIS that re-solves **the live mutated board** (not just wave tops). |
 
 ## The rules that are load-bearing
@@ -50,7 +50,7 @@ attack waves."*
   speeds bounded, splits have answer time), frozen `Math.random`, engine pins
   (exact intercept, chain, spans, rebuild, banner), the proven run
   (0 cities lost), **the slack rule** — every wave re-solved with ONE FEWER
-  interceptor in EVERY battery — determinism, and six mutants that must die
+  interceptor in EVERY battery — determinism, and twelve mutants that must die
   (`--mutate`).
 - `npm run missileplay` (browser, `smoke` job): real keys only. Arrows are
   HELD (a `press()` fits inside one frame gap — the keepplay lesson), the
@@ -84,5 +84,22 @@ attack waves."*
   blast-in-flight, not a *launch* — a battery firing the instant the bomb
   appears outruns nothing; the reaction is to the missile, as the original's
   felt).
+- The yellow bomb dodged but stayed singular; every jink read identical; every
+  kill popped the same orange. — **CLOSED by #2379** (the full menagerie:
+  GRAND BARRAGE smart bombs **shed 2-3 MIRVs near the deck** at their scripted
+  altitude through the same `spawnChild` law as ICBM splitters — mothers
+  converge on the parent's city. **Escalation**: SATURATION carries the first
+  (baseline) weaver; from wave 3 `CFG.dodgeEsc` commits further and faster
+  (v1.35 × 18 vs 1.1 × 14 — a longer, hotter streak), and two scripted
+  veterans (`jinks: 2`) hold a second escape. When the last escape ends the
+  bomb flashes **`spent`**: pale trail, red X — the dodge will not come this
+  time. Blasts carry a material `src` (`iv`/`chain`/`city`/`base`/`dud`) and
+  the renderer gives each its own hue. The planner answers the doctrine with
+  doctrine: **mothers die before their split** (threat ETA = sooner of
+  ground/split), and a bomb mid-jink is led to where its streak ENDS. Gates:
+  MENAGERIE section in `missilecheck` (shed law, no-early-shed, tell +
+  veteran budget, escalation drift 18.9 vs 9.8, material tags) and 3 new
+  mutants; the slack rule (9/battery) still wins every wave.)
 - No two-player; the arcade's alternating batteries is one `input` object
-  away, but nobody asked yet.
+  away, but nobody asked yet. Needs a design stage per Jon's rule (CPU
+  default first), not a drive-by.

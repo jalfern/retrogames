@@ -370,18 +370,167 @@ section('JINK (#2375) — the smart bomb makes you earn the kill')
         ok(!e.alive, 'the second round at the escape point missed too — the cooldown/budget doctrine does not converge; the kill cannot be earned')
     }
 
-    // 5. across the proven run the dodge actually shapes the fight.
+    // 5. across the proven run the dodge actually shapes the fight. #2379
+    //    veterans (`jinks: 2` in the scripts) hold a second escape, so the
+    //    ceiling is the summed budget, not the bomb count.
     {
         const gj = makeGame(0)
         const held = new Map()
         let jinks = 0
+        const budget = WAVES.reduce((n, w) => n + w.entries.filter((x) => x.kind === 'smart')
+            .reduce((m, x) => m + (x.jinks ?? CFG.dodge.budget), 0), 0)
         const smartCount = WAVES.reduce((n, w) => n + w.entries.filter((x) => x.kind === 'smart').length, 0)
         for (let t = 0; t < 40000 && !gj.end; t++) {
             step(gj, decide(gj, held))
             for (const ev of gj.events) if (ev.type === 'jink') jinks++
         }
-        ok(jinks >= 3 && jinks <= smartCount, `the three barrages produced ${jinks} jinks (${smartCount} smart bombs aloft) — the escape never joins the real fight`)
-        console.log(`  ..    ${jinks} jinks across ${smartCount} smart bombs — the autopilot spends its feint rounds and still cleans house`)
+        ok(jinks >= 3 && jinks <= budget, `the three barrages produced ${jinks} jinks (${smartCount} smart bombs, ${budget} escapes budgeted) — the escape never joins the real fight`)
+        console.log(`  ..    ${jinks}/${budget} budgeted jinks across ${smartCount} smart bombs — the autopilot spends its feint rounds and still cleans house`)
+    }
+}
+
+// ------------------------------------------------- smart split & escalation (#2379) ----
+section('MENAGERIE (#2379) — the yellow bomb sheds, veterans double-dodge, blasts are material')
+{
+    const quietSky = (w = 0) => {
+        const g = toPlay(makeGame(w))
+        g.queue.length = 0; g.enemies.length = 0; g.blasts.length = 0; g.intc.length = 0
+        return g
+    }
+    const mkSmart = (g, x, y, opts = {}) => {
+        const e = { id: g.nextId++, kind: 'smart', x, px: x, y, vx: opts.vx ?? -0.3, vy: opts.vy ?? 0.5, ti: opts.ti ?? -1, t: 0,
+            alive: true, split: opts.split ? { ...opts.split, done: false } : null, amp: opts.amp ?? 12, drops: null,
+            jinks: opts.jinks ?? null, spawnAt: g.playT, score: CFG.score.smart }
+        g.enemies.push(e)
+        return e
+    }
+    const fireAt = (g, e, tau) => {
+        const tx = e.px + e.vx * tau + Math.sin((e.t + tau) * 0.07) * e.amp
+        const ty = e.y + e.vy * tau
+        g.intc.push({ id: g.nextId++, x: 128, y: 200, tx, ty, vx: (tx - 128) / tau, vy: (ty - 200) / tau, eta: tau, t: 0, bat: 1 })
+        return { tx, ty }
+    }
+
+    // 1. the SCRIPT carries the bestiary: the arcade's yellow bomb both weaves
+    //    AND sheds — most GRAND BARRAGE smarts split near the deck.
+    {
+        let shed = 0, vets = 0
+        WAVES.forEach((w, wi) => w.entries.forEach((en) => {
+            if (en.kind !== 'smart') return
+            if (en.split) {
+                shed++
+                ok(en.split.n >= 2 && en.split.n <= 3, `w${wi}: smart split n=${en.split.n}`)
+                ok(en.split.y > 100 && en.split.y < CFG.killLine - 10, `w${wi}: smart sheds at y=${en.split.y} — the arcade sheds near the deck, not at the top`)
+            }
+            if ((en.jinks ?? 1) > 1) vets++
+        }))
+        ok(shed >= 3, `only ${shed} smart bombs shed MIRVs — the full menagerie is one silhouette and ours still stays singular`)
+        ok(shed < WAVES.reduce((n, w) => n + w.entries.filter((e) => e.kind === 'smart').length, 0), 'every smart splits — the shed must be a promotion, not the default')
+        ok(vets >= 1, 'no veteran smart (jinks: 2) — the late-wave escalation has no flagship')
+    }
+
+    // 2. the SPLIT LAW: the shed happens at the scripted altitude, the children
+    //    converge on the PARENT's city and get answer time.
+    {
+        const g = quietSky()
+        const e = mkSmart(g, 110, 100, { ti: 2, amp: 0, vy: 0.5, vx: 0.05, split: { y: 114, n: 2, spd: 150 } })
+        let splitEv = null
+        for (let t = 0; t < 40 && !splitEv; t++) { step(g, {}); splitEv = g.events.find((ev) => ev.type === 'split') || null }
+        ok(!!splitEv, 'a smart bomb with a split spec crossed its altitude and never shed')
+        const kids = g.enemies.filter((q) => q.kind === 'icbm' && q.y >= 110)
+        ok(kids.length === 2, `the shed produced ${kids.length} children (want 2)`)
+        ok(kids.every((k) => k.ti === 2), 'the shed children abandoned the parent\'s target city')
+        ok(kids.every((k) => (CFG.groundY - k.y) / k.vy > 60), 'the shed children land with under 60 ticks of answer time — an unhittable MIRV is a broken rule, not difficulty')
+        ok(!e.alive, 'the parent survived its own shed')
+    }
+
+    // 3. NO EARLY SHED: above the altitude the bomb is still whole.
+    {
+        const g = quietSky()
+        mkSmart(g, 110, 60, { ti: 2, amp: 0, split: { y: 114, n: 2, spd: 150 } })
+        let tooEarly = false
+        for (let t = 0; t < 20; t++) { step(g, {}); if (g.events.some((ev) => ev.type === 'split')) tooEarly = true }
+        ok(!tooEarly, 'the shed fired above its altitude — the mirror of the #2306 altitude lie')
+    }
+
+    // 4. THE TELL + ESCALATION: a baseline bomb (wave 2) escapes once, flashes
+    //    `spent`, and the third round of any later engagement is dead-cheap.
+    //    A veteran (wave 3, jinks: 2) signs for TWO escapes before the same tell.
+    const escapeRound = (g, e) => {
+        fireAt(g, e, 72)
+        let jink = false
+        for (let t = 0; t < 110 && e.alive; t++) { step(g, {}); for (const ev of g.events) if (ev.type === 'jink') jink = true }
+        return jink
+    }
+    {
+        const run = (wave, jinks) => {
+            const g = quietSky(wave)
+            const e = mkSmart(g, 200, 60, { amp: 12, jinks: jinks > 1 ? jinks : null })
+            const js = []
+            let spent = 0
+            for (let r = 0; r < 4 && e.alive; r++) {
+                fireAt(g, e, 72)
+                for (let t = 0; t < 110 && e.alive; t++) {
+                    step(g, {})
+                    for (const ev of g.events) { if (ev.type === 'jink') js.push(ev.dir); if (ev.type === 'spent') spent++ }
+                }
+            }
+            return { alive: e.alive, js, spent }
+        }
+        const base = run(1, 1)
+        ok(base.js.length === 1 && base.spent === 1 && !base.alive, `baseline smart (wave 2): ${base.js.length} jinks, ${base.spent} spent, alive=${base.alive} (want 1 / 1 / dead)`)
+        const esc = run(2, 2)
+        ok(esc.js.length === 2 && esc.spent === 1 && !esc.alive, `veteran smart (wave 3): ${esc.js.length} jinks, ${esc.spent} spent, alive=${esc.alive} (want 2 / 1 / dead)`)
+        ok(esc.js[0] === base.js[0], 'the veteran escaped in the opposite direction from the same sky — the escape is not the same geometry law')
+    }
+
+    // 5. ESCALATION IS VISIBLE: the wave-3 jink moves FURTHER per escape than
+    //    the wave-2 one (that longer streak is the tell of the faster commit).
+    {
+        const drift = (wave) => {
+            const g = quietSky(wave)
+            const e = mkSmart(g, 200, 60, { amp: 12 })
+            fireAt(g, e, 72)
+            for (let t = 0; t < 110 && e.alive && !(e.dodgeT > 0); t++) step(g, {})
+            const x0 = e.px
+            for (let t = 0; t < 110 && e.alive && e.dodgeT > 0; t++) step(g, {})
+            return Math.abs(e.px - x0)
+        }
+        const d1 = drift(1), d2 = drift(2)
+        ok(d2 > d1, `wave-3 escape moved ${d2.toFixed(1)}px vs wave-2 ${d1.toFixed(1)}px — the escalation must be a BIGGER commitment, not the same one`)
+        console.log(`  ..    escape drift wave2 ${d1.toFixed(1)}px -> wave3 ${d2.toFixed(1)}px`)
+    }
+
+    // 6. BLAST MATERIALS: every blast names what it burned through, so the
+    //    renderer cannot collapse them back into one orange memory.
+    {
+        const g = quietSky()
+        step(g, { aimTo: [100, 60], fire: true })
+        let iv = false
+        for (let t = 0; t < 120 && !iv; t++) { step(g, {}); iv = g.blasts.some((b) => b.src === 'iv') }
+        ok(iv, 'an interceptor blast carries no material tag')
+        const gc = quietSky()
+        gc.enemies.push({ id: 901, kind: 'icbm', x: 54, px: 54, y: 180, vx: 0, vy: 1, ti: 0, t: 0, alive: true, split: null, amp: 0, drops: null, spawnAt: 0, score: 25 })
+        let city = false
+        for (let t = 0; t < 30 && !city; t++) { step(gc, {}); city = gc.blasts.some((b) => b.src === 'city') }
+        ok(city, 'a city plume is tagged like a rubble puff — ART.md asked for material variety')
+        const gb = quietSky()
+        gb.enemies.push({ id: 902, kind: 'icbm', x: 128, px: 128, y: 180, vx: 0, vy: 1, ti: 7, t: 0, alive: true, split: null, amp: 0, drops: null, spawnAt: 0, score: 25 })
+        let base = false
+        for (let t = 0; t < 30 && !base; t++) { step(gb, {}); base = gb.blasts.some((b) => b.src === 'base') }
+        ok(base, 'a battery spark is not tagged as one')
+        const gd = quietSky()
+        gd.enemies.push({ id: 903, kind: 'icbm', x: 30, px: 30, y: 180, vx: 0, vy: 1, ti: -1, t: 0, alive: true, split: null, amp: 0, drops: null, spawnAt: 0, score: 25 })
+        let dud = false
+        for (let t = 0; t < 30 && !dud; t++) { step(gd, {}); dud = gd.blasts.some((b) => b.src === 'dud') }
+        ok(dud, 'a dud ground puff is not tagged as one')
+        const gch = toPlay(makeGame(0))
+        gch.enemies.push({ id: 904, kind: 'icbm', x: 112, px: 112, y: 60, vx: 0, vy: 0, ti: -1, t: 0, alive: true, split: null, amp: 0, drops: null, spawnAt: 0, score: 25 })
+        gch.enemies.push({ id: 905, kind: 'icbm', x: 120, px: 120, y: 60, vx: 0, vy: 0, ti: -1, t: 0, alive: true, split: null, amp: 0, drops: null, spawnAt: 0, score: 25 })
+        gch.blasts.push({ x: 100, y: 60, r: 11, rMax: 13, age: 1, state: 'grow', chain: false, src: 'iv' })
+        let chainTag = false
+        for (let t = 0; t < 40 && !chainTag; t++) { step(gch, {}); chainTag = gch.blasts.some((b) => b.chain && b.src === 'chain') }
+        ok(chainTag, 'the chain pop has no material tag of its own')
     }
 }
 
@@ -533,6 +682,31 @@ if (MUT) {
         tryMut('dodgeOn true -> false (no jink at all)', { dodge: { ...CFG.dodge }, dodgeOn: false }, escape)
         tryMut('jink budget 1 -> 0 (never commits)', { dodge: { ...CFG.dodge, budget: 0 } }, escape)
         tryMut('jink ticks 14 -> 0 (event fires, px never moves)', { dodge: { ...CFG.dodge, ticks: 0 } }, escape)
+    }
+    // 8. escalation switches (#2379): the wave-3 commitment must have probes.
+    {
+        // drift of a no-spec wave-3 jink (net of fall vx): escalation is
+        // v1.35 x 18 ticks = 18.9px; the wave-2 baseline nets only 9.8px
+        // (v1.1 x 14). Anything <= 16 means the escalation table stopped
+        // driving the wave.
+        const bigDrift = () => {
+            const g = toPlay(makeGame(2))
+            g.queue.length = 0; g.enemies.length = 0; g.blasts.length = 0; g.intc.length = 0
+            const e = { id: g.nextId++, kind: 'smart', x: 200, px: 200, y: 60, vx: -0.3, vy: 0.5, ti: -1, t: 0,
+                alive: true, split: null, amp: 12, drops: null, spawnAt: g.playT, score: CFG.score.smart }
+            g.enemies.push(e)
+            const tau = 72
+            const tx = e.px + e.vx * tau + Math.sin((e.t + tau) * 0.07) * e.amp
+            const ty = e.y + e.vy * tau
+            g.intc.push({ id: g.nextId++, x: 128, y: 200, tx, ty, vx: (tx - 128) / tau, vy: (ty - 200) / tau, eta: tau, t: 0, bat: 1 })
+            for (let t = 0; t < 110 && e.alive && !(e.dodgeT > 0); t++) step(g, {})
+            const x0 = e.px
+            for (let t = 0; t < 110 && e.alive && e.dodgeT > 0; t++) step(g, {})
+            return Math.abs(e.px - x0) > 16   // escalation nets 18.9px; baseline nets 9.8 (v1.1, 14 ticks)
+        }
+        tryMut('dodgeEsc null (wave 3 stops escalating)', { dodgeEsc: null }, bigDrift)
+        tryMut('dodgeEsc ticks 18 -> 14 (escalation invisible)', { dodgeEsc: { ...CFG.dodgeEsc, ticks: 14 } }, bigDrift)
+        tryMut('dodgeEsc v 1.35 -> 1.1 (same commitment as wave 2)', { dodgeEsc: { ...CFG.dodgeEsc, v: 1.1 } }, bigDrift)
     }
 }
 

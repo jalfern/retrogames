@@ -19,7 +19,15 @@ export function decide(g, held) {
         const dx = e.x - b.x, dy = e.y - b.y
         return dx * dx + dy * dy <= b.r * b.r
     })
-    const eta = (e) => (CFG.groundY - e.y) / e.vy
+    // #2379: a warhead that still carries an unspent split is a CLOCK, not
+    // just a fall — after its split tick it becomes n threats where it was
+    // one. The arcade answers mothers BEFORE the split (one round denies n
+    // tubes of work), so urgency is the sooner of ground-ETA and split-ETA.
+    const eta = (e) => {
+        const gETA = (CFG.groundY - e.y) / e.vy
+        if (e.split && !e.split.done && e.y < e.split.y) return Math.min(gETA, (e.split.y - e.y) / e.vy)
+        return gETA
+    }
 
     let pick = null
     for (const e of live) {
@@ -52,7 +60,8 @@ export function decide(g, held) {
     }
     if (!pick) return {}
     const e = pick
-    const groundETA = Math.floor(eta(e))
+    const killETA = Math.floor(eta(e))                       // ground or split, whichever comes first
+    const groundETA = killETA
 
     const feasible = []
     g.bases.forEach((b, i) => {
@@ -64,7 +73,10 @@ export function decide(g, held) {
     if (!feasible.length) return {}
 
     for (let tau = 4; tau <= Math.min(MAX_TAU, groundETA - 3); tau++) {
-        const ex = e.px + e.vx * tau + (e.amp ? Math.sin((e.t + tau) * 0.07) * e.amp : 0)
+        let ex = e.px + e.vx * tau + (e.amp ? Math.sin((e.t + tau) * 0.07) * e.amp : 0)
+        // #2379: a bomb mid-jink is COMMITTED to the rest of its escape —
+        // lead it, so the follow-up round lands where the streak ENDS.
+        if (e.dodgeT > 0) ex += e.dodgeDir * e.esc.v * Math.min(tau, e.dodgeT)
         const ey = e.y + e.vy * tau
         if (ey < CFG.aimMinY + 1) continue
         if (ey > CFG.killLine) break
