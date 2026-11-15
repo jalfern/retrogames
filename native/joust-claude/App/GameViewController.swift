@@ -81,7 +81,9 @@ final class GameViewController: BaseViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         #if os(iOS)
-        // leave the bottom of a portrait phone for the on-screen pad
+        // aspect-fit inside the safe area; on a phone (landscape only) the
+        // on-screen stick and button sit in the side margins. A portrait iPad
+        // keeps the game at the top so the pad's corners stay clear.
         let safe = view.bounds.inset(by: view.safeAreaInsets)
         if safe.height > safe.width {
             stage.frame = CGRect(x: safe.minX, y: safe.minY + 8, width: safe.width, height: safe.width * 224 / 256)
@@ -94,6 +96,13 @@ final class GameViewController: BaseViewController {
     }
 
     #if os(iOS)
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        controls.screenAppeared()
+    }
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+        traitCollection.userInterfaceIdiom == .phone ? .landscape : .all
+    }
     override var prefersStatusBarHidden: Bool { true }
     override var prefersHomeIndicatorAutoHidden: Bool { true }
     @objc private func tap() {

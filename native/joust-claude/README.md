@@ -84,8 +84,21 @@ on the 27 SDKs (a no-scene app traps at launch).
 - Menu/Options: pause. B: back.
 - Title screen: A = one rider. Controller 2's A, or X with two controllers = two riders.
 - iPhone/iPad: an on-screen pad (GCVirtualController) shows while no controller
-  is connected, and a tap starts. A hardware keyboard works as on the web:
+  is connected, and a tap starts. iPhone is landscape-only: the game fills the
+  height and the stick and buttons sit in the side margins. The pad must
+  connect after the view is on screen (`viewDidAppear`), and it must never count
+  as a "real" controller, or its own connect event makes it disconnect itself. A hardware keyboard works as on the web:
   arrows + Space/X; A/D + W/F for rider 2.
+
+## Icons
+
+`tools/make-icons.sh` paints every icon with the game's own art code
+(`App/Art.swift`) and writes `App/Assets.xcassets`:
+- the iOS 1024² icon;
+- the tvOS layered parallax icon (Back: sky, lava, ledges, hand; Front: the rider);
+- the Top Shelf and Top Shelf Wide banners.
+
+`ASSETCATALOG_COMPILER_APPICON_NAME[sdk=appletv*]` picks the brand asset on tvOS.
 
 ## Deviations from the web shell (sim untouched)
 
