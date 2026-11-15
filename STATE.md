@@ -1,79 +1,78 @@
-# STATE — session 287 (2026-11-15, slot b)
+# STATE — session 288 (2026-11-15, slot a)
 
 ## Playable now / what shipped
-- **VIPER PIT hits back (#2334 → PR #2341, merge `d171e12`).** Destructible
-  props + meter pickups, engine-side: seeded crates/barrels in the fight zone
-  (barrel = any one hit; crate = one heavy or two lights; smash zone +0.35 m
-  above the rim so punches land too); projectiles smash AND are eaten by the
-  furniture; kills on loot props drop a bobbing orb — walk-through banks +20
-  meter (capped; feeds the super/finisher economy). Layout seeds per round on
-  a dedicated stream (CPU rolls untouched); respawn each round; prop/orb state
-  folds into `matchHash` when on (seats agree, replays verify). Option
-  `createMatch({ props: true })`, default off. Presentation: shards fly away
-  from the hitter, crates show the crack, orbs bob/spin/fade; crack/drop/bank
-  audio stings.
-- Gates at ship: viperpitcheck **431/431** (+25 clauses: seeding, damage
-  tiers, crack→break, smash-and-eat, orb drop/collect/ttl, respawn, hash
-  coverage, ladder winnable WITH props, IRON RING golden streams
-  `[1332719598, 1991399977, 3133682145]` pinned vs the pre-PR engine =
-  options-off zero footprint). Prop-damage mutant (both paths stripped) caught.
-  lint v/mario/fps/ai + eslint + build green.
-- Also landed around the shift (other lanes): TIDY BOT aimed retrieve
-  (#2338/#2340, slot a), GARDEN GUARD clear ceremony (#2336 pt2/#2342, QA).
-- **#2335 PROD STALL CLOSED** with evidence at exit: entry `index-CFtOh-EZ.js`,
-  full 60-chunk sweep finds `AIMED` (`index-tn0WIXuq.js`) and `propbreak`
-  (`fighting-Csewj1eB.js`, `index-CekvXgWk.js`) — both stalled features now
-  verified serving.
+- **BRITANNIA: purse & passage toll (#2345 → PR #2348, merge `4a20211`).**
+  The gap "Boarding is free at any coast" ships its toll half: HUD carries
+  `PURSE 250` (the original's GOLD) from minute one; every boarding pays 5
+  gold with a coin chink; a light purse is refused ON THE SAND (chapel-stone
+  pattern — cooldown, buzz, gold kept: a door, not a fine). **Dawn tithe**
+  +20/day, capped at 250 — invented glue, honest tail: origin has no
+  overworld income, stage 2's shops replace it. Moderate travel lives on the
+  land forever; six boardings a day run dry by day 23. `gold/fare/day` on
+  harness state, gold inside the state hash, `setGold` + DebugKit cheat.
+- Gates at ship: britanniacheck **332** (+28 PURSE LAW: literal spec pins,
+  toll/tithe laws incl. exactly-zero-pays & 4-refuseth, booked-vs-module
+  economy sims agreeing on day 23, winnable-with-empty-purse via moon chain,
+  purity, wiring). Mutants die by name: toll-free (2 red), purse-hollow
+  (5 red), tithe-mint (3 red). britannidrive 55/60 — 4 new live purse gates
+  green (pays 245, refused dry at 4, tithe 0→20 + words); remaining 5
+  failures PROVEN pre-existing main baseline (A/B run, spare port 5175).
+  lint mario/fps/ai + lint:britannia + eslint + build green.
 - Rule 4: game code shipped.
 
 ## Ladder (this session's path)
-- Warden target **#1711** claimed, audited live, released: store still 7 takes
-  all PLAIGRADEd, no claptest take, `/status` `writeKey:false`, jonq **#2305**
-  AWAITING (deadline 11-17, default hold — not taken). Jon-side lines: his
-  phone claptest (#2156) + `wrangler secret put SESSION_WRITE_KEY` → then the
-  #2093 relabel one-off.
-- game-queue empty; feedback all QA-held at claim time; flagship stage spent →
-  never-dry: `idle-kick` → VIPER PIT gap 0 (weakest unheld, score 3; TEN-DEEP
-  4, BRITANNIA 4, PoP 3 all held). Filed #2334 with the why-weakest line,
-  claimed, shipped.
+- Warden target **#1711** claimed first, audited live (3rd consecutive
+  nothing-moved: `/status` writeKey:false, store still 7 takes all PLAIGRADEd,
+  no claptest take, jonq **#2305** AWAITING deadline 11-17 default hold),
+  released with evidence back to `next`. Jon-side lines unchanged: his
+  claptest phone run (#2156) + `wrangler secret put SESSION_WRITE_KEY`.
+- game-queue empty; only `feedback` was **#2343** (TidyBot attract) — 3 live
+  QA MASTER sessions (mini/mini2/studio) → borrow blocked; flagship stage
+  spent (`flagshipStage` null).
+- Never-dry: `weakestStage` named **BRITANNIA** (score 3, three unowned
+  README gaps, oldest among score-3 ties; PoP/GardenGuard QA-held). Filed
+  #2345 with why-weakest line, claimed, shipped. Quay-location rule was
+  probed FIRST and rejected honestly: all 8 gates are inland (findStars
+  filter), zero coast tiles within 3 of any gate — the geography forces the
+  toll half, not the port half.
 
 ## BOARD at exit
 - building: NONE. game-queue: empty.
-- building-qa: **#2336** (GardenGuard), **#2330** (PoP polish).
-- feedback claimable by builders: **#2343** (TidyBot attract) — but QA MASTER
-  nodes were live all shift; expect them at it.
+- building-qa: **#2336** (GardenGuard), **#2330** (PoP). feedback: **#2343**
+  (TidyBot, QA-held all shift), **#2351** (new — BRITANNIA polish pass: ship
+  sprite, coin presentation, refusal theatre, drive baseline).
 - jonq open: **#2305** (lane:platform, AWAITING — not ours to wait on).
 - #1711 `next` — Jon-side remainder unchanged. No halt, no steer.
 
 ## Next (slot a or b, in order)
-1. Ladder as usual; expect never-dry. Re-run `idle-kick` honestly — scores
-   moved: VIPER PIT and TIDY BOT now carry 2 gaps each. Candidates ≈ GARDEN
-   GUARD (gap 0 is an explained non-gap — take its NEXT bullet), FLOOR BOSS,
-   SHORT ORDER SHOUT, GRAVEL YARD, TALK ME DOWN, BOMB DEFUSE …
+1. Ladder as usual. Re-run `idle-kick` honestly — Britannia's three gaps are
+   now two (toll bullet carries CLOSED-by marker). Candidates carry score 3:
+   FLOOR BOSS, SHORT ORDER SHOUT, GRAVEL YARD, TALK ME DOWN, BOMB DEFUSE …
+   (registry order picks; run the tool, don't copy this line.)
 2. If a jonq answer lands for #2305 (write key), execute the #2093 relabel
    one-off; a clap-test take on the store means grade it + post #1711/#2156.
-3. Prod markers are green now; if #2335 reopens, re-run the full-chunk sweep
-   (entry HTML references the entry only — walk its ~60 chunks for markers).
+3. Britannia polish (#2351) is QA's; the 5 pre-existing britannidrive
+   failures (gate-III menu stickiness x4, gate-VI shrine bump) are named
+   there — a QA calibration pass, don't let them scare a builder.
 
 ## The session's catches
-- **A checker section can be silently dead under `--mutate`.** The new Node
-  rules landed inside the giant `if (!MUT)` block: the plant gate printed but
-  the rule clauses never ran mutant-side. House pattern: full rules in the
-  !MUT scope, flipped one-liners beside the other "MUTANT check:" bites in
-  `if (MUT)`. Cross-check WHERE a clause lives, not just that it was planted.
-- **New mechanics can break old live clauses legitimately.** The gait clause
-  rode a fixed window and main happened to enjoy a passive CPU; with orbs, RIV
-  banks +20 meter and engages sooner → NYX hitstunned mid-sample (4/22
-  samples, twice — not flake). Fixed honestly: sample back-walk FIRST (fresh
-  positions) + wider window; the law (presentation) unchanged.
-- **`gh` beats the ping.** Warden re-kicks carried stale board states twice;
-  fresh audits confirmed #1711 unchanged in both directions — release + ladder
-  with evidence, per the 11-14 audit precedent.
-- **Prod markers live in lazy chunks** (`fighting-*.js`, per-game `index-*.js`),
-  not the entry bundle — grep the chunks the entry references, with `-L`.
+- **Baseline before blame.** The drive showed 9 reds; 5 were identical on
+  main (A/B: same machine, spare port 5175, `git worktree` untouched).
+  Without the baseline I'd have burned the shift on someone else's staleness.
+- **zsh grep on minified JS dies ("character not in range")** on em-dash
+  bytes via `echo` — export `LC_ALL=C` and pipe curl straight into
+  `grep -a`; never round-trip bundle text through the shell's echo.
+- **Prod markers hide in shared chunks** (`fighting-*.js` carries several
+  games) — walk EVERY `*.js` the entry references, not just `index-*`; and a
+  chunk NAME never tells you the game (verify with the marker itself).
+- **Same-tick toast collision:** the tithe toast died behind a gale notice —
+  day-turn block moved AFTER the wind block so the newer news wins (GOAL
+  still king).
 
 ## Hygiene at exit
-- Dev servers 5178 + 5181 (mine) stopped; 5174/5179 (foreign) untouched.
-- Slot-b forge worktree + /tmp/rt-main-check removed; branch gone via squash;
-  main checkout at origin/main. STATE committed to main (game merged — rule 9)
-  + statepark slot b.
+- Dev servers 5173 + 5175 (mine) stopped; 5174/5179 (foreign) untouched.
+- Slot-a forge worktree removed; branch gone via squash; main checkout at
+  origin/main. STATE commit to main follows this file (game merged — rule 9)
+  + statepark slot a. Prod marker poll: entry chunk sweep for `tithe 20
+  gold` — if #2348's marker is absent at next shift start, treat as #2335-
+  class stall and re-run the sweep.
