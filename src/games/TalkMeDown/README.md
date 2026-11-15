@@ -12,7 +12,12 @@ the couch — or the mic.
   identical hashes. `Math.random()` lives only in the shell (sparks, shake).
 - **Modules** carry a stamp that indexes the printed rulebook:
   - `NEON (N1..N6)` — cut exactly ONE colored wire.
-  - `DIAL (D1..D6)` — turn the 0-9 dial, then press SET.
+  - `DIAL (D1..D6)` — turn the 0-9 dial, then press SET. DIAL's "another
+    module has wires" rule (D4) reads the bomb layout; a second dial module
+    is intentionally not cross-referenced (first dial wins) — and that is
+    structurally untestable, not just unwritten: the seat law puts NEON at
+    module 0 and the type cycle keeps DIAL at one module per round, so two
+    live dials never exist on a real board (law note, not a gap — #2356).
   - `GLYPH (G1..G5)` — press three symbols in order.
   Every rule is a pure function of features the defuser can see and read
   aloud: serial last digit, LED count (0-8), bolt color, wire colors + lit
@@ -391,11 +396,6 @@ red on main while `bombcheck` stays green. Filed for the QA lane.
   `voiceCmd`), and since #2287 PHONES type calls too: a TYPE pill opens the
   soft keyboard into the same CALL line (`tmdphonecheck`). Still open: a live
   speech-service delivery in CI (no such service exists headless).
-- DIAL's "another module has wires" rule (D4) reads the bomb layout; a second
-  dial module is intentionally not cross-referenced (first dial wins). This is
-  structurally untestable, not just unwritten: the seat law puts NEON at
-  module 0 and the type cycle keeps DIAL at one module per round, so two live
-  dials never exist on a real board.
 - **CLOSED by #1917 (THE RAIL):** where the batteries sit IS a rule — a
   seeded three-slot tray that opens at the right; only the cell nearest the
   opening pulls out, `<`/`>` pick the slot, blocked/empty refuse silently,
@@ -403,11 +403,11 @@ red on main while `bombcheck` stays green. Filed for the QA lane.
   (module stream untouched), and the tray/hand/home ride hash, simState and
   the net snapshot. Proof: `npm run platecheck` (78 gates incl. audio + slide
   identity, 105 two-cell boards and named mutants).
-- Voice shorthand for the drain: "PULL IT" on the mic pulses the drain story
-  (#1923: parseCall `pull` intent, faster chevron clock, `PULL IT -> A` lead
-  gated on legality). A bare pull verb stays noise; a verb + color is still
-  the wire call (the cut law outranks the rail).
-- **CLOSED by the #1915 phone round:** the phone learns the drain without
+- **CLOSED by #1923:** the voice shorthand for the drain — "PULL IT" on the
+  mic pulses the drain story (parseCall `pull` intent, faster chevron clock,
+  `PULL IT -> A` lead gated on legality). A bare pull verb stays noise; a
+  verb + color is still the wire call (the cut law outranks the rail).
+- **CLOSED by #1915 (the phone round):** the phone learns the drain without
   the mic — a loaded pocket battery idles with a 2px breath (`RAIL_BOB`,
   view-only) so IN HAND reads as a live object at arm's length, and a fresh
   flip beats the faster PULL-IT hint itself for 96 render ticks (`flipLead`),

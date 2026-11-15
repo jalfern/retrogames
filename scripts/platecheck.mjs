@@ -13,6 +13,7 @@ import {
 import { makeRailFx, stepRailFx, railCellPose, drawBack, RAIL_TAB_FREE, RAIL_TAB_BLOCKED, RAIL_DENY_JAM, RAIL_DENY_EMPTY, RAIL_BOB, railMouthGlow, PANEL } from '../src/games/TalkMeDown/art.js'
 import { readFileSync } from 'node:fs'
 import { plant, pull } from './lib/mutateguard.mjs'
+import { parseGaps } from './lib/idle.mjs'
 
 let pass = 0, fail = 0
 const ok = (name, cond, extra = '') => {
@@ -804,6 +805,33 @@ if (process.argv.includes('--mutate')) {
     }
     console.log(`  mutant pulled ${caught} blocked cells (want > 0 — proof the gate line is load-bearing)`)
     process.exit(caught > 0 ? 0 : 1)
+}
+
+// ---- README honest-gaps honesty (#2356) ---------------------------------------
+// parseGaps (scripts/lib/idle.mjs) turns this README's "## Honest gaps"
+// section into the never-dry ladder's targets. A CLOSED bullet the parser
+// cannot see ("CLOSED by the #1915" — a word between `by` and `#`) or
+// shipped work without a marker (the #1923 PULL IT shorthand) counts as an
+// OPEN gap and re-kicks free lanes onto shipped work (#961 law). Pinned:
+// every CLOSED marker the section shows, the parser drops — plus the two
+// known phantoms stay gone and the DIAL law note still lives in Engine
+// notes (moved out of the gaps list, not deleted).
+
+{
+    const md = readFileSync('src/games/TalkMeDown/README.md', 'utf8')
+    const gaps = parseGaps(md)
+    const sec = ((md.split(/^##\s+Honest gaps/im)[1] || '').split(/^##\s/m)[0])
+    const marked = (sec.match(/^\s*-\s*\*\*CLOSED by/gim) || []).length
+    ok(`README gaps section carries its CLOSED markers (got ${marked}, want >= 9)`, marked >= 9)
+    ok('no counted gap is a CLOSED bullet (parser sees every marker)',
+        !gaps.some((g) => /closed by/i.test(g)),
+        gaps.filter((g) => /closed by/i.test(g)).map((g) => g.slice(0, 60)).join(' | '))
+    ok('#1923 PULL IT shorthand is marked CLOSED, not counted (#2356)',
+        !gaps.some((g) => /voice shorthand/i.test(g)))
+    ok('the DIAL cross-reference note left the gaps list (#2356)',
+        !gaps.some((g) => /another module has wires/i.test(g)))
+    ok('the DIAL law note still lives in Engine notes (moved, not deleted)',
+        /another\s+module\s+has\s+wires/.test((md.split(/^##\s+Engine notes/im)[1] || '').split(/^##\s/m)[0]))
 }
 
 console.log(`\nplatecheck: ${pass} pass, ${fail} fail`)
