@@ -53,6 +53,16 @@ the author honest about which is which. From a perch the floor habits are
 banned (`hopelessHigh`): only a solved arc — including the rain shot
 (up-aimed 45°, downward arc onto a foe below) — may burn an arrow upward.
 
+**Heat (#2377).** `g.lastHit` rides the tick stamp; when `heatTicks` (450 =
+15 s) pass without a HIT the arena goes HOT: every stuck arrow's age drains
+at `1 + heatRot` (4) per tick where cool stone adds 2 — wall armour halves
+its ~20 s life to ~10 s, so parking behind your own barricades stops being
+a winning schedule. First blood cools the flag synchronously inside
+`scoreHit` (the dry spell restarts from the blood; a re-heat is exactly
+`heatTicks` later). Measured tempo: the proven autopilot's first hit lands
+by tick 246 and its longest dry spell is 275 — honest matches never heat,
+and the arena receipts replay byte-identical with the rule in place.
+
 ## Invariants the harness owns (`npm run archerycheck [-- --mutate]`)
 
 - **The arrow ledger, every tick**: `quivers + flying + stuck + hit + lost
@@ -73,11 +83,21 @@ banned (`hopelessHigh`): only a solved arc — including the rain shot
 - Determinism three ways: recorded stream re-replay; re-solve from
   scratch; drop-a-moving-command MUST diverge. Plus a tick where both
   players acted exists (the stamp order was exercised).
-- Eight mutants must die (`--mutate`, wired into the CI static job):
+- **HEAT (#2377)**: the gate fires at exactly tick `heatTicks`; the drain law
+  pins the dryout tick off the arrow's *observed* age at stick (an arrow keeps
+  its flight age when it sticks — the closed form lies twice before it tells
+  the truth: flight age AND the second `age++` in `step()`); cool cover lives
+  595 ticks, hot 297 (half, pinned by formula both ways); first blood cools
+  the same tick; re-heat is exactly `heatTicks` after blood; the ledger stays
+  exact through hot dryouts; and every arena's first hit lands ≥90 ticks
+  before the gate — pressure is for stalemates only.
+- Eight + two mutants must die (`--mutate`, wired into the CI static job):
   no-stick, no-knockout, no-pull, no-arrow-gravity, no-player-gravity,
   clock-too-short, lob-bot (now patched with `climbSeek: false` too — the
   climbing brain re-opens the firing lanes the lobs froze, so the mutant
-  must regress the doctrine as it ships), no-climb-seek.
+  must regress the doctrine as it ships), no-climb-seek, no-heat, heat-rot
+  off (caught on a cool/hot lifetime ratio the patched constant cannot sign
+  for itself).
 
 ## Lessons this title paid for (all in the code comments)
 
@@ -109,9 +129,10 @@ banned (`hopelessHigh`): only a solved arc — including the rain shot
 - The 2P duel has no harness yet beyond the pad dispatch existing
   (`secondPad` is `VirtualControls`' contract, exercised by IceClimber);
   `archeryplay` drives P1 only.
-- `stuckTTL` (40 s) is tuned for 3-win matches; a stalemate to the clock
+- ~~`stuckTTL` (40 s) is tuned for 3-win matches; a stalemate to the clock
   is proven not to happen (the match receipts), but a very defensive duel
-  could get boring near the wall — the wander keeps it honest, not fast.
+  could get boring near the wall — the wander keeps it honest, not fast.~~
+  **CLOSED by #2377** (the heat rule; see Heat above).
 
 ## WATCH (#1637 batch 5)
 
