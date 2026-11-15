@@ -22,7 +22,7 @@ import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePric
 import { RACES, ALIGNMENTS, compose, classOk, rollCandidates } from '../src/games/TenDeep/people.js'
 import { genFloor, FLOORS, MOBS } from '../src/games/TenDeep/dungeon.js'
 import { solveRun, nextAction } from '../src/games/TenDeep/solver.js'
-import { sightedMobs, forwardMonster, MOB_MAT, MOB_SIZE, SIGHT } from '../src/games/TenDeep/view.js'
+import { sightedMobs, forwardMonster, MOB_MAT, MOB_SIZE, MOB_TINT, SIGHT } from '../src/games/TenDeep/view.js'
 import { fitSize, fitTwoCols, estWidth } from '../src/games/TenDeep/hudfit.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -1753,6 +1753,39 @@ if (MUT) {
     }
 }
 
+// #2321 MODERN COMBAT — the corridor stays lit behind the fight (README
+// honest gap #2 closed). No browser can tell a frozen canvas from a live one
+// cheaply, so these source pins hold the three laws: GL draws through combat;
+// paintCombat never paints an opaque backdrop and the paint branch always
+// lays a corridor under the plates; plates wear the bestiary tint.
+{
+    const idxSrc = readFileSync(join(HERE, '..', 'src', 'games', 'TenDeep', 'index.jsx'), 'utf8')
+    ok(/\(gs\.mode === 'map' \|\| gs\.mode === 'combat'\) && !!gs\.map/.test(idxSrc),
+        'glOn no longer covers combat mode — the fight cut back to a dead screen')
+    const pcStart = idxSrc.indexOf('const paintCombat = () => {')
+    ok(pcStart > 0, 'paintCombat anchor missing')
+    const pcSrc = idxSrc.slice(pcStart, idxSrc.indexOf('const paint = () =>', pcStart))
+    ok(!/createLinearGradient/.test(pcSrc), 'paintCombat paints an opaque backdrop again — the separate-screen cut is back')
+    ok(!/#131633|#2a1d3d|#0d0a16/.test(pcSrc), 'the old flat combat backdrop colours are painted again behind the plates')
+    ok(/drawMob\(ctx, m\.art,[^)]*MOB_TINT\[m\.key\]/.test(pcSrc), 'combat plates stopped wearing the bestiary tint')
+    const cbMatch = idxSrc.match(/else if \(screenRef\.current === 'play' && gs\.mode === 'combat'\) \{[\s\S]*?\n\s{12}\}/)
+    ok(!!cbMatch, 'the combat paint branch lost its corridor-under-plates structure')
+    if (cbMatch) {
+        ok(/clearRect\(0, 0, W, 200\)/.test(cbMatch[0]), 'the GL combat band is not cleared — plates would float over an opaque backdrop')
+        ok(/else paintMap\(\)/.test(cbMatch[0]), 'the wireframe fallback stopped painting the hall behind the fight')
+    }
+    ok(/const drawMob = \(ctx, art, x, y, size, flash, tint\)/.test(idxSrc), 'drawMob dropped its tint argument')
+    ok(/const shadePixel = \(base, tint, r\) => \{/.test(idxSrc) && /if \(!tint\) return base/.test(idxSrc),
+        'shadePixel went away — plates draw flat again')
+    ok(/art: s\.art, tint: s\.tint/.test(idxSrc), 'the slay dissolve stopped carrying the tint')
+    ok(/drawMob\(ctx, f\.art, f\.x - f\.size \/ 2, 140 - f\.size \+ p \* 22, f\.size, false, f\.tint\)/.test(idxSrc),
+        'the slay dissolve stopped painting tinted')
+    // every bestiary member has a coat to wear — a key added to the dungeon
+    // without a tint would draw its plates raw.
+    for (const k of Object.keys(MOBS)) ok(!!MOB_TINT[k], `MOB_TINT has no entry for ${k} — its plate would draw untinted`)
+    ok(MOB_TINT.RAT === '#9a7a52', `MOB_TINT.RAT moved (${MOB_TINT.RAT}) — the untinted fallback changed coats`)
+}
+
 // #1275 — the mode-aware B button, pinned in the only place its five cases
 // can be enumerated without a browser: sim truth in, pad verb out. The pad
 // render itself is graded in tendeeppplay (the DOM carries these codes).
@@ -1783,6 +1816,33 @@ if (MUT) {
     pull(coreFile)
     console.log(`  mut tint unwired: ${res.status !== 0 ? 'caught' : 'SURVIVED (BAD)'}`)
     ok(res.status !== 0, 'tint unwired SURVIVED — the bestiary could go grey unnoticed')
+}
+
+// #2321 MODERN COMBAT — each regression of the lit-corridor fight must redden
+// at least one of the source pins above.
+if (MUT) {
+    const idxFile = join(HERE, '..', 'src', 'games', 'TenDeep', 'index.jsx')
+    const idxOrig = readFileSync(idxFile, 'utf8')
+    const combatMutants = [
+        ['glOn cuts combat again (separate-screen cut returns)',
+            "(gs.mode === 'map' || gs.mode === 'combat') && !!gs.map", "gs.mode === 'map' && !!gs.map"],
+        ['combat plates drop the bestiary tint',
+            'MOB_TINT[m.key] || MOB_TINT.RAT)', ')'],
+        ['shadePixel ignores the tint (plates go flat)',
+            'if (!tint) return base', 'if (tint) return base'],
+        ['the GL combat band paints over instead of clearing',
+            'ctx.clearRect(0, 0, W, 200)', 'ctx.fillRect(0, 0, W, 200)'],
+        ['the wireframe hall stops painting behind the fight',
+            'else paintMap()\n                paintCombat()', 'paintCombat()'],
+    ]
+    for (const [name, from, to] of combatMutants) {
+        ok(idxOrig.includes(from), `modern-combat mutant anchor missing: ${name}`)
+        plant(idxFile, idxOrig.replace(from, to))
+        const res = spawnSync(process.execPath, [join(HERE, 'tendeepcheck.mjs')], { encoding: 'utf8' })
+        pull(idxFile)
+        console.log(`  mut ${name}: ${res.status !== 0 ? 'caught' : 'SURVIVED (BAD)'}`)
+        ok(res.status !== 0, `${name} SURVIVED — the modern-combat pins stopped touching this rule`)
+    }
 }
 
 console.log(`\ntendeepcheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

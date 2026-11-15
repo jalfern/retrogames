@@ -78,7 +78,20 @@ const ART = {
         '...yyyy...', '..ywwwwy..', '.ywkddkwy.', '.wkddddkw.', '.wgddddgw.', '..kddddk..', '.kkddddkk.', 'kkkddddkkk', 'k.kddddk.k', '...kkkk...'] },
 }
 
-const drawMob = (ctx, art, x, y, size, flash) => {
+// #2321 MODERN combat pass: plates wear the bestiary's own coat — the same
+// MOB_TINT the GL billboards and the wireframe glyph ride (view.js), pulled
+// in at a third so the bitmap's internal shading survives — under a torch
+// falloff toward the dark floor, the corridor's own lighting vocabulary.
+// Eyes ('e') stay raw. Pure arithmetic, no state, deterministic per pixel.
+const shadePixel = (base, tint, r) => {
+    if (!tint) return base
+    const p = (c) => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]
+    const a = p(base), t = p(tint)
+    const drop = 1 - 0.30 * (r / 9)
+    const m = a.map((v, i) => Math.round((v + (t[i] - v) * 0.32) * drop))
+    return `rgb(${m[0]},${m[1]},${m[2]})`
+}
+const drawMob = (ctx, art, x, y, size, flash, tint) => {
     const A = ART[art]
     if (!A) return
     const u = size / 10
@@ -86,7 +99,7 @@ const drawMob = (ctx, art, x, y, size, flash) => {
         for (let c = 0; c < 10; c++) {
             const ch = A.rows[r][c]
             if (ch === '.' || !ch) continue
-            ctx.fillStyle = flash ? '#ffffff' : (A.pal[ch] || '#fff')
+            ctx.fillStyle = flash ? '#ffffff' : (ch === 'e' ? (A.pal[ch] || '#fff') : shadePixel(A.pal[ch] || '#fff', tint, r))
             ctx.fillRect(x + c * u, y + r * u, u + 0.6, u + 0.6)
         }
     }
@@ -493,7 +506,9 @@ const TenDeepGame = () => {
             }
             return { w: SIZE, h: SIZE, cells }
         }
-        const glOn = () => !!R && (screenRef.current === 'play' || screenRef.current === 'attract') && gs.mode === 'map' && !!gs.map
+        // #2321 MODERN combat: GL keeps drawing THROUGH the fight — the ambush
+        // happens in the corridor you were already walking, not on a separate screen.
+        const glOn = () => !!R && (screenRef.current === 'play' || screenRef.current === 'attract') && (gs.mode === 'map' || gs.mode === 'combat') && !!gs.map
         let glWasOn = false
         let lastBeacons = 0
         const syncGl = () => {
@@ -639,7 +654,7 @@ const TenDeepGame = () => {
                 else if (e.type === 'hit') { audioController.playNoise(0.12, 0.07); shake = 4; flashHit = 0.25 }
                 else if (e.type === 'slay') {
                     audioController.playSweep(420, 90, 0.22, 'square', 0.06); say(`${e.name} SLAIN`)
-                    const s = mobSlot(e.mob); if (s) fxList.push({ kind: 'slay', t0: performance.now(), x: s.sx, y: 140 - s.size * 0.5, size: s.size, art: s.art, xp: e.xp })
+                    const s = mobSlot(e.mob); if (s) fxList.push({ kind: 'slay', t0: performance.now(), x: s.sx, y: 140 - s.size * 0.5, size: s.size, art: s.art, tint: s.tint, xp: e.xp })
                 }
                 else if (e.type === 'fire' || e.type === 'spell') {
                     audioController.playSweep(e.spell === 'firestorm' ? 900 : 700, 180, e.spell === 'firestorm' ? 0.32 : 0.18, 'sawtooth', 0.05)
@@ -848,7 +863,7 @@ const TenDeepGame = () => {
             const sx = 128 + (i - (n - 1) / 2) * 62
             const A = ART[m.art]
             const size = (A ? A.s * 10 : 50) * (m.key === 'KING' ? 1.25 : 1)
-            return { sx, size, art: m.art }
+            return { sx, size, art: m.art, tint: MOB_TINT[m.key] || MOB_TINT.RAT }
         }
         // a deterministic per-bolt offset in [0,1): repeated casts of the same
         // letter at the same foe trace the same path (the harness can trust it),
@@ -917,7 +932,7 @@ const TenDeepGame = () => {
                     if (p < 0.6) {
                         ctx.save()
                         ctx.globalAlpha = 1 - p / 0.6
-                        drawMob(ctx, f.art, f.x - f.size / 2, 140 - f.size + p * 22, f.size, false)
+                        drawMob(ctx, f.art, f.x - f.size / 2, 140 - f.size + p * 22, f.size, false, f.tint)
                         ctx.restore()
                     }
                     ctx.save()
@@ -940,10 +955,11 @@ const TenDeepGame = () => {
         }
 
         const paintCombat = () => {
-            const g = ctx.createLinearGradient(0, 0, 0, 150)
-            g.addColorStop(0, '#131633'); g.addColorStop(1, '#2a1d3d')
-            ctx.fillStyle = g; ctx.fillRect(0, 0, W, 150)
-            ctx.fillStyle = '#0d0a16'; ctx.fillRect(0, 150, W, 50)
+            // #2321 MODERN combat: no opaque backdrop — the corridor keeps
+            // painting behind the fight (GL drawn through below, paintMap in
+            // the wireframe fallback). The plates ride the same lit view,
+            // wearing the bestiary tints, so the ambush no longer cuts to a
+            // separate screen (README honest gap #2).
             const mobs = gs.combat ? gs.combat.mobs : []
             const live = mobs.filter((m) => m.hp > 0)
             const wob = Math.sin(bob / 7) * 2
@@ -955,7 +971,7 @@ const TenDeepGame = () => {
                 const size = (A ? A.s * 10 : 50) * (m.key === 'KING' ? 1.25 : 1)
                 const mx = slideX(slot, sx, size)
                 if (m.hp > 0) {
-                    drawMob(ctx, m.art, mx - size / 2, 140 - size + wob, size, flashHit > 0)
+                    drawMob(ctx, m.art, mx - size / 2, 140 - size + wob, size, flashHit > 0, MOB_TINT[m.key] || MOB_TINT.RAT)
                     if (i === gs.target) {
                         ctx.strokeStyle = '#ffffff'
                         ctx.beginPath()
@@ -1008,7 +1024,18 @@ const TenDeepGame = () => {
                 else if (gs.town.b) paintInterior(ctx, gs, bob)
                 else paintRim(ctx, gs, bob, doorIdxOf(gs.town))
             }
-            else if (screenRef.current === 'play' && gs.mode === 'combat') paintCombat()
+            else if (screenRef.current === 'play' && gs.mode === 'combat') {
+                // #2321: the corridor stays lit under the plates — GL draws
+                // through the cleared band; without GL the wireframe paints the
+                // same hall. No more cut to a flat gradient at the ambush.
+                if (glOn()) {
+                    ctx.clearRect(0, 0, W, 200)
+                    ctx.fillStyle = 'rgba(255,255,255,0.35)'
+                    ctx.fillRect(CX - 4, 100, 9, 1); ctx.fillRect(CX, 96, 1, 9)
+                }
+                else paintMap()
+                paintCombat()
+            }
             else if (glOn()) {
                 // the WebGL corridor draws through from the layer below; the 2D
                 // frame keeps only the sighter over it (the party strip, automap
