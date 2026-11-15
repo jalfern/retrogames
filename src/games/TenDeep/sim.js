@@ -14,6 +14,7 @@
 import { genFloor, MOBS, FLOORS, SIZE, mulberry32 } from './dungeon.js'
 import { BUILDINGS, SERVICES, rollRecruit, serviceHeroOk, TOWN, RIM_STREET, rimBlocked, rimDoorAt, makeRimFolk, rimFolkAt, rimFolkShares, RIM_FOLK_NAMES, RIM_FOLK_BARKS, RIM_FLAMES, RIM_WELL_FLAME, rimFlame, RIM_WIND, rimWind, RIM_WELL_HUM, rimWellNear, RIM_CUT, rimCut, RIM_TRAIL_N, rimTrail } from './town.js'
 import { SPELLS, ALIGN_ORDER, compose, rollCandidates, canCast } from './people.js'
+import { packNotices } from './view.js'
 
 export { SIZE, BUILDINGS, SERVICES, TOWN, RIM_STREET, rimBlocked, rimDoorAt, makeRimFolk, rimFolkAt, rimFolkShares, RIM_FOLK_NAMES, RIM_FOLK_BARKS, RIM_FLAMES, RIM_WELL_FLAME, rimFlame, RIM_WIND, rimWind, RIM_WELL_HUM, rimWellNear, RIM_CUT, rimCut, RIM_TRAIL_N, rimTrail }
 export { SPELLS, CLASSES, ALIGN_ORDER, canCast, classOkHero } from './people.js'
@@ -132,6 +133,9 @@ function enterFloor(st, fi) {
     st.pots = new Set(st.map.pots.filter(p => !st.skipPots.has(`${fi},${p.x},${p.y}`)).map(p => p.y * SIZE + p.x))
     st.springs = new Set(st.map.springs.filter(p => !st.skipSprings.has(`${fi},${p.x},${p.y}`)).map(p => p.y * SIZE + p.x))
     st.ambushes = new Set(st.map.ambushes.map(a => a.y * SIZE + a.x))
+    // #2321 — roaming packs: live tile per pack, keyed by spawn tile. An
+    // entry exists only once a pack has left home; sprung packs freeze.
+    st.packPos = {}
     st.combat = null
     markView(st)
 }
@@ -456,7 +460,7 @@ export function step(st, cmd) {
     if (cmd === 'fwd' || cmd === 'back') {
         const s = cmd === 'fwd' ? 0 : 2
         const nx = st.x + HX[(st.dir + s) % 4], ny = st.y + HY[(st.dir + s) % 4]
-        if (!st.map.wall(nx, ny)) { st.x = nx; st.y = ny; markView(st); settleTile(st) }
+        if (!st.map.wall(nx, ny)) { st.x = nx; st.y = ny; markView(st); settleTile(st); patrolPacks(st) }
         else st.events.push({ type: 'bump' })
         return
     }
@@ -734,10 +738,84 @@ function settleTile(st) {
         st.events.push({ type: 'pickup', potions: st.potions })
     }
     if (st.springs.has(t)) st.events.push({ type: 'seeSpring' })
-    if (st.ambushes.has(t)) {
-        const amb = st.map.ambushes.find(q => q.y * SIZE + q.x === t)
-        st.ambushes.delete(t)
+    // #2321 — the ambush springs where the PACK STANDS — and on its POST.
+    // st.packPos maps spawn key -> live tile (no entry = at home); a pack
+    // that sidesteps as you walk onto its post still lunges (the tether
+    // keeps it one tile away — it is right there, and it is visible). This
+    // keeps every encounter the seeded layout promised: XP never leaks.
+    for (const k of [...st.ambushes]) {
+        const p = st.packPos[k] != null ? st.packPos[k] : k
+        if (p !== t && k !== t) continue
+        const amb = st.map.ambushes.find(q => q.y * SIZE + q.x === k)
+        st.ambushes.delete(k)
         startCombat(st, amb.group, false)
+    }
+}
+
+// #2321 — Wizardry's groups drift in the corridor; ours now do too. Once per
+// honest party step, every UNSPRUNG pack takes at most one tile. Determinism
+// law: no RNG — the choice is a hash of (spawn key, st.tick), so replaying
+// the same commands reproduces every drift (stateHash mixes pack positions in,
+// and tendeepcheck pins legality + determinism + the notice rule). Rules:
+//  - never through walls, out of bounds, onto springs, thrones, the party's
+//    own tile, or a tile another live pack holds;
+//  - never further than 1 tile from the spawn (the pack keeps its beat, and
+//    a pack seeded on the road stays findable on the road);
+//  - a pack that NOTICES the party (view.js's honest sight test — in front,
+//    within the torch, nothing through stone) closes the gap one tile; the
+//    meeting springs whenever either side steps onto the other's tile.
+// Sprung packs are frozen forever. The solver never dodges, each pack still
+// fights at most once, so every proof, the slack rule and determinism ride.
+function packStepOk(st, nx, ny, sx, sy) {
+    if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) return false
+    if (st.map.wall(nx, ny)) return false
+    const t = ny * SIZE + nx
+    if (st.springs.has(t)) return false
+    if (st.ambushes.has(t)) return false       // a live pack's spawn tile is its ground
+    if (st.map.throne && st.map.throne.x === nx && st.map.throne.y === ny) return false
+    if (nx === st.x && ny === st.y) return false
+    if (Math.abs(nx - sx) + Math.abs(ny - sy) > 1) return false           // one-tile beat: a pack on the road stays visible on the road
+    return true
+}
+
+// Exported for tendeepcheck's synthetic patrol gates (the game drives it via
+// fwd/back; the harness pokes the rule directly at synthetic states).
+export function patrolPacks(st) {    if (st.mode !== 'map' || st.combat || !st.map) return
+    const occ = new Set()
+    for (const k of st.ambushes) occ.add(st.packPos[k] != null ? st.packPos[k] : k)
+    for (const k of [...st.ambushes]) {
+        const cur = st.packPos[k] != null ? st.packPos[k] : k
+        const cx = cur % SIZE, cy = (cur - cx) / SIZE
+        const sx = k % SIZE, sy = (k - sx) / SIZE
+        occ.delete(cur)
+        let nx = cx, ny = cy
+        if (packNotices(st, cx, cy)) {
+            const dx = st.x - cx, dy = st.y - cy
+            const tries = Math.abs(dx) >= Math.abs(dy)
+                ? [[Math.sign(dx), 0], [0, Math.sign(dy)]]
+                : [[0, Math.sign(dy)], [Math.sign(dx), 0]]
+            for (const [ox, oy] of tries) {
+                if (ox === 0 && oy === 0) continue
+                const t = (cy + oy) * SIZE + cx + ox
+                if (!occ.has(t) && packStepOk(st, cx + ox, cy + oy, sx, sy)) { nx = cx + ox; ny = cy + oy; break }
+            }
+        } else {
+            const cand = []
+            for (let d = 0; d < 4; d++) {
+                const mx = cx + HX[d], my = cy + HY[d]
+                const t = my * SIZE + mx
+                if (!occ.has(t) && packStepOk(st, mx, my, sx, sy)) cand.push([mx, my, t])
+            }
+            if (cand.length) {
+                let h = (k ^ Math.imul(st.tick + 1, 0x9E3779B1)) >>> 0
+                h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d) >>> 0
+                const pick = cand[h % cand.length]
+                nx = pick[0]; ny = pick[1]
+            }
+        }
+        const nt = ny * SIZE + nx
+        if (nt !== cur) st.packPos[k] = nt
+        occ.add(nt)
     }
 }
 
@@ -760,6 +838,10 @@ export function stateHash(st) {
         mix(k); mix(p.aff)
     }
     if (st.combat) for (const m of st.combat.mobs) mix(m.hp)
+    // #2321 — the drift is sim truth: two runs that disagree on where the
+    // packs stand must not hash alike. Sorted spawn keys keep it order-free.
+    for (const k of [...st.ambushes].sort((a, b) => a - b))
+        mix(st.packPos && st.packPos[k] != null ? st.packPos[k] : k)
     mix(st.ledger.dealt * 131 + st.ledger.taken)
     return (h >>> 0).toString(16)
 }

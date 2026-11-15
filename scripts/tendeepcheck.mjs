@@ -18,7 +18,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, SPELLS, CLASSES, ALIGN_ORDER, canCast, DX as DXC, DY as DYC, automapRing, automapShade, RIM_STREET, rimBlocked, rimDoorAt, makeRimFolk, rimFolkAt, rimFolkShares, RIM_FOLK_NAMES, RIM_FLAMES, RIM_WELL_FLAME, rimFlame, RIM_WIND, rimWind, rimWellNear, RIM_CUT, rimCut, rimTrail } from '../src/games/TenDeep/sim.js'
+import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, SPELLS, CLASSES, ALIGN_ORDER, canCast, DX as DXC, DY as DYC, automapRing, automapShade, RIM_STREET, rimBlocked, rimDoorAt, makeRimFolk, rimFolkAt, rimFolkShares, RIM_FOLK_NAMES, RIM_FLAMES, RIM_WELL_FLAME, rimFlame, RIM_WIND, rimWind, rimWellNear, RIM_CUT, rimCut, rimTrail, patrolPacks } from '../src/games/TenDeep/sim.js'
 import { RACES, ALIGNMENTS, compose, classOk, rollCandidates } from '../src/games/TenDeep/people.js'
 import { genFloor, FLOORS, MOBS } from '../src/games/TenDeep/dungeon.js'
 import { solveRun, nextAction } from '../src/games/TenDeep/solver.js'
@@ -172,7 +172,7 @@ for (let fi = 0; fi < FLOORS.length; fi++) {
         if (JSON.stringify(sighted) !== JSON.stringify(again)) bad++
         for (const m of sighted) {
             checked++
-            if (!g.ambushes.has(m.y * SIZE + m.x)) bad++                 // sprung must not show
+            if (!g.ambushes.has(m.key)) bad++                             // sprung must not show (key = stable spawn tile)
             if (m.range > SIGHT + 1e-9) bad++                             // range respected
             const fx = DXC[g.dir], fy = DYC[g.dir]
             if ((m.x - g.x) * fx + (m.y - g.y) * fy < -0.25) bad++        // forward respected
@@ -191,6 +191,100 @@ for (let fi = 0; fi < FLOORS.length; fi++) {
     }
     ok(stateHash(g) === hashBefore || g.mode !== 'map' || g.tick > 0, 'sightedMobs is pure — the sim hash still rides the walk')
     ok(bad === 0, `DEEP ${fi + 1}: no honest-LOS violation among ${checked} sightings`)
+}
+
+// ---------------------------------------------------------------- #2321 roaming ----
+// Packs roam now (#2315 made them VISIBLE; this makes them MOVE). The law the
+// gates hold: a patrol never crosses a wall, never stands on a spring, throne,
+// the party's tile or another live pack's tile, never wanders further than 1
+// tile from its spawn (the pack keeps its beat), freezes the moment it
+// springs, and the whole drift is a deterministic function of
+// (spawn key, tick) — replay pins it via stateHash.
+section('ROAMING PACKS — legality, freeze, notice-closure, determinism')
+
+// synthetic corridor rig for the view-layer rules (same mkMap idiom as the
+// sighted gates): open row y=3 x=1..12, one pack.
+const roamMap = (extraOpen, ambushes) => {
+    const open = new Set([...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(x => 3 * SIZE + x), ...extraOpen])
+    return { ambushes, wall: (x, y) => !open.has(y * SIZE + x) }
+}
+{
+    const ahead = { x: 8, y: 3, id: 0, group: ['RAT', 'RAT'] }
+    const amb = new Set([ahead.y * SIZE + ahead.x])
+    const st = { map: roamMap([], [ahead]), ambushes: amb, packPos: {}, springs: new Set(), x: 2, y: 3, dir: 0, mode: 'map', combat: null, tick: 1 }
+    patrolPacks(st)
+    const p1 = st.packPos[ahead.y * SIZE + ahead.x]
+    ok(p1 === ahead.y * SIZE + 7, 'a pack that NOTICES the party in the torchlight closes the gap one tile')
+    st.tick = 2; st.x = 4; patrolPacks(st)
+    ok(st.packPos[ahead.y * SIZE + ahead.x] === ahead.y * SIZE + 7,
+        'the one-tile tether holds: it noticed and stepped, but stays on its beat')
+    // sprung packs freeze: remove from the ambush set, position must not budge
+    const frozen = st.packPos[ahead.y * SIZE + ahead.x]
+    st.ambushes.delete(ahead.y * SIZE + ahead.x)
+    st.tick = 3; patrolPacks(st)
+    ok(st.packPos[ahead.y * SIZE + ahead.x] === frozen, 'a sprung pack is frozen forever')
+    // springs are refused: a pack with the party ahead but every closing tile
+    // sprung will not cross the water
+    const near = { x: 4, y: 3, id: 0, group: ['RAT'] }
+    const stS = { map: roamMap([], [near]), ambushes: new Set([near.y * SIZE + near.x]), packPos: {}, springs: new Set([3 * SIZE + 3]), x: 2, y: 3, dir: 0, mode: 'map', combat: null, tick: 5 }
+    patrolPacks(stS)
+    const q = stS.packPos[near.y * SIZE + near.x]
+    ok(q !== 3 * SIZE + 3, 'a patrol never steps onto a sprung tile')
+    // the party tile is refused: adjacent pack does not bulldoze through you
+    const at = { x: 3, y: 3, id: 0, group: ['RAT'] }
+    const stP = { map: roamMap([], [at]), ambushes: new Set([at.y * SIZE + at.x]), packPos: {}, springs: new Set(), x: 2, y: 3, dir: 0, mode: 'map', combat: null, tick: 7 }
+    patrolPacks(stP)
+    ok(!Object.keys(stP.packPos).length || Object.values(stP.packPos)[0] !== 3 * SIZE + 2, 'a patrol never stands on the party tile')
+    // sightedMobs reports the LIVE tile under packPos, keyed by the spawn tile
+    const stV = { map: roamMap([], [ahead]), ambushes: new Set([ahead.y * SIZE + ahead.x]), packPos: { [ahead.y * SIZE + ahead.x]: 3 * SIZE + 6 }, x: 2, y: 3, dir: 0 }
+    const sm = sightedMobs(stV)
+    ok(sm.length === 1 && sm[0].x === 6 && sm[0].y === 3 && sm[0].key === ahead.y * SIZE + ahead.x,
+        'sightedMobs reports the pack\u2019s live tile under a stable spawn key')
+}
+
+// on every real seeded deep: legality across a long deterministic wander, the
+// freeze across a sprung combat, and identical drift on replay.
+for (let fi = 0; fi < FLOORS.length; fi++) {
+    const drive = () => {
+        const g = makeRun({ seed: fi + 1 })
+        step(g, 'down')
+        const events = []
+        let bad = 0, driftFrames = 0, closes = 0
+        const lastPos = new Map()
+        for (let n = 0; n < 700 && !g.end && g.mode === 'map'; n++) {
+            const before = new Map([...g.ambushes].map(k => [k, g.packPos[k] != null ? g.packPos[k] : k]))
+            step(g, n % 3 === 2 ? 'fwd' : (n % 2 ? 'left' : 'right'))
+            if (g.mode !== 'map') break
+            const occ = new Set()
+            for (const k of g.ambushes) {
+                const p = g.packPos[k] != null ? g.packPos[k] : k
+                const x = p % SIZE, y = (p - x) / SIZE
+                if (g.map.wall(x, y)) bad++                                     // never through stone
+                if (g.springs.has(p)) bad++                                    // never on a spring
+                if (g.map.throne && g.map.throne.x === x && g.map.throne.y === y) bad++
+                if (p === g.y * SIZE + g.x) bad++                              // never ON the party
+                if (occ.has(p)) bad++                                          // packs never stack
+                occ.add(p)
+                const sx = k % SIZE, sy = (k - sx) / SIZE
+                if (Math.abs(x - sx) + Math.abs(y - sy) > 1) bad++            // keeps its one-tile beat
+                if (p !== before.get(k)) {
+                    driftFrames++
+                    const bp = before.get(k)
+                    const bx = bp % SIZE, by = (bp - bx) / SIZE
+                    const d0 = Math.abs(bx - g.x) + Math.abs(by - g.y)
+                    const d1 = Math.abs(x - g.x) + Math.abs(y - g.y)
+                    if (d1 === d0 - 1) closes++                                // moved toward the party
+                    lastPos.set(k, p)
+                }
+            }
+        }
+        return { g, bad, driftFrames, closes, hash: stateHash(g), pos: [...lastPos.entries()].sort((a, b) => a[0] - b[0]).map(e => e.join('@')).join(';') }
+    }
+    const r1 = drive(), r2 = drive()
+    ok(r1.bad === 0, `DEEP ${fi + 1}: no illegal patrol state (walls/springs/throne/party/stack/radius)`)
+    ok(r1.driftFrames > 0, `DEEP ${fi + 1}: packs actually move — at least ${r1.driftFrames} drift events`)
+    ok(r1.closes > 0, `DEEP ${fi + 1}: sighted packs close on the party (${r1.closes} closing steps)`)
+    ok(r1.hash === r2.hash && r1.pos === r2.pos, `DEEP ${fi + 1}: the drift is deterministic — replay hashes and pack tiles alike`)
 }
 
 

@@ -55,10 +55,23 @@ function losClear (wall, x0, y0, x1, y1) {
     return true
 }
 
+// #2321 — packs roam. The pack's LIVE tile lives in st.packPos (spawn tile
+// key -> current tile key); a state without packPos (or a pack that has never
+// moved) stands on its spawn tile, exactly as before. One accessor keeps every
+// consumer — GL billboards, wireframe, probe, tendeepcheck — honest to the
+// same position the sim triggers on.
+export function packTile (st, spawnKey) {
+    const p = st && st.packPos && st.packPos[spawnKey]
+    return p == null ? spawnKey : p
+}
+
 // Which ambushes the party currently sees. Takes the live sim state (st.map,
-// st.ambushes, st.x/y/dir) so the same call runs in the browser and in the
-// Node proof against a real makeRun(). Returns {x, y, mat, tint, count, range}
-// nearest-first. Sprung ambushes (removed from st.ambushes) never show.
+// st.ambushes, st.packPos, st.x/y/dir) so the same call runs in the browser
+// and in the Node proof against a real makeRun(). Returns
+// {x, y, key, mat, tint, count, range} nearest-first, at the pack's LIVE
+// tile. Sprung ambushes (removed from st.ambushes) never show. `key` is the
+// stable spawn-tile key — position drifts, identity doesn't (the sighting
+// sting needs one).
 export function sightedMobs (st) {
     const map = st && st.map
     if (!map) return []
@@ -66,8 +79,11 @@ export function sightedMobs (st) {
     const px = st.x + 0.5, py = st.y + 0.5
     const out = []
     for (const a of map.ambushes) {
-        if (!st.ambushes.has(a.y * SIZE + a.x)) continue   // already sprung
-        const ax = a.x + 0.5, ay = a.y + 0.5
+        const k = a.y * SIZE + a.x
+        if (!st.ambushes.has(k)) continue                    // already sprung
+        const p = packTile(st, k)
+        const mx = p % SIZE, my = (p - mx) / SIZE
+        const ax = mx + 0.5, ay = my + 0.5
         const dx = ax - px, dy = ay - py
         const range = Math.hypot(dx, dy)
         if (range < 0.5 || range > SIGHT) continue
@@ -76,7 +92,7 @@ export function sightedMobs (st) {
         const group = a.group || []
         const lead = group[0] || 'RAT'
         out.push({
-            x: a.x, y: a.y,
+            x: mx, y: my, key: k,
             mat: MOB_MAT[lead] != null ? MOB_MAT[lead] : 8,
             tint: MOB_TINT[lead] || MOB_TINT.RAT,
             count: group.length || 1,
@@ -85,6 +101,21 @@ export function sightedMobs (st) {
     }
     out.sort((p, q) => p.range - q.range)
     return out
+}
+
+// Does the pack standing at (cx, cy) NOTICE the party — the same honest test
+// the view applies (in front, within torchlight, nothing through stone)? The
+// sim uses this to decide when a pack closes the gap.
+export function packNotices (st, cx, cy) {
+    const map = st && st.map
+    if (!map) return false
+    const fx = DX[st.dir], fy = DY[st.dir]
+    const px = st.x + 0.5, py = st.y + 0.5
+    const dx = cx + 0.5 - px, dy = cy + 0.5 - py
+    const range = Math.hypot(dx, dy)
+    if (range < 1.5 || range > SIGHT) return false
+    if (dx * fx + dy * fy < 0.5) return false
+    return losClear(map.wall, px, py, cx + 0.5, cy + 0.5)
 }
 
 // The nearest sighted monster ON THE FORWARD AXIS (the wireframe painter can
