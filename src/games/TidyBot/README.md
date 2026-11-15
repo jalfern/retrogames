@@ -77,10 +77,17 @@ didn't say MODERN.
 3. A press cadence of 14 ticks/press is global (`auto.cd`) — the shipped
    autopilot wins all seeds in ~8.3k ticks against a 33.6k-tick total budget,
    leaving humans huge slack.
+4. Every container is flanked by real standable zones on both sides (#2284).
+   The fridge sat flush (x=304 edge vs wall x=312): an 8px sliver no 12px bot
+   could stand in, so it had one work zone while DW had two. It moved to
+   x=254 — the right flank is a 20px lane with a mirrored zone (DW's pattern:
+   zones sit 2px off the body, w18 h52). The tidycheck gate "fridge flank is
+   two zones" goes named-red if any zone is painted onto furniture, into a
+   dead sliver, or loses its road.
 
 ## Verify
 ```
-npm run tidycheck            # 56 Node gates + browser gates (needs npm run dev)
+npm run tidycheck            # 63 Node gates + browser gates (needs npm run dev)
 npm run tidycheck -- --node  # Node-only
 npm run tidycheck -- --mutate   # door mutant (TIDY_MUT=door|glass|run|tidy|order)
 CONTRACT_ONLY=tidy-bot npm run contractcheck

@@ -43,7 +43,7 @@ applyMut()
 
 const {
     makeGame, step, autopilot, playthrough, loadLevel, blockers,
-    DW, FR, LEVEL_TIME, KINDS, LEVELS,
+    DW, FR, CONTAINERS, LEVEL_TIME, KINDS, LEVELS, ROBOT_R, REACH,
 } = s
 
 
@@ -388,7 +388,7 @@ section('glide — human BFS routing (#2250)')
     ok(open.n > shut.n, `opening the door lengthens the road — ${shut.n} ticks shut vs ${open.n} open (RED under door mutant)`)
 
     // reach the far rooms too: every honest tap on the shelf arrives
-    const TAPS = [[60, 200], [250, 210], [23, 60], [79, 60], [255, 58], [100, 190], [180, 110], [40, 120], [300, 110], [160, 40], [24, 214], [296, 110]]
+    const TAPS = [[60, 200], [250, 210], [23, 60], [79, 60], [243, 58], [303, 58], [100, 190], [180, 110], [40, 120], [300, 110], [160, 40], [24, 214], [296, 110]]
     let arrivedAll = true, worst = 0
     for (const [tx, ty] of TAPS) {
         const g = makeGame(5)
@@ -396,12 +396,41 @@ section('glide — human BFS routing (#2250)')
         if (!r.ok || !r.arrived || r.throughDoor) arrivedAll = false
         worst = Math.max(worst, r.n)
     }
-    ok(arrivedAll, `all 12 floor taps across both rooms route and arrive (worst ${worst} ticks)`)
+    ok(arrivedAll, `all 13 floor taps across both rooms route and arrive (worst ${worst} ticks)`)
 
     // determinism of the roads: same seed, same tap, same walk
     const wA = walkTo(makeGame(9), 60, 200)
     const wB = walkTo(makeGame(9), 60, 200)
     ok(wA.arrived && wB.arrived && wA.n === wB.n, 'the glide path is deterministic — same seed + tap = same walk')
+}
+
+section('fridge flank is two zones (#2284)')
+{
+    // The fridge used to sit flush at x=304 with the wall at x=312: an 8px
+    // strip no 12px bot could stand in, so it had ONE work zone while DW had
+    // two. Geometry moved the fridge left; this gate pins the promise that a
+    // container's zones are real standable ground flanking the body — a zone
+    // painted onto furniture or into a dead sliver goes named-red.
+    const gs = makeGame(5)
+    const hits = (b, r) => b.x < r.x + r.w && b.x + b.w > r.x && b.y < r.y + r.h && b.y + b.h > r.y
+    const centreOk = (c, z) => {
+        const zx = z.x + z.w / 2, zy = z.y + z.h / 2
+        const box = { x: zx - ROBOT_R, y: zy - ROBOT_R, w: ROBOT_R * 2, h: ROBOT_R * 2 }
+        const stand = !blockers(gs).some((r) => hits(box, r))
+        const flank = zx + ROBOT_R <= c.x || zx - ROBOT_R >= c.x + c.w
+        const dx = zx < c.x ? c.x - zx : zx > c.x + c.w ? zx - c.x - c.w : 0
+        const dy = zy < c.y ? c.y - zy : zy > c.y + c.h ? zy - c.y - c.h : 0
+        return stand && flank && Math.hypot(dx, dy) <= REACH
+    }
+    ok(FR.zones.length === DW.zones.length, 'the fridge offers as many flanks as the washer (RED: one-zone fridge)')
+    ok(FR.zones.every((z) => centreOk(FR, z)), 'each fridge zone centre is standable, flanks the body and sits within arm reach')
+    ok(CONTAINERS.every((c) => c.zones.every((z) => centreOk(c, z))), 'no work zone anywhere is painted onto furniture or into a dead sliver')
+    // the right flank is a lane, not a mirage: BFS actually routes to it
+    const g = makeGame(5)
+    const zR = FR.zones[1]
+    const r = zR ? s.routeDir(g, zR.x + zR.w / 2, zR.y + zR.h / 2) : null
+    ok(!!r && r.ok && Math.hypot(r.tx - (zR.x + zR.w / 2), r.ty - (zR.y + zR.h / 2)) <= 8,
+        'the right-of-fridge zone has a road to it (RED: tap refused)')
 }
 
 if (!NODE_ONLY) {
