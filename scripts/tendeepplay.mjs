@@ -94,6 +94,27 @@ const glmean = (x, y, w, h) => page.evaluate(([sx, sy, sw, sh]) => {
     for (let i = 0; i < buf.length; i += 4) s += buf[i] + buf[i + 1] + buf[i + 2]
     return +(s / (buf.length / 4)).toFixed(1)
 }, [x, y, w, h])
+// Sample a box on the GL canvas and COUNT pixels whose every channel
+// clears a brightness threshold — bone-white monsters against a dark hall
+// is a far sharper signal than a mean (torch-lit brick and brown rats both
+// sit mid-grey; nothing else in a lit corridor reads triple->100).
+const glcount = (x, y, w, h, thr) => page.evaluate(([sx, sy, sw, sh, t]) => {
+    const cv = document.querySelector('canvas[data-deep-gl]')
+    if (!cv || !cv.width) return -1
+    const gl = cv.getContext('webgl2')
+    if (!gl || gl.isContextLost()) return -1
+    const W = cv.width, H = cv.height
+    const bx = Math.round((sx / 256) * W)
+    const by = H - Math.round((sy / 224) * H) - Math.max(1, Math.round((sh / 224) * H))
+    const bw = Math.max(1, Math.round((sw / 256) * W))
+    const bh = Math.max(1, Math.round((sh / 224) * H))
+    const buf = new Uint8Array(bw * bh * 4)
+    gl.readPixels(bx, Math.max(0, by), bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, buf)
+    let n = 0
+    for (let i = 0; i < buf.length; i += 4) if (buf[i] > t && buf[i + 1] > t && buf[i + 2] > t) n++
+    return n
+}, [x, y, w, h, thr])
+
 // the eye glides between cells; sampling mid-glide reads a corridor whose
 // axis is still swinging (a real lesson from this harness's first run) —
 // always wait for the eye to settle on the sim's pose before pixels.
@@ -887,10 +908,11 @@ else {
     // the den; the dev hook nulls the fight, the ambush is still consumed).
     // Centre lit with the pack, dark without it, at the identical pose — the
     // billboard is on screen, and sight matches the tile that takes the step.
-    const d = genFloor(0)
+    const d = genFloor(1)   // deep 2 — the Bone Sentry packs read bone-white where deep 1's rats blend
     const open = (x, y) => !d.wall(x, y)
     const cands = []
     for (const a of d.ambushes) {
+        if (!a.group.includes('SKELET')) continue
         if (d.dist[a.y * 19 + a.x] < 8) continue   // far enough that the walk there is its own corridor
         for (let f = 0; f < 4; f++) {
             const fx = DX[f], fy = DY[f]
@@ -903,31 +925,32 @@ else {
             break
         }
     }
-    const med3 = async (box) => {
+    const BOX = [96, 84, 64, 48]
+    const med3 = async () => {
         const s = []
-        for (let i = 0; i < 3; i++) { s.push(await glmean(...box)); await wait(130) }
+        for (let i = 0; i < 3; i++) { s.push(await glcount(...BOX, 100)); await wait(130) }
         return s.sort((p, q) => p - q)[1]
     }
     let A = null, B = null, m0 = -1, m1 = -1, used = null
     for (const c of cands) {
-        if (!(await setup({ floor: 0, at: [c.P.x, c.P.y], facing: c.dir }))) continue
+        if (!(await setup({ floor: 1, at: [c.P.x, c.P.y], facing: c.dir }))) continue
         await wait(120)
         const p = await probe()
         if (p.mode !== 'map' || !p.gl) continue
         await settleGl()
-        const before = await med3([96, 88, 64, 36])
+        const before = await med3()
         const mobsBefore = p.mobs
         if (!(await setup({ at: [c.a.x, c.a.y] }))) continue      // walk over the pack — spent
         if (!(await setup({ at: [c.P.x, c.P.y], facing: c.dir }))) continue
         await wait(120)
         await settleGl()
-        const after = await med3([96, 88, 64, 36])
+        const after = await med3()
         const mobsAfter = (await probe()).mobs
         if (A === null || before - after > A - B) { A = before; B = after; m0 = mobsBefore; m1 = mobsAfter; used = c }
-        if (A - B > 22) break
+        if (A > 40 && A - B > A * 0.5) break
     }
-    r.check('a pack stands in the corridor: the centre lights where the identical pose is dark once spent', A !== null && A - B > 18,
-        `lit=${A} spent=${B} den=${used ? `(${used.a.x},${used.a.y}) facing ${['E', 'S', 'W', 'N'][used.dir]}` : 'none found'}`)
+    r.check('a pack stands in the corridor: bone-white bodies light the centre where the identical pose goes dark once spent', A !== null && A > 40 && A - B > A * 0.5,
+        `bright ${A} -> ${B} px den=${used ? `(${used.a.x},${used.a.y}) facing ${['E', 'S', 'W', 'N'][used.dir]}` : 'none found'}`)
     r.check('the pack leaves the view when it is spent', m0 > 0 && m0 > m1, `mobs ${m0} -> ${m1}`)
     const pp = await probe()
     r.check('the billboards ride the presentation clock (mobs count survives turns)', pp.mobs >= 0, `mode=${pp.mode} mobs=${pp.mobs}`)
