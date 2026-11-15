@@ -68,15 +68,19 @@ export function classifyFailure(reason) {
 //    who revoked consent must not leave a pile of their recordings queued on
 //    the device — that is the acceptance line ("without consent, nothing
 //    uploads") seen from the storage side.
+//  - #1711 audit 1: `motion` may also be a PREDICATE (entry) -> bool, because
+//    consent is keyed per player now — one device may hold takes from two
+//    humans, and revoking `mia` must purge her entries while `jon`'s ship.
 //  - stale entries drop by age.
 //  - survivors send oldest-first: the take that has waited longest leaves
 //    first, so ordering in the store matches the order they were played.
 export function planDrain(entries, { motion = false, now = Date.now(), maxAgeMs = OUTBOX_MAX_AGE_MS } = {}) {
     const sorted = [...(entries || [])].sort((a, b) => (a.savedAt || 0) - (b.savedAt || 0))
+    const motionOf = typeof motion === 'function' ? motion : () => !!motion
     const drop = []
     const send = []
     for (const e of sorted) {
-        if (!motion) { drop.push({ id: e.id, reason: 'motion consent revoked — outbox purged' }); continue }
+        if (!motionOf(e)) { drop.push({ id: e.id, reason: 'motion consent revoked — outbox purged' }); continue }
         if (!e.savedAt || now - e.savedAt > maxAgeMs) { drop.push({ id: e.id, reason: 'too old to ship' }); continue }
         send.push(e)
     }

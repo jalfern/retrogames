@@ -167,6 +167,10 @@ export function autoStart(opts = {}) {
         // #1711 S3: rule knobs the seed doesn't fix (Rally weather...); the
         // spec may hold an object or a live getter — resolved at recorder birth.
         rules: spec.rules || null,
+        // #1711 audit 1: the consenting human's normalized id, stamped into
+        // the take at seed-birth (autoRecord resolves identity before asking
+        // the gate to record anything).
+        player: opts.player || null,
     })
     voiceExtra = typeof spec.voiceExtra === 'function' ? spec.voiceExtra : null
     voice = null
