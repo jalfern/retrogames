@@ -1,81 +1,82 @@
-# STATE — session 297 (2026-11-15, slot b)
+# STATE — session 297 (2026-11-15, slot a)
 
 ## Playable now / what shipped
-- **COMET DRIFT GP canyon polish (#2395 → PR #2412, merge `77e0115`).** All six
-  items of the #2388 follow-up, live at jalfern.com/retrogames/comet-drift
-  (marker `e8ac68` verified in `art-DVVrYLQ3.js`, Vercel success). Renderer-only
-  except item 6: (1) near segments break stride 1 (`WALL_STRIDE_NEAR` 520u) —
-  faceted crest silhouette gone; (2) pure `wallSun(i,side)` sun-dot law vs
-  `SUN_AZ` — warm `pal.sun` wash down-sun, cool `pal.skyTop` up-sun, capped by
-  `SUN_TINT`; (3) new named `crest` role in all 4 palettes (ember/white-hot/
-  sandy-dune/bleached) driving the rim cap; (4) coal edge (`rgbaS(P.outline,.5)`)
-  one step under the crest cap — parallax mesas can't read through wall haze;
-  (5) `wallCrack(i,side)` per-index hash pick (~1 in 3) replaces the per-frame
-  stride carry that cracked EVERY face (near-face strobe); (6) `GRIT` (sim):
-  pinned grind > v 3.6 sheds 2 crack-depth cells at the foot every 4 ticks —
-  the pile GROWS between bounces, #1702 flow heals it, pose+tick hash keeps
-  banked replays byte-identical, physics-neutral (markCell never touches v).
-- Gates: cometcheck **489→502** normal GREEN (pile-growth rig + determinism +
-  silent crawl, sun-dot symmetry + lit/shaded lap spread, crack-cadence band,
-  crest roles per course, source pins ×6) + 4 new `--mutate` mutants — all die,
-  delta vs main baseline exactly +4 expected kill-fails. eslint + mario/fps/ai +
-  build green. Polished visual deltas verified with before/after shots at 800×450.
-- Parallel lane shipped same evening (not this session): golden traces #2402
-  (#2408/#2410, slot a — their report parked 21:58Z), BombDefuse #2363 (#2401),
-  Archery play fix #2381 (#2403), Talk-Me-Down README audit #2356 (#2413),
-  PLAICRAFT #1711 audit-1 (#2406).
+- **BOULDER DASH: slime & bolts — PR #2416 MERGED as `5fc1b73`** (#2411,
+  never-dry stage). Prod verified: chunk `index-4MIb1ryI.js` carries it at
+  https://jalfern.com/retrogames/boulder-dash.
+  - **Amoeba** (Boulder Dash II, 1985): `AMO_HEAD/AMO_BODY` cells + generation
+    clock; every `CFG.amoEvery` ticks heads extend along `amoebaDir`, branch
+    perpendicular when shut in, DISSOLVE diamonds they touch, engulf the player;
+    bodies expire after `CFG.amoGens` generations so the wave advances, never fills.
+  - **Push walls**: shove sideways one cell/arrow (BD law — nothing lifts),
+    crush a rock in the path (crushed gems are LOST), obey gravity and crush
+    under fall. They are the vault: SLIME VAULT's doors sit over pits.
+  - **SLIME VAULT (cave 5)**: full-height steel divide, two bolt-and-pit doors,
+    boulder choke opened by a crush, dirt-sealed slime pocket eating a bait vein.
+    Containment is provable: growth claims only EMPTY/DIAMOND — uncarved DIRT
+    is absolute — pinned across the planner win-run.
+  - Proof: dashcheck **92/92**, `--mutate` **102/102** (10 mutants incl.
+    `amoeba`/`push`/`pushCrush` each reddening a real check); dashplay **31/31**
+    real-key drive (vault cracked, wave grown+expired, bolt shoved, boulder
+    crushed, restart, zero page errors); mobile lite stick **8/8**;
+    watchcheck boulder-dash 320/320; goldentracecheck 56/56 unaffected; lint
+    dash/mario/fps/ai + build green. Existing caves' planner routes
+    byte-identical (determinism pins) despite the BFS push-door learning.
+- QA follow-up filed: **#2417** (slime/bolt readability cues, vault audio,
+  sim untouched) — feedback lane.
 
 ## Ladder (this session's path)
-- Warden target **#2402 REFUSED** at claim — slot a held it with a 50-min-old
-  live FORGE(a) claim (it shipped mid-evening). Clean ladder: no steer; no
-  `next` (after #2402/#1711 churn); game-queue empty; feedback borrow OPEN
-  (no live QA MASTER) → **#2395** was the only *actionable* feedback item
-  (#2354/#2355 self-declare their gaps owned; #2356 closed by #2413). Ran
-  FORGE-QA steps 2–5 as the builder borrow: qa-claim `building-qa`, qa/
-  comet-canyon-polish-2395 worktree, reproduced by shots, fixed, gated, shipped
-  with Closes.
-
-## BOARD at exit
-- building: #1711 (audit chain — stage 1 shipped #2406; re-derive its branch
-  liveness fresh at next claim). building-qa: #2387, #2385 (re-derive; they sat
-  live at 21:10Z).
-- game-queue: empty. `next`: empty.
-- feedback open: #2355, #2354 (audit notes, owned — nothing shippable by their
-  own text), plus building-qa pairs above.
-- jonq open: #2305 (lane:platform, AWAITING until 11-17) — not ours to wait on.
-
-## Next (slot a or b, in order)
-1. Ladder as usual. Never-dry → `weakestStage`/`idle.mjs` FRESH; verify the
-   picked gap is gameplay before building (#2391 lesson stands; Emberwood &
-   Joust are trace-gated now but still gap-list candidates).
-2. If jonq #2305 answers → execute the #2093 relabel chain.
-3. CometDrift polish pass #2 filed? No — #2395 WAS this game's polish pass; the
-   next Comet asks are its README honest-gaps only (edit-track economy etc).
+- Warden target **#2402**: claim said "already yours (resume)" — but a LIVE
+  worker was inside it (session 296-a; see catches). Yielded the issue instead
+  of racing it; it closed cleanly (#2408/#2410/#2414/#2415, closed).
+- Ladder: no steer/next/game-queue; feedback all owned/building-qa; 3 live
+  QA MASTER sessions → no borrow; flagship stage spent → `weakestStage` fresh:
+  **BOULDER DASH** (score 2, gap #0 "no amoeboid/push walls") → filed #2411
+  with the why-weakest line, claimed, shipped. Rule 4 honest: game code merged.
 
 ## The session's catches
-- **cometcheck `--mutate` is RED on MAIN (99 fails, +1 pre-existing SURVIVED
-  #478):** expected-failure assertions during plants accumulate into R.fail with
-  no restore — that's house pattern, not a regression. Judge a branch by the
-  DIFF vs a base `--mutate` run in a scratch worktree (`worktree add /tmp/…`,
-  symlink node_modules), never by its raw tally. My delta: exactly 4 kills.
-- **A mutant must isolate ITS law.** First grit mutant (`cracks >= 6` after a
-  grind) SURVIVED: chip dashes are also depth 3.5 and 89 bumps wrote plenty.
-  Fix: grit = crack-depth deposits on PINNED ticks (wpress≥2) — chips can only
-  fire at wpress===1, SAND has no other 3.5 writer (ring 1, crater 3, chip 4.5).
-- **GRIT.v sits just above SAND.chipV (3.6 > 3.5)** so the #1718 slow-bump law
-  gate stays pristine by the same rock-speed physics (plain-sand hover caps
-  ~3.40); measured before shipping, not assumed.
-- **Lazy chunks hide prod markers:** CometDrift art lives in `art-*.js`, not the
-  entry bundle — BFS entry→dynamic-import refs, or wait `gh pr checks` Vercel
-  SUCCESS first. zsh `\S` grep mangles chunk bodies; Node fetch + JS regex.
-- mutateguard earns its keep twice: refused --mutate on a dirty tree mid-session
-  (commit-first, rerun clean).
+- **An idle-kick can resurrect a live lane.** Warden judged slot a idle at
+  21:33Z and kicked this session — but 296-a was mid-merge on #2402 (its HEAD
+  moved between my commands; #2408 merged at 21:39Z). forge-claim cannot
+  arbitrate two processes sharing slot letter "a". Behaviour that kept the
+  peace: when the target issue shows a *live* worker's fingerprints (moving
+  HEAD, new merge commits mid-read), yield it and take the ladder. The warden's
+  idle-detector deserves a look (process liveness vs board silence) — no jonq
+  (not taste/priority), recorded here + shift notes.
+- **Bait gems obey the construction laws too**: unsupported gems over the
+  pocket fell and greed-turned to dirt ~tick 2 — long before the wave, silently
+  killing the `dissolve` prove. Node gate caught it in seconds; fix = gems ON
+  the pocket floor, nothing above (rule 1, learned the sharp way again).
+- **Real keys outrun world ticks**: every keydown steps the digger instantly
+  (tap = instant move) while the CA ticks at 12 Hz — a win froze the sim with
+  the wave mid-life. Full-lifecycle asserts need a no-input observation window
+  (reset + watch), not the win-run itself.
+- **BSD `cp` has no multi-destination form** — step 1's two-path park template
+  fails wholesale on macOS; park with two `cp` calls (slot-scoped first, #1430).
+- **Mobile lite has no canvas taps** where VirtualControls' left-half stick
+  zone covers (full-height overlay): drive the stick (drag from centre) for
+  mobile tests; 8/8.
+
+## BOARD at exit (re-derive fresh)
+- building: #1711 (platform lane, Jon-side stages open). building-qa: #2385,
+  #2387 at exit — re-derive.
+- game-queue: empty again. feedback: + #2417 (mine, QA lane's to take).
+- Nightly last run SUCCESS; main green at `5fc1b73`.
+- jonq #2305 (lane:platform) AWAITING to 11-17 — not ours.
+
+## Next (slot a or b, in order)
+1. Ladder as usual; never-dry → `weakestStage`/`idle.mjs` FRESH, confirm the
+   gap is gameplay before building (#2391 lesson stands).
+2. Golden traces for a third port game only when Jon names one (#2402 follow-up
+   pattern: one adapter + scenarios in goldentrace.mjs).
+3. If jonq #2305 answers → the #2093 relabel chain (platform lane).
 
 ## Hygiene at exit
-- Dev server 5178 stopped (own pid only); foreign ports untouched.
-- qa-2395 + scratch mm-base worktrees removed; branch gone via squash; main
-  checkout detached at origin/main. #2395 commented+shipped+closed.
-- STATE.md committed to main (game merged this session, rule 9) + parked slot b.
+- Main checkout detached at `origin/main`; worktree `forge-boulder-amoeba`
+  removed; branch deleted; dev server 5173 stopped (mine; foreign ports
+  untouched). STATE committed to main — a *game* merged this session (rule 9).
+- Parked slot-scoped via `node scripts/statepark.mjs park a`.
 
 ## Open questions
-- None new. jonq #2305 (lane:platform) AWAITING until 11-17 — not ours.
+- None new. jonq #2305 (lane:platform, `SESSION_WRITE_KEY`) AWAITING to 11-17;
+  folded from 296-a's park — nothing evaporated between lanes.
