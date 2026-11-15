@@ -1,81 +1,75 @@
-# STATE — session 285 (2026-11-15, slot a)
+# STATE — session 286 (2026-11-15, slot a)
 
 ## Playable now / what shipped
-- **GARDEN GUARD tray portraits (#2328 → PR #2331, merge `98ea042`; prod
-  pending #2335).** The never-dry pick (weakestStage score 3: three README gaps,
-  no QA feedback naming it, oldest unheld at that score). Honest skip note: gap
-  0 = documented slack-rule exemption (check-only wouldn't count), gap 1 =
-  documented mobile economy choice; gap 2 ("card art reuses the small defender
-  icons") was the oldest fixable one. Cards are now PORTRAIT PLATES: critters
-  posed at card scale on orchard soil under their own dusk hue (treeline, low
-  sun, drifting cloud), beveled riveted frames, gilded on selection, breathing
-  on the sim clock (deterministic — attract replays byte-identical); trowel card
-  framed to match. `drawPlantIcon` stays for field/cursor — sim untouched, all
-  #1832 chrome contracts ride unchanged.
-  - Gates: gardencheck **55/55** (+8 portrait clauses: layered fills ≥8/card,
-    soil mound on the floor line, ≥3 rivets, double frame, 6 distinct drawing
-    signatures, gild follows `sel`, all cards move between sec 0.9↔2.4, same
-    state → same recording). Failure-proved: rewiring to the old icon stamp
-    turns 6 of 8 red. Pop-tweaks after eyeballing screenshots (heavy treeline →
-    soft silhouette, chili pods outlined, trowel clipped in its plate).
-  - Driven for real (headless Chrome, real events): attract → Space → plant by
-    tap → L6 tray → **gold frame read back from canvas pixels** → win → attract
-    → restart, zero page errors. contractcheck 15/15; lints + build green.
-- Rule 4: game code shipped. QA polish pass filed: **#2336** (sound is the big
-  one — GardenGuard has no AudioController at all).
+- **TIDY BOT aimed retrieve (#2338 → PR #2340, merge `b06f7b9`; prod
+  pending #2335).** The never-dry pick (`weakestStage` score 3: three README
+  gaps, no QA feedback naming it, oldest unheld at that score). Gap 0
+  ("retrieval takes the last-wrong item") CLOSED:
+  - **Rack slots are engine state** — `it.slot` lowest-free on stow, cleared
+    while carried, freed slot reused, deterministic heal for slotless
+    `in`-states; the cavity paints items at THEIR slot (neighbours never shift;
+    all nine DW dwellers visible — the old 2-row paint could clip L3's ninth).
+    Slot rides `stateHash`.
+  - **`aimAt(gs,tx,ty)`** (pure, like `routeDir`): tap an item in an OPEN
+    cavity → pulsing teal brackets + `AIMED` + double ping, glide to the rack
+    front, B pulls THAT item (outranks wrong-first). Tap never fires a verb —
+    the #2250 two-step law stands.
+  - **Keyboard parity:** B + held direction pulls the stow furthest that way
+    (ties lowest slot). No aim given → wrong-first byte-for-byte — the
+    autopilot never aims, every win-proof rides unchanged.
+  - **Cancel law mirrors glide:** movement keys, new taps, landed verbs, WATCH,
+    level change, reset clear the mark; B commits it. Aim rides `pad.aim` —
+    seed + pads replays hash-identical.
+  - Gates: tidycheck **103/103** (+18 Node clauses, +5 browser: real tap
+    marks, 83 bracket px read from canvas, real KeyB pulls the marked plate,
+    re-tap re-marks, real arrow cancels). `aim` mutant turns the three aiming
+    clauses NAMED-red (proved). contractcheck 15/15; scoped lints + build green.
+- Rule 4: game code shipped. QA polish pass filed: **#2343** (attract never
+  shows the signature pull — the prover never aims; reach-animation, flash,
+  glyph scale).
 
-## THE HEADLINE: PROD STALL (#2335) — read this before your step 8
-Production alias `retrogames-psi.vercel.app` (what jalfern.com proxies) has
-served main chunk `index-DwVfievf.js` since ~08:50Z despite GitHub deployments
-reporting SUCCESS for `98ea042` (08:54), `3693ebe` (08:58) and `e5d057e`
-(09:14). Proven origin-stale, not proxy cache (cache-bust + no-cache headers
-return the old HTML; psi fetched directly; HTML `last-modified` claims 09:14).
-Three lanes' features are merged but invisible. No vercel CLI/token on the
-studio and *.vercel.app deployment URLs are SSO-gated → needs dashboard eyes.
-**Until #2335 clears, step-8 prod verification will fail for every merge — don't
-spend an hour re-deriving this; link #2335 and move on.**
+## PROD (#2335)
+- Still stalled at exit — but it MOVED this shift: alias flipped
+  `index-CaYNshLC.js` → `index-Bus6Zyw-.js` mid-session, yet all 51 chunks
+  the entry references lack the `AIMED` marker → still serving pre-`b06f7b9`.
+  Recovery in progress or partial flip; dashboard eyes still needed (#2335).
 
 ## Ladder (this session's path)
-- Warden target **#2324** (PoP GRAB): claim REFUSED — slot b held it live (24
-  min); they shipped it as #2329. Normal ladder: no halt/steer; `next` #1711
-  Jon-side only; queue EMPTY; feedback #2321 `building-qa`; QA MASTER live →
-  no borrow; flagship stage spent → never-dry rung → GARDEN GUARD. Claimed
-  self-filed #2328 IMMEDIATELY after create (the #2318-vs-#2315 twin-stage fix;
-  worked — no collision this time).
+- Warden target **#2334** (VIPER PIT props): claim REFUSED (slot b live, 32
+  min) → normal ladder: no halt/steer; `next` #1711 Jon-side only (twice
+  audited); game-queue EMPTY; feedback all `building-qa`; QA MASTER live →
+  no borrow; flagship stage spent → **never-dry**: `idle-kick` → TIDY BOT 0
+  weak. Filed #2338 with the why-weakest line and claimed IMMEDIATELY (no
+  twin-stage collision).
 
 ## BOARD at exit
-- game-queue: empty. building: #2334 (POLISH VIPER PIT — another lane's claim at
-  exit; not ours). building-qa: #2321 (TEN-DEEP; pt1-3 merged, #2333 MODERN pass
-  — QA still inside), #2330 (PoP polish, QA grabbed slot b's pass). feedback:
-  #2336 (mine, claimable).
-- Bugs open: **#2335 PROD STALL** (lane:platform, needs dashboard) — highest
-  priority for whoever has Vercel access.
+- building: **#2334** (VIPER PIT — slot b; engine core `2c25e29` pushed 09:46Z,
+  presentation/gates unfinished; if its next heartbeat lapses, step 1b resume).
+- building-qa: #2330 (PoP polish), #2336 (GardenGuard sound).
+- feedback claimable: #2343 (mine — QA lane's natural next job).
 - jonq open: #2305 (AWAITING, lane:platform; default hold). No halt, no steer.
-- Slot-b harness debt from session 283 was fixed on main (#2327).
+- game-queue: empty.
 
 ## Next (slot a or b, in order)
-1. If #2335 is still open and you have ANY way to reach Vercel — fix the alias
-   flip first; verification for #2331/#2333 rides on it. Otherwise skip step-8
-   deep-dives and link #2335.
-2. Ladder as usual: #2336 is claimable feedback — but QA MASTER is a builder
-   borrow only when QA is dead; expect never-dry again. Run `weakestStage` —
-   TEN-DEEP/PrinceOfPersia gaps now partially closed; BRITANNIA/other score-3s
-   remain (it re-scores honestly).
-3. jonq #2305 answered → execute the #2093 relabel one-off (platform lane).
+1. #2335: the alias moved but didn't catch `b06f7b9`. Whoever has Vercel
+   dashboard access — push the alias/pullprod; then string-marker-verify
+   #2340/#2331/#2333 features across the FULL lazy-chunk set (HTML references
+   the entry only; the entry imports ~51 game chunks).
+2. Ladder as usual. #2343 is claimable feedback but QA MASTER is live →
+   expect never-dry; re-run `idle-kick` honestly (TIDY BOT now carries 2 gaps).
+3. If #2334's branch shows no FORGE checkpoint >90 min, resume it per 1b.
 
 ## The session's catches
-- **Prod verification needs a content marker in the right chunk.** Vite names
-  every lazy game chunk `index-*.js` (the module file is index.jsx) — polling
-  `index-<main>.js` for game strings scans the wrong file; HTML-hash-flip alone
-  can also pass while content is stale. Marker-scan ALL referenced chunks;
-  cross-environment chunk-hash equality does NOT hold (local e5d057e build ≠
-  Vercel hash), so string markers are the only portable proof.
-- **A fresh, clean, correct build ≠ a fresh deploy.** All local gates green says
-  nothing about the alias flip; #2335 cost this session 40 min it would not have
-  spent knowing the deploy pipeline itself was the suspect.
-- **Eyeball your art before shipping** — screenshot zoom found three defects
-  (heavy treeline blobs, low-contrast chili on red sky, trowel overflowing its
-  plate) that no bbox-based gate can see.
+- **The commit button must not cancel itself.** B-keydown hit the shared
+  "human speaks → glide yields" path and cleared the aim ref BEFORE the pad
+  could carry it. Movement keys cancel; verbs end the mark where they LAND
+  (doSim edge). Browser gates earned their keep — unit thinking missed it.
+- **Dump state before trusting a red.** Two probe "failures" this session were
+  the probe author's arithmetic (slot-reuse expectation, re-tapping a vacated
+  slot), not the engine. One state dump beat three more probes.
+- **Prod marker-scan must follow the entry chunk's imports**, not HTML refs:
+  every game is a lazy chunk named `index-*.js`; an entry-hash flip can still
+  predate the merge.
 
 ## Hygiene at exit
 - Dev server :5173 (slot a's own) stopped; nothing else touched.
