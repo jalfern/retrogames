@@ -64,6 +64,25 @@ export const CFG = {
     crashTicks: 112,
     crashMash: 3,                          // ticks shaved per A press
     crashMin: 46,
+    // rival bodies (#2384). They ride the pace line as a speed TARGET but fly
+    // the same always-ballistic law as the player: crests and whoop waves
+    // separate them when the ground falls faster than gravity. In the air a
+    // rider stabilises toward a STALE terrain read — reaction lag grows as
+    // skill falls — so the tail of the pack misjudges the rising ground after
+    // a big ramp and lands on the nose. The landing window is the player's
+    // own landFwd/landBack scaled by skill. A wipeout freezes the rival's
+    // distance (the league churns live) and the cooldown is the section it
+    // just learned, so one scare is drama, not a demolition derby.
+    rivalEaseV: 0.10,                      // pace attractor while riding
+    rivalDown: 110,                        // ticks walked back after a wipeout
+    rivalRecover: 1.8,                     // v at the remount
+    rivalLag: 14,                          // ticks of stale-eye × (lagBase − skill)
+    rivalLagBase: 1.05,
+    rivalCool: 200,                        // post-remount immunity ("learned it")
+    rivalAirEase: 0.16,                    // air stabilisation rate (player's)
+    rivalRollEase: 0.25,                   // ground pitch tracking (player's)
+    rivalLookK: 5,                         // lookahead depth per skill (px per v)
+    rivalTolMul: 1,                        // harness mutant knob on the window
     clock: 70,                             // start clock, seconds
     lapBonus: 34,                          // seconds at the line
     laps: 2,
@@ -105,7 +124,10 @@ export function makeGame(trackIdx = 0, opts = {}) {
         boostAt: -999,
         inBand: null,
         rank: RIVALS.length + 1,
-        rivals: RIVALS.map((r) => ({ ...r, d: 0 })),
+        rivals: RIVALS.map((r) => ({
+            ...r, d: 0, v: r.base, alt: groundY(tr.ground, 0),
+            vy: 0, air: false, pitch: 0, down: 0, cool: 0, crashes: 0,
+        })),
         score: 0,
         end: null,
         count: opts.count !== undefined ? opts.count : CFG.count,
@@ -119,10 +141,62 @@ export function makeGame(trackIdx = 0, opts = {}) {
     }
 }
 
-// total distance a rival covers in one tick (they run the same terrain ease)
+// The CRASH LEAGUE (#2384): rivals are riding bodies, not ghosts. The pace
+// line stays their speed TARGET, but each rival integrates the same always-
+// ballistic law the player does — crests and whoop waves throw them up when
+// the ground falls away faster than gravity — and its landing is judged by
+// the player's own nose-vs-slope rule inside a skill-scaled window. In the
+// air a rider steers toward a STALE terrain read (reaction lag grows as
+// skill falls), so the tail of the pack misjudges the rising ground after
+// the big ramps and lands on the nose. A wiped-out rival freezes its
+// distance while it walks the bike back: the leaderboard churns live and a
+// stuck chase can ride past the wreck. Zero Math.random — receipts pin it.
 function rivalTick(g) {
     const tr = track(g.track)
-    for (const r of g.rivals) r.d += rivalSpeed(tr, r.d, r.base)
+    for (const r of g.rivals) {
+        if (r.cool > 0) r.cool--
+        if (r.down > 0) {
+            r.down--
+            if (r.down === 0) {
+                r.v = CFG.rivalRecover
+                r.cool = CFG.rivalCool
+                emit(g, { type: 'rup', name: r.name, x: ((r.d % LAP) + LAP) % LAP })
+            }
+            continue                        // walking the bike back: d frozen
+        }
+        const pace = rivalSpeed(tr, r.d, r.base)
+        r.v += (pace - r.v) * CFG.rivalEaseV
+        const x = ((r.d % LAP) + LAP) % LAP
+        if (r.air) {
+            const lag = Math.max(0, Math.round(CFG.rivalLag * (CFG.rivalLagBase - r.skill)))
+            const look = 8 + r.skill * Math.max(8, r.v * CFG.rivalLookK)
+            const want = Math.atan(slopeAt(tr.ground, x + look - lag * r.v))
+            r.pitch += (want - r.pitch) * CFG.rivalAirEase
+        } else {
+            r.pitch += (Math.atan(slopeAt(tr.ground, x)) - r.pitch) * CFG.rivalRollEase
+        }
+        r.vy -= CFG.g
+        const ny = r.alt + r.vy
+        const gy = groundY(tr.ground, r.d)
+        if (ny >= gy) {
+            r.air = true
+            r.alt = ny
+        } else if (r.air) {
+            const err = r.pitch - Math.atan(slopeAt(tr.ground, r.d))
+            const w = CFG.rivalTolMul * (0.72 + 0.4 * r.skill)
+            if (r.cool <= 0 && (err < -CFG.landFwd * w || err > CFG.landBack * w)) {
+                r.down = CFG.rivalDown
+                r.crashes++
+                r.air = false; r.vy = 0; r.v = 0; r.alt = gy
+                emit(g, { type: 'rcrash', name: r.name, why: err < 0 ? 'forward' : 'backward', x })
+            } else {
+                r.alt = gy; r.air = false; r.vy = 0
+            }
+        } else {
+            r.alt = gy; r.vy = 0
+        }
+        r.d += r.v
+    }
 }
 
 export function rankOf(g) {

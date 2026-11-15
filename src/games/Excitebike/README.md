@@ -27,8 +27,10 @@ faster heat.
 
 - `levels.js` — the course **as data**: heightmap control points, feature
   bands (mud/water/whoops/boost/up-step), and the five rivals' pace lines
-  (piecewise speed-vs-distance). `groundY/slopeAt/featureAt` are the only
-  readers. Node-safe.
+  (piecewise speed-vs-distance) plus rider skill tiers. The skill tiers make
+  the CRASH LEAGUE: lagged stabilisation + the player's landing law in a
+  skill-scaled window (sim.js `rivalTick`), receipts pinned by
+  `excitecheck`. `groundY/slopeAt/featureAt` are the only readers. Node-safe.
 - `sim.js` — pure `step(state, input)`, zero `Math.random`. Heightmap
   ground, ballistic air with pitch/lean, heat, mud pump, water stall,
   boost, crash/recover, laps, clock, rivals, ledger. Node-safe.
@@ -49,9 +51,11 @@ faster heat.
 
 ## Honest gaps
 
-- Rivals ride researched pace lines (scripted speed vs distance), not the
-  full physics — they bob over jumps visually but never crash. The league
-  in first place is still a number the harness proves you can beat.
+- Rivals are riding bodies since #2384 — they fly real parabolas, wipe out at
+  the big-jump lip and remount, with skill tiers pinned by `excitecheck`
+  CRASH LEAGUE receipts. But their throttle is still a pace line: they choose
+  no lines, brake into nothing, and there is no bike-vs-bike contact — you can
+  ride straight through a wreck. A full physics league stays open.
 - The NES splash screen (EDIT TRACK / 6 tracks) is not here: two carved
   tracks, 2 laps each, which is where the fidelity muscle (controls,
   feel, terrain) actually lives.

@@ -129,6 +129,98 @@ for (let i = 0; i < 2; i++) {
     ok(all.ok, `track ${i + 1}: stripped of slack on EVERY supply it cannot win (end=${all.end} rank=${all.rank})`)
 }
 
+// --------------------------------------------------------- crash league ----
+section('CRASH LEAGUE (rivals are riding bodies — receipts exact, #2384)')
+const LEAGUE = []
+{
+    // The five rivals fly the same always-ballistic law the player does, land
+    // inside a skill-scaled version of the player's own window, and pay for a
+    // wipeout with frozen distance. Receipts are deterministic: exact ticks,
+    // exact riders, exact lips. The front office (MARIO/KATO/GORDON) is clean
+    // on both tracks; SONJA repeats the MOTOCROSS jump lip every lap; IVAN
+    // eats the SUPERCROSS whoop field twice. If the terrain, pace lines or
+    // skill tiers move, these receipts move — and this section says so loudly.
+    const RECEIPTS = {
+        0: [
+            { t: 480, name: 'SONJA', x: 1367 },
+            { t: 1908, name: 'IVAN', x: 1365 },
+            { t: 1951, name: 'SONJA', x: 1367 },
+        ],
+        1: [
+            { t: 502, name: 'IVAN', x: 1404 },
+            { t: 2048, name: 'IVAN', x: 1404 },
+        ],
+    }
+    const replay = (i) => {
+        const { r } = runs[i]
+        const g = makeGame(i, {})
+        const crashes = []          // { t, name, x, dDown, churnBefore/After, gained150 }
+        const ups = []
+        let maxRel = 0
+        for (let k = 0; k < r.script.length; k++) {
+            step(g, r.script[k])
+            for (const e of g.events) {
+                if (e.type === 'rcrash') {
+                    const q = g.rivals.find((x) => x.name === e.name)
+                    crashes.push({ t: g.tick, name: e.name, why: e.why, x: Math.round(e.x), d: q.d, leadGap: Math.max(...g.rivals.map((x) => x.d)) - q.d, k })
+                } else if (e.type === 'rup') ups.push({ t: g.tick, name: e.name })
+            }
+            g.events.length = 0
+            for (const q of g.rivals) maxRel = Math.max(maxRel, q.air ? q.alt - groundY(track(i).ground, q.d) : 0)
+        }
+        return { g, crashes, ups, maxRel }
+    }
+    const rivalRank = (g, name) => 1 + g.rivals.filter((q) => q.name !== name && q.d > g.rivals.find((x) => x.name === name).d + 0.01).length
+
+    for (let i = 0; i < 2; i++) {
+        const { crashes, ups, maxRel } = replay(i)
+        LEAGUE.push({ i, crashes, ups, maxRel, script: runs[i].r.script })
+        ok(crashes.length === RECEIPTS[i].length, `track ${i + 1}: ${crashes.length} rival wipeouts, want ${RECEIPTS[i].length} (${JSON.stringify(crashes.map((c) => c.name))})`)
+        RECEIPTS[i].forEach((w, k) => {
+            const c = crashes[k]
+            ok(c && c.name === w.name && c.t === w.t && Math.abs(c.x - w.x) <= 2,
+                `track ${i + 1}: wipeout ${k + 1} was ${c ? `${c.name}@t${c.t} x${c.x}` : 'missing'}, want ${w.name}@t${w.t} x${w.x}`)
+        })
+        ok(maxRel >= 15, `track ${i + 1}: highest any rival left the ground was ${maxRel.toFixed(1)}px — they are bobbing, not flying`)
+        // every wreck ends on two wheels before the flag
+        for (const c of crashes) ok(ups.some((u) => u.name === c.name && u.t > c.t), `track ${i + 1}: ${c.name} went down at t${c.t} and never came up`)
+        // a crash costs GROUND: distance freezes while down (110 ticks) plus a
+        // slow remount — 150 ticks later the wreck gained < 250px, and the gap
+        // to the race leader among rivals widened by >= 150px.
+        ok(crashes.every((c) => {
+            const st = makeGame(i, {})
+            for (let k = 0; k <= c.k + 150 && k < runs[i].r.script.length; k++) { step(st, runs[i].r.script[k]); st.events.length = 0 }
+            const q = st.rivals.find((x) => x.name === c.name)
+            return q.d - c.d < 250 && (Math.max(...st.rivals.map((x) => x.d)) - q.d) - c.leadGap >= 150
+        }), `track ${i + 1}: a wiped-out rival kept pace with the field — down costs nothing`)
+    }
+    // skill tiers: the front office lands what it takes off
+    LEAGUE.forEach(({ i, crashes }) => {
+        ok(!crashes.some((c) => ['MARIO', 'KATO', 'GORDON'].includes(c.name)), `track ${i + 1}: a front-office rider fell — the skill tiers are a lottery`)
+    })
+    // SONJA's lap-2 wipeout at the big-jump lip is at the SAME place as lap 1:
+    // the danger is terrain, not chance.
+    {
+        const s = LEAGUE[0].crashes.filter((c) => c.name === 'SONJA')
+        ok(s.length >= 2 && Math.abs(s[0].x - s[s.length - 1].x) <= 4, `SONJA's wipeouts moved (${JSON.stringify(s.map((c) => c.x))}) — crash sites must be terrain-fixed`)
+    }
+    // live churn: SONJA's first wreck drops her behind IVAN while she walks it
+    {
+        const st = makeGame(0, {})
+        const k0 = LEAGUE[0].crashes[0].k
+        for (let k = 0; k <= k0; k++) { step(st, runs[0].r.script[k]); st.events.length = 0 }
+        const before = rivalRank(st, 'SONJA')
+        for (let k = k0 + 1; k <= k0 + 150; k++) { step(st, runs[0].r.script[k]); st.events.length = 0 }
+        const after = rivalRank(st, 'SONJA')
+        ok(after > before, `SONJA's wreck did not drop her in the order (${before} -> ${after}) — the leaderboard cannot churn`)
+    }
+    // determinism: the same script replays to the same wipeouts
+    {
+        const again = replay(0)
+        ok(JSON.stringify(again.crashes.map((c) => [c.t, c.name])) === JSON.stringify(LEAGUE[0].crashes.map((c) => [c.t, c.name])), 'rival wipeouts are not deterministic — attract lies')
+    }
+}
+
 // ------------------------------------------------------- rules the game promised ----
 section('RULES THE CARTRIDGE PROMISED')
 {
@@ -352,6 +444,37 @@ if (MUT) {
         const g = makeGame(0, {})
         for (let t = 0; t < 400; t++) step(g, { g: true })
         return g.total > 1
+    })
+    // ---- crash-league mutants (#2384) — each edits one load-bearing law ----
+    const replay0Crashes = () => {
+        const g = makeGame(0, {})
+        const hits = []
+        for (let k = 0; k < LEAGUE[0].script.length; k++) {
+            step(g, LEAGUE[0].script[k])
+            for (const e of g.events) if (e.type === 'rcrash') hits.push({ name: e.name, d: g.rivals.find((x) => x.name === e.name).d, k })
+            g.events.length = 0
+        }
+        return { hits }
+    }
+    tryMut('rivalDown=0 (a wipeout costs no ground)', flat({ rivalDown: 0 }), () => {
+        const { hits } = replay0Crashes()
+        if (!hits.length) return false
+        const c = hits[0]
+        const st = makeGame(0, {})
+        for (let k = 0; k <= c.k + 150 && k < LEAGUE[0].script.length; k++) { step(st, LEAGUE[0].script[k]); st.events.length = 0 }
+        return st.rivals.find((x) => x.name === c.name).d - c.d < 250   // baseline: frozen + slow remount
+    })
+    tryMut('rivalTolMul=9 (the league is crash-proof)', flat({ rivalTolMul: 9 }), () => replay0Crashes().hits.length === 3)
+    tryMut('rivalTolMul=0.2 (even the front office falls)', flat({ rivalTolMul: 0.2 }), () => {
+        for (const { i, script } of LEAGUE) {
+            const g = makeGame(i, {})
+            for (let k = 0; k < script.length; k++) {
+                step(g, script[k])
+                if (g.events.some((e) => e.type === 'rcrash' && ['MARIO', 'KATO', 'GORDON'].includes(e.name))) return false
+                g.events.length = 0
+            }
+        }
+        return true
     })
 }
 
