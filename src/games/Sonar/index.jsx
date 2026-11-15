@@ -389,7 +389,7 @@ const SonarGame = () => {
                         end: gs.end, hash: stateHash(gs),
                         cooldown: Math.max(0, CFG.pingCd - (gs.tick - gs.lastPing)),
                         litOpen, litRock, contacts: contacts.length, hiddenEels,
-                        contactRings: contacts.map(b => (b.ring == null ? -1 : b.ring)),
+                        contactMarks: contacts.map(b => ({ x: b.x, y: b.y, ring: (b.ring == null ? -1 : b.ring) })),
                         eels: gs.eels.map(e => ({ x: cx(eelCell(e)), y: cy(eelCell(e)) })),
                         ventKnown: known(gs, gs.vent),
                         vent: { x: cx(gs.vent), y: cy(gs.vent) },
