@@ -12,6 +12,9 @@
 //                  and the art contract holds in canvas coordinates: the HUD sits
 //                  below the lawn, the tray clears the site-chrome corner, the
 //                  lane-saver reads as a scarecrow, the ghost cursor is opt-in.
+//   5. #2328     — tray cards are portrait plates: posed content, soil mound,
+//                  riveted double frames, gilded selection, sim-clock liveness,
+//                  per-card uniqueness, deterministic drawing.
 //
 // It also proves IT can fail: run with `--mutant` and one load-bearing rule
 // (the breach-does-not-lose) is flipped; the harness must go red on it. This is
@@ -21,7 +24,7 @@
 
 import {
     FIXED_DT, W, H, ROWS, COLS, colX, rowY, tileOf,
-    LEVELS,
+    LEVELS, CARD_ORDER,
     newRun, advance, autoStep, plant, spawnEnemy,
     occupied, waveProgress, stateHash,
     actAt, toggleTrowel, bankTap,
@@ -209,6 +212,54 @@ section('POLISH CONTRACT (juice events carry what the shell needs)')
     check('clear event names the next level (unlock sting)', !!(seen.clear && seen.clear.next != null), JSON.stringify(seen.clear))
 }
 
+// art contract — a recording stand-in for a 2D context: path ops push
+// points, fill()/stroke() record the path bounding box (+globalAlpha, and the
+// stroke's style string — #2328 pins gilded vs plain frames by style). Layout
+// is asserted in CANVAS coordinates, so no viewport can break it.
+const bbox = (pts) => {
+    if (!pts.length) return null
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+    for (const [x, y] of pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y) }
+    return { x0, y0, x1, y1 }
+}
+const mockCtx = () => {
+    let pts = []
+    let tx = 0, ty = 0, sx = 1, sy = 1
+    const stack = []
+    const X = (x) => tx + sx * x
+    const Y = (y) => ty + sy * y
+    const c = {
+        fills: [], strokes: [], alphas: [], _ga: 1,
+        fillStyle: '', strokeStyle: '', lineWidth: 1, lineCap: '',
+        font: '', textAlign: '', textBaseline: '',
+        save() { stack.push([tx, ty, sx, sy]) },
+        restore() { if (stack.length) [tx, ty, sx, sy] = stack.pop() },
+        translate(a, b) { tx += a; ty += b },
+        scale(a, b) { sx *= a; sy *= b },
+        rotate() { /* only the 6deg spent-scarecrow tilt ever rotates — negligible for a bbox */ },
+        clip() { },
+        beginPath() { pts = [] },
+        moveTo(x, y) { pts.push([X(x), Y(y)]) }, lineTo(x, y) { pts.push([X(x), Y(y)]) },
+        closePath() { },
+        arc(x, y, r) { pts.push([X(x) - r * sx, Y(y)], [X(x) + r * sx, Y(y)], [X(x), Y(y) - r * sy], [X(x), Y(y) + r * sy]) },
+        ellipse(x, y, rx, ry) { pts.push([X(x) - rx * sx, Y(y) - ry * sy], [X(x) + rx * sx, Y(y) + ry * sy]) },
+        arcTo(x1, y1, x2, y2) { pts.push([X(x1), Y(y1)], [X(x2), Y(y2)]) },
+        quadraticCurveTo(x1, y1, x2, y2) { pts.push([X(x1), Y(y1)], [X(x2), Y(y2)]) },
+        bezierCurveTo(a, b, c2, d, x, y) { pts.push([X(a), Y(b)], [X(c2), Y(d)], [X(x), Y(y)]) },
+        fillRect(x, y, w, h) { c.fills.push({ x0: X(x), y0: Y(y), x1: X(x + w), y1: Y(y + h), a: c._ga, rect: true }) },
+        strokeRect() { }, fillText() { }, measureText() { return { width: 100 } },
+        fill() { const b = bbox(pts); if (b) c.fills.push({ ...b, a: c._ga }) },
+        stroke() { const b = bbox(pts); if (b) c.strokes.push({ ...b, style: c.strokeStyle }) },
+        createLinearGradient() { return { addColorStop() { } } },
+        createRadialGradient() { return { addColorStop() { } } },
+    }
+    Object.defineProperty(c, 'globalAlpha', {
+        get() { return c._ga },
+        set(v) { c._ga = v; c.alphas.push(v) },
+    })
+    return c
+}
+
 section('NEWCOMER FEEDBACK (#1832)')
 {
     // refused plants are events the shell toasts — the sim is the single
@@ -243,52 +294,8 @@ section('NEWCOMER FEEDBACK (#1832)')
         check('autopilot run emits zero refuse events (attract stays silent)', gb.done === 'win' && refusals === 0, `done=${gb.done} refusals=${refusals}`)
     }
 
-    // art contract — a recording stand-in for a 2D context: path ops push
-    // points, fill()/stroke() record the path bounding box (+globalAlpha).
+    // art contract assertions use the module-level recording mockCtx above.
     // Layout is asserted in CANVAS coordinates, so no viewport can break it.
-    const bbox = (pts) => {
-        if (!pts.length) return null
-        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
-        for (const [x, y] of pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y) }
-        return { x0, y0, x1, y1 }
-    }
-    const mockCtx = () => {
-        let pts = []
-        let tx = 0, ty = 0, sx = 1, sy = 1
-        const stack = []
-        const X = (x) => tx + sx * x
-        const Y = (y) => ty + sy * y
-        const c = {
-            fills: [], strokes: [], alphas: [], _ga: 1,
-            fillStyle: '', strokeStyle: '', lineWidth: 1, lineCap: '',
-            font: '', textAlign: '', textBaseline: '',
-            save() { stack.push([tx, ty, sx, sy]) },
-            restore() { if (stack.length) [tx, ty, sx, sy] = stack.pop() },
-            translate(a, b) { tx += a; ty += b },
-            scale(a, b) { sx *= a; sy *= b },
-            rotate() { /* only the 6deg spent-scarecrow tilt ever rotates — negligible for a bbox */ },
-            clip() { },
-            beginPath() { pts = [] },
-            moveTo(x, y) { pts.push([X(x), Y(y)]) }, lineTo(x, y) { pts.push([X(x), Y(y)]) },
-            closePath() { },
-            arc(x, y, r) { pts.push([X(x) - r * sx, Y(y)], [X(x) + r * sx, Y(y)], [X(x), Y(y) - r * sy], [X(x), Y(y) + r * sy]) },
-            ellipse(x, y, rx, ry) { pts.push([X(x) - rx * sx, Y(y) - ry * sy], [X(x) + rx * sx, Y(y) + ry * sy]) },
-            arcTo(x1, y1, x2, y2) { pts.push([X(x1), Y(y1)], [X(x2), Y(y2)]) },
-            quadraticCurveTo(x1, y1, x2, y2) { pts.push([X(x1), Y(y1)], [X(x2), Y(y2)]) },
-            bezierCurveTo(a, b, c2, d, x, y) { pts.push([X(a), Y(b)], [X(c2), Y(d)], [X(x), Y(y)]) },
-            fillRect(x, y, w, h) { c.fills.push({ x0: X(x), y0: Y(y), x1: X(x + w), y1: Y(y + h), a: c._ga, rect: true }) },
-            strokeRect() { }, fillText() { }, measureText() { return { width: 100 } },
-            fill() { const b = bbox(pts); if (b) c.fills.push({ ...b, a: c._ga }) },
-            stroke() { const b = bbox(pts); if (b) c.strokes.push(b) },
-            createLinearGradient() { return { addColorStop() { } } },
-            createRadialGradient() { return { addColorStop() { } } },
-        }
-        Object.defineProperty(c, 'globalAlpha', {
-            get() { return c._ga },
-            set(v) { c._ga = v; c.alphas.push(v) },
-        })
-        return c
-    }
     {
         const gl = newRun(7); gl.level = 5
         const cHud = mockCtx(); drawHud(cHud, gl, false)
@@ -313,6 +320,87 @@ section('NEWCOMER FEEDBACK (#1832)')
             cGh.alphas.includes(0.5) && !cGn.alphas.includes(0.5),
             `ghost=${JSON.stringify(cGh.alphas)} plain=${JSON.stringify(cGn.alphas)}`)
     }
+}
+
+section('CARD PORTRAITS (#2328)')
+{
+    // The tray cards must be PORTRAITS, not icon stamps: each plate carries a
+    // posed defender on soil, inside a beveled, riveted frame that gilds when
+    // selected, breathing on the sim clock. Geometry mirrors drawTray:
+    // cardW=64 gap=8 startX=218 cardY=12, plate inset 5 => 54x40.
+    const CARD_W = 64, GAP = 8, START_X = 218, CARD_Y = 12
+    const plateOf = (i) => ({ x0: START_X + i * (CARD_W + GAP) + 5, y0: CARD_Y + 5, w: CARD_W - 10, h: 40 })
+    const inPlate = (f, p) => f.x0 >= p.x0 - 1.5 && f.y1 <= p.y0 + p.h + 1.5 && f.x1 <= p.x0 + p.w + 1.5 && f.y0 >= p.y0 - 1.5
+    const sixRun = () => {
+        const g = newRun(7)
+        g.level = 5
+        g.unlocked = [...CARD_ORDER]
+        g.acorns = 9999
+        for (const k of Object.keys(g.cd)) g.cd[k] = 0
+        return g
+    }
+    const sig = (c) => JSON.stringify([c.fills, c.strokes].map((a) => a.map((f) =>
+        [f.x0, f.y0, f.x1, f.y1].map((v) => Math.round(v * 1000) / 1000))))
+    const draw = (sec, sel = -1) => { const g = sixRun(); g.sec = sec; g.sel = sel; const c = mockCtx(); drawTray(c, g, null, null); return { c, g } }
+
+    const base = draw(0.9)
+    const perCard = CARD_ORDER.map((id, i) => {
+        const p = plateOf(i)
+        const fills = base.c.fills.filter((f) => inPlate(f, p))
+        const strokes = base.c.strokes.filter((s) => inPlate(s, p))
+        return { id, p, fills, strokes }
+    }
+    )
+    // 1. layered portrait content per card (posed critter = many fills inside the plate)
+    check('every defender card paints a layered portrait (>= 8 fills inside the plate)',
+        perCard.every((k) => k.fills.length >= 8),
+        perCard.map((k) => `${k.id}=${k.fills.length}`).join(' '))
+    // 2. the critter stands on ground: a mound-wide fill touching the plate floor
+    check('every portrait stands on a soil mound (24-46px wide, touches the floor)',
+        perCard.every((k) => k.fills.some((f) => {
+            const w = f.x1 - f.x0
+            return w >= 24 && w <= 46 && f.y1 >= k.p.y0 + k.p.h - 6
+        })),
+        perCard.map((k) => k.id).join(' '))
+    // 3. riveted frames: >= 3 tiny fills near the plate's four corners
+    const nearCorner = (f, p) => {
+        const cx = (f.x0 + f.x1) / 2, cy = (f.y0 + f.y1) / 2, w = f.x1 - f.x0
+        if (w > 5 || cy < p.y0 - 1 || cy > p.y0 + p.h + 1 || cx < p.x0 - 1 || cx > p.x0 + p.w + 1) return false
+        const dx = Math.min(Math.abs(cx - p.x0), Math.abs(cx - (p.x0 + p.w)))
+        const dy = Math.min(Math.abs(cy - p.y0), Math.abs(cy - (p.y0 + p.h)))
+        return dx <= 6 && dy <= 6
+    }
+    check('every plate is riveted (>= 3 corner rivets)',
+        perCard.every((k) => k.fills.filter((f) => nearCorner(f, k.p)).length >= 3),
+        perCard.map((k) => `${k.id}=${k.fills.filter((f) => nearCorner(f, k.p)).length}`).join(' '))
+    // 4. double frame: full-plate outline stroke + a light bevel line near the top edge
+    check('every plate is double-framed (full outline + top-edge bevel)',
+        perCard.every((k) => k.strokes.some((s) => s.x0 <= k.p.x0 + 2 && s.x1 >= k.p.x0 + k.p.w - 2 && s.y0 <= k.p.y0 + 2 && s.y1 >= k.p.y0 + k.p.h - 2)
+            && k.strokes.some((s) => s.y0 <= k.p.y0 + 3 && s.y1 <= k.p.y0 + 3 && s.x1 - s.x0 >= k.p.w * 0.6)))
+    // 5. per-card uniqueness: no two portraits share a drawing signature
+    const sigs = perCard.map((k) => JSON.stringify([k.fills, k.strokes]))
+    check('portraits differ per defender (6 distinct drawing signatures)', new Set(sigs).size === 6)
+    // 6. selection gilds the plate frame — and follows g.sel
+    const gilded = (c, i) => {
+        const p = plateOf(i)
+        return c.strokes.some((s) => s.style === '#ffd24a' && s.x0 <= p.x0 + 2 && s.x1 >= p.x0 + p.w - 2)
+    }
+    const s0 = draw(0.9, 0), s1 = draw(0.9, 1)
+    check('a selected card gilds its frame; neighbours stay plain',
+        gilded(s0.c, 0) && !gilded(s0.c, 1) && gilded(s1.c, 1) && !gilded(s1.c, 0))
+    // 7. liveness: portraits breathe — every card's drawing moves between
+    // sim seconds 0.9 and 2.4 (deterministic, but never frozen)
+    const alt = draw(2.4)
+    const moved = CARD_ORDER.map((id, i) => {
+        const p = plateOf(i)
+        const a = JSON.stringify(perCard[i].fills)
+        const b = JSON.stringify(alt.c.fills.filter((f) => inPlate(f, p)))
+        return a !== b
+    })
+    check('portraits breathe on the sim clock (all 6 change between sec 0.9 and 2.4)', moved.every(Boolean), JSON.stringify(moved))
+    // 8. determinism: the exact same state draws the exact same tray
+    const again = draw(0.9)
+    check('portrait drawing is deterministic (same state, same recording)', sig(base.c) === sig(again.c))
 }
 
 console.log(`\n=== gardencheck: ${pass} pass, ${fail} fail ===`)
