@@ -38,12 +38,13 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
     FIXED_DT, W, H, ROWS, COLS, colX, rowY, tileOf,
-    LEVELS, CARD_ORDER, SHOWER, ENEMIES,
+    LEVELS, CARD_ORDER, SHOWER, ENEMIES, PLANTS,
     newRun, advance, autoStep, plant, spawnEnemy,
     occupied, waveProgress, stateHash,
     actAt, toggleTrowel, bankTap,
+    seedSpectacle, SPECTACLE_EVERY,
 } from '../src/games/GardenGuard/sim.js'
-import { drawHud, drawTray, drawMower, drawCursor, drawClearCeremony, drawEnemy } from '../src/games/GardenGuard/art.js'
+import { drawHud, drawTray, drawMower, drawCursor, drawClearCeremony, drawEnemy, drawPlant, drawPlantIcon } from '../src/games/GardenGuard/art.js'
 import { BED, endSteps, endCue } from '../src/games/GardenGuard/sound.js'
 import { MUSIC } from '../src/utils/AudioController.js'
 
@@ -582,6 +583,111 @@ section('GOBLIN POSTURE (#2336)')
     const dA = draw('grunt', 1.7), dB = draw('grunt', 1.7)
     check('posture drawing is deterministic (same state, same recording)',
         JSON.stringify(dA.c.fills) === JSON.stringify(dB.c.fills) && JSON.stringify(dA.c.strokes) === JSON.stringify(dB.c.strokes))
+}
+
+// ---- 9. #2336 gap 2 — attract spectacle --------------------------------------
+section('ATTRACT SPECTACLE (#2336)')
+{
+    // The marquee must show the game's two signature moments, staged with the
+    // sim's own mechanics. Reverting seedSpectacle to `return -1` reddens the
+    // first four gates; hardwiring the attract mower prog back to 0 reddens
+    // the last one.
+    // a) chili nuke: bomb planted over a real cluster wipes it.
+    const g = newRun(77)
+    const rb = seedSpectacle(g, 'bomb')
+    const bombP = g.plants.find((p) => p.type === 'chili')
+    check('bomb spectacle plants a lit Chili Bomb on the lawn', rb >= 0 && !!bombP && bombP.fuse > 0, `r=${rb}`)
+    check('bomb spectacle gathers a goblin cluster on that lane', g.enemies.filter((e) => e.r === rb).length >= 3,
+        `lane ${rb} enemies=${g.enemies.filter((e) => e.r === rb).length}`)
+    let booms = 0, kills = 0
+    for (let i = 0; i < 60 * 3; i++) {
+        autoStep(g, DT)
+        booms += g.events.filter((e) => e.t === 'boom').length
+        kills += g.events.filter((e) => e.t === 'kill').length
+        g.events.length = 0
+    }
+    check('the spectacle bomb booms and wipes the cluster', booms === 1 && kills >= 3, `booms=${booms} kills=${kills}`)
+
+    // b) mower sweep: a walker on an armed, undefended lane trips the scarecrow.
+    const g2 = newRun(78)
+    const rm = seedSpectacle(g2, 'mow')
+    check('mow spectacle releases a walker down an armed lane', rm >= 0 && g2.mowers[rm], `r=${rm}`)
+    let mowed = false
+    for (let i = 0; i < 60 * 8 && !mowed; i++) {
+        autoStep(g2, DT)
+        mowed = g2.events.some((e) => e.t === 'mow' && e.r === rm)
+        g2.events.length = 0
+    }
+    check('the scarecrow-mower sweeps that lane', mowed && g2.mowers[rm] === false && g2.done === null, `done=${g2.done}`)
+
+    // c) the schedule is a real cadence, and the demo stays refuse-silent
+    // (the seeded entities are ordinary state — no canonical-path refusals).
+    check('spectacles alternate on a tight cadence (5–9s)', SPECTACLE_EVERY >= 5 && SPECTACLE_EVERY <= 9, `every=${SPECTACLE_EVERY}`)
+    {
+        const g3 = newRun(79)
+        let refusals = 0
+        for (let i = 0; i < 60 * 16; i++) {
+            autoStep(g3, DT)
+            if (i % (SPECTACLE_EVERY * 60) === 0) seedSpectacle(g3, i === 0 ? 'bomb' : 'mow')
+            refusals += g3.events.filter((e) => e.t === 'refuse').length
+            g3.events.length = 0
+        }
+        check('spectacle seeds never toast a refusal (attract stays silent)', refusals === 0, `refusals=${refusals}`)
+    }
+
+    // d) determinism: seed + schedule replays byte-identically.
+    const specRun = (seed) => {
+        const g4 = newRun(seed)
+        let next = 180, flip = false
+        for (let i = 0; i < 60 * 20; i++) {
+            autoStep(g4, DT)
+            if (g4.tick >= next) { seedSpectacle(g4, flip ? 'mow' : 'bomb'); flip = !flip; next = g4.tick + SPECTACLE_EVERY * 60 }
+        }
+        return stateHash(g4)
+    }
+    check('spectacle run is deterministic (same seed + schedule -> same hash)', specRun(81) === specRun(81), `${specRun(81)}`)
+
+    // e) the shell wires it to the marquee: seed call, cadence constant, and
+    // the mower prog actually reaches drawMower (was hardwired 0).
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'GardenGuard', 'index.jsx'), 'utf8')
+    const attractBody = src.slice(src.indexOf('const paintAttract'), src.indexOf('// --------------------------------------------------------- loop ----'))
+    check('the attract director seeds the demo lawn', src.includes('seedSpectacle(demoG') && src.includes('SPECTACLE_EVERY'))
+    check('the attract paints the live mower run (not prog 0)',
+        attractBody.includes('demoG.mowerRun[r]') && !/drawMower\(ctx, r, 0,/.test(attractBody))
+}
+
+// ---- 10. #2336 gap 3 — defenders read at field scale ------------------------
+section('FIELD POSES (#2336)')
+{
+    // The lawn must not stamp the small icon any more: each field plant draws
+    // the #2328 portrait pose at mid-scale. Reverting drawPlant to icon stamps
+    // reddens gates 1–2 and the source gate.
+    const makeP = (id, t = 1.3) => {
+        const def = PLANTS[id]
+        return {
+            r: 2, c: 4, type: id, hp: def.hp, maxHp: def.hp,
+            cool: def.rate ? def.rate * 0.5 : 0, bornT: 0, anim: 2.0,
+            fuse: def.kind === 'bomb' ? def.fuse * 0.5 : 0, made: 0,
+        }
+    }
+    const sig = (c) => JSON.stringify([c.fills, c.strokes].map((a) => a.map((f) =>
+        [f.x0, f.y0, f.x1, f.y1].map((v) => Math.round(v * 100) / 100))))
+    const recPlant = (id, t = 1.3) => { const c = mockCtx(); drawPlant(c, makeP(id), t); return c }
+    const recIcon = (id) => { const c = mockCtx(); drawPlantIcon(c, id, colX(4), rowY(2), 34); return c }
+    const ops = (c) => c.fills.length + c.strokes.length
+    const ratios = CARD_ORDER.map((id) => ops(recPlant(id)) / Math.max(1, ops(recIcon(id))))
+    check('every field plant paints a richer pose than the small icon (>= 1.5x ops)',
+        ratios.every((x) => x >= 1.5), CARD_ORDER.map((id, i) => `${id}=${ratios[i].toFixed(1)}`).join(' '))
+    const psigs = CARD_ORDER.map((id) => sig(recPlant(id)))
+    check('field poses differ per defender (6 distinct drawing signatures)', new Set(psigs).size === 6)
+    const pumpkinAlive = sig(recPlant('pumpkin', 1.1)) !== sig(recPlant('pumpkin', 2.7))
+    check('the Pumpkin Catapult draws its band back on the sim clock (mid-scale liveness)', pumpkinAlive)
+    check('field pose drawing is deterministic (same state, same recording)',
+        sig(recPlant('squirrel', 2.2)) === sig(recPlant('squirrel', 2.2)))
+    const artSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'GardenGuard', 'art.js'), 'utf8')
+    const body = artSrc.slice(artSrc.indexOf('export function drawPlant(ctx'), artSrc.indexOf('// ----------------------------------------------------------- goblins ----'))
+    check('the lawn draws the portrait pose, not the small icon',
+        body.includes('drawCardPose') && !body.includes('drawPlantIcon'))
 }
 
 console.log(`\n=== gardencheck: ${pass} pass, ${fail} fail ===`)

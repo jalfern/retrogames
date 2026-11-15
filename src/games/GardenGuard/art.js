@@ -463,57 +463,61 @@ export function drawPlantIcon(ctx, id, cx, cy, s) {
 }
 
 // -------------------------------------------------------- defender art ----
+// #2336 gap 3: the field used to stamp the same 30px icon as the (pre-#2328)
+// cards, so defenders read thin at field scale. Field plants now draw the
+// #2328 portrait POSE (drawCardPose) at mid-scale, foot anchored on the soil
+// mound — the same posed critter the card carries, on the lawn. Per-kind
+// dynamics ride the pose: producers breathe, shooters recoil and flash, bombs
+// swell with the fuse, the pumpkin's catapult band draws back on the sim
+// clock. Presentation-only: the sim never sees any of this.
+const FIELD_SCALE = 1.5
 export function drawPlant(ctx, p, t) {
     const cx = colX(p.c), cy = rowY(p.r)
     const def = PLANTS[p.type]
     // soil mound
     ctx.fillStyle = 'rgba(70,45,25,0.35)'; ctx.beginPath(); ctx.ellipse(cx, cy + 22, 26, 9, 0, 0, 7); ctx.fill()
     const sway = Math.sin((t * 2 + p.anim)) * 1.5
-    ctx.save(); ctx.translate(cx, cy)
+    // the posed critter at field scale, feet on the mound
+    const pose = (s = FIELD_SCALE, dx = 0, dy = 0, rot = 0) => {
+        ctx.save(); ctx.translate(cx + dx, cy + 18 + dy); ctx.rotate(rot); ctx.scale(s, s)
+        drawCardPose(ctx, p.type, 0, 0, t)
+        ctx.restore()
+    }
     if (def.kind === 'bomb') {
         const lit = Math.max(0, 1 - p.fuse / def.fuse)
-        ctx.save(); ctx.rotate(sway * 0.2)
-        drawPlantIcon(ctx, 'chili', 0, 2, 34 + lit * 6)
-        ctx.restore()
-        if (p.fuse <= 0.001) { /* handled by shell particles */ }
-        // fuse spark
-        const fx = 0, fy = -26
+        pose(FIELD_SCALE + lit * 0.18, sway * 0.2, 0, sway * 0.02)
+        // fuse spark — rides the swell, blinks faster than the pose wisp
         ctx.fillStyle = t % 0.1 < 0.05 ? '#fff6a0' : '#ff8a3a'
-        ctx.beginPath(); ctx.arc(fx + 6, fy, 2.6 + lit * 2, 0, 7); ctx.fill()
+        ctx.beginPath(); ctx.arc(cx + 9, cy - 28, 2.6 + lit * 2, 0, 7); ctx.fill()
     } else if (def.kind === 'producer') {
         const pulse = 1 + Math.sin(t * 3 + p.anim) * 0.06
-        ctx.save(); ctx.scale(pulse, pulse); drawPlantIcon(ctx, 'daisy', sway, 0, 36); ctx.restore()
+        pose(FIELD_SCALE * pulse, sway, 0)
     } else if (def.kind === 'shooter' || def.kind === 'frost') {
         // recoil right after firing: cool resets to def.rate, so (def.rate - p.cool)
         // is time-since-shot; squash + kick the body back off the muzzle.
         const rec = Math.max(0, 1 - (def.rate - p.cool) / 0.14)
-        ctx.save(); ctx.translate(sway * 0.4 - rec * 3, 0); ctx.scale(1 - rec * 0.14, 1 + rec * 0.1)
-        drawPlantIcon(ctx, p.type, 0, 0, 34)
-        ctx.restore()
+        pose(FIELD_SCALE * (1 - rec * 0.14), sway * 0.4 - rec * 3, 0)
         if (rec > 0.5) {
-            const mx = 12, my = -6
             ctx.fillStyle = def.kind === 'frost' ? 'rgba(191,240,255,0.85)' : 'rgba(255,230,168,0.9)'
-            ctx.beginPath(); ctx.arc(mx, my, 3 + rec * 4, 0, 7); ctx.fill()
+            ctx.beginPath(); ctx.arc(cx + 16, cy - 8, 3 + rec * 4, 0, 7); ctx.fill()
         }
     } else if (def.kind === 'wall') {
-        drawPlantIcon(ctx, 'hedge', 0, 0, 36)
+        pose()
         const dmg = 1 - p.hp / p.maxHp
         if (dmg > 0.35) {
             ctx.strokeStyle = 'rgba(60,30,15,0.7)'; ctx.lineWidth = 1.5
-            ctx.beginPath(); ctx.moveTo(-6, -12); ctx.lineTo(-2, -2); ctx.lineTo(-7, 6); ctx.stroke()
-            if (dmg > 0.7) { ctx.beginPath(); ctx.moveTo(6, -10); ctx.lineTo(3, 0); ctx.lineTo(8, 8); ctx.stroke() }
+            ctx.beginPath(); ctx.moveTo(cx - 6, cy - 12); ctx.lineTo(cx - 2, cy - 2); ctx.lineTo(cx - 7, cy + 6); ctx.stroke()
+            if (dmg > 0.7) { ctx.beginPath(); ctx.moveTo(cx + 6, cy - 10); ctx.lineTo(cx + 3, cy); ctx.lineTo(cx + 8, cy + 8); ctx.stroke() }
         }
-    } else if (def.kind === 'lobber') {
-        drawPlantIcon(ctx, 'pumpkin', 0, 2, 34)
-        ctx.strokeStyle = '#6b4326'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, -14); ctx.lineTo(12, -22); ctx.stroke()
+    } else {
+        pose() // lobber — the pose already carries the frame + drawn-back band
     }
-    ctx.restore()
     // hp bar (only when hurt)
     if (p.hp < p.maxHp && def.kind !== 'bomb') {
         const w = 34, frac = Math.max(0, p.hp / p.maxHp)
-        ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(cx - w / 2, cy - 26, w, 4)
+        ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(cx - w / 2, cy - 32, w, 4)
         ctx.fillStyle = frac > 0.5 ? '#7fe07f' : frac > 0.25 ? '#ffd24a' : '#ff6a5a'
-        ctx.fillRect(cx - w / 2, cy - 26, w * frac, 4)
+        ctx.fillRect(cx - w / 2, cy - 32, w * frac, 4)
     }
 }
 
