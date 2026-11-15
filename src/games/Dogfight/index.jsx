@@ -228,6 +228,7 @@ const DogfightGame = () => {
         let toast = 0, toastMsg = ''
         let engineAcc = 0, flash = 0
         let shake = 0
+        let overheatSeen = 0
 
         const say = (m) => { toastMsg = m; toast = 120 }
 
@@ -239,7 +240,7 @@ const DogfightGame = () => {
                 } else if (e.type === 'dry') audioController.playTone(220, 0.05, 'square', 0.04)
                 else if (e.type === 'overheat') {
                     // the Vickers is red: keep holding and the tracers walk
-                    if (e.who === 0) { audioController.playTone(96, 0.18, 'square', 0.05); say('BARRELS RED HOT — BREAK YOUR BURSTS') }
+                    if (e.who === 0) { overheatSeen++; audioController.playTone(96, 0.18, 'square', 0.05); say('BARRELS RED HOT — BREAK YOUR BURSTS') }
                 }
                 else if (e.type === 'hit') {
                     if (e.victim === 0) { audioController.playNoise(0.1, 0.09); flash = 1; shake = 0.5; say('YOU HIT — EVASIVE!') } else { audioController.playTone(130, 0.08, 'square', 0.06); say('DIRECT HIT') }
@@ -269,6 +270,7 @@ const DogfightGame = () => {
             gs.cmds = []
             throttle = 0.85
             keys.clear()
+            overheatSeen = 0
             setMode('play')
             say('ALTI-SPEED FOR HEIGHT — CLIMB AND FIND THEM')
             audioController.playSweep(220, 660, 0.3, 'square', 0.07)
@@ -504,6 +506,7 @@ const DogfightGame = () => {
                     ledger: ledgerOk(),
                     total: gs.p.total,
                     foeFired: gs.foes.reduce((s, f) => s + f.fired, 0),
+                    overheat: overheatSeen,
                     cmds: gs.cmds.length,
                     demoTick: screenRef.current === 'attract' ? gs.tick : null,
                 }),

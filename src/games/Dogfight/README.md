@@ -42,6 +42,28 @@ without a belt field fed the guns `undefined` — `NaN > 0` is false, so the
 patrol looked *peaceful*, not broken. A fake-dangerous sky is exactly as bad
 as a frozen one.)
 
+### Burst discipline (#2310 — spray costs hits, belts and receipts)
+
+An air-cooled Vickers held closed-belt reddens and starts to walk. Each round
+adds `heatShot` (~13 rounds to redline, ~1.7 s of trigger); every silent tick
+sheds `heatCool` (~5.5 s back to cold). Below `heatSoft` (0.25) the barrel is
+cold and shoots dead straight; past it each round leaves on a deterministic
+cone of `heatSpread × (heat − soft)` radians (~±0.045 rad ≈ 7 m across at
+250 m, wider than the biplane) — and the cone **walks** by the golden angle
+per round, so a long burst scatters instead of drifting to one side. The
+determinism law holds: the deviation is `f(own fired counter, heat)`, never
+`Math.random`, so replays stay bit-identical.
+
+The honest part: `predictHit` folds in the **same** deviation with the **same**
+azimuth as `flyGun` spawns it, so the autopilot's receipt is exactly the round
+the sky will honour. A cold scout earns 250 m receipts; a red-hot one stops
+being approved them — spray buys misses, discipline buys hits. This is why the
+receipt-gated pilot never reddens: `drivePatrol` peaks `heat` at **0.077**
+(one round's worth — its bursts are ≤ 2 rounds, so it stays inside the soft
+band), and `dogfightcheck` pins that (`maxHeat ≤ 0.5`) so heat can never become
+decorative for the pilot either. The cockpit shows a `GUNS` tape (yellow→orange
+→red) and an overheat call; the whole game now answers a spray.
+
 ## Bandits with doctrine
 
 P-D pursuit (pitch and bank both INTEGRATE their command; a pure-P aim
@@ -56,21 +78,28 @@ way from where the deflection already aims.
 
 - `npm run dogfightcheck` — Node, ~0.5 s. Construction, trim/stall/zoom/
   glide ledgers, bullet-integrator parity against an independent
-  integration, per-tick round ledger, the real pilot winning both patrols
-  **by the gun alone**, determinism three ways, **slack** (−20 rounds AND
-  −40 m must still win), and `--mutate` for seven mutants that must die.
+  integration, per-tick round ledger, the heat model (cold shots straight,
+  spray reddens, cone == sideways velocity, cone walks, silence cools,
+  receipts dry up hot), the real pilot winning both patrols **by the gun
+  alone** with a barrel that stays cold, determinism three ways, **slack**
+  (−20 rounds AND −40 m must still win), and `--mutate` for nine mutants
+  that must die.
 - `npm run dogfightplay` — Chrome, real key events only. Instruments
   (ASI/altimeter/belt DOM) read the probe to the unit; a projected bandit
-  is confirmed in painted pixels; a real pull drains m/s into metres; the
-  live stream replays hash-identical in the tab; death → R is clean.
+  is confirmed in painted pixels; a real pull drains m/s into metres; a
+  3 s spray reddens the GUNS tape and a 6 s wait cools it back to zero;
+  the live stream replays hash-identical in the tab; death → R is clean.
   `DOG_LITE=1 --throttle 16` reproduces the CI runner (lite pipeline,
   640x426, 16x slow CPU).
 
 ## Honest gaps
 
-- The attract autopilot fires ~5 rounds a patrol because the receipt gate
-  is honest; a human sprays. `missed ≤ 3` is a harness promise about the
-  PILOT, not the player.
+- (CLOSED by #2310: burst discipline — sustained fire reddens the Vickers,
+  golden-angle cone widened the tracers, `predictHit` receipts dry up on a
+  hot barrel; `maxHeat ≤ 0.5` now proves the pilot was never scorched either.
+  Shipped history, kept in place per house style.) The attract autopilot
+  fires ~5 rounds a patrol because the receipt gate is honest; a human
+  sprays. `missed ≤ 3` is a harness promise about the PILOT, not the player.
 - The Circus can be won at hp 1. It is meant to be close; if it becomes
   a coin flip for Jon, the honest knob is the lead's gun range (300), not
   the player's hull.

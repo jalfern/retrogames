@@ -198,6 +198,36 @@ async function main() {
     r.check('the belt still balances every visible state', fired.ledger, `ledger ${fired.ledger}`)
     await page.screenshot({ path: 'scripts/.shots/dog-gunnery.png' })
 
+    // ---- burst discipline on screen: spray reddens the GUNS tape ----------
+    // real trigger held on the sky, real DOM read back: what Node proves about
+    // the barrel, the cockpit must show — and silence must hand it all back.
+    await page.evaluate(() => window.__dogTest.start(0))
+    await sleep(500)
+    const heatStart = await probe()
+    await page.keyboard.down('Space')
+    await sleep(3000)
+    const hot = await probe()
+    await page.keyboard.up('Space')
+    const gunDom = () => page.evaluate(() => {
+        const el = document.getElementById('dog-gunheat')
+        return el ? { w: el.style.width, bg: el.style.background || el.style.backgroundColor } : null
+    })
+    const gdHot = await gunDom()
+    r.check('spraying reddens the barrel (state)', hot.p.heat >= 0.75 && hot.overheat >= 1,
+        `heat ${(hot.p.heat * 100).toFixed(0)}%, overheat events ${hot.overheat}`)
+    r.check('spraying burns belts — the economy is real', heatStart.p.belt - hot.p.belt >= 15,
+        `${heatStart.p.belt - hot.p.belt} rounds away in 3 s of held trigger`)
+    r.check('the GUNS tape paints the heat red', gdHot && parseFloat(gdHot.w) >= 70 && /rgb\(239, 68, 68\)|#ef4444/i.test(gdHot.bg),
+        `tape ${gdHot ? gdHot.w : 'nil'} ${gdHot ? gdHot.bg : ''}`)
+    await page.screenshot({ path: 'scripts/.shots/dog-overheat.png' })
+    await sleep(6200)
+    const cold = await probe()
+    const gdCold = await gunDom()
+    r.check('silence cools the barrel — state and tape return to zero',
+        cold.p.heat === 0 && gdCold && parseFloat(gdCold.w) === 0,
+        `heat ${cold.p.heat}, tape ${gdCold ? gdCold.w : 'nil'}`)
+    r.check('the belt still balances through the whole heat cycle', cold.ledger, `ledger ${cold.ledger}`)
+
     // ---- determinism in the page ------------------------------------------
     const rep = await page.evaluate(() => window.__dogTest.replayCheck())
     r.check('the live stream replays hash-identical in the tab', rep.match, `cmds=${rep.cmds} live=${rep.live} twin=${rep.replay}`)
@@ -207,7 +237,7 @@ async function main() {
     r.check('PROGNOSIS names a verdict', /WINNABLE|NOT WINNABLE/.test(prog), prog.slice(0, 70))
 
     // ---- die and restart -----------------------------------------------------
-    if (!fired.end) {
+    if (!cold.end) {
         for (let i = 0; i < 6; i++) await page.evaluate(() => window.__dbg.act('HIT ME'))
     }
     await sleep(1400)
