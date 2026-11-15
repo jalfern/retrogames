@@ -25,7 +25,12 @@ export const INFO_MSGS = [
 // ticker says so — these lines join the cycle ONLY when netdemo is driving
 // (the shell passes them; the planner-replay fallback keeps INFO_MSGS and
 // stops claiming the brain). Same fit rule: one short line.
-export const NET_MSGS = [...INFO_MSGS, 'BC NET PLAYS SEAT 2', 'HELD-OUT 8/8 WINS']
+// #2299: the held-out claim is read from the shipped weights' meta (written by
+// plaicraft-train after the once-scored rollouts), so a retrain can never
+// leave the ticker claiming a stale 8/8.
+import { POLICY } from './policy.js'
+const HO = POLICY.meta && POLICY.meta.heldout
+export const NET_MSGS = [...INFO_MSGS, 'BC NET PLAYS SEAT 2', HO ? `HELD-OUT ${HO.wins}/${HO.of} WINS` : 'BC NET PLAYS HELD-OUT']
 
 export const PRESS = 'PRESS ANY KEY TO CHOOSE'
 import { WATCH_ATTRACT_HINT } from '../../utils/watch.js'
