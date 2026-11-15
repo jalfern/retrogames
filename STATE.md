@@ -1,72 +1,74 @@
-# STATE — session 282 (2026-11-15, slot b)
+# STATE — session 283 (2026-11-15, slot b)
 
 ## Playable now / what shipped
-- **ARENA ARCHERY climbs on purpose (#2307 → PR #2312, merge `ca1f66d`, LIVE
-  at /retrogames/arena-archery).** The autopilot owns the vertical game:
-  every 12 ticks `reachableStep` scans the slab ahead; `hopGrants` replays
-  the exact plan (run-up at speed, take-off 2–5 cells out, land 1–2 past the
-  near edge) through the REAL `moveBody` before committing. Commitment lives
-  on the player; failed landings ban the cell + 20-tick cooldown; the climb
-  owns the feet while committed; from a perch only solved arcs fire
-  (`hopelessHigh`, rain shot added to the solver). Climbing is tempo, not
-  survival: it releases when the quiver thins to 2 (the slack rule caught
-  the perched-and-dry loss before this gate existed).
-  - **The arenas were physically unclimbable**: two-row slabs presented 58 px
-    of rise vs the integrator's MEASURED 51 px apex — the closed-form contract
-    (jump²/2g = 48) passed while the claim was fiction. Re-carved to one-row
-    steps sized to the apex; THE NEST restored (dropped mid-rewrite) as
-    CROSSGLOVE's proven geometry + a roof-blocked sniper cupola.
-  - archerycheck: **146/146, eight mutants die** (new: `climbSeek:false`;
-    lob-bot now also patches `climbSeek:false`). New CLIMBS receipts are
-    grounded-row → grounded-row: CROSSGLOVE 3-2@996 +10 rows, KNOCKBACK
-    3-0@685 +18 (row-3 balconies), THE NEST 3-2@996 +10. Slack, determinism
-    ×3, per-tick arrow ledger, worstGap<150 all unchanged. lint mario/fps/ai
-    + eslint + build green. archeryplay 16/18 — the two SPACE-charge fails
-    reproduce identically on untouched main (pre-existing advisory issue).
-    Prod verified: `index-DNBuSHHs.js` carries `THE NEST`.
-- Rule 4: game code shipped. QA polish pass filed: **#2314**.
+- **TEN-DEEP shows roaming monsters before they fight (#2315 → PR #2319, merge
+  `dfd8e97`, LIVE at /retrogames/ten-deep).** A pack now stands in the torchlight
+  ahead — size it, engage or back off — like Wizardry (Apple II 1981), which always
+  drew groups in the first-person view. Before, every ambush hid in "honest darkness";
+  the shared WebGL renderer even shipped a monster atlas TEN-DEEP never fed.
+  - **One honest source of truth**: `view.js · sightedMobs(st)` (+ `forwardMonster`)
+    — pure, deterministic, no RNG, no browser — reused by the GL billboards, the
+    wireframe painter, the harness probe and the Node gate. Sighted = within torch
+    (`SIGHT=6`), in FRONT of the facing, and clear LOS (`losClear` mirrors
+    `dungeon.core.js viewCells`; nothing through a wall). GL feeds the built-in atlas
+    (8 rat / 9 skeleton / 10 goblin) sized by pack count, swaying on a presentation-only
+    clock; wireframe paints a tinted two-red-eye glyph on the forward column. Automap
+    stays clean (Wizardry never drew monsters on paper).
+  - **Fidelity without weakening the proof**: the SIM is untouched — ambushes stay
+    hidden trigger-tiles, the solver still never dodges, so every campaign proof, the
+    slack rule and determinism ride UNCHANGED. Only presentation changed.
+  - Gates: tendeepcheck **9603/9603** (+2: synthetic sight law — ahead sighted,
+    behind/beyond-range/behind-wall/sprung refused, nearest-first, forwardMonster vs
+    off-axis; + independent no-wall-hacks cross-check on all 10 seeded deeps);
+    **4 view.js mutants die** → 9671/9671 under `--mutate`. tendeeppplay **90/90**
+    (+1 GL gate: monster lights the centre before spring — range 1 = 71.8 vs empty
+    hall 16.8; wireframe branch too). lint tendeep/mario/fps/ai + eslint + build green.
+    Prod verified: `index-DrwfbVlW.js` carries the bestiary tints.
+- Rule 4: game code shipped. QA polish pass filed: **#2321**.
 
 ## Ladder (this session's path)
-- Warden target **#2306 → REFUSED** (another lane's claim newer). #1711
-  PLAICRAFT: re-grade returned "nothing new to grade" (Jon-side only — clap
-  test store unchanged, jonq #2305 still awaiting). QA borrow skipped
-  (`QA MASTER` live). Flagship stage spent → **never-dry rung**:
-  `weakestStage` → ARENA ARCHERY score 3 (gap "the bot never climbs ledge
-  chains deliberately"; held-titles excluded). Filed #2307, claimed, shipped.
+- No halt/steer; `next` #1711 PLAICRAFT = Jon-side only; game-queue EMPTY; feedback
+  #2313/#2314 are QA-held (`building-qa`); QA MASTER live → no borrow. Flagship stage
+  spent (SSX/Emberwood/COMET/Myst gaps all owned). **Never-dry rung**: `weakestStage`
+  → TEN-DEEP score 3 (oldest registry title with unowned gaps; ArenaArchery excluded —
+  #2314 just named it → ambiguity owned). Took README gap 0, filed #2315, claimed, shipped.
 
 ## BOARD at exit
-- game-queue EMPTY. building: none open. building-qa: none open.
-- feedback: **#2313** (QA — WWI DOGFIGHT polish, slot a), **#2314**
-  (QA — ARENA ARCHERY polish, mine) — the QA lane's queue.
+- game-queue: EMPTY.
+- building (other lanes): **#2318** — POLISH TEN-DEEP corridor monsters — slot a's
+  parallel never-dry pick of the SAME gap, mid-build (`building`, `mobview.js`). Left
+  UNTOUCHED (their claim); posted a factual cross-ref on #2318: main already carries the
+  feature via #2319 (only `view.js` on main — no duplicate module yet) — rebase & reconcile.
+- building-qa: **#2321** (mine — QA lane grabbed it straight away), **#2314** (ArenaArchery).
+  feedback: none left claimable by builders.
 - jonq open: **#2305** (lane:platform, AWAITING — not ours to wait on).
-- #1711 `next` — Jon-side remainder unchanged. No halt, no steer.
+- #1711 `next` — Jon-side remainder unchanged. #2313 (Dogfight QA) closed via #2317;
+  Dogfight polish + ASI dials shipped on main (#2317/#2320) by another lane. No halt/steer.
 
 ## Next (slot a or b, in order)
-1. Ladder as before; expect never-dry again. Weakest candidates (score 3,
-   oldest registry first, minus whatever lanes claim meanwhile): TEN-DEEP,
-   PRINCE OF PERSIA, GARDEN GUARD, VIPER PIT, BRITANNIA, FLOOR BOSS,
-   SHORT ORDER SHOUT, GRAVEL YARD, TALK ME DOWN, BOMB DEFUSE.
-2. If a jonq answer lands for #2305 (write key), execute the #2093 relabel
-   one-off; a clap-test take on the store means grade it + post to
-   #1711/#2156 (closes #2156 evidence).
+1. If #2318 (slot a) is still open, do NOT re-file the corridor-monster gap — it is
+   on main (#2319). Any TEN-DEEP work should build on view.js, not fork it.
+2. Else ladder as before; expect never-dry again. Weakest candidates (score 3, oldest
+   registry first, minus held): PRINCE OF PERSIA, GARDEN GUARD, VIPER PIT, BRITANNIA,
+   FLOOR BOSS, SHORT ORDER SHOUT, GRAVEL YARD, TALK ME DOWN, BOMB DEFUSE, …
+3. If a jonq answer lands for #2305 (write key), execute the #2093 relabel one-off
+   (slot-b lane); a clap-test take on the store means grade it + post to #1711/#2156.
 
 ## The session's catches
-- **Closed-form contracts don't prove physics.** jump²/2g said 48 and passed;
-  the integrator actually rises 51 and the slabs asked 58. Measure apexes by
-  replaying `moveBody`, then carve levels to the measurement (levels.js now
-  says so, and CLIMBS receipts keep it true).
-- **A rewrite can silently shrink the roster.** levels.js lost THE NEST mid-
-  rewrite (ARENAS_COUNT 2 vs 3) and the audit stayed green because the loop
-  just iterated fewer arenas. Assert COUNT + names after wholesale rewrites.
-- **Opts are not CFG.** `makeGame(arena, {climbSeek:false})` left the flag
-  set — the first mutant run was silently a no-op. Mutate CFG directly (that
-  is what `tryMut` does; scratch probes must too).
-- **Receipts must be un-fakeable.** A mid-air min-row brush-past counts a
-  climb a grounded-row → grounded-row metric doesn't; the first receipts
-  over-counted until the metric matched the doctrine.
+- **Closed-form contracts don't prove what a renderer can't show.** The GL sprite
+  pipeline culls by RANGE + a forward-plane dot, NOT walls — so honesty is the CALLER's
+  job. sightedMobs must LOS-gate itself or billboards float through stone.
+- **One source of truth pays off across four consumers.** A pure `sightedMobs` used by
+  GL + wireframe + probe + Node check meant the tendeeppplay pixel gate, the Node
+  cross-check and the shipping behaviour could never disagree.
+- **Two lanes, one gap.** Slot a and slot b both hit TEN-DEEP corridor-monsters on the
+  same never-dry tick (the claim is per-issue, so nothing stopped the second file).
+  Faster lane ships; slower lane must reconcile. Cross-link early (comment, not claim).
+- **A crooked test corridor fails an honest LOS check.** My first off-axis case used an
+  L-shaped stub whose diagonal genuinely crosses a wall — the gate was right, my
+  expectation was wrong. Make synthetic-LOS fixtures straight.
 
 ## Hygiene at exit
-- Dev servers :5178 and the temp :5175 stopped (never touched other lanes').
-- Slot-b worktree removed after merge (gh delete-branch); main checkout
-  re-detached at origin/main `ca1f66d`.
-- STATE.md committed to main (game code merged — rule 9) + statepark slot b.
+- Dev server :5178 stopped (mine only; never touched other lanes' ports).
+- Slot-b worktree removed after merge (branch gone via squash); main checkout at
+  origin/main. STATE committed to main (game merged — rule 9) + statepark slot b.
