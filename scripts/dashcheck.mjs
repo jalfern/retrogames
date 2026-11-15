@@ -34,9 +34,12 @@ const MUT = args.includes('--mutate')
 const mapArg = args.includes('--map') ? +args[args.indexOf('--map') + 1] : null
 const MUT_NAME = process.env.DASH_MUT || null
 
-const { W, H, EMPTY, DIRT, BOULDER, DIAMOND, STEEL, FIRE, CFG } = sim
+const { W, H, EMPTY, DIRT, BOULDER, DIAMOND, STEEL, FIRE, AMO_HEAD, AMO_BODY, PUSHWALL, CFG } = sim
 
-const TOKEN = { dig: 'dig', fell: 'fell', roll: 'roll', convert: 'gemlost', fly: 'ignite', burn: 'spread' }
+const TOKEN = {
+    dig: 'dig', fell: 'fell', roll: 'roll', convert: 'gemlost', fly: 'ignite', burn: 'spread',
+    push: 'push', crush: 'crush', amoeba: 'amoeba', dissolve: 'dissolve',
+}
 
 let pass = 0
 const fails = []
@@ -55,6 +58,9 @@ const MUTANTS = {
     flyIgnite: 'the firefly stops lighting things — no explosion at all',
     flyTravel: 'the firefly stops holding its heading — the orbit never reaches the seam, the corridor stays empty',
     fallKill: 'a falling boulder stops crushing — the hazard is theatre',
+    amoeba: 'the slime stops growing — the wave never crosses its pocket, never eats the bait',
+    push: 'push walls stop sliding — SLIME VAULT stays bolted shut',
+    pushCrush: 'walls stop crushing rocks — the boulder chokes the choke corridor forever',
 }
 
 if (MUT_NAME) {
@@ -73,7 +79,8 @@ if (mapArg !== null) {
             const t = grid[y * W + x]
             line += x === meta.spawn.x && y === meta.spawn.y ? '@'
                 : x === meta.exit.x && y === meta.exit.y ? 'E'
-                    : t === DIRT ? '#' : t === BOULDER ? 'O' : t === DIAMOND ? '*' : t === STEEL ? '=' : t === FIRE ? '~' : '.'
+                    : t === DIRT ? '#' : t === BOULDER ? 'O' : t === DIAMOND ? '*' : t === STEEL ? '=' : t === FIRE ? '~'
+                        : t === AMO_HEAD || t === AMO_BODY ? 's' : t === PUSHWALL ? '+' : '.'
         }
         console.log(line)
     }
@@ -252,6 +259,133 @@ for (let i = 0; i < LEVELS.length; i++) {
         g.player.x = 35; g.player.y = 3; g.have = meta.need
         sim.playerMove(g, 'ArrowRight')
         ok(g.win === true && g.end === 'clear', 'the exit did not open when the quota WAS met — the win path is broken')
+    }
+}
+
+// ------------------------------------------ SLIME & BOLTS (#2411) rule pins ----
+{
+    section('SLIME & BOLTS (#2411) — the amoeba wave and the push wall, pinned as rules')
+
+    const mk = (ops, player) => {
+        const g = new Uint8Array(W * H).fill(DIRT)
+        for (let x = 0; x < W; x++) { g[x] = STEEL; g[(H - 1) * W + x] = STEEL }
+        for (let y = 0; y < H; y++) { g[y * W] = STEEL; g[y * W + W - 1] = STEEL }
+        for (const [x, y, t] of ops) g[y * W + x] = t
+        const meta = { spawn: { x: player[0], y: player[1] }, exit: { x: player[0], y: player[1] }, need: 1, timeTicks: 600, flies: [] }
+        return sim.makeGame(meta, g)
+    }
+    const isAmo = (t) => t === AMO_HEAD || t === AMO_BODY
+
+    // the wave crosses open space eastward and its tail dissolves behind it
+    {
+        const g = mk([[10, 5, AMO_HEAD], [11, 5, EMPTY], [12, 5, EMPTY], [13, 5, EMPTY], [14, 5, EMPTY]], [2, 2])
+        let grewAt = -1
+        for (let t = 0; t < CFG.amoEvery * 4 && grewAt < 0; t++) {
+            sim.step(g)
+            if (isAmo(g.grid[5 * W + 11])) grewAt = t
+        }
+        ok(grewAt >= 0, 'the slime never grew into the open cell ahead — the amoeba automaton is inert')
+        for (let t = 0; t < CFG.amoEvery * (CFG.amoGens + 8); t++) sim.step(g)
+        ok(!isAmo(g.grid[5 * W + 11]), 'the wave left a permanent stain — bodies must expire or the cave just fills')
+        ok(!isAmo(g.grid[5 * W + 14]), 'the wave is still occupying the far cell after its generations ran out — the tail never catches up')
+    }
+    // a diamond in the wave path dissolves — and is NOT collected
+    {
+        const g = mk([[10, 5, AMO_HEAD], [11, 5, EMPTY], [12, 5, DIAMOND]], [2, 2])
+        let dissolved = false
+        for (let t = 0; t < CFG.amoEvery * 4 + 4 && !dissolved; t++) {
+            sim.step(g)
+            if (g.events.some(e => e.type === 'dissolve')) dissolved = true
+        }
+        ok(dissolved, 'the slime touched a diamond and nothing happened — the eating rule is gone')
+        ok(isAmo(g.grid[5 * W + 12]), 'the diamond cell did not become slime — the wave stopped short')
+        ok(g.have === 0, 'a slime-dissolved gem paid out — greed should get nothing from the goo')
+    }
+    // the slime cannot eat through dirt; and it branches perpendicular when shut in
+    {
+        const g = mk([[10, 5, AMO_HEAD], [10, 4, EMPTY]], [2, 2])   // east stays DIRT
+        let sideward = false
+        for (let t = 0; t < CFG.amoEvery * 3 + 2; t++) {
+            sim.step(g)
+            if (isAmo(g.grid[4 * W + 10])) sideward = true
+        }
+        ok(!isAmo(g.grid[5 * W + 11]), 'amoeba grew into DIRT — uncarved rock must be a wall to the wave')
+        ok(sideward, 'a wall-shut head never branched sideways — the blob cannot flow around corners')
+    }
+    // engulf both ways: walking into slime dies, slime growing onto the player dies
+    {
+        const g = mk([[10, 5, AMO_HEAD], [11, 5, EMPTY], [12, 5, EMPTY]], [12, 5])
+        g.player.x = 11; g.player.y = 5; g.grid[5 * W + 11] = EMPTY
+        sim.playerMove(g, 'ArrowLeft')                                  // step onto the seeded cell
+        ok(!g.player.alive && g.deathCause === 'amoeba', 'walking into slime was survivable — the pocket is theatre, not hazard')
+        const h = mk([[10, 5, AMO_HEAD], [11, 5, EMPTY]], [11, 5])
+        let engulfed = -1
+        for (let t = 0; t < CFG.amoEvery * 2 + 2 && engulfed < 0; t++) { sim.step(h); if (!h.player.alive) engulfed = t }
+        ok(engulfed >= 0 && h.deathCause === 'amoeba', 'the wave grew over a standing player without engulfing them')
+    }
+    // a bolt slides east one cell per shove; the player follows into the vacated cell
+    {
+        const g = mk([[6, 5, PUSHWALL], [7, 5, EMPTY]], [5, 5])
+        const moved = sim.playerMove(g, 'ArrowRight')
+        ok(moved && g.grid[5 * W + 6] === EMPTY && g.grid[5 * W + 7] === PUSHWALL, 'the shove did not slide the wall — push is dead')
+        ok(g.player.x === 6 && g.player.y === 5, 'the player did not step into the vacated cell — the shove is one-way theatre')
+        ok(g.events.some(e => e.type === 'push'), 'the wall moved but no push event fired — the proves-token cannot see the mechanic')
+    }
+    // BD lifts nothing: a wall below you does not slide up when you shove it
+    {
+        const g = mk([[6, 4, PUSHWALL]], [6, 5])
+        const moved = sim.playerMove(g, 'ArrowUp')
+        ok(!moved && g.grid[4 * W + 6] === PUSHWALL && g.player.y === 5, 'a push wall slid upward — gravity law broken, nothing gets lifted')
+    }
+    // the shove crushes the rock in its path — and a crushed gem pays nothing
+    {
+        const g = mk([[6, 5, PUSHWALL], [7, 5, BOULDER], [8, 5, EMPTY]], [5, 5])
+        sim.playerMove(g, 'ArrowRight')
+        ok(g.grid[5 * W + 7] === PUSHWALL, 'the wall stopped at a boulder instead of crushing it — the choke stays choked')
+        ok(g.events.some(e => e.type === 'crush' && e.kind === BOULDER), 'a crushed boulder fired no event — the gate cannot see the crush')
+        const h = mk([[6, 5, PUSHWALL], [7, 5, DIAMOND], [8, 5, EMPTY]], [5, 5])
+        sim.playerMove(h, 'ArrowRight')
+        ok(h.grid[5 * W + 7] === PUSHWALL && h.have === 0, 'a gem crushed under the wall paid out — destroyed loot must stay destroyed')
+    }
+    // a resting bolt is scenery, a falling bolt is death (the boulder law, doubled)
+    {
+        const g = mk([[6, 6, PUSHWALL], [6, 7, DIRT]], [6, 8])
+        g.grid[9 * W + 6] = DIRT
+        for (let t = 0; t < 40; t++) sim.step(g)
+        ok(g.player.alive && g.grid[6 * W + 6] === PUSHWALL, 'a resting pushwall killed the player or drifted — the moving/not-moving law is gone')
+        const h = mk([[6, 4, PUSHWALL], [6, 5, EMPTY], [6, 6, EMPTY], [6, 7, EMPTY]], [6, 7])
+        let died = -1
+        for (let t = 0; t < 40 && died < 0; t++) { sim.step(h); if (!h.player.alive) died = t }
+        ok(died >= 0 && h.deathCause === 'pushwall', 'a pushwall fell through the player without crushing them — falling bolts are free')
+    }
+    // SLIME VAULT end-to-end: the bolts really work the vault and the slime
+    // stays in its pocket across the whole planner win-run.
+    {
+        const { meta, grid } = buildLevel(4)
+        const g = sim.makeGame(meta, grid)
+        let pushes = 0, crushes = 0, fellWalls = 0, viol = null
+        const tally = (e) => {
+            if (e.type === 'push') pushes++
+            else if (e.type === 'crush') crushes++
+            else if (e.type === 'fell' && e.kind === PUSHWALL) fellWalls++
+        }
+        while (!g.end && g.tick < meta.timeTicks) {
+            const before = g.events.length                       // capture move events before step() clears them
+            if (g.tick % CFG.moveEvery === 0) { const d = sim.planStep(g); if (d) sim.playerMove(g, d) }
+            for (let k = before; k < g.events.length; k++) tally(g.events[k])
+            sim.step(g)
+            for (const e of g.events) tally(e)
+            for (let i = 0; i < g.grid.length; i++) {
+                if (!isAmo(g.grid[i])) continue
+                const x = i % W, y = (i - x) / W
+                if (!(x >= 24 && x <= 28 && y >= 13 && y <= 16)) viol = viol || `tick ${g.tick} slime at ${x},${y}`
+            }
+        }
+        ok(g.win === true, `SLIME VAULT was not winnable end-to-end (have ${g.have}/${meta.need}, end ${g.end})`)
+        ok(pushes >= 4, `only ${pushes} pushes across the win-run — the vault and choke bolts were not worked`)
+        ok(crushes === 1, `expected exactly 1 crush on the route, saw ${crushes} — the boulder choke changed shape`)
+        ok(fellWalls >= 2, `only ${fellWalls} pushwalls dropped into pits — a bolt that never falls never opens the tube`)
+        ok(!viol, `the slime left its pocket (${viol}) — the harvest and the tube are no longer provably safe`)
     }
 }
 

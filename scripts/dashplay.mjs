@@ -165,5 +165,45 @@ r.check('another key starts a fresh play (clock reset)', (await probe()).screen 
         `trail=${s2.trail} fly ${flyX}->${s2.flies[0] && s2.flies[0].x}`)
 }
 
+// ---- #2411 SLIME VAULT live: bolts shoved and wave grown with real keys ----
+{
+    await page.evaluate(() => window.__game && window.__game.reset && window.__game.reset(4))
+    await wait(700)
+    const s = await probe()
+    r.check('the contract reset loaded SLIME VAULT', s.name === 'SLIME VAULT' && s.screen === 'play', `name=${s.name} screen=${s.screen}`)
+    r.check('the vault starts bolted: 2 push walls and the choke boulder', s.bolts === 2 && s.boulders === 1, `bolts=${s.bolts} boulders=${s.boulders}`)
+    let slimePeak = 0, boltShoved = false, crushSeen = false
+    for (let i = 0; i < 1600; i++) {
+        const q = await probe()
+        if (q.screen !== 'play') break
+        slimePeak = Math.max(slimePeak, q.slime)
+        if (q.boltAt.some(([bx]) => bx > 22)) boltShoved = true
+        if (q.boulders === 0) crushSeen = true
+        const d = await hint()
+        if (d) await key(d)
+        await wait(55)
+    }
+    const fin = await probe()
+    r.check('real arrows crack the vault — SLIME VAULT won end-to-end', fin.screen === 'over' && fin.win === true, `screen=${fin.screen} win=${fin.win} have=${fin.have}/${fin.need}`)
+    r.check('the slime wave visibly grew…', slimePeak > 4, `peak slime=${slimePeak}`)
+    r.check('a bolt was shoved off its mark (real push through a real key)', boltShoved, `boltAt=${JSON.stringify(fin.boltAt)}`)
+    r.check('the choke boulder got crushed under a wall (board lost it)', crushSeen, `boulders=${fin.boulders}`)
+    await wait(1200)
+    await key('KeyM')
+    await wait(300)
+    r.check('the vault run restarts back to attract', (await probe()).screen === 'attract')
+    // the wave's full life-cycle on its own clock (taps outrun world ticks, so
+    // expiry is watched in a fresh cave with no input — the wave never idles):
+    await page.evaluate(() => window.__game && window.__game.reset && window.__game.reset(4))
+    let peak2 = 0, expired = false
+    for (let i = 0; i < 140 && !expired; i++) {
+        const q = await probe()
+        peak2 = Math.max(peak2, q.slime)
+        if (peak2 > 4 && q.slime === 0) expired = true
+        await wait(80)
+    }
+    r.check('…and dissolved entirely on its own clock (generations expire)', peak2 > 4 && expired, `peak=${peak2} end=${(await probe()).slime}`)
+}
+
 r.check('zero page errors across the whole playthrough', errors.length === 0, errors.slice(0, 4).join(' | '))
 r.exit(browser)

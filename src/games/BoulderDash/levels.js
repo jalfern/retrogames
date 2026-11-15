@@ -10,6 +10,10 @@
 //   roll     a falling rock levelled out off a ledge (level 2)
 //   convert  a gem fell and gave up, turning to dirt (level 3)
 //   fly,burn a firefly ignited and a chain spread — and steel contained it (4)
+//   push     the digger shoved a push wall sideways one cell (level 5, #2411)
+//   crush    a shoved wall destroyed the rock in its path (level 5)
+//   amoeba   the slime wave grew into open space (level 5)
+//   dissolve the wave took a diamond down with it (level 5)
 //
 // Two construction rules keep an unattended CI gate honest:
 //   1. the HARVEST gems (the quota) always sit on solid dirt with plain dirt
@@ -22,7 +26,7 @@
 //      silences the token, turning the gate red. Fire, in particular, is boxed
 //      behind steel: the wall is the lesson, the chain never crosses it.
 
-import { W, H, EMPTY, DIRT, BOULDER, DIAMOND, STEEL } from './sim.js'
+import { W, H, EMPTY, DIRT, BOULDER, DIAMOND, STEEL, AMO_HEAD, PUSHWALL } from './sim.js'
 
 class Carve {
     constructor() { this.g = new Uint8Array(W * H).fill(DIRT) }
@@ -144,6 +148,48 @@ export const LEVELS = [
             // steel cell — the player tunnels along it laterally and never digs
             // beneath a gem, so nothing of the paydirt ever drains away.
             c.seam(18, 20, 26)
+            return c.g
+        },
+    },
+    {
+        // The later variants come home (#2411). A full-height steel divide cuts
+        // the cavern — the ONLY way east is a tube carved through it, and the
+        // tube is bolted by a push wall. Shove the bolt east and it slides over
+        // the pit in the floor and drops out of the way: push + gravity, the
+        // classic vault crack. Deeper east, a second wall slams a boulder out
+        // of the corridor (crush — the rock is gone, the wall follows it into
+        // the next pit, and the tube opens again). Both walls and their pits
+        // are load-bearing: dashcheck's `push`/`crush` mutants strand the
+        // planner in this cave, and the every-cave-winnable gate goes red.
+        // Below the tube, a slime pocket (Boulder Dash II's amoeba) crawls
+        // east across its chamber and DISSOLVES the bait vein at its far wall
+        // in front of anyone who digs down to watch. Containment is a law, not
+        // a hope: the wave claims only EMPTY and DIAMOND, and uncarved DIRT
+        // never qualifies — so the pocket, ringed by solid rock, cannot reach
+        // the tube, the harvest at row 18 west of the divide, or the exit.
+        name: 'SLIME VAULT', timeTicks: 2400, need: 6,
+        spawn: { x: 3, y: 18 }, exit: { x: 36, y: 10 },
+        amoebaDir: [1, 0],
+        proves: ['dig', 'push', 'fell', 'crush', 'amoeba', 'dissolve'],
+        build() {
+            const c = new Carve()
+            c.shell()
+            c.rect(2, 16, 4, 20, EMPTY)                 // start, bottom-left (west side)
+            c.seam(18, 8, 13)                           // supported harvest — the whole quota, west of the divide
+            c.rect(20, 1, 21, 20, STEEL)                // the divide: full height, no way around but the tube
+            c.rect(18, 10, 32, 10, EMPTY)               // the tube, straight through it
+            c.row(9, 18, 29, STEEL)                     // tube roof — the corridor reads as a tunnel
+            c.set(23, 11, EMPTY); c.set(29, 11, EMPTY)  // the two pits the bolts drop into
+            c.rect(33, 8, 37, 12, EMPTY)                // exit chamber, east
+            c.set(22, 10, PUSHWALL)                     // the vault bolt (floor holds it; the pit is one cell east)
+            c.set(26, 10, PUSHWALL)                     // the choke: shove east, the boulder is next
+            c.set(28, 10, BOULDER)
+            c.rect(24, 13, 28, 16, EMPTY)               // the slime pocket, sealed by untouched dirt
+            c.set(24, 14, AMO_HEAD); c.set(24, 15, AMO_HEAD); c.set(25, 15, AMO_HEAD)
+            // the bait vein sits ON the pocket floor with nothing above it —
+            // loose gems over open space would fall and greed-turn to dirt long
+            // before the wave arrives (construction rule 1, learned the sharp way).
+            c.set(27, 16, DIAMOND); c.set(28, 16, DIAMOND)
             return c.g
         },
     },
