@@ -2177,9 +2177,17 @@ if (process.argv.includes('--mutate')) {
                 P.a = e.a; P.idx = 0; P.hint = 0
                 P.v = 7; P.spinT = 0; P.driftT = 0; P.charge = -1; P.driftG = 0
                 P.boostT = 90; P.boostTier = 0; P.offroad = true; P.surf = 'sand'
-                for (let i = 0; i < 120; i++) Mg.step(g, { u: true, steer: 0.32 })
-                const cracks = [...g.marks.values()].filter((d) => d === 3.5).length
-                check('#2395 grind rig: a fast pinned grind piles grit at the foot', cracks >= 6, `crack-depth marks after a 120-tick grind: ${cracks}`)
+                // crack-depth cells on a PINNED tick (wpress>=2) are grit: chips
+                // fire only on the arrival tick (wpress===1), and no other law
+                // writes 3.5 (SAND ring=1, crater=3, chip=4.5).
+                let prev = 0; let gritTicks = 0
+                for (let i = 0; i < 120; i++) {
+                    Mg.step(g, { u: true, steer: 0.32 })
+                    const n = [...g.marks.values()].filter((d) => d === 3.5).length
+                    if (n > prev && (P.wpress || 0) >= 2) gritTicks++
+                    prev = n
+                }
+                check('#2395 grind rig: stone drops DURING the pin, not just at the arrival (grit ticks)', gritTicks >= 1, `crack-depth deposits on pinned ticks: ${gritTicks}`)
             })
         } finally { pull(simPathP) }
     }
