@@ -39,6 +39,11 @@ const provenRun = () => {
 const SKY = Array.from({ length: 40 }, (_, i) => 186 - (Math.sin(i * 2.7) * 4 + Math.sin(i * 0.9) * 3))
 const STARS = Array.from({ length: 46 }, (_, i) => [(i * 97) % W, ((i * 61) % 150) + 4, 0.25 + ((i * 13) % 10) / 12])
 
+// #2379 — blasts are MATERIAL, not one warm memory: the interceptor's
+// white-hot flare, the chain pop's gold, the city plume's brick ember, the
+// battery's violet spark and the rubble-puff dud all read differently.
+const BLAST_HUE = { iv: '225,250,255', chain: '255,214,90', city: '255,104,66', base: '190,140,255', dud: '168,158,140' }
+
 const MissileBattleGame = () => {
     const stageRef = useRef(null)
     const [screen, setScreen] = useState('attract')
@@ -92,7 +97,17 @@ const MissileBattleGame = () => {
                 if (e.type === 'ifire') audioController.playSweep(220, 880, 0.18, 'square', 0.04)
                 else if (e.type === 'deny') audioController.playTone(90, 0.08, 'square', 0.05)
                 else if (e.type === 'boom') { audioController.playNoise(0.08, 0.05); shake = Math.max(shake, 2) }
-                else if (e.type === 'kill') { audioController.playTone(e.chain ? 980 : 520, 0.05, 'square', 0.04); burst(e.x, e.y, e.chain ? 10 : 6, e.chain ? '#ffe27a' : '#ffb37a'); shake = Math.max(shake, e.chain ? 3 : 2) }
+                else if (e.type === 'kill') {
+                    audioController.playTone(e.chain ? 980 : 520, 0.05, 'square', 0.04)
+                    // the kill spark carries its MATERIAL (#2379, ART.md variety)
+                    const kcol = e.chain ? '#ffe27a' : e.kind === 'smart' ? '#ffd23e' : e.kind === 'bomber' ? '#7df6ff' : '#ffb37a'
+                    burst(e.x, e.y, e.chain ? 10 : 6, kcol)
+                    shake = Math.max(shake, e.chain ? 3 : 2)
+                }
+                else if (e.type === 'spent') { // the jink is used up — the bomb flashes naked
+                    audioController.playTone(1240, 0.04, 'square', 0.03)
+                    burst(e.x, e.y, 5, '#cdd3e0')
+                }
                 else if (e.type === 'split') audioController.playTone(340, 0.06, 'sawtooth', 0.03)
                 else if (e.type === 'jink') audioController.playSweep(760, 240, 0.14, 'triangle', 0.035)
                 else if (e.type === 'drop') audioController.playTone(180, 0.05, 'triangle', 0.03)
@@ -199,10 +214,13 @@ const MissileBattleGame = () => {
             const liveIds = new Set()
             for (const e of gs.enemies) {
                 liveIds.add(e.id)
-                const col = e.kind === 'bomber' ? '#59f2ff' : e.kind === 'smart' ? '#ffd23e' : '#ff5d6c'
+                // a smart whose escapes are spent goes pale (#2379): the tell
+                // that the streak WILL NOT come this time
+                const spentVis = e.kind === 'smart' && e.dodgeLeft === 0
+                const col = e.kind === 'bomber' ? '#59f2ff' : e.kind === 'smart' ? (spentVis ? '#b8bdc9' : '#ffd23e') : '#ff5d6c'
                 const tr = trailFor(e.id, e.x, e.y, col)
                 ctx.strokeStyle = col
-                ctx.globalAlpha = 0.35
+                ctx.globalAlpha = spentVis ? 0.28 : 0.35
                 ctx.beginPath()
                 tr.pts.forEach(([x, y], k) => (k === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)))
                 ctx.stroke()
@@ -212,10 +230,21 @@ const MissileBattleGame = () => {
                 else if (e.kind === 'smart') {
                     ctx.beginPath(); ctx.arc(e.x, e.y, 3, 0, Math.PI * 2); ctx.fill()
                     if (e.dodgeT > 0) { // #2375 the jink streak — the escape reads on screen
-                        ctx.globalAlpha = 0.55
-                        ctx.strokeStyle = col
-                        ctx.beginPath(); ctx.moveTo(e.x - e.dodgeDir * 10, e.y + 1); ctx.lineTo(e.x - e.dodgeDir * 4, e.y + 1); ctx.stroke()
+                        // #2379 escalation: the veteran's streak is longer and
+                        // hotter — you can SEE the bigger commitment coming off
+                        const escBig = e.esc === CFG.dodgeEsc
+                        ctx.globalAlpha = escBig ? 0.75 : 0.55
+                        ctx.strokeStyle = escBig ? '#fff3a8' : col
+                        const len = 4 + (e.esc ? e.esc.ticks * 0.55 : 8)
+                        ctx.beginPath(); ctx.moveTo(e.x - e.dodgeDir * len, e.y + 1); ctx.lineTo(e.x - e.dodgeDir * 4, e.y + 1); ctx.stroke()
                         ctx.globalAlpha = 1
+                    }
+                    if (spentVis) { // the naked mark: an X where the dodge used to be
+                        ctx.strokeStyle = '#ff8f8f'
+                        ctx.beginPath()
+                        ctx.moveTo(e.x - 4, e.y - 4); ctx.lineTo(e.x + 4, e.y + 4)
+                        ctx.moveTo(e.x + 4, e.y - 4); ctx.lineTo(e.x - 4, e.y + 4)
+                        ctx.stroke()
                     }
                 }
                 else ctx.fillRect(e.x - 1.5, e.y - 3, 3, 6)
@@ -232,7 +261,8 @@ const MissileBattleGame = () => {
                 ctx.fillRect(m.x - 1, m.y - 1, 2, 2)
             }
             for (const b of gs.blasts) {
-                ctx.fillStyle = b.chain ? `rgba(255,214,90,${0.5 + 0.3 * Math.sin(tk)})` : `rgba(255,255,255,${0.55 + 0.3 * Math.sin(tk / 2)})`
+                const hue = BLAST_HUE[b.src] || BLAST_HUE.iv
+                ctx.fillStyle = b.chain ? `rgba(${hue},${0.5 + 0.3 * Math.sin(tk)})` : `rgba(${hue},${0.55 + 0.3 * Math.sin(tk / 2)})`
                 ctx.beginPath(); ctx.arc(b.x, b.y, Math.max(0.5, b.r), 0, Math.PI * 2); ctx.fill()
             }
 
@@ -383,8 +413,9 @@ const MissileBattleGame = () => {
                             id: 9000 + Math.round(s.x * 7 + s.y), kind: s.kind ?? 'icbm',
                             x: s.x, px: s.x, y: s.y, vx: s.vx ?? 0,
                             vy: s.vy ?? (CFG.groundY - s.y) / spd,
-                            ti: s.ti ?? 0, t: 0, alive: true, split: null,
+                            ti: s.ti ?? 0, t: 0, alive: true, split: s.split ? { ...s.split, done: false } : null,
                             amp: s.amp ?? 0, drops: s.drops ? s.drops.map((d) => ({ ...d, done: false })) : null,
+                            jinks: s.jinks ?? null,
                             spawnAt: gs.playT, score: CFG.score[s.kind ?? 'icbm'],
                         })
                     }
@@ -423,7 +454,7 @@ const MissileBattleGame = () => {
                         for (let k = 0; k < 5; k++) gs.enemies.push({ id: 8000 + k, kind: 'icbm', x: 60 + k * 32, px: 60 + k * 32, y: 30 + k * 6, vx: (146 - 60 - k * 32) / 240, vy: (CFG.groundY - 30 - k * 6) / 240, ti: 2, t: 0, alive: true, split: null, amp: 0, drops: null, spawnAt: gs.playT, score: CFG.score.icbm })
                         return 'five warheads converging on one city'
                     } },
-                    { label: 'SMARTEST BOMB', run: () => { gs.enemies.push({ id: 8100, kind: 'smart', x: 128, px: 128, y: 20, vx: 0, vy: 0.6, ti: 3, t: 0, alive: true, split: null, amp: 13, drops: null, spawnAt: gs.playT, score: CFG.score.smart }); return 'weaving at the middle city' } },
+                    { label: 'SMARTEST BOMB', run: () => { gs.enemies.push({ id: 8100, kind: 'smart', x: 128, px: 128, y: 20, vx: 0, vy: 0.6, ti: 3, t: 0, alive: true, split: { y: 118, n: 3, spd: 150, done: false }, amp: 13, drops: null, jinks: 2, spawnAt: gs.playT, score: CFG.score.smart }); return 'a veteran: it weaves, dodges twice, then sheds three near the deck' } },
                     { label: 'JINK PROOF', run: () => {
                         // the scripted earn-the-kill: round one is feinted, round two is yours
                         const e = { id: 8101, kind: 'smart', x: 200, px: 200, y: 60, vx: -0.3, vy: 0.5, ti: 1, t: 0, alive: true, split: null, amp: 12, drops: null, spawnAt: gs.playT, score: CFG.score.smart }

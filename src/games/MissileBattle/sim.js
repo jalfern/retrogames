@@ -37,6 +37,13 @@ export const CFG = {
     // the escape). Deterministic: same sky, same jink, every replay.
     dodge: { r: 30, horizon: 26, v: 1.1, ticks: 14, cool: 20, budget: 1 },
     dodgeOn: true,
+    // ESCALATION (#2379): by the GRAND BARRAGE the jink commits FURTHER and
+    // LONGER — the longer, faster streak you see is the tell. Two late
+    // veteran bombs (waves.js `jinks: 2`) hold a second escape: the wave-3
+    // answer to a bomb is no longer memorised at round one. SATURATION still
+    // teaches the plain escape, so the player meets the menagerie in order.
+    // A bomb whose last escape ends flashes NAKED (`spent` event).
+    dodgeEsc: { wave: 2, budget: 1, ticks: 18, v: 1.35, cool: 24 },
 }
 
 
@@ -82,6 +89,7 @@ function spawnEnemy(g, spec) {
         split: spec.split ? { ...spec.split, done: false } : null,
         amp: spec.amp || 0,
         drops: spec.drops ? spec.drops.map((d) => ({ ...d, done: false })) : null,
+        jinks: spec.jinks ?? null,   // #2379: a script may promote a bomb to a multi-escape veteran
         spawnAt: g.playT,
         score: CFG.score[spec.kind],
     })
@@ -132,11 +140,11 @@ function fire(g, tx, ty) {
     return true
 }
 
-function addBlast(g, x, y, r, chain = false) {
+function addBlast(g, x, y, r, chain = false, src = 'iv') {
     if (g.blasts.length >= CFG.maxBlasts) g.blasts.shift()
     // a blast is born ALREADY breathing: r=0 would be filtered out before
     // its first growth tick — a chain blast born invisible never kills
-    g.blasts.push({ x, y, r: CFG.blastGrow, rMax: r, age: 0, state: 'grow', chain })
+    g.blasts.push({ x, y, r: CFG.blastGrow, rMax: r, age: 0, state: 'grow', chain, src })
 }
 
 const freshWave = (g, wave) => {
@@ -247,7 +255,7 @@ export function step(g, input = {}) {
             }
         }
     }
-    for (const [x, y] of chains) addBlast(g, x, y, CFG.blastR * CFG.chainR, true)
+    for (const [x, y] of chains) addBlast(g, x, y, CFG.blastR * CFG.chainR, true, 'chain')
     g.blasts = g.blasts.filter((b) => b.r > 0)
 
     // 5. enemies fall, weave, split, drop, hit ground
@@ -260,11 +268,20 @@ export function step(g, input = {}) {
         // spent the weave is naked again). The first interceptor learns where
         // it runs; the next one is aimed there. Pure geometry, no luck.
         if (e.kind === 'smart' && CFG.dodgeOn) {
-            if (e.dodgeT === undefined) { e.dodgeT = 0; e.dodgeCool = 0; e.dodgeLeft = CFG.dodge.budget }
+            if (e.dodgeT === undefined) {
+                e.dodgeT = 0; e.dodgeCool = 0
+                // #2379 escalation: late-wave bombs play by the tougher table.
+                e.esc = CFG.dodgeEsc && g.wave >= CFG.dodgeEsc.wave ? CFG.dodgeEsc : CFG.dodge
+                e.dodgeLeft = e.jinks != null ? e.jinks : e.esc.budget
+            }
             if (e.dodgeT > 0) {
                 e.dodgeT--
-                e.px += e.dodgeDir * CFG.dodge.v
-                if (e.dodgeT === 0) { e.dodgeLeft--; e.dodgeCool = CFG.dodge.cool }
+                e.px += e.dodgeDir * e.esc.v
+                if (e.dodgeT === 0) {
+                    e.dodgeLeft--; e.dodgeCool = e.esc.cool ?? CFG.dodge.cool
+                    // the last escape ends: visibly naked from here on
+                    if (e.dodgeLeft === 0) g.events.push({ type: 'spent', x: Math.round(e.x), y: Math.round(e.y), tick: g.tick })
+                }
             } else {
                 if (e.dodgeCool > 0) e.dodgeCool--
                 if (e.dodgeLeft > 0 && e.dodgeCool === 0) {
@@ -278,8 +295,8 @@ export function step(g, input = {}) {
                     }
                     if (dir !== 0) {
                         e.dodgeDir = dir
-                        e.dodgeT = CFG.dodge.ticks
-                        g.events.push({ type: 'jink', x: Math.round(e.x), y: Math.round(e.y), dir, tick: g.tick })
+                        e.dodgeT = e.esc.ticks
+                        g.events.push({ type: 'jink', x: Math.round(e.x), y: Math.round(e.y), dir, left: e.dodgeLeft - 1, tick: g.tick })
                     }
                 }
             }
@@ -317,17 +334,22 @@ export function step(g, input = {}) {
 
         if (e.y >= CFG.groundY) {
             e.alive = false
+            let src = 'dud'
             if (e.ti >= 0 && e.ti < 6 && g.cities[e.ti].alive) {
                 g.cities[e.ti].alive = false
                 g.events.push({ type: 'cityHit', x: CITIES[e.ti], tick: g.tick })
+                src = 'city'
             } else if (e.ti >= 6 && g.bases[e.ti - 6].alive) {
                 g.bases[e.ti - 6].alive = false
                 g.bases[e.ti - 6].ammo = 0
                 g.events.push({ type: 'baseHit', x: BASES[e.ti - 6], tick: g.tick })
+                src = 'base'
             } else {
                 g.events.push({ type: 'dud', x: Math.round(e.x), tick: g.tick })
             }
-            addBlast(g, e.x, CFG.groundY - 2, CFG.blastR * 0.8)
+            // the plume carries the MATERIAL it burned through (#2379): a city
+            // plume, a battery spark and a rubble puff are not the same fire.
+            addBlast(g, e.x, CFG.groundY - 2, CFG.blastR * 0.8, false, src)
             if (g.cities.every((c) => !c.alive)) {
                 g.end = 'lose'
                 g.events.push({ type: 'lose', tick: g.tick })

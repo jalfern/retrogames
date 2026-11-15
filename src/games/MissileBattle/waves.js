@@ -45,6 +45,11 @@ export const WAVES = [
             { t: 520, kind: 'icbm', x0: 92, ti: 2, spd: 258, split: { y: 94, n: 2, spd: 216 } },
             { t: 600, kind: 'bomber', y: 56, x0: 274, vx: -0.6, drops: [{ t: 140, ti: 4 }, { t: 300, ti: 3 }, { t: 460, ti: 7 }] },
             { t: 690, kind: 'icbm', x0: 250, ti: 8, spd: 250 },
+            // the FIRST smart bomb appears one wave earlier than the old scripts
+            // (#2379): the arcade teaches the menagerie in order — meet the
+            // weaver in SATURATION with its single escape, then face the
+            // doubled, faster one in the GRAND BARRAGE (sim.js CFG.dodgeEsc).
+            { t: 730, kind: 'smart', x0: 214, ti: 4, spd: 244, amp: 9 },
             { t: 780, kind: 'icbm', x0: 34, ti: 0, spd: 246, split: { y: 90, n: 2, spd: 215 } },
             { t: 870, kind: 'icbm', x0: 150, ti: 3, spd: 242 },
             { t: 960, kind: 'icbm', x0: 210, ti: 4, spd: 240, split: { y: 84, n: 3, spd: 212 } },
@@ -59,23 +64,31 @@ export const WAVES = [
         name: 'GRAND BARRAGE',
         entries: [
             { t: 45, kind: 'icbm', x0: 16, ti: 0, spd: 255, split: { y: 92, n: 2, spd: 215 } },
-            { t: 110, kind: 'smart', x0: 240, ti: 5, spd: 252, amp: 11 },
+            // #2379 — the arcade's yellow bomb both WEAVES and SHEDS: each
+            // GRAND BARRAGE smart splits into 2-3 MIRVs near the deck, the
+            // full menagerie in one silhouette. Split altitudes sit below the
+            // ICBM splitter band (the shed is late, like the original) and the
+            // children converge on the parent's city through spawnChild.
+            { t: 110, kind: 'smart', x0: 240, ti: 5, spd: 252, amp: 11, split: { y: 118, n: 2, spd: 150 } },
             { t: 180, kind: 'icbm', x0: 120, ti: 2, spd: 248, split: { y: 84, n: 3, spd: 210 } },
             { t: 250, kind: 'bomber', y: 38, x0: -18, vx: 0.72, drops: [{ t: 110, ti: 1 }, { t: 240, ti: 2 }, { t: 370, ti: 3 }, { t: 500, ti: 4 }] },
             { t: 320, kind: 'icbm', x0: 66, ti: 1, spd: 244 },
-            { t: 390, kind: 'smart', x0: 30, ti: 6, spd: 240, amp: 9 },
+            { t: 390, kind: 'smart', x0: 30, ti: 6, spd: 240, amp: 9, split: { y: 110, n: 2, spd: 160 } },
             { t: 460, kind: 'icbm', x0: 196, ti: 4, spd: 238, split: { y: 80, n: 2, spd: 205 } },
             { t: 540, kind: 'icbm', x0: 150, ti: 3, spd: 234 },
             { t: 610, kind: 'icbm', x0: 82, ti: 1, spd: 232, split: { y: 90, n: 2, spd: 208 } },
             { t: 690, kind: 'bomber', y: 52, x0: 274, vx: -0.68, drops: [{ t: 130, ti: 5 }, { t: 300, ti: 6 }, { t: 470, ti: 8 }] },
-            { t: 770, kind: 'smart', x0: 220, ti: 4, spd: 230, amp: 13 },
+            // veterans: these two hold a SECOND escape (#2379 escalation)
+            { t: 770, kind: 'smart', x0: 220, ti: 4, spd: 230, amp: 13, jinks: 2, split: { y: 112, n: 3, spd: 140 } },
             { t: 850, kind: 'icbm', x0: 40, ti: 0, spd: 228, split: { y: 88, n: 2, spd: 200 } },
             { t: 930, kind: 'icbm', x0: 170, ti: 3, spd: 226 },
-            { t: 1020, kind: 'smart', x0: 90, ti: 1, spd: 224, amp: 10 },
+            { t: 1020, kind: 'smart', x0: 90, ti: 1, spd: 224, amp: 10, split: { y: 122, n: 2, spd: 150 } },
             { t: 1110, kind: 'icbm', x0: 146, ti: 2, spd: 222, split: { y: 82, n: 3, spd: 200 } },
             { t: 1210, kind: 'icbm', x0: 250, ti: 8, spd: 220, split: { y: 76, n: 2, spd: 200 } },
             { t: 1310, kind: 'icbm', x0: 110, ti: 2, spd: 218 },
-            { t: 1420, kind: 'smart', x0: 200, ti: 5, spd: 215, amp: 12 },
+            // ti 3, not 5: the shed children must not all pile onto the right
+            // span — the arc balance is what the slack rule grades (#2379)
+            { t: 1420, kind: 'smart', x0: 200, ti: 3, spd: 215, amp: 12, jinks: 2, split: { y: 116, n: 2, spd: 145 } },
         ],
     },
 ]
