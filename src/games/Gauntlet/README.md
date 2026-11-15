@@ -409,9 +409,26 @@ stripped to its consented half at upload time. Honest gaps: online lockstep
 quests are NOT auto-recorded (the wire owns the seats); a mid-run WATCH seats
 the brain but seat 1 stays labelled `human` for the ticks before the takeover.
 Same wiring in ShortOrderShout (offline kitchens), TalkMeDown and
-RallyCoDriver (offline stages). Proof: `npm run recordcheck` (73 gates —
-consent, store contract, auto-capture, voice clock, and the clap-sync verdict
-with its pinned mutants).
+RallyCoDriver (offline stages). Proof: `npm run recordcheck` — consent,
+identity, store contract, auto-capture, voice clock, and the clap-sync verdict
+with its pinned mutants.
+
+## Per-player identity (#1711 audit 1)
+
+Consent, takes and uploads key to a NAME, not the device. The gate asks WHO
+(`#consent-name`): saving anything requires a valid name; an unnamed NO
+THANKS records a decline under `anon` (decline-only — nothing may upload for
+an id nobody owns). `player.js` normalizes ids (" Jon " → `jon`) and keeps
+the last-used name at `retrogames-player-v1` as a PREFILL only. Legacy
+device-wide grants under `'player'` are no longer consulted, so an old
+unnamed YES re-asks (consent is not transferable to a named player). The
+take carries the id in the additive rec `player` stamp, `uploadSession`
+refuses without a valid name (no-fallback, the #2142 ruling; the store
+stays lenient so cached old bundles keep working), and outbox drains consult
+consent PER NAME — two humans consenting on one phone reach the store as two
+labels; revoking one purges only that pile. Honest gap: a pass-and-play take
+carries the label of the human who started the run (seat-level identity is
+S2 dataset work).
 
 ## Store evidence (#1711 S3 prep)
 
