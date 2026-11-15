@@ -113,6 +113,40 @@ const SLEEP_LINES = [
 // a hanging visitor within CAT_MEET_DIST of Miso greets her once per visit —
 // a tiny bond bump, and the meet line warms with the ladder.
 export const PET_FEED_T = 2.2        // world seconds the bowl + crumbs linger
+
+// ------------------------------------------------------- yarn ball (#2256) ----
+// The original lets you ORDER play with the pet (The Sims, PC 2000: a cat toy
+// the Sim dangles). The yarn ball is the lot's first cat-only piece: a decor
+// toy whose play rewards pay the CAT first. A resident may order the play (tap
+// the ball) while Miso is home and rested — the walk ends with both paid and
+// the bond climbing; without a cat the order refuses honestly at the ball.
+// Generic fun-seeking (autonomy, the bored-kid hunt, pad-A) skips cat-only
+// pieces: nobody parks on a cat toy. A bored awake cat hunts the ball herself.
+export const YARN_CD = 8             // world seconds between ordered play sessions
+export const YARN_CAT_FUN = 0.45    // fun Miso pockets from a dangled ball
+export const YARN_SOCIAL = 0.1      // social the resident pockets mid-play
+export const YARN_BOND = 1          // house bond per played session
+export const YARN_REACH = 3         // tiles the cat must be within at the finish
+export const YARN_PLAY_T = 2.2      // world seconds the ball spins + paws bat (view-only)
+export const PET_SELF_FUN = 0.5     // fun the cat bats out of the ball unasked
+export const PET_BORED = 0.3        // cat fun under this, she hunts the yarn herself
+export const YARN_LINES = [
+    '{n} dangles the yarn ball in slow arcs — Miso\'s paws answer every arc.',
+    'String magic: {n} winds the tail of yarn and Miso does the rest.',
+    'The ball rolls, the tabby pounces, the household laughs out loud.',
+]
+export const YARN_NOCAT_LINES = [
+    'The yarn ball sits unspooled — a toy is only half a game without a cat.',
+    'Nobody to play with; the yarn waits for a cat at the gate.',
+]
+export const YARN_LOST_LINES = [
+    'Miso drifts off mid-wiggle — the offer stands, but the paws are elsewhere.',
+    'The ball spins once, twice — no cat nearby to catch it.',
+]
+export const PET_PLAY_LINES = [
+    'Miso finds the yarn ball and bats it under the sofa, then out, then under again.',
+    'A private game of string — nobody ordered it, everybody enjoyed it.',
+]
 export const CAT_MEET_DIST = 2      // Manhattan reach of the greeting
 export const CAT_MEET_BOND = 0.5    // a small nod, not a ladder jump
 const CAT_MEET_LINES = [
@@ -244,6 +278,7 @@ export const CATALOG = [
     { id: 'roomkit', name: 'Spare Room', price: 300, h: 1, solid: false, room: true },
     { id: 'petkit', name: 'Adopt a Cat', price: PET.price, h: 1, solid: false, pet: true },
     { id: 'kidkit', name: 'Adopt a Child', price: KID.price, h: 1, solid: false, kid: true },
+    { id: 'yarn', name: 'Yarn Ball', price: 60, h: 1, solid: false, decor: true, need: 'fun', amt: 0.25, dur: 3, catOnly: true },   // #2256: card 17, the cat's own toy
 ]
 export const DEF = Object.fromEntries(CATALOG.map((d) => [d.id, d]))
 export const NEEDS = ['hunger', 'energy', 'fun', 'social', 'bladder']
@@ -308,7 +343,7 @@ export const MEAL_COLD_LINES = [
 // Union of these shelves covers CATALOG exactly, no duplicates (STORES gate).
 export const CAT_TABS = [
     { id: 'HOME', ids: ['bed', 'fridge', 'stove', 'toilet', 'shower', 'phone'] },
-    { id: 'FUN', ids: ['tv', 'radio', 'book', 'sofa'] },
+    { id: 'FUN', ids: ['tv', 'radio', 'book', 'sofa', 'yarn'] },
     { id: 'DECOR', ids: ['plant', 'rug', 'lamp'] },
     { id: 'SPECIAL', ids: ['roomkit', 'petkit', 'kidkit'] },
 ]
@@ -495,6 +530,7 @@ export function newRun(seed) {
         spatFx: 0,                // #2076: seconds left of the storm-puff tell over the pair
         cooFx: 0,                 // #2131: seconds left of the sparkle/hearts tell over the pair
         cmdCd: 0,                 // #2131: real seconds until the next player command lands
+        yarnCd: 0,                // #2256: world seconds until the next ordered yarn play
         holdT: -1,                // #2171: armed thumb-court hold (world ms; -1 = no press pending)
         courtPick: null,          // #2235: preferred addressee while it stays in the reach ring
         houseLineCd: 6,               // co-presence chat line cooldown (s)
@@ -830,7 +866,18 @@ export function findNearest(s, p, type) {
     return best
 }
 
+// #2256: the yarn ball is cat business — the order stands while Miso is home
+// and awake and the play cooldown has closed. Placement/sale never consult
+// this; only a human ordering play does.
+export function yarnOrderOk(s) {
+    return !!s.pet && !s.pet.asleep && s.yarnCd === 0 && !isNight(s)
+}
+
 export function cmdUse(s, p, it) {
+    if (DEF[it.id] && DEF[it.id].catOnly && !yarnOrderOk(s)) {
+        if (!s.pet) s.events.push({ t: 'refuse', r: it.r, c: it.c })
+        return false
+    }
     const tg = targetsOf(s, it)
     if (!tg.length) return false
     const path = bfsPath(s, { r: p.r, c: p.c }, tg)
@@ -876,6 +923,7 @@ export function tryUse(s, p) {
         }
         const d = DEF[it.id]
         if (!d || !d.need) continue
+        if (d.catOnly && !yarnOrderOk(s)) continue   // #2256: pad-A takes the play order only while it stands
         const near = Math.min(...targetsOf(s, it).map((t) => Math.abs(t.r - p.r) + Math.abs(t.c - p.c)))
         if (near < bd) { bd = near; best = it }
     }
@@ -1020,7 +1068,7 @@ function needTarget(s, p, need) {
     let best = null, bd = 1e9
     for (const it of s.items) {
         const d = DEF[it.id]
-        if (!d || d.need !== need) continue
+        if (!d || d.need !== need || d.catOnly) continue   // #2256: self-service never parks on the cat toy
         const tg = targetsOf(s, it)
         if (!tg.length) continue
         const dist = bfsPath(s, { r: p.r, c: p.c }, tg)
@@ -1447,7 +1495,7 @@ export function adoptPet(s) {
         name: PET.name, r: 12, c: 5, x: tileX(5) + TILE / 2, y: tileY(12) + TILE / 2,
         path: bfsPath(s, { r: 12, c: 5 }, [dest]), state: 'enter', t: 0, face: 1, walkPhase: 0,
         needs: { hunger: 0.8, fun: 0.75, energy: 0.85 },
-        asleep: false, cd: 0, purrT: 0, wanderT: 2, food: false, bedT: 0, stepDist: 0, feedT: 0,
+        asleep: false, cd: 0, purrT: 0, wanderT: 2, food: false, bedT: 0, stepDist: 0, feedT: 0, play: false, playT: 0, sitT: 0, stretchT: 0,
     }
     s.events.push({ t: 'pet', name: PET.name, x: s.pet.x, y: s.pet.y })
     think(s, 'The carrier clicks open at the gate — Miso stretches, claims the lot, and trots inside.')
@@ -1461,6 +1509,11 @@ function updatePet(s, dt) {
     if (p.cd > 0) p.cd = Math.max(0, p.cd - dt)
     if (p.purrT > 0) p.purrT = Math.max(0, p.purrT - dt)
     if (p.feedT > 0) p.feedT = Math.max(0, p.feedT - dt)   // #2200: the bowl fades on the world clock
+    if (p.playT > 0) p.playT = Math.max(0, p.playT - dt)   // #2256: the bat-spin fades the same way
+    if (p.stretchT > 0) p.stretchT = Math.max(0, p.stretchT - dt)
+    // #2256 sprite states (view-only): settled cats sit; walking cats reset.
+    if (!p.path && !p.play && !p.asleep && !p.food) p.sitT = Math.min(4, p.sitT + dt)
+    else p.sitT = 0
     const dh = dt / HOUR_SEC
     p.needs.hunger = Math.max(0, p.needs.hunger - PET_DECAY.hunger * dh)
     p.needs.fun = Math.max(0, p.needs.fun - PET_DECAY.fun * dh * (p.asleep ? 0.3 : 1))
@@ -1485,7 +1538,7 @@ function updatePet(s, dt) {
     }
 
     if (p.asleep) {
-        if (!night) { p.asleep = false; p.state = 'roam'; think(s, 'Miso unspools at dawn and stretches down the whole hallway.') }
+        if (!night) { p.asleep = false; p.state = 'roam'; p.stretchT = 0.9; think(s, 'Miso unspools at dawn and stretches down the whole hallway.'); return }
         return
     }
     // night: find a warm floor tile and pour herself into a loaf
@@ -1516,6 +1569,23 @@ function updatePet(s, dt) {
         p.feedT = PET_FEED_T   // #2200: the kibble moment paints a bowl + crumbs
         s.events.push({ t: 'pet-eat', name: p.name, x: p.x, y: p.y })
         think(s, 'Miso works the fridge latch like a puzzle toy. Kibble: acquired.')
+    }
+    // #2256 yarn law: a bored cat hunts the ball herself — the toy earns its
+    // keep even when nobody orders the play (mirrors the kibble law above).
+    if (!p.food && !p.play && p.needs.fun < PET_BORED) {
+        const y = findNearest(s, p, 'yarn')
+        if (y) {
+            const path = bfsPath(s, { r: p.r, c: p.c }, y.tg)
+            if (path) { p.path = path; p.play = true; p.state = 'play' }
+        }
+    }
+    if (p.play && !p.path) {
+        p.play = false
+        p.needs.fun = Math.min(1, p.needs.fun + PET_SELF_FUN)
+        p.state = 'roam'
+        p.playT = YARN_PLAY_T
+        s.events.push({ t: 'pet-play', name: p.name, x: p.x, y: p.y, self: true })
+        think(s, pick(s, PET_PLAY_LINES))
     }
     // wander the lot — every pick asks walkable AND reachable, every seed the same
     if (!p.path) {
@@ -1571,7 +1641,7 @@ function funTarget(s, k) {
     let best = null, bd = 1e9
     for (const it of s.items) {
         const d = DEF[it.id]
-        if (!d || d.need !== 'fun') continue
+        if (!d || d.need !== 'fun' || d.catOnly) continue   // #2256: Pip doesn't play with the cat's ball
         const tg = targetsOf(s, it)
         if (!tg.length) continue
         const dist = Math.min(...tg.map((t) => Math.abs(t.r - k.r) + Math.abs(t.c - k.c)))
@@ -1813,6 +1883,37 @@ function finishUse(s, p) {
             s.mealEaten = []
         }
     }
+    // #2256: the ordered play. The walk to the ball ends in a session while
+    // Miso answers within YARN_REACH — both are paid, the bond climbs, the
+    // ball spins (item + cat staging is view-only, like feedT). A cat that
+    // wandered off, slept, or lost the cooldown slot makes the offer refuse —
+    // the ball's own fun already paid is the consolation.
+    if (def.id === 'yarn') {
+        const cat = s.pet
+        const near = cat && !cat.asleep && s.yarnCd === 0 && Math.abs(cat.r - p.r) + Math.abs(cat.c - p.c) <= YARN_REACH
+        if (near) {
+            cat.needs.fun = Math.min(1, cat.needs.fun + YARN_CAT_FUN)
+            p.needs.social = Math.min(1, p.needs.social + YARN_SOCIAL)
+            relAdd(s, 'house', YARN_BOND)
+            s.content = Math.min(WIN_CONTENT, s.content + 1)
+            s.yarnCd = YARN_CD
+            it.playT = YARN_PLAY_T
+            cat.playT = YARN_PLAY_T
+            cat.play = false
+            const cells = []
+            for (const [dr, dc] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const rr = p.r + dr, cc = p.c + dc
+                if (walkable(s, rr, cc)) cells.push({ r: rr, c: cc })
+            }
+            const cpath = bfsPath(s, { r: cat.r, c: cat.c }, cells)
+            if (cpath && cpath.length) { cat.path = cpath; cat.state = 'play'; cat.food = false }
+            s.events.push({ t: 'pet-play', name: p.name, x: tileX(it.c) + TILE / 2, y: tileY(it.r) + TILE / 2 })
+            think(s, pick(s, YARN_LINES).replace('{n}', p.name))
+        } else {
+            s.events.push({ t: 'refuse', r: it.r, c: it.c })
+            think(s, cat ? pick(s, YARN_LOST_LINES) : pick(s, YARN_NOCAT_LINES))
+        }
+    }
 }
 
 // -------------------------------------------------------------- work ------
@@ -1987,6 +2088,7 @@ export function advance(s, dt) {
     if (s.cooFx > 0) s.cooFx = Math.max(0, s.cooFx - dt)       // #2131: the warm tell too
     if (s.giftFx > 0) s.giftFx = Math.max(0, s.giftFx - dt)    // #2240: the set-down basket fades too
     if (s.cmdCd > 0) s.cmdCd = Math.max(0, s.cmdCd - dt)       // #2131: command cooldown rides the real clock
+    if (s.yarnCd > 0) s.yarnCd = Math.max(0, s.yarnCd - dt)     // #2256: so does the yarn play cooldown
     if (s.triTell > 0) s.triTell = Math.max(0, s.triTell - dt) // #2154: the three-way tell throttles on the world clock
     if (s.orderPing.t > 0) s.orderPing.t = Math.max(0, s.orderPing.t - dt)   // #2253: the order ring fades on the real clock
     if (s.build) return     // time stands still in buy mode
@@ -2290,6 +2392,7 @@ export function stateHash(s) {
     mix(s.mealSlot); mix(s.mealSerial) // and which bell rang, and how many ever rang
     mix(s.mealEaten.length)            // who has sat down at the current plate
     mix(s.meal ? 1 : 0)              // the plate itself is state (its cell rides the items loop)
+    mix(s.yarnCd)                    // #2256: the ordered-play cooldown rides it too
     for (const p of s.people) {
         mix(p.r); mix(p.c)
         for (const n of NEEDS) mix(p.needs[n])
@@ -2305,6 +2408,7 @@ export function stateHash(s) {
         mix(s.pet.r); mix(s.pet.c)
         mix(s.pet.needs.hunger); mix(s.pet.needs.fun); mix(s.pet.needs.energy)
         mix(s.pet.asleep ? 1 : 0); mix(s.pet.cd)
+        mix(s.pet.play ? 1 : 0)      // #2256: a cat mid-hunt toward the yarn is state
     }
     mix(s.kid ? 1 : 0)                              // #2203: so is the child
     if (s.kid) {

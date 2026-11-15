@@ -35,6 +35,7 @@ import {
     courtReach, courtPickSet,   // #2235: choose your court target — tap a shared-ring person
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court — one pad button, two orders
     scheduleMeals, MEAL_WINDOW, SPAT_CD,   // #2244: the meal bells — the F1 cheat re-seeds today's hours
+    DEF, yarnOrderOk,   // #2256: the yarn ball — cat-only piece, honest refusal on tap
     NEED_HINT,   // #2253: the amber prompt names the fix
     VISIT_TIMBRE, REL_EDGES,   // #2240: each neighbour owns a call motif + entrance footfalls; FAMILY tier for scenario legs
     stateHash,
@@ -68,6 +69,7 @@ const MESSAGES = [
     'WHEN THE RING IS CROWDED — tap a person in reach. They hear your next words until they step away.',
     'Adopt a child for §150 — K opens the counter. Pip scampers, snackes, plays and tumbles.',
     'A lonely Pip cries and the whole house feels it. Nearby family, toys and a cozy corner keep the giggles coming.',
+    'MISO WANTS A GAME — buy the Yarn Ball (§60, FUN shelf) and tap it: your resident dangles, the tabby pounces, BONDS climb.',
     'Bank 80 contentment and the lifetime wish comes true.',
 ]
 const PRESS = 'TAP / PRESS ANY KEY TO MOVE IN'
@@ -283,6 +285,12 @@ const HomebodyGame = () => {
                         setTimeout(() => audioController.playTone(520, 0.05, 'square', 0.05), 70)
                         if (live) burst(e.x, e.y + 5, 3, '#8a5626', 1.2)   // #2200: the crumbs fly
                         break
+                    case 'pet-play':   // #2256: the yarn session — three bat-flips and a pink twinkle
+                        audioController.playSweep(620, 900, 0.06, 'triangle', 0.045)
+                        setTimeout(() => audioController.playSweep(760, 1050, 0.06, 'triangle', 0.045), 90)
+                        setTimeout(() => audioController.playSweep(900, 1245, 0.07, 'triangle', 0.04), 190)
+                        if (live) burst(e.x, e.y - 6, 5, '#ff9fc4', 1.8)
+                        break
                     case 'cat-meet':   // #2200: a curious hello — rising chirp, pink dot
                         audioController.playSweep(700, 1050, 0.1, 'triangle', 0.04)
                         setTimeout(() => audioController.playTone(1245, 0.06, 'sine', 0.03), 110)
@@ -413,6 +421,10 @@ const HomebodyGame = () => {
             const it = cellItem(gs, t.r, t.c)
             if (it) {
                 if (it.id === 'mail') { if (cmdWork(gs, p)) return; say(p.workedToday ? 'NOT WORK TODAY — IT IS THE WEEKEND' : 'CLOCK IN DURING WORK HOURS'); return }
+                if (DEF[it.id] && DEF[it.id].catOnly) {   // #2256: the ball answers honestly without a cat
+                    if (!gs.pet) say('NO CAT ON THE LOT'); else if (!yarnOrderOk(gs)) say('MISO IS NOT FEELING IT'); else { /* falls through to cmdUse */ }
+                    if (!yarnOrderOk(gs)) return
+                }
                 if (cmdUse(gs, p, it)) { audioController.playTone(560, 0.04, 'triangle', 0.03); say(`✓ ${it.id === 'mail' ? 'WORK' : (it.name || 'OBJECT').toUpperCase()}`); return }   // #2253: the tap answers back
                 say('CANNOT REACH THAT')
                 return

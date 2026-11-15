@@ -12,6 +12,7 @@ import {
     CAT_TABS, tabCards,   // #2222: the catalog's category shelves
     SPEED_MULT,   // #2227: the speed dial
     petMood, PET_FEED_T,   // #2200: Miso's mood row + the lingering bowl
+    YARN_PLAY_T,   // #2256: the yarn session's stage time
     GIFT_LAND_T,   // #2240: the set-down basket's stage time
 } from './sim.js'
 
@@ -334,6 +335,23 @@ export function drawItemAt(ctx, id, x, y, t) {
             }
             break
         }
+        case 'yarn': {
+            // #2256: the cat's ball — a coral wound ball with crossing wraps,
+            // a loose thread trailing on the boards, and a shadow of its own.
+            ctx.fillStyle = '#c94f6d'
+            ctx.beginPath(); ctx.arc(x + 16, y + 23, 6, 0, 7); ctx.fill()
+            ctx.strokeStyle = '#e07a92'; ctx.lineWidth = 1.4
+            ctx.beginPath(); ctx.arc(x + 15, y + 22, 4.2, 0.4, 2.6); ctx.stroke()
+            ctx.beginPath(); ctx.arc(x + 17.5, y + 24.5, 3.4, 3.2, 5.6); ctx.stroke()
+            ctx.lineWidth = 1
+            ctx.beginPath()
+            ctx.moveTo(x + 21, y + 26)
+            ctx.quadraticCurveTo(x + 26, y + 27, x + 27, y + 24 + Math.sin(t * 2) * 1.2)
+            ctx.stroke()
+            ctx.fillStyle = 'rgba(30,20,10,0.16)'
+            ctx.beginPath(); ctx.ellipse(x + 16, y + 30, 7, 2, 0, 0, 7); ctx.fill()
+            break
+        }
         default: break
     }
     // soft ground shadow under solids
@@ -345,6 +363,26 @@ export function drawItemAt(ctx, id, x, y, t) {
 
 export function drawItem(ctx, it, t) {
     drawItemAt(ctx, it.id, tileX(it.c), tileY(it.r), t)
+    // #2256: the session staging — while playT runs the ball rolls in place,
+    // the loose thread whipping; fades on the last second like the bowl does.
+    if (it.id === 'yarn' && it.playT > 0) {
+        const x = tileX(it.c), y = tileY(it.r)
+        const k = Math.min(1, it.playT)
+        ctx.save()
+        ctx.globalAlpha = 0.85 * k
+        ctx.translate(x + 16, y + 23)
+        ctx.rotate(Math.sin(t * 9) * 0.5)
+        ctx.strokeStyle = '#e07a92'; ctx.lineWidth = 1.2
+        ctx.beginPath(); ctx.arc(0, 0, 6.5, 0.8, 2.9); ctx.stroke()
+        ctx.restore()
+        ctx.save()
+        ctx.globalAlpha = 0.9 * k
+        ctx.fillStyle = '#ffd24a'
+        for (const [px, py] of [[-9, -6], [8, -9], [0, -12]]) {
+            ctx.fillRect(x + 16 + px + Math.sin(t * 5 + px) * 2, y + 23 + py - (1 - k) * 6, 2, 2)
+        }
+        ctx.restore()
+    }
 }
 
 // --------------------------------------------------------------- people ----
@@ -551,15 +589,54 @@ export function drawPet(ctx, p, t) {
     } else {
         const step = Math.sin(p.walkPhase * 2) * 1.5
         const moving = p.path && p.path.length
+        const playing = p.playT > 0
+        // #2256 sprite states: the bat (front paws alternating while a session
+        // stages), the sit (settled on the boards after a while without a path)
+        // and the dawn stretch (forelegs down, rump high). View-only timers —
+        // none of it rides the hash.
+        const stretching = p.stretchT > 0
+        const sitting = !moving && !playing && !stretching && p.sitT > 1.2
+        if (sitting) {
+            // upright sit: chest tall, tail curled over the toes
+            ctx.fillStyle = '#d98e4a'
+            ctx.beginPath(); ctx.ellipse(0, -8, 6, 7, 0, 0, Math.PI * 2); ctx.fill()
+            ctx.beginPath(); ctx.arc(1, -17, 4.2, 0, Math.PI * 2); ctx.fill()
+            ctx.fillStyle = '#b56f31'
+            ctx.beginPath(); ctx.moveTo(-2, -19.5); ctx.lineTo(-1, -23); ctx.lineTo(0.5, -19.8); ctx.closePath(); ctx.fill()
+            ctx.beginPath(); ctx.moveTo(2.5, -19.8); ctx.lineTo(3.5, -23); ctx.lineTo(4.5, -19.5); ctx.closePath(); ctx.fill()
+            ctx.strokeStyle = '#d98e4a'; ctx.lineWidth = 2
+            ctx.beginPath(); ctx.moveTo(5, -3); ctx.quadraticCurveTo(9, -1, 6, 1); ctx.stroke()
+            ctx.fillStyle = '#241305'
+            ctx.fillRect(2, -18, 1.5, 1.5)
+            ctx.fillStyle = '#b56f31'
+            ctx.fillRect(-3, -11, 3, 1.5); ctx.fillRect(-2, -7, 3, 1.5)
+        } else {
         // legs: two-pixel pistons while the path runs
         ctx.fillStyle = '#8a5626'
         const l1 = moving ? Math.round(step) : 0, l2 = moving ? -l1 : 0
         ctx.fillRect(-6, -4, 2, 4 + l1); ctx.fillRect(-1, -4, 2, 4 + l2)
         ctx.fillRect(4, -4, 2, 4 + l2)
-        // body + head
-        ctx.fillStyle = '#d98e4a'
-        ctx.beginPath(); ctx.ellipse(0, -8, 9, 4.5, 0, 0, Math.PI * 2); ctx.fill()
-        ctx.beginPath(); ctx.arc(8, -11, 4, 0, Math.PI * 2); ctx.fill()
+        if (stretching) {
+            // forelegs flat forward, rump up — the whole-hallway stretch
+            ctx.fillStyle = '#d98e4a'
+            ctx.beginPath(); ctx.ellipse(-2, -10, 9, 4, -0.35, 0, Math.PI * 2); ctx.fill()
+            ctx.beginPath(); ctx.arc(7, -6.5, 4, 0, Math.PI * 2); ctx.fill()
+            ctx.fillStyle = '#8a5626'
+            ctx.fillRect(8, -4, 2, 4); ctx.fillRect(11, -3, 3, 3)
+        } else {
+            // body + head
+            ctx.fillStyle = '#d98e4a'
+            ctx.beginPath(); ctx.ellipse(0, -8, 9, 4.5, 0, 0, Math.PI * 2); ctx.fill()
+            ctx.beginPath(); ctx.arc(8, -11, 4, 0, Math.PI * 2); ctx.fill()
+            if (playing) {
+                // bat: one forepaw mid-swipe, head low over the ball
+                ctx.fillStyle = '#8a5626'
+                const sw = Math.sin(p.playT * 13) > 0 ? 1 : -1
+                ctx.fillRect(10, -9 + sw * 2, 4, 2)
+                ctx.fillStyle = '#d98e4a'
+                ctx.beginPath(); ctx.arc(9, -9.5, 3.4, 0, Math.PI * 2); ctx.fill()
+            }
+        }
         // ears
         ctx.fillStyle = '#b56f31'
         ctx.beginPath(); ctx.moveTo(5.5, -13.5); ctx.lineTo(6.5, -17); ctx.lineTo(8, -13.8); ctx.closePath(); ctx.fill()
@@ -573,6 +650,7 @@ export function drawPet(ctx, p, t) {
         ctx.fillRect(-3, -11, 3, 1.5); ctx.fillRect(1, -11.5, 3, 1.5)
         ctx.fillStyle = '#241305'
         ctx.fillRect(9, -12, 1.5, 1.5)
+        }
     }
     ctx.restore()
     if (p.purrT > 0) {

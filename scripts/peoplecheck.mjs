@@ -89,6 +89,7 @@ import {
     MEAL, MEAL_NAMES, MEAL_DUE, MEAL_WINDOW, MEAL_BOND, MEAL_LINES, SHARED_MEAL_LINES, HOUR_SEC,   // #2244: the meal bells
     AMBER_AT, DAY1_GRACE, NEED_HINT,   // #2253: the first-time player pass
     GIFT_LAND_T, VISIT_TIMBRE,   // #2240: the set-down basket + the visitor timbres
+    YARN_CD, YARN_CAT_FUN, YARN_BOND, YARN_SOCIAL, YARN_PLAY_T, PET_SELF_FUN, PET_BORED, yarnOrderOk,   // #2256: the yarn ball — ordered play + the cat's own game
 } from '../src/games/Homebody/sim.js'
 import { readFileSync } from 'node:fs'
 
@@ -121,7 +122,7 @@ section('BOOT')
     check('five needs per resident, all positive', g.people.every((p) => NEEDS.length === 5 && NEEDS.every((n) => p.needs[n] > 0.5)))
     check('starter house has bed/fridge/toilet/mail/radio', ['bed', 'fridge', 'toilet', 'mail', 'radio'].every((id) => g.items.some((it) => it.id === id)))
     check('starter items never wall anyone in', g.items.every((it) => targetsOf(g, it).length > 0))
-    check('sixteen catalog pieces with prices; Spare Room card 14 keyed R, Adopt a Cat card 15 keyed P, Adopt a Child card 16 keyed K', CATALOG.length === 16 && CATALOG.every((d) => d.price > 0) && CATALOG[13].id === 'roomkit' && CATALOG.filter((d) => d.room).length === 1 && CATALOG[14].id === 'petkit' && CATALOG.filter((d) => d.pet).length === 1 && CATALOG[15].id === 'kidkit' && CATALOG.filter((d) => d.kid).length === 1)   // #2197/#2203
+    check('seventeen catalog pieces with prices; Spare Room card 14 keyed R, Adopt a Cat card 15 keyed P, Adopt a Child card 16 keyed K, Yarn Ball card 17 cat-only', CATALOG.length === 17 && CATALOG.every((d) => d.price > 0) && CATALOG[13].id === 'roomkit' && CATALOG.filter((d) => d.room).length === 1 && CATALOG[14].id === 'petkit' && CATALOG.filter((d) => d.pet).length === 1 && CATALOG[15].id === 'kidkit' && CATALOG.filter((d) => d.kid).length === 1 && CATALOG[16].id === 'yarn' && CATALOG[16].catOnly === true)   // #2197/#2203/#2256
     check('tileOf maps pixels to cells', tileOf(tileX(3) + 4, tileY(2) + 4)?.c === 3 && tileOf(tileX(3), tileY(2))?.r === 2)
 }
 
@@ -640,7 +641,7 @@ section('FEEL — walk surfaces + refusal (#1823)')
     const feelJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
     check('pin: footfalls carry their surface', /t: 'step', surf: groundOf\(s, p\.r, p\.c\)/.test(feelSim))
     check('pin: both walk routes feed the footfall meter', /footstep\(s, p, budget - step\)/.test(feelSim) && /footstep\(s, p, Math\.abs\(p\.x - ox\)/.test(feelSim))
-    check('pin: every refusal branch emits its event', (feelSim.match(/t: 'refuse'/g) || []).length === 5)   // #2197/#2203: the two adoption counters make the fifth door that answers
+    check('pin: every refusal branch emits its event', (feelSim.match(/t: 'refuse'/g) || []).length === 7)   // #2197/#2203: the two adoption counters make the fifth door that answers; #2256: the yarn ball answers twice — at the order and at the finish
     check('pin: the shell plays three distinct step timbres', /e\.surf === 'floor'[\s\S]*e\.surf === 'path'/.test(feelJsx))
     check('pin: the refusal flashes a red ghost cell', /refuses\.push\(\{ r: e\.r, c: e\.c/.test(feelJsx) && /fillStyle = '#e23b2e'/.test(feelJsx))
 }
@@ -2471,6 +2472,138 @@ section('GIFT LANDS & TIMBRES')   // #2240 — the basket that lands, the two be
         const w = play(20261023)
         check('#2240 the wish still lands with the Ivy ring and the stroll law running', w.done === 'win', `content ${w.content} day ${w.day}`)
     }
+}
+
+// --------------------------------------------------------- YARN (#2256) ------
+section('YARN BALL (#2256): ordered play, honest refusals, the cat\u2019s own game, exclusions')
+{
+    const yarnSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const yarnJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const yarnArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+
+    // the card: FUN shelf, catOnly flag, décor (never blocks anybody)
+    check('the yarn card sits on the FUN shelf, cat-only decor at §60', DEF.yarn.catOnly === true && DEF.yarn.decor === true && DEF.yarn.need === 'fun' && TAB_CARDS[1].includes(16) && TAB_OF[16] === 1)
+
+    // refusal without a cat: the order dies honest at the ball, with a voice
+    const s1 = newRun(12)
+    s1.money = 600
+    s1.sel = 16
+    check('the shelf sells a ball: placed, paid', place(s1, 10, 2) && s1.money === 600 - DEF.yarn.price)
+    const ball = s1.items.find((it) => it.id === 'yarn')
+    check('without a cat the play order refuses at the ball', !cmdUse(s1, s1.people[0], ball) && drain(s1).some((e) => e.t === 'refuse' && e.r === 10 && e.c === 2) && !yarnOrderOk(s1))
+
+    // cat home — but night keeps the offer: Miso sleeps through orders
+    adoptPet(s1)
+    s1.hour = 23
+    check('night: the cat sleeps and the ball waits', !yarnOrderOk(s1))
+    s1.hour = 10
+    s1.pet.needs.fun = 0.45   // leave headroom under the cap so the +YARN_CAT_FUN pay is visible
+
+    // the ordered session: walk, dangle, both paid, bond + content + cooldown + staging
+    const o = s1.people[0]
+    const parkBallCat = () => {
+        s1.pet.r = 10; s1.pet.c = 3; s1.pet.x = tileX(3) + TILE / 2; s1.pet.y = tileY(10) + TILE / 2
+        s1.pet.path = null; s1.pet.state = 'roam'; s1.pet.play = false
+        s1.pet.cd = PET_COOS   // arm the coo cooldown so the proximity law can't co-pay
+        o.r = 9; o.c = 2; o.x = tileX(2) + TILE / 2; o.y = tileY(9) + TILE / 2
+        o.path = null; o.goal = null; o.use = null; o.working = false; o.faintT = 0
+    }
+    parkBallCat()
+    s1.yarnCd = 0
+    const cf0 = s1.pet.needs.fun, soc0 = o.needs.social, rel0 = s1.rel.house, cnt0 = s1.content
+    check('with Miso home and rested the order stands', yarnOrderOk(s1) && cmdUse(s1, o, ball))
+    let paidCd = -1, playEv = null
+    for (let i = 0; i < 600; i++) {
+        // keep the cat in reach, but let the resident finish the walk on their own
+        s1.pet.r = 10; s1.pet.c = 3; s1.pet.x = tileX(3) + TILE / 2; s1.pet.y = tileY(10) + TILE / 2
+        s1.pet.path = null; s1.pet.state = 'roam'; s1.pet.play = false
+        s1.pet.needs.fun = cf0   // hold fun steady against hourly decay so the pay is exact
+        o.needs.social = soc0    // ditto the resident's social
+        advance(s1, DT)
+        const ev = drain(s1).find((e) => e.t === 'pet-play')
+        if (ev) { playEv = ev; paidCd = s1.yarnCd; break }
+    }
+    check('the ordered play pays both sides, the bond and an event', !!playEv && s1.pet.needs.fun >= cf0 + YARN_CAT_FUN - 0.01 && o.needs.social > soc0 && s1.rel.house >= rel0 + YARN_BOND - 0.05 && s1.content > cnt0)
+    check('the session arms the cooldown and the ball spins', paidCd === YARN_CD && ball.playT > 0 && s1.pet.playT > 0)
+
+    // the cooldown economy: one session per YARN_CD
+    o.path = null; o.goal = null; o.use = null
+    check('a second order inside the cooldown refuses', !cmdUse(s1, o, ball))
+    for (let i = 0; i < Math.ceil(YARN_CD * 60) + 10; i++) { advance(s1, DT); drain(s1) }
+    check('the offer stands again once the cooldown closes', yarnOrderOk(s1) && cmdUse(s1, o, ball))
+
+    // the cat wandered off — the finish refuses honestly, fun unchanged
+    const cf1 = s1.pet.needs.fun
+    s1.pet.r = 12; s1.pet.c = 5; s1.pet.x = tileX(5) + TILE / 2; s1.pet.y = tileY(12) + TILE / 2; s1.pet.play = false
+    let refusedFar = false
+    for (let i = 0; i < 400; i++) {
+        s1.pet.r = 12; s1.pet.c = 5; s1.pet.x = tileX(5) + TILE / 2; s1.pet.y = tileY(12) + TILE / 2; s1.pet.path = null; s1.pet.needs.fun = cf1
+        advance(s1, DT)
+        if (drain(s1).some((e) => e.t === 'refuse' && e.r === 10 && e.c === 2)) { refusedFar = true; break }
+    }
+    check('a cat out of reach refuses the finish — the wasted walk is the cost', refusedFar && s1.pet.needs.fun <= cf1 + 0.01)
+
+    // pad-A doctrine: the A button takes the order only while it stands
+    o.path = null; o.goal = null; o.use = null
+    o.r = 10; o.c = 3; o.x = tileX(3) + TILE / 2; o.y = tileY(10) + TILE / 2
+    s1.yarnCd = 4
+    check('pad-A skips the ball while the cooldown holds', !tryUse(s1, o))
+    s1.yarnCd = 0
+    check('pad-A takes the play order when it stands', tryUse(s1, o) === true && o.goal && o.goal.it.id === 'yarn')
+    o.path = null; o.goal = null; o.use = null
+
+    // the cat\u2019s own game: a bored Miso hunts the ball unasked
+    const s2 = newRun(14)
+    s2.money = 600
+    s2.sel = 16
+    place(s2, 10, 2)
+    adoptPet(s2)
+    s2.pet.needs.fun = 0.2
+    s2.pet.cd = PET_COOS
+    let selfPlay = null
+    for (let i = 0; i < 1200 && !selfPlay; i++) { advance(s2, DT); selfPlay = drain(s2).find((e) => e.t === 'pet-play' && e.self) || null }
+    check('a bored cat hunts the yarn herself — the toy works unasked', !!selfPlay && s2.pet.playT > 0)
+
+    // exclusions: Pip does not play with the cat\u2019s ball
+    const s3 = newRun(15)
+    s3.money = 900
+    s3.sel = 16
+    place(s3, 10, 2)
+    adoptKid(s3)
+    s3.kid.needs.fun = 0.1
+    let kidOnBall = false
+    for (let i = 0; i < 900; i++) {
+        advance(s3, DT); drain(s3)
+        if (s3.kid.goal && s3.kid.goal.it && s3.kid.goal.it.id === 'yarn') kidOnBall = true
+    }
+    check('generic fun-seeking skips the cat toy — Pip never targets the ball', !kidOnBall)
+
+    // the sale: it is furniture after all — half back, gone from the lot
+    s3.money = 100
+    check('the ball sells back for half and leaves the lot', sellAt(s3, 10, 2) && s3.money === 100 + Math.floor(DEF.yarn.price / 2) && !s3.items.some((it) => it.id === 'yarn'))
+
+    // determinism + the hash: the cooldown is state
+    const dA = newRun(16), dB = newRun(16)
+    for (const d of [dA, dB]) { d.money = 600; d.sel = 16; place(d, 10, 2); adoptPet(d) }
+    for (let i = 0; i < 900; i++) { advance(dA, DT); drain(dA); advance(dB, DT); drain(dB) }
+    check('yarn hours stay seed-exact', stateHash(dA) === stateHash(dB))
+    const hy = stateHash(dA)
+    dA.yarnCd += 1.1
+    check('the yarn cooldown rides the hash', stateHash(dA) !== hy)
+
+    // the wish still lands with a cat and a yarn economy (and the ball never gets in the way)
+    const w = newRun(1)
+    let wn = 0
+    while (!w.done && wn++ < 60 * 60 * 6) { autoStep(w, DT); drain(w) }
+    check('the lifetime wish still lands with the yarn shelf open', w.done === 'win')
+
+    // source pins — the wiring must not silently drop
+    check('pin: cat-only is skipped by BOTH generic fun hunts', (yarnSim.match(/d\.catOnly\) continue/g) || []).length >= 2)
+    check('pin: the order gate is one honest voice', /catOnly && !yarnOrderOk\(s\)/.test(yarnSim) && /export function yarnOrderOk/.test(yarnSim))
+    check('pin: the finish pays cat fun, social, bond and content', /cat\.needs\.fun = Math\.min\(1, cat\.needs\.fun \+ YARN_CAT_FUN\)/.test(yarnSim) && /relAdd\(s, 'house', YARN_BOND\)/.test(yarnSim))
+    check('pin: the cooldown rides advance and the hash', /if \(s\.yarnCd > 0\) s\.yarnCd = Math\.max\(0, s\.yarnCd - dt\)/.test(yarnSim) && /mix\(s\.yarnCd\)/.test(yarnSim))
+    check('pin: the shell names the honest refusals and voices the session', /NO CAT ON THE LOT/.test(yarnJsx) && /MISO IS NOT FEELING IT/.test(yarnJsx) && /case 'pet-play'/.test(yarnJsx) && /MISO WANTS A GAME/.test(yarnJsx))
+    check('pin: the art ships — ball, spin staging, and the new cat states', /case 'yarn'/.test(yarnArt) && /it\.playT/.test(yarnArt) && /sitT/.test(yarnArt) && /stretchT/.test(yarnArt))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)
