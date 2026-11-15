@@ -2,8 +2,8 @@
 // export -> trained policy -> seat. Proves the shipped numbers, and proves
 // it can fail: the same agreement gate run against zeroed weights must
 // collapse (mutant, last gate). Runs in seconds on the practice seeds;
-// NEVER touches held-out seeds 100..107 — those were scored once, in
-// scripts/plaicraft-train.mjs, and live in data/plaicraft/results.json.
+// NEVER touches held-out seeds 100..107 — those were scored once, by the
+// trainer (retrogames-rl since stage 2, #2394), and live in data/plaicraft/results.json.
 //
 // Usage: npm run plaicraftcheck
 

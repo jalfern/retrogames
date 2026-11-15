@@ -26,7 +26,8 @@ export const INFO_MSGS = [
 // (the shell passes them; the planner-replay fallback keeps INFO_MSGS and
 // stops claiming the brain). Same fit rule: one short line.
 // #2299: the held-out claim is read from the shipped weights' meta (written by
-// plaicraft-train after the once-scored rollouts), so a retrain can never
+// the trainer after the once-scored rollouts — the trainer lives in
+// retrogames-rl since #2394), so a retrain can never
 // leave the ticker claiming a stale 8/8.
 import { POLICY } from './policy.js'
 const HO = POLICY.meta && POLICY.meta.heldout

@@ -1,7 +1,8 @@
 // PLAICRAFT (#1625) — the studio's recorded-play -> dataset -> model -> seat
 // pipeline, written up honestly. Numbers here are the single held-out scoring
-// committed to public/research/results.json by scripts/plaicraft-train.mjs
-// (npm run plaicraft:train); the page never trains anything — it reports.
+// committed to public/research/results.json by the trainer (stage 2, #2394:
+// training lives in the private retrogames-rl repo and runs on the 3090 box);
+// the page never trains anything — it reports.
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -41,9 +42,10 @@ export default function Research() {
                         the sim (state-hash match every 30 ticks), then a JSONL dataset: per tick, the seat&apos;s own 31 senses
                         (range-finder rays, hero bearing + headings + look-ahead prediction, nearest monster and food, last
                         action) and the expert&apos;s pad. <code>data/plaicraft/README.md</code> documents the format.</li>
-                    <li><b style={{ color: '#5dff8f' }}>Train</b> — <code>npm run plaicraft:train</code>: one 31-24-24-5 MLP, deterministic
+                    <li><b style={{ color: '#5dff8f' }}>Train</b> — one 31-24-24-5 MLP, deterministic
                         (zero dependencies, fixed seed, fixed hyperparameters — no sweeps). Choose on practice, score once on
-                        held-out — the discipline from weight surgery.</li>
+                        held-out — the discipline from weight surgery. Since stage 2 (#2394) training runs in the
+                        retrogames-rl repo on the studio&apos;s 3090 box; this repo exports the data and reports the numbers.</li>
                     <li><b style={{ color: '#5dff8f' }}>Seat</b> — the quantized weights ship with the game (<code>src/games/Gauntlet/policy.js</code>,
                         1493 numbers). On the hero-select screen, <b>M</b> seats the BRAIN in slot 2; C and P still work; any
                         input takes the seat back like any partner source.</li>
