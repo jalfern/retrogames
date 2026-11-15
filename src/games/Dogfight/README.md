@@ -62,7 +62,22 @@ receipt-gated pilot never reddens: `drivePatrol` peaks `heat` at **0.077**
 (one round's worth — its bursts are ≤ 2 rounds, so it stays inside the soft
 band), and `dogfightcheck` pins that (`maxHeat ≤ 0.5`) so heat can never become
 decorative for the pilot either. The cockpit shows a `GUNS` tape (yellow→orange
-→red) and an overheat call; the whole game now answers a spray.
+→red), an overheat call, and the world answers back: the breech glows, past
+redline the shroud throws cooling wisps, and the ◎ sight blooms with the
+barrel — the discipline rule is legible mid-merge without reading a gauge.
+
+### The jam (#2313 — the honest epilogue of the heat rule)
+
+Six rounds fired while the barrel sits at ≥ 0.9 (`jamHeat`) overheat the
+synchronization gear and it **seizes for 5 s** (`jamTicks`, deterministic): the
+trigger goes dead — no round, no belt draw, ledger intact — until a `jamclear`
+frees it. A held trigger jams at round ~22 (~2.8 s of spray); `predictHit`
+issues **no receipts to a seized gear**, so even the autopilot cannot promise a
+bullet that cannot exist. `dogfightcheck` pins the whole arc: the seizure fires,
+the held trigger draws nothing while seized, it clears on schedule and the gun
+fires again, the ledger balances through it, receipts stay away while jammed,
+and the pilot — whose bursts never touch redline — never jams at all. A
+`soft-hands` mutant (`jamOn:false`) dies on the audit.
 
 ## Bandits with doctrine
 
@@ -80,9 +95,11 @@ way from where the deflection already aims.
   glide ledgers, bullet-integrator parity against an independent
   integration, per-tick round ledger, the heat model (cold shots straight,
   spray reddens, cone == sideways velocity, cone walks, silence cools,
-  receipts dry up hot), the real pilot winning both patrols **by the gun
+  receipts dry up hot), the **jam** (held trigger seizes, seized draws
+  nothing, clears on schedule, ledger intact, pilot never jams, no receipts
+  to a seized gear), the real pilot winning both patrols **by the gun
   alone** with a barrel that stays cold, determinism three ways, **slack**
-  (−20 rounds AND −40 m must still win), and `--mutate` for nine mutants
+  (−20 rounds AND −40 m must still win), and `--mutate` for ten mutants
   that must die.
 - `npm run dogfightplay` — Chrome, real key events only. Instruments
   (ASI/altimeter/belt DOM) read the probe to the unit; a projected bandit
@@ -100,11 +117,18 @@ way from where the deflection already aims.
   Shipped history, kept in place per house style.) The attract autopilot
   fires ~5 rounds a patrol because the receipt gate is honest; a human
   sprays. `missed ≤ 3` is a harness promise about the PILOT, not the player.
-- The Circus can be won at hp 1. It is meant to be close; if it becomes
-  a coin flip for Jon, the honest knob is the lead's gun range (300), not
-  the player's hull.
-- 2D instrument knobs are DOM, not gauges; no gun-jam sim; no observer/
-  tail-gunner third party; one wing colour per side.
+- (CLOSED by #2313: the gun-jam epilogue — a redline gear held closed-belt
+  seizes for 5 s, `predictHit` goes deaf to it, `soft-hands` dies. Shipped
+  history, kept in place per house style.)
+- The Circus can be won at hp 1. Measured this pass: the autopilot clears
+  patrol 1 (Circus) at **hp 1** using only 6 rounds (`slack` still wins at
+  belt −40). It is meant to be close; if it becomes a coin flip for Jon, the
+  honest knob is the lead's gun range (300), not the player's hull. No blind
+  tune made.
+- 2D instrument knobs are DOM, not painted gauges — ASI/altimeter still want
+  round dials with needles at period look (bar 1); filed as its own follow-up
+  (this pass took the meat: heat-in-world, sound, sight bloom, jam, smoke).
+  No observer/tail-gunner third party; one wing colour per side.
 
 ## WATCH (#1637 batch 5)
 
