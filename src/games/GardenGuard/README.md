@@ -13,11 +13,14 @@ currency is **acorns**, defenders are critters, every sprite is drawn in code.
 - `art.js` — procedural look: gradient dusk sky, cottage + scarecrow-mowers
   (a real scarecrow per lane: gold glow while armed, grey and head-tilted once
   spent — #1832), checkerboard lawn with grain, the wooden card tray + acorn
-  purse (inset right of the site's top-left chrome — #1832), per-defender and
-  per-goblin sprites (walk/eat/slow animation), projectiles, particles hooks,
-  cursor (the ghost defender only shows once the keyboard cursor is used —
-  #1832), HUD (level + wave bar + five scarecrow pips, in the 28px strip BELOW
-  the lawn so nothing paints over row 5 — #1832).
+  purse (inset right of the site's top-left chrome — #1832), **framed portrait
+  plates on the cards** (#2328: each defender posed at card scale on a soil
+  mound under its own dusk hue — treeline, low sun, drifting cloud — inside a
+  beveled, riveted frame that gilds when selected; breathing on the sim clock,
+  deterministic), per-defender and per-goblin sprites (walk/eat/slow animation),
+  projectiles, particles hooks, cursor (the ghost defender only shows once the
+  keyboard cursor is used — #1832), HUD (level + wave bar + five scarecrow pips,
+  in the 28px strip BELOW the lawn so nothing paints over row 5 — #1832).
 - `index.jsx` — the arcade shell: one fixed-timestep loop, attract (driven by the
   sim's own `bot`), keyboard / pointer / VirtualControls all funneled through the
   same `drivePad` → sim actions, juice (particles + shake), PauseOverlay,
@@ -41,6 +44,7 @@ next defender; the last ends with the Warlord.
 ```bash
 npm run gardencheck                 # pure Node: boot + core rules + winnable on 5 seeds
                                     # + the #1832 newcomer gates (refuse events, art contract)
+                                    # + the #2328 card-portrait contract (8 gates)
 npm run dev                        # then, another shell:
 CONTRACT_ONLY=garden-guard npm run contractcheck   # window.__game contract, determinism
 ```
@@ -48,7 +52,9 @@ CONTRACT_ONLY=garden-guard npm run contractcheck   # window.__game contract, det
 and the "Chili Bomb splashes a cluster" gate goes red (then restore). The #1832
 art contract gates the same way: the HUD/tray/scarecrow/ghost assertions run
 against a recording mock-canvas, so reverting any of the newcomer layout fixes
-turns them red without a browser.
+turns them red without a browser. The #2328 portrait contract is proved the
+same way — rewiring the tray back to an icon stamp turns 6 of its 8 gates red
+(layered fills, soil mound, rivets, double frame, gild, liveness).
 
 ## Newcomer pass (#1832)
 A first-time player pass found: refused plants were silent (now a toast + buzz +
@@ -70,7 +76,9 @@ there was no in-play how-to (a first-wave hint line until the first plant).
 - Sun drops auto-bank shortly after landing (tap to bank sooner). This is the
   mobile-friendly choice, and keeps the bot/harness able to drive the economy.
 - Card art in the tray reuses the small defender icons; portrait frames are
-  deliberately simple.
+  deliberately simple. **CLOSED by #2328** — cards are now posed portraits on
+  soil under dusk skies, in beveled riveted frames (see `art.js`
+  `drawCardPortrait`); the tray cards no longer call `drawPlantIcon`.
 
 ## Notes
 - State is plain JSON (arrays of plain objects), so the contract's

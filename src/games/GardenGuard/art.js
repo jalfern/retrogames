@@ -121,6 +121,143 @@ export function drawAcornIcon(ctx, cx, cy, s) {
     ctx.restore()
 }
 
+// ---------------------------------------------------------- card portrait ----
+// #2328: the tray cards used to stamp the 30px field icon on a flat tint plate
+// ("card art reuses the small defender icons" — README honest gap #2). A card
+// is a PORTRAIT PLATE: the critter posed at card scale on orchard ground under
+// a dusk sky in its own hue — soil mound, treeline, low sun, drifting cloud —
+// inside a beveled, riveted wooden frame that gilds when selected. Everything
+// moves on the sim clock (deterministic: attract replays stay byte-identical).
+function drawPlateFrame(ctx, x, y, w, h, sel) {
+    ctx.lineWidth = 1
+    ctx.strokeStyle = sel ? '#ffd24a' : 'rgba(60,38,16,0.75)'
+    rr(ctx, x, y, w, h, 5); ctx.stroke()
+    ctx.strokeStyle = sel ? 'rgba(255,226,138,0.9)' : 'rgba(255,238,200,0.28)'
+    ctx.beginPath(); ctx.moveTo(x + 5, y + 1.5); ctx.lineTo(x + w - 5, y + 1.5); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(x + 1.5, y + 5); ctx.lineTo(x + 1.5, y + h - 5); ctx.stroke()
+    ctx.fillStyle = sel ? '#ffd24a' : '#c9a24b'
+    for (const [rx, ry] of [[x + 3.5, y + 3.5], [x + w - 3.5, y + 3.5], [x + 3.5, y + h - 3.5], [x + w - 3.5, y + h - 3.5]]) {
+        ctx.beginPath(); ctx.arc(rx, ry, 1.4, 0, 7); ctx.fill()
+    }
+}
+
+export function drawCardPortrait(ctx, id, x, y, w, h, sec, sel) {
+    const def = PLANTS[id]
+    const sway = Math.sin(sec * 2.1 + def.name.length) * 1.6
+    ctx.save()
+    rr(ctx, x, y, w, h, 5)
+    ctx.clip()
+    // dusk sky in the defender's own hue
+    const pg = ctx.createLinearGradient(0, y, 0, y + h)
+    pg.addColorStop(0, shade(def.color, 34)); pg.addColorStop(1, shade(def.color, -22))
+    ctx.fillStyle = pg; ctx.fillRect(x, y, w, h)
+    // the orchard's low sun, and a cloud drifting across every card
+    ctx.fillStyle = 'rgba(255,242,194,0.85)'; ctx.beginPath(); ctx.arc(x + w - 12, y + 10, 4.5, 0, 7); ctx.fill()
+    ctx.fillStyle = 'rgba(255,255,255,0.35)'
+    const cx0 = x + ((sec * 3 + def.name.length * 7) % (w + 14)) - 7
+    ctx.beginPath(); ctx.arc(cx0, y + 8, 3.4, 0, 7); ctx.arc(cx0 + 5, y + 9, 4, 0, 7); ctx.fill()
+    // distant treeline arcs (soft silhouettes, not heavy blobs) + ground line
+    // + the soil mound it all stands on
+    ctx.fillStyle = 'rgba(43,29,18,0.30)'
+    ctx.beginPath(); ctx.arc(x + 9, y + h - 11, 8, Math.PI, 0); ctx.fill()
+    ctx.beginPath(); ctx.arc(x + w - 12, y + h - 10, 6.5, Math.PI, 0); ctx.fill()
+    ctx.fillStyle = 'rgba(70,45,25,0.55)'; ctx.fillRect(x, y + h - 9, w, 9)
+    ctx.fillStyle = 'rgba(94,62,34,0.9)'; ctx.beginPath(); ctx.ellipse(x + w / 2, y + h - 8, 17, 5, 0, 0, 7); ctx.fill()
+    drawCardPose(ctx, id, x + w / 2 + sway * 0.35, y + h - 9, sec)
+    ctx.restore()
+    drawPlateFrame(ctx, x, y, w, h, sel)
+}
+
+// posed defender, drawn around its foot point (fx, fy); ~28px tall budget.
+function drawCardPose(ctx, id, fx, fy, sec) {
+    ctx.lineJoin = 'round'
+    if (id === 'daisy') {
+        // two blooms and a leaf — the gilded daisy at full height
+        ctx.strokeStyle = '#2f7d2f'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'
+        ctx.beginPath(); ctx.moveTo(fx - 6, fy); ctx.quadraticCurveTo(fx - 8, fy - 12, fx - 6, fy - 19); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(fx + 5, fy); ctx.quadraticCurveTo(fx + 7, fy - 8, fx + 6, fy - 13); ctx.stroke()
+        ctx.fillStyle = '#3f9f4f'; ctx.beginPath(); ctx.ellipse(fx + 1, fy - 6, 5, 2.4, 0.6, 0, 7); ctx.fill()
+        const bloom = (bx, by, r, spin) => {
+            ctx.fillStyle = '#ffdf4f'
+            for (let i = 0; i < 10; i++) { const a = spin + (i / 10) * Math.PI * 2; ctx.beginPath(); ctx.ellipse(bx + Math.cos(a) * r, by + Math.sin(a) * r, r * 0.55, r * 0.3, a, 0, 7); ctx.fill() }
+            ctx.fillStyle = '#a86a2a'; ctx.beginPath(); ctx.arc(bx, by, r * 0.62, 0, 7); ctx.fill()
+        }
+        bloom(fx - 6, fy - 20, 7, sec * 0.4)
+        bloom(fx + 6, fy - 14, 4, -sec * 0.5)
+    } else if (id === 'squirrel') {
+        // sitting up, big curled tail, hefting an acorn overhead
+        ctx.fillStyle = '#8a5a2c'
+        ctx.beginPath(); ctx.moveTo(fx - 5, fy - 2); ctx.quadraticCurveTo(fx - 16, fy - 6, fx - 12, fy - 18); ctx.quadraticCurveTo(fx - 8, fy - 12, fx - 5, fy - 8); ctx.closePath(); ctx.fill()
+        ctx.fillStyle = '#b9793f'
+        ctx.beginPath(); ctx.ellipse(fx, fy - 7, 6.5, 8, 0, 0, 7); ctx.fill()
+        ctx.beginPath(); ctx.arc(fx + 2, fy - 16, 5, 0, 7); ctx.fill()
+        ctx.fillStyle = '#d8a878'; ctx.beginPath(); ctx.ellipse(fx + 3.5, fy - 15, 2.6, 3, 0, 0, 7); ctx.fill()
+        ctx.fillStyle = '#2b1d12'; ctx.beginPath(); ctx.arc(fx + 3.5, fy - 17.5, 1.2, 0, 7); ctx.fill()
+        ctx.beginPath(); ctx.arc(fx + 0.5, fy - 20, 1, 0, 7); ctx.fill()
+        ctx.strokeStyle = '#b9793f'; ctx.lineWidth = 2; ctx.lineCap = 'round'
+        ctx.beginPath(); ctx.moveTo(fx + 1, fy - 12); ctx.lineTo(fx + 3, fy - 21); ctx.stroke()
+        drawAcornIcon(ctx, fx + 4, fy - 24, 12)
+        ctx.fillStyle = '#8a5a2c'; ctx.beginPath(); ctx.ellipse(fx + 3, fy - 1, 3, 1.6, 0, 0, 7); ctx.fill()
+    } else if (id === 'hedge') {
+        // a wall you can see: full block, lobed tufts, berries, gripping roots
+        ctx.fillStyle = '#3f9f4f'; rr(ctx, fx - 13, fy - 22, 26, 22, 5); ctx.fill()
+        ctx.fillStyle = '#2f7d3f'
+        for (let i = 0; i < 7; i++) { const a = rnd(i, 2) * 6.28; ctx.beginPath(); ctx.arc(fx + Math.cos(a) * 8, fy - 11 + Math.sin(a) * 7, 5 + rnd(i, 5) * 2.4, 0, 7); ctx.fill() }
+        ctx.fillStyle = '#d8483f'
+        for (const [bx, by] of [[-8, -16], [4, -13], [-2, -6], [8, -18]]) { ctx.beginPath(); ctx.arc(fx + bx, fy + by, 1.7, 0, 7); ctx.fill() }
+        ctx.strokeStyle = '#6b4326'; ctx.lineWidth = 1.6; ctx.lineCap = 'round'
+        ctx.beginPath(); ctx.moveTo(fx - 6, fy - 1); ctx.lineTo(fx - 9, fy + 1.5); ctx.moveTo(fx + 5, fy - 1); ctx.lineTo(fx + 8, fy + 1.5); ctx.stroke()
+    } else if (id === 'chili') {
+        // a cluster of three, smoke wisps drifting — the bomb is thinking about it
+        const pod = (bx, by, s, rot) => {
+            ctx.save(); ctx.translate(bx, by); ctx.rotate(rot)
+            ctx.fillStyle = '#d92e21'
+            ctx.beginPath(); ctx.moveTo(-2 * s, -6 * s); ctx.quadraticCurveTo(-6 * s, 2 * s, 0, 8 * s); ctx.quadraticCurveTo(3 * s, 2 * s, 2 * s, -6 * s); ctx.closePath(); ctx.fill()
+            ctx.fillStyle = '#ff6f56'
+            ctx.beginPath(); ctx.moveTo(-1.5 * s, -4 * s); ctx.quadraticCurveTo(-4 * s, 1.5 * s, -0.5 * s, 6.5 * s); ctx.quadraticCurveTo(-1 * s, 0, -0.5 * s, -4 * s); ctx.closePath(); ctx.fill()
+            ctx.strokeStyle = 'rgba(70,22,12,0.6)'; ctx.lineWidth = 1.1
+            ctx.beginPath(); ctx.moveTo(-2 * s, -6 * s); ctx.quadraticCurveTo(-6 * s, 2 * s, 0, 8 * s); ctx.quadraticCurveTo(3 * s, 2 * s, 2 * s, -6 * s); ctx.closePath(); ctx.stroke()
+            ctx.strokeStyle = '#2f7d2f'; ctx.lineWidth = 1.4 * s
+            ctx.beginPath(); ctx.moveTo(0, -6 * s); ctx.quadraticCurveTo(2 * s, -8.5 * s, 4 * s, -7 * s); ctx.stroke()
+            ctx.restore()
+        }
+        pod(fx - 6, fy - 9, 0.9, 0.18)
+        pod(fx + 5, fy - 8, 0.8, -0.22)
+        pod(fx, fy - 12, 1.25, 0)
+        ctx.strokeStyle = 'rgba(120,110,100,0.5)'; ctx.lineWidth = 1.4; ctx.lineCap = 'round'
+        for (let k = 0; k < 2; k++) {
+            const py = fy - 24 - k * 5 - ((sec * 4 + k * 2) % 5)
+            ctx.beginPath(); ctx.moveTo(fx + 3 + k * 3, py); ctx.quadraticCurveTo(fx + 6 + k * 3, py - 3, fx + 3 + k * 3, py - 6); ctx.stroke()
+        }
+        ctx.fillStyle = sec % 0.5 < 0.25 ? '#fff6a0' : '#ff8a3a'
+        ctx.beginPath(); ctx.arc(fx + 5, fy - 26, 1.8, 0, 7); ctx.fill()
+    } else if (id === 'frost') {
+        // frosted toadstool with ice crystals at the base and a slow twinkle
+        ctx.fillStyle = '#e8e2d2'; rr(ctx, fx - 3, fy - 10, 6, 10, 2.5); ctx.fill()
+        ctx.fillStyle = '#bfe9f2'
+        ctx.beginPath(); ctx.moveTo(fx - 13, fy - 9); ctx.quadraticCurveTo(fx - 13, fy - 24, fx, fy - 24); ctx.quadraticCurveTo(fx + 13, fy - 24, fx + 13, fy - 9); ctx.closePath(); ctx.fill()
+        ctx.fillStyle = '#5fd0e6'
+        ctx.beginPath(); ctx.arc(fx - 5, fy - 15, 2.6, 0, 7); ctx.arc(fx + 4, fy - 18, 2, 0, 7); ctx.arc(fx + 7, fy - 12, 1.6, 0, 7); ctx.fill()
+        ctx.fillStyle = '#eafbff'
+        ctx.beginPath(); ctx.moveTo(fx - 9, fy - 1); ctx.lineTo(fx - 7, fy - 7); ctx.lineTo(fx - 5, fy - 1); ctx.closePath(); ctx.fill()
+        ctx.beginPath(); ctx.moveTo(fx + 5, fy - 1); ctx.lineTo(fx + 7, fy - 6); ctx.lineTo(fx + 9, fy - 1); ctx.closePath(); ctx.fill()
+        if (Math.sin(sec * 5) > 0.2) { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(fx - 8, fy - 22, 1.4, 0, 7); ctx.fill() }
+    } else if (id === 'pumpkin') {
+        // a pumpkin loaded on the little orchard catapult, band drawn back
+        ctx.strokeStyle = '#6b4326'; ctx.lineWidth = 2.6; ctx.lineCap = 'round'
+        ctx.beginPath(); ctx.moveTo(fx + 8, fy); ctx.lineTo(fx + 8, fy - 14); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(fx + 8, fy - 14); ctx.lineTo(fx + 13, fy - 20); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(fx + 8, fy - 14); ctx.lineTo(fx + 3, fy - 21); ctx.stroke()
+        const pull = 1 + Math.sin(sec * 2.4) * 0.8
+        ctx.strokeStyle = '#c9b08a'; ctx.lineWidth = 1.6
+        ctx.beginPath(); ctx.moveTo(fx + 13, fy - 20); ctx.lineTo(fx - 2 - pull, fy - 12); ctx.lineTo(fx + 3, fy - 21); ctx.stroke()
+        ctx.fillStyle = '#e0822b'; ctx.beginPath(); ctx.ellipse(fx - 3 - pull, fy - 11, 7.5, 6.5, 0, 0, 7); ctx.fill()
+        ctx.strokeStyle = '#b9641f'; ctx.lineWidth = 1.2
+        ctx.beginPath(); ctx.moveTo(fx - 3 - pull, fy - 17); ctx.lineTo(fx - 3 - pull, fy - 5); ctx.moveTo(fx - 7 - pull, fy - 15); ctx.quadraticCurveTo(fx - 7 - pull, fy - 9, fx - 6 - pull, fy - 6); ctx.stroke()
+        ctx.fillStyle = '#2f7d2f'; ctx.fillRect(fx - 4.5 - pull, fy - 20, 3, 4)
+    }
+}
+
 // ---------------------------------------------------------- card tray ----
 // #1832: the board contents sit right of x=128 — the site's top-left chrome
 // (ARCADE at y 12-38, FEEDBACK at y 44-70, each ~95px wide) owns the corner,
@@ -153,17 +290,9 @@ export function drawTray(ctx, g, hover, shake) {
         rr(ctx, x, y, cardW, cardH, 7); ctx.fill()
         ctx.lineWidth = sel ? 3 : 1.5; ctx.strokeStyle = sel ? '#e4a52b' : 'rgba(90,60,30,0.5)'
         rr(ctx, x, y, cardW, cardH, 7); ctx.stroke()
-        // portrait plate: a tinted inset in the defender's own colour
-        ctx.save()
-        rr(ctx, x + 5, y + 5, cardW - 10, 40, 5)
-        ctx.clip()
-        const pg = ctx.createLinearGradient(0, y + 5, 0, y + 45)
-        pg.addColorStop(0, shade(def.color, 34)); pg.addColorStop(1, shade(def.color, -22))
-        ctx.fillStyle = pg; ctx.fillRect(x + 5, y + 5, cardW - 10, 40)
-        ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.beginPath(); ctx.ellipse(x + cardW / 2, y + 12, 22, 8, 0, 0, 7); ctx.fill()
-        drawPlantIcon(ctx, id, x + cardW / 2, y + 24, 30)
-        ctx.restore()
-        ctx.strokeStyle = 'rgba(60,38,16,0.55)'; ctx.lineWidth = 1; rr(ctx, x + 5, y + 5, cardW - 10, 40, 5); ctx.stroke()
+        // portrait plate — a posed vignette in the defender's own colour inside
+        // a beveled, riveted frame (#2328); it breathes on the sim clock.
+        drawCardPortrait(ctx, id, x + 5, y + 5, cardW - 10, 40, g.sec, sel)
         // name plate
         ctx.fillStyle = C.ink; ctx.font = 'bold 9px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
         ctx.fillText(SHORT[id] || def.name.slice(0, 8).toUpperCase(), x + cardW / 2, y + 52)
@@ -189,14 +318,19 @@ export function drawTray(ctx, g, hover, shake) {
     const tx = startX + g.unlocked.length * (cardW + gap)
     ctx.fillStyle = g.trowel ? '#fff3cf' : '#efe0bd'; rr(ctx, tx, 12, cardW, cardH, 7); ctx.fill()
     ctx.lineWidth = g.trowel ? 3 : 1.5; ctx.strokeStyle = g.trowel ? '#e4a52b' : 'rgba(90,60,30,0.5)'; rr(ctx, tx, 12, cardW, cardH, 7); ctx.stroke()
-    drawTrowel(ctx, tx + cardW / 2, 12 + 34)
+    // #2328: the trowel card gets the same framed plate language as the defenders
+    ctx.fillStyle = 'rgba(43,29,18,0.35)'; rr(ctx, tx + 5, 17, cardW - 10, 40, 5); ctx.fill()
+    ctx.save(); rr(ctx, tx + 5, 17, cardW - 10, 40, 5); ctx.clip()
+    drawTrowel(ctx, tx + cardW / 2, 12 + 30)
+    ctx.restore()
+    drawPlateFrame(ctx, tx + 5, 17, cardW - 10, 40, g.trowel)
     ctx.fillStyle = C.ink; ctx.font = 'bold 10px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
     ctx.fillText('TROWEL', tx + cardW / 2, 12 + cardH - 12)
     if (hover && hover.kind === 'trowel') { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; rr(ctx, tx - 1, 11, cardW + 2, cardH + 2, 8); ctx.stroke() }
 }
 
 function drawTrowel(ctx, cx, cy) {
-    ctx.save(); ctx.translate(cx, cy); ctx.rotate(-0.5)
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(-0.38)
     ctx.fillStyle = '#c9c9d2'; ctx.beginPath(); ctx.moveTo(-6, 4); ctx.lineTo(6, 4); ctx.lineTo(2, 16); ctx.lineTo(-2, 16); ctx.closePath(); ctx.fill()
     ctx.fillStyle = '#8a5a2c'; ctx.fillRect(-2, -14, 4, 18)
     ctx.fillStyle = '#6b4326'; rr(ctx, -4, -18, 8, 6, 2); ctx.fill()
