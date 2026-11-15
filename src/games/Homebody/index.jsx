@@ -37,6 +37,7 @@ import {
     scheduleMeals, MEAL_WINDOW, SPAT_CD,   // #2244: the meal bells — the F1 cheat re-seeds today's hours
     MEAL_TIMBRE, sharedChord, nightLevel,   // #2264: per-bell motifs, the rotating table chord, one night curve
     DEF, yarnOrderOk,   // #2256: the yarn ball — cat-only piece, honest refusal on tap
+    binOrderOk,   // #2303: the bin — the lot's chore, honest refusal out of season
     NEED_HINT,   // #2253: the amber prompt names the fix
     VISIT_TIMBRE, REL_EDGES,   // #2240: each neighbour owns a call motif + entrance footfalls; FAMILY tier for scenario legs
     stateHash,
@@ -58,6 +59,7 @@ const MESSAGES = [
     'The mailbox pays the bills on workdays. § buys furniture to raise the home.',
     'Morning brings the paper — the boy sweeps past and today\'s edition waits on the step. Tap it for a laugh.',
     'THE BELLS RING THREE TIMES A DAY — a warm plate waits by the kitchen. Tap to eat; eat together and BONDS rise.',
+    'GARBAGE DAY EVERY THIRD DAY — the eve says WHEEL IT OUT, dawn sends the truck. Miss the curb and the lot gets skipped.',
     'Fern the neighbour wanders in by day — chat fills the blue bar.',
     'CHAT builds BONDS — Fern at FAMILY visits sooner and lingers. Neglect cools them.',
     'Ivy shops the market — chat grows HER bond too. At FRIENDS she brings a basket; FAMILY adds honey-money.',
@@ -199,6 +201,26 @@ const HomebodyGame = () => {
                     case 'meal-cold':   // #2244/#2264: nobody came to the table — a soft, sad low, and the cold is SEEN: a grey puff settles on the spot, crumbs where the plate was (the storm-puff doctrine)
                         audioController.playSweep(392, 262, 0.24, 'triangle', 0.04)
                         if (live) { say('THE MEAL WENT COLD'); burst(tilePx(e.c), tilePy(e.r) + 12, 7, '#9a958a', 1.4); burst(tilePx(e.c), tilePy(e.r) + 20, 4, '#d9d2bc', 0.8) }
+                        break
+                    case 'bin-eve':   // #2303: the eve announces itself — the lot keeps its rhythm
+                        audioController.playTone(392, 0.06, 'square', 0.035)
+                        setTimeout(() => audioController.playTone(330, 0.1, 'square', 0.035), 110)
+                        if (live) say('GARBAGE TOMORROW — WHEEL OUT THE BIN')
+                        break
+                    case 'bin-out':   // #2303: the chore lands — two low thumps and a rumble on the gravel
+                        audioController.playTone(140, 0.06, 'triangle', 0.05)
+                        audioController.playTone(110, 0.09, 'triangle', 0.045, 0.07)
+                        audioController.playFilteredNoise(0.08, 0.03, 300)
+                        if (live) say(`${e.name.toUpperCase()} WHEELS THE BIN OUT`)
+                        break
+                    case 'garbage-collected':   // #2303: the truck takes it — bright ding, gold glints at the curb
+                        audioController.playTone(988, 0.07, 'triangle', 0.05)
+                        setTimeout(() => audioController.playTone(1318, 0.16, 'triangle', 0.05), 100)
+                        if (live) { say('THE TRUCK TAKES IT — CLEAN LOT'); burst(e.x, e.y - 6, 8, '#ffd24a', 2) }
+                        break
+                    case 'garbage-skipped':   // #2303: the truck drove past — the miss is SEEN: grey puff at the empty curb (the cold-plate doctrine)
+                        audioController.playSweep(330, 196, 0.3, 'triangle', 0.04)
+                        if (live) { say('THE TRUCK PASSED US BY'); burst(tilePx(e.c), tilePy(e.r) + 10, 7, '#9a958a', 1.4) }
                         break
                     case 'gift':   // #2143: the market basket lands — warm arpeggio, gold glints
                         audioController.playTone(523, 0.07, 'triangle', 0.05)
@@ -426,6 +448,13 @@ const HomebodyGame = () => {
                 if (DEF[it.id] && DEF[it.id].catOnly) {   // #2256: the ball answers honestly without a cat
                     if (!gs.pet) say('NO CAT ON THE LOT'); else if (!yarnOrderOk(gs)) say('MISO IS NOT FEELING IT'); else { /* falls through to cmdUse */ }
                     if (!yarnOrderOk(gs)) return
+                }
+                if (DEF[it.id] && DEF[it.id].binOnly) {   // #2303: the bin answers honestly out of season
+                    if (!binOrderOk(gs)) {
+                        say(gs.binAt === 'curb' ? 'THE BIN IS AT THE CURB'
+                            : (gs.day + 1 === gs.collectionDay ? 'WHEEL IT OUT THIS EVENING — BEFORE DARK' : 'NO COLLECTION TONIGHT — THE TRUCK KEEPS ITS RHYTHM'))
+                        return
+                    }
                 }
                 if (cmdUse(gs, p, it)) { audioController.playTone(560, 0.04, 'triangle', 0.03); say(`✓ ${it.id === 'mail' ? 'WORK' : (it.name || 'OBJECT').toUpperCase()}`); return }   // #2253: the tap answers back
                 say('CANNOT REACH THAT')

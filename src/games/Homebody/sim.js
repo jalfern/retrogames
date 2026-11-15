@@ -365,6 +365,72 @@ export const sharedChord = (serial) => SHARED_TABLE_CHORDS[Math.max(0, serial | 
 export const nightLevel = (hour) => hour >= 19 ? Math.min(0.42, (hour - 19) / 3 * 0.42)
     : hour < 7 ? (hour < 5 ? 0.42 : (7 - hour) / 2 * 0.42) : 0
 
+// ------------------------------------------------------ garbage day (#2303) --
+// The day/night clause's third hour-scheduled citizen after the paper route
+// and the meal bells (The Sims, PC 2000: the truck keeps the street). Nobody
+// buys a bin: BIN joins DEF but never CATALOG — walkable (solid:false) and
+// usable (binOnly), so the tap route and BFS treat it as an appliance the lot
+// owns, generic self-service skips it (a chore, not a need), and the sale
+// refuses. The law has three beats: the eve ARMS it (bin waiting to be set
+// out, truck hour seeded for dawn), a resident WHEELS it to the curb (an
+// order, and in demo an autonomous route — roster-free residents keep the
+// day), and at dawn the truck either COLLECTS (clean lot, small honest pay —
+// the win economy is untouched: fun, social and one contentment, never more)
+// or, if the bin never made the curb, SKIPS the lot honestly and visibly:
+// the waste sits out all day, and the missed collection rides the roster for
+// a whole cycle. Cadence: every third day, never banked, newDay re-seeds.
+export const BIN = { id: 'bin', name: 'Garbage Bin', price: 0, h: 1, solid: false, decor: true, need: 'fun', amt: 0, dur: 2.4, binOnly: true }
+DEF.bin = BIN
+export const BIN_HOME = { r: 11, c: 5 }      // by the gate post, where the bin lives
+export const BIN_CURB = { r: 12, c: 5 }      // the curb cell at the gate — the truck's stop
+export const GARBAGE_EVERY = 3               // the truck keeps the street every third day
+export const TRUCK_DUE = [5, 7]             // dawn window: the truck hour is seeded inside it
+export const SET_OUT_EARLY = 18             // the set-out window opens after supper…
+export const SET_OUT_LATE = 20.5           // …and closes at a civil hour (night is no time for chores)
+export const BIN_SET_SOCIAL = 0.08         // the wheeler's small satisfaction of a chore done
+export const BIN_FUN = 0.1                 // a clean lot lifts everyone a little
+export const BIN_BOND = 1                  // house bond per collection — a kept rhythm
+export const BIN_PICK_LINES = [
+    'The truck rumbles past at dawn — the bin is empty again, the lot is clean.',
+    'Collection morning: the lid lifts, the bin tips, the street keeps its rhythm.',
+    'The garbage truck takes the bin\'s whole load and rolls on down the street.',
+]
+export const BIN_SKIP_LINES = [
+    'The truck passed our gate and did not stop — the bin never made the curb.',
+    'No collect today: the bin sits by the road all day, full and unargued with.',
+    'The truck driver saw the empty curb and drove on. Somebody forgot the chore.',
+]
+export const BIN_SET_LINES = [
+    '{p} wheels the bin down to the curb — tomorrow the truck takes it.',
+    'Bin at the curb, lid shut tight. The morning shift can find it now.',
+    'The bin rolls out to the street corner, and the lot keeps its hours.',
+]
+export const BIN_EVE_LINES = [
+    'Evening news on the lot: garbage tomorrow. The bin waits to go out.',
+    'The street-cries say collection at dawn — somebody owes the bin a trip to the curb.',
+]
+export const BIN_NIGHT_LINES = [
+    'The bin goes out the evening BEFORE the truck, not at midnight.',
+    'The truck comes at dawn — the curb waits for morning, not for night.',
+]
+export const BIN_OUT_LINES = [
+    'The bin is already at the curb, waiting for the truck.',
+    'Two trips to the curb is one too many — the bin stands at the road.',
+]
+
+// The one honest voice for "can the bin order stand": eve only, bin at home,
+// not yet set today. Placement/sale never consult it; only a human ordering
+// the chore does (the yarnOrderOk pattern, #2256).
+export function binOrderOk(s) {
+    return s.binAt === 'home' && s.binAuto && s.binSetDay !== s.day
+        && !isNight(s) && s.hour >= SET_OUT_EARLY && s.hour <= SET_OUT_LATE
+}
+
+// #2303: the truck is a day away — the eve owns the arm. The dawn hour seeds
+// when the evening window opens, once per cycle, so the schedule stays
+// deterministic.
+function binEve(s) { return s.day + 1 === s.collectionDay }
+
 // ------------------------------------------------- catalog shelves (#2222) ----
 // The original people-sim never showed a flat wall of goods: buy mode is a
 // catalog with category tabs — flip shelves, each shelf few big cards.
@@ -521,8 +587,9 @@ export function newRun(seed) {
             { uid: 3, id: 'toilet', r: 6, c: 9 },
             { uid: 4, id: 'mail', r: 11, c: 6 },
             { uid: 5, id: 'radio', r: 3, c: 2 },
+            { uid: 6, id: 'bin', r: BIN_HOME.r, c: BIN_HOME.c },   // #2303: the lot owns its bin — parked by the gate post
         ],
-        nextUid: 6,
+        nextUid: 7,
         people: [person('Otto', 3, 3, '#e2574c', 1), person('Mira', 3, 8, '#3f7fd1', 0)],
         active: 0,
         visitor: null,                  // { name, x, y, path, state, t }
@@ -549,6 +616,13 @@ export function newRun(seed) {
         mealEaten: [],            // #2244: people who have eaten the CURRENT plate
         mealAt: 0,                // #2244: hour the current plate landed (window expiry)
         mealAfter: [7, 12.5, 18.5],   // #2244: today's seeded bell hours
+        binAt: 'home',            // #2303: 'home' by the gate or 'curb' at the road
+        binAuto: false,           // #2303: eve armed — the chore route stands until done
+        binSetDay: 0,             // #2303: day stamp of the last trip to the curb
+        collectionDay: GARBAGE_EVERY,   // #2303: day the truck is next due
+        truckHour: 6,             // #2303: dawn hour the truck passes, seeded on the eve
+        collections: 0,           // #2303: bins the truck ever took (rides the hash)
+        skips: 0,                 // #2303: honest skips — the missed days on the roster
         orderPing: { x: 0, y: 0, label: '', t: 0 },   // #2253: the last issued order (the view rings its target while t > 0)
         mealName: '',             // #2244: name of the current plate (a word is state the view reads)
         rel: { house: 0, fern: 0, ivy: 0, kid: 0 },   // #1817/#2143/#2203 conversation ladders (0..REL_MAX)
@@ -906,6 +980,12 @@ export function cmdUse(s, p, it) {
         if (!s.pet) s.events.push({ t: 'refuse', r: it.r, c: it.c })
         return false
     }
+    // #2303: the bin takes the set-out order only while the eve stands —
+    // out of season or already at the curb, the refusal is honest and seen.
+    if (DEF[it.id] && DEF[it.id].binOnly && !binOrderOk(s)) {
+        s.events.push({ t: 'refuse', r: it.r, c: it.c })
+        return false
+    }
     const tg = targetsOf(s, it)
     if (!tg.length) return false
     const path = bfsPath(s, { r: p.r, c: p.c }, tg)
@@ -952,6 +1032,7 @@ export function tryUse(s, p) {
         const d = DEF[it.id]
         if (!d || !d.need) continue
         if (d.catOnly && !yarnOrderOk(s)) continue   // #2256: pad-A takes the play order only while it stands
+        if (d.binOnly && !binOrderOk(s)) continue   // #2303: pad-A takes the set-out only while the eve stands
         const near = Math.min(...targetsOf(s, it).map((t) => Math.abs(t.r - p.r) + Math.abs(t.c - p.c)))
         if (near < bd) { bd = near; best = it }
     }
@@ -1076,7 +1157,7 @@ export function placeOk(s, r, c) {
 
 export function sellAt(s, r, c) {
     const it = cellItem(s, r, c)
-    if (!it || it.id === 'mail' || it.id === 'paper' || it.id === 'meal') return false   // #2238/#2244: the mailbox belongs to the lot, the news to the route, the meal to the table
+    if (!it || it.id === 'mail' || it.id === 'paper' || it.id === 'meal' || it.id === 'bin') return false   // #2303/#2238/#2244: the mailbox belongs to the lot, the news to the route, the meal to the table, the bin to the kerb
     const def = DEF[it.id]
     s.items = s.items.filter((x) => x !== it)
     s.money += Math.floor(def.price / 2)
@@ -1101,7 +1182,7 @@ function needTarget(s, p, need) {
     let best = null, bd = 1e9
     for (const it of s.items) {
         const d = DEF[it.id]
-        if (!d || d.need !== need || d.catOnly) continue   // #2256: self-service never parks on the cat toy
+        if (!d || d.need !== need || d.catOnly || d.binOnly) continue   // #2256: self-service never parks on the cat toy; #2303: nor on the lot's chore
         const tg = targetsOf(s, it)
         if (!tg.length) continue
         const dist = bfsPath(s, { r: p.r, c: p.c }, tg)
@@ -1119,6 +1200,8 @@ function autonomous(s, p) {
     // #2244: cooked beats snacking — while a plate is warm and this resident
     // hasn't had their helping, they head for the table before the generic
     // need scan (the original prioritises a home-cooked meal over the fridge).
+    // #2303: the eve chore lives BELOW the need scan (see autonomous) — here
+    // only the table law outranks it, and the scan and the chat always do.
     if (s.demo && s.meal && p.needs.hunger < 0.75 && p.mealTaken !== s.mealSerial) {
         const tg = targetsOf(s, s.meal)
         const path = tg.length ? bfsPath(s, { r: p.r, c: p.c }, tg) : null
@@ -1145,6 +1228,18 @@ function autonomous(s, p) {
                 }
             }
         }
+    }
+    // #2303: the eve chore — while the bin waits for its morning, a resident
+    // with every need in hand and nobody on the lot to talk to wheels it to
+    // the curb (the lot keeps its hours). It replaces what a seeded idle
+    // stroll would have spent, never a need-scan or a chat minute — the
+    // WINNABLE seeds are the guard and the bot never borrows for the chore
+    // either (#2240's lesson, learned again here: every earlier placement
+    // that outranked the scan or the till tipped seeds 7/1234/20261023).
+    if (s.demo && s.binAuto && s.binAt === 'home' && s.binSetDay !== s.day && s.hour >= SET_OUT_EARLY && s.hour <= SET_OUT_LATE
+        && !hasVisitor(s) && !hasIvy(s)) {
+        const bin = s.items.find((it) => it.id === 'bin')
+        if (bin && cmdUse(s, p, bin)) return
     }
     // idle wander (seeded)
     // #2253: s.noWander is a test-only hold (peoplecheck). The gate below the
@@ -1292,6 +1387,47 @@ function updateMeals(s) {
     s.mealName = MEAL_NAMES[slot]
     s.events.push({ t: 'meal', slot, name: s.mealName, r: spot.r, c: spot.c })
     think(s, pick(s, MEAL_LINES))
+}
+
+// ------------------------------------------------------- garbage day ------
+// #2303: the clause's third citizen. Two beats on the world clock: the eve
+// arms the chore (announce once, seed the dawn hour), and dawn resolves the
+// cycle — COLLECTED if the bin stands at the curb, honestly SKIPPED if it
+// never made it. The truck never waits and the day is never banked: a missed
+// set-out costs the whole cycle, the same way a cold plate costs the meal.
+function updateBin(s) {
+    if (s.day === s.collectionDay) {
+        if (s.hour < s.truckHour) return
+        if (s.binAt === 'curb') {
+            s.binAt = 'home'
+            const it = s.items.find((x) => x.id === 'bin')
+            if (it) { it.r = BIN_HOME.r; it.c = BIN_HOME.c }
+            s.binAuto = false
+            s.collections++
+            for (const q of s.people) q.needs.fun = Math.min(1, q.needs.fun + BIN_FUN)
+            relAdd(s, 'house', BIN_BOND)
+            s.content = Math.min(WIN_CONTENT, s.content + 1)
+            s.events.push({ t: 'garbage-collected', x: tileX(BIN_CURB.c) + TILE / 2, y: tileY(BIN_CURB.r) + TILE / 2 })
+            think(s, BIN_PICK_LINES[s.collections % BIN_PICK_LINES.length])
+        } else {
+            s.skips++
+            s.binAuto = false
+            s.events.push({ t: 'garbage-skipped', r: BIN_CURB.r, c: BIN_CURB.c })
+            think(s, BIN_SKIP_LINES[s.skips % BIN_SKIP_LINES.length])
+        }
+        s.collectionDay += GARBAGE_EVERY
+        return
+    }
+    // the eve: one announcement, one dawn hour, once per cycle. Both the hour
+    // and the wording are arithmetic, never s.rng — the truck must not re-phase
+    // the seeded autopilot's stream (the #2240 lesson: WINNABLE seeds win by a
+    // hair, and an extra rng draw per cycle moves every roll after it).
+    if (binEve(s) && !s.binAuto && s.binSetDay !== s.day && s.hour >= SET_OUT_EARLY && s.hour <= SET_OUT_LATE) {
+        s.truckHour = TRUCK_DUE[0] + ((Math.imul(s.collectionDay, 2654435761) >>> 9) % 200) / 100
+        s.binAuto = true
+        s.events.push({ t: 'bin-eve', r: BIN_HOME.r, c: BIN_HOME.c })
+        think(s, BIN_EVE_LINES[s.collectionDay % BIN_EVE_LINES.length])
+    }
 }
 
 // ----------------------------------------------------------- visitor ------
@@ -1674,7 +1810,7 @@ function funTarget(s, k) {
     let best = null, bd = 1e9
     for (const it of s.items) {
         const d = DEF[it.id]
-        if (!d || d.need !== 'fun' || d.catOnly) continue   // #2256: Pip doesn't play with the cat's ball
+        if (!d || d.need !== 'fun' || d.catOnly || d.binOnly) continue   // #2256: Pip doesn't play with the cat's ball; #2303: nor wheels anyone's bin
         const tg = targetsOf(s, it)
         if (!tg.length) continue
         const dist = Math.min(...tg.map((t) => Math.abs(t.r - k.r) + Math.abs(t.c - k.c)))
@@ -1886,6 +2022,27 @@ function finishUse(s, p) {
     // phantom whose plate went cold, shared away or rotted out from under the
     // walk) feeds nothing; the wasted steps are the cost, the stamp is the law.
     if (def.id === 'meal' && (s.meal !== it || p.mealTaken === s.mealSerial)) { p.use = null; return }
+    // #2303: the set-out. The walk to the bin ends in the chore while the eve
+    // still stands — the bin rolls to the curb and waits for dawn. A bin that
+    // already made the trip (or left season) refuses at the cell: the wasted
+    // walk is the cost, the stamp is the law (the meal-serial doctrine, at
+    // the kerb). No content here — the payoff lands at the truck, honest size.
+    if (def.id === 'bin') {
+        p.use = null
+        if (s.binAt === 'curb' || s.binSetDay === s.day) {
+            s.events.push({ t: 'refuse', r: it.r, c: it.c })
+            think(s, pick(s, BIN_OUT_LINES))
+            return
+        }
+        p.needs.social = Math.min(1, p.needs.social + BIN_SET_SOCIAL)
+        s.binAt = 'curb'
+        it.r = BIN_CURB.r; it.c = BIN_CURB.c
+        s.binSetDay = s.day
+        s.binAuto = false
+        s.events.push({ t: 'bin-out', name: p.name, r: BIN_CURB.r, c: BIN_CURB.c })
+        think(s, BIN_SET_LINES[s.binSetDay % BIN_SET_LINES.length].replace('{p}', p.name))
+        return
+    }
     const before = p.needs[def.need]
     p.needs[def.need] = Math.min(1, p.needs[def.need] + def.amt)
     p.use = null
@@ -2153,6 +2310,7 @@ export function advance(s, dt) {
     updateHouseBond(s, simDt)
     updatePaper(s)          // #2238: the route rides the same world clock, kept behind the documented five-deep chain
     updateMeals(s)          // #2244: so do the bells, right behind the news
+    updateBin(s)            // #2303: and the truck — the eve arms, dawn resolves
 
     for (const p of s.people) {
         p.mood = avg(p)
@@ -2403,6 +2561,10 @@ export function bot(s) {
             }
         }
     }
+    // #2303: the bot never borrows for the chore — a bin walk mid-evening
+    // steals chat minutes the WINNABLE seeds win by (built, tested, cut:
+    // seeds 7/1234/20261023 all fell). Autonomy is the route; the marquee
+    // and the eve banner teach the player to order it themselves.
 }
 
 export function autoStep(s, dt) {
@@ -2433,6 +2595,11 @@ export function stateHash(s) {
     mix(s.mealEaten.length)            // who has sat down at the current plate
     mix(s.meal ? 1 : 0)              // the plate itself is state (its cell rides the items loop)
     mix(s.yarnCd)                    // #2256: the ordered-play cooldown rides it too
+    mix(s.collectionDay)             // #2303: the truck's roster rides it — the view tells off the hash
+    mix(Math.round(s.truckHour * 100) | 0)   // and the seeded dawn hour it passes at
+    mix(s.binAt === 'curb' ? 1 : 0) // where the bin stands is state (its cell rides the items loop)
+    mix(s.binAuto ? 1 : 0)
+    mix(s.binSetDay); mix(s.collections); mix(s.skips)
     for (const p of s.people) {
         mix(p.r); mix(p.c)
         for (const n of NEEDS) mix(p.needs[n])

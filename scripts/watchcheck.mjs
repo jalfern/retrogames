@@ -2228,7 +2228,14 @@ const PILOTS = [
             const watching = () => page.evaluate((h) => window[h].watching(), H)
             const probe = () => page.evaluate((h) => window[h].probe(), H)
             const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
-            const moved = (a, b) => b.items.length !== a.items.length || b.money !== a.money
+            // Owner-free arrivals (the paper #2303 era: post #2238, plates #2244
+            // and the lot's bin #2303) are the point of those laws — an idle
+            // street is allowed to receive post, plates and a skipped collection.
+            // The law this gate owns is BUYING: a bought item is a catalog piece,
+            // and catalog pieces are exactly what the idle street must not add.
+            const OWNER_FREE = new Set(['mail', 'paper', 'meal', 'bin'])
+            const bought = (q) => q.items.filter((i) => !OWNER_FREE.has(i.id)).length
+            const moved = (a, b) => bought(b) !== bought(a) || b.money !== a.money
                 || b.people.some((p, i) => p.working !== a.people[i].working)
             await key(page, 'Space')                       // attract -> play (single-screen boot)
             await page.waitForTimeout(400)
