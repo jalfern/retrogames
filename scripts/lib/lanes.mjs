@@ -28,6 +28,15 @@
 //     flagship gap instead of idling. The warden only kicks when studio did not
 //     take the gap itself this tick (down/busy/queue-bound = the gap survives
 //     studio's share), so mini stays the last lane, same reserve shape as #1290.
+//   QA mini2 (#2280) — the mini runs a SECOND QA slot, the way the Studio runs
+//     builder slots a and b (#1258). Same ladder shape one step further down:
+//     mini2 joins the queue only when items remain after builders, studio and
+//     mini have each reserved theirs (miniReserve = mini lane idle+up+queue-
+//     bound, passed in as miniUp), and the flagship fallback reaches mini2
+//     when feedback and queue leave it nothing. Inference on the mini is
+//     shared between the two lanes — Jon accepted that. Claim-time collision
+//     safety is unchanged: qa-claim.sh's unified namespace (#878) makes the
+//     two mini lanes pick different items or yield.
 //
 // Targets are assigned to FREE slots in slot order (a before b): a busy slot
 // takes nothing, so the next free slot inherits its ladder position — the two
@@ -62,7 +71,8 @@ export function builderLadder(issues, { owner = OWNER } = {}) {
 // bLoaded = the slot-b launchd job exists (trial not reverted);
 // studioUp (#1290) = the studio QA lane is idle, its model answers and its job
 // exists — i.e. it will consume one queue item this tick, so mini reserves it.
-export function lanePlan({ issues = [], owner = OWNER, freeA = false, freeB = false, bLoaded = true, studioUp = true } = {}) {
+// miniUp (#2280) = the same fact for the mini lane, so mini2 reserves mini's share.
+export function lanePlan({ issues = [], owner = OWNER, freeA = false, freeB = false, bLoaded = true, studioUp = true, miniUp = true } = {}) {
     const ladder = builderLadder(issues, { owner })
     const rest = ladder.slice()
     const targets = { a: null, b: null }
@@ -80,12 +90,18 @@ export function lanePlan({ issues = [], owner = OWNER, freeA = false, freeB = fa
     // after builders and (if it can run) studio have each taken theirs.
     const studioReserve = studioUp && qaStudioQueue ? 1 : 0
     const qaMiniQueue = feedbackFree === 0 && queueFree > freeSlots + studioReserve
+    // #2280: mini2 reserves mini's share too — one step further down the ladder.
+    const miniReserve = miniUp && qaMiniQueue ? 1 : 0
+    const qaMini2Queue = feedbackFree === 0 && queueFree > freeSlots + studioReserve + miniReserve
     // #1372: with nothing left for mini in feedback or the queue, mini idles —
     // and an unowned flagship gap outranks idling (#878). Mutually exclusive
     // with qaMiniQueue by construction: the queue wins per tick (e-prime), the
     // flagship stage is the tail. Whether the gap survives studio's SHARE is a
     // runtime fact (down/busy/queue-kicked), decided by the warden, not here.
     const qaMiniFlagship = feedbackFree === 0 && queueFree <= freeSlots + studioReserve
+    // #2280: same tail rule for mini2 — nothing left after ALL four lanes'
+    // shares, so the warden may send mini2 to an unowned flagship gap.
+    const qaMini2Flagship = feedbackFree === 0 && queueFree <= freeSlots + studioReserve + miniReserve
 
     return {
         targets,
@@ -93,6 +109,8 @@ export function lanePlan({ issues = [], owner = OWNER, freeA = false, freeB = fa
         qaStudioQueue,
         qaMiniQueue,
         qaMiniFlagship,
-        counts: { ladder: ladder.length, feedbackFree, queueFree, freeSlots, studioReserve },
+        qaMini2Queue,
+        qaMini2Flagship,
+        counts: { ladder: ladder.length, feedbackFree, queueFree, freeSlots, studioReserve, miniReserve },
     }
 }
