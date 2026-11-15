@@ -1,74 +1,68 @@
-# STATE — session 275 (2026-11-14, slot b)
+# STATE — session 276 (2026-11-14, slot a)
 
 ## Playable now / what shipped
-- **Homebody #2240 — Ivy polish pass part 2** (merge `b7f7f07`, PR #2282,
-  closes #2240): four laws + a real bug. (1) The SET-DOWN — a basket-carrying
-  Ivy physically places it at her kitchen spot (fridge→stove→front step→cell)
-  with a 150/95 Hz triangle thunk + filtered noise, distinct from her gate
-  bell; view-only staging (`giftFx/giftAt/giftHoney`, off stateHash), basket
-  paints on the depth line, fades on GIFT_LAND_T=5 s. (2) `VISIT_TIMBRE`
-  data table — Fern keeps the 660→880 two-bell, Ivy a three-note lilt that
-  lands DOWN (587→988→740) + lower slower steps; shell plays it verbatim.
-  (3) The STRANDED-IVY rescue (real bug found): `scheduleIvy` can roll
-  ivyAfter=19 at lv 0 and `hour ≥ ivyAfter+gap && hour < 19` never passes
-  again — nothing re-rolls till a visit ends → those seeds never show Ivy
-  (seed 5). Attract bot rings once ONLY when her schedule can no longer
-  land. Built-and-CUT: unconditional noon pull + forced stroll-to-ring —
-  each tipped WINNABLE seed 7 (wins by exactly §10) out of the win.
-  (4) BONDS at phone scale — rows via exported `bondRows(s)`, drive samples
-  across the gold-pulse phases at k≈0.60: ink, 3 rows, FAMILY gold all
-  survive. Bonus fix: Ivy's ring never got a chat bubble (lifetime chatT
-  always spent by Fern) — `arbitrateVisitors` re-arms chatT on claim
-  switch (`p.chatWith`), honest dt crossing (#2135) intact.
-  peoplecheck **497/0** (was 480; +17 gates; seed 7 byte-identical win
-  content 80 day 3 §10), homebodydrive **72/0** (new live legs), mutants
-  kill exactly the promised gates (495/2, 496/1). Rebased on #2276.
-  Prod-verified: the served Homebody chunk carries `gift-land` (found via
-  chunk-enumeration — the prod build is code-split, grepping index misses).
+- **TALK ME DOWN gets typed calls on phones** (#2287 → PR #2288, merge
+  2ee0b37): the phone's only mouth was the MIC pill; X was desktop-only
+  (#1894). Now a TYPE pill (touch, play-only, never on a keyboard box) focuses
+  a real `<input>` — the soft keyboard rises and feeds the SAME shell-side line
+  X made (cl.open/cl.buf → drawCallLine, tick law, 28-char cap). GO/Enter
+  shouts through voiceCall — the mic's own entry: one grammar, one pulse law,
+  one bank (#1415). Words are not hands (#1247 → pads), TWO belts: input
+  stopPropagation + keydown AND keyup guards refuse INPUT targets ("CUT BLUE"
+  would press B; spaces press A otherwise). Escape/blur/pause/screen-leave put
+  the line away. TOUCH_CALL_HINT names both true channels (pill-law pins hold).
+- Harness: `npm run tmdphonecheck` **39/39** — phone 390×844 real tap/type/GO
+  + desktop control page; pad-cold collision probes incl. after the shout;
+  exactly-one bank entry; nonsense refuses intent-null. Mutant (both belts out)
+  → 11 red, restored green. Regressions all green: bombcheck 94/0, platecheck
+  97/0, voicecheck 49/0, lint×3, build.
+- Side fix: **bombdrive revived (63/0)** — died at the auto-record gate on
+  live-store boxes; seeded honest DECLINED per #2095 parity (watchcheck law).
+- #2240 (warden target) was found already shipped (PR #2282 merged 23:33Z by
+  slot b, whose session died before step 8): claimed, prod-verified the served
+  chunk carries giftFx/timbres, live URL commented, `building`→`shipped`,
+  closed. Slot b also committed its own close-out — both paths agree.
 
 ## Ladder (this session's path)
-- Warden target #2240 claimed on slot b (feedback→building); design comment
-  posted first (#issuecomment-6884826402); one ship, time-box respected.
+- Warden target #2240 → step-8 close-out only (work landed pre-claim).
+- Queue empty, steer none, next items all lane:platform, QA MASTER live →
+  flagship READMEs ALL spent → NEVER-DRY weakestStage → TALK ME DOWN (score 4,
+  oldest unowned gap = typed calls on phones). Filed #2287 + claimed + shipped.
 
 ## BOARD at exit
-- #2240 closed (+prod comment with live URL). Open QA feedback: #2272/
-  #2270/#2264/#2258/#2256 — don't duplicate. game-queue: EMPTY. No
-  `building`, no steer/halt.
-- jonq: nothing open from lane:games. Nightly green; main-ok clean at exit.
+- #2287 closed (shipped). game-queue: EMPTY. No steer/next-for-games, no halt.
+- Open QA: #2272/#2270/#2264/#2256 (lane:qa). TMD has 8 prior QA passes — no
+  new polish-pass filed (step 8b already satisfied for this title).
+- jonq: #2285 AWAITING (lane:games, PLAICRAFT intent leak) — not mine, don't wait.
+- slot b: #2277 building. Nightly green; main-ok clean at session start.
 
 ## Next (slot a or b, in order)
-1. Queue empty → ladder: steer/none → #1711 skip (Jon-side) → QA-borrow only
-   if no `QA MASTER` live → flagship stages (SSX, Emberwood, COMET DRIFT HD,
-   Myst) via `idle.mjs`, skipping QA-held gaps → weakestStage.
-2. Homebody's Ivy now has a daily-presence guarantee in attract; if QA wants
-   more (a dedicated Ivy quest), that's a Jon taste call, not ours.
+1. Queue empty → same ladder; NEVER-DRY weakestStage (TMD's remaining unowned
+   gaps: CI speech-service — needs a service that headless lacks; D4 anchor is
+   structurally untestable; #1915 design-call residuals). Next weakest after
+   TMD will shift as QA lands; run the driver honestly, don't grab owned gaps.
+2. The #2095 pattern suggests auditing drives that never seed DECLINED consent
+   (bombdrive was one; others may lurk in nightly advisory).
 
 ## The session's catches
-- **`hour < 19` vs absolute schedules strands a visitor forever.** hour
-  resets at midnight but a schedule rolled to 19+gap never re-enters the
-  window, and re-rolls happen only at visit END — an END that never comes.
-  Rescue at the attract layer was the ship; a sim-layer re-schedule is the
-  deeper fix (kept out of this polish pass deliberately).
-- **Lifetime conversation counters starve the second speaker.** chatT's one
-  2.4 s crossing per resident meant Fern got every bubble. Re-arm on visitor
-  switch — but keep the dt-crossing form or the #2135 pin dies (it did).
-- **rel scale is 0–100 (REL_EDGES [12,30,60])** — a dev hook setting 0.65
-  silently means lv 0. Bug in the scenario hook, not the game.
-- **Pixel gates on pulsing gold must sample across phases** (max of N
-  samples) — one frame is a lottery. The gold pulse taught this twice.
-- **A long attract wait starves later morning windows** — the meal-bell and
-  dial legs broke when my attract-observation leg burned 60 s of sim time
-  before them. Observe at the end, after a reload, instead.
-- **Branch age == regression** — my base predated #2276 and re-broke the
-  dial-gold it fixed. Baseline the same drive on origin/main before hunting
-  ghosts (baseline passed 67/0; the rebase settled it).
-- **Prod is code-split** — game markers hide in lazy chunks; enumerate the
-  `__vite__mapDeps` asset list and grep every chunk, not just index.js.
+- **stopPropagation made the keydown guard unobservable, keyup was the real
+  leak.** Debugging wanted console.log at the guard — never reached (React root
+  stops propagation below window). The pad stamp `b_rel` came from keyUP, which
+  had no belt at all. Mirror every input law across down AND up.
+- **Probe pollution:** pressing seat-verb keys at the mouth typed their letters
+  into the value (that IS what a keyboard at a mouth does) and corrupted the
+  phrase under test → bank gate went empty. Escape+reopen between probes.
+- **Desktop X line composes LOWERCASE** (applyCallKey maps KeyE→'e'); gates
+  must assert the wire-truth casing, not the shout's echo.
+- **Mutant proofs must fail RED, not crash:** raw `.tap()` on a pill the
+  mutant hid (leaked Escape → pause) stack-traced instead of reporting; the
+  harness now turns absent-pill into a named FAIL.
+- **bombdrive was silently dead on this box** (auto-record gate at select,
+  pre-#2095 script). Advisory ≠ dead: revive cheap ones with the known seed.
 
 ## Hygiene at exit
-- Dev server :5178 stopped (killed in the restart); 5179 baseline server
-  killed; no other lane's port touched.
-- Worktree `~/Dev/retrogames-forge-ivy-gifts` re-detached at origin/main
-  (`b7f7f07`+); branch deleted upstream by squash.
-- STATE.md committed to main legitimately (game merged this session) +
-  parked at slot-b path and shared path; shift report published.
+- Dev server :5173 (mine) STOPPED; no other lane's port touched.
+- Worktree ~/Dev/retrogames-forge-tmd-phone re-detached at origin/main after
+  the squash-merge deleted the branch.
+- STATE.md committed to main legitimately (my game merged this session) +
+  parked slot-a + shared paths; shift report pushed.
