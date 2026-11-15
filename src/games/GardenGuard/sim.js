@@ -553,6 +553,47 @@ export function autoStep(g, dt) {
     advance(g, dt)
 }
 
+// -------------------------------------------------- attract spectacle ----
+// #2336 gap 2: ART.md bar 6 wants the attract to show the game off, but the
+// bot plays to WIN — chili only in emergencies, and a lane never reaches the
+// mower while the defence holds — so the marquee lawn never showed the two
+// signature moments of the lineage. seedSpectacle stages them with the sim's
+// OWN mechanics: a lit bomb dropped onto a real goblin cluster, and a walker
+// released on the danger line of an armed, undefended lane. Nothing is faked
+// (the entities are ordinary sim state and die by the normal rules) and every
+// roll is the sim's LCG, so a given seed replays the same spectacle.
+// No events are emitted by the seed itself — the attract stays silent (#1832).
+export const SPECTACLE_EVERY = 7 // seconds between attract moments (alternating)
+
+export function seedSpectacle(g, kind) {
+    if (kind === 'bomb') {
+        const r = 2
+        const cols = [5, 4, 6]
+        const c = cols.find((cc) => !occupied(g, r, cc))
+        if (c == null) return -1
+        for (let i = 0; i < 3; i++) {
+            spawnEnemy(g, i === 0 ? 'brute' : 'grunt', r)
+            g.enemies[g.enemies.length - 1].x = colX(c) + 26 + roll(g) * 26
+        }
+        g.plants.push({ r, c, type: 'chili', hp: 1, maxHp: 1, cool: 0, bornT: g.sec, anim: roll(g) * 6, fuse: PLANTS.chili.fuse, made: 0 })
+        return r
+    }
+    if (kind === 'mow') {
+        const defended = (r) => g.plants.some((p) => p.r === r && !['producer', 'wall'].includes(PLANTS[p.type].kind))
+        for (let k = 0; k < ROWS; k++) {
+            const r = (k + g.botFill) % ROWS
+            if (!g.mowers[r] || defended(r)) continue
+            // close enough that the walk beats whatever shooter the bot may
+            // still seed into the lane (the sweep is the point, not a race).
+            spawnEnemy(g, 'sprinter', r)
+            g.enemies[g.enemies.length - 1].x = HOUSE_X + 90 + roll(g) * 40
+            return r
+        }
+        return -1
+    }
+    return -1
+}
+
 // ------------------------------------------------------------ hash ----
 export function stateHash(g) {
     let h = 2166136261 >>> 0

@@ -12,6 +12,8 @@ currency is **acorns**, defenders are critters, every sprite is drawn in code.
   the autopilot `bot`, and `stateHash`.
   Every random comes from one seed (`roll`/LCG); `Math.random()` is never used
   here, so the harness and the attract demo replay byte-identically.
+  `seedSpectacle` stages the attract's chili-nuke / mower-sweep moments from
+  ordinary sim state (#2336 gap 2).
 - `art.js` — procedural look: gradient dusk sky, cottage + scarecrow-mowers
   (a real scarecrow per lane: gold glow while armed, grey and head-tilted once
   spent — #1832), checkerboard lawn with grain, the wooden card tray + acorn
@@ -19,7 +21,9 @@ currency is **acorns**, defenders are critters, every sprite is drawn in code.
   plates on the cards** (#2328: each defender posed at card scale on a soil
   mound under its own dusk hue — treeline, low sun, drifting cloud — inside a
   beveled, riveted frame that gilds when selected; breathing on the sim clock,
-  deterministic), per-defender and per-goblin sprites (walk/eat/slow animation),
+  deterministic), **the same poses at field scale on the lawn** (#2336 gap 3 —
+  `drawPlant` draws `drawCardPose` at 1.5x, foot on the mound, no more icon
+  stamps), per-defender and per-goblin sprites (walk/eat/slow animation),
   projectiles, particles hooks, cursor (the ghost defender only shows once the
   keyboard cursor is used — #1832), HUD (level + wave bar + five scarecrow pips,
   in the 28px strip BELOW the lawn so nothing paints over row 5 — #1832), and
@@ -61,6 +65,13 @@ npm run gardencheck                 # pure Node: boot + core rules + winnable on
                                     # + the #2336 goblin posture (9 gates: per-type
                                     #   silhouette proportions, ear poke, the streaming
                                     #   scarf, gait liveness, determinism)
+                                    # + the #2336 attract spectacle (10 gates: the seeded
+                                    #   chili nuke booms and wipes a cluster, the seeded
+                                    #   walker trips a live mower sweep, cadence, silence,
+                                    #   determinism, shell wiring incl. the live mower prog)
+                                    # + the #2336 field poses (5 gates: every field plant
+                                    #   paints >= 1.5x the icon's drawing ops, six distinct
+                                    #   signatures, the catapult band draws back, determinism)
 npm run dev                        # then, another shell:
 CONTRACT_ONLY=garden-guard npm run contractcheck   # window.__game contract, determinism
 ```
@@ -132,6 +143,31 @@ straight legs with horns off its tall head. The old per-type gear (helmet, club,
 horns, shield, tuft, belly, tails) rides the new head/body anchors.
 Failure-proved: flattening the `POSE` table back to one blob reddens 6 of the 9
 gardencheck §8 gates (silhouette aspect ratios, ear poke, scarf, uniqueness).
+
+## Attract spectacle (#2336 gap 2)
+ART.md bar 6 wants the attract to show the game off, but the win-seeking bot
+plays safe — chili only in emergencies, and a lane never reaches its mower while
+the defence holds — so the marquee used to show a quiet lawn (and `paintAttract`
+even hardwired the mower progress to `0`, so a sweep could never paint). Now the
+demo seeds its own signature moments every `SPECTACLE_EVERY` (7s), alternating:
+a **chili nuke** (a lit bomb dropped onto a real goblin cluster — `seedSpectacle('bomb')`)
+and a **mower sweep** (a sprinter released on the danger line of an armed,
+undefended lane — `seedSpectacle('mow')`). Both use only ordinary sim state, so
+every entity lives and dies by the normal rules and the whole thing stays
+deterministic (all rolls are the sim's LCG). The blast leaves a white-core +
+expanding ember flash that fades on a tick-decayed `k`. Failure-proved: reverting
+`seedSpectacle` to `return -1` reddens 5 of the 10 gardencheck §9 gates and the
+attract's live-mower-prog gate catches the old `drawMower(ctx, r, 0, …)`.
+
+## Field poses (#2336 gap 3)
+The lawn used to stamp the small (pre-#2328) `drawPlantIcon` on a mound, so
+defenders read thin at field scale. `drawPlant` now draws the **#2328 portrait
+pose** (`drawCardPose`) at `FIELD_SCALE = 1.5`, foot anchored on the soil mound —
+the same posed critter the card carries, on the lawn. Per-kind dynamics ride the
+pose: producers breathe, shooters recoil + flash, bombs swell with the fuse, and
+the Pumpkin Catapult's band draws back on the sim clock. Presentation-only — the
+sim never sees it. Failure-proved: stamping `drawPlantIcon` back into the
+`drawPlant` pose helper reddens the ops-ratio, liveness and source gates.
 
 ## Notes
 - State is plain JSON (arrays of plain objects), so the contract's

@@ -24,7 +24,7 @@ import {
     FIXED_DT, W, H, ROWS, TRAY_H, GLY, rowY, colX, HOUSE_X,
     tileOf, PLANTS,
     newRun, advance, autoStep, moveCursor, selectCard, cycleCard, toggleTrowel, actAt, bankTap,
-    waveProgress, bigWaveUp, stateHash, bot,
+    waveProgress, bigWaveUp, stateHash, bot, seedSpectacle, SPECTACLE_EVERY,
 } from './sim.js'
 import {
     drawBackground, drawCottage, drawLawn, drawTray, drawPlant, drawEnemy, drawProj,
@@ -73,6 +73,15 @@ const GardenGuardGame = () => {
         let seed = 20261023
         let particles = [], shake = 0
         let toastMsg = '', toast = 0
+        // #2336 gap 2: the attract shows the game's signature moments — a chili
+        // nuke and a scarecrow-mower sweep — seeded into the demo lawn on its own
+        // clock so they alternate every few seconds (scheduled on demoG.tick,
+        // which, unlike demoG.sec, never resets when the demo clears a level).
+        // demoFlash marks the blast.
+        let demoSpecNext = 180, demoSpecFlip = false
+        let demoFlash = { x: 0, y: 0, k: 0 }
+        // #2336 gap 2: live proof hooks — did the marquee actually boom and sweep?
+        const demoSeen = { booms: 0, mows: 0 }
         // #1832: a refused plant rattles its card (k decays 1 -> 0 per tick)
         let shakeCard = { i: -1, k: 0 }
         // #1832: the planter's ghost defender only shows once the keyboard
@@ -290,11 +299,24 @@ const GardenGuardGame = () => {
             drawBackground(ctx, Date.now() / 1000)
             drawLawn(ctx, demoG)
             drawCottage(ctx)
-            for (let r = 0; r < ROWS; r++) drawMower(ctx, r, 0, demoG.mowers[r])
+            // #2336 gap 2: pass the real mower run (was hardwired 0 — the
+            // scarecrow sweep never actually painted on the marquee).
+            for (let r = 0; r < ROWS; r++) drawMower(ctx, r, demoG.mowerRun[r], demoG.mowers[r])
             for (const p of demoG.plants) drawPlant(ctx, p, demoG.sec)
             for (const e of [...demoG.enemies].sort((a, b) => a.x - b.x)) drawEnemy(ctx, e, demoG.sec)
             for (const pr of demoG.projs) drawProj(ctx, pr)
             for (const d of demoG.acornDrops) drawAcornDrop(ctx, d, demoG.sec)
+            // the nuke reads on the marquee: white core + expanding ember ring,
+            // faded by the tick-decayed k (deterministic — no Math.random).
+            if (demoFlash.k > 0) {
+                const u = 1 - demoFlash.k / 22
+                ctx.globalAlpha = (1 - u) * 0.9
+                ctx.fillStyle = '#ff9a3a'
+                ctx.beginPath(); ctx.arc(demoFlash.x, demoFlash.y, 16 + u * 80, 0, 7); ctx.fill()
+                ctx.fillStyle = '#fff6c9'
+                ctx.beginPath(); ctx.arc(demoFlash.x, demoFlash.y, 7 + u * 30, 0, 7); ctx.fill()
+                ctx.globalAlpha = 1
+            }
             drawTray(ctx, demoG, null)
             drawHud(ctx, demoG, bigWaveUp(demoG))
             // #2336 gap 4 (+ gap 2): the attract shows the game's best moment too —
@@ -329,8 +351,22 @@ const GardenGuardGame = () => {
                 acc -= SIM_MS
                 if (screenRef.current === 'attract') {
                     autoStep(demoG, SIM_MS / 1000)
+                    // #2336 gap 2: seed the marquee toward spectacle — every
+                    // SPECTACLE_EVERY seconds the demo gets a chili nuke, then a
+                    // mower sweep, then a nuke… Both use the sim's own mechanics
+                    // (seedSpectacle), so nothing on show is a play the harness
+                    // couldn't replay. A boom leaves a flash (deterministic k).
+                    for (const ev of demoG.events) {
+                        if (ev.t === 'boom') { demoFlash = { x: ev.x, y: ev.y, k: 22 }; demoSeen.booms++ }
+                        if (ev.t === 'mow') demoSeen.mows++
+                    }
+                    if (demoG.tick >= demoSpecNext) {
+                        seedSpectacle(demoG, demoSpecFlip ? 'mow' : 'bomb')
+                        demoSpecFlip = !demoSpecFlip
+                        demoSpecNext = demoG.tick + SPECTACLE_EVERY * 60
+                    }
                     handleEvents(demoG, false)
-                    if (demoG.done) demoG = newRun((Date.now() >>> 5) ^ 0xbeef)
+                    if (demoG.done) { demoG = newRun((Date.now() >>> 5) ^ 0xbeef); demoSpecNext = demoG.tick + 180; demoSpecFlip = false }
                 } else if (screenRef.current === 'play' && gs && !gs.done) {
                     if (!contractHoldsLoop()) {
                         if (watchingRef.current) {
@@ -351,6 +387,7 @@ const GardenGuardGame = () => {
                 }
                 if (toast > 0) toast--
                 if (shakeCard.k > 0) shakeCard.k = Math.max(0, shakeCard.k - 1 / 12)
+                if (demoFlash.k > 0) demoFlash.k--
                 stepParticles()
             }
             if (screenRef.current === 'attract') paintAttract()
@@ -459,6 +496,13 @@ const GardenGuardGame = () => {
                 tap: (px, py) => pointerPx(px, py),
                 win: () => { if (gs) { for (const e of gs.enemies) e.hp = 0; for (const w of gs.waves) { w.started = true; w.i = w.entries.length } gs.waveIdx = gs.waves.length; gs.enemies.length = 0 } },
                 bot: () => { if (gs) bot(gs) },
+                // #2336 gap 2: the attract director's live state (screen stays
+                // 'attract' — nothing here leaves DEV).
+                attract: () => (demoG ? {
+                    screen: screenRef.current, tick: demoG.tick, booms: demoSeen.booms, mows: demoSeen.mows,
+                    sweep: demoG.mowerRun.some((v) => v > 0), flash: demoFlash.k,
+                    plants: demoG.plants.length, enemies: demoG.enemies.length, specFlip: demoSpecFlip,
+                } : { screen: screenRef.current }),
                 // #1637 watchcheck pilot drives these.
                 watching: () => watchingRef.current,
                 watchSfx: watchSfxLog,
