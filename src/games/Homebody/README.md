@@ -509,6 +509,34 @@ the kitchen, with nobody home or not.
   brass bell + `BREAKFAST BELL — FOOD ON THE COUNTER`, and the F1 cheat
   `DROP MEAL` rings any bell on demand.
 
+## Yarn ball (#2256) — the cat gets ordered play, and new states
+- **Card 17, FUN shelf, §60.** `yarn` joins CATALOG as decor (`solid:false`)
+  with a `catOnly: true` flag. Generic fun-seeking never parks on it:
+  `tryUse` skips it unless the order stands, `needTarget` (autonomy) and
+  `funTarget` (Pip's bored hunt) skip `catOnly` outright — Pip does not play
+  with the cat's ball.
+- **The order law.** Tap the ball (or pad-A beside it) while Miso is home,
+  awake, day, and the `YARN_CD` (8 s world) cooldown has closed — the resident
+  walks and dangles: cat fun +`YARN_CAT_FUN` (0.45), resident social +0.1,
+  house bond +`YARN_BOND` (1), content +1, `pet-play` event, ball spin +
+  cat bat staging (`playT`, view-only). Without a cat the order refuses AT the
+  ball with a thought line; a cat asleep, night-bound, out of reach at the
+  finish (Manhattan > `YARN_REACH` 3), or beaten to the cooldown slot by the
+  other resident refuses honestly — the wasted walk is the cost.
+- **The cat's own game.** A bored awake cat (fun < `PET_BORED` 0.3) hunts the
+  nearest ball and bats it unasked: fun +`PET_SELF_FUN` (0.5), `pet-play`
+  (`self:true`). The toy earns its §60 even from the player's pocket alone.
+- **Sprite states owed and paid.** Dawn stretch (`stretchT`, forelegs down rump
+  high), the sit (settled > 1.2 s without a path — chest tall, tail over toes),
+  the bat pose mid-session (head low, forepaw swiping), plus the ball's own
+  spin + gold twinkles on `playT`. All view-only timers — none rides
+  `stateHash`; `yarnCd` and the cat's `play` flag do.
+- Gates: `peoplecheck` section YARN BALL (24 pins: card/shelf, three honest
+  refusals, the paid session, cooldown economy, the far-cat refusal, pad-A
+  doctrine, self-play, Pip exclusion, sale, determinism, hash, wish-still-
+  lands, source pins). Mutant: zero `s.yarnCd = YARN_CD` — exactly the two
+  cooldown gates go red (521 → 519/2); restore.
+
 ## Honest gaps (filed to QA #…)
 - **CLOSED by #1806:** multiple rooms — one expansion ships: the Spare Room kit
   grows a wing on the east lawn (floor/walls/door/windows, connectivity-guarded,
