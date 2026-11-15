@@ -112,9 +112,17 @@ fi
 # origin/main, never the lagging working tree.
 OCFG="$HOME/.config/opencode/opencode.json"
 if [[ "$SLOT" == b ]]; then
-    LA="$HOME/Library/LaunchAgents/$TAPJOB"
+    # #2286: launchd ONLY loads *.plist from LaunchAgents — the original
+    # install path here lacked the extension, so bootstrap silently never
+    # loaded, :8012 stayed dead and the BUILDER·B LIVE pane never showed
+    # anything (found 2026-11-14: orphan file com.jalfern.tap-builderb in
+    # ~/Library/LaunchAgents, no service in launchctl print). Self-heal:
+    # move the extensionless orphan onto its real name, then bootstrap.
+    LAD="$HOME/Library/LaunchAgents"
+    LA="$LAD/$TAPJOB.plist"
+    if [[ -f "$LAD/$TAPJOB" && ! -f "$LA" ]]; then mv "$LAD/$TAPJOB" "$LA"; fi
     if ! launchctl print "gui/$(id -u)/$TAPJOB" >/dev/null 2>&1; then
-        mkdir -p "$HOME/Library/LaunchAgents"
+        mkdir -p "$LAD"
         if { [[ -f "$LA" ]] || git -C "$REPO" show "origin/main:scripts/$TAPJOB.plist" > "$LA" 2>/dev/null; } \
            && launchctl bootstrap "gui/$(id -u)" "$LA" >/dev/null 2>&1; then
             echo "$(date): bootstrapped $TAPJOB" >> "$LOG"

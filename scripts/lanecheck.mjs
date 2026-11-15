@@ -441,7 +441,20 @@ ok(warden.includes('builders=$nb/2'), 'pulse line carries slot liveness')
 ok(read('forge-claim.sh').includes('yielding to') && qac.includes('(QA|FORGE)'),
     'claim scripts share one liveness namespace and yield on collision')
 
-ok(watch.includes('BUILDER·B') && watch.includes('n=6'), 'watch.sh shows slot b (pane + resize bits; n=6 since the mini2 pane #2280)')
+ok(watch.includes('BUILDER·B') && watch.includes('n=5'), 'watch.sh shows slot b (pane + resize bits; n=5 lanes since MBP retired #2286, incl. mini2 #2280)')
+ok(!watch.includes('pane qa-mbp') && !watch.includes('QA·MBP  up'),
+    'watch.sh retired the QA·MBP pane (#2286, Jon 2026-11-14)')
+ok(watch.includes('allow-set-title off') && watch.includes('pane-border-status top')
+    && watch.includes('pane-border-format') && watch.includes("set_title \"$FIRST\" 'BUILDER·A'")
+    && watch.includes("'BUILDER·A · output'"),
+    'watch.sh bakes the always-visible pane labels (#2286: border status + titles, no in-pane overwrite)')
+ok(watch.includes('-s qwen') && !watch.includes('-s retro'),
+    'watch.sh nests Jon\'s Qwen chat as session "qwen" (#2286, was "retro")')
+ok(watch.includes("P1='opencode run.*QA MASTER on node '") && watch.includes("P2='mini\\.'"),
+    'watch.sh QA·MINI matches the launcher text, not the pre-#1422 omlxmini model string (#2286)')
+ok(watch.includes('bake_fit') && read('watch-fit.mjs').includes('codePointAt')
+    && watch.includes('FIT=$FITPATH'),
+    'watch.sh bakes watch-fit.mjs: log lines trim to pane width in cells, headers cannot scroll away (#2286)')
 const qafa = read('forge-qa.sh'), tapStudio = read('com.jalfern.tap-studio.plist')
 ok(tapStudio.includes('<string>com.jalfern.tap-studio</string>') && /<string>8011<\/string>/.test(tapStudio)
     && /<string>8000<\/string>/.test(tapStudio) && tapStudio.includes('stream-studio.log')
@@ -517,8 +530,8 @@ ok(watch.includes('LANE=builderb') && watch.includes('TAPPORT=8012')
         'watch.sh opens a QA·MINI·2 pane below QA·MINI (#2280)')
     ok(watch.includes('LANE=mini2') && watch.includes('TAPPORT=8014'),
         'watch.sh --live gives QA·MINI·2 its own live pane over tap :8014 (#2280)')
-    ok(/P2='mini\\\.'/.test(watch) && /Z3='mini\\\.'/.test(watch),
-        'QA·MINI matches node mini. exactly — mini2 never lands in its pane (#2280)')
+    ok(/P2='mini\\\.'/.test(watch) && /P2='mini2\\\.'/.test(watch) && !/Z3=/.test(watch),
+        'QA·MINI matches node mini. exactly — mini2 never lands in its pane (#2280; #2286 moved the patterns into the panes as the warden no longer sizes by liveness)')
     ok(telem.includes("'qaMini2': live('opencode run.*QA MASTER on node mini2\\\\.')"),
         'board.json slots carries qaMini2 live (#2280)')
     ok(floor.includes("cell('qa·mini·2', slots.qaMini2)"),
