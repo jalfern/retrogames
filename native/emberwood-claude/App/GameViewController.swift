@@ -42,10 +42,8 @@ final class GameViewController: BaseViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         #if os(iOS)
-        let safe = view.bounds.inset(by: view.safeAreaInsets)
-        if safe.height > safe.width {
-            skView.frame = CGRect(x: safe.minX, y: safe.minY + 8, width: safe.width, height: safe.width * 9 / 16)
-        } else { skView.frame = safe }
+        skView.frame = view.bounds
+        scene.layout(view.bounds.size, safe: view.safeAreaInsets)
         #else
         skView.frame = view.bounds
         #endif
@@ -78,6 +76,12 @@ final class GameScene: SKScene {
     private let stage = Stage()
     private let room = SKCropNode()
     private let hud = SKNode(), overlay = SKNode()
+    /// the 320x180 game block (room + side HUD + overlays); on iOS the scene is
+    /// shaped like the screen and this block sits clear of the on-screen pad
+    private let canvas = SKNode()
+    #if os(iOS)
+    private let pauseButton = SKNode()
+    #endif
 
     private var mode = Mode.attract
     private var sim = Sim(seed: 11)
@@ -104,18 +108,70 @@ final class GameScene: SKScene {
         room.maskNode = mask
         room.position = CGPoint(x: 32, y: 2)
         room.addChild(stage)
-        addChild(room)
+        addChild(canvas)
+        canvas.addChild(room)
         let frameRect = SKShapeNode(rect: CGRect(x: 31, y: 1, width: ROOM_W + 2, height: ROOM_H + 2))
         frameRect.strokeColor = rgb("#3a2a1c"); frameRect.lineWidth = 1; frameRect.zPosition = 5
-        addChild(frameRect)
+        canvas.addChild(frameRect)
         let vig = SKSpriteNode(texture: Tex.soft("vignette", 128, [(0, 0), (0.7, 0), (1, 0.4)]), size: CGSize(width: ROOM_W * 1.4, height: ROOM_H * 1.5))
-        vig.position = CGPoint(x: 32 + ROOM_W / 2, y: 2 + ROOM_H / 2); vig.zPosition = 6
-        addChild(vig)
+        vig.position = CGPoint(x: ROOM_W / 2, y: ROOM_H / 2); vig.zPosition = 4000
+        room.addChild(vig) // inside the crop: the vignette darkens the room's edge, never the margins
         hud.zPosition = 10; overlay.zPosition = 20
-        addChild(hud); addChild(overlay)
+        canvas.addChild(hud); canvas.addChild(overlay)
+        #if os(iOS)
+        let pb = SKShapeNode(circleOfRadius: 9)
+        pb.fillColor = SKColor.black.withAlphaComponent(0.45); pb.strokeColor = rgb("#c9a24a"); pb.lineWidth = 0.8
+        pauseButton.addChild(pb)
+        for dx in [-2.5, 2.5] {
+            let bar = SKShapeNode(rect: CGRect(x: dx - 1.2, y: -4, width: 2.4, height: 8))
+            bar.fillColor = rgb("#e8d9b8"); bar.strokeColor = .clear
+            pauseButton.addChild(bar)
+        }
+        pauseButton.zPosition = 30
+        addChild(pauseButton)
+        #endif
         launchOptions()
         enterAttract()
     }
+
+    /// iOS: shape the scene like the screen. Phone (wide): the block is centred
+    /// between two margins kept clear for the on-screen pad (D-pad left, A/B/X
+    /// right). iPad (squarer): the block fills the width at the top and the pad
+    /// lives in the band below. A pause button sits in the top-right corner,
+    /// since the on-screen pad has no Menu button.
+    func layout(_ pts: CGSize, safe: UIEdgeInsets) {
+        guard pts.width > 0, pts.height > 0 else { return }
+        let aspect = pts.width / pts.height
+        var unit: CGFloat // points per scene unit
+        var origin: CGPoint
+        if aspect >= 16.0 / 9.0 {
+            let reserve: CGFloat = max(190, max(safe.left, safe.right) + 140)
+            unit = min((pts.width - 2 * reserve) / 320, (pts.height - safe.top - safe.bottom) / 180)
+            let w = pts.width / unit, h = pts.height / unit
+            origin = CGPoint(x: (w - 320) / 2, y: (h - 180) / 2 + (safe.bottom - safe.top) / unit / 2)
+        } else {
+            unit = min(pts.width / 320, (pts.height - safe.top - 240) / 180)
+            let w = pts.width / unit, h = pts.height / unit
+            origin = CGPoint(x: (w - 320) / 2, y: h - 180 - safe.top / unit - 4)
+        }
+        size = CGSize(width: pts.width / unit, height: pts.height / unit)
+        scaleMode = .aspectFit
+        canvas.position = origin
+        #if os(iOS)
+        pauseButton.position = CGPoint(x: size.width - max(safe.right, 12) / unit - 14, y: size.height - max(safe.top, 12) / unit - 14)
+        #endif
+    }
+
+    #if os(iOS)
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        for t in touches {
+            let p = t.location(in: self)
+            if mode == .play || mode == .pause, hypot(p.x - pauseButton.position.x, p.y - pauseButton.position.y) < 16 {
+                setMode(mode == .play ? .pause : .play); return
+            }
+        }
+    }
+    #endif
 
     // MARK: test hooks
     // `-start 1` jumps into a new game, `-room <id>` starts one in that room
@@ -215,7 +271,7 @@ final class GameScene: SKScene {
     func tapped() {
         switch mode {
         case .attract: startPlay(continueSave: false)
-        case .pause: setMode(.play)
+        case .pause: break // the pause button (touchesBegan) or A resumes
         case .win: if clock - winAt > 1.5 { enterAttract() }
         case .play: break
         }
@@ -328,6 +384,9 @@ final class GameScene: SKScene {
     }
 
     private func render() {
+        #if os(iOS)
+        pauseButton.isHidden = !(mode == .play || mode == .pause)
+        #endif
         stage.sync(sim, clock)
         drawHud()
         drawOverlay()
