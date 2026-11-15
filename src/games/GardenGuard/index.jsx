@@ -30,6 +30,7 @@ import {
     drawBackground, drawCottage, drawLawn, drawTray, drawPlant, drawEnemy, drawProj,
     drawAcornDrop, drawAcornIcon, drawMower, drawCursor, drawHud,
 } from './art.js'
+import { BED, endCue } from './sound.js'
 
 const SIM_MS = FIXED_DT
 const MESSAGES = [
@@ -168,6 +169,11 @@ const GardenGuardGame = () => {
             if (s.done !== 'win' && s.done !== 'lose') return
             overAtRef.current = performance.now()
             watchingRef.current = false; setWatching(false) // #1637 the lawn ends in your hands
+            // #2336 the orchard held or it fell — the fleet's law: the end of a
+            // run gets its sting, not silence. endCue's mapping is gardencheck's
+            // §6 (real won/lost runs through a recorder).
+            audioController.stopMusic()
+            endCue(s.done, audioController)
             setEndInfo({ end: s.done, why: s.endMsg, score: s.score, level: s.level })
             setSc('over')
         }
@@ -357,6 +363,7 @@ const GardenGuardGame = () => {
             setEndInfo(null)
             setSc('play')
             audioController.playSweep(260, 620, 0.28, 'square', 0.07)
+            audioController.startMusic(BED) // #2336 the orchard has had no bed at all
         }
 
         // --------------------------------------------------------- input ----
@@ -500,6 +507,7 @@ const GardenGuardGame = () => {
             window.removeEventListener('pointerdown', onPointer)
             window.removeEventListener('resize', resize)
             cancelAnimationFrame(raf)
+            audioController.stopMusic() // #2336 the bed belongs to this mount, not to the tab
             if (canvas) canvas.remove()
         }
     }, [])

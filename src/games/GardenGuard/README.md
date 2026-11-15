@@ -25,6 +25,9 @@ currency is **acorns**, defenders are critters, every sprite is drawn in code.
   sim's own `bot`), keyboard / pointer / VirtualControls all funneled through the
   same `drivePad` → sim actions, juice (particles + shake), PauseOverlay,
   `window.__gardenTest` DEV hooks and the `window.__game` contract.
+- `sound.js` — the pure sound spine (#2336): the bed name and the win/lose sting
+  mapping as data + a recorder-friendly `endCue`, so gardencheck §6 can prove
+  both endings from real runs without a browser. The shell does the scheduling.
 
 ## Controls
 - **Tap a card (or 1–6)** then **tap a tile** to plant. On the pad: arrows move
@@ -45,6 +48,8 @@ next defender; the last ends with the Warlord.
 npm run gardencheck                 # pure Node: boot + core rules + winnable on 5 seeds
                                     # + the #1832 newcomer gates (refuse events, art contract)
                                     # + the #2328 card-portrait contract (8 gates)
+                                    # + the #2336 sound spine (17 gates: bed pattern,
+                                    #   win/lose sting mapping, recorder-driven real runs)
 npm run dev                        # then, another shell:
 CONTRACT_ONLY=garden-guard npm run contractcheck   # window.__game contract, determinism
 ```
@@ -79,6 +84,19 @@ there was no in-play how-to (a first-wave hint line until the first plant).
   deliberately simple. **CLOSED by #2328** — cards are now posed portraits on
   soil under dusk skies, in beveled riveted frames (see `art.js`
   `drawCardPortrait`); the tray cards no longer call `drawPlantIcon`.
+
+## Sound pass (#2336)
+The polish report claimed `AudioController` was "never imported" — that part was
+stale: per-action SFX landed with #1839. What the lawn genuinely lacked was a
+**bed** and **end stings**. Now:
+- `MUSIC.garden` — an original autumn-folk bed (G-major chord-tone skip over a
+  boom-chick bass, composed for this build) starts with the lawn and stops at
+  the finish and on unmount, so no other tab inherits it.
+- Win → the fleet's `playFanfare`; lose → a four-note minor fall (330→165 Hz),
+  lower and sadder than the breach sweep so defeat reads differently from a
+  lost lane. The mapping lives in `sound.js` as data so gardencheck §6 drives a
+  REAL won run and a REAL breached run through a recorder and counts the cues.
+  Failure-proved: emptying the win mapping reddens two gates.
 
 ## Notes
 - State is plain JSON (arrays of plain objects), so the contract's

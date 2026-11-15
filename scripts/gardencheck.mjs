@@ -15,6 +15,10 @@
 //   5. #2328     — tray cards are portrait plates: posed content, soil mound,
 //                  riveted double frames, gilded selection, sim-clock liveness,
 //                  per-card uniqueness, deterministic drawing.
+//   6. #2336     — the sound spine: the orchard's bed lives in the synth engine
+//                  with a valid pattern, win/lose map to distinct stings (proved
+//                  by driving a REAL won run and a REAL lost run through a
+//                  recorder), and the shell wires bed + sting + teardown.
 //
 // It also proves IT can fail: run with `--mutant` and one load-bearing rule
 // (the breach-does-not-lose) is flipped; the harness must go red on it. This is
@@ -22,6 +26,9 @@
 //
 // Run:  node scripts/gardencheck.mjs  [--mutant]
 
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
     FIXED_DT, W, H, ROWS, COLS, colX, rowY, tileOf,
     LEVELS, CARD_ORDER,
@@ -30,6 +37,8 @@ import {
     actAt, toggleTrowel, bankTap,
 } from '../src/games/GardenGuard/sim.js'
 import { drawHud, drawTray, drawMower, drawCursor } from '../src/games/GardenGuard/art.js'
+import { BED, endSteps, endCue } from '../src/games/GardenGuard/sound.js'
+import { MUSIC } from '../src/utils/AudioController.js'
 
 const DT = FIXED_DT / 1000
 
@@ -401,6 +410,66 @@ section('CARD PORTRAITS (#2328)')
     // 8. determinism: the exact same state draws the exact same tray
     const again = draw(0.9)
     check('portrait drawing is deterministic (same state, same recording)', sig(base.c) === sig(again.c))
+}
+
+// ---- 6. #2336 — the sound spine ----------------------------------------------
+section('SOUND SPINE (#2336)')
+{
+    // the bed the orchard deserves, living in the synth engine
+    const G = MUSIC[BED]
+    check(`the synth engine carries the orchard bed "${BED}"`, !!G)
+    if (G) {
+        check('the bed has a 32-step lead and equal-length bass + perc',
+            G.lead.length === 32 && G.bass.length === G.lead.length && G.perc.length === G.lead.length)
+        check('the bed marches at a relaxed stroll (0.10–0.16s/step)', G.step >= 0.10 && G.step <= 0.16, `step=${G.step}`)
+        const inRange = (ns) => ns.every((n) => n === 0 || (n >= 24 && n <= 100))
+        check('every note sits in playable MIDI range', inRange(G.lead) && inRange(G.bass))
+        check('the lead carries a tune (>= 16 notes) and the bass walks (>= 8)',
+            G.lead.filter(Boolean).length >= 16 && G.bass.filter(Boolean).length >= 8,
+            `lead=${G.lead.filter(Boolean).length} bass=${G.bass.filter(Boolean).length}`)
+        check('perc steps stay in the dum/tek vocabulary', G.perc.every((v) => [0, 1, 2].includes(v)))
+    }
+
+    // end-of-run stings as provable data: distinct outcomes, distinct voices
+    const w = endSteps('win'), l = endSteps('lose'), n = endSteps(null)
+    check('a win maps to the fanfare', w.length === 1 && w[0][0] === 'fanfare')
+    check('a loss maps to a descending fall (>= 4 steps)',
+        l.length >= 4 && l.every((st) => st[0] === 'tone')
+        && l.every((st, i) => i === 0 || st[1] < l[i - 1][1]), JSON.stringify(l.map((st) => Math.round(st[1]))))
+    check('win and lose share no voice', JSON.stringify(w) !== JSON.stringify(l))
+    check('an unfinished game cues nothing', n.length === 0 && endCue(null, { playTone() {}, playFanfare() {} }) === 0)
+    check('every step is a verb the AudioController answers',
+        [...w, ...l].every((st) => ['fanfare', 'tone'].includes(st[0])))
+
+    // the contract against the REAL engine's signatures (Node import, no browser):
+    // finite args mean the cues would actually schedule when the ctx exists.
+    check('lose steps bind finite freq/dur/vol/delay',
+        l.every((st) => [1, 2, 4, 5].every((i) => Number.isFinite(st[i]))), JSON.stringify(l[0]))
+
+    // drive REAL runs to both endings and count what the shell would play
+    const gw = play(7)
+    check('recorder: a won run asks for the fanfare once', endCue(gw.done, {
+        fanfares: 0, tones: 0,
+        playTone() { this.tones++ }, playFanfare() { this.fanfares++ },
+    }) === 1)
+    {
+        const g = newRun(7)
+        g.acorns = 9999
+        for (let i = 0; i < 8; i++) spawnEnemy(g, 'brute', i % ROWS)
+        let t = 0
+        while (!g.done && t++ < 60 * 60 * 4) advance(g, DT)
+        const sink = { fanfares: 0, tones: 0, playTone() { this.tones++ }, playFanfare() { this.fanfares++ } }
+        check('recorder: a breached run ends in a lose and rings its fall',
+            g.done === 'lose' && endCue(g.done, sink) === l.length && sink.tones === l.length && sink.fanfares === 0,
+            `done=${g.done} tones=${sink.tones}`)
+    }
+
+    // the shell's wiring: bed at the start, sting at the end, silence on teardown
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'GardenGuard', 'index.jsx'), 'utf8')
+    check('the shell starts the bed when the lawn begins', src.includes('startMusic(BED)'))
+    check('the shell plays the mapped sting when the run ends', src.includes('endCue(s.done, audioController)'))
+    check('the shell stops the bed at the finish and on unmount',
+        (src.match(/audioController\.stopMusic\(\)/g) || []).length === 2)
 }
 
 console.log(`\n=== gardencheck: ${pass} pass, ${fail} fail ===`)
