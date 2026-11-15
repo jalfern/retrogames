@@ -19,6 +19,10 @@
 //                  with a valid pattern, win/lose map to distinct stings (proved
 //                  by driving a REAL won run and a REAL lost run through a
 //                  recorder), and the shell wires bed + sting + teardown.
+//   7. #2336     — the level-clear ceremony: clearing rains a paying acorn
+//                  shower inside the ~3s window, the gold+card ceremony paints
+//                  (mock canvas) only on a clear, never on the final level's
+//                  unlock, deterministically, and the shell wires lawn + attract.
 //
 // It also proves IT can fail: run with `--mutant` and one load-bearing rule
 // (the breach-does-not-lose) is flipped; the harness must go red on it. This is
@@ -31,12 +35,12 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
     FIXED_DT, W, H, ROWS, COLS, colX, rowY, tileOf,
-    LEVELS, CARD_ORDER,
+    LEVELS, CARD_ORDER, SHOWER,
     newRun, advance, autoStep, plant, spawnEnemy,
     occupied, waveProgress, stateHash,
     actAt, toggleTrowel, bankTap,
 } from '../src/games/GardenGuard/sim.js'
-import { drawHud, drawTray, drawMower, drawCursor } from '../src/games/GardenGuard/art.js'
+import { drawHud, drawTray, drawMower, drawCursor, drawClearCeremony } from '../src/games/GardenGuard/art.js'
 import { BED, endSteps, endCue } from '../src/games/GardenGuard/sound.js'
 import { MUSIC } from '../src/utils/AudioController.js'
 
@@ -470,6 +474,66 @@ section('SOUND SPINE (#2336)')
     check('the shell plays the mapped sting when the run ends', src.includes('endCue(s.done, audioController)'))
     check('the shell stops the bed at the finish and on unmount',
         (src.match(/audioController\.stopMusic\(\)/g) || []).length === 2)
+}
+
+// ---- 7. #2336 gap 4 — the level-clear ceremony --------------------------------
+section('CLEAR CEREMONY (#2336)')
+{
+    // a cleared level rains acorns AND pays them before the next raid wipes —
+    // the dance moment, proved in the pure sim.
+    const g = newRun(27)
+    // g.sec resets inside startLevel, so the ceremony window is measured in ticks.
+    let clearAt = -1, upTick = -1, clearTick = -1, acornsAtClear = 0, banks = 0
+    let shower = null
+    for (let guard = 0; guard < 60 * 90 && g.level === 1 && !g.done; guard++) {
+        autoStep(g, DT)
+        for (const e of g.enemies) e.hp = 0
+        if (g.waves[g.waveIdx] && !g.waves[g.waveIdx].started) g.nextWaveAt = g.sec
+        else if (g.waves[g.waveIdx]) g.waves[g.waveIdx].i = g.waves[g.waveIdx].entries.length
+        for (const ev of g.events) {
+            if (ev.t === 'clear' && clearAt < 0) { clearAt = g.sec; acornsAtClear = g.acorns; clearTick = g.tick }
+            if (ev.t === 'shower' && !shower) shower = { ...ev }
+            if (clearAt >= 0 && ev.t === 'bank') banks++
+            if (ev.t === 'level' && ev.level === 2 && upTick < 0) upTick = g.tick
+        }
+        g.events.length = 0
+    }
+    check('a clear fires an acorn shower (>= 5 drops)', !!shower && shower.n >= 5, JSON.stringify(shower))
+    check('every shower drop banks inside the ceremony window', banks >= SHOWER.n, `banks=${banks}`)
+    check(`the shower pays >= n*${SHOWER.val} acorns`, g.acorns - acornsAtClear >= SHOWER.n * SHOWER.val,
+        `gain=${g.acorns - acornsAtClear}`)
+    const windowS = (upTick - clearTick) * DT
+    check('the ceremony holds ~3s before the next raid (not instant)',
+        windowS > 2.4 && windowS <= 3.3, `window=${windowS.toFixed(2)}s`)
+
+    // the look: nothing mid-play; a gold ceremony + a big centred card on clear;
+    // the final level (no unlock) shows the wash but never the card.
+    const gl = newRun(9)
+    gl.levelClearAt = -1; gl.sec = 20; gl.level = 1
+    const cQuiet = mockCtx(); drawClearCeremony(cQuiet, gl)
+    check('the ceremony paints nothing during play', cQuiet.fills.length === 0, `fills=${cQuiet.fills.length}`)
+    gl.levelClearAt = 10; gl.sec = 10.9
+    const cBig = mockCtx(); drawClearCeremony(cBig, gl)
+    check('on clear the orchard glitters (>= 12 fills)', cBig.fills.length >= 12, `fills=${cBig.fills.length}`)
+    const big = cBig.fills.filter((f) => f.x1 - f.x0 >= 130 && f.x1 - f.x0 <= W - 2 && f.y1 - f.y0 >= 80)
+    check('the new defender is presented big and centre-lawn',
+        big.some((f) => (f.x0 + f.x1) / 2 > 300 && (f.x0 + f.x1) / 2 < 560 && (f.y0 + f.y1) / 2 > 220 && (f.y0 + f.y1) / 2 < 480),
+        JSON.stringify(big.slice(0, 3)))
+    const glF = newRun(9); glF.levelClearAt = 10; glF.sec = 10.9; glF.level = LEVELS.length
+    const cFin = mockCtx(); drawClearCeremony(cFin, glF)
+    check('the final clear still celebrates but presents no card',
+        cFin.fills.length >= 12 && !cFin.fills.some((f) => f.x1 - f.x0 >= 130 && f.x1 - f.x0 <= W - 2 && f.y1 - f.y0 >= 80),
+        `fills=${cFin.fills.length}`)
+    const cA = mockCtx(); drawClearCeremony(cA, gl)
+    const cB = mockCtx(); drawClearCeremony(cB, gl)
+    check('determinism: the same cleared state records an identical ceremony',
+        JSON.stringify(cA.fills) === JSON.stringify(cB.fills))
+
+    // shell wiring: the lawn and the attract both show it; the rain has its chime
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'GardenGuard', 'index.jsx'), 'utf8')
+    check('the shell paints the ceremony on the live lawn', src.includes('drawClearCeremony(ctx, g)'))
+    check('the attract board shows the ceremony too (gap 2 spectacle)', src.includes('drawClearCeremony(ctx, demoG)'))
+    check("the shower rings its chime (case 'shower')", src.includes("case 'shower'"))
 }
 
 console.log(`\n=== gardencheck: ${pass} pass, ${fail} fail ===`)

@@ -28,7 +28,7 @@ import {
 } from './sim.js'
 import {
     drawBackground, drawCottage, drawLawn, drawTray, drawPlant, drawEnemy, drawProj,
-    drawAcornDrop, drawAcornIcon, drawMower, drawCursor, drawHud,
+    drawAcornDrop, drawAcornIcon, drawMower, drawCursor, drawHud, drawClearCeremony,
 } from './art.js'
 import { BED, endCue } from './sound.js'
 
@@ -154,6 +154,10 @@ const GardenGuardGame = () => {
                         }
                         break
                     }
+                    case 'shower': // #2336 gap 4 — the acorn rain rings as it starts
+                        audioController.playSweep(620, 1240, 0.35, 'triangle', 0.05)
+                        audioController.playTone(980, 0.06, 'triangle', 0.03)
+                        break
                     case 'kill': {
                         const gruntBase = { grunt: 220, sprinter: 300, pup: 360, brute: 120, warlord: 90 }[e.id] || 240
                         audioController.playSweep(gruntBase, gruntBase * 0.5, 0.16, 'sawtooth', 0.05)
@@ -255,6 +259,9 @@ const GardenGuardGame = () => {
             ctx.globalAlpha = 1
             if (live && !g.done) drawCursor(ctx, g, kbGhost)
             ctx.restore()
+            // #2336 gap 4: the dance moment — gold wash, sparkle rain and the
+            // new-defender card fill the level-clear window on the lawn itself.
+            drawClearCeremony(ctx, g)
             if (!g.done && bigWaveUp(g)) { const a = 0.1 + Math.sin(g.sec * 6) * 0.05; ctx.fillStyle = `rgba(180,28,18,${a.toFixed(3)})`; ctx.fillRect(0, 0, W, H) }
             drawTray(ctx, g, null, shakeCard.k > 0 ? shakeCard : null)
             drawHud(ctx, g, bigWaveUp(g))
@@ -290,6 +297,9 @@ const GardenGuardGame = () => {
             for (const d of demoG.acornDrops) drawAcornDrop(ctx, d, demoG.sec)
             drawTray(ctx, demoG, null)
             drawHud(ctx, demoG, bigWaveUp(demoG))
+            // #2336 gap 4 (+ gap 2): the attract shows the game's best moment too —
+            // when the demo lawn clears, the ceremony rains on the marquee board.
+            drawClearCeremony(ctx, demoG)
         }
 
         // ------------------------------------------------------------ loop ----
