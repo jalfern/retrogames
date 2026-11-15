@@ -1005,8 +1005,8 @@ const mkRec2 = (game = 'gauntlet', seed = 777, ticks = 90) => {
         try {
             const mutated = await import(pathToFileURL(MUT).href + `?t=${Date.now()}`)
             const pdm = mutated.planDrain([{ id: 'j', player: 'jon', savedAt: 1 }, { id: 'm', player: 'mia', savedAt: 2 }], { motion: (e) => e.player === 'jon', now: 3 })
-            ok(pdm.drop.some((d) => d.id === 'm') && pdm.send.every((e) => e.player === 'jon'),
-                'MUTANT per-name consent ignored: a revoked player\u2019s take must still purge \u2014 red means revoked recordings ship')
+            ok(pdm.send.length === 2 && pdm.drop.length === 0,
+                'MUTANT per-name consent ignored: both names ship regardless \u2014 the real module must (and does, above) purge revoked mia')
         } finally {
             pull(MUT)
         }

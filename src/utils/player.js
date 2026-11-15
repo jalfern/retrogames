@@ -59,7 +59,7 @@ export function loadLastPlayer(store) {
 
 export function rememberPlayer(store, name) {
     const id = playerId(name)
-    if (!store || !id) return null
+    if (!store || !id || id === ANON_ID) return null // anon is a decline marker, never a person to prefill
     const rec = { id, name: String(name).trim().slice(0, PLAYER_NAME_MAX), at: Date.now() }
     try { store.setItem(PLAYER_LS_KEY, JSON.stringify(rec)) } catch { /* private mode: prefill lives for the page only */ }
     return rec
@@ -75,7 +75,7 @@ export function planGate({ probe, lastPlayer = null, consentForId = null } = {})
     const id = lastPlayer ? lastPlayer.id : null
     if (id) {
         const c = consentForId ? consentForId(id) : null
-        return { ask: !c || !c.at || c.expired, id }
+        return { ask: !c || !c.at || !!c.expired, id }
     }
     const c = consentForId ? consentForId(ANON_ID) : null
     // silent only when anon DECLINED and not expired — a decision that exists
