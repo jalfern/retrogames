@@ -45,9 +45,16 @@ if (MUT) {
         .replace(
             "if (sp.qcb && f.def.moves.qcb && dist < 2.2 && m.rng() < tier * 0.22) return scriptMotion('p', 'qcb', f)",
             "if (sp.qcb && f.def.moves.qcb && dist < 2.2 && m.rng() < tier * 0.22 && !globalThis.__VIPER_NOQCB__) return scriptMotion('p', 'qcb', f)")
+        .replace(
+            'hurtProp(m, pr, mv.dmg >= 9 ? 2 : 1, atk.side)',
+            '/* __VIPER_NOPROP__ melee smash stripped */')
+        .replace(
+            'hurtProp(m, pr, p.dmg >= 9 ? 2 : 1, p.owner)',
+            '/* __VIPER_NOPROP__ projectile smash stripped */')
     ok(mutated.includes('__VIPER_NOGUARD__'), 'mutate: guard gate line found to patch')
     ok(mutated.includes('__VIPER_NOLOCK__'), 'mutate: juggle lock gate line found to patch')
     ok(mutated.includes('__VIPER_NOQCB__'), 'mutate: #2151 close-range qcb branch found to patch')
+    ok(mutated.includes('__VIPER_NOPROP__') && mutated.split('__VIPER_NOPROP__').length - 1 === 2, 'mutate: #2334 prop-damage lines found to patch (melee + projectile)')
     plantNew(path.join(HERE, '../src/engine/.mutant-fighting.mjs'), mutated)
 }
 const ENG_PATH = MUT ? '../src/engine/.mutant-fighting.mjs' : '../src/engine/fighting.js'
@@ -263,6 +270,143 @@ if (!MUT) {
     }
     ok(run(3) === run(3), 'same seed + same pads -> identical hash stream')
     ok(run(3) !== run(4), 'different seed -> different stream')
+
+    // #2334 destructible props + pickups (the `props` option). The engine copy
+    // under --mutate strips both smash paths, so every damage clause below flips.
+    {
+        const mkP = (p1 = 'riv', p2 = 'nyx', seed = 5) => e.createMatch({ seed, guardButton: true, juggle: true, guardCrush: true, props: true, p1: human(p1), p2: human(p2) })
+        const fight = (mm) => { let w = 0; while (mm.phase !== 'fight' && w++ < 300) e.step(mm, [P(), P()]) }
+        const mp = mkP()
+        ok(mp.propsOn && mp.props.length >= 4 && mp.props.length <= 5, `props stand at round start (${mp.props.length})`)
+        ok(mp.props.every((p) => (p.kind === 'barrel' && p.hp === 1) || (p.kind === 'crate' && p.hp === 2)), 'every prop carries its kind hp (barrel 1, crate 2)')
+        const lay = (seed) => JSON.stringify(mkP('riv', 'nyx', seed).props)
+        ok(lay(9) === lay(9), 'prop layout is seeded: same seed, same pit')
+        ok(lay(9) !== lay(23), 'prop layout varies with the seed')
+        mp.round = 2; e.resetRound(mp)
+        ok(mp.props.every((p) => !p.broken && p.hp === (p.kind === 'barrel' ? 1 : 2)) && mp.orbs.length === 0, 'a new round respawns the furniture and clears the loot')
+        const layoutWith = (pred, p1 = 'riv') => {
+            for (let seed = 1; seed < 120; seed++) {
+                const t = mkP(p1, 'nyx', seed); fight(t)
+                const pr = t.props.find(pred)
+                if (pr) return { m: t, pr }
+            }
+            return null
+        }
+        {
+            const hit = layoutWith((p) => p.kind === 'barrel' && p.x < -3)
+            ok(!!hit, 'a seeded pit offers a left-side barrel')
+            if (hit) {
+                const { m: mm, pr } = hit
+                mm.fighters[0].x = pr.x - 1.2
+                e.step(mm, [P({ lp: true }), P()])
+                for (let i = 0; i < 40 && mm.fighters[0].st === 'attack'; i++) e.step(mm, [P(), P()])
+                ok(MUT ? !pr.broken : (pr.broken && mm.events.some((x) => x.kind === 'propbreak')),
+                    MUT ? 'MUTANT: prop damage stripped -> the barrel survives the punch (harness bites)'
+                        : 'one light punch breaks a barrel (hp 1) and the propbreak event fires')
+            }
+        }
+        {
+            const hit = layoutWith((p) => p.kind === 'crate' && p.x < -3)
+            if (hit) {
+                const { m: mm, pr } = hit
+                const swing = () => {
+                    mm.fighters[0].x = pr.x - 1.2
+                    e.step(mm, [P({ lp: true }), P()])
+                    for (let i = 0; i < 40 && mm.fighters[0].st === 'attack'; i++) e.step(mm, [P(), P()])
+                }
+                swing()
+                ok(MUT ? pr.hp === 2 : pr.hp === 1 && !pr.broken, 'the first light CRACKS a crate (hp 2 -> 1)')
+                swing()
+                ok(MUT ? !pr.broken : pr.broken, 'the second light breaks the crate')
+            }
+        }
+        {
+            let found = null
+            for (let seed = 1; seed < 120 && !found; seed++) {
+                const t = mkP('riv', 'nyx', seed); fight(t)
+                const pr = t.props.find((p) => p.orb && p.x < -3)
+                if (pr) found = { m: t, pr }
+            }
+            ok(!!found, 'some seeded pit hides an orb in a left-side prop')
+            if (found) {
+                const { m: mm, pr } = found
+                mm.fighters[0].x = pr.x - 1.2
+                e.step(mm, [P({ hp: true }), P()])
+                for (let i = 0; i < 30 && mm.orbs.length === 0 && mm.fighters[0].st === 'attack'; i++) e.step(mm, [P(), P()])
+                ok(MUT ? mm.orbs.length === 0 : (mm.orbs.length === 1 && mm.events.some((x) => x.kind === 'orbdrop')), 'breaking an orb prop drops the pickup')
+                if (mm.orbs.length) {
+                    const o = mm.orbs[0]
+                    const m0 = mm.fighters[0].meter
+                    mm.fighters[0].x = o.x - 1.5
+                    let walked = 0
+                    while (mm.orbs.length && walked++ < 80) e.step(mm, [P({ right: true }), P()])
+                    ok(mm.events.some((x) => x.kind === 'orbtake') && mm.fighters[0].meter === Math.min(100, m0 + e.ORB_METER),
+                        `walking through the orb banks +${e.ORB_METER} meter (${m0} -> ${mm.fighters[0].meter})`)
+                }
+            }
+        }
+        {
+            const hit = layoutWith((p) => p.kind === 'barrel' && p.x < -3.5, 'cinder')
+            if (hit) {
+                const { m: mm, pr } = hit
+                mm.fighters[0].x = Math.max(-8.5, pr.x - 3.0)
+                e.step(mm, [P({ down: true }), P({ down: true, right: true })])
+                e.step(mm, [P({ right: true }), P()])
+                e.step(mm, [P({ right: true, lp: true }), P()])
+                let gone = false
+                for (let i = 0; i < 120; i++) { e.step(mm, [P(), P()]); if (pr.broken) { gone = true; break } }
+                ok(MUT ? !gone : gone, MUT ? 'MUTANT: no prop damage -> the fireball flies past' : 'a fireball smashes a barrel before the foe')
+                ok(mm.projectiles.length === 0, 'the furniture eats the projectile either way')
+            }
+            const hit2 = layoutWith((p) => p.kind === 'crate' && p.x < -3.5, 'cinder')
+            if (hit2) {
+                const { m: mm, pr } = hit2
+                mm.fighters[0].x = Math.max(-8.5, pr.x - 3.0)
+                e.step(mm, [P({ down: true }), P({ down: true, right: true })])
+                e.step(mm, [P({ right: true }), P()])
+                e.step(mm, [P({ right: true, lp: true }), P()])
+                let cracked = false
+                for (let i = 0; i < 120; i++) { e.step(mm, [P(), P()]); if (pr.hp < 2) { cracked = true; break } }
+                ok(MUT ? !cracked : (cracked && !pr.broken), 'one fireball CRACKS a crate (2 hp) and dies at it')
+                ok(mm.projectiles.length === 0, 'the crate eats that shot too')
+            }
+        }
+        {
+            const scripted = (breakOne) => {
+                const mm = mkP('riv', 'nyx', 11)
+                fight(mm)
+                for (let k = 0; k < 200; k++) {
+                    if (breakOne && k === 30) { mm.props[0].broken = true; mm.props[0].brokeT = mm.tick }
+                    e.step(mm, [P({ lp: k % 53 === 0 }), P({ left: k % 41 < 9 })])
+                }
+                return e.matchHash(mm)
+            }
+            ok(scripted(false) !== scripted(true), 'prop state rides matchHash (a broken prop changes the hash — seats must agree)')
+        }
+        {
+            // option-off keeps IRON RING's stream bit-identical to the engine as
+            // it shipped pre-#2334 (golden constants recorded against origin/main).
+            const IR = await import(bust('../src/games/IronRing/fighters.js'))
+            const [d1, d2] = IR.ROSTER
+            const stream = (seed) => {
+                const mm = e.createMatch({ seed, p1: { ...d1, cpu: true }, p2: { ...d2, cpu: true } })
+                let h = 0
+                for (let k = 0; k < 600; k++) { e.step(mm, [P({ left: k % 61 >= 44, lp: k % 29 === 0 }), P({ left: k % 61 < 22 })]); if (k === 99 || k === 299 || k === 599) h = (h * 31 + e.matchHash(mm)) | 0 }
+                return h >>> 0
+            }
+            const GOLDEN = [1332719598, 1991399977, 3133682145]
+            ok([3, 7, 11].map(stream).every((h, i) => h === GOLDEN[i]), 'props off = no footprint: IRON RING streams match the pre-#2334 goldens')
+        }
+        {
+            // the shipped config (props ON) keeps every ladder CPU winnable
+            for (const id of LADDER) {
+                const mm = mkP(id, 'nyx', 1234)
+                let g = 0
+                while (mm.phase !== 'done' && g++ < 60 * 60 * 4) e.step(mm, [P(), P()])
+                ok(mm.phase === 'done' && mm.winner === 0 && mm.fighters[0].wins >= 2, `CPU ${id} completes a match vs idle WITH props on`)
+            }
+        }
+    }
 
     // #1637 b30 WATCH seat law. The cabinet's seat flips def.cpu to the fighter's
     // OWN ladder tier (BY_ID[p1Char].cpu) — the tier the arcade runs it at. What
@@ -1638,7 +1782,13 @@ if (!MUT) {
         await page.waitForFunction(() => window.__viperPitTest.state && window.__viperPitTest.state.phase === 'fight', null, { timeout: 20000 })
         const walkSamples = async (key, need = 22) => {
             const out = []
-            for (let t = 0; t < 14 && out.length < need; t++) {
+            // window widened 14->24 for #2334: with destructible props the CPU's
+            // engagement timing legitimately shifts (collecting a dropped orb
+            // raises its meter and aggression), so a fixed ~3 s lane can straddle
+            // a hitstun. The LAW being sampled — walking out still drives the
+            // tighter shuffle stride — is presentation; sampling must not depend
+            // on the opponent happening to be passive.
+            for (let t = 0; t < 24 && out.length < need; t++) {
                 await page.keyboard.down(key)
                 for (let i = 0; i < 4; i++) {
                     const p = await page.evaluate(() => window.__viperPitTest.pose(0))
@@ -1652,6 +1802,12 @@ if (!MUT) {
         }
         const range = (s, k) => (s.length ? Math.max(...s.map((p) => p[k])) - Math.min(...s.map((p) => p[k])) : 0)
         const mean = (s, k) => (s.length ? s.reduce((a, p) => a + p[k], 0) / s.length : 0)
+        // back-walk first (#2334): the fresh fight puts the CPU far away, so the
+        // tighter-shuffle law gets its samples before engagement; the forward
+        // walk closes distance and inherits whatever the bout turns into.
+        const back = await walkSamples('ArrowLeft')
+        ok(back.length >= 6 && range(back, 'legR') > 0.4,
+            `walking out still drives the shuffle stride (${back.length} samples, ${back.length ? range(back, 'legR').toFixed(3) : '-'} swing)`)
         const fwd = await walkSamples('ArrowRight')
         ok(fwd.length >= 6, `NYX walks on real input (${fwd.length} walked samples)`)
         ok(fwd.filter((p) => Math.abs(p.legR - p.legL) > 0.1).length >= 4,
@@ -1659,11 +1815,47 @@ if (!MUT) {
         ok(range(fwd, 'hipY') > 0.01, `the stride bobs the hips live (${range(fwd, 'hipY').toFixed(3)})`)
         ok(range(fwd, 'legR') > 0.4, `the stride swings the legs live (${range(fwd, 'legR').toFixed(3)})`)
         ok(mean(fwd, 'armR') < -0.47, `the guard arm stays raised while walking (mean armR ${mean(fwd, 'armR').toFixed(3)})`)
-        const back = await walkSamples('ArrowLeft')
-        ok(back.length >= 6 && range(back, 'legR') > 0.4,
-            `walking out still drives the shuffle stride (${back.length} samples, ${back.length ? range(back, 'legR').toFixed(3) : '-'} swing)`)
         await page.evaluate(() => window.__viperPitTest.setChars('riv', 'nyx'))
         await page.waitForFunction(() => window.__viperPitTest.state && window.__viperPitTest.state.phase === 'fight', null, { timeout: 20000 })
+    }
+
+    // #2334 props live: the engine snapshot, the GL layer, and a REAL CPU bout
+    // smashing the furniture — presentation fed by the sim, no forced seams.
+    {
+        await page.evaluate(() => window.__viperPitTest.setChars('cinder', 'riv'))
+        await page.waitForFunction(() => window.__viperPitTest.state && window.__viperPitTest.state.phase === 'fight', null, { timeout: 20000 })
+        const p0 = await page.evaluate(() => window.__viperPitTest.props())
+        ok(p0 && p0.props.length >= 4, `live props snapshot — the pit stands furnished (${p0 && p0.props.length} props)`)
+        const pool0 = await page.evaluate(() => window.__viperPitTest.shieldFx())
+        ok(pool0 && p0 && pool0.propsLive === p0.props.length, `the GL scene carries one mesh per engine prop (${pool0 && pool0.propsLive})`)
+        let sawBreak = 0
+        let breaksFed = 0
+        let sawOrbView = false
+        let rounds = 0
+        while (rounds < 3 && !(sawBreak >= 2 && sawOrbView)) {
+            const until = Date.now() + 20000
+            while (Date.now() < until && !(sawBreak >= 2 && sawOrbView)) {
+                await page.waitForTimeout(250)
+                const pN = await page.evaluate(() => window.__viperPitTest.props())
+                if (!pN || pN.props.length === 0) break
+                const fxN = await page.evaluate(() => window.__viperPitTest.shieldFx())
+                const broke = pN.props.filter((x) => x.broken).length
+                if (broke > sawBreak) sawBreak = broke
+                breaksFed = Math.max(breaksFed, fxN ? fxN.breaksTotal : 0)
+                if (pN.orbs.length > 0 && fxN && fxN.orbsLive > 0) sawOrbView = true
+            }
+            const st = await page.evaluate(() => window.__viperPitTest.state)
+            if (st && st.phase === 'done') {
+                await page.evaluate(() => window.__viperPitTest.setChars('cinder', 'riv'))
+                try {
+                    await page.waitForFunction(() => window.__viperPitTest.state && window.__viperPitTest.state.phase === 'fight', null, { timeout: 15000 })
+                } catch { /* attract or a stall: next round handles it */ }
+            }
+            rounds++
+        }
+        ok(sawBreak >= 2, `real CPU play smashes the furniture (${sawBreak} props down across ${rounds || 1} bout${rounds === 1 ? '' : 's'})`)
+        ok(breaksFed >= sawBreak, `every break fed the presentation pool (${breaksFed} fx for ${sawBreak} breaks)`)
+        ok(sawOrbView, 'dropped loot floats in the GL pool (orb views spawn from engine orbs)')
     }
 
     await page.keyboard.press('Escape')

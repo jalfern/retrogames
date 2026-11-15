@@ -689,6 +689,7 @@ export function createScene(canvas) {
     // list (the sim owns positions, hp and loot — this only draws them), tip a
     // prop over when it breaks, float the loot orbs, and fly shards on a break.
     const propFx = []
+    let breaksTotal = 0
     const propViews = new Map()
     const orbViews = new Map()
     let propSig = null
@@ -749,10 +750,11 @@ export function createScene(canvas) {
             }
             shatterFx.push({ ring, shards, t: SHATTER_FRAMES, x, y })
         },
-        fxCount() { return { shields: shieldFx.length, bursts: shatterFx.length, propBreaks: propFx.length, propsLive: propViews.size, orbsLive: orbViews.size } },
+        fxCount() { return { shields: shieldFx.length, bursts: shatterFx.length, propBreaks: propFx.length, breaksTotal, propsLive: propViews.size, orbsLive: orbViews.size } },
         // #2334: the sim says a prop broke — splinter it. Shards fly away from
         // the hitter (dir), the standing view tips over that way too.
         propBreak(x, kind, dir = 1) {
+            breaksTotal++
             for (const v of propViews.values()) {
                 if (v.broke < 0 && Math.abs(v.g.position.x - x) < 0.35) { v.dir = dir; v.broke = Math.max(v.broke, 0) }
             }
