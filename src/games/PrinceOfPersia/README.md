@@ -64,15 +64,16 @@ original's full height: twelve levels, the real duel, the look.
 
 ## Controls
 
-Arrows move · SPACE jump (hold = farther) · SHIFT hold while falling = grab
-(run modifier on the ground) · UP block / climb · DOWN crouch / release hang ·
-X or Z strike · ? pause · R restart after the hour is lost.
+Arrows move · SPACE jump (hold = farther) · SHIFT or ✋ hold while falling = grab
+(run modifier on the ground; ✋ is the pad's third button, #2324) · UP block /
+climb · DOWN crouch / release hang · X or Z strike · ? pause · R restart after
+the hour is lost.
 
 ## Verify
 
 ```bash
 npm run lint:pop     # scoped lint gate
-npm run popcheck     # 333 checks: the 75 Stage-1 rules + 24 Stage-2 look
+npm run popcheck     # 371 checks: the 75 Stage-1 rules + 24 Stage-2 look
                      # clauses + 67 Stage-3 clauses + 25 Stage-4 sound clauses
                      # + 14 Stage-5 gate/banner/escort clauses + 15 Stage-6
                      # light-model clauses + 17 Stage-7 escort clauses + 16
@@ -81,7 +82,8 @@ npm run popcheck     # 333 checks: the 75 Stage-1 rules + 24 Stage-2 look
                      # Stage-10 interacting-source clauses + 31 Stage-11
                      # breathing-palace clauses (temporal sky, shaft motes,
                      # arch veil, two-source props, temp-gated tunic, derived
-                     # window key, chase-sound duck).
+                     # window key, chase-sound duck) + 5 §23 phone-✋ wiring
+                     # clauses (#2324).
                      # Champion run pinned: autopilot clears all twelve levels at
                      # 0 deaths, the mirror / mouse-held gate / poisoned phantom
                      # shadow / invisible bridge / sheathed merge all fire in that
@@ -91,7 +93,10 @@ npm run popplay      # advisory headless drive (needs npm run dev): real keys
                      # level restarts under a running clock, R restarts, the
                      # attract screen is silent, the hour rides a music bed
                      # (analyser over the silence), and all twelve levels carry
-                     # the right bed — zero page errors
+                     # the right bed — plus the phone page (#2324): tap starts,
+                     # ✋ exists beside the actzone and its held Shift caps the
+                     # prince to a walk, release hands the run back — zero page
+                     # errors
 ```
 
 Mutant proof at ship time: dropping `parry` from the SFX table turned
@@ -449,8 +454,14 @@ red, parity ternaries removed → 2 red; restored → 350/350.
 
 ## Honest gaps (the deep pass continues — see #316)
 
-- Touch: the pad has no Shift, so hang-grab on a phone leans on climbing
-  with the d-pad; desktop-first, as the original was.
+- ~~Touch: the pad has no Shift, so hang-grab on a phone leans on climbing
+  with the d-pad; desktop-first, as the original was.~~ **CLOSED by #2324**:
+  `VirtualControls` grew a prop-gated `thirdAction` — a third HELD button with
+  its own pointer (keydown on touch, keyup on release/hide). PRINCE OF PERSIA
+  passes ✋ = `ShiftLeft`, so the whole ledge grammar — catch while falling,
+  climb, release, shimmy, hang-jump — is phone-reachable. `popplay` proves the
+  chain live (thumb-right runs; ✋ held caps to a walk; ✋ lifted hands the run
+  back) and `popcheck` §23 pins the wiring.
 - The sky is alive but minimal: one cloud band and a handful of pinned stars per
   pane. A richer sky (multiple clouds, a horizon, a passing moon disc) is polish,
   not a gap against the 1989 look — the original's windows were a flat blue.

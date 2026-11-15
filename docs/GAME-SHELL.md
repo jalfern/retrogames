@@ -26,7 +26,10 @@ own `src/games/<Name>/` and are designed from the original.
   `touchstart`/`mousedown` (IronKeep, Missile Command) or a pointer-method
   title opts out, or the shell's Space double-fires its actions.
 - `<VirtualControls />` covers phones: it dispatches `Arrow{Left,Right,Up,Down}`
-  + `Space` ("A"); pass `secondAction` for "B", `visible={false}` on menus.
+  + `Space` ("A"); pass `secondAction` for "B", `thirdAction={{ label, code }}`
+  for a third HELD button (#2324 — its own pointer, keydown on touch, keyup on
+  release/hide; never inside the A/B actzone, whose hit-test is vpadcheck-pinned),
+  `visible={false}` on menus.
 - Audio: everything synthesized via `audioController`; nothing plays before
   the first user gesture unlocks the AudioContext (App.jsx).
 - 3D assets: before modelling a prop, check the shelf (`src/utils/modelShelf.js`)

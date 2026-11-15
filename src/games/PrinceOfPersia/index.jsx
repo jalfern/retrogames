@@ -429,7 +429,7 @@ const PrinceOfPersiaGame = () => {
                     </div>
                 )}
             </div>
-            <VirtualControls secondAction={{ label: '⚔', code: 'KeyX' }} visible={!paused} />
+            <VirtualControls secondAction={{ label: '⚔', code: 'KeyX' }} thirdAction={{ label: '✋', code: 'ShiftLeft' }} visible={!paused} />
         </div>
     )
 }

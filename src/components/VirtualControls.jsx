@@ -33,7 +33,7 @@ const IconBolt = ({ s }) => (
 // direction. Below this a touch is a tap (tap-to-start keeps its own meaning).
 const SWIPE_MIN = 24
 
-const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = true, diag = false, skin = null }) => {
+const VirtualControls = ({ secondPad, secondAction: secondActionProp, thirdAction = null, visible = true, diag = false, skin = null }) => {
     const [held, setHeld] = useState(() => new Set())
     const [diagKeysState, setDiagKeysState] = useState(() => new Set())
 
@@ -94,6 +94,8 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     const actZoneRef = useRef(null)
     const aBtnRef = useRef(null)
     const bBtnRef = useRef(null)
+    const cBtnRef = useRef(null)
+    const cPtr = useRef(null)
     const dirCodes = useRef([])
     const actCode = useRef(null)
     const dPtr = useRef(null)
@@ -159,10 +161,11 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     const syncHeld = useCallback(() => {
         const s = new Set(dirCodes.current)
         if (actCode.current) s.add(actCode.current)
+        if (thirdAction && cPtr.current !== null) s.add(thirdAction.code)
         for (const c of p2Codes.current) s.add(c)
         for (const c of diagCodes.current) s.add(c)
         setHeld(s)
-    }, [])
+    }, [thirdAction])
 
     const setDirCodes = useCallback((codes) => {
         const prev = new Set(dirCodes.current)
@@ -225,6 +228,10 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
         for (const c of dirCodes.current) fire(c, 'keyup')
         dirCodes.current = []
         if (actCode.current) { fire(actCode.current, 'keyup'); actCode.current = null }
+        if (cPtr.current !== null) {
+            cPtr.current = null
+            if (thirdAction) fire(thirdAction.code, 'keyup')
+        }
         for (const c of p2Codes.current) fire(c, 'keyup')
         p2Codes.current = new Set()
         for (const c of diagCodes.current) fire(c, 'keyup')
@@ -250,7 +257,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
         clearHeld()
         setStickUI({ active: false, ax: 0, ay: 0 })
         syncHeld()
-    }, [fire, syncHeld])
+    }, [fire, syncHeld, thirdAction])
 
     useEffect(() => {
         const onBlur = () => releaseAll()
@@ -555,6 +562,30 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     const aMM = (e) => { aMove(e.clientX, e.clientY, 'm') }
     const aMU = () => { aEnd('m') }
 
+    // --- Third action (#2324): one held button beside (never inside) the
+    // actzone. The actzone is a single-pointer hit-test zone pinned by
+    // vpadcheck; C rides its own pointer and the same synthesized keydown/
+    // keyup contract the actzone uses, so a game reaches a third held code
+    // (PRINCE OF PERSIA's Shift grab) without touching that law. Synthetic
+    // events are isTrusted:false — holding C never trips the hide-on-keyboard.
+    const cDown = (id) => {
+        if (!thirdAction || cPtr.current !== null) return
+        cPtr.current = id
+        tick()
+        fire(thirdAction.code, 'keydown')
+        syncHeld()
+    }
+    const cUp = () => {
+        if (cPtr.current === null) return
+        cPtr.current = null
+        if (thirdAction) fire(thirdAction.code, 'keyup')
+        syncHeld()
+    }
+    const cTS = (e) => { e.preventDefault(); for (const t of e.changedTouches) if (cPtr.current === null) cDown(t.identifier) }
+    const cTE = (e) => { for (const t of e.changedTouches) if (t.identifier === cPtr.current) cUp() }
+    const cMD = (e) => { e.preventDefault(); cDown('m') }
+    const cMU = () => { cUp() }
+
     // --- Second pad (2P, separate buttons) ---
     const p2Code = (k) => secondPad[k.slice(3)]
     const p2Bind = (key) => {
@@ -759,9 +790,59 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                 )}
 
                 {/* Action Buttons: only the actions the game reads, by name.
-                    #735: the zone is data-vc="actzone" (vpadboot's stable
-                    selector) and its gap/padding scale with the pad (sz). */}
-                {(showA || secondAction) ? (
+                    The zone is data-vc actzone (vpadcheck/vpadboot's stable
+                    selector) and its gap/padding scale with the pad (sz).
+                    #2324: thirdAction renders a held button BESIDE the actzone
+                    (never inside — the zone's single-pointer hit-test is
+                    vpadcheck-pinned). A game that does not pass the prop
+                    renders this subtree byte-for-byte as before. */}
+                {thirdAction ? (
+                    <div className="flex items-end select-none" style={{ gap: sz.gap }}>
+                        <div
+                            ref={cBtnRef}
+                            data-vc="c"
+                            data-key={thirdAction.code}
+                            style={btnStyle}
+                            className={`${actBase} touch-none ${isHeld(thirdAction.code) ? 'bg-sky-400/40 ring-white/90 scale-95 brightness-150' : 'bg-sky-500/25 ring-white/60'}`}
+                            onTouchStart={cTS}
+                            onTouchEnd={cTE}
+                            onTouchCancel={cTE}
+                            onMouseDown={cMD}
+                            onMouseUp={cMU}
+                            onMouseLeave={cMU}
+                        >
+                            <span className="text-white font-bold leading-none" style={{ fontSize: sz.font((thirdAction.label || 'C').length) }}>{thirdAction.label || 'C'}</span>
+                        </div>
+                        {(showA || secondAction) ? (
+                            <div
+                                data-vc="actzone"
+                                ref={actZoneRef}
+                                className="flex items-end touch-none select-none"
+                                style={{ gap: sz.gap, paddingBottom: Math.round(sz.gap * 0.5), paddingRight: Math.round(sz.gap * 0.5) }}
+                                onTouchStart={aTS}
+                                onTouchMove={aTM}
+                                onTouchEnd={aTE}
+                                onMouseDown={aMD}
+                                onMouseMove={aMM}
+                                onMouseUp={aMU}
+                                onMouseLeave={aMU}
+                            >
+                                {secondAction && (
+                                    <div ref={bBtnRef} data-vc="b" data-key={secondAction.code} style={btnStyle} className={`${actBase} ${isHeld(secondAction.code) ? 'bg-orange-400/40 ring-white/90 scale-95 brightness-150' : 'bg-orange-500/25 ring-white/60'}`}>
+                                        <span className="text-white/90">{<IconBolt s={Math.round(sz.btn * ICON_F)} />}</span>
+                                        <span className="text-white font-bold leading-none" style={{ fontSize: sz.font((secondAction.label || 'B').length) }}>{secondAction.label || 'B'}</span>
+                                    </div>
+                                )}
+                                {showA && (
+                                    <div ref={aBtnRef} data-vc="a" data-key="Space" style={btnStyle} className={`${actBase} ${isHeld('Space') ? 'bg-red-400/40 ring-white/90 scale-95 brightness-150' : 'bg-red-500/25 ring-white/60'}`}>
+                                        <span className="text-white/90">{<IconFire s={Math.round(sz.btn * ICON_F)} />}</span>
+                                        <span className="text-white font-bold leading-none" style={{ fontSize: sz.font(aLabel.length) }}>{aLabel}</span>
+                                    </div>
+                                )}
+                            </div>
+                        ) : null}
+                    </div>
+                ) : (showA || secondAction) ? (
                     <div
                         data-vc="actzone"
                         ref={actZoneRef}
