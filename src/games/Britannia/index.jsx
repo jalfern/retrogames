@@ -160,22 +160,6 @@ const BritanniaGame = () => {
 
         const step = (pad) => {
             S.tick++
-            // #2345 purse: the day turn pays the tithe — the eight gate-towns
-            // keep their Avatar liquid until stage 2's shops replace the land
-            // (the tribute caps at the starting bounty; a full purse hears
-            // nothing, and GOAL stays king of the toast).
-            const day = Math.floor(S.tick / DAY)
-            if (day !== S.day) {
-                S.day = day
-                if (S.gold < START_GOLD) {
-                    S.gold = tribute(S.gold)
-                    if (!/^GOAL/.test(S.toastMsg || '')) {
-                        S.toast = 110; S.toastMsg = `New day: the gate-towns tithe ${TRIBUTE} gold into thy purse.`
-                        audioController.playTone(880, 0.07, 'square', 0.07)
-                        audioController.playTone(1320, 0.09, 'square', 0.06)
-                    }
-                }
-            }
             const sky = weatherAt(S.x, S.y, S.tick, S.seed, terrainAt)
             if (sky !== S.wx) {
                 S.wx = sky
@@ -223,6 +207,24 @@ const BritanniaGame = () => {
                     else if (wind === 2) { S.toast = 110; S.toastMsg = 'A fresh wind takes hold.'; audioController.playSweep(160, 240, 0.7, 'triangle', 0.06) }
                     else if (wind === 0) { S.toast = 110; S.toastMsg = 'A high settles — the fronts stall.'; audioController.playTone(220, 0.6, 'sine', 0.05) }
                     else { S.toast = 110; S.toastMsg = 'The wind eases to steady.'; audioController.playTone(260, 0.4, 'sine', 0.04) }
+                }
+            }
+            // #2345 purse: the day turn pays the tithe — the eight gate-towns
+            // keep their Avatar liquid until stage 2's shops replace the land
+            // (the tribute caps at the starting bounty; a full purse hears
+            // nothing, and GOAL stays king of the toast). It lands after the
+            // wind-shift block so the tithe's own words outlive a same-tick
+            // gale notice — the purse is the newer news the player must read.
+            const day = Math.floor(S.tick / DAY)
+            if (day !== S.day) {
+                S.day = day
+                if (S.gold < START_GOLD) {
+                    S.gold = tribute(S.gold)
+                    if (!/^GOAL/.test(S.toastMsg || '')) {
+                        S.toast = 110; S.toastMsg = `New day: the gate-towns tithe ${TRIBUTE} gold into thy purse.`
+                        audioController.playTone(880, 0.07, 'square', 0.07)
+                        audioController.playTone(1320, 0.09, 'square', 0.06)
+                    }
                 }
             }
             S.fl = flashAt(S.x, S.y, S.tick, tod(), S.seed, terrainAt)

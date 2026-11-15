@@ -478,6 +478,61 @@ await page.screenshot({ path: '/tmp/forge/britannia-shrine.png' })
     await page.screenshot({ path: '/tmp/forge/britannia-hull.png' })
 }
 
+// #2345 purse & passage toll, lived with the loop locked: boarding debits
+// exactly the fare, an emptied purse is refused ON THE SAND (dry, gold kept,
+// the toast names the fare), and the day turn pays the tithe.
+{
+    await page.evaluate((a) => {
+        window.__game.reset(a.sd); window.__britanniaTest.setTime(a.tt)
+        window.__britanniaTest.teleport(5)
+        window.__game.step({}, 0)
+        window.__game.step({ left: true }, 1) // beside gate V — its menu whirls
+        window.__game.step({ b: true }, 1)    // dismiss, or the picker eats the walk
+    }, { sd: seed0, tt: 19 * E + 100 })
+    await sleep(140)
+    let paid = null
+    for (let i = 0; i < 420; i++) {
+        await page.evaluate(() => window.__game.step({ left: true }, 1))
+        const s = await page.evaluate(() => window.__britanniaTest.state())
+        if (s.ship) { paid = s; break }
+    }
+    r.check('boarding pays the captain: one fare debited, the toast names it (#2345)',
+        !!paid && paid.gold === 245 && /gold to the captain/.test(paid.toastMsg), JSON.stringify({ gold: paid && paid.gold, toast: paid && paid.toastMsg }))
+    // refusal on the sand: emptied purse, west off gate V again
+    await page.evaluate((a) => {
+        window.__game.reset(a.sd); window.__britanniaTest.setTime(a.tt)
+        window.__britanniaTest.teleport(5)
+        window.__game.step({}, 0)
+        window.__game.step({ left: true }, 1)
+        window.__game.step({ b: true }, 1)
+        window.__britanniaTest.setGold(4)
+    }, { sd: seed0, tt: 19 * E + 100 })
+    await sleep(140)
+    let denied = null
+    for (let i = 0; i < 160; i++) {
+        await page.evaluate(() => window.__game.step({ left: true }, 1))
+        const s = await page.evaluate(() => window.__britanniaTest.state())
+        if (/purse is light/.test(s.toastMsg)) { denied = s; break }
+    }
+    r.check('four gold refuseth on the sand: nobody boards, the gold stays (#2345)',
+        !!denied && !denied.ship && denied.gold === 4 && /captain asketh 5 gold/.test(denied.toastMsg),
+        JSON.stringify({ ship: denied && denied.ship, gold: denied && denied.gold, toast: denied && denied.toastMsg }))
+    // the day turn: an emptied purse meets the dawn tithe
+    await page.evaluate(() => {
+        window.__game.reset(7); window.__britanniaTest.setTime(0)
+        window.__britanniaTest.setGold(0)
+        window.__game.step({}, 0)
+        for (let i = 0; i < 7200 + 2; i++) window.__game.step({}, 1)
+    })
+    const tithed = await page.evaluate(() => { const s = window.__britanniaTest.state(); return { gold: s.gold, day: s.day, toast: s.toastMsg } })
+    r.check('the day turn pays the tithe: 0 -> 20 gold, and it announces itself (#2345)',
+        tithed.gold === 20 && tithed.day === 1 && /tithe 20 gold/.test(tithed.toast), JSON.stringify(tithed))
+    await page.evaluate(() => window.__game.release())
+    r.check('the live toll agrees with the booked rule (payToll(250) == the driven debit)',
+        !!paid && paid.gold === 245, JSON.stringify(paid && paid.gold))
+    await page.screenshot({ path: '/tmp/forge/britannia-purse.png' })
+}
+
 // restart path stays clean
 await page.evaluate(() => window.__game.reset(7))
 await sleep(250)
