@@ -65,3 +65,19 @@
 
 ## Open questions
 - None new. jonq #2305 (lane:platform) AWAITING until 11-17 — not ours.
+
+## Addendum — slot a, post-report (same day, ~18:35Z)
+- **Second red-main fix shipped: #2396 (`872d818`).** Nightly 43729749985 was
+  red on `watchcheck` — TidyBot's seat pin matched the pre-#2251 single-line
+  `step(gs, [watchingRef.current ? autopilot(gs) : livePad()])`; #2251 extracted
+  `const pad = …` + `step(gs, [pad])` (semantics identical) and merged after the
+  last green nightly, so it surfaced at the next one. Re-pinned as a semantic
+  pair (ternary exists AND pad reaches step). Old-regex-vs-source reproduces the
+  CI failure. Harness-only.
+- Nightly re-dispatched on `872d818` (run 43747595201) — the next lane should
+  confirm GREEN; until then main-ok reads red (or whatever that run says).
+- **Foreign worktree warning:** `/Users/jon/Dev/retrogames-forge-maingreen-ticks`
+  has branch `main` checked out (slot b's, local `7c37181`). It makes
+  `gh pr merge --delete-branch` exit 1 AFTER merging (happened to #2396 —
+  MERGED on GitHub, fatal locally). Owner must re-detach at exit; meanwhile
+  lanes: check `gh pr view <n> --json state` before trusting a merge fatal.
