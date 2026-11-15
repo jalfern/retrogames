@@ -201,20 +201,12 @@ const fxAft = await page.evaluate(() => window.__bdTest.boomFx())
 const scrAft = await page.evaluate(() => window.__bdTest.screen())
 r.check('next run opens scorched but lid-free (decals carry, fx expire)', scrAft === 'play' && fxAft.scorch >= 3 && fxAft.lid === false && fxAft.shrap === 0 && fxAft.chunks === 0 && fxAft.bounced === 0, `scr=${fxAft.scorch} lid=${fxAft.lid} shrap=${fxAft.shrap} chunks=${fxAft.chunks}`)
 
-// #2363: bursts read MIXED — per-chunk material rolls mean the body spits
-// more than one family; the law is the UNION across bursts (steel always
-// present, the others probabilistic — 4 bursts put flake risk below 1/1000).
-const matUnion = new Set((fxLive.mats || '').split(',').filter(Boolean))
-for (let i = 0; i < 3; i++) {
-    await page.keyboard.press('KeyX'); await sleep(900)
-    await page.evaluate(() => window.__bdTest.boomNow()); await sleep(140)
-    const fx = await page.evaluate(() => window.__bdTest.boomFx())
-    for (const m of (fx.mats || '').split(',')) if (m) matUnion.add(m)
-}
-r.check('#2363 booms spit more than one material family (union across bursts)', matUnion.size >= 2, [...matUnion].join('+'))
-// leave the board on a fresh PLAY screen — every section below assumes it
-// (the bursts above just spent the run's fuse)
-await page.keyboard.press('KeyX'); await sleep(1200)
+// #2363: bursts read MIXED and scale with the bomb — deterministic probe
+// across bomb indices 0-5 (no screen restarts: the gates below keep their
+// own untouched timeline). Union of families ≥ 2 with ~30 rolls is certain.
+const mp = await page.evaluate(() => window.__bdTest.matProbe())
+r.check('#2363 booms spit more than one material family (probe union ≥2)', mp.mats.split(',').filter(Boolean).length >= 2, mp.mats)
+r.check('#2363 chunk count grows 3→6 with the bomb (ceiling 6)', JSON.stringify(mp.counts) === JSON.stringify([3, 4, 5, 6, 6, 6]), JSON.stringify(mp.counts))
 
 // #1812 item 2 — the press-tick law in the REAL view stack, stepped tick-exact
 // (wall-clock rAF sampling is too coarse on software-rendered Chrome — the

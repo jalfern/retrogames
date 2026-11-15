@@ -850,6 +850,7 @@ console.log('\n— #2363 material families + rack clank —')
     ok(/Math\.min\(6, 3 \+ bomb\)/.test(spawn), '#2363 chunk count grows with the bomb (3 → 6 ceiling)')
     ok(jsx.includes('banked: hudRef.current.banked'), '#2363 boomFx exposes the clank counter')
     ok(/clankProbe: \(\) =>/.test(jsx), '#2363 clankProbe exposes the clank law for deterministic pinning')
+    ok(/matProbe: \(\) =>[\s\S]{0,500}spawnBoom\(hud, bomb\)/.test(jsx), '#2363 matProbe spawns the body per bomb index — the count + material laws are probeable')
 }
 
 console.log('\n— win tally (#1812 item 6) —')

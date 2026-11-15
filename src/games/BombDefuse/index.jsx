@@ -1698,6 +1698,23 @@ export default function BombDefuseGame() {
                     hud.banked = b; if (c.bankHit) hud.sparks.splice(-3)
                     return out
                 },
+                // #2363: deterministic multi-bomb chunk probe — spawns the
+                // body for each bomb index (0–5) and collects the material
+                // union + count, then clears. No screen restarts, no page
+                // disturbance — the STAGGER/press-tick gates stay on their
+                // own untouched timeline.
+                matProbe: () => {
+                    const hud = hudRef.current
+                    const mats = new Set()
+                    const counts = []
+                    for (let bomb = 0; bomb < 6; bomb++) {
+                        spawnBoom(hud, bomb)
+                        counts.push(hud.chunks.length)
+                        for (const c of hud.chunks) mats.add(c.mat)
+                    }
+                    hud.chunks = []; hud.shrap = []; hud.lid = null; hud.banked = 0
+                    return { mats: [...mats].sort().join(','), counts }
+                },
                 boomNow: () => { const gb = gsRef.current; if (gb && !gb.done) gb.fuse = 1 },
                 ventTaught: () => hudRef.current.ventTaught,
                 // #1812 item 1: the live teach panel + its dismissal latch.
