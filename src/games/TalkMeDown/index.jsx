@@ -98,6 +98,12 @@ export default function TalkMeDown() {
     // state, never hashed). ENTER shouts the buffer through voiceCall — the
     // mic's own entry — so grammar, pulse, banner and bank are one path.
     const callRef = useRef({ open: false, buf: '' })
+    // #2287 THE PHONE'S TYPED MOUTH: X was the desktop channel (#1894); the
+    // phone owns a soft keyboard instead. The TYPE pill opens a real <input>
+    // that feeds THIS SAME line — cl.open/cl.buf are one line, two deliveries.
+    const [typeOpen, setTypeOpen] = useState(false)
+    const [typeVal, setTypeVal] = useState('')
+    const typeInputRef = useRef(null)
     const overAtRef = useRef(0)
     const [watching, setWatching] = useState(false) // #1637 WATCH: mirrors the seat flag for the chrome
     const watchingRef = useRef(false)
@@ -565,6 +571,11 @@ export default function TalkMeDown() {
         const S2 = { KeyA: 'left', KeyD: 'right', KeyW: 'up', KeyS: 'down', KeyF: 'a' }
 
         const onKeyDown = (e) => {
+            // #2287: a key whose target is the phone's TYPE line is already
+            // a WORD, not a hand (#1247 extended to pads) — the line owns it.
+            // Without this, "CUT BLUE" would press the pad's B and every space
+            // would press A (KeyB/Space are seat verbs); tmdphonecheck pins it.
+            if (e.target === typeInputRef.current) return
             // #1894: while the CALL line is open Escape puts the mouth away
             // first — the squad card only rises when nothing is being typed.
             if (callRef.current.open && e.code === 'Escape') {
@@ -1150,6 +1161,9 @@ export default function TalkMeDown() {
                 // #1894: the harness reads/pilots the typed line the same way
                 // it reads the mic badge — and asserts delivery with real keys.
                 callLine: () => ({ open: callRef.current.open, buf: callRef.current.buf, paused: pausedRef.current }),
+                // #2287: what the phone's mouth renders — pill present / line open.
+                // DOM truth, not state truth: the harness asserts what the player sees.
+                typeUI: () => ({ pill: !!document.querySelector('[data-tmd-type-btn]'), line: !!document.querySelector('[data-tmd-type]') }),
                 release: (field) => { keys1Ref.current[field] = false },
                 keys: () => ({ ...keys1Ref.current }),
                 state: () => { const g = gsRef.current; return g ? simState(g) : null },
@@ -1247,6 +1261,60 @@ export default function TalkMeDown() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [startPlay, startAttract, toggleVoice, voiceCall])
 
+    // ---- #2287 THE PHONE'S TYPED MOUTH --------------------------------------
+    // Tap TYPE -> a real <input> focuses (the soft keyboard rises) and feeds
+    // the SAME shell-side line X made (#1894): cl.open/cl.buf -> drawCallLine,
+    // the per-char tick, the CALL_LINE_MAX cap. GO (Enter) shouts through
+    // voiceCall — the mic's own entry — so grammar, obey-pulse, refuse-why and
+    // the #1415 bank ride one path unchanged. A key landing on the line is a
+    // WORD, not a hand (#1247 extended to pads): this input stops its own
+    // propagation AND the global handler refuses INPUT targets, so typing
+    // "CUT BLUE" can never press the pad's B (KeyB is a seat verb) and a
+    // space can never press A.
+    const openTypeLine = () => {
+        if (screenRef.current !== 'play' || pausedRef.current) return
+        const cl = callRef.current
+        cl.open = true; cl.buf = ''
+        setTypeVal(''); setTypeOpen(true)
+        sfx.key()
+        // focus inside the tap's own gesture tick — that is what lets the
+        // soft keyboard rise on iOS; the rAF covers React's mount ordering.
+        requestAnimationFrame(() => {
+            const el = typeInputRef.current
+            if (el && document.activeElement !== el) el.focus()
+        })
+    }
+    const closeTypeLine = () => {
+        const cl = callRef.current
+        cl.open = false; cl.buf = ''
+        setTypeVal(''); setTypeOpen(false)
+        const el = typeInputRef.current
+        if (el && document.activeElement === el) el.blur()
+    }
+    const onTypeInput = (v) => {
+        const cl = callRef.current
+        const v2 = v.slice(0, CALL_LINE_MAX)
+        if (v2.length > cl.buf.length) sfx.tick() // the X line's per-char tick (#1894)
+        cl.buf = v2; cl.open = true
+        setTypeVal(v2)
+    }
+    const onTypeKey = (e) => {
+        e.stopPropagation() // second belt: keys never leave the mouth
+        if (e.code === 'Enter' || e.code === 'NumpadEnter') {
+            const said = callRef.current.buf
+            if (said.length) voiceCall(said) // GO shouts it — the mic's own entry
+            closeTypeLine()
+            return
+        }
+        if (e.code === 'Escape') { closeTypeLine(); sfx.move(); return }
+    }
+    // the line lives on the panel, not past it (#1894's law): leaving play or
+    // pausing puts the mouth away, keyboard still down or not.
+    useEffect(() => {
+        if ((paused || screen !== 'play') && typeOpen) closeTypeLine()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [paused, screen])
+
     return (
         <div className="min-h-[var(--shell-h)] bg-black flex items-center justify-center relative select-none">
             <canvas
@@ -1304,6 +1372,48 @@ export default function TalkMeDown() {
                 >
                     {micOn ? 'MIC ON — SHOUT' : 'MIC · TAP'}
                 </button>
+            )}
+            {/* #2287: the phone's typed mouth — X was desktop-only (#1894).
+                Sits stacked over the MIC pill so one thumb row owns both
+                channels; never rendered on a keyboard box. */}
+            {(TOUCH_UI || URL_TOUCH) && screen === 'play' && !paused && !typeOpen && (
+                <button
+                    type="button"
+                    data-tmd-type-btn
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); openTypeLine() }}
+                    className="fixed z-[62] font-mono text-[10px] tracking-[0.25em] px-2 py-1 border rounded"
+                    style={{
+                        bottom: 'calc(2.75rem + var(--sab, 0px))', left: '50%', transform: 'translateX(-50%)',
+                        color: '#8b8b98', borderColor: 'rgba(255,255,255,0.3)', background: 'rgba(0,0,0,0.35)', cursor: 'pointer',
+                    }}
+                >
+                    TYPE
+                </button>
+            )}
+            {typeOpen && screen === 'play' && !paused && (
+                <input
+                    ref={typeInputRef}
+                    data-tmd-type
+                    onPointerDown={(e) => e.stopPropagation()}
+                    type="text"
+                    autoFocus
+                    autoComplete="off" autoCorrect="off" autoCapitalize="characters" spellCheck={false}
+                    enterKeyHint="go"
+                    maxLength={CALL_LINE_MAX}
+                    placeholder="WRITE THE CALL — GO SHOUTS IT"
+                    value={typeVal}
+                    onChange={(e) => onTypeInput(e.target.value)}
+                    onKeyDown={(e) => onTypeKey(e)}
+                    onBlur={() => closeTypeLine()}
+                    aria-label="type the call"
+                    className="fixed z-[63] font-mono text-[11px] tracking-[0.12em] px-2 py-1 border rounded"
+                    style={{
+                        bottom: 'calc(2.75rem + var(--sab, 0px))', left: '50%', transform: 'translateX(-50%)',
+                        width: '72%', color: '#ffcf5e', borderColor: 'rgba(255,207,94,0.55)',
+                        background: 'rgba(0,0,0,0.6)', outline: 'none',
+                    }}
+                />
             )}
             <VirtualControls secondAction={{ label: 'PAGE', code: 'KeyB' }} visible={screen === 'play'} />
         </div>
