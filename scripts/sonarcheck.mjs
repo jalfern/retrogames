@@ -26,9 +26,14 @@
 //   DISTANCE CUE contacts carry the ring (wavefront delay) that touched them;
 //                heat/pitch maps it monotonically near→hot (#2365), and the
 //                paint path still cannot reach a live eel cell.
+//   VENT SIGNAL  #2367: the swirl ripples only while vent knowledge is FRESH
+//                (a front landed within CFG.swirlFresh ticks), sits as a dim
+//                ghost while merely remembered, and the painter gates the whole
+//                thing through ventSignal(); a faint expanding ring per ping
+//                teaches ring→distance in pixels.
 //   DEATH/DESCEND  a touching eel takes a life; the vent takes you down.
 //   DETERMINISM  replays match, a dropped command does not (tamper probe).
-//   MUTATIONS    six rules silenced in children, each must turn a NAMED check
+//   MUTATIONS    eight rules silenced in children, each must turn a NAMED check
 //                red, or a check has stopped touching its rule.
 
 import { spawnSync } from 'node:child_process'
@@ -57,6 +62,7 @@ const MUTANTS = {
     eelKill: 'eels stop taking lives — the dark becomes a museum',
     descend: 'the vent stops descending — depths become wallpaper',
     cue: 'distance cue frozen — every contact reads the same nearness; the ring→heat map is dead',
+    ventRipple: 'the vent swirl ignores freshness — remembered exits ripple forever and the front stops teaching',
 }
 if (MUT_NAME) {
     if (!(MUT_NAME in MUTANTS)) { console.error(`unknown mutant ${MUT_NAME}`); process.exit(2) }
@@ -252,6 +258,60 @@ section('DISTANCE CUE (the ring that touched the eel reads as nearness, #2365)')
     ok(!/eelCell\(|gs\.eels\b/.test(paintSrc), 'the paint path reaches a LIVE eel cell — knowledge law broken')
 }
 
+section('VENT SIGNAL (fresh knowledge ripples, remembered knowledge ghosts, #2367)')
+{
+    ok(CFG.swirlFresh >= 3, `swirlFresh=${CFG.swirlFresh} too short to read as a ripple at 60 fps`)
+    ok(CFG.swirlFresh < CFG.fade, `swirlFresh=${CFG.swirlFresh} outlives the fade window — ghost state unreachable`)
+
+    // deterministic corridor: spawn at one end, vent at the other, no eels.
+    // The wavefront arrival tick is computable, so the three vent states and
+    // their exact boundaries are pinned, not sampled.
+    const grid = new Uint8Array(N).fill(ROCK)
+    for (let x = 4; x <= 30; x++) grid[s.idx(x, 13)] = OPEN
+    const cave = { seed: 4, depth: 1, grid, spawn: s.idx(4, 13), vent: s.idx(30, 13), rooms: [], centers: [], pearls: [] }
+    const arrival = Math.ceil(s.bfsField(grid, s.idx(4, 13))[s.idx(30, 13)] / CFG.waveSpeed)
+
+    const g = s.makeGame(cave)
+    g.eels = []
+    ok(s.ventSignal(g) === 0, 'the swirl lights for an exit no sound has ever reached — the vent leaks truth')
+    s.ping(g, { noCd: true })
+    let firstRipple = -1, firstGhost = -1, wentDark = -1
+    for (let t = 0; t <= arrival + CFG.fade + 8; t++) {
+        s.step(g)
+        const sig = s.ventSignal(g)
+        if (sig === 2 && firstRipple < 0) firstRipple = g.tick
+        if (sig === 1 && firstRipple >= 0 && firstGhost < 0) firstGhost = g.tick
+        if (firstGhost >= 0 && sig === 0 && wentDark < 0) wentDark = g.tick
+    }
+    ok(firstRipple === arrival, `ripple began at tick ${firstRipple}, wavefront says ${arrival} — the swirl does not ride the front`)
+    ok(firstGhost === arrival + CFG.swirlFresh + 1, `ghost began at tick ${firstGhost}, freshness law says ${arrival + CFG.swirlFresh + 1} — remembered exits still ripple (or never settle)`)
+    ok(wentDark === arrival + CFG.fade + 1, `vent went dark at tick ${wentDark}, fade law says ${arrival + CFG.fade + 1} — the ghost outlived its memory`)
+
+    // re-hearing: a second ping, fired while the vent is GHOST, must lift it
+    // back to rippling — the exit teaches again every time sound confirms it.
+    const g2 = s.makeGame(cave)
+    g2.eels = []
+    s.ping(g2, { noCd: true })
+    for (let t = 0; t < arrival + CFG.swirlFresh + 2; t++) s.step(g2)
+    ok(s.ventSignal(g2) === 1, `expected ghost before the re-ping, got signal ${s.ventSignal(g2)} — fixture drifted`)
+    s.ping(g2, { noCd: true })
+    let reheard = false
+    for (let t = 0; t <= arrival + 1; t++) { s.step(g2); if (s.ventSignal(g2) === 2) reheard = true }
+    ok(reheard, 'a second wavefront never revived the swirl — re-confirmation is dead, the ghost never ripples again')
+
+    // painter law (#2367): the swirl gates through ventSignal(), the old
+    // always-on known(gs, vent) call is gone, and the ping ring draws from the
+    // live ping list. Static like the #2365 cue law above; a planted mutant
+    // below proves the regex actually bites.
+    const jsx = readFileSync(new URL('../src/games/Sonar/index.jsx', import.meta.url), 'utf8')
+    const paintAt = jsx.indexOf('const paint = ')
+    const pSrc = jsx.slice(paintAt, paintAt + jsx.slice(paintAt).indexOf('const hud ='))
+    ok(/ventSignal\(gs\)/.test(pSrc), 'the painter does not gate the swirl through ventSignal — freshness is decoration elsewhere')
+    ok(!/known\(gs, gs\.vent\)/.test(pSrc), 'the painter still draws the swirl straight off known() — the old always-on vent is back')
+    ok(/gs\.pings/.test(pSrc) && /p\.maxK/.test(pSrc), 'no expanding wavefront ring is drawn from the live pings — the ring→distance teach is missing')
+    ok(!/eelCell\(|gs\.eels\b/.test(pSrc), 'the paint path reaches a LIVE eel cell — knowledge law broken')
+}
+
 section('OCCLUSION (a sealed pocket is dark until the echo walks in the door)')
 {
     // chamber — one passage — top corridor — pocket fed ONLY by a far door
@@ -424,6 +484,29 @@ if (MUT) {
         try {
             const child = spawnSync(process.execPath, [process.argv[1]], { encoding: 'utf8' })
             ok(child.status !== 0, `cue mutant SURVIVED: ${name}`)
+        } finally {
+            pull(path)
+        }
+    }
+}
+
+if (MUT) {
+    const jsxPath = new URL('../src/games/Sonar/index.jsx', import.meta.url).pathname
+    const jsxOrig = readFileSync(jsxPath, 'utf8')
+    const ringMutants = [
+        ['the ping wavefront ring stops being drawn — ring→distance is sound-only again', jsxPath, jsxOrig,
+            'if (k < 0 || k > p.maxK + RING_TRAIL) continue',
+            'if (k < 0 || k > p.maxK + RING_TRAIL || true) continue'],
+        ['the vent swirl reverts to always-on for any known cell (#2367 gap)', jsxPath, jsxOrig,
+            'const sig = ventSignal(gs)',
+            'const sig = known(gs, gs.vent) ? 2 : 0'],
+    ]
+    for (const [name, path, orig, from, to] of ringMutants) {
+        if (!orig.includes(from)) { ok(false, `vent-ring mutant anchor: ${name}`); continue }
+        plant(path, orig.replace(from, to))
+        try {
+            const child = spawnSync(process.execPath, [process.argv[1]], { encoding: 'utf8' })
+            ok(child.status !== 0, `vent-ring mutant SURVIVED: ${name}`)
         } finally {
             pull(path)
         }

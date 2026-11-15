@@ -23,13 +23,14 @@ import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import {
     CFG, W, H, ROCK, DIRS, idx, cx, cy,
-    genCave, makeGame, planRun, planStep, playerMove, ping, step, stateHash, known, eelContacts, eelCell, contactHeat,
+    genCave, makeGame, planRun, planStep, playerMove, ping, step, stateHash, known, eelContacts, eelCell, contactHeat, ventSignal,
 } from './sim.js'
 
 const TS = 16
 const CW = W * TS
 const CH = H * TS
 const SIM_MS = 50                                  // CFG tick = 1/20 s
+const RING_TRAIL = 3                             // #2367: trailing echoes behind each live ping ring
 const DEMO_SEED = 0xC0FFEE
 const MAX_DEPTH = 4
 const ARROWS = Object.keys(DIRS)
@@ -224,13 +225,46 @@ const SonarGame = () => {
                     ctx.strokeRect(px + 1, py + 1, TS - 2, TS - 2)
                 }
             }
-            // vent: a swirl the sonar actually touched
-            if (known(gs, gs.vent)) {
+            // #2367: the wavefront as a SHAPE. A faint ring expands from every
+            // live ping at the sim's own wave speed (with a short trail), closing
+            // when its last bucket lands. It teaches the ring→distance mapping the
+            // #2365 heat cue leans on: the ring is out there, the walls answer
+            // when it gets back. Decorative — cells still light solely by BFS
+            // arrival in sim.js; this circle is drawn from gs.pings (the fact
+            // that YOU made a sound), never from eel truth.
+            for (const p of gs.pings) {
+                const k = t - p.t0
+                if (k < 0 || k > p.maxK + RING_TRAIL) continue
+                const fade = 1 - k / (p.maxK + RING_TRAIL + 1)
+                const sx = cx(p.src) * TS + 8, sy = cy(p.src) * TS + 8
+                const lead = Math.min(k, p.maxK)
+                ctx.lineWidth = 2
+                ctx.strokeStyle = `rgba(140,230,255,${(0.55 * fade).toFixed(3)})`
+                ctx.beginPath(); ctx.arc(sx, sy, lead * CFG.waveSpeed * TS + 4, 0, Math.PI * 2); ctx.stroke()
+                for (let tr = 1; tr <= RING_TRAIL && k - tr >= 0; tr++) {
+                    ctx.strokeStyle = `rgba(140,230,255,${(0.55 * fade * (1 - tr / (RING_TRAIL + 1))).toFixed(3)})`
+                    ctx.beginPath(); ctx.arc(sx, sy, (lead - tr * 0.7) * CFG.waveSpeed * TS + 4, 0, Math.PI * 2); ctx.stroke()
+                }
+            }
+            // vent: a swirl the sonar actually touched. #2367: it RIPPLES only
+            // while the knowledge is fresh — a front arrived within CFG.swirlFresh
+            // ticks, so sound just confirmed the exit. Older knowledge stays on
+            // the canvas as a dim ghost: remembered, not re-confirmed. Both
+            // states ride ventSignal(), which is gated on known() — remembering a
+            // fixed feature is the game's own memory law, never truth.
+            const sig = ventSignal(gs)
+            if (sig) {
                 const vx = cx(gs.vent) * TS, vy = cy(gs.vent) * TS
-                const a = 0.5 + 0.4 * Math.sin(t / 4)
-                ctx.strokeStyle = `rgba(90,240,200,${a.toFixed(2)})`; ctx.lineWidth = 2
-                ctx.beginPath(); ctx.arc(vx + 8, vy + 8, 5 + (t % 12) * 0.4, 0, Math.PI * 1.6); ctx.stroke()
-                ctx.fillStyle = 'rgba(90,240,200,0.8)'
+                if (sig === 2) {
+                    const a = 0.5 + 0.4 * Math.sin(t / 4)
+                    ctx.strokeStyle = `rgba(90,240,200,${a.toFixed(2)})`; ctx.lineWidth = 2
+                    ctx.beginPath(); ctx.arc(vx + 8, vy + 8, 5 + (t % 12) * 0.4, 0, Math.PI * 1.6); ctx.stroke()
+                    ctx.fillStyle = 'rgba(90,240,200,0.8)'
+                } else {
+                    ctx.strokeStyle = 'rgba(90,240,200,0.22)'; ctx.lineWidth = 1
+                    ctx.beginPath(); ctx.arc(vx + 8, vy + 8, 5, 0, Math.PI * 1.6); ctx.stroke()
+                    ctx.fillStyle = 'rgba(90,240,200,0.4)'
+                }
                 ctx.fillRect(vx + 7, vy + 7, 2, 2)
             }
             // pearls: seen is seen
@@ -392,6 +426,7 @@ const SonarGame = () => {
                         contactMarks: contacts.map(b => ({ x: b.x, y: b.y, ring: (b.ring == null ? -1 : b.ring) })),
                         eels: gs.eels.map(e => ({ x: cx(eelCell(e)), y: cy(eelCell(e)) })),
                         ventKnown: known(gs, gs.vent),
+                        ventSignal: ventSignal(gs),
                         vent: { x: cx(gs.vent), y: cy(gs.vent) },
                         board: board(),
                     }

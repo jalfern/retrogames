@@ -40,15 +40,38 @@ releases the seat silently. DEV probes: `__sonarTest.watching()`,
 
 ## Verify
 ```bash
-npm run sonarcheck            # 198 checks: gen, wavefront honesty, determinism,
+npm run sonarcheck            # 210 checks: gen, wavefront honesty, determinism,
                               # eel timelines, distance-cue ring/heat (#2365),
+                              # vent signal fresh/ghost/dark boundaries (#2367),
                               # vent-win crossings (20/20 seeds)
 DEV_PORT=<p> npm run watchcheck -- --only sonar   # 182: seat pilot + source pins
+DEV_PORT=<p> npm run sonarplay                    # real keys + pixels (#2365/#2367)
 ```
+
+## The vent signal (#2367)
+`ventSignal(g)` (sim.js) grades the vent cell through `known()`: 0 never heard,
+1 remembered (dim ghost on canvas), 2 a front landed within `CFG.swirlFresh`
+ticks — only then does the swirl ripple. The vent is fixed geometry, so
+remembering it is ordinary knowledge; freshness is what keeps it *teaching*
+("sound just confirmed this"). `sonarcheck` pins all three transitions to
+computed wavefront ticks (ripple@arrival, ghost@arrival+swirlFresh+1, dark at
+the fade edge) plus a re-hearing revival, and a `ventRipple:false` mutant dies
+by name. Each live ping also strokes a faint expanding ring (with three trailing
+echoes) from its source — the ring→distance mapping the #2365 heat cue leans on,
+now visible; it draws from `gs.pings`, cells still light solely by BFS arrival.
 
 ## Honest gaps
 - **CLOSED by #2365:** eels telegraph only via contacts; no distance cue on a
   ping's first lit ring — contacts now carry the ring that lit them and
   heat/pitch maps nearness (#2365).
-- The vent swirl is drawn as soon as its cell is known — a Pearl jam can hide it
-  in plain light.
+- **CLOSED by #2367:** the vent swirl was drawn as soon as its cell was known —
+  it now ripples only on a fresh front and ghosts otherwise; the ping ring
+  teaches the distance mapping in pixels.
+
+## Remaining polish candidates (#2367 follow-ups)
+- Colourblind SHAPE cue on the heat mark (double stroke/chevron when hot) so
+  near/far reads without hue.
+- Haptics (`navigator.vibrate`) on hot contact / hit, gated behind feedback
+  state so harness runs stay silent.
+- Attract beat that pings an eel on a NEAR ring so the hot mark sells itself
+  in five seconds (docs/ART.md bar 6).
