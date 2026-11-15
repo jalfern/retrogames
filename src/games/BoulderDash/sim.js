@@ -54,6 +54,14 @@ export const DIAMOND = 3
 export const STEEL = 4
 export const FIRE = 5
 export const FIREFLY = 6               // never stored in the grid; flies are entities
+// #2411 — the later-variant elements. AMO_HEAD/AMO_BODY are the two amoeba
+// cells (Boulder Dash II, Origin 1985): the wave paints new cells as HEAD and
+// demotes them to BODY once the next generation leaves them behind, so the
+// slime reads as a moving creature, not a stain. PUSHWALL (Super Boulder Dash
+// lineage) is solid rock the digger can shove sideways one cell per move.
+export const AMO_HEAD = 7
+export const AMO_BODY = 8
+export const PUSHWALL = 9
 
 export const CFG = {
     burn: 5,                            // ticks a FIRE cell lives before emptying
@@ -72,6 +80,11 @@ export const CFG = {
     flyIgnite: true,                    // the firefly sets what it touches alight
     flyTravel: true,                    // #2364: the fly holds its heading and bounces — it can leave the pit
     fallKill: true,                     // a falling boulder crushes the player
+    amoeba: true,                       // #2411: the slime wave grows (Boulder Dash II)
+    amoEvery: 3,                      // CA ticks between amoeba growth passes — the wave reads as motion
+    amoGens: 8,                       // generations a body cell survives — the wave's length
+    push: true,                       // #2411: push walls slide sideways one cell per shove
+    pushCrush: true,                  // …and crush whatever rock stands in the way
 }
 
 export const DIRS = {
@@ -97,7 +110,14 @@ export const hash = (s) => {
 export function stateHash(g) {
     let s = `${g.tick}|${g.have}|${g.score}|${g.end}|${g.win}|${g.player.x},${g.player.y},${g.player.alive ? 1 : 0}`
     for (const f of g.flies) s += `|f${f.x},${f.y},${f.dir}`
-    for (let i = 0; i < g.grid.length; i++) s += String.fromCharCode(48 + g.grid[i] + (g.grid[i] === FIRE ? g.burn[i] : 0))
+    for (let i = 0; i < g.grid.length; i++) {
+        const t = g.grid[i]
+        // FIRE carries its burn timer, amoeba cells their generation — each in a
+        // character range the other cannot reach, so no two distinct states fold
+        // to the same char (#2411).
+        const adj = t === FIRE ? g.burn[i] : (t === AMO_HEAD || t === AMO_BODY ? 11 + g.amoGen[i] : 0)
+        s += String.fromCharCode(48 + t + adj)
+    }
     s += '|' + [...g.movingB].join(',') + ';' + [...g.movingD].join(',')
     return hash(s)
 }
@@ -119,16 +139,25 @@ export function makeGame(level, grid) {
         flies: (level.flies || []).map((f, i) => ({ id: i, x: f.x, y: f.y, dir: f.dir | 0 })),
         movingB: new Set(),                             // boulder cell-indices in motion last tick
         movingD: new Set(),                             // gem cell-indices in motion last tick
+        amoGen: new Int8Array(W * H),                   // #2411 amoeba: generation born (0 = seeded)
+        amoPass: 0,                                     // growth passes so far (the wave's clock)
+        amoDir: (level && level.amoebaDir) || [1, 0],   // which way the wave travels this cave
+        deathCause: null,
         cmds: [],                                       // recorded {tick,dir} — replay fuel
         events: [],
     }
     for (const f of g.flies) if (inBounds(f.x, f.y)) g.flyAt[idx(f.x, f.y)] = f.id
+    for (let i = 0; i < g.grid.length; i++) {
+        const t = g.grid[i]
+        if (t === AMO_HEAD || t === AMO_BODY) g.amoGen[i] = 0   // seeded slime starts at generation 0
+    }
     return g
 }
 
 function killPlayer(g, cause) {
     if (!g.player.alive) return
     g.player.alive = false
+    g.deathCause = cause
     g.end = 'dead'
     g.win = false
     g.events.push({ type: 'die', cause })
@@ -151,7 +180,28 @@ export function playerMove(g, dir) {
 
     const t = cell(g, nx, ny)
     if (t === STEEL || t === BOULDER) return false                 // solid: blocked
+    if (t === AMO_HEAD || t === AMO_BODY) { killPlayer(g, 'amoeba'); return false }  // slime is death (#2411)
     if (t === FIRE) { killPlayer(g, 'fire'); return false }
+    if (t === PUSHWALL) {
+        // A push wall slides sideways one cell per shove — BD's law is that
+        // nothing is ever lifted, so vertical shoves just fail. The cell the
+        // wall lands in must give: empty space or fire (doused) slides; a rock
+        // is crushed — a crushed gem is LOST, not collected (haste costs).
+        if (!CFG.push || d[0] === 0) return false
+        const bx = nx + d[0], by = ny + d[1]
+        const b = cell(g, bx, by)
+        if (b === EMPTY || b === FIRE) {
+            g.grid[idx(nx, ny)] = EMPTY
+            g.grid[idx(bx, by)] = PUSHWALL
+            if (b === FIRE) g.burn[idx(bx, by)] = 0
+            g.events.push({ type: 'push', x: bx, y: by })
+        } else if ((b === BOULDER || b === DIAMOND) && CFG.pushCrush) {
+            g.grid[idx(nx, ny)] = EMPTY
+            g.grid[idx(bx, by)] = PUSHWALL
+            g.events.push({ type: 'crush', x: bx, y: by, kind: b })
+            g.events.push({ type: 'push', x: bx, y: by })
+        } else return false
+    }
 
     if (t === DIRT) { g.grid[idx(nx, ny)] = EMPTY; g.events.push({ type: 'dig' }) }
     else if (t === DIAMOND) {
@@ -187,22 +237,23 @@ function gravity(g) {
         for (let x = 0; x < W; x++) {
             const i = idx(x, y)
             const t = g.grid[i]
-            if (t !== BOULDER && t !== DIAMOND) continue
-            const moving = t === BOULDER ? g.movingB.has(i) : g.movingD.has(i)
+            if (t !== BOULDER && t !== DIAMOND && t !== PUSHWALL) continue
+            const moving = t === BOULDER ? g.movingB.has(i) : t === DIAMOND ? g.movingD.has(i) : false
             const below = cell(g, x, y + 1)
             if (below === EMPTY || below === FIRE) {
                 g.grid[i] = EMPTY
                 g.grid[idx(x, y + 1)] = t
                 if (below === FIRE) g.burn[idx(x, y + 1)] = 0
-                if (t === BOULDER) mvB.add(idx(x, y + 1)); else mvD.add(idx(x, y + 1))
+                if (t === BOULDER) mvB.add(idx(x, y + 1)); else if (t === DIAMOND) mvD.add(idx(x, y + 1))
                 g.events.push({ type: 'fell', x, y: y + 1, kind: t })
-                if (t === BOULDER && CFG.fallKill && g.player.alive && g.player.x === x && g.player.y === y + 1) {
-                    killPlayer(g, 'boulder')
+                if ((t === BOULDER || t === PUSHWALL) && CFG.fallKill && g.player.alive && g.player.x === x && g.player.y === y + 1) {
+                    killPlayer(g, t === PUSHWALL ? 'pushwall' : 'boulder')
                 }
                 continue
             }
-            // blocked straight down by another rock: try to level out sideways
-            if (CFG.roll && (below === BOULDER || below === DIAMOND)) {
+            // blocked straight down by another rock: try to level out sideways.
+            // Push walls never roll — a wall that leans is not a wall (#2411).
+            if (CFG.roll && t !== PUSHWALL && (below === BOULDER || below === DIAMOND)) {
                 let rolled = false
                 for (const dx of [-1, 1]) {
                     if (cell(g, x + dx, y) === EMPTY && cell(g, x + dx, y + 1) === EMPTY) {
@@ -259,6 +310,53 @@ function fire(g) {
     }
 }
 
+// ------------------------------------------------------------- CA: amoeba ----
+// The wave from Boulder Dash II (#2411). Every CFG.amoEvery ticks one growth
+// pass runs: the newest cells (generation amoPass-1 — the SEEDED cells at the
+// first pass) push one cell along the cave's amoebaDir; where the way ahead is
+// shut they branch perpendicular, so the blob flows around corners the way the
+// original creature does. Growth only claims EMPTY and DIAMOND — a diamond the
+// slime touches dissolves (`dissolve`), and uncarved DIRT, steel, boulders and
+// fire are walls to it, which is what keeps every cave's harvest provably out
+// of reach. Bodies age: a cell older than CFG.amoGens generations empties, so
+// the wave ADVANCES down the corridor instead of filling the cave — the classic
+// look of heads chasing a tail that is dissolving behind them. Heads paint as
+// AMO_HEAD and demote to AMO_BODY once the next pass leaves them behind.
+// Growing onto the player engulfs them.
+function amoeba(g) {
+    if (!CFG.amoeba) return
+    const grow = g.tick % CFG.amoEvery === 0
+    const isAmo = (t) => t === AMO_HEAD || t === AMO_BODY
+    // age: decay the old tail, and on a growth tick demote last pass's heads
+    for (let i = 0; i < g.grid.length; i++) {
+        const t = g.grid[i]
+        if (!isAmo(t)) continue
+        if (g.amoPass - g.amoGen[i] > CFG.amoGens) { g.grid[i] = EMPTY; continue }
+        if (grow && t === AMO_HEAD && g.amoGen[i] < g.amoPass) g.grid[i] = AMO_BODY
+    }
+    if (!grow) return
+    g.amoPass++
+    const d = g.amoDir
+    const perp = [[0, -1], [0, 1]]
+    for (let i = 0; i < g.grid.length; i++) {
+        if (!isAmo(g.grid[i]) || g.amoGen[i] !== g.amoPass - 1) continue   // heads only
+        const x = i % W, y = (i - x) / W
+        let targets = [[x + d[0], y + d[1]]]
+        const t0 = cell(g, x + d[0], y + d[1])
+        if (t0 !== EMPTY && t0 !== DIAMOND) targets = perp.map(([px, py]) => [x + px, y + py])
+        for (const [tx, ty] of targets) {
+            const tt = cell(g, tx, ty)
+            if (tt !== EMPTY && tt !== DIAMOND) continue
+            const j = idx(tx, ty)
+            g.grid[j] = AMO_HEAD
+            g.amoGen[j] = g.amoPass
+            g.events.push({ type: 'amoeba', x: tx, y: ty })
+            if (tt === DIAMOND) g.events.push({ type: 'dissolve', x: tx, y: ty })
+            if (g.player.alive && g.player.x === tx && g.player.y === ty) killPlayer(g, 'amoeba')
+        }
+    }
+}
+
 // ------------------------------------------------------------- CA: firefly ----
 // Momentum (#2364): the fly HOLDS its heading while the way is open, and when
 // an obstacle — steel, boulder, diamond, the world edge — blocks it, it turns
@@ -274,10 +372,12 @@ function fireflies(g) {
         g.flyAt[idx(f.x, f.y)] = -1
     }
     // obstacles stop the fly dead; open space (air, fire) and dust let it pass.
+    // #2411: push walls and live slime are obstacles too — the fly turns off
+    // them like steel (SLIME VAULT ships no fly; existing caves have neither).
     const blocked = (x, y) => {
         if (!inBounds(x, y)) return true
         const t = g.grid[idx(x, y)]
-        return t === STEEL || t === BOULDER || t === DIAMOND
+        return t === STEEL || t === BOULDER || t === DIAMOND || t === PUSHWALL || t === AMO_HEAD || t === AMO_BODY
     }
     for (const f of g.flies) {
         let nx, ny
@@ -316,6 +416,7 @@ export function step(g) {
 
     gravity(g)
     fire(g)
+    amoeba(g)
     fireflies(g)
 
     // a boulder could roll the very tick a gem converted, and a fire could burn
@@ -357,6 +458,23 @@ function bfsField(g, startCells) {
             if (!inBounds(nx, ny)) continue
             const j = idx(nx, ny); const t = g.grid[j]
             if (t === STEEL || t === BOULDER || t === FIRE || g.flyAt[j] >= 0) continue
+            if (t === AMO_HEAD || t === AMO_BODY) continue                 // slime is void to a route
+            if (t === PUSHWALL) {
+                // #2411: a push wall is a DOOR the route can open — one shove
+                // moves it and the player into its cell (j), and a second
+                // clears the far cell (k). Only sideways (BD lifts nothing),
+                // and only if the cell beyond gives: empty, fire, or — when
+                // crushing is live — a rock the wall slams through.
+                if (!CFG.push || dx === 0) continue
+                const kx = nx + dx, ky = ny + dy
+                const b = cell(g, kx, ky)
+                const gives = b === EMPTY || b === FIRE || ((b === BOULDER || b === DIAMOND) && CFG.pushCrush)
+                if (!gives) continue
+                if (dist[j] === -1) { dist[j] = d + 1; q.push(j) }
+                const kk = idx(kx, ky)
+                if (inBounds(kx, ky) && dist[kk] === -1) { dist[kk] = d + 2; q.push(kk) }
+                continue
+            }
             if (dist[j] === -1) { dist[j] = d + 1; q.push(j) }
         }
     }
