@@ -90,8 +90,11 @@ on the 27 SDKs.
   is A, Play/Pause is B. (No potion button on the Remote.)
 - Title: A starts, B/Y continues the autosave. Pause: A resumes, B quits to title.
 - iPhone/iPad: an on-screen pad (D-pad, A, B, X) while no controller is
-  connected; tap starts. A hardware keyboard works as on the web: arrows/WASD,
-  Space/Z, X, C, Esc/P.
+  connected; tap starts, the pause button sits top-right. The scene takes the
+  screen's shape: on a phone the game block is centred between margins kept
+  clear for the pad; on an iPad it fills the width at the top with the pad
+  below. A hardware keyboard works as on the web: arrows/WASD, Space/Z, X, C,
+  Esc/P. Verified on an iPhone 17 Pro Max (`-selfcheck YES`: all MATCH).
 
 ## Deviations from the web shell (sim untouched)
 
