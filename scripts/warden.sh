@@ -26,6 +26,8 @@
 #                every gap owned, STOP legal, no kick.
 #   5. QA      — not running and feedback is waiting? kick scripts/forge-qa.sh
 #                (mini, studio, and — only while the builder is idle — builder)
+#   5c. WORKTREE SWEEP (#2279) — purge provably-landed, clean lane worktrees
+#                (capped, never dirty/unpushed/held); halted and dry ticks skip.
 #   6. FOLLOW-UP PULSE — only if step 3, 3b, 4 or 5 did something
 #
 # Rules for editing this file (read before changing anything):
@@ -644,6 +646,26 @@ main() {
         TRI=$(node "$REPO/scripts/studiotrial.mjs" tick 2>>"$LOG" | tail -1)
         log "studiotrial: $TRI"
         [[ "$TRI" == reported* ]] && ACTIONS+=("trial:$(print -r -- "$TRI" | awk '{print $2}')")
+    fi
+
+    # ---- 5c. WORKTREE SWEEP (#2279) --------------------------------------
+    # Landed lane worktrees must vanish without anyone stepping in (295 piled
+    # up in ~/Dev before the 2026-11-14 hand sweep). worktreepurge.mjs removes
+    # only provably-landed, clean trees (never dirty, never unpushed, never a
+    # tree a live lane sits in, never one with .mutant-running) through
+    # `git worktree remove` without --force, capped per run. Extracted like
+    # the lanebusy lib so the tick uses origin/main's copy.
+    if [[ "$HALTED" != yes && "$DRY" != 1 ]]; then
+        WPJ="$LOG_DIR/worktreepurge.mjs"
+        git -C "$REPO" show origin/main:scripts/worktreepurge.mjs > "$WPJ" 2>/dev/null \
+            || cp "$REPO/scripts/worktreepurge.mjs" "$WPJ" 2>/dev/null || true
+        if [[ -s "$WPJ" ]]; then
+            WPOUT=$(node "$WPJ" --repo "$REPO" --run --max 6 2>>"$LOG")
+            WPDONE=$(print -r -- "$WPOUT" | grep '^DONE' | tail -1)
+            log "worktreepurge: ${WPDONE:-no summary}"
+            WPN=$(print -r -- "$WPDONE" | sed -n 's/.*purged=\([0-9]*\).*/\1/p')
+            [[ -n "$WPN" && "$WPN" != 0 ]] && ACTIONS+=("wt-purge:$WPN")
+        fi
     fi
 
     # ---- 6. FOLLOW-UP PULSE -----------------------------------------------

@@ -144,6 +144,10 @@ const SAFE = {
     // mkdtempSync(tmpdir()/shimcheck-*) — throwaway git repos, the lock dir
     // under root, and the dead-shim copy. Nothing tracked is ever rewritten.
     'shimcheck.mjs': 'mkdtemp fixture dirs + dead-shim copy under tmpdir; never rewrites tracked files',
+    // Read 2026-11-14 (#2279): sandbox git repos and the mutant copy live under
+    // mkdtempSync(tmpdir()/wtcheck-*); the tool it audits removes ONLY through
+    // `git worktree remove` inside those throwaway repos.
+    'worktreepurgecheck.mjs': 'mkdtemp fixture repos + mutant copy under tmpdir; never rewrites tracked files',
 }
 
 function audit() {
