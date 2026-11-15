@@ -179,5 +179,56 @@ page.on('pageerror', () => { pageErrors++ })
     if (res.blocked > 0) console.log(`  (head-bumps tocked: ${res.blocked})`)
 }
 
+// ------------------------------------------- heat — dry spells bake (#2377) ----
+{
+    // Fresh duel, bot-driven until cover exists. Phases are SEPARATE
+    // evaluates with real sleeps between — getImageData reads the PAINTED
+    // canvas, and the paint only runs on RAF, so a synchronous probe-and-
+    // sample pair would grade the previous frame.
+    const setup = await page.evaluate(() => {
+        const t = window.__archeryTest
+        t.start('1p', 0)
+        const p0 = t.probe()
+        for (let k = 0; k < 40 && t.probe().stuck === 0 && t.probe().screen === 'play'; k++) t.drive(15)
+        const c = t.probe().stuckCells[0] || null
+        return { startDry: p0.dryTicks, startHeat: p0.heat, cell: c ? { x: c.x, y: c.y } : null }
+    })
+    await sleep(250)   // a cool frame of the stuck cell must reach the canvas
+    const coolPx = await page.evaluate(({ cell }) => {
+        if (!cell) return -1
+        const g = document.querySelector('canvas[data-archery-stage]').getContext('2d')
+        const d = g.getImageData(Math.max(0, cell.x - 10), Math.max(0, cell.y - 10), 20, 20).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 110 && d[i + 1] < 90 && d[i + 2] < 90) n++
+        return n
+    }, { cell: setup.cell })
+    await page.evaluate(() => { const t = window.__archeryTest; t.forceHeat(); t.drive(3); return t.probe().heat })
+    await sleep(250)   // let RAF paint the fire
+    const hotState = await page.evaluate(() => {
+        const p = window.__archeryTest.probe()
+        return { heat: p.heat, cell: p.stuckCells[0] || null }
+    })
+    const hotPx = await page.evaluate(({ cell }) => {
+        if (!cell) return -1
+        const g = document.querySelector('canvas[data-archery-stage]').getContext('2d')
+        const d = g.getImageData(Math.max(0, cell.x - 10), Math.max(0, cell.y - 10), 20, 20).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 110 && d[i + 1] < 90 && d[i + 2] < 90) n++
+        return n
+    }, { cell: hotState.cell || setup.cell })
+    // first blood cools: drive() seats the autopilot at SEAT 1, so first
+    // blood is usually P1's — watch BOTH scores, not just the bot's.
+    const scoreBefore = await page.evaluate(() => window.__archeryTest.probe().scores.reduce((a, b) => a + b, 0))
+    await page.evaluate(() => {
+        const t = window.__archeryTest
+        for (let k = 0; k < 20 && t.probe().heat && t.probe().screen === 'play'; k++) t.drive(20)
+    })
+    const coolP = await page.evaluate(() => window.__archeryTest.probe())
+    r.check('the duel starts cool, dry spell counted from zero', setup.startHeat === false && setup.startDry >= 0 && setup.startDry < 450, JSON.stringify({ heat: setup.startHeat, dry: setup.startDry }))
+    r.check('the forced dry spell heats the arena through a real tick', hotState.heat === true, `dry-forced, heat=${hotState.heat}`)
+    r.check('hot cover is PAINTED red where cool cover was amber', coolPx >= 0 && hotPx > coolPx + 15, `hot px ${coolPx} -> ${hotPx} in the stuck cell`)
+    r.check('first blood cools the arena in the browser too', coolP.heat === false && coolP.scores.reduce((a, b) => a + b, 0) > scoreBefore, `scores ${scoreBefore}->${coolP.scores.join()} heat=${coolP.heat}`)
+}
+
 r.check('zero page errors across the whole session', pageErrors === 0, `errors=${pageErrors}`)
 r.exit(browser)
