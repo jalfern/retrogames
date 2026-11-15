@@ -239,6 +239,9 @@ pane() {
 # `G <int> <int>` / `P <int> <int> <int>` or they are dropped before any
 # parsing, and `tput lines` is clamped, so neither garbage from oMLX nor a
 # pane squeezed to a few rows can stop the redraw.
+# KL is the ASCII label for IN-PANE text: on this ASCII-mode server '·' would
+# print as two mojibake bytes and eat two cells. Border titles keep the nicer
+# L ('·' sanitises to '_' there, never reaching the pty as bytes).
 lane_pane() {
     cat <<'PANE'
 G=$'\e[32m' R=$'\e[1;31m' Y=$'\e[33m' C=$'\e[36m' D=$'\e[2m' B=$'\e[1m' N=$'\e[0m'
@@ -267,7 +270,7 @@ while true; do
     spark=""; max=1
     for v in $hist; do (( v > max )) && max=$v; done
     for v in $hist; do (( i = v * 7 / max + 1 )); spark+=${bars[$i]}; done
-    hdrplain="$L"
+    hdrplain="$KL"
     if [[ "$code" == 000 ]]; then
         hist=(); sc=$R; sp="DOWN"
     else
@@ -278,23 +281,23 @@ while true; do
             sc=$Y
             set -- ${=g}; hist+=($2); (( ${#hist} > 24 )) && hist=(${hist[2,-1]})
             cands=("gen $2 t/s ctx $(( $3 / 1000 ))k$more" "gen $2 t/s$more" "gen $2 t/s" "gen")
-            for c in $cands; do (( ${#L} + ${#c} + 2 <= cols )) && { sp=$c; break; }
+            for c in $cands; do (( ${#KL} + ${#c} + 2 <= cols )) && { sp=$c; break; }
             done
         elif [[ -n $p ]]; then
             sc=$C
             set -- ${=p}; pct=0; (( $3 > 0 )) && (( pct = 100 * $2 / $3 ))
             cands=("prefill ${pct}% @ $4 t/s$more" "prefill ${pct}%$more" "prefill" )
-            for c in $cands; do (( ${#L} + ${#c} + 2 <= cols )) && { sp=$c; break; }
+            for c in $cands; do (( ${#KL} + ${#c} + 2 <= cols )) && { sp=$c; break; }
             done
             sp=${sp:-up}
         else sc=$D; sp="idle"; fi
     fi
-    hdrplain="$L $sp"
+    hdrplain="$KL $sp"
     spare=$(( cols - ${#hdrplain} - 2 )); (( spare < 0 )) && spare=0
     (( ${#spark} > spare )) && spark=${spark:1:$spare}
     pid=$(pgrep -f "$P1$P2" | head -1)
     clear
-    print -r -- "${B}$L${N}  ${sc}${sp}${N}  ${C}${spark}${N}"
+    print -r -- "${B}$KL${N}  ${sc}${sp}${N}  ${C}${spark}${N}"
     if [[ "$ln" -lt 2 ]]; then sleep 5; continue; fi
     if [[ -z "$pid" ]]; then
         print -r -- "${D}no session${N}"
@@ -375,7 +378,7 @@ f=/tmp/forge/stream-$LANE.log
 code=$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://127.0.0.1:$TAPPORT/v1/models")
 if [[ "$code" == 000 ]]; then t="${R}tap DOWN${N}${D} (sessions go direct)"
 else t="tap :$TAPPORT"; fi
-print -r -- "${B}$L live${N}  ${D}$t${N}"
+print -r -- "${B}$KL live${N}  ${D}$t${N}"
 touch "$f"
 if [[ -f "$FIT" ]] && command -v node >/dev/null 2>&1; then
     # tail feeds the filter through a process substitution: node is *the*
@@ -405,7 +408,7 @@ LIVE_BODY=$WDIR/body-live.zsh;     live_pane   > "$LIVE_BODY"
 : > "$WDIR/panes.tsv"
 
 # First pane: new-session can't use `pane`, so bake it and record it by hand.
-bake builder-a 'BUILDER·A' "$LANE_BODY" L='BUILDER·A' PORT=8000 PROV=omlx FIT=$FITPATH \
+bake builder-a 'BUILDER·A' "$LANE_BODY" L='BUILDER·A' KL='BUILDER-A' PORT=8000 PROV=omlx FIT=$FITPATH \
     P1='opencode run.*(THE FORGE( on slot a)?|QA MASTER on node builder)' P2='\.'
 FIRST=$(tmux new-session -d -s "$SESSION" -x 120 -y 40 -P -F '#{pane_id}' "zsh '$WDIR/builder-a.zsh'")
 PANEID[builder-a]=$FIRST
@@ -416,13 +419,13 @@ tmux set-option -t "$SESSION" remain-on-exit on
 apply_border_law
 set_title "$FIRST" 'BUILDER·A'
 
-ENVK=(L='BUILDER·B' PORT=8000 PROV=omlx FIT=$FITPATH P1='opencode run.*THE FORGE on slot b' P2='\.')
+ENVK=(L='BUILDER·B' KL='BUILDER-B' PORT=8000 PROV=omlx FIT=$FITPATH P1='opencode run.*THE FORGE on slot b' P2='\.')
 pane builder-b 'BUILDER·B' "$LANE_BODY" -v -l 80% -t "${PANEID[builder-a]}"
-ENVK=(L='QA·MINI' PORT=18000 PROV=omlxmini FIT=$FITPATH P1='opencode run.*QA MASTER on node ' P2='mini\.')
+ENVK=(L='QA·MINI' KL='QA-MINI' PORT=18000 PROV=omlxmini FIT=$FITPATH P1='opencode run.*QA MASTER on node ' P2='mini\.')
 pane qa-mini 'QA·MINI' "$LANE_BODY" -v -l 75% -t "${PANEID[builder-b]}"
-ENVK=(L='QA·MINI·2' PORT=18000 PROV=omlxmini FIT=$FITPATH P1='opencode run.*QA MASTER on node ' P2='mini2\.')
+ENVK=(L='QA·MINI·2' KL='QA-MINI-2' PORT=18000 PROV=omlxmini FIT=$FITPATH P1='opencode run.*QA MASTER on node ' P2='mini2\.')
 pane qa-mini2 'QA·MINI·2' "$LANE_BODY" -v -l 66% -t "${PANEID[qa-mini]}"
-ENVK=(L='QA·STUDIO' PORT=8000 PROV=omlx FIT=$FITPATH P1='opencode run.*QA MASTER on node ' P2='studio\.')
+ENVK=(L='QA·STUDIO' KL='QA-STUDIO' PORT=8000 PROV=omlx FIT=$FITPATH P1='opencode run.*QA MASTER on node ' P2='studio\.')
 pane qa-studio 'QA·STUDIO' "$LANE_BODY" -v -l 50% -t "${PANEID[qa-mini2]}"
 ENVK=(PWLOG=$WDIR/pane.log FIT=$FITPATH)
 pane warden 'WARDEN' "$WARDEN_BODY" -v -l 6 -t "${PANEID[qa-studio]}"
@@ -450,15 +453,15 @@ set_title "$QWEN_PANE" 'QWEN'
 # at creation — an index would name the wrong row once any earlier pane has
 # been split (the #1356 bug: live-studio at 0.4 fell onto QA·MBP's row).
 if (( LIVE )); then
-    ENVK=(L='BUILDER' LANE=builder TAPPORT=8010 FIT=$FITPATH)
+    ENVK=(L='BUILDER' KL='BUILDER' LANE=builder TAPPORT=8010 FIT=$FITPATH)
     pane live-builder 'BUILDER·A · output' "$LIVE_BODY" -h -l 50% -t "${PANEID[builder-a]}"
-    ENVK=(L='BUILDER·B' LANE=builderb TAPPORT=8012 FIT=$FITPATH)
+    ENVK=(L='BUILDER·B' KL='BUILDER-B' LANE=builderb TAPPORT=8012 FIT=$FITPATH)
     pane live-builderb 'BUILDER·B · output' "$LIVE_BODY" -h -l 50% -t "${PANEID[builder-b]}"
-    ENVK=(L='QA·MINI' LANE=mini TAPPORT=8013 FIT=$FITPATH)
+    ENVK=(L='QA·MINI' KL='QA-MINI' LANE=mini TAPPORT=8013 FIT=$FITPATH)
     pane live-mini 'QA·MINI · output' "$LIVE_BODY" -h -l 50% -t "${PANEID[qa-mini]}"
-    ENVK=(L='QA·MINI·2' LANE=mini2 TAPPORT=8014 FIT=$FITPATH)
+    ENVK=(L='QA·MINI·2' KL='QA-MINI-2' LANE=mini2 TAPPORT=8014 FIT=$FITPATH)
     pane live-mini2 'QA·MINI·2 · output' "$LIVE_BODY" -h -l 50% -t "${PANEID[qa-mini2]}"
-    ENVK=(L='QA·STUDIO' LANE=studio TAPPORT=8011 FIT=$FITPATH)
+    ENVK=(L='QA·STUDIO' KL='QA-STUDIO' LANE=studio TAPPORT=8011 FIT=$FITPATH)
     pane live-studio 'QA·STUDIO · output' "$LIVE_BODY" -h -l 50% -t "${PANEID[qa-studio]}"
     set_title "${PANEID[live-builder]}" 'BUILDER·A · output'
     set_title "${PANEID[live-builderb]}" 'BUILDER·B · output'
