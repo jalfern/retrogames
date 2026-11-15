@@ -103,3 +103,33 @@ is `planner.js`'s own proven run (it clears waves 1-2; the pilot ceiling-pin
 bug and its fix are documented in the game README). Verify with
 `npm run joustcheck` (`static` gate) and `npm run joustdive` (Chrome, real
 keys; advisory tier).
+
+## Golden traces (#2402 — the Apple TV port spec)
+
+`public/traces/joust-{1p,2p,death}.{json,trace.json}` are the committed
+golden runs: a `retrogames-rec/v1` pad recording plus the full sim state at
+EVERY tick (`retrogames-trace/v1`, spec in `scripts/lib/trace.mjs` and
+docs/GAME-SHELL.md). The native tvOS port replays the seed + pad stream and
+diffs its own state field-by-field — `node scripts/goldentrace.mjs diff
+public/traces/joust-1p.trace.json port.trace.json` names the first differing
+tick and field.
+
+- `joust-1p` — planner autopilot, 1300 ticks: wave-1 clear, the wave-2
+  banner and spawn (the level-change shape), kills + the egg chain.
+- `joust-2p` — both seats on the planner, 1100 ticks: the two-seat pad
+  contract (`l/r/f` + `l2/r2/f2`), including seat 1 burning all lives and
+  the wave-2 banner. Note: the tab ships seat 1 only; the 2p trace pins the
+  sim's two-seat contract, which is what the port's local-2P mode must match.
+- `joust-death` — real keyboard inputs: scripted lean-right-no-flap slide
+  off the ledge into lava (~t245), death, respawn, planner resume.
+
+Regenerate: `npm run goldentrace record joust` (deterministic — the files
+must come back byte-identical; capture stamps on a feature branch are
+`unknown` per the #527 stamp law). Gate: `npm run goldentracecheck` replays
+every committed pair and fails naming tick+field when behaviour drifts;
+`--mutate` plants a sim bug and proves the gate catches it.
+
+`excludes: ["events"]` — `gs.events` is the shell-drained output channel
+(`index.jsx`'s `handleEvents` empties it; the sim itself never consumes it),
+so it is a side-effect queue, not state a port must reproduce. Every other
+sim field — physics, wave ledger, crumble timers, hands — rides every row.

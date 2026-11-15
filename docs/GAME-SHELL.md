@@ -163,6 +163,42 @@ one live pad mid-file and must be caught). The determinism law is the same one
 #494 states: seed + per-player pad streams ⇒ identical hashes, whatever
 produced the pads.
 
+## Trace format — `retrogames-trace/v1` (issue #2402)
+
+The port-parity spec: the whole sim state at EVERY tick of a
+`retrogames-rec/v1` run, quantized to integers so a Swift/diff tool can
+compare field by field with zero float-repr ambiguity. Module:
+`scripts/lib/trace.mjs` (pure Node). Files live in `public/traces/`, one
+`<scenario>.json` (rec) + `<scenario>.trace.json` (golden) per run.
+
+```json
+{
+  "format": "retrogames-trace/v1", "game": "joust", "rec": "joust-1p.json",
+  "build": "sha|unknown", "seed": 1, "players": 1, "ticks": 1300, "quant": 1000,
+  "excludes": ["events"],
+  "consts": { "players2": 1 },
+  "fields": ["deaths", "eggs.0.x", "hash", "tick", "..."],
+  "rows": [ [i0, v0, i1, v1, "..."], ... ]
+}
+```
+
+- **Decoding (any language).** Running state = `consts`, plus every `fields`
+  path at null. For tick t, walk `rows[t-1]` two cells at a time and set
+  `fields[i] = v`; a field not named in a row carries its value over. So the
+  decoded state exists for EVERY field at EVERY tick, unambiguously (an
+  array that shrank gets an explicit null on the freed slot).
+- **Numbers** are `Math.round(v * quant)` integers. **`hash`** — the game's
+  own `stateHash`/`hashState` — rides every row raw: a port compares one
+  integer per tick and only field-diffs where the hash first differs.
+- **Exclusions** are honest and documented per game: functions (`rng`),
+  `_`-prefixed per-run scratch, and per-game cosmetic/shell-drained keys
+  (Joust `events`, Emberwood `fx`).
+- The trace is ALWAYS the pad-only replay (no bot runs during capture): the
+  port sees exactly seed + pads, the #494 determinism law.
+- Gate: `npm run goldentracecheck` re-derives every committed pair and fails
+  naming the first differing tick+field; `--mutate` proves it can fail.
+  Diff CLI for port authors: `node scripts/goldentrace.mjs diff golden port`.
+
 ## Episode block — optional addendum for training (`plaicraft`, issue #1141)
 
 A recording may carry ONE extra top-level key, `episode`; the base format is

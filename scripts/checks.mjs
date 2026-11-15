@@ -61,7 +61,11 @@ export const SCOPES = {
   excite: { dirs: ['src/games/Excitebike'], lint: ['lint:excite'], checks: [['excitecheck', true]], smoke: ['exciteplay'] },
   kart: { dirs: ['src/games/MarioKart'], lint: ['lint:kart'], checks: ['kartcheck'], smoke: [] },
   tetris: { dirs: ['src/games/Tetris'], lint: ['lint:tetris'], checks: ['tetrischeck', ['tetrischeck', true]], smoke: [] },
-  joust: { dirs: ['src/games/Joust'], lint: ['lint:joust'], checks: ['joustcheck', ['joustcheck', true]], smoke: [] },
+  joust: { dirs: ['src/games/Joust'], lint: ['lint:joust'], checks: ['joustcheck', ['joustcheck', true], 'goldentracecheck'], smoke: [] },
+  // #2402: golden traces spec the tvOS ports of Joust + Emberwood — any change
+  // to the sims, the fold, the traces or the tool stale-checks here (Node-only,
+  // browser-free; a port diff names the first differing tick+field).
+  golden: { dirs: ['public/traces/', 'src/games/Emberwood'], lint: ['lint:rec'], checks: ['goldentracecheck', ['goldentracecheck', true]], smoke: [] },
   qbert: { dirs: ['src/games/QBert'], lint: ['lint:qbert'], checks: ['qbertcheck', ['qbertcheck', true]], smoke: [] },
   ark: { dirs: ['src/games/Arkanoid'], lint: ['lint:ark'], checks: ['arkcheck'], smoke: [] },
   dug: { dirs: ['src/games/DigDug'], lint: ['lint:dug'], checks: [['dugcheck', true]], smoke: [] },

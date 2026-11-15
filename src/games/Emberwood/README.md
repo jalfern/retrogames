@@ -320,3 +320,33 @@ without bombs neither the step nor the mesa is reachable (both proven).
 Gates: `emberwoodcheck` 6f (face gating both ways, arrows through the face,
 stoop line-lock, roost-vs-dive vulnerability, boss4 flag/chest/respawn/
 save) + map/solver gates; 259 green node-first.
+
+## Golden traces (#2402 — the Apple TV port spec)
+
+`public/traces/emberwood-{roam,death}.{json,trace.json}` are the committed
+golden runs: a `retrogames-rec/v1` pad recording plus the full sim state at
+EVERY tick (`retrogames-trace/v1`, spec in `scripts/lib/trace.mjs` and
+docs/GAME-SHELL.md). The native tvOS port replays the seed + pad stream and
+diffs its own state field-by-field:
+
+    node scripts/goldentrace.mjs diff public/traces/emberwood-roam.trace.json port.trace.json
+
+- `emberwood-roam` — seed 7, 900 ticks: steerer walks the overworld chain
+  ow-11 → ow-01 → ow-00 → **d1-e0** (a warp-tile dungeon entry) — the
+  level-change shape with screen edges, warps and NPCs.
+- `emberwood-death` — seed 7, 1000 ticks: walked into the vale's teeth until
+  HP hit zero (t138), then the A-press revive (t235) — the death/revive
+  contract.
+
+Regenerate: `npm run goldentrace record emberwood` (deterministic — byte-
+identical output; branch captures stamp `unknown` per the #527 stamp law).
+Gate: `npm run goldentracecheck` replays every committed pair and fails
+naming tick+field when behaviour drifts; `--mutate` plants a sim bug and
+proves the gate catches it. The pad→input fold is shared, not re-implemented:
+it moved verbatim into `input.js`, imported by both the tab and the harness.
+
+`excludes: ["fx"]` — the `fx` array is the cosmetic particle journal (capped,
+shell-side reads only; `hashState` never hashes it), so it is not state a port
+must reproduce. Positions, HP, items, flags, enemies, projectiles, blocks,
+doors, shop and screen are all pinned per tick — the `screen` field is what
+makes level changes diffable.
