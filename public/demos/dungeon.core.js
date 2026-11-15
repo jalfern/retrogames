@@ -27,8 +27,13 @@
  *   R.viewCells(x, y, r) // cells visible by line of sight
  *   R.frameCount, R.drawing
  *
- * Sprite materials 8..10 are the built-in monster atlas (8 rat, 9 skeleton,
- * 10 goblyn; two-frame shamble selected by `anim`). A sprite's optional
+ * Sprite materials 8..16 are the built-in monster atlas — 8 rat, 9 skeleton,
+ * 10 goblyn (full tiles, two-frame shamble selected by `anim`), and the
+ * bestiary shapes #2321 added: 11 snake + 12 wyrm (a serpent shelf: the two
+ * half-heights of one tile), 13 wraith (tile 11 lower half), 14 hollow king,
+ * 15 troll, 16 minotaur. Each entry lives in SPR_UV as [u0, v0, tileH]; a
+ * species' proportion is its art, the billboard's world size is the caller's.
+ * A sprite's optional
  * `tint` [r,g,b] multiplies the lit colour (default white — callers that
  * omit it draw exactly as before). The pure helpers
  * DungeonRenderer.cellBlocks / DungeonRenderer.viewCells work headless in Node.
@@ -44,7 +49,7 @@ globalThis.DungeonRenderer = (function () {
   const RANGE = 8;
   const FOV_V = 72 * Math.PI / 180;
   const TILE = 128, ATLAS = 512, TC = ATLAS / TILE;
-  const MAT = { BRICK: 0, FLAG: 1, TIMBER: 2, WATER: 3, GRAVEL: 4, STAIR_UP: 5, STAIR_DN: 6, DOOR: 7, RAT: 8, SKEL: 9, GOB: 10 };
+  const MAT = { BRICK: 0, FLAG: 1, TIMBER: 2, WATER: 3, GRAVEL: 4, STAIR_UP: 5, STAIR_DN: 6, DOOR: 7, RAT: 8, SKEL: 9, GOB: 10, SNAKE: 11, WYRM: 12, WRAITH: 13, KING: 14, TROLL: 15, MINOTAUR: 16 };
   const DOOR_W = 0.86, DOOR_H = 0.94;
 
   function mulberry32(seed) {
@@ -274,6 +279,223 @@ globalThis.DungeonRenderer = (function () {
         g.strokeStyle = '#356831'; g.lineWidth = 8;
         g.beginPath(); g.moveTo(56, 96); g.lineTo(48 + sw * 8, 120); g.stroke();
         g.beginPath(); g.moveTo(72, 96); g.lineTo(80 - sw * 2, 120); g.stroke();
+        g.restore();
+      }
+    }
+    // 11 SNAKE — tile 15 UPPER half (#2321 bestiary shapes; the serpent
+    // shelf). Low coiled adder, raised head; the frames trade a tongue
+    // flick for a head bob. Art stays inside x 4..60 — the rat and goblyn
+    // frames above/beside spill past their half-tiles and sample neighbours.
+    {
+      // tile 15, upper half — NOT T(MAT.SNAKE): the new material ids are
+      // logical (SPR_UV keys), their art tiles are placed in free atlas space.
+      const ox = 3 * TILE, oy = 3 * TILE;
+      for (const f of [0, 1]) {
+        g.save(); g.translate(ox + f * (TILE / 2), oy);
+        const bob = f ? 3 : 0;
+        g.strokeStyle = '#3f7a38'; g.lineWidth = 7; g.lineCap = 'round';
+        g.beginPath(); g.moveTo(8, 52); g.bezierCurveTo(20, 38, 14, 58, 30, 52); g.stroke();
+        g.beginPath(); g.moveTo(30, 52); g.bezierCurveTo(38, 48, 36, 32 + bob, 44, 24 + bob); g.stroke();
+        g.fillStyle = '#2f6b2a';
+        for (const [sx2, sy2] of [[14, 47], [23, 51], [32, 45 + bob * 0.5]]) { g.beginPath(); g.arc(sx2, sy2, 1.8, 0, 7); g.fill(); }
+        g.fillStyle = '#5fae4e';
+        g.beginPath(); g.ellipse(46, 20 + bob, 7, 5.5, -0.3, 0, 7); g.fill();
+        g.fillStyle = '#ffe082'; g.beginPath(); g.arc(48, 18 + bob, 1.8, 0, 7); g.fill();
+        g.fillStyle = '#1c1410'; g.beginPath(); g.arc(48.4, 18 + bob, 0.9, 0, 7); g.fill();
+        if (!f) {
+          g.strokeStyle = '#c8503c'; g.lineWidth = 1.5;
+          g.beginPath(); g.moveTo(52, 22); g.lineTo(59, 18); g.stroke();
+          g.beginPath(); g.moveTo(56, 20); g.lineTo(60, 16); g.stroke();
+          g.beginPath(); g.moveTo(56, 20); g.lineTo(59, 22); g.stroke();
+        } else {
+          g.fillStyle = '#a8b060'; g.beginPath(); g.ellipse(8, 52, 3, 2.4, 0.4, 0, 7); g.fill();
+        }
+        g.restore();
+      }
+    }
+    // 12 WYRM — tile 15 LOWER half: horned serpent head over coil rings.
+    {
+      const ox = 3 * TILE, oy = 3.5 * TILE;
+      for (const f of [0, 1]) {
+        g.save(); g.translate(ox + f * (TILE / 2), oy);
+        g.strokeStyle = '#2f5a6a'; g.lineWidth = 8; g.lineCap = 'round';
+        g.beginPath(); g.moveTo(6, 54); g.bezierCurveTo(16, 44, 10, 60, 26, 56); g.stroke();
+        g.beginPath(); g.moveTo(26, 56); g.bezierCurveTo(38, 53, 34, 60, 42, 52); g.stroke();
+        g.strokeStyle = '#3f7488'; g.lineWidth = 4;
+        g.beginPath(); g.moveTo(7, 53); g.bezierCurveTo(16, 45, 11, 59, 26, 55); g.stroke();
+        g.strokeStyle = '#46899a'; g.lineWidth = 7;
+        g.beginPath(); g.moveTo(40, 50); g.bezierCurveTo(44, 40, 40, 30, 46, 24); g.stroke();
+        g.fillStyle = '#46899a';
+        g.beginPath(); g.moveTo(40, 14); g.lineTo(60, 9 + (f ? 1 : 0)); g.lineTo(58, 21); g.lineTo(42, 26); g.closePath(); g.fill();
+        g.fillStyle = '#23343e';
+        g.beginPath(); g.moveTo(44, 24); g.lineTo(58, f ? 18 : 20); g.lineTo(56, 28); g.lineTo(46, 28); g.closePath(); g.fill();
+        g.fillStyle = '#e8e2d2';
+        g.beginPath(); g.moveTo(56, 20); g.lineTo(58, 25); g.lineTo(54, 22); g.closePath(); g.fill();
+        g.beginPath(); g.moveTo(50, 22); g.lineTo(52, 27); g.lineTo(48, 23); g.closePath(); g.fill();
+        g.strokeStyle = '#d8d2c0'; g.lineWidth = 3;
+        g.beginPath(); g.moveTo(42, 13); g.lineTo(34, 5); g.stroke();
+        g.beginPath(); g.moveTo(46, 11); g.lineTo(42, 3); g.stroke();
+        g.fillStyle = '#ffe082'; g.beginPath(); g.arc(48, 15, 2, 0, 7); g.fill();
+        g.fillStyle = '#1c1410'; g.fillRect(47.4, 13, 1.2, 4);
+        g.strokeStyle = '#7fb8c4'; g.lineWidth = 1.5;
+        for (const [sx2, sy2] of [[12, 52], [22, 54], [32, 51]]) { g.beginPath(); g.arc(sx2, sy2, 2.4, 0.2, Math.PI - 0.2); g.stroke(); }
+        g.restore();
+      }
+    }
+    // 13 WRAITH — tile 11 LOWER half: hooded spectre, void face, ragged
+    // trail; frame 2 floats up while the tatters drag.
+    {
+      const ox = 3 * TILE, oy = 2.5 * TILE;
+      for (const f of [0, 1]) {
+        g.save(); g.translate(ox + f * (TILE / 2), oy + (f ? -2 : 0));
+        g.strokeStyle = '#c2ccf0'; g.lineWidth = 3; g.lineCap = 'round';
+        g.beginPath(); g.moveTo(20, 30); g.bezierCurveTo(14, 34, 12, 40, 14, 46); g.stroke();
+        g.beginPath(); g.moveTo(44, 30); g.bezierCurveTo(50, 34, 52, 40, 50, 46); g.stroke();
+        g.fillStyle = '#aeb8e4';
+        g.beginPath();
+        g.moveTo(20, 26); g.lineTo(44, 26); g.lineTo(42 + f * 2, 42); g.lineTo(38, 36); g.lineTo(36, 50 - f * 2); g.lineTo(32, 41); g.lineTo(28, 52 - f * 2); g.lineTo(24, 39); g.lineTo(20, 45); g.closePath(); g.fill();
+        g.fillStyle = '#c2ccf0';
+        g.beginPath(); g.moveTo(32, 5); g.bezierCurveTo(22, 5, 15, 16, 18, 28); g.lineTo(46, 28); g.bezierCurveTo(49, 16, 42, 5, 32, 5); g.closePath(); g.fill();
+        g.strokeStyle = '#98a4d8'; g.lineWidth = 2;
+        g.beginPath(); g.moveTo(32, 5); g.bezierCurveTo(22, 5, 15, 16, 18, 28); g.stroke();
+        g.fillStyle = '#161226';
+        g.beginPath(); g.ellipse(32, 19, 8.5, 10, 0, 0, 7); g.fill();
+        g.fillStyle = '#b8ff4a';
+        g.beginPath(); g.arc(28.5, 18, 2, 0, 7); g.fill();
+        g.beginPath(); g.arc(35.5, 18, 2, 0, 7); g.fill();
+        g.restore();
+      }
+    }
+    // 14 KING — tile 12, full: THE HOLLOW KING, gold crown over a hollow
+    // skull, dark royal robe pooled on the floor, teal soul-gems.
+    {
+      const ox = 0, oy = 3 * TILE;
+      for (const f of [0, 1]) {
+        g.save(); g.translate(ox + f * (TILE / 2), oy);
+        const sway = f ? 2 : 0;
+        g.fillStyle = '#4b4f6b';
+        g.beginPath(); g.moveTo(12, 58); g.lineTo(52, 58); g.lineTo(48 + sway, 124); g.lineTo(16 - sway, 124); g.closePath(); g.fill();
+        g.fillStyle = '#23263a'; g.fillRect(28, 58, 8, 66);
+        g.strokeStyle = '#c9a227'; g.lineWidth = 2;
+        g.beginPath(); g.moveTo(12, 58); g.lineTo(16 - sway, 124); g.stroke();
+        g.beginPath(); g.moveTo(52, 58); g.lineTo(48 + sway, 124); g.stroke();
+        g.fillStyle = '#5a5f80';
+        g.beginPath(); g.ellipse(14, 58, 8, 5, 0, 0, 7); g.fill();
+        g.beginPath(); g.ellipse(50, 58, 8, 5, 0, 0, 7); g.fill();
+        g.strokeStyle = '#c9a227'; g.lineWidth = 1.5;
+        g.beginPath(); g.ellipse(14, 58, 8, 5, 0, 0, 7); g.stroke();
+        g.beginPath(); g.ellipse(50, 58, 8, 5, 0, 0, 7); g.stroke();
+        g.strokeStyle = '#b8bec9'; g.lineWidth = 3;
+        g.beginPath(); g.moveTo(54, 58); g.lineTo(58, 30); g.stroke();
+        g.fillStyle = '#e8b93a'; g.beginPath(); g.arc(58, 26, 3.4, 0, 7); g.fill();
+        g.fillStyle = '#e8e2d2';
+        g.beginPath(); g.ellipse(32, 36, 12, 11, 0, 0, 7); g.fill();
+        g.fillStyle = '#120e18';
+        g.beginPath(); g.arc(27, 34, 3.6, 0, 7); g.fill();
+        g.beginPath(); g.arc(37, 34, 3.6, 0, 7); g.fill();
+        g.fillStyle = '#7dffce';
+        g.beginPath(); g.arc(27, 34, 1.3, 0, 7); g.fill();
+        g.beginPath(); g.arc(37, 34, 1.3, 0, 7); g.fill();
+        g.beginPath(); g.moveTo(32, 39); g.lineTo(34, 43); g.lineTo(30, 43); g.closePath(); g.fill();
+        g.strokeStyle = '#120e18'; g.lineWidth = 3;
+        g.beginPath(); g.moveTo(26, 46); g.lineTo(38, 46); g.stroke();
+        g.strokeStyle = '#e8e2d2'; g.lineWidth = 1;
+        for (const tx of [29, 32, 35]) { g.beginPath(); g.moveTo(tx, 44.5); g.lineTo(tx, 47.5); g.stroke(); }
+        g.fillStyle = '#e8b93a';
+        g.beginPath(); g.moveTo(18, 20); g.lineTo(22, 8); g.lineTo(27, 16); g.lineTo(32, 5); g.lineTo(37, 16); g.lineTo(42, 8); g.lineTo(46, 20); g.closePath(); g.fill();
+        g.fillRect(18, 18, 28, 5);
+        g.fillStyle = '#7dffce';
+        g.beginPath(); g.arc(32, 20, 1.6 + f * 0.6, 0, 7); g.fill();
+        g.beginPath(); g.arc(23, 20, 1.1, 0, 7); g.fill();
+        g.beginPath(); g.arc(41, 20, 1.1, 0, 7); g.fill();
+        g.fillStyle = '#7dffce';
+        g.beginPath(); g.arc(32, 66, 3 + f * 0.7, 0, 7); g.fill();
+        g.restore();
+      }
+    }
+    // 15 TROLL — tile 13, full: bog troll, heavy green body, small head,
+    // knotted club; frame 2 lifts the club.
+    {
+      const ox = TILE, oy = 3 * TILE;
+      for (const f of [0, 1]) {
+        g.save(); g.translate(ox + f * (TILE / 2), oy);
+        g.strokeStyle = '#3c5a2a'; g.lineWidth = 9; g.lineCap = 'round';
+        g.beginPath(); g.moveTo(26, 92); g.lineTo(22 - f * 2, 122); g.stroke();
+        g.beginPath(); g.moveTo(42, 92); g.lineTo(48 + f * 2, 122); g.stroke();
+        g.fillStyle = '#5f8a52';
+        g.beginPath(); g.ellipse(34, 74, 21, 24, 0, 0, 7); g.fill();
+        g.fillStyle = '#6f9a62';
+        g.beginPath(); g.ellipse(34, 82, 13, 13, 0, 0, 7); g.fill();
+        g.fillStyle = '#3c5a2a';
+        for (const [sx2, sy2] of [[20, 66], [46, 70], [30, 92]]) { g.beginPath(); g.arc(sx2, sy2, 1.6, 0, 7); g.fill(); }
+        g.strokeStyle = '#5f8a52'; g.lineWidth = 8;
+        g.beginPath(); g.moveTo(16, 62); g.bezierCurveTo(10, 70, 8, 78, 10 + f * 3, 86); g.stroke();
+        g.strokeStyle = '#8a6b46'; g.lineWidth = 6;
+        g.beginPath(); g.moveTo(50, 60); g.bezierCurveTo(56, 52, 58, 44, 58, f ? 34 : 42); g.stroke();
+        g.fillStyle = '#8a6b46';
+        g.beginPath(); g.ellipse(58, f ? 24 : 32, 5.5, 7.5, 0.2, 0, 7); g.fill();
+        g.strokeStyle = '#6b4f32'; g.lineWidth = 1.5;
+        g.beginPath(); g.ellipse(58, f ? 24 : 32, 3, 5, 0.2, 0, 7); g.stroke();
+        g.fillStyle = '#6f9a52';
+        g.beginPath(); g.arc(32, 42, 11.5, 0, 7); g.fill();
+        g.beginPath(); g.moveTo(20, 38); g.lineTo(12, 34); g.lineTo(20, 43); g.closePath(); g.fill();
+        g.beginPath(); g.moveTo(44, 38); g.lineTo(52, 34); g.lineTo(44, 43); g.closePath(); g.fill();
+        g.strokeStyle = '#4f7a42'; g.lineWidth = 3;
+        g.beginPath(); g.moveTo(24, 38); g.lineTo(40, 38); g.stroke();
+        g.fillStyle = '#ffd54f';
+        g.beginPath(); g.arc(28, 42, 2.2, 0, 7); g.fill();
+        g.beginPath(); g.arc(37, 42, 2.2, 0, 7); g.fill();
+        g.fillStyle = '#1c1410';
+        g.beginPath(); g.arc(28.3, 42, 1, 0, 7); g.fill();
+        g.beginPath(); g.arc(37.3, 42, 1, 0, 7); g.fill();
+        g.strokeStyle = '#2f4a26'; g.lineWidth = 2;
+        g.beginPath(); g.moveTo(25, 48); g.lineTo(39, 48); g.stroke();
+        g.fillStyle = '#e8e0c8';
+        g.beginPath(); g.moveTo(26, 48); g.lineTo(28, 44); g.lineTo(30, 48); g.closePath(); g.fill();
+        g.beginPath(); g.moveTo(34, 48); g.lineTo(36, 44); g.lineTo(38, 48); g.closePath(); g.fill();
+        g.restore();
+      }
+    }
+    // 16 MINOTAUR — tile 14, full: brown bull-man, bone horns, red eyes,
+    // battle axe; frame 2 raises the axe.
+    {
+      const ox = 2 * TILE, oy = 3 * TILE;
+      for (const f of [0, 1]) {
+        g.save(); g.translate(ox + f * (TILE / 2), oy);
+        g.strokeStyle = '#5c3a22'; g.lineWidth = 9; g.lineCap = 'round';
+        g.beginPath(); g.moveTo(24, 96); g.lineTo(20 - f * 2, 124); g.stroke();
+        g.beginPath(); g.moveTo(42, 96); g.lineTo(46 + f * 2, 124); g.stroke();
+        g.fillStyle = '#2a1a10'; g.fillRect(15 - f * 2, 121, 9, 5); g.fillRect(42 + f * 2, 121, 9, 5);
+        g.fillStyle = '#8a5a3a';
+        g.beginPath(); g.ellipse(33, 72, 20, 23, 0, 0, 7); g.fill();
+        g.fillStyle = '#7a4e30';
+        g.beginPath(); g.ellipse(33, 64, 12, 10, 0, 0, 7); g.fill();
+        g.fillStyle = '#6b4226';
+        for (const [sx2, sy2] of [[22, 78], [42, 80], [30, 88]]) { g.beginPath(); g.arc(sx2, sy2, 1.5, 0, 7); g.fill(); }
+        g.strokeStyle = '#8a5a3a'; g.lineWidth = 8;
+        g.beginPath(); g.moveTo(15, 62); g.bezierCurveTo(9, 70, 8, 78, 10, 86); g.stroke();
+        g.strokeStyle = '#e8e0c8'; g.lineWidth = 4.5;
+        g.beginPath(); g.moveTo(23, 32); g.bezierCurveTo(14, 26, 10, 22, 12, 12); g.stroke();
+        g.beginPath(); g.moveTo(39, 31); g.bezierCurveTo(46, 24, 52, 21, 54, 11); g.stroke();
+        g.fillStyle = '#8a5a3a';
+        g.beginPath(); g.arc(31, 38, 10.5, 0, 7); g.fill();
+        g.beginPath(); g.moveTo(40, 34); g.lineTo(48, 31); g.lineTo(41, 40); g.closePath(); g.fill();
+        g.fillStyle = '#a3743f';
+        g.beginPath(); g.ellipse(29, 45, 7.5, 5, 0, 0, 7); g.fill();
+        g.fillStyle = '#3a2414';
+        g.beginPath(); g.arc(26, 45, 1.1, 0, 7); g.fill();
+        g.beginPath(); g.arc(32, 45, 1.1, 0, 7); g.fill();
+        g.fillStyle = '#ff5252';
+        g.beginPath(); g.arc(27, 35, 2, 0, 7); g.fill();
+        g.beginPath(); g.arc(36, 35, 2, 0, 7); g.fill();
+        g.strokeStyle = '#6b4a2c'; g.lineWidth = 4;
+        g.beginPath(); g.moveTo(50, 62); g.lineTo(58, f ? 22 : 30); g.stroke();
+        g.fillStyle = '#8a6b46';
+        g.beginPath(); g.moveTo(48, 58); g.lineTo(53, 56); g.lineTo(52, 52); g.lineTo(47, 54); g.closePath(); g.fill();
+        g.fillStyle = '#b8bec9';
+        g.beginPath(); g.moveTo(56, f ? 26 : 34); g.lineTo(62, f ? 10 : 18); g.lineTo(62, f ? 34 : 42); g.closePath(); g.fill();
+        g.strokeStyle = '#dfe3e8'; g.lineWidth = 1.5;
+        g.beginPath(); g.moveTo(57, f ? 24 : 32); g.lineTo(61, f ? 12 : 20); g.stroke();
         g.restore();
       }
     }
@@ -517,7 +739,6 @@ void main(){
     { const rnd = mulberry32(0x70F1); for (let i = 0; i < 8; i++) FLICK.push(rnd()); }
     let lights = [];
 
-    const norm3 = (x, y, z) => { const l = Math.hypot(x, y, z) || 1; return [x / l, y / l, z / l]; };
 
     api.setMaze = (maze) => { api.maze = maze; };
     api.setSprites = (list) => { api.sprites = list || []; };
@@ -669,7 +890,17 @@ void main(){
       sprData[k] = px; sprData[k + 1] = py; sprData[k + 2] = 0; sprData[k + 3] = u; sprData[k + 4] = v;
       sn++;
     }
-    const SPR_U = { 8: 0, 9: 0.25, 10: 0.5 };
+    // #2321 — monster materials live in an explicit UV table: [u0, v0, tileH].
+    // 8/9/10 keep their original full tiles (deepglass draws byte-identical);
+    // the bestiary shapes added for #2321 sit in the free atlas corners —
+    // 13 wraith in tile 11's lower half (goblin art bleeds over the upper),
+    // 14 king / 15 troll / 16 minotaur in row 3, and 11 snake + 12 wyrm
+    // sharing tile 15's halves ("serpent shelf"). Frames step 0.125 across.
+    const SPR_UV = {
+      8: [0, 0.5], 9: [0.25, 0.5], 10: [0.5, 0.5],
+      11: [0.75, 0.75, 0.125], 12: [0.75, 0.875, 0.125], 13: [0.75, 0.625, 0.125],
+      14: [0, 0.75], 15: [0.25, 0.75], 16: [0.5, 0.75],
+    };
     function buildSprites() {
       sn = 0;
       const zf = Math.round(logic.z);
@@ -681,13 +912,14 @@ void main(){
         const cf = Math.cos(view.yaw), sf = Math.sin(view.yaw)
         if (sdx * -sf + sdy * cf < -0.25) continue;
         const frame = (Math.floor((s.anim || 0) / 300) & 1);
-        const u0 = SPR_U[s.mat] != null ? SPR_U[s.mat] : 0;
+        const uvE = SPR_UV[s.mat] || [0, 0.5, 0.25];
+        const uvH = uvE[2] != null ? uvE[2] : 0.25;
         const inset = 0.008;
         s._u = {
           base: [s.x, s.y, s.fz != null ? s.fz : zf],
           size: [s.w || 0.62, s.h || 0.62],
-          uvO: [u0 + frame * 0.125 + inset, 0.5 + inset],
-          uvS: [0.125 - 2 * inset, 0.25 - 2 * inset],
+          uvO: [uvE[0] + frame * 0.125 + inset, uvE[1] + inset],
+          uvS: [0.125 - 2 * inset, uvH - 2 * inset],
           anim: s.anim || 0,
         };
         live.push(s);

@@ -561,8 +561,12 @@ const TenDeepGame = () => {
             }
             if (freshSights) audioController.playSweep(150, 85, 0.28, 'triangle', 0.05)
             R.setSprites(mobs.map((m, i) => {
-                const size = 0.62 + Math.min(m.count - 1, 3) * 0.07
-                return { x: m.x + 0.5, y: m.y + 0.5, z: 0, mat: m.mat, w: size, h: size, anim: mobAnim + i * 140 }
+                // #2321 — each species keeps its own proportions (a slinking
+                // adder, a towering Hollow King); the pack-count growth rides
+                // on top of the shape's base size, exactly as before.
+                const grow = Math.min(m.count - 1, 3) * 0.07
+                const sz = m.size || { w: 0.62, h: 0.62 }
+                return { x: m.x + 0.5, y: m.y + 0.5, z: 0, fz: sz.fz || 0, mat: m.mat, w: sz.w + grow, h: sz.h + grow, anim: mobAnim + i * 140 }
             }))
             R.frame(dt)
         }

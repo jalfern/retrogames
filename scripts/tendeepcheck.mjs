@@ -22,7 +22,7 @@ import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePric
 import { RACES, ALIGNMENTS, compose, classOk, rollCandidates } from '../src/games/TenDeep/people.js'
 import { genFloor, FLOORS, MOBS } from '../src/games/TenDeep/dungeon.js'
 import { solveRun, nextAction } from '../src/games/TenDeep/solver.js'
-import { sightedMobs, forwardMonster, MOB_MAT, SIGHT } from '../src/games/TenDeep/view.js'
+import { sightedMobs, forwardMonster, MOB_MAT, MOB_SIZE, SIGHT } from '../src/games/TenDeep/view.js'
 import { fitSize, fitTwoCols, estWidth } from '../src/games/TenDeep/hudfit.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -112,6 +112,38 @@ section('SIGHTED MOB GATES (#2315) — honest line of sight, no wall-hacks')
             'tint lost its white default — callers that omit it (deepglass) would draw black')
     }
 
+    // #2321 — SHAPES: the tints brought colour, now every bestiary member
+    // owns a silhouette. Only the Grave Ghoul shares a plate on purpose
+    // (Bone Sentry's frame, dead-flesh tint). Refold a species onto the
+    // rat/goblin shelf and this goes red.
+    const plates = {}
+    for (const k of Object.keys(MOB_MAT)) (plates[MOB_MAT[k]] = plates[MOB_MAT[k]] || []).push(k)
+    const shared = Object.values(plates).filter((v) => v.length > 1)
+    ok(shared.length === 1 && shared[0].join('/') === 'SKELET/GHOUL',
+        `the bestiary folded back onto shared silhouettes: ${shared.map((v) => v.join('+')).join(', ') || 'clean'}`)
+    // Every named material must exist in the shared atlas UV table AND have
+    // a paint block — a bare number samples the rat's tile as a ghost.
+    {
+        const core = readFileSync(join(HERE, '../public/demos/dungeon.core.js'), 'utf8')
+        const uv = core.match(/const SPR_UV = \{([\s\S]*?)\};/)
+        ok(!!uv, 'the shared atlas lost its SPR_UV table')
+        for (const [sp, m] of Object.entries(MOB_MAT)) {
+            ok(uv && new RegExp(`(^|\\s)${m}:\\s*\\[`).test(uv[1]),
+                `atlas SPR_UV has no entry for ${sp} (mat ${m}) — its billboard would sample the rat`)
+        }
+        for (const sp of ['SNAKE', 'WYRM', 'WRAITH', 'KING', 'TROLL', 'MINOTAUR']) {
+            ok(core.includes(`// ${MOB_MAT[sp]} ${sp}`),
+                `the atlas never paints the ${sp} shape at its id ${MOB_MAT[sp]}`)
+        }
+    }
+    // Shape and size go together: the rat billboard is the #2315 GL gate's
+    // calibration and must not drift; the rest of the bestiary varies.
+    ok(MOB_SIZE.RAT.w === 0.62 && MOB_SIZE.RAT.h === 0.62,
+        'the rat billboard moved — the #2315 GL sighting gate lost its calibration')
+    ok(MOB_SIZE.KING.h > MOB_SIZE.RAT.h && MOB_SIZE.TROLL.h > MOB_SIZE.SNAKE.h && MOB_SIZE.SNAKE.h < MOB_SIZE.RAT.h,
+        'billboard proportions went flat — the adder stands like the Hollow King')
+    ok(MOB_SIZE.WRAITH.fz > 0, 'the wraith walks the floor — its float drifted off')
+
     // a synthetic map helper: walls everywhere except the open cells passed in.
     const mkMap = (open, ambushes) => ({
         ambushes,
@@ -129,6 +161,8 @@ section('SIGHTED MOB GATES (#2315) — honest line of sight, no wall-hacks')
     ok(s1.length === 1 && s1[0].x === 5 && s1[0].y === 3 && s1[0].count === 2,
         `a pack straight ahead in an open corridor is sighted (${JSON.stringify(s1)})`)
     ok(s1[0].mat === MOB_MAT.RAT, `a rat pack maps to the rat atlas mat (${s1[0].mat})`)
+    ok(s1[0].size && s1[0].size.w === MOB_SIZE.RAT.w && s1[0].size.h === MOB_SIZE.RAT.h,
+        'a sighted mob carries its species billboard size')
 
     // behind the facing (party faces east, monster lies west) → not sighted
     const stBack = { ...st1, dir: 2 }
@@ -1527,6 +1561,11 @@ if (MUT) {
                 // and the mutant "survives" without existing (flagged on #2318).
                 'if (!st.ambushes.has(k)) continue',
                 'if (false) continue'],
+            ['#2321 — a species refolds onto the goblin plate',
+                // the distinct-silhouette contract is load-bearing: fold the
+                // adder back onto goblyn and the plates gate must go red.
+                'SNAKE: 11,',
+                'SNAKE: 10,'],
         ]
         for (const [name, from, to] of viewMutants) {
             ok(viewOrig.includes(from), `view mutant anchor missing: ${name}`)
