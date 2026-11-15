@@ -19,7 +19,13 @@
 // VALUE never appears in output: the self-test asserts its absence from every
 // posted body (acceptance line: `git grep` and the posted comments contain no
 // key). Clap needs a browser + dev server (DEV_PORT); when no server answers,
-// the clap line says so instead of pretending.
+// the clap line says so instead of pretending. A take where the player simply
+// never clapped (< CLAP_MIN_PAIRS onsets) is NOT clap-tested — n-a, not FAIL:
+// it proves nothing about alignment either way, and FAIL would bury the real
+// failures (claps heard but no coincident taps = broken pad capture). The
+// alignment proof for S1 lives in the dedicated clap test (#2156,
+// /retrogames/claptest); the verdict line names it so Jon knows where to make
+// one.
 //
 // Exit codes: 0 every new take graded (or nothing new), 1 a grading or posting
 // failed, 2 key/store missing (live).
@@ -33,6 +39,7 @@ import { listSessions, probeStore, storeFromQuery } from '../src/utils/sessionSt
 import { readKey, keySource, resetLocalKeyCache } from './lib/localkey.mjs'
 import { startRelaySim, SIM_READ_KEY } from './lib/relaysim.mjs'
 import { collectRun } from './plaicraft-export.mjs'
+import { CLAP_MIN_PAIRS, CLAP_TOL_MS } from '../src/utils/clapSync.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const argv = process.argv.slice(2)
@@ -47,6 +54,13 @@ const PORT = process.env.DEV_PORT || 5173
 
 // --- the verdict comment builder (pure; self-tested both directions) ---------
 
+// A clap run that heard fewer than CLAP_MIN_PAIRS onsets is NOT a failed
+// alignment test — it is a take where the clap test was never done. Exported so
+// the pins below (and any future grader) share one definition.
+export function clapNotTested(clap) {
+    return !!(clap && clap.ran && Number.isFinite(clap.claps) && clap.claps < CLAP_MIN_PAIRS)
+}
+
 export function verdictBody(ev, clap, gradedBy) {
     const replay = ev.replayOk
         ? `PASS (${ev.ticks} ticks${ev.note ? `, ${ev.note}` : ''})`
@@ -56,17 +70,20 @@ export function verdictBody(ev, clap, gradedBy) {
             ? `PASS (worst clock drift ${Math.max(0, ...ev.voice.map((t) => Math.abs(t.driftMs || 0))).toFixed(1)} ms)`
             : `FAIL — ${ev.error || 'voice clock broken'}`)
         : 'n-a (no audio)'
+    const notTested = clapNotTested(clap)
     const clapLine = !ev.audio
         ? 'n-a (no audio)'
         : (!clap || clap.ran === false)
             ? `not run (${clap ? clap.why : 'clap unavailable'})`
-            : clap.ok
-                ? `PASS — worst ${clap.worstMs === null ? '?' : clap.worstMs} ms${clap.seat === null ? '' : ` (seat ${clap.seat})`}`
-                : `FAIL — ${clap.why}`
+            : notTested
+                ? `n-a — not clap-tested (${clap.claps} clap(s) heard, need ${CLAP_MIN_PAIRS}; to prove ±${CLAP_TOL_MS} ms alignment, play /retrogames/claptest or clap-per-tap in-game)`
+                : clap.ok
+                    ? `PASS — worst ${clap.worstMs === null ? '?' : clap.worstMs} ms${clap.seat === null ? '' : ` (seat ${clap.seat})`}`
+                    : `FAIL — ${clap.why}`
     const seats = ev.relabeledSeats > 0
         ? `${ev.humanSeats} native human + ${ev.relabeledSeats} relabeled (#2142 — relabeled seats are NOT human evidence)`
         : ev.humanSeats > 0 ? `${ev.humanSeats} native human` : 'no human seat'
-    const graded = clap && clap.ran && !clap.ok
+    const graded = clap && clap.ran && !clap.ok && !notTested
         ? 'FAIL'
         : ev.ok && (!ev.audio || ev.voiceOk) ? 'PASS' : 'FAIL'
     const lines = [
@@ -123,8 +140,10 @@ async function runClap(key, base, jonKey) {
     const out = `${r.stdout || ''}\n${r.stderr || ''}`
     const worst = /worst (-?[\d.]+) ms/.exec(out)
     const seat = /seat (\d+)/.exec(out)
+    // the analyze mode's onset count — decides FAIL vs n-a (not clap-tested) below
+    const heard = /claps heard in the take\s+(\d+)/.exec(out)
     const failLine = (out.split('\n').find((l) => /FAIL/.test(l)) || 'clap grading failed').trim()
-    return { ran: true, ok: r.status === 0, worstMs: worst ? Number(worst[1]) : null, seat: seat ? Number(seat[1]) : null, why: failLine }
+    return { ran: true, ok: r.status === 0, claps: heard ? Number(heard[1]) : null, worstMs: worst ? Number(worst[1]) : null, seat: seat ? Number(seat[1]) : null, why: failLine }
 }
 
 function extractMarkers(text) {
@@ -273,6 +292,22 @@ async function runSelfTest() {
     ok(/clap: FAIL — worst 512 ms \(seat 0\)|clap: FAIL/.test(clapFail) && /— FAIL$/.test(clapFail.split('\n')[0]), 'builder: a failed clap flips the headline FAIL even with replay+voice green', clapFail.split('\n')[0])
     const relabeled = verdictBody({ ...goodEv, humanSeats: 0, relabeledSeats: 1 }, null, 'FORGE (b)')
     ok(/relabeled seats are NOT human evidence/.test(relabeled), 'builder: #2142 relabel flag is loud in the seats line')
+    // #1711 (session 279): a take whose audio holds no clap test is n-a, not FAIL.
+    // Real takes without claps must not read as broken alignment — but claps
+    // HEARD with no coincident taps stay FAIL (that is the broken-capture case
+    // #2056 exists to catch, and laundering it n-a would hide it).
+    const noClap = verdictBody(goodEv, { ran: true, ok: false, claps: 0, worstMs: null, seat: 0, why: '0 clap-coincident A-tap(s) of 0 clap(s) — need 3 (a real take has a clap per tap) (worst null ms)' }, 'self-test')
+    ok(/^PLAIGRADE \S+ — PASS$/m.test(noClap) && /clap: n-a — not clap-tested \(0 clap\(s\) heard, need 3/.test(noClap) && /claptest/.test(noClap),
+        'not-tested: 0 claps heard -> n-a line naming /retrogames/claptest, headline stays PASS on replay+voice', noClap.split('\n').slice(0, 4).join(' | '))
+    const twoClap = verdictBody(goodEv, { ran: true, ok: false, claps: 2, worstMs: null, seat: 0, why: '2 clap-coincident A-tap(s) of 2 clap(s) — need 3' }, 'self-test')
+    ok(/— PASS$/m.test(twoClap) && /n-a — not clap-tested \(2 clap\(s\)/.test(twoClap),
+        'not-tested: below the 3-clap minimum is n-a too (a stray transient is not a test)', twoClap.split('\n').slice(0, 4).join(' | '))
+    const clapsNoTaps = verdictBody(goodEv, { ran: true, ok: false, claps: 6, worstMs: null, seat: 0, why: 'no A-button taps recorded — the clap test names the A button (#2056)' }, 'self-test')
+    ok(/— FAIL$/.test(clapsNoTaps.split('\n')[0]) && /clap: FAIL — no A-button taps recorded/.test(clapsNoTaps),
+        'NOT laundered: 6 claps heard with zero A-taps stays FAIL (broken capture is not "untested")', clapsNoTaps.split('\n').slice(0, 4).join(' | '))
+    ok(clapNotTested({ ran: true, ok: false, claps: 0 }) === true && clapNotTested({ ran: true, ok: false, claps: 3 }) === false
+        && clapNotTested({ ran: true, ok: false }) === false && clapNotTested(null) === false,
+        'clapNotTested: one definition, finite-count-only (old-shape clap objects keep their FAIL)')
 
     // 3) end-to-end on the production worker in Node: new-take detection,
     //    marker idempotence, force, and the no-secret assert.
