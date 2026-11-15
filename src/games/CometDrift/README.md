@@ -216,6 +216,12 @@ CONTRACT_ONLY=comet-drift npm run contractcheck   # window.__game (needs npm run
 node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift \
   --eval "window.__cometTest.setPlan(true)" --prewait 8000 --w 840 --h 390 --out f.png
                               # autopilot race frame (--w/--h choose aspect)
+npm run cometcheck            # (+13 #2395 gates: grind-pile rig + determinism +
+                              #       silent crawl, sun-dot symmetry & lit/shaded lap
+                              #       spread, crack cadence band, crest tint per course,
+                              #       source pins for stride-1 near, index-pinned cracks,
+                              #       coal-edged crest, warm/cool face washes; --mutate
+                              #       adds 4 new mutants — all die)
 ```
 
 ## WATCH (#1637 batch 13) — the certified autopilot gets a seat
@@ -429,8 +435,32 @@ The #419 "not yet cups" landed. `cup.js` holds the whole mode as pure rules:
   drift+sand+speed, silent for straight sand / road / kerb / wall / crawling,
   sub-linear saturating intensity, and source pins for the entry-edge call +
   apron tint since stepFx is DOM-only).
-- The strata are texture bands, not true vertical geometry (Mode 7 limitation
-  accepted — the Road Rash trick was always fake).
+- **CLOSED by #2388:** the strata are true vertical canyon geometry — the rim
+  loops extrude to quads at escape-law height (`wallRise`/`strataBreaks`),
+  merged into the sprite far→near sort. The old texture-band note predates it.
+- **CLOSED by #2395 (QA polish on #2388):** the wall polish pass, all six items.
+  (1) *Crest faceting*: segments closer than `WALL_STRIDE_NEAR` (520u) break
+  stride 1 — the crest silhouette is as smooth as the baked foot line, far
+  segments keep stride 2. (2) *Sun-side faces*: pure `wallSun(i, side)` (art.js)
+  is the sun-dot against `SUN_AZ`; down-sun faces soak a `pal.sun` warm wash,
+  up-sun faces sit cool in `pal.skyTop`, capped by `SUN_TINT` (0.11/0.13) so
+  strata stay readable. (3) *Per-course crest*: new named `crest` role in all
+  four palettes — Gulch ember-gold, Noon white-hot, the Dunes sandier
+  dawn-cream, Heat bleached. (4) *Mesa depth*: the crest cap strokes over a
+  coal edge one step wider (`rgbaS(P.outline, 0.5)`), so parallax mesas can no
+  longer read through a nearer wall's haze band. (5) *Cracks at speed*: the
+  per-frame stride carry (which cracked EVERY face — near faces strobed at
+  racing speed) is gone; `wallCrack(i, side)` is a pure per-index pick, ~1
+  face in 3, stable forever. (6) *Grind debris*: a pinned kart above `GRIT.v`
+  (3.6, just past `SAND.chipV`) sheds two crack-depth grit cells at the wall
+  foot every 4 ticks — the pile GROWS between the bounces instead of
+  scattering fresh each impact, then heals with the #1702 flow; pose+tick hash
+  keeps banked replays byte-identical, and a crawl under the grit speed stays
+  pristine (the #1718 slow-bump law survives: gated). Renderer-only except
+  (6), which is physics-neutral (markCell never touches velocity). Gates:
+  cometcheck +13 (pile-growth rig, determinism, silent crawl, sun-dot
+  symmetry, lit/shaded lap spread, crack-cadence band, crest roles, source
+  pins), and `--mutate` carries four new #2395 mutants — all die.
 - Banking cue (#502 item 4): `bankAt(i)` in track.js is the shared measure
   (smoothed |curvature| / BANK_K); `bankRimDefs()` paints dark rim-shadow dots
   on the outside of banked bends in the ground bake, so Sandbank's bowl leans

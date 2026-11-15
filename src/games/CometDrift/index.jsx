@@ -10,7 +10,7 @@ import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS, LINK, riv
 import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt, spriteFootShift, ELEV_SCREEN, sandSpray, rutTexel, bankAt } from './track.js'
 import { selectorGeom, selectorHit, previewBox, cupBadgeGeom, cupBadgeHit } from './selector.js'
 import { CUP, CUP_RACES, makeCup, tally, standings, leaderName, cupDone } from './cup.js'
-import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath, sunLayout, rivalViewFx, duneCrest, DUNE, strataAt, wallRise, strataBreaks } from './art.js'
+import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath, sunLayout, rivalViewFx, duneCrest, DUNE, strataAt, wallRise, strataBreaks, wallCrack, wallSun, SUN_TINT } from './art.js'
 import { drawText } from './font.js'
 import { engineVoice, driftScrape, sandWhoosh, ambienceFor } from './engineSfx.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE, setStick } from '../../utils/padState'
@@ -45,6 +45,7 @@ const T = TRACK
 
 const hexRGB = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]
 const ABGR = (h) => { const [r, g, b] = hexRGB(h); return 0xff000000 | (b << 16) | (g << 8) | r }
+const rgbaS = (hex, a) => { const v = ABGR(hex); return `rgba(${v & 255}, ${(v >> 8) & 255}, ${(v >> 16) & 255}, ${a})` }
 
 // the dust the canyon kicks up, lifted straight from the apron palette —
 // re-anchored whenever the SELECTED course re-tints the world (#493)
@@ -560,6 +561,12 @@ export default function CometDrift() {
         // merge into drawSprites' far→near sort, so rock and karts occlude
         // honestly. Renderer-only: no sim number reads any of it.
         const WALL_STRIDE = 2
+        // #2395 item 1: the crest silhouette is only as smooth as its vertex
+        // spacing. Beyond WALL_STRIDE_NEAR a stride-2 chord every ~50px of arc
+        // is cheap and the haze forgives it; nearer, the chords show as facets
+        // on long straights, so those segments break stride 1 (and there are
+        // few of them — the cost is per-visible-segment, not per-track).
+        const WALL_STRIDE_NEAR = 520
         const WALL_NEAR = 34
         const WALL_FAR = 2600
         const wallHash = (n) => { const v = Math.sin(n * 12.9898) * 43758.5453; return v - Math.floor(v) }
@@ -567,19 +574,22 @@ export default function CometDrift() {
             const pal = paletteFor(COURSE.palette)
             const out = []
             for (const s of [1, -1]) {
-                let nextCrack = 0
-                for (let i = 0; i < TRACK.N; i += WALL_STRIDE) {
-                    const j = (i + WALL_STRIDE) % TRACK.N
-                    const q = TRACK.pts[i]; const q2 = TRACK.pts[j]
+                let i = 0
+                while (i < TRACK.N) {
+                    const q = TRACK.pts[i]
                     const n0x = Math.cos(q.a + Math.PI / 2) * s; const n0y = Math.sin(q.a + Math.PI / 2) * s
-                    const n1x = Math.cos(q2.a + Math.PI / 2) * s; const n1y = Math.sin(q2.a + Math.PI / 2) * s
-                    const lat0 = strataAt(i, s)[0]; const lat1 = strataAt(j, s)[0]
+                    const lat0 = strataAt(i, s)[0]
                     const pr0 = project(q.x + n0x * lat0, q.y + n0y * lat0)
+                    const step = pr0.f > 0 && pr0.f < WALL_STRIDE_NEAR ? 1 : WALL_STRIDE
+                    const j = (i + step) % TRACK.N
+                    const q2 = TRACK.pts[j]
+                    const n1x = Math.cos(q2.a + Math.PI / 2) * s; const n1y = Math.sin(q2.a + Math.PI / 2) * s
+                    const lat1 = strataAt(j, s)[0]
                     const pr1 = project(q2.x + n1x * lat1, q2.y + n1y * lat1)
-                    if (Math.max(pr0.f, pr1.f) < WALL_NEAR || Math.min(pr0.f, pr1.f) > WALL_FAR) continue
+                    if (Math.max(pr0.f, pr1.f) < WALL_NEAR || Math.min(pr0.f, pr1.f) > WALL_FAR) { i += step; continue }
                     const sA = BASE_PP / pr0.f; const sB = BASE_PP / pr1.f
                     const xb0 = W / 2 + pr0.l * sA; const xb1 = W / 2 + pr1.l * sB
-                    if (Math.max(xb0, xb1) < -4 || Math.min(xb0, xb1) > W + 4) continue
+                    if (Math.max(xb0, xb1) < -4 || Math.min(xb0, xb1) > W + 4) { i += step; continue }
                     const h0 = wallRise(i, s); const h1 = wallRise(j, s)
                     const yb0 = HZ + CAM_H * sA; const yb1 = HZ + CAM_H * sB
                     const yt0 = HZ + (CAM_H - h0) * sA; const yt1 = HZ + (CAM_H - h1) * sB
@@ -587,10 +597,9 @@ export default function CometDrift() {
                     const bk = bankAt(i)
                     const shade = bk >= 0.6 && s === -(Math.sign(q.k) || 1) ? 0.16 * Math.min(1, bk) : 0
                     const fr = f > 1700 ? Math.min(0.8, (f - 1700) / 1250) : 0
-                    let crack = 0
-                    if (q.s >= nextCrack) { nextCrack = q.s + 30; crack = 1 }
                     out.push({ kind: 'w', f, xb0, yb0, xb1, yb1, yt0, yt1, sA,
-                        breaks: strataBreaks(i, s), pal, shade, fr, crack, h: wallHash(i * 4 + (s > 0 ? 1 : 2)) })
+                        breaks: strataBreaks(i, s), pal, shade, fr, crack: wallCrack(i, s) ? 1 : 0, sd: wallSun(i, s), h: wallHash(i * 4 + (s > 0 ? 1 : 2)) })
+                    i += step
                 }
             }
             return out
@@ -613,6 +622,11 @@ export default function CometDrift() {
             ctx.fillStyle = g
             ctx.fill()
             if (w.shade > 0) { ctx.fillStyle = `rgba(28, 14, 8, ${w.shade.toFixed(3)})`; ctx.fill() }
+            // #2395 item 2: the dusk sun has a side — faces whose road normal
+            // points down-sun soak up a warm wash, up-sun faces sit in cool
+            // skylight. Capped by SUN_TINT so the strata still read through.
+            if (w.sd > SUN_TINT.floor) { ctx.fillStyle = rgbaS(P.sun, Math.min(SUN_TINT.maxWarm, w.sd * 0.13).toFixed(3)); ctx.fill() }
+            else if (w.sd < -SUN_TINT.floor) { ctx.fillStyle = rgbaS(P.skyTop, Math.min(SUN_TINT.maxCool, -w.sd * 0.15).toFixed(3)); ctx.fill() }
             if (w.fr > 0) { ctx.fillStyle = `rgba(${HAZE[0]}, ${HAZE[1]}, ${HAZE[2]}, ${w.fr.toFixed(3)})`; ctx.fill() }
             // vertical fracture: hash-slanted, riding the old ~30px seam law
             if (w.crack) {
@@ -624,9 +638,16 @@ export default function CometDrift() {
                 ctx.lineTo(w.xb0 + (w.xb1 - w.xb0) * (t + (w.h - 0.5) * 0.3), w.yt0)
                 ctx.stroke()
             }
-            // rim cap: the sun line along the crest; coal contact line at the foot
-            ctx.strokeStyle = P.rimLit
-            ctx.lineWidth = Math.max(1, Math.round(2 * w.sA))
+            // rim cap: the sun line along the crest, in its own sandier tint
+            // (#2395 item 3), laid over a coal edge one step wider — the dark
+            // fringe is the depth line that keeps the parallax mesas from
+            // reading through the wall's haze band (#2395 item 4).
+            const capW = Math.max(1, Math.round(2 * w.sA))
+            ctx.strokeStyle = rgbaS(P.outline, 0.5)
+            ctx.lineWidth = capW + 2
+            ctx.beginPath(); ctx.moveTo(w.xb0, w.yt0); ctx.lineTo(w.xb1, w.yt1); ctx.stroke()
+            ctx.strokeStyle = P.crest
+            ctx.lineWidth = capW
             ctx.beginPath(); ctx.moveTo(w.xb0, w.yt0); ctx.lineTo(w.xb1, w.yt1); ctx.stroke()
             ctx.strokeStyle = 'rgba(24, 12, 8, 0.55)'
             ctx.lineWidth = Math.max(1, Math.round(w.sA))
