@@ -101,7 +101,11 @@ export const SFX = {
     hit: () => [noise(0.08, 0.2), tone(180, 0.1, 'square', 0.14)],
     hitPlayer: () => [noise(0.1, 0.22), tone(140, 0.14, 'square', 0.16), tone(90, 0.2, 'sine', 0.12, 0.04)],
     hurtoffall: () => [noise(0.12, 0.2), tone(110, 0.18, 'square', 0.14)],
-    parry: () => [noise(0.06, 0.25), tone(1150, 0.1, 'square', 0.07), tone(1720, 0.07, 'sine', 0.05, 0.01)],
+    // QA #2330-3: the clash IS the timing cue on a phone, so it must carry over
+    // the thuds: a bright steel ring (1150/1720/2300 Hz stack, the third partial
+    // is new sparkle) whose peak ≥ the hit's — while hit/hitPlayer stay low
+    // single-tone thuds ≤200 Hz. Popcheck §24 pins the brightness split.
+    parry: () => [noise(0.07, 0.3), tone(1150, 0.11, 'square', 0.12), tone(1720, 0.09, 'sine', 0.09, 0.01), tone(2300, 0.06, 'sine', 0.05, 0.02)],
     guardWind: (e) => [tone(e.boss ? 190 : 140, 0.06, 'square', 0.07)],
     guardDown: (e) => [sweep(e.boss ? 400 : 400, 80, e.boss ? 0.45 : 0.25, 'sawtooth', 0.18), noise(0.12, 0.14)],
 

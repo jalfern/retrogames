@@ -257,7 +257,13 @@ const PrinceOfPersiaGame = () => {
             const before = g.events.length
             if (attract) {
                 attractT++
-                step(g, decide(g))
+                // QA #2330-5: attract sells the ledge grammar — hold Shift through
+                // falls so the loop shows grab → strain → climb on a phone's first
+                // look. The WATCH pilot keeps decide()'s tuned clean route (the
+                // slack budget lives there); shadow levels stay grab-free as well.
+                const inp = decide(g)
+                if (!g.shadow && !g.p.hang && !g.p.onGround && g.p.vy > 0) inp.shift = true
+                step(g, inp)
                 if (g.status === 'win' || g.status === 'lost') {
                     endAttract++
                     if (endAttract > 100 || attractT > 60 * 60 * 3) { g = makeGame(0); attractT = 0; endAttract = 0 }
