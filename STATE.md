@@ -1,78 +1,95 @@
-# STATE — session 288 (2026-11-15, slot a)
+# STATE — session 289 (2026-11-15, slot b)
 
 ## Playable now / what shipped
-- **BRITANNIA: purse & passage toll (#2345 → PR #2348, merge `4a20211`).**
-  The gap "Boarding is free at any coast" ships its toll half: HUD carries
-  `PURSE 250` (the original's GOLD) from minute one; every boarding pays 5
-  gold with a coin chink; a light purse is refused ON THE SAND (chapel-stone
-  pattern — cooldown, buzz, gold kept: a door, not a fine). **Dawn tithe**
-  +20/day, capped at 250 — invented glue, honest tail: origin has no
-  overworld income, stage 2's shops replace it. Moderate travel lives on the
-  land forever; six boardings a day run dry by day 23. `gold/fare/day` on
-  harness state, gold inside the state hash, `setGold` + DebugKit cheat.
-- Gates at ship: britanniacheck **332** (+28 PURSE LAW: literal spec pins,
-  toll/tithe laws incl. exactly-zero-pays & 4-refuseth, booked-vs-module
-  economy sims agreeing on day 23, winnable-with-empty-purse via moon chain,
-  purity, wiring). Mutants die by name: toll-free (2 red), purse-hollow
-  (5 red), tithe-mint (3 red). britannidrive 55/60 — 4 new live purse gates
-  green (pays 245, refused dry at 4, tithe 0→20 + words); remaining 5
-  failures PROVEN pre-existing main baseline (A/B run, spare port 5175).
-  lint mario/fps/ai + lint:britannia + eslint + build green.
+- **FLOOR BOSS gets a career ladder (#2346 → PR #2349, merge `02dd5ca`).**
+  Clearing the quota clocks you into the NEXT shift instead of ending the run.
+  `shiftParams(n)` is the whole ladder, pure in n: quota +200/rung, order wire
+  540→380 (rush 320→220), deadlines −4%/rung (floor 0.72), wear −15/rung
+  (floor −70). Quota law moved to EARNINGS-vs-rung (`score − shiftBase ≥
+  quota(n)`; shift 1 = bit-identical to the old absolute law). `nextShift`:
+  floor persists (hires/racks/freight-in-gripper), bots wear-reset, strike
+  sheet new, orders/pad/belt/truck clean, escrow follows freight out (#1921).
+  Fired/short ends the career; every cleared night banks. HUD `SHIFT n` + bank
+  tally, earnings bar, rung-named win screen, BEST SHIFT→BEST RUN, contract
+  pad-A advance, DebugKit rungs. Measured ramp: autopilot banks 5–8 nights
+  across 5 seeds, then the ladder out-earns it — winnable early, bites late.
+- Gates at ship: floorbosscheck 431→462 (+31: params/caps/clamp, three HEAD
+  parity traces literal-embedded, earnings quota, nextShift carry law, hash/
+  state rungs, 5 career ramps, 10 UI pins). Mutants killed: `--mutate-ladder`,
+  `--mutate-advance`, `--mutate-bank`. floorbossplay 36/36 real keys (win →
+  Enter → live shift 2, career 1689, quota 1200; short ends run; clean
+  restart). lint v/mario/fps/ai + eslint + build green. Prod verified: ladder
+  markers in `assets/index-CkxdkbMr.js` (entry `index-BYQmNat0.js`), live at
+  jalfern.com/retrogames/floorboss.
 - Rule 4: game code shipped.
 
 ## Ladder (this session's path)
-- Warden target **#1711** claimed first, audited live (3rd consecutive
-  nothing-moved: `/status` writeKey:false, store still 7 takes all PLAIGRADEd,
-  no claptest take, jonq **#2305** AWAITING deadline 11-17 default hold),
-  released with evidence back to `next`. Jon-side lines unchanged: his
-  claptest phone run (#2156) + `wrangler secret put SESSION_WRITE_KEY`.
-- game-queue empty; only `feedback` was **#2343** (TidyBot attract) — 3 live
-  QA MASTER sessions (mini/mini2/studio) → borrow blocked; flagship stage
-  spent (`flagshipStage` null).
-- Never-dry: `weakestStage` named **BRITANNIA** (score 3, three unowned
-  README gaps, oldest among score-3 ties; PoP/GardenGuard QA-held). Filed
-  #2345 with why-weakest line, claimed, shipped. Quay-location rule was
-  probed FIRST and rejected honestly: all 8 gates are inland (findStars
-  filter), zero coast tiles within 3 of any gate — the geography forces the
-  toll half, not the port half.
+- Warden target **#1711**: claim REFUSED — slot a holds the liveness namespace
+  (claimed 11:14Z, released 11:17Z; their fresh audit twice: store 7 takes all
+  graded, `/status writeKey:false`, jonq #2305 AWAITING). Jon-side-only; not
+  re-litigated, went to the ladder per the slot notes.
+- No halt/steer; game-queue empty; feedback all `building-qa` (#2336, #2330)
+  or with live QA MASTER sessions on mini/mini2/studio → no borrow; flagship
+  stage spent (`flagshipStage` null).
+- Never-dry: `weakestStage` → BRITANNIA (score 3, oldest). Audited its gap 0
+  against the ORIGINAL data before building: boarding-free is Ultima IV's real
+  rule (`AVATAR.EXE` ships SHIPSHOR/SHIPSEA transition tilesets + bare
+  `Board:` prompt; every gold string belongs to town NPC dialogs). Gaps 1–2
+  are stage-2 milestones / check-only → nothing shippable as stage-1 gameplay.
+  Audit filed as **#2353** (feedback; also owns the gap so future picks aim
+  elsewhere) and cross-posted on **#2345** (slot a shipped Britannia tolls —
+  QA should weigh the strings before polishing them).
+- Next weakest: FLOOR BOSS (score 3) — oldest unowned gap = one-shift template.
+  Filed POLISH **#2346**, claimed, shipped.
 
 ## BOARD at exit
 - building: NONE. game-queue: empty.
-- building-qa: **#2336** (GardenGuard), **#2330** (PoP). feedback: **#2343**
-  (TidyBot, QA-held all shift), **#2351** (new — BRITANNIA polish pass: ship
-  sprite, coin presentation, refusal theatre, drive baseline).
-- jonq open: **#2305** (lane:platform, AWAITING — not ours to wait on).
-- #1711 `next` — Jon-side remainder unchanged. No halt, no steer.
+- building-qa: **#2336** (GardenGuard), **#2330** (PoP polish).
+- feedback: **#2352** (FloorBoss polish pass — mine: clock-in ceremony,
+  carry-over rules text, rung pricing, per-rung rush watch, deepest-shift
+  board), **#2353** (Britannia audit note — mine), #2343 (TidyBot attract,
+  expect the QA lanes at it).
+- jonq open: **#2305** (lane:platform, AWAITING, deadline 11-17, default hold
+  — not ours to wait on).
+- #1711 `next` — Jon-side remainder unchanged: his phone claptest (#2156) +
+  `wrangler secret put SESSION_WRITE_KEY` → then the #2093 relabel one-off.
+  No halt, no steer.
 
 ## Next (slot a or b, in order)
-1. Ladder as usual. Re-run `idle-kick` honestly — Britannia's three gaps are
-   now two (toll bullet carries CLOSED-by marker). Candidates carry score 3:
-   FLOOR BOSS, SHORT ORDER SHOUT, GRAVEL YARD, TALK ME DOWN, BOMB DEFUSE …
-   (registry order picks; run the tool, don't copy this line.)
-2. If a jonq answer lands for #2305 (write key), execute the #2093 relabel
-   one-off; a clap-test take on the store means grade it + post #1711/#2156.
-3. Britannia polish (#2351) is QA's; the 5 pre-existing britannidrive
-   failures (gate-III menu stickiness x4, gate-VI shrine bump) are named
-   there — a QA calibration pass, don't let them scare a builder.
+1. Ladder as usual. #1711: verify `/status` + store fresh at claim time; a
+   clap-test take on the store means grade it + post #1711/#2156; a writeKey
+   lands → execute the #2093 relabel one-off (only after jonq #2305 answers).
+2. never-dry scores moved: FloorBoss gap 0 shipped (its two leftovers are
+   big — 2P seats, aisle physics) and #2352 names it; Britannia gap 0 now
+   owned by #2353. Candidates: SHORT ORDER SHOUT, GRAVEL YARD, TALK ME DOWN,
+   BOMB DEFUSE (score 3 each), or whatever QA files after its sweep. Read
+   #2353 before touching any Britannia gap.
+3. Prod markers: entry HTML names the entry chunk only — walk its ~60 chunks
+   with STRING-LITERAL markers (identifiers minify away; see catches).
 
 ## The session's catches
-- **Baseline before blame.** The drive showed 9 reds; 5 were identical on
-  main (A/B: same machine, spare port 5175, `git worktree` untouched).
-  Without the baseline I'd have burned the shift on someone else's staleness.
-- **zsh grep on minified JS dies ("character not in range")** on em-dash
-  bytes via `echo` — export `LC_ALL=C` and pipe curl straight into
-  `grep -a`; never round-trip bundle text through the shell's echo.
-- **Prod markers hide in shared chunks** (`fighting-*.js` carries several
-  games) — walk EVERY `*.js` the entry references, not just `index-*`; and a
-  chunk NAME never tells you the game (verify with the marker itself).
-- **Same-tick toast collision:** the tithe toast died behind a gale notice —
-  day-turn block moved AFTER the wind block so the newer news wins (GOAL
-  still king).
+- **Zero-footprint proofs must survive their own hash.** Once `stateHash`
+  gains bits, pre-change hash literals can't be reused. Extract the pre-PR
+  engine (`git show HEAD:path`, re-point its imports), diff BEHAVIOR
+  side-by-side per tick, and embed literal behavior traces (tick:score:shipped:
+  expired marks) as the portable parity pin — that's what floorbosscheck now
+  carries vs HEAD `359e062`.
+- **Prod markers: literals, not identifiers.** Minification keeps
+  `'NIGHTS BANKED'`/`'shiftstart'` but renames `shiftParams`/`nextShift` —
+  scan chunks for strings or you'll pollute the poll forever.
+- **Commit before mutants.** mutateguard refuses a `--mutate` run on a dirty
+  tree (#2047 law, by design): the guard's refusal, not a bug — commit the
+  gate first, then plant.
+- **Old copy leaks design.** FloorBoss's over screen already promised "PRESS
+  ANY KEY FOR THE NEXT SHIFT" when no next shift existed. The ladder inherited
+  the promise — and `floorbossplay` pinned the old win→attract law, so a flow
+  change must re-pin its own play suite in the same PR.
+- **Warden pings go stale; the claim script is the authority.** The target
+  ping repeated #1711 twice after slot a's fresh releases; claim-time liveness
+  correctly refused — trust `forge-claim.sh`, not the prompt.
 
 ## Hygiene at exit
-- Dev servers 5173 + 5175 (mine) stopped; 5174/5179 (foreign) untouched.
-- Slot-a forge worktree removed; branch gone via squash; main checkout at
-  origin/main. STATE commit to main follows this file (game merged — rule 9)
-  + statepark slot a. Prod marker poll: entry chunk sweep for `tithe 20
-  gold` — if #2348's marker is absent at next shift start, treat as #2335-
-  class stall and re-run the sweep.
+- Dev server 5178 stopped; foreign ports (5173/5174/5179) untouched.
+- Slot-b forge worktree removed; branch `forge/fb-ladder` gone via squash;
+  main checkout detached at origin/main. STATE committed to main (game merged
+  — rule 9) + statepark slot b.
