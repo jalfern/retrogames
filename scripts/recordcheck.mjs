@@ -8,6 +8,8 @@
 //   npm run recordcheck -- --mutate   # RED by design: the store's door-guard
 //       is bypassed and an unconsented voice upload lands — proving the
 //       refusal is load-bearing (the shipped path keeps refusing).
+//   Two planted mutants: the taxonomy flip (permanent->keep) and, #1711
+//   audit 1, the per-name consent predicate replaced by a shared flag.
 //   Hand-mutant proof: delete the `if (!c.motion)` line in src/utils/
 //   consent.js#uploadAllowed -> this script goes red at the consent gates.
 //
@@ -16,9 +18,10 @@
 // enforces — contract shared, not duplicated.
 
 import http from 'node:http'
-import { validate, verifyRecording, REC_FORMAT, REC_FORMAT_V2 } from '../src/utils/recording.js'
+import { validate, verifyRecording, createRecorder, REC_FORMAT, REC_FORMAT_V2 } from '../src/utils/recording.js'
 import { createVoiceClock, tickToMs } from '../src/utils/voice.js'
-import { loadConsent, grantConsent, revokeConsent, consentFor, uploadAllowed, CONSENT_LS_KEY, CONSENT_GRACE_MS } from '../src/utils/consent.js'
+import { loadConsent, grantConsent, revokeConsent, consentFor, uploadAllowed, CONSENT_LS_KEY, CONSENT_GRACE_MS, ANON_ID } from '../src/utils/consent.js'
+import { playerId, loadLastPlayer, rememberPlayer, planGate, canGrant } from '../src/utils/player.js'
 import { validateSessionEnvelope, sessionKey, sessionMeta, sessionRow } from '../relay/core.js'
 import { uploadSession, listSessions, probeStore, storeFromQuery, tickSeconds } from '../src/utils/sessionStore.js'
 import { planRun, decideMerge } from '../src/utils/autoRecordCore.js'
@@ -99,6 +102,46 @@ const mkRec = (v2 = false, n = 200) => {
     ok(uploadAllowed(null, both).ok === false, 'garbage in -> refused')
 }
 
+// --- identity: consent keys to a NAME, not the device (#1711 audit 1) ------
+{
+    // normalization: the id is what consent, takes and uploads all share.
+    ok(playerId('  Jon  ') === 'jon' && playerId('A  B') === 'a b', 'names normalize: trim, collapse, lowercase')
+    ok(playerId('ann.o@x-1') === 'ann.o@x-1', 'safe charset survives')
+    ok(playerId('   ') === null && playerId('!!!') === null && playerId(null) === null && playerId(undefined) === null, 'no identifiable name -> null (a save needs a WHO)')
+    ok(playerId('x'.repeat(100)).length === 64, 'name clipped to the envelope bound (64)')
+    ok(canGrant('jon') === true && canGrant(ANON_ID) === false && canGrant(null) === false, 'anon declines; named ids grant')
+
+    const s = memStore()
+    const anonTry = grantConsent(s, ANON_ID, { motion: true, voice: true })
+    ok(!anonTry.motion && !anonTry.voice && consentFor(s, ANON_ID).motion === false, 'a GRANT under anon is refused — nothing uploads for an id nobody owns')
+    grantConsent(s, ANON_ID, { motion: false, voice: false })
+    ok(consentFor(s, ANON_ID).at > 0, 'an unnamed NO THANKS is stored under anon (the gate stops nagging; nothing more)')
+
+    // legacy device-wide grant is inert: a device that once said yes under
+    // 'player' (no name, no owner) is re-asked now that WHO is required.
+    const legacy = memStore()
+    legacy.setItem(CONSENT_LS_KEY, JSON.stringify({ player: { motion: true, voice: true, at: Date.now() } }))
+    const gp = planGate({ probe: { ok: true, sessions: true }, lastPlayer: null, consentForId: (id) => consentFor(legacy, id) })
+    ok(gp.ask === true, "the legacy 'player' grant re-asks: consent is not transferable to a named player")
+
+    // gate planning
+    const ON = { ok: true, sessions: true }
+    const OFF = { ok: false, sessions: false }
+    ok(planGate({ probe: OFF, lastPlayer: { id: 'jon', name: 'Jon' }, consentForId: () => null }).ask === false, 'store off: nobody is asked (no dead buttons)')
+    const dev = memStore()
+    grantConsent(dev, 'jon', { motion: true, voice: false })
+    ok(planGate({ probe: ON, lastPlayer: { id: 'jon', name: 'Jon' }, consentForId: (id) => consentFor(dev, id) }).ask === false, 'named + decided: zero added friction')
+    ok(planGate({ probe: ON, lastPlayer: null, consentForId: (id) => consentFor(dev, id) }).ask === true, 'no name known -> the gate goes up (WHO is required to record)')
+    grantConsent(dev, ANON_ID, { motion: false, voice: false })
+    ok(planGate({ probe: ON, lastPlayer: null, consentForId: (id) => consentFor(dev, id) }).ask === false, 'anon DECLINED stays silent — declining needs no identity')
+
+    // last-used name: prefill plumbing only
+    const d2 = memStore()
+    ok(rememberPlayer(d2, ' Mia ') && loadLastPlayer(d2).id === 'mia' && loadLastPlayer(d2).name === 'Mia', 'last-used name remembered, id normalized, display kept')
+    ok(rememberPlayer(d2, 'anon') === null && loadLastPlayer(d2).id === 'mia', 'anon is never a prefill name')
+    ok(loadLastPlayer(null) === null && rememberPlayer(null, 'jon') === null, 'no storage: honest no-op')
+}
+
 // --- S2 plan rules: when do we ask, when do we record (#1711) --------------
 {
     const OFF = { ok: false, sessions: false }
@@ -173,6 +216,10 @@ const server = http.createServer((req, res) => {
 })
 await new Promise((r) => server.listen(0, '127.0.0.1', r))
 const BASE = `http://127.0.0.1:${server.address().port}`
+const bucketRowBySeed = (seed) => {
+    for (const v of bucket.values()) if (Number(v.meta.seed) === seed) return v.meta.player
+    return null
+}
 
 // --- upload round-trips --------------------------------------------------------
 {
@@ -235,6 +282,22 @@ const BASE = `http://127.0.0.1:${server.address().port}`
     ok(sneak.status === 400, 'server refuses voice-without-voice-consent even if a client is broken')
     const sneak2 = await fetch(`${BASE}/sessions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ recording: mkRec(false), player: 'mallory', consent: {} }) })
     ok(sneak2.status === 400, 'server refuses an envelope with no motion consent')
+
+    // #1711 audit 1 — the client's no-fallback door: no valid named player,
+    // zero fetch. The fixed label 'player' is gone from the client.
+    fetches = 0
+    const unnamed = await uploadSession(mkRec(false), { consent: { motion: true, voice: false, at: 1 }, base: BASE, fetchImpl: counting })
+    ok(unnamed.uploaded === false && fetches === 0 && unnamed.reason === 'named player required', 'no player name -> no fetch at all')
+    const badname = await uploadSession(mkRec(false), { player: '   ', consent: { motion: true, at: 1 }, base: BASE, fetchImpl: counting })
+    ok(badname.uploaded === false && fetches === 0, 'a name that normalizes to nothing is refused too')
+    const stamped = mkRec(false)
+    stamped.player = 'mia'
+    const stampedUp = await uploadSession(stamped, { consent: { motion: true, at: 1 }, base: BASE })
+    ok(stampedUp.uploaded && bucket.get(stampedUp.key).meta.player === 'mia', 'the take\u2019s own seed-birth stamp labels the upload with no opts.player')
+    const normUp = await uploadSession(mkRec(false), { player: '  Bo ', consent: { motion: true, at: 1 }, base: BASE })
+    ok(normUp.uploaded && bucket.get(normUp.key).meta.player === 'bo', 'the envelope carries the normalized id')
+    const legacyDoor = await fetch(`${BASE}/sessions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ recording: mkRec(false), player: 'player', consent: { motion: true } }) })
+    ok(legacyDoor.status === 200, 'server stays lenient by design (cached old bundles keep working) — the client door is what ends new anonymous takes')
 }
 
 // --- S2 auto-capture: arm -> autoStart -> live bank -> autoStop -> upload ---
@@ -260,7 +323,7 @@ const BASE = `http://127.0.0.1:${server.address().port}`
     ok(armLiveCapture(fakeSpec) === true, 'armLiveCapture arms the production live feed')
     ok(!isRecording() && autoStop() === null, 'idle: autoStop returns nothing (no phantom file)')
     sim.seed = 7; sim.tick = 0; sim.h = 7 * 31
-    ok(autoStart({ voiceConsent: false }) === true, 'autoStart opens the recorder at seed-birth')
+    ok(autoStart({ voiceConsent: false, player: 'jon' }) === true, 'autoStart opens the recorder at seed-birth')
     ok(isRecording(), 'the recorder is live while the human plays')
     for (let t = 1; t <= 120; t++) {
         const pads = [{ right: t % 10 < 5 }, {}]
@@ -274,6 +337,7 @@ const BASE = `http://127.0.0.1:${server.address().port}`
     ok(validate(rec) === null, `auto-captured file validates (${validate(rec) || 'clean'})`, validate(rec) || '')
     ok(rec.format === REC_FORMAT && rec.voice === undefined, 'voice ungranted -> an honest v1 file')
     ok(rec.ticks === 120 && rec.seed === 7 && rec.game === 'gauntlet', 'seed + length + game stamped from the run')
+    ok(rec.player === 'jon', '#1711 audit 1: autoStart stamps the consenting id into the take at seed-birth')
     ok(rec.slots[0].source.kind === 'human' && rec.slots[1].source.kind === 'cpu', 'seat labels come from the game at stop time')
     const ver2 = verifyRecording(rec, { reset: (seed) => { sim.seed = seed; sim.tick = 0; sim.h = seed * 31 }, step: advance, state: () => ({ tick: sim.tick, hash: sim.h }) })
     ok(ver2.ok && ver2.ticks === 120, 'the auto-captured file replay-verifies tick-for-tick')
@@ -287,6 +351,27 @@ const BASE = `http://127.0.0.1:${server.address().port}`
     revokeConsent(st2, 'jon')
     const revoked = await uploadSession(rec, { player: 'jon', consent: consentFor(st2, 'jon'), base: BASE })
     ok(revoked.uploaded === false && revoked.reason === 'no motion consent', 'a mid-run revoke stops the upload at the last moment')
+}
+
+// --- the take carries WHO (#1711 audit 1) ------------------------------------
+// The consent evidence belongs IN the file, not only in the envelope: an
+// exported take still says which human it came from. Additive: v1 files
+// without the stamp stay valid, readers that don't know it ignore it.
+{
+    const r = createRecorder({ gameId: 'gauntlet', method: 'dpad', seed: 7, players: 1, build: 'test', hashEvery: 30, player: 'jon' })
+    for (let t = 1; t <= 60; t++) r.addTick([{ right: true }], null, t % 30 === 0 ? 1000 + t : null)
+    const rec = r.finish()
+    ok(rec.player === 'jon', 'recorder stamps the consenting player id into the take')
+    ok(validate(rec) === null, 'stamped files validate (additive field; old readers ignore it)')
+    const r2 = createRecorder({ gameId: 'gauntlet', method: 'dpad', seed: 7, players: 1, build: 'test', hashEvery: 30 })
+    for (let t = 1; t <= 60; t++) r2.addTick([{}], null, t % 30 === 0 ? 1 : null)
+    const rec2 = r2.finish()
+    ok(rec2.player === undefined && validate(rec2) === null, 'files without the stamp stay valid v1 (old takes untouched)')
+    const badP = (p) => { const x = mkRec(false); x.player = p; return validate(x) }
+    ok(badP('') !== null && badP(42) !== null && badP('x'.repeat(65)) !== null, 'validate rejects bad player stamps (empty, non-string, >64)')
+    let threw = false
+    try { createRecorder({ gameId: 'gauntlet', method: 'dpad', seed: 7, player: 'x'.repeat(65) }) } catch { threw = true }
+    ok(threw, 'recorder refuses an over-long player at birth, not at finish')
 }
 
 // --- #2058: an auto-captured run stamps seat 0 human whatever the spec claims --
@@ -821,6 +906,37 @@ const mkRec2 = (game = 'gauntlet', seed = 777, ticks = 90) => {
     ok(revOut.dropped.length === 1 && revOut.sent.length === 0 && await makeOutbox(fac).count() === 0,
         'revoked consent purges the pen through drain \u2014 nothing uploads AND nothing lingers')
     ok(await dropEntry('no-such-id') === true, 'dropEntry is silent on missing (already-gone is success)')
+
+    // --- two humans, one phone (#1711 audit 1 acceptance gate) --------------
+    // Consent keys by name, so the outbox drains per NAME: revoking `mia`
+    // purges her pile while `jon`'s ships, and the store ends up showing
+    // distinct labels for distinct players on the same device.
+    const dev = memStore()
+    grantConsent(dev, 'jon', { motion: true, voice: false })
+    grantConsent(dev, 'mia', { motion: true, voice: false })
+    const pdP = planDrain([{ id: 'j', player: 'jon', savedAt: 1 }, { id: 'm', player: 'mia', savedAt: 2 }], { motion: (e) => e.player === 'jon', now: 3 })
+    ok(pdP.send.length === 1 && pdP.send[0].id === 'j' && pdP.drop.length === 1 && pdP.drop[0].id === 'm', 'planDrain takes a per-entry motion predicate — one flag per name, not per device')
+
+    const fac2 = fakeIDB()
+    setOutboxFactory(fac2)
+    const pen2 = () => makeOutbox(fac2).count()
+    await queueRun(mkRec2('gauntlet', 701, 60), 'jon')
+    await queueRun(mkRec2('gauntlet', 702, 60), 'mia')
+    await queueRun(mkRec2('gauntlet', 703, 60), 'jon')
+    revokeConsent(dev, 'mia')
+    const nameUpload = (e) => uploadSession(e.rec, { player: e.player, consent: consentFor(dev, e.player), base: BASE })
+    const twoOut = await drainOutbox({ motion: (e) => consentFor(dev, e.player).motion, upload: nameUpload })
+    ok(twoOut.sent.length === 2 && twoOut.dropped.length === 1 && await pen2() === 0,
+        'revoking mia purges only her take — jon\u2019s two ship in the same pass')
+    const rowFor = (seed) => bucketRowBySeed(seed)
+    ok(rowFor(701) === 'jon' && rowFor(703) === 'jon', 'jon\u2019s drained takes reach the store labelled jon')
+    ok(twoOut.dropped[0].reason.includes('revoked'), 'the purged take names why: consent revoked')
+    grantConsent(dev, 'mia', { motion: true, voice: false })
+    setOutboxFactory(fac2)
+    await queueRun(mkRec2('gauntlet', 704, 60), 'mia')
+    const miaOut = await drainOutbox({ motion: (e) => consentFor(dev, e.player).motion, upload: nameUpload })
+    ok(miaOut.sent.length === 1 && await pen2() === 0, 'a re-granted mia ships her own take')
+    ok(rowFor(701) === 'jon' && rowFor(704) === 'mia', 'two players consented on ONE device -> the store shows two labels (acceptance line, Node form)')
 }
 
 // --- sync badge: the phone says so (#1711 S7) -------------------------------
@@ -871,6 +987,28 @@ const mkRec2 = (game = 'gauntlet', seed = 777, ticks = 90) => {
                 'MUTANT classifyFailure drop->keep: a 413 must stay dropped \u2014 red here means a poison entry would clog the queue')
         } finally {
             pull(MUT) // #1359 — guard also rewinds on SIGTERM/SIGINT/SIGHUP/exit
+        }
+    }
+}
+
+// --mutate audit 1: replace the per-name consent predicate with a shared
+// flag. The gate below asserts on the MUTANT module that a revoked player's
+// take STILL purges — red means revoked humans' recordings would ship.
+{
+    const CORE = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/utils/outboxCore.js')
+    const MUT = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/utils/.recordcheck-mutant-names.mjs')
+    const ANCHOR = "    const motionOf = typeof motion === 'function' ? motion : () => !!motion"
+    const src = fs.readFileSync(CORE, 'utf8')
+    if (!src.includes(ANCHOR)) { console.log('FAIL   names mutant anchor not found in outboxCore.js \u2014 update recordcheck ANCHOR to match'); fail++ }
+    else {
+        plantNew(MUT, src.replace(ANCHOR, "    const motionOf = () => true // MUTANT: per-name consent ignored"))
+        try {
+            const mutated = await import(pathToFileURL(MUT).href + `?t=${Date.now()}`)
+            const pdm = mutated.planDrain([{ id: 'j', player: 'jon', savedAt: 1 }, { id: 'm', player: 'mia', savedAt: 2 }], { motion: (e) => e.player === 'jon', now: 3 })
+            ok(pdm.drop.some((d) => d.id === 'm') && pdm.send.every((e) => e.player === 'jon'),
+                'MUTANT per-name consent ignored: a revoked player\u2019s take must still purge \u2014 red means revoked recordings ship')
+        } finally {
+            pull(MUT)
         }
     }
 }
