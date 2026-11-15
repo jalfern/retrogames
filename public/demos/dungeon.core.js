@@ -739,7 +739,6 @@ void main(){
     { const rnd = mulberry32(0x70F1); for (let i = 0; i < 8; i++) FLICK.push(rnd()); }
     let lights = [];
 
-    const norm3 = (x, y, z) => { const l = Math.hypot(x, y, z) || 1; return [x / l, y / l, z / l]; };
 
     api.setMaze = (maze) => { api.maze = maze; };
     api.setSprites = (list) => { api.sprites = list || []; };
