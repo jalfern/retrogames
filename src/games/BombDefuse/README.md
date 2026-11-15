@@ -109,7 +109,7 @@ lockstep-by-sampling-law (#531), same shape as the other four co-op titles:
 ## Verify
 
 ```bash
-npm run defusecheck                      # 333 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline, first-VENT coaching, the first-vent teach panel, powered-device bed, window pre-flash, active-seat chips, the boom FX, the win tally, the attract marquee camera, the accent-tolerance battery, the haptics
+npm run defusecheck                      # 345 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline, first-VENT coaching, the first-vent teach panel, powered-device bed, window pre-flash, active-seat chips, the boom FX, the win tally, the attract marquee camera, the accent-tolerance battery, the haptics, material families + rack clank
 npm run defuselinkcheck                # 75 gates: online protocol incl. in-flight reseat (7b/7c/7d)
 CONTRACT_ONLY=bomb-defuse npm run contractcheck
 DEV_PORT=5178 npm run plaicraft:evidence -- --self-test   # fifth-title synths + mutants
@@ -320,8 +320,20 @@ restore → 201/201.
   defusecheck +10 source pins (spawn-from-rect, radial kick, size floor,
   gravity, bounce law, settle law, hud/probe wiring); defusedrive gates the
   live 4-chunk launch, a real ground bounce mid-flight, and expiry across the
-  restart. Remaining: per-material fragments (bakelite vs steel) and chunks
-  colliding with rack geometry stay polish ideas.
+  restart.
+
+- **CLOSED by #2363**: per-material fragments — each chunk rolls a family
+  (steel chassis, bakelite arm panel, brass step-dot fittings, fuse glass) and
+  tears from that family's source rect, so a shard reads as the part it came
+  off: steel keeps the rivet motif, bakelite is matte brown with a panel seam,
+  brass is gold with a hard specular line, glass is a pale translucent wedge
+  with a screen-space sparkle tail (the only family that glints). Rack clank —
+  chunks that fall onto the lamp bank / step-dot bank / cutter-column
+  silhouettes CLANK off the top edge (damped 0.34 deflect + 3 spark dots)
+  instead of ghosting through; `hud.banked` counts it (`boomFx.banked`), and
+  `__bdTest.clankProbe` proves the law deterministically. Chunk-count variety:
+  BOMB 1 spits 3 chunks, growing `Math.min(6, 3 + bomb)` — later bombs feel
+  bigger. All view-only (Math.random, no sim state; the hash pins stay green).
 - **CLOSED by #2363**: voice grammar accent tolerance — the verb tiers (and
   the warn + wire tiers) now ride the dmax leash the colour rescues already
   used: 3-4-letter words 1 edit (bent→vent, hole→hold, bear→bar, waite→wait,
@@ -337,5 +349,3 @@ restore → 201/201.
   thump, surge [100] one heavy thud, boom [120,60,200] the big decaying one,
   defused [30,40,30] the clean tick-out. The sound still tells the whole
   story; the buzz is the weight. Pinned by defusecheck source gates.
-- Remaining (separate stage): per-material fragments (bakelite/brass/glass
-  families), chunks vs rack-geometry occlusion, per-bomb chunk-count variety.

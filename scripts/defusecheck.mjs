@@ -762,7 +762,7 @@ console.log('\n— the boom (#1812 item 3) —')
     // clearing scorchDecals on restart reddens the carry pin; referencing gs
     // inside spawnBoom reddens the purity pin.
     const jsx = readFileSync(join(here, '../src/games/BombDefuse/index.jsx'), 'utf8')
-    ok(/k === 'boom'[\s\S]{0,120}spawnBoom\(hud\)/.test(jsx), 'the boom event spawns lid + shrapnel + scorch')
+    ok(/k === 'boom'[\s\S]{0,120}spawnBoom\(hud, gsRef\.current/.test(jsx), 'the boom event spawns lid + shrapnel + scorch (carrying the bomb number)')
     const spawn = jsx.slice(jsx.indexOf('const spawnBoom'), jsx.indexOf('function drawHudFrame'))
     ok(spawn.includes('hud.lid') && spawn.includes('hud.shrap') && spawn.includes('scorchDecals = Array.from'), 'the spawn sets lid, shrapnel and decals')
     ok(spawn.includes('Math.random') && !/\bgs\b/.test(spawn), 'spawnBoom reads only Math.random — no gs, hash law intact (ART.md 5)')
@@ -820,6 +820,36 @@ console.log('\n— haptics (#2363) —')
     ok(/k === 'surge'[\s\S]{0,80}buzz\(\[100\]\)/.test(jsx), 'a surge is one heavy thud [100]')
     ok(/k === 'defused'[\s\S]{0,80}buzz\(\[30, 40, 30\]\)/.test(jsx), 'a defused bomb ticks out clean [30,40,30]')
     ok(/k === 'boom'[\s\S]{0,80}buzz\(\[120, 60, 200\]\)/.test(jsx), 'the boom is the big decaying one [120,60,200]')
+}
+
+console.log('\n— #2363 material families + rack clank —')
+{
+    // The boom spits the case's MATERIALS (steel / bakelite / brass / glass),
+    // chunks clank off the rack silhouettes instead of ghosting through, and
+    // the charge grows with the bomb (3 → 6). Kill proofs: flattening the
+    // roll back to one family reddens the family pin; deleting the clank
+    // branch reddens the bank pin and the drive's clankProbe; pinning the
+    // count at a constant reddens the variety pin.
+    const jsx = readFileSync(join(here, '../src/games/BombDefuse/index.jsx'), 'utf8')
+    const spawn = jsx.slice(jsx.indexOf('const spawnBoom'), jsx.indexOf('function drawHudFrame'))
+    ok(/const MAT_ZONES = \{[\s\S]{0,600}bakelite[\s\S]{0,300}brass[\s\S]{0,300}glass/.test(jsx),
+        '#2363 material source rects exist — bakelite, brass, glass (besides the steel body)')
+    ok(spawn.includes('MAT_ROLL()') && /MAT_ROLL = \(\) =>[\s\S]*'bakelite'/.test(jsx),
+        '#2363 every chunk rolls a material family at spawn — the burst reads mixed')
+    ok(spawn.includes('mat, bankHit: 0'), '#2363 chunks carry their material + clank counter')
+    ok(spawn.includes("zone[Math.floor(Math.random() * zone.length)]") && spawn.includes('z.x + Math.random() * z.w'),
+        '#2363 non-steel chunks tear from their material zone, not the whole body')
+    ok(/mat === 'glass'[\s\S]{0,700}rgba\(196,232,224/.test(jsx) && /sparkle tail/.test(jsx),
+        '#2363 glass shards paint as pale wedges with a sparkle tail')
+    ok(/mat === 'brass'[\s\S]{0,200}C\.brass/.test(jsx) && /mat === 'bakelite'/.test(jsx),
+        '#2363 brass and bakelite families get their own paint (specular gold / matte seam)')
+    ok(/const RACK_BANKS = \[[\s\S]{0,400}\]/.test(jsx), '#2363 the rack banks are declared (lamp/dot/cutter silhouettes)')
+    ok(/prevY <= b\.y && c\.y >= b\.y/.test(jsx) && /hud\.banked\+\+/.test(jsx),
+        '#2363 a falling chunk crossing a bank top clanks and is counted')
+    ok(/c\.vy = -c\.vy \* 0\.34/.test(jsx), '#2363 the clank is a damped deflect, not a stop')
+    ok(/Math\.min\(6, 3 \+ bomb\)/.test(spawn), '#2363 chunk count grows with the bomb (3 → 6 ceiling)')
+    ok(jsx.includes('banked: hudRef.current.banked'), '#2363 boomFx exposes the clank counter')
+    ok(/clankProbe: \(\) =>/.test(jsx), '#2363 clankProbe exposes the clank law for deterministic pinning')
 }
 
 console.log('\n— win tally (#1812 item 6) —')
