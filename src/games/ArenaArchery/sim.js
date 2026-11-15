@@ -477,7 +477,6 @@ function hopGrants(g, p, cx, slabRow, dir, out) {
             let air = false
             let ok = false
             for (let t = 0; t < 52; t++) {
-                const gap = (lx - b.x) * dir
                 const to = (tx - b.x) * dir
                 if (b.grounded) {
                     if (air) { ok = Math.floor(b.y / CFG.cell) <= startRow - 1; break }
@@ -530,7 +529,6 @@ function climbStep(g, p) {
     // the duel can afford, and far below the 30 Hz frame budget
     if (g.tick - p.climbTried < 12) return null
     p.climbTried = g.tick
-    const c0 = Math.floor(p.x / CFG.cell)
     const prefer = Math.floor(g.p[1 - p.id].x / CFG.cell)
     const plan = {}
     const step = reachableStep(g, p, prefer, 2, 6, p.climbNo, (c) => hopGrants(g, p, c.cx, c.stand, c.dir, plan))

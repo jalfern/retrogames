@@ -24,7 +24,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { CFG, makeGame, step, botInput, recordMatch, replay, stateHash, cloneGame } from './sim.js'
-import { ARENAS_COUNT, buildArena } from './levels.js'
+import { ARENAS_COUNT, ARENA_NAMES, buildArena } from './levels.js'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
@@ -451,7 +451,7 @@ const ArenaArcheryGame = () => {
                     <h2 className={`text-4xl font-black mb-1 ${end.winner === 0 || modeRef.current === '2p' ? 'text-yellow-300' : 'text-red-400'}`}>
                         {end.winner < 0 ? 'DRAW' : modeRef.current === '2p' ? `PLAYER ${end.winner + 1} TAKES THE ARENA` : end.winner === 0 ? 'YOU TAKE THE ARENA' : 'THE BOT TAKES THE ARENA'}
                     </h2>
-                    <p className="text-lg mb-1">{end.scores[0]} &mdash; {end.scores[1]} in {(end.time / 30).toFixed(1)}s on {end.arena === 0 ? 'CROSSGLOVE' : 'KNOCKBACK'}</p>
+                    <p className="text-lg mb-1">{end.scores[0]} &mdash; {end.scores[1]} in {(end.time / 30).toFixed(1)}s on {ARENA_NAMES[end.arena] || 'CROSSGLOVE'}</p>
                     <p className="text-sm text-amber-200/80 mb-4">every missed arrow became terrain on that board &middot; the replay reproduces this match hash-for-hash</p>
                     <p className="text-sm text-amber-100/80 mb-4">R runs it back &middot; any other key returns to the marquee</p>
                     <p className="animate-pulse font-bold">TAP / PRESS ANY KEY</p>
