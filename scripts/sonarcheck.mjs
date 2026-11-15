@@ -33,7 +33,7 @@
 //                teaches ring→distance in pixels.
 //   DEATH/DESCEND  a touching eel takes a life; the vent takes you down.
 //   DETERMINISM  replays match, a dropped command does not (tamper probe).
-//   MUTATIONS    eight rules silenced in children, each must turn a NAMED check
+//   MUTATIONS    nine rules silenced in children, each must turn a NAMED check
 //                red, or a check has stopped touching its rule.
 
 import { spawnSync } from 'node:child_process'
@@ -63,6 +63,7 @@ const MUTANTS = {
     descend: 'the vent stops descending — depths become wallpaper',
     cue: 'distance cue frozen — every contact reads the same nearness; the ring→heat map is dead',
     ventRipple: 'the vent swirl ignores freshness — remembered exits ripple forever and the front stops teaching',
+    attractJoin: 'the attract showcase join disabled — the demo starts cold at tick 0 and a five-second viewer never sees a hot mark (#2383)',
 }
 if (MUT_NAME) {
     if (!(MUT_NAME in MUTANTS)) { console.error(`unknown mutant ${MUT_NAME}`); process.exit(2) }
@@ -400,6 +401,42 @@ section('DETERMINISM (attract replay is a proof, not a vibe)')
     const mid = Math.floor(cmds.length / 2)
     const tampered = cmds.slice(0, mid).concat(cmds.slice(mid + 1))
     ok(s.stateHash(s.replay(cave, tampered)) !== s.stateHash(a), 'the hash ignores a dropped command — determinism could not catch a desync')
+}
+
+// ------------------------------------------------------------ showcase #2383 ----
+// The attract joins its proven replay ATTRACT_LEAD ticks before the first
+// NEAR (ring ≤ 5) contact, so a five-second viewer sees what a hot mark is.
+// The join is only honest if the contact it aims at is real: pin that every
+// demo depth has one, that the join sits before it (never after — no aiming
+// at a contact already consumed), and that on the shallow depths the gap the
+// join covers was real (nothing near happens in the first three seconds).
+section('ATTRACT SHOWCASE (a near contact within seconds, honestly)')
+{
+    ok(s.NEAR_RING <= 5, `NEAR_RING=${s.NEAR_RING} — marks that hot paint red, the cue must match the painter`)
+    for (let depth = 1; depth <= 4; depth++) {
+        const cave = s.genCave(0xC0FFEE, depth)
+        const cmds = s.planRun(cave).cmds
+        const hot = s.firstNearContact(cave, cmds)
+        ok(hot > 0, `d${depth}: the demo route never touches an eel on a NEAR ring — the showcase has nothing to show`)
+        const join = s.attractJoinAt(cave, cmds)
+        ok(join >= 0 && join < hot, `d${depth}: join ${join} does not sit before the near contact at ${hot}`)
+        ok(hot - join <= s.ATTRACT_LEAD, `d${depth}: near contact lands ${hot - join} ticks after the join — more than ${s.ATTRACT_LEAD}, a five-second viewer misses it`)
+        if (depth <= 2) {
+            // On the shallow demo depths nothing near happens in the first
+            // ATTRACT_LEAD ticks from tick 0 — this is exactly the gap the
+            // join exists to cover. If this goes false, the route changed and
+            // the join's raison d'être must be re-measured, not assumed.
+            ok(hot > s.ATTRACT_LEAD, `d${depth}: a near contact already lands at tick ${hot} without the join — re-measure why it leads ${s.ATTRACT_LEAD}`)
+        }
+    }
+    // the join changes no commands: the script it fast-forwards through is
+    // still the full proven route, ending in the same descent.
+    const cave = s.genCave(0xC0FFEE, 1)
+    const cmds = s.planRun(cave).cmds
+    const join = s.attractJoinAt(cave, cmds)
+    const g = s.replay(cave, cmds, { maxTicks: join })
+    ok(!g.end && g.tick === join, `fast-forwarding to the join ended the demo early (end=${g.end} tick=${g.tick}/${join})`)
+    ok(s.known(g, g.player.c), 'the diver cell was not known at the join — the view would start in ground')
 }
 
 // -------------------------------------------------------------- mutation gate ----

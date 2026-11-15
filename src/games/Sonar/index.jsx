@@ -23,7 +23,7 @@ import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import {
     CFG, W, H, ROCK, DIRS, idx, cx, cy,
-    genCave, makeGame, planRun, planStep, playerMove, ping, step, stateHash, known, eelContacts, eelCell, contactHeat, ventSignal,
+    genCave, makeGame, planRun, planStep, playerMove, ping, step, stateHash, known, eelContacts, eelCell, contactHeat, ventSignal, attractJoinAt, replay,
 } from './sim.js'
 
 const TS = 16
@@ -84,6 +84,20 @@ const SonarGame = () => {
         let runScore = 0, livesCarry = CFG.lives
         const held = []
 
+        // #2383 haptics. The arcade pattern (navigator.vibrate, try/caught),
+        // gated so harness runs stay silent: the __game contract handle is the
+        // harness's signature — where it exists, motors stay quiet but every
+        // intended pulse lands in hapticLog, so sonarplay can still prove the
+        // rule fired. Production (no __game) gets the real buzz.
+        const hapticLog = []
+        const buzz = (ms) => {
+            const key = Array.isArray(ms) ? ms.join(',') : String(ms)
+            hapticLog.push(`${tickBase + gs.tick}:${key}`)
+            if (hapticLog.length > 48) hapticLog.shift()
+            if (typeof window !== 'undefined' && window.__game) return
+            try { if (navigator.vibrate) navigator.vibrate(ms) } catch { /* no haptics */ }
+        }
+
         const indexCmds = (cmds) => {
             const m = new Map()
             for (const c of cmds) { if (!m.has(c.tick)) m.set(c.tick, []); m.get(c.tick).push(c) }
@@ -94,8 +108,17 @@ const SonarGame = () => {
             cave = genCave(seed, depth)
             gs = makeGame(cave, resetRun ? {} : { score: gs ? runScore : 0, lives: livesCarry })
             if (resetRun) { runScore = 0; livesCarry = CFG.lives }
-            if (screenRef.current === 'attract') byTick = indexCmds(planFor(DEMO_SEED, depth))
-            else byTick = null
+            if (screenRef.current === 'attract') {
+                const cmds = planFor(DEMO_SEED, depth)
+                // #2383 attract showcase: join the proven replay ~3 s before its
+                // first NEAR contact so the hot mark sells itself inside five
+                // seconds. The join runs the script itself (replay's machinery),
+                // silently — every lit cell at the join is a real wavefront
+                // arrival; the contact ahead lands on the plan's own ping.
+                const join = attractJoinAt(cave, cmds)
+                if (join > 0) gs = replay(cave, cmds, { maxTicks: join })
+                byTick = indexCmds(cmds)
+            } else byTick = null
             held.length = 0
         }
         loadDepth(1, true)
@@ -109,7 +132,7 @@ const SonarGame = () => {
             for (const e of evts) {
                 if (e.type === 'ping') audioController.playSweep(1050, 240, 0.5, 'sine', 0.07)
                 else if (e.type === 'pearl') { audioController.playSweep(880, 1760, 0.14, 'square', 0.07); audioController.playTone(2093, 0.08, 'square', 0.03) }
-                else if (e.type === 'hit') { audioController.playNoise(0.18, 0.1); audioController.playSweep(300, 90, 0.3, 'sawtooth', 0.08) }
+                else if (e.type === 'hit') { audioController.playNoise(0.18, 0.1); audioController.playSweep(300, 90, 0.3, 'sawtooth', 0.08); buzz([90, 40, 90]) }   // #2383: the long one — you got touched
                 else if (e.type === 'die') audioController.playDeath()
                 else if (e.type === 'descend') { audioController.playSweep(220, 880, 0.5, 'triangle', 0.08); toast = 40 }
                 else if (e.type === 'contact') nearestRing = nearestRing < 0 ? e.ring : Math.min(nearestRing, e.ring)
@@ -119,6 +142,7 @@ const SonarGame = () => {
                 const f = Math.round(170 + (1 - h) * 730)          // near ≈170 Hz → far ≈900 Hz
                 audioController.playTone(f, 0.07, 'sine', 0.03 + h * 0.05)
                 if (h > 0.55) audioController.playTone(Math.round(f * 0.72), 0.09, 'sine', 0.02 + h * 0.045)
+                if (h > 0.55) buzz(30)                             // #2383: short pulse on a HOT contact
             }
         }
 
@@ -302,6 +326,17 @@ const SonarGame = () => {
                 ctx.moveTo(ex + 1, ey + 5)
                 ctx.quadraticCurveTo(ex + 8, ey + 1 + (b.t % 3) * 3, ex + 15, ey + 9)
                 ctx.stroke()
+                // #2383 colourblind SHAPE cue: a HOT mark grows a second stroke —
+                // a chevron under the body, fully below row 10 of the cell, while
+                // cold marks stay single. Near/far then reads from SHAPE alone, no
+                // hue needed (the arc/hatch distinction docs/ART.md asks for).
+                if (h > 0.55) {
+                    ctx.beginPath()
+                    ctx.moveTo(ex + 4, ey + 11)
+                    ctx.lineTo(ex + 8, ey + 15)
+                    ctx.lineTo(ex + 12, ey + 11)
+                    ctx.stroke()
+                }
                 ctx.fillStyle = `rgba(${Math.min(255, cr + 60)},${Math.min(255, cg + 80)},${cb},${a.toFixed(2)})`
                 ctx.fillRect(ex + 12, ey + 7, 2, 2)
             }
@@ -432,6 +467,10 @@ const SonarGame = () => {
                     }
                 },
                 knownAt: (x, y) => known(gs, idx(x, y)),
+                // #2383: every intended haptic pulse, "tick:ms" — motors stay
+                // silent under the harness (window.__game); the intent is logged
+                // so sonarplay can still prove the rule fired.
+                haptics: () => hapticLog.slice(-12),
                 // #1637 WATCH probes: is the prover driving, did it blip.
                 watching: () => watchingRef.current && screenRef.current === 'play',
                 watchSfx: watchSfxLog,

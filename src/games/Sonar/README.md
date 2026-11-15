@@ -40,12 +40,12 @@ releases the seat silently. DEV probes: `__sonarTest.watching()`,
 
 ## Verify
 ```bash
-npm run sonarcheck            # 210 checks: gen, wavefront honesty, determinism,
+npm run sonarcheck            # 228 checks: gen, wavefront honesty, determinism,
                               # eel timelines, distance-cue ring/heat (#2365),
                               # vent signal fresh/ghost/dark boundaries (#2367),
-                              # vent-win crossings (20/20 seeds)
+                              # attract showcase (#2383), vent-win crossings
 DEV_PORT=<p> npm run watchcheck -- --only sonar   # 182: seat pilot + source pins
-DEV_PORT=<p> npm run sonarplay                    # real keys + pixels (#2365/#2367)
+DEV_PORT=<p> npm run sonarplay                    # real keys + pixels (#2365/#2367/#2383)
 ```
 
 ## The vent signal (#2367)
@@ -69,9 +69,17 @@ now visible; it draws from `gs.pings`, cells still light solely by BFS arrival.
   teaches the distance mapping in pixels.
 
 ## Remaining polish candidates (#2367 follow-ups)
-- Colourblind SHAPE cue on the heat mark (double stroke/chevron when hot) so
-  near/far reads without hue.
-- Haptics (`navigator.vibrate`) on hot contact / hit, gated behind feedback
-  state so harness runs stay silent.
-- Attract beat that pings an eel on a NEAR ring so the hot mark sells itself
-  in five seconds (docs/ART.md bar 6).
+- **CLOSED by #2383:** colourblind SHAPE cue on the heat mark — a hot mark
+  grows a second stroke (a chevron fully below row 10 of its cell; cold stay
+  single), pinned in `sonarplay` by counting lower-band red pixels; haptics —
+  short pulse on a hot contact, long on a hit, `navigator.vibrate` gated
+  behind the harness contract (`window.__game` present ⇒ motors silent, every
+  intended pulse logged to the DEV probe `haptics()`); attract showcase —
+  `attractJoinAt()` joins the proven replay `ATTRACT_LEAD` ticks before its
+  first NEAR contact so a five-second viewer watches a hot mark land (the
+  join runs the script itself, no commands added; `sonarcheck` pins the
+  aim and a `attractJoin:false` mutant dies).
+
+## Remaining polish candidates (#2383 follow-ups)
+- Attract could also surface the SHAPE cue in copy (a cycling line about the
+  chevron), if the heat cue gets adopted widely.
