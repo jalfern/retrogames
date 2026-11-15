@@ -19,8 +19,8 @@ import { TOWN_R, FLAT as TOWN_FLAT, townScore, hasCottage } from '../src/games/B
 import { decodeCon, decodeRecord, CON_TERR, FLAT } from '../src/games/Britannia/ega.js'
 import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches, SPLAT, splatIntensity, dimples, splashStrikes, SPLAT_GAP, ROUGH_MEMORY, seaRough, crestGain, foamGain, SAIL_DRAG, shipCd, SURF_FLOOR, surfVoice, surfDue } from '../src/games/Britannia/swell.js'
 import { SHRINE_DIST, AVATARS, shrineTitle, shrineSpot, plotShrines } from '../src/games/Britannia/shrines.js'
-import { HULL_MAX, STRAIN_STORM, strain, wear, repair, nearestCoast, GROAN_GAP } from '../src/games/Britannia/hull.js'
-import { START_GOLD, FARE, TRIBUTE, payToll, tribute } from '../src/games/Britannia/purse.js'
+import { HULL_MAX, STRAIN_STORM, strain, wear, repair, nearestCoast, GROAN_GAP, sailState } from '../src/games/Britannia/hull.js'
+import { START_GOLD, FARE, TRIBUTE, payToll, tribute, moorReach } from '../src/games/Britannia/purse.js'
 
 // Prove-it-can-fail mutants (#1876): --mutate-shrine shrinks SHRINE_DIST to 1
 // (sanctums onto the gate's approach ring), --mutate-block deletes the foot
@@ -43,6 +43,9 @@ const MUT = {
     '--mutate-toll-free': { target: 'src/games/Britannia/index.jsx', from: 'if (!toll.paid) {', to: 'if (false) {', name: 'boarding toll refusal deleted' },
     '--mutate-purse-hollow': { target: 'src/games/Britannia/purse.js', from: 'export const START_GOLD = 250', to: 'export const START_GOLD = 0', name: 'starting purse emptied' },
     '--mutate-tithe-mint': { target: 'src/games/Britannia/purse.js', from: 'return Math.min(START_GOLD, g + TRIBUTE)', to: 'return g + TRIBUTE', name: 'tithe minting past the cap' },
+    '--mutate-moor-drift': { target: 'src/games/Britannia/purse.js', from: 'return g >= FARE ? 1 : 2', to: 'return 1', name: 'the light-purse boat drifting back to the waterline' },
+    '--mutate-sail-locked': { target: 'src/games/Britannia/hull.js', from: 'return w <= 0 ? 0 : w === 1 ? 1 : 2', to: 'return w <= -1 ? 0 : w === 1 ? 1 : 2', name: 'a sail frozen full under a becalmed sky' },
+    '--mutate-captain-echo': { target: 'src/games/Britannia/index.jsx', from: "audioController.playTone(300, 0.09, 'square', 0.10)\n                    audioController.playTone(190, 0.16, 'square', 0.10)", to: "audioController.playSweep(96, 60, 0.14, 'square', 0.16)", name: 'the captain stealing the chapel thud back' },
 }
 const mutKey = Object.keys(MUT).find(k => ARGS.includes(k))
 if (mutKey) {
@@ -1460,7 +1463,7 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     // refusal keeps the pilgrim dry and names the fare; payment debits.
     const idx = readFileSync('src/games/Britannia/index.jsx', 'utf8')
     ok(/const toll = payToll\(S\.gold\)/.test(idx), 'index.jsx: boarding asks the purse before the keel goes in')
-    const refBlock = idx.match(/if \(!toll\.paid\) \{([\s\S]{0,240})\}/)
+    const refBlock = idx.match(/if \(!toll\.paid\) \{([\s\S]{0,320})\}/)
     ok(!!refBlock && refBlock[1].includes('The captain asketh'),
         'index.jsx: the light-purse refusal names the fare the captain asketh')
     ok(!!refBlock && !refBlock[1].includes('S.ship = true') && !refBlock[1].includes('S.x = nx'),
@@ -1476,6 +1479,54 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     ok(/gold: S\.gold,/.test(idx) && /fare: FARE,/.test(idx), 'index.jsx: gold and the standing fare ride the harness state')
     ok(/\+ S\.gold \* 13\) >>> 0/.test(idx), 'index.jsx: the state hash carries the purse (tolls are hash-visible)')
     ok(/setGold: g => \{ S\.gold = Math\.max\(0, g \| 0\) \}/.test(idx), 'index.jsx: the DEV hook can drive the refusal')
+}
+
+// TOLL SEEN (#2351) — the purse law was true but invisible; this makes the
+// captain, his boat, his price and the wind all READ on screen. The reach and
+// the sail are pure law (numbers in, numbers out) and pinned as law; the rest
+// is wiring — the presentation must stay bolted to the payment it describes.
+{
+    const idx = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+    const purseSrc = readFileSync('src/games/Britannia/purse.js', 'utf8')
+    const refBlock = idx.match(/if \(!toll\.paid\) \{([\s\S]{0,320})\}/)
+    // moorReach: a payable purse moors at the waterline; a light one watches
+    // her ride an honest tile further out. Pure, clamped, deterministic.
+    ok(moorReach(FARE) === 1, 'moorReach: exactly-the-fare gold moors at the waterline (reach 1)')
+    ok(moorReach(START_GOLD) === 1, 'moorReach: a full purse moors at the waterline')
+    ok(moorReach(FARE - 1) === 2, 'moorReach: four gold sees the boat ride out of the step (reach 2)')
+    ok(moorReach(0) === 2 && moorReach(-9) === 2, 'moorReach: empty and negative purses both watch her ride out (clamped)')
+    ok(moorReach(FARE + 1) === moorReach(START_GOLD), 'moorReach: past the fare the reach stops growing (the law, not the number, moves the boat)')
+    const mDet = moorReach(2)
+    ok(mDet === 2 && moorReach(2) === mDet, 'moorReach: deterministic')
+    // sailState: the canvas obeys the named wind class — Origin's ship sails
+    // when the wind does and lies becalmed when it does not.
+    ok(sailState(0) === 0, 'sailState: BECALMED furles the sail (0)')
+    ok(sailState(1) === 1, 'sailState: STEADY sails reefed (1)')
+    ok(sailState(2) === 2 && sailState(3) === 2, 'sailState: FRESH and GALE carry full canvas (2)')
+    ok(sailState(-3) === 0 && sailState(9) === 2, 'sailState: out-of-range winds clamp into the four classes')
+    ok(sailState(1.7) === 1 && sailState(2.9) === 2, 'sailState: fractional wind floors into its class')
+    // wiring: the presentation is bolted to the payment.
+    ok(/if \(S\.coins\)[\s\S]{0,80}COIN_ARC/.test(idx), 'index.jsx: the coin arc decays on the world clock')
+    ok(/S\.coins = \{ ox: nx - dx, oy: ny - dy, dx, dy, t: 0 \}/.test(idx), 'index.jsx: a paid fare looses the coin arc from sand toward deck')
+    ok(/S\.purseFlash = 30/.test(idx), 'index.jsx: gold moving flashes the HUD purse')
+    ok(/moorReach\(S\.gold\)/.test(idx), 'index.jsx: the moored boat reads the purse before the step')
+    ok(/const sail = sailState\(S\.wind\)/.test(idx), 'index.jsx: the under-way sail is set by the wind class')
+    ok(/sail === 2 \? 12 : 6/.test(idx), 'index.jsx: reefed canvas is smaller than set canvas')
+    ok(/fillRect\(-5, -9, 10, 3\)/.test(idx), 'index.jsx: a becalmed ship shows the furled canvas, not a frozen balloon')
+    // the captain's own voice: two deny tones, and NOT the chapel thud reused.
+    ok(!!refBlock && (refBlock[1].match(/playTone\(/g) || []).length >= 2,
+        'index.jsx: the refusal is the captain\u2019s two-tone deny')
+    ok(!!refBlock && !/playSweep\(96, 60/.test(refBlock[1]),
+        'index.jsx: the captain no longer borrows the chapel-stone thud')
+    ok(/S\.toast = 150; S\.toastMsg = `The captain asketh/.test(idx),
+        'index.jsx: the refusal holds the words on screen a beat longer (150)')
+    // purity: the new law is still numbers-only, like the purse it extends.
+    ok(!/\bS\./.test(purseSrc), 'purse.js stays pure after moorReach: the purse never touches the walk')
+    const hullSrc = readFileSync('src/games/Britannia/hull.js', 'utf8')
+    ok(!/\bctx\.|\bS\./.test(hullSrc), 'hull.js stays pure after sailState: the hull reads numbers, not the painter')
+    // harness visibility: a drive can prove the theatre fired.
+    ok(/coinFx: S\.coins \? 1 : 0, purseFlash: S\.purseFlash,/.test(idx), 'index.jsx: coin arc and purse flash ride the harness state')
+    ok(/moor: S\.ship \? -1 : moorReach\(S\.gold\), sail: sailState\(S\.wind\)/.test(idx), 'index.jsx: mooring reach and sail state ride the harness state')
 }
 
 console.log(fails ? `\nBRITANNIA: ${fails} FAILURES` : '\nBRITANNIA: all checks pass')

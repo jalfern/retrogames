@@ -69,6 +69,15 @@ export function repair(hull) {
 // able to flood the audio renderer).
 export const GROAN_GAP = 20
 
+// #2351: the sail speaks the wind the weather already names. Origin's ship
+// sails when the wind does — under a becalmed sky the canvas comes down.
+// wind is the epoch wind class (0 BECALMED .. 3 GALE): furled, reefed, set.
+// Pure + deterministic, so britanniacheck can pin the whole law.
+export function sailState(wind) {
+    const w = wind > 3 ? 3 : wind < 0 ? 0 : wind | 0
+    return w <= 0 ? 0 : w === 1 ? 1 : 2
+}
+
 // The founder's answer: the nearest coast tile (open water with dry land at
 // hand) from (sx, sy) on the wrapped world — deterministic BFS, cardinal
 // neighbours in fixed order, so the rescue is reproducible from the seed. The

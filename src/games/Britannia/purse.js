@@ -29,3 +29,12 @@ export function tribute(gold) {
     const g = gold > 0 ? gold : 0
     return Math.min(START_GOLD, g + TRIBUTE)
 }
+
+// #2351: the toll made SEEN before the step. A captain who can be paid moors
+// his boat at the waterline (reach 1); a light purse sees her ride an extra
+// tile out — the refusal reads on the water before the toast says it. Pure
+// like the rest of the purse: gold in, a distance out.
+export function moorReach(gold) {
+    const g = gold > 0 ? gold : 0
+    return g >= FARE ? 1 : 2
+}
