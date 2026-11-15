@@ -41,7 +41,18 @@ export const CFG = {
     respawnTicks: 75,
     invulnTicks: 45,
     stuckTTL: 1200,
+    // #2377 THE ARENA HEATS UP — dry-spell pressure. When heatTicks pass
+    // without a HIT the duel goes HOT: every stuck arrow's age drains at
+    // heatRot times the rate, so the barricades a defensive duel builds near
+    // the wall evaporate and hoarding cover stops being a winning schedule.
+    // First blood cools it the same tick. Measured (archerycheck HEAT pins):
+    // the proven autopilot's longest dry spell across all arenas is 275
+    // ticks, so 450 (15 s) is pressure no honest match ever feels — only a
+    // stalemate does. heat:false is the test-only kill switch (mutant).
+    heatTicks: 450,
+    heatRot: 3,
     // test-only switches so the harness can prove each muscle is load-bearing
+    heat: true,           // false: dry spells never heat the arena
     ballistics: true,     // false: arrows fly dead flat
     stick: true,          // false: arrows phase through stone
     knockout: true,       // false: arrows fly through stuck arrows
@@ -92,6 +103,10 @@ export function makeGame(arena, opts = {}) {
         p: [mk(0, a.p1), mk(1, a.p2)],
         arrows: [], stuck: [],
         ledger: { hit: 0, lost: 0 },
+        // #2377 dry-spell bookkeeping: the tick of the last HIT and whether
+        // the arena is currently HOT (plain data — cloneGame/DebugKit carry
+        // it; stateHash mixes neither, so the replay contract is untouched).
+        lastHit: 0, heat: false,
         // #1739 pure bookkeeping: every quiver GAIN per player (pull, dryout,
         // respawn resupply). Lets a harness assert the exact economy identity
         // `quiver = start - loosed + receipts` — the pull-back the #1685 fix
@@ -187,6 +202,11 @@ function scoreHit(g, ar, victim) {
     const scorer = g.p[ar.owner]
     scorer.score++
     g.ledger.hit++
+    g.lastHit = g.tick   // #2377 first blood breaks the dry spell
+    if (CFG.heat && g.heat) {
+        g.heat = false
+        g.events.push({ type: 'cool', tick: g.tick })
+    }
     victim.alive = false
     victim.deadT = CFG.respawnTicks
     victim.charge = 0
@@ -322,11 +342,21 @@ function stepArrows(g) {
             g.arrows.splice(i, 1); g.ledger.lost++
         }
     }
-    // stuck arrows dry out and walk home on their own
+    // stuck arrows dry out and walk home on their own. #2377: while the
+    // arena is HOT every stuck arrow's age drains at heatRot times the rate
+    // here, and the 1-per-tick `age++` in step() stays 1× — so a hot tick
+    // advances stuck-age by 1 + heatRot where a cool tick adds 1 + 1. An
+    // arrow keeps its flight age when it sticks, so the dryout tick is
+    // (age at stick) + the ticks it takes the drain to cross stuckTTL:
+    // measured under constant rot, hot cover lasts half a cool lifetime
+    // (~20 s of wall armour → ~10 s). The harness pins the dryout tick to
+    // exact arithmetic off the observed age, not vibes.
     if (CFG.ttlRelease) {
+        const rot = g.heat ? CFG.heatRot : 1
         for (let i = g.stuck.length - 1; i >= 0; i--) {
             const s = g.stuck[i]
-            if (++s.age > CFG.stuckTTL) {
+            s.age += rot
+            if (s.age > CFG.stuckTTL) {
                 g.stuck.splice(i, 1)
                 const k = g.arrows.indexOf(s)
                 if (k >= 0) g.arrows.splice(k, 1)
@@ -343,6 +373,15 @@ function stepArrows(g) {
 // world resolves. Anything sampled by two players in one frame meets here.
 export function step(g, in1 = null, in2 = null) {
     if (g.end) return
+    // #2377 gate runs BEFORE the players and arrows resolve: the hot flag a
+    // frame uses is decided by the dry spell at its start, so an arrow that
+    // sticks on the very tick heat begins already rots at the hot rate
+    // (scoreHit cools it synchronously the tick blood is drawn).
+    if (CFG.heat) {
+        const hot = g.tick - g.lastHit >= CFG.heatTicks
+        if (hot && !g.heat) { g.heat = true; g.events.push({ type: 'heat', tick: g.tick }) }
+        else if (!hot && g.heat) { g.heat = false; g.events.push({ type: 'cool', tick: g.tick }) }
+    }
     stepPlayer(g, g.p[0], in1)
     stepPlayer(g, g.p[1], in2)
     stepArrows(g)
