@@ -54,10 +54,22 @@
 # back within one refresh and says why. Loop bodies are hardened against the
 # two known killers besides an external kill: a pane squeezed to a few rows
 # (`tput lines` no longer feeds arithmetic unchecked) and garbage from oMLX's
-# activity feed (lines must match `G <int> <int>` / `P <int> <int> <int>`
-# before anything parses them). Proven by `npm run watchcheck`.
+# activity feed (lines must match `G <int> <int>` / `P <int> <int> <int>`)
+# before anything parses them. Proven by `npm run watchrespawncheck` (#2278;
+# #1259's respawn e2e rides in it too).
 # FORGE_WATCH_SESSION builds into another session name, so the check never
 # disturbs the real dashboard.
+#
+# #2278 — the respawn recipe must survive its own freshness. macOS 27 runs
+# /usr/libexec/tmp_cleaner (launchd, daily 00:00) over /tmp, deleting files
+# with -atime +3 -mtime +3 -ctime +3. The baked scripts and panes.tsv are
+# written once and never re-read (zsh keeps the loop in memory; the supervisor
+# awk's panes.tsv only when a pane dies), so a watch session older than 3 days
+# lost everything the respawn needs while the supervisor ran on in memory. The
+# supervisor now sweeps `touch` over its whole WDIR every cycle: touch moves
+# atime+mtime and — like any inode change — ctime, so no file ever matches all
+# three while the session lives; when it dies, touching stops and /tmp cleans
+# the leftovers as usual.
 
 SESSION=${FORGE_WATCH_SESSION:-forge}
 WDIR=/tmp/forge/watch/$SESSION  # per session: a test sandbox never clobbers the real dashboard
@@ -75,6 +87,10 @@ mkdir -p "$WDIR"
 # The supervisor: one loop OUTSIDE tmux (a pane cannot resurrect itself).
 # Reads panes.tsv (`pane_id <TAB> name <TAB> script`) and respawns any dead
 # pane by re-running its baked script. Every event lands in pane.log.
+# Baked by a function, and baked on EVERY watch.sh run (build and adopt): if
+# tmp_cleaner ever took supervise.zsh itself (#2278), re-opening watch.sh
+# restores it and the guard resumes.
+bake_supervisor() {
 cat > "$WDIR/supervise.zsh" <<'SUPER'
 #!/bin/zsh
 S=${SESSION:-forge}
@@ -82,7 +98,14 @@ W=${WDIR:-/tmp/forge/watch}
 spec=$W/panes.tsv
 log=$W/pane.log
 warned=""
+setopt NULL_GLOB
 while tmux has-session -t "$S" 2>/dev/null; do
+    # #2278 keep-fresh: tmp_cleaner (macOS daily 00:00) deletes /tmp files with
+    # -atime +3 -mtime +3 -ctime +3. These files are written once and never
+    # re-read, so a >3-day-old session would lose the respawn recipe mid-run.
+    # touch sets atime+mtime, and any inode change moves ctime too — one sweep
+    # per cycle keeps every file (and the dir) unmatched for the session's life.
+    touch "$W" "$0" "$spec" "$log" "$W"/*.zsh 2>/dev/null
     while IFS='|' read -r dead id; do
         [[ "$dead" == 1 ]] || continue
         line=$(awk -F '\t' -v id="$id" '$1==id {print $2"\t"$3}' "$spec" 2>/dev/null)
@@ -103,6 +126,8 @@ while tmux has-session -t "$S" 2>/dev/null; do
     sleep 5
 done
 SUPER
+}
+bake_supervisor
 
 supervise_is_live() { pgrep -f "$WDIR/supervise.zsh" >/dev/null; }
 start_supervisor() { supervise_is_live || { SESSION="$SESSION" WDIR="$WDIR" nohup zsh "$WDIR/supervise.zsh" >/dev/null 2>&1 &! } }
