@@ -7,10 +7,10 @@ import { mountDbg } from '../../utils/DebugKit'
 import { containMap } from '../../utils/fitCanvas'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS, LINK, rivalBoostFx, SAND } from './sim'
-import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt, spriteFootShift, ELEV_SCREEN, sandSpray, rutTexel } from './track.js'
+import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt, spriteFootShift, ELEV_SCREEN, sandSpray, rutTexel, bankAt } from './track.js'
 import { selectorGeom, selectorHit, previewBox, cupBadgeGeom, cupBadgeHit } from './selector.js'
 import { CUP, CUP_RACES, makeCup, tally, standings, leaderName, cupDone } from './cup.js'
-import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath, sunLayout, rivalViewFx, duneCrest, DUNE } from './art.js'
+import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath, sunLayout, rivalViewFx, duneCrest, DUNE, strataAt, wallRise, strataBreaks } from './art.js'
 import { drawText } from './font.js'
 import { engineVoice, driftScrape, sandWhoosh, ambienceFor } from './engineSfx.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE, setStick } from '../../utils/padState'
@@ -548,6 +548,91 @@ export default function CometDrift() {
             return c
         }
 
+        // #2388: the canyon walls stand up. The rim loops (art.js strataAt —
+        // the same law the sim clamps karts at, #1498) extrude to true
+        // vertical faces: each visible track segment becomes a quad from the
+        // ground (z=0) to the escape-law height (wallRise), projected with the
+        // sprite pinhole (s = BASE_PP/f; height shifts y only). Faces paint the
+        // strata VERTICALLY — foot shadow, dark, mid, light, lit rim at the
+        // law's own thickness fractions — capped by a rim line, fractured by
+        // hash-offset cracks, hazed on the ground's own `fr` law and darkened
+        // on the outside of banked sweepers (bankAt ≥ 0.6, #502's cue). Quads
+        // merge into drawSprites' far→near sort, so rock and karts occlude
+        // honestly. Renderer-only: no sim number reads any of it.
+        const WALL_STRIDE = 2
+        const WALL_NEAR = 34
+        const WALL_FAR = 2600
+        const wallHash = (n) => { const v = Math.sin(n * 12.9898) * 43758.5453; return v - Math.floor(v) }
+        const buildWalls = () => {
+            const pal = paletteFor(COURSE.palette)
+            const out = []
+            for (const s of [1, -1]) {
+                let nextCrack = 0
+                for (let i = 0; i < TRACK.N; i += WALL_STRIDE) {
+                    const j = (i + WALL_STRIDE) % TRACK.N
+                    const q = TRACK.pts[i]; const q2 = TRACK.pts[j]
+                    const n0x = Math.cos(q.a + Math.PI / 2) * s; const n0y = Math.sin(q.a + Math.PI / 2) * s
+                    const n1x = Math.cos(q2.a + Math.PI / 2) * s; const n1y = Math.sin(q2.a + Math.PI / 2) * s
+                    const lat0 = strataAt(i, s)[0]; const lat1 = strataAt(j, s)[0]
+                    const pr0 = project(q.x + n0x * lat0, q.y + n0y * lat0)
+                    const pr1 = project(q2.x + n1x * lat1, q2.y + n1y * lat1)
+                    if (Math.max(pr0.f, pr1.f) < WALL_NEAR || Math.min(pr0.f, pr1.f) > WALL_FAR) continue
+                    const sA = BASE_PP / pr0.f; const sB = BASE_PP / pr1.f
+                    const xb0 = W / 2 + pr0.l * sA; const xb1 = W / 2 + pr1.l * sB
+                    if (Math.max(xb0, xb1) < -4 || Math.min(xb0, xb1) > W + 4) continue
+                    const h0 = wallRise(i, s); const h1 = wallRise(j, s)
+                    const yb0 = HZ + CAM_H * sA; const yb1 = HZ + CAM_H * sB
+                    const yt0 = HZ + (CAM_H - h0) * sA; const yt1 = HZ + (CAM_H - h1) * sB
+                    const f = (pr0.f + pr1.f) / 2
+                    const bk = bankAt(i)
+                    const shade = bk >= 0.6 && s === -(Math.sign(q.k) || 1) ? 0.16 * Math.min(1, bk) : 0
+                    const fr = f > 1700 ? Math.min(0.8, (f - 1700) / 1250) : 0
+                    let crack = 0
+                    if (q.s >= nextCrack) { nextCrack = q.s + 30; crack = 1 }
+                    out.push({ kind: 'w', f, xb0, yb0, xb1, yb1, yt0, yt1, sA,
+                        breaks: strataBreaks(i, s), pal, shade, fr, crack, h: wallHash(i * 4 + (s > 0 ? 1 : 2)) })
+                }
+            }
+            return out
+        }
+        const drawWallQuad = (w) => {
+            const P = w.pal
+            const g = ctx.createLinearGradient(w.xb0, w.yb0, w.xb0, w.yt0)
+            const br = w.breaks
+            g.addColorStop(0, P.rockDark)
+            g.addColorStop(br[0], P.rockMid)
+            g.addColorStop(br[1], P.rockLight)
+            g.addColorStop(br[2], P.rimLit)
+            g.addColorStop(1, P.rimLit)
+            ctx.beginPath()
+            ctx.moveTo(w.xb0, w.yb0)
+            ctx.lineTo(w.xb1, w.yb1)
+            ctx.lineTo(w.xb1, w.yt1)
+            ctx.lineTo(w.xb0, w.yt0)
+            ctx.closePath()
+            ctx.fillStyle = g
+            ctx.fill()
+            if (w.shade > 0) { ctx.fillStyle = `rgba(28, 14, 8, ${w.shade.toFixed(3)})`; ctx.fill() }
+            if (w.fr > 0) { ctx.fillStyle = `rgba(${HAZE[0]}, ${HAZE[1]}, ${HAZE[2]}, ${w.fr.toFixed(3)})`; ctx.fill() }
+            // vertical fracture: hash-slanted, riding the old ~30px seam law
+            if (w.crack) {
+                const t = 0.25 + w.h * 0.5
+                ctx.strokeStyle = P.crack
+                ctx.lineWidth = Math.max(1, Math.round(w.sA))
+                ctx.beginPath()
+                ctx.moveTo(w.xb0 + (w.xb1 - w.xb0) * t, w.yb0)
+                ctx.lineTo(w.xb0 + (w.xb1 - w.xb0) * (t + (w.h - 0.5) * 0.3), w.yt0)
+                ctx.stroke()
+            }
+            // rim cap: the sun line along the crest; coal contact line at the foot
+            ctx.strokeStyle = P.rimLit
+            ctx.lineWidth = Math.max(1, Math.round(2 * w.sA))
+            ctx.beginPath(); ctx.moveTo(w.xb0, w.yt0); ctx.lineTo(w.xb1, w.yt1); ctx.stroke()
+            ctx.strokeStyle = 'rgba(24, 12, 8, 0.55)'
+            ctx.lineWidth = Math.max(1, Math.round(w.sA))
+            ctx.beginPath(); ctx.moveTo(w.xb0, w.yb0); ctx.lineTo(w.xb1, w.yb1); ctx.stroke()
+        }
+
         const drawSprites = () => {
             ctx.save()
             ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip()
@@ -563,12 +648,15 @@ export default function CometDrift() {
             }
             const s0 = T.pts[0]
             items.push({ x: s0.x, y: s0.y, a: 0, img: archFor(COURSE.short), w: 300, h: 170, elev: s0.h || 0 })
+            for (const w of buildWalls()) items.push(w)
             items.sort((a, b) => {
-                const fa = project(a.x, a.y).f; const fb = project(b.x, b.y).f
-                return fb - fa
+                const fa = a.kind === 'w' ? a.f : project(a.x, a.y).f
+                const fb = b.kind === 'w' ? b.f : project(b.x, b.y).f
+                return fb - fa || ((a.kind === 'w' ? 0 : 1) - (b.kind === 'w' ? 0 : 1))
             })
             const footCap = (H - HZ) * 0.22
             for (const it of items) {
+                if (it.kind === 'w') { drawWallQuad(it); continue }
                 const pr = project(it.x, it.y)
                 if (pr.f < 30 || pr.f > 2600) continue
                 const s = BASE_PP / pr.f

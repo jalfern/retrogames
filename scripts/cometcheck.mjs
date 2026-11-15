@@ -1667,8 +1667,10 @@ selectorGate(await loadSelector())
     check('#1696 determinism: same seed, same drive — identical marks, identical hash',
         JSON.stringify([...roll.g.marks]) === JSON.stringify([...roll2.g.marks]) && m.stateHash(roll.g) === m.stateHash(roll2.g))
     // ---- #1718 cliff chips: a FAST bump scars the rock strata too ----------
-    // coal chip at the contact + crack dashes outward into the face, stamped
-    // on the same texel queue; an impact the sand could carry on its own
+    // coal chip at the contact + crack dashes at the wall foot (#2388 moved
+    // the strata into true geometry — debris now scatters inward, where it
+    // actually piles), stamped on the same texel queue; an impact the sand
+    // could carry on its own
     // never chips; deterministic; and the #1702 flow decays chip → crack →
     // dents → pristine. A plain-throttle sand run HOVERS at sandTop (measured
     // 3.19..3.40 — acc cancels the sink), so the fast rig rides a live blue
@@ -1701,10 +1703,24 @@ selectorGate(await loadSelector())
             const dx = (tx + 0.5) / TEXSn - bp.x; const dy = (ty + 0.5) / TEXSn - bp.y
             return Math.sqrt(dx * dx + dy * dy) >= lo && Math.sqrt(dx * dx + dy * dy) <= hi
         }).length
+        const chipPos = (() => {
+            const [k] = decals.find(([d]) => d === S.chip) || []
+            if (k === undefined) return null
+            const tx = k % TEXn; const ty = (k - tx) / TEXn
+            return { x: (tx + 0.5) / TEXSn, y: (ty + 0.5) / TEXSn }
+        })()
+        const nearChip = (lo, hi) => {
+            if (!chipPos) return 0
+            return decals.filter(([k, d]) => {
+                if (d !== S.crack) return 0
+                const tx = k % TEXn; const ty = (k - tx) / TEXn
+                return Math.hypot((tx + 0.5) / TEXSn - chipPos.x, (ty + 0.5) / TEXSn - chipPos.y) >= lo && Math.hypot((tx + 0.5) / TEXSn - chipPos.x, (ty + 0.5) / TEXSn - chipPos.y) <= hi
+            }).length
+        }
         check('#1718 chip rig: a fast bump stamps a coal chip at the contact',
-            decals.length > 0 && nearD(S.chip, 0, 9) >= 1, `chips within 9px: ${nearD(S.chip, 0, 9)} (${decals.length} decals)`)
-        check('#1718 chip rig: crack dashes radiate into the strata around the chip',
-            nearD(S.crack, 4, 24) >= 2, `crack dashes in the 4..24px window: ${nearD(S.crack, 4, 24)}`)
+            decals.length > 0 && nearD(S.chip, 0, 12) >= 1, `chips within 12px: ${nearD(S.chip, 0, 12)} (${decals.length} decals)`)
+        check('#2388 chip rig: crack dashes scatter at the wall FOOT around the chip (debris falls inward, not into the now-3D strata)',
+            nearChip(2, 30) >= 2, `crack dashes within 30px of the chip: ${nearChip(2, 30)}`)
         check('#1718 chip law: no decal texel sits on asphalt (markCell law)',
             decals.every(([k]) => surfTex(k) !== 'road'), `${decals.filter(([k]) => surfTex(k) === 'road').length} decals on road`)
         const imp2 = chipRun(7, 178, true)
