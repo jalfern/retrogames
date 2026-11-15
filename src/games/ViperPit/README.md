@@ -98,6 +98,20 @@ the #1096 options switched on.
   groups that live: a wall-clock breeze, and a kick when a fighter rushes past
   or a forced hit lands (`fx()` sway). Presentation only — netplay hashes
   untouched.
+- **Destructible props + pickups (#2334)**: the fight zone itself holds seeded
+  crates and barrels — any active attack box or projectile that overlaps one
+  damages it (heavy 2 dmg, light 1: barrels pop at once, crates crack then
+  break; the smash zone rides a hand's width above the rim so punches land too,
+  and a smashed prop EATS the projectile that killed it). Some breaks drop a
+  meter orb (crates hide loot more often than barrels) that either fighter
+  banks by touch for +20 meter — capped, so the pickup feeds the super/finisher
+  economy. Layout is seeded per round on a dedicated stream (never touching the
+  CPU's rolls); props respawn and loot clears each round; prop and orb state
+  fold into `matchHash` when the option is on, so netplay seats agree and
+  replays verify. Engine option `createMatch({ props: true })` — off by
+  default, IRON RING streams are golden-pinned bit-identical with it off.
+  The shards, the crack on a wounded crate and the bobbing orb are presentation
+  driven by engine state (`props()` DEV hook, `propsState(m)` helper).
 
 ## Where the code lives
 
@@ -130,7 +144,7 @@ the #1096 options switched on.
   DEV `__viperPitTest` also exposes `fx()` (stage-life snapshot), `stage(i)`
   (jump to a pit by index), `sweep()` (force the train pass) and the guard-fx
   probes `forceBlock(i)`/`forceCrush()`, `blockFx()`, `breakFx()`,
-  `shieldFx()` (live GL pool counts).
+  `shieldFx()` (live GL pool counts) and `props()` (the live #2334 furniture + loot snapshot).
 - **Select screen (#1106, card poses #2172)**: each card shows the fighter's OWN rig rendered by
   `createPortraitRenderer` (a mini 240x187 GL view, preserveDrawingBuffer so
   the HUD `drawImage`s it; card aspect matches the canvas so nothing
@@ -172,6 +186,10 @@ the #1096 options switched on.
 
 - Blocking: only `bk` (guard) blocks in this title; `blockHeld` still covers
   idle/crouch/blockstun. GUARD+DOWN = crouch-block; throws beat guard.
+- The pit fights back (#2334): crates and barrels break under any strike
+  (barrel = any one hit, crate = one heavy or two lights), and killing one
+  that holds loot drops an orb — walk through it for +20 meter. The furniture
+  is seeded per round; learn the layout, bank the loot, finish them faster.
 - Guard crush: blocking drains a hidden gauge by the hit's damage; an empty
   gauge CRUSHES the guard (a long helplessness + chip, `GUARD BREAK` banner)
   that the opponent can punish. The gauge regens while not guarding and resets
@@ -282,8 +300,16 @@ the #1096 options switched on.
   fighter). Pinned by silhouette-hash, centroid-spread, zoom-handoff, tap-hover,
   the tile-containment invariant and four self-biting mutants in `viperpitcheck`
   (plus a live `__VIPER_SPILL__` prove-fail for the containment gate).
-- Stage midground + fight-reactive sway landed (#1106); heavier interactivity
-  (destructible props, pickups) still open.
+- **CLOSED by #2334:** heavier interactivity — destructible props + pickups:
+  seeded crates/barrels in the fight zone smash under attacks and projectiles
+  (heavy 2 dmg, light 1; the prop eats the shot), and some breaks drop a
+  collectible +20 meter orb. Seeded per round, hash-covered, respawn on reset;
+  `createMatch({ props: true })`. Pinned by ~25 clauses in `viperpitcheck`
+  (layout seeding, damage tiers, crack-then-break, projectile smash-and-eat,
+  orb drop/collect, round respawn, hash coverage, IRON RING golden streams)
+  plus a prop-damage mutant that the harness must catch.
+- Stage midground + fight-reactive sway landed (#1106); the heavier tier —
+  destructible props, pickups — closed by #2334 above.
 - `qcb` counter + guard crush landed (#1106): blocking drains a guard gauge;
   an empty gauge CRUSHES into a long punish stun (chip + `GUARD BREAK`), the
   gauge regens and resets full. A live guard/stun meter is drawn above the
