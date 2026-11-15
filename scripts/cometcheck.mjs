@@ -13,6 +13,7 @@
 // must go RED (and restore the file whatever happens).
 
 import { readFileSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { plant, pull } from './lib/mutateguard.mjs'
 import { inflateSync } from 'node:zlib'
 import { deflateSync } from 'node:zlib'
