@@ -11,6 +11,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexp
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { audioController } from '../../utils/AudioController'
 import { createSim, stepSim, simState, spawnRoom, saveState, loadState } from './sim.js'
+import { padToInput as padToInputShared } from './input.js'
 import { createRenderer } from './render.js'
 import { makeTextures, battleHeat, musicStepFor, musicBedFor } from './art.js'
 import { proveGame } from './solver.js'
@@ -162,19 +163,7 @@ export default function Emberwood() {
             prevA = a; prevB = b; prevUp = up; prevDn = dn
             return inp
         }
-        const padToInput = (pad, prev) => {
-            const lx = (pad.right ? 1 : 0) - (pad.left ? 1 : 0) || (pad.x || 0)
-            const ly = (pad.down ? 1 : 0) - (pad.up ? 1 : 0) || (pad.y || 0)
-            const inp = {
-                lx: Math.abs(lx) > 0.15 ? lx : 0, ly: Math.abs(ly) > 0.15 ? ly : 0,
-                aHeld: !!pad.a, aPressed: !!pad.a && !prev.a, aReleased: !pad.a && prev.a,
-                bPressed: !!pad.b && !prev.b, bHeld: !!pad.b, bReleased: !pad.b && prev.b,
-                cPressed: !!pad.b2 && !prev.b2,
-                upPressed: !!pad.up && !prev.up, downPressed: !!pad.down && !prev.down,
-            }
-            prev.a = !!pad.a; prev.b = !!pad.b; prev.b2 = !!pad.b2; prev.up = !!pad.up; prev.down = !!pad.down
-            return inp
-        }
+        const padToInput = padToInputShared // #2402 — the fold lives in input.js so the golden-trace harness replays the exact same decode
         const contractPrev = { a: false, b: false, b2: false, up: false, down: false }
 
         const setMode = (m) => { screenRef.current = m; setScreen(m) }
