@@ -730,7 +730,11 @@ const TidyBotGame = () => {
             if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             // #2250 GLIDE: keys are the human speaking — a glide yields at once.
             goto = null
-            clearAim() // #2338 the mark obeys the same law
+            // #2338 mark cancel law: MOVEMENT interrupts the mark; B is the
+            // COMMIT gesture, so it must not be cleared at keydown — doSim
+            // ends the mark when the press lands (consume or refuse, never a
+            // stale order).
+            if (e.code === 'ArrowLeft' || e.code === 'ArrowRight' || e.code === 'ArrowUp' || e.code === 'ArrowDown') clearAim()
             if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = true
             if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = true
             if (e.code === 'ArrowUp' || e.code === 'KeyW') keys.up = true
