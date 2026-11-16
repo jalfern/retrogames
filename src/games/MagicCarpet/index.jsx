@@ -16,7 +16,7 @@ import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, 
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import {
     W, H, HUD_H, HORIZON, MAP,
-    LEVELS,
+    LEVELS, CAMPAIGN_CAP,
     SPILLS, spellById,
     makeGame, step, autopilot, stateHash, setHand, cycleR, cycleL, crater, settleGround, INVIS_T,
     hudTap, TAP, TRAY, muffleOf, OPEN_CUTOFF, crumbleFeel, castBearing, diveOf, sampleH, WATER, aerialFog,
@@ -1464,7 +1464,7 @@ const MagicCarpetGame = () => {
                             // ~17k ticks/world at the deep end, so a fixed 60k (or the old
                             // 12k/world) would call world 1 unwinnable or time out late arcs.
                             let t = 0
-                            while (!clone.end && t < LEVELS.length * 26000) { step(clone, autopilot(clone)); t++ }
+                            while (!clone.end && t < CAMPAIGN_CAP) { step(clone, autopilot(clone)); t++ }
                             return clone.end === 'win'
                                 ? `WINNABLE from here: vault quota banked at tick ${clone.tick} (${clone.score} pts)`
                                 : `NOT winnable by the autopilot from here: end=${clone.end || 'timeout'} vault ${Math.floor(clone.bank)}/${clone.quota}`
@@ -1546,7 +1546,7 @@ const MagicCarpetGame = () => {
             {screen === 'attract' && (
                 <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
                     <h1 className="text-4xl font-black" style={{ color: '#e8c860', textShadow: '0 0 18px #6a4ad0, 3px 3px 0 #3a1a5a' }}>MAGIC CARPET</h1>
-                    <p className="text-purple-200/90 font-mono mt-1 text-sm">fly . gather mana . fly it home . restore twenty-seven worlds</p>
+                    <p className="text-purple-200/90 font-mono mt-1 text-sm">fly . gather mana . fly it home . restore forty-five worlds</p>
                     <p className="text-white font-mono font-bold mt-2 animate-pulse">TAP / PRESS ANY KEY TO START</p>
                     <AttractMessage
                         className="text-purple-100/80 font-mono text-[11px] mt-2 px-8 leading-4"
@@ -1559,7 +1559,7 @@ const MagicCarpetGame = () => {
                             'DIE AND THE LOAD IS LOST',
                             'FIREBALLS CRATER THE LAND · BURNING VILLAGES BREED WOLVES',
                             'CAST INVISIBILITY AND WIZARD AND WOLVES LOOK RIGHT THROUGH YOU',
-                            'EIGHTEEN WORLDS · SIX ARCS OF THREE ATMOSPHERES · EACH GUARDED',
+                            'FORTY-FIVE WORLDS · FIFTEEN ARCS OF THREE ATMOSPHERES · EACH GUARDED',
                         ]}
                     />
                     <span className="block mt-2 text-purple-200/70 font-mono font-bold tracking-wider">{WATCH_ATTRACT_HINT}</span>
