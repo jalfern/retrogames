@@ -132,6 +132,34 @@ classic law rather than freezing.
   folds direction/variant when a level opts into variants, and no older cave
   uses `'fork'`.
 
+## The butterfly drift (#2453 — the roaming critter weaves)
+The originals had TWO flying critters: the boring, burning firefly (#2364's
+door law) and the butterfly, which flitted through open ground changing course
+on its own. Momentum-only turning happens exclusively against obstacles, so our
+fly shuttled its corridor while the cavern proper stayed calm — the README's
+oldest actionable gap. `sim.js` now has the second kind:
+- **`meta.butterflies: [{x, y, dir}]`** maps to the same fly automaton with
+  `drift:1, digs:0, ignites:0` — it FLAPS, it does NOT bore dust, it does NOT
+  ignite. Contact is still fatal (cause `fly`, "COOKED").
+- **The flap law**: hold heading (momentum intact); roll a deterministic hash of
+  (fly id, tick, cell) ONLY when the way straight ahead is open ground
+  (EMPTY/FIRE — never mid-bore); on a hit, turn right first, then left, and
+  only onto cells that aren't blocked. In a 1-cell lined corridor every
+  candidate is wall — **drift cannot perturb a predictable patrol by law**
+  (dashcheck pins 600 ticks of zero flaps in a capped tube). Zero RNG, like
+  every other cell of this CA.
+- **`CFG.flyDrift`** mutes the flaps (mutant); **`flyExt`** folds the flap
+  counter into `stateHash` ONLY when a level declares a butterfly — caves 1–7
+  replay byte-identical, and dashcheck refuses drift state on any older cave.
+- **GOSSAMER HOLLOW (cave 8)**: a steel-ringed gallery across the cavern roof
+  with two pillars — the butterfly genuinely sweeps it (dashcheck pins ≥40
+  flaps and ≥40 distinct cells in a synthetic chamber, and 88 gallery cells on
+  the real cave) — and a steel-lined tube at col 27 to the dig lanes below.
+  Once the player opens the lane, the butterfly comes down and roams it: the
+  harvest seam at row 18 provably stays cool (nothing in this cave ever burns —
+  butterflies light nothing and the automaton only ever touches open ground),
+  while a digger dawdling the lane gets eaten (pinned by replay).
+
 ## Verify
 ```bash
 npm run dashcheck             # 155 checks: every cave winnable, replay
@@ -169,5 +197,7 @@ blind sleeps) makes it deterministic.
   are waves whose heads reverse or spawn on player action; those are not.
 - A push wall slides on flat ground only — there is no "wall falls and keeps
   sliding" combo, and no pull mechanics (faithful to the era, but a simplification).
-- The corridor patrol is a fixed shuttle (the fly turns only against steel, so
-  it never weaves into the cavern proper the way an original butterfly could).
+- The butterfly (#2453) flits but does not *carry*: the originals' butterflies
+  could grab a diamond and drop it later on the far side of the cave; ours
+  contaminates by contact only. One bite per gap — gem-carrying is a candidate
+  stage of its own.
