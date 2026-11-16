@@ -248,11 +248,16 @@ const ClapTest = () => {
             .catch(() => { setStartBusy(false) })
     }, [freshSim, mirror, setPhase])
 
-    // the whole screen is the target — every primary pointer down is a slap;
-    // Space/Enter on desktop are the same `a` tap for keyboard users.
+    // the whole screen is the target — every pointer down is a slap; Space/Enter
+    // on desktop are the same `a` tap for keyboard users. NO isPrimary filter:
+    // a phone gripped with a thumb on the glass makes every slap from the other
+    // hand a SECONDARY pointer, and the old filter dropped those silently — the
+    // #2504 audio audit's leading shape (mic heard full-scale slaps, pads
+    // banked zero taps). A held thumb costs one spurious edge; passing still
+    // demands ≥3 taps each coincident with a heard clap within ±50 ms, so no
+    // take can launder its way to green on rests.
     const slapDown = (e) => {
         if (phaseRef.current !== 'testing') return
-        if (e && e.isPrimary === false) return
         if (e && e.preventDefault) e.preventDefault()
         heldRef.current = true
     }

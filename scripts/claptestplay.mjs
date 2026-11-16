@@ -445,6 +445,70 @@ for (let i = 0; i < RUNS.length; i++) {
     if (!chosen.out.coreOk) break // dead or failed: its red lines are printed, stop honestly
 }
 
+// #2504 (session 309): the thumb case. Jon's /claptest takes stored loud slaps
+// in audio but ~zero A-taps in pads — the leading shape is a phone gripped with
+// a thumb on the glass, which makes every slap from the other hand a SECONDARY
+// pointer. Chromium marks that slap isPrimary=false, exactly like a real phone,
+// so CDP multi-touch drives it honestly: hold the thumb, slap three times with
+// a second finger — every slap must fold into the pad stream, and the run must
+// still auto-end. With the old isPrimary filter restored this goes RED
+// (taps stay one: only the thumb itself).
+async function twoFingerProof() {
+    const context = await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true })
+    const page = await context.newPage()
+    await page.bringToFront()
+    page.on('pageerror', (e) => errors.push(String(e)))
+    await page.goto(PAGE_URL, { waitUntil: 'load' })
+    await page.waitForSelector('[data-clap-test]', { timeout: 15000 })
+    await page.tap('[data-clap-start]')
+    let gate = false
+    try { await page.waitForSelector('[data-consent-gate]', { timeout: 5000 }); gate = true } catch { /* cached consent */ }
+    if (gate) {
+        await page.tap('#consent-motion')
+        await page.tap('#consent-voice')
+        await page.tap('#consent-name')
+        await page.type('#consent-name', 'qabot')
+        await page.tap('#consent-yes')
+    }
+    let inTest = false
+    try {
+        await page.waitForFunction(() => window.__clapTest && window.__clapTest.phase === 'testing', null, { timeout: 8000 })
+        inTest = true
+    } catch { /* gated below */ }
+    if (!inTest) {
+        r.check('two-finger: run reaches the testing phase', false, 'stuck before testing')
+        await context.close().catch(() => {})
+        return
+    }
+    const cdp = await context.newCDPSession(page)
+    const thumb = { x: 22, y: 754, id: 1 }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [thumb] })
+    await page.waitForTimeout(350)
+    const afterThumb = await page.evaluate(() => ((window.__clapTest || {}).taps || []).length)
+    // one slap per pointer id, ~400 ms apart (each tap resets the 600 ms
+    // settle, so the run ends after the LAST slap, not the third); the first
+    // multi-point event of a CDP sequence is absorbed as warm-up because
+    // Chromium's handler treats it differently from subsequent ones.
+    for (let i = 0; i < 4; i++) {
+        const slap = { x: 195, y: 390, id: 2 + i }
+        await page.waitForTimeout(i === 0 ? 500 : 400)
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [thumb, slap] })
+        await page.waitForTimeout(120)
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [slap] })
+    }
+    const taps = await page.evaluate(() => ((window.__clapTest || {}).taps || []).length)
+    r.check('two-finger: slaps with a second finger register while a thumb holds the screen (isPrimary drop, #2504)', taps - afterThumb >= 3, JSON.stringify({ afterThumb, taps }))
+    let ended = false
+    try {
+        await page.waitForFunction(() => window.__clapTest && (window.__clapTest.phase === 'grading' || window.__clapTest.phase === 'graded'), null, { timeout: 3000 })
+        ended = true
+    } catch { /* gated below */ }
+    r.check('two-finger: the run still auto-ends one settle after the last tap', ended, JSON.stringify(await page.evaluate(() => ({ phase: (window.__clapTest || {}).phase, taps: (window.__clapTest || {}).taps }))))
+    await cdp.detach().catch(() => {})
+    await context.close().catch(() => {})
+}
+if (!MUTANT) await twoFingerProof()
+
 r.check('zero page errors', errors.length === 0, errors.join(' | '))
 sim.close()
 await r.exit(browser)
