@@ -550,7 +550,12 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
             if (e.type === 'hutDown' && e.loot) bounty += e.m // #1764 stage 2: the ashes pay
             if (e.type === 'level') {
                 t0 -= e.reset.bank + e.reset.pearls + e.reset.hoard + e.reset.sibs
-                t0 += pearlMana(gs) + LEVELS[e.n].hoard + gs.sibs.reduce((a, sb) => a + sb.mana, 0)
+                // Live wizard purse, not LEVELS[e.n].hoard: a wizard who absorbs a
+                // spawn pearl on the SAME tick the level fires (d < 5 at spawn — seen
+                // in the 45-world campaign at worlds 40/41, seed 7, +6 twice) holds
+                // hoard+absorbed while the map has already lost it. The sim conserves
+                // either way; the constant version double-counted the world grant.
+                t0 += pearlMana(gs) + (gs.wizard.alive ? gs.wizard.mana : 0) + gs.sibs.reduce((a, sb) => a + sb.mana, 0)
             }
         }
         gs.events.length = 0
