@@ -239,5 +239,26 @@ page.on('pageerror', () => { pageErrors++ })
     r.check('first blood cools the arena in the browser too', coolP.heat === false && coolP.scores.reduce((a, b) => a + b, 0) > scoreBefore, `scores ${scoreBefore}->${coolP.scores.join()} heat=${coolP.heat}`)
 }
 
+// ------------------------------ telegraph receipts in the live shell (#2385) ----
+{
+    // derive-only receipts: fx must be visible on the probe, and an honest
+    // bot duel (longest dry spell 275, archerycheck pins it) must NEVER ring
+    // the telegraph here either — the bell is stalemate-only by law.
+    const res = await page.evaluate(() => {
+        const t = window.__archeryTest
+        t.start('1p', 0)
+        let warn = -1
+        for (let k = 0; k < 40 && t.probe().screen === 'play'; k++) {
+            t.drive(30)
+            const fx = t.probe().fx
+            if (fx) warn = fx.warnNotes
+        }
+        const p = t.probe()
+        return { hasFx: !!p.fx, warn, dryFx: p.fx ? p.fx.dryFx : -1, screen: p.screen }
+    })
+    r.check('the shell exposes #2385 fx receipts on the probe', res.hasFx && res.dryFx >= 0 && res.warn >= 0, JSON.stringify(res))
+    r.check('an honest tempo never rings the heat telegraph', res.warn === 0, `warnNotes=${res.warn} (driven to ${res.screen})`)
+}
+
 r.check('zero page errors across the whole session', pageErrors === 0, `errors=${pageErrors}`)
 r.exit(browser)

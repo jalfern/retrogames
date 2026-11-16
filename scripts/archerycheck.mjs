@@ -22,7 +22,7 @@
 // climbSeek flag must turn the receipts red.
 import { ARENAS_COUNT, buildArena } from '../src/games/ArenaArchery/levels.js'
 import {
-    CFG, makeGame, step, botInput, recordMatch, replay, stateHash,
+    CFG, makeGame, step, botInput, recordMatch, replay, stateHash, heatWarnStep,
 } from '../src/games/ArenaArchery/sim.js'
 
 const args = process.argv.slice(2)
@@ -404,6 +404,62 @@ section('HEAT — a dry spell bakes the arena; first blood cools it (#2377)')
     }
 }
 
+// ------------------------------------------ TELEGRAPH — warn before the bake ----
+// #2385 item 1: the rumble is the SOUND of the gate already fired; the player
+// deserves to hear it coming. Two rising notes ring at gate-heatWarnLead and
+// gate-heatWarnLead/2 of the dry spell. The window is pinned with HARD numbers
+// so a mutant shifting the lead cannot vouch for itself the way CFG-reading
+// ratios can.
+section('TELEGRAPH — the dry spell warns 2 s and 1 s before the gate (#2385)')
+{
+    // the pure law: exact steps, silence outside, silence once hot
+    ok(heatWarnStep(0) === 0 && heatWarnStep(CFG.heatTicks - CFG.heatWarnLead - 1) === 0,
+        'telegraph: must stay silent before the window opens')
+    ok(heatWarnStep(CFG.heatTicks - CFG.heatWarnLead) === 1,
+        `telegraph: note 1 must ring at dry ${CFG.heatTicks - CFG.heatWarnLead} (gate − lead)`)
+    ok(heatWarnStep(CFG.heatTicks - CFG.heatWarnLead / 2) === 2,
+        `telegraph: note 2 must ring at dry ${CFG.heatTicks - CFG.heatWarnLead / 2} (gate − lead/2)`)
+    ok(heatWarnStep(CFG.heatTicks) === 0 && heatWarnStep(CFG.heatTicks + 500) === 0,
+        'telegraph: once the spell passes the gate the rumble owns the voice — no notes')
+    // blood closes the spell: dry snaps back to 0 mid-window and the law falls
+    // silent again (the shell's latch re-arms off the same number)
+    ok(heatWarnStep(5) === 0, 'telegraph: a hit mid-window must silence the warning')
+    // live through the real gate: a bloodless run rings exactly two notes,
+    // BOTH at least a full 45 ticks (1.5 s) clear of the heat event — the
+    // constant is the promise ("before" means before), CFG only names the gate.
+    const g = scratch()
+    const notes = []
+    let heatAt = -1
+    for (let t = 0; t < CFG.heatTicks + 5 && heatAt < 0; t++) {
+        step(g, null, null)
+        const ws = heatWarnStep(g.tick - g.lastHit)
+        if (ws) notes.push([ws, g.tick])
+        for (const e of g.events) if (e.type === 'heat') heatAt = e.tick
+        g.events.length = 0
+    }
+    ok(notes.length === 2 && notes[0][0] === 1 && notes[1][0] === 2 && heatAt === CFG.heatTicks,
+        `telegraph live run: notes ${JSON.stringify(notes)}, heat@${heatAt} — exactly two rising notes before the gate`)
+    ok(notes.length === 2 && heatAt - notes[0][1] >= 45,
+        `telegraph lead: first note at ${notes[0] ? notes[0][1] : '-'} is only ${notes[0] ? heatAt - notes[0][1] : '?'} ticks before the ${heatAt} rumble — must be ≥ 45 (a 2 s warning, not a stutter)`)
+    // honest tempo never rings: across arenas the real autopilot duel's
+    // longest dry spell must stay under the warn window — the attract demo
+    // and every honest match are prohibited from faking the rule (the first
+    // hit lands ≥90 ticks before the gate; the warn lead must fit under
+    // that headroom, pinned here by the actual spell, not a claim).
+    let honestMaxDry = 0
+    for (let i = 0; i < ARENAS_COUNT; i++) {
+        const g2 = makeGame(buildArena(i))
+        let dryMax = 0
+        while (!g2.end && g2.tick < CFG.matchTicks) {
+            step(g2, botInput(g2, 0, 1), botInput(g2, 1, 0))
+            dryMax = Math.max(dryMax, g2.tick - g2.lastHit)
+        }
+        honestMaxDry = Math.max(honestMaxDry, dryMax)
+    }
+    ok(honestMaxDry < CFG.heatTicks - CFG.heatWarnLead,
+        `telegraph in honest play: longest real dry spell ${honestMaxDry} must stay under the warn window (${CFG.heatTicks - CFG.heatWarnLead}) — no honest duel may ring the bell`)
+}
+
 // --------------------------------------------------------------- mutants ----
 if (MUT) {
     section('MUTATIONS — each one MUST turn an honest check red')
@@ -526,6 +582,21 @@ if (MUT) {
         }
         const coolL = life(false), hotL = life(true)
         return coolL > 0 && hotL > 0 && coolL / hotL >= 1.8
+    })
+    tryMut('heat-warn too late (the bell rings with under a second left — #2385)', { heatWarnLead: 20 }, () => {
+        // the window slides to gate−20/gate−10: two notes still ring, but the
+        // HARD ≥45-tick lead promise breaks — the check must catch it on the
+        // constant, not on the patched CFG.heatWarnLead.
+        const g = scratch()
+        const notes = []
+        let heatAt = -1
+        for (let t = 0; t < CFG.heatTicks + 5 && heatAt < 0; t++) {
+            step(g, null, null)
+            if (heatWarnStep(g.tick - g.lastHit)) notes.push(g.tick)
+            for (const e of g.events) if (e.type === 'heat') heatAt = e.tick
+            g.events.length = 0
+        }
+        return notes.length >= 2 && heatAt - notes[0] >= 45
     })
 }
 
