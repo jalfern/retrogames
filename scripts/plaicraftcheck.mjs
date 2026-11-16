@@ -9,7 +9,7 @@
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { step, stateHash } from '../src/games/Gauntlet/sim.js'
+import { step, stateHash, makeGame, LEVELS } from '../src/games/Gauntlet/sim.js'
 import { partnerPad, decide } from '../src/games/Gauntlet/planner.js'
 import { createModelPolicy, featurize, forward, N_FEAT, FEAT_NAMES, seatSources } from '../src/games/Gauntlet/model.js'
 import { POLICY } from '../src/games/Gauntlet/policy.js'
@@ -176,6 +176,23 @@ function agreement(seed, cap, policy) {
     const caught = leakCols(leaky)
     check('MUTANT: re-adding the reach copy trips the leak gate', caught.includes(cols),
         caught.length ? `injected copy caught at col ${caught.join(',')}` : 'injected leak went UNDETECTED')
+}
+
+// 11 — #2516 difficulty-rules threading: newGame passes EXPLICIT difficulty opts
+// (levelCount, slack) to THE sim, absent keeps every historical default (no
+// recording has ever stamped these). The mutant builds the game the way the
+// pre-#2516 wrapper did — knobs dropped — and must NOT match the stamped game:
+// the proof this gate can fail.
+{
+    const plain = newGame(7)
+    const stamped = newGame(7, { partnerKey: 'elf', levelCount: 6, slack: true })
+    check('difficulty rules thread to the sim (#2516)',
+        plain.levelCount === LEVELS.length && !plain.slack && stamped.levelCount === 6 && stamped.slack === true,
+        `plain lc=${plain.levelCount} slack=${!!plain.slack} | stamped lc=${stamped.levelCount} slack=${stamped.slack}`)
+    const dropped = makeGame(7, 'warrior', { topDown: true, partner: true, partnerKey: 'elf' }) // pre-#2516 form
+    check('MUTANT: dropped threading is caught (#2516)',
+        dropped.levelCount !== stamped.levelCount || !dropped.slack,
+        `dropped lc=${dropped.levelCount} slack=${!!dropped.slack} vs stamped lc=${stamped.levelCount} slack=${stamped.slack}`)
 }
 
 console.log(ok.join('\n'))
