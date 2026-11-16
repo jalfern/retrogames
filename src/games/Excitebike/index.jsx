@@ -83,7 +83,7 @@ const ExcitebikeGame = () => {
         let demoAt = 0, demoReady = false, toast = 0, toastMsg = '', toastPrio = 0, shake = 0
         let noteAt = 0, heatBeep = 0, fxRBump = 0 // #2434 renderer-side rbump counter (vacuity probe)
         const lastContact = []
-        const keys = { g: false, b: false, j: false }
+        const keys = { g: false, b: false, j: false, l: false, r: false }
         let bikeMem = { pump: 0 } // #1637 decide()'s per-seat memory (pump taps)
         const parts = []
         // #2434: the toast is ONE line. A headline (a rival PILES IN, your own
@@ -144,6 +144,14 @@ const ExcitebikeGame = () => {
                     burst(scrX + 12, g2s(gs.alt) - 8, 10, '#c98a3a'); shake = 6
                     if (e.name) leans[e.name] = 12 // the pushed rider visibly tips
                 }
+                else if (e.type === 'rub') {
+                    // #2457: matched speed, same line — handlebars. The fix is
+                    // steering, and the toast says so.
+                    say('RUB! TAKE THE LINE')
+                    audioController.playNoise(0.12, 0.06); audioController.playTone(880, 0.10, 'sawtooth', 0.05)
+                    burst(scrX + 10, g2s(gs.alt) - 10, 6, '#ffe23f'); shake = 4
+                    if (e.name) leans[e.name] = 10
+                }
                 else if (e.type === 'jolt') {
                     say('JOLT!')
                     audioController.playTone(110, 0.14, 'sawtooth', 0.06)
@@ -188,6 +196,15 @@ const ExcitebikeGame = () => {
                         if (Math.abs(dd) < 60) shake = 3
                     }
                 }
+                else if (e.type === 'rrub') {
+                    // #2457: the pack sorting itself out at pace — sparks where
+                    // two rivals separate, no toast (the pack talks quietly).
+                    const dd = ((e.x - gs.x + LAP * 1.5) % LAP) - LAP / 2
+                    if (dd > -104 && dd < W - 64) {
+                        audioController.playNoise(0.08, 0.03)
+                        burst(scrX + dd, g2s(groundY(track(gs.track).ground, e.x)) - 8, 4, '#ffe23f')
+                    }
+                }
                 else if (e.type === 'rhop') {
                     // the pack choosing a line: a rival commits the hop over a
                     // body — a puff off the deck and a faint tick, that's all;
@@ -224,7 +241,7 @@ const ExcitebikeGame = () => {
             const scrX = 84
             const evts = gs.events.splice(0)
             for (const e of evts) {
-                if (['flyby', 'bump', 'jolt'].includes(e.type) || (e.type === 'crash' && (e.why === 'wreck' || e.why === 'contact'))) {
+                if (['flyby', 'bump', 'jolt', 'rub'].includes(e.type) || (e.type === 'crash' && (e.why === 'wreck' || e.why === 'contact'))) {
                     lastContact.push({ t: gs.tick, type: e.type, name: e.name || '', why: e.why || '' })
                 }
             }
@@ -246,7 +263,7 @@ const ExcitebikeGame = () => {
                 wasAir[r.name] = r.air
                 if (p0 && !r.air && r.down === 0 && (preRival[gs.rivals.indexOf(r)].vy < -1.4 || Math.abs(r.pitch) > 0.2)) {
                     const ddx = r.d % LAP - camNow()
-                    if (ddx > -20 && ddx < 256 + 20) burst(ddx, g2s(groundY(trk, r.d % LAP)) - 2, 4, '#b5905a')
+                    if (ddx > -20 && ddx < 256 + 20) burst(ddx, g2s(groundY(trk, r.d % LAP)) - 2 - laneDy(r.lane), 4, '#b5905a')
                 }
             }
             // decay the juice timers (lean, pops, flashes, scars)
@@ -275,7 +292,7 @@ const ExcitebikeGame = () => {
             // attract demo's script came from and excitecheck grades; it
             // re-decides from the live bike every tick.
             if (watchingRef.current) { doSim(decide(gs, bikeMem)); return }
-            doSim({ g: keys.g, b: keys.b, j: keys.j, u: keys.g, d: keys.b })
+            doSim({ g: keys.g, b: keys.b, j: keys.j, u: keys.g, d: keys.b, l: keys.l, r: keys.r })
         }
 
         const music = () => {
@@ -298,7 +315,7 @@ const ExcitebikeGame = () => {
             for (const r of gs.rivals) {
                 if (r.down > 0) continue
                 const gap = r.d - gs.total
-                if (gap < 0 && gap > -150 && r.v - gs.v > 0.4 && gs.v > 1.0) { preTell = true; break }
+                if (gap < 0 && gap > -150 && r.v - gs.v > 0.4 && gs.v > 1.0 && Math.abs(r.lane - gs.lane) < 0.3) { preTell = true; break }
             }
         }
         const rivalHum = () => {
@@ -387,8 +404,11 @@ const ExcitebikeGame = () => {
             }
             ctx.fillStyle = PAL.gate; ctx.fillRect(sx - 13, g2s(96) - 48, 3, 48); ctx.fillRect(sx + 12, g2s(96) - 48, 3, 48)
         }
-        const drawBike = (cx, cy, pitch, p, riderName) => {
-            ctx.save(); ctx.translate(cx, cy); ctx.rotate(-pitch)
+        const laneDy = (lane) => (lane || 0) * 16          // #2457: a far line sits higher
+        const laneSc = (lane) => 1 - (lane || 0) * 0.10    // and slightly smaller — the NES depth trick
+        const drawBike = (cx, cy, pitch, p, riderName, lane) => {
+            const dy = laneDy(lane); const s = laneSc(lane)
+            ctx.save(); ctx.translate(cx, cy - dy); ctx.scale(s, s); ctx.rotate(-pitch)
             // wheels
             ctx.fillStyle = '#181818'
             ctx.fillRect(-9, -3, 6, 6); ctx.fillRect(3, -3, 6, 6)
@@ -403,11 +423,12 @@ const ExcitebikeGame = () => {
             ctx.fillStyle = '#e8c090'; ctx.fillRect(3, -14, 3, 2)       // arm to bars
             ctx.fillRect(5, -13, 2, 5)
             ctx.restore()
-            if (riderName) { ctx.fillStyle = '#f8f8f8'; ctx.font = '7px monospace'; ctx.textAlign = 'center'; ctx.fillText(riderName, cx, cy - 26); ctx.textAlign = 'left' }
+            if (riderName) { ctx.fillStyle = '#f8f8f8'; ctx.font = '7px monospace'; ctx.textAlign = 'center'; ctx.fillText(riderName, cx, cy - dy - 26 * s); ctx.textAlign = 'left' }
         }
-        const drawRider = (cx, cy, rot, p) => {
+        const drawRider = (cx, cy, rot, p, lane) => {
             // a rider separated from the bike (#2387 tumble/remount theatre)
-            ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot)
+            const dy = laneDy(lane); const s = laneSc(lane)
+            ctx.save(); ctx.translate(cx, cy - dy); ctx.scale(s, s); ctx.rotate(rot)
             ctx.fillStyle = p.body; ctx.fillRect(-2, -7, 5, 8)
             ctx.fillStyle = p.hel; ctx.fillRect(-1, -11, 5, 4)
             ctx.fillStyle = '#e8c090'; ctx.fillRect(2, -4, 3, 2)
@@ -447,57 +468,69 @@ const ExcitebikeGame = () => {
             drawTerrain(tr, camX)
             drawScars(tr, camX)
             if (camX < 400) drawStart(camX)
+            // #2457: riders paint far-line first so the near bike overlaps the
+            // far one — depth reads on screen, then the player joins the sort.
+            const renderables = []
             for (const r of gs.rivals) {
                 const rx = r.d % LAP
                 const ddx = rx - camX
                 if (ddx > -20 && ddx < W + 20) {
-                    const col = RIDE.rivals[gs.rivals.indexOf(r) % 5]
-                    if (r.down > 0) {
-                        // wiped out (#2384). #2387 gave the flicker a story:
-                        // the rider comes OFF and tumbles a few frames, the
-                        // bike parks nose-in-dirt while they walk it back,
-                        // then a hop and they're on. The amber chevron stays —
-                        // #2391's SOLID-wreck warning must not lose its voice.
-                        const gy = g2s(groundY(tr.ground, rx))
-                        const p = 110 - r.down
-                        if (p < 34) {
-                            drawBike(ddx + Math.sin(p * 0.5) * 3, gy - 4 - Math.abs(Math.sin(p * 0.3)) * 7, 1.15 + Math.sin(p * 0.42) * 0.45, col, null)
-                            drawRider(ddx - 4 + p * 0.35, gy - 18 - Math.abs(Math.sin(p * 0.3)) * 9, p * 0.5, col)
-                        } else if (r.down > 24) {
-                            if (gs.tick % 22 < 14) drawRider(ddx + 9 - Math.sin(gs.tick * 0.12) * 3, gy - 6, Math.sin(gs.tick * 0.3) * 0.2, col)
-                            drawBike(ddx, gy - 4, 1.15, col, r.name)
+                    renderables.push({ lane: r.lane || 0, fn: () => {
+                        const col = RIDE.rivals[gs.rivals.indexOf(r) % 5]
+                        if (r.down > 0) {
+                            // wiped out (#2384). #2387 gave the flicker a story:
+                            // the rider comes OFF and tumbles a few frames, the
+                            // bike parks nose-in-dirt while they walk it back,
+                            // then a hop and they're on. The amber chevron stays —
+                            // #2391's SOLID-wreck warning must not lose its voice.
+                            const gy = g2s(groundY(tr.ground, rx))
+                            const p = 110 - r.down
+                            if (p < 34) {
+                                drawBike(ddx + Math.sin(p * 0.5) * 3, gy - 4 - Math.abs(Math.sin(p * 0.3)) * 7, 1.15 + Math.sin(p * 0.42) * 0.45, col, null, r.lane)
+                                drawRider(ddx - 4 + p * 0.35, gy - 18 - Math.abs(Math.sin(p * 0.3)) * 9, p * 0.5, col, r.lane)
+                            } else if (r.down > 24) {
+                                if (gs.tick % 22 < 14) drawRider(ddx + 9 - Math.sin(gs.tick * 0.12) * 3, gy - 6, Math.sin(gs.tick * 0.3) * 0.2, col, r.lane)
+                                drawBike(ddx, gy - 4, 1.15, col, r.name, r.lane)
+                            } else {
+                                const hp = 24 - r.down
+                                drawBike(ddx, gy - 4, 1.15 * Math.min(1, hp / 18), col, r.name, r.lane)
+                                drawRider(ddx - 3, gy - 10 - (hp < 16 ? Math.sin((hp / 16) * Math.PI) * 12 : 0), hp < 16 ? -0.6 : 0, col, r.lane)
+                            }
+                            const wy = g2s(groundY(tr.ground, rx)) - 34 + Math.sin(gs.tick * 0.15) * 2 - laneDy(r.lane)
+                            if (gs.tick % 24 < 16) {
+                                ctx.fillStyle = '#ffb347'
+                                ctx.beginPath(); ctx.moveTo(ddx, wy + 7); ctx.lineTo(ddx - 5, wy); ctx.lineTo(ddx + 5, wy); ctx.closePath(); ctx.fill()
+                                ctx.fillStyle = '#101010'; ctx.fillRect(ddx - 1, wy + 2, 2, 3)
+                            }
+                            if (gs.tick % 6 === 0) { parts.push({ x: ddx - 8, y: g2s(groundY(tr.ground, rx)) - 4 - laneDy(r.lane), vx: -0.4, vy: -0.7, t: 0, col: '#8a5a1a' }) }
                         } else {
-                            const hp = 24 - r.down
-                            drawBike(ddx, gy - 4, 1.15 * Math.min(1, hp / 18), col, r.name)
-                            drawRider(ddx - 3, gy - 10 - (hp < 16 ? Math.sin((hp / 16) * Math.PI) * 12 : 0), hp < 16 ? -0.6 : 0, col)
+                            const py = g2s(r.air ? r.alt : groundY(tr.ground, rx)) - 6
+                            const tilt = leans[r.name] ? Math.sin(leans[r.name] * 0.8) * leans[r.name] * 0.02 : 0
+                            drawBike(ddx, py, r.pitch + tilt, col, r.name, r.lane)
                         }
-                        const wy = g2s(groundY(tr.ground, rx)) - 34 + Math.sin(gs.tick * 0.15) * 2
-                        if (gs.tick % 24 < 16) {
-                            ctx.fillStyle = '#ffb347'
-                            ctx.beginPath(); ctx.moveTo(ddx, wy + 7); ctx.lineTo(ddx - 5, wy); ctx.lineTo(ddx + 5, wy); ctx.closePath(); ctx.fill()
-                            ctx.fillStyle = '#101010'; ctx.fillRect(ddx - 1, wy + 2, 2, 3)
-                        }
-                        if (gs.tick % 6 === 0) { parts.push({ x: ddx - 8, y: g2s(groundY(tr.ground, rx)) - 4, vx: -0.4, vy: -0.7, t: 0, col: '#8a5a1a' }) }
-                    } else {
-                        const py = g2s(r.air ? r.alt : groundY(tr.ground, rx)) - 6
-                        const tilt = leans[r.name] ? Math.sin(leans[r.name] * 0.8) * leans[r.name] * 0.02 : 0
-                        drawBike(ddx, py, r.pitch + tilt, col, r.name)
-                    }
+                    } })
                 }
             }
             if (!(gs.crash > 0 && gs.tick % 6 < 3)) {
-                const jlean = leanYou.t > 0 ? Math.sin(leanYou.t * 0.9) * leanYou.t * 0.02 : 0
-                drawBike(gs.x - camX, g2s(gs.alt) - 6, gs.pitch + jlean, RIDE.you)
-                if (preTell && gs.tick % 8 < 5) {
-                    // a rival is closing on your back — amber chevrons at the
-                    // rear wheel, the visual half of the engine-pitch pre-tell
-                    ctx.fillStyle = '#ffb347'
-                    for (let k = 0; k < 2; k++) {
-                        const bx = gs.x - camX - 16 - k * 7
-                        ctx.beginPath(); ctx.moveTo(bx + 5, g2s(gs.alt) - 12); ctx.lineTo(bx, g2s(gs.alt) - 16); ctx.lineTo(bx, g2s(gs.alt) - 8); ctx.closePath(); ctx.fill()
+                renderables.push({ lane: gs.lane || 0, fn: () => {
+                    const jlean = leanYou.t > 0 ? Math.sin(leanYou.t * 0.9) * leanYou.t * 0.02 : 0
+                    drawBike(gs.x - camX, g2s(gs.alt) - 6, gs.pitch + jlean, RIDE.you, null, gs.lane)
+                    if (preTell && gs.tick % 8 < 5) {
+                        // a rival is closing on your back ON YOUR LINE — amber
+                        // chevrons at the rear wheel, the visual half of the
+                        // engine-pitch pre-tell (#2457: cross-line riders do
+                        // not warn, they just pass)
+                        ctx.fillStyle = '#ffb347'
+                        for (let k = 0; k < 2; k++) {
+                            const bx = gs.x - camX - 16 - k * 7
+                            const chy = g2s(gs.alt) - laneDy(gs.lane)
+                            ctx.beginPath(); ctx.moveTo(bx + 5, chy - 12); ctx.lineTo(bx, chy - 16); ctx.lineTo(bx, chy - 8); ctx.closePath(); ctx.fill()
+                        }
                     }
-                }
+                } })
             }
+            renderables.sort((a, b) => b.lane - a.lane)
+            for (const re of renderables) re.fn()
             for (let i = parts.length - 1; i >= 0; i--) {
                 const pa = parts[i]; pa.t++; pa.x += pa.vx; pa.y += pa.vy + 1
                 if (pa.t > 22) { parts.splice(i, 1); continue }
@@ -584,7 +617,7 @@ const ExcitebikeGame = () => {
             parts.length = 0
             lastContact.length = 0
             clearJuice()
-            keys.g = keys.b = keys.j = false
+            keys.g = keys.b = keys.j = keys.l = keys.r = false
             setMode('play')
             audioController.playSweep(220, 660, 0.25, 'sawtooth', 0.07)
         }
@@ -608,14 +641,18 @@ const ExcitebikeGame = () => {
             if (e.code === 'ArrowUp') keys.g = true
             if (e.code === 'ArrowDown') keys.b = true
             if (e.code === 'Space') keys.j = true
+            if (e.code === 'ArrowLeft') keys.l = true    // #2457 steer OUT to the far line
+            if (e.code === 'ArrowRight') keys.r = true    // #2457 back to the near line
             if (e.code === 'KeyG') { gearRef.current = gearRef.current === 'high' ? 'low' : 'high'; setGear(gearRef.current); gs.gear = gearRef.current; say('GEAR: ' + gearRef.current.toUpperCase()) }
         }
         const onUp = (e) => {
             if (e.code === 'ArrowUp') keys.g = false
             if (e.code === 'ArrowDown') keys.b = false
             if (e.code === 'Space') keys.j = false
+            if (e.code === 'ArrowLeft') keys.l = false
+            if (e.code === 'ArrowRight') keys.r = false
         }
-        const onBlur = () => { keys.g = keys.b = keys.j = false }
+        const onBlur = () => { keys.g = keys.b = keys.j = keys.l = keys.r = false }
         const onPointer = () => {
             const sc = screenRef.current
             if (sc === 'attract') startPlay(0)
@@ -648,12 +685,13 @@ const ExcitebikeGame = () => {
                     air: gs.air, airT: gs.airT, crash: gs.crash, stall: gs.stall, pumpT: gs.pumpT,
                     heat: gs.heat, hot: gs.hot, gear: gs.gear, rank: gs.rank, score: gs.score,
                     lap: gs.lap, laps: gs.laps, clock: gs.clock, count: gs.count, inBand: gs.inBand,
-                    rivals: gs.rivals.map((r) => ({ name: r.name, d: Math.round(r.d), air: r.air, down: r.down, crashes: r.crashes, tk: r.tk, held: r.held })),
+                    lane: +gs.lane.toFixed(3),   // #2457 lateral line
+                    rivals: gs.rivals.map((r) => ({ name: r.name, d: Math.round(r.d), air: r.air, down: r.down, crashes: r.crashes, tk: r.tk, held: r.held, lane: +r.lane.toFixed(2) })),
                     contact: lastContact.slice(-14),
                     toast: { msg: toastMsg, left: toast, prio: toastPrio }, // #2434 headline-vs-minor probe
                     fxRBump, // #2434 renderer-side on-screen scuffle count (vacuity)
                     juice: { pops: pops.length, flashes: flashes.length, scars: scars.length, lean: Object.keys(leans).length + (leanYou.t ? 1 : 0), preTell },
-                    screenX: Math.max(0, gs.x - 84) ? 84 : gs.x, screenY: g2s(gs.alt) - 6,
+                    screenX: Math.max(0, gs.x - 84) ? 84 : gs.x, screenY: g2s(gs.alt) - 6 - laneDy(gs.lane),
                 }),
                 start: () => startPlay(0),
                 watching: () => watchingRef.current, // #1637 watchcheck pilot drives these
@@ -677,6 +715,7 @@ const ExcitebikeGame = () => {
                         ...(opts.crash !== undefined && { crash: opts.crash }),
                         ...(opts.heat !== undefined && { heat: opts.heat }),
                         ...(opts.clock !== undefined && { clock: opts.clock }),
+                        ...(opts.lane !== undefined && { lane: opts.lane }),   // #2457 rigs can seat the bike on a line
                     })
                     if (opts.alt === undefined) gs.alt = groundY(track(gs.track).ground, gs.x)
                     // #2391 test rigs: park rivals (downed or rolling) so the
@@ -696,6 +735,7 @@ const ExcitebikeGame = () => {
                 getState: () => [
                     `${track(gs.track).name}  ${gs.rank}${['st', 'nd', 'rd'][gs.rank - 1] || 'th'}/6  lap ${gs.lap}/${gs.laps}  ${gs.gear}  clock ${(gs.clock / 60).toFixed(1)}s`,
                     `v ${gs.v.toFixed(2)}  alt ${gs.alt.toFixed(0)}  vy ${gs.vy.toFixed(2)}  pitch ${gs.pitch.toFixed(2)}  ${gs.air ? 'AIR ' + gs.airT : 'ground'}`,
+                    `line ${gs.lane.toFixed(2)}  rivals ${gs.rivals.map((r) => `${r.name}:${r.lane.toFixed(2)}`).join(' ')}`,
                     `heat ${gs.heat.toFixed(0)}${gs.hot ? ' BOILED' : ''}  crash ${gs.crash}  stall ${gs.stall}  band ${gs.inBand || '-'}`,
                     `league ${gs.rivals.map((r) => `${r.name}${r.down > 0 ? ' DOWN' : ''}${r.air ? ' air' : ''}${r.crashes ? `↺${r.crashes}` : ''}`).join(' ')}`,
                     `screen ${screenRef.current}  paused ${pausedRef.current}  end ${gs.end}  score ${gs.score}`,
@@ -706,7 +746,7 @@ const ExcitebikeGame = () => {
                             if (gs.end) return `already ${gs.end}`
                             const r = decide(gs, { pump: 0 })
                             const report = []
-                            for (const [name, patch] of [['gas', { g: true }], ['brake', { b: true }], ['jump', { g: true, j: true }], ['coast', {}]]) {
+                            for (const [name, patch] of [['gas', { g: true }], ['brake', { b: true }], ['jump', { g: true, j: true }], ['far line', { g: true, l: true }], ['near line', { g: true, r: true }], ['coast', {}]]) {
                                 const c = structuredClone(gs)
                                 for (let k = 0; k < 60; k++) { step(c, name === 'jump' ? { ...patch, j: k === 0 } : patch); c.events.length = 0; if (c.end) break }
                                 report.push(`${name}:v${c.v.toFixed(1)}${c.crash ? '×' : ''}${c.air ? ' air' : ''}`)

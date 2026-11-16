@@ -43,7 +43,7 @@ export function decide(g, mem) {
     const tr = track(g.track)
     const x = g.x
     const band = featureAt(tr, x)
-    const inp = { g: false, b: false, u: false, d: false, j: false }
+    const inp = { g: false, b: false, u: false, d: false, j: false, l: false, r: false }
 
     if (g.crash > 0 || g.stall > 0) { inp.j = (mem.pump = (mem.pump + 1) % 2) === 0; return inp }
 
@@ -97,6 +97,15 @@ export function decide(g, mem) {
     opts.push({ g: true, j: true })                       // hop now
     if (g.v > CFG.maxHigh * 0.7) opts.push({ g: true, b: true })   // lift off the gas into heat
     if (solidAhead) opts.push({ b: true })                // #2391: coast to a stop before the wreck
+    // #2457: the line is a lever now. When a body is in range, the rollout
+    // can also choose to STEER — a cross-line pass costs nothing, while the
+    // same-line creep pays rub bites. The planner discovers the open lane
+    // through the real sim, exactly like it discovered the hops.
+    const nearAhead = CFG.laneK && g.rivals.some((r) => r.d - g.total > 4 && r.d - g.total < 180)
+    if (nearAhead) {
+        opts.push({ g: true, l: true })                   // pull out to the far line
+        opts.push({ g: true, r: true })                   // back to the near line
+    }
     const cand = opts.map((o) => ({ ...inp, ...o }))
     let best = null
     for (const c of cand) {

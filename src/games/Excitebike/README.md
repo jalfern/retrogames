@@ -48,37 +48,60 @@ faster heat.
   and who arrives nose-low and chains. One drama per pair per
   `contactCool` (the `pk` matrix; `held` is the rival-side brake, the
   player's hold is untouched); `contactK`/`packK` are the harness mutant
-  knobs. Node-safe.
+  knobs. The LANE axis (#2457): every bike carries a lateral line `lane`
+  0 (near) .. 1 (far), steered by ←/→ (full `laneRate` on the ground, half
+  in the air). Every contact law is now SAME-LANE gated (`laneTouch`) —
+  crossing a body on another line is a clean draft, no flyby, no hold — and
+  the old silent matched-speed ghost (|relV| ≤ 0.3) became the RUB: the
+  player pays `laneScrape` per bite (`rubCool` cadence) and the rival is
+  shoved `laneW` aside; rival-vs-rival rub (`rrub`) is lateral-only and
+  never touches v or d, so the CRASH LEAGUE receipts stand untouched, and
+  `laneHome` walks shoved rivals back to line 0 before the next lap's
+  chain. `laneK` is the master knob (0 = the pinned single-line league,
+  byte-identical — MOTOCROSS never engages the axis). Node-safe.
 - `planner.js` — the autopilot. Decisions every few ticks; each candidate
-  (gas/brake × jump now/later × lean) is **rolled through the real sim**
-  before it is allowed to drive. The attract demo is its output. Since
-  #2391 a DOWNED rival ahead stretches the horizon past the remount and
-  adds a coast candidate plus a delayed-hop sweep — the planner discovers
-  the flyby over the wreck instead of braking to a stop behind it.
+  (gas/brake × jump now/later × lean × far/near line) is **rolled through
+  the real sim** before it is allowed to drive. The attract demo is its
+  output. Since #2391 a DOWNED rival ahead stretches the horizon past the
+  remount and adds a coast candidate plus a delayed-hop sweep — the planner
+  discovers the flyby over the wreck instead of braking to a stop behind it.
+  Since #2457 it also chooses LINES when a body is in range — SUPERCROSS
+  re-learned five forced passes as clean cross-line drafts (witnesses
+  re-recorded); MOTOCROSS still rides its five air-bys untouched.
 - `index.jsx` — the shell. Renderer draws the heightmap column-by-column,
   the HUD (speed dial with needle, heat gauge, position, course bar) and
-  the bikes rotated by pitch. DEV hook `__bikeTest` for `exciteplay`.
+  the bikes rotated by pitch; lanes render as NES depth (far line sits
+  higher and ~10% smaller, riders paint far-to-near). DEV hook
+  `__bikeTest` for `exciteplay`.
 
 ## Controls (faithful to the NES mapping)
 
 - `↑` gas on the ground, **lean back in the air** · `↓` brake, **lean nose
   down in the air** · `SPACE` jump (hold = longer), and **pump it** in mud,
   water and after a crash · `G` gear High/Low at the title · `?` pause.
-- Touch pad: up/down arrows are the throttle and brake (and lean), the A
-  button is jump/pump. Tap anywhere to start.
+- `←`/`→` steer ACROSS the track (#2457, full authority on the ground, half
+  in the air): pass on the open line — same-line traffic is solid, and
+  matched speed in the same line is a RUB.
+- Touch pad: up/down arrows are the throttle and brake (and lean), the
+  stick's left/right are the lines, the A button is jump/pump. Tap anywhere
+  to start.
 
 ## Honest gaps
 
-- Bike-vs-bike contact landed on the player side in #2391 — wrecks are
-  SOLID (wipeout above `wreckV`, a hold below it, never a ride-through),
-  closing onto a riding back bumps with two-way momentum transfer (over
-  `contactCrash` it is over the bars), a rival catching your back swerves,
-  and crossing a body airborne pays a once-per-pass flyby — receipts pinned
-  by `excitecheck` CONTACT. What stays open from the full-physics-league
-  wish: rival-vs-rival contact (the pack still ghosts through each other,
-  chooses no lines, and never chain-wrecks) and same-line passes at matched
-  speed (relV ≤ 0.3 glides ghost — the sim has no lateral axis; a lane
-  axis would close both halves).
+- **CLOSED by #2457:** the lane axis landed — ←/→ steer a continuous lateral
+  line, every contact law is same-line gated (crossing a body on another
+  line is a clean draft, and flyby only pays when you cross THEIR body),
+  and the silent matched-speed ghost became the RUB: same line, relV ≤ 0.3
+  is handlebars — the player pays scrape, the rival is shoved aside;
+  rival-vs-rival `rrub` separates the pack laterally without ever touching
+  v or d (the CRASH LEAGUE receipts stand). Proven by the `excitecheck`
+  LANE block + 6 lane mutants; SUPERCROSS witnesses re-recorded (the
+  autopilot re-learned five forced passes as clean line choices), MOTOCROSS
+  pinned byte-identical (maxLane 0 — the axis never engages there).
+- Rivals never INITIATE a line change: they ride line 0 and only spread when
+  a rub shoves them. Active pack bargaining — dive-bombing a gap, defending
+  a lane, choosing the outside into a corner — remains open; the axis made
+  the PLAYER's line choices real, the pack's are still pace-line politics.
 - The NES splash screen (EDIT TRACK / 6 tracks) is not here: two carved
   tracks, 2 laps each, which is where the fidelity muscle (controls,
   feel, terrain) actually lives.

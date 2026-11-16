@@ -295,6 +295,57 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     r.check('the headline held through the scuffle (no minor "bumps" clobber)', /PILES IN!/.test(heldToast), JSON.stringify({ heldToast, scuffle }))
 }
 
+// ---- LANE (#2457): the axis is real IN THE TAB — steering, draft, rub ----
+{
+    // real ← moves the bike to the far line, and the paint climbs with it:
+    // the same bike on the same flat ground sits HIGHER on the canvas when
+    // it is on the far line (the NES depth trick, graded in pixels).
+    await page.evaluate(() => window.__bikeTest.setup({ track: 0, x: 600, v: 0 }))
+    await wait(250)
+    const s0 = await probe()
+    const p0 = await bikePx()
+    await page.keyboard.down('ArrowLeft')
+    let lane1 = 0
+    for (let i = 0; i < 40; i++) { lane1 = (await probe()).lane; if (lane1 >= 0.4) break; await wait(30) }
+    await page.keyboard.up('ArrowLeft')
+    const s1 = await probe()
+    const p1 = await bikePx()
+    r.check('ArrowLeft is STEERING — the lateral line moves on real keys', lane1 >= 0.4, `lane ${s0.lane} -> ${lane1}`)
+    r.check('the far line is PAINTED higher (depth on screen, not just state)',
+        p1.n > 20 && p0.n > 20 && (p0.y0 + p0.y1) / 2 - (p1.y0 + p1.y1) / 2 > 4,
+        `red row ${((p0.y0 + p0.y1) / 2).toFixed(0)} -> ${((p1.y0 + p1.y1) / 2).toFixed(0)} at lane ${s1.lane}`)
+    // cross-line DRAFT: the exact same downed-body rig that wipes you out on
+    // line 0 (CONTACT block above) — crossed from the far line it is NOTHING.
+    await page.evaluate(() => window.__bikeTest.setup({ track: 0, x: 600, v: 0, lane: 0.5, rivals: { IVAN: { d: 670, v: 0, down: 400 }, MARIO: { d: -60, v: 0, down: 400 }, KATO: { d: -100, v: 0, down: 400 }, GORDON: { d: -140, v: 0, down: 400 }, SONJA: { d: -180, v: 0, down: 400 } } }))
+    let crossed = false, ateDirt = false
+    await page.keyboard.down('ArrowUp')
+    for (let i = 0; i < 140 && !crossed; i++) {
+        const s = await probe()
+        if ((s.contact || []).some((e) => e.type === 'crash')) { ateDirt = true; break }
+        crossed = s.x > 690
+        await wait(40)
+    }
+    await page.keyboard.up('ArrowUp')
+    r.check('crossing a downed rival on the FAR line is clean — no wreck, no hold', crossed && !ateDirt, `x=${(await probe()).x.toFixed(0)} crash=${(await probe()).crash}`)
+    // RUB: matched speed behind a riding back, same line — the old silent
+    // ghost now bites: contact event + the toast telling you the fix.
+    // (Wait for the previous section's prio-2 headline to clear first — the
+    // one-line-toast law #2434 correctly refuses to stomp it, and a blocked
+    // say is lost, so the rig must start with a clean toast.)
+    await page.waitForFunction(() => window.__bikeTest.probe().toast.left === 0, null, { timeout: 10000 })
+    await page.evaluate(() => window.__bikeTest.setup({ track: 0, x: 200, v: 5, rivals: { KATO: { d: 208, v: 5, down: 0 }, MARIO: { d: -60, v: 0, down: 400 }, GORDON: { d: -100, v: 0, down: 400 }, SONJA: { d: -140, v: 0, down: 400 }, IVAN: { d: -180, v: 0, down: 400 } } }))
+    let rubbed = null, toastRub = false, seenToast = null
+    for (let i = 0; i < 80 && !rubbed; i++) {
+        const s = await probe()
+        rubbed = (s.contact || []).find((e) => e.type === 'rub') || null
+        if (!toastRub && s.toast && /RUB!/.test(s.toast.msg)) toastRub = true
+        if (rubbed) seenToast = s.toast
+        if (!rubbed) await wait(30)
+    }
+    r.check('matched speed in the SAME line is a RUB now — the ghost is closed', !!rubbed, JSON.stringify(rubbed))
+    r.check('the rub tells you the fix ("RUB! TAKE THE LINE")', toastRub, JSON.stringify(seenToast))
+}
+
 // ---- the solid-wreck hazard cue is PAINTED (amber chevron over a downed rider) ----
 {
     await page.evaluate(() => window.__bikeTest.setup({ track: 0, x: 1200, v: 0 }))

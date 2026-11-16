@@ -112,6 +112,23 @@ export const CFG = {
     hazBase: 3.2,                        // reaction distance px per unit of v
     hazSkill: 5,                         // skill buys metres of read ahead
     hazMin: 14,                          // inside this the hop can never rise — do not commit
+    // LANE AXIS (#2457): the track gains its NES depth. `lane` is a continuous
+    // lateral line 0 (near, the line the pinned league has always ridden) to 1
+    // (far). ←/→ steer it; every contact law now asks SAME-LANE first —
+    // crossing a body in another lane is a clean draft pass, no flyby, no
+    // scrape. Two same-line bikes at matched speed (|relV| ≤ 0.3, the old
+    // silent-ghost band) now RUB: the player pays scrape and the rival is
+    // nudged aside; rival-vs-rival rub is lateral-only (never touches v or d,
+    // so the CRASH LEAGUE receipts stand untouched). laneK=0 restores the
+    // single-line league byte-identical (the harness pins both).
+    laneK: 1,
+    laneRate: 0.02,                      // lines/tick steered on the ground
+    laneRateAir: 0.008,                  // half-authority in the air
+    laneTouch: 0.3,                      // |Δlane| under this = the same line
+    laneW: 0.34,                         // a rub shoves the rival this far aside
+    laneHome: 0.004,                     // rivals ease back to line 0 (the pinned league line)
+    laneScrape: 0.045,                   // px/tick the player bleeds while rubbing
+    rubCool: 12,                         // ticks between rub bites (one scrape per bite, not per tick)
     clock: 70,                             // start clock, seconds
     lapBonus: 34,                          // seconds at the line
     laps: 2,
@@ -135,6 +152,7 @@ export function makeGame(trackIdx = 0, opts = {}) {
         lap: 1,
         x: 0,                              // px into the lap
         total: 0,                          // px of the whole race (for rank)
+        lane: 0,                           // #2457 lateral line, 0 near .. 1 far
         v: 0,
         alt: groundY(tr.ground, 0),        // world height of the wheels
         vy: 0,
@@ -158,6 +176,7 @@ export function makeGame(trackIdx = 0, opts = {}) {
             vy: 0, air: false, pitch: 0, down: 0, cool: 0, crashes: 0,
             tk: 0, flown: false,          // contact cooldown / flyby-once flag (#2391)
             held: 0,                     // blocked behind a body (#2420) — brake latch
+            lane: 0, rk: 0,             // #2457 lateral line / rub bite cooldown
         })),
         // #2420: one-drama-per-PAIR matrix (i*N+j and j*N+i), the contactCool
         // law extended to rival-vs-rival. Int ticks, decremented in pack().
@@ -205,6 +224,11 @@ function rivalTick(g) {
     const tr = track(g.track)
     for (const r of g.rivals) {
         if (r.cool > 0) r.cool--
+        if (r.rk > 0) r.rk--
+        // #2457: a shoved rival drifts back to the league line over ~30
+        // ticks — enough for the pass it was shoved for, and home again
+        // before the next lap's chain (the CRASH LEAGUE receipts ride line 0).
+        if (CFG.laneK && r.lane !== 0) r.lane = r.lane * (1 - CFG.laneHome)
         if (r.held > 0) { r.held--; r.v = 0; r.alt = groundY(tr.ground, r.d); r.air = false; r.vy = 0; continue }
         if (r.down > 0) {
             r.down--
@@ -302,6 +326,10 @@ function contact(g) {
             if (!g.air) r.flown = false
             continue
         }
+        // #2457 same-line gate: inside the body box but on ANOTHER line is a
+        // clean draft pass — no flyby (you never crossed THEIR body), no
+        // scrape, no hold. The lane axis replaces the ghost courtesy.
+        if (CFG.laneK && Math.abs(r.lane - g.lane) >= CFG.laneTouch) continue
         if (clear >= CFG.contactClear) {
             if (g.air && !r.flown) {
                 r.flown = true
@@ -350,6 +378,20 @@ function contact(g) {
             emit(g, { type: 'jolt', name: r.name, x: g.x })
             r.tk = CFG.contactCool
         }
+        // RUB (#2457): the old silent ghost band (|relV| ≤ 0.3 same-line) is
+        // now handlebars-on-handlebars. The player pays scrape every bite;
+        // the rival is shoved aside, so the fix for being stuck behind is
+        // steering — the lane axis closes the pass-without-a-line loophole.
+        // Never bites a down or held rider (that is a marshalled body), and
+        // never while the player is wrecked or stalled.
+        if (CFG.laneK && r.rk === 0 && !g.air && !r.air && r.down <= 0 && r.held <= 0 &&
+            g.crash === 0 && g.stall === 0 && ag < CFG.contactBody && Math.abs(relV) <= 0.3) {
+            g.v = Math.max(0, g.v - CFG.laneScrape)
+            const dir = r.lane >= g.lane ? 1 : -1
+            r.lane = Math.min(1, Math.max(0, r.lane + CFG.laneW * dir))
+            r.rk = CFG.rubCool
+            emit(g, { type: 'rub', name: r.name, x: g.x })
+        }
     }
 }
 
@@ -379,6 +421,9 @@ function pack(g) {
             const b = g.rivals[j]
             const gap = b.d - a.d
             if (gap <= 0 || gap >= CFG.contactBody) continue   // b must be AHEAD of a
+            // #2457 same-line gate: two rivals abreast draft clean — the pack
+            // only fights for the line it shares.
+            if (CFG.laneK && Math.abs(a.lane - b.lane) >= CFG.laneTouch) continue
             // clearance above GROUND — the rider's own airborne law; the player's
             // flyby clearance is ground-based too, and the pack rides the same
             // terrain together (a dip between two bikes is not a hole in the law).
@@ -412,9 +457,16 @@ function pack(g) {
                 b.d += 3
                 emit(g, { type: 'rbump', a: a.name, b: b.name, cv: +cv.toFixed(2), x: ((b.d % LAP) + LAP) % LAP })
                 g.pk[i * N + j] = g.pk[j * N + i] = CFG.contactCool
+            } else if (CFG.laneK && !a.air && !b.air && b.down <= 0 && Math.abs(relV) <= 0.3) {
+                // PACK RUB (#2420 law, #2457 axis): matched speed, same line —
+                // they scrape and the tail rider slides to the open line.
+                // LATERAL ONLY: v and d never move, so the CRASH LEAGUE
+                // receipts (times and distances) are untouched by the axis.
+                const dir = b.lane >= a.lane ? 1 : -1
+                b.lane = Math.min(1, Math.max(0, b.lane + CFG.laneW * dir))
+                emit(g, { type: 'rrub', a: a.name, b: b.name, x: ((b.d % LAP) + LAP) % LAP })
+                g.pk[i * N + j] = g.pk[j * N + i] = CFG.contactCool
             }
-            // a pace-matched draft (relV <= 0.3) glides — the no-lateral-axis
-            // courtesy stays the README's honest gap.
         }
     }
 }
@@ -541,6 +593,17 @@ export function step(g, inp) {
         }
     } else if (jEdge && g.air && g.jumpT > 0) {
         g.jumpT = CFG.jumpHold          // holding jump in early air hangs longer
+    }
+
+    // ---- lane steer (#2457) -----------------------------------------------
+    // ← steers OUT to the far line, → back to the near line. Continuous,
+    // clamped to the track: the NES crossed its width in about a second,
+    // so ground authority clears a rival's lane (laneTouch) in ~15 ticks.
+    // Airborne the same keys still move the bike, at reduced authority.
+    if (CFG.laneK) {
+        const lr = g.air ? CFG.laneRateAir : CFG.laneRate
+        if (inp.l) g.lane = Math.min(1, g.lane + lr)
+        if (inp.r) g.lane = Math.max(0, g.lane - lr)
     }
 
     // ---- heat -------------------------------------------------------------
