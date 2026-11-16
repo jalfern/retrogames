@@ -96,6 +96,8 @@ export const CFG = {
     fireSpread: true,                   // fire lights flammable neighbours
     flyIgnite: true,                    // the firefly sets what it touches alight
     flyTravel: true,                    // #2364: the fly holds its heading and bounces — it can leave the pit
+    flyDrift: true,                     // #2453: the butterfly flap — in OPEN air the fly turns on its own
+    flyDriftOdds: 4,                   // …1 in this many open-air ticks — the flit rate of the originals
     fallKill: true,                     // a falling boulder crushes the player
     amoeba: true,                       // #2411: the slime wave grows (Boulder Dash II)
     amoEvery: 3,                      // CA ticks between amoeba growth passes — the wave reads as motion
@@ -130,7 +132,7 @@ export const hash = (s) => {
 // with one move dropped MUST NOT (see dashcheck's tamper probe).
 export function stateHash(g) {
     let s = `${g.tick}|${g.have}|${g.score}|${g.end}|${g.win}|${g.player.x},${g.player.y},${g.player.alive ? 1 : 0}`
-    for (const f of g.flies) s += `|f${f.x},${f.y},${f.dir}`
+    for (const f of g.flies) s += `|f${f.x},${f.y},${f.dir}${g.flyExt ? `~${f.flaps}` : ''}`
     for (let i = 0; i < g.grid.length; i++) {
         const t = g.grid[i]
         // FIRE carries its burn timer, amoeba cells their generation — each in a
@@ -166,7 +168,11 @@ export function makeGame(level, grid) {
         need: level.need,
         player: { x: level.spawn.x, y: level.spawn.y, alive: true },
         exit: { ...level.exit },
-        flies: (level.flies || []).map((f, i) => ({ id: i, x: f.x, y: f.y, dir: f.dir | 0 })),
+        flies: [...(level.flies || []), ...((level.butterflies || []).map((b) => ({ ...b, drift: true, digs: false, ignites: false })))].map((f, i) => ({ id: i, x: f.x, y: f.y, dir: f.dir | 0, drift: f.drift ? 1 : 0, digs: f.digs === false ? 0 : 1, ignites: f.ignites === false ? 0 : 1, flaps: 0 })),
+        // #2453: drift state rides the hash ONLY when a level actually has a
+        // drifting fly (the #2428 amoExt pattern) — caves without drift replay
+        // byte-identical.
+        flyExt: !!(level && ((level.flies || []).some((f) => f.drift) || (level.butterflies || []).length > 0)),
         movingB: new Set(),                             // boulder cell-indices in motion last tick
         movingD: new Set(),                             // gem cell-indices in motion last tick
         amoGen: new Int8Array(W * H),                   // #2411 amoeba: generation born (0 = seeded)
@@ -534,6 +540,30 @@ function amoeba(g) {
 // if travel is silenced the dashcheck FLY RELEASE scenario goes red.
 // CFG.flyTravel = false reverts to the original net-zero orbit (rotate every
 // tick, steel-only block) — a firefly that could never leave a sealed box.
+//
+// THE BUTTERFLY FLAP (#2453) — the README's oldest actionable gap said the fly
+// "never weaves into the cavern proper the way an original butterfly could":
+// momentum-only turning happens exclusively against obstacles, so in a corridor
+// the patrol is a fixed shuttle. The originals' butterflies flapped — they
+// changed direction on their own in open ground and swept the whole cavern.
+// `drift: true` flies therefore ALSO turn on their own, but only where a flap
+// can read as one:
+//   - the roll is offered only when the way straight ahead is OPEN (EMPTY/FIRE)
+//     — mid-bore the fly keeps drilling, so seams and lanes stay honest;
+//   - the flap is offered only into cells that are not blocked — in a 1-cell
+//     corridor both sides are wall, the flap cannot land, and shuttle patrols
+//     stay byte-predictable BY LAW (the FLY PIT chicken-game can never be made
+//     unfair by drift);
+//   - right first, then left — reversals are a flap the butterfly never makes.
+// Zero RNG: the roll is a deterministic hash of (fly id, tick, cell), so the
+// whole cave stays a pure function of (level, grid, script) — dashcheck replays
+// it twice and demands identical hashes. CFG.flyDrift=false mutes the flaps
+// (mutant proof); the flap count rides stateHash only when a level opts in.
+const flyRoll = (id, tick, x, y) => {
+    let r = Math.imul(id + 0x9e3779b1, 0x85ebca6b) ^ Math.imul(tick + 0x165667b1, 0xc2b2ae35) ^ Math.imul(x * 7919 + y + 0x27d4eb2f, 0x27d4eb2f)
+    r ^= r >>> 15; r = Math.imul(r, 0x2545f491); r ^= r >>> 13
+    return r >>> 0
+}
 function fireflies(g) {
     for (const f of g.flies) {
         g.flyAt[idx(f.x, f.y)] = -1
@@ -541,21 +571,46 @@ function fireflies(g) {
     // obstacles stop the fly dead; open space (air, fire) and dust let it pass.
     // #2411: push walls and live slime are obstacles too — the fly turns off
     // them like steel (SLIME VAULT ships no fly; existing caves have neither).
-    const blocked = (x, y) => {
+    // #2453: a BUTTERFLY (digs:false) also treats dust as wall — it never bores
+    // or ignites, only flits. Same automaton, different permissions.
+    const blockedFor = (f) => (x, y) => {
         if (!inBounds(x, y)) return true
         const t = g.grid[idx(x, y)]
-        return t === STEEL || t === BOULDER || t === DIAMOND || t === PUSHWALL || t === AMO_HEAD || t === AMO_BODY
+        if (t === STEEL || t === BOULDER || t === DIAMOND || t === PUSHWALL || t === AMO_HEAD || t === AMO_BODY) return true
+        return t === DIRT && f.digs === 0
     }
+    // dust ahead = the fly is about to bore; #2453 keeps the flap off mid-bore
+    // so seam lanes and drilled lines stay honest (see the drift note above).
+    const boring = (x, y) => g.grid[idx(x, y)] === DIRT
     for (const f of g.flies) {
         let nx, ny
+        const bf = blockedFor(f)
         if (CFG.flyTravel) {
             let d = CFG.fireflyDirs[f.dir]
-            for (let tries = 1; blocked(f.x + d[0], f.y + d[1]) && tries < CFG.fireflyDirs.length; tries++) {
+            for (let tries = 1; bf(f.x + d[0], f.y + d[1]) && tries < CFG.fireflyDirs.length; tries++) {
                 f.dir = (f.dir + 1) % CFG.fireflyDirs.length
                 d = CFG.fireflyDirs[f.dir]
             }
             nx = f.x + d[0]; ny = f.y + d[1]
-            if (blocked(nx, ny)) { nx = f.x; ny = f.y }          // boxed on all sides: wait it out
+            if (bf(nx, ny)) { nx = f.x; ny = f.y }          // boxed on all sides: wait it out
+            // #2453 the flap: only with open ground ahead (never mid-bore), and
+            // only onto ground that is open too — right first, then left. Both
+            // sides wall (any 1-cell corridor) means the flap cannot land.
+            if (CFG.flyDrift && f.drift && (nx !== f.x || ny !== f.y) && !boring(nx, ny)) {
+                if (flyRoll(f.id, g.tick, f.x, f.y) % CFG.flyDriftOdds === 0) {
+                    for (const turn of [1, 3]) {
+                        const cd = (f.dir + turn) % CFG.fireflyDirs.length
+                        const cdd = CFG.fireflyDirs[cd]
+                        if (!bf(f.x + cdd[0], f.y + cdd[1])) {
+                            f.dir = cd; f.flaps++
+                            g.events.push({ type: 'drift', x: f.x, y: f.y, dir: cd })
+                            break
+                        }
+                    }
+                    d = CFG.fireflyDirs[f.dir]
+                    nx = f.x + d[0]; ny = f.y + d[1]
+                }
+            }
         } else {
             const d = CFG.fireflyDirs[f.dir]
             nx = f.x + d[0]; ny = f.y + d[1]
@@ -564,12 +619,12 @@ function fireflies(g) {
         }
         if (nx !== f.x || ny !== f.y) {
             f.x = nx; f.y = ny
-            if (CFG.flyIgnite && g.grid[idx(nx, ny)] !== FIRE) {
+            if (CFG.flyIgnite && f.ignites !== 0 && g.grid[idx(nx, ny)] !== FIRE) {
                 g.grid[idx(nx, ny)] = FIRE
                 g.burn[idx(nx, ny)] = CFG.burn
                 g.events.push({ type: 'ignite', x: nx, y: ny })
             }
-            if (g.player.alive && g.player.x === nx && g.player.y === ny) killPlayer(g, 'fire')
+            if (g.player.alive && g.player.x === nx && g.player.y === ny) killPlayer(g, 'fly')
         }
     }
     for (const f of g.flies) if (inBounds(f.x, f.y)) g.flyAt[idx(f.x, f.y)] = f.id

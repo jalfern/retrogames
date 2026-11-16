@@ -287,5 +287,49 @@ r.check('another key starts a fresh play (clock reset)', (await probe()).screen 
     r.check('the fork wave dissolves on its own clock (generations expire)', peak4 > 6 && gone4, `peak=${peak4} end=${(await probe()).slime}`)
 }
 
+// ---- #2453 GOSSAMER HOLLOW live: the butterfly weaves and dips the tube ----
+{
+    await page.evaluate(() => window.__game && window.__game.reset && window.__game.reset(7))
+    await wait(700)
+    const s = await probe()
+    r.check('the contract reset loaded GOSSAMER HOLLOW', s.name === 'GOSSAMER HOLLOW' && s.screen === 'play', `name=${s.name} screen=${s.screen}`)
+    r.check('the cave ships a butterfly — drift on, boring and ignition off', s.butterfly === true, `butterfly=${s.butterfly}`)
+    // phase A: no input — the player is safe at the spawn while the critter
+    // proves itself: flaps at real pace, dips into the tube, and can never
+    // pass the sealed lane under the tube mouth (dust is wall to a butterfly).
+    let flapsSeen = 0, dipped = false, breach = false
+    for (let i = 0; i < 480; i++) {
+        const q = await probe()
+        if (q.screen !== 'play') break
+        flapsSeen = Math.max(flapsSeen, q.flaps || 0)
+        const f = (q.flies || [])[0]
+        if (f) {
+            if (f.y >= 12) dipped = true
+            if (f.y >= 18) breach = true
+        }
+        await wait(60)
+    }
+    r.check('the butterfly flaps at real pace in the live game', flapsSeen >= 10, `flaps=${flapsSeen}`)
+    r.check('the butterfly dips into the tube toward the dig lanes', dipped, 'no tube visit in 480 ticks')
+    r.check('…and cannot breach the sealed lane — dust is wall to a butterfly', !breach, 'the fly reached the harvest row while it was still rock')
+    // phase B: restart fresh, drive the planner route home with real keys
+    await page.evaluate(() => window.__game && window.__game.reset && window.__game.reset(7))
+    await wait(500)
+    for (let i = 0; i < 1600; i++) {
+        const q = await probe()
+        if (q.screen !== 'play') break
+        const d = await hint()
+        if (d) await key(d)
+        await wait(55)
+    }
+    const fin = await probe()
+    r.check('the planner route drives GOSSAMER HOLLOW home with real keys', fin.screen === 'over' && fin.win === true && fin.have >= fin.need,
+        `screen=${fin.screen} win=${fin.win} have=${fin.have}/${fin.need}`)
+    await wait(1200)
+    await key('KeyM')
+    await wait(300)
+    r.check('the hollow run restarts back to attract', (await probe()).screen === 'attract')
+}
+
 r.check('zero page errors across the whole playthrough', errors.length === 0, errors.slice(0, 4).join(' | '))
 r.exit(browser)

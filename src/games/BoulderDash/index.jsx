@@ -461,6 +461,9 @@ const DashGame = () => {
                         trail: trail.size, alarmed,
                         // #2444 the forking blob, live: front count + heading spread.
                         heads, headDirs: [...headDirs],
+                        // #2453 the butterfly, live: flap count + is-it-a-butterfly.
+                        flaps: gs.flies.reduce((n, f) => n + (f.flaps || 0), 0),
+                        butterfly: gs.flies.some((f) => f.drift === 1 && f.digs === 0),
                     }
                 },
                 // the next arrow the PROVEN planner would press from here — the
