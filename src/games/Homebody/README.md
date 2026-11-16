@@ -632,6 +632,35 @@ eve/collection/autonomy gates go red (585 → 578/7); `s.skips++ → s.skips = 0
 the bin) — the law it owns is BUYING, and the paper/bells/bin eras made the
 raw item count a stale proxy (the gate flaked red on main for exactly that).
 
+## Queue polish (#2474) — the NOW is seen, the append is named
+
+Two fidelity laws on the #2470 action queue, no rule change:
+- **The NOW cell.** The original drew a depleting timer on the running action's
+  icon; #2470 goldened the head chip but the errand IN FLIGHT had no chip at
+  all. Now, while a resident works a PLAYER errand (and holds a pending list),
+  a gold-rimmed cell leads the row: the running order's glyph with a thin bar
+  that drains as the interaction spends its `t/dur` or the walk spends its
+  steps (length stamped at issue, `p.walkN0`). An AI wander shows none — the
+  chips are the player's list, free will never takes the panel — and neither
+  does a faint. The cell is a tell, not a button: taps there are inert and
+  `queueHit` shifts the pending chips right by one cell, so cancel-by-chip
+  keeps its exact hit law (painter and hit-test still read `residentRows`).
+  All view-only: `stateHash` never sees `walkN0` or the cell (#2076 doctrine).
+- **Per-glyph append timbres.** #2470 rang one 660 Hz blip for every append.
+  `QUEUE_TIMBRE` (sim.js, pure data — the #2240/#2264 pattern) keys each chip
+  glyph apart — a warm two-note fork for hunger, a soft low hum for the bed,
+  a bright triple bounce for fun, a chirpy pair for social, a droplet, a
+  briefcase thunk that falls, one soft step for walks — distinct in first
+  frequency, note count and spacing (the gates prove uniqueness). The shell
+  plays the tables verbatim through `queueGlyphFor(id)`, the same glyph the
+  chip paints — one source for what you see and what you hear.
+
+Gates: `homebodyqueuecheck` POLISH #2474 section (21 pins: table shape and
+distinctness, glyph derivation, wipe rise over a real walk, t/dur clamp, AI and
+faint inertness, fresh-run row geometry and shifted cancel taps, hash-safety of
+probing, source pins). Mutant proven: `chipProgress` → `return null` kills
+exactly the seven NOW-cell pins; restore.
+
 ## Honest gaps (filed to QA #…)
 - **CLOSED by #1806:** multiple rooms — one expansion ships: the Spare Room kit
   grows a wing on the east lawn (floor/walls/door/windows, connectivity-guarded,

@@ -868,7 +868,10 @@ export function residentRows(s) {
     let y = LOT_Y + 26
     for (const p of s.people) {
         const barsY0 = y + 16
-        const row = { p, nameY: y, barsY0, queueY: p.queue.length ? barsY0 + NEEDS.length * 10 + 2 : null }
+        // #2474: the NOW cell — the errand actually running, shown ahead of the
+        // pending chips with a thin drain bar (The Sims drew a depleting timer on
+        // the head of its action queue). View-only: stateHash never sees it.
+        const row = { p, nameY: y, barsY0, queueY: p.queue.length ? barsY0 + NEEDS.length * 10 + 2 : null, now: p.queue.length ? chipProgress(p) : null }
         y = barsY0 + NEEDS.length * 10 + 8 + (row.queueY !== null ? 18 : 0)
         row.nextY = y
         rows.push(row)
@@ -876,13 +879,37 @@ export function residentRows(s) {
     return rows
 }
 
+// #2474: queueGlyphFor(id) — the chip glyph as a function of the event id, so
+// the painter and the shell's per-glyph timbre (QUEUE_TIMBRE) read ONE source.
+export function queueGlyphFor(id) {
+    if (id === 'walk') return 'arrow'
+    if (id === 'work' || id === 'mail') return 'case'
+    const d = DEF[id]
+    return (d && d.need && NEED_ICON[d.need]) || 'star'
+}
+
+// #2474: chipProgress(p) — how far along the resident's RUNNING errand is, or
+// null when nothing is in flight for the player (an AI wander shows no NOW
+// cell: the chips are the player's list, free will never takes the panel).
+// Interaction → t/dur (sleep has no visible deadline → a static marker).
+// Walk → the steps spent against the length stamped at issue (p.walkN0).
+export function chipProgress(p) {
+    if (!p || p.faintT > 0 || p.owner !== 'human') return null
+    if (p.use) {
+        const frac = p.use.def && p.use.def.sleep ? 0 : Math.min(1, p.use.t / (p.use.dur || 1))
+        return { frac, glyph: queueGlyphFor(p.use.it.id) }
+    }
+    if (p.path && p.path.length && p.walkN0) {
+        const id = p.goal && p.goal.kind === 'use' ? p.goal.it.id : 'walk'
+        return { frac: Math.max(0, 1 - p.path.length / p.walkN0), glyph: queueGlyphFor(id) }
+    }
+    return null
+}
+
 // the queue chips' glyph: the panel's own need icons for object orders;
 // the work case for the mail; an arrow for a plain walk.
 function queueGlyph(o) {
-    if (o.kind === 'walk') return 'arrow'
-    if (o.kind === 'work') return 'case'
-    const d = DEF[o.it.id]
-    return (d && d.need && NEED_ICON[d.need]) || 'star'
+    return queueGlyphFor(o.kind === 'use' ? o.it.id : o.kind)
 }
 
 export function queueHit(s, px, py) {
@@ -891,8 +918,12 @@ export function queueHit(s, px, py) {
         const row = rows[pi]
         if (row.queueY === null) continue
         if (py < row.queueY || py > row.queueY + QCELL.ch) continue
+        // #2474: a NOW cell occupies the first slot when an errand is running —
+        // it is a tell, not a button (running orders are not cancellable), so a
+        // tap there is inert and the pending chips shift right by one cell.
+        const off = row.now ? QCELL.cw + QCELL.gap : 0
         const n = row.p.queue.length
-        const x0 = PANEL_X + 26
+        const x0 = PANEL_X + 26 + off
         if (px < x0 || px > x0 + n * (QCELL.cw + QCELL.gap) - QCELL.gap) continue
         const qi = Math.floor((px - x0) / (QCELL.cw + QCELL.gap))
         if (px - x0 - qi * (QCELL.cw + QCELL.gap) > QCELL.cw) continue
@@ -936,8 +967,20 @@ export function drawPanel(ctx, s, t) {
             // #2470: the queue chips — pending orders in the list, head of
             // line first, the panel's own icon language. Tapping a chip cancels
             // that order (queueHit shares this exact geometry).
+            // #2474: a NOW cell leads the row while an errand runs — gold-rimmed
+            // with a thin bar that drains as the interaction/walk spends itself.
+            const off = row.now ? QCELL.cw + QCELL.gap : 0
+            if (row.now) {
+                const nx = PANEL_X + 26
+                ctx.fillStyle = '#232f4a'; ctx.fillRect(nx, row.queueY, QCELL.cw, QCELL.ch)
+                ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1
+                ctx.strokeRect(nx + 0.5, row.queueY + 0.5, QCELL.cw - 1, QCELL.ch - 1)
+                needIcon(ctx, nx + QCELL.cw / 2, row.queueY + QCELL.ch / 2, row.now.glyph, '#ffd24a')
+                const left = Math.max(0, (QCELL.cw - 4) * (1 - row.now.frac))
+                if (left > 0) { ctx.fillStyle = '#ffd24a'; ctx.fillRect(nx + 2, row.queueY + QCELL.ch - 3, left, 2) }
+            }
             for (let i = 0; i < p.queue.length; i++) {
-                const x = PANEL_X + 26 + i * (QCELL.cw + QCELL.gap)
+                const x = PANEL_X + 26 + off + i * (QCELL.cw + QCELL.gap)
                 ctx.fillStyle = '#1a2336'; ctx.fillRect(x, row.queueY, QCELL.cw, QCELL.ch)
                 ctx.strokeStyle = i === 0 ? '#c9a23f' : '#31405e'; ctx.lineWidth = 1
                 ctx.strokeRect(x + 0.5, row.queueY + 0.5, QCELL.cw - 1, QCELL.ch - 1)
