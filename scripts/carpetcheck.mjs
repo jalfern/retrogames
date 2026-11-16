@@ -24,6 +24,7 @@ import {
     FOG_NEAR, FOG_D, HAZE, hazeOf, airOf, aerialFog,
     DIVE_DRAG, DIVE_NOFIRE, CAMPAIGN_CAP,
     nameBias, landFor,
+    wizFireGap, WIZ_FIRE_BASE, WIZ_FIRE_FLOOR, WIZ_DEEP_FROM, WIZ_FAN_STEP,
 } from '../src/games/MagicCarpet/sim.js'
 import { WAVE_CYCLE, arcTint } from '../src/games/MagicCarpet/renderer.js' // #1764 item 4 stage 4: the wave law's clock constant, for the JS twin; #2449 item 1: the arc-keyed sky tint, for the real function
 
@@ -150,6 +151,62 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
             tints[LEVELS.length - 1] <= 0.62 &&
             new Set(tints).size === arcs && painted.size === LEVELS.length,
             `drift ${drift}: tint w1 ${tints[0].toFixed(2)} → w${LEVELS.length} ${tints[LEVELS.length - 1].toFixed(2)}, ${new Set(tints).size}/${arcs} arc tints, ${painted.size}/${LEVELS.length} distinct zeniths`)
+    }
+    {
+        // #2449 item 3: DEEP-ARC OFFENSIVE — wiz fights at quota-805/725 HP ran
+        // minutes because the wizard cast one aimed 55-tick bolt in EVERY world
+        // while his HP climbed +15 a world (the original's late wizards threw
+        // faster, patterned casts). Prove the feel law: (a) the gap table —
+        // shallow worlds keep 55, the deep ramp tightens one tick a world to a
+        // 40 floor; (b) live casts from the threat ring — world 1 keeps the
+        // single aimed bolt on the old fuse, world XLV opens in a twin fan of
+        // ±0.16 rad on the tightened gap (one dodge corridor between the bolts).
+        // The 60-seed sweep below is the margin: it must still restore all 45
+        // worlds on all 60 seeds. Mutation guide: pin the gap back to 55 or
+        // drop the fan branch and (a)/(b) go red.
+        const gaps = LEVELS.map((_, i) => wizFireGap(i))
+        r.check('#2449 item 3: the fire gap tightens across the deep ramp — 55 on the shallow worlds, one tick per world, floor 40',
+            gaps[0] === WIZ_FIRE_BASE && gaps[WIZ_DEEP_FROM] === WIZ_FIRE_BASE &&
+            gaps.every((g) => g >= WIZ_FIRE_FLOOR) &&
+            gaps.slice(WIZ_DEEP_FROM).every((g, i) => i === 0 || g <= gaps[WIZ_DEEP_FROM + i - 1]) &&
+            gaps[33] === WIZ_FIRE_FLOOR && gaps[LEVELS.length - 1] === WIZ_FIRE_FLOOR,
+            `gap w${WIZ_DEEP_FROM + 1}=${gaps[WIZ_DEEP_FROM]} → floor ${WIZ_FIRE_FLOOR} (measured ${[0, 18, 27, 33, 44].map((i) => gaps[i]).join('/')})`)
+        const volley = (level) => {
+            const g = makeGame(7, level)
+            const wz = g.wizard
+            // Park 40 from the tower CENTRE, re-pinned EVERY tick (the carpet
+            // drifts on its own yaw otherwise): the wizard orbits the tower at
+            // radius 34, so pd ∈ [6, 74] — always inside the 75-tick threat
+            // ring, and the fuse (fresh 40) decides the first cast tick.
+            const wb = () => g.projs.filter((p) => p.kind === 'bolt' && p.from === 'w').length
+            let first = -1, second = -1, bolts = 0, evn = g.events.length
+            for (let i = 0; i < 240 && second < 0; i++) {
+                g.x = wz.tx + 40; g.y = wz.ty
+                const before = wb()
+                step(g, {})
+                const freshEv = g.events.slice(evn); evn = g.events.length
+                if (freshEv.some((e) => e.type === 'wizfire')) {
+                    const n = wb() - before
+                    if (first < 0) { first = i; bolts = n } else second = i
+                }
+            }
+            return { first, gap: second - first, bolts }
+        }
+        const shallow = volley(0)
+        const deep = volley(44)
+        r.check('#2449 item 3: world 1 still casts ONE aimed bolt on the old fuse (shallow fights unchanged)',
+            shallow.first === 39 && shallow.bolts === 1 && shallow.gap === WIZ_FIRE_BASE, JSON.stringify(shallow))
+        r.check('#2449 item 3: world XLV casts a TWIN fan on the tightened 40-tick gap (deep fights answer back)',
+            deep.first === 39 && deep.bolts === 2 && deep.gap === WIZ_FIRE_FLOOR, JSON.stringify(deep))
+        {
+            const g = makeGame(7, 44)
+            const wz = g.wizard
+            for (let i = 0; i <= 39; i++) { g.x = wz.tx + 40; g.y = wz.ty; step(g, {}) }
+            const b = g.projs.filter((p) => p.kind === 'bolt' && p.from === 'w')
+            const spread = b.length === 2 ? Math.abs(Math.atan2(b[0].vy, b[0].vx) - Math.atan2(b[1].vy, b[1].vx)) : -1
+            r.check('#2449 item 3: the fan spreads exactly ±0.16 rad about the aim line — a dodge corridor, not a wall',
+                Math.abs(spread - 2 * WIZ_FAN_STEP) < 1e-9, `spread=${spread.toFixed(3)} rad`)
+        }
     }
     {
         // #2449 item 2: NAME-BIASED LAND — the land must read its own name. The

@@ -104,6 +104,21 @@ export const QUOTA = LEVELS[LEVELS.length - 1].quota
 // The sweep is deterministic — this is a canary, not a flake guard.
 export const CAMPAIGN_CAP = LEVELS.length * 30000
 
+// #2449 item 3 — DEEP-ARC OFFENSIVE: the far country hits back harder. In the
+// original the late wizards cast faster and in patterns; ours threw one aimed
+// bolt every 55 ticks in EVERY world while wizard HP climbed +15 a world, so
+// deep-arc fights ran minutes untouched. From the deep ramp (world 19, index
+// 18) the fire gap now tightens one tick per world to a 40-tick floor, and
+// from arc 11 (index 30, three worlds per arc) the volley opens into a twin
+// fan of ±0.16 rad — side-stepable, lethal if you park. Pure level-index
+// arithmetic: no rng, so no seed-stream shifts; wizSlow still holds the fuse.
+export const WIZ_FIRE_BASE = 55
+export const WIZ_FIRE_FLOOR = 40
+export const WIZ_DEEP_FROM = 18
+export const WIZ_FAN_FROM = 30
+export const WIZ_FAN_STEP = 0.16
+export const wizFireGap = (level) => (level < WIZ_DEEP_FROM ? WIZ_FIRE_BASE : Math.max(WIZ_FIRE_FLOOR, WIZ_FIRE_BASE - (level - WIZ_DEEP_FROM)))
+
 // ---- title WORLD SELECT (#1740) -----------------------------------------
 // Pure selector plumbing so the whole pick path is Node-provable, like hudTap.
 // Thumb-sized chevron zones sit at the bottom corners of the 320x200 title
@@ -1443,9 +1458,15 @@ export function step(gs, inp) {
             gs.events.push({ type: 'lost', kind: 'wizard', x: wz.x, y: wz.y })
         }
         if (gs.wizFire <= 0 && pd < 75) {
-            gs.wizFire = gs.wizSlow > 0 ? 150 : 55
+            gs.wizFire = gs.wizSlow > 0 ? 150 : wizFireGap(gs.level)
             const a = Math.atan2(wrapD(gs.y - wz.y), wrapD(gs.x - wz.x))
-            gs.projs.push({ kind: 'bolt', from: 'w', x: wz.x, y: wz.y, z: Math.max(sampleH(gs, wz.x, wz.y), WATER) + 10, vx: Math.cos(a) * 2.2, vy: Math.sin(a) * 2.2, dmg: 6, life: 90 })
+            // #2449 item 3: the deep arcs cast a twin fan; the old worlds keep
+            // the single aimed bolt. One 'wizfire' cue per volley (the shell
+            // pans/hears the cast, not each bolt).
+            const offsets = gs.level >= WIZ_FAN_FROM ? [-WIZ_FAN_STEP, WIZ_FAN_STEP] : [0]
+            for (const off of offsets) {
+                gs.projs.push({ kind: 'bolt', from: 'w', x: wz.x, y: wz.y, z: Math.max(sampleH(gs, wz.x, wz.y), WATER) + 10, vx: Math.cos(a + off) * 2.2, vy: Math.sin(a + off) * 2.2, dmg: 6, life: 90 })
+            }
             // #1746: the event carries the cast point (presentation only, like
             // 'lost' above) so the shell can hear which side of the sky it lit.
             gs.events.push({ type: 'wizfire', x: wz.x, y: wz.y })
