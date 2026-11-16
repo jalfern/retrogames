@@ -2,9 +2,9 @@
 
 ## Playable now / what shipped
 - **BOULDER DASH wall momentum (#2468 → PR #2471, merge `60ecb2b`).**
-  Live on the production deploy (jalfern.com proxy cache still serving the old
-  index at exit — verify `index-DLxmtTz0.js` contains "SLIDERS LEDGE" once it
-  turns over, ≤30 min). Cave 10 **SLIDERS LEDGE** in production:
+  LIVE at jalfern.com/retrogames/boulder-dash (verified: "SLIDERS LEDGE" in
+  `assets/index-BlREe5nI.js` on www ~30 min after merge — proxy cache).
+  Cave 10 **SLIDERS LEDGE** in production:
   - **The combo:** a wall shoved off a ledge KEEPS SLIDING along the floor it
     lands on until something blocks it — the original's most-loved squash.
     Shove law at spawn only (boulders stay dead-weight; a boulder that later
