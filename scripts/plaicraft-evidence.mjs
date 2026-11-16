@@ -36,7 +36,8 @@ import { tickToMs, voiceDrift, VOICE_CLOCK_EVERY, containerDurationMs, TICK_MS }
 import { probeStore, listSessions, storeFromQuery } from '../src/utils/sessionStore.js'
 import { readKey } from './lib/localkey.mjs'
 import { startRelaySim, SIM_READ_KEY } from './lib/relaysim.mjs'
-import { collectRun, makeReplayDriver } from './plaicraft-export.mjs'
+import { collectRun, makeReplayDriver, heroFromPad, p2FromPad } from './plaicraft-export.mjs'
+import { makeGame, step as gauntletStep, stateHash as gauntletHash } from '../src/games/Gauntlet/sim.js'
 import { createGame as tmdCreate, step as tmdStep, hash as tmdHash, solvePad } from '../src/games/TalkMeDown/engine.js'
 import { createGame as sosCreate, stepGame, hashState, makeCpuEmitter } from '../src/games/ShortOrderShout/engine.js'
 import { createSim, tickSim, stateHash, cpuDriverPad, cpuCoDriverPad, WEATHER_ORDER } from '../src/games/RallyCoDriver/sim.js'
@@ -464,6 +465,34 @@ function synthSessions() {
         tr.ms = 816 // bytes died with the clock — audioLonger must NOT be the catcher
         out.push({ rec: file, expect: false, label: 'gauntlet (PHONE take — clock frozen at mic death, #2430)' })
     }
+    // gauntlet — the seed10 shape (#2430 item 1): valkyrie hero, seat 2 a
+    // model, rules stamp carries the hero but NO partnerKey. Live passes the
+    // partner key UNSET for cpu/model seats, so the sim built its own default
+    // valkyrie partner — and the duplicate swap keys on an EXPLICIT key, so
+    // unset never swaps. Absent must rebuild valkyrie (proven against Jon's
+    // stored take: full-run hash match); the naive fix of stamping 'valkyrie'
+    // explicitly hits the swap rule and rebuilds warrior — that mutant must
+    // go RED, pinning that stamps carry the RAW key and absent is the default.
+    const mkValkTake = (rules) => {
+        const seed = 10
+        const gs = makeGame(seed, 'valkyrie', { partner: true, topDown: true }) // live pick: key unset
+        gs.partnerOn = true
+        const rec = createRecorder({ gameId: 'gauntlet', method: 'stick', seed, players: 2, build: 'selftest', sources: [{ kind: 'human' }, { kind: 'model', modelId: 'plaicraft-bc/v2' }], rules: () => ({ ...rules }) })
+        const st = { prevA: false, prevB: false }
+        const DIRS = ['up', 'right', 'down', 'right', 'up', 'left']
+        for (let t = 0; t < 900 && !gs.end; t++) {
+            const heroPad = { [DIRS[Math.floor(t / 40) % DIRS.length]]: true }
+            const p2 = { [DIRS[Math.floor(t / 31) % DIRS.length]]: true }
+            if (t % 7 === 0) heroPad.a = true
+            if (t % 5 === 0) p2.a = true
+            gauntletStep(gs, heroFromPad(heroPad, st), p2FromPad(p2))
+            rec.addTick([heroPad, p2], null, gs.tick % 30 === 0 ? gauntletHash(gs) : null)
+            gs.events.length = 0
+        }
+        return rec.finish(gauntletHash(gs))
+    }
+    out.push({ rec: mkValkTake({ hero: 'valkyrie' }), expect: true, label: 'gauntlet (VALKYRIE hero, unstamped valkyrie partner — #2430 seed10 shape)' })
+    out.push({ rec: mkValkTake({ hero: 'valkyrie', partnerKey: 'valkyrie' }), expect: false, label: 'gauntlet (#2430 MUTANT — explicit valkyrie stamp meets the swap → warrior)' })
     // talk-me-down — solo, solvePad autopilot, v2 voice with a realistic clock
     {
         const seed = 11
