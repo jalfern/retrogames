@@ -67,7 +67,11 @@ const GAMES = {
     },
     gauntlet: {
         excludes: ['events', 'levelData'],
-        create: (seed, players) => ({ gs: gNewGame(seed, {}, players > 1), seed }),
+        // #1711 S1: pin the pairing EXPLICITLY (see scripts/goldentrace.mjs —
+        // the frozen spec names its own partner; absent now means the sim's
+        // live default valkyrie per #2446, which is for human takes, not
+        // this spec).
+        create: (seed, players) => ({ gs: gNewGame(seed, { partnerKey: 'elf' }, players > 1), seed }),
         stepAll: (ctx, pads) => { gStep(ctx.gs, heroFromPad(pads[0] || {}), p2FromPad(pads[1] || {})) },
         hash: (ctx) => gHash(ctx.gs),
         state: (ctx) => ctx.gs,
