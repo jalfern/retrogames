@@ -10,7 +10,7 @@
 // so players' tracks don't bleed into each other on open speakers.
 
 import { createVoiceClock, b64FromBytes } from './voice.js'
-import { coachView } from './clapCoachCore.js'
+import { coachView, coachState, coachArmAfterTake, liveClapWatch, COACH_SHOWN, COACH_LEARNED } from './clapCoachCore.js'
 
 export function voiceSupported() {
     return typeof navigator !== 'undefined'
@@ -82,15 +82,35 @@ function syncMicBadge() {
 // --- clap coach (#1711) — the one line that TEACHES the ±50 ms proof. The
 // store can only grade alignment on takes that contain claps, and human takes
 // carried none because nothing ever asked. The pill appears at the recorder's
-// green-REC moment (rule 1), once per device (rule 2 — localStorage; the mic
-// badge and VU bar keep carrying the ongoing truth), and its text is an
-// instruction, never a claim (rule 3). Rules are pure in clapCoachCore.js
+// green-REC moment (rule 1), once LEARNED per device (rule 2 — localStorage
+// state none|shown|learned; a take whose live mic hears zero claps re-arms the
+// ask, a take that hears one retires it — the mic badge and VU bar keep
+// carrying the ongoing truth), and its text is an instruction, never a claim
+// (rule 3). Rules are pure in clapCoachCore.js
 // (recordcheck-pinned); this is the paint and the moment. DOM truth for the
-// harness: [data-clap-coach="coach"] while shown, window.__clapCoach always.
+// harness: [data-clap-coach="coach"] while shown, window.__clapCoach always
+// (with `state`), window.__clapCoachTake on finalize.
 const COACH_FLAG_KEY = 'vc.clapCoach'
 
+function readCoachFlag() {
+    try { return localStorage.getItem(COACH_FLAG_KEY) } catch { return null } // private mode: treat as none, show each time rather than never
+}
+function writeCoachFlag(value) {
+    try {
+        if (value) localStorage.setItem(COACH_FLAG_KEY, value)
+        else localStorage.removeItem(COACH_FLAG_KEY)
+    } catch { /* private mode */ }
+}
+
 function coachAlreadyShown() {
-    try { return localStorage.getItem(COACH_FLAG_KEY) === '1' } catch { return false } // private mode: show each time rather than never
+    return coachState(readCoachFlag()) !== 'none'
+}
+
+// stamp the learned state the moment a live clap lands (not at finalize) — a
+// take that crashes after the clap still keeps the credit; the habit landed.
+function coachMarkLearned() {
+    writeCoachFlag(COACH_LEARNED)
+    if (typeof window !== 'undefined') window.__clapCoach = { ...(window.__clapCoach || {}), state: 'learned' }
 }
 
 function removeClapCoach() {
@@ -102,9 +122,10 @@ function removeClapCoach() {
 function maybeClapCoach() {
     if (typeof document === 'undefined') return
     const view = coachView({ micLive: true, shown: coachAlreadyShown() })
-    if (typeof window !== 'undefined') window.__clapCoach = { ...view, at: Date.now() }
+    if (typeof window !== 'undefined') window.__clapCoach = { ...view, state: coachState(readCoachFlag()), at: Date.now() }
     if (view.kind !== 'coach') return
-    try { localStorage.setItem(COACH_FLAG_KEY, '1') } catch { /* private mode */ }
+    writeCoachFlag(COACH_SHOWN)
+    if (typeof window !== 'undefined') window.__clapCoach = { ...window.__clapCoach, state: 'shown' }
     const el = document.createElement('div')
     el.setAttribute('data-clap-coach', view.kind)
     el.setAttribute('aria-live', 'polite')
@@ -195,7 +216,7 @@ function runVuMeter(stream, ms = 1200) {
 // own stream for the whole take, so it doubles as the take's delivered-samples
 // clock (the tick trace stamps from it); null when the tap degrades to a no-op.
 function liveLevelTap(stream) {
-    const noop = { stop() {}, ctx: null }
+    const noop = { stop() {}, claps: () => 0, ctx: null }
     if (typeof window === 'undefined' || typeof requestAnimationFrame === 'undefined') return noop
     const AC = typeof AudioContext !== 'undefined' ? AudioContext : (globalThis.webkitAudioContext || null)
     if (!AC) return noop
@@ -210,6 +231,12 @@ function liveLevelTap(stream) {
         const data = new Uint8Array(an.fftSize)
         window.__voiceLevel = 0
         let raf = 0
+        // #1711 re-arm: watch this take's own mic for claps on the SAME frames
+        // the meter reads (a fan-out tap — the take bytes are untouched). First
+        // clap heard upgrades the coach flag to learned right away; finalize
+        // clears it again when the take ends silent.
+        let watch = null
+        let clapsHeard = 0
         const step = () => {
             // A fresh AudioContext can be born suspended (autoplay); unlike the
             // fire-and-forget #1257 bar, this meter is gated on by the harness,
@@ -219,6 +246,8 @@ function liveLevelTap(stream) {
             let peak = 0
             for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i] - 128))
             window.__voiceLevel = Math.min(1, (peak / 128) * 2.5)
+            watch = liveClapWatch(watch, window.__voiceLevel)
+            if (watch.claps > clapsHeard) { clapsHeard = watch.claps; coachMarkLearned() }
             raf = requestAnimationFrame(step)
         }
         raf = requestAnimationFrame(step)
@@ -228,6 +257,7 @@ function liveLevelTap(stream) {
                 window.__voiceLevel = 0
                 try { src.disconnect(); an.disconnect(); ctx.close() } catch { /* gone */ }
             },
+            claps() { return clapsHeard },
             ctx, // #2247: the take's device clock (see createVoiceSession)
         }
     } catch { try { ctx.close() } catch { /* gone */ } return noop }
@@ -575,6 +605,18 @@ export function createVoiceSession(opts = {}) {
                     // Jon's first takes). The bytes settle covers are the
                     // bytes the track stores, so this is the honest length.
                     const ms = Math.round(hybridNow() - startMs)
+                    // #1711 re-arm: this take heard the mic or it didn't. The
+                    // mic was live (phase was 'recording' to get here), so
+                    // zero claps demotes a shown-but-unlearned device — the
+                    // ask returns next take. A learned device rests.
+                    const heardClaps = levelTap ? levelTap.claps() : 0
+                    const wasShown = coachState(readCoachFlag()) === 'shown'
+                    const nextCoach = coachArmAfterTake({ stored: readCoachFlag(), micLive: true, heardClaps })
+                    writeCoachFlag(nextCoach)
+                    if (typeof window !== 'undefined') {
+                        window.__clapCoachTake = { claps: heardClaps, took: heardClaps > 0 ? 'learned' : wasShown ? 'rearm' : 'keep', state: coachState(nextCoach), at: Date.now() }
+                        window.__clapCoach = { ...(window.__clapCoach || {}), state: coachState(nextCoach) }
+                    }
                     if (levelTap) { levelTap.stop(); levelTap = null } // #2205: meter dies with the take
                     if (stream) stream.getTracks().forEach((t) => { try { t.stop() } catch { /* gone */ } })
                     stream = null
