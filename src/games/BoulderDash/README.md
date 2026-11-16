@@ -251,14 +251,24 @@ slide resumes only on ground.
   a dead end where it spent itself against a decoy gem.
 
 ## Honest gaps
-- The amoeba family is our reading of BD II/the originals — honest
+- **BLOCKED** (original-read: the corner-priority and player-reactive wave laws
+  are exactly what BD II source or long play footage would settle; neither is
+  in the repo and FORGE.md's network boundary forbids guessing — slot-a lane
+  ruling 2026-11-16: "the SPLIT law stays un-specced until originals are read;
+  inverting the drift is invention, not the game"). Unblocks by: BD II amoeba
+  disassembly or verified frame study landing in-repo. The amoeba family is our
+  reading of BD II/the originals — honest
   simplifications: the corner priority is fixed (right, then left) for both the
   two-phase gait and the #2444 fork; the dropper's lateral resume keeps its
   original heading; the fork's perpendicular sibling pick is fixed (right first);
   and no wave behaviour depends on the player or on distant events (the originals'
   amoebas are equally dumb). The multi-head *shape* is here (#2444) — rarer still
   are waves whose heads reverse or spawn on player action; those are not.
-- No pull mechanics (faithful to the era, but a simplification). (The
+- **BLOCKED** (faithful-to-era non-feature: the originals' era has no pull law
+  to read, so inventing one is design, not restoration — and Jon's games are
+  restorations). Unblocks by: a source/footage read showing a pull mechanic in
+  the era, or Jon asking for one. No pull mechanics (faithful to the era, but a
+  simplification). (The
   fall-and-keep-sliding half of the push-wall family landed in #2468 —
   see Wall momentum above; SLIDERS LEDGE proves it live.)
 - The butterfly (#2453) flits, and since #2463 it also *carries* (SILK GULCH).

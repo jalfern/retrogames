@@ -195,6 +195,12 @@ ok(parseGaps('## Honest gaps\n- live gap still open here\n- shipped gap — **CL
     '#961: parseGaps drops a CLOSED-marked bullet')
 ok(parseGaps('## Honest gaps\n- open one\n- shipped **CLOSED by 959** without a hash\n').length === 2,
     '#961: only a "CLOSED by #<n>" marker closes a gap')
+
+// **BLOCKED**: fidelity-declined gaps stay in the prose but off the ladder
+ok(parseGaps('## Honest gaps\n- live gap one here\n- dumb mirror law — **BLOCKED** until BD2 source is in hand.\n').length === 1,
+    'BLOCKED: a fidelity-declined gap must not score for the never-dry ladder')
+ok(parseGaps('## Honest gaps\n- a gap merely mentioning that something was blocked in review\n').length === 1,
+    'BLOCKED: the bare word must not decline a gap — only the bold marker does')
 ok(!REAL_GAPS.Emberwood.some((s) => /portrait/i.test(s)),
     '#961: Emberwood honest-gaps re-grew the shipped #959/#960 portrait-full-bleed note')
 const firstGapOwned = (game) => QA(900, game, FIX_GAPS[game][0])

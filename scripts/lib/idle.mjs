@@ -32,6 +32,16 @@ const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim()
 // A bullet marked "**CLOSED by #<n>**" is shipped work, not a gap: keeping it
 // re-kicks free lanes onto closed work (#961: Emberwood's portrait gap #0,
 // closed by #959/#960, kept getting kicked because the marker was decorative).
+// A bullet marked "**BLOCKED**" is the mirror case: fidelity-blocked work —
+// behaviour whose spec is the original, where the original material that would
+// define it is not in the repo and FORGE.md's network boundary ("GitHub, npm,
+// and docs you already use") says don't guess. It stays honest prose but must
+// not score for weakestStage: a gap no lane may build is not weakness.
+// Without this, every free session re-runs the same "is this gap actually
+// buildable?" investigation before it can decline the kick (this session's
+// #1571 kick named BOULDER DASH gap 0 — the amoeba reactivity law the slot-a
+// lane had already ruled original-blocked on 2026-11-16, in its own STATE).
+// Unlike CLOSED, BLOCKED names no PR — it owns nothing, it only declines.
 export function parseGaps(md) {
     const out = []
     let inSection = false
@@ -47,7 +57,7 @@ export function parseGaps(md) {
             out[out.length - 1] += ' ' + line.trim()
         }
     }
-    return out.filter((g) => !/CLOSED by #\d+/i.test(g))
+    return out.filter((g) => !/CLOSED by #\d+/i.test(g) && !/\*\*BLOCKED\*\*/.test(g))
 }
 
 // A gap is OWNED when an open QA issue already says it: the issue names its
