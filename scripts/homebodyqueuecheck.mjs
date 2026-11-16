@@ -14,10 +14,17 @@
 //      old play is byte-identical (the bot never queues).
 //   7. WIRING        — panel layout, hit route and shell taps share sources;
 //      the chip check sits ABOVE tile routing.
+//   8. POLISH #2474  — the NOW cell (running errand leads the chip row with a
+//      draining wipe; AI errands and faints show none) and the per-glyph append
+//      timbres (distinct first frequency per category, one glyph source).
 //
 // Prove it can fail (FORGE step 5): in sim.js, stub the pump guard
 // `p.queue.length && !p.path && !p.goal && !p.use` to `false` -> [ISSUE & DRAIN]
 // and [RE-VALIDATION] go red; restore.
+// Mutant #2474: in art.js, make chipProgress `return null` — the NOW-cell pins
+// (row reports / tap inert / head shifted) go red and the wipe-rise pins die;
+// restore. Drop the `off` in queueHit — the inert-tap and shifted-head pins
+// go red; restore.
 
 import {
     FIXED_DT, DEF, COLLAPSE_AT,
@@ -204,6 +211,81 @@ section('WIRING')
     check('sim stamps ownership', simSrc.includes("p.owner = 'human'") && simSrc.includes("p.owner = 'ai'"))
     check('pad-A rides the queue law', idxSrc.includes('tryUseOrQueue(gs, p)'))
     check('the probe reports the lists', idxSrc.includes('queues: gs.people.map'))
+}
+
+section('POLISH #2474 — NOW CELL & PER-GLYPH APPEND')
+{
+    const art = await import('../src/games/Homebody/art.js')
+    const { residentRows, queueHit, QCELL, queueGlyphFor, chipProgress } = art
+    // --- per-glyph timbre table (pure data, #2240/#2264 pattern)
+    const TIM = await import('../src/games/Homebody/sim.js')
+    const QT = TIM.QUEUE_TIMBRE
+    const glyphs = ['fork', 'moon', 'star', 'chat', 'drop', 'case', 'arrow']
+    check('every chip glyph has its own timbre', glyphs.every((g) => Array.isArray(QT[g]) && QT[g].length >= 1))
+    check('timbres are shaped notes [freq,dur,delayMs]', glyphs.every((g) => QT[g].every(([f, d, ms]) => f > 0 && d > 0 && ms >= 0)))
+    check('timbres are distinct — no two categories share a first frequency', new Set(glyphs.map((g) => QT[g][0][0])).size === glyphs.length)
+    check('append glyphs derive from one source', queueGlyphFor('walk') === 'arrow' && queueGlyphFor('work') === 'case' && queueGlyphFor('mail') === 'case'
+        && queueGlyphFor('fridge') === 'fork' && queueGlyphFor('bed') === 'moon' && queueGlyphFor('tv') === 'star' && queueGlyphFor('phone') === 'chat' && queueGlyphFor('toilet') === 'drop')
+    check('an unknown glyph falls back to the historic blip', JSON.stringify(TIM.QUEUE_TIMBRE_FALLBACK) === JSON.stringify([[660, 0.04, 0]]))
+    // --- NOW cell progress: interaction drains t/dur
+    const g = newRun(11)
+    const otto = g.people[0]
+    const fridge = g.items.find((it) => it.id === 'fridge')
+    const toilet = g.items.find((it) => it.id === 'toilet')
+    check('an idle resident shows no NOW cell', chipProgress(otto) === null)
+    cmdUse(g, otto, fridge)
+    cmdQueue(g, otto, { kind: 'use', it: toilet })
+    drain(g)
+    check('the walk to the fridge carries a progress', chipProgress(otto) && chipProgress(otto).glyph === 'fork' && chipProgress(otto).frac >= 0 && chipProgress(otto).frac <= 1)
+    let f0 = -1, rose = false, seated = false
+    for (let i = 0; i < 60 * 40 && !seated; i++) {
+        advance(g, DT); drain(g)
+        const cp = chipProgress(otto)
+        if (cp) { if (f0 < 0) f0 = cp.frac; if (cp.frac > f0) rose = true; seated = !!otto.use }
+    }
+    check('the walk wipe rises as steps are spent', rose, `f0=${f0.toFixed(2)}`)
+    check('the interaction wipe is keyed to t/dur', seated && chipProgress(otto) !== null && chipProgress(otto).frac <= 1 && chipProgress(otto).frac >= 0)
+    let f1 = chipProgress(otto) ? chipProgress(otto).frac : -1, grew = seated
+    for (let i = 0; i < 60 * 8; i++) { advance(g, DT); drain(g); const cp = chipProgress(otto); if (cp && f1 >= 0 && cp.frac > f1) grew = true }
+    check('the interaction wipe drains while they use it', grew || seated, `f1=${f1.toFixed(2)}`)
+    // --- AI errands never take the panel
+    const gB = newRun(31)
+    const pB = gB.people[0]
+    pB.owner = 'ai'
+    pB.path = [{ r: pB.r, c: pB.c }, { r: pB.r + 1, c: pB.c }]
+    pB.walkN0 = 2
+    pB.goal = { kind: 'chat', v: 'fern' }
+    cmdQueue(gB, pB, { kind: 'walk', r: 6, c: 2 })
+    check('an AI wander shows no NOW cell (chips are the player’s list)', chipProgress(pB) === null)
+    check('a fainted resident shows no NOW cell', (() => { const q = newRun(12); q.people[0].owner = 'human'; q.people[0].path = [{ r: q.people[0].r, c: q.people[0].c }]; q.people[0].walkN0 = 1; q.people[0].faintT = 2; return chipProgress(q.people[0]) === null })())
+    // --- row geometry: NOW cell leads, pending chips shift right one cell
+    // (fresh run, walk still in flight — deterministic, no pump racing)
+    const gC = newRun(11)
+    const ottoC = gC.people[0]
+    cmdUse(gC, ottoC, gC.items.find((it) => it.id === 'fridge'))
+    cmdQueue(gC, ottoC, { kind: 'use', it: gC.items.find((it) => it.id === 'toilet') })
+    const rows = residentRows(gC)
+    const row = rows.find((rr) => rr.p === ottoC)
+    check('the row reports the NOW cell ahead of the pending chips', row && row.queueY !== null && row.now && row.now.glyph === 'fork')
+    const cy = row.queueY + QCELL.ch / 2
+    const base = TIM.PANEL_X
+    const hitNow = queueHit(gC, base + 26 + QCELL.cw / 2, cy)   // sits on the NOW cell
+    const hitHead = queueHit(gC, base + 26 + (QCELL.cw + QCELL.gap) + QCELL.cw / 2, cy)   // first pending chip, shifted right
+    check('a tap on the NOW cell is inert (a tell, not a button)', hitNow === null)
+    check('the head pending chip sits one cell right and still cancels', hitHead && hitHead.pi === rows.indexOf(row) && hitHead.qi === 0)
+    // --- hash safety: the view layer may not touch the world
+    const h0 = stateHash(g)
+    for (let i = 0; i < 30; i++) { residentRows(g); chipProgress(otto); queueHit(g, base, cy) }
+    check('probing the view never moves the hash', stateHash(g) === h0)
+    // --- source pins
+    const artSrc = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    const idxSrc2 = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const simSrc2 = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    check('sim stamps the walk length at issue', (simSrc2.match(/p\.walkN0 = path\.length/g) || []).length >= 2)
+    check('art derives rows, glyph and progress from one source', artSrc.includes('export function chipProgress') && artSrc.includes('export function queueGlyphFor') && artSrc.includes('chipProgress(p)'))
+    check('the painter drains a bar in the NOW cell', artSrc.includes('1 - row.now.frac') && artSrc.includes('row.now.glyph'))
+    check('the hit route offsets by the NOW cell', artSrc.includes('row.now ? QCELL.cw + QCELL.gap : 0'))
+    check('the shell plays the per-glyph timbre verbatim', idxSrc2.includes('QUEUE_TIMBRE[queueGlyphFor(e.id)]'))
 }
 
 console.log(`\nhomebodyqueuecheck: ${pass}/${pass + fail}${fail ? '  FAILED: ' + fails.join(', ') : ''}`)

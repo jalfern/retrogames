@@ -994,6 +994,8 @@ export function cmdUse(s, p, it) {
     p.path = path
     p.goal = { kind: 'use', it }
     p.owner = 'human'   // #2470: a cmd* order is a PLAYER order (autonomy assigns its own paths directly)
+    p.walkN0 = path.length   // #2474: view-only (never mixed into stateHash) — the walk's length at
+                             // issue, so the panel can show the errand draining as steps are spent
     // #2253: an issued order must be *visible* the instant it lands — the view
     // rings the target (and the shell names it) so a registered tap never looks
     // like a dropped one. The cell arrives with the path's last step; an
@@ -1020,6 +1022,7 @@ export function cmdWalk(s, p, r, c) {
     p.path = path
     p.goal = null
     p.owner = 'human'   // #2470: player orders own the resident; AI orders never do
+    p.walkN0 = path.length   // #2474: see cmdUse — the walk's issue-time length for the chip wipe
     return true
 }
 
@@ -1068,6 +1071,23 @@ export function tryUseOrQueue(s, p) {
 // gate play byte-identical.
 
 export const QUEUE_MAX = 3
+
+// #2474: PER-GLYPH QUEUE TIMBRES. The original gave each action category its
+// own append sound; #2470 shipped one 660 Hz blip for every chip. Keyed by
+// the chip's glyph (art.js queueGlyphFor): distinct first frequency, note
+// count and shape per category — the panel LISTENING is as legible as the
+// panel looking. The shell plays these tables verbatim (#2240 VISIT_TIMBRE,
+// #2264 MEAL_TIMBRE pattern). [freq, dur, delayMs]
+export const QUEUE_TIMBRE = {
+    fork: [[620, 0.05, 0], [784, 0.07, 60]],        // hunger — a warm two-note fork
+    moon: [[300, 0.11, 0]],                          // energy — one soft low hum
+    star: [[880, 0.04, 0], [1174, 0.05, 55], [1568, 0.06, 110]],   // fun — a bright triple bounce
+    chat: [[740, 0.04, 0], [988, 0.05, 50]],        // social — a chirpy pair
+    drop: [[520, 0.07, 0]],                          // bladder — a single droplet
+    case: [[220, 0.07, 0], [165, 0.10, 70]],        // work — a briefcase thunk, down
+    arrow: [[460, 0.035, 0]],                        // walk — one soft step
+}
+export const QUEUE_TIMBRE_FALLBACK = [[660, 0.04, 0]]   // unknown glyph — the historic blip
 
 export function orderBusy(s, p) {
     return p.faintT > 0 || p.working || !!p.use || !!(p.path && p.path.length) || !!p.goal

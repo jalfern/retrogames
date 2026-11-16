@@ -42,6 +42,7 @@ import {
     binOrderOk,   // #2303: the bin — the lot's chore, honest refusal out of season
     NEED_HINT,   // #2253: the amber prompt names the fix
     VISIT_TIMBRE, REL_EDGES,   // #2240: each neighbour owns a call motif + entrance footfalls; FAMILY tier for scenario legs
+    QUEUE_TIMBRE, QUEUE_TIMBRE_FALLBACK,   // #2474: per-glyph append timbres — the chip you hear names the errand
     stateHash,
 } from './sim.js'
 import {
@@ -52,6 +53,7 @@ import {
     drawSay,   // #2135: the spoken-word bubble over the pair
     drawGroundGift, bondRows,   // #2240: the set-down basket + the BONDS rows as data
     queueHit,   // #2470: the queue chips' tap route (shares the painter's geometry)
+    queueGlyphFor,   // #2474: the chip glyph from an event id — one source for paint and timbre
 } from './art.js'
 
 const SIM_MS = FIXED_DT
@@ -176,10 +178,14 @@ const HomebodyGame = () => {
                     case 'sell': audioController.playSweep(420, 180, 0.12, 'square', 0.05); break
                     // #2470: the queue speaks — every append, cancel, honest drop and
                     // full-list refusal lands with its own sound and line.
-                    case 'queued':
-                        audioController.playTone(660, 0.04, 'triangle', 0.03)
+                    case 'queued': {
+                        // #2474: per-glyph append — the panel's own icon language,
+                        // audible (QUEUE_TIMBRE played verbatim, #2240 pattern)
+                        const qtb = QUEUE_TIMBRE[queueGlyphFor(e.id)] || QUEUE_TIMBRE_FALLBACK
+                        qtb.forEach(([f, d, ms]) => { if (ms) setTimeout(() => audioController.playTone(f, d, 'triangle', 0.03), ms); else audioController.playTone(f, d, 'triangle', 0.03) })
                         if (live) say(`QUEUED ${DEF[e.id] ? DEF[e.id].name.toUpperCase() : e.id === 'work' ? 'WORK' : e.id === 'walk' ? 'WALK' : String(e.id).toUpperCase()}`)
                         break
+                    }
                     case 'queue-cancel': audioController.playTone(320, 0.05, 'square', 0.03); if (live) say('ORDER CANCELLED'); break
                     case 'queue-drop':
                         audioController.playTone(240, 0.08, 'sawtooth', 0.04)
