@@ -153,8 +153,9 @@ oldest actionable gap. `sim.js` now has the second kind:
   replay byte-identical, and dashcheck refuses drift state on any older cave.
 - **GOSSAMER HOLLOW (cave 8)**: a steel-ringed gallery across the cavern roof
   with two pillars — the butterfly genuinely sweeps it (dashcheck pins ≥40
-  flaps and ≥40 distinct cells in a synthetic chamber, and 88 gallery cells on
-  the real cave) — and a steel-lined tube at col 27 to the dig lanes below.
+  flaps and ≥40 distinct cells in a synthetic chamber; dashplay counted 100
+  live flaps on the real cave) — and a steel-lined tube at col 27 to the dig
+  lanes below.
   Once the player opens the lane, the butterfly comes down and roams it: the
   harvest seam at row 18 provably stays cool (nothing in this cave ever burns —
   butterflies light nothing and the automaton only ever touches open ground),
@@ -162,7 +163,7 @@ oldest actionable gap. `sim.js` now has the second kind:
 
 ## Verify
 ```bash
-npm run dashcheck             # 155 checks: every cave winnable, replay
+npm run dashcheck             # 184 checks: every cave winnable, replay
                               # determinism, rule pins (crush, gem-dirt, fire),
                               # FLY RELEASE (#2364: escape, containment, chicken;
                               # #2374: dust-mark seam pin),
@@ -175,11 +176,16 @@ npm run dashcheck             # 155 checks: every cave winnable, replay
                               # replay hashes for caves 1-5),
                               # MULTI-HEAD (#2444: fork birth, >=2 heads/>=2
                               # headings, wrap-around-a-wall, hard head cap,
-                              # dissolve, FORK BASIN containment + win)
-npm run dashcheck -- --mutate # 168: +13 — every CFG switch silenced goes red
-npm run dashplay              # 42 real-key checks: attract→play→win→restart on
-                              # FLY PIT + SLIME VAULT + GOO GALLERY + FORK BASIN,
-                              # waves expiring on their own clocks, zero page errors
+                              # dissolve, FORK BASIN containment + win),
+                              # BUTTERFLY DRIFT (#2453: corridor-invariance by
+                              # law, open-ground weave, GOSSAMER HOLLOW descent,
+                              # sealed-lane law, cool harvest, flap-state hash,
+                              # opt-in-only flyExt on caves 1-7)
+npm run dashcheck -- --mutate # 198: +14 — every CFG switch silenced goes red
+npm run dashplay              # 49 real-key checks: attract→play→win→restart on
+                              # FLY PIT + SLIME VAULT + GOO GALLERY + FORK BASIN
+                              # + GOSSAMER HOLLOW, waves expiring on their own
+                              # clocks, butterfly flapping live, zero page errors
 DEV_PORT=<p> npm run watchcheck -- --only boulder-dash  # 182: seat pilot + pins
 ```
 `dashplay` paces the vault shoves at WORLD ticks: a 55 ms key loop can shove a
