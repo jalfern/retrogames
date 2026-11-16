@@ -9,11 +9,12 @@
 //               kills every non-boss enemy and pays them; the bonus timer opens
 //               the exits; killing THE ANNOUNCER wins.
 //   ledger    : final score == sum of scored events, pilot replay included.
-//   pilot     : all 9 seeds 0-8 win the nine-room show since #2007 — the wide
-//               boards plus the DIRECTED stall-break (slide until the goal opens;
-//               growing sweep while it doesn't) rescued every stall and the old
-//               seed-3 forced loss. Deathless on seeds 1 and 7, pinned below.
-//   slack     : seed 1 still wins with one fewer crate per room and zero
+//   pilot     : all 9 seeds 0-8 win the nine-room show UNshielded since #2491
+//               (the arcade gives no spawn invulnerability) — the wide boards,
+//               the DIRECTED stall-break and the #2491 doctrine (lane-sound
+//               duel, spawn-lean parking, open-door landing, dry-tank reload)
+//               carry every seed. Deathless on seeds 7 and 8, pinned below.
+//   slack     : seeds 0-2 still win with one fewer crate per room and zero
 //               energy cells.
 //   varisize (#1973, #2007, #2024): every room of the show — THE ANNOUNCER's
 //               finale included — boards 24 cells (wider than the screen) with
@@ -75,7 +76,7 @@ const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.299 * ((n 
 async function fresh() {
     const sim = await import(`../src/games/SmashTV/sim.js?c=${Date.now()}`)
     const planner = await import(`../src/games/SmashTV/planner.js?c=${Date.now()}`)
-    return { ...sim, plan: planner.plan, planCoop: planner.planCoop, padToInp: planner.padToInp, inpToPad: planner.inpToPad, decidePad: planner.decidePad }
+    return { ...sim, plan: planner.plan, planCoop: planner.planCoop, padToInp: planner.padToInp, inpToPad: planner.inpToPad, decidePad: planner.decidePad, decide: planner.decide }
 }
 const S = await fresh()
 const { makeGame, step, stateHash, CFG, comboColor, flickerPhase, COMBO_COLORS, MISSILE_TURN, MISSILE_LIFE, MISSILE_BLAST, FLAME_LIFE, FLAME_FAN, FLAME_SLOW } = S
@@ -314,13 +315,38 @@ console.log('rules')
     step(gs, {})
     ok(gs.lives === 0 || gs.end === 'over', 'three bodies spend the run', `lives ${gs.lives} end ${gs.end}`)
 }
-// spawn invulnerability is the only mercy
+// #2491 — the arcade's law: NO mercy. Room entries and respawns land exposed;
+// the only shield left in the game is the telegraph (#1978). These pins die
+// the moment a shield creeps back (mutant: mercyBack).
 {
     const gs = makeGame(0)
-    ok(gs.player.invuln > 0, 'contestants spawn shielded')
+    ok(gs.player.invuln === 0, 'contestants spawn unshielded — zero mercy')
     gs.ebullets.push({ id: 8101, x: gs.player.x + 2, y: gs.player.y, dx: 1, dy: 0, dmg: 1, kind: 'shot' })
     step(gs, {})
-    ok(gs.lives === CFG.lives && gs.player.deadT === 0, 'a shielded player walks through fire')
+    ok(gs.lives === CFG.lives - 1 && gs.player.deadT > 0, 'a round that reaches the spawn still kills', `lives=${gs.lives} deadT=${gs.player.deadT}`)
+    // the respawn lands exposed too: burn the life, run out the freeze
+    for (let i = 0; i < 70 && gs.player.deadT > 0; i++) { step(gs, {}); gs.events.length = 0 }
+    ok(gs.player.deadT === 0 && gs.player.invuln === 0, 'the solo respawn lands unshielded', `deadT=${gs.player.deadT} invuln=${gs.player.invuln}`)
+    gs.ebullets.push({ id: 8102, x: gs.player.x + 2, y: gs.player.y, dx: 1, dy: 0, dmg: 1, kind: 'shot' })
+    step(gs, {})
+    ok(gs.lives === CFG.lives - 2, 'and dies to the very next round — no grace period', `lives=${gs.lives}`)
+    // co-op seats obey the same law
+    const gc = makeGame(0, { players: 2 })
+    gc.players[1].deadT = 70
+    for (let i = 0; i < 70 && gc.players[1].deadT > 0; i++) { step(gc, {}); gc.events.length = 0 }
+    ok(gc.players[1].deadT === 0 && gc.players[1].invuln === 0, 'the co-op seat respawns unshielded too', `invuln=${gc.players[1].invuln}`)
+}
+// #2491 open-door landing — no shield means the body-physics must never seat
+// a respawn inside a body: the world freezes while a seat dies, so a chaser
+// can park ON the spawn cell (slack seed 1 spent three lives that way). The
+// seat lands at the nearest clear cell along the spawn row.
+{
+    const gs = makeGame(0)
+    gs.enemies.push({ id: 8301, kind: 'walkcam', x: gs.player.x, y: gs.player.y, hp: 1, cd: 9999, wanderT: 999, wdx: 0, wdy: 0, hitT: 0, dir: 1 })
+    gs.player.deadT = 70
+    for (let i = 0; i < 70 && gs.player.deadT > 0; i++) { step(gs, {}); gs.events.length = 0 }
+    const gap = gs.enemies.length ? Math.hypot(gs.enemies[0].x - gs.player.x, gs.enemies[0].y - gs.player.y) : 1e9
+    ok(gs.player.deadT === 0 && gap >= CFG.contactR, 'a body parked on the spawn cell never inherits the respawn', `gap=${gap.toFixed(1)}`)
 }
 // contact and grenades also kill
 {
@@ -931,6 +957,19 @@ function gs_clear(g) { g.events.length = 0 }
     let cooped = false
     for (const [i1, pad] of rc.script) { step(gc, i1, S.padToInp(pad)); gc.events.length = 0; if (gc.players.some((q) => q.weapon === 'flame')) cooped = true }
     ok(!cooped, 'neither co-op seat equips the FLAMER either')
+    // #2491 strengthened: sweep-pinning the seat-law rides route luck — the
+    // no-mercy reroute moved the bonus walks so no seed happened to walk the
+    // barrel any more, and the old proximity mutant survived a green suite.
+    // Probe the law directly: a dropped barrel 12 px east of the seat must
+    // send the legs WEST out of the ring; without the wrap, the upgrade run
+    // toward the crate walks straight onto it.
+    {
+        const gsb = makeGame(0)
+        const pb = gsb.player
+        gsb.items.push({ id: 9101, t: 'weapon', w: 'flame', x: pb.x + 12, y: pb.y })
+        const inp = S.decide(gsb)
+        ok((inp.mx || 0) === -1, 'the seat steps out of the dropped-barrel ring the moment it is inside', `mx=${inp.mx ?? 0}`)
+    }
 }
 
 // ----------------------------------------------------------------- pilot ----
@@ -938,18 +977,20 @@ console.log('pilot')
 {
     // #2007 honest floor: the whole show runs wide boards now, and the
     // DIRECTED stall-break (slide until the goal vector opens, sweep growing
-    // while it doesn't) ended every pinned stall — including the seed-3 fan
-    // attrition that #1973 had documented as a forced loss. The sweep says the
-    // forced loss is retired: all nine seeds win. If a future change loses one
-    // again, update this pin AND the README together, Pong's seed 25 style.
+    // while it doesn't) ended every pinned stall. #2491 then took the shields
+    // out and the sweep re-measured honestly on the law: all nine seeds win
+    // UNshielded, and the deathless matinee moved from {1,5,7} to {7,8} —
+    // with zero mercy the opening volley costs first blood on seven boards.
+    // If a future change loses one again, update this pin AND the README
+    // together, Pong's seed 25 style.
     const wins = [], deathless = []
     for (const seed of [0, 1, 2, 3, 4, 5, 6, 7, 8]) {
         const r = S.plan(seed)
         if (r.won) { wins.push(seed); if (r.deaths === 0) deathless.push(seed) }
         console.log(`  seed ${seed}: ${r.won ? 'WON' : 'lost'} deaths=${r.deaths} score=${r.score}`)
     }
-    ok(wins.length === 9, 'pilot clears all 9 seeds — the #1973 forced loss retired by the directed break', `won ${wins.join(',')}`)
-    ok(deathless.includes(1), 'seed 1 proves the deathless matinee', `deathless ${deathless.join(',')}`)
+    ok(wins.length === 9, 'pilot clears all 9 seeds unshielded — zero mercy, zero losses', `won ${wins.join(',')}`)
+    ok(deathless.includes(7) && deathless.includes(8), 'seeds 7 and 8 prove the deathless matinee under zero mercy', `deathless ${deathless.join(',')}`)
 }
 
 // ------------------------------------------------------------- varisize ----
@@ -1030,6 +1071,14 @@ console.log('slack')
 {
     const r = S.plan(1, { slack: true })
     ok(r.won, 'the show is still won with one fewer crate per room and zero energy cells', `deaths=${r.deaths}`)
+    // #2491: the slack floor spans the whole documented slack band (seeds
+    // 0-2, README) — and the dry-tank reload doctrine is slack-proven here:
+    // with zero energy cells, a laser pilot that never goes back for fuel
+    // strands at the finale.
+    for (const s of [0, 2]) {
+        const rs = S.plan(s, { slack: true })
+        ok(rs.won, `slack seed ${s} still wins on the stripped boards`, `deaths=${rs.deaths}`)
+    }
 }
 
 // ---------------------------------------------------------------- ledger ----
@@ -1333,6 +1382,10 @@ if (process.argv.includes('--mutate')) {
         ['#2032: the warhead is inert', 'if (dist(b.x, b.y, q.x, q.y) < MISSILE_BLAST + (q.kind === \'boss\' ? 14 : 7)) damageEnemy(gs, q, 1, \'blast\', owner)', 'if (false) damageEnemy(gs, q, 1, \'blast\', owner)'],
         ['#2032: the fire never dies out', 'if (b.age > FLAME_LIFE) { b.done = true; continue }', 'if (b.age > 1e9) { b.done = true; continue }'],
         ['#2032: the flamer coughs a single pellet', 'for (const [d, sp] of [[-FLAME_FAN, FLAME_SLOW], [0, 1], [FLAME_FAN, FLAME_SLOW]]) {', 'for (const [d, sp] of [[0, 1]]) {'],
+        ['#2491 mercyBack: the entry shield creeps back onto the spawn', 'const inv = 0 // #2491: the arcade gives no spawn invulnerability — land exposed', 'const inv = 70 // mercyBack'],
+        ['#2491 mercyBack: the solo respawn shield returns', 'p.invuln = 0 // #2491: respawn lands unshielded — the arcade gives none', 'p.invuln = 150 // mercyBack'],
+        ['#2491 mercyBack: the co-op respawn shield returns', 'q.invuln = 0 // #2491: respawn lands unshielded — the arcade gives none', 'q.invuln = 150 // mercyBack'],
+        ['#2491: the open-door landing forgets parked bodies', 'if (gs.enemies.some((e) => e.hp > 0 && Math.hypot(e.x - nx, e.y - y) < CFG.contactR)) continue', 'if (false) continue'],
     ]
     const LEVELS = 'src/games/SmashTV/levels.js'
     const LEVELS_MUTANTS = [
@@ -1349,6 +1402,9 @@ if (process.argv.includes('--mutate')) {
     const PLANNER = 'src/games/SmashTV/planner.js'
     const PLANNER_MUTANTS = [
         ['#2032: the seat walks onto the dropped flamer', 'if (d > 16) return inp', 'if (d > -1e9) return inp'],
+        ['#2491: the lane-sound duel is deaf again (seed 4 re-nails onto the chrome corner)', 'if (staticDuel && Math.abs(qx) > Math.abs(qy) && !hOpen && vOpen) {', 'if (false) {'],
+        ['#2491: the pilot loiters under queued spawns again', 'if (hot && hd < 40) {', 'if (hot && hd < -40) {'],
+        ['#2491: the dry-tank reload never fires', "const dry = p.weapon === 'laser' && gs.energy < 30", 'const dry = false'],
     ]
     const JUICE = 'src/games/SmashTV/juice.js'
     const JUICE_MUTANTS = [
