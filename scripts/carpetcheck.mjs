@@ -186,7 +186,8 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         const scorched = landFor('SCORCHED HOLLOW', ramp)
         const mossy = landFor('MOSSWOOD', ramp)
         const deep = landFor('DEEPGREEN', ramp)
-        const lowUntouched = [...frozen, ...scorched, ...mossy, ...deep].every((v, i) => ramp[i % (GRID * GRID)] <= 52 || v === ramp[i % (GRID * GRID)])
+        const lowUntouched = [frozen, scorched, mossy, deep].every((a) =>
+            a.every((v, i) => ramp[i] > 52 || v === ramp[i]))
         const pureOk = ramp.every((v, i) => v === i % 97)
         const srcSim = await readFile(new URL('../src/games/MagicCarpet/sim.js', import.meta.url), 'utf8')
         r.check('#2449 item 2: the land reads its own name — ice lifts snow above the line, heat melts it to bare crag, lush sags crags under grass, and nothing below 52 moves (coastlines and site bands are safe by construction; rng-free, replay-stable)',
