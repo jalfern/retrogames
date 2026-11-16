@@ -31,6 +31,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { planAdd, planDrain, classifyFailure, OUTBOX_MAX_ITEMS } from '../src/utils/outboxCore.js'
 import { badgeView, BADGE_HOLD_UPLOADED_MS, BADGE_HOLD_SYNCED_MS } from '../src/utils/syncBadgeCore.js'
+import { coachView, COACH_TEXT, COACH_HOLD_MS } from '../src/utils/clapCoachCore.js'
 import { makeOutbox, setOutboxFactory, queueRun, drain as drainOutbox, dropEntry } from '../src/utils/outbox.js'
 import { plantNew, pull } from './lib/mutateguard.mjs' // #1359: SIGTERM mid-mutant must not leave the dotfile corpse in src/utils
 
@@ -1063,6 +1064,26 @@ const mkRec2 = (game = 'gauntlet', seed = 777, ticks = 90) => {
     ok(badgeView({ storeLive: true, sent: 0, left: 0, uploaded: false }).kind === 'hidden', 'a pass that did nothing says nothing')
     const mut = badgeView({ storeLive: true, requeued: true, left: 0 })
     ok(mut.kind === 'queued' && mut.text === 'TAKE SAVED — WILL SYNC', 'a requeue with an unreadable pen count still says a take is saved')
+}
+
+// --- clap coach: teach the ±50 ms proof (#1711) -----------------------------
+// Every graded human take heard ZERO claps, so the ±50 ms line could not be
+// graded on any of them — nothing ever asked the player. coachView is the
+// whole rule set (voiceCapture.js paints it at the green-REC moment); these
+// gates pin its honesty: a dead pipe gets no lesson, one lesson per boot,
+// and the text instructs instead of claiming.
+{
+    ok(coachView({ micLive: false, shown: false }).kind === 'hidden',
+        'no coaching for a mic that is not live — LISTEN and declined pipes get nothing')
+    ok(coachView({ micLive: true, shown: true }).kind === 'hidden',
+        'once per boot — the screen belongs to the game after the first lesson')
+    const c = coachView({ micLive: true, shown: false })
+    ok(c.kind === 'coach' && c.text === COACH_TEXT && c.holdMs === COACH_HOLD_MS,
+        'a live take mic teaches CLAP WITH YOUR FIRST TAPS, then fades')
+    ok(!/IS SYNCED|SYNC OK|ALIGNED/i.test(COACH_TEXT),
+        'the coach instructs and never claims — the clap verdict decides sync')
+    ok(COACH_HOLD_MS > 0 && COACH_HOLD_MS <= 6000,
+        'the lesson is a whisper, not a takeover — it holds at most 6 s of screen')
 }
 
 // --mutate: the taxonomy flip (permanent -> keep) must poison the queue — this

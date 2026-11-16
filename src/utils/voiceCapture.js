@@ -10,6 +10,7 @@
 // so players' tracks don't bleed into each other on open speakers.
 
 import { createVoiceClock, b64FromBytes } from './voice.js'
+import { coachView } from './clapCoachCore.js'
 
 export function voiceSupported() {
     return typeof navigator !== 'undefined'
@@ -66,7 +67,7 @@ function syncMicBadge() {
     const rec = [...liveSessions].some((s) => s.phase === 'recording')
     const listen = !rec && [...liveSessions].some((s) => s.phase === 'listening')
     const off = liveSessions.size > 0
-    if (!off) { if (el) el.remove(); return }
+    if (!off) { if (el) el.remove(); removeClapCoach(); return }
     const b = el || badgeEl()
     if (!b) return
     const dot = b.querySelector('[data-voice-dot]')
@@ -75,6 +76,42 @@ function syncMicBadge() {
     dot.style.background = rec ? '#38e07b' : listen ? '#7ec8ff' : '#6b6b78'
     dot.style.boxShadow = rec ? '0 0 8px rgba(56,224,123,0.9)' : listen ? '0 0 8px rgba(126,200,255,0.9)' : 'none'
     label.textContent = rec ? 'REC' : listen ? 'LISTEN' : 'MIC OFF'
+    if (!rec) removeClapCoach() // the coach only stands while the REC it named is live
+}
+
+// --- clap coach (#1711) — the one line that TEACHES the ±50 ms proof. The
+// store can only grade alignment on takes that contain claps, and human takes
+// carried none because nothing ever asked. The pill appears at the recorder's
+// green-REC moment (rule 1), once per boot (rule 2 — sessionStorage; the mic
+// badge and VU bar keep carrying the ongoing truth), and its text is an
+// instruction, never a claim (rule 3). Rules are pure in clapCoachCore.js
+// (recordcheck-pinned); this is the paint and the moment. DOM truth for the
+// harness: [data-clap-coach="coach"] while shown, window.__clapCoach always.
+const COACH_FLAG_KEY = 'vc.clapCoach'
+
+function coachAlreadyShown() {
+    try { return sessionStorage.getItem(COACH_FLAG_KEY) === '1' } catch { return false } // private mode: show each time rather than never
+}
+
+function removeClapCoach() {
+    if (typeof document === 'undefined') return
+    const el = document.querySelector('[data-clap-coach]')
+    if (el) el.remove()
+}
+
+function maybeClapCoach() {
+    if (typeof document === 'undefined') return
+    const view = coachView({ micLive: true, shown: coachAlreadyShown() })
+    if (typeof window !== 'undefined') window.__clapCoach = { ...view, at: Date.now() }
+    if (view.kind !== 'coach') return
+    try { sessionStorage.setItem(COACH_FLAG_KEY, '1') } catch { /* private mode */ }
+    const el = document.createElement('div')
+    el.setAttribute('data-clap-coach', view.kind)
+    el.setAttribute('aria-live', 'polite')
+    el.style.cssText = 'position:fixed;z-index:9998;top:48px;left:10px;padding:5px 9px;border-radius:6px;background:rgba(6,4,16,0.82);border:1px solid #38e07b;color:#38e07b;font-family:"Press Start 2P",monospace;font-size:7px;letter-spacing:0.06em;pointer-events:none'
+    el.textContent = `\u{1F44F} ${view.text}`
+    document.body.appendChild(el)
+    setTimeout(removeClapCoach, view.holdMs) // UI paint timing, not sim time
 }
 
 // acquireListenBadge (#1263/#1257 parity, #1427) — a mic that is LIVE for
@@ -488,6 +525,7 @@ export function createVoiceSession(opts = {}) {
             phase = 'recording'; dbg('mic-open')
             liveSessions.add(reg); syncMicBadge()
             runVuMeter(s) // #1257: prove this mic hears something, right now
+            maybeClapCoach() // #1711: teach the ±50 ms proof while it hears it
             levelTap = liveLevelTap(s) // #2205: keep a live level visible for the whole take
             clockCtx = levelTap.ctx || null // #2247: the take's device clock (null -> wall)
             return null
