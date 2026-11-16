@@ -6,6 +6,7 @@
 // moving, …) is absent from the trace until JS adds it.
 
 import Foundation
+import RetroKit
 
 // MARK: - rng
 

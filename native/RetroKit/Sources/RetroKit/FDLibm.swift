@@ -6,15 +6,19 @@
 // results differently in the last place (sin(-1.1151806735836653): V8
 // -0.8979903015775141, Darwin -0.897990301577514), and the pilot's aim and
 // every 8-way step go through these, so the port has to be V8's.
-// check.sh fuzzes all three against Node's Math.* on millions of inputs.
+// gauntlet-claude/check.sh (`gauntlet-trace math`) fuzzes all three against
+// Node's Math.* on 300k inputs each; Joust, Emberwood and Gauntlet all use it.
+// All @inlinable: each app compiles it at its own optimization level (the
+// package itself builds -Onone in Debug). Same bits either way: Swift never
+// fuses a*b+c on its own, so only the explicit fma() calls fuse.
 
 import Foundation
 
-@inline(__always) private func hi(_ x: Double) -> Int32 { Int32(bitPattern: UInt32(truncatingIfNeeded: x.bitPattern >> 32)) }
-@inline(__always) private func lo(_ x: Double) -> UInt32 { UInt32(truncatingIfNeeded: x.bitPattern) }
-@inline(__always) private func words(_ h: UInt32, _ l: UInt32) -> Double { Double(bitPattern: UInt64(h) << 32 | UInt64(l)) }
+@inlinable @inline(__always) func hi(_ x: Double) -> Int32 { Int32(bitPattern: UInt32(truncatingIfNeeded: x.bitPattern >> 32)) }
+@inlinable @inline(__always) func lo(_ x: Double) -> UInt32 { UInt32(truncatingIfNeeded: x.bitPattern) }
+@inlinable @inline(__always) func words(_ h: UInt32, _ l: UInt32) -> Double { Double(bitPattern: UInt64(h) << 32 | UInt64(l)) }
 
-private func kSin(_ x: Double, _ y: Double, _ iy: Int) -> Double {
+@inlinable func kSin(_ x: Double, _ y: Double, _ iy: Int) -> Double {
     let S1 = -1.66666666666666324348e-01, S2 = 8.33333333332248946124e-03, S3 = -1.98412698298579493134e-04
     let S4 = 2.75573137070700676789e-06, S5 = -2.50507602534068634195e-08, S6 = 1.58969099521155010221e-10
     let ix = hi(x) & 0x7fffffff
@@ -26,7 +30,7 @@ private func kSin(_ x: Double, _ y: Double, _ iy: Int) -> Double {
     return x - fma(-v, S1, fma(z, fma(0.5, y, -(v * r)), -y))
 }
 
-private func kCos(_ x: Double, _ y: Double) -> Double {
+@inlinable func kCos(_ x: Double, _ y: Double) -> Double {
     let C1 = 4.16666666666666019037e-02, C2 = -1.38888888888741095749e-03, C3 = 2.48015872894767294178e-05
     let C4 = -2.75573143513906633035e-07, C5 = 2.08757232129817482790e-09, C6 = -1.13596475577881948265e-11
     let ix = hi(x) & 0x7fffffff
@@ -40,7 +44,7 @@ private func kCos(_ x: Double, _ y: Double) -> Double {
     return a - (hz - fma(z, r, -(x * y)))
 }
 
-private let npio2hw: [Int32] = [
+@usableFromInline let npio2hw: [Int32] = [
     0x3FF921FB, 0x400921FB, 0x4012D97C, 0x401921FB, 0x401F6A7A, 0x4022D97C,
     0x4025FDBB, 0x402921FB, 0x402C463A, 0x402F6A7A, 0x4031475C, 0x4032D97C,
     0x40346B9C, 0x4035FDBB, 0x40378FDB, 0x403921FB, 0x403AB41B, 0x403C463A,
@@ -51,7 +55,7 @@ private let npio2hw: [Int32] = [
 
 /// __ieee754_rem_pio2 for |x| <= 2^19*pi/2 (every angle the games make);
 /// nil beyond, where the caller falls back to libm.
-private func remPio2(_ x: Double) -> (n: Int32, y0: Double, y1: Double)? {
+@inlinable func remPio2(_ x: Double) -> (n: Int32, y0: Double, y1: Double)? {
     let invpio2 = 6.36619772367581382433e-01
     let pio2_1 = 1.57079632673412561417e+00, pio2_1t = 6.07710050650619224932e-11
     let pio2_2 = 6.07710050630396597660e-11, pio2_2t = 2.02226624879595063154e-21
@@ -106,7 +110,7 @@ private func remPio2(_ x: Double) -> (n: Int32, y0: Double, y1: Double)? {
     return nil
 }
 
-public func fdSin(_ x: Double) -> Double {
+@inlinable public func fdSin(_ x: Double) -> Double {
     let ix = hi(x) & 0x7fffffff
     if ix <= 0x3fe921fb { return kSin(x, 0, 0) }
     if ix >= 0x7ff00000 { return x - x }
@@ -119,7 +123,7 @@ public func fdSin(_ x: Double) -> Double {
     }
 }
 
-public func fdCos(_ x: Double) -> Double {
+@inlinable public func fdCos(_ x: Double) -> Double {
     let ix = hi(x) & 0x7fffffff
     if ix <= 0x3fe921fb { return kCos(x, 0) }
     if ix >= 0x7ff00000 { return x - x }
@@ -132,13 +136,13 @@ public func fdCos(_ x: Double) -> Double {
     }
 }
 
-private let atanhi = [4.63647609000806093515e-01, 7.85398163397448278999e-01, 9.82793723247329054082e-01, 1.57079632679489655800e+00]
-private let atanlo = [2.26987774529616870924e-17, 3.06161699786838301793e-17, 1.39033110312309984516e-17, 6.12323399573676603587e-17]
-private let aT = [3.33333333333329318027e-01, -1.99999999998764832476e-01, 1.42857142725034663711e-01, -1.11111104054623557880e-01,
+@usableFromInline let atanhi = [4.63647609000806093515e-01, 7.85398163397448278999e-01, 9.82793723247329054082e-01, 1.57079632679489655800e+00]
+@usableFromInline let atanlo = [2.26987774529616870924e-17, 3.06161699786838301793e-17, 1.39033110312309984516e-17, 6.12323399573676603587e-17]
+@usableFromInline let aT = [3.33333333333329318027e-01, -1.99999999998764832476e-01, 1.42857142725034663711e-01, -1.11111104054623557880e-01,
                   9.09088713343650656196e-02, -7.69187620504482999495e-02, 6.66107313738753120669e-02, -5.83357013379057348645e-02,
                   4.97687799461593236017e-02, -3.65315727442169155270e-02, 1.62858201153657823623e-02]
 
-public func fdAtan(_ x0: Double) -> Double {
+@inlinable public func fdAtan(_ x0: Double) -> Double {
     var x = x0
     let hx = hi(x)
     let ix = hx & 0x7fffffff
@@ -169,7 +173,7 @@ public func fdAtan(_ x0: Double) -> Double {
     return hx < 0 ? -zz : zz
 }
 
-public func fdAtan2(_ y: Double, _ x: Double) -> Double {
+@inlinable public func fdAtan2(_ y: Double, _ x: Double) -> Double {
     let pi_o_2 = 1.5707963267948965580e+00, pi = 3.1415926535897931160e+00, pi_lo = 1.2246467991473531772e-16
     if x.isNaN || y.isNaN { return x + y }
     let hx = hi(x), hy = hi(y)

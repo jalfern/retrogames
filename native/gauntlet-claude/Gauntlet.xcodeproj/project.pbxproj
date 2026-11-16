@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		AB0000000000000000000001 /* RetroKit in Frameworks */ = {isa = PBXBuildFile; productRef = AB0000000000000000000011 /* RetroKit */; };
+		AB0000000000000000000002 /* RetroKitApp in Frameworks */ = {isa = PBXBuildFile; productRef = AB0000000000000000000012 /* RetroKitApp */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		A10000000000000000000001 /* Gauntlet.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Gauntlet.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -17,7 +22,7 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		A30000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A30000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (AB0000000000000000000001 /* RetroKit in Frameworks */, AB0000000000000000000002 /* RetroKitApp in Frameworks */, ); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -59,6 +64,10 @@
 				A20000000000000000000001 /* App */,
 				A20000000000000000000002 /* GauntletCore */,
 			);
+			packageProductDependencies = (
+				AB0000000000000000000011 /* RetroKit */,
+				AB0000000000000000000012 /* RetroKitApp */,
+			);
 			name = Gauntlet;
 			productName = Gauntlet;
 			productReference = A10000000000000000000001 /* Gauntlet.app */;
@@ -83,6 +92,9 @@
 			);
 			mainGroup = A40000000000000000000001;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				AB0000000000000000000021 /* XCLocalSwiftPackageReference "../RetroKit" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A40000000000000000000002 /* Products */;
 			projectDirPath = "";
@@ -235,6 +247,24 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		AB0000000000000000000021 /* XCLocalSwiftPackageReference "../RetroKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../RetroKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AB0000000000000000000011 /* RetroKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RetroKit;
+		};
+		AB0000000000000000000012 /* RetroKitApp */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RetroKitApp;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A70000000000000000000001 /* Project object */;
 }

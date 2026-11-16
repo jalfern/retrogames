@@ -6,6 +6,7 @@ import Foundation
 import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
+import RetroKit
 
 let out = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "App/Assets.xcassets"
 

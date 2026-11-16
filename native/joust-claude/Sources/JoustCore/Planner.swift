@@ -2,6 +2,7 @@
 // attract demo and the WATCH mode. Deterministic: same state in, same pads out.
 
 import Foundation
+import RetroKit
 
 extension Game {
     func searchSolid(_ x: Double, _ dir: Double) -> Double? {

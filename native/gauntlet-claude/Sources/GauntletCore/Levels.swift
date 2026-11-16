@@ -1,6 +1,7 @@
 // The ten halls, heroes and monsters, decoded from LevelData.swift (generated
 // from levels.js by scripts/genlevels.mjs).
 import Foundation
+import RetroKit
 
 public struct Start: Decodable { public let x: Double, y: Double, a: Double }
 public struct DoorDef: Decodable { public let x: Int, y: Int; public let lock: String? }

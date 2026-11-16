@@ -54,17 +54,18 @@ steps per frame.
 Porting rules that kept the traces green (all three bit us before they were rules):
 - **V8's math is fdlibm compiled by clang with `-ffp-contract=on`.** Every
   `a*b + c` inside one expression is a fused multiply-add, and clang fuses the
-  left-hand product first. `FDLibm.swift` ports sin, cos, atan2 and the π/2
+  left-hand product first. RetroKit's `FDLibm.swift` ports sin, cos, atan2 and the π/2
   reduction that way. Plain fdlibm misses V8 on about 0.4% of sin/cos inputs,
   and Darwin's libm misses on about 3% (sin) to 18% (atan2). The pilot's aim
   and every 8-way step go through these functions.
-- **`toFixed` rounds the double's exact value.** It works from the exact
+- **`toFixed` rounds the double's exact value** (RetroKit's `jsToFixed`). It works from the exact
   decimal expansion, ties going away from zero; printf breaks ties to even,
   and `x*1000` invents false ties (2.545 is stored as 2.54499…). The state
   hash is built from toFixed strings.
 - **Read recordings with `JSONDecoder`, not `JSONSerialization`.** The latter
   isn't correctly rounded (it reads 0.021500000000000002 as 0.0215), and the
-  aim lane is 17-digit doubles.
+  aim lane is 17-digit doubles. RetroKit's `RecordingFile` does.
+- These and the other shared rules: [`../RetroKit/README.md`](../RetroKit/README.md).
 - JS `for…of` over `gs.monsters` keeps walking the OLD array when a kill
   reassigns it. Iterating a Swift value copy does the same.
 - Keys JS adds later stay optional: `door.hits`, `item.taken`, `shot.done`
@@ -86,9 +87,15 @@ the software framebuffer and the on-device selfcheck need optimized code (60 fps
 
 ## Layout
 
-- `Sources/GauntletCore/`: the sim, the planner, the halls (generated), the
-  V8 math, and the trace codec and races. No UIKit. SwiftPM builds it for the
-  Mac CLI, and the Xcode target compiles the same folder.
+- [`../RetroKit`](../RetroKit/README.md): what the ports share — the V8 math
+  (`FDLibm`, `jsToFixed`), the trace codec and recording reader, the Surface
+  framebuffer + 3×5 font, the Synth engine, two-seat Controls and the
+  selfcheck runner. SwiftPM and the Xcode project both use it as a local
+  package; its drawing and math are `@inlinable`, so they run at this
+  target's `-O` even in Debug.
+- `Sources/GauntletCore/`: the sim, the planner, the halls (generated), and
+  the trace fold (`flatten`, recording → pads) and races. No UIKit. SwiftPM
+  builds it for the Mac CLI, and the Xcode target compiles the same folder.
 - `Sources/gauntlet-trace/`: the Mac CLI (`check`, `trace`, `race`, `math`, `parts`).
 - `App/`: the shell.
   - `GameViewController`: attract, hero select, play, pause and over; two
@@ -101,11 +108,13 @@ the software framebuffer and the on-device selfcheck need optimized code (60 fps
     explored map, portraits and the HUD band.
   - `Sprites`: art.js `punch()`, the pixel strings from SPRITE_DATA plus white
     hit-flash silhouettes.
-  - `Surface`: the framebuffer and 3×5 font from the Joust port.
-  - `Synth`: AudioController voices, the event sounds and sound.js's narrator buzzes.
-  - `Controls`: two seats (controllers, Siri Remote, on-screen pad, keyboard).
+  - `Synth`: the death jingle and sound.js's narrator buzzes on RetroKit's
+    `SynthEngine` (the event sounds are in `GameViewController`).
+  - `Controls`: Gauntlet's two-seat mapping (controllers, Siri Remote,
+    on-screen pad, keyboard) for RetroKit's `Controls`.
   - `Assets.xcassets`: the tvOS parallax icon, the top shelf and the iOS
-    AppIcon, built from the game's own sprites by `scripts/icons.py`.
+    AppIcon, built from the game's own sprites by `scripts/icons.py` (the
+    catalog itself is written by RetroKit's `scripts/brandassets.py`).
 - `scripts/`: `genlevels.mjs`, `race.mjs`, `mathfuzz.mjs`, `icons.py`.
 
 ## Controls

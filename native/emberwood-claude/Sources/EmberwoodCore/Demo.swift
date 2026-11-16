@@ -6,6 +6,7 @@
 // parity test through both dungeons and both act-one bosses.
 
 import Foundation
+import RetroKit
 
 public struct Demo {
     public let seed: UInt32

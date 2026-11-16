@@ -3,13 +3,14 @@
 # behind a treeline (back), drifting embers (middle), Ash with the ember blade
 # (front) — the tvOS parallax stack, the top shelf banners, and a flattened
 # iOS AppIcon. Rerun after an art change:  python3 scripts/icons.py
-import json, math, os, random, shutil
+import json, sys, math, os, random
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, '..', '..', 'RetroKit', 'scripts'))
+import brandassets  # noqa: E402
 ART = os.path.join(HERE, '..', 'App', 'Art')
 OUT = os.path.join(HERE, '..', 'App', 'Assets.xcassets')
-INFO = {"author": "xcode", "version": 1}
 FONT = '/System/Library/Fonts/Supplemental/Copperplate.ttc'
 
 def art(name): return Image.open(os.path.join(ART, name + '.png')).convert('RGBA')
@@ -93,55 +94,7 @@ def front(w, h, title=False):
         d.text((int(w * 0.6 - (bb2[2] - bb2[0]) / 2), ty + int(h * 0.27)), sub, font=f2, fill=(232, 217, 184, 255))
     return im
 
-def write(path, img):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    img.save(path)
-
-def contents(path, obj):
-    os.makedirs(path, exist_ok=True)
-    with open(os.path.join(path, 'Contents.json'), 'w') as f: json.dump(obj, f, indent=2)
-
-def stack(root, name, size, scales):
-    sd = os.path.join(root, name + '.imagestack')
-    contents(sd, {"info": INFO, "layers": [{"filename": n + ".imagestacklayer"} for n in ("Front", "Middle", "Back")]})
-    for layer, fn in (("Front", front), ("Middle", middle), ("Back", back)):
-        ld = os.path.join(sd, layer + '.imagestacklayer')
-        contents(ld, {"info": INFO})
-        cd = os.path.join(ld, 'Content.imageset')
-        imgs = []
-        for sc in scales:
-            w, h = size[0] * sc, size[1] * sc
-            f = f"{layer.lower()}{'' if sc == 1 else '@%dx' % sc}.png"
-            write(os.path.join(cd, f), fn(w, h))
-            imgs.append({"filename": f, "idiom": "tv", "scale": f"{sc}x"})
-        contents(cd, {"images": imgs, "info": INFO})
-
-def shelf(root, name, size):
-    d = os.path.join(root, name + '.imageset')
-    imgs = []
-    for sc in (1, 2):
-        w, h = size[0] * sc, size[1] * sc
-        im = back(w, h); im.alpha_composite(middle(w, h, 11)); im.alpha_composite(front(w, h, title=True))
-        f = f"shelf{'' if sc == 1 else '@2x'}.png"
-        write(os.path.join(d, f), im.convert('RGB'))
-        imgs.append({"filename": f, "idiom": "tv", "scale": f"{sc}x"})
-    contents(d, {"images": imgs, "info": INFO})
-
-shutil.rmtree(OUT, ignore_errors=True)
-contents(OUT, {"info": INFO})
-ba = os.path.join(OUT, 'App Icon & Top Shelf Image.brandassets')
-contents(ba, {"assets": [
-    {"filename": "App Icon - App Store.imagestack", "idiom": "tv", "role": "primary-app-icon", "size": "1280x768"},
-    {"filename": "App Icon.imagestack", "idiom": "tv", "role": "primary-app-icon", "size": "400x240"},
-    {"filename": "Top Shelf Image Wide.imageset", "idiom": "tv", "role": "top-shelf-image-wide", "size": "2320x720"},
-    {"filename": "Top Shelf Image.imageset", "idiom": "tv", "role": "top-shelf-image", "size": "1920x720"},
-], "info": INFO})
-stack(ba, 'App Icon', (400, 240), (1, 2))
-stack(ba, 'App Icon - App Store', (1280, 768), (1,))
-shelf(ba, 'Top Shelf Image', (1920, 720))
-shelf(ba, 'Top Shelf Image Wide', (2320, 720))
-ai = os.path.join(OUT, 'AppIcon.appiconset')
-icon = back(1024, 1024); icon.alpha_composite(middle(1024, 1024)); icon.alpha_composite(front(1024, 1024))
-write(os.path.join(ai, 'icon-1024.png'), icon.convert('RGB'))
-contents(ai, {"images": [{"filename": "icon-1024.png", "idiom": "universal", "platform": "ios", "size": "1024x1024"}], "info": INFO})
-print('icons: tvOS stack + top shelf + iOS AppIcon -> App/Assets.xcassets')
+# the asset catalog itself (Contents.json, stacks, shelf, AppIcon): RetroKit
+OUT = sys.argv[1] if len(sys.argv) > 1 else OUT  # another folder: check a rerun without touching App/
+brandassets.build(OUT, back=back, middle=middle, front=front, shelf_middle=lambda w, h: middle(w, h, 11))
+print('icons: tvOS stack + top shelf + iOS AppIcon -> ' + os.path.relpath(OUT))

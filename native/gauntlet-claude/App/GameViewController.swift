@@ -8,6 +8,8 @@
 
 import UIKit
 import GameController
+import RetroKit
+import RetroKitApp
 
 #if os(tvOS)
 typealias BaseViewController = GCEventViewController
@@ -19,7 +21,7 @@ final class GameViewController: BaseViewController {
     enum Mode { case attract, select, play, pause, over }
 
     private let stage = UIView()
-    private let controls = Controls()
+    private let controls = Controls.gauntlet()
     private let synth = Synth.shared
     private let painter = Painter()
     private var link: CADisplayLink?
@@ -96,38 +98,22 @@ final class GameViewController: BaseViewController {
 
     private func launchOptions() {
         let d = UserDefaults.standard
-        if d.bool(forKey: "selfcheck") {
-            checkLines = ["SELF-CHECK RUNNING..."]
-            DispatchQueue.global(qos: .userInitiated).async {
-                let lines = GameViewController.selfCheck()
-                for l in lines { NSLog("GAUNTLET SELFCHECK %@", l); print("GAUNTLET SELFCHECK \(l)") }
-                fflush(stdout)
-                DispatchQueue.main.async { self.checkLines = lines }
-            }
-        }
+        SelfCheck.startIfAsked(tag: "GAUNTLET", check: GameViewController.selfCheck) { self.checkLines = $0 }
         let n = d.integer(forKey: "start")
         if n == 1 || n == 2 { seat2 = n == 2 ? "cpu" : "off"; startPlay(); watching = d.bool(forKey: "watch") }
     }
 
     static func selfCheck() -> [String] {
-        guard let dir = Bundle.main.resourceURL?.appendingPathComponent("traces"),
-              let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return ["NO BUNDLED TRACES"] }
-        var out: [String] = []
-        for n in names.filter({ !$0.hasSuffix(".trace.json") }).sorted() {
-            do {
-                let rec = try Recording(data: Data(contentsOf: dir.appendingPathComponent(n)))
-                let (states, mm) = replay(rec)
-                let g = try Data(contentsOf: dir.appendingPathComponent(n.replacingOccurrences(of: ".json", with: ".trace.json")))
-                let (ticks, fields, d) = try compare(golden: g, port: states)
-                if let d { out.append("DIVERGE \(n) TICK \(d.tick) \(d.field) GOLDEN \(d.golden) PORT \(d.port)") }
-                else { out.append("MATCH \(n) \(ticks)/\(ticks) TICKS, \(fields) FIELDS" + (mm == nil ? "" : " HASH DIFF \(mm!)")) }
-                if !n.contains("death") { // these pads ARE the web planner's answers
-                    if let why = plannerRaceOwnPads(rec) { out.append("DIVERGE PLANNER \(n) \(why)") }
-                    else { out.append("MATCH PLANNER \(n) \(rec.ticks)/\(rec.ticks) TICKS SAID WHAT PLANNER.JS SAID") }
-                }
-            } catch { out.append("ERROR \(n) \(error)") }
+        SelfCheck.goldens { n, data in
+            let rec = try Recording(data: data)
+            let (states, mm) = replay(rec)
+            var extra: [String] = []
+            if !n.contains("death") { // these pads ARE the web planner's answers
+                if let why = plannerRaceOwnPads(rec) { extra.append("DIVERGE PLANNER \(n) \(why)") }
+                else { extra.append("MATCH PLANNER \(n) \(rec.ticks)/\(rec.ticks) TICKS SAID WHAT PLANNER.JS SAID") }
+            }
+            return SelfCheck.Run(states: states, hashMismatch: mm, extra: extra)
         }
-        return out
     }
 
     // MARK: modes
