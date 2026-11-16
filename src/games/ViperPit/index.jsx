@@ -23,6 +23,7 @@ import { isWatchKey, playWatchStart, playWatchStop, watchSfxLog } from '../../ut
 import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
 import { createMatch, step, emptyPad, matchHash, fightersState, forceKO, propsState, FIXED_DT } from '../../engine/fighting.js'
 import { ROSTER, BY_ID, LADDER, introQuotes, koQuotes, voiceNotes } from './fighters.js'
+import { createHostSelect } from './netselect.js'
 import { createScene, buildFighter, buildStage, createPortraitRenderer, guardShimmer, guardShatter, SHIMMER_FRAMES, SHATTER_FRAMES } from './render.js'
 import { STAGES } from './stages.js'
 
@@ -136,7 +137,17 @@ const ViperPitGame = () => {
             latch.clear()
             return p
         }
-        const guestPick = { char: null }
+        // #2476: the online select-start gate as a pure state machine — the host
+        // may only launch once the guest's pick has landed over the wire.
+        const hostSelect = createHostSelect()
+        const sentPicks = { n: 0, ok: null }
+        const recvPicks = { n: 0 }
+        // #2476: the challenger's confirmed pick, kept so a socket that had to
+        // reconnect (the StrictMode ghost-close makes the first join race its own
+        // closing socket: `room full` → retry) RE-DECLARES the choice when it
+        // lands — a pick made while unseated used to evaporate, and a host that
+        // pressed FIGHT in the meantime would wait forever.
+        const myPick = { char: null }
 
         // ---- net (#1039 lobby + pad lockstep; the wire carries all nine verbs) ----
         const nq = new URLSearchParams(window.location.search)
@@ -159,7 +170,13 @@ const ViperPitGame = () => {
             joinHref: net.joinHref,
             names: ['HOST', 'CHALLENGER'],
         } : null)
-        const netSend = (t, m) => { if (net.room) { try { net.room.send(t, m) } catch { /* closed */ } } }
+        const netSend = (t, m) => { if (!net.room) return false; try { return net.room.send(t, m) } catch { return false } }
+        // The host is the launch authority; the seed keeps host authority (#531
+        // precedent), generated at the actual launch — which the #2476 gate
+        // defers until the guest's pick has arrived.
+        const launchNet = ({ hostChar, guestChar }) => {
+            net.lobby.start({ seed: (seedCounter = (seedCounter * 1103515245 + 12345) >>> 0), hostChar, guestChar })
+        }
 
         if (net.active) {
             const lobby = createLobby({
@@ -169,9 +186,24 @@ const ViperPitGame = () => {
                 makeTransport,
                 shareRelay: !!nq.get('relay'),
                 onState: (s) => { net.phase = s.phase; net.code = s.code; net.joinHref = s.joinHref; pushNetUi() },
-                onRoster: ({ slots }) => { net.seats = slots.slice(); pushNetUi() },
-                onJoin: () => pushNetUi(),
-                onLeave: () => pushNetUi(),
+                onRoster: ({ slots }) => {
+                    net.seats = slots.slice(); pushNetUi()
+                    // re-seated (or the roster just formed): re-declare the pick
+                    if (net.role === 'guest' && myPick.char) netSend('pick', { char: myPick.char })
+                },
+                onJoin: () => {
+                    // #2476: a new challenger's pick is fresh — drop anything the
+                    // last occupant of seat 1 left behind.
+                    if (net.role === 'host') hostSelect.reset()
+                    pushNetUi()
+                },
+                onLeave: () => {
+                    // #2476: no ghost waits — a challenger who leaves while the
+                    // host awaits their pick voids the pending launch; the host
+                    // presses FIGHT again and waits for the next pick.
+                    if (net.role === 'host') hostSelect.reset()
+                    pushNetUi()
+                },
                 onStart: (m) => {
                     const sd = m.seed >>> 0
                     const hostChar = m.hostChar || 'riv'
@@ -186,7 +218,16 @@ const ViperPitGame = () => {
                         peerH.set(k, h)
                         if (oursH.has(k) && oursH.get(k) !== h) { desyncRef.current = true; setDesync(true) }
                     },
-                    pick: (m) => { if (net.role === 'host') guestPick.char = m.char },
+                    pick: (m) => {
+                        // #2476: a pick that lands AFTER the host committed to
+                        // FIGHT is the moment the gate releases — launch now,
+                        // with the guest's real choice (never a placeholder).
+                        if (net.role === 'host') {
+                            recvPicks.n++
+                            const r = hostSelect.onPick(m.char)
+                            if (r.start && screenRef.current === 'select') launchNet(r.start)
+                        }
+                    },
                     gone: () => { if (screenRef.current === 'play') { desyncRef.current = true; setDesync(true) } },
                 },
             })
@@ -312,7 +353,7 @@ const ViperPitGame = () => {
         const atAttract = () => {
             seatOff(false) // #1637 the cabinet returns to the player
             pickLine = null
-            if (net.active) { setSc('select'); return }
+            if (net.active) { hostSelect.reset(); setSc('select'); return }
             p2Picked = false
             setSc('select')
         }
@@ -323,10 +364,15 @@ const ViperPitGame = () => {
             pickSting(c)
             if (net.active) {
                 if (net.role === 'host') {
-                    net.lobby.start({ seed: (seedCounter = (seedCounter * 1103515245 + 12345) >>> 0), hostChar: c.id, guestChar: guestPick.char || seededChar(seedCounter, c.id) })
+                    // #2476: the gate — a FIGHT press before the guest has
+                    // picked defers the start; onPick fires it when the pick
+                    // lands, so the guest's real choice always wins.
+                    const r = hostSelect.commit(c.id)
+                    if (r.start) launchNet(r.start)
                 } else {
-                    guestPick.char = c.id
-                    netSend('pick', { char: c.id })
+                    myPick.char = c.id
+                    sentPicks.ok = netSend('pick', { char: c.id })
+                    sentPicks.n++
                 }
                 return
             }
@@ -1040,7 +1086,9 @@ const ViperPitGame = () => {
                 hctx.textAlign = 'center'
                 hctx.fillStyle = 'rgba(255,255,255,0.9)'
                 hctx.fillText(net.active
-                    ? (net.role === 'host' ? `ROOM ${net.code} — SPACE: FIGHT` : 'WAITING FOR HOST…')
+                    ? (net.role === 'host'
+                        ? (hostSelect.waiting ? `ROOM ${net.code} — AWAITING CHALLENGER'S PICK…` : `ROOM ${net.code} — SPACE: FIGHT`)
+                        : 'WAITING FOR HOST…')
                     : `MODE: ${mode === 'local' ? (p2Picked ? 'P2 PICK' : 'P1 PICK') : 'STREET LADDER'} — 1/2 SWITCH · ARROWS · SPACE`, W / 2, H * 0.92)
                 ui(Math.max(9, H * 0.017))
                 hctx.fillStyle = 'rgba(140,145,170,0.9)'
@@ -1189,6 +1237,23 @@ const ViperPitGame = () => {
                 zoomOf(i) { return cardZoom[i | 0] ?? 0 },
                 hover(d) { hoverSelect(d | 0) },
                 pick() { atSelect() },
+                // #2476 net-select gate probe: seat characters + gate posture,
+                // so the harness can watch the deferral and the release.
+                netState() {
+                    return {
+                        role: net.role, phase: net.phase, code: net.code,
+                        waiting: hostSelect.waiting,
+                        chars: [p1Char, p2Char],
+                        screen: screenRef.current,
+                        gate: hostSelect.state,
+                        rphase: net.room ? net.room.phase : '-',
+                        seats: net.seats.slice(),
+                        wsState: ws ? ws.readyState : -1,
+                        sentPicks: sentPicks.n,
+                        recvPicks: recvPicks.n,
+                        lastSendOk: sentPicks.ok,
+                    }
+                },
                 cardRects() { return cardRects.slice() },
                 portraitStats() {
                     if (!portraits) return null
@@ -1374,7 +1439,12 @@ const ViperPitGame = () => {
             window.removeEventListener('resize', resize)
             wrap.removeEventListener('pointerdown', onPointer)
             guardRef.current = null
-            if (net.lobby && net.lobby.destroy) net.lobby.destroy()
+            // StrictMode (#2476): the first mount's socket must actually close,
+            // or it holds a seat the live mount can never fill (`room full`
+            // forever). `net.lobby.destroy` never existed; the proven teardown
+            // is room.reset() — it clears the retry and closes the ws
+            // (BlobBattle precedent, the pattern six other net games use).
+            if (net.room) { try { net.room.reset() } catch { /* gone */ } }
             if (import.meta.env.DEV) { unexposeGame(); unmountDbg(); delete window.__viperPitTest }
             scene.renderer.dispose()
             if (portraitR) portraitR.dispose()

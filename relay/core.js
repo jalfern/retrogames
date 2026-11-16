@@ -22,9 +22,14 @@ export const ROOM_CAP_MAX = 4
 // reusable ROOM layer (#845): 'roster' is server->all presence, 'go' host->all
 // kickoff, 'st' every-racer->others live state, 'fin' racer->host finish report,
 // 'res' host->all per-heat results, 'pod' host->all final podium, 'bye' graceful
-// leave. Every room type is forwarded to ALL OTHER members (see relay()), which
-// is what makes the same relay serve a 2P lockstep AND a 4P ghost race.
-export const FORWARD_TYPES = ['pad', 'hs', 'start', 'roster', 'go', 'st', 'fin', 'res', 'pod', 'bye']
+// leave. 'pick' (#2476) is the char-select handshake the fighting cabinets run
+// (ViperPit, IronRing): challenger -> host, before 'go'. It was missing from
+// the allowlist, so the relay silently dropped every challenger pick — the
+// gate and README both believed the packet shipped; only the two-Chrome live
+// drive (vipernet) could see it. Every room type is forwarded to ALL OTHER
+// members (see relay()), which is what makes the same relay serve a 2P
+// lockstep AND a 4P ghost race.
+export const FORWARD_TYPES = ['pad', 'hs', 'start', 'roster', 'go', 'st', 'fin', 'res', 'pod', 'bye', 'pick']
 
 export function makeCode(rand) {
     let s = ''
