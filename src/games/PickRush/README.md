@@ -95,7 +95,7 @@ to one shift's waves; `amb` flattens the ambience eras (#2234); named gates go r
   (Note corrected #2234: this no longer "waits on #1141" — that kit SHIPPED;
   what's left is wiring PICK RUSH drops through `scripts/plaicraft-export.mjs`,
   an episode-pipeline task, not a feel task.)
-- No second on-screen touchpad for seat 2 (Jon's rule — keyboard-only 2P).
+- **DISCLAIMER** — No second on-screen touchpad for seat 2 (Jon's rule — keyboard-only 2P).
 - Sound is event-synthesized; no per-shift ambience change yet. — **CLOSED by
   #2234** (`ambience.js`: three eras keyed to the shift — early floor with a
   distant forklift chirp + far metal roll, glass era adds a pneumatic hiss and

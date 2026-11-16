@@ -464,4 +464,6 @@ The #419 "not yet cups" landed. `cup.js` holds the whole mode as pure rules:
 - Banking cue (#502 item 4): `bankAt(i)` in track.js is the shared measure
   (smoothed |curvature| / BANK_K); `bankRimDefs()` paints dark rim-shadow dots
   on the outside of banked bends in the ground bake, so Sandbank's bowl leans
-  before the tyres do. Gated in cometcheck.
+  before the tyres do. Gated in cometcheck. — **CLOSED by #706** (merge
+  `d393eef`; this bullet described the shipped work and lacked the marker,
+  #961 pattern — marker added by #2488).

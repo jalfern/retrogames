@@ -201,6 +201,32 @@ ok(parseGaps('## Honest gaps\n- live gap one here\n- dumb mirror law — **BLOCK
     'BLOCKED: a fidelity-declined gap must not score for the never-dry ladder')
 ok(parseGaps('## Honest gaps\n- a gap merely mentioning that something was blocked in review\n').length === 1,
     'BLOCKED: the bare word must not decline a gap — only the bold marker does')
+
+// **DISCLAIMER** (#2488): documented judgement calls — solver disclaimers,
+// decided states, Jon-rule non-features — stay honest prose but off the ladder.
+ok(parseGaps('## Honest gaps\n- live gap one here\n- slack rule cannot apply — **DISCLAIMER**, RTA title.\n').length === 1,
+    'DISCLAIMER: a documented judgement call must not score for the never-dry ladder')
+ok(parseGaps('## Honest gaps\n- a gap that merely disclaims a shortcut in review prose\n').length === 1,
+    'DISCLAIMER: the bare word must not decline a gap — only the bold marker does')
+{
+    // the real READMEs #2488 classified: none may score again, and the
+    // stale-closure markers must hold the shipped work down permanently.
+    const gapsOf = (d) => parseGaps(read(`../src/games/${d}/README.md`))
+    ok(gapsOf('GardenGuard').length === 0,
+        '#2488: GardenGuard gaps are disclaimers — nothing on that shelf may score')
+    ok(!gapsOf('TenDeep').some((s) => /between-run persistence/i.test(s)),
+        '#2488: TenDeep statelessness was DECIDED (#2321) — it must not score')
+    ok(!gapsOf('PickRush').some((s) => /second on-screen touchpad/i.test(s)),
+        "#2488: no second pad is Jon's rule — a non-feature must not score")
+    ok(!gapsOf('TidyBot').some((s) => /wash-cycle hum/i.test(s)),
+        '#2488: TidyBot wash hum shipped in #2283 — the CLOSED marker must hold')
+    ok(!gapsOf('CometDrift').some((s) => /banking cue/i.test(s)),
+        '#2488: CometDrift banking cue shipped in #706 — the CLOSED marker must hold')
+    ok(gapsOf('BoulderDash').length === 0,
+        '#2488: BoulderDash transport prose justifies itself clause by clause (strand test) — nothing scores')
+    ok(!gapsOf('Dogfight').some((s) => /Circus can be won at hp 1/i.test(s)),
+        '#2488: Dogfight hp-1 Circus is documented intent with a Jon-gated knob — it must not score')
+}
 ok(!REAL_GAPS.Emberwood.some((s) => /portrait/i.test(s)),
     '#961: Emberwood honest-gaps re-grew the shipped #959/#960 portrait-full-bleed note')
 const firstGapOwned = (game) => QA(900, game, FIX_GAPS[game][0])

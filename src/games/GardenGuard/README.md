@@ -95,13 +95,14 @@ lamps (now real scarecrows, grey when spent, with five pips in the HUD), and
 there was no in-play how-to (a first-wave hint line until the first plant).
 
 ## Honest gaps
-- **No puzzle-slack solver.** This is a real-time strategy title, not a
+- **DISCLAIMER** — **No puzzle-slack solver.** This is a real-time strategy title, not a
   deterministic puzzle with a perfect solver, so FORGE's slack rule (re-solve
   every level with one fewer supply) does not apply — there is no closed-form
   solution to shrink. Winnability is instead proven by the depth-first autopilot
-  clearing all five levels on five seeds.
-- Sun drops auto-bank shortly after landing (tap to bank sooner). This is the
-  mobile-friendly choice, and keeps the bot/harness able to drive the economy.
+  clearing all five levels on five seeds. (#2488: a solver disclaimer, not work.)
+- **DISCLAIMER** — Sun drops auto-bank shortly after landing (tap to bank sooner).
+  This is the mobile-friendly choice, and keeps the bot/harness able to drive
+  the economy. (#2488: a documented design decision, not work.)
 - Card art in the tray reuses the small defender icons; portrait frames are
   deliberately simple. **CLOSED by #2328** — cards are now posed portraits on
   soil under dusk skies, in beveled riveted frames (see `art.js`

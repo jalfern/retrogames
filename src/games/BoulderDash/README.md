@@ -271,7 +271,7 @@ slide resumes only on ground.
   simplification). (The
   fall-and-keep-sliding half of the push-wall family landed in #2468 —
   see Wall momentum above; SLIDERS LEDGE proves it live.)
-- The butterfly (#2453) flits, and since #2463 it also *carries* (SILK GULCH).
+- **DISCLAIMER** — The butterfly (#2453) flits, and since #2463 it also *carries* (SILK GULCH).
   Honest simplifications of the transport: the burden perishes at the drop
   (the originals' carriers could also be shot down mid-air — nothing shoots
   here), one gem per bearer, and the load is chosen by the level (a born-loaded
