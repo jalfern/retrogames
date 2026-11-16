@@ -98,10 +98,19 @@ faster heat.
   LANE block + 6 lane mutants; SUPERCROSS witnesses re-recorded (the
   autopilot re-learned five forced passes as clean line choices), MOTOCROSS
   pinned byte-identical (maxLane 0 — the axis never engages there).
-- Rivals never INITIATE a line change: they ride line 0 and only spread when
-  a rub shoves them. Active pack bargaining — dive-bombing a gap, defending
-  a lane, choosing the outside into a corner — remains open; the axis made
-  the PLAYER's line choices real, the pack's are still pace-line politics.
+- **CLOSED by #2460:** PACK BARGAINING — rivals now INITIATE line changes.
+  A grounded rival behind you at matched speed (the rub band) that sees you
+  settled off the league home LATCHES onto your line and walks onto it
+  (skill-scaled: MARIO crowds, IVAN rides his line), stopping AT it and
+  tracking you there. The duel pauses (no motion, no cool-down) while either
+  rider flies or a wreck sits in the hazard read — ground before lines, and
+  bumpy ground never ends a duel for three seconds; a real break (out-pace,
+  slide-past, line-back) cools it (`bargCool`) before the rider dares again.
+  Lateral only: v and d never move (pin: bargK=0 trace-identical), and
+  engaging needs the rub band, so a bargained pass can only end in a rub or a
+  clean line break — the CRASH LEAGUE receipts stand. Proven by the
+  excitecheck BARGAIN block (engage/monitor/hazard-refusal/release-cooldown/
+  skill-grade/receipts) + 4 bargain mutants.
 - The NES splash screen (EDIT TRACK / 6 tracks) is not here: two carved
   tracks, 2 laps each, which is where the fidelity muscle (controls,
   feel, terrain) actually lives.

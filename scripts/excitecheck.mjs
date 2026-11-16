@@ -734,6 +734,127 @@ section('LANE (the axis is real — same-line law, cross-line draft, #2457)')
     }
 }
 
+// ------------------------------------------------ bargain (#2460 item 1) ----
+section('BARGAIN (the pack contests your line — #2460)')
+{
+    const bargRig = (o = {}) => {
+        const g = makeGame(0, { count: 0 })
+        const tr = track(0)
+        const q = g.rivals.find((r) => r.name === 'KATO')
+        g.x = 2000; g.total = 2000
+        g.alt = groundY(tr.ground, 2000); g.v = o.v ?? 5
+        g.lane = o.lane ?? 0.5
+        q.d = 2000 - (o.behind ?? 30); q.v = o.rv ?? 5; q.down = 0; q.cool = 0; q.tk = 0
+        q.alt = groundY(tr.ground, ((q.d % LAP) + LAP) % LAP); q.lane = 0
+        // keep the pair firmly on the ground: the duel law deliberately rests
+        // while riders fly (no line changes in the air), so pins hold BOTH
+        // wheels down to probe the law itself, not the air cadence.
+        const pin = () => {
+            g.air = false; g.vy = 0; g.alt = groundY(tr.ground, g.x)
+            q.air = false; q.vy = 0; q.alt = groundY(tr.ground, ((q.d % LAP) + LAP) % LAP)
+        }
+        return { g, q, pin }
+    }
+    // the contest: a matched-speed rider behind, you settle onto the far line
+    // — KATO LATCHES (a bargain event) and walks onto your line, stopping AT
+    // it. He stays ~20px back (outside the body box) so the mirror is honest
+    // pack-craft, not contact theatre.
+    {
+        const { g, q, pin } = bargRig({})
+        let engaged = false, mono = true, prev = 0
+        for (let t = 1; t <= 70; t++) {
+            g.v = 5; q.v = 5; pin()
+            step(g, {})
+            if (g.events.some((e) => e.type === 'bargain' && e.name === 'KATO')) engaged = true
+            if (q.lane < prev - 1e-12) mono = false
+            prev = q.lane
+            g.events.length = 0
+        }
+        ok(engaged, 'no rival ever contested the far line — the pack still holds its lines (#2460)')
+        ok(mono && q.lane === 0.5, `the bargainer reached ${q.lane.toFixed(3)} (monotone ${mono}), want the mirror parked exactly on line 0.500`)
+        ok(q.lane <= 0.5 + 1e-12, 'the bargainer crossed past the player line — mirroring, not cutting off')
+    }
+    // fairness: out-pace the duel and the line is yours — a 0.5/5 pair never
+    // latches (|relV| > the rub band), so no new contact physics is invented.
+    {
+        const { g, q } = bargRig({ v: 5.5 })
+        let n = 0
+        for (let t = 1; t <= 40; t++) {
+            g.v = 5.5; q.v = 5
+            step(g, {})
+            n += g.events.filter((e) => e.type === 'bargain').length
+            g.events.length = 0
+        }
+        ok(n === 0 && q.lane === 0, `a faster pass got contested anyway (${n} bargains, lane ${q.lane.toFixed(2)}) — bargaining must be speed-matched only`)
+    }
+    // hazard refusal: a downed body inside KATO's read window outranks your
+    // line — ground before lines. (The body sits at gap 30 of a react ~39.)
+    {
+        const { g, q, pin } = bargRig({})
+        const iv = g.rivals.find((r) => r.name === 'IVAN')
+        iv.d = q.d + 30; iv.alt = groundY(track(0).ground, ((iv.d % LAP) + LAP) % LAP); iv.down = 60; iv.v = 0; iv.cool = 0
+        let n = 0, moved = 0
+        for (let t = 1; t <= 3; t++) {     // gaps 30→24.8→19.6 all inside [hazMin, react]
+            g.v = 5; q.v = 5; pin()
+            step(g, {})
+            n += g.events.filter((e) => e.type === 'bargain').length
+            moved = Math.max(moved, q.lane)
+            g.events.length = 0
+        }
+        ok(n === 0 && moved === 0, `a rider contested while reading a wreck (${n} bargains, lane ${moved.toFixed(2)}) — hazard reads must outrank line choice`)
+    }
+    // release + cooldown: bring your line back and the duel is over; the
+    // released rider cools on its own line (bargCool) before it dares again.
+    {
+        const { g, q, pin } = bargRig({})
+        for (let t = 1; t <= 20; t++) { g.v = 5; q.v = 5; pin(); step(g, {}); g.events.length = 0 }
+        const peak = q.lane
+        ok(peak > 0.05, `no mirror after 20 matched ticks (${peak.toFixed(3)}) — the engage side of the duel is dead`)
+        for (let t = 1; t <= 2; t++) { g.lane = 0; g.v = 5; q.v = 5; pin(); step(g, {}); g.events.length = 0 }
+        let n2 = 0
+        for (let t = 1; t <= 40; t++) {
+            g.lane = 0.5; g.v = 5; q.v = 5; pin()
+            step(g, {})
+            n2 += g.events.filter((e) => e.type === 'bargain').length
+            g.events.length = 0
+        }
+        ok(n2 === 0 && q.lane < peak, `a released rival re-latched immediately (${n2} bargains, lane ${q.lane.toFixed(3)}) — the cooldown is paint`)
+    }
+    // skill grades the contest: MARIO crowds you hard, IVAN rides his line.
+    {
+        const g = makeGame(0, { count: 0 })
+        const tr = track(0)
+        const m = g.rivals.find((r) => r.name === 'MARIO')
+        const iv = g.rivals.find((r) => r.name === 'IVAN')
+        g.x = 2000; g.total = 2000; g.alt = groundY(tr.ground, 2000); g.v = 5; g.lane = 0.5
+        m.d = 1970; m.v = 5; m.alt = groundY(tr.ground, 1970); m.lane = 0; m.cool = 0
+        iv.d = 1940; iv.v = 5; iv.alt = groundY(tr.ground, 1940); iv.lane = 0; iv.cool = 0
+        for (let t = 1; t <= 30; t++) {
+            g.v = 5; m.v = 5; iv.v = 5
+            g.air = false; g.vy = 0; g.alt = groundY(tr.ground, g.x)
+            m.air = false; m.vy = 0; m.alt = groundY(tr.ground, m.d % LAP)
+            iv.air = false; iv.vy = 0; iv.alt = groundY(tr.ground, iv.d % LAP)
+            step(g, {}); g.events.length = 0
+        }
+        ok(m.lane > 0.1 && iv.lane > 0.04 && m.lane > iv.lane * 1.3,
+            `skill did not grade the contest (MARIO ${m.lane.toFixed(3)} vs IVAN ${iv.lane.toFixed(3)}) — every rider bargains the same`)
+    }
+    // receipts: the duel is LATERAL ONLY — the same rig with bargK=0 must
+    // leave every v, d and score byte-for-byte where the CRASH LEAGUE left it.
+    {
+        const traceOf = (bargK) => {
+            const save = CFG.bargK
+            CFG.bargK = bargK
+            const { g, q, pin } = bargRig({})
+            const out = []
+            for (let t = 1; t <= 60; t++) { pin(); step(g, {}); out.push(`${q.d.toFixed(6)}|${q.v.toFixed(6)}|${g.total.toFixed(6)}|${g.score}`); g.events.length = 0 }
+            CFG.bargK = save
+            return out.join('_')
+        }
+        ok(traceOf(1) === traceOf(0), 'bargaining moved v or d — the CRASH LEAGUE receipts must not feel the duel')
+    }
+}
+
 // ------------------------------------------------------- rules the game promised ----
 section('RULES THE CARTRIDGE PROMISED')
 {
@@ -1165,6 +1286,45 @@ if (MUT) {
         }
         return rubs === 1   // baseline: one bite, then the shove has them abreast; snaps-home: bites per rubCool
     })
+    // ---- bargain mutants (#2460) — each edits one load-bearing clause ----
+    const bargRigM = (o = {}) => {
+        const g = makeGame(0, { count: 0 })
+        const tr = track(0)
+        const q = g.rivals.find((r) => r.name === 'KATO')
+        g.x = 2000; g.total = 2000
+        g.alt = groundY(tr.ground, 2000); g.v = o.v ?? 5
+        g.lane = o.lane ?? 0.5
+        q.d = 2000 - (o.behind ?? 30); q.v = o.rv ?? 5; q.down = 0; q.cool = 0; q.tk = 0
+        q.alt = groundY(tr.ground, ((q.d % LAP) + LAP) % LAP); q.lane = 0
+        const pin = () => {
+            g.air = false; g.vy = 0; g.alt = groundY(tr.ground, g.x)
+            q.air = false; q.vy = 0; q.alt = groundY(tr.ground, ((q.d % LAP) + LAP) % LAP)
+        }
+        return { g, q, pin }
+    }
+    const probeBargain = () => {
+        const { g, q, pin } = bargRigM({})
+        let eng = false
+        for (let t = 1; t <= 70; t++) {
+            g.v = 5; q.v = 5; pin()
+            step(g, {})
+            if (g.events.some((e) => e.type === 'bargain' && e.name === 'KATO')) eng = true
+            g.events.length = 0
+        }
+        return eng && q.lane === 0.5
+    }
+    const probeHazStays = () => {
+        const { g, q, pin } = bargRigM({})
+        const iv = g.rivals.find((r) => r.name === 'IVAN')
+        iv.d = q.d + 30; iv.alt = groundY(track(0).ground, ((iv.d % LAP) + LAP) % LAP); iv.down = 60; iv.v = 0; iv.cool = 0
+        let moved = 0
+        for (let t = 1; t <= 3; t++) { g.v = 5; q.v = 5; pin(); step(g, {}); moved = Math.max(moved, q.lane); g.events.length = 0 }
+        return moved === 0
+    }
+    tryMut('bargK=0 (the pack never bargains — #2460)', flat({ bargK: 0 }), probeBargain)
+    tryMut('bargRate=0 (bargaining is theatre)', flat({ bargRate: 0 }), probeBargain)
+    tryMut('bargRange=0 (blind to your gap)', flat({ bargRange: 0 }), probeBargain)
+    tryMut('bargain ignores hazard reads (lines outrank ground)', flat({ hazBase: 0, hazSkill: 0 }), probeHazStays)
 }
 
 console.log(`\nexcitecheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)
