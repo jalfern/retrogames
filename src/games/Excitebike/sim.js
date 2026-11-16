@@ -129,6 +129,21 @@ export const CFG = {
     laneHome: 0.004,                     // rivals ease back to line 0 (the pinned league line)
     laneScrape: 0.045,                   // px/tick the player bleeds while rubbing
     rubCool: 12,                         // ticks between rub bites (one scrape per bite, not per tick)
+    // PACK BARGAINING (#2460): a speed-matched rival BEHIND you does not just
+    // hold its pace line — if you settled onto a different line, it LATCHES
+    // onto yours and closes the gap you took. Lateral only: v and d never
+    // move, so the CRASH LEAGUE receipts stand. The latch needs a clear hazard
+    // read (the same downed/held-body scan the hop commits to — a rider reads
+    // the ground before it reads your line), releases when the geometry breaks
+    // (you out-accelerate it, take the line back, or it gets shoved off by a
+    // rub), and cools before re-engaging, so the contest is a duell, not a
+    // clamp. Riders contest in proportion to skill — MARIO crowds you, IVAN
+    // rides his line. bargK is the harness mutant knob: 0 restores the silent
+    // hold-the-line pack byte-identical.
+    bargK: 1,
+    bargRate: 0.010,                     // lines/tick at skill 1 (player steers at 0.02 — counterplay always wins)
+    bargRange: 140,                      // px of track behind you it will bargain over
+    bargCool: 200,                       // ticks a released rival holds its line before it dares again
     clock: 70,                             // start clock, seconds
     lapBonus: 34,                          // seconds at the line
     laps: 2,
@@ -177,6 +192,7 @@ export function makeGame(trackIdx = 0, opts = {}) {
             tk: 0, flown: false,          // contact cooldown / flyby-once flag (#2391)
             held: 0,                     // blocked behind a body (#2420) — brake latch
             lane: 0, rk: 0,             // #2457 lateral line / rub bite cooldown
+            bg: 0, latch: false,       // #2460 bargain cooldown / active line-contest flag
         })),
         // #2420: one-drama-per-PAIR matrix (i*N+j and j*N+i), the contactCool
         // law extended to rival-vs-rival. Int ticks, decremented in pack().
@@ -225,10 +241,57 @@ function rivalTick(g) {
     for (const r of g.rivals) {
         if (r.cool > 0) r.cool--
         if (r.rk > 0) r.rk--
+        if (r.bg > 0) r.bg--
+        // PACK BARGAINING (#2460): the gap you took, the pack answers. A
+        // grounded rival BEHIND you at matched speed (the rub band — a latch
+        // can therefore only ever end in a rub or a clean line break, never a
+        // new crash) that sees you settled on a line OFF the league home
+        // LATCHES onto yours: it walks onto your line, stops AT it, and tracks
+        // you there while the match lasts — the gap is contested, not given.
+        // Engaging needs a full line of daylight (laneTouch) and a clear hazard
+        // read (ground before lines). The duel PAUSES while either rider is
+        // airborne or reading a wreck (no motion, no hard feelings — bumpy
+        // ground must not end the duel for three seconds at every hop), and
+        // only a real break — you out-pace it, it slides past, or you take the
+        // league line back — cools it before it dares again.
+        let contest = false
+        let mover = false
+        if (CFG.bargK && CFG.laneK && r.down <= 0 && r.held <= 0 && r.cool <= 0 &&
+            r.v > 1 && g.crash === 0 && (r.latch || r.bg === 0)) {
+            const behind = g.total - r.d
+            const rel = g.v - r.v
+            const wantLine = g.lane >= CFG.laneTouch              // you drove out of his home line
+            const distOK = r.latch ? behind >= -10 && behind <= CFG.bargRange
+                : behind > 4 && behind <= CFG.bargRange
+            const lineOK = r.latch || Math.abs(g.lane - r.lane) >= CFG.laneTouch
+            if (wantLine && distOK && lineOK && Math.abs(rel) <= 0.3) {
+                const react = r.v * (CFG.hazBase + CFG.hazSkill * r.skill)
+                let busy = false
+                for (const q of g.rivals) {
+                    if (q === r) continue
+                    if (q.down <= 0 && q.held <= 0) continue
+                    const gq = q.d - r.d
+                    if (gq >= CFG.hazMin && gq <= react) { busy = true; break }
+                }
+                if (!busy) { contest = true; mover = !g.air && !r.air }
+            }
+        }
+        if (contest && !r.latch) emit(g, { type: 'bargain', name: r.name, x: ((r.d % LAP) + LAP) % LAP })
+        if (!contest && r.latch) r.bg = CFG.bargCool
+        r.latch = contest
         // #2457: a shoved rival drifts back to the league line over ~30
         // ticks — enough for the pass it was shoved for, and home again
         // before the next lap's chain (the CRASH LEAGUE receipts ride line 0).
-        if (CFG.laneK && r.lane !== 0) r.lane = r.lane * (1 - CFG.laneHome)
+        if (mover) {
+            // contest: pull onto the player's line, skill-scaled, and stop
+            // AT it — a bargainer mirrors your line, it does not cut you off.
+            const want = g.lane
+            const stepB = CFG.bargRate * r.skill
+            const dir = want > r.lane ? 1 : -1
+            r.lane = Math.abs(want - r.lane) <= stepB ? want : r.lane + stepB * dir
+        } else if (!contest && CFG.laneK && r.lane !== 0) {
+            r.lane = r.lane * (1 - CFG.laneHome)
+        }
         if (r.held > 0) { r.held--; r.v = 0; r.alt = groundY(tr.ground, r.d); r.air = false; r.vy = 0; continue }
         if (r.down > 0) {
             r.down--
