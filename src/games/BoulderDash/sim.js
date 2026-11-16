@@ -69,7 +69,12 @@ export const PUSHWALL = 9
 export const AMO_CLASSIC = 0
 export const AMO_TWOPHASE = 1
 export const AMO_DROP = 2
-export const AMO_VARIANT = { classic: AMO_CLASSIC, twophase: AMO_TWOPHASE, drop: AMO_DROP }
+// #2444 — the multi-head wave: a fork head advances AND plants a perpendicular
+// sibling head at the same cell, so ONE origin grows several independently-
+// cornering fingers that reach around obstacles and enclose space — the "rarer
+// multi-head wave shape" the README said was missing. Still one automaton.
+export const AMO_FORK = 3
+export const AMO_VARIANT = { classic: AMO_CLASSIC, twophase: AMO_TWOPHASE, drop: AMO_DROP, fork: AMO_FORK }
 // Direction order for slime heads: index 0..3 clockwise from east, so a left
 // turn is +3 and a right turn is +1, and the 180° mirror of a wave is +2.
 export const AMO_D4 = [[1, 0], [0, 1], [-1, 0], [0, -1]]
@@ -97,6 +102,8 @@ export const CFG = {
     amoGens: 8,                       // generations a body cell survives — the wave's length
     amoTurn: true,                    // #2428: the two-phase gait — heads corner 90° on the off phase
     amoDrop: true,                    // #2428: the dropper variant — down is the head's first offer
+    amoFork: true,                    // #2444: the fork variant — a head plants a perpendicular sibling
+    amoForkMax: 4,                  // …but at most this many live heads per wave (containment, see dashcheck)
     push: true,                       // #2411: push walls slide sideways one cell per shove
     pushCrush: true,                  // …and crush whatever rock stands in the way
 }
@@ -405,6 +412,16 @@ function amoeba(g) {
     const pass = g.amoPass
     const turn = CFG.amoTurn
     const drop = CFG.amoDrop
+    const fork = CFG.amoFork
+    // Live front heads per wave entering this pass — the fork cap reads this so
+    // a wave that has reached its head budget advances only (containment law).
+    const fronts = new Map()
+    if (fork) for (let i = 0; i < g.grid.length; i++) {
+        if (g.grid[i] === AMO_HEAD && g.amoGen[i] === pass - 1) { const w = g.amoWave[i]; fronts.set(w, (fronts.get(w) || 0) + 1) }
+    }
+    // one fork per wave per pass — a wave climbs toward its head budget one
+    // finger at a time, so the cap is a hard ceiling, not a soft target.
+    const forked = new Set()
     const claimsByWave = new Map()
     for (let i = 0; i < g.grid.length; i++) {
         if (!isAmo(g.grid[i]) || g.amoGen[i] !== pass - 1) continue   // heads only
@@ -461,6 +478,35 @@ function amoeba(g) {
             // up then down, children inherit the parent's heading
             claim(x + AMO_D4[3][0], y + AMO_D4[3][1], k)
             claim(x + AMO_D4[1][0], y + AMO_D4[1][1], k)
+            continue
+        }
+        if (v === AMO_FORK && fork) {
+            // MULTI-HEAD — the BD amoeba that FORKS. The head advances on the
+            // same persisted-corner rule as the two-phase gait, THEN plants one
+            // perpendicular sibling head at THIS cell (right offer first, then
+            // left) so a single origin sprouts fingers that reach around a pillar
+            // and enclose space. Each head carries its own heading and corners on
+            // its own next pass, so the blob grows several fronts at once — the
+            // "rarer multi-head wave shape". Honest containment: growth claims
+            // only EMPTY/DIAMOND, and a wave caps its live fronts at
+            // CFG.amoForkMax, so past the budget it ADVANCES without forking and
+            // the tail dissolves behind it (#2411's never-fills law, multi-head).
+            const d = AMO_D4[k]
+            const free = (dx, dy) => { const tt = cell(g, x + dx, y + dy); return tt === EMPTY || tt === DIAMOND }
+            let use = k
+            if (!free(d[0], d[1])) {
+                for (const pk of perpOf(k)) { const p = AMO_D4[pk]; if (free(p[0], p[1])) { use = pk; break } }
+                if (use !== k) g.events.push({ type: 'amoTurn', x, y, w })
+            }
+            const u = AMO_D4[use]
+            claim(x + u[0], y + u[1], use)
+            // then fork one perpendicular sibling from THIS cell — even on a pass
+            // where the front also advanced (that is what makes it multi-headed).
+            // One fork per wave per pass, and none past the head budget, so the
+            // wave climbs to CFG.amoForkMax fingers and holds there (hard ceiling).
+            if ((fronts.get(w) || 0) < CFG.amoForkMax && !forked.has(w)) {
+                for (const pk of perpOf(use)) { const p = AMO_D4[pk]; if (claim(x + p[0], y + p[1], pk)) { g.events.push({ type: 'amoFork', x, y, w }); forked.add(w); break } }
+            }
             continue
         }
         // classic (and any variant whose switch is silenced — the wave falls

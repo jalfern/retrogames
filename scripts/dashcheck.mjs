@@ -40,6 +40,7 @@ const TOKEN = {
     dig: 'dig', fell: 'fell', roll: 'roll', convert: 'gemlost', fly: 'ignite', burn: 'spread',
     push: 'push', crush: 'crush', amoeba: 'amoeba', dissolve: 'dissolve',
     gait: 'amoTurn', pour: 'amoDrop', vise: 'mirror',        // #2428 variant receipts
+    fork: 'amoFork',                                          // #2444 multi-head receipt
 }
 
 let pass = 0
@@ -62,6 +63,7 @@ const MUTANTS = {
     amoeba: 'the slime stops growing — the wave never crosses its pocket, never eats the bait',
     amoTurn: 'the two-phase head stops cornering — the wave leaks perpendiculars like classic and never walks its square-corner gait',
     amoDrop: 'the dropper stops preferring down — it never pours into the shaft below it',
+    amoFork: 'the fork head stops planting siblings — the wave grows one finger like classic and never wraps the pillar (multi-head is dead)',
     push: 'push walls stop sliding — SLIME VAULT stays bolted shut',
     pushCrush: 'walls stop crushing rocks — the boulder chokes the choke corridor forever',
 }
@@ -517,6 +519,84 @@ for (let i = 0; i < LEVELS.length; i++) {
         ok(lids.length > 0, 'GOO GALLERY ships no lid telegraph — three open pockets hide under plain rock')
         ok(lids.every(([x, y]) => grid[y * W + x] === DIRT && grid[(y + 1) * W + x] !== DIRT),
             'a GOO GALLERY lid-marked cell is not dirt capping pocket air — the green telegraph would sit over the wrong rock')
+    }
+}
+
+// ------------------------------------------------ MULTI-HEAD AMOEBA (#2444) pins ----
+{
+    section('MULTI-HEAD AMOEBA (#2444) — one origin, several fingers: the fork, the wrap, the cap, the dissolve')
+
+    const mk2 = (ops, player, lv = {}) => {
+        const g = new Uint8Array(W * H).fill(DIRT)
+        for (let x = 0; x < W; x++) { g[x] = STEEL; g[(H - 1) * W + x] = STEEL }
+        for (let y = 0; y < H; y++) { g[y * W] = STEEL; g[y * W + W - 1] = STEEL }
+        for (const [x, y, t] of ops) g[y * W + x] = t
+        const meta = { spawn: { x: player[0], y: player[1] }, exit: { x: player[0], y: player[1] }, need: 1, timeTicks: 600, flies: [], ...lv }
+        return sim.makeGame(meta, g)
+    }
+    const isAmo2 = (t) => t === AMO_HEAD || t === AMO_BODY
+
+    // THE WRAP: a vertical wall (col 13, rows 3..8) cuts an open room, with a gap
+    // at the top and bottom. A single-finger wave stalls at the wall; a fork wave
+    // sprouts heads that corner and reach the far side through a gap. The wall
+    // cells themselves must stay DIRT — slime eats only EMPTY/DIAMOND. The player
+    // parks in a sealed nook so its death never truncates the growth we measure.
+    {
+        const room = [[13, 2, EMPTY], [13, 9, EMPTY]]   // the two gaps over/under the wall
+        for (let x = 10; x <= 18; x++) for (let y = 2; y <= 9; y++) if (x !== 13) room.push([x, y, EMPTY])
+        const wall = [[13, 3], [13, 4], [13, 5], [13, 6], [13, 7], [13, 8]]   // stay DIRT; coords for the assertion
+        const g = mk2(room, [2, 2], { amoebaDir: [1, 0], amoebaVariant: 'fork', amoebas: [{ cells: [[11, 6]], dir: [1, 0], variant: 'fork' }] })
+        const forks = []
+        let maxFronts = 1, distinctDirsEver = new Set(), pastAny = false, peak = 0, cleared = false
+        for (let t = 0; t < sim.CFG.amoEvery * 60; t++) {
+            sim.step(g)
+            for (const e of g.events) if (e.type === 'amoFork') forks.push(e)
+            let n = 0, frontsNow = 0, dirs = new Set()
+            for (let i = 0; i < g.grid.length; i++) {
+                if (g.grid[i] === AMO_HEAD) { dirs.add(g.amoHead[i]); if (g.amoGen[i] === g.amoPass) frontsNow++ }
+                if (isAmo2(g.grid[i])) {
+                    n++
+                    const x = i % W, y = (i - x) / W
+                    if (x >= 14) pastAny = true
+                }
+            }
+            maxFronts = Math.max(maxFronts, frontsNow)
+            peak = Math.max(peak, n)
+            if (peak > 6 && n === 0) cleared = true
+            distinctDirsEver = new Set([...distinctDirsEver, ...dirs])
+        }
+        ok(forks.length >= 1, 'the fork head never planted a sibling — the wave grew one finger; multi-head is dead')
+        ok(maxFronts >= 2, `the wave never held more than ${maxFronts} front head(s) at once — it is single-fingered, not multi-head`)
+        ok(distinctDirsEver.size >= 2, `the fingers never diverged in heading (${[...distinctDirsEver]}) — a blob that only grows one way is a line, not a creature`)
+        ok(pastAny, 'the wave never reached the far side of the wall — a fork wave corners and grows AROUND an obstacle')
+        ok(wall.every(([x, y]) => g.grid[y * W + x] === DIRT), 'slime grew THROUGH the rock wall — growth claims only EMPTY/DIAMOND, never DIRT')
+        ok(maxFronts <= sim.CFG.amoForkMax, `the wave grew ${maxFronts} front heads over the cap ${sim.CFG.amoForkMax} — the containment budget is not a hard ceiling`)
+        ok(cleared, `the fork wave never dissolved (peak ${peak}) — generations must empty it (the #2411 never-fills law holds even for multi-head)`)
+    }
+
+    // CONTAINMENT on the real cave: across the planner win-run of FORK BASIN the
+    // blob never crosses its dirt ring, never touches the harvest seam at row 18
+    // or the exit, and the cave is winnable with the fork live.
+    {
+        const { meta, grid } = buildLevel(6)
+        const g = sim.makeGame(meta, grid)
+        let viol = null, peak = 0
+        while (!g.end && g.tick < meta.timeTicks) {
+            if (g.tick % CFG.moveEvery === 0) { const d = sim.planStep(g); if (d) sim.playerMove(g, d) }
+            sim.step(g)
+            let n = 0
+            for (let i = 0; i < g.grid.length; i++) {
+                if (!isAmo2(g.grid[i])) continue
+                n++
+                const x = i % W, y = (i - x) / W
+                if (!(x >= 20 && x <= 30 && y >= 4 && y <= 8)) viol = viol || `tick ${g.tick} slime at ${x},${y}`
+            }
+            peak = Math.max(peak, n)
+        }
+        ok(!viol, `fork slime escaped FORK BASIN's pocket (${viol}) — the harvest and exit are no longer provably safe`)
+        ok(peak > 6, `the fork blob only reached ${peak} cells — too timid to read as a multi-headed creature`)
+        ok(g.win === true, `FORK BASIN was not winnable with the fork live (have ${g.have}/${meta.need}, end ${g.end})`)
+        ok(g.amoExt === true, 'FORK BASIN does not flag variant state — its hash would under-observe divergence')
     }
 }
 

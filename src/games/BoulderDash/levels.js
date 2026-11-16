@@ -257,6 +257,43 @@ export const LEVELS = [
             return c.g
         },
     },
+    {
+        // THE MULTI-HEAD AMOEBA comes home (#2444). One fork wave, seeded in a
+        // sealed chamber with a stone pillar at its heart: a single origin, but
+        // the head plants perpendicular siblings as it drives, so two (then up to
+        // CFG.amoForkMax) fingers grow at once, corner independently, and reach
+        // AROUND the pillar — the forking blob Boulder Dash is famous for and the
+        // README gap said was missing. Containment is the same law as every other
+        // cave here: the pocket is ringed by uncarved DIRT (growth claims only
+        // EMPTY/DIAMOND), the harvest seam at row 18 and the exit are outside the
+        // ring, and the live-head cap + #2411 gens-expiry make the wave advance
+        // and DISSOLVE rather than flood. dashcheck pins all of it, and a mute of
+        // amoFork (→ single-finger growth) goes the fork pin red.
+        name: 'FORK BASIN', timeTicks: 2400, need: 6,
+        spawn: { x: 3, y: 18 }, exit: { x: 36, y: 2 },
+        amoebaDir: [1, 0], amoebaVariant: 'fork',
+        amoebas: [{ cells: [[21, 6]], dir: [1, 0], variant: 'fork' }],
+        proves: ['dig', 'amoeba', 'dissolve', 'fork'],
+        // #2417-style readability telegraph (painter-only): the dirt row capping
+        // the pocket reads "danger below".
+        lids: [[20, 3], [21, 3], [22, 3], [23, 3], [24, 3], [25, 3], [26, 3],
+            [27, 3], [28, 3], [29, 3], [30, 3]],
+        build() {
+            const c = new Carve()
+            c.shell()
+            c.rect(2, 16, 4, 20, EMPTY)                 // start, bottom-left
+            c.rect(34, 1, 37, 4, EMPTY)                 // exit, top-right
+            c.seam(18, 8, 13)                           // supported harvest — quota lives here, far from the slime
+            // the fork pocket, sealed by untouched dirt all around
+            c.rect(20, 4, 30, 8, EMPTY)
+            c.rect(24, 5, 25, 7, DIRT)                  // the pillar the forking fingers must wrap
+            c.set(21, 6, AMO_HEAD)                     // one origin, driving east
+            // bait gems on the pocket floor, on solid ground (construction rule 1:
+            // nothing loose over open space) — the wave dissolves them as it wraps.
+            c.set(28, 8, DIAMOND); c.set(29, 8, DIAMOND)
+            return c.g
+        },
+    },
 ]
 
 export function buildLevel(idx) {
