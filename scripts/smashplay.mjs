@@ -24,7 +24,7 @@ await page.keyboard.press('Enter')
 await page.waitForTimeout(400)
 p0 = await probe()
 r.check('press any key starts the show', p0.screen === 'play' && p0.room === 0, `${p0.screen} room ${p0.room}`)
-r.check('spawn shield up', p0.player.invuln > 0)
+r.check('the contestant lands exposed — zero spawn mercy (#2491)', p0.player.invuln === 0, `invuln ${p0.player.invuln}`)
 
 // twin-stick: run right while firing left — drawn state must track
 const before = await probe()
@@ -72,15 +72,25 @@ await page.waitForTimeout(200)
 const e1 = await probe()
 r.check('firebomb costs POWER', e1.energy === e0.energy - 34, `${e0.energy} -> ${e1.energy}`)
 
-// one honest death: drop a bullet on the player after the shield lapses
-await page.evaluate(() => { const gs = window.__smashTest.state(); gs.player.invuln = 0; gs.ebullets.push({ id: 7001, x: gs.player.x + 2, y: gs.player.y, dx: 1, dy: 0, dmg: 1, kind: 'shot' }) })
+// one honest death: there is no shield to lapse (#2491) — one round, one life
+await page.evaluate(() => { const gs = window.__smashTest.state(); gs.ebullets.push({ id: 7001, x: gs.player.x + 2, y: gs.player.y, dx: 1, dy: 0, dmg: 1, kind: 'shot' }) })
 await page.waitForTimeout(300)
 let p = await probe()
 r.check('one hit takes a life', p.lives < 3 || p.end === 'over', `lives ${p.lives}`)
 
+// #2491: the respawn lands under fire — run out the death freeze, verify the
+// seat is exposed on the landing frame, then hand it the next round. No grace.
+await page.waitForTimeout(1400)
+p = await probe()
+r.check('the respawn lands back in the arena, unshielded', p.screen === 'play' && p.lives === 2 && p.player.invuln === 0, `${p.screen} lives=${p.lives} invuln=${p.player.invuln}`)
+await page.evaluate(() => { const gs = window.__smashTest.state(); gs.ebullets.push({ id: 7002, x: gs.player.x + 2, y: gs.player.y, dx: 1, dy: 0, dmg: 1, kind: 'shot' }) })
+await page.waitForTimeout(300)
+p = await probe()
+r.check('a respawn that meets a round pays for it — zero mercy live', p.lives === 1 || p.end === 'over', `lives ${p.lives}`)
+
 // burn the rest of the lives
 for (let i = 0; i < 12 && p.screen === 'play'; i++) {
-    await page.evaluate(() => { const gs = window.__smashTest.state(); gs.player.invuln = 0; gs.ebullets.push({ id: 7100 + gs.tick, x: gs.player.x + 2, y: gs.player.y, dx: 1, dy: 0, dmg: 1, kind: 'shot' }) })
+    await page.evaluate(() => { const gs = window.__smashTest.state(); gs.ebullets.push({ id: 7100 + gs.tick, x: gs.player.x + 2, y: gs.player.y, dx: 1, dy: 0, dmg: 1, kind: 'shot' }) })
     await page.waitForTimeout(700)
     p = await probe()
 }

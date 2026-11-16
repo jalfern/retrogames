@@ -18,7 +18,9 @@ The five signature features of the original are the spec:
    screen shake, gore sparks, and THE ANNOUNCER himself as the room-9 boss.
 
 Faithful rules: **one hit kills** (the original has no hit points), 3 lives,
-extra life every 20,000. Respawn keeps the room but grants spawn invulnerability.
+extra life every 20,000. Respawn keeps the room and lands **unshielded** —
+#2491 took out the last softener: the arcade gives no spawn invulnerability,
+and reading the opening volley is the pilot's (and the player's) own job.
 
 ## Co-op (#496)
 The cabinet was two players on two sticks, so seat 2 is a player slot, not a
@@ -308,16 +310,79 @@ smash-tv`) against the three audit questions #2024 left open:
   LIVE window (kiting drags him along), his fan opens centre-stage, and the
   3-add cap keeps pressure on. The pilot still clears all nine seeds with
   the fan unmodified — the finale reads as a puzzle at both edges.
-- **Remaining honest gaps:** one-hit death softened by spawn invulnerability
+- **Remaining honest gaps:** ~~one-hit death softened by spawn invulnerability
   stays AS DOCUMENTED. On a phone pad across a 384 px board with 8-way fan
   fire, the arcade's zero-mercy respawn would be a control-tax, not a rule;
-  it is the only gap left and it is deliberate. (Weapons 4→6, gibs, and the
-  wide finale all closed since the pass that opened this list.)
+  it is the only gap left and it is deliberate.~~ CLOSED by #2491 (below):
+  fidelity beats provability — the arcade gives none, so neither does the
+  arena. (Weapons 4→6, gibs, and the wide finale all closed since the pass
+  that opened this list.)
 
 Gates: smashcheck 3b extends the off-screen-marker section — `SPAWN_CUE` /
 `edgeRow` law pins, renderer seam scans (arming + per-frame side re-read),
 and a live finale mat across 4 seeds counting `bossAdd` spawn events against
 the camera clamp (the cue is proven needed, not decorative).
+
+## NO MERCY — the arcade's law (#2491)
+
+Honest-gaps list, last line: *"One-hit death softened by spawn invulnerability;
+the arcade gives none."* Midway's SMASH TV (1990) never shields the contestant —
+room entries and respawns land exposed. `sim.js` granted `invulnRoom: 70` on
+room entry and `invulnRespawn: 150` after death: two and a half seconds of
+tanking the opening volley. Both are zero now (the fields stay as harness
+isolation hooks, pinned at zero). The `#2028` pass had kept the softener as a
+deliberate control-tax call; #2491 overrules it — fidelity beats provability
+(AGENTS.md), the arcade is the spec, and the field now reads the throw like
+the cabinet's own telegraphs ask the player to.
+
+What it took to keep the show provably winnable **without** the shield — four
+doctrine laws in `planner.js` plus two physics laws in `sim.js`:
+
+- **Swept-horizon volley gate** (`volleyGate`, seatDrive tail): every move
+  lane is simulated 26 ticks against live rounds — a lane is dead when a round
+  crosses the body, when its horizon exit still closes distance, or when it
+  pins the seat into chrome. Surviving lanes rank forward-biased; the chosen
+  escape commits until it stops being safe. Objective legs own the *where*;
+  the gate owns only the veto.
+- **Lane-sound duel** (seat-1 threat branch): never align onto a lane chrome
+  owns. Seed 4 nailed itself onto the (12,10) corner twice a cycle — align
+  north into the bar, volley-commit east under the turret's throw, drift back,
+  repeat — while the open column beneath the turret sat unclaimed. For
+  ground-holding duelists (turret, heavy) the pilot probes both cardinal lanes
+  from the would-be stand and takes the one that can actually fire.
+- **Spawn-lean parking** (hold-center): the pilot reads `roomData.spawns` the
+  way the human reads the #1978 spawn cue — never loiter inside a queued
+  landing ring. Slack seed 1 room 1 used to materialise a walkcam on the
+  hero's crown; three lives, room 1.
+- **Dry-tank reload**: LASER burns 2 energy a shot and the sim answers an
+  underfunded trigger with silence — a dry pilot is scenery holding a gun
+  (seeds 2/5 strafed THE ANNOUNCER thousands of ticks at energy 0). Below
+  30 energy the room's business becomes the reload: walk the nearest energy
+  cell, dropped barrel or crate (never the FLAMER — the seat-law holds) while
+  keeping the aim on the threat.
+- **Open-door landing** (sim): the world freezes while a seat dies, so a
+  chaser can park ON the spawn cell — with zero shield every respawn would
+  die on contact without ever moving. Body-physics still refuse a body inside
+  a body: `landX` seats the respawn at the nearest clear cell along the spawn
+  row. The door is clear; the shield is not — any round already in the room
+  still kills on arrival.
+- **Grenade escape + contact guard** (prior #2491 pass): fly the sim's own
+  detonation path to find the blast spot and clear the ring before it blows;
+  a graze is a life now, so anything inside the touch band gets backed off the
+  moment it is.
+
+Honest re-measure, pins and README together (Pong's seed 25 style): the
+9-seed sweep wins **9/9 unshielded**, co-op wins **9/9**, slack seeds 0–2 all
+win on the stripped boards, and the deathless matinee moved from {1,5,7} to
+**{7,8}** — under zero mercy the opening volley costs first blood on seven
+boards. First blood the shields used to eat is now read or paid.
+
+Gates: rules-section pins (spawn unshielded, entry round kills, solo + co-op
+respawn exposed, open-door landing), pilot pins above, slack pins 0–2. Four
+mercyBack mutants (entry shield 70, solo respawn shield 150, co-op respawn
+shield 150, landing forgets parked bodies) and three doctrine mutants
+(lane-sound deaf, loiter under spawns, reload never fires) must all die.
+`smashplay` drives a live respawn under fire with zero page errors.
 
 ## Honest gaps vs the cabinet
 - ~~THE ANNOUNCER keeps his screen-sized stage on purpose (a boss half off-screen
@@ -331,4 +396,6 @@ the camera clamp (the cue is proven needed, not decorative).
 - ~~Bonus-room civilians are stylized (dot-matrix contestants, no gore sprites).~~
   CLOSED by #2044: the bonus crowd now SPLATS — seven multi-pixel gibs, a bone
   chip and a floor stain (above).
-- One-hit death softened by spawn invulnerability; the arcade gives none.
+- ~~One-hit death softened by spawn invulnerability; the arcade gives none.~~
+  CLOSED by #2491: both shields are zero — the arena now lands exposed like the
+  cabinet, and the pilot doctrine above carries the proof (NO MERCY section).
