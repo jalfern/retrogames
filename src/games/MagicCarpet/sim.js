@@ -1204,6 +1204,24 @@ export function muffleOf(gs) {
     return gs.invis > 0 || diveOf(gs) > 0 ? MUFFLE_CUTOFF : OPEN_CUTOFF
 }
 
+// #2449 item 5: the world bed goes DEEP with the campaign. The original varied
+// its music across the forty-five levels; the runtime-synth analog is the wind
+// drone the shell plays under every world, and by the far country it must not
+// still sound like world 1. The bed is a pure read of the world index — the
+// same arc key as the renderer's sky-tint drift (#2449 item 1): each arc drops
+// the drone 2.2 Hz and lengthens its breath 15 ms, while the sweep RATIO (the
+// whoosh's fall, 58/74) stays the law, so it reads as the same wind going
+// deeper, not a different instrument. Arc 0 is byte-identical to the old
+// constant bed (74→58 over 0.5 s every 46 ticks), so pre-#2449 audio pins are
+// untouched. Like muffleOf it never feeds stateHash: it drives sound, not rules.
+export function ambBed(level) {
+    const a = Math.floor(level / 3) // arc 0..14 — the campaign's depth
+    const f0 = (7400 - 220 * a) / 100 // drone lead: 2.2 Hz deeper per arc
+    const f1 = Math.round(f0 * (58 / 74) * 100) / 100 // same fall — the same wind, deeper
+    const dur = (500 + 15 * a) / 1000 // breath: 15 ms longer per arc
+    return { f0, f1, dur, period: 46 }
+}
+
 // #1697: how a finished crumble LANDS on the wizard on the carpet — pure read
 // of the landing event plus where the carpet is, like muffleOf is of the veil.
 // Size scales the thud (a bolt crater is a knock, a volcano vent a collapse);

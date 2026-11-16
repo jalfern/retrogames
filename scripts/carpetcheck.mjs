@@ -13,7 +13,7 @@ import {
     LEVELS, QUOTA, SPILLS, BOUNTY, MAP, spellById, sampleH,
     makeGame, step, autopilot, stateHash, CRATER_GLOW, glowOf, toppleTower, toppleSib, settleGround, CRUMBLE_T,
     setHand, INVIS_T, hudTap, cycleL, TAP, TRAY, W, H, HUD_H,
-    muffleOf, OPEN_CUTOFF, MUFFLE_CUTOFF, volcanoErupt, raiseTerrain, shatterAt, SHATTER_R, WATER, crater, diveOf,
+    muffleOf, ambBed, OPEN_CUTOFF, MUFFLE_CUTOFF, volcanoErupt, raiseTerrain, shatterAt, SHATTER_R, WATER, crater, diveOf,
     DISSOLVE_R, DISSOLVE_SINK, dissolveLand, GRID, CELL,
     crumbleFeel, CRUMBLE_HEAR_R, castBearing, CUE_LOUD_R, CUE_HEAR_R, CUE_FLOOR,
     cloneAt, CLONE_R, CLONE_MAX, SPAWN_HP, lookPoint, genWorld,
@@ -1611,6 +1611,53 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
     r.check('the muffle band is genuinely narrow (MUFFLE_CUTOFF well below open)',
         MUFFLE_CUTOFF > 100 && MUFFLE_CUTOFF < 1200 && OPEN_CUTOFF > 10000 && MUFFLE_CUTOFF < OPEN_CUTOFF / 10,
         `muffle ${MUFFLE_CUTOFF}Hz vs open ${OPEN_CUTOFF}Hz`)
+}
+
+// ---- #2449 item 5: DEEP ARCS HEAR THE FAR COUNTRY. ambBed(level) is the pure
+// read the shell keys the world's wind drone to the campaign's arc — the same
+// arc key as the renderer's sky-tint drift (arcTint, floor(level/3): three
+// worlds per atmosphere, forty-five worlds = fifteen arcs). Each arc drops the
+// drone 2.2 Hz and lengthens its breath 15 ms, but the whoosh's FALL (the 58/74
+// sweep ratio) and the 46-tick period stay the law, so it reads as the same
+// wind going deeper, not a new instrument. Arc 0 is byte-identical to the
+// pre-#2449 constant bed, so the old audio pins hold untouched. Mutation guide:
+// (1) drop the -220*a from f0 in sim.js — "deeper per arc" goes red; (2) make
+// f1 a constant instead of f0*(58/74) — "same wind" goes red; (3) revert the
+// bed to the constant 74,58,0.5 in index.jsx — the shell pin goes red.
+{
+    const bed0 = ambBed(0)
+    r.check('#2449-5 arc 0 is the pre-#2449 constant bed (74→58 over 0.5 s every 46 ticks)',
+        bed0.f0 === 74 && bed0.f1 === 58 && bed0.dur === 0.5 && bed0.period === 46,
+        `f0=${bed0.f0} f1=${bed0.f1} dur=${bed0.dur} period=${bed0.period}`)
+    // Same key as the renderer's sky-tint drift: flat across a 3-world arc,
+    // stepping exactly at the boundary — arc 0 (worlds 1–3) vs arc 1 (4–6),
+    // and the last arc (14, worlds 43–45) stays flat.
+    r.check('#2449-5 the bed is flat across a 3-world arc and steps at the boundary (same key as arcTint)',
+        ambBed(0).f0 === ambBed(1).f0 && ambBed(1).f0 === ambBed(2).f0 &&
+        ambBed(3).f0 < ambBed(2).f0 &&
+        ambBed(42).f0 === ambBed(43).f0 && ambBed(43).f0 === ambBed(44).f0,
+        `arc0=${ambBed(0).f0} arc1=${ambBed(3).f0} arc14=${ambBed(42).f0}`)
+    // The laws, checked across all fifteen arcs.
+    let deep = true, longer = true, sameWind = true, period = true
+    let pf0 = ambBed(0).f0, pdur = ambBed(0).dur
+    for (let a = 1; a < 15; a++) {
+        const b = ambBed(a * 3)
+        if (!(b.f0 < pf0)) deep = false
+        if (!(b.dur > pdur)) longer = false
+        if (Math.abs(b.f1 / b.f0 - 58 / 74) > 0.01) sameWind = false
+        if (b.period !== 46) period = false
+        pf0 = b.f0; pdur = b.dur
+    }
+    r.check('#2449-5 every arc deepens the drone 2.2 Hz and lengthens the breath 15 ms',
+        deep && longer, `arc14 f0=${ambBed(42).f0}Hz dur=${ambBed(42).dur}s`)
+    r.check('#2449-5 the whoosh keeps its 58/74 fall and the 46-tick period (same wind, deeper)',
+        sameWind && period, `arc14 ratio=${(ambBed(42).f1 / ambBed(42).f0).toFixed(3)} period=${ambBed(42).period}`)
+    // The shell must actually drive the bed from ambBed — not a constant.
+    const idxSrc = await readFile(new URL('../src/games/MagicCarpet/index.jsx', import.meta.url), 'utf8')
+    r.check('#2449-5 the shell drives the wind bed from ambBed, not the old constant',
+        /ambBed\(gs\.level\)/.test(idxSrc) &&
+        /ambSweep\(bed\.f0, bed\.f1, bed\.dur, 'sine',/.test(idxSrc) &&
+        !/ambSweep\(74, 58, 0\.5,/.test(idxSrc))
 }
 
 // ---- #1612 mobile spellbook: the HUD itself equips hands, like the original's
