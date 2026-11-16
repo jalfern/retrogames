@@ -43,9 +43,11 @@ Porting rules that keep the traces green:
 - Integers stay `Int` (`deadT`, `invuln`, `sitT`, timers); positions stay `Double`.
 - JS `Math.round` is not Swift's `.rounded()`. JS rounds ties toward +∞; use
   `jsRound`. The hash uses ToInt32/`Math.imul` (`&*` on `Int32`).
-- `Math.sin/cos` is Darwin libm and matched V8 on every tick checked so far. If a
-  trace ever splits by one unit in the last place, `JSMath.swift` is where V8's
-  fdlibm goes.
+- `Math.sin/cos` are V8's own: fdlibm as clang compiles it, with fused
+  multiply-adds (`FDLibm.swift`, from the Gauntlet port). It is bit-exact
+  against Node on 1M+ inputs. Darwin's libm differs in the last place on
+  about 3% of inputs. Joust's traces never caught it, but Gauntlet's planner
+  race did.
 - Trace quirks: a missing path equals `null`, an empty array is `[]`, `pending`
   is `null` or `{reason, t}`, and `segs.N.crumble` exists only on crumble ledges.
 
