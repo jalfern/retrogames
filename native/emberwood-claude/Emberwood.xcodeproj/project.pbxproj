@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		AB0000000000000000000001 /* RetroKit in Frameworks */ = {isa = PBXBuildFile; productRef = AB0000000000000000000011 /* RetroKit */; };
 		AB0000000000000000000002 /* RetroKitApp in Frameworks */ = {isa = PBXBuildFile; productRef = AB0000000000000000000012 /* RetroKitApp */; };
+		AB0000000000000000000003 /* MiniThree in Frameworks */ = {isa = PBXBuildFile; productRef = AB0000000000000000000013 /* MiniThree */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -19,10 +20,11 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A20000000000000000000001 /* App */ = {isa = PBXFileSystemSynchronizedRootGroup; path = App; sourceTree = "<group>"; };
 		A20000000000000000000002 /* EmberwoodCore */ = {isa = PBXFileSystemSynchronizedRootGroup; name = EmberwoodCore; path = Sources/EmberwoodCore; sourceTree = "<group>"; };
+		A20000000000000000000003 /* EmberwoodRender */ = {isa = PBXFileSystemSynchronizedRootGroup; name = EmberwoodRender; path = Sources/EmberwoodRender; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		A30000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (AB0000000000000000000001 /* RetroKit in Frameworks */, AB0000000000000000000002 /* RetroKitApp in Frameworks */, ); runOnlyForDeploymentPostprocessing = 0; };
+		A30000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (AB0000000000000000000001 /* RetroKit in Frameworks */, AB0000000000000000000002 /* RetroKitApp in Frameworks */, AB0000000000000000000003 /* MiniThree in Frameworks */, ); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -31,6 +33,7 @@
 			children = (
 				A20000000000000000000001 /* App */,
 				A20000000000000000000002 /* EmberwoodCore */,
+				A20000000000000000000003 /* EmberwoodRender */,
 				A10000000000000000000002 /* Info.plist */,
 				A40000000000000000000002 /* Products */,
 			);
@@ -54,7 +57,7 @@
 				A60000000000000000000001 /* Sources */,
 				A30000000000000000000001 /* Frameworks */,
 				A60000000000000000000002 /* Resources */,
-				A60000000000000000000003 /* Bundle golden traces */,
+				A60000000000000000000003 /* Bundle golden traces + shelf models */,
 			);
 			buildRules = (
 			);
@@ -63,10 +66,12 @@
 			fileSystemSynchronizedGroups = (
 				A20000000000000000000001 /* App */,
 				A20000000000000000000002 /* EmberwoodCore */,
+				A20000000000000000000003 /* EmberwoodRender */,
 			);
 			packageProductDependencies = (
 				AB0000000000000000000011 /* RetroKit */,
 				AB0000000000000000000012 /* RetroKitApp */,
+				AB0000000000000000000013 /* MiniThree */,
 			);
 			name = Emberwood;
 			productName = Emberwood;
@@ -110,7 +115,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		A60000000000000000000003 /* Bundle golden traces */ = {
+		A60000000000000000000003 /* Bundle golden traces + shelf models */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -118,13 +123,13 @@
 			);
 			inputPaths = (
 			);
-			name = "Bundle golden traces";
+			name = "Bundle golden traces + shelf models";
 			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			showEnvVarsInLog = 0;
-			shellScript = "# the web game's golden traces (#2402) ride along for -selfcheck\nmkdir -p \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/traces\"\ncp \"$SRCROOT\"/../../public/traces/emberwood-*.json \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/traces/\"\n";
+			shellScript = "# the web game's golden traces (#2402) ride along for -selfcheck\nmkdir -p \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/traces\"\ncp \"$SRCROOT\"/../../public/traces/emberwood-*.json \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/traces/\"\n# the shelf props render.js loads (#939): tree_pine, tree_oak, tree_pine_tall, bush\nmkdir -p \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/models\"\nfor m in tree_pine tree_oak tree_pine_tall bush; do cp \"$SRCROOT\"/../../public/models/scenery/$m.glb \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/models/\"; done\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -263,6 +268,10 @@
 		AB0000000000000000000012 /* RetroKitApp */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = RetroKitApp;
+		};
+		AB0000000000000000000013 /* MiniThree */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MiniThree;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

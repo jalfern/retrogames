@@ -75,7 +75,7 @@ public struct Items {
     public var sword = true, bow = false, shield = false, blade = false, gale = false, step = false
     public var bombs = 0, arrows = 0, potions = 0, keys = 0, bigkey = false
     public var e = 0 // items._e — the shell's ember tally ('_' keys are not state)
-    func has(_ name: String) -> Bool {
+    public func has(_ name: String) -> Bool {
         switch name {
         case "sword": return sword; case "bow": return bow; case "shield": return shield; case "blade": return blade
         case "gale": return gale; case "step": return step; case "bigkey": return bigkey
@@ -160,6 +160,7 @@ public struct DungeonEntry { public var screen: String, x: Double, y: Double }
 public struct FX {
     public let k: String, x: Double, y: Double
     public var dir: Dir? = nil, type: String? = nil, boss: Int = 0, item: String? = nil, z: Double = 0
+    public var dirx = 0.0, diry = 0.0 // the dust puffs' drift (render only; fx is not traced)
 }
 
 public struct Input {
@@ -933,7 +934,7 @@ public final class Sim {
                 if e.st > 0 {
                     e.st -= 1
                     if e.st == 0 { e.chx = dx / distOr1; e.chy = dy / distOr1; e.charging = 42 }
-                    else if e.st == 34 { emit("dust", e.x - e.fx * 5, e.y - e.fy * 5 + 3) }
+                    else if e.st == 34 { let fx = e.fx, fy = e.fy; emit("dust", e.x - e.fx * 5, e.y - e.fy * 5 + 3) { $0.dirx = -fx; $0.diry = -fy } }
                     break
                 }
                 if e.charging > 0 {
@@ -943,7 +944,7 @@ public final class Sim {
                         e.charging = 0; e.rest = 55
                     } else {
                         e.fx = e.chx; e.fy = e.chy; e.x = nx; e.y = ny
-                        if (e.t + e.seedOff) % 6 == 0 { emit("dust", e.x - e.chx * 7, e.y - e.chy * 7) }
+                        if (e.t + e.seedOff) % 6 == 0 { let cx = e.chx, cy = e.chy; emit("dust", e.x - e.chx * 7, e.y - e.chy * 7) { $0.dirx = -cx; $0.diry = -cy } }
                     }
                     break
                 }

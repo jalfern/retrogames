@@ -1,0 +1,13 @@
+{
+  "about": "Render-parity moments (README: Render parity). Each: createSim(11); act2 → flags.emberTaken + kit; spawnRoom(room, at); step `steps` ticks of an idle pad; then 300 renderer syncs at t seconds (camera, fades and charge ease to rest), setFocus(hero), one draw. Math.random is pinned to 0.5 on both sides; fx are not fed (particles off).",
+  "size": [960, 576],
+  "syncs": 300,
+  "scenes": [
+    { "name": "town",     "room": "ow-11", "at": null,    "steps": 0,   "t": 3.0 },
+    { "name": "fern",     "room": "ow-01", "at": [8, 8],  "steps": 40,  "t": 7.25 },
+    { "name": "dungeon",  "room": "d1-e1", "at": [7, 9],  "steps": 60,  "t": 11.5 },
+    { "name": "wyrm",     "room": "d2-f4", "at": [7, 9],  "steps": 200, "t": 4.6 },
+    { "name": "ashfell",  "room": "ow-20", "at": [8, 9],  "steps": 30,  "t": 9.1, "act2": true },
+    { "name": "king",     "room": "d3-f0", "at": [7, 9],  "steps": 90,  "t": 2.2, "act2": true }
+  ]
+}

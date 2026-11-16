@@ -26,9 +26,16 @@ const tex = await page.evaluate((code) => {
     return out
 }, src)
 await browser.close()
+// render.js's own canvases (npc_*, fx_*) come from scripts/webframes.mjs: keep them
+const keep = {}
+try {
+    const old = JSON.parse(readFileSync(join(out, 'index.json'), 'utf8'))
+    for (const [k, v] of Object.entries(old)) if (/^(npc|fx)_/.test(k)) keep[k] = { v, png: readFileSync(join(out, `${k}.png`)) }
+} catch {}
 rmSync(out, { recursive: true, force: true })
 mkdirSync(out, { recursive: true })
 const index = {}
+for (const [k, { v, png }] of Object.entries(keep)) { writeFileSync(join(out, `${k}.png`), png); index[k] = v }
 for (const [k, v] of Object.entries(tex)) {
     writeFileSync(join(out, `${k}.png`), Buffer.from(v.png.split(',')[1], 'base64'))
     index[k] = [v.w, v.h]
