@@ -45,6 +45,7 @@ const TOKEN = {
     ferryDrop: 'ferryDrop',                                   // #2463 cargo lands on the pad
     carryDone: 'carryDone',                                   // #2463 the burdened fly perishes
     grab: 'grab',                                             // #2463 a free butterfly takes a gem
+    slide: 'slide',                                           // #2468 a fallen wall kept sliding
 }
 
 let pass = 0
@@ -72,6 +73,7 @@ const MUTANTS = {
     amoFork: 'the fork head stops planting siblings — the wave grows one finger like classic and never wraps the pillar (multi-head is dead)',
     push: 'push walls stop sliding — SLIME VAULT stays bolted shut',
     pushCrush: 'walls stop crushing rocks — the boulder chokes the choke corridor forever',
+    wallMomentum: 'walls forget their shove — SLIDERS LEDGE parks the bolt in its own landing shaft and seals the corridor',
 }
 
 if (MUT_NAME) {
@@ -970,6 +972,112 @@ for (let i = 0; i < LEVELS.length; i++) {
         ok((meta.pads || []).map(([x, y]) => `${x},${y}`).join('|') === '18,16', 'the pad telegraph drifted off the tunnel end')
         ok(grid[16 * W + 18] === EMPTY && grid[16 * W + 19] === DIAMOND, 'the pad telegraph no longer faces the pocket gem — the hint lies')
         ok(grid[16 * W + 20] === EMPTY && grid[17 * W + 20] === STEEL, 'the pad is not a steel-floored cup — ferried gems would fall or convert')
+    }
+}
+
+// ------------------------------------------------ WALL MOMENTUM (#2468) ----
+{
+    section('WALL MOMENTUM (#2468) — a fallen wall keeps sliding; opt-in, honest, and load-bearing')
+    const mkM = (ops, player) => {
+        const g = new Uint8Array(W * H).fill(DIRT)
+        for (let x = 0; x < W; x++) { g[x] = STEEL; g[(H - 1) * W + x] = STEEL }
+        for (let y = 0; y < H; y++) { g[y * W] = STEEL; g[y * W + W - 1] = STEEL }
+        for (const [x, y, t] of ops) g[y * W + x] = t
+        return sim.makeGame({ spawn: { x: player[0], y: player[1] }, exit: { x: player[0], y: player[1] }, need: 1, timeTicks: 600, flies: [], momentum: true }, g)
+    }
+    // the flat-ground law survives: one cell per SHOVE — an armed wall on solid
+    // floor does NOT auto-slide (that would rewrite #2411 under everyone's feet).
+    {
+        const g = mkM([[6, 10, EMPTY], [7, 10, PUSHWALL], [8, 10, EMPTY]], [6, 10])   // floor row 11 is dirt
+        sim.playerMove(g, 'ArrowRight')
+        const t1 = g.grid[10 * W + 8]
+        for (let t = 0; t < 50; t++) sim.step(g)
+        ok(t1 === PUSHWALL && g.grid[10 * W + 8] === PUSHWALL && g.grid[10 * W + 9] !== PUSHWALL,
+            'a shoved wall slid on flat ground — #2411 one-cell-per-shove is only broken by a FALL')
+    }
+    // the combo: shoved off a lip, the wall falls, lands, and walks on until
+    // steel stops it — then its momentum is dead for good.
+    {
+        const g = mkM([[6, 10, EMPTY], [7, 10, PUSHWALL], [8, 10, EMPTY], [8, 11, EMPTY], [8, 12, EMPTY],
+            [9, 12, EMPTY], [10, 12, EMPTY], [11, 12, STEEL]], [6, 10])
+        sim.playerMove(g, 'ArrowRight')                     // shove onto the lip at (8,10)
+        const slides = []
+        for (let t = 0; t < 40; t++) { sim.step(g); for (const e of g.events) if (e.type === 'slide') slides.push(`${e.x},${e.y}`) }
+        ok(g.grid[12 * W + 10] === PUSHWALL && slides.join('|') === '9,12|10,12',
+            `the fallen wall did not walk its lane (rest at ${g.grid[12 * W + 10]}, slides ${slides.join('|')})`)
+        const before = g.grid[12 * W + 10]
+        for (let t = 0; t < 40; t++) sim.step(g)
+        ok(g.grid[12 * W + 10] === before && slides.length === 2, 'a blocked slide kept moving — momentum must die at the wall')
+    }
+    // no drift mid-fall: gravity owns the descent, the lane is entered where it lands
+    {
+        const g = mkM([[6, 10, EMPTY], [7, 10, PUSHWALL], [8, 10, EMPTY], [8, 11, EMPTY], [8, 12, EMPTY],
+            [8, 13, EMPTY], [9, 13, EMPTY], [10, 13, EMPTY], [11, 13, STEEL]], [6, 10])
+        sim.playerMove(g, 'ArrowRight')
+        for (let t = 0; t < 40; t++) sim.step(g)
+        ok(g.grid[13 * W + 10] === PUSHWALL, 'a falling wall drifted sideways mid-air — the slide resumes only on the ground')
+    }
+    // the slide flattens a player standing in the lane (same cause as a fall)
+    {
+        const g = mkM([[6, 10, EMPTY], [7, 10, PUSHWALL], [8, 10, EMPTY], [8, 11, EMPTY], [9, 11, EMPTY], [10, 11, EMPTY], [11, 11, STEEL]], [6, 10])
+        sim.playerMove(g, 'ArrowRight')
+        g.player.x = 9; g.player.y = 11   // step into the lane after the shove
+        let cause = null
+        for (let t = 0; t < 40; t++) { sim.step(g); if (!g.player.alive) { cause = g.deathCause; break } }
+        ok(cause === 'pushwall', `a sliding wall passed through the player (${cause}) — FLATTENED must be real`)
+    }
+    // the slide douses fire instead of stopping (the shove's give-law, kept)
+    {
+        const g = mkM([[6, 10, EMPTY], [7, 10, PUSHWALL], [8, 10, EMPTY], [8, 11, EMPTY], [9, 11, FIRE], [10, 11, EMPTY], [11, 11, STEEL]], [6, 10])
+        g.burn[11 * W + 9] = 50
+        sim.playerMove(g, 'ArrowRight')
+        for (let t = 0; t < 40; t++) sim.step(g)
+        ok(g.grid[11 * W + 9] !== FIRE && g.grid[11 * W + 10] === PUSHWALL,
+            `the slide did not douse the fire it crossed (9,11=${g.grid[11 * W + 9]}, wall at ${g.grid[11 * W + 10] === PUSHWALL ? '10,11' : 'elsewhere'})`)
+    }
+    // a wall that falls WITHOUT a shove stays put — the combo needs both halves
+    {
+        const g = mkM([[7, 8, PUSHWALL], [7, 9, EMPTY], [7, 10, EMPTY], [8, 10, EMPTY], [9, 10, EMPTY], [10, 10, STEEL]], [4, 10])
+        for (let t = 0; t < 40; t++) sim.step(g)
+        ok(g.grid[10 * W + 7] === PUSHWALL, 'an unshoved fallen wall slid anyway — momentum comes from the SHOVE, not the fall')
+    }
+    // the decoy law: a slide through a gem CRUSHES it — the gem is lost, not gained
+    {
+        const g = mkM([[6, 10, EMPTY], [7, 10, PUSHWALL], [8, 10, EMPTY], [8, 11, EMPTY], [9, 11, DIAMOND], [10, 11, EMPTY], [11, 11, STEEL]], [6, 10])
+        sim.playerMove(g, 'ArrowRight')
+        let crushed = null
+        for (let t = 0; t < 40; t++) { sim.step(g); for (const e of g.events) if (e.type === 'crush') crushed = e }
+        ok(crushed && crushed.kind === DIAMOND && crushed.x === 9 && g.grid[11 * W + 9] !== DIAMOND && g.have === 0,
+            'the slide did not lose the gem honest — crushed paydirt is spent, not collected')
+    }
+    // legacy law byte-kept: SLIME VAULT (no `momentum`) parks its dropped bolt
+    {
+        const { meta, grid } = buildLevel(4)
+        const g = sim.makeGame(meta, grid)
+        ok(sim.makeGame(meta, grid).momExt === false, 'SLIME VAULT folds momentum state — the opt-in must stay exclusive')
+        g.player.x = 21; g.player.y = 10
+        sim.playerMove(g, 'ArrowRight')
+        for (let t = 0; t < 60; t++) sim.step(g)
+        ok(g.grid[11 * W + 23] === PUSHWALL, 'the legacy vault bolt slid on after landing — old caves keep the park-in-the-pit law')
+    }
+    // opt-in exclusivity + hash determinism: only SLIDERS LEDGE folds momentum,
+    // its replay is byte-identical, and a dropped move desyncs the digest.
+    {
+        for (let i = 0; i < 9; i++) {
+            const m = buildLevel(i)
+            ok(sim.makeGame(m.meta, m.grid).momExt === false, `LEVEL ${i} folds momentum state — the #2468 opt-in must stay exclusive to SLIDERS LEDGE`)
+        }
+        const { meta, grid } = buildLevel(9)
+        ok(sim.makeGame(meta, grid).momExt === true, 'SLIDERS LEDGE does not flag momentum state — its hash would under-observe divergence')
+        const r = runPlanner(9)
+        const a = sim.replay(meta, grid, r.cmds)
+        const b = sim.replay(meta, grid, r.cmds)
+        ok(sim.stateHash(a) === sim.stateHash(b), 'SLIDERS LEDGE replays differ — momentum is not a pure function')
+        ok(sim.stateHash(sim.replay(meta, grid, r.cmds.slice(0, 3).concat(r.cmds.slice(4)))) !== sim.stateHash(a), 'the cave-10 hash ignores a dropped move — determinism could not see a desync')
+        ok((meta.bolts || []).length === 1 && meta.bolts[0][2] === 'E' && grid[meta.bolts[0][1] * W + meta.bolts[0][0] + 1] === EMPTY,
+            'the SLIDERS LEDGE bolt mark drifted — the arrow would promise a shove that cannot happen')
+        ok(grid[12 * W + 23] === DIRT && grid[12 * W + 24] === EMPTY,
+            'the corridor mouth law drifted — a parked bolt must seal the only road (that is what makes momentum load-bearing)')
     }
 }
 

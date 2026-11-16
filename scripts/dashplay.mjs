@@ -211,6 +211,34 @@ r.check('another key starts a fresh play (clock reset)', (await probe()).screen 
     r.check('…and dissolved entirely on its own clock (generations expire)', peak2 > 4 && expired, `peak=${peak2} end=${(await probe()).slime}`)
 }
 
+// ---- #2468 SLIDERS LEDGE live: the fallen wall walks its lane, under real keys ----
+{
+    await page.evaluate(() => window.__game && window.__game.reset && window.__game.reset(9))
+    await wait(700)
+    const s = await probe()
+    r.check('the contract reset loaded SLIDERS LEDGE', s.name === 'SLIDERS LEDGE' && s.screen === 'play', `name=${s.name} screen=${s.screen}`)
+    let slidesPrev = 0, momSeen = false
+    for (let i = 0; i < 1600; i++) {
+        const q = await probe()
+        if (q.screen !== 'play') break
+        if (q.slides > slidesPrev) { slidesPrev = q.slides; momSeen = true }
+        const d = await hint()
+        if (d) await key(d)
+        let advanced = false
+        for (let k = 0; k < 15 && !advanced; k++) { advanced = (await probe()).tick > q.tick; if (!advanced) await wait(20) }
+    }
+    const fin = await probe()
+    r.check('real arrows drive SLIDERS LEDGE home — the win rides the slide', fin.screen === 'over' && fin.win === true, `screen=${fin.screen} win=${fin.win} have=${fin.have}/${fin.need}`)
+    r.check('the fallen wall rumbled down its lane live (slide receipts)', momSeen && fin.slides > 8, `slides=${fin.slides} — the wall parked instead of walking`)
+    r.check('the bolt ended at the dead end, clear of the corridor mouth',
+        fin.boltAt.some(([bx, by]) => bx >= 30 && by === 12) && !fin.boltAt.some(([bx, by]) => bx === 24 && by === 12),
+        JSON.stringify(fin.boltAt))
+    await wait(1200)
+    await key('KeyM')
+    await wait(300)
+    r.check('the ledge run restarts back to attract', (await probe()).screen === 'attract')
+}
+
 // ---- #2428 GOO GALLERY live: all three variants drive under real keys ----
 {
     await page.evaluate(() => window.__game && window.__game.reset && window.__game.reset(5))
