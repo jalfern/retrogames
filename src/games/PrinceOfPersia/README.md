@@ -452,6 +452,29 @@ lead 15 → 3 red (pin), duel branch removed → 1 red, riser pinned flat → 1
 red, parity ternaries removed → 2 red; restored → 350/350.
 `lint:pop` clean, `popplay` 17/17 zero page errors on the live bed.
 
+- **Living night sky (#2461, `cloudPhase`, `cloudBank`, `moonPane`, `moonShade`).**
+  The pane is weather now, not wallpaper. `cloudBank` crosses three seeded layers
+  per glass column at 0.55–1.5× `SKY_DRIFT`, each with its own altitude, size and
+  peak density; the first layer is pinned to the moon's row so every pane's
+  signature event is a cloud passing THE MOON, not past it. `moonPane` sets the
+  disc wandering (`MOON_DRIFT`, half-sweep ≈ 1400 ticks, ±1.6 px, clamped inside
+  the glass — #2330's "same window, same night" survives as "same window, same
+  night, moving"). `moonShade(tick, seed)` = how much light survives: whichever
+  layer actually overlaps the disc (horizontal AND vertical) dims the pane's cool
+  key to `1 − d·CLOUD_DIM`, and that shade rides `moonSources`' 4th channel into
+  `lightAt`/`coolAt` (so `tempAt` and every figure's lighting inherit it), the
+  cold pool, the cast shaft, the dust motes and the flagstone band — the hall
+  darkens and re-brightens under the moving sky. The default path (`tick` omitted)
+  pins shade 1, so every pre-#2461 byte and proof is untouched. `popcheck` §25
+  (11 clauses): cloudCross/cloudPhase value-identity, bank bounds and swell, disc
+  bounds + rooftop law restated for the wander, shade range, all 48 column seeds
+  dim ≤0.8 AND clear within 6000 ticks, key attenuation measured at the pane
+  centre (lightAt 0.70 → ≤0.5), renderer wiring regexes, dungeon stays ambient.
+  Mutant proofs: coolAt shade multiply removed → 1 red; `MOON_DRIFT = 0` → 2 red;
+  `moonShade → 1` → 2 red; restored → 398/398. `popplay` drives THE CHECKPOINT
+  via `__popTest.goto(2)` and reads `__popTest.sky()` — forecast, live shade and
+  a luminance diff across 2.5 s of real glass.
+
 ## Honest gaps (the deep pass continues — see #316)
 
 - ~~Touch: the pad has no Shift, so hang-grab on a phone leans on climbing
@@ -462,9 +485,17 @@ red, parity ternaries removed → 2 red; restored → 350/350.
   climb, release, shimmy, hang-jump — is phone-reachable. `popplay` proves the
   chain live (thumb-right runs; ✋ held caps to a walk; ✋ lifted hands the run
   back) and `popcheck` §23 pins the wiring.
-- The sky is alive but minimal: one cloud band and a handful of pinned stars per
+- ~~The sky is alive but minimal: one cloud band and a handful of pinned stars per
   pane. A richer sky (multiple clouds, a horizon, a passing moon disc) is polish,
-  not a gap against the 1989 look — the original's windows were a flat blue.
+  not a gap against the 1989 look — the original's windows were a flat blue.~~
+  **CLOSED by #2330-4 (horizon + disc) and #2461 (banks + motion + overcast)**:
+  each pane now runs a three-layer seeded cloud bank crossing at its own height
+  and speed, the moon disc wanders its pane on a seeded arc, and the moonlight is
+  a function of that sky — when the bank covers the moon the pane dims AND so do
+  the cold pool, cast shaft, dust motes and floor band out in the hall
+  (`moonShade`, the 4th channel of `moonSources`). `popcheck` §25 pins the whole
+  law (48/48 panes dim ≤0.8 and clear within 6000 ticks); `popplay` proves the
+  glass lives on the real canvas.
 - The duck is proven by a pure peak model (cue vol vs bus·voice); `popplay` does
   not yet assert the duck on the live analyser. The `duckMusic` path is wired and
   exercised (chase cues fire it), but a measured duck-over-bed popplay check is a

@@ -411,7 +411,7 @@ see item 5).
   an unverifiable #489-memory claim (no reachable sources; the #1680 lesson) —
   inventing multi-carry would triple a homing projectile's damage, so it is
   out of spec, not a gap.
-- **Village life stage 2 by #1764 item 3:** the village economy — convert or
+- **CLOSED by #1764 — village life stage 2 (item 3):** the village economy — convert or
   burn, the original's signature loop. The carpet snags a villager BY TOUCH in
   the low band (`VIL_GRAB_R = 8`u and `alt ≤ ground + VIL_GRAB_ALT (12)` — the
   same band wolves bite from: altitude is armor AND the price of a prisoner).
