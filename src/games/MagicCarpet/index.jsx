@@ -19,7 +19,7 @@ import {
     LEVELS, CAMPAIGN_CAP,
     SPILLS, spellById,
     makeGame, step, autopilot, stateHash, setHand, cycleR, cycleL, crater, settleGround, INVIS_T,
-    hudTap, TAP, TRAY, muffleOf, OPEN_CUTOFF, crumbleFeel, castBearing, diveOf, sampleH, WATER, aerialFog,
+    hudTap, TAP, TRAY, muffleOf, OPEN_CUTOFF, ambBed, crumbleFeel, castBearing, diveOf, sampleH, WATER, aerialFog,
     atCastle, bookOpen, bookClose, bookKey, bookTap, BOOK, BOOK_PROMPT,
     SEL, selectTap, cursorStep,
 } from './sim.js'
@@ -555,7 +555,8 @@ const MagicCarpetGame = () => {
             audioController.setMuffle(muffleOf(gs))
             if (boostOn && !boostPrev) audioController.ambSweep(220, 520, 0.22, 'sine', 0.05)
             if (boostOn && gs.tick % 12 === 0) audioController.ambNoise(0.06, 0.02)
-            if (gs.tick % 46 === 0) audioController.ambSweep(74, 58, 0.5, 'sine', boostOn ? 0.028 : 0.015)
+            const bed = ambBed(gs.level) // #2449 item 5: the bed deepens with the arc
+            if (gs.tick % bed.period === 0) audioController.ambSweep(bed.f0, bed.f1, bed.dur, 'sine', boostOn ? 0.028 : 0.015)
             if (bankHum > 0) {
                 if (gs.tick % 9 === 0) audioController.ambTone(98 + (gs.tick % 3) * 7, 0.2, 'sine', 0.022)
                 bankHum--
