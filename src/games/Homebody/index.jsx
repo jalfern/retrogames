@@ -54,6 +54,8 @@ import {
     drawGroundGift, bondRows,   // #2240: the set-down basket + the BONDS rows as data
     queueHit,   // #2470: the queue chips' tap route (shares the painter's geometry)
     queueGlyphFor,   // #2474: the chip glyph from an event id — one source for paint and timbre
+    chipHover,   // #2474 item 2: the name-reveal hit route (mouse hover + held thumb)
+    chipCollapse, chipCollapseArm, COLLAPSE_FRAMES,   // #2474 item 4: the row-collapse beat (view-only register)
 } from './art.js'
 
 const SIM_MS = FIXED_DT
@@ -123,6 +125,17 @@ const HomebodyGame = () => {
         const sayB = { text: '', x: 0, y: 0, life: 0 }
         const showSay = (s2, e) => { const t = s2.thoughts[0]; if (t) { sayB.text = t.text; sayB.x = e.x ?? W / 2; sayB.y = e.y ?? H / 2; sayB.life = 4.2 } }
         let toastMsg = '', toast = 0
+        // #2474 items 2+4: the view-only chip layer. collapseCache arms the row-
+        // collapse ghosts (Map<personIndex, {glyphs, rest, t}>); hoverReveal is the
+        // name the pointer rests on (mouse) or a thumb held past HOLD_NAME_MS over
+        // the inert NOW cell (pending chips keep cancel-at-press — items 2+3 must
+        // not collide with the pinned #2470 law). None of this touches the sim.
+        const collapseCache = new Map()
+        let qPrevSnap = null   // #2474 item 4: last frame's pending-glyph lists, to spot the ones that left
+        const HOLD_NAME_MS = 420
+        let mouseHover = null
+        let pressName = null   // { x, y, t0, revealed } — the held-thumb clock
+        let hoverReveal = null
         const prev = { left: false, right: false, up: false, down: false, a: false, b: false, pdown: false }
         const heldKeys = { left: false, right: false, up: false, down: false }
         let actQueued = false, buildQueued = false, switchQueued = false
@@ -647,7 +660,7 @@ const HomebodyGame = () => {
             ctx.restore()
             nightTint(ctx, g.hour, g.ext)
             drawTopBar(ctx, g)
-            drawPanel(ctx, g, g.sec)
+            drawPanel(ctx, g, g.sec, live ? collapseCache : null, live ? hoverReveal : null)
             drawThoughts(ctx, g)
             // #2253: a fresh order rings its target — the player sees the tap
             // landed the moment it registers, not seconds later at the fridge.
@@ -756,6 +769,14 @@ const HomebodyGame = () => {
             if (!last) last = ts
             const ft = Math.min(ts - last, 250)
             last = ts
+            // #2474 item 2: the held-thumb name clock — a finger resting on the
+            // inert NOW cell past HOLD_NAME_MS reads the errand's name (in pixels).
+            // Pending chips answer the press with cancel (#2470 law), so touch names
+            // ride the free surface; the mouse rides hover, which never taps at all.
+            if (pressName && !pressName.revealed && screenRef.current === 'play' && !pausedRef.current && performance.now() - pressName.t0 >= HOLD_NAME_MS) {
+                const hv = chipHover(gs, pressName.x, pressName.y)
+                if (hv && hv.qi === -1) hoverReveal = pressName.revealed = hv
+            }
             if (pausedRef.current) return
             // #2227: the dial answers even while the world stands still — these
             // consumptions sit ABOVE the step multiplier on purpose; swallow them
@@ -811,6 +832,17 @@ const HomebodyGame = () => {
                     }
                 }
                 }
+                // #2474 item 4: this frame's end carries a shorter list than the last
+                // frame's end — chips left the line (a pointer cancel lands BETWEEN
+                // frames, the pump issues mid-frame) — arm the collapse beat.
+                const qNow = gs ? gs.people.map((p) => p.queue.map((o) => queueGlyphFor(o.kind === 'use' ? o.it.id : o.kind))) : null
+                if (qNow && qPrevSnap) {
+                    for (let pi = 0; pi < qNow.length; pi++) {
+                        if (qNow[pi].length < qPrevSnap[pi].length) chipCollapseArm(collapseCache, pi, qPrevSnap[pi], qNow[pi].length)
+                    }
+                }
+                qPrevSnap = qNow
+                if (gs) chipCollapse(gs, collapseCache)   // #2474 item 4: ghosts decay on the world clock
                 stepParticles(ft)
             }
             if (screenRef.current === 'attract') paintAttract()
@@ -835,6 +867,7 @@ const HomebodyGame = () => {
             actQueued = buildQueued = switchQueued = false; digitPick = -1; courtQueued = null
             tabQueued = 0; specialPick = null   // #2222
             speedPick = null; speedCycled = 0   // #2227: a new street moves in at normal
+            collapseCache.clear(); hoverReveal = null; mouseHover = null; pressName = null; qPrevSnap = null   // #2474: no ghosts or stale names across streets
             setEndInfo(null)
             setSc('play')
             audioController.playSweep(262, 523, 0.24, 'square', 0.07)
@@ -921,11 +954,33 @@ const HomebodyGame = () => {
             if (watchingRef.current) { watchingRef.current = false; setWatching(false); if (gs) gs.demo = false; playWatchStop(); return }
             const r = canvas.getBoundingClientRect()
             if (!r.width) return
-            pointerPx((e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H)
+            const pxx = (e.clientX - r.left) / r.width * W
+            const pyy = (e.clientY - r.top) / r.height * H
+            pressName = { x: pxx, y: pyy, t0: performance.now(), revealed: false }   // #2474 item 2: the thumb clock starts with the press
+            pointerPx(pxx, pyy)
+        }
+        // #2474 item 2: the name reveal — a mouse resting on a chip reads it; the
+        // watch pill stopPropagation()s its own presses, e.target is this canvas.
+        const onMove = (e) => {
+            if (screenRef.current !== 'play' || pausedRef.current || !canvas || e.target !== canvas || watchingRef.current) { mouseHover = null; return }
+            if (e.pointerType === 'touch') return   // a thumb ends where it last tapped — hover is the mouse's idiom
+            const r = canvas.getBoundingClientRect()
+            if (!r.width) return
+            mouseHover = chipHover(gs, (e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H)
+            hoverReveal = mouseHover
+        }
+        const onLift = () => {
+            // #2474: the thumb clock ends with the lift; its revealed name goes
+            // with it (mouse names live and die by onMove, not by the clock).
+            if (pressName && pressName.revealed) hoverReveal = null
+            pressName = null
         }
         window.addEventListener('keydown', onDown)
         window.addEventListener('keyup', onUp)
         window.addEventListener('pointerdown', onPointer)
+        window.addEventListener('pointermove', onMove)
+        window.addEventListener('pointerup', onLift)
+        window.addEventListener('pointercancel', onLift)
 
         const resize = () => {
             if (!canvas) return
@@ -987,6 +1042,8 @@ const HomebodyGame = () => {
                     paper: gs.paper ? { r: gs.paper.r, c: gs.paper.c } : null, paperDay: gs.paperDay,   // #2238: the route
                     meal: gs.meal ? { r: gs.meal.r, c: gs.meal.c, name: gs.mealName } : null, mealDay: gs.mealDay, mealSlot: gs.mealSlot, mealSerial: gs.mealSerial, mealEaten: gs.mealEaten.length,   // #2244: the bells
                     queues: gs.people.map((p) => p.queue.map((o) => (o.kind === 'use' ? o.it.id : o.kind))),   // #2470: the pending lists, head first
+                    collapse: gs.people.map((_, pi) => (collapseCache.has(pi) ? COLLAPSE_FRAMES : 0)),   // #2474 item 4: which rows are ghosting (QA-visible, view-only)
+                    hoverName: hoverReveal ? hoverReveal.name : null,   // #2474 item 2: the name the pointer is reading (QA-visible)
                 }) : { screen: screenRef.current, seed },
                 // #1637 watchcheck pilot drives these.
                 watching: () => watchingRef.current,
@@ -1137,6 +1194,9 @@ const HomebodyGame = () => {
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('pointerdown', onPointer)
+            window.removeEventListener('pointermove', onMove)
+            window.removeEventListener('pointerup', onLift)
+            window.removeEventListener('pointercancel', onLift)
             window.removeEventListener('resize', resize)
             cancelAnimationFrame(raf)
             if (canvas) canvas.remove()

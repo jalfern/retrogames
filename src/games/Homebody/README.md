@@ -661,6 +661,45 @@ faint inertness, fresh-run row geometry and shifted cancel taps, hash-safety of
 probing, source pins). Mutant proven: `chipProgress` → `return null` kills
 exactly the seven NOW-cell pins; restore.
 
+## Queue polish 2 (#2474) — the chips name themselves, the line moves with a beat
+
+The next two fidelity laws on the #2470 action queue — again view-only, the
+sim still owns the law and the hash:
+- **The name reveal.** The original taught its action icons by naming them.
+  `chipHover` (art.js, the #2240 shared-geometry pattern) reads the cell under a
+  pointer — the pending chips AND the inert NOW cell — and paints the errand's
+  name (`chipName(id)`: catalog objects ride `DEF`, mail/work say WORK, a walk
+  says WALK) in the panel's own blue under the row. A mouse hover answers at
+  once; a thumb holds ~420 ms on the NOW cell (the one free surface — pending
+  chips answer the press with cancel, #2470) to read the running errand's name.
+  Hover never rides the tap route: `chipHover` sits beside `queueHit`, so
+  reading a chip can never cancel it (`pointerPx` contains no `chipHover`).
+- **The collapse beat.** When the last chip cancels/drops/issues, the row used to
+  vanish with a silent resize. Now the row keeps its reserved 18 px while the
+  departed chips shrink away as ghosts (`residentRows(s, collapse)` reserves the
+  slot; `drawPanel` shrinks `row.fade.glyphs`), then reflows. `chipCollapseArm`
+  fires whenever a frame's pending list is shorter than the last frame's — a
+  pointer cancel lands BETWEEN frames, so the shell compares per-frame snapshots
+  (`qPrevSnap`), not per world step. The beat decays on the world clock (12
+  steps), so the fast gears hurry it honestly. Ghosts and names live outside `s`;
+  `stateHash` never sees them (the queue itself still rides the hash — that law
+  is #2470's), and a new street clears the register.
+- **Item 3 — promote-by-tap: parked for a gesture call (#2495).** The original
+  pulls a queued action to the front; the chip's tap verb is already cancel-at-
+  press (#2470, pinned). A second verb needs Jon's decision (long-press promote,
+  drag-to-head, or skip) — filed as a decidable question, not built blind.
+
+Gates: `homebodyqueuecheck` POLISH 2 section (+22 pins: `chipName` mapping,
+hover names the pending chip / the NOW cell / nothing off-row, hover never cancels
+and never moves the hash, row-reserved + hold-open + reflow over the collapse,
+arm-nothing, probing hash-safety, source pins incl. hover-not-in-pointerPx and
+cancel-still-owns-the-press). `homebodydrive` (+5 live: a busy tap joins the
+list, hover reads the chip its name, the blue label paints under the row, the
+name clears on leave, cancelling a chip arms the beat — `collapse=[12,0]`).
+Mutants proven: `chipHover` → `return null` kills exactly the two reveal pins;
+dropping the reserved-space line kills exactly the two hold-open pins; restore.
+`peoplecheck` 585/0, seed-exact hash pins green (the layer is view-only).
+
 ## Honest gaps (filed to QA #…)
 - **CLOSED by #1806:** multiple rooms — one expansion ships: the Spare Room kit
   grows a wing on the east lawn (floor/walls/door/windows, connectivity-guarded,

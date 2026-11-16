@@ -863,7 +863,7 @@ function needColor(v) {
 // reserved (the panel stays as tight as it always was for idle households).
 export const QCELL = { cw: 19, ch: 14, gap: 3 }
 
-export function residentRows(s) {
+export function residentRows(s, collapse = null) {
     const rows = []
     let y = LOT_Y + 26
     for (const p of s.people) {
@@ -872,11 +872,21 @@ export function residentRows(s) {
         // pending chips with a thin drain bar (The Sims drew a depleting timer on
         // the head of its action queue). View-only: stateHash never sees it.
         const row = { p, nameY: y, barsY0, queueY: p.queue.length ? barsY0 + NEEDS.length * 10 + 2 : null, now: p.queue.length ? chipProgress(p) : null }
+        // #2474 item 4: the collapse beat — a row whose chips just left the list
+        // keeps its reserved space (and paints its shrinking ghosts) while the
+        // fade plays, so “the list moved” is SEEN before the panel reflows.
+        const fade = p.queue.length ? null : (collapse && collapse.get(pIndex(s, p))) || null
+        if (fade) { row.fade = fade; row.queueY = barsY0 + NEEDS.length * 10 + 2 }
         y = barsY0 + NEEDS.length * 10 + 8 + (row.queueY !== null ? 18 : 0)
         row.nextY = y
         rows.push(row)
     }
     return rows
+}
+
+function pIndex(s, p) {
+    for (let i = 0; i < s.people.length; i++) if (s.people[i] === p) return i
+    return -1
 }
 
 // #2474: queueGlyphFor(id) — the chip glyph as a function of the event id, so
@@ -897,11 +907,11 @@ export function chipProgress(p) {
     if (!p || p.faintT > 0 || p.owner !== 'human') return null
     if (p.use) {
         const frac = p.use.def && p.use.def.sleep ? 0 : Math.min(1, p.use.t / (p.use.dur || 1))
-        return { frac, glyph: queueGlyphFor(p.use.it.id) }
+        return { frac, glyph: queueGlyphFor(p.use.it.id), id: p.use.it.id }
     }
     if (p.path && p.path.length && p.walkN0) {
         const id = p.goal && p.goal.kind === 'use' ? p.goal.it.id : 'walk'
-        return { frac: Math.max(0, 1 - p.path.length / p.walkN0), glyph: queueGlyphFor(id) }
+        return { frac: Math.max(0, 1 - p.path.length / p.walkN0), glyph: queueGlyphFor(id), id }
     }
     return null
 }
@@ -933,14 +943,66 @@ export function queueHit(s, px, py) {
     return null
 }
 
-export function drawPanel(ctx, s, t) {
+// #2474 item 2: chipName(id) — the one source for a chip's spoken name.
+// CATALOG objects ride DEF; the mail and a plain walk carry their own words.
+export function chipName(id) {
+    if (id === 'walk') return 'WALK'
+    if (id === 'work' || id === 'mail') return 'WORK'
+    const d = DEF[id]
+    return (d && d.name ? d.name : String(id)).toUpperCase()
+}
+
+// #2474 item 2: chipHover(s, px, py) — the name-reveal hit route. It reads the
+// queueHit geometry AND the NOW cell (the tell is a button for NAMES only, never
+// for cancels). The shell decides the gesture: a mouse hover reveals instantly,
+// a held thumb reveals after the long-press clock — so touch and mouse share one
+// geometry and neither collides with the cancel-by-chip law (#2470, pinned).
+export function chipHover(s, px, py) {
+    const rows = residentRows(s)
+    for (let pi = 0; pi < rows.length; pi++) {
+        const row = rows[pi]
+        if (row.queueY === null) continue
+        if (py < row.queueY || py > row.queueY + QCELL.ch) continue
+        if (row.now && px >= PANEL_X + 26 && px <= PANEL_X + 26 + QCELL.cw) {
+            return { pi, qi: -1, glyph: row.now.glyph, name: chipName(row.now.id) }
+        }
+    }
+    const qh = queueHit(s, px, py)
+    if (!qh) return null
+    const o = rows[qh.pi].p.queue[qh.qi]
+    return { pi: qh.pi, qi: qh.qi, glyph: queueGlyph(o), name: chipName(o.kind === 'use' ? o.it.id : o.kind) }
+}
+
+// #2474 item 4: the collapse register (shell-owned Map<personIndex, entry>).
+// The shell snapshots each resident's pending glyphs around its world steps;
+// glyphs that LEFT the list (cancel, issue, drop — any honest exit) are handed
+// here and paint as shrinking ghosts while the row holds its space. The sim
+// owns the law and hashes; the register lives outside s, byte-safe by design.
+// k is the per-world-step clock: at the dial's fast gears the world really
+// runs quicker, and the beat hurries with it.
+export const COLLAPSE_FRAMES = 12
+
+export function chipCollapse(s, cache) {
+    if (!s || !cache) return
+    for (const [k, en] of cache) {
+        en.t -= 1
+        if (en.t <= 0) cache.delete(k)
+    }
+}
+
+export function chipCollapseArm(cache, pi, glyphs, rest) {
+    if (!cache || !glyphs.length) return
+    cache.set(pi, { glyphs, rest, t: COLLAPSE_FRAMES })
+}
+
+export function drawPanel(ctx, s, t, collapse = null, hoverName = null) {
     ctx.fillStyle = P.panel; ctx.fillRect(PANEL_X, LOT_Y, W - PANEL_X - 4, H - LOT_Y - 8)
     ctx.strokeStyle = P.panelEdge; ctx.lineWidth = 2
     ctx.strokeRect(PANEL_X + 1, LOT_Y + 1, W - PANEL_X - 6, H - LOT_Y - 10)
     ctx.textAlign = 'left'; ctx.textBaseline = 'top'
     ctx.fillStyle = '#9fb4d8'; ctx.font = 'bold 10px monospace'
     ctx.fillText('HOUSEHOLD', PANEL_X + 10, LOT_Y + 8)
-    for (const row of residentRows(s)) {
+    for (const row of residentRows(s, collapse)) {
         const p = row.p
         const isActive = s.people[s.active] === p
         ctx.fillStyle = p.hue
@@ -985,6 +1047,30 @@ export function drawPanel(ctx, s, t) {
                 ctx.strokeStyle = i === 0 ? '#c9a23f' : '#31405e'; ctx.lineWidth = 1
                 ctx.strokeRect(x + 0.5, row.queueY + 0.5, QCELL.cw - 1, QCELL.ch - 1)
                 needIcon(ctx, x + QCELL.cw / 2, row.queueY + QCELL.ch / 2, queueGlyph(p.queue[i]), i === 0 ? '#ffd24a' : '#8fa2c8')
+            }
+            // #2474 item 4: ghosts of the chips that just left the list, shrinking
+            // into the vacated tail while the row holds its space — “the list
+            // moved.” Only the positions beyond the new head count ghost (an emptied
+            // row ghosts fully; a middle-cancel reads as the honest left-shift).
+            if (row.fade) {
+                const k = Math.max(0, row.fade.t / COLLAPSE_FRAMES)
+                const gone = row.fade.glyphs.length
+                for (let i = row.fade.rest; i < gone; i++) {
+                    const gx = PANEL_X + 26 + i * (QCELL.cw + QCELL.gap)
+                    const bx = gx + (QCELL.cw - QCELL.cw * k) / 2
+                    const by = row.queueY + (QCELL.ch - QCELL.ch * k) / 2
+                    ctx.globalAlpha = k
+                    ctx.fillStyle = '#232f4a'
+                    ctx.fillRect(bx, by, QCELL.cw * k, QCELL.ch * k)
+                    if (k > 0.5) needIcon(ctx, bx + QCELL.cw * k / 2, by + QCELL.ch * k / 2, row.fade.glyphs[i], '#7488ad')
+                    ctx.globalAlpha = 1
+                }
+            }
+            // #2474 item 2: the name reveal — the chip the pointer rests on (or a
+            // held thumb) says its own word under the row, teaching the glyph set.
+            if (hoverName && hoverName.pi === s.people.indexOf(p)) {
+                ctx.fillStyle = '#8fa2c8'; ctx.font = 'bold 7px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top'
+                ctx.fillText(hoverName.name, PANEL_X + 26, row.queueY + QCELL.ch + 1)
             }
         }
     }
