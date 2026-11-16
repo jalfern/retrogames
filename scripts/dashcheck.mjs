@@ -42,6 +42,9 @@ const TOKEN = {
     gait: 'amoTurn', pour: 'amoDrop', vise: 'mirror',        // #2428 variant receipts
     fork: 'amoFork',                                          // #2444 multi-head receipt
     drift: 'drift',                                           // #2453 butterfly flap receipt
+    ferryDrop: 'ferryDrop',                                   // #2463 cargo lands on the pad
+    carryDone: 'carryDone',                                   // #2463 the burdened fly perishes
+    grab: 'grab',                                             // #2463 a free butterfly takes a gem
 }
 
 let pass = 0
@@ -61,6 +64,7 @@ const MUTANTS = {
     flyIgnite: 'the firefly stops lighting things — no explosion at all',
     flyTravel: 'the firefly stops holding its heading — the orbit never reaches the seam, the corridor stays empty',
     flyDrift: 'the butterfly forgets to flap — GOSSAMER HOLLOW is a straight corridor patrol again, the drift receipt dies',
+    flyCarry: 'the transport stops hauling — SILK GULCH loses its ferried supply and cannot close the quota (ferry-only strands at 4/6)',
     fallKill: 'a falling boulder stops crushing — the hazard is theatre',
     amoeba: 'the slime stops growing — the wave never crosses its pocket, never eats the bait',
     amoTurn: 'the two-phase head stops cornering — the wave leaks perpendiculars like classic and never walks its square-corner gait',
@@ -156,6 +160,11 @@ for (let i = 0; i < LEVELS.length; i++) {
         const reach = digReachable(meta, grid)
         let gems = 0
         for (let j = 0; j < W * H; j++) if (grid[j] === DIAMOND && reach[j]) gems++
+        // #2463: each burdened transport is a FUTURE gem (it delivers one at
+        // the pad and perishes) — supply arithmetic counts the carriers, and
+        // the pad itself when still empty of both jobs. Levels without ferries
+        // add 0 — every older cave's audit is unchanged.
+        gems += ((meta.butterflies) || []).filter((b) => b.carry === 1).length
         ok(gems >= meta.need, `${meta.name}: only ${gems} dig-reachable gems but the quota is ${meta.need}`)
         ok(reach[meta.exit.y * W + meta.exit.x] === 1, `${meta.name}: the exit is NOT dig-reachable from the spawn`)
     }
@@ -851,6 +860,116 @@ for (let i = 0; i < LEVELS.length; i++) {
         }
         ok(minGap <= 4, `the GOO GALLERY vise never closes within the telegraph window (min gap ${minGap}) — the green lane and the drone would never fire`)
         ok(rowPair, 'the vise closes off-axis (never two fronts sharing a corridor row within 4) — the between-fronts lane shade would paint nothing')
+    }
+}
+
+// ------------------------------------------------- BUTTERFLY FERRY (#2463) pins ----
+{
+    section('BUTTERFLY FERRY (#2463) — the transport takes, lands, serialises, and perishes')
+
+    // (a) PAD LAWS in a synthetic lined shaft: the loaded fly descends, the
+    // cargo lands as a real gem on the steel-floored pad (rests — never
+    // falls/converts), the bearer perishes (carryDone + removed from the
+    // flock), and a SECOND loaded fly is REFUSED while the pad holds the gem
+    // (diamonds block flies) until the harness empties the pad — deliveries
+    // serialise, nothing is cloned.
+    {
+        const g0 = new Uint8Array(W * H).fill(DIRT)
+        for (let x = 0; x < W; x++) { g0[x] = STEEL; g0[(H - 1) * W + x] = STEEL }
+        for (let y = 0; y < H; y++) { g0[y * W] = STEEL; g0[y * W + W - 1] = STEEL }
+        for (let y = 3; y <= 8; y++) { g0[y * W + 12] = EMPTY; g0[y * W + 11] = STEEL; g0[y * W + 13] = STEEL }
+        g0[9 * W + 12] = STEEL                          // the pad floor — steel, so gems rest as gems
+        const meta = {
+            spawn: { x: 2, y: 2 }, exit: { x: 2, y: 2 }, need: 1, timeTicks: 400,
+            dropCells: [[12, 8]],
+            butterflies: [{ x: 12, y: 4, dir: 0, carry: 1 }, { x: 12, y: 3, dir: 0, carry: 1 }],
+        }
+        const g = sim.makeGame(meta, g0)
+        ok(g.carryExt === true, 'a level with dropCells must fold cargo state into the hash (carryExt)')
+        const padIdx = 8 * W + 12
+        let drops = 0, done = 0, collected = false, restTicks = 0
+        for (let t = 0; t < 80; t++) {
+            sim.step(g)
+            drops += g.events.filter((e) => e.type === 'ferryDrop').length
+            done += g.events.filter((e) => e.type === 'carryDone').length
+            if (g.grid[padIdx] === DIAMOND) restTicks++
+            // the harness plays the collector at tick 40 (a real player digs in)
+            if (g.tick === 40 && g.grid[padIdx] === DIAMOND) { g.grid[padIdx] = EMPTY; collected = true }
+        }
+        ok(drops === 2 && done === 2, `pad serialisation broke: ${drops} drops / ${done} carryDone (expected 2/2 — one before, one after collecting)`)
+        ok(g.flies.length === 0, `${g.flies.length} transport(s) survived delivering — the burden must perish (carryDone)`)
+        ok(restTicks > 4 && collected, 'the delivered gem did not rest as a gem on the steel pad (it fell, converted, or never landed)')
+        ok(g.grid[padIdx] === DIAMOND, 'the second delivery did not land after the pad was emptied — the bounce-and-wait law is dead')
+        const padsNow = g.flies.filter((f) => f.carry === 1).length
+        ok(padsNow === 0, 'a transport survived carrying — cargo outlived the bearer')
+    }
+
+    // (b) SILK GULCH live, across the REAL planner win-run: both ferries land
+    // on the pad (20,16) and perish; the weaver never dives the mine (the
+    // loaded-only law contains it by rule); it flaps in the gallery meanwhile;
+    // nothing ever burns (the harvest row stays cool by the no-ignition law).
+    {
+        const { meta, grid } = buildLevel(8)
+        const g = sim.makeGame(meta, grid)
+        const mineSet = new Set(meta.mine.map(([x, y]) => y * W + x))
+        let drops = 0, done = 0, flaps = 0, fires = 0, weaverDived = null, harvestHot = null
+        while (!g.end && g.tick < meta.timeTicks) {
+            if (g.tick % CFG.moveEvery === 0) { const d = sim.planStep(g); if (d) sim.playerMove(g, d) }
+            sim.step(g)
+            drops += g.events.filter((e) => e.type === 'ferryDrop' && e.y === 16 && e.x === 20).length
+            done += g.events.filter((e) => e.type === 'carryDone').length
+            flaps += g.events.filter((e) => e.type === 'drift').length
+            fires += g.events.filter((e) => e.type === 'ignite' || e.type === 'spread').length
+            for (const f of g.flies) if (f.carry === 0 && mineSet.has(f.y * W + f.x)) weaverDived = weaverDived || `tick ${g.tick} fly ${f.id} at ${f.x},${f.y}`
+            for (let x = 8; x <= 10; x++) if (g.grid[18 * W + x] === FIRE) harvestHot = `tick ${g.tick} fire at ${x},18`
+        }
+        ok(g.win === true, `SILK GULCH was not winnable with the ferry live (have ${g.have}/${meta.need}, end ${g.end})`)
+        ok(drops === 2 && done === 2, `the ferried quota was ${drops} pad-drops / ${done} perished (expected 2/2)`)
+        ok(!weaverDived, `an unburdened butterfly entered the mine (${weaverDived}) — the loaded-only refusal is dead, the weaver could eat the pad`)
+        ok(flaps >= 10, `the weaver flapped only ${flaps}× during the run — the gallery reads as scenery, not a critter`)
+        ok(fires === 0 && !harvestHot, `SILK GULCH produced fire (${fires} events ${harvestHot || ''}) — butterflies light nothing; the harvest is cool by law`)
+        ok(g.have === meta.need, `the harvest took ${g.have} gems, quota ${meta.need} — supply arithmetic (seam 3 + pocket 1 + ferried 2) leaked`)
+    }
+
+    // (c) FERRY-ONLY: silence the transport on the live cave and the quota
+    // CANNOT close — the ferried supply stops existing. This is the load-
+    // bearing proof (same class as SLIME VAULT's push mutant stranding it).
+    {
+        CFG.flyCarry = false
+        const r = runPlanner(8)
+        CFG.flyCarry = true
+        ok(!r.g.win && r.g.have < r.meta.need, `with flyCarry silenced the cave still finished ${r.g.have}/${r.meta.need} win=${r.g.win} — the ferry is decoration, not the quota`)
+    }
+
+    // (d) determinism + opt-in exclusivity: SILK GULCH replays byte-identical
+    // (cargo rides the hash), a dropped move changes it, and NO older cave
+    // folds cargo/mine state (no dropCells there).
+    {
+        const { meta, grid } = buildLevel(8)
+        const r = runPlanner(8)
+        const a = sim.replay(meta, grid, r.cmds)
+        const b = sim.replay(meta, grid, r.cmds)
+        ok(sim.stateHash(a) === sim.stateHash(b), 'SILK GULCH replays differ — cargo state is not a pure function')
+        ok(a.carryExt === true && a.flyExt === true, 'SILK GULCH must fold BOTH flap and cargo state into the hash')
+        ok(sim.stateHash(sim.replay(meta, grid, r.cmds.slice(0, 3).concat(r.cmds.slice(4)))) !== sim.stateHash(a), 'the cave-9 hash ignores a dropped move — determinism could not see a desync')
+        for (let i = 0; i < 8; i++) {
+            const m = buildLevel(i)
+            ok(sim.makeGame(m.meta, m.grid).carryExt === false, `LEVEL ${i} folds cargo state — the ferry opt-in must stay exclusive to SILK GULCH`)
+        }
+    }
+
+    // (e) readability marks stay truthful (#2374/#2417 law): the shaft tint
+    // marks open mine cells; the pad telegraph sits at the tunnel end facing
+    // the pocket gem it promises.
+    {
+        const { meta, grid } = buildLevel(8)
+        ok(meta.name === 'SILK GULCH', `ferry marks pinned to the wrong cave (${meta.name})`)
+        const mineSet = new Set(meta.mine.map(([x, y]) => y * W + x))
+        ok((meta.dust || []).map(([x, y]) => `${x},${y}`).sort().join('|') === '20,13|20,14', 'the shaft tint drifted off the bore column')
+        ok((meta.dust || []).every(([x, y]) => grid[y * W + x] === EMPTY && mineSet.has(y * W + x)), 'a shaft-marked cell is not open mine — the delivery hint would sit on rock')
+        ok((meta.pads || []).map(([x, y]) => `${x},${y}`).join('|') === '18,16', 'the pad telegraph drifted off the tunnel end')
+        ok(grid[16 * W + 18] === EMPTY && grid[16 * W + 19] === DIAMOND, 'the pad telegraph no longer faces the pocket gem — the hint lies')
+        ok(grid[16 * W + 20] === EMPTY && grid[17 * W + 20] === STEEL, 'the pad is not a steel-floored cup — ferried gems would fall or convert')
     }
 }
 

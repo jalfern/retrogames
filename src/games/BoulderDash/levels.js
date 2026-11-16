@@ -18,6 +18,8 @@
 //   pour     a dropping head claimed DOWN first — slime poured off its shelf (6)
 //   vise     two waves claimed the same pass — the mirrored twins closed (6)
 //   drift    the butterfly flapped in open ground on its own (8, #2453)
+//   grab     the transport butterfly took a gem mid-flight (9, #2463)
+//   ferryDrop the butterfly let its cargo go over a drop cell (9, #2463)
 //
 // Two construction rules keep an unattended CI gate honest:
 //   1. the HARVEST gems (the quota) always sit on solid dirt with plain dirt
@@ -351,6 +353,79 @@ export const LEVELS = [
             // above the harvest lane. Steel on both faces — and open ground
             // carries no fuel — so nothing burning ever travels it either way.
             c.col(27, 12, 17, EMPTY)
+            return c.g
+        },
+    },
+    {
+        // THE TRANSPORT BUTTERFLY (#2463). The originals' butterflies grabbed a
+        // diamond and dropped it on the far side — a transport puzzle in its own
+        // right. SILK GULCH's quota cannot be dug: three gems sit on the open
+        // seam, one rests in a steel pocket at the foot of the shaft, and the
+        // last TWO ride with the butterflies (a loaded fly is born carrying —
+        // `carry:1`). A loaded transport flies with momentum like any fly, but
+        // at the drop cell — the steel pad at (20,16) — the cargo lets go: a
+        // real, collectable gem resting on steel (it never falls, never
+        // greed-turns; the pad's steel floor is the law that keeps it a gem).
+        // The burdened fly perishes of the landing (carryDone: the originals'
+        // "carries it until it dies", our one honest simplification — our flies
+        // are otherwise unkillable), so a loaded fly always tries the pad: if
+        // the pad still holds a gem the fly BOUNCES (diamonds block flies) and
+        // waits above, cycling down until the player empties the pad. Supply is
+        // exactly the quota: seam 3 + pocket 1 + ferried 2 = need 6. Silence
+        // flyCarry and the ferries die — dashcheck strands the planner at 4/6
+        // and the level fails: the transport is load-bearing, not decoration.
+        // The third butterfly is unburdened and weaves the steel-ringed gallery
+        // (#2453 drift proof); the shaft is a two-cell dust bore (the fly that
+        // drops bears through it, igniting — but a butterfly lights nothing, so
+        // the bore stays dark and cool and the harvest at row 18 is provably
+        // safe). The dust marks are the readability seam of #2374 again: the
+        // bore column is where a winged delivery comes through.
+        name: 'SILK GULCH', timeTicks: 2400, need: 6,
+        spawn: { x: 3, y: 18 }, exit: { x: 36, y: 2 },
+        butterflies: [
+            { x: 12, y: 7, dir: 1 },             // the weaver (drift proof, no cargo)
+            { x: 20, y: 13, dir: 0, carry: 1 }, // burdened: dives the shaft to the pad
+            { x: 20, y: 16, dir: 0, carry: 1 }, // burdened: born on the pad — instant drop
+        ],
+        dropCells: [[20, 16]],
+        // the mine: the loaded-only column from the gallery mouth to the pad.
+        // An UNburdened butterfly refuses these cells (it turns above the mouth —
+        // only the burdened dive), so the weaver can never dive into the pocket
+        // or wander the harvest tunnels: containment by rule, not layout.
+        mine: [[20, 12], [20, 13], [20, 14], [20, 15], [20, 16]],
+        proves: ['dig', 'drift', 'ferryDrop', 'carryDone'],
+        // readability (painter-only, #2374 tint law): the shaft column a loaded
+        // transport comes down — dashcheck pins both marks to open mine cells.
+        dust: [[20, 13], [20, 14]],
+        // the pocket mouth telegraph (dashcheck pins: DIRT directly west of the
+        // pad-approach air, on the tunnel's last dig).
+        pads: [[18, 16]],
+        build() {
+            const c = new Carve()
+            c.shell()
+            c.rect(2, 16, 4, 20, EMPTY)                 // start, bottom-left
+            c.rect(34, 1, 37, 4, EMPTY)                 // exit, top-right
+            c.seam(18, 8, 10)                          // harvest — half the quota, dig-free
+            // the pocket: steel cup at the foot of the shaft, entered by one
+            // dig east from the tunnel's end. Its gem rests ON STEEL — never
+            // falls, never converts; it waits for a pickaxe. The pad cell
+            // (20,16) itself starts EMPTY: only ferry-drops put a gem there.
+            c.rect(19, 15, 21, 17, STEEL)
+            c.set(19, 16, DIAMOND)                     // the pocket gem (supplied, not dig-seam)
+            c.set(20, 16, EMPTY)                       // the pad
+            // the shaft: open column from the gallery mouth to the pad (dark —
+            // butterflies ignite nothing), cheeks and floor steel.
+            c.col(20, 12, 15, EMPTY)
+            // the gallery: steel-ringed flight deck with pillars to weave (the
+            // weaver's stage, #2453 style). The mouth is the mine's first cell.
+            c.rect(10, 5, 30, 11, EMPTY)
+            c.row(4, 9, 31, STEEL); c.row(12, 9, 31, STEEL)
+            c.col(9, 4, 12, STEEL); c.col(31, 4, 12, STEEL)
+            c.rect(14, 7, 15, 8, STEEL)
+            c.rect(24, 8, 25, 9, STEEL)
+            // approach tunnel from the start chamber; its last cell is the cap
+            // the player must dig east to reach the pocket.
+            c.row(16, 5, 18, EMPTY)
             return c.g
         },
     },
