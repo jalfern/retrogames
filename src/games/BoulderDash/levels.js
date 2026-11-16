@@ -14,6 +14,9 @@
 //   crush    a shoved wall destroyed the rock in its path (level 5)
 //   amoeba   the slime wave grew into open space (level 5)
 //   dissolve the wave took a diamond down with it (level 5)
+//   gait     a two-phase head CORNERED at a wall, its children marching on (6, #2428)
+//   pour     a dropping head claimed DOWN first — slime poured off its shelf (6)
+//   vise     two waves claimed the same pass — the mirrored twins closed (6)
 //
 // Two construction rules keep an unattended CI gate honest:
 //   1. the HARVEST gems (the quota) always sit on solid dirt with plain dirt
@@ -200,6 +203,57 @@ export const LEVELS = [
             // loose gems over open space would fall and greed-turn to dirt long
             // before the wave arrives (construction rule 1, learned the sharp way).
             c.set(27, 16, DIAMOND); c.set(28, 16, DIAMOND)
+            return c.g
+        },
+    },
+    {
+        // The amoeba FAMILY comes home (#2428). Three sealed pockets, one
+        // creature law each, and none of them can reach the harvest at row 18
+        // or the exit shaft at col 36 — containment is the same construction
+        // law as SLIME VAULT (uncarved DIRT is absolute; growth claims only
+        // EMPTY and DIAMOND). West pocket: a TWO-PHASE wave that corners on
+        // its turn passes and drives on its extend passes, eating the bait
+        // gems on its floor. Middle: a mirrored CLASSIC pair in a two-row
+        // corridor, seeded at both ends and closing like a vise — every pass
+        // both fronts claim, which is the `vise` receipt. East: a DROPPER in
+        // a shaft — down is its first offer, so it pours to the floor.
+        name: 'GOO GALLERY', timeTicks: 2400, need: 6,
+        spawn: { x: 3, y: 18 }, exit: { x: 36, y: 2 },
+        amoebaDir: [1, 0], amoebaVariant: 'twophase',
+        amoebas: [
+            { cells: [[30, 2]], dir: [1, 0], variant: 'drop' },
+            { cells: [[20, 12], [20, 13]], dir: [1, 0], variant: 'classic' },
+            { cells: [[34, 12], [34, 13]], dir: [-1, 0], variant: 'classic' },
+        ],
+        proves: ['dig', 'amoeba', 'dissolve', 'gait', 'pour', 'vise'],
+        // #2417-style readability data (painter-only): dirt rows capping the
+        // three slime pockets — the green grain telegraph reads "danger below".
+        lids: [[6, 3], [7, 3], [8, 3], [9, 3], [10, 3], [11, 3], [12, 3], [13, 3],
+            [14, 3], [15, 3], [16, 3], [30, 1],
+            [20, 11], [21, 11], [22, 11], [23, 11], [24, 11], [25, 11], [26, 11],
+            [27, 11], [28, 11], [29, 11], [30, 11], [31, 11], [32, 11], [33, 11], [34, 11]],
+        build() {
+            const c = new Carve()
+            c.shell()
+            c.rect(2, 16, 4, 20, EMPTY)                 // start, bottom-left
+            c.rect(34, 1, 37, 4, EMPTY)                 // exit, top-right
+            c.seam(18, 8, 13)                           // supported harvest — 6 on the seam, quota 6
+            // pocket A — the two-phase creature's chamber (wave 0), sealed by
+            // untouched dirt all around. Bait gems sit ON the pocket floor (row
+            // 6 stays uncarved under them — construction rule 1; loose gems over
+            // open space fall and greed-turn to dirt before the wave arrives).
+            c.rect(6, 4, 16, 5, EMPTY)
+            c.rect(15, 6, 16, 8, EMPTY)                 // the elbow — where the gait turns the corner
+            c.set(6, 4, AMO_HEAD); c.set(6, 5, AMO_HEAD)
+            // bait gems in the creature's DRIVE lane (row 5), on solid floor:
+            // the front marches east through here, so the dissolve is certain.
+            c.set(13, 5, DIAMOND); c.set(14, 5, DIAMOND)
+            // pocket B — the dropper's shaft (wave 1): one column, air rows 2..8,
+            // dirt floor below. Down is its first offer; it pours and stalls.
+            c.col(30, 2, 8, EMPTY)
+            // pocket C — the vise (waves 2+3): a two-row corridor with classic
+            // waves seeded at both ends, dirs 180° apart. Dirt roof and floor.
+            c.rect(20, 12, 34, 13, EMPTY)
             return c.g
         },
     },

@@ -181,7 +181,13 @@ r.check('another key starts a fresh play (clock reset)', (await probe()).screen 
         if (q.boulders === 0) crushSeen = true
         const d = await hint()
         if (d) await key(d)
-        await wait(55)
+        // pace shoves at WORLD ticks: gravity only gets to see a bolt while it
+        // stands over its pit, and a 55 ms key loop can shove it past between
+        // two ticks — the hop makes the vault a coin-flip under load. Wait for
+        // the tick to actually advance (world seconds, never a blind sleep —
+        // the AGENTS.md clock rule) so every pit cell is evaluated.
+        let advanced = false
+        for (let k = 0; k < 15 && !advanced; k++) { advanced = (await probe()).tick > q.tick; if (!advanced) await wait(20) }
     }
     const fin = await probe()
     r.check('real arrows crack the vault — SLIME VAULT won end-to-end', fin.screen === 'over' && fin.win === true, `screen=${fin.screen} win=${fin.win} have=${fin.have}/${fin.need}`)
@@ -203,6 +209,43 @@ r.check('another key starts a fresh play (clock reset)', (await probe()).screen 
         await wait(80)
     }
     r.check('…and dissolved entirely on its own clock (generations expire)', peak2 > 4 && expired, `peak=${peak2} end=${(await probe()).slime}`)
+}
+
+// ---- #2428 GOO GALLERY live: all three variants drive under real keys ----
+{
+    await page.evaluate(() => window.__game && window.__game.reset && window.__game.reset(5))
+    await wait(700)
+    const s = await probe()
+    r.check('the contract reset loaded GOO GALLERY', s.name === 'GOO GALLERY' && s.screen === 'play', `name=${s.name} screen=${s.screen}`)
+    let gooPeak = 0, drove = 0
+    for (let i = 0; i < 1600; i++) {
+        const q = await probe()
+        if (q.screen !== 'play') break
+        gooPeak = Math.max(gooPeak, q.slime)
+        drove++
+        const d = await hint()
+        if (d) await key(d)
+        await wait(55)
+    }
+    const fin = await probe()
+    r.check('the planner route drives GOO GALLERY home with real keys', fin.screen === 'over' && fin.win === true && fin.have >= fin.need,
+        `screen=${fin.screen} win=${fin.win} have=${fin.have}/${fin.need}`)
+    r.check('the family is visibly alive — slime grew while the digger ran', gooPeak > 6, `peak slime=${gooPeak} over ${drove} presses`)
+    await wait(1200)
+    await key('KeyM')
+    await wait(300)
+    r.check('the gallery run restarts back to attract', (await probe()).screen === 'attract')
+    // waves expire on their own clock in a fresh cave with no input (the tails
+    // must never leave the pockets full)
+    await page.evaluate(() => window.__game && window.__game.reset && window.__game.reset(5))
+    let peak3 = 0, gone3 = false
+    for (let i = 0; i < 220 && !gone3; i++) {
+        const q = await probe()
+        peak3 = Math.max(peak3, q.slime)
+        if (peak3 > 6 && q.slime === 0) gone3 = true
+        await wait(80)
+    }
+    r.check('all three variant waves expire on their own clocks', peak3 > 6 && gone3, `peak=${peak3} end=${(await probe()).slime}`)
 }
 
 r.check('zero page errors across the whole playthrough', errors.length === 0, errors.slice(0, 4).join(' | '))

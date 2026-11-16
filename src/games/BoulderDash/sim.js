@@ -62,6 +62,18 @@ export const FIREFLY = 6               // never stored in the grid; flies are en
 export const AMO_HEAD = 7
 export const AMO_BODY = 8
 export const PUSHWALL = 9
+// #2428 — the Boulder Dash II amoeba FAMILY rides on the slime cells as variant
+// codes (the wave is still ONE automaton, it just steps differently): 0 is the
+// #2411 classic wave, 1 the two-phase gait (extend, then corner), 2 the dropper
+// (down is always the first offer). A level says which family its slime is from.
+export const AMO_CLASSIC = 0
+export const AMO_TWOPHASE = 1
+export const AMO_DROP = 2
+export const AMO_VARIANT = { classic: AMO_CLASSIC, twophase: AMO_TWOPHASE, drop: AMO_DROP }
+// Direction order for slime heads: index 0..3 clockwise from east, so a left
+// turn is +3 and a right turn is +1, and the 180° mirror of a wave is +2.
+export const AMO_D4 = [[1, 0], [0, 1], [-1, 0], [0, -1]]
+export const amoDirIdx = ([dx, dy]) => AMO_D4.findIndex(([ax, ay]) => ax === dx && ay === dy)
 
 export const CFG = {
     burn: 5,                            // ticks a FIRE cell lives before emptying
@@ -83,6 +95,8 @@ export const CFG = {
     amoeba: true,                       // #2411: the slime wave grows (Boulder Dash II)
     amoEvery: 3,                      // CA ticks between amoeba growth passes — the wave reads as motion
     amoGens: 8,                       // generations a body cell survives — the wave's length
+    amoTurn: true,                    // #2428: the two-phase gait — heads corner 90° on the off phase
+    amoDrop: true,                    // #2428: the dropper variant — down is the head's first offer
     push: true,                       // #2411: push walls slide sideways one cell per shove
     pushCrush: true,                  // …and crush whatever rock stands in the way
 }
@@ -114,8 +128,17 @@ export function stateHash(g) {
         const t = g.grid[i]
         // FIRE carries its burn timer, amoeba cells their generation — each in a
         // character range the other cannot reach, so no two distinct states fold
-        // to the same char (#2411).
-        const adj = t === FIRE ? g.burn[i] : (t === AMO_HEAD || t === AMO_BODY ? 11 + g.amoGen[i] : 0)
+        // to the same char (#2411). On #2428 VARIANT caves the amoeba char also
+        // carries head direction, variant and wave id (bases 8/32/96 above the
+        // generation) — states that could diverge must hash differently. Levels
+        // without variants take the #2411 branch unchanged: byte-identical.
+        let adj = 0
+        if (t === FIRE) adj = g.burn[i]
+        else if (t === AMO_HEAD || t === AMO_BODY) {
+            adj = g.amoExt
+                ? g.amoGen[i] + 8 * (g.amoHead[i] + 1) + 32 * g.amoVar[i] + 96 * g.amoWave[i]
+                : 11 + g.amoGen[i]
+        }
         s += String.fromCharCode(48 + t + adj)
     }
     s += '|' + [...g.movingB].join(',') + ';' + [...g.movingD].join(',')
@@ -142,14 +165,44 @@ export function makeGame(level, grid) {
         amoGen: new Int8Array(W * H),                   // #2411 amoeba: generation born (0 = seeded)
         amoPass: 0,                                     // growth passes so far (the wave's clock)
         amoDir: (level && level.amoebaDir) || [1, 0],   // which way the wave travels this cave
+        // #2428 — per-cell amoeba state for the BD II FAMILY: which wave a cell
+        // belongs to, which way that head points, and which variant of the
+        // creature it is. Levels that use none of it leave these arrays at zero
+        // and the hash keeps its #2411 shape (byte-identity for old caves).
+        amoWave: new Int8Array(W * H),                  // wave id (0 = the grid-seeded primary)
+        amoVar: new Uint8Array(W * H),                  // AMO_CLASSIC / AMO_TWOPHASE / AMO_DROP
+        amoHead: new Int8Array(W * H).fill(-1),         // head direction index into AMO_D4 (-1 = not a head)
+        amoExt: !!(level && ((level.amoebas && level.amoebas.length) ||
+            (level.amoebaVariant && level.amoebaVariant !== 'classic'))),
         deathCause: null,
         cmds: [],                                       // recorded {tick,dir} — replay fuel
         events: [],
     }
     for (const f of g.flies) if (inBounds(f.x, f.y)) g.flyAt[idx(f.x, f.y)] = f.id
+    const pVar = AMO_VARIANT[(level && level.amoebaVariant) || 'classic'] || 0
+    const pDir = amoDirIdx(g.amoDir)
     for (let i = 0; i < g.grid.length; i++) {
         const t = g.grid[i]
-        if (t === AMO_HEAD || t === AMO_BODY) g.amoGen[i] = 0   // seeded slime starts at generation 0
+        if (t === AMO_HEAD || t === AMO_BODY) {
+            g.amoGen[i] = 0                                   // seeded slime starts at generation 0
+            g.amoVar[i] = pVar
+            g.amoHead[i] = t === AMO_HEAD ? pDir : -1
+        }
+    }
+    // extra waves the level declares: { cells:[[x,y]…], dir:[dx,dy], variant }
+    for (let w = 0; w < ((level && level.amoebas) || []).length; w++) {
+        const a = level.amoebas[w]
+        const d = amoDirIdx(a.dir || [1, 0])
+        const v = AMO_VARIANT[a.variant || 'classic'] || 0
+        for (const [x, y] of a.cells) {
+            if (!inBounds(x, y)) continue
+            const i = idx(x, y)
+            g.grid[i] = AMO_HEAD
+            g.amoGen[i] = 0
+            g.amoWave[i] = w + 1                    // the primary wave owns id 0
+            g.amoVar[i] = v
+            g.amoHead[i] = d
+        }
     }
     return g
 }
@@ -311,18 +364,31 @@ function fire(g) {
 }
 
 // ------------------------------------------------------------- CA: amoeba ----
-// The wave from Boulder Dash II (#2411). Every CFG.amoEvery ticks one growth
-// pass runs: the newest cells (generation amoPass-1 — the SEEDED cells at the
-// first pass) push one cell along the cave's amoebaDir; where the way ahead is
-// shut they branch perpendicular, so the blob flows around corners the way the
-// original creature does. Growth only claims EMPTY and DIAMOND — a diamond the
-// slime touches dissolves (`dissolve`), and uncarved DIRT, steel, boulders and
-// fire are walls to it, which is what keeps every cave's harvest provably out
-// of reach. Bodies age: a cell older than CFG.amoGens generations empties, so
-// the wave ADVANCES down the corridor instead of filling the cave — the classic
-// look of heads chasing a tail that is dissolving behind them. Heads paint as
-// AMO_HEAD and demote to AMO_BODY once the next pass leaves them behind.
-// Growing onto the player engulfs them.
+// The wave from Boulder Dash II (#2411), extended into the amoeba FAMILY by
+// #2428. Every CFG.amoEvery ticks one growth pass runs. Growth only claims
+// EMPTY and DIAMOND — a diamond the slime touches dissolves (`dissolve`), and
+// uncarved DIRT, steel, boulders and fire are walls to it, which is what keeps
+// every cave's harvest provably out of reach. Bodies age: a cell older than
+// CFG.amoGens generations empties, so the wave ADVANCES down the corridor
+// instead of filling the cave — the classic look of heads chasing a tail that
+// is dissolving behind them. Heads paint as AMO_HEAD and demote to AMO_BODY
+// once the next pass leaves them behind. Growing onto the player engulfs them.
+//
+// The three behaviours a level can choose per wave (AMO_VARIANT):
+//  - classic (#2411): extend along the head's dir; when shut in, branch out
+//    perpendicular on both sides at once.
+//  - twophase (the BD II two-phase gait): each head has two modes — DRIVE
+//    while the way ahead is open, and CORNER when shut in: it rotates to the
+//    first open offer (right turn first, then left) and the new heading
+//    PERSISTS into the children. Where classic leaks both perpendiculars and
+//    children keep pointing the old way, the two-phase wave turns as one
+//    creature — square corner after square corner, a walk you can read.
+//  - drop: DOWN is always the head's first offer — poured over a shelf the
+//    slime falls into open space; when the floor is reached it resumes its
+//    lateral dir, and turns perpendicular when that too is shut.
+// Mirror twins are a LEVEL fact, not a law: two waves seeded at opposite walls
+// with dirs 180° apart close like a vise; the shared claim law makes their
+// fronts advance symmetrically, which is what the gate pins.
 function amoeba(g) {
     if (!CFG.amoeba) return
     const grow = g.tick % CFG.amoEvery === 0
@@ -331,30 +397,85 @@ function amoeba(g) {
     for (let i = 0; i < g.grid.length; i++) {
         const t = g.grid[i]
         if (!isAmo(t)) continue
-        if (g.amoPass - g.amoGen[i] > CFG.amoGens) { g.grid[i] = EMPTY; continue }
-        if (grow && t === AMO_HEAD && g.amoGen[i] < g.amoPass) g.grid[i] = AMO_BODY
+        if (g.amoPass - g.amoGen[i] > CFG.amoGens) { g.grid[i] = EMPTY; if (t === AMO_HEAD) g.amoHead[i] = -1; continue }
+        if (grow && t === AMO_HEAD && g.amoGen[i] < g.amoPass) { g.grid[i] = AMO_BODY; g.amoHead[i] = -1 }
     }
     if (!grow) return
     g.amoPass++
-    const d = g.amoDir
-    const perp = [[0, -1], [0, 1]]
+    const pass = g.amoPass
+    const turn = CFG.amoTurn
+    const drop = CFG.amoDrop
+    const claimsByWave = new Map()
     for (let i = 0; i < g.grid.length; i++) {
-        if (!isAmo(g.grid[i]) || g.amoGen[i] !== g.amoPass - 1) continue   // heads only
+        if (!isAmo(g.grid[i]) || g.amoGen[i] !== pass - 1) continue   // heads only
         const x = i % W, y = (i - x) / W
-        let targets = [[x + d[0], y + d[1]]]
-        const t0 = cell(g, x + d[0], y + d[1])
-        if (t0 !== EMPTY && t0 !== DIAMOND) targets = perp.map(([px, py]) => [x + px, y + py])
-        for (const [tx, ty] of targets) {
+        const k = g.amoHead[i] >= 0 ? g.amoHead[i] : amoDirIdx(g.amoDir)
+        const v = g.amoVar[i]
+        const w = g.amoWave[i]
+        const claim = (tx, ty, nd, ev) => {
             const tt = cell(g, tx, ty)
-            if (tt !== EMPTY && tt !== DIAMOND) continue
+            if (tt !== EMPTY && tt !== DIAMOND) return false
             const j = idx(tx, ty)
             g.grid[j] = AMO_HEAD
-            g.amoGen[j] = g.amoPass
-            g.events.push({ type: 'amoeba', x: tx, y: ty })
+            g.amoGen[j] = pass
+            g.amoWave[j] = w
+            g.amoVar[j] = v
+            g.amoHead[j] = nd
+            g.events.push({ type: 'amoeba', x: tx, y: ty, w })
+            if (ev) g.events.push({ type: ev, x: tx, y: ty, w })
             if (tt === DIAMOND) g.events.push({ type: 'dissolve', x: tx, y: ty })
             if (g.player.alive && g.player.x === tx && g.player.y === ty) killPlayer(g, 'amoeba')
+            claimsByWave.set(w, (claimsByWave.get(w) || 0) + 1)
+            return true
         }
+        const perpOf = (kk) => [(kk + 1) % 4, (kk + 3) % 4]     // right-turn, left-turn (clockwise order)
+        if (v === AMO_DROP && drop) {
+            // down first, then the head's own heading, then whichever side opens
+            const d = AMO_D4[k]
+            if (claim(x, y + 1, k, 'amoDrop')) continue
+            if (claim(x + d[0], y + d[1], k)) continue
+            for (const pk of [3, 1]) if (claim(x + AMO_D4[pk][0], y + AMO_D4[pk][1], k)) break
+            continue
+        }
+        if (v === AMO_TWOPHASE && turn) {
+            // Two-phase gait: heads drive while the way is open, but a head
+            // shut in CORNERS — right first, then left — and the new heading
+            // PERSISTS into the children (this is where it parts from classic,
+            // which leaks both perpendiculars and keeps pointing the old way:
+            // the two-phase wave turns as one creature, square corner after
+            // square corner). Only when even the corners are taken does it leak
+            // perpendiculars like classic, and then it dies out with the tail.
+            const d = AMO_D4[k]
+            const free = (dx, dy) => { const tt = cell(g, x + dx, y + dy); return tt === EMPTY || tt === DIAMOND }
+            let use = k
+            if (!free(d[0], d[1])) {
+                for (const pk of perpOf(k)) {
+                    const p = AMO_D4[pk]
+                    if (free(p[0], p[1])) { use = pk; break }
+                }
+                if (use !== k) g.events.push({ type: 'amoTurn', x, y, w })
+            }
+            const u = AMO_D4[use]
+            if (claim(x + u[0], y + u[1], use)) continue
+            // shut in every direction (all offers taken by bodies): as classic,
+            // up then down, children inherit the parent's heading
+            claim(x + AMO_D4[3][0], y + AMO_D4[3][1], k)
+            claim(x + AMO_D4[1][0], y + AMO_D4[1][1], k)
+            continue
+        }
+        // classic (and any variant whose switch is silenced — the wave falls
+        // back to the #2411 law rather than freezing, so mutants read as the
+        // rule dying, not the cave breaking). Branch children keep the PARENT'S
+        // heading — the #2411 semantics, byte for byte: try ahead, else up,
+        // then down, each inheriting dir.
+        const d = k >= 0 ? AMO_D4[k] : g.amoDir
+        if (claim(x + d[0], y + d[1], k)) continue
+        claim(x + AMO_D4[3][0], y + AMO_D4[3][1], k)
+        claim(x + AMO_D4[1][0], y + AMO_D4[1][1], k)
     }
+    // two waves claiming the SAME pass is the vise closing — worth an event so
+    // the gate can pin the mirrored twins as a mechanic, not a layout coincidence
+    if (claimsByWave.size >= 2) g.events.push({ type: 'mirror', waves: [...claimsByWave.keys()] })
 }
 
 // ------------------------------------------------------------- CA: firefly ----
