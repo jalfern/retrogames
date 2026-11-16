@@ -179,3 +179,13 @@ export function edgeMarks(marks, camX, cw, cap = MARK_CAP) {
 // into one law: chips never crawl under the 1UP board or off the bottom.
 export const SPAWN_CUE = 48
 export const edgeRow = (y, hudH, ch) => Math.round(Math.max(hudH + 8, Math.min(ch - 8, y)))
+
+// #2507 item 2 — the open-door landing beat. When respawnBeat says the seat
+// stepped off the door cell, the landing flashes a shrinking ring (seen) and
+// the shell adds a low step (heard); the body that owns the old cell wears a
+// blinking red bracket for THREAT_MARK_TICKS so the dodge reads as "that thing
+// took my cell", not a teleport. Pure decays the render reads exactly.
+export const LAND_FLASH_TICKS = 14
+export const landFlashPhase = (t) => Math.max(0, 1 - t / LAND_FLASH_TICKS)
+export const THREAT_MARK_TICKS = 36
+export const threatMarkPhase = (t) => Math.max(0, 1 - t / THREAT_MARK_TICKS)

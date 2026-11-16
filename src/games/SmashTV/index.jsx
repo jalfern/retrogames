@@ -25,7 +25,7 @@ import { buildSprites, buildFloor } from './art.js'
 import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
 import { playerFrame, GUN, STOCK, gunPose } from './sprite.js'
 import { enemyFrame, CHARGE, TELEGRAPH, OUTLINE, bossMouth, ADD_TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
-import { muzzleFlash, casingCol, killShake, recoilKick, shutterPhase, SHUTTER_TICKS, shellKick, barrelHot, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, STAIN_TICKS, stainRadius, camPan, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, edgeMarks, camLead, SPAWN_CUE, edgeRow } from './juice.js'
+import { muzzleFlash, casingCol, killShake, recoilKick, shutterPhase, SHUTTER_TICKS, shellKick, barrelHot, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, STAIN_TICKS, stainRadius, camPan, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, edgeMarks, camLead, SPAWN_CUE, edgeRow, LAND_FLASH_TICKS, landFlashPhase, THREAT_MARK_TICKS, threatMarkPhase } from './juice.js'
 import { BAR, PIP, POWER_LABEL, ICON, bombReady, hiRoll, RACK_FLASH, respawnState, powerLow, LOW_SHIFT, LOW_LABEL_SHIFT } from './hud.js'
 import { fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_SWELL, MURMUR_HYPE_FREQ, WHOOSH, ALERT, POWER_PING } from './audio.js'
 import { attractFrame, DIM } from './attract.js'
@@ -90,6 +90,11 @@ const SmashTVGame = () => {
         // boss's spawn events; the chip's side is re-read per frame so it dies
         // the tick the camera pans onto the add
         const spawnCues = []
+        // #2507 item 2 landing beat (draw layer only): landFx = the shrinking
+        // ring where a dodged respawn came down; threatFx = the bracket on the
+        // body that owns the old door cell. Fed by the respawn event's beat.
+        const landFx = []
+        const threatFx = []
 
         // #496 seat 2 is a SLOT (off / human / cpu / model). A human seat reads
         // onePad slot 2 (gamepad 2 via the bridge, or P2 keys mapped below);
@@ -175,7 +180,18 @@ const SmashTVGame = () => {
                 else if (e.type === 'murmur') audioController.playFilteredNoise(MURMUR.dur, MURMUR.vol + MURMUR_SWELL * (e.hype || 0), MURMUR.freq + MURMUR_HYPE_FREQ * (e.hype || 0))
                 else if (e.type === 'alert') audioController.playTone(ALERT.freq, ALERT.dur, ALERT.type, ALERT.vol)
                 else if (e.type === 'death') { audioController.playDeath(); shake = 10; flash = 14; say(BARKS[Math.floor(Math.random() * BARKS.length)]) }
-                else if (e.type === 'respawn') audioController.playSweep(110, 440, 0.3, 'triangle', 0.07)
+                else if (e.type === 'respawn') {
+                    audioController.playSweep(110, 440, 0.3, 'triangle', 0.07)
+                    // #2507 item 2: the seat stepped off the door cell — flash
+                    // the landing, thud the step, bracket the cell-stealer.
+                    if (e.shift) {
+                        const q = gs.players[e.pi || 0]
+                        landFx.push({ x: q.x, y: q.y, t: 0 })
+                        audioController.playTone(85, 0.05, 'square', 0.06)
+                        audioController.playNoise(0.05, 0.05)
+                        if (e.tx != null) threatFx.push({ x: e.tx, y: e.ty, t: 0 })
+                    }
+                }
                 else if (e.type === 'clear') {
                     audioController.playSweep(330, 990, 0.35, 'square', 0.09)
                     // #1978: on the wide boards the nearest open door can sit a
@@ -789,6 +805,40 @@ const SmashTVGame = () => {
                 }
             }
             while (gibs.length && gibs[0].t >= GORE_TICKS) gibs.shift()
+            // #2507 item 2 — the landing beat. Where a dodged respawn came
+            // down, a spawn-yellow ring of ticks closes in (the seat, seen) and
+            // a low step thuds (heard, in the event handler); the body that
+            // owns the old door cell wears a blinking kill-red ring for
+            // THREAT_MARK_TICKS — "that thing took my cell", so the shift
+            // reads as deliberate, not a teleport. Draw layer only.
+            for (let i = landFx.length - 1; i >= 0; i--) {
+                const f = landFx[i]
+                f.t++
+                const ph = landFlashPhase(f.t)
+                if (ph <= 0) { landFx.splice(i, 1); continue }
+                ctx.globalAlpha = ph * 0.85
+                ctx.fillStyle = MARK.spawn
+                const fr = Math.round(10 * (1 - ph) + 4)
+                for (let a = 0; a < 8; a++) {
+                    const an = (a / 8) * Math.PI * 2
+                    ctx.fillRect(Math.round(f.x + Math.cos(an) * fr) - 1, Math.round(f.y + Math.sin(an) * fr) - 1, 2, 2)
+                }
+                ctx.globalAlpha = 1
+            }
+            for (let i = threatFx.length - 1; i >= 0; i--) {
+                const m = threatFx[i]
+                m.t++
+                const ph = threatMarkPhase(m.t)
+                if (ph <= 0) { threatFx.splice(i, 1); continue }
+                ctx.globalAlpha = ((gs.tick >> 1) % 2 ? 0.95 : 0.5) * Math.min(1, ph * 2)
+                ctx.fillStyle = MARK.enemy
+                const mr = CFG.contactR + 3
+                for (let a = 0; a < 8; a++) {
+                    const an = (a / 8) * Math.PI * 2 + Math.PI / 8
+                    ctx.fillRect(Math.round(m.x + Math.cos(an) * mr) - 1, Math.round(m.y + Math.sin(an) * mr) - 1, 3, 3)
+                }
+                ctx.globalAlpha = 1
+            }
             for (const pp of pops) {
                 pp.y -= 0.4; pp.t++
                 text(pp.txt, pp.x, pp.y - HUD_H / 2 > 0 ? pp.y : pp.y + 16, 8, pp.col, 4)
