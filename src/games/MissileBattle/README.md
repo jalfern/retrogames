@@ -72,9 +72,11 @@ takes turns under the sky. Five features, all honoured:
    SOLO → YOU + CPU SEAT → 2 HUMAN with **M** (attract only). The autopilot
    drives seat 2 through the same `decide()` that proofs the attract demo,
    and it stands down at the sector line because the ownership law lives in
-   the sim, not the shell. 2 HUMAN shares ONE aim control — arrows + Space
-   on a desktop keyboard, taps on the phone — alternating by turn. There is
-   deliberately no second touchpad.
+   the sim, not the shell. On the autopilot's waves the human console is
+   DARK — no launch, no refusal, the arcade's dead second panel. 2 HUMAN
+   shares ONE aim control — arrows + Space on a desktop keyboard, taps on
+   the phone — alternating by turn, and there the sim's `denySeat` voice is
+   what a crossing hand hears. There is deliberately no second touchpad.
 
 **Byte-safety**: every law short-circuits on `!g.twoP`; the seat/ledger rides
 `stateHash` only when duo is on (the `amoExt` pattern — the frozen solo hashes

@@ -489,6 +489,7 @@ const MissileBattleGame = () => {
                         // #2473: the harness can stage a duo board directly
                         gs = makeGame(opts.wave ?? gs.wave, { twoP: opts.twoP ?? gs.twoP, cpu: opts.cpu ?? gs.cpu })
                     }
+                    if (opts.mode) { modeRef.current = opts.mode; setModeUi(opts.mode) } // rig: the M-wheel state without the keystrokes
                     // quiet = an empty SKY, not an empty script: an emptied
                     // queue reads as wave-clear on the first play tick, and
                     // freshWave ~4.3 s later wipes planted warheads and relits
