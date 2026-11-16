@@ -2,6 +2,17 @@
 //
 //   npm run plaicraft:grade                     # live: grade every take without a
 //                                             #   `PLAIGRADE <key>` marker on #1711
+//   npm run plaicraft:grade -- --nightly      # unattended (nightly, #1711): the
+//                                             #   verdict loop runs without a lane.
+//                                             #   No key on the runner -> DORMANT,
+//                                             #   exit 0 (never freezes merges). An
+//                                             #   audio take whose clap step could
+//                                             #   not run is HELD: no verdict posted,
+//                                             #   no marker written — a verdict
+//                                             #   missing its clap axis must not
+//                                             #   become permanent evidence; the next
+//                                             #   run retries it (marker idempotence
+//                                             #   only marks posted verdicts).
 //   npm run plaicraft:grade -- --dry-run      # print verdicts, post nothing
 //   npm run plaicraft:grade -- --key=<k> [--key=<k2>]  # force specific takes
 //   npm run plaicraft:grade -- --self-test    # offline proof (relaysim, no gh)
@@ -180,6 +191,15 @@ async function gradeRows(rows, base, jonKey, opts = {}) {
         if (row.player) ev.player = row.player
         let clap = null
         if (ev.audio) clap = clapPossible ? await runClap(row.key, base, jonKey) : { ran: false, why: `no dev server on :${PORT} — start npm run dev -- --port ${PORT} to grade the clap` }
+        // #1711 nightly: hold, don't launder. A verdict without its clap axis
+        // (infra died, the player didn't skip the test) is incomplete — posting it
+        // would write the PLAIGRADE marker and make the take un-regradeable by any
+        // later lane run. Skip the post; the missing marker makes the next run retry.
+        if (opts.nightly && ev.audio && clap && clap.ran === false) {
+            console.log(`grade: HELD ${row.key} — clap step did not run (${(clap && clap.why) || 'clap unavailable'}); no verdict posted, marker stays free for the next run`)
+            out.push({ key: row.key, ev, clap, held: true })
+            continue
+        }
         const body = verdictBody(ev, clap, opts.gradedBy || 'FORGE (b)')
         out.push({ key: row.key, ev, clap, body })
         console.log(body + '\n')
@@ -196,8 +216,15 @@ async function gradeRows(rows, base, jonKey, opts = {}) {
 
 async function runLive() {
     const base = flagVal('store', process.env.SESSION_STORE || storeFromQuery(''))
+    const nightly = argv.includes('--nightly')
     const jonKey = readKey('JON_KEY')
-    if (!jonKey) { console.error(`grade: JON_KEY required (source: ${keySource('JON_KEY') || 'unset'}) — inline or .env.local at the repo root (#2157)`); return 2 }
+    if (!jonKey) {
+        // Nightly runs on runners that may never hold the key: absence is the
+        // configured state until Jon sets the repo secret — say so and exit 0,
+        // a dormant loop must not red-freeze merges (main-ok reads the nightly).
+        if (nightly) { console.log(`grade: DORMANT — no JON_KEY on this runner (#1711: set the repo Actions secret, see relay/README.md); nothing graded`); return 0 }
+        console.error(`grade: JON_KEY required (source: ${keySource('JON_KEY') || 'unset'}) — inline or .env.local at the repo root (#2157)`); return 2
+    }
     const probe = await probeStore(base)
     if (!probe.ok || !probe.sessions) { console.log(`store not reachable/provisioned (${probe.err || 'sessions:false'} @ ${base})`); return 2 }
     const force = []
@@ -223,10 +250,12 @@ async function runLive() {
     rows = rows.slice(0, max)
     if (!rows.length) { console.log(`grade: nothing new to grade (${base})`); return 0 }
     console.log(`grade: ${rows.length} new take(s) @ ${base}`)
-    const results = await gradeRows(rows, base, jonKey, { dry: argv.includes('--dry-run'), noClap: argv.includes('--no-clap') })
+    const results = await gradeRows(rows, base, jonKey, { dry: argv.includes('--dry-run'), noClap: argv.includes('--no-clap'), nightly })
     const bad = results.filter((x) => x.postError).length
     if (bad) { console.error(`grade: ${bad} verdict comment(s) failed to post`); return 1 }
-    console.log(`grade: ${results.length} verdict(s) ${argv.includes('--dry-run') ? 'printed (dry-run)' : 'posted on #' + ISSUE}`)
+    const held = results.filter((x) => x.held).length
+    if (held) console.log(`::warning::grade: ${held} take(s) HELD — clap infra missing this run; verdicts deferred to the next nightly (no markers posted)`)
+    console.log(`grade: ${results.length - held} verdict(s) ${argv.includes('--dry-run') ? 'printed (dry-run)' : 'posted on #' + ISSUE}${held ? `, ${held} held` : ''}`)
     return 0
 }
 
@@ -239,12 +268,13 @@ const synthVoice = (ticks) => {
     return { slots: [0], consent: true, headset: false, mime: 'audio/webm;codecs=opus', ms: Math.round(ticks * 16.67) + 40, clock, b64: 'QUJD' }
 }
 
-function synthHumanTake(seed) {
+function synthHumanTake(seed, { voice = true } = {}) {
     const r = collectRun(2, { noRows: true, maxTicks: 1500, seed })
     const file = r.file
     file.format = 'retrogames-rec/v2'
     if (file.slots && file.slots[0]) file.slots[0].source = { kind: 'human' }
-    file.voice = { tracks: [synthVoice(file.ticks)], declined: [] }
+    if (voice) file.voice = { tracks: [synthVoice(file.ticks)], declined: [] }
+    else file.format = 'retrogames-rec/v1' // honest retag: no voice section = v1 (sessionStore strip rule)
     return file
 }
 
@@ -341,6 +371,25 @@ async function runSelfTest() {
     ok(second.length === 1 && second[0].key === keys[1], 'already-marked take is SKIPPED — idempotence via the marker line', second.map((x) => x.key).join(','))
     const forced = await gradeRows([{ key: keys[0], player: 'jon', game: 'gauntlet' }], sim.base, SIM_READ_KEY, { dry: true, noClap: true, gradedBy: 'self-test' })
     ok(forced.length === 1 && forced[0].key === keys[0] && forced[0].ev.ok, '--key= forces one take regardless of markers')
+
+    // 4) #1711 nightly mode — hold, don't launder. An audio take whose clap step
+    //    could not run (infra missing) must NOT get a verdict posted: that would
+    //    write the PLAIGRADE marker and strand the clap axis forever (marker
+    //    idempotence skips marked keys). No-audio takes have no clap axis to
+    //    wait for, so they grade complete even here.
+    const heldOut = await gradeRows([{ key: keys[0], player: 'jon', game: 'gauntlet' }], sim.base, SIM_READ_KEY,
+        { dry: true, noClap: true, nightly: true, gradedBy: 'self-test' })
+    ok(heldOut.length === 1 && heldOut[0].held === true && !heldOut[0].body,
+        'nightly: audio take with clap infra missing is HELD — no verdict body produced', JSON.stringify(Object.keys(heldOut[0] || {})))
+    ok(extractMarkers(heldOut.map((x) => x.body || '').join('\n')).size === 0,
+        'nightly: a held take writes no PLAIGRADE marker — the next run sees it as new again')
+    const nv = synthHumanTake(9, { voice: false })
+    const nvUp = await (await fetch(`${sim.base}/sessions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ recording: nv, player: 'jon', consent: { motion: true, voice: false } }) })).json()
+    ok(nvUp.ok && !!nvUp.key, 'nightly fixture: silent (no-voice) take stored')
+    const silent = await gradeRows([{ key: nvUp.key, player: 'jon', game: 'gauntlet' }], sim.base, SIM_READ_KEY,
+        { dry: true, noClap: true, nightly: true, gradedBy: 'self-test' })
+    ok(silent.length === 1 && !silent[0].held && !!silent[0].body && /^PLAIGRADE \S+ — PASS$/m.test(silent[0].body) && /clap: n-a \(no audio\)/.test(silent[0].body),
+        'nightly: no-audio take is NOT held — its verdict is complete as graded', silent[0] && silent[0].body ? silent[0].body.split('\n')[0] : 'no body')
 
     delete process.env.JON_KEY
     sim.close()

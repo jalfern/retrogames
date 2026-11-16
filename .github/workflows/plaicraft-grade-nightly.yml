@@ -1,0 +1,71 @@
+name: PLAICRAFT take grading (advisory, #1711)
+
+# S1's verdict loop, off the lanes: human phone takes are graded the night they
+# land. `scripts/plaicraft-grade.mjs --nightly` lists the store, replays every
+# take without a PLAIGRADE marker on #1711, claps the audio ones against the
+# dev-server build, and posts the verdict comment — the same evidence a lane
+# posts by hand (#2157), just without waiting for a lane.
+#
+# Advisory in every direction (#1358 blast-radius law): it lives OUTSIDE
+# nightly.yml because a store hiccup or Chromium flake must never red-freeze
+# merges — nightlyverdictcheck forbids advisory jobs in the verdict workflow,
+# and scripts/main-ok.sh reads nightly.yml only. Its own concurrency group,
+# nothing else queues behind it. The offline proof of the grader
+# (`gradeselftest`, relaysim + synth takes) rides every night inside
+# nightly.yml's full-static, where it CAN be a verdict — this file is the
+# live path: dormant-green without the secret, real verdicts with it.
+#
+# JON_KEY is the store READ key (#1711 S8 lockdown). Absent = DORMANT exit 0:
+# the secret is Jon's call (jonq, one-time `gh secret set JON_KEY`; the exact
+# command lives in relay/README.md "KEY IN A LOCAL FILE"). The value never
+# enters logs — grade.mjs asserts its absence from every posted body.
+# A red run here is noise to fix, not a freeze; `::warning::` lines name held
+# takes (audio takes whose clap step died keep their marker free for retry).
+
+on:
+  schedule:
+    - cron: '45 6 * * *'   # after the nightly verdict workflow starts (06:15 UTC quiet window)
+  workflow_dispatch:
+
+concurrency:
+  group: plaicraft-grade-nightly
+  cancel-in-progress: false   # a verdict comment posts whole or not at all
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  grade-takes:
+    runs-on: ubuntu-latest
+    continue-on-error: true   # advisory: red here is a note, never a freeze
+    env:
+      JON_KEY: ${{ secrets.JON_KEY }}
+      GH_TOKEN: ${{ github.token }}
+      SHOT_CHANNEL: chromium
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24   # npm >=11, see the note in ci.yml's static job
+          cache: npm
+      - name: Grade new PLAICRAFT takes (#1711)
+        run: |
+          if [ -z "$JON_KEY" ]; then
+            echo 'grade: DORMANT — no JON_KEY repo secret (#1711; one-time setup in relay/README.md). Nothing graded, nothing red.'
+            exit 0
+          fi
+          npm ci
+          npx playwright-core install --with-deps chromium
+          npm run dev > /tmp/vite.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:5173/retrogames/gauntlet > /dev/null; then
+              echo "dev server up after ${i}s"; break
+            fi
+            if [ "$i" = "60" ]; then echo "dev server never came up"; cat /tmp/vite.log; exit 1; fi
+            sleep 1
+          done
+          npm run plaicraft:grade -- --nightly
+      - name: Dev server log (on failure)
+        if: failure()
+        run: cat /tmp/vite.log

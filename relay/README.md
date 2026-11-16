@@ -88,6 +88,14 @@ after 1 h).
   grade new takes WITHOUT Jon running anything: `npm run plaicraft:grade`
   posts a `PLAIGRADE <key>` verdict (replay / voice / clap / seats) on #1711
   for every take not yet marked there.
+- **KEY ON THE NIGHTLY (#1711, take-grading loop off the lanes):**
+  `plaicraft-grade-nightly.yml` runs `plaicraft:grade --nightly` every night,
+  so a take is graded the night it lands, no lane session needed. It needs
+  the read key as a GitHub Actions secret — one-time, from a shell that can
+  read the local file (nothing prints the value):
+  `umask 077; sed -n 's/^JON_KEY=//p' ~/Dev/retrogames/.env.local | gh secret set JON_KEY --repo jalfern/retrogames`.
+  Until that runs the job is DORMANT (prints why, exits 0); a store or
+  Chromium hiccup stays advisory (own workflow, continue-on-error — #1358).
 - **WRITE-KEY SEPARATION (#2142 audit finding 1b; NO-FALLBACK #1711 audit
   item 1):** `PATCH /sessions/<key>` authenticates ONLY against the separate
   secret `SESSION_WRITE_KEY` (`wrangler secret put SESSION_WRITE_KEY`), so the
