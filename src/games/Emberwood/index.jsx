@@ -441,8 +441,14 @@ export default function Emberwood() {
                     rend.buildScreen(sim.screen, sim.flags, sim.cut)
                     const e = sim.enemies.find(x => x.type === 'cinderling' && !x.dead)
                     if (!e) return false
-                    e.hp = 1
-                    sim.hero.x = e.x; sim.hero.y = e.y + 12; sim.hero.dir = 'down' // #2440: face the foe (was 'up' — the swing sailed away; unprovable while the leg was SKIPped)
+                    // #2447: the foe must SURVIVE the swing. A 1-hp cinderling died on the
+                    // hit tick, so its billboard was gone before any tinted frame rendered
+                    // and the hit-tell gate could never see the tint (seen=0 forever).
+                    e.hp = 3 // blade-less swings bite 1 — it takes two, wearing the tint between
+                    // +y is up, so the hero seats above the foe and must face 'up' to swing
+                    // onto it (verified at the sim: 'down' from y+12 lands 25px away). The
+                    // #2440 note had this inverted — unprovable while the leg was SKIPped.
+                    sim.hero.x = e.x; sim.hero.y = e.y + 12; sim.hero.dir = 'up'
                     sim.cool = 0
                     return true
                 },
