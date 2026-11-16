@@ -1313,7 +1313,7 @@ if (!SKIP_BROWSER) {
         // gated in Node (4b); the RENDERED tell must be real too — the enemy
         // billboard wears a hot tint for the whole hitT, so a swinging player
         // SEES the hit land on a phone. Pre-fix the audit had no way to say so.
-        cok(await page.evaluate(() => window.__emberwoodTest.duel()), 'a duel is set (hero above a 1-hp cinderling)')
+        cok(await page.evaluate(() => window.__emberwoodTest.duel()), 'a duel is set (hero above a cinderling that survives the swing)')
         const tell = await page.evaluate(async () => {
             const T = window.__emberwoodTest
             const raf = () => new Promise(r => requestAnimationFrame(r))
@@ -1328,11 +1328,9 @@ if (!SKIP_BROWSER) {
             return { seen, swung }
         })
         cok(tell.swung, 'the swing ran (an arc was live during the window)')
-        // NOTE (was cok): this probe has never run green — the leg it lives in
-        // SKIPped since #1527 (missing hook wiring, fixed in #2440). It fails
-        // on revived run (seen=0); its duel semantics/driving need a real fix.
-        // Observed values stay printed so the next session has the numbers.
-        console.log(`NOTE  #2445 revived-stale probe: hit tint seen=${tell.seen}/${tell.swung ? 'swung' : 'NO SWING'} (was SKIPped since #1527 — fix owns #2445)`)
+        // #2447: back from NOTE — the duel foe is survivable now, so tinted
+        // frames must render while hitT decays (~8 ticks of visible tint).
+        cok(tell.seen > 0, `the enemy wears the hit tint for a readable window (${tell.seen} tinted frames)`)
 
         // #773 brightness gates: an overworld frame must READ at phone brightness
         // and a dungeon frame must stay moody-but-lantern. Pre-fix the composite
@@ -1594,6 +1592,10 @@ if (!SKIP_BROWSER) {
         // shadow, his own livery — never the keeper's red. The audit paints each
         // town npc and reads the exact pixels, so regressing him back to "another
         // shopkeeper" (kind:'shop', red livery, open face) goes red.
+        // #2447: paintNpc returns the #1511 2x buffer (28x36); drawing it at
+        // native size into a 14x18 canvas left every crop in the hood's top-left
+        // quadrant (face/hood/robe all read 92,74,106). Scale the buffer back to
+        // sprite space first — nearest, so flat regions keep their exact colors.
         const spritePx = await page.evaluate(async (ids) => {
             const out = {}
             for (const id of ids) {
@@ -1602,7 +1604,8 @@ if (!SKIP_BROWSER) {
                 const img = new Image()
                 await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url })
                 const d = document.createElement('canvas'); d.width = 14; d.height = 18
-                const c = d.getContext('2d'); c.drawImage(img, 0, 0)
+                const c = d.getContext('2d'); c.imageSmoothingEnabled = false
+                c.drawImage(img, 0, 0, 14, 18)
                 const at = (x, y) => { const p = c.getImageData(x, y, 1, 1).data; return [p[0], p[1], p[2]] }
                 out[id] = { hood: at(7, 1), face: at(7, 4), body: at(7, 9) }
             }
@@ -1616,10 +1619,11 @@ if (!SKIP_BROWSER) {
             const keeperRed = [160, 74, 60]
             cok(!near(cw.body, keeperRed), `the colporter does NOT wear the keeper's red livery (body=${cw.body} vs red ${keeperRed})`)
             cok(!near(cw.body, kw.body), `the colporter's livery differs from the keeper's (body ${cw.body} vs ${kw.body})`)
-            // NOTE (was cok): #2445 — revived-stale pixel probes (the leg was
-            // SKIPped since #1527). Sampled colors now read hood==robe; the
-            // screen layout these crops were cut against has drifted.
-            console.log(`NOTE  #2445 revived-stale probes: colporter face=${cw.face} hood=${cw.hood} robe=${cw.body} (were SKIPped since #1527 — fix owns #2445)`)
+            // #2447 back from NOTE: his face sits in the hood's shadow — dark in
+            // absolute terms AND darker than the hood framing it — and the hood
+            // is its own cloth, distinct from the robe below.
+            cok(luma(cw.face) < 80 && luma(cw.face) < luma(cw.hood), `the colporter's face hides in the hood's shadow (face=${cw.face} luma ${luma(cw.face).toFixed(0)} vs hood ${cw.hood})`)
+            cok(!near(cw.hood, cw.body), `the colporter's hood is distinct cloth from his robe (hood=${cw.hood} vs robe=${cw.body})`)
             cok(!near(cw.hood, kw.hood), `the colporter's head treatment differs from the keeper's (hood=${cw.hood} vs cap=${kw.hood})`)
         }
 
@@ -1702,9 +1706,24 @@ if (!SKIP_BROWSER) {
             const vis = last.filter(e => e.visible)
             cok(vis.length === 2 && last.some(e => e.id === 'colporter' && !e.visible), `keeper and elder stand in the town, the colporter stays hooded-off without the blade (${vis.length}/${last.length} visible)`)
             const elderE = byId.elder
-            const ys = east.map(s => Object.fromEntries(s.map(e => [e.id, e.scaleY]))).map(m => m.elder)
-            const range = Math.max(...ys) - Math.min(...ys)
-            console.log(`NOTE  #2445 revived-stale probe: elder idle bob range=${range.toFixed(3)} vs 0.01 gate (SKIPped since #1527 — resample needs retuning on #2445)`)
+            // #2447 back from NOTE: 10 samples at ~80ms covered under one breath
+            // period (spd ~2 rad/s → ~3.2s), and phase-locked round-trips landed
+            // near the sine's extremes (range 0.009–0.016 vs the 0.01 gate).
+            // Sample every rAF for ~5s in-page — longer than one full breath —
+            // so the gate measures the swing, not the luck of the sampling phase.
+            const bob = await page.evaluate(async () => {
+                const T = window.__emberwoodTest
+                const raf = () => new Promise(r => requestAnimationFrame(r))
+                const ys = []
+                for (let i = 0; i < 300; i++) {
+                    await raf()
+                    const m = Object.fromEntries(T.npcAnim().map(e => [e.id, e.scaleY]))
+                    if (m.elder !== undefined) ys.push(m.elder)
+                }
+                return ys
+            })
+            const range = bob.length ? Math.max(...bob) - Math.min(...bob) : 0
+            cok(range >= 0.01, `the elder breathes — idle bob spans ${range.toFixed(3)} peak-to-peak over ${bob.length} frames (gate 0.01)`)
             const all = east.flat()
             cok(all.every(e => e.scaleY > 0.91 && e.scaleY < 1.09), `the bob + gait stay light — scaleY bounded ±9% (${Math.min(...all.map(e => e.scaleY)).toFixed(3)}..${Math.max(...all.map(e => e.scaleY)).toFixed(3)})`)
             cok(all.every(e => Math.abs(e.posZ - 9 * e.scaleY) < 0.02), `the squash is anchored at the feet — posZ tracks 9*scaleY (max drift ${Math.max(...all.map(e => Math.abs(e.posZ - 9 * e.scaleY))).toFixed(3)})`)
