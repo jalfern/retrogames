@@ -89,7 +89,10 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         QUOTA === LEVELS[LEVELS.length - 1].quota, `QUOTA=${QUOTA}`)
     r.check('makeGame pins every level, clamps out-of-range, and pins are deterministic',
         LEVELS.every((l, n) => makeGame(7, n).level === n &&
-            stateHash(makeGame(7, n)) === stateHash(makeGame(7, n))) &&
+            stateHash(makeGame(7, n)) === stateHash(makeGame(7, n)) &&
+            (() => { const g = makeGame(7, n)
+                return g.wizard.mana === l.hoard && g.wizard.hp === l.wizHp && g.quota === l.quota &&
+                    g.pearls.length === l.pearls })()) &&
         makeGame(7, 99).level === LEVELS.length - 1 && makeGame(7, -5).level === 0 &&
         stateHash(makeGame(7, 0)) !== stateHash(makeGame(7, 1)))
     {
