@@ -1,75 +1,73 @@
-# STATE — session 305 (2026-11-16, slot b)
+# STATE — session 306 (2026-11-16, slot b)
 
 ## Playable now / what shipped
-- **HOMEBODY action queue LIVE (#2470 → PR #2472, merge `c7c0c03`).**
-  Bundle `index-BGDF7gIM.js`, queue law verified in `index-C5LoerbC.js` at
-  jalfern.com/retrogames/homebody. The Sims' command layer completed: a tap
-  while the resident is busy with one of THEIR OWN errands appends
-  (`cmdQueue`, cap 3) instead of silently losing the errand; the tick an
-  order ends, the head re-issues from wherever they stand, re-validated
-  (sold/season/expired drops are honest `queue-drop` events, next item
-  tried). Panel: pending orders paint as 19×14 chips under each resident's
-  bars in the panel's own icon language (+`case`/`arrow` glyphs);
-  `residentRows`/`QCELL` shared painter↔hit-test (the #2240 pattern); chip
-  tap cancels. Collapse and departure clear the list; queue contents ride
-  `stateHash`. Pad-A parity via `tryUseOrQueue`.
-  **Ownership law:** free will never outranks the hand — autonomy/move-in
-  orders stamp `p.owner='ai'` and stay preemptible (tap replaces, exactly
-  the old behaviour); only `cmd*` (player) orders earn the queue. Attract
-  bot never queues → old play hash-seed-exact (pin computed against
-  unmodified main: seed 7, 3000 ticks = 1609037625).
-- Gates: homebodyqueuecheck NEW 40/40 (mutant: stub pump guard → exactly
-  the 3 drain pins red) + homebodydrive 72/72 + peoplecheck 585/585
-  (one pin relaxed for the tryUseOrQueue rename; law double-pinned) +
-  eslint + lint:mario/fps/ai + ciscope selftest (new check parked in
-  MANUAL_CHECKS) + build.
+- **VIPER PIT net-select gate LIVE (#2476 → PR #2479, merge `a9ee5cc`).**
+  Vercel Production @ merge sha; jalfern.com proxy flips the new chunk
+  `index-B74N_XkN.js` within its ~30-min cache. The challenger's pick can no
+  longer be dropped, overwritten, or lost to a reconnect:
+  - `netselect.js` (new pure state machine, IronRing #1761 law ported): host
+    FIGHT before the pick **defers** (select line `AWAITING CHALLENGER'S
+    PICK…`); the late pick fires the launch with the guest's REAL choice;
+    pre-pick immediate; no relaunch after launch; leave/join `reset()`
+    (no ghost waits); entering select re-arms for rematches. Host stays sole
+    launch authority (#531); offline ladder + local 2P byte-identical.
+  - **THE relay never forwarded 'pick'** — `relay/core.js` FORWARD_TYPES
+    silently dropped every challenger pick in production, any order (a live
+    drive found what the code-reading gap note missed). Allowlisted + pinned
+    both ways; also un-blocks IRON RING's #1761 wire.
+  - Cleanup called nonexistent `net.lobby.destroy` → StrictMode first-mount
+    socket leaked, held seat 1, live join refused `room full` forever. Now
+    `net.room.reset()` (BlobBattle pattern).
+  - Guest **re-declares its pick on re-seat** — reconnects used to lose the
+    choice into the dead socket.
+- Same shift, other lanes: MISSILE BATTLE 2P #2473 shipped on slot a
+  (`e5fff02`); QA shipped EXCITEBIKE #2460 (`87bc385`).
+
+## Gates
+- viperpitcheck **441/441** (+9 part A2 pins incl. relay-forwards-pick,
+  unknown-type-dies) + mutants **290/290** (named `gateOn`: gate→placeholder,
+  deferral pins go red). vipernet NEW **13/13** live: two headless Chromes over
+  the local relay twin — RACE / PRE-PICK / GHOST, wire-level socket log, zero
+  page errors. contract 14/14. eslint + lint:viper + mario/fps/ai + ciscope
+  selftest + build green.
 
 ## BOARD at exit
-- game-queue / next / steer / waiting-jon: empty. building-qa: QA's own
-  (#2447/#2449/#2460 + new #2474). building: #1711 (slot a, platform lane).
-- Filed #2474 QA — HOMEBODY polish pass (head-chip progress tick, chip
-  labels, promote-by-tap, row-collapse beat, per-glyph timbres).
+- game-queue / next / steer / waiting-jon: empty. building: #1711 (platform).
+- building-qa: #2474, #2449, **#2478** (IRON RING lobby.destroy leak —
+  filed by this session, QA already picked it up). feedback: #2482 (VIPER PIT
+  polish pass, this session), #2483 (MISSILE polish, slot a's 8b).
 
 ## Next (slot a or b, in order)
-1. Refresh the ladder; empty → flagship stage / weakestStage
-   (`scripts/lib/idle.mjs`). Verify a picked gap is player-visible (#2391).
-   Note: GardenGuard's two score-contributing README gaps are SOLVER
-   DISCLAIMERS, not work — skip them with that reason (this session did;
-   HOMEBODY won the tie as oldest genuinely-open title).
-2. If #1711 lands its physical acceptance (Jon's clapping take),
-   `DEV_PORT=<own> npm run plaicraft:grade` posts the verdict by itself.
-3. Watch: nightly runs the FULL drive + peoplecheck — keep both green on
-   main (the drive's new `clearQueues` rig hook and KeyG waits are the
-   scenario half of the queue contract).
+1. Refresh the ladder; empty → flagship stage → weakestStage
+   (`scripts/lib/idle.mjs`). Disclaimers/decideds are NOT work — skip with the
+   reason, don't build them (GardenGuard's two score bullets, TenDeep #0,
+   Dogfight's no-blind-tune note, LodeRunnerLite's slack-proven bullet).
+   TidyBot's loop-the-wash-hum + attract-loop-2+ and SmashTV's spawn-invuln
+   vs arcade are genuinely-open score-1 gaps if the ladder lands there.
+2. #1711 acceptance stays with Jon (phone take on the store;
+   `DEV_PORT=<own> npm run plaicraft:grade`).
 
 ## The session's catches
-- **A queue-law feature is a scenario-audit.** The drive predates the
-  queue; its gates measured PREEMPTION semantics (tap-while-busy = walk
-  now) and one KeyG switch is async. Symptoms were "random" pixel/bond
-  gates three legs downstream of a fridge tap. Fixes were scenario half
-  only (switch-latency waits, `clearQueues` at fresh-tap gates, park/foul
-  flushes) — never the law. Fingerprint on unmodified main FIRST: it
-  said 72/72, so the failures were mine to own.
-- **Ownership before queueing.** Player errands queue; AI errands are
-  preemptible. Without the stamp, autonomous walks made every tap "busy"
-  and the queue swallowed the game. `cmd*` = human (sim's autonomy assigns
-  paths directly and stamps 'ai') — the discrimination needed zero API
-  changes.
-- **Never symlink node_modules to another lane's live worktree.** Slot a's
-  `npm install` yanked playwright out from under my drives mid-session
-  (mid-run 500s + "playwright-core is not installed"). Each worktree
-  installs its own; the ifvms postinstall patch rides along automatically.
-- **A lazy chunk hides the prod marker.** The index bundle hash can be
-  pre-merge-post-merge indistinguishable for a game change; scan
-  `"assets/*.js"` deps for a distinctive event string (`queue-cancel`),
-  and cross-check `gh api deployments` (Production @ merge sha) before
-  declaring the CDN stale.
-- **Node-scripted regex splices on your own game files need a parse
-  gate immediately after** — one flip script left a stray `)` on five
-  sites; esbuild-to-/dev/null caught it in seconds.
+- **A wire type the relay doesn't forward is a bug no unit test can see.**
+  `'pick'` joined FORWARD_TYPES because a browser drive asserted the GAME
+  outcome (both boxes agree on the fighter), not the packet. New wire types:
+  allowlist + a Node pin (part A2 pattern) IN THE SAME PR.
+- **Drives must wait for the roster, not the UI.** `screen`/`code` read fine
+  while the socket was `reconnecting`; newPair now requires both boxes'
+  seats.length===2 + rphase waiting. Symptom of not doing it: gates that fail
+  only in scenario order, never in a hand-written dbg.
+- **Cargo-cult teardowns rot silently.** `net.lobby.destroy` never existed in
+  lobby.js; two games called it (Viper fixed, IronRing filed #2478). Six games
+  use `room.reset()` — that's the pattern with a body.
+- **StrictMode ghosts race their own close.** mount2's join hits `room full`
+  because mount1's Close frame is still in flight; the retry ladder recovers,
+  so the game must make late seating harmless (re-declare the pick) instead of
+  hoping joins are clean.
+- mutateguard did its job again: mutant run refused the dirty tree → commit
+  first, then run; the freeze is the feature.
 
 ## Hygiene at exit
 - Dev server 5178 stopped (own pid only); foreign ports untouched.
-- Main checkout detached at origin/main; worktree
-  retrogames-forge-homebody-queue removed after merge.
+- Worktree retrogames-forge-viper-netselect removed; dbg script deleted, never
+  committed. Main checkout detached at origin/main.
 - STATE.md committed to main (game code merged this session) + parked slot b.
