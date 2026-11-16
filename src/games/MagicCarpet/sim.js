@@ -95,6 +95,14 @@ export const LEVELS = [
     { name: 'THE FINAL SKY', quota: 805, hoard: 755, wizHp: 725, pearls: 263 },
 ]
 export const QUOTA = LEVELS[LEVELS.length - 1].quota
+// Full-campaign tick budget shared by the harness sweep and the DebugKit
+// PROGNOSIS solver: #1925 fixed 300k, #2419 made it ride the campaign at
+// 26,000/world, and #2427 measured the 45-world economy honestly: slowest
+// seed 36 needs 1,217,880 ticks (27,064/world), so the flat 26k factor no
+// longer clears the sweep. Factor 30,000/world (cap 1.35M) leaves ~11% head
+// over the measured worst seed while still failing a soft-locked autopilot.
+// The sweep is deterministic — this is a canary, not a flake guard.
+export const CAMPAIGN_CAP = LEVELS.length * 30000
 
 // ---- title WORLD SELECT (#1740) -----------------------------------------
 // Pure selector plumbing so the whole pick path is Node-provable, like hudTap.

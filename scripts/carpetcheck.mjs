@@ -22,7 +22,7 @@ import {
     scareVillagers, VIL_PANIC_R, VIL_FLAME_R, VIL_WANDER_R,
     VIL_GRAB_R, VIL_GRAB_ALT, VIL_TRIBUTE_T, VIL_TRIBUTE_M,
     FOG_NEAR, FOG_D, HAZE, hazeOf, airOf, aerialFog,
-    DIVE_DRAG, DIVE_NOFIRE,
+    DIVE_DRAG, DIVE_NOFIRE, CAMPAIGN_CAP,
 } from '../src/games/MagicCarpet/sim.js'
 import { WAVE_CYCLE } from '../src/games/MagicCarpet/renderer.js' // #1764 item 4 stage 4: the wave law's clock constant, for the JS twin
 
@@ -53,12 +53,12 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
 
 // ---- forty-five worlds: level progression and equilibrium (#1740, grown by #1925 item 3, #2419 and #2427)
 {
-    const gs = run(7, LEVELS.length * 26000)
+    const gs = run(7, CAMPAIGN_CAP)
     r.check('forty-five worlds: seed 7 clears I→XLV and wins at the final quota',
         gs.end === 'win' && gs.level === LEVELS.length - 1 && gs.levelClears === LEVELS.length - 1 && gs.bank >= gs.quota,
         `end=${gs.end} level=${gs.level + 1} bank=${Math.floor(gs.bank)}/${gs.quota} tick=${gs.tick}`)
     r.check('banked vault (not carried mana) is what reaches the quota', gs.bank >= QUOTA, `bank=${Math.floor(gs.bank)} quota=${QUOTA}`)
-    const gs2 = run(88, LEVELS.length * 26000)
+    const gs2 = run(88, CAMPAIGN_CAP)
     r.check('seed 88 also restores all forty-five worlds', gs2.end === 'win' && gs2.level === LEVELS.length - 1, `end=${gs2.end} level=${gs2.level + 1}`)
 }
 
@@ -96,7 +96,7 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         const gs = makeGame(3)
         const seen = []
         let i = 0
-        while (!gs.end && i < LEVELS.length * 26000) {
+        while (!gs.end && i < CAMPAIGN_CAP) {
             step(gs, autopilot(gs))
             for (const e of gs.events) if (e.type === 'level') seen.push(e.name)
             gs.events.length = 0
@@ -540,7 +540,7 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
     let t0 = total(gs)
     let spent = 0, bounty = 0
     let i = 0
-    while (!gs.end && i < LEVELS.length * 26000) {
+    while (!gs.end && i < CAMPAIGN_CAP) {
         step(gs, autopilot(gs))
         for (const e of gs.events) {
             if (e.type === 'cast') spent += spellById(e.id).cost
@@ -1015,7 +1015,7 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         for (let s = 1; s <= 60; s++) {
             const gs = makeGame(s)
             let i = 0
-            while (!gs.end && i < LEVELS.length * 26000) { step(gs, autopilot(gs)); i++ }
+            while (!gs.end && i < CAMPAIGN_CAP) { step(gs, autopilot(gs)); i++ }
             if (gs.end === 'win') { wins++; if (i > slowest) slowest = i }
         }
         r.check('60-seed balance sweep: the autopilot still restores all forty-five worlds, all 60 seeds',

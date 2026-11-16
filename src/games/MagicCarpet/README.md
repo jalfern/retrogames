@@ -816,14 +816,17 @@ original's full **forty-five worlds** — fifteen arcs of three atmospheres.
 - Plumbing rode `LEVELS.length` everywhere (select, cursor, HUD, PROGNOSIS);
   the attract copy is updated — and the stale `EIGHTEEN WORLDS · SIX ARCS`
   line #2419 left behind finally follows the campaign.
-- **Caps measured, law unchanged:** `LEVELS.length * 26000` = 1,170,000 ticks.
-  Fresh 60-seed measurement at 45 worlds: **60/60 win**, slowest seed 88 at
-  **1,112,401 ticks** — 95% of the cap. The margin is thinner than at 27
-  (was ~27%) because deep-arc fights lengthen superlinearly (wizHp 725 at the
-  end vs 455): the estimate of ~850k was low by a quarter. The sweep is
-  deterministic (seeded RNG, fixed timestep), so a 5% margin cannot flake —
-  but any future *rule* change near the tail must re-measure, and this note is
-  where the number lives.
+- **Caps measured, law raised honestly:** the flat factor rides the campaign at
+  `CAMPAIGN_CAP = LEVELS.length * 30000` — now exported from sim.js so the
+  carpetcheck sweep and the DebugKit PROGNOSIS budget can never drift apart
+  again. Fresh 60-seed measurement at 45 worlds: **60/60 win**, slowest seed 36
+  at **1,217,880 ticks** — 90% of the new 1.35M cap, but it **exceeds the old
+  1.17M** (26k/world, seed 36 alone needed 27,064): deep-arc fights lengthen
+  superlinearly (wizHp 725 at the end vs 455), so my first estimate of ~850k
+  was low by a quarter and the first README draft quoted the wrong seed (88 was
+  *a* slow seed, not the slowest — the single-seed probe lied by omission).
+  The sweep is deterministic (seeded RNG, fixed timestep), so headroom here is
+  canary-for-rule-changes, not flake insurance.
 - carpetcheck: campaign gates re-targeted twenty-seven→forty-five (seed-7/seed-88
   full clears, live name-order campaign, sweep titles); the arc ramp pin widened
   from slice(18,27) to slice(18) — it now proves +15/+5 all the way to world 45

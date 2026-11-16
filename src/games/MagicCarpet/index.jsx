@@ -16,7 +16,7 @@ import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, 
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import {
     W, H, HUD_H, HORIZON, MAP,
-    LEVELS,
+    LEVELS, CAMPAIGN_CAP,
     SPILLS, spellById,
     makeGame, step, autopilot, stateHash, setHand, cycleR, cycleL, crater, settleGround, INVIS_T,
     hudTap, TAP, TRAY, muffleOf, OPEN_CUTOFF, crumbleFeel, castBearing, diveOf, sampleH, WATER, aerialFog,
@@ -1464,7 +1464,7 @@ const MagicCarpetGame = () => {
                             // ~17k ticks/world at the deep end, so a fixed 60k (or the old
                             // 12k/world) would call world 1 unwinnable or time out late arcs.
                             let t = 0
-                            while (!clone.end && t < LEVELS.length * 26000) { step(clone, autopilot(clone)); t++ }
+                            while (!clone.end && t < CAMPAIGN_CAP) { step(clone, autopilot(clone)); t++ }
                             return clone.end === 'win'
                                 ? `WINNABLE from here: vault quota banked at tick ${clone.tick} (${clone.score} pts)`
                                 : `NOT winnable by the autopilot from here: end=${clone.end || 'timeout'} vault ${Math.floor(clone.bank)}/${clone.quota}`
