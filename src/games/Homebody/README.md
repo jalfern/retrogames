@@ -736,10 +736,16 @@ sim still owns the law and the hash:
   steps), so the fast gears hurry it honestly. Ghosts and names live outside `s`;
   `stateHash` never sees them (the queue itself still rides the hash — that law
   is #2470's), and a new street clears the register.
-- **Item 3 — promote-by-tap: parked for a gesture call (#2495).** The original
-  pulls a queued action to the front; the chip's tap verb is already cancel-at-
-  press (#2470, pinned). A second verb needs Jon's decision (long-press promote,
-  drag-to-head, or skip) — filed as a decidable question, not built blind.
+- **Item 3 — drag-to-front (#2495 answered B).** The original pulls a queued
+  action to the head. The chip's tap verb stayed cancel, but cancel moved from
+  press to release (the mobile idiom; a tap is down+up, the exposed `tap()`
+  rides both). Press-and-pull a chip #2+ left until it reaches the head slot
+  (distance derives from `QCELL`'s pitch, sloped half a pitch) and it jumps to
+  the front of the list — `queuePromote` (sim.js) splices order only; the
+  promoted errand still re-validates at issue time, so a sold one drops
+  honestly. The head chip has no front to pull to, so its press keeps the
+  instant cancel. The pad route publishes thumb moves, so phone drags ride the
+  same law; `__game.drag(fx,fy,tx,ty)` drives the whole gesture for QA.
 
 Gates: `homebodyqueuecheck` POLISH 2 section (+22 pins: `chipName` mapping,
 hover names the pending chip / the NOW cell / nothing off-row, hover never cancels

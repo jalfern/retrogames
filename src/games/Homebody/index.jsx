@@ -26,7 +26,7 @@ import {
     REL_NAMES,
     tileOf, CATALOG, NEEDS, SFX, EXT_ROOM,
     newRun, advance, autoStep, cmdUse, cmdWalk, cmdWork,   // #2470: tryUse moved to tryUseOrQueue below
-    cmdQueue, queueCancel, orderBusy, tryUseOrQueue,   // #2470: the action queue — append while busy, cancel by chip
+    cmdQueue, queueCancel, queuePromote, orderBusy, tryUseOrQueue,   // #2470: the action queue — append while busy, cancel by chip; #2474 item 3: promote by pull
     WORK_START, WORK_END,   // #2470: the mail order is only queued while the window is honestly open
     place, sellAt, cellItem, targetsOf, walkable, manualMove, placeOk, buildRoom,
     adoptPet, adoptOk, PET,   // #2197: the cat counter
@@ -54,6 +54,7 @@ import {
     drawSay,   // #2135: the spoken-word bubble over the pair
     drawGroundGift, bondRows,   // #2240: the set-down basket + the BONDS rows as data
     queueHit,   // #2470: the queue chips' tap route (shares the painter's geometry)
+    QCELL,   // #2474 item 3: the chip pitch — the drag threshold derives from it
     queueGlyphFor,   // #2474: the chip glyph from an event id — one source for paint and timbre
     chipHover,   // #2474 item 2: the name-reveal hit route (mouse hover + held thumb)
     chipCollapse, chipCollapseArm, COLLAPSE_FRAMES,   // #2474 item 4: the row-collapse beat (view-only register)
@@ -202,6 +203,11 @@ const HomebodyGame = () => {
                         break
                     }
                     case 'queue-cancel': audioController.playTone(320, 0.05, 'square', 0.03); if (live) say('ORDER CANCELLED'); break
+                    case 'queue-promote':   // #2474 item 3: the chip you pulled left steps up to the front of the line
+                        audioController.playTone(520, 0.04, 'triangle', 0.04)
+                        audioController.playTone(780, 0.05, 'triangle', 0.04, 0.055)
+                        if (live) say(`${DEF[e.id] ? DEF[e.id].name.toUpperCase() : e.id === 'work' ? 'WORK' : e.id === 'walk' ? 'WALK' : String(e.id).toUpperCase()} ORDERED NEXT`)
+                        break
                     case 'queue-drop':
                         audioController.playTone(240, 0.08, 'sawtooth', 0.04)
                         if (live) say(`${e.name.toUpperCase()} CAN NO LONGER DO THAT`)
@@ -459,12 +465,41 @@ const HomebodyGame = () => {
         }
 
         // ---------------------------------------------------------- pointer ----
+        // #2474 item 3: DRAG-TO-FRONT (The Sims 1, pull a queued chip to the
+        // head). Pressing a chip ARMS it; the tap spends itself on LIFT — no
+        // travel means the historic cancel, pulling the chip left past one
+        // chip-pitch promotes it to next-in-line instead. qi 0 has no front to
+        // pull to, so its press still rides the plain cancel.
+        let chipDrag = null   // { pi, qi, x0, y0, moved }
+        const chipLift = () => {
+            if (!chipDrag) return
+            const qh = chipDrag
+            chipDrag = null
+            if (qh.moved || !gs || gs.done || pausedRef.current || screenRef.current !== 'play') return
+            queueCancel(gs, gs.people[qh.pi], qh.qi)
+        }
+        const chipDragMove = (px, py) => {
+            if (!chipDrag || chipDrag.moved) return
+            const dx = px - chipDrag.x0, dy = py - chipDrag.y0
+            // Jon #2495 option B: the chip must reach the HEAD slot (the row's
+            // first chip cell, pitch-shifted by the chip's index), with a slop
+            // so a slipping thumb-tap never promotes by accident.
+            const headEdge = chipDrag.x0 - chipDrag.qi * (QCELL.cw + QCELL.gap) + QCELL.cw
+            if (px <= headEdge && dx <= -(QCELL.cw + QCELL.gap) / 2 && Math.abs(dx) >= Math.abs(dy)) {
+                chipDrag.moved = true
+                if (chipDrag.qi > 0 && gs && !gs.done) queuePromote(gs, gs.people[chipDrag.pi], chipDrag.qi)
+            }
+        }
         const pointerPx = (px, py) => {
             if (!gs || gs.done || screenRef.current !== 'play' || pausedRef.current) return
             const dd = speedHit(px, py)   // #2227: the dial is always tappable — the pad route to the gears, above every other hit
             if (dd >= 0) { const pv = gs.speed; if (setSpeed(gs, dd)) speedBlip(dd, dd > pv); return }
             const qh = queueHit(gs, px, py)   // #2470: the queue chips sit in the panel column — a chip tap cancels that order and spends the tap
-            if (qh) { queueCancel(gs, gs.people[qh.pi], qh.qi); return }
+            if (qh) {
+                if (qh.qi === 0) { queueCancel(gs, gs.people[qh.pi], qh.qi); return }   // the head chip has no front to pull to
+                chipDrag = { pi: qh.pi, qi: qh.qi, x0: px, y0: py, moved: false }
+                return
+            }
             if (gs.build) {
                 const tb = tabHit(px, py)   // #2222: tap a shelf name to flip
                 if (tb >= 0) { if (selectTab(gs, tb)) audioController.playTone(500 + tb * 70, 0.05, 'square', 0.04); return }
@@ -573,6 +608,8 @@ const HomebodyGame = () => {
             if (pad.b && !prev.b) { gs.build = !gs.build; audioController.playSweep(gs.build ? 320 : 620, gs.build ? 620 : 320, 0.14, 'square', 0.05) }
             const pdown = !!(pad.pointer && pad.pointer.down)
             if (pdown && !prev.pdown) pointerPx(pad.pointer.x * W, pad.pointer.y * H)
+            else if (pdown && chipDrag) chipDragMove(pad.pointer.x * W, pad.pointer.y * H)   // #2474 item 3: the pad publishes the thumb's moves too
+            else if (!pdown && prev.pdown) chipLift()   // #2474 item 3: pad lift settles the armed chip like the canvas one
             if (pad.a && !prev.a) {
                 if (gs.build) {
                     if (cellItem(gs, gs.cursor.r, gs.cursor.c) && cellItem(gs, gs.cursor.r, gs.cursor.c).id !== 'mail') sellAt(gs, gs.cursor.r, gs.cursor.c)
@@ -988,15 +1025,18 @@ const HomebodyGame = () => {
         // watch pill stopPropagation()s its own presses, e.target is this canvas.
         const onMove = (e) => {
             if (screenRef.current !== 'play' || pausedRef.current || !canvas || e.target !== canvas || watchingRef.current) { mouseHover = null; return }
-            if (e.pointerType === 'touch') return   // a thumb ends where it last tapped — hover is the mouse's idiom
             const r = canvas.getBoundingClientRect()
             if (!r.width) return
-            mouseHover = chipHover(gs, (e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H)
+            const mx = (e.clientX - r.left) / r.width * W, my = (e.clientY - r.top) / r.height * H
+            if (chipDrag) { chipDragMove(mx, my); return }   // #2474 item 3: an armed chip rides the thumb, touch included
+            if (e.pointerType === 'touch') return   // a thumb ends where it last tapped — hover is the mouse's idiom
+            mouseHover = chipHover(gs, mx, my)
             hoverReveal = mouseHover
         }
         const onLift = () => {
             // #2474: the thumb clock ends with the lift; its revealed name goes
             // with it (mouse names live and die by onMove, not by the clock).
+            chipLift()   // #2474 item 3: the armed chip settles — no travel means the historic cancel
             if (pressName && pressName.revealed) hoverReveal = null
             pressName = null
         }
@@ -1075,7 +1115,8 @@ const HomebodyGame = () => {
                 watching: () => watchingRef.current,
                 watchSfx: watchSfxLog,
                 start: (sd) => startPlay(sd),
-                tap: (px, py) => pointerPx(px, py),
+                tap: (px, py) => { pointerPx(px, py); chipLift() },   // #2474 item 3: a harness tap is the whole press-and-release — the historic cancel survives
+                drag: (fx, fy, tx, ty) => { pointerPx(fx, fy); chipDragMove(tx, ty); chipLift() },   // #2474 item 3: press at (fx,fy), pull to (tx,ty), release — the drag-to-front route
                 press: (code) => onDown({ code, preventDefault: () => {} }),
                 release: (code) => onUp({ code }),   // #2171: the release half of the thumb-court gesture
                 room: () => (gs ? buildRoom(gs) : false),

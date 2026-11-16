@@ -20,6 +20,10 @@
 //   9. POLISH 2 #2474 — the name reveal (chipHover reads the pending chip or the
 //      NOW cell and names it; hover never cancels) and the row-collapse beat
 //      (a emptied row holds its space while ghost chips shrink, then reflows).
+//  10. POLISH 3 #2474 — drag-to-front (#2495 answer B): queuePromote splices
+//      order only; the head chip and out-of-range are inert; the promoted
+//      errand rides the pump first and still re-validates; the view routes
+//      (arm/press-lift/settle/pad) and the QCELL-derived head-slot distance.
 //
 // Prove it can fail (FORGE step 5): in sim.js, stub the pump guard
 // `p.queue.length && !p.path && !p.goal && !p.use` to `false` -> [ISSUE & DRAIN]
@@ -31,10 +35,12 @@
 // Mutant #2474-2: in art.js, make chipHover `return null` — the four reveal
 // pins go red; restore. Drop the reserved-space line in residentRows
 // (`if (fade) row.queueY = ...`) — the hold-open pin goes red; restore.
+// Mutant #2474-3: stub queuePromote `return null` — the front-move, rides-the-
+// pump and hash pins go red; restore.
 
 import {
     FIXED_DT, DEF, COLLAPSE_AT,
-    newRun, advance, autoStep, cmdUse, cmdWork, cmdQueue, queueCancel, orderBusy, tryUseOrQueue,
+    newRun, advance, autoStep, cmdUse, cmdWork, cmdQueue, queueCancel, queuePromote, orderBusy, tryUseOrQueue,
     sellAt, stateHash, WORK_START, targetsOf, tileX, tileY, TILE,
 } from '../src/games/Homebody/sim.js'
 import { readFileSync } from 'node:fs'
@@ -192,7 +198,10 @@ section('HASH & REPLAY')
     // queue layer provably did not touch the old play (the bot never queues).
     const p = newRun(7)
     for (let i = 0; i < 3000; i++) { advance(p, DT); drain(p) }
-    check('no-tap play is seed-exact', stateHash(p) === 1609037625, `got ${stateHash(p)} (computed against unmodified main, #2470)`)
+    // #2474 QA recalibration: this constant predated #2503 (ice-cream truck) —
+    // truckHour/binAt/iceDay/serial/cone all ride stateHash now, so the frozen
+    // 1609037625 was red on main before this branch (verified at 096faac).
+    check('no-tap play is seed-exact', stateHash(p) === 819006649, `got ${stateHash(p)} (recomputed at main post-#2503, #2474)`)
     let sawQueue = false
     const q = newRun(5)
     for (let i = 0; i < 60 * 900 && !q.done; i++) { autoStep(q, DT); drain(q); if (q.people.some((pp) => pp.queue.length)) sawQueue = true }
@@ -351,9 +360,69 @@ section('POLISH 2 #2474 — NAME REVEAL & COLLAPSE BEAT')
     check('the hover route sits beside queueHit, not inside it', artSrc3.indexOf('export function chipHover') > artSrc3.indexOf('export function queueHit')
         && !(/pointerPx[\s\S]{0,400}chipHover/).test(idxSrc3.slice(idxSrc3.indexOf('const pointerPx'), idxSrc3.indexOf('const pointerPx') + 400)))
     check('the shell arms ghosts on a shrinking list and decays per world step', idxSrc3.includes('chipCollapseArm(collapseCache') && idxSrc3.includes('chipCollapse(gs, collapseCache)'))
-    check('the cancel law still owns the press (queueHit -> queueCancel)', /queueHit\(gs, px, py\).{0,160}queueCancel/s.test(idxSrc3))
+    check('the cancel law still owns the settled tap (arm on press, queueCancel on lift)', /queueHit\(gs, px, py\)[\s\S]{0,220}queueCancel/s.test(idxSrc3) && idxSrc3.includes('chipLift()'))
     check('the probe exposes the view state for QA', idxSrc3.includes('collapse: gs.people.map') && idxSrc3.includes('hoverName: hoverReveal'))
     check('a new street clears ghosts and names', idxSrc3.includes('collapseCache.clear(); hoverReveal = null'))
+}
+
+section('POLISH 3 #2474 — DRAG-TO-FRONT (promote a queued chip)')
+{
+    const simSrc4 = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const idxSrc4 = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    check('sim exports the promote law', simSrc4.includes('export function queuePromote'))
+    // --- pure order law: only the LIST moves, the head-in-flight never does
+    const gP = newRun(21)
+    const oP = gP.people[0]
+    const fridgeP = gP.items.find((it) => it.id === 'fridge')
+    const aP = gP.items.find((it) => it.id === 'toilet')
+    const bP = gP.items.find((it) => it.id === 'tv') || gP.items.find((it) => it.id === 'radio')
+    drain(gP)
+    cmdUse(gP, oP, fridgeP)                                   // errand in flight
+    cmdQueue(gP, oP, { kind: 'use', it: aP })          // [a]
+    cmdQueue(gP, oP, { kind: 'use', it: bP })             // [a, b]
+    const hBefore = stateHash(gP)
+    const pr = queuePromote(gP, oP, 1)
+    const evP = drain(gP).filter((e) => e.t === 'queue-promote')
+    check('promote moves the chosen chip to the front', pr && pr.it === bP && oP.queue[0].it === bP && oP.queue[1].it === aP)
+    check('the promote event names the errand and the resident', evP.length === 1 && evP[0].id === bP.id && evP[0].name === oP.name)
+    check('order is state — the hash moves', stateHash(gP) !== hBefore)
+    check('the head chip has no front to pull to', queuePromote(gP, oP, 0) === null && oP.queue[0].it === bP && !drain(gP).some((e) => e.t === 'queue-promote'))
+    check('out of range is inert', queuePromote(gP, oP, 2) === null && queuePromote(gP, oP, -1) === null && oP.queue.length === 2)
+    // --- the promoted errand is the one that runs next
+    const hMid = stateHash(gP)
+    check('promoting the same head is inert (hash still)', queuePromote(gP, oP, 0) === null && stateHash(gP) === hMid)
+    const issueSeq = []
+    for (let i = 0; i < 60 * 60 && oP.queue.length; i++) {
+        advance(gP, DT); drain(gP)
+        const cur = oP.use ? oP.use.it.id : (oP.goal && oP.goal.it ? oP.goal.it.id : null)
+        if ((cur === aP.id || cur === bP.id) && issueSeq[issueSeq.length - 1] !== cur) issueSeq.push(cur)
+    }
+    check('the promoted errand rides the pump first', issueSeq[0] === bP.id && issueSeq.includes(aP.id), `issued: ${issueSeq.join(',')}`)
+    // --- re-validation survives promotion: a sold promoted order drops honestly at issue
+    const gS = newRun(22)
+    const oS = gS.people[0]
+    const fridgeS = gS.items.find((it) => it.id === 'fridge')
+    const bedS = gS.items.find((it) => it.id === 'bed')
+    const toiletS = gS.items.find((it) => it.id === 'toilet')
+    drain(gS)
+    cmdUse(gS, oS, fridgeS)
+    cmdQueue(gS, oS, { kind: 'use', it: toiletS })
+    cmdQueue(gS, oS, { kind: 'use', it: bedS })
+    queuePromote(gS, oS, 1)                                   // bed steps to the front
+    sellAt(gS, bedS.r, bedS.c)
+    drain(gS)
+    let dropped = false
+    for (let i = 0; i < 60 * 60 && !dropped; i++) { advance(gS, DT); dropped = drain(gS).some((e) => e.t === 'queue-drop' && e.id === 'bed') }
+    check('a sold promoted order still drops honestly at issue', dropped && !oS.queue.some((o) => o.kind === 'use' && o.it === bedS))
+    check('the resident is never stranded by the reorder', !oS.done && !oS.queue.some((o) => o.kind === 'use' && o.it === bedS))
+    // --- wiring: the view routes through the sim law, threshold derives from QCELL
+    check('the shell arms, drags and settles chips via the sim law', idxSrc4.includes('queuePromote(gs, gs.people[chipDrag.pi], chipDrag.qi)')
+        && idxSrc4.includes('queueCancel(gs, gs.people[qh.pi], qh.qi)'))
+    check('the drag lands on the head slot — distance derives from QCELL, not magic numbers', idxSrc4.includes('headEdge = chipDrag.x0 - chipDrag.qi * (QCELL.cw + QCELL.gap) + QCELL.cw') && idxSrc4.includes('px <= headEdge'))
+    check('the harness gets the whole gesture: tap is press+release, drag pulls', idxSrc4.includes('pointerPx(px, py); chipLift()') && idxSrc4.includes('pointerPx(fx, fy); chipDragMove(tx, ty); chipLift()'))
+    check('the pad route settles and drags too', idxSrc4.includes('chipDragMove(pad.pointer.x * W, pad.pointer.y * H)') && idxSrc4.includes('chipLift()   // #2474 item 3: pad lift'))
+    check('pulling the head chip is the plain press-cancel', /if \(qh\.qi === 0\) \{ queueCancel\(gs, gs\.people\[qh\.pi\], qh\.qi\)/.test(idxSrc4))
+    check('the promote has its own two-note up and a spoken line', /case 'queue-promote':[\s\S]{0,420}ORDERED NEXT/.test(idxSrc4))
 }
 
 console.log(`\nhomebodyqueuecheck: ${pass}/${pass + fail}${fail ? '  FAILED: ' + fails.join(', ') : ''}`)
