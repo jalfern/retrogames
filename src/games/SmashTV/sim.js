@@ -4,7 +4,9 @@
 //
 // Load-bearing rules (the harness pins these):
 //   - ONE HIT KILLS: any enemy bullet, grenade blast or contact ends a life;
-//     spawn invulnerability is the only mercy. Zero lives -> game over.
+//     there is NO mercy — room entries and respawns land unshielded, as the
+//     arcade's law (#2491: the arcade gives none; the old spawn shields were
+//     the deviation). Zero lives -> game over.
 //   - exits stay SEALED until every enemy in the room is dead (and the wave
 //     has fully spawned); then they open and walking into one advances the room.
 //   - crates shatter under fire and reveal their weapon; touching it swaps the
@@ -39,9 +41,10 @@ export const CFG = {
     lives: 3,
     extraLife: 20000,
     roomBonus: 1000,
-    invulnRespawn: 150,
-    invulnRoom: 70,
     deadFreeze: 70,
+    // #2491: NO spawn shields — the arcade gives none. `invuln` stays on the
+    // seat as a harness isolation hook (scripts set it to park a seat out of
+    // harm's way while they audit other laws); the game itself never grants it.
     firebombCost: 34,
     maxEnergy: 100,
     grenadeSpeed: 1.3,
@@ -140,8 +143,8 @@ export function makeGame(seed = 0, opts = {}) {
         cleared: false, spawnT: 0, bonusT: 0, combo: 0, roomsCleared: 0,
         bossDead: false, bossDeath: null, alertCd: 0, walls: null, roomData: null,
     }
-    gs.players.push(makeSeat(start.x, start.y, CFG.invulnRoom, seed))
-    if (seats > 1) gs.players.push(makeSeat(start.x, start.y, CFG.invulnRoom, (seed ^ 0x5f3a) | 0))
+    gs.players.push(makeSeat(start.x, start.y, 0, seed))
+    if (seats > 1) gs.players.push(makeSeat(start.x, start.y, 0, (seed ^ 0x5f3a) | 0))
     gs.player = gs.players[0]
     // seat 1's bank IS the game's bank: one property, two names, one value
     for (const k of ['score', 'lives', 'upTo', 'weapon']) {
@@ -177,7 +180,7 @@ function loadRoom(gs, idx) {
     const energyCells = gs.slack ? 0 : room.energyCells
     if (gs.slack && gs.crates.length) gs.crates.shift()
     if (energyCells) gs.items.push({ id: gs._nextId++, t: 'energy', x: cx(3), y: cy(2) })
-    const inv = gs.tick === 0 ? CFG.invulnRoom : CFG.invulnRespawn
+    const inv = 0 // #2491: the arcade gives no spawn invulnerability — land exposed
     const p1 = gs.players[0]
     p1.x = cx(startColOf(room.gw)); p1.y = cy(START.r)
     p1.aim = [0, -1]; p1.fireT = 0; p1.deadT = 0; p1.invuln = inv; p1.walk = 0
@@ -746,7 +749,7 @@ export function step(gs, inp = {}, inp2 = null) {
             if (p.deadT === 0) {
                 if (p.lives <= 0) { gs.end = 'over'; gs.events.push({ type: 'over' }); return gs }
                 p.x = cx(startColOf(gwOf(gs))); p.y = cy(START.r)
-                p.invuln = CFG.invulnRespawn
+                p.invuln = 0 // #2491: respawn lands unshielded — the arcade gives none
                 gs.energy = CFG.maxEnergy
                 gs.events.push({ type: 'respawn' })
             }
@@ -765,7 +768,7 @@ export function step(gs, inp = {}, inp2 = null) {
                 if (q.lives <= 0) q.out = true
                 else {
                     q.x = cx(startColOf(gwOf(gs))); q.y = cy(START.r)
-                    q.invuln = CFG.invulnRespawn
+                    q.invuln = 0 // #2491: respawn lands unshielded — the arcade gives none
                     if (i === 0) gs.energy = CFG.maxEnergy
                     gs.events.push({ type: 'respawn', pi: i })
                 }

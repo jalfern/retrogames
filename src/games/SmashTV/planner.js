@@ -70,6 +70,38 @@ function dodge(gs, p) {
     return null
 }
 
+// #2491 doctrine — the arcade gave no spawn shield, so reading the throw is
+// the pilot's own job. A grenade flies a straight locked line at a fixed speed
+// for its fuse, so its landing point is pure arithmetic: leave the blast ring
+// (grenadeR + playerR) before the fuse dies. Bullets never hit a pilot already
+// out of the ring at landing, so the law is: whenever the predicted landing
+// spot is inside the ring around the seat, walk the direction (of the eight
+// the sim can say) that ends up furthest from that spot and stays in room.
+// Zero randomness — same LCG-free determinism as the rest of the planner.
+function grenadeEscape(gs, p) {
+    let hot = null, ht = 1e9
+    const ring = CFG.grenadeR + CFG.playerR
+    for (const g of gs.grenades) {
+        const lx = g.x + g.dx * g.t, ly = g.y + g.dy * g.t
+        const d = Math.hypot(lx - p.x, ly - p.y)
+        if (d > ring + 2) continue
+        if (g.t < ht) { ht = g.t; hot = [lx, ly] }
+    }
+    if (!hot) return null
+    const bw = boardW(gs)
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7071, 0.7071], [0.7071, -0.7071], [-0.7071, 0.7071], [-0.7071, -0.7071]]
+    const stepPx = CFG.playerSpeed * 8
+    let best = null, bs = -1e9
+    for (const d of dirs) {
+        const nx = p.x + d[0] * stepPx, ny = p.y + d[1] * stepPx
+        if (nx < 14 || nx > bw - 14 || ny < HUD_H + 14 || ny > CH - 14) continue
+        if (blockedPx(gs, nx, ny, CFG.playerR)) continue
+        const dd = Math.hypot(nx - hot[0], ny - hot[1])
+        if (dd > bs) { bs = dd; best = d }
+    }
+    return best
+}
+
 const aimH = (gs, inp, p, x, y) => {
     const [qx, qy] = q8(x - p.x, y - p.y)
     inp.fx = qx; inp.fy = qy
@@ -108,6 +140,17 @@ function seatDrive(gs, pi = 0) {
     if (st.rn !== gs.room) { st.rn = gs.room; st.streak = 0 }
     st.last = [p.x, p.y]
     st.wantMove = false
+    // #2491: outranks even a stall-break — a detour that walks into a blast
+    // ring is no break at all. Leave the ring first, then everything else.
+    const gvec = grenadeEscape(gs, p)
+    if (gvec) {
+        const [qx, qy] = q8(gvec[0], gvec[1])
+        inp.mx = qx; inp.my = qy
+        st.wantMove = true; st.gx = qx; st.gy = qy
+        const th = nearestEnemy(gs, true, p)
+        if (th) aimH(gs, inp, p, th.x, th.y)
+        return inp
+    }
     if (st.stall > 15) {
         st.streak = (st.streak || 0) + 1
         // #2007: a fixed 30-tick break spans ~36px — less than the no-go band
@@ -119,8 +162,14 @@ function seatDrive(gs, pi = 0) {
         st.stall = 0
         if (pi === 0) {
             // seat 1 keeps its proven horizontal break exactly as it always did
-            st.axis = 0
+            if (st.axis == null) st.axis = 0
             st.side *= -1
+            // …until horizontal has plainly failed twice (#2491: with no spawn
+            // shields some routes arrive at a bar from a new side, and a bar
+            // band only breaks vertically — the #508 partner lesson, withheld
+            // from seat 1 until it earns it). Clean runs never reach streak 2,
+            // so every proven byte-run stands untouched.
+            if (st.streak >= 2) st.axis = st.axis === 1 ? 0 : 1
         } else {
             // a partner's break that lands mid-detour runs into a wall that runs
             // the other way, so the axis must swap — but the side also flipped on
