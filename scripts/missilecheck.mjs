@@ -628,6 +628,47 @@ section('ALTERNATING BATTERIES (#2473) — sectors, seats, rescue, ledgers')
     console.log(`  ..    duo autopilot: ${duoR.receipts.fired} fired, ${duoR.receipts.kills} kills, ledgers ${duoG.pscore.join(' / ')}`)
 }
 
+// ---------------------------------------------------------------- deny voice ----
+// #2483 item 4: the seat refusal is the alternating law's voice. It must be
+// the house two-tone (high ask, low no — the captain's idiom), the crossed
+// sector band must strobe red at the denial, and the flash must decay. The
+// shell is browser-only, so this arm pins the source the browser will run.
+section('DENY VOICE (#2483) — two-tone refusal, red band, solo untouched')
+{
+    const jsx = readFileSync(join(HERE, '../src/games/MissileBattle/index.jsx'), 'utf8')
+    const b0 = jsx.indexOf("e.type === 'denySeat'")
+    const b1 = jsx.indexOf("e.type === 'seatOut'", b0)
+    ok(b0 > 0 && b1 > b0, 'the denySeat branch was removed from the shell')
+    const branch = jsx.slice(b0, b1)
+    const tones = (branch.match(/audioController\.playTone\(/g) || []).length
+    ok(tones === 2, `the sector refusal is ${tones === 1 ? 'back to one flat buzz' : `voiced with ${tones} tones`} — the law wants the two-tone (high ask, low no)`)
+    ok(!/playTone\(\s*110\b/.test(branch), 'the old flat 110 Hz deny buzz is back')
+    ok(/denyFlash\s*=\s*\d+/.test(branch) && /denyBand\s*=\s*e\.x\s*<\s*W\s*\/\s*2\s*\?\s*0\s*:\s*1/.test(branch),
+        'the denial no longer arms the crossed-band flash keyed to the target side')
+    ok(/denyFlash\s*>\s*0/.test(jsx) && /rgba\(255,\s*64,\s*64/.test(jsx) && /denyBand\s*===\s*0/.test(jsx),
+        'the red sector-band strobe was deleted from the map paint')
+    ok(/if\s*\(denyFlash\s*>\s*0\)\s*denyFlash--/.test(jsx), 'the refusal flash never decays — it would stain the band red forever')
+    // solo keeps its exact old voice — only duo gained the chirp
+    const d0 = jsx.indexOf("e.type === 'deny'")
+    const solo = jsx.slice(d0, jsx.indexOf('else if', d0 + 10))
+    ok(/playTone\(\s*90\b/.test(solo) && (solo.match(/audioController\.playTone\(/g) || []).length === 1,
+        'the solo DENY voice changed — item 4 is duo-only')
+    // the band the renderer paints is keyed to the EVENT x — prove denied
+    // shots really land deep in the partner's band, not near the line
+    {
+        const g = makeGame(0, { twoP: true })
+        g.phase = 'play'; g.playT = 1; g.queue = []; g.enemies = []
+        step(g, { aimTo: [250, 60], fire: true })
+        const e1 = g.events.find((e) => e.type === 'denySeat')
+        const h = makeGame(1, { twoP: true })
+        h.phase = 'play'; h.playT = 1; h.queue = []; h.enemies = []
+        step(h, { aimTo: [20, 60], fire: true })
+        const e2 = h.events.find((e) => e.type === 'denySeat')
+        ok(e1 && e1.x > W / 2, 'a west-seat denial does not stamp an east-side x — the flash would paint the wrong band')
+        ok(e2 && e2.x < W / 2, 'an east-seat denial does not stamp a west-side x — the flash would paint the wrong band')
+    }
+}
+
 // ------------------------------------------------------------------- the slack rule ----
 section('SLACK RULE — one fewer interceptor in EVERY battery')
 {
