@@ -25,7 +25,7 @@ import { buildSprites, buildFloor } from './art.js'
 import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
 import { playerFrame, GUN, STOCK, gunPose } from './sprite.js'
 import { enemyFrame, CHARGE, TELEGRAPH, OUTLINE, bossMouth, ADD_TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
-import { muzzleFlash, casingCol, killShake, recoilKick, shutterPhase, SHUTTER_TICKS, shellKick, barrelHot, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, STAIN_TICKS, stainRadius, camPan, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, edgeMarks, camLead, SPAWN_CUE, edgeRow, LAND_FLASH_TICKS, landFlashPhase, THREAT_MARK_TICKS, threatMarkPhase } from './juice.js'
+import { muzzleFlash, casingCol, killShake, recoilKick, shutterPhase, SHUTTER_TICKS, shellKick, barrelHot, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, STAIN_TICKS, stainRadius, camPan, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, edgeMarks, camLead, SPAWN_CUE, edgeRow, LAND_FLASH_TICKS, landFlashPhase, THREAT_MARK_TICKS, threatMarkPhase, entryRingPhase, entryRingR } from './juice.js'
 import { BAR, PIP, POWER_LABEL, ICON, bombReady, hiRoll, RACK_FLASH, respawnState, powerLow, LOW_SHIFT, LOW_LABEL_SHIFT } from './hud.js'
 import { fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_SWELL, MURMUR_HYPE_FREQ, WHOOSH, ALERT, POWER_PING } from './audio.js'
 import { attractFrame, DIM } from './attract.js'
@@ -95,6 +95,10 @@ const SmashTVGame = () => {
         // body that owns the old door cell. Fed by the respawn event's beat.
         const landFx = []
         const threatFx = []
+        // #2507 item 1 entry rings (draw layer only): every enemy the studio
+        // throws in — room openers included — wears the add-ring language on
+        // arrival, so nothing materializes silently inside the frame.
+        const bornFx = []
 
         // #496 seat 2 is a SLOT (off / human / cpu / model). A human seat reads
         // onePad slot 2 (gamepad 2 via the bridge, or P2 keys mapped below);
@@ -176,6 +180,10 @@ const SmashTVGame = () => {
                     audioController.playSweep(90, 240, 0.12, 'triangle', 0.04)
                     // #2028: a boss add thrown past the frame edge gets the flare
                     if (e.bossAdd) spawnCues.push({ x: e.x, y: e.y, t: SPAWN_CUE })
+                    // #2507 item 1: EVERY entry wears the ring — the chip above
+                    // speaks for off-frame cells; the ring answers for in-frame
+                    // materializations, room openers included.
+                    bornFx.push({ x: e.x, y: e.y, t: 0 })
                 }
                 else if (e.type === 'murmur') audioController.playFilteredNoise(MURMUR.dur, MURMUR.vol + MURMUR_SWELL * (e.hype || 0), MURMUR.freq + MURMUR_HYPE_FREQ * (e.hype || 0))
                 else if (e.type === 'alert') audioController.playTone(ALERT.freq, ALERT.dur, ALERT.type, ALERT.vol)
@@ -204,7 +212,7 @@ const SmashTVGame = () => {
                         audioController.playNoise(SHUTTER_CONFIRM.noise, 0.07)
                     }
                     say(e.bonus ? 'THAT WAS BEAUTIFUL!' : 'ROOM CLEAR! EXIT OPEN!')
-                } else if (e.type === 'advance') { stains.length = 0; gibs.length = 0; spawnCues.length = 0; audioController.playSweep(220, 660, 0.25, 'square', 0.07) }
+                } else if (e.type === 'advance') { stains.length = 0; gibs.length = 0; spawnCues.length = 0; bornFx.length = 0; audioController.playSweep(220, 660, 0.25, 'square', 0.07) }
                 else if (e.type === 'bomb') { audioController.playFilteredNoise(WHOOSH.dur, WHOOSH.vol, WHOOSH.freq); audioController.playNoise(0.4, 0.12); audioController.playSweep(80, 900, 0.4, 'sawtooth', 0.1); shake = 8; flash = 12; say('FIREBOMB! THE AUDIENCE ROARS!') }
                 else if (e.type === 'bombFail') { audioController.playTone(110, 0.12, 'square', 0.05); say('NOT ENOUGH POWER!') }
                 // #2507 dry tank: the trigger just entered the reload zone — a
@@ -839,6 +847,22 @@ const SmashTVGame = () => {
                 }
                 ctx.globalAlpha = 1
             }
+            // #2507 item 1 — the entry ring. Every spawn stamps a spawn-yellow
+            // ring that opens over ADD_TELEGRAPH ticks (the add-ring geometry,
+            // MARK.spawn colour): the opening volley of every room announces
+            // itself instead of popping in silent. Draw layer only.
+            for (let i = bornFx.length - 1; i >= 0; i--) {
+                const b = bornFx[i]
+                const ph = entryRingPhase(b.t)
+                if (ph <= 0) { bornFx.splice(i, 1); continue }
+                ctx.strokeStyle = MARK.spawn
+                ctx.globalAlpha = ph
+                ctx.lineWidth = 2
+                ctx.beginPath(); ctx.arc(b.x, b.y, entryRingR(b.t), 0, Math.PI * 2); ctx.stroke()
+                ctx.globalAlpha = 1
+                ctx.lineWidth = 1
+                b.t++
+            }
             for (const pp of pops) {
                 pp.y -= 0.4; pp.t++
                 text(pp.txt, pp.x, pp.y - HUD_H / 2 > 0 ? pp.y : pp.y + 16, 8, pp.col, 4)
@@ -1074,7 +1098,7 @@ const SmashTVGame = () => {
                     floor = buildFloor(0, gs.seed)
                     demoAt = 0
                     parts.length = 0; pops.length = 0; evLog.length = 0
-                    gibs.length = 0; stains.length = 0; spawnCues.length = 0
+                    gibs.length = 0; stains.length = 0; spawnCues.length = 0; bornFx.length = 0
                     held.clear(); bombEdge = false
                     shake = 0; flash = 0; toast = 0
                     glint[0] = glint[1] = 0

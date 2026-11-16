@@ -96,7 +96,7 @@ byte-identical; flat aims keep their vertical stack). And `art.js
 PAULDRON_BOB` lifts the chrome caps 1 px as the feet plant, so the shoulders
 ride the run cycle — steady at rest.
 
-## SPECIALS — HEAT-SEEKER & FLAMER (#2032)
+
 The cabinet's power-up ladder had eight guns; this arena had four plus the bomb.
 #2032 adds the two signatures it was missing — the guided missile and the fire.
 
@@ -458,3 +458,19 @@ shell routes flash + bracket; the draw reads the juice phases). Mutation
 guide: strip the spread at a respawn site → that seat's pin dies; `find`
 without the cell test → the stealer gate dies; clean-door tx → null breaks the
 false-alarm gate.
+
+## OPENING VOLLEY — ENTRY RINGS (#2507 item 1)
+Zero input, nine seeds: room 1 carries no guns — every seed's first blood is
+walkcam **contact**, and the fastest lands 16 ticks after a silent pop-in
+beside the seat (seed 2; `smashcheck` measures and pins it). The studio had
+arrival cues only for the host's adds (the materialize ring) and for cells
+past the camera (the #1978 edge chip) — an enemy that materialized IN FRAME
+said nothing. Now every `spawn` event wears the add-ring geometry in
+spawn-yellow for `ADD_TELEGRAPH` ticks (`juice.js entryRingPhase/entryRingR`,
+drawn from a renderer-side `bornFx` list): the opening volley of every room
+announces itself, and the marker still glows when the fastest contact lands
+(22 > 16, pinned). Presentation only — the sim, the no-mercy law (#2491) and
+every seed hash are untouched (the pilot sweep holds at 9/9).
+Mutation guide: flatten `entryRingPhase` → the decay pin dies; freeze the
+radius → the geometry pin dies; re-gate the push to `bossAdd` → the source
+pin dies.

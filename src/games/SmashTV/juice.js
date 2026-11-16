@@ -8,6 +8,7 @@
 //   room falls — with a set of arrow chevrons pointing in, not the old red dot.
 
 import { GUN } from './sprite.js'
+import { ADD_TELEGRAPH } from './enemies.js'
 
 // the muzzle flash: the gun's own tip colour, blooming a little past the muzzle
 export const muzzleFlash = (weapon) => {
@@ -189,3 +190,17 @@ export const LAND_FLASH_TICKS = 14
 export const landFlashPhase = (t) => Math.max(0, 1 - t / LAND_FLASH_TICKS)
 export const THREAT_MARK_TICKS = 36
 export const threatMarkPhase = (t) => Math.max(0, 1 - t / THREAT_MARK_TICKS)
+
+// #2507 item 1 — the entry ring. The first throw of each room is the opening
+// volley, and an enemy that materialized INSIDE the frame said nothing: the
+// materialize ring was the host's add-only cue, and the edge chip only speaks
+// for cells past the camera. Measured across the nine seeds, room 1 carries
+// no guns at all — the fastest first blood is a walkcam contact 16 ticks
+// after it popped in next to the seat (seed 2), well before a player can
+// parse a silent sprite. So every entry announces itself in the game's own
+// arrival language: the add-ring geometry (r 4→15) in spawn-yellow, riding
+// the spawn event the sim already emits per roster entry. Presentation only —
+// the sim and every seed hash are untouched.
+export const entryRingPhase = (age) => (age < ADD_TELEGRAPH ? 1 - age / ADD_TELEGRAPH : 0)
+export const entryRingR = (age) => 4 + 11 * Math.min(Math.max(age, 0), ADD_TELEGRAPH) / ADD_TELEGRAPH
+
