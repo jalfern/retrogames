@@ -636,11 +636,11 @@ const MissileBattleGame = () => {
                     <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
                         <h1 className="text-4xl font-black" style={{ color: '#ff7d5d', textShadow: '3px 0 0 #39d2ff, -3px 0 0 #ff3d6e, 0 10px 24px #000' }}>MISSILE BATTLE</h1>
                         <p className="text-white font-mono font-bold mt-3 animate-pulse">{PRESS}</p>
-                        <p className="text-white/70 font-mono text-xs mt-2 tracking-widest">
+                        <span className="block text-white/70 font-mono text-xs mt-2 tracking-widest">
                             MODE <span style={{ color: mode === 'solo' ? '#8fd8ff' : mode === 'coop' ? '#c9b8ff' : '#ffcf8f' }}>
                                 {mode === 'solo' ? 'SOLO' : mode === 'coop' ? 'YOU + CPU SEAT' : '2 HUMAN · ALTERNATING'}
                             </span> <span className="text-white/40">· M TO CHANGE</span>
-                        </p>
+                        </span>
                         <span className="block mt-2 text-xs text-white/50 tracking-widest">{WATCH_ATTRACT_HINT}</span>
                         <AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />
                     </div>
