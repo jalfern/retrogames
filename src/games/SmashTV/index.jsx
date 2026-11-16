@@ -25,7 +25,7 @@ import { buildSprites, buildFloor } from './art.js'
 import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
 import { playerFrame, GUN, STOCK, gunPose } from './sprite.js'
 import { enemyFrame, CHARGE, TELEGRAPH, OUTLINE, bossMouth, ADD_TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
-import { muzzleFlash, casingCol, killShake, recoilKick, shutterPhase, SHUTTER_TICKS, shellKick, barrelHot, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, STAIN_TICKS, stainRadius, camPan, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, edgeMarks, camLead, SPAWN_CUE, edgeRow, LAND_FLASH_TICKS, landFlashPhase, THREAT_MARK_TICKS, threatMarkPhase, entryRingPhase, entryRingR } from './juice.js'
+import { muzzleFlash, casingCol, killShake, recoilKick, shutterPhase, SHUTTER_TICKS, shellKick, barrelHot, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, STAIN_TICKS, stainRadius, camPan, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, edgeMarks, camLead, SPAWN_CUE, edgeRow, LAND_FLASH_TICKS, landFlashPhase, THREAT_MARK_TICKS, threatMarkPhase, entryRingPhase, entryRingR, entryScale, ZOOM_SETTLE } from './juice.js'
 import { BAR, PIP, POWER_LABEL, ICON, bombReady, hiRoll, RACK_FLASH, respawnState, powerLow, LOW_SHIFT, LOW_LABEL_SHIFT } from './hud.js'
 import { fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_SWELL, MURMUR_HYPE_FREQ, WHOOSH, ALERT, POWER_PING } from './audio.js'
 import { attractFrame, DIM } from './attract.js'
@@ -77,6 +77,16 @@ const SmashTVGame = () => {
         let demoAt = 0, toast = 0, toastMsg = '', shake = 0, flash = 0, roomTotal = 0, roomBump = 0, clearedAt = -1, rackFlash = 0, hiShown = board()[0]?.score || 0
         let camX = 0 // #1973: arena camera — big rooms run wider than the screen
         let camF = -1e9 // #1978: float camera position (the uniform pan); -1e9 = snap on the first frame
+        // #2521: the entry pull-back. zs is the view scale, zt ticks since the
+        // room opened (juice.js entryScale owns the curve). Prototype knob:
+        // ?scale=<f> pins the scale (clamped 0.5..1, 1 = the old framing) and
+        // ?nozoom=1 turns the reveal off — side-by-side shots of both boards.
+        let zs = 1, zt = ZOOM_SETTLE
+        const qZoomOff = new URLSearchParams(window.location.search).has('nozoom')
+        const qZoomPin = (() => {
+            const v = parseFloat(new URLSearchParams(window.location.search).get('scale'))
+            return Number.isFinite(v) ? Math.min(1, Math.max(0.5, v)) : null
+        })()
         const glint = [0, 0] // #1950: per-seat mount-glint countdown (draw frames)
                 const held = new Set()
         let bombEdge = false
@@ -127,7 +137,7 @@ const SmashTVGame = () => {
                 if (e.type === 'room') {
                     floor = buildFloor(e.room, gs.seed, gs.roomData.gw * CELL)
                     say(ROOM_NAMES[e.room])
-                    roomTotal = 0; roomBump = 0; clearedAt = -1
+                    roomTotal = 0; roomBump = 0; clearedAt = -1; zt = 0
                     if (e.bonus) {
                         for (const [fq, dl, d, v] of BONUS_JINGLE) audioController.playTone(fq, d, 'square', v, dl)
                         flash = 8
@@ -621,7 +631,7 @@ const SmashTVGame = () => {
             const col = comboColor(n)
             const pulse = 1 + 0.08 * Math.sin(gs.tick / 3)
             ctx.save()
-            ctx.translate(CW / 2 + camX, HUD_H + 48) // #1978: below the sealed-door row (r0) so the pop never fights the chevrons
+            ctx.translate(camX + CW / (2 * zs), HUD_H + 48) // #1978: below the sealed-door row (r0) so the pop never fights the chevrons; #2521: screen-centre under the zoom
             ctx.scale(pulse, pulse)
             text(`BONUS ×${n}`, 0, 0, 20 + Math.min(8, n), col, 14)
             ctx.restore()
@@ -757,7 +767,17 @@ const SmashTVGame = () => {
                 // so a 1.2 px/tick walk never hops the board 2 px at once. The pan
                 // trails the run by a few px and catches up when he stops; rooms
                 // and respawns jump >CAM_SNAP and snap through instantly.
-                const want0 = Math.max(0, Math.min(mid - CW / 2, camBoard - CW))
+                // #2521: the entry pull-back widens the view window to CW/zs
+                // for the first beat of the room — the opening shot shows 83%
+                // of the board instead of 67%. The zoom slides its target at
+                // ≤0.96 px/frame at the frame edge and camPan still caps every
+                // pan step at CAM_PAN px — the uniform-pan law (#1978) holds
+                // through the reveal, and at play scale (zs=1) this is the old
+                // byte-identical camera.
+                zs = qZoomOff ? 1 : qZoomPin !== null ? qZoomPin : entryScale(zt)
+                zt = Math.min(zt + 1, ZOOM_SETTLE)
+                const vw = Math.min(CW / zs, camBoard)
+                const want0 = Math.max(0, Math.min(mid - vw / 2, camBoard - vw))
                 // #2011: while a cleared room is still a walk to the door, the
                 // frame settles up to CAM_LEAD px toward it — the exit rides the
                 // edge of the screen instead of hiding a full pan away. camPan
@@ -774,13 +794,22 @@ const SmashTVGame = () => {
                             if (dd < bd) { bd = dd; leadDx = dx }
                         }
                     }
-                    want = Math.max(0, Math.min(mid + camLead(leadDx, bd) - CW / 2, camBoard - CW))
+                    want = Math.max(0, Math.min(mid + camLead(leadDx, bd) - vw / 2, camBoard - vw))
                 }
                 camF = camPan(camF, want)
                 camX = Math.round(camF)
-            } else { camX = 0; camF = 0 }
+            } else { camX = 0; camF = 0; zs = 1 }
             ctx.save()
             if (shake > 0) { ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake); shake -= 0.5 }
+            // #2521: the pull-back zoom, centred on the arena's midpoint —
+            // screen x = (worldX − camX)·zs, so [camX, camX + CW/zs] is the
+            // live view window, and the vertical anchor keeps the board's
+            // centre still while the wide frame hangs (outside the board the
+            // per-frame CRT background letterboxes the extra view for free).
+            if (zs < 1) {
+                ctx.translate(0, ((HUD_H + CH) / 2) * (1 - zs))
+                ctx.scale(zs, zs)
+            }
             ctx.translate(-camX, 0)
             ctx.drawImage(floor, 0, HUD_H)
             drawWalls()
@@ -883,7 +912,7 @@ const SmashTVGame = () => {
                 for (const s of gs.roomData.spawns) marks.push({ x: s.c * CELL + 8, y: HUD_H + s.r * CELL + 8, col: MARK.spawn, kind: 'spawn' })
                 for (const en of gs.enemies) if (en.kind !== 'boss') marks.push({ x: en.x, y: en.y, col: MARK.enemy, kind: 'enemy' })
                 if (gs.roomData.bonus) for (const v of gs.civilians) marks.push({ x: v.x, y: v.y, col: MARK.civ, kind: 'civ' })
-                for (const m of edgeMarks(marks, camX, CW)) {
+                for (const m of edgeMarks(marks, camX, CW / zs)) {
                     ctx.fillStyle = m.col
                     ctx.fillRect(m.side < 0 ? 2 : CW - 5, edgeRow(m.y, HUD_H, CH) - 1, 3, 3)
                 }
@@ -898,7 +927,7 @@ const SmashTVGame = () => {
                 for (let i = spawnCues.length - 1; i >= 0; i--) {
                     const cu = spawnCues[i]
                     cu.t--
-                    const side = markSide(cu.x, camX, CW)
+                    const side = markSide(cu.x, camX, CW / zs)
                     if (cu.t <= 0 || !side) { spawnCues.splice(i, 1); continue }
                     if (cu.t > SPAWN_CUE / 2 || (gs.tick >> 1) % 2 === 0) {
                         ctx.fillStyle = MARK.spawn
@@ -1000,7 +1029,7 @@ const SmashTVGame = () => {
             watchingRef.current = false; setWatching(false) // #1637 a new show starts with the stick in your hand
             floor = buildFloor(0, gs.seed)
             demoAt = 0
-            roomTotal = 0; roomBump = 0; clearedAt = -1
+            roomTotal = 0; roomBump = 0; clearedAt = -1; zt = 0
             camF = -1e9 // #1978: frame the new show instantly, never pan in
             setMode('play')
         }
@@ -1067,7 +1096,7 @@ const SmashTVGame = () => {
                 stepP2: (pad) => { if (p2slot.kind !== 'off' && gs.players.length > 1) doSim({ mx: 0, my: 0, fire: false, bomb: false }, seatPadToInp(pad)) },
                 start: () => startPlay(),
                 watching: () => watchingRef.current, // #1637 watchcheck: is the prover running seat 1?
-                start2P: (seed = 0, kind = 'cpu') => { setSeat(kind); gs = makeGame(seed >>> 0, { players: 2 }); floor = buildFloor(0, gs.seed); demoAt = 0; roomTotal = 0; roomBump = 0; clearedAt = -1; camF = -1e9; setMode('play') },
+                start2P: (seed = 0, kind = 'cpu') => { setSeat(kind); gs = makeGame(seed >>> 0, { players: 2 }); floor = buildFloor(0, gs.seed); demoAt = 0; roomTotal = 0; roomBump = 0; clearedAt = -1; zt = 0; camF = -1e9; setMode('play') },
                 plan: (seed = 0, opts) => plan(seed, opts),
                 events: () => evLog,
                 probe: () => ({
@@ -1081,7 +1110,7 @@ const SmashTVGame = () => {
                     ebullets: gs.ebullets.length, bullets: gs.bullets.length,
                     crates: gs.crates.map((k) => k.hp), items: gs.items.filter((i) => !i.taken).map((i) => i.t),
                     civilians: gs.civilians.length, bonusT: gs.bonusT,
-                    camX, boardW: roomPx(), gw: gs.roomData.gw, // #1973: pixel checks are camera-aware
+                    camX, boardW: roomPx(), gw: gs.roomData.gw, scale: zs, // #1973: pixel checks are camera-aware; #2521: gates read the live view scale
                 }),
                 gameTime: () => gs.tick / 60,
                 goreFx: () => ({ gibs: gibs.map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h, t: p.t })), stains: stains.length }),
@@ -1102,7 +1131,7 @@ const SmashTVGame = () => {
                     held.clear(); bombEdge = false
                     shake = 0; flash = 0; toast = 0
                     glint[0] = glint[1] = 0
-                    roomTotal = 0; roomBump = 0; clearedAt = -1
+                    roomTotal = 0; roomBump = 0; clearedAt = -1; zt = 0
                     camF = -1e9 // #1978: a reset frames room 1 at once
                     modelP2 = null; p2BombEdge = false
                     // a driven second seat opens as a model slot: __game.step([p1, p2])

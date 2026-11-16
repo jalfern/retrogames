@@ -251,8 +251,9 @@ pop-band emptiness across all rooms) + 5 mutants (2 px hop, no-snap drift,
 confirm off, blind handler, pop back on the door row); smashplay adds a live
 rAF-rate gate — max hop ≤ 1 px/frame and the pan monotone with the run.
 
-The zoom-out-vs-cabinet question (item 5) stays an honest gap: a mild entry
-scale was not prototyped blind; the pan board is the shipped framing.
+The zoom-out-vs-cabinet question (item 5) was the last honest gap here:
+~~a mild entry scale was not prototyped blind; the pan board is the shipped
+framing.~~ CLOSED by #2521 — see THE OPENING SHOT below.
 
 ## THE LONG WALK HOME — the crowd follows you to the door (#2011)
 
@@ -474,3 +475,39 @@ every seed hash are untouched (the pilot sweep holds at 9/9).
 Mutation guide: flatten `entryRingPhase` → the decay pin dies; freeze the
 radius → the geometry pin dies; re-gate the push to `bossAdd` → the source
 pin dies.
+
+## THE OPENING SHOT — the entry pull-back (#2507 item 4, QA studio)
+
+The last framing gap vs the cabinet: its 16:9 lens showed more arena than our
+256 px window ever could, and the studio had never tried a wider opening beat.
+Prototype knobs first (`?scale=<f>` pins the view scale for A/B shots,
+`?nozoom=1` off) — then the shipped law:
+
+- `juice.js` owns the curve: `ENTRY_ZOOM = 0.8` → the room opens showing
+  `CW/0.8 = 320` of the 384 px board (**83%, vs the old 67%**), holds
+  `ZOOM_HOLD = 10` ticks, and smoothsteps back to play scale by
+  `ZOOM_SETTLE = 90`. Smoothstep, not linear: no kink at either end, and the
+  steepest edge flow is `CW·Δscale = 0.96 px/frame` — inside the #1978 pan
+  budget, so the reveal never moves the picture harder than the camera it
+  rides. `camPan` still caps every translational step at `CAM_PAN` px; the
+  zoom only slides the pan TARGET, and the uniform-pan law holds untouched.
+- `index.jsx` renders the arena through a centre-anchored transform
+  (`screen x = (world − camX)·zs`): the board midpoint sits still while the
+  wide frame hangs, and the per-frame CRT background letterboxes the extra
+  view for free. Markers and the add-entry flare read their edges against
+  `CW/zs`, so nothing visible earns a chip during the reveal; the combo pop's
+  screen-centre converts through the zoom.
+- **The host law moves with it (#2024).** The sim keeps THE ANNOUNCER inside
+  the NOMINAL window `[cam+48, cam+CW−48]`; a zoomed window is always a
+  superset of the nominal one at any mid and any reveal scale (smashcheck
+  sweeps the grid) — his minimum on-screen margin through the whole reveal is
+  `48·ENTRY_ZOOM ≥ 38 px`. Containment rides wide without touching the sim:
+  no hash moves, the pilot sweep stays 9/9.
+- Honest limit, measured: during the 1.5 s reveal the 0.8 scale draws sprite
+  pixels fractionally (the #2043 blur note) — a soft-focus opening, crisp by
+  the time the guns matter. `zs = 1` is the byte-identical old camera.
+
+Gates: smashcheck `entry-zoom` (15 pins — reveal ≥80% of the board, curve
+endpoints/monotone/range, edge-flow ≤ pan budget, superset + host-margin
+sweep, capped pan through the reveal, and the renderer/sim-purity source pins)
++ 5 mutants (never-wide, overshoot, blind camera, blind chips, unarmed entry).

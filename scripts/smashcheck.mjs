@@ -67,7 +67,7 @@ const { GW, GW_BIG, BIG_ROOMS, GH, CW, CELL, HUD_H, CH, EXITS, exitsOf, TOTAL_RO
 const { wallCell, NEON_TOP, CHROME, borderRivet } = await import('../src/games/SmashTV/walls.js')
 const { playerFrame, GUN, LAYERS, PLAYER_FRAMES, CARRIAGE, POSE, STOCK, SPREAD_FLOOR, gunPose } = await import('../src/games/SmashTV/sprite.js')
 const { ENEMY_FRAMES, TELEGRAPH, CHARGERS, CHARGE, OUTLINE, enemyFrame, bossMouth, BOSS_MOUTH_FLAP, ADD_TELEGRAPH, BOSS_DEATH_T } = await import('../src/games/SmashTV/enemies.js')
-const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore, recoilKick, RECOIL_TICKS, RECOIL_PX, SHELL_KICK, shellKick, barrelHot, HOT_FLOOR, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, GORE_GRAV, STAIN_TICKS, stainRadius, camPan, CAM_PAN, CAM_SNAP, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, edgeMarks, MARK_CAP, CAM_LEAD, walkHype, camLead, SPAWN_CUE, edgeRow, LAND_FLASH_TICKS, landFlashPhase, THREAT_MARK_TICKS, threatMarkPhase, entryRingPhase, entryRingR } = await import('../src/games/SmashTV/juice.js')
+const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore, recoilKick, RECOIL_TICKS, RECOIL_PX, SHELL_KICK, shellKick, barrelHot, HOT_FLOOR, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, GORE_GRAV, STAIN_TICKS, stainRadius, camPan, CAM_PAN, CAM_SNAP, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, edgeMarks, MARK_CAP, CAM_LEAD, walkHype, camLead, SPAWN_CUE, edgeRow, LAND_FLASH_TICKS, landFlashPhase, THREAT_MARK_TICKS, threatMarkPhase, entryRingPhase, entryRingR, entryScale, ZOOM_HOLD, ZOOM_SETTLE, ENTRY_ZOOM } = await import('../src/games/SmashTV/juice.js')
 const { PLAYER_PAL, PAULDRON_BOB } = await import('../src/games/SmashTV/art.js')
 const { FIRE, fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_SWELL, MURMUR_HYPE_FREQ, MURMUR_TICKS, WHOOSH, ALERT, ALERT_RADIUS, ALERT_CD, POWER_PING } = await import('../src/games/SmashTV/audio.js')
 const { BAR, PIP, POWER_LABEL, labelClearsBar, pipFits, bombReady, RACK_FLASH, hiRoll, respawnState, RESPAWN_BLINK_SHIFT, powerLow, LOW_SHIFT, LOW_LABEL_SHIFT } = await import('../src/games/SmashTV/hud.js')
@@ -1204,7 +1204,9 @@ console.log('varisize')
     // steps it uniformly, and the rounded value is all the arena sees)
     const IDX = readFileSync('src/games/SmashTV/index.jsx', 'utf8')
     ok(IDX.includes('ctx.translate(-camX, 0)'), 'the arena renders through a camera pan')
-    ok(/const want0 = Math\.max\(0, Math\.min\(mid - CW \/ 2, camBoard - CW\)\)/.test(IDX) && /want = Math\.max\(0, Math\.min\(mid \+ camLead\(leadDx, bd\) - CW \/ 2, camBoard - CW\)\)/.test(IDX), 'camX centres the live cast and clamps at the board edges', '')
+    // #2521: the window is CW/zs — the pull-back widens it for the reveal and
+    // at play scale (zs = 1) this is exactly the #1973/#1978 camera.
+    ok(/const vw = Math\.min\(CW \/ zs, camBoard\)/.test(IDX) && /const want0 = Math\.max\(0, Math\.min\(mid - vw \/ 2, camBoard - vw\)\)/.test(IDX) && /want = Math\.max\(0, Math\.min\(mid \+ camLead\(leadDx, bd\) - vw \/ 2, camBoard - vw\)\)/.test(IDX), 'camX centres the live cast and clamps at the board edges', '')
     ok(IDX.includes('camPan(camF, want)'), 'the pan obeys the uniform-step law')
     ok(IDX.includes('camX = Math.round(camF)'), 'the pan lands on whole pixels')
 }
@@ -1313,7 +1315,7 @@ console.log('polish')
     // borrow the game's own colours so the chip reads without a tutorial.
     ok(markSide(10, 72, 256) === -1 && markSide(330, 72, 256) === 1 && markSide(200, 72, 256) === 0, 'markSide maps board x to the frame edge', `${markSide(10, 72, 256)},${markSide(330, 72, 256)},${markSide(200, 72, 256)}`)
     ok(MARK.spawn === '#ffd23f' && MARK.enemy === '#ff5d5d' && MARK.civ === '#8fff9f', 'the markers reuse the telegraph, kill and exit colours')
-    ok(SRC2.includes('edgeMarks(marks, camX, CW)'), 'the renderer stamps the edge chips through the budget filter')
+    ok(SRC2.includes('edgeMarks(marks, camX, CW / zs)'), 'the renderer stamps the edge chips through the budget filter')
     ok(SRC2.includes("en.kind !== 'boss'"), 'the host is exempt — the host law already keeps him framed')
 
     // 3a′) #2089 — the edge budget spends itself on the UNSEEN. The old code
@@ -1390,7 +1392,7 @@ console.log('polish')
     ok(SPAWN_CUE > 0, 'the add-entry flare has a window', `${SPAWN_CUE}`)
     ok(edgeRow(HUD_H - 40, HUD_H, CH) === HUD_H + 8 && edgeRow(CH + 40, HUD_H, CH) === CH - 8 && edgeRow(HUD_H + 30, HUD_H, CH) === HUD_H + 30, 'edgeRow clamps a cue into the HUD-safe band')
     ok(SRC2.includes('spawnCues.push') && SRC2.includes('SPAWN_CUE'), 'the renderer arms the add-entry flare')
-    ok(SRC2.includes('markSide(cu.x, camX, CW)'), 'the flare re-reads its edge each frame — panning onto the add kills it')
+    ok(SRC2.includes('markSide(cu.x, camX, CW / zs)'), 'the flare re-reads its edge each frame — panning onto the add kills it')
     {
         // drive the finale with the hero pinned at the far edge; the host law
         // keeps HIM framed, but the adds spawn across the whole board. Count
@@ -1431,7 +1433,7 @@ console.log('polish')
     // sits at board centre — at mid-board framing the old pop row collided
     // with the sealed/shuttering door. The pop now hangs below the border row,
     // and nothing may ever be built in its band.
-    ok(SRC2.includes('ctx.translate(CW / 2 + camX, HUD_H + 48)'), 'the combo pop hangs below the border door row')
+    ok(SRC2.includes('ctx.translate(camX + CW / (2 * zs), HUD_H + 48)'), 'the combo pop hangs below the border door row')
     for (let idx = 0; idx < TOTAL_ROOMS; idx++) {
         const low = genRoom(0, idx).walls.filter(([, r]) => r <= 2)
         ok(low.length === 0, `room ${idx + 1}: nothing built in the pop's band (rows 0–2)`)
@@ -1498,7 +1500,76 @@ console.log('walk-home')
     ok(/MURMUR\.vol \+ MURMUR_SWELL \* \(e\.hype \|\| 0\)/.test(SRC3), 'the component mixes the hype into the bed')
     ok(/MURMUR\.freq \+ MURMUR_HYPE_FREQ \* \(e\.hype \|\| 0\)/.test(SRC3), 'the bed rides brighter at full hype')
     ok(/if \(gs\.cleared\) \{[\s\S]{0,700}camLead\(leadDx, bd\)/.test(SRC3), 'the camera settles toward the open door only once the room is cleared')
-    ok(/want = Math\.max\(0, Math\.min\(mid \+ camLead\(leadDx, bd\) - CW \/ 2, camBoard - CW\)\)/.test(SRC3), 'the settle keeps the pan clamped to the board edges')
+    ok(/want = Math\.max\(0, Math\.min\(mid \+ camLead\(leadDx, bd\) - vw \/ 2, camBoard - vw\)\)/.test(SRC3), 'the settle keeps the pan clamped to the board edges')
+}
+
+// ---------------------------------------------------- entry-zoom (#2521) ----
+console.log('entry-zoom')
+{
+    // The opening pull-back: every room hangs wide for its first beat (83% of
+    // the board visible against the old 67%), reads the opening volley the
+    // #2507 rings announce, then eases to play scale. Presentation-only —
+    // sim.js runs no zoom, the #1978 pan law carries the reveal, and the
+    // #2024 host law survives because the zoomed window is always a superset
+    // of the nominal camera window the host is confined to.
+    const IDXZ = readFileSync('src/games/SmashTV/index.jsx', 'utf8')
+    const SIMZ = readFileSync('src/games/SmashTV/sim.js', 'utf8')
+    const BOARD = 24 * CELL
+
+    ok(ENTRY_ZOOM < 1 && ENTRY_ZOOM >= 0.5 && CW / ENTRY_ZOOM >= 0.8 * BOARD,
+        'the opening frame reveals at least 80% of the wide board',
+        `${(100 * CW / ENTRY_ZOOM / BOARD).toFixed(0)}% vs the old ${(100 * CW / BOARD).toFixed(0)}%`)
+
+    ok(entryScale(0) === ENTRY_ZOOM && entryScale(ZOOM_HOLD) === ENTRY_ZOOM && entryScale(ZOOM_SETTLE) === 1,
+        'the curve opens wide, holds a beat, and lands exactly at play scale')
+
+    let mono = true, ranged = true, flow = 0
+    for (let t = 0; t <= 150; t++) {
+        const s = entryScale(t)
+        if (s < ENTRY_ZOOM - 1e-9 || s > 1 + 1e-9) ranged = false
+        if (t && s < entryScale(t - 1) - 1e-9) mono = false
+        if (t) flow = Math.max(flow, CW * Math.abs(s - entryScale(t - 1)))
+    }
+    ok(mono, 'the push-in never lurches back out mid-reveal')
+    ok(ranged, 'the scale stays inside [ENTRY_ZOOM, 1] — no crop past the board, no infinite wide', `flow ${flow.toFixed(2)} px`)
+    ok(flow <= CAM_PAN, 'the push-in edge flow stays inside the #1978 pan budget', `${flow.toFixed(2)} px/frame`)
+
+    // superset law: at every mid and every reveal scale the wide window covers
+    // the nominal window, so host-law containment (pinned in the finale
+    // section) rides the pull-back with margin to spare.
+    const win = (mid, s) => { const vw = Math.min(CW / s, BOARD); const a = Math.max(0, Math.min(mid - vw / 2, BOARD - vw)); return [a, a + vw] }
+    let superset = true, margin = Infinity
+    for (let mid = 0; mid <= BOARD; mid += 4) {
+        const nom = win(mid, 1)
+        for (let t = 0; t <= ZOOM_SETTLE; t += 5) {
+            const s = entryScale(t), z = win(mid, s)
+            if (z[0] > nom[0] + 1e-9 || z[1] < nom[1] - 1e-9) superset = false
+            margin = Math.min(margin, (nom[0] + 48 - z[0]) * s)
+        }
+    }
+    ok(superset, 'the wide frame always contains the nominal camera window', `min host margin ${margin.toFixed(1)} px`)
+    ok(margin >= 32, 'THE ANNOUNCER stays framed through the reveal — containment moves with the zoom', `min ${margin.toFixed(1)} px ≥ 32`)
+
+    // uniform pan through the reveal: static cast, camF from the entry snap,
+    // want sliding as the window narrows — no step may exceed CAM_PAN.
+    let camFz = -1e9, hop = 0, prev = null
+    for (let t = 0; t <= ZOOM_SETTLE; t++) {
+        const vw = Math.min(CW / entryScale(t), BOARD)
+        camFz = camPan(camFz, Math.max(0, Math.min(BOARD / 2 - vw / 2, BOARD - vw)))
+        if (prev !== null && Math.abs(camFz - prev) <= CAM_SNAP) hop = Math.max(hop, Math.abs(camFz - prev))
+        prev = camFz
+    }
+    ok(hop <= CAM_PAN, 'camPan caps the pan while the reveal slides its target', `max step ${hop}`)
+
+    // renderer wiring pins
+    ok(IDXZ.includes('entryScale(zt)') && /zt = Math\.min\(zt \+ 1, ZOOM_SETTLE\)/.test(IDXZ),
+        'the renderer advances the reveal clock from the juice law')
+    ok((IDXZ.match(/zt = 0/g) || []).length === 4, 'every room entry arms the reveal (advance, start, start2P, reset)',
+        `${(IDXZ.match(/zt = 0/g) || []).length}/4`)
+    ok(/ctx\.scale\(zs, zs\)/.test(IDXZ) && /ctx\.translate\(0, \(\(HUD_H \+ CH\) \/ 2\) \* \(1 - zs\)\)/.test(IDXZ),
+        'the arena renders through the centre-anchored zoom transform')
+    ok(IDXZ.includes('scale: zs'), 'the probe reports the live view scale for the harness')
+    ok(!/\bzs\b|entryScale/.test(SIMZ), 'the zoom never touches the sim — every seed hash holds')
 }
 
 // ------------------------------------------------------------- mutants ----
@@ -1570,16 +1641,21 @@ if (process.argv.includes('--mutate')) {
         ['#2089: the edge budget shrinks and drops far-half threats', 'export const MARK_CAP = 8', 'export const MARK_CAP = 2'],
         ['#2507: the entry ring fades to nothing', 'export const entryRingPhase = (age) => (age < ADD_TELEGRAPH ? 1 - age / ADD_TELEGRAPH : 0)', 'export const entryRingPhase = () => 0'],
         ['#2507: the entry ring never opens', 'export const entryRingR = (age) => 4 + 11 * Math.min(Math.max(age, 0), ADD_TELEGRAPH) / ADD_TELEGRAPH', 'export const entryRingR = () => 4'],
+        ['#2521: the reveal never opens wide', 'if (t <= ZOOM_HOLD) return ENTRY_ZOOM', 'if (t <= ZOOM_HOLD) return 1'],
+        ['#2521: the push-in overshoots past play scale', 'return ENTRY_ZOOM + (1 - ENTRY_ZOOM) * u * u * (3 - 2 * u)', 'return Math.min(1.2, ENTRY_ZOOM + (1 - ENTRY_ZOOM) * u * u * (3 - 2 * u) + 0.08)'],
     ]
     const IDX = 'src/games/SmashTV/index.jsx'
     const IDX_MUTANTS = [
         ['#1978: the far-door confirm goes blind', 'if (farExitPx(q.x, q.y, doors) > FAR_EXIT_PX) {', 'if (false) {'],
-        ['#1978: the combo pop slides back onto the door row', 'ctx.translate(CW / 2 + camX, HUD_H + 48)', 'ctx.translate(CW / 2 + camX, HUD_H + 30)'],
+        ['#1978: the combo pop slides back onto the door row', 'ctx.translate(camX + CW / (2 * zs), HUD_H + 48)', 'ctx.translate(camX + CW / (2 * zs), HUD_H + 30)'],
         ['#2011: the swell drops out of the bed', 'MURMUR.vol + MURMUR_SWELL * (e.hype || 0)', 'MURMUR.vol'],
         ['#2011: the camera never settles toward the exit', 'camLead(leadDx, bd)', '0'],
         ['#2507: the dry meter goes numb (bar holds slate)', 'const dryTank = powerLow(gs.weapon, gs.energy, CFG.dryLimit)', 'const dryTank = false'],
         ['#2507: the dry ping goes mute at the reload edge', 'powerLow(gs.weapon, gs.energy, CFG.dryLimit) && gs.tick % POWER_PING.every', 'false && gs.tick % POWER_PING.every'],
         ['#2507: room spawns lose their ring — the hook re-gates to boss adds', 'bornFx.push({ x: e.x, y: e.y, t: 0 })', 'if (e.bossAdd) bornFx.push({ x: e.x, y: e.y, t: 0 })'],
+        ['#2521: the camera ignores the reveal — the window stays tight', 'const vw = Math.min(CW / zs, camBoard)', 'const vw = CW'],
+        ['#2521: edge chips go blind through the pull-back', 'edgeMarks(marks, camX, CW / zs)', 'edgeMarks(marks, camX, CW)'],
+        ['#2521: room entry forgets to arm the reveal', 'roomTotal = 0; roomBump = 0; clearedAt = -1; zt = 0', 'roomTotal = 0; roomBump = 0; clearedAt = -1'],
     ]
     const targets = [[SIM, MUTANTS], [SPRITE, SPRITE_MUTANTS], [LEVELS, LEVELS_MUTANTS], [PLANNER, PLANNER_MUTANTS], [JUICE, JUICE_MUTANTS], [IDX, IDX_MUTANTS]]
     let died = 0, total = 0
