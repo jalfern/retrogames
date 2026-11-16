@@ -128,6 +128,13 @@ const walkable = (gs, c, r) => {
 
 // ---------------------------------------------------------------- setup ----
 export function makeGame(seed = 0, heroKey = 'warrior', opts = {}) {
+    // NOTE (#1711 S1 diagnosis): the pair rule below deliberately keys off the
+    // EXPLICIT partnerKey. A solo+seat-2 run passes undefined, and loadLevel
+    // then spawns the sim default (valkyrie) every level — even beside a
+    // valkyrie hero. That IS the deployed semantics Jon's seed10 take was
+    // recorded with; do not "tidy" it here or live play changes under the
+    // recordings' feet. Replay-side, newGame() rebuilds undefined for
+    // hero-stamped files so the same default resolution runs.
     const gs = {
         seed, heroKey, partnerKey: opts.partnerKey, slack: !!opts.slack, partnerOn: !!opts.partner,
         topDown: !!opts.topDown, partnerHuman: false,
