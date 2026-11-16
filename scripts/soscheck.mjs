@@ -11,6 +11,8 @@
 import { createGame, stepGame, simState, makeCpuEmitter, cellKind, SHIFT_TICKS, QUOTA, RUNNER_POST, hashState, COOL_SIP, SEAR_OK, SEAR_TELL, TAP_REFILL, actionable, cpuPlan } from '../src/games/ShortOrderShout/engine.js'
 import { MIC_RECT, VOX_RECT, CHIP_ZONE, PIP_ZONE, CHIP_MIN_H, rectsOverlap } from '../src/games/ShortOrderShout/art.js'
 import { takeIsSpeech, ACK_MIN_MS, PTT_MIN_B64, createPttSender, ackLine, ACK_LINES, micBars, MIC_BARS, SOFT_AT } from '../src/games/ShortOrderShout/ptt.js'
+import { readFileSync } from 'node:fs'
+import { parseGaps } from './lib/idle.mjs'
 
 const URL = process.env.SOS_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/short-order-shout`
 
@@ -571,6 +573,39 @@ if (!process.env.SOS_SKIP_BROWSER) {
     }
     ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '))
     await browser.close()
+}
+
+// ---- README honest-gaps honesty (#2354) ---------------------------------------
+// parseGaps (scripts/lib/idle.mjs) turns this README's "## Honest gaps"
+// section into the never-dry ladder's targets. #2354's audit named three
+// counted bullets that were shipped history or law notes, not open gaps:
+// the voice bullet (half-duplex PTT shipped #1416/#1432, the radio mechanic
+// #2079 — only full-duplex is deferred), the voice-ops bullet (machine/wire
+// tier proven, thumb tuning #1468 — only the check-only browser tier waits)
+// and the seats bullet (law: seats 3-4 are CPU-only locally, a friend over
+// the room wire unlocks them; d-pad-only is the VirtualControls standard).
+// Pinned: every CLOSED marker the section shows, the parser drops (a marker
+// variant the parser cannot see would count as an OPEN gap, #961 law); the
+// three phantoms stay gone; the seats law note still lives in the Online
+// lobby section (moved, not deleted).
+{
+    const md = readFileSync('src/games/ShortOrderShout/README.md', 'utf8')
+    const gaps = parseGaps(md)
+    const sec = ((md.split(/^##\s+Honest gaps/im)[1] || '').split(/^##\s/m)[0])
+    const marked = (sec.match(/^\s*-\s*\*\*CLOSED by/gim) || []).length
+    ok(`README gaps section carries its CLOSED markers (got ${marked}, want >= 5)`, marked >= 5)
+    ok('no counted gap is a CLOSED bullet (parser sees every marker)',
+        !gaps.some((g) => /closed by/i.test(g)),
+        gaps.filter((g) => /closed by/i.test(g)).map((g) => g.slice(0, 60)).join(' | '))
+    ok('the voice bullet no longer counts (shipped; only full-duplex deferred, #2354)',
+        !gaps.some((g) => /half-duplex hold-v ptt/i.test(g)))
+    ok('the voice-ops bullet no longer counts (thumb tuning shipped, #2354)',
+        !gaps.some((g) => /voice ops/i.test(g)))
+    ok('the seats 3-4 bullet no longer counts (law note, #2354)',
+        !gaps.some((g) => /cpu-only locally/i.test(g)))
+    ok('the seats law note still lives in the Online lobby section (moved, not deleted)',
+        /seats 3.4 are cpu-only\s+locally/i.test(
+            (md.split(/^##\s+Online lobby/im)[1] || '').split(/^##\s/m)[0]))
 }
 
 console.log(`\nsoscheck: ${pass} pass, ${fail} fail`)
