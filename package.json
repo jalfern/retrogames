@@ -350,6 +350,7 @@
     "nightlybotcheck": "node scripts/nightlybot.mjs --selftest",
     "cachecheck": "node scripts/cachecheck.mjs",
     "ironringcheck": "node scripts/ironringcheck.mjs",
+    "ironringnet": "node scripts/ironringnet.mjs",
     "lint:viper": "eslint src/games/ViperPit src/components src/utils src/config src/main.jsx scripts/viperpitcheck.mjs",
     "viperpitcheck": "node scripts/viperpitcheck.mjs",
     "vipernet": "node scripts/vipernet.mjs",

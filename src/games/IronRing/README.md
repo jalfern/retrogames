@@ -113,6 +113,14 @@ trick), camera tracks the midpoint and zooms with the spacing.
   killing the gauge drain (`def.guard - raw` → no-op) must stop the crush from
   ever landing (the empty-gauge gate goes red).
 - `CONTRACT_ONLY=iron-ring npm run contractcheck` — the #377 driving contract.
+- `npm run ironringnet` — live netplay race proof (#2478): two headless Chromes
+  over the local relay twin (needs `npm run dev`, DEV_PORT; IRONRING_URL to point
+  elsewhere) — the host's FIGHT landing before the guest's pick defers the
+  launch, both boxes then agree on the guest's real fighter; pre-pick immediate
+  launch; a guest that leaves un-hangs the host and a fresh joiner re-seats and
+  launches; zero page errors. Advisory browser tier, the blobnet/vipernet
+  pattern — the deterministic gate + the relay `pick` allowlist are part A2 of
+  `ironringcheck` in the static lane.
 
 ## Honest gaps (polish-pass candidates)
 
@@ -150,6 +158,23 @@ trick), camera tracks the midpoint and zooms with the spacing.
   choice, never a seeded placeholder. The decision is the pure
   `src/games/IronRing/netselect.js`, gated in Node (part A2), proven-fail under
   `--mutate`.
+- **CLOSED by #2478** Net teardown + re-seat pick — the gate shipped, but the
+  socket under it did not hold. The unmount cleanup called
+  `net.lobby.destroy()` — **which `createLobby` never exposed** — so React's
+  StrictMode first-mount socket was never closed: it kept holding seat 1 and
+  the live mount's join was refused `room full`, making every dev room look
+  permanently broken. The teardown is now the proven `net.room.reset()`
+  (BlobBattle precedent, the pattern six other net games use; also clears the
+  retry ladder). Two more wire subtleties, both the #2476 pattern ported: the
+  challenger now **re-declares its pick on every roster landing** (a choice
+  made while the socket was reconnecting used to evaporate and the host would
+  wait forever), and roster `onJoin`/`onLeave` `reset()` the gate (a leaving
+  challenger can't hang a waiting host; a new joiner's pick is fresh). Also
+  un-blocked here: `relay/core.js` FORWARD_TYPES never carried `'pick'` — the
+  relay silently dropped every challenger pick (#2476 found it for ViperPit,
+  fixed centrally). Gates: part A2 leave-reset pins + the allowlist pins; live
+  race proof `npm run ironringnet` (the pairing step is itself the teardown
+  proof — with a leaking socket the guest never seats).
 - **CLOSED by #1761 (item 5, first slice)** Guard crush — the cabinet now fights
   with the engine's `guardCrush` gauge (see Rules worth knowing): blocking is a
   resource, burst pressure shatters it into a punishable 46-tick stagger.
