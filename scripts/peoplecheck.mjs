@@ -1020,7 +1020,7 @@ section('COURT')
     const ctJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
     check('pin: both commands arm the cooldown', (ctSim.match(/s\.cmdCd = CMD_CD/g) || []).length === 2)
     check('pin: the empty press rides the compliment (Space/A), objects still win (#2171: the press arms, the release pays)',
-        /else if \(!tryUse\(gs, p\)\)[\s\S]*courtHoldArm\(gs\)/.test(ctJsx) && /courtTap\(gs\)/.test(ctJsx))
+        /else if \(!tryUse(?:OrQueue)?\(gs, p\)\)[\s\S]*courtHoldArm\(gs\)/.test(ctJsx) && /courtTap\(gs\)/.test(ctJsx))   // #2470: the queue parity renamed the route; the press-arms/release-pays law itself is pinned above and in homebodyqueuecheck
     check('pin: C/X are real keys, not stray ones', /COURT_KEYS = new Set\(\['KeyC', 'KeyX'\]\)/.test(ctJsx) && /KeyC'\s*\?\s*'coo'\s*:\s*'insult'/.test(ctJsx))
     check('pin: affection pays its own chord and hearts, insult its own sour fall',
         /case 'affection'/.test(ctJsx) && /case 'insult'/.test(ctJsx) && /AFFECTION ♥ FAMILY/.test(ctJsx))

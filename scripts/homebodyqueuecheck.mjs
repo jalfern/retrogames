@@ -66,6 +66,19 @@ section('ISSUE & DRAIN')
     pA.r = fAt.r; pA.c = fAt.c; pA.x = tileX(fAt.c) + TILE / 2; pA.y = tileY(fAt.r) + TILE / 2
     check('idle pad-A issues at once', tryUseOrQueue(gA, pA) === true && pA.goal && pA.goal.it === fA && pA.queue.length === 0)
     drain(gA)
+    check('a player order claims ownership', pA.owner === 'human')
+    // #2470: free will never outranks the hand — an AI errand is preempted,
+    // not queued behind, and the pump's ownership stamp tells them apart.
+    const gB = newRun(31)
+    const pB = gB.people[0]
+    const fB = gB.items.find((it) => it.id === 'fridge')
+    pB.owner = 'ai'
+    pB.path = [{ r: pB.r, c: pB.c }]
+    pB.goal = { kind: 'chat', v: 'fern' }
+    const tB = targetsOf(gB, fB)[0]
+    pB.r = tB.r; pB.c = tB.c; pB.x = tileX(tB.c) + TILE / 2; pB.y = tileY(tB.r) + TILE / 2
+    check('an AI wander is preempted, never queued', tryUseOrQueue(gB, pB) === true && pB.queue.length === 0 && pB.owner === 'human' && pB.goal.it === fB)
+    drain(gB)
 }
 
 section('THE LINE')
@@ -187,6 +200,8 @@ section('WIRING')
     check('new glyphs ship', artSrc.includes("case 'case':") && artSrc.includes("case 'arrow':"))
     check('the chip route sits above tile routing', idxSrc.indexOf('queueHit(gs, px, py)') < idxSrc.indexOf('const t = tileOf(px, py)'))
     check('the shell appends and cancels via the sim law', idxSrc.includes('cmdQueue(gs, p,') && idxSrc.includes('queueCancel(gs, gs.people[qh.pi], qh.qi)'))
+    check('the shell queues only human errands', (idxSrc.match(/p\.owner === 'human' && orderBusy\(gs, p\)/g) || []).length >= 5)
+    check('sim stamps ownership', simSrc.includes("p.owner = 'human'") && simSrc.includes("p.owner = 'ai'"))
     check('pad-A rides the queue law', idxSrc.includes('tryUseOrQueue(gs, p)'))
     check('the probe reports the lists', idxSrc.includes('queues: gs.people.map'))
 }

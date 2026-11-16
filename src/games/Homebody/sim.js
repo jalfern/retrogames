@@ -559,6 +559,7 @@ const person = (name, r, c, hue, worksOn) => ({
     worksOn,
     needs: { hunger: 0.82, energy: 0.84, fun: 0.8, social: 0.75, bladder: 0.85 },
     queue: [], path: null, goal: null,
+    owner: null,          // #2470: who placed the errand in flight — 'human' orders earn the queue, AI wander gets preempted
     use: null,             // { obj, def, t, dur }
     faintT: 0, redT: {},  // per-need seconds spent fully red
     workedToday: false, working: false,
@@ -992,6 +993,7 @@ export function cmdUse(s, p, it) {
     if (!path) return false
     p.path = path
     p.goal = { kind: 'use', it }
+    p.owner = 'human'   // #2470: a cmd* order is a PLAYER order (autonomy assigns its own paths directly)
     // #2253: an issued order must be *visible* the instant it lands — the view
     // rings the target (and the shell names it) so a registered tap never looks
     // like a dropped one. The cell arrives with the path's last step; an
@@ -1017,6 +1019,7 @@ export function cmdWalk(s, p, r, c) {
     if (!path) return false
     p.path = path
     p.goal = null
+    p.owner = 'human'   // #2470: player orders own the resident; AI orders never do
     return true
 }
 
@@ -1045,12 +1048,14 @@ export function tryUse(s, p) {
     return n.work ? cmdWork(s, p) : cmdUse(s, p, n.it)
 }
 
-// #2470: pad-A parity — A rides the same queue law as a tap: idle issues now,
-// busy appends the nearest usable object to the resident's list.
+// #2470: pad-A parity — A rides the same queue law as a tap: an idle resident
+// issues now; a resident busy with one of the PLAYER's own errands appends the
+// nearest usable object to the resident's list. An AI wander (owner !== 'human')
+// is always preemptible — free will never outranks the hand on the screen.
 export function tryUseOrQueue(s, p) {
     const n = nearestUse(s, p)
     if (!n) return false
-    if (!orderBusy(s, p)) return n.work ? cmdWork(s, p) : cmdUse(s, p, n.it)
+    if (!(orderBusy(s, p) && p.owner === 'human')) return n.work ? cmdWork(s, p) : cmdUse(s, p, n.it)
     return n.work ? cmdQueue(s, p, { kind: 'work' }) : cmdQueue(s, p, { kind: 'use', it: n.it })
 }
 
@@ -1263,7 +1268,7 @@ function autonomous(s, p) {
     if (s.demo && s.meal && p.needs.hunger < 0.75 && p.mealTaken !== s.mealSerial) {
         const tg = targetsOf(s, s.meal)
         const path = tg.length ? bfsPath(s, { r: p.r, c: p.c }, tg) : null
-        if (path) { p.path = path; p.goal = { kind: 'use', it: s.meal }; return }
+        if (path) { p.path = path; p.goal = { kind: 'use', it: s.meal }; p.owner = 'ai'; return }
     }
     let worst = null, wv = 1e9
     for (const n of NEEDS) if (p.needs[n] < wv) { wv = p.needs[n]; worst = n }
@@ -1277,12 +1282,12 @@ function autonomous(s, p) {
         for (const n of order) {
             if (p.needs[n] >= 0.55) break
             const t = needTarget(s, p, n)
-            if (t) { p.path = t.path; p.goal = { kind: 'use', it: t.it }; return }
+            if (t) { p.path = t.path; p.goal = { kind: 'use', it: t.it }; p.owner = 'ai'; return }
             if (n === 'social') {           // #2143: chat with whichever neighbour is around
                 const nv = nearestVisitor(s)
                 if (nv) {
                     const cell = nearestFreeTo(s, nv.v.r, nv.v.c)
-                    if (cell) { const path = bfsPath(s, { r: p.r, c: p.c }, [cell]); if (path) { p.path = path; p.goal = { kind: 'chat', v: nv.k }; return } }
+                    if (cell) { const path = bfsPath(s, { r: p.r, c: p.c }, [cell]); if (path) { p.path = path; p.goal = { kind: 'chat', v: nv.k }; p.owner = 'ai'; return } }
                 }
             }
         }
@@ -2481,7 +2486,7 @@ export function advance(s, dt) {
             const tg = (walkable(s, pref[0], pref[1]) ? [pref] : EXT_ROOM.floor)
                 .map(([r, c]) => ({ r, c }))
             const path = bfsPath(s, { r: p.r, c: p.c }, tg)
-            if (path) { p.path = path; p.goal = { kind: 'room' } }
+            if (path) { p.path = path; p.goal = { kind: 'room' }; p.owner = 'ai' }
         }
         // #2470: the queue plays its turn before the resident drifts back to
         // their own devices — the tick a delivered order leaves them idle, the

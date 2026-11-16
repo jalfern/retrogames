@@ -469,7 +469,7 @@ const HomebodyGame = () => {
                     if (cmdWork(gs, p)) return
                     // #2470: busy but the window is open and the day is theirs — the
                     // clock-in waits on the list instead of being lost to the tap.
-                    if (orderBusy(gs, p) && !p.workedToday && p.worksOn === gs.day % 2 && gs.hour >= WORK_START && gs.hour < WORK_END - 1
+                    if (p.owner === 'human' && orderBusy(gs, p) && !p.workedToday && p.worksOn === gs.day % 2 && gs.hour >= WORK_START && gs.hour < WORK_END - 1
                         && cmdQueue(gs, p, { kind: 'work' })) return
                     say(p.workedToday ? 'NOT WORK TODAY — IT IS THE WEEKEND' : 'CLOCK IN DURING WORK HOURS'); return
                 }
@@ -484,7 +484,7 @@ const HomebodyGame = () => {
                         return
                     }
                 }
-                if (orderBusy(gs, p)) {   // #2470: an errand in flight keeps flying — this tap joins the list (queue-full speaks its own line)
+                if (p.owner === 'human' && orderBusy(gs, p)) {   // #2470: an errand in flight keeps flying — this tap joins the list (queue-full speaks its own line)
                     cmdQueue(gs, p, { kind: 'use', it })
                     return
                 }
@@ -501,17 +501,17 @@ const HomebodyGame = () => {
                 }
             }
             if (near && near.id !== 'mail') {
-                if (orderBusy(gs, p)) { cmdQueue(gs, p, { kind: 'use', it: near }); return }   // #2470: busy — the spot-tap joins the list
+                if (p.owner === 'human' && orderBusy(gs, p)) { cmdQueue(gs, p, { kind: 'use', it: near }); return }   // #2470: busy — the spot-tap joins the list
                 if (cmdUse(gs, p, near)) { audioController.playTone(560, 0.04, 'triangle', 0.03); return }
             }
             if (near && near.id === 'mail') {
                 if (cmdWork(gs, p)) return
-                if (orderBusy(gs, p) && !p.workedToday && p.worksOn === gs.day % 2 && gs.hour >= WORK_START && gs.hour < WORK_END - 1
+                if (p.owner === 'human' && orderBusy(gs, p) && !p.workedToday && p.worksOn === gs.day % 2 && gs.hour >= WORK_START && gs.hour < WORK_END - 1
                     && cmdQueue(gs, p, { kind: 'work' })) return   // #2470: clock in as soon as they're free
                 return
             }
             if (walkable(gs, t.r, t.c)) {
-                if (orderBusy(gs, p)) { cmdQueue(gs, p, { kind: 'walk', r: t.r, c: t.c }); return }   // #2470: busy — the walk joins the list
+                if (p.owner === 'human' && orderBusy(gs, p)) { cmdQueue(gs, p, { kind: 'walk', r: t.r, c: t.c }); return }   // #2470: busy — the walk joins the list
                 cmdWalk(gs, p, t.r, t.c)
             }
         }
@@ -1006,10 +1006,11 @@ const HomebodyGame = () => {
                 ivyHome: () => { if (gs && gs.ivy) { gs.ivy.state = 'leaving'; gs.ivy.path = null } },   // #2143: rig the next visit (scenario setup, like park/foul)
                 // #2070: rig the spat scenario — park the pair beside each
                 // other, both in the red; `thaw` lifts their tempers up.
-                foul: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; b.r = 3; b.c = 4; b.path = null; for (const p of gs.people) { for (const n of NEEDS) p.needs[n] = 0.3; p.working = false; p.faintT = 0 } gs.grudge = 0; gs.spatCd = 0; gs.spats = 0 } },   // the rigged spat counts as the run's first — earlier organic barbs in a long drive are clock noise, not the law
-                park: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; a.path = null; b.r = 3; b.c = 4; b.path = null; a.x = LOT_X + 3 * TILE + TILE / 2; a.y = LOT_Y + 3 * TILE + TILE / 2; b.x = LOT_X + 4 * TILE + TILE / 2; b.y = LOT_Y + 3 * TILE + TILE / 2; for (const p of gs.people) { p.use = null; p.goal = null; p.working = false; p.faintT = 0; p.queue.length = 0; for (const n of NEEDS) p.needs[n] = 0.5 } gs.visitor = null; gs.ivy = null; gs.cmdCd = 0; gs.spats = 0; gs.spatCd = SPAT_CD } },   // #2131/#2143/#2149: adjacency, idle for real, tempers NEUTRAL (mood 1: no organic spat, no instant make-up — the law itself is pinned in peoplecheck), nobody else to address, cooldown ready — and the SPRITES land where the logic was parked (#2149: cells without pixels left the pair standing apart, so make-up hearts burst at the stale midpoint, where the MADE UP toast card paints over them). #2244: the spat counter and its cooldown re-arm too — a long drive may have collected organic barbs upstream, and the gates downstream assert the rigged one is the run's first. #2470: the queues are wiped too — a parked household starts clean
+                foul: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; b.r = 3; b.c = 4; b.path = null; for (const p of gs.people) { for (const n of NEEDS) p.needs[n] = 0.3; p.working = false; p.faintT = 0 } gs.grudge = 0; gs.spatCd = 0; gs.spats = 0; for (const p of gs.people) { p.queue.length = 0; p.owner = null } } },   // the rigged spat counts as the run's first — earlier organic barbs in a long drive are clock noise, not the law
+                park: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; a.path = null; b.r = 3; b.c = 4; b.path = null; a.x = LOT_X + 3 * TILE + TILE / 2; a.y = LOT_Y + 3 * TILE + TILE / 2; b.x = LOT_X + 4 * TILE + TILE / 2; b.y = LOT_Y + 3 * TILE + TILE / 2; for (const p of gs.people) { p.use = null; p.goal = null; p.working = false; p.faintT = 0; p.queue.length = 0; p.owner = null; for (const n of NEEDS) p.needs[n] = 0.5 } gs.visitor = null; gs.ivy = null; gs.cmdCd = 0; gs.spats = 0; gs.spatCd = SPAT_CD; for (const p of gs.people) p.queue.length = 0 } },   // #2131/#2143/#2149: adjacency, idle for real, tempers NEUTRAL (mood 1: no organic spat, no instant make-up — the law itself is pinned in peoplecheck), nobody else to address, cooldown ready — and the SPRITES land where the logic was parked (#2149: cells without pixels left the pair standing apart, so make-up hearts burst at the stale midpoint, where the MADE UP toast card paints over them). #2244: the spat counter and its cooldown re-arm too — a long drive may have collected organic barbs upstream, and the gates downstream assert the rigged one is the run's first. #2470: the queues are wiped too — a parked household starts clean
                 thaw: () => { if (gs) for (const p of gs.people) for (const n of NEEDS) p.needs[n] = 0.9 },
-                stand: (who, r, c) => { if (gs) { const p = gs.people[who]; p.r = r; p.c = c; p.path = null; p.use = null; p.goal = null; p.working = false; p.queue.length = 0; p.x = LOT_X + c * TILE + TILE / 2; p.y = LOT_Y + r * TILE + TILE / 2 } },   // #2171: park() seats the pair by the radio — the thumb-court drive needs a cell with a clear hand  (#2470: the queue is part of being parked for real)
+                stand: (who, r, c) => { if (gs) { const p = gs.people[who]; p.r = r; p.c = c; p.path = null; p.use = null; p.goal = null; p.working = false; p.queue.length = 0; p.owner = null; p.x = LOT_X + c * TILE + TILE / 2; p.y = LOT_Y + r * TILE + TILE / 2 } },   // #2171: park() seats the pair by the radio — the thumb-court drive needs a cell with a clear hand  (#2470: the queue is part of being parked for real)
+                clearQueues: () => { if (gs) for (const p of gs.people) { p.queue.length = 0; p.owner = null } return 'lists wiped' },   // #2470: scenario-boundary flush — a gate that measures a FRESH single tap starts with empty lists
                 hearts: () => particles.filter((pt) => pt.kind === 'heart').length,   // #2076: the make-up paid hearts?
                 // #2240: the SET-DOWN, counted on the live canvas at the landing
                 // cell — greens + tomato are the basket's own signature (the floor's
