@@ -792,9 +792,7 @@ the campaign grows from eighteen to **twenty-seven worlds** — the original ran
   law pins: the arc seven-nine ramp table + SKY trio + cycle closure, and the
   yield cap `quota <= floor(pearls * 3.5)` across all worlds.
 - Mutation guide (prove it can fail): drop the last LEVELS entry (THE FARTHEST
-  SKY) → the world table goes red three ways (length/names 26≠27, the SKY trio
-  pin, the arc seven-nine ramp table) while the sweep stays 60/60 — correct,
-  the mutant wins, it just stops early (the #1740 precedent). For the win
-  condition itself use the header's quota mutation: all the equilibrium gates
-  go red together. (Or clamp arc-nine pearls back to +4 — the ramp-table pin
-  goes red alone.) All restored after proving.
+  SKY) → the twenty-seven-world table check goes red (26≠27) while the seed-7
+  and seed-88 wins stay green — correct, the mutant wins, it just stops early
+  (the #1740 precedent; proven 2026-11-15, restored after). Or clamp arc-nine
+  pearls back to +4 — the ramp-table pin goes red alone.
