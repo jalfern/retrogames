@@ -80,13 +80,18 @@ const ExcitebikeGame = () => {
 
         let gs = makeGame(0, { gear: gearRef.current })
         let raf = 0, last = 0, acc = 0
-        let demoAt = 0, demoReady = false, toast = 0, toastMsg = '', shake = 0
-        let noteAt = 0, heatBeep = 0
+        let demoAt = 0, demoReady = false, toast = 0, toastMsg = '', toastPrio = 0, shake = 0
+        let noteAt = 0, heatBeep = 0, fxRBump = 0 // #2434 renderer-side rbump counter (vacuity probe)
         const lastContact = []
         const keys = { g: false, b: false, j: false }
         let bikeMem = { pump: 0 } // #1637 decide()'s per-seat memory (pump taps)
         const parts = []
-        const say = (m) => { toastMsg = m; toast = 90 }
+        // #2434: the toast is ONE line. A headline (a rival PILES IN, your own
+        // wreck) must not be stomped by a minor rival scuffle while it is still
+        // on screen — a chain should read as one dramatic beat, not a strobe of
+        // four messages. Headlines (prio 2) override anything; minors (prio 1)
+        // yield to a live headline but pass freely once it has faded.
+        const say = (m, p = 1) => { if (toast > 0 && p < toastPrio) return; toastMsg = m; toastPrio = p; toast = 90 }
         // #2387 juice layer — pops/flashes/scars are pinned to WORLD x so the
         // camera carries them with the dirt (a popup that slides past its own
         // overtake is paint lying about physics). Zero sim state touched.
@@ -116,7 +121,7 @@ const ExcitebikeGame = () => {
                 else if (e.type === 'stall') { say('STALLED — PUMP!'); audioController.playNoise(0.2, 0.07) }
                 else if (e.type === 'unstall') { say('BACK ON!'); audioController.playSweep(240, 620, 0.2, 'square', 0.06) }
                 else if (e.type === 'crash') {
-                    say(e.why === 'wreck' ? 'WRECK!' : e.why === 'contact' ? 'BIKE VS BIKE!' : 'CRASH!')
+                    say(e.why === 'wreck' ? 'WRECK!' : e.why === 'contact' ? 'BIKE VS BIKE!' : 'CRASH!', 2)
                     audioController.playNoise(0.3, 0.09); burst(scrX, g2s(gs.alt) - 6, 16, '#d07c30'); shake = 9
                     if (e.why === 'wreck' || e.why === 'contact') { if (scars.length > 8) scars.shift(); scars.push({ wx: gs.x % LAP, name: 'you', t: 0, fade: 0 }) }
                 }
@@ -151,7 +156,7 @@ const ExcitebikeGame = () => {
                     // window is (-20, W+20), i.e. dd in (-104, W-64+20)).
                     const dd = ((e.x - gs.x + LAP * 1.5) % LAP) - LAP / 2
                     if (dd > -104 && dd < W - 64) {
-                        say(e.why === 'wreck' ? e.name + ' PILES IN!' : e.name + ' DOWN!')
+                        say(e.why === 'wreck' ? e.name + ' PILES IN!' : e.name + ' DOWN!', 2)
                         audioController.playNoise(0.22, 0.07); audioController.playTone(130, 0.18, 'sawtooth', 0.05)
                         burst(scrX + dd, g2s(groundY(track(gs.track).ground, e.x)) - 6, e.why === 'wreck' ? 18 : 12, '#8a5a1a')
                         if (Math.abs(dd) < 90) shake = 5
@@ -174,7 +179,8 @@ const ExcitebikeGame = () => {
                     // fight — all only while the pair is actually on screen.
                     const dd = ((e.x - gs.x + LAP * 1.5) % LAP) - LAP / 2
                     if (dd > -104 && dd < W - 64) {
-                        say(e.a + ' bumps ' + e.b)
+                        fxRBump++ // #2434: an on-screen scuffle that would clobber the toast
+                        say(e.a + ' bumps ' + e.b) // prio 1 — a minor fight, yields to a live headline
                         audioController.playNoise(0.12, 0.05); audioController.playTone(160, 0.09, 'square', 0.04)
                         burst(scrX + dd - 6, g2s(groundY(track(gs.track).ground, e.x)) - 8, 7, '#c98a3a')
                         if (leans[e.a] == null) leans[e.a] = 8
@@ -551,7 +557,7 @@ const ExcitebikeGame = () => {
             // speedometer needle via an inline svg rotation
             if (h.needle) { const frac = Math.max(0, Math.min(1, gs.v / CFG.boostV)); h.needle.setAttribute('transform', `rotate(${-120 + frac * 240} 30 30)`) }
             if (h.toast) { h.toast.textContent = toastMsg; h.toast.style.opacity = toast > 0 ? '1' : '0' }
-            if (toast > 0 && !pausedRef.current) toast--
+            if (toast > 0 && !pausedRef.current) { toast--; if (toast === 0) toastPrio = 0 }
         }
 
         const frame = (ts) => {
@@ -644,6 +650,8 @@ const ExcitebikeGame = () => {
                     lap: gs.lap, laps: gs.laps, clock: gs.clock, count: gs.count, inBand: gs.inBand,
                     rivals: gs.rivals.map((r) => ({ name: r.name, d: Math.round(r.d), air: r.air, down: r.down, crashes: r.crashes, tk: r.tk, held: r.held })),
                     contact: lastContact.slice(-14),
+                    toast: { msg: toastMsg, left: toast, prio: toastPrio }, // #2434 headline-vs-minor probe
+                    fxRBump, // #2434 renderer-side on-screen scuffle count (vacuity)
                     juice: { pops: pops.length, flashes: flashes.length, scars: scars.length, lean: Object.keys(leans).length + (leanYou.t ? 1 : 0), preTell },
                     screenX: Math.max(0, gs.x - 84) ? 84 : gs.x, screenY: g2s(gs.alt) - 6,
                 }),
@@ -656,6 +664,7 @@ const ExcitebikeGame = () => {
                     if (screenRef.current !== 'play') return false
                     if (opts.track !== undefined) { gs = makeGame(opts.track, { gear: gs.gear, count: 0 }) }
                     lastContact.length = 0
+                    fxRBump = 0
                     Object.assign(gs, {
                         ...(opts.x !== undefined && { x: opts.x }),
                         ...(opts.x !== undefined && { total: opts.x }),
