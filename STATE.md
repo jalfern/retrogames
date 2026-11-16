@@ -1,82 +1,83 @@
-# STATE — session 297 (2026-11-15, slot a)
+# STATE — session 298 (2026-11-15, slot b)
 
 ## Playable now / what shipped
-- **BOULDER DASH: slime & bolts — PR #2416 MERGED as `5fc1b73`** (#2411,
-  never-dry stage). Prod verified: chunk `index-4MIb1ryI.js` carries it at
-  https://jalfern.com/retrogames/boulder-dash.
-  - **Amoeba** (Boulder Dash II, 1985): `AMO_HEAD/AMO_BODY` cells + generation
-    clock; every `CFG.amoEvery` ticks heads extend along `amoebaDir`, branch
-    perpendicular when shut in, DISSOLVE diamonds they touch, engulf the player;
-    bodies expire after `CFG.amoGens` generations so the wave advances, never fills.
-  - **Push walls**: shove sideways one cell/arrow (BD law — nothing lifts),
-    crush a rock in the path (crushed gems are LOST), obey gravity and crush
-    under fall. They are the vault: SLIME VAULT's doors sit over pits.
-  - **SLIME VAULT (cave 5)**: full-height steel divide, two bolt-and-pit doors,
-    boulder choke opened by a crush, dirt-sealed slime pocket eating a bait vein.
-    Containment is provable: growth claims only EMPTY/DIAMOND — uncarved DIRT
-    is absolute — pinned across the planner win-run.
-  - Proof: dashcheck **92/92**, `--mutate` **102/102** (10 mutants incl.
-    `amoeba`/`push`/`pushCrush` each reddening a real check); dashplay **31/31**
-    real-key drive (vault cracked, wave grown+expired, bolt shoved, boulder
-    crushed, restart, zero page errors); mobile lite stick **8/8**;
-    watchcheck boulder-dash 320/320; goldentracecheck 56/56 unaffected; lint
-    dash/mario/fps/ai + build green. Existing caves' planner routes
-    byte-identical (determinism pins) despite the BFS push-door learning.
-- QA follow-up filed: **#2417** (slime/bolt readability cues, vault audio,
-  sim untouched) — feedback lane.
+- **MAGIC CARPET: campaign to 27 worlds (#2419 → PR #2424, merge `fcc1d65`).**
+  Live at jalfern.com/retrogames/magic-carpet (marker `THE FARTHEST SKY`
+  verified in `index-DBV27Bnp.js`, Vercel success). Never-dry pick
+  (`weakestStage` score 2 — oldest-unowned README gap, tie by registry order).
+  Growth one of the campaign gap: LEVELS 18→27, arcs seven–nine keep the
+  three-atmosphere cycle (27 ≡ 0 mod 3) and the +15 quota/hoard/wizHp ramp;
+  **pearls ride +5/world from world 19** — at +4 the tail would demand 93% of
+  realistic yield where mid-campaign asks 89% (the #1740 stall policy, now a
+  machine pin `quota <= floor(pearls*3.5)` on every world). Nine names closing
+  the SKY trio: IRONWOOD, EMBER GULCH, HOARFROST / MOSSVALE, MAGMA WAKE,
+  WHITEWALL / HOLLOW GREEN, LAST CINDER, THE FARTHEST SKY. Select/cursor/HUD
+  already rode `LEVELS.length` — zero law changes needed; attract tagline only.
+- Caps ride the campaign: carpetcheck sweep + DebugKit PROGNOSIS become
+  `LEVELS.length * 26000` ticks (old fixed 300k was ~88% eaten by seed 7 at
+  eighteen; measured slowest full win at 27 worlds: **508,702 ticks**).
+- Gates: carpetcheck **394→395 green** (seed-7 I→XXVII, seed-88, live name
+  order seed 3, 60/60 sweep all 27, yield-cap pin, arc-ramp/SKY-trio pin,
+  cursor wrap proven GENERICALLY — old ±18 literals would have passed WRONG at
+  any other n) + eslint + mario/fps/ai + build green. Mutation proof: drop
+  last LEVELS entry → world-table check red, seed clears stay green (mutant
+  wins early, #1740 precedent); restored.
+- Also shipped here: recalibrated the stale #1746 pan opt-in pin in carpetcheck
+  to #2166's NaN-widened `_panner` guard (harness-only, law unchanged; it was
+  red on main's suite — nightly doesn't run carpetcheck, static doesn't either,
+  so nobody saw it). Regenerated MagicCarpet verification shots (same pattern
+  as the #1925 eighteen-worlds PR #2026).
 
 ## Ladder (this session's path)
-- Warden target **#2402**: claim said "already yours (resume)" — but a LIVE
-  worker was inside it (session 296-a; see catches). Yielded the issue instead
-  of racing it; it closed cleanly (#2408/#2410/#2414/#2415, closed).
-- Ladder: no steer/next/game-queue; feedback all owned/building-qa; 3 live
-  QA MASTER sessions → no borrow; flagship stage spent → `weakestStage` fresh:
-  **BOULDER DASH** (score 2, gap #0 "no amoeboid/push walls") → filed #2411
-  with the why-weakest line, claimed, shipped. Rule 4 honest: game code merged.
+- Warden target **#2411 REFUSED** at claim (slot a live, push 15 min old — it
+  shipped mid-session #2416). No steer, no `next`, game-queue empty; feedback
+  borrow blocked (3 QA MASTER sessions live: mini, mini2, studio) → flagship
+  stage: idle.mjs honest parse shows ALL flagship gaps CLOSED → never-dry
+  `weakestStage` fresh → MAGIC CARPET. Filed #2419 (POLISH, game-queue) then
+  claimed normally.
 
-## The session's catches
-- **An idle-kick can resurrect a live lane.** Warden judged slot a idle at
-  21:33Z and kicked this session — but 296-a was mid-merge on #2402 (its HEAD
-  moved between my commands; #2408 merged at 21:39Z). forge-claim cannot
-  arbitrate two processes sharing slot letter "a". Behaviour that kept the
-  peace: when the target issue shows a *live* worker's fingerprints (moving
-  HEAD, new merge commits mid-read), yield it and take the ladder. The warden's
-  idle-detector deserves a look (process liveness vs board silence) — no jonq
-  (not taste/priority), recorded here + shift notes.
-- **Bait gems obey the construction laws too**: unsupported gems over the
-  pocket fell and greed-turned to dirt ~tick 2 — long before the wave, silently
-  killing the `dissolve` prove. Node gate caught it in seconds; fix = gems ON
-  the pocket floor, nothing above (rule 1, learned the sharp way again).
-- **Real keys outrun world ticks**: every keydown steps the digger instantly
-  (tap = instant move) while the CA ticks at 12 Hz — a win froze the sim with
-  the wave mid-life. Full-lifecycle asserts need a no-input observation window
-  (reset + watch), not the win-run itself.
-- **BSD `cp` has no multi-destination form** — step 1's two-path park template
-  fails wholesale on macOS; park with two `cp` calls (slot-scoped first, #1430).
-- **Mobile lite has no canvas taps** where VirtualControls' left-half stick
-  zone covers (full-height overlay): drive the stick (drag from centre) for
-  mobile tests; 8/8.
-
-## BOARD at exit (re-derive fresh)
-- building: #1711 (platform lane, Jon-side stages open). building-qa: #2385,
-  #2387 at exit — re-derive.
-- game-queue: empty again. feedback: + #2417 (mine, QA lane's to take).
-- Nightly last run SUCCESS; main green at `5fc1b73`.
-- jonq #2305 (lane:platform) AWAITING to 11-17 — not ours.
+## BOARD at exit
+- game-queue: **#2427** (MAGIC CARPET toward 45 worlds — filed this session,
+  with the honest margin warning + projected sweep cost; grows what the 3.5x
+  yield law allows, re-files the rest).
+- building: #2420 (EXCITEBIKE pack contact), #1711 (PLAICRAFT S1 — re-derive
+  branch liveness fresh at claim). building-qa: #2385. `next`/`steer`: empty.
+- jonq open: #2305 (lane:platform, AWAITING until 11-17) — not ours to wait on.
+- textfitcheck 269/270 on main: the red is `demo fox` phone-portrait HUD
+  overflow — fox untouched by any recent forge PR as far as I can see;
+  somebody's inherited advisory, not fixed here.
 
 ## Next (slot a or b, in order)
-1. Ladder as usual; never-dry → `weakestStage`/`idle.mjs` FRESH, confirm the
-   gap is gameplay before building (#2391 lesson stands).
-2. Golden traces for a third port game only when Jon names one (#2402 follow-up
-   pattern: one adapter + scenarios in goldentrace.mjs).
-3. If jonq #2305 answers → the #2093 relabel chain (platform lane).
+1. #2427 is the natural next claim (same game, laws and pins already warm).
+2. Ladder as usual; never-dry → `weakestStage`/`idle.mjs` FRESH, verify the
+   picked gap is gameplay before building (#2391 lesson stands).
+3. If jonq #2305 answers → execute the #2093 relabel chain.
+
+## The session's catches
+- **A stale source-pin lies quietly off-CI.** carpetcheck's #1746 pin demanded
+  `if (pan === null) return null`; #2166 had already widened it with
+  `|| !isFin(pan)` — red on main's local suite for days because neither
+  static nor nightly runs carpetcheck. Pin a LAW, not a literal, when you can
+  (the new yield/ramp pins check algebra, not text).
+- **SIGKILL eats the stdout buffer.** The mutation-run kill at 80 s flushed
+  only the first FAIL line; the rest of the red list died with the process.
+  Judge a killed run by what flushed, and make README claims match what you
+  actually saw (report what happened, not what should have).
+- **`git diff <commit>` is diff-to-WORKTREE, not to HEAD.** My "commit
+  contains PNGs" scare was that — `git show --stat HEAD` proved the commit
+  clean; the PNGs were carpetcheck regenerating verification shots after the
+  commit. Browser passes rewrite tracked shots: commit them after the run,
+  never stage while one is live (#2047 class).
+- **+4 pearls couldn't reach 27 honestly.** Tails are where economy laws bite:
+  margin shrinks ~1 pt/world, so the yield law decided the table, and the
+  README now says so.
 
 ## Hygiene at exit
-- Main checkout detached at `origin/main`; worktree `forge-boulder-amoeba`
-  removed; branch deleted; dev server 5173 stopped (mine; foreign ports
-  untouched). STATE committed to main — a *game* merged this session (rule 9).
-- Parked slot-scoped via `node scripts/statepark.mjs park a`.
+- Dev server 5178 stopped (own pid only); foreign ports (5173/5174/5176/5179)
+  untouched.
+- Worktree retrogames-forge-carpet-27worlds removed; branch gone via squash;
+  main checkout detached at origin/main. #2419 commented+shipped+closed.
+- STATE.md committed to main (game merged this session, rule 9) + parked slot b.
 
 ## Open questions
-- None new. jonq #2305 (lane:platform, `SESSION_WRITE_KEY`) AWAITING to 11-17;
-  folded from 296-a's park — nothing evaporated between lanes.
+- None new. jonq #2305 (lane:platform) AWAITING until 11-17 — not ours.
