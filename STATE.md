@@ -1,67 +1,70 @@
-# STATE — session 301 (2026-11-15, slot a)
+# STATE — session 302 (2026-11-15, slot b)
 
 ## Playable now / what shipped
-- **BOULDER DASH: the butterfly drift (#2453 → PR #2456, merge `d29a2d0`).**
-  Live at jalfern.com/retrogames/boulder-dash — **GOSSAMER HOLLOW** is cave 8
-  (marker verified in served chunk `index-Cu3s1i0p.js`, prod deploy 06:25Z).
-  Never-dry pick (`weakestStage` score 4 — the README gap "the corridor patrol
-  is a fixed shuttle … never weaves into the cavern proper the way an original
-  butterfly could"). New critter kind: `meta.butterflies` = the fly automaton
-  with `drift:1, digs:0, ignites:0` — it FLAPS (deterministic hash-of-moment
-  90° turns, right-first, only with open ground ahead and only onto open
-  ground), but neither bores dust nor ignites — the originals' two critters
-  (firefly/butterfly) finally separated. **Corridor-invariance by law**: in a
-  lined tube every flap candidate is wall, so drift can never perturb a
-  predictable patrol (600-tick pin) — fairness preserved, weaving freed.
-  Hash: `flyExt` gates flap state (amoExt pattern) — caves 1–7 byte-identical,
-  opt-in-only pinned. Hollow: steel-ringed roof gallery + pillars the butterfly
-  sweeps; steel-lined tube col 27 to the dig lanes; harvest row 18 provably
-  cool (butterfly lights nothing); a dawdling digger gets eaten (replay-pinned).
-  Side fix: fly catches player now kills with cause `fly` ("COOKED") not `fire`.
-- Gates: **dashcheck 184/184** + **198 mutants** (new `flyDrift` caught) +
-  **dashplay 49/49** (GOSSAMER HOLLOW live: flaps=100, tube dip, sealed-lane
-  law, real-key win, restart, zero page errors) + **watchcheck boulder-dash
-  320/320** + lint:mario/fps/ai + build + eslint (5 files).
-- DEV probe: `__dashTest.probe()` now reports `flaps` + `butterfly`.
+- **PLAICRAFT S1 blockers closed (#1711 → PR #2454, merge `56131ca`).**
+  Live at jalfern.com/retrogames — bundle `index-DEhn8iyS.js` carries the
+  capture guard (`content-clock-frozen` verified in the served chunk).
+  - **Valkyrie replay:** Jon's stored take
+    `gauntlet/2026-11-15-seed10-3a2be04acb.json` replay-verifies **PASS,
+    7142/7142 ticks, all 239 checkpoints** as stored. Whole store:
+    **10/10 replay-verified — 100%.** The replay half of the fix is
+    **QA's #2446** (`9f9e405`) which landed mid-session — absent partnerKey
+    now rebuilds the sim's own live default (valkyrie; the pair-swap keys
+    only an EXPLICIT valkyrie, unset never is). My PR adopted it.
+  - **Capture (this session, unique):** iOS/Android freeze
+    `AudioContext.currentTime` while still reporting `running` — seed4's trace
+    stamped ms=816 for 100 s and looked internally consistent. `hybridNow`
+    now burns a content clock dead >1 s (trace keeps wall pace, `resume()`
+    asked, freeze named in `__voiceDebug`); OS-dropped mic tracks (ended/mute)
+    take the badge off REC. Short bytes then fail grading honestly by name.
+  - **Golden-spec rescue:** QA's default change put 4 gauntlet goldens red
+    ON MAIN (native-port spec was recorded beside elf; CI scope missed it and
+    the nightly predated the merge). #2454 pins `partnerKey:'elf'` explicitly
+    in BOTH copies of the spec table (goldentrace.mjs + goldentracecheck.mjs
+    — the table is duplicated, a trap worth remembering). 89/89 green.
+- Gates: recordcheck 202/202 (+new frozen-pipeline block; hand-mutant removing
+  the freeze branch kills 5 pins in the seed4 shape: same-ms run 55, stall
+  55000 ms, settle ms 5000) + evidence self-test 44/44 + voicecheck 49/49 +
+  goldentrace 89/89 + netdemo 55/55 + gauntletcheck 306 + gauntletplay 28/28
+  (browser, port 5178) + plaicraftcheck + lint:mario/fps/ai + build.
 
-## Board at exit
-- building (lane:games): check `gh` — #1711 (PLAICRAFT S1) held by slot b since
-  04:49Z (my claim on it was REFUSED by liveness — correct behavior).
-  #2453 shipped+closed. game-queue / next / steer / waiting-jon: empty at claim time.
-- building-qa held: #2430, #2354(was closed by QA), #2434, and QA opened #2449/#2447
-  during the window (QA lane is feeding itself). #2438 (BD polish) now ALSO owns the
-  drift tells/audio/telegraph backlog (I extended it — see its last comment).
+## BOARD at exit
+- building (lane:platform): **#1711 stays OPEN** (big-build multi-stage; the
+  stage's remaining acceptance needs one fresh phone take from Jon graded green
+  replay+voice+clap against `56131ca`). Commented with full evidence.
+- game-queue / next / steer / waiting-jon: empty. building-qa: #2430, #2354
+  held by QA (left untouched; left a note on #2430 re segment-restart — the
+  un-shipped half of mic recovery, parked pending a voice.js format decision).
 
 ## Next (slot a or b, in order)
-1. Refresh the ladder. `weakestStage` will now return BOULDER DASH only until
-   #2438 is claimed (it's the polish owner). Its remaining BD README gaps are
-   disclosures + the NEW gem-carrying butterfly gap (a real stage — a player
-   feature; pickable once #2438's owner finishes tells).
-2. Clean gameplay runners-up: LodeRunnerLite vault-3 one-fewer-life slack;
-   WWI Dogfight "Circus winnable at hp 1"; SmashTV spawn-invulnerability vs
-   the arcade's none (fidelity removal, small); IronRing air-escape throws.
-3. A new flagship honest-gaps note: SSX/Emberwood/CometDriftHD/Myst have ZERO
-   open gaps — consider whether that's true or README hygiene hid them (#2391).
+1. Refresh the ladder. Queue empty → flagship stage per FORGE (SSX, Emberwood,
+   COMET DRIFT HD, Myst — oldest README gap nobody owns) or `weakestStage`.
+   Verify a picked gap is player-visible before building (#2391).
+2. If the warden re-points a slot at #1711: the next S1 slice is the human
+   grading loop — run `plaicraft:grade` when a new take lands (posts the
+   verdict itself), then stage-close evidence goes to Jon/Claude, not a lane.
+3. Watch item: nightly may flag other consumers of the #2446 default change
+   (anything replaying un-stamped 2p files beside elf). goldentrace is pinned;
+   if nightly names more, pin explicitly like #2454.
 
 ## The session's catches
-- **`meta`-level opt-ins must set every derived flag in BOTH declaration paths.**
-  My first `flyExt` looked for `drift` on the raw `level.flies` entries —
-  butterflies declare no `drift` (the mapping adds it), so the hash silently
-  ignored flaps. Any new level-list sugar must re-audit every `level.X` scan.
-- **Harness tests build games by hand** (`g.flies = [{…}]` straight in
-  dashcheck). Engine changes must treat MISSING per-entity flags as the
-  historical default (explicit 0 disables) or the first test that bypasses
-  `makeGame` goes red for the wrong reason.
-- **"Fire spreads to DIAMOND/BOULDER" is the sim law** — any "harvest is safe"
-  design must argue from ignition sources and steel caps, not from gems being
-  inert. It reshaped GOSSAMER HOLLOW from fire-drama to critter-drama (which is
-  what the originals' butterfly cave is anyway).
-- jalfern.com serves a 308 without trailing-slash semantics — prod-marker scans
-  need `curl -L` on the entry AND on the lazy chunks (the entry is one hash;
-  the game lives in ~51 referenced chunks).
+- **#2465 was a number I invented.** Never cite an issue tag that doesn't
+  exist — fixed in-branch, but check `gh issue view` BEFORE tagging comments
+  and commits.
+- **Two lanes can fix one bug at once.** Claim is a lock, not a radar: check
+  for a merged fix touching the same symbols BEFORE building (git log -S on the
+  target file saved the merge from duplicating semantics twice).
+- **The golden spec table is duplicated** (goldentrace.mjs + goldentracecheck
+  .js). Fix both copies or the gate stays red.
+- **Verify-from-the-other-side held again** — the store itself was the truth:
+  download Jon's takes, dump `rules`/slots/voice, sweep partner identities;
+  divergence-tick ordering (elf 2130 > valkyrie > wizard 870 > warrior 840)
+  is what proved live chose the sim default, not any stamped key.
+- **A `pull_request` CI trigger silently missing** → `gh workflow run ci.yml
+  --ref <branch>` and `gh pr checks` again; static went green that way.
 
 ## Hygiene at exit
-- Dev server 5173 stopped (own pid only); foreign ports untouched.
-- Worktree retrogames-forge-bd-drift removed after merge; main detached at
-  origin/main. #2453 commented + shipped + closed; #2438 extended.
-- STATE.md committed to main (game merged this session) + parked slot a.
+- Dev server 5178 stopped (own pid only); foreign ports untouched.
+- Worktree retrogames-forge-plaicraft-blockers removed; branch gone via squash;
+  main detached at origin/main. #1711 stays open by design (big-build).
+- STATE.md committed to main (game code merged this session) + parked slot b.
