@@ -9,8 +9,8 @@ import { makeGame, step, cloneGame, CFG, clockText, stateHash } from './sim.js'
 import { decide } from './planner.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
-import { drawScene, VW, VH, fitAttractFont } from './art.js'
-import { LEVEL_COUNT, LEVEL_NAMES, RW } from './levels.js'
+import { drawScene, VW, VH, fitAttractFont, moonSources, moonShade, paneShift } from './art.js'
+import { LEVEL_COUNT, LEVEL_NAMES, RW, T } from './levels.js'
 import { SFX, trackFor, duckFor, stepFor } from './music.js'
 
 const LITE = typeof window !== 'undefined' && /[?&]lite=/.test(window.location.search)
@@ -133,6 +133,29 @@ const PrinceOfPersiaGame = () => {
             hash: () => stateHash(g),
             watching: () => watchingRef.current, // #1637 watchcheck: is the prover running the hour?
             musicState: () => ({ ...audioController._musicState(), peak: audioController._peak() }),
+            // #2461 living sky: the live overcast of this room's panes, a forecast
+            // of the next 2400 ticks (overcast-and-clear must be a real upcoming
+            // event, not a memory), and the first pane's rect — world and device px.
+            sky: () => {
+                const lvl = g.level
+                const rm = Math.min(g.room, lvl.nRooms - 1)
+                const src = lvl.theme === 'palace' ? moonSources([lvl.deco[rm]], rm * RW * T, g.tick) : []
+                const cnv = canvasRef.current
+                const sc = cnv ? cnv.width / VW : 1
+                const py = 44 + paneShift(lvl.deco[rm] || {})
+                const pane = src.length ? {
+                    x: src[0][0] - 6, y: py, w: 12, h: 40,
+                    dev: { x: Math.round((src[0][0] - 6) * sc), y: Math.round(py * sc), w: Math.round(12 * sc), h: Math.round(40 * sc) },
+                    shade: +(src[0][3] ?? 1).toFixed(3),
+                } : null
+                const forecast = src.map((mp) => {
+                    let mn = 1, mx = 0
+                    for (let d = 0; d <= 2400; d++) { const s = moonShade(g.tick + d, mp[2]); if (s < mn) mn = s; if (s > mx) mx = s }
+                    return { min: +mn.toFixed(3), max: +mx.toFixed(3) }
+                })
+                return { theme: lvl.theme, tick: g.tick, shades: src.map((mp) => +(mp[3] ?? 1).toFixed(3)), pane, forecast }
+            },
+            goto: (i) => { attract = false; setAttractUi(false); g = makeGame(i) },
         }
         const p_block = () => g.p.block
 

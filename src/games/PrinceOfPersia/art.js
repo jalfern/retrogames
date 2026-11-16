@@ -146,7 +146,8 @@ export function lightAt(x, y, keyPx, amb = LIGHT_AMBIENT, moonPx = []) {
     }
     for (let i = 0; i < moonPx.length; i++) {
         const dx = x - moonPx[i][0], dy = y - moonPx[i][1]
-        l += MOON_STRENGTH * coolGlow(Math.sqrt(dx * dx + dy * dy))
+        // Stage 31: a pane under cloud throws less light (4th channel, #2461)
+        l += MOON_STRENGTH * (moonPx[i][3] ?? 1) * coolGlow(Math.sqrt(dx * dx + dy * dy))
     }
     return l > 1 ? 1 : l
 }
@@ -229,19 +230,23 @@ export function coolAt(x, y, moonPx) {
     let s = 0
     for (let i = 0; i < moonPx.length; i++) {
         const dx = x - moonPx[i][0], dy = y - moonPx[i][1]
-        s += coolGlow(Math.sqrt(dx * dx + dy * dy))
+        s += (moonPx[i][3] ?? 1) * coolGlow(Math.sqrt(dx * dx + dy * dy))
     }
     return s > 1 ? 1 : s
 }
 // arched windows in a palace deco band, as cool key sources (pixel-centres of the
 // panes the moon shines through). Pure function of the deco + the band's first col.
-export function moonSources(decos, base) {
+// Pass `tick` to carry the live overcast (Stage 31): the 4th channel is that pane's
+// moonShade this tick. Omitted (default), the shade is 1 — every pre-#2461 caller,
+// pin and byte path is untouched.
+export function moonSources(decos, base, tick = null) {
     const out = []
     for (let rm = 0; rm < (decos || []).length; rm++) {
         const d = decos[rm]
         if (d && d.window != null) {
             const px = base + rm * RW * T + d.window * T + 16
-            out.push([px, paneKeyY(d), hash(Math.round((px - 16) / T) * 2.7 + 5)])
+            const seed = hash(Math.round((px - 16) / T) * 2.7 + 5)
+            out.push([px, paneKeyY(d), seed, tick == null ? 1 : moonShade(tick, seed)])
         }
     }
     return out
@@ -336,15 +341,11 @@ export function paneKeyY(d) {
 // the cool key so the drawn window and the light it throws never disagree.
 export const paneShift = (d) => paneKeyY(d) - 60
 
-// a slow cloud crossing a pane: a fractional position across the sky that wraps,
+// a slow cloud crossing a pane: fractional position across the sky that wraps,
 // with a soft density that is 0 at the edges and peaks mid-crossing — a cloud
-// passes, then clear sky again. Deterministic in tick + seed (#343-4).
+// passes, then clear sky again. Deterministic in tick + seed (#343-4). The
+// position/density law lives in the Stage 31 sky block (cloudPhase/cloudCross).
 export const SKY_DRIFT = 0.0007                 // pane-widths per tick: barely perceptible
-export function cloudCross(tick, seed = 0) {
-    let p = (tick * SKY_DRIFT + seed * 0.37) % 1
-    if (p < 0) p += 1
-    return Math.sin(p * Math.PI)                 // 0 → 1 → 0 across one crossing
-}
 // a fixed star field inside one pane (fractional coords), each with its own twinkle
 // phase. Positions are hash-pinned to the seed, so the same window keeps its stars.
 export function starField(seed = 0, n = 4) {
@@ -409,6 +410,93 @@ export function archPath(ctx, x, base, w, h) {
     ctx.arc(x, base - h + w, w, Math.PI, 0)
     ctx.lineTo(x + w, base)
     ctx.closePath()
+}
+
+// ---- Stage 31 (#2461): living night sky — cloud banks, a wandering moon, overcast
+// moonlight. The pane carried one waving cloud and a bolted-down moon; now each
+// window owns a seeded bank of cloud layers (different altitude, size and speed)
+// and the moon wanders slowly across its pane. And the moonlight obeys the sky:
+// the moon's cool key dims while a cloud covers the disc (the 4th channel of
+// moonSources), so the cold pool, cast shaft, dust motes and floor band darken
+// together and the hall brightens again when the sky clears. All pure: tick +
+// the window's column seed, rng-free; sim, stateHash and seed determinism are
+// untouched, and moonSources' default path (no tick) stays byte-identical.
+export const SKY_CLOUDS = 3                       // cloud layers per pane
+export const CLOUD_DIM = 0.55                     // deepest dim under the thickest cloud
+export const MOON_DRIFT = 0.0011                  // rad/tick: a half-sweep every ~1400 ticks
+
+// the crossing phase of a cloud — cloudCross's p, exposed so a bank can drive
+// density AND position from it. (The old single cloud used density for position,
+// which made it wave back and forth mid-pane; banked clouds cross straight.)
+export function cloudPhase(tick, seed = 0) {
+    let p = (tick * SKY_DRIFT + seed * 0.37) % 1
+    if (p < 0) p += 1
+    return p
+}
+// a cloud crossing a pane: density 0 at the edges, peaking mid-crossing. Same
+// values as before, now phrased through cloudPhase. Deterministic in tick + seed.
+export function cloudCross(tick, seed = 0) {
+    return Math.sin(cloudPhase(tick, seed) * Math.PI)
+}
+// one pane's cloud bank: n layers crossing at their own speed, height and size,
+// each fading in and out with its own crossing. Positions are px from the glass
+// column's inner left edge (the clip keeps the overhang inside the frame); a
+// layer off-view is simply absent, so the bank thins and swells through the hour.
+export function cloudBank(tick, seed = 0, n = SKY_CLOUDS) {
+    const myBase = moonPane(seed, 0).my      // the pane's moon row, static seed
+    const out = []
+    for (let i = 0; i < n; i++) {
+        const sp = 0.55 + hash(seed * 1.3 + i * 7.7) * 0.95        // layers run 0.55..1.5x
+        const p = cloudPhase(tick * sp, seed + i * 7.13)
+        const d = cloudCross(tick * sp, seed + i * 7.13) * (0.5 + hash(seed * 4.7 + i * 2.3) * 0.5)
+        if (d <= 0.02) continue
+        const w = 7 + Math.round(hash(seed * 5.9 + i * 1.7) * 7)   // 7..14 px
+        const h = 4 + Math.round(hash(seed * 3.1 + i * 6.7) * 3)   // 4..7 px
+        // the first layer rides the moon's row (its top sits 0..h-1 px over the
+        // disc, so a crossing cloud passes *over the moon*, not the moon's left
+        // or right); the rest get free altitude bands high in the glass.
+        const y = i === 0
+            ? myBase - Math.round(hash(seed * 2.3) * (h - 1))
+            : 46 + Math.round(hash(seed * 2.3 + i * 4.1) * 16)
+        out.push({ x: -6 + p * 24, y, w, h, d })                    // x: a full crossing, px from inner glass edge
+    }
+    return out
+}
+// the moon's slow wander, px: a long lazy arc (seeded phase so every window keeps
+// its own night — #2330's law, only now the night *moves*).
+export function moonDrift(tick, seed = 0) {
+    const ph = hash(seed * 0.7 + 0.13) * Math.PI * 2
+    return {
+        ox: Math.sin(tick * MOON_DRIFT + ph) * 1.6,
+        oy: Math.sin(tick * MOON_DRIFT * 0.29 + ph * 1.7) * 1.0,
+    }
+}
+// the wandering moon's position for this tick: mx is px from wx with the disc
+// (±2px) clamped inside the inner glass column (2..14); my stays in the band
+// #2330 pinned (disc bottom never reaches the horizon's rooftops).
+export function moonPane(seed = 0, tick = 0) {
+    const ms = moonSpot(seed)
+    const md = moonDrift(tick, seed)
+    const raw = 2 + ms.fx * 11 + md.ox
+    return {
+        mx: raw < 4 ? 4 : raw > 12 ? 12 : raw,
+        my: 58 + Math.round(ms.fy * 12 + md.oy),
+    }
+}
+// how much of the moon's light survives at the pane this tick: 1 clear, down to
+// 1-CLOUD_DIM under a solid cloud. `dim` takes the thickest cloud actually over
+// the disc — horizontal AND vertical overlap, so a high cirrus and a low bank
+// crossing the moon at different heights do not both count.
+export function moonShade(tick, seed = 0) {
+    const mp = moonPane(seed, tick)
+    const mx = mp.mx - 2
+    let dim = 0
+    for (const c of cloudBank(tick, seed)) {
+        if (mx + 2 < c.x || mx - 2 > c.x + c.w) continue
+        if (mp.my + 2 < c.y || mp.my - 2 > c.y + c.h) continue
+        if (c.d > dim) dim = c.d
+    }
+    return 1 - dim * CLOUD_DIM
 }
 
 // ---- pose tables --------------------------------------------------------------
@@ -737,19 +825,24 @@ function palaceWall(ctx, c0, decos, tick) {
         ctx.lineTo(wx + 16, 84)
         ctx.closePath()
         ctx.fill()
-        const moon = 0.4 + 0.2 * Math.sin(tick * 0.02 + rm)
-        ctx.fillStyle = `rgba(120,140,220,${moon.toFixed(2)})`
+        // Stage 31 (#2461): the sky is live. `sh` < 1 means cloud is over the moon
+        // — the pane's glow dims, and through moonSources' 4th channel so do the
+        // cold pool, cast shaft, motes and floor band out in the hall.
+        const sh = moonShade(tick, pseed)
+        const veil = (0.4 + 0.2 * Math.sin(tick * 0.02 + rm)) * (0.45 + 0.55 * sh)
+        ctx.fillStyle = `rgba(120,140,220,${veil.toFixed(2)})`
         ctx.fillRect(wx + 2, 60, 12, 22)
-        // a cloud crossing the pane, denser mid-transit, clipped to the glass column
+        // clouds crossing the pane, clipped to the glass column
         ctx.save()
         ctx.beginPath(); ctx.rect(wx + 2, 44, 12, 40); ctx.clip()
-        // QA #2330-4: the night outside — a hash-pinned moon disc and a distant
-        // skyline standing on the horizon. Same seed as stars/cloud, so every
-        // window keeps its own fixed night; clouds cross in front of both.
-        const ms = moonSpot(pseed)
-        const mx = wx + 2 + Math.round(ms.fx * 11)
-        const my = 58 + Math.round(ms.fy * 12)
-        ctx.fillStyle = '#e8ecf8'
+        // QA #2330-4: the night outside — a moon disc over a distant skyline.
+        // Same seed as stars/clouds, so every window keeps its own night; #2461
+        // set that night in motion: the disc wanders its pane, clouds cross both.
+        const mn = moonPane(pseed, tick)
+        const mx = wx + Math.round(mn.mx)
+        const my = mn.my
+        const disc = `rgba(232,236,248,${(0.35 + 0.65 * sh).toFixed(2)})`
+        ctx.fillStyle = disc
         ctx.fillRect(mx - 1, my - 1, 3, 3)
         ctx.fillRect(mx, my - 2, 1, 1)
         ctx.fillRect(mx, my + 2, 1, 1)
@@ -763,11 +856,14 @@ function palaceWall(ctx, c0, decos, tick) {
         for (const twr of skyline(pseed)) ctx.fillRect(wx + 2 + Math.round(twr.fx * 10), hy - twr.h, 2, twr.h)
         ctx.fillStyle = 'rgba(150,160,210,0.22)'
         ctx.fillRect(wx + 2, hy, 12, 1)
-        const cp = cloudCross(tick, pseed)
-        if (cp > 0.02) {
-            const cxp = wx - 4 + cp * 24
-            ctx.fillStyle = `rgba(150,165,205,${(cp * 0.16).toFixed(3)})`
-            ctx.fillRect(cxp - 6, 52 + Math.round(hash(pseed) * 8), 12, 6)
+        // the bank (#2461): every layer crossing at its own height, size and
+        // speed, soft-edged — and the first layer rides the moon's row, so the
+        // overcast a player sees in the glass is the same event that dims the hall.
+        for (const c of cloudBank(tick, pseed)) {
+            ctx.fillStyle = `rgba(150,165,205,${(c.d * 0.22).toFixed(3)})`
+            ctx.fillRect(wx + 2 + c.x, c.y, c.w, c.h)
+            ctx.fillStyle = `rgba(178,190,225,${(c.d * 0.10).toFixed(3)})`
+            ctx.fillRect(wx + 2 + c.x, c.y, c.w, 1)
         }
         ctx.restore()
         // stars above the moon glow, each twinkling on its own phase
@@ -827,7 +923,7 @@ function lightPool(ctx, x, y, fl) {
 // the flame pools so palace stone under a window reads moonlit, not firelit. Its hue
 // and strength come from the window's own seeded sky (moonTint), so a row of windows
 // reads as different skies, not one stencil. Clipped below the HUD like warm pools.
-function coolPool(ctx, x, y, fl, seed = 0) {
+function coolPool(ctx, x, y, fl, seed = 0, shade = 1) {
     const tint = moonTint(seed)
     ctx.save()
     ctx.globalCompositeOperation = 'lighter'
@@ -835,7 +931,7 @@ function coolPool(ctx, x, y, fl, seed = 0) {
     ctx.rect(x - MOON_RADIUS, HUD_LINE, MOON_RADIUS * 2, VH - HUD_LINE)
     ctx.clip()
     const r = 120 + fl * 10
-    const a = tint.s
+    const a = tint.s * shade                            // #2461: overcast thins the pool
     const outer = ctx.createRadialGradient(x, y, 8, x, y, r)
     outer.addColorStop(0, `rgba(${tint.r},${tint.g},${tint.b},${(0.20 * a).toFixed(3)})`)
     outer.addColorStop(0.5, `rgba(${Math.max(0, tint.r - 40)},${Math.max(0, tint.g - 40)},${Math.min(255, tint.b - 35)},${(0.08 * a).toFixed(3)})`)
@@ -1397,7 +1493,7 @@ export function drawScene(ctx, g, opts = {}) {
     // reads moonlit (cool keys + cold pools); the dungeon never has them, so it
     // stays firelit. Empty off-palace, so every other room is unchanged.
     const moonPx = lvl.theme === 'palace'
-        ? moonSources(lvl.deco.slice(Math.floor(c0 / RW), Math.ceil(c1 / RW)), Math.floor(c0 / RW) * RW * T)
+        ? moonSources(lvl.deco.slice(Math.floor(c0 / RW), Math.ceil(c1 / RW)), Math.floor(c0 / RW) * RW * T, tick)
         : []
     // centre-weighted shadow: the room sinks into darkness toward its edges, and a
     // room without a single torch sinks deeper — but the light itself, where it
@@ -1445,14 +1541,15 @@ export function drawScene(ctx, g, opts = {}) {
     // (coolBandAt), mirroring the warm bounce — so the shaft reads as light *cast*
     // from the pane, not a bloom centred on it. Windows never sit in the HUD band,
     // so the shaft is already clear of it.
-    for (const mp of moonPx) coolPool(ctx, mp[0], mp[1], Math.sin(tick * 0.04), mp[2] || 0)
+    for (const mp of moonPx) coolPool(ctx, mp[0], mp[1], Math.sin(tick * 0.04), mp[2] || 0, mp[3] ?? 1)
     ctx.save()
     ctx.globalCompositeOperation = 'lighter'
     const creach = Math.ceil(MOON_RADIUS * 0.7 / T)
     for (const mp of moonPx) {
         const tint = moonTint(mp[2] || 0)
+        const sh31 = mp[3] ?? 1          // #2461: cloud over the moon dims everything this pane throws
         const sg = ctx.createLinearGradient(0, mp[1], 0, fy)
-        sg.addColorStop(0, `rgba(${tint.r},${tint.g},${tint.b},${(0.10 * tint.s).toFixed(3)})`)
+        sg.addColorStop(0, `rgba(${tint.r},${tint.g},${tint.b},${(0.10 * tint.s * sh31).toFixed(3)})`)
         sg.addColorStop(1, `rgba(${Math.max(0, tint.r - 50)},${Math.max(0, tint.g - 50)},${Math.min(255, tint.b - 40)},0)`)
         ctx.fillStyle = sg
         ctx.fillRect(mp[0] - 14, mp[1], 28, fy - mp[1])
@@ -1462,7 +1559,7 @@ export function drawScene(ctx, g, opts = {}) {
         for (const mo of shaftMotes(tick, mp[2] || 0)) {
             const my = mp[1] + mo.y * mh
             if (my < HUD_LINE || my > fy) continue
-            ctx.fillStyle = `rgba(${Math.min(255, tint.r + 60)},${Math.min(255, tint.g + 60)},255,${(mo.a * tint.s * 0.5).toFixed(3)})`
+            ctx.fillStyle = `rgba(${Math.min(255, tint.r + 60)},${Math.min(255, tint.g + 60)},255,${(mo.a * tint.s * 0.5 * sh31).toFixed(3)})`
             ctx.fillRect(mp[0] + mo.dx, my, 1.5, 1.5)
         }
         const mc = Math.round(mp[0] / T)
@@ -1471,9 +1568,9 @@ export function drawScene(ctx, g, opts = {}) {
             if (c < c0 || c >= c1) continue
             const b = coolBandAt(c * T + T / 2, moonPx)
             if (b <= 0.02) continue
-            ctx.fillStyle = `rgba(${tint.r},${tint.g},${tint.b},${(b * 0.09 * tint.s).toFixed(3)})`
+            ctx.fillStyle = `rgba(${tint.r},${tint.g},${tint.b},${(b * 0.09 * tint.s * sh31).toFixed(3)})`
             ctx.fillRect(c * T + 1, fy - 5, T - 2, 10)
-            ctx.fillStyle = `rgba(${Math.min(255, tint.r + 40)},${Math.min(255, tint.g + 40)},255,${(b * 0.13 * tint.s).toFixed(3)})`
+            ctx.fillStyle = `rgba(${Math.min(255, tint.r + 40)},${Math.min(255, tint.g + 40)},255,${(b * 0.13 * tint.s * sh31).toFixed(3)})`
             ctx.fillRect(c * T + 1, fy - 5, T - 2, 2)
         }
     }
@@ -1495,7 +1592,7 @@ export function drawScene(ctx, g, opts = {}) {
         // flame-side one (two-source props, #343-6): strongest window + its side.
         let cbest = 0, cside = 0
         for (const mp of moonPx) {
-            const cg = coolGlow(Math.hypot(mp[0] - x, mp[1] - y))
+            const cg = coolGlow(Math.hypot(mp[0] - x, mp[1] - y)) * (mp[3] ?? 1)
             if (cg > cbest) { cbest = cg; cside = mp[0] >= x ? 1 : -1 }
         }
         return { warm: lightAt(x, y, torchPx, amb, moonPx), side, temp: tempAt(x, y, torchPx, amb, moonPx), cool: cbest, coolSide: cside }

@@ -1541,7 +1541,11 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
                 && skyline(1).concat(a).every((t) => t.fx >= 0 && t.fx + 2 <= 12 && t.h >= 1 && t.h <= 6)
         })())
     ok('#2330-4 the glass column actually paints disc, skyline and horizon',
-        /moonSpot\(pseed\)/.test(artSrc24) && /skyline\(pseed\)/.test(artSrc24) && /HORIZON_F \* 40/.test(artSrc24))
+        // #2461: the disc position now wanders — painted via moonPane, which
+        // derives from moonSpot. The law stands: the pane paints a disc that is
+        // seed-derived, over skyline + horizon.
+        /moonPane\(pseed/.test(artSrc24) && /moonSpot\(seed\)/.test(artSrc24)
+        && /skyline\(pseed\)/.test(artSrc24) && /HORIZON_F \* 40/.test(artSrc24))
 
     // 24-5 attract sells the grab without touching the pilot: decide() stays the
     // tuned clean route (the SLACK gate depends on it), while the attract loop
