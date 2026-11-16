@@ -1021,12 +1021,12 @@ export function cmdWalk(s, p, r, c) {
 }
 
 // the "A button" use: nearest usable object adjacent to the person
-export function tryUse(s, p) {
+function nearestUse(s, p) {
     let best = null, bd = 3
     for (const it of s.items) {
         if (it.id === 'mail') {
             if (!p.workedToday && !p.working && s.day % 2 === p.worksOn && s.hour >= WORK_START && s.hour < WORK_END - 1
-                && Math.abs(it.r - p.r) + Math.abs(it.c - p.c) <= 2) return cmdWork(s, p)
+                && Math.abs(it.r - p.r) + Math.abs(it.c - p.c) <= 2) return { it, work: true }
             continue
         }
         const d = DEF[it.id]
@@ -1036,8 +1036,66 @@ export function tryUse(s, p) {
         const near = Math.min(...targetsOf(s, it).map((t) => Math.abs(t.r - p.r) + Math.abs(t.c - p.c)))
         if (near < bd) { bd = near; best = it }
     }
-    if (best) return cmdUse(s, p, best)
-    return false
+    return best ? { it: best } : null
+}
+
+export function tryUse(s, p) {
+    const n = nearestUse(s, p)
+    if (!n) return false
+    return n.work ? cmdWork(s, p) : cmdUse(s, p, n.it)
+}
+
+// #2470: pad-A parity — A rides the same queue law as a tap: idle issues now,
+// busy appends the nearest usable object to the resident's list.
+export function tryUseOrQueue(s, p) {
+    const n = nearestUse(s, p)
+    if (!n) return false
+    if (!orderBusy(s, p)) return n.work ? cmdWork(s, p) : cmdUse(s, p, n.it)
+    return n.work ? cmdQueue(s, p, { kind: 'work' }) : cmdQueue(s, p, { kind: 'use', it: n.it })
+}
+
+// ---------------------------------------------------------- queue -------
+// #2470: the original's action queue (The Sims, PC 2000) — while a resident
+// is busy, a new order lands in THEIR queue instead of silently replacing the
+// errand in flight; when the current order ends, the next one re-issues from
+// wherever the resident stands. Idle taps keep today's instant issue, so the
+// attract bot (which never orders while busy, see autonomous) and every older
+// gate play byte-identical.
+
+export const QUEUE_MAX = 3
+
+export function orderBusy(s, p) {
+    return p.faintT > 0 || p.working || !!p.use || !!(p.path && p.path.length) || !!p.goal
+}
+
+export function cmdQueue(s, p, o) {
+    if (p.faintT > 0 || p.working) return false
+    if (p.queue.length >= QUEUE_MAX) {
+        s.events.push({ t: 'queue-full', name: p.name })
+        return false
+    }
+    p.queue.push(o)
+    s.events.push({ t: 'queued', name: p.name, id: o.kind === 'use' ? o.it.id : o.kind })
+    return true
+}
+
+export function queueCancel(s, p, i) {
+    if (i < 0 || i >= p.queue.length) return null
+    const o = p.queue.splice(i, 1)[0]
+    s.events.push({ t: 'queue-cancel', name: p.name, id: o.kind === 'use' ? o.it.id : o.kind })
+    return o
+}
+
+// an order is re-validated at ISSUE time, never trusted from tap time: the
+// object may have been sold, the cat may have lost interest, the mail window
+// may have closed — each honest refusal is seen (cmdUse/cmdWork refuse with
+// their own events) and the next item gets its turn.
+function issueOrder(s, p, o) {
+    if (p.faintT > 0 || p.working) return false
+    if (o.kind === 'walk') return cmdWalk(s, p, o.r, o.c)
+    if (o.kind === 'work') return cmdWork(s, p)
+    if (!s.items.includes(o.it)) return false   // sold or moved on — drop it
+    return cmdUse(s, p, o.it)
 }
 
 // ---------------------------------------------------------- building ------
@@ -2116,6 +2174,7 @@ function finishUse(s, p) {
 function startWork(s, p) {
     p.working = true
     p.workedToday = true
+    p.queue.length = 0   // #2470: off the lot for eight hours — the list goes with the commuter
     s.fastT = Math.max(s.fastT, 6)
     s.events.push({ t: 'work-go', name: p.name })
     s.fastT = 1.5
@@ -2358,6 +2417,7 @@ export function advance(s, dt) {
                 if (p.redT[n] > COLLAPSE_AT) {
                     p.faintT = FAINT_SEC
                     p.path = null; p.goal = null; p.use = null
+                    p.queue.length = 0   // #2470: collapsed on the floor — the list dies with the knees
                     s.events.push({ t: 'faint', name: p.name, x: p.x, y: p.y })
                     think(s, `${p.name} collapses! Someone, help!`)
                 }
@@ -2422,6 +2482,19 @@ export function advance(s, dt) {
                 .map(([r, c]) => ({ r, c }))
             const path = bfsPath(s, { r: p.r, c: p.c }, tg)
             if (path) { p.path = path; p.goal = { kind: 'room' } }
+        }
+        // #2470: the queue plays its turn before the resident drifts back to
+        // their own devices — the tick a delivered order leaves them idle, the
+        // head of the list re-issues from wherever they stand (re-validated;
+        // stale orders drop honestly, and the next item gets its turn).
+        if (p.queue.length && !p.path && !p.goal && !p.use) {
+            let ok = false
+            while (p.queue.length && !ok) {
+                const o = p.queue.shift()
+                ok = issueOrder(s, p, o)
+                if (!ok) s.events.push({ t: 'queue-drop', name: p.name, id: o.kind === 'use' ? o.it.id : o.kind })
+            }
+            if (ok) continue
         }
         autonomous(s, p)
         // idle flavour
@@ -2604,6 +2677,11 @@ export function stateHash(s) {
         mix(p.r); mix(p.c)
         for (const n of NEEDS) mix(p.needs[n])
         mix(p.faintT); mix(p.working ? 1 : 0); mix(p.queue.length)
+        for (const o of p.queue) {   // #2470: plans are state — a queued list changes the hash
+            if (o.kind === 'walk') { mix(o.r * COLS + o.c + 1); continue }
+            if (o.kind === 'work') { mix(-1000); continue }
+            mix(-(s.items.indexOf(o.it) + 2))   // sold since enqueue reads as its own value (-1)
+        }
     }
     mix(s.items.length)
     for (const it of s.items) { mix(it.r); mix(it.c) }
