@@ -29,6 +29,16 @@ export const CFG = {
     maxVY: 0.95,
     maxBlasts: 26,
     score: { icbm: 25, smart: 60, bomber: 45, chain: 40 },
+    // #2473: a duo defender mans TWO tubes against the same named barrage the
+    // solo three tubes answer — the sector budget adds this offset per tube so
+    // the mirrored wave stays holdable. One knob: the harness slack loop
+    // lowers ammoWave and the duo budget follows, keeping the slack rule real.
+    duoAmmo: 6,
+    // #2473 switches so --mutate can prove each duo law load-bearing: the
+    // alternating gate, the sector retarget, and the per-seat ledger.
+    seatGate: true,
+    retargetOn: true,
+    ledgerOn: true,
     spans: [[0, 104], [40, 216], [152, 256]],
     // JINK (#2375): the smart bomb reads the sky for a short-fused detonation
     // bearing down on it and commits sideways, away from the blast point. One
@@ -50,6 +60,58 @@ export const CFG = {
 // ti indexes TARGETS; a dead target keeps its column (the impact reads as a
 // dud on the rubble — legality never depends on a living victim).
 const resolveTarget = (g, ti) => TARGETS[ti] ?? (void g, 128)
+
+// ---- two-player ownership (#2473 — the arcade's alternating batteries) ----
+// The map splits into sectors: P1 holds the west (cities 0-2 + the west
+// battery), P2 the east (cities 3-5 + the east battery); the middle battery
+// is the shared reserve that EITHER defender mans. Solo play never consults
+// any of this (every helper short-circuits on !g.twoP), so the frozen solo
+// hashes cannot move.
+export const SEAT_OF_CITY = [1, 1, 1, 2, 2, 2]
+export const SEAT_OF_BASE = [1, 0, 2]        // 0 = shared reserve
+
+// Which seat may FIRE battery i this wave: its own seat, the shared reserve,
+// or — once a player's sector has fallen — everything, because the survivor
+// mans all six tubes (the arcade's carry-the-flag rescue).
+export const seatOwnsBase = (g, i) => {
+    if (!g.twoP || CFG.seatGate === false) return true
+    const s = SEAT_OF_BASE[i]
+    if (s === 0 || s === g.seat) return true
+    return g.out[s - 1] === true     // the owner sector has fallen — the survivor mans it
+}
+
+// A wave belongs to a seat; an eliminated seat's turn passes to the survivor.
+const seatForWave = (g, wave) => {
+    const s = (wave % 2) + 1
+    return g.out[s] ? (s === 1 ? 2 : 1) : s
+}
+
+// Retarget one script entry onto the active seat's sector by mirroring its
+// column: city k lands in slot k%3 of the defender's three cities; the
+// west/east batteries map to the defender's own battery; the shared reserve
+// stays central. Each warhead then SPAWNS on the defender's own side of the
+// map (W - x0 flip — the scripts' mirror pairs sum to 256), so a seat's
+// wave is the same named script folded into its sector, not a diagonal the
+// solo economy was never tuned against. Bombers keep cruising across.
+const SECTOR_TI = {
+    1: [0, 1, 2, 0, 1, 2, 6, 7, 6],
+    2: [3, 4, 5, 3, 4, 5, 8, 7, 8],
+}
+const retarget = (entry, seat) => {
+    const ti = entry.ti ?? -1
+    const out = { ...entry, ti: ti >= 0 ? SECTOR_TI[seat][ti] : -1 }
+    const x0 = entry.x0 ?? 0
+    if (x0 > 128 && seat === 1) {
+        out.x0 = W - x0
+        if (entry.kind === 'bomber') out.vx = -entry.vx
+    } else if (x0 < 128 && seat === 2) {
+        out.x0 = W - x0
+        if (entry.kind === 'bomber') out.vx = -entry.vx
+    }
+    if (entry.drops) out.drops = entry.drops.map((d) => ({ ...d, ti: d.ti >= 0 ? SECTOR_TI[seat][d.ti] : -1 }))
+    if (entry.split) out.split = { ...entry.split }
+    return out
+}
 
 function nearestTarget(g, x) {
     let best = -1, bd = 1e9
@@ -120,15 +182,25 @@ function spawnChild(g, parent, k) {
 function fire(g, tx, ty) {
     tx = Math.max(2, Math.min(W - 2, tx))
     ty = Math.max(CFG.aimMinY, Math.min(CFG.aimMaxY, ty))
-    let bi = -1, bd = 1e9
+    let bi = -1, bd = 1e9, spanHit = false
     g.bases.forEach((b, i) => {
         if (!b.alive || b.ammo <= 0) return
         const [a, z] = CFG.spans[i]
         if (tx < a || tx > z) return
+        spanHit = true
+        if (!seatOwnsBase(g, i)) return
         const d = Math.abs(b.x - tx)
         if (d < bd) { bd = d; bi = i }
     })
-    if (bi < 0) { g.events.push({ type: 'deny', x: Math.round(tx), y: Math.round(ty), tick: g.tick }); return false }
+    if (bi < 0) {
+        // the arcade's alternating battery says NO in its own voice: firing
+        // across the sector line is a refusal, not an empty tube (#2473).
+        // Solo keeps its exact event shape — only duo annotates the seat.
+        g.events.push(g.twoP && spanHit
+            ? { type: 'denySeat', x: Math.round(tx), y: Math.round(ty), seat: g.seat, tick: g.tick }
+            : { type: 'deny', x: Math.round(tx), y: Math.round(ty), tick: g.tick })
+        return false
+    }
     const b = g.bases[bi]
     b.ammo--
     const sx = b.x, sy = CFG.groundY + 8
@@ -149,22 +221,32 @@ function addBlast(g, x, y, r, chain = false, src = 'iv') {
 
 const freshWave = (g, wave) => {
     g.wave = wave
+    g.seat = g.twoP ? seatForWave(g, wave) : 0
     g.cities = CITIES.map((x) => ({ x, alive: true }))
-    g.bases = BASES.map((x) => ({ x, ammo: CFG.ammoWave, alive: true }))
+    const ammo = g.twoP ? CFG.ammoWave + CFG.duoAmmo : CFG.ammoWave
+    g.bases = BASES.map((x) => ({ x, ammo, alive: true }))
     g.enemies = []; g.intc = []; g.blasts = []
-    g.queue = structuredClone(WAVES[wave].entries)
+    // duo: the same named script, retargeted onto the defender's sector (§2
+    // of the #2473 law) — the barrage itself is never re-authored, only the
+    // columns it falls on alternate with the seat.
+    g.queue = structuredClone(WAVES[wave].entries).map((e) => (g.twoP && CFG.retargetOn ? retarget(e, g.seat) : e))
     g.fired = 0; g.firedBy = [0, 0, 0]; g.kills = 0
     g.phase = 'banner'; g.pT = CFG.bannerLen
-    g.events.push({ type: 'banner', wave, tick: g.tick })
+    g.events.push(g.twoP ? { type: 'banner', wave, seat: g.seat, tick: g.tick } : { type: 'banner', wave, tick: g.tick })
 }
 
-export function makeGame(wave = 0) {
+export function makeGame(wave = 0, opts = {}) {
     const g = {
         tick: 0, playT: 0, wave: 0, phase: 'banner', pT: CFG.bannerLen,
         score: 0, end: null,
         cities: [], bases: [], aim: { x: 128, y: 90 },
         fireHeld: false, fired: 0, firedBy: [0, 0, 0], kills: 0, nextId: 1,
         enemies: [], intc: [], blasts: [], queue: [], events: [],
+        // #2473 — two-player alternating batteries. Solo (the default) never
+        // consults these fields; the seat rides on events and the hash only
+        // when twoP is on, so the frozen solo hashes cannot move.
+        twoP: !!opts.twoP, cpu: opts.cpu || [false, false], seat: 0,
+        pscore: [0, 0], out: [false, false],
     }
     freshWave(g, wave)
     return g
@@ -174,6 +256,9 @@ export const stateHash = (g) => {
     const r1 = (n) => Math.round(n * 10)
     return [
         g.tick, g.wave, g.phase, g.end, g.score,
+        // the two-player ledger rides the hash ONLY when duo is on — solo
+        // replay hashes cannot move (#2473, same opt-in pattern as amoExt)
+        ...(g.twoP ? [`D${g.seat}${g.pscore[0]}-${g.pscore[1]}${g.out[0] ? 'x' : ''}${g.out[1] ? 'x' : ''}`] : []),
         g.cities.map((c) => (c.alive ? 1 : 0)).join(''),
         g.bases.map((b) => `${b.ammo}${b.alive ? 1 : 0}`).join(','),
         g.aim.x.toFixed(1), g.aim.y.toFixed(1), g.fired, g.kills,
@@ -248,9 +333,13 @@ export function step(g, input = {}) {
             const dx = e.x - b.x, dy = e.y - b.y
             if (dx * dx + dy * dy <= b.r * b.r) {
                 e.alive = false
-                g.score += b.chain ? CFG.score.chain : e.score
+                const pts = b.chain ? CFG.score.chain : e.score
+                g.score += pts
+                if (g.twoP && CFG.ledgerOn) g.pscore[g.seat - 1] += pts   // the defender of the wave bags the kill
                 g.kills++
-                g.events.push({ type: 'kill', kind: e.kind, x: Math.round(e.x), y: Math.round(e.y), pts: b.chain ? CFG.score.chain : e.score, chain: !!b.chain, tick: g.tick })
+                g.events.push(g.twoP
+                    ? { type: 'kill', kind: e.kind, x: Math.round(e.x), y: Math.round(e.y), pts, chain: !!b.chain, seat: g.seat, tick: g.tick }
+                    : { type: 'kill', kind: e.kind, x: Math.round(e.x), y: Math.round(e.y), pts, chain: !!b.chain, tick: g.tick })
                 if (CFG.chainR > 0) chains.push([e.x, e.y])
             }
         }
@@ -337,8 +426,17 @@ export function step(g, input = {}) {
             let src = 'dud'
             if (e.ti >= 0 && e.ti < 6 && g.cities[e.ti].alive) {
                 g.cities[e.ti].alive = false
-                g.events.push({ type: 'cityHit', x: CITIES[e.ti], tick: g.tick })
+                g.events.push(g.twoP
+                    ? { type: 'cityHit', x: CITIES[e.ti], seat: SEAT_OF_CITY[e.ti], tick: g.tick }
+                    : { type: 'cityHit', x: CITIES[e.ti], tick: g.tick })
                 src = 'city'
+                // #2473 — a sector whose three cities all fall is OUT: the
+                // survivor mans every battery from the next wave (rescue).
+                if (g.twoP && !g.out[SEAT_OF_CITY[e.ti] - 1] &&
+                    !g.cities.some((c, i) => c.alive && SEAT_OF_CITY[i] === SEAT_OF_CITY[e.ti])) {
+                    g.out[SEAT_OF_CITY[e.ti] - 1] = true
+                    g.events.push({ type: 'seatOut', seat: SEAT_OF_CITY[e.ti], tick: g.tick })
+                }
             } else if (e.ti >= 6 && g.bases[e.ti - 6].alive) {
                 g.bases[e.ti - 6].alive = false
                 g.bases[e.ti - 6].ammo = 0
@@ -350,7 +448,10 @@ export function step(g, input = {}) {
             // the plume carries the MATERIAL it burned through (#2379): a city
             // plume, a battery spark and a rubble puff are not the same fire.
             addBlast(g, e.x, CFG.groundY - 2, CFG.blastR * 0.8, false, src)
-            if (g.cities.every((c) => !c.alive)) {
+            // duo: two sectors dark is the map dark; one standing city — on
+            // either banner — keeps the war alive.
+            const dark = g.twoP ? g.out[0] && g.out[1] : g.cities.every((c) => !c.alive)
+            if (dark) {
                 g.end = 'lose'
                 g.events.push({ type: 'lose', tick: g.tick })
                 return g
@@ -366,8 +467,27 @@ export function step(g, input = {}) {
         const ammo = g.bases.reduce((n, b) => n + (b.alive ? b.ammo : 0), 0)
         const cities = g.cities.filter((c) => c.alive).length
         g.score += ammo * 5 + cities * 10
+        if (g.twoP && CFG.ledgerOn) {
+            // per-seat bonus: your tubes, your cities; the shared reserve is
+            // credited to whoever defended the wave (it only ever fired for
+            // them); a fallen sector's tubes are credited to the survivor who
+            // mans them from here on.
+            for (const s of [1, 2]) {
+                if (g.out[s - 1]) continue
+                let a = 0, c = 0
+                g.bases.forEach((b, i) => {
+                    if (!b.alive) return
+                    const o = SEAT_OF_BASE[i]
+                    if (o === s || (o === 0 && g.seat === s) || (o > 0 && o !== s && g.out[o - 1])) a += b.ammo
+                })
+                g.cities.forEach((cc, i) => { if (cc.alive && SEAT_OF_CITY[i] === s) c++ })
+                g.pscore[s - 1] += a * 5 + c * 10
+            }
+        }
         g.phase = 'clear'; g.pT = CFG.clearLen
-        g.events.push({ type: 'clear', wave: g.wave, ammo, cities, score: g.score, tick: g.tick })
+        g.events.push(g.twoP
+            ? { type: 'clear', wave: g.wave, ammo, cities, score: g.score, seat: g.seat, pscore: g.pscore.slice(), tick: g.tick }
+            : { type: 'clear', wave: g.wave, ammo, cities, score: g.score, tick: g.tick })
     }
 
     return g

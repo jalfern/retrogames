@@ -44,6 +44,47 @@ attack waves."*
   equal the script's `y`, and the cruising altitude must sit inside the aim
   band).
 
+## Two-player alternating batteries (#2473 — the arcade's second console)
+
+Original: **Missile Command** (Atari arcade, 1980) — 2P splits the map and
+takes turns under the sky. Five features, all honoured:
+
+1. **Sectors**: the map is a border — P1 the cyan west (cities 0–2 + the west
+   battery), P2 the amber east (cities 3–5 + the east battery). The middle
+   battery is the shared reserve either defender mans; each player's own two
+   tubes are always theirs.
+2. **Alternating waves** (`g.seat = wave % 2 + 1`): each barrage is one
+   player's defense turn. The named scripts in `waves.js` are never
+   re-authored — `retarget()` folds every entry onto the defender's sector
+   (`SECTOR_TI`: city k → slot k%3 of your three, west/east batteries map to
+   yours, reserve stays central) and flips the spawn column (`W − x0`) so a
+   seat's wave is the same script mirrored into its own sky. Deterministic,
+   replay-stable, still zero-random.
+3. **Per-player ledgers**: kills credit the defender of the wave; the
+   wave-clear bonus splits per seat (own tubes, own cities; the reserve's
+   leftover rides to whoever defended, since only they could spend it).
+4. **Fallen sector + rescue**: a side whose three cities all die during a
+   wave is OUT — its tubes are manned by the survivor from then on (the
+   arcade's carry-the-flag end). The war ends when BOTH sectors go dark;
+   reach the end of GRAND BARRAGE and the sole holder (or the higher ledger
+   if both held) tops the board.
+5. **CPU seat first** (AGENTS.md multiplayer rule): the menu cycles
+   SOLO → YOU + CPU SEAT → 2 HUMAN with **M** (attract only). The autopilot
+   drives seat 2 through the same `decide()` that proofs the attract demo,
+   and it stands down at the sector line because the ownership law lives in
+   the sim, not the shell. On the autopilot's waves the human console is
+   DARK — no launch, no refusal, the arcade's dead second panel. 2 HUMAN
+   shares ONE aim control — arrows + Space on a desktop keyboard, taps on
+   the phone — alternating by turn, and there the sim's `denySeat` voice is
+   what a crossing hand hears. There is deliberately no second touchpad.
+
+**Byte-safety**: every law short-circuits on `!g.twoP`; the seat/ledger rides
+`stateHash` only when duo is on (the `amoExt` pattern — the frozen solo hashes
+cannot move). The duo economy: `CFG.duoAmmo` adds 6 per tube because a sector
+defender mans two tubes against the whole named barrage; the slack rule
+lowers `ammoWave` and the duo budget follows, and every duo wave still holds
+both sectors at 13/tube (`missilecheck` ALTERNATING section).
+
 ## Harness
 
 - `npm run missilecheck` (static CI gate): script audit (targets coverable,
@@ -100,6 +141,15 @@ attack waves."*
   MENAGERIE section in `missilecheck` (shed law, no-early-shed, tell +
   veteran budget, escalation drift 18.9 vs 9.8, material tags) and 3 new
   mutants; the slack rule (9/battery) still wins every wave.)
-- No two-player; the arcade's alternating batteries is one `input` object
+- ~~No two-player; the arcade's alternating batteries is one `input` object
   away, but nobody asked yet. Needs a design stage per Jon's rule (CPU
-  default first), not a drive-by.
+  default first), not a drive-by.~~ **CLOSED by #2473** (the full alternating
+  law is in §Two-player above: sector ownership in the sim, mirrored-column
+  retarget of the named scripts, per-seat ledgers, seatOut + survivor rescue,
+  CPU seat by default, **M** menu cycle, one shared aim control — no second
+  pad, per Jon's rule. Solo hashes frozen; slack holds every duo wave at
+  13/tube.) What stays open: the arcade ran 2P as long as both players
+  stood, so turn parity was never fixed — with three named barrages seat 1
+  defends waves 1 and 3 while seat 2 gets the single middle wave. A six-wave
+  alternating set (two scripts per barrage, parity even) would square it;
+  unscripted work, not a law gap.

@@ -274,5 +274,71 @@ r.check('the banner hands the sky over to the script', !!st, `phase=${(await pro
     r.check('? again hands the sky back', back.screen === 'play')
 }
 
+// ---- #2473 alternating batteries: seats, the sector line, a CPU partner ----
+{
+    // end the solo run in pixels-free shame: six dark cities
+    await ensureSetup({ wave: 1, quiet: true })
+    await waitPlay()
+    for (let i = 0; i < 6; i++) await setup({ killCity: i })
+    await setup({ spawn: { kind: 'icbm', x: 54, y: 170, vy: 1.5, ti: 0 } })
+    await waitEv((ev) => ev.type === 'lose', 160)
+    await wait(1200)
+    await page.keyboard.press('KeyZ') // back to attract
+    await wait(300)
+    await page.keyboard.press('KeyM')
+    r.check('M cycles the arcade mode line', (await probe()).mode === 'coop', `mode=${(await probe()).mode}`)
+    await page.keyboard.press('Space')
+    const duo = await waitPlay(120)
+    r.check('the coop run starts under seat one', !!duo && duo.twoP === true && duo.seat === 1,
+        duo ? `twoP=${duo.twoP} seat=${duo.seat} screen=${duo.screen}` : 'never reached play')
+    r.check('the duo HUD shows two columns', (await page.locator('text=1P').count()) > 0)
+
+    // the sector line refuses a human crossing it — in the sim's own voice
+    await ensureSetup({ wave: 0, quiet: true })
+    await waitPlay()
+    const box0 = await page.evaluate(() => {
+        const r = document.querySelector('canvas[data-mb-stage]').getBoundingClientRect()
+        return { left: r.left, top: r.top, w: r.width, h: r.height }
+    })
+    await page.mouse.click(box0.left + (250 / 256) * box0.w, box0.top + (60 / 224) * box0.h)
+    const refusal = await waitEv((ev) => ev.type === 'denySeat' && ev.seat === 1, 60)
+    r.check('deep east on seat one: the sector says NO in its own voice', !!refusal,
+        refusal ? '' : JSON.stringify((await probe()).evLog.slice(-5).map((e) => e.type)))
+    await page.mouse.click(box0.left + (54 / 256) * box0.w, box0.top + (60 / 224) * box0.h)
+    const own = await waitEv((ev) => ev.type === 'ifire', 60)
+    r.check('inside its own sector the partner fires freely', !!own && (own.bat === 0 || own.bat === 1),
+        own ? `bat=${own.bat}` : 'no launch')
+
+    // seat two: SATURATION lands on the amber east and the autopilot takes
+    // the keys nobody is touching
+    await ensureSetup({ wave: 1 })
+    const s2 = await waitPlay(140)
+    r.check('wave two belongs to seat two', !!s2 && s2.seat === 2, `seat=${(await probe()).seat}`)
+    // seat two is the autopilot's watch: the human console is DARK — the
+    // arcade's dead second panel. Not a refusal, silence: no launch on the
+    // partner's sky while the autopilot holds it. (In 2 HUMAN the sector
+    // law covers the same line out loud, with denySeat — proven above on
+    // seat one's watch.)
+    const evLen = (await probe()).evLog.length
+    await page.mouse.click(box0.left + (20 / 256) * box0.w, box0.top + (60 / 224) * box0.h)
+    await wait(1000)
+    const after = await probe()
+    const crossed = after.evLog.slice(evLen).some((e) => e.type === 'ifire' && e.tx < 100)
+    r.check('the human console is dark on the autopilot watch', !crossed,
+        crossed ? 'a human interceptor flew on the CPU seat\'s watch' : '')
+    let cpuShot = false
+    for (let i = 0; i < 200 && !cpuShot; i++) { cpuShot = (await probe()).intc.length > 0; if (!cpuShot) await wait(50) }
+    r.check('the CPU seat fires with nobody touching the keys', cpuShot)
+    const earned = await waitEv((ev) => ev.type === 'kill' && ev.seat === 2, 400)
+    r.check('seat two bags kills on its own watch', !!earned, earned ? '' : JSON.stringify((await probe()).enemies.map((e) => e.kind)))
+    r.check('the amber column paid up', (await probe()).pscore[1] > 0, `pscore=${JSON.stringify((await probe()).pscore)}`)
+
+    // and the wheel comes off: the rig sets the mode directly (the M-key
+    // cycle was proven above; forcing a second duo loss would need impacts
+    // the rig's pokes deliberately skip)
+    await setup({ mode: 'solo' })
+    r.check('the arcade mode returns to SOLO cleanly', (await probe()).mode === 'solo', `mode=${(await probe()).mode}`)
+}
+
 r.check('zero page errors for the whole session', errors.length === 0, errors.slice(0, 3).join(' | '))
 r.exit(browser)

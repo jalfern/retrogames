@@ -8,7 +8,7 @@
 // unanswered work it hunts loaded bombers — a pre-drop kill cancels every
 // drop they still carry (issue #2306).
 
-import { CFG } from './sim.js'
+import { CFG, seatOwnsBase } from './sim.js'
 import { step } from './sim.js'
 
 export const MAX_TAU = 340
@@ -49,7 +49,7 @@ export function decide(g, held) {
         // legal while the tubes can cover that reserve after spending one
         // round on the bomber (chains make this conservative, never loose).
         const reserve = live.filter((e) => !inBlast(e) && !(held.get(e.id) > g.tick)).length
-        const ammo = g.bases.reduce((n, b) => n + (b.alive ? b.ammo : 0), 0)
+        const ammo = g.bases.reduce((n, b, i) => n + (b.alive && seatOwnsBase(g, i) ? b.ammo : 0), 0)
         if (ammo <= reserve) return {}
         const dropETA = (e) => Math.min(...e.drops.filter((d) => !d.done).map((d) => d.t - (g.playT - e.spawnAt)))
         const bombs = g.enemies.filter((e) => e.kind === 'bomber' && e.alive &&
@@ -66,6 +66,7 @@ export function decide(g, held) {
     const feasible = []
     g.bases.forEach((b, i) => {
         if (!b.alive || b.ammo <= 0) return
+        if (!seatOwnsBase(g, i)) return   // #2473: the autopilot respects the alternating battery too
         const [a, z] = CFG.spans[i]
         if (e.x < a || e.x > z) return
         feasible.push(i)
