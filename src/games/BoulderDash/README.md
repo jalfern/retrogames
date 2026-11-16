@@ -161,9 +161,35 @@ oldest actionable gap. `sim.js` now has the second kind:
   butterflies light nothing and the automaton only ever touches open ground),
   while a digger dawdling the lane gets eaten (pinned by replay).
 
+## The transport butterfly (#2463 — the originals' gem-carrying stage)
+`CFG.flyCarry` (levels opt in by declaring `dropCells` — `carryExt`, the
+amoExt/flyExt pattern: caves without ferries hash and replay byte-identical):
+- **The grab**: a free (unloaded, non-boring) butterfly flies ONTO a diamond
+  and takes it instead of bouncing — the firefly burns, the butterfly hauls.
+- **The release**: at a level-declared drop cell the cargo lets go — a real,
+  collectable gem. The pad's steel floor is the law that keeps it a gem (no
+  fall, no greed-convert). A pad still holding a gem REFUSES the next fly
+  (diamonds block flies) — deliveries serialise, nothing is cloned, and a fly
+  will not drop onto a digger squatting the pad (collection is never a coin
+  flip).
+- **The burden is mortal**: delivering perishes the bearer (`carryDone`) — the
+  originals' "carries until it dies", our one honest simplification being that
+  the burden itself is what kills (our flies are otherwise unkillable).
+- **The dive is one-way**: `meta.mine` lists the loaded-only column down to the
+  pad. An unburdened butterfly REFUSES mine cells (the weaver never dives), a
+  loaded fly never climbs back out — so a loaded fly in the shaft is a delivery
+  in progress, and containment of the harvest is a rule, not a hope. The
+  planner's BFS treats the mine as void and escorts instead: with the quota
+  short and no diggable gem left, `planStep` routes to the pad's face cell and
+  waits — the escort branch is opt-in via carryExt.
+- **SILK GULCH (cave 9)**: quota 6 = seam 3 + pocket gem 1 + TWO ferried
+  (loaded butterflies `carry:1` at level). With `flyCarry` silenced the ferried
+  supply stops existing — dashcheck strands the planner below quota and the
+  gate goes red: the transport is the quota, not decoration.
+
 ## Verify
 ```bash
-npm run dashcheck             # 184 checks: every cave winnable, replay
+npm run dashcheck             # 235 checks: every cave winnable, replay
                               # determinism, rule pins (crush, gem-dirt, fire),
                               # FLY RELEASE (#2364: escape, containment, chicken;
                               # #2374: dust-mark seam pin),
@@ -180,8 +206,13 @@ npm run dashcheck             # 184 checks: every cave winnable, replay
                               # BUTTERFLY DRIFT (#2453: corridor-invariance by
                               # law, open-ground weave, GOSSAMER HOLLOW descent,
                               # sealed-lane law, cool harvest, flap-state hash,
-                              # opt-in-only flyExt on caves 1-7)
-npm run dashcheck -- --mutate # 198: +14 — every CFG switch silenced goes red
+                              # opt-in-only flyExt on caves 1-7),
+                              # BUTTERFLY FERRY (#2463: pad laws — land/rest/
+                              # serialise/perish, one-way dive, loaded-only
+                              # mine, ferry-only strand with flyCarry muted,
+                              # SILK GULCH live win, cargo-hash determinism +
+                              # opt-in exclusivity, truthful marks)
+npm run dashcheck -- --mutate # 250: +15 — every CFG switch silenced goes red
 npm run dashplay              # 49 real-key checks: attract→play→win→restart on
                               # FLY PIT + SLIME VAULT + GOO GALLERY + FORK BASIN
                               # + GOSSAMER HOLLOW, waves expiring on their own
@@ -203,7 +234,10 @@ blind sleeps) makes it deterministic.
   are waves whose heads reverse or spawn on player action; those are not.
 - A push wall slides on flat ground only — there is no "wall falls and keeps
   sliding" combo, and no pull mechanics (faithful to the era, but a simplification).
-- The butterfly (#2453) flits but does not *carry*: the originals' butterflies
-  could grab a diamond and drop it later on the far side of the cave; ours
-  contaminates by contact only. One bite per gap — gem-carrying is a candidate
-  stage of its own.
+- The butterfly (#2453) flits, and since #2463 it also *carries* (SILK GULCH).
+  Honest simplifications of the transport: the burden perishes at the drop
+  (the originals' carriers could also be shot down mid-air — nothing shoots
+  here), one gem per bearer, and the load is chosen by the level (a born-loaded
+  transport), not picked from a vault the wings alone could seal (in this CA the
+  digger can always dig where the fly can fly — so the ferry's exclusivity is
+  supply arithmetic + the loaded-only mine law, proven by the strand test).
