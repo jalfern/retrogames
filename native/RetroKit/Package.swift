@@ -5,6 +5,8 @@
 //                  The ports' sim cores and their Mac CLIs depend on it.
 //   RetroKitApp  — the app shell pieces: the Synth voice engine, seat-based
 //                  Controls, the -selfcheck runner. Apps only.
+//   MiniThree    — the three.js subset the arcade's 3D games use, on Metal
+//                  (README.md: what it supports, how a render.js ports).
 import PackageDescription
 
 let package = Package(
@@ -13,9 +15,11 @@ let package = Package(
     products: [
         .library(name: "RetroKit", targets: ["RetroKit"]),
         .library(name: "RetroKitApp", targets: ["RetroKitApp"]),
+        .library(name: "MiniThree", targets: ["MiniThree"]),
     ],
     targets: [
         .target(name: "RetroKit"),
         .target(name: "RetroKitApp", dependencies: ["RetroKit"]),
+        .target(name: "MiniThree"),
     ]
 )
