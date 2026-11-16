@@ -64,6 +64,12 @@
 //                  collection pays fun/bond/one content, and a missed set-out
 //                  skips the whole cycle honestly; hash carries and the wish
 //                  still lands.
+//  14. ICE CREAM TRUCK (#2503) — the jingle passes on warm afternoons: an
+//                  arithmetic hour (never rng) drops one cone at the curb per
+//                  day, the till pays for it (broke refuses at the tap and at
+//                  the curb), one serving retires with the sale, the child
+//                  beats the toy box to it, and the leftovers leave with the
+//                  truck; hash carries and the wish still lands.
 //
 // It proves IT can fail the playbook way: break one load-bearing line in sim.js
 // (content accrual in finishUse, or the relAdd(s,'fern') feed in the visitor
@@ -98,6 +104,7 @@ import {
     GIFT_LAND_T, VISIT_TIMBRE,   // #2240: the set-down basket + the visitor timbres
     YARN_CD, YARN_CAT_FUN, YARN_BOND, YARN_SOCIAL, YARN_PLAY_T, PET_SELF_FUN, PET_BORED, yarnOrderOk,   // #2256: the yarn ball — ordered play + the cat's own game
     BIN, BIN_HOME, BIN_CURB, GARBAGE_EVERY, TRUCK_DUE, BIN_FUN, BIN_BOND, binOrderOk,   // #2303: garbage day — the eve, the curb, the truck
+    CONE, CONE_PRICE, ICE_DUE, ICE_WINDOW, ICE_FUN, ICE_KID_FUN, KID_ICE_FLOOR, coneOrderOk, ringTruck, icePassHour, ICE_TIMBRE,   // #2503: the ice-cream truck — the jingle, the curb, the price, the chase
 } from '../src/games/Homebody/sim.js'
 import { readFileSync } from 'node:fs'
 
@@ -711,7 +718,7 @@ section('FEEL — walk surfaces + refusal (#1823)')
     const feelJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
     check('pin: footfalls carry their surface', /t: 'step', surf: groundOf\(s, p\.r, p\.c\)/.test(feelSim))
     check('pin: both walk routes feed the footfall meter', /footstep\(s, p, budget - step\)/.test(feelSim) && /footstep\(s, p, Math\.abs\(p\.x - ox\)/.test(feelSim))
-    check('pin: every refusal branch emits its event', (feelSim.match(/t: 'refuse'/g) || []).length === 9)   // #2197/#2203: the two adoption counters make the fifth door that answers; #2256: the yarn ball answers twice — at the order and at the finish; #2303: the bin answers twice too
+    check('pin: every refusal branch emits its event', (feelSim.match(/t: 'refuse'/g) || []).length === 13)   // #2197/#2203: the two adoption counters make the fifth door that answers; #2256: the yarn ball answers twice — at the order and at the finish; #2303: the bin answers twice too; #2503: the cone answers at the order, at the finish (gone or broke), and at the child's curb
     check('pin: the shell plays three distinct step timbres', /e\.surf === 'floor'[\s\S]*e\.surf === 'path'/.test(feelJsx))
     check('pin: the refusal flashes a red ghost cell', /refuses\.push\(\{ r: e\.r, c: e\.c/.test(feelJsx) && /fillStyle = '#e23b2e'/.test(feelJsx))
 }
@@ -2753,7 +2760,7 @@ section('YARN BALL (#2256): ordered play, honest refusals, the cat\u2019s own ga
     check('the lifetime wish still lands with the yarn shelf open', w.done === 'win')
 
     // source pins — the wiring must not silently drop
-    check('pin: cat-only is skipped by BOTH generic fun hunts', (yarnSim.match(/d\.catOnly \|\| d\.binOnly\) continue/g) || []).length >= 2)   // #2303: the bin's exclusion rides the same lines
+    check('pin: cat-only is skipped by BOTH generic fun hunts', (yarnSim.match(/d\.catOnly \|\| d\.binOnly(?: \|\| d\.truckOnly)?\) continue/g) || []).length >= 2)   // #2303: the bin's exclusion rides the same lines; #2503: and the cone's joins them (generic hunts never spend the till)
     check('pin: the order gate is one honest voice', /catOnly && !yarnOrderOk\(s\)/.test(yarnSim) && /export function yarnOrderOk/.test(yarnSim))
     check('pin: the finish pays cat fun, social, bond and content', /cat\.needs\.fun = Math\.min\(1, cat\.needs\.fun \+ YARN_CAT_FUN\)/.test(yarnSim) && /relAdd\(s, 'house', YARN_BOND\)/.test(yarnSim))
     check('pin: the cooldown rides advance and the hash', /if \(s\.yarnCd > 0\) s\.yarnCd = Math\.max\(0, s\.yarnCd - dt\)/.test(yarnSim) && /mix\(s\.yarnCd\)/.test(yarnSim))
@@ -2890,6 +2897,148 @@ section('GARBAGE DAY (#2303): the eve sets out, dawn resolves, a miss is honest'
         && /GARBAGE TOMORROW — WHEEL OUT THE BIN/.test(gJsx) && /THE TRUCK PASSED US BY/.test(gJsx) && /GARBAGE DAY EVERY THIRD DAY/.test(gJsx))
     check('pin: the tap answers honestly out of season', /DEF\[it\.id\]\.binOnly/.test(gJsx) && /NO COLLECTION TONIGHT/.test(gJsx))
     check('pin: the art ships the bin', /case 'bin'/.test(gArt))
+}
+
+// ---------------------------------------------- ICE CREAM TRUCK (#2503) ----
+section('ICE CREAM TRUCK (#2503): the jingle passes, the cone sells, the truck moves on')
+{
+    const keepAlive = (g) => { for (const q of g.people) { q.faintT = 0; q.needs.hunger = Math.max(q.needs.hunger, 0.8); q.needs.energy = Math.max(q.needs.energy, 0.8); q.needs.bladder = Math.max(q.needs.bladder, 0.8) } }   // the household being alive is not what these gates test
+
+    // the cone belongs to the street — never a card, never for sale
+    const s0 = newRun(41)
+    check('the cone is a walkable street-owned object, never a catalog card',
+        CONE.need === 'fun' && CONE.solid === false && CONE.truckOnly === true && !CATALOG.some((d) => d.id === 'cone'))
+    check('a fresh lot has no cone and an empty ledger',
+        s0.cone === null && s0.iceDay === 0 && s0.iceSerial === 0 && s0.treats === 0 && !s0.items.some((it) => it.id === 'cone'))
+    check('the truck-not-here order refuses at the cell',
+        !coneOrderOk(s0) && !cmdUse(s0, s0.people[0], { id: 'cone', r: 12, c: 5 })
+        && drain(s0).some((e) => e.t === 'refuse' && e.r === 12 && e.c === 5))
+    check('the cone cannot be sold', sellAt(s0, 12, 5) === false && s0.money === newRun(41).money)
+
+    // the schedule law: arithmetic off the day, never rng, never banked
+    check('the pass hour sits inside the warm-afternoon window, day after day',
+        Array.from({ length: 30 }, (_, i) => icePassHour(i + 1)).every((h) => h >= ICE_DUE[0] && h < ICE_DUE[1]))
+    check('the pass hour is pure arithmetic — the same day names the same hour',
+        icePassHour(9) === icePassHour(9) && icePassHour(9) !== icePassHour(10))
+
+    // the organic pass: land, idle, leave — the day stamp is the law
+    const s1 = newRun(42)
+    let truckEv = null, goneEv = null, landHour = 0, landCone = false, landDay = 0, landSerial = 0, landMoney = 0, n = 0
+    while (!goneEv && s1.day === 1 && n++ < 60 * 60 * 6) {
+        advance(s1, DT); keepAlive(s1)
+        const ev = drain(s1)
+        if (!truckEv && ev.some((e) => e.t === 'ice-truck')) { truckEv = true; landHour = s1.hour; landCone = !!s1.cone; landDay = s1.iceDay; landSerial = s1.iceSerial; landMoney = s1.money }
+        if (ev.find((e) => e.t === 'ice-gone')) goneEv = true
+    }
+    check('the truck stops — one cone at the curb, the day stamped, nothing paid yet',
+        !!truckEv && landCone && landDay === 1 && landSerial === 1 && landMoney === newRun(42).money
+        && landHour >= icePassHour(1) && landHour < icePassHour(1) + 0.1, `${landHour.toFixed(2)}h`)
+    check('the window closes — the leftover cone goes with the truck', !!goneEv && s1.cone === null && !s1.items.some((it) => it.id === 'cone'))
+    const s1b = newRun(50)
+    let trucks = { 1: 0, 2: 0 }, m = 0
+    while (!(s1b.day === 2 && s1b.hour > icePassHour(2) + ICE_WINDOW + 0.5) && m++ < 60 * 60 * 8) {
+        advance(s1b, DT); keepAlive(s1b)
+        if (drain(s1b).some((e) => e.t === 'ice-truck')) trucks[s1b.day]++
+    }
+    check('one truck a day, both days, the stamp neither double-drops nor banks',
+        trucks[1] === 1 && trucks[2] === 1 && s1b.iceSerial === 2, `day1 ${trucks[1]}, day2 ${trucks[2]}`)
+
+    // the buy: the till pays, fun lands, the cone leaves the street
+    const s2 = newRun(43)
+    ringTruck(s2); advance(s2, DT)
+    check('a rigged ring lands a fresh cone and the order gate stands', !!s2.cone && coneOrderOk(s2))
+    check('the tap issues the order', cmdUse(s2, s2.people[0], s2.cone))
+    let bought = null, m0 = s2.money, fun0 = s2.people[0].needs.fun
+    for (let i = 0; i < 60 * 40 && !bought; i++) { advance(s2, DT); keepAlive(s2); bought = drain(s2).find((e) => e.t === 'ice-cream') || null }
+    check('the walk pays the till, pays the fun bar, and retires the cone',
+        !!bought && m0 - s2.money === CONE_PRICE && s2.treats === 1 && s2.cone === null
+        && s2.people[0].needs.fun >= Math.min(1, fun0 + ICE_FUN))
+
+    // honest refusals — broke at the tap, broke at the finish
+    const s3 = newRun(44)
+    ringTruck(s3); advance(s3, DT)
+    s3.money = CONE_PRICE - 1
+    check('an order with empty pockets refuses at the tap',
+        !coneOrderOk(s3) && !cmdUse(s3, s3.people[0], s3.cone) && drain(s3).some((e) => e.t === 'refuse') && s3.treats === 0)
+    const s4 = newRun(45)
+    ringTruck(s4); advance(s4, DT)
+    cmdUse(s4, s4.people[0], s4.cone)
+    s4.money = 0
+    let brokeEv = null
+    for (let i = 0; i < 60 * 40 && !brokeEv; i++) { advance(s4, DT); keepAlive(s4); brokeEv = drain(s4).find((e) => e.t === 'refuse') || null }
+    check('a till drained mid-walk refuses at the curb — the wasted steps are the cost, the cone stays for a paying hand',
+        !!brokeEv && s4.treats === 0 && !!s4.cone)
+
+    // one serving per cone — whoever reaches first eats it
+    const s5 = newRun(46)
+    ringTruck(s5); advance(s5, DT)
+    const cone5 = s5.cone
+    const o1 = cmdUse(s5, s5.people[0], cone5), o2 = cmdUse(s5, s5.people[1], cone5)
+    let nBuy = 0, nNo = 0
+    for (let i = 0; i < 60 * 60 && nBuy + nNo < 2; i++) {
+        advance(s5, DT); keepAlive(s5)
+        const ev = drain(s5)
+        nBuy += ev.filter((e) => e.t === 'ice-cream').length
+        nNo += ev.filter((e) => e.t === 'refuse').length
+    }
+    check('one cone, one serving — the late hand is refused at the curb', o1 && o2 && nBuy === 1 && nNo === 1 && s5.treats === 1)
+
+    // the child's law: Pip chases the jingle and pays from the till
+    const s6 = newRun(47)
+    adoptKid(s6)
+    ringTruck(s6)
+    let kidEv = null
+    for (let i = 0; i < 60 * 60 && !kidEv; i++) { autoStep(s6, DT); kidEv = drain(s6).find((e) => e.t === 'kid-ice') || null }
+    check('with the jingle up the child beats the toy box to the curb and pays for the joy',
+        !!kidEv && s6.treats === 1 && s6.kid.needs.fun >= ICE_KID_FUN - 0.01)
+
+    // midnight takes whatever the window somehow kept
+    const s8 = newRun(49)
+    s8.hour = 23.5
+    ringTruck(s8); advance(s8, DT)
+    check('a rigged late stop may stand', !!s8.cone)
+    runFor(s8, 3)   // 3 real seconds crosses midnight at 5 s per sim-hour
+    check('midnight rots the late cone — the truck is home, nothing waits for tomorrow',
+        s8.day === 2 && s8.cone === null && !s8.items.some((it) => it.id === 'cone'))
+
+    // the ledger rides the hash
+    const s9 = newRun(51)
+    const hPre = stateHash(s9)
+    ringTruck(s9); advance(s9, DT)
+    check('the standing cone moves the hash', stateHash(s9) !== hPre)
+    const h1 = stateHash(s9)
+    s9.iceDay += 1; check('the stop stamp rides the hash', stateHash(s9) !== h1)
+    s9.iceDay -= 1; s9.iceSerial += 1; check('the cone serial rides the hash', stateHash(s9) !== h1)
+    s9.iceSerial -= 1; s9.treats += 1; check('the treats ledger rides the hash', stateHash(s9) !== h1)
+
+    // the win economy is untouched: the wish still lands with the truck running
+    const w = play(1)
+    check('the lifetime wish still lands with the ice-cream man on the street', w.done === 'win')
+
+    // source pins — the wiring must not silently drop
+    const iSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const iJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const iArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    const iBody = iSim.match(/function updateIceCream\(s\) \{[\s\S]*?\n\}/)?.[0] || 'MISSING'
+    check('pin: the order gate is one honest voice', /truckOnly && !coneOrderOk\(s\)/.test(iSim) && /export function coneOrderOk/.test(iSim))
+    check('pin: the clock\u2019s own paths draw no rng (the #2303 lesson)', /function updateIceCream\(s\)/.test(iSim) && iBody !== 'MISSING' && !/s\.rng\(\)|pick\(s,/.test(iBody) && /updateIceCream\(s\)/.test(iSim))
+    check('pin: the till pays, fun pays, the ledger stamps', /s\.money -= CONE_PRICE/.test(iSim) && /p\.needs\.fun = Math\.min\(1, p\.needs\.fun \+ ICE_FUN\)/.test(iSim) && /s\.treats\+\+/.test(iSim))
+    check('pin: the generic hunts never spend the till', (iSim.match(/d\.truckOnly\) continue/g) || []).length >= 2)
+    check('pin: the child chase is till-gated, floor-gated, and outranks the toy box',
+        /!k\.treat && s\.cone && s\.money >= CONE_PRICE && k\.needs\.fun < KID_ICE_FLOOR/.test(iSim)
+        && iSim.indexOf('the ice-cream law') >= 0 && iSim.indexOf('the ice-cream law') < iSim.indexOf('// play: a bored child hunts'))
+    check('pin: it rides the hash', /mix\(s\.iceDay\); mix\(s\.iceSerial\); mix\(s\.treats\)/.test(iSim) && /mix\(s\.cone \? 1 : 0\)/.test(iSim))
+    check('pin: the sale refuses the cone', /it\.id === 'bin' \|\| it\.id === 'cone'/.test(iSim))
+    check('pin: the shell voices the whole stop and the marquee teaches it',
+        /case 'ice-truck'/.test(iJsx) && /case 'ice-cream'/.test(iJsx) && /case 'kid-ice'/.test(iJsx) && /case 'ice-gone'/.test(iJsx)
+        && /THE ICE CREAM MAN COMES/.test(iJsx) && /THE TRUCK MOVED ON/.test(iJsx) && /CHASED THE TRUCK DOWN/.test(iJsx)
+        && /ICE CREAM MAN PASSES EVERY AFTERNOON/.test(iJsx))
+    check('pin: out-of-season taps answer honestly, and the marquee price is the till price',
+        /DEF\[it\.id\]\.truckOnly/.test(iJsx) && /THE TILL IS SHORT OF/.test(iJsx) && /THE TRUCK IS NOT ON THE STREET/.test(iJsx)
+        && CONE_PRICE === 2 && /\u00a7\$\{CONE_PRICE\}/.test(iJsx))
+    check('pin: the jingle is a five-note music-box table', Array.isArray(ICE_TIMBRE) && ICE_TIMBRE.length === 5 && ICE_TIMBRE.every(([f, d, ms]) => f > 0 && d > 0 && ms >= 0))
+    check('pin: the art ships the cone', /case 'cone'/.test(iArt))
+    check('pin: the scenario ring ships — F1 cheat and dev hook', /RING TRUCK/.test(iJsx) && /ringTruck: \(\)/.test(iJsx))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)

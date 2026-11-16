@@ -397,6 +397,30 @@ export function drawItemAt(ctx, id, x, y, t, night = 0) {
             ctx.beginPath(); ctx.ellipse(x + 16, y + 30, 7, 2, 0, 0, 7); ctx.fill()
             break
         }
+        case 'cone': {
+            // #2503: the soft-serve standing at the curb — a waffle cone with
+            // crosshatch, pastel twin swirls and a cherry gleaming on top.
+            // It keeps a shadow of its own (decor skips the generic one).
+            ctx.fillStyle = '#b07a3f'
+            ctx.beginPath(); ctx.moveTo(x + 11, y + 16); ctx.lineTo(x + 21, y + 16); ctx.lineTo(x + 16, y + 28); ctx.closePath(); ctx.fill()
+            ctx.strokeStyle = '#8a5c2a'; ctx.lineWidth = 1
+            ctx.beginPath()
+            ctx.moveTo(x + 12.4, y + 19); ctx.lineTo(x + 19.6, y + 19)
+            ctx.moveTo(x + 13.4, y + 22); ctx.lineTo(x + 18.6, y + 22)
+            ctx.moveTo(x + 14.4, y + 25); ctx.lineTo(x + 17.6, y + 25)
+            ctx.stroke()
+            ctx.fillStyle = '#ffe9f0'
+            ctx.beginPath(); ctx.arc(x + 16, y + 13.5, 5.4, 0, 7); ctx.fill()
+            ctx.fillStyle = '#ffc9dd'
+            ctx.beginPath(); ctx.arc(x + 16, y + 9.5, 4.2, 0, 7); ctx.fill()
+            ctx.fillStyle = '#c94f43'
+            ctx.beginPath(); ctx.arc(x + 16, y + 5.4, 2.1, 0, 7); ctx.fill()
+            ctx.fillStyle = '#fff'
+            ctx.fillRect(x + 15, y + 4.4, 1, 1)          // the cherry's gleam
+            ctx.fillStyle = 'rgba(30,20,10,0.16)'
+            ctx.beginPath(); ctx.ellipse(x + 16, y + 29.5, 6.5, 2, 0, 0, 7); ctx.fill()
+            break
+        }
         default: break
     }
     // soft ground shadow under solids

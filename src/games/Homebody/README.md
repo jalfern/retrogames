@@ -216,7 +216,7 @@ see §Speed dial.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 585 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), garbage day — roster, eve set-out, dawn collection, honest skip, hash (#2303), winnable seeds, determinism
+npm run peoplecheck          # 620 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), garbage day — roster, eve set-out, dawn collection, honest skip, hash (#2303), ice-cream truck — arithmetic stop, paid buy, broke refusals, one serving, kid chase, rot, hash (#2503), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -632,6 +632,58 @@ eve/collection/autonomy gates go red (585 → 578/7); `s.skips++ → s.skips = 0
 the bin) — the law it owns is BUYING, and the paper/bells/bin eras made the
 raw item count a stale proxy (the gate flaked red on main for exactly that).
 
+## Ice cream truck (#2503) — the lot buys its afternoons
+
+The clause's fourth hour-scheduled citizen after the paper, the bells and the
+garbage truck (The Sims, PC 1990/2000: the ice-cream man rolls down the street
+on warm afternoons and the young ones run out with money in hand). **CONE**
+joins `DEF` but never `CATALOG` (nobody stocks a soft-serve stand):
+`solid:false, truckOnly:true, need:'fun', amt:0` — walkable and tappable like
+the other street pieces, generic self-service skips it (the same `continue`
+lines that carry `catOnly`/`binOnly` — a paid treat is not a free need-stop),
+the sale refuses, and `finishUse` answers it with its own branch before the
+generic pay, so the luxury never feeds the win economy by accident.
+
+- **Schedule law, arithmetic never rng** (#2303's lesson re-paid): the pass
+  hour is `ICE_DUE[0] + day-hash % 2·h` — inside 14:00–16:00, landing by
+  `due + ICE_WINDOW` (2 sim-hours — sized so the walk from the far rooms
+  still lands inside it, the #2244 lesson). **One truck a day** — the day
+  stamp is the gate; a window that ran out is gone honestly, never banked,
+  and midnight rots whatever a rigged late stop left standing.
+- **The buy.** While the truck idles, the cone stands at the curb cell
+  (gate-side) and `coneOrderOk` stands: tap / pad-A issues the order, and
+  the finish pays `CONE_PRICE` (§2) from the till, fun +`ICE_FUN`, treats
+  ledger +1, and the cone leaves the street with the sale — **one serving
+  per cone**, whoever reaches first eats it, the late hand is refused at the
+  curb (the meal-serial doctrine at ice-cream scale). Broke refuses at the
+  tap in words, and a till drained mid-walk refuses at the curb: the wasted
+  steps are the cost. The money leaves the till, the fun lands, content pays
+  nothing — the win economy is untouched (the bin doctrine, honest size).
+- **Children first.** While a cone stands, the till can pay and joy has not
+  overflowed (`fun < KID_ICE_FLOOR`), Pip routes to the curb BEFORE the toy
+  box — the kid's own law in `updateKid`, the cook-beats-snacking precedent;
+  the attract demo visibly chases the truck. Adult cones are ordered by hand
+  (autonomy never spends the till — the bot-borrows-for-the-bin lesson kept).
+- **The jingle.** Five rising music-box notes (`ICE_TIMBRE`, played verbatim
+  by the shell — the VISIT/MEAL_TIMBRE pattern), pastel glints at the curb;
+  a bought cone pops an octave higher for a child; the gone tail falls
+  880→523 with a pastel puff where the cone stood (the cold-plate doctrine).
+  The marquee teaches the whole law in one line; F1 `RING TRUCK` (and the
+  `ringTruck` harness hook) calls the man on demand for scenario setup.
+- **Determinism.** The clock's own paths draw no rng — landing, wording
+  (`iceDay`/`iceSerial` arithmetic) and the child's refusal lines alike.
+  `iceDay`/`iceSerial`/`treats` ride `stateHash`; the cone's cell rides the
+  items loop; the WINNABLE seeds still win with the truck running.
+
+Gates: `peoplecheck` §ICE CREAM TRUCK (35 pins: lot-owned object, arithmetic
+schedule law, one-truck-a-day stamp across two days, land + nearest-free
+fallback, honest refusals (no truck / broke at tap / broke at the curb), the
+paid buy, one serving, midnight rot, kid-first chase, hash carries for
+serial/stamp/ledger/cone, wish-still-lands, source pins incl. the no-rng-on-
+the-clock pin and the marquee price bound to `CONE_PRICE`). Mutant proven:
+`!coneOrderOk(s) → false` at the order gate — exactly the two order-refusal
+gates go red (620 → 618/2); restore.
+
 ## Queue polish (#2474) — the NOW is seen, the append is named
 
 Two fidelity laws on the #2470 action queue, no rule change:
@@ -736,9 +788,10 @@ adoptable child (see Kids (#2203)).
   panel pips are tappable — see §Speed dial).
 - Day/night is cosmetic + decay only — the paper route (#2238, §Paper route
   below) is its first hour-scheduled citizen, the meal bells (#2244,
-  §Meal bells below) its next two, and **CLOSED by #2303** the garbage truck
-  (§Garbage day below) keeps the street. Nothing else on the lot keeps hours
-  beyond work, Ivy's rounds and the morning news.
+  §Meal bells below) its next two, **CLOSED by #2303** the garbage truck
+  (§Garbage day below) keeps the street, and **CLOSED by #2503** the
+  ice-cream man (§Ice cream truck below) sells the hot afternoon. Nothing
+  else on the lot keeps hours beyond work, Ivy's rounds and the morning news.
 - Needs panel shows both residents; no per-object queue display like the
   original. — **CLOSED by #2470** (per-resident action queue: a tap on an
   object/mail/floor while the resident is busy with one of THEIR OWN errands

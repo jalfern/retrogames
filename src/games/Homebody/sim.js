@@ -2136,7 +2136,7 @@ function updateKid(s, dt) {
             think(s, ICE_KID_LINES[s.treats % ICE_KID_LINES.length].replace('{k}', k.name))
         } else {
             s.events.push({ t: 'refuse', r: k.r, c: k.c })
-            think(s, pick(s, it ? ICE_BROKE_LINES : ICE_OUT_LINES))
+            think(s, (it ? ICE_BROKE_LINES : ICE_OUT_LINES)[s.iceSerial % 2])   // arithmetic pick — the clock's own paths never draw rng (#2303's lesson)
         }
     }
     // play: a bored child hunts the fun objects — the kid's own need loop
