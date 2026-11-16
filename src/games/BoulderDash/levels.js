@@ -278,6 +278,11 @@ export const LEVELS = [
         // #2417-style readability telegraph (painter-only): the dirt row capping
         // the pocket reads "danger below".
         lids: [[22, 3], [23, 3], [24, 3], [25, 3], [26, 3], [27, 3], [28, 3]],
+        // #2438 polish (painter-only): the stone pillar the fork fingers must
+        // wrap, marked so the multi-head reach reads before the blob arrives.
+        // dashcheck pins every cell to the pillar rock; if the pocket is
+        // re-carved and the data lags, red.
+        pillar: [[25, 5], [26, 5], [25, 6], [26, 6], [25, 7], [26, 7]],
         build() {
             const c = new Carve()
             c.shell()
@@ -323,6 +328,11 @@ export const LEVELS = [
         lids: [[9, 3], [10, 3], [11, 3], [12, 3], [13, 3], [14, 3], [15, 3], [16, 3],
             [17, 3], [18, 3], [19, 3], [20, 3], [21, 3], [22, 3], [23, 3], [24, 3],
             [25, 3], [26, 3], [27, 3], [28, 3], [29, 3], [30, 3], [31, 3]],
+        // #2438 polish (painter-only): the dirt cap where the harvest lane meets
+        // the tube column — tinting it reads "dig here and the hollow opens"
+        // before the descent is ever used (the mouth is invisible from below
+        // until dug). dashcheck pins it to DIRT over a clear tube.
+        tubes: [[27, 18]],
         build() {
             const c = new Carve()
             c.shell()

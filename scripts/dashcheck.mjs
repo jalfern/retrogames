@@ -799,6 +799,61 @@ for (let i = 0; i < LEVELS.length; i++) {
     }
 }
 
+// ---------------------------------------------- AMOEBA POLISH (#2438) pins ----
+{
+    section('AMOEBA POLISH (#2438) — the painter marks and the vise condition they ride on')
+
+    // FORK BASIN pillar marks: the painter shades them "wrap me" — they must be
+    // the pillar rock, and every cell must touch the pocket air the fingers run.
+    {
+        const m = buildLevel(6)
+        ok(m.meta.name === 'FORK BASIN', `pillar marks moved to ${m.meta.name} — the pin followed the wrong cave`)
+        const pil = m.meta.pillar || []
+        ok(pil.length === 6, `FORK BASIN pillar marks count ${pil.length} ≠ 6 — the telegraph drifted off the pillar`)
+        ok(pil.every(([x, y]) => m.grid[y * W + x] === DIRT), 'a pillar-marked cell is not the DIRT pillar — the wrap hint would sit on open air')
+        ok(pil.every(([x, y]) => [[1, 0], [0, 1], [-1, 0], [0, -1]].some(([dx, dy]) => m.grid[(y + dy) * W + x + dx] === EMPTY)),
+            'a pillar cell touches no pocket air — no finger can wrap it, the hint lies')
+    }
+    // GOSSAMER tube mark: the painter tints the dirt cap where the harvest lane
+    // meets the tube column — it must be diggable rock over a clear tube.
+    {
+        const m = buildLevel(7)
+        ok(m.meta.name === 'GOSSAMER HOLLOW', `tube marks moved to ${m.meta.name} — the pin followed the wrong cave`)
+        const tb = (m.meta.tubes || []).map(([x, y]) => `${x},${y}`).join('|')
+        ok(tb === '27,18', `tube marks drifted (got "${tb}") — the descent hint would sit off the tube column`)
+        ok(m.grid[18 * W + 27] === DIRT, 'the tube-mouth mark is not DIRT — the climb it promises cannot be dug')
+        ok([13, 14, 15, 16, 17].every(y => m.grid[y * W + 27] === EMPTY), 'the tube column above the mark is blocked — the telegraph promises a climb that dead-ends')
+    }
+    // GOO GALLERY vise condition: the painter shades the lane and drones ONLY
+    // while two wave fronts sit within 4 cells. If the cave were re-carved so
+    // the mirrored pair never closes that tightly, the telegraph would be dead
+    // scenery — so run the cave hazard-live (no commands) and pin the closure.
+    {
+        const m = buildLevel(5)
+        ok(m.meta.name === 'GOO GALLERY', 'vise condition pinned to the wrong cave')
+        const g = sim.makeGame(m.meta, m.grid)
+        let minGap = 99, rowPair = false
+        for (let t = 0; t < 240 && g.player.alive && !g.end; t++) {
+            sim.step(g)
+            const fronts = []
+            for (let i = 0; i < g.grid.length; i++) {
+                if (g.grid[i] === AMO_HEAD && g.amoGen[i] === g.amoPass) fronts.push({ w: g.amoWave[i], x: i % W, y: (i - (i % W)) / W })
+            }
+            for (let a = 0; a < fronts.length; a++) {
+                for (let b = a + 1; b < fronts.length; b++) {
+                    const p = fronts[a], q = fronts[b]
+                    if (p.w === q.w) continue
+                    const gap = Math.max(Math.abs(p.x - q.x), Math.abs(p.y - q.y))
+                    if (gap < minGap) minGap = gap
+                    if (gap <= 4 && p.y === q.y) rowPair = true
+                }
+            }
+        }
+        ok(minGap <= 4, `the GOO GALLERY vise never closes within the telegraph window (min gap ${minGap}) — the green lane and the drone would never fire`)
+        ok(rowPair, 'the vise closes off-axis (never two fronts sharing a corridor row within 4) — the between-fronts lane shade would paint nothing')
+    }
+}
+
 // -------------------------------------------------------------- mutation gate ----
 if (MUT) {
     section('MUTATIONS — each silenced rule MUST turn a real check red')

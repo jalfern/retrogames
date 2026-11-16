@@ -96,6 +96,21 @@ const DashGame = () => {
         const TRAIL_LIFE = 10
         const trail = new Map()
         let alarmed = false
+        // #2438 polish (renderer/audio only — sim untouched): the amoeba FAMILY
+        // finally reads per variant. turnFlash marks amoTurn corner cells for a
+        // strong one-shot; forkBlip marks fork points where a new finger is born;
+        // trailB is the butterfly's COOLER comet (the amber comet belongs to the
+        // firefly); visePairs holds the closing corridor cells the telegraph
+        // shades, recomputed each CA tick; the counters are DEV-probe receipts.
+        const turnFlash = new Map()
+        const forkFlash = new Map()
+        const trailB = new Map()
+        let visePairs = []          // [ [y, xFrom, xTo, alpha], … ] air between two wave fronts
+        let viseHot = false
+        let lastTurnSfx = -99, lastDropSfx = -99, lastForkSfx = -99, lastFlapSfx = -99, lastDroneSfx = -99
+        let turnSeen = 0, forkSeen = 0, dropHeard = 0, flapHeard = 0, dronesHeard = 0
+        let tubesSet = new Set()
+        let pillarSet = new Set()
 
         const loadLevel = (idx, freshScore) => {
             levelIdx = idx % LEVELS.length
@@ -111,6 +126,12 @@ const DashGame = () => {
             boltDir.clear(); (meta.bolts || []).forEach(([x, y, d]) => boltDir.set(y * W + x, d))
             amoBorn.clear()
             trail.clear(); alarmed = false
+            turnFlash.clear(); forkFlash.clear(); trailB.clear()
+            visePairs = []; viseHot = false
+            lastTurnSfx = lastDropSfx = lastForkSfx = lastFlapSfx = lastDroneSfx = -99
+            turnSeen = forkSeen = dropHeard = flapHeard = dronesHeard = 0
+            tubesSet = new Set((meta.tubes || []).map(([x, y]) => y * W + x))
+            pillarSet = new Set((meta.pillar || []).map(([x, y]) => y * W + x))
         }
         loadLevel(0, true)
 
@@ -130,6 +151,52 @@ const DashGame = () => {
                     audioController.playTone(170 + ((e.x * 7 + e.y * 13) % 60), 0.03, 'sine', 0.022)
                     amoBorn.set(e.y * W + e.x, gs.tick)   // painter: flash fresh heads (#2417)
                 }
+                // #2438 family tells. The sim already emits these receipts; the
+                // painter/audio surface them so the CREATURES read apart, not just
+                // the hashes. Each carries its wave, so the flashes land exactly on
+                // the fresh cells the pass grew (amoGen === amoPass marks them).
+                else if (e.type === 'amoTurn') {
+                    turnSeen++
+                    const flashFresh = () => {
+                        for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+                            const j = (e.y + dy) * W + (e.x + dx)
+                            if (gs.grid[j] === AMO_HEAD && gs.amoWave[j] === e.w && gs.amoGen[j] === gs.amoPass) turnFlash.set(j, gs.tick)
+                        }
+                        turnFlash.set(e.y * W + e.x, gs.tick)
+                    }
+                    flashFresh()
+                    if (gs.tick - lastTurnSfx >= 4) {       // chains of corners glide, never machine-gun
+                        lastTurnSfx = gs.tick
+                        audioController.playSweep(300, 430, 0.07, 'triangle', 0.035)
+                    }
+                }
+                else if (e.type === 'amoDrop') {
+                    if (gs.tick - lastDropSfx >= 8) {       // the FIRST pour of a shaft-run thunks
+                        lastDropSfx = gs.tick
+                        dropHeard++
+                        audioController.playTone(70, 0.09, 'triangle', 0.06)
+                        audioController.playNoise(0.04, 0.03)
+                    }
+                }
+                else if (e.type === 'amoFork') {
+                    forkSeen++
+                    for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+                        const j = (e.y + dy) * W + (e.x + dx)
+                        if (gs.grid[j] === AMO_HEAD && gs.amoWave[j] === e.w && gs.amoGen[j] === gs.amoPass) forkFlash.set(j, gs.tick)
+                    }
+                    if (gs.tick - lastForkSfx >= 4) {       // a new finger being born gets a blip
+                        lastForkSfx = gs.tick
+                        audioController.playSweep(520, 780, 0.09, 'sine', 0.03)
+                    }
+                }
+                else if (e.type === 'drift') {
+                    if (gs.tick - lastFlapSfx >= 5) {       // the butterfly's wingbeat, quieter than any firefly cue
+                        lastFlapSfx = gs.tick
+                        flapHeard++
+                        audioController.playTone(640 + 70 * (e.dir | 0), 0.025, 'sine', 0.02)
+                        audioController.playTone(880 + 70 * (e.dir | 0), 0.03, 'sine', 0.015)
+                    }
+                }
                 else if (e.type === 'dissolve') audioController.playSweep(1200, 300, 0.18, 'sawtooth', 0.05)
                 else if (e.type === 'locked') audioController.playTone(160, 0.08, 'sawtooth', 0.06)
                 else if (e.type === 'die') audioController.playDeath()
@@ -142,7 +209,10 @@ const DashGame = () => {
             const won = gs.win
             const entry = { score: gs.score, gems: gs.have, level: meta.name, date: new Date().toISOString().slice(2, 10) }
             if (won || gs.score > 0) localStorage.setItem('boulderdash.board', JSON.stringify([...board(), entry].sort((a, b) => b.score - a.score).slice(0, 8)))
-            const causeNames = { boulder: 'BURIED', pushwall: 'FLATTENED', amoeba: 'ENGULFED', fire: 'INCINERATED', fly: 'COOKED' }
+            // #2438: a flutter-named cause for the no-ignite critter — 'COOKED'
+            // belongs to the firefly; the butterfly EATES you, it does not burn.
+            const allFlutter = gs.flies.length > 0 && gs.flies.every((f) => f.ignites === 0)
+            const causeNames = { boulder: 'BURIED', pushwall: 'FLATTENED', amoeba: 'ENGULFED', fire: 'INCINERATED', fly: allFlutter ? 'EATEN' : 'COOKED' }
             const cause = won ? (levelIdx >= LEVELS.length - 1 ? 'EVERY CAVE CRACKED' : 'CAVE CLEARED') : gs.end === 'time' ? 'THE CLOCK RAN OUT' : (causeNames[gs.deathCause] || 'BURIED')
             setEnd({ score: gs.score, gems: gs.have, need: meta.need, won, cause, last: won && levelIdx >= LEVELS.length - 1 })
             overAtRef.current = performance.now()
@@ -168,13 +238,48 @@ const DashGame = () => {
         // untouched. Attract runs them too, so the demo teaches the mechanic.
         const trailAndCue = () => {
             for (const [i, s] of trail) { if (s <= 1) trail.delete(i); else trail.set(i, s - 1) }
+            for (const [i, s] of trailB) { if (s <= 1) trailB.delete(i); else trailB.set(i, s - 1) }
             for (const f of gs.flies) {
-                trail.set(f.y * W + f.x, TRAIL_LIFE)
+                if (f.drift && f.digs === 0) trailB.set(f.y * W + f.x, TRAIL_LIFE)   // #2438: the butterfly drags a cooler comet
+                else trail.set(f.y * W + f.x, TRAIL_LIFE)
                 if (!alarmed && f.y === 8 && f.x >= 17) {
                     alarmed = true
                     audioController.playSweep(1560, 1040, 0.16, 'square', 0.03)
                     audioController.playTone(780, 0.12, 'triangle', 0.03)
                 }
+            }
+            // #2438 vise telegraph: while two wave FRONTS sit within 4 cells the
+            // closing lane shades green before you stand in it, and one low
+            // rising drone says "the vise is moving" (once per closing).
+            const fronts = []
+            for (let i = 0; i < gs.grid.length; i++) {
+                if (gs.grid[i] === AMO_HEAD && gs.amoGen[i] === gs.amoPass) {
+                    fronts.push({ i, w: gs.amoWave[i], x: i % W, y: (i - (i % W)) / W })
+                }
+            }
+            const pairs = []
+            let close = null
+            for (let a = 0; a < fronts.length; a++) {
+                for (let b = a + 1; b < fronts.length; b++) {
+                    const p = fronts[a], q = fronts[b]
+                    if (p.w === q.w) continue
+                    if (p.y === q.y || p.x === q.x) {
+                        const gap = Math.max(Math.abs(p.x - q.x), Math.abs(p.y - q.y))
+                        if (gap <= 8) pairs.push({
+                            x1: Math.min(p.x, q.x), x2: Math.max(p.x, q.x),
+                            y1: Math.min(p.y, q.y), y2: Math.max(p.y, q.y),
+                            alpha: Math.min(0.22, 0.05 + (8 - gap) * 0.025),
+                        })
+                    }
+                    if (!close && Math.max(Math.abs(p.x - q.x), Math.abs(p.y - q.y)) <= 4) close = [p, q]
+                }
+            }
+            visePairs = pairs
+            viseHot = !!close
+            if (close && gs.tick - lastDroneSfx >= 24) {
+                lastDroneSfx = gs.tick
+                dronesHeard++
+                audioController.playSweep(90, 150, 0.5, 'sawtooth', 0.03)
             }
         }
 
@@ -261,6 +366,19 @@ const DashGame = () => {
                             ctx.fillStyle = '#6fbf5a'
                             ctx.fillRect(px + 4, py + 5, 2, 2); ctx.fillRect(px + 10, py + 9, 2, 2); ctx.fillRect(px + 7, py + 12, 2, 1)
                         }
+                        // #2438: the tube mouth below the harvest lane carries a
+                        // cool teal seam so the climb route reads before it's dug;
+                        // the fork pillar carries warm stone grain — "wrap me".
+                        if (tubesSet.has(y * W + x)) {
+                            ctx.fillStyle = 'rgba(120,220,255,0.2)'; ctx.fillRect(px, py, TS, TS)
+                            ctx.fillStyle = '#bfeaff'
+                            ctx.fillRect(px + 4, py + 3, 2, 2); ctx.fillRect(px + 10, py + 7, 2, 2); ctx.fillRect(px + 6, py + 12, 2, 2)
+                        }
+                        if (pillarSet.has(y * W + x)) {
+                            ctx.fillStyle = 'rgba(200,170,120,0.18)'; ctx.fillRect(px, py, TS, TS)
+                            ctx.fillStyle = '#c8aa78'
+                            ctx.fillRect(px + 2, py + 4, 3, 2); ctx.fillRect(px + 9, py + 2, 2, 2); ctx.fillRect(px + 7, py + 10, 3, 2)
+                        }
                     } else if (t === STEEL) {
                         ctx.fillStyle = '#5b6b7a'; ctx.fillRect(px, py, TS, TS)
                         ctx.fillStyle = '#8595a4'; ctx.fillRect(px, py, TS, 3); ctx.fillRect(px, py, 3, TS)
@@ -295,6 +413,36 @@ const DashGame = () => {
                             ctx.fillStyle = 'rgba(235,255,205,0.55)'; ctx.fillRect(px + 1, py + 1, TS - 2, TS - 2)
                             ctx.fillStyle = '#ffffff'; ctx.fillRect(px + 7, py + 7, 2, 2)
                         }
+                        // #2438 per-variant HEAD tells — the family finally reads
+                        // apart in a quiet cave (the sim stamps amoVar/amoHead;
+                        // classic keeps its #2411 look untouched).
+                        if (gs.amoExt) {
+                            const v = gs.amoVar[y * W + x], k = gs.amoHead[y * W + x]
+                            if (v === 1 && k >= 0) {        // two-phase: leading-edge notch on the heading side
+                                ctx.fillStyle = '#0d4f16'
+                                if (k === 0) { ctx.fillRect(px + TS - 3, py + 2, 3, TS - 4); ctx.fillStyle = '#a5f078'; ctx.fillRect(px + TS - 5, py + 7, 2, 2) }
+                                else if (k === 2) { ctx.fillRect(px, py + 2, 3, TS - 4); ctx.fillStyle = '#a5f078'; ctx.fillRect(px + 3, py + 7, 2, 2) }
+                                else if (k === 1) { ctx.fillRect(px + 2, py + TS - 3, TS - 4, 3); ctx.fillStyle = '#a5f078'; ctx.fillRect(px + 7, py + TS - 5, 2, 2) }
+                                else { ctx.fillRect(px + 2, py, TS - 4, 3); ctx.fillStyle = '#a5f078'; ctx.fillRect(px + 7, py + 3, 2, 2) }
+                            } else if (v === 2) {            // dropper: drip shading at its base — down is its offer
+                                ctx.fillStyle = '#0d4f16'
+                                ctx.fillRect(px + 3, py + TS - 4, 3, 4); ctx.fillRect(px + 10, py + TS - 3, 3, 3)
+                                ctx.fillStyle = '#8ee06a'; ctx.fillRect(px + 2, py + TS - 2, TS - 4, 1)
+                            } else if (v === 3) {            // fork: a pale cross node — this head can plant fingers
+                                ctx.fillStyle = '#d9ffae'
+                                ctx.fillRect(px + 7, py + 3, 2, TS - 6); ctx.fillRect(px + 3, py + 7, TS - 6, 2)
+                            }
+                        }
+                        const tf = turnFlash.get(y * W + x)
+                        if (tf !== undefined && gs.tick - tf <= 4) {   // corner one-shot: legible at a glance on a phone
+                            ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 2
+                            ctx.strokeRect(px + 2, py + 2, TS - 4, TS - 4)
+                        }
+                        const ff = forkFlash.get(y * W + x)
+                        if (ff !== undefined && gs.tick - ff <= 4) {   // a finger just being born
+                            ctx.fillStyle = 'rgba(210,255,170,0.6)'
+                            ctx.fillRect(px + 4, py + 4, TS - 8, TS - 8)
+                        }
                         amoebaOutline(px, py, x, y)
                     } else if (t === AMO_BODY) {
                         ctx.fillStyle = '#187024'; ctx.fillRect(px, py, TS, TS)
@@ -325,12 +473,31 @@ const DashGame = () => {
                 }
             }
 
+            // #2438 vise telegraph: shade the AIR between two closing fronts —
+            // a lane the vise is eating is a lane you must not stand in, and it
+            // reads before you commit to it. Alpha rises as the gap narrows.
+            for (const p of visePairs) {
+                ctx.fillStyle = `rgba(96,224,96,${p.alpha.toFixed(3)})`
+                for (let yy = p.y1; yy <= p.y2; yy++) {
+                    for (let xx = p.x1 + 1; xx <= p.x2 - 1; xx++) {
+                        if (gs.grid[yy * W + xx] === EMPTY) ctx.fillRect(xx * TS + 2, yy * TS + 2, TS - 4, TS - 4)
+                    }
+                }
+            }
+
             // #2374 trail: the fly's last TRAIL_LIFE cells as a fading amber
             // comet — the patrol lane becomes readable motion, not just a sprite.
             for (const [i, s] of trail) {
                 const tx = (i % W) * TS, ty = ((i - (i % W)) / W) * TS
                 ctx.fillStyle = `rgba(255,214,110,${Math.min(0.3, s * 0.035).toFixed(3)})`
                 ctx.fillRect(tx + 3, ty + 3, TS - 6, TS - 6)
+            }
+            // #2438: the butterfly's comet is COOLER than the firefly's — a
+            // player learns "flaps, does not burn" from the trail colour alone.
+            for (const [i, s] of trailB) {
+                const tx = (i % W) * TS, ty = ((i - (i % W)) / W) * TS
+                ctx.fillStyle = `rgba(150,225,255,${Math.min(0.28, s * 0.032).toFixed(3)})`
+                ctx.fillRect(tx + 4, ty + 4, TS - 8, TS - 8)
             }
 
             // exit door + spawn marker
@@ -340,12 +507,23 @@ const DashGame = () => {
             ctx.fillStyle = open ? '#59e05e' : '#7a6a4a'
             ctx.beginPath(); ctx.arc(ex + TS - 5, ey + 8, 1.6, 0, Math.PI * 2); ctx.fill()
 
-            // the fly (firefly automaton) — a bright dart trailing its glow
+            // the flies — a bright dart trailing its glow. #2438: the butterfly
+            // reads APART from the firefly — ice-blue body, a wing pair that
+            // beats on a 2-frame phase, no ember nose (it does not burn).
             for (const f of gs.flies) {
                 const fx = f.x * TS, fy = f.y * TS
-                ctx.fillStyle = 'rgba(255,240,120,0.35)'; ctx.fillRect(fx - 2, fy - 2, TS + 4, TS + 4)
-                ctx.fillStyle = '#fff27a'; ctx.beginPath(); ctx.arc(fx + 8, fy + 8, 4, 0, Math.PI * 2); ctx.fill()
-                ctx.fillStyle = '#ff8a00'; ctx.fillRect(fx + (f.dir === 1 ? 11 : 2), fy + 7, 3, 2)
+                if (f.drift && f.digs === 0) {
+                    const spread = gs.tick % 2 ? 6 : 3
+                    ctx.fillStyle = 'rgba(160,230,255,0.3)'; ctx.fillRect(fx - 2, fy - 2, TS + 4, TS + 4)
+                    ctx.fillStyle = '#cfeeff'                       // wings (N-S spread, flapping)
+                    ctx.beginPath(); ctx.moveTo(fx + 8, fy + 8); ctx.lineTo(fx + 8 - spread, fy + 8 - spread); ctx.lineTo(fx + 8 + spread, fy + 8 - spread); ctx.closePath(); ctx.fill()
+                    ctx.beginPath(); ctx.moveTo(fx + 8, fy + 8); ctx.lineTo(fx + 8 - spread, fy + 8 + spread); ctx.lineTo(fx + 8 + spread, fy + 8 + spread); ctx.closePath(); ctx.fill()
+                    ctx.fillStyle = '#7fd4f0'; ctx.beginPath(); ctx.arc(fx + 8, fy + 8, 3, 0, Math.PI * 2); ctx.fill()
+                } else {
+                    ctx.fillStyle = 'rgba(255,240,120,0.35)'; ctx.fillRect(fx - 2, fy - 2, TS + 4, TS + 4)
+                    ctx.fillStyle = '#fff27a'; ctx.beginPath(); ctx.arc(fx + 8, fy + 8, 4, 0, Math.PI * 2); ctx.fill()
+                    ctx.fillStyle = '#ff8a00'; ctx.fillRect(fx + (f.dir === 1 ? 11 : 2), fy + 7, 3, 2)
+                }
             }
 
             // the digger
@@ -441,6 +619,7 @@ const DashGame = () => {
                 probe: () => {
                     let boulders = 0, gems = 0, fires = 0, slime = 0, bolts = 0, heads = 0
                     const headDirs = new Set()
+                    const kinds = [0, 0, 0, 0]
                     const boltAt = []
                     for (let i = 0; i < gs.grid.length; i++) {
                         if (gs.grid[i] === BOULDER) boulders++
@@ -448,7 +627,7 @@ const DashGame = () => {
                         else if (gs.grid[i] === FIRE) fires++
                         else if (gs.grid[i] === AMO_HEAD || gs.grid[i] === AMO_BODY) slime++
                         else if (gs.grid[i] === PUSHWALL) { bolts++; boltAt.push([i % W, (i - (i % W)) / W]) }
-                        if (gs.grid[i] === AMO_HEAD) { heads++; headDirs.add(gs.amoHead[i]) }
+                        if (gs.grid[i] === AMO_HEAD) { heads++; headDirs.add(gs.amoHead[i]); kinds[gs.amoExt ? gs.amoVar[i] : 0]++ }
                     }
                     return {
                         screen: screenRef.current, tick: gs.tick, t: gs.tick / CFG.caHz, level: levelIdx, name: meta.name,
@@ -464,6 +643,15 @@ const DashGame = () => {
                         // #2453 the butterfly, live: flap count + is-it-a-butterfly.
                         flaps: gs.flies.reduce((n, f) => n + (f.flaps || 0), 0),
                         butterfly: gs.flies.some((f) => f.drift === 1 && f.digs === 0),
+                        // #2438 polish observability (DEV-only): the juice the sim
+                        // cannot see — telegraph state, sfx receipts (cumulative, so
+                        // a one-shot tone observed at any later tick still counts)
+                        // and the live head counts per variant the family tells key on.
+                        viseHot, viseLanes: visePairs.length,
+                        turnBlips: turnSeen, forkBlips: forkSeen, dropThunks: dropHeard, flapToots: flapHeard, drones: dronesHeard,
+                        coolTrail: trailB.size, wingPhase: gs.tick % 2,
+                        tubes: tubesSet.size, pillar: pillarSet.size,
+                        amoKinds: kinds,
                     }
                 },
                 // the next arrow the PROVEN planner would press from here — the
