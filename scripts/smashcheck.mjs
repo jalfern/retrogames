@@ -67,7 +67,7 @@ const { GW, GW_BIG, BIG_ROOMS, GH, CW, CELL, HUD_H, CH, EXITS, exitsOf, TOTAL_RO
 const { wallCell, NEON_TOP, CHROME, borderRivet } = await import('../src/games/SmashTV/walls.js')
 const { playerFrame, GUN, LAYERS, PLAYER_FRAMES, CARRIAGE, POSE, STOCK, SPREAD_FLOOR, gunPose } = await import('../src/games/SmashTV/sprite.js')
 const { ENEMY_FRAMES, TELEGRAPH, CHARGERS, CHARGE, OUTLINE, enemyFrame, bossMouth, BOSS_MOUTH_FLAP, ADD_TELEGRAPH, BOSS_DEATH_T } = await import('../src/games/SmashTV/enemies.js')
-const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore, recoilKick, RECOIL_TICKS, RECOIL_PX, SHELL_KICK, shellKick, barrelHot, HOT_FLOOR, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, GORE_GRAV, STAIN_TICKS, stainRadius, camPan, CAM_PAN, CAM_SNAP, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, edgeMarks, MARK_CAP, CAM_LEAD, walkHype, camLead, SPAWN_CUE, edgeRow } = await import('../src/games/SmashTV/juice.js')
+const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore, recoilKick, RECOIL_TICKS, RECOIL_PX, SHELL_KICK, shellKick, barrelHot, HOT_FLOOR, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, GORE_GRAV, STAIN_TICKS, stainRadius, camPan, CAM_PAN, CAM_SNAP, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, edgeMarks, MARK_CAP, CAM_LEAD, walkHype, camLead, SPAWN_CUE, edgeRow, LAND_FLASH_TICKS, landFlashPhase, THREAT_MARK_TICKS, threatMarkPhase } = await import('../src/games/SmashTV/juice.js')
 const { PLAYER_PAL, PAULDRON_BOB } = await import('../src/games/SmashTV/art.js')
 const { FIRE, fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_SWELL, MURMUR_HYPE_FREQ, MURMUR_TICKS, WHOOSH, ALERT, ALERT_RADIUS, ALERT_CD, POWER_PING } = await import('../src/games/SmashTV/audio.js')
 const { BAR, PIP, POWER_LABEL, labelClearsBar, pipFits, bombReady, RACK_FLASH, hiRoll, respawnState, RESPAWN_BLINK_SHIFT, powerLow, LOW_SHIFT, LOW_LABEL_SHIFT } = await import('../src/games/SmashTV/hud.js')
@@ -79,7 +79,7 @@ async function fresh() {
     return { ...sim, plan: planner.plan, planCoop: planner.planCoop, padToInp: planner.padToInp, inpToPad: planner.inpToPad, decidePad: planner.decidePad, decide: planner.decide }
 }
 const S = await fresh()
-const { makeGame, step, stateHash, CFG, comboColor, flickerPhase, COMBO_COLORS, MISSILE_TURN, MISSILE_LIFE, MISSILE_BLAST, FLAME_LIFE, FLAME_FAN, FLAME_SLOW } = S
+const { makeGame, step, stateHash, CFG, comboColor, flickerPhase, COMBO_COLORS, MISSILE_TURN, MISSILE_LIFE, MISSILE_BLAST, FLAME_LIFE, FLAME_FAN, FLAME_SLOW, respawnBeat } = S
 const cx = (c) => c * 16 + 8
 const cy = (r) => 24 + r * 16 + 8
 
@@ -347,6 +347,56 @@ console.log('rules')
     for (let i = 0; i < 70 && gs.player.deadT > 0; i++) { step(gs, {}); gs.events.length = 0 }
     const gap = gs.enemies.length ? Math.hypot(gs.enemies[0].x - gs.player.x, gs.enemies[0].y - gs.player.y) : 1e9
     ok(gs.player.deadT === 0 && gap >= CFG.contactR, 'a body parked on the spawn cell never inherits the respawn', `gap=${gap.toFixed(1)}`)
+}
+// #2507 item 2 — the open-door landing BEAT: the dodge gets a telegraph. When
+// landX must step the seat off the door cell, the respawn event carries
+// shift=true plus the position of the body that OWNS the old cell; a clean
+// door stays silent. All presentation — the hash never reads it.
+// Mutants: strip the beat spread at a respawn site → its seat pin dies; have
+// respawnBeat name the nearest live enemy anywhere instead of the cell's
+// occupant → the stealer gate dies.
+{
+    const gs = makeGame(0)
+    const ex = gs.player.x, ey = gs.player.y // the door cell itself
+    gs.enemies.push({ id: 8400, kind: 'walkcam', x: ex - 26, y: ey, hp: 1, cd: 9999, wanderT: 999, wdx: 0, wdy: 0, hitT: 0, dir: 1 }) // decoy: alive, 10px off the free cell (nearer the landing than the true owner), never inside the door cell
+    gs.enemies.push({ id: 8401, kind: 'walkcam', x: ex, y: ey, hp: 1, cd: 9999, wanderT: 999, wdx: 0, wdy: 0, hitT: 0, dir: 1 }) // the cell-stealer
+    gs.player.deadT = 70
+    let beat = null
+    for (let i = 0; i < 70 && gs.player.deadT > 0; i++) {
+        step(gs, {})
+        const b = gs.events.find((e) => e.type === 'respawn')
+        if (b) beat = b
+        gs.events.length = 0
+    }
+    ok(beat && beat.shift === true, 'a dodged landing reports the shift on the respawn event')
+    ok(beat && beat.tx != null && Math.hypot(beat.tx - ex, beat.ty - ey) < 0.01, 'the beat names the body that owns the old cell — not merely a live one', `tx=${beat && beat.tx} ty=${beat && beat.ty}`)
+    ok(gs.player.deadT === 0 && gs.player.x !== ex, 'and the seat really landed off the door cell', `x=${gs.player.x}`)
+    const h1 = stateHash(gs)
+    gs.events.push({ type: 'respawn', shift: true, tx: 1, ty: 2 })
+    ok(stateHash(gs) === h1, 'the beat is presentation — the hash never reads it')
+}
+{
+    const gs = makeGame(0)
+    gs.enemies.length = 0 // a truly clean door
+    gs.player.deadT = 70
+    let beat = null
+    for (let i = 0; i < 70 && gs.player.deadT > 0; i++) {
+        step(gs, {})
+        const b = gs.events.find((e) => e.type === 'respawn')
+        if (b) beat = b
+        gs.events.length = 0
+    }
+    ok(beat && beat.shift === false && beat.tx === null && beat.ty === null, 'a clean door lands on the cell and calls nobody — no false alarm')
+    ok(LAND_FLASH_TICKS === 14 && THREAT_MARK_TICKS === 36 && THREAT_MARK_TICKS > LAND_FLASH_TICKS, 'the beat outlives its own flash — the bracket keeps pointing after the ring is gone')
+    ok(landFlashPhase(0) === 1 && landFlashPhase(LAND_FLASH_TICKS) === 0 && threatMarkPhase(0) === 1 && threatMarkPhase(THREAT_MARK_TICKS) === 0, 'both decays start whole and end at zero')
+    ok(landFlashPhase(4) > landFlashPhase(9) && threatMarkPhase(8) > threatMarkPhase(20), 'both decays are monotone (a beat that re-brightens reads as a second landing)')
+}
+{
+    const SSRC0 = readFileSync('src/games/SmashTV/sim.js', 'utf8')
+    ok((SSRC0.match(/\.\.\.respawnBeat\(gs, /g) || []).length === 2, 'both respawn seats spread the beat (solo + co-op)')
+    const ISRC0 = readFileSync('src/games/SmashTV/index.jsx', 'utf8')
+    ok(/e\.shift/.test(ISRC0) && /landFx\.push/.test(ISRC0) && /threatFx\.push/.test(ISRC0), 'the shell routes the beat: flash the landing, bracket the cell-stealer')
+    ok(/landFlashPhase/.test(ISRC0) && /threatMarkPhase/.test(ISRC0), 'the draw reads the juice phases — no homegrown timings in the shell')
 }
 // contact and grenades also kill
 {

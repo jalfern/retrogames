@@ -754,6 +754,21 @@ function landX(gs, y, self) {
     return sx
 }
 
+// #2507 item 2 — the open-door landing must READ as a dodge, not a teleport.
+// landX shifts the seat a cell or two when a body parks the spawn row; the
+// beat rides the respawn event (presentation-only, like the wizfire cast point
+// in MagicCarpet — never the hash): `shift` says the seat stepped off the door
+// cell, `tx/ty` name the living body that OWNS the old cell (the same
+// occupancy test landX uses: within contactR of the cell centre) so the render
+// can stamp the stealer. A clean door reports shift=false, tx=null — silence.
+export function respawnBeat(gs, self) {
+    const sx = cx(startColOf(gwOf(gs)))
+    const y = cy(START.r)
+    if (self.x === sx) return { shift: false, tx: null, ty: null }
+    const th = gs.enemies.find((e) => e.hp > 0 && Math.hypot(e.x - sx, e.y - y) < CFG.contactR)
+    return { shift: true, tx: th ? th.x : null, ty: th ? th.y : null }
+}
+
 export function step(gs, inp = {}, inp2 = null) {
     gs.tick++
     if (gs.end) return gs
@@ -779,7 +794,7 @@ export function step(gs, inp = {}, inp2 = null) {
                 p.x = landX(gs, cy(START.r), p); p.y = cy(START.r)
                 p.invuln = 0 // #2491: respawn lands unshielded — the arcade gives none
                 gs.energy = CFG.maxEnergy
-                gs.events.push({ type: 'respawn' })
+                gs.events.push({ type: 'respawn', ...respawnBeat(gs, p) }) // #2507 item 2: the beat rides the event
             }
             return gs
         }
@@ -798,7 +813,7 @@ export function step(gs, inp = {}, inp2 = null) {
                     q.x = landX(gs, cy(START.r), q); q.y = cy(START.r)
                     q.invuln = 0 // #2491: respawn lands unshielded — the arcade gives none
                     if (i === 0) gs.energy = CFG.maxEnergy
-                    gs.events.push({ type: 'respawn', pi: i })
+                    gs.events.push({ type: 'respawn', pi: i, ...respawnBeat(gs, q) }) // #2507 item 2: the beat rides the event
                 }
             }
         }

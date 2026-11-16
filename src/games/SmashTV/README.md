@@ -425,3 +425,36 @@ re-hardcodes its own number, HUD goes numb — five must die.
 - ~~One-hit death softened by spawn invulnerability; the arcade gives none.~~
   CLOSED by #2491: both shields are zero — the arena now lands exposed like the
   cabinet, and the pilot doctrine above carries the proof (NO MERCY section).
+
+## #2507 item 2 — the open-door landing BEAT (QA studio)
+
+The #2491 open-door landing may step the seat a cell or two off the spawn
+cell when a body parks the door (`landX`). Without a beat that shift reads as
+a teleport. The beat rides the respawn event (presentation-only, like
+MagicCarpet's wizfire cast point — `stateHash` never reads events):
+
+- `respawnBeat(gs, self)` (sim.js, exported, pure): `shift` says the seat
+  landed off the door cell; `tx/ty` name the living body that OWNS the old
+  cell — the same occupancy test `landX` uses (within `CFG.contactR` of the
+  cell centre), so the marker points at the cell-stealer, not "an enemy
+  around here". A clean door reports `shift:false, tx:null` — silence. Both
+  respawn seats (solo + co-op) spread the beat onto the event.
+- juice.js owns the clock: `LAND_FLASH_TICKS` 14 / `landFlashPhase` (the
+  ring) and `THREAT_MARK_TICKS` 36 / `threatMarkPhase` (the bracket outlives
+  its own flash — it keeps pointing after the ring is gone). Monotone decays,
+  both pinned.
+- index.jsx draws inside the world transform: a spawn-yellow ring of 8 ticks
+  closes in over the landing cell (the seat, seen), the shell thuds a low step
+  (85 Hz square + noise — heard), and the cell-stealer wears a blinking
+  kill-red ring of 8 dashes for the bracket window ("that thing took my
+  cell"). Rules untouched: zero invulnerability, `landX` physics, pan law.
+
+Harness: 11 gates added to smashcheck — event carrier (shift reported on the
+dodge), stealer naming (a decoy sits alive 10 px off the free cell — nearer
+the landing than the true owner — so "nearest enemy anywhere" goes red),
+landing actually shifted, hash purity, clean-door silence (no false alarm),
+three decay-law gates, and three source pins (both seats spread the beat; the
+shell routes flash + bracket; the draw reads the juice phases). Mutation
+guide: strip the spread at a respawn site → that seat's pin dies; `find`
+without the cell test → the stealer gate dies; clean-door tx → null breaks the
+false-alarm gate.
