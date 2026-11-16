@@ -1,87 +1,77 @@
-# STATE — session 299 (2026-11-16, slot b)
+# STATE — session 300 (2026-11-15, slot a)
 
 ## Playable now / what shipped
-- **MAGIC CARPET: forty-five worlds (#2427 → PR #2441, merge `c0db200`).**
-  Live at jalfern.com/retrogames/magic-carpet (marker `THE FINAL SKY` verified
-  in prod chunk `index-CuvpMWJy.js`, Vercel success). The campaign reached the
-  original's FULL length: arcs ten–fifteen, 18 new names (GREENVEIL → THE FINAL
-  SKY), +15 vault ramp and pearls +5 unbroken; 45 ≡ 0 mod 3 keeps every arc on
-  a frost close; SKY ladder now LAST/ENDLESS/FARTHEST/OUTER/FINAL.
-  Yield law holds to the tail honestly: deepest ask 805 vs floor(263·3.5)=920
-  = **87.5%**, better than mid-campaign's 89% → no tail re-file needed.
-  Attract copy follows (`FORTY-FIVE WORLDS · FIFTEEN ARCS`) — and the stale
-  `EIGHTEEN WORLDS` line #2419 left behind finally updated.
-- **Cap law raised from measurement:** fresh 60-seed sweep at 45 = 60/60 win,
-  slowest seed 36 at **1,217,880 ticks** — OVER the inherited 1.17M
-  (`LEVELS.length×26000`): deep-arc fights lengthen superlinearly (wizHp 725@45).
-  New law `CAMPAIGN_CAP = LEVELS.length × 30000` **exported from sim.js** —
-  carpetcheck + DebugKit PROGNOSIS ride one source, drift impossible.
-- **A real bug the long road found:** campaign mana-conservation ledger broke at
-  worlds 40/41 (seed 7, +6 twice). A wizard absorbing a spawn pearl on the
-  level-up tick moves map→purse, but the rebase added his purse as the spawn
-  CONSTANT — sim conserved, ledger double-counted. Fixed harness-side (live
-  purse) + new spawn-equivalence pin (every world seeds exactly its table
-  hoard/HP/quota/pearls) restored the proof strength the live version lost.
-  Never fired pre-45 because it needs pearl-within-5u-of-tower AND quota-that-tick.
-- Gates: carpetcheck **393/395** — all Node arms, sweep, conservation, spawn
-  pins green; the two residue fails are the #1703 heavy-phone pixel arms,
-  flaking on this shared box (values swing wildly run-to-run incl. 0-frame
-  captures; lite-GL variant of same gate green) — advisory, documented on the
-  PR/issue. eslint + mario/fps/ai + contractcheck 724/724 + build green.
-  Mutation proofs: drop THE FINAL SKY → table pin red alone; pearls 228→227
-  (MAGMA FIELD) → widened +5 ramp pin red alone. Restored, mutateguard clean.
-- QA polish pass filed: **#2449** (arc-tint drift, name-biased terrain, deep-arc
-  fight feel, per-arc ambience; + the flaky pixel-arm caveat for CI).
+- **BOULDER DASH: the multi-head amoeba (#2444 → PR #2450, merge `0486f6d`).**
+  Live at jalfern.com/retrogames/boulder-dash — **FORK BASIN** is cave 7 (marker
+  `FORK BASIN` verified in served chunks `index-CGUafQuW.js`/`index-DHxgeFru.js`).
+  Never-dry pick (`weakestStage` score 4 — top of the unheld shelf; flagship stage
+  spent). New variant `AMO_FORK`: a head **advances and plants a perpendicular
+  sibling**, so one origin grows several independently-cornering fingers that wrap
+  a pillar and enclose space — the signature BD blob, and the README's oldest gap
+  ("rarer multi-head wave shapes are not here"). Distinct from #2428's mirrored
+  vise (two *separate* waves); this is one creature, many heads.
+  Containment law: ≤1 new head/wave/pass (`forked` ledger), hard-capped at
+  `CFG.amoForkMax`=4, plus #2411 gens-expiry → fills its pocket, hits boundaries,
+  dissolves; claims only EMPTY/DIAMOND. Zero RNG. `amoExt` gates the variant hash
+  so the 5 pre-#2428 caves + GOO GALLERY stay byte-identical.
+- Gates: **dashcheck 155/155** (new MULTI-HEAD section: fork birth, ≥2 heads/≥2
+  headings, wrap-around-a-wall, hard cap, dissolve, FORK BASIN containment+win) +
+  **168/168 mutants** (new `amoFork`) + **dashplay 42/42** (multi-head live: peak
+  6 fronts/4 headings, dissolves 27→0, zero page errors) + lint:mario/fps/ai + build.
+- DEV probe now reports `heads`/`headDirs` so QA can see the front count in-browser.
 
-## Ladder (this session's path)
-- Warden target **#2420 REFUSED** at claim (slot a live, 76 min). No steer/next
-  then; game-queue top #2427 (my #2419 follow-up) claimed normally.
-- **A `steer` appeared mid-build: #2430 (PLAICRAFT valkyrie replay/voice).**
-  Steer outranks the ladder at the NEXT claim — it is platform-lane work; this
-  session stayed in its one game per rule (hard rule: one game per session).
+## Also this session (no own game — reconciled a stale claim)
+- Warden target **#2428** was ALREADY shipped by **slot b** mid-session (PR #2436 /
+  `6c4c2c6`, merged 02:25Z) but left `building`+OPEN because the PR body said
+  *"closing … (#2428)"* in prose, not the `Closes #` keyword, and b died before
+  step-8. My `forge-claim` re-grabbed the stale label (see catch below). I verified
+  prod, credited b, closed #2428 (`shipped`), then shipped my OWN game (#2444) so
+  the slot never ran dry. Net: my slot's game code this session = #2444 only.
 
 ## BOARD at exit
-- game-queue: empty. building: #2420 (slot a, EXCITEBIKE contact), #1711
-  (PLAICRAFT, re-derive branch liveness fresh at claim). building-qa: #2385,
-  #2449 (mine, QA's to take). `steer`: **#2430** — takes the next claim per
-  ladder law (platform lane; check jonq/answers first).
-- jonq open: #2305 (lane:platform, AWAITING until 11-17) — not ours to wait on.
-- Slot hygiene warning for the next b session: **5178 is squatting a foreign
-  vite** (launched from `retrogames-forge-bd-amoeba2`, pid was 96504 — slot a's
-  lane, NEVER touch per slot law). This session ran its dev server on **5188**
-  (`DEV_PORT=5188` for all browser arms) and stopped only its own pid.
+- building (lane:games): **empty** (#2428 and #2427 both resolved this window).
+  game-queue: empty. `next`/`steer`: empty. waiting-jon: empty.
+- building-qa / QA-polish: #2430, #2354 held. Fresh feedback: **#2438** (BD amoeba
+  polish — I EXTENDED its scope to cover the #2444 fork tells/audio/finger-telegraph),
+  #2434 (EXCITEBIKE pack feel).
 
 ## Next (slot a or b, in order)
-1. **#2430 steer** — first claim of the next cycle if still open (check it
-   isn't claimed/answered first; it's platform-flavoured, mind the lanes).
-2. #2427 is CLOSED shipped — no campaign growth left (45 = the original's full
-   length). Remaining magic-carpet work is #2449's QA territory + the
-   scoring-model delta (needs a research stage; file POLISH when taken).
-3. Never-dry: `weakestStage`/`idle.mjs` FRESH; verify the gap is gameplay (#2391).
+1. Refresh the ladder; games `building` is empty, flagship spent (#2438 owns amoeba
+   polish). Run `weakestStage` FRESH — it returns BOULDER DASH again only until
+   #2438 is claimed. Likely real-mechanic runners-up (score 2): PrinceOfPersia
+   (sky = presentation, SKIP for gameplay), GardenGuard solver gap (=harness, SKIP),
+   ViperPit/Britannia/Open gaps. **Verify the picked gap is a mechanic a player
+   notices before building (#2391)** — do NOT build a README honesty-disclosure note
+   as "work" (the trap this session: weakestStage's BD pick was a disclosure, not a
+   feature; I aimed at the actionable "multi-head" half).
+2. Clean gameplay candidates: LodeRunnerLite vault-3 one-fewer-life slack; WWI
+   Dogfight "Circus winnable at hp 1" (difficulty).
+3. Re-file never-dry only after confirming nothing a flagship/QA owns is in the way.
 
 ## The session's catches
-- **`| tail -N` on a long suite swallows the FAIL lines** — your own pipe is a
-  buffer too. Long checks: full log to file, grep after (session 298's SIGKILL
-  lesson, same tax twice).
-- **A single-seed probe lied by omission:** seed 7+88 cleared at ~1.11M and my
-  first README draft wrote "slowest seed 88" — the full sweep's slowest is seed
-  36 at 1,217,880 and it EXCEEDS the old cap. Measure the whole sweep before
-  sizing a law; the first number in the README was wrong and got corrected in
-  the same PR.
-- **Pixel gates are load-sensitive on a 4-lane box:** the #1703 heavy-phone arms
-  failed 3x with three different value profiles (incl. mid-window 0px = zero
-  frames rendered in 350 ms). Same gates are green on CI. Judge red by whether
-  it MOVES between runs; a moving number is noise, a fixed number is a bug.
-- **`jalfern.com` 308s to `www.`** — curl without `-L` gets `Redirecting...`;
-  prod-verify greps need -L (and the game lives in a lazy chunk: resolve
-  markers across the chunk chain, not just index).
+- **Two lanes collided because forge-claim's liveness regex has a gap.** It matches
+  `^(QA|FORGE) \(slot\): (claimed|checkpoint)` — but slot b's checkpoint lines are
+  bare `FORGE: <sha> pushed…` (NO `(slot)`), so they do NOT hold the lock. Combined
+  with a merged-but-not-Closes'd PR leaving `building`, slot a legitimately re-claimed
+  shipped work. Worth a harness fix: stamp the slot on every builder checkpoint, OR
+  treat a bare `FORGE:`/`QA:` line as liveness too. Until then: after a claim,
+  `git ls-remote` the branch + grep `origin/main` for a content marker BEFORE
+  building — gone branch + feature-in-main = already shipped, reconcile and move on.
+- **Carve-ops `[x,y]` with no tile type coerce to `0 = EMPTY`.** My first wrap-room
+  fed wall coords without a type; the "wall" became air and slime walked through.
+  Every carve op MUST carry its tile constant.
+- **Amoeba head-cap must be a hard ceiling.** Gating forks on the previous pass's
+  front-count let EVERY head fork in one pass (3→6→9). Fixed: one fork per wave per
+  pass (`forked` ledger) → climbs to the cap and holds.
+- **A sibling merge can purge your worktree mid-session.** When b squash-deleted
+  `forge/bd-amoeba2`, the worktree-purge unregistered that dir while I sat in it →
+  git/gh "not a repository". Pass `--repo` explicitly and re-checkout when a path
+  vanishes.
+- **Verify-from-the-other-side held again** (prod hashes ≠ local; pull the LIVE
+  entry, extract its chunk list, grep chunks for a marker).
 
 ## Hygiene at exit
-- Dev server 5188 stopped (own pid only); 5178 foreign vite untouched, as is
-  every other lane's port. Worktree retrogames-forge-carpet-45worlds removed
-  after merge; branch gone via squash; main checkout detached at origin/main.
-  #2427 commented+shipped+closed; #2449 filed. STATE committed to main (game
-  merged this session, rule 9) + parked slot b.
-
-## Open questions
-- None new. jonq #2305 (lane:platform) AWAITING until 11-17 — not ours.
+- Dev server 5173 stopped (own pid only); foreign ports untouched.
+- Worktree retrogames-forge-bd-fork removed; branch gone via squash; main detached
+  at origin/main (`0486f6d`). #2444 commented+shipped+closed; #2428 reconciled+closed.
+- STATE.md committed to main (game merged this session) + parked slot a.
