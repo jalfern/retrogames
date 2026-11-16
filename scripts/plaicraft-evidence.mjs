@@ -132,6 +132,17 @@ function driverFor(rec) {
 // still catches iOS tail-drops, which run in hundreds of ms (Jon's took −900).
 const VOICE_CONTAINER_TOL_MS = 150
 
+// #2430: a mic that dies mid-run keeps stamping its clock — `t` advances with
+// the ticks while `ms` freezes at the last honest value (Jon's seed4 take:
+// 0.8 s of audio for 6100 ticks, clock pinned at ms 816 from tick ~126).
+// Tick-space coverage can't see it; ms-space coverage can: the trace's ms span
+// must keep pace with its tick span. Subtracting the FIRST sample erases the
+// legitimate mic-open delay (the #2058 shape). Healthy takes land near 0 to
+// −4 s (throttle makes ms out-pace ticks); catch-up bursts stay under ~1 s.
+// 8 s separates them from a stalled capture, which misses WHOLE SECONDS of
+// play per second of stoppage (Jon's missed 100 s).
+const VOICE_STALL_TOL_MS = 8000
+
 // #2157 (seed42 lesson): a dropped download is not a failed take. Network
 // throws and 5xx answers are retried with backoff (400/800/1600 ms, 4
 // attempts total); 4xx stays an immediate FAIL — 404/401 do not heal.
@@ -210,6 +221,11 @@ async function verifyKey(key, base, readHeaders = {}) {
             const covered = clk.length > 0 && clk[clk.length - 1].t >= rec.ticks - VOICE_CLOCK_EVERY
             const endMs = clk.length ? clk[clk.length - 1].ms : 0
             const containerMs = containerDurationMs(tr) // what the bytes themselves declare (null = unparseable)
+            // #2430: ms-space coverage. ms advanced over the trace vs what the
+            // tick span at 60 Hz owes it; a frozen capture pays nothing.
+            const stallMs = clk.length >= 2
+                ? Math.round((clk[clk.length - 1].t - clk[0].t) * TICK_MS - (endMs - clk[0].ms))
+                : 0
             tracks.push({
                 slots: tr.slots.join('+'),
                 clockSamples: clk.length,
@@ -221,16 +237,20 @@ async function verifyKey(key, base, readHeaders = {}) {
                 containerMs,     // #2058: and the container-declared length
                 audioLonger: tr.ms >= endMs, // audio at least as long as its own clock claims
                 truncated: containerMs !== null && containerMs < endMs - VOICE_CONTAINER_TOL_MS, // bytes end before the clock does
+                stallMs,         // #2430: ms of play the clock left uncovered (0 = kept pace)
+                clockStalled: clk.length >= 2 && stallMs > VOICE_STALL_TOL_MS, // #2430: frozen-capture stop
             })
         }
         res.voice = tracks
         res.voiceOk = true
-        const broken = tracks.find((t) => !t.monotonicMs || !t.coversRunEnd || !t.audioLonger || t.truncated)
+        const broken = tracks.find((t) => !t.monotonicMs || !t.coversRunEnd || !t.audioLonger || t.truncated || t.clockStalled)
         if (broken) {
             res.voiceOk = false
             res.error = broken.truncated
                 ? `audio truncated at stop: container ${broken.containerMs} ms < clock ${broken.msAtLastClock} ms on slot ${broken.slots}`
-                : `voice clock broken on slot ${broken.slots} (track ${broken.trackMs} ms vs clock ${broken.msAtLastClock} ms)`
+                : broken.clockStalled
+                    ? `voice capture stalled on slot ${broken.slots}: clock froze at ${broken.msAtLastClock} ms, ${broken.stallMs} ms of play uncovered (track ${broken.trackMs} ms for ${res.ticks} ticks)`
+                    : `voice clock broken on slot ${broken.slots} (track ${broken.trackMs} ms vs clock ${broken.msAtLastClock} ms)`
             return res
         }
     }
@@ -431,6 +451,19 @@ function synthSessions() {
         const r = collectRun(2, { noRows: true, maxTicks: 1500 })
         out.push({ rec: attachPhoneVoice(r.file, { micDelayMs: 1638, flushMs: 700, stamp: 'pre-stop' }), expect: false, label: 'gauntlet (PHONE take — pre-flush ms stamp)' })
     }
+    {
+        // #2430 (Jon's seed4 take): the mic dies at ~0.8 s but the recorder
+        // keeps stamping the clock — `t` advances to the end, every `ms` after
+        // tick 126 stays 816, and track ms matches. All tick-space checks stay
+        // green; only ms-vs-tick coverage can see a capture that stopped while
+        // the game ran. The verdict must go RED and name the frozen ms.
+        const r = collectRun(2, { noRows: true, maxTicks: 1500 })
+        const file = attachPhoneVoice(r.file, { micDelayMs: 1600, flushMs: 700 })
+        const tr = file.voice.tracks[0]
+        for (const s of tr.clock) if (s.t >= 126) s.ms = 816
+        tr.ms = 816 // bytes died with the clock — audioLonger must NOT be the catcher
+        out.push({ rec: file, expect: false, label: 'gauntlet (PHONE take — clock frozen at mic death, #2430)' })
+    }
     // talk-me-down — solo, solvePad autopilot, v2 voice with a realistic clock
     {
         const seed = 11
@@ -616,6 +649,11 @@ async function runSelfTest() {
             `${s.error || ''} ${JSON.stringify(s.voice)}`)
         if (want.label.includes('dropped the tail')) ok(!s.ok && s.replayOk && s.voiceOk === false && /truncated/.test(s.error || ''), 'container-declared tail-drop is CAUGHT, naming container vs clock ms', s.error)
         if (want.label.includes('pre-flush ms stamp')) ok(!s.ok && s.replayOk && s.voiceOk === false && /voice clock broken .*track \d+ ms vs clock \d+ ms/.test(s.error || ''), 'pre-stop-stamped ms fails audioLonger — the #2058 phone shape reproduces in the harness now', s.error)
+        if (want.label.includes('clock frozen at mic death')) ok(
+            !s.ok && s.replayOk && s.voiceOk === false && /stalled .*froze at 816 ms/.test(s.error || '') &&
+            s.voice && s.voice[0].coversRunEnd && s.voice[0].monotonicMs && s.voice[0].audioLonger,
+            'frozen-capture stop is CAUGHT by ms-space coverage naming the frozen ms, while the tick-space checks the bug hid behind stay green (#2430)',
+            s.error)
     }
     ok(caught >= 1 && caught === mutantKeys, `every pad-flip mutant was CAUGHT (${caught}/${mutantKeys})`, caughtAt.join(' | '))
     if (caughtAt.length) ok(caughtAt.some((e) => /diverged at tick/.test(e)), 'a mutant names its divergence tick', caughtAt[0])
