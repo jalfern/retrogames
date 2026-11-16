@@ -90,7 +90,17 @@ export function newGame(seed, rules = {}, partner = true) {
     // partner nobody played still walks, swings at monsters, and its
     // interference leaks into the hash (the #1793 divergence at ~tick 570 —
     // the ghost's path is set by the level layout, hence seed-invariant).
-    const gs = makeGame(seed, rules.hero || 'warrior', { topDown: true, partner, partnerKey: rules.partnerKey || 'elf' })
+    // #2430: ABSENT partnerKey must rebuild what LIVE built, and live passes
+    // the key UNSET for cpu/model seats (index.jsx startPlay) — the sim then
+    // uses its own default (valkyrie; the duplicate swap keys on an EXPLICIT
+    // 'valkyrie', which unset never is). The old 'elf' fallback rebuilt a
+    // partner live never had: Jon's valkyrie-hero take seed10 matched to tick
+    // 2130 (elf drift hid until monster targeting flipped) and no stamp value
+    // could rebuild valkyrie either — explicit 'valkyrie' hits the swap rule
+    // and yields warrior. Pass the stamp through untouched: absent stays
+    // absent = live default; explicit replays exactly what live passed.
+    const key = typeof rules.partnerKey === 'string' && rules.partnerKey ? { partnerKey: rules.partnerKey } : {}
+    const gs = makeGame(seed, rules.hero || 'warrior', { topDown: true, partner, ...key })
     gs.partnerOn = partner
     gs.partnerMode = 'cpu'
     return gs
@@ -128,8 +138,11 @@ export function makeReplayDriver(rules = {}) {
 // the expert run (opts.noRows for scoring runs).
 export function collectRun(seed, opts = {}) {
     const maxTicks = opts.maxTicks || 30000
-    const gs = newGame(seed)
-    const rec = createRecorder({ gameId: 'gauntlet', method: 'stick', seed, players: 2, sources: [{ kind: 'model' }, { kind: opts.seatKind || 'cpu' }] })
+    // #2430: the planner corpus keeps its proven elf partner EXPLICITLY (stamp
+    // and sim agree) — newGame's absent-partnerKey default is now the live sim
+    // default (valkyrie), and unstamped synthetic files must not claim it.
+    const gs = newGame(seed, { partnerKey: 'elf' })
+    const rec = createRecorder({ gameId: 'gauntlet', method: 'stick', seed, players: 2, sources: [{ kind: 'model' }, { kind: opts.seatKind || 'cpu' }], rules: () => ({ hero: 'warrior', partnerKey: 'elf' }) })
     const codec = makeHeroPadCodec()
     const hst = { prevA: false, prevB: false }
     const featMem = {}
@@ -167,7 +180,7 @@ export function collectRun(seed, opts = {}) {
         gs.events.length = 0
     }
     const file = rec.finish(stateHash(gs))
-    const v = verifyRecording(file, makeReplayDriver())
+    const v = verifyRecording(file, makeReplayDriver(file.rules || {}))
     return {
         seed, file, rows,
         stats: {
