@@ -1,53 +1,60 @@
-# STATE — session 307 slot b close-out
+# STATE — RetroGames forge
 
-## Shipped this session
-- **#2493 → 9e7a4e7** PLAICRAFT clap: `--micdelay`/`--lag-min` + achieved-lag report.
-  The audited lag shape (slow CPU + late mic, −3.4 s worst case) is now provable, gated
-  (can-fail red at −1 s) and mutant-proof. #1711 released to `next` — human-side
-  remainder only (Jon's takes + JON_KEY Actions secret).
-- **#2494 → PR #2497 → 3a7edb1** BRITANNIA village: the cottages have substance.
-  36 seeded cottages across all 8 gate-towns (`village.js`), timber-barred walk refusal
-  with the named first knock, draw==block, gate reachability preserved (BFS descent).
-  `britanniacheck` 374 green (+11 pins, 2 new mutants red); new `cottage-drive` 6/6
-  incl. panel/node byte-parity and a deterministic named knock (gate 93,67 → 93,69).
-  Verified live on www (village marker in the prod Britannia chunk).
+_Updated 2026-11-16 ~20:05 UTC by slot a (forge, `retrogames-forge-smashtv-no-mercy`), end of shift._
 
-## Board
-- Slot a in flight: **#2492 SMASH TV no spawn mercy** (worktree
-  `~/Dev/retrogames-forge-smashtv-no-mercy`) — folded from its parked report, never
-  touched by this lane.
-- Filed **#2499** `QA — BRITANNIA: polish pass` (feedback): door glyphs, chimney smoke
-  + night lamps, per-gate town names, stone footstep voice, roof silhouettes.
-- #1711 stays open, label `next` (humans only).
+## Slot status
+- **SMASH TV #2491 is SHIPPED.** Main gives **no spawn invulnerability** — first spawn and
+  every respawn land exposed, `INVULN` is 0 at every spawn site. PR **#2492** squash-merged as
+  **`30ea66d`** (5 files, +552/−108; verified present on current tip `e493001`, sim.js has the
+  `#2491` zero-shield markers, planner has the lane-sound doctrine) and live at
+  https://jalfern.com/retrogames/smash-tv. Worktree removed; issue closed completed + `shipped`.
+- No game-code goal for slot a right now — take the next unswept ladder item (#2449 MAGIC
+  CARPET has 3 items left, 4/7; the slot b Britannia lane owns #2494's follow-ups).
+- **Main is GREEN** (`scripts/main-ok.sh`): the only recent nightly failure (43898004660) was
+  `full-static`/goldentrace (#2501), already fixed on main by #2502. Two nightly reruns on
+  `e6de70f` were in flight at this close (43940658280, 43941588463) — next lane, confirm one
+  goes green and park; the umbrella #2498 can then close.
 
-## Next queued (step-2 ladder, recompute at run start)
-- Britannia's honest gap 1 is **enterable cottages**: the `.ULT` town boards are 40×32
-  (1280 B probed) and terrain IDs need AVATAR.EXE's table — probe the EXE before
-  promising doors that open.
+## What shipped this shift
+- **SMASH TV — zero spawn invulnerability (#2491, PR #2492, merged `30ea66d`).**
+  Branch commits `562861f` (game: shield zeroed everywhere, pin flips), `5d8e382` (seed-4
+  corner stall: lane-sound duel doctrine), `1873948` (slack-1 camping: **open-door landing**
+  `landX` — respawn lands on the nearest clear cell of the spawn row, body-physics not mercy;
+  spawn-lean parking; dry-tank reload), `38777c8` (honest deathless recount {7,8}).
+  Proof floor: sweep **9/9 solo, 9/9 co-op, slack 0–2 win, deathless {7,8}**;
+  `npm run smashcheck` PASS 766 / `--mutate` PASS 817 — 4 mercyBack mutants (restore the
+  shield any way you like, the pins see it) + 3 doctrine mutants (lane-sound deaf, loiter
+  under spawns, reload never fires) all die; new deterministic dropped-barrel seat-law probe.
+  `npm run smashplay` **42/42** live Chrome incl. respawn-under-fire gates (ring east of
+  spawn). The zero-mercy law now matches the rest of the arcade (AGENTS.md).
+  QA polish pass filed: **#2507** (SMASH TV zero-mercy playtest polish).
 
-## Open questions
-- jonq **#2487** AWAITING — JON_KEY Actions secret; deadline 2026-11-18; default B
-  (stays dormant).
+## Open questions for Jon
+- **#2487** (jonq v2 CI `JON_KEY` Actions secret) still AWAITING — deadline 2026-11-18;
+  default B = stays dormant.
 
-## Catches for the next session (each cost probes this shift)
-- `Report.check(label, pass, detail)` — label FIRST; a swapped call passes vacuously.
-- Britannia's gate wheel is a **3×3 zone** (`index.jsx` finds gi within a tile): after a
-  teleport the first step re-whirls the menu, the menu branch freezes cd and eats
-  arrows, and Z only sets `dismissed` while the menu is open → dismiss mid-hold.
-- Prod verify: `jalfern.com` 301s to **www.jalfern.com** (curl -L); Britannia code ships
-  in a lazy route chunk, not the entry — wait for the entry hash to change, then grep
-  the chunks the new entry imports for the marker string. A negative sweep during the
-  alias switch can be CDN flakiness — this session's automated sweep timed out on 51
-  chunks, then the named route chunk served the marker on the first manual try.
-- shiftreport.mjs silently swallows a bad notes JSON (`catch { notes = null }`) and
-  pushes CARRIED-OVER notes instead — always check the echoed headline matches yours.
-- mutateguard refuses dirty trees — commit before any `--mutate` run.
-- Town skirt subtlety: score-edge tiles read ts ≈ 0.4; village law demands ts ≥ 0.5.
-- Nightly cron `15 6 * * *` — tonight is the FIRST scheduled `gradeselftest` CI run.
-  If red: #2176 rule — fix within 2 h or quarantine in `scripts/quarantine.json`
-  naming an open issue.
+## Next goals
+1. Slot a: **next ladder item** at the next scheduled kick. Best candidates as of this close:
+   #2449 MAGIC CARPET item 2 (`#SNAKE` 3×2 body, 20-tick tail — item 1 shipped in #2484),
+   or #2483 MISSILE BATTLE items 5–6 (dome shatter VFX, four-tone victory fanfare — 4/6
+   shipped). Britannia cottages (#2494) is slot b's.
+2. QA lane: **#2507** SMASH TV zero-mercy playtest polish (barrel telegraph readability,
+   respawn-camping CPU at low seeds, attract copy mentions "no mercy"?).
+3. Confirm a nightly rerun goes green on main and close the umbrella **#2498** (its only real
+   failure — goldentrace #2501 — is already fixed by #2502).
 
-## Lanes clean
-- Main checkout detached at `origin/main`; slot b dev server (:5178) stopped.
-- Worktree `~/Dev/retrogames-forge-britannia-village` kept (node_modules donor for
-  the next Britannia stage).
+## Harness health (do not relearn these)
+- `main-ok.sh` green. Last nightlies: 11-15 both green; the 11-16 red was `full-static`
+  (goldentrace depth-1 CI checkout, #2501) fixed by #2502 — verified in `main` history.
+- Lesson from this close: verify failure claims against the actual run/jobs before filing
+  issues — a panic-threaded flake narrative produced one bogus issue (#2511, closed with
+  retraction). Check `gh run view <id> --json jobs` first.
+- Slot-a worktree removed cleanly; `npm run dev -- --port 5173 --strictPort` free again.
+- smashcheck's mercyBack anchors live on exact sim.js comment strings — rewording `#2491`
+  comments in sim.js breaks `--mutate`.
+
+## Recent shipped
+`e493001` MISSILE BATTLE two-tone refusal (#2509) · `4e92a92` MAGIC CARPET deep-arc wizards
+(#2505) · `fba669e` VIPER PIT net-select polish (#2500) · `30ea66d` **SMASH TV no spawn
+invulnerability — NO MERCY (#2491/#2492)** · `e6de70f` STATE (slot b) · `277c8a6` goldentrace
+CI fix (#2502) · `3a7edb1` BRITANNIA cottage substance (#2497).
