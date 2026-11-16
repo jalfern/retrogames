@@ -23,7 +23,7 @@ import { isWatchKey, playWatchStart, playWatchStop, watchSfxLog } from '../../ut
 import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
 import { createMatch, step, emptyPad, matchHash, fightersState, forceKO, propsState, FIXED_DT } from '../../engine/fighting.js'
 import { ROSTER, BY_ID, LADDER, introQuotes, koQuotes, voiceNotes } from './fighters.js'
-import { createHostSelect } from './netselect.js'
+import { createHostSelect, gateLines, awaitingPulse, attractTag, cardRim, arrivalCue } from './netselect.js'
 import { createScene, buildFighter, buildStage, createPortraitRenderer, guardShimmer, guardShatter, SHIMMER_FRAMES, SHATTER_FRAMES } from './render.js'
 import { STAGES } from './stages.js'
 
@@ -148,6 +148,11 @@ const ViperPitGame = () => {
         // lands — a pick made while unseated used to evaporate, and a host that
         // pressed FIGHT in the meantime would wait forever.
         const myPick = { char: null }
+        // #2482 item 2: the host's arrival cue — when a challenger's pick lands
+        // while they're on select, their card lights ARRIVED and their voice
+        // register announces them. Presentation only: the gate/pads/hashes are
+        // the lines above, this rides beside them.
+        const arrived = { char: null, t: 0 }
 
         // ---- net (#1039 lobby + pad lockstep; the wire carries all nine verbs) ----
         const nq = new URLSearchParams(window.location.search)
@@ -225,6 +230,17 @@ const ViperPitGame = () => {
                         if (net.role === 'host') {
                             recvPicks.n++
                             const r = hostSelect.onPick(m.char)
+                            // #2482 item 2: ARRIVED — the rival card lights on the
+                            // host's grid and the challenger's own register (a pure
+                            // voiceNotes pair) sells "the other player is HERE".
+                            if (screenRef.current === 'select') {
+                                arrived.char = m.char
+                                arrived.t = 90
+                                const ad = BY_ID[m.char] || ROSTER[0]
+                                const avn = voiceNotes(ad)
+                                audioController.playTone(avn[0], 0.07, ad.voice.wave, 0.09)
+                                audioController.playTone(avn[1], 0.13, ad.voice.wave, 0.08, 0.07)
+                            }
                             if (r.start && screenRef.current === 'select') launchNet(r.start)
                         }
                     },
@@ -712,6 +728,7 @@ const ViperPitGame = () => {
         const drawHud = (W, H) => {
             hctx.clearRect(0, 0, W, H)
             if (pickLine && pickLine.t > 0) pickLine.t--
+            if (arrived.t > 0) arrived.t--
             const scr = screenRef.current
             if (!gs) return
             const f = gs.fighters
@@ -994,6 +1011,15 @@ const ViperPitGame = () => {
                 ui(Math.max(10, H * 0.02))
                 hctx.fillStyle = 'rgba(160,165,190,0.8)'
                 hctx.fillText(net.active ? `ROOM ${net.code || '····'}` : '1 STREET LADDER     2 LOCAL 2P', W / 2, H * 0.92)
+                // #2482 item 4: the marquee advertises the open room — a subtle
+                // corner tag while the lobby waits for a challenger (host side).
+                if (attractTag({ active: net.active, role: net.role, phase: net.phase })) {
+                    ui(Math.max(9, H * 0.018))
+                    hctx.textAlign = 'right'
+                    hctx.fillStyle = 'rgba(89,224,200,0.8)'
+                    hctx.fillText('2P ONLINE READY', W - 14, H * 0.07)
+                    hctx.textAlign = 'center'
+                }
                 // #1637 b30: teach the watch key from the title card — offline
                 // only, the wire owns its seats.
                 if (!net.active) {
@@ -1006,10 +1032,20 @@ const ViperPitGame = () => {
             if (scr === 'select') {
                 ensurePortraits()
                 hctx.fillStyle = 'rgba(5,4,10,0.82)'; hctx.fillRect(0, 0, W, H)
+                // #2482 items 1+3: the net screen's lines and the guest's locked
+                // pick, answered by the pure gateLines helper (hash-safe).
+                const gl = net.active
+                    ? gateLines({
+                        role: net.role, code: net.code, waiting: hostSelect.waiting,
+                        guestId: net.role === 'guest' ? myPick.char : null,
+                        guestName: net.role === 'guest' && myPick.char ? (BY_ID[myPick.char] || {}).name || null : null,
+                    })
+                    : null
+                const lockedId = gl ? gl.lockedId : null
                 ui(Math.max(20, H * 0.045))
                 hctx.textAlign = 'center'
                 hctx.fillStyle = '#59e0c8'
-                hctx.fillText(p2Picked ? 'PLAYER 2 — CHOOSE' : net.active ? (net.role === 'host' ? 'HOST — CHOOSE' : 'GUEST — CHOOSE') : 'CHOOSE YOUR FIGHTER', W / 2, H * 0.12)
+                hctx.fillText(gl ? gl.header : (p2Picked ? 'PLAYER 2 — CHOOSE' : 'CHOOSE YOUR FIGHTER'), W / 2, H * 0.12)
                 const total = ROSTER.length
                 const cw = Math.min(H * 0.5, (W * 0.94) / (total * 1.06)), ch = cw * 0.78
                 // #2172 ease every card toward its zoom target (hovered = 1)
@@ -1037,7 +1073,8 @@ const ViperPitGame = () => {
                     hctx.fillStyle = '#12121c'; hctx.fillRect(x, y, tw, th)
                     const pt = portraits && portraits[rd.id]
                     if (pt) {
-                        if (hovered) { hctx.shadowColor = 'rgba(89,224,200,0.75)'; hctx.shadowBlur = Math.max(10, W * 0.014) }
+                        // #2482 item 5: hover glow + rim wear the fighter's own accent.
+                    if (hovered) { hctx.shadowColor = cardRim(true, rd) + 'bf'; hctx.shadowBlur = Math.max(10, W * 0.014) }
                         // Portrait grows with the tile (12% at full hover) but
                         // stays inside it: th - ph = 0.12*ch*zc - 0.12*ch > 0.
                         // __VIPER_SPILL__ is the harness's prove-fail flag (#2172):
@@ -1053,9 +1090,32 @@ const ViperPitGame = () => {
                         hctx.fillStyle = hex(rd.color.accent); hctx.fillRect(x + tw * 0.32, y + th * 0.36, tw * 0.36, th * 0.05)
                         hctx.fillStyle = hex(rd.color.pants); hctx.fillRect(x + tw * 0.36, y + th * 0.64, tw * 0.28, th * 0.1)
                     }
-                    hctx.strokeStyle = hovered ? '#59e0c8' : '#31364a'
+                    hctx.strokeStyle = cardRim(hovered, rd)
                     hctx.lineWidth = hovered ? 3 : 1
                     hctx.strokeRect(x, y, tw, th)
+                    // #2482 item 1: the challenger's locked pick wears a double
+                    // amber frame + PICKED badge — the arcade prints the choice.
+                    if (lockedId === rd.id) {
+                        hctx.strokeStyle = '#ffd23c'
+                        hctx.lineWidth = 2
+                        hctx.strokeRect(x + 3, y + 3, tw - 6, th - 6)
+                        ui(Math.max(8, H * 0.015))
+                        hctx.textAlign = 'left'
+                        hctx.fillStyle = '#ffd23c'
+                        hctx.fillText('PICKED', x + 6, y + Math.max(12, H * 0.026))
+                        hctx.textAlign = 'center'
+                    }
+                    // #2482 item 2: the host sees the rival's card light ARRIVED
+                    // (alpha fades with the cue, which decays on the frame tick).
+                    const cue = arrivalCue(arrived, rd.id)
+                    if (cue != null) {
+                        hctx.strokeStyle = `rgba(255,255,255,${cue.toFixed(2)})`
+                        hctx.lineWidth = 3
+                        hctx.strokeRect(x + 2, y + 2, tw - 4, th - 4)
+                        hctx.fillStyle = `rgba(255,246,232,${cue.toFixed(2)})`
+                        ui(Math.max(9, H * 0.017))
+                        hctx.fillText('ARRIVED', x + tw / 2, y - Math.max(6, H * 0.014))
+                    }
                     ui(Math.max(11, H * 0.022) * zc)
                     hctx.textAlign = 'center'
                     hctx.fillStyle = '#fff'
@@ -1084,11 +1144,10 @@ const ViperPitGame = () => {
                 }
                 ui(Math.max(11, H * 0.021))
                 hctx.textAlign = 'center'
-                hctx.fillStyle = 'rgba(255,255,255,0.9)'
-                hctx.fillText(net.active
-                    ? (net.role === 'host'
-                        ? (hostSelect.waiting ? `ROOM ${net.code} — AWAITING CHALLENGER'S PICK…` : `ROOM ${net.code} — SPACE: FIGHT`)
-                        : 'WAITING FOR HOST…')
+                // #2482 item 3: the WAITING/AWAITING line breathes (the attract
+                // shimmer law, slower) — presentation-only, hashes never see it.
+                hctx.fillStyle = gl && gl.pulse ? `rgba(255,255,255,${awaitingPulse(Date.now()).toFixed(2)})` : 'rgba(255,255,255,0.9)'
+                hctx.fillText(gl ? gl.bottom
                     : `MODE: ${mode === 'local' ? (p2Picked ? 'P2 PICK' : 'P1 PICK') : 'STREET LADDER'} — 1/2 SWITCH · ARROWS · SPACE`, W / 2, H * 0.92)
                 ui(Math.max(9, H * 0.017))
                 hctx.fillStyle = 'rgba(140,145,170,0.9)'
@@ -1252,6 +1311,29 @@ const ViperPitGame = () => {
                         sentPicks: sentPicks.n,
                         recvPicks: recvPicks.n,
                         lastSendOk: sentPicks.ok,
+                    }
+                },
+                // #2482 polish probe: the same pure answers the screen renders,
+                // as data — so the harness pins the lock print, the wait pulse,
+                // the marquee tag, the arrival cue, and the palette rims.
+                netPolish() {
+                    const gId = net.active && net.role === 'guest' ? myPick.char : null
+                    const gl = net.active
+                        ? gateLines({
+                            role: net.role, code: net.code, waiting: hostSelect.waiting,
+                            guestId: gId, guestName: gId ? (BY_ID[gId] || {}).name || null : null,
+                        })
+                        : null
+                    return {
+                        locked: gl ? gl.lockedId : null,
+                        header: gl ? gl.header : null,
+                        bottom: gl ? gl.bottom : null,
+                        pulse: gl && gl.pulse ? awaitingPulse(Date.now()) : null,
+                        tag: attractTag({ active: net.active, role: net.role, phase: net.phase }),
+                        arrived: arrived.t > 0 ? arrived.char : null,
+                        arrivedT: arrived.t,
+                        rim: cardRim(true, ROSTER[cursor] || ROSTER[0]),
+                        screen: screenRef.current,
                     }
                 },
                 cardRects() { return cardRects.slice() },

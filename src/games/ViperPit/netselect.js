@@ -56,3 +56,58 @@ export function createHostSelect() {
         reset() { committed = false; hostChar = null; guestChar = null; launched = false }
     }
 }
+
+// ---- #2482 select polish (presentation-only) --------------------------------------
+// What the net select screen SAYS and how it breathes, as pure answers so the
+// Node harness can pin the exact strings and curves. None of this touches the
+// gate above, the pads, or the netplay hashes.
+
+export function gateLines({ role, code = '', waiting = false, guestId = null, guestName = null }) {
+    // Host side: the FIGHT prompt or the (breathing) wait line. Guest side:
+    // once they pick, the choice prints and LOCKS — it survives a re-seat
+    // because it is derived from myPick, which the re-declare law keeps.
+    if (role === 'host') {
+        return {
+            header: 'HOST — CHOOSE',
+            bottom: waiting ? `ROOM ${code} — AWAITING CHALLENGER'S PICK…` : `ROOM ${code} — SPACE: FIGHT`,
+            pulse: waiting,
+            lockedId: null,
+        }
+    }
+    if (guestName) {
+        return {
+            header: `${guestName} — PICK LOCKED`,
+            bottom: 'PICK LOCKED — WAITING FOR HOST…',
+            pulse: true,
+            lockedId: guestId || null,
+        }
+    }
+    return { header: 'GUEST — CHOOSE', bottom: 'WAITING FOR HOST…', pulse: false, lockedId: null }
+}
+
+export function awaitingPulse(t) {
+    // The stall breathes like the attract PRESS prompt (the shimmer law) — but
+    // slower, and never under 0.50 so the line stays readable at its dimmest.
+    return +(0.5 + 0.4 * (0.5 + 0.5 * Math.sin(t / 480))).toFixed(3)
+}
+
+export function attractTag({ active, role, phase }) {
+    // #2482 item 4: the marquee advertises the open room — host side, lobby
+    // waiting for a challenger. A guest, an offline cabinet, or a live match
+    // never tags.
+    return !!(active && role === 'host' && phase === 'waiting')
+}
+
+export function cardRim(hovered, def) {
+    // #2482 item 5: the selected card's rim wears the fighter's OWN accent
+    // instead of flat cabinet teal (five identities, five rims); idle cards
+    // keep the dark frame.
+    return hovered ? `#${def.color.accent.toString(16).padStart(6, '0')}` : '#31364a'
+}
+
+export function arrivalCue(arrived, id) {
+    // #2482 item 2: a challenger 'pick' packet lit this card; returns the
+    // cue's alpha for this frame (full, then fading over the last 24 ticks)
+    // or null when this card is not the arrival.
+    return arrived && arrived.t > 0 && arrived.char === id ? +Math.min(1, arrived.t / 24).toFixed(3) : null
+}

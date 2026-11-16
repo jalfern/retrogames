@@ -1269,6 +1269,91 @@ console.log('part A2: online select gate (netselect.js)')
     }
 }
 
+// ---- Part A3: net-select polish (#2482) — presentation answers, pure ----------
+// The lock print, the breathing wait line, the marquee tag, the arrival cue and
+// the palette rims are pure helpers in netselect.js: pin every string and curve
+// in Node. The wiring gates below prove the screen actually consults them.
+console.log('part A3: net-select polish (netselect.js + wiring)')
+{
+    const fsx = await import('node:fs')
+    const NS = await import(bust('../src/games/ViperPit/netselect.js'))
+
+    // Item 1 — the guest's pick prints and locks; the host keeps FIGHT/wait.
+    const gh = NS.gateLines({ role: 'host', code: 'ABCD', waiting: false })
+    ok(gh.header === 'HOST — CHOOSE' && gh.bottom === 'ROOM ABCD — SPACE: FIGHT' && gh.pulse === false,
+        'host with a pick in hand is offered SPACE: FIGHT (no pulse on a prompt)')
+    const gw = NS.gateLines({ role: 'host', code: 'ABCD', waiting: true })
+    ok(gw.bottom === "ROOM ABCD — AWAITING CHALLENGER'S PICK…" && gw.pulse === true,
+        'the deferred host reads AWAITING… and it is marked to breathe')
+    const g0 = NS.gateLines({ role: 'guest', code: 'ABCD' })
+    ok(g0.header === 'GUEST — CHOOSE' && g0.bottom === 'WAITING FOR HOST…' && g0.pulse === false && g0.lockedId === null,
+        'an unpicked challenger still sees GUEST — CHOOSE (nothing invented before a pick)')
+    const g1 = NS.gateLines({ role: 'guest', code: 'ABCD', guestId: 'nyx', guestName: 'NYX' })
+    ok(g1.header === 'NYX — PICK LOCKED' && g1.bottom === 'PICK LOCKED — WAITING FOR HOST…' && g1.lockedId === 'nyx' && g1.pulse === true,
+        'after the guest picks, the choice PRINTS (NYX — PICK LOCKED) and the card is marked locked')
+
+    // Item 3 — the wait breathes: real variation, readable floor, slow tempo.
+    const ps = []
+    for (let t = 0; t < 6000; t += 37) ps.push(NS.awaitingPulse(t))
+    const lo = Math.min(...ps), hi = Math.max(...ps)
+    ok(lo >= 0.5 && hi <= 0.9 && hi - lo >= 0.3,
+        `awaiting pulse varies ${lo.toFixed(2)}..${hi.toFixed(2)} (visible shimmer, never unreadable)`)
+    ok(Math.abs(NS.awaitingPulse(1000) - NS.awaitingPulse(1080)) <= 0.15,
+        'the pulse is SLOW — an 80 ms window moves it <0.15 (a strobe would fail)')
+
+    // Item 4 — marquee tag: host + open room, and nothing else.
+    ok(NS.attractTag({ active: true, role: 'host', phase: 'waiting' }) === true, 'an open host room advertises 2P ONLINE READY')
+    ok(NS.attractTag({ active: true, role: 'host', phase: 'starting' }) === false
+        && NS.attractTag({ active: true, role: 'guest', phase: 'waiting' }) === false
+        && NS.attractTag({ active: false, role: 'host', phase: 'waiting' }) === false,
+        'no tag for a live/refused phase, for the challenger seat, or offline')
+
+    // Item 5 — five identities, five rims; idle stays dark.
+    const rims = ROSTER.map((d) => NS.cardRim(true, d))
+    ok(new Set(rims).size === ROSTER.length, `hovered rims carry ${new Set(rims).size}/${ROSTER.length} distinct fighter accents`)
+    ok(NS.cardRim(false, ROSTER[0]) === '#31364a', 'idle cards keep the dark frame')
+
+    // Item 2 — the arrival cue: right card, full then fading, nothing after.
+    const arr = { char: 'vess', t: 90 }
+    ok(NS.arrivalCue(arr, 'vess') === 1 && NS.arrivalCue(arr, 'nyx') === null,
+        'the ARRIVED frame lights ONLY the arriving card, at full')
+    ok(NS.arrivalCue({ char: 'vess', t: 12 }, 'vess') === 0.5 && NS.arrivalCue({ char: 'vess', t: 0 }, 'vess') === null,
+        'the cue fades over its tail and dies (no permanent halo)')
+
+    // Wiring gates — the cabinet must CONSULT the helpers (call-site proof).
+    const IX = fsx.readFileSync(path.join(HERE, '../src/games/ViperPit/index.jsx'), 'utf8')
+    const wire = [
+        ['header/bottom come from gateLines', /gl \? gl\.header/, /gl \? gl\.bottom/],
+        ['wait line applies awaitingPulse', /awaitingPulse\(Date\.now\(\)\)/],
+        ['lock frame keyed to the locked id', /lockedId === rd\.id/, /'PICKED'/],
+        ['pick packet arms the arrival cue', /arrived\.char = m\.char/, /arrived\.t = 90/],
+        ['arrival cue decays on the frame tick', /if \(arrived\.t > 0\) arrived\.t--/],
+        ['arrival sting rides the challenger register', /voiceNotes\(ad\)/],
+        ['attract consults attractTag', /attractTag\(\{ active: net\.active/],
+        ['card rim is the palette helper', /cardRim\(hovered, rd\)/],
+    ]
+    for (const w of wire) ok(w.slice(1).every((re) => re.test(IX)), `wire: ${w[0]}`)
+    ok(!/strokeStyle = hovered \? '#59e0c8'/.test(IX), 'wire: the flat teal hover rim is gone')
+
+    if (MUT) {
+        // Mutant: flatten the pulse — the shimmer pin above must go RED.
+        const src = fsx.readFileSync(path.join(HERE, '../src/games/ViperPit/netselect.js'), 'utf8')
+        const mutated = src.replace(
+            'return +(0.5 + 0.4 * (0.5 + 0.5 * Math.sin(t / 480))).toFixed(3)',
+            'return 0.7 // MUTANT pulseFlat: the wait line freezes')
+        ok(mutated !== src, 'mutate: awaitingPulse line found to patch')
+        const MNS = path.join(HERE, '../src/games/ViperPit/.mutant-netselect.mjs')
+        plantNew(MNS, mutated)
+        try {
+            const M = await import(bust(MNS))
+            const mp = []
+            for (let t = 0; t < 6000; t += 37) mp.push(M.awaitingPulse(t))
+            ok(Math.max(...mp) - Math.min(...mp) < 0.3,
+                'MUTANT pulseFlat: frozen wait line — the shimmer pin bites (harness proven)')
+        } finally { pull(MNS) }
+    }
+}
+
 console.log(`part A: ${pass} ok, ${fail} fail`)
 
 // ---- Part B: browser drive ---------------------------------------------------------
