@@ -1189,6 +1189,18 @@ export function cmdQueue(s, p, o) {
     return true
 }
 
+// #2474 item 3: DRAG-TO-FRONT. The original let you pull a queued action to
+// the head of the list; a phone thumb gets the same law via press-and-pull-left
+// (index.jsx chipDrag). Only order moves — the order still re-validates at
+// issue time like any other queued errand, and the head-in-flight is untouched.
+export function queuePromote(s, p, i) {
+    if (i <= 0 || i >= p.queue.length) return null
+    const o = p.queue.splice(i, 1)[0]
+    p.queue.unshift(o)
+    s.events.push({ t: 'queue-promote', name: p.name, id: o.kind === 'use' ? o.it.id : o.kind })
+    return o
+}
+
 export function queueCancel(s, p, i) {
     if (i < 0 || i >= p.queue.length) return null
     const o = p.queue.splice(i, 1)[0]
