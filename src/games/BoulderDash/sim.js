@@ -98,6 +98,8 @@ export const CFG = {
     flyTravel: true,                    // #2364: the fly holds its heading and bounces — it can leave the pit
     flyDrift: true,                     // #2453: the butterfly flap — in OPEN air the fly turns on its own
     flyDriftOdds: 4,                   // …1 in this many open-air ticks — the flit rate of the originals
+    flyCarry: true,                     // #2463: the butterfly TRANSPORTS — it takes a gem it flies onto and
+                                      // releases it over a drop cell (the originals' gem-carrying stage)
     fallKill: true,                     // a falling boulder crushes the player
     amoeba: true,                       // #2411: the slime wave grows (Boulder Dash II)
     amoEvery: 3,                      // CA ticks between amoeba growth passes — the wave reads as motion
@@ -132,7 +134,9 @@ export const hash = (s) => {
 // with one move dropped MUST NOT (see dashcheck's tamper probe).
 export function stateHash(g) {
     let s = `${g.tick}|${g.have}|${g.score}|${g.end}|${g.win}|${g.player.x},${g.player.y},${g.player.alive ? 1 : 0}`
-    for (const f of g.flies) s += `|f${f.x},${f.y},${f.dir}${g.flyExt ? `~${f.flaps}` : ''}`
+    // #2463: cargo rides the flies ONLY when the level declares drop cells
+    // (carryExt, the flyExt opt-in pattern) — older caves hash byte-identical.
+    for (const f of g.flies) s += `|f${f.x},${f.y},${f.dir}${g.flyExt ? `~${f.flaps}` : ''}${g.carryExt ? `#${f.carry}` : ''}`
     for (let i = 0; i < g.grid.length; i++) {
         const t = g.grid[i]
         // FIRE carries its burn timer, amoeba cells their generation — each in a
@@ -168,11 +172,19 @@ export function makeGame(level, grid) {
         need: level.need,
         player: { x: level.spawn.x, y: level.spawn.y, alive: true },
         exit: { ...level.exit },
-        flies: [...(level.flies || []), ...((level.butterflies || []).map((b) => ({ ...b, drift: true, digs: false, ignites: false })))].map((f, i) => ({ id: i, x: f.x, y: f.y, dir: f.dir | 0, drift: f.drift ? 1 : 0, digs: f.digs === false ? 0 : 1, ignites: f.ignites === false ? 0 : 1, flaps: 0 })),
+        flies: [...(level.flies || []), ...((level.butterflies || []).map((b) => ({ ...b, drift: true, digs: false, ignites: false })))].map((f, i) => ({ id: i, x: f.x, y: f.y, dir: f.dir | 0, drift: f.drift ? 1 : 0, digs: f.digs === false ? 0 : 1, ignites: f.ignites === false ? 0 : 1, flaps: 0, carry: f.carry ? 1 : 0 })),
         // #2453: drift state rides the hash ONLY when a level actually has a
         // drifting fly (the #2428 amoExt pattern) — caves without drift replay
         // byte-identical.
         flyExt: !!(level && ((level.flies || []).some((f) => f.drift) || (level.butterflies || []).length > 0)),
+        // #2463: the transport puzzle's drop cells (the ferry release targets the
+        // level declares), and the same opt-in for cargo state on the hash —
+        // caves without drop cells replay byte-identical.
+        dropCells: new Set(((level && level.dropCells) || []).map(([x, y]) => y * W + x)),
+        // #2463: the loaded-only column (mine cells) — an unburdened butterfly
+        // refuses them, so only a transport with cargo can dive to the pad.
+        mineCells: new Set(((level && level.mine) || []).map(([x, y]) => y * W + x)),
+        carryExt: !!(level && (level.dropCells || []).length),
         movingB: new Set(),                             // boulder cell-indices in motion last tick
         movingD: new Set(),                             // gem cell-indices in motion last tick
         amoGen: new Int8Array(W * H),                   // #2411 amoeba: generation born (0 = seeded)
@@ -565,24 +577,54 @@ const flyRoll = (id, tick, x, y) => {
     return r >>> 0
 }
 function fireflies(g) {
-    for (const f of g.flies) {
-        g.flyAt[idx(f.x, f.y)] = -1
+    g.flyAt.fill(-1)     // full clear: a despawned transport must not haunt its pad cell
+    // #2463 release: a loaded transport that is ON the pad (entered this tick,
+    // or born there) lets its cargo go — a real gem rests onto the empty pad —
+    // and perishes of the landing (the originals "carry until they die"; our
+    // one honest simplification is that the burden kills the bearer, since our
+    // flies are otherwise unkillable). A pad still holding a gem is refused
+    // (diamonds block flies), so deliveries serialise onto the pad.
+    const landed = []
+    const release = (f) => {
+        const i = idx(f.x, f.y)
+        if (f.carry !== 1 || !g.dropCells.has(i) || g.grid[i] !== EMPTY) return false
+        g.grid[i] = DIAMOND
+        f.carry = 0
+        g.events.push({ type: 'ferryDrop', x: f.x, y: f.y, id: f.id })
+        g.events.push({ type: 'carryDone', x: f.x, y: f.y, id: f.id })
+        landed.push(f)
+        return true
     }
+    if (CFG.flyCarry && g.carryExt) for (const f of g.flies) release(f)
     // obstacles stop the fly dead; open space (air, fire) and dust let it pass.
     // #2411: push walls and live slime are obstacles too — the fly turns off
     // them like steel (SLIME VAULT ships no fly; existing caves have neither).
     // #2453: a BUTTERFLY (digs:false) also treats dust as wall — it never bores
     // or ignites, only flits. Same automaton, different permissions.
+    // #2463: an UNburdened butterfly refuses the mine column (only the loaded
+    // dive); a DIAMOND that a free butterfly flies onto is a GRAB, not a wall.
     const blockedFor = (f) => (x, y) => {
         if (!inBounds(x, y)) return true
+        if (CFG.flyCarry && g.carryExt && f.digs === 0 && f.carry === 0 && g.mineCells.has(idx(x, y))) return true
+        // THE DIVE IS ONE-WAY (#2463): a burdened fly that entered the mine
+        // never climbs back out — it delivers at the pad and perishes there,
+        // so a loaded fly in the shaft is a delivery in progress, guaranteed.
+        if (CFG.flyCarry && g.carryExt && f.carry === 1 && ny0(f.y, y) && g.mineCells.has(idx(f.x, f.y)) && !g.mineCells.has(idx(x, y))) return true
+        // The transport will not drop on a digger squatting the pad: the pad is
+        // refused while the player stands on it, so collection is never a coin
+        // flip — land, drop, perish happens only on a free pad.
+        if (CFG.flyCarry && g.carryExt && f.carry === 1 && g.dropCells.has(idx(x, y)) && g.player.alive && g.player.x === x && g.player.y === y) return true
         const t = g.grid[idx(x, y)]
+        if (t === DIAMOND && CFG.flyCarry && g.carryExt && f.digs === 0 && f.carry === 0) return false   // grab target
         if (t === STEEL || t === BOULDER || t === DIAMOND || t === PUSHWALL || t === AMO_HEAD || t === AMO_BODY) return true
         return t === DIRT && f.digs === 0
     }
+    const ny0 = (cy, ty) => ty < cy     // upward step helper (closure order safe: used below)
     // dust ahead = the fly is about to bore; #2453 keeps the flap off mid-bore
     // so seam lanes and drilled lines stay honest (see the drift note above).
     const boring = (x, y) => g.grid[idx(x, y)] === DIRT
     for (const f of g.flies) {
+        if (landed.includes(f)) continue
         let nx, ny
         const bf = blockedFor(f)
         if (CFG.flyTravel) {
@@ -618,16 +660,29 @@ function fireflies(g) {
             f.dir = (f.dir + 1) % CFG.fireflyDirs.length
         }
         if (nx !== f.x || ny !== f.y) {
+            const dest = idx(nx, ny)
+            // THE GRAB (#2463): a gem is an obstacle to a fly (#2364's turn
+            // list) — but a free TRANSPORT butterfly takes it instead of
+            // bouncing off (the originals' butterflies grabbed a diamond on
+            // contact). Opt-in via carryExt; one gem at a time; dust-bearing
+            // fireflies never carry — the two critters stay distinct.
+            if (CFG.flyCarry && g.carryExt && f.carry === 0 && f.digs === 0 && g.grid[dest] === DIAMOND) {
+                g.grid[dest] = EMPTY
+                f.carry = 1
+                g.events.push({ type: 'grab', x: nx, y: ny, id: f.id })
+            }
             f.x = nx; f.y = ny
-            if (CFG.flyIgnite && f.ignites !== 0 && g.grid[idx(nx, ny)] !== FIRE) {
-                g.grid[idx(nx, ny)] = FIRE
-                g.burn[idx(nx, ny)] = CFG.burn
+            if (CFG.flyCarry && g.carryExt) release(f)     // THE RELEASE (see above)
+            if (CFG.flyIgnite && f.ignites !== 0 && g.grid[dest] !== FIRE) {
+                g.grid[dest] = FIRE
+                g.burn[dest] = CFG.burn
                 g.events.push({ type: 'ignite', x: nx, y: ny })
             }
             if (g.player.alive && g.player.x === nx && g.player.y === ny) killPlayer(g, 'fly')
         }
     }
     for (const f of g.flies) if (inBounds(f.x, f.y)) g.flyAt[idx(f.x, f.y)] = f.id
+    if (landed.length) g.flies = g.flies.filter((f) => !landed.includes(f))
 }
 
 // --------------------------------------------------------------- the tick ----
@@ -681,6 +736,7 @@ function bfsField(g, startCells) {
             const j = idx(nx, ny); const t = g.grid[j]
             if (t === STEEL || t === BOULDER || t === FIRE || g.flyAt[j] >= 0) continue
             if (t === AMO_HEAD || t === AMO_BODY) continue                 // slime is void to a route
+            if (g.carryExt && g.mineCells.has(j) && !(g.dropCells.has(j) && t === DIAMOND)) continue   // #2463: the dive lane is the transports' — the digger routes to the pad's face; a pad carrying a delivery opens for collection
             if (t === PUSHWALL) {
                 // #2411: a push wall is a DOOR the route can open — one shove
                 // moves it and the player into its cell (j), and a second
@@ -714,6 +770,25 @@ export function planStep(g) {
     if (wantGem) {
         for (let i = 0; i < g.grid.length; i++) {
             if (g.grid[i] === DIAMOND && field[i] >= 0 && field[i] < bestD) { bestD = field[i]; best = i }
+        }
+        // THE ESCORT (#2463): short of the quota with no gem within digging
+        // reach, the only gems left are the ones the butterfly will ferry. Ride
+        // over to a pad (a cell beside a declared drop cell — never the pad
+        // itself: a loaded fly lands there) and wait. A gem that lands turns the
+        // branch off by itself: it is a reachable DIAMOND again. Opt-in via
+        // carryExt — older caves never see this branch.
+        if (best < 0 && g.carryExt && g.dropCells.size) {
+            for (const pad of g.dropCells) {
+                const px = pad % W, py = (pad - px) / W
+                for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+                    const j = idx(px + dx, py + dy)
+                    if (inBounds(px + dx, py + dy) && field[j] >= 0 && field[j] < bestD) { bestD = field[j]; best = j }
+                }
+            }
+            if (best < 0) return null
+            // already at the pad: stand and watch the sky (the fly lands on the
+            // pad cell, which is not where we stand)
+            if (best === idx(p.x, p.y)) return null
         }
     } else {
         const e = idx(g.exit.x, g.exit.y)

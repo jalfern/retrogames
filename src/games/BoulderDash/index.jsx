@@ -108,7 +108,7 @@ const DashGame = () => {
         let visePairs = []          // [ [y, xFrom, xTo, alpha], … ] air between two wave fronts
         let viseHot = false
         let lastTurnSfx = -99, lastDropSfx = -99, lastForkSfx = -99, lastFlapSfx = -99, lastDroneSfx = -99
-        let turnSeen = 0, forkSeen = 0, dropHeard = 0, flapHeard = 0, dronesHeard = 0
+        let turnSeen = 0, forkSeen = 0, dropHeard = 0, flapHeard = 0, dronesHeard = 0, ferrySeen = 0, doneSeen = 0
         let tubesSet = new Set()
         let pillarSet = new Set()
 
@@ -129,7 +129,7 @@ const DashGame = () => {
             turnFlash.clear(); forkFlash.clear(); trailB.clear()
             visePairs = []; viseHot = false
             lastTurnSfx = lastDropSfx = lastForkSfx = lastFlapSfx = lastDroneSfx = -99
-            turnSeen = forkSeen = dropHeard = flapHeard = dronesHeard = 0
+            turnSeen = forkSeen = dropHeard = flapHeard = dronesHeard = ferrySeen = doneSeen = 0
             tubesSet = new Set((meta.tubes || []).map(([x, y]) => y * W + x))
             pillarSet = new Set((meta.pillar || []).map(([x, y]) => y * W + x))
         }
@@ -196,6 +196,18 @@ const DashGame = () => {
                         audioController.playTone(640 + 70 * (e.dir | 0), 0.025, 'sine', 0.02)
                         audioController.playTone(880 + 70 * (e.dir | 0), 0.03, 'sine', 0.015)
                     }
+                }
+                else if (e.type === 'grab') {         // #2463: the transport takes a gem — a bright pickup pluck
+                    ferrySeen++
+                    audioController.playSweep(700, 1100, 0.08, 'triangle', 0.04)
+                }
+                else if (e.type === 'ferryDrop') {    // cargo lands: a heavy, welcome thunk
+                    audioController.playSweep(500, 180, 0.12, 'triangle', 0.05)
+                    audioController.playTone(980, 0.06, 'sine', 0.03)
+                }
+                else if (e.type === 'carryDone') {    // the burdened fly perishes at the pad
+                    doneSeen++
+                    audioController.playSweep(320, 90, 0.22, 'sine', 0.03)
                 }
                 else if (e.type === 'dissolve') audioController.playSweep(1200, 300, 0.18, 'sawtooth', 0.05)
                 else if (e.type === 'locked') audioController.playTone(160, 0.08, 'sawtooth', 0.06)
@@ -524,6 +536,13 @@ const DashGame = () => {
                     ctx.fillStyle = '#fff27a'; ctx.beginPath(); ctx.arc(fx + 8, fy + 8, 4, 0, Math.PI * 2); ctx.fill()
                     ctx.fillStyle = '#ff8a00'; ctx.fillRect(fx + (f.dir === 1 ? 11 : 2), fy + 7, 3, 2)
                 }
+                // #2463: a burdened transport visibly carries — a diamond clutched
+                // under the body. The load is the mechanic; the player must see it.
+                if (f.carry) {
+                    ctx.fillStyle = '#bffcff'
+                    ctx.beginPath(); ctx.moveTo(fx + 8, fy + 11); ctx.lineTo(fx + 5.5, fy + 13.5); ctx.lineTo(fx + 8, fy + 16); ctx.lineTo(fx + 10.5, fy + 13.5); ctx.closePath(); ctx.fill()
+                    ctx.fillStyle = '#4aa8d8'; ctx.fillRect(fx + 7, fy + 12.5, 2, 2)
+                }
             }
 
             // the digger
@@ -643,6 +662,9 @@ const DashGame = () => {
                         // #2453 the butterfly, live: flap count + is-it-a-butterfly.
                         flaps: gs.flies.reduce((n, f) => n + (f.flaps || 0), 0),
                         butterfly: gs.flies.some((f) => f.drift === 1 && f.digs === 0),
+                        // #2463 the transports, live: cargo aloft, deliveries landed.
+                        carries: gs.flies.reduce((n, f) => n + (f.carry || 0), 0),
+                        ferryDrops: ferrySeen, transportsDone: doneSeen,
                         // #2438 polish observability (DEV-only): the juice the sim
                         // cannot see — telegraph state, sfx receipts (cumulative, so
                         // a one-shot tone observed at any later tick still counts)
