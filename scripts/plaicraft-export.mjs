@@ -90,7 +90,16 @@ export function newGame(seed, rules = {}, partner = true) {
     // partner nobody played still walks, swings at monsters, and its
     // interference leaks into the hash (the #1793 divergence at ~tick 570 —
     // the ghost's path is set by the level layout, hence seed-invariant).
-    const gs = makeGame(seed, rules.hero || 'warrior', { topDown: true, partner, partnerKey: rules.partnerKey || 'elf' })
+    // #2465: a hero-stamped file with no partnerKey must NOT default to 'elf'.
+    // Live solo+seat-2 runs pass NO key at all, and the sim then chooses its
+    // own default — valkyrie (the pair-downgrade at sim.js loadLevel only
+    // fires for an EXPLICIT valkyrie key, never for the undefined default).
+    // Passing undefined here runs the identical resolution: Jon's valkyrie take
+    // (seed10) played beside a valkyrie partner; 'elf' diverged it at 2130,
+    // 'warrior' at 840. Un-stamped files keep 'elf' — the pairing every
+    // pre-hero-stamp corpus, golden and netdemo file was recorded with.
+    const pkey = rules.partnerKey || (rules.hero ? undefined : 'elf')
+    const gs = makeGame(seed, rules.hero || 'warrior', { topDown: true, partner, partnerKey: pkey })
     gs.partnerOn = partner
     gs.partnerMode = 'cpu'
     return gs
