@@ -671,4 +671,21 @@ adoptable child (see Kids (#2203)).
   §Meal bells below) its next two, and **CLOSED by #2303** the garbage truck
   (§Garbage day below) keeps the street. Nothing else on the lot keeps hours
   beyond work, Ivy's rounds and the morning news.
-- Needs panel shows both residents; no per-object queue display like the original.
+- Needs panel shows both residents; no per-object queue display like the
+  original. — **CLOSED by #2470** (per-resident action queue: a tap on an
+  object/mail/floor while the resident is busy with one of THEIR OWN errands
+  appends it (`cmdQueue`, cap `QUEUE_MAX` 3) instead of losing the errand in
+  flight; the tick an order ends, the head of the list re-issues from wherever
+  they stand (`issueOrder`, re-validated — sold object / expired season /
+  off-hours mail drop honestly with `queue-drop` and the next item gets its
+  turn); collapse and leaving for work clear the list; the panel paints pending
+  orders as 19×14 chips under each resident's bars using the panel's own icon
+  set (`residentRows`/`QCELL` shared between painter and `queueHit` — the
+  #2240 pattern), a chip tap cancels that order; pad-A rides the same law via
+  `tryUseOrQueue`; queue contents join `stateHash`. Free will never outranks
+  the hand: orders the resident's OWN autonomy placed (`p.owner !== 'human'` —
+  autonomy and the move-in reaction stamp `'ai'`, every `cmd*` stamps `'human'`)
+  are preempted by a tap exactly as before the queue existed, and the attract
+  bot never queues, so old play is byte-identical (seed-exact pin + the whole
+  `homebodydrive` leg). Gates: `npm run homebodyqueuecheck` 40 pins; mutate:
+  stub the pump guard → exactly the drain pins red.)

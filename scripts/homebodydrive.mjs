@@ -88,6 +88,9 @@ const tap = async (x, y) => {
 }
 
 // tap the fridge tile (col 9,row 2) -> resident paths there
+// #2470: the queue law keeps a resident's errands; these gates measure a FRESH
+// single tap, so the scenario lists are wiped at the boundary first.
+await page.evaluate(() => window.__homebodyTest.clearQueues())
 const before = await st()
 await tap(8 + 9 * 32 + 16, 40 + 2 * 32 + 16) // fridge centre
 await wait(150)
@@ -106,6 +109,7 @@ check('#2238 the daily lands on the step, hour-scheduled and stamped',
     !!pp.paper && pp.paper.r === 10 && pp.paper.c === 5 && pp.paperDay === pp.day, pp.paper ? `${pp.paper.r},${pp.paper.c} d${pp.paperDay} @${pp.hour}h` : 'never')
 const funBefore = Math.max(...pp.people.map((p) => p.needs.fun))
 const contBefore = pp.content
+await page.evaluate(() => window.__homebodyTest.clearQueues())   // #2470: fresh single tap — the fridge errand upstream must not sit in front of the paper
 await tap(8 + 5 * 32 + 16, 40 + 10 * 32 + 16)   // the paper tile
 let pr = pp
 for (let i = 0; i < 60 && pr.paper; i++) { await wait(250); pr = await st() }

@@ -856,6 +856,52 @@ function needColor(v) {
     return v > 0.55 ? P.barGreen : v > 0.25 ? P.barAmber : P.barRed
 }
 
+// #2470 — residentRows(s): the needs panel's per-resident layout as DATA
+// (the same pattern #2240 set with bondRows — painter and hit-test read one
+// source, so paint and tap can never drift). A resident with queued orders
+// gets a row of QCELL chips under their bars; without, the row is not
+// reserved (the panel stays as tight as it always was for idle households).
+export const QCELL = { cw: 19, ch: 14, gap: 3 }
+
+export function residentRows(s) {
+    const rows = []
+    let y = LOT_Y + 26
+    for (const p of s.people) {
+        const barsY0 = y + 16
+        const row = { p, nameY: y, barsY0, queueY: p.queue.length ? barsY0 + NEEDS.length * 10 + 2 : null }
+        y = barsY0 + NEEDS.length * 10 + 8 + (row.queueY !== null ? 18 : 0)
+        row.nextY = y
+        rows.push(row)
+    }
+    return rows
+}
+
+// the queue chips' glyph: the panel's own need icons for object orders;
+// the work case for the mail; an arrow for a plain walk.
+function queueGlyph(o) {
+    if (o.kind === 'walk') return 'arrow'
+    if (o.kind === 'work') return 'case'
+    const d = DEF[o.it.id]
+    return (d && d.need && NEED_ICON[d.need]) || 'star'
+}
+
+export function queueHit(s, px, py) {
+    const rows = residentRows(s)
+    for (let pi = 0; pi < rows.length; pi++) {
+        const row = rows[pi]
+        if (row.queueY === null) continue
+        if (py < row.queueY || py > row.queueY + QCELL.ch) continue
+        const n = row.p.queue.length
+        const x0 = PANEL_X + 26
+        if (px < x0 || px > x0 + n * (QCELL.cw + QCELL.gap) - QCELL.gap) continue
+        const qi = Math.floor((px - x0) / (QCELL.cw + QCELL.gap))
+        if (px - x0 - qi * (QCELL.cw + QCELL.gap) > QCELL.cw) continue
+        if (qi >= n) continue
+        return { pi, qi }
+    }
+    return null
+}
+
 export function drawPanel(ctx, s, t) {
     ctx.fillStyle = P.panel; ctx.fillRect(PANEL_X, LOT_Y, W - PANEL_X - 4, H - LOT_Y - 8)
     ctx.strokeStyle = P.panelEdge; ctx.lineWidth = 2
@@ -863,15 +909,15 @@ export function drawPanel(ctx, s, t) {
     ctx.textAlign = 'left'; ctx.textBaseline = 'top'
     ctx.fillStyle = '#9fb4d8'; ctx.font = 'bold 10px monospace'
     ctx.fillText('HOUSEHOLD', PANEL_X + 10, LOT_Y + 8)
-    let y = LOT_Y + 26
-    for (const p of s.people) {
+    for (const row of residentRows(s)) {
+        const p = row.p
         const isActive = s.people[s.active] === p
         ctx.fillStyle = p.hue
-        ctx.beginPath(); ctx.arc(PANEL_X + 16, y + 6, 6, 0, 7); ctx.fill()
+        ctx.beginPath(); ctx.arc(PANEL_X + 16, row.nameY + 6, 6, 0, 7); ctx.fill()
         ctx.fillStyle = isActive ? '#ffd24a' : '#8fa2c8'
         ctx.font = 'bold 10px monospace'
-        ctx.fillText(p.name.toUpperCase() + (p.working ? ' · AT WORK' : ''), PANEL_X + 28, y + 1)
-        y += 16
+        ctx.fillText(p.name.toUpperCase() + (p.working ? ' · AT WORK' : ''), PANEL_X + 28, row.nameY + 1)
+        let y = row.barsY0
         for (const n of NEEDS) {
             needIcon(ctx, PANEL_X + 14, y + 4, NEED_ICON[n], needColor(p.needs[n]))
             ctx.fillStyle = P.barBg; ctx.fillRect(PANEL_X + 26, y, 64, 7)
@@ -886,8 +932,21 @@ export function drawPanel(ctx, s, t) {
             ctx.textAlign = 'left'
             y += 10
         }
-        y += 8
+        if (row.queueY !== null) {
+            // #2470: the queue chips — pending orders in the list, head of
+            // line first, the panel's own icon language. Tapping a chip cancels
+            // that order (queueHit shares this exact geometry).
+            for (let i = 0; i < p.queue.length; i++) {
+                const x = PANEL_X + 26 + i * (QCELL.cw + QCELL.gap)
+                ctx.fillStyle = '#1a2336'; ctx.fillRect(x, row.queueY, QCELL.cw, QCELL.ch)
+                ctx.strokeStyle = i === 0 ? '#c9a23f' : '#31405e'; ctx.lineWidth = 1
+                ctx.strokeRect(x + 0.5, row.queueY + 0.5, QCELL.cw - 1, QCELL.ch - 1)
+                needIcon(ctx, x + QCELL.cw / 2, row.queueY + QCELL.ch / 2, queueGlyph(p.queue[i]), i === 0 ? '#ffd24a' : '#8fa2c8')
+            }
+        }
     }
+    const rowsAll = residentRows(s)
+    let y = rowsAll.length ? rowsAll[rowsAll.length - 1].nextY : LOT_Y + 26
     // BONDS (#1817): heart = the two residents, leaf = Fern; four pips per
     // bond, filled by level. The FAMILY pip pulses — earned is shown.
     const by = y + 2
@@ -985,6 +1044,17 @@ function needIcon(ctx, x, y, kind, col) {
             break
         case 'drop':
             ctx.beginPath(); ctx.moveTo(x, y - 5); ctx.quadraticCurveTo(x + 4.6, y + 1, x, y + 4.6); ctx.quadraticCurveTo(x - 4.6, y + 1, x, y - 5); ctx.fill()
+            break
+        case 'case':   // #2470: the work order — a briefcase
+            ctx.fillRect(x - 4.5, y - 1.5, 9, 6)
+            ctx.fillRect(x - 2.2, y - 4, 1.3, 2.6); ctx.fillRect(x + 0.9, y - 4, 1.3, 2.6)
+            ctx.fillRect(x - 2.2, y - 4, 4.4, 1.3)
+            break
+        case 'arrow':   // #2470: a plain walk — a chunky right arrow
+            ctx.beginPath()
+            ctx.moveTo(x - 4, y - 1.4); ctx.lineTo(x + 0.6, y - 1.4); ctx.lineTo(x + 0.6, y - 4)
+            ctx.lineTo(x + 4.6, y); ctx.lineTo(x + 0.6, y + 4); ctx.lineTo(x + 0.6, y + 1.4); ctx.lineTo(x - 4, y + 1.4)
+            ctx.closePath(); ctx.fill()
             break
         default: break
     }
