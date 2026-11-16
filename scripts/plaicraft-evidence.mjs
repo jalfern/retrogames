@@ -42,6 +42,7 @@ import { createGame as tmdCreate, step as tmdStep, hash as tmdHash, solvePad } f
 import { createGame as sosCreate, stepGame, hashState, makeCpuEmitter } from '../src/games/ShortOrderShout/engine.js'
 import { createSim, tickSim, stateHash, cpuDriverPad, cpuCoDriverPad, WEATHER_ORDER } from '../src/games/RallyCoDriver/sim.js'
 import { createGame as bdCreate, step as bdStep, hash as bdHash, solvePads as bdSolvePads } from '../src/games/BombDefuse/engine.js'
+import { createTestSim, SLAP_HOLD_TICKS, FIXED_DT as CLAPTEST_DT } from '../src/utils/clapTestCore.js'
 
 const argv = process.argv.slice(2)
 const flagVal = (name, dflt) => {
@@ -109,6 +110,25 @@ function driverFor(rec) {
                 reset: (seed, players) => { g = bdCreate(seed >>> 0 || 1, Math.max(1, Math.min(2, players | 0 || 1))) },
                 step: (pads) => { if (!g.done) bdStep(g, pads) },
                 state: () => ({ tick: g.tick, hash: bdHash(g) }),
+            },
+        }
+    }
+    if (rec.game === 'claptest') {
+        // #1711 (session 309): the calibration page (/retrogames/claptest, #2156)
+        // records through the same take path and its core (clapTestCore) is a
+        // seeded phase machine — taps are folded from the `a` pads, so the take
+        // replay-verifies like every game. beginRun opens at seed-birth: the
+        // recorded stream is entirely the testing phase, hence start() before
+        // the first step (tick 1 = sim tick 1). Without this driver the nightly
+        // grader POSTED false FAILs ("no replay driver") on Jon's real
+        // /claptest takes the moment JON_KEY armed the loop.
+        let g = null
+        return {
+            note: '',
+            driver: {
+                reset: (seed) => { g = createTestSim({ seed: seed >>> 0 }); g.start() },
+                step: (pads) => { g.step(pads[0]) },
+                state: () => ({ tick: g.ticks, hash: g.hash() }),
             },
         }
     }
@@ -592,6 +612,46 @@ function synthSessions() {
             rec.addTick(pads, null, bdHash(g))
         }
         out.push({ rec: rec.finish(bdHash(g)), expect: true, label: 'bomb-defuse (2P solver pair)' })
+    }
+    // claptest — the #2156 calibration page, driven like a phone: three slaps
+    // ~2 s apart, palm contact SLAP_HOLD_TICKS each; the sim auto-ENDs one
+    // settle after the third tap (never reaches the 12 s cap). v2 voice so
+    // the full clock axis runs. Replay must verify — the page core is seeded
+    // and taps fold from `a` pads exactly as the recorder stores them (#1711).
+    {
+        const seed = 45
+        const g = createTestSim({ seed })
+        g.start() // beginRun opens at seed-birth — the take is all testing phase
+        const rec = createRecorder({ gameId: 'claptest', method: 'pointer', seed, players: 1, build: 'selftest', sources: [{ kind: 'cpu' }] })
+        const tapsAt = [Math.round(2000 / CLAPTEST_DT), Math.round(4000 / CLAPTEST_DT), Math.round(6000 / CLAPTEST_DT)]
+        while (g.phase === 'testing') {
+            const t = g.ticks + 1
+            const pad = { a: tapsAt.some((s) => t >= s && t < s + SLAP_HOLD_TICKS) }
+            g.step(pad)
+            rec.addTick([pad], null, g.hash())
+        }
+        out.push({ rec: rec.finish(g.hash()), expect: true, label: 'claptest (3 slaps + auto-settle)' })
+    }
+    // claptest MUTANT — the pad-capture-drop shape: erase the third slap's `a`
+    // pads from an honest take. The file's hashes were stamped by a 3-tap run;
+    // replay folds two taps and must fork at the next checkpoint (this is the
+    // driver's own can-fail proof — Jon's seed144524 take was the live one).
+    {
+        const seed = 46
+        const g = createTestSim({ seed })
+        g.start()
+        const rec = createRecorder({ gameId: 'claptest', method: 'pointer', seed, players: 1, build: 'selftest', sources: [{ kind: 'cpu' }] })
+        const tapsAt = [Math.round(2000 / CLAPTEST_DT), Math.round(4000 / CLAPTEST_DT), Math.round(6000 / CLAPTEST_DT)]
+        while (g.phase === 'testing') {
+            const t = g.ticks + 1
+            const pad = { a: tapsAt.some((s) => t >= s && t < s + SLAP_HOLD_TICKS) }
+            g.step(pad)
+            rec.addTick([pad], null, g.hash())
+        }
+        const file = rec.finish(g.hash())
+        const drop = tapsAt[2] - 1 // pads are 0-based, ticks 1-based
+        for (let i = drop; i < drop + SLAP_HOLD_TICKS; i++) if (file.slots[0].pads[i]) delete file.slots[0].pads[i].a
+        out.push({ rec: file, expect: false, label: 'claptest MUTANT — dropped third slap' })
     }
     return out
 }
