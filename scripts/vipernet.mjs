@@ -66,6 +66,7 @@ const open = async (url, tag) => {
     return page
 }
 const net = (page) => page.evaluate(() => window.__viperPitTest.netState())
+const polish = (page) => page.evaluate(() => window.__viperPitTest.netPolish())
 
 // Fresh room: host opens, guest joins, both leave attract for the select screen.
 const newPair = async () => {
@@ -97,6 +98,9 @@ try {
         await p.A.keyboard.press('Space') // host commits while the pick is still owed
         const deferred = await until(async () => { const s = await net(p.A); return s.waiting && s.screen === 'select' ? s : null })
         ok(!!deferred, 'RACE: a FIGHT before the guest pick DEFERS — host waits on select')
+        const pz = await polish(p.A)
+        ok(!!pz && pz.pulse !== null && /AWAITING/.test(pz.bottom || ''),
+            '#2482: the deferred host reads the AWAITING line on the wait pulse', JSON.stringify(pz && pz.bottom))
         await p.B.keyboard.press('ArrowLeft') // default cursor 3 (riv) -> 2 (vess)
         await p.B.keyboard.press('Space')     // the pick lands late — the gate must release
         const both = await until(async () => {
@@ -121,6 +125,15 @@ try {
         await p.B.keyboard.press('ArrowLeft')
         await p.B.keyboard.press('Space') // pick lands BEFORE any FIGHT press
         await sleep(150)
+        // #2482: the print & the cue — the guest sees their choice locked, the
+        // host's grid lights the arriving rival, and the FIGHT prompt stays solid
+        // (only a WAIT line breathes).
+        const gb = await until(async () => { const z = await polish(p.B); return z && z.locked === 'vess' ? z : null }, 2000)
+        ok(!!gb && gb.header === 'VESS — PICK LOCKED' && gb.bottom === 'PICK LOCKED — WAITING FOR HOST…' && gb.pulse !== null,
+            '#2482: the guest pick PRINTS and locks — VESS — PICK LOCKED over a breathing wait line', JSON.stringify(gb && gb.header))
+        const ga = await until(async () => { const z = await polish(p.A); return z && z.arrived === 'vess' ? z : null }, 2000)
+        ok(!!ga && ga.pulse === null && /SPACE: FIGHT/.test(ga.bottom || ''),
+            '#2482: the rival card lights ARRIVED on the host; its FIGHT prompt stays solid', JSON.stringify(ga && ga.bottom))
         await p.A.keyboard.press('Space')
         const both = await until(async () => {
             const [sa, sb] = await Promise.all([net(p.A), net(p.B)])
