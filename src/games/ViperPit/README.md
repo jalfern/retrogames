@@ -197,6 +197,34 @@ the #1096 options switched on.
   `waiting`/`chars`/screen. Node pins: `viperpitcheck` part A2 + `gateOn`
   mutant; live race proof: `npm run vipernet` (two headless Chromes over the
   local relay twin).
+- **Net-select polish (#2482)** — the lobby screen reads like the cabinet now,
+  and every answer is still pure (`netselect.js`), so the Node harness pins the
+  exact strings and curves without a browser:
+  - *Guest lock (item 1)* — once the challenger confirms, the header prints
+    `NYX — PICK LOCKED`, the bottom line reads `PICK LOCKED — WAITING FOR
+    HOST…`, and their card wears a double amber frame + `PICKED` badge. The
+    lock is derived from `myPick` (the #2476 re-declare state), so it survives
+    a socket re-seat untouched.
+  - *Host arrival cue (item 2)* — a `pick` packet landing on the host's select
+    lights the arriving card (white frame + `ARRIVED`, alpha fading over its
+    tail, `arrivalCue`) and stings the challenger's OWN voice register (two
+    notes of `voiceNotes`, deterministic). Presentation rides beside the gate —
+    `onPick`/`launchNet` are untouched.
+  - *Breathing wait (item 3)* — `awaitingPulse(t)` drives the AWAITING/WAITING
+    line's alpha (0.50–0.90, ~3 s period — the attract shimmer law, slower,
+    never unreadable). Non-waiting lines stay solid.
+  - *Marquee tag (item 4)* — `attractTag` is true only for host + open room +
+    lobby `waiting`: attract then prints a subtle `2P ONLINE READY` corner tag,
+    advertising the mode the marquee always did. No tag offline, on the guest
+    seat, or once a match is live.
+  - *Palette rims (item 5)* — `cardRim` puts the hovered card's rim AND glow in
+    the fighter's own accent (five identities, five rims — NYX teal, CINDER
+    ember, VESS lime, RIV volt, KRAX steel); idle cards keep the dark frame.
+  All presentation — the engine, pads and netplay hashes never see any of it.
+  DEV probe: `netPolish()` (locked/header/bottom/pulse/tag/arrived/rim/screen).
+  Pins: `viperpitcheck` part A3 (strings, pulse range + slowness, tag truth
+  table, rim distinctness, cue light-only + fade + death, 9 wiring gates) +
+  the `pulseFlat` mutant.
 
 ## Rules worth knowing
 
