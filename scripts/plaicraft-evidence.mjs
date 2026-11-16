@@ -42,6 +42,7 @@ import { createGame as tmdCreate, step as tmdStep, hash as tmdHash, solvePad } f
 import { createGame as sosCreate, stepGame, hashState, makeCpuEmitter } from '../src/games/ShortOrderShout/engine.js'
 import { createSim, tickSim, stateHash, cpuDriverPad, cpuCoDriverPad, WEATHER_ORDER } from '../src/games/RallyCoDriver/sim.js'
 import { createGame as bdCreate, step as bdStep, hash as bdHash, solvePads as bdSolvePads } from '../src/games/BombDefuse/engine.js'
+import { createTestSim } from '../src/utils/clapTestCore.js'
 
 const argv = process.argv.slice(2)
 const flagVal = (name, dflt) => {
@@ -109,6 +110,22 @@ function driverFor(rec) {
                 reset: (seed, players) => { g = bdCreate(seed >>> 0 || 1, Math.max(1, Math.min(2, players | 0 || 1))) },
                 step: (pads) => { if (!g.done) bdStep(g, pads) },
                 state: () => ({ tick: g.tick, hash: bdHash(g) }),
+            },
+        }
+    }
+    if (rec.game === 'claptest') {
+        // #2504: the one-screen slap test (#2156) is a sim like the rest —
+        // createTestSim folds the pad's `a` into a tap bank and hashes from
+        // (seed, tick, taps) alone, so the same reset/step/state contract
+        // replays it bit-exact. start() at reset: the recorder opens at
+        // seed-birth, the instant the screen flips attract -> testing.
+        let g = null
+        return {
+            note: '',
+            driver: {
+                reset: (seed) => { g = createTestSim({ seed: seed >>> 0 }); g.start() },
+                step: (pads) => { g.step((pads && pads[0]) || {}) },
+                state: () => ({ tick: g.ticks, hash: g.hash() }),
             },
         }
     }
