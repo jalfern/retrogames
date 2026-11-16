@@ -28,6 +28,9 @@ import { createSim, stepSim, hashState } from '../src/games/Emberwood/sim.js'
 import { padToInput } from '../src/games/Emberwood/input.js'
 import { TS, SW, SH, SCREENS } from '../src/games/Emberwood/world.js'
 import { tilePath } from '../src/games/Emberwood/solver.js'
+import { step as gStep, stateHash as gHash } from '../src/games/Gauntlet/sim.js'
+import { decide as gDecide, partnerPad as gPartnerPad } from '../src/games/Gauntlet/planner.js'
+import { makeHeroPadCodec, heroFromPad, p2FromPad, newGame as gNewGame } from './plaicraft-export.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const OUT_DIR = join(here, '..', 'public', 'traces')
@@ -74,6 +77,31 @@ const GAMES = {
         tick: (ctx) => ctx.sim.tick,
         state: (ctx) => ctx.sim,
     },
+    // Gauntlet rides THE pad lane its recordings already use (plaicraft-export
+    // makeReplayDriver): seat 1 through heroFromPad (the planner's absolute aim
+    // lives in ax/ay), seat 2 through p2FromPad, always passed (a blank pad
+    // when nobody holds seat 2 — the replay driver's own shape).
+    gauntlet: {
+        excludes: ['events', 'levelData'],
+        create(seed, players) { return { gs: gNewGame(seed, {}, players > 1), seed, players } },
+        stepAll(ctx, pads) { gStep(ctx.gs, heroFromPad(pads[0] || {}), p2FromPad(pads[1] || {})) },
+        hash: (ctx) => gHash(ctx.gs),
+        tick: (ctx) => ctx.gs.tick,
+        state: (ctx) => ctx.gs,
+    },
+}
+
+// --- gauntlet steerers: the planner on seat 1 (aim rides ax/ay), the CPU
+// partner seat on seat 2 — exactly the expert lanes plaicraft records. ---
+const gCodec = makeHeroPadCodec()
+function gauntletPads(ctx) {
+    const pads = [gCodec.toPad(gDecide(ctx.gs))]
+    if (ctx.players > 1) {
+        const p2 = gPartnerPad(ctx.gs, !!ctx.prevA)
+        ctx.prevA = !!p2.a
+        pads.push(p2)
+    }
+    return pads
 }
 
 const rawOf = (pad) => ({
@@ -112,6 +140,21 @@ const SCENARIOS = {
             if (t >= 240 && t < 330) return [{ left: false, right: true, a: false }] // tilt + fall, no flap
             return joustPads(ctx.gs)
         },
+    },
+    'gauntlet-1p': {
+        seed: 1, players: 1, ticks: 1400, kinds: ['cpu'],
+        why: 'the planner (aim on ax/ay) clears hall 1 at ~t1134 — the level-change shape',
+        pad: (ctx) => gauntletPads(ctx),
+    },
+    'gauntlet-2p': {
+        seed: 1, players: 2, ticks: 1400, kinds: ['cpu', 'cpu'],
+        why: 'two seats: planner + the CPU partner seat on pad 2; hall 1 cleared together',
+        pad: (ctx) => gauntletPads(ctx),
+    },
+    'gauntlet-death': {
+        seed: 2, players: 1, ticks: 1000, kinds: ['human'],
+        why: 'an idle hero is worn down by the swarm (death t794) and respawns (t894)',
+        pad: () => [{}],
     },
     'emberwood-roam': {
         seed: 7, players: 1, ticks: 900, kinds: ['model'],
@@ -278,6 +321,14 @@ function observe(name, ctx, notes) {
         if (ctx.gs.players[0].lives < 3) notes.lostLife = true
         if (ctx.gs.players[0].rider && ctx.gs.players[0].lives < 3) notes.respawned = true
     }
+    if (name === 'gauntlet-1p' || name === 'gauntlet-2p') {
+        if (ctx.gs.level > 0) notes.level = true
+        if (name === 'gauntlet-2p' && ctx.gs.partner) notes.partner = true
+    }
+    if (name === 'gauntlet-death') {
+        if (ctx.gs.deaths > 0) notes.death = true
+        if (notes.death && ctx.gs.hero.deadT === 0) notes.respawned = true
+    }
     if (name === 'emberwood-roam') {
         notes.screens = notes.screens || new Set()
         notes.screens.add(ctx.sim.screen)
@@ -292,6 +343,9 @@ const REQUIRED = {
     'joust-1p': (n) => n.wave !== undefined || 'never reached wave 2 (level change)',
     'joust-2p': (n) => n.wave !== undefined || 'never reached wave 2 (level change)',
     'joust-death': (n) => (n.lostLife && n.respawned) || 'no death + respawn observed',
+    'gauntlet-1p': (n) => n.level || 'never cleared hall 1 (level change)',
+    'gauntlet-2p': (n) => (n.level && n.partner) || 'no two-seat hall-1 clear',
+    'gauntlet-death': (n) => (n.death && n.respawned) || 'no death + respawn observed',
     'emberwood-roam': (n) => n.screens.size >= 3 || `only visited ${n.screens.size} screens`,
     'emberwood-death': (n) => (n.death && n.revived) || 'no death + revive observed',
 }

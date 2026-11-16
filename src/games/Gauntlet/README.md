@@ -494,3 +494,28 @@ seed-INVARIANT tick (~570), intermittently, while other takes in the same
 session verify clean. Suspect a wall-time float inside hashed state.
 Repro: `npm run plaicraft:outbox` (the killed-take scenario dumps any
 divergent file to /tmp/forge/outbox-divergent-take.json).
+
+## Golden traces (#2402 — the Apple TV port spec)
+
+`public/traces/gauntlet-{1p,2p,death}.{json,trace.json}` are the committed
+golden runs: a `retrogames-rec/v1` pad recording plus the full sim state at
+EVERY tick (`retrogames-trace/v1`, `scripts/lib/trace.mjs`). A native port
+replays seed + pads and diffs field by field
+(`node scripts/goldentrace.mjs diff <golden> <port>`).
+
+- `gauntlet-1p` — seed 1, 1400 ticks: the planner on seat 1 (its absolute aim
+  rides the pad's `ax/ay` lane) clears hall 1 at ~t1134 — the level change.
+- `gauntlet-2p` — seed 1, 1400 ticks: planner + the CPU partner seat
+  (`partnerPad`) on pad 2, hall 1 cleared together — the two-seat contract.
+- `gauntlet-death` — seed 2, 1000 ticks: an idle hero worn down by the swarm
+  (death t794, respawn t894).
+
+The pad lane is THE one Gauntlet recordings already use
+(`scripts/plaicraft-export.mjs` `makeReplayDriver`: `newGame`, `heroFromPad`,
+`p2FromPad`), so recordings, PLAICRAFT and the ports share one fold.
+Regenerate: `npm run goldentrace record gauntlet`; gate: `npm run goldentracecheck`.
+
+`excludes: ["events", "levelData"]` — `events` is the shell-drained journal
+(sounds, toasts); `levelData` is the static `LEVELS[level]` object, fully named
+by `level`. Sets and Maps (`smashed`, `revealed`, `tele`) and `_`-keys flatten
+to nothing; `stateHash` covers smashed/revealed/explored and the trap state.

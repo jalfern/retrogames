@@ -25,6 +25,8 @@ import { plant, pull } from './lib/mutateguard.mjs'
 import { makeGame, step, stateHash } from '../src/games/Joust/sim.js'
 import { createSim, stepSim, hashState } from '../src/games/Emberwood/sim.js'
 import { padToInput } from '../src/games/Emberwood/input.js'
+import { step as gStep, stateHash as gHash } from '../src/games/Gauntlet/sim.js'
+import { heroFromPad, p2FromPad, newGame as gNewGame } from './plaicraft-export.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const DIR = join(here, '..', 'public', 'traces')
@@ -38,6 +40,9 @@ const EXPECT = [
     { rec: 'joust-death.json', trace: 'joust-death.trace.json', shape: 'lava death, respawn, planner resume' },
     { rec: 'emberwood-roam.json', trace: 'emberwood-roam.trace.json', shape: 'four screens incl. a dungeon entry' },
     { rec: 'emberwood-death.json', trace: 'emberwood-death.trace.json', shape: 'HP-zero death + A-press revive' },
+    { rec: 'gauntlet-1p.json', trace: 'gauntlet-1p.trace.json', shape: 'planner clears hall 1 (level change)' },
+    { rec: 'gauntlet-2p.json', trace: 'gauntlet-2p.trace.json', shape: 'two seats clear hall 1 together' },
+    { rec: 'gauntlet-death.json', trace: 'gauntlet-death.trace.json', shape: 'swarm death + respawn' },
 ]
 
 const GAMES = {
@@ -59,6 +64,13 @@ const GAMES = {
         stepAll: (ctx, pads) => { stepSim(ctx.sim, padToInput(pads[0] || {}, ctx.prev)) },
         hash: (ctx) => hashState(ctx.sim),
         state: (ctx) => ctx.sim,
+    },
+    gauntlet: {
+        excludes: ['events', 'levelData'],
+        create: (seed, players) => ({ gs: gNewGame(seed, {}, players > 1), seed }),
+        stepAll: (ctx, pads) => { gStep(ctx.gs, heroFromPad(pads[0] || {}), p2FromPad(pads[1] || {})) },
+        hash: (ctx) => gHash(ctx.gs),
+        state: (ctx) => ctx.gs,
     },
 }
 
@@ -159,6 +171,7 @@ if (r.failed === 0) {
 const MUTANTS = [
     ['joust gravity 0.045 -> 0.0449', '../src/games/Joust/sim.js', 'gravity: 0.045,', 'gravity: 0.0449,'],
     ['emberwood hero speed 1.45 -> 1.47', '../src/games/Emberwood/sim.js', 'speed: 1.45 }', 'speed: 1.47 }'],
+    ['gauntlet walk 0.045 -> 0.0451', '../src/games/Gauntlet/sim.js', 'walk: 0.045,', 'walk: 0.0451,'],
 ]
 if (!CHILD) {
     if (MUTATE) {
