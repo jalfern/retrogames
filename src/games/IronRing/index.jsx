@@ -129,6 +129,14 @@ const IronRingGame = () => {
         // #1761: the online select-start gate as a pure state machine — the host
         // may only launch once the guest's pick has landed over the wire.
         const hostSelect = createHostSelect()
+        const sentPicks = { n: 0, ok: null }
+        const recvPicks = { n: 0 }
+        // #2478: the challenger's confirmed pick, kept so a socket that had to
+        // reconnect (the StrictMode ghost-close makes the first join race its own
+        // closing socket: `room full` → retry) RE-DECLARES the choice when it
+        // lands — a pick made while unseated used to evaporate, and a host that
+        // pressed FIGHT in the meantime would wait forever (#2476 pattern).
+        const myPick = { char: null }
 
         // ---- net (#1039 lobby + hand-rolled pad lockstep: the wire carries the
         // eight fighting verbs, so it skips the 6-bit lockstep normalizer) ----
@@ -152,7 +160,7 @@ const IronRingGame = () => {
             joinHref: net.joinHref,
             names: ['HOST', 'CHALLENGER'],
         } : null)
-        const netSend = (t, m) => { if (net.room) { try { net.room.send(t, m) } catch { /* closed */ } } }
+        const netSend = (t, m) => { if (!net.room) return false; try { return net.room.send(t, m) } catch { return false } }
         // The host is the launch authority; the seed keeps host authority
         // (Outpost precedent), generated at the actual launch — which the
         // netselect gate defers until the guest's pick has arrived.
@@ -168,9 +176,25 @@ const IronRingGame = () => {
                 makeTransport,
                 shareRelay: !!nq.get('relay'),
                 onState: (s) => { net.phase = s.phase; net.code = s.code; net.joinHref = s.joinHref; pushNetUi() },
-                onRoster: ({ slots }) => { net.seats = slots.slice(); pushNetUi() },
-                onJoin: () => pushNetUi(),
-                onLeave: () => pushNetUi(),
+                onRoster: ({ slots }) => {
+                    net.seats = slots.slice(); pushNetUi()
+                    // #2478: re-seated (or the roster just formed) — re-declare
+                    // the pick so a choice made on a dead socket still reaches.
+                    if (net.role === 'guest' && myPick.char) netSend('pick', { char: myPick.char })
+                },
+                onJoin: () => {
+                    // #2478: a new challenger's pick is fresh — drop anything the
+                    // last occupant of seat 1 left behind (#2476 pattern).
+                    if (net.role === 'host') hostSelect.reset()
+                    pushNetUi()
+                },
+                onLeave: () => {
+                    // #2478: no ghost waits — a challenger who leaves while the
+                    // host awaits their pick voids the pending launch; the host
+                    // presses FIGHT again and waits for the next pick.
+                    if (net.role === 'host') hostSelect.reset()
+                    pushNetUi()
+                },
                 onStart: (m) => {
                     const sd = m.seed >>> 0
                     const hostChar = m.hostChar || 'kade'
@@ -191,6 +215,7 @@ const IronRingGame = () => {
                         // FIGHT is the moment the gate releases — launch now,
                         // with the guest's real choice (never a placeholder).
                         if (net.role === 'host') {
+                            recvPicks.n++
                             const r = hostSelect.onPick(m.char)
                             if (r.start && screenRef.current === 'select') launchNet(r.start)
                         }
@@ -294,7 +319,12 @@ const IronRingGame = () => {
                     const r = hostSelect.commit(c.id)
                     if (r.start) launchNet(r.start)
                 } else {
-                    netSend('pick', { char: c.id })
+                    // #2478: keep the choice — a socket that drops now (the
+                    // StrictMode ghost, a flaky network) re-declares it on the
+                    // next roster landing instead of evaporating.
+                    myPick.char = c.id
+                    sentPicks.ok = netSend('pick', { char: c.id })
+                    sentPicks.n++
                 }
                 return
             }
@@ -860,6 +890,24 @@ const IronRingGame = () => {
                 forceAirGrab() { if (gs) { const d = gs.fighters[1]; d.def.cpu = false; d.st = 'airthrow'; d.stun = 10; d.sf = 0; d.move = null; d.phase = ''; d.y = Math.max(d.y, 0.5); d.vy = Math.max(d.vy, 0.03); d.vx = 0; gs.hitstop = Math.max(gs.hitstop, 8); gs.events.push({ t: gs.tick, kind: 'airgrab', by: 0 }) } },
                 expireContinue() { continueFrames = 1 },
                 setLadder(i) { ladderIdx = i },
+                // #2478 net gate probe: seat characters + gate posture, so the
+                // live drive (scripts/ironringnet.mjs) can watch the deferral,
+                // the release, and the socket underneath it all.
+                netState() {
+                    return {
+                        role: net.role, phase: net.phase, code: net.code,
+                        waiting: hostSelect.waiting,
+                        chars: [p1Char, p2Char],
+                        screen: screenRef.current,
+                        gate: hostSelect.state,
+                        rphase: net.room ? net.room.phase : '-',
+                        seats: net.seats.slice(),
+                        wsState: ws ? ws.readyState : -1,
+                        sentPicks: sentPicks.n,
+                        recvPicks: recvPicks.n,
+                        lastSendOk: sentPicks.ok,
+                    }
+                },
                 // #1637 watchcheck pilot drives these.
                 watching: () => watchingRef.current,
                 probe: () => (gs ? { phase: gs.phase, tick: gs.tick, x: gs.fighters.map((f) => +f.x.toFixed(2)), hp: gs.fighters.map((f) => Math.round(f.hp)), wins: gs.fighters.map((f) => f.wins), done: gs.phase === 'done' } : null),
@@ -915,7 +963,14 @@ const IronRingGame = () => {
             window.removeEventListener('keyup', onKeyUp)
             window.removeEventListener('resize', resize)
             wrap.removeEventListener('pointerdown', onPointer)
-            if (net.lobby && net.lobby.destroy) net.lobby.destroy()
+            // #2478 StrictMode: the first mount's socket must actually close,
+            // or it holds a seat the live mount can never fill (`room full`
+            // forever). `net.lobby.destroy` never existed — createLobby exposes
+            // close(), not destroy — so the guard silently skipped teardown.
+            // The proven teardown is room.reset(): it clears the retry ladder
+            // and closes the ws (BlobBattle precedent, the pattern six other
+            // net games use).
+            if (net.room) { try { net.room.reset() } catch { /* gone */ } }
             unexposeFeedbackState()
             if (import.meta.env.DEV) { unexposeGame(); unmountDbg(); delete window.__ironRingTest }
             scene.renderer.dispose()

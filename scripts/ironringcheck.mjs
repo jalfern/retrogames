@@ -714,6 +714,39 @@ console.log('part A2: online select gate (netselect.js)')
     const re = s3.onPick('brakk')
     ok(re.start === null, 'a re-pick after the host already started cannot relaunch the match')
 
+    // #2478 (the #2476 pattern): a challenger who LEAVES must un-hang the
+    // host — index.jsx drives hostSelect.reset() from onJoin/onLeave; the
+    // machine pins here say what that reset must guarantee.
+    const s4 = createHostSelect()
+    s4.commit('kade')
+    ok(s4.waiting === true, 'gate is waiting while the challenger owes a pick')
+    s4.reset()
+    ok(s4.waiting === false && s4.state.guestChar === null && s4.commit('kade').waiting === true,
+        'a challenger LEAVING un-hangs the host: pending launch voided, next FIGHT re-arms the wait')
+
+    const s5 = createHostSelect()
+    s5.commit('kade')
+    s5.onPick('vexa')
+    s5.reset()
+    ok(s5.commit('kade').start === null && s5.onPick('sable').start && s5.state.guestChar === 'sable',
+        'leave after a stored pick: the stale choice is gone and the NEXT joiner fires it fresh')
+
+    // #2478, the DEEPER bug (#2476 found it for ViperPit): relay/core.js
+    // FORWARD_TYPES never carried 'pick' — the relay silently dropped every
+    // challenger pick, so IronRing's #1761 gate could defer forever. Lock the
+    // allowlist itself, and lock that unknown types STILL die.
+    {
+        const core = await import(bust('../relay/core.js'))
+        const room = core.newRoom('IRON', 2)
+        core.join(room, 'sock-host')
+        core.join(room, 'sock-guest')
+        const fwd = core.relay(room, 'sock-guest', { t: 'pick', s: 1, char: 'vexa' })
+        ok(fwd.ok === true && fwd.to.length === 1 && fwd.to[0] === 'sock-host',
+            'relay forwards a challenger pick to the host (allowlist carries pick)')
+        const bad = core.relay(room, 'sock-guest', { t: 'pickx', s: 1 })
+        ok(bad.ok === false && bad.err === 'type', 'relay still refuses unknown wire types (allowlist stays an allowlist)')
+    }
+
     if (MUT) {
         // Mutant: restore the pre-#1761 behavior — commit launches immediately,
         // so a guest pick still in flight is dropped for a seeded placeholder.
