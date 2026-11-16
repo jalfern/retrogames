@@ -395,6 +395,26 @@ function objectiveDrive(gs, pi, st, p) {
 
     // upgrade run: while no threat is close and we still have the stock twin
     // pistols, smash the nearest crate and grab the gun inside.
+    // #2491 dry-tank reload: LASER burns 2 energy a shot and the sim answers
+    // an underfunded trigger with silence — a dry pilot is scenery with a gun
+    // (seeds 2/5 strafed THE ANNOUNCER for thousands of ticks at energy 0).
+    // When the tank runs low, the business of the room becomes the reload:
+    // walk the nearest cell, drop or crate that puts lead back in the gun
+    // (energy tops the tank; a crate hands over an energy-free iron), and
+    // keep the aim on the threat while walking — the guard and the gate own
+    // the body.
+    const dry = p.weapon === 'laser' && gs.energy < 30
+    const refuel = dry
+        ? (gs.items.find((k) => k.t === 'energy') ||
+           gs.items.find((k) => k.t === 'weapon' && k.w !== 'laser' && k.w !== 'flame') ||
+           gs.crates.find((k) => k.hp > 0 && k.weapon && k.weapon !== 'laser' && k.weapon !== 'flame'))
+        : null
+    if (refuel) {
+        const th = nearestEnemy(gs, true, p)
+        if (th) aimAt(th.x, th.y)
+        moveToward(refuel.x, refuel.y, 4)
+        return inp
+    }
     const crate = gs.crates.find((k) => k.hp > 0 && k.weapon !== p.weapon)
     if (!gs.cleared && !room.boss && crate && (p.weapon === 'twin' || p.weapon === 'spread') && (!threat || Math.hypot(threat.x - p.x, threat.y - p.y) > 45)) {
         aimAt(crate.x, crate.y)
@@ -478,8 +498,33 @@ function objectiveDrive(gs, pi, st, p) {
             const [qx, qy] = q8(threat.x - p.x, threat.y - p.y)
             const perp = (threat.x - p.x) * qy - (threat.y - p.y) * qx
             if (Math.abs(perp) > 4 && d > 24) {
-                if (Math.abs(qy) >= Math.abs(qx)) inp.mx = Math.sign(perp * qy) || Math.sign(threat.x - p.x) || 1
-                else inp.my = -Math.sign(perp * qx) || Math.sign(threat.y - p.y) || 1
+                // #2491 lane-sound duel — never align onto a lane chrome owns.
+                // The perp walk blindly drags the body onto the threat's row or
+                // column even when the aligned lane is walled (and the aligned
+                // STAND unreachable): seed 4 nailed itself onto the (12,10)
+                // corner twice a cycle — align north into chrome, volley-commit
+                // east under the turret's throw, drift back west, repeat — while
+                // the open column beneath the turret sat unclaimed. Probe both
+                // cardinal lanes from the would-be stand; when the wanted one is
+                // blocked and its sibling is clear, take the sibling: walk the
+                // OTHER axis and let the gun come onto the lane that can fire.
+                // duelists that hold ground (turret, heavy). Lobbers throw
+                // arcs at where you STAND and chasers close the lane themselves
+                // — for them the proven perp/dodge doctrine keeps the floor
+                // (an unscoped draft cost seed 5: lane-walking into a thrower
+                // pair traded positions the volley gate was built to refuse).
+                const staticDuel = threat.kind === 'turret' || threat.kind === 'heavy'
+                const hOpen = los(gs, p.x, threat.y, threat.x, threat.y)
+                const vOpen = los(gs, threat.x, p.y, threat.x, threat.y)
+                if (staticDuel && Math.abs(qx) > Math.abs(qy) && !hOpen && vOpen) {
+                    inp.mx = Math.sign(threat.x - p.x); inp.my = 0
+                } else if (staticDuel && Math.abs(qy) >= Math.abs(qx) && !vOpen && hOpen) {
+                    inp.mx = 0; inp.my = Math.sign(threat.y - p.y)
+                } else if (Math.abs(qy) >= Math.abs(qx)) {
+                    inp.mx = Math.sign(perp * qy) || Math.sign(threat.x - p.x) || 1
+                } else {
+                    inp.my = -Math.sign(perp * qx) || Math.sign(threat.y - p.y) || 1
+                }
                 st.wantMove = true
             } else {
                 // #2491 dead-shot breaker: aligned and firing, yet the body has
@@ -507,6 +552,25 @@ function objectiveDrive(gs, pi, st, p) {
     }
 
     // no threat visible and not clear: hold center, wait for the wave
+    // #2491 spawn-lean parking — the shield that used to eat a wave landing
+    // on the hero's head is gone. The cabinet telegraphs the landing for a
+    // human's eye (the #1978 spawn cue); the pilot reads the queue itself:
+    // slack seed 1 room 1 queued a walkcam on the entry cell and it
+    // materialised on the hero's crown — instant death, three lives, room 1.
+    // Never loiter inside a queued landing ring: stand off the nearest one.
+    let hot = null, hd = 1e9
+    for (const s of (room.spawns || [])) {
+        const d = Math.hypot(cx(s.c) - p.x, cy(s.r) - p.y)
+        if (d < hd) { hd = d; hot = [cx(s.c), cy(s.r)] }
+    }
+    if (hot && hd < 40) {
+        const [qx, qy] = q8(p.x - hot[0], p.y - hot[1])
+        if (qx || qy) {
+            inp.mx = qx; inp.my = qy
+            st.wantMove = true
+            return inp
+        }
+    }
     moveToward(boardW(gs) / 2, CH - 48, 24)
     // the partner gives its twin room on the same sheet of chrome
     if (pi === 1) {

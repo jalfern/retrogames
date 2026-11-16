@@ -182,7 +182,7 @@ function loadRoom(gs, idx) {
     if (energyCells) gs.items.push({ id: gs._nextId++, t: 'energy', x: cx(3), y: cy(2) })
     const inv = 0 // #2491: the arcade gives no spawn invulnerability — land exposed
     const p1 = gs.players[0]
-    p1.x = cx(startColOf(room.gw)); p1.y = cy(START.r)
+    p1.x = landX(gs, cy(START.r), p1); p1.y = cy(START.r)
     p1.aim = [0, -1]; p1.fireT = 0; p1.deadT = 0; p1.invuln = inv; p1.walk = 0
     gs.player = p1
     if (gs.players.length > 1) {
@@ -732,6 +732,25 @@ function checkExit(gs) {
 }
 
 // ---------------------------------------------------------------- step ----
+// #2491 open-door landing — with zero spawn shield, the body-physics still
+// refuse a body inside a body: the world freezes while seats die, so a chaser
+// can park ON the spawn cell and every respawn would die on contact without
+// ever moving (slack seed 1: three lives spent against a frozen walkcam).
+// Land the seat at the nearest clear cell along the spawn row — the door is
+// clear, the shield is not: zero invulnerability rides along, and any round
+// already in the room still kills on arrival.
+function landX(gs, y, self) {
+    const sx = cx(startColOf(gwOf(gs)))
+    for (const dc of [0, -1, 1, -2, 2, -3, 3]) {
+        const nx = cx(startColOf(gwOf(gs)) + dc)
+        if (blockedPx(gs, nx, y, CFG.playerR)) continue
+        if (gs.players.some((q) => q !== self && !q.out && q.deadT === 0 && Math.hypot(q.x - nx, q.y - y) < CFG.contactR + CFG.playerR)) continue
+        if (gs.enemies.some((e) => e.hp > 0 && Math.hypot(e.x - nx, e.y - y) < CFG.contactR)) continue
+        return nx
+    }
+    return sx
+}
+
 export function step(gs, inp = {}, inp2 = null) {
     gs.tick++
     if (gs.end) return gs
@@ -748,7 +767,7 @@ export function step(gs, inp = {}, inp2 = null) {
             p.deadT--
             if (p.deadT === 0) {
                 if (p.lives <= 0) { gs.end = 'over'; gs.events.push({ type: 'over' }); return gs }
-                p.x = cx(startColOf(gwOf(gs))); p.y = cy(START.r)
+                p.x = landX(gs, cy(START.r), p); p.y = cy(START.r)
                 p.invuln = 0 // #2491: respawn lands unshielded — the arcade gives none
                 gs.energy = CFG.maxEnergy
                 gs.events.push({ type: 'respawn' })
@@ -767,7 +786,7 @@ export function step(gs, inp = {}, inp2 = null) {
             if (q.deadT === 0) {
                 if (q.lives <= 0) q.out = true
                 else {
-                    q.x = cx(startColOf(gwOf(gs))); q.y = cy(START.r)
+                    q.x = landX(gs, cy(START.r), q); q.y = cy(START.r)
                     q.invuln = 0 // #2491: respawn lands unshielded — the arcade gives none
                     if (i === 0) gs.energy = CFG.maxEnergy
                     gs.events.push({ type: 'respawn', pi: i })
