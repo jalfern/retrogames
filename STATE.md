@@ -1,72 +1,79 @@
-# STATE — session 304 (2026-11-16, slot a)
+# STATE — session 305 (2026-11-16, slot a)
 
 ## Playable now / what shipped
-- **PRINCE OF PERSIA living night sky (#2461 → PR #2465, merge `581792f`).**
-  Live at jalfern.com/retrogames/prince-of-persia — palace windows are weather now:
-  - **Cloud banks:** 3 seeded layers per pane at 0.55–1.5× drift, own height/
-    size/density; the first layer rides the moon's row so every pane's
-    signature event is a cloud passing THE MOON, not past it.
-  - **Wandering moon:** `moonPane` drifts the disc ±1.6 px on a seeded arc,
-    clamped inside the glass — #2330's "same window, same night" survives,
-    moving; rooftop law restated for the motion (disc bottom ≤67 < roof ≥68).
-  - **Overcast moonlight (the player-visible rule):** `moonShade(tick,seed)`
-    dims the window's cool key when cloud overlaps the disc; the shade rides
-    `moonSources`' 4th channel into `lightAt`/`coolAt`/`tempAt`, cold pool,
-    cast shaft, dust motes, flagstone band, figure rims. Halls darken and
-    re-brighten under the sky. Measured: lightAt 0.70 clear → ≤0.5 overcast.
-  - **Byte-safe:** default `moonSources(decos, base)` pins shade 1 — every
-    pre-#2461 pin untouched; sim/`stateHash`/rng untouched (pure tick+seed).
-  - #1711 claim attempt REFUSED (slot b live) → ladder empty → flagship gaps
-    owned/QA-held → never-dry `weakestStage` → PoP (score 2, registry-oldest).
-- **Picker hygiene (same PR, README-only):** MagicCarpet's village-economy
-  bullet — shipped work missing its marker — is `CLOSED by #1764` again, so
-  `weakestStage` stops handing free lanes closed work (#961 law).
-- Gates: popcheck 398/398 (§25 ×11; all 48 column seeds dim ≤0.8 AND clear
-  within 6000 ticks) · mutants 1/2/2 red (shade-out, drift-0, shade→1) ·
-  popplay 28/28 live (forecast min 0.527, pane luminance shifts, shade rides
-  the tick) · eslint + lint:mario/fps/ai + build green · `static` green.
+- **BOULDER DASH wall momentum (#2468 → PR #2471, merge `60ecb2b`).**
+  Live on the production deploy (jalfern.com proxy cache still serving the old
+  index at exit — verify `index-DLxmtTz0.js` contains "SLIDERS LEDGE" once it
+  turns over, ≤30 min). Cave 10 **SLIDERS LEDGE** in production:
+  - **The combo:** a wall shoved off a ledge KEEPS SLIDING along the floor it
+    lands on until something blocks it — the original's most-loved squash.
+    Shove law at spawn only (boulders stay dead-weight; a boulder that later
+    becomes a falling wall carries no arm); straight-down falls teach no
+    direction (no drift); doused, crushed or flattening kills the arm.
+  - **Byte-safe opt-in:** `momentum:` cave flag → `CFG.wallMomentum`; when off
+    the sim takes the exact pre-#2468 path (pins: old caves' stateHash identical
+    across both flag values). Same pattern as #2444's `multiHead`.
+  - **Load-bearing cave:** the exit bolt sits at corridor end; without momentum
+    the player's only wall parks in the mouth (the #1571 complaint verbatim)
+    and the planner STRANDS; with it, one shove from 2 tiles clears the bolt —
+    the proof is the delta, not a demo. Gems live in side pockets (see catches).
+- **#1711 PLAICRAFT S1 — collision, resolved fairly, still open (slot b).**
+  I claimed #1711 step 1b (clap-coach re-arm after the #2462 refactor); slot
+  b's resumed session pushed the same fix 9 min later and its PR #2466 merged
+  first (`12a7fe7`). I adopted + tested it (store graded: nothing new to
+  grade), posted the handoff on #1711 releasing steps 2–4 to b, and moved to
+  the ladder myself. Acceptance stays open: Jon's phone takes on the in-app
+  store (`DEV_PORT=<own> npm run plaicraft:grade` grades and posts itself).
+
+## Gates (all green, #2471)
+- dashcheck **270/270** (was 241): +29 momentum pins — spawn-law truth table
+  (8 dirs × ground/void), armed→live carry-over, douse/crush/flatten death,
+  blocked dies (wall + player both), drift guard 60k ticks, legacy byte-parity.
+- mutants **286/286** (was 270 + 16): the new `wallMomentum` mutant caught.
+- dashplay **65/65** live: SLIDERS LEDGE playable (0 deaths, 0 stuck), slide
+  with NO actuator held (the combo fires on its own), old-cave regression,
+  slide-sfx tick + mom probe.
+- eslint + lint:mario/fps/ai + build + attractcheck (694) green; `static`
+  green on CI; Vercel production deploy Ready (`retrogames-b2eepef78`).
 
 ## BOARD at exit
 - game-queue / next / steer / waiting-jon: empty. building: #1711 (slot b,
-  big-build — remaining acceptance is Jon's phone take; when a fresh take
-  lands, `DEV_PORT=<own> npm run plaicraft:grade` grades + posts itself).
-- #2461 shipped+closed this session. Others while I ran: b shipped #2462 +
-  #2466 (clap coach + re-arm); QA shipped the BoulderDash butterfly #2467.
-- building-qa: QA's own (#2460, #2447 revived; #2449 items 1–2 shipped by
-  QA as #2455/#2458).
+  big-build), #2470 (HOMEBODY action-queue polish, lane:games — taken).
+- #2468 shipped+closed this session.
+- building-qa (QA's own): #2449, #2460. Ladder refused them to builder
+  lanes while QA sessions are live — expected.
+- amoeba honesty: multi-head + drift shipped; the SPLIT law stays un-specced
+  until originals are read — inverting the drift is invention, not the game.
 
 ## Next (slot a or b, in order)
-1. Refresh the ladder; empty → flagship stage → weakestStage — **re-run the
-   picker, the shelf re-sorted twice this evening** (PoP gap 0 is gone; its
-   last gap is check-only duck proof, not a player-visible stage).
-2. Harness-doc fix worth taking (small, no behaviour): FORGE step 8 says poll
-   the bundle hash — but a change confined to one game lands in that route's
-   LAZY chunk and the index hash does NOT move. Evidence + the chunk-scan
-   method posted on #2461's final comment (I nearly called a 90-min alias
-   stall that was my probe looking in the wrong file).
-3. If a fresh gauntlet take is in the store, grade it (b's note stands).
+1. Fresh ladder → flagship stage → weakestStage (never dry). After #2468 the
+   BoulderDash shelf is 4 gaps, all check-only or original-blocked — expect
+   it to sink.
+2. #1711 steps 2–4 are b's (handoff comment on the issue). If a fresh
+   gauntlet take lands in the store, grade it.
+3. Session 304's harness-doc fix still open (FORGE step 8: index-hash polling
+   lies for lazy-chunk changes — this session re-confirmed the OTHER half:
+   BoulderDash ships IN the index chunk, so the hash DOES move; per-game
+   verify = grep the chunk the live index names, then check the alias).
 
 ## The session's catches
-- **Prod verification by index-hash polling lies for feature stages.** New
-  games move the index hash (registry import); one-game changes don't. Grep
-  the lazy chunks the live index references instead — #2465's marker was in
-  `index-DAD9FVOy.js` on www from the start.
-- **weakestStage picked a ghost:** MagicCarpet scored first on a README
-  bullet for work #1764 finished months ago. Read the gap text before
-  building the picker's answer; fix the marker (#961) and re-score.
-- **Guarantee the signature event in law, not luck:** free cloud bands left
-  7/48 seeds with no dim ever; pinning layer 0 to the moon's row made
-  overcast 48/48 within 5 s.
-- **Unit-mixed pins:** rad/tick vs panes/tick reads plausible and fails —
-  divide by 2π before comparing drift rates.
-- **STATE.md written into the main checkout can be reset by hygiene mid-
-  session** (mine was reverted before commit). Write → park → commit
-  back-to-back; the slot-park copy is the backup.
-- **gh merge fast-forwards the worktree onto `main`** — re-detach at once
-  and delete the local main (law).
-
-## Hygiene at exit
-- Dev server 5173 stopped (own pid only); foreign ports untouched.
-- Worktree retrogames-forge-pop-sky pruned post-merge (purge cron); branch
-  gone via squash; main checkout detached at origin/main, clean.
-- STATE.md committed to main (game code merged this session) + parked slot a.
+- **Claims are advisory; branches are truth.** Slot b silently resumed #1711
+  from its own stale claim and merged #2466 while mine was mid-review. Before
+  claiming, `gh pr list --head <branch>` + check if a remote branch already
+  exists; if another lane beat you, adopt, credit, release — don't duplicate.
+- **A gem is a DOOR in the planner, not a corridor.** A gem mid-corridor made
+  the BFS call the exit unreachable (stranded); and gem-at-tick-1 fell
+  straight into a pit the "gem not above hole" invariant missed because the
+  gem spawns where the gem is. Gems go in dead-end pockets, floor below,
+  no void below the pocket.
+- **`npm ci --dry-run` lies about `.bin`.** Main checkout's node_modules/.bin
+  was empty (playwright "Executable doesn't exist"). Fix: `cp -Rc
+  <working-worktree>/node_modules .` — a symlinked .node_modules breaks
+  `npm run`; a real copy works.
+- **Live assertions need the world's timing, not the player's.** dashplay's
+  exit-walk check failed 3× at 3500 ms — a 20-tick boulder slide (333 ms)
+  lands the crush on the player's path; 6000 ms is the right slack for a
+  scripted 2 m run.
+- **Vercel deploy URLs are SSO-walled** — prod verification = jalfern.com
+  only, and it proxies with a ~30 min cache; a NOT_FOUND for a new content
+  hash means the alias hasn't flipped yet, not a bad deploy.
