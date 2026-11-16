@@ -145,14 +145,21 @@ const LEAGUE = []
     // bump at t818 (IVAN) changes his phase, and he lands CLEAN at the lip on
     // lap 2 — IVAN's old lap-2 receipt retired honestly as a consequence of
     // contact, SONJA keeps hers. SUPERCROSS receipts unchanged.
+    // #2420 update: the pack is solid to itself and the grid staggers 14px
+    // (the original's start row), so every phase moved. MOTOCROSS now takes
+    // FOUR wipeouts — SONJA's two lip crashes each pull IVAN's chain-wreck
+    // behind them (why 'wreck', on:SONJA), and IVAN's old clean lap-2 landing
+    // went with the phase. SUPERCROSS keeps its two IVAN receipts.
     const RECEIPTS = {
         0: [
-            { t: 480, name: 'SONJA', x: 1367 },
-            { t: 1951, name: 'SONJA', x: 1367 },
+            { t: 489, name: 'SONJA', x: 1369 },
+            { t: 503, name: 'IVAN', x: 1353 },
+            { t: 1960, name: 'SONJA', x: 1370 },
+            { t: 2036, name: 'IVAN', x: 1355 },
         ],
         1: [
-            { t: 502, name: 'IVAN', x: 1404 },
-            { t: 2048, name: 'IVAN', x: 1404 },
+            { t: 514, name: 'IVAN', x: 1404 },
+            { t: 2060, name: 'IVAN', x: 1404 },
         ],
     }
     const replay = (i) => {
@@ -166,7 +173,7 @@ const LEAGUE = []
             for (const e of g.events) {
                 if (e.type === 'rcrash') {
                     const q = g.rivals.find((x) => x.name === e.name)
-                    crashes.push({ t: g.tick, name: e.name, why: e.why, x: Math.round(e.x), d: q.d, leadGap: Math.max(...g.rivals.map((x) => x.d)) - q.d, k })
+                    crashes.push({ t: g.tick, name: e.name, why: e.why, on: e.on || '', x: Math.round(e.x), d: q.d, leadGap: Math.max(...g.rivals.map((x) => x.d)) - q.d, k })
                 } else if (e.type === 'rup') ups.push({ t: g.tick, name: e.name })
             }
             g.events.length = 0
@@ -208,15 +215,20 @@ const LEAGUE = []
         const s = LEAGUE[0].crashes.filter((c) => c.name === 'SONJA')
         ok(s.length >= 2 && Math.abs(s[0].x - s[s.length - 1].x) <= 4, `SONJA's wipeouts moved (${JSON.stringify(s.map((c) => c.x))}) — crash sites must be terrain-fixed`)
     }
-    // live churn: SONJA's first wreck drops her behind IVAN while she walks it
+    // live churn (#2420): the wreck takes its witness. IVAN chains behind
+    // SONJA's lip crash on both laps — lap 1 while he is still in her
+    // slipstream (14 ticks), lap 2 after her body has aged but is still alive
+    // inside the rivalDown window (76 < 110). SUPERCROSS proves the contrast:
+    // the tail rider falls ALONE (nobody behind), so nobody chains.
     {
-        const st = makeGame(0, {})
-        const k0 = LEAGUE[0].crashes[0].k
-        for (let k = 0; k <= k0; k++) { step(st, runs[0].r.script[k]); st.events.length = 0 }
-        const before = rivalRank(st, 'SONJA')
-        for (let k = k0 + 1; k <= k0 + 150; k++) { step(st, runs[0].r.script[k]); st.events.length = 0 }
-        const after = rivalRank(st, 'SONJA')
-        ok(after > before, `SONJA's wreck did not drop her in the order (${before} -> ${after}) — the leaderboard cannot churn`)
+        const cs = LEAGUE[0].crashes
+        ok(cs.filter((c) => c.why === 'wreck' && c.on === 'SONJA').length === 2,
+            `MOTOCROSS made ${cs.filter((c) => c.why === 'wreck').length} chain-wrecks, want 2 — SONJA's lip should pull IVAN in every lap`)
+        ok(cs[0].name === 'SONJA' && cs[1].why === 'wreck' && cs[1].on === 'SONJA' && cs[1].t - cs[0].t <= 30 &&
+            cs[2].name === 'SONJA' && cs[3].why === 'wreck' && cs[3].on === 'SONJA' && cs[3].t - cs[2].t < 110,
+            `the chain did not follow the lip crash inside the body's lifetime (${JSON.stringify(cs.map((c) => [c.name, c.t, c.why]))}) — the pack is not solid`)
+        ok(!LEAGUE[1].crashes.some((c) => c.why === 'wreck'),
+            'SUPERCROSS chained a rival behind its own tail rider — there is no one back there to chain')
     }
     // determinism: the same script replays to the same wipeouts
     {
@@ -252,12 +264,12 @@ section('CONTACT (the league is solid — receipts exact, #2391)')
     }
     const WANTS = {
         0: {
-            flybys: 5, bumps: 4, jolts: 0, crashes: 0,
-            firstFlyby: { t: 553, name: 'SONJA', overWreck: true },
+            flybys: 5, bumps: 0, jolts: 0, crashes: 0,
+            firstFlyby: { t: 551, name: 'IVAN', overWreck: true },
             overAllFive: true,
         },
         1: {
-            flybys: 9, bumps: 3, jolts: 0, crashes: 0,
+            flybys: 8, bumps: 5, jolts: 0, crashes: 0,
             firstFlyby: { t: 573, name: 'IVAN', overWreck: true },
         },
     }
@@ -393,6 +405,189 @@ section('CONTACT (the league is solid — receipts exact, #2391)')
         const a = JSON.stringify(contactRuns[0].map((h) => [h.t, h.type, h.name]))
         const b = JSON.stringify(replayContact(0).map((h) => [h.t, h.type, h.name]))
         ok(a === b, 'contact receipts are not deterministic — attract lies')
+    }
+}
+
+// ---------------------------------------------------------- pack (#2420) ----
+section('PACK (the league is solid to itself — receipts exact, #2420)')
+{
+    // Rival-vs-rival contact: the same body law the player pays, mirrored
+    // onto the pack. Chain wrecks (the tail rides into a body it inherits),
+    // hazard hops (skill decides who reads the body early enough to fly it),
+    // bump momentum both ways, a blocked lane that HOLDS, one drama per pair,
+    // and one master switch (packK) that ghosts it all away. The MOTOCROSS
+    // campaign carries the organic proof (CRASH LEAGUE pins the chains); the
+    // rigs below fire each rule at an exact tick on the flat start straight.
+    const rig2 = (chaserName, gap0, down = 400, vd = 0) => {
+        const g = makeGame(0, { count: 0 })
+        const tr = track(0)
+        const v = g.rivals.find((r) => r.name === 'GORDON')
+        const c = g.rivals.find((r) => r.name === chaserName)
+        v.d = 150; v.down = down; v.v = vd; v.alt = groundY(tr.ground, 150); v.air = false; v.cool = 0; v.tk = 0
+        c.d = 150 - gap0; c.v = 5; c.alt = groundY(tr.ground, c.d); c.air = false; c.cool = 0; c.tk = 0; c.down = 0
+        return { g, v, c }
+    }
+    // skill gradient, same rig: KATO (0.92) reads the wreck at 39px and flies
+    // it clean; IVAN (0.52) commits at 29px, arrives nose-low, and chains.
+    {
+        const { g, v, c } = rig2('KATO', 70)
+        const hits = []
+        for (let t = 1; t <= 40; t++) {
+            c.v = 5.0
+            step(g, {})
+            for (const e of g.events) if (['rhop', 'rcrash', 'rbump'].includes(e.type) && (e.name === 'KATO' || e.a === 'KATO' || e.b === 'KATO')) hits.push(`${t}:${e.type}${e.why ? e.why : ''}`)
+            g.events.length = 0
+        }
+        ok(hits.length === 1 && hits[0] === '8:rhop' && c.d > v.d,
+            `the front office did not clear the wreck cleanly (${JSON.stringify(hits)}, d ${c.d.toFixed(0)} vs ${v.d.toFixed(0)}) — hazard hops are not a skill yet`)
+    }
+    {
+        const { g, v, c } = rig2('IVAN', 70)
+        const hits = []
+        for (let t = 1; t <= 20; t++) {
+            c.v = 5.0
+            step(g, {})
+            for (const e of g.events) if (['rhop', 'rcrash'].includes(e.type)) hits.push(`${t}:${e.type}${e.why ? e.why : ''}`)
+            g.events.length = 0
+        }
+        ok(hits.join(',') === '10:rhop,12:rcrashwreck',
+            `the tail rider did not chain behind the body (${JSON.stringify(hits)}) — the pack ghosts or overpunishes`)
+        ok(c.d < v.d, 'the chained rider ended up THROUGH the body — solidity is theatre')
+    }
+    // determinism: the same rigs replay to the same chain beats
+    {
+        const beats = () => {
+            const out = []
+            for (const n of ['KATO', 'IVAN']) {
+                const { g, c } = rig2(n, 70)
+                for (let t = 1; t <= 40; t++) {
+                    c.v = 5.0
+                    step(g, {})
+                    for (const e of g.events) if (['rhop', 'rcrash'].includes(e.type)) out.push(n + t + e.type)
+                    g.events.length = 0
+                }
+            }
+            return out.join(',')
+        }
+        ok(beats() === beats(), 'pack receipts are not deterministic — attract lies')
+    }
+    // rbump: closing at 2.2 over a riding back transfers momentum BOTH ways
+    {
+        const { g, v, c } = rig2('IVAN', 30, 0, 3.6)
+        let hit = null
+        for (let t = 1; t <= 20 && !hit; t++) {
+            v.v = 3.6
+            const cv0 = c.v, vv0 = v.v, vd0 = v.d
+            c.v = v.v + 2.2
+            step(g, {})
+            for (const e of g.events) if (e.type === 'rbump') hit = { t, a: e.a, b: e.b, cv: e.cv, lost: +(cv0 - c.v).toFixed(2), gain: +(v.v - vv0).toFixed(2), shove: +(v.d - vd0 - v.v).toFixed(0) }
+            g.events.length = 0
+            v.v = 3.6
+        }
+        ok(hit && hit.a === 'IVAN' && hit.b === 'GORDON' && hit.cv > 1.6 && hit.cv < 3.4,
+            `closing on a riding back did not bump as scripted (${JSON.stringify(hit)})`)
+        ok(hit && hit.lost > 0.5 && hit.gain > 0.3 && hit.shove === 3,
+            `the pack bump moved no one (${JSON.stringify(hit)}) — two-way transfer is theatre`)
+    }
+    // a body met AT the box wipes the rider (too late to hop): wreck on:GORDON t1
+    {
+        const { g, v, c } = rig2('IVAN', 12)
+        let hit = null
+        for (let t = 1; t <= 20 && !hit; t++) {
+            c.v = 5
+            step(g, {})
+            for (const e of g.events) if (e.type === 'rcrash') hit = { t, why: e.why, on: e.on }
+            g.events.length = 0
+        }
+        ok(hit && hit.t === 1 && hit.why === 'wreck' && hit.on === 'GORDON',
+            `slamming a body at v5 was not a chain-wreck (${JSON.stringify(hit)})`)
+    }
+    // slamming a RIDING back over the crash line: contact wipeout at t1
+    {
+        const { g, v, c } = rig2('IVAN', 12, 0, 1.5)
+        let hit = null
+        for (let t = 1; t <= 20 && !hit; t++) {
+            v.v = 1.5; c.v = 5.6
+            step(g, {})
+            for (const e of g.events) if (e.type === 'rcrash') hit = { t, why: e.why, on: e.on }
+            g.events.length = 0
+        }
+        ok(hit && hit.t === 1 && hit.why === 'contact' && hit.on === 'GORDON',
+            `slamming a crawling rival's back did not go over the bars (${JSON.stringify(hit)})`)
+    }
+    // the blocked lane HOLDS: a rolling stop waits BEHIND the body (never
+    // creeping through it), and when the rider remounts the held bike drives
+    // on around the empty space
+    {
+        const { g, c } = rig2('IVAN', 12.5, 20)   // body walks back at t20
+        c.v = 0.2                                       // rolling stop, well under wreckV
+        let held = 0, crash0 = 0
+        for (let t = 1; t <= 80; t++) {
+            step(g, {})
+            if (c.held > 0) held++
+            crash0 += g.events.filter((e) => e.type === 'rcrash').length
+            g.events.length = 0
+        }
+        ok(held > 10 && crash0 === 0,
+            `a rolling stop at a body neither held nor waited (held=${held}, crashes=${crash0}) — the lane is not blocked`)
+        ok(c.held === 0 && c.v > 1, `the held bike never released after the wreck cleared (held=${c.held}, v ${c.v.toFixed(2)}) — the latch is a parking brake`)
+    }
+    // one drama per pair: after IVAN's chain, reviving both and re-closing on
+    // the SAME pair pays nothing until the 90-tick cooldown expires
+    {
+        const { g, v, c } = rig2('IVAN', 12)
+        let n = 0
+        for (let t = 1; t <= 20; t++) {
+            c.v = 5
+            if (t > 12) { c.down = 0; c.cool = 0; v.down = 400 }   // both revived, still paired
+            step(g, {})
+            n += g.events.filter((e) => ['rcrash', 'rbump'].includes(e.type)).length
+            g.events.length = 0
+        }
+        ok(n === 1, `the same pair made ${n} dramas in 20 ticks, want 1 — the pack derby clause is dead`)
+    }
+    // bounded pack: the campaign stays a race, not a demolition derby.
+    {
+        const all = LEAGUE.flatMap((l) => l.crashes)
+        ok(all.length <= 8, `the league fell ${all.length} times across both tracks — that is a derby, not a race`)
+        ok(!all.some((c) => ['MARIO', 'KATO', 'GORDON'].includes(c.name)), 'the front office piled up — the skill gradient is broken')
+    }
+    // the master switch: contactK=0 must ghost the pack AND silence the reads
+    {
+        const before = []
+        const after = []
+        const probe = (sink) => {
+            const { g, c } = rig2('IVAN', 70)
+            for (let t = 1; t <= 20; t++) {
+                c.v = 5.0
+                step(g, {})
+                for (const e of g.events) if (['rhop', 'rcrash', 'rbump'].includes(e.type)) sink.push(t + ':' + e.type)
+                g.events.length = 0
+            }
+            return c.d
+        }
+        const d1 = probe(before)
+        const save = CFG.contactK
+        CFG.contactK = 0
+        const d2 = probe(after)
+        CFG.contactK = save
+        ok(before.length === 2 && after.length === 0 && d2 > d1,
+            `contactK did not switch the pack law off (${JSON.stringify(before)} -> ${JSON.stringify(after)}) — the switch is paint`)
+    }
+    // packK alone: ghost the pack, keep the player's law armed
+    {
+        const save = CFG.packK
+        CFG.packK = 0
+        const { g, c } = rig2('IVAN', 70)
+        let n = 0
+        for (let t = 1; t <= 20; t++) {
+            c.v = 5.0
+            step(g, {})
+            n += g.events.filter((e) => ['rhop', 'rcrash', 'rbump'].includes(e.type)).length
+            g.events.length = 0
+        }
+        CFG.packK = save
+        ok(n === 0 && c.d > 150, `packK=0 still fired ${n} pack events / stopped the rider — the pack switch does not own its own law`)
     }
 }
 
@@ -639,7 +834,7 @@ if (MUT) {
         for (let k = 0; k <= c.k + 150 && k < LEAGUE[0].script.length; k++) { step(st, LEAGUE[0].script[k]); st.events.length = 0 }
         return st.rivals.find((x) => x.name === c.name).d - c.d < 250   // baseline: frozen + slow remount
     })
-    tryMut('rivalTolMul=9 (the league is crash-proof)', flat({ rivalTolMul: 9 }), () => replay0Crashes().hits.length === 2)
+    tryMut('rivalTolMul=9 (the league is crash-proof)', flat({ rivalTolMul: 9 }), () => replay0Crashes().hits.length === 4)
     tryMut('rivalTolMul=0.2 (even the front office falls)', flat({ rivalTolMul: 0.2 }), () => {
         for (const { i, script } of LEAGUE) {
             const g = makeGame(i, {})
@@ -714,6 +909,54 @@ if (MUT) {
         }
         return n === 1
     })
+    // ---- pack mutants (#2420) — each edits one load-bearing clause ----
+    const rig2m = (chaserName, gap0, down = 400, vd = 0) => {
+        const g = makeGame(0, { count: 0 })
+        const tr = track(0)
+        const v = g.rivals.find((r) => r.name === 'GORDON')
+        const c = g.rivals.find((r) => r.name === chaserName)
+        v.d = 150; v.down = down; v.v = vd; v.alt = groundY(tr.ground, 150); v.air = false; v.cool = 0; v.tk = 0
+        c.d = 150 - gap0; c.v = 5; c.alt = groundY(tr.ground, c.d); c.air = false; c.cool = 0; c.tk = 0; c.down = 0
+        return { g, v, c }
+    }
+    const chaseHits = (name, n = 20) => {
+        const { g, c } = rig2m(name, 70)
+        let hits = 0
+        for (let t = 1; t <= n; t++) {
+            c.v = 5.0
+            step(g, {})
+            hits += g.events.filter((e) => ['rhop', 'rcrash', 'rbump'].includes(e.type)).length
+            g.events.length = 0
+        }
+        return hits
+    }
+    tryMut('packK=0 (the pack is paint)', flat({ packK: 0 }), () => chaseHits('IVAN') === 2)
+    tryMut('haz reads off (no line choice — the front office chains too)', flat({ hazBase: 0, hazSkill: 0 }), () => {
+        const { g, v, c } = rig2m('KATO', 70)
+        let hopped = false, crashed = false
+        for (let t = 1; t <= 40; t++) {
+            c.v = 5.0
+            step(g, {})
+            for (const e of g.events) { if (e.type === 'rhop') hopped = true; if (e.type === 'rcrash') crashed = true }
+            g.events.length = 0
+        }
+        return hopped && !crashed && c.d > v.d
+    })
+    tryMut('contactSwap=0 (the pack bump moves no one)', flat({ contactSwap: 0 }), () => {
+        const { g, v, c } = rig2m('IVAN', 30, 0, 3.6)
+        for (let t = 1; t <= 20; t++) {
+            v.v = 3.6
+            c.v = v.v + 2.2
+            const cv0 = c.v
+            step(g, {})
+            const e = g.events.find((x) => x.type === 'rbump')
+            g.events.length = 0
+            v.v = 3.6
+            if (e) return cv0 - c.v > 0.5
+        }
+        return false
+    })
+    tryMut('wreckV=9 (a downed rival cannot chain the pack)', flat({ wreckV: 9 }), () => chaseHits('IVAN') === 2)
 }
 
 console.log(`\nexcitecheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

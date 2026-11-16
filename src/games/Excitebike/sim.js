@@ -101,6 +101,17 @@ export const CFG = {
     contactCool: 90,                       // ticks between contacts of one pair
     flybyPts: 150,
     contactK: 1,
+    // PACK CONTACT (#2420): the league is solid to ITSELF too — rivals obey
+    // the same body law against each other (bump/crash/solid wreck). A
+    // grounded rival reads a DOWNED body ahead inside its braking distance
+    // (v-scaled, earlier the better the rider) and commits the player's own
+    // jump law — hazard hops are the lines the pace-line league never chose.
+    // Late reactions arrive nose-low and the wreck chains. packK is the
+    // harness mutant knob: 0 ghosts the pack again.
+    packK: 1,
+    hazBase: 3.2,                        // reaction distance px per unit of v
+    hazSkill: 5,                         // skill buys metres of read ahead
+    hazMin: 14,                          // inside this the hop can never rise — do not commit
     clock: 70,                             // start clock, seconds
     lapBonus: 34,                          // seconds at the line
     laps: 2,
@@ -142,11 +153,15 @@ export function makeGame(trackIdx = 0, opts = {}) {
         boostAt: -999,
         inBand: null,
         rank: RIVALS.length + 1,
-        rivals: RIVALS.map((r) => ({
-            ...r, d: 0, v: r.base, alt: groundY(tr.ground, 0),
+        rivals: RIVALS.map((r, idx) => ({
+            ...r, d: -idx * 14, v: r.base, alt: groundY(tr.ground, 0),
             vy: 0, air: false, pitch: 0, down: 0, cool: 0, crashes: 0,
             tk: 0, flown: false,          // contact cooldown / flyby-once flag (#2391)
+            held: 0,                     // blocked behind a body (#2420) — brake latch
         })),
+        // #2420: one-drama-per-PAIR matrix (i*N+j and j*N+i), the contactCool
+        // law extended to rival-vs-rival. Int ticks, decremented in pack().
+        pk: new Array(RIVALS.length * RIVALS.length).fill(0),
         score: 0,
         end: null,
         count: opts.count !== undefined ? opts.count : CFG.count,
@@ -158,6 +173,22 @@ export function makeGame(trackIdx = 0, opts = {}) {
         bonusTax: opts.bonusTax || 0,      // fewer seconds at the line
         _clockFrac: 0,
     }
+}
+
+// #2420: a rival's wipeout, shared by the landing law (why forward/
+// backward) and the pack law (why wreck/contact, `on` names the victim).
+// Distance freezes while the rider walks the bike back; the remount is the
+// same slow, learned one.
+function rivalWipe(g, r, why, on) {
+    if (why === 'wreck') r.d -= 8   // the striker is knocked back off the body,
+                                    // stopping behind the wreck it hit — the same
+                                    // −8 the player pays (#2391), so the frozen
+                                    // distances read honestly on the leaderboard.
+    const x = ((r.d % LAP) + LAP) % LAP
+    r.down = CFG.rivalDown
+    r.crashes++
+    r.air = false; r.vy = 0; r.v = 0; r.alt = groundY(track(g.track).ground, r.d)
+    emit(g, { type: 'rcrash', name: r.name, why, x, ...(on ? { on } : {}) })
 }
 
 // The CRASH LEAGUE (#2384): rivals are riding bodies, not ghosts. The pace
@@ -174,6 +205,7 @@ function rivalTick(g) {
     const tr = track(g.track)
     for (const r of g.rivals) {
         if (r.cool > 0) r.cool--
+        if (r.held > 0) { r.held--; r.v = 0; r.alt = groundY(tr.ground, r.d); r.air = false; r.vy = 0; continue }
         if (r.down > 0) {
             r.down--
             if (r.down === 0) {
@@ -186,6 +218,24 @@ function rivalTick(g) {
         const pace = rivalSpeed(tr, r.d, r.base)
         r.v += (pace - r.v) * CFG.rivalEaseV
         const x = ((r.d % LAP) + LAP) % LAP
+        // HAZARD HOP (#2420): a downed body ahead within braking distance is
+        // the line the pace line never took. Better riders read it earlier
+        // (v-scaled by skill); commit the player's own jump law, or arrive
+        // nose-low at the body and the wreck chains you.
+        if (CFG.contactK && CFG.packK && !r.air && r.v > 1) {
+            const react = r.v * (CFG.hazBase + CFG.hazSkill * r.skill)
+            for (const q of g.rivals) {
+                if (q === r) continue
+                if (q.down <= 0 && q.held <= 0) continue   // hazard = a body down OR a bike held dead-still in the lane
+                const gap = q.d - r.d
+                if (gap >= CFG.hazMin && gap <= react && r.v - q.v > CFG.wreckV) {
+                    r.air = true
+                    r.vy = CFG.jump + CFG.jumpPerV * r.v
+                    emit(g, { type: 'rhop', name: r.name, x })
+                    break
+                }
+            }
+        }
         if (r.air) {
             const lag = Math.max(0, Math.round(CFG.rivalLag * (CFG.rivalLagBase - r.skill)))
             const look = 8 + r.skill * Math.max(8, r.v * CFG.rivalLookK)
@@ -204,10 +254,7 @@ function rivalTick(g) {
             const err = r.pitch - Math.atan(slopeAt(tr.ground, r.d))
             const w = CFG.rivalTolMul * (0.72 + 0.4 * r.skill)
             if (r.cool <= 0 && (err < -CFG.landFwd * w || err > CFG.landBack * w)) {
-                r.down = CFG.rivalDown
-                r.crashes++
-                r.air = false; r.vy = 0; r.v = 0; r.alt = gy
-                emit(g, { type: 'rcrash', name: r.name, why: err < 0 ? 'forward' : 'backward', x })
+                rivalWipe(g, r, err < 0 ? 'forward' : 'backward')
             } else {
                 r.alt = gy; r.air = false; r.vy = 0
             }
@@ -306,6 +353,72 @@ function contact(g) {
     }
 }
 
+// PACK CONTACT (#2420): the league turns solid to ITSELF. Pairwise, the
+// chaser vs the rider ahead, with the SAME constants #2391 gave the player:
+// • airborne above contactClear — clean line, nothing to pay (the hazard
+//   hop worked);
+// • a DOWNED rider blocks the lane: arrive above wreckV and it is a wipeout
+//   (the chain — a crash site is where the tail piles up), slower and the
+//   body simply holds you until its rider walks the bike back;
+// • closing on a riding back above contactBump bumps with two-way momentum
+//   transfer; above contactCrash the striker is over the bars.
+// One drama per pair per contactCool (the pk matrix — a pack pass is a
+// fight, not a demolition derby). Deterministic: zero Math.random.
+function pack(g) {
+    if (!CFG.contactK || !CFG.packK || g.end) return
+    const N = g.rivals.length
+    for (let k = 0; k < g.pk.length; k++) if (g.pk[k] > 0) g.pk[k]--
+    for (let i = 0; i < N; i++) {
+        const a = g.rivals[i]
+        if (a.down > 0) continue                 // walking a bike makes no contact
+        if (a.cool > 0) continue                 // remount grace — the marshalled corner rule,
+                                                 // extended: you never re-crash into the body you
+                                                 // just walked your bike out from beside.
+        for (let j = 0; j < N; j++) {
+            if (j === i) continue
+            const b = g.rivals[j]
+            const gap = b.d - a.d
+            if (gap <= 0 || gap >= CFG.contactBody) continue   // b must be AHEAD of a
+            // clearance above GROUND — the rider's own airborne law; the player's
+            // flyby clearance is ground-based too, and the pack rides the same
+            // terrain together (a dip between two bikes is not a hole in the law).
+            if (a.alt - groundY(track(g.track).ground, a.d) >= CFG.contactClear) continue    // flew the line clean
+            if (g.pk[i * N + j] > 0) continue
+            const relV = a.v - b.v
+            if (b.down > 0) {
+                if (a.v > CFG.wreckV) {
+                    rivalWipe(g, a, 'wreck', b.name)
+                    g.pk[i * N + j] = g.pk[j * N + i] = CFG.contactCool
+                } else {
+                    // The lane is BLOCKED: sit behind the body. A rival's pace
+                    // would creep him onto the body at walking speed, so the
+                    // hold LATCHES the brake for a few ticks at a time (the
+                    // pack keeps re-arming it while the body stays in front) —
+                    // a rival waits at the body's edge until the lane clears.
+                    // (The player's hold is untouched — a human brakes; the
+                    // pace line has to be braked for it.)
+                    a.v = 0
+                    a.held = 3
+                }
+                continue
+            }
+            if (relV > CFG.contactCrash) {
+                rivalWipe(g, a, 'contact', b.name)
+                g.pk[i * N + j] = g.pk[j * N + i] = CFG.contactCool
+            } else if (relV > CFG.contactBump || (gap < 8 && relV > 0.3)) {
+                const cv = Math.max(relV, CFG.contactBump)
+                a.v -= cv * CFG.contactSwap
+                b.v += cv * CFG.contactSwap * 0.5
+                b.d += 3
+                emit(g, { type: 'rbump', a: a.name, b: b.name, cv: +cv.toFixed(2), x: ((b.d % LAP) + LAP) % LAP })
+                g.pk[i * N + j] = g.pk[j * N + i] = CFG.contactCool
+            }
+            // a pace-matched draft (relV <= 0.3) glides — the no-lateral-axis
+            // courtesy stays the README's honest gap.
+        }
+    }
+}
+
 // landing slope a ballistic hop WOULD find at x (used only for event truth;
 // the planner gets its own answer by rolling this same step())
 function emit(g, e) { g.events.push(e) }
@@ -355,7 +468,7 @@ export function step(g, inp) {
         g.x += g.v; g.total += g.v
         if (g.crash === 0) { g.v = 1.6; g.pitch = Math.atan(slopeAt(tr.ground, g.x)); emit(g, { type: 'recover' }) }
         g.heat = Math.max(0, g.heat - CFG.heatCool * 0.5)
-        rivalTick(g); g.rank = rankOf(g)
+        rivalTick(g); pack(g); g.rank = rankOf(g)
         return
     }
 
@@ -367,7 +480,7 @@ export function step(g, inp) {
         g.alt = groundY(tr.ground, g.x)
         g.onGround = true
         if (g.stall === 0) { g.v = 2.4; emit(g, { type: 'unstall' }) }
-        rivalTick(g); g.rank = rankOf(g)
+        rivalTick(g); pack(g); g.rank = rankOf(g)
         return
     }
 
@@ -548,6 +661,7 @@ export function step(g, inp) {
     }
 
     rivalTick(g)
+    pack(g)
     contact(g)
     g.rank = rankOf(g)
 }

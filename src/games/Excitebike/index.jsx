@@ -151,9 +151,9 @@ const ExcitebikeGame = () => {
                     // window is (-20, W+20), i.e. dd in (-104, W-64+20)).
                     const dd = ((e.x - gs.x + LAP * 1.5) % LAP) - LAP / 2
                     if (dd > -104 && dd < W - 64) {
-                        say(e.name + ' DOWN!')
+                        say(e.why === 'wreck' ? e.name + ' PILES IN!' : e.name + ' DOWN!')
                         audioController.playNoise(0.22, 0.07); audioController.playTone(130, 0.18, 'sawtooth', 0.05)
-                        burst(scrX + dd, g2s(groundY(track(gs.track).ground, e.x)) - 6, 12, '#8a5a1a')
+                        burst(scrX + dd, g2s(groundY(track(gs.track).ground, e.x)) - 6, e.why === 'wreck' ? 18 : 12, '#8a5a1a')
                         if (Math.abs(dd) < 90) shake = 5
                     }
                     // #2387: the crash site TEACHES — a dirt mound and an oiled
@@ -166,6 +166,31 @@ const ExcitebikeGame = () => {
                     if (dd > -104 && dd < W - 64) audioController.playTone(240, 0.08, 'square', 0.04)
                     const si = scars.findIndex((s) => s.name === e.name)
                     if (si >= 0) scars[si].fade = 1 // remounted — the mark starts to dry
+                }
+                else if (e.type === 'rbump') {
+                    // #2420: wheel-to-wheel between RIVALS. Sparks at the
+                    // contact point, the pushed rider tips, a softer thud than
+                    // your own bump (it is not your bike), a toast naming the
+                    // fight — all only while the pair is actually on screen.
+                    const dd = ((e.x - gs.x + LAP * 1.5) % LAP) - LAP / 2
+                    if (dd > -104 && dd < W - 64) {
+                        say(e.a + ' bumps ' + e.b)
+                        audioController.playNoise(0.12, 0.05); audioController.playTone(160, 0.09, 'square', 0.04)
+                        burst(scrX + dd - 6, g2s(groundY(track(gs.track).ground, e.x)) - 8, 7, '#c98a3a')
+                        if (leans[e.a] == null) leans[e.a] = 8
+                        if (leans[e.b] == null) leans[e.b] = 12
+                        if (Math.abs(dd) < 60) shake = 3
+                    }
+                }
+                else if (e.type === 'rhop') {
+                    // the pack choosing a line: a rival commits the hop over a
+                    // body — a puff off the deck and a faint tick, that's all;
+                    // the arc itself sells it.
+                    const dd = ((e.x - gs.x + LAP * 1.5) % LAP) - LAP / 2
+                    if (dd > -104 && dd < W - 64) {
+                        audioController.playTone(300, 0.05, 'square', 0.03)
+                        burst(scrX + dd, g2s(groundY(track(gs.track).ground, e.x)) - 4, 4, '#b8a06a')
+                    }
                 }
                 else if (e.type === 'slam') { say('SLAM!'); audioController.playNoise(0.14, 0.06); shake = 5 }
                 else if (e.type === 'lap') { say('LAP ' + e.lap + '  +' + e.bonus + 's'); audioController.playSweep(392, 784, 0.3, 'square', 0.07) }
@@ -617,7 +642,7 @@ const ExcitebikeGame = () => {
                     air: gs.air, airT: gs.airT, crash: gs.crash, stall: gs.stall, pumpT: gs.pumpT,
                     heat: gs.heat, hot: gs.hot, gear: gs.gear, rank: gs.rank, score: gs.score,
                     lap: gs.lap, laps: gs.laps, clock: gs.clock, count: gs.count, inBand: gs.inBand,
-                    rivals: gs.rivals.map((r) => ({ name: r.name, d: Math.round(r.d), air: r.air, down: r.down, crashes: r.crashes, tk: r.tk })),
+                    rivals: gs.rivals.map((r) => ({ name: r.name, d: Math.round(r.d), air: r.air, down: r.down, crashes: r.crashes, tk: r.tk, held: r.held })),
                     contact: lastContact.slice(-14),
                     juice: { pops: pops.length, flashes: flashes.length, scars: scars.length, lean: Object.keys(leans).length + (leanYou.t ? 1 : 0), preTell },
                     screenX: Math.max(0, gs.x - 84) ? 84 : gs.x, screenY: g2s(gs.alt) - 6,
