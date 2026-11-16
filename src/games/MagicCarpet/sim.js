@@ -225,6 +225,42 @@ function genHeights(r) {
     return h
 }
 
+// #2449 item 2: NAME-BIASED LAND — the land reads its own name. The campaign's
+// newer worlds are named for an atmosphere (FROSTGATE, MAGMA FIELD, MOSSWOOD),
+// but until now nothing in the generated land matched the word: rock share, the
+// snowline and the crag height were pure seed, and FROSTGATE read no frostier
+// than SNOWBOUND beyond the PAL slot. landFor() shapes a finished height field
+// by the world name's family: ICE worlds lift shoulders into rock and peaks into
+// snow; HEAT worlds melt the snowline back to bare crag; LUSH worlds sag the
+// crags so grass shoulders spread. Neutral names (the SKY worlds, the moors)
+// take the field untouched.
+// Deterministic and rng-free — no stream draw, so replays and the seed promise
+// hold — and it lifts nothing below 52: sea level, coastlines and every site
+// band (castle 26–44, tower 24–48, books 24–50, huts 26–46) sit below that,
+// so the #1639 fairness invariant and the measured campaign margins are
+// untouched by construction; the carpet's auto-climb (step, aheadH+4) rides the
+// taller ice peaks without special-casing.
+export function nameBias(name) {
+    const n = (name || '').toUpperCase()
+    if (/FROST|SNOW|RIME|GLACIER|HOAR|WHITE/.test(n)) return 'ice'
+    if (/EMBER|SCORCH|MAGMA|CINDER|ASH|PYRE|BURN/.test(n)) return 'heat'
+    if (/GREEN|EMERALD|MOSS|VERDANT|THORN|WOOD/.test(n)) return 'lush'
+    return 'neutral'
+}
+
+export function landFor(name, heights) {
+    const kind = nameBias(name)
+    if (kind === 'neutral') return heights
+    const out = heights.slice()
+    for (let i = 0; i < out.length; i++) {
+        const h = out[i]
+        if (kind === 'ice' && h > 52) out[i] = Math.min(96, h + 8 * smooth01(52, 74, h))
+        else if (kind === 'heat' && h > 76) out[i] = h - 9 * smooth01(76, 92, h)
+        else if (kind === 'lush' && h > 54) out[i] = h - 8 * smooth01(54, 78, h)
+    }
+    return out
+}
+
 export function sampleH(gs, x, y) {
     const gx = wrap(x, MAP) / CELL, gy = wrap(y, MAP) / CELL
     const x0 = Math.floor(gx), y0 = Math.floor(gy)
@@ -558,9 +594,9 @@ export function genWorld(gs) {
     gs.deforms = [] // #1694: fresh land never inherits pending crumble ripples
     const lv = LEVELS[gs.level]
     gs.quota = lv.quota
-    gs.heights = genHeights((() => {
+    gs.heights = landFor(lv.name, genHeights((() => {
         return () => { gs.rngState = (gs.rngState + 0x6D2B79F5) | 0; let t = gs.rngState; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
-    })())
+    })()))
     gs.castleStage = 0
     gs.wizStage = 0; gs.worldT = 0; gs.wizGuardFire = 0 // #1764: every wizard starts at his foundations
     const cs = findSpot(gs, 26, 44, true, null, 0)

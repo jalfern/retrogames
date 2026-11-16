@@ -23,6 +23,7 @@ import {
     VIL_GRAB_R, VIL_GRAB_ALT, VIL_TRIBUTE_T, VIL_TRIBUTE_M,
     FOG_NEAR, FOG_D, HAZE, hazeOf, airOf, aerialFog,
     DIVE_DRAG, DIVE_NOFIRE, CAMPAIGN_CAP,
+    nameBias, landFor,
 } from '../src/games/MagicCarpet/sim.js'
 import { WAVE_CYCLE, arcTint } from '../src/games/MagicCarpet/renderer.js' // #1764 item 4 stage 4: the wave law's clock constant, for the JS twin; #2449 item 1: the arc-keyed sky tint, for the real function
 
@@ -149,6 +150,55 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
             tints[LEVELS.length - 1] <= 0.62 &&
             new Set(tints).size === arcs && painted.size === LEVELS.length,
             `drift ${drift}: tint w1 ${tints[0].toFixed(2)} → w${LEVELS.length} ${tints[LEVELS.length - 1].toFixed(2)}, ${new Set(tints).size}/${arcs} arc tints, ${painted.size}/${LEVELS.length} distinct zeniths`)
+    }
+    {
+        // #2449 item 2: NAME-BIASED LAND — the land must read its own name. The
+        // campaign's named worlds carried an atmosphere word that the generated land
+        // ignored (rock share/snowline were pure seed). Prove: (a) every world name
+        // classifies into exactly one family with the expected membership; (b) the
+        // shape transform moves the snowline/rock share the right way on a full-ramp
+        // field (every height 0–96 present, so counts are exact, not seed-noise);
+        // (c) the transform touches nothing below 52 — coastlines and every
+        // findSpot band are untouched by construction — and never mutates its
+        // input; (d) genWorld actually applies it.
+        const ramp = Array.from({ length: GRID * GRID }, (_, i) => i % 97)
+        const band = (h) => ({ snow: h.filter((v) => v >= 88).length, rock: h.filter((v) => v >= 74).length })
+        const kinds = LEVELS.map((l) => nameBias(l.name))
+        const counts = { ice: 0, heat: 0, lush: 0, neutral: 0 }
+        kinds.forEach((k) => counts[k]++)
+        const spot = {
+            'FROSTGATE': 'ice', 'SNOWBOUND': 'ice', 'GLACIER MAW': 'ice', 'HOARFROST': 'ice', 'WHITEFALL': 'ice', 'RIME WASTES': 'ice',
+            'MAGMA FIELD': 'heat', 'SCORCHED HOLLOW': 'heat', 'LAST PYRE': 'heat', 'ASHEN WAKE': 'heat', 'CINDER VALE': 'heat',
+            'MOSSWOOD': 'lush', 'GREEN REACH': 'lush', 'DEEPGREEN': 'lush', 'THORNVALE': 'lush', 'VERDANT ISLES': 'lush',
+            'THE FINAL SKY': 'neutral', 'IRON MOOR': 'neutral', 'LAST LIGHT': 'neutral',
+        }
+        const spotOk = Object.entries(spot).every(([nm, k]) => nameBias(nm) === k)
+        const disjoinOk = LEVELS.every((l) => {
+            const n = l.name.toUpperCase()
+            const hits = [/FROST|SNOW|RIME|GLACIER|HOAR|WHITE/, /EMBER|SCORCH|MAGMA|CINDER|ASH|PYRE|BURN/, /GREEN|EMERALD|MOSS|VERDANT|THORN|WOOD/].filter((re) => re.test(n)).length
+            return nameBias(l.name) === 'neutral' ? hits === 0 : hits === 1
+        })
+        const base = band(ramp)
+        const ice = band(landFor('GLACIER MAW', ramp))
+        const heat = band(landFor('SCORCHED HOLLOW', ramp))
+        const lush = band(landFor('GREEN REACH', ramp))
+        const frozen = landFor('FROSTGATE', ramp)
+        const scorched = landFor('SCORCHED HOLLOW', ramp)
+        const mossy = landFor('MOSSWOOD', ramp)
+        const deep = landFor('DEEPGREEN', ramp)
+        const lowUntouched = [...frozen, ...scorched, ...mossy, ...deep].every((v, i) => ramp[i % (GRID * GRID)] <= 52 || v === ramp[i % (GRID * GRID)])
+        const pureOk = ramp.every((v, i) => v === i % 97)
+        const srcSim = await readFile(new URL('../src/games/MagicCarpet/sim.js', import.meta.url), 'utf8')
+        r.check('#2449 item 2: the land reads its own name — ice lifts snow above the line, heat melts it to bare crag, lush sags crags under grass, and nothing below 52 moves (coastlines and site bands are safe by construction; rng-free, replay-stable)',
+            disjoinOk && spotOk &&
+            counts.ice === 10 && counts.heat === 14 && counts.lush === 12 && counts.neutral === 9 &&
+            landFor('THE FINAL SKY', ramp) === ramp &&
+            ice.snow > base.snow && ice.rock > base.rock &&
+            heat.snow < base.snow && heat.rock === base.rock &&
+            lush.rock < base.rock && lush.snow < base.snow &&
+            lowUntouched && pureOk &&
+            srcSim.includes('landFor(lv.name, genHeights'),
+            `ice snow ${base.snow}→${ice.snow} rock ${base.rock}→${ice.rock}; heat snow ${base.snow}→${heat.snow}; lush rock ${base.rock}→${lush.rock}; low-band untouched, neutral identity, ${counts.ice}i/${counts.heat}h/${counts.lush}l/${counts.neutral}n`)
     }
     {
         const src = await readFile(new URL('../src/games/MagicCarpet/renderer.js', import.meta.url), 'utf8')
