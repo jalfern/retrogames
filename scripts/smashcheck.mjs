@@ -76,7 +76,7 @@ const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.299 * ((n 
 async function fresh() {
     const sim = await import(`../src/games/SmashTV/sim.js?c=${Date.now()}`)
     const planner = await import(`../src/games/SmashTV/planner.js?c=${Date.now()}`)
-    return { ...sim, plan: planner.plan, planCoop: planner.planCoop, padToInp: planner.padToInp, inpToPad: planner.inpToPad, decidePad: planner.decidePad }
+    return { ...sim, plan: planner.plan, planCoop: planner.planCoop, padToInp: planner.padToInp, inpToPad: planner.inpToPad, decidePad: planner.decidePad, decide: planner.decide }
 }
 const S = await fresh()
 const { makeGame, step, stateHash, CFG, comboColor, flickerPhase, COMBO_COLORS, MISSILE_TURN, MISSILE_LIFE, MISSILE_BLAST, FLAME_LIFE, FLAME_FAN, FLAME_SLOW } = S
@@ -957,6 +957,19 @@ function gs_clear(g) { g.events.length = 0 }
     let cooped = false
     for (const [i1, pad] of rc.script) { step(gc, i1, S.padToInp(pad)); gc.events.length = 0; if (gc.players.some((q) => q.weapon === 'flame')) cooped = true }
     ok(!cooped, 'neither co-op seat equips the FLAMER either')
+    // #2491 strengthened: sweep-pinning the seat-law rides route luck — the
+    // no-mercy reroute moved the bonus walks so no seed happened to walk the
+    // barrel any more, and the old proximity mutant survived a green suite.
+    // Probe the law directly: a dropped barrel 12 px west of the seat must
+    // send the legs EAST out of the ring; without the wrap, the hold-center
+    // legs walk straight onto it.
+    {
+        const gsb = makeGame(0)
+        const pb = gsb.player
+        gsb.items.push({ id: 9101, t: 'weapon', w: 'flame', x: pb.x - 12, y: pb.y })
+        const inp = S.decide(gsb)
+        ok((inp.mx || 0) === 1, 'the seat steps out of the dropped-barrel ring the moment it is inside', `mx=${inp.mx ?? 0}`)
+    }
 }
 
 // ----------------------------------------------------------------- pilot ----
