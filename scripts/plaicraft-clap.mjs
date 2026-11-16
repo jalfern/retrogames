@@ -10,6 +10,17 @@
 //                                                  # must STILL go green: presses
 //                                                  # aim at the landing, not the
 //                                                  # wall clock
+//   npm run plaicraft:clap -- --throttle=8 --micdelay=3700 --lag-min=3.7
+//                                                  # #1711 audit item 3 (2026-11-16):
+//                                                  # the audited phone shape is the MIC
+//                                                  # opening seconds after seed-birth
+//                                                  # (stored clocks: seed10 -3385 ms,
+//                                                  # seed19 -3700). --micdelay stalls the
+//                                                  # synth mic that long; every run then
+//                                                  # REPORTS its achieved clock lag and
+//                                                  # --lag-min goes RED if the shape is not
+//                                                  # reached — a throttle run must prove
+//                                                  # the lag, never just name it.
 //
 // How it works: the store is the PRODUCTION worker running in Node (#1711 S5,
 // scripts/lib/relaysim.mjs — cfworkers shim + faithful R2 mock), so the whole
@@ -46,7 +57,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { validate } from '../src/utils/recording.js'
 import { detectClaps, clapVerdict, matchClapEdges, takeEdges, CLAP_TOL_MS, CLAP_SEARCH_MS, CLAP_MIN_PAIRS } from '../src/utils/clapSync.js'
-import { containerDurationMs } from '../src/utils/voice.js'
+import { containerDurationMs, voiceDrift } from '../src/utils/voice.js'
 import { startRelaySim } from './lib/relaysim.mjs'
 import { STORE_DEFAULT } from '../src/utils/sessionStore.js'
 import { readKey } from './lib/localkey.mjs'
@@ -64,6 +75,14 @@ const ANALYZE_KEY = flagVal('key', null)
 const ANALYZE_FILE = flagVal('file', null)
 const ANALYZE_MIN = Number(flagVal('min', CLAP_MIN_PAIRS)) || CLAP_MIN_PAIRS // #2056: clap count a phone take must match
 const THROTTLE = Number(flagVal('throttle', 1)) || 1 // #2136: reproduce a contended box (Emulation.setCPUThrottlingRate)
+// #1711 audit item 3 (2026-11-16): the phone shape is a late mic, not just a slow
+// box — stall the synth mic --micdelay ms, and the run must carry that lag.
+const MIC_DELAY = Math.max(0, Number(flagVal('micdelay', 0)) || 0)
+const LAG_MIN = Number(flagVal('lag-min', 0)) || 0 // seconds of clock lag the take must show
+// Interaction budgets are x8-millisecond counts (the box this script was calibrated
+// on); scale them with the emulated rate so a harsher box fails on alignment, not
+// on the harness mistiming its own waits (×64 used to die at the consent gate).
+const SLOW = Math.max(1, THROTTLE / 8)
 // Clap schedule: from mic-open (wall). First clap >= 1.2 s after YES so the
 // seed-birth + recorder-open storm settles; spacing > minGap for the detector.
 const CLAP_MS = [1200, 2600, 4000]
@@ -238,7 +257,15 @@ await context.addInitScript(() => {
         window.__clapWall = claps.map((p) => t0 + (p / sr) * 1000)
         return dest.stream
     }
-    navigator.mediaDevices.getUserMedia = () => synth()
+    // #1711 audit item 3: --micdelay resolves the mic request late — a phone's
+    // recorder storm holds the take clockless for seconds AFTER seed-birth
+    // (seed10 -3385 ms, seed19 -3700 on the stored clock). Read at call time so
+    // the driver can arm it after load, exactly like __CLAP. With the flag at 0
+    // the path is the original byte-for-byte — no extra macrotask on the default.
+    navigator.mediaDevices.getUserMedia = (c) => {
+        const d = window.__MICDELAY || 0
+        return d > 0 ? new Promise((res) => setTimeout(() => res(synth()), d)) : synth(c)
+    }
 })
 const page = await context.newPage()
 page.setDefaultTimeout(60000)
@@ -249,12 +276,12 @@ if (THROTTLE > 1) await throttleCPU(page, THROTTLE) // #2136: run the gate on a 
 
 // arm the claps BEFORE the mic opens (the gate is still up; the wrapper reads
 // __CLAP when the real recorder asks for the device)
-await page.evaluate((clapMs) => { window.__CLAP = { clapMs } }, CLAP_MS)
+await page.evaluate(({ clapMs, micDelay }) => { window.__CLAP = { clapMs }; window.__MICDELAY = micDelay }, { clapMs: CLAP_MS, micDelay: MIC_DELAY })
 await page.keyboard.press('ArrowRight') // gesture: unlock audio, attract -> select
 await page.waitForTimeout(400)
 await page.keyboard.press('Space') // human start -> the consent gate goes up
 try {
-    await page.waitForSelector('[data-consent-gate]', { timeout: 5000 })
+    await page.waitForSelector('[data-consent-gate]', { timeout: Math.round(5000 * SLOW) })
     r.check('consent gate goes up before any capture (store live)', true)
 } catch {
     r.check('consent gate goes up before any capture (store live)', false)
@@ -271,11 +298,18 @@ await page.click('#consent-yes')
 // recorder + mic open at seed-birth
 let micOpen = false
 try {
-    await page.waitForFunction(() => !!(window.__autoCapture && window.__autoCapture.recording), null, { timeout: 5000 })
+    await page.waitForFunction(() => !!(window.__autoCapture && window.__autoCapture.recording), null, { timeout: Math.round(5000 * SLOW) + MIC_DELAY })
     micOpen = true
 } catch { /* gate below reports it */ }
 r.check('recorder opens at seed-birth after YES+YES', micOpen, await page.evaluate(() => JSON.stringify(window.__autoCapture || null)))
 if (!micOpen) await r.exit(browser)
+// #1711 audit item 3: recording:true stamps at seed-birth, but the take CLOCK
+// zeroes only when the mic actually lands (__markStartWall). Wait for that zero
+// before reading clap stamps and the rec badge — reading at seed-birth races the
+// recorder-open, and --micdelay widens that race to seconds.
+try {
+    await page.waitForFunction(() => !!(window.__markStartWall && window.__clapWall && window.__clapWall.length), null, { timeout: MIC_DELAY + Math.round(8000 * SLOW) })
+} catch { /* the clap-scheduled check below reports it */ }
 
 let clapWall = await page.evaluate(() => window.__clapWall || [])
 r.check('claps scheduled from mic-open', clapWall.length === CLAP_MS.length, JSON.stringify(clapWall.map((w) => w - clapWall[0])))
@@ -381,7 +415,7 @@ await page.waitForTimeout(500)
 await page.evaluate(() => { const gs = window.__gauntletTest.state(); if (!gs.end) gs.end = 'lose' })
 let uploaded = null
 try {
-    await page.waitForFunction(() => !!(window.__autoRecord && window.__autoRecord.last), null, { timeout: 15000 })
+    await page.waitForFunction(() => !!(window.__autoRecord && window.__autoRecord.last), null, { timeout: Math.round(15000 * SLOW) })
     uploaded = await page.evaluate(() => window.__autoRecord.last)
 } catch { /* gate below */ }
 r.check('the take uploaded through the consent gate', !!(uploaded && uploaded.uploaded), JSON.stringify(uploaded))
@@ -412,6 +446,18 @@ r.check('stored file validates', validate(rec) === null, validate(rec) || '')
 r.check('v2 file with one voice track', rec.format === 'retrogames-rec/v2' && rec.voice && rec.voice.tracks.length === 1, rec.format)
 const track = rec.voice && rec.voice.tracks[0]
 r.check('voice track carries a clock trace', !!(track && Array.isArray(track.clock) && track.clock.length >= 2), track && JSON.stringify(track.clock))
+
+// #1711 audit item 3 (2026-11-16): a throttle run must NAME its lag, not just
+// claim one. The audited phone takes sit seconds behind realtime on the stored
+// clock (seed10 -3385 ms, seed19 -3700) — voiceDrift measures exactly that
+// axis, so every run reports the achieved figure and --lag-min goes RED when
+// the take does not actually carry the audited shape. What auditors read is
+// what this run proved, in the same units as the takes in the store.
+if (track && Array.isArray(track.clock) && track.clock.length >= 2) {
+    const d = voiceDrift(track.clock)
+    r.info('achieved clock lag vs realtime (#1711 audit item 3)', `maxLag ${d.maxLagMs.toFixed(1)} ms @tick ${d.worstTick} (calibration: seed10 -3385 ms, seed19 -3700 ms)`)
+    if (LAG_MIN > 0) r.check(`take carries at least ${LAG_MIN} s of clock lag (the audited phone shape)`, Math.abs(d.maxLagMs) >= LAG_MIN * 1000, `maxLag ${d.maxLagMs.toFixed(1)} ms`)
+}
 
 // the A-tap ticks the pads banked: rising edges of `a` (exactly one per
 // tap — 3 taps, 3 edges; the steering holds are context, not presses)
