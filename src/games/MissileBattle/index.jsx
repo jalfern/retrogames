@@ -18,7 +18,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
-import { W, H, CFG, makeGame, step, stateHash } from './sim.js'
+import { W, H, CFG, makeGame, step, stateHash, SEAT_OF_CITY, SEAT_OF_BASE } from './sim.js'
 import { plan, decide } from './planner.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -44,6 +44,11 @@ const STARS = Array.from({ length: 46 }, (_, i) => [(i * 97) % W, ((i * 61) % 15
 // battery's violet spark and the rubble-puff dud all read differently.
 const BLAST_HUE = { iv: '225,250,255', chain: '255,214,90', city: '255,104,66', base: '190,140,255', dud: '168,158,140' }
 
+// #2473 sector identity: player one the cyan west, player two the amber east,
+// the shared reserve a pale steel — readable at a glance, in the game's own
+// night-sky palette rather than anyone else's.
+const SEAT_RGB = { 1: '57,210,255', 2: '255,180,94', 0: '208,214,235' }
+
 const MissileBattleGame = () => {
     const stageRef = useRef(null)
     const [screen, setScreen] = useState('attract')
@@ -55,6 +60,17 @@ const MissileBattleGame = () => {
     const [watching, setWatching] = useState(false) // #1637 WATCH: the intercept solver takes the keys
     const watchingRef = useRef(false)
     const watchHeldRef = useRef(new Map()) // the solver's target reservations, live
+    // #2473 — arcade 2P: solo (default, phone-honest) | coop (you + the
+    // autopilot seat 2) | duo (two humans on one keyboard, one aim control,
+    // alternating by turn — Jon's rule: no second touchpad, ever).
+    const [mode, setModeUi] = useState('solo')
+    const modeRef = useRef('solo')
+    const cycleMode = () => {
+        const next = modeRef.current === 'solo' ? 'coop' : modeRef.current === 'coop' ? 'duo' : 'solo'
+        modeRef.current = next
+        setModeUi(next)
+        audioController.playTone(next === 'solo' ? 300 : next === 'coop' ? 420 : 560, 0.08, 'square', 0.05)
+    }
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hudRef = useRef({})
     const setHud = (k) => (el) => { hudRef.current[k] = el }
@@ -78,6 +94,7 @@ const MissileBattleGame = () => {
         let demoAt = 0, toast = 0, toastMsg = '', shake = 0
         const keys = { l: false, r: false, u: false, d: false, f: false, fTap: false }
         const tap = { on: false, x: 128, y: 90 }
+        const seatHeld = [new Map(), new Map()] // #2473 the CPU seat's own reservations
         const evLog = []
         const parts = []
         const trails = new Map()
@@ -114,8 +131,20 @@ const MissileBattleGame = () => {
                 else if (e.type === 'launch') audioController.playTone(e.kind === 'bomber' ? 140 : 240, 0.04, 'triangle', 0.02)
                 else if (e.type === 'cityHit') { say('CITY LOST'); audioController.playSweep(220, 40, 0.5, 'sawtooth', 0.09); burst(e.x, CFG.groundY - 4, 16, '#ff5d5d'); shake = 7 }
                 else if (e.type === 'baseHit') { say('BATTERY KNOCKED OUT'); audioController.playSweep(180, 50, 0.4, 'square', 0.08); shake = 6 }
-                else if (e.type === 'clear') { say(`WAVE CLEAR +${e.ammo * 5 + e.cities * 10}`); audioController.playSweep(400, 1200, 0.4, 'square', 0.06) }
-                else if (e.type === 'banner') say(`${WAVES[e.wave].name} — WAVE ${e.wave + 1}`)
+                else if (e.type === 'denySeat') { say(`NOT YOUR SECTOR — PLAYER ${e.seat}`); audioController.playTone(110, 0.12, 'square', 0.06) }
+                else if (e.type === 'seatOut') {
+                    say(`SECTOR ${e.seat} HAS FALLEN — PLAYER ${e.seat === 1 ? 2 : 1} MANS EVERY TUBE`)
+                    audioController.playSweep(260, 30, 0.9, 'sawtooth', 0.1); shake = 8
+                }
+                else if (e.type === 'clear') {
+                    say(e.pscore
+                        ? `WAVE CLEAR — P1 ${e.pscore[0]} · P2 ${e.pscore[1]}`
+                        : `WAVE CLEAR +${e.ammo * 5 + e.cities * 10}`)
+                    audioController.playSweep(400, 1200, 0.4, 'square', 0.06)
+                }
+                else if (e.type === 'banner') say(e.seat
+                    ? `${WAVES[e.wave].name} — WAVE ${e.wave + 1} · PLAYER ${e.seat} ${e.seat === 1 ? 'WEST' : 'EAST'}`
+                    : `${WAVES[e.wave].name} — WAVE ${e.wave + 1}`)
                 else if (e.type === 'win') audioController.playSweep(400, 1600, 0.8, 'square', 0.08)
                 else if (e.type === 'lose') audioController.playSweep(300, 60, 1.1, 'sawtooth', 0.1)
             }
@@ -123,7 +152,10 @@ const MissileBattleGame = () => {
 
         const finish = (win) => {
             const sc = gs.score
-            setEnd({ win, score: sc })
+            // duo verdict: a sole sector still standing holds the sky; if both
+            // held, the higher ledger does (the arcade's separate score columns)
+            const winner = gs.twoP ? (gs.out[0] ? 2 : gs.out[1] ? 1 : (gs.pscore[0] >= gs.pscore[1] ? 1 : 2)) : 0
+            setEnd({ win, score: sc, twoP: gs.twoP, pscore: gs.pscore.slice(), winner })
             if (win) localStorage.setItem('missilebattle.board', JSON.stringify([...board(), { score: sc, date: new Date().toISOString().slice(2, 10) }].sort((a, b) => b.score - a.score).slice(0, 8)))
             overAtRef.current = performance.now()
             setMode('over')
@@ -148,6 +180,14 @@ const MissileBattleGame = () => {
             // #1637 WATCH: the same intercept solver missilecheck grades —
             // youngest-threat-first, battery ammo balanced, reservations held.
             if (watchingRef.current) { doSim(decide(gs, watchHeldRef.current)); keys.fTap = false; return }
+            // #2473: an automated seat drives its own waves — the seat check
+            // lives in the sim, so the autopilot stands down at the sector
+            // line exactly like a human partner would.
+            if (gs.twoP && gs.phase === 'play' && gs.cpu[gs.seat - 1]) {
+                doSim(decide(gs, seatHeld[gs.seat - 1]))
+                keys.fTap = false
+                return
+            }
             const inp = { l: keys.l, r: keys.r, u: keys.u, d: keys.d, fire: keys.f || keys.fTap }
             if (tap.on) { inp.aimTo = [tap.x, tap.y]; inp.fire = true; tap.on = false }
             doSim(inp)
@@ -209,6 +249,36 @@ const MissileBattleGame = () => {
             ctx.fillRect(0, CFG.groundY, W, H - CFG.groundY)
             for (const c of gs.cities) drawCity(c.x, c.alive)
             gs.bases.forEach((b, i) => drawBattery(b, i))
+            // #2473 duo: the map is a border — cyan west, amber east, the
+            // centre line pulsing in whoever's turn it is. Fallen sectors go
+            // dark-red; idle tubes dim; every pip is ownership at a glance.
+            if (gs.twoP) {
+                ctx.fillStyle = 'rgba(57,210,255,0.45)'; ctx.fillRect(2, CFG.groundY + 3, 124, 2)
+                ctx.fillStyle = 'rgba(255,180,94,0.45)'; ctx.fillRect(130, CFG.groundY + 3, W - 132, 2)
+                if (gs.out[0]) { ctx.fillStyle = 'rgba(96,42,46,0.9)'; ctx.fillRect(2, CFG.groundY + 3, 124, 2) }
+                if (gs.out[1]) { ctx.fillStyle = 'rgba(96,42,46,0.9)'; ctx.fillRect(130, CFG.groundY + 3, W - 132, 2) }
+                ctx.fillStyle = 'rgba(208,214,235,0.18)'
+                for (let y = 36; y < CFG.groundY - 4; y += 9) ctx.fillRect(128, y, 1, 5)
+                const pulse = 0.3 + 0.22 * Math.sin(tk * 0.2)
+                ctx.fillStyle = `rgba(${SEAT_RGB[gs.seat] || '208,214,235'},${pulse.toFixed(3)})`
+                for (let y = 36; y < CFG.groundY - 4; y += 9) ctx.fillRect(128, y, 1, 5)
+                gs.cities.forEach((c, ci) => {
+                    const rgb = SEAT_RGB[SEAT_OF_CITY[ci]]
+                    ctx.fillStyle = c.alive ? `rgba(${rgb},0.9)` : `rgba(${rgb},0.3)`
+                    ctx.fillRect(c.x - 1, CFG.groundY - 15, 2, 2)
+                })
+                gs.bases.forEach((b, i) => {
+                    const own = SEAT_OF_BASE[i]
+                    const rgb = SEAT_RGB[own]
+                    const on = b.alive && (own === 0 || own === gs.seat || gs.out[own - 1])
+                    ctx.fillStyle = `rgba(${rgb},${!b.alive ? 0.25 : on ? 0.95 : 0.4})`
+                    ctx.fillRect(b.x - 1, CFG.groundY - 16, 2, 2)
+                    if (!b.alive) {
+                        ctx.strokeStyle = 'rgba(255,120,120,0.7)'
+                        ctx.beginPath(); ctx.moveTo(b.x - 5, CFG.groundY - 12); ctx.lineTo(b.x + 5, CFG.groundY - 4); ctx.stroke()
+                    }
+                })
+            }
 
             // enemy trails + heads (trails are renderer memory, not sim state)
             const liveIds = new Set()
@@ -266,10 +336,13 @@ const MissileBattleGame = () => {
                 ctx.beginPath(); ctx.arc(b.x, b.y, Math.max(0.5, b.r), 0, Math.PI * 2); ctx.fill()
             }
 
-            // the reticle — where the next tap/Space will put a blast
+            // the reticle — where the next tap/Space will put a blast; in duo
+            // it wears the colour of the seat holding the sky (#2473)
             if (screenRef.current === 'play') {
                 const { x, y } = gs.aim
-                ctx.strokeStyle = tk % 30 < 15 ? '#8fff9f' : '#d8ffd8'
+                ctx.strokeStyle = gs.twoP
+                    ? (tk % 30 < 15 ? (gs.seat === 2 ? '#ffcf8f' : '#8fd8ff') : (gs.seat === 2 ? '#fff1d8' : '#d8f2ff'))
+                    : (tk % 30 < 15 ? '#8fff9f' : '#d8ffd8')
                 ctx.beginPath()
                 ctx.moveTo(x - 7, y); ctx.lineTo(x - 2, y); ctx.moveTo(x + 2, y); ctx.lineTo(x + 7, y)
                 ctx.moveTo(x, y - 7); ctx.lineTo(x, y - 2); ctx.moveTo(x, y + 2); ctx.lineTo(x, y + 7)
@@ -292,9 +365,14 @@ const MissileBattleGame = () => {
             if (now - lastHud < 80) return
             lastHud = now
             const h = hudRef.current
-            if (h.score) h.score.textContent = String(gs.score).padStart(6, '0')
+            if (gs.twoP) {
+                if (h.score) h.score.textContent = `1P ${String(gs.pscore[0]).padStart(6, '0')}  2P ${String(gs.pscore[1]).padStart(6, '0')}`
+                if (h.wave) h.wave.textContent = `${gs.wave + 1}/3 · P${gs.seat}${gs.phase === 'banner' ? ' INCOMING' : ''}${gs.out[0] ? ' · S1✗' : ''}${gs.out[1] ? ' · S2✗' : ''}`
+            } else {
+                if (h.score) h.score.textContent = String(gs.score).padStart(6, '0')
+                if (h.wave) h.wave.textContent = `${gs.wave + 1}/3 ${gs.phase === 'banner' ? 'INCOMING' : ''}`
+            }
             if (h.hiscore) h.hiscore.textContent = String(Math.max(gs.score, ...board().map((b) => b.score), 0)).padStart(6, '0')
-            if (h.wave) h.wave.textContent = `${gs.wave + 1}/3 ${gs.phase === 'banner' ? 'INCOMING' : ''}`
             if (h.cities) h.cities.textContent = String(gs.cities.filter((c) => c.alive).length)
             if (h.ammo) h.ammo.textContent = gs.bases.map((b) => (b.alive ? b.ammo : '—')).join(' ')
             if (h.toast) { h.toast.textContent = toastMsg; h.toast.style.opacity = toast > 0 ? '1' : '0' }
@@ -318,8 +396,10 @@ const MissileBattleGame = () => {
         }
 
         const startPlay = () => {
-            gs = makeGame(0)
+            const md = modeRef.current
+            gs = makeGame(0, { twoP: md !== 'solo', cpu: md === 'coop' ? [false, true] : [false, false] })
             evLog.length = 0; parts.length = 0; trails.clear()
+            seatHeld[0] = new Map(); seatHeld[1] = new Map()
             keys.l = keys.r = keys.u = keys.d = keys.f = keys.fTap = false
             tap.on = false
             watchingRef.current = false; setWatching(false); watchHeldRef.current = new Map() // #1637 a new run starts with the keys in your hand
@@ -332,7 +412,10 @@ const MissileBattleGame = () => {
             if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault()
             const sc = screenRef.current
-            if (sc === 'attract') { startPlay(); return }
+            if (sc === 'attract') {
+                if (e.code === 'KeyM') { cycleMode(); return } // #2473 SOLO → +CPU → 2 HUMAN (desktop keyboard option, Jon's rule)
+                startPlay(); return
+            }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current || e.repeat) return
             // #1637 WATCH: Y hands the sky to the solver; any driving key takes it back.
@@ -392,6 +475,9 @@ const MissileBattleGame = () => {
                     enemies: gs.enemies.map((e) => ({ id: e.id, kind: e.kind, x: Math.round(e.x * 10) / 10, y: Math.round(e.y * 10) / 10 })),
                     intc: gs.intc.map((m) => ({ id: m.id, x: Math.round(m.x * 10) / 10, y: Math.round(m.y * 10) / 10 })),
                     blasts: gs.blasts.length,
+                    // #2473 duo probes: who holds the sky, the two ledgers
+                    twoP: gs.twoP, seat: gs.seat, cpu: gs.cpu.slice(), pscore: gs.pscore.slice(), out: gs.out.slice(),
+                    mode: modeRef.current,
                     board: board(), evLog: evLog.slice(-90),
                 }),
                 start: startPlay,
@@ -399,7 +485,10 @@ const MissileBattleGame = () => {
                 hash: () => stateHash(gs),
                 setup: (opts = {}) => {
                     if (screenRef.current !== 'play') return false
-                    if (opts.wave !== undefined) { gs = makeGame(opts.wave) }
+                    if (opts.wave !== undefined || opts.twoP !== undefined || opts.cpu !== undefined) {
+                        // #2473: the harness can stage a duo board directly
+                        gs = makeGame(opts.wave ?? gs.wave, { twoP: opts.twoP ?? gs.twoP, cpu: opts.cpu ?? gs.cpu })
+                    }
                     // quiet = an empty SKY, not an empty script: an emptied
                     // queue reads as wave-clear on the first play tick, and
                     // freshWave ~4.3 s later wipes planted warheads and relits
@@ -546,6 +635,11 @@ const MissileBattleGame = () => {
                     <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
                         <h1 className="text-4xl font-black" style={{ color: '#ff7d5d', textShadow: '3px 0 0 #39d2ff, -3px 0 0 #ff3d6e, 0 10px 24px #000' }}>MISSILE BATTLE</h1>
                         <p className="text-white font-mono font-bold mt-3 animate-pulse">{PRESS}</p>
+                        <p className="text-white/70 font-mono text-xs mt-2 tracking-widest">
+                            MODE <span style={{ color: mode === 'solo' ? '#8fd8ff' : mode === 'coop' ? '#c9b8ff' : '#ffcf8f' }}>
+                                {mode === 'solo' ? 'SOLO' : mode === 'coop' ? 'YOU + CPU SEAT' : '2 HUMAN · ALTERNATING'}
+                            </span> <span className="text-white/40">· M TO CHANGE</span>
+                        </p>
                         <span className="block mt-2 text-xs text-white/50 tracking-widest">{WATCH_ATTRACT_HINT}</span>
                         <AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />
                     </div>
@@ -556,6 +650,11 @@ const MissileBattleGame = () => {
                 <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-amber-50 font-mono px-6">
                     <h2 className={`text-4xl font-black mb-1 ${end.win ? 'text-yellow-300' : 'text-red-400'}`}>{end.win ? 'DEFENSE HELD' : 'THE MAP WENT DARK'}</h2>
                     <p className="text-lg mb-4">{end.score} pts{end.win ? ' — all three barrages broken' : ''}</p>
+                    {end.twoP && (
+                        <p className="mb-3 font-bold tracking-widest" style={{ color: end.winner === 1 ? '#8fd8ff' : '#ffcf8f' }}>
+                            1P {end.pscore[0]} · 2P {end.pscore[1]} — PLAYER {end.winner} TOPS THE BOARD
+                        </p>
+                    )}
                     <div className="bg-black/50 border border-amber-400/40 rounded-lg p-4 w-80 max-w-full text-sm">
                         <div className="text-amber-300 font-bold mb-1 tracking-widest">HALL OF FAME</div>
                         {board().map((r, i) => (

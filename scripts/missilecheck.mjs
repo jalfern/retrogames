@@ -534,6 +534,100 @@ section('MENAGERIE (#2379) — the yellow bomb sheds, veterans double-dodge, bla
     }
 }
 
+// ------------------------------------------------ ALTERNATING BATTERIES (#2473) ----
+section('ALTERNATING BATTERIES (#2473) — sectors, seats, rescue, ledgers')
+{
+    // 1. seats alternate by wave, and every named entry of a duo wave falls
+    //    inside the defender's sector, spawning from the defender's side
+    const SECTOR_TI = { 1: [0, 1, 2, 6, 7], 2: [3, 4, 5, 7, 8] }
+    for (let w = 0; w < 3; w++) {
+        const g = makeGame(w, { twoP: true })
+        const seat = (w % 2) + 1
+        ok(g.seat === seat, `duo wave ${w}: seat is ${g.seat}, the alternation law wants ${seat}`)
+        for (const e of g.queue) {
+            if (e.ti >= 0) ok(SECTOR_TI[seat].includes(e.ti), `wave ${w} seat ${seat}: an entry targets ti ${e.ti} — off-sector`)
+            ok(seat === 1 ? e.x0 <= W / 2 : e.x0 >= W / 2, `wave ${w} seat ${seat}: spawn column ${e.x0} crosses the border`)
+            if (e.drops) for (const d of e.drops) ok(d.ti < 0 || SECTOR_TI[seat].includes(d.ti), `wave ${w} seat ${seat}: a bomber drop targets ${d.ti} — off-sector`)
+        }
+    }
+    // solo's queue is untouched by the retarget — same ti, same columns
+    {
+        const g = makeGame(0)
+        ok(g.queue.every((e, i) => e.ti === WAVES[0].entries[i].ti && e.x0 === WAVES[0].entries[i].x0), 'the solo queue was retargeted')
+        ok(g.seat === 0, 'solo seats exist')
+    }
+
+    // 2. the fire gate: deep in the partner's half is refused in the sector's
+    //    own voice; the shared reserve fires for either defender
+    const gateShot = (seat, x) => {
+        const g = makeGame(seat === 1 ? 0 : 1, { twoP: true })
+        g.phase = 'play'; g.playT = 1; g.queue = []; g.enemies = []
+        step(g, { aimTo: [x, 60], fire: true })
+        return { ev: g.events.find((e) => e.type === 'ifire' || e.type === 'denySeat' || e.type === 'deny'), intc: g.intc.length }
+    }
+    {
+        const r1 = gateShot(1, 250)
+        ok(r1.ev?.type === 'denySeat' && r1.intc === 0, 'player one fired deep over the east sector line')
+        const r2 = gateShot(2, 250)
+        ok(r2.ev?.type === 'ifire' && r2.ev.bat === 2, 'player two could not fire inside their own sector')
+        const r3 = gateShot(1, 200)
+        ok(r3.ev?.type === 'ifire' && r3.ev.bat === 1, 'the shared reserve ignored the defender')
+        const r4 = gateShot(2, 20)
+        ok(r4.ev?.type === 'denySeat' && r4.intc === 0, 'player two fired deep over the west sector line')
+        const sg = makeGame(0); sg.phase = 'play'; sg.playT = 1; sg.queue = []
+        step(sg, { aimTo: [250, 60], fire: true })
+        ok(sg.intc.length === 1, 'solo fire touched the sector gate')
+    }
+
+    // 3. fallen sector + rescue: seats are eliminated only when their own
+    //    three cities go dark; the survivor mans the tubes; both dark = war
+    {
+        const g = makeGame(0, { twoP: true })
+        g.phase = 'play'; g.playT = 1; g.queue = []; g.enemies = []
+        g.cities[0].alive = false; g.cities[1].alive = false
+        g.enemies.push({ id: 901, kind: 'icbm', x: 110, px: 110, y: 191, vx: 0, vy: 1, ti: 2, t: 0, alive: true, split: null, amp: 0, drops: null, spawnAt: 1, score: 25 })
+        step(g, {})
+        ok(g.out[0] === true && g.events.some((e) => e.type === 'seatOut'), 'the west sector lost all three cities without the seatOut receipt')
+        ok(g.end === null, 'one sector falling dark ended the war')
+        const s = makeGame(1, { twoP: true })
+        s.out = [true, false]; s.seat = 2; s.phase = 'play'; s.playT = 1; s.queue = []
+        step(s, { aimTo: [20, 60], fire: true })
+        ok(s.intc.length === 1 && s.intc[0].bat === 0, 'the survivor did not man the fallen sector\'s battery')
+        // take the survivor's other two cities, then let the third fall: the
+        // impact is what must darken the map, not a bookkeeping pass
+        s.cities[4].alive = false; s.cities[5].alive = false
+        s.enemies.push({ id: 902, kind: 'icbm', x: 146, px: 146, y: 191, vx: 0, vy: 1, ti: 3, t: 0, alive: true, split: null, amp: 0, drops: null, spawnAt: 1, score: 25 })
+        let dark = null
+        for (let t = 0; t < 30 && !dark; t++) { step(s, {}); dark = s.events.find((e) => e.type === 'lose') }
+        ok(!!dark && s.end === 'lose', 'both sectors went dark and the map stayed lit')
+    }
+
+    // 4. an eliminated seat never takes the sky again — its turn passes
+    {
+        const g = makeGame(0, { twoP: true })
+        g.out = [true, false]
+        g.phase = 'clear'; g.pT = 1; step(g, {}); step(g, {})
+        ok(g.wave === 1 && g.seat === 2, `an eliminated seat returned to the board (wave ${g.wave} seats ${g.seat})`)
+    }
+
+    // 5. the proven duo run: the autopilot holding BOTH seats, both sectors
+    //    spotless, and the two columns summing to the total exactly
+    const duoR = plan(makeGame(0, { twoP: true }))
+    ok(duoR.ok && duoR.receipts.end === 'win', `the duo autopilot did not win: ${duoR.receipts.end}`)
+    for (const w of duoR.receipts.perWave) ok(w.lost === 0, `duo autopilot lost ${w.lost} cities on wave ${w.wave} — a sector fell`)
+    const duoG = makeGame(0, { twoP: true })
+    {
+        const held = new Map()
+        for (let t = 0; t < 40000 && !duoG.end; t++) step(duoG, decide(duoG, held))
+        ok(duoG.end === 'win', `ledger run ended ${duoG.end}`)
+        ok(duoG.pscore[0] + duoG.pscore[1] === duoG.score, `ledgers ${duoG.pscore.join('+')} do not sum to ${duoG.score}`)
+        ok(duoG.pscore[0] > 0 && duoG.pscore[1] > 0, 'one seat carried the board alone — the wave-credit split is broken')
+        ok(stateHash(duoG).includes(`|D${duoG.seat}`), 'the stateHash ignores the duo ledger')
+        ok(!stateHash(makeGame(0)).includes('|D'), 'the solo hash carries a duo segment')
+    }
+    console.log(`  ..    duo autopilot: ${duoR.receipts.fired} fired, ${duoR.receipts.kills} kills, ledgers ${duoG.pscore.join(' / ')}`)
+}
+
 // ------------------------------------------------------------------- the slack rule ----
 section('SLACK RULE — one fewer interceptor in EVERY battery')
 {
@@ -544,6 +638,15 @@ section('SLACK RULE — one fewer interceptor in EVERY battery')
         CFG.ammoWave = honest
         ok(r.ok, `wave ${w} is NOT winnable at ${honest - 1} per battery (fired ${r.receipts.fired}, lost ${r.receipts.citiesLost}) — zero slack is a build failure`)
         console.log(`  ..    wave ${w} @ ${honest - 1}/battery: ${r.ok ? 'WINS' : 'LOSES'} (${r.receipts.fired} fired, ${r.receipts.citiesLost} lost)`)
+    }
+    // #2473: the duo mirror — the sector budget follows the knob, and both
+    // sectors must still come through spotless one round lighter everywhere
+    for (let w = 0; w < WAVES.length; w++) {
+        CFG.ammoWave = honest - 1
+        const r = plan(makeGame(w, { twoP: true }))
+        CFG.ammoWave = honest
+        ok(r.ok && r.receipts.citiesLost === 0, `duo wave ${w} @ ${honest - 1}/battery: ${r.ok ? `survived DIRTY (lost ${r.receipts.citiesLost})` : 'LOSES'} — a sector fell with slack on the tubes`)
+        console.log(`  ..    duo wave ${w} @ ${honest - 1}/battery: ${r.ok && r.receipts.citiesLost === 0 ? 'BOTH SECTORS HELD' : 'FAILED'}`)
     }
 }
 
@@ -575,6 +678,22 @@ section('DETERMINISM')
     g2.enemies[0].x -= 0.4
     g2.aim.x += 0.1
     ok(stateHash(g1) !== stateHash(g2), 'stateHash ignores the reticle')
+
+    // #2473 duo determinism: the mirrored barrage, the alternating seats and
+    // the ledger all replay to the identical hashes and verdicts
+    const runDuo = () => {
+        const g = makeGame(0, { twoP: true })
+        const held = new Map()
+        const hs = []
+        for (let t = 0; t < 30000 && !g.end; t++) {
+            step(g, decide(g, held))
+            if (t % 1000 === 0) hs.push(stateHash(g))
+        }
+        return { hs, end: g.end, score: g.score, ps: g.pscore.join('/') }
+    }
+    const da = runDuo(), db = runDuo()
+    ok(JSON.stringify(da) === JSON.stringify(db), 'two identical duo runs diverged')
+    ok(da.end === 'win', `the duo determinism run ended ${da.end} (want win)`)
 }
 
 // ------------------------------------------------------------------ mutations ----
@@ -707,6 +826,28 @@ if (MUT) {
         tryMut('dodgeEsc null (wave 3 stops escalating)', { dodgeEsc: null }, bigDrift)
         tryMut('dodgeEsc ticks 18 -> 14 (escalation invisible)', { dodgeEsc: { ...CFG.dodgeEsc, ticks: 14 } }, bigDrift)
         tryMut('dodgeEsc v 1.35 -> 1.1 (same commitment as wave 2)', { dodgeEsc: { ...CFG.dodgeEsc, v: 1.1 } }, bigDrift)
+    }
+    // 9. #2473 seat laws: the sector gate, the retarget map and the ledger —
+    //    each switch must turn its ALTERNATING pins red
+    {
+        const eastRefused = () => {
+            const g = makeGame(0, { twoP: true }); g.phase = 'play'; g.playT = 1; g.queue = []; g.enemies = []
+            step(g, { aimTo: [250, 60], fire: true })
+            return g.intc.length === 0
+        }
+        tryMut('seatGate off (no sector line)', { seatGate: false }, eastRefused)
+        const sectorLaw = () => {
+            const g = makeGame(1, { twoP: true })
+            return g.queue.every((e) => e.ti < 0 || [3, 4, 5, 7, 8].includes(e.ti))
+        }
+        tryMut('retargetOn off (waves ignore the sector map)', { retargetOn: false }, sectorLaw)
+        const ledger = () => {
+            const g = makeGame(0, { twoP: true })
+            const held = new Map()
+            for (let t = 0; t < 40000 && !g.end; t++) step(g, decide(g, held))
+            return g.pscore[0] + g.pscore[1] === g.score && g.pscore[0] > 0
+        }
+        tryMut('ledgerOn off (kills and bonuses skip the seat columns)', { ledgerOn: false }, ledger)
     }
 }
 
