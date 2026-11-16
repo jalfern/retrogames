@@ -1138,7 +1138,7 @@ if (MUT) {
         ['#2172 the hovered card draws last so its zoom rides on top', /ROSTER\.forEach\(\(rd, i\) => \{ if \(i !== cursor\) drawCard\(rd, i\) \}\)\s*drawCard\(ROSTER\[cursor\], cursor\)/],
         ['#2172 tapping another card walks the cursor there', /if \(hit >= 0 && hit !== cursor\) hoverSelect\(hit - cursor\)/],
         ['#2172 the zoom resets when select closes', /scr !== 'select' && cardZoom\.some\(\(v\) => v !== 0\)\) cardZoom\.fill\(0\)/],
-        ['the hovered card glows teal', /shadowColor = 'rgba\(89,224,200,0\.75\)'/],
+        ['#2482 the hovered card glows in its own palette accent', /shadowColor = cardRim\(true, rd\)/],
         ['hovering blips the hovered fighter voice', /const hoverSelect = \(d\) => \{\s*cursor = \(cursor \+ d \+ ROSTER\.length\) % ROSTER\.length\s*hoverBlip\(ROSTER\[cursor\]\)/],
         ['the arrow keys drive the hover blip', /hoverSelect\(-1\)[\s\S]*hoverSelect\(1\)/],
         ['the hovered intro blurb prints under the grid', /`"\$\{ROSTER\[cursor\]\.intro\}"`/],
