@@ -39,10 +39,28 @@ const RELAY = `ws://127.0.0.1:${srv.boundPort()}`
 const browser = await launch()
 const errors = []
 
-const open = async (url) => {
+const open = async (url, tag) => {
     const page = await browser.newPage({ viewport: { width: 900, height: 760 } })
+    // Wire-level visibility (#2476): a socket that dies mid-scenario is the
+    // difference between "the gate failed" and "this box was never seated".
+    await page.addInitScript((t) => {
+        const OS = window.WebSocket
+        window.WebSocket = function (u, p) {
+            const ws = new OS(u, p)
+            const cu = String(u)
+            if (cu.includes('/room/')) {
+                console.log(`WS[${t}] new ${cu}`)
+                ws.addEventListener('open', () => console.log(`WS[${t}] open ${cu}`))
+                ws.addEventListener('close', (e) => console.log(`WS[${t}] close ${cu} code=${e.code}`))
+            }
+            return ws
+        }
+        window.WebSocket.prototype = OS.prototype
+        Object.assign(window.WebSocket, OS)
+    }, tag)
+    page.on('console', (m) => { const t = m.text(); if (t.startsWith('WS[')) console.log('   wire:', t) })
     page.on('pageerror', (e) => { if (!relayNoise(String(e))) errors.push(String(e)) })
-    page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text())) errors.push(m.text()) })
+    page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text()) && !m.text().startsWith('WS[')) errors.push(m.text()) })
     await page.goto(url, { waitUntil: 'load' })
     await page.waitForFunction(() => !!(window.__viperPitTest && window.__viperPitTest.netState), null, { timeout: 15000 })
     return page
@@ -51,16 +69,22 @@ const net = (page) => page.evaluate(() => window.__viperPitTest.netState())
 
 // Fresh room: host opens, guest joins, both leave attract for the select screen.
 const newPair = async () => {
-    const A = await open(`${BASE}?net=host&relay=${RELAY}`)
+    const A = await open(`${BASE}?net=host&relay=${RELAY}`, 'A')
     const hp = await until(async () => { const p = await net(A); return p && p.phase === 'waiting' && p.code.length === 4 ? p : null })
     if (!hp) throw new Error('host never opened a room')
-    const B = await open(`${BASE}?net=join&room=${hp.code}&relay=${RELAY}`)
+    const B = await open(`${BASE}?net=join&room=${hp.code}&relay=${RELAY}`, 'B')
     await A.keyboard.press('Space')
     await B.keyboard.press('Space')
+    // Seated, not just "on select": a guest's first socket can race its own
+    // StrictMode ghost (`room full` → retry ladder), and select renders no
+    // matter of the socket. Wait until the ROSTER agrees — both boxes show
+    // two seats and hold an open room socket.
     const paired = await until(async () => {
         const [pa, pb] = await Promise.all([net(A), net(B)])
-        return pa.screen === 'select' && pb.screen === 'select' && pa.code === pb.code ? true : null
-    })
+        return pa.screen === 'select' && pb.screen === 'select' && pa.code === pb.code
+            && pa.rphase === 'waiting' && pb.rphase === 'waiting'
+            && pa.seats.length === 2 && pb.seats.length === 2 ? true : null
+    }, 20000)
     if (!paired) throw new Error('pair never reached select together')
     return { A, B, code: hp.code }
 }
@@ -121,14 +145,19 @@ try {
         await p.A.keyboard.press('Space') // re-press — must re-arm the wait, not crash or launch
         ok(!!(await until(async () => (await net(p.A)).waiting ? true : null)),
             'GHOST: a re-press re-arms the wait for the next challenger')
-        const C = await open(`${BASE}?net=join&room=${p.code}&relay=${RELAY}`)
+        const C = await open(`${BASE}?net=join&room=${p.code}&relay=${RELAY}`, 'C')
+        ok(!!(await until(async () => { const s = await net(C); return s.rphase === 'waiting' && s.seats.length === 2 ? true : null }, 20000)),
+            'GHOST: the fresh challenger seats in the still-open room')
         await C.keyboard.press('Space')
         await C.keyboard.press('ArrowLeft')
-        await C.keyboard.press('Space') // the NEW joiner's pick fires the re-armed gate
+        await C.keyboard.press('Space') // the fresh pick lands at the re-armed host
+        ok(!!(await until(async () => (await net(p.A)).gate.guestChar === 'vess' ? true : null)),
+            'GHOST: the re-armed gate stores the fresh joiner pick before any FIGHT')
+        await p.A.keyboard.press('Space') // the host launches when ready — with the real choice
         const both = await until(async () => {
             const [sa, sc] = await Promise.all([net(p.A), net(C)])
             return sa.screen === 'play' && sc.screen === 'play' ? [sa, sc] : null
-        })
+        }, 20000)
         ok(!!both && both[0].chars[1] === 'vess' && both[1].chars[1] === 'vess',
             'GHOST: the fresh joiner picks and BOTH boxes agree on the real choice',
             both ? `host ${JSON.stringify(both[0].chars)}` : '')
