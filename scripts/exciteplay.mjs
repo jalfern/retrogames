@@ -265,6 +265,36 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     r.check('a front-office rival hazard-hops the SAME body clean (skill grades the line)', !!clean && sawAir, JSON.stringify(clean))
 }
 
+// ---- #2434: the toast is ONE line — a minor scuffle must not stomp a live headline ----
+// The chain's "PILES IN!" is a headline (prio 2); a rival wheel-to-wheel is a
+// minor (prio 1). While the headline is still on screen the minor must YIELD,
+// so a dense pack reads as one dramatic beat, not a strobe of four messages.
+{
+    // Rig the chain: a frozen body, the tail rider committing late and PILING IN.
+    await page.evaluate(() => window.__bikeTest.setup({ track: 0, x: 100, v: 0, rivals: { GORDON: { d: 250, v: 0, down: 400 }, IVAN: { d: 248, v: 5 } } }))
+    let headline = false
+    for (let i = 0; i < 90 && !headline; i++) {
+        const s = await probe()
+        if (s.toast && s.toast.prio === 2 && /PILES IN!/.test(s.toast.msg)) headline = true
+        await wait(30)
+    }
+    r.check('the chain headlines the toast ("<name> PILES IN!", prio 2)', headline)
+    // Fresh race (the toast is renderer state, so the headline SURVIVES the reset):
+    // MARIO closes on KATO inside contact range — a guaranteed minor rbump — while
+    // the headline is still up. The toast must HOLD the headline, not flip to "bumps".
+    await page.evaluate(() => window.__bikeTest.setup({ track: 0, x: 100, v: 0, rivals: { MARIO: { d: 80, v: 5.3 }, KATO: { d: 86, v: 4.7 } } }))
+    let scuffle = 0, heldToast = ''
+    for (let i = 0; i < 60; i++) {
+        const s = await probe()
+        scuffle = s.fxRBump || 0
+        heldToast = s.toast ? s.toast.msg : ''
+        if (scuffle >= 1) break
+        await wait(30)
+    }
+    r.check('a minor scuffle fired while the headline was up (vacuity)', scuffle >= 1, JSON.stringify({ scuffle, heldToast }))
+    r.check('the headline held through the scuffle (no minor "bumps" clobber)', /PILES IN!/.test(heldToast), JSON.stringify({ heldToast, scuffle }))
+}
+
 // ---- the solid-wreck hazard cue is PAINTED (amber chevron over a downed rider) ----
 {
     await page.evaluate(() => window.__bikeTest.setup({ track: 0, x: 1200, v: 0 }))
