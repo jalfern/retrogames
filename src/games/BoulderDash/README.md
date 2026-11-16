@@ -109,9 +109,32 @@ classic law rather than freezing.
   recorded hashes (`e2536bb0 / afc3579 / fb495932 / 580a2db5 / fd18f2fb`) —
   dashcheck's FROZEN FLOOR section refuses any drift.
 
+## Multi-head amoeba (#2444 — Boulder Dash's forking blob)
+- **fork** (`'fork'`): the head advances on the same persisted-corner rule as the
+  two-phase gait, THEN plants one perpendicular sibling head at the *same* cell
+  (right offer first, then left). One origin therefore grows several fingers at
+  once, each keeping its own heading and cornering independently — so the blob
+  reaches around a pillar and encloses space, the signature BD amoeba look the
+  README had flagged as missing. `amoFork` events mark each split.
+- **Containment is a law, not a hope**: a wave adds at most ONE new head per
+  growth pass (`forked` ledger) and never past `CFG.amoForkMax` live fronts, so it
+  climbs to the finger budget and holds there; combined with `CFG.amoGens` expiry
+  and the rule that growth claims only EMPTY/DIAMOND, the wave fills, hits its
+  boundaries, then dissolves — it provably cannot flood the cavern (dashcheck's
+  MULTI-HEAD section runs the wrap in a synthetic room and the containment + win
+  on FORK BASIN, and the `amoFork` mutant turns the fork pin red).
+- **FORK BASIN (cave 7)**: a dirt-ringed pocket holding a stone pillar, seeded
+  with a single fork origin on its west wall and bait gems on its floor. The
+  capped blob wraps the pillar (several fronts, several headings), dissolves its
+  bait, then expires — the harvest seam at row 18 and the exit sit outside the
+  ring and are never reachable by slime (pinned every tick of the planner run).
+- The five pre-#2428 caves and GOO GALLERY stay byte-identical: `amoExt` only
+  folds direction/variant when a level opts into variants, and no older cave
+  uses `'fork'`.
+
 ## Verify
 ```bash
-npm run dashcheck             # 134 checks: every cave winnable, replay
+npm run dashcheck             # 155 checks: every cave winnable, replay
                               # determinism, rule pins (crush, gem-dirt, fire),
                               # FLY RELEASE (#2364: escape, containment, chicken;
                               # #2374: dust-mark seam pin),
@@ -121,11 +144,14 @@ npm run dashcheck             # 134 checks: every cave winnable, replay
                               # AMOEBA FAMILY (#2428: corner-persist gait,
                               # down-first dropper, vise lockstep + no-crossing,
                               # GOO GALLERY containment + lids, frozen-floor
-                              # replay hashes for caves 1-5)
-npm run dashcheck -- --mutate # 146: +12 — every CFG switch silenced goes red
-npm run dashplay              # 36 real-key checks: attract→play→win→restart on
-                              # FLY PIT + SLIME VAULT + GOO GALLERY, waves
-                              # expiring on their own clocks, zero page errors
+                              # replay hashes for caves 1-5),
+                              # MULTI-HEAD (#2444: fork birth, >=2 heads/>=2
+                              # headings, wrap-around-a-wall, hard head cap,
+                              # dissolve, FORK BASIN containment + win)
+npm run dashcheck -- --mutate # 168: +13 — every CFG switch silenced goes red
+npm run dashplay              # 42 real-key checks: attract→play→win→restart on
+                              # FLY PIT + SLIME VAULT + GOO GALLERY + FORK BASIN,
+                              # waves expiring on their own clocks, zero page errors
 DEV_PORT=<p> npm run watchcheck -- --only boulder-dash  # 182: seat pilot + pins
 ```
 `dashplay` paces the vault shoves at WORLD ticks: a 55 ms key loop can shove a
@@ -134,11 +160,13 @@ coin-flip under CPU load; waiting for `tick` to advance (world seconds, never
 blind sleeps) makes it deterministic.
 
 ## Honest gaps
-- The two-phase and drop variants are our reading of BD II's amoeba family —
-  one honest simplification each: the corner priority is fixed (right, then
-  left) and the dropper's lateral resume keeps its original heading; no wave
-  behaviour depends on the player or on distant events (the originals' amoebas
-  are equally dumb, but the rarer multi-head wave shapes are not here).
+- The amoeba family is our reading of BD II/the originals — honest
+  simplifications: the corner priority is fixed (right, then left) for both the
+  two-phase gait and the #2444 fork; the dropper's lateral resume keeps its
+  original heading; the fork's perpendicular sibling pick is fixed (right first);
+  and no wave behaviour depends on the player or on distant events (the originals'
+  amoebas are equally dumb). The multi-head *shape* is here (#2444) — rarer still
+  are waves whose heads reverse or spawn on player action; those are not.
 - A push wall slides on flat ground only — there is no "wall falls and keeps
   sliding" combo, and no pull mechanics (faithful to the era, but a simplification).
 - The corridor patrol is a fixed shuttle (the fly turns only against steel, so

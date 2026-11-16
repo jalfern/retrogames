@@ -439,7 +439,8 @@ const DashGame = () => {
         if (import.meta.env.DEV) {
             window.__dashTest = {
                 probe: () => {
-                    let boulders = 0, gems = 0, fires = 0, slime = 0, bolts = 0
+                    let boulders = 0, gems = 0, fires = 0, slime = 0, bolts = 0, heads = 0
+                    const headDirs = new Set()
                     const boltAt = []
                     for (let i = 0; i < gs.grid.length; i++) {
                         if (gs.grid[i] === BOULDER) boulders++
@@ -447,6 +448,7 @@ const DashGame = () => {
                         else if (gs.grid[i] === FIRE) fires++
                         else if (gs.grid[i] === AMO_HEAD || gs.grid[i] === AMO_BODY) slime++
                         else if (gs.grid[i] === PUSHWALL) { bolts++; boltAt.push([i % W, (i - (i % W)) / W]) }
+                        if (gs.grid[i] === AMO_HEAD) { heads++; headDirs.add(gs.amoHead[i]) }
                     }
                     return {
                         screen: screenRef.current, tick: gs.tick, t: gs.tick / CFG.caHz, level: levelIdx, name: meta.name,
@@ -457,6 +459,8 @@ const DashGame = () => {
                         // #2374 polish observability (DEV-only): comet length and
                         // whether the corridor-entry chirp has fired this level.
                         trail: trail.size, alarmed,
+                        // #2444 the forking blob, live: front count + heading spread.
+                        heads, headDirs: [...headDirs],
                     }
                 },
                 // the next arrow the PROVEN planner would press from here — the

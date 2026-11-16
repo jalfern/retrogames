@@ -248,5 +248,44 @@ r.check('another key starts a fresh play (clock reset)', (await probe()).screen 
     r.check('all three variant waves expire on their own clocks', peak3 > 6 && gone3, `peak=${peak3} end=${(await probe()).slime}`)
 }
 
+// ---- #2444 FORK BASIN live: the multi-head blob grows under real keys ----
+{
+    await page.evaluate(() => window.__game && window.__game.reset && window.__game.reset(6))
+    await wait(700)
+    const s = await probe()
+    r.check('the contract reset loaded FORK BASIN', s.name === 'FORK BASIN' && s.screen === 'play', `name=${s.name} screen=${s.screen}`)
+    let forkPeak = 0, maxHeads = 0, maxDirs = 0, drove = 0
+    for (let i = 0; i < 1600; i++) {
+        const q = await probe()
+        if (q.screen !== 'play') break
+        forkPeak = Math.max(forkPeak, q.slime)
+        maxHeads = Math.max(maxHeads, q.heads || 0)
+        maxDirs = Math.max(maxDirs, (q.headDirs || []).length)
+        drove++
+        const d = await hint()
+        if (d) await key(d)
+        await wait(55)
+    }
+    const fin = await probe()
+    r.check('the planner route drives FORK BASIN home with real keys', fin.screen === 'over' && fin.win === true && fin.have >= fin.need,
+        `screen=${fin.screen} win=${fin.win} have=${fin.have}/${fin.need}`)
+    r.check('the fork blob is visibly alive — slime grew while the digger ran', forkPeak > 6, `peak slime=${forkPeak} over ${drove} presses`)
+    r.check('…and it is MULTI-HEADED — several fronts grew at once in more than one direction', maxHeads >= 2 && maxDirs >= 2, `peak fronts=${maxHeads}, distinct headings=${maxDirs}`)
+    await wait(1200)
+    await key('KeyM')
+    await wait(300)
+    r.check('the basin run restarts back to attract', (await probe()).screen === 'attract')
+    // the blob dissolves on its own clock in a fresh cave with no input
+    await page.evaluate(() => window.__game && window.__game.reset && window.__game.reset(6))
+    let peak4 = 0, gone4 = false
+    for (let i = 0; i < 260 && !gone4; i++) {
+        const q = await probe()
+        peak4 = Math.max(peak4, q.slime)
+        if (peak4 > 6 && q.slime === 0) gone4 = true
+        await wait(80)
+    }
+    r.check('the fork wave dissolves on its own clock (generations expire)', peak4 > 6 && gone4, `peak=${peak4} end=${(await probe()).slime}`)
+}
+
 r.check('zero page errors across the whole playthrough', errors.length === 0, errors.slice(0, 4).join(' | '))
 r.exit(browser)
