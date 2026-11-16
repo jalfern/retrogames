@@ -1182,6 +1182,76 @@ if (MUT) {
     ok(!/const cw = Math\.min\(H \* 0\.5, \(W \* 0\.94\)/.test(mutL), 'mutant: overflowing card grid fails the fit gate (harness bites)')
 }
 
+// ---- Part A2: the online select-start gate (#2476) --------------------------------
+// The wire carries the guest's pick on its own 'pick' message; the host is the
+// launch authority. A FIGHT press that precedes the guest's pick must DEFER the
+// start, and the late pick must fire it with the guest's real choice — never a
+// seeded placeholder standing in for the challenger (the #1761 law, ported).
+console.log('part A2: online select gate (netselect.js)')
+{
+    const { createHostSelect } = await import(bust('../src/games/ViperPit/netselect.js'))
+    const s1 = createHostSelect()
+    const c1 = s1.commit('riv')
+    ok(c1.start === null && c1.waiting === true, 'a FIGHT press before the guest pick DEFERS the start (waiting)')
+    const g1 = s1.onPick('nyx')
+    ok(g1.start && g1.start.hostChar === 'riv' && g1.start.guestChar === 'nyx',
+        'the late pick launches with the guest REAL choice (nyx), not a placeholder')
+
+    const s2 = createHostSelect()
+    s2.onPick('vex')
+    const c2 = s2.commit('riv')
+    ok(c2.start && c2.start.hostChar === 'riv' && c2.start.guestChar === 'vex' && c2.waiting === false,
+        'a pick that lands before the host commits launches immediately with it')
+
+    const s2b = createHostSelect()
+    s2b.onPick('vex')
+    s2b.onPick('krax')
+    const c2b = s2b.commit('riv')
+    ok(c2b.start && c2b.start.guestChar === 'krax', 'a pre-commit re-pick updates the choice (krax wins)')
+
+    const s3 = createHostSelect()
+    s3.onPick('vex')
+    s3.commit('riv')
+    ok(s3.onPick('brakk').start === null && s3.commit('riv').start === null,
+        'after the launch neither a re-pick nor a second FIGHT can relaunch the match')
+
+    const s4 = createHostSelect()
+    s4.commit('riv')
+    ok(s4.waiting === true, 'gate is waiting while the challenger owes a pick')
+    s4.reset()
+    ok(s4.waiting === false && s4.state.guestChar === null && s4.commit('riv').waiting === true,
+        'a challenger LEAVING un-hangs the host: pending launch voided, next FIGHT re-arms the wait')
+
+    const s5 = createHostSelect()
+    s5.commit('riv')
+    s5.onPick('nyx')
+    s5.reset()
+    ok(s5.commit('riv').start === null && s5.onPick('vex').start && s5.state.guestChar === 'vex',
+        'leave after a stored pick: the stale choice is gone and the NEXT joiner fires it fresh')
+
+    if (MUT) {
+        // Mutant: restore the pre-#2476 behavior — commit launches straight
+        // through, so a guest pick still on the wire is dropped for a
+        // placeholder. The deferral invariant above must go RED on this.
+        const fsx = await import('node:fs')
+        const NSRC = path.join(HERE, '../src/games/ViperPit/netselect.js')
+        const src = fsx.readFileSync(NSRC, 'utf8')
+        const mutated = src.replace(
+            'if (guestChar == null) return { start: null, waiting: true }',
+            "if (guestChar == null) { guestChar = 'P' } // MUTANT gateOn: placeholder stands in for the challenger")
+        ok(mutated !== src, 'mutate: netselect gate line found to patch')
+        const MNS = path.join(HERE, '../src/games/ViperPit/.mutant-netselect.mjs')
+        plantNew(MNS, mutated)
+        try {
+            const { createHostSelect: mutHost } = await import(bust(MNS))
+            const ms = mutHost()
+            const mc = ms.commit('riv')
+            ok(mc.start !== null && mc.start.guestChar === 'P',
+                'MUTANT gateOn: commit launches immediately, an in-flight pick becomes the placeholder (harness bites)')
+        } finally { pull(MNS) }
+    }
+}
+
 console.log(`part A: ${pass} ok, ${fail} fail`)
 
 // ---- Part B: browser drive ---------------------------------------------------------

@@ -182,6 +182,22 @@ the #1096 options switched on.
   a crop shows up as 0.000 or 1.000), `cardRects()`
   (live card geometry for the on-screen fit + portrait-ink pixel audit).
 
+- **Net-select gate (#2476, `netselect.js`)** — the online launch handshake as a
+  pure state machine (IronRing #1761 law, ported): the host presses FIGHT →
+  `commit(char)`; if the challenger's pick hasn't landed the start DEFERS
+  (`waiting`, select line `ROOM XXXX — AWAITING CHALLENGER'S PICK…`), and the
+  pick packet — whenever it arrives — releases the gate via `onPick`, launching
+  with the guest's REAL choice. Before this, the host embedded
+  `guestPick.char || seededChar(...)` at press time, so a pick still on the wire
+  became a random stranger on both boxes. Roster hooks: `onLeave` and `onJoin`
+  `reset()` (a leaving challenger can't hang the host; a new joiner picks
+  fresh), and entering select in net mode re-arms the gate so rematches launch.
+  The guest stays a dumb sender (`pick` packet on confirm); the host is the only
+  start authority (#531 law). DEV probe: `netState()` → role/phase/code/
+  `waiting`/`chars`/screen. Node pins: `viperpitcheck` part A2 + `gateOn`
+  mutant; live race proof: `npm run vipernet` (two headless Chromes over the
+  local relay twin).
+
 ## Rules worth knowing
 
 - Blocking: only `bk` (guard) blocks in this title; `blockHeld` still covers
@@ -263,6 +279,12 @@ the #1096 options switched on.
   must let heavies smash through GUARD; lifting the juggle cap must let the
   third aerial hit connect.
 - `CONTRACT_ONLY=viper-pit npm run contractcheck` — the #377 driving contract.
+- `npm run vipernet` — live net-select race proof (#2476): two headless Chromes
+  over the local relay twin (needs `npm run dev`) — the host's FIGHT landing
+  before the guest's pick defers the launch, and both boxes later agree on the
+  guest's chosen fighter; pre-pick immediate launch; a guest that leaves
+  un-hangs the host; zero page errors. Advisory browser tier, the blobnet
+  pattern — the deterministic gate is part A2 of `viperpitcheck` in static.
 - `npm run lint:viper` + the three repo gates (`lint:mario`, `lint:fps`,
   `lint:ai`) + `npm run build`.
 
@@ -309,10 +331,25 @@ the #1096 options switched on.
   orb drop/collect, round respawn, hash coverage, IRON RING golden streams)
   plus a prop-damage mutant that the harness must catch.
 - Stage midground + fight-reactive sway landed (#1106); the heavier tier —
-  destructible props, pickups — closed by #2334 above.
+  destructible props, pickups — closed by #2334 above. — **CLOSED by #1106/#2334**
+  (shipped-history, marker added by #2476 — the bullet lacked it and kept
+  re-kicking lanes, #961).
 - `qcb` counter + guard crush landed (#1106): blocking drains a guard gauge;
   an empty gauge CRUSHES into a long punish stun (chip + `GUARD BREAK`), the
   gauge regens and resets full. A live guard/stun meter is drawn above the
   bar, and the feedback reads now too — shimmer arc + gauge cyan sweep on
-  every block, white-hot flash + shard burst on the break.
+  every block, white-hot flash + shard burst on the break. — **CLOSED by
+  #1106** (shipped-history, marker added by #2476, #961 law).
 - Net select: guest pick reaches the host only if sent before the host starts.
+  — **CLOSED by #2476:** the IronRing #1761 gate law, ported as ViperPit's own
+  `netselect.js` pure state machine. A FIGHT press before the challenger's pick
+  has landed DEFERS the launch (select shows `ROOM XXXX — AWAITING CHALLENGER'S
+  PICK…`); the pick, whenever it arrives, fires the start with the guest's REAL
+  choice — the `guestPick.char || seededChar(...)` placeholder path is gone, so
+  a challenger can never be swapped into a stranger mid-flight. A challenger who
+  leaves un-hangs the gate (roster-driven `reset()`), a new joiner's pick is
+  fresh, and returning to select re-arms the gate for rematches. Host remains the
+  sole launch authority (#531 law); offline ladder and local 2P byte-identical.
+  Gates: `viperpitcheck` part A2 (defer / late-pick real choice / pre-pick
+  immediate / no relaunch after launch / leave-reset) + the `gateOn` mutant;
+  `npm run vipernet` drives the race live in two Chromes over the local relay.
