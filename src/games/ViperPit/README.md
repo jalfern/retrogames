@@ -358,4 +358,12 @@ the #1096 options switched on.
   the old `guestPick.char || seededChar(...)` path never actually saw one
   (this also un-blocks IRON RING's #1761 gate, which ships the same wire
   type). `pick` is now allowlisted; part A2 pins both that it forwards and
-  that unknown types still die.
+  that unknown types still die. Two more seats of truth the live drive earned:
+  the unmount cleanup called `net.lobby.destroy` — which never existed — so the
+  StrictMode first-mount socket leaked, held seat 1, and the live mount's join
+  was refused `room full` forever (now the proven `net.room.reset()` teardown);
+  and a guest whose socket had to reconnect used to lose its pick into the dead
+  socket — the challenger now RE-DECLARES its pick on every roster landing, so
+  a re-seated challenger's choice always reaches the host, whenever it is
+  ready. Both are dev-invisible-in-prod subtleties the two-Chrome tier exists
+  to catch.
