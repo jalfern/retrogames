@@ -60,6 +60,8 @@ const MUTANTS = {
     flyTravel: 'the firefly stops holding its heading — the orbit never reaches the seam, the corridor stays empty',
     fallKill: 'a falling boulder stops crushing — the hazard is theatre',
     amoeba: 'the slime stops growing — the wave never crosses its pocket, never eats the bait',
+    amoTurn: 'the two-phase head stops cornering — the wave leaks perpendiculars like classic and never walks its square-corner gait',
+    amoDrop: 'the dropper stops preferring down — it never pours into the shaft below it',
     push: 'push walls stop sliding — SLIME VAULT stays bolted shut',
     pushCrush: 'walls stop crushing rocks — the boulder chokes the choke corridor forever',
 }
@@ -387,6 +389,134 @@ for (let i = 0; i < LEVELS.length; i++) {
         ok(crushes === 1, `expected exactly 1 crush on the route, saw ${crushes} — the boulder choke changed shape`)
         ok(fellWalls >= 2, `only ${fellWalls} pushwalls dropped into pits — a bolt that never falls never opens the tube`)
         ok(!viol, `the slime left its pocket (${viol}) — the harvest and the tube are no longer provably safe`)
+    }
+}
+
+// ------------------------------------------------ AMOEBA FAMILY (#2428) pins ----
+{
+    section('AMOEBA FAMILY (#2428) — the gait, the dropper, the vise, and the frozen old caves')
+
+    const mk = (ops, player, lv = {}) => {
+        const g = new Uint8Array(W * H).fill(DIRT)
+        for (let x = 0; x < W; x++) { g[x] = STEEL; g[(H - 1) * W + x] = STEEL }
+        for (let y = 0; y < H; y++) { g[y * W] = STEEL; g[y * W + W - 1] = STEEL }
+        for (const [x, y, t] of ops) g[y * W + x] = t
+        const meta = { spawn: { x: player[0], y: player[1] }, exit: { x: player[0], y: player[1] }, need: 1, timeTicks: 600, flies: [], ...lv }
+        return sim.makeGame(meta, g)
+    }
+    const isAmo = (t) => t === AMO_HEAD || t === AMO_BODY
+    const run = (g, passes) => {
+        const target = sim.CFG.amoEvery * passes + 2
+        for (let t = 0; t < target && g.player.alive && !g.end; t++) sim.step(g)
+    }
+
+    // TWO-PHASE GAIT: shut in, the head CORNERS (right first) and the new
+    // heading persists — the children march the new way. Silence the law and
+    // the head leaks both perpendiculars pointing the old way instead.
+    {
+        const open = [[11, 5], [12, 5], [13, 5], [14, 5], [14, 6], [14, 7], [14, 8], [15, 7]]
+        const g = mk([[10, 5, AMO_HEAD], ...open.map(([x, y]) => [x, y, EMPTY])], [2, 2], { amoebaDir: [1, 0], amoebaVariant: 'twophase' })
+        const turned = []
+        const tickTo = sim.CFG.amoEvery * 9
+        for (let t = 0; t < tickTo && g.player.alive; t++) { sim.step(g); for (const e of g.events) if (e.type === 'amoTurn') turned.push(e) }
+        ok(turned.length >= 1, 'a two-phase head shut at a wall never CORNERED — the BD II gait is dead')
+        ok(isAmo(g.grid[8 * W + 14]), 'the two-phase head turned but its children did not march on (persist is gone) — the wave would stop at every corner')
+        ok(!isAmo(g.grid[7 * W + 15]), 'the two-phase wave leaked east past its corner — it turns as a creature or not at all')
+        ok(!isAmo(g.grid[4 * W + 14]), 'the two-phase wave leaked both perpendiculars like classic — the single persistent corner is the whole point')
+    }
+    // THE DROPPER: down is the first offer; when the floor arrives it resumes
+    // its lateral heading — slime poured down a shaft.
+    {
+        const g = mk([[10, 5, AMO_HEAD], [11, 5, EMPTY], [10, 6, EMPTY], [10, 7, EMPTY], [11, 7, EMPTY], [12, 7, EMPTY]], [2, 2], { amoebaDir: [1, 0], amoebaVariant: 'drop' })
+        const drops = []
+        for (let t = 0; t < sim.CFG.amoEvery * 4 + 2 && g.player.alive; t++) { sim.step(g); for (const e of g.events) if (e.type === 'amoDrop') drops.push(e) }
+        ok(drops.length >= 2, 'the dropper claimed sideways while open ground yawned BELOW it — down-first is the dropper law')
+        ok(isAmo(g.grid[7 * W + 10]), 'the dropper never reached the shaft floor — it is not pouring')
+        ok(isAmo(g.grid[7 * W + 11]), 'the dropper stalled at the floor instead of resuming its heading — poured slime keeps flowing')
+    }
+    // THE VISE: two classic waves, dirs 180° apart, front each other down a
+    // corridor. While open ground remains they claim in the same passes (the
+    // vise receipt), each front drives at least three cells, and neither wave
+    // ever claims through the other — slime is solid to slime.
+    {
+        const corridor = []
+        for (let x = 11; x <= 16; x++) corridor.push([x, 5, EMPTY])
+        const g = mk(corridor, [2, 2], {
+            amoebas: [
+                { cells: [[10, 5]], dir: [1, 0], variant: 'classic' },
+                { cells: [[17, 5]], dir: [-1, 0], variant: 'classic' },
+            ],
+        })
+        const fronts = []
+        for (let t = 0; t < sim.CFG.amoEvery * 5 + 2 && g.player.alive; t++) {
+            sim.step(g)
+            for (const e of g.events) if (e.type === 'mirror') fronts.push(g.amoPass)
+        }
+        ok(fronts.length >= 2, `the mirrored pair shared only ${fronts.length} closing passes — the vise does not close`)
+        const g2 = mk(corridor, [2, 2], {
+            amoebas: [
+                { cells: [[10, 5]], dir: [1, 0], variant: 'classic' },
+                { cells: [[17, 5]], dir: [-1, 0], variant: 'classic' },
+            ],
+        })
+        let maxA = 10, minB = 17, crossed = false
+        for (let t = 0; t < sim.CFG.amoEvery * 5 + 2 && g2.player.alive; t++) {
+            sim.step(g2)
+            for (const e of g2.events) {
+                if (e.type !== 'amoeba') continue
+                if (e.w === 1 && e.x >= minB) crossed = true
+                if (e.w === 2 && e.x <= maxA) crossed = true
+                if (e.w === 1) maxA = Math.max(maxA, e.x)
+                if (e.w === 2) minB = Math.min(minB, e.x)
+            }
+        }
+        ok(maxA - 10 >= 3 && 17 - minB >= 3, `fronts advanced ${maxA - 10}/${17 - minB} — a vise front that stalls at 2 barely closes`)
+        ok(!crossed, 'one wave claimed THROUGH the other — solid slime stops slime; the vise halts, it never mixes')
+    }
+    // NO DERBY: variant waves still obey every #2411 containment law. Across
+    // the REAL planner win-run of GOO GALLERY the slime never leaves its four
+    // pockets, and the harvest at row 18 stays clean.
+    {
+        const { meta, grid } = buildLevel(5)
+        const g = sim.makeGame(meta, grid)
+        let viol = null
+        while (!g.end && g.tick < meta.timeTicks) {
+            if (g.tick % CFG.moveEvery === 0) { const d = sim.planStep(g); if (d) sim.playerMove(g, d) }
+            sim.step(g)
+            for (let i = 0; i < g.grid.length; i++) {
+                if (!isAmo(g.grid[i])) continue
+                const x = i % W, y = (i - x) / W
+                const inside = (x >= 6 && x <= 16 && y >= 4 && y <= 5) || (x >= 15 && x <= 16 && y >= 6 && y <= 8) ||
+                    (x === 30 && y >= 2 && y <= 8) || (x >= 20 && x <= 34 && y >= 12 && y <= 13)
+                if (!inside) viol = viol || `tick ${g.tick} slime at ${x},${y}`
+            }
+        }
+        ok(!viol, `variant slime left its pockets (${viol}) — the harvest is no longer provably safe`)
+        ok(g.win === true, `GOO GALLERY was not winnable with all three variants live (have ${g.have}/${meta.need}, end ${g.end})`)
+    }
+    // THE FROZEN FLOOR: the five pre-#2428 caves replay to their recorded
+    // hashes — the variant state never perturbs a classic wave, byte for byte.
+    {
+        const recorded = { 0: 'e2536bb0', 1: 'afc3579', 2: 'fb495932', 3: '580a2db5', 4: 'fd18f2fb' }
+        for (let i = 0; i <= 4; i++) {
+            const { meta, grid } = buildLevel(i)
+            const g = sim.makeGame(meta, grid)
+            sim.planRun(g)
+            const r = sim.replay(meta, grid, g.cmds)
+            ok(sim.stateHash(r) === recorded[i], `LEVEL ${i} (${meta.name}) drifted off its recorded hash (${sim.stateHash(r)} ≠ ${recorded[i]}) — the variant refactor perturbed a classic cave`)
+            ok(g.amoExt === false, `LEVEL ${i} claims variant state — old caves must not fold direction into their hash`)
+        }
+        const b5 = buildLevel(5)
+        ok(sim.makeGame(b5.meta, b5.grid).amoExt === true, 'GOO GALLERY does not flag variant state — its hash would under-observe divergence')
+    }
+    // lids lie check for GOO GALLERY (same #2417 law): every marked dirt cap
+    // must really be dirt capping pocket air (or seeded slime).
+    {
+        const { meta, grid } = buildLevel(5)
+        const lids = meta.lids || []
+        ok(lids.length > 0, 'GOO GALLERY ships no lid telegraph — three open pockets hide under plain rock')
+        ok(lids.every(([x, y]) => grid[y * W + x] === DIRT && grid[(y + 1) * W + x] !== DIRT),
+            'a GOO GALLERY lid-marked cell is not dirt capping pocket air — the green telegraph would sit over the wrong rock')
     }
 }
 

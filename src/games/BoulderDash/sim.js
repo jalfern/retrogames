@@ -439,12 +439,12 @@ function amoeba(g) {
         }
         if (v === AMO_TWOPHASE && turn) {
             // Two-phase gait: heads drive while the way is open, but a head
-            // shut in on a TURN pass corners — right first, then left — and the
-            // new heading PERSISTS into the children (this is where it parts
-            // from classic, which leaks both perpendiculars and keeps pointing
-            // the old way: the two-phase wave turns as a creature, square
-            // corner after square corner). Turn passes quantise the cornering
-            // to every other generation, the gait that reads as a walk.
+            // shut in CORNERS — right first, then left — and the new heading
+            // PERSISTS into the children (this is where it parts from classic,
+            // which leaks both perpendiculars and keeps pointing the old way:
+            // the two-phase wave turns as one creature, square corner after
+            // square corner). Only when even the corners are taken does it leak
+            // perpendiculars like classic, and then it dies out with the tail.
             const d = AMO_D4[k]
             const free = (dx, dy) => { const tt = cell(g, x + dx, y + dy); return tt === EMPTY || tt === DIAMOND }
             let use = k

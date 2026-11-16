@@ -14,7 +14,7 @@
 //   crush    a shoved wall destroyed the rock in its path (level 5)
 //   amoeba   the slime wave grew into open space (level 5)
 //   dissolve the wave took a diamond down with it (level 5)
-//   gait     a two-phase head CORNERED on its turn pass — the BD II gait (6, #2428)
+//   gait     a two-phase head CORNERED at a wall, its children marching on (6, #2428)
 //   pour     a dropping head claimed DOWN first — slime poured off its shelf (6)
 //   vise     two waves claimed the same pass — the mirrored twins closed (6)
 //
