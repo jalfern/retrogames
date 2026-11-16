@@ -1,79 +1,75 @@
-# STATE — session 305 (2026-11-16, slot a)
+# STATE — session 305 (2026-11-16, slot b)
 
 ## Playable now / what shipped
-- **BOULDER DASH wall momentum (#2468 → PR #2471, merge `60ecb2b`).**
-  LIVE at jalfern.com/retrogames/boulder-dash (verified: "SLIDERS LEDGE" in
-  `assets/index-BlREe5nI.js` on www ~30 min after merge — proxy cache).
-  Cave 10 **SLIDERS LEDGE** in production:
-  - **The combo:** a wall shoved off a ledge KEEPS SLIDING along the floor it
-    lands on until something blocks it — the original's most-loved squash.
-    Shove law at spawn only (boulders stay dead-weight; a boulder that later
-    becomes a falling wall carries no arm); straight-down falls teach no
-    direction (no drift); doused, crushed or flattening kills the arm.
-  - **Byte-safe opt-in:** `momentum:` cave flag → `CFG.wallMomentum`; when off
-    the sim takes the exact pre-#2468 path (pins: old caves' stateHash identical
-    across both flag values). Same pattern as #2444's `multiHead`.
-  - **Load-bearing cave:** the exit bolt sits at corridor end; without momentum
-    the player's only wall parks in the mouth (the #1571 complaint verbatim)
-    and the planner STRANDS; with it, one shove from 2 tiles clears the bolt —
-    the proof is the delta, not a demo. Gems live in side pockets (see catches).
-- **#1711 PLAICRAFT S1 — collision, resolved fairly, still open (slot b).**
-  I claimed #1711 step 1b (clap-coach re-arm after the #2462 refactor); slot
-  b's resumed session pushed the same fix 9 min later and its PR #2466 merged
-  first (`12a7fe7`). I adopted + tested it (store graded: nothing new to
-  grade), posted the handoff on #1711 releasing steps 2–4 to b, and moved to
-  the ladder myself. Acceptance stays open: Jon's phone takes on the in-app
-  store (`DEV_PORT=<own> npm run plaicraft:grade` grades and posts itself).
-
-## Gates (all green, #2471)
-- dashcheck **270/270** (was 241): +29 momentum pins — spawn-law truth table
-  (8 dirs × ground/void), armed→live carry-over, douse/crush/flatten death,
-  blocked dies (wall + player both), drift guard 60k ticks, legacy byte-parity.
-- mutants **286/286** (was 270 + 16): the new `wallMomentum` mutant caught.
-- dashplay **65/65** live: SLIDERS LEDGE playable (0 deaths, 0 stuck), slide
-  with NO actuator held (the combo fires on its own), old-cave regression,
-  slide-sfx tick + mom probe.
-- eslint + lint:mario/fps/ai + build + attractcheck (694) green; `static`
-  green on CI; Vercel production deploy Ready (`retrogames-b2eepef78`).
+- **HOMEBODY action queue LIVE (#2470 → PR #2472, merge `c7c0c03`).**
+  Bundle `index-BGDF7gIM.js`, queue law verified in `index-C5LoerbC.js` at
+  jalfern.com/retrogames/homebody. The Sims' command layer completed: a tap
+  while the resident is busy with one of THEIR OWN errands appends
+  (`cmdQueue`, cap 3) instead of silently losing the errand; the tick an
+  order ends, the head re-issues from wherever they stand, re-validated
+  (sold/season/expired drops are honest `queue-drop` events, next item
+  tried). Panel: pending orders paint as 19×14 chips under each resident's
+  bars in the panel's own icon language (+`case`/`arrow` glyphs);
+  `residentRows`/`QCELL` shared painter↔hit-test (the #2240 pattern); chip
+  tap cancels. Collapse and departure clear the list; queue contents ride
+  `stateHash`. Pad-A parity via `tryUseOrQueue`.
+  **Ownership law:** free will never outranks the hand — autonomy/move-in
+  orders stamp `p.owner='ai'` and stay preemptible (tap replaces, exactly
+  the old behaviour); only `cmd*` (player) orders earn the queue. Attract
+  bot never queues → old play hash-seed-exact (pin computed against
+  unmodified main: seed 7, 3000 ticks = 1609037625).
+- Gates: homebodyqueuecheck NEW 40/40 (mutant: stub pump guard → exactly
+  the 3 drain pins red) + homebodydrive 72/72 + peoplecheck 585/585
+  (one pin relaxed for the tryUseOrQueue rename; law double-pinned) +
+  eslint + lint:mario/fps/ai + ciscope selftest (new check parked in
+  MANUAL_CHECKS) + build.
 
 ## BOARD at exit
-- game-queue / next / steer / waiting-jon: empty. building: #1711 (slot b,
-  big-build), #2470 (HOMEBODY action-queue polish, lane:games — taken).
-- #2468 shipped+closed this session.
-- building-qa (QA's own): #2449, #2460. Ladder refused them to builder
-  lanes while QA sessions are live — expected.
-- amoeba honesty: multi-head + drift shipped; the SPLIT law stays un-specced
-  until originals are read — inverting the drift is invention, not the game.
+- game-queue / next / steer / waiting-jon: empty. building-qa: QA's own
+  (#2447/#2449/#2460 + new #2474). building: #1711 (slot a, platform lane).
+- Filed #2474 QA — HOMEBODY polish pass (head-chip progress tick, chip
+  labels, promote-by-tap, row-collapse beat, per-glyph timbres).
 
 ## Next (slot a or b, in order)
-1. Fresh ladder → flagship stage → weakestStage (never dry). After #2468 the
-   BoulderDash shelf is 4 gaps, all check-only or original-blocked — expect
-   it to sink.
-2. #1711 steps 2–4 are b's (handoff comment on the issue). If a fresh
-   gauntlet take lands in the store, grade it.
-3. Session 304's harness-doc fix still open (FORGE step 8: index-hash polling
-   lies for lazy-chunk changes — this session re-confirmed the OTHER half:
-   BoulderDash ships IN the index chunk, so the hash DOES move; per-game
-   verify = grep the chunk the live index names, then check the alias).
+1. Refresh the ladder; empty → flagship stage / weakestStage
+   (`scripts/lib/idle.mjs`). Verify a picked gap is player-visible (#2391).
+   Note: GardenGuard's two score-contributing README gaps are SOLVER
+   DISCLAIMERS, not work — skip them with that reason (this session did;
+   HOMEBODY won the tie as oldest genuinely-open title).
+2. If #1711 lands its physical acceptance (Jon's clapping take),
+   `DEV_PORT=<own> npm run plaicraft:grade` posts the verdict by itself.
+3. Watch: nightly runs the FULL drive + peoplecheck — keep both green on
+   main (the drive's new `clearQueues` rig hook and KeyG waits are the
+   scenario half of the queue contract).
 
 ## The session's catches
-- **Claims are advisory; branches are truth.** Slot b silently resumed #1711
-  from its own stale claim and merged #2466 while mine was mid-review. Before
-  claiming, `gh pr list --head <branch>` + check if a remote branch already
-  exists; if another lane beat you, adopt, credit, release — don't duplicate.
-- **A gem is a DOOR in the planner, not a corridor.** A gem mid-corridor made
-  the BFS call the exit unreachable (stranded); and gem-at-tick-1 fell
-  straight into a pit the "gem not above hole" invariant missed because the
-  gem spawns where the gem is. Gems go in dead-end pockets, floor below,
-  no void below the pocket.
-- **`npm ci --dry-run` lies about `.bin`.** Main checkout's node_modules/.bin
-  was empty (playwright "Executable doesn't exist"). Fix: `cp -Rc
-  <working-worktree>/node_modules .` — a symlinked .node_modules breaks
-  `npm run`; a real copy works.
-- **Live assertions need the world's timing, not the player's.** dashplay's
-  exit-walk check failed 3× at 3500 ms — a 20-tick boulder slide (333 ms)
-  lands the crush on the player's path; 6000 ms is the right slack for a
-  scripted 2 m run.
-- **Vercel deploy URLs are SSO-walled** — prod verification = jalfern.com
-  only, and it proxies with a ~30 min cache; a NOT_FOUND for a new content
-  hash means the alias hasn't flipped yet, not a bad deploy.
+- **A queue-law feature is a scenario-audit.** The drive predates the
+  queue; its gates measured PREEMPTION semantics (tap-while-busy = walk
+  now) and one KeyG switch is async. Symptoms were "random" pixel/bond
+  gates three legs downstream of a fridge tap. Fixes were scenario half
+  only (switch-latency waits, `clearQueues` at fresh-tap gates, park/foul
+  flushes) — never the law. Fingerprint on unmodified main FIRST: it
+  said 72/72, so the failures were mine to own.
+- **Ownership before queueing.** Player errands queue; AI errands are
+  preemptible. Without the stamp, autonomous walks made every tap "busy"
+  and the queue swallowed the game. `cmd*` = human (sim's autonomy assigns
+  paths directly and stamps 'ai') — the discrimination needed zero API
+  changes.
+- **Never symlink node_modules to another lane's live worktree.** Slot a's
+  `npm install` yanked playwright out from under my drives mid-session
+  (mid-run 500s + "playwright-core is not installed"). Each worktree
+  installs its own; the ifvms postinstall patch rides along automatically.
+- **A lazy chunk hides the prod marker.** The index bundle hash can be
+  pre-merge-post-merge indistinguishable for a game change; scan
+  `"assets/*.js"` deps for a distinctive event string (`queue-cancel`),
+  and cross-check `gh api deployments` (Production @ merge sha) before
+  declaring the CDN stale.
+- **Node-scripted regex splices on your own game files need a parse
+  gate immediately after** — one flip script left a stray `)` on five
+  sites; esbuild-to-/dev/null caught it in seconds.
+
+## Hygiene at exit
+- Dev server 5178 stopped (own pid only); foreign ports untouched.
+- Main checkout detached at origin/main; worktree
+  retrogames-forge-homebody-queue removed after merge.
+- STATE.md committed to main (game code merged this session) + parked slot b.
