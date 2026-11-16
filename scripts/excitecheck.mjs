@@ -252,11 +252,12 @@ section('CONTACT (the league is solid — receipts exact, #2391)')
         for (let k = 0; k < runs[i].r.script.length; k++) {
             step(g, runs[i].r.script[k])
             for (const e of g.events) {
-                if (e.type === 'flyby' || e.type === 'bump' || e.type === 'jolt') {
+                if (e.type === 'flyby' || e.type === 'bump' || e.type === 'jolt' || e.type === 'rub') {
                     const q = g.rivals.find((x) => x.name === e.name)
                     hits.push({ t: g.tick, type: e.type, name: e.name, down: q ? q.down > 0 : false })
                 }
                 if (e.type === 'crash') hits.push({ t: g.tick, type: 'crash', name: '', why: e.why })
+                if (e.type === 'rrub') hits.push({ t: g.tick, type: 'rrub', name: e.a })
             }
             g.events.length = 0
         }
@@ -264,12 +265,18 @@ section('CONTACT (the league is solid — receipts exact, #2391)')
     }
     const WANTS = {
         0: {
-            flybys: 5, bumps: 0, jolts: 0, crashes: 0,
+            flybys: 5, bumps: 0, jolts: 0, crashes: 0, rubs: 0, rrubs: 0,
             firstFlyby: { t: 551, name: 'IVAN', overWreck: true },
             overAllFive: true,
         },
         1: {
-            flybys: 8, bumps: 5, jolts: 0, crashes: 0,
+            // #2457 re-record: with a lane axis the autopilot LEARNS lines —
+            // five passes that used to be forced (8 flybys/5 bumps, creeping
+            // and scraping line 0) became clean cross-line drafts. The pack
+            // still crashes (CRASH LEAGUE unchanged); the league just got
+            // smarter. Rubs are proven by the rigs below, not this campaign —
+            // a planner that steers never creeps.
+            flybys: 3, bumps: 0, jolts: 0, crashes: 0, rubs: 0, rrubs: 0,
             firstFlyby: { t: 573, name: 'IVAN', overWreck: true },
         },
     }
@@ -280,9 +287,12 @@ section('CONTACT (the league is solid — receipts exact, #2391)')
         const bu = hits.filter((h) => h.type === 'bump')
         const jo = hits.filter((h) => h.type === 'jolt')
         const cr = hits.filter((h) => h.type === 'crash')
+        const ru = hits.filter((h) => h.type === 'rub')
+        const rr = hits.filter((h) => h.type === 'rrub')
         ok(fl.length === w.flybys, `track ${i + 1}: ${fl.length} flybys, want ${w.flybys}`)
         ok(bu.length === w.bumps, `track ${i + 1}: ${bu.length} bumps, want ${w.bumps}`)
         ok(jo.length === w.jolts && cr.length === w.crashes, `track ${i + 1}: jolt ${jo.length}/crash ${cr.length}, want 0/0 — the autopilot eats the new law`)
+        ok(ru.length === w.rubs && rr.length === w.rrubs, `track ${i + 1}: rub ${ru.length}/rrub ${rr.length}, want 0/0 — the autopilot creeps instead of taking the line`)
         const f0 = fl[0]
         ok(f0 && f0.t === w.firstFlyby.t && f0.name === w.firstFlyby.name,
             `track ${i + 1}: first flyby was ${f0 ? `${f0.name}@t${f0.t}` : 'none'}, want ${w.firstFlyby.name}@t${w.firstFlyby.t}`)
@@ -588,6 +598,139 @@ section('PACK (the league is solid to itself — receipts exact, #2420)')
         }
         CFG.packK = save
         ok(n === 0 && c.d > 150, `packK=0 still fired ${n} pack events / stopped the rider — the pack switch does not own its own law`)
+    }
+}
+
+// ------------------------------------------------------- lane (#2457) ----
+section('LANE (the axis is real — same-line law, cross-line draft, #2457)')
+{
+    const laneRig = (o = {}) => {
+        const g = makeGame(0, { count: 0 })
+        const tr = track(0)
+        const q = g.rivals.find((r) => r.name === 'KATO')
+        g.x = 2000; g.total = 2000
+        g.alt = groundY(tr.ground, 2000) + (o.airAlt || 0)
+        g.v = o.v ?? 5; g.onGround = !o.airAlt
+        if (o.airAlt) { g.air = true; g.vy = o.vy ?? 0 }
+        g.lane = o.lane ?? 0
+        q.d = 2000 + (o.gap ?? 6); q.v = o.rv ?? 5; q.down = o.down ?? 0
+        q.alt = groundY(tr.ground, q.d % LAP); q.cool = 0; q.tk = 0; q.lane = o.rLane ?? 0
+        return { g, q }
+    }
+    const drain = (g) => { const n = g.events.length; g.events.length = 0; return n }
+    // steering: full authority on the ground, half in the air, clamped to the track
+    {
+        const g = makeGame(0, { count: 0 }); g.v = 5
+        for (let t = 1; t <= 10; t++) step(g, { l: true })
+        ok(Math.abs(g.lane - 0.2) < 1e-9, `ground steering moved ${g.lane.toFixed(3)}, want 0.200`)
+        for (let t = 1; t <= 60; t++) step(g, { l: true })
+        ok(g.lane === 1, `steering ran past the far edge (lane ${g.lane}) — the track has no wall`)
+        for (let t = 1; t <= 10; t++) step(g, { r: true })
+        ok(Math.abs(g.lane - 0.8) < 1e-9, `steer-back moved to ${g.lane.toFixed(3)}, want 0.800`)
+        const g2 = makeGame(0, { count: 0 }); g2.v = 5
+        g2.air = true; g2.alt += 5; g2.vy = 1
+        for (let t = 1; t <= 10; t++) step(g2, { l: true })
+        ok(Math.abs(g2.lane - 0.08) < 1e-9, `air steering bit at ${g2.lane.toFixed(3)}, want half authority 0.080`)
+    }
+    // same-line rub: matched speed behind a riding back is contact now, not a
+    // silent rank-steal — the player pays a scrape and the rival gets shoved.
+    {
+        const { g, q } = laneRig({ gap: 8, rv: 5 })
+        let rub = null
+        for (let t = 1; t <= 15 && !rub; t++) {
+            const v0 = g.v
+            step(g, {})
+            const e = g.events.find((x) => x.type === 'rub')
+            if (e) rub = { t, lost: +(v0 - g.v).toFixed(3), shove: +q.lane.toFixed(2) }
+            drain(g)
+        }
+        ok(rub && rub.lost > 0.04, `the rub cost nothing (${JSON.stringify(rub)}) — the ghost is still free`)
+        ok(rub && rub.shove >= 0.3, `the rubbed rival stayed in the way (lane ${rub && rub.shove}) — rub never opens a line`)
+    }
+    // cross-line twin of the exact same rig: SILENT. A pass on another line is
+    // a clean draft — no rub, no bump, no phantom anything.
+    {
+        const { g } = laneRig({ gap: 8, rv: 5, lane: 0.5 })
+        let n = 0
+        for (let t = 1; t <= 15; t++) { step(g, {}); n += g.events.filter((e) => ['rub', 'bump', 'jolt', 'flyby', 'crash'].includes(e.type)).length; drain(g) }
+        ok(n === 0, `a cross-line pass paid ${n} contact events — the lane gate does not own the law`)
+    }
+    // flyby only pays when you cross THEIR body, not the air beside it
+    {
+        const { g } = laneRig({ gap: 60, rv: 0, down: 40, airAlt: 20, vy: 0 })
+        let hit = null
+        for (let t = 1; t <= 30 && !hit; t++) {
+            g.v = 5
+            step(g, {})
+            const e = g.events.find((x) => x.type === 'flyby')
+            if (e) hit = { t, score: g.score }
+            drain(g)
+        }
+        ok(hit && hit.t === 10 && hit.score === 150, `same-line air pass paid ${JSON.stringify(hit)}, want flyby@t10 150pts`)
+        const c = laneRig({ gap: 60, rv: 0, down: 40, airAlt: 20, vy: 0, lane: 0.5 })
+        let paid = 0
+        for (let t = 1; t <= 30; t++) { c.g.v = 5; step(c.g, {}); paid += c.g.events.filter((e) => e.type === 'flyby').length; drain(c.g) }
+        ok(paid === 0 && c.g.score === 0, `cross-line air paid ${paid} flybys — the award is not tied to the body`)
+    }
+    // a body blocks ITS line only: cross it and you ride on untouched
+    {
+        const { g } = laneRig({ gap: 60, rv: 0, down: 40, lane: 0.5 })
+        let crashed = false
+        for (let t = 1; t <= 30; t++) { step(g, { g: true }); if (g.crash > 0) crashed = true; drain(g) }
+        ok(!crashed && g.total > 2060, `crossing a wreck on the far line still ate it (crash=${crashed}) — bodies do not own the whole track`)
+    }
+    // pack rub: two rivals, matched pace, same line — they separate LATERALLY.
+    // The invariance twin (laneK=0) proves v and d never move, so the whole
+    // CRASH LEAGUE receipt book is untouched by the axis.
+    {
+        const packRig = (laneK) => {
+            const save = CFG.laneK
+            CFG.laneK = laneK
+            const g = makeGame(0, { count: 0 })
+            const tr = track(0)
+            const a = g.rivals.find((r) => r.name === 'IVAN')
+            const b = g.rivals.find((r) => r.name === 'GORDON')
+            b.d = 150; b.v = 4; b.alt = groundY(tr.ground, 150); b.down = 0; b.cool = 0
+            a.d = 144; a.v = 4; a.alt = groundY(tr.ground, 144); a.down = 0; a.cool = 0
+            const out = []
+            let rubs = 0
+            for (let t = 1; t <= 24; t++) {
+                a.v = 4; b.v = 4                      // hold the pair pace-matched (the ghost band)
+                step(g, {})
+                rubs += g.events.filter((e) => e.type === 'rrub').length
+                out.push(`${b.d.toFixed(4)}`)
+                drain(g)
+            }
+            CFG.laneK = save
+            return { trace: out.join('|'), rubs, lane: b.lane }
+        }
+        const on = packRig(1), off = packRig(0)
+        ok(on.rubs >= 1 && off.rubs === 0, `pack rub fired ${on.rubs} with the axis on, ${off.rubs} off — the switch does not own it`)
+        ok(on.trace === off.trace, 'pack rub moved a rival along the TRACK — the axis must be lateral-only (league receipts!)')
+        ok(on.lane >= 0.3, `the pack never separated (lane ${on.lane.toFixed(2)}) — rrub is theatre`)
+    }
+    // byte-identity: MOTOCROSS never touches the axis — the pinned 5-flyby
+    // showcase rides line 0 exactly as it did before the axis existed
+    {
+        const g = makeGame(0, {})
+        let rubs = 0, maxLane = 0
+        for (let k = 0; k < runs[0].r.script.length; k++) {
+            step(g, runs[0].r.script[k])
+            rubs += g.events.filter((e) => e.type === 'rub' || e.type === 'rrub').length
+            maxLane = Math.max(maxLane, g.lane, ...g.rivals.map((r) => r.lane))
+            drain(g)
+        }
+        ok(rubs === 0 && maxLane === 0, `MOTOCROSS engaged the axis (rubs ${rubs}, maxLane ${maxLane.toFixed(2)}) — the opt-in purity broke`)
+    }
+    // master switch: laneK=0 — the script's steering inputs go nowhere
+    {
+        const save = CFG.laneK
+        CFG.laneK = 0
+        const g = makeGame(0, { count: 0 }); g.v = 5
+        for (let t = 1; t <= 20; t++) step(g, { l: true, g: true })
+        const pure = g.lane === 0
+        CFG.laneK = save
+        ok(pure, 'laneK=0 still steered — the master switch is paint')
     }
 }
 
@@ -957,6 +1100,71 @@ if (MUT) {
         return false
     })
     tryMut('wreckV=9 (a downed rival cannot chain the pack)', flat({ wreckV: 9 }), () => chaseHits('IVAN') === 2)
+    // ---- lane mutants (#2457) — each edits one load-bearing clause ----
+    const laneRigM = (o = {}) => {
+        const g = makeGame(0, { count: 0 })
+        const tr = track(0)
+        const q = g.rivals.find((r) => r.name === 'KATO')
+        g.x = 2000; g.total = 2000
+        g.alt = groundY(tr.ground, 2000); g.v = o.v ?? 5
+        g.lane = o.lane ?? 0
+        q.d = 2000 + (o.gap ?? 8); q.v = o.rv ?? 5; q.down = o.down ?? 0
+        q.alt = groundY(tr.ground, q.d % LAP); q.cool = 0; q.tk = 0; q.lane = o.rLane ?? 0
+        return { g, q }
+    }
+    const probeSteer = () => {
+        const g = makeGame(0, { count: 0 }); g.v = 5
+        for (let t = 1; t <= 10; t++) step(g, { l: true })
+        return g.lane > 0.15
+    }
+    const probeCrossSilent = () => {
+        const { g } = laneRigM({ gap: 8, rv: 5, lane: 0.5 })
+        let n = 0
+        for (let t = 1; t <= 15; t++) { step(g, {}); n += g.events.filter((e) => ['rub', 'bump', 'jolt', 'flyby', 'crash'].includes(e.type)).length; g.events.length = 0 }
+        return n === 0
+    }
+    const probeScrape = () => {
+        const { g } = laneRigM({ gap: 8, rv: 5 })
+        for (let t = 1; t <= 15; t++) {
+            const v0 = g.v
+            step(g, {})
+            if (g.events.some((e) => e.type === 'rub')) return v0 - g.v > 0.04   // concrete number, not CFG
+            g.events.length = 0
+        }
+        return false
+    }
+    const probeRubFires = () => {
+        const { g } = laneRigM({ gap: 8, rv: 5 })
+        for (let t = 1; t <= 15; t++) {
+            step(g, {})
+            if (g.events.some((e) => e.type === 'rub')) return true
+            g.events.length = 0
+        }
+        return false
+    }
+    tryMut('laneRate=0 (steering is paint)', flat({ laneRate: 0 }), probeSteer)
+    tryMut('laneTouch=9 (lines collapse — cross-line passes pay again)', flat({ laneTouch: 9 }), probeCrossSilent)
+    tryMut('laneScrape=0 (the rub costs nothing — ghost reborn)', flat({ laneScrape: 0 }), probeScrape)
+    tryMut('laneK=0 (the axis switch is paint)', flat({ laneK: 0 }), probeRubFires)
+    tryMut('laneW=0 (rub never opens a line)', flat({ laneW: 0 }), () => {
+        const { g, q } = laneRigM({ gap: 8, rv: 5 })
+        for (let t = 1; t <= 15; t++) {
+            step(g, {})
+            if (g.events.some((e) => e.type === 'rub')) return q.lane >= 0.3
+            g.events.length = 0
+        }
+        return false
+    })
+    tryMut('laneHome=1 (a shoved rival snaps home instantly — re-rubs forever)', flat({ laneHome: 1 }), () => {
+        const { g } = laneRigM({ gap: 8, rv: 5 })
+        let rubs = 0
+        for (let t = 1; t <= 60; t++) {
+            step(g, {})
+            rubs += g.events.filter((e) => e.type === 'rub').length
+            g.events.length = 0
+        }
+        return rubs === 1   // baseline: one bite, then the shove has them abreast; snaps-home: bites per rubCool
+    })
 }
 
 console.log(`\nexcitecheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)
