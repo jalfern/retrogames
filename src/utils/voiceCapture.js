@@ -376,7 +376,7 @@ export function createVoiceSession(opts = {}) {
     // trace-vs-tick lag is still world-vs-realtime.
     let clockCtx = null
     let contentBase = null // { wall, content } captured at the first running read
-    // #2465 (Jon's seed4 take): iOS/Android can freeze the capture context's
+    // #1711 S1 (Jon's seed4 take): iOS/Android can freeze the capture context's
     // currentTime while still reporting state 'running' — screen-lock / audio
     // interruption. The bytes died at 816 ms and the wall-stamped... content-
     // anchored trace froze with them: 100 s of play stamped with the same ms,
@@ -415,7 +415,7 @@ export function createVoiceSession(opts = {}) {
     }
     const clock = createVoiceClock({ now: hybridNow })
     const consent = { consent: false, headset: false, reason: 'unasked' }
-    // #2465: a dropped mic track (iOS screen-lock ENDS the track; Android
+    // #1711 S1: a dropped mic track (iOS screen-lock ENDS the track; Android
     // mute) must show on the badge while the take is still open — the dot
     // reads MIC OFF instead of glowing REC over a dead pipe. The session's
     // internal phase stays 'recording' so finalize still flushes honestly.
@@ -457,7 +457,7 @@ export function createVoiceSession(opts = {}) {
             : navigator.mediaDevices.getUserMedia({ audio: audioBase })
         return openMic.then((s) => {
             stream = s
-            // #2465: watch the pipe itself, not just our own lifecycle — when
+            // #1711 S1: watch the pipe itself, not just our own lifecycle — when
             // the OS takes the mic (track ended/muted), say so on the badge.
             try {
                 for (const tr of s.getTracks()) {

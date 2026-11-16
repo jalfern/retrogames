@@ -128,7 +128,7 @@ const walkable = (gs, c, r) => {
 
 // ---------------------------------------------------------------- setup ----
 export function makeGame(seed = 0, heroKey = 'warrior', opts = {}) {
-    // NOTE (#2465 diagnosis): the pair rule below deliberately keys off the
+    // NOTE (#1711 S1 diagnosis): the pair rule below deliberately keys off the
     // EXPLICIT partnerKey. A solo+seat-2 run passes undefined, and loadLevel
     // then spawns the sim default (valkyrie) every level — even beside a
     // valkyrie hero. That IS the deployed semantics Jon's seed10 take was

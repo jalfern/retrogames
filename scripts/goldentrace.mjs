@@ -83,7 +83,13 @@ const GAMES = {
     // when nobody holds seat 2 — the replay driver's own shape).
     gauntlet: {
         excludes: ['events', 'levelData'],
-        create(seed, players) { return { gs: gNewGame(seed, {}, players > 1), seed, players } },
+        // #1711 S1: pin the pairing EXPLICITLY. #2446 made an absent
+        // partnerKey replay the sim's live default (valkyrie) — right for
+        // human takes, but these golden traces are the native port's frozen
+        // spec and were recorded beside ELF (the export's historical
+        // default). The spec names its own partner; it does not inherit
+        // defaults that evolve under it.
+        create(seed, players) { return { gs: gNewGame(seed, { partnerKey: 'elf' }, players > 1), seed, players } },
         stepAll(ctx, pads) { gStep(ctx.gs, heroFromPad(pads[0] || {}), p2FromPad(pads[1] || {})) },
         hash: (ctx) => gHash(ctx.gs),
         tick: (ctx) => ctx.gs.tick,

@@ -541,7 +541,7 @@ const bucketRowBySeed = (seed) => {
     }
 }
 
-// --- #2465: the content clock that FREEZES (Jon's seed4 take shape) ----------
+// --- #1711 S1: the content clock that FREEZES (Jon's seed4 take shape) ----------
 // iOS/Android can stall the capture context's currentTime while still reporting
 // state 'running' (screen-lock / audio interruption): bytes stopped at 816 ms
 // and the content-paced trace froze with them — clock stamps advanced in t but
@@ -605,12 +605,12 @@ const bucketRowBySeed = (seed) => {
         MOCK.wall = 0
         const session = createVoiceSession({ ask: async () => ({ consent: true }), now: () => MOCK.wall })
         await session.ready
-        ok(session.phase === 'recording', '#2465 frozen-pipeline mock take opens')
+        ok(session.phase === 'recording', '#1711 S1 frozen-pipeline mock take opens')
         let sawFreeze = false
         for (let t = 1; t <= 3600; t++) { MOCK.wall += TICK_MS; session.onTick(t); if (globalThis.window.__voiceDebug && globalThis.window.__voiceDebug.where === 'content-clock-frozen') sawFreeze = true } // 60 s of world, pipe dead after 5 s
         const tr = await session.finalize()
         const clk = (tr && tr.clock) || []
-        ok(clk.length >= 30, `#2465 take sampled across the freeze (${clk.length} samples)`)
+        ok(clk.length >= 30, `#1711 S1 take sampled across the freeze (${clk.length} samples)`)
         // 1) no frozen run: consecutive samples keep advancing after the pipe died
         let frozenRun = 0, maxFrozenRun = 0
         for (let i = 1; i < clk.length; i++) { if (clk[i].ms === clk[i - 1].ms) { frozenRun++; maxFrozenRun = Math.max(maxFrozenRun, frozenRun) } else frozenRun = 0 }
