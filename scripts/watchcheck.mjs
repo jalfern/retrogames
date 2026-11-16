@@ -1446,11 +1446,15 @@ const PILOTS = [
             const watching = () => page.evaluate((h) => window[h].watching(), H)
             const probe = () => page.evaluate((h) => window[h].probe(), H)
             const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
-            // attract -> crew select -> solo run (Space owns each screen)
+            // attract -> crew select -> solo run (Space owns each screen).
+            // #2176 fix, same family as short-order-shout: select->play rides an
+            // async unlock, Y only seats while 'play'; the fixed sleeps expired
+            // before the shift existed under deep frame debt (repro at --throttle
+            // 64). Poll THE screen through the hook (#601).
             await key(page, 'Space')
-            await page.waitForTimeout(300)
+            await page.waitForFunction(() => window.__bdTest.screen() === 'select', null, { timeout: 10000 }).catch(() => {})
             await key(page, 'Space')
-            await page.waitForTimeout(900)
+            await page.waitForFunction(() => window.__bdTest.screen() === 'play', null, { timeout: 20000 }).catch(() => {})
             await key(page, 'KeyY')
             await seatPoll(page, H)
             rep.check('bomb-defuse: Y seats the solver crew', await watching())
@@ -1525,11 +1529,18 @@ const PILOTS = [
             const watching = () => page.evaluate((h) => window[h].watching(), H)
             const probe = () => page.evaluate((h) => window[h].probe(), H)
             const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
-            // attract -> cooks select (default 2 = the proven pair) -> shift
+            // attract -> cooks select (default 2 = the proven pair) -> shift.
+            // #2176-class fix: the select->play hop rides an async audio unlock
+            // (index.jsx humanStart), and Y only seats while screen === 'play'.
+            // Under nightly's deep frame debt the old fixed 300/900 ms sleeps
+            // expired before 'play' existed — Y landed on the select screen,
+            // the seat was refused, and cook1 sat frozen at spawn (repro:
+            // watchcheck --only short-order-shout --throttle 64). Poll THE
+            // screen through the hook instead of sleeping real time (#601).
             await key(page, 'Space')
-            await page.waitForTimeout(300)
+            await page.waitForFunction(() => window.__sosTest.probe().screen === 'select', null, { timeout: 10000 }).catch(() => {})
             await key(page, 'Space')
-            await page.waitForTimeout(900)
+            await page.waitForFunction(() => window.__sosTest.probe().screen === 'play', null, { timeout: 20000 }).catch(() => {})
             await key(page, 'KeyY')
             await seatPoll(page, H)
             rep.check('short-order-shout: Y seats the proven pair', await watching())
