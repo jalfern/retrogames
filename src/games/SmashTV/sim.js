@@ -47,6 +47,9 @@ export const CFG = {
     // harm's way while they audit other laws); the game itself never grants it.
     firebombCost: 34,
     maxEnergy: 100,
+    // #2507 dry-tank: the planner's reload threshold (#2491) — below this,
+    // LASER lead is gone and the HUD screams (powerLow) before the gun does.
+    dryLimit: 30,
     grenadeSpeed: 1.3,
     grenadeTicks: 80,
     grenadeR: 16,
@@ -760,6 +763,12 @@ export function step(gs, inp = {}, inp2 = null) {
     if (gs.bossDeath && gs.bossDeath.t > 0) { gs.bossDeath.t--; return gs }
     const p = gs.player
     const co = gs.players.length > 1
+    // #2507 dry-tank alarm: once the tank drops into the planner's reload
+    // zone the trigger answers with silence (#2491) — bark once on the edge;
+    // the HUD's red pulse keeps the warning up until fuel lands.
+    const dryNow = p.weapon === 'laser' && gs.energy < CFG.dryLimit
+    if (dryNow && !gs._dryWarn) gs.events.push({ type: 'powerLow' })
+    gs._dryWarn = dryNow
 
     if (!co) {
         // ---- single seat: the legacy death / respawn / game-over ladder ----

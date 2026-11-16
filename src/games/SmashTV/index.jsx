@@ -26,8 +26,8 @@ import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
 import { playerFrame, GUN, STOCK, gunPose } from './sprite.js'
 import { enemyFrame, CHARGE, TELEGRAPH, OUTLINE, bossMouth, ADD_TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
 import { muzzleFlash, casingCol, killShake, recoilKick, shutterPhase, SHUTTER_TICKS, shellKick, barrelHot, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, STAIN_TICKS, stainRadius, camPan, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, edgeMarks, camLead, SPAWN_CUE, edgeRow } from './juice.js'
-import { BAR, PIP, POWER_LABEL, ICON, bombReady, hiRoll, RACK_FLASH, respawnState } from './hud.js'
-import { fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_SWELL, MURMUR_HYPE_FREQ, WHOOSH, ALERT } from './audio.js'
+import { BAR, PIP, POWER_LABEL, ICON, bombReady, hiRoll, RACK_FLASH, respawnState, powerLow, LOW_SHIFT, LOW_LABEL_SHIFT } from './hud.js'
+import { fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_SWELL, MURMUR_HYPE_FREQ, WHOOSH, ALERT, POWER_PING } from './audio.js'
 import { attractFrame, DIM } from './attract.js'
 
 const SIM_MS = 1000 / 60
@@ -191,6 +191,10 @@ const SmashTVGame = () => {
                 } else if (e.type === 'advance') { stains.length = 0; gibs.length = 0; spawnCues.length = 0; audioController.playSweep(220, 660, 0.25, 'square', 0.07) }
                 else if (e.type === 'bomb') { audioController.playFilteredNoise(WHOOSH.dur, WHOOSH.vol, WHOOSH.freq); audioController.playNoise(0.4, 0.12); audioController.playSweep(80, 900, 0.4, 'sawtooth', 0.1); shake = 8; flash = 12; say('FIREBOMB! THE AUDIENCE ROARS!') }
                 else if (e.type === 'bombFail') { audioController.playTone(110, 0.12, 'square', 0.05); say('NOT ENOUGH POWER!') }
+                // #2507 dry tank: the trigger just entered the reload zone — a
+                // falling two-note siren + bark, so a player looks at the meter
+                // before the gun goes silent on them (#2491's dry-pilot rule).
+                else if (e.type === 'powerLow') { audioController.playTone(196, 0.12, 'square', 0.06); audioController.playTone(147, 0.16, 'square', 0.06, 0.14); say('POWER LOW! FIND FUEL!') }
                 else if (e.type === '1up') audioController.playSweep(440, 1760, 0.5, 'square', 0.08)
                 else if (e.type === 'bossKill') {
                     audioController.playSweep(120, 40, 0.5, 'sawtooth', 0.12)
@@ -214,6 +218,8 @@ const SmashTVGame = () => {
         const doSim = (inp, inp2 = null) => {
             step(gs, inp, inp2)
             handleEvents(gs.events.splice(0))
+            // #2507 dry-tank ping: the steady red-zone heartbeat between barks.
+            if (powerLow(gs.weapon, gs.energy, CFG.dryLimit) && gs.tick % POWER_PING.every === 0) audioController.playTone(POWER_PING.freq, POWER_PING.dur, POWER_PING.type, POWER_PING.vol)
             if (gs.cleared && clearedAt < 0) clearedAt = gs.tick
             if (!gs.cleared) clearedAt = -1
             if (roomBump > 0) roomBump--
@@ -679,15 +685,21 @@ const SmashTVGame = () => {
             ctx.drawImage(SP[`icon_${gs.weapon}`], ICON.x, ICON.y)
             const flashing = rackFlash > 0
             text(WEAPONS[gs.weapon].name.split(' ')[0], 200, 10, 7, flashing ? ((gs.tick >> 2) % 2 ? '#8fff9f' : '#cfd8ff') : '#cfd8ff', flashing ? 4 : 0, 'left')
-            ctx.fillStyle = '#101a33'
+            // #2507 dry tank: the whole meter trough pulses red the moment the
+            // LASER enters the reload zone (the trough, not the shrinking fill —
+            // at 1 bar of lead a red fill is a red pixel nobody sees), and the
+            // remaining burn holds solid red. Silence from the gun is coming.
+            const dryTank = powerLow(gs.weapon, gs.energy, CFG.dryLimit)
+            const dryOn = dryTank && (gs.tick >> LOW_SHIFT) % 2 === 0
+            ctx.fillStyle = dryOn ? '#5c1218' : '#101a33'
             ctx.fillRect(BAR.x, BAR.y, BAR.w, BAR.h)
-            ctx.fillStyle = bombReady(gs.energy, CFG.firebombCost) ? ((gs.tick >> 3) % 2 ? '#ffd23f' : '#ff8a3f') : '#5d7094'
+            ctx.fillStyle = dryTank ? '#ff4f4f' : bombReady(gs.energy, CFG.firebombCost) ? ((gs.tick >> 3) % 2 ? '#ffd23f' : '#ff8a3f') : '#5d7094'
             ctx.fillRect(BAR.x, BAR.y, BAR.w * (gs.energy / CFG.maxEnergy), BAR.h)
             ctx.fillStyle = '#10141f'
             ctx.fillRect(BAR.x + BAR.w * (CFG.firebombCost / CFG.maxEnergy), BAR.y, 1, BAR.h)
             ctx.fillStyle = bombReady(gs.energy, CFG.firebombCost) ? ((gs.tick >> 2) % 2 ? '#ff4f4f' : '#ffd23f') : '#232c44'
             ctx.fillRect(PIP.x, PIP.y, PIP.w, PIP.h)
-            text('POWER', POWER_LABEL.x, POWER_LABEL.y, POWER_LABEL.size, '#5d7094', 0, 'right')
+            text('POWER', POWER_LABEL.x, POWER_LABEL.y, POWER_LABEL.size, dryTank && (gs.tick >> LOW_LABEL_SHIFT) % 2 ? '#ff4f4f' : '#5d7094', 0, 'right')
             if (gs.roomData.bonus) {
                 ctx.fillStyle = 'rgba(143,255,159,0.15)'
                 ctx.fillRect(0, HUD_H, CW * Math.max(0, gs.bonusT / gs.roomData.bonusTime), 2)
@@ -1061,6 +1073,7 @@ const SmashTVGame = () => {
                     { label: 'PROGNOSIS', run: () => { const r = plan(gs.seed); return r.won ? `fresh sim still winnable (deaths ${r.deaths})` : 'fresh sim NOT winnable' } },
                     { label: 'kill all', run: () => { gs.enemies = []; return 'cleared (cheat)' } },
                     { label: 'max power', run: () => { gs.energy = CFG.maxEnergy; return 'power 100' } },
+                    { label: 'dry tank', run: () => { gs.weapon = 'laser'; gs.energy = 22; return 'laser @ 22 — alarm should scream' } },
                     { label: 'open exits', run: () => { gs.cleared = true; return 'exits open (cheat)' } },
                     { label: 'seat: cpu', run: () => { setSeat('cpu'); return `seat ${seatMode} (applies next start)` } },
                 ],

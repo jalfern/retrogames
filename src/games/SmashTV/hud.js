@@ -18,6 +18,14 @@ export const labelClearsBar = () => POWER_LABEL.y - POWER_LABEL.size * 0.8 >= BA
 export const bombReady = (energy, cost) => energy >= cost
 export const pipFits = () => PIP.x >= BAR.x + BAR.w && PIP.x + PIP.w <= 256 && PIP.y + PIP.h <= 24
 
+// #2507 dry-tank legibility: below the planner's reload threshold (CFG.dryLimit,
+// passed in — the HUD never re-hardcodes it) a LASER trigger answers with
+// silence (#2491), so the POWER bar turns into a red pulse and the POWER label
+// flashes with it. Only LASER runs dry: free-lead guns cost no energy.
+export const powerLow = (weapon, energy, dryLimit) => weapon === 'laser' && energy < dryLimit
+export const LOW_SHIFT = 3 // bar pulses every 8 ticks (~7.5 flashes/s)
+export const LOW_LABEL_SHIFT = 4 // the label blinks half as fast, stays readable
+
 // the rack name flashes for one second (60 ticks) after a pickup
 export const RACK_FLASH = 60
 
