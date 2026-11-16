@@ -89,7 +89,11 @@ export function makeTextures() {
     })()
     T.tallgrass = (() => {
         const [c, g] = mk(16, 16)
-        g.clearRect(0, 0, 16, 16)
+        // #2440: opaque grass base under the blades. The floor tiles are plain
+        // opaque Lambert — transparent texels sampled black, so every tile read
+        // as dark squares. Solid base (no rnd() draws: this texture is built in
+        // a seeded sequence and extra calls would shift every later texture).
+        g.fillStyle = '#356a32'; g.fillRect(0, 0, 16, 16)
         for (let x = 1; x < 15; x += 2) {
             const hgt = 7 + Math.floor(rnd() * 5)
             g.fillStyle = '#6fae4e'
