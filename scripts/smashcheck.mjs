@@ -67,7 +67,7 @@ const { GW, GW_BIG, BIG_ROOMS, GH, CW, CELL, HUD_H, CH, EXITS, exitsOf, TOTAL_RO
 const { wallCell, NEON_TOP, CHROME, borderRivet } = await import('../src/games/SmashTV/walls.js')
 const { playerFrame, GUN, LAYERS, PLAYER_FRAMES, CARRIAGE, POSE, STOCK, SPREAD_FLOOR, gunPose } = await import('../src/games/SmashTV/sprite.js')
 const { ENEMY_FRAMES, TELEGRAPH, CHARGERS, CHARGE, OUTLINE, enemyFrame, bossMouth, BOSS_MOUTH_FLAP, ADD_TELEGRAPH, BOSS_DEATH_T } = await import('../src/games/SmashTV/enemies.js')
-const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore, recoilKick, RECOIL_TICKS, RECOIL_PX, SHELL_KICK, shellKick, barrelHot, HOT_FLOOR, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, GORE_GRAV, STAIN_TICKS, stainRadius, camPan, CAM_PAN, CAM_SNAP, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, edgeMarks, MARK_CAP, CAM_LEAD, walkHype, camLead, SPAWN_CUE, edgeRow, LAND_FLASH_TICKS, landFlashPhase, THREAT_MARK_TICKS, threatMarkPhase } = await import('../src/games/SmashTV/juice.js')
+const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore, recoilKick, RECOIL_TICKS, RECOIL_PX, SHELL_KICK, shellKick, barrelHot, HOT_FLOOR, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, GORE_GRAV, STAIN_TICKS, stainRadius, camPan, CAM_PAN, CAM_SNAP, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, edgeMarks, MARK_CAP, CAM_LEAD, walkHype, camLead, SPAWN_CUE, edgeRow, LAND_FLASH_TICKS, landFlashPhase, THREAT_MARK_TICKS, threatMarkPhase, entryRingPhase, entryRingR } = await import('../src/games/SmashTV/juice.js')
 const { PLAYER_PAL, PAULDRON_BOB } = await import('../src/games/SmashTV/art.js')
 const { FIRE, fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_SWELL, MURMUR_HYPE_FREQ, MURMUR_TICKS, WHOOSH, ALERT, ALERT_RADIUS, ALERT_CD, POWER_PING } = await import('../src/games/SmashTV/audio.js')
 const { BAR, PIP, POWER_LABEL, labelClearsBar, pipFits, bombReady, RACK_FLASH, hiRoll, respawnState, RESPAWN_BLINK_SHIFT, powerLow, LOW_SHIFT, LOW_LABEL_SHIFT } = await import('../src/games/SmashTV/hud.js')
@@ -398,6 +398,55 @@ console.log('rules')
     ok(/e\.shift/.test(ISRC0) && /landFx\.push/.test(ISRC0) && /threatFx\.push/.test(ISRC0), 'the shell routes the beat: flash the landing, bracket the cell-stealer')
     ok(/landFlashPhase/.test(ISRC0) && /threatMarkPhase/.test(ISRC0), 'the draw reads the juice phases — no homegrown timings in the shell')
 }
+
+// #2507 item 1 — opening-volley readability. Measured across the nine seeds,
+// room 1 carries no guns at all: the first blood is walkcam CONTACT, and the
+// fastest walkcam dropped 16 ticks after a silent pop-in beside the seat
+// (seed 2). In-frame materializations had no arrival cue — the ring was the
+// host's add-only decoration and the edge chip only speaks past the camera.
+// Now EVERY spawn event wears the add-ring geometry in spawn-yellow for
+// ADD_TELEGRAPH ticks. Presentation only: the sim and every seed hash hold.
+// Mutants: the fade law goes flat → the decay pin dies; the ring stops
+// opening → the geometry pin dies; the hook re-gates to boss adds → the
+// source pin dies.
+{
+    let hookBad = '', minLead = 1e9, minLeadSeed = -1, deaths = 0
+    for (let seed = 0; seed < 9; seed++) {
+        const g = makeGame(seed)
+        const roster = g.roomData.spawns.length
+        let spawned = 0, spawnOf = {}
+        for (let t = 0; t < 300 && !(g.players[0].deadT > 0); t++) {
+            step(g, {})
+            for (const ev of g.events) {
+                if (ev.type !== 'spawn') continue
+                spawned++
+                if (!Number.isFinite(ev.x) || !Number.isFinite(ev.y)) hookBad = `seed ${seed}: spawn event without coordinates`
+                const last = g.enemies[g.enemies.length - 1]
+                if (last) spawnOf[last.id] = t
+            }
+            g.events.length = 0
+        }
+        if (spawned !== roster && !hookBad) hookBad = `seed ${seed}: ${spawned}/${roster} entries announced`
+        if (g.players[0].deadT > 0) {
+            deaths++
+            const q = g.players[0]
+            let bd = 1e9, bite = null
+            for (const e of g.enemies) { const d = Math.hypot(e.x - q.x, e.y - q.y); if (d < bd) { bd = d; bite = e } }
+            if (bite && spawnOf[bite.id] != null && t0lead(spawnOf[bite.id], g.tick) < minLead) { minLead = t0lead(spawnOf[bite.id], g.tick); minLeadSeed = seed }
+        }
+    }
+    ok(hookBad === '', 'every room-1 entry emits a spawn event with coordinates (the ring rides it, all 9 seeds)', hookBad)
+    ok(deaths === 7, 'no input: the opening volley kills exactly the 7 exposed seeds (3 and 8 sit behind walls)', `${deaths}/9`)
+    ok(minLead === 16, 'measured floor: the fastest first blood is 16 ticks after its spawn (seed 2)', `${minLead}@seed ${minLeadSeed}`)
+    ok(minLead < ADD_TELEGRAPH, 'the entry ring is still on screen when the fastest contact lands — the where-it-came-from marker outlives first blood', `ring ${ADD_TELEGRAPH} vs lead ${minLead}`)
+    ok(entryRingPhase(0) === 1 && entryRingPhase(ADD_TELEGRAPH - 1) > 0 && entryRingPhase(ADD_TELEGRAPH) === 0 && entryRingPhase(6) > entryRingPhase(12), 'the entry ring fades whole over exactly ADD_TELEGRAPH ticks (the add-ring window)')
+    ok(entryRingR(0) === 4 && entryRingR(ADD_TELEGRAPH) === 15 && entryRingR(11) > entryRingR(5), 'the entry ring opens 4→15 px — the add-ring geometry, one law for every arrival')
+    const ISRC1 = readFileSync('src/games/SmashTV/index.jsx', 'utf8')
+    ok(/SPAWN_CUE \}\)\n(\s*\/\/[^\n]*\n)+\s*bornFx\.push\(\{ x: e\.x, y: e\.y, t: 0 \}\)/.test(ISRC1), 'the ring hook is unconditional — every spawn event, not just boss adds')
+    ok(/entryRingPhase\(b\.t\)/.test(ISRC1) && /entryRingR\(b\.t\)/.test(ISRC1) && /ctx\.strokeStyle = MARK\.spawn/.test(ISRC1), 'the shell draws the ring in spawn-yellow from the juice laws — no homegrown timings')
+}
+function t0lead(spawnTick, hitTick) { return hitTick - spawnTick }
+
 // contact and grenades also kill
 {
     const gs = makeGame(0)
@@ -743,6 +792,9 @@ console.log('hud')
         ok(/gs\.energy < CFG\.dryLimit/.test(PSRC) && !/gs\.energy < 30/.test(PSRC), 'the autopilot refuels at CFG.dryLimit — no second hardcoded 30 to drift')
         const ISRC = readFileSync('src/games/SmashTV/index.jsx', 'utf8')
         ok(/powerLow\(gs\.weapon, gs\.energy, CFG\.dryLimit\)/.test(ISRC), 'the HUD pulse reads the same CFG.dryLimit the planner refuels at')
+        ok((ISRC.match(/powerLow\(gs\.weapon, gs\.energy, CFG\.dryLimit\)/g) || []).length === 2, 'both call sites (bar + ping) read the shared threshold', `${(ISRC.match(/powerLow\(gs\.weapon, gs\.energy, CFG\.dryLimit\)/g) || []).length} sites`)
+        ok(/const dryTank = powerLow\(gs\.weapon, gs\.energy, CFG\.dryLimit\)/.test(ISRC), 'the BAR computes dry from the shared threshold — named so a mutation at this site is visible')
+        ok(/powerLow\(gs\.weapon, gs\.energy, CFG\.dryLimit\) && gs\.tick % POWER_PING\.every/.test(ISRC), 'the PING rings on the same threshold — named so a mutation at its site is visible')
     }
     ok(LOW_SHIFT === 3 && LOW_LABEL_SHIFT === 4 && POWER_PING.every === 30, 'the dry alarm cadence: fast bar pulse, readable label blink, half-second ping', `${LOW_SHIFT}/${LOW_LABEL_SHIFT}/${POWER_PING.every}`)
     ok(RACK_FLASH === 60, 'the rack name flashes for one second after a pickup', `${RACK_FLASH}`)
@@ -1516,6 +1568,8 @@ if (process.argv.includes('--mutate')) {
         ['#2011: the camera stops settling toward the exit', 'export const CAM_LEAD = 8', 'export const CAM_LEAD = 0'],
         ['#2089: the edge budget re-spends itself on marks already in frame', 'if (side) off.push({ ...m, side })', 'off.push({ ...m, side })'],
         ['#2089: the edge budget shrinks and drops far-half threats', 'export const MARK_CAP = 8', 'export const MARK_CAP = 2'],
+        ['#2507: the entry ring fades to nothing', 'export const entryRingPhase = (age) => (age < ADD_TELEGRAPH ? 1 - age / ADD_TELEGRAPH : 0)', 'export const entryRingPhase = () => 0'],
+        ['#2507: the entry ring never opens', 'export const entryRingR = (age) => 4 + 11 * Math.min(Math.max(age, 0), ADD_TELEGRAPH) / ADD_TELEGRAPH', 'export const entryRingR = () => 4'],
     ]
     const IDX = 'src/games/SmashTV/index.jsx'
     const IDX_MUTANTS = [
@@ -1523,7 +1577,9 @@ if (process.argv.includes('--mutate')) {
         ['#1978: the combo pop slides back onto the door row', 'ctx.translate(CW / 2 + camX, HUD_H + 48)', 'ctx.translate(CW / 2 + camX, HUD_H + 30)'],
         ['#2011: the swell drops out of the bed', 'MURMUR.vol + MURMUR_SWELL * (e.hype || 0)', 'MURMUR.vol'],
         ['#2011: the camera never settles toward the exit', 'camLead(leadDx, bd)', '0'],
-        ['#2507: the dry meter goes numb (bar and label hold slate)', 'const dryTank = powerLow(gs.weapon, gs.energy, CFG.dryLimit)', 'const dryTank = false'],
+        ['#2507: the dry meter goes numb (bar holds slate)', 'const dryTank = powerLow(gs.weapon, gs.energy, CFG.dryLimit)', 'const dryTank = false'],
+        ['#2507: the dry ping goes mute at the reload edge', 'powerLow(gs.weapon, gs.energy, CFG.dryLimit) && gs.tick % POWER_PING.every', 'false && gs.tick % POWER_PING.every'],
+        ['#2507: room spawns lose their ring — the hook re-gates to boss adds', 'bornFx.push({ x: e.x, y: e.y, t: 0 })', 'if (e.bossAdd) bornFx.push({ x: e.x, y: e.y, t: 0 })'],
     ]
     const targets = [[SIM, MUTANTS], [SPRITE, SPRITE_MUTANTS], [LEVELS, LEVELS_MUTANTS], [PLANNER, PLANNER_MUTANTS], [JUICE, JUICE_MUTANTS], [IDX, IDX_MUTANTS]]
     let died = 0, total = 0
