@@ -1,70 +1,67 @@
-# STATE — session 302 (2026-11-15, slot b)
+# STATE — session 303 (2026-11-16, slot a)
 
 ## Playable now / what shipped
-- **PLAICRAFT S1 blockers closed (#1711 → PR #2454, merge `56131ca`).**
-  Live at jalfern.com/retrogames — bundle `index-DEhn8iyS.js` carries the
-  capture guard (`content-clock-frozen` verified in the served chunk).
-  - **Valkyrie replay:** Jon's stored take
-    `gauntlet/2026-11-15-seed10-3a2be04acb.json` replay-verifies **PASS,
-    7142/7142 ticks, all 239 checkpoints** as stored. Whole store:
-    **10/10 replay-verified — 100%.** The replay half of the fix is
-    **QA's #2446** (`9f9e405`) which landed mid-session — absent partnerKey
-    now rebuilds the sim's own live default (valkyrie; the pair-swap keys
-    only an EXPLICIT valkyrie, unset never is). My PR adopted it.
-  - **Capture (this session, unique):** iOS/Android freeze
-    `AudioContext.currentTime` while still reporting `running` — seed4's trace
-    stamped ms=816 for 100 s and looked internally consistent. `hybridNow`
-    now burns a content clock dead >1 s (trace keeps wall pace, `resume()`
-    asked, freeze named in `__voiceDebug`); OS-dropped mic tracks (ended/mute)
-    take the badge off REC. Short bytes then fail grading honestly by name.
-  - **Golden-spec rescue:** QA's default change put 4 gauntlet goldens red
-    ON MAIN (native-port spec was recorded beside elf; CI scope missed it and
-    the nightly predated the merge). #2454 pins `partnerKey:'elf'` explicitly
-    in BOTH copies of the spec table (goldentrace.mjs + goldentracecheck.mjs
-    — the table is duplicated, a trap worth remembering). 89/89 green.
-- Gates: recordcheck 202/202 (+new frozen-pipeline block; hand-mutant removing
-  the freeze branch kills 5 pins in the seed4 shape: same-ms run 55, stall
-  55000 ms, settle ms 5000) + evidence self-test 44/44 + voicecheck 49/49 +
-  goldentrace 89/89 + netdemo 55/55 + gauntletcheck 306 + gauntletplay 28/28
-  (browser, port 5178) + plaicraftcheck + lint:mario/fps/ai + build.
+- **EXCITEBIKE lane axis shipped (#2457 → PR #2459, merge `4ca7f69`).**
+  Live at jalfern.com/retrogames/excitebike (marker confirmed in served
+  chunk `index-CTcvtIhC.js`).
+  - **Steer across the whole track:** ArrowLeft/ArrowRight slide you along
+    the lane axis (`laneK`); releasing eases toward your line (`laneHome`).
+    Far lanes render higher and ~10% smaller, paint order far→near (depth).
+  - **Same-line law:** contact, contactCd, wreck-bleed and draft only bite
+    when riders share a line (`laneDiff` vs `laneW`). Track 1 (maxLane 0)
+    is byte-identical — pinned.
+  - **Cross-line passes pay:** a `rub` keeps your speed, scrapes the
+    rival's lane away (`laneW` shove) + "RUB! TAKE THE LINE" toast;
+    rival-vs-rival `rrub` is lateral-only so CR receipts stay pinned
+    (rival v/d invariant, mutant-pinned twin).
+  - **Pack reads lines:** autopilot gets far/near line candidates when a
+    body is within 180px — it learned clean cross-line passes.
+  - **Witness numbers:** ghost gate unchanged (16 @ 1.000000); track2
+    flybys **8 → 3**, bumps **0 → 0** (re-recorded honestly, new
+    `rubs==0 && rrubs==0` pins); MOTOCROSS byte-identity pinned.
+- Gates: excitecheck 140/140 · excite:mutate 196/196 caught (incl. 6 new
+  lane mutants) · exciteplay 46/46 (port 5173) · lint:mario/fps/ai +
+  eslint + build green.
+- Follow-up filed: **#2460** (QA polish: pack line bargaining, depth-cue
+  polish, rub feedback variety) — label feedback, left for the QA lane.
 
 ## BOARD at exit
-- building (lane:platform): **#1711 stays OPEN** (big-build multi-stage; the
-  stage's remaining acceptance needs one fresh phone take from Jon graded green
-  replay+voice+clap against `56131ca`). Commented with full evidence.
-- game-queue / next / steer / waiting-jon: empty. building-qa: #2430, #2354
-  held by QA (left untouched; left a note on #2430 re segment-restart — the
-  un-shipped half of mic recovery, parked pending a voice.js format decision).
+- game-queue / next / steer: empty. building: none (slot a).
+- #1711 PLAICRAFT stays open (slot b's big-build; needs one fresh phone
+  take graded — see dac332d). building-qa: #2430, #2354 held by QA.
+- No open question issues filed this session.
 
 ## Next (slot a or b, in order)
-1. Refresh the ladder. Queue empty → flagship stage per FORGE (SSX, Emberwood,
-   COMET DRIFT HD, Myst — oldest README gap nobody owns) or `weakestStage`.
-   Verify a picked gap is player-visible before building (#2391).
-2. If the warden re-points a slot at #1711: the next S1 slice is the human
-   grading loop — run `plaicraft:grade` when a new take lands (posts the
-   verdict itself), then stage-close evidence goes to Jon/Claude, not a lane.
-3. Watch item: nightly may flag other consumers of the #2446 default change
-   (anything replaying un-stamped 2p files beside elf). goldentrace is pinned;
-   if nightly names more, pin explicitly like #2454.
+1. Refresh the ladder. Queue empty → flagship stage per FORGE (SSX,
+   Emberwood, COMET DRIFT HD, Myst — oldest README gaps nobody owns) or
+   `weakestStage` (EXCITEBIKE scored lowest before #2457; after it, the
+   board re-sorts — re-run the picker, don't guess).
+2. If a slot lands on EXCITEBIKE again, #2460's gaps are the menu — but
+   QA is its own lane; builder lanes take it only if pointed there.
+3. Watch item: any harness that assumed rivals share the player's contact
+   envelope (the old same-line-everything world) — excitecheck's LANE
+   section is the reference for the new semantics.
 
 ## The session's catches
-- **#2465 was a number I invented.** Never cite an issue tag that doesn't
-  exist — fixed in-branch, but check `gh issue view` BEFORE tagging comments
-  and commits.
-- **Two lanes can fix one bug at once.** Claim is a lock, not a radar: check
-  for a merged fix touching the same symbols BEFORE building (git log -S on the
-  target file saved the merge from duplicating semantics twice).
-- **The golden spec table is duplicated** (goldentrace.mjs + goldentracecheck
-  .js). Fix both copies or the gate stays red.
-- **Verify-from-the-other-side held again** — the store itself was the truth:
-  download Jon's takes, dump `rules`/slots/voice, sweep partner identities;
-  divergence-tick ordering (elf 2130 > valkyrie > wizard 870 > warrior 840)
-  is what proved live chose the sim default, not any stamped key.
-- **A `pull_request` CI trigger silently missing** → `gh workflow run ci.yml
-  --ref <branch>` and `gh pr checks` again; static went green that way.
+- **`gh pr merge` switched the worktree onto local `main`** (branch deleted
+  under it). Re-detach (`git checkout --detach origin/main`) and delete the
+  local main copy before leaving the worktree, or the next command in the
+  lane edits main by accident.
+- **index.lock contention from a parallel lane rewound an un-pushed commit**
+  once mid-session (commit existed, branch ref came back a hash behind, tree
+  kept content). Re-commit + verify remote after push; content survived.
+- **A cross-line rub rig must wait for the toast queue** (prio law #2434:
+  prio-1 says die silently under a live headline) and sit on flat track —
+  the whoops band x1720–2100 throws riders before a setup at large x lands.
+- **v:0 on a rival doesn't stick** — pace easing re-accelerates it; to
+  silence traffic for a rig, kill it far behind (`down: 400`).
+- **Re-recording witnesses honestly:** the old track2 flyby pin (8) counted
+  ghost passes the same-line law now forbids; when semantics legitimately
+  change, re-record and say so in the PR, and pin the new invariant
+  (rubs==0) so the drop can't silently become a regression later.
 
 ## Hygiene at exit
-- Dev server 5178 stopped (own pid only); foreign ports untouched.
-- Worktree retrogames-forge-plaicraft-blockers removed; branch gone via squash;
-  main detached at origin/main. #1711 stays open by design (big-build).
-- STATE.md committed to main (game code merged this session) + parked slot b.
+- Dev server 5173 stopped (own pid only); foreign ports untouched.
+- Worktree retrogames-forge-excite-lanes removed after close-out; branch
+  gone via squash; detached at origin/main.
+- STATE.md committed to main (game code merged this session) + parked slot a.
