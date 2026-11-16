@@ -319,7 +319,13 @@ void main(){
         })
         src.scale.setScalar(targetH / t.h)
         if (t.facing === '+z') src.quaternion.copy(camera.quaternion)
-        else src.rotation.set(STAND_UP, 0, yaw)
+        // #2440: yaw BEFORE stand-up (rotating about the model's own +Y while
+        // it is still the world-vertical axis) so every yaw leaves it upright
+        // and only spins it on the turntable. rotation.set(STAND_UP, 0, yaw)
+        // stood the model up and then tilted it back over by yaw — props lay
+        // flat (Jon: the native port found the double-STAND_UP on the wrapper;
+        // the yaw axis was the second half of the same bug).
+        else src.rotation.set(STAND_UP, yaw, 0)
         const g = new THREE.Group()
         g.add(src)
         g.position.set(FX(x), y, 0)
@@ -744,7 +750,11 @@ void main(){
                     m.transparent = faded
                     m.depthWrite = !faded
                 }
-                cp.mesh.rotation.x = STAND_UP + WIND.tree(cp.x, cp.y, tSec)
+                // #2440: the wrapper carries ONLY the wind lean; the model is
+                // already stood up inside putShelfProp. Writing STAND_UP here
+                // too doubled the rotation — props lay flat (native port #2439
+                // found it; the check only proved they MOVED, never STOOD).
+                cp.mesh.rotation.x = WIND.tree(cp.x, cp.y, tSec)
             } else {
                 cp.mesh.material.opacity = cp.o
                 cp.mesh.quaternion.copy(camera.quaternion)
@@ -753,7 +763,7 @@ void main(){
         }
         for (const b of bushes) {
             if (b.mats) {
-                b.mesh.rotation.x = STAND_UP + WIND.bush(b.x, b.y, tSec)
+                b.mesh.rotation.x = WIND.bush(b.x, b.y, tSec) // #2440 wind only — see canopies above
             } else {
                 b.mesh.quaternion.copy(camera.quaternion)
                 b.mesh.rotateZ(WIND.bush(b.x, b.y, tSec))
@@ -1030,9 +1040,31 @@ void main(){
             shelfAttached: !!shelf,
             // billboard quads sway around z; shelf props stand on the stage and
             // lean around x (the upright base is STAND_UP, the wind rides on top)
-            treeRot: canopies.slice(0, 5).map(c => (c.mats ? c.mesh.rotation.x - STAND_UP : c.mesh.rotation.z)),
-            bushRot: bushes.slice(0, 5).map(b => (b.mats ? b.mesh.rotation.x - STAND_UP : b.mesh.rotation.z)),
+            treeRot: canopies.slice(0, 5).map(c => (c.mats ? c.mesh.rotation.x : c.mesh.rotation.z)),
+            bushRot: bushes.slice(0, 5).map(b => (b.mats ? b.mesh.rotation.x : b.mesh.rotation.z)),
+            // #2440: does the MODEL stand? World-space +Y of the prop model
+            // (local up through matrixWorld); the stage is z-up, so an upright
+            // prop scores z ≈ +1 and a fallen one ≈ −1.
+            treeUp: canopies.filter(c => c.mats).slice(0, 5).map(c => {
+                c.mesh.updateWorldMatrix(true, true)
+                const src = c.mesh.children[0]
+                return src ? +new THREE.Vector3(0, 1, 0).transformDirection(src.matrixWorld).z.toFixed(3) : 0
+            }),
+            bushUp: bushes.filter(b => b.mats).slice(0, 5).map(b => {
+                b.mesh.updateWorldMatrix(true, true)
+                const src = b.mesh.children[0]
+                return src ? +new THREE.Vector3(0, 1, 0).transformDirection(src.matrixWorld).z.toFixed(3) : 0
+            }),
             grassOff: grassTiles.slice(0, 6).map(g => g.tex.offset.x),
+            // #2440: the tile's own pixels — corner (0,0) is between blades;
+            // it must be painted, not a transparent hole (holes sampled black
+            // on the opaque floor material).
+            grassBaseAlpha: (() => {
+                if (!grassTiles.length) return -1
+                const im = grassTiles[0].tex.image
+                const g2 = im && im.getContext && im.getContext('2d', { willReadFrequently: true })
+                return g2 ? g2.getImageData(0, 0, 1, 1).data[3] : -1
+            })(),
         }),
         tailStats: () => {
             const live = tailPool.filter(t => t.mesh.visible)

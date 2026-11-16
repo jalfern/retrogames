@@ -414,6 +414,11 @@ export default function Emberwood() {
                 renderInfo: () => rend.renderInfo(),
                 fxStats: () => ({ ...fxCounts }),
                 tailStats: () => rend.tailStats(),
+                // #2440: the leg at emberwoodcheck's hit-tell loop threw here
+                // since #1527 (the hook was added to render.js but never wired
+                // through), and the SKIP swallowed ~40 browser gates.
+                hitTell: () => rend.hitTell(),
+                texInfo: () => rend.texInfo(),
                 switchTells: () => rend.switchTells(),
                 ventTints: () => rend.ventTints(),
                 npcSprite: (id) => rend.npcSprite(id),
@@ -437,7 +442,7 @@ export default function Emberwood() {
                     const e = sim.enemies.find(x => x.type === 'cinderling' && !x.dead)
                     if (!e) return false
                     e.hp = 1
-                    sim.hero.x = e.x; sim.hero.y = e.y + 12; sim.hero.dir = 'up'
+                    sim.hero.x = e.x; sim.hero.y = e.y + 12; sim.hero.dir = 'down' // #2440: face the foe (was 'up' — the swing sailed away; unprovable while the leg was SKIPped)
                     sim.cool = 0
                     return true
                 },
