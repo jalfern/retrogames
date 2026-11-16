@@ -24,7 +24,8 @@ import { AMB, AMB_NAME, AMB_CELL, ambientAt, flockOf, flightOf, progressOf } fro
 import { faceFor, walkFrame, drawAvatar } from './avatar.js'
 import { WARP_LEN, warpFlash, warpRing, warpMotes, warpSwapAt } from './warp.js'
 import { TERR, hash2, TILE, SUB, blockShades, builtPalette, cobbleBlock } from './tiles.js'
-import { townScore, hasCottage } from './towns.js'
+import { townScore } from './towns.js'
+import { plotVillage, villageBlockMap, villageTriples } from './village.js'
 import { AVATARS, shrineTitle, plotShrines } from './shrines.js'
 import { buildClassicStamps, variantOf } from './ega.js'
 import { PHASES, moonPhase, moonName, phaseLit, gateFlavor, routeDest } from './moons.js'
@@ -90,6 +91,8 @@ const BritanniaGame = () => {
         // shrines (#1876): one consecrated plot per gate, plotted once from the
         // loaded land; shrineBlock maps tile -> gate index for the walk refusal.
         let shrines = [], shrineBlock = new Map()
+        // #2494: the seeded village — cottages that stand (block) on the plaza
+        let village = [], villageBlock = new Map()
         let S = null
         const fresh = (seed = 0) => ({
             seed: seed >>> 0, tick: 0, x: gates[seed % Math.max(1, gates.length)]?.x ?? 93, y: gates[seed % Math.max(1, gates.length)]?.y ?? 67,
@@ -98,6 +101,7 @@ const BritanniaGame = () => {
             sel: 1, gate: -1, hoverRow: -1, done: false, camX: 0, camY: 0, wx: WX.CLEAR, fl: 0, thunder: -1,
             amb: AMB.NONE, warp: null, toast: 0, toastMsg: '',
             bumped: new Set(), // shrines whose stone the pilgrim has touched
+            knocked: new Set(), // #2494: towns whose barred cottage door he has tried
             wind: windNow(0, seed >>> 0), // #1853: the day's first pressure reading
             splat: -99, // #1829: last tick the sea spoke a drop
             hull: HULL_MAX, worn: 0, groan: -99, // #1829 hazard: strain on the planks (integer + fraction) + groan throttle
@@ -119,6 +123,11 @@ const BritanniaGame = () => {
             shrines = plotShrines(gates, terrainAt)
             shrineBlock = new Map()
             shrines.forEach((s, i) => { if (s) shrineBlock.set(s.x + ',' + s.y, i) })
+            // #2494: plot the village after the chapels — a cottage never rises
+            // on a sanctum, and the anti-stranding descent keeps every gate's
+            // ring walkable (village.js), so the town never traps its pilgrim.
+            village = plotVillage(gates, terrainAt, shrines)
+            villageBlock = villageBlockMap(village)
             S = fresh(0)
             S.camX = S.x * TILE; S.camY = S.y * TILE
             setMode('attract')
@@ -350,6 +359,17 @@ const BritanniaGame = () => {
                     S.bumped.add(si)
                     S.toast = 120; S.toastMsg = `The ${shrineTitle(si)} is stone — about face.`
                 }
+            } else if (villageBlock.has(nx + ',' + ny)) {
+                // #2494: the cottages have substance — timber bars the way with
+                // its own lower knock (the chapel's stone thud stays unique),
+                // and the first barred door of a town teaches the stage-2 truth.
+                const gi = villageBlock.get(nx + ',' + ny)
+                S.cd = 24
+                audioController.playSweep(82, 50, 0.11, 'square', 0.14)
+                if (!S.knocked.has(gi)) {
+                    S.knocked.add(gi)
+                    S.toast = 120; S.toastMsg = 'A cottage door, barred with iron — folk enter within, not here.'
+                }
             } else if (isSea(v)) {
                 // #2345 purse: no gold, no passage. The captain is paid before
                 // the keel touches water — a light purse is refused with the
@@ -427,7 +447,7 @@ const BritanniaGame = () => {
                 ctx.fillStyle = s === 2 ? hi : s === 0 ? lo : mid
                 ctx.fillRect(sx + bx * bs, sy + by * bs, bs, bs)
             }
-            if (ts >= 0.75 && !onGate(tx, ty) && hasCottage(tx, ty)) drawCottage(sx, sy, tx, ty, t)
+            if (villageBlock.has(tx + ',' + ty)) drawCottage(sx, sy, tx, ty, t)
             if (v === 5) {
                 // forest canopy, keyed to the world tile so it never repeats
                 for (let i = 0; i < 4; i++) {
@@ -507,10 +527,9 @@ const BritanniaGame = () => {
 
         let classicOn = false
 
-        // cottages + hearth smoke (#1352): the town toast promises "cottages
-        // and smoke", so the strongest built-up ground must actually host them.
-        // Placement is seeded per tile (hasCottage) and never under a gate.
-        const onGate = (tx, ty) => gates.some(g => g.x === tx && g.y === ty)
+        // cottages + hearth smoke (#1352, solid since #2494): the village
+        // plot (village.js) decides which plaza tiles stand a cottage — the
+        // seeded hash still places them, and draw + block read the SAME map.
         const drawCottage = (sx, sy, tx, ty, t) => {
             const cx = sx + 16
             ctx.fillStyle = '#7f7668'; ctx.fillRect(cx - 7, sy + 12, 14, 10)
@@ -1244,6 +1263,9 @@ const BritanniaGame = () => {
                     // found) + how many shrines the pilgrim has touched
                     shrines: shrines.map(s => (s ? [s.x, s.y] : null)),
                     bumped: S.bumped.size,
+                    // #2494: the standing village + how many doors the pilgrim has knocked
+                    village: villageTriples(village),
+                    knocked: S.knocked.size,
                     warping: !!S.warp, warpFlash: S.warp ? warpFlash(S.tick - S.warp.t0) : 0, warpDest: S.warp ? S.warp.dest : -1,
                     moon: moonPhase(S.tick),
                     // #1862: where tonight's moon routeth from the open gate
