@@ -92,6 +92,9 @@ const MissileBattleGame = () => {
         let gs = makeGame(0)
         let raf = 0, last = 0, acc = 0
         let demoAt = 0, toast = 0, toastMsg = '', shake = 0
+        // #2483 item 4: the crossed sector band strobes red when a seat
+        // reaches over the line — the refusal is seen as well as heard.
+        let denyFlash = 0, denyBand = -1
         const keys = { l: false, r: false, u: false, d: false, f: false, fTap: false }
         const tap = { on: false, x: 128, y: 90 }
         const seatHeld = [new Map(), new Map()] // #2473 the CPU seat's own reservations
@@ -131,7 +134,15 @@ const MissileBattleGame = () => {
                 else if (e.type === 'launch') audioController.playTone(e.kind === 'bomber' ? 140 : 240, 0.04, 'triangle', 0.02)
                 else if (e.type === 'cityHit') { say('CITY LOST'); audioController.playSweep(220, 40, 0.5, 'sawtooth', 0.09); burst(e.x, CFG.groundY - 4, 16, '#ff5d5d'); shake = 7 }
                 else if (e.type === 'baseHit') { say('BATTERY KNOCKED OUT'); audioController.playSweep(180, 50, 0.4, 'square', 0.08); shake = 6 }
-                else if (e.type === 'denySeat') { say(`NOT YOUR SECTOR — PLAYER ${e.seat}`); audioController.playTone(110, 0.12, 'square', 0.06) }
+                else if (e.type === 'denySeat') {
+                    say(`NOT YOUR SECTOR — PLAYER ${e.seat}`)
+                    // #2483 item 4: the arcade's alternating battery answers in
+                    // the house two-tone (high ask, low no — the captain's idiom),
+                    // not one flat buzz; the band you crossed strobes red.
+                    audioController.playTone(320, 0.07, 'square', 0.06)
+                    audioController.playTone(150, 0.14, 'square', 0.06)
+                    denyFlash = 24; denyBand = e.x < W / 2 ? 0 : 1
+                }
                 else if (e.type === 'seatOut') {
                     say(`SECTOR ${e.seat} HAS FALLEN — PLAYER ${e.seat === 1 ? 2 : 1} MANS EVERY TUBE`)
                     audioController.playSweep(260, 30, 0.9, 'sawtooth', 0.1); shake = 8
@@ -231,6 +242,7 @@ const MissileBattleGame = () => {
             const sx = shake > 0 ? ((performance.now() % 7) - 3) * shake * 0.4 : 0
             const sy = shake > 0 ? ((performance.now() % 5) - 2) * shake * 0.4 : 0
             if (shake > 0) { shake *= 0.86; if (shake < 0.4) shake = 0 }
+            if (denyFlash > 0) denyFlash--
             ctx.fillStyle = '#04040c'
             ctx.fillRect(0, 0, W, H)
             const tk = gs.tick
@@ -257,6 +269,13 @@ const MissileBattleGame = () => {
                 ctx.fillStyle = 'rgba(255,180,94,0.45)'; ctx.fillRect(130, CFG.groundY + 3, W - 132, 2)
                 if (gs.out[0]) { ctx.fillStyle = 'rgba(96,42,46,0.9)'; ctx.fillRect(2, CFG.groundY + 3, 124, 2) }
                 if (gs.out[1]) { ctx.fillStyle = 'rgba(96,42,46,0.9)'; ctx.fillRect(130, CFG.groundY + 3, W - 132, 2) }
+                // #2483 item 4: a reach across the line paints the crossed
+                // sector's own band red in a quick strobe — ownership law, seen.
+                if (denyFlash > 0) {
+                    ctx.fillStyle = denyFlash % 6 > 2 ? 'rgba(255,64,64,0.9)' : 'rgba(255,64,64,0.35)'
+                    if (denyBand === 0) ctx.fillRect(2, CFG.groundY + 3, 124, 2)
+                    else ctx.fillRect(130, CFG.groundY + 3, W - 132, 2)
+                }
                 ctx.fillStyle = 'rgba(208,214,235,0.18)'
                 for (let y = 36; y < CFG.groundY - 4; y += 9) ctx.fillRect(128, y, 1, 5)
                 const pulse = 0.3 + 0.22 * Math.sin(tk * 0.2)
