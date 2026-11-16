@@ -224,6 +224,32 @@ bolt past its pit between two gravity evaluations, which made the vault a
 coin-flip under CPU load; waiting for `tick` to advance (world seconds, never
 blind sleeps) makes it deterministic.
 
+## Wall momentum (#2468 — the wall that falls and keeps sliding)
+
+A push wall now remembers the way it was shoved. On flat ground nothing
+changes — #2411's one-cell-per-shove law still rules. But a wall shoved
+over a lip falls, and the fall converts the memory into live momentum:
+from the cell it lands in it slides one cell per tick until steel, slime,
+another wall or the world edge stops it, and then the momentum dies for
+good. The slide keeps the shove's give/crush laws (empty and fire douse
+and slide; boulder and gem are crushed — the gem is lost, not collected)
+and flattens the player if they stand in the lane (FLATTENED, same cause
+as a falling bolt). No drift mid-fall — gravity owns the descent; the
+slide resumes only on ground.
+
+- **Opt-in, byte-safe:** only caves declaring `momentum: true` (currently
+  SLIDERS LEDGE) carry the state; momentum rides `stateHash` only in
+  those caves (`momExt`, the amoExt/carryExt pattern) — every older cave
+  replays byte-identical, and dashcheck's exclusivity pins refuse the
+  flag anywhere else.
+- **SLIDERS LEDGE (cave 10)** makes the combo load-bearing: the only
+  road from the harvest to the exit gallery runs tube → shaft → corridor,
+  and the vault bolt lands in the corridor's mouth. Without momentum the
+  wall parks itself there forever (it cannot be shoved down), the cave is
+  unwinable, and the `wallMomentum` mutant proves it red. With momentum
+  the player follows the sound of the sliding wall down the corridor to
+  a dead end where it spent itself against a decoy gem.
+
 ## Honest gaps
 - The amoeba family is our reading of BD II/the originals — honest
   simplifications: the corner priority is fixed (right, then left) for both the
@@ -232,8 +258,9 @@ blind sleeps) makes it deterministic.
   and no wave behaviour depends on the player or on distant events (the originals'
   amoebas are equally dumb). The multi-head *shape* is here (#2444) — rarer still
   are waves whose heads reverse or spawn on player action; those are not.
-- A push wall slides on flat ground only — there is no "wall falls and keeps
-  sliding" combo, and no pull mechanics (faithful to the era, but a simplification).
+- No pull mechanics (faithful to the era, but a simplification). (The
+  fall-and-keep-sliding half of the push-wall family landed in #2468 —
+  see Wall momentum above; SLIDERS LEDGE proves it live.)
 - The butterfly (#2453) flits, and since #2463 it also *carries* (SILK GULCH).
   Honest simplifications of the transport: the burden perishes at the drop
   (the originals' carriers could also be shot down mid-air — nothing shoots

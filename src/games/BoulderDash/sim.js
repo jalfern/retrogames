@@ -110,6 +110,7 @@ export const CFG = {
     amoForkMax: 4,                  // …but at most this many live heads per wave (containment, see dashcheck)
     push: true,                       // #2411: push walls slide sideways one cell per shove
     pushCrush: true,                  // …and crush whatever rock stands in the way
+    wallMomentum: true,               // #2468: a wall shoved off a ledge keeps sliding where it lands
 }
 
 export const DIRS = {
@@ -155,6 +156,14 @@ export function stateHash(g) {
         s += String.fromCharCode(48 + t + adj)
     }
     s += '|' + [...g.movingB].join(',') + ';' + [...g.movingD].join(',')
+    // #2468: momentum rides the hash ONLY in `momentum` caves (the amoExt/
+    // carryExt opt-in pattern) — old caves hash byte-identical, sorted so the
+    // map's iteration order can never change the digest.
+    if (g.momExt) {
+        for (const [i, m] of [...g.wallMom.entries()].sort((a, b) => a[0] - b[0])) {
+            s += `|w${i}:${m.dir}${m.live ? '!' : ''}`
+        }
+    }
     return hash(s)
 }
 
@@ -199,6 +208,15 @@ export function makeGame(level, grid) {
         amoHead: new Int8Array(W * H).fill(-1),         // head direction index into AMO_D4 (-1 = not a head)
         amoExt: !!(level && ((level.amoebas && level.amoebas.length) ||
             (level.amoebaVariant && level.amoebaVariant !== 'classic'))),
+        // #2468: the momentum family — a shoved wall that FALLS converts its
+        // arm into live momentum and keeps sliding where it lands, until
+        // something stops it (the originals' wall-falls-and-keeps-sliding
+        // combo). Per-cell state {dir, live}: dir is the shove axis (-1 west,
+        // +1 east), live flips true the first time gravity moves the cell.
+        // Levels that don't declare `momentum` leave this map empty and the
+        // hash keeps its pre-#2468 shape — byte-identity for old caves.
+        wallMom: new Map(),
+        momExt: !!(level && level.momentum),
         deathCause: null,
         cmds: [],                                       // recorded {tick,dir} — replay fuel
         events: [],
@@ -279,6 +297,15 @@ export function playerMove(g, dir) {
             g.events.push({ type: 'crush', x: bx, y: by, kind: b })
             g.events.push({ type: 'push', x: bx, y: by })
         } else return false
+        // #2468: the shove leaves its mark — the wall remembers which way it
+        // was sent. An ARMED wall still obeys the flat-ground law (one cell
+        // per shove); the arm only becomes a slide if gravity takes the floor
+        // out from under it (see gravity + wallSlide). Legacy caves (no
+        // `momentum`) never write the map.
+        if (CFG.wallMomentum && g.momExt) {
+            g.wallMom.delete(idx(nx, ny))
+            g.wallMom.set(idx(bx, by), { dir: d[0], live: false })
+        }
     }
 
     if (t === DIRT) { g.grid[idx(nx, ny)] = EMPTY; g.events.push({ type: 'dig' }) }
@@ -323,6 +350,14 @@ function gravity(g) {
                 g.grid[idx(x, y + 1)] = t
                 if (below === FIRE) g.burn[idx(x, y + 1)] = 0
                 if (t === BOULDER) mvB.add(idx(x, y + 1)); else if (t === DIAMOND) mvD.add(idx(x, y + 1))
+                // #2468: a falling wall carries its shove — and the fall is
+                // what converts the arm into live momentum. From the cell it
+                // lands in, it slides (wallSlide below).
+                if (t === PUSHWALL && CFG.wallMomentum && g.momExt && g.wallMom.has(i)) {
+                    const m = g.wallMom.get(i)
+                    g.wallMom.delete(i)
+                    g.wallMom.set(idx(x, y + 1), { dir: m.dir, live: true })
+                }
                 g.events.push({ type: 'fell', x, y: y + 1, kind: t })
                 if ((t === BOULDER || t === PUSHWALL) && CFG.fallKill && g.player.alive && g.player.x === x && g.player.y === y + 1) {
                     killPlayer(g, t === PUSHWALL ? 'pushwall' : 'boulder')
@@ -354,6 +389,45 @@ function gravity(g) {
     }
     g.movingB = mvB
     g.movingD = mvD
+}
+
+// ---------------------------------------------------- CA: wall momentum (#2468) ----
+// A LIVE-momentum wall (one that fell while carrying a shove) keeps sliding in
+// the shove direction — one cell per tick, the classic pace — until something
+// stops it. The give/crush laws are the shove's own: empty or fire (doused)
+// slides; a rock is crushed and the gem with it is LOST; steel, slime, another
+// wall, the pit lip that is out of bounds, or anything unmoving ends the run —
+// the wall rests and its momentum dies. A wall that flattens the player in its
+// path kills with the same cause as a falling one (FLATTENED). ARMED walls
+// (shoved but never fallen) wait here: on flat ground #2411's one-cell-per-
+// shove law still rules; only the fall turns the arm into a slide. East-going
+// cells are processed right-most-first (and west left-most-first) so two walls
+// in one lane never overcall each other's claim this tick.
+function wallSlide(g) {
+    if (!CFG.wallMomentum || !g.momExt || g.wallMom.size === 0) return
+    const live = [...g.wallMom.entries()]
+        .map(([i, m]) => ({ i, x: i % W, y: (i - (i % W)) / W, dir: m.dir, live: m.live }))
+        .filter((e) => e.live)
+        .sort((a, b) => (a.dir === b.dir ? (a.dir > 0 ? b.x - a.x : a.x - b.x) : a.dir - b.dir))
+    for (const e of live) {
+        if (g.grid[e.i] !== PUSHWALL) { g.wallMom.delete(e.i); continue } // moved by another rule — its run ends honest
+        // No drift mid-fall: gravity owns the descent; the slide resumes when
+        // the wall has ground under it again.
+        const under = cell(g, e.x, e.y + 1)
+        if (under === EMPTY || under === FIRE) continue
+        const tx = e.x + e.dir
+        const b = cell(g, tx, e.y)
+        const gives = b === EMPTY || b === FIRE || ((b === BOULDER || b === DIAMOND) && CFG.pushCrush)
+        if (!gives) { g.wallMom.delete(e.i); continue }                    // blocked: the wall rests, the momentum dies
+        g.grid[e.i] = EMPTY
+        g.grid[idx(tx, e.y)] = PUSHWALL
+        g.wallMom.delete(e.i)
+        g.wallMom.set(idx(tx, e.y), { dir: e.dir, live: true })
+        if (b === FIRE) g.burn[idx(tx, e.y)] = 0
+        if (b === BOULDER || b === DIAMOND) g.events.push({ type: 'crush', x: tx, y: e.y, kind: b })
+        g.events.push({ type: 'slide', x: tx, y: e.y })
+        if (CFG.fallKill && g.player.alive && g.player.x === tx && g.player.y === e.y) killPlayer(g, 'pushwall')
+    }
 }
 
 // --------------------------------------------------------------- CA: fire ----
@@ -692,6 +766,7 @@ export function step(g) {
     g.tick++
 
     gravity(g)
+    wallSlide(g)
     fire(g)
     amoeba(g)
     fireflies(g)

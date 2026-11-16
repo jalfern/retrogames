@@ -109,6 +109,7 @@ const DashGame = () => {
         let viseHot = false
         let lastTurnSfx = -99, lastDropSfx = -99, lastForkSfx = -99, lastFlapSfx = -99, lastDroneSfx = -99
         let turnSeen = 0, forkSeen = 0, dropHeard = 0, flapHeard = 0, dronesHeard = 0, ferrySeen = 0, doneSeen = 0
+        let slideSeen = 0   // #2468 receipts: the rumbled ticks of a wall walking its lane
         let tubesSet = new Set()
         let pillarSet = new Set()
 
@@ -146,6 +147,10 @@ const DashGame = () => {
                 // A bolt now sounds like a BOLT — a sub-bass thud below every
                 // rock noise plus a short metallic ring nothing else owns.
                 else if (e.type === 'push') { audioController.playTone(55, 0.07, 'triangle', 0.05); audioController.playTone(1245, 0.05, 'square', 0.018); audioController.playNoise(0.03, 0.02) }
+                // #2468: a sliding wall RUMBLES — a low stone grind distinct from
+                // the shove's thunk, so the player can hear their bolt walking
+                // away down the corridor they cannot yet see.
+                else if (e.type === 'slide') { slideSeen++; audioController.playTone(41, 0.06, 'sawtooth', 0.035); audioController.playNoise(0.05, 0.025) }
                 else if (e.type === 'crush') { audioController.playNoise(0.1, 0.08); audioController.playTone(46, 0.12, 'triangle', 0.07); audioController.playTone(980, 0.09, 'square', 0.022) }
                 else if (e.type === 'amoeba') {
                     audioController.playTone(170 + ((e.x * 7 + e.y * 13) % 60), 0.03, 'sine', 0.022)
@@ -674,6 +679,10 @@ const DashGame = () => {
                         coolTrail: trailB.size, wingPhase: gs.tick % 2,
                         tubes: tubesSet.size, pillar: pillarSet.size,
                         amoKinds: kinds,
+                        // #2468 the slide, live: rumble receipts + which walls
+                        // still carry momentum ([x, y, dir, live]).
+                        slides: slideSeen,
+                        mom: [...gs.wallMom.entries()].map(([i, m]) => [i % W, (i - (i % W)) / W, m.dir, m.live ? 1 : 0]),
                     }
                 },
                 // the next arrow the PROVEN planner would press from here — the

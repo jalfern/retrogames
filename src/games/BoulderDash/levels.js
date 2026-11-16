@@ -20,6 +20,9 @@
 //   drift    the butterfly flapped in open ground on its own (8, #2453)
 //   grab     the transport butterfly took a gem mid-flight (9, #2463)
 //   ferryDrop the butterfly let its cargo go over a drop cell (9, #2463)
+//   slide    a wall fell while carrying its shove and KEPT SLIDING on the
+//            ground it landed on, crushing the boulder at the end of its run
+//            (10, #2468)
 //
 // Two construction rules keep an unattended CI gate honest:
 //   1. the HARVEST gems (the quota) always sit on solid dirt with plain dirt
@@ -426,6 +429,49 @@ export const LEVELS = [
             // approach tunnel from the start chamber; its last cell is the cap
             // the player must dig east to reach the pocket.
             c.row(16, 5, 18, EMPTY)
+            return c.g
+        },
+    },
+    {
+        // THE WALL FALLS AND KEEPS SLIDING (#2468). Everything east of the
+        // divide is steel-sealed except one tube, one shaft and one corridor:
+        // the digger's only road to the exit gallery runs THROUGH the vault
+        // bolt. Shove the bolt east at (23,10) and it takes the lip at
+        // (24,10), drops the shaft, and lands in the low corridor at (24,12)
+        // — squarely in the mouth of the only path. WITHOUT momentum the wall
+        // parks itself there forever: it cannot be shoved down, the corridor
+        // stays sealed, the run is lost. WITH momentum (#2468) the wall lands
+        // still carrying its shove, walks the corridor east, slams a decoy
+        // gem at the dead end (crush — haste costs), and rests in the corner
+        // of the chamber, clear of the digger's road. Load-bearing by
+        // construction: silencing wallMomentum strands the planner in this
+        // cave (its only route runs straight through the shaft), and
+        // silencing gravity parks the bolt on the corridor roof.
+        name: 'SLIDERS LEDGE', timeTicks: 2400, need: 6,
+        spawn: { x: 3, y: 18 }, exit: { x: 36, y: 10 },
+        momentum: true,
+        proves: ['dig', 'push', 'fell', 'slide', 'crush'],
+        bolts: [[23, 10, 'E']],
+        build() {
+            const c = new Carve()
+            c.shell()
+            c.rect(2, 16, 4, 20, EMPTY)                 // start, bottom-left
+            c.seam(18, 8, 13)                          // six supported gems — the whole quota
+            c.col(16, 11, 17, EMPTY)                   // the riser from the harvest up to the tube mouth
+            c.rect(20, 1, 21, 20, STEEL)               // full-height divide: the tube is the only hole in it
+            c.row(10, 16, 24, EMPTY)                   // the tube, ending on the bolt's lip
+            c.row(9, 16, 24, STEEL)                    // the tube roof
+            c.row(10, 25, 32, STEEL)                   // east of the lip the tube is sealed — nothing that way
+            c.col(24, 11, 12, EMPTY)                   // the shaft the bolt drops down
+            c.row(11, 24, 32, STEEL); c.set(24, 11, EMPTY)  // the corridor ceiling (the shaft stays open)
+            c.row(12, 24, 31, EMPTY)                   // the low corridor — the digger's only road east
+            c.row(13, 22, 37, STEEL)                   // the sealed floor under everything
+            c.row(12, 32, 36, EMPTY)                   // the chamber at the corridor's east end
+            c.set(36, 12, DIAMOND)                     // the dead-end decoy: the sliding wall slams it (haste costs)
+            c.set(33, 11, EMPTY); c.row(11, 34, 37, STEEL) // the ladder up (and the chamber sealed overhead)
+            c.rect(33, 9, 37, 10, EMPTY)               // the exit gallery, rows 9-10
+            c.row(8, 22, 37, STEEL)                    // the gallery roof — no dig around, only the ladder
+            c.set(23, 10, PUSHWALL)                    // the vault bolt, at the tube's lip over the shaft
             return c.g
         },
     },
