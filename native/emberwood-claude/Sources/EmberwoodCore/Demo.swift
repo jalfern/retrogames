@@ -13,6 +13,9 @@ public struct Demo {
     let setup: [String: Any]?
     /// the web sim's hashState after every tick of this run (for the on-device check)
     public let hashes: [UInt32]
+    /// bot.js's own output per tick (fuzz runs, where pads override it); for a
+    /// plain attract run the inputs ARE the bot's output
+    let botOut: [Input]?
 
     public init(data: Data) throws {
         guard let o = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -20,7 +23,12 @@ public struct Demo {
         seed = (o["seed"] as? NSNumber)?.uint32Value ?? 11
         setup = o["setup"] as? [String: Any]
         hashes = (o["hashes"] as? [NSNumber] ?? []).map(\.uint32Value)
-        inputs = (o["inputs"] as? [[String: Any]] ?? []).map { m in
+        inputs = Demo.decode(o["inputs"])
+        botOut = o["bot"] == nil ? nil : Demo.decode(o["bot"])
+    }
+
+    static func decode(_ any: Any?) -> [Input] {
+        (any as? [[String: Any]] ?? []).map { m in
             var i = Input()
             func b(_ k: String) -> Bool { (m[k] as? NSNumber)?.boolValue ?? false }
             i.lx = (m["lx"] as? NSNumber)?.doubleValue ?? 0
@@ -32,7 +40,36 @@ public struct Demo {
         }
     }
 
+    static func same(_ a: Input, _ b: Input) -> Bool {
+        a.lx == b.lx && a.ly == b.ly && a.aHeld == b.aHeld && a.aPressed == b.aPressed && a.aReleased == b.aReleased &&
+            a.bPressed == b.bPressed && a.bHeld == b.bHeld && a.bReleased == b.bReleased && a.cPressed == b.cPressed
+    }
+    static func show(_ i: Input) -> String {
+        var p: [String] = []
+        if i.lx != 0 { p.append("lx:\(i.lx)") }; if i.ly != 0 { p.append("ly:\(i.ly)") }
+        if i.aPressed { p.append("aPressed") }; if i.aHeld { p.append("aHeld") }; if i.aReleased { p.append("aReleased") }
+        if i.bPressed { p.append("bPressed") }
+        return "{" + p.joined(separator: ",") + "}"
+    }
+
+    /// The Swift bot against bot.js: replay the run, ask the Swift bot every
+    /// tick (it lends, as attractBot does), compare with what bot.js said, then
+    /// step with the recorded input. nil = identical on every tick.
+    public func botRace() -> String? {
+        guard setup == nil else { return nil }
+        let want = botOut ?? inputs
+        let sim = Sim(seed: seed), bot = Bot()
+        for (t, inp) in inputs.enumerated() {
+            let mine = bot.tick(sim)
+            if !Demo.same(mine, want[t]) { return "tick \(t + 1) on \(sim.screen): bot.js \(Demo.show(want[t])) swift \(Demo.show(mine))" }
+            sim.step(inp); sim.fx.removeAll()
+        }
+        return nil
+    }
+
     /// attractBot's loan, applied before every attract tick.
+    public var isBotRun: Bool { setup == nil }
+
     public static func lend(_ sim: Sim) {
         sim.items.bow = true
         sim.items.blade = true

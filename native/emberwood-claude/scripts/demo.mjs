@@ -24,7 +24,8 @@ let pad = {}, padT = 0, deadT = 0
 // route never enters. The Swift Demo applies the same setup in the same order.
 const si = process.argv.indexOf('--setup')
 const setup = si > 0 ? JSON.parse(process.argv[si + 1]) : null
-const SEED = 11, CAP = setup ? 6000 : 12000
+const sdi = process.argv.indexOf('--seed')
+const SEED = sdi > 0 ? Number(process.argv[sdi + 1]) : 11, CAP = setup ? 6000 : 12000
 const sim = createSim(SEED)
 if (setup) {
     Object.assign(sim.items, setup.items || {})
@@ -34,7 +35,7 @@ if (setup) {
     Object.assign(sim.flags.ventsOff, ventsOff || {})
     spawnRoom(sim, setup.screen, setup.entry || null)
 }
-const inputs = [], perTick = [], hashes = []
+const inputs = [], perTick = [], hashes = [], botOut = []
 // attractBot's first lines (the loan), for the no-bot setup runs
 function attractLend(s) {
     s.items.bow = true; s.items.blade = true
@@ -42,10 +43,17 @@ function attractLend(s) {
     s.items.keys = Math.max(s.items.keys, 5)
     s.hero.max = Math.max(s.hero.max, 4); s.hero.hp = Math.max(s.hero.hp, 4)
 }
+function compact(inp) {
+    const c = {}
+    for (const k of KEYS) if (inp[k]) c[k] = typeof inp[k] === 'number' ? inp[k] : true
+    for (const k of Object.keys(inp)) if (!KEYS.includes(k) && inp[k]) throw new Error(`bot input key ${k} not recorded`)
+    return c
+}
 const KEYS = ['lx', 'ly', 'aHeld', 'aPressed', 'aReleased', 'bPressed', 'bHeld', 'bReleased', 'cPressed', 'upPressed', 'downPressed']
 while (!sim.win && (fi > 0 ? deadT < 120 : !sim.death) && inputs.length < CAP) {
     let inp
     if (setup) { attractLend(sim); inp = { lx: 0, ly: 0 } } else inp = attractBot(sim)
+    if (!setup && fi > 0) botOut.push(compact(inp)) // the bot's own answer, before any override
     if (fi > 0) {
         if (sim.death) deadT++
         if (padT <= 0 && rand() < (setup ? 0.08 : 0.02)) {
@@ -56,10 +64,7 @@ while (!sim.win && (fi > 0 ? deadT < 120 : !sim.death) && inputs.length < CAP) {
         if (padT > 0) { padT--; inp = padToInput(pad, prev); if (rand() < 0.1) pad.a = !pad.a }
         else { const idle = padToInput({}, prev); if (setup) inp = idle } // keep the release edges (gale casts on B release)
     }
-    const c = {}
-    for (const k of KEYS) if (inp[k]) c[k] = typeof inp[k] === 'number' ? inp[k] : true
-    for (const k of Object.keys(inp)) if (!KEYS.includes(k) && inp[k]) throw new Error(`bot input key ${k} not recorded`)
-    inputs.push(c)
+    inputs.push(compact(inp))
     stepSim(sim, inp)
     sim.fx.length = 0
     const flat = flattenState(sim, ['fx'])
@@ -68,6 +73,6 @@ while (!sim.win && (fi > 0 ? deadT < 120 : !sim.death) && inputs.length < CAP) {
     perTick.push(flat)
 }
 if (!sim.win && fi < 0) throw new Error(`attract run did not win (tick ${sim.tick}, screen ${sim.screen})`)
-writeFileSync(demoOut, JSON.stringify({ format: 'emberwood-demo/v1', seed: SEED, ticks: inputs.length, ...(setup ? { setup } : {}), inputs, hashes }) + '\n')
+writeFileSync(demoOut, JSON.stringify({ format: 'emberwood-demo/v1', seed: SEED, ticks: inputs.length, ...(setup ? { setup } : {}), inputs, ...(botOut.length ? { bot: botOut } : {}), hashes }) + '\n')
 if (traceOut) writeFileSync(traceOut, JSON.stringify(buildTrace({ game: 'emberwood', rec: 'emberwood-demo.json', build: 'unknown', seed: SEED, players: 1, ticks: inputs.length, excludes: ['fx'] }, perTick)) + '\n')
 console.log(`demo${fi > 0 ? ' fuzz ' + process.argv[fi + 1] : ''}: ${inputs.length} ticks, ${sim.win ? 'won' : sim.death ? 'died' : 'stopped'} on ${sim.screen}`)

@@ -1,9 +1,10 @@
 // EMBERWOOD — the native shell over Sim.swift (a tick-exact port of the web
-// sim). Mirrors src/games/Emberwood/index.jsx: attract (the web bot's own
-// route, recorded by scripts/demo.mjs and replayed with its loan) → play,
+// sim). Mirrors src/games/Emberwood/index.jsx: attract (the bot's proven
+// route, a new seed each lap) → play (Y = WATCH),
 // a fixed 60 Hz sim step, autosave/continue, the shop, the fx→sound map, the
 // three music beds with the combat-heat tempo. The sim owns every rule; this
-// file paints (Stage), plays sounds (Synth) and listens (Controls).
+// file paints (Stage), plays sounds (Synth) and listens (Controls). The
+// attract and WATCH both run Bot.swift, a tick-exact port of bot.js.
 
 import UIKit
 import SpriteKit
@@ -86,11 +87,13 @@ final class GameScene: SKScene {
     private var mode = Mode.attract
     private var sim = Sim(seed: 11)
     private var prev = PadPrev()
-    private var demo: Demo? = {
-        guard let u = Bundle.main.url(forResource: "emberwood-demo", withExtension: "json"), let d = try? Data(contentsOf: u) else { return nil }
-        return try? Demo(data: d)
-    }()
-    private var demoT = 0
+    private var bot = Bot()
+    private var watching = false
+    private var watchSnap: (items: Items, score: Int, hp: Int, max: Int)? = nil
+    private var potionQueued = false
+    // -perf YES: frame timing to the console every 2 s
+    private let perf = UserDefaults.standard.bool(forKey: "perf")
+    private var perfT = 0.0, perfFrames = 0, perfSteps = 0, perfWorst = 0.0, perfCost = 0.0
     private var last: TimeInterval = 0, acc = 0.0, clock = 0.0
     private var frameN = 0
     private var lastSaveScreen = "", lastSaveTick = 0
@@ -218,6 +221,8 @@ final class GameScene: SKScene {
         if let u = Bundle.main.url(forResource: "emberwood-demo", withExtension: "json"), let d = try? Data(contentsOf: u), let demo = try? Demo(data: d) {
             if let t = demo.hashCheck() { out.append("DIVERGE emberwood-demo.json HASH AT TICK \(t)") }
             else { out.append("MATCH emberwood-demo.json \(demo.inputs.count)/\(demo.inputs.count) TICK HASHES") }
+            if let d = demo.botRace() { out.append("DIVERGE WATCH BOT \(d)") }
+            else { out.append("MATCH WATCH BOT \(demo.inputs.count)/\(demo.inputs.count) TICKS SAID WHAT BOT.JS SAID") }
         } else { out.append("NO BUNDLED DEMO") }
         return out
     }
@@ -231,8 +236,9 @@ final class GameScene: SKScene {
     }
 
     private func enterAttract() {
-        sim = Sim(seed: demo?.seed ?? 11)
-        demoT = 0
+        stopWatch(sound: false)
+        sim = Sim(seed: 11)
+        bot = Bot()
         stage.build(sim)
         setMode(.attract)
         synth.musicLevel = 0.45
@@ -247,6 +253,8 @@ final class GameScene: SKScene {
             s = Sim.load(sd)
         }
         sim = s ?? Sim(seed: 11)
+        bot = Bot()
+        watching = false; watchSnap = nil
         prev = PadPrev()
         stage.build(sim)
         lastSaveScreen = sim.screen; lastSaveTick = sim.tick
@@ -273,8 +281,29 @@ final class GameScene: SKScene {
         case .attract: startPlay(continueSave: false)
         case .pause: break // the pause button (touchesBegan) or A resumes
         case .win: if clock - winAt > 1.5 { enterAttract() }
-        case .play: break
+        case .play: if watching { stopWatch() }
         }
+    }
+
+    // MARK: WATCH (#1624): the proven route plays your game; the kit is a loan
+
+    private func startWatch() {
+        if sim.death || sim.win || watching { return }
+        watchSnap = (sim.items, sim.score, sim.hero.hp, sim.hero.max)
+        watching = true
+        synth.tone(660, 0.07, .square, 0.06); synth.tone(990, 0.1, .square, 0.06, 0.07)
+    }
+
+    private func stopWatch(sound: Bool = true) {
+        guard watching else { return }
+        watching = false
+        if sound { synth.tone(880, 0.07, .square, 0.06); synth.tone(440, 0.12, .square, 0.06, 0.07) }
+        if let w = watchSnap, !sim.win, !sim.death {
+            let e = sim.items.e
+            sim.items = w.items; sim.items.e = e
+            sim.score = w.score; sim.hero.max = w.max; sim.hero.hp = min(w.hp, w.max)
+        }
+        watchSnap = nil
     }
 
     // MARK: loop
@@ -291,17 +320,26 @@ final class GameScene: SKScene {
 
         switch mode {
         case .attract:
+            if p.y { startPlay(continueSave: hasSave); startWatch(); return }
             if p.a || (p.any && !p.y && !p.menu && !p.b) { startPlay(continueSave: false); return }
-            if (p.y || p.b) && hasSave { startPlay(continueSave: true); return }
+            if p.b && hasSave { startPlay(continueSave: true); return }
         case .pause:
-            if p.a || p.menu { setMode(.play) }
-            else if p.b { synth.stopMusic(); enterAttract() }
+            // gamepad: A / Options resume, X drinks, B quits. Siri Remote: click
+            // resumes, Play/Pause drinks (B-hold is the Gale Charm in play, so
+            // the potion lives here), Menu quits to the title.
+            let remote = controls.remoteDriving
+            if p.x || (remote && p.b) { potionQueued = true; setMode(.play) }
+            else if p.a || (p.menu && !remote) { setMode(.play) }
+            else if p.b || (p.menu && remote) { synth.stopMusic(); enterAttract() }
             render(); return
         case .win:
             if (p.a || p.b) && clock - winAt > 1.5 { enterAttract() }
         case .play:
             if p.menu { setMode(.pause); render(); return }
+            if p.y { if watching { stopWatch() } else { startWatch() } }
+            else if watching && (p.a || p.b || p.x || p.up || p.down || p.left || p.right) { stopWatch() }
         }
+        let t0 = CACurrentMediaTime()
 
         acc += dt
         var steps = 0
@@ -309,15 +347,18 @@ final class GameScene: SKScene {
         while acc >= FIXED && steps < 8 {
             acc -= FIXED; steps += 1
             if mode == .attract {
-                if sim.win || sim.death || demo == nil || demoT >= demo!.inputs.count { sim = Sim(seed: demo?.seed ?? 11); demoT = 0 }
-                if let d = demo {
-                    Demo.lend(sim)
-                    sim.step(d.inputs[demoT]); demoT += 1
-                } else { sim.step(Input()) }
+                // index.jsx resetAttract: a fresh vale, seed + 7, every time the route ends
+                if sim.win || sim.death { sim = Sim(seed: sim.seed &+ 7); bot = Bot() }
+                sim.step(bot.tick(sim))
             } else if mode == .play {
                 let wasWin = sim.win
-                let pad = Pad(up: held.up, down: held.down, left: held.left, right: held.right, a: held.a, b: held.b, b2: held.x)
-                sim.step(padToInput(pad, &prev))
+                let pad = Pad(up: held.up, down: held.down, left: held.left, right: held.right, a: held.a, b: held.b, b2: held.x || potionQueued)
+                potionQueued = false
+                let mine = padToInput(pad, &prev) // edges stay fresh while the bot drives
+                if watching {
+                    if sim.win || sim.death { stopWatch(); sim.step(mine) }
+                    else { sim.step(bot.tick(sim)) }
+                } else { sim.step(mine) }
                 if sim.win && !wasWin {
                     winAt = clock
                     UserDefaults.standard.removeObject(forKey: GameScene.SAVE_KEY)
@@ -328,6 +369,17 @@ final class GameScene: SKScene {
             }
         }
         autosave()
+        if perf {
+            perfFrames += 1; perfSteps += steps; perfWorst = max(perfWorst, dt)
+            perfCost += CACurrentMediaTime() - t0
+            if clock - perfT > 2 {
+                let line = String(format: "EMBERWOOD PERF %.1f fps, %.2f steps/frame, worst frame %.1f ms, sim+paint %.2f ms/frame, screen %@, nodes %d",
+                                  Double(perfFrames) / (clock - perfT), Double(perfSteps) / Double(max(1, perfFrames)), perfWorst * 1000,
+                                  perfCost / Double(max(1, perfFrames)) * 1000, sim.screen, countNodes(self))
+                print(line); fflush(stdout)
+                perfT = clock; perfFrames = 0; perfSteps = 0; perfWorst = 0; perfCost = 0
+            }
+        }
 
         let fx = sim.fx
         sim.fx.removeAll()
@@ -341,6 +393,8 @@ final class GameScene: SKScene {
         render()
         synth.pump()
     }
+
+    private func countNodes(_ n: SKNode) -> Int { 1 + n.children.reduce(0) { $0 + countNodes($1) } }
 
     private func music() {
         let s = World.screens[sim.screen]!
@@ -444,13 +498,14 @@ final class GameScene: SKScene {
             overlay.addChild(label("ASH OF THE VALE", 6, cx, 95, rgb("#e8d9b8")))
             let blink = Int(clock * 2) % 2 == 0
             overlay.addChild(label(blink ? "PRESS A TO BEGIN" : "", 7, cx, 82, .white))
-            if hasSave { overlay.addChild(label("B / Y: CONTINUE", 5.5, cx, 71, rgb("#8ce0ff"))) }
+            if hasSave { overlay.addChild(label("B: CONTINUE", 5.5, cx, 71, rgb("#8ce0ff"))) }
+            overlay.addChild(label("Y / \u{25B3} — WATCH THE PROVEN ROUTE", 4.5, cx, 18, rgb("#ffd27a")))
             overlay.addChild(label("A SWORD (HOLD: BOW)  B BOMB (HOLD: GALE)  X POTION", 4.5, 160, 8, rgb("#cfc8dc")))
             return
         case .pause:
             overlay.addChild(panel(CGRect(x: cx - 70, y: 66, width: 140, height: 48)))
             overlay.addChild(label("PAUSED", 11, cx, 101, rgb("#ffb238")))
-            overlay.addChild(label("A RESUME   B QUIT TO TITLE", 5.5, cx, 84, .white))
+            overlay.addChild(label(controls.remoteDriving ? "CLICK RESUME   \u{23EF} DRINK   MENU QUIT" : "A RESUME   X DRINK   B QUIT TO TITLE", 5.5, cx, 84, .white))
             overlay.addChild(label("THE VALE REMEMBERS (AUTOSAVE)", 4.5, cx, 74, rgb("#cfc8dc")))
         case .win:
             overlay.addChild(panel(CGRect(x: cx - 100, y: 60, width: 200, height: 60)))
@@ -461,6 +516,10 @@ final class GameScene: SKScene {
         case .play: break
         }
         if mode == .attract { return }
+        if watching {
+            let w = label("WATCHING — ANY BUTTON TAKES THE REINS", 5, cx, 2 + ROOM_H - 6, rgb("#ffd27a").withAlphaComponent(0.75 + 0.25 * sin(clock * 3)))
+            overlay.addChild(w)
+        }
         // room name banner
         if sim.nameT > 0 && !sim.death {
             let a = CGFloat(min(1, Double(sim.nameT) / 30))
