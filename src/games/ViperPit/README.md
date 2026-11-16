@@ -353,3 +353,9 @@ the #1096 options switched on.
   Gates: `viperpitcheck` part A2 (defer / late-pick real choice / pre-pick
   immediate / no relaunch after launch / leave-reset) + the `gateOn` mutant;
   `npm run vipernet` drives the race live in two Chromes over the local relay.
+  The live drive found the DEEPER bug: `relay/core.js` FORWARD_TYPES never
+  carried `'pick'` — the relay silently dropped every challenger pick, so even
+  the old `guestPick.char || seededChar(...)` path never actually saw one
+  (this also un-blocks IRON RING's #1761 gate, which ships the same wire
+  type). `pick` is now allowlisted; part A2 pins both that it forwards and
+  that unknown types still die.

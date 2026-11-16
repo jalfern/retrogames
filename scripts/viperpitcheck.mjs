@@ -1229,6 +1229,23 @@ console.log('part A2: online select gate (netselect.js)')
     ok(s5.commit('riv').start === null && s5.onPick('vex').start && s5.state.guestChar === 'vex',
         'leave after a stored pick: the stale choice is gone and the NEXT joiner fires it fresh')
 
+    // The deeper bug vipernet surfaced (#2476): the relay's FORWARD_TYPES
+    // allowlist never carried 'pick' — every challenger pick was silently
+    // dropped at the server, so the gate could defer forever. Lock the
+    // allowlist itself, and lock that unknown types STILL die (it is an
+    // allowlist, not a sieve).
+    {
+        const core = await import(bust('../relay/core.js'))
+        const room = core.newRoom('VPIP', 2)
+        core.join(room, 'sock-host')
+        core.join(room, 'sock-guest')
+        const fwd = core.relay(room, 'sock-guest', { t: 'pick', s: 1, char: 'vess' })
+        ok(fwd.ok === true && fwd.to.length === 1 && fwd.to[0] === 'sock-host',
+            'relay forwards a challenger pick to the host (allowlist carries pick)')
+        const bad = core.relay(room, 'sock-guest', { t: 'pickx', s: 1 })
+        ok(bad.ok === false && bad.err === 'type', 'relay still refuses unknown wire types (allowlist stays an allowlist)')
+    }
+
     if (MUT) {
         // Mutant: restore the pre-#2476 behavior — commit launches straight
         // through, so a guest pick still on the wire is dropped for a
