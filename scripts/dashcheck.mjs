@@ -39,6 +39,7 @@ const { W, H, EMPTY, DIRT, BOULDER, DIAMOND, STEEL, FIRE, AMO_HEAD, AMO_BODY, PU
 const TOKEN = {
     dig: 'dig', fell: 'fell', roll: 'roll', convert: 'gemlost', fly: 'ignite', burn: 'spread',
     push: 'push', crush: 'crush', amoeba: 'amoeba', dissolve: 'dissolve',
+    gait: 'amoTurn', pour: 'amoDrop', vise: 'mirror',        // #2428 variant receipts
 }
 
 let pass = 0
