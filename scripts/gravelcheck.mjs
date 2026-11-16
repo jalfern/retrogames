@@ -25,6 +25,7 @@ import { createLockStep } from '../src/utils/lockstep.js'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parseGaps } from './lib/idle.mjs'
 import {
     SEATS, PAD_DELAY, HASH_EVERY, padMask, unmaskPad, wirePad, padsAt, seatOf, seatKinds, hostSeed,
 } from '../src/games/GravelYard/net.js'
@@ -807,6 +808,38 @@ console.log('— win proof (CPU crew) —')
         /pad: \(m\) => \{ const s = m\.s \| 0;[\s\S]*?ls\.gotPad\(m\.k \| 0, m\.p, s\)/.test(jsxSrc))
     ok('#1705 hash replies are refereed per peer slot',
         /hs: \(m\) => \{ const r = ls\.gotHash\(m\.k \| 0, m\.h >>> 0, m\.s \| 0\)/.test(jsxSrc))
+}
+
+// ---- README honest-gaps honesty (#2355) ------------------------------------
+// parseGaps (scripts/lib/idle.mjs) turns this README's "## Honest gaps"
+// section into the never-dry ladder's targets. #2355's audit named three
+// counted bullets that were shipped history or law notes, not open gaps:
+// the operator-seat bullet (the third seat went human online #1705; a local
+// third scheme is refused by the no-second-touchpad law), the movement bullet
+// (d-pad-only is the VirtualControls standard #1253; analog/reverse is parked
+// for its own design + migration stage), and the #1306 feel-pass bullet (pure
+// shipped history, no open remainder). Pinned: the section's CLOSED markers
+// stay (the parser drops each marked bullet), the three phantoms stay gone,
+// and the local-third-seat law note still lives in the Seats section (moved,
+// not deleted — #2354's pattern).
+{
+    const md = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'GravelYard', 'README.md'), 'utf8')
+    const gaps = parseGaps(md)
+    const sec = ((md.split(/^##\s+Honest gaps/im)[1] || '').split(/^##\s/m)[0])
+    const marked = (sec.match(/^\s*-\s*\*\*CLOSED by/gim) || []).length
+    ok(`README gaps section carries its CLOSED markers (got ${marked}, want >= 5)`, marked >= 5)
+    ok('no counted gap is a CLOSED bullet (parser sees every marker)',
+        !gaps.some((g) => /CLOSED by #\d+/i.test(g)),
+        gaps.filter((g) => /CLOSED by #\d+/i.test(g)).map((g) => g.slice(0, 60)).join(' | '))
+    ok('the operator-seat bullet no longer counts (third seat human online; local third is law, #2355)',
+        !gaps.some((g) => /screen operator seat is cpu-only/i.test(g)))
+    ok('the movement bullet no longer counts (d-pad standard; analog/reverse parked, #2355)',
+        !gaps.some((g) => /d-pad-only \(no analog/i.test(g)))
+    ok('the #1306 feel-pass bullet no longer counts (shipped history, #2355)',
+        !gaps.some((g) => /#1306 polish shipped the mid-game feel/i.test(g)))
+    ok('the local-third-seat law note still lives in the Seats section (moved, not deleted)',
+        /third local seat is refused by law/i.test(
+            (md.split(/^##\s+Seats/im)[1] || '').split(/^##\s/m)[0]))
 }
 
 // ---------- browser half ----------

@@ -86,6 +86,10 @@ over a local relay (`relay/server.mjs`) with THREE headless pages, and the twin
 gates that carried the vacuous green were retrofitted with a digger-movement
 assertion.
 
+A third LOCAL seat is refused by law: a third keyboard would crowd the pad
+(no-second-touchpad), and VirtualControls is d-pad-only movement arcade-wide —
+the third seat goes human over the room wire instead (#1705).
+
 Known CPU reference results (engine seeds): the full CPU crew makes quota on
 **8/8 seeds** (663-985C vs 600); with one unit less on EVERY pile cell
 (slack rule) it still wins **7/8**; a two-handed crew (digger by pad, rest
@@ -146,17 +150,19 @@ CPU) wins 8/8. `simulate(seed, players)` in the engine is the reference driver.
   drives it headless. Mutant proof: stub the pin-retire branch
   (`c.kind === 'pin' && gs.pin === c.orderId` -> `false`) and exactly the
   retire gate goes red; restore = green.
-- The screen operator seat is CPU-only locally (a third keyboard scheme would
-  crowd the pad); model seats drive it through the contract.
 - **CLOSED by #1759:** the tip no longer decides by age — the truck can PIN an
   open order at the board; delivery serves the pinned matching order first and
   falls back to the oldest match (the pre-pin rule) when nothing pinned fits the
   load. See the PIN law below.
-- Movement is d-pad-only (no analog stick); CPU crews never reverse (all
-  forward routing), so tight squeezes are handled by replanning, not backing up.
-- #1306 polish shipped the mid-game feel pass (amber cones + cast shadow,
-  wet-cell 2-frame shimmer, diesel idle drone at a 48-tick cadence, per-seat
-  radio voice formants, cents ticker + CLEAN SHIFT stamp).
+- **CLOSED by #1253:** movement is d-pad-only — the arcade-wide
+  VirtualControls standard; CPU crews never reverse (all forward routing), so
+  tight squeezes are handled by replanning, not backing up. Analog/reverse is
+  parked for its own design + migration stage: it would change pad semantics
+  and hashed positions on a heavily replay-gated game (banked recordings,
+  watchcheck, quota pins) — not a stage-1 pick (#2355).
+- **CLOSED by #1306:** polish shipped the mid-game feel pass (amber cones +
+  cast shadow, wet-cell 2-frame shimmer, diesel idle drone at a 48-tick
+  cadence, per-seat radio voice formants, cents ticker + CLEAN SHIFT stamp).
 - #1390 polish shipped the machines' life: the digger boom swings through 4
   bite frames (S.diggerDig, indexed by `digSwingFrame(job.t)`), dust bursts
   over the pile cell on a dig bite; the dump truck bed raises through a 3-frame

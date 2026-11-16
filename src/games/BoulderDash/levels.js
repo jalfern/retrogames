@@ -17,6 +17,7 @@
 //   gait     a two-phase head CORNERED at a wall, its children marching on (6, #2428)
 //   pour     a dropping head claimed DOWN first — slime poured off its shelf (6)
 //   vise     two waves claimed the same pass — the mirrored twins closed (6)
+//   drift    the butterfly flapped in open ground on its own (8, #2453)
 //
 // Two construction rules keep an unattended CI gate honest:
 //   1. the HARVEST gems (the quota) always sit on solid dirt with plain dirt
@@ -293,6 +294,53 @@ export const LEVELS = [
             // bait gems on the pocket floor, on solid ground (construction rule 1:
             // nothing loose over open space) — the wave dissolves them as it wraps.
             c.set(26, 8, DIAMOND); c.set(27, 8, DIAMOND)
+            return c.g
+        },
+    },
+    {
+        // THE BUTTERFLY WEAVES THE CAVERN (#2453). The README's oldest
+        // actionable gap: "the fly turns only against steel, so it never weaves
+        // into the cavern proper the way an original butterfly could". The
+        // originals had TWO critters — the boring, burning firefly (FLY PIT)
+        // and the butterfly, which flitted through open ground changing course
+        // on its own. `meta.butterflies` declares the second kind: same fly
+        // automaton with drift flaps on (deterministic hash-of-moment turns in
+        // open air, #2364 momentum intact) but it does NOT bore dust and does
+        // NOT ignite — the two critters differ exactly as the originals did.
+        // The gallery is a steel ring, so neither fire nor butterfly needs a
+        // containment invention: the butterfly exits through the open tube at
+        // col 27 only after the player digs the roof lane below it open, then
+        // roams the dig lanes — contact is still fatal, the harvest seam at
+        // row 18 is provably cool (nothing in this cave ever burns: no
+        // ignition source, and dust only burns when touched by fire).
+        name: 'GOSSAMER HOLLOW', timeTicks: 2400, need: 6,
+        spawn: { x: 3, y: 18 }, exit: { x: 36, y: 2 },
+        butterflies: [{ x: 26, y: 5, dir: 1 }],
+        proves: ['dig', 'drift'],
+        // readability telegraph (painter-only, #2417 style): the steel row
+        // capping the gallery reads "roof over the hollow" — the tube mouth at
+        // col 27 is where the butterfly will come out once the lane opens.
+        lids: [[9, 3], [10, 3], [11, 3], [12, 3], [13, 3], [14, 3], [15, 3], [16, 3],
+            [17, 3], [18, 3], [19, 3], [20, 3], [21, 3], [22, 3], [23, 3], [24, 3],
+            [25, 3], [26, 3], [27, 3], [28, 3], [29, 3], [30, 3], [31, 3]],
+        build() {
+            const c = new Carve()
+            c.shell()
+            c.rect(2, 16, 4, 20, EMPTY)                 // start, bottom-left
+            c.rect(34, 1, 37, 4, EMPTY)                 // exit, top-right
+            c.seam(18, 8, 13)                           // supported harvest, quota 6
+            // the hollow: an open gallery across the cavern roof — steel-ringed
+            // top, bottom and both sides, and open nothing else.
+            c.rect(10, 5, 30, 11, EMPTY)
+            c.row(4, 9, 31, STEEL); c.row(12, 9, 31, STEEL)
+            c.col(9, 4, 12, STEEL); c.col(31, 4, 12, STEEL)
+            // pillars so the drift has something to weave around
+            c.rect(15, 6, 16, 7, STEEL)
+            c.rect(24, 9, 25, 10, STEEL)
+            // the tube: an open col through the ring floor, down to one cell
+            // above the harvest lane. Steel on both faces — and open ground
+            // carries no fuel — so nothing burning ever travels it either way.
+            c.col(27, 12, 17, EMPTY)
             return c.g
         },
     },

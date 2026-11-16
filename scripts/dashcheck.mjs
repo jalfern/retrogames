@@ -41,6 +41,7 @@ const TOKEN = {
     push: 'push', crush: 'crush', amoeba: 'amoeba', dissolve: 'dissolve',
     gait: 'amoTurn', pour: 'amoDrop', vise: 'mirror',        // #2428 variant receipts
     fork: 'amoFork',                                          // #2444 multi-head receipt
+    drift: 'drift',                                           // #2453 butterfly flap receipt
 }
 
 let pass = 0
@@ -59,6 +60,7 @@ const MUTANTS = {
     fireSpread: 'fire stops spreading — there is no chain, only a match',
     flyIgnite: 'the firefly stops lighting things — no explosion at all',
     flyTravel: 'the firefly stops holding its heading — the orbit never reaches the seam, the corridor stays empty',
+    flyDrift: 'the butterfly forgets to flap — GOSSAMER HOLLOW is a straight corridor patrol again, the drift receipt dies',
     fallKill: 'a falling boulder stops crushing — the hazard is theatre',
     amoeba: 'the slime stops growing — the wave never crosses its pocket, never eats the bait',
     amoTurn: 'the two-phase head stops cornering — the wave leaks perpendiculars like classic and never walks its square-corner gait',
@@ -695,6 +697,105 @@ for (let i = 0; i < LEVELS.length; i++) {
         const ls = lids.map(([x, y]) => `${x},${y}`).sort().join('|')
         ok(ls === '24,12|25,12|26,12|27,12|28,12', `pocket-lid marks drifted (got "${ls}") — the green telegraph would sit over the wrong rock`)
         ok(lids.every(([x, y]) => grid[y * sim.W + x] === DIRT && grid[(y + 1) * sim.W + x] === EMPTY), 'a lid-marked cell is not DIRT over pocket air — the telegraph must cap the pocket, not hover beside it')
+    }
+}
+
+// -------------------------------------------------------- BUTTERFLY DRIFT (#2453) ----
+{
+    section('BUTTERFLY DRIFT (#2453) — flaps weave open ground, never a lined corridor')
+
+    // (a) CORRIDOR-INVARIANCE BY LAW: in a 1-cell tube steel-lined on both
+    // faces and capped at both ends, every flap candidate is wall — drift can
+    // NEVER perturb a shuttle patrol. This is the fairness law that lets the
+    // FLY PIT chicken-game survive drift existing at all.
+    {
+        const g0 = new Uint8Array(W * H).fill(DIRT)
+        for (let x = 0; x < W; x++) { g0[x] = STEEL; g0[(H - 1) * W + x] = STEEL }
+        for (let y = 0; y < H; y++) { g0[y * W] = STEEL; g0[y * W + W - 1] = STEEL }
+        for (let x = 11; x <= 29; x++) g0[6 * W + x] = EMPTY
+        for (let x = 10; x <= 30; x++) { g0[5 * W + x] = STEEL; g0[7 * W + x] = STEEL }
+        g0[6 * W + 10] = STEEL; g0[6 * W + 30] = STEEL
+        const meta = { spawn: { x: 2, y: 2 }, exit: { x: 2, y: 2 }, need: 1, timeTicks: 800, butterflies: [{ x: 12, y: 6, dir: 1 }] }
+        const g = sim.makeGame(meta, g0)
+        ok(g.flyExt === true, 'a level with butterflies must fold drift state into the hash (flyExt)')
+        let flaps = 0
+        const cells = new Set()
+        for (let t = 0; t < 600; t++) {
+            sim.step(g)
+            flaps += g.events.filter((e) => e.type === 'drift').length
+            cells.add(g.flies[0].y * W + g.flies[0].x)
+        }
+        ok(flaps === 0, `the butterfly flapped ${flaps}× inside a lined corridor — drift could make predictable patrols unfair`)
+        ok(cells.size === 19, `the shuttle patrol broke (visited ${cells.size} cells, expected the full 19-cell tube intact)`)
+    }
+
+    // (b) THE WEAVE: in open ground the same automaton flaps constantly and
+    // sweeps the chamber — the README gap made visible.
+    {
+        const g0 = new Uint8Array(W * H).fill(DIRT)
+        for (let x = 0; x < W; x++) { g0[x] = STEEL; g0[(H - 1) * W + x] = STEEL }
+        for (let y = 0; y < H; y++) { g0[y * W] = STEEL; g0[y * W + W - 1] = STEEL }
+        for (let y = 4; y <= 11; y++) for (let x = 10; x <= 19; x++) g0[y * W + x] = EMPTY
+        for (let y = 3; y <= 12; y++) { g0[y * W + 9] = STEEL; g0[y * W + 20] = STEEL }
+        const meta = { spawn: { x: 2, y: 2 }, exit: { x: 2, y: 2 }, need: 1, timeTicks: 800, butterflies: [{ x: 12, y: 6, dir: 1 }] }
+        const g = sim.makeGame(meta, g0)
+        let flaps = 0
+        const cells = new Set()
+        const dirs = new Set()
+        for (let t = 0; t < 500; t++) {
+            sim.step(g)
+            flaps += g.events.filter((e) => e.type === 'drift').length
+            cells.add(g.flies[0].y * W + g.flies[0].x)
+            dirs.add(g.flies[0].dir)
+        }
+        ok(flaps >= 40, `open-ground weave produced only ${flaps} flaps in 500 ticks — the butterfly reads as a rail, not a critter`)
+        ok(cells.size >= 40, `the butterfly covered only ${cells.size} distinct cells of an 80-cell chamber — no sweep`)
+        ok(dirs.size === 4, 'the weave never tried every heading — momentum-only turning is back')
+    }
+
+    // (c) GOSSAMER HOLLOW live: the butterfly leaves its gallery through the
+    // tube once the lane under the tube mouth is open, and it never burns
+    // anything — the harvest row provably never sees FIRE, and a digger who
+    // dawdles the lane at a fixed cadence gets eaten (the mechanic, not a
+    // mood). The planner still brings the quota home (per-cave loop above).
+    {
+        const { meta, grid } = buildLevel(7)
+        const g = sim.makeGame(meta, grid)
+        ok(g.flies[0].drift === 1 && g.flies[0].digs === 0 && g.flies[0].ignites === 0,
+            'meta.butterflies must map to a drift-fly that neither bores nor ignites — the original butterfly did neither')
+        let descend = -1, fires = 0, harvestHot = null
+        let tubeOpen = -1
+        for (let t = 0; t < 900 && g.player.alive && !g.end; t++) {
+            if (g.tick % 4 === 0 && g.player.x < 36) sim.playerMove(g, 'ArrowRight')
+            sim.step(g)
+            fires += g.events.filter((e) => e.type === 'ignite' || e.type === 'spread').length
+            if (tubeOpen < 0 && g.grid[18 * W + 27] === EMPTY) tubeOpen = g.tick
+            const f = g.flies[0]
+            if (descend < 0 && f.y >= 12) descend = g.tick
+            for (let x = 8; x <= 13; x++) if (g.grid[18 * W + x] === FIRE) harvestHot = `tick ${g.tick} fire at ${x},18`
+        }
+        ok(tubeOpen >= 0, 'the lane never opened under the tube mouth — the hollow can never interact')
+        ok(descend >= 0 && descend < 600, `the butterfly never came down the tube (reached row ${g.flies[0].y} by tick ${g.tick}) — the cavern proper stays un-swept`)
+        ok(fires === 0 && !harvestHot, `GOSSAMER HOLLOW produced fire (${fires} events ${harvestHot || ''}) — the butterfly must not burn; the harvest sits cool by law`)
+        ok(g.deathCause === 'fly', `a digger dawdling the open lane survived with cause ${JSON.stringify(g.deathCause)} — the roaming butterfly is theatre, not hazard`)
+    }
+
+    // (d) determinism for the drift cave + the opt-in pin: only GOSSAMER
+    // HOLLOW folds flap state; every older cave keeps flyExt false (their
+    // recorded hashes above stay the law).
+    {
+        const { meta, grid } = buildLevel(7)
+        const r = runPlanner(7)
+        const a = sim.replay(meta, grid, r.cmds)
+        const b = sim.replay(meta, grid, r.cmds)
+        ok(sim.stateHash(a) === sim.stateHash(b), 'GOSSAMER HOLLOW replays differ — the drift hash is not a pure function')
+        ok(a.flies[0].flaps > 0 && a.flyExt === true, 'the cave-8 replay carried no flap state — drift is not riding the hash')
+        const tampered = r.cmds.slice(0, 3).concat(r.cmds.slice(4))
+        ok(sim.stateHash(sim.replay(meta, grid, tampered)) !== sim.stateHash(a), 'the cave-8 hash ignores a dropped move — determinism could not see a desync')
+        for (let i = 0; i < 7; i++) {
+            const m = buildLevel(i)
+            ok(sim.makeGame(m.meta, m.grid).flyExt === false, `LEVEL ${i} folds drift state — opt-in must stay exclusive to cave 8`)
+        }
     }
 }
 
