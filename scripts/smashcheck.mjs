@@ -960,15 +960,15 @@ function gs_clear(g) { g.events.length = 0 }
     // #2491 strengthened: sweep-pinning the seat-law rides route luck — the
     // no-mercy reroute moved the bonus walks so no seed happened to walk the
     // barrel any more, and the old proximity mutant survived a green suite.
-    // Probe the law directly: a dropped barrel 12 px west of the seat must
-    // send the legs EAST out of the ring; without the wrap, the hold-center
-    // legs walk straight onto it.
+    // Probe the law directly: a dropped barrel 12 px east of the seat must
+    // send the legs WEST out of the ring; without the wrap, the upgrade run
+    // toward the crate walks straight onto it.
     {
         const gsb = makeGame(0)
         const pb = gsb.player
-        gsb.items.push({ id: 9101, t: 'weapon', w: 'flame', x: pb.x - 12, y: pb.y })
+        gsb.items.push({ id: 9101, t: 'weapon', w: 'flame', x: pb.x + 12, y: pb.y })
         const inp = S.decide(gsb)
-        ok((inp.mx || 0) === 1, 'the seat steps out of the dropped-barrel ring the moment it is inside', `mx=${inp.mx ?? 0}`)
+        ok((inp.mx || 0) === -1, 'the seat steps out of the dropped-barrel ring the moment it is inside', `mx=${inp.mx ?? 0}`)
     }
 }
 
