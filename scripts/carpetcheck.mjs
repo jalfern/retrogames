@@ -1,4 +1,4 @@
-// carpetcheck.mjs — MAGIC CARPET proof: boots, rules hold, twenty-seven worlds reach equilibrium.
+// carpetcheck.mjs — MAGIC CARPET proof: boots, rules hold, forty-five worlds reach equilibrium.
 //
 // Node-first (sim is pure), then a short real-browser pass via the game contract.
 // Run: npm run dev in another terminal, then `npm run carpetcheck`.
@@ -51,21 +51,21 @@ const d1 = run(7, 600), d2 = run(7, 600), d3 = run(8, 600)
 r.check('seed 7 twice → identical hash', stateHash(d1) === stateHash(d2), `${stateHash(d1)} vs ${stateHash(d2)}`)
 r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
 
-// ---- twenty-seven worlds: level progression and equilibrium (#1740, grown by #1925 item 3 and #2419)
+// ---- forty-five worlds: level progression and equilibrium (#1740, grown by #1925 item 3, #2419 and #2427)
 {
     const gs = run(7, LEVELS.length * 26000)
-    r.check('twenty-seven worlds: seed 7 clears I→XXVII and wins at the final quota',
+    r.check('forty-five worlds: seed 7 clears I→XLV and wins at the final quota',
         gs.end === 'win' && gs.level === LEVELS.length - 1 && gs.levelClears === LEVELS.length - 1 && gs.bank >= gs.quota,
         `end=${gs.end} level=${gs.level + 1} bank=${Math.floor(gs.bank)}/${gs.quota} tick=${gs.tick}`)
     r.check('banked vault (not carried mana) is what reaches the quota', gs.bank >= QUOTA, `bank=${Math.floor(gs.bank)} quota=${QUOTA}`)
     const gs2 = run(88, LEVELS.length * 26000)
-    r.check('seed 88 also restores all twenty-seven worlds', gs2.end === 'win' && gs2.level === LEVELS.length - 1, `end=${gs2.end} level=${gs2.level + 1}`)
+    r.check('seed 88 also restores all forty-five worlds', gs2.end === 'win' && gs2.level === LEVELS.length - 1, `end=${gs2.end} level=${gs2.level + 1}`)
 }
 
 // ---- #1740 WORLDS: the campaign table, the economy floor and the select math
 {
-    r.check('twenty-seven named worlds, quotas/hoards/HP/pearls strictly escalate',
-        LEVELS.length === 27 && new Set(LEVELS.map((l) => l.name)).size === 27 &&
+    r.check('forty-five named worlds, quotas/hoards/HP/pearls strictly escalate',
+        LEVELS.length === 45 && new Set(LEVELS.map((l) => l.name)).size === 45 &&
         LEVELS.every((l, i) => i === 0 || (l.quota > LEVELS[i - 1].quota && l.hoard > LEVELS[i - 1].hoard &&
             l.wizHp > LEVELS[i - 1].wizHp && l.pearls >= LEVELS[i - 1].pearls)),
         LEVELS.map((l) => `${l.name}:${l.quota}`).join(' '))
@@ -75,16 +75,17 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
     r.check('#2419 yield law: every quota stays under realistic pearl yield (~3.5x the pearls) — the hoard is never load-bearing (economy policy, #1740)',
         LEVELS.every((l) => l.quota <= Math.floor(l.pearls * 3.5)),
         LEVELS.map((l) => `${l.quota}/${Math.floor(l.pearls * 3.5)}`).join(' '))
-    r.check('#2419 arcs seven to nine keep the house ramp (+15 quota/hoard/wizHp; +5 pearls since world 19) and close on the SKY trio',
-        LEVELS.length >= 27 &&
-        LEVELS.slice(18, 27).every((l, i) => l.quota === LEVELS[18].quota + 15 * i &&
+    r.check('#2419/#2427 the deep arcs keep the house ramp (+15 quota/hoard/wizHp; +5 pearls since world 19) and close on the five SKYs',
+        LEVELS.length >= 45 &&
+        LEVELS.slice(18).every((l, i) => l.quota === LEVELS[18].quota + 15 * i &&
             l.hoard === LEVELS[18].hoard + 15 * i && l.wizHp === LEVELS[18].wizHp + 15 * i &&
             l.pearls === LEVELS[18].pearls + 5 * i) &&
         LEVELS[17].pearls + 5 === LEVELS[18].pearls &&
         LEVELS[8].name === 'THE LAST SKY' && LEVELS[17].name === 'THE ENDLESS SKY' && LEVELS[26].name === 'THE FARTHEST SKY' &&
+        LEVELS[35].name === 'THE OUTER SKY' && LEVELS[44].name === 'THE FINAL SKY' &&
         LEVELS.length % 3 === 0,
-        `arc7 ${LEVELS[18].name}:${LEVELS[18].quota}:${LEVELS[18].pearls} … arc9 ${LEVELS[26].name}:${LEVELS[26].quota}:${LEVELS[26].pearls}`)
-    r.check('QUOTA exports the final world (the win condition is the twenty-seventh vault)',
+        `arc7 ${LEVELS[18].name}:${LEVELS[18].quota}:${LEVELS[18].pearls} … arc15 ${LEVELS[44].name}:${LEVELS[44].quota}:${LEVELS[44].pearls}`)
+    r.check('QUOTA exports the final world (the win condition is the forty-fifth vault)',
         QUOTA === LEVELS[LEVELS.length - 1].quota, `QUOTA=${QUOTA}`)
     r.check('makeGame pins every level, clamps out-of-range, and pins are deterministic',
         LEVELS.every((l, n) => makeGame(7, n).level === n &&
@@ -110,7 +111,7 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         selectTap(2, SEL.y + 1) === 'prev' && selectTap(SEL.zw - 1, SEL.y + SEL.h - 1) === 'prev' &&
         selectTap(W - 2, SEL.y + SEL.h - 1) === 'next' && selectTap(W - SEL.zw + 1, SEL.y + 1) === 'next' &&
         selectTap(W / 2, SEL.y + SEL.h / 2) === null && selectTap(2, SEL.y - 1) === null && selectTap(W - 2, SEL.y + SEL.h + 1) === null)
-    r.check('the cursor cycles twenty-seven worlds both directions (never leaves the table)',
+    r.check('the cursor cycles forty-five worlds both directions (never leaves the table)',
         cursorStep(0, -1) === LEVELS.length - 1 && cursorStep(LEVELS.length - 1, 1) === 0 &&
         cursorStep(4, -LEVELS.length) === 4 && cursorStep(4, LEVELS.length) === 4 &&
         cursorStep(LEVELS.length - 2, 3) === 1 &&
@@ -119,7 +120,7 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         `n=${LEVELS.length}`)
     {
         const src = await readFile(new URL('../src/games/MagicCarpet/renderer.js', import.meta.url), 'utf8')
-        r.check('the renderer CYCLES its three atmospheres over twenty-seven worlds (no clamp to the third)',
+        r.check('the renderer CYCLES its three atmospheres over forty-five worlds (no clamp to the third)',
             src.includes('PAL[level % PAL.length]') && !src.includes('PAL[Math.min(level'),
             'source pin')
     }
@@ -1017,7 +1018,7 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
             while (!gs.end && i < LEVELS.length * 26000) { step(gs, autopilot(gs)); i++ }
             if (gs.end === 'win') { wins++; if (i > slowest) slowest = i }
         }
-        r.check('60-seed balance sweep: the autopilot still restores all twenty-seven worlds, all 60 seeds',
+        r.check('60-seed balance sweep: the autopilot still restores all forty-five worlds, all 60 seeds',
             wins === 60, `wins ${wins}/60, slowest ${slowest} ticks`)
     }
 }

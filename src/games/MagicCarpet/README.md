@@ -335,11 +335,11 @@ see item 5).
   Invisibility shipped #1610, volcano #1612 item 5, shatter + raise #1639,
   dissolve #1668, **clone #1680** — the roster tail of #1612 item 5
   (clone/dissolve/shatter/volcano) is now fully shipped.
-- **PARTIAL by #1740, grown by #1925 item 3 and #2419:** the title carries a WORLD SELECT
-  (◀ ▶ / chevron taps, twenty-seven startable worlds) — the campaign runs twenty-seven
-  worlds (nine arcs of three atmospheres), not the original's 45;
-  scoring is banked mana + kills + clears + time bonus. The remaining growth
-  (worlds 28–45) and the scoring-model delta stay open.
+- **CLOSED by #2427 (grown by #1740, #1925 item 3, #2419):** the title carries a WORLD
+  SELECT (◀ ▶ / chevron taps, forty-five startable worlds) — the campaign runs
+  forty-five worlds (fifteen arcs of three atmospheres), the original's full length;
+  scoring is banked mana + kills + clears + time bonus. The scoring-model delta
+  vs the original stays open (needs its own research stage).
 - **Castle-spell menu closed by #1764 item 1:** the original's spell selection was
   a browseable book, and the book lives at home. `B` (or a tap on the glowing
   prompt) opens it ONLY inside the castle's 26u reach — away from it the refusal
@@ -796,3 +796,41 @@ the campaign grows from eighteen to **twenty-seven worlds** — the original ran
   and seed-88 wins stay green — correct, the mutant wins, it just stops early
   (the #1740 precedent; proven 2026-11-15, restored after). Or clamp arc-nine
   pearls back to +4 — the ramp-table pin goes red alone.
+
+## #2427 campaign to forty-five worlds (2026-11-16, forge slot b): THE FINAL SKY
+
+The never-dry stage filed by #2419: the campaign grows from twenty-seven to the
+original's full **forty-five worlds** — fifteen arcs of three atmospheres.
+
+- Arcs ten to fifteen keep every house law: the atmosphere cycle (45 ≡ 0 mod 3,
+  so every arc still closes on frost), the unbroken +15 ramp on quota/hoard/
+  wizHp, pearls +5/world, strict escalation. **The yield law reaches 45 with
+  room**: the deepest ask is 805 at 263 pearls = 87.5% of floor(pearls·3.5)=920
+  — a *better* margin than mid-campaign's 89%, so no tail re-file was needed.
+- Eighteen named worlds in house motif (words reused, full names unique), two
+  new SKY closures: GREENVEIL, EMBER REACH, FROSTGATE / IRON MOOR, ASHEN WAKE,
+  WHITEFALL / MOSSWOOD, EMBER STORM, THE OUTER SKY / DEEPGREEN, MAGMA FIELD,
+  RIME WASTES / THORNVALE, LAST PYRE, SNOWBOUND / GREEN REACH, SCORCHED
+  HOLLOW, THE FINAL SKY (the superlative ladder LAST → ENDLESS → FARTHEST →
+  OUTER → FINAL).
+- Plumbing rode `LEVELS.length` everywhere (select, cursor, HUD, PROGNOSIS);
+  the attract copy is updated — and the stale `EIGHTEEN WORLDS · SIX ARCS`
+  line #2419 left behind finally follows the campaign.
+- **Caps measured, law unchanged:** `LEVELS.length * 26000` = 1,170,000 ticks.
+  Fresh 60-seed measurement at 45 worlds: **60/60 win**, slowest seed 88 at
+  **1,112,401 ticks** — 95% of the cap. The margin is thinner than at 27
+  (was ~27%) because deep-arc fights lengthen superlinearly (wizHp 725 at the
+  end vs 455): the estimate of ~850k was low by a quarter. The sweep is
+  deterministic (seeded RNG, fixed timestep), so a 5% margin cannot flake —
+  but any future *rule* change near the tail must re-measure, and this note is
+  where the number lives.
+- carpetcheck: campaign gates re-targeted twenty-seven→forty-five (seed-7/seed-88
+  full clears, live name-order campaign, sweep titles); the arc ramp pin widened
+  from slice(18,27) to slice(18) — it now proves +15/+5 all the way to world 45
+  — and the SKY trio pin became a five-SKY ladder incl. THE OUTER/THE FINAL SKY.
+  Cursor wrap stays proven generically (±n round-trips + full cycles both
+  directions at n=45, no literals).
+- Mutation guide (prove it can fail): drop the last LEVELS entry (THE FINAL
+  SKY) → the forty-five-world table check goes red (44≠45) while the seed-7
+  and seed-88 wins stay green — the mutant wins early (#1740 precedent). Or
+  clamp a deep-arc pearl step back to +4 — the widened ramp pin goes red alone.
