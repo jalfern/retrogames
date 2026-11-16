@@ -100,7 +100,17 @@ export function newGame(seed, rules = {}, partner = true) {
     // and yields warrior. Pass the stamp through untouched: absent stays
     // absent = live default; explicit replays exactly what live passed.
     const key = typeof rules.partnerKey === 'string' && rules.partnerKey ? { partnerKey: rules.partnerKey } : {}
-    const gs = makeGame(seed, rules.hero || 'warrior', { topDown: true, partner, ...key })
+    // #2516 (stage 3c difficulty knobs): a rules stamp MAY carry difficulty opts so
+    // the research harness drives THE same makeGame knobs live play can pass —
+    // `slack` cuts food/potion supply, `levelCount` is the win threshold.
+    // Absent keeps every historical default (no recording has ever stamped
+    // these; replays are unaffected). Honesty: the sim has LEVELS.length = 10
+    // authored levels — levelCount > 10 is not content, the run crashes at the
+    // level-10 advance; that is a finding, not a plumbing bug (#2516).
+    const diff = {}
+    if (Number.isInteger(rules.levelCount) && rules.levelCount > 0) diff.levelCount = rules.levelCount
+    if (rules.slack) diff.slack = true
+    const gs = makeGame(seed, rules.hero || 'warrior', { topDown: true, partner, ...key, ...diff })
     gs.partnerOn = partner
     gs.partnerMode = 'cpu'
     return gs
