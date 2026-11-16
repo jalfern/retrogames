@@ -42,6 +42,14 @@ const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim()
 // #1571 kick named BOULDER DASH gap 0 — the amoeba reactivity law the slot-a
 // lane had already ruled original-blocked on 2026-11-16, in its own STATE).
 // Unlike CLOSED, BLOCKED names no PR — it owns nothing, it only declines.
+// A bullet marked "**DISCLAIMER**" is the third class: a documented judgement
+// call — a solver disclaimer (why FORGE's slack rule cannot apply), a decided
+// state (a jonq answer or audit closed the question), or a non-feature by Jon's
+// own rule. The prose stays in the README (it is still honest reporting), but a
+// behaviour the maintainers chose on purpose is not weakness and must not score
+// (#2488: GardenGuard's "No puzzle-slack solver" + auto-bank prose kept
+// topping the ladder at 2 while the whole shelf waited for real work).
+// Only the bold marker declines — the bare word must not, same law as BLOCKED.
 export function parseGaps(md) {
     const out = []
     let inSection = false
@@ -57,7 +65,7 @@ export function parseGaps(md) {
             out[out.length - 1] += ' ' + line.trim()
         }
     }
-    return out.filter((g) => !/CLOSED by #\d+/i.test(g) && !/\*\*BLOCKED\*\*/.test(g))
+    return out.filter((g) => !/CLOSED by #\d+/i.test(g) && !/\*\*BLOCKED\*\*/.test(g) && !/\*\*DISCLAIMER\*\*/.test(g))
 }
 
 // A gap is OWNED when an open QA issue already says it: the issue names its

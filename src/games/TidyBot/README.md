@@ -157,6 +157,10 @@ after.
   given the old law is byte-for-byte, so the autopilot and every win-proof ride
   unchanged. See §Aimed retrieve below.
 - No looping wash-cycle hum (START fires a one-shot sweep); attract restarts
-  the demo game rather than looping level 2+.
+  the demo game rather than looping level 2+. — **CLOSED by #2283** (merge
+  `014135b`: `feel()` runs a looping hum while `dwRun` — a 84 Hz wash tone
+  every 36 ticks plus bubble ticks — and a cleared attract shift clocks into the
+  NEXT room instead of hard-rebooting; marker added by #2488, the work shipped
+  then and the bullet lacked it, #961 pattern).
 - Glide walks but never acts — tap-to-open/place would collapse the chore loop
   into single taps; held back until the verbs feel as good one-handed.

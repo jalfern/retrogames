@@ -123,7 +123,7 @@ way from where the deflection already aims.
 - (CLOSED by #2313: the gun-jam epilogue — a redline gear held closed-belt
   seizes for 5 s, `predictHit` goes deaf to it, `soft-hands` dies. Shipped
   history, kept in place per house style.)
-- The Circus can be won at hp 1. Measured this pass: the autopilot clears
+- **DISCLAIMER** — The Circus can be won at hp 1. Measured this pass: the autopilot clears
   patrol 1 (Circus) at **hp 1** using only 6 rounds (`slack` still wins at
   belt −40). It is meant to be close; if it becomes a coin flip for Jon, the
   honest knob is the lead's gun range (300), not the player's hull. No blind

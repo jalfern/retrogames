@@ -261,7 +261,7 @@ npm run dev && npm run tendeepplay   # headless Chrome, real key events,
   MOB_TINT covers every `MOBS` key; 5 mutants all die); tendeeppplay reads the
   2D-layer alpha at the old gradient's corners (must be 0) and proves
   `glFrames` advance mid-fight.
-- **No between-run persistence — DECIDED stateless (#2321):** the run is one
+- **DISCLAIMER** — **No between-run persistence — DECIDED stateless (#2321):** the run is one
   sitting; a wipe drags the bodies to the RIM and taxes the purse, and that
   grief IS the economy (temple gold, hire posts, the dead-purse end). A
   localStorage snapshot would let players bank around the tax and split the
