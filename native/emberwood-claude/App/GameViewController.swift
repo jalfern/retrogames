@@ -9,6 +9,8 @@
 import UIKit
 import SpriteKit
 import GameController
+import RetroKit
+import RetroKitApp
 
 #if os(tvOS)
 typealias BaseViewController = GCEventViewController
@@ -72,7 +74,7 @@ final class GameViewController: BaseViewController {
 final class GameScene: SKScene {
     enum Mode { case attract, play, pause, win }
     weak var host: GameViewController?
-    let controls = Controls()
+    let controls = Controls.emberwood()
     private let synth = Synth.shared
     private let stage = Stage()
     private let room = SKCropNode()
@@ -183,15 +185,7 @@ final class GameScene: SKScene {
     // run ON THIS DEVICE and prints MATCH/DIVERGE lines (log + screen).
     private func launchOptions() {
         let d = UserDefaults.standard
-        if d.bool(forKey: "selfcheck") {
-            checkLines = ["SELF-CHECK RUNNING..."]
-            DispatchQueue.global(qos: .userInitiated).async {
-                let lines = GameScene.selfCheck()
-                for l in lines { NSLog("EMBERWOOD SELFCHECK %@", l); print("EMBERWOOD SELFCHECK \(l)") }
-                fflush(stdout)
-                DispatchQueue.main.async { self.checkLines = lines }
-            }
-        }
+        SelfCheck.startIfAsked(tag: "EMBERWOOD", check: GameScene.selfCheck) { self.checkLines = $0 }
         DispatchQueue.main.async {
             if let r = d.string(forKey: "room"), World.screens[r] != nil { // dev: start a new game in that room
                 self.startPlay(continueSave: false)
@@ -204,20 +198,10 @@ final class GameScene: SKScene {
     }
 
     static func selfCheck() -> [String] {
-        var out: [String] = []
-        if let dir = Bundle.main.resourceURL?.appendingPathComponent("traces"),
-           let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) {
-            for n in names.filter({ !$0.hasSuffix(".trace.json") }).sorted() {
-                do {
-                    let rec = try Recording(data: Data(contentsOf: dir.appendingPathComponent(n)))
-                    let (states, mm) = replay(rec)
-                    let g = try Data(contentsOf: dir.appendingPathComponent(n.replacingOccurrences(of: ".json", with: ".trace.json")))
-                    let (ticks, fields, d) = try compare(golden: g, port: states)
-                    if let d { out.append("DIVERGE \(n) TICK \(d.tick) \(d.field) GOLDEN \(d.golden) PORT \(d.port)") }
-                    else { out.append("MATCH \(n) \(ticks)/\(ticks) TICKS, \(fields) FIELDS" + (mm == nil ? "" : " HASH DIFF \(mm!)")) }
-                } catch { out.append("ERROR \(n) \(error)") }
-            }
-        } else { out.append("NO BUNDLED TRACES") }
+        var out = SelfCheck.goldens { _, data in
+            let (states, mm) = replay(try Recording(data: data))
+            return SelfCheck.Run(states: states, hashMismatch: mm)
+        }
         if let u = Bundle.main.url(forResource: "emberwood-demo", withExtension: "json"), let d = try? Data(contentsOf: u), let demo = try? Demo(data: d) {
             if let t = demo.hashCheck() { out.append("DIVERGE emberwood-demo.json HASH AT TICK \(t)") }
             else { out.append("MATCH emberwood-demo.json \(demo.inputs.count)/\(demo.inputs.count) TICK HASHES") }
@@ -316,7 +300,7 @@ final class GameScene: SKScene {
         clock += dt
         frameN += 1
         controls.poll()
-        let p = controls.pressed, held = controls.held
+        let p = controls.pressed[0], held = controls.held[0]
 
         switch mode {
         case .attract:

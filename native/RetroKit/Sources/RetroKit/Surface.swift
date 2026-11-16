@@ -1,24 +1,27 @@
-// GAUNTLET — the framebuffer the shell paints into (0xAARRGGBB), the cabinet's
-// 320x240 canvas (256x200 view + 64px side panel + 40px HUD band), scaled up
-// nearest-neighbour. Surface + the 3x5 pixel font come from the Joust port.
+// The framebuffer a pixel port paints into (0xAARRGGBB), at the cabinet's own
+// resolution, then scaled up nearest-neighbour by the shell; plus the 3x5 pixel
+// font (art.js's glyphs + the extras the TV copy needs). From the Joust port
+// (256x224), shared with Gauntlet (320x240). Pure Swift: icon tools use it too.
+// The drawing calls are @inlinable so they compile into the app at its own
+// optimization level (Gauntlet's Debug is -O; the package's Debug is -Onone).
 
 import Foundation
-typealias RGBA = UInt32
+public typealias RGBA = UInt32
 
-@inline(__always) func hex(_ s: String) -> RGBA {
+@inlinable public func hex(_ s: String) -> RGBA {
     var v: UInt64 = 0
     Scanner(string: String(s.dropFirst())).scanHexInt64(&v)
     return 0xFF00_0000 | RGBA(v & 0xFF_FFFF)
 }
 
 /// A drawing surface: the screen, or a cached sprite.
-final class Surface {
-    let w: Int, h: Int
-    var pix: [RGBA]
-    var ox = 0, oy = 0 // translation (screen shake)
-    init(_ w: Int, _ h: Int) { self.w = w; self.h = h; pix = Array(repeating: 0, count: w * h) }
+public final class Surface {
+    public let w: Int, h: Int
+    public var pix: [RGBA]
+    public var ox = 0, oy = 0 // translation (screen shake)
+    public init(_ w: Int, _ h: Int) { self.w = w; self.h = h; pix = Array(repeating: 0, count: w * h) }
 
-    @inline(__always) func blend(_ i: Int, _ c: RGBA, _ alpha: Double) {
+    @inlinable @inline(__always) public func blend(_ i: Int, _ c: RGBA, _ alpha: Double) {
         if alpha >= 1 { pix[i] = c; return }
         let d = pix[i]
         let a = alpha
@@ -32,7 +35,7 @@ final class Surface {
     }
 
     /// canvas fillRect with integer-snapped corners
-    func fill(_ x: Double, _ y: Double, _ w: Double, _ h: Double, _ c: RGBA, _ alpha: Double = 1) {
+    @inlinable public func fill(_ x: Double, _ y: Double, _ w: Double, _ h: Double, _ c: RGBA, _ alpha: Double = 1) {
         let x0 = max(0, Int(x.rounded(.down)) + ox), y0 = max(0, Int(y.rounded(.down)) + oy)
         let x1 = min(self.w, Int((x + w).rounded(.down)) + ox), y1 = min(self.h, Int((y + h).rounded(.down)) + oy)
         if x0 >= x1 || y0 >= y1 { return }
@@ -40,13 +43,13 @@ final class Surface {
     }
 
     /// art.js `px`: Math.round the corner, integer size
-    func px(_ x: Double, _ y: Double, _ w: Int, _ h: Int, _ c: RGBA) {
+    @inlinable public func px(_ x: Double, _ y: Double, _ w: Int, _ h: Int, _ c: RGBA) {
         fill(jsRound(x), jsRound(y), Double(w), Double(h), c)
     }
 
-    func blit(_ s: Surface, _ dx: Int, _ dy: Int) { blitScaled(s, dx, dy, s.w, s.h) }
+    @inlinable public func blit(_ s: Surface, _ dx: Int, _ dy: Int) { blitScaled(s, dx, dy, s.w, s.h) }
 
-    func blitScaled(_ s: Surface, _ dx: Int, _ dy: Int, _ dw: Int, _ dh: Int, alpha: Double = 1) {
+    @inlinable public func blitScaled(_ s: Surface, _ dx: Int, _ dy: Int, _ dw: Int, _ dh: Int, alpha: Double = 1) {
         for y in 0..<dh {
             let ty = dy + y + oy
             if ty < 0 || ty >= h { continue }
@@ -61,7 +64,7 @@ final class Surface {
     }
 
     /// drawImage under translate(cx,cy) · rotate(a) · scale(flip ? -1 : 1, 1), image at (-ax,-ay)
-    func blitRotated(_ s: Surface, _ cx: Int, _ cy: Int, _ a: Double, flip: Bool, ax: Double, ay: Double) {
+    @inlinable public func blitRotated(_ s: Surface, _ cx: Int, _ cy: Int, _ a: Double, flip: Bool, ax: Double, ay: Double) {
         let ca = cos(a), sa = sin(a)
         let r = Int((Double(s.w * s.w + s.h * s.h)).squareRoot()) + 2
         for py in (cy - r)...(cy + r) {
@@ -82,10 +85,10 @@ final class Surface {
         }
     }
 
-    func clear(_ c: RGBA) { for i in pix.indices { pix[i] = c } }
+    @inlinable public func clear(_ c: RGBA) { for i in pix.indices { pix[i] = c } }
 }
 
-let FONT: [Character: [String]] = [
+public let FONT: [Character: [String]] = [
     "0": ["111", "101", "101", "101", "111"], "1": ["010", "110", "010", "010", "111"],
     "2": ["111", "001", "111", "100", "111"], "3": ["111", "001", "111", "001", "111"],
     "4": ["101", "101", "111", "001", "001"], "5": ["111", "100", "111", "001", "111"],
@@ -114,8 +117,8 @@ let FONT: [Character: [String]] = [
     ">": ["100", "010", "001", "010", "100"], "=": ["000", "111", "000", "111", "000"], "#": ["101", "111", "101", "111", "101"],
 ]
 
-@discardableResult
-func text5(_ g: Surface, _ str: String, _ x: Double, _ y: Double, _ color: RGBA = 0xFFFF_FFFF, _ scale: Int = 1, alpha: Double = 1) -> Double {
+@discardableResult @inlinable
+public func text5(_ g: Surface, _ str: String, _ x: Double, _ y: Double, _ color: RGBA = 0xFFFF_FFFF, _ scale: Int = 1, alpha: Double = 1) -> Double {
     var cx = jsRound(x)
     let yy = jsRound(y)
     let sc = Double(scale)
@@ -131,11 +134,11 @@ func text5(_ g: Surface, _ str: String, _ x: Double, _ y: Double, _ color: RGBA 
     return cx
 }
 
-func textWidth(_ str: String, _ scale: Int = 1) -> Double { Double(str.count * 4 * scale - scale) }
+@inlinable public func textWidth(_ str: String, _ scale: Int = 1) -> Double { Double(str.count * 4 * scale - scale) }
 
 /// the web's text(s, x, y, size, col, glow, align): a monospace line at px
 /// size ~5*scale, x anchored by align, y the baseline
-func text(_ g: Surface, _ str: String, _ x: Double, _ y: Double, _ size: Double, _ col: RGBA, align: String = "center", alpha: Double = 1) {
+@inlinable public func text(_ g: Surface, _ str: String, _ x: Double, _ y: Double, _ size: Double, _ col: RGBA, align: String = "center", alpha: Double = 1) {
     let scale = max(1, Int((size / 5).rounded()))
     let w = textWidth(str, scale)
     let x0 = align == "left" ? x : align == "right" ? x - w : x - w / 2
@@ -143,7 +146,7 @@ func text(_ g: Surface, _ str: String, _ x: Double, _ y: Double, _ size: Double,
 }
 
 /// a soft radial darkening/tint over a rect (the canvas radialGradient fills)
-func radial(_ g: Surface, _ cx: Double, _ cy: Double, _ r0: Double, _ r1: Double, _ col: RGBA, _ a1: Double, w: Int, h: Int) {
+@inlinable public func radial(_ g: Surface, _ cx: Double, _ cy: Double, _ r0: Double, _ r1: Double, _ col: RGBA, _ a1: Double, w: Int, h: Int) {
     for y in 0..<h { for x in 0..<w {
         let d = ((Double(x) + 0.5 - cx) * (Double(x) + 0.5 - cx) + (Double(y) + 0.5 - cy) * (Double(y) + 0.5 - cy)).squareRoot()
         if d <= r0 { continue }

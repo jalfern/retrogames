@@ -6,6 +6,7 @@
 
 import Foundation
 import GauntletCore
+import RetroKit
 
 func load(_ p: String) throws -> Data { try Data(contentsOf: URL(fileURLWithPath: p)) }
 
@@ -15,8 +16,7 @@ case "trace":
     guard args.count >= 3 else { print("usage: gauntlet-trace trace <rec.json> <out.trace.json>"); exit(2) }
     let rec = try Recording(data: load(args[1]))
     let (states, mm) = replay(rec)
-    try writeTrace(states: states, game: rec.game, seed: rec.seed, ticks: rec.ticks, recName: URL(fileURLWithPath: args[1]).lastPathComponent)
-        .replacingOccurrences(of: "\"players\":1", with: "\"players\":\(rec.players)")
+    try writeTrace(states: states, game: rec.game, seed: rec.seed, players: rec.players, ticks: rec.ticks, excludes: ["fx"], recName: URL(fileURLWithPath: args[1]).lastPathComponent)
         .write(toFile: args[2], atomically: true, encoding: .utf8)
     print("wrote \(args[2]) (\(rec.ticks) ticks)\(mm.map { "; recorded hash first differs at tick \($0)" } ?? "; every recorded hash matches")")
 case "race": // race <rec.json> <trace.json>

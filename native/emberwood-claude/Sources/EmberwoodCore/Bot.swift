@@ -9,6 +9,7 @@
 // the fuzz runs).
 
 import Foundation
+import RetroKit
 
 // MARK: - solver.js: tilePath over the bot's view of the world
 

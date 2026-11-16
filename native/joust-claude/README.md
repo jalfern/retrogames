@@ -44,10 +44,11 @@ Porting rules that keep the traces green:
 - JS `Math.round` is not Swift's `.rounded()`. JS rounds ties toward +∞; use
   `jsRound`. The hash uses ToInt32/`Math.imul` (`&*` on `Int32`).
 - `Math.sin/cos` are V8's own: fdlibm as clang compiles it, with fused
-  multiply-adds (`FDLibm.swift`, from the Gauntlet port). It is bit-exact
-  against Node on 1M+ inputs. Darwin's libm differs in the last place on
-  about 3% of inputs. Joust's traces never caught it, but Gauntlet's planner
-  race did.
+  multiply-adds (RetroKit's `jsSin`/`jsCos`). Darwin's libm differs in the
+  last place on about 3% of inputs. Joust's traces never caught it, but
+  Gauntlet's planner race did.
+- The rules all ports share (V8 math, toFixed, JSONDecoder, for…of, optional
+  keys) are in [`../RetroKit/README.md`](../RetroKit/README.md).
 - Trace quirks: a missing path equals `null`, an empty array is `[]`, `pending`
   is `null` or `{reason, t}`, and `segs.N.crumble` exists only on crumble ledges.
 
@@ -66,15 +67,21 @@ on the 27 SDKs (a no-scene app traps at launch).
 
 ## Layout
 
-- `Sources/JoustCore/`: the sim, waves, planner and trace codec. It has no UIKit.
+- [`../RetroKit`](../RetroKit/README.md): what the ports share — JS math,
+  the trace codec and recording reader, the Surface framebuffer + pixel font
+  (all `RetroKit`), and the Synth engine, seat Controls and selfcheck runner
+  (`RetroKitApp`). SwiftPM and the Xcode project both use it as a local package.
+- `Sources/JoustCore/`: the sim, waves, planner and the Joust trace fold
+  (`flatten`, recording → input). It has no UIKit.
   SwiftPM (`Package.swift`) builds it for the Mac CLI, and the Xcode target
   compiles the same folder directly (a synchronized group).
 - `Sources/joust-trace/`: the Mac CLI (`check`, `trace`, `autopilot`).
 - `App/`: the shell.
   - `GameViewController`: screens, 60 Hz fixed step, paint, events.
-  - `Art`: art.js in a 256×224 software framebuffer, scaled with nearest-neighbour.
-  - `Synth`: the AudioController voices + sounds.js recipes + the march.
-  - `Controls`: game controllers.
+  - `Art`: art.js in a 256×224 software framebuffer (RetroKit's `Surface`),
+    scaled with nearest-neighbour.
+  - `Synth`: sounds.js recipes + the march on RetroKit's `SynthEngine`.
+  - `Controls`: Joust's mapping for RetroKit's two-seat `Controls`.
 - `scripts/autopilot.mjs`: the web side of the autopilot race.
 
 ## Controls
@@ -95,7 +102,8 @@ on the 27 SDKs (a no-scene app traps at launch).
 ## Icons
 
 `tools/make-icons.sh` paints every icon with the game's own art code
-(`App/Art.swift`) and writes `App/Assets.xcassets`:
+(`App/Art.swift`, built against RetroKit) and writes `App/Assets.xcassets`
+(or the folder given as its argument):
 - the iOS 1024² icon;
 - the tvOS layered parallax icon (Back: sky, lava, ledges, hand; Front: the rider);
 - the Top Shelf and Top Shelf Wide banners.

@@ -4,6 +4,7 @@
 // hit flash. No image assets.
 
 import Foundation
+import RetroKit
 
 enum Sprites {
     private static var cache: [String: [Surface]] = [:]

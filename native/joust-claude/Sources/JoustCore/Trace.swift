@@ -1,4 +1,5 @@
-// retrogames-trace/v1 for the Swift port (spec: scripts/lib/trace.mjs).
+// The Joust flatten + recording fold for retrogames-trace/v1; the codec
+// itself (TV, q, writeTrace, compare, the recording reader) is RetroKit's.
 //
 // flatten() mirrors flattenState() over the Game object graph: dotted paths,
 // numbers quantized with Math.round(v * 1000), empty arrays recorded as [],
@@ -7,30 +8,7 @@
 // the decoder treats a missing path as null on both sides.
 
 import Foundation
-
-public enum TV: Equatable, CustomStringConvertible {
-    case null
-    case num(Int64)
-    case bool(Bool)
-    case str(String)
-    case emptyArray
-
-    public var description: String { json }
-    public var json: String {
-        switch self {
-        case .null: return "null"
-        case let .num(n): return String(n)
-        case let .bool(b): return b ? "true" : "false"
-        case let .str(s): return "\"" + s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
-        case .emptyArray: return "[]"
-        }
-    }
-}
-
-public let QUANT = 1000.0
-
-@inline(__always) func q(_ v: Double) -> TV { v.isFinite ? .num(Int64(jsRound(v * QUANT))) : .null }
-@inline(__always) func q(_ v: Int) -> TV { .num(Int64(v) * 1000) }
+import RetroKit
 
 public func flatten(_ gs: Game) -> [String: TV] {
     var out: [String: TV] = [:]
@@ -93,43 +71,28 @@ public func flatten(_ gs: Game) -> [String: TV] {
 // ------------------------------------------------------------ recordings ----
 
 public struct Recording {
-    public let game: String
-    public let seed: Int
-    public let players: Int
-    public let ticks: Int
-    public let pads: [[[String: Bool]]] // [slot][tick] -> pad
+    public let file: RecordingFile
+    public var game: String { file.game }
+    public var seed: Int { file.seed }
+    public var players: Int { file.players }
+    public var ticks: Int { file.ticks }
     public let hashes: [(t: Int, h: UInt32)]
 
     public init(data: Data) throws {
-        guard let o = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw TraceError.bad("recording is not an object") }
-        guard (o["format"] as? String) == "retrogames-rec/v1" else { throw TraceError.bad("not retrogames-rec/v1") }
-        game = o["game"] as? String ?? ""
-        seed = (o["seed"] as? NSNumber)?.intValue ?? 0
-        players = (o["players"] as? NSNumber)?.intValue ?? 1
-        ticks = (o["ticks"] as? NSNumber)?.intValue ?? 0
-        let slots = o["slots"] as? [[String: Any]] ?? []
-        pads = slots.map { s in
-            (s["pads"] as? [[String: Any]] ?? []).map { p in p.compactMapValues { ($0 as? NSNumber)?.boolValue } }
-        }
-        hashes = (o["hashes"] as? [[String: Any]] ?? []).map { ((($0["t"] as? NSNumber)?.intValue ?? 0), (($0["h"] as? NSNumber)?.uint32Value ?? 0)) }
+        file = try RecordingFile(data: data)
+        hashes = file.hashes.map { ($0.t, UInt32($0.h) ?? 0) }
     }
 
     /// The pad -> sim fold, same as scripts/goldentrace.mjs's joust adapter.
-    public func input(at t: Int, players2: Int) -> Input {
-        let p1 = pads.count > 0 && t < pads[0].count ? pads[0][t] : [:]
-        var inp = Input(l: p1["left"] ?? false, r: p1["right"] ?? false, f: p1["a"] ?? false)
-        if pads.count > 1 && t < pads[1].count {
-            let p2 = pads[1][t]
-            inp.l2 = p2["left"] ?? false; inp.r2 = p2["right"] ?? false; inp.f2 = p2["a"] ?? false
+    public func input(at t: Int) -> Input {
+        let p1 = file.pad(0, t)
+        var inp = Input(l: p1.left, r: p1.right, f: p1.a)
+        if file.slots.count > 1 && t < file.slots[1].pads.count {
+            let p2 = file.pad(1, t)
+            inp.l2 = p2.left; inp.r2 = p2.right; inp.f2 = p2.a
         }
-        _ = players2
         return inp
     }
-}
-
-public enum TraceError: Error, CustomStringConvertible {
-    case bad(String)
-    public var description: String { if case let .bad(s) = self { return s }; return "trace error" }
 }
 
 /// Replay a recording pad-only; returns the flattened state after every tick.
@@ -140,7 +103,7 @@ public func replay(_ rec: Recording) -> (states: [[String: TV]], hashMismatch: I
     let want = Dictionary(rec.hashes.map { ($0.t, $0.h) }, uniquingKeysWith: { a, _ in a })
     var mismatch: Int? = nil
     for t in 0..<rec.ticks {
-        gs.step(rec.input(at: t, players2: gs.players2))
+        gs.step(rec.input(at: t))
         gs.events.removeAll() // the shell drains it every tick; never state
         var flat = flatten(gs)
         let h = gs.stateHash()
@@ -151,75 +114,7 @@ public func replay(_ rec: Recording) -> (states: [[String: TV]], hashMismatch: I
     return (states, mismatch)
 }
 
-// ---------------------------------------------------------- trace writer ----
-
+/// retrogames-trace/v1 for a replayed recording (`events` excluded)
 public func writeTrace(states: [[String: TV]], rec: Recording, recName: String) -> String {
-    var keys = Set<String>()
-    for s in states { keys.formUnion(s.keys) }
-    let fields = keys.sorted()
-    let idx = Dictionary(uniqueKeysWithValues: fields.enumerated().map { ($1, $0) })
-    var prev: [String: TV] = [:]
-    var rows: [String] = []
-    rows.reserveCapacity(states.count)
-    for m in states {
-        var d: [String] = []
-        for k in fields {
-            let v = m[k] ?? .null
-            if v != (prev[k] ?? .null) { d.append("\(idx[k]!),\(v.json)"); prev[k] = v }
-        }
-        rows.append("[" + d.joined(separator: ",") + "]")
-    }
-    let fieldsJSON = "[" + fields.map { TV.str($0).json }.joined(separator: ",") + "]"
-    return """
-    {"format":"retrogames-trace/v1","game":"\(rec.game)","rec":"\(recName)","build":"swift-port","seed":\(rec.seed),"players":\(rec.players),"ticks":\(rec.ticks),"excludes":["events"],"quant":1000,"fields":\(fieldsJSON),"consts":{},"rows":[\(rows.joined(separator: ","))]}
-
-    """
-}
-
-// ------------------------------------------------- golden trace decoding ----
-
-func tv(_ any: Any?) -> TV {
-    guard let any, !(any is NSNull) else { return .null }
-    if let n = any as? NSNumber {
-        if CFGetTypeID(n) == CFBooleanGetTypeID() { return .bool(n.boolValue) }
-        return .num(n.int64Value)
-    }
-    if let s = any as? String { return .str(s) }
-    if let a = any as? [Any], a.isEmpty { return .emptyArray }
-    return .null
-}
-
-public struct Divergence {
-    public let tick: Int
-    public let field: String
-    public let golden: TV
-    public let port: TV
-}
-
-/// Compare port states against a golden trace; nil = every field of every tick matches.
-public func compare(golden data: Data, port: [[String: TV]]) throws -> (ticks: Int, divergence: Divergence?) {
-    guard let o = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-          (o["format"] as? String) == "retrogames-trace/v1" else { throw TraceError.bad("not retrogames-trace/v1") }
-    let fields = o["fields"] as? [String] ?? []
-    let consts = (o["consts"] as? [String: Any] ?? [:]).mapValues(tv)
-    let rows = o["rows"] as? [[Any]] ?? []
-    guard rows.count == port.count else { throw TraceError.bad("tick count: golden \(rows.count), port \(port.count)") }
-    var cur: [String: TV] = consts
-    for f in fields { cur[f] = .null }
-    for (t, row) in rows.enumerated() {
-        var i = 0
-        while i + 1 < row.count {
-            let fi = (row[i] as? NSNumber)?.intValue ?? 0
-            cur[fields[fi]] = tv(row[i + 1])
-            i += 2
-        }
-        let mine = port[t]
-        let keys = Set(cur.keys).union(mine.keys).sorted()
-        for k in keys {
-            let g = cur[k] ?? .null
-            let p = mine[k] ?? .null
-            if g != p { return (rows.count, Divergence(tick: t + 1, field: k, golden: g, port: p)) }
-        }
-    }
-    return (rows.count, nil)
+    writeTrace(states: states, game: rec.game, seed: rec.seed, players: rec.players, ticks: rec.ticks, excludes: ["events"], recName: recName)
 }

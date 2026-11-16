@@ -58,9 +58,9 @@ Porting rules that kept the traces green:
   always set.
 - `Math.round` ties go to +∞ (`jsRound`); the hash is `Math.imul` on Int32.
 - `Math.sin/cos` are V8's own: fdlibm as clang compiles it, with fused
-  multiply-adds (`FDLibm.swift`, from the Gauntlet port, bit-exact against
-  Node on 1M+ inputs). Darwin's libm differs in the last place on about 3% of
-  inputs.
+  multiply-adds (RetroKit's `jsSin`/`jsCos`). Darwin's libm differs in the
+  last place on about 3% of inputs.
+- The rules all ports share are in [`../RetroKit/README.md`](../RetroKit/README.md).
 
 ## Build and run
 
@@ -76,7 +76,11 @@ on the 27 SDKs.
 
 ## Layout
 
-- `Sources/EmberwoodCore/`: sim, world, pad fold, trace codec, demo replay,
+- [`../RetroKit`](../RetroKit/README.md): what the ports share — JS math
+  (`jsHypot`, `jsRound`, V8's sin/cos), the trace codec and recording reader,
+  the Synth engine, seat Controls and the selfcheck runner. SwiftPM and the
+  Xcode project both use it as a local package.
+- `Sources/EmberwoodCore/`: sim, world, pad fold, trace fold (`flatten`), demo replay,
   save/continue. No UIKit; SwiftPM builds it for the Mac CLI and the Xcode
   target compiles the same folder (synchronized group).
 - `Sources/emberwood-trace/`: the Mac CLI (`check`, `trace`, `demo`).
@@ -84,15 +88,17 @@ on the 27 SDKs.
   - `GameViewController`: SpriteKit scene, modes, 60 Hz fixed step, HUD,
     shop/message/death/win overlays, autosave, selfcheck.
   - `Stage`: the diorama (see below).
-  - `Synth`: AudioController voices, the fx→sound map, the vale/deep/ashfell
-    beds with dum/tek percussion, ducking and the combat-heat tempo.
-  - `Controls`: game controllers, Siri Remote, on-screen pad, keyboard.
+  - `Synth`: the fx→sound map and the vale/deep/ashfell beds with dum/tek
+    percussion, on RetroKit's `SynthEngine` (ducking, the combat-heat tempo).
+  - `Controls`: Emberwood's one-seat mapping (controllers, Siri Remote,
+    on-screen pad, keyboard) for RetroKit's `Controls`.
   - `Art/`: the web's own `art.js` textures, painted in Chrome by
     `scripts/exportart.mjs` (rerun after an art change).
   - `Resources/emberwood-demo.json`: the recorded attract run + per-tick hashes.
   - `Assets.xcassets`: tvOS parallax icon (back: dusk + treeline, middle:
     embers, front: Ash), top shelf banners, iOS AppIcon — all from App/Art by
-    `scripts/icons.py`. Every native port ships icons.
+    `scripts/icons.py` (the catalog itself is written by RetroKit's
+    `scripts/brandassets.py`). Every native port ships icons.
 - `scripts/`: `genworld.mjs`, `demo.mjs`, `exportart.mjs`, `icons.py`.
 
 ## Controls

@@ -7,6 +7,8 @@
 import UIKit
 import GameController
 import CoreHaptics
+import RetroKit
+import RetroKitApp
 
 #if os(tvOS)
 typealias BaseViewController = GCEventViewController
@@ -19,7 +21,7 @@ final class GameViewController: BaseViewController {
 
     private let fb = Surface(256, 224)
     private let stage = UIView()
-    private let controls = Controls()
+    private let controls = Controls.joust()
     private let synth = Synth.shared
     private var link: CADisplayLink?
 
@@ -123,32 +125,14 @@ final class GameViewController: BaseViewController {
         let d = UserDefaults.standard
         let n = d.integer(forKey: "start")
         if n == 1 || n == 2 { startPlay(n, watch: d.bool(forKey: "watch")) }
-        if d.bool(forKey: "selfcheck") {
-            checkLines = ["SELF-CHECK RUNNING..."]
-            DispatchQueue.global(qos: .userInitiated).async {
-                let lines = Self.selfCheck()
-                for l in lines { NSLog("JOUST SELFCHECK %@", l); print("JOUST SELFCHECK \(l)") }
-                fflush(stdout)
-                DispatchQueue.main.async { self.checkLines = lines }
-            }
-        }
+        SelfCheck.startIfAsked(tag: "JOUST", check: Self.selfCheck) { self.checkLines = $0 }
     }
 
     static func selfCheck() -> [String] {
-        guard let dir = Bundle.main.resourceURL?.appendingPathComponent("traces"),
-              let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return ["NO BUNDLED TRACES"] }
-        var out: [String] = []
-        for n in names.filter({ !$0.hasSuffix(".trace.json") }).sorted() {
-            do {
-                let rec = try Recording(data: Data(contentsOf: dir.appendingPathComponent(n)))
-                let (states, mm) = replay(rec)
-                let g = try Data(contentsOf: dir.appendingPathComponent(n.replacingOccurrences(of: ".json", with: ".trace.json")))
-                let (ticks, d) = try compare(golden: g, port: states)
-                if let d { out.append("DIVERGE \(n) TICK \(d.tick) \(d.field) GOLDEN \(d.golden) PORT \(d.port)") }
-                else { out.append("MATCH \(n) \(ticks)/\(ticks) TICKS" + (mm == nil ? "" : " HASH DIFF \(mm!)")) }
-            } catch { out.append("ERROR \(n) \(error)") }
+        SelfCheck.goldens { _, data in
+            let (states, mm) = replay(try Recording(data: data))
+            return SelfCheck.Run(states: states, hashMismatch: mm)
         }
-        return out
     }
 
     private func setScreen(_ s: Screen) {
@@ -295,7 +279,7 @@ final class GameViewController: BaseViewController {
                     handleEvents(demo, audible: false)
                     attractT += dt
                 } else if screen == .play, let g = gs, g.end == nil {
-                    let s = controls.seats
+                    let s = controls.held
                     let inp = watching ? g.plan() : Input(l: s[0].left, r: s[0].right, f: s[0].flap, l2: s[1].left, r2: s[1].right, f2: s[1].flap)
                     g.step(inp)
                     handleEvents(g, audible: true)

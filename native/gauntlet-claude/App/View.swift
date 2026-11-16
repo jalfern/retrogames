@@ -8,6 +8,7 @@
 // health, keys, gold, the 2P card) and the HUD band (hall, 1UP, HI, lives).
 
 import Foundation
+import RetroKit
 
 let VWI = 256, VHI = 200, PW = 64, HT = 40, CW = VWI + PW, CH = VHI + HT
 

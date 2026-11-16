@@ -9,6 +9,7 @@
 //  - the hash is a string (toFixed + join + FNV-1a over UTF-16), so jsToFixed.
 
 import Foundation
+import RetroKit
 
 public struct CFG {
     public static let turn = 0.042, walk = 0.045, radius = 0.28

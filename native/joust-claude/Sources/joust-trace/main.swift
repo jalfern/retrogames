@@ -7,6 +7,7 @@
 
 import Foundation
 import JoustCore
+import RetroKit
 
 func load(_ p: String) throws -> Data { try Data(contentsOf: URL(fileURLWithPath: p)) }
 
@@ -29,7 +30,7 @@ case "check", nil:
         let rec = try Recording(data: load("\(dir)/\(n)"))
         let (states, mm) = replay(rec)
         let golden = "\(dir)/\(n.replacingOccurrences(of: ".json", with: ".trace.json"))"
-        let (ticks, d) = try compare(golden: load(golden), port: states)
+        let (ticks, _, d) = try compare(golden: load(golden), port: states)
         let fields = states.last?.count ?? 0
         if let d {
             bad += 1

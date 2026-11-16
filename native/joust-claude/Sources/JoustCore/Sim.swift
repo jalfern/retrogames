@@ -8,6 +8,7 @@
 // will say so.
 
 import Foundation
+import RetroKit
 
 public let W = 256.0
 public let H = 224.0
@@ -613,17 +614,4 @@ public func wrapDelta(_ d0: Double) -> Double {
 
 public func nextEggKind(_ kind: String?) -> String? {
     kind == "bounder" ? "hunter" : (kind == "hunter" ? "shadow" : nil)
-}
-
-/// JavaScript Math.round: nearest integer, ties toward +infinity.
-public func jsRound(_ x: Double) -> Double {
-    if !x.isFinite { return x }
-    let f = x.rounded(.down)
-    return x - f >= 0.5 ? f + 1 : f
-}
-
-/// ECMAScript ToInt32 for an integral double.
-func toInt32(_ v: Double) -> Int32 {
-    let m = v.truncatingRemainder(dividingBy: 4294967296)
-    return Int32(truncatingIfNeeded: Int64(m))
 }

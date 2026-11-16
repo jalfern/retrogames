@@ -7,6 +7,7 @@
 
 import Foundation
 import EmberwoodCore
+import RetroKit
 
 func load(_ p: String) throws -> Data { try Data(contentsOf: URL(fileURLWithPath: p)) }
 

@@ -7,6 +7,7 @@
 // Parity: check.sh races both against planner.js tick for tick.
 
 import Foundation
+import RetroKit
 
 extension Game {
     func cellWalk(_ c: Int, _ r: Int) -> Bool {
