@@ -82,10 +82,24 @@ const readJSON = (p) => JSON.parse(readFileSync(p, 'utf8'))
 
 // #527 item 5 — a committed stamp must name a fetchable commit; `unknown` is
 // honest for captures taken on a branch whose commit will not survive the squash.
+// #2501: nightly CI checks out with depth-1, so commits older than HEAD are not
+// objects on the runner and every historical golden stamp reads "unfetchable"
+// there (the audit only ever ran on a full-history box before). Ask the remote
+// for exactly that commit once, then re-check — a stamp that exists nowhere is
+// still unfetchable, so the audit keeps its teeth. Results cached (the same two
+// stamps cover the whole inventory).
+const stampCache = new Map()
 function stampOk(stamp) {
     if (stamp === 'unknown') return true
-    try { execFileSync('git', ['cat-file', '-e', `${stamp}^{commit}`], { cwd: join(here, '..'), stdio: 'ignore' }); return true }
-    catch { return false }
+    if (stampCache.has(stamp)) return stampCache.get(stamp)
+    const has = () => { try { execFileSync('git', ['cat-file', '-e', `${stamp}^{commit}`], { cwd: join(here, '..'), stdio: 'ignore' }); return true } catch { return false } }
+    let okv = has()
+    if (!okv) {
+        try { execFileSync('git', ['fetch', '--depth=1', 'origin', stamp], { cwd: join(here, '..'), stdio: 'ignore' }) } catch { /* gone */ }
+        okv = has()
+    }
+    stampCache.set(stamp, okv)
+    return okv
 }
 
 function replay(file) {
