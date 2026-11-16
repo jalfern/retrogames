@@ -1,60 +1,64 @@
-# STATE — RetroGames forge
+# STATE — session 308 slot b close-out
 
-_Updated 2026-11-16 ~20:05 UTC by slot a (forge, `retrogames-forge-smashtv-no-mercy`), end of shift._
+## Shipped this session
+- **#2503 → PR #2506 → 6de72c6** HOMEBODY ice-cream truck — the lot's 4th
+  hour-scheduled citizen. Resumed the dead lane's pushed corpse (d7594b1 sim +
+  b0468f7 view/gates) rather than starting a second issue. Verified before merge:
+  peoplecheck 620/0, the documented mutant reproduced independently (order gate
+  `!coneOrderOk → false` gives exactly 618/2 — the two refusal gates), lint gates
+  + build green. Live on www: Homebody chunk `index-CZNVN50I.js` carries the cone
+  law. Issue closed, `shipped`.
+- **Main fixed (#2498, #601 freeze lifted by repair, not luck).** Three layers:
+  1. goldentracecheck (#2501/#2502, merged pre-session at 277c8a6) verified green
+     on CI in run 43913176777 full-static (89/89 + 94/94, "NIGHTLY GREEN").
+  2. That run then lost full-smoke on excitebike `PILES IN!` — diagnosed as a
+     harness race, **deterministic on Mac too**: the chain seats in sim state two
+     polls before the HUD div gets the text; the PACK loop exited on the state
+     detection. Fixed in **#2512 → 7fa8438**; exciteplay 46/46 green.
+  3. Gauntlet Y-seat flake in the same nightly: watchcheck 316/316 locally — the
+     #1722 late-seat family, deliberately untouched (advisory, one-rerun rule).
+  Doomed rerun 43941588463 (pre-fix sha e6de70f) cancelled; **nightly
+  43947467784 at fixed tip 7fa8438 is in flight** — on green, heal closes #2498.
 
-## Slot status
-- **SMASH TV #2491 is SHIPPED.** Main gives **no spawn invulnerability** — first spawn and
-  every respawn land exposed, `INVULN` is 0 at every spawn site. PR **#2492** squash-merged as
-  **`30ea66d`** (5 files, +552/−108; verified present on current tip `e493001`, sim.js has the
-  `#2491` zero-shield markers, planner has the lane-sound doctrine) and live at
-  https://jalfern.com/retrogames/smash-tv. Worktree removed; issue closed completed + `shipped`.
-- No game-code goal for slot a right now — take the next unswept ladder item (#2449 MAGIC
-  CARPET has 3 items left, 4/7; the slot b Britannia lane owns #2494's follow-ups).
-- **Main is GREEN** (`scripts/main-ok.sh`): the only recent nightly failure (43898004660) was
-  `full-static`/goldentrace (#2501), already fixed on main by #2502. Two nightly reruns on
-  `e6de70f` were in flight at this close (43940658280, 43941588463) — next lane, confirm one
-  goes green and park; the umbrella #2498 can then close.
+## Board
+- Other lanes today: SMASH TV #2492 → 30ea66d (slot a, live), MAGIC CARPET
+  #2505, VIPER PIT #2500, MISSILE BATTLE #2509, slot-a STATE 96b4dfc.
+- #2503 carried no new polish issue — it is a stage of the existing HOMEBODY QA
+  pass #2474; Britannia polish #2499 stands.
 
-## What shipped this shift
-- **SMASH TV — zero spawn invulnerability (#2491, PR #2492, merged `30ea66d`).**
-  Branch commits `562861f` (game: shield zeroed everywhere, pin flips), `5d8e382` (seed-4
-  corner stall: lane-sound duel doctrine), `1873948` (slack-1 camping: **open-door landing**
-  `landX` — respawn lands on the nearest clear cell of the spawn row, body-physics not mercy;
-  spawn-lean parking; dry-tank reload), `38777c8` (honest deathless recount {7,8}).
-  Proof floor: sweep **9/9 solo, 9/9 co-op, slack 0–2 win, deathless {7,8}**;
-  `npm run smashcheck` PASS 766 / `--mutate` PASS 817 — 4 mercyBack mutants (restore the
-  shield any way you like, the pins see it) + 3 doctrine mutants (lane-sound deaf, loiter
-  under spawns, reload never fires) all die; new deterministic dropped-barrel seat-law probe.
-  `npm run smashplay` **42/42** live Chrome incl. respawn-under-fire gates (ring east of
-  spawn). The zero-mercy law now matches the rest of the arcade (AGENTS.md).
-  QA polish pass filed: **#2507** (SMASH TV zero-mercy playtest polish).
+## Next queued (step-2 ladder, recompute at run start)
+- Nothing invented. Known big-builds waiting for their own claim: Britannia
+  enterable cottages (README gap 1, needs AVATAR.EXE terrain table), HOMEBODY
+  day/night tail (work/Ivy/news life).
 
-## Open questions for Jon
-- **#2487** (jonq v2 CI `JON_KEY` Actions secret) still AWAITING — deadline 2026-11-18;
-  default B = stays dormant.
+## Open questions
+- jonq #2487 (lane:platform) and #2495 (lane:qa) AWAITING — not this lane's;
+  nothing new filed (main-fix was harness-only, taken without asking per 5a).
 
-## Next goals
-1. Slot a: **next ladder item** at the next scheduled kick. Best candidates as of this close:
-   #2449 MAGIC CARPET item 2 (`#SNAKE` 3×2 body, 20-tick tail — item 1 shipped in #2484),
-   or #2483 MISSILE BATTLE items 5–6 (dome shatter VFX, four-tone victory fanfare — 4/6
-   shipped). Britannia cottages (#2494) is slot b's.
-2. QA lane: **#2507** SMASH TV zero-mercy playtest polish (barrel telegraph readability,
-   respawn-camping CPU at low seeds, attract copy mentions "no mercy"?).
-3. Confirm a nightly rerun goes green on main and close the umbrella **#2498** (its only real
-   failure — goldentrace #2501 — is already fixed by #2502).
+## Catches for the next session (each cost probes this shift)
+- **Donor `node_modules` can die mid-session.** This worktree's node_modules was
+  a symlink into the SMASH TV lane's tree; that lane cleaned up and left my
+  playwright missing mid-diagnosis. Fix: `rm` the symlink, own `npm ci`
+  (~3 min). Prefer real node_modules per lane worktree.
+- **A dead dev server keeps its port** — after node_modules vanished, vite on
+  :5178 stayed up answering 500s. `lsof -ti :<port>` → confirm it's YOUR worktree's
+  vite → kill, restart.
+- **HUD-write races**: any `*play` gate that exits on a STATE condition and reads
+  DOM text inside the same loop races the step-boundary render write (excitebike
+  PACK was one; the pattern may live elsewhere — check here first when a similar
+  gate goes red deterministically).
+- **`gh pr merge` "Base branch was modified" can be a lie** — the first attempt
+  of #2512 printed the error yet actually merged; `gh pr view --json state`
+  before retrying.
+- **main-ok reads `cancelled` as not-red.** Cancelling a doomed pre-fix nightly
+  legitimately lifts the freeze ONLY with a fixed-tip run in flight — say so on
+  #2498 (done) so the board matches reality.
+- Nightly heal only closes #2498 on a GREEN full suite incl. full-smoke — the
+  in-flight run must pass gauntlet; if gauntlet flakes again there, rerun it
+  once and move on.
 
-## Harness health (do not relearn these)
-- `main-ok.sh` green. Last nightlies: 11-15 both green; the 11-16 red was `full-static`
-  (goldentrace depth-1 CI checkout, #2501) fixed by #2502 — verified in `main` history.
-- Lesson from this close: verify failure claims against the actual run/jobs before filing
-  issues — a panic-threaded flake narrative produced one bogus issue (#2511, closed with
-  retraction). Check `gh run view <id> --json jobs` first.
-- Slot-a worktree removed cleanly; `npm run dev -- --port 5173 --strictPort` free again.
-- smashcheck's mercyBack anchors live on exact sim.js comment strings — rewording `#2491`
-  comments in sim.js breaks `--mutate`.
-
-## Recent shipped
-`e493001` MISSILE BATTLE two-tone refusal (#2509) · `4e92a92` MAGIC CARPET deep-arc wizards
-(#2505) · `fba669e` VIPER PIT net-select polish (#2500) · `30ea66d` **SMASH TV no spawn
-invulnerability — NO MERCY (#2491/#2492)** · `e6de70f` STATE (slot b) · `277c8a6` goldentrace
-CI fix (#2502) · `3a7edb1` BRITANNIA cottage substance (#2497).
+## Lanes clean
+- Main checkout detached at origin/main (this STATE commit's parent).
+- Forge worktree `~/Dev/retrogames-forge-plaicraft-sweep` detached at 7fa8438,
+  branch pruned, tree clean (kept for its installed node_modules — no symlinks).
+- Slot b dev server (:5178) stopped.
