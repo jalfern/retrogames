@@ -38,6 +38,7 @@ import {
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court — one pad button, two orders
     scheduleMeals, MEAL_WINDOW, SPAT_CD,   // #2244: the meal bells — the F1 cheat re-seeds today's hours
     MEAL_TIMBRE, sharedChord, nightLevel,   // #2264: per-bell motifs, the rotating table chord, one night curve
+    ringTruck, ICE_TIMBRE, CONE_PRICE, coneOrderOk,   // #2503: the ice-cream truck — the jingle table, the price, the order gate, the F1/harness ring
     DEF, yarnOrderOk,   // #2256: the yarn ball — cat-only piece, honest refusal on tap
     binOrderOk,   // #2303: the bin — the lot's chore, honest refusal out of season
     NEED_HINT,   // #2253: the amber prompt names the fix
@@ -67,6 +68,7 @@ const MESSAGES = [
     'Morning brings the paper — the boy sweeps past and today\'s edition waits on the step. Tap it for a laugh.',
     'THE BELLS RING THREE TIMES A DAY — a warm plate waits by the kitchen. Tap to eat; eat together and BONDS rise.',
     'GARBAGE DAY EVERY THIRD DAY — the eve says WHEEL IT OUT, dawn sends the truck. Miss the curb and the lot gets skipped.',
+    'THE ICE CREAM MAN PASSES EVERY AFTERNOON — when the jingle comes, a cone waits at the curb (§2 from the till). Tap it before the truck moves on.',
     'Fern the neighbour wanders in by day — chat fills the blue bar.',
     'CHAT builds BONDS — Fern at FAMILY visits sooner and lingers. Neglect cools them.',
     'Ivy shops the market — chat grows HER bond too. At FRIENDS she brings a basket; FAMILY adds honey-money.',
@@ -259,6 +261,26 @@ const HomebodyGame = () => {
                     case 'garbage-skipped':   // #2303: the truck drove past — the miss is SEEN: grey puff at the empty curb (the cold-plate doctrine)
                         audioController.playSweep(330, 196, 0.3, 'triangle', 0.04)
                         if (live) { say('THE TRUCK PASSED US BY'); burst(tilePx(e.c), tilePy(e.r) + 10, 7, '#9a958a', 1.4) }
+                        break
+                    case 'ice-truck': {   // #2503: the jingle rolls down the street — a music-box motif plays the table verbatim, pastel glints at the curb
+                        ICE_TIMBRE.forEach(([f, d, ms]) => setTimeout(() => audioController.playTone(f, d, 'triangle', 0.04), ms))
+                        if (live) { say('THE ICE CREAM MAN COMES'); burst(tilePx(e.c), tilePy(e.r) + 8, 8, '#ffd9e8', 2) }
+                        break
+                    }
+                    case 'ice-cream':   // #2503: the cone changed hands — a bright pop and a heart where it was caught
+                        audioController.playTone(1046, 0.06, 'triangle', 0.05)
+                        setTimeout(() => audioController.playTone(1318, 0.12, 'triangle', 0.05), 70)
+                        if (live) { say(`${e.name.toUpperCase()} GOT A CONE ♥`); heartBurst(e.x, e.y - 12) }
+                        break
+                    case 'kid-ice':   // #2503: the child beat the melting clock — the giggle climbs an octave higher than the adult's pop
+                        audioController.playTone(1318, 0.05, 'triangle', 0.05)
+                        setTimeout(() => audioController.playTone(1568, 0.05, 'triangle', 0.05), 60)
+                        setTimeout(() => audioController.playTone(2093, 0.14, 'triangle', 0.05), 120)
+                        if (live) { say(`${e.name.toUpperCase()} CHASED THE TRUCK DOWN ♥`); heartBurst(e.x, e.y - 12) }
+                        break
+                    case 'ice-gone':   // #2503: the truck moved on — a falling jingle tail and a pastel puff at the empty curb (the cold-plate doctrine, at ice-cream scale)
+                        audioController.playSweep(880, 523, 0.28, 'triangle', 0.04)
+                        if (live) { say('THE TRUCK MOVED ON'); burst(tilePx(e.c), tilePy(e.r) + 8, 6, '#ffd9e8', 1.4) }
                         break
                     case 'gift':   // #2143: the market basket lands — warm arpeggio, gold glints
                         audioController.playTone(523, 0.07, 'triangle', 0.05)
@@ -502,6 +524,9 @@ const HomebodyGame = () => {
                             : (gs.day + 1 === gs.collectionDay ? 'WHEEL IT OUT THIS EVENING — BEFORE DARK' : 'NO COLLECTION TONIGHT — THE TRUCK KEEPS ITS RHYTHM'))
                         return
                     }
+                }
+                if (DEF[it.id] && DEF[it.id].truckOnly) {   // #2503: the cone answers honestly — no truck, or no money for the treat
+                    if (!coneOrderOk(gs)) { say(gs.cone ? `THE TILL IS SHORT OF §${CONE_PRICE} FOR A CONE` : 'THE TRUCK IS NOT ON THE STREET'); return }
                 }
                 if (p.owner === 'human' && orderBusy(gs, p)) {   // #2470: an errand in flight keeps flying — this tap joins the list (queue-full speaks its own line)
                     cmdQueue(gs, p, { kind: 'use', it })
@@ -1040,6 +1065,7 @@ const HomebodyGame = () => {
                     pet: gs.pet ? { name: gs.pet.name, r: gs.pet.r, c: gs.pet.c, state: gs.pet.state, asleep: gs.pet.asleep, needs: { ...gs.pet.needs }, cd: Math.round(gs.pet.cd * 10) / 10, x: Math.round(gs.pet.x), y: Math.round(gs.pet.y) } : null,   // #2197
                     kid: gs.kid ? { name: gs.kid.name, r: gs.kid.r, c: gs.kid.c, state: gs.kid.state, asleep: gs.kid.asleep, needs: { ...gs.kid.needs }, cd: Math.round(gs.kid.cd * 10) / 10, x: Math.round(gs.kid.x), y: Math.round(gs.kid.y) } : null,   // #2203
                     paper: gs.paper ? { r: gs.paper.r, c: gs.paper.c } : null, paperDay: gs.paperDay,   // #2238: the route
+                    cone: gs.cone ? { r: gs.cone.r, c: gs.cone.c } : null, iceSerial: gs.iceSerial, iceDay: gs.iceDay, treats: gs.treats,   // #2503: the truck's stop and the cone ledger
                     meal: gs.meal ? { r: gs.meal.r, c: gs.meal.c, name: gs.mealName } : null, mealDay: gs.mealDay, mealSlot: gs.mealSlot, mealSerial: gs.mealSerial, mealEaten: gs.mealEaten.length,   // #2244: the bells
                     queues: gs.people.map((p) => p.queue.map((o) => (o.kind === 'use' ? o.it.id : o.kind))),   // #2470: the pending lists, head first
                     collapse: gs.people.map((_, pi) => (collapseCache.has(pi) ? COLLAPSE_FRAMES : 0)),   // #2474 item 4: which rows are ghosting (QA-visible, view-only)
@@ -1066,6 +1092,7 @@ const HomebodyGame = () => {
                 ringIvy: () => { if (gs) { gs.ivyAfter = Math.min(gs.ivyAfter, Math.floor(gs.hour)); gs.ivyGap = 0 } return 'Ivy rings soon' },   // #2143
                 ivyFamily: () => { if (gs) { gs.rel.ivy = Math.max(gs.rel.ivy, REL_EDGES[2] + 5); if (gs.ivy) gs.ivy.honey = true } return 'FAMILY' },   // #2240: the top tier for scenario legs (basket + honey + gold pulse) — a visitor already inside re-declares her jar
                 ringMeal: () => { if (gs) { if (gs.meal) { gs.items = gs.items.filter((x) => x !== gs.meal); gs.meal = null; gs.mealEaten = [] } if (gs.mealSlot >= 3) { gs.mealSlot = 0; scheduleMeals(gs) } const sl = gs.mealSlot; gs.mealAfter[sl] = Math.max(Math.floor(gs.hour), gs.hour - MEAL_WINDOW + 0.05) } return 'a bell is due' },   // #2244: ring any bell now (scenario setup, like ringIvy) — retires whatever plate sits so the taps order the fresh one, and the window opens wide even if the clock passed the slot
+                ringTruck: () => (gs ? ringTruck(gs) : 'no sim'),   // #2503: call the ice-cream man now (sim-owned scenario setup — retires whatever cone stands and opens a stop at the hour)
                 ivyHome: () => { if (gs && gs.ivy) { gs.ivy.state = 'leaving'; gs.ivy.path = null } },   // #2143: rig the next visit (scenario setup, like park/foul)
                 // #2070: rig the spat scenario — park the pair beside each
                 // other, both in the red; `thaw` lifts their tempers up.
@@ -1181,6 +1208,7 @@ const HomebodyGame = () => {
                     { label: 'RING IVY', run: () => { if (gs) { gs.ivyAfter = Math.min(gs.ivyAfter, Math.floor(gs.hour)); gs.ivyGap = 0 } return 'Ivy swings by soon' } },   // #2143
                 { label: 'DROP PAPER', run: () => { if (gs) { gs.paperDay = -1; gs.paperAfter = Math.min(gs.paperAfter, Math.floor(gs.hour)) } return gs ? 'the route is due — news hits the step' : 'no sim' } },   // #2238
                 { label: 'DROP MEAL', run: () => { if (gs) { if (gs.mealSlot >= 3) { gs.mealSlot = 0; scheduleMeals(gs) } const sl = gs.mealSlot; if (gs.hour < gs.mealAfter[sl]) gs.mealAfter[sl] = Math.floor(gs.hour) } return gs ? 'the bell is due — food hits the kitchen (unless one is already out)' : 'no sim' } },   // #2244
+                { label: 'RING TRUCK', run: () => (gs ? ringTruck(gs) : 'no sim') },   // #2503: the jingle lands now — a cone hits the curb (retires any cone standing)
                     { label: 'DIAL PAUSE', run: () => { if (gs) setSpeed(gs, 0); return gs ? `dial ${SPEED_NAMES[gs.speed]} — the world stands still` : 'no sim' } },   // #2227
                     { label: 'DIAL FASTEST', run: () => { if (gs) setSpeed(gs, 3); return gs ? `dial ${SPEED_NAMES[gs.speed]} — the world hurries` : 'no sim' } },   // #2227
                     { label: 'NEW SEED', run: () => { seed = nextSeed(seed); startPlay(); return `reseeded ${seed}` } },

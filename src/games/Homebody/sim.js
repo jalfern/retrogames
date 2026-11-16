@@ -431,6 +431,75 @@ export function binOrderOk(s) {
 // deterministic.
 function binEve(s) { return s.day + 1 === s.collectionDay }
 
+// ------------------------------------------------------ ice-cream truck (#2503) --
+// The clause's fourth hour-scheduled citizen after the paper, the bells and the
+// garbage truck (The Sims, PC 1990/2000: the ice-cream man rolls down the
+// street on warm afternoons and the young ones run out with money in hand).
+// Nobody stocks a soft-serve stand: CONE joins DEF but never CATALOG —
+// walkable (solid:false) and usable (fun), so the tap route and BFS treat it
+// as an appliance the lot hosts for an hour, while generic self-service skips
+// it (truckOnly — a paid treat is not a free need-stop) and the sale refuses
+// it. The law has three beats: the TRUCK ARRIVES (a cone lands at the curb,
+// jingle, day stamp), someone BUYS it (an order pays CONE_PRICE from the till
+// — broke refuses honestly in words — and the cone is one serving: whoever
+// reaches it first eats it), and the TRUCK MOVES ON (window closed, the cone
+// goes with the truck — never banked, never sold late). One truck a day: the
+// day stamp is the law, and the pass hour is arithmetic off the day, never
+// s.rng (#2303/#2240: an extra draw per cycle re-phases the seeded autopilot
+// and the WINNABLE seeds win by a hair). Children chase it: while a cone
+// stands, Pip routes to the curb before the toy box (the kid's own law, the
+// cook-beats-snacking precedent at ice-cream scale) — the demo visibly chases
+// the truck.
+export const CONE = { id: 'cone', name: 'Ice Cream Cone', price: 0, h: 1, solid: false, decor: true, need: 'fun', amt: 0, dur: 2.0, truckOnly: true }
+DEF.cone = CONE
+export const ICE_DUE = [14, 16]             // warm-afternoon window: the pass hour sits inside it
+export const ICE_WINDOW = 2                // sim-hours the truck idles on the street — sized so the walk from the far rooms still lands inside it (the #2244 lesson)
+export const CONE_PRICE = 2                // §2 from the till — a small luxury, honest cost
+export const ICE_FUN = 0.4                // an adult's cone
+export const ICE_KID_FUN = 0.5            // a child's cone (sugar, at kid scale)
+export const KID_ICE_FLOOR = 0.85         // a child chases the truck unless joy already overflows
+// The jingle — five rising notes on a music box, the truck's own voice. The
+// shell plays this table verbatim (#2240 VISIT_TIMBRE, #2264 MEAL_TIMBRE
+// pattern). [freq, dur, delayMs]
+export const ICE_TIMBRE = [[659, 0.12, 0], [784, 0.12, 140], [1046, 0.14, 280], [784, 0.12, 430], [1046, 0.24, 570]]
+export const ICE_ARRIVE_LINES = [
+    'The ice-cream man rounds the corner — the jingle rolls down the empty street.',
+    'A pastel truck crests the hill: cones at the curb while the engine idles.',
+    'The jingle comes before the truck does — soft-serve o\'clock on our street.',
+]
+export const ICE_BROKE_LINES = [
+    'Empty pockets — the till says no to the cone.',
+    'The cone waits, the purse does not: a treat costs §2 the ice-cream man never learned to take IOUs.',
+]
+export const ICE_OUT_LINES = [
+    'The last cone is already melting in someone\'s hand — the truck has one of each.',
+    'One cone per stop, and the stop is spent. The truck moves on empty.',
+]
+export const ICE_GONE_LINES = [
+    'The jingle fades down the street — the truck moved on without us.',
+    'The ice-cream man waves and rolls away; the curb is just a curb again.',
+]
+export const ICE_KID_LINES = [
+    '{k} runs back with a cone twice as tall as their worries.',
+    'Sugar victory: {k} beats the melting clock all the way home.',
+    '{k} licks the drip before it lands — a professional at work.',
+]
+export const ICE_SAVOR_LINES = [
+    '{n} pays the man and catches the cone — licking first, walking later.',
+    'A cold cone at the hot hour: {n} considers the afternoon officially saved.',
+    '{n} trades §2 for the smallest, sweetest luxury on the street.',
+]
+
+// The pass hour: arithmetic off the day, the truckHour mix (#2303's own
+// recipe) — deterministic, and no rng stream touched.
+export const icePassHour = (day) => ICE_DUE[0] + ((Math.imul(day, 2654435761) >>> 9) % 200) / 100
+
+// The one honest voice for "can the cone order stand": a cone is standing
+// (the truck is here) and the till can pay. Placement/sale never consult it;
+// only a human ordering the treat does (the binOrderOk pattern, #2303).
+export function coneOrderOk(s) { return !!s.cone && s.money >= CONE_PRICE }
+
+
 // ------------------------------------------------- catalog shelves (#2222) ----
 // The original people-sim never showed a flat wall of goods: buy mode is a
 // catalog with category tabs — flip shelves, each shelf few big cards.
@@ -624,6 +693,12 @@ export function newRun(seed) {
         truckHour: 6,             // #2303: dawn hour the truck passes, seeded on the eve
         collections: 0,           // #2303: bins the truck ever took (rides the hash)
         skips: 0,                 // #2303: honest skips — the missed days on the roster
+        cone: null,               // #2503: the cone the truck set at the curb (item ref | null)
+        iceDay: 0,              // #2503: day stamp of the last stop (rides the hash)
+        iceSerial: 0,           // #2503: cones the street ever set (per-cone identity)
+        treats: 0,              // #2503: cones ever eaten (rides the hash)
+        iceAt: 0,               // #2503: hour the current cone landed (window expiry)
+        iceNow: null,           // #2503: a rigged pass hour (ringTruck) — one-shot, never the law
         orderPing: { x: 0, y: 0, label: '', t: 0 },   // #2253: the last issued order (the view rings its target while t > 0)
         mealName: '',             // #2244: name of the current plate (a word is state the view reads)
         rel: { house: 0, fern: 0, ivy: 0, kid: 0 },   // #1817/#2143/#2203 conversation ladders (0..REL_MAX)
@@ -987,6 +1062,15 @@ export function cmdUse(s, p, it) {
         s.events.push({ t: 'refuse', r: it.r, c: it.c })
         return false
     }
+    // #2503: the cone takes the order while the truck idles AND the till can
+    // pay — a broke order refuses at the tap, in words (the treat costs what
+    // the treat costs); a tap after the truck moved on refuses in silence it
+    // cannot mistake (no cone, no order, refuse flash at the empty curb).
+    if (DEF[it.id] && DEF[it.id].truckOnly && !coneOrderOk(s)) {
+        s.events.push({ t: 'refuse', r: it.r, c: it.c })
+        think(s, pick(s, s.cone ? ICE_BROKE_LINES : ICE_GONE_LINES))
+        return false
+    }
     const tg = targetsOf(s, it)
     if (!tg.length) return false
     const path = bfsPath(s, { r: p.r, c: p.c }, tg)
@@ -1039,6 +1123,7 @@ function nearestUse(s, p) {
         if (!d || !d.need) continue
         if (d.catOnly && !yarnOrderOk(s)) continue   // #2256: pad-A takes the play order only while it stands
         if (d.binOnly && !binOrderOk(s)) continue   // #2303: pad-A takes the set-out only while the eve stands
+        if (d.truckOnly && !coneOrderOk(s)) continue   // #2503: pad-A takes the treat only while the truck idles and the till pays
         const near = Math.min(...targetsOf(s, it).map((t) => Math.abs(t.r - p.r) + Math.abs(t.c - p.c)))
         if (near < bd) { bd = near; best = it }
     }
@@ -1240,7 +1325,7 @@ export function placeOk(s, r, c) {
 
 export function sellAt(s, r, c) {
     const it = cellItem(s, r, c)
-    if (!it || it.id === 'mail' || it.id === 'paper' || it.id === 'meal' || it.id === 'bin') return false   // #2303/#2238/#2244: the mailbox belongs to the lot, the news to the route, the meal to the table, the bin to the kerb
+    if (!it || it.id === 'mail' || it.id === 'paper' || it.id === 'meal' || it.id === 'bin' || it.id === 'cone') return false   // #2303/#2238/#2244/#2503: the mailbox belongs to the lot, the news to the route, the meal to the table, the bin to the kerb, the cone to the truck
     const def = DEF[it.id]
     s.items = s.items.filter((x) => x !== it)
     s.money += Math.floor(def.price / 2)
@@ -1265,7 +1350,7 @@ function needTarget(s, p, need) {
     let best = null, bd = 1e9
     for (const it of s.items) {
         const d = DEF[it.id]
-        if (!d || d.need !== need || d.catOnly || d.binOnly) continue   // #2256: self-service never parks on the cat toy; #2303: nor on the lot's chore
+        if (!d || d.need !== need || d.catOnly || d.binOnly || d.truckOnly) continue   // #2256: self-service never parks on the cat toy; #2303: nor on the lot's chore; #2503: nor spends the till on a treat nobody ordered
         const tg = targetsOf(s, it)
         if (!tg.length) continue
         const dist = bfsPath(s, { r: p.r, c: p.c }, tg)
@@ -1511,6 +1596,52 @@ function updateBin(s) {
         s.events.push({ t: 'bin-eve', r: BIN_HOME.r, c: BIN_HOME.c })
         think(s, BIN_EVE_LINES[s.collectionDay % BIN_EVE_LINES.length])
     }
+}
+
+// ---------------------------------------------------- ice cream truck (#2503) --
+// The clause's fourth citizen: two beats on the world clock, no rng anywhere
+// on the schedule. A cone lands when the pass hour comes; whoever reaches it
+// while the truck idles pays for it; the window closes and the rest of the
+// tray goes home with the truck.
+function updateIceCream(s) {
+    if (s.cone) {
+        if (s.hour >= s.iceAt + ICE_WINDOW) {
+            const it = s.cone
+            s.items = s.items.filter((x) => x !== it)
+            s.cone = null
+            s.events.push({ t: 'ice-gone', r: it.r, c: it.c })
+            think(s, ICE_GONE_LINES[s.iceSerial % ICE_GONE_LINES.length])
+        }
+        return
+    }
+    // one truck a day — the day stamp is the law (the paper doctrine); a stop
+    // whose approaches were blocked retries inside the window rather than wall
+    // the law into a silent skip, and a window that ran out is gone honestly,
+    // never banked for tomorrow.
+    const due = s.iceNow !== null ? s.iceNow : icePassHour(s.day)
+    if (s.iceDay === s.day || s.hour < due || s.hour >= due + ICE_WINDOW) return
+    const curb = { r: 12, c: 4 }     // the curb by the gate — the truck's pull-in spot
+    const spot = walkable(s, curb.r, curb.c) ? curb : nearestFreeTo(s, curb.r, curb.c)
+    if (!spot) return
+    const it = { uid: s.nextUid++, id: 'cone', r: spot.r, c: spot.c }
+    s.items.push(it)
+    s.cone = it
+    s.iceDay = s.day
+    s.iceSerial++
+    s.iceAt = s.hour
+    s.iceNow = null
+    s.events.push({ t: 'ice-truck', r: spot.r, c: spot.c })
+    think(s, ICE_ARRIVE_LINES[s.iceDay % ICE_ARRIVE_LINES.length])
+}
+
+// scenario setup (the ringMeal/ringIvy pattern): retire whatever cone stands
+// and open a stop right now. Harness and F1 cheat only — the clock's own law
+// above never reads it.
+export function ringTruck(s) {
+    if (s.cone) { s.items = s.items.filter((x) => x !== s.cone); s.cone = null }
+    s.iceDay = Math.min(s.iceDay, s.day - 1)   // today's stop (if any) is retired — the law may land again
+    s.iceNow = Math.max(0, s.hour - 0.01)
+    return 'the jingle is due — a cone hits the curb'
 }
 
 // ----------------------------------------------------------- visitor ------
@@ -1881,7 +2012,7 @@ export function adoptKid(s) {
         name: KID.name, r: 12, c: 5, x: tileX(5) + TILE / 2, y: tileY(12) + TILE / 2,
         path: bfsPath(s, { r: 12, c: 5 }, [dest]), state: 'enter', t: 0, face: 1, walkPhase: 0,
         needs: { hunger: 0.8, fun: 0.7, energy: 0.85, social: 0.75 },
-        asleep: false, cd: 0, giggleT: 0, cryT: 0, wanderT: 2, food: false, playObj: false, bedT: 0, stepDist: 0,
+        asleep: false, cd: 0, giggleT: 0, cryT: 0, wanderT: 2, food: false, playObj: false, treat: false, bedT: 0, stepDist: 0,
     }
     s.events.push({ t: 'kid', name: KID.name, x: s.kid.x, y: s.kid.y })
     think(s, ADOPT_KID_LINE)
@@ -1893,7 +2024,7 @@ function funTarget(s, k) {
     let best = null, bd = 1e9
     for (const it of s.items) {
         const d = DEF[it.id]
-        if (!d || d.need !== 'fun' || d.catOnly || d.binOnly) continue   // #2256: Pip doesn't play with the cat's ball; #2303: nor wheels anyone's bin
+        if (!d || d.need !== 'fun' || d.catOnly || d.binOnly || d.truckOnly) continue   // #2256: Pip doesn't play with the cat's ball; #2303: nor wheels anyone's bin; #2503: the treat gets its own chase-law below, with money in hand
         const tg = targetsOf(s, it)
         if (!tg.length) continue
         const dist = Math.min(...tg.map((t) => Math.abs(t.r - k.r) + Math.abs(t.c - k.c)))
@@ -1963,7 +2094,7 @@ function updateKid(s, dt) {
         return
     }
     // snacks: a hungry child works the fridge (or whatever the kitchen offers)
-    if (!k.food && k.needs.hunger < 0.3) {
+    if (!k.food && !k.treat && k.needs.hunger < 0.3) {
         const fr = findNearest(s, k, 'fridge') || findNearest(s, k, 'stove')
         if (fr) {
             const path = bfsPath(s, { r: k.r, c: k.c }, fr.tg)
@@ -1977,8 +2108,39 @@ function updateKid(s, dt) {
         s.events.push({ t: 'kid-eat', name: k.name, x: k.x, y: k.y })
         think(s, pick(s, KID_SNACK_LINES))
     }
+    // #2503 the ice-cream law: while the truck idles, the till can pay, and
+    // joy has not yet overflowed, the child runs to the curb BEFORE the toy
+    // box (the original's kids drop everything for the jingle). The arrival
+    // pays from the till; a cone that got eaten first or a till gone short
+    // mid-walk refuses at the curb — the wasted steps are the cost, the same
+    // doctrine as the adult's walk. One kid-serving per cone: the treats
+    // ledger counts every cone the street ever sold.
+    if (!k.food && !k.playObj && !k.treat && s.cone && s.money >= CONE_PRICE && k.needs.fun < KID_ICE_FLOOR) {
+        const tg = targetsOf(s, s.cone)
+        if (tg.length) {
+            const path = bfsPath(s, { r: k.r, c: k.c }, tg)
+            if (path) { k.path = path; k.treat = true; k.state = 'treat' }
+        }
+    }
+    if (k.treat && !k.path) {
+        k.treat = false
+        const it = s.cone
+        if (it && s.money >= CONE_PRICE) {
+            s.money -= CONE_PRICE
+            k.needs.fun = Math.min(1, k.needs.fun + ICE_KID_FUN)
+            s.treats++
+            s.items = s.items.filter((x) => x !== it)
+            s.cone = null
+            k.giggleT = 1.4
+            s.events.push({ t: 'kid-ice', name: k.name, x: k.x, y: k.y })
+            think(s, ICE_KID_LINES[s.treats % ICE_KID_LINES.length].replace('{k}', k.name))
+        } else {
+            s.events.push({ t: 'refuse', r: k.r, c: k.c })
+            think(s, (it ? ICE_BROKE_LINES : ICE_OUT_LINES)[s.iceSerial % 2])   // arithmetic pick — the clock's own paths never draw rng (#2303's lesson)
+        }
+    }
     // play: a bored child hunts the fun objects — the kid's own need loop
-    if (!k.playObj && !k.food && k.needs.fun < 0.3) {
+    if (!k.playObj && !k.food && !k.treat && k.needs.fun < 0.3) {
         const ft = funTarget(s, k)
         if (ft) {
             const path = bfsPath(s, { r: k.r, c: k.c }, ft.tg)
@@ -2124,6 +2286,33 @@ function finishUse(s, p) {
         s.binAuto = false
         s.events.push({ t: 'bin-out', name: p.name, r: BIN_CURB.r, c: BIN_CURB.c })
         think(s, BIN_SET_LINES[s.binSetDay % BIN_SET_LINES.length].replace('{p}', p.name))
+        return
+    }
+    // #2503: the walk to the curb ends in the buy while the truck still idles
+    // and the till can pay — money leaves the till, fun lands, and the cone
+    // leaves the street with the sale: one serving per stop, whoever reaches
+    // first eats it (the wasted walk is the cost, the gone item is the law —
+    // the meal-serial doctrine at ice-cream scale). No content on the way:
+    // the win economy is untouched; the joy is the fun bar and the heart.
+    if (def.id === 'cone') {
+        p.use = null
+        if (s.cone !== it) {
+            s.events.push({ t: 'refuse', r: it.r, c: it.c })
+            think(s, pick(s, ICE_OUT_LINES))
+            return
+        }
+        if (s.money < CONE_PRICE) {
+            s.events.push({ t: 'refuse', r: it.r, c: it.c })
+            think(s, pick(s, ICE_BROKE_LINES))
+            return
+        }
+        s.money -= CONE_PRICE
+        p.needs.fun = Math.min(1, p.needs.fun + ICE_FUN)
+        s.treats++
+        s.items = s.items.filter((x) => x !== it)
+        s.cone = null
+        s.events.push({ t: 'ice-cream', name: p.name, x: tileX(it.c) + TILE / 2, y: tileY(it.r) + TILE / 2 })
+        think(s, pick(s, ICE_SAVOR_LINES).replace('{n}', p.name))
         return
     }
     const before = p.needs[def.need]
@@ -2350,6 +2539,9 @@ function newDay(s) {
     if (s.meal) { s.items = s.items.filter((it) => it !== s.meal); s.meal = null; s.mealEaten = [] }
     s.mealSlot = 0
     scheduleMeals(s)
+    // #2503: midnight takes any cone the window somehow kept (a rigged late
+    // stop in the harness) — the truck is home, nothing waits for tomorrow.
+    if (s.cone) { s.items = s.items.filter((it) => it !== s.cone); s.cone = null }
     s.day++
     s.events.push({ t: 'day', day: s.day })
 }
@@ -2395,6 +2587,7 @@ export function advance(s, dt) {
     updatePaper(s)          // #2238: the route rides the same world clock, kept behind the documented five-deep chain
     updateMeals(s)          // #2244: so do the bells, right behind the news
     updateBin(s)            // #2303: and the truck — the eve arms, dawn resolves
+    updateIceCream(s)       // #2503: and the jingle — the cone lands, the window runs out
 
     for (const p of s.people) {
         p.mood = avg(p)
@@ -2698,6 +2891,8 @@ export function stateHash(s) {
     mix(s.binAt === 'curb' ? 1 : 0) // where the bin stands is state (its cell rides the items loop)
     mix(s.binAuto ? 1 : 0)
     mix(s.binSetDay); mix(s.collections); mix(s.skips)
+    mix(s.iceDay); mix(s.iceSerial); mix(s.treats)   // #2503: the street's stops and the cone ledger ride it
+    mix(s.cone ? 1 : 0)     // the cone itself is state (its cell rides the items loop)
     for (const p of s.people) {
         mix(p.r); mix(p.c)
         for (const n of NEEDS) mix(p.needs[n])
