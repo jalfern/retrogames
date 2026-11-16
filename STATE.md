@@ -1,86 +1,87 @@
 # STATE — session 299 (2026-11-16, slot b)
 
 ## Playable now / what shipped
-- **BOULDER DASH: the amoeba family — PR #2436 MERGED as `6c4c2c6`** (#2428,
-  never-dry stage). Live at https://jalfern.com/retrogames/boulder-dash,
-  marker `GOO GALLERY` verified in served chunk `index-By18zfYU.js`.
-  - **Two-phase gait** (BD II, Origin 1985): a shut-in head CORNERS (right
-    first, then left) and the new heading PERSISTS into its children — the
-    wave turns as one creature instead of leaking both perpendiculars.
-  - **Droppers**: down is always the first offer; at the floor they resume
-    their lateral heading — poured slime stacks from the bottom.
-  - **Mirrored dual waves**: `meta.amoebas` seeds extra waves; two waves
-    claiming one pass fire the `mirror` (vise) receipt.
-  - Per-cell `amoWave/amoHead/amoVar`; variant state rides `stateHash` only
-    when a level has variants (`amoExt`) — caves 1–5 replay byte-identical,
-    pinned by a FROZEN FLOOR section (`e2536bb0/afc3579/fb495932/580a2db5/fd18f2fb`).
-  - **GOO GALLERY (cave 6)**: two-phase chamber (bait gems ON the floor, in
-    the drive lane), one-column shaft for the dropper, mirrored classic pair
-    in a two-row corridor. Containment swept every tick of the win-run.
-  - Proof: dashcheck **134/134**, `--mutate` **146/146** (12 mutants; new
-    `amoTurn`/`amoDrop` each redden a real check); dashplay **36/36 twice**
-    (new gallery real-key scenario: win, slime peak 57, waves expire,
-    restart, zero page errors); lint dash/mario/fps/ai + build green.
-- QA follow-up filed: **#2438** (variant tells, corner/pour audio, vise
-  telegraph — painter/audio only). Not this lane's to build.
-- Also shipped elsewhere this evening (not this session): excitebike pack-solid
-  #2420 (`4b1ac41`, slot a), carpet 27 worlds #2419 (298-b, `fcc1d65`),
-  native RetroKit #2437, Gauntlet/Joust/Emberwood native #2431/#2432.
+- **MAGIC CARPET: forty-five worlds (#2427 → PR #2441, merge `c0db200`).**
+  Live at jalfern.com/retrogames/magic-carpet (marker `THE FINAL SKY` verified
+  in prod chunk `index-CuvpMWJy.js`, Vercel success). The campaign reached the
+  original's FULL length: arcs ten–fifteen, 18 new names (GREENVEIL → THE FINAL
+  SKY), +15 vault ramp and pearls +5 unbroken; 45 ≡ 0 mod 3 keeps every arc on
+  a frost close; SKY ladder now LAST/ENDLESS/FARTHEST/OUTER/FINAL.
+  Yield law holds to the tail honestly: deepest ask 805 vs floor(263·3.5)=920
+  = **87.5%**, better than mid-campaign's 89% → no tail re-file needed.
+  Attract copy follows (`FORTY-FIVE WORLDS · FIFTEEN ARCS`) — and the stale
+  `EIGHTEEN WORLDS` line #2419 left behind finally updated.
+- **Cap law raised from measurement:** fresh 60-seed sweep at 45 = 60/60 win,
+  slowest seed 36 at **1,217,880 ticks** — OVER the inherited 1.17M
+  (`LEVELS.length×26000`): deep-arc fights lengthen superlinearly (wizHp 725@45).
+  New law `CAMPAIGN_CAP = LEVELS.length × 30000` **exported from sim.js** —
+  carpetcheck + DebugKit PROGNOSIS ride one source, drift impossible.
+- **A real bug the long road found:** campaign mana-conservation ledger broke at
+  worlds 40/41 (seed 7, +6 twice). A wizard absorbing a spawn pearl on the
+  level-up tick moves map→purse, but the rebase added his purse as the spawn
+  CONSTANT — sim conserved, ledger double-counted. Fixed harness-side (live
+  purse) + new spawn-equivalence pin (every world seeds exactly its table
+  hoard/HP/quota/pearls) restored the proof strength the live version lost.
+  Never fired pre-45 because it needs pearl-within-5u-of-tower AND quota-that-tick.
+- Gates: carpetcheck **393/395** — all Node arms, sweep, conservation, spawn
+  pins green; the two residue fails are the #1703 heavy-phone pixel arms,
+  flaking on this shared box (values swing wildly run-to-run incl. 0-frame
+  captures; lite-GL variant of same gate green) — advisory, documented on the
+  PR/issue. eslint + mario/fps/ai + contractcheck 724/724 + build green.
+  Mutation proofs: drop THE FINAL SKY → table pin red alone; pearls 228→227
+  (MAGMA FIELD) → widened +5 ramp pin red alone. Restored, mutateguard clean.
+- QA polish pass filed: **#2449** (arc-tint drift, name-biased terrain, deep-arc
+  fight feel, per-arc ambience; + the flaky pixel-arm caveat for CI).
 
 ## Ladder (this session's path)
-- Warden target **#2420: REFUSED** — slot a held it live (claimed 23:26Z,
-  sim.js edits landing mid-read). Correct refusal; its session was alive.
-- Corpse scan briefly looked like a live slot-b hold on #2419 (branch + worktree
-  + vite on 5178, checkpoints seconds old) — that session was alive on its own
-  tail: it merged #2424, commented shipped at 00:23:39Z, then died before its
-  STATE commit (which arrived anyway). Yield law honored; no double-take.
-- Ladder: no steer/next/game-queue; feedback all owned or QA-held; 3 live QA
-  MASTER sessions → no borrow; flagship stage spent → `weakestStage` FRESH:
-  **BOULDER DASH** (score 3, gap #0 amoeba family) → filed **#2428**,
-  claimed, shipped. Rule 4 honest: game code merged.
+- Warden target **#2420 REFUSED** at claim (slot a live, 76 min). No steer/next
+  then; game-queue top #2427 (my #2419 follow-up) claimed normally.
+- **A `steer` appeared mid-build: #2430 (PLAICRAFT valkyrie replay/voice).**
+  Steer outranks the ladder at the NEXT claim — it is platform-lane work; this
+  session stayed in its one game per rule (hard rule: one game per session).
 
-## The session's catches
-- **Bait gems over open pocket air die at tick 1** (fall + greed-turn to dirt
-  before the wave arrives). The #2411 lesson bit again in a brand-new pocket;
-  the prove-token (missing `dissolve`) caught it in seconds. Law: bait ON the
-  pocket floor, inside the creature's drive lane.
-- **Gait v1/v2 were over-designed before right**: parity-gated cornering ate
-  the seed generation (wave died at pass 1); corner-on-open spiralled forever
-  and never reached the bait. What works: drive while open, corner only when
-  shut in, persist the heading — verified by receipts + winnable level, not by
-  reasoning. Amoeba feel is geometry × phase; simulate, don't pontificate.
-- **55 ms real-key loop vs 83 ms gravity tick made SLIME VAULT a coin-flip
-  under CPU load** (bolts shoved past their pit between gravity evaluations) —
-  pre-existing dashplay flake: baseline passed quiet, mine failed during a
-  merge storm. Fixed harness-only: vault shoves paced on world-tick advance
-  (never blind sleeps). 36/36 twice after.
-- Classic-path claims keep #2411 order (ahead, up, down, children inherit
-  heading) — verified byte-identity BEFORE writing any new pins.
-
-## BOARD at exit (re-derive fresh)
-- building: #2427 (MAGIC CARPET toward 45 — slot a, live). building-qa:
-  #2434, #2430, #2354 — re-derive.
-- game-queue: empty. `next`/`steer`: none. feedback: #2438 (new, mine — QA
-  lane's to take), #2355/#2354 (self-declared owned).
-- jonq: none open on lane:games; #2305 (lane:platform) is not ours.
-- Nightly green; main `3417ac1` and climbing (native lanes shipping fast).
+## BOARD at exit
+- game-queue: empty. building: #2420 (slot a, EXCITEBIKE contact), #1711
+  (PLAICRAFT, re-derive branch liveness fresh at claim). building-qa: #2385,
+  #2449 (mine, QA's to take). `steer`: **#2430** — takes the next claim per
+  ladder law (platform lane; check jonq/answers first).
+- jonq open: #2305 (lane:platform, AWAITING until 11-17) — not ours to wait on.
+- Slot hygiene warning for the next b session: **5178 is squatting a foreign
+  vite** (launched from `retrogames-forge-bd-amoeba2`, pid was 96504 — slot a's
+  lane, NEVER touch per slot law). This session ran its dev server on **5188**
+  (`DEV_PORT=5188` for all browser arms) and stopped only its own pid.
 
 ## Next (slot a or b, in order)
-1. Ladder as usual; never-dry → `weakestStage`/`idle.mjs` FRESH at claim time
-   — the board rewrites itself between a warden kick and your claim (#2420 was
-   claimed 46 min before my kick arrived; #2419 merged while I read it).
-2. BoulderDash remaining honest gaps (README): wall falls-and-keeps-sliding /
-   pull combo, fly weave — candidates when the ladder lands here again.
-3. #2438 polish gates on the FROZEN FLOOR hashes — painter/audio must keep
-   caves 1–5 byte-identical.
+1. **#2430 steer** — first claim of the next cycle if still open (check it
+   isn't claimed/answered first; it's platform-flavoured, mind the lanes).
+2. #2427 is CLOSED shipped — no campaign growth left (45 = the original's full
+   length). Remaining magic-carpet work is #2449's QA territory + the
+   scoring-model delta (needs a research stage; file POLISH when taken).
+3. Never-dry: `weakestStage`/`idle.mjs` FRESH; verify the gap is gameplay (#2391).
+
+## The session's catches
+- **`| tail -N` on a long suite swallows the FAIL lines** — your own pipe is a
+  buffer too. Long checks: full log to file, grep after (session 298's SIGKILL
+  lesson, same tax twice).
+- **A single-seed probe lied by omission:** seed 7+88 cleared at ~1.11M and my
+  first README draft wrote "slowest seed 88" — the full sweep's slowest is seed
+  36 at 1,217,880 and it EXCEEDS the old cap. Measure the whole sweep before
+  sizing a law; the first number in the README was wrong and got corrected in
+  the same PR.
+- **Pixel gates are load-sensitive on a 4-lane box:** the #1703 heavy-phone arms
+  failed 3x with three different value profiles (incl. mid-window 0px = zero
+  frames rendered in 350 ms). Same gates are green on CI. Judge red by whether
+  it MOVES between runs; a moving number is noise, a fixed number is a bug.
+- **`jalfern.com` 308s to `www.`** — curl without `-L` gets `Redirecting...`;
+  prod-verify greps need -L (and the game lives in a lazy chunk: resolve
+  markers across the chunk chain, not just index).
 
 ## Hygiene at exit
-- Worktree `retrogames-forge-bd-amoeba2` removed; branch gone via squash;
-  dev server 5178 stopped (own); scratch worktree /tmp/bd-base removed and its
-  vite on 5177 stopped (both mine); foreign ports untouched.
-- STATE committed to main (a game merged this session, rule 9) + parked slot b
-  via `node scripts/statepark.mjs park b`.
+- Dev server 5188 stopped (own pid only); 5178 foreign vite untouched, as is
+  every other lane's port. Worktree retrogames-forge-carpet-45worlds removed
+  after merge; branch gone via squash; main checkout detached at origin/main.
+  #2427 commented+shipped+closed; #2449 filed. STATE committed to main (game
+  merged this session, rule 9) + parked slot b.
 
 ## Open questions
-- None new. jonq #2305 (lane:platform) not ours; nothing evaporated between
-  lanes this session.
+- None new. jonq #2305 (lane:platform) AWAITING until 11-17 — not ours.
