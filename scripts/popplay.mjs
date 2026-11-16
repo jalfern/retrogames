@@ -230,5 +230,28 @@ await touchEndBoth([])
 
 r.check('the phone page ran clean', pErrors.length === 0, pErrors.join(' | '))
 
+// ---- #2461 living night sky on the live palace ----
+await page.evaluate(() => window.__popTest.goto(2))
+await page.waitForTimeout(400)
+const sky = await page.evaluate(() => window.__popTest.sky())
+r.check('#2461 THE CHECKPOINT opens under moonlit panes', sky.theme === 'palace' && sky.shades.length >= 1,
+    `theme ${sky.theme} panes ${sky.shades.length}`)
+r.check('#2461 overcast-then-clear is on the live forecast for every pane',
+    sky.forecast.length >= 1 && sky.forecast.every((f) => f.min <= 0.8 && f.max >= 0.999), JSON.stringify(sky.forecast))
+const panePix = () => page.evaluate((d) => {
+    const g2 = document.querySelector('canvas').getContext('2d')
+    const px = g2.getImageData(d.x, d.y, d.w, d.h).data
+    let lum = 0
+    for (let i = 0; i < px.length; i += 4) lum += px[i] + px[i + 2]
+    return lum
+}, sky.pane.dev)
+const pix0 = await panePix()
+await page.waitForTimeout(2500)
+const pix1 = await panePix()
+r.check('#2461 the glass lives on screen: cloud and star motion shift the pane', pix0 !== pix1, `lum ${pix0} -> ${pix1}`)
+const sky2 = await page.evaluate(() => window.__popTest.sky())
+r.check('#2461 the live shade channel rides the tick (sim-safe presentation)', sky2.tick > sky.tick && typeof sky2.pane.shade === 'number',
+    `tick ${sky.tick} -> ${sky2.tick}, shade ${sky2.pane.shade}`)
+
 r.check('zero page errors', errors.length === 0, errors.join(' | '))
 r.exit(browser)

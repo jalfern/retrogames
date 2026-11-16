@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path'
 import { makeGame, step, CFG, cloneGame, stateHash, chompDown, GUARD_STYLE, gateOpenHere, platePressed } from '../src/games/PrinceOfPersia/sim.js'
 import { decide, P } from '../src/games/PrinceOfPersia/planner.js'
 import { LEVEL_COUNT, makeLevel, RW, FH, GROUND, roomOf, SOLID, SPIKE, LOOSE, GATE, EXITPLATE } from '../src/games/PrinceOfPersia/levels.js'
-import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR, lightAt, torchGlow, facet, darkAlpha, LIGHT_AMBIENT, TORCH_RADIUS, LIGHT_DIR, escortSilhouettes, DOOR_ZONE, LIGHT_AMBIENT_LITE, HUD_LINE, torchSum, tempAt, bounceAt, poolVisibleAt, ambientFor, coolGlow, coolAt, moonSources, rimColor, bandAt, propShade, MOON_RADIUS, MOON_STRENGTH, VW, MOON_DILUTE, moonTint, coolBandAt, rimAlpha, paneKeyY, paneShift, WINDOW_ROW_PX, cloudCross, SKY_DRIFT, starField, skyTwinkle, shaftMotes, SHAFT_MOTES, archPath, fitAttractFont, moonSpot, skyline, HORIZON_F } from '../src/games/PrinceOfPersia/art.js'
+import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR, lightAt, torchGlow, facet, darkAlpha, LIGHT_AMBIENT, TORCH_RADIUS, LIGHT_DIR, escortSilhouettes, DOOR_ZONE, LIGHT_AMBIENT_LITE, HUD_LINE, torchSum, tempAt, bounceAt, poolVisibleAt, ambientFor, coolGlow, coolAt, moonSources, rimColor, bandAt, propShade, MOON_RADIUS, MOON_STRENGTH, VW, MOON_DILUTE, moonTint, coolBandAt, rimAlpha, paneKeyY, paneShift, WINDOW_ROW_PX, cloudCross, SKY_DRIFT, starField, skyTwinkle, shaftMotes, SHAFT_MOTES, archPath, fitAttractFont, moonSpot, skyline, HORIZON_F, cloudPhase, cloudBank, SKY_CLOUDS, CLOUD_DIM, moonDrift, MOON_DRIFT, moonPane, moonShade } from '../src/games/PrinceOfPersia/art.js'
 import { SFX, trackFor, TRACKS, duckFor, DUCK_LEVEL, DUEL_DUCK, ROOM_DUCK, BED_VOICE, CHASE_CUES, stepFor, PRESSURE_MIN, FINAL_MIN } from '../src/games/PrinceOfPersia/music.js'
 import { MUSIC, MUSIC_BUS } from '../src/utils/AudioController.js'
 
@@ -1579,6 +1579,135 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
                 return g.levelIndex > 0 && (seen.grab || 0) >= 1 && (seen.strain || 0) >= 1 && (seen.climb || 0) >= 1
             })())
     }
+}
+
+// ---- 25. #2461 living night sky — cloud banks, wandering moon, overcast moonlight ----
+{
+    const artSrc25 = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'art.js'), 'utf8')
+
+    // 25-1 the refactor changed numbers for nobody: cloudCross is cloudPhase's
+    // sine, exactly, and the phase lives in [0,1) forever.
+    ok('#2461 cloudCross keeps its exact values through cloudPhase',
+        [[0, 0], [371, 0.25], [1430, 0.7], [1 / SKY_DRIFT, 0]].every(([t, s]) =>
+            Math.abs(cloudCross(t, s) - Math.sin(cloudPhase(t, s) * Math.PI)) < 1e-12)
+        && Array.from({ length: 500 }, (_, i) => cloudPhase(i * 3.7, 0.31)).every((p) => p >= 0 && p < 1))
+
+    // 25-2 the bank: several layers per pane, deterministic, bounded to the
+    // glass column's envelope (overhang is fine — the draw clips it), and the
+    // bank visibly thins to one cloud and swells to several across the hour.
+    ok('#2461 cloudBank is deterministic, bounded, and rides the crossing law',
+        SKY_CLOUDS >= 3 && JSON.stringify(cloudBank(991, 0.42)) === JSON.stringify(cloudBank(991, 0.42))
+        && [0, 0.42, 0.9].every((s) => cloudBank(500, s).every((c) =>
+            c.x >= -6 && c.x <= 18 && c.y >= 44 && c.y + c.h <= 84
+            && c.w >= 7 && c.w <= 14 && c.h >= 4 && c.h <= 7 && c.d > 0.02 && c.d <= 1)))
+    ok('#2461 the bank runs two to three layers deep and swells and thins — weather, not a stencil',
+        (() => {
+            let two = false, three = false
+            for (let s = 0; s < 10; s++) {
+                for (let t = 0; t <= 3000; t++) {
+                    const n = cloudBank(t, s * 0.1).length
+                    if (n >= 2) two = true
+                    if (n >= 3) three = true
+                }
+            }
+            return two && three
+        })())
+
+    // 25-3 the moon wanders: same seed+tick same place, but across an hour it
+    // is in ~800 different places — and the disc (±2px) never leaves the glass
+    // column, never reaches the horizon's rooftops (#2330's law, widened to a
+    // moving night: the band is now 58..65 so disc bottom ≤ 67 < roof top ≥ 68).
+    ok('#2461 moonPane wanders its pane inside the glass, deterministically',
+        (() => {
+            const mxs = new Set()
+            for (let s = 0; s < 30; s++) {
+                for (let t = 0; t <= 4000; t += 13) {
+                    const mp = moonPane(s * 0.131, t)
+                    if (mp.mx < 4 || mp.mx > 12) return false
+                    if (mp.my < 58 || mp.my > 65) return false
+                    mxs.add(mp.mx.toFixed(2))
+                }
+            }
+            return mxs.size > 500
+        })() && JSON.stringify(moonPane(0.31, 900)) === JSON.stringify(moonPane(0.31, 900))
+        && Math.abs(moonDrift(0, 0).ox) <= 1.6 + 1e-9
+        // the moon crosses its pane slower than a cloud does (radians vs pane-widths,
+        // put on the same footing: /2π) — the night drifts, the weather moves.
+        && MOON_DRIFT > 0 && MOON_DRIFT / (2 * Math.PI) < SKY_DRIFT)
+
+    // 24-4's law restated for the moving night: the disc bottom stays under the
+    // horizon line at every tick.
+    ok('#2461 the wandering disc still never sits on a rooftop (bottom ≤ 67, roof ≥ 68)',
+        (() => {
+            for (let s = 0; s < 40; s++) {
+                for (let t = 0; t <= 4000; t += 7) {
+                    const mp = moonPane(s * 0.097, t)
+                    if (mp.my + 2 > 67) return false
+                }
+            }
+            return 44 + Math.round(HORIZON_F * 40) - 6 >= 68
+        })())
+
+    // 25-4 overcast is the signature, not a lottery: for every column seed the
+    // pane dims to ≤0.8 and returns to full within a couple of world-minutes —
+    // the player standing in THE CHECKPOINT always sees the moon come and go.
+    ok('#2461 moonShade stays in [1-CLOUD_DIM, 1] and is deterministic',
+        (() => {
+            for (let s = 0; s < 24; s++) {
+                for (let t = 0; t <= 3000; t += 5) {
+                    const sh = moonShade(t, s * 0.0417)
+                    if (sh < 1 - CLOUD_DIM - 1e-9 || sh > 1) return false
+                }
+            }
+            return moonShade(777, 0.25) === moonShade(777, 0.25)
+        })())
+    ok('#2461 every pane dims under cloud and clears again within 6000 ticks',
+        (() => {
+            for (let k = 0; k < 48; k++) {
+                const x = Math.sin((k * 2.7 + 5) * 127.1 + 311.7) * 43758.5453
+                const pseed = x - Math.floor(x)
+                let dimmed = false, cleared = false, mn = 1
+                for (let t = 0; t <= 6000; t++) {
+                    const sh = moonShade(t, pseed)
+                    if (sh < mn) mn = sh
+                    if (sh <= 0.8) dimmed = true
+                    else if (dimmed && sh === 1) { cleared = true; break }
+                }
+                if (mn > 0.8 || !cleared) return false
+            }
+            return true
+        })())
+
+    // 25-5 the channel rides the keys: moonSources carries the live shade as a
+    // 4th channel, the default path stays byte-identical (every pre-#2461 pin
+    // holds), and the physics actually get darker under cloud — measured at the
+    // pane centre: lightAt 0.70 clear vs ≤0.5 dim, same for coolAt.
+    ok('#2461 moonSources carries the overcast; default path byte-identical',
+        moonSources([{ window: 3 }], 0)[0][3] === 1
+        && moonSources([{ window: 3 }], 0).length === moonSources([{ window: 3 }], 0, 1200).length
+        && moonSources([{ window: 3 }], 0, 1200)[0][3] >= 1 - CLOUD_DIM && moonSources([{ window: 3 }], 0, 1200)[0][3] <= 1)
+    ok('#2461 cloud dims the keys where the moon lands — lightAt and coolAt read the channel',
+        (() => {
+            let clearT = null, dimT = null
+            for (let t = 0; t <= 6000 && !(clearT !== null && dimT !== null); t++) {
+                const sh = moonSources([{ window: 3 }], 0, t)[0][3]
+                if (sh === 1 && clearT === null) clearT = t
+                if (sh <= 0.7 && dimT === null) dimT = t
+            }
+            if (clearT === null || dimT === null) return false
+            const c = moonSources([{ window: 3 }], 0, clearT)[0]
+            const d = moonSources([{ window: 3 }], 0, dimT)[0]
+            return Math.abs(lightAt(c[0], c[1], [], 0, [c]) - MOON_STRENGTH) < 1e-9
+                && lightAt(d[0], d[1], [], 0, [d]) <= MOON_STRENGTH * 0.7 + 1e-9
+                && coolAt(c[0], c[1], [c]) === 1
+                && coolAt(d[0], d[1], [d]) <= 0.7 + 1e-9
+        })())
+    ok('#2461 the overcast is wired through the renderer (sources, banks, pane, hall)',
+        /moonSources\(lvl\.deco[^\n]*tick\)/.test(artSrc25) && /moonShade\(tick, pseed\)/.test(artSrc25)
+        && /cloudBank\(tick, pseed\)/.test(artSrc25) && /coolPool\(ctx, mp\[0\], mp\[1\],[^\n]*mp\[3\]/.test(artSrc25)
+        && /sh31/.test(artSrc25) && /\(mp\[3\] \?\? 1\)/.test(artSrc25))
+    ok('#2461 the dungeon stays a dungeon: no windows, no shades, ambient only',
+        lightAt(100, 100, [], LIGHT_AMBIENT) === LIGHT_AMBIENT && coolAt(100, 100, []) === 0)
 }
 
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
