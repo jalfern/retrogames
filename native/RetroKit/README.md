@@ -43,6 +43,12 @@ pieces they had in common, one copy each. Per-game code (sims, planners,
   on the device and prints `<GAME> SELFCHECK MATCH|DIVERGE …` to the log, to
   stdout, and to the game's own screen.
 
+**`MiniThree`** (Metal; Foundation + CoreGraphics: the 3D ports and their Mac CLIs)
+— the three.js r180 subset the arcade's three.js games use, with three's names
+and semantics, so a game's `render.js` ports line for line. Emberwood's
+`Sources/EmberwoodRender/Render.swift` is the first port; see "Porting a
+three.js game" below.
+
 **`scripts/brandassets.py`**: writes a port's `App/Assets.xcassets` (the tvOS
 parallax stack, the two top shelf banners, the iOS AppIcon, and every
 `Contents.json`) from three painted layers. Emberwood's and Gauntlet's
@@ -115,3 +121,50 @@ parallax stack, the two top shelf banners, the iOS AppIcon, and every
    Call `SelfCheck.startIfAsked` from the launch hooks.
 3. `App/Synth.swift` subclasses `SynthEngine`, and `App/Controls.swift` builds a
    `Controls.Config`. Icons come from the game's art via `brandassets.build()`.
+
+## MiniThree: three.js on Metal
+
+What it supports (and nothing else yet):
+
+| three.js | MiniThree | notes |
+|---|---|---|
+| `Object3D`, `Group`, `Scene`, `Mesh` | same | position / quaternion / rotation (XYZ, kept in step) / scale, `lookAt`, `rotateZ`, `traverse`, `clone(true)` (shares geometry + material), `visible`, `castShadow`, `receiveShadow`, `renderOrder` |
+| `OrthographicCamera`, `PerspectiveCamera` | same | `updateProjectionMatrix`; `Vector3.project(camera)` uses three's WebGL clip space |
+| `BufferGeometry`, `PlaneGeometry`, `BoxGeometry` | same | the generators emit three's vertex/uv order exactly (box faces sample like three's) |
+| `MeshBasicMaterial`, `MeshLambertMaterial`, `MeshStandardMaterial` | same | map, color, opacity, transparent, alphaTest, depthWrite/Test, side, vertexColors, emissive; Standard = three's GGX (no env maps) |
+| `HemisphereLight`, `DirectionalLight` (+ PCF shadow), `PointLight`, `AmbientLight` | same | physically-correct units (r155+), view-space light uniforms |
+| `Fog`, `FogExp2` | `Fog`, `FogExp2` (`scene.fog` / `scene.fogExp2`) | |
+| `Texture` / `CanvasTexture` | same | Nearest/Linear, wrap clamp/repeat/mirrored, offset/repeat/rotation/center (three's uvTransform), sRGB colorSpace, flipY |
+| `Sprite`, `Points`, `Line`, `LineSegments`, `InstancedMesh` | same | 1-px lines, as WebGL |
+| `WebGLRenderTarget` + `ShaderMaterial` | same | MSAA `samples`, sRGB targets; ShaderMaterial bodies are GLSL hand-ported to MSL (see below) |
+| ACES filmic + sRGB output | `toneMapping = .acesFilmic`, `outputColorSpace = .srgb` | applied to the canvas only, as three does |
+| `GLTFLoader` (.glb) | `GLTFLoader.load(url:)` | static meshes, TRS/matrix nodes, baseColor factor/texture, COLOR_0, doubleSided, alpha modes |
+
+The renderer is `WebGLRenderer` (on Metal). It keeps the three behaviours that change pixels:
+- **Render lists.** Opaque objects are sorted by (renderOrder, material.id, z, id), and transparent ones back to front by (renderOrder, −z, id). Creation order therefore matters: create objects in the order render.js does.
+- **Output.** A render target gets *linear* output and no tone mapping. Only the canvas (`setRenderTarget(nil)`) gets the tone mapping and the sRGB OETF, and the clear colour follows the same rule. sRGB targets and textures use `*_srgb` formats, so the hardware encodes on write, decodes on read and blends in linear, as `SRGB8_ALPHA8` does in WebGL2.
+- **Shadows.** The shadow pass draws casters' opposite faces (`shadowSide`), and PCF is three's 17-tap kernel. Objects with a negative determinant (a mirrored `scale.x`) flip their front face.
+- **Blending and depth.** Blending is three's straight-alpha `NormalBlending` / `AdditiveBlending`, and the depth function is LessEqual.
+- **Shader math.** The shader chunks are hand-ported, and each function in `Shaders.swift` names the chunk it comes from. Keep them in step with `node_modules/three/src/renderers/shaders/ShaderChunk`.
+
+ShaderMaterial bodies are GLSL-shaped MSL. A body sees `vUv` (WebGL convention: v = 0 at the bottom), `texture2D(tName, uv)`, `vec2`/`vec3`/`vec4` and every uniform by its own name, and it ends with `return vec4(...)` instead of `gl_FragColor = ...`. The body can't declare functions, so inline them, as Emberwood's composite does with `lin2srgb`. The vertex stage is the post-pass one: `gl_Position = vec4(position.xy, 0., 1.)`.
+
+The host hands the renderer a canvas each frame: `setCanvas(drawable.texture)`, then `render(...)`, then `present(drawable)`. Use a non-sRGB pixel format, because the shader encodes, like the web canvas. Offscreen (Mac CLI) use is `makeOffscreenCanvas`, then `finish()`, then `readPixels`.
+
+### Porting a three.js game
+
+1. Add a `Sources/<Game>Render` target that depends on `MiniThree` (and your sim core). In Xcode, add it as a synchronized group and link the `MiniThree` product.
+   - In SwiftPM, write `#if canImport(<Game>Core) import <Game>Core #endif`. In the app everything is one module.
+   - Rename any render.js helper that collides with a sim type. Emberwood's `FX()` became `MX()`.
+2. Port `render.js` top to bottom.
+   - Keep its creation order and its numbers.
+   - `new THREE.X(...)` becomes `X(...)`, and `color.set('#hex')` stays the same.
+   - Swap `Math.random` for an injectable `random` and `Math.sin`/`hypot` for RetroKit's `jsSin`/`jsHypot`.
+   - Textures come from the game's own Chrome-painted art (`exportart.mjs` → `App/Art`). A canvas painted inside render.js gets exported by the web-frames script, not repainted in Swift.
+3. Give it a parity gate like Emberwood's (`native/emberwood-claude/parity/`, README "Render parity"):
+   - A JSON of scripted moments.
+   - A script that runs the game's own render.js in Chrome and saves the canvases.
+   - A CLI that renders the same moments offscreen and runs `compare`. Pin `Math.random`, and sync until eased values are at rest.
+4. Only then add native-only quality (drawable-sized buffers, bigger shadow maps), behind a switch the gate never uses.
+
+Not yet ported (add when a game needs them, with a parity moment): spot lights, point-light shadows, env maps / IBL, normal/roughness/AO maps, skinning and morphs, `MeshPhong`, `CubeTexture`, VSM / PCFSoft, frustum culling (all objects draw), and `ShaderMaterial` on scene meshes (post passes only today).

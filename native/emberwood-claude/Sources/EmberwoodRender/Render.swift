@@ -5,11 +5,11 @@
 //
 // Coordinate convention: X = east (tileX*TS), Y = south (tileY*TS), Z = height.
 // The camera perches south-above and looks north-down; camera.up=(0,-1,0)
-// mirrors X, so every view-space x passes through FX() (#772).
+// mirrors X, so every view-space x passes through MX() — render.js calls it
+// FX(); renamed here because the sim already has an FX type (#772).
 //
 // Native-only knobs (never used by the parity gate): `quality.tv` raises the
-// shadow map, lifts the 1280-px cap to the drawable's own size and turns on
-// canvas MSAA. Math.random is `random` (the parity gate pins it to 0.5).
+// shadow map and lifts the 1280-px cap to the drawable's own size. Math.random is `random` (the parity gate pins it to 0.5).
 
 import Foundation
 import CoreGraphics
@@ -20,7 +20,7 @@ import EmberwoodCore
 #endif
 
 let WALL_H = 12.0
-@inline(__always) func FX(_ x: Double) -> Double { Double(SW * TS) - x }
+@inline(__always) func MX(_ x: Double) -> Double { Double(SW * TS) - x }
 
 // #789 living foliage — one deterministic wind field drives every plant.
 public enum WIND {
@@ -60,8 +60,9 @@ public struct Quality {
     public var maxLong = 1280.0
     public var canvasSamples = 1
     public static let web = Quality()
-    /// beyond the web on the TV: native 4K, 4x MSAA on the canvas, a 4096 shadow map
-    public static let tv = Quality(shadowMapSize: 4096, maxLong: .infinity, canvasSamples: 4)
+    /// beyond the web on the TV: the scene pass (4x MSAA) at the drawable's own
+    /// size — 3840x2160 on a 4K set, where the web caps at 1280 — and a 4096² sun shadow map
+    public static let tv = Quality(shadowMapSize: 4096, maxLong: .infinity, canvasSamples: 1)
 }
 
 /// A pooled billboard (mkBillboard)
@@ -172,7 +173,7 @@ public final class EmberwoodRenderer {
         hemi = HemisphereLight(0xbfd8ff, 0x3c3226, 1.15)
         scene.add(hemi)
         sun = DirectionalLight(0xffd9a0, 2.4)
-        sun.position.set(FX(-80), 200, 150)
+        sun.position.set(MX(-80), 200, 150)
         sun.target.position.set(128, 88, 0)
         if !lite {
             sun.castShadow = true
@@ -342,7 +343,7 @@ public final class EmberwoodRenderer {
         else { src.rotation = Euler(STAND_UP, 0, yaw) }
         let g = Group()
         g.add(src)
-        g.position.set(FX(x), y, 0)
+        g.position.set(MX(x), y, 0)
         screenGroup.add(g); staticMeshes.append(g)
         return (g, mats, t.facing)
     }
@@ -370,7 +371,7 @@ public final class EmberwoodRenderer {
             spots.append((2, 1)); spots.append((13, 9))
         }
         for (i, p) in spots.prefix(4).enumerated() {
-            torchLights[i].position.set(FX(Double(p.0 * TS + 8)), Double(p.1 * TS + 8), 10)
+            torchLights[i].position.set(MX(Double(p.0 * TS + 8)), Double(p.1 * TS + 8), 10)
             torchLights[i].intensity = dark ? 7 : 0
         }
 
@@ -388,7 +389,7 @@ public final class EmberwoodRenderer {
                 let z0 = ch == "~" ? -0.6 : 0
                 let mat = MeshLambertMaterial(map: tex)
                 let m = Mesh(floorGeo, mat)
-                m.position.set(FX(Double(x * TS + 8)), Double(y * TS + 8), z0)
+                m.position.set(MX(Double(x * TS + 8)), Double(y * TS + 8), z0)
                 m.receiveShadow = !lite
                 if ch == "~" { m.material.color.set("#9fc8e8") }
                 if ch == "\"" && cut["\(id):\(x),\(y)"] == true { m.material.map = T("grass") }
@@ -408,7 +409,7 @@ public final class EmberwoodRenderer {
                         } else {
                             let bu = Mesh(PlaneGeometry(14, 10), MeshLambertMaterial(map: T("bush"), transparent: true, alphaTest: 0.4))
                             bu.quaternion = camera.quaternion
-                            bu.position.set(FX(px), py, 5)
+                            bu.position.set(MX(px), py, 5)
                             screenGroup.add(bu); staticMeshes.append(bu)
                             bushes.append(Bush(mesh: bu, mats: nil, facing: nil, x: px, y: py))
                         }
@@ -421,7 +422,7 @@ public final class EmberwoodRenderer {
                     } else {
                         let tr = Mesh(PlaneGeometry(24, 30), MeshLambertMaterial(map: T("tree"), transparent: true, alphaTest: 0.4))
                         tr.quaternion = camera.quaternion
-                        tr.position.set(FX(px), py + 6, 12)
+                        tr.position.set(MX(px), py + 6, 12)
                         screenGroup.add(tr); staticMeshes.append(tr)
                         canopies.append(Canopy(mesh: tr, mats: nil, facing: nil, x: px, y: py, o: 1))
                     }
@@ -429,18 +430,18 @@ public final class EmberwoodRenderer {
                 if ch == "I" {
                     let sg = Mesh(PlaneGeometry(16, 16), MeshLambertMaterial(map: T("sign"), transparent: true, alphaTest: 0.4))
                     sg.quaternion = camera.quaternion
-                    sg.position.set(FX(Double(x * TS + 8)), Double(y * TS + 6), 8)
+                    sg.position.set(MX(Double(x * TS + 8)), Double(y * TS + 6), 8)
                     screenGroup.add(sg); staticMeshes.append(sg)
                 }
                 if ch == "<" {
                     let pt = Mesh(PlaneGeometry(14, 14), MeshBasicMaterial(map: T("portal"), transparent: true))
-                    pt.position.set(FX(Double(x * TS + 8)), Double(y * TS + 8), 0.2)
+                    pt.position.set(MX(Double(x * TS + 8)), Double(y * TS + 8), 0.2)
                     screenGroup.add(pt); staticMeshes.append(pt)
                 }
                 if let h = SOLID_H[ch], ch != "T" && ch != "I" && ch != "<" && ch != "C" {
                     let topKey = ch == "#" ? "wallTop" : (ch == "H" || ch == "R" ? "roof" : (ch == "=" ? "fence" : "rock"))
                     let box = Mesh(BoxGeometry(Double(TS), Double(TS), h), MeshLambertMaterial(map: ch == "#" ? T("wall") : (ch == "=" ? T("fence") : T(topKey)), color: ch == "#" ? Color("#9a95ad") : Color(0xffffff)))
-                    box.position.set(FX(Double(x * TS + 8)), Double(y * TS + 8), h / 2)
+                    box.position.set(MX(Double(x * TS + 8)), Double(y * TS + 8), h / 2)
                     if !lite { box.castShadow = true; box.receiveShadow = true }
                     screenGroup.add(box); staticMeshes.append(box)
                 }
@@ -448,12 +449,12 @@ public final class EmberwoodRenderer {
         }
         for p in s.plates ?? [] {
             let ring = Mesh(PlaneGeometry(14, 14), MeshBasicMaterial(map: T("plate"), color: Color(0xc9a24a), transparent: true))
-            ring.position.set(FX(Double(p.x * TS + 8)), Double(p.y * TS + 8), 0.15)
+            ring.position.set(MX(Double(p.x * TS + 8)), Double(p.y * TS + 8), 0.15)
             screenGroup.add(ring); staticMeshes.append(ring)
         }
         for sw in s.switches ?? [] {
             let plaque = Mesh(PlaneGeometry(12, 12), MeshLambertMaterial(map: T(sw.via == "gust" ? "runeGust" : "switchP")))
-            plaque.position.set(FX(Double(sw.x * TS + 8)), Double(sw.y * TS + 8), 8)
+            plaque.position.set(MX(Double(sw.x * TS + 8)), Double(sw.y * TS + 8), 8)
             // #1063 the wind-rune flutters with the vale's wind
             screenGroup.add(plaque); staticMeshes.append(plaque)
             dynSwitches.append((sw.id, plaque, sw.via == "gust", Double((sw.x * 31 + sw.y * 17) % 13)))
@@ -461,20 +462,20 @@ public final class EmberwoodRenderer {
         for c in s.chests ?? [] {
             let ch2 = Mesh(PlaneGeometry(14, 12), MeshLambertMaterial(map: T("chest/closed"), transparent: true, alphaTest: 0.4))
             ch2.quaternion = camera.quaternion
-            ch2.position.set(FX(Double(c.x * TS + 8)), Double(c.y * TS + 8), 6)
+            ch2.position.set(MX(Double(c.x * TS + 8)), Double(c.y * TS + 8), 6)
             screenGroup.add(ch2); staticMeshes.append(ch2)
             dynChests[c.id] = ch2
         }
         for d in s.doors ?? [] {
             let box = Mesh(BoxGeometry(Double(TS), Double(TS), WALL_H), MeshLambertMaterial(map: T(d.kind == "bigkey" ? "doorBig" : (d.kind == "heart" ? "doorHeart" : "door"))))
-            box.position.set(FX(Double(d.x * TS + 8)), Double(d.y * TS + 8), WALL_H / 2)
+            box.position.set(MX(Double(d.x * TS + 8)), Double(d.y * TS + 8), WALL_H / 2)
             if !lite { box.castShadow = true }
             screenGroup.add(box); staticMeshes.append(box)
             dynDoors[d.id] = box
         }
         for cr in s.cracks ?? [] {
             let box = Mesh(BoxGeometry(Double(TS), Double(TS), WALL_H), MeshLambertMaterial(map: T("crack")))
-            box.position.set(FX(Double(cr.x * TS + 8)), Double(cr.y * TS + 8), WALL_H / 2)
+            box.position.set(MX(Double(cr.x * TS + 8)), Double(cr.y * TS + 8), WALL_H / 2)
             if !lite { box.castShadow = true }
             screenGroup.add(box); staticMeshes.append(box)
             dynCracks[cr.id] = box
@@ -484,21 +485,21 @@ public final class EmberwoodRenderer {
             // T('brazier') is the frame pair, not an image: no map until sync picks a frame
             let mb = Mesh(PlaneGeometry(12, 16), MeshLambertMaterial(map: nil, transparent: true, alphaTest: 0.4))
             mb.quaternion = camera.quaternion
-            mb.position.set(FX(Double(b.x * TS + 8)), Double(b.y * TS + 8), 8)
+            mb.position.set(MX(Double(b.x * TS + 8)), Double(b.y * TS + 8), 8)
             screenGroup.add(mb); staticMeshes.append(mb)
             braziers.append((mb, Double(b.x * TS + 8), Double(b.y * TS + 8)))
         }
         vents.removeAll()
         for v in s.vents ?? [] {
             let mv = Mesh(PlaneGeometry(14, 12), MeshLambertMaterial(map: T("vent"), transparent: true, alphaTest: 0.4))
-            mv.position.set(FX(Double(v.x * TS + 8)), Double(v.y * TS + 8), 0.2)
+            mv.position.set(MX(Double(v.x * TS + 8)), Double(v.y * TS + 8), 0.2)
             screenGroup.add(mv); staticMeshes.append(mv)
             vents.append((mv, v.id, Double(v.x * TS + 8), Double(v.y * TS + 8)))
         }
         for n in s.npcs ?? [] {
             let nn = Mesh(PlaneGeometry(14, 18), MeshLambertMaterial(map: art(npcArtKey(n.id, n.kind)).map(makeTex), transparent: true, alphaTest: 0.4))
             nn.quaternion = camera.quaternion
-            nn.position.set(FX(Double(n.x * TS + 8)), Double(n.y * TS + 8), 9)
+            nn.position.set(MX(Double(n.x * TS + 8)), Double(n.y * TS + 8), 9)
             if n.requires != nil { nn.visible = false }
             let r = npcRhythm(n.id)
             npcPose[n.id] = NpcPose(requires: n.requires, phase: r.phase, spd: r.spd, nx: n.x, ny: n.y, face: npcFacing[n.id] ?? 1)
@@ -527,7 +528,7 @@ public final class EmberwoodRenderer {
             var p = parts[partIdx]; let pi = partIdx; partIdx = (partIdx + 1) % PARTS
             p.m.visible = true
             p.m.material.color.set(colors[Int(jsFloor(random() * Double(colors.count)))])
-            p.m.position.set(FX(x), y, 6 + random() * 8)
+            p.m.position.set(MX(x), y, 6 + random() * 8)
             p.vx = (random() - 0.5) * spread
             p.vy = (random() - 0.5) * spread
             p.vz = random() * up
@@ -543,7 +544,7 @@ public final class EmberwoodRenderer {
             p.m.visible = true
             let c = JUICE["dust"]!
             p.m.material.color.set(c[Int(jsFloor(random() * Double(c.count)))])
-            p.m.position.set(FX(x + (random() - 0.5) * 4), y + (random() - 0.5) * 3, 1 + random() * 2)
+            p.m.position.set(MX(x + (random() - 0.5) * 4), y + (random() - 0.5) * 3, 1 + random() * 2)
             p.vx = dirx * 0.5 + (random() - 0.5) * 0.7
             p.vy = diry * 0.5 + (random() - 0.5) * 0.7
             p.vz = 0.15 + random() * 0.35
@@ -557,7 +558,7 @@ public final class EmberwoodRenderer {
             p.m.visible = true
             let c = JUICE["mote"]!
             p.m.material.color.set(c[Int(jsFloor(random() * Double(c.count)))])
-            p.m.position.set(FX(x + (random() - 0.5) * 12), y + (random() - 0.5) * 12, (z != 0 ? z : 6) + (random() - 0.5) * 6)
+            p.m.position.set(MX(x + (random() - 0.5) * 12), y + (random() - 0.5) * 12, (z != 0 ? z : 6) + (random() - 0.5) * 6)
             p.vx = (random() - 0.5) * 0.35
             p.vy = -(0.15 + random() * 0.25)
             p.vz = (random() - 0.5) * 0.15
@@ -605,10 +606,10 @@ public final class EmberwoodRenderer {
         var v = 0.5
         for l in torchLights {
             if l.intensity <= 0 { continue }
-            let d = jsHypot(l.position.x - FX(x), l.position.y - y)
+            let d = jsHypot(l.position.x - MX(x), l.position.y - y)
             v += max(0, 1 - d / 70) * 1.6
         }
-        let dl = jsHypot(lantern.position.x - FX(x), lantern.position.y - y)
+        let dl = jsHypot(lantern.position.x - MX(x), lantern.position.y - y)
         v += max(0, 1 - dl / 66) * 0.9
         return min(1.3, v)
     }
@@ -656,7 +657,7 @@ public final class EmberwoodRenderer {
             mesh.quaternion = camera.quaternion
             mesh.rotateZ(lean)
             mesh.scale.set(u.face, sc, 1)
-            mesh.position.x = FX(bx)
+            mesh.position.x = MX(bx)
             mesh.position.y = by
             mesh.position.z = 9 * sc
             npcPose[npcId] = u
@@ -687,7 +688,7 @@ public final class EmberwoodRenderer {
                 b.mesh.quaternion = camera.quaternion
                 b.mesh.rotateZ(WIND.bush(b.x, b.y, tSec))
             }
-            b.mesh.position.x = FX(b.x) + jsSin(tSec * 4.7 + b.x * 0.11) * WIND.gust(b.x, b.y, tSec) * 0.35
+            b.mesh.position.x = MX(b.x) + jsSin(tSec * 4.7 + b.x * 0.11) * WIND.gust(b.x, b.y, tSec) * 0.35
         }
         for gt in grassTiles { gt.tex.offset.x = WIND.grass(gt.x, gt.y, tSec) }
         let anim = Int(jsFloor(tSec * 7)) % 2
@@ -712,7 +713,7 @@ public final class EmberwoodRenderer {
             sw.mesh.rotation.z = jsSin(tSec * 1.7 + sw.phase) * 0.12 * w
             sw.mesh.position.z = 8 + jsSin(tSec * 2.3 + sw.phase) * 0.4 * w
         }
-        camera.position.x += (FX(128 + (hx - 128) * 0.5) - camera.position.x) * 0.08
+        camera.position.x += (MX(128 + (hx - 128) * 0.5) - camera.position.x) * 0.08
         camera.position.y += ((CAM_Y + (hy - 88) * 0.5) - camera.position.y) * 0.08
         let lookX = camera.position.x, lookY = camera.position.y - 120
         camera.lookAt(lookX, lookY, 2)
@@ -729,16 +730,16 @@ public final class EmberwoodRenderer {
             camera.position.y += (random() - 0.5) * shake
             shake *= 0.82
         }
-        lantern.position.set(FX(hx), hy, 12)
+        lantern.position.set(MX(hx), hy, 12)
 
         let pose = sim.swing > 0 ? "slash" : (sim.drawing ? "draw" : ((sim.moving ?? false) ? "w\(anim + 1)" : "w1"))
         setTex(heroBB, "hero/\(sim.hero.dir.rawValue)/\(pose)")
-        heroBB.mesh.position.set(FX(hx), hy, 9)
+        heroBB.mesh.position.set(MX(hx), hy, 9)
         heroBB.mesh.scale.x = 1
         let hl = probeLight(hx, hy, dark)
         heroBB.mat.color.setRGB(hl, hl, hl)
         if sim.hero.hurt > 0 && Int(jsFloor(tSec * 14)) % 2 == 0 { heroBB.mat.color.set("#ff5c5c") }
-        heroBB.shadow.position.set(FX(hx), hy, 0.12)
+        heroBB.shadow.position.set(MX(hx), hy, 0.12)
 
         if sim.arc > 0 {
             let af = Double(sim.arc) / ARC_DUR
@@ -746,7 +747,7 @@ public final class EmberwoodRenderer {
             arcMesh.visible = true
             arcMesh.quaternion = camera.quaternion
             arcMesh.rotateZ((ARC_DIRS[sim.arcDir] ?? 0) + (0.5 - af) * 0.9)
-            arcMesh.position.set(FX(hx + avx * 11), hy + avy * 11, 10)
+            arcMesh.position.set(MX(hx + avx * 11), hy + avy * 11, 10)
             let grow = 0.82 + (1 - af) * 0.4
             arcMesh.scale.set(grow, grow, 1)
             arcMat.opacity = af
@@ -781,12 +782,12 @@ public final class EmberwoodRenderer {
             if e.type == "wyrm" { b.mesh.scale.set(24.0 / 16, 20.0 / 16, 1) }
             if e.type == "king" { b.mesh.scale.set(28.0 / 16, 28.0 / 16, 1) }
             if e.type == "hawk" { b.mesh.scale.set(22.0 / 16, 18.0 / 16, 1) }
-            b.mesh.position.set(FX(e.x), e.y, 8 + (e.type == "bat" || e.type == "wisp" ? 6 : (e.type == "hawk" && e.rest <= 0 ? 5 : 0)))
+            b.mesh.position.set(MX(e.x), e.y, 8 + (e.type == "bat" || e.type == "wisp" ? 6 : (e.type == "hawk" && e.rest <= 0 ? 5 : 0)))
             b.mesh.scale.x *= (e.fx > 0.1 ? -1 : 1)
             let el = e.hitT > 0 ? 1.7 : probeLight(e.x, e.y, dark)
             b.mat.color.setRGB(min(1.6, el), e.hitT > 0 ? 1.1 : el, e.hitT > 0 ? 1.1 : el)
             b.mat.opacity = e.type == "wisp" ? 0.65 + 0.3 * jsSin(tSec * 6 + (e.i.map(Double.init) ?? .nan)) : 1
-            b.shadow.position.set(FX(e.x), e.y, 0.12)
+            b.shadow.position.set(MX(e.x), e.y, 0.12)
             b.shadow.scale.setScalar(e.boss != 0 ? 2 : 1)
         }
         let wyrm = sim.enemies.first { $0.type == "wyrm" && !$0.dead }
@@ -801,7 +802,7 @@ public final class EmberwoodRenderer {
             tailLive += 1
             t.mesh.visible = true
             setTex(t, i % 2 != 0 ? "wyrm/segB" : "wyrm/seg")
-            let tx = FX(pa.0) - FX(pb.0)
+            let tx = MX(pa.0) - MX(pb.0)
             let ty = pa.1 - pb.1
             if abs(tx) + abs(ty) > 0.01 { t.lastYaw = jsAtan2(ty, tx); t.oriented = 1 }
             t.mesh.quaternion = camera.quaternion
@@ -809,7 +810,7 @@ public final class EmberwoodRenderer {
             let spd = jsHypot(p.0 - pb.0, p.1 - pb.1) / 3
             let taper = 1 - Double(i) * 0.038
             t.mesh.scale.set(taper * (1 + min(0.16, spd * 0.16)), taper * (1 - min(0.22, spd * 0.2)), 1)
-            t.mesh.position.set(FX(p.0), p.1, 7.4 - Double(i) * 0.17 + min(1.1, spd * 1.3) * (1 - Double(i) / Double(tailPool.count)))
+            t.mesh.position.set(MX(p.0), p.1, 7.4 - Double(i) * 0.17 + min(1.1, spd * 1.3) * (1 - Double(i) / Double(tailPool.count)))
             let wl = probeLight(p.0, p.1, dark)
             if w.hitT > 0 { t.mat.color.setRGB(1.7, 1.2, 1.2) }
             else if w.stagger > 0 && (i + Int(jsFloor(tSec * 12))) % 3 == 0 { t.mat.color.setRGB(1.5, 0.85, 0.4) }
@@ -824,10 +825,10 @@ public final class EmberwoodRenderer {
             let dr = sim.drops[i]
             d.mesh.visible = true; d.shadow.visible = true
             setTex(d, dr.kind == "ember" ? "ember/\(anim)" : dr.kind)
-            d.mesh.position.set(FX(dr.x), dr.y, 5 + jsSin(tSec * 5 + Double(dr.t) * 0.1) * 1.5)
+            d.mesh.position.set(MX(dr.x), dr.y, 5 + jsSin(tSec * 5 + Double(dr.t) * 0.1) * 1.5)
             let dl2 = probeLight(dr.x, dr.y, dark)
             d.mat.color.setRGB(dl2, dl2, dl2)
-            d.shadow.position.set(FX(dr.x), dr.y, 0.12)
+            d.shadow.position.set(MX(dr.x), dr.y, 0.12)
         }
         for i in 0..<projPool.count {
             let p = projPool[i]
@@ -836,7 +837,7 @@ public final class EmberwoodRenderer {
             p.mesh.visible = true
             setTex(p, pr.kind == "arrow" ? "arrow" : (pr.kind == "gust" ? "gust" : "orb"))
             p.mat.opacity = pr.kind == "gust" ? max(0.2, min(1, Double(pr.life ?? 0) / 24)) : 1
-            p.mesh.position.set(FX(pr.x), pr.y, 8)
+            p.mesh.position.set(MX(pr.x), pr.y, 8)
             p.mesh.rotation.z = jsAtan2(pr.vy, pr.vx)
             let pl = probeLight(pr.x, pr.y, dark)
             p.mat.color.setRGB(pl, pl, pl)
@@ -848,19 +849,19 @@ public final class EmberwoodRenderer {
             let bb = sim.bombs[i]
             b.mesh.visible = true; setTex(b, "bomb")
             let puls = bb.fuse < 22 && Int(jsFloor(tSec * 10)) % 2 == 0
-            b.mesh.position.set(FX(bb.x), bb.y, 6)
+            b.mesh.position.set(MX(bb.x), bb.y, 6)
             b.mat.color.setRGB(puls ? 2 : 1, puls ? 1.2 : 1, puls ? 1.2 : 1)
-            b.shadow.position.set(FX(bb.x), bb.y, 0.12)
+            b.shadow.position.set(MX(bb.x), bb.y, 0.12)
         }
         for i in 0..<blockBBs.count {
             let b = blockBBs[i]
             guard i < sim.blocks.count else { b.mesh.visible = false; b.shadow.visible = false; continue }
             let bk = sim.blocks[i]
             b.mesh.visible = true
-            b.mesh.position.set(FX(Double(bk.x * TS + 8)), Double(bk.y * TS + 8), 7)
+            b.mesh.position.set(MX(Double(bk.x * TS + 8)), Double(bk.y * TS + 8), 7)
             let bl = probeLight(Double(bk.x * TS + 8), Double(bk.y * TS + 8), dark)
             b.mat.color.setRGB(bl, bl, bl)
-            b.shadow.position.set(FX(Double(bk.x * TS + 8)), Double(bk.y * TS + 8), 0.12)
+            b.shadow.position.set(MX(Double(bk.x * TS + 8)), Double(bk.y * TS + 8), 0.12)
         }
         for i in parts.indices {
             var p = parts[i]
@@ -906,7 +907,7 @@ public final class EmberwoodRenderer {
         compMat.set("tScene", .texture(rtScene.texture))
         compMat.set("tBloom", .texture(rtA.texture))
         compMat.set("tSoft", .texture(rtD.texture))
-        let v = Vector3(FX(simFocus.0), simFocus.1, 0).project(camera)
+        let v = Vector3(MX(simFocus.0), simFocus.1, 0).project(camera)
         compMat.set("focus", .vec2(Vector2((v.x + 1) / 2, (v.y + 1) / 2)))
         renderer.setRenderTarget(nil)
         renderer.render(quadScene, quadCam)
@@ -914,7 +915,7 @@ public final class EmberwoodRenderer {
 
     public func setFocus(_ x: Double, _ y: Double) { simFocus = (x, y) }
     public func screenPos(_ x: Double, _ y: Double, _ z: Double = 0) -> (x: Double, y: Double) {
-        let v = Vector3(FX(x), y, z).project(camera)
+        let v = Vector3(MX(x), y, z).project(camera)
         return ((v.x + 1) / 2, (1 - v.y) / 2)
     }
     public func loadTex() { TEX = true; texCache.removeAll() }

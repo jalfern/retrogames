@@ -77,21 +77,22 @@ public final class WebGLRenderer {
         if canvasSamples > 1 {
             if canvasMSAA == nil || canvasMSAA!.width != tex.width || canvasMSAA!.height != tex.height || canvasMSAA!.pixelFormat != tex.pixelFormat {
                 let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: tex.pixelFormat, width: tex.width, height: tex.height, mipmapped: false)
-                d.textureType = .type2DMultisample; d.sampleCount = canvasSamples; d.usage = .renderTarget; d.storageMode = .private
+                d.textureType = .type2DMultisample; d.sampleCount = canvasSamples; d.usage = .renderTarget; d.storageMode = transient
                 canvasMSAA = device.makeTexture(descriptor: d)
                 let dd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float, width: tex.width, height: tex.height, mipmapped: false)
-                dd.textureType = .type2DMultisample; dd.sampleCount = canvasSamples; dd.usage = .renderTarget; dd.storageMode = .private
+                dd.textureType = .type2DMultisample; dd.sampleCount = canvasSamples; dd.usage = .renderTarget; dd.storageMode = transient
                 canvasDepth = device.makeTexture(descriptor: dd)
             }
         } else if canvasDepth == nil || canvasDepth!.width != tex.width || canvasDepth!.height != tex.height || canvasDepth!.textureType != .type2D {
             canvasMSAA = nil
             let dd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float, width: tex.width, height: tex.height, mipmapped: false)
-            dd.usage = .renderTarget; dd.storageMode = .private
+            dd.usage = .renderTarget; dd.storageMode = transient
             canvasDepth = device.makeTexture(descriptor: dd)
         }
     }
 
     /// the command buffer frames encode into; commit it with `present` / `finish`
+    public var currentCommandBuffer: MTLCommandBuffer { cb }
     var cb: MTLCommandBuffer {
         if let c = commandBuffer { return c }
         let c = queue.makeCommandBuffer()!
@@ -156,6 +157,15 @@ public final class WebGLRenderer {
 
     // MARK: render targets
 
+    /// MSAA samples and depth that never leave the tile: memoryless on iOS/tvOS
+    private var transient: MTLStorageMode {
+        #if os(iOS) || os(tvOS)
+        return .memoryless
+        #else
+        return .private
+        #endif
+    }
+
     private func prepare(_ rt: WebGLRenderTarget) {
         guard rt.dirty || rt.colorTex == nil else { return }
         let fmt: MTLPixelFormat = rt.texture.colorSpace == .srgb ? .rgba8Unorm_srgb : .rgba8Unorm
@@ -166,13 +176,13 @@ public final class WebGLRenderer {
         rt.texture.source.mtlSRGB = rt.colorTex
         if rt.samples > 0 {
             let m = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: fmt, width: rt.width, height: rt.height, mipmapped: false)
-            m.textureType = .type2DMultisample; m.sampleCount = rt.samples; m.usage = .renderTarget; m.storageMode = .private
+            m.textureType = .type2DMultisample; m.sampleCount = rt.samples; m.usage = .renderTarget; m.storageMode = transient
             rt.msaaTex = device.makeTexture(descriptor: m)
         } else { rt.msaaTex = nil }
         if rt.depthBuffer {
             let dd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float, width: rt.width, height: rt.height, mipmapped: false)
             if rt.samples > 0 { dd.textureType = .type2DMultisample; dd.sampleCount = rt.samples }
-            dd.usage = .renderTarget; dd.storageMode = .private
+            dd.usage = .renderTarget; dd.storageMode = transient
             rt.depthTex = device.makeTexture(descriptor: dd)
         } else { rt.depthTex = nil }
         rt.dirty = false

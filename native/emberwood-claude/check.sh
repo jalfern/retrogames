@@ -9,6 +9,10 @@
 #     every tick — the attract run, another attract seed, and every bot fuzz.
 #  5. Fuzz: the bot route with random pad overrides, and random pads started in
 #     the act-two rooms (Hollow King, Cinderhawk, vents, gale runes, shop).
+#  6. Render parity: the native diorama (render.js on MiniThree) draws the
+#     scripted moments in parity/scenes.json within tolerance of the web's own
+#     frames (parity/web, from scripts/webframes.mjs). scripts/parity.sh --web
+#     recaptures those after a render.js or art change.
 set -e
 cd "${0:A:h}"
 root=../..
@@ -40,5 +44,7 @@ for st in \
   for fz in 3 9; do race --fuzz $fz --setup "$st"; done
 done
 echo "fuzz: $runs runs, $fails differ"
+.build/debug/emberwood-render frames >/dev/null
+.build/debug/emberwood-render compare || fails=$((fails+1))
 rm -rf $tmp
 [ $fails -eq 0 ]

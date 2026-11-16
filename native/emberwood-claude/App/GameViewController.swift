@@ -3,8 +3,9 @@
 // route, a new seed each lap) → play (Y = WATCH),
 // a fixed 60 Hz sim step, autosave/continue, the shop, the fx→sound map, the
 // three music beds with the combat-heat tempo. The sim owns every rule; this
-// file paints (Stage), plays sounds (Synth) and listens (Controls). The
-// attract and WATCH both run Bot.swift, a tick-exact port of bot.js.
+// file drives the diorama (Diorama: render.js on MiniThree, under the HUD),
+// plays sounds (Synth) and listens (Controls). The attract and WATCH both run
+// Bot.swift, a tick-exact port of bot.js.
 
 import UIKit
 import SpriteKit
@@ -21,14 +22,22 @@ typealias BaseViewController = UIViewController
 final class GameViewController: BaseViewController {
     private let skView = SKView()
     private var scene: GameScene!
+    private var diorama: Diorama!
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
+        // the 3D diorama underneath, the SpriteKit HUD on top (transparent)
+        diorama = Diorama(frame: view.bounds)
+        view.addSubview(diorama.view)
         skView.ignoresSiblingOrder = true
+        skView.allowsTransparency = true
+        skView.backgroundColor = .clear
         view.addSubview(skView)
         scene = GameScene(size: CGSize(width: 320, height: 180))
         scene.scaleMode = .aspectFit
+        scene.backgroundColor = .clear
+        scene.diorama = diorama
         scene.host = self
         skView.presentScene(scene)
         #if os(tvOS)
@@ -44,6 +53,7 @@ final class GameViewController: BaseViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        diorama.view.frame = view.bounds
         #if os(iOS)
         skView.frame = view.bounds
         scene.layout(view.bounds.size, safe: view.safeAreaInsets)
@@ -76,8 +86,7 @@ final class GameScene: SKScene {
     weak var host: GameViewController?
     let controls = Controls.emberwood()
     private let synth = Synth.shared
-    private let stage = Stage()
-    private let room = SKCropNode()
+    var diorama: Diorama!
     private let hud = SKNode(), overlay = SKNode()
     /// the 320x180 game block (room + side HUD + overlays); on iOS the scene is
     /// shaped like the screen and this block sits clear of the on-screen pad
@@ -106,21 +115,9 @@ final class GameScene: SKScene {
     static let SAVE_KEY = "emberwood.save.v1"
 
     override func didMove(to view: SKView) {
-        backgroundColor = rgb("#0d0b14")
+        backgroundColor = .clear
         anchorPoint = .zero
-        let mask = SKSpriteNode(color: .white, size: CGSize(width: ROOM_W, height: ROOM_H))
-        mask.anchorPoint = .zero
-        room.maskNode = mask
-        room.position = CGPoint(x: 32, y: 2)
-        room.addChild(stage)
         addChild(canvas)
-        canvas.addChild(room)
-        let frameRect = SKShapeNode(rect: CGRect(x: 31, y: 1, width: ROOM_W + 2, height: ROOM_H + 2))
-        frameRect.strokeColor = rgb("#3a2a1c"); frameRect.lineWidth = 1; frameRect.zPosition = 5
-        canvas.addChild(frameRect)
-        let vig = SKSpriteNode(texture: Tex.soft("vignette", 128, [(0, 0), (0.7, 0), (1, 0.4)]), size: CGSize(width: ROOM_W * 1.4, height: ROOM_H * 1.5))
-        vig.position = CGPoint(x: ROOM_W / 2, y: ROOM_H / 2); vig.zPosition = 4000
-        room.addChild(vig) // inside the crop: the vignette darkens the room's edge, never the margins
         hud.zPosition = 10; overlay.zPosition = 20
         canvas.addChild(hud); canvas.addChild(overlay)
         #if os(iOS)
@@ -223,7 +220,7 @@ final class GameScene: SKScene {
         stopWatch(sound: false)
         sim = Sim(seed: 11)
         bot = Bot()
-        stage.build(sim)
+        diorama.build(sim)
         setMode(.attract)
         synth.musicLevel = 0.45
         synth.startMusic("emberwoodVale")
@@ -240,7 +237,7 @@ final class GameScene: SKScene {
         bot = Bot()
         watching = false; watchSnap = nil
         prev = PadPrev()
-        stage.build(sim)
+        diorama.build(sim)
         lastSaveScreen = sim.screen; lastSaveTick = sim.tick
         acc = 0
         synth.musicLevel = 1
@@ -357,9 +354,11 @@ final class GameScene: SKScene {
             perfFrames += 1; perfSteps += steps; perfWorst = max(perfWorst, dt)
             perfCost += CACurrentMediaTime() - t0
             if clock - perfT > 2 {
-                let line = String(format: "EMBERWOOD PERF %.1f fps, %.2f steps/frame, worst frame %.1f ms, sim+paint %.2f ms/frame, screen %@, nodes %d",
+                let ds = diorama.view.drawableSize
+                let line = String(format: "EMBERWOOD PERF %.1f fps, %.2f steps/frame, worst frame %.1f ms, sim %.2f ms/frame, 3D cpu %.2f ms gpu %.2f ms at %dx%d (buffer %dx%d), screen %@, hud nodes %d",
                                   Double(perfFrames) / (clock - perfT), Double(perfSteps) / Double(max(1, perfFrames)), perfWorst * 1000,
-                                  perfCost / Double(max(1, perfFrames)) * 1000, sim.screen, countNodes(self))
+                                  perfCost / Double(max(1, perfFrames)) * 1000, diorama.cpuMs, diorama.gpuMs, Int(ds.width), Int(ds.height),
+                                  diorama.stage.bufW, diorama.stage.bufH, sim.screen, countNodes(self))
                 print(line); fflush(stdout)
                 perfT = clock; perfFrames = 0; perfSteps = 0; perfWorst = 0; perfCost = 0
             }
@@ -368,7 +367,7 @@ final class GameScene: SKScene {
         let fx = sim.fx
         sim.fx.removeAll()
         if mode == .play || mode == .win { for e in fx { synth.fx(e.k, boss: e.boss) } }
-        stage.onFx(fx)
+        diorama.onFx(fx)
         if mode == .play && sim.galing && sim.tick % 6 == 0 {
             let k = min(1, Double(sim.bHoldT - 12) / 24)
             synth.filteredNoise(0.1, 0.02 + k * 0.05, 420 + k * 900)
@@ -425,7 +424,7 @@ final class GameScene: SKScene {
         #if os(iOS)
         pauseButton.isHidden = !(mode == .play || mode == .pause)
         #endif
-        stage.sync(sim, clock)
+        diorama.frame(sim, clock)
         drawHud()
         drawOverlay()
     }
@@ -437,6 +436,16 @@ final class GameScene: SKScene {
         hudSig = sig
         hud.removeAllChildren()
         if mode == .attract { return }
+        // the columns sit over the diorama now (as the web's HTML HUD sits over
+        // its canvas): a dusk backing keeps them legible over a lit vale
+        func backing(_ r: CGRect) {
+            let p = SKShapeNode(rect: r, cornerRadius: 3)
+            p.fillColor = rgb("#140e18").withAlphaComponent(0.55); p.strokeColor = .clear; p.zPosition = -1
+            hud.addChild(p)
+        }
+        let rows = 2 + [it.blade, it.bow, it.shield, it.gale, it.step].filter { $0 }.count
+        backing(CGRect(x: 2, y: CGFloat(170 - ((h.max + 2) / 3) * 7 - 21), width: 29, height: CGFloat(((h.max + 2) / 3) * 7 + 27)))
+        backing(CGRect(x: 291, y: CGFloat(170 - rows * 10 + 4), width: 28, height: CGFloat(rows * 10 + 2)))
         // left column: hearts, embers, keys
         for i in 0..<h.max {
             let s = icon("heart", 6, 5.4, CGFloat(9 + (i % 3) * 7), CGFloat(170 - (i / 3) * 7))
