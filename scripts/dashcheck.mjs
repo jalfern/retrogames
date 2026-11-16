@@ -589,7 +589,7 @@ for (let i = 0; i < LEVELS.length; i++) {
                 if (!isAmo2(g.grid[i])) continue
                 n++
                 const x = i % W, y = (i - x) / W
-                if (!(x >= 20 && x <= 30 && y >= 4 && y <= 8)) viol = viol || `tick ${g.tick} slime at ${x},${y}`
+                if (!(x >= 22 && x <= 28 && y >= 4 && y <= 8)) viol = viol || `tick ${g.tick} slime at ${x},${y}`
             }
             peak = Math.max(peak, n)
         }

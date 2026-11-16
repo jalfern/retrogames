@@ -272,25 +272,27 @@ export const LEVELS = [
         name: 'FORK BASIN', timeTicks: 2400, need: 6,
         spawn: { x: 3, y: 18 }, exit: { x: 36, y: 2 },
         amoebaDir: [1, 0], amoebaVariant: 'fork',
-        amoebas: [{ cells: [[21, 6]], dir: [1, 0], variant: 'fork' }],
+        amoebas: [{ cells: [[23, 6]], dir: [1, 0], variant: 'fork' }],
         proves: ['dig', 'amoeba', 'dissolve', 'fork'],
         // #2417-style readability telegraph (painter-only): the dirt row capping
         // the pocket reads "danger below".
-        lids: [[20, 3], [21, 3], [22, 3], [23, 3], [24, 3], [25, 3], [26, 3],
-            [27, 3], [28, 3], [29, 3], [30, 3]],
+        lids: [[22, 3], [23, 3], [24, 3], [25, 3], [26, 3], [27, 3], [28, 3]],
         build() {
             const c = new Carve()
             c.shell()
             c.rect(2, 16, 4, 20, EMPTY)                 // start, bottom-left
             c.rect(34, 1, 37, 4, EMPTY)                 // exit, top-right
             c.seam(18, 8, 13)                           // supported harvest — quota lives here, far from the slime
-            // the fork pocket, sealed by untouched dirt all around
-            c.rect(20, 4, 30, 8, EMPTY)
-            c.rect(24, 5, 25, 7, DIRT)                  // the pillar the forking fingers must wrap
-            c.set(21, 6, AMO_HEAD)                     // one origin, driving east
+            // the fork pocket, sealed by untouched dirt all around. Sized so the
+            // capped blob fills it, hits its boundaries, then expires — the same
+            // self-limiting life as SLIME VAULT's wave (a roomier pocket would
+            // leave it still growing at the end of the drive window).
+            c.rect(22, 4, 28, 8, EMPTY)
+            c.rect(25, 5, 26, 7, DIRT)                  // the pillar the forking fingers must wrap
+            c.set(23, 6, AMO_HEAD)                     // one origin, driving east
             // bait gems on the pocket floor, on solid ground (construction rule 1:
             // nothing loose over open space) — the wave dissolves them as it wraps.
-            c.set(28, 8, DIAMOND); c.set(29, 8, DIAMOND)
+            c.set(26, 8, DIAMOND); c.set(27, 8, DIAMOND)
             return c.g
         },
     },
