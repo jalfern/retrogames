@@ -240,7 +240,11 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     // IN behind the wreck, staying behind it.
     await page.evaluate(() => window.__bikeTest.setup({ track: 0, x: 100, v: 0, rivals: { GORDON: { d: 250, v: 0, down: 400 }, IVAN: { d: 170, v: 4.8 }, KATO: { d: 20, v: 0 } } }))
     let piled = null, toastPiled = false
-    for (let i = 0; i < 70 && !piled; i++) {
+    // #2498: the HUD div lags the sim a couple of frames (the toast text lands
+    // via the step-boundary write), so exiting the moment `piled` seats read the
+    // innerText one frame too early and the gate failed every run, deterministic.
+    // Poll until BOTH the state chain and its on-screen announcement are seen.
+    for (let i = 0; i < 70 && !(piled && toastPiled); i++) {
         const s = await probe()
         const iv = s.rivals.find((q) => q.name === 'IVAN')
         if (iv && iv.down > 0 && iv.crashes >= 1) piled = { d: iv.d, gd: s.rivals.find((q) => q.name === 'GORDON').d }
