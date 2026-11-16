@@ -758,7 +758,50 @@ Mutants proven: `chipHover` → `return null` kills exactly the two reveal pins;
 dropping the reserved-space line kills exactly the two hold-open pins; restore.
 `peoplecheck` 585/0, seed-exact hash pins green (the layer is view-only).
 
+## Sneak in the night (#2520) — odd nights the lot keeps watch
+
+The day/night clause gets its first **night** citizen: the original's clock
+brings not only deliveries but a burglar. The lot now has something to lose
+after dark — and an answer on the shelf.
+
+- **The loot is ornament, never cash.** `SNEAK_LOOT = ['plant','rug','lamp']`
+  — one loose decor item, lifted at the door-step. The economy stays provably
+  untouched: the sneak section contains no `s.money` at all (source-pinned),
+  so the attract-win margin (~§10 on tight seeds) can never be robbed into a
+  loss. A bare lot gets an honest `sneak-empty` — he came, found nothing loose,
+  left. `s.lost` counts ornaments and rides the hash.
+- **Parity is arithmetic, not dice.** Odd days (`day % 2 === 1`) are his
+  nights; he lands at 23:00 (`SNEAK_DUE`), window to 23:59, one visit per
+  night stamped by `sneakNight === s.day` (the paper-route doctrine). Because
+  the rule reads the day, the twelve-night determinism twin passes untouched —
+  the section draws no rng (`updateSneak` is source-pinned rng-free).
+- **Visitor-shaped, not resident-shaped.** He rides the `g.sneak` slot like
+  the cat and the kid: gate cell (12,5) → door-step (10,5) via BFS, `enter →
+  grab → leaving`, on the depth line, retired at midnight by `newDay`
+  (`sneak-gone`) — nothing prowls into tomorrow. `drawPerson` gives him the
+  fedora (`p.sneak`); the alarm sprite is a DOMED SIREN with a night halo.
+- **The answer is purchasable.** *Burglar Alarm*, §90, walkable decor on the
+  SPECIAL shelf (card 19). `hasAlarm(s)` is the one honest voice; a placed
+  alarm turns him AT the gate post (`sneak-scared`, `scareDay` stamped) — the
+  foot never lands, nothing is taken. Parity still applies: an alarm doesn't
+  make safe nights safer, it makes his nights harmless.
+- **Voices.** `sneak-in` = three falling low triangle steps (near-silent);
+  `sneak-scared` = two-tone siren + red burst at the gate; `sneak-take` =
+  low thunk + shake, banner names the ornament (`THE SNEAK TOOK THE POTTED
+  FERN`). Events are `{ t: ... }` per house convention; the marquee teaches
+  the law (`THE SNEAK WALKS ODD NIGHTS AT ELEVEN…`).
+- **Rig + telemetry.** `ringSneak(s)` (F1 cheat `RING SNEAK`, dev hook
+  `__homebodyTest.ringSneak`) bypasses parity (retires tonight's stamp) but
+  never the alarm — QA can demand a prowler on any seed.
+  `__homebodyTest.sneak` / `.sneakLedger` read the visit and the losses.
+- **peoplecheck** (§SNEAK IN THE NIGHT): shelf, ledger, parity forever,
+  organic gate→verdict→gone, one-a-night with even nights clean, decor take
+  + bare-lot empty, alarm-at-the-post (rig obeys it), midnight retire, four
+  hash carriers, rng-free source, determinism twin, win economy intact,
+  marquee/case/art/rig source pins. 650 checks, 0 fail.
+
 ## Honest gaps (filed to QA #…)
+
 - **CLOSED by #1806:** multiple rooms — one expansion ships: the Spare Room kit
   grows a wing on the east lawn (floor/walls/door/windows, connectivity-guarded,
   one per lot). Deeper multi-room building (choose placement, second wing, rooms
@@ -796,7 +839,9 @@ adoptable child (see Kids (#2203)).
   below) is its first hour-scheduled citizen, the meal bells (#2244,
   §Meal bells below) its next two, **CLOSED by #2303** the garbage truck
   (§Garbage day below) keeps the street, and **CLOSED by #2503** the
-  ice-cream man (§Ice cream truck below) sells the hot afternoon. Nothing
+  ice-cream man (§Ice cream truck below) sells the hot afternoon, and
+  **CLOSED by #2520** the sneak (§Sneak in the night below) walks the odd
+  night — the clause now keeps hours at both ends of the day. Nothing
   else on the lot keeps hours beyond work, Ivy's rounds and the morning news.
 - Needs panel shows both residents; no per-object queue display like the
   original. — **CLOSED by #2470** (per-resident action queue: a tap on an

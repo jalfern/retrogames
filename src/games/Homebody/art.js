@@ -421,6 +421,30 @@ export function drawItemAt(ctx, id, x, y, t, night = 0) {
             ctx.beginPath(); ctx.ellipse(x + 16, y + 29.5, 6.5, 2, 0, 0, 7); ctx.fill()
             break
         }
+        case 'alarm': {
+            // #2520: the tin on the shelf — dome siren, a blinking LED, a whip
+            // antenna. At night its red gains a halo: the lot watches back.
+            ctx.fillStyle = '#6d6f78'
+            ctx.fillRect(x + 9, y + 18, 14, 8)
+            ctx.fillStyle = '#4d4f57'
+            ctx.fillRect(x + 9, y + 24, 14, 2)
+            ctx.fillStyle = '#c0392b'
+            ctx.beginPath(); ctx.arc(x + 16, y + 18, 3.6, Math.PI, 0); ctx.fill()      // the dome
+            const pulse = 0.5 + 0.5 * Math.sin(t * 4)
+            ctx.fillStyle = `rgba(255,72,55,${(0.35 + 0.65 * pulse).toFixed(3)})`
+            ctx.beginPath(); ctx.arc(x + 12.6, y + 21.4, 1.6, 0, 7); ctx.fill()        // the LED
+            if (night > 0) {
+                ctx.fillStyle = `rgba(255,72,55,${((0.08 + 0.14 * pulse) * night).toFixed(3)})`
+                ctx.beginPath(); ctx.arc(x + 12.6, y + 21.4, 5 + pulse * 3, 0, 7); ctx.fill()
+            }
+            ctx.strokeStyle = '#9a9ca6'; ctx.lineWidth = 1
+            ctx.beginPath(); ctx.moveTo(x + 22, y + 18); ctx.lineTo(x + 26, y + 10 + Math.sin(t * 3) * 0.6); ctx.stroke()   // whip antenna, alive in the wind
+            ctx.fillStyle = '#d8dade'
+            ctx.beginPath(); ctx.arc(x + 26, y + 9.2, 1.2, 0, 7); ctx.fill()
+            ctx.fillStyle = 'rgba(30,20,10,0.16)'
+            ctx.beginPath(); ctx.ellipse(x + 16, y + 27.5, 7.5, 2, 0, 0, 7); ctx.fill()   // decor keeps its own shadow
+            break
+        }
         default: break
     }
     // soft ground shadow under solids
@@ -535,6 +559,19 @@ export function drawPerson(ctx, p, t, active, fx = null, lean = 0) {
         ctx.fillStyle = '#d1483f'
         ctx.beginPath(); ctx.arc(0.5, -1.5, 1.6, 0, 7); ctx.fill()
         ctx.restore()
+    }
+    // #2520: the sneak — a snap-brim fedora pulled low over the eyes; on a
+    // dark-coat silhouette the lot learns him at a glance (drawn over the
+    // hair the body painter laid, so the brim sits where a hat sits).
+    if (p.sneak) {
+        const hy = y - 15 + (p.path && p.path.length ? Math.sin(p.walkPhase) * 1.6 : Math.sin(t * 2 + p.x) * 0.6)
+        ctx.fillStyle = '#221b2c'
+        ctx.beginPath(); ctx.ellipse(x, hy + 2.6, 8.4, 2.1, 0, 0, 7); ctx.fill()   // the brim
+        ctx.fillRect(x - 4.4, hy - 3.6, 8.8, 6.2)                                     // the crown
+        ctx.fillStyle = '#5a4a6e'
+        ctx.fillRect(x - 4.4, hy - 0.4, 8.8, 1.5)                                     // the band
+        ctx.fillStyle = 'rgba(10,8,14,0.55)'
+        ctx.fillRect(x - 5.4, hy + 4.6, 10.8, 2.4)                                    // the shadow the brim casts
     }
     // #2076: the spat tell — a little storm cloud throwing a bolt over this head
     if (fx === 'spat') {

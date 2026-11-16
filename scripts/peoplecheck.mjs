@@ -105,6 +105,7 @@ import {
     YARN_CD, YARN_CAT_FUN, YARN_BOND, YARN_SOCIAL, YARN_PLAY_T, PET_SELF_FUN, PET_BORED, yarnOrderOk,   // #2256: the yarn ball — ordered play + the cat's own game
     BIN, BIN_HOME, BIN_CURB, GARBAGE_EVERY, TRUCK_DUE, BIN_FUN, BIN_BOND, binOrderOk,   // #2303: garbage day — the eve, the curb, the truck
     CONE, CONE_PRICE, ICE_DUE, ICE_WINDOW, ICE_FUN, ICE_KID_FUN, KID_ICE_FLOOR, coneOrderOk, ringTruck, icePassHour, ICE_TIMBRE,   // #2503: the ice-cream truck — the jingle, the curb, the price, the chase
+    SNEAK_DUE, SNEAK_WINDOW, SNEAK_LOOT, sneakNightDue, hasAlarm, ringSneak, SNEAK_CREEP, SNEAK_SIREN,   // #2520: the sneak — the window, the loot list, the parity, the alarm, the rig
 } from '../src/games/Homebody/sim.js'
 import { readFileSync } from 'node:fs'
 
@@ -137,7 +138,7 @@ section('BOOT')
     check('five needs per resident, all positive', g.people.every((p) => NEEDS.length === 5 && NEEDS.every((n) => p.needs[n] > 0.5)))
     check('starter house has bed/fridge/toilet/mail/radio', ['bed', 'fridge', 'toilet', 'mail', 'radio'].every((id) => g.items.some((it) => it.id === id)))
     check('starter items never wall anyone in', g.items.every((it) => targetsOf(g, it).length > 0))
-    check('eighteen catalog pieces with prices; Spare Room card 14 keyed R, Adopt a Cat card 15 keyed P, Adopt a Child card 16 keyed K, Yarn Ball card 17 cat-only, Canopy Bed card 18 wing-only', CATALOG.length === 18 && CATALOG.every((d) => d.price > 0) && CATALOG[13].id === 'roomkit' && CATALOG.filter((d) => d.room).length === 1 && CATALOG[14].id === 'petkit' && CATALOG.filter((d) => d.pet).length === 1 && CATALOG[15].id === 'kidkit' && CATALOG.filter((d) => d.kid).length === 1 && CATALOG[16].id === 'yarn' && CATALOG[16].catOnly === true && CATALOG[17].id === 'canopy' && CATALOG.filter((d) => d.wingOnly).length === 1)   // #2197/#2203/#2256/#2272
+    check('nineteen catalog pieces with prices; Spare Room card 14 keyed R, Adopt a Cat card 15 keyed P, Adopt a Child card 16 keyed K, Yarn Ball card 17 cat-only, Canopy Bed card 18 wing-only, Burglar Alarm card 19', CATALOG.length === 19 && CATALOG.every((d) => d.price > 0) && CATALOG[13].id === 'roomkit' && CATALOG.filter((d) => d.room).length === 1 && CATALOG[14].id === 'petkit' && CATALOG.filter((d) => d.pet).length === 1 && CATALOG[15].id === 'kidkit' && CATALOG.filter((d) => d.kid).length === 1 && CATALOG[16].id === 'yarn' && CATALOG[16].catOnly === true && CATALOG[17].id === 'canopy' && CATALOG.filter((d) => d.wingOnly).length === 1 && CATALOG[18].id === 'alarm')   // #2197/#2203/#2256/#2272/#2520
     check('tileOf maps pixels to cells', tileOf(tileX(3) + 4, tileY(2) + 4)?.c === 3 && tileOf(tileX(3), tileY(2))?.r === 2)
 }
 
@@ -3039,6 +3040,131 @@ section('ICE CREAM TRUCK (#2503): the jingle passes, the cone sells, the truck m
     check('pin: the jingle is a five-note music-box table', Array.isArray(ICE_TIMBRE) && ICE_TIMBRE.length === 5 && ICE_TIMBRE.every(([f, d, ms]) => f > 0 && d > 0 && ms >= 0))
     check('pin: the art ships the cone', /case 'cone'/.test(iArt))
     check('pin: the scenario ring ships — F1 cheat and dev hook', /RING TRUCK/.test(iJsx) && /ringTruck: \(\)/.test(iJsx))
+}
+
+// ---------------------------------------------- SNEAK IN THE NIGHT (#2520) ----
+section('SNEAK IN THE NIGHT (#2520): odd nights the ornaments are at risk, and the alarm answers')
+{
+    const keepWarm = (g) => { for (const q of g.people) { q.faintT = 0; q.needs.hunger = Math.max(q.needs.hunger, 0.8); q.needs.energy = Math.max(q.needs.energy, 0.8); q.needs.bladder = Math.max(q.needs.bladder, 0.8) } }
+
+    // the answer is purchasable, and the law reads the shelf
+    check('the alarm is a card: §90, walkable, on the SPECIAL shelf',
+        DEF.alarm && DEF.alarm.price === 90 && DEF.alarm.solid === false && !DEF.alarm.need
+        && (CAT_TABS.find((t) => t.id === 'SPECIAL') || { ids: [] }).ids.includes('alarm'))
+
+    // a fresh lot: no prowler, empty night ledger
+    const s0 = newRun(41)
+    check('a fresh lot has no sneak and an empty ledger',
+        s0.sneak === null && s0.sneakNight === 0 && s0.scareDay === 0 && s0.sneakSerial === 0 && s0.lost === 0 && !hasAlarm(s0))
+
+    // the parity is arithmetic off the day — Otto's own alternation, pure function
+    check('odd nights due, even nights safe, forever',
+        Array.from({ length: 30 }, (_, i) => sneakNightDue(i + 1)).every((d, i) => d === (i % 2 === 0)))
+
+    // the organic visit: gate → door-step → verdict → gone, day 1 (odd), and NOTHING by day
+    const s1 = newRun(42)
+    let inEv = null, takeEv = null, emptyEv = null, goneEv = null, landHour = 0, dayAtIn = 0, gateOk = false, sawDaySneak = false, n = 0
+    while (!goneEv && s1.day <= 2 && n++ < 60 * 60 * 12) {
+        advance(s1, DT); keepWarm(s1)
+        const ev = drain(s1)
+        if (!inEv && ev.some((e) => e.t === 'sneak-in')) { inEv = true; landHour = s1.hour; dayAtIn = s1.day; gateOk = s1.sneak === null || (s1.sneak.r === 12 && s1.sneak.c === 5) }
+        if (s1.sneak && s1.hour < SNEAK_DUE) sawDaySneak = true
+        takeEv = takeEv || ev.find((e) => e.t === 'sneak-take') || null
+        emptyEv = emptyEv || ev.find((e) => e.t === 'sneak-empty') || null
+        goneEv = goneEv || ev.find((e) => e.t === 'sneak-gone') || null
+    }
+    check('the sneak crosses at 23:00 on odd nights only — never in daylight',
+        !!inEv && dayAtIn === 1 && landHour >= SNEAK_DUE && landHour < SNEAK_DUE + SNEAK_WINDOW && !sawDaySneak, `${dayAtIn}@${landHour.toFixed(2)}h`)
+    check('he enters at the honest gate cell and the visit ends in exactly one verdict',
+        gateOk && (!!takeEv || !!emptyEv) && !(takeEv && emptyEv))
+    check('he leaves clean — sprite and logic walk the same visit to the end',
+        !!goneEv && s1.sneak === null && s1.lost === (takeEv ? 1 : 0) && s1.sneakNight === 1 && s1.sneakSerial === 1)
+
+    // one sneak a night AND even nights pass untouched
+    const s2 = newRun(43)
+    let marks = { 1: 0, 2: 0 }, k = 0
+    while (!(s2.day === 3) && k++ < 60 * 60 * 15) {
+        advance(s2, DT); keepWarm(s2)
+        const hits = drain(s2).filter((e) => e.t === 'sneak-in' || e.t === 'sneak-scared').length
+        marks[s2.day] = (marks[s2.day] || 0) + hits
+    }
+    check('one visit a night, day 1 lands, day 2 (even) sleeps clean',
+        marks[1] === 1 && marks[2] === 0 && s2.sneakSerial === 1, `d1 ${marks[1]}, d2 ${marks[2]}`)
+
+    // the take is an ornament, never cash — and a bare lot gets an honest empty-handed note
+    const s3 = newRun(44)
+    s3.items.push({ uid: 800, id: 'plant', r: 6, c: 4 })
+    ringSneak(s3)
+    let took3 = null
+    for (let i = 0; i < 60 * 60 && !took3; i++) { advance(s3, DT); keepWarm(s3); took3 = drain(s3).find((e) => e.t === 'sneak-take') || null }
+    check('a loose fern is the prize — the take names the ornament, never cash',
+        !!took3 && took3.id === 'plant' && SNEAK_LOOT.includes(took3.id) && s3.lost === 1
+        && !s3.items.some((it) => it.id === 'plant'))
+    s3.items = s3.items.filter((it) => !SNEAK_LOOT.includes(it.id))
+    ringSneak(s3)
+    let empty3 = null
+    for (let i = 0; i < 60 * 60 && !empty3; i++) { advance(s3, DT); keepWarm(s3); empty3 = drain(s3).find((e) => e.t === 'sneak-empty') || null }
+    check('a bare lot still gets the call — nothing loose, nothing lifted, the note is honest',
+        !!empty3 && s3.lost === 1)
+
+    // the answer: a placed alarm turns him at the gate post — foot never lands
+    const s4 = newRun(45)
+    s4.items.push({ uid: 900, id: 'alarm', r: 2, c: 2 })
+    let scare = null, moneyBefore = s4.money, ever = false
+    while (!scare && s4.day <= 1 && n++ < 60 * 60 * 20) {
+        advance(s4, DT); keepWarm(s4)
+        if (s4.sneak) ever = true
+        scare = drain(s4).find((e) => e.t === 'sneak-scared') || null
+    }
+    check('with the tin standing he never sets foot past the gate — scared, stamped, safe',
+        !!scare && !ever && s4.money === moneyBefore && s4.lost === 0 && s4.scareDay === 1 && s4.sneakNight === 1)
+    check('the rig bypasses parity (harness needs a prowler on demand) but never the alarm',
+        ringSneak(s4) !== undefined && (() => { drain(s4); for (let i = 0; i < 600 && !s4.sneak; i++) { advance(s4, DT); if (drain(s4).some((e) => e.t === 'sneak-scared')) return true } return false })())
+
+    // midnight retires whoever is still on the lot
+    const s5 = newRun(46)
+    s5.hour = 23.55
+    ringSneak(s5); advance(s5, DT)
+    check('a rigged late visit may stand', !!s5.sneak)
+    runFor(s5, 3)   // 3 real seconds crosses midnight at 5 s per sim-hour
+    check('midnight sends him home — nothing prowls into tomorrow', s5.day === 2 && s5.sneak === null)
+
+    // the night's ledger rides the hash
+    const s6 = newRun(47)
+    const hPre = stateHash(s6)
+    s6.sneakNight += 1; check('the night stamp rides the hash', stateHash(s6) !== hPre); s6.sneakNight -= 1
+    s6.scareDay += 1; check('the scare stamp rides the hash', stateHash(s6) !== hPre); s6.scareDay -= 1
+    s6.lost += 1; check('the loot ledger rides the hash', stateHash(s6) !== hPre); s6.lost -= 1
+    s6.sneakSerial += 1; check('the visit serial rides the hash', stateHash(s6) !== hPre); s6.sneakSerial -= 1
+    ringSneak(s6); advance(s6, DT)
+    check('the prowler on the lot is state', stateHash(s6) !== hPre)
+
+    // determinism: the whole twelve-night run, twice
+    const twin = () => { const g = newRun(4200); for (let i = 0; i < 60 * 60 * 12 * 6; i++) { advance(g, DT); keepWarm(g); if (g.done) break } return stateHash(g) }
+    check('twelve nights, twice, one hash — the parity law consumes no rng', twin() === twin())
+
+    // the win economy is untouched: the wish still lands with the night at risk
+    const w = play(1)
+    check('the lifetime wish still lands with the sneak on the payroll', w.done === 'win')
+
+    // source pins — the wiring must not silently drop
+    const pSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const pJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const pArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    const sBody = pSim.match(/function updateSneak\(s, dt\) \{[\s\S]*?\n\}/)?.[0] || 'MISSING'
+    check('pin: the clock\u2019s own paths draw no rng (the #2303 lesson)', sBody !== 'MISSING' && !/s\.rng\(\)|pick\(s,/.test(sBody) && /updateSneak\(s, dt\)/.test(pSim))
+    check('pin: one night is the law in the source too', /s\.sneakNight === s\.day/.test(pSim) && /s\.sneakNight = s\.day/.test(pSim))
+    check('pin: the sneak section never touches the till — the law is decor-only', !/s\.money/.test(sBody) && /SNEAK_LOOT\.includes\(it\.id\)/.test(sBody))
+    check('pin: the source states the law in plain words', /SNEAK_LOOT = \['plant', 'rug', 'lamp'\]/.test(pSim) && /HE FOUND NOTHING TO TAKE|nothing loose/.test(pJsx + pSim))
+    check('pin: the alarm gate reads the shelf once, honestly', /export function hasAlarm/.test(pSim) && /if \(hasAlarm\(s\)\)/.test(sBody))
+    check('pin: midnight retires the prowler', /if \(s\.sneak\) \{ s\.sneak = null; s\.events\.push\(\{ t: 'sneak-gone' \}\) \}/.test(pSim))
+    check('pin: the shell voices the whole visit and the marquee teaches it',
+        /case 'sneak-in'/.test(pJsx) && /case 'sneak-take'/.test(pJsx) && /case 'sneak-scared'/.test(pJsx) && /case 'sneak-gone'/.test(pJsx)
+        && /THE SNEAK TOOK/.test(pJsx) && /THE ALARM SCARES HIM OFF/.test(pJsx) && /SOMEONE IS ON THE LOT/.test(pJsx)
+        && /THE SNEAK WALKS ODD NIGHTS AT ELEVEN/.test(pJsx))
+    check('pin: the art ships the tin and the fedora', /case 'alarm'/.test(pArt) && /p\.sneak/.test(pArt))
+    check('pin: the scenario rig ships — F1 cheat and dev hook', /RING SNEAK/.test(pJsx) && /ringSneak: \(\)/.test(pJsx))
+    check('pin: he rides the depth line like every visitor here', /\.\.\.\(g\.sneak \? \[\{ p: g\.sneak, v: g\.sneak\.y \}\] : \[\]\)/.test(pJsx))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)

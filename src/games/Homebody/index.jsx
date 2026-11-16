@@ -39,6 +39,7 @@ import {
     scheduleMeals, MEAL_WINDOW, SPAT_CD,   // #2244: the meal bells — the F1 cheat re-seeds today's hours
     MEAL_TIMBRE, sharedChord, nightLevel,   // #2264: per-bell motifs, the rotating table chord, one night curve
     ringTruck, ICE_TIMBRE, CONE_PRICE, coneOrderOk,   // #2503: the ice-cream truck — the jingle table, the price, the order gate, the F1/harness ring
+    ringSneak, SNEAK_CREEP, SNEAK_SIREN, SNEAK_TAKE_SFX,   // #2520: the sneak — creep motif, siren, thunk, the F1/harness ring
     DEF, yarnOrderOk,   // #2256: the yarn ball — cat-only piece, honest refusal on tap
     binOrderOk,   // #2303: the bin — the lot's chore, honest refusal out of season
     NEED_HINT,   // #2253: the amber prompt names the fix
@@ -70,6 +71,7 @@ const MESSAGES = [
     'THE BELLS RING THREE TIMES A DAY — a warm plate waits by the kitchen. Tap to eat; eat together and BONDS rise.',
     'GARBAGE DAY EVERY THIRD DAY — the eve says WHEEL IT OUT, dawn sends the truck. Miss the curb and the lot gets skipped.',
     'THE ICE CREAM MAN PASSES EVERY AFTERNOON — when the jingle comes, a cone waits at the curb (§2 from the till). Tap it before the truck moves on.',
+    'THE SNEAK WALKS ODD NIGHTS AT ELEVEN — odd nights at 23:00 a dark coat tries the gate for a loose ornament (a plant, a rug, a lamp). A Burglar Alarm (§90, SPECIAL) turns him at the post.',
     'Fern the neighbour wanders in by day — chat fills the blue bar.',
     'CHAT builds BONDS — Fern at FAMILY visits sooner and lingers. Neglect cools them.',
     'Ivy shops the market — chat grows HER bond too. At FRIENDS she brings a basket; FAMILY adds honey-money.',
@@ -287,6 +289,28 @@ const HomebodyGame = () => {
                     case 'ice-gone':   // #2503: the truck moved on — a falling jingle tail and a pastel puff at the empty curb (the cold-plate doctrine, at ice-cream scale)
                         audioController.playSweep(880, 523, 0.28, 'triangle', 0.04)
                         if (live) { say('THE TRUCK MOVED ON'); burst(tilePx(e.c), tilePy(e.r) + 8, 6, '#ffd9e8', 1.4) }
+                        break
+                    case 'sneak-in': {   // #2520: boots on the gravel — three falling low steps, near-silent. The lot sleeps; the view keeps watch.
+                        SNEAK_CREEP.forEach(([f, d, ms]) => setTimeout(() => audioController.playTone(f, d, 'triangle', 0.03), ms))
+                        if (live) { say('SOMEONE IS ON THE LOT'); burst(tilePx(e.c), tilePy(e.r) + 10, 6, '#3c3348', 1.6) }
+                        break
+                    }
+                    case 'sneak-take':   // #2520: an armful leaving — a low thunk, a short shake, and the banner names what the lot lost
+                        SNEAK_TAKE_SFX.forEach(([f, d, ms]) => setTimeout(() => audioController.playTone(f, d, 'square', 0.05), ms))
+                        if (live) { shake = 4; say(`THE SNEAK TOOK THE ${(DEF[e.id]?.name || e.id).toUpperCase()}`); burst(tilePx(e.c), tilePy(e.r) + 8, 8, '#7a2e28', 2.2) }
+                        break
+                    case 'sneak-empty':   // #2520: nothing loose, nothing lifted — a dry little shrug of a note
+                        audioController.playTone(196, 0.12, 'triangle', 0.03)
+                        if (live) say('HE FOUND NOTHING TO TAKE')
+                        break
+                    case 'sneak-scared': {   // #2520: the answer — the tin siren wakes the street and the dark coat turns at the gate post
+                        SNEAK_SIREN.forEach(([f, d, ms]) => setTimeout(() => audioController.playTone(f, d, 'square', 0.05), ms))
+                        if (live) { say('THE ALARM SCARES HIM OFF'); burst(tilePx(5), tilePy(12) + 10, 8, '#ff5a46', 2) }
+                        break
+                    }
+                    case 'sneak-gone':   // #2520: the night keeps its secret — a soft falling sweep as he melts past the gate
+                        audioController.playSweep(262, 147, 0.34, 'triangle', 0.03)
+                        if (live) say('THE LOT SLEEPS ON')
                         break
                     case 'gift':   // #2143: the market basket lands — warm arpeggio, gold glints
                         audioController.playTone(523, 0.07, 'triangle', 0.05)
@@ -647,7 +671,7 @@ const HomebodyGame = () => {
             drawGate(ctx, g.sec)
             drawClouds(ctx, g.sec)
             for (const it of g.items) drawItem(ctx, it, g.sec, nightLevel(g.hour))   // #2264: the meal sprite keeps night hours (steam dim/slow, warm halo)
-            const order = [...g.people.map((p) => ({ p, v: p.y })), ...(g.visitor ? [{ p: g.visitor, v: g.visitor.y }] : []), ...(g.ivy ? [{ p: g.ivy, v: g.ivy.y }] : []), ...(g.pet ? [{ p: g.pet, v: g.pet.y }] : []), ...(g.kid ? [{ p: g.kid, v: g.kid.y }] : []), ...(g.giftFx > 0 && g.giftAt ? [{ p: { x: g.giftAt.x, y: g.giftAt.y }, giftLanded: true }] : [])].sort((a, b) => a.v - b.v)   // #2143: both neighbours share the lot; #2197: so does the cat; #2203: and the child; #2240: so the set-down basket rides the depth line
+            const order = [...g.people.map((p) => ({ p, v: p.y })), ...(g.visitor ? [{ p: g.visitor, v: g.visitor.y }] : []), ...(g.ivy ? [{ p: g.ivy, v: g.ivy.y }] : []), ...(g.pet ? [{ p: g.pet, v: g.pet.y }] : []), ...(g.kid ? [{ p: g.kid, v: g.kid.y }] : []), ...(g.sneak ? [{ p: g.sneak, v: g.sneak.y }] : []), ...(g.giftFx > 0 && g.giftAt ? [{ p: { x: g.giftAt.x, y: g.giftAt.y }, giftLanded: true }] : [])].sort((a, b) => a.v - b.v)   // #2143: both neighbours share the lot; #2197: so does the cat; #2203: and the child; #2520: and the sneak; #2240: so the set-down basket rides the depth line
             for (const o of order) {
                 if (o.giftLanded) { drawGroundGift(ctx, g); continue }   // #2240
                 if (g.pet && o.p === g.pet) { drawPet(ctx, o.p, g.sec); continue }   // #2197: its own sprite, same depth line
@@ -1101,6 +1125,8 @@ const HomebodyGame = () => {
                     holdT: Math.round(gs.holdT), courtArmed: gs.holdT >= 0,   // #2171: the thumb court
                     visitor: gs.visitor ? gs.visitor.name : null,
                     ivy: gs.ivy ? { name: gs.ivy.name, gift: !!gs.ivy.gift, state: gs.ivy.state, x: Math.round(gs.ivy.x), y: Math.round(gs.ivy.y) } : null,   // #2143
+                    sneak: gs.sneak ? { state: gs.sneak.state, x: Math.round(gs.sneak.x), y: Math.round(gs.sneak.y) } : null,   // #2520: the prowler reads here — the drive proves the sprite lands where the sim says
+                    sneakLedger: { night: gs.sneakNight, scare: gs.scareDay, serial: gs.sneakSerial, lost: gs.lost, alarm: gs.items.some((it) => it.id === 'alarm') },   // #2520: one-night law, scare stamp, till ledger, alarm placement — all in one readout
                     giftFx: Math.round(gs.giftFx * 10) / 10, giftHoney: !!gs.giftHoney, demoIvy: gs.demoIvy,   // #2240: the set-down + the attract's ring
                     pet: gs.pet ? { name: gs.pet.name, r: gs.pet.r, c: gs.pet.c, state: gs.pet.state, asleep: gs.pet.asleep, needs: { ...gs.pet.needs }, cd: Math.round(gs.pet.cd * 10) / 10, x: Math.round(gs.pet.x), y: Math.round(gs.pet.y) } : null,   // #2197
                     kid: gs.kid ? { name: gs.kid.name, r: gs.kid.r, c: gs.kid.c, state: gs.kid.state, asleep: gs.kid.asleep, needs: { ...gs.kid.needs }, cd: Math.round(gs.kid.cd * 10) / 10, x: Math.round(gs.kid.x), y: Math.round(gs.kid.y) } : null,   // #2203
@@ -1134,6 +1160,7 @@ const HomebodyGame = () => {
                 ivyFamily: () => { if (gs) { gs.rel.ivy = Math.max(gs.rel.ivy, REL_EDGES[2] + 5); if (gs.ivy) gs.ivy.honey = true } return 'FAMILY' },   // #2240: the top tier for scenario legs (basket + honey + gold pulse) — a visitor already inside re-declares her jar
                 ringMeal: () => { if (gs) { if (gs.meal) { gs.items = gs.items.filter((x) => x !== gs.meal); gs.meal = null; gs.mealEaten = [] } if (gs.mealSlot >= 3) { gs.mealSlot = 0; scheduleMeals(gs) } const sl = gs.mealSlot; gs.mealAfter[sl] = Math.max(Math.floor(gs.hour), gs.hour - MEAL_WINDOW + 0.05) } return 'a bell is due' },   // #2244: ring any bell now (scenario setup, like ringIvy) — retires whatever plate sits so the taps order the fresh one, and the window opens wide even if the clock passed the slot
                 ringTruck: () => (gs ? ringTruck(gs) : 'no sim'),   // #2503: call the ice-cream man now (sim-owned scenario setup — retires whatever cone stands and opens a stop at the hour)
+                ringSneak: () => (gs ? ringSneak(gs) : 'no sim'),   // #2520: send the sneak now (sim-owned scenario setup — retires any prowler and opens the window at the hour, alarm or not)
                 ivyHome: () => { if (gs && gs.ivy) { gs.ivy.state = 'leaving'; gs.ivy.path = null } },   // #2143: rig the next visit (scenario setup, like park/foul)
                 // #2070: rig the spat scenario — park the pair beside each
                 // other, both in the red; `thaw` lifts their tempers up.
@@ -1250,6 +1277,7 @@ const HomebodyGame = () => {
                 { label: 'DROP PAPER', run: () => { if (gs) { gs.paperDay = -1; gs.paperAfter = Math.min(gs.paperAfter, Math.floor(gs.hour)) } return gs ? 'the route is due — news hits the step' : 'no sim' } },   // #2238
                 { label: 'DROP MEAL', run: () => { if (gs) { if (gs.mealSlot >= 3) { gs.mealSlot = 0; scheduleMeals(gs) } const sl = gs.mealSlot; if (gs.hour < gs.mealAfter[sl]) gs.mealAfter[sl] = Math.floor(gs.hour) } return gs ? 'the bell is due — food hits the kitchen (unless one is already out)' : 'no sim' } },   // #2244
                 { label: 'RING TRUCK', run: () => (gs ? ringTruck(gs) : 'no sim') },   // #2503: the jingle lands now — a cone hits the curb (retires any cone standing)
+                { label: 'RING SNEAK', run: () => (gs ? ringSneak(gs) : 'no sim') },   // #2520: boots now — the sneak tries the gate at once (the alarm still answers if it stands)
                     { label: 'DIAL PAUSE', run: () => { if (gs) setSpeed(gs, 0); return gs ? `dial ${SPEED_NAMES[gs.speed]} — the world stands still` : 'no sim' } },   // #2227
                     { label: 'DIAL FASTEST', run: () => { if (gs) setSpeed(gs, 3); return gs ? `dial ${SPEED_NAMES[gs.speed]} — the world hurries` : 'no sim' } },   // #2227
                     { label: 'NEW SEED', run: () => { seed = nextSeed(seed); startPlay(); return `reseeded ${seed}` } },

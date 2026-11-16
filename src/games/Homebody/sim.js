@@ -280,6 +280,7 @@ export const CATALOG = [
     { id: 'kidkit', name: 'Adopt a Child', price: KID.price, h: 1, solid: false, kid: true },
     { id: 'yarn', name: 'Yarn Ball', price: 60, h: 1, solid: false, decor: true, need: 'fun', amt: 0.25, dur: 3, catOnly: true },   // #2256: card 17, the cat's own toy
     { id: 'canopy', name: 'Canopy Bed', price: 260, h: 1, solid: true, need: 'energy', amt: 0.3, dur: 9, sleep: true, cozy: 0.055, wingOnly: true },   // #2272: card 18, the wing's bedroom bed — sleeps deeper, fits nowhere else
+    { id: 'alarm', name: 'Burglar Alarm', price: 90, h: 1, solid: false, decor: true },   // #2520: card 19 — the night gets an answer; a box by the phone that keeps the whole street honest
 ]
 export const DEF = Object.fromEntries(CATALOG.map((d) => [d.id, d]))
 export const NEEDS = ['hunger', 'energy', 'fun', 'social', 'bladder']
@@ -499,6 +500,128 @@ export const icePassHour = (day) => ICE_DUE[0] + ((Math.imul(day, 2654435761) >>
 // only a human ordering the treat does (the binOrderOk pattern, #2303).
 export function coneOrderOk(s) { return !!s.cone && s.money >= CONE_PRICE }
 
+// -------------------------------------------------- sneak in the night (#2520) --
+// The day/night tail gets its NIGHT citizen (The Sims, PC 2000: burglars prowl
+// the small hours, and the burglar alarm is the buyable answer — the till
+// finally has something worth guarding). Same doctrines as the paper, the
+// truck and the bells: the due hour is arithmetic off the day, never an rng
+// draw (#2303/#2503 — an extra draw per cycle re-phases the seeded autopilot);
+// the day stamp is the law — one sneak a night, never banked; the window sits
+// wholly before midnight so the night owns one day number; and he never shows
+// his face in daylight (`hour >= SNEAK_DUE` alone proves it — 23:00 is night
+// by the lot's own clock). He is visitor-shaped: BFS from the gate cell,
+// walkAlong at a loiterer's pace, non-solid (a prowler must never fence anyone
+// in — #2508's truck law applies to him too). He crosses to the door-step,
+// lifts SNEAK_TAKE from the till (empty pockets is an honest line, the till
+// floors at zero), and walks back out. A PLACED alarm is the answer: he never
+// sets foot past the gate post — siren, scare stamp, and the hedge keeps him.
+export const SNEAK_DUE = 23               // the window opens 23:00 — the lot is asleep, the street is quiet
+export const SNEAK_WINDOW = 1           // one watched hour, closed at midnight by construction
+// He takes POSSESSIONS, not savings — the original's burglar lifts an object,
+// and HOMEBODY's economy stays whole (the starter lot's wish-planning margin is
+// razor-thin; taxing it would tax the demo's wing beat too). Loose ornaments
+// only: nothing with a need attached, nothing the lot runs on.
+export const SNEAK_LOOT = ['plant', 'rug', 'lamp']
+export const sneakNightDue = (day) => day % 2 === 1   // odd nights, Otto's own alternation — quiet, arithmetic, checkable
+export const SNEAK_CREEP = [[196, 0.28, 0], [185, 0.28, 300], [175, 0.4, 600]]        // three falling low steps — boots on gravel
+export const SNEAK_SIREN = [[880, 0.14, 0], [660, 0.14, 170], [880, 0.14, 340], [660, 0.14, 510]]   // the tin two-tone, urgent
+export const SNEAK_TAKE_SFX = [[220, 0.1, 0], [147, 0.22, 120]]                       // the thunk of an armful leaving
+export const SNEAK_IN_LINES = [
+    'A shadow slips past the gate post — someone is on the lot, and the house sleeps on.',
+    'The street-light catches a dark coat at the path: a prowler, choosing the odd hours.',
+    'Boots on the gravel, soft as regret — the lot has company at the unkindest hour.',
+]
+export const SNEAK_TAKE_LINES = [
+    'The shelf comes up light — the sneak walked straight to the ornament and pocketed it.',
+    'One knick-knack quieter: the sneak only ever takes what the day left loose.',
+    'The crate, the step, the gate — the sneak does the whole round in minutes.',
+]
+export const SNEAK_EMPTY_LINES = [
+    'Nothing loose, nothing lifted — the sneak leaves nothing behind but a dent in the pride.',
+    'A tidy lot outfoxed the prowler: he came for ornaments and found a model home.',
+]
+export const SNEAK_SCARE_LINES = [
+    'The alarm wakes the street — the never-set foot turns back at the gate post.',
+    'A tin siren and the hedge keeps him: the alarm did its one job, perfectly.',
+    'The sneak heard the alarm three houses away and took the long way round the world.',
+]
+export const SNEAK_GONE_LINES = [
+    'The dark coat melts past the gate — the lot sleeps on, plundered but unbroken.',
+    'He leaves the way he came, whistling tunelessly; the night keeps its secret.',
+]
+
+// One honest voice for "does the lot keep a dog with a siren": placed alarm,
+// anywhere on the lot. The law and the view and the harness all read this.
+export function hasAlarm(s) { return s.items.some((it) => it.id === 'alarm') }
+
+// scenario setup (the ringTruck pattern): retire whatever prowls and send one
+// now, alarm or not. Harness and F1 cheat only — the clock's own law never reads it.
+export function ringSneak(s) {
+    s.sneak = null
+    s.sneakNight = Math.min(s.sneakNight, s.day - 1)   // tonight's visit (if any) is retired — the law may land again
+    s.sneakNow = Math.max(0, s.hour - 0.01)
+    return 'boots on the gravel — the sneak is due'
+}
+
+function updateSneak(s, dt) {
+    if (s.sneak) {
+        const k = s.sneak
+        k.t += dt
+        walkAlong(s, k, dt, 52)
+        if (k.path && !k.path.length) k.path = null
+        if (k.state === 'enter' && !k.path) { k.state = 'grab'; k.t = 0 }
+        if (k.state === 'grab' && k.t > 0.6) {   // a beat at the door-step — the drama is the point
+            const gone = s.items.find((it) => SNEAK_LOOT.includes(it.id))
+            if (gone) {
+                s.items = s.items.filter((x) => x !== gone)
+                s.lost += 1
+                s.events.push({ t: 'sneak-take', id: gone.id, r: gone.r, c: gone.c })
+                reflow(s)
+                think(s, SNEAK_TAKE_LINES[s.sneakSerial % SNEAK_TAKE_LINES.length])
+            } else {
+                s.events.push({ t: 'sneak-empty' })
+                think(s, SNEAK_EMPTY_LINES[s.sneakSerial % SNEAK_EMPTY_LINES.length])
+            }
+            k.state = 'leaving'
+            k.path = bfsPath(s, { r: k.r, c: k.c }, [{ r: 12, c: 5 }])
+        } else if (k.state === 'leaving' && !k.path) {
+            s.sneak = null
+            s.events.push({ t: 'sneak-gone' })
+            think(s, SNEAK_GONE_LINES[s.sneakNight % SNEAK_GONE_LINES.length])
+        }
+        return
+    }
+    // one sneak a night — the day stamp is the law; a blocked approach retries
+    // inside the window (the paper doctrine) and a window that ran out is gone
+    // honestly, never banked for tomorrow.
+    const due = s.sneakNow !== null ? s.sneakNow : SNEAK_DUE
+    if (s.sneakNight === s.day || (s.sneakNow === null && !sneakNightDue(s.day)) || s.hour < due || s.hour >= due + SNEAK_WINDOW) return
+    if (hasAlarm(s)) {    // the answer: he never crosses the gate post
+        s.sneakNight = s.day
+        s.scareDay = s.day
+        s.sneakNow = null
+        s.sneakSerial++
+        s.events.push({ t: 'sneak-scared' })
+        think(s, SNEAK_SCARE_LINES[s.scareDay % SNEAK_SCARE_LINES.length])
+        return
+    }
+    const gate = { r: 12, c: 5 }      // the gate cell — Fern's own door, the honest way in
+    const step = { r: 10, c: 5 }      // the door-step the paper and the mail already know
+    const dest = walkable(s, step.r, step.c) ? step : nearestFreeTo(s, step.r, step.c)
+    const path = dest && walkable(s, gate.r, gate.c) ? bfsPath(s, gate, [dest]) : null
+    if (!path) return
+    s.sneak = {
+        name: 'Sneak', r: gate.r, c: gate.c, x: tileX(gate.c) + TILE / 2, y: tileY(gate.r) + TILE / 2,
+        path, state: 'enter', t: 0, hue: '#3c3348', face: 1, walkPhase: 0, sneak: true,
+    }
+    s.sneakNight = s.day
+    s.sneakNow = null
+    s.sneakSerial++
+    s.events.push({ t: 'sneak-in', r: gate.r, c: gate.c })
+    think(s, SNEAK_IN_LINES[s.sneakSerial % SNEAK_IN_LINES.length])
+}
+
+
 
 // ------------------------------------------------- catalog shelves (#2222) ----
 // The original people-sim never showed a flat wall of goods: buy mode is a
@@ -508,7 +631,7 @@ export const CAT_TABS = [
     { id: 'HOME', ids: ['bed', 'fridge', 'stove', 'toilet', 'shower', 'phone', 'canopy'] },
     { id: 'FUN', ids: ['tv', 'radio', 'book', 'sofa', 'yarn'] },
     { id: 'DECOR', ids: ['plant', 'rug', 'lamp'] },
-    { id: 'SPECIAL', ids: ['roomkit', 'petkit', 'kidkit'] },
+    { id: 'SPECIAL', ids: ['roomkit', 'petkit', 'kidkit', 'alarm'] },   // #2520: the alarm joins the special shelf — the night's answer
 ]
 export const TAB_CARDS = CAT_TABS.map((t) => t.ids.map((id) => CATALOG.findIndex((d) => d.id === id)))
 export const TAB_OF = {}
@@ -699,6 +822,12 @@ export function newRun(seed) {
         treats: 0,              // #2503: cones ever eaten (rides the hash)
         iceAt: 0,               // #2503: hour the current cone landed (window expiry)
         iceNow: null,           // #2503: a rigged pass hour (ringTruck) — one-shot, never the law
+        sneak: null,            // #2520: the prowler on the lot (visitor-shaped | null)
+        sneakNight: 0,          // #2520: day stamp — one visit a night, the day-stamp doctrine (rides the hash)
+        scareDay: 0,            // #2520: day the alarm last turned him at the gate (rides the hash)
+        sneakSerial: 0,         // #2520: visits ever made (line variant rides it, the iceSerial way)
+        lost: 0,                // #2520: § ever lifted from the till (rides the hash)
+        sneakNow: null,         // #2520: a rigged due hour (ringSneak) — one-shot, never the law
         orderPing: { x: 0, y: 0, label: '', t: 0 },   // #2253: the last issued order (the view rings its target while t > 0)
         mealName: '',             // #2244: name of the current plate (a word is state the view reads)
         rel: { house: 0, fern: 0, ivy: 0, kid: 0 },   // #1817/#2143/#2203 conversation ladders (0..REL_MAX)
@@ -2554,6 +2683,9 @@ function newDay(s) {
     // #2503: midnight takes any cone the window somehow kept (a rigged late
     // stop in the harness) — the truck is home, nothing waits for tomorrow.
     if (s.cone) { s.items = s.items.filter((it) => it !== s.cone); s.cone = null }
+    // #2520: and midnight sends whatever prowls home — the window owns only
+    // the hours before it; the stamp was set the moment he crossed the post.
+    if (s.sneak) { s.sneak = null; s.events.push({ t: 'sneak-gone' }) }
     s.day++
     s.events.push({ t: 'day', day: s.day })
 }
@@ -2600,6 +2732,7 @@ export function advance(s, dt) {
     updateMeals(s)          // #2244: so do the bells, right behind the news
     updateBin(s)            // #2303: and the truck — the eve arms, dawn resolves
     updateIceCream(s)       // #2503: and the jingle — the cone lands, the window runs out
+    updateSneak(s, dt)      // #2520: and the night — odd nights a shadow tries the gate, the alarm answers
 
     for (const p of s.people) {
         p.mood = avg(p)
@@ -2905,6 +3038,8 @@ export function stateHash(s) {
     mix(s.binSetDay); mix(s.collections); mix(s.skips)
     mix(s.iceDay); mix(s.iceSerial); mix(s.treats)   // #2503: the street's stops and the cone ledger ride it
     mix(s.cone ? 1 : 0)     // the cone itself is state (its cell rides the items loop)
+    mix(s.sneakNight); mix(s.scareDay); mix(s.sneakSerial); mix(s.lost)   // #2520: the night's ledger rides it too
+    mix(s.sneak ? 1 : 0)    // and the prowler on the lot is state, exactly the visitor law
     for (const p of s.people) {
         mix(p.r); mix(p.c)
         for (const n of NEEDS) mix(p.needs[n])
