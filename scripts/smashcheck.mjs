@@ -792,6 +792,9 @@ console.log('hud')
         ok(/gs\.energy < CFG\.dryLimit/.test(PSRC) && !/gs\.energy < 30/.test(PSRC), 'the autopilot refuels at CFG.dryLimit — no second hardcoded 30 to drift')
         const ISRC = readFileSync('src/games/SmashTV/index.jsx', 'utf8')
         ok(/powerLow\(gs\.weapon, gs\.energy, CFG\.dryLimit\)/.test(ISRC), 'the HUD pulse reads the same CFG.dryLimit the planner refuels at')
+        ok((ISRC.match(/powerLow\(gs\.weapon, gs\.energy, CFG\.dryLimit\)/g) || []).length === 2, 'both call sites (bar + ping) read the shared threshold', `${(ISRC.match(/powerLow\(gs\.weapon, gs\.energy, CFG\.dryLimit\)/g) || []).length} sites`)
+        ok(/const dryTank = powerLow\(gs\.weapon, gs\.energy, CFG\.dryLimit\)/.test(ISRC), 'the BAR computes dry from the shared threshold — named so a mutation at this site is visible')
+        ok(/powerLow\(gs\.weapon, gs\.energy, CFG\.dryLimit\) && gs\.tick % POWER_PING\.every/.test(ISRC), 'the PING rings on the same threshold — named so a mutation at its site is visible')
     }
     ok(LOW_SHIFT === 3 && LOW_LABEL_SHIFT === 4 && POWER_PING.every === 30, 'the dry alarm cadence: fast bar pulse, readable label blink, half-second ping', `${LOW_SHIFT}/${LOW_LABEL_SHIFT}/${POWER_PING.every}`)
     ok(RACK_FLASH === 60, 'the rack name flashes for one second after a pickup', `${RACK_FLASH}`)
@@ -1574,7 +1577,8 @@ if (process.argv.includes('--mutate')) {
         ['#1978: the combo pop slides back onto the door row', 'ctx.translate(CW / 2 + camX, HUD_H + 48)', 'ctx.translate(CW / 2 + camX, HUD_H + 30)'],
         ['#2011: the swell drops out of the bed', 'MURMUR.vol + MURMUR_SWELL * (e.hype || 0)', 'MURMUR.vol'],
         ['#2011: the camera never settles toward the exit', 'camLead(leadDx, bd)', '0'],
-        ['#2507: the dry meter goes numb (bar and label hold slate)', 'const dryTank = powerLow(gs.weapon, gs.energy, CFG.dryLimit)', 'const dryTank = false'],
+        ['#2507: the dry meter goes numb (bar holds slate)', 'const dryTank = powerLow(gs.weapon, gs.energy, CFG.dryLimit)', 'const dryTank = false'],
+        ['#2507: the dry ping goes mute at the reload edge', 'powerLow(gs.weapon, gs.energy, CFG.dryLimit) && gs.tick % POWER_PING.every', 'false && gs.tick % POWER_PING.every'],
         ['#2507: room spawns lose their ring — the hook re-gates to boss adds', 'bornFx.push({ x: e.x, y: e.y, t: 0 })', 'if (e.bossAdd) bornFx.push({ x: e.x, y: e.y, t: 0 })'],
     ]
     const targets = [[SIM, MUTANTS], [SPRITE, SPRITE_MUTANTS], [LEVELS, LEVELS_MUTANTS], [PLANNER, PLANNER_MUTANTS], [JUICE, JUICE_MUTANTS], [IDX, IDX_MUTANTS]]
