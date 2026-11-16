@@ -541,6 +541,103 @@ const bucketRowBySeed = (seed) => {
     }
 }
 
+// --- #2465: the content clock that FREEZES (Jon's seed4 take shape) ----------
+// iOS/Android can stall the capture context's currentTime while still reporting
+// state 'running' (screen-lock / audio interruption): bytes stopped at 816 ms
+// and the content-paced trace froze with them — clock stamps advanced in t but
+// every ms after tick ~126 stayed 816, and the take LOOKED internally sound
+// (track ms == clock end ms) while 99 s of play had no audio behind it. The
+// capture must notice a device clock that stops dead, keep the trace on the
+// wall for the rest of the take, and leave the short bytes to fail grading
+// HONESTLY (audioLonger false naming the gap) instead of hiding inside a
+// frozen pair. Hand mutant: delete the freeze branch in hybridNow
+// (src/utils/voiceCapture.js, `contentBurned = true`) -> the trace freezes
+// again, the paced-pace and stall lines go RED while the #2247 block above
+// stays green (only the freeze scenario sees it).
+{
+    const TICK_MS = 1000 / 60
+    const FREEZE_AT = 5000 // the pipe dies 5 s into the take (wall)
+    const MOCK = { wall: 0 }
+    const el = () => ({ style: { cssText: '', background: '', boxShadow: '', width: '' }, setAttribute() {}, remove() {}, appendChild() {}, querySelector: () => el(), innerHTML: '', isConnected: true })
+    class FrozenCtx {
+        constructor() { this.state = 'running'; this.resumeCalls = 0 }
+        // currentTime advances normally, then dies mid-take at a fixed value
+        get currentTime() { return Math.min(MOCK.wall, FREEZE_AT) / 1000 }
+        resume() { this.resumeCalls++; return Promise.resolve() }
+        close() { this.state = 'closed' }
+        createMediaStreamSource() { return { connect() {}, disconnect() {} } }
+        createAnalyser() { return { fftSize: 512, getByteTimeDomainData(b) { b.fill(128) } } }
+    }
+    let CTX = null
+    class SpyCtx extends FrozenCtx { constructor() { super(); CTX = this } }
+    class FakeRecorder {
+        static isTypeSupported(m) { return m === 'audio/webm;codecs=opus' }
+        constructor(_s, o) { this.mimeType = (o && o.mimeType) || 'audio/webm'; this.state = 'inactive'; this.ondataavailable = null; this.onstop = null }
+        start() { this.state = 'recording' }
+        stop() {
+            this.state = 'inactive'
+            // honest dead bytes: what the pipe produced up to FREEZE_AT (a
+            // handful of bytes stands in for ~5 s of opus — the take's declared
+            // ms is what the guard is judged on, not this blob size).
+            if (this.ondataavailable) this.ondataavailable({ data: new Blob([new Uint8Array([1, 2, 3, 4])], { type: this.mimeType }) })
+            if (this.onstop) this.onstop()
+        }
+    }
+    const trackObj = { stop() {}, onended: null, onmute: null, onunmute: null }
+    const stream = { getTracks: () => [trackObj] }
+    const prev = {
+        window: globalThis.window, document: globalThis.document, navigator: globalThis.navigator,
+        MediaRecorder: globalThis.MediaRecorder, AudioContext: globalThis.AudioContext,
+        webkitAudioContext: globalThis.webkitAudioContext,
+        requestAnimationFrame: globalThis.requestAnimationFrame, cancelAnimationFrame: globalThis.cancelAnimationFrame,
+    }
+    const put = (k, v) => Object.defineProperty(globalThis, k, { value: v, configurable: true, writable: true })
+    const del = (k) => { try { delete globalThis[k] } catch { /* keep */ } if (prev[k] === undefined) put(k, prev[k]) }
+    put('window', {})
+    put('document', { createElement: () => el(), querySelector: () => el(), body: { appendChild() {} }, addEventListener() {}, removeEventListener() {} })
+    put('navigator', { mediaDevices: { getUserMedia: () => Promise.resolve(stream), enumerateDevices: () => Promise.resolve([]) } })
+    put('MediaRecorder', FakeRecorder)
+    put('AudioContext', SpyCtx)
+    put('requestAnimationFrame', () => 1)
+    put('cancelAnimationFrame', () => {})
+    try {
+        const { createVoiceSession } = await import('../src/utils/voiceCapture.js')
+        MOCK.wall = 0
+        const session = createVoiceSession({ ask: async () => ({ consent: true }), now: () => MOCK.wall })
+        await session.ready
+        ok(session.phase === 'recording', '#2465 frozen-pipeline mock take opens')
+        for (let t = 1; t <= 3600; t++) { MOCK.wall += TICK_MS; session.onTick(t) } // 60 s of world, pipe dead after 5 s
+        const tr = await session.finalize()
+        const clk = (tr && tr.clock) || []
+        ok(clk.length >= 30, `#2465 take sampled across the freeze (${clk.length} samples)`)
+        // 1) no frozen run: consecutive samples keep advancing after the pipe died
+        let frozenRun = 0, maxFrozenRun = 0
+        for (let i = 1; i < clk.length; i++) { if (clk[i].ms === clk[i - 1].ms) { frozenRun++; maxFrozenRun = Math.max(maxFrozenRun, frozenRun) } else frozenRun = 0 }
+        ok(maxFrozenRun <= 1, `trace never freezes again (longest same-ms run ${maxFrozenRun}; seed4 shipped 100+)`)
+        // 2) ms-space stall (the #2430 grader metric): the trace keeps wall pace
+        const stallMs = clk.length >= 2 ? Math.round((clk[clk.length - 1].t - clk[0].t) * TICK_MS - (clk[clk.length - 1].ms - clk[0].ms)) : 0
+        ok(Math.abs(stallMs) <= 1500, `post-freeze trace keeps honest pace (stall ${stallMs} ms vs the 8000 ms grader bound)`)
+        // 3) honest length: declared ms reaches the END of the take, far past
+        //    the dead pipe — the short bytes then fail audioLonger loudly.
+        ok(tr && tr.ms > FREEZE_AT + 40000, `settle ms names the whole take (${tr && tr.ms} > freeze ${FREEZE_AT} + 40000) — bytes-vs-clock gap is visible, not hidden`)
+        ok(CTX && CTX.resumeCalls >= 1, `the frozen context was asked to resume (${CTX && CTX.resumeCalls} calls)`)
+        ok(globalThis.window.__voiceDebug && globalThis.window.__voiceDebug.where === 'content-clock-frozen', 'the freeze is named in __voiceDebug', JSON.stringify(globalThis.window.__voiceDebug))
+        // 4) a dropped mic track mid-take says so on the debug breadcrumb
+        MOCK.wall = 0
+        const s2 = createVoiceSession({ ask: async () => ({ consent: true }), now: () => MOCK.wall })
+        await s2.ready
+        for (let t = 1; t <= 120; t++) { MOCK.wall += TICK_MS; s2.onTick(t) }
+        if (trackObj.onended) trackObj.onended()
+        ok(globalThis.window.__voiceDebug.where === 'mic-track-ended', 'an OS-dropped mic track is named in __voiceDebug', JSON.stringify(globalThis.window.__voiceDebug))
+        const tr2 = await s2.finalize()
+        ok(tr2 !== null, 'a take whose track died still flushes its bytes honestly (finalize not short-circuited)')
+    } finally {
+        for (const k of ['window', 'document', 'navigator', 'MediaRecorder', 'AudioContext', 'webkitAudioContext', 'requestAnimationFrame', 'cancelAnimationFrame']) {
+            if (prev[k] === undefined) del(k); else put(k, prev[k])
+        }
+    }
+}
+
 // --- clap sync: the ±50 ms acceptance line, pure twin of the browser proof --
 // (#1711 S3) scripts/plaicraft-clap.mjs runs these two functions on bytes that
 // came out of the real MediaRecorder; here synthetic PCM pins the same verdicts

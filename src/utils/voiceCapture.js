@@ -376,18 +376,51 @@ export function createVoiceSession(opts = {}) {
     // trace-vs-tick lag is still world-vs-realtime.
     let clockCtx = null
     let contentBase = null // { wall, content } captured at the first running read
+    // #2465 (Jon's seed4 take): iOS/Android can freeze the capture context's
+    // currentTime while still reporting state 'running' — screen-lock / audio
+    // interruption. The bytes died at 816 ms and the wall-stamped... content-
+    // anchored trace froze with them: 100 s of play stamped with the same ms,
+    // and the take LOOKED internally consistent (track ms == clock end ms).
+    // A content clock that stops advancing while the wall moves is a LIE —
+    // after CAPTURE_FREEZE_MS of no movement, burn it: keep the trace on the
+    // wall for the rest of the take (honest pace; the short bytes then fail
+    // grading honestly — audioLonger false — instead of a frozen trace hiding
+    // behind an equally-frozen ms), and keep asking the context to resume.
+    // 1000 ms separates a real stall (misses WHOLE seconds of play) from the
+    // ~55 ms starvation spikes the hybrid exists to ride through (#2136).
+    const CAPTURE_FREEZE_MS = 1000
+    let contentBurned = false
+    let lastContent = null
+    let lastContentWall = 0
     const hybridNow = () => {
         const wall = now()
         if (clockCtx && clockCtx.state === 'running') {
             const content = clockCtx.currentTime * 1000
+            if (contentBurned) return wall
+            if (lastContent !== null && content === lastContent && wall - lastContentWall > CAPTURE_FREEZE_MS) {
+                contentBurned = true
+                contentBase = null
+                dbg('content-clock-frozen')
+                try { const p = clockCtx.resume(); if (p && p.catch) p.catch(() => {}) } catch { /* gone */ }
+                return wall
+            }
+            if (content !== lastContent) { lastContent = content; lastContentWall = wall }
             if (!contentBase) contentBase = { wall, content }
             return contentBase.wall + (content - contentBase.content)
         }
+        // suspended/interrupted between reads: stamp from the wall (as before)
+        // and ask for a resume so an interrupted pipeline can come back.
+        if (clockCtx) { try { const p = clockCtx.resume(); if (p && p.catch) p.catch(() => {}) } catch { /* gone */ } }
         return wall
     }
     const clock = createVoiceClock({ now: hybridNow })
     const consent = { consent: false, headset: false, reason: 'unasked' }
-    const reg = { get phase() { return phase } } // badge refcount view of this session
+    // #2465: a dropped mic track (iOS screen-lock ENDS the track; Android
+    // mute) must show on the badge while the take is still open — the dot
+    // reads MIC OFF instead of glowing REC over a dead pipe. The session's
+    // internal phase stays 'recording' so finalize still flushes honestly.
+    let micLost = false
+    const reg = { get phase() { return phase === 'recording' && micLost ? 'mic-lost' : phase } } // badge refcount view of this session
     let phase = 'asking' // asking | recording | declined | failed | done
     let rec = null
     let stream = null
@@ -424,6 +457,15 @@ export function createVoiceSession(opts = {}) {
             : navigator.mediaDevices.getUserMedia({ audio: audioBase })
         return openMic.then((s) => {
             stream = s
+            // #2465: watch the pipe itself, not just our own lifecycle — when
+            // the OS takes the mic (track ended/muted), say so on the badge.
+            try {
+                for (const tr of s.getTracks()) {
+                    tr.onended = () => { micLost = true; dbg('mic-track-ended'); syncMicBadge() }
+                    tr.onmute = () => { micLost = true; dbg('mic-track-muted'); syncMicBadge() }
+                    tr.onunmute = () => { micLost = false; dbg('mic-track-back'); syncMicBadge() }
+                }
+            } catch { /* older engines: no per-track events */ }
             mime = pickMime()
             rec = mime ? new MediaRecorder(s, { mimeType: mime, audioBitsPerSecond: bitrate }) : new MediaRecorder(s)
             chunks = []
