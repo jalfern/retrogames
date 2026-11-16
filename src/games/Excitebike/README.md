@@ -33,14 +33,22 @@ faster heat.
   `excitecheck`. `groundY/slopeAt/featureAt` are the only readers. Node-safe.
 - `sim.js` — pure `step(state, input)`, zero `Math.random`. Heightmap
   ground, ballistic air with pitch/lean, heat, mud pump, water stall,
-  boost, crash/recover, laps, clock, rivals, ledger, and the CONTACT law
+  boost, crash/recover, laps, clock, rivals, ledger, the CONTACT law
   (#2391): a downed rival is solid (wipeout above `wreckV`, a hold below —
   never a ride-through), a close onto a riding back ≥ `contactBump` bumps
   with two-way momentum transfer (`contactSwap`; over `contactCrash` it is
   over the bars), a rival catching your back swerves (jolt), crossing a
-  body with ≥ `contactClear` of air pays a once-per-pass `flybyPts`. One
-  drama per pair per `contactCool`; `contactK` is the harness mutant knob.
-  Node-safe.
+  body with ≥ `contactClear` of air pays a once-per-pass `flybyPts` — and
+  the PACK law (#2420): the same body law mirrored onto rival-vs-rival
+  pairs (`pack()`), so chain wrecks pile the tail behind a crash, `rbump`
+  transfers momentum between rivals, and a blocked lane LATCHES the brake
+  (`held`) until the body moves; plus hazard hops — a grounded rival reads
+  a downed or held body within `v·(hazBase + hazSkill·skill)` px and
+  commits the player's own jump law, so skill grades who flies it clean
+  and who arrives nose-low and chains. One drama per pair per
+  `contactCool` (the `pk` matrix; `held` is the rival-side brake, the
+  player's hold is untouched); `contactK`/`packK` are the harness mutant
+  knobs. Node-safe.
 - `planner.js` — the autopilot. Decisions every few ticks; each candidate
   (gas/brake × jump now/later × lean) is **rolled through the real sim**
   before it is allowed to drive. The attract demo is its output. Since

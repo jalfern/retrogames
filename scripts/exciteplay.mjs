@@ -19,6 +19,8 @@
 //   7. CONTACT — a downed rival blocks the lane (real gas into it = WRECK!),
 //      a real SPACE hop pays a FLYBY, the hazard chevron is painted, and the
 //      attract demo replays its pinned contact receipt tick-for-tick (#2391).
+//   8. PACK — a rival chains into a downed rival on screen ("PILES IN!") and
+//      a better rider hazard-hops the same body clean (#2420).
 // The terrain, ledger, slack rule and nine mutants live in excitecheck.mjs.
 import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
 
@@ -228,6 +230,39 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     }
     await page.keyboard.up('Space')
     r.check('hopping the wreck with a real SPACE keys a scored FLYBY instead', !!flew, flew ? `${flew.name}@t${flew.t}` : 'no flyby / crashed')
+}
+
+// ---- PACK (#2420): the league is solid to ITSELF in the tab ----
+{
+    // Park the player on the start straight and set up the same chain the
+    // MOTOCROSS campaign produces: a frozen body 80px ahead, the tail rider
+    // closing at pace. Real physics, no script — IVAN commits late and PILES
+    // IN behind the wreck, staying behind it.
+    await page.evaluate(() => window.__bikeTest.setup({ track: 0, x: 100, v: 0, rivals: { GORDON: { d: 250, v: 0, down: 400 }, IVAN: { d: 170, v: 4.8 }, KATO: { d: 20, v: 0 } } }))
+    let piled = null, toastPiled = false
+    for (let i = 0; i < 70 && !piled; i++) {
+        const s = await probe()
+        const iv = s.rivals.find((q) => q.name === 'IVAN')
+        if (iv && iv.down > 0 && iv.crashes >= 1) piled = { d: iv.d, gd: s.rivals.find((q) => q.name === 'GORDON').d }
+        if (!toastPiled) {
+            const txt = await page.evaluate(() => document.body.innerText)
+            if (/PILES IN!/.test(txt)) toastPiled = true
+        }
+        await wait(40)
+    }
+    r.check('a rival chains into a downed rival in the tab (tail rider wiped onto the body)', !!piled && piled.d <= piled.gd, JSON.stringify(piled))
+    r.check('the chain is announced on screen ("<name> PILES IN!")', toastPiled)
+    // the SAME rig, better rider: KATO reads the body earlier and flies it —
+    // over the frozen rival with no wipeout, the pack's line-choice in the tab.
+    await page.evaluate(() => window.__bikeTest.setup({ track: 0, x: 100, v: 0, rivals: { GORDON: { d: 250, v: 0, down: 400 }, KATO: { d: 170, v: 5 }, IVAN: { d: 30, v: 0 } } }))
+    let clean = null, sawAir = false
+    for (let i = 0; i < 70 && !clean; i++) {
+        const s = await probe()
+        const ka = s.rivals.find((q) => q.name === 'KATO')
+        if (ka) { if (ka.air) sawAir = true; if (ka.d > 262 && ka.crashes === 0 && ka.down === 0) clean = { d: ka.d } }
+        await wait(40)
+    }
+    r.check('a front-office rival hazard-hops the SAME body clean (skill grades the line)', !!clean && sawAir, JSON.stringify(clean))
 }
 
 // ---- the solid-wreck hazard cue is PAINTED (amber chevron over a downed rider) ----
