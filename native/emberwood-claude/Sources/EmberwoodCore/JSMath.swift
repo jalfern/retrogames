@@ -35,10 +35,11 @@ import Foundation
     return sum.squareRoot() * m
 }
 
-/// Math.sin / Math.cos. Darwin libm; V8 uses fdlibm. If a trace ever splits
-/// by one ulp, swap fdlibm in here.
-@inline(__always) public func jsSin(_ x: Double) -> Double { sin(x) }
-@inline(__always) public func jsCos(_ x: Double) -> Double { cos(x) }
+/// Math.sin / Math.cos: V8's own — fdlibm as clang compiles it, fused
+/// multiply-adds and all (FDLibm.swift, from the Gauntlet port, where Darwin's
+/// libm split a planner aim by one ulp). Darwin differs on ~3% of inputs.
+@inline(__always) public func jsSin(_ x: Double) -> Double { fdSin(x) }
+@inline(__always) public func jsCos(_ x: Double) -> Double { fdCos(x) }
 
 /// ECMAScript ToInt32 (`v | 0`).
 @inline(__always) func toInt32(_ v: Double) -> Int32 {

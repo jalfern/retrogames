@@ -57,8 +57,10 @@ Porting rules that kept the traces green:
 - `FLAG_BITS` walks `Object.keys(flags)`: `ventsOff` is an object, so its bit is
   always set.
 - `Math.round` ties go to +∞ (`jsRound`); the hash is `Math.imul` on Int32.
-- `Math.sin/cos` is Darwin libm and matched V8 on every tick checked; if a trace
-  ever splits by one ulp, `JSMath.swift` is where fdlibm goes.
+- `Math.sin/cos` are V8's own: fdlibm as clang compiles it, with fused
+  multiply-adds (`FDLibm.swift`, from the Gauntlet port, bit-exact against
+  Node on 1M+ inputs). Darwin's libm differs in the last place on about 3% of
+  inputs.
 
 ## Build and run
 
