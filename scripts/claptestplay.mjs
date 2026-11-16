@@ -55,7 +55,11 @@ const MUTANT = (() => {
 // few = only two slaps. #2205: the clean pass runs the nominal cadence AND an
 // off-nominal one, sharing one browser context so the second attract screen
 // shows the first run in the local verdict history.
-const RUNS = MUTANT
+// --run=<label fragment> drives one named run (the loop breaks on a failed
+// core, so a run queued behind a starved one needs this to be witnessed on a
+// loaded box; the full suite is unchanged when the flag is absent).
+const ONLY = argv.find((a) => a.startsWith('--run='))?.split('=').slice(1).join('=') || null
+const RUNS = (MUTANT
     ? [{
         label: MUTANT === 'shift' ? 'MUTANT shift' : MUTANT === 'silent' ? 'MUTANT silent' : 'MUTANT few',
         clapMs: MUTANT === 'silent' ? [] : MUTANT === 'few' ? [1200, 2600] : [1200, 2600, 4000],
@@ -67,7 +71,12 @@ const RUNS = MUTANT
     : [
         { label: 'nominal', clapMs: [1200, 2600, 4000], tapsN: 3, shift: 0, expectPass: true, studio: true },
         { label: 'off-tempo 1.6/2.4 s (#2205)', clapMs: [1200, 2800, 5200], tapsN: 3, shift: 0, expectPass: true, studio: false, showHistory: true },
-    ]
+        // #1711 re-arm: a fresh device that slaps SILENTLY ends its take with
+        // the mic live and zero claps heard -> shown demotes to none, the ask
+        // returns, and a new page proves the pill actually paints again.
+        { label: 're-arm (silent take re-teaches)', clapMs: [], tapsN: 3, shift: 0, expectPass: false, studio: false, freshContext: true, expectReArm: true },
+    ]).filter((cfg) => !ONLY || cfg.label.includes(ONLY))
+if (ONLY && !RUNS.length) { console.error(`claptestplay: --run=${ONLY} matched no run`); process.exit(2) }
 
 const r = new Report('claptest:play')
 const sim = await startRelaySim()
@@ -89,6 +98,7 @@ async function runOnce(cfg, { requireGate, sink }) {
         skip: (label, detail = '') => sink.push({ skip: true, label, detail }),
     }
     const pfx = RUNS.length > 1 ? `${cfg.label}: ` : ''
+    if (cfg.freshContext) { if (sharedContext) await sharedContext.close().catch(() => {}); sharedContext = null } // a taught device cannot re-learn — it must be a stranger again
     const context = sharedContext || await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true })
     sharedContext = context
     await context.addInitScript(() => {
@@ -199,24 +209,25 @@ async function runOnce(cfg, { requireGate, sink }) {
     if (!armed) return dead()
 
     // #1711 clap coach: the ±50 ms proof must TEACH itself at live REC. A fresh
-    // consented boot shows the pill once; every later boot on the same device
-    // stays silent (rule 2 — the two runs share one browser context, so run B
-    // is the taught device). kind/flag survive the visual fade; the element
-    // check is the paint.
+    // consented boot shows the pill once (flag 'shown'); every later boot on the
+    // same device stays silent — and after a take whose live mic heard its
+    // claps, the device is LEARNED ('2'), resting forever (#1711 re-arm:
+    // silent devices re-arm instead, proven by the third run below). kind/flag
+    // survive the visual fade; the element check is the paint.
     {
         const coach = await page.evaluate(() => ({
             kind: (window.__clapCoach || {}).kind || 'unset',
             text: (window.__clapCoach || {}).text || '',
             el: !!document.querySelector('[data-clap-coach]'),
-            flag: localStorage.getItem('vc.clapCoach') === '1',
+            flag: localStorage.getItem('vc.clapCoach'),
         }))
         if (gateUp) {
             r.check(`${pfx}clap coach appears at live REC (fresh device learns the ±50 ms proof)`,
-                coach.kind === 'coach' && coach.text === COACH_TEXT && coach.flag, JSON.stringify(coach))
+                coach.kind === 'coach' && coach.text === COACH_TEXT && coach.flag === '1', JSON.stringify(coach))
             r.check(`${pfx}coach pill is painted on screen`, coach.el, JSON.stringify(coach))
         } else {
-            r.check(`${pfx}no second lesson on a taught device — coach stays hidden`,
-                coach.kind === 'hidden' && !coach.el && coach.flag, JSON.stringify(coach))
+            r.check(`${pfx}no second lesson on a learned device — coach rests, habit proven`,
+                coach.kind === 'hidden' && !coach.el && coach.flag === '2', JSON.stringify(coach))
         }
     }
 
@@ -308,12 +319,54 @@ async function runOnce(cfg, { requireGate, sink }) {
     r.check(`${pfx}the take uploaded through the consent gate`, !!(last && last.uploaded), JSON.stringify(last))
     if (!(last && last.uploaded)) return dead({ v })
     coreOk = coreOk && true // uploading is part of the core, both directions
+    // #1711 re-arm: the take's own live analyser is the habit evidence. A pass
+    // must leave the device LEARNED; a silent take must leave it CLEARED so the
+    // next boot asks again (the flag is the whole mechanism — the repaint proof
+    // runs at the end of this run).
+    {
+        const arm = await page.evaluate(() => ({
+            ...(window.__clapCoachTake || {}),
+            flag: localStorage.getItem('vc.clapCoach'),
+        }))
+        if (cfg.expectPass) {
+            if (fast) r.check(`${pfx}the take's live watch heard the claps — device marked learned`,
+                arm.took === 'learned' && arm.claps >= 1 && arm.flag === '2' && arm.state === 'learned', JSON.stringify(arm))
+            else r.skip(`${pfx}live-watch learned pin`, `runner at ${fps} fps — frames cannot resolve the claps`)
+        }
+        if (cfg.expectReArm) {
+            r.check(`${pfx}silent take on a live mic re-arms the ask — shown demoted, flag cleared`,
+                arm.took === 'rearm' && arm.claps === 0 && arm.flag === null && arm.state === 'none', JSON.stringify(arm))
+        }
+    }
     const listed = await (await fetch(`${BASE}/sessions`, { headers: sim.readHeaders })).json()
     const row = (listed.sessions || []).find((s) => s.key === last.key)
     r.check(`${pfx}the store lists the take with audio, game=claptest`, !!(row && row.audio === true && row.game === 'claptest'), JSON.stringify(row))
     r.check(`${pfx}the typed name reached the store and the mirror (#1711 audit 1)`,
         row && row.player === 'qabot' && last.player === 'qabot', JSON.stringify({ row: row && row.player, last: last && last.player }))
 
+    if (cfg.expectReArm) {
+        // The story's other half: on a re-armed device the NEXT take's REC paints
+        // the pill again — the phone teaches until the habit lands. Consent is
+        // cached in this context, so the recorder arms without the gate.
+        const p2 = await context.newPage()
+        p2.on('pageerror', (e) => errors.push(String(e)))
+        await p2.bringToFront()
+        await p2.goto(PAGE_URL, { waitUntil: 'load' })
+        await p2.click('[data-clap-start]').catch(() => {})
+        let rearmed = false
+        try {
+            await p2.waitForFunction(() => !!(window.__autoCapture && window.__autoCapture.recording) && window.__clapTest && window.__clapTest.phase === 'testing', null, { timeout: 8000 })
+            rearmed = true
+        } catch { /* gate below */ }
+        const coach2 = await p2.evaluate(() => ({
+            kind: (window.__clapCoach || {}).kind || 'unset',
+            el: !!document.querySelector('[data-clap-coach]'),
+            flag: localStorage.getItem('vc.clapCoach'),
+        })).catch(() => null)
+        r.check(`${pfx}re-armed device sees the pill again on its next take — teaches until learned`,
+            rearmed && !!coach2 && coach2.kind === 'coach' && coach2.el && coach2.flag === '1', JSON.stringify(coach2))
+        await p2.close().catch(() => {})
+    }
     if (!cfg.studio) return { page, v, last, coreOk, fast }
 
     // --- the studio agrees: same bytes, same code, same verdict --------------------
@@ -378,7 +431,7 @@ for (let i = 0; i < RUNS.length; i++) {
     let chosen = null
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         const sink = []
-        const out = await runOnce(cfg, { requireGate: attempt === 1 && i === 0, sink })
+        const out = await runOnce(cfg, { requireGate: attempt === 1 && (i === 0 || !!cfg.freshContext), sink })
         chosen = { sink, out }
         if ((out.fast && out.coreOk) || attempt === maxAttempts) break
         // retry on the SAME context (its localStorage carries run A's history);

@@ -31,7 +31,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { planAdd, planDrain, classifyFailure, OUTBOX_MAX_ITEMS } from '../src/utils/outboxCore.js'
 import { badgeView, BADGE_HOLD_UPLOADED_MS, BADGE_HOLD_SYNCED_MS } from '../src/utils/syncBadgeCore.js'
-import { coachView, COACH_TEXT, COACH_HOLD_MS } from '../src/utils/clapCoachCore.js'
+import { coachView, COACH_TEXT, COACH_HOLD_MS, coachState, coachArmAfterTake, liveClapWatch, COACH_SHOWN, COACH_LEARNED } from '../src/utils/clapCoachCore.js'
 import { makeOutbox, setOutboxFactory, queueRun, drain as drainOutbox, dropEntry } from '../src/utils/outbox.js'
 import { plantNew, pull } from './lib/mutateguard.mjs' // #1359: SIGTERM mid-mutant must not leave the dotfile corpse in src/utils
 
@@ -1076,7 +1076,7 @@ const mkRec2 = (game = 'gauntlet', seed = 777, ticks = 90) => {
     ok(coachView({ micLive: false, shown: false }).kind === 'hidden',
         'no coaching for a mic that is not live — LISTEN and declined pipes get nothing')
     ok(coachView({ micLive: true, shown: true }).kind === 'hidden',
-        'once per device — the screen belongs to the game after the first lesson')
+        'once LEARNED on the device — the screen belongs to the game after the lesson lands')
     const c = coachView({ micLive: true, shown: false })
     ok(c.kind === 'coach' && c.text === COACH_TEXT && c.holdMs === COACH_HOLD_MS,
         'a live take mic teaches CLAP WITH YOUR FIRST TAPS, then fades')
@@ -1084,6 +1084,52 @@ const mkRec2 = (game = 'gauntlet', seed = 777, ticks = 90) => {
         'the coach instructs and never claims — the clap verdict decides sync')
     ok(COACH_HOLD_MS > 0 && COACH_HOLD_MS <= 6000,
         'the lesson is a whisper, not a takeover — it holds at most 6 s of screen')
+}
+
+// --- clap coach RE-ARM (#1711): taught, not shown ---------------------------
+// Once-per-shown burned the lesson on the players who needed it: Jon drives
+// the instant REC goes green, the pill is easy never to look at, and the old
+// flag then silenced the ask forever on exactly his device. A take is its own
+// evidence — the recorder's live analyser hears claps while the take runs — so
+// the device state is none|shown|learned and a mic-live take that ends with
+// zero claps heard re-arms the ask. The error bias is one-sided by design: a
+// missed clap costs a 5 s pill, never a lost proof.
+{
+    ok(coachState(null) === 'none' && coachState(COACH_SHOWN) === 'shown' && coachState(COACH_LEARNED) === 'learned',
+        'device states read none|shown|learned')
+    ok(coachState('1') === 'shown',
+        'the legacy shipped flag (once-per-shown) migrates as shown — a device that never clapped CAN re-learn')
+    ok(coachState('bogus') === 'shown',
+        'a corrupt flag fails open to shown — at most one more pill, never a nag storm')
+    // the arm table, in rule order
+    ok(coachArmAfterTake({ stored: COACH_SHOWN, micLive: true, heardClaps: 0 }) === null,
+        'silent take on a live mic demotes shown -> cleared: the ask returns next take')
+    ok(coachArmAfterTake({ stored: COACH_SHOWN, micLive: true, heardClaps: 2 }) === COACH_LEARNED,
+        'a heard clap upgrades shown -> learned')
+    ok(coachArmAfterTake({ stored: null, micLive: true, heardClaps: 1 }) === COACH_LEARNED,
+        'habit before the pill is still habit — a clapping device is marked learned')
+    ok(coachArmAfterTake({ stored: COACH_LEARNED, micLive: true, heardClaps: 0 }) === COACH_LEARNED,
+        'learned rests — a quiet take after the habit landed never nags')
+    ok(coachArmAfterTake({ stored: COACH_SHOWN, micLive: false, heardClaps: 0 }) === COACH_SHOWN,
+        'a take with no live mic is NO evidence — declined/failed pipes change nothing')
+    ok(coachArmAfterTake({ stored: null, micLive: true, heardClaps: 0 }) === null,
+        'nothing to demote — a never-shown device stays never-shown')
+    // the live watcher: clapSync's onset law in frame units over the VU scale
+    const runWatch = (levels) => levels.reduce((s, l) => liveClapWatch(s, l), null)
+    const HUM = 0.075 // the synth mic's 220 Hz hum on the VU scale
+    const humOnly = Array.from({ length: 240 }, () => HUM)
+    ok(runWatch(humOnly).claps === 0, 'room/synth hum never counts as a clap')
+    const burst = (n, lvl = 0.95) => Array.from({ length: n }, () => lvl)
+    ok(runWatch([...humOnly, ...burst(3), ...humOnly]).claps === 1,
+        'one loud burst after a quiet stretch counts exactly once — a 50 ms decay sampled over many frames does not double-fire')
+    ok(runWatch([...humOnly, ...burst(3), ...humOnly.slice(0, 6), ...burst(3), ...humOnly]).claps === 1,
+        'a second transient within the gap window (~300 ms) is still the same burst')
+    ok(runWatch([...humOnly, ...burst(3), ...humOnly, ...burst(3), ...humOnly, ...burst(3), ...humOnly]).claps === 3,
+        'three claps about 2 s apart count three — the clap test\'s own cadence')
+    ok(runWatch(Array.from({ length: 240 }, () => 0.9)).claps === 0,
+        'sustained loud (game bleed through a speaker) never counts — no quiet stretch, no clap')
+    ok(runWatch([...humOnly, 0.4, 0.45, 0.4, ...burst(3), ...humOnly]).claps === 0,
+        'voice-level frames reset the quiet stretch — a transient right after speech is not proven sharp, quiet must return first')
 }
 
 // --mutate: the taxonomy flip (permanent -> keep) must poison the queue — this
