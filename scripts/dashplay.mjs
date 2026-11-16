@@ -331,5 +331,68 @@ r.check('another key starts a fresh play (clock reset)', (await probe()).screen 
     r.check('the hollow run restarts back to attract', (await probe()).screen === 'attract')
 }
 
+// ---- #2438 AMOEBA POLISH live: the family tells, the vise drone, the cool comet ----
+{
+    // GOO GALLERY with NO input: the sealed pockets do their thing, and the
+    // juice the sim cannot see must prove itself through the probe — corner
+    // blips from the two-phase gait, pour thunks from the dropper, and the
+    // vise lane shade + drone the moment the mirrored fronts close.
+    await page.evaluate(() => window.__game && window.__game.reset && window.__game.reset(5))
+    await wait(700)
+    const g0 = await probe()
+    r.check('the gallery loaded with its polish data live', g0.name === 'GOO GALLERY' && g0.screen === 'play', `name=${g0.name}`)
+    let turnPeak = 0, dropPeak = 0, dronePeak = 0, hot = false, lanes = 0, kindsPeak = [0, 0, 0, 0]
+    for (let i = 0; i < 260; i++) {
+        const q = await probe()
+        if (q.screen !== 'play') break
+        turnPeak = Math.max(turnPeak, q.turnBlips || 0)
+        dropPeak = Math.max(dropPeak, q.dropThunks || 0)
+        dronePeak = Math.max(dronePeak, q.drones || 0)
+        lanes = Math.max(lanes, q.viseLanes || 0)
+        hot = hot || !!q.viseHot
+        ;(q.amoKinds || []).forEach((n, k) => { kindsPeak[k] = Math.max(kindsPeak[k], n || 0) })
+        await wait(80)
+    }
+    r.check('the two-phase gait is SEEN cornering — turn flashes + shift tones fired', turnPeak >= 1, `turnBlips=${turnPeak}`)
+    r.check('the dropper is HEARD pouring — its first shaft thunk fired', dropPeak >= 1, `dropThunks=${dropPeak}`)
+    r.check('variant head counts are live — classic, two-phase and dropper all grew heads',
+        kindsPeak[0] >= 1 && kindsPeak[1] >= 1 && kindsPeak[2] >= 1, `kinds=${JSON.stringify(kindsPeak)}`)
+    r.check('the vise shades its closing lane and drones once shut to 4 cells',
+        hot && lanes >= 1 && dronePeak >= 1, `viseHot=${hot} lanes=${lanes} drones=${dronePeak}`)
+    // FORK BASIN: every fork the planner's run provokes blips and flashes.
+    await page.evaluate(() => window.__game && window.__game.reset && window.__game.reset(6))
+    await wait(500)
+    let forkPeak = 0, pillarSees = 0
+    for (let i = 0; i < 1600; i++) {
+        const q = await probe()
+        if (q.screen !== 'play') break
+        forkPeak = Math.max(forkPeak, q.forkBlips || 0)
+        pillarSees = Math.max(pillarSees, q.pillar || 0)
+        const d = await hint()
+        if (d) await key(d)
+        await wait(55)
+    }
+    r.check('fork fingers being BORN get their blip + flash in the live cave', forkPeak >= 1, `forkBlips=${forkPeak}`)
+    r.check('the wrap pillar is marked on the basin painter', pillarSees === 6, `pillar=${pillarSees}`)
+    // GOSSAMER: the butterfly reads apart — cool comet trails, wings beat.
+    await page.evaluate(() => window.__game && window.__game.reset && window.__game.reset(7))
+    await wait(500)
+    let coolPeak = 0, wingFlip = false, wingWas = -1, tubesSee = 0, flapP = 0
+    for (let i = 0; i < 480; i++) {
+        const q = await probe()
+        if (q.screen !== 'play') break
+        coolPeak = Math.max(coolPeak, q.coolTrail || 0)
+        if (wingWas >= 0 && q.wingPhase !== wingWas) wingFlip = true
+        wingWas = q.wingPhase
+        tubesSee = Math.max(tubesSee, q.tubes || 0)
+        flapP = Math.max(flapP, q.flapToots || 0)
+        await wait(60)
+    }
+    r.check('the butterfly drags a COOLER comet of its own (not the amber one)', coolPeak >= 3, `coolTrail=${coolPeak}`)
+    r.check('its wing pair beats on a 2-frame phase', wingFlip, `phase stuck at ${wingWas}`)
+    r.check('flaps are HEARD — the quiet flutter cue fired', flapP >= 3, `flapToots=${flapP}`)
+    r.check('the tube mouth is marked on the hollow painter', tubesSee === 1, `tubes=${tubesSee}`)
+}
+
 r.check('zero page errors across the whole playthrough', errors.length === 0, errors.slice(0, 4).join(' | '))
 r.exit(browser)
