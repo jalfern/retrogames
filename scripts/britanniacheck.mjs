@@ -19,6 +19,7 @@ import { TOWN_R, FLAT as TOWN_FLAT, townScore, hasCottage } from '../src/games/B
 import { decodeCon, decodeRecord, CON_TERR, FLAT } from '../src/games/Britannia/ega.js'
 import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches, SPLAT, splatIntensity, dimples, splashStrikes, SPLAT_GAP, ROUGH_MEMORY, seaRough, crestGain, foamGain, SAIL_DRAG, shipCd, SURF_FLOOR, surfVoice, surfDue } from '../src/games/Britannia/swell.js'
 import { SHRINE_DIST, AVATARS, shrineTitle, shrineSpot, plotShrines } from '../src/games/Britannia/shrines.js'
+import { plotVillage, cottageSeed, villageTriples, KEEP_RING, PLAZA_MIN_TS } from '../src/games/Britannia/village.js'
 import { HULL_MAX, STRAIN_STORM, strain, wear, repair, nearestCoast, GROAN_GAP, sailState } from '../src/games/Britannia/hull.js'
 import { START_GOLD, FARE, TRIBUTE, payToll, tribute, moorReach } from '../src/games/Britannia/purse.js'
 
@@ -45,6 +46,12 @@ const MUT = {
     '--mutate-tithe-mint': { target: 'src/games/Britannia/purse.js', from: 'return Math.min(START_GOLD, g + TRIBUTE)', to: 'return g + TRIBUTE', name: 'tithe minting past the cap' },
     '--mutate-moor-drift': { target: 'src/games/Britannia/purse.js', from: 'return g >= FARE ? 1 : 2', to: 'return 1', name: 'the light-purse boat drifting back to the waterline' },
     '--mutate-sail-locked': { target: 'src/games/Britannia/hull.js', from: 'return w <= 0 ? 0 : w === 1 ? 1 : 2', to: 'return w <= -1 ? 0 : w === 1 ? 1 : 2', name: 'a sail frozen full under a becalmed sky' },
+    // #2494 village: --mutate-village-block deletes the cottage refusal (the
+    // ghost-town relapse the stage exists to fix); --mutate-village-flood
+    // seeds a cottage on EVERY plaza tile — the anti-stranding pin must see a
+    // gate lose its ring to the sprawl.
+    '--mutate-village-block': { target: 'src/games/Britannia/index.jsx', from: "} else if (villageBlock.has(nx + ',' + ny)) {", to: '} else if (false) {', name: 'cottage refusal deleted' },
+    '--mutate-village-flood': { target: 'src/games/Britannia/village.js', from: 'if (cottageSeed(x, y) >= 40) continue', to: 'if (false) continue', name: 'cottage seed law flooded' },
     '--mutate-captain-echo': { target: 'src/games/Britannia/index.jsx', from: "audioController.playTone(300, 0.09, 'square', 0.10)\n                    audioController.playTone(190, 0.16, 'square', 0.10)", to: "audioController.playSweep(96, 60, 0.14, 'square', 0.16)", name: 'the captain stealing the chapel thud back' },
 }
 const mutKey = Object.keys(MUT).find(k => ARGS.includes(k))
@@ -1245,8 +1252,9 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
         for (let i = 0; i < 400; i++) varied.add(hasCottage(i % 20, (i * 7) % 20))
         ok(varied.has(true) && varied.has(false), 'cottages scatter, not stamp (some plots built, some empty)')
     }
-    ok(/ts >= 0\.75 && !onGate\(tx, ty\) && hasCottage\(tx, ty\)/.test(src),
-        'index.jsx: cottages stand only on the strongest built-up ground, never under a gate')
+    ok(/if \(villageBlock\.has\(tx \+ ',' \+ ty\)\) drawCottage/.test(src),
+        'index.jsx: cottages are painted exactly where the village law stands them (evolved #1352 — the seen map IS the walked map, never under a gate: village.js excludes gates)')
+    ok(PLAZA_MIN_TS === 0.5, 'the cottage skirt is the built-up half of the plaza (spec value pinned, not read from itself)')
     ok(/hearth smoke|drawCottage/.test(src) && /rgba\(214,214,220/.test(src),
         'index.jsx: smoke wisps lift off the roofs — the town toast is not a lie')
 
@@ -1385,6 +1393,104 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     ok(/shrines: shrines\.map\(s => \(s \? \[s\.x, s\.y\] : null\)\)/.test(src),
         'index.jsx: the eight plots ride the harness state (panel can be compared with the Node sweep)')
     ok(/bumped: S\.bumped\.size/.test(src), 'index.jsx: shrine touches are countable by the harness')
+}
+
+// ---- village (#2494): the cottages have substance ----
+// The seeded plaza cottages (#1352) were ghosts — walk-through, draw-only.
+// Village law now STANDS them: the walk refuses timber with its own knock, the
+// seed hash decides placement, and a deterministic descent guarantees no gate
+// ever loses its walkable ring to the village. Prove-it-can-fail lives at the
+// top of this file: --mutate-village-block (ghost relapse reddens the wiring
+// pin) and --mutate-village-flood (seed the whole plaza — the anti-stranding
+// pin sees the sprawl take a gate's ring).
+{
+    const terrain = (x, y) => world.get(x, y)
+    const spots = plotShrines(gates, terrain)
+    const v1 = plotVillage(gates, terrain, spots)
+    ok(v1.length >= 4, `the towns host standing cottages (${v1.length} across the shelf — "cottages and smoke" keeps its promise solid)`)
+
+    // determinism: same land, same gates => the same village, 40 times over
+    const first = JSON.stringify(villageTriples(v1))
+    let detOk = true
+    for (let i = 0; i < 40; i++) if (JSON.stringify(villageTriples(plotVillage(gates, terrain, plotShrines(gates, terrain)))) !== first) detOk = false
+    ok(detOk, 'the village plot is deterministic (40 recomputes, byte-identical)')
+
+    // every cottage obeys the land: seeded hash, built-up skirt, level ground,
+    // never a gate tile, never a chapel sanctum (the stone owns that flag).
+    const gateKeys = new Set(gates.map(g => g.x + ',' + g.y))
+    const sancKeys = new Set(spots.filter(Boolean).map(s => s.x + ',' + s.y))
+    ok(v1.every(c => cottageSeed(c.x, c.y) < 40), 'every cottage stands where the #1352 seed hash seeds it (law, not list)')
+    ok(v1.every(c => !gateKeys.has(c.x + ',' + c.y)), 'no cottage ever crowds a moongate tile')
+    ok(v1.every(c => !sancKeys.has(c.x + ',' + c.y)), 'no cottage ever rises on a chapel sanctum (the stone keeps its ground)')
+    ok(v1.every(c => { const v = world.get(c.x, c.y); return !isSea(v) && TOWN_FLAT.has(v) && townScore(c.x, c.y, gates, terrain) >= PLAZA_MIN_TS }),
+        'every cottage stands on the built-up skirt: level town score >= 0.5, never sea, cliff, hill, forest or marsh')
+    ok(new Set(v1.map(c => c.x + ',' + c.y)).size === v1.length, 'no tile hosts two cottages')
+
+    // anti-stranding, verified HERE independently of village.js: block every
+    // cottage + sanctum and walk the land; every gate keeps >= KEEP_RING of
+    // its eight ring neighbours reachable through free town ground.
+    const bKey = new Set([...v1.map(c => c.x + ',' + c.y), ...sancKeys])
+    let strand = 0
+    for (const g of gates) {
+        const seen = new Set([g.x + ',' + g.y])
+        const q = [[g.x, g.y]]
+        while (q.length) {
+            const [x, y] = q.pop()
+            for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const nx = wrap(x + dx), ny = wrap(y + dy), k = nx + ',' + ny
+                if (seen.has(k) || bKey.has(k)) continue
+                const v = world.get(nx, ny)
+                if (isSea(v)) continue
+                const inField = gates.some((g) => {
+                    const dx = Math.abs(nx - g.x), dy = Math.abs(ny - g.y)
+                    return Math.max(Math.min(dx, MAPW - dx), Math.min(dy, MAPW - dy)) <= TOWN_R
+                })
+                if (!inField) continue
+                seen.add(k); q.push([nx, ny])
+            }
+        }
+        const open = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]
+            .filter(([dx, dy]) => seen.has(wrap(g.x + dx) + ',' + wrap(g.y + dy))).length
+        if (open < KEEP_RING) strand++
+    }
+    ok(strand === 0, `no gate is stranded by its village (every gate keeps >= ${KEEP_RING} reachable ring tiles)`)
+
+    // the descent itself must DO work somewhere: on an all-level foreign world,
+    // find a seed position whose raw seed places >= KEEP_RING+1 cottages on the
+    // ring — there plotVillage must drop until the ring breathes again.
+    const FLATTIE = () => 6
+    let descentProven = false
+    outer: for (let gy = 8; gy < 96; gy++) {
+        for (let gx = 8; gx < 96; gx++) {
+            let raw = 0
+            for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+                if (!dx && !dy) continue
+                if (cottageSeed(gx + dx, gy + dy) < 40) raw++
+            }
+            if (raw < KEEP_RING + 1) continue // ring not crowded — nothing to prove here
+            const out = plotVillage([{ x: gx, y: gy }], FLATTIE, [])
+            const onRing = out.filter(c => Math.max(Math.abs(c.x - gx), Math.abs(c.y - gy)) === 1).length
+            if (onRing < raw && onRing <= 8 - KEEP_RING) { descentProven = true; break outer }
+        }
+    }
+    ok(descentProven, `the repair descent is real: on an all-level world a crowded ring sheds cottages until the gate breathes (<= ${8 - KEEP_RING} stand on a crowded ring)`)
+
+    // worlds that offer nothing answer honestly: sea plots no village, a
+    // foreign flat keeps one (the law travels with the engine).
+    ok(plotVillage([{ x: 100, y: 100 }], () => 0, []).length === 0, 'a gate in open sea gets no village (empty, no crash)')
+    ok(plotVillage([{ x: 100, y: 100 }], () => 1, []).length > 0, 'a foreign level land still hosts cottages at its gate')
+
+    // wiring: draw and block read the SAME map, the refusal has its own voice,
+    // and the panel carries the village for live parity.
+    const src = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+    ok(/else if \(villageBlock\.has\(nx \+ ',' \+ ny\)\)/.test(src),
+        'index.jsx: foot-walk asks the village block before stepping onto a cottage (no more ghost walk-through)')
+    ok(/barred with iron/.test(src), 'index.jsx: the barred door speaks when first knocked')
+    ok(/S\.cd = 24/.test(src), 'index.jsx: the cottage knock pays its own cooldown (24, under the chapel\'s 26)')
+    ok(/if \(villageBlock\.has\(tx \+ ',' \+ ty\)\) drawCottage/.test(src),
+        'index.jsx: cottages are PAINTED exactly where they BLOCK — the seen town is the walked town')
+    ok(/village: villageTriples\(village\)/.test(src) && /knocked: S\.knocked\.size/.test(src),
+        'index.jsx: the village and the knocks ride the harness state (panel compares with the Node sweep)')
 }
 
 // PURSE LAW (#2345) — gold rides with the pilgrim and passage is not free.
