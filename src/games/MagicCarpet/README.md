@@ -837,3 +837,26 @@ original's full **forty-five worlds** — fifteen arcs of three atmospheres.
   SKY) → the forty-five-world table check goes red (44≠45) while the seed-7
   and seed-88 wins stay green — the mutant wins early (#1740 precedent). Or
   clamp a deep-arc pearl step back to +4 — the widened ramp pin goes red alone.
+
+## #2449 item 3: DEEP-ARC OFFENSIVE (2026-11-16, QA studio): wizards answer back harder
+
+- Wizard HP climbs +15 a world (arc ramp, #2419) but the wizard's own fire law
+  was world-independent: one aimed bolt, every 55 ticks, dmg 6. Deep-arc
+  fights therefore ran minutes untouched (issue: quota-805/725 HP worlds).
+- New law (`sim.js`, exports `wizFireGap`, `WIZ_DEEP_FROM`, `WIZ_FAN_FROM`,
+  `WIZ_FAN_STEP`): the fire gap tightens one tick per world from the deep ramp
+  (index 18) to a 40-tick floor; from arc 11 (index 30) the volley is a twin
+  fan of ±0.16 rad about the aim line. Worlds 1–18 behave exactly as before.
+  Pure level-index arithmetic — no rng draw, so no seed-stream shifts — and
+  `wizSlow` still holds the fuse (the 150-tick hold is unchanged).
+- Probe traps learned: the wizard ORBITS the tower at radius 34 (`wz.ang`), so
+  park the carpet at `tx+40` and re-pin EVERY tick (its own yaw flies it away,
+  and a one-shot park reads pd up to 74+drift → late, erratic casts); and
+  `gs.events` accumulates — slice it per tick or every later step re-reads the
+  first cast as a fresh one.
+- carpetcheck: +4 pins — the gap-table law (55 shallow, monotone tightening,
+  floor 40 reached by index 33), live single-bolt w1 (@40 fuse, gap 55), live
+  twin-fan XLV (@40, gap 40), spread-law (±0.16 exactly). Mutation guide: pin
+  `wizFireGap(gs.level)` back to 55 or drop the fan branch → those pins go red
+  while shallow-world replay checks stay green. The 60-seed sweep remains the
+  margin (all forty-five worlds, all 60 seeds).
