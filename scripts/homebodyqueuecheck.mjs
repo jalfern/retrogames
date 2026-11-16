@@ -17,6 +17,9 @@
 //   8. POLISH #2474  — the NOW cell (running errand leads the chip row with a
 //      draining wipe; AI errands and faints show none) and the per-glyph append
 //      timbres (distinct first frequency per category, one glyph source).
+//   9. POLISH 2 #2474 — the name reveal (chipHover reads the pending chip or the
+//      NOW cell and names it; hover never cancels) and the row-collapse beat
+//      (a emptied row holds its space while ghost chips shrink, then reflows).
 //
 // Prove it can fail (FORGE step 5): in sim.js, stub the pump guard
 // `p.queue.length && !p.path && !p.goal && !p.use` to `false` -> [ISSUE & DRAIN]
@@ -25,6 +28,9 @@
 // (row reports / tap inert / head shifted) go red and the wipe-rise pins die;
 // restore. Drop the `off` in queueHit — the inert-tap and shifted-head pins
 // go red; restore.
+// Mutant #2474-2: in art.js, make chipHover `return null` — the four reveal
+// pins go red; restore. Drop the reserved-space line in residentRows
+// (`if (fade) row.queueY = ...`) — the hold-open pin goes red; restore.
 
 import {
     FIXED_DT, DEF, COLLAPSE_AT,
@@ -286,6 +292,68 @@ section('POLISH #2474 — NOW CELL & PER-GLYPH APPEND')
     check('the painter drains a bar in the NOW cell', artSrc.includes('1 - row.now.frac') && artSrc.includes('row.now.glyph'))
     check('the hit route offsets by the NOW cell', artSrc.includes('row.now ? QCELL.cw + QCELL.gap : 0'))
     check('the shell plays the per-glyph timbre verbatim', idxSrc2.includes('QUEUE_TIMBRE[queueGlyphFor(e.id)]'))
+}
+
+section('POLISH 2 #2474 — NAME REVEAL & COLLAPSE BEAT')
+{
+    const art = await import('../src/games/Homebody/art.js')
+    const { residentRows, queueHit, chipHover, chipName, chipCollapse, chipCollapseArm, COLLAPSE_FRAMES, QCELL, queueGlyphFor } = art
+    const base = 528   // PANEL_X
+    // --- chipName: one source for the spoken name
+    check('chipName names catalog objects', chipName('fridge') === 'FRIDGE' && chipName('toilet') === 'PORCELAIN THRONE')
+    check('chipName speaks the mail and the walk', chipName('mail') === 'WORK' && chipName('work') === 'WORK' && chipName('walk') === 'WALK')
+    check('an unknown id still answers in caps', chipName('hmm') === 'HMM')
+    // --- hover: mouse route over the chips AND the NOW cell
+    // (fresh walk to the fridge with the toilet queued — deterministic, no pump racing)
+    const gH = newRun(11)
+    const ottoH = gH.people[0]
+    cmdUse(gH, ottoH, gH.items.find((it) => it.id === 'fridge'))
+    cmdQueue(gH, ottoH, { kind: 'use', it: gH.items.find((it) => it.id === 'toilet') })
+    const rowsH = residentRows(gH)
+    const rowH = rowsH.find((rr) => rr.p === ottoH)
+    const cyH = rowH.queueY + QCELL.ch / 2
+    check('the NOW cell leads and the hover reads its errand', rowH.now && rowH.now.id === 'fridge'
+        && (() => { const h = chipHover(gH, base + 26 + QCELL.cw / 2, cyH); return h && h.qi === -1 && h.glyph === 'fork' && h.name === 'FRIDGE' })())
+    check('hover names the pending chip', (() => { const h = chipHover(gH, base + 26 + (QCELL.cw + QCELL.gap) + QCELL.cw / 2, cyH); return h && h.qi === 0 && h.name === 'PORCELAIN THRONE' })())
+    check('hover off the row reads nothing', chipHover(gH, base + 26 + QCELL.cw / 2, cyH - 10) === null
+        && chipHover(gH, base + 4, cyH) === null)
+    const hH = stateHash(gH)
+    const qH = ottoH.queue.length
+    for (let i = 0; i < 40; i++) { chipHover(gH, base + 26 + (QCELL.cw + QCELL.gap) + QCELL.cw / 2, cyH); chipHover(gH, base + 26 + QCELL.cw / 2, cyH) }
+    check('hover never cancels and never moves the hash', ottoH.queue.length === qH && stateHash(gH) === hH)
+    check('the NOW name rides one glyph/id source', rowH.now.glyph === queueGlyphFor(rowH.now.id))
+    // --- collapse beat: an emptied row holds space while ghosts shrink, then reflows.
+    // (the queue is sim state, so emptying it moves the hash — capture the view's
+    // own reflow before/after the fade, and prove probing stable on THIS state.)
+    const cache = new Map()
+    const hEmpty = stateHash(gH)   // queue still has the toilet
+    ottoH.queue.length = 0         // the list drains (as cancel/drop would)
+    const rowEmpty = residentRows(gH).find((rr) => rr.p === ottoH)
+    const hAfter = stateHash(gH)
+    check('the sim owns the queue state (hash moves when the list drains)', hEmpty !== hAfter)
+    chipCollapseArm(cache, gH.people.indexOf(ottoH), ['fork', 'drop'], 0)
+    const rowG = residentRows(gH, cache).find((rr) => rr.p === ottoH)
+    check('arm keeps the row reserved while chips are gone', rowG.queueY !== null && rowG.fade && rowG.fade.glyphs.length === 2 && rowG.fade.t === COLLAPSE_FRAMES)
+    check('the beat holds the panel open (the next row sits lower)', rowG.nextY === rowEmpty.nextY + 18)
+    for (let i = 0; i < COLLAPSE_FRAMES - 1; i++) chipCollapse(gH, cache)
+    check('the ghosts survive until the last frame', residentRows(gH, cache).find((rr) => rr.p === ottoH).fade && cache.has(0))
+    chipCollapse(gH, cache)
+    check('the row reflows when the beat ends', !cache.has(0) && residentRows(gH, cache).find((rr) => rr.p === ottoH).queueY === null
+        && residentRows(gH, cache).find((rr) => rr.p === ottoH).nextY === rowEmpty.nextY)
+    check('arming nothing arms nothing', (() => { const c2 = new Map(); chipCollapseArm(c2, 0, [], 0); return c2.size === 0 })())
+    cache.clear()
+    check('probing the new view never moves the hash', stateHash(gH) === hAfter && stateHash(gH) === hAfter)
+    // --- source pins: the layer is view-only, hover never rides the tap route
+    const artSrc3 = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    const idxSrc3 = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    check('art exports the reveal and collapse routes', ['export function chipHover', 'export function chipName', 'export function chipCollapse', 'export function chipCollapseArm', 'export const COLLAPSE_FRAMES'].every((x) => artSrc3.includes(x)))
+    check('the painter draws ghosts and the name label', artSrc3.includes('if (row.fade)') && artSrc3.includes('hoverName.name'))
+    check('the hover route sits beside queueHit, not inside it', artSrc3.indexOf('export function chipHover') > artSrc3.indexOf('export function queueHit')
+        && !(/pointerPx[\s\S]{0,400}chipHover/).test(idxSrc3.slice(idxSrc3.indexOf('const pointerPx'), idxSrc3.indexOf('const pointerPx') + 400)))
+    check('the shell arms ghosts on a shrinking list and decays per world step', idxSrc3.includes('chipCollapseArm(collapseCache') && idxSrc3.includes('chipCollapse(gs, collapseCache)'))
+    check('the cancel law still owns the press (queueHit -> queueCancel)', /queueHit\(gs, px, py\).{0,160}queueCancel/s.test(idxSrc3))
+    check('the probe exposes the view state for QA', idxSrc3.includes('collapse: gs.people.map') && idxSrc3.includes('hoverName: hoverReveal'))
+    check('a new street clears ghosts and names', idxSrc3.includes('collapseCache.clear(); hoverReveal = null'))
 }
 
 console.log(`\nhomebodyqueuecheck: ${pass}/${pass + fail}${fail ? '  FAILED: ' + fails.join(', ') : ''}`)

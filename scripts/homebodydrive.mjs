@@ -533,6 +533,70 @@ check('contract state ticks', f0.tick > 0 && typeof f0.score === 'number', `tick
     check('#2240 attract shows Ivy on the lot and rings her once', !!seen && rung === 1, `ivy=${seen} demoIvy=${rung} hour=${hour}`)
 }
 
+// #2474 items 2+4 live: the queue chips LEARN their names and MOVE with a beat.
+// Route: tap the fridge (issues a walk), tap it again while busy (the errand
+// appends as a chip). Then the mouse over the chip reads its name (blue label
+// pixels paint under the row), and a tap on the chip cancels it — the row arms
+// its collapse beat (probe.collapse goes live for the fade).
+{
+    const LOTX = 8, LOTY = 40, TL = 32
+    const panelX = 528, qx0 = panelX + 26, qy0 = LOTY + 94, cw = 19, gap = 3
+    if ((await st()).screen !== 'play') { await page.keyboard.press('Space'); await wait(400) }   // the Ivy attract leg left us on the marquee
+    const ss = await st()
+    const fr = ss.items.find((it) => it.id === 'fridge')
+    const frx = LOTX + fr.c * TL + TL / 2, fry = LOTY + fr.r * TL + TL / 2
+    const canvasPt = async (x, y) => {
+        const b = await page.evaluate(() => { const c = document.querySelector('canvas').getBoundingClientRect(); return { l: c.left, t: c.top, w: c.width, h: c.height } })
+        return [b.l + (x / 640) * b.w, b.t + (y / 480) * b.h]
+    }
+    await tap(frx, fry)   // issue the walk
+    await wait(120)
+    await tap(frx, fry)   // busy tap — the errand joins the list
+    let qn = 0
+    for (let i = 0; i < 40 && !(qn = ((await st()).queues || [])[0]?.length); i++) await wait(50)
+    check('#2474 a busy tap joins the list (a chip sits in the row)', qn >= 1, `queue=${qn}`)
+    // The chip's x depends on whether a NOW cell leads (errand in flight): head
+    // slot qx0, or shifted right one cell after the NOW tell. Hover the shifted
+    // slot first, fall back to the head slot.
+    const chipCxShifted = qx0 + (cw + gap) + cw / 2
+    const chipCxHead = qx0 + cw / 2
+    const chipCy = qy0 + 7
+    let hoverName = null
+    for (let i = 0; i < 24 && !hoverName; i++) {
+        const [hx, hy] = await canvasPt(chipCxShifted, chipCy)
+        await page.mouse.move(hx, hy)
+        hoverName = (await st()).hoverName
+        if (!hoverName) { const [ax, ay] = await canvasPt(chipCxHead, chipCy); await page.mouse.move(ax, ay); hoverName = (await st()).hoverName }
+        await wait(50)
+    }
+    check('#2474 item 2 hover reads the chip its name', hoverName === 'FRIDGE' || hoverName === 'PORCELAIN THRONE' || hoverName === 'WALK', JSON.stringify(hoverName))
+    const ink = await page.evaluate(([x0, y0]) => {
+        const c = document.querySelector('canvas')
+        const d = c.getContext('2d').getImageData(x0, y0, 80, 9).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 120 && d[i] < 190 && d[i + 1] > 150 && d[i + 1] < 205 && d[i + 2] > 190) n++   // #8fa2c8 label text
+        return n
+    }, [qx0, qy0 + 15])
+    check('#2474 item 2 the name paints under the row', ink >= 6, `label ink ${ink}`)
+    const [ox, oy] = await canvasPt(panelX + 2, LOTY + 4)   // panel header, off any chip
+    await page.mouse.move(ox, oy)
+    let cleared = false
+    for (let i = 0; i < 20 && !cleared; i++) { cleared = !(await st()).hoverName; await wait(50) }
+    check('#2474 item 2 the name clears when the pointer leaves', cleared)
+    // cancel THAT pending chip by tapping it while the NOW errand still runs
+    // (so the chip persists across a frame boundary) — the row arms its collapse beat.
+    const piC = (await st()).active
+    let armed = false
+    for (const cx of [chipCxShifted, chipCxHead]) {
+        if (!(await st()).queues[piC]?.length) break
+        const [cxp, cyp] = await canvasPt(cx, chipCy)
+        await page.mouse.click(cxp, cyp)
+        for (let i = 0; i < 20 && !armed; i++) { armed = ((await st()).collapse || []).some((v) => v > 0); await wait(30) }
+        if (armed) break
+    }
+    check('#2474 item 4 cancelling a chip arms the row-collapse beat', armed && (await st()).queues[piC].length === 0, `collapse=${JSON.stringify((await st()).collapse)}`)
+}
+
 check('zero page errors across the whole drive', errors.length === 0, JSON.stringify(errors.slice(0, 3)))
 await browser.close()
 console.log(`\n=== homebodydrive: ${pass} pass, ${fail} fail ===`)
