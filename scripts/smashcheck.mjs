@@ -69,8 +69,8 @@ const { playerFrame, GUN, LAYERS, PLAYER_FRAMES, CARRIAGE, POSE, STOCK, SPREAD_F
 const { ENEMY_FRAMES, TELEGRAPH, CHARGERS, CHARGE, OUTLINE, enemyFrame, bossMouth, BOSS_MOUTH_FLAP, ADD_TELEGRAPH, BOSS_DEATH_T } = await import('../src/games/SmashTV/enemies.js')
 const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore, recoilKick, RECOIL_TICKS, RECOIL_PX, SHELL_KICK, shellKick, barrelHot, HOT_FLOOR, GLINT_TICKS, glintPhase, goreSet, GORE_TICKS, GORE_GRAV, STAIN_TICKS, stainRadius, camPan, CAM_PAN, CAM_SNAP, FAR_EXIT_PX, farExitPx, SHUTTER_CONFIRM, MARK, markSide, edgeMarks, MARK_CAP, CAM_LEAD, walkHype, camLead, SPAWN_CUE, edgeRow } = await import('../src/games/SmashTV/juice.js')
 const { PLAYER_PAL, PAULDRON_BOB } = await import('../src/games/SmashTV/art.js')
-const { FIRE, fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_SWELL, MURMUR_HYPE_FREQ, MURMUR_TICKS, WHOOSH, ALERT, ALERT_RADIUS, ALERT_CD } = await import('../src/games/SmashTV/audio.js')
-const { BAR, PIP, POWER_LABEL, labelClearsBar, pipFits, bombReady, RACK_FLASH, hiRoll, respawnState, RESPAWN_BLINK_SHIFT } = await import('../src/games/SmashTV/hud.js')
+const { FIRE, fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_SWELL, MURMUR_HYPE_FREQ, MURMUR_TICKS, WHOOSH, ALERT, ALERT_RADIUS, ALERT_CD, POWER_PING } = await import('../src/games/SmashTV/audio.js')
+const { BAR, PIP, POWER_LABEL, labelClearsBar, pipFits, bombReady, RACK_FLASH, hiRoll, respawnState, RESPAWN_BLINK_SHIFT, powerLow, LOW_SHIFT, LOW_LABEL_SHIFT } = await import('../src/games/SmashTV/hud.js')
 const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) }
 
 async function fresh() {
@@ -379,6 +379,35 @@ console.log('rules')
     step(gs, { fire: true })
     ok(!gs.events.some((e) => e.type === 'shoot') && gs.energy === 1, 'a broke LASER refuses to fire')
 }
+// #2507 dry-tank alarm: the sim barks ONCE at the reload edge (#2491 zone),
+// refuelling re-arms it, and free-lead guns never bark. The HUD's red pulse
+// and the planner's refuel both read CFG.dryLimit — pinned below with the hud.
+{
+    const gs = makeGame(0)
+    gs.weapon = 'laser'
+    gs.energy = CFG.dryLimit; step(gs); gs.events.length = 0
+    ok(!gs.events.some((e) => e.type === 'powerLow'), 'the alarm trips strictly inside the zone, not at the line')
+    gs.energy = CFG.dryLimit - 1
+    step(gs)
+    ok(gs.events.some((e) => e.type === 'powerLow'), 'the LASER barks once as it enters the dry zone')
+    gs.events.length = 0
+    gs.energy = 20; step(gs); gs.events.length = 0
+    gs.energy = 2; step(gs)
+    ok(!gs.events.some((e) => e.type === 'powerLow'), 'dryer does not mean deader — no spam while sinking', `barks ${gs.events.filter((e) => e.type === 'powerLow').length}`)
+    gs.events.length = 0
+    gs.energy = CFG.maxEnergy; step(gs); gs.events.length = 0
+    gs.energy = CFG.dryLimit - 1
+    step(gs)
+    ok(gs.events.some((e) => e.type === 'powerLow'), 'refuel then a second crossing barks again (the flag re-armed)')
+    const g2 = makeGame(0)
+    g2.weapon = 'laser'; g2.energy = 20
+    step(g2)
+    ok(g2.events.some((e) => e.type === 'powerLow'), 'equipping dry barks on the next tick — no silent silence')
+    const g3 = makeGame(0)
+    g3.weapon = 'spread'; g3.energy = 5
+    step(g3)
+    ok(!g3.events.some((e) => e.type === 'powerLow'), 'free-lead guns never run dry on the meter')
+}
 // FIREBOMB: costs 34, clears the room (not the boss), pays the kills
 {
     const gs = makeGame(0)
@@ -654,6 +683,18 @@ console.log('hud')
     ok(pipFits(), 'the BOMB-ready pip sits in the strip beside the bar', JSON.stringify(PIP))
     ok(bombReady(34, 34) && !bombReady(33, 34), 'the pip lights exactly at the firebomb cost')
     ok(bombReady(CFG.maxEnergy, CFG.firebombCost) && !bombReady(0, CFG.firebombCost), 'the pip tracks the energy, not a fixed pose')
+    // #2507 dry-tank readability: HUD and autopilot read ONE threshold, and
+    // the pulse constants exist for the renderer to obey.
+    ok(CFG.dryLimit === 30, 'the dry-tank threshold is 30 POWER — the #2491 doctrine value')
+    ok(powerLow('laser', CFG.dryLimit - 1, CFG.dryLimit) && !powerLow('laser', CFG.dryLimit, CFG.dryLimit), 'powerLow trips strictly below the reload threshold')
+    ok(!powerLow('twin', 0, CFG.dryLimit) && !powerLow('spread', 1, CFG.dryLimit) && !powerLow('flame', 2, CFG.dryLimit), 'powerLow is LASER-only — free lead never warns')
+    {
+        const PSRC = readFileSync('src/games/SmashTV/planner.js', 'utf8')
+        ok(/gs\.energy < CFG\.dryLimit/.test(PSRC) && !/gs\.energy < 30/.test(PSRC), 'the autopilot refuels at CFG.dryLimit — no second hardcoded 30 to drift')
+        const ISRC = readFileSync('src/games/SmashTV/index.jsx', 'utf8')
+        ok(/powerLow\(gs\.weapon, gs\.energy, CFG\.dryLimit\)/.test(ISRC), 'the HUD pulse reads the same CFG.dryLimit the planner refuels at')
+    }
+    ok(LOW_SHIFT === 3 && LOW_LABEL_SHIFT === 4 && POWER_PING.every === 30, 'the dry alarm cadence: fast bar pulse, readable label blink, half-second ping', `${LOW_SHIFT}/${LOW_LABEL_SHIFT}/${POWER_PING.every}`)
     ok(RACK_FLASH === 60, 'the rack name flashes for one second after a pickup', `${RACK_FLASH}`)
     let v = 0, frames = 0
     const seq = []
@@ -1386,6 +1427,9 @@ if (process.argv.includes('--mutate')) {
         ['#2491 mercyBack: the solo respawn shield returns', 'p.invuln = 0 // #2491: respawn lands unshielded — the arcade gives none', 'p.invuln = 150 // mercyBack'],
         ['#2491 mercyBack: the co-op respawn shield returns', 'q.invuln = 0 // #2491: respawn lands unshielded — the arcade gives none', 'q.invuln = 150 // mercyBack'],
         ['#2491: the open-door landing forgets parked bodies', 'if (gs.enemies.some((e) => e.hp > 0 && Math.hypot(e.x - nx, e.y - y) < CFG.contactR)) continue', 'if (false) continue'],
+        ['#2507: the dry tank goes silent (no bark at the reload edge)', "if (dryNow && !gs._dryWarn) gs.events.push({ type: 'powerLow' })", 'void 0'],
+        ['#2507: the bark never re-arms after a refuel', 'gs._dryWarn = dryNow', ''],
+        ['#2507: the alarm forgets which gun runs dry — free lead barks too', "const dryNow = p.weapon === 'laser' && gs.energy < CFG.dryLimit", 'const dryNow = gs.energy < CFG.dryLimit'],
     ]
     const LEVELS = 'src/games/SmashTV/levels.js'
     const LEVELS_MUTANTS = [
@@ -1404,7 +1448,8 @@ if (process.argv.includes('--mutate')) {
         ['#2032: the seat walks onto the dropped flamer', 'if (d > 16) return inp', 'if (d > -1e9) return inp'],
         ['#2491: the lane-sound duel is deaf again (seed 4 re-nails onto the chrome corner)', 'if (staticDuel && Math.abs(qx) > Math.abs(qy) && !hOpen && vOpen) {', 'if (false) {'],
         ['#2491: the pilot loiters under queued spawns again', 'if (hot && hd < 40) {', 'if (hot && hd < -40) {'],
-        ['#2491: the dry-tank reload never fires', "const dry = p.weapon === 'laser' && gs.energy < 30", 'const dry = false'],
+        ['#2491: the dry-tank reload never fires', "const dry = p.weapon === 'laser' && gs.energy < CFG.dryLimit", 'const dry = false'],
+        ['#2507: the autopilot re-hardcodes its own threshold and drifts off the HUD', 'gs.energy < CFG.dryLimit', 'gs.energy < 44'],
     ]
     const JUICE = 'src/games/SmashTV/juice.js'
     const JUICE_MUTANTS = [
@@ -1428,6 +1473,7 @@ if (process.argv.includes('--mutate')) {
         ['#1978: the combo pop slides back onto the door row', 'ctx.translate(CW / 2 + camX, HUD_H + 48)', 'ctx.translate(CW / 2 + camX, HUD_H + 30)'],
         ['#2011: the swell drops out of the bed', 'MURMUR.vol + MURMUR_SWELL * (e.hype || 0)', 'MURMUR.vol'],
         ['#2011: the camera never settles toward the exit', 'camLead(leadDx, bd)', '0'],
+        ['#2507: the dry meter goes numb (bar and label hold slate)', 'const dryTank = powerLow(gs.weapon, gs.energy, CFG.dryLimit)', 'const dryTank = false'],
     ]
     const targets = [[SIM, MUTANTS], [SPRITE, SPRITE_MUTANTS], [LEVELS, LEVELS_MUTANTS], [PLANNER, PLANNER_MUTANTS], [JUICE, JUICE_MUTANTS], [IDX, IDX_MUTANTS]]
     let died = 0, total = 0

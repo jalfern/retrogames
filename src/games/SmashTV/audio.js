@@ -48,3 +48,7 @@ export const WHOOSH = { dur: 0.22, vol: 0.06, freq: 1800 }
 export const ALERT_RADIUS = 48
 export const ALERT_CD = 60
 export const ALERT = { freq: 1320, dur: 0.07, type: 'square', vol: 0.05 }
+
+// #2507 dry-tank ping: while the LASER meter sits in the reload zone (powerLow),
+// a soft tick every half world-second — the red bar is seen, this is heard.
+export const POWER_PING = { every: 30, freq: 180, dur: 0.04, type: 'square', vol: 0.035 }

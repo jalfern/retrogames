@@ -402,8 +402,9 @@ function objectiveDrive(gs, pi, st, p) {
     // walk the nearest cell, drop or crate that puts lead back in the gun
     // (energy tops the tank; a crate hands over an energy-free iron), and
     // keep the aim on the threat while walking — the guard and the gate own
-    // the body.
-    const dry = p.weapon === 'laser' && gs.energy < 30
+    // the body. #2507: the threshold is CFG.dryLimit — the same constant the
+    // HUD's red pulse reads, so the alarm and the doctrine cannot drift.
+    const dry = p.weapon === 'laser' && gs.energy < CFG.dryLimit
     const refuel = dry
         ? (gs.items.find((k) => k.t === 'energy') ||
            gs.items.find((k) => k.t === 'weapon' && k.w !== 'laser' && k.w !== 'flame') ||

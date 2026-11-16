@@ -384,6 +384,32 @@ shield 150, landing forgets parked bodies) and three doctrine mutants
 (lane-sound deaf, loiter under spawns, reload never fires) must all die.
 `smashplay` drives a live respawn under fire with zero page errors.
 
+## DRY-TANK ALARM — the meter screams before the gun (#2507)
+
+A dry pilot is scenery with a gun (#2491), but until now the *player* found
+that out by pulling a dead trigger: the POWER bar just got shorter. When the
+LASER drops below the reload zone the HUD now says so:
+
+- **One threshold, one home**: `CFG.dryLimit = 30` (sim.js). The planner's
+  refuel doctrine and the HUD pulse both read it — the alarm can never drift
+  off the autopilot's zone (source pin: no second literal in planner.js).
+- **Edge bark** (sim event `powerLow`): fired once on the crossing, re-armed
+  by any refuel (cell, room clear, respawn). Two-note falling siren +
+  "POWER LOW! FIND FUEL!" — you look at the meter before the silence does.
+- **Red-pulse trough** (HUD): while dry the whole bar track pulses dark red
+  (the *trough*, not the fill — at 1 energy a red fill is one invisible
+  pixel) and the remaining burn holds solid red; the POWER label blinks at
+  half the bar cadence. `powerLow(weapon, energy, dryLimit)` is LASER-only —
+  free lead never warns.
+- **Half-second ping** while parked in the zone (`POWER_PING`, audio.js):
+  the steady heartbeat between barks.
+
+`smashcheck` pins: strict-under threshold, LASER-only, bark-once-and-re-arm
+(direct energy writes — the laser's 16-tick cadence stays out of the proof),
+shared-threshold source pins over planner + index, cadence constants.
+Mutants: bark deleted, flag never re-arms, weapon-blind alarm, planner
+re-hardcodes its own number, HUD goes numb — five must die.
+
 ## Honest gaps vs the cabinet
 - ~~THE ANNOUNCER keeps his screen-sized stage on purpose (a boss half off-screen
   reads as a bug); every other room runs the 24-column pan board.~~ CLOSED by
