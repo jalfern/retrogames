@@ -24,7 +24,7 @@ import {
     FOG_NEAR, FOG_D, HAZE, hazeOf, airOf, aerialFog,
     DIVE_DRAG, DIVE_NOFIRE, CAMPAIGN_CAP,
 } from '../src/games/MagicCarpet/sim.js'
-import { WAVE_CYCLE } from '../src/games/MagicCarpet/renderer.js' // #1764 item 4 stage 4: the wave law's clock constant, for the JS twin
+import { WAVE_CYCLE, arcTint } from '../src/games/MagicCarpet/renderer.js' // #1764 item 4 stage 4: the wave law's clock constant, for the JS twin; #2449 item 1: the arc-keyed sky tint, for the real function
 
 const wrap = (v, m) => ((v % m) + m) % m
 const wrapD = (v) => wrap(v + MAP / 2, MAP) - MAP / 2
@@ -126,6 +126,29 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         r.check('the renderer CYCLES its three atmospheres over forty-five worlds (no clamp to the third)',
             src.includes('PAL[level % PAL.length]') && !src.includes('PAL[Math.min(level'),
             'source pin')
+    }
+    {
+        // #2449 item 1: arc-keyed zenith drift — deep-arc worlds must not wear
+        // the same sky as their arc-1 twins (atmospheres cycled mod 3, so world
+        // 40's frost was pixel-identical to world 4's).
+        const src = await readFile(new URL('../src/games/MagicCarpet/renderer.js', import.meta.url), 'utf8')
+        const drift = Number((src.match(/const ARC_DRIFT = ([\d.]+)/) || [])[1])
+        const zs = [...src.matchAll(/zenith: (0x[0-9a-f]{6})/g)].map((m) => parseInt(m[1], 16))
+        const PAL_CYCLE = zs.length
+        const tints = LEVELS.map((_, i) => arcTint(i))
+        const arcs = Math.ceil(LEVELS.length / PAL_CYCLE)
+        const painted = new Set(LEVELS.map((_, i) => {
+            const z = zs[i % PAL_CYCLE], k = tints[i]
+            return [((z >> 16) & 255) * k, ((z >> 8) & 255) * k, (z & 255) * k].map((c) => Math.round(c * 10)).join(',')
+        }))
+        r.check('#2449 item 1: the sky zenith deepens per arc — one tint table, forty-five distinct skies, world 40 no longer wears world 4 (arc-keyed drift, not a PAL per world)',
+            !!drift && drift > 0 && zs.length === PAL_CYCLE &&
+            src.includes('v3(p.zenith).multiplyScalar(arcTint(level))') &&
+            tints[0] === 1 && tints[PAL_CYCLE - 1] === 1 && tints[PAL_CYCLE] < tints[0] &&
+            tints.every((t, i) => i === 0 || t <= tints[i - 1]) &&
+            tints[LEVELS.length - 1] <= 0.62 &&
+            new Set(tints).size === arcs && painted.size === LEVELS.length,
+            `drift ${drift}: tint w1 ${tints[0].toFixed(2)} → w${LEVELS.length} ${tints[LEVELS.length - 1].toFixed(2)}, ${new Set(tints).size}/${arcs} arc tints, ${painted.size}/${LEVELS.length} distinct zeniths`)
     }
     {
         const src = await readFile(new URL('../src/games/MagicCarpet/renderer.js', import.meta.url), 'utf8')

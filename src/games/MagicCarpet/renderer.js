@@ -66,6 +66,15 @@ const PAL = [
 
 const v3 = (v) => new THREE.Color(((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255)
 
+// #2449 item 1: the original's skies shifted slowly across the whole campaign;
+// PAL cycles every three worlds, so forty-five worlds = fifteen arcs of one
+// atmosphere each. Key a slow zenith drift to the ARC number: every arc deepens
+// the zenith by ARC_DRIFT of the authored colour (arc 1 rides the authored
+// values untouched, the back half reads as the far country). One PAL table,
+// zero RNG, deterministic per world.
+const ARC_DRIFT = 0.045
+export const arcTint = (level) => Math.max(0, 1 - Math.floor(level / PAL.length) * ARC_DRIFT)
+
 const NOISE_GLSL = `
 float hash21(vec2 p){ p = fract(p * vec2(234.34, 435.345)); p += dot(p, p + 34.23); return fract(p.x * p.y); }
 float vnoise(vec2 p){
@@ -1320,7 +1329,8 @@ void main(){
     // repeating campaign instead of clamping the ninth world to Frostbound.
     const applyPalette = (level) => {
         const p = PAL[level % PAL.length]
-        tUniforms.uZenith.value.copy(v3(p.zenith))
+        const zin = v3(p.zenith).multiplyScalar(arcTint(level))
+        tUniforms.uZenith.value.copy(zin)
         tUniforms.uFogCol.value.copy(v3(p.fog))
         tUniforms.uSunCol.value.copy(v3(p.sun))
         tUniforms.uDeep.value.copy(v3(p.deep))
@@ -1331,7 +1341,7 @@ void main(){
         tUniforms.uGrassB.value.copy(v3(p.grassB))
         tUniforms.uRock.value.copy(v3(p.rock))
         tUniforms.uSnow.value.copy(v3(p.snow))
-        sUniforms.uZenith.value.copy(v3(p.zenith))
+        sUniforms.uZenith.value.copy(zin)
         sUniforms.uHorizon.value.copy(v3(p.fog))
         sUniforms.uCloudCol.value.copy(v3(p.cloud))
         sUniforms.uCloudMix.value = p.cloudMix
