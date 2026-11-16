@@ -18,12 +18,15 @@ export const CFG = {
 
 // #1740: the original ran a long campaign of 45 levels; the atmospheres repeat
 // every third world (the renderer cycles its three PALs the same way), so the
-// named worlds below are nine arcs of three — each arc stricter than the last
+// named worlds below are fifteen arcs of three — each arc stricter than the last
 // (#1925 item 3 grew the campaign from nine to eighteen: arcs four to six keep
 // the same three-atmosphere cycle and the +15 vault ramp; #2419 grew it to
 // twenty-seven: arcs seven to nine keep the +15 vault ramp, and the deeper
 // arcs ride pearls at +5/world so quota stays under ~3.5x the pearl yield —
-// the economy policy below outranks the old +4 step).
+// the economy policy below outranks the old +4 step; #2427 grew it to the
+// original's full forty-five: arcs ten to fifteen keep the same laws, and the
+// margin at the end (quota 805 vs floor(263*3.5)=920) is better than
+// mid-campaign's — the yield law reaches 45 with room to spare).
 // Quota policy (learned in the sweep: seeds 41/54 stalled when world 9's
 // demand outran the pearl yield): every quota stays well under what the pearls
 // alone realistically pay (~pearls x 3.5 against the 2..6 roll), because the
@@ -64,6 +67,32 @@ export const LEVELS = [
     { name: 'HOLLOW GREEN', quota: 505, hoard: 455, wizHp: 425, pearls: 163 },
     { name: 'LAST CINDER', quota: 520, hoard: 470, wizHp: 440, pearls: 168 },
     { name: 'THE FARTHEST SKY', quota: 535, hoard: 485, wizHp: 455, pearls: 173 },
+    // #2427 — the fourth and fifth campaigns: the original's full forty-five.
+    // Arc ten (+15 vault ramp, pearls +5 — the yield margin holds to the end:
+    // the deepest ask is 805 at 263 pearls = 87.5% of the 3.5x yield floor):
+    { name: 'GREENVEIL', quota: 550, hoard: 500, wizHp: 470, pearls: 178 },
+    { name: 'EMBER REACH', quota: 565, hoard: 515, wizHp: 485, pearls: 183 },
+    { name: 'FROSTGATE', quota: 580, hoard: 530, wizHp: 500, pearls: 188 },
+    // arc eleven — stricter still:
+    { name: 'IRON MOOR', quota: 595, hoard: 545, wizHp: 515, pearls: 193 },
+    { name: 'ASHEN WAKE', quota: 610, hoard: 560, wizHp: 530, pearls: 198 },
+    { name: 'WHITEFALL', quota: 625, hoard: 575, wizHp: 545, pearls: 203 },
+    // arc twelve — closes on the fourth SKY:
+    { name: 'MOSSWOOD', quota: 640, hoard: 590, wizHp: 560, pearls: 208 },
+    { name: 'EMBER STORM', quota: 655, hoard: 605, wizHp: 575, pearls: 213 },
+    { name: 'THE OUTER SKY', quota: 670, hoard: 620, wizHp: 590, pearls: 218 },
+    // arc thirteen — the long country the original's back half was:
+    { name: 'DEEPGREEN', quota: 685, hoard: 635, wizHp: 605, pearls: 223 },
+    { name: 'MAGMA FIELD', quota: 700, hoard: 650, wizHp: 620, pearls: 228 },
+    { name: 'RIME WASTES', quota: 715, hoard: 665, wizHp: 635, pearls: 233 },
+    // arc fourteen — stricter still:
+    { name: 'THORNVALE', quota: 730, hoard: 680, wizHp: 650, pearls: 238 },
+    { name: 'LAST PYRE', quota: 745, hoard: 695, wizHp: 665, pearls: 243 },
+    { name: 'SNOWBOUND', quota: 760, hoard: 710, wizHp: 680, pearls: 248 },
+    // arc fifteen — the last country: the deepest vault, the final sky.
+    { name: 'GREEN REACH', quota: 775, hoard: 725, wizHp: 695, pearls: 253 },
+    { name: 'SCORCHED HOLLOW', quota: 790, hoard: 740, wizHp: 710, pearls: 258 },
+    { name: 'THE FINAL SKY', quota: 805, hoard: 755, wizHp: 725, pearls: 263 },
 ]
 export const QUOTA = LEVELS[LEVELS.length - 1].quota
 
@@ -71,7 +100,7 @@ export const QUOTA = LEVELS[LEVELS.length - 1].quota
 // Pure selector plumbing so the whole pick path is Node-provable, like hudTap.
 // Thumb-sized chevron zones sit at the bottom corners of the 320x200 title
 // surface (48x48 HUD px = >=44 CSS px on a 390px phone); the cursor cycles
-// through the twenty-seven worlds and any other start key/tap launches from it.
+// through the forty-five worlds and any other start key/tap launches from it.
 export const SEL = { y: 112, h: 48, zw: 48 }
 export function selectTap(x, y) {
     if (y < SEL.y || y > SEL.y + SEL.h) return null
