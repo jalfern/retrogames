@@ -63,6 +63,26 @@ a winning schedule. First blood cools the flag synchronously inside
 by tick 246 and its longest dry spell is 275 — honest matches never heat,
 and the arena receipts replay byte-identical with the rule in place.
 
+**Heat juice (#2385).** The heat rule now announces itself before it bites.
+(1) **Telegraph** — `heatWarnStep(dry)` (sim, pure) rings two rising notes
+at dry-spell ticks 390 and 420 (`heatWarnLead` 60 = a 2 s head start on the
+rumble); a hit re-arms the shell latch, and once HOT the rumble owns the
+voice. The window is pinned with hard numbers (≥ 45 ticks before the gate)
+and the longest REAL autopilot dry spell is pinned under it — no honest duel
+may ring the bell, so the attract witness never fakes the rule. (2) **Shape
+cue** — hot cover gains a crackle dither (dark 1×2 ticks, count ∝ remaining
+life, positions hashed off the cell) and the ember pulse accelerates with
+`burn`, so dying cover is legible without relying on the orange hue.
+(3) **Dryout pop** — the unused `dryout` event now pays visually: an ash
+puff at the cell plus the shaft arcing to its owner's quiver bar (the sim
+already returns the arrow — the paint says so), with a soft poof-and-blip.
+(4) **Attract showcase — judged, not cheated**: attract replays
+`recordMatch`'s witness stream through the real `step()`; scripting a heat
+beat would diverge the hashes that ARE the demo's honesty (and honest
+matches never heat, see above). The marquee line "15 s WITHOUT BLOOD · THE
+COVER BURNS OUT" is the showcase; the telegraph only rings in real stalemate
+danger. Probe `fx: { ash, homes, warnNotes, dryFx, warnStep }` receipts.
+
 ## Invariants the harness owns (`npm run archerycheck [-- --mutate]`)
 
 - **The arrow ledger, every tick**: `quivers + flying + stuck + hit + lost
@@ -91,13 +111,18 @@ and the arena receipts replay byte-identical with the rule in place.
   the same tick; re-heat is exactly `heatTicks` after blood; the ledger stays
   exact through hot dryouts; and every arena's first hit lands ≥90 ticks
   before the gate — pressure is for stalemates only.
-- Eight + two mutants must die (`--mutate`, wired into the CI static job):
+- **TELEGRAPH (#2385)**: the warn law fires exactly two rising notes at
+  `heatTicks − heatWarnLead` and its midpoint, is silent outside and once hot,
+  the first note lands ≥ 45 ticks before the rumble (hard constant), and the
+  longest dry spell of a real autopilot duel stays under the window.
+- Eight + three mutants must die (`--mutate`, wired into the CI static job):
   no-stick, no-knockout, no-pull, no-arrow-gravity, no-player-gravity,
   clock-too-short, lob-bot (now patched with `climbSeek: false` too — the
   climbing brain re-opens the firing lanes the lobs froze, so the mutant
   must regress the doctrine as it ships), no-climb-seek, no-heat, heat-rot
   off (caught on a cool/hot lifetime ratio the patched constant cannot sign
-  for itself).
+  for itself), heat-warn too late (the lead is judged against the hard ≥45
+  tick promise, not the patched `heatWarnLead`).
 
 ## Lessons this title paid for (all in the code comments)
 

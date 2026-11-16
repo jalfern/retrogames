@@ -51,6 +51,12 @@ export const CFG = {
     // stalemate does. heat:false is the test-only kill switch (mutant).
     heatTicks: 450,
     heatRot: 3,
+    // #2385 heat telegraph: the shell rings two rising warning notes across
+    // the last heatWarnLead ticks of the cool dry spell (gate-lead and
+    // gate-lead/2), so "cover is about to go" is audible BEFORE the rumble.
+    // Shell-only — the pure state never reads this; it exists so the harness
+    // (and the warn-too-late mutant) can speak about the window.
+    heatWarnLead: 60,
     // test-only switches so the harness can prove each muscle is load-bearing
     heat: true,           // false: dry spells never heat the arena
     ballistics: true,     // false: arrows fly dead flat
@@ -393,6 +399,16 @@ export function step(g, in1 = null, in2 = null) {
     }
     if (g.end) g.events.push({ type: 'over', winner: g.winner, why: g.end })
 }
+
+// #2385 THE TELEGRAPH — pure law the shell rings and the harness pins. A
+// dry spell of heatTicks - heatWarnLead rings warning note 1; gate - lead/2
+// rings note 2 (rising pitch = "about to go"). Outside the window, already
+// hot, or with the heat rule killed, it says nothing: the rumble owns the
+// arena once the gate has fired, and a hit closes the spell. Returns 0/1/2.
+export const heatWarnStep = (dry, heatTicks = CFG.heatTicks, lead = CFG.heatWarnLead) =>
+    CFG.heat && dry === heatTicks - lead ? 1
+        : CFG.heat && dry === heatTicks - lead / 2 ? 2
+            : 0
 
 // ---------------------------------------------------------------- solver ----
 // forward-simulate the ACTUAL Euler trajectory the released arrow will fly

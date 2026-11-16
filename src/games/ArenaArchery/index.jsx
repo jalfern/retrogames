@@ -23,13 +23,14 @@ import { PRESS, MESSAGES } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { CFG, makeGame, step, botInput, recordMatch, replay, stateHash, cloneGame } from './sim.js'
+import { CFG, makeGame, step, botInput, recordMatch, replay, stateHash, cloneGame, heatWarnStep } from './sim.js'
 import { ARENAS_COUNT, ARENA_NAMES, buildArena } from './levels.js'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 
 const SIM_MS = 1000 / 30
+const HOME_LIFE = 18 // #2385 sim ticks a rotted shaft takes to fly home to its quiver
 const CW = CFG.cell
 const A0 = buildArena(0)
 const PXW = A0.W * CW
@@ -111,26 +112,45 @@ const ArenaArcheryGame = () => {
         //            latched, so a held key doesn't rattle.
         // Dust ages in WORLD time (per sim tick): it freezes on pause, like
         // the stone.
-        const puffs = []            // {x, y, r, age, life}
+        const puffs = []            // {x, y, r, age, life, ash?}
+        const home = []            // #2385 dryout: a shaft flying back to its quiver {sx, sy, owner, t}
         const squash = [0, 0]       // sim ticks: >0 land squash, <0 take-off stretch
         const airTop = [null, null]
         const prevGrounded = [true, true]
         const prevAlive = [true, true]
         const airPress = [false, false]
         let landCount = 0, blockCount = 0
+        let warnLatch = 0          // #2385 last telegraph note rung this dry spell
+        let warnNotes = 0, dryFx = 0 // receipts: notes rung, dryout FX spawned
 
         const resetJuice = () => {
             puffs.length = 0
+            home.length = 0
             for (let i = 0; i < 2; i++) {
                 squash[i] = 0; airTop[i] = null
                 prevGrounded[i] = true; prevAlive[i] = true; airPress[i] = false
             }
             landCount = 0; blockCount = 0
+            warnLatch = 0
         }
 
         const detectJuice = (in1, in2) => {
             for (const u of puffs) u.age++
             while (puffs.length && puffs[0].age >= puffs[0].life) puffs.shift()
+            for (const hz of home) hz.t++
+            while (home.length && home[0].t >= HOME_LIFE) home.shift()
+            // #2385 the heat telegraph: two rising notes across the last two
+            // seconds of the cool dry spell, rung off the sim's own stamps so
+            // pause freezes the warning with the stone. A hit (dry snaps back)
+            // re-arms the latch; once HOT the rumble owns the voice.
+            const dry = gs.tick - gs.lastHit
+            const ws = heatWarnStep(dry)
+            if (dry <= CFG.heatTicks - CFG.heatWarnLead) warnLatch = 0
+            if (ws > warnLatch) {
+                warnLatch = ws
+                warnNotes++
+                audioController.playTone(ws === 1 ? 240 : 320, 0.07 + ws * 0.02, 'triangle', 0.03)
+            }
             for (let i = 0; i < 2; i++) {
                 const p = gs.p[i]
                 const inp = [in1, in2][i]
@@ -252,17 +272,32 @@ const ArenaArcheryGame = () => {
             if (bgDirty) paintBg(g)
             ctx.clearRect(0, 0, PXW, PXH)
             ctx.drawImage(bg, 0, 0)
-            // #2314 landing dust: a ring that widens and thins at the feet
+            // #2314 landing dust: a ring that widens and thins at the feet.
+            // #2385 ash: a smaller, sootier puff for a rotting shaft.
             if (play) {
                 for (let i = puffs.length - 1; i >= 0; i--) {
                     const u = puffs[i]
                     if (u.age >= u.life) { puffs.splice(i, 1); continue }
                     const t = u.age / u.life
-                    ctx.globalAlpha = 0.5 * (1 - t)
-                    ctx.fillStyle = '#b9c2d8'
+                    ctx.globalAlpha = (u.ash ? 0.6 : 0.5) * (1 - t)
+                    ctx.fillStyle = u.ash ? '#8a7280' : '#b9c2d8'
                     ctx.beginPath()
                     ctx.arc(u.x, u.y - 2, u.r + t * 9, 0, Math.PI * 2)
                     ctx.fill()
+                }
+                // #2385 the fly-home: the rotted shaft arcs up toward the
+                // owner's quiver bar (top edge of the canvas, where the HUD
+                // draws it) and fades as it lands there.
+                for (let i = home.length - 1; i >= 0; i--) {
+                    const hz = home[i]
+                    if (hz.t >= HOME_LIFE) { home.splice(i, 1); continue }
+                    const k = hz.t / HOME_LIFE
+                    const tx = hz.owner === 0 ? 26 : PXW - 26
+                    const ty = 8
+                    const px = hz.sx + (tx - hz.sx) * k
+                    const py = hz.sy + (ty - hz.sy) * k - Math.sin(k * Math.PI) * 26
+                    ctx.globalAlpha = 1 - k * 0.5
+                    drawArrowShape(ctx, px, py, Math.atan2(ty - hz.sy, tx - hz.sx), true, false, g.tick)
                 }
                 ctx.globalAlpha = 1
             }
@@ -278,9 +313,22 @@ const ArenaArcheryGame = () => {
                     // freezes the fire with the stone.
                     const j = ((s.cell * 7 + g.tick * 5) % 3) - 1
                     const burn = Math.min(1, s.age / CFG.stuckTTL)
-                    ctx.globalAlpha = 0.22 + 0.16 * Math.sin(g.tick * 0.35 + s.cell) ** 2 + burn * 0.22
+                    // #2385 the pulse ACCELERATES as the shaft nears death —
+                    // a shape/time cue, not just a hue — and a crackle dither
+                    // (dark 1×2 ticks, count ∝ burn, positions hashed off the
+                    // cell so each cover cracks differently, crawling every
+                    // 10 ticks) makes dying cover legible without any colour.
+                    ctx.globalAlpha = 0.22 + 0.16 * Math.sin(g.tick * (0.35 + burn * 1.1) + s.cell) ** 2 + burn * 0.22
                     ctx.fillStyle = '#ff5a24'
                     ctx.fillRect(sx - CW / 2 + 3, sy - CW / 2 + 3, CW - 6, CW - 6)
+                    ctx.globalAlpha = 0.85
+                    ctx.fillStyle = '#2b0d05'
+                    const cracks = 1 + Math.floor(burn * 3)
+                    for (let k = 0; k < cracks; k++) {
+                        const hx = (s.cell * 13 + k * 7 + Math.floor(g.tick / 10)) % (CW - 10)
+                        const hy = (s.cell * 29 + k * 11 + Math.floor(g.tick / 10)) % (CW - 12)
+                        ctx.fillRect(sx - CW / 2 + 5 + hx, sy - CW / 2 + 5 + hy, 1, 2)
+                    }
                     ctx.globalAlpha = 1
                     drawArrowShape(ctx, sx + j, sy - j, s.ang || 0.6, false, true, g.tick)
                 } else {
@@ -315,6 +363,19 @@ const ArenaArcheryGame = () => {
                 else if (e.type === 'hit') { say(e.who === 0 || mode === '2p' ? `PLAYER ${e.who + 1} HITS!` : 'THE BOT HITS YOU'); audioController.playNoise(0.09, 0.08) }
                 else if (e.type === 'respawn') audioController.playSweep(200, 420, 0.2, 'sine', 0.04)
                 else if (e.type === 'jump') audioController.playTone(300, 0.03, 'square', 0.02)
+                // #2385 the dryout POP: the sim already sends the shaft home to
+                // its owner's quiver (or loses it to a full one) — paint the
+                // economy so rot reads as *returning ammo*, not vanishing: an
+                // ash cough at the cell and the shaft arcing to the quiver bar.
+                else if (e.type === 'dryout') {
+                    const sx = (e.cell % gs.W) * CW + CW / 2
+                    const sy = Math.floor(e.cell / gs.W) * CW + CW / 2
+                    puffs.push({ x: sx, y: sy, r: 3, age: 0, life: 26, ash: true })
+                    home.push({ sx, sy, owner: e.who, t: 0 })
+                    dryFx++
+                    audioController.playNoise(0.04, 0.03)
+                    audioController.playTone(e.who === 0 ? 520 : 620, 0.06, 'triangle', 0.04)
+                }
                 // #2377 heat: a low rumble climbing out of the floor when
                 // the dry spell bakes the arena; a relieved hiss when blood
                 // finally cools it.
@@ -479,6 +540,10 @@ const ArenaArcheryGame = () => {
                     demo: demoG ? { tick: demoG.tick, end: demoG.end, scores: [demoG.p[0].score, demoG.p[1].score] } : null,
                     // #2314 juice is derived-only — the counters are its receipt
                     juice: { puffs: puffs.length, landings: landCount, blocked: blockCount },
+                    // #2385 heat telegraph + dryout FX receipts (derived-only):
+                    // warnNotes must stay 0 through any honest bot duel, and
+                    // a driven match must show dryout FX at least once.
+                    fx: { ash: puffs.filter((u) => u.ash).length, homes: home.length, warnNotes, dryFx, warnStep: heatWarnStep(gs.tick - gs.lastHit) },
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),
