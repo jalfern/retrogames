@@ -2375,7 +2375,9 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
             handler ? 'routed' : 'wizfire handler not pinned')
         r.check('#1746 pan is opt-in in AudioController — null keeps the direct graph untouched',
             /playSweep\(startFreq, endFreq, duration, type = 'triangle', vol = 0\.1, pan = null, delay = 0\)/.test(acSrc) &&
-            /_panner\(pan, t, dest\) \{\s*\n\s*if \(pan === null\) return null/.test(acSrc) &&
+            // #2166 widened the guard: a non-finite pan stays direct too — the law is
+            // "no panner when the pan is absent-or-NaN", the pin follows the law.
+            /_panner\(pan, t, dest\) \{\s*\n\s*if \(pan === null \|\| !isFin\(pan\)\) return null/.test(acSrc) &&
             /\} else \{\s*\n\s*gain\.connect\(this\.ctx\.destination\)/.test(acSrc))
     }
 }
