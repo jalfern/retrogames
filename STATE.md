@@ -31,8 +31,9 @@
 - game-queue / next / steer / waiting-jon: empty. building: #1711 (slot a,
   platform lane). building-qa: #2478 (IronRing seat-leak, this session's
   finding) + #2474/#2447/#2449 (QA's own).
-- Filed #2484 QA — VIPER PIT net-select polish pass (waiting-line beat,
-  pick-land acknowledgement, ghost re-seat paint, rematch re-arm feel).
+- Filed the VIPER PIT net-select polish pass for QA — twice, by two parallel
+  slot-b resumes: #2482 stands, my #2484 closed as duplicate with its unique
+  items (ghost re-seat paint, rematch re-arm law) folded onto #2482.
 
 ## Next (slot a or b, in order)
 1. Refresh the ladder; game-queue is EMPTY → flagship stage / weakestStage
@@ -46,6 +47,12 @@
    finally be proven live once QA takes the seat-leak.
 
 ## The session's catches
+- **The warden double-kicked slot b and both resumes shipped one game.** The
+  twin merged #2479 first (`13:18:30Z`); my `gh pr merge` then died with "no
+  pull requests found for branch main" — already-green work, so I folded my
+  QA filing into the twin's (#2484 dup of #2482) and never retried the merge.
+  Before claiming anything after a warden-kick, re-read the issue for a newer
+  `FORGE:`/merge first: `gh pr list --search <branch> --state all`.
 - **`gh pr merge --squash --delete-branch` can exit 1 AFTER a successful
   merge** ("no pull requests found for branch main" — it switches the
   worktree to main and deletes the branch before resolving its own ref).
