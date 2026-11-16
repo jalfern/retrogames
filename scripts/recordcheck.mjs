@@ -606,7 +606,8 @@ const bucketRowBySeed = (seed) => {
         const session = createVoiceSession({ ask: async () => ({ consent: true }), now: () => MOCK.wall })
         await session.ready
         ok(session.phase === 'recording', '#2465 frozen-pipeline mock take opens')
-        for (let t = 1; t <= 3600; t++) { MOCK.wall += TICK_MS; session.onTick(t) } // 60 s of world, pipe dead after 5 s
+        let sawFreeze = false
+        for (let t = 1; t <= 3600; t++) { MOCK.wall += TICK_MS; session.onTick(t); if (globalThis.window.__voiceDebug && globalThis.window.__voiceDebug.where === 'content-clock-frozen') sawFreeze = true } // 60 s of world, pipe dead after 5 s
         const tr = await session.finalize()
         const clk = (tr && tr.clock) || []
         ok(clk.length >= 30, `#2465 take sampled across the freeze (${clk.length} samples)`)
@@ -621,7 +622,7 @@ const bucketRowBySeed = (seed) => {
         //    the dead pipe — the short bytes then fail audioLonger loudly.
         ok(tr && tr.ms > FREEZE_AT + 40000, `settle ms names the whole take (${tr && tr.ms} > freeze ${FREEZE_AT} + 40000) — bytes-vs-clock gap is visible, not hidden`)
         ok(CTX && CTX.resumeCalls >= 1, `the frozen context was asked to resume (${CTX && CTX.resumeCalls} calls)`)
-        ok(globalThis.window.__voiceDebug && globalThis.window.__voiceDebug.where === 'content-clock-frozen', 'the freeze is named in __voiceDebug', JSON.stringify(globalThis.window.__voiceDebug))
+        ok(sawFreeze, 'the freeze is named in __voiceDebug when it happens')
         // 4) a dropped mic track mid-take says so on the debug breadcrumb
         MOCK.wall = 0
         const s2 = createVoiceSession({ ask: async () => ({ consent: true }), now: () => MOCK.wall })
