@@ -90,7 +90,11 @@ audio.js) plays under gameplay, ducked ~3 dB while any alarm is active.
 - Seats: a browser drives the seat its relay slot owns; the host may keep one
   extra keyboard partner seat (P, while the room has space); open seats are CPU.
   Mobile players each own their own seat — VirtualControls feeds the device's
-  seat, not always seat 1 (`ownSeat` in index.jsx).
+  seat, not always seat 1 (`ownSeat` in index.jsx). Seats 3–4 are CPU-only
+  locally: a third local scheme would need a second pad, which the
+  no-second-touchpad law refuses, and VirtualControls is d-pad-only movement
+  arcade-wide (no analog) — a friend over the room wire is what unlocks them
+  (law note, not a gap — #2354).
 - Lockstep: pads sampled ONCE, `PAD_DELAY`=10 ticks ahead (sampling law #531),
   batched every 2nd tick as byte masks (`{t:'pad',s,k,mm:{seat:[m,m]}}`,
   ~30 Hz/member); the whole-sim hash rides every 60 ticks and must agree with
@@ -241,18 +245,20 @@ face). soslinkcheck pins the countdown contract (+4 => 137).
   word variety with far mark, shift-wipe); mutant `ackLine => COPY` kills
   exactly the back-to-back gate; the #2079 red-ring gate now accepts both ring
   shades (the dim ring IS the taper).
-- **Voice**: half-duplex hold-V PTT over the pad wire shipped (#1416 gap 1,
-  #1432), and the radio became a mechanic (#2079): keying ties the talker's
-  hands — A/B refused while your take is held or draining, solo included —
-  and every landed take gets a COPY from the CPU line. full-duplex/WebRTC
-  audio is still deferred, and the #1247 recorder path keeps banking per-seat
-  mic audio alongside it.
-- **Voice ops**: the production toggle (M arm, VOX, echo gate) is proven at
-  the machine/wire tier. Thumb tuning shipped (#1468): MIC/VOX/seat-chip hit
-  boxes are >=20 canvas px in disjoint zones (`art.js` + soscheck asserts);
-  the soslinkdrive browser tier for these surfaces still awaits a Chrome box.
-- Seats 3–4 are CPU-only locally (a third keyboard pad is what online
-  unlocks); the pad is d-pad-only movement (no analog).
+- **CLOSED by #2079 (the radio is a mechanic):** half-duplex hold-V PTT over
+  the pad wire shipped (#1416 gap 1, #1432), and the radio became a mechanic:
+  keying ties the talker's hands — A/B refused while your take is held or
+  draining, solo included — and every landed take gets a COPY from the CPU
+  line. Still open: full-duplex/WebRTC audio (two live mic streams + AEC +
+  signaling) is multi-session infra, not one stage — deferred; a stage that
+  opens it quotes this line (#2354 parked it there). The #1247 recorder path
+  keeps banking per-seat mic audio alongside it.
+- **CLOSED by #1468 (thumb tuning):** the production toggle (M arm, VOX, echo
+  gate) is proven at the machine/wire tier, and the thumb tuning shipped:
+  MIC/VOX/seat-chip hit boxes are >=20 canvas px in disjoint zones (`art.js`
+  + soscheck asserts). Still open: the soslinkdrive browser tier for these
+  surfaces awaits a Chrome box — check-only verification, not a gameplay
+  stage (#2354 parked it there).
 - **CLOSED by #2113 (2026-11-12):** the patty-burn chain had no cool-the-pan
   counterplay beyond dousing. A cup of water poured on a HOT-BUT-NOT-BURNT
   burner (`cooking`/`ready`) now spends the cup and knocks `COOL_SIP = 60`
