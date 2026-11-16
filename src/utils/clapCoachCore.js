@@ -16,9 +16,10 @@
 //      actually recording — it appears at the recorder's green REC moment,
 //      never during LISTEN (recognition is not recording, #1257/#1427) and
 //      never before getUserMedia resolved.
-//   2. ONCE PER BOOT. The screen belongs to the game (syncBadge rule 4): the
-//      coach teaches the habit once; the badge and VU bar carry the ongoing
-//      truth. A player who declines to clap never sees it again that session.
+//   2. ONCE PER DEVICE. The screen belongs to the game (syncBadge rule 4): the
+//      coach teaches the habit once and trusts the player; the mic badge and
+//      VU bar keep carrying the ongoing truth. A player who declines to clap
+//      never sees it again until they clear device data.
 //   3. INSTRUCTION, NOT CLAIM. The text tells the player what to do; it never
 //      says the audio IS synced — the clap verdict does that, in the store.
 
@@ -28,7 +29,7 @@ export const COACH_TEXT = 'CLAP WITH YOUR FIRST TAPS'
 
 // coachView({ micLive, shown }) -> { kind: hidden|coach, text, holdMs }
 //  - micLive: the take recorder's mic is open and recording (green REC).
-//  - shown:  the coach already ran this app boot (sessionStorage truth lives
+//  - shown:  the coach already ran on this device (localStorage truth lives
 //    in the shell; this core only applies the rule).
 export function coachView({ micLive = false, shown = false } = {}) {
     if (!micLive) return { kind: 'hidden', text: '', holdMs: 0 }

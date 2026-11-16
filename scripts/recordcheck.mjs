@@ -1076,7 +1076,7 @@ const mkRec2 = (game = 'gauntlet', seed = 777, ticks = 90) => {
     ok(coachView({ micLive: false, shown: false }).kind === 'hidden',
         'no coaching for a mic that is not live — LISTEN and declined pipes get nothing')
     ok(coachView({ micLive: true, shown: true }).kind === 'hidden',
-        'once per boot — the screen belongs to the game after the first lesson')
+        'once per device — the screen belongs to the game after the first lesson')
     const c = coachView({ micLive: true, shown: false })
     ok(c.kind === 'coach' && c.text === COACH_TEXT && c.holdMs === COACH_HOLD_MS,
         'a live take mic teaches CLAP WITH YOUR FIRST TAPS, then fades')

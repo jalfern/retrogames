@@ -82,7 +82,7 @@ function syncMicBadge() {
 // --- clap coach (#1711) — the one line that TEACHES the ±50 ms proof. The
 // store can only grade alignment on takes that contain claps, and human takes
 // carried none because nothing ever asked. The pill appears at the recorder's
-// green-REC moment (rule 1), once per boot (rule 2 — sessionStorage; the mic
+// green-REC moment (rule 1), once per device (rule 2 — localStorage; the mic
 // badge and VU bar keep carrying the ongoing truth), and its text is an
 // instruction, never a claim (rule 3). Rules are pure in clapCoachCore.js
 // (recordcheck-pinned); this is the paint and the moment. DOM truth for the
@@ -90,7 +90,7 @@ function syncMicBadge() {
 const COACH_FLAG_KEY = 'vc.clapCoach'
 
 function coachAlreadyShown() {
-    try { return sessionStorage.getItem(COACH_FLAG_KEY) === '1' } catch { return false } // private mode: show each time rather than never
+    try { return localStorage.getItem(COACH_FLAG_KEY) === '1' } catch { return false } // private mode: show each time rather than never
 }
 
 function removeClapCoach() {
@@ -104,7 +104,7 @@ function maybeClapCoach() {
     const view = coachView({ micLive: true, shown: coachAlreadyShown() })
     if (typeof window !== 'undefined') window.__clapCoach = { ...view, at: Date.now() }
     if (view.kind !== 'coach') return
-    try { sessionStorage.setItem(COACH_FLAG_KEY, '1') } catch { /* private mode */ }
+    try { localStorage.setItem(COACH_FLAG_KEY, '1') } catch { /* private mode */ }
     const el = document.createElement('div')
     el.setAttribute('data-clap-coach', view.kind)
     el.setAttribute('aria-live', 'polite')

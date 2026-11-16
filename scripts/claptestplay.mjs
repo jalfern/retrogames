@@ -36,6 +36,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { validate } from '../src/utils/recording.js'
 import { detectClaps, matchClapEdges, takeEdges, CLAP_TOL_MS } from '../src/utils/clapSync.js'
+import { COACH_TEXT } from '../src/utils/clapCoachCore.js'
 import { startRelaySim } from './lib/relaysim.mjs'
 
 const argv = process.argv.slice(2)
@@ -196,6 +197,28 @@ async function runOnce(cfg, { requireGate, sink }) {
     } catch { /* gate below */ }
     r.check(`${pfx}recorder + mic open at seed-birth after consent`, armed, await page.evaluate(() => JSON.stringify({ ac: window.__autoCapture || null, ct: (window.__clapTest || {}).phase })))
     if (!armed) return dead()
+
+    // #1711 clap coach: the ±50 ms proof must TEACH itself at live REC. A fresh
+    // consented boot shows the pill once; every later boot on the same device
+    // stays silent (rule 2 — the two runs share one browser context, so run B
+    // is the taught device). kind/flag survive the visual fade; the element
+    // check is the paint.
+    {
+        const coach = await page.evaluate(() => ({
+            kind: (window.__clapCoach || {}).kind || 'unset',
+            text: (window.__clapCoach || {}).text || '',
+            el: !!document.querySelector('[data-clap-coach]'),
+            flag: localStorage.getItem('vc.clapCoach') === '1',
+        }))
+        if (gateUp) {
+            r.check(`${pfx}clap coach appears at live REC (fresh device learns the ±50 ms proof)`,
+                coach.kind === 'coach' && coach.text === COACH_TEXT && coach.flag, JSON.stringify(coach))
+            r.check(`${pfx}coach pill is painted on screen`, coach.el, JSON.stringify(coach))
+        } else {
+            r.check(`${pfx}no second lesson on a taught device — coach stays hidden`,
+                coach.kind === 'hidden' && !coach.el && coach.flag, JSON.stringify(coach))
+        }
+    }
 
     // #2205 item 5: the whole screen is the slap target and says so to a11y.
     r.check(`${pfx}the slap target carries a descriptive aria-label`, /Slap target/.test(await page.getAttribute('[data-clap-test]', 'aria-label') || ''))
