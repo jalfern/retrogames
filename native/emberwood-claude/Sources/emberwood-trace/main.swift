@@ -34,7 +34,12 @@ case "demo":
     guard args.count >= 3 else { print("usage: emberwood-trace demo <demo.json> <golden.trace.json>"); exit(2) }
     let demo = try Demo(data: load(args[1]))
     let (states, _) = demo.replay()
-    exit(try report(URL(fileURLWithPath: args[1]).lastPathComponent, states, load(args[2]), nil) ? 0 : 1)
+    var ok = try report(URL(fileURLWithPath: args[1]).lastPathComponent, states, load(args[2]), nil)
+    if demo.isBotRun {
+        if let d = demo.botRace() { print("DIVERGE bot: \(d)"); ok = false }
+        else { print("MATCH   bot: the Swift bot said what bot.js said on all \(demo.inputs.count) ticks") }
+    }
+    exit(ok ? 0 : 1)
 case "check", nil:
     let dir = args.count >= 2 ? args[1] : "../../public/traces"
     let names = try FileManager.default.contentsOfDirectory(atPath: dir)

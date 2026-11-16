@@ -24,20 +24,28 @@ What it runs:
   `createSim(11)` (with its loan) to the Ember Heart, ~11.6k ticks through both
   act-one dungeons and both bosses, and writes the web's per-tick trace; the
   Swift replay must match every field. The same recording is the app's attract.
+- WATCH: `Bot.swift` (a line-for-line port of `bot.js`) must emit exactly the
+  input `bot.js` emits on every tick: the attract run, seed 18, and every bot
+  fuzz run (where pads override it and knock it off the route). Its static
+  inputs — the proven route (`proveGame`) and the screen graph — are computed
+  from the web code by `genworld.mjs`, so JS key order carries over.
 - Fuzz: the bot route with random pad overrides, and random pads started in the
   act-two rooms (`--setup`: Hollow King with and without the vents sealed,
   Cinderhawk, gale runes, gust-pushed blocks, the shop with 900 embers).
 
 On a device: launch with `-selfcheck YES` (the build bundles the goldens). It
 replays them **on that hardware** plus the whole attract run against the web's
-per-tick hashes, and prints MATCH/DIVERGE on screen and to stdout:
+per-tick hashes, races the WATCH bot against bot.js's recorded answers, and prints MATCH/DIVERGE on screen and to stdout:
 
 ```
 xcrun devicectl device process launch --device <id> --console com.jalfern.retrogames.emberwood -- -selfcheck YES
 ```
 
 Other test hooks: `-start 1` starts a new game, `-continue YES` loads the save,
-`-room <id>` starts in that room with the act-two kit lent (screenshots).
+`-room <id>` starts in that room with the act-two kit lent (screenshots),
+`-perf YES` prints fps / sim steps per frame / worst frame / cost every 2 s.
+Measured on Apple TV 4K (3rd gen): 59.9 fps, 1.00 steps per frame, under 0.4 ms
+of sim + paint per frame, outdoors and in the lit dungeons.
 
 Porting rules that kept the traces green:
 - `Math.hypot` is V8's (divide by max, Kahan sum, sqrt, scale) — `jsHypot`.
@@ -80,15 +88,24 @@ on the 27 SDKs.
   - `Art/`: the web's own `art.js` textures, painted in Chrome by
     `scripts/exportart.mjs` (rerun after an art change).
   - `Resources/emberwood-demo.json`: the recorded attract run + per-tick hashes.
-- `scripts/`: `genworld.mjs`, `demo.mjs`, `exportart.mjs`.
+  - `Assets.xcassets`: tvOS parallax icon (back: dusk + treeline, middle:
+    embers, front: Ash), top shelf banners, iOS AppIcon — all from App/Art by
+    `scripts/icons.py`. Every native port ships icons.
+- `scripts/`: `genworld.mjs`, `demo.mjs`, `exportart.mjs`, `icons.py`.
 
 ## Controls
 
 - Gamepad: stick / D-pad walk. A: sword, hold to draw the bow, release to loose.
   B: bomb, hold for the Gale Charm. X (or R1): potion. Menu/Options: pause.
 - Siri Remote: rest a thumb toward an edge of the touch surface to walk; click
-  is A, Play/Pause is B. (No potion button on the Remote.)
-- Title: A starts, B/Y continues the autosave. Pause: A resumes, B quits to title.
+  is A, Play/Pause is B. The potion lives on the pause screen: Menu, then
+  Play/Pause drinks (a long-press can't be it: B-hold is the Gale Charm).
+  Menu on the pause screen quits to the title.
+- Y / Triangle: WATCH — the bot plays your game on its proven route, borrowing
+  the demo kit; any other button takes the reins back and your own items,
+  embers and hearts return (world progress it made stays), as on the web.
+- Title: A starts, B continues the autosave, Y watches. Pause: A resumes,
+  X drinks, B quits to title.
 - iPhone/iPad: an on-screen pad (D-pad, A, B, X) while no controller is
   connected; tap starts, the pause button sits top-right. The scene takes the
   screen's shape: on a phone the game block is centred between margins kept
@@ -100,8 +117,8 @@ on the 27 SDKs.
 
 - The stage is SpriteKit 2.5D, not three.js: walls are a lit top face over a
   shaded south face, creatures and trees are billboards on soft shadows, and the
-  deep rooms are lit by the lantern and torches (SKLightNode). No bloom,
-  tilt-shift, real shadow maps or the 3D shelf props; foliage sway is simpler.
-- WATCH (the bot taking over a live game) is not here: `bot.js` is not ported.
-  The attract is the bot's real route, replayed from its recording.
+  deep rooms are lit by the lantern and torches (SKLightNode). Bloom is
+  additive halo sprites (torches, braziers, embers, orbs, the Wyrm's maw, the
+  King's core, blasts, kills); no full-screen bloom pass, tilt-shift, real
+  shadow maps or 3D shelf props; foliage sway is simpler.
 - HUD, shop, messages and title are SpriteKit text, not HTML.

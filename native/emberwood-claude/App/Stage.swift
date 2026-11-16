@@ -33,6 +33,21 @@ enum Tex {
         cache[key] = t
         return t
     }
+    /// white radial falloff for additive halos (the bloom stand-in): tint with color
+    static var glow: SKTexture {
+        if let t = cache["glow"] { return t }
+        let size = 64
+        let cs = CGColorSpaceCreateDeviceRGB()
+        let ctx = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0, space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let stops: [(CGFloat, CGFloat)] = [(0, 1), (0.25, 0.55), (0.6, 0.14), (1, 0)]
+        let cols = stops.map { CGColor(red: 1, green: 1, blue: 1, alpha: $0.1) } as CFArray
+        let g = CGGradient(colorsSpace: cs, colors: cols, locations: stops.map(\.0))!
+        let c = CGPoint(x: size / 2, y: size / 2)
+        ctx.drawRadialGradient(g, startCenter: c, startRadius: 0, endCenter: c, endRadius: CGFloat(size) / 2, options: [])
+        let t = SKTexture(cgImage: ctx.makeImage()!)
+        cache["glow"] = t
+        return t
+    }
     static func soft(_ key: String, _ size: Int, _ stops: [(CGFloat, CGFloat)]) -> SKTexture {
         if let t = cache[key] { return t }
         let cs = CGColorSpaceCreateDeviceRGB()
@@ -70,7 +85,9 @@ func npcTexture(_ n: Npc) -> SKTexture {
 }
 
 final class Stage: SKNode {
-    private let ground = SKNode(), props = SKNode(), fxLayer = SKNode()
+    private let ground = SKNode(), props = SKNode(), fxLayer = SKNode(), glowLayer = SKNode()
+    private var glows: [SKSpriteNode] = [], glowUsed = 0
+    private var torchSpots: [CGPoint] = []
     private var sig = ""
     private var dark = false
     private let lantern = SKLightNode()
@@ -98,8 +115,8 @@ final class Stage: SKNode {
 
     override init() {
         super.init()
-        addChild(ground); addChild(props); addChild(fxLayer)
-        ground.zPosition = -2000; fxLayer.zPosition = 3000
+        addChild(ground); addChild(props); addChild(fxLayer); addChild(glowLayer)
+        ground.zPosition = -2000; fxLayer.zPosition = 3000; glowLayer.zPosition = 3500
         heroShadow.texture = Tex.soft("shadow", 32, [(0, 0.55), (0.7, 0.3), (1, 0)])
         heroShadow.size = CGSize(width: 14, height: 6)
         props.addChild(heroShadow); props.addChild(heroS)
@@ -179,10 +196,12 @@ final class Stage: SKNode {
             for c in s.chests ?? [] { spots.append((c.x, c.y == 0 ? 1 : c.y - 1)) }
             spots.append((2, 1)); spots.append((13, 9))
         }
+        torchSpots = []
         for (i, t) in torches.enumerated() {
             if dark && i < spots.count {
                 t.isEnabled = true
                 t.position = P(Double(spots[i].0 * TS + 8), Double(spots[i].1 * TS + 8), 8)
+                torchSpots.append(t.position)
             } else { t.isEnabled = false }
         }
         var reserved = Set<Int>()
@@ -298,6 +317,7 @@ final class Stage: SKNode {
         }
         sig = signature(sim)
         parts.forEach { $0.node.removeFromParent() }; parts = []
+        flashes = []
     }
 
     // MARK: per-frame
@@ -317,9 +337,63 @@ final class Stage: SKNode {
         return s
     }
 
+    /// an additive halo at a stage point: the HD-2D bloom, done as light sprites
+    private func glow(_ p: CGPoint, _ r: CGFloat, _ col: SKColor, _ a: CGFloat) {
+        if glowUsed >= glows.count {
+            let g = SKSpriteNode(texture: Tex.glow)
+            g.blendMode = .add; g.colorBlendFactor = 1
+            glowLayer.addChild(g); glows.append(g)
+        }
+        let g = glows[glowUsed]; glowUsed += 1
+        g.isHidden = false
+        g.position = p; g.size = CGSize(width: r * 2, height: r * 2)
+        g.color = col; g.alpha = a
+    }
+
+    private func glows(_ sim: Sim, _ t: Double) {
+        glowUsed = 0
+        let warm = rgb("#ff9a3c"), gold = rgb("#ffd27a"), cyan = rgb("#8ce0ff")
+        let flick = 0.85 + 0.15 * sin(t * 11) * sin(t * 7.3)
+        for (i, p) in torchSpots.enumerated() { glow(p, 30, warm, CGFloat(0.46 * flick + 0.05 * sin(t * 5 + Double(i)))) }
+        for bz in brazierNodes { glow(CGPoint(x: bz.position.x, y: bz.position.y + 12), 22, warm, CGFloat(0.5 * flick)) }
+        if dark { glow(P(sim.hero.x, sim.hero.y, 6), 34, rgb("#ffc070"), 0.22) }
+        let s = World.screens[sim.screen]!
+        for v in s.vents ?? [] where !(sim.flags.ventsOff[v.id] ?? false) {
+            glow(P(Double(v.x * TS + 8), Double(v.y * TS + 8), 6), 14, warm, CGFloat(0.25 + 0.2 * sin(t * 3.2 + Double(v.x))))
+        }
+        for y in 0..<SH { for x in 0..<SW where tileAt(s, x, y) == ch("<") { glow(P(Double(x * TS + 8), Double(y * TS + 8)), 14, cyan, CGFloat(0.3 + 0.1 * sin(t * 2))) } }
+        for d in sim.drops where d.kind == "ember" { glow(P(d.x, d.y, 3), 7, gold, 0.55) }
+        for p in sim.projectiles {
+            if p.kind == "orb" { glow(P(p.x, p.y, 6), 9, cyan, 0.7) }
+            else if p.kind == "gust" { glow(P(p.x, p.y, 6), 14, rgb("#bff2ff"), CGFloat(0.35 * min(1, Double(p.life ?? 0) / 12))) }
+        }
+        for b in sim.bombs where b.fuse < 30 { glow(P(b.x, b.y, 8), CGFloat(8 + (30 - b.fuse) / 3), rgb("#ff5a2a"), CGFloat(0.25 + 0.35 * Double((b.fuse / 3) % 2))) }
+        for e in sim.enemies where !e.dead && !e.hidden {
+            switch e.type {
+            case "wyrm": glow(P(e.x, e.y, 4), e.stagger > 0 ? 30 : 22, e.stagger > 0 ? gold : warm, e.open != 0 || e.stagger > 0 ? 0.8 : 0.32)
+            case "king": glow(P(e.x, e.y, 4), e.mantle <= 0 ? 26 : 16, e.mantle <= 0 ? rgb("#ffb238") : warm, e.mantle <= 0 ? CGFloat(0.55 + 0.1 * sin(t * 6)) : 0.2)
+            case "maw": if e.open != 0 { glow(P(e.x, e.y, 4), 18, rgb("#c96a4a"), 0.3) }
+            case "wisp": glow(P(e.x, e.y, 6), 10, cyan, 0.35)
+            case "cinderling", "pod": glow(P(e.x, e.y, 3), 10, warm, 0.32)
+            default: break
+            }
+            if e.hitT > 0 { glow(P(e.x, e.y, 4), 14, .white, CGFloat(Double(e.hitT) / 8 * 0.5)) }
+        }
+        if sim.arc > 0 { glow(P(sim.hero.x, sim.hero.y, 4), 16, sim.items.blade ? warm : gold, CGFloat(Double(sim.arc) / Double(ARC_DUR) * 0.3)) }
+        for f in flashes { glow(f.p, f.r, f.c, CGFloat(Double(f.ttl) / Double(f.life)) * f.a) }
+        flashes = flashes.compactMap { var f = $0; f.ttl -= 1; return f.ttl > 0 ? f : nil }
+        for i in glowUsed..<glows.count { glows[i].isHidden = true }
+    }
+    private struct Flash { var p: CGPoint; var r: CGFloat; var c: SKColor; var a: CGFloat; var ttl: Int; let life: Int }
+    private var flashes: [Flash] = []
+    private func flash(_ x: Double, _ y: Double, _ r: CGFloat, _ c: String, _ a: CGFloat, _ ttl: Int) {
+        flashes.append(Flash(p: P(x, y, 4), r: r, c: rgb(c), a: a, ttl: ttl, life: ttl))
+    }
+
     func sync(_ sim: Sim, _ t: Double) {
         if signature(sim) != sig { build(sim) }
         for k in poolUsed.keys { poolUsed[k] = 0 }
+        glows(sim, t)
         let anim = Int(t * 7) % 2
         let h = sim.hero
 
@@ -505,7 +579,7 @@ final class Stage: SKNode {
     private func spawn(_ x: Double, _ y: Double, _ cols: [String], _ n: Int, _ sp: Double = 2.2, _ up: Double = 1.6) {
         for k in 0..<n {
             let node = SKSpriteNode(color: rgb(cols[k % cols.count]), size: CGSize(width: 1.6, height: 1.6))
-            node.blendMode = .alpha
+            node.blendMode = .add
             fxLayer.addChild(node)
             let a = Double.random(in: 0..<(2 * .pi)), v = Double.random(in: 0.3...1) * sp * 0.5
             let life = Int.random(in: 18...34)
@@ -521,9 +595,9 @@ final class Stage: SKNode {
                 let (dx, dy) = e.dir == .left ? (-8.0, 0.0) : e.dir == .right ? (8, 0) : e.dir == .up ? (0, -8) : (0, 8)
                 spawn(e.x + dx, e.y + dy, ["#ffffff", "#ffd87a"], 3, 1.4, 1)
             case "hit": spawn(e.x, e.y, ["#ffd27a", "#ff9a3c", "#fff3cf"], 7); shake = max(shake, 3)
-            case "die": spawn(e.x, e.y, ["#8a4030", "#5c2f2f", "#c96a4a"], 12); shake = max(shake, 4)
+            case "die": spawn(e.x, e.y, ["#8a4030", "#5c2f2f", "#c96a4a"], 12); shake = max(shake, 4); flash(e.x, e.y, e.boss != 0 ? 50 : 18, "#ff9a3c", 0.6, e.boss != 0 ? 40 : 10)
             case "cut": spawn(e.x, e.y, ["#8cc45f", "#6fae4e", "#b7e08a"], 6, 1.8, 1.2)
-            case "boom": spawn(e.x, e.y, ["#ffd27a", "#ff9a3c", "#ff5a2a", "#ffe9c9"], 26, 4.5, 3); shake = max(shake, 7)
+            case "boom": spawn(e.x, e.y, ["#ffd27a", "#ff9a3c", "#ff5a2a", "#ffe9c9"], 26, 4.5, 3); shake = max(shake, 7); flash(e.x, e.y, 44, "#ffb238", 0.9, 16)
             case "crack": spawn(e.x, e.y, ["#8d8999", "#4e4a5a", "#ffd27a"], 16, 3.5, 2.4)
             case "coin": spawn(e.x, e.y, ["#ffe08a", "#ffb238"], 4, 1.2, 1.4)
             case "heart": spawn(e.x, e.y, ["#ff8896", "#e8384a"], 5, 1.4, 1.4)
@@ -533,16 +607,16 @@ final class Stage: SKNode {
             case "spit": spawn(e.x, e.y, ["#8ce0ff", "#bff2ff", "#5d9cc4"], 4, 1.6, 1)
             case "hurt": shake = max(shake, 6)
             case "clank": spawn(e.x, e.y, ["#ffffff", "#cfd6e6"], 5, 2, 1.2)
-            case "stagger": spawn(e.x, e.y, ["#ff9a3c", "#ffd27a", "#ffffff"], 22, 4, 3); shake = max(shake, 8)
+            case "stagger": spawn(e.x, e.y, ["#ff9a3c", "#ffd27a", "#ffffff"], 22, 4, 3); shake = max(shake, 8); flash(e.x, e.y, 34, "#ffd27a", 0.8, 18)
             case "pop": spawn(e.x, e.y, ["#8cc45f", "#6fae4e", "#b7e08a"], 6, 2, 1.4)
             case "dust": spawn(e.x, e.y + 3, ["#9b8254", "#8a714a", "#6e5a3a", "#b09468"], 3, 1, 0.5)
             case "split": spawn(e.x, e.y, ["#7c3d30", "#5c2f2f", "#c9613a"], 10, 3.2, 2); spawn(e.x, e.y, ["#ff9a3c", "#ffd87a"], 6, 2, 2.4); shake = max(shake, 3)
-            case "warp": spawn(e.x, e.y, ["#8ce0ff", "#bff2ff"], 12, 2.4, 2)
-            case "grant": spawn(e.x, e.y, ["#ffd27a", "#fff3cf", "#8ce0ff"], 14, 2.6, 2.2)
+            case "warp": spawn(e.x, e.y, ["#8ce0ff", "#bff2ff"], 12, 2.4, 2); flash(e.x, e.y, 24, "#8ce0ff", 0.6, 14)
+            case "grant": spawn(e.x, e.y, ["#ffd27a", "#fff3cf", "#8ce0ff"], 14, 2.6, 2.2); flash(e.x, e.y, 30, "#fff3cf", 0.7, 30)
             case "gust", "galecharge": spawn(e.x, e.y, ["#e8f4ff", "#8ce0ff", "#bff2ff"], 8, 2.6, 1.4)
             case "seal": spawn(e.x, e.y, ["#8cc45f", "#cfd6e6", "#6fae4e"], 12, 2.4, 1.8)
             case "spore": spawn(e.x, e.y, ["#8cc45f", "#4c8438"], 6, 2, 1.2)
-            case "mantle": spawn(e.x, e.y, ["#57506a", "#2c2733", "#ff7a3c"], 14, 3.2, 2.2); shake = max(shake, 5)
+            case "mantle": spawn(e.x, e.y, ["#57506a", "#2c2733", "#ff7a3c"], 14, 3.2, 2.2); shake = max(shake, 5); flash(e.x, e.y, 34, "#ff7a3c", 0.7, 16)
             case "roar": spawn(e.x, e.y, ["#ff9a3c", "#ffd27a"], 18, 3.6, 2.6); shake = max(shake, 7)
             case "mote":
                 let node = SKSpriteNode(color: rgb("#ffb238"), size: CGSize(width: 1.4, height: 1.4))

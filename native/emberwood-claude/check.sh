@@ -5,7 +5,9 @@
 #     and the repo's own diff tool agrees on the Swift port's traces.
 #  3. The attract run (web bot, recorded fresh) matches the web's per-tick trace
 #     over its full ~11.6k ticks, and the bundled demo is still that run.
-#  4. Fuzz: the bot route with random pad overrides, and random pads started in
+#  4. WATCH: the Swift bot (Bot.swift) must say exactly what bot.js says on
+#     every tick — the attract run, another attract seed, and every bot fuzz.
+#  5. Fuzz: the bot route with random pad overrides, and random pads started in
 #     the act-two rooms (Hollow King, Cinderhawk, vents, gale runes, shop).
 set -e
 cd "${0:A:h}"
@@ -24,6 +26,7 @@ cmp -s $tmp/demo.json App/Resources/emberwood-demo.json || { echo "App/Resources
 $B demo $tmp/demo.json $tmp/demo.trace.json
 runs=0; fails=0
 race() { runs=$((runs+1)); node scripts/demo.mjs $tmp/f.json $tmp/f.trace.json "$@" >/dev/null; $B demo $tmp/f.json $tmp/f.trace.json >$tmp/out.txt || { fails=$((fails+1)); echo "fuzz $*: $(cat $tmp/out.txt)"; } }
+race --seed 18
 for fz in 1 2 3 4; do race --fuzz $fz; done
 G='"gale":true,"step":true,"shield":true'
 for st in \

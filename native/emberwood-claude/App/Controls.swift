@@ -107,6 +107,9 @@ final class Controls {
         return p
     }
 
+    /// the seat is driven by a Siri Remote (no gamepad): the pause screen adapts
+    var remoteDriving: Bool { (ordered.first.map { $0.extendedGamepad == nil }) ?? false }
+
     func poll() {
         var now = ordered.first.map(read) ?? Buttons()
         if let kb = GCKeyboard.coalesced?.keyboardInput {

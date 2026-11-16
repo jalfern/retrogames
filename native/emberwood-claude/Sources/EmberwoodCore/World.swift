@@ -59,14 +59,19 @@ public struct Screen: Decodable {
 
 public struct Offer: Decodable { public let item: String; public let label: String; public let price: Int }
 
+public struct Edge: Decodable { public let to: String; public let via: String; public let dir: String?; public let tile: [Int]?; public let did: String?; public let kind: String? }
+public struct PlanStep: Decodable { public let type: String; public let id: String; public let screen: String }
+struct BotData: Decodable { let GRAPH: [String: [Edge]]; let PLAN: [PlanStep] }
+
 struct WorldFile: Decodable {
     let SCREENS: [String: Screen]
     let SHOP: [Offer]
     let SECRET_SHOP: [Offer]
+    let BOT: BotData
 }
 
 public enum World {
-    public static let data: (screens: [String: Screen], shop: [Offer], secret: [Offer]) = {
+    public static let data: (screens: [String: Screen], shop: [Offer], secret: [Offer], graph: [String: [Edge]], plan: [PlanStep]) = {
         let raw = Data(base64Encoded: worldJSONBase64)!
         let f = try! JSONDecoder().decode(WorldFile.self, from: raw)
         var screens = f.SCREENS
@@ -75,11 +80,13 @@ public enum World {
             precondition(s.grid.count == SH && s.grid.allSatisfy { $0.count == SW }, "screen \(k) is not \(SW)x\(SH) ASCII")
             screens[k] = s
         }
-        return (screens, f.SHOP, f.SECRET_SHOP)
+        return (screens, f.SHOP, f.SECRET_SHOP, f.BOT.GRAPH, f.BOT.PLAN)
     }()
     public static var screens: [String: Screen] { data.screens }
     public static var shop: [Offer] { data.shop }
     public static var secretShop: [Offer] { data.secret }
+    public static var graph: [String: [Edge]] { data.graph }
+    public static var plan: [PlanStep] { data.plan }
 }
 
 @inline(__always) public func ch(_ c: Character) -> UInt8 { c.asciiValue! }
