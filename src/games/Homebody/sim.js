@@ -95,6 +95,7 @@ export const NEIGH_IGNORE_T = 30      // s of one-ear waiting that sours the pai
 export const NEIGH_SPAT_DROP = 4      // rel.neigh lost per pair spat (SPAT_DROP scaled soft)
 export const NEIGH_MAKEUP = 2         // the reunion pays after absence thaws (softest thaw)
 export const NEIGH_SPAT_CD = 40      // s before another pair spat can fire (SPAT_CD mirror)
+export const NEIGH_MURMUR_CD = 24    // #2599 handoff 2: s between the pair's sour murmurs while the cold war holds (household GRUDGE_COOL_CD scaled long — the fence carries less than a kitchen)
 export const NEIGH_STROLL_T = 12     // #2611: s of free pair-chat banked before the pair walks the lot
 // #2611: the pair's circuit — fixed hang spots the lot actually offers (front
 // path beside the gravel run, east lawn beyond the fence line, back lawn above
@@ -975,6 +976,8 @@ export function newRun(seed) {
         neiStroll: 0,             // #2611: free-chat seconds banked toward the next pair stroll (clock, not hash)
         neiWalk: 0,              // #2611: next spot on the pair's circuit (discrete, rides the hash)
         neiSpatCd: 0,             // #2604: real seconds until the next pair spat may fire (clock, not hash)
+    neiMurmurCd: 0,           // #2599 handoff 2: seconds until the pair's next sour murmur (clock, not hash)
+    neiMurrs: 0,              // #2599 handoff 2: rotation position through NEIGH_SOUR_LINES (clock, not hash)
         pet: null,                  // #2197: the household cat, once adopted
         kid: null,                  // #2203: the adopted child, once the agency calls
         paper: null,                // #2238: today's news on the step (item ref | null)
@@ -1802,6 +1805,15 @@ export const NEIGH_SPAT_LINES = [
     'Two neighbours, one ear: the waiting minutes finally catch fire.',
     'Ivy says it plain, Fern says it back — the gate goes quiet.',
 ]
+// #2599 handoff 2: the cold war is not silent between neighbours either — the
+// pair murmur one short sour line on a long cooldown (the #2135 household beat,
+// scaled to the fence). Rotated on a counter, never rng: seeded timelines hold.
+export const NEIGH_SOUR_LINES = [
+    'Something sour hangs over the fence; neither of them says it twice.',
+    'A gate closes a little too firmly on the NEIGH street.',
+    'Two waves almost happen across the lawn. Almost.',
+    'The hedge between the two lots seems taller this afternoon.',
+]
 export const NEIGH_THAW_LINES = [
     'One gate closed, and the quarrel has nobody left to perform for.',
     'With half the pair gone home, the sour air thins off the porch.',
@@ -1889,7 +1901,17 @@ function updateNeighbours(s, dt) {
     const d = Math.abs(fv.r - iv.r) + Math.abs(fv.c - iv.c)
     // #2604 cold war: proximity builds NOTHING — no chat, no glance, no meet-up
     // walk. The household doctrine verbatim; the pair stand where they stand.
-    if (s.neiGrudge) return
+    // #2599 handoff 2: silence gets one crack in it — a sour murmur on a long
+    // cooldown (the #2135 household beat, scaled). Lines and a clock only: the
+    // murmur builds nothing, pays nothing, and never rides the hash.
+    if (s.neiGrudge) {
+        if (s.neiMurmurCd <= 0) {
+            s.neiMurmurCd = NEIGH_MURMUR_CD
+            think(s, NEIGH_SOUR_LINES[s.neiMurrs++ % NEIGH_SOUR_LINES.length])   // rotation, not rng (#2154 pattern) — seeded timelines hold
+            s.events.push({ t: 'grudge-cool', who: 'neigh', x: (fv.x + iv.x) / 2, y: (fv.y + iv.y) / 2 })
+        } else s.neiMurmurCd -= dt
+        return
+    }
     if (s.neiMending && !fv.claim && !iv.claim && d <= NEIGH_REACH) {
         // #2604: the thaw pays at the first unclaimed moment back in the ring —
         // softest on the panel, and no content: the win economy is the household's.
@@ -1957,6 +1979,7 @@ function updateNeighbours(s, dt) {
                 s.neiStroll = 0   // #2611: the walk dies with the quarrel
                 s.neiSpatCd = NEIGH_SPAT_CD
                 s.neiGrudge = 1
+                s.neiMurmurCd = GRUDGE_FIRST_CD   // #2599 handoff 2: the first sour murmur comes after the crack, not on top of it (#2135 mirror)
                 s.neiSpats += 1
                 relSub(s, 'neigh', NEIGH_SPAT_DROP)
                 s.events.push({ t: 'spat', who: 'neigh', x: (fv.x + iv.x) / 2, y: (fv.y + iv.y) / 2 })
