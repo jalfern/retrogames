@@ -1,64 +1,78 @@
-# STATE — session 308 slot b close-out
+# STATE — session 310 slot b close-out
 
 ## Shipped this session
-- **#2503 → PR #2506 → 6de72c6** HOMEBODY ice-cream truck — the lot's 4th
-  hour-scheduled citizen. Resumed the dead lane's pushed corpse (d7594b1 sim +
-  b0468f7 view/gates) rather than starting a second issue. Verified before merge:
-  peoplecheck 620/0, the documented mutant reproduced independently (order gate
-  `!coneOrderOk → false` gives exactly 618/2 — the two refusal gates), lint gates
-  + build green. Live on www: Homebody chunk `index-CZNVN50I.js` carries the cone
-  law. Issue closed, `shipped`.
-- **Main fixed (#2498, #601 freeze lifted by repair, not luck).** Three layers:
-  1. goldentracecheck (#2501/#2502, merged pre-session at 277c8a6) verified green
-     on CI in run 43913176777 full-static (89/89 + 94/94, "NIGHTLY GREEN").
-  2. That run then lost full-smoke on excitebike `PILES IN!` — diagnosed as a
-     harness race, **deterministic on Mac too**: the chain seats in sim state two
-     polls before the HUD div gets the text; the PACK loop exited on the state
-     detection. Fixed in **#2512 → 7fa8438**; exciteplay 46/46 green.
-  3. Gauntlet Y-seat flake in the same nightly: watchcheck 316/316 locally — the
-     #1722 late-seat family, deliberately untouched (advisory, one-rerun rule).
-  Doomed rerun 43941588463 (pre-fix sha e6de70f) cancelled; **nightly
-  43947467784 at fixed tip 7fa8438 is in flight** — on green, heal closes #2498.
+- **#2520 → 6df49c1 (PR #2526)** HOMEBODY: the sneak in the night + burglar
+  alarm — the day/night clause's first *night* citizen. Odd days (`day%2===1`)
+  at 23:00 a sneak crosses at the gate (12,5), takes ONE loose ornament
+  (plant/rug/lamp) at the door-step, leaves; midnight retires him; one visit
+  a night stamped by day. Parity is arithmetic — no rng (source pin + twin
+  green). Answer is purchasable: *Burglar Alarm* §90, SPECIAL shelf (card 19),
+  `hasAlarm` turns him AT the gate post; `ringSneak` rig bypasses parity but
+  never the alarm. Fedora sprite, domed-siren night halo, creep/siren/thunk
+  SFX, banners name the loot, marquee teaches the law. peoplecheck
+  **650 pass / 0 fail** (~30 new pins §SNEAK IN THE NIGHT). lint mario/fps/ai
+  + build green.
+  - **Design law banked:** the loot is decor, never cash. The attract bot wins
+    day 2–3 with only ~§10 above the §300 room-kit price on every seed 1–12 —
+    any cash take breaks `attract builds the wing…` on all of them. The sneak
+    section contains no `s.money` (source-pinned). New economy features must be
+    designed around the win margin, not tested into it.
+- **#1711 machine-side CLOSED, released to `next`.** Nightly take-grading proven
+  ARMED on CI: JON_KEY secret live (20:26Z), dispatch run 43968315875 green
+  (DORMANT branch + `plaicraft:grade --nightly` "nothing new to grade"),
+  gradeselftest 29/29, store re-audit: 14/14 takes PLAIGRADE-marked. Remaining
+  acceptance line 3 needs one completed human clap take — the nightly grades it
+  itself (cron 06:45 UTC). Evidence posted on the issue; no lane work left.
 
 ## Board
-- Other lanes today: SMASH TV #2492 → 30ea66d (slot a, live), MAGIC CARPET
-  #2505, VIPER PIT #2500, MISSILE BATTLE #2509, slot-a STATE 96b4dfc.
-- #2503 carried no new polish issue — it is a stage of the existing HOMEBODY QA
-  pass #2474; Britannia polish #2499 stands.
+- Slot b took the never-dry rung after #1711 released: `weakestStage` =
+  HOMEBODY (score 2). Its index-0 gap prose was stale (all sub-parts shipped
+  #1817–#2235); real oldest unowned gap = the day/night tail → filed+claimed
+  #2520 and shipped it. Rule-4 counter restored (game code this session).
+- **#2516 (retrogames-rl 3c) deliberately NOT claimed**: its governance says
+  predictions must be authored by Claude+Jon ("not a lane") and the training
+  run exceeds a shift budget. Left for the right lane; rationale in session log.
+- Slot A ran live all shift; Britannia/MissileBattle/SmashTV held by
+  building-qa issues — untouched.
+- **RED MAIN at close (watch live):** blocking = nightly.yml 43947467784
+  (tip 7fa8438) failed `smash-tv resumes` — the seat-poll repair (#2524,
+  closes #2523) squash-merged 23:33 and is IN the current tip. Nightly
+  43983438362 on `6df49c1` in flight (23:55); a background watcher merges
+  STATE PR #2527 when green, then detaches main. If it reds again: verify's
+  failures were all pre-existing families (kingsquest/ultima DOS boot, kart
+  smoke, minesweeper bot, robot-lab #1099 text-fit, demo-fox) — none touch
+  Homebody; fix or quarantine per rule 5a naming open issues.
 
-## Next queued (step-2 ladder, recompute at run start)
-- Nothing invented. Known big-builds waiting for their own claim: Britannia
-  enterable cottages (README gap 1, needs AVATAR.EXE terrain table), HOMEBODY
-  day/night tail (work/Ivy/news life).
+## Next queued
+- Nothing invented. Known big-builds self-claim: HOMEBODY day/night tail
+  continues (nothing else keeps hours after dark yet — the sneak was its first
+  night citizen), Britannia enterable cottages (AVATAR.EXE terrain table).
+- #1711 waits only on Jon's human clap take (nightly grades; no lane action).
 
 ## Open questions
-- jonq #2487 (lane:platform) and #2495 (lane:qa) AWAITING — not this lane's;
-  nothing new filed (main-fix was harness-only, taken without asking per 5a).
+- None filed this session (jonq not needed — the decor-loot change was a
+  fidelity-preserving design fix, not a taste call).
 
 ## Catches for the next session (each cost probes this shift)
-- **Donor `node_modules` can die mid-session.** This worktree's node_modules was
-  a symlink into the SMASH TV lane's tree; that lane cleaned up and left my
-  playwright missing mid-diagnosis. Fix: `rm` the symlink, own `npm ci`
-  (~3 min). Prefer real node_modules per lane worktree.
-- **A dead dev server keeps its port** — after node_modules vanished, vite on
-  :5178 stayed up answering 500s. `lsof -ti :<port>` → confirm it's YOUR worktree's
-  vite → kill, restart.
-- **HUD-write races**: any `*play` gate that exits on a STATE condition and reads
-  DOM text inside the same loop races the step-boundary render write (excitebike
-  PACK was one; the pattern may live elsewhere — check here first when a similar
-  gate goes red deterministically).
-- **`gh pr merge` "Base branch was modified" can be a lie** — the first attempt
-  of #2512 printed the error yet actually merged; `gh pr view --json state`
-  before retrying.
-- **main-ok reads `cancelled` as not-red.** Cancelling a doomed pre-fix nightly
-  legitimately lifts the freeze ONLY with a fixed-tip run in flight — say so on
-  #2498 (done) so the board matches reality.
-- Nightly heal only closes #2498 on a GREEN full suite incl. full-smoke — the
-  in-flight run must pass gauntlet; if gauntlet flakes again there, rerun it
-  once and move on.
+- **Homebody events ride `e.t`, not `e.type`** (index.jsx `switch (e.t)`).
+  New event pushes must use `t:` or they silently vanish from the shell.
+- **No pre-placed starter loot**: newRun lots have no placed decor at day 1,
+  so an organic first-night sneak verdict is take-or-empty; pin shapes that
+  accept `sneak-empty` and put the guaranteed take behind a rig placement.
+- **Wages move money mid-run** — never assert "money unchanged across a long
+  organic window"; pin the cash-free law in the source instead.
+- `ringSneak` retires tonight's stamp (`sneakNight = min(night, day-1)`) so
+  back-to-back rig rings work; the alarm still answers them.
+- Backgrounded `npm run dev` in a lane worktree can be reaped by the harness
+  (exit 143/1) — contractcheck was green-headed anyway; advisory.
 
 ## Lanes clean
-- Main checkout detached at origin/main (this STATE commit's parent).
-- Forge worktree `~/Dev/retrogames-forge-plaicraft-sweep` detached at 7fa8438,
-  branch pruned, tree clean (kept for its installed node_modules — no symlinks).
-- Slot b dev server (:5178) stopped.
+- Main checkout detached at `6df49c1` (this session's merge). `main-ok` read
+  `nightly cancelled` = not-red all shift.
+- Worktree `~/Dev/retrogames-forge-plaicraft-s1-arm` → detached at
+  origin/main, tree clean, real node_modules — reusable for the next Homebody
+  stage. Branch `forge/homebody-night-sneak` deleted by the merge.
+- Older worktree `~/Dev/retrogames-forge-plaicraft-sweep` still parked with
+  real node_modules (keep for plaicraft stages).
+- Slot b dev server (:5178) stopped at close.
+- STATE.md left UNCOMMITTED per rule 9 and parked for slot b.
