@@ -33,6 +33,27 @@ check('policy shipped & shaped', POLICY.arch && POLICY.arch[0] === N_FEAT && N_F
     check('rec/v1 recording replays exact (seed 5, 1200t)', r.stats.verified, r.stats.mismatch ? JSON.stringify(r.stats.mismatch) : '')
 }
 
+// 2b — #2621 (stage 3d): the hard-setting stamp rides export → replay → rows.
+{
+    const dflt = collectRun(5, { maxTicks: 1200, noRows: true })
+    const hard = collectRun(5, { maxTicks: 1200, noRows: true, rules: { slack: true, hero: 'wizard' } })
+    check('default corpus stamp unchanged (no phantom keys)',
+        dflt.file.rules.hero === 'warrior' && dflt.file.rules.partnerKey === 'elf' && dflt.file.rules.slack === undefined,
+        JSON.stringify(dflt.file.rules))
+    check('stamped export records slack + wizard in rules',
+        hard.file.rules.slack === true && hard.file.rules.hero === 'wizard', JSON.stringify(hard.file.rules))
+    check('stamped recording verifies against its own stamp (seed 5, 1200t)', hard.stats.verified,
+        hard.stats.mismatch ? JSON.stringify(hard.stats.mismatch) : '')
+    const wrong = verifyRecording(hard.file, makeReplayDriver({}))
+    check('replay at the WRONG stamp must NOT verify (the stamp rebuilds the real game)',
+        !wrong.ok, wrong.ok ? 'a hard-stamp recording verified as default?!' : String(wrong.mismatch && wrong.mismatch.t))
+    const again = collectRun(5, { maxTicks: 1200, noRows: true, rules: { slack: true, hero: 'wizard' } })
+    check('hard stamp is deterministic (same seed + stamp → byte-identical file)',
+        JSON.stringify(hard.file) === JSON.stringify(again.file), `${hard.stats.ticks} vs ${again.stats.ticks}`)
+    check('the stamp CHANGES the game (wizard+slack ≠ warrior default at seed 5)',
+        JSON.stringify(hard.file.hashes) !== JSON.stringify(dflt.file.hashes), '')
+}
+
 // 3 — teacher-forcing agreement on practice seeds (the seat, predicting the
 // expert at the expert's OWN states): regenerate labels live for two seeds.
 function agreement(seed, cap, policy) {
