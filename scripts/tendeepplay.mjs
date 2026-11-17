@@ -522,11 +522,36 @@ if (ambush && !mid) {
 r.check('an ambush opens with a slide-in (plate off its slot on the first frame)', !!mid,
     mid ? `slide ${Math.round(mid.slide)} ms left, plate at x=${Math.round(mid.slideX.x)} vs slot ${Math.round(mid.slideX.sx)}` : 'never caught a mid-slide frame')
 if (mid && mid.slideX) {
-    const w = Math.round(mid.slideX.size * 0.8), h = Math.round(mid.slideX.size * 0.7)
-    const y = Math.round(140 - mid.slideX.size * 0.85)
-    const slotLit = await px(Math.round(mid.slideX.sx - w / 2), y, w, h, 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 200)
-    const bandLit = await px(Math.round(mid.slideX.x - w / 2), y, w, h, 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 200)
-    r.check('the mid-slide plate is painted right of its final slot', bandLit > slotLit + 10, `band=${bandLit} slot=${slotLit} (plate at x=${Math.round(mid.slideX.x)})`)
+    // #2626 (nightly run 44119695377): reading the plate position from the
+    // probe and then measuring the two windows in separate round-trips let the
+    // ~500 ms slide-in SETTLE between the calls on CI Chrome — both windows
+    // then caught the same parked plate (band=71 slot=70). Read the state and
+    // measure both windows in one evaluate (state x vs painted canvas are at
+    // most one frame apart), and poll while the slide still runs.
+    const midScan = () => page.evaluate(() => {
+        const st = window.__deepTest.probe()
+        if (!st.slideX || st.slide <= 0 || st.slideX.x - st.slideX.sx <= 12) return null
+        const w = Math.round(st.slideX.size * 0.8), h = Math.round(st.slideX.size * 0.7)
+        const y = Math.round(140 - st.slideX.size * 0.85)
+        const cv = document.querySelector('canvas[data-deep-view]')
+        const count = (cx) => {
+            const d = cv.getContext('2d').getImageData(Math.round(cx - w / 2), y, w, h).data
+            let n = 0
+            for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 200) n++
+            return n
+        }
+        return { x: st.slideX.x, sx: st.slideX.sx, band: count(st.slideX.x), slot: count(st.slideX.sx) }
+    })
+    let ms = null, msOk = false
+    for (let i = 0; i < 10 && !msOk; i++) {
+        const s = await midScan()
+        if (!s) break // the slide settled before the scan landed — report honestly
+        ms = s
+        msOk = s.band > s.slot + 10
+        if (!msOk) await wait(40)
+    }
+    r.check('the mid-slide plate is painted right of its final slot', msOk,
+        ms ? `band=${ms.band} slot=${ms.slot} (plate at x=${Math.round(ms.x)} slot x=${Math.round(ms.sx)})` : 'slide settled before a mid-slide scan landed')
 }
 // the plate gate below samples the SETTLED frame — wait the slide out
 for (let i = 0; i < 50 && (await probe()).slide > 0; i++) await wait(40)
