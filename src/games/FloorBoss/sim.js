@@ -196,6 +196,47 @@ export function blocked(gs, x, y, ignoreId = null) {
     return false
 }
 
+// #2546 aisle-clearance law — the forklift network stays serviceable. Real
+// warehouses forbid racking that strands a lane: a forklift never enters an
+// aisle it cannot leave (turn radii), and every rack face must be reachable.
+// On this kinematic grid the honest analogue is three reachability laws,
+// judged on a HYPOTHETICAL rack before anything is charged:
+//   'self'   — the new rack has no drivable service side on the network
+//   'rack'   — an existing rack loses its last reachable service side
+//   'pocket' — a drivable cell that was reachable becomes unreachable
+//              (a dead-end aisle behind the new rack)
+// Anchors: shipping docks, home pads, and the arm bay's open sides — the
+// places freight actually flows between (the same cells the dispatch engine
+// lives on). Curated RACK_SPOTS satisfy all three by construction; only
+// hand-built walls hit the refusal.
+function serviceNet(gs, extra) {
+    const isRack = (x, y) => (extra && extra.x === x && extra.y === y) || gs.racks.some((r) => r.x === x && r.y === y)
+    const seen = new Set()
+    let frontier = []
+    const seed = (x, y) => {
+        const k = `${x},${y}`
+        if (!seen.has(k) && inGrid(x, y) && map[y][x] === CELL.FLOOR && !isRack(x, y)) { seen.add(k); frontier.push({ x, y }) }
+    }
+    for (const d of OUT_DOCKS) seed(d.x, d.y)
+    for (const p of HOME_PADS) seed(p.x, p.y)
+    for (const [dx, dy] of NB) seed(BAY_CELL.x + dx, BAY_CELL.y + dy)
+    while (frontier.length) {
+        const next = []
+        for (const n of frontier) for (const [dx, dy] of NB) seed(n.x + dx, n.y + dy)
+        frontier = next
+    }
+    return seen
+}
+function strandsFloor(gs, x, y) {
+    if (map[y][x] !== CELL.FLOOR || gs.racks.some((r) => r.x === x && r.y === y)) return false // other laws refuse first
+    const before = serviceNet(gs, null)
+    const after = serviceNet(gs, { x, y })
+    if (!NB.some(([dx, dy]) => after.has(`${x + dx},${y + dy}`))) return 'self'
+    for (const r of gs.racks) if (!NB.some(([dx, dy]) => after.has(`${r.x + dx},${r.y + dy}`))) return 'rack'
+    for (const k of before) if (k !== `${x},${y}` && !after.has(k)) return 'pocket'
+    return false
+}
+
 function outDocks() {
     const docks = []
     for (const o of OUT_CELLS) for (const [dx, dy] of NB) if (map[o.y + dy][o.x + dx] === CELL.FLOOR) docks.push({ x: o.x + dx, y: o.y + dy })
@@ -293,6 +334,8 @@ function cellClick(gs, x, y) {
     if (gs.tool === 'rack') {
         if (map[y][x] !== CELL.FLOOR) { gs.ev.push({ type: 'refuse', x, y }); return 'refuse' }
         if (gs.racks.length >= RACK_SPOTS.length + 4) { gs.ev.push({ type: 'refuse', x, y }); return 'refuse' }
+        const strand = strandsFloor(gs, x, y)
+        if (strand) { gs.ev.push({ type: 'aisle', x, y, why: strand }); return 'aisle' } // #2546: nothing is charged for a lane you cannot drive
         if (gs.score < RACK_COST) { gs.ev.push({ type: 'poor', x, y }); return 'poor' }
         gs.score -= RACK_COST
         gs.racks.push({ x, y, items: [] })

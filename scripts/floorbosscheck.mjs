@@ -43,7 +43,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { plant, pull } from './lib/mutateguard.mjs'
 import {
-    makeGame, step, state, stateHash, createAutopilot, clickCell,
+    makeGame, step, state, stateHash, createAutopilot, clickCell, RACK_SPOTS,
     SHIFT, QUOTA, STRIKES, RACK_CAP, OVERFLOW_FINE, EXPIRE_FINE, BREAK_FINE, BASE_PAY,
     STOW_PAY, RACK_COST, ROBOT_COST, ARM_PATIENCE, ARM_CELL, PAD_CAP, PAD_AGE,
     FREIGHT_PER_BOX, FULL_TRAILER, DISPATCH_FEE,
@@ -72,7 +72,8 @@ const MUT_ADVANCE = ARGS.includes('--mutate-advance')
 const MUT_BANK = ARGS.includes('--mutate-bank')
 const MUT_RUSH = ARGS.includes('--mutate-rush')
 const MUT_PRICE = ARGS.includes('--mutate-price')
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE) {
+const MUT_AISLE = ARGS.includes('--mutate-aisle')
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const src = readFileSync(sim, 'utf8')
     const [from, to, name] = MUT_YIELD
@@ -103,7 +104,9 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                         ? ['rushOn: 2700,', 'rushOn: 2500,', 'the measured-pinned rush clock shifts without a re-measure — unannounced difficulty drift (#2352)']
                                                         : MUT_PRICE
                                                             ? ['due: Math.round((1 - p.dueMult) * 100)', 'due: 0', 'the clock-in card claims the deadlines stayed put — the pricing lies (#2352)']
-                                                            : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
+                                                            : MUT_AISLE
+                                                                ? ["if (strand) { gs.ev.push({ type: 'aisle', x, y, why: strand }); return 'aisle' }", "if (strand && false) { gs.ev.push({ type: 'aisle', x, y, why: strand }); return 'aisle' }", 'aisle clearance off — racks may wall out lanes and pocket the floor (#2546)']
+                                                                : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(sim, src.replace(from, to))
     console.log(`  ..    mutated: ${name} — this run MUST report FAILs`)
@@ -935,6 +938,41 @@ console.log('— first-time-player readability pass (#2254, source pins) —')
     ok(/bottom-\[20%\]/.test(ui) && /bottom-\[15%\]/.test(ui), 'attract marquee and watch line are anchored to the stage, clear of the footer (#2254 item 5)')
     ok(!/bottom-8 inset-x-0 flex justify-center pointer-events-none"/.test(ui),
         'the wrapper-bottom marquee (footer overlap) cannot come back (#2254 item 5)')
+}
+
+// ---- #2546 aisle-clearance rack law — forklift lanes stay serviceable ----
+console.log('— aisle clearance (#2546) —')
+{
+    const g = makeGame(11)
+    g.score = 5000
+    // curated spots are legal by construction — autopilot must never meet a refusal
+    let spotFails = 0
+    for (const sp of RACK_SPOTS) { g.tool = 'rack'; if (clickCell(g, sp.x, sp.y) !== 'build') spotFails++ }
+    ok(spotFails === 0, 'every curated RACK_SPOT still builds — autopilot expansion never meets the new refusal')
+    // strand law: close the last open side of a stocked rack
+    const g2 = makeGame(11)
+    g2.score = 5000
+    g2.racks.length = 0
+    g2.racks.push({ x: 14, y: 3, items: ['crate'] })
+    for (const [x, y] of [[13, 3], [15, 3], [14, 4]]) { g2.tool = 'rack'; if (clickCell(g2, x, y) !== 'build') spotFails++ }
+    const scoreBefore = g2.score
+    g2.tool = 'rack'
+    const rr = clickCell(g2, 14, 2)
+    ok(rr === 'aisle' && g2.ev.at(-1)?.why === 'rack', 'walling out a stocked rack is refused (why=rack)')
+    ok(g2.score === scoreBefore, 'the refusal charges nothing — money back for a lane you cannot drive')
+    ok(g2.racks.length === 4 && !g2.racks.some((r) => r.x === 14 && r.y === 2), 'the stranding rack never lands')
+    // pocket law: sealing the last throat of a reachable pocket is refused
+    const g3 = makeGame(11)
+    g3.score = 5000
+    g3.racks.length = 0
+    for (const [x, y] of [[11, 7], [13, 7], [12, 8]]) g3.racks.push({ x, y, items: [] })
+    g3.tool = 'rack'
+    const rp = clickCell(g3, 12, 6)
+    ok(rp === 'aisle' && g3.ev.at(-1)?.why === 'pocket', 'a rack that would strand the (12,7) pocket is refused (why=pocket)')
+    // named refusal on screen: the painter teaches WHICH law broke
+    const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    ok(/case 'aisle'/.test(ui) && /DEAD-END AISLE/.test(ui) && /STRANDED A RACK/.test(ui) && /NO SERVICE LANE/.test(ui),
+        'the aisle refusal names the broken law on screen (#2546)')
 }
 
 console.log(fails ? `\nFLOOR BOSS CHECK: ${fails} FAILED` : '\nFLOOR BOSS CHECK: all green')
