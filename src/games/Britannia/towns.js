@@ -29,3 +29,12 @@ export function townScore(tx, ty, gates, terrainAt) {
 // strongest built-up tiles hosts a cottage so the promise is kept on screen.
 // Pure and deterministic: same tile, same verdict, every frame and every run.
 export const hasCottage = (tx, ty) => (((tx * 73856093) ^ (ty * 19349663)) >>> 8) % 100 < 40
+
+// #2499 item 4: the footstep voice of built-up ground. The original changed
+// the foot's tone on town stone; ours muttered grass everywhere. The open-road
+// voice stays bit-identical (the #1135 foot keeps its stride); on trodden
+// ground (ts > 0 — the very threshold the town toast and tint read) the step
+// becomes a hard, short, higher tick. Pure: ts picks the voice, tick the tone.
+export const stepVoice = (ts, tick) => ts > 0
+    ? { f: 240 + (tick % 3) * 22, d: 0.025, type: 'square', g: 0.05 }
+    : { f: 90 + (tick % 3) * 14, d: 0.03, type: 'triangle', g: 0.06 }
