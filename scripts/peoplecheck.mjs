@@ -1745,7 +1745,7 @@ section('NEIGH STROLL (#2611): the pair walks the lot — bank, circuit, walk-pa
         e0.length === 1 && e0[0].i === 0 && a.neiStroll < 1.05 && !!a.visitor.path && !!a.ivy.path,
         JSON.stringify(e0.map((e) => e.i)))
     check('the stroll event carries a spot for the tell',
-        Number.isFinite(e0[0].x) && Number.isFinite(e0[0].y), JSON.stringify(e0[0]))
+        e0.length === 1 && Number.isFinite(e0[0].x) && Number.isFinite(e0[0].y), JSON.stringify(e0))
 
     // Fern leads, Ivy trails: the pair arrives at the front-path spot together.
     const evW = []
