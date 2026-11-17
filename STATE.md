@@ -1,68 +1,68 @@
-# STATE — session 317 slot b close-out
+# STATE — session 318 slot a close-out
 
 ## Shipped this session
-- **#2555 → PR #2560 merged (c8b95fc, live).** FLOOR BOSS DUEL SEATS: the
-  model manager (quota-proven autopilot) drives its own slot beside the human
-  (`pads[1]`, own cursor/tool/till); `D` at the attract or the cyan chip.
-  One budget stays the floor's — solo score math is bit-identical (#1917,
-  tick-for-tick gate) and the win proof transfers to either seat. Credit
-  follows work: stow→rack owner, escrow→parcel shipper majority (ties→HOUSE),
-  freight bonus per box onto the loading ledger; legacy fleet/racks are the
-  house (owner −1); expiry/overflow are the house's sheet; taps name the
-  tapper. Verdict at the whistle: richer till is MANAGER OF THE NIGHT.
-  Conservation `score = 100 + Σcredits − spent` closed every tick, Node
-  (15 seeds, floor wins 15/15, model out-credits idle human 15/15) and
-  browser. floorbosscheck +17 gates + `--mutate-duel` kill; floorbossplay
-  41/41 live duel drive. Episodes record `players:2, sources:['human','model']`
-  (#1144 slot two). Prod verified: chunk `index-Bx6Fuwup.js` carries
-  `MANAGER OF THE NIGHT`. Play: https://jalfern.com/retrogames/floor-boss.
-  Polish pass filed #2561 (feedback).
-- Design reversal worth remembering: the first duel design gated purchases on
-  private tills — legacy-floor capital then sat unspendable and the floor
-  FIRED (seed 4242 at 467). Honest model: capex is the floor's budget, credit
-  is production-only. Keep that if anyone revisits duel economics.
-
-## Session shape
-- TARGET #2550 claim REFUSED (slot a live hold, checkpoint 25 min old) — ran
-  the normal ladder: no steer, `next` #1711 is lane:platform (precedent
-  314/315/316: no games-lane action), game-queue empty, feedback borrow
-  refused (3 live `QA MASTER` PIDs), flagship gaps spent → `weakestStage`
-  picked FLOOR BOSS (score 2: two-player seats + turn radii, both unowned —
-  #2546's closure un-owned the README handles). Filed POLISH #2555, claimed,
-  shipped. One-game rule satisfied.
-
-## Board
-- building: #2550 (slot a, LodeRunnerLite vault witness), #2516 (lane:research).
-  Britannia #2562 and SmashTV #2554 landed on main mid-session (other lanes).
-- `next` = #1711 (lane:platform — no games-lane action).
-- jonq: #2529 AWAITING (lane:research, due Nov 19, default A) — not ours.
+- **PR #2564 → retrogames `354c2f7` — ARENA ARCHERY seats two (#2558, never-dry
+  weakest stage).** Two real fixes + the seat-2 proof.
+  - *Gameplay fix:* `looseArrow` could receive aim `(0,0)` — a jump press zeroes
+    aim X, a direction-free release zeroes aim Y — spawning a shaft at the body
+    with no velocity: a **dud at the shooter's feet** (stuck, pulled back,
+    quiver refilled; harness receipts caught it `rc 0→1 stuck 0→1`). TowerFall
+    always fires: no-direction release now looses toward the facing. Bot streams
+    never produce (0,0): archerycheck receipts byte-identical (pulls 14/10/14).
+  - *Rule fix:* retired the on-screen `secondPad` (AGENTS.md multiplayer law:
+    two players = desktop keyboard option, no second touchpad; it painted dead
+    even in 1p mode where seat 2 is the bot's).
+  - *Proof:* `archeryplay` DUEL section, real keys only — `2` seats the duel +
+    bot-vacated idle, KeyA walk + cyan-paint-at-state, KeyW jump, no-dud gate,
+    same-tick stamp (arrows carry `born: g.tick`, P1 numbered first), seat-2
+    pull (receipts move for seat 2 not seat 1), three honest kills through
+    respawn+invuln → `PLAYER 2 TAKES THE ARENA`, dual-stream replay
+    hash-identical, DOM: no second pad exists. Mutant: facing-fallback removed
+    → no-dud gate red (`#1@x253 = shooter`) → restored.
+  - Gates: archeryplay **40/40**, archerycheck **152/152**, `--mutate`
+    **174/174**, eslint/lint:archery/fps/ai + build green. Prod verified by
+    marker (chunk `index-Cb5fH7PP.js` carries `born:` + ArenaArchery prop set,
+    zero `secondPad`); #2558 auto-closed, `shipped` label, live URL commented.
+  - Also fixed a pre-existing telegraph flake: `warnNotes`/`dryFx` are session
+    accumulators — the gate now samples the delta across the graded stream.
+- **TARGET #2555 (warden) — REFUSED at claim, correctly:** slot b held it 13 min
+  fresh (their FloorBoss DUEL, a different game); this lane ladder'd instead of
+  duplicating. Ladder: steer none; `next` #1711 = lane:platform no-op; queue
+  empty; QA MASTER live (feedback borrow refused); `idle-kick` answered
+  `KICK ARENA ARCHERY 0 weak` → filed #2558 with the why-weakest line, claimed,
+  shipped. Polish pass filed: **#2565** (feedback, lane:games — kill juice,
+  flush-stick angles, duel ceremony, fletching, seat-keyed release sound).
 
 ## Next queued
-- FloorBoss **turn-radii / two-way aisle widths** stays open honestly in the
-  README (second gap #2546 left) — the likely weakestStage pick next dry visit.
-- #2561 (FloorBoss duel polish) is feedback for the QA lane; builders never
-  borrow while QA MASTER sessions are live.
+- `game-queue` empty at close. `next` = **#1711** (lane:platform — no games-lane
+  action, precedent 314/315/316; do NOT claim to re-confirm).
+- Fall through to flagship/idle — **recompute with `idle.mjs`/`idle-kick.mjs`,
+  never from memory**: ARENA ARCHERY's README is now all-CLOSED so the shelf map
+  moved again; #2565 (new feedback) and #2499/#2449 belong to the QA lane unless
+  QA is idle at the next session's claim step.
 
-## Catches for the next session
-- **`gh pr checks --repo <r> --json …` errors without a PR selector** — the
-  rule-5 loop must run BARE inside the PR worktree (branch infers the PR).
-  With --repo the `while` condition dies at once, exit status 0, and
-  `gh pr merge` fires while `static` is pending (branch protection saved it).
-- **floorbossplay starts a RANDOM seed** — a fired solo night cascades red
-  through the ladder gates (~10% seed luck; rerun once, per AGENTS rule 3).
-  The duel section now reloads the page so it never depends on that luck.
-- **Prod-poll scripts: `hit=x && exit 0` without an echo exits SILENTLY.**
-  An entry-hash change IS the deploy signal — print it.
-- STATE.md catch from 316 still true: `curl -L` for jalfern.com; game chunks
-  are `index-<hash>.js` off the entry JS.
+## Open questions (issues, not here — #605)
+- None filed this lane. Lane-foreign: **#2529** (lane:research, AWAITING,
+  deadline 2026-11-19T00:01Z, default A) gates #2516, not this lane's work.
 
-## Open questions
-- none (nothing waiting-jon from this lane).
+## Catches for the next session (each cost probes this shift)
+- **jalfern.com 308-redirects to www.jalfern.com.** Prod polling without
+  `curl -L` reads "Redirecting..." and cries "no bundle". Always -L.
+- **Quiver-only sampling cannot catch a zero-velocity dud** (~10 ticks to land
+  and pull back). Prove direction by position: expose `x,y` on the probe and
+  assert the shaft left toward the facing (x < shooter − 8).
+- **A browser-only law needs a browser pin:** archerycheck can't kill the
+  facing-fallback mutant (bots never release at (0,0)) — say so in the README
+  and keep the mutant proof manual in the PR notes.
+- **Measure, don't guess walks:** px→ms blind walks over-shot spawns by ~30 px
+  (accel/decel bias); a probe-and-nudge loop (|dx|<8) parks dead-on.
+- Fresh worktree `node_modules` symlink + orphan-5173 check went smoothly this
+  session — both STATE catches from #2553 still hold.
 
 ## Lanes clean
-- Main checkout detached at origin/main (STATE.md committed + pushed this
-  session — game merged, rule 9 allows it); parked via statepark b.
-- Worktree retrogames-forge-duel-seats detached at c8b95fc (merged); keeper
-  per precedent, node_modules symlink only. Local `main` branch created by
-  gh's merge dance was deleted; nothing holds `main`.
-- :5178 dev server stopped at close. No other lane's port touched.
+- Main checkout detached at origin/main (354c2f7); STATE.md written +
+  `statepark.mjs park a`; STATE commit goes to main via PR (game merged this
+  session — same shape as #2552/#2556).
+- Worktree `~/Dev/retrogames-forge-archery-duel-seat` re-detached at
+  origin/main, reusable. My :5173 dev server stopped at close-out; other
+  lanes' ports untouched.
