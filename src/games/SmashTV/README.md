@@ -389,6 +389,15 @@ routed around. Re-keying the parent cells fixed 21 of 25 (wins 66→80, stuck
 tracked on the issue. smashcheck's `roll seeds` gate pins the 23 un-wedged
 seeds against re-freeze.
 
+Duel re-measure (nightly 43996221673, same family): the sweep's proof of the
+lane-sound duel was route luck too — seed 4's corner walk died with the router
+fix and the deaf-duel mutant survived; the nightly itself red on two stale
+mutant anchors from the #2521 centre-anchor rewrite. The laws are alive:
+smashcheck now pins replay ticks (seed 1 tick 3817 heavy#853, seed 2 tick
+1775 heavy#305) where routes bring the seat onto a walled row, asserting the
+duel's answer against the live board shape, and all mutant anchors match the
+current renderer text.
+
 Gates: rules-section pins (spawn unshielded, entry round kills, solo + co-op
 respawn exposed, open-door landing), pilot pins above, slack pins 0–2. Four
 mercyBack mutants (entry shield 70, solo respawn shield 150, co-op respawn
