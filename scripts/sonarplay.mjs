@@ -440,7 +440,7 @@ for (let i = 0; i < 900; i++) {
     }, [x, y])
     let st = await probe()
     if (st.screen !== 'play') { await tap('KeyG'); await wait(1100) }
-    let freshPx = -1, ghostPx = -1, revivePx = -1, knownAfterGhost = true, recoveries = 0, attempts = 0
+    let freshPx = -1, ghostPx = -1, ghostBrightPx = -1, revivePx = -1, knownAfterGhost = true, recoveries = 0, attempts = 0
     let gx = -1, gy = -1, gIdx = -1
     for (let i = 0; i < 240 && ghostPx < 0 && attempts < 8; i++) {
         st = await probe()
@@ -476,6 +476,7 @@ for (let i = 0; i < 900; i++) {
             knownAfterGhost = await knownAt(gx, gy)
             const v = await cellPix(gx, gy)
             ghostPx = v.dim
+            ghostBrightPx = v.bright
             break
         }
         if (sig === 0) break                                              // collected/never — restart the hunt
@@ -483,9 +484,15 @@ for (let i = 0; i < 900; i++) {
         if (i % 40 === 39) attempts++                                     // bound stalled waits
     }
     r.check('a real ping paints a fresh pearl bright (pixels)', freshPx >= 4, `bright=${freshPx}`)
-    r.check('the remembered pearl keeps a dim glint after the fade (pixels)', ghostPx >= 2, `dim=${ghostPx}`)
-    r.check('the ghosted pearl cell is knowledge-dark — only memory draws it', ghostPx >= 2 && !knownAfterGhost, `known=${knownAfterGhost}`)
-    if (ghostPx >= 2) {
+    // #2601 window shift: the ghost is a hollow shimmering ring, not a 2px dot —
+    // the arc covers ~44 px in the dim window at every shimmer phase (measured
+    // on the ring, α 0.30–0.58 stays inside the window), so the floor rises from
+    // 2 to 20. The ring's α never crosses the bright floor (0.745): a remembered
+    // pearl can no longer read fresh — hollow-vs-solid hierarchy, in numbers.
+    r.check('the remembered pearl keeps its dim ring after the fade (pixels)', ghostPx >= 20, `dim=${ghostPx}`)
+    r.check('the remembered ring never reads fresh (pixels)', ghostPx >= 20 && ghostBrightPx === 0, `bright=${ghostBrightPx}`)
+    r.check('the ghosted pearl cell is knowledge-dark — only memory draws it', ghostPx >= 20 && !knownAfterGhost, `known=${knownAfterGhost}`)
+    if (ghostPx >= 20) {
         await wait(200)
         for (let k = 0; k < 20 && revivePx < 0; k++) {
             const s3 = await probe()

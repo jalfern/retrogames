@@ -77,6 +77,14 @@ now visible; it draws from `gs.pings`, cells still light solely by BFS arrival.
 - **CLOSED by #2367:** the vent swirl was drawn as soon as its cell was known —
   it now ripples only on a fresh front and ghosts otherwise; the ping ring
   teaches the distance mapping in pixels.
+- **CLOSED by #2601:** the remembered pearl was a static 2×2 dot at α 0.34 —
+  terrain-noise-quiet. The ghost is now a hollow ring (r 4.5) with a slow
+  2-phase shimmer α 0.30–0.58: terrain never outlines (the glyph vocabulary is
+  the same as the vent/eel marks), hollow-vs-solid keeps it under the fresh
+  bead, and the whole band rides inside `sonarplay`'s dim window while staying
+  below the bright floor (α 0.745) — so a ghost can neither hide nor read
+  fresh. The descent toast teaches the sim's own reset law ("THE MAP FORGETS")
+  and `sonarcheck` proves the wipe (new depth ⇒ knowledge-zero).
 
 ## Remaining polish candidates (#2367 follow-ups)
 - **CLOSED by #2383:** colourblind SHAPE cue on the heat mark — a hot mark
