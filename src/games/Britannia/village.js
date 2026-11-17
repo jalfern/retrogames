@@ -146,6 +146,44 @@ export const doorFace = (c, gate) => {
     return dy >= 0 ? 's' : 'n'
 }
 
+// #2499 item 3: eight towns, eight greetings. AVATAR.EXE's town-name table
+// is not recoverable from the bundle (#1829 item 5 — the .ULT boards carry
+// terrain ids, not names), so the arrival toast may at least stop reading as
+// one copy-paste line for all eight: the gi-th gate keeps its own line, a
+// fixed table with gate I holding the original #1135 greeting untouched. Pure
+// and wrapped — foreign maps of any gate count still get a greeting.
+const TOWN_TOASTS = [
+    'Cottages and smoke: a town lieth nigh.',
+    'A town lieth nigh — chimney wreaths its roofs.',
+    'Timber and thatch gather round the moongate.',
+    'A town lieth nigh: wells, smoke and barred doors.',
+    'Thou smellst hearth-smoke — folk dwell hard by.',
+    'A town lieth nigh, its walls warden the gate.',
+    'Cots and hearths: the town draweth rein near here.',
+    'Smoke from many chimneys: a town under the moon.',
+]
+export const townToast = (gi) => TOWN_TOASTS[((gi % TOWN_TOASTS.length) + TOWN_TOASTS.length) % TOWN_TOASTS.length]
+
+// the gate whose ground ye stand on (wrapped Chebyshev; first wins ties, so
+// the toast is a law of the map, never of arrival order).
+export const nearestGateIndex = (gates, x, y) => {
+    let bi = 0, bd = Infinity
+    gates.forEach((g, i) => { const d = CHEB(x, y, g.x, g.y); if (d < bd) { bd = d; bi = i } })
+    return bi
+}
+
+// #2499 item 2: lamps at night. The original's towns read inhabited even
+// when empty — chimneys breathing and windows lit. Seeded off the cottage's
+// own hash: most cottages burn a lamp, some stand shuttered (travellers pass
+// through), and the village lights the same way every night — seeded, never
+// rolled, so node and panel agree tile for tile.
+export const lampLit = (tx, ty) => cottageSeed(tx, ty) % 3 !== 0
+
+// #2499 item 5: the roof shade variant — two-tone shingles separate cottage
+// ink from ordinary town green at a glance; seeded, so courses catch the sun
+// differently cottage to cottage.
+export const roofShade = (tx, ty) => cottageSeed(tx, ty) % 2
+
 // the panel's view — [x, y, gi] per cottage, the shrines-array shape so
 // britanniacheck can diff node plots against the live panel.
 export const villageTriples = (village) => village.map((c) => [c.x, c.y, c.gi])

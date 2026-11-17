@@ -602,3 +602,34 @@ Origin's per-town gate table (not in the bundle).
   south, gate VI sanctum west, gate III walk-off north) sit on open or unwalled
   sides — verified against the side table before ship; a dedicated
   knock-and-enter drive step is the fair follow-up.
+
+## Village craft — eight towns that read inhabited (#2499 polish pass)
+
+The polish pass over the village substance (#2494) and the town walls
+(#2538). Two laws landed here (items 1 doors and 4 footstep-voice had
+already shipped with their gates):
+
+- **Eight greetings.** The arrival toast was one copy-paste line for all
+  eight towns. `village.js:townToast` keys a fixed 8-line table to the
+  gate whose ground you enter (`nearestGateIndex`, wrapped Chebyshev,
+  first wins ties) — gate I keeps the original `#1135` ink
+  ("Cottages and smoke: a town lieth nigh."). Honest tail: these are
+  flavor lines, NOT recovered names — AVATAR.EXE's town-name table is not
+  in the bundle (#1829 item 5 stands); the boards carry terrain ids only.
+- **Lamps at night.** `village.js:lampLit` seats the lamp law on the
+  cottage's own seed hash: most cottages burn a warm halo after nightfall
+  (the original's towns read inhabited even empty), the shuttered third
+  keep the traveller's dark, and the village lights identically every
+  night — seeded, never rolled.
+- **Shingled roofs.** `village.js:roofShade` picks a seeded two-tone
+  variant; the view lays courses up the pitch with the eastern half sunk
+  (as the chapel's slate keeps the sun west) and a ridge cap at the peak,
+  so cottage ink separates from ordinary town green at a glance.
+
+Harness +13 gates (toast table distinctness/wrap/gate-I ink, nearest-gate
+law, lit-fraction strictly between 0 and the cottage count, both roof
+shades on the shelf, purity, wiring pins into index.jsx; the #1135
+toast-once pin re-targeted to the new call). Mutants
+`--mutate-toast-same`, `--mutate-lamp-dark`, `--mutate-roof-flat` each
+die and restore. Still honest: interiors and NPC talk remain stage 2
+(#1128); the halo is cosmetic — lamps obey nothing but the hash.

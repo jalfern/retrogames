@@ -19,7 +19,7 @@ import { TOWN_R, FLAT as TOWN_FLAT, townScore, hasCottage, stepVoice } from '../
 import { decodeCon, decodeRecord, CON_TERR, FLAT } from '../src/games/Britannia/ega.js'
 import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches, SPLAT, splatIntensity, dimples, splashStrikes, SPLAT_GAP, ROUGH_MEMORY, seaRough, crestGain, foamGain, SAIL_DRAG, shipCd, SURF_FLOOR, surfVoice, surfDue } from '../src/games/Britannia/swell.js'
 import { SHRINE_DIST, AVATARS, shrineTitle, shrineSpot, plotShrines } from '../src/games/Britannia/shrines.js'
-import { plotVillage, cottageSeed, villageTriples, KEEP_RING, PLAZA_MIN_TS, doorFace } from '../src/games/Britannia/village.js'
+import { plotVillage, cottageSeed, villageTriples, KEEP_RING, PLAZA_MIN_TS, doorFace, townToast, nearestGateIndex, lampLit, roofShade } from '../src/games/Britannia/village.js'
 import { plotWalls, wallTriples, openTriples } from '../src/games/Britannia/walls.js'
 import { HULL_MAX, STRAIN_STORM, strain, wear, repair, nearestCoast, GROAN_GAP, sailState } from '../src/games/Britannia/hull.js'
 import { START_GOLD, FARE, TRIBUTE, payToll, tribute, moorReach } from '../src/games/Britannia/purse.js'
@@ -65,6 +65,12 @@ const MUT = {
     '--mutate-door-flip': { target: 'src/games/Britannia/village.js', from: "return dy >= 0 ? 's' : 'n'", to: "return dy >= 0 ? 'n' : 's'", name: 'vertical doors look away from the gate' },
     '--mutate-stone-grass': { target: 'src/games/Britannia/towns.js', from: 'export const stepVoice = (ts, tick) => ts > 0', to: 'export const stepVoice = (ts, tick) => ts > 99', name: 'plaza stone trampled back to grass' },
     '--mutate-captain-echo': { target: 'src/games/Britannia/index.jsx', from: "audioController.playTone(300, 0.09, 'square', 0.10)\n                    audioController.playTone(190, 0.16, 'square', 0.10)", to: "audioController.playSweep(96, 60, 0.14, 'square', 0.16)", name: 'the captain stealing the chapel thud back' },
+    // #2499 greetings/lamps/roofs: one greeting for all towns, a village
+    // where every lamp is shuttered, and a shelf of identical flat roofs
+    // each undo one of the polish laws.
+    '--mutate-toast-same': { target: 'src/games/Britannia/village.js', from: 'export const townToast = (gi) => TOWN_TOASTS[((gi % TOWN_TOASTS.length) + TOWN_TOASTS.length) % TOWN_TOASTS.length]', to: 'export const townToast = (gi) => TOWN_TOASTS[0]', name: 'all eight towns greet with one line' },
+    '--mutate-lamp-dark': { target: 'src/games/Britannia/village.js', from: 'export const lampLit = (tx, ty) => cottageSeed(tx, ty) % 3 !== 0', to: 'export const lampLit = (tx, ty) => false', name: 'every lamp shuttered — the town dies at nightfall' },
+    '--mutate-roof-flat': { target: 'src/games/Britannia/village.js', from: 'export const roofShade = (tx, ty) => cottageSeed(tx, ty) % 2', to: 'export const roofShade = (tx, ty) => 0', name: 'one shade for every roof — the shingle variance is gone' },
 }
 const mutKey = Object.keys(MUT).find(k => ARGS.includes(k))
 if (mutKey) {
@@ -1209,7 +1215,7 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     ok(/classical|classicOn/.test(tsrc) && !/builtPalette\(TERR\[vv\], ts\)/.test(tsrc.slice(0, tsrc.indexOf('const ts = townScore')) || ''),
         'index.jsx: the wash lives in the modern branch (classic sheet stays clean)')
     ok(/if \(ts > 0 && cobbleBlock\(tx, ty, bx, by\)\)/.test(tsrc), 'index.jsx: town blocks darken onto cobble grout')
-    ok(/inTown && !S\.wasTown/.test(tsrc) && /town lieth nigh/.test(tsrc), 'index.jsx: entering town toasts once')
+    ok(/inTown && !S\.wasTown/.test(tsrc) && /townToast\(nearestGateIndex/.test(tsrc) && /town lieth nigh/.test(readFileSync('src/games/Britannia/village.js', 'utf8')), 'index.jsx: entering town toasts once, and gate I\'s greeting still reads town-lieth-nigh')
     ok(/town: townScore\(S\.x, S\.y, gates, terrainAt\)/.test(tsrc), 'index.jsx: the harness can see the town under the Avatar')
 }
 
@@ -1472,6 +1478,36 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
         'the stone voice switches at ts > 0 — the same threshold the toast and tint read')
     ok(/stepVoice\(townScore\(nx, ny, gates, terrainAt\)/.test(dxSrc),
         'index.jsx: the footstep voice reads the tile being stepped ONTO, not the one left behind')
+
+    // #2499 item 3: eight towns, eight greetings. The arrival toast reads the
+    // nearest gate's own line — gate I keeps the original #1135 ink, and no
+    // two gates on the shelf share a greeting.
+    ok(townToast(0) === 'Cottages and smoke: a town lieth nigh.',
+        'gate I keeps the original arrival toast (#1135 ink unbroken)')
+    const toasts = Array.from({ length: 8 }, (_, i) => townToast(i))
+    ok(new Set(toasts).size === 8, `every gate greets with its own line (${new Set(toasts).size}/8 distinct — eight towns no longer read as one)`)
+    ok(toasts.every(s => s.length > 12 && s.endsWith('.')), 'every greeting is a full sentence the toast bar can show')
+    ok(townToast(8) === townToast(0) && townToast(-1) === townToast(7), 'townToast wraps both directions (foreign maps of any gate count)')
+    ok(nearestGateIndex(gates, gates[2].x, gates[2].y) === 2 && nearestGateIndex(gates, gates[5].x + 1, gates[5].y) === 5,
+        'nearestGateIndex names the gate whose ground ye stand on (and its doorstep)')
+    ok(/townToast\(nearestGateIndex\(gates, S\.x, S\.y\)\)/.test(dxSrc),
+        'index.jsx: the arrival toast reads the town ye actually enter (nearest gate), not a fixed line')
+
+    // #2499 item 2: lamps at night — seeded off the cottage hash, no
+    // Math.random in the law, and the shelf shows both lit and shuttered
+    // cottages (a uniformly glowing village is a stage set, not a town).
+    const vLit = v1.filter(c => lampLit(c.x, c.y)).length
+    ok(vLit > 0 && vLit < v1.length, `lamps vary cottage to cottage (${vLit}/${v1.length} lit — some hearth dark, the town reads inhabited, not uniform)`)
+    const vilSrc = readFileSync('src/games/Britannia/village.js', 'utf8')
+    ok(!/Math\.random/.test(vilSrc), 'village.js carries no Math.random (the lamp law is the same tonight and at britanniacheck time)')
+    ok(/lampLit\(tx, ty\)/.test(dxSrc), 'index.jsx: the window follows the lamp law')
+    ok(/255,190,90/.test(dxSrc), 'index.jsx: a lit lamp casts a warm night halo around the window')
+
+    // #2499 item 5: two-tone shingles — both shade variants occur across the
+    // shelf, and the view dresses roofs through the seeded law.
+    ok(new Set(v1.map(c => roofShade(c.x, c.y))).size === 2, 'both roof shades stand somewhere on the shelf (no two cottages read as one flat patch)')
+    ok(/roofShade\(tx, ty\)/.test(dxSrc), 'index.jsx: roof dressing follows the seeded shade law')
+    ok(/#6d5439/.test(dxSrc) && /ridge cap/.test(dxSrc), 'index.jsx: shingle courses and a ridge cap are painted on the roof triangle')
 
     // anti-stranding, verified HERE independently of village.js: block every
     // cottage + sanctum and walk the land; every gate keeps >= KEEP_RING of

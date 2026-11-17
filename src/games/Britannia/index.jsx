@@ -25,7 +25,7 @@ import { faceFor, walkFrame, drawAvatar } from './avatar.js'
 import { WARP_LEN, warpFlash, warpRing, warpMotes, warpSwapAt } from './warp.js'
 import { TERR, hash2, TILE, SUB, blockShades, builtPalette, cobbleBlock } from './tiles.js'
 import { townScore, stepVoice } from './towns.js'
-import { plotVillage, villageBlockMap, villageTriples, doorFace } from './village.js'
+import { plotVillage, villageBlockMap, villageTriples, doorFace, townToast, nearestGateIndex, lampLit, roofShade } from './village.js'
 import { plotWalls, wallBlockMap, wallTriples, openTriples } from './walls.js'
 import { AVATARS, shrineTitle, plotShrines } from './shrines.js'
 import { buildClassicStamps, buildBrickStamps, variantOf } from './ega.js'
@@ -468,7 +468,7 @@ const BritanniaGame = () => {
             // crossing onto built-up ground sells the town before its walls do (#1135)
             const ts = townScore(S.x, S.y, gates, terrainAt)
             const inTown = !S.ship && ts > 0
-            if (inTown && !S.wasTown) { S.toast = 100; S.toastMsg = 'Cottages and smoke: a town lieth nigh.'; audioController.playTone(330, 0.14, 'triangle', 0.05) }
+            if (inTown && !S.wasTown) { S.toast = 100; S.toastMsg = townToast(nearestGateIndex(gates, S.x, S.y)); audioController.playTone(330, 0.14, 'triangle', 0.05) }
             S.wasTown = inTown
         }
 
@@ -581,6 +581,15 @@ const BritanniaGame = () => {
             ctx.fillStyle = '#7f7668'; ctx.fillRect(cx - 7, sy + 12, 14, 10)
             ctx.fillStyle = '#42352a'
             ctx.beginPath(); ctx.moveTo(cx - 9, sy + 12); ctx.lineTo(cx, sy + 3); ctx.lineTo(cx + 9, sy + 12); ctx.closePath(); ctx.fill()
+            // #2499 item 5: two-tone shingles and a ridge — seeded variant
+            // (roofShade), courses stepped up the pitch, the eastern half sunk
+            // the way the chapel's slate keeps the sun on its western face.
+            const rs = roofShade(tx, ty)
+            ctx.fillStyle = rs ? '#342818' : '#2e2318'
+            ctx.beginPath(); ctx.moveTo(cx, sy + 3); ctx.lineTo(cx + 9, sy + 12); ctx.lineTo(cx, sy + 12); ctx.closePath(); ctx.fill()
+            ctx.fillStyle = rs ? '#6d5439' : '#5d472f'
+            for (let r = 0; r < 3; r++) { const yy = sy + 6 + r * 3, hw = yy - (sy + 3) - 1; ctx.fillRect(cx - hw, yy, hw * 2, 1) }
+            ctx.fillRect(cx - 1, sy + 3, 1, 2) // ridge cap at the peak
             // #2499 item 1: the door faces the plaza — a framed oak leaf with a
             // lit knob and a sill stone, riding the side of the cottage that
             // looks toward its moongate (doorBy, village.doorFace). Tucked to the
@@ -593,7 +602,22 @@ const BritanniaGame = () => {
             ctx.fillStyle = '#8a5a2b'; ctx.fillRect(cx + ddx, sy + dtop, 4, 6)
             ctx.fillStyle = '#ffd98a'; ctx.fillRect(face === 'e' ? cx + ddx : cx + ddx + 3, sy + dtop + 2, 1, 1)
             ctx.fillStyle = '#9a948a'; ctx.fillRect(cx + ddx - 1, sy + dtop + 7, 6, 1)
-            ctx.fillStyle = '#ffd98a'; ctx.fillRect(face === 'e' ? cx - 6 : cx + 3, sy + 14, 3, 3)
+            // #2499 item 2: the lamp law — most cottages burn a lamp after
+            // nightfall (a warm halo so the town reads inhabited from the
+            // moor); the shuttered few keep the traveller's dark. By day the
+            // lit window wears its old #ffd98a ink.
+            const winX = face === 'e' ? cx - 6 : cx + 3
+            const nl = night()
+            if (lampLit(tx, ty)) {
+                if (nl > 0.05) {
+                    const lg = ctx.createRadialGradient(winX + 1.5, sy + 15.5, 1, winX + 1.5, sy + 15.5, 8)
+                    lg.addColorStop(0, `rgba(255,190,90,${(0.4 * nl).toFixed(3)})`)
+                    lg.addColorStop(1, 'rgba(255,190,90,0)')
+                    ctx.fillStyle = lg; ctx.fillRect(winX - 7, sy + 8, 18, 16)
+                    ctx.fillStyle = '#ffe9b0'
+                } else ctx.fillStyle = '#ffd98a'
+            } else ctx.fillStyle = '#2c2620'
+            ctx.fillRect(winX, sy + 14, 3, 3)
             const ph = (t / 3 + hash2(tx, ty, 5) * 40) % 20
             ctx.fillStyle = `rgba(214,214,220,${(0.34 * (1 - ph / 20)).toFixed(3)})`
             ctx.beginPath(); ctx.arc(cx + 4 + Math.sin(ph / 3 + tx) * 2, sy + 2 - ph, 2 + ph * 0.14, 0, 7); ctx.fill()
