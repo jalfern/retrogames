@@ -179,4 +179,14 @@ trick), camera tracks the midpoint and zooms with the spacing.
   with the engine's `guardCrush` gauge (see Rules worth knowing): blocking is a
   resource, burst pressure shatters it into a punishable 46-tick stagger.
   Gates in Node + browser, `--mutate-crush` proves the drain gate bites.
-- Stun system, throws escapable in air (the remaining v2 mechanics).
+- **CLOSED by #1785 via PR #1792** Input stun + air-escapable throws — the v2
+  remainder ships in `src/engine/fighting.js`: mashing attacks fills a hidden
+  `stunMeter`, and a full meter staggers you for 90 ticks — you cannot attack,
+  while walking and stand-block still work; slow taps regen faster than they
+  fill, and a clean hit or wear-off resets the meter. A throw that catches a
+  controllable airborne victim is a grab with an escape window (a tap breaks
+  it), not a guaranteed hit. Both are opt-in engine flags — VIPER PIT stays
+  bit-identical — and the cabinet fights with them on (`inputStun: true,
+  airThrow: true`, real fight + attract). Gates: `ironringcheck` part A —
+  cabinet flags, mash-fills-stun, slow-tap regen, no-attack/still-blocks while
+  stunned, wear-off + clean-hit reset, air-grab escape, determinism.
