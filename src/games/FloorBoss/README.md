@@ -226,6 +226,44 @@ score; three expired orders and you're fired. Quota: 1000.
 - Duel hash segment `D[...]` (credits, spent, verdict, owners, seat-M channel) is
   duel-only — additive (#1373) and absent from every solo hash.
 
+## Corner clearances — no rack faces a tight elbow (#2627)
+
+The turn-radius slice of the aisle-clearance law (#2546 reachability, #2614
+two-way width, now the bend). A cart servicing a rack **parks on the cell facing
+it** (`atTarget` = Manhattan distance 1) and sits there for the whole pick. Face
+a tight elbow with a rack and that work-stop lands on the single cell BOTH legs
+of the bend must pass — the floor is blocked at the corner for the duration of
+every pick that rack causes. Real warehouses legislate exactly this (corner
+clearances: stored goods may not sit in the swing of a bend, because an
+obstruction there blocks two aisles at once and kills the sightline into both).
+
+The fifth click-point law, judged on the hypothetical rack in `strandsFloor`
+(`cornerChokes` in `sim.js`):
+
+- **B** — a drivable cell that is a tight corner: exactly two open neighbours,
+  perpendicular (the elbow);
+- **R** — the click sits opposite one leg (`R = B − d`), so B is the service
+  cell of the rack being bought and its cart parks on the elbow;
+- **legs** — both legs run tight (both side cells blocked) for `CORNER_ARM`
+  cells, each ending on open floor, so traffic arrives from both sides.
+
+`CORNER_ARM = 3` is the jam's physical floor, not a taste number: the elbow
+holds the work stop, and the jam law (two waiting carts within Manhattan
+distance 2, `tryJam`) needs two queue cells inside the walls — 1 + 2 = 3. On a
+shorter leg the second cart is still at the wide mouth where it can pull off, so
+the third never queues blind. Refusal: `why:'corner'`, money not spent, no rack
+lands, no hash moves (`NO CORNER STACK` on canvas).
+
+Escapes stay honest, the same grammar as #2546/#2614: **plug** either leg (a
+dead-end spur carries no oncoming traffic — one-way by choice), open a **bay** on
+a leg (the cell stops being tight and the waiting cart pulls into it), or leave
+the corner's facing cell unbuilt. Pure map+racks scan, rows then columns
+ascending, no rng, no movers — click-point only (#1917 zero footprint), and no
+curated `RACK_SPOTS` placement trips it, so the autopilot win proof transfers
+untouched. `floorbosscheck` +13 gates (pin, autopilot invariant, boundary both
+axes and both mirrors, plug/bay/short-leg escapes, no-charge/no-state/determinism,
+painter name); `--mutate-corner` kills the law by name.
+
 ## Verify
 ```bash
 npm run floorbosscheck          # Node: boots/rules/win/determinism/episode (mutant-proven) + servo presentation source pins (#1877) + load-out (#1911) + freight-line conservation/bonus/express laws (#1921) + freight tiers: side-stream golden, tiered bonus, road law, dest spread (#1927) + load weight: dest+weight goldens, mix sentinels, rate literals 60/54, dock speed 14/14/28 (#1931)
@@ -241,6 +279,7 @@ node scripts/floorbosscheck.mjs --mutate-slow    # heavies cannot cost the dock 
 node scripts/floorbosscheck.mjs --mutate-bands   # the inverted dest band (REGIONAL 72%) cannot return (#1931)
 node scripts/floorbosscheck.mjs --mutate-duel    # bot stows cannot bypass the rack-owner credit law (#2555)
 node scripts/floorbosscheck.mjs --mutate-lane    # long tight aisles cannot be sealed into one-way traps (#2614)
+node scripts/floorbosscheck.mjs --mutate-corner  # no rack may face a tight elbow and park its cart in the choke (#2627)
 npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877); real-tap pad call/send + drawn-truck-is-sim-truck gates (#1911); escrow-books-at-pack + freight-paid-at-drive-off gates (#1921); violet far-post tag pixels + road-commit + tap-on-road-silence gates (#1927 — verb gates run with auto-dispatch off and settle dock+truck+road together); steel heavy-tag pixel [154,215,255] + padWeight simState eye (#1931); DUEL live drive: D enters the duel, cyan model cursor moves on its own, twin till updates, verdict banner lands (#2555)
 CONTRACT_ONLY=floor-boss npm run contractcheck
 node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
@@ -300,4 +339,4 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
   a plugged mouth (dead-end spur, one-way by choice) stays legal. Pure
   click-point scan, `LANE_LONG` and the curated spots never trip it
   (autopilot invariant gated); `floorbosscheck` +12 gates, `--mutate-lane`
-  kill. True turn radii stay future work.
+  kill. **third slice shipped by #2627**: corner clearances are law — the rack whose service cell is a tight elbow with two long tight legs is refused (`why:'corner'`, `NO CORNER STACK`); CORNER_ARM 3 derives from the jam law (elbow + two queue cells), plug/bay/short-leg escapes gated, `--mutate-corner` kill. Honest residual: carts are still kinematically 1-cell, so this is a build-time clearance rather than a swept-path solver, and the refusal names the law without showing the escape — stages 2–3 of #2627.

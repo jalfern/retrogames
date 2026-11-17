@@ -275,6 +275,59 @@ function laneRuns(gs, extra) {
     }
     return runs
 }
+// #2627 NO CORNER STACKS — the turn-radius half of #2546's tail ("true turn
+// radii / forklift lanes"). A cart servicing a rack PARKS on the cell facing it
+// (`atTarget` = Manhattan distance 1) and sits there for the whole pick. Face a
+// TIGHT elbow with a rack and that work-stop lands on the one cell BOTH legs of
+// the bend have to pass: the aisles are blocked at the corner for the duration
+// of the stop, and a real warehouse legislates against exactly this (corner
+// clearances — stored goods may not sit in the swing of a bend, because an
+// obstruction there blocks two aisles at once and kills the sightline into both).
+// The floor, at the click point on the hypothetical rack:
+//   B   a drivable cell that is a tight corner — exactly two open neighbours,
+//       perpendicular (the elbow);
+//   R   the click sits OPPOSITE one leg (R = B − d): B is the service cell of
+//       the rack being bought, so the cart parks on the elbow;
+//   legs  BOTH legs run tight (both side cells blocked) for CORNER_ARM cells,
+//       each ending on open floor (traffic arrives from a wide junction).
+// CORNER_ARM = 3 is the jam's physical floor: the elbow holds the work stop, and
+// the jam law (two waiting carts within Manhattan distance 2) needs two queue
+// cells inside the walls — 1 + 2 = 3. A shorter leg leaves the second cart at
+// the wide mouth, where it can pull off; the third never queues blind.
+// Escapes stay honest, mirroring #2546/#2614: plug either leg (a dead-end spur
+// carries no oncoming traffic — one-way by choice), open a BAY on a leg (the
+// cell stops being tight and the waiting cart pulls into it), or simply leave
+// the corner's facing cell unbuilt. Pure map+racks scan in fixed order (rows
+// then columns, ascending), no rng, no movers: click-point only, zero footprint
+// (#1917); curated RACK_SPOTS never trip it, so the autopilot proof transfers.
+export const CORNER_ARM = 3
+const CDIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]]
+function cornerChokes(gs, extra) {
+    const open = (x, y) => inGrid(x, y) && map[y][x] === CELL.FLOOR
+        && !(extra && extra.x === x && extra.y === y)
+        && !gs.racks.some((r) => r.x === x && r.y === y)
+    const sideClear = (x, y, dx, dy) => (dy === 0 ? open(x, y + 1) || open(x, y - 1) : open(x + 1, y) || open(x - 1, y))
+    // tight leg length from (x,y) walking direction d: counts the elbow plus the
+    // run of tight cells; stops at a plug (dead end) or a bay/wide cell (room).
+    const leg = (x, y, dx, dy) => {
+        let n = 1, cx = x, cy = y
+        while (open(cx + dx, cy + dy) && !sideClear(cx + dx, cy + dy, dx, dy)) { n++; cx += dx; cy += dy }
+        return open(cx + dx, cy + dy) && sideClear(cx + dx, cy + dy, dx, dy) ? n : 0 // 0 = plugged ahead: no through traffic
+    }
+    const out = []
+    for (let y = 1; y < ROWS - 1; y++) {
+        for (let x = 1; x < COLS - 1; x++) {
+            if (!open(x, y)) continue
+            const dirs = CDIRS.filter(([dx, dy]) => open(x + dx, y + dy))
+            if (dirs.length !== 2 || dirs[0][0] + dirs[1][0] === 0 || dirs[0][1] + dirs[1][1] === 0) continue // not an elbow
+            const facing = dirs.some(([dx, dy]) => extra && extra.x === x - dx && extra.y === y - dy)
+            if (!facing) continue // only the rack whose service cell IS the elbow
+            const [a, b] = [leg(x, y, dirs[0][0], dirs[0][1]), leg(x, y, dirs[1][0], dirs[1][1])]
+            if (a >= CORNER_ARM && b >= CORNER_ARM) out.push(`c${x},${y}:${dirs[0][0]},${dirs[0][1]}-${dirs[1][0]},${dirs[1][1]}`)
+        }
+    }
+    return out
+}
 function strandsFloor(gs, x, y) {
     if (map[y][x] !== CELL.FLOOR || gs.racks.some((r) => r.x === x && r.y === y)) return false // other laws refuse first
     const before = serviceNet(gs, null)
@@ -286,6 +339,11 @@ function strandsFloor(gs, x, y) {
     // that COMPLETES a no-pass lane is refused (see laneRuns above).
     const was = new Set(laneRuns(gs, null))
     for (const r of laneRuns(gs, { x, y })) if (!was.has(r)) return 'lane'
+    // #2627 the fifth law, judged on the same hypothetical rack: a click whose
+    // service cell is a tight elbow with two long tight legs parks the cart in
+    // the choke (see cornerChokes above).
+    const wasC = new Set(cornerChokes(gs, null))
+    for (const c of cornerChokes(gs, { x, y })) if (!wasC.has(c)) return 'corner'
     return false
 }
 
