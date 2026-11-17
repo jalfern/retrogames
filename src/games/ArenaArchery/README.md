@@ -45,6 +45,38 @@ newcomer replaces it and the spent rival is counted `lost` on the ledger.
 Stepping on a stuck arrow with room in the quiver pulls it back —
 *leave it as cover or take the ammo is the game's one decision*.
 
+**Flush sticks (#2565).** A stuck shaft lies against the surface that holds
+it, TowerFall-style: the surface is read from the stuck cell + arrival
+velocity (a solid cell below the air cell = floor → near-vertical ±15°;
+penetration past the cell faces, whichever the tip crossed last, decides for
+solid cells: side → near-horizontal, top/bottom → vertical, tip sign follows
+the travel direction). A shaft lodged in an air cell with nothing below is a
+mid-air knock-out — no surface, keeps its raw arrival angle. The law is
+sim-state only (grid + velocity; no RNG) and `stateHash` mixes neither ang
+nor surface, so replays hash exactly as before. Proven headless: FLUSH
+section (floor ±15 of 75°, wall ±15 of 0°, double-thickness ceiling −75°,
+mid-air arrival-kept) + a per-tick `floppy === 0` receipt across all three
+won matches + the `floppy shafts` mutant dies.
+
+**Kill juice, fletching, seat pitch (#2565).** A hit now pays:
+(1) **kill juice** — ~3 frames of hit-stop (the fixed-step accumulator
+holds; ticks are delayed, never skipped — the command stream and replay
+hashes are untouched), a stepped 8-frame screen shake (a fixed table, no
+`Math.random`, so captures stay reproducible), and seat-tinted rings + a low
+THUD at the spot the victim fell. Receipt `juice.kills`; the browser suite
+grades 3 kills after a duel and catches `shake` live at the blow.
+(2) **fletching** — every shaft paints two tail barbs in its OWNER's colour
+(the same red/cyan as the quiver bars), on flying, stuck (even dim/burning)
+and fly-home arrows alike. Silhouette = seat identity at 8 px. Pixel-proved:
+the bot duel's terrain carries both owners' barbs (cells whose tail box
+overlaps an archer body are skipped, so only barbs answer for the colour).
+(3) **seat-keyed release** — the draw's sweep splits by seat (320/390 Hz
+base, like dryout's 520/620), so a same-tick exchange is readable by ear;
+receipt `fx.seatLoose`.
+An honest limitation, same shape as #2558's facing-fallback pin: the audio
+split and the shake *feel* can only be graded by the browser harness —
+archerycheck cannot hear.
+
 **Deliberate climbing (#2307).** The autopilot owns the vertical game. Each
 re-plan window (every 12 ticks) `reachableStep` scans the slab ahead of the
 bot — near-edge, standing span, approach direction — and for each candidate
@@ -138,8 +170,9 @@ danger. Probe `fx: { ash, homes, warnNotes, dryFx, warnStep }` receipts.
   hash-identical. Phone law: no second on-screen touchpad exists (the pad
   that shipped — painting dead even in 1p — was retired per AGENTS.md; the
   duel is the desktop-keyboard option).
-- Eight + three mutants must die (`--mutate`, wired into the CI static job):
-  no-stick, no-knockout, no-pull, no-arrow-gravity, no-player-gravity,
+- Twelve mutants must die (`--mutate`, wired into the CI static job):
+  no-stick, no-knockout, no-pull, floppy-shafts (#2565 — the flush snap
+  killed), no-arrow-gravity, no-player-gravity,
   clock-too-short, lob-bot (now patched with `climbSeek: false` too — the
   climbing brain re-opens the firing lanes the lobs froze, so the mutant
   must regress the doctrine as it ships), no-climb-seek, no-heat, heat-rot
@@ -174,6 +207,15 @@ danger. Probe `fx: { ash, homes, warnNotes, dryFx, warnStep }` receipts.
 
 ## Honest gaps
 
+- **Single-row undersides.** A thin one-row slab lifts its hit into the air
+  cell above the slab (the direction-agnostic air-cell lift is the #1685
+  pull economy — measured this session: gating the lift to downward arrivals
+  only starves it and the autopilot flips to 2-3 on every arena, so the
+  lift stays as is). Consequence: an arrow rising under a one-row canopy
+  sticks *above* it, painted near-vertical, not hanging from the underside.
+  Double-thickness stone hangs tip-up correctly (flush FLUSH-ceiling pin).
+  A true underside-hang would need the lift to be economy-aware, not
+  direction-aware — filed with this issue's ceremony item.
 - ~~The 2P duel has no harness yet beyond the pad dispatch existing
   (`secondPad` is `VirtualControls`' contract, exercised by IceClimber);
   `archeryplay` drives P1 only.~~

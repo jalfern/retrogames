@@ -124,6 +124,21 @@ const ArenaArcheryGame = () => {
         let landCount = 0, blockCount = 0
         let warnLatch = 0          // #2385 last telegraph note rung this dry spell
         let warnNotes = 0, dryFx = 0 // receipts: notes rung, dryout FX spawned
+        // #2565 KILL JUICE. A hit must pay like TowerFall: the board flinches.
+        // All derived-only — the sim and its hashes never know:
+        //   hit-stop: the fixed-step accumulator holds ~3 frames, so the world
+        //             pauses on the blow (the commands stream is untouched —
+        //             ticks are delayed, never skipped or added);
+        //   shake:    every paint offset along a stepped table (no Math.random,
+        //             so a capture stays reproducible frame-for-frame);
+        //   burst:    the victim's fall spot blooms in rings tinted with the
+        //             victim's seat colour + a low THUD under the existing crack.
+        // killFx is the receipt the browser harness grades.
+        const SHAKE_PAT = [[0, 3], [-2, -2], [3, -1], [-3, 2], [2, 3], [-1, -3], [3, 1], [-2, 2]]
+        let shake = 0            // paint frames of flinch remaining
+        let hitstop = 0          // sim-ms the accumulator holds
+        let killFx = 0           // receipts: kills that made the board flinch
+        const seatLoose = [0, 0] // #2565 receipts: looses counted per seat (the pitch split is readable by ear)
 
         const resetJuice = () => {
             puffs.length = 0
@@ -131,9 +146,11 @@ const ArenaArcheryGame = () => {
             for (let i = 0; i < 2; i++) {
                 squash[i] = 0; airTop[i] = null
                 prevGrounded[i] = true; prevAlive[i] = true; airPress[i] = false
+                seatLoose[i] = 0
             }
             landCount = 0; blockCount = 0
             warnLatch = 0
+            killFx = 0; shake = 0; hitstop = 0
         }
 
         const detectJuice = (in1, in2) => {
@@ -212,7 +229,7 @@ const ArenaArcheryGame = () => {
             bgDirty = false
         }
 
-        const drawArrowShape = (c, x, y, ang, dim, hot, t = 0) => {
+        const drawArrowShape = (c, x, y, ang, dim, hot, t = 0, owner = -1) => {
             c.save()
             c.translate(x, y); c.rotate(ang)
             c.strokeStyle = hot ? '#ff9a4a' : dim ? '#8a7a55' : '#e8d9a0'
@@ -220,6 +237,16 @@ const ArenaArcheryGame = () => {
             c.beginPath(); c.moveTo(-8, 0); c.lineTo(6, 0); c.stroke()
             c.fillStyle = hot ? '#ff4a1e' : dim ? '#b9a06a' : '#ffd23e'
             c.beginPath(); c.moveTo(8, 0); c.lineTo(3, -3); c.lineTo(3, 3); c.closePath(); c.fill()
+            // #2565 fletching: two tail barbs in the OWNER's colour (the same
+            // red/cyan the quiver bars use) — at 8 px the originals' arrows
+            // still read fletched, and a stuck shaft says whose it is at a
+            // glance. Painted at any dim/hot state: ownership survives the fire.
+            if (owner === 0 || owner === 1) {
+                c.strokeStyle = owner === 0 ? '#ff5d6c' : '#4ad7ff'
+                c.lineWidth = 1
+                c.beginPath(); c.moveTo(-8, 0); c.lineTo(-4.5, -2.6); c.stroke()
+                c.beginPath(); c.moveTo(-8, 0); c.lineTo(-4.5, 2.6); c.stroke()
+            }
             if (hot) {
                 // #2377 an ember on a burning shaft: a spark that hops
                 // between spots driven by the shaft's cell and the SIM tick
@@ -273,6 +300,10 @@ const ArenaArcheryGame = () => {
             const play = screenRef.current === 'play'
             if (bgDirty) paintBg(g)
             ctx.clearRect(0, 0, PXW, PXH)
+            // #2565 kill flinch: shift the whole board along the stepped table
+            // (deterministic — no Math.random — so captures stay reproducible).
+            const fl = shake > 0 ? SHAKE_PAT[(SHAKE_PAT.length - shake) % SHAKE_PAT.length] : null
+            if (fl) ctx.setTransform(1, 0, 0, 1, fl[0], fl[1])
             ctx.drawImage(bg, 0, 0)
             // #2314 landing dust: a ring that widens and thins at the feet.
             // #2385 ash: a smaller, sootier puff for a rotting shaft.
@@ -281,8 +312,8 @@ const ArenaArcheryGame = () => {
                     const u = puffs[i]
                     if (u.age >= u.life) { puffs.splice(i, 1); continue }
                     const t = u.age / u.life
-                    ctx.globalAlpha = (u.ash ? 0.6 : 0.5) * (1 - t)
-                    ctx.fillStyle = u.ash ? '#8a7280' : '#b9c2d8'
+                    ctx.globalAlpha = (u.ash ? 0.6 : u.tint ? 0.8 : 0.5) * (1 - t)
+                    ctx.fillStyle = u.tint || (u.ash ? '#8a7280' : '#b9c2d8')
                     ctx.beginPath()
                     ctx.arc(u.x, u.y - 2, u.r + t * 9, 0, Math.PI * 2)
                     ctx.fill()
@@ -299,7 +330,7 @@ const ArenaArcheryGame = () => {
                     const px = hz.sx + (tx - hz.sx) * k
                     const py = hz.sy + (ty - hz.sy) * k - Math.sin(k * Math.PI) * 26
                     ctx.globalAlpha = 1 - k * 0.5
-                    drawArrowShape(ctx, px, py, Math.atan2(ty - hz.sy, tx - hz.sx), true, false, g.tick)
+                    drawArrowShape(ctx, px, py, Math.atan2(ty - hz.sy, tx - hz.sx), true, false, g.tick, hz.owner)
                 }
                 ctx.globalAlpha = 1
             }
@@ -332,14 +363,14 @@ const ArenaArcheryGame = () => {
                         ctx.fillRect(sx - CW / 2 + 5 + hx, sy - CW / 2 + 5 + hy, 1, 2)
                     }
                     ctx.globalAlpha = 1
-                    drawArrowShape(ctx, sx + j, sy - j, s.ang || 0.6, false, true, g.tick)
+                    drawArrowShape(ctx, sx + j, sy - j, s.ang || 0.6, false, true, g.tick, s.owner)
                 } else {
-                    drawArrowShape(ctx, sx, sy, s.ang || 0.6, true)
+                    drawArrowShape(ctx, sx, sy, s.ang || 0.6, true, false, g.tick, s.owner)
                 }
             }
             for (const ar of g.arrows) {
                 if (ar.state === 'stuck') continue
-                drawArrowShape(ctx, ar.x, ar.y, Math.atan2(ar.vy, ar.vx), ar.state === 'fall')
+                drawArrowShape(ctx, ar.x, ar.y, Math.atan2(ar.vy, ar.vx), ar.state === 'fall', false, g.tick, ar.owner)
             }
             drawArcher(ctx, g.p[0], '#ff5d6c', play ? squash[0] : 0)
             drawArcher(ctx, g.p[1], '#4ad7ff', play ? squash[1] : 0)
@@ -354,15 +385,34 @@ const ArenaArcheryGame = () => {
                 ctx.fillRect(0, 0, PXW, PXH)
                 ctx.globalAlpha = 1
             }
+            if (fl) ctx.setTransform(1, 0, 0, 1, 0, 0)
         }
 
         const handleEvents = (evts) => {
             for (const e of evts) {
-                if (e.type === 'loose') audioController.playSweep(340 + e.charge * 300, 140, 0.12, 'triangle', 0.05)
+                if (e.type === 'loose') {
+                    // #2565 seat-keyed release: dryout already splits by owner
+                    // (520/620); splitting the draw's sweep the same way makes a
+                    // same-tick exchange readable by ear (the #2558 stamp duel).
+                    audioController.playSweep((e.who === 0 ? 320 : 390) + e.charge * 300, 140, 0.12, 'triangle', 0.05)
+                    seatLoose[e.who]++
+                }
                 else if (e.type === 'stick') audioController.playTone(190, 0.05, 'square', 0.045)
                 else if (e.type === 'knockout') audioController.playTone(760, 0.05, 'square', 0.05)
                 else if (e.type === 'pull') { audioController.playTone(560, 0.05, 'triangle', 0.05); say('ARROW PULLED') }
-                else if (e.type === 'hit') { say(e.who === 0 || mode === '2p' ? `PLAYER ${e.who + 1} HITS!` : 'THE BOT HITS YOU'); audioController.playNoise(0.09, 0.08) }
+                else if (e.type === 'hit') {
+                    say(e.who === 0 || mode === '2p' ? `PLAYER ${e.who + 1} HITS!` : 'THE BOT HITS YOU')
+                    audioController.playNoise(0.09, 0.08)
+                    // #2565 the board flinches: three frames of world-hold, a
+                    // stepped screen shake, and rings blooming where the victim
+                    // fell, tinted with the victim's seat colour. Positions come
+                    // from the sim's own victim body at the tick of the blow.
+                    const v = gs.p[e.victim]
+                    hitstop = 110; shake = 8; killFx++
+                    audioController.playTone(72, 0.16, 'square', 0.07) // the THUD under the crack
+                    puffs.push({ x: v.x, y: v.y - 4, r: 6, age: 0, life: 34, tint: e.victim === 0 ? '#ff5d6c' : '#4ad7ff' })
+                    puffs.push({ x: v.x, y: v.y - 4, r: 2, age: 0, life: 44, tint: '#ffd23e' })
+                }
                 else if (e.type === 'respawn') audioController.playSweep(200, 420, 0.2, 'sine', 0.04)
                 else if (e.type === 'jump') audioController.playTone(300, 0.03, 'square', 0.02)
                 // #2385 the dryout POP: the sim already sends the shaft home to
@@ -459,8 +509,11 @@ const ArenaArcheryGame = () => {
             const ft = Math.min(ts - last, 250)
             last = ts
             if (!pausedRef.current) {
-                acc += ft
-                while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+                // #2565 hit-stop: the accumulator holds (ft is spent on the
+                // freeze, not queued) — the world pauses, nothing is skipped.
+                if (hitstop > 0) hitstop -= ft
+                else { acc += ft; while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS } }
+                if (shake > 0) shake--
             }
             paint()
             syncHud()
@@ -534,18 +587,22 @@ const ArenaArcheryGame = () => {
                     stuck: gs.stuck.length,
                     // #2377 the heat engine, visible to the browser harness
                     heat: gs.heat, lastHit: gs.lastHit, dryTicks: gs.tick - gs.lastHit,
-                    stuckCells: gs.stuck.map((s) => ({ cell: s.cell, age: s.age, x: (s.cell % gs.W) * CW + CW / 2, y: Math.floor(s.cell / gs.W) * CW + CW / 2 })),
+                    stuckCells: gs.stuck.map((s) => ({ cell: s.cell, age: s.age, id: s.id, owner: s.owner, ang: s.ang, x: (s.cell % gs.W) * CW + CW / 2, y: Math.floor(s.cell / gs.W) * CW + CW / 2 })),
                     arrows: gs.arrows.map((a) => ({ id: a.id, state: a.state, owner: a.owner, born: a.born, x: Math.round(a.x), y: Math.round(a.y) })),
                     ledger: { ...gs.ledger, total: gs.total + gs.supplied, now: gs.p[0].quiver + gs.p[1].quiver + gs.arrows.filter((a) => a.state !== 'stuck').length + gs.stuck.length + gs.ledger.hit + gs.ledger.lost },
                     // attract is a separate sim instance — the harness grades
                     // THAT moving, not the idle gs
                     demo: demoG ? { tick: demoG.tick, end: demoG.end, scores: [demoG.p[0].score, demoG.p[1].score] } : null,
                     // #2314 juice is derived-only — the counters are its receipt
-                    juice: { puffs: puffs.length, landings: landCount, blocked: blockCount },
+                    juice: { puffs: puffs.length, landings: landCount, blocked: blockCount,
+                        // #2565 kill juice receipts: every kill flinched the board
+                        kills: killFx, shake, hitstop },
                     // #2385 heat telegraph + dryout FX receipts (derived-only):
                     // warnNotes must stay 0 through any honest bot duel, and
                     // a driven match must show dryout FX at least once.
-                    fx: { ash: puffs.filter((u) => u.ash).length, homes: home.length, warnNotes, dryFx, warnStep: heatWarnStep(gs.tick - gs.lastHit) },
+                    // #2565 seatLoose: releases counted per seat — the pitched
+                    // split that makes a same-tick exchange audible.
+                    fx: { ash: puffs.filter((u) => u.ash).length, homes: home.length, warnNotes, dryFx, warnStep: heatWarnStep(gs.tick - gs.lastHit), seatLoose: [...seatLoose] },
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),

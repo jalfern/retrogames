@@ -13,7 +13,7 @@
 // with one fewer arrow of quiver AND the foe gifted the first point.
 //
 //   npm run archerycheck              the audit (~1 s)
-//   npm run archerycheck -- --mutate  + ten mutants that MUST die
+//   npm run archerycheck -- --mutate  + twelve mutants that MUST die
 //   npm run archerycheck -- --arena 1 dump an arena as ASCII
 //
 // #2307 adds the third muscle — CLIMBS: the autopilot gains rows on purpose.
@@ -61,7 +61,7 @@ function driveMatch(opts = {}) {
     const g = makeGame(buildArena(opts.arena || 0), opts)
     const skills = opts.skills || [1, 0]
     const cap = opts.maxTicks || CFG.matchTicks + 240
-    const receipts = { jumps: 0, sticks: 0, knocks: 0, pulls: 0, dryouts: 0, ledBreaks: 0, stuckPeak: 0, worstGap: 0, heatSeen: false, firstHit: 0, climbs: [[], []], gain: [0, 0] }
+    const receipts = { jumps: 0, sticks: 0, knocks: 0, pulls: 0, dryouts: 0, ledBreaks: 0, stuckPeak: 0, worstGap: 0, heatSeen: false, firstHit: 0, climbs: [[], []], gain: [0, 0], floppy: 0 }
     // #2307 climb receipts: a CLIMB is leaving the ground going up and
     // landing on the ground some rows higher — grounded-row to grounded-row,
     // the only metric that can't be faked by a mid-air min-row brush-past.
@@ -86,6 +86,17 @@ function driveMatch(opts = {}) {
         g.cmds.push({ tick: g.tick, p1: i1, p2: i2 })
         step(g, i1, i2)
         if (ledger(g) !== g.total + g.supplied) receipts.ledBreaks++
+        // #2565 flush receipts: every shaft resting ON stone (stuck in a
+        // solid cell, or in the air cell above one) must wear a flush angle —
+        // near-vertical (75°±15) or near-horizontal (0/180°±15). A shaft
+        // hanging at a raw arrival skew reads as broken geometry.
+        for (const s of g.stuck) {
+            const cx = s.cell % g.W, cy = (s.cell / g.W) | 0
+            const onStone = g.grid[s.cell] === 1 || (cy + 1 < g.H && g.grid[(cy + 1) * g.W + cx] === 1)
+            if (!onStone) continue
+            const d = ((((s.ang * 180) / Math.PI) % 180) + 180) % 180
+            if (!(Math.abs(d - 90) <= 15 || Math.min(d, 180 - d) <= 15)) receipts.floppy++
+        }
         receipts.stuckPeak = Math.max(receipts.stuckPeak, g.stuck.length)
         for (const e of g.events) {
             if (e.type === 'loose' || e.type === 'hit') {
@@ -221,6 +232,72 @@ section('TERRAIN — stick to air, knock-out by replacement, pull-back: the issu
         `script(pull): standing in a stuck arrow's cell left quiver ${g.p[0].quiver}/${q0} and ${g.stuck.length} stuck — the pull is the game's economy`)
 }
 
+// ------------------------------------------------- flush sticks (#2565) ----
+section('FLUSH — a stuck shaft lies against the surface that holds it (#2565)')
+{
+    const deg = (a) => (a * 180) / Math.PI
+    // floor: the flat shaft sticks in the air cell above the floor and must
+    // read near-vertical (75° ± 15), tip toward the facing — not sag at its
+    // ~15° arrival angle like a branch that never landed flush.
+    const g = scratch()
+    g.p[0].x = 300; g.p[0].y = FLOOR_Y; g.p[0].grounded = true
+    g.p[0].firing = true; g.p[0].charge = 0.35
+    step(g, { mx: 0, my: 0, fire: false, aim: { x: 1, y: 0 } }, null)
+    const ar = g.arrows[g.arrows.length - 1]
+    for (let t = 0; t < 120 && ar.state === 'fly'; t++) step(g, null, null)
+    ok(ar.state === 'stuck', 'flush(floor): flat shot never stuck — rig broken')
+    ok(Math.abs(deg(ar.ang) - 75) <= 15,
+        `flush(floor): shaft sits at ${deg(ar.ang).toFixed(1)}° — floor sticks must be near-vertical (60–120°)`)
+
+    // wall: a column in the lane, fired at flat full charge — the shaft buries
+    // its tip through the side face and must read near-horizontal (8° ± 15).
+    const w = scratch()
+    for (let y = 5; y <= 10; y++) w.grid[y * w.W + 12] = 1
+    w.p[0].x = 60; w.p[0].y = 150; w.p[0].grounded = false
+    w.p[0].firing = true; w.p[0].charge = 1
+    step(w, { mx: 0, my: 0, fire: false, aim: { x: 1, y: 0 } }, null)
+    const wa = w.arrows[w.arrows.length - 1]
+    for (let t = 0; t < 120 && wa.state === 'fly'; t++) step(w, null, null)
+    ok(wa.state === 'stuck' && Math.abs(deg(wa.ang)) <= 15,
+        `flush(wall): shaft at ${wa.ang != null ? deg(wa.ang).toFixed(1) : '-'}° (state ${wa.state}) — wall sticks must be near-horizontal`)
+
+    // ceiling: DOUBLE-thickness stone overhead, met by a full 45° lob — no
+    // air cell above the hit to lift into, so the shaft stays against the
+    // underside and must hang near-vertical the OTHER way (−75°). (A single
+    // row slab lifts its hit above the slab — the direction-agnostic air-cell
+    // lift is the #1685 pull economy and stays as is; see README gaps.)
+    const c = scratch()
+    for (let y = 5; y <= 6; y++) for (let x = 10; x <= 16; x++) c.grid[y * c.W + x] = 1
+    c.p[0].x = 140; c.p[0].y = FLOOR_Y; c.p[0].grounded = true
+    c.p[0].firing = true; c.p[0].charge = 1
+    step(c, { mx: 0, my: 0, fire: false, aim: { x: 1, y: -1 } }, null)
+    const ca = c.arrows[c.arrows.length - 1]
+    for (let t = 0; t < 120 && ca.state === 'fly'; t++) step(c, null, null)
+    ok(ca.state === 'stuck' && deg(ca.ang) <= -60,
+        `flush(ceiling): shaft at ${ca.ang != null ? deg(ca.ang).toFixed(1) : '-'}° (state ${ca.state}) — ceiling sticks hang tip-up near-vertical`)
+
+    // mid-air knock-out with NO stone beneath the cell: nothing to lie
+    // against, so the shaft keeps its raw arrival angle (the preservation
+    // branch — snap-everything would fake flush where there is no surface).
+    const k = scratch()
+    const ghost = { id: 999, owner: 1, state: 'stuck', cell: 6 * k.W + 8, age: 0, x: 8 * CFG.cell + 12, y: 152, ang: 2.2, vx: 0, vy: 0 }
+    k.stuck.push(ghost)
+    k.p[0].x = 140; k.p[0].y = 140; k.p[0].grounded = false
+    k.p[0].firing = true; k.p[0].charge = 1
+    step(k, { mx: 0, my: 0, fire: false, aim: { x: 1, y: 0.1 } }, null)
+    const ka = k.arrows[k.arrows.length - 1]
+    let pvx = ka.vx, pvy = ka.vy, ko = false
+    for (let t = 0; t < 60 && !ko; t++) {
+        step(k, null, null)
+        ko = k.events.some((e) => e.type === 'knockout')
+        if (!ko) { pvx = ka.vx; pvy = ka.vy }
+        k.events.length = 0
+    }
+    ok(ko, 'flush(midair): the knock-out rig never fired')
+    ok(ka.state === 'stuck' && Math.abs(ka.ang - Math.atan2(pvy + CFG.arrowGravity, pvx)) < 0.05,
+        `flush(midair): knock-out shaft angled ${ka.ang} with no surface beneath — arrival angle must be kept where there is no stone`)
+}
+
 // ------------------------------------------------ each arena, won for real ----
 const receipts = {}
 for (let i = 0; i < ARENAS_COUNT; i++) {
@@ -232,6 +309,7 @@ for (let i = 0; i < ARENAS_COUNT; i++) {
     ok(g.tick < CFG.matchTicks, `arena ${i}: match ran out the clock (${g.tick}) — a demo that times out is a tie nobody asked for`)
     ok(r.ledBreaks === 0, `arena ${i}: the arrow ledger broke on ${r.ledBreaks} ticks — arrows walked off uncounted`)
     ok(r.sticks > 0, `arena ${i}: zero arrows stuck in stone — the terrain muscle never moved`)
+    ok(r.floppy === 0, `arena ${i}: ${r.floppy} stuck-on-stone samples hung at a raw arrival angle — flush sticks (#2565) died`)
     ok(r.pulls + r.dryouts > 0, `arena ${i}: no arrow ever came back (pulled or dried out) — the quiver economy ran one-way and the arena would silt up`)
     ok(r.knocks + r.pulls > 0, `arena ${i}: stuck arrows were neither eaten nor pulled — pure scenery`)
     ok(g.p[1].score < CFG.winScore, `arena ${i}: the bot nearly won (${g.p[1].score}) — the demo would be a highlight reel FOR the loser`)
@@ -520,6 +598,11 @@ if (MUT) {
         g.p[0].vy = 0; g.p[0].grounded = true
         step(g, { mx: 0, my: 0, fire: false }, null)
         return g.p[0].quiver === CFG.quiver && g.stuck.length === 0
+    })
+    tryMut('floppy shafts (sticks keep raw arrival angles — #2565)', { flushSticks: false }, () => {
+        const g = scratch()
+        const ar = shootFlat(g, 300, 0.35)
+        return ar.state === 'stuck' && Math.abs((ar.ang * 180) / Math.PI - 75) <= 15
     })
     tryMut('flat-arrows (no arrow gravity)', { arrowGravity: 0 }, () => {
         const g = scratch()

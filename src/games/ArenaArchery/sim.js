@@ -51,6 +51,14 @@ export const CFG = {
     // stalemate does. heat:false is the test-only kill switch (mutant).
     heatTicks: 450,
     heatRot: 3,
+    // #2565 FLUSH STICKS. TowerFall plants every shaft flush with the surface
+    // it holds: floor sticks read near-vertical, wall/ceiling sticks near-
+    // horizontal. An arrival angle off a long lob can hang visibly off-register
+    // with the stone. The snap (see flushAngle) is sim-state only — grid +
+    // velocity, no RNG — and stateHash mixes neither `ang` nor surface, so the
+    // replay/hash contract is untouched. flushSticks:false is the test-only
+    // kill switch (mutant: floppy shafts keep any arrival angle).
+    flushSticks: true,
     // #2385 heat telegraph: the shell rings two rising warning notes across
     // the last heatWarnLead ticks of the cool dry spell (gate-lead and
     // gate-lead/2), so "cover is about to go" is audible BEFORE the rumble.
@@ -186,6 +194,36 @@ function looseArrow(g, p) {
     g.events.push({ type: 'loose', who: p.id, charge: p.charge })
 }
 
+// #2565 the flush law. Which face did the shaft's tip cross into the stone?
+// Penetration past each candidate entry face (chosen by the velocity's sign):
+// the smaller penetration is the face it crossed LAST — the surface the shaft
+// should lie against. A shaft lodged in an AIR cell with stone below is a
+// floor stick, always tip-down; an air cell with nothing below is a mid-air
+// knock-out with no surface — it keeps its arrival angle. Deterministic
+// (grid + velocity only); the tip is drawn along `ang`, so flush = the shaft
+// lies against the face rather than skewing off it.
+const FLUSH_DOWN = 1.31  // 75° off horizontal — floor/ceiling sticks
+const FLUSH_FLAT = 0.14  // 8° off horizontal — wall sticks
+function flushAngle(g, cell, ar) {
+    const cx = cell % g.W, cy = Math.floor(cell / g.W)
+    const solid = (x, y) => x >= 0 && y >= 0 && x < g.W && y < g.H && g.grid[y * g.W + x] === SOLID
+    const dx = ar.vx >= 0 ? 1 : -1
+    const tip = ar.vy >= 0 ? 1 : -1
+    if (g.grid[cell] === 0) {
+        if (!solid(cx, cy + 1)) return Math.atan2(ar.vy, ar.vx) // mid-air knock: no surface
+        return dx > 0 ? FLUSH_DOWN : Math.PI - FLUSH_DOWN        // floor stick: tip into the stone
+    }
+    const px = ar.x - cx * CFG.cell
+    const py = ar.y - cy * CFG.cell
+    const penX = ar.vx > 0 ? px : ar.vx < 0 ? CFG.cell - px : Infinity
+    const penY = ar.vy > 0 ? py : ar.vy < 0 ? CFG.cell - py : Infinity
+    if (penY < penX) { // crossed a top/bottom face (slab edge, ceiling underside)
+        if (tip > 0) return dx > 0 ? FLUSH_DOWN : Math.PI - FLUSH_DOWN
+        return dx > 0 ? -FLUSH_DOWN : -(Math.PI - FLUSH_DOWN)
+    }
+    return dx > 0 ? tip * FLUSH_FLAT : Math.PI - tip * FLUSH_FLAT // side face: wall
+}
+
 function stickArrow(g, ar) {
     const cx = Math.floor(ar.x / CFG.cell), cy = Math.floor(ar.y / CFG.cell)
     let cell = cy * g.W + cx
@@ -193,7 +231,12 @@ function stickArrow(g, ar) {
     // the air cell above it — the cell a walking archer shares, and the
     // only place the pull-back economy can reach. A wall stays a wall
     // cell (visible, knocks, recycles on the TTL; you cannot pull an
-    // arrow out of the middle of a wall you cannot touch).
+    // arrow out of the middle of a wall you cannot touch). The lift is
+    // direction-agnostic ON PURPOSE (#1685 economy): every arrow the world
+    // accepts must return to the quiver loop or the TTL, and a thin
+    // direction-gate on the lift starves the pull economy (measured: the
+    // autopilot flips to 2-3 on every arena). Single-row undersides are
+    // documented terrain behaviour — see README honest gaps.
     if (solidAt(g, ar.x, ar.y) && cy > 0 && !solidAt(g, ar.x, ar.y - CFG.cell)) cell = (cy - 1) * g.W + cx
     const old = g.stuck.find((s) => s.cell === cell)
     if (old) {
@@ -206,7 +249,7 @@ function stickArrow(g, ar) {
     }
     ar.state = 'stuck'
     ar.cell = cell
-    ar.ang = Math.atan2(ar.vy, ar.vx)
+    ar.ang = CFG.flushSticks ? flushAngle(g, cell, ar) : Math.atan2(ar.vy, ar.vx)
     ar.vx = 0; ar.vy = 0
     g.stuck.push(ar)
     g.events.push({ type: 'stick', who: ar.owner, cell })
