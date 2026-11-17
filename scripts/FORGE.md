@@ -12,7 +12,11 @@ AGENTS.md wins.
    so a lone dirty `STATE.md` is a report, NOT a corpse. Park it, then refresh
    the checkout the way the law prescribes — detached, never a checkout of
    `main` (AGENTS.md, "Worktrees only"):
-   `mkdir -p /tmp/forge && cp STATE.md /tmp/forge/STATE.<slot>.parked.md /tmp/forge/STATE.parked.md && git checkout -- STATE.md && git fetch --prune origin && git checkout --detach origin/main`
+   `mkdir -p /tmp/forge && cp STATE.md /tmp/forge/STATE.<slot>.parked.md && cp STATE.md /tmp/forge/STATE.parked.md && git checkout -- STATE.md && git fetch --prune origin && git checkout --detach origin/main`
+   (one `cp` per destination — BSD cp takes the LAST path as a destination directory,
+   so `cp STATE.md A B` dies "Not a directory" once B exists as a file, and the `&&`
+   chain silently skips the fetch/detach — the exact shape #1430's fresh park must
+   never have. Slot-scoped first, shared second.)
    (both checkouts are scoped: the first to STATE.md, the one file this lane
    owns; the second moves only the detached HEAD. No corpse can be wiped by
    either). #1430: park the slot-scoped copy FIRST — with only the shared path,
