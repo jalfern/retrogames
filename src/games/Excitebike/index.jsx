@@ -19,7 +19,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { W, H, makeGame, step, stateHash, CFG } from './sim.js'
-import { track, groundY, LAP, MUD, WATER, BOOST } from './levels.js'
+import { track, groundY, LAP, MUD, WATER, BOOST, nextSel, TRACK_COUNT, trackName, trackBite } from './levels.js'
 import { plan, decide } from './planner.js'
 import { PRESS, MESSAGES } from './attract.js'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -54,9 +54,11 @@ const ExcitebikeGame = () => {
     const [paused, setPaused] = useState(false)
     const [end, setEnd] = useState(null)
     const [gear, setGear] = useState('high')
+    const [sel, setSel] = useState(0) // #2563: the splash cursor — which of the six you're riding
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const gearRef = useRef('high')
+    const selRef = useRef(0)
     const overAtRef = useRef(0)
     const [watching, setWatching] = useState(false) // #1637 WATCH: excitecheck's rollout planner rides the gate
     const watchingRef = useRef(false)
@@ -282,7 +284,7 @@ const ExcitebikeGame = () => {
         }
         const doFrameSim = () => {
             const sc = screenRef.current
-            if (sc === 'attract') { tickDemo(); return }
+            if (sc === 'attract' || sc === 'tracks') { tickDemo(); return }
             if (sc !== 'play') return
             // One arrow, two truths: on the ground Up is the GAS and Down the
             // BRAKE; airborne the SAME arrows are the rider's weight — the sim
@@ -627,8 +629,25 @@ const ExcitebikeGame = () => {
             if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault()
             const sc = screenRef.current
-            if (sc === 'attract') { startPlay(0); return }
+            if (sc === 'attract') { selRef.current = 0; setSel(0); setMode('tracks'); audioController.playTone(520, 0.08, 'square', 0.05); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
+            // #2563 THE SPLASH — the NES selection screen. The cursor walks the
+            // six-course roster (wrap lives in levels.js `nextSel`, the same
+            // law excitecheck SPLASH pins); Enter/Space/digits seat you, G
+            // sets the gear the old title hint always promised, Esc steps back.
+            if (sc === 'tracks') {
+                // #1656 multi-screen contract: the one-tap ▶ WATCH lands Space
+                // here first — so Y on the splash starts the run AND seats the
+                // prover, same beat as the single-screen shells.
+                if (isWatchKey(e)) { startPlay(selRef.current); watchingRef.current = true; setWatching(true); playWatchStart(); return }
+                if (e.code === 'ArrowDown' || e.code === 'ArrowRight') { selRef.current = nextSel(selRef.current, 1); setSel(selRef.current); audioController.playTone(440 + selRef.current * 60, 0.05, 'square', 0.05) }
+                else if (e.code === 'ArrowUp' || e.code === 'ArrowLeft') { selRef.current = nextSel(selRef.current, -1); setSel(selRef.current); audioController.playTone(440 + selRef.current * 60, 0.05, 'square', 0.05) }
+                else if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space') startPlay(selRef.current)
+                else if (/^Digit[1-6]$/.test(e.code)) { const n = +e.code.slice(5) - 1; if (n < TRACK_COUNT) { selRef.current = n; setSel(n); startPlay(n) } }
+                else if (e.code === 'KeyG') { gearRef.current = gearRef.current === 'high' ? 'low' : 'high'; setGear(gearRef.current); say('GEAR: ' + gearRef.current.toUpperCase()) }
+                else if (e.code === 'Escape') setMode('attract')
+                return
+            }
             if (pausedRef.current || e.repeat) return
             // #1637 WATCH: Y seats the rollout planner at any live state (it
             // re-decides from the bike every tick); any driving key takes over.
@@ -653,9 +672,17 @@ const ExcitebikeGame = () => {
             if (e.code === 'ArrowRight') keys.r = false
         }
         const onBlur = () => { keys.g = keys.b = keys.j = keys.l = keys.r = false }
-        const onPointer = () => {
+        const onPointer = (e) => {
             const sc = screenRef.current
-            if (sc === 'attract') startPlay(0)
+            // #2563: the pad zone is a STEERING surface on the splash — a push
+            // there walks the cursor (its arrows do); a tap outside the pad (or
+            // the A button's Space) seats the course. Without this guard the
+            // stick's own pointerdown would ride you into the race mid-push.
+            if (e && e.target && e.target.closest && e.target.closest('[data-vc]')) return
+            // #2563: marquee → splash → race. A tap on the splash seats the
+            // course the cursor is on (arrows move it; there is only one pad).
+            if (sc === 'attract') { selRef.current = 0; setSel(0); setMode('tracks') }
+            else if (sc === 'tracks') startPlay(selRef.current)
             else if (sc === 'over' && performance.now() - overAtRef.current > 900) setMode('attract')
             // #1637 a touch on the dirt means you want the wheel (the WATCH pill
             // stopPropagations its press; the pad's keys take over too).
@@ -681,6 +708,7 @@ const ExcitebikeGame = () => {
             window.__bikeTest = {
                 probe: () => ({
                     screen: screenRef.current, tick: gs.tick, track: gs.track, end: gs.end,
+                    sel: selRef.current, tracks: TRACK_COUNT, // #2563 splash cursor + roster size
                     x: gs.x, total: gs.total, v: gs.v, alt: gs.alt, vy: gs.vy, pitch: gs.pitch,
                     air: gs.air, airT: gs.airT, crash: gs.crash, stall: gs.stall, pumpT: gs.pumpT,
                     heat: gs.heat, hot: gs.hot, gear: gs.gear, rank: gs.rank, score: gs.score,
@@ -850,6 +878,34 @@ const ExcitebikeGame = () => {
                 </>
             )}
 
+            {/* #2563 THE SPLASH — the NES track catalogue between marquee and
+                race. The proven demo keeps rolling behind the dim; a bike
+                cursor walks the six-course roster. Keyboard: arrows/digits/
+                Enter, G gear, Esc back. Touch: the pad (arrows + A) or tap. */}
+            {screen === 'tracks' && (
+                <>
+                    <div className="absolute inset-0 bg-black/72 pointer-events-none" />
+                    <div className="absolute inset-x-0 top-3 text-center pointer-events-none">
+                        <h1 className="text-2xl font-black tracking-tight" style={{ color: '#e40000', textShadow: '2px 2px 0 #ffe23f, 3px 3px 0 #000' }}>EXCITEBIKE</h1>
+                        <div className="mt-1 text-white/70 font-mono text-[10px] tracking-[0.4em]">TRACKS</div>
+                    </div>
+                    <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex flex-col items-center gap-1 pointer-events-none font-mono">
+                        {[...Array(TRACK_COUNT)].map((_, i) => (
+                            <div key={i} className={`flex items-center gap-2 text-sm sm:text-base ${i === sel ? 'text-yellow-300' : 'text-white/85'}`}>
+                                <span className={`w-5 text-right ${i === sel ? 'opacity-100' : 'opacity-0'}`} style={{ textShadow: '0 0 8px #ffe23f' }}>▶</span>
+                                <span className="w-16 text-right">TRACK {i + 1}</span>
+                                <span className={`w-32 text-left font-bold ${i === sel ? '' : 'font-normal'}`}>{trackName(i)}</span>
+                                <span className="text-[11px] leading-none tracking-tight" style={{ textShadow: '1px 1px #000' }} aria-label={`grade ${trackBite(i)}`}>
+                                    {'▰'.repeat(trackBite(i))}<span className="text-white/25">{'▱'.repeat(TRACK_COUNT - trackBite(i))}</span>
+                                </span>
+                            </div>
+                        ))}
+                        <div className="mt-3 text-[10px] text-cyan-200/90 tracking-widest animate-pulse">ENTER RIDES · 1-6 FAST · G GEAR ({gear.toUpperCase()})</div>
+                        <div className="text-[10px] text-white/45 tracking-widest">↑↓ PICK COURSE · ESC BACK</div>
+                    </div>
+                </>
+            )}
+
             {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
             {screen === 'attract' && (
                 <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
@@ -865,13 +921,13 @@ const ExcitebikeGame = () => {
                         <div className="text-yellow-300 font-bold mb-1 tracking-widest">HALL OF FAME</div>
                         {board().map((r, i) => (<div key={i} className="flex justify-between gap-2"><span>{i + 1}.</span><span>{r.date}</span><span>{r.score}</span></div>))}
                     </div>
-                    <p className="mt-4 text-xs text-cyan-100/70">gear at the title was <b>{gear}</b> — press G on the title to change</p>
+                    <p className="mt-4 text-xs text-cyan-100/70">gear was <b>{gear}</b> — press G on the TRACKS screen to change</p>
                     <p className="mt-2 animate-pulse font-bold">TAP / PRESS ANY KEY</p>
                 </div>
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'EXCITEBIKE')} onResume={handleResume} />}
-            <VirtualControls visible={play && !paused} />
+            <VirtualControls visible={(play || screen === 'tracks') && !paused} />
         </div>
     )
 }

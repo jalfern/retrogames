@@ -36,8 +36,11 @@ const browser = await launch()
 const page = await browser.newPage({ viewport: { width: 620, height: 680 }, deviceScaleFactor: 1 })
 page.setDefaultTimeout(180000)
 const errors = []
-page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`))
-page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
+// device-level AudioContext complaints (no audio device/renderer on the box)
+// are not page errors — same filter lodeplay/papersplay/britanniadrive carry.
+const deviceNoise = (s) => /AudioContext encountered an error from the audio device/i.test(String(s || ''))
+page.on('pageerror', (e) => { if (!deviceNoise(e.message)) errors.push(`[pageerror] ${e.message}`) })
+page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location()) && !deviceNoise(m.text())) errors.push(`[console.error] ${m.text()}`) })
 
 const probe = () => page.evaluate(() => window.__bikeTest.probe())
 const wait = (ms) => page.waitForTimeout(ms)
@@ -85,12 +88,19 @@ await wait(900)
     r.check('the attract screen paints a rider on the canvas', p.n > 25, `${p.n} red px`)
 }
 
-// ---- a real key starts a fresh race and lifts through the countdown ----
+// ---- a real key opens the splash; Enter starts a fresh race ----
 await page.keyboard.press('KeyZ')
 await wait(200)
 {
+    const s0 = await probe()
+    r.check('a real key at the marquee opens the TRACKS splash (#2563)', s0.screen === 'tracks' && s0.tracks === 6,
+        `screen=${s0.screen} tracks=${s0.tracks}`)
+}
+await page.keyboard.press('Enter')
+await wait(200)
+{
     const a = await probe()
-    r.check('a real key starts a fresh race', a.screen === 'play' && a.count > 0 && a.x < 40 && a.score === 0,
+    r.check('Enter rides the selected course — a fresh race', a.screen === 'play' && a.count > 0 && a.x < 40 && a.score === 0,
         `screen=${a.screen} count=${a.count} x=${a.x.toFixed(0)}`)
 }
 let ready = false
@@ -469,7 +479,78 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     await page.keyboard.press('KeyZ')
     await wait(250)
     mid = await probe()
-    r.check('and a real key starts a fresh race from attract', mid.screen === 'play' && mid.count > 0, `screen=${mid.screen} count=${mid.count}`)
+    r.check('and the marquee opens the splash again (#2563)', mid.screen === 'tracks', `screen=${mid.screen}`)
+    // ---- SPLASH driven with real keys only (#2563) ----
+    // Keyboard first (fresh cursor, absolute assertions), then the phone story:
+    // the pad hides on trusted keyboard and shows on touch (step-5 feel law),
+    // so touch gets its own cleanly-opened splash.
+    await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('ArrowDown')
+    r.check('arrow-down walks the cursor (2 steps -> index 2)', (await probe()).sel === 2, `sel=${(await probe()).sel}`)
+    await page.keyboard.press('ArrowUp')
+    await page.keyboard.press('ArrowUp')
+    await page.keyboard.press('ArrowUp')
+    r.check('arrow-up wraps backward past row 0 to the last course', (await probe()).sel === 5, `sel=${(await probe()).sel}`)
+    await page.keyboard.press('ArrowRight')
+    r.check('arrow-forward wraps past the last course to row 0', (await probe()).sel === 0, `sel=${(await probe()).sel}`)
+    await page.keyboard.press('Escape')
+    r.check('Escape at the splash steps back to the marquee', (await probe()).screen === 'attract')
+    await page.keyboard.press('KeyZ')
+    await wait(200)
+    // phone: touch wakes the pad; the stick STEERS the cursor, a tap outside
+    // the pad seats the course the cursor picked.
+    const wakePad = () => page.evaluate(() => window.dispatchEvent(new Event('touchstart')))
+    const barSel = '[data-vc="1"]' // the pad's button bar — one per mounted pad
+    const padUp = async () => {
+        await wakePad()
+        for (let i = 0; i < 20 && (await page.locator(barSel).count()) === 0; i++) await wait(100)
+        return page.locator(barSel).count()
+    }
+    r.check('the pad is up on the splash — a phone picks a course too', (await padUp()) === 1)
+    {
+        const st = await page.locator('[data-vc="stick"]').first().boundingBox()
+        if (st) {
+            await page.mouse.move(st.x + st.width / 2, st.y + st.height / 2)
+            await page.mouse.down()
+            await page.mouse.move(st.x + 6, st.y + st.height / 2, { steps: 4 }) // push the stick LEFT
+            await wait(150)
+            r.check('the pad itself walks the splash cursor (left push wraps to the last course)', (await probe()).sel === 5, `sel=${(await probe()).sel}`)
+            await page.mouse.up()
+        } else {
+            r.check('the pad itself walks the splash cursor (left push wraps to the last course)', false, 'no [data-vc="stick"] to push')
+        }
+    }
+    await page.mouse.click(500, 120) // tap OUTSIDE the pad seats the picked course
+    await wait(250)
+    mid = await probe()
+    r.check('a tap outside the pad rides the course the cursor picked (K.O. CROSS)',
+        mid.screen === 'play' && mid.track === 5 && mid.count > 0,
+        `screen=${mid.screen} track=${mid.track} count=${mid.count}`)
+    // fresh tab: digits fast-seat, the race rides on pixels, the one-pad law holds
+    await page.goto(URL, { waitUntil: 'load' })
+    await page.waitForFunction(() => !!window.__bikeTest, null, { timeout: 30000 })
+    await wait(900)
+    await page.keyboard.press('KeyZ')
+    await wait(200)
+    await page.keyboard.press('KeyG')
+    await page.keyboard.press('Digit5')
+    await wait(250)
+    mid = await probe()
+    r.check('digit 5 fast-seats BIG AIR and the splash gear carries into the race',
+        mid.screen === 'play' && mid.track === 4 && mid.gear === 'low' && mid.count > 0,
+        `screen=${mid.screen} track=${mid.track} gear=${mid.gear} count=${mid.count}`)
+    await wakePad(); await wait(150)
+    r.check('exactly one pad on screen — the phone never gets a second one', (await page.locator(barSel).count()) === 1)
+    await page.keyboard.press('KeyG')
+    r.check('G in-race still shifts (low -> high)', (await probe()).gear === 'high')
+    await page.waitForFunction(() => window.__bikeTest.probe().count === 0, null, { timeout: 8000 }).catch(() => {})
+    await hold('ArrowUp', 3000)
+    mid = await probe()
+    const bigAirPx = await bikePx()
+    r.check('BIG AIR races on real pixels (gas on, world scrolling, rider painted)',
+        mid.x > 250 && bigAirPx.n > 12, `x=${mid.x.toFixed(0)} red px=${bigAirPx.n}`)
+    await page.keyboard.press('Escape')
+    r.check('Escape mid-race is not a secret exit (the race keeps running)', (await probe()).screen === 'play')
 }
 
 // ---- the pause door ----
