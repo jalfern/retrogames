@@ -189,10 +189,24 @@ faster heat.
   keys: TEST seats, Esc returns, lap finishes to the bay, empty draft refuses
   by name, rows stay 8); flatten-the-transient-branch mutant reddens the
   identity gates.
-- **Test rides are keyboard-escapable only** — a phone ends a test lap by
-  riding it (one lap is short); there is no on-screen Esc. And a SAVED track
-  chosen at the splash still uses the save-and-race gate — esc-to-the-bay is
-  the TEST path's, not every custom entry's.
+- **CLOSED by #2573:** **ABANDON on the pad** — a test ride is now a phone's
+  too. While a draft is seated the pad grows a third button (`data-vc="c"`,
+  sky, labelled ABANDON) that fires the SAME Escape law `endTestRide` already
+  honored — zero new exit logic: the seat owns the button, so it appears exactly
+  on `play && testRide.active` and leaves with the seat (the badge reads
+  "ABANDON OR ESC TO BAY"). The prop rides a component-state mirror (`testing`)
+  because `testRide` lives in the effect closure the JSX cannot read. A league
+  race never grows it (mid-race Escape is a dead key by the shipped law — the
+  pad-side sibling of that pin), and the bay never grows it (EXIT already lives
+  in the tool strip, reachable by cursor+A). Proven: exciteplay +6 — no C in
+  the bay, C grows seated, label+code law (`Escape`), thumb-tap lands in the
+  bay draft-intact, C leaves with the seat, no C in a league race — 90/90 on
+  :5176, excitecheck 336/336 untouched. Harness catch: the pad hides on
+  keyboard use (Step 5 feel) — gates wake it with `touchstart` after keyboard
+  legs or they measure the hide, not the law.
+- **A SAVED track chosen at the splash still uses the save-and-race gate** —
+  esc-to-the-bay is the TEST path's, not every custom entry's: a race is not a
+  draft, and mid-race Escape stays a dead key by law.
 - **Custom laps are fixed at 2** and the rivals ride their GENERIC pace line
   over your terrain (`rivalSpeed` is terrain-computed, never per-custom
   tuned): a well-drawn course beats the pack on pace, a crowded one may be
