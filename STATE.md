@@ -1,78 +1,64 @@
-# STATE — session 310 slot b close-out
+# STATE — session 312 slot b close-out
 
 ## Shipped this session
-- **#2520 → 6df49c1 (PR #2526)** HOMEBODY: the sneak in the night + burglar
-  alarm — the day/night clause's first *night* citizen. Odd days (`day%2===1`)
-  at 23:00 a sneak crosses at the gate (12,5), takes ONE loose ornament
-  (plant/rug/lamp) at the door-step, leaves; midnight retires him; one visit
-  a night stamped by day. Parity is arithmetic — no rng (source pin + twin
-  green). Answer is purchasable: *Burglar Alarm* §90, SPECIAL shelf (card 19),
-  `hasAlarm` turns him AT the gate post; `ringSneak` rig bypasses parity but
-  never the alarm. Fedora sprite, domed-siren night halo, creep/siren/thunk
-  SFX, banners name the loot, marquee teaches the law. peoplecheck
-  **650 pass / 0 fail** (~30 new pins §SNEAK IN THE NIGHT). lint mario/fps/ai
-  + build green.
-  - **Design law banked:** the loot is decor, never cash. The attract bot wins
-    day 2–3 with only ~§10 above the §300 room-kit price on every seed 1–12 —
-    any cash take breaks `attract builds the wing…` on all of them. The sneak
-    section contains no `s.money` (source-pinned). New economy features must be
-    designed around the win margin, not tested into it.
-- **#1711 machine-side CLOSED, released to `next`.** Nightly take-grading proven
-  ARMED on CI: JON_KEY secret live (20:26Z), dispatch run 43968315875 green
-  (DORMANT branch + `plaicraft:grade --nightly` "nothing new to grade"),
-  gradeselftest 29/29, store re-audit: 14/14 takes PLAIGRADE-marked. Remaining
-  acceptance line 3 needs one completed human clap take — the nightly grades it
-  itself (cron 06:45 UTC). Evidence posted on the issue; no lane work left.
+- **#2532 shipped — HOMEBODY even-night prowl (PR #2533, squash d936368).**
+  Finished the corpse session 311 left (draft PR with 2 WIP items):
+  1. `peoplecheck` §PROWL (33 checks): parity arithmetic + sneak-complement
+     cross-check (no dark hosts boots AND paws), organic due-night twin
+     (d2@23.00h, d1 odd quiet), feet-move during the BFS, midnight
+     send-home same-night, natural walk-home when rung at breakfast, no-cat
+     quiet + refusal-in-words, purrs-never-pennies (fun up, money/lost
+     frozen), hash ledger (prowl/prowlNight/prowlSerial), rng determinism
+     twin, win-economy intact, 12 source pins. Suite **682/0**; mutant
+     proof: `day % 2 === 0` flipped → 9 reds, restored.
+  2. `homebodydrive` §PROWL live (8 gates): refusal-words, real adoption,
+     flap opens, banner paints cream over the lawn (y≈348 scan), sprite
+     cell follows logic, amber night-eyes px, home stamped one-on-serial,
+     home banner. Drive **85/0**, zero page errors.
+  Live: https://jalfern.com/retrogames/homebody — deployed chunk
+  index-BtX3Q5cz.js carries `MISO PROWLS EVEN NIGHTS`. Issue labeled
+  shipped + closed.
 
 ## Board
-- Slot b took the never-dry rung after #1711 released: `weakestStage` =
-  HOMEBODY (score 2). Its index-0 gap prose was stale (all sub-parts shipped
-  #1817–#2235); real oldest unowned gap = the day/night tail → filed+claimed
-  #2520 and shipped it. Rule-4 counter restored (game code this session).
-- **#2516 (retrogames-rl 3c) deliberately NOT claimed**: its governance says
-  predictions must be authored by Claude+Jon ("not a lane") and the training
-  run exceeds a shift budget. Left for the right lane; rationale in session log.
-- Slot A ran live all shift; Britannia/MissileBattle/SmashTV held by
-  building-qa issues — untouched.
-- **RED MAIN at close (watch live):** blocking = nightly.yml 43947467784
-  (tip 7fa8438) failed `smash-tv resumes` — the seat-poll repair (#2524,
-  closes #2523) squash-merged 23:33 and is IN the current tip. Nightly
-  43983438362 on `6df49c1` in flight (23:55); a background watcher merges
-  STATE PR #2527 when green, then detaches main. If it reds again: verify's
-  failures were all pre-existing families (kingsquest/ultima DOS boot, kart
-  smoke, minesweeper bot, robot-lab #1099 text-fit, demo-fox) — none touch
-  Homebody; fix or quarantine per rule 5a naming open issues.
+- Resumed #2532 (TARGET, claim accepted — already ours). No halt/steer.
+- `game-queue` empty; `next` = #1711 (lane:platform, no lane action);
+  building #2516 held by rl lane. #2530 (smash-tv planner wedge) got
+  `building-qa` mid-session — QA took the real game bug; leave it.
+- jonq #2529 AWAITING is lane:research's, not ours.
+- Step 8b not filed: Homebody already has open QA pass #2508.
 
 ## Next queued
-- Nothing invented. Known big-builds self-claim: HOMEBODY day/night tail
-  continues (nothing else keeps hours after dark yet — the sneak was its first
-  night citizen), Britannia enterable cottages (AVATAR.EXE terrain table).
-- #1711 waits only on Jon's human clap take (nightly grades; no lane action).
+- Ladder will fall through to the #841 flagship stage again — check
+  `idle.mjs` weakestStage fresh (Homebody's score dropped after this ship;
+  #2508 is QA-held so Homebody is hands-off for builder lanes now).
+- #2530 smash-tv wedge is QA-held — builders skip it even when the queue
+  empties.
 
 ## Open questions
-- None filed this session (jonq not needed — the decor-loot change was a
-  fidelity-preserving design fix, not a taste call).
+- None filed this session (finishing a spelled-out WIP handoff is
+  derivation, not a taste call). Lane-foreign: jonq #2529 AWAITING.
 
 ## Catches for the next session (each cost probes this shift)
-- **Homebody events ride `e.t`, not `e.type`** (index.jsx `switch (e.t)`).
-  New event pushes must use `t:` or they silently vanish from the shell.
-- **No pre-placed starter loot**: newRun lots have no placed decor at day 1,
-  so an organic first-night sneak verdict is take-or-empty; pin shapes that
-  accept `sneak-empty` and put the guaranteed take behind a rig placement.
-- **Wages move money mid-run** — never assert "money unchanged across a long
-  organic window"; pin the cash-free law in the source instead.
-- `ringSneak` retires tonight's stamp (`sneakNight = min(night, day-1)`) so
-  back-to-back rig rings work; the alarm still answers them.
-- Backgrounded `npm run dev` in a lane worktree can be reaped by the harness
-  (exit 143/1) — contractcheck was green-headed anyway; advisory.
+- **Prod-carry checks must `curl -sL --compressed` into files.** A plain
+  `curl | grep` scans the 15-byte "Redirecting..." body (jalfern.com 308s
+  to www.jalfern.com) and false-fails forever on a perfect deploy. Game
+  chunks are 2 levels deep: entry mapDeps → chunk mapDeps; scan both.
+- **Day-crossing sim twins: a prowl rung in daylight completes NATURALLY
+  (out+back ≈ 4 sim h at 40 px/s), long before midnight.** Assert the
+  same-day natural close; use an explicit 23:5 re-ring to prove the
+  midnight retire.
+- **Fun-pay floor math**: cat fun decays 0.08/sim-h; a `+PET_PROWL_FUN
+  − 0.05` assertion fails on decay alone (observed 0.52 vs floor 0.55).
+  Margins ≥ −0.15 for hour-spanning fun deltas.
+- `ringProwl` (like ringSneak) lowers `prowlNight` to day−1 so the law
+  may re-ring the SAME night — serial, not stamp, counts visits.
+- The `gh` identity is jalfern, so my FORGE comments render as jalfern —
+  when checking for Jon's hold on a PR, distinguish the `vc` bot and
+  `FORGE:`-prefixed own comments.
 
 ## Lanes clean
-- Main checkout detached at `6df49c1` (this session's merge). `main-ok` read
-  `nightly cancelled` = not-red all shift.
-- Worktree `~/Dev/retrogames-forge-plaicraft-s1-arm` → detached at
-  origin/main, tree clean, real node_modules — reusable for the next Homebody
-  stage. Branch `forge/homebody-night-sneak` deleted by the merge.
-- Older worktree `~/Dev/retrogames-forge-plaicraft-sweep` still parked with
-  real node_modules (keep for plaicraft stages).
-- Slot b dev server (:5178) stopped at close.
-- STATE.md left UNCOMMITTED per rule 9 and parked for slot b.
+- Main checkout detached at origin/main (ahead: STATE #2527 by another
+  lane). STATE.md rewritten + parked for slot b; STATE PR carries it.
+- Worktree `~/Dev/retrogames-forge-homebody-prowl` re-detached at
+  d936368-ish tip, clean tree, real node_modules (reusable).
+- Slot b dev server (:5178) stopped at close-out.
