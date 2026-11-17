@@ -95,6 +95,10 @@ const MESSAGES = [
     'MISO WANTS A GAME — buy the Yarn Ball (§60, FUN shelf) and tap it: your resident dangles, the tabby pounces, BONDS climb.',
     'Bank 80 contentment and the lifetime wish comes true.',
 ]
+// #2599 item 3: the attract sells the pair on its OWN copy beat — the index of
+// the NEIGH marquee line, derived from the text so a reordered marquee can never
+// silently drift the hook away from the copy it stages.
+const NEIGH_MARQUEE = MESSAGES.findIndex((m) => m.startsWith('FERN AND IVY'))
 const PRESS = 'TAP / PRESS ANY KEY TO MOVE IN'
 // #2143: bond-key → name, for the toast lines (three points on the triangle now).
 const BONDER = { house: 'HOUSEHOLD', fern: 'FERN', ivy: 'IVY', kid: 'PIP', neigh: 'NEIGHBOURS' }   // #2203: the child rows a bond; #2588: so do the neighbours between themselves
@@ -122,6 +126,7 @@ const HomebodyGame = () => {
     const pausedRef = useRef(false)
     const watchingRef = useRef(false)
     const overAtRef = useRef(0)
+    const marqueeIx = useRef(0)   // #2599 item 3: the attract copy line currently on screen
 
     useEffect(() => {
         const wrap = stageRef.current
@@ -131,6 +136,7 @@ const HomebodyGame = () => {
         let canvas = null, ctx = null
         let raf = 0, last = 0, acc = 0
         let gs = null, demoG = null
+        let neighBeatRung = null   // #2599 item 3: the demo run whose gate Ivy was rung into, if any
         let seed = 20261023
         let particles = [], shake = 0
         const refuses = []   // #1823: red ghost-cell flashes on refused placements
@@ -1049,6 +1055,16 @@ const HomebodyGame = () => {
                     const want = attractSpeed(demoG)
                     if (want !== demoG.speed) demoG.speed = want
                     if (demoG.done) demoG = freshDemo()
+                    // #2599 item 3: sell the copy with the picture — while the NEIGH
+                    // marquee line is the one on screen and Fern hangs at an empty
+                    // gate, ring Ivy into the demo (the #2143 ringIvy clock law on the
+                    // attract's own sim). Once per demo run; the #2240 noon fallback
+                    // keeps its floor; nothing here moves the economy.
+                    if (demoG && !neighBeatRung && marqueeIx.current === NEIGH_MARQUEE
+                        && demoG.visitor && demoG.visitor.state === 'hang' && !demoG.ivy && demoG.hour < 19) {
+                        neighBeatRung = demoG
+                        demoG.ivyAfter = Math.min(demoG.ivyAfter, Math.floor(demoG.hour)); demoG.ivyGap = 0
+                    }
                 } else if (screenRef.current === 'play' && gs && !gs.done) {
                     if (!contractHoldsLoop()) {
                         // #1637 batch 17 WATCH: the seat is autoStep — bot + advance,
@@ -1089,7 +1105,7 @@ const HomebodyGame = () => {
         }
 
         // ------------------------------------------------------------- start ----
-        const freshDemo = () => { const d = newRun((Date.now() >>> 5) ^ 0x5eed); return d }
+        const freshDemo = () => { neighBeatRung = null; const d = newRun((Date.now() >>> 5) ^ 0x5eed); return d }
 
         const startPlay = (sd) => {
             if (sd !== undefined) seed = sd >>> 0
@@ -1323,6 +1339,7 @@ const HomebodyGame = () => {
                 ringSneak: () => (gs ? ringSneak(gs) : 'no sim'),   // #2520: send the sneak now (sim-owned scenario setup — retires any prowler and opens the window at the hour, alarm or not)
                 ringProwl: () => (gs ? ringProwl(gs) : 'no sim'),   // #2532: open the flap now (harness/F1 only — the parity law never reads it)
                 ivyHome: () => { if (gs && gs.ivy) { gs.ivy.state = 'leaving'; gs.ivy.path = null } },   // #2143: rig the next visit (scenario setup, like park/foul)
+                pairCold: (cd) => { if (gs) { const seat = (o, r, c, hue) => { o.r = r; o.c = c; o.x = LOT_X + c * TILE + TILE / 2; o.y = LOT_Y + r * TILE + TILE / 2; o.path = null; o.state = 'hang'; o.t = 0; o.hue = hue; o.face = 1; o.walkPhase = 0; o.chatT = 0; o.hangUntil = 9999; o.neighT = 0 }; gs.visitAfter = 99; gs.ivyAfter = 99; gs.ivyGap = 0; if (!gs.visitor) gs.visitor = { name: 'Fern' }; if (!gs.ivy) gs.ivy = { name: 'Ivy', gift: false }; seat(gs.visitor, 3, 5, '#4fae5f'); seat(gs.ivy, 3, 7, '#a3579b'); for (const p of gs.people) { p.queue.length = 0; p.owner = null; p.working = false } gs.neiGrudge = 1; gs.neiMurrs = 0; gs.neiMurmurCd = cd ?? 0; sayB.life = 0 } return 'pair cold' },   // #2599 handoff 2 scenario rig: the pair seated apart and cold, the murmur clock armed — scenario setup like park/foul/ringIvy
                 // #2070: rig the spat scenario — park the pair beside each
                 // other, both in the red; `thaw` lifts their tempers up.
                 foul: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; b.r = 3; b.c = 4; b.path = null; for (const p of gs.people) { for (const n of NEEDS) p.needs[n] = 0.3; p.working = false; p.faintT = 0 } gs.grudge = 0; gs.spatCd = 0; gs.spats = 0; for (const p of gs.people) { p.queue.length = 0; p.owner = null } } },   // the rigged spat counts as the run's first — earlier organic barbs in a long drive are clock noise, not the law
@@ -1473,7 +1490,7 @@ const HomebodyGame = () => {
                 <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/10 to-black/45 flex flex-col items-center justify-end pb-24 text-center px-6 pointer-events-none">
                     <h1 className="text-5xl font-black mb-2 tracking-wide" style={{ color: '#ffd24a', textShadow: '3px 3px 0 #2c5aa0, 0 8px 22px #000' }}>HOMEBODY</h1>
                     <p className="font-mono text-[11px] text-sky-100/70 mb-4 tracking-widest">A LITTLE SUBURBAN LIFE SIM</p>
-                    <AttractMessage className="mb-4 text-amber-50/85" messages={MESSAGES} />
+                    <AttractMessage className="mb-4 text-amber-50/85" messages={MESSAGES} onIndex={(i) => { marqueeIx.current = i }} />
                     <p className="text-lg font-mono font-bold animate-pulse text-white">{PRESS}</p>
                     <p className="font-mono text-[11px] font-bold tracking-widest text-amber-100/60 mt-3">{WATCH_ATTRACT_HINT}</p>
                 </div>

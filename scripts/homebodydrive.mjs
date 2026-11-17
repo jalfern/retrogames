@@ -538,6 +538,36 @@ check('contract state ticks', f0.tick > 0 && typeof f0.score === 'number', `tick
     check('#2240 attract shows Ivy on the lot and rings her once', !!seen && rung === 1, `ivy=${seen} demoIvy=${rung} hour=${hour}`)
 }
 
+// #2599 handoff 2 + item 1 live: the cold pair murmurs, and the plate wears
+// the pair. Rig the guests seated apart and cold, murmur clock at 1.6 s; the
+// sour beat then fires on its armed clock and the split-rim bubble (Fern-green
+// left half, Ivy-plum right) paints ABOVE their heads — the dresses wear the
+// same hues, but the sample band sits clear of the sprites, where only a pair
+// plate ever paints (resident chatter is cream-and-brown, and both hues at
+// once sit nowhere else up there).
+{
+    if ((await st()).screen !== 'play') { await page.keyboard.press('Space'); await wait(500) }
+    const pairScan = () => page.evaluate(() => {
+        const c = document.querySelector('canvas'), g = c.getContext('2d', { willReadFrequently: true })
+        const d = g.getImageData(94, 76, 224, 40).data
+        let green = 0, plum = 0
+        for (let i = 0; i < d.length; i += 4) {
+            const [r, gg, b] = [d[i], d[i + 1], d[i + 2]]
+            if (r > 55 && r < 115 && gg > 145 && gg < 205 && b > 70 && b < 125 && gg > b && gg > r) green++
+            if (r > 135 && r < 195 && gg > 60 && gg < 115 && b > 125 && b < 185 && r > gg && b > gg) plum++
+        }
+        return { green, plum }
+    })
+    await page.evaluate(() => window.__homebodyTest.pairCold(1.6))
+    await wait(700)
+    const quiet = await pairScan()
+    const samples = []
+    for (let i = 0; i < 10; i++) { samples.push(await pairScan()); await wait(300) }
+    const best = samples.reduce((m, x) => (x.green + x.plum > m.green + m.plum ? x : m))
+    check('#2599 the cold pair murmurs live — the sour beat paints a pair-hued plate above them',
+        quiet.green + quiet.plum < 6 && best.green >= 5 && best.plum >= 5, `quiet=${quiet.green}/${quiet.plum} best=${best.green}/${best.plum}`)
+}
+
 // #2474 items 2+4 live: the queue chips LEARN their names and MOVE with a beat.
 // Route: tap the fridge (issues a walk), tap it again while busy (the errand
 // appends as a chip). Then the mouse over the chip reads its name (blue label

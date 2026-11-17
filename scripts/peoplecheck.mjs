@@ -100,6 +100,7 @@ import {
     NEIGH_CHAT, NEIGH_GLANCE, NEIGH_FADE, NEIGH_COOL_CD, NEIGH_WARM, NEIGH_LINES,   // #2588: the third-party bond
     NEIGH_IGNORE_T, NEIGH_SPAT_DROP, NEIGH_MAKEUP, NEIGH_SPAT_CD,   // #2604: the pair's own quarrel law
     NEIGH_STROLL_T, NEIGH_SPOTS, NEIGH_STROLL_LINES,   // #2611: the pair's circuit — bank, spots, beat lines
+    NEIGH_MURMUR_CD, NEIGH_SOUR_LINES,   // #2599 handoff 2: the cold-war murmur — clock and sour lines
     PAPER, PAPER_LATE, PAPER_LINES,   // #2238: the paper route
     MEAL, MEAL_NAMES, MEAL_DUE, MEAL_WINDOW, MEAL_BOND, MEAL_LINES, SHARED_MEAL_LINES, HOUR_SEC,   // #2244: the meal bells
     MEAL_TIMBRE, SHARED_TABLE_CHORDS, sharedChord, nightLevel,   // #2264: per-bell timbres, the rotating table chord, one night curve
@@ -1699,8 +1700,10 @@ section('NEIGH SPAT (#2604): third-party grudge — souring, cold war, thaw, reu
     }
     check('a whole quarrel — crack, absence, reunion — is seed-exact',
         spatRun(7) === spatRun(7) && spatRun(2604) === spatRun(2604))
-    check('pin: the cold war silences the pair by returning before any pay',
-        /if \(s\.neiGrudge\) return/.test(spSim) && /s\.neiIgnore >= NEIGH_IGNORE_T && s\.neiSpatCd <= 0/.test(spSim))
+    const cwBlk = (spSim.match(/\n    if \(s\.neiGrudge\) \{[\s\S]*?\n    \}\n/) || [''])[0]
+    check('pin: the cold war silences the pair by returning before any pay (#2599: it may murmur lines — never pay)',
+        /return/.test(cwBlk) && !/rel(?:Add|Sub)|money|content|neiSpats/.test(cwBlk)
+        && /s\.neiIgnore >= NEIGH_IGNORE_T && s\.neiSpatCd <= 0/.test(spSim))
     check('pin: absence thaws, reunion pays NEIGH_MAKEUP once',
         /if \(s\.neiGrudge\) \{\s*s\.neiGrudge = 0\s*s\.neiMending = 1/.test(spSim)
         && /relAdd\(s, 'neigh', NEIGH_MAKEUP\)/.test(spSim) && /if \(s\.neiMending && !fv\.claim && !iv\.claim && d <= NEIGH_REACH\)/.test(spSim))
@@ -1851,7 +1854,7 @@ section('NEIGH STROLL (#2611): the pair walks the lot — bank, circuit, walk-pa
         /s\.neiStroll >= NEIGH_STROLL_T/.test(stSim) && /NEIGH_SPOTS\[idx\]/.test(stSim)
         && /s\.neiWalk = \(s\.neiWalk \+ 1\) % NEIGH_SPOTS\.length/.test(stSim))
     check('pin: the bank fills only while both are mobile, and the lap runs after the cold-war return',
-        /if \(!fv\.path && !iv\.path\) \{\s*s\.neiStroll \+= dt/.test(stSim) && /if \(s\.neiGrudge\) return/.test(stSim))
+        /if \(!fv\.path && !iv\.path\) \{\s*s\.neiStroll \+= dt/.test(stSim) && /if \(s\.neiGrudge\) \{[\s\S]{0,640}?\n    \}\n    if \(s\.neiMending/.test(stSim))
     check('pin: the tell names the pair and the marquee teaches the law',
         /FERN AND IVY TAKE A WALK/.test(stJsx) && /THE PAIR WANDERS THE LOT/.test(stJsx))
     const fresh = newRun(3)
@@ -1864,7 +1867,7 @@ section('NEIGH STROLL (#2611): the pair walks the lot — bank, circuit, walk-pa
 // The pair's identity on the VIEW side: their lines wear their hues, their
 // reunion sparkles teal, their cold war leans them apart, and the panel teaches
 // cross-warmth. No economy here — sim.js must not learn any of these words.
-section('NEIGH VIEW (#2599): pair bubbles, teal reunion, guest sulks, warmth sparkle')
+section('NEIGH VIEW (#2599): pair bubbles, teal reunion, guest sulks, warmth sparkle, murmur, attract ring')
 {
     const nvArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
     const nvJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
@@ -1915,6 +1918,68 @@ section('NEIGH VIEW (#2599): pair bubbles, teal reunion, guest sulks, warmth spa
         && /else neighPrevD = 99/.test(nvJsx))
     check('pin: the view pass stays out of the sim — the economy never heard of these tells',
         !/PAIR_HUES|pairSparkle|neighSulks|neigh\.warm|neighWave|neighPrevD/.test(nvSim))
+
+    // #2599 handoff 2 — the cold war speaks. Sour murmurs on a long clock while
+    // the pair stands apart; the crack and the pay stay exactly as #2604 left them.
+    const hangN = (g, key, name, r, c, hue) => {
+        g.visitAfter = 99; g.ivyAfter = 99; g.ivyGap = 0
+        g[key] = { name, r, c, x: tileX(c) + TILE / 2, y: tileY(r) + TILE / 2, path: null, state: 'hang',
+            t: 0, hue, face: 1, walkPhase: 0, chatT: 0, hangUntil: 9999, neighT: 0 }
+        return g[key]
+    }
+    // hold + hour-cap, the §NEIGH STROLL lap shape: nobody works, no bell rings,
+    // the world stands at ten — sixty honest seconds of cold war and nothing else.
+    const lapN = (g, pairs, sec, sink) => {
+        for (let i = 0; i < Math.round(sec / DT); i++) {
+            pairs.forEach(([p, r, c]) => { p.r = r; p.c = c; p.path = null; p.use = null; p.goal = null; p.working = false })
+            g.hour = Math.min(g.hour, 10)
+            advance(g, DT); sink.push(...drain(g))
+        }
+    }
+    const c1 = newRun(2599); hangN(c1, 'visitor', 'Fern', 3, 5, '#4fae5f'); hangN(c1, 'ivy', 'Ivy', 3, 7, '#a3579b')
+    c1.neiGrudge = 1
+    const rnNeigh = c1.rel.neigh
+    const evCold2 = []
+    lapN(c1, [[c1.visitor, 3, 5], [c1.ivy, 3, 7], [c1.people[0], 1, 12], [c1.people[1], 1, 1]], 60, evCold2)
+    const murmurs = evCold2.filter((e) => e.t === 'grudge-cool' && e.who === 'neigh')
+    check('the cold war murmurs — a minute of cold pair trades sour beats, never silence',
+        murmurs.length >= 2 && murmurs.every((e) => Number.isFinite(e.x) && Number.isFinite(e.y)), `beats=${murmurs.length}`)
+    check('the murmur pays NOTHING — sixty cold seconds move the pair bond not at all',
+        Math.abs(c1.rel.neigh - rnNeigh) < 1e-9 && c1.rel.fern === 0 && c1.rel.ivy === 0,
+        `neigh=${c1.rel.neigh} fern=${c1.rel.fern} ivy=${c1.rel.ivy}`)
+    check('the murmur keeps the household beat honest — only pair murmurs carry who:neigh here',
+        evCold2.filter((e) => e.t === 'grudge-cool' && e.who !== 'neigh').length === 0)
+    c1.ivy = null   // absence thaws, as ever — and the murmuring stops with the war
+    const evThawed = []
+    lapN(c1, [[c1.visitor, 3, 5], [c1.people[0], 1, 12], [c1.people[1], 1, 1]], 60, evThawed)
+    check('the thaw outlasts the murmur — warm-free air after absence, no more sour beats',
+        c1.neiGrudge === 0 && c1.neiMending === 1 && evThawed.filter((e) => e.t === 'grudge-cool' && e.who === 'neigh').length === 0)
+    const h0 = newRun(9), h1 = newRun(9); h1.neiMurmurCd = 13.7; h1.neiMurrs = 2
+    check('pin: the murmur is a clock, not state — it never rides the hash', stateHash(h0) === stateHash(h1))
+    check('pin: the pair murmur mirrors the household beat — longer cooldown, first line after the crack',
+        /export const NEIGH_MURMUR_CD = 24/.test(nvSim) && /s\.neiMurmurCd = GRUDGE_FIRST_CD/.test(nvSim)
+        && /if \(s\.neiMurmurCd <= 0\)/.test(nvSim) && /s\.neiMurmurCd -= dt/.test(nvSim))
+    check('pin: the murmur rides the household crack event and wears the pair plate automatically',
+        /t: 'grudge-cool', who: 'neigh'/.test(nvSim))
+    check('pin: the sour lines rotate on a counter, never rng — seeded timelines hold',
+        /NEIGH_SOUR_LINES\[s\.neiMurrs\+\+ % NEIGH_SOUR_LINES\.length\]/.test(nvSim)
+        && !/pick\(s, NEIGH_SOUR_LINES\)/.test(nvSim) && /export const NEIGH_SOUR_LINES = \[/.test(nvSim)
+        && (nvSim.match(/export const NEIGH_SOUR_LINES = \[[\s\S]*?\]/)[0].match(/,$/gm) || []).length >= 3)
+    check('pin: absence still ends the war — the murmur block lives inside the grudge return',
+        /if \(s\.neiGrudge\) \{[\s\S]{0,700}?\n    \}\n    if \(s\.neiMending/.test(nvSim))
+
+    // #2599 item 3 — the attract sells the pair on its own copy beat.
+    const nmJsx = readFileSync(new URL('../src/components/AttractMessage.jsx', import.meta.url), 'utf8')
+    check('pin: AttractMessage can announce its copy beats — optional, other titles never see it',
+        /onIndex/.test(nmJsx) && /cbRef\.current\?\.\(0\)/.test(nmJsx) && /cbRef\.current\?\.\(ixRef\.current\)/.test(nmJsx))
+    check('pin: the NEIGH marquee index derives from the copy, never a magic number',
+        /MESSAGES\.findIndex\(\(m\) => m\.startsWith\('FERN AND IVY'\)\)/.test(nvJsx))
+    check('pin: on that beat the demo rings Ivy while Fern hangs at an empty gate, before dusk',
+        /marqueeIx\.current === NEIGH_MARQUEE[\s\S]{0,160}demoG\.visitor && demoG\.visitor\.state === 'hang' && !demoG\.ivy && demoG\.hour < 19/.test(nvJsx)
+        && /demoG\.ivyAfter = Math\.min\(demoG\.ivyAfter, Math\.floor\(demoG\.hour\)\); demoG\.ivyGap = 0/.test(nvJsx))
+    check('pin: the ring is once per demo run, re-armed by the next street',
+        /neighBeatRung = demoG/.test(nvJsx) && /freshDemo = \(\) => \{ neighBeatRung = null/.test(nvJsx))
+    check('pin: the attract wires its marquee to the hook', /onIndex=\{\(i\) => \{ marqueeIx\.current = i \}\}/.test(nvJsx))
 }
 
 // ----------------------------------------------------------- PET (#2197) -----
@@ -2507,7 +2572,10 @@ section('COURT POLISH (#2135): spoken chat, cooling beats, the ring tell')
     const cpJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
     check('pin: both neighbours\u2019 crossings use the honest dt check and speak a chat event',
         (cpSim.match(/partner\.chatT - dt <= 2\.4/g) || []).length === 2 && (cpSim.match(/t: 'chat'/g) || []).length === 2)
-    check('pin: the cooling beat emits its own event once', (cpSim.match(/t: 'grudge-cool'/g) || []).length === 1)
+    // #2599 handoff 2 adds a second emitter: the pair's cold-war murmur rides the
+    // same beat, tagged who:'neigh'. Two sources, one event id — the view's single
+    // grudge-cool handler stays the whole rendering law.
+    check('pin: the cooling beat emits its own event once per cold war — household + pair (#2599)', (cpSim.match(/t: 'grudge-cool'/g) || []).length === 2)
     check('pin: the reach ring paints only when a word is ready (cooldown closed, buy mode closed)',
         /g\.cmdCd <= 0/.test(cpJsx) && /courtTarget\(g\)/.test(cpJsx) && /ctx\.ellipse\(t\.p\.x/.test(cpJsx))
     check('pin: spoken lines render as a bubble over the pair (art + shell + all six spoken events)',
