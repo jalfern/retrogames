@@ -224,11 +224,13 @@ danger. Probe `fx: { ash, homes, warnNotes, dryFx, warnStep }` receipts.
 
 ## Honest gaps
 
-- **Single-row undersides (stage 2 of #2579, gated on jonq #2585).**
-  Multi-course ceilings now hang their rising hits tip-up in the air below
+- **DISCLAIMER** — single-row undersides declined by ruling (#2585
+  answered B, 2026-11-17; the record rides #2579).
+  Multi-course ceilings hang their rising hits tip-up in the air below
   the lowest course (`hangUnderside` in `sim.js`, UNDERSIDE section of
   `archerycheck`) — but a thin one-row canopy still lifts its hit into the
-  air cell above the slab. That is measured, not inherited: with single-row
+  air cell above the slab, and that stays the law by choice. The lift is
+  measured, not inherited: with single-row
   corridor hangs on, ONE hanging shaft in KNOCKBACK's spawn corridor
   re-knits the autopilot matchup into a 917-tick duel whose 451-tick dry
   spell rings the #2377 heat bell, and no bot-knob re-tune fixes arena 1
@@ -236,11 +238,12 @@ danger. Probe `fx: { ash, homes, warnNotes, dryFx, warnStep }` receipts.
   combos — every combo that keeps arena 1's tempo green rewrites arenas
   0/2's duel flow away from main, and the nearest candidates outright
   flip another arena's winner).
-  Whether the full law ships (wider tempo constants) or single-row hangs
-  are declined is Jon's ruling; the law, the lab gates and the bot doctrine
-  (sway, sky-cross, honest `predictHit`) are all in and green on this
-  branch's shape — widening the hang predicate back to one-row slabs is
-  the only code the ruling needs.
+  Jon's ruling B: thick-stone hangs stand — honest duels never hear the
+  heat bell for a one-row canopy's lift; the #2377 tempo promise outranks
+  hang coverage. Not re-litigated without new tempo-constant evidence;
+  the law, the lab gates and the bot doctrine (sway, sky-cross, honest
+  `predictHit`) stay in and green, and the declined shape is archived on
+  `origin/pull/2583/head` (`a002199`) should the ruling ever change.
 - ~~The 2P duel has no harness yet beyond the pad dispatch existing
   (`secondPad` is `VirtualControls`' contract, exercised by IceClimber);
   `archeryplay` drives P1 only.~~
