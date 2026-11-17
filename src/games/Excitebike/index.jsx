@@ -1244,6 +1244,9 @@ const ExcitebikeGame = () => {
                             // its number on the roster — you see the length you're
                             // about to ride before you seat it.
                             const L = i >= TRACK_COUNT ? lapsOf((track(i) || {}).laps) : LAPS_DEFAULT
+                            // #2642 GRADED PACK — your design wears its pack grade
+                            // (0–3 pips of the measured cap), the catalogue grammar.
+                            const PK = i >= TRACK_COUNT ? Math.max(0, Math.min(3, Math.round(((track(i) || {}).pace || 0) / 0.02))) : 0
                             return (
                             <div key={i} className={`flex items-center gap-2 text-sm sm:text-base ${i === sel ? 'text-yellow-300' : 'text-white/85'}`}>
                                 <span className="w-5 text-right"><BikeCursor on={i === sel} /></span>
@@ -1254,7 +1257,10 @@ const ExcitebikeGame = () => {
                                         {'▰'.repeat(trackBite(i))}<span className="text-white/25">{'▱'.repeat(TRACK_COUNT - trackBite(i))}</span>
                                     </span>
                                 ) : (
-                                    <span className="text-[11px] leading-none text-orange-300" aria-label="your own design" data-custom-laps={L}>★ YOURS{L !== LAPS_DEFAULT ? ` · ${L} LAP${L === 1 ? '' : 'S'}` : ''}</span>
+                                    <>
+                                        <span className="text-[11px] leading-none text-orange-300" aria-label="your own design" data-custom-laps={L}>★ YOURS{L !== LAPS_DEFAULT ? ` · ${L} LAP${L === 1 ? '' : 'S'}` : ''}</span>
+                                        <span className="text-[11px] leading-none tracking-tight text-emerald-300" style={{ textShadow: '1px 1px #000' }} data-pack={PK} aria-label={`pack grade ${PK} of 3`}>{'▰'.repeat(PK)}<span className="text-white/25">{'▱'.repeat(3 - PK)}</span></span>
+                                    </>
                                 )}
                             </div>
                             )
