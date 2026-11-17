@@ -221,11 +221,34 @@ faster heat.
   (law ×13, reload byte-identity ×2 customs, structural submit-nothing; two
   by-hand structural mutants die by name) and driven by `exciteplay` with real
   Esc, a real EXIT thumb-tap, and a bay→splash→re-seat loop (97/97 merged).
-- **Custom laps are fixed at 2** and the rivals ride their GENERIC pace line
-  over your terrain (`rivalSpeed` is terrain-computed, never per-custom
-  tuned): a well-drawn course beats the pack on pace, a crowded one may be
-  a slab of whoops — there is no "difficulty grade" beyond what you draw.
-  The attract demo still flies MOTOCROSS only; saved designs never enter it.
+- **CLOSED by #2625 (stage 1): YOUR LAPS** — the designer sets the race length.
+  A `LAP` tool joined the bay strip (after TEST, before ERASE — EXIT stays last,
+  backward wrap still lands on EXIT; the law is tested, not assumed): Space cycles
+  the count 1→8→1 and the tool's face wears its state (`LAP 3` — the only tool
+  that shows its number), NES orange. Default 2 is the house book, so every design
+  saved BEFORE this law rides byte-identical. The number travels with the design
+  everywhere: the codec stores `laps` (validated by `lapsOf` — old-format or
+  garbage values fall back to the book, never drop the design), a deviating splash
+  row labels itself (`★ YOURS · 3 LAPS`), and the seat hands the stored number to
+  `makeGame` — gated behind `ownTerrain`, so league 0–5 gets no option and the
+  two-lap book with every match receipt stands untouched. Esc-abandon carries the
+  number you rode back into the bay with the stamps; a deviating seat toasts
+  `N LAPS — BY YOUR LAW`. Fidelity: the original's edit mode lets you choose the
+  lap count; its exact VS-mode range is operator lore we don't model, so 1–8 is
+  the port's book. Proven by excitecheck YOUR LAPS (+22: law/book, config-not-
+  terrain (compile output carries no laps — every geometry pin holds by
+  construction), codec round-trip/legacy/garbage/clamp, one draft registered at
+  1 and 3 laps racing provably different distances at WOT with determinism, and
+  source pins for the wiring excitecheck can't drive). Re-recorded pin: strip is
+  11 tools, TEST 6 · LAP 7 · ERASE 8, EXIT last.
+- **Custom pace grade (#2625 stage 2, open):** rivals ride their GENERIC pace
+  line over your terrain (`rivalSpeed` is terrain-computed, never per-custom
+  tuned): a well-drawn course beats the pack on pace, a crowded one may be a
+  slab of whoops — beyond the length you choose (stage 1, shipped) there is no
+  "difficulty grade". The mechanism exists (per-course `pace`, #2573); customs
+  carry no `pace` key yet.
+- **Attract never sees your designs (#2625 stage 3, open):** the attract demo
+  still flies MOTOCROSS only; saved designs never enter it.
 - **PER-COURSE LEAGUE (#2573 items 5+6):** every course carries a `pace`
    (MOTOCROSS/SUPERCROSS 0 — calibration, all receipts byte-honest; then
    +0.02/+0.03/+0.04, K.O. CROSS +0.06) and `PACK_TIER` [1,2/3,1/3,0,0] rides
