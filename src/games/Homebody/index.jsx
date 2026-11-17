@@ -38,7 +38,7 @@ import {
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court — one pad button, two orders
     scheduleMeals, MEAL_WINDOW, SPAT_CD,   // #2244: the meal bells — the F1 cheat re-seeds today's hours
     MEAL_TIMBRE, sharedChord, nightLevel,   // #2264: per-bell motifs, the rotating table chord, one night curve
-    ringTruck, ICE_TIMBRE, CONE_PRICE, coneOrderOk,   // #2503: the ice-cream truck — the jingle table, the price, the order gate, the F1/harness ring
+    ringTruck, ICE_TIMBRE, ICE_ENDINGS, CONE_PRICE, coneOrderOk,   // #2503: the ice-cream truck — the jingle table, the price, the order gate, the F1/harness ring (ICE_ENDINGS: #2508 item 2, the call varies)
     ringSneak, SNEAK_CREEP, SNEAK_SIREN, SNEAK_TAKE_SFX,   // #2520: the sneak — creep motif, siren, thunk, the F1/harness ring
     ringProwl, PROWL_PADS, PROWL_HOME_SFX,   // #2532: Miso's even-night prowl — soft pads, the home chirp, the F1/harness ring
     DEF, yarnOrderOk,   // #2256: the yarn ball — cat-only piece, honest refusal on tap
@@ -162,7 +162,17 @@ const HomebodyGame = () => {
         // so restores and any missed event still self-heal into the drive-off.
         const ICE_TRUCK_IN_S = 2, ICE_TRUCK_OUT_S = 4
         const ICE_TRUCK_Y = H - 46   // on the street below the fence — nearest thing to the camera, so it paints last
-        const iceTruck = { phase: 'off', px: 0, from: 0, parked: 0, t0: 0 }
+        const iceTruck = { phase: 'off', px: 0, from: 0, parked: 0, t0: 0, jingle: 'A' }
+        // #2508 item 2: the call varies and SWELLS — iceVol reads the truck's live
+        // progress toward its curb spot, so early notes are round-the-corner quiet
+        // and the bar that lands at the curb plays full. Distance-based, view-only.
+        const ICE_VOL_FAR = 0.022, ICE_VOL_NEAR = 0.06
+        const iceVol = () => {
+            if (iceTruck.phase !== 'in') return ICE_VOL_NEAR   // parked/at rest: the curb is right here
+            const span = iceTruck.parked + TRUCK_W + 8
+            const k = span > 0 ? Math.max(0, Math.min(1, (iceTruck.px + TRUCK_W + 8) / span)) : 1
+            return ICE_VOL_FAR + (ICE_VOL_NEAR - ICE_VOL_FAR) * k
+        }
         const iceTruckRollOut = (sim) => {
             if (iceTruck.phase === 'in' || iceTruck.phase === 'parked') { iceTruck.from = iceTruck.px; iceTruck.t0 = sim ? sim.sec : 0; iceTruck.phase = 'out' }
         }
@@ -287,7 +297,13 @@ const HomebodyGame = () => {
                         if (live) { say('THE TRUCK PASSED US BY'); burst(tilePx(e.c), tilePy(e.r) + 10, 7, '#9a958a', 1.4) }
                         break
                     case 'ice-truck': {   // #2503: the jingle rolls down the street — a music-box motif plays the table verbatim, pastel glints at the curb
-                        ICE_TIMBRE.forEach(([f, d, ms]) => setTimeout(() => audioController.playTone(f, d, 'triangle', 0.04), ms))
+                        // #2508 item 2: the call varies per pass (two ending bars on alternating
+                        // passes) and each note's gain rides iceVol — quiet round the corner,
+                        // swelling toward the curb. iceSerial was stamped before the event fired,
+                        // so +1 puts the street's very first pass on ending A.
+                        ICE_TIMBRE.forEach(([f, d, ms]) => setTimeout(() => audioController.playTone(f, d, 'triangle', iceVol()), ms))
+                        iceTruck.jingle = (s.iceSerial + 1) % 2 === 0 ? 'A' : 'B'
+                        ICE_ENDINGS[iceTruck.jingle === 'A' ? 0 : 1].forEach(([f, d, ms]) => setTimeout(() => audioController.playTone(f, d, 'triangle', iceVol()), ms))
                         iceTruck.parked = LOT_X + e.c * TILE - 44   // #2508 item 1: the body follows the jingle — wheels up at the west edge, roll in to the cone
                         iceTruck.from = iceTruck.px = -(TRUCK_W + 8); iceTruck.t0 = s.sec; iceTruck.phase = 'in'
                         if (live) { say('THE ICE CREAM MAN COMES'); burst(tilePx(e.c), tilePy(e.r) + 8, 8, '#ffd9e8', 2) }
@@ -710,11 +726,15 @@ const HomebodyGame = () => {
                 iceTruckRollOut(g)
             }
             if (iceTruck.phase === 'in') {
-                const k = Math.min(1, (g.sec - iceTruck.t0) / ICE_TRUCK_IN_S)
+                let k = (g.sec - iceTruck.t0) / ICE_TRUCK_IN_S
+                if (!(k >= 0)) k = 1   // a sim restart mid-roll leaves t0 on the dead clock — finish the slide instead of flinging the truck west
+                else k = Math.min(1, k)
                 iceTruck.px = iceTruck.from + (iceTruck.parked - iceTruck.from) * k
                 if (k >= 1) { iceTruck.px = iceTruck.parked; iceTruck.phase = 'parked' }
             } else if (iceTruck.phase === 'out') {
-                const k = Math.min(1, (g.sec - iceTruck.t0) / ICE_TRUCK_OUT_S)
+                let k = (g.sec - iceTruck.t0) / ICE_TRUCK_OUT_S
+                if (!(k >= 0)) k = 1   // #2508: same law for the drive-off (homebodydrive caught x = -2342 on a rewound clock)
+                else k = Math.min(1, k)
                 iceTruck.px = iceTruck.from + (W + TRUCK_W + 8 - iceTruck.from) * k
                 if (k >= 1) iceTruck.phase = 'off'
             }
@@ -1185,7 +1205,7 @@ const HomebodyGame = () => {
                     kid: gs.kid ? { name: gs.kid.name, r: gs.kid.r, c: gs.kid.c, state: gs.kid.state, asleep: gs.kid.asleep, needs: { ...gs.kid.needs }, cd: Math.round(gs.kid.cd * 10) / 10, x: Math.round(gs.kid.x), y: Math.round(gs.kid.y) } : null,   // #2203
                     paper: gs.paper ? { r: gs.paper.r, c: gs.paper.c } : null, paperDay: gs.paperDay,   // #2238: the route
                     cone: gs.cone ? { r: gs.cone.r, c: gs.cone.c } : null, iceSerial: gs.iceSerial, iceDay: gs.iceDay, treats: gs.treats,   // #2503: the truck's stop and the cone ledger
-                    truckView: { phase: iceTruck.phase, x: Math.round(iceTruck.px) },   // #2508 item 1: the view-side truck — QA reads the slide (phase 'off'/'in'/'parked'/'out') here
+                    truckView: { phase: iceTruck.phase, x: Math.round(iceTruck.px), jingle: iceTruck.jingle },   // #2508 item 1: the view-side truck — QA reads the slide (phase 'off'/'in'/'parked'/'out') here; item 2: which ending bar this pass rang ('A'/'B')
                     meal: gs.meal ? { r: gs.meal.r, c: gs.meal.c, name: gs.mealName } : null, mealDay: gs.mealDay, mealSlot: gs.mealSlot, mealSerial: gs.mealSerial, mealEaten: gs.mealEaten.length,   // #2244: the bells
                     queues: gs.people.map((p) => p.queue.map((o) => (o.kind === 'use' ? o.it.id : o.kind))),   // #2470: the pending lists, head first
                     collapse: gs.people.map((_, pi) => (collapseCache.has(pi) ? COLLAPSE_FRAMES : 0)),   // #2474 item 4: which rows are ghosting (QA-visible, view-only)
