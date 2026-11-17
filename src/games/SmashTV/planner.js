@@ -361,7 +361,7 @@ function seatDrive(gs, pi = 0) {
             st.stall = Math.hypot(p.x - ox, p.y - oy) < 4 ? st.stall + 1 : 0
         } else st.stall = moved < 0.3 ? st.stall + 1 : 0
     } else st.hist = []
-    if (st.rn !== gs.room) { st.rn = gs.room; st.streak = 0; st.hist = []; st.rt = null; st.rtG = null; st.rtKill = null }
+    if (st.rn !== gs.room) { st.rn = gs.room; st.streak = 0; st.hist = []; st.rt = null; st.rtG = null; st.rtKill = null; st.gp = null }
     st.last = [p.x, p.y]
     st.wantMove = false
     const inp = {}
@@ -523,6 +523,30 @@ function objectiveDrive(gs, pi, st, p) {
                 if (pth && pth.length) { st.rt = pth; st.rtG = [tc, tr]; if (tgt) st.rtKill = tgt.id }
             }
         }
+        // #2530 goal-progress stall — the roam breaker. The displacement
+        // window only catches bodies that STOP; the four surviving roam seeds
+        // {20,53,60,66} travel big chords forever (volley commits east, the
+        // objective pulls SW, repeat) yet never close on their objective:
+        // 57k ticks of honest walking with the last threat untouched. Judge
+        // the OTHER master instead — the gap to the goal. A goal that keeps
+        // its place (static turret, item, crate, exit — a walking chaser's
+        // exact coords change every tick, so kiting never arms this) whose
+        // distance has not netted 16px closer in 600 ticks of wanted walking
+        // is losing to the geometry: grow the streak, and the router above
+        // plans the walk instead of re-rolling straight legs forever.
+        // Progress is not only movement: a duel that LANDS (goal hp dropping,
+        // score ticking) is winning while the seat holds its distance — the
+        // window watches the goal's hp and the score too: any flinch resets it;
+        // only a stone-deaf, score-frozen stare-down arms. And never in a boss
+        // room: there the lateral-sweep doctrine owns the floor (#2491) and a
+        // pinned add's stand is not worth abandoning it for.
+        if (!st.rt && (inp.mx || inp.my) && rawD > 16) {
+            const gt = gs.enemies.find((en) => en.hp > 0 && Math.abs(en.x - x) < 1 && Math.abs(en.y - y) < 1)
+            const gv = gt ? gt.hp : -1
+            if (!st.gp || st.gp.x !== x || st.gp.y !== y || st.gp.h !== gv || st.gp.s !== gs.score) st.gp = { x, y, best: rawD, t: gs.tick, h: gv, s: gs.score }
+            else if (rawD < st.gp.best - 16) { st.gp.best = rawD; st.gp.t = gs.tick }
+            else if (gs.tick - st.gp.t > 600 && st.detour <= 0 && !(room && room.boss)) { st.streak = (st.streak || 0) + 1; st.gp = null }
+        } else st.gp = null
         if (inp.mx || inp.my) { st.wantMove = true; st.gx = inp.mx; st.gy = inp.my }
     }
 

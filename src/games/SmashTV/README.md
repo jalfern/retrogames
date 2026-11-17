@@ -385,9 +385,19 @@ shields used to eat is now read or paid.
 its own array values (Map keys are strict), collapsing every relocation route
 to its goal cell — the seat then walked straight into the chrome it was being
 routed around. Re-keying the parent cells fixed 21 of 25 (wins 66→80, stuck
-0); the four wide-corner ping-pong roamers that remain (20, 53, 60, 66) stay
-tracked on the issue. smashcheck's `roll seeds` gate pins the 23 un-wedged
-seeds against re-freeze.
+0). The wide-corner ping-pong roamers then needed a second law: the stall
+window only catches bodies that STOP, but a volley-commit pulling east while
+the objective pulls SW travels big chords forever and never closes the gap —
+so the pilot now also judges GOAL PROGRESS (600 ticks of wanted walking with
+no net 16px toward a goal that keeps its place, no score, no hp flinch, no
+boss in the room = the straight legs are losing → grow the streak and let the
+BFS router plan the walk). Seed 20 (static turret, east/volt-back line) now
+wins: 81/13/0/3. Three roamers stay tracked on the issue — 53 (a dropped
+flame barrel sits ON its exit route's cell: the #2032 avoid law and the
+router fight at the d≤16 ring forever; a barrel-aware `cellFree` fixes 53 but
+phase-shifts seed 21's boss line into a loss — the ring needs a scoped home),
+60 and 66. smashcheck's `roll seeds` gate pins the 24 un-wedged seeds against
+re-freeze.
 
 Duel re-measure (nightly 43996221673, same family): the sweep's proof of the
 lane-sound duel was route luck too — seed 4's corner walk died with the router
