@@ -712,14 +712,15 @@ const MissileBattleGame = () => {
                 <div className="absolute top-2 left-3 right-3 flex items-center gap-3 text-white font-mono text-xs">
                     <span ref={setHud('wave')} className="border border-red-300/60 text-red-200 px-2 py-0.5 rounded bg-black/40">1/3</span>
                     <span className="text-cyan-200">CITIES <b ref={setHud('cities')}>6</b></span>
-                    <span ref={setHud('ammo')} className="text-violet-200/90">10 10 10</span>
-                    {/* #2510 item 3: the machine signs its shift — a small tag
-                        by the score column while the autopilot holds the sky. */}
-                    <span ref={setHud('auto')} className="text-[10px] font-bold tracking-widest border border-current rounded px-1 py-0.5 bg-black/40 transition-opacity duration-200" style={{ opacity: 0 }} />
-                    <span className="ml-auto text-xl font-bold" style={{ textShadow: '0 2px 5px #000' }}><span ref={setHud('score')}>000000</span></span>
+                    <span ref={setHud('ammo')} className="text-violet-200/90 whitespace-nowrap">10 10 10</span>
+                    <span className="ml-auto text-xl font-bold whitespace-nowrap" style={{ textShadow: '0 2px 5px #000' }}><span ref={setHud('score')}>000000</span></span>
                     <span className="text-yellow-200/70"><span ref={setHud('hiscore')}>000000</span></span>
                 </div>
                 <div ref={setHud('toast')} className="absolute inset-x-0 top-1/4 text-center text-amber-100 font-mono font-bold text-xl transition-opacity duration-500" style={{ opacity: 0, textShadow: '0 0 12px #f60' }} />
+                {/* #2510 item 3: the machine signs its shift — a small tag by
+                    the score column while the autopilot holds the sky. Absolute
+                    so it never pushes the narrow-phone HUD into wrapping. */}
+                <span ref={setHud('auto')} className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] font-bold tracking-widest border border-current rounded px-1 py-0.5 bg-black/40 transition-opacity duration-200" style={{ opacity: 0 }} />
                 {/* #2510 item 1: the arcade flipped a named PLAYER card between
                     turns — the seat card ceremonies the hand-off on the banner:
                     the seat's colour, its word, its cities still lit. */}
