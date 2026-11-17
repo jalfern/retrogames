@@ -646,10 +646,16 @@ function body(ctx, p, t, bob, fx = null, lean = 0) {
     ctx.fillRect(x - 5, y - 6 + bob, 10, 10)
     ctx.fillStyle = 'rgba(0,0,0,0.15)'
     ctx.fillRect(x - 5, y + 1 + bob, 10, 2)
-    // arms
+    // arms — fx 'wave' (#2599 item 2): the meet-up greeting — the host's arm
+    // goes up and pumps, a hand on top; everyone else keeps arms at rest.
     ctx.fillStyle = p.hue
     ctx.fillRect(x - 7, y - 5 + bob - leg * 0.5, 2, 7)
-    ctx.fillRect(x + 5, y - 5 + bob + leg * 0.5, 2, 7)
+    if (fx === 'wave') {
+        const pump = Math.sin(t * 14) > 0 ? 0 : 2
+        ctx.fillRect(x + 5, y - 9 + bob - pump, 2, 5)
+        ctx.fillStyle = '#e8c29a'
+        ctx.fillRect(x + 5, y - 11 + bob - pump, 2, 2)
+    } else ctx.fillRect(x + 5, y - 5 + bob + leg * 0.5, 2, 7)
     // head
     ctx.fillStyle = '#e8c29a'
     ctx.beginPath(); ctx.arc(x, y - 11 + bob, 5.4, 0, 7); ctx.fill()

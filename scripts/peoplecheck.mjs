@@ -1900,8 +1900,21 @@ section('NEIGH VIEW (#2599): pair bubbles, teal reunion, guest sulks, warmth spa
     check('pin: the guests\u2019 puff arms at the crack and fades on the real clock',
         /if \(e\.who === 'neigh'\) neighSulks = 2\.4/.test(nvJsx) && /neighSulks = Math\.max\(0, neighSulks - dtMs \/ 1000\)/.test(nvJsx))
     check('pin: no stale pair-puff across streets', /sayB\.life = 0[\s\S]{0,120}neighSulks = 0/.test(nvJsx))
+    check('pin: arrival rings the greeting on the ring crossing, unclaimed and warm only',
+        /neighPrevD > 2 && d0 <= 2/.test(nvJsx) && /!gs\.neiGrudge && !gs\.visitor\.claim && !gs\.ivy\.claim/.test(nvJsx)
+        && /neighWave = 1\.1/.test(nvJsx))
+    check('pin: the greeting is one soft note and teal glints — AudioController only, no assets',
+        /playTone\(784, 0\.06, 'triangle', 0\.03\)/.test(nvJsx) && /'#7fd0c0', 1\.6, 'flash'/.test(nvJsx))
+    check('pin: Fern wears the wave — the host of the street greets, and the cold-war branches outrank the beat',
+        /neighWave > 0 && g\.visitor && o\.p === g\.visitor/.test(nvJsx) && /fx = 'wave'/.test(nvJsx)
+        && /else if \(ri < 0 && neighWave > 0/.test(nvJsx))
+    check('pin: the greeting has a raised pumping arm in the paint',
+        /if \(fx === 'wave'\)/.test(nvArt) && /Math\.sin\(t \* 14\)/.test(nvArt) && /const pump = Math\.sin\(t \* 14\)/.test(nvArt))
+    check('pin: the beat fades on the real clock and never crosses streets',
+        /neighWave = Math\.max\(0, neighWave - dtMs \/ 1000\)/.test(nvJsx) && /neighWave = 0; neighPrevD = 99/.test(nvJsx)
+        && /else neighPrevD = 99/.test(nvJsx))
     check('pin: the view pass stays out of the sim — the economy never heard of these tells',
-        !/PAIR_HUES|pairSparkle|neighSulks|neigh\.warm/.test(nvSim))
+        !/PAIR_HUES|pairSparkle|neighSulks|neigh\.warm|neighWave|neighPrevD/.test(nvSim))
 }
 
 // ----------------------------------------------------------- PET (#2197) -----
