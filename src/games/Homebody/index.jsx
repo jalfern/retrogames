@@ -138,6 +138,7 @@ const HomebodyGame = () => {
         const sayB = { text: '', x: 0, y: 0, life: 0, hues: null }
         const showSay = (s2, e) => { const t = s2.thoughts[0]; if (t) { sayB.text = t.text; sayB.x = e.x ?? W / 2; sayB.y = e.y ?? H / 2; sayB.life = 4.2; sayB.hues = e.t === 'neigh' || e.who === 'neigh' ? PAIR_HUES : null } }   // #2599: pair lines wear the pair
         let neighSulks = 0   // #2599 handoff 1: storm-puff window over the pair at the crack (real seconds, view-only)
+        let neighWave = 0, neighPrevD = 99   // #2599 item 2: meet-up greeting beat + last frame's pair ring distance (view-only; the sim never hears of it)
         let toastMsg = '', toast = 0
         // #2474 items 2+4: the view-only chip layer. collapseCache arms the row-
         // collapse ghosts (Map<personIndex, {glyphs, rest, t}>); hoverReveal is the
@@ -803,6 +804,8 @@ const HomebodyGame = () => {
                     fx = neighSulks > 0 ? 'spat' : 'cold'
                     const other = o.p === g.visitor ? g.ivy : g.visitor
                     lean = o.p.x <= other.x ? -1 : 1
+                } else if (ri < 0 && neighWave > 0 && g.visitor && o.p === g.visitor) {
+                    fx = 'wave'   // #2599 item 2: the street's host greets the arriving pair — Fern waves (the grudge branches above outrank the beat)
                 }
                 drawPerson(ctx, o.p, g.sec, g.people[g.active] === o.p, fx, lean)
             }
@@ -984,6 +987,20 @@ const HomebodyGame = () => {
             // banner; the landmine predates it (#2135). Take the frame's dt.
             if (sayB.life > 0) sayB.life = Math.max(0, sayB.life - dtMs / 1000)   // #2135: real-clock fade, like the toast
             if (neighSulks > 0) neighSulks = Math.max(0, neighSulks - dtMs / 1000)   // #2599 handoff 1: the guests' puff fades on the real clock (the world may be frozen in buy mode)
+            // #2599 item 2: the meet-up greeting — Ivy's meet-walk arrives beside
+            // Fern and Fern waves. Honest view-side arrival: the ring distance
+            // crossing from outside to inside (mirror of sim.js NEIGH_REACH), only
+            // while both guests are on the lot, unclaimed, and the cold war is off.
+            if (gs && gs.visitor && gs.ivy && !gs.neiGrudge && !gs.visitor.claim && !gs.ivy.claim) {
+                const d0 = Math.abs(gs.visitor.r - gs.ivy.r) + Math.abs(gs.visitor.c - gs.ivy.c)
+                if (neighPrevD > 2 && d0 <= 2) {
+                    neighWave = 1.1
+                    audioController.playTone(784, 0.06, 'triangle', 0.03)
+                    burst((gs.visitor.x + gs.ivy.x) / 2, gs.visitor.y - 12, 3, '#7fd0c0', 1.6, 'flash')
+                }
+                neighPrevD = d0
+            } else neighPrevD = 99   // an empty lot or a cold war re-arms the beat for the next arrival
+            if (neighWave > 0) neighWave = Math.max(0, neighWave - dtMs / 1000)   // #2599 item 2: the wave lives on the real clock, like the puff
         }
 
         const frame = (ts) => {
@@ -1086,6 +1103,7 @@ const HomebodyGame = () => {
             particles = []; shake = 0; toast = 0; refuses.length = 0
             sayB.life = 0   // #2135: no stale bubble across streets
             neighSulks = 0   // #2599: nor a stale pair-puff
+            neighWave = 0; neighPrevD = 99   // #2599 item 2: nor a stale greeting
             prev.left = prev.right = prev.up = prev.down = prev.a = prev.b = prev.pdown = false
             actQueued = buildQueued = switchQueued = false; digitPick = -1; courtQueued = null
             tabQueued = 0; specialPick = null   // #2222
