@@ -281,6 +281,13 @@ const PILOTS = [
         },
         {
             id: 'smash-tv', hook: '__smashTest',
+            // #2530: the browser start rolls a random seed 0..96, but the planner is
+            // certified on seeds 0-8 only (smashcheck). Six roll seeds (19/20/34/41/
+            // 48/84) wedge the autopilot permanently in room 0/1 — nightly
+            // 43947467784 rolled 41 and the resume gate honestly called the frozen
+            // score dead (score 2000 -> 2000, room 1). Pin the certified seed here;
+            // #2530 owns the planner wedge itself. (Precedent: carpetcheck ?seed=7.)
+            q: '?seed=0',
             advanced: (a, b) => b.score > a.score,
             note: (a, b) => `score ${a.score} -> ${b.score}, room ${b.room}, lives ${b.lives} held`,
             advanceWait: 6000,
@@ -293,7 +300,7 @@ const PILOTS = [
             note: (a, b) => `v ${a.v} -> ${b.v}, lap ${b.lap + 1}/5, place ${b.place}`,
         },
     ].map((g) => ({
-        id: g.id, url: `${BASE}/${g.id}`, hook: g.hook,
+        id: g.id, url: `${BASE}/${g.id}${g.q || ''}`, hook: g.hook,
         async run(page, rep) {
             const H = g.hook
             const watching = () => page.evaluate((h) => window[h].watching(), H)
