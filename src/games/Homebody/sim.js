@@ -554,6 +554,106 @@ export const SNEAK_GONE_LINES = [
 // anywhere on the lot. The law and the view and the harness all read this.
 export function hasAlarm(s) { return s.items.some((it) => it.id === 'alarm') }
 
+// ------------------------------------------------ even-night prowl (#2532) ----
+// The day/night tail's second night citizen, the sneak's MIRROR (The Sims, PC
+// 2000: the household cat is a night creature — let out after dark it works
+// the lawn, and nobody's out past midnight). Same doctrines as the sneak:
+// parity off the day (arithmetic, never an rng draw — #2303/#2503/#2520), a
+// day stamp (one prowl a night, never banked), a window wholly before
+// midnight, and a midnight send-home. The parities are complementary and can
+// never overlap: odd nights boots on the gravel, even nights cat paws — a
+// sneak and a prowling Miso never share a dark. She walks the lot's own edge
+// (visitor-shaped BFS, non-solid per the truck law) and home to the nearest
+// warm floor cell; the prowl pays CAT-scale fun and nothing else — never
+// s.money, never s.lost (the #2520 win-margin law: night features must not
+// touch the attract's thin wish margin). No cat, quiet night: honest absence,
+// no event, no fake Miso.
+export const PROWL_DUE = 23                 // the same unkind hour the sneak chose - the lawn is Miso's country then
+export const PROWL_WINDOW = 1               // one watched hour, closed at midnight by construction
+export const prowlNightDue = (day) => day % 2 === 0   // even nights — the sneak took the odd ones; the lot keeps both
+export const PET_PROWL_FUN = 0.30         // cat-scale pay: a night's hunt is play, not money
+export const PROWL_OUT_LINES = [
+    'Miso slips out under the hedge — even nights are hers, and the lawn keeps no secrets from those paws.',
+    'The cat pours through the flap at eleven; the garden fills with small purposeful footsteps.',
+    'Even nights Miso walks the fence line, tail up, reading the neighbourhood by smell.',
+]
+export const PROWL_HOME_LINES = [
+    'Home by midnight — Miso shakes the dew off and pours herself into the loaf.',
+    'The prowl ends at the flap: whatever the garden held, the cat keeps.',
+    'Miso returns before midnight, unbothered by mice or by parity.',
+]
+export const PROWL_PADS = [[392, 0.06, 0], [330, 0.06, 130], [262, 0.08, 260]]      // three soft rising pads — paws on dew
+export const PROWL_HOME_SFX = [[262, 0.1, 0], [392, 0.14, 120]]                       // the little way home, up two notes
+
+// scenario setup (the ringSneak pattern): retire whatever prowls and send one
+// now, any night. Harness and F1 cheat only — the clock's own law never reads it.
+export function ringProwl(s) {
+    if (!s.pet) return 'no cat on the lot — nothing to let out'
+    s.prowl = null
+    s.prowlNight = Math.min(s.prowlNight, s.day - 1)   // tonight's prowl (if any) is retired — the law may land again
+    s.prowlNow = Math.max(0, s.hour - 0.01)
+    return 'the flap swings open — Miso is due'
+}
+
+// the walk home lands, or midnight catches her: one honest close for both.
+function finishProwl(s) {
+    s.prowl = null
+    const p = s.pet
+    if (p) {
+        p.state = 'roam'
+        p.needs.fun = Math.min(1, p.needs.fun + PET_PROWL_FUN)
+    }
+    s.events.push({ t: 'prowl-home' })
+    think(s, PROWL_HOME_LINES[s.prowlNight % PROWL_HOME_LINES.length])
+}
+
+function updateProwl(s, dt) {
+    const p = s.pet
+    if (!p) {   // no cat: the rig expires inside its window, the law stays silent
+        if (s.prowlNow !== null && s.hour >= s.prowlNow + PROWL_WINDOW) s.prowlNow = null
+        return
+    }
+    if (s.prowl) {
+        const w = s.prowl
+        w.t += dt
+        walkAlong(s, p, dt, 40)
+        if (w.state === 'out' && !p.path) {
+            const cell = nearestFloorCell(s, p.r, p.c)
+            const bp = cell && walkable(s, cell.r, cell.c) ? bfsPath(s, { r: p.r, c: p.c }, [cell]) : null
+            if (bp) { p.path = bp; w.state = 'home' }   // a blocked flap retries — the window is the deadline
+        } else if (w.state === 'home' && !p.path) {
+            finishProwl(s)
+        }
+        return
+    }
+    // one prowl a night — the day stamp is the law; a blocked route retries
+    // inside the window (the paper doctrine) and an unused window is gone
+    // honestly, never banked for tomorrow.
+    const due = s.prowlNow !== null ? s.prowlNow : PROWL_DUE
+    if (s.prowlNight === s.day || (s.prowlNow === null && !prowlNightDue(s.day)) || s.hour < due || s.hour >= due + PROWL_WINDOW) return
+    // the far side of her own lawn — the farthest walkable lot cell from the gate,
+    // deterministic by scan (the cat always gets the same country, seed or no seed).
+    let dest = null, bd = -1
+    for (let r = 2; r <= ROWS - 3; r++) {
+        for (let c = 1; c <= COLS - 2; c++) {
+            if (!walkable(s, r, c)) continue
+            const d = Math.abs(r - 12) + Math.abs(c - 5)
+            if (d > bd) { bd = d; dest = { r, c } }
+        }
+    }
+    const path = dest && bfsPath(s, { r: p.r, c: p.c }, [dest])
+    if (!path) return
+    if (p.asleep) { p.asleep = false; p.stretchT = 0.9 }   // the wake-and-slip
+    p.state = 'prowl'
+    p.path = path
+    s.prowl = { state: 'out', t: 0 }
+    s.prowlNight = s.day
+    s.prowlNow = null
+    s.prowlSerial++
+    s.events.push({ t: 'prowl-out', r: p.r, c: p.c })
+    think(s, PROWL_OUT_LINES[s.prowlSerial % PROWL_OUT_LINES.length])
+}
+
 // scenario setup (the ringTruck pattern): retire whatever prowls and send one
 // now, alarm or not. Harness and F1 cheat only — the clock's own law never reads it.
 export function ringSneak(s) {
@@ -828,6 +928,10 @@ export function newRun(seed) {
         sneakSerial: 0,         // #2520: visits ever made (line variant rides it, the iceSerial way)
         lost: 0,                // #2520: § ever lifted from the till (rides the hash)
         sneakNow: null,         // #2520: a rigged due hour (ringSneak) — one-shot, never the law
+        prowl: null,            // #2532: {state:'out'|'home'} while Miso works the lawn (her own feet carry it)
+        prowlNight: 0,          // #2532: day stamp — one prowl a night, the day-stamp doctrine (rides the hash)
+        prowlSerial: 0,         // #2532: prowl visits ever made (line variant rides it, the sneakSerial way)
+        prowlNow: null,         // #2532: a rigged due hour (ringProwl) — one-shot, never the law
         orderPing: { x: 0, y: 0, label: '', t: 0 },   // #2253: the last issued order (the view rings its target while t > 0)
         mealName: '',             // #2244: name of the current plate (a word is state the view reads)
         rel: { house: 0, fern: 0, ivy: 0, kid: 0 },   // #1817/#2143/#2203 conversation ladders (0..REL_MAX)
@@ -2065,6 +2169,9 @@ function updatePet(s, dt) {
         if (!night) { p.asleep = false; p.state = 'roam'; p.stretchT = 0.9; think(s, 'Miso unspools at dawn and stretches down the whole hallway.'); return }
         return
     }
+    // #2532: while the prowl is live the prowl owns her feet — the loaf waits
+    // for midnight (finishProwl sets her roaming again and this branch beds her).
+    if (night && s.prowl) return
     // night: find a warm floor tile and pour herself into a loaf
     if (night) {
         if (p.state === 'bed' && p.path && p.path.length) { walkAlong(s, p, dt, 44); return }
@@ -2686,6 +2793,9 @@ function newDay(s) {
     // #2520: and midnight sends whatever prowls home — the window owns only
     // the hours before it; the stamp was set the moment he crossed the post.
     if (s.sneak) { s.sneak = null; s.events.push({ t: 'sneak-gone' }) }
+    // #2532: and midnight calls the cat in, however far she got — the window
+    // owns only the hours before it (the sneak's own midnight rule, mirrored).
+    if (s.prowl) finishProwl(s)
     s.day++
     s.events.push({ t: 'day', day: s.day })
 }
@@ -2733,6 +2843,7 @@ export function advance(s, dt) {
     updateBin(s)            // #2303: and the truck — the eve arms, dawn resolves
     updateIceCream(s)       // #2503: and the jingle — the cone lands, the window runs out
     updateSneak(s, dt)      // #2520: and the night — odd nights a shadow tries the gate, the alarm answers
+    updateProwl(s, simDt)     // #2532: and Miso keeps the even ones — the parities are the lot's night watch
 
     for (const p of s.people) {
         p.mood = avg(p)
@@ -3039,6 +3150,7 @@ export function stateHash(s) {
     mix(s.iceDay); mix(s.iceSerial); mix(s.treats)   // #2503: the street's stops and the cone ledger ride it
     mix(s.cone ? 1 : 0)     // the cone itself is state (its cell rides the items loop)
     mix(s.sneakNight); mix(s.scareDay); mix(s.sneakSerial); mix(s.lost)   // #2520: the night's ledger rides it too
+    mix(s.prowl ? 1 : 0); mix(s.prowlNight); mix(s.prowlSerial)           // #2532: and the cat's parity ledger
     mix(s.sneak ? 1 : 0)    // and the prowler on the lot is state, exactly the visitor law
     for (const p of s.people) {
         mix(p.r); mix(p.c)

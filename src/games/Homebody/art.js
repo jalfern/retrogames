@@ -675,7 +675,7 @@ function star(ctx, x, y, r, col) {
 // Miso — a tabby loaf with a life of her own: stripe-backed walk with a
 // swaying tail, a sleeping comma with rising Zzz, and pink purr sparks while
 // someone coos at her. One sprite for every state; flip by facing.
-export function drawPet(ctx, p, t) {
+export function drawPet(ctx, p, t, prowl) {
     const x = p.x, y = p.y
     ctx.save(); ctx.translate(x, y); ctx.scale(p.face, 1)
     if (p.asleep) {
@@ -783,6 +783,11 @@ export function drawPet(ctx, p, t) {
     if (p.asleep && Math.floor(t) % 2 === 0) {
         ctx.fillStyle = '#cfe0ff'; ctx.font = 'bold 7px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'
         ctx.fillText('z', x + 8, y - 14 - (t % 1) * 3)
+    }
+    if (prowl) {   // #2532: night eyes — two small amber glints while the cat works the dark (view-only, rides nothing)
+        ctx.fillStyle = '#ffb347'
+        ctx.beginPath(); ctx.arc(x + 9 * (p.face || 1), y - 12, 1.4, 0, Math.PI * 2); ctx.fill()
+        ctx.beginPath(); ctx.arc(x + 6 * (p.face || 1), y - 12.5, 1.2, 0, Math.PI * 2); ctx.fill()
     }
 }
 

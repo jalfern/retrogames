@@ -106,6 +106,7 @@ import {
     BIN, BIN_HOME, BIN_CURB, GARBAGE_EVERY, TRUCK_DUE, BIN_FUN, BIN_BOND, binOrderOk,   // #2303: garbage day — the eve, the curb, the truck
     CONE, CONE_PRICE, ICE_DUE, ICE_WINDOW, ICE_FUN, ICE_KID_FUN, KID_ICE_FLOOR, coneOrderOk, ringTruck, icePassHour, ICE_TIMBRE,   // #2503: the ice-cream truck — the jingle, the curb, the price, the chase
     SNEAK_DUE, SNEAK_WINDOW, SNEAK_LOOT, sneakNightDue, hasAlarm, ringSneak, SNEAK_CREEP, SNEAK_SIREN,   // #2520: the sneak — the window, the loot list, the parity, the alarm, the rig
+    PROWL_DUE, PROWL_WINDOW, prowlNightDue, PET_PROWL_FUN, ringProwl, PROWL_PADS, PROWL_HOME_SFX,   // #2532: Miso's even-night prowl — the window, the parity, the cat-scale pay, the rig, the sound tables
 } from '../src/games/Homebody/sim.js'
 import { readFileSync } from 'node:fs'
 
@@ -3165,6 +3166,136 @@ section('SNEAK IN THE NIGHT (#2520): odd nights the ornaments are at risk, and t
     check('pin: the art ships the tin and the fedora', /case 'alarm'/.test(pArt) && /p\.sneak/.test(pArt))
     check('pin: the scenario rig ships — F1 cheat and dev hook', /RING SNEAK/.test(pJsx) && /ringSneak: \(\)/.test(pJsx))
     check('pin: he rides the depth line like every visitor here', /\.\.\.\(g\.sneak \? \[\{ p: g\.sneak, v: g\.sneak\.y \}\] : \[\]\)/.test(pJsx))
+}
+
+// ------------------------------------------------ EVEN-NIGHT PROWL (#2532) ----
+section('EVEN-NIGHT PROWL (#2532): even 23:00s the flap opens, midnight calls her in')
+{
+    const keepWarm = (g) => { for (const q of g.people) { q.faintT = 0; q.needs.hunger = Math.max(q.needs.hunger, 0.8); q.needs.energy = Math.max(q.needs.energy, 0.8); q.needs.bladder = Math.max(q.needs.bladder, 0.8) } }
+
+    // the windows are constants, and the pay is cat-scale
+    check('prowl keeps the same unkind hour and one watched window', PROWL_DUE === 23 && PROWL_WINDOW === 1)
+    check('the pay is fun, cat-scale, and nothing else is even importable as a till word', PET_PROWL_FUN > 0 && PET_PROWL_FUN <= 0.5)
+
+    // parity is arithmetic off the day — and complementary to the sneak forever
+    check('even nights due, odd nights quiet, forever',
+        Array.from({ length: 30 }, (_, i) => prowlNightDue(i + 1)).every((d, i) => d === ((i + 1) % 2 === 0)))
+    check('the two parities never share a dark — exactly one night-watch a night, forever',
+        Array.from({ length: 60 }, (_, i) => sneakNightDue(i + 1) !== prowlNightDue(i + 1)).every(Boolean))
+
+    // a lot without Miso: fresh fields, a refusal in words, and honest silence
+    const s0 = newRun(41)
+    check('a fresh lot has no cat and an empty prowl ledger',
+        s0.pet === null && s0.prowl === null && s0.prowlNight === 0 && s0.prowlSerial === 0)
+    const refuse0 = ringProwl(s0)
+    let quiet0 = 0
+    for (let i = 0; i < 60 * 60 * 6; i++) { advance(s0, DT); keepWarm(s0); quiet0 += drain(s0).filter((e) => e.t === 'prowl-out' || e.t === 'prowl-home').length }
+    check('no cat, no call — the rig refuses in words and five nights stay silent',
+        /no cat/.test(String(refuse0)) && quiet0 === 0 && s0.prowlNow === null && s0.prowlNight === 0, String(refuse0))
+
+    // the organic due night: quiet day 1 (odd), slip-out day 2 (even), the walk
+    // moves her own feet, midnight calls her in on the same night she started
+    const s1 = newRun(42)
+    check('the counter sells Miso to the nightly lot', adoptPet(s1) === true && !!s1.pet)
+    const money1 = s1.money
+    let out1 = null, home1 = null, lost1 = 0, n1 = 0, outCell = null, funAtOut = null, moved1 = false, dayAtOut = 0, outHour = 0
+    while (!home1 && s1.day <= 3 && n1++ < 60 * 60 * 20) {
+        advance(s1, DT); keepWarm(s1)
+        const ev = drain(s1)
+        if (!out1 && ev.some((e) => e.t === 'prowl-out')) { out1 = true; outCell = [s1.pet.r, s1.pet.c]; funAtOut = s1.pet.needs.fun; dayAtOut = s1.day; outHour = s1.hour; s1.pet.needs.fun = 0.3 }   // headroom, so the pay is measurable
+        if (out1 && !moved1 && s1.prowl && (s1.pet.r !== outCell[0] || s1.pet.c !== outCell[1])) moved1 = true
+        home1 = home1 || ev.find((e) => e.t === 'prowl-home') || null
+        lost1 += ev.filter((e) => e.t === 'sneak-take').length
+    }
+    check('odd day 1 sleeps clean; the slip-out lands on even day 2 at eleven',
+        !!out1 && dayAtOut === 2 && outHour >= PROWL_DUE && outHour < PROWL_DUE + PROWL_WINDOW, `d${dayAtOut}@${outHour.toFixed(2)}h`)
+    check('her own feet carry the prowl — the sprite walks the BFS, then retires clean', moved1 && s1.prowl === null)
+    check('midnight calls her in on the same night she left — stamp, serial, clean retire',
+        !!home1 && s1.prowl === null && s1.prowlNight === 2 && s1.prowlSerial === 1)
+    check('the prowl pays purrs, never pennies — fun up, the till untouched',
+        s1.pet.needs.fun >= 0.3 + PET_PROWL_FUN - 0.15 && s1.money === money1 && s1.lost === lost1, `fun ${s1.pet.needs.fun.toFixed(2)}`)
+
+    // one prowl a night for four nights, and the lot proves the complement on ice:
+    // a sneak-in and a prowl-out never land on the same dark
+    const s2 = newRun(43)
+    adoptPet(s2)
+    const pMarks = {}, sMarks = {}
+    let k2 = 0
+    while (s2.day <= 4 && k2++ < 60 * 60 * 15) {
+        advance(s2, DT); keepWarm(s2)
+        const ev = drain(s2)
+        const d = s2.day
+        pMarks[d] = (pMarks[d] || 0) + ev.filter((e) => e.t === 'prowl-out').length
+        sMarks[d] = (sMarks[d] || 0) + ev.filter((e) => e.t === 'sneak-in' || e.t === 'sneak-scared').length
+    }
+    check('the cat keeps the evens: d1 quiet, d2 one, d3 quiet, d4 one',
+        (pMarks[1] || 0) === 0 && (pMarks[2] || 0) === 1 && (pMarks[3] || 0) === 0 && (pMarks[4] || 0) === 1 && s2.prowlSerial === 2,
+        JSON.stringify(pMarks))
+    check('cross-check on one lot: no dark ever hosts both boots and paws',
+        [1, 2, 3, 4].every((d) => !((sMarks[d] || 0) > 0 && (pMarks[d] || 0) > 0)) && (sMarks[1] || 0) === 1 && (sMarks[3] || 0) === 1,
+        JSON.stringify(sMarks))
+
+    // the rig bypasses parity on demand but still stamps — and the walk cannot outlive midnight
+    const s3 = newRun(44)
+    adoptPet(s3)
+    const why3 = ringProwl(s3)
+    let k3 = 0
+    while (!s3.prowl && k3++ < 600) { advance(s3, DT); keepWarm(s3); drain(s3) }
+    check('the rig opens the flap on an odd night (harness needs eyes on the lawn) and stamps the night',
+        /flap swings open/.test(String(why3)) && !!s3.prowl && s3.prowlNight === s3.day && s3.prowlSerial === 1, String(why3))
+    let home3 = null, k3b = 0
+    while (!home3 && k3b++ < 60 * 60 * 8) { advance(s3, DT); keepWarm(s3); home3 = drain(s3).find((e) => e.t === 'prowl-home') || null }
+    check('rung at breakfast she walks the whole errand home on her own paws — same day, both legs',
+        !!home3 && s3.prowl === null && s3.day === 1 && s3.prowlNight === 1 && s3.prowlSerial === 1, `d${s3.day}@${s3.hour.toFixed(1)}h`)
+    // and a late re-ring minutes before midnight cannot outrun the send-home
+    s3.hour = 23.5
+    ringProwl(s3)
+    let home3b = null, k3c = 0
+    while (!home3b && k3c++ < 60 * 60 * 2) { advance(s3, DT); keepWarm(s3); home3b = drain(s3).find((e) => e.t === 'prowl-home') || null }
+    check('whatever hour the flap opens, midnight still calls her in — nothing prowls into tomorrow',
+        !!home3b && s3.prowl === null && s3.day === 2 && s3.prowlSerial === 2)
+
+    // the ledger rides the hash, live prowl included
+    const s6 = newRun(47)
+    adoptPet(s6)
+    const hPre = stateHash(s6)
+    s6.prowlNight += 1; check('the prowl night stamp rides the hash', stateHash(s6) !== hPre); s6.prowlNight -= 1
+    s6.prowlSerial += 1; check('the prowl serial rides the hash', stateHash(s6) !== hPre); s6.prowlSerial -= 1
+    ringProwl(s6)
+    let k6 = 0
+    while (!s6.prowl && k6++ < 600) { advance(s6, DT); keepWarm(s6); drain(s6) }
+    check('the cat on the prowl is state', stateHash(s6) !== hPre && !!s6.prowl)
+
+    // determinism: six nights with a cat, twice, one hash — the parity law consumes no rng
+    const twin = () => { const g = newRun(4201); adoptPet(g); for (let i = 0; i < 60 * 60 * 12 && g.day <= 6; i++) { advance(g, DT); keepWarm(g); drain(g) } return stateHash(g) }
+    check('six nights, twice, one hash — the prowl law draws no rng', twin() === twin())
+
+    // the win economy is untouched: the wish still lands with the cat on the payroll
+    const w = play(1)
+    check('the lifetime wish still lands with the prowl on the payroll', w.done === 'win')
+
+    // source pins — the wiring must not silently drop
+    const pSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const pJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const pArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    const wBody = pSim.match(/function updateProwl\(s, dt\) \{[\s\S]*?\n\}/)?.[0] || 'MISSING'
+    const fBody = pSim.match(/function finishProwl\(s\) \{[\s\S]*?\n\}/)?.[0] || 'MISSING'
+    check('pin: the clock\u2019s own paths draw no rng (the #2303 lesson)', wBody !== 'MISSING' && !/s\.rng\(\)|pick\(s,/.test(wBody) && /updateProwl\(s, simDt\)/.test(pSim))
+    check('pin: parity is arithmetic off the day, in the source too', /prowlNightDue = \(day\) => day % 2 === 0/.test(pSim))
+    check('pin: one night is the law in the source too', /s\.prowlNight === s\.day/.test(wBody) && /s\.prowlNight = s\.day/.test(wBody))
+    check('pin: neither prowl function ever touches the till — the law is purrs-only', wBody !== 'MISSING' && fBody !== 'MISSING' && !/s\.money|s\.lost/.test(wBody + fBody) && /p\.needs\.fun = Math\.min\(1, p\.needs\.fun \+ PET_PROWL_FUN\)/.test(fBody))
+    check('pin: midnight retires the cat, and the loaf waits while she walks', /if \(s\.prowl\) finishProwl\(s\)/.test(pSim) && /if \(night && s\.prowl\) return/.test(pSim))
+    check('pin: the wake-and-slip — a sleeping Miso is woken for a due night', /if \(p\.asleep\) \{ p\.asleep = false; p\.stretchT = 0\.9 \}/.test(wBody))
+    check('pin: the shell voices both ends of the walk and the marquee teaches the parity',
+        /case 'prowl-out'/.test(pJsx) && /case 'prowl-home'/.test(pJsx)
+        && /MISO IS OUT ON THE LOT/.test(pJsx) && /MISO IS HOME FOR THE NIGHT/.test(pJsx)
+        && /MISO PROWLS EVEN NIGHTS AT ELEVEN/.test(pJsx) && /prowl pays purrs, never pennies/.test(pJsx))
+    check('pin: the night-eyes are view-only art riding the prowl flag', /if \(prowl\)/.test(pArt) && /#ffb347/.test(pArt) && /drawPet\(ctx, o\.p, g\.sec, !!g\.prowl\)/.test(pJsx))
+    check('pin: the drive reads the walk — hook state and ledger', /prowl: gs\.prowl/.test(pJsx) && /prowlLedger/.test(pJsx))
+    check('pin: the scenario rig ships — F1 cheat, dev hook, and a refusal in words', /RING PROWL/.test(pJsx) && /ringProwl: \(\)/.test(pJsx) && /no cat on the lot/.test(pSim))
+    check('pin: the sound tables hold — three soft pads out, a two-note lift home',
+        Array.isArray(PROWL_PADS) && PROWL_PADS.length === 3 && PROWL_PADS.every(([f, d, ms]) => f > 0 && d > 0 && ms >= 0)
+        && Array.isArray(PROWL_HOME_SFX) && PROWL_HOME_SFX.length === 2 && PROWL_HOME_SFX.every(([f, d, ms]) => f > 0 && d > 0 && ms >= 0))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)
