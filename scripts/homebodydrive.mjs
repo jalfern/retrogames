@@ -10,9 +10,14 @@ const check = (n, c, info = '') => { if (c) { pass++; console.log('  ok  ', n, i
 await requireDevServer(BASE)
 const browser = await launch()
 const errors = []
+// headless Chrome has no audio device — the AudioContext renderer error is
+// environment noise, filtered identically in cottage-drive/britanniadrive/
+// lodeplay/papersplay (established doctrine; the sounds themselves are gated
+// by the node harness).
+const deviceNoise = (s) => /AudioContext encountered an error from the audio device/i.test(String(s || ''))
 const page = await openGame(browser, { url: BASE, hook: '__homebodyTest', start: false, wait: 900 })
-page.on('pageerror', (e) => errors.push(String(e)))
-page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
+page.on('pageerror', (e) => { if (!deviceNoise(e)) errors.push(String(e)) })
+page.on('console', (m) => { if (m.type() === 'error' && !deviceNoise(m.text())) errors.push(m.text()) })
 
 const st = async () => page.evaluate(() => window.__homebodyTest.probe())
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -663,6 +668,63 @@ check('contract state ticks', f0.tick > 0 && typeof f0.score === 'number', `tick
     check('#2532 the home banner paints too — the lift-home is voiced on screen', homeInk >= 20, `ink ${homeInk}`)
     await page.keyboard.press('Digit2')
     await stWait((x) => x.speed === 1)
+}
+
+// #2508 item 1 — the ice-cream truck rolls, it no longer teleports. Read the
+// view state machine live: off → in (x climbs from off-screen west) → parked at
+// the cone → out (x climbs east) → off. Pixels prove the body too: the street
+// strip below the fence gains a pastel-mint census while the truck crosses it
+// and gives it back after the drive-off (relative to its own baseline — the
+// strip's own night tint may shift, so only the truck's own pixels make it move).
+{
+    if ((await st()).screen !== 'play') { await page.keyboard.press('Space'); await wait(400) }
+    const t0s = await st()
+    check('#2508 no truck on the street before the jingle', t0s.truckView.phase === 'off' && t0s.cone === null, JSON.stringify(t0s.truckView))
+    const mintBand = () => page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const d = c.getContext('2d').getImageData(220, 434, 200, 44).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) {
+            const [r, g, b] = [d[i], d[i + 1], d[i + 2]]
+            if (d[i + 3] > 200 && r < 200 && g > 140 && b > 140 && b > r + 30 && g > r + 20) n++   // pastel mint family, tint-tolerant
+        }
+        return n
+    })
+    const mint0 = await mintBand()
+    await page.evaluate(() => { window.__homebodyTest.money(500); window.__homebodyTest.ringTruck() })
+    let seenIn = false, parkedView = null
+    const xsIn = []
+    for (let i = 0; i < 80 && !parkedView; i++) {
+        const s = await st()
+        const tv = s.truckView
+        if (tv.phase === 'in') { seenIn = true; xsIn.push(tv.x) }
+        if (tv.phase === 'parked') parkedView = { ...tv, c: s.cone && s.cone.c }
+        await wait(40)
+    }
+    check('#2508 the truck rolls IN — phase in before parked, x climbing from off-screen west',
+        seenIn && !!parkedView && xsIn.length >= 2 && xsIn[xsIn.length - 1] > xsIn[0] + 30 && xsIn[0] < 0,
+        JSON.stringify({ seenIn, first: xsIn[0], last: xsIn[xsIn.length - 1], parked: parkedView && parkedView.x }))
+    check('#2508 it parks where the cone stands (~92 px past the west edge, the window by the gate)',
+        !!parkedView && Math.abs(parkedView.x - (8 + (parkedView.c || 4) * 32 - 44)) <= 2, JSON.stringify(parkedView))
+    // end the stop: order the cone (a sale should land; honest window-close is
+    // equally a drive-off — which one ends it is recorded, the law is the roll).
+    const cn = (await st()).cone
+    if (cn) await tap(8 + cn.c * 32 + 16, 40 + cn.r * 32 + 16)
+    let gone = null, xsOut = [], mintPeak = mint0
+    for (let i = 0; i < 400 && !gone; i++) {
+        const s = await st()
+        if (!s.cone) {
+            if (s.truckView.phase === 'out') xsOut.push(s.truckView.x)
+            mintPeak = Math.max(mintPeak, await mintBand())
+            if (s.truckView.phase === 'off') gone = s
+        }
+        await wait(50)
+    }
+    check('#2508 the cone left (sold or window) and the truck drove OFF east instead of vanishing',
+        !!gone && xsOut.length >= 2 && xsOut[xsOut.length - 1] > xsOut[0] + 60,
+        JSON.stringify({ sold: (await st()).treats, xsOut: [xsOut[0], xsOut[xsOut.length - 1]] }))
+    check('#2508 the mint body paints on the street while it crosses, and the strip is empty again after',
+        mintPeak - mint0 >= 30 && (await mintBand()) < mint0 + 8, `mint base ${mint0} peak ${mintPeak} after ${await mintBand()}`)
 }
 
 check('zero page errors across the whole drive', errors.length === 0, JSON.stringify(errors.slice(0, 3)))

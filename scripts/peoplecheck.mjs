@@ -3041,6 +3041,17 @@ section('ICE CREAM TRUCK (#2503): the jingle passes, the cone sells, the truck m
     check('pin: the jingle is a five-note music-box table', Array.isArray(ICE_TIMBRE) && ICE_TIMBRE.length === 5 && ICE_TIMBRE.every(([f, d, ms]) => f > 0 && d > 0 && ms >= 0))
     check('pin: the art ships the cone', /case 'cone'/.test(iArt))
     check('pin: the scenario ring ships — F1 cheat and dev hook', /RING TRUCK/.test(iJsx) && /ringTruck: \(\)/.test(iJsx))
+    // #2508 item 1: the truck has a body now — view-only arrival/drive-off, sim law untouched
+    check('pin: #2508 — the truck sprite ships with wheels, awning and a roof cone-sign',
+        /export function drawIceTruck/.test(iArt) && /export const TRUCK_W/.test(iArt))
+    check('pin: #2508 — it rolls in (~2 s) and drives off (~4 s), never appears or vanishes at the curb',
+        /const ICE_TRUCK_IN_S = 2, ICE_TRUCK_OUT_S = 4/.test(iJsx)
+        && /phase = 'in'/.test(iJsx) && /phase = 'parked'/.test(iJsx) && /phase = 'out'/.test(iJsx)
+        && /drawIceTruck\(ctx, iceTruck\.px/.test(iJsx))
+    check('pin: #2508 — every way the stop ends drives it off: sale, kid catch, window close, and the paint-tick backstop',
+        (iJsx.match(/iceTruckRollOut\(s\)/g) || []).length === 3 && /iceTruckRollOut\(g\)/.test(iJsx))
+    check('pin: #2508 — the truck is draw-only: the sim is untouched and the slide is QA-readable',
+        iSim.indexOf('drawIceTruck') === -1 && /truckView: \{ phase:/.test(iJsx))
 }
 
 // ---------------------------------------------- SNEAK IN THE NIGHT (#2520) ----
