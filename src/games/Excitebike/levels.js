@@ -3,9 +3,10 @@
 // harness imports them unchanged to audit the track BEFORE anyone rides it:
 // every up-step clearable at wide-open throttle, every ramp launch landing on
 // real ground, and every gameplay band (mud/water/boost) sitting on a slice of
-// the heightmap that actually exists. Two hand-carved tracks, one looping lap
-// each — the original's 6-track roster is out of scope (the README says so);
-// the fidelity the issue asked for lives in the terrain shape and the feel.
+// the heightmap that actually exists. Six hand-carved tracks, one looping lap
+// each — the original's 6-track roster (#2563), picked from the splash
+// screen; EDIT TRACK remains the honest gap (README). The fidelity the
+// issue asked for lives in the terrain shape and the feel.
 //
 // Height is "up" in world units (bigger = higher). The heightmap is one entry
 // per horizontal pixel; control points are linearly interpolated, then whoops
@@ -27,6 +28,7 @@ export const BOOST = 'boost'
 const TRACKS = [
     {
         name: 'MOTOCROSS',
+        bite: 1,
         // rolling hills, one big jump, a whoop field, a mud pit, a water hole,
         // a boost straight and one clearable up-step. Closes flat-ish at LAP.
         cps: [
@@ -68,6 +70,7 @@ const TRACKS = [
     },
     {
         name: 'SUPERCROSS',
+        bite: 2,
         // busier: two jumps, a bigger whoop field, back-to-back mud, a taller
         // step, and a harder water landing. Same loop length.
         cps: [
@@ -102,6 +105,140 @@ const TRACKS = [
             [MUD, 2340, 2660, 1],
             [WATER, 3460, 3700, 1],
             [BOOST, 4060, 4300, 1],
+        ],
+    },
+    {
+        name: 'SAND CROSS',
+        bite: 3,
+        // the desert course: long rolling dunes, one mid lip, a WIDE whoop
+        // field, a long sand-mud flat (the longest drag in the roster), the
+        // standard step-atop-a-rise and a boost straight home. No water — the
+        // sand bites through mud instead. Slower names, real terrain.
+        cps: [
+            [0, 96], [300, 96],             // start straight (finish line)
+            [480, 84], [680, 98],          // dune
+            [860, 84], [1080, 98],        // dune two
+            [1300, 140], [1304, 140],     // mid lip (climb, 4px crest)
+            [1440, 66], [1600, 96],       // landing slope back to flat
+            [1720, 94], [2400, 94],       // wide whoop field (sine stamped below)
+            [2460, 88], [2940, 88],       // the long sand flat (mud band below)
+            [3020, 84], [3164, 130], [3170, 132],   // step at the top of its rise
+            [3400, 132], [3600, 124],
+            [3900, 74], [4200, 96],       // downhill sweeper
+            [4400, 116], [4700, 116],     // boost straight
+            [4980, 86], [5260, 100],      // rollers home
+            [5540, 88], [5800, 96],
+            [LAP, 96],
+        ],
+        bands: [
+            { whoops: [1720, 2400, 6, 4] },
+            [MUD, 2440, 2960, 1],
+            [BOOST, 4400, 4700, 1],
+        ],
+    },
+    {
+        name: 'SLALOM CROSS',
+        bite: 4,
+        // the rhythm course: three knuckles strung close together (the landing
+        // of one sets the take-off of the next), a tight whoop straight between
+        // knuckles two and three, mud immediately after the big third landing
+        // (punish the slow arrival), the step, and the longest boost straight
+        // in the roster home. No water — speed is this course's whole argument.
+        // Every feature asks for a decision.
+        cps: [
+            [0, 96], [260, 96],
+            [440, 124], [444, 124],       // knuckle one
+            [560, 76], [720, 96],
+            [840, 120], [844, 120],      // knuckle two, tight on its landing
+            [950, 84], [1140, 92],
+            [1180, 92], [1560, 92],      // whoop rhythm straight (stamped below)
+            [1780, 132], [1784, 132],    // knuckle three, the big one
+            [1930, 64], [2100, 96],
+            [2200, 88], [2440, 88],      // mud right off the landing
+            [2520, 82], [2664, 128], [2670, 130],   // step at the top of its rise
+            [2900, 130], [3100, 120],
+            [3260, 84], [3420, 84],      // fast dip (the crossing reads clean at speed)
+            [3580, 118],
+            [3800, 114], [4400, 114],    // the long boost home
+            [4560, 146], [4720, 96],
+            [4900, 84], [5180, 98],      // rollers home
+            [5460, 86], [5700, 100],
+            [5800, 96], [LAP, 96],
+        ],
+        bands: [
+            { whoops: [1180, 1560, 7, 4] },
+            [MUD, 2180, 2460, 1],
+            [BOOST, 3800, 4400, 1],
+            [BOOST, 2940, 3080, 1],      // a second arrow strip after the step
+        ],
+    },
+    {
+        name: 'BIG AIR',
+        bite: 5,
+        // two tall lips with long glides and a water crossing in between (the
+        // recovery section), then a whoop run, mud, the step, and a boost
+        // straight onto the fast home sweep. Height over density: the air is
+        // where this course lives.
+        cps: [
+            [0, 96], [320, 96],
+            [560, 156], [564, 156],      // big one: long climb, tall lip
+            [760, 56], [960, 96],       // long landing slope
+            [1000, 96], [1200, 96],     // boost arrows right off the landing
+            [1380, 82], [1540, 96],     // shallow roller
+            [1680, 70], [1820, 70],     // water between the giants
+            [1980, 118],
+            [2200, 152], [2204, 152],   // big two
+            [2420, 58], [2620, 96],
+            [2740, 92], [3280, 92],     // whoop run (stamped below)
+            [3360, 86], [3540, 86],     // mud after the whoops
+            [3620, 80], [3764, 126], [3770, 128],   // step at the top of its rise
+            [4000, 128], [4220, 118],
+            [4480, 116], [4880, 116],   // boost straight
+            [5160, 84], [5380, 96],     // fast home sweep
+            [5540, 88], [5740, 98],
+            [5800, 96], [LAP, 96],
+        ],
+        bands: [
+            [BOOST, 1000, 1200, 1],
+            [WATER, 1620, 1880, 1],
+            { whoops: [2740, 3280, 7, 4] },
+            [MUD, 3340, 3560, 1],
+            [BOOST, 4480, 4880, 1],
+        ],
+    },
+    {
+        name: 'K.O. CROSS',
+        bite: 6,
+        // the whole roster at full stretch: three big lips, TWO whoop fields,
+        // back-to-back mud, the tallest step in the game, a deep water bowl,
+        // a boost into a climb that launches lip three. Everything the
+        // cartridge taught, in one lap, in order.
+        cps: [
+            [0, 96], [220, 96],
+            [420, 148], [424, 148],      // lip one
+            [580, 62], [740, 96],
+            [860, 90], [1220, 90],      // whoop field one (stamped below)
+            [1420, 144], [1424, 144],   // lip two, tight off the whoops
+            [1580, 60], [1760, 96],
+            [1840, 86], [2260, 86],     // back-to-back mud
+            [2340, 80], [2486, 132], [2492, 134],   // tallest step, at its rise
+            [2720, 134], [2920, 122],
+            [3080, 60], [3260, 60],     // deep bowl
+            [3420, 118],
+            [3620, 116], [3860, 116],   // boost then the climb
+            [4080, 150], [4320, 88],
+            [4520, 146], [4524, 146],   // lip three off the far side
+            [4680, 62], [4860, 96],
+            [4980, 92], [5380, 92],     // whoop field two (stamped below)
+            [5600, 86], [5800, 96],
+            [LAP, 96],
+        ],
+        bands: [
+            { whoops: [860, 1220, 10, 4] },
+            [MUD, 1820, 2280, 1],
+            [WATER, 3020, 3320, 1],
+            [BOOST, 3620, 3860, 1],
+            { whoops: [4980, 5380, 9, 3] },
         ],
     },
 ]
@@ -140,6 +277,12 @@ const CACHE = TRACKS.map((t) => ({
 
 export const TRACK_COUNT = TRACKS.length
 export const trackName = (i) => CACHE[i].name
+export const trackBite = (i) => CACHE[i].bite || i + 1
+
+// The splash cursor's movement law, in data land so the shell and the
+// harness read the SAME wrap (#2563): arrows step the selection by ±1 and
+// it cycles the roster — the NES menu law, pinned by excitecheck SPLASH.
+export const nextSel = (i, dir, n = TRACK_COUNT) => ((i + dir) % n + n) % n
 
 function interp(g, x) {
     if (x < 0) x = 0
