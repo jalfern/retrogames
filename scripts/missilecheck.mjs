@@ -15,7 +15,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { makeGame, step, stateHash, CFG, W } from '../src/games/MissileBattle/sim.js'
+import { makeGame, step, stateHash, CFG, W, SEAT_OF_CITY } from '../src/games/MissileBattle/sim.js'
 import { decide, plan } from '../src/games/MissileBattle/planner.js'
 import { WAVES, TARGETS } from '../src/games/MissileBattle/waves.js'
 
@@ -667,6 +667,78 @@ section('DENY VOICE (#2483) — two-tone refusal, red band, solo untouched')
         ok(e1 && e1.x > W / 2, 'a west-seat denial does not stamp an east-side x — the flash would paint the wrong band')
         ok(e2 && e2.x < W / 2, 'an east-seat denial does not stamp a west-side x — the flash would paint the wrong band')
     }
+}
+
+// ------------------------------------------------ visible labour & ceremony (#2510) ----
+// The duo law teaches itself on screen: the machine signs its shift, the turn
+// flip ceremonies the seat, the rescue re-lights the taken tubes, and the
+// arcade keeps a city column per seat. The shell is browser-only, so this arm
+// pins the sim data the naming reads AND the renderer idioms it runs — the
+// deny-voice pattern (#2483).
+section('#2510 DUO CEREMONY — seat stamps, seat card, AUTONOMOUS tag, rescue re-light, city columns')
+{
+    // 1. every interceptor stamps WHOSE sky it defended — the trail hue and
+    //    the AUTONOMOUS tag read it. Solo stamps 0, and the stamp must not
+    //    move the hash one jot (solo replay parity, #2473 law).
+    {
+        const g = makeGame(0, { twoP: true })
+        g.phase = 'play'; g.playT = 1; g.queue = []; g.enemies = []
+        step(g, { aimTo: [80, 60], fire: true })
+        ok(g.intc.length > 0 && g.intc[g.intc.length - 1].seat === 1, 'a west-seat shot carries no seat stamp — the autopilot hue and the tag name nobody')
+        const h = makeGame(1, { twoP: true })
+        h.phase = 'play'; h.playT = 1; h.queue = []; h.enemies = []
+        step(h, { aimTo: [180, 60], fire: true })
+        ok(h.intc.length > 0 && h.intc[h.intc.length - 1].seat === 2, 'an east-seat shot carries no seat stamp')
+        const s = makeGame(0)
+        s.phase = 'play'; s.playT = 1; s.queue = []; s.enemies = []
+        step(s, { aimTo: [128, 60], fire: true })
+        ok(s.intc.length > 0 && s.intc[s.intc.length - 1].seat === 0, 'solo interceptors must stamp seat 0 — the duo naming must not leak into solo')
+        const a = makeGame(0), b = makeGame(0)
+        a.intc.push({ id: 1, x: 5, y: 6 })
+        b.intc.push({ id: 1, x: 5, y: 6, seat: 2 })
+        ok(stateHash(a) === stateHash(b), 'the seat stamp moved the stateHash — solo replay hashes broke')
+    }
+    // 2. the banner event carries the seat (the card's data source); the
+    //    solo banner's event shape stays exactly as it was.
+    {
+        const b = makeGame(0, { twoP: true }).events.find((e) => e.type === 'banner')
+        ok(b && b.seat === 1, 'the duo banner does not carry the seat — the ceremony has no name to show')
+        ok(!('seat' in (makeGame(0).events.find((e) => e.type === 'banner') || {})), 'the solo banner gained a seat field — solo event shape moved')
+    }
+    // 3. the rescue receipt names the fallen seat — the re-light's colour key.
+    {
+        const g = makeGame(0, { twoP: true })
+        g.phase = 'play'; g.playT = 1; g.queue = []; g.enemies = []
+        // kill the other two west cities; the live one takes the missile —
+        // the fall that closes the sector is the one that must name the seat.
+        g.cities.forEach((c, i) => { if (SEAT_OF_CITY[i] === 1 && i !== 0) c.alive = false })
+        g.enemies.push({ id: 900, kind: 'icbm', x: 40, px: 40, y: CFG.groundY - 4, vx: 0, vy: 1, ti: 0, t: 0, alive: true, split: null, amp: 0, drops: null, spawnAt: g.playT, score: CFG.score.icbm })
+        for (let t = 0; t < 12 && !g.events.some((e) => e.type === 'seatOut'); t++) step(g, {})
+        const so = g.events.find((e) => e.type === 'seatOut')
+        ok(so && so.seat === 1, 'seatOut does not name the fallen seat — the re-light pulses for nobody')
+    }
+    // 4-7. renderer idioms the browser runs (deny-voice style):
+    const jsx = readFileSync(join(HERE, '../src/games/MissileBattle/index.jsx'), 'utf8')
+    // the seat card ceremonies the turn flip on the banner's first beat, and
+    // the toast no longer duplicates the seat word.
+    ok(/CFG\.bannerLen\s*-\s*90/.test(jsx) && /PLAYER \$\{gs\.seat === 1 \? 'ONE' : 'TWO'\}/.test(jsx),
+        'the seat card was deleted — the arcade turn flip is back to a bare toast')
+    ok(!/WAVE \$\{e\.wave \+ 1\} · PLAYER/.test(jsx), 'the banner toast spells the seat again — the card ceremonies it now')
+    // the machine signs its shift, in its own hue; its shots fly that hue too.
+    ok(/AUTONOMOUS/.test(jsx) && /gs\.cpu\[gs\.seat - 1\]/.test(jsx) && /SEAT_RGB\[gs\.seat\]/.test(jsx),
+        'the AUTONOMOUS tag is gone — the autopilot is invisible labour again')
+    ok(/SEAT_RGB\[m\.seat\]/.test(jsx), 'autopilot interceptors lost their trail hue — machine shots look human again')
+    // the rescue: a moment (rings + sparks in the survivor hue) AND a record
+    // (fallen tubes keep the survivor colour for the rest of the war).
+    ok(/relight\s*=\s*\d+/.test(jsx) && /SEAT_RGB\[surv\]/.test(jsx) && /relight\s*>\s*0/.test(jsx),
+        'the rescue re-light beat was deleted — a sector falling is undersold again')
+    ok(/own === 1 \? 2 : 1/.test(jsx), 'the taken tubes no longer keep the survivor colour — the handover is invisible after the moment')
+    // arcade sidewalls: a city column per seat, dimming as cities die.
+    ok(/wx\s*=\s*s === 1 \? 3 : W - 5/.test(jsx) && /SEAT_OF_CITY\[i2\] === s/.test(jsx),
+        'the per-player city columns were deleted — ownership needs the HUD again')
+    // duo-only law: none of this paints for a solo player.
+    ok(/twoP && gs\.phase === 'banner'/.test(jsx) || /gs\.twoP && gs\.phase === 'banner'/.test(jsx),
+        'the seat card lost its twoP gate — solo would gain a PLAYER ONE ceremony')
 }
 
 // ------------------------------------------------------------------- the slack rule ----

@@ -152,6 +152,14 @@ const MissileBattleGame = () => {
                 else if (e.type === 'seatOut') {
                     say(`SECTOR ${e.seat} HAS FALLEN — PLAYER ${e.seat === 1 ? 2 : 1} MANS EVERY TUBE`)
                     audioController.playSweep(260, 30, 0.9, 'sawtooth', 0.1); shake = 8
+                    // #2510 item 5: the rescue beat — the fallen sector's own
+                    // tubes throw sparks in the SURVIVOR's colour as the
+                    // handover lands; the pips keep it for the rest of the war.
+                    relight = 36; relightSeat = e.seat
+                    const surv = e.seat === 1 ? 2 : 1
+                    gs.bases.forEach((b, bi) => {
+                        if (b.alive && SEAT_OF_BASE[bi] === e.seat) burst(b.x, CFG.groundY - 8, 8, SEAT_HEX[surv])
+                    })
                 }
                 else if (e.type === 'clear') {
                     say(e.pscore
@@ -159,9 +167,10 @@ const MissileBattleGame = () => {
                         : `WAVE CLEAR +${e.ammo * 5 + e.cities * 10}`)
                     audioController.playSweep(400, 1200, 0.4, 'square', 0.06)
                 }
-                else if (e.type === 'banner') say(e.seat
-                    ? `${WAVES[e.wave].name} — WAVE ${e.wave + 1} · PLAYER ${e.seat} ${e.seat === 1 ? 'WEST' : 'EAST'}`
-                    : `${WAVES[e.wave].name} — WAVE ${e.wave + 1}`)
+                else if (e.type === 'banner')
+                    // #2510 item 1: the seat leaves the toast — the seat CARD
+                    // (below) now ceremonies the player; the toast keeps the wave.
+                    say(`${WAVES[e.wave].name} — WAVE ${e.wave + 1}`)
                 else if (e.type === 'win') audioController.playSweep(400, 1600, 0.8, 'square', 0.08)
                 else if (e.type === 'lose') audioController.playSweep(300, 60, 1.1, 'sawtooth', 0.1)
             }
@@ -249,6 +258,7 @@ const MissileBattleGame = () => {
             const sy = shake > 0 ? ((performance.now() % 5) - 2) * shake * 0.4 : 0
             if (shake > 0) { shake *= 0.86; if (shake < 0.4) shake = 0 }
             if (denyFlash > 0) denyFlash--
+            if (relight > 0) relight--
             ctx.fillStyle = '#04040c'
             ctx.fillRect(0, 0, W, H)
             const tk = gs.tick
@@ -292,10 +302,26 @@ const MissileBattleGame = () => {
                     ctx.fillStyle = c.alive ? `rgba(${rgb},0.9)` : `rgba(${rgb},0.3)`
                     ctx.fillRect(c.x - 1, CFG.groundY - 15, 2, 2)
                 })
+                // #2510 item 2: arcade sidewalls — a column of city lamps per
+                // seat at the screen's outer edge; ownership reads without the
+                // HUD, and each lamp dims as that seat's city dies.
+                for (const s of [1, 2]) {
+                    const wx = s === 1 ? 3 : W - 5
+                    const rank = gs.cities.filter((c2, i2) => c2.alive && SEAT_OF_CITY[i2] === s).length
+                    for (let k = 0; k < 3; k++) {
+                        const rgb = SEAT_RGB[s]
+                        ctx.fillStyle = k < rank ? `rgba(${rgb},0.9)` : `rgba(${rgb},0.2)`
+                        ctx.fillRect(wx, CFG.groundY - 10 - k * 5, 2, 3)
+                    }
+                }
                 gs.bases.forEach((b, i) => {
-                    const own = SEAT_OF_BASE[i]
+                    let own = SEAT_OF_BASE[i]
+                    // #2510 item 5 (persistent): a fallen sector's tubes carry
+                    // the SURVIVOR's colour — the handover is on the pip for
+                    // the rest of the war, not just the moment it lands.
+                    if (own > 0 && gs.out[own - 1]) own = own === 1 ? 2 : 1
                     const rgb = SEAT_RGB[own]
-                    const on = b.alive && (own === 0 || own === gs.seat || gs.out[own - 1])
+                    const on = b.alive && (SEAT_OF_BASE[i] === 0 || SEAT_OF_BASE[i] === gs.seat || gs.out[SEAT_OF_BASE[i] - 1])
                     ctx.fillStyle = `rgba(${rgb},${!b.alive ? 0.25 : on ? 0.95 : 0.4})`
                     ctx.fillRect(b.x - 1, CFG.groundY - 16, 2, 2)
                     if (!b.alive) {
@@ -303,6 +329,17 @@ const MissileBattleGame = () => {
                         ctx.beginPath(); ctx.moveTo(b.x - 5, CFG.groundY - 12); ctx.lineTo(b.x + 5, CFG.groundY - 4); ctx.stroke()
                     }
                 })
+                // #2510 item 5 (the moment): the handover pulses — expanding
+                // survivor-coloured rings over the fallen sector's own tubes.
+                if (relight > 0) {
+                    const surv = relightSeat === 1 ? 2 : 1
+                    const a = relight / 36
+                    gs.bases.forEach((b, bi) => {
+                        if (SEAT_OF_BASE[bi] !== relightSeat) return
+                        ctx.strokeStyle = `rgba(${SEAT_RGB[surv]},${(a * 0.9).toFixed(3)})`
+                        ctx.beginPath(); ctx.arc(b.x, CFG.groundY - 6, 4 + (36 - relight) * 0.45, 0, Math.PI * 2); ctx.stroke()
+                    })
+                }
             }
 
             // enemy trails + heads (trails are renderer memory, not sim state)
@@ -348,11 +385,14 @@ const MissileBattleGame = () => {
 
             // interceptors + blasts
             for (const m of gs.intc) {
-                ctx.strokeStyle = '#bfe9ff'
-                ctx.globalAlpha = 0.5
+                // #2510 item 3: the autopilot's shots fly their sector's hue —
+                // invisible labour made visible (a human shot stays house-white).
+                const auto = gs.twoP && m.seat > 0 && gs.cpu[m.seat - 1]
+                ctx.strokeStyle = auto ? `rgba(${SEAT_RGB[m.seat]},0.55)` : '#bfe9ff'
+                ctx.globalAlpha = auto ? 0.6 : 0.5
                 ctx.beginPath(); ctx.moveTo(m.x - m.vx * 5, m.y - m.vy * 5); ctx.lineTo(m.x, m.y); ctx.stroke()
                 ctx.globalAlpha = 1
-                ctx.fillStyle = '#ffffff'
+                ctx.fillStyle = auto ? SEAT_HEX[m.seat] : '#ffffff'
                 ctx.fillRect(m.x - 1, m.y - 1, 2, 2)
             }
             for (const b of gs.blasts) {
@@ -402,6 +442,30 @@ const MissileBattleGame = () => {
             if (h.ammo) h.ammo.textContent = gs.bases.map((b) => (b.alive ? b.ammo : '—')).join(' ')
             if (h.toast) { h.toast.textContent = toastMsg; h.toast.style.opacity = toast > 0 ? '1' : '0' }
             if (toast > 0 && !pausedRef.current) toast--
+            // #2510 item 3: the AUTONOMOUS tag — visible labour while the
+            // machine holds the sky, in the autopilot seat's own hue.
+            if (h.auto) {
+                const autoOn = screenRef.current === 'play' && gs.twoP && gs.cpu[gs.seat - 1] && gs.tick % 40 < 30
+                h.auto.textContent = 'AUTONOMOUS'
+                h.auto.style.color = `rgb(${SEAT_RGB[gs.seat] || '208,214,235'})`
+                h.auto.style.opacity = autoOn ? '1' : '0'
+            }
+            // #2510 item 1: the seat card — the arcade's named turn flip, on
+            // the first beat of every duo banner: seat word, sector, lit cities.
+            if (h.card) {
+                const cardOn = screenRef.current === 'play' && gs.twoP && gs.phase === 'banner' && gs.pT > CFG.bannerLen - 90
+                h.card.style.opacity = cardOn ? '1' : '0'
+                if (cardOn && h.card.dataset.seat !== `${gs.seat}`) {
+                    h.card.dataset.seat = `${gs.seat}`
+                    const hex = SEAT_HEX[gs.seat]
+                    const lamps = gs.cities.map((c, i) => (SEAT_OF_CITY[i] === gs.seat
+                        ? `<span style="display:inline-block;width:7px;height:7px;margin:0 3px;background:${c.alive ? hex : '#4d2b30'}${c.alive ? `;box-shadow:0 0 6px ${hex}` : ''}"></span>`
+                        : '')).join('')
+                    h.card.innerHTML = `<div style="font-size:22px;font-weight:900;letter-spacing:0.3em;color:${hex};text-shadow:0 0 16px #000">PLAYER ${gs.seat === 1 ? 'ONE' : 'TWO'}</div>`
+                        + `<div style="font-size:10px;letter-spacing:0.5em;margin-top:4px;color:rgba(255,255,255,0.7)">${gs.seat === 1 ? 'WEST SECTOR' : 'EAST SECTOR'}</div>`
+                        + `<div style="margin-top:8px">${lamps}</div>`
+                }
+            }
         }
 
         const frame = (ts) => {
@@ -649,10 +713,19 @@ const MissileBattleGame = () => {
                     <span ref={setHud('wave')} className="border border-red-300/60 text-red-200 px-2 py-0.5 rounded bg-black/40">1/3</span>
                     <span className="text-cyan-200">CITIES <b ref={setHud('cities')}>6</b></span>
                     <span ref={setHud('ammo')} className="text-violet-200/90">10 10 10</span>
+                    {/* #2510 item 3: the machine signs its shift — a small tag
+                        by the score column while the autopilot holds the sky. */}
+                    <span ref={setHud('auto')} className="text-[10px] font-bold tracking-widest border border-current rounded px-1 py-0.5 bg-black/40 transition-opacity duration-200" style={{ opacity: 0 }} />
                     <span className="ml-auto text-xl font-bold" style={{ textShadow: '0 2px 5px #000' }}><span ref={setHud('score')}>000000</span></span>
                     <span className="text-yellow-200/70"><span ref={setHud('hiscore')}>000000</span></span>
                 </div>
                 <div ref={setHud('toast')} className="absolute inset-x-0 top-1/4 text-center text-amber-100 font-mono font-bold text-xl transition-opacity duration-500" style={{ opacity: 0, textShadow: '0 0 12px #f60' }} />
+                {/* #2510 item 1: the arcade flipped a named PLAYER card between
+                    turns — the seat card ceremonies the hand-off on the banner:
+                    the seat's colour, its word, its cities still lit. */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <div ref={setHud('card')} className="bg-black/60 border border-white/25 rounded-lg px-8 py-5 text-center font-mono transition-opacity duration-200" style={{ opacity: 0 }} />
+                </div>
             </div>
 
             {screen === 'attract' && (
