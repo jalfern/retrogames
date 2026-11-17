@@ -1,57 +1,68 @@
-# STATE — session 317 slot a close-out
+# STATE — session 317 slot b close-out
 
 ## Shipped this session
-- **PR #2553 → retrogames `34adc13` — LODE RUNNER-LITE #2550: THE VAULT zero-death
-  witness.** Never-dry rung (#1571): ladder empty, live QA owned all feedback,
-  flagshipStage null; `weakestStage` scored LodeRunnerLite 1 (its only open README
-  gap: THE VAULT's witness spent a life). Game fix (`levels.js`, vault 3 only): the
-  far nugget hangs at the rope's end (x20, was floor x24) and the guard posts at x18
-  (was x15 mid-corridor) — the crossing is now the rope, the one highway a walker
-  can't enter. Witness: **win, lives 3/3, t124** (was 2 lives, t116); vaults 1–2
-  untouched, determinism unchanged, all construction contracts + strata law green.
-  Harness: shelf-wide **CLEAN-WITNESS gate** (no attract witness may spend a life) +
-  design-law pin (exactly one walk-row nugget in THE VAULT). Mutant: guard→x15
-  restores the corridor → both new gates red; restored → **136/136 plain, 164/164
-  --mutate**. lodeplay 52/52 live (:5173); lint:lode/fps/ai + build green. Prod
-  verified (chunk `index-DSnNocPJ.js` carries guard@18/gold@20); #2550 auto-closed
-  via `Closes` ref, `shipped` label applied, live URL commented.
-  Same PR fixed a pre-existing lodeplay 5b flake (grey-ladder sample clamped to the
-  walk row when the runner's climb drifted; anchor is the rung span 6–14).
-- **TARGET #2546 (warden) — REFUSED at claim, correctly:** slot b held it (29 min
-  fresh), shipped the FloorBoss aisle law itself (`3318a05`, #2549) and did its own
-  close-out + STATE (#2552). This lane did NOT duplicate its paperwork.
+- **#2555 → PR #2560 merged (c8b95fc, live).** FLOOR BOSS DUEL SEATS: the
+  model manager (quota-proven autopilot) drives its own slot beside the human
+  (`pads[1]`, own cursor/tool/till); `D` at the attract or the cyan chip.
+  One budget stays the floor's — solo score math is bit-identical (#1917,
+  tick-for-tick gate) and the win proof transfers to either seat. Credit
+  follows work: stow→rack owner, escrow→parcel shipper majority (ties→HOUSE),
+  freight bonus per box onto the loading ledger; legacy fleet/racks are the
+  house (owner −1); expiry/overflow are the house's sheet; taps name the
+  tapper. Verdict at the whistle: richer till is MANAGER OF THE NIGHT.
+  Conservation `score = 100 + Σcredits − spent` closed every tick, Node
+  (15 seeds, floor wins 15/15, model out-credits idle human 15/15) and
+  browser. floorbosscheck +17 gates + `--mutate-duel` kill; floorbossplay
+  41/41 live duel drive. Episodes record `players:2, sources:['human','model']`
+  (#1144 slot two). Prod verified: chunk `index-Bx6Fuwup.js` carries
+  `MANAGER OF THE NIGHT`. Play: https://jalfern.com/retrogames/floor-boss.
+  Polish pass filed #2561 (feedback).
+- Design reversal worth remembering: the first duel design gated purchases on
+  private tills — legacy-floor capital then sat unspendable and the floor
+  FIRED (seed 4242 at 467). Honest model: capex is the floor's budget, credit
+  is production-only. Keep that if anyone revisits duel economics.
+
+## Session shape
+- TARGET #2550 claim REFUSED (slot a live hold, checkpoint 25 min old) — ran
+  the normal ladder: no steer, `next` #1711 is lane:platform (precedent
+  314/315/316: no games-lane action), game-queue empty, feedback borrow
+  refused (3 live `QA MASTER` PIDs), flagship gaps spent → `weakestStage`
+  picked FLOOR BOSS (score 2: two-player seats + turn radii, both unowned —
+  #2546's closure un-owned the README handles). Filed POLISH #2555, claimed,
+  shipped. One-game rule satisfied.
+
+## Board
+- building: #2550 (slot a, LodeRunnerLite vault witness), #2516 (lane:research).
+  Britannia #2562 and SmashTV #2554 landed on main mid-session (other lanes).
+- `next` = #1711 (lane:platform — no games-lane action).
+- jonq: #2529 AWAITING (lane:research, due Nov 19, default A) — not ours.
 
 ## Next queued
-- `game-queue` empty at close. `next` = **#1711** (lane:platform — machine side
-  closed, ONLY Jon's clap take remains, do NOT claim to re-confirm; note stands).
-- Fall through to flagship/idle — **recompute with `idle.mjs`, never from memory**:
-  this session consumed LodeRunnerLite's last gap (README now all-CLOSED), so the
-  shelf map moved; live QA masters own `feedback` (3 were running).
+- FloorBoss **turn-radii / two-way aisle widths** stays open honestly in the
+  README (second gap #2546 left) — the likely weakestStage pick next dry visit.
+- #2561 (FloorBoss duel polish) is feedback for the QA lane; builders never
+  borrow while QA MASTER sessions are live.
 
-## Open questions (issues, not here — #605)
-- None filed this lane. Lane-foreign: **#2529** (lane:research, AWAITING, deadline
-  2026-11-19T00:01Z, default A) gates #2516, not this lane's work.
+## Catches for the next session
+- **`gh pr checks --repo <r> --json …` errors without a PR selector** — the
+  rule-5 loop must run BARE inside the PR worktree (branch infers the PR).
+  With --repo the `while` condition dies at once, exit status 0, and
+  `gh pr merge` fires while `static` is pending (branch protection saved it).
+- **floorbossplay starts a RANDOM seed** — a fired solo night cascades red
+  through the ladder gates (~10% seed luck; rerun once, per AGENTS rule 3).
+  The duel section now reloads the page so it never depends on that luck.
+- **Prod-poll scripts: `hit=x && exit 0` without an echo exits SILENTLY.**
+  An entry-hash change IS the deploy signal — print it.
+- STATE.md catch from 316 still true: `curl -L` for jalfern.com; game chunks
+  are `index-<hash>.js` off the entry JS.
 
-## Catches for the next session (each cost probes this shift)
-- **`$?` after `cmd | tail` is TAIL's exit — again.** A lint gate "passed" through a
-  pipe while eslint had actually died on a missing package. Unpipe, check `$?`.
-- **Fresh lane worktrees have no `node_modules`.** Symlink the main checkout's
-  (`ln -s /Users/jon/Dev/retrogames/node_modules <worktree>/node_modules`) — lockfile
-  matches; a full `npm ci` is minutes you don't spend. Create the link IN the
-  worktree (a chained `cd` put one inside the main checkout's node_modules once).
-- **Orphan dev servers squat port 5173.** A merged session's vite (PPID 1, 404 at
-  root, cwd = a finished worktree) blocked my strictPort start; `lsof -nP
-  -iTCP:5173 -sTCP:LISTEN` + ancestry, confirm PPID 1 + merged branch, then kill.
-  Zombie debris on YOUR port is fair game; other lanes' ports never are.
-- **Prod verification by marker, not hash:** lazy chunks are `./index-*.js` refs in
-  the main bundle — fetch and grep the game chunk for a code marker (mine:
-  `18:"G"`) instead of watching the index hash.
-- A PR body's `Closes #n` auto-closes at squash-merge; a later explicit
-  `gh issue close` just says "already closed" — harmless, labels still apply.
+## Open questions
+- none (nothing waiting-jon from this lane).
 
 ## Lanes clean
-- Main checkout detached at origin/main; STATE.md written + `statepark.mjs park a`
-  (`/tmp/forge/STATE.a.parked.md` + shared path). STATE commit goes to main via
-  PR (game merged this session, so STATE is committable — same shape as #2552).
-- Worktree `~/Dev/retrogames-forge-lode-vault3-nolife` re-detached at origin/main,
-  reusable. My :5173 dev server stopped at close-out; other lanes' ports untouched.
+- Main checkout detached at origin/main (STATE.md committed + pushed this
+  session — game merged, rule 9 allows it); parked via statepark b.
+- Worktree retrogames-forge-duel-seats detached at c8b95fc (merged); keeper
+  per precedent, node_modules symlink only. Local `main` branch created by
+  gh's merge dance was deleted; nothing holds `main`.
+- :5178 dev server stopped at close. No other lane's port touched.
