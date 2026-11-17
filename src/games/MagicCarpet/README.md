@@ -338,8 +338,18 @@ see item 5).
 - **CLOSED by #2427 (grown by #1740, #1925 item 3, #2419):** the title carries a WORLD
   SELECT (◀ ▶ / chevron taps, forty-five startable worlds) — the campaign runs
   forty-five worlds (fifteen arcs of three atmospheres), the original's full length;
-  scoring is banked mana + kills + clears + time bonus. The scoring-model delta
-  vs the original stays open (needs its own research stage).
+  scoring is banked mana + kills + clears + time bonus (the `sim.js` score
+  line). **Scoring research closed (QA mini2, this PR):** no public source
+  fixes the original's per-kill / per-clear / time values — the 1994 manual
+  is not in any accessible scan (archive.org carries only the 553 MB EU CD
+  redump, no manual item; MobyGames 403s; dosgames lists no entry; Wikipedia
+  skips the 1994 title; the two archive.org magazine full-text hits are
+  1998/2000 reviews). The one verifiable anchor — the original's vault IS the
+  score and win loop — already holds as this README's load-bearing rule
+  (bank-by-delivery above). Verdict: the score's banked-mana core is original
+  law; the kills / clears / time-bonus terms are documented house garnish,
+  kept for feel and labelled as such rather than dressed up as original
+  numbers that can't be proven.
 - **Castle-spell menu closed by #1764 item 1:** the original's spell selection was
   a browseable book, and the book lives at home. `B` (or a tap on the glowing
   prompt) opens it ONLY inside the castle's 26u reach — away from it the refusal
