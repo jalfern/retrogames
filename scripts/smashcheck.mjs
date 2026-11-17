@@ -1204,9 +1204,7 @@ console.log('varisize')
     // steps it uniformly, and the rounded value is all the arena sees)
     const IDX = readFileSync('src/games/SmashTV/index.jsx', 'utf8')
     ok(IDX.includes('ctx.translate(-camX, 0)'), 'the arena renders through a camera pan')
-    // #2521: the window is CW/zs — the pull-back widens it for the reveal and
-    // at play scale (zs = 1) this is exactly the #1973/#1978 camera.
-    ok(/const vw = Math\.min\(CW \/ zs, camBoard\)/.test(IDX) && /const want0 = Math\.max\(0, Math\.min\(mid - vw \/ 2, camBoard - vw\)\)/.test(IDX) && /want = Math\.max\(0, Math\.min\(mid \+ camLead\(leadDx, bd\) - vw \/ 2, camBoard - vw\)\)/.test(IDX), 'camX centres the live cast and clamps at the board edges', '')
+    ok(/const want0 = Math\.max\(0, Math\.min\(mid - CW \/ 2, camBoard - CW\)\)/.test(IDX) && /want = Math\.max\(0, Math\.min\(mid \+ camLead\(leadDx, bd\) - CW \/ 2, camBoard - CW\)\)/.test(IDX), 'camX centres the live cast and clamps at the board edges', '')
     ok(IDX.includes('camPan(camF, want)'), 'the pan obeys the uniform-step law')
     ok(IDX.includes('camX = Math.round(camF)'), 'the pan lands on whole pixels')
 }
@@ -1315,7 +1313,7 @@ console.log('polish')
     // borrow the game's own colours so the chip reads without a tutorial.
     ok(markSide(10, 72, 256) === -1 && markSide(330, 72, 256) === 1 && markSide(200, 72, 256) === 0, 'markSide maps board x to the frame edge', `${markSide(10, 72, 256)},${markSide(330, 72, 256)},${markSide(200, 72, 256)}`)
     ok(MARK.spawn === '#ffd23f' && MARK.enemy === '#ff5d5d' && MARK.civ === '#8fff9f', 'the markers reuse the telegraph, kill and exit colours')
-    ok(SRC2.includes('edgeMarks(marks, camX, CW / zs)'), 'the renderer stamps the edge chips through the budget filter')
+    ok(SRC2.includes('edgeMarks(marks, camX - zOver, CW / zs)'), 'the renderer stamps the edge chips through the budget filter')
     ok(SRC2.includes("en.kind !== 'boss'"), 'the host is exempt — the host law already keeps him framed')
 
     // 3a′) #2089 — the edge budget spends itself on the UNSEEN. The old code
@@ -1392,7 +1390,7 @@ console.log('polish')
     ok(SPAWN_CUE > 0, 'the add-entry flare has a window', `${SPAWN_CUE}`)
     ok(edgeRow(HUD_H - 40, HUD_H, CH) === HUD_H + 8 && edgeRow(CH + 40, HUD_H, CH) === CH - 8 && edgeRow(HUD_H + 30, HUD_H, CH) === HUD_H + 30, 'edgeRow clamps a cue into the HUD-safe band')
     ok(SRC2.includes('spawnCues.push') && SRC2.includes('SPAWN_CUE'), 'the renderer arms the add-entry flare')
-    ok(SRC2.includes('markSide(cu.x, camX, CW / zs)'), 'the flare re-reads its edge each frame — panning onto the add kills it')
+    ok(SRC2.includes('markSide(cu.x, camX - zOver, CW / zs)'), 'the flare re-reads its edge each frame — panning onto the add kills it')
     {
         // drive the finale with the hero pinned at the far edge; the host law
         // keeps HIM framed, but the adds spawn across the whole board. Count
@@ -1433,7 +1431,7 @@ console.log('polish')
     // sits at board centre — at mid-board framing the old pop row collided
     // with the sealed/shuttering door. The pop now hangs below the border row,
     // and nothing may ever be built in its band.
-    ok(SRC2.includes('ctx.translate(camX + CW / (2 * zs), HUD_H + 48)'), 'the combo pop hangs below the border door row')
+    ok(SRC2.includes('ctx.translate(CW / 2 + camX, HUD_H + 48)'), 'the combo pop hangs below the border door row')
     for (let idx = 0; idx < TOTAL_ROOMS; idx++) {
         const low = genRoom(0, idx).walls.filter(([, r]) => r <= 2)
         ok(low.length === 0, `room ${idx + 1}: nothing built in the pop's band (rows 0–2)`)
@@ -1500,7 +1498,7 @@ console.log('walk-home')
     ok(/MURMUR\.vol \+ MURMUR_SWELL \* \(e\.hype \|\| 0\)/.test(SRC3), 'the component mixes the hype into the bed')
     ok(/MURMUR\.freq \+ MURMUR_HYPE_FREQ \* \(e\.hype \|\| 0\)/.test(SRC3), 'the bed rides brighter at full hype')
     ok(/if \(gs\.cleared\) \{[\s\S]{0,700}camLead\(leadDx, bd\)/.test(SRC3), 'the camera settles toward the open door only once the room is cleared')
-    ok(/want = Math\.max\(0, Math\.min\(mid \+ camLead\(leadDx, bd\) - vw \/ 2, camBoard - vw\)\)/.test(SRC3), 'the settle keeps the pan clamped to the board edges')
+    ok(/want = Math\.max\(0, Math\.min\(mid \+ camLead\(leadDx, bd\) - CW \/ 2, camBoard - CW\)\)/.test(SRC3), 'the settle keeps the pan clamped to the board edges')
 }
 
 // ---------------------------------------------------- entry-zoom (#2521) ----
@@ -1534,10 +1532,10 @@ console.log('entry-zoom')
     ok(ranged, 'the scale stays inside [ENTRY_ZOOM, 1] — no crop past the board, no infinite wide', `flow ${flow.toFixed(2)} px`)
     ok(flow <= CAM_PAN, 'the push-in edge flow stays inside the #1978 pan budget', `${flow.toFixed(2)} px/frame`)
 
-    // superset law: at every mid and every reveal scale the wide window covers
-    // the nominal window, so host-law containment (pinned in the finale
-    // section) rides the pull-back with margin to spare.
-    const win = (mid, s) => { const vw = Math.min(CW / s, BOARD); const a = Math.max(0, Math.min(mid - vw / 2, BOARD - vw)); return [a, a + vw] }
+    // superset law: the wide window shares the nominal window's centre and is
+    // wider, so host-law containment (pinned in the finale section) rides the
+    // pull-back with margin ≥ 48·scale to spare.
+    const win = (mid, s) => { const l = Math.max(0, Math.min(mid - CW / 2, BOARD - CW)); const c = l + CW / 2; const vw = Math.min(CW / s, BOARD); return [c - vw / 2, c + vw / 2] }
     let superset = true, margin = Infinity
     for (let mid = 0; mid <= BOARD; mid += 4) {
         const nom = win(mid, 1)
@@ -1550,24 +1548,24 @@ console.log('entry-zoom')
     ok(superset, 'the wide frame always contains the nominal camera window', `min host margin ${margin.toFixed(1)} px`)
     ok(margin >= 32, 'THE ANNOUNCER stays framed through the reveal — containment moves with the zoom', `min ${margin.toFixed(1)} px ≥ 32`)
 
-    // uniform pan through the reveal: static cast, camF from the entry snap,
-    // want sliding as the window narrows — no step may exceed CAM_PAN.
+    // the reveal slides NO pan target: want stays the nominal formula at every
+    // reveal scale (that decoupling is why the live camera never lags into a
+    // snap — the failure mode the first centred-window prototype shipped).
     let camFz = -1e9, hop = 0, prev = null
     for (let t = 0; t <= ZOOM_SETTLE; t++) {
-        const vw = Math.min(CW / entryScale(t), BOARD)
-        camFz = camPan(camFz, Math.max(0, Math.min(BOARD / 2 - vw / 2, BOARD - vw)))
+        camFz = camPan(camFz, Math.max(0, Math.min(BOARD / 2 - CW / 2, BOARD - CW)))
         if (prev !== null && Math.abs(camFz - prev) <= CAM_SNAP) hop = Math.max(hop, Math.abs(camFz - prev))
         prev = camFz
     }
-    ok(hop <= CAM_PAN, 'camPan caps the pan while the reveal slides its target', `max step ${hop}`)
+    ok(hop <= CAM_PAN, 'the reveal leaves the pan target untouched — the uniform-pan law is byte-intact', `max step ${hop}`)
 
     // renderer wiring pins
     ok(IDXZ.includes('entryScale(zt)') && /zt = Math\.min\(zt \+ 1, ZOOM_SETTLE\)/.test(IDXZ),
         'the renderer advances the reveal clock from the juice law')
     ok((IDXZ.match(/zt = 0/g) || []).length === 4, 'every room entry arms the reveal (advance, start, start2P, reset)',
         `${(IDXZ.match(/zt = 0/g) || []).length}/4`)
-    ok(/ctx\.scale\(zs, zs\)/.test(IDXZ) && /ctx\.translate\(0, \(\(HUD_H \+ CH\) \/ 2\) \* \(1 - zs\)\)/.test(IDXZ),
-        'the arena renders through the centre-anchored zoom transform')
+    ok(/ctx\.scale\(zs, zs\)/.test(IDXZ) && /ctx\.translate\(CW \/ 2, \(HUD_H \+ CH\) \/ 2\)/.test(IDXZ) && /ctx\.translate\(-CW \/ 2, -\(HUD_H \+ CH\) \/ 2\)/.test(IDXZ),
+        'the arena renders through the window-centre zoom transform')
     ok(IDXZ.includes('scale: zs'), 'the probe reports the live view scale for the harness')
     ok(!/\bzs\b|entryScale/.test(SIMZ), 'the zoom never touches the sim — every seed hash holds')
 }
@@ -1653,7 +1651,7 @@ if (process.argv.includes('--mutate')) {
         ['#2507: the dry meter goes numb (bar holds slate)', 'const dryTank = powerLow(gs.weapon, gs.energy, CFG.dryLimit)', 'const dryTank = false'],
         ['#2507: the dry ping goes mute at the reload edge', 'powerLow(gs.weapon, gs.energy, CFG.dryLimit) && gs.tick % POWER_PING.every', 'false && gs.tick % POWER_PING.every'],
         ['#2507: room spawns lose their ring — the hook re-gates to boss adds', 'bornFx.push({ x: e.x, y: e.y, t: 0 })', 'if (e.bossAdd) bornFx.push({ x: e.x, y: e.y, t: 0 })'],
-        ['#2521: the camera ignores the reveal — the window stays tight', 'const vw = Math.min(CW / zs, camBoard)', 'const vw = CW'],
+        ['#2521: the zoom transform dies — the reveal never widens the frame', 'ctx.scale(zs, zs)', 'ctx.scale(1, zs)'],
         ['#2521: edge chips go blind through the pull-back', 'edgeMarks(marks, camX, CW / zs)', 'edgeMarks(marks, camX, CW)'],
         ['#2521: room entry forgets to arm the reveal', 'roomTotal = 0; roomBump = 0; clearedAt = -1; zt = 0', 'roomTotal = 0; roomBump = 0; clearedAt = -1'],
     ]

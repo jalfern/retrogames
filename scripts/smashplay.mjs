@@ -13,6 +13,15 @@ page.on('pageerror', (e) => errors.push(String(e)))
 
 const probe = () => page.evaluate(() => window.__smashTest.probe())
 
+// #2521: the entry pull-back maps world→canvas through a scale for its first
+// ~1.5 s after any room cut (camX stays nominal — only the PIXELS move). The
+// pixel probes below want play scale, so let the reveal settle before sampling.
+const settleZoom = () => page.evaluate(() => new Promise((resolve) => {
+    const t0 = performance.now()
+    const tick = () => ((window.__smashTest.probe().scale ?? 1) >= 1 || performance.now() - t0 > 4000) ? resolve() : requestAnimationFrame(tick)
+    requestAnimationFrame(tick)
+}))
+
 let p0 = await probe()
 r.check('boots into attract', p0.screen === 'attract', p0.screen)
 const h1 = await page.evaluate(() => window.__smashTest.hash())
@@ -25,6 +34,27 @@ await page.waitForTimeout(400)
 p0 = await probe()
 r.check('press any key starts the show', p0.screen === 'play' && p0.room === 0, `${p0.screen} room ${p0.room}`)
 r.check('the contestant lands exposed — zero spawn mercy (#2491)', p0.player.invuln === 0, `invuln ${p0.player.invuln}`)
+
+// #2521: the opening pull-back — reset arms the room wide, the studio pushes
+// back to play scale inside the settle window, monotone all the way.
+{
+    const rz = await page.evaluate(async () => {
+        const raf = () => new Promise((res) => requestAnimationFrame(res))
+        window.__game.reset(0, 1)
+        const seen = []
+        for (let i = 0; i < 150; i++) {
+            const gs = window.__smashTest.state()
+            gs.player.invuln = 1e9 // the scale decays on draw frames; the no-mercy volley must not spend lives the later gates borrow
+            await raf()
+            seen.push(window.__smashTest.probe().scale)
+        }
+        const gsz = window.__smashTest.state()
+        gsz.lives = 3; gsz.player.invuln = 0; gsz.enemies.length = 0; gsz.roomData.spawns.length = 0
+        return { first: seen[0], min: Math.min(...seen), last: seen[seen.length - 1], mono: seen.every((v, i) => !i || v >= seen[i - 1] - 1e-9) }
+    })
+    r.check('#2521 the room opens wide (0.8) and pushes back to play scale', rz.first <= 0.8 && rz.min <= 0.8 && rz.last === 1 && rz.mono, JSON.stringify(rz))
+    await settleZoom()
+}
 
 // twin-stick: run right while firing left — drawn state must track
 const before = await probe()
@@ -155,6 +185,8 @@ r.check('restart returns to the arena', p.screen === 'play' && p.room === 0 && p
         const api = window.__game
         api.reset(0, 1)
         for (let i = 0; i < 4; i++) api.step([{ }])
+        // #2521: pixels below are read at play scale — let the reveal settle
+        await new Promise((rz) => { const q = () => ((window.__smashTest.probe().scale ?? 1) >= 1) ? rz() : requestAnimationFrame(q); requestAnimationFrame(q) })
         const gs = window.__smashTest.state()
         gs.player.invuln = 0 // the spawn blink would blank the sprite on odd frames
         gs.enemies.length = 0 // camera-leg chrome is the same grey — the column
@@ -228,7 +260,8 @@ r.check('the arena actually renders', px > 500, `${px} lit px`)
         const c = document.querySelector('canvas[data-smash-stage]')
         const g = c.getContext('2d')
         const at = (x, y) => { const d = g.getImageData(x, y, 1, 1).data; return { r: d[0], gg: d[1], b: d[2] } }
-        return { inBig, camX: T.probe().camX, px: Math.round(gs.player.x), left: at(2, 122), right: at(253, 100) }
+        const q5 = T.probe(); const s5 = q5.scale ?? 1 // #2521: canvas px map through the reveal scale — sample the same world points
+        return { inBig, camX: q5.camX, px: Math.round(gs.player.x), left: at(Math.round(128 - 126 * s5), Math.round(148 - 26 * s5)), right: at(Math.round(128 + 125 * s5), Math.round(148 - 48 * s5)) }
     })
     r.check('room 5 boards wide and the camera pans with the hero', cam.inBig && cam.camX >= 100 && cam.px > 300, JSON.stringify({ camX: cam.camX, x: cam.px }))
     r.check('the pan shows studio floor where the old screen-edge wall was', cam.left.b < 60, JSON.stringify(cam.left))
@@ -265,7 +298,7 @@ r.check('the arena actually renders', px > 500, `${px} lit px`)
             const pr = T.probe()
             const b = (pr.enemies || []).find((e) => e.kind === 'boss')
             if (!b) return null
-            const sx = Math.round(b.x - pr.camX), sy = Math.round(b.y)
+            const sx = Math.round((b.x - pr.camX - 128) * (pr.scale ?? 1) + 128), sy = Math.round((b.y - 148) * (pr.scale ?? 1) + 148) // #2521: canvas px map through the reveal scale
             const d = g.getImageData(Math.max(0, sx - 18), Math.max(0, sy - 10), 36, 20).data
             let lit = 0
             for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 90) lit++
@@ -311,6 +344,10 @@ r.check('the arena actually renders', px > 500, `${px} lit px`)
         const api = window.__game
         api.reset(0, 1)
         for (let i = 0; i < 4; i++) T.stepWith({})
+        // #2521: let the reveal settle before staging timed arcs — the pixel
+        // boxes below then read at exact play scale (their world mapping too).
+        // The settle runs live sim, so keep the borrowed hero unkillable.
+        await new Promise((rz) => { const q = () => { window.__smashTest.state().player.invuln = 1e9; ((window.__smashTest.probe().scale ?? 1) >= 1) ? rz() : requestAnimationFrame(q) }; requestAnimationFrame(q) })
         const gs = T.state()
         const clear = () => {
             gs.enemies = []; gs.civilians = []; gs.ebullets = []; gs.grenades = []; gs.crates = []; gs.items = []
@@ -357,8 +394,9 @@ r.check('the arena actually renders', px > 500, `${px} lit px`)
                     // in a box that covers the drift.
                     const s2 = T.probe()
                     const g2 = T.state()
+                    const sc2 = s2.scale ?? 1 // #2521: canvas px map through the reveal scale
                     const mm = (g2.bullets || []).find((q) => q.kind === 'homing') || m
-                    missilePx = countCol(mm.x - (s2.camX || 0) - 4, mm.y - 4, 9, 9, [255, 176, 79])
+                    missilePx = countCol(Math.round((mm.x - (s2.camX || 0) - 128) * sc2 + 128) - 4, Math.round((mm.y - 148) * sc2 + 148) - 4, 9, 9, [255, 176, 79])
                 }
             }
             flight++
@@ -387,8 +425,9 @@ r.check('the arena actually renders', px > 500, `${px} lit px`)
             if (e) hpWatch = e.hp
             if (f === 3) { // young puff, short of the enemy sprite: fire colours only
                 await raf(); await raf()
-                const camX = T.probe().camX || 0
-                firePx = countCol(102 - camX, 133, 16, 14, [255, 210, 63]) + countCol(102 - camX, 133, 16, 14, [255, 138, 63])
+                const prF = T.probe(); const camX = prF.camX || 0; const sf = prF.scale ?? 1 // #2521: canvas px map through the reveal scale
+                const fxCanvas = Math.round((102 - camX - 128) * sf + 128)
+                firePx = countCol(fxCanvas, Math.round((133 - 148) * sf + 148), 16, 14, [255, 210, 63]) + countCol(fxCanvas, Math.round((133 - 148) * sf + 148), 16, 14, [255, 138, 63])
             }
             f++
         }
@@ -396,8 +435,9 @@ r.check('the arena actually renders', px > 500, `${px} lit px`)
         // debris ages on DRAW frames, not sim ticks — wait real frames so the
         // blast settles before the gone-sample (stepWith alone starves the painter)
         for (let i = 0; i < 30; i++) await raf()
-        const camX = T.probe().camX || 0
-        const goneFire = countCol(102 - camX, 133, 58, 14, [255, 210, 63]) + countCol(102 - camX, 133, 58, 14, [255, 138, 63])
+        const prGone = T.probe(); const camX = prGone.camX || 0; const sg2 = prGone.scale ?? 1 // #2521: canvas px map through the reveal scale
+        const gxCanvas = Math.round((102 - camX - 128) * sg2 + 128)
+        const goneFire = countCol(gxCanvas, Math.round((133 - 148) * sg2 + 148), 58, 14, [255, 210, 63]) + countCol(gxCanvas, Math.round((133 - 148) * sg2 + 148), 58, 14, [255, 138, 63])
         const flamer = { puffs, firstDrop, reach: +reach.toFixed(1), dying: !gs.bullets.some((b) => b.kind === 'flame'), firePx }
         return { seek, flamer, goneFire }
     })
@@ -420,6 +460,10 @@ r.check('the arena actually renders', px > 500, `${px} lit px`)
         const api = window.__game
         api.reset(0, 1)
         for (let i = 0; i < 4; i++) T.stepWith({})
+        // #2521: let the reveal settle before staging timed arcs — the pixel
+        // boxes below then read at exact play scale (their world mapping too).
+        // The settle runs live sim, so keep the borrowed hero unkillable.
+        await new Promise((rz) => { const q = () => { window.__smashTest.state().player.invuln = 1e9; ((window.__smashTest.probe().scale ?? 1) >= 1) ? rz() : requestAnimationFrame(q) }; requestAnimationFrame(q) })
         const gs = T.state()
         gs.enemies = []; gs.ebullets = []; gs.bullets = []
         // civilian fire only answers in a bonus room — stage the room as one
@@ -438,8 +482,8 @@ r.check('the arena actually renders', px > 500, `${px} lit px`)
         const c = document.querySelector('canvas[data-smash-stage]')
         const g = c.getContext('2d')
         const near = (d, i, rgb) => Math.abs(d[i] - rgb[0]) < 40 && Math.abs(d[i + 1] - rgb[1]) < 40 && Math.abs(d[i + 2] - rgb[2]) < 40
-        const camX = T.probe().camX || 0
-        const d = g.getImageData(Math.max(0, 150 - camX - 16), 124, 33, 33).data
+        const prG = T.probe(); const camX = prG.camX || 0; const sg = prG.scale ?? 1 // #2521: canvas px map through the reveal scale
+        const d = g.getImageData(Math.max(0, Math.round((150 - camX - 128) * sg + 128) - 16), Math.round((140 - 148) * sg + 148) - 16, 33, 33).data
         for (let i = 0; i < d.length; i += 4) if (near(d, i, [200, 31, 47]) || near(d, i, [232, 70, 74]) || near(d, i, [160, 24, 36])) redPx++
         const fx1 = T.goreFx()
         gibsNow = fx1.gibs.length; stainNow = fx1.stains

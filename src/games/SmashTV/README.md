@@ -489,14 +489,17 @@ Prototype knobs first (`?scale=<f>` pins the view scale for A/B shots,
   `ZOOM_SETTLE = 90`. Smoothstep, not linear: no kink at either end, and the
   steepest edge flow is `CW·Δscale = 0.96 px/frame` — inside the #1978 pan
   budget, so the reveal never moves the picture harder than the camera it
-  rides. `camPan` still caps every translational step at `CAM_PAN` px; the
-  zoom only slides the pan TARGET, and the uniform-pan law holds untouched.
-- `index.jsx` renders the arena through a centre-anchored transform
-  (`screen x = (world − camX)·zs`): the board midpoint sits still while the
-  wide frame hangs, and the per-frame CRT background letterboxes the extra
-  view for free. Markers and the add-entry flare read their edges against
-  `CW/zs`, so nothing visible earns a chip during the reveal; the combo pop's
-  screen-centre converts through the zoom.
+  rides. And the reveal is decoupled from the pan entirely (centre anchor,
+  below) — `camPan`'s law cannot even see it.
+- `index.jsx` renders the arena through a transform anchored on the **live
+  window centre** (`screen x = (world − camX − CW/2)·zs + CW/2`): the pan
+  target stays the nominal formula, so the #1978 uniform-pan law is untouched
+  by construction. (Design lesson, caught live: the first prototype centred
+  the WIDE window on the cast mid — that slid the pan target ~1.8 px/tick,
+  above the 1 px/frame cap, the lag accumulated, `camPan` snapped… and the
+  camera teleported 25 px mid-room. Decoupling zoom from pan is the law.)
+  Markers and the add-entry flare read their edges against `CW/zs` centred on
+  the window, so nothing visible earns a chip during the reveal.
 - **The host law moves with it (#2024).** The sim keeps THE ANNOUNCER inside
   the NOMINAL window `[cam+48, cam+CW−48]`; a zoomed window is always a
   superset of the nominal one at any mid and any reveal scale (smashcheck

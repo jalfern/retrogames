@@ -631,7 +631,7 @@ const SmashTVGame = () => {
             const col = comboColor(n)
             const pulse = 1 + 0.08 * Math.sin(gs.tick / 3)
             ctx.save()
-            ctx.translate(camX + CW / (2 * zs), HUD_H + 48) // #1978: below the sealed-door row (r0) so the pop never fights the chevrons; #2521: screen-centre under the zoom
+            ctx.translate(CW / 2 + camX, HUD_H + 48) // #1978: below the sealed-door row (r0) so the pop never fights the chevrons — #2521: window-centre anchor keeps it screen-centred through the reveal
             ctx.scale(pulse, pulse)
             text(`BONUS ×${n}`, 0, 0, 20 + Math.min(8, n), col, 14)
             ctx.restore()
@@ -767,17 +767,14 @@ const SmashTVGame = () => {
                 // so a 1.2 px/tick walk never hops the board 2 px at once. The pan
                 // trails the run by a few px and catches up when he stops; rooms
                 // and respawns jump >CAM_SNAP and snap through instantly.
-                // #2521: the entry pull-back widens the view window to CW/zs
-                // for the first beat of the room — the opening shot shows 83%
-                // of the board instead of 67%. The zoom slides its target at
-                // ≤0.96 px/frame at the frame edge and camPan still caps every
-                // pan step at CAM_PAN px — the uniform-pan law (#1978) holds
-                // through the reveal, and at play scale (zs=1) this is the old
-                // byte-identical camera.
+                // #2521: the entry pull-back. The pan target stays the NOMINAL
+                // window (the #1973/#1978 camera is byte-identical) — the reveal
+                // is a pure scale channel anchored on the window centre (see the
+                // draw transform), so the zoom never slides the pan target and
+                // camPan's 1 px/frame law cannot lag into a snap.
                 zs = qZoomOff ? 1 : qZoomPin !== null ? qZoomPin : entryScale(zt)
                 zt = Math.min(zt + 1, ZOOM_SETTLE)
-                const vw = Math.min(CW / zs, camBoard)
-                const want0 = Math.max(0, Math.min(mid - vw / 2, camBoard - vw))
+                const want0 = Math.max(0, Math.min(mid - CW / 2, camBoard - CW))
                 // #2011: while a cleared room is still a walk to the door, the
                 // frame settles up to CAM_LEAD px toward it — the exit rides the
                 // edge of the screen instead of hiding a full pan away. camPan
@@ -794,21 +791,22 @@ const SmashTVGame = () => {
                             if (dd < bd) { bd = dd; leadDx = dx }
                         }
                     }
-                    want = Math.max(0, Math.min(mid + camLead(leadDx, bd) - vw / 2, camBoard - vw))
+                    want = Math.max(0, Math.min(mid + camLead(leadDx, bd) - CW / 2, camBoard - CW))
                 }
                 camF = camPan(camF, want)
                 camX = Math.round(camF)
             } else { camX = 0; camF = 0; zs = 1 }
             ctx.save()
             if (shake > 0) { ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake); shake -= 0.5 }
-            // #2521: the pull-back zoom, centred on the arena's midpoint —
-            // screen x = (worldX − camX)·zs, so [camX, camX + CW/zs] is the
-            // live view window, and the vertical anchor keeps the board's
-            // centre still while the wide frame hangs (outside the board the
-            // per-frame CRT background letterboxes the extra view for free).
+            // #2521: the pull-back zoom, anchored on the live window's centre:
+            // screen x = (world − camX − CW/2)·zs + CW/2. The pan stays exact,
+            // the reveal shows CW/zs of the board symmetrically about the
+            // frame centre, and outside the board the per-frame CRT background
+            // letterboxes the extra view for free.
             if (zs < 1) {
-                ctx.translate(0, ((HUD_H + CH) / 2) * (1 - zs))
+                ctx.translate(CW / 2, (HUD_H + CH) / 2)
                 ctx.scale(zs, zs)
+                ctx.translate(-CW / 2, -(HUD_H + CH) / 2)
             }
             ctx.translate(-camX, 0)
             ctx.drawImage(floor, 0, HUD_H)
@@ -907,12 +905,16 @@ const SmashTVGame = () => {
             // frame by construction. #2089: the budget is spent only on marks that
             // actually sit past the edge, threats first — never on a mark already in
             // frame (edgeMarks owns the filter, priority and cap).
+            // #2521: under the pull-back the visible window is CW/zs wide,
+            // centred on the nominal window — zOver px of extra board peek
+            // out on each side, so an entity is off-frame only past it.
+            const zOver = zs < 1 ? (CW / zs - CW) / 2 : 0
             if (camBoard > CW && screenRef.current === 'play' && (gs.tick >> 2) % 2 === 0) {
                 const marks = []
                 for (const s of gs.roomData.spawns) marks.push({ x: s.c * CELL + 8, y: HUD_H + s.r * CELL + 8, col: MARK.spawn, kind: 'spawn' })
                 for (const en of gs.enemies) if (en.kind !== 'boss') marks.push({ x: en.x, y: en.y, col: MARK.enemy, kind: 'enemy' })
                 if (gs.roomData.bonus) for (const v of gs.civilians) marks.push({ x: v.x, y: v.y, col: MARK.civ, kind: 'civ' })
-                for (const m of edgeMarks(marks, camX, CW / zs)) {
+                for (const m of edgeMarks(marks, camX - zOver, CW / zs)) {
                     ctx.fillStyle = m.col
                     ctx.fillRect(m.side < 0 ? 2 : CW - 5, edgeRow(m.y, HUD_H, CH) - 1, 3, 3)
                 }
@@ -927,7 +929,7 @@ const SmashTVGame = () => {
                 for (let i = spawnCues.length - 1; i >= 0; i--) {
                     const cu = spawnCues[i]
                     cu.t--
-                    const side = markSide(cu.x, camX, CW / zs)
+                    const side = markSide(cu.x, camX - zOver, CW / zs)
                     if (cu.t <= 0 || !side) { spawnCues.splice(i, 1); continue }
                     if (cu.t > SPAWN_CUE / 2 || (gs.tick >> 1) % 2 === 0) {
                         ctx.fillStyle = MARK.spawn
