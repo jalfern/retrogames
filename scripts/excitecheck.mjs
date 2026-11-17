@@ -15,8 +15,9 @@
 //   npm run excitecheck -- --mutate   # re-break the load-bearing rules; a
 //                                     # surviving mutant means a check died
 import { makeGame, step, stateHash, CFG } from '../src/games/Excitebike/sim.js'
-import { track, groundY, featureAt, LAP, MUD, WATER, BOOST, TRACK_COUNT, nextSel, trackName } from '../src/games/Excitebike/levels.js'
+import { track, groundY, featureAt, LAP, MUD, WATER, BOOST, TRACK_COUNT, nextSel, trackName, buildTrack, registerCustom, customCount } from '../src/games/Excitebike/levels.js'
 import { plan, decide } from '../src/games/Excitebike/planner.js'
+import { compileCustom, auditCustomData, encodeCustom, decodeCustom, fitsAt, stampAt, SPAN, EDGE, STAMP_KINDS, CUSTOM_KEY, CUSTOM_MAX } from '../src/games/Excitebike/custom.js'
 
 const MUT = process.argv.includes('--mutate')
 let pass = 0
@@ -1356,6 +1357,97 @@ if (MUT) {
     tryMut('bargRate=0 (bargaining is theatre)', flat({ bargRate: 0 }), probeBargain)
     tryMut('bargRange=0 (blind to your gap)', flat({ bargRange: 0 }), probeBargain)
     tryMut('bargain ignores hazard reads (lines outrank ground)', flat({ hazBase: 0, hazSkill: 0 }), probeHazStays)
+}
+
+// ---------------------------------------------------------------- edit ----
+section('EDIT TRACK (a course is data: the compiler, the law, the grown roster, #2576)')
+{
+    const fpG = (g) => { let s = 0; for (let x = 0; x < g.length; x++) s += Math.round(g[x] * 100); return s }
+    const A = [
+        { kind: 'RAMP', x: 1200 }, { kind: 'WHOOPS', x: 2000 }, { kind: 'MUD', x: 2600 },
+        { kind: 'BOOST', x: 3200 }, { kind: 'WATER', x: 3800 }, { kind: 'STEP', x: 4400 },
+    ]
+    const B = [
+        { kind: 'RAMP', x: 840 }, { kind: 'WHOOPS', x: 1400 }, { kind: 'WATER', x: 1800 },
+        { kind: 'BOOST', x: 2200 }, { kind: 'MUD', x: 2600 }, { kind: 'RAMP', x: 3000 },
+        { kind: 'STEP', x: 3600 }, { kind: 'BOOST', x: 4200 }, { kind: 'WHOOPS', x: 4800 },
+        { kind: 'WATER', x: 5200 }, { kind: 'MUD', x: 5600 },
+    ]
+    const da = buildTrack(compileCustom(A))
+    const db = buildTrack(compileCustom(B))
+    const auditA = auditCustomData(da, groundY); const auditB = auditCustomData(db, groundY)
+    ok(auditA.ok, `reference draft A refused: ${auditA.why}`)
+    ok(auditB.ok, `reference draft B (11 stamps) refused: ${auditB.why}`)
+
+    // determinism: the compiler is a pure fold over sorted stamps
+    ok(fpG(da.ground) === fpG(buildTrack(compileCustom(A)).ground), 'compiling the same draft twice gave different ground')
+    ok(fpG(da.ground) === fpG(buildTrack(compileCustom([...A].reverse())).ground), 'stamp ORDER changed the compiled course')
+
+    // stamps are REAL geometry, not bands: each kind must show up in the ground
+    const rampStep = da.steps.find((s) => s.x >= 1200 && s.x <= 1680)
+    ok(rampStep && rampStep.rise >= 44 && rampStep.grade > 0.28, `RAMP did not carve a clearable step (steps ${JSON.stringify(da.steps)})`)
+    const stepStep = da.steps.find((s) => s.x >= 4400 && s.x <= 4860)
+    ok(stepStep && stepStep.rise >= 40, 'STEP did not carve its deck crest')
+    let wmin = 1e9, wmax = -1e9
+    for (let x = 2000; x <= 2260; x++) { const h = groundY(da.ground, x); wmin = Math.min(wmin, h); wmax = Math.max(wmax, h) }
+    ok(wmax - wmin >= 10, `WHOOPS stamped no real bumps (range ${(wmax - wmin).toFixed(1)})`)
+    ok(groundY(da.ground, 3900) < groundY(da.ground, 3700) - 10, 'WATER sits on flat ground — the bowl is theatre')
+    ok(Math.abs(groundY(da.ground, 100) - 96) < 3 && fpG(da.ground) !== fpG(buildTrack(compileCustom([])).ground), 'the untouched lap moved under the stamps')
+
+    // refusals: each illegal draft must be refused BY NAME
+    const refuse = (stamps, want) => {
+        const r = auditCustomData(buildTrack(compileCustom(stamps)), groundY)
+        ok(!r.ok && (!want || r.why === want), `illegal draft gave ${JSON.stringify(r)} (want refusal ${want || 'of any kind'})`)
+    }
+    refuse([], 'DRAW SOMETHING FIRST')
+    refuse([{ kind: 'RAMP', x: 1200 }, { kind: 'STEP', x: 1400 }], 'OBSTACLES OVERLAP')
+    refuse([{ kind: 'RAMP', x: EDGE - 40 }], 'KEEP CLEAR OF THE START LINE')
+    refuse([{ kind: 'BOOST', x: 6200 }], null) // eats the closing cp / hangs off the lap — seam or band law must catch it
+    ok(SPAN.BOOST + 6200 > LAP - EDGE, 'the past-edge probe is no longer past the edge — retune it')
+
+    // the live-cursor law agrees with the SAVE law (one law, two readers)
+    let placed = []
+    for (const st of A) { ok(fitsAt(placed, st.kind, st.x), `editor cursor would have refused stamp ${st.kind}@${st.x} that the audit accepts`); placed.push(st) }
+    ok(!fitsAt(placed, 'STEP', 1400), 'cursor fits an overlapping stamp the audit refuses')
+    ok(!fitsAt(placed, 'RAMP', 40), 'cursor fits a stamp inside the seam margin')
+    ok(stampAt(placed, 2100) === 1, 'ERASE points at the wrong stamp')
+
+    // storage codec: round-trips, and garbage is an empty shelf
+    const enc = encodeCustom([{ name: 'CUSTOM', stamps: A.map((s) => [s.kind, s.x]) }, { name: 'WILDPARK', stamps: B.map((s) => [s.kind, s.x]) }])
+    const dec = decodeCustom(enc)
+    ok(dec.length === 2 && dec[1].name === 'WILDPARK' && JSON.stringify(dec[0].stamps) === JSON.stringify(A.map((s) => [s.kind, s.x])), 'codec round-trip lost or renamed a course')
+    ok(!decodeCustom('{oops').length && !decodeCustom('[{"stamps":[["NOPE",100]]}]').length && !decodeCustom('{"a":1}').length && !decodeCustom(null).length, 'codec let garbage through')
+    ok(typeof CUSTOM_KEY === 'string' && CUSTOM_MAX === 3 && STAMP_KINDS.length === 6, 'the editor contract (key/slots/vocabulary) moved')
+
+    // the roster grows, the shipped six stay carved stone
+    const pinsBefore = [...Array(TRACK_COUNT)].map((_, i) => fpG(track(i).ground))
+    const i6 = registerCustom(da, 0); const i7 = registerCustom(db, 1)
+    ok(i6 === 6 && i7 === 7 && customCount() === 2, `customs must register at 6/7, got ${i6}/${i7} (count ${customCount()})`)
+    ok(track(6).name === 'CUSTOM' && track(7).name === 'CUSTOM' && track(6).bite === 7, 'customs do not present as CUSTOM grade-7 rides')
+    ok(pinsBefore.every((p, i) => p === fpG(track(i).ground)), 'REGISTERING CUSTOMS MOVED A SHIPPED COURSE')
+    ok(nextSel(8, 1, 9) === 0 && nextSel(0, -1, 9) === 8, 'the splash cursor must wrap the grown roster (6 + 2 customs + EDIT)')
+    ok(nextSel(5, 1) === 0 && nextSel(0, -1) === 6 - 1 && TRACK_COUNT === 6, 'the shipped n=6 cursor law moved')
+    const dB = buildTrack(compileCustom([{ kind: 'RAMP', x: 5600 }, { kind: 'BOOST', x: 1000 }]))
+    ok(registerCustom(dB, 1) === 7 && customCount() === 2 && fpG(track(7).ground) === fpG(dB.ground), 'resaving slot 1 must replace, not stack')
+    ok(registerCustom(dB, customCount() + 1) === -1, 'a hole is not a legal slot')
+
+    // a saved custom is RIDABLE by the same engine: WOT never dies stuck, the
+    // run is deterministic, and both reference drafts finish their two laps.
+    for (const [i, label] of [[6, 'draft A'], [7, 'draft B']] ) {
+        const g = makeGame(i, { count: 0 })
+        let maxStuck = 0, stuck = 0
+        for (let t = 0; t < 9000 && !g.end; t++) {
+            step(g, { g: true })
+            if (g.crash > 0 || g.stall > 0) stuck++; else stuck = 0
+            maxStuck = Math.max(maxStuck, stuck); g.events.length = 0
+        }
+        ok(maxStuck < 400 && g.lap >= 2 && g.end, `${label} at WOT: ${g.end ?? 'unfinished'} lap ${g.lap}, maxStuck ${maxStuck} — a custom the throttle alone cannot finish is not saveable`)
+        const h = makeGame(i, { count: 0 })
+        for (let t = 0; t < 2000 && !h.end; t++) { step(h, { g: true }); h.events.length = 0 }
+        const h2 = makeGame(i, { count: 0 })
+        for (let t = 0; t < 2000 && !h2.end; t++) { step(h2, { g: true }); h2.events.length = 0 }
+        ok(stateHash(h) === stateHash(h2), `${label}: the custom ride is not deterministic`)
+    }
 }
 
 console.log(`\nexcitecheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

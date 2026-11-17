@@ -74,6 +74,14 @@ faster heat.
   the bikes rotated by pitch; lanes render as NES depth (far line sits
   higher and ~10% smaller, riders paint far-to-near). DEV hook
   `__bikeTest` for `exciteplay`.
+- `custom.js` — EDIT TRACK (#2576): the stamp vocabulary + footprints, the
+  base lap template, the deterministic splicing compiler, the ONE legality law
+  (`auditCustomData`, read by cursor/SAVE/harness), `fitsAt` for the live
+  cursor, and the localStorage codec (garbage-in, empty-shelf-out). Pure —
+  no DOM, no localStorage access in this file. `levels.js` gained
+  `buildTrack/registerCustom/customCount`: customs join CACHE after the six
+  (index 6+slot) so every index-driven reader rides them untouched;
+  `TRACK_COUNT` still means SIX (the shipped roster is pinned).
 
 ## Controls (faithful to the NES mapping)
 
@@ -90,6 +98,12 @@ faster heat.
   stick's left/right are the lines, the A button is jump/pump. Tap anywhere
   to start. On the splash the same pad steers the cursor and A rides; a tap
   outside the pad seats the picked course (one pad, always).
+- **EDIT TRACK (#2576)**: `0` at the splash (or the EDIT row / pad cursor +
+  tap) opens the design bay — `←/→` walk a 40px stamp cursor, `↑/↓` walk the
+  tool strip (RAMP STEP WHOOPS MUD WATER BOOST ERASE SAVE EXIT, both wrap),
+  `SPACE`/A executes the tool under the cursor, `1`/`2`/`3` save a legal draft
+  into CUSTOM slots, `Esc` exits. A draft that fails the audit (overlap, the
+  start/finish seam, blank) refuses to save. Saved customs ride at TRACK 7+.
 
 ## Honest gaps
 
@@ -130,9 +144,37 @@ faster heat.
   exciteplay drives marquee→splash→cursor→tap→race in real keys/touch.
   Balance note: SLALOM rides dry — its knuckle rhythm plus the long boost
   home; water lives on BIG AIR and K.O. CROSS.
-- The splash's other half — **EDIT TRACK** (draw your own obstacle course and
-  store it as a custom track, the NES original's second menu entry) — is not
-  here. The roster is six carved circuits, 2 laps each.
+- **CLOSED by #2576:** THE SPLASH's other half — **EDIT TRACK** — landed.
+  A stamp compiler (`custom.js`) turns a draft of obstacles (RAMP, STEP,
+  WHOOPS, MUD, WATER, BOOST + ERASE/SAVE/EXIT) into the same `{cps,bands}`
+  data the shipped six ride on: stamps splice into a rolling base lap (the
+  template cps inside a span are replaced, edges seated on the base line, so
+  terrain stays continuous and the compile is order-independent/deterministic)
+  and every obstacle is REAL geometry — the RAMP's lip is a +52 crest the
+  auditor sees as a step, WATER stamps its own bowl. `auditCustomData` is ONE
+  legality law read by the live cursor (FIT yellow / NO red), by SAVE (an
+  illegal track refuses to store) and by the Node gate: blank, overlap, seam
+  margin, off-lap, and HOLES (a flipped splice filter once deleted the world
+  outside the stamps and passed every LOCAL check — the law now samples the
+  whole lap). Three localStorage save slots; customs enter the roster at
+  TRACK 7+ (splash rows grow, cursor law wraps the grown n), ride the same
+  engine/rivals/WATCH unchanged. Digit `0` opens the bay; the pad reaches it
+  too (cursor + A executes the tool under the cursor). Proven: excitecheck
+  EDIT block (+37: determinism byte pins, refusal-by-name, live-law==save-law,
+  codec garbage-in/empty-out, shipped-six fingerprints unmoved, WOT finish +
+  deterministic rides of two saved drafts) and exciteplay 76/76 designing,
+  refusing, saving, reloading and racing CUSTOM 1 in real keys/touch. Mutant:
+  flatten the RAMP rise → the step-geometry gate reddens.
+- **No test-ride inside the bay** — you save, then seat it (the NES flow was
+  save-and-race too). A draft always rides in the same tab after SAVE (the
+  slot registers immediately), but there is no esc-to-the-bay-from-the-gate.
+- **Custom laps are fixed at 2** and the rivals ride their GENERIC pace line
+  over your terrain (`rivalSpeed` is terrain-computed, never per-custom
+  tuned): a well-drawn course beats the pack on pace, a crowded one may be
+  a slab of whoops — there is no "difficulty grade" beyond what you draw.
+  The attract demo still flies MOTOCROSS only; saved designs never enter it.
+- The bay's ghost preview is a silhouette + colour bar, not the animated
+  NES stamp cursor; palette labels are text (see also open polish #2573).
 
 ## Juice layer (#2387)
 

@@ -19,7 +19,8 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { W, H, makeGame, step, stateHash, CFG } from './sim.js'
-import { track, groundY, LAP, MUD, WATER, BOOST, nextSel, TRACK_COUNT, trackName, trackBite } from './levels.js'
+import { track, groundY, LAP, MUD, WATER, BOOST, nextSel, TRACK_COUNT, trackName, trackBite, buildTrack, registerCustom, customCount } from './levels.js'
+import { TOOLS, SPAN, CUR_STEP, CUSTOM_KEY, CUSTOM_MAX, compileCustom, auditCustomData, fitsAt, stampAt, stampShape, encodeCustom, decodeCustom } from './custom.js'
 import { plan, decide } from './planner.js'
 import { PRESS, MESSAGES } from './attract.js'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -55,9 +56,11 @@ const ExcitebikeGame = () => {
     const [end, setEnd] = useState(null)
     const [gear, setGear] = useState('high')
     const [sel, setSel] = useState(0) // #2563: the splash cursor — which of the six you're riding
+    const [customs, setCustoms] = useState(0) // #2576: saved EDIT TRACK slots loaded (splash grows)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const gearRef = useRef('high')
+    const customsRef = useRef(0)
     const selRef = useRef(0)
     const overAtRef = useRef(0)
     const [watching, setWatching] = useState(false) // #1637 WATCH: excitecheck's rollout planner rides the gate
@@ -84,6 +87,7 @@ const ExcitebikeGame = () => {
         let raf = 0, last = 0, acc = 0
         let demoAt = 0, demoReady = false, toast = 0, toastMsg = '', toastPrio = 0, shake = 0
         let noteAt = 0, heatBeep = 0, fxRBump = 0 // #2434 renderer-side rbump counter (vacuity probe)
+        let vclock = 0 // #2576 editor pulse clock (the sim is parked in EDIT; menus still breathe)
         const lastContact = []
         const keys = { g: false, b: false, j: false, l: false, r: false }
         let bikeMem = { pump: 0 } // #1637 decide()'s per-seat memory (pump taps)
@@ -459,8 +463,92 @@ const ExcitebikeGame = () => {
             }
             ctx.globalAlpha = 1
         }
+        const KIND_COLOR = { RAMP: '#ffe23f', STEP: '#f0d080', WHOOPS: '#c98a3a', MUD: '#8a5a1a', WATER: '#60a0ff', BOOST: '#ffe23f', ERASE: '#ff6a4a', SAVE: '#80e000', EXIT: '#f8f8f8' }
+        const drawEditor = () => {
+            const tr = draft.track
+            const camX = Math.max(0, Math.min(LAP - W + 1, draft.cursor - Math.floor(W / 2)))
+            drawTerrain(tr, camX)
+            // start/finish banner stays on the base lap — the seam is sacred
+            drawStart(camX)
+            // placed stamps: end ticks pinned to the surface + a kind label
+            for (const st of draft.stamps) {
+                const sx = st.x - camX; const ex = st.x + SPAN[st.kind] - camX
+                if (ex < -4 || sx > W + 4) continue
+                ctx.fillStyle = '#f8f8f8'
+                ctx.fillRect(sx, g2s(groundY(tr.ground, st.x)) + 12, 2, 6)
+                ctx.fillRect(ex - 2, g2s(groundY(tr.ground, Math.min(LAP, st.x + SPAN[st.kind]))) + 12, 2, 6)
+                ctx.fillStyle = KIND_COLOR[st.kind] || '#f8f8f8'
+                ctx.font = 'bold 7px monospace'
+                ctx.fillText(st.kind, Math.max(2, Math.min(W - 30, sx + 4)), g2s(groundY(tr.ground, st.x)) - 6)
+            }
+            // the cursor: pulsing plumb line, footprint bracket, ghost preview
+            const kind = TOOLS[draft.tool]
+            const verb = kind === 'SAVE' || kind === 'EXIT' || kind === 'ERASE'
+            const fits = verb || fitsAt(draft.stamps, kind, draft.cursor)
+            const col = kind === 'ERASE' ? '#ff6a4a' : kind === 'SAVE' ? '#80e000' : fits ? '#ffe23f' : '#ff2a1a'
+            const cx = draft.cursor - camX
+            const gy = g2s(groundY(tr.ground, draft.cursor))
+            const pulse = Math.sin(vclock * 0.14) * 2
+            if (SPAN[kind] !== undefined && fits && kind !== 'ERASE') {
+                // ghost: the stamp's true silhouette at the cursor, half-laid
+                ctx.globalAlpha = 0.55
+                ctx.strokeStyle = col; ctx.lineWidth = 2
+                const shp = stampShape(kind, draft.cursor)
+                if (shp.length > 1) {
+                    ctx.beginPath()
+                    for (const [px, h] of shp) ctx.lineTo(px - camX, g2s(h))
+                    ctx.stroke()
+                } else {
+                    for (let sx = Math.max(0, cx); sx < Math.min(W, cx + SPAN[kind]); sx += 2) {
+                        ctx.fillStyle = col
+                        ctx.fillRect(sx, g2s(groundY(tr.ground, draft.cursor)) + 1, 2, kind === 'BOOST' ? 4 : 6)
+                    }
+                }
+                ctx.globalAlpha = 1
+            }
+            ctx.fillStyle = col
+            ctx.fillRect(cx, gy - 46 + pulse, 2, 46)
+            ctx.beginPath(); ctx.moveTo(cx - 4, gy - 46 + pulse); ctx.lineTo(cx + 6, gy - 40 + pulse); ctx.lineTo(cx - 4, gy - 34 + pulse); ctx.closePath(); ctx.fill()
+            if (kind === 'ERASE' && SPAN[kind] === undefined) {
+                ctx.strokeStyle = col; ctx.lineWidth = 1
+                ctx.strokeRect(cx - 8, gy - 16, 18, 18)
+                ctx.beginPath(); ctx.moveTo(cx - 6, gy - 14); ctx.lineTo(cx + 8, gy + 0); ctx.moveTo(cx + 8, gy - 14); ctx.lineTo(cx - 6, gy + 0); ctx.stroke()
+            }
+            // chrome: title, palette strip, status line, help
+            ctx.fillStyle = 'rgba(0,0,0,0.62)'; ctx.fillRect(0, 0, W, 18)
+            ctx.fillStyle = '#e40000'; ctx.font = 'bold 10px monospace'
+            ctx.fillText('EDIT TRACK', 6, 12)
+            ctx.fillStyle = '#f8f8f8'; ctx.font = '8px monospace'
+            ctx.fillText('OBSTACLES ' + draft.stamps.length + '/12', 84, 12)
+            ctx.fillText('SAVED ' + customsRef.current + '/' + CUSTOM_MAX, 178, 12)
+            ctx.fillStyle = '#8fe0ff'
+            ctx.fillText('X' + draft.cursor, 250, 12)
+            ctx.fillStyle = 'rgba(0,0,0,0.62)'; ctx.fillRect(0, H - 24, W, 24)
+            let px = 4
+            for (let i = 0; i < TOOLS.length; i++) {
+                const on = i === draft.tool
+                ctx.fillStyle = on ? (KIND_COLOR[TOOLS[i]] || '#ffe23f') : 'rgba(248,248,248,0.5)'
+                ctx.font = (on ? 'bold 8px monospace' : '8px monospace')
+                if (on) { ctx.fillStyle = 'rgba(255,226,63,0.14)'; ctx.fillRect(px - 2, H - 22, ctx.measureText(TOOLS[i]).width + 8, 14); ctx.fillStyle = KIND_COLOR[TOOLS[i]] || '#ffe23f' }
+                ctx.fillText(TOOLS[i], px + 4, H - 12)
+                px += ctx.measureText(TOOLS[i]).width + 10
+            }
+            if (draft.msgT > 0) {
+                draft.msgT--
+                ctx.globalAlpha = draft.msgT < 40 ? draft.msgT / 40 : 1
+                ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center'
+                const okMsg = draft.msg.startsWith('SAVED') || draft.msg === 'ERASED'
+                ctx.fillStyle = okMsg ? '#80e000' : '#ff6a4a'
+                ctx.fillText(draft.msg, W / 2, 44)
+                ctx.textAlign = 'left'; ctx.globalAlpha = 1
+            }
+            ctx.fillStyle = 'rgba(143,224,255,0.75)'; ctx.font = '7px monospace'; ctx.textAlign = 'center'
+            ctx.fillText('←→ MOVE · ↑↓ TOOL · SPACE SETS · 1-3 SAVE · ESC EXIT', W / 2, H - 28)
+            ctx.textAlign = 'left'
+        }
         const drawScene = () => {
             const scr = screenRef.current
+            if (scr === 'edit') { vclock++; drawEditor(); return } // #2576 the sim stays parked; the bay breathes on vclock
             const tr = track(gs.track)
             const camX = Math.max(0, gs.x - 84)
             const sx = shake > 0 ? Math.sin(gs.tick * 3.1) * shake * 0.6 : 0
@@ -624,6 +712,78 @@ const ExcitebikeGame = () => {
             audioController.playSweep(220, 660, 0.25, 'sawtooth', 0.07)
         }
 
+        // ---- #2576 EDIT TRACK — design your own course, save it, ride it ----
+        // The draft is a stamp list; custom.js compiles it into the same
+        // {cps,bands} table the shipped six ride on, and auditCustomData is
+        // the ONE legality law shared by the live cursor, SAVE, and the Node
+        // gate. Nothing here mutates the sim — the editor is a compiler UI.
+        const draft = { stamps: [], cursor: 120, tool: 0, msg: '', msgT: 0, track: null, savePtr: 0 }
+        const storedList = () => {
+            try { return decodeCustom(localStorage.getItem(CUSTOM_KEY)) } catch { return [] }
+        }
+        const rebuildDraft = () => { draft.track = buildTrack(compileCustom(draft.stamps, 'CUSTOM')) }
+        const syncCustoms = () => {
+            customsRef.current = Math.max(customsRef.current, customCount())
+            setCustoms(customsRef.current)
+        }
+        const hydrateCustoms = () => {
+            const list = storedList()
+            let n = 0
+            for (const e of list) {
+                const built = buildTrack(compileCustom(e.stamps, e.name))
+                if (!auditCustomData(built, groundY).ok) continue // garbage or a stale rule — drop it, stay dense
+                if (registerCustom(built, n) < 0) break
+                n++
+            }
+            customsRef.current = n
+            setCustoms(n)
+        }
+        const openEdit = () => {
+            draft.stamps = []; draft.cursor = 120; draft.tool = 0; draft.msg = 'DESIGN YOUR OWN TRACK'; draft.msgT = 200
+            rebuildDraft()
+            setMode('edit')
+            audioController.playSweep(330, 520, 0.18, 'square', 0.06)
+        }
+        const exitEdit = () => {
+            setMode('tracks')
+            // land the cursor on the last real course, never back on the bay
+            selRef.current = Math.min(selRef.current, TRACK_COUNT + customsRef.current - 1)
+            setSel(selRef.current)
+            audioController.playSweep(520, 330, 0.18, 'square', 0.06)
+        }
+        const saveDraft = (slotHint) => {
+            const built = buildTrack(compileCustom(draft.stamps, 'CUSTOM'))
+            const a = auditCustomData(built, groundY)
+            if (!a.ok) { draft.msg = a.why; draft.msgT = 200; audioController.playNoise(0.14, 0.07); audioController.playTone(140, 0.12, 'square', 0.05); return }
+            const list = storedList()
+            let at = slotHint != null ? Math.min(slotHint, list.length) : (list.length >= CUSTOM_MAX ? draft.savePtr++ % CUSTOM_MAX : list.length)
+            list[at] = { name: built.name, stamps: draft.stamps.map((s) => [s.kind, s.x]) }
+            while (list.length > CUSTOM_MAX) list.pop()
+            try { localStorage.setItem(CUSTOM_KEY, encodeCustom(list)) } catch { /* storage off: it rides this session anyway */ }
+            registerCustom(built, at)
+            syncCustoms()
+            draft.msg = 'SAVED — TRACK ' + (TRACK_COUNT + at + 1)
+            draft.msgT = 200
+            audioController.playSweep(440, 880, 0.25, 'square', 0.08)
+        }
+        const editExecute = () => {
+            const kind = TOOLS[draft.tool]
+            if (kind === 'SAVE') return saveDraft(null)
+            if (kind === 'EXIT') return exitEdit()
+            if (kind === 'ERASE') {
+                const i = stampAt(draft.stamps, draft.cursor)
+                if (i >= 0) { draft.stamps.splice(i, 1); rebuildDraft(); audioController.playTone(200, 0.08, 'triangle', 0.05); draft.msg = 'ERASED'; draft.msgT = 90 }
+                else { audioController.playTone(160, 0.07, 'square', 0.04) }
+                return
+            }
+            if (draft.stamps.length >= 12) { draft.msg = 'FULL — 12 OBSTACLES'; draft.msgT = 140; audioController.playNoise(0.1, 0.05); return }
+            if (!fitsAt(draft.stamps, kind, draft.cursor)) { draft.msg = 'NO — IT MUST FIT'; draft.msgT = 140; audioController.playTone(130, 0.12, 'square', 0.06); return }
+            draft.stamps.push({ kind, x: draft.cursor })
+            rebuildDraft()
+            if (kind === 'RAMP' || kind === 'STEP') audioController.playTone(kind === 'RAMP' ? 240 : 180, 0.1, 'square', 0.06)
+            else audioController.playTone(kind === 'WATER' ? 520 : kind === 'BOOST' ? 700 : 320, 0.08, 'triangle', 0.05)
+        }
+
         const onDown = (e) => {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
             if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
@@ -636,16 +796,37 @@ const ExcitebikeGame = () => {
             // law excitecheck SPLASH pins); Enter/Space/digits seat you, G
             // sets the gear the old title hint always promised, Esc steps back.
             if (sc === 'tracks') {
+                // #2576: the roster of rows is 6 + saved customs + EDIT TRACK;
+                // the cursor law wraps that grown n (the shipped-pin is n=6).
+                const rows = TRACK_COUNT + customsRef.current
+                const n = rows + 1
+                const onEditRow = selRef.current >= rows
                 // #1656 multi-screen contract: the one-tap ▶ WATCH lands Space
                 // here first — so Y on the splash starts the run AND seats the
                 // prover, same beat as the single-screen shells.
-                if (isWatchKey(e)) { startPlay(selRef.current); watchingRef.current = true; setWatching(true); playWatchStart(); return }
-                if (e.code === 'ArrowDown' || e.code === 'ArrowRight') { selRef.current = nextSel(selRef.current, 1); setSel(selRef.current); audioController.playTone(440 + selRef.current * 60, 0.05, 'square', 0.05) }
-                else if (e.code === 'ArrowUp' || e.code === 'ArrowLeft') { selRef.current = nextSel(selRef.current, -1); setSel(selRef.current); audioController.playTone(440 + selRef.current * 60, 0.05, 'square', 0.05) }
-                else if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space') startPlay(selRef.current)
-                else if (/^Digit[1-6]$/.test(e.code)) { const n = +e.code.slice(5) - 1; if (n < TRACK_COUNT) { selRef.current = n; setSel(n); startPlay(n) } }
+                if (isWatchKey(e)) { if (onEditRow) return openEdit(); startPlay(selRef.current); watchingRef.current = true; setWatching(true); playWatchStart(); return }
+                if (e.code === 'ArrowDown' || e.code === 'ArrowRight') { selRef.current = nextSel(selRef.current, 1, n); setSel(selRef.current); audioController.playTone(440 + selRef.current * 60, 0.05, 'square', 0.05) }
+                else if (e.code === 'ArrowUp' || e.code === 'ArrowLeft') { selRef.current = nextSel(selRef.current, -1, n); setSel(selRef.current); audioController.playTone(440 + selRef.current * 60, 0.05, 'square', 0.05) }
+                else if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space') { if (onEditRow) openEdit(); else startPlay(selRef.current) }
+                else if (e.code === 'Digit0') openEdit() // 0 opens the design bay from anywhere on the splash
+                else if (/^Digit[1-6]$/.test(e.code)) { const d = +e.code.slice(5) - 1; if (d < TRACK_COUNT) { selRef.current = d; setSel(d); startPlay(d) } }
                 else if (e.code === 'KeyG') { gearRef.current = gearRef.current === 'high' ? 'low' : 'high'; setGear(gearRef.current); say('GEAR: ' + gearRef.current.toUpperCase()) }
                 else if (e.code === 'Escape') setMode('attract')
+                return
+            }
+            // #2576 EDIT TRACK keys: ←/→ walk the 40px cursor, ↑/↓ the tool
+            // strip (both wrap, the same cursor law as the splash), Space/A
+            // executes the tool under the cursor, 1-3 save slots, Esc exits.
+            if (sc === 'edit') {
+                if ((e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') && e.repeat) return
+                if (e.code === 'ArrowLeft') { draft.cursor = (draft.cursor - CUR_STEP + LAP) % LAP; audioController.playTone(300, 0.03, 'square', 0.03) }
+                else if (e.code === 'ArrowRight') { draft.cursor = (draft.cursor + CUR_STEP) % LAP; audioController.playTone(300, 0.03, 'square', 0.03) }
+                else if (e.code === 'ArrowUp') { draft.tool = nextSel(draft.tool, -1, TOOLS.length); audioController.playTone(440 + draft.tool * 40, 0.04, 'square', 0.04) }
+                else if (e.code === 'ArrowDown') { draft.tool = nextSel(draft.tool, 1, TOOLS.length); audioController.playTone(440 + draft.tool * 40, 0.04, 'square', 0.04) }
+                else if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space') editExecute()
+                else if (/^Digit[1-3]$/.test(e.code)) saveDraft(+e.code.slice(5) - 1)
+                else if (e.code === 'KeyX' || e.code === 'Escape') exitEdit()
+                else if (e.code === 'KeyG') { gearRef.current = gearRef.current === 'high' ? 'low' : 'high'; setGear(gearRef.current) }
                 return
             }
             if (pausedRef.current || e.repeat) return
@@ -682,7 +863,8 @@ const ExcitebikeGame = () => {
             // #2563: marquee → splash → race. A tap on the splash seats the
             // course the cursor is on (arrows move it; there is only one pad).
             if (sc === 'attract') { selRef.current = 0; setSel(0); setMode('tracks') }
-            else if (sc === 'tracks') startPlay(selRef.current)
+            else if (sc === 'tracks') { if (selRef.current >= TRACK_COUNT + customsRef.current) openEdit(); else startPlay(selRef.current) }
+            else if (sc === 'edit') editExecute() // one pad: its arrows steer the cursor/tool, a tap (or A) executes
             else if (sc === 'over' && performance.now() - overAtRef.current > 900) setMode('attract')
             // #1637 a touch on the dirt means you want the wheel (the WATCH pill
             // stopPropagations its press; the pad's keys take over too).
@@ -703,12 +885,19 @@ const ExcitebikeGame = () => {
         resize()
         raf = requestAnimationFrame(frame)
         const t = setTimeout(() => { provenRun(); demoReady = true }, 60)
+        hydrateCustoms() // #2576 saved designs ride before you ever open the bay
 
         if (import.meta.env.DEV) {
             window.__bikeTest = {
                 probe: () => ({
                     screen: screenRef.current, tick: gs.tick, track: gs.track, end: gs.end,
                     sel: selRef.current, tracks: TRACK_COUNT, // #2563 splash cursor + roster size
+                    customs: customsRef.current, rows: TRACK_COUNT + customsRef.current + 1, // #2576 saved designs + EDIT row
+                    edit: screenRef.current === 'edit' ? {
+                        cursor: draft.cursor, tool: TOOLS[draft.tool], stamps: draft.stamps.map((s) => [s.kind, s.x]),
+                        fits: fitsAt(draft.stamps, TOOLS[draft.tool], draft.cursor),
+                        msg: draft.msgT > 0 ? draft.msg : '',
+                    } : null,
                     x: gs.x, total: gs.total, v: gs.v, alt: gs.alt, vy: gs.vy, pitch: gs.pitch,
                     air: gs.air, airT: gs.airT, crash: gs.crash, stall: gs.stall, pumpT: gs.pumpT,
                     heat: gs.heat, hot: gs.hot, gear: gs.gear, rank: gs.rank, score: gs.score,
@@ -890,17 +1079,28 @@ const ExcitebikeGame = () => {
                         <div className="mt-1 text-white/70 font-mono text-[10px] tracking-[0.4em]">TRACKS</div>
                     </div>
                     <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex flex-col items-center gap-1 pointer-events-none font-mono">
-                        {[...Array(TRACK_COUNT)].map((_, i) => (
+                        {[...Array(TRACK_COUNT + customs)].map((_, i) => (
                             <div key={i} className={`flex items-center gap-2 text-sm sm:text-base ${i === sel ? 'text-yellow-300' : 'text-white/85'}`}>
                                 <span className={`w-5 text-right ${i === sel ? 'opacity-100' : 'opacity-0'}`} style={{ textShadow: '0 0 8px #ffe23f' }}>▶</span>
-                                <span className="w-16 text-right">TRACK {i + 1}</span>
-                                <span className={`w-32 text-left font-bold ${i === sel ? '' : 'font-normal'}`}>{trackName(i)}</span>
-                                <span className="text-[11px] leading-none tracking-tight" style={{ textShadow: '1px 1px #000' }} aria-label={`grade ${trackBite(i)}`}>
-                                    {'▰'.repeat(trackBite(i))}<span className="text-white/25">{'▱'.repeat(TRACK_COUNT - trackBite(i))}</span>
-                                </span>
+                                <span className="w-16 text-right">{i < TRACK_COUNT ? `TRACK ${i + 1}` : `CUSTOM ${i - TRACK_COUNT + 1}`}</span>
+                                <span className={`w-32 text-left font-bold ${i === sel ? '' : 'font-normal'}`}>{i < TRACK_COUNT ? trackName(i) : '·  ·  ·  ·  ·'}</span>
+                                {i < TRACK_COUNT ? (
+                                    <span className="text-[11px] leading-none tracking-tight" style={{ textShadow: '1px 1px #000' }} aria-label={`grade ${trackBite(i)}`}>
+                                        {'▰'.repeat(trackBite(i))}<span className="text-white/25">{'▱'.repeat(TRACK_COUNT - trackBite(i))}</span>
+                                    </span>
+                                ) : (
+                                    <span className="text-[11px] leading-none text-orange-300" aria-label="your own design">★ YOURS</span>
+                                )}
                             </div>
                         ))}
-                        <div className="mt-3 text-[10px] text-cyan-200/90 tracking-widest animate-pulse">ENTER RIDES · 1-6 FAST · G GEAR ({gear.toUpperCase()})</div>
+                        {/* #2576 EDIT TRACK — the original's second menu entry: last row, digit 0, or walk the cursor onto it */}
+                        <div className={`flex items-center gap-2 text-sm sm:text-base ${sel >= TRACK_COUNT + customs ? 'text-yellow-300' : 'text-white/85'}`}>
+                            <span className={`w-5 text-right ${sel >= TRACK_COUNT + customs ? 'opacity-100' : 'opacity-0'}`} style={{ textShadow: '0 0 8px #ffe23f' }}>▶</span>
+                            <span className="w-16 text-right">EDIT</span>
+                            <span className="w-32 text-left font-bold">DESIGN TRACK</span>
+                            <span className="text-[11px] leading-none text-cyan-300" aria-label="design your own course">✎ 0</span>
+                        </div>
+                        <div className="mt-3 text-[10px] text-cyan-200/90 tracking-widest animate-pulse">ENTER RIDES · 1-6 FAST · 0 EDIT · G GEAR ({gear.toUpperCase()})</div>
                         <div className="text-[10px] text-white/45 tracking-widest">↑↓ PICK COURSE · ESC BACK</div>
                     </div>
                 </>
@@ -927,7 +1127,7 @@ const ExcitebikeGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'EXCITEBIKE')} onResume={handleResume} />}
-            <VirtualControls visible={(play || screen === 'tracks') && !paused} />
+            <VirtualControls visible={(play || screen === 'tracks' || screen === 'edit') && !paused} />
         </div>
     )
 }
