@@ -241,6 +241,7 @@ node scripts/floorbosscheck.mjs --mutate-slow    # heavies cannot cost the dock 
 node scripts/floorbosscheck.mjs --mutate-bands   # the inverted dest band (REGIONAL 72%) cannot return (#1931)
 node scripts/floorbosscheck.mjs --mutate-duel    # bot stows cannot bypass the rack-owner credit law (#2555)
 node scripts/floorbosscheck.mjs --mutate-lane    # long tight aisles cannot be sealed into one-way traps (#2614)
+node scripts/floorbosscheck.mjs --mutate-corner   # racks cannot choke a tight elbow at its swing (#2627)
 npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877); real-tap pad call/send + drawn-truck-is-sim-truck gates (#1911); escrow-books-at-pack + freight-paid-at-drive-off gates (#1921); violet far-post tag pixels + road-commit + tap-on-road-silence gates (#1927 — verb gates run with auto-dispatch off and settle dock+truck+road together); steel heavy-tag pixel [154,215,255] + padWeight simState eye (#1931); DUEL live drive: D enters the duel, cyan model cursor moves on its own, twin till updates, verdict banner lands (#2555)
 CONTRACT_ONLY=floor-boss npm run contractcheck
 node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
@@ -300,4 +301,15 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
   a plugged mouth (dead-end spur, one-way by choice) stays legal. Pure
   click-point scan, `LANE_LONG` and the curated spots never trip it
   (autopilot invariant gated); `floorbosscheck` +12 gates, `--mutate-lane`
-  kill. True turn radii stay future work.
+  kill. — **third slice shipped by #2627 (stage 1 of that issue)**: turn
+   radii at the elbow became law — a rack whose service cell IS a tight
+   corner is refused (`why:'corner'`, named `NO CORNER STACK`): corner cell
+   B drivable with exactly two open, perpendicular neighbours; the click rack
+   sits at `B − d` for an arm direction `d`; both arms run tight for
+   `ARM_MIN` (2) cells and both far ends stay open mouths — through traffic on
+   both aisles meets its choke at once (the jam pair sits one cell into each
+   arm, Manhattan 2, neither at a mouth). Bay on either arm, plugged mouth
+   (one-way spur) or a 1-cell arm stays legal, mirroring #2546/#2614; pure
+   geometry, zero footprint, curated spots never trip it. `floorbosscheck`
+   +15 gates, `--mutate-corner` kill. Refusal-teaching (stage 2) and swing
+   markers (stage 3) stay open in #2627.
