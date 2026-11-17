@@ -282,7 +282,27 @@ export const trackBite = (i) => CACHE[i].bite || i + 1
 // The splash cursor's movement law, in data land so the shell and the
 // harness read the SAME wrap (#2563): arrows step the selection by ±1 and
 // it cycles the roster — the NES menu law, pinned by excitecheck SPLASH.
+// #2576: the roster GROWS — EDIT TRACK customs register after the six, and
+// the shell passes the grown n; the shipped-roster pins stay at n=6.
 export const nextSel = (i, dir, n = TRACK_COUNT) => ((i + dir) % n + n) % n
+
+// ---- EDIT TRACK customs (#2576) ---------------------------------------------
+// A compiled draft becomes a roster member: build its ground the same way the
+// shipped courses get theirs, splice it into CACHE right after the six, and
+// every index-driven reader (sim, planner, rival pace, renderer, harness)
+// rides it unchanged. Slot is dense (0..CUSTOM_MAX-1); re-saving a slot
+// replaces it. TRACK_COUNT keeps meaning SIX — the shipped roster is pinned.
+export function buildTrack(t) {
+    return { ...t, ground: buildGround(t.cps, t.bands), steps: stepsOf(t.cps) }
+}
+export function registerCustom(built, slot) {
+    if (!(slot >= 0 && slot < 3)) return -1
+    const i = TRACKS.length + slot
+    if (slot > customCount()) return -1
+    CACHE[i] = built
+    return i
+}
+export const customCount = () => Math.max(0, CACHE.length - TRACKS.length)
 
 function interp(g, x) {
     if (x < 0) x = 0
@@ -363,5 +383,9 @@ export function rivalSpeed(t, d, base) {
 }
 
 export function track(i) {
-    return CACHE[((i % TRACK_COUNT) + TRACK_COUNT) % TRACK_COUNT]
+    // #2576: the roster includes registered EDIT TRACK customs — wrap over the
+    // GROWN cache, not the shipped six. With zero customs this is the same
+    // law as before (CACHE.length === TRACK_COUNT), so every shipped pin holds.
+    const n = CACHE.length
+    return CACHE[((i % n) + n) % n]
 }
