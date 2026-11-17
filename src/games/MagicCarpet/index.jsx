@@ -7,7 +7,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
-import AttractMessage from '../../components/AttractMessage'
+import { attractCaption, FALLBACKS, CAP_HOLD_MS, FALLBACK_MS } from './attract.js' // #2568 (#2449 item 4): one caption line, not a wall
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -122,6 +122,11 @@ const MagicCarpetGame = () => {
     const [end, setEnd] = useState(null)
     const [watching, setWatching] = useState(false) // #1637 WATCH: sim.js's autopilot flies the worlds
     const screenRef = useRef('attract')
+    // #2568: the attract tells its story as ONE caption line that narrates the
+    // live demo (docs/ART.md bar 6), not a stack of rules over it.
+    const [attractCap, setAttractCap] = useState(FALLBACKS[0])
+    const attractCapUntil = useRef(0)
+    const attractFb = useRef(0)
     const pausedRef = useRef(false)
     const watchingRef = useRef(false)
     const overAtRef = useRef(0)
@@ -205,6 +210,15 @@ const MagicCarpetGame = () => {
         }
 
         const handleEvents = (evts) => {
+            // #2568: during attract, story beats caption the demo they belong
+            // to — one line, event-driven (presentation-only; the sim never
+            // sees attract.js). New beat => hold the line CAP_HOLD_MS.
+            if (screenRef.current === 'attract') {
+                for (const e of evts) {
+                    const cap = attractCaption(e)
+                    if (cap) { setAttractCap(cap); attractCapUntil.current = performance.now() + CAP_HOLD_MS }
+                }
+            }
             for (const e of evts) {
                 if (e.type === 'pickup') {
                     audioController.playTone(760 + (e.m || 3) * 30, 0.05, 'triangle', 0.05)
@@ -530,6 +544,14 @@ const MagicCarpetGame = () => {
             const ap = autopilot(gs)
             eff.l = !!ap.left; eff.r = !!ap.right; eff.u = !!ap.up; eff.d = !!ap.down
             doSim(ap)
+            // #2568: quiet-spell cadence — when no beat owns the caption line,
+            // the core rules cycle through it ONE at a time.
+            const nowMs = performance.now()
+            if (nowMs >= attractCapUntil.current) {
+                attractFb.current = (attractFb.current + 1) % FALLBACKS.length
+                setAttractCap(FALLBACKS[attractFb.current])
+                attractCapUntil.current = nowMs + FALLBACK_MS
+            }
         }
 
         const doFrameSim = () => {
@@ -1549,20 +1571,10 @@ const MagicCarpetGame = () => {
                     <h1 className="text-4xl font-black" style={{ color: '#e8c860', textShadow: '0 0 18px #6a4ad0, 3px 3px 0 #3a1a5a' }}>MAGIC CARPET</h1>
                     <p className="text-purple-200/90 font-mono mt-1 text-sm">fly . gather mana . fly it home . restore forty-five worlds</p>
                     <p className="text-white font-mono font-bold mt-2 animate-pulse">TAP / PRESS ANY KEY TO START</p>
-                    <AttractMessage
-                        className="text-purple-100/80 font-mono text-[11px] mt-2 px-8 leading-4"
-                        messages={[
-                            'ARROWS STEER THE CARPET · IT BANKS AND CANNOT CRASH',
-                            'A CASTS YOUR LEFT HAND · X YOUR RIGHT',
-                            'TAP THE BOOK OR HAND SLOTS TO CHANGE SPELLS',
-                            'AT YOUR CASTLE THE SPELL BOOK OPENS — B, OR TAP ITS GLOW',
-                            'GATHER MANA PEARLS · HOVER YOUR CASTLE TO FILL THE VAULT',
-                            'DIE AND THE LOAD IS LOST',
-                            'FIREBALLS CRATER THE LAND · BURNING VILLAGES BREED WOLVES',
-                            'CAST INVISIBILITY AND WIZARD AND WOLVES LOOK RIGHT THROUGH YOU',
-                            'FORTY-FIVE WORLDS · FIFTEEN ARCS OF THREE ATMOSPHERES · EACH GUARDED',
-                        ]}
-                    />
+                    {/* #2568 (#2449 item 4): the nine-line rule-wall is gone —
+                        one caption line narrates what the live demo is doing,
+                        cycling one-at-a-time when quiet (docs/ART.md bar 6). */}
+                    <p id="mc-attract-cap" className="text-purple-100/85 font-mono text-[11px] mt-2 px-8 leading-4 min-h-4">{attractCap}</p>
                     <span className="block mt-2 text-purple-200/70 font-mono font-bold tracking-wider">{WATCH_ATTRACT_HINT}</span>
                 </div>
             )}
