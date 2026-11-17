@@ -38,6 +38,7 @@
 //   node scripts/floorbosscheck.mjs --mutate-rush     # the measured-pinned rush clock shifts without a re-measure, demand RED (#2352)
 //   node scripts/floorbosscheck.mjs --mutate-price     # the clock-in card claims a free rung, demand RED (#2352)
 //   node scripts/floorbosscheck.mjs --mutate-duel      # bot stows pay the house, not the rack owner — credit law dies, demand RED (#2555)
+//   node scripts/floorbosscheck.mjs --mutate-lane      # no-pass lanes allowed — racks may seal a long tight aisle, demand RED (#2614)
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -48,7 +49,7 @@ import {
     SHIFT, QUOTA, STRIKES, RACK_CAP, OVERFLOW_FINE, EXPIRE_FINE, BREAK_FINE, BASE_PAY,
     STOW_PAY, RACK_COST, ROBOT_COST, ARM_PATIENCE, ARM_CELL, PAD_CAP, PAD_AGE, OUT_CELLS,
     FREIGHT_PER_BOX, FULL_TRAILER, DISPATCH_FEE,
-    shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice,
+    shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice, LANE_LONG,
 } from '../src/games/FloorBoss/sim.js'
 import { createEpisode, validateEpisode } from '../src/utils/robot/episode.js'
 import { hashString } from '../src/utils/robot/physics.js'
@@ -75,7 +76,8 @@ const MUT_RUSH = ARGS.includes('--mutate-rush')
 const MUT_PRICE = ARGS.includes('--mutate-price')
 const MUT_AISLE = ARGS.includes('--mutate-aisle')
 const MUT_DUEL = ARGS.includes('--mutate-duel')
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL) {
+const MUT_LANE = ARGS.includes('--mutate-lane')
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const src = readFileSync(sim, 'utf8')
     const [from, to, name] = MUT_YIELD
@@ -110,7 +112,9 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                 ? ["credit(gs, rk.owner, STOW_PAY) // #2555 law: the stow pays the rack owner", 'credit(gs, -1, STOW_PAY)', 'bot stows pay the house — the rack owner loses their credit (#2555)']
                                                                 : MUT_AISLE
                                                                 ? ["if (strand) { gs.ev.push({ type: 'aisle', x, y, why: strand }); return 'aisle' }", "if (strand && false) { gs.ev.push({ type: 'aisle', x, y, why: strand }); return 'aisle' }", 'aisle clearance off — racks may wall out lanes and pocket the floor (#2546)']
-                                                                : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
+                                                                : MUT_LANE
+                                                                    ? ["for (const r of laneRuns(gs, { x, y })) if (!was.has(r)) return 'lane'", "for (const r of laneRuns(gs, { x, y })) if (!was.has(r) && false) return 'lane'", 'the no-pass lane law is off — racks may seal long tight aisles into one-way traps (#2614)']
+                                                                    : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(sim, src.replace(from, to))
     console.log(`  ..    mutated: ${name} — this run MUST report FAILs`)
@@ -977,6 +981,55 @@ console.log('— aisle clearance (#2546) —')
     const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
     ok(/case 'aisle'/.test(ui) && /DEAD-END AISLE/.test(ui) && /STRANDED A RACK/.test(ui) && /NO SERVICE LANE/.test(ui),
         'the aisle refusal names the broken law on screen (#2546)')
+}
+
+// ---- no-pass lanes (#2614) — a long tight aisle needs a bay to be two-way ----
+console.log('— no-pass lanes (#2614) —')
+{
+    ok(LANE_LONG === 5, 'LANE_LONG pinned at 5 — the jam law (distance 2) needs 1+2+1 to hold a meeting fully inside a lane')
+    const mk = () => { const g = makeGame(11); g.score = 9000; g.racks.length = 0; return g }
+    const put = (g, x, y) => { g.tool = 'rack'; return clickCell(g, x, y) }
+    // horizontal: a 4-cell tight run builds; the click that completes LANE_LONG is refused
+    const g = mk()
+    let building = true
+    for (let x = 14; x <= 18; x++) if (put(g, x, 5) !== 'build') building = false
+    for (let x = 14; x <= 17; x++) if (put(g, x, 3) !== 'build') building = false
+    ok(building, 'the lane under construction (tight run of 4, mouths open) builds — law bites at completion, not before')
+    const score0 = g.score, hash0 = stateHash(g)
+    const rr = put(g, 18, 3)
+    ok(rr === 'aisle' && g.ev.at(-1)?.why === 'lane', 'the click that completes a 5-cell tight open-ended lane is refused (why=lane)')
+    ok(g.score === score0 && stateHash(g) === hash0, 'the refusal charges nothing and adds no state — click-point law only (#1917)')
+    ok(!g.racks.some((r) => r.x === 18 && r.y === 3), 'the lane-closing rack never lands')
+    // a bay splits the run: the same lane with one notch off the corridor builds
+    const gb = mk()
+    let bayLegal = true
+    for (let x = 14; x <= 18; x++) if (x !== 16 && put(gb, x, 5) !== 'build') bayLegal = false
+    for (let x = 14; x <= 18; x++) if (put(gb, x, 3) !== 'build') bayLegal = false
+    ok(bayLegal && gb.racks.some((r) => r.x === 15 && r.y === 5) && !gb.racks.some((r) => r.x === 16 && r.y === 5),
+        'the same long lane builds once (16,5) is left open — the notch is the pull-off bay')
+    // a plugged mouth makes it a dead-end spur — one-way by choice, legal by #2546
+    const gc = mk()
+    let spurLegal = put(gc, 13, 4) === 'build'
+    for (let x = 14; x <= 18; x++) if (put(gc, x, 5) !== 'build') spurLegal = false
+    for (let x = 14; x <= 18; x++) if (put(gc, x, 3) !== 'build') spurLegal = false
+    ok(spurLegal, 'the same five-cell run with its west mouth plugged builds — dead spurs stay legal')
+    // vertical mirror
+    const gv = mk()
+    let vLegal = true
+    for (let y = 3; y <= 6; y++) { if (put(gv, 14, y) !== 'build') vLegal = false; if (put(gv, 16, y) !== 'build') vLegal = false }
+    if (put(gv, 16, 7) !== 'build') vLegal = false
+    ok(vLegal, 'the vertical lane under construction (tight run of 4) builds — columns mirror rows')
+    ok(put(gv, 14, 7) === 'aisle' && gv.ev.at(-1)?.why === 'lane', 'the vertical completion is refused too (why=lane)')
+    const gm = mk()
+    let spurV = put(gm, 15, 8) === 'build'
+    for (let y = 3; y <= 7; y++) { if (put(gm, 14, y) !== 'build') spurV = false; if (put(gm, 16, y) !== 'build') spurV = false }
+    ok(spurV, 'the vertical run with its south mouth plugged builds — the law is about two-way traffic, not length alone')
+    // determinism of the refusal: identical rig, identical hashes
+    const refusalHash = () => { const q = mk(); for (let x = 14; x <= 18; x++) put(q, x, 5); for (let x = 14; x <= 17; x++) put(q, x, 3); put(q, 18, 3); return stateHash(q) }
+    ok(refusalHash() === refusalHash(), 'two identical refused builds land on identical hashes — no rng touched')
+    // the painter names the fourth law
+    const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    ok(/why === 'lane'/.test(ui) && /NO PASSING LANE/.test(ui), 'the painter names NO PASSING LANE on screen (#2614)')
 }
 
 // ---- duel seats (#2555) — two managers, one floor, credit follows work ----

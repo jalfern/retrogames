@@ -227,6 +227,54 @@ function serviceNet(gs, extra) {
     }
     return seen
 }
+// #2614 NO-PASS LANES — the two-way-width half of #2546's tail ("true turn
+// radii / two-way lane widths stay future work"). Aisles here are one cell;
+// the only way two bots pass head-on is a BAY — an open cell beside the run
+// where a waiter pulls off. Without one, a long open-ended run is a one-way
+// trap: two bots entering from opposite mouths refuse each other (occupancy
+// law) and jam with nowhere to go. The warehouse rule, at the click point:
+// completing a straight TIGHT run of >= LANE_LONG open cells — tight meaning
+// both perpendicular neighbours blocked — whose mouths at BOTH ends stay open,
+// is refused. LANE_LONG 5 is the trap's physical floor: the jam law fires at
+// Manhattan distance 2, so the shortest lane that can hold a head-on meeting
+// ENTIRELY inside tight walls — neither bot at a mouth, both committed — is
+// 1 + 2 + 1 = 5 cells; on a shorter lane every meeting still has a bot at an
+// open mouth to reverse into. Runs of 1..4 stay legal
+// two-way (short enough to keep an exit visible); a bay splits a long run
+// because its cell stops being tight; a run with a closed mouth is a dead-end
+// spur, legal by the #2546 ruling (one-way by choice — you reverse before the
+// meeting). Pure map+racks scan, fixed order (rows then columns, ascending),
+// no rng: click-point only, movers and BFS never consult it.
+export const LANE_LONG = 5
+function laneRuns(gs, extra) {
+    const open = (x, y) => inGrid(x, y) && map[y][x] === CELL.FLOOR
+        && !(extra && extra.x === x && extra.y === y)
+        && !gs.racks.some((r) => r.x === x && r.y === y)
+    const runs = []
+    for (let y = 1; y < ROWS - 1; y++) { // horizontal lanes
+        let x = 1
+        while (x < COLS - 1) {
+            if (open(x, y) && !open(x, y - 1) && !open(x, y + 1)) {
+                let x1 = x
+                while (open(x1 + 1, y) && !open(x1 + 1, y - 1) && !open(x1 + 1, y + 1)) x1++
+                if (x1 - x + 1 >= LANE_LONG && open(x - 1, y) && open(x1 + 1, y)) runs.push(`h${y}:${x}-${x1}`)
+                x = x1 + 1
+            } else x++
+        }
+    }
+    for (let x = 1; x < COLS - 1; x++) { // vertical lanes
+        let y = 1
+        while (y < ROWS - 1) {
+            if (open(x, y) && !open(x - 1, y) && !open(x + 1, y)) {
+                let y1 = y
+                while (open(x, y1 + 1) && !open(x - 1, y1 + 1) && !open(x + 1, y1 + 1)) y1++
+                if (y1 - y + 1 >= LANE_LONG && open(x, y - 1) && open(x, y1 + 1)) runs.push(`v${x}:${y}-${y1}`)
+                y = y1 + 1
+            } else y++
+        }
+    }
+    return runs
+}
 function strandsFloor(gs, x, y) {
     if (map[y][x] !== CELL.FLOOR || gs.racks.some((r) => r.x === x && r.y === y)) return false // other laws refuse first
     const before = serviceNet(gs, null)
@@ -234,6 +282,10 @@ function strandsFloor(gs, x, y) {
     if (!NB.some(([dx, dy]) => after.has(`${x + dx},${y + dy}`))) return 'self'
     for (const r of gs.racks) if (!NB.some(([dx, dy]) => after.has(`${r.x + dx},${r.y + dy}`))) return 'rack'
     for (const k of before) if (k !== `${x},${y}` && !after.has(k)) return 'pocket'
+    // #2614 the fourth law, judged on the same hypothetical rack: a click
+    // that COMPLETES a no-pass lane is refused (see laneRuns above).
+    const was = new Set(laneRuns(gs, null))
+    for (const r of laneRuns(gs, { x, y })) if (!was.has(r)) return 'lane'
     return false
 }
 

@@ -240,6 +240,7 @@ node scripts/floorbosscheck.mjs --mutate-weight  # heavy crates cannot claim the
 node scripts/floorbosscheck.mjs --mutate-slow    # heavies cannot cost the dock their ticks (#1931)
 node scripts/floorbosscheck.mjs --mutate-bands   # the inverted dest band (REGIONAL 72%) cannot return (#1931)
 node scripts/floorbosscheck.mjs --mutate-duel    # bot stows cannot bypass the rack-owner credit law (#2555)
+node scripts/floorbosscheck.mjs --mutate-lane    # long tight aisles cannot be sealed into one-way traps (#2614)
 npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877); real-tap pad call/send + drawn-truck-is-sim-truck gates (#1911); escrow-books-at-pack + freight-paid-at-drive-off gates (#1921); violet far-post tag pixels + road-commit + tap-on-road-silence gates (#1927 — verb gates run with auto-dispatch off and settle dock+truck+road together); steel heavy-tag pixel [154,215,255] + padWeight simState eye (#1931); DUEL live drive: D enters the duel, cyan model cursor moves on its own, twin till updates, verdict banner lands (#2555)
 CONTRACT_ONLY=floor-boss npm run contractcheck
 node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
@@ -290,5 +291,13 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
   (`strandsFloor` in `sim.js` — a rack that would wall out a stocked rack,
   sit without a service side, or seal a dead-end pocket is refused, money
   back, the refusal named on screen; `floorbosscheck` gates the three laws,
-  the all-spots autopilot invariant, and a `--mutate-aisle` kill). True turn
-  radii / two-way lane widths stay future work.
+  the all-spots autopilot invariant, and a `--mutate-aisle` kill). —
+  **second slice shipped by #2614**: two-way width is law too — completing a
+  straight tight run of `LANE_LONG` (5) open aisle cells with both mouths
+  open is refused (`why:'lane'`, named `NO PASSING LANE`): 5 is the shortest
+  lane whose jam-law meeting (distance 2) sits fully inside the walls,
+  neither bot at a mouth — a bay notch (the pull-off cell splits the run) or
+  a plugged mouth (dead-end spur, one-way by choice) stays legal. Pure
+  click-point scan, `LANE_LONG` and the curated spots never trip it
+  (autopilot invariant gated); `floorbosscheck` +12 gates, `--mutate-lane`
+  kill. True turn radii stay future work.
