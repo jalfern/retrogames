@@ -253,6 +253,12 @@ const FloorBossGame = () => {
             }
         }
 
+        // #2561: a credit landing on the twin till must name itself — the seat's
+        // color, anchored under the till (house credit has no seat chip to name).
+        const tillFx = (seat, msg) => {
+            if (!gs.duel || seat < 0 || seat > 1) return
+            fx(`${msg} ${seat === 0 ? 'YOU' : 'MODEL'}`, seat === 0 ? '#ffd23f' : '#57c7ff', 436, 44)
+        }
         const fx = (msg, col, x, y) => {
             // #2254 item 2: dock messages all anchored at the same spot overprinted
             // into a smear. Stack them one per lane above the anchor (lane frees when
