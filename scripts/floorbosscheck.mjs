@@ -39,6 +39,7 @@
 //   node scripts/floorbosscheck.mjs --mutate-price     # the clock-in card claims a free rung, demand RED (#2352)
 //   node scripts/floorbosscheck.mjs --mutate-duel      # bot stows pay the house, not the rack owner — credit law dies, demand RED (#2555)
 //   node scripts/floorbosscheck.mjs --mutate-lane      # no-pass lanes allowed — racks may seal a long tight aisle, demand RED (#2614)
+//   node scripts/floorbosscheck.mjs --mutate-corner    # corner stacks allowed — racks may choke a tight elbow, demand RED (#2627)
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -49,7 +50,7 @@ import {
     SHIFT, QUOTA, STRIKES, RACK_CAP, OVERFLOW_FINE, EXPIRE_FINE, BREAK_FINE, BASE_PAY,
     STOW_PAY, RACK_COST, ROBOT_COST, ARM_PATIENCE, ARM_CELL, PAD_CAP, PAD_AGE, OUT_CELLS,
     FREIGHT_PER_BOX, FULL_TRAILER, DISPATCH_FEE,
-    shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice, LANE_LONG,
+    shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice, LANE_LONG, ARM_MIN,
 } from '../src/games/FloorBoss/sim.js'
 import { createEpisode, validateEpisode } from '../src/utils/robot/episode.js'
 import { hashString } from '../src/utils/robot/physics.js'
@@ -77,7 +78,8 @@ const MUT_PRICE = ARGS.includes('--mutate-price')
 const MUT_AISLE = ARGS.includes('--mutate-aisle')
 const MUT_DUEL = ARGS.includes('--mutate-duel')
 const MUT_LANE = ARGS.includes('--mutate-lane')
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE) {
+const MUT_CORNER = ARGS.includes('--mutate-corner')
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const src = readFileSync(sim, 'utf8')
     const [from, to, name] = MUT_YIELD
@@ -114,6 +116,8 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                 ? ["if (strand) { gs.ev.push({ type: 'aisle', x, y, why: strand }); return 'aisle' }", "if (strand && false) { gs.ev.push({ type: 'aisle', x, y, why: strand }); return 'aisle' }", 'aisle clearance off — racks may wall out lanes and pocket the floor (#2546)']
                                                                 : MUT_LANE
                                                                     ? ["for (const r of laneRuns(gs, { x, y })) if (!was.has(r)) return 'lane'", "for (const r of laneRuns(gs, { x, y })) if (!was.has(r) && false) return 'lane'", 'the no-pass lane law is off — racks may seal long tight aisles into one-way traps (#2614)']
+                                                                    : MUT_CORNER
+                                                                    ? ["if (cornerChokes(gs, { x, y }).length) return 'corner'", "if (cornerChokes(gs, { x, y }).length && false) return 'corner'", 'the corner-stack law is off — racks may choke a tight elbow (#2627)']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(sim, src.replace(from, to))
@@ -1030,6 +1034,74 @@ console.log('— no-pass lanes (#2614) —')
     // the painter names the fourth law
     const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
     ok(/why === 'lane'/.test(ui) && /NO PASSING LANE/.test(ui), 'the painter names NO PASSING LANE on screen (#2614)')
+}
+
+// ---- no corner stacks (#2627) — a rack that faces a tight elbow chokes TWO aisles ----
+console.log('— no corner stacks (#2627) —')
+{
+    ok(ARM_MIN === 2, 'ARM_MIN pinned at 2 — the jam pair sits one cell into each arm (Manhattan 2); an arm of 1 leaves its bot at the mouth to reverse out (#2614 carries the same exit)')
+    const mk = () => { const g = makeGame(11); g.score = 9000; g.racks.length = 0; return g }
+    const put = (g, x, y) => { g.tool = 'rack'; return clickCell(g, x, y) }
+    // elbow rig: R=(17,4) faces corner B=(18,4); east arm y=4 (tight 19..20, open mouth at 21),
+    // south arm x=18 (tight (18,5)..(18,6), open mouth at (18,7)); back cells (18,3),(19,5),(17,5) shut it tight.
+    const NEED = [[18, 3], [19, 3], [19, 5], [20, 3], [20, 5], [17, 5], [19, 6], [17, 6]]
+    const rig = (skip = {}) => {
+        const g = mk()
+        const fails = []
+        for (const [x, y] of NEED) { if (skip[`${x},${y}`]) continue; if (put(g, x, y) !== 'build') fails.push([x, y]) }
+        return { g, fails }
+    }
+    {
+        const { g, fails } = rig()
+        ok(fails.length === 0, 'the elbow under construction builds clean — the law bites only at the rack that faces the corner')
+        const score0 = g.score, hash0 = stateHash(g)
+        ok(put(g, 17, 4) === 'aisle' && g.ev.at(-1)?.why === 'corner', 'the click whose rack faces a tight elbow is refused (why=corner)')
+        ok(g.score === score0 && stateHash(g) === hash0, 'the refusal charges nothing and adds no state — click-point law only (#1917)')
+        ok(!g.racks.some((r) => r.x === 17 && r.y === 4), 'the corner-facing rack never lands')
+    }
+    // escapes, honest and mirrored from #2546/#2614
+    ok(rig({ '17,6': true }).fails.length === 0 && (() => { const { g } = rig({ '17,6': true }); return put(g, 17, 4) === 'build' })(),
+        'a bay on the south arm (the notch at (17,6)) clears the elbow — the same pull-off #2614 blesses')
+    {
+        const { g, fails } = rig({ '19,3': true })
+        ok(fails.length === 0 && put(g, 17, 4) === 'build', 'a bay on the east arm (open (19,3)) clears the elbow too')
+    }
+    {
+        const g = mk()
+        const spur = [[18, 3], [19, 3], [19, 5], [20, 3], [20, 5], [17, 5], [19, 6], [17, 6], [18, 7]].every(([x, y]) => put(g, x, y) === 'build')
+        ok(spur && put(g, 17, 4) === 'build', 'plugging the south mouth makes it a dead-end spur — one-way by choice, legal (#2546)')
+    }
+    {
+        const g = mk()
+        const spur = [[18, 3], [19, 3], [19, 5], [20, 3], [20, 5], [17, 5], [19, 6], [17, 6], [21, 4]].every(([x, y]) => put(g, x, y) === 'build')
+        ok(spur && put(g, 17, 4) === 'build', 'plugging the east mouth clears it too — a corner with one way through cannot meet two aisles')
+    }
+    {
+        const g = mk()
+        const legal = [[18, 3], [19, 3], [19, 5], [20, 3], [20, 5], [17, 5]].every(([x, y]) => put(g, x, y) === 'build')
+        ok(legal && put(g, 17, 4) === 'build', 'the same corner with a 1-cell south arm builds — short arms keep the mouth-adjacent exit')
+    }
+    // the law is axis-symmetric: mirror the elbow through the diagonal
+    {
+        const g = mk()
+        const need = [[21, 2], [20, 2], [21, 4], [23, 4], [20, 4], [21, 5], [23, 5], [23, 3]]
+        const fails = need.filter(([x, y]) => put(g, x, y) !== 'build')
+        ok(fails.length === 0, 'the vertical mirror rig builds clean — columns mirror rows')
+        ok(put(g, 22, 2) === 'aisle' && g.ev.at(-1)?.why === 'corner', 'the mirrored elbow refuses too (why=corner)')
+    }
+    // determinism: identical refused builds land on identical hashes — no rng, no movers
+    const refusalHash = () => { const q = mk(); for (const [x, y] of NEED) put(q, x, y); put(q, 17, 4); return stateHash(q) }
+    ok(refusalHash() === refusalHash(), 'two identical refused elbows land on identical hashes — pure geometry, fixed order')
+    // curated expansion never meets the refusal: the autopilot win proof transfers untouched
+    {
+        const g = mk()
+        let fails = 0
+        for (const sp of RACK_SPOTS) { g.tool = 'rack'; if (clickCell(g, sp.x, sp.y) !== 'build') fails++ }
+        ok(fails === 0, 'every curated RACK_SPOT still builds — autopilot expansion never trips the corner law')
+    }
+    // the painter names the fifth law
+    const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    ok(/why === 'corner'/.test(ui) && /NO CORNER STACK/.test(ui), 'the painter names NO CORNER STACK on screen (#2627)')
 }
 
 // ---- duel seats (#2555) — two managers, one floor, credit follows work ----

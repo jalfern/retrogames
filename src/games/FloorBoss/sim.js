@@ -275,6 +275,66 @@ function laneRuns(gs, extra) {
     }
     return runs
 }
+// #2627 NO CORNER STACKS — the turn-radii tail of #2546/#2614: nothing at the
+// click point stopped you racking the SWING of a corner. Real warehouses
+// legislate corner clearances ("keep aisle bends free of stored goods") because
+// an obstruction at an elbow blocks TWO aisles at once and kills the sightline
+// into both. The mechanism here: a cart servicing a rack PARKS ON THE CELL
+// FACING IT (Manhattan distance 1, held PICK_TICKS — atTarget in step()). Put
+// the rack opposite a tight elbow and that work-stop lands on the one cell both
+// arms must pass: through traffic on either arm stalls for the whole pick, and
+// two waiting bots meeting ACROSS the elbow (B+d and B+d2 — Manhattan 2) trip
+// the jam law (distance ≤ 2, both waits past JAM_WAIT) with no bay and no
+// mouth-adjacent escape — the choke is created by the click. So on the
+// hypothetical rack R, refuse the click that completes a tight elbow whose rack
+// faces the corner:
+//   B = R + d drivable, exactly two open neighbours d and d2, perpendicular;
+//   both arms run TIGHT (both flanks blocked) for ARM_MIN cells from B;
+//   both far ends stay OPEN MOUTHS (the cell past each tight run is open —
+//   through traffic on both arms; a run ending at a wall is a dead-end spur,
+//   legal by the #2546 ruling, and a bay mid-arm stops the tight run and
+//   blesses the pull-off, same exemption #2614 carries).
+// ARM_MIN 2 is the trap's physical floor, mirrored from LANE_LONG's 1+2+1:
+// the jam pair sits one cell into each arm, and an arm of 1 leaves its bot at
+// the mouth to reverse out of — the same exit #2614 keeps for lanes of 1..4.
+// Escapes stay honest: plug either mouth, open a bay on either arm, or leave
+// the facing cell unbuilt. Pure map+racks geometry, fixed order, no rng, no
+// movers, zero footprint (#1917): the refusal charges nothing, lands no rack
+// and changes no hash. Curated RACK_SPOTS never trip it (floorbosscheck pins
+// the autopilot win proof transfers).
+export const ARM_MIN = 2
+function cornerChokes(gs, extra) {
+    const open = (x, y) => inGrid(x, y) && map[y][x] === CELL.FLOOR
+        && !(extra && extra.x === x && extra.y === y)
+        && !gs.racks.some((r) => r.x === x && r.y === y)
+    const chokes = []
+    if (!extra) return chokes // only a rack can be the one that faces the corner
+    for (const [dx, dy] of NB) { // d = the arm the rack faces; B = R + d
+        const bx = extra.x + dx, by = extra.y + dy
+        if (!open(bx, by)) continue
+        for (const [px, py] of [[dy, dx], [-dy, -dx]]) { // d2 candidates (a perpendicular pair)
+            // exact elbow: arms open along d and p; the two back cells closed
+            // (d's back cell is the rack R itself; p's back cell must be shut).
+            // The d-arm's first cell B+d is forced open by the run below; if
+            // either arm's first cell is a bay or wall the run fails and the
+            // corner keeps its escape.
+            const d2open = open(bx + px, by + py)
+            const backD2 = open(bx - px, by - py) // must be closed (wall or rack)
+            if (!d2open || backD2) continue
+            // tight-run along axis a from B; flanks are the perpendicular pair f/f'
+            const run = (ax, ay, fx, fy) => {
+                let k = 0
+                while (open(bx + (k + 1) * ax, by + (k + 1) * ay)
+                    && !open(bx + (k + 1) * ax + fx, by + (k + 1) * ay + fy)
+                    && !open(bx + (k + 1) * ax - fx, by + (k + 1) * ay - fy)) k++
+                const mouth = open(bx + (k + 1) * ax, by + (k + 1) * ay) // past the tight run: an open mouth, or a wall/spur
+                return k >= ARM_MIN && mouth
+            }
+            if (run(dx, dy, px, py) && run(px, py, dx, dy)) chokes.push(`e${bx},${by}:${dx},${dy}`)
+        }
+    }
+    return chokes
+}
 function strandsFloor(gs, x, y) {
     if (map[y][x] !== CELL.FLOOR || gs.racks.some((r) => r.x === x && r.y === y)) return false // other laws refuse first
     const before = serviceNet(gs, null)
@@ -286,6 +346,9 @@ function strandsFloor(gs, x, y) {
     // that COMPLETES a no-pass lane is refused (see laneRuns above).
     const was = new Set(laneRuns(gs, null))
     for (const r of laneRuns(gs, { x, y })) if (!was.has(r)) return 'lane'
+    // #2627 the fifth law, same hypothetical rack: a click whose rack FACES a
+    // tight elbow is refused (see cornerChokes above).
+    if (cornerChokes(gs, { x, y }).length) return 'corner'
     return false
 }
 
