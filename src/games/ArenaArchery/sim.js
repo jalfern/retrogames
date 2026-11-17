@@ -61,9 +61,11 @@ export const CFG = {
     flushSticks: true,
     // #2579 UNDERSIDE HANGS. The #1685 lift hoists every single-row slab hit
     // into the cell above the slab so the arrow can walk home; but a shaft
-    // that crossed a canopy's BOTTOM face under a canopy it could be PULLED
-    // from hangs where it struck (TowerFall keeps its shafts honest). Lift vs
-    // hang decides by economy, not direction — see stickArrow.
+    // that crossed a MULTI-COURSE ceiling's BOTTOM face while rising hangs in
+    // the air below the lowest course instead of embedding mid-stone
+    // (TowerFall keeps its shafts honest). Lift vs hang decides by economy,
+    // not direction — see stickArrow. Single-row corridor hangs are gated off
+    // pending Jon's ruling on #2377's tempo promise (jonq #2585).
     // hangUnderside:false is the test-only kill switch (mutant: always-lift).
     hangUnderside: true,
     // #2385 heat telegraph: the shell rings two rising warning notes across
@@ -263,14 +265,16 @@ function stickArrow(g, ar) {
     // arrow out of the middle of a wall you cannot touch). The lift is
     // #1685 economy: every arrow the world accepts must return to the
     // quiver loop or the TTL. #2579 makes it ECONOMY-aware, not
-    // direction-blind: a shaft whose tip crossed the slab's BOTTOM face
-    // while rising hangs under the canopy whenever that hang cell is
-    // itself pullable (hangReachable) — the arrow still returns to the
-    // loop, from below, and the paint keeps the TowerFall truth of where
-    // it struck. Only canopies no one can reach from underneath keep
-    // lifting their hits above the slab (that lift is how those arrows
-    // walk home). Floors, wall hits, top-row grazes and double-thickness
-    // ceilings are byte-identical behaviour.
+    // direction-blind, for THICK stone (stage 1): a shaft whose tip crossed
+    // the bottom face of a multi-course ceiling while rising hangs in the
+    // air cell below the lowest course whenever that cell is itself pullable
+    // (hangReachable) — it never embeds mid-stone. Single-row canopies keep
+    // lifting their hits above the slab: measured here (event-stream diff of
+    // the duel), ONE such hang at KNOCKBACK's spawn corridor re-knits the
+    // knife-edge matchup into a 917-tick duel whose dry spell rings the heat
+    // bell #2377 says honest matches never hear. The single-row half waits
+    // on Jon's ruling (jonq #2585); the law and its lab stay ready.
+    // Floors, wall hits and top-row grazes are byte-identical behaviour.
     if (solidAt(g, ar.x, ar.y) && cy > 0) {
         // last-crossed face, the flushAngle criterion: the smaller the
         // penetration, the later the shaft crossed that face.
@@ -278,6 +282,7 @@ function stickArrow(g, ar) {
         const penX = ar.vx > 0 ? px : ar.vx < 0 ? CFG.cell - px : Infinity
         const penY = ar.vy > 0 ? py : ar.vy < 0 ? CFG.cell - py : Infinity
         const hang = CFG.hangUnderside && ar.vy < 0 && penY < penX &&
+            solidAt(g, ar.x, ar.y - CFG.cell) &&
             !solidAt(g, ar.x, ar.y + CFG.cell) && hangReachable(g, cx, cy + 1)
         if (hang) { cell = (cy + 1) * g.W + cx; ar.hang = true }
         else if (!solidAt(g, ar.x, ar.y - CFG.cell)) cell = (cy - 1) * g.W + cx

@@ -224,16 +224,23 @@ danger. Probe `fx: { ash, homes, warnNotes, dryFx, warnStep }` receipts.
 
 ## Honest gaps
 
-- **Single-row undersides.** A thin one-row slab lifts its hit into the air
-  cell above the slab (the direction-agnostic air-cell lift is the #1685
-  pull economy — measured this session: gating the lift to downward arrivals
-  only starves it and the autopilot flips to 2-3 on every arena, so the
-  lift stays as is). Consequence: an arrow rising under a one-row canopy
-  sticks *above* it, painted near-vertical, not hanging from the underside.
-  Double-thickness stone hangs tip-up correctly (flush FLUSH-ceiling pin).
-  A true underside-hang would need the lift to be economy-aware, not
-  direction-aware — still open after the #2565 ceremony shipped (ceremony is
-  presentation; the lift itself was never ceremony's to change).
+- **Single-row undersides (stage 2 of #2579, gated on jonq #2585).**
+  Multi-course ceilings now hang their rising hits tip-up in the air below
+  the lowest course (`hangUnderside` in `sim.js`, UNDERSIDE section of
+  `archerycheck`) — but a thin one-row canopy still lifts its hit into the
+  air cell above the slab. That is measured, not inherited: with single-row
+  corridor hangs on, ONE hanging shaft in KNOCKBACK's spawn corridor
+  re-knits the autopilot matchup into a 917-tick duel whose 451-tick dry
+  spell rings the #2377 heat bell, and no bot-knob re-tune fixes arena 1
+  without distorting arenas 0/2 (swept: `bot0Range` × `bot0Release`, 48
+  combos — every combo that keeps arena 1's tempo green rewrites arenas
+  0/2's duel flow away from main, and the nearest candidates outright
+  flip another arena's winner).
+  Whether the full law ships (wider tempo constants) or single-row hangs
+  are declined is Jon's ruling; the law, the lab gates and the bot doctrine
+  (sway, sky-cross, honest `predictHit`) are all in and green on this
+  branch's shape — widening the hang predicate back to one-row slabs is
+  the only code the ruling needs.
 - ~~The 2P duel has no harness yet beyond the pad dispatch existing
   (`secondPad` is `VirtualControls`' contract, exercised by IceClimber);
   `archeryplay` drives P1 only.~~
