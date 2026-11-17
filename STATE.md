@@ -1,55 +1,76 @@
-# STATE — session 321 slot a close-out
+# STATE — session 322 slot b close-out
 
 ## Shipped this session
-- **ARENA ARCHERY — thick-ceiling undersides (#2579 stage 1), PR #2583,
-  squash `a3efd02`, live.** Rising hits under multi-course stone hang
-  tip-up in the air below the lowest course (never mid-stone); suspended
-  shafts sway (no knock-out, sky-crossed route, honest `predictHit`),
-  pull/replace/fade like all stuck terrain. `archerycheck` 170/170,
-  `--mutate` 196/196 — all 13 mutants die (always-lift re-aimed at the
-  thick gate). All three arena MATCH receipts byte-identical to main
-  (`996 3-2 / 685 3-0 / 996 3-2`) — #2377 tempo promise untouched by
-  construction. eslint + three scoped lint gates + build green.
+- **#2587 → PR #2591 merged (`c52a3c6`, live). EXCITEBIKE — TEST RIDE.**
+  The bay's missing esc-to-the-bay: a TEST tool (between BOOST and ERASE, so
+  the strip's backward wrap still lands on EXIT) compiles the CURRENT draft
+  through SAVE's exact compiler + `auditCustomData` (illegal draft refuses by
+  name, bay never leaves), then seats `makeGame(TRANSIENT, { laps: 1 })` — one
+  unsaved lap of your own terrain, rivals included, badge painted. `Esc` or the
+  lap line returns to the bay with stamps/cursor/tool intact; over screen +
+  leaderboard stay the league's. `TRANSIENT` (-1) is a levels.js alias resolved
+  by `track()` BEFORE the CACHE wrap — every course-reader (sim/planner/
+  renderer/rivals) rides it honestly while the splash roster never grows a
+  phantom row (gates pin `customs`/`rows` and the shipped-six fingerprints).
+  Gates: excitecheck **317/317** (+12 TEST: refusal-before-seating, SAVE
+  byte-identity, one-lap WOT finish, determinism, roster-leak, alias-wrap
+  restored on clear); `--mutate` **381/381**, all die; flatten-transient
+  mutant reddens the identity gates (by hand, restored). exciteplay **84/84**
+  (:5178 real keys — TEST seats `track=-1 laps=1`, Esc returns draft-intact,
+  warp-to-line finishes to the bay, rows stay 8, empty draft refuses by name;
+  zero page errors). eslint + lint mario/fps/ai + build green. Prod verified:
+  live Excitebike chunk `index-D-fZySeH.js` carries the ride markers.
+  QA #2573 told: gap 1 fully closed; new candidates 7 (no on-screen Esc for
+  phones mid-test) and 8 (splash-seated customs keep the save-and-race gate).
+- TARGET **#2579 claim SUCCEEDED** (slot a's newest claimed/checkpoint marker
+  was 93 min stale — their later comments were bookkeeping, which the lockout
+  law ignores by design) — but stage 2 (single-row hangs) is design-gated on
+  jonq **#2585** (AWAITING, default B, deadline 2026-11-19T10:55Z). Per #605
+  the lane never waits on a ruling and must not pre-empt it: checkpointed #2579
+  (`building`, slot b) and took the #1571 never-dry pick instead.
 
 ## Next queued
-- **#2579 stage 2 = jonq #2585** (single-row corridor hangs vs #2377's
-  tempo promise; default B = keep the promise, decline single-row).
-  Resuming the full law needs only the widened predicate + blessed
-  constants — full shape in commit `a002199` on the (now-merged stage-1
-  history). #2579 stays `building` (Part of, stage 2 pending Jon).
-- **Owed proof leg:** `archeryplay` UNDERSIDE chrome section (real-key
-  browser smoke of hang paint) — file as its own small PR next session.
-- After that: `node scripts/idle-kick.mjs` — ArenaArchery is held
-  (#2579 open building); expect a different title's kick.
+- **#2579 is slot b's held issue** — resume = `forge-claim.sh 2579 b` (answers
+  "already yours" while fresh) then check **#2585**: ANSWERED A → build stage 2
+  (law/gates/doctrine shaped at `a002199` — recover via
+  `git fetch origin pull/2583/head`; tempo-constant widening is all that's
+  left); ANSWERED B **or defaulted B after the deadline** → record the ruling
+  on #2579, keep stage 1 (`a3efd02`) as the shipped law, label shipped + close.
+  Do not build single-row hangs while #2585 is AWAITING.
+- `game-queue` empty at close; `next` = **#1711** (lane:platform — games-lane
+  no-op, precedent 314–319); QA lane live (feedback borrow refused; #2561
+  building-qa held). Idle-kick at close = **`KICK SONAR ABYSS -1 weak`** —
+  NEW index `-1`: inspect what `weakestStage` scored (likely feedback-driven,
+  not a README gap index) before filing; do NOT blindly file "gap 0".
 
 ## Open questions (issues, not here — #605)
-- #2585 (lane:games, AWAITING, default B) — this lane's stage-2 ruling.
-- Lane-foreign: #2529 (lane:research, AWAITING, deadline 2026-11-19T00:01Z,
-  default A).
+- None filed this lane. Lane-adjacent: **#2585** (AWAITING, gates our held
+  #2579 — see Next queued). Lane-foreign: #2529 (lane:research).
 
 ## Catches for the next session (each cost probes this shift)
-- **Enemy-supply was a phantom:** ownership-stream probe showed ZERO
-  enemy-hang pulls in arena 1's 917-tick duel; owner-pull and hang-TTL
-  mutants came back byte-identical. Before claiming a cascade mechanism,
-  log WHO pulled WHAT owner — receipts first, story second.
-- **One hang can break a knife-edge matchup:** arena 1 tempo died to a
-  SINGLE hang at the (4,11) spawn corridor, not systemic economy. Any law
-  that adds stuck-arrow positions inside a bot corridor re-arms KNOCKBACK;
-  re-measure `honestMaxDry` before believing "green on all arenas".
-- **Cell size is 24, not 16** (`CFG.cell`), arena grids H=13; ASCII dumps
-  from `--arena` print WITHOUT the roof line offset you expect — count from
-  the source rows in levels.js, not from the dump.
-- **Sweep harnesses must gate the main-match winner**, not just tempo+slack
-  — my first sweep called a combo PASS while arena 0 sat at 2-3.
-- **`gh pr merge --delete-branch` concurrent-ref flake:** when another lane
-  pushes main mid-merge, post-merge `checkout --detach origin/main` still
-  lands correctly (a3efd02) — verify with `git log --oneline -1`, don't
-  re-run the merge.
+- **Prod markers live in per-game lazy chunks** — the HTML's index chunk is
+  ~1MB of shell+registry and contains ZERO game strings (MOTOCROSS 0 hits).
+  Poll = find the game chunk among the `index-*.js` refs by a stable string
+  (MOTOCROSS), then grep that file for your new marker. 16 blind polls at the
+  index chunk were wasted before seeing this.
+- **Claim lockout counts only `claimed|checkpoint` markers** (#1258 script):
+  design/PR/merged notes do NOT extend a lane's hold. Slot a merged stage 1 at
+  11:03 yet lost the claim seconds later — legal, by design; the merged work is
+  in main, nothing was lost.
+- **Menu grows cheap when you insert before the verb block**: TEST at index 6
+  of 10 kept every wrap pin (backward wrap lands on EXIT unchanged). When you
+  grow a strip, hunt positions-through-wrap pins before tail-inserting.
+- **Ephemeral sim state wants a side alias, not the registry**: CACHE density
+  drives menu rows; the TEST draft seats at a sentinel `TRANSIENT=-1` resolved
+  inside `track()`, so density never lies. Nothing passed -1 before #2587 — the
+  old wrap for -1 is pinned restored-after-clear.
+- **`const` arrow funcs referenced earlier in the same useEffect body**
+  (doSim→endTestRide): fine at runtime (frame loop starts after init) and
+  eslint-clean here; only bite-safety is "don't call before the const line".
 
 ## Lanes clean
-- Main checkout detached at origin/main (`a3efd02`); STATE.md committed
-  WITH the merge (rule 9 satisfied).
-- Worktree `~/Dev/retrogames-forge-archery-underside` = merged branch,
-  detached at `a3efd02` — free to reuse or remove.
-- :5173 never started this session (no browser leg ran); other lanes'
-  ports untouched.
+- Main checkout detached at origin/main; this STATE written here, parked via
+  `statepark.mjs park b`, committed to main via `forge/state-322-b` (game
+  merged this session, so STATE is committable — #2552/#2556 shape).
+- Worktree `~/Dev/retrogames-forge-excite-testride` re-detached at origin/main,
+  reusable. :5178 dev server stopped at close-out; other lanes' ports untouched.
