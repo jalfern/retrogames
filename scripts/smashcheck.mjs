@@ -1160,6 +1160,33 @@ console.log('pilot')
         }
         ok(!wedged.length, 'roll seeds #2530: the un-wedged autopilot seeds never stall (23 seeds, 45k cap)', `wedged ${wedged.join(',')}`)
     }
+    // #2491 lane-sound duel — replay pin. The sweep used to catch a deaf-duel
+    // mutant by luck of route: seed 4 walked onto the (12,10) chrome corner and
+    // stood there under the turret's throw. #2540 re-laid the routes, seed 4
+    // stopped walking there, and the mutant survived the sweep (63/64, 2026-11-17).
+    // The law is not dead — it still drives the seat where the new lines bring it
+    // to a walled row — so pin two live ticks where the branch is load-bearing
+    // (measured at tip 24869f7: seed 1 heavy#853, seed 2 heavy#305). Shape is
+    // re-derived from the live state, never from text. If routes re-lay again,
+    // move these ticks with the matinee pins, README and all.
+    {
+        const { q8: q8d, los: losd } = await import('../src/games/SmashTV/sim.js')
+        for (const [seed, T, tid] of [[1, 3817, 853], [2, 1775, 305]]) {
+            const gs = S.makeGame(seed)
+            while (!gs.end && gs.tick < T) { S.step(gs, S.decide(gs)); gs.events.length = 0 }
+            const p = gs.player
+            const t = gs.enemies.find((e) => e.id === tid && !e.dead)
+            let drives = false
+            if (t) {
+                const dx = t.x - p.x, dy = t.y - p.y
+                const [qx, qy] = q8d(dx, dy)
+                const shape = Math.abs(qx) > Math.abs(qy) && !losd(gs, p.x, t.y, t.x, t.y) && losd(gs, t.x, p.y, t.x, t.y)
+                const inp = S.decide(gs)
+                drives = shape && (inp.mx || 0) === Math.sign(dx) && (inp.my || 0) === 0
+            }
+            ok(drives, `#2491: the lane-sound duel still drives the seat at seed ${seed} tick ${T} (shape live, answer takes the open column)`)
+        }
+    }
 }
 
 // ------------------------------------------------------------- varisize ----
