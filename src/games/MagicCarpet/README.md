@@ -860,3 +860,39 @@ original's full **forty-five worlds** — fifteen arcs of three atmospheres.
   `wizFireGap(gs.level)` back to 55 or drop the fan branch → those pins go red
   while shallow-world replay checks stay green. The 60-seed sweep remains the
   margin (all forty-five worlds, all 60 seeds).
+
+## #2449 item 4: ONE LINE THAT WATCHES THE DEMO (2026-11-17, forge a, #2568)
+
+- Attract used to stack NINE rule lines under the title while a live autopilot
+  demo flew the real sim behind them — docs/ART.md bar 6 wants "one message at
+  a time, cycling"; the wall broke both halves of that sentence.
+- New `attract.js` (pure, presentation-only): `attractCaption(ev)` maps sim
+  story beats to a single short rule line — `pickup`/`bankIn`/`learn`/`equip`/
+  `tribute`/`bite`/`wizfire`/`towerFire`/`rocksling`/`boom`/`absorb`/`stage`/
+  `wizGrow`/`sibGrow`/`coven` + `villager`'s grab/convert/settle sub-beats.
+  Unknown events caption `null` — never a blank line. Texts ≤44 monospace
+  chars so a 390px attract never wraps to two lines (two lines = bar 6 again —
+  the gate caught four of my own first drafts over the line; measure, don't
+  eyeball).
+- `index.jsx` paints one `#mc-attract-cap` line: event beats hold 4 s
+  (`CAP_HOLD_MS`); quiet spells cycle five core-rule cadence lines every 3 s
+  (`FALLBACK_MS`) — steering, hands+book, forty-five worlds+vault, die-with-
+  cargo, fire-breeds-wolves+veil. Every rule the old wall stated survives, now
+  one at a time; the `AttractMessage` import is deleted. Captions never reach
+  the sim — pinned (attract.js imports nothing from sim.js, sim.js never
+  mentions it).
+- carpetcheck: +6 Node gates (caption law, distinct ≤44 texts, unknown→null,
+  presentation-only pin, wall-deleted pin, MEASURED beat floor: replay
+  tickDemo's own cadence — seed 7, resettle 2600, autopilot steering — over 4
+  demo worlds and count distinct captioned beats ≥8; measured 17).
+  +3 chrome gates: exactly one `#mc-attract-cap` in the attract DOM with the
+  wall's `CANNOT CRASH` text absent, the line MOVES across ~6.6 s of sampling
+  (beats or cadence both satisfy it), attract unbroken + zero page errors.
+- Mutants: `return null` atop `attractCaption` → the measured beat floor goes
+  red (0 ≥ 8 fails); injecting a second `#mc-attract-cap` line in the live DOM
+  → the one-line count gate red. Restored both after proving.
+- Honest remainder: the attract demo never CASTS (the autopilot steers only),
+  so spell-only rules — veil immunity, shatter, volcano, dissolve, clone —
+  have no event beat; the closest cadence line carries "FIRE BREEDS WOLVES ·
+  THE VEIL HIDES YOU". A cast-capable attract demo is the remaining tail of
+  this gap.
