@@ -21,7 +21,11 @@ const page = await browser.newPage({ viewport: { width: 900, height: 640 }, devi
 page.setDefaultTimeout(120000)
 const errors = []
 page.on('pageerror', e => errors.push(`[pageerror] ${e.message}`))
-page.on('console', m => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
+// Headless boxes with no audio device throw "AudioContext encountered an
+// error from the audio device/WebAudio renderer" (britanniadrive precedent) —
+// environmental, not game code; real page/console errors still land.
+const ENV_NOISE = /AudioContext encountered an error from the audio device/i
+page.on('console', m => { if (m.type() === 'error' && !relayNoise(m.text(), m.location()) && !ENV_NOISE.test(m.text())) errors.push(`[console.error] ${m.text()}`) })
 
 const probe = () => page.evaluate(() => window.__sonarTest.probe())
 const hint = () => page.evaluate(() => window.__sonarTest.hint())
@@ -33,7 +37,10 @@ const px = (x, y) => page.evaluate(([x, y]) => {
 }, [x, y])
 const wait = ms => page.waitForTimeout(ms)
 const tap = k => page.keyboard.press(k)
-const swim = async (k) => { await page.keyboard.down(k); await wait(90); await page.keyboard.up(k); await wait(20) }
+// Hold a direction long enough to span a moveEvery boundary for certain:
+// 90 ms ≈ 1.8 ticks can straddle two boundaries and step zero times —
+// under load that stalls the planner swim and the descent flakes.
+const swim = async (k) => { await page.keyboard.down(k); await wait(160); await page.keyboard.up(k); await wait(25) }
 
 await page.goto(URL, { waitUntil: 'load' })
 try {
@@ -83,6 +90,11 @@ await wait(400)
 {
     const a = await probe()
     r.check('a real key starts a fresh seeded run', a.screen === 'play' && a.score === 0 && a.lives === 3 && a.pearls > 0, `screen=${a.screen} lives=${a.lives} pearls=${a.pearls} seed=${a.seed}`)
+    // #2589/#2594 order law: a run started FROM ATTRACT must be dark and cold.
+    // With loadDepth called before the mode flips, seeds shaped like the fixed
+    // fallback layout inherit the attract replay's mid-dive state: pre-lit map
+    // and gs.tick ≈ join (seed 20261135 → tick 152, the #2589 fingerprint).
+    r.check('the fresh run starts dark and cold — no inherited attract state (#2589)', a.t < 2 && a.cooldown === 0 && a.litOpen < 80, `t=${a.t.toFixed(2)}s litOpen=${a.litOpen} cd=${a.cooldown}`)
     const p0 = await px(a.player.x, a.vent.y)
     void p0
     const pp = await px(a.player.x, a.player.y)
@@ -212,22 +224,44 @@ for (let i = 0; i < 900; i++) {
         const c = document.querySelector('canvas[data-sonar-stage]')
         const d = c.getContext('2d').getImageData(x * 16, y * 16, 16, 16).data
         let mx = -255, red = 0, cold = 0, low = 0
+        const rows = []
         for (let p = 0; p < d.length; p += 4) {
             const rb = d[p] - d[p + 2]
             mx = Math.max(mx, rb)
             if (rb >= 30) {
                 red++
-                if ((p / 4) % 16 >= 11) low++          // #2383: below row 10 — chevron country
+                const q = p / 4
+                const rrow = Math.floor(q / 16), rcol = q % 16
+                rows.push(`${rrow}:${rcol}`)
+                if (rrow >= 11) low++          // #2383: below row 10 — chevron country
             }
             if (d[p] >= 85 && d[p + 2] - d[p] >= 25 && d[p + 1] <= 170) cold++
         }
-        return { max: mx, red, cold, low }
+        return { max: mx, red, cold, low, rows, x, y }
     }, [x, y])
     const collect = async (s) => {
         if (s.screen !== 'play') return
+        // A cell the route already touched on a NEAR ring still paints that
+        // hot mark (chevron included) for the whole fade window; a later cold
+        // contact in the same cell cannot make the cell "single". Grade cold
+        // only on cells with no live hot blip.
+        // hot paint (halo + chevron) is heat > 0.55, i.e. ring <= 6 (contactHeat
+        // at ring 6 = 0.56). Exclude those cells — and their 8-neighbours, the
+        // danger halo (r ≈ 14 px) spills red into the lower band of adjacent
+        // cells — not just the ring<=5 showcase set.
+        const hotCells = new Set()
+        for (const m of (s.contactMarks || [])) {
+            if (m.ring < 0 || m.ring > 6) continue
+            for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) hotCells.add(`${m.x + dx},${m.y + dy}`)
+        }
         for (const m of (s.contactMarks || [])) {
             if (m.ring < 0) continue
+            // Load spikes stall page.evaluate for seconds — by then a blip has
+            // faded toward alpha 0.3 and cannot count cold on any ground. Only
+            // sample marks still bright (world age <10 ticks: alpha ≥ 0.93).
+            if ((m.age || 0) > 10) continue
             if (m.x === s.player.x && m.y === s.player.y) continue
+            if (m.ring >= 9 && hotCells.has(`${m.x},${m.y}`)) continue
             const key = `${m.x},${m.y},${m.ring}`
             if (seen.has(key)) continue
             seen.set(key, await sampleCell(m.x, m.y))
@@ -253,9 +287,15 @@ for (let i = 0; i < 900; i++) {
         const c0 = classify()
         if (c0.coldN >= 1 && c0.hotN >= 1) break
         if (st.cooldown <= 1) { await tap('Space'); pings++ }
-        // rig a patrol to walk at the diver: its contact must arrive on a
+        // Rig a patrol to walk at the diver: its contact must arrive on a
         // NEAR ring (setup-only — the wavefront touch itself stays honest).
-        if (c0.hotN === 0 && st.cooldown <= 1 && i % 12 === 11 && st.lives === 3) await page.evaluate(() => window.__sonarTest.trailEel())
+        // The death section above may already have spent a life — a respawned
+        // diver still catches rig approaches. Re-seat every iteration while no
+        // hot sample exists: a compound gate of (modulo AND cooldown) only
+        // offered a few coin-flips per run, and zero offers meant zero hot
+        // samples. trailEel re-routes from the eel's CURRENT cell, so calling
+        // it repeatedly is just a steady chase, not a teleport chain.
+        if (c0.hotN === 0 && st.lives >= 1) await page.evaluate(() => window.__sonarTest.trailEel())
         await wait(70)
     }
     const c = classify()
@@ -274,7 +314,7 @@ for (let i = 0; i < 900; i++) {
     r.check('hot marks grow the double-stroke chevron (shape cue, pixels)', c.hotN >= 1 && hLowOk === c.hotN,
         `${hLowOk}/${c.hotN} hot samples carry the chevron`)
     r.check('cold marks stay single (shape cue, pixels)', c.coldN >= 1 && cLowBad === 0,
-        `${cLowBad}/${c.coldN} cold samples leaked lower-band red`)
+        `${cLowBad}/${c.coldN} cold samples leaked lower-band red` + (cLowBad ? ` @ ${[...seen].filter(([k, v]) => Number(k.split(',')[2]) >= 9 && v.low > 2).map(([k, v]) => `${k}[${v.rows.slice(0, 12).join(' ')}]`).join(' | ')}` : ''))
     // #2383 haptics: the hot contact must have rung a short pulse. The motors
     // stay silent under the harness (window.__game); the logged intent proves
     // the rule fired. (hit's long pulse is proven after the death section.)
@@ -378,6 +418,92 @@ for (let i = 0; i < 900; i++) {
     }
     r.check('the ping paints a visible expanding wavefront ring (pixels)', ringOk,
         `peak=${ringPeak} plain=${ringPlain}`)
+}
+
+// ---- #2594 pearl memory, in pixels + real keys: bright when heard, a dim
+// glint when remembered, bright again on re-hearing. Organic ghosting: after
+// one real SPACE ping the diver simply WAITS (the core dodge), so no wavefront
+// refreshes the memory — the fade boundary is reached by living, not rigging.
+// Fresh = counted pink-white px; ghost = counted dim-pink px on a cell the
+// knowledge says dark (only the remembered pearl draw can brighten it). ----
+{
+    const cellPix = (x, y) => page.evaluate(([x, y]) => {
+        const c = document.querySelector('canvas[data-sonar-stage]')
+        const d = c.getContext('2d').getImageData(x * 16, y * 16, 16, 16).data
+        let bright = 0, dim = 0
+        for (let p = 0; p < d.length; p += 4) {
+            const R = d[p], G = d[p + 1], B = d[p + 2]
+            if (R >= 190 && G >= 150 && B >= 170) bright++                 // fresh pearl / glint
+            if (R >= 55 && R <= 170 && G >= 35 && G <= 130 && B >= 45 && B <= 170) dim++   // remembered glint on black
+        }
+        return { bright, dim }
+    }, [x, y])
+    let st = await probe()
+    if (st.screen !== 'play') { await tap('KeyG'); await wait(1100) }
+    let freshPx = -1, ghostPx = -1, revivePx = -1, knownAfterGhost = true, recoveries = 0, attempts = 0
+    let gx = -1, gy = -1, gIdx = -1
+    for (let i = 0; i < 240 && ghostPx < 0 && attempts < 8; i++) {
+        st = await probe()
+        if (st.screen !== 'play') {
+            if (++recoveries > 4) break
+            await tap('KeyR'); await wait(1100); attempts++
+            freshPx = ghostPx = revivePx = -1
+            continue
+        }
+        if (freshPx < 0) {
+            if (st.cooldown > 1) { await wait(150); continue }
+            await tap('Space')                                             // the one honest ping
+            const t0 = Date.now()
+            while (Date.now() - t0 < 900) {
+                const s2 = await probe()
+                if (s2.screen !== 'play') break
+                for (let k = 0; k < s2.pearlSignals.length; k++) {
+                    if (s2.pearlSignals[k] !== 2) continue
+                    const cell = s2.pearlCells[k]
+                    if (cell.taken) continue
+                    const v = await cellPix(cell.x, cell.y)
+                    if (v.bright >= 4) { freshPx = v.bright; gx = cell.x; gy = cell.y; gIdx = k; break }
+                }
+                if (freshPx >= 0) break
+                await wait(80)
+            }
+            continue
+        }
+        // wait out the fade WITHOUT pinging — this is the ghost forming in plain
+        // living. Poll the sim's own signal; sample pixels only once it is 1.
+        const sig = st.pearlSignals[gIdx]
+        if (sig === 1) {
+            knownAfterGhost = await knownAt(gx, gy)
+            const v = await cellPix(gx, gy)
+            ghostPx = v.dim
+            break
+        }
+        if (sig === 0) break                                              // collected/never — restart the hunt
+        await wait(120)
+        if (i % 40 === 39) attempts++                                     // bound stalled waits
+    }
+    r.check('a real ping paints a fresh pearl bright (pixels)', freshPx >= 4, `bright=${freshPx}`)
+    r.check('the remembered pearl keeps a dim glint after the fade (pixels)', ghostPx >= 2, `dim=${ghostPx}`)
+    r.check('the ghosted pearl cell is knowledge-dark — only memory draws it', ghostPx >= 2 && !knownAfterGhost, `known=${knownAfterGhost}`)
+    if (ghostPx >= 2) {
+        await wait(200)
+        for (let k = 0; k < 20 && revivePx < 0; k++) {
+            const s3 = await probe()
+            if (s3.screen !== 'play') break
+            if (s3.cooldown <= 1) await tap('Space')
+            const t0 = Date.now()
+            while (Date.now() - t0 < 900) {
+                const s4 = await probe()
+                if (s4.screen !== 'play') break
+                if (s4.pearlSignals[gIdx] === 2) {
+                    const v = await cellPix(gx, gy)
+                    if (v.bright >= 4) { revivePx = v.bright; break }
+                }
+                await wait(80)
+            }
+        }
+    }
+    r.check('a second ping revives the remembered pearl to bright (pixels)', revivePx >= 4, `revive=${revivePx}`)
 }
 
 r.check('zero page errors across the whole playthrough', errors.length === 0, errors.slice(0, 4).join(' | '))

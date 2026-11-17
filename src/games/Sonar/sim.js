@@ -56,6 +56,7 @@ export const CFG = {
     ventRipple: true,    // #2367: the vent swirl RIPPLES only on fresh vent knowledge (false = old always-on swirl)
     swirlFresh: 6,       // #2367: ticks a wavefront arrival still counts as fresh (≈300 ms — a readable beat at 60 fps)
     attractJoin: true,   // #2383: the attract joins its proven replay just before the first NEAR contact (false = always start at tick 0)
+    pearlGhost: true,    // #2594: a heard pearl stays as a dim ghost past the fade, like the vent ghost (false = remembered treasure goes black)
 }
 
 export const DIRS = {
@@ -263,6 +264,23 @@ export function ventSignal(g) {
     if (!CFG.ventRipple) return 2                 // MUTANT (see the switch comment): freshness ignored
     if (g.mem[g.vent] < 0) return 2               // standing on it is hearing it (own lungs)
     return g.tick - g.mem[g.vent] <= CFG.swirlFresh ? 2 : 1
+}
+
+// #2594 — what the painter may do with a PEARL cell, the same three-state law
+// #2367 wrote for the vent: 0 = never heard (dark — the game stays the game),
+// 1 = heard once, memory faded (a dim ghost: fixed geometry is rememberable
+// knowledge — the vent taught this doctrine, the prize inherits it), 2 = known
+// now (full paint). `mem[pearl] >= 0` is the hearing record: it is written only
+// by a BFS wavefront arrival (or by standing there — own lungs), never by
+// truth, so the ghost cannot leak a pearl the sound never reached. Taken
+// pearls are 0 at any freshness — a collected prize is not a destination.
+// Pure over (mem, taken, tick): no sim state added, every hash unaffected.
+export function pearlSignal(g, i) {
+    if (g.taken[i]) return 0
+    const c = g.pearls[i]
+    if (known(g, c)) return 2
+    if (!CFG.pearlGhost) return 0           // MUTANT (see the switch comment): remembered treasure goes black
+    return g.mem[c] >= 0 ? 1 : 0
 }
 
 export function makeGame(cave, opts = {}) {

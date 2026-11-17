@@ -23,7 +23,7 @@ import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import {
     CFG, W, H, ROCK, DIRS, idx, cx, cy,
-    genCave, makeGame, planRun, planStep, playerMove, ping, step, stateHash, known, eelContacts, eelCell, contactHeat, ventSignal, attractJoinAt, replay,
+    genCave, makeGame, planRun, planStep, playerMove, ping, step, stateHash, known, eelContacts, eelCell, contactHeat, ventSignal, pearlSignal, attractJoinAt, replay,
 } from './sim.js'
 
 const TS = 16
@@ -291,15 +291,25 @@ const SonarGame = () => {
                 }
                 ctx.fillRect(vx + 7, vy + 7, 2, 2)
             }
-            // pearls: seen is seen
+            // pearls: fresh knowledge paints bright; #2594 — remembered knowledge
+            // keeps a glint. The vent doctrine (#2367): fixed geometry is
+            // rememberable, so a pearl a wavefront once touched stays on the
+            // canvas as a dim static dot past the fade until taken. Never-heard
+            // pearls stay dark: the ghost reads mem (knowledge), never truth.
             for (let i = 0; i < gs.pearls.length; i++) {
+                const sig = pearlSignal(gs, i)
+                if (!sig) continue
                 const c = gs.pearls[i]
-                if (gs.taken[i] || !known(gs, c)) continue
                 const px = cx(c) * TS, py = cy(c) * TS
-                ctx.fillStyle = 'rgba(255,220,240,0.85)'
-                ctx.beginPath(); ctx.arc(px + 8, py + 8, 3.5, 0, Math.PI * 2); ctx.fill()
-                ctx.fillStyle = '#fff'
-                ctx.fillRect(px + 6, py + 5, 2, 2)
+                if (sig === 2) {
+                    ctx.fillStyle = 'rgba(255,220,240,0.85)'
+                    ctx.beginPath(); ctx.arc(px + 8, py + 8, 3.5, 0, Math.PI * 2); ctx.fill()
+                    ctx.fillStyle = '#fff'
+                    ctx.fillRect(px + 6, py + 5, 2, 2)
+                } else {
+                    ctx.fillStyle = 'rgba(255,190,225,0.34)'
+                    ctx.fillRect(px + 7, py + 7, 2, 2)
+                }
             }
             // eels: contact blips at the cell where a wavefront TOUCHED them —
             // this loop literally has no access to a live eel position. #2365:
@@ -375,8 +385,14 @@ const SonarGame = () => {
             const pin = seedFromQuery()
             seed = pin != null ? pin >>> 0 : (Date.now() ^ (Math.floor(performance.now() * 1000) << 8)) >>> 0
             runScore = 0; livesCarry = CFG.lives
-            loadDepth(1, true)
+            // #2594 order law: setMode BEFORE loadDepth. loadDepth decides the
+            // attract replay join by reading screenRef — called while the ref
+            // still says 'attract', a fresh start inherits the mid-replay demo
+            // state on seeds shaped like the fixed fallback layout (pre-lit
+            // map, script-ping ticks, gs.tick ≈150+). That was #2589's
+            // "reset(seed) started at tick 152" — seed roulette, not a flake.
             setMode('play')
+            loadDepth(1, true)
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
         }
         const onDown = (e) => {
@@ -458,10 +474,14 @@ const SonarGame = () => {
                         end: gs.end, hash: stateHash(gs),
                         cooldown: Math.max(0, CFG.pingCd - (gs.tick - gs.lastPing)),
                         litOpen, litRock, contacts: contacts.length, hiddenEels,
-                        contactMarks: contacts.map(b => ({ x: b.x, y: b.y, ring: (b.ring == null ? -1 : b.ring) })),
+                        contactMarks: contacts.map(b => ({ x: b.x, y: b.y, ring: (b.ring == null ? -1 : b.ring), age: gs.tick - b.t })),
                         eels: gs.eels.map(e => ({ x: cx(eelCell(e)), y: cy(eelCell(e)) })),
                         ventKnown: known(gs, gs.vent),
                         ventSignal: ventSignal(gs),
+                        // #2594: per-pearl painter state (0 dark / 1 ghost / 2 fresh);
+                        // cells are truth for the harness's eyes only, like `eels` above.
+                        pearlSignals: gs.pearls.map((c, k) => pearlSignal(gs, k)),
+                        pearlCells: gs.pearls.map((c, k) => ({ x: cx(c), y: cy(c), taken: gs.taken[k] })),
                         vent: { x: cx(gs.vent), y: cy(gs.vent) },
                         board: board(),
                     }
@@ -519,8 +539,9 @@ const SonarGame = () => {
                     tickBase = 0
                     seed = s >>> 0
                     runScore = 0; livesCarry = CFG.lives
-                    loadDepth(1, true)
+                    // #2589/#2594: mode BEFORE depth — see startPlay's order law.
                     setMode('play')
+                    loadDepth(1, true)
                 },
                 tick: (pad) => {
                     if (gs.end) { gs.tick += 1; return }
