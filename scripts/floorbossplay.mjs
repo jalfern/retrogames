@@ -442,5 +442,74 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     await waitMode('over', 4000) // the report screen takes its turn — the verdict paints there
 }
 
+// ---- teach the elbow (#2627 s2): drive a corner refusal with REAL taps and watch the lesson light ----
+{
+    await page.goto(URL) // a clean floor — the rig wants no seeded racks near the elbow
+    await page.waitForFunction(() => !!window.__floorbossTest, null, { timeout: 15000 }) // the DEV hook mounts at the shell's first effect — a raw goto must wait for it
+    if (!await waitMode('attract', 5000)) r.check('teach leg: fresh page reaches attract', false, 'no attract')
+    await page.keyboard.press('Space')
+    if (!await waitMode('play')) r.check('teach leg: Space clocks in', false, 'no play')
+    await page.evaluate(() => {
+        const g = window.__floorbossTest.sim()
+        g.racks.length = 0; g.score = 9000 // the rig wants the whole elbow to itself, built by hand
+        g.auto = false // the crew stays at the pads through the rig build
+        const pads = [[23, 12], [24, 12], [22, 12], [21, 12]]
+        g.robots.forEach((b, i) => { b.x = pads[i % 4][0]; b.y = pads[i % 4][1]; b.task = { kind: 'idle' }; b.carry = null; b.moveT = 0 })
+    })
+    // arm the rack tool with a real chip tap
+    const chip2 = await page.evaluate(() => {
+        const c = window.__floorbossTest.canvas()
+        const b = c.getBoundingClientRect()
+        return { x: b.left + (572 + 37) / 800 * b.width, y: b.top + (6 + 14) / 520 * b.height }
+    })
+    await page.mouse.click(chip2.x, chip2.y)
+    r.check('teach leg arms the rack tool (chip tap)', (await st()).tool === 'rack')
+    const armRack = async () => { if ((await st()).tool !== 'rack') await page.mouse.click(chip2.x, chip2.y) }
+    const tapCell = async (x, y) => {
+        await armRack() // the tool disarms after every build (parity law) — re-arm per purchase
+        await page.evaluate(([x, y]) => { const b = window.__floorbossTest.sim().robots.find((bb) => bb.x === x && bb.y === y); if (b) { b.x = 23; b.y = 12; b.task = { kind: 'idle' }; b.moveT = 0 } }, [x, y])
+        const p = await clientXY(x, y)
+        await page.mouse.click(p.x, p.y)
+        await new Promise((res) => setTimeout(res, 90))
+    }
+    const NEED = [[18, 3], [19, 3], [19, 5], [20, 3], [20, 5], [17, 5], [19, 6], [17, 6]]
+    let built = 0
+    for (const [x, y] of NEED) {
+        await tapCell(x, y)
+        if (await page.evaluate(([x, y]) => window.__floorbossTest.sim().racks.some((r) => r.x === x && r.y === y), [x, y])) built++
+    }
+    r.check('the elbow under construction builds by real taps', built === 8, `${built}/8`)
+    const preCorner = await page.evaluate(() => { const g = window.__floorbossTest.sim(); return { score: g.score, fx: g.fx.length } })
+    await tapCell(17, 4)
+    // ev drains each step — assert on the persistent fx ledger + the board, not the event tail
+    const after = await page.evaluate(() => { const g = window.__floorbossTest.sim(); return { racks: g.racks.some((r) => r.x === 17 && r.y === 4), score: g.score, fxs: g.fx.slice(-4).map((f) => f.msg) } })
+    r.check('real tap facing the tight elbow is refused — rack never lands', !after.racks, JSON.stringify(after))
+    r.check('the refused tap charges nothing (#1917)', after.score === preCorner.score, `${preCorner.score} -> ${after.score}`)
+    r.check('the refusal names NO CORNER STACK on the fx ledger', after.fxs.some((m) => m === 'NO CORNER STACK'), after.fxs.join(' | ') || 'none')
+    r.check('the refusal teaches with a SPUR IT tail (#2627 s2)', after.fxs.some((m) => m === 'SPUR IT — PLUG A MOUTH'), after.fxs.join(' | ') || 'none')
+    // the lesson lights both mouths — dashed green PLUG frames pulse on canvas
+    const lit = { e: 0, s: 0 }
+    const probe = async (cx, cy) => page.evaluate(([cx, cy]) => {
+        const c = window.__floorbossTest.canvas()
+        const x0 = (10 + cx * 26 + 3) * 2, y0 = (44 + cy * 26 + 3) * 2
+        const d = c.getContext('2d').getImageData(x0, y0, (26 - 6) * 2, (26 - 6) * 2).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i + 1] > 150 && d[i + 1] > d[i] + 50 && d[i + 1] > d[i + 2] + 30) n++
+        return n
+    }, [cx, cy])
+    for (let i = 0; i < 14; i++) {
+        if (await probe(21, 4) > 6) lit.e++
+        if (await probe(18, 7) > 6) lit.s++
+        await new Promise((res) => setTimeout(res, 90))
+    }
+    r.check('the east mouth pulses green PLUG at the lesson (#2627 s2)', lit.e >= 3, `hits ${lit.e}/14`)
+    r.check('the south mouth pulses green PLUG at the lesson (#2627 s2)', lit.s >= 3, `hits ${lit.s}/14`)
+    // and taking the teacher's advice by a real tap clears the elbow
+    await tapCell(21, 4)
+    await tapCell(17, 4)
+    const cleared = await page.evaluate(() => { const g = window.__floorbossTest.sim(); return { corner: g.racks.some((r) => r.x === 17 && r.y === 4), mouth: g.racks.some((r) => r.x === 21 && r.y === 4) } })
+    r.check('plugging the taught mouth then facing the corner builds — the advice is good (#2627 s2)', cleared.corner && cleared.mouth, JSON.stringify(cleared))
+}
+
 r.check('zero page errors', errors.length === 0, errors.join(' | '))
 r.exit(browser)
