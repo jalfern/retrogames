@@ -65,6 +65,28 @@ export function decodeCon(bytes) {
 // variant choice per world tile: deterministic, 0..3
 export const variantOf = (hash2, tx, ty, v) => Math.floor(hash2(tx, ty, v) * 4) % 4
 
+// BRICK.CON — Origin's own masonry tileset, "reserved for the stage-2
+// cities" (header note above). The POLISH walls (#2516 ladder) stamp it in
+// classic mode; the filename is the mapping, nothing guessed.
+export function buildBrickStamps(zip, TILE) {
+    const set = zip['BRICK.CON'] ? decodeCon(zip['BRICK.CON']) : null
+    if (!set) return null
+    const out = []
+    for (const px of set) {
+        const c = document.createElement('canvas')
+        c.width = TILE; c.height = TILE
+        const x = c.getContext('2d')
+        x.imageSmoothingEnabled = false
+        const sc = TILE / TILE8
+        for (let p = 0; p < px.length; p++) {
+            x.fillStyle = EGA[px[p]]
+            x.fillRect((p % TILE8) * sc, Math.floor(p / TILE8) * sc, sc, sc)
+        }
+        out.push(c)
+    }
+    return out
+}
+
 // tiles.classic[v] = array of TILE-px canvases (4 stamped variants, or 1 flat fill)
 export function buildClassicStamps(zip, TILE, hash2) {
     const classic = []

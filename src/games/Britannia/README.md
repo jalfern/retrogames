@@ -74,6 +74,12 @@ transcribed into source:
   obeys the wind class (`sailState` in hull.js): full canvas in FRESH/GALE,
   reefed in STEADY, furled on a becalmed sea.
 - Town walls/buildings are still tile terrain; enterable buildings are stage 2.
+  — **CLOSED by #2538** for the WALLS half: six of eight gate-towns stand
+  behind a seeded stone ring with one gate (#2516-ladder POLISH — see "Town
+  walls" below). The enterable half is now data-proven stage-2, not choice:
+  every `*.ULT` region file in the bundle is exactly 1280 B (terrain-only)
+  and no `INSIDE.DAT` ships — the original's interiors/objects are not in
+  the repo (audited 2026-11-17; don't-guess law).
 - Classic mode (`C`) stamps the ORIGINAL terrain tiles: Origin's own
   terrain-named tilesets (`GRASS/MARSH/BRUSH/HILL/FOREST/SHORE.CON`, 192B =
   6×32B records; records 2..5 are four 8×8 chunky-4bpp variants, high nibble
@@ -558,3 +564,35 @@ npm run dev                 # play at /retrogames/britannia
   pressure-style variation is item 2, pinned by the drift law. (The surf roar
   landed in #1829-item-1 below, and storms now endanger the hull — see
   "Storms endanger the hull".)
+
+## Town walls — the gate-towns become places (#2538, POLISH #2516 ladder)
+
+In the original (Ultima IV, Origin 1985) every town is walled with a gate.
+Until now ours were open tinted skirts. `walls.js` (pure + deterministic, the
+village.js family) rings each gate-town at Chebyshev 3 with stone that sits
+only on level town ground — never sea, cliff, hill, forest, marsh, sand, gate,
+sanctum or cottage (so boarding, chapels and hearths are untouched). Exactly
+ONE opening per town, its cardinal side hashed from the gate's coordinates:
+learnable and stable, honouring the RULE of walled towns without faking
+Origin's per-town gate table (not in the bundle).
+
+- **Two laws, both booked in britanniacheck, never strands** — the plaza must
+  reach the wider land THROUGH the gate; **never costs a road** — land
+  connectivity on the radius-6 rim with walls must equal connectivity without
+  them (an isthmus never dies by masonry). Survive neither on any side? The
+  town stays honestly unwalled: on real Britannia **6 towns wall up**, gates
+  II (161,21) and VI' (231,235) are thin isles with <6 level ring tiles.
+- **Feel:** the wall is stone — its own knock (116->78 Hz; chapel 96->60,
+  cottage 82->50), a first-touch refusal naming the gate's side, and
+  "Thou enterest the town by its gate." when you cross the threshold.
+- **Look:** modern tiles get seeded stone courses with lit capstones and the
+  occasional moss patch; classic (`C`) stamps **Origin's own BRICK.CON** —
+  the tileset ega.js held for the stage-2 cities — decoded in
+  `buildBrickStamps` and selected with variant seed 9.
+- Harness +14 gates (booked 6-walled result, determinism 40x, siting/ring/
+  strand/road laws recomputed in the check, foreign-world honesty both ways,
+  purity, wiring pins); mutants `--mutate-wall-flat` and `--mutate-wall-noopen`
+  each die and restore. The known britannidrive walks (spawn gate VI boarding
+  south, gate VI sanctum west, gate III walk-off north) sit on open or unwalled
+  sides — verified against the side table before ship; a dedicated
+  knock-and-enter drive step is the fair follow-up.

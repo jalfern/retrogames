@@ -26,8 +26,9 @@ import { WARP_LEN, warpFlash, warpRing, warpMotes, warpSwapAt } from './warp.js'
 import { TERR, hash2, TILE, SUB, blockShades, builtPalette, cobbleBlock } from './tiles.js'
 import { townScore } from './towns.js'
 import { plotVillage, villageBlockMap, villageTriples } from './village.js'
+import { plotWalls, wallBlockMap, wallTriples, openTriples } from './walls.js'
 import { AVATARS, shrineTitle, plotShrines } from './shrines.js'
-import { buildClassicStamps, variantOf } from './ega.js'
+import { buildClassicStamps, buildBrickStamps, variantOf } from './ega.js'
 import { PHASES, moonPhase, moonName, phaseLit, gateFlavor, routeDest } from './moons.js'
 import { crest, crestLane, foam, landSides, foamPatches, splatIntensity, dimples, splashStrikes, SPLAT_GAP, seaRough, crestGain, foamGain, shipCd, surfDue } from './swell.js'
 import { HULL_MAX, wear, repair, nearestCoast, GROAN_GAP, sailState } from './hull.js'
@@ -59,9 +60,9 @@ function buildTileCaches(zip) {
     // shows a repeating tile pattern (#1146).
     if (!zip) {
         const SHADE = ['#00007c', '#00a800', '#005400', '#6c6c6c', '#949494', '#00a800', '#545400', '#a8a800', '#d4c878']
-        return { classic: SHADE.map(c => { const cv = document.createElement('canvas'); cv.width = TILE; cv.height = TILE; const x = cv.getContext('2d'); x.fillStyle = c; x.fillRect(0, 0, TILE, TILE); return [cv] }) }
+        return { classic: SHADE.map(c => { const cv = document.createElement('canvas'); cv.width = TILE; cv.height = TILE; const x = cv.getContext('2d'); x.fillStyle = c; x.fillRect(0, 0, TILE, TILE); return [cv] }), brick: null }
     }
-    return { classic: buildClassicStamps(zip, TILE, hash2) }
+    return { classic: buildClassicStamps(zip, TILE, hash2), brick: buildBrickStamps(zip, TILE) }
 }
 
 const BritanniaGame = () => {
@@ -93,6 +94,9 @@ const BritanniaGame = () => {
         let shrines = [], shrineBlock = new Map()
         // #2494: the seeded village — cottages that stand (block) on the plaza
         let village = [], villageBlock = new Map()
+        // walls (POLISH #2516-ladder): stone rings with one gate per town —
+        // wallBlock bars the foot, openBy names the one tile that lets it in
+        let walls = [], wallOpens = [], wallBlock = new Map(), openBy = new Map()
         let S = null
         const fresh = (seed = 0) => ({
             seed: seed >>> 0, tick: 0, x: gates[seed % Math.max(1, gates.length)]?.x ?? 93, y: gates[seed % Math.max(1, gates.length)]?.y ?? 67,
@@ -102,6 +106,8 @@ const BritanniaGame = () => {
             amb: AMB.NONE, warp: null, toast: 0, toastMsg: '',
             bumped: new Set(), // shrines whose stone the pilgrim has touched
             knocked: new Set(), // #2494: towns whose barred cottage door he has tried
+            walled: new Set(), // towns whose stone the pilgrim has felt (wall knock)
+            entered: new Set(), // towns whose gate he has walked through
             wind: windNow(0, seed >>> 0), // #1853: the day's first pressure reading
             splat: -99, // #1829: last tick the sea spoke a drop
             hull: HULL_MAX, worn: 0, groan: -99, // #1829 hazard: strain on the planks (integer + fraction) + groan throttle
@@ -128,6 +134,12 @@ const BritanniaGame = () => {
             // ring walkable (village.js), so the town never traps its pilgrim.
             village = plotVillage(gates, terrainAt, shrines)
             villageBlock = villageBlockMap(village)
+            // POLISH (#2516 ladder): the towns get their walls — a stone ring
+            // with one seeded gate per town, never stranding the pilgrim and
+            // never costing a road (walls.js laws; britanniacheck pins it).
+            { const wp = plotWalls(gates, terrainAt); walls = wp.walls; wallOpens = wp.opens }
+            wallBlock = wallBlockMap(walls)
+            openBy = new Map(wallOpens.map((o) => [o.x + ',' + o.y, o.gi]))
             S = fresh(0)
             S.camX = S.x * TILE; S.camY = S.y * TILE
             setMode('attract')
@@ -370,6 +382,19 @@ const BritanniaGame = () => {
                     S.knocked.add(gi)
                     S.toast = 120; S.toastMsg = 'A cottage door, barred with iron — folk enter within, not here.'
                 }
+            } else if (wallBlock.has(nx + ',' + ny)) {
+                // POLISH (#2516 ladder): the town wall is stone — its own knock
+                // (a higher, shorter rap than the chapel's thud and the cottage
+                // timber), and the first barred mile teaches where the gate is.
+                const gi = wallBlock.get(nx + ',' + ny)
+                S.cd = 22
+                audioController.playSweep(116, 78, 0.10, 'square', 0.14)
+                if (!S.walled.has(gi)) {
+                    S.walled.add(gi)
+                    const o = wallOpens.find((x) => x.gi === gi)
+                    const way = o ? { s: 'south', n: 'north', e: 'east', w: 'west' }[o.dir] : 'the gate'
+                    S.toast = 140; S.toastMsg = `The town wall barrest the way — its gate standeth ${way}.`
+                }
             } else if (isSea(v)) {
                 // #2345 purse: no gold, no passage. The captain is paid before
                 // the keel touches water — a light purse is refused with the
@@ -408,6 +433,13 @@ const BritanniaGame = () => {
                 }
             } else {
                 S.x = nx; S.y = ny; S.cd = WALK_CD
+                const oi = openBy.get(nx + ',' + ny)
+                if (oi !== undefined && !S.entered.has(oi)) {
+                    // POLISH: crossing the threshold reads — the gap in the
+                    // wall is a GATE, and the first walk through says so.
+                    S.entered.add(oi)
+                    S.toast = 110; S.toastMsg = 'Thou enterest the town by its gate.'
+                }
                 S.face = faceFor(dx, dy); S.anim++
                 if ((S.tick % 2) === 0) audioController.playTone(90 + (S.tick % 3) * 14, 0.03, 'triangle', 0.06)
             }
@@ -434,7 +466,11 @@ const BritanniaGame = () => {
         const drawTile = (tx, ty, sx, sy, t) => {
             const v = world.get(tx, ty)
             const vv = v < 9 ? v : 8
-            if (classicOn) { const cs = tiles.classic[vv]; ctx.drawImage(cs[variantOf(hash2, tx, ty, vv) % cs.length], sx, sy); return }
+            if (classicOn) {
+                const walled = wallBlock.has(tx + ',' + ty)
+                const cs = walled && tiles.brick ? tiles.brick : tiles.classic[vv]
+                ctx.drawImage(cs[variantOf(hash2, tx, ty, walled ? 9 : vv) % cs.length], sx, sy); return
+            }
             // modern: shade each 16px block from the world-continuous field so
             // the land is soft, continuous terrain — no static, no tile repeat
             const ts = townScore(tx, ty, gates, terrainAt)
@@ -447,6 +483,7 @@ const BritanniaGame = () => {
                 ctx.fillStyle = s === 2 ? hi : s === 0 ? lo : mid
                 ctx.fillRect(sx + bx * bs, sy + by * bs, bs, bs)
             }
+            if (wallBlock.has(tx + ',' + ty)) { drawWall(sx, sy, tx, ty); return }
             if (villageBlock.has(tx + ',' + ty)) drawCottage(sx, sy, tx, ty, t)
             if (v === 5) {
                 // forest canopy, keyed to the world tile so it never repeats
@@ -540,6 +577,24 @@ const BritanniaGame = () => {
             const ph = (t / 3 + hash2(tx, ty, 5) * 40) % 20
             ctx.fillStyle = `rgba(214,214,220,${(0.34 * (1 - ph / 20)).toFixed(3)})`
             ctx.beginPath(); ctx.arc(cx + 4 + Math.sin(ph / 3 + tx) * 2, sy + 2 - ph, 2 + ph * 0.14, 0, 7); ctx.fill()
+        }
+
+        // the town wall (POLISH #2516 ladder): a full-tile stone course — cold
+        // grey blocks in staggered rows with lit capstones on top and a seam
+        // shadow at the foot; seeded per tile so no two stretches match, and
+        // clearly masonry beside the chapel's warmer ashlar and the cottage timber.
+        const drawWall = (sx, sy, tx, ty) => {
+            ctx.fillStyle = '#8f8a7e'; ctx.fillRect(sx, sy + 4, TILE, 26)
+            ctx.fillStyle = '#6f6a5f'
+            for (let r = 0; r < 3; r++) ctx.fillRect(sx, sy + 12 + r * 6, TILE, 1)
+            const off = hash2(tx, ty, 3) > 0.5 ? 8 : 0
+            for (let r = 0; r < 3; r++) {
+                ctx.fillRect(sx + ((off + (r % 2) * 8) % 16), sy + 6 + r * 6, 1, 6)
+                ctx.fillRect(sx + ((off + 8 + (r % 2) * 8) % 24), sy + 6 + r * 6, 1, 6)
+            }
+            ctx.fillStyle = '#b3ada0'; ctx.fillRect(sx, sy + 4, TILE, 2)
+            ctx.fillStyle = '#585348'; ctx.fillRect(sx, sy + 29, TILE, 1)
+            if (hash2(tx, ty, 9) > 0.72) { ctx.fillStyle = 'rgba(70,96,52,0.5)'; ctx.fillRect(sx + 3 + Math.floor(hash2(tx, ty, 4) * 22), sy + 18 + Math.floor(hash2(tx, ty, 6) * 8), 3, 2) }
         }
 
         // the chapel (#1876): a virtue-shrine over the sanctum tile — ashlar
@@ -1266,6 +1321,12 @@ const BritanniaGame = () => {
                     // #2494: the standing village + how many doors the pilgrim has knocked
                     village: villageTriples(village),
                     knocked: S.knocked.size,
+                    // POLISH (#2516 ladder): the standing walls + each town's
+                    // gate, for panel == node plot parity in britanniacheck
+                    walls: wallTriples(walls),
+                    opens: openTriples(wallOpens),
+                    wallKnocks: S.walled.size,
+                    gatesEntered: S.entered.size,
                     warping: !!S.warp, warpFlash: S.warp ? warpFlash(S.tick - S.warp.t0) : 0, warpDest: S.warp ? S.warp.dest : -1,
                     moon: moonPhase(S.tick),
                     // #1862: where tonight's moon routeth from the open gate
