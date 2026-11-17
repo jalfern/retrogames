@@ -808,11 +808,10 @@ const PILOTS = [
             await key(page, 'KeyY')
             rep.check('magic-carpet: Y seats the autopilot', await watching())
             rep.check('magic-carpet: handoff blip at seat', (await sfx()).at(-1) === 'start')
-            const a = await probe()
-            await page.waitForTimeout(8000)
-            const b = await probe()
             const dYaw = (x, y) => Math.abs(((y - x + Math.PI * 3) % (Math.PI * 2)) - Math.PI)
             const adv = (x, y) => dYaw(x.yaw, y.yaw) > 0.12 || y.casts > x.casts || y.kills > x.kills || y.bank > x.bank || y.level > x.level
+            const a = await probe()
+            const b = await pollAdvance(page, probe, adv, a, 8000) // #601: world seconds, not real ms
             rep.check('magic-carpet: the pilot flies the run untouched', adv(a, b),
                 `yaw ${(a.yaw * 57.3).toFixed(0)}° -> ${(b.yaw * 57.3).toFixed(0)}°, casts ${a.casts} -> ${b.casts}, vault ${Math.floor(a.bank)} -> ${Math.floor(b.bank)}, kills ${b.kills}, world ${b.level + 1}`)
             rep.check('magic-carpet: still watching mid-flight', await watching())
@@ -823,8 +822,7 @@ const PILOTS = [
             await key(page, 'KeyY')                       // re-seat: fly from HERE
             rep.check('magic-carpet: Y re-seats the pilot mid-run', await watching())
             const c = await probe()
-            await page.waitForTimeout(5000)
-            const d = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 5000) // #601: world seconds, not real ms
             rep.check('magic-carpet: resumes from where the player left it', adv(c, d),
                 `yaw ${(c.yaw * 57.3).toFixed(0)}° -> ${(d.yaw * 57.3).toFixed(0)}°, casts ${c.casts} -> ${d.casts}, vault ${Math.floor(c.bank)} -> ${Math.floor(d.bank)}`)
             await key(page, 'KeyY')                       // hand the controls back
