@@ -398,15 +398,26 @@ while the router commands east into the barrel centre, a 1.2px wobble forever;
 the router's BFS now rings flame-barrel cells, but only on cleared-room,
 non-boss, non-kill routes — an unscoped ring phase-shifted seed 21's mid-fight
 routes into a boss-room loss, the cleared gate keeps seed 21 byte-identical
-AND un-wedges 53: 82/13/0/2. Two roamers stay tracked on the issue — 60
-(multi-room freezes r1+r4) and 66 (arm→short-path→drop cycle at point-blank).
-smashcheck's `roll seeds` gate pins the 25 un-wedged seeds against re-freeze.
+AND un-wedges 53: 82/13/0/2. The last two roamers then fell to their own laws
+(studio, 2026-11-17): seed 60 froze dry against a shut gun crate — the refuel
+walk stops at its 4px drop radius and the branch only ever aimed at a VISIBLE
+enemy, so behind chrome the trigger was never pulled; the dry walk now shoots
+its crate target. Seed 66 outran its dodge: a round falling south leaves the
+north escape lane safe forever, so one slip off the turret's line became a 90px
+retreat every reload while the router held the stand behind it — a commit that
+carries the body away from the router's waypoint now releases after a 10-tick
+hysteresis of walkable objective lane (single-tick flickers must not release —
+#2491's fluency lesson): 85/12/0/0, roam class closed, {60,66} graduated into
+smashcheck's `roll seeds` gate, which now pins 27 seeds against re-freeze.
+The trade, honestly: seed 43 and 76 flipped lost→won on the new lines; seed 13
+flipped won→lost (the paid-release re-laid its seed-1 duel approach and it
+attritions in room 8, t≈8.7k) — its line is tracked, not certified.
 
 Duel re-measure (nightly 43996221673, same family): the sweep's proof of the
 lane-sound duel was route luck too — seed 4's corner walk died with the router
 fix and the deaf-duel mutant survived; the nightly itself red on two stale
 mutant anchors from the #2521 centre-anchor rewrite. The laws are alive:
-smashcheck now pins replay ticks (seed 1 tick 3817 heavy#853, seed 2 tick
+smashcheck now pins replay ticks (seed 1 tick 3420 heavy#853, seed 2 tick
 1775 heavy#305) where routes bring the seat onto a walled row, asserting the
 duel's answer against the live board shape, and all mutant anchors match the
 current renderer text.

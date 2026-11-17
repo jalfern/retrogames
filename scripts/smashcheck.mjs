@@ -1156,7 +1156,7 @@ console.log('pilot')
     // 53 joined with the cleared-room barrel ring (the exit walk and the #2032
     // flame-barrel avoid law fought over the barrel's own cell forever).
     {
-        const FIXED = [17, 18, 19, 20, 23, 28, 30, 32, 34, 41, 43, 44, 47, 48, 53, 54, 55, 57, 62, 65, 73, 84, 86, 92, 95]
+        const FIXED = [17, 18, 19, 20, 23, 28, 30, 32, 34, 41, 43, 44, 47, 48, 53, 54, 55, 57, 60, 62, 65, 66, 73, 84, 86, 92, 95]
         const wedged = []
         for (const seed of FIXED) {
             const gs = S.makeGame(seed)
@@ -1171,7 +1171,7 @@ console.log('pilot')
             }
             if (!gs.end && frozen > 12000) wedged.push(seed)
         }
-        ok(!wedged.length, 'roll seeds #2530: the un-wedged autopilot seeds never stall (25 seeds, 45k cap)', `wedged ${wedged.join(',')}`)
+        ok(!wedged.length, 'roll seeds #2530: the un-wedged autopilot seeds never stall (27 seeds, 45k cap)', `wedged ${wedged.join(',')}`)
     }
     // #2491 lane-sound duel — replay pin. The sweep used to catch a deaf-duel
     // mutant by luck of route: seed 4 walked onto the (12,10) chrome corner and
@@ -1181,10 +1181,13 @@ console.log('pilot')
     // to a walled row — so pin two live ticks where the branch is load-bearing
     // (measured at tip 24869f7: seed 1 heavy#853, seed 2 heavy#305). Shape is
     // re-derived from the live state, never from text. If routes re-lay again,
-    // move these ticks with the matinee pins, README and all.
+    // move these ticks with the matinee pins, README and all. #2530 roam fix
+    // (dry-crate shoot + paid commit release) re-laid seed 1's approach ~400
+    // ticks early: the duel now drives ticks 3401-3486, pin at 3420 (measured
+    // studio 2026-11-17; seed 2's line is byte-identical).
     {
         const { q8: q8d, los: losd } = await import('../src/games/SmashTV/sim.js')
-        for (const [seed, T, tid] of [[1, 3817, 853], [2, 1775, 305]]) {
+        for (const [seed, T, tid] of [[1, 3420, 853], [2, 1775, 305]]) {
             const gs = S.makeGame(seed)
             while (!gs.end && gs.tick < T) { S.step(gs, S.decide(gs)); gs.events.length = 0 }
             const p = gs.player
