@@ -1048,6 +1048,7 @@ const ExcitebikeGame = () => {
                     sel: selRef.current, tracks: TRACK_COUNT, // #2563 splash cursor + roster size
                     customs: customsRef.current, rows: TRACK_COUNT + customsRef.current + 1, // #2576 saved designs + EDIT row
                     customLaps: [...Array(customsRef.current)].map((_, k) => lapsOf((track(TRACK_COUNT + k) || {}).laps)), // #2625 each saved design's race length, in roster order
+                    customPace: [...Array(customsRef.current)].map((_, k) => (track(TRACK_COUNT + k) || {}).pace ?? null), // #2642 each saved design's pack grade, in roster order
                     rev: revLog.slice(-4), // #2573 item 4 — gear-bound seat-rev receipts
                     edit: screenRef.current === 'edit' ? {
                         cursor: draft.cursor, tool: TOOLS[draft.tool], stamps: draft.stamps.map((s) => [s.kind, s.x]),
