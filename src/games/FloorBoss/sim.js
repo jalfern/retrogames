@@ -319,7 +319,7 @@ function callTruck(gs, via, seat = 0) {
         debit(gs, DISPATCH_FEE) // the express tax is the floor's bill — #2555: the tapping manager is named in the event
         gs.fees += DISPATCH_FEE
     }
-    gs.ev.push({ type: 'truckin', tap: via === 'tap', fee: via === 'tap' ? DISPATCH_FEE : 0 })
+    gs.ev.push({ type: 'truckin', tap: via === 'tap', fee: via === 'tap' ? DISPATCH_FEE : 0, s: seat }) // #2555: the tap that paid the tax is named
 }
 
 function sendTruck(gs, tap, seat = 0) {
@@ -345,7 +345,7 @@ function sendTruck(gs, tap, seat = 0) {
     // aboard — an empty dribble still drives home LOCAL-cadenced
     tr.away = tr.far >= 0 ? TRIP_TICKS[tr.far] : 0
     tr.mode = 'leave'
-    gs.ev.push({ type: 'truckout', tap, carry: tr.carry, far: tr.far })
+    gs.ev.push({ type: 'truckout', tap, carry: tr.carry, far: tr.far, s: seat }) // #2555: the manager who sent it
 }
 
 function cellClick(gs, x, y, seat = 0) {
