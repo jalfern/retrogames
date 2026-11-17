@@ -204,3 +204,26 @@ export const threatMarkPhase = (t) => Math.max(0, 1 - t / THREAT_MARK_TICKS)
 export const entryRingPhase = (age) => (age < ADD_TELEGRAPH ? 1 - age / ADD_TELEGRAPH : 0)
 export const entryRingR = (age) => 4 + 11 * Math.min(Math.max(age, 0), ADD_TELEGRAPH) / ADD_TELEGRAPH
 
+// ---------------------------------------------------------------------------
+// #2521 — the entry pull-back. The cabinet framed the show through its 16:9
+// lens; our boards run 1.5× the screen, and the old framing never let the
+// player see more of a room than a palm's width at a time. So the opening
+// shot of every room hangs wide — CW/ENTRY_ZOOM = 320 of the 384 px board
+// (83% visible against the old 67%) — holds long enough to read the opening
+// volley the #2507 rings announce, then eases back to play scale. The
+// smoothstep's steepest edge flow, CW·Δscale = 0.96 px/frame, stays inside
+// the #1978 pan budget: the reveal never moves the picture harder than the
+// camera it rides, and camPan still caps every translational step at
+// CAM_PAN px. Presentation only — the sim, the pan law and every hash are
+// untouched; the host law survives because a zoomed window is always a
+// superset of the nominal one (smashcheck pins the superset law).
+export const ENTRY_ZOOM = 0.8 // widest frame: 320 px of the 384 px board
+export const ZOOM_HOLD = 10 // ticks the wide frame holds before the push-in
+export const ZOOM_SETTLE = 90 // by this tick after entry the room is at play scale
+export function entryScale(t) {
+    if (t <= ZOOM_HOLD) return ENTRY_ZOOM
+    if (t >= ZOOM_SETTLE) return 1
+    const u = (t - ZOOM_HOLD) / (ZOOM_SETTLE - ZOOM_HOLD)
+    return ENTRY_ZOOM + (1 - ENTRY_ZOOM) * u * u * (3 - 2 * u) // smoothstep: no kinks at either end
+}
+
