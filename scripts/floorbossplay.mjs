@@ -511,5 +511,81 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     r.check('plugging the taught mouth then facing the corner builds — the advice is good (#2627 s2)', cleared.corner && cleared.mouth, JSON.stringify(cleared))
 }
 
+// ---- swing paint (#2627 s3): live elbows carry faint amber floor-paint — drive it with real taps ----
+{
+    await page.goto(URL)
+    await page.waitForFunction(() => !!window.__floorbossTest, null, { timeout: 15000 })
+    if (!await waitMode('attract', 5000)) r.check('swing leg: fresh page reaches attract', false, 'no attract')
+    await page.keyboard.press('Space')
+    if (!await waitMode('play')) r.check('swing leg: Space clocks in', false, 'no play')
+    await page.evaluate(() => {
+        const g = window.__floorbossTest.sim()
+        g.racks.length = 0; g.score = 9000
+        g.auto = false
+        const pads = [[23, 12], [24, 12], [22, 12], [21, 12]]
+        g.robots.forEach((b, i) => { b.x = pads[i % 4][0]; b.y = pads[i % 4][1]; b.task = { kind: 'idle' }; b.carry = null; b.moveT = 0 })
+    })
+    const chipS = await page.evaluate(() => {
+        const c = window.__floorbossTest.canvas()
+        const b = c.getBoundingClientRect()
+        return { x: b.left + (572 + 37) / 800 * b.width, y: b.top + (6 + 14) / 520 * b.height }
+    })
+    const tapCellS = async (x, y) => {
+        if ((await st()).tool !== 'rack') await page.mouse.click(chipS.x, chipS.y) // re-arm after every build
+        await page.evaluate(([x, y]) => { const b = window.__floorbossTest.sim().robots.find((bb) => bb.x === x && bb.y === y); if (b) { b.x = 23; b.y = 12; b.task = { kind: 'idle' }; b.moveT = 0 } }, [x, y])
+        const p = await clientXY(x, y)
+        await page.mouse.click(p.x, p.y)
+        await new Promise((res) => setTimeout(res, 90))
+    }
+    const LIVE = [[18, 3], [19, 3], [19, 5], [20, 3], [20, 5], [17, 5], [17, 6]] // the bay-notched rig — (19,6) stays open
+    let builtS = 0
+    for (const [x, y] of LIVE) {
+        await tapCellS(x, y)
+        if (await page.evaluate(([x, y]) => window.__floorbossTest.sim().racks.some((r) => r.x === x && r.y === y), [x, y])) builtS++
+    }
+    await tapCellS(17, 4) // faces the elbow — legal, lands (the bay keeps the escape)
+    builtS += await page.evaluate(() => window.__floorbossTest.sim().racks.some((r) => r.x === 17 && r.y === 4)) ? 1 : 0
+    r.check('swing leg builds a LIVE elbow by real taps (8/8 land)', builtS === 8, `${builtS}/8`)
+    const sw = await page.evaluate(() => window.__floorbossTest.swing())
+    const swk = sw.map((m) => `${m.x},${m.y}`).sort().join(' ')
+    r.check('the DEV eye lists the live elbows the taps created (#2627 s3)', swk === '17,3 18,4', swk || 'none')
+    // warm-pixel probe: amber floor-paint shifts R over B; measure the DELTA
+    // between the elbow cell and a bare reference cell, over frames, cursor parked
+    // far away so the reach-diamond cannot bleed into either probe.
+    const farP = await clientXY(4, 10) // park the cursor far from both probe cells — the reach-diamond must not bleed into either
+    await page.mouse.move(farP.x, farP.y)
+    await new Promise((res) => setTimeout(res, 120))
+    const warm = async (cx, cy) => page.evaluate(([cx, cy]) => {
+        const c = window.__floorbossTest.canvas()
+        const x0 = (10 + cx * 26 + 4) * 2, y0 = (44 + cy * 26 + 4) * 2
+        const d = c.getContext('2d').getImageData(x0, y0, (26 - 8) * 2, (26 - 8) * 2).data
+        let s = 0
+        for (let i = 0; i < d.length; i += 4) s += d[i] - d[i + 2]
+        return s / (d.length / 4)
+    }, [cx, cy])
+    let hits = 0
+    for (let i = 0; i < 8; i++) {
+        const a = await warm(18, 4)
+        const b = await warm(10, 10)
+        if (a - b >= 4) hits++
+        await new Promise((res) => setTimeout(res, 120))
+    }
+    r.check('the elbow cell paints warmer than bare floor — keep-clear box visible on canvas (#2627 s3)', hits >= 5, `warm-delta hits ${hits}/8`)
+    // paint follows grammar: close the south arm and the corner dies — the paint
+    // must follow the geometry, not linger as decoration.
+    await tapCellS(18, 5) // the south arm's first cell becomes a rack — B keeps one arm: not a corner
+    await new Promise((res) => setTimeout(res, 150))
+    const sw2 = await page.evaluate(() => window.__floorbossTest.swing())
+    r.check('racking the arm kills the elbow — the sweep follows the grammar (#2627 s3)', !sw2.some((m) => m.x === 18 && m.y === 4), sw2.map((m) => `${m.x},${m.y}`).join(' ') || 'none')
+    let gone = 0
+    for (let i = 0; i < 6; i++) {
+        const a = await warm(18, 4)
+        const b = await warm(10, 10)
+        if (Math.abs(a - b) < 4) gone++
+        await new Promise((res) => setTimeout(res, 120))
+    }
+    r.check('dead elbow cools — no stale paint left behind (#2627 s3)', gone >= 4, `cool hits ${gone}/6`)
+}
+
 r.check('zero page errors', errors.length === 0, errors.join(' | '))
 r.exit(browser)

@@ -27,7 +27,7 @@ import {
     makeGame, step, state, stateHash, createAutopilot, clickCell, setTool,
     toggleAuto, clickOrder, hireRobot, nextShift, rungPrice, rushNow,
     COLS, ROWS, SHIFT, STRIKES, RACK_COST, ROBOT_COST, RACK_CAP, STOW_PAY,
-    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS, cornerEscapes,
+    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS, cornerEscapes, swingMarkers,
 } from './sim.js'
 
 const SIM_MS = 1000 / 60
@@ -537,6 +537,28 @@ const FloorBossGame = () => {
             }
         }
 
+        const paintSwing = () => {
+            // #2627 s3 SWING PAINT — faint amber keep-clear paint on live
+            // elbows (see sim.js): the cell where a cart parks mid-pick while
+            // traffic swings past. The yard-paint grammar made glanceable —
+            // box + quarter turn-arc arm-centre to arm-centre through B, the
+            // cart's path. Amber = the law colour (refusal banners, reach
+            // diamond); hard elbows (both arms see through traffic) paint
+            // stronger, the double-sightline case doctrine paints hardest.
+            // Painter-only, deterministic — pure geometry of the board, no
+            // rng, no tick animation (a painted floor does not pulse).
+            for (const m of swingMarkers(gs)) {
+                const x = PX(m.x), y = PY(m.y), cx = x + TILE / 2, cy = y + TILE / 2
+                ctx.fillStyle = `rgba(255,210,63,${m.h ? 0.085 : 0.05})`
+                ctx.fillRect(x + 2, y + 2, TILE - 4, TILE - 4)
+                const [a1, a2] = m.arms
+                ctx.strokeStyle = `rgba(255,210,63,${m.h ? 0.3 : 0.16})`; ctx.lineWidth = 2
+                ctx.beginPath()
+                ctx.moveTo(cx + a1[0] * TILE, cy + a1[1] * TILE)
+                ctx.quadraticCurveTo(cx, cy, cx + a2[0] * TILE, cy + a2[1] * TILE)
+                ctx.stroke()
+            }
+        }
         const paintTeach = (tick) => {
             // #2627 s2 TEACH THE ELBOW — a corner refusal lights the honest exits:
             // dashed green frames on the mouths that would spur the elbow (plugging
@@ -1148,6 +1170,7 @@ const FloorBossGame = () => {
             paintConveyor(tick)
             paintOutbound(tick)
             paintRacks()
+            paintSwing()
             paintTeach(tick)
             paintArm(tick)
             paintRobots(tick)
@@ -1373,6 +1396,8 @@ const FloorBossGame = () => {
                 arm: () => ({ held: gs.arm.held, swing: gs.arm.swing, swingT0: gs.arm.swingT0, target: gs.arm.target ? { ...gs.arm.target } : null, heldT: gs.arm.heldT, reach: ARM_REACH }),
                 // #1877 eyes on the servo presentation ghosts (renderer-only state)
                 servoFx: () => ({ arcs: arcItems.filter((a) => a.servo).length, diamond: diamondA, dmode: gs.arm.swing > 0 ? 'swing' : gs.tool === 'rack' ? 'rack' : gs.arm.held ? 'pulse' : 'off', tool: gs.tool, sway: gripSway, shud: gripShud }),
+                // #2627 s3 eye on the swing paint — live elbows the painter marks (renderer-only query, sim untouched)
+                swing: () => swingMarkers(gs).map((m) => ({ x: m.x, y: m.y, h: m.h })),
                 // #2561 eyes on the twin-till ceremony (renderer-only state): when
                 // each seat's chip last armed its growth blink, and the live spend
                 // flash (label + color) so the browser gate can name model buys.

@@ -371,6 +371,53 @@ export function cornerEscapes(gs, x, y) {
     }
     return out
 }
+// #2627 stage 3 SWING PAINT — the grammar made glanceable. Stages 1–2 made
+// the elbow law bite and teach on refusal; this answers "where does the
+// grammar live?" at a glance: a paint-query for LIVE elbows — cells where a
+// cart parks IN the aisle mid-pick while traffic swings past. A live elbow is
+// an open floor cell B with exactly two open neighbours, perpendicular arms,
+// faced by an EXISTING rack R (R = B − arm, so B is R's service cell — the
+// atTarget Manhattan-1 work-stop): every pick of R halts a cart on the turn.
+// The exactly-two + perpendicular tests are the corridor skip in disguise: a
+// rack facing a straight aisle leaves ±p open-neighbours — opposite, never a
+// swing (#2614's lane country) — and a T-junction leaves three. `hard` =
+// both arms see through traffic: the stage-1 tight-run per arm (tight for
+// ARM_MIN cells, open mouth beyond) — the double-sightline case real yards
+// paint strongest, and the one the click-point law can miss when arms
+// tighten AFTER the facing rack landed (each flank click judged on its own).
+// Pure map+racks geometry, fixed order, no rng, no movers, zero footprint
+// (#1917) — the same scan family as cornerRecords; the painter draws it.
+export function swingMarkers(gs) {
+    const open = (x, y) => inGrid(x, y) && map[y][x] === CELL.FLOOR
+        && !gs.racks.some((r) => r.x === x && r.y === y)
+    const out = []
+    const at = new Map() // `x,y` -> marker; two racks can face one elbow — merge, hard wins
+    for (const R of gs.racks) {
+        for (const [dx, dy] of NB) {
+            const bx = R.x + dx, by = R.y + dy
+            if (!open(bx, by)) continue
+            const arms = NB.filter(([ax, ay]) => open(bx + ax, by + ay))
+            if (arms.length !== 2) continue
+            const [a1, a2] = arms
+            if (a1[0] * a2[0] + a1[1] * a2[1] !== 0) continue // perpendicular only — a straight face doesn't swing
+            // stage-1's run per arm: tight for ARM_MIN with an open mouth past it.
+            const sees = (ax, ay, fx, fy) => {
+                let k = 0
+                while (open(bx + (k + 1) * ax, by + (k + 1) * ay)
+                    && !open(bx + (k + 1) * ax + fx, by + (k + 1) * ay + fy)
+                    && !open(bx + (k + 1) * ax - fx, by + (k + 1) * ay - fy)) k++
+                return k >= ARM_MIN && open(bx + (k + 1) * ax, by + (k + 1) * ay)
+            }
+            const hard = sees(dx, dy, dy, dx) && sees(dy, dx, dx, dy)
+            const key = `${bx},${by}`
+            const prev = at.get(key)
+            if (prev) prev.h = prev.h || (hard ? 1 : 0)
+            else at.set(key, { x: bx, y: by, h: hard ? 1 : 0, arms: [a1, a2] })
+        }
+    }
+    for (const m of at.values()) out.push(m)
+    return out
+}
 function strandsFloor(gs, x, y) {
     if (map[y][x] !== CELL.FLOOR || gs.racks.some((r) => r.x === x && r.y === y)) return false // other laws refuse first
     const before = serviceNet(gs, null)
