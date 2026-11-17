@@ -392,5 +392,32 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     r.check('fresh shift starts clean', fresh.tick < 120 && fresh.score < 130 && fresh.shift === 1 && fresh.quota === 1000, `${fresh.tick} ticks, score ${fresh.score}, shift ${fresh.shift}`)
 }
 
+// ---- duel seats (#2555): D enters, seat M lives, the verdict lands ----
+{
+    await page.goto(URL) // a clean console for the duel drive — no dependence on the previous night's luck
+    for (let i = 0; i < 50 && !(await page.evaluate(() => !!window.__floorbossTest)); i++) await new Promise((res) => setTimeout(res, 200))
+    await new Promise((res) => setTimeout(res, 600))
+    await page.keyboard.press('KeyD')
+    const d0 = await waitMode('play', 4000) ? await page.evaluate(() => { const g = window.__floorbossTest.sim(); return { duel: !!g.duel, m: g.m ? { x: g.m.cursor.x, y: g.m.cursor.y } : null } }) : null
+    r.check('D at the attract seats the model manager — duel mode live (#2555)', !!d0 && d0.duel === true && !!d0.m, JSON.stringify(d0))
+    // Seat M's liveness, driven through the model's own manager (autopilot-as-
+    // seat-M), not a human pad: the game's autopilot must steer the cyan cursor
+    // on its own. Software Chrome is slow in real time, so the loop advances
+    // through the same pad interface the live rAF chain uses.
+    let mMoved = false
+    for (let i = 0; i < 500 && !mMoved && d0 && d0.m; i++) {
+        await page.evaluate(() => window.__floorbossTest.step(20, {}, true))
+        const c = await page.evaluate(() => { const m = window.__floorbossTest.sim().m.cursor; return { x: m.x, y: m.y } })
+        if (c.x !== d0.m.x || c.y !== d0.m.y) mMoved = true
+    }
+    r.check('seat M steers its own cursor through its own manager (no human pad touches it)', mMoved)
+    await page.evaluate(() => { const g = window.__floorbossTest; for (let i = 0; i < 9200 && !g.sim().end; i++) g.step(1, {}, true) })
+    const dEnd = await page.evaluate(() => { const g = window.__floorbossTest.sim(); return { end: g.end, winner: g.duelWinner, tills: g.credits ? g.credits.slice(0, 2) : null, score: g.score, cons: !!g.duel && g.score === 100 + g.credits[0] + g.credits[1] + g.credits[2] - g.spent } })
+    r.check('duel shift runs to the whistle through the loop', !!dEnd.end, `${dEnd.end} score ${dEnd.score}`)
+    r.check('conservation holds in the browser: score = 100 + Σcredits − spent (#2555)', dEnd.cons === true, JSON.stringify(dEnd))
+    r.check('the verdict names the model over an idle human seat (#2555)', dEnd.winner === 1 && dEnd.tills[1] > dEnd.tills[0], `winner ${dEnd.winner}, tills ${dEnd.tills.join(' vs ')}`)
+    await waitMode('over', 4000) // the report screen takes its turn — the verdict paints there
+}
+
 r.check('zero page errors', errors.length === 0, errors.join(' | '))
 r.exit(browser)

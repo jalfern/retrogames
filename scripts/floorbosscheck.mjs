@@ -37,15 +37,16 @@
 //   node scripts/floorbosscheck.mjs --mutate-bank     # the career score resets each night, demand RED (#2346)
 //   node scripts/floorbosscheck.mjs --mutate-rush     # the measured-pinned rush clock shifts without a re-measure, demand RED (#2352)
 //   node scripts/floorbosscheck.mjs --mutate-price     # the clock-in card claims a free rung, demand RED (#2352)
+//   node scripts/floorbosscheck.mjs --mutate-duel      # bot stows pay the house, not the rack owner — credit law dies, demand RED (#2555)
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { plant, pull } from './lib/mutateguard.mjs'
 import {
-    makeGame, step, state, stateHash, createAutopilot, clickCell, RACK_SPOTS,
+    makeGame, step, state, stateHash, createAutopilot, clickCell, setTool, hireRobot, RACK_SPOTS,
     SHIFT, QUOTA, STRIKES, RACK_CAP, OVERFLOW_FINE, EXPIRE_FINE, BREAK_FINE, BASE_PAY,
-    STOW_PAY, RACK_COST, ROBOT_COST, ARM_PATIENCE, ARM_CELL, PAD_CAP, PAD_AGE,
+    STOW_PAY, RACK_COST, ROBOT_COST, ARM_PATIENCE, ARM_CELL, PAD_CAP, PAD_AGE, OUT_CELLS,
     FREIGHT_PER_BOX, FULL_TRAILER, DISPATCH_FEE,
     shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice,
 } from '../src/games/FloorBoss/sim.js'
@@ -73,7 +74,8 @@ const MUT_BANK = ARGS.includes('--mutate-bank')
 const MUT_RUSH = ARGS.includes('--mutate-rush')
 const MUT_PRICE = ARGS.includes('--mutate-price')
 const MUT_AISLE = ARGS.includes('--mutate-aisle')
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE) {
+const MUT_DUEL = ARGS.includes('--mutate-duel')
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const src = readFileSync(sim, 'utf8')
     const [from, to, name] = MUT_YIELD
@@ -104,7 +106,9 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                         ? ['rushOn: 2700,', 'rushOn: 2500,', 'the measured-pinned rush clock shifts without a re-measure — unannounced difficulty drift (#2352)']
                                                         : MUT_PRICE
                                                             ? ['due: Math.round((1 - p.dueMult) * 100)', 'due: 0', 'the clock-in card claims the deadlines stayed put — the pricing lies (#2352)']
-                                                            : MUT_AISLE
+                                                            : MUT_DUEL
+                                                                ? ["credit(gs, rk.owner, STOW_PAY) // #2555 law: the stow pays the rack owner", 'credit(gs, -1, STOW_PAY)', 'bot stows pay the house — the rack owner loses their credit (#2555)']
+                                                                : MUT_AISLE
                                                                 ? ["if (strand) { gs.ev.push({ type: 'aisle', x, y, why: strand }); return 'aisle' }", "if (strand && false) { gs.ev.push({ type: 'aisle', x, y, why: strand }); return 'aisle' }", 'aisle clearance off — racks may wall out lanes and pocket the floor (#2546)']
                                                                 : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
@@ -973,6 +977,102 @@ console.log('— aisle clearance (#2546) —')
     const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
     ok(/case 'aisle'/.test(ui) && /DEAD-END AISLE/.test(ui) && /STRANDED A RACK/.test(ui) && /NO SERVICE LANE/.test(ui),
         'the aisle refusal names the broken law on screen (#2546)')
+}
+
+// ---- duel seats (#2555) — two managers, one floor, credit follows work ----
+console.log('— duel seats (#2555) —')
+{
+    // zero footprint (#1917): the duel overlay must not nudge the floor's own
+    // economy — same seed, same pads, score identical tick-for-tick solo vs duel.
+    let drift = 0
+    for (const seed of [7, 4242]) {
+        const a = makeGame(seed)
+        const b = makeGame(seed, { duel: true })
+        for (let t = 0; t < 1200; t++) {
+            step(a, [{ a: t % 90 === 0 }])
+            step(b, [{ a: t % 90 === 0 }, {}])
+            if (a.score !== b.score) { drift++; break }
+        }
+    }
+    ok(drift === 0, 'duel overlay is economically invisible — solo and duel score tick-for-tick (#1917 law)')
+
+    // seat M drives: cursor, tool and purchases route to seat 1.
+    const g = makeGame(11, { duel: true })
+    g.score = 5000
+    setTool(g, 'rack', 1)
+    ok(state(g).toolM === 'rack' && g.tool === null, 'B/tool lands on the seat asked for, not the human cursor')
+    g.m.cursor.x = RACK_SPOTS[3].x; g.m.cursor.y = RACK_SPOTS[3].y
+    const built = clickCell(g, RACK_SPOTS[3].x, RACK_SPOTS[3].y, 1)
+    const ownedRack = g.racks.find((r) => r.x === RACK_SPOTS[3].x && r.y === RACK_SPOTS[3].y)
+    ok(built === 'build' && ownedRack && ownedRack.owner === 1, 'seat M buys a rack and it wears the model stamp')
+    ok(hireRobot(g, 1) && g.robots.some((b) => b.owner === 1), 'seat M hires a bot the ledger can see')
+
+    // law 1: a stow pays the RACK owner — bot labor stowed onto a model rack.
+    const g2 = makeGame(11, { duel: true })
+    g2.racks.length = 0
+    g2.racks.push({ x: 16, y: 5, items: [], owner: 1 })
+    const bot = g2.robots[0]
+    bot.carry = 'crate'; bot.task = { kind: 'toStock', rx: 16, ry: 5 }
+    bot.x = 16; bot.y = 4; bot.path = []; bot.moveT = 0; bot.wait = 0; bot.jam = false; bot.broken = false
+    const before = g2.credits[1]
+    for (let t = 0; t < 60 && g2.credits[1] === before; t++) step(g2, [{}])
+    ok(g2.credits[1] === before + STOW_PAY, `law 1 — a bot stow credits the rack owner (+${STOW_PAY}), not the floor`)
+
+    // law 2: escrow rides the parcel to the shipper majority; ties go house.
+    const g3 = makeGame(11, { duel: true })
+    g3.orders = [{ id: 999, items: ['crate', 'crate'], due: g3.tick + 9000, prio: false, shipped: false, expired: false }]
+    g3.staging = ['crate', 'crate']; g3.stOwn = [1, 1]
+    g3.packT = 1
+    for (let t = 0; t < 4 && !g3.pad.length; t++) step(g3, [{}])
+    ok(g3.pad.length === 1 && g3.pad[0].o === 1, 'law 2 — crates staged by seat M pack into an M parcel')
+    const g4 = makeGame(11, { duel: true })
+    g4.orders = [{ id: 999, items: ['crate', 'crate'], due: g4.tick + 9000, prio: false, shipped: false, expired: false }]
+    g4.staging = ['crate', 'crate']; g4.stOwn = [1, 0]
+    g4.packT = 1
+    for (let t = 0; t < 4 && !g4.pad.length; t++) step(g4, [{}])
+    ok(g4.pad.length === 1 && g4.pad[0].o === -1, 'no majority splits to the house')
+
+    // taps name the tapper; the fee still rides the floor budget.
+    const g5 = makeGame(11, { duel: true })
+    g5.pad.push({ n: 1, since: g5.tick, esc: 0, d: 0, w: 0, o: -1 })
+    g5.truck.mode = 'out'
+    const feeBefore = g5.score
+    clickCell(g5, OUT_CELLS[0].x, OUT_CELLS[0].y, 1)
+    ok(g5.ev.some((e) => e.type === 'truckin' && e.s === 1) && g5.score === feeBefore - DISPATCH_FEE,
+        'a seat M tap calls the truck — named in the event, the tax paid from the floor')
+
+    // a live duel shift: conservation every tick, the model out-credits an idle
+    // human, and the verdict matches the richer till.
+    let consOk = true, mWins = 0, verdictOk = true
+    for (const seed of [4242, 1337, 777]) {
+        const apM = createAutopilot(1)
+        const d = makeGame(seed, { duel: true })
+        for (let t = 0; t < SHIFT && !d.end; t++) {
+            step(d, [{}, apM(d)])
+            if (d.score !== 100 + d.credits[0] + d.credits[1] + d.credits[2] - d.spent) { consOk = false; break }
+        }
+        if (d.duelWinner !== 1) verdictOk = false
+        if (d.credits[1] > d.credits[0]) mWins++
+    }
+    ok(consOk, 'conservation closes every tick: score = 100 + Σcredits − spent')
+    ok(mWins === 3, 'the model manager out-credits an idle human 3/3 seeds — seat M really works')
+    ok(verdictOk, 'the whistle verdict names the richer till (MODEL beats a seat that never built)')
+
+    // hash honesty: the duel segment moves with the ledgers; solo never carries it.
+    const dhA = makeGame(5, { duel: true }); const dhB = makeGame(5, { duel: true })
+    for (let t = 0; t < 600; t++) { step(dhA, [{}]); step(dhB, [{}]) }
+    ok(stateHash(dhA) === stateHash(dhB), 'duel determinism: same seed, same pads, same hash')
+    const soloS = state(makeGame(7))
+    const duelS = state(makeGame(7, { duel: true }))
+    ok(!('duel' in soloS) && duelS.duel === true && duelS.tills.length === 2, 'the duel eye opens only in the duel; solo state stays solo')
+
+    // presentation pins: the seat entry, twin till, verdict line, owner tints,
+    // and the episode finally seats the model.
+    const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    ok(/startPlay\(e\.code === 'KeyD'\)/.test(ui), "D at the attract seats the model manager")
+    ok(/MODEL \$\{mm\}/.test(ui) && /MANAGER OF THE NIGHT/.test(ui), 'twin till and the verdict line ride the canvas')
+    ok(/owner === 1 \? '#57c7ff'/.test(ui), 'racks wear their owner tint — cyan is the model\'s')
+    ok(/players: duel \? 2 : 1/.test(ui) && /\['human', 'model'\]/.test(ui), "the episode records players:2, sources ['human','model'] (#1144 slot two)")
 }
 
 console.log(fails ? `\nFLOOR BOSS CHECK: ${fails} FAILED` : '\nFLOOR BOSS CHECK: all green')

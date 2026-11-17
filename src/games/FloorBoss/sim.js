@@ -244,6 +244,34 @@ function outDocks() {
 }
 const OUT_DOCKS = outDocks()
 
+// #2555 DUEL SEATS — a second manager (the model seat) sits at one console
+// beside the human, one slot each, running the SAME floor. One budget is the
+// floor's (gs.score and every spend — solo laws, purchases, quota — stay
+// bit-identical, so the autopilot's win proof transfers to either seat); what
+// a duel adds is PRODUCTION CREDIT: every asset carries an owner and every
+// payout's credit lands on the seat that built or staged it. Three laws:
+// (1) a stow pays the RACK owner, bot or gantry; (2) a packed order's escrow
+// rides the parcel to the seat that staged MORE of its crates (no strict
+// majority → the HOUSE); (3) the full-trailer freight bonus accrues per box
+// onto the loading ledger at park and pays at drive-off. Ownership: 0 = seat H
+// (human), 1 = seat M (model), −1 = the HOUSE — the legacy floor (opening
+// racks and bots) earns for the house. Spending never touches credit (capex,
+// fees and fines are the floor's budget, tallied on gs.spent so conservation
+// closes: score = 100 + Σcredits − spent). At the whistle the richer till is
+// MANAGER OF THE NIGHT — the manager whose assets ran the floor (the house is
+// not a manager). Direction stays shared: either seat may steer any bot — the
+// aisles are the floor's; the credit is private.
+// Zero footprint (#1917): seat 1, the credit ledgers and every duel hash/state
+// segment exist only while gs.duel; gs.score math never learns about seats, so
+// solo play is bit-identical.
+const ci = (owner) => (owner < 0 ? 2 : owner) // credit index: seat 0 → 0, seat 1 → 1, house → 2
+function chan(gs, seat) { return seat === 0 ? gs : gs.m }
+// credits are a PRODUCTION ledger — stows, order escrow, freight bonuses.
+// Spending (capex, fees, fines) is the floor's budget: it moves gs.score and
+// gs.spent, never a manager's credit. Conservation law: score = 100 + Σcredits − spent.
+function credit(gs, owner, amt) { gs.score += amt; if (gs.duel) gs.credits[ci(owner)] += amt }
+function debit(gs, amt) { gs.score -= amt; if (gs.duel) gs.spent += amt }
+
 // BFS from (fx,fy) to nearest cell satisfying pred; robots are walls unless
 // they are the mover itself. Returns path (excluding start) or null.
 function bfs(gs, fx, fy, pred, ignoreId) {
@@ -285,16 +313,16 @@ const bayClaimed = (gs) => gs.robots.some((b) => b.task.kind === 'toArm' && !b.b
 // scheduled pickup (law) is free; a manager tap that calls early pays the
 // dispatch fee (the express tax on dribbles); a send pays freight when the
 // trailer hauls FULL_TRAILER boxes or more (see sendTruck).
-function callTruck(gs, via) {
+function callTruck(gs, via, seat = 0) {
     gs.truck.mode = 'back'
     if (via === 'tap') {
-        gs.score -= DISPATCH_FEE
+        debit(gs, DISPATCH_FEE) // the express tax is the floor's bill — #2555: the tapping manager is named in the event
         gs.fees += DISPATCH_FEE
     }
-    gs.ev.push({ type: 'truckin', tap: via === 'tap', fee: via === 'tap' ? DISPATCH_FEE : 0 })
+    gs.ev.push({ type: 'truckin', tap: via === 'tap', fee: via === 'tap' ? DISPATCH_FEE : 0, s: seat }) // #2555: the tap that paid the tax is named
 }
 
-function sendTruck(gs, tap) {
+function sendTruck(gs, tap, seat = 0) {
     const tr = gs.truck
     if (tr.carry >= FULL_TRAILER) {
         // freight tiers (#1927): each box pays by its own destination class —
@@ -303,53 +331,59 @@ function sendTruck(gs, tap) {
         // so a LOCAL×HEAVY crate pays what a LONG-HAUL×LIGHT crate pays.
         let amt = 0
         for (let d = 0; d < FREIGHT_MULT.length; d++) for (let w = 0; w < WEIGHT_MULT.length; w++) amt += FREIGHT_PER_BOX * FREIGHT_MULT[d] * WEIGHT_MULT[w] * (tr.grid[d][w] || 0)
+        // #2555: the full-trailer bonus accrues per box onto the shipper's tally
+        // during park and pays at drive-off — the three-tally sum is exactly the
+        // old floor total (a conservation gate proves it).
         gs.score += amt
+        if (gs.duel) for (let i = 0; i < 3; i++) gs.credits[i] += tr.bonus[i]
         gs.freight += amt
         const heavy = tr.grid.reduce((s, row) => s + (row[WEIGHT_HEAVY] || 0), 0)
-        gs.ev.push({ type: 'bonus', amt, carry: tr.carry, far: tr.far, tiers: tr.tiers.join(''), heavy, grid: tr.grid.map((r) => r.join('')).join('') })
+        gs.ev.push({ type: 'bonus', amt, carry: tr.carry, far: tr.far, tiers: tr.tiers.join(''), heavy, grid: tr.grid.map((r) => r.join('')).join(''), s0: tr.bonus ? tr.bonus[0] : amt, s1: tr.bonus ? tr.bonus[1] : 0 })
     }
+    if (gs.duel) { tr.bonus = [0, 0, 0] }
     // the road is the cost (#1927): the trip commits by the farthest class
     // aboard — an empty dribble still drives home LOCAL-cadenced
     tr.away = tr.far >= 0 ? TRIP_TICKS[tr.far] : 0
     tr.mode = 'leave'
-    gs.ev.push({ type: 'truckout', tap, carry: tr.carry, far: tr.far })
+    gs.ev.push({ type: 'truckout', tap, carry: tr.carry, far: tr.far, s: seat }) // #2555: the manager who sent it
 }
 
-function cellClick(gs, x, y) {
+function cellClick(gs, x, y, seat = 0) {
     if (!inGrid(x, y)) return 'oor'
+    const me = chan(gs, seat)
     const bot = gs.robots.find((r) => r.x === x && r.y === y)
     if (bot) {
-        if (bot.broken) { bot.repair -= TURBO_CUT; gs.ev.push({ type: 'turbo', x, y }); return 'turbo' }
-        if (bot.jam) { nudge(gs, bot); gs.ev.push({ type: 'jamclear', x, y }); return 'nudge' }
-        gs.sel = bot.id
-        gs.ev.push({ type: 'select', x, y })
+        if (bot.broken) { bot.repair -= TURBO_CUT; gs.ev.push({ type: 'turbo', x, y, s: seat }); return 'turbo' }
+        if (bot.jam) { nudge(gs, bot); gs.ev.push({ type: 'jamclear', x, y, s: seat }); return 'nudge' }
+        me.sel = bot.id
+        gs.ev.push({ type: 'select', x, y, s: seat })
         return 'select'
     }
-    if (gs.tool === 'hire') {
-        if (gs.robots.length >= MAX_ROBOTS || gs.score < ROBOT_COST) { gs.ev.push({ type: 'poor', x: gs.cursor.x, y: gs.cursor.y }); gs.tool = null; return 'poor' }
-        hireRobot(gs)
-        gs.tool = null
+    if (me.tool === 'hire') {
+        if (gs.robots.length >= MAX_ROBOTS || gs.score < ROBOT_COST) { gs.ev.push({ type: 'poor', x: me.cursor.x, y: me.cursor.y, s: seat }); me.tool = null; return 'poor' }
+        hireRobot(gs, seat)
+        me.tool = null
         return 'hire'
     }
-    if (gs.tool === 'rack') {
+    if (me.tool === 'rack') {
         if (map[y][x] !== CELL.FLOOR) { gs.ev.push({ type: 'refuse', x, y }); return 'refuse' }
         if (gs.racks.length >= RACK_SPOTS.length + 4) { gs.ev.push({ type: 'refuse', x, y }); return 'refuse' }
         const strand = strandsFloor(gs, x, y)
         if (strand) { gs.ev.push({ type: 'aisle', x, y, why: strand }); return 'aisle' } // #2546: nothing is charged for a lane you cannot drive
-        if (gs.score < RACK_COST) { gs.ev.push({ type: 'poor', x, y }); return 'poor' }
-        gs.score -= RACK_COST
-        gs.racks.push({ x, y, items: [] })
-        gs.ev.push({ type: 'build', x, y })
-        gs.tool = null
+        if (gs.score < RACK_COST) { gs.ev.push({ type: 'poor', x, y, s: seat }); return 'poor' }
+        debit(gs, RACK_COST)
+        gs.racks.push({ x, y, items: [], owner: seat })
+        gs.ev.push({ type: 'build', x, y, s: seat })
+        me.tool = null
         return 'build'
     }
     const rk = rackAt(gs, x, y)
     if (rk) {
-        if (gs.sel != null) {
-            const bot = gs.robots.find((r) => r.id === gs.sel)
+        if (me.sel != null) {
+            const bot = gs.robots.find((r) => r.id === me.sel)
             if (bot && !bot.broken && !bot.carry && !bot.jam && rk.items.length) {
                 assignRack(gs, bot, rk, rk.items[0])
-                gs.ev.push({ type: 'dispatch', x, y })
+                gs.ev.push({ type: 'dispatch', x, y, s: seat })
                 return 'dispatch'
             }
         }
@@ -360,7 +394,7 @@ function cellClick(gs, x, y) {
         // #1872: arm-click calls a bot only while the gantry is not mid-swing
         if (gs.arm.held && gs.arm.swing === 0) {
             const bot = nearestIdle(gs, BAY_CELL.x, BAY_CELL.y)
-            if (bot) { sendArm(gs, bot); gs.ev.push({ type: 'dispatch', x, y }); return 'dispatch' }
+            if (bot) { sendArm(gs, bot); gs.ev.push({ type: 'dispatch', x, y, s: seat }); return 'dispatch' }
         }
         return 'idle-arm'
     }
@@ -370,9 +404,9 @@ function cellClick(gs, x, y) {
         const tr = gs.truck
         if (tr.mode === 'out' && gs.pad.length) {
             if (tr.away > 0) { gs.ev.push({ type: 'peek', x, y }); return 'peek' } // on the road — silent wait, no fee for a truck that cannot come (#1927)
-            callTruck(gs, 'tap'); return 'call'
+            callTruck(gs, 'tap', seat); return 'call'
         }
-        if (tr.mode === 'park') { sendTruck(gs, true); return 'send' }
+        if (tr.mode === 'park') { sendTruck(gs, true, seat); return 'send' }
         gs.ev.push({ type: 'peek', x, y })
         return 'peek'
     }
@@ -380,30 +414,31 @@ function cellClick(gs, x, y) {
 }
 export const clickCell = cellClick
 
-export function setTool(gs, tool) { gs.tool = gs.tool === tool ? null : tool }
+export function setTool(gs, tool, seat = 0) { const me = chan(gs, seat); me.tool = me.tool === tool ? null : tool }
 // B cycles the build tool: none → rack → hire → none (pad/mouse parity).
-export function cycleTool(gs) {
-    gs.tool = gs.tool === null ? 'rack' : gs.tool === 'rack' ? 'hire' : null
-    return gs.tool
+export function cycleTool(gs, seat = 0) {
+    const me = chan(gs, seat)
+    me.tool = me.tool === null ? 'rack' : me.tool === 'rack' ? 'hire' : null
+    return me.tool
 }
 export function toggleAuto(gs) { gs.auto = !gs.auto; gs.ev.push({ type: 'auto', on: gs.auto }); return gs.auto }
 export function clickOrder(gs, id) {
     const o = gs.orders.find((x) => x.id === id && !o.shipped && !o.expired)
     if (o) { o.prio = !o.prio; gs.ev.push({ type: 'prio', id }) }
 }
-export function hireRobot(gs) {
+export function hireRobot(gs, seat = 0) {
     if (gs.robots.length >= MAX_ROBOTS) { gs.ev.push({ type: 'refuse', x: HOME_PADS[0].x, y: HOME_PADS[0].y }); return false }
-    if (gs.score < ROBOT_COST) { gs.ev.push({ type: 'poor', x: 0, y: 0 }); return false }
+    if (gs.score < ROBOT_COST) { gs.ev.push({ type: 'poor', x: 0, y: 0, s: seat }); return false }
     const pad = HOME_PADS.find((p) => !gs.robots.some((r) => r.x === p.x && r.y === p.y)) || HOME_PADS[gs.robots.length % HOME_PADS.length]
-    gs.score -= ROBOT_COST
-    gs.robots.push(newRobot(gs, pad.x, pad.y))
-    gs.ev.push({ type: 'hire', x: pad.x, y: pad.y })
+    debit(gs, ROBOT_COST)
+    gs.robots.push(newRobot(gs, pad.x, pad.y, seat))
+    gs.ev.push({ type: 'hire', x: pad.x, y: pad.y, s: seat })
     return true
 }
 
-function newRobot(gs, x, y) {
+function newRobot(gs, x, y, owner = -1) {
     return {
-        id: gs.nextBotId++, x, y, carry: null,
+        id: gs.nextBotId++, x, y, carry: null, owner, // #2555: who hired it — −1 is the house (legacy floor)
         task: { kind: 'idle' }, path: [], moveT: 0, wait: 0, jam: false,
         pickT: 0, broken: false, repair: 0, wear: 0,
         wearMax: 260 + Math.floor(gs.rng() * 180) - gs.params.wearCut, dir: 0, hist: [], stall: 0,
@@ -494,18 +529,25 @@ function autoAssign(gs) {
     }
 }
 
-export function makeGame(seed = 1337) {
+export function makeGame(seed = 1337, opts = {}) {
+    const duel = !!opts.duel // #2555: seat M — the model manager sits beside the human
     const rng = mulberry32((seed * 2654435761 >>> 0) ^ 0x1b873593)
     const gs = {
         seed: seed >>> 0, rng, tick: 0,
         score: 100, // opening float — SimCity lets you lay pipe before the tax base exists
         strikes: 0, auto: true,
+        duel,
+        credits: duel ? [0, 0, 0] : null, // #2555 production ledgers [seat H, seat M, house]; gs.score stays the floor total (solo law untouched)
+        spent: duel ? 0 : null, // #2555: capex + fees + fines, so conservation closes: score = 100 + Σcredits − spent
+        m: duel ? { cursor: { x: 22, y: 7 }, cursorT: 0, tool: null, sel: null, prevA: false, prevB: false } : null, // seat M's channel — the model's own cursor/tool
+        stOwn: duel ? [] : null, // #2555: parallel to staging — which seat's bot staged each crate (−1 = house fleet)
+        duelWinner: null,
         shift: 1, params: shiftParams(1), shiftBase: 0, cleared: 0, // ladder (#2346): quota is measured against shiftBase, cleared counts the nights banked
         tool: null, sel: null, cursor: { x: 12, y: 7 }, cursorT: 0,
         prevA: false, prevB: false,
         robots: [], racks: [], staging: [], orders: [], conv: [],
         arm: { held: null, pose: 0, swing: 0, swingT0: 0, target: null, heldT: 0 }, // pose 0 docked, ramps to 1 while loading; swing/target = servo self-stow (#1872)
-        truck: { x: TRUCK_HOME, mode: 'out', dwell: 0, loadT: 0, carry: 0, away: 0, far: -1, tiers: [0, 0, 0], grid: [[0, 0, 0], [0, 0, 0], [0, 0, 0]] }, // load-out (#1911): mode out | back | park | leave; away/far/tiers = freight tiers (#1927); grid[d][w] = boxes by dest×weight (#1931)
+        truck: { x: TRUCK_HOME, mode: 'out', dwell: 0, loadT: 0, carry: 0, away: 0, far: -1, tiers: [0, 0, 0], grid: [[0, 0, 0], [0, 0, 0], [0, 0, 0]], bonus: duel ? [0, 0, 0] : null }, // load-out (#1911): mode out | back | park | leave; away/far/tiers = freight tiers (#1927); grid[d][w] = boxes by dest×weight (#1931); bonus[ledger] = per-seat freight tally (#2555)
         destRng: mulberry32((seed ^ 0x9e3779b9) >>> 0), // freight-tier side stream (#1927): dest rolls never touch the module stream
         weightRng: mulberry32((seed ^ 0x5f356495) >>> 0), // load-weight side stream (#1931): the third rng — dest and module streams stay byte-identical too
         pad: [], // staged parcels awaiting a trailer, { n: boxes, since: tick, esc: escrowed pay, d: destination class, w: weight class } (#1911/#1921/#1927/#1931)
@@ -516,8 +558,8 @@ export function makeGame(seed = 1337) {
         end: null, endReason: '',
         fx: [], ev: [],
     }
-    gs.racks.push({ x: RACK_SPOTS[0].x, y: RACK_SPOTS[0].y, items: ['crate', 'crate', 'can', 'can'] })
-    gs.racks.push({ x: RACK_SPOTS[5].x, y: RACK_SPOTS[5].y, items: ['can', 'coil', 'crate', 'coil'] })
+    gs.racks.push({ x: RACK_SPOTS[0].x, y: RACK_SPOTS[0].y, items: ['crate', 'crate', 'can', 'can'], owner: -1 })
+    gs.racks.push({ x: RACK_SPOTS[5].x, y: RACK_SPOTS[5].y, items: ['can', 'coil', 'crate', 'coil'], owner: -1 }) // #2555: the legacy floor is the HOUSE's
     gs.robots.push(newRobot(gs, HOME_PADS[0].x, HOME_PADS[0].y))
     gs.robots.push(newRobot(gs, HOME_PADS[1].x, HOME_PADS[1].y))
     return gs
@@ -546,16 +588,29 @@ function tryShip(gs) {
     const open = gs.orders.filter((o) => !o.shipped && !o.expired).sort((a, b) => (b.prio - a.prio) || (a.due - b.due) || (a.id - b.id))
     for (const o of open) {
         if (gs.pad.length >= PAD_CAP) break // pad filled mid-cycle — the rest wait for the trailer (#1911)
-        const pool = gs.staging.slice()
-        let ok = true
-        for (const k of o.items) {
-            const i = pool.indexOf(k)
-            if (i < 0) { ok = false; break }
-            pool.splice(i, 1)
+        // consume left-greedy, tracking staging indices (deterministic; the
+        // multiset of crates is unchanged from the pool splice walk)
+        const need = o.items.slice()
+        const taken = []
+        const own = [] // #2555: whose bot staged each crate this parcel packs from
+        for (let si = 0; si < gs.staging.length && need.length; si++) {
+            const ni = need.indexOf(gs.staging[si])
+            if (ni < 0) continue
+            need.splice(ni, 1)
+            taken.push(si)
+            if (gs.duel) own.push(gs.stOwn[si])
         }
-        if (!ok) continue
-        gs.staging = pool
+        if (need.length) continue
+        const drop = new Set(taken)
+        gs.staging = gs.staging.filter((_, si) => !drop.has(si))
+        if (gs.duel) gs.stOwn = gs.stOwn.filter((_, si) => !drop.has(si))
         o.shipped = true
+        // #2555 shipper law: the packed order's credit rides the parcel to the
+        // seat that staged MORE of its crates; without a strict majority the
+        // HOUSE keeps it (the legacy fleet works for the floor, not a manager).
+        const seat1 = gs.duel ? own.filter((s) => s === 1).length : 0
+        const seat0 = gs.duel ? own.filter((s) => s === 0).length : 0
+        const shipper = gs.duel ? (seat1 * 2 > own.length ? 1 : seat0 * 2 > own.length ? 0 : -1) : -1
         const rush = rushNow(gs)
         const base = o.items.reduce((s, k) => s + BASE_PAY[k], 0)
         const onTime = gs.tick <= o.due
@@ -575,8 +630,8 @@ function tryShip(gs) {
         // STANDARD 30 / LIGHT 52
         const wr = gs.weightRng()
         const w = wr < WEIGHT_ODDS[WEIGHT_HEAVY] ? WEIGHT_HEAVY : wr < WEIGHT_ODDS[WEIGHT_HEAVY] + WEIGHT_ODDS[WEIGHT_STANDARD] ? WEIGHT_STANDARD : WEIGHT_LIGHT
-        gs.pad.push({ n: o.items.length, since: gs.tick, esc: pay, d, w }) // stage the parcel for a trailer (#1911); escrow rides the parcel (#1921), destination joins it (#1927), weight joins it (#1931)
-        gs.ev.push({ type: onTime ? 'ship' : 'late', pay, o: o.id, d, w })
+        gs.pad.push({ n: o.items.length, since: gs.tick, esc: pay, d, w, o: shipper }) // stage the parcel for a trailer (#1911); escrow rides the parcel (#1921), destination joins it (#1927), weight joins it (#1931) — and the shipper's seat rides it too (#2555)
+        gs.ev.push({ type: onTime ? 'ship' : 'late', pay, o: o.id, d, w, s: shipper })
     }
 }
 
@@ -627,8 +682,8 @@ function stepRobot(gs, bot) {
                     rk.items.push(bot.carry)
                     bot.carry = null
                     gs.stows++
-                    gs.score += STOW_PAY
-                    gs.ev.push({ type: 'stow', x: rk.x, y: rk.y })
+                    credit(gs, rk.owner, STOW_PAY) // #2555 law: the stow pays the rack owner
+                    gs.ev.push({ type: 'stow', x: rk.x, y: rk.y, s: rk.owner })
                     bot.task = { kind: 'idle' }; bot.path = []
                 } else {
                     // target filled while en route — spread to emptiest rack, or
@@ -643,8 +698,9 @@ function stepRobot(gs, bot) {
             } else if (t.kind === 'toOut') {
                 if (bot.carry) {
                     gs.staging.push(bot.carry)
+                    if (gs.duel) gs.stOwn.push(bot.owner) // #2555: staged freight remembers whose bot brought it
                     bot.carry = null
-                    gs.ev.push({ type: 'deliver', x: bot.x, y: bot.y })
+                    gs.ev.push({ type: 'deliver', x: bot.x, y: bot.y, s: bot.owner })
                 }
                 bot.task = { kind: 'idle' }; bot.path = []
             }
@@ -709,8 +765,8 @@ function stepRobot(gs, bot) {
     if (bot.wear >= bot.wearMax) {
         bot.broken = true
         bot.repair = REPAIR_TICKS
-        gs.score -= BREAK_FINE
-        gs.ev.push({ type: 'break', x: bot.x, y: bot.y })
+        debit(gs, BREAK_FINE) // wear repair is the floor's bill; #2555 names the bot's employer in the event
+        gs.ev.push({ type: 'break', x: bot.x, y: bot.y, s: bot.owner })
     }
 }
 
@@ -750,10 +806,30 @@ export function step(gs, pads = [{}]) {
         if (pad.up) gs.cursor.y = Math.max(0, gs.cursor.y - 1)
         if (pad.down) gs.cursor.y = Math.min(ROWS - 1, gs.cursor.y + 1)
     }
-    if (pad.a && !gs.prevA) cellClick(gs, gs.cursor.x, gs.cursor.y)
-    if (pad.b && !gs.prevB) cycleTool(gs)
+    if (pad.a && !gs.prevA) cellClick(gs, gs.cursor.x, gs.cursor.y, 0)
+    if (pad.b && !gs.prevB) cycleTool(gs, 0)
     gs.prevA = !!pad.a
     gs.prevB = !!pad.b
+
+    // #2555: seat M — the model manager drives its own cursor/tool channel from
+    // pads[1] (the autopilot's pad, composed by the shell). Same verbs, same
+    // CURSOR_STEP law, separate till.
+    if (gs.duel) {
+        const mp = pads[1] || {}
+        const m = gs.m
+        m.cursorT++
+        if ((mp.left || mp.right || mp.up || mp.down) && m.cursorT >= CURSOR_STEP) {
+            m.cursorT = 0
+            if (mp.left) m.cursor.x = Math.max(0, m.cursor.x - 1)
+            if (mp.right) m.cursor.x = Math.min(COLS - 1, m.cursor.x + 1)
+            if (mp.up) m.cursor.y = Math.max(0, m.cursor.y - 1)
+            if (mp.down) m.cursor.y = Math.min(ROWS - 1, m.cursor.y + 1)
+        }
+        if (mp.a && !m.prevA) cellClick(gs, m.cursor.x, m.cursor.y, 1)
+        if (mp.b && !m.prevB) cycleTool(gs, 1)
+        m.prevA = !!mp.a
+        m.prevB = !!mp.b
+    }
 
     // clocked world: rush siren at the front edge of each wave
     if (rush) { const [ron, rlen] = rushClock(gs); if (gs.tick % (ron + rlen) === ron) gs.ev.push({ type: 'rush' }) }
@@ -763,7 +839,7 @@ export function step(gs, pads = [{}]) {
     if (gs.spawnT <= 0) {
         gs.spawnT = rush ? 70 : 130
         if (!gs.conv.some((c) => c.x <= CONV_X0 + 1)) gs.conv.push({ kind: KINDS[Math.floor(gs.rng() * KINDS.length)], x: CONV_X0 })
-        else { gs.score -= OVERFLOW_FINE; gs.ev.push({ type: 'overflow', x: CONV_X0, y: CONV_ROW }) }
+        else { debit(gs, OVERFLOW_FINE); gs.ev.push({ type: 'overflow', x: CONV_X0, y: CONV_ROW }) } // #2555: the belt is house infrastructure — overflow is the house's bill
     }
     gs.convT++
     if (gs.convT >= CONV_TICKS) {
@@ -795,8 +871,8 @@ export function step(gs, pads = [{}]) {
                 gs.arm.target = null
                 gs.arm.heldT = 0
                 gs.stows++
-                gs.score += STOW_PAY
-                gs.ev.push({ type: 'armstow', x: rk.x, y: rk.y, k: kind })
+                credit(gs, rk.owner, STOW_PAY) // #2555 law: even the gantry's cargo pays the rack owner
+                gs.ev.push({ type: 'armstow', x: rk.x, y: rk.y, k: kind, s: rk.owner })
             } else {
                 // target filled while swinging — re-pick and pay the rotation again
                 const t = armReach(gs)[0]
@@ -832,7 +908,7 @@ export function step(gs, pads = [{}]) {
             o.expired = true
             gs.expired++
             gs.strikes++
-            gs.score -= EXPIRE_FINE
+            debit(gs, EXPIRE_FINE) // #2555: the strike sheet is the house's — the floor absorbs the fine, the manager eats the strike
             gs.ev.push({ type: 'expire', o: o.id })
             if (gs.strikes >= STRIKES) {
                 gs.end = 'fired'
@@ -878,6 +954,7 @@ export function step(gs, pads = [{}]) {
                 tr.carry++
                 tr.tiers[p.d || 0]++ // freight tiers (#1927): the trailer knows what rides in it
                 tr.grid[p.d || 0][pw]++ // weight joins the manifest (#1931)
+                if (gs.duel) tr.bonus[ci(p.o)] += FREIGHT_PER_BOX * FREIGHT_MULT[p.d || 0] * WEIGHT_MULT[pw] // #2555: each box earns its rate onto its shipper's tally
                 if ((p.d || 0) > tr.far) tr.far = p.d || 0 // the road stays distance-driven — weight prices the box, not the miles (#1931)
                 if (p.n <= 0) {
                     gs.pad.shift()
@@ -885,8 +962,8 @@ export function step(gs, pads = [{}]) {
                     // escrow — money followed the freight off the dock
                     gs.escrow -= p.esc || 0
                     gs.paid += p.esc || 0
-                    gs.score += p.esc || 0
-                    if (p.esc) gs.ev.push({ type: 'freight', pay: p.esc, x: OUT_CELLS[0].x, y: OUT_CELLS[0].y })
+                    credit(gs, p.o, p.esc || 0) // #2555: the parcel pays its shipper (house parcels pay the house)
+                    if (p.esc) gs.ev.push({ type: 'freight', pay: p.esc, x: OUT_CELLS[0].x, y: OUT_CELLS[0].y, s: p.o })
                 }
                 gs.ev.push({ type: 'loadout', x: OUT_CELLS[0].x, y: OUT_CELLS[0].y, w: pw })
             }
@@ -920,6 +997,11 @@ export function step(gs, pads = [{}]) {
                 : `shift ${gs.shift} over, ${gs.params.quota - earned} units short of quota`
         }
     }
+    // #2555: the whistle names the richer till — MANAGER OF THE NIGHT (the
+    // house is not a manager; only seats H and M are judged).
+    if (gs.duel && gs.end) {
+        gs.duelWinner = gs.credits[0] === gs.credits[1] ? 'TIE' : gs.credits[0] > gs.credits[1] ? 0 : 1
+    }
     return gs
 }
 
@@ -947,11 +1029,13 @@ export function nextShift(gs) {
     gs.packT = 30
     gs.orders = []
     gs.staging = []
+    gs.stOwn = gs.duel ? [] : null // #2555: staging wiped for the fresh night — the crate-ledger too
     gs.conv = []
     gs.pad = []
     gs.escrow = 0
+    gs.duelWinner = null // #2555: a new night, a new verdict
     gs.arm = { held: null, pose: 0, swing: 0, swingT0: 0, target: null, heldT: 0 }
-    gs.truck = { x: TRUCK_HOME, mode: 'out', dwell: 0, loadT: 0, carry: 0, away: 0, far: -1, tiers: [0, 0, 0], grid: [[0, 0, 0], [0, 0, 0], [0, 0, 0]] }
+    gs.truck = { x: TRUCK_HOME, mode: 'out', dwell: 0, loadT: 0, carry: 0, away: 0, far: -1, tiers: [0, 0, 0], grid: [[0, 0, 0], [0, 0, 0], [0, 0, 0]], bonus: gs.duel ? [0, 0, 0] : null } // #2555: the freight tally resets with the trailer, the ledgers do not
     gs.fx.length = 0
     for (const b of gs.robots) {
         b.broken = false; b.repair = 0; b.wear = 0
@@ -972,6 +1056,11 @@ export function stateHash(gs) {
     s += `S[${gs.staging.join('')}]|`
     s += `T[${gs.truck.mode}:${gs.truck.carry}:${Math.round(gs.truck.x)}:${gs.truck.away}:${gs.truck.tiers.join('')}:${gs.truck.grid.map((r) => r.join('')).join('')}]P[${gs.pad.map((p) => `${p.n}:${p.esc || 0}:${p.d || 0}:${p.w || 0}`).join(',')}]|` // load-out (#1911) + per-parcel escrow (#1921) + tiers/road (#1927) + weight manifest/classes (#1931), additive (#1373 law)
     s += `E[${gs.escrow}:${gs.paid}:${gs.freight}:${gs.fees}]|` // freight ledger, additive (#1373 law, #1921)
+    if (gs.duel) {
+        // #2555 duel segment — additive (#1373 law) and DUEL-ONLY: solo hashes
+        // stay byte-identical to the pre-duel floor (#1917 zero footprint).
+        s += `D[${gs.credits[0]}:${gs.credits[1]}:${gs.credits[2]}:X${gs.spent}:${gs.duelWinner ?? '-'}:B${gs.truck.bonus.join(',')}R[${gs.racks.map((r) => r.owner).join(',')}]K[${gs.robots.map((b) => b.owner).join(',')}]S[${gs.stOwn.join(',')}]M${gs.m.cursor.x},${gs.m.cursor.y}:${gs.m.tool || '-'}]|`
+    }
     for (const o of gs.orders) s += `${o.id}{${o.items.join(',')}}${o.due - gs.tick}${o.prio ? '!' : ''};`
     for (const c of gs.conv) s += `${c.kind}@${c.x};`
     s += `|SH${gs.shift}:${gs.shiftBase}:${gs.cleared}:${gs.params.quota}:${gs.params.orderBase}:${gs.params.dueMult}:${gs.params.wearCut}` // ladder (#2346), additive (#1373 law)
@@ -988,7 +1077,7 @@ export function state(gs) {
         earned: gs.score - gs.shiftBase,
         strikes: gs.strikes,
         done: !!gs.end,
-        players: 1,
+        players: gs.duel ? 2 : 1, // #2555: two seats at one console
         seed: gs.seed >>> 0,
         hash: stateHash(gs),
         rush: rushNow(gs),
@@ -1020,6 +1109,19 @@ export function state(gs) {
         stows: gs.stows,
         end: gs.end,
         endReason: gs.endReason,
+        ...(gs.duel ? {
+            // #2555: the duel eye — credits, verdict, seat M's cursor and the
+            // ownership stamp on every asset (only present while duelling).
+            duel: true,
+            tills: [gs.credits[0], gs.credits[1]],
+            house: gs.credits[2],
+            spent: gs.spent,
+            duelWinner: gs.duelWinner,
+            cursorM: [gs.m.cursor.x, gs.m.cursor.y],
+            toolM: gs.m.tool,
+            rackOwners: gs.racks.map((r) => r.owner),
+            botOwners: gs.robots.map((b) => b.owner),
+        } : {}),
     }
 }
 
@@ -1029,12 +1131,13 @@ export function state(gs) {
 // robots, backs jammed ones off, and buys racks near the flow while cash
 // allows — the dispatch itself runs on auto. floorbosscheck proves this makes
 // quota; the attract demo runs it live.
-export function createAutopilot() {
+export function createAutopilot(seat = 0) {
     let flip = false
     return function autopilot(gs) {
         const pad = { left: false, right: false, up: false, down: false, a: false, b: false }
         if (gs.end) return pad
         const s = state(gs)
+        const me = chan(gs, seat) // #2555: the autopilot drives a seat — its own cursor, tool and till
         flip = !flip
 
         // triage first: broken (turbo — alternating A so every other press is
@@ -1046,6 +1149,9 @@ export function createAutopilot() {
         // third robot once the racks are worth more hands. #1921: the freight
         // line delays the till, so an attentive manager counts escrow as money
         // in transit when sizing purchases — the trailer always pays.
+        // #2555: purchases come out of the FLOOR budget in every mode — the
+        // duel changes who gets the credit, never the economics (the autopilot
+        // plays an identical game at either seat; the win proof transfers).
         let goal = null
         const cash = s.score + s.escrow
         // #1921: in the last quarter-shift a new rack or robot barely earns its
@@ -1056,7 +1162,7 @@ export function createAutopilot() {
             goal = RACK_SPOTS.find((sp) => !s.racks.some((r) => r.x === sp.x && r.y === sp.y)) || null
         }
         if (!target && !goal && wantHire) {
-            if (s.tool !== 'hire') pad.b = flip
+            if (me.tool !== 'hire') pad.b = flip
             else pad.a = flip
             return pad
         }
@@ -1072,14 +1178,14 @@ export function createAutopilot() {
 
         const tx = target ? target.x : goal.x
         const ty = target ? target.y : goal.y
-        const cx = gs.cursor.x, cy = gs.cursor.y
+        const cx = me.cursor.x, cy = me.cursor.y
         if (cx !== tx) { pad.left = tx < cx; pad.right = tx > cx; return pad }
         if (cy !== ty) { pad.up = ty < cy; pad.down = ty > cy; return pad }
 
         if (target) { pad.a = flip; return pad } // turbo: press/release/press
         if (goal === OUT_CELLS[0]) {
             // tap the pad with no build tool armed — cycle off first if one is
-            if (gs.tool) { pad.b = flip; return pad }
+            if (me.tool) { pad.b = flip; return pad }
             pad.a = flip
             return pad
         }
@@ -1091,7 +1197,7 @@ export function createAutopilot() {
             pad.left = cx > 0; pad.right = !pad.left
             return pad
         }
-        if (gs.tool !== 'rack') pad.b = true
+        if (me.tool !== 'rack') pad.b = true
         else pad.a = true
         return pad
     }

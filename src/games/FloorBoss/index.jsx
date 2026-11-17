@@ -107,6 +107,8 @@ const FloorBossGame = () => {
         let gs = makeGame(1337)
         let raf = 0, last = 0, acc = 0
         const ap = createAutopilot()
+        const apM = createAutopilot(1) // #2555: seat M — the model manager for duel mode
+        let duelMode = false
         let demoSeed = 1337
         let contractSeed = 4242
         const parts = []
@@ -135,16 +137,20 @@ const FloorBossGame = () => {
         let escGrowAt = -999, escLast = 0 // escrow chip blinks only right after money lands (#1877 freight context)
         let humT = 60 // 60 bpm floor hum while bots move
 
-        const beginEpisode = () => {
+        const beginEpisode = (duel = false) => {
             try {
-                episode = createEpisode({ gameId: 'floor-boss', method: 'dpad', seed: gs.seed >>> 0, players: 1, sources: ['human'], task: 'floor-boss-shift', assets: MANIFEST_REV })
+                // #2555: the duel finally uses the second slot the #1144 episode
+                // format always pinned — two seats, two sources.
+                episode = createEpisode({ gameId: 'floor-boss', method: 'dpad', seed: gs.seed >>> 0, players: duel ? 2 : 1, sources: duel ? ['human', 'model'] : ['human'], task: duel ? 'floor-boss-duel' : 'floor-boss-shift', assets: MANIFEST_REV })
             } catch { episode = null }
         }
-        const recordTick = (pad) => {
+        const recordTick = (pad, padM = null) => {
             if (!episode) return
             try {
                 const p = pad || { left: keys.left, right: keys.right, up: keys.up, down: keys.down, a: edgeA, b: edgeB }
-                episode.addTick([{ left: !!p.left, right: !!p.right, up: !!p.up, down: !!p.down, a: !!p.a, b: !!p.b }], null, stateHash(gs))
+                const seat = [{ left: !!p.left, right: !!p.right, up: !!p.up, down: !!p.down, a: !!p.a, b: !!p.b }]
+                if (padM) seat.push({ left: !!padM.left, right: !!padM.right, up: !!padM.up, down: !!padM.down, a: !!padM.a, b: !!padM.b }) // #2555: slot 1 is the model's own hands
+                episode.addTick(seat, null, stateHash(gs))
             } catch { episode = null }
         }
         const closeEpisode = (won) => {
@@ -293,8 +299,9 @@ const FloorBossGame = () => {
             // or releasing mid-shift resumes from exactly where the floor stands;
             // floorbosscheck grades this same manager to quota).
             const pad = watchingRef.current && !gs.end ? ap(gs) : livePad()
-            step(gs, [pad])
-            recordTick(pad)
+            const mpad = duelMode && !gs.end ? apM(gs) : null // #2555: seat M drives its own slot beside you
+            step(gs, mpad ? [pad, mpad] : [pad])
+            recordTick(pad, mpad)
             edgeA = false; edgeB = false
             handleEvents(gs.ev, gs.tick)
             // the floor hums at 60 bpm while bots work — gain scales with how
@@ -479,7 +486,9 @@ const FloorBossGame = () => {
                 ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.fillRect(x + 3, y + 4, TILE - 2, TILE - 2)
                 ctx.fillStyle = '#20303c'; ctx.fillRect(x + 1, y + 1, TILE - 2, TILE - 2)
                 ctx.fillStyle = '#2b4152'; ctx.fillRect(x + 1, y + 1, TILE - 2, 5)
-                ctx.strokeStyle = '#c96a1f'; ctx.lineWidth = 2
+                // #2555: owner tint on the frame — green is yours, cyan is the
+                // model's, the classic orange is the house's legacy racks.
+                ctx.strokeStyle = r.owner === 0 ? '#5dff8f' : r.owner === 1 ? '#57c7ff' : '#c96a1f'; ctx.lineWidth = 2
                 ctx.strokeRect(x + 2, y + 2, TILE - 4, TILE - 4)
                 // shelf lips
                 ctx.strokeStyle = 'rgba(224,149,78,0.55)'; ctx.lineWidth = 1
@@ -612,6 +621,30 @@ const FloorBossGame = () => {
             }
         }
 
+        // #2555: the duel marks — seat M steers a cyan bracket beside yours,
+        // and every hired bot wears its employer's dot (the house fleet wears
+        // none; those plates are classic).
+        const paintDuel = (tick) => {
+            if (!gs.duel || screenRef.current !== 'play') return
+            for (const b of gs.robots) {
+                if (b.owner < 0) continue
+                ctx.fillStyle = b.owner === 0 ? '#5dff8f' : '#57c7ff'
+                ctx.beginPath(); ctx.arc(PX(b.x) + 5, PY(b.y) + 5, 2.4, 0, Math.PI * 2); ctx.fill()
+            }
+            const mx = PX(gs.m.cursor.x), my = PY(gs.m.cursor.y)
+            const pulse = 0.55 + Math.cos(tick * 0.18) * 0.3
+            ctx.strokeStyle = `rgba(87,199,255,${pulse})`; ctx.lineWidth = 2
+            const c = 7
+            for (const [ox, oy, sx, sy] of [[0, 0, 1, 1], [TILE, 0, -1, 1], [0, TILE, 1, -1], [TILE, TILE, -1, -1]]) {
+                ctx.beginPath()
+                ctx.moveTo(mx + ox + c * sx, my + oy)
+                ctx.lineTo(mx + ox, my + oy)
+                ctx.lineTo(mx + ox, my + oy + c * sy)
+                ctx.stroke()
+            }
+            if (gs.m.tool === 'rack') { ctx.globalAlpha = 0.5; ctx.strokeStyle = '#57c7ff'; ctx.strokeRect(mx + 2, my + 2, TILE - 4, TILE - 4); ctx.globalAlpha = 1 }
+        }
+
         const paintParticles = () => {
             for (let i = parts.length - 1; i >= 0; i--) {
                 const p = parts[i]; p.t++; p.x += p.vx; p.y += p.vy; p.vy += p.g
@@ -684,6 +717,17 @@ const FloorBossGame = () => {
                 ctx.fillStyle = growWin ? (tick % 50 < 34 ? '#7ec8ff' : '#3d5f78') : '#5d94b6'
                 ctx.font = 'bold 8px monospace'; ctx.textAlign = 'left'
                 ctx.fillText(`ESCROW ${gs.escrow}`, 372, 22)
+            }
+            if (gs.duel) {
+                // #2555 twin till — the manager scoreboard rides beside escrow;
+                // the leading seat burns bright, the trailer stays steady dim.
+                const [h, mm] = gs.credits
+                const lead = h === mm ? -1 : (h > mm ? 0 : 1)
+                ctx.font = 'bold 8px monospace'; ctx.textAlign = 'left'
+                ctx.fillStyle = lead === 0 ? '#ffd23f' : '#8f7f45'
+                ctx.fillText(`YOU ${h}`, 436, 12)
+                ctx.fillStyle = lead === 1 ? '#57c7ff' : '#3f6f88'
+                ctx.fillText(`MODEL ${mm}`, 436, 26)
             }
             // shift clock
             const left = Math.max(0, Math.ceil((SHIFT - gs.tick) / 60))
@@ -979,6 +1023,11 @@ const FloorBossGame = () => {
                 const deep = Math.max(1, ...board.map((e) => e.shift || 1), +(localStorage.getItem('floorboss.deep') || 0)) // #2352: the ladder is the scoreboard
                 ctx.fillText(`BEST RUN: ${board[0].score}${deep > 1 ? ` · DEEPEST SHIFT ${deep}` : ''}`, W / 2, 206) // #2346: runs now span the ladder
             }
+            // #2555: the duel door — cyan chip, tappable or D
+            ctx.fillStyle = 'rgba(87,199,255,0.10)'; ctx.fillRect(W / 2 - 110, 236, 220, 24)
+            ctx.strokeStyle = '#57c7ff'; ctx.lineWidth = 1.2; ctx.strokeRect(W / 2 - 110.5, 236.5, 221, 23)
+            ctx.fillStyle = '#9fdcff'; ctx.font = 'bold 9px monospace'
+            ctx.fillText('D — DUEL THE MODEL · TWO SEATS ONE FLOOR', W / 2, 251)
             ctx.textAlign = 'left'
         }
 
@@ -995,6 +1044,13 @@ const FloorBossGame = () => {
             ctx.fillText(gs.endReason, W / 2, 150)
             ctx.font = 'bold 15px monospace'; ctx.fillStyle = '#ffffff'
             ctx.fillText(`THROUGHPUT ${gs.score}`, W / 2, 190)
+            if (gs.duel && gs.duelWinner != null) {
+                // #2555: the verdict — richest production till takes the night.
+                const [h, mm] = gs.credits
+                ctx.font = 'bold 12px monospace'
+                ctx.fillStyle = gs.duelWinner === 0 ? '#ffd23f' : gs.duelWinner === 1 ? '#57c7ff' : '#cfe6f5'
+                ctx.fillText(gs.duelWinner === 'TIE' ? `MANAGER OF THE NIGHT — DEAD HEAT ${h}` : `MANAGER OF THE NIGHT: ${gs.duelWinner === 0 ? 'YOU' : 'MODEL'} ${gs.duelWinner === 0 ? h : mm} over ${gs.duelWinner === 0 ? mm : h}`, W / 2, 170)
+            }
             ctx.font = '8px monospace'; ctx.fillStyle = '#9fc0d8'
             ctx.fillText(`NIGHTS BANKED ${gs.cleared} · CAREER ${gs.score}`, W / 2, 210)
             ctx.fillText(`SHIPPED ${gs.shipped} · STOWS ${gs.stows} · EXPIRED ${gs.expired}/${STRIKES}`, W / 2, 226)
@@ -1029,6 +1085,7 @@ const FloorBossGame = () => {
             paintArcs(worldDt)
             paintTutorial(tick)
             paintCursor(tick)
+            paintDuel(tick)
             paintParticles()
             paintRushWash(tick)
             paintRushScan(tick)
@@ -1058,16 +1115,17 @@ const FloorBossGame = () => {
             paint()
         }
 
-        const startPlay = () => {
+        const startPlay = (duel = false) => {
             // #1473: honor ?seed=N so a filed report replays this exact shift
             const pin = seedFromQuery()
-            gs = makeGame(pin != null ? pin >>> 0 : (Math.random() * 2 ** 31) | 0)
+            duelMode = duel // #2555: D at the attract seats the model manager beside you
+            gs = makeGame(pin != null ? pin >>> 0 : (Math.random() * 2 ** 31) | 0, { duel })
             parts.length = 0
             setEnd(null)
             clockIn = null // #2352: a fresh run gets no stale ceremony
             watchingRef.current = false; setWatching(false) // #1637 a new shift starts in your hands
             setMode('play')
-            beginEpisode()
+            beginEpisode(duel)
             audioController.playTone(262, 0.08, 'square', 0.06)
             audioController.playTone(392, 0.08, 'square', 0.06, 0.09)
             audioController.playTone(523, 0.12, 'square', 0.06, 0.18)
@@ -1121,7 +1179,7 @@ const FloorBossGame = () => {
                 return
             }
             if (pausedRef.current) return
-            if (screenRef.current === 'attract') { startPlay(); return }
+            if (screenRef.current === 'attract') { startPlay(e.code === 'KeyD'); return } // #2555: D seats the model manager
             if (screenRef.current === 'over') {
                 if (performance.now() - overAt < 600) return
                 if (advanceShift()) return // #2346: a cleared night clocks into the next
@@ -1154,7 +1212,15 @@ const FloorBossGame = () => {
             if (e.code === 'ArrowDown' || e.code === 'KeyS') keys.down = false
         }
         const onPointerDown = (ev) => {
-            if (screenRef.current === 'attract') { startPlay(); return }
+            if (screenRef.current === 'attract') {
+                // #2555: the DUEL chip is a tappable door — seat M (the model
+                // manager) joins at either input, no second pad needed.
+                const r = canvas.getBoundingClientRect()
+                const px = ((ev.clientX - r.left) / r.width) * W
+                const py = ((ev.clientY - r.top) / r.height) * H
+                if (px >= W / 2 - 110 && px <= W / 2 + 110 && py >= 236 && py <= 260) { startPlay(true); return }
+                startPlay(); return
+            }
             if (screenRef.current === 'over' && performance.now() - overAt > 600) {
                 if (advanceShift()) return // #2346: tap clocks into the next night
                 setMode('attract'); gs = makeGame(1337); return
@@ -1207,7 +1273,7 @@ const FloorBossGame = () => {
                 hash: () => stateHash(gs),
                 canvas: () => canvas,
                 sim: () => gs,
-                step: (n = 1, pad = {}) => { for (let i = 0; i < n; i++) step(gs, [pad]) },
+                step: (n = 1, pad = {}, useM = false) => { for (let i = 0; i < n; i++) step(gs, useM && duelMode ? [pad, apM(gs)] : [pad]) }, // #2555: useM fast-forwards a duel through the model's own manager
                 click: (x, y) => clickCell(gs, x, y),
                 press: (code) => onKeyDown({ code, preventDefault() {}, repeat: false }),
                 release: (code) => onKeyUp({ code }),
@@ -1233,7 +1299,7 @@ const FloorBossGame = () => {
                 servoFx: () => ({ arcs: arcItems.filter((a) => a.servo).length, diamond: diamondA, dmode: gs.arm.swing > 0 ? 'swing' : gs.tool === 'rack' ? 'rack' : gs.arm.held ? 'pulse' : 'off', tool: gs.tool, sway: gripSway, shud: gripShud }),
                 // #1637 watchcheck pilot drives these.
                 watching: () => watchingRef.current,
-                probe: () => ({ tick: gs.tick, score: gs.score, escrow: gs.escrow, freight: gs.freight, fees: gs.fees, shipped: gs.shipped, stows: gs.stows, racks: gs.racks.length, end: gs.end, away: gs.truck.away, far: gs.truck.far, padDest: gs.pad.map((p) => p.d || 0), padWeight: gs.pad.map((p) => p.w || 0), heavy: gs.truck.grid.reduce((s, r) => s + r[2], 0) }), // away/far/padDest #1927, padWeight/heavy #1931
+                probe: () => ({ tick: gs.tick, score: gs.score, escrow: gs.escrow, freight: gs.freight, fees: gs.fees, shipped: gs.shipped, stows: gs.stows, racks: gs.racks.length, end: gs.end, away: gs.truck.away, far: gs.truck.far, padDest: gs.pad.map((p) => p.d || 0), padWeight: gs.pad.map((p) => p.w || 0), heavy: gs.truck.grid.reduce((s, r) => s + r[2], 0), duel: gs.duel ? { tills: gs.credits.slice(0, 2), house: gs.credits[2], spent: gs.spent, winner: gs.duelWinner, rackOwners: gs.racks.map((r) => r.owner), botOwners: gs.robots.map((b) => b.owner) } : null }), // away/far/padDest #1927, padWeight/heavy #1931, duel eyes #2555
                 watchSfx: watchSfxLog,
                 GX, GY, TILE, W, H,
             }
