@@ -146,3 +146,16 @@ select,
     transform: translateX(-3px);
   }
 }
+
+/* #2573 EXCITEBIKE splash cursor — the NES catalogue's little bike bobs on
+   two frames while the menu idles (steps(1): a hard A/B flip, not a glide). */
+@keyframes bikebob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-2px);
+  }
+}
