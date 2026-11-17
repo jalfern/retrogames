@@ -1153,6 +1153,22 @@ console.log('— teach the elbow (#2627 stage 2) —')
         ok(one === two && stateHash(g) === h0, 'cornerEscapes is pure — same answer twice, board hash unchanged (#1917)')
     }
     {
+        // pocket-trap: a mouth with an open cell behind it, reachable ONLY
+        // through that mouth — plugging it strands floor. The clears-check
+        // cannot see it (the before-net computes with the plug already
+        // stood, so the stranded cell was never reachable to begin with);
+        // only the legality check excludes it. This rig is what kills the
+        // --mutate-teach mutant.
+        const g = mk()
+        const seq = [...NEED, [17, 8], [19, 8], [18, 9]]
+        const fails = []
+        for (const [x, y] of seq) if (put(g, x, y) !== 'build') fails.push([x, y])
+        ok(fails.length === 0, 'pocket-trap rig builds clean — (18,8) hangs behind south mouth (18,7), reachable only through it')
+        const esc = cornerEscapes(g, 17, 4)
+        ok(!esc.some((m) => m.x === 18 && m.y === 7), 'the pocket-mouth is never taught — plugging (18,7) would strand (18,8) (#2627 s2 honesty)')
+        ok(esc.some((m) => m.x === 21 && m.y === 4), 'the clean east mouth is still taught — the lesson adapts cell by cell')
+    }
+    {
         // the teacher never teaches a refusal: a mouth that is some rack's
         // last service face is a TRAP, not a lesson — racking it would strand
         // that rack (the rack law). Wall (22,4) in except toward the mouth.
