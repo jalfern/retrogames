@@ -77,6 +77,23 @@ An honest limitation, same shape as #2558's facing-fallback pin: the audio
 split and the shake *feel* can only be graded by the browser harness —
 archerycheck cannot hear.
 
+**Duel ceremony (#2565 item 3).** `2` announces the match before it begins,
+the way TowerFall does: the board HOLDS ~0.9 s (the same accumulator-hold as
+hit-stop — ticks delayed, never skipped, so the command stream and replay
+hashes are untouched), seat pings ring in the seats' own pitches (320 then
+390 Hz, the same split as the loose sweep and dryout), painted seat chips
+(`P1` red / `P2` cyan) name each archer above their head, and `DRAW!`
+crosses the board at 600 ms before the release. The attract marquee gained
+the seat-key line (`2 DUEL ON ONE KEYBOARD — P1 ARROWS+SPACE · P2 WASD+F`).
+Solo keeps the old single sweep — the two modes are meant to sound distinct.
+Proven in the browser: four DUEL-section gates grade the receipts (hold with
+seat 1 ringing first, pings-then-DRAW order, chips+word PIXELS above the
+bodies and across the centre strip, release with ticks advancing), 49/49.
+Browser-only, same pin shape as the facing fallback and the seat pitch: the
+ceremony lives in the shell, not the sim — archerycheck never seats a duel.
+The manual mutant (ceremony arming removed in `startPlay`) reddens the hold
+and paint gates.
+
 **Deliberate climbing (#2307).** The autopilot owns the vertical game. Each
 re-plan window (every 12 ticks) `reachableStep` scans the slab ahead of the
 bot — near-edge, standing span, approach direction — and for each candidate
@@ -215,7 +232,8 @@ danger. Probe `fx: { ash, homes, warnNotes, dryFx, warnStep }` receipts.
   sticks *above* it, painted near-vertical, not hanging from the underside.
   Double-thickness stone hangs tip-up correctly (flush FLUSH-ceiling pin).
   A true underside-hang would need the lift to be economy-aware, not
-  direction-aware — filed with this issue's ceremony item.
+  direction-aware — still open after the #2565 ceremony shipped (ceremony is
+  presentation; the lift itself was never ceremony's to change).
 - ~~The 2P duel has no harness yet beyond the pad dispatch existing
   (`secondPad` is `VirtualControls`' contract, exercised by IceClimber);
   `archeryplay` drives P1 only.~~

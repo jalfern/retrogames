@@ -32,6 +32,14 @@ import WatchButton, { WatchToast, AttractWatchButton } from '../../components/Wa
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 
 const SIM_MS = 1000 / 30
+// #2565 item 3 — duel ceremony. TowerFall announces a two-seat match with a
+// distinct beat before the first draw: seat pings, then DRAW. Presentation +
+// audio only: the fixed-step accumulator HOLDS while the ceremony rings, so
+// world ticks are delayed, never skipped or added (the #2565 hit-stop law) —
+// the sim, its command stream and every replay hash stay untouched.
+const CEREMONY_MS = 900
+const CER_PING2_MS = 300   // seat-2 ping after seat-1
+const CER_DRAW_MS = 600    // the DRAW! beat
 const HOME_LIFE = 18 // #2385 sim ticks a rotted shaft takes to fly home to its quiver
 const CW = CFG.cell
 const A0 = buildArena(0)
@@ -137,8 +145,13 @@ const ArenaArcheryGame = () => {
         const SHAKE_PAT = [[0, 3], [-2, -2], [3, -1], [-3, 2], [2, 3], [-1, -3], [3, 1], [-2, 2]]
         let shake = 0            // paint frames of flinch remaining
         let hitstop = 0          // sim-ms the accumulator holds
+        let ceremony = 0         // #2565 item 3: ms of duel ceremony left (world holds)
         let killFx = 0           // receipts: kills that made the board flinch
         const seatLoose = [0, 0] // #2565 receipts: looses counted per seat (the pitch split is readable by ear)
+        // #2565 item 3 duel ceremony receipts: pings rung (P1 then P2) and the
+        // DRAW beat landed. The browser harness grades these + the painted chips.
+        const seatPing = [0, 0]
+        let drawBeat = 0
 
         const resetJuice = () => {
             puffs.length = 0
@@ -151,6 +164,7 @@ const ArenaArcheryGame = () => {
             landCount = 0; blockCount = 0
             warnLatch = 0
             killFx = 0; shake = 0; hitstop = 0
+            ceremony = 0; seatPing[0] = 0; seatPing[1] = 0; drawBeat = 0
         }
 
         const detectJuice = (in1, in2) => {
@@ -374,6 +388,25 @@ const ArenaArcheryGame = () => {
             }
             drawArcher(ctx, g.p[0], '#ff5d6c', play ? squash[0] : 0)
             drawArcher(ctx, g.p[1], '#4ad7ff', play ? squash[1] : 0)
+            // #2565 item 3 — the ceremony painted: the seat chips name each
+            // archer in their own colour (red/cyan, like the quiver bars and
+            // fletching), and DRAW! crosses the board when the beat lands.
+            // Above the bodies (head top is p.y−12); the centre strip holds no
+            // gameplay ink while the board is held at spawn.
+            if (play && ceremony > 0 && mode === '2p') {
+                ctx.textAlign = 'center'
+                ctx.font = 'bold 11px monospace'
+                if (seatPing[0]) { ctx.fillStyle = '#ff5d6c'; ctx.fillText('P1', g.p[0].x, g.p[0].y - 24) }
+                if (seatPing[1]) { ctx.fillStyle = '#4ad7ff'; ctx.fillText('P2', g.p[1].x, g.p[1].y - 24) }
+                if (drawBeat) {
+                    ctx.font = 'bold 30px monospace'
+                    ctx.fillStyle = '#1a1226'
+                    ctx.fillText('DRAW!', PXW / 2 + 2, PXH / 2 - 10)
+                    ctx.fillStyle = '#ffd23e'
+                    ctx.fillText('DRAW!', PXW / 2, PXH / 2 - 12)
+                }
+                ctx.textAlign = 'left'
+            }
             if (hot) {
                 // the arena itself sweats: a breathing ember frame top and
                 // bottom says "re-engage" before any text has to
@@ -455,7 +488,15 @@ const ArenaArcheryGame = () => {
             bgDirty = true
             setMode('play')
             say(m === '2p' ? 'DUEL — FIRST TO 3' : 'YOU vs THE BOT — FIRST TO 3')
-            audioController.playSweep(220, 660, 0.25, 'square', 0.07)
+            if (m === '2p') {
+                // #2565 item 3: the duel is ANNOUNCED, not just started — seat
+                // pings in the seats' own pitches (the #2565 loose split,
+                // 320/390), then DRAW!, then the board releases. The generic
+                // sweep stays the solo start so the two modes sound distinct.
+                ceremony = CEREMONY_MS
+            } else {
+                audioController.playSweep(220, 660, 0.25, 'square', 0.07)
+            }
         }
 
         const buildDemo = (i) => {
@@ -509,9 +550,21 @@ const ArenaArcheryGame = () => {
             const ft = Math.min(ts - last, 250)
             last = ts
             if (!pausedRef.current) {
+                // #2565 item 3: the ceremony holds the board like the hit-stop —
+                // the accumulator spends the frame on the freeze, so ticks are
+                // delayed, never skipped; pings and the DRAW beat fire off the
+                // frame clock and freeze on pause with everything else.
+                if (ceremony > 0) {
+                    const el = CEREMONY_MS - ceremony
+                    if (seatPing[0] === 0) { seatPing[0] = 1; audioController.playTone(320, 0.1, 'triangle', 0.06) }
+                    if (el >= CER_PING2_MS && seatPing[1] === 0) { seatPing[1] = 1; audioController.playTone(390, 0.1, 'triangle', 0.06) }
+                    if (el >= CER_DRAW_MS && drawBeat === 0) { drawBeat = 1; audioController.playSweep(520, 940, 0.16, 'square', 0.07) }
+                    ceremony -= ft
+                }
                 // #2565 hit-stop: the accumulator holds (ft is spent on the
                 // freeze, not queued) — the world pauses, nothing is skipped.
                 if (hitstop > 0) hitstop -= ft
+                else if (ceremony > 0) { /* the board holds until DRAW releases it */ }
                 else { acc += ft; while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS } }
                 if (shake > 0) shake--
             }
@@ -603,6 +656,9 @@ const ArenaArcheryGame = () => {
                     // #2565 seatLoose: releases counted per seat — the pitched
                     // split that makes a same-tick exchange audible.
                     fx: { ash: puffs.filter((u) => u.ash).length, homes: home.length, warnNotes, dryFx, warnStep: heatWarnStep(gs.tick - gs.lastHit), seatLoose: [...seatLoose] },
+                    // #2565 item 3 ceremony receipts: ms of board-hold left,
+                    // seat pings rung (P1 first, then P2), DRAW beat landed.
+                    ceremony: { ms: Math.max(0, ceremony), pings: [...seatPing], draw: drawBeat },
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),
@@ -717,6 +773,9 @@ const ArenaArcheryGame = () => {
                     <AttractMessage className="mb-6 text-amber-100/80" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-yellow-300">{PRESS}</p>
                     <span className="block mt-4 text-amber-200/70 font-mono font-bold tracking-wider">{WATCH_ATTRACT_HINT}</span>
+                    {/* #2565 item 3 — the duel's seat keys, discoverable at the
+                        marquee (the desktop-keyboard option per AGENTS.md). */}
+                    <span className="block mt-2 text-red-300/80 font-mono font-bold tracking-wider">2 DUEL ON ONE KEYBOARD — P1 ARROWS+SPACE · P2 WASD+F</span>
                 </div>
             )}
 
