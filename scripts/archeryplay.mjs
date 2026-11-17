@@ -189,12 +189,29 @@ page.on('pageerror', () => { pageErrors++ })
     // owners in the terrain — every sampled tail must carry its owner's barbs,
     // proving the tint tracks the shooter, not the surface. The duel keeps
     // running live, so poll a few windows for the both-owners frame.
+    // #2626 calibration (nightly run 44119695377): the only seat-1 arrow so far
+    // was the 350 ms draw-phase draw — it lands at the archer's feet and the
+    // pull law (#1739) retrieves it on the next tick, so no owner-0 shaft ever
+    // stood in the terrain and the scan was lawfully red. Fire seat 1 a REAL
+    // full charge (lands out of foot-reach, stays stuck) while the bot shoots;
+    // the both-owners proof itself is unchanged.
+    await page.keyboard.down('Space')
+    await sleep(900)
+    await page.keyboard.up('Space')
     let fletchBots = []
     let fOkBots = false
-    for (let k = 0; k < 8 && !fOkBots; k++) {
-        fletchBots = await fletchScan()
-        fOkBots = fletchOk(fletchBots, true)
-        if (!fOkBots) await sleep(150)
+    for (let k = 0; k < 14 && !fOkBots; k++) {
+        const cells = await fletchScan()
+        if (cells.length) fletchBots = cells
+        fOkBots = fletchOk(cells, true)
+        if (!fOkBots) {
+            if (k === 6) { // a hit or same-cell replace may have eaten the first shaft — draw again
+                await page.keyboard.down('Space')
+                await sleep(900)
+                await page.keyboard.up('Space')
+            }
+            await sleep(150)
+        }
     }
     r.check('stuck shafts wear owner-tinted fletching — red for P1, cyan for P2 (#2565)', fOkBots, JSON.stringify(fletchBots))
     const rc = await page.evaluate(() => window.__archeryTest.replayCheck())
