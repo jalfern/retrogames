@@ -490,9 +490,9 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     await page.keyboard.press('ArrowUp')
     await page.keyboard.press('ArrowUp')
     await page.keyboard.press('ArrowUp')
-    r.check('arrow-up wraps backward past row 0 to the last course', (await probe()).sel === 5, `sel=${(await probe()).sel}`)
+    r.check('arrow-up wraps backward past row 0 onto the EDIT row (#2576 grew the menu)', (await probe()).sel === 6, `sel=${(await probe()).sel}`)
     await page.keyboard.press('ArrowRight')
-    r.check('arrow-forward wraps past the last course to row 0', (await probe()).sel === 0, `sel=${(await probe()).sel}`)
+    r.check('arrow-forward wraps past the last row to row 0', (await probe()).sel === 0, `sel=${(await probe()).sel}`)
     await page.keyboard.press('Escape')
     r.check('Escape at the splash steps back to the marquee', (await probe()).screen === 'attract')
     await page.keyboard.press('KeyZ')
@@ -514,13 +514,21 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
             await page.mouse.down()
             await page.mouse.move(st.x + 6, st.y + st.height / 2, { steps: 4 }) // push the stick LEFT
             await wait(150)
-            r.check('the pad itself walks the splash cursor (left push wraps to the last course)', (await probe()).sel === 5, `sel=${(await probe()).sel}`)
+            r.check('the pad itself walks the splash cursor — left push wraps onto the EDIT row (#2576)', (await probe()).sel === 6, `sel=${(await probe()).sel}`)
             await page.mouse.up()
         } else {
-            r.check('the pad itself walks the splash cursor (left push wraps to the last course)', false, 'no [data-vc="stick"] to push')
+            r.check('the pad itself walks the splash cursor — left push wraps onto the EDIT row (#2576)', false, 'no [data-vc="stick"] to push')
         }
     }
-    await page.mouse.click(500, 120) // tap OUTSIDE the pad seats the picked course
+    await page.mouse.click(500, 120) // tap OUTSIDE the pad executes the row: the bay opens for a phone
+    await wait(250)
+    mid = await probe()
+    r.check('a tap on the EDIT row opens the design bay on touch (#2576)', mid.screen === 'edit', `screen=${mid.screen}`)
+    await page.keyboard.press('Escape')
+    await wait(200)
+    mid = await probe()
+    r.check('Esc leaves the bay back on the last real course (K.O. CROSS)', mid.screen === 'tracks' && mid.sel === 5, `screen=${mid.screen} sel=${mid.sel}`)
+    await page.mouse.click(500, 120) // and a tap now seats the course the cursor rests on
     await wait(250)
     mid = await probe()
     r.check('a tap outside the pad rides the course the cursor picked (K.O. CROSS)',
@@ -574,6 +582,89 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
         if (!fb) await wait(60)
     }
     r.check('attract replays the pinned contact receipt (SONJA flyby t553) tick-for-tick in the browser', !!fb, fb ? `t=${fb.t}` : 'not seen within 15s')
+}
+
+// ---- EDIT TRACK (#2576): design in real keys — stamp, refuse, save, seat, ride ----
+{
+    await page.goto(URL, { waitUntil: 'load' })
+    await page.waitForFunction(() => !!window.__bikeTest, null, { timeout: 30000 })
+    await wait(700)
+    await page.keyboard.press('KeyZ')
+    await wait(200)
+    r.check('the splash advertises the design bay (the NES second menu entry)', (await page.locator('text=DESIGN TRACK').count()) > 0, 'no DESIGN TRACK row in the DOM')
+    await page.keyboard.press('Digit0')
+    await wait(200)
+    let e = (await probe()).edit
+    r.check('digit 0 opens EDIT TRACK', (await probe()).screen === 'edit' && !!e && e.stamps.length === 0, `screen=${(await probe()).screen}`)
+
+    // cursor law in the bay: 40px steps
+    for (let i = 0; i < 3; i++) { await page.keyboard.press('ArrowRight'); await wait(40) }
+    e = (await probe()).edit
+    r.check('the stamp cursor walks 40px per tap', e.cursor === 240, `cursor=${e && e.cursor}`)
+
+    // stamp a RAMP
+    await page.keyboard.press('Space')
+    await wait(120)
+    e = (await probe()).edit
+    r.check('SPACE stamps the tool under the cursor', !!e && e.stamps.length === 1 && e.stamps[0][0] === 'RAMP' && e.stamps[0][1] === 240, JSON.stringify(e && e.stamps))
+
+    // the live law: overlapping is refused before it can ever reach SAVE
+    for (let i = 0; i < 4; i++) { await page.keyboard.press('ArrowRight'); await wait(40) } // 240 -> 400, inside the RAMP footprint
+    await page.keyboard.press('Space')
+    await wait(120)
+    e = (await probe()).edit
+    r.check('an overlapping stamp is refused at the cursor (fits red, no stamp added)', !!e && e.stamps.length === 1 && e.msg.includes('NO'), `${JSON.stringify(e && { n: e.stamps.length, msg: e.msg })}`)
+
+    // tool strip wraps; SAVE tool writes slot 1 (the tool under the cursor is law:
+    // RAMP(0) --up--> EXIT(8) --up--> SAVE(7))
+    await page.keyboard.press('ArrowUp'); await wait(40)
+    await page.keyboard.press('ArrowUp'); await wait(40)
+    e = (await probe()).edit
+    r.check('the tool strip wraps backward onto SAVE', !!e && e.tool === 'SAVE', e && e.tool)
+    await page.keyboard.press('Space')
+    await wait(150)
+    let p = await probe()
+    r.check('SAVE batteries a legal draft into CUSTOM 1', p.customs === 1 && !!p.edit && p.edit.msg.includes('SAVED'), `customs=${p.customs} msg=${p.edit && p.edit.msg}`)
+
+    // erase, then SAVE refuses the blank — the audit is the SAVE gate
+    await page.keyboard.press('ArrowUp'); await wait(40) // SAVE -> ERASE
+    await page.keyboard.press('Space'); await wait(120)   // cursor 400 sits inside the RAMP footprint
+    p = await probe()
+    r.check('ERASE lifts the stamp under the cursor', p.customs === 1 && p.edit.stamps.length === 0, JSON.stringify(p.edit && p.edit.stamps))
+    await page.keyboard.press('ArrowDown'); await wait(40) // ERASE -> SAVE
+    await page.keyboard.press('Space'); await wait(120)
+    p = await probe()
+    r.check('SAVE refuses an empty course (the audit refuses, so storage never sees it)', p.customs === 1 && p.edit.msg.includes('DRAW'), p.edit && p.edit.msg)
+
+    // exit lands back on the splash with the roster grown
+    await page.keyboard.press('ArrowDown'); await wait(40) // SAVE -> EXIT
+    await page.keyboard.press('Space'); await wait(200)
+    p = await probe()
+    r.check('EXIT returns to the grown splash (cursor restored where it entered — TRACK 1)', p.screen === 'tracks' && p.customs === 1 && p.sel === 0, `screen=${p.screen} customs=${p.customs} sel=${p.sel}`)
+    r.check('the splash row 7 presents the saved design', (await page.locator('text=CUSTOM 1').count()) > 0, 'no CUSTOM row')
+
+    // the battery is real: reload the tab, the design survives hydration
+    await page.goto(URL, { waitUntil: 'load' })
+    await page.waitForFunction(() => !!window.__bikeTest, null, { timeout: 30000 })
+    await wait(700)
+    p = await probe()
+    r.check('a saved custom rides the roster after a fresh load (localStorage battery)', p.customs === 1 && p.rows === 8, `customs=${p.customs} rows=${p.rows}`)
+
+    // and it RIDES: seat TRACK 7 with the cursor and drive it
+    await page.keyboard.press('KeyZ')
+    await wait(200)
+    for (let i = 0; i < 6; i++) { await page.keyboard.press('ArrowDown'); await wait(40) }
+    p = await probe()
+    r.check('the cursor seats TRACK 7 (the saved design)', p.sel === 6, `sel=${p.sel}`)
+    await page.keyboard.press('Enter')
+    await wait(250)
+    p = await probe()
+    r.check('CUSTOM 1 seats a real race (same engine, same rivals)', p.screen === 'play' && p.track === 6 && p.count > 0 && p.rivals.length === 5, `screen=${p.screen} track=${p.track} rivals=${p.rivals.length}`)
+    await page.waitForFunction(() => window.__bikeTest.probe().count === 0, null, { timeout: 8000 }).catch(() => {})
+    await hold('ArrowUp', 2600)
+    p = await probe()
+    const px = await bikePx()
+    r.check('the custom course races on real pixels (gas on, world scrolling, rider painted)', p.x > 200 && px.n > 12, `x=${p.x.toFixed(0)} red px=${px.n}`)
 }
 
 r.check('zero page errors across the whole ride', errors.length === 0, errors.slice(0, 4).join(' | '))

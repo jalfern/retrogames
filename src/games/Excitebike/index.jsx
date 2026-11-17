@@ -746,7 +746,8 @@ const ExcitebikeGame = () => {
         }
         const exitEdit = () => {
             setMode('tracks')
-            selRef.current = Math.min(selRef.current, TRACK_COUNT + customsRef.current)
+            // land the cursor on the last real course, never back on the bay
+            selRef.current = Math.min(selRef.current, TRACK_COUNT + customsRef.current - 1)
             setSel(selRef.current)
             audioController.playSweep(520, 330, 0.18, 'square', 0.06)
         }
