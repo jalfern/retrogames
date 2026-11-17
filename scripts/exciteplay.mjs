@@ -616,7 +616,7 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     r.check('an overlapping stamp is refused at the cursor (fits red, no stamp added)', !!e && e.stamps.length === 1 && e.msg.includes('NO'), `${JSON.stringify(e && { n: e.stamps.length, msg: e.msg })}`)
 
     // tool strip wraps; SAVE tool writes slot 1 (the tool under the cursor is law:
-    // RAMP(0) --up--> EXIT(8) --up--> SAVE(7))
+    // RAMP(0) --up--> EXIT(10) --up--> SAVE(9); #2625 grew the strip to 11)
     await page.keyboard.press('ArrowUp'); await wait(40)
     await page.keyboard.press('ArrowUp'); await wait(40)
     e = (await probe()).edit
@@ -710,9 +710,11 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     r.check('a test seat never grows the roster (the phantom is nowhere)', p.customs === 1 && p.rows === 8, `customs=${p.customs} rows=${p.rows}`)
 
     // an illegal draft refuses TEST by name — the same law SAVE reads
-    await page.keyboard.press('ArrowDown'); await wait(40) // TEST -> ERASE
+    await page.keyboard.press('ArrowDown'); await wait(40) // TEST -> LAP (#2625 sits between)
+    await page.keyboard.press('ArrowDown'); await wait(40) // LAP -> ERASE
     await page.keyboard.press('Space'); await wait(120)    // lift the RAMP under the cursor
-    await page.keyboard.press('ArrowUp'); await wait(40)   // back onto TEST
+    await page.keyboard.press('ArrowUp'); await wait(40)   // ERASE -> LAP
+    await page.keyboard.press('ArrowUp'); await wait(40)   // LAP -> TEST
     await page.keyboard.press('Space'); await wait(150)
     p = await probe()
     r.check('an empty draft refuses TEST by name (stays in the bay)', p.screen === 'edit' && p.test === false && !!p.edit && p.edit.msg.includes('DRAW'), JSON.stringify(p && { s: p.screen, m: p.edit && p.edit.msg }))
@@ -894,6 +896,104 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     p = await probe()
     r.check('LOW seats a LOWER rev — the sweep is keyed to the gear (#2573)', p.screen === 'play' && p.count > 0 && p.gear === 'low' && p.rev.length === 1 && p.rev[0][0] === 160 && p.rev[0][1] === 480 && p.rev[0][2] === 'low', JSON.stringify({ s: p.screen, g: p.gear, c: p.count, rev: p.rev }))
     await page.setViewportSize({ width: 620, height: 680 })
+}
+
+// ---- YOUR LAPS (#2625 stage 1): the designer sets the race length, all the
+// way from the bay strip to the engine, the battery and the splash badge ----
+{
+    await page.goto(URL, { waitUntil: 'load' })
+    await page.waitForFunction(() => !!window.__bikeTest, null, { timeout: 30000 })
+    await wait(700)
+    await page.keyboard.press('KeyZ'); await wait(200)
+    await page.evaluate(() => localStorage.clear()) // a clean battery: this leg owns slot 1
+    await page.keyboard.press('Digit0'); await wait(200)
+    let p = await probe()
+    r.check('a fresh bay defaults to the house book (2 laps)', p.screen === 'edit' && p.edit.laps === 2, JSON.stringify(p.edit))
+
+    // walk the strip down onto LAP (RAMP(0) --down x7--> LAP(7); TEST(6) sits before it)
+    for (let i = 0; i < 7; i++) { await page.keyboard.press('ArrowDown'); await wait(40) }
+    p = await probe()
+    r.check('the tool strip offers LAP between TEST and ERASE', !!p.edit && p.edit.tool === 'LAP', p.edit && p.edit.tool)
+
+    // cycle the number: 2 --x6--> 8, and the next press wraps to 1 (the whole 1–8 book)
+    for (let i = 0; i < 6; i++) { await page.keyboard.press('Space'); await wait(45) }
+    p = await probe()
+    r.check('LAP cycles the designer\'s number up to the top of the book (8)', !!p.edit && p.edit.laps === 8, p.edit && String(p.edit.laps))
+    await page.keyboard.press('Space'); await wait(80)
+    p = await probe()
+    r.check('LAP wraps 8 -> 1 so every length is reachable by repeating A', !!p.edit && p.edit.laps === 1 && p.edit.msg.includes('LAPS 1'), JSON.stringify(p.edit && { l: p.edit.laps, m: p.edit.msg }))
+    r.check('a LAPS message paints as OK, not an error refusal', !!p.edit && p.edit.msg.startsWith('LAPS') && !p.edit.msg.includes('NO'), p.edit && p.edit.msg)
+
+    // draw something legal and SAVE it carrying the 1
+    await page.keyboard.press('ArrowUp'); await wait(40) // back onto RAMP? no — LAP(7) -> BOOST(6)
+    await page.keyboard.press('ArrowUp'); await wait(40)
+    p = await probe()
+    r.check('LAP is a setting neighbor: stepping off it lands on obstacle tools', !!p.edit && ['BOOST', 'RAMP'].includes(p.edit.tool), p.edit && p.edit.tool)
+    await page.keyboard.press('ArrowUp'); await wait(40); await page.keyboard.press('ArrowUp'); await wait(40)
+    await page.keyboard.press('ArrowUp'); await wait(40); await page.keyboard.press('ArrowUp'); await wait(40)
+    await page.keyboard.press('ArrowUp'); await wait(40) // BOOST(6)..RAMP(0): 6 ups from 6 lands RAMP(0)
+    p = await probe()
+    r.check('back on RAMP with the chosen length remembered', !!p.edit && p.edit.tool === 'RAMP' && p.edit.laps === 1, JSON.stringify(p.edit))
+    await page.keyboard.press('Space'); await wait(120) // stamp RAMP @120 — legal
+    p = await probe()
+    r.check('the draft took the stamp (terrain and laps are separate ledgers)', !!p.edit && p.edit.stamps.length === 1, JSON.stringify(p.edit && p.edit.stamps))
+    await page.keyboard.press('ArrowUp'); await wait(40) // RAMP --up--> EXIT(10)
+    await page.keyboard.press('ArrowUp'); await wait(40) // EXIT --up--> SAVE(9)
+    await page.keyboard.press('Space'); await wait(150)
+    p = await probe()
+    r.check('SAVE stores the design WITH its lap count', p.customs === 1 && p.edit.msg.includes('SAVED') && p.customLaps.length === 1 && p.customLaps[0] === 1, JSON.stringify({ c: p.customs, m: p.edit && p.edit.msg, cl: p.customLaps }))
+
+    // the battery carries laps across a reload
+    await page.goto(URL, { waitUntil: 'load' })
+    await page.waitForFunction(() => !!window.__bikeTest, null, { timeout: 30000 })
+    await wait(700)
+    p = await probe()
+    r.check('after a reload the stored design still runs ONE lap (codec battery)', p.customs === 1 && p.customLaps[0] === 1, JSON.stringify({ c: p.customs, cl: p.customLaps }))
+
+    // the splash badge wears the deviation before you seat it
+    await page.keyboard.press('KeyZ'); await wait(200)
+    const badge = await page.locator('[data-custom-laps]').first().textContent().catch(() => '')
+    r.check('the splash row labels the deviation (★ YOURS · 1 LAP)', /YOURS/.test(badge || '') && /1 LAP/.test(badge || ''), JSON.stringify(badge))
+
+    // seat it: the engine races the designer's book, and says so
+    for (let i = 0; i < 6; i++) { await page.keyboard.press('ArrowDown'); await wait(40) }
+    await page.keyboard.press('Enter'); await wait(250)
+    p = await probe()
+    r.check('seating CUSTOM 1 hands the engine ONE lap (not the house book)', p.screen === 'play' && p.track === 6 && p.laps === 1, JSON.stringify({ s: p.screen, tk: p.track, l: p.laps }))
+    const toast1 = p.toast && p.toast.msg || ''
+    r.check('the seat toasts the law out loud (BY YOUR LAW)', /BY YOUR LAW/.test(toast1) || /ONE LAP/.test(toast1), JSON.stringify(toast1))
+
+    // a one-lap race ENDS at the line — over screen, leaderboard writer runs
+    await page.waitForFunction(() => window.__bikeTest.probe().count === 0, null, { timeout: 8000 }).catch(() => {})
+    await hold('ArrowUp', 500)                                       // get rolling off the gate
+    await page.evaluate(() => window.__bikeTest.setup({ x: 6340 })) // a few strides from the line
+    await hold('ArrowUp', 900)
+    p = await probe()
+    r.check('the one-lap custom finishes at the line (win, not another lap)', p.end === 'win' && p.screen === 'over' && p.lap >= 1, JSON.stringify({ e: p.end, s: p.screen, lap: p.lap }))
+
+    // abandon carries the number you rode, not just the terrain
+    await wait(1200) // the over screen keeps its 900 ms dwell before any key lands
+    await page.keyboard.press('Enter'); await wait(150)
+    await page.waitForFunction(() => window.__bikeTest.probe().screen === 'attract', null, { timeout: 4000 }).catch(() => {})
+    p = await probe()
+    if (p.screen !== 'tracks') { await page.keyboard.press('KeyZ'); await wait(250) }
+    { // seat the custom again and walk out with Esc
+        for (let i = 0; i < 6; i++) { await page.keyboard.press('ArrowDown'); await wait(40) }
+        await page.keyboard.press('Enter'); await wait(250)
+        await page.keyboard.press('Escape'); await wait(200)
+        p = await probe()
+    }
+    r.check('Esc mid-custom reloads the bay WITH the number you rode', p.screen === 'edit' && p.edit.laps === 1 && p.edit.stamps.length === 1, JSON.stringify(p && { s: p.screen, l: p.edit && p.edit.laps, n: p.edit && p.edit.stamps.length }))
+
+    // the league never hears about any of this: a fresh MOTOCROSS seat is the book
+    await page.keyboard.press('Escape'); await wait(200) // bay -> splash
+    p = await probe()
+    r.check('the bay exit lands on the last real course (the custom row)', p.screen === 'tracks' && p.sel === 6, JSON.stringify({ s: p.screen, sel: p.sel }))
+    await page.keyboard.press('ArrowUp'); await wait(40)
+    for (let i = 0; i < 5; i++) { await page.keyboard.press('ArrowUp'); await wait(40) }
+    await page.keyboard.press('Enter'); await wait(250)
+    p = await probe()
+    r.check('MOTOCROSS still seats the two-lap book (#2377 promise intact)', p.screen === 'play' && p.track === 0 && p.laps === 2, JSON.stringify({ s: p.screen, tk: p.track, l: p.laps }))
 }
 
 r.check('zero page errors across the whole ride', errors.length === 0, errors.slice(0, 4).join(' | '))

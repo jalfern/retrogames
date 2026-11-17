@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs'
 import { makeGame, step, stateHash, CFG } from '../src/games/Excitebike/sim.js'
 import { track, groundY, featureAt, LAP, MUD, WATER, BOOST, TRACK_COUNT, nextSel, trackName, buildTrack, registerCustom, customCount, TRANSIENT, setTestTrack, clearTestTrack, hasTestTrack, ownTerrain } from '../src/games/Excitebike/levels.js'
 import { plan, decide } from '../src/games/Excitebike/planner.js'
-import { compileCustom, auditCustomData, encodeCustom, decodeCustom, fitsAt, stampAt, SPAN, EDGE, STAMP_KINDS, CUSTOM_KEY, CUSTOM_MAX, TOOLS } from '../src/games/Excitebike/custom.js'
+import { compileCustom, auditCustomData, encodeCustom, decodeCustom, fitsAt, stampAt, SPAN, EDGE, STAMP_KINDS, CUSTOM_KEY, CUSTOM_MAX, LAPS_DEFAULT, LAPS_MIN, LAPS_MAX, lapsOf, TOOLS } from '../src/games/Excitebike/custom.js'
 
 const MUT = process.argv.includes('--mutate')
 let pass = 0
@@ -1493,7 +1493,11 @@ section('TEST RIDE (the bay seats an unsaved draft — TRANSIENT, #2587)')
     ]
     const da = buildTrack(compileCustom(A))
     ok(TRANSIENT === -1, 'TRANSIENT must stay -1 (the seat alias the shell hands makeGame)')
-    ok(TOOLS.indexOf('TEST') === 6 && TOOLS.indexOf('ERASE') === 7 && TOOLS[TOOLS.length - 1] === 'EXIT' && TOOLS.length === 10, 'the TEST tool must sit before the verbs — the strip wrap pins depend on it')
+    // #2625 re-recorded with LAP: the LAW (not just the numbers) — TEST/LAP sit
+    // before the verbs, EXIT stays last, and the backward wrap from the first
+    // stamp still lands on EXIT.
+    ok(TOOLS.indexOf('TEST') === 6 && TOOLS.indexOf('LAP') === 7 && TOOLS.indexOf('ERASE') === 8 && TOOLS[TOOLS.length - 1] === 'EXIT' && TOOLS.length === 11, 'the TEST/LAP tools must sit before the verbs — the strip wrap pins depend on it')
+    ok(nextSel(0, -1, TOOLS.length) === TOOLS.length - 1 && nextSel(TOOLS.length - 1, 1, TOOLS.length) === 0, 'the tool strip wrap moved — first stamp back must reach EXIT, forward from EXIT must reach RAMP')
 
     // with the bay not seated, track(-1) is the plain roster wrap it always was
     ok(fpG(track(TRANSIENT).ground) === fpG(track(customCount() + TRACK_COUNT - 1).ground), 'track(-1) stopped wrapping the roster when no test is seated')
@@ -1578,6 +1582,70 @@ section('OWN EXIT (your track gives you back — ownTerrain, #2603)')
         readFileSync(new URL('../src/games/Excitebike/sim.js', import.meta.url), 'utf8') +
         readFileSync(new URL('../src/games/Excitebike/levels.js', import.meta.url), 'utf8')
     ), 'the pure sim/levels layer touches the leaderboard — abandon-submits-nothing is no longer structural')
+}
+
+// ---------------------------------------------------------------- your laps ----
+section('YOUR LAPS (the designer sets the race length — #2625 stage 1)')
+{
+    const src = readFileSync(new URL('../src/games/Excitebike/index.jsx', import.meta.url), 'utf8')
+    const D = [{ kind: 'RAMP', x: 1200 }, { kind: 'BOOST', x: 2400 }, { kind: 'STEP', x: 3400 }]
+
+    // THE LAW: a custom runs the laps ITS DESIGNER chose; the league keeps the
+    // two-lap book. 1–8 offered, house default 2 — every design saved before
+    // this law deviates by nothing.
+    ok(LAPS_MIN === 1 && LAPS_MAX === 8 && LAPS_DEFAULT === 2, `the lap book moved (min ${LAPS_MIN}, max ${LAPS_MAX}, default ${LAPS_DEFAULT})`)
+    ok([1, 2, 3, 4, 5, 6, 7, 8].every((n) => lapsOf(n) === n), 'lapsOf refused a legal number — the designer lost a page of the book')
+    ok([0, 9, -1, 1.5, '3', NaN, null, undefined, true].every((v) => lapsOf(v) === LAPS_DEFAULT), 'lapsOf must fall back to the house book for anything illegal, never invent a length')
+
+    // config, not terrain: the compiler never hears about laps, so every ground/
+    // cps/bands fingerprint from the EDIT block holds by construction.
+    ok(!('laps' in compileCustom(D)), 'compileCustom output carries laps — laps are race config, not geometry')
+
+    // engine contract: an explicit laps rides, an omitted laps is the book.
+    ok(makeGame(0, { count: 0 }).laps === CFG.laps && makeGame(0, { count: 0, laps: 1 }).laps === 1 && makeGame(0, { count: 0, laps: 8 }).laps === 8, 'makeGame stopped honoring the laps option (or its default)')
+    ok([...Array(TRACK_COUNT)].every((_, i) => makeGame(i, { gear: 'high' }).laps === 2), 'a league seat picked up a lap-count change — the league book is two, everywhere')
+
+    // codec: round-trip the designer's number; old-format and garbage fall back,
+    // they never drop the design.
+    const enc = encodeCustom([{ name: 'RUSH', stamps: D.map((s) => [s.kind, s.x]), laps: 5 }])
+    const dec = decodeCustom(enc)
+    ok(dec.length === 1 && dec[0].laps === 5 && dec[0].name === 'RUSH', 'the codec lost the designer\'s number (or the name)')
+    const legacy = decodeCustom('[{"name":"OLD","stamps":[["RAMP",1200]]}]')
+    ok(legacy.length === 1 && legacy[0].laps === LAPS_DEFAULT, 'a pre-#2625 saved design must decode on the house book, not vanish')
+    const junk = decodeCustom('[{"name":"BAD","stamps":[["RAMP",1200]],"laps":9},{"name":"WORSE","stamps":[["RAMP",1200]],"laps":"few"}]')
+    ok(junk.length === 2 && junk.every((e) => e.laps === LAPS_DEFAULT), 'a garbage laps value must fall back to the book — validated, never fatal')
+    ok(JSON.parse(encodeCustom([{ name: 'X', stamps: [['RAMP', 1200]], laps: 99 }]))[0].laps === LAPS_DEFAULT, 'encode let an illegal laps value out')
+
+    // seats carry laps: two copies of ONE draft, differing only in the designer's
+    // number — the lengths they race are then provably different.
+    const d1 = buildTrack(compileCustom(D)); d1.laps = 1
+    const d3 = buildTrack(compileCustom(D)); d3.laps = 3
+    ok(registerCustom(d1, 0) === 6 && registerCustom(d3, 1) === 7 && track(6).laps === 1 && track(7).laps === 3, 'registered customs lost their stored laps')
+    ok(makeGame(6, { count: 0, laps: lapsOf(track(6).laps) }).laps === 1 && makeGame(7, { count: 0, laps: lapsOf(track(7).laps) }).laps === 3, 'the seat wiring (ownTerrain ? stored laps) does not deliver the designer\'s number to the engine')
+
+    // the length is REAL: a 1-lap ride ends at the first line-cross, a 3-lap
+    // ride is still racing long past it, and the same draft with no stored
+    // deviation rides the book. Deterministic throughout — QA can re-run it.
+    const wot = (i, laps) => {
+        const g = makeGame(i, { count: 0, ...(laps ? { laps } : {}) })
+        for (let t = 0; t < 9000 && !g.end; t++) { step(g, { g: true }); g.events.length = 0 }
+        return g
+    }
+    const g1 = wot(6, lapsOf(track(6).laps)); const g3 = wot(7, lapsOf(track(7).laps)); const g2 = wot(6)
+    ok(g1.end === 'win' && g1.lap >= 1 && g1.laps === 1, `the one-lap ride did not end at its line (${g1.end ?? 'unfinished'} lap ${g1.lap}/${g1.laps})`)
+    ok(g3.end === 'win' && g3.lap >= 3 && g3.tick > g1.tick * 2, `the three-lap ride is not racing three times the distance (${g3.end ?? 'unfinished'} lap ${g3.lap}, ticks ${g3.tick} vs ${g1.tick})`)
+    ok(g2.end === 'win' && g2.lap >= 2 && g2.tick > g1.tick && g2.tick < g3.tick, 'an unstored ride deviated from the two-lap book between the one- and three-lap rides')
+    const hA = stateHash(wot(6, 1)); const hB = stateHash(wot(6, 1))
+    ok(hA === hB, 'the laps-1 ride is not deterministic — the same design cannot be raced fairly twice')
+
+    // source pins: the wiring the Node harness cannot drive directly (startPlay's
+    // spread, save/hydrate/abandon, LAP-as-setting) is at least pinned by name —
+    // exciteplay drives the keys themselves.
+    ok(/ownTerrain\(trackIdx\) && t0 && t0\.laps/.test(src), 'startPlay stopped gating stored laps behind ownTerrain — the league could inherit a designer number')
+    ok(/built\.laps = lapsOf\(draft\.laps\)/.test(src), 'saveDraft stopped storing the designer\'s number with the design')
+    ok(/built\.laps = lapsOf\(e\.laps\)/.test(src), 'hydrate stopped restoring stored laps to the roster')
+    ok(/draft\.laps = lapsOf\(t && t\.laps\)/.test(src), 'abandon no longer carries the number you rode back into the bay')
+    ok(/if \(kind === 'LAP'\)/.test(src), 'the LAP tool lost its setting-branch — a cycle should never push a stamp')
 }
 
 console.log(`\nexcitecheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

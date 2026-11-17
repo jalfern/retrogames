@@ -17,10 +17,20 @@ import { LAP, MUD, WATER, BOOST } from './levels.js'
 export const CUSTOM_MAX = 3            // three save slots, like a cartridge battery
 export const CUSTOM_BITE = 7         // custom courses grade past the six (#2573 item 5 may retune)
 export const STAMP_KINDS = ['RAMP', 'STEP', 'WHOOPS', 'MUD', 'WATER', 'BOOST']
-// the editor's tool strip: the six obstacles plus TEST / ERASE / SAVE / EXIT
-// verbs. TEST (#2587) sits BEFORE the verbs on purpose: the strip's backward
-// wrap from the first stamp still lands on EXIT, so every menu-wrap pin holds.
-export const TOOLS = [...STAMP_KINDS, 'TEST', 'ERASE', 'SAVE', 'EXIT']
+// YOUR LAPS (#2625 stage 1): the designer sets the race length. The original's
+// edit mode lets you choose the lap count; this port offers 1–8 with the house
+// book (2) as the default, so every design saved BEFORE this law rides exactly
+// as it did (old codec entries fall back to 2 — see lapsOf/the codec below).
+export const LAPS_MIN = 1
+export const LAPS_MAX = 8
+export const LAPS_DEFAULT = 2
+export const lapsOf = (v) => (Number.isInteger(v) && v >= LAPS_MIN && v <= LAPS_MAX ? v : LAPS_DEFAULT)
+// the editor's tool strip: the six obstacles plus TEST / LAP / ERASE / SAVE /
+// EXIT verbs. TEST (#2587) sits BEFORE the verbs on purpose: the strip's
+// backward wrap from the first stamp still lands on EXIT, so every menu-wrap
+// pin holds. LAP (#2625) joins it there — a SETTING tool, before the verbs,
+// and the strip still ends in EXIT (the wrap law is tested, not assumed).
+export const TOOLS = [...STAMP_KINDS, 'TEST', 'LAP', 'ERASE', 'SAVE', 'EXIT']
 export const CUR_STEP = 40           // cursor quantum; stamp footprints align to it
 export const MAX_STAMPS = 12
 
@@ -158,6 +168,7 @@ export const CUSTOM_KEY = 'excitebike.tracks.v1'
 export function encodeCustom(list) {
     return JSON.stringify((list || []).slice(0, CUSTOM_MAX).map((t) => ({
         name: t.name,
+        laps: lapsOf(t.laps), // #2625 the designer's number rides with the design
         stamps: (t.stamps || []).filter((s) => STAMP_KINDS.includes(s[0]) && Number.isInteger(s[1])).slice(0, MAX_STAMPS),
     })))
 }
@@ -176,7 +187,9 @@ export function decodeCustom(raw) {
             stamps.push([s[0], s[1]])
         }
         if (bad) continue
-        out.push({ name: typeof t.name === 'string' && t.name ? t.name.slice(0, 12) : 'CUSTOM', stamps })
+        // #2625 laps are validated, never fatal: an old-format or garbage laps
+        // value falls back to the house book — it must not drop the entry.
+        out.push({ name: typeof t.name === 'string' && t.name ? t.name.slice(0, 12) : 'CUSTOM', laps: lapsOf(t.laps), stamps })
     }
     return out
 }
