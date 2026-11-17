@@ -79,6 +79,7 @@ const MESSAGES = [
     'Fern the neighbour wanders in by day — chat fills the blue bar.',
     'CHAT builds BONDS — Fern at FAMILY visits sooner and lingers. Neglect cools them.',
     'Ivy shops the market — chat grows HER bond too. At FRIENDS she brings a basket; FAMILY adds honey-money.',
+    'FERN AND IVY MIND THEIR OWN BUSINESS — a shared afternoon climbs their NEIGH bond, and friends chat deeper.',
     'Order the court on glass: tap ✓ for the kind word — hold ✓ on someone and the insult flies.',
     'Red needs flare tempers — a SPAT cracks BONDS. Fill both, side by side, to thaw.',
     'Bank §300, then B + R: hammer on a Spare Room and the lot grows.',
@@ -93,7 +94,7 @@ const MESSAGES = [
 ]
 const PRESS = 'TAP / PRESS ANY KEY TO MOVE IN'
 // #2143: bond-key → name, for the toast lines (three points on the triangle now).
-const BONDER = { house: 'HOUSEHOLD', fern: 'FERN', ivy: 'IVY', kid: 'PIP' }   // #2203: the child rows a bond too
+const BONDER = { house: 'HOUSEHOLD', fern: 'FERN', ivy: 'IVY', kid: 'PIP', neigh: 'NEIGHBOURS' }   // #2203: the child rows a bond; #2588: so do the neighbours between themselves
 
 const CUR = { l: ['ArrowLeft', 'KeyA'], r: ['ArrowRight', 'KeyD'], u: ['ArrowUp', 'KeyW'], d: ['ArrowDown', 'KeyS'] }
 const MOVE_KEYS = new Set([...CUR.l, ...CUR.r, ...CUR.u, ...CUR.d])
@@ -411,6 +412,11 @@ const HomebodyGame = () => {
                     case 'chat': // #2135: the neighbours talk ON screen now — a soft murmur, then the bubble
                         audioController.playTone(e.k === 'ivy' ? 494 : 523, 0.05, 'sine', 0.03)
                         setTimeout(() => audioController.playTone(e.k === 'ivy' ? 392 : 415, 0.07, 'sine', 0.03), 70)
+                        if (live) showSay(s, e)
+                        break
+                    case 'neigh': // #2588: two guests, two voices — a warmer pair-murmur and a bubble
+                        audioController.playTone(587, 0.05, 'triangle', 0.03)
+                        setTimeout(() => audioController.playTone(440, 0.08, 'triangle', 0.03), 70)
                         if (live) showSay(s, e)
                         break
                     case 'coo': // #2131: the compliment — a warm two-note and gold glints
@@ -1331,7 +1337,7 @@ const HomebodyGame = () => {
                     }))
                     let bands = 0, prevBand = false
                     const yTop = LOT_Y + 26 + gs.people.length * 74 + 12 - 2
-                    const yBot = yTop + 2 * 14 + 12
+                    const yBot = yTop + 3 * 14 + 12   // #2588: four base bond rows now (house/fern/ivy/neigh)
                     for (let yy = Math.floor(yTop * k); yy < Math.ceil(yBot * k); yy++) {
                         let ink = false
                         for (let xx = Math.floor((PANEL_X + 62) * k); xx < Math.ceil((PANEL_X + 108) * k); xx++) {

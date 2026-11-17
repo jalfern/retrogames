@@ -73,7 +73,8 @@ see §Speed dial.
   a spat lands with banner + sour buzzer + red sparks + a screen jolt, the
   thaw answers with a warm major chord. Honesty (#237): The Sims *orders*
   insults and compliments; spats here are a law of neglected living, not a
-  button — romance and third-party relationships stay open (see Honest gaps).
+  button — romance landed (#2131) and so did third-party relationships
+  (#2588, §Neighbours who meet); spats between neighbours stay open (Honest gaps).
 - Spat polish (#2076): the quarrel now stages itself ON the lot. `s.spatFx`
   (2.4 s, real clock, view-only) arms at the crack: both residents get a
   storm puff with a gold bolt over the head, knifed brows and a shaking
@@ -138,6 +139,28 @@ see §Speed dial.
   throttle — `s.triTell`/`s.triHits` freeze with the sim and ride `stateHash`.
   Court targeting (`courtTarget`) is the player's side of the line and is
   untouched by the choreography.
+- Neighbours who meet (#2588): the web, not the spoke — Fern and Ivy form
+  their OWN bond (`rel.neigh`) while they share the lot, the third-party
+  tail #2070 left open. `updateNeighbours` runs at the end of the visitor
+  chain (claims already settled by `arbitrateVisitors`, after `updateHouseBond`
+  so the documented five-deep pin stays whole). Law: both hang, BOTH unclaimed,
+  Manhattan ≤ 2 (`NEIGH_REACH`, the household co-presence ring mirrored) →
+  `rel.neigh +0.05/s`; exactly one claimed and ≤ 4 (`NEIGH_GLANCE_REACH` —
+  gossip carries further than walk-talk) → `+0.02/s`; both hosts have an ear,
+  or the pair is silent by reach → nothing. Idle and apart → the MEET-UP:
+  etiquette honours #2154's tie law (the first neighbour stays home), so Ivy
+  paths to a free cell beside Fern (`NEIGH_MEET_CD` retries) and, while the
+  pair are free, NEITHER visitor auto-re-homes to sofa/stove — company beats
+  the furniture. The ladder is the shared one (12/30/60, rel-up/rel-down ride
+  the existing plumbing, crossings pay +2 content like every rung, a rotation
+  of `NEIGH_LINES` exchanges bubbles on an 11 s throttle). Cross-warmth —
+  friend of my friend: at rung 1+ each neighbour chats **25% deeper** with the
+  household (Fern 0.07→0.0875·dt, Ivy IVY_CHAT×1.25, additive relAdds so the
+  base lines stay byte-identical below the rung). Absence cools it softest of
+  all: −0.02/sim-hour via `relSub`. The BONDS panel gained a `twin`-leaf
+  NEIGH row (teal #3aa08a — distinct from Fern-green and Ivy-plum at phone
+  scale; bondRows is the one source, `bondsPix` reads it). No rng anywhere —
+  rotation and proximity only, every seed replays exact.
 - Court pick (#2235): when the reach ring is CONTESTED, the player chooses the
   ear. `courtReach(s)` lists everyone the word can find (partner pushed first,
   fainting and leaving excluded — the old candidate law); when two or more share
@@ -216,7 +239,7 @@ see §Speed dial.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 701 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), garbage day — roster, eve set-out, dawn collection, honest skip, hash (#2303), ice-cream truck — arithmetic stop, paid buy, broke refusals, one serving, kid chase, rot, hash (#2503), truck arrival + drive-off view — rolls in 2 s, out 4 s, draw-only, truckView (#2508), cone in hand — the eat beat, world-clock hold, two arithmetic drips, view-only, hash-still, drive-verified (#2508 item 3), winnable seeds, determinism
+npm run peoplecheck          # 722 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), neighbours who meet — third-party rel.neigh: chat/glance/meet/cross-warmth/ladder/hash (#2588), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), garbage day — roster, eve set-out, dawn collection, honest skip, hash (#2303), ice-cream truck — arithmetic stop, paid buy, broke refusals, one serving, kid chase, rot, hash (#2503), truck arrival + drive-off view — rolls in 2 s, out 4 s, draw-only, truckView (#2508), cone in hand — the eat beat, world-clock hold, two arithmetic drips, view-only, hash-still, drive-verified (#2508 item 3), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -253,10 +276,14 @@ npm run peoplecheck          # 701 gates: boot, rules, spare-room wing (#1806), 
 # correctly stay green — they assert the old law); restore. Mutant #2240: zero
 # the `s.giftFx = GIFT_LAND_T` arm — exactly the two set-down staging gates go
 # red (497 → 495/2); restore. Or swap Ivy's call motif onto Fern's two-bell in
-# VISIT_TIMBRE — exactly the lilt gate goes red (497 → 496/1); restore.
+# VISIT_TIMBRE — exactly the lilt gate goes red (497 → 496/1); restore. Mutant
+# #2588: comment out the Fern cross-warmth relAdd — exactly the Fern warmth gate
+# and the both-blocks pin go red (712 → 710/2; Ivy's warmth rides its own line);
+# restore. Or zero NEIGH_CHAT — the glance (windowed), meet and first-rung
+# crossing gates go red (712 → 709/3); restore.
 npm run dev   # another terminal
 npm run contractcheck        # includes homebody (CONTRACT_ONLY=homebody for just this)
-DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels + real C/X court keys with pink affection pixels and the far-apart Space doctrine + #2222 shelf flips on real [ ] keys, a tapped tab and gold-painted open-tab pixels + #2244 bells live: ring, steaming-plate pixels, parallel tap-orders, shared-table hearts + #2240 live: FAMILY basket lands with weave/greens/tomato/honey pixels on the depth line and a 5 s stage, BONDS reads at 390-px phone scale (ink, three rows, FAMILY gold — sampled across the pulse's phases), and the attract run shows Ivy on the lot and rings her once
+DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart + live storm-puff/heart pixels + real C/X court keys with pink affection pixels and the far-apart Space doctrine + #2222 shelf flips on real [ ] keys, a tapped tab and gold-painted open-tab pixels + #2244 bells live: ring, steaming-plate pixels, parallel tap-orders, shared-table hearts + #2240 live: FAMILY basket lands with weave/greens/tomato/honey pixels on the depth line and a 5 s stage, BONDS reads at 390-px phone scale (ink, four rows since #2588, FAMILY gold — sampled across the pulse's phases), and the attract run shows Ivy on the lot and rings her once
 ```
 Drive it: tap objects to order the active resident; G switches residents; B
 opens buy mode (time stops); `[` `]` flip the catalog shelves and 1-9 pick a
@@ -884,7 +911,11 @@ cat is a night creature, out working the lot after the house is asleep).
 the coo, held past it the insult flies mid-hold, on the same laws and the same
 cooldown as C/X. **The pet half of that tail landed in #2197 — Miso the
 adoptable cat (see Cat (#2197))**; the kids half landed in #2203 — Pip, the
-adoptable child (see Kids (#2203)).
+adoptable child (see Kids (#2203)). **Third-party relationships landed in #2588
+— Fern and Ivy form their own bond (see §Neighbours who meet).** Still open:
+neighbours never SPAT (no third-party grudge — the cold-war law is household
+only); the pair ring is proximity, not pathing choreography beyond the meet-up
+(they chat where the lot parks them); Miso and Pip don't mediate the pair.
 - Visitors are Fern and Ivy (#2143); pets landed (#2197, Miso — and #2200 gave
   her a mood row on the panel and neighbours who greet her); kids landed
   (#2203, Pip); **CLOSED by #2222:** the buy catalog got its category shelves

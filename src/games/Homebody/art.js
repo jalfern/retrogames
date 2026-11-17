@@ -1168,7 +1168,7 @@ export function drawPanel(ctx, s, t, collapse = null, hoverName = null) {
     }
     const mood = petMood(s)
     if (mood !== null) {
-        const py = by + (s.kid ? 68 : 54)
+        const py = by + (s.kid ? 82 : 68)   // #2588: the NEIGH row moved the cat's seat down one
         bondRow(ctx, PANEL_X + 12, py, 'paw', '#d98e4a', Math.round(mood * 4), 'MISO')
         if (mood <= RED_AT && Math.floor(t * 3) % 2 === 0) {
             ctx.strokeStyle = '#ff6a5c'; ctx.lineWidth = 1
@@ -1273,8 +1273,12 @@ export function bondRows(s) {
         { key: 'house', glyph: 'heart', col: s.grudge ? '#8c3b34' : '#e2574c', lv: relLevel(s.rel.house), label: 'HOUSE', x: PANEL_X + 12, y: by + 12, pulse: relLevel(s.rel.house) === 3 },
         { key: 'fern', glyph: 'leaf', col: '#4fae5f', lv: relLevel(s.rel.fern), label: 'FERN', x: PANEL_X + 12, y: by + 26, pulse: relLevel(s.rel.fern) === 3 },
         { key: 'ivy', glyph: 'flower', col: '#a3579b', lv: relLevel(s.rel.ivy), label: 'IVY', x: PANEL_X + 12, y: by + 40, pulse: relLevel(s.rel.ivy) === 3 },
+        // #2588: the third-party rung — twin leaves, the neighbours' own row.
+        // Teal: far enough from Fern-green and Ivy-plum to read as a pair's
+        // own colour (and from every other row hue in the phone-scale probe).
+        { key: 'neigh', glyph: 'twin', col: '#3aa08a', lv: relLevel(s.rel.neigh), label: 'NEIGH', x: PANEL_X + 12, y: by + 54, pulse: relLevel(s.rel.neigh) === 3 },
     ]
-    if (s.kid) rows.push({ key: 'kid', glyph: 'star', col: '#ffd24a', lv: relLevel(s.rel.kid), label: 'PIP', x: PANEL_X + 12, y: by + 54, pulse: false })
+    if (s.kid) rows.push({ key: 'kid', glyph: 'star', col: '#ffd24a', lv: relLevel(s.rel.kid), label: 'PIP', x: PANEL_X + 12, y: by + 68, pulse: false })
     return rows
 }
 
@@ -1296,6 +1300,11 @@ function bondRow(ctx, x, y, glyph, col, lv, label) {
     } else if (glyph === 'star') {
         // #2203: Pip's BONDS glyph — a five-point gold star
         star(ctx, x + 5.5, y + 3, 4.4, col)
+    } else if (glyph === 'twin') {
+        // #2588: the neighbours' BONDS glyph — two mirrored leaves, leaning in
+        ctx.fillStyle = col
+        ctx.beginPath(); ctx.ellipse(x + 4.4, y + 2.4, 1.9, 3.2, Math.PI / 4, 0, 7); ctx.fill()
+        ctx.beginPath(); ctx.ellipse(x + 7.6, y + 3.4, 1.9, 3.2, -Math.PI / 4, 0, 7); ctx.fill()
     } else if (glyph === 'paw') {
         // #2200: Miso's BONDS glyph — three toes over a broad pad
         ctx.fillStyle = col

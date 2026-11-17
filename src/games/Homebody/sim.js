@@ -70,6 +70,21 @@ export const IVY_FADE = 0.03         // rel lost per sim-hour of absence
 export const IVY_GIFT_HUNGER = 0.18  // per resident, per basket
 export const IVY_GIFT_CASH = 15      // the FAMILY-tier honey-money (§)
 
+// #2588: neighbours who meet — the web, not the spoke. Fern and Ivy share the
+// lot most afternoons, but every bond here is anchored to the household. The
+// Sims' social web is PAIRS: two guests form their own opinion of each other
+// while they share the visit. No rng here either — the whole law is rotation
+// and proximity, so every seed stays deterministic.
+export const NEIGH_CHAT = 0.05        // rel/s while BOTH hang unclaimed within the pair ring
+export const NEIGH_GLANCE = 0.02      // rel/s while only one is claimed but they're close
+export const NEIGH_FADE = 0.02        // rel lost per sim-hour of ordinary absence (softest)
+export const NEIGH_REACH = 2          // the pair ring mirrors the household co-presence law
+export const NEIGH_GLANCE_REACH = 4   // gossip carries across the room, walk-talk does not
+export const NEIGH_MEET_CD = 3        // s between meet-up walk retries (the repathT pattern)
+export const NEIGH_COOL_CD = 11       // s between exchanged lines (the #2135 cooling-beat pattern)
+export const NEIGH_WARM = 1.25        // friendship warms: each neighbour chats 25% deeper
+export const NEIGH_WARM_AT = 1        // with the household once the pair is on speaking terms
+
 // #2240: THE GIFT LANDS. FRIENDS+ used to pay hunger with a toast and nothing
 // physical; now the basket Ivy carried in gets SET DOWN when she reaches the
 // kitchen — visible on the ground beside the fridge (else stove, else the front
@@ -931,6 +946,8 @@ export function newRun(seed) {
         demoIvy: 0,               // #2240: the attract has rung (or saw) Ivy this run
         triTell: 0,                 // #2154: world seconds until the next three-way choreography tell
         triHits: 0,                 // #2154: three-way tells fired this run (the line variant rides it)
+        neighTell: 0,               // #2588: world seconds until the next exchanged neighbour line
+        neighHits: 0,              // #2588: neighbour exchanges fired this run (line variant rides it)
         pet: null,                  // #2197: the household cat, once adopted
         kid: null,                  // #2203: the adopted child, once the agency calls
         paper: null,                // #2238: today's news on the step (item ref | null)
@@ -968,7 +985,7 @@ export function newRun(seed) {
         prowlNow: null,         // #2532: a rigged due hour (ringProwl) — one-shot, never the law
         orderPing: { x: 0, y: 0, label: '', t: 0 },   // #2253: the last issued order (the view rings its target while t > 0)
         mealName: '',             // #2244: name of the current plate (a word is state the view reads)
-        rel: { house: 0, fern: 0, ivy: 0, kid: 0 },   // #1817/#2143/#2203 conversation ladders (0..REL_MAX)
+        rel: { house: 0, fern: 0, ivy: 0, kid: 0, neigh: 0 },   // #1817/#2143/#2203/#2588 conversation ladders (0..REL_MAX)
         spats: 0,                 // #2070: quarrels this run (rides the hash)
         grudge: 0,                // #2070: 1 = cold war until the pair makes up
         spatCd: 0,                // #2070: real seconds until the next spat may fire
@@ -1058,6 +1075,13 @@ const REL_UP_LINES = {
         1: ['Pip picked this one. Pip tells everyone so, unprompted.', 'Pip follows you room to room like a small determined shadow.'],
         2: ['Pip saved you the good seat, the one with the best view of the radio.', 'Pip shows you their secret cave under the stairs. You are sworn to secrecy.'],
         3: ['Pip signed your drawing — "BEST FRIENDS FOREVER" — and framed it on the fridge.'],
+    },
+    // #2588: the third-party ladder — the neighbours climb it between
+    // themselves, with nobody from the house on the rung.
+    neigh: {
+        1: ['Fern and Ivy nod at each other by the gate now, like it is planned.', 'The two neighbours save each other a seat at the kitchen table without asking.'],
+        2: ['Fern and Ivy arrive an hour apart and still finish each other\u2019s market news.', 'Ivy brings a spare basket; Fern brought one last week. This is a thing now.'],
+        3: ['Fern and Ivy — the neighbourhood\u2019s other household, two gardens and one gossip line.'],
     },
 }
 
@@ -1738,6 +1762,13 @@ export const TRI_LINES = [
     'Fern and Ivy both want a word — the house learns to take turns.',
     'Two neighbours, one listening ear: the closer foot gets the first word.',
 ]
+// #2588: the pair's own conversation — spoken when the pair-ring is warm
+// enough for company, rotated on the throttle like the three-way tells.
+export const NEIGH_LINES = [
+    'Fern and Ivy swap market news — tomatoes, weather, and nobody\u2019s business.',
+    'Ivy shows Fern a seed packet; Fern pretends to be appalled and asks for two.',
+    'Fern hums a bar; Ivy finishes the tune. Both pretend that was an accident.',
+]
 function eligibleNear(s, v) {
     return s.people
         .map((p, i) => ({ p, i, d: Math.abs(p.r - v.r) + Math.abs(p.c - v.c) }))
@@ -1772,6 +1803,51 @@ function arbitrateVisitors(s) {
     for (const p of s.people) {
         const who = fv && fv.claim === p ? 'fern' : iv && iv.claim === p ? 'ivy' : p.chatWith
         if (who !== p.chatWith) { p.chatT = 0; p.chatWith = who }
+    }
+}
+
+// ------------------------------------------------- neighbours (#2588) ------
+// The third-party bond: Fern and Ivy form their own opinion of each other
+// while they share the lot. Both unclaimed within the pair ring — the full
+// chat. Exactly one claimed — the waiting neighbour still rides the gossip
+// at glance rate, close across the room. Both hosts busy — the pair says
+// nothing; attention is where the ear is. Meet-up etiquette honours #2154's
+// tie law: the FIRST neighbour stays at home and the newcomer crosses the
+// room — Ivy walks, Fern waits.
+function freeCellNear(s, r, c) {
+    for (const [dr, dc] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+        if (walkable(s, r + dr, c + dc)) return { r: r + dr, c: c + dc }
+    }
+    return null
+}
+function updateNeighbours(s, dt) {
+    if (s.neighTell > 0) s.neighTell = Math.max(0, s.neighTell - dt)
+    const fv = hasVisitor(s) && s.visitor.state === 'hang' ? s.visitor : null
+    const iv = hasIvy(s) && s.ivy.state === 'hang' ? s.ivy : null
+    if (!fv || !iv) return
+    if (iv.neighT > 0) iv.neighT = Math.max(0, iv.neighT - dt)
+    const d = Math.abs(fv.r - iv.r) + Math.abs(fv.c - iv.c)
+    if (!fv.claim && !iv.claim) {
+        if (d > NEIGH_REACH) {
+            // the meet-up: nobody to talk to, so the newcomer crosses the room
+            if (!iv.path && iv.neighT <= 0) {
+                const spot = freeCellNear(s, fv.r, fv.c)
+                if (spot) iv.path = bfsPath(s, { r: iv.r, c: iv.c }, [spot])
+                iv.neighT = NEIGH_MEET_CD
+            }
+            return
+        }
+        relAdd(s, 'neigh', NEIGH_CHAT * dt)
+        if (relLevel(s.rel.neigh) >= NEIGH_WARM_AT && s.neighTell <= 0) {
+            s.neighHits += 1                             // lines rotate, cleanly (#2154 pattern)
+            think(s, NEIGH_LINES[s.neighHits % NEIGH_LINES.length])
+            s.events.push({ t: 'neigh', x: (fv.x + iv.x) / 2, y: (fv.y + iv.y) / 2 })
+            s.neighTell = NEIGH_COOL_CD
+        }
+        return
+    }
+    if (fv.claim === null ? iv.claim !== null : iv.claim === null) {
+        if (d <= NEIGH_GLANCE_REACH) relAdd(s, 'neigh', NEIGH_GLANCE * dt)   // gossip carries further than walk-talk
     }
 }
 
@@ -1958,6 +2034,9 @@ function updateVisitor(s, dt) {
             v.chatT += dt
             partner.needs.social = Math.min(1, partner.needs.social + 0.06 * dt)
             relAdd(s, 'fern', 0.07 * dt)   // #1817: the bond climbs while they talk
+            // #2588: cross-warmth — a neighbour at peace with the other guest
+            // chats deeper with the house (friend of my friend, ×1.25).
+            if (relLevel(s.rel.neigh) >= NEIGH_WARM_AT) relAdd(s, 'fern', 0.07 * (NEIGH_WARM - 1) * dt)
             // #2135: the crossing check read 0.06·dt (the social rate, a typo) —
             // with a fixed dt the line NEVER fired. Ivy's law was the honest one.
             if (partner.chatT > 2.4 && partner.chatT - dt <= 2.4) {
@@ -1974,7 +2053,10 @@ function updateVisitor(s, dt) {
         return
     }
     // if furniture changed around them, re-home toward the living room
-    if (v.state === 'hang' && !v.path && !partnerNear(s, v) && !v.repathT) {
+    // (#2588: not while the pair hang out — company beats the sofa; the
+    // newcomers' visit is the destination when nobody needs an ear.)
+    if (v.state === 'hang' && !v.path && !partnerNear(s, v) && !v.repathT &&
+        !(s.ivy && s.ivy.state === 'hang' && !s.ivy.claim && !v.claim)) {
         v.repathT = 3
     }
     if (v.repathT) {
@@ -2029,6 +2111,7 @@ function updateIvy(s, dt) {
                     hangUntil: 40 + s.rng() * 40 + 8 * lv,   // friends linger — harder per level than Fern
                     gift, metCat: false,   // #2200: the greeting re-arms with every visit
                     honey: lv >= 3,       // #2240: FAMILY is decided at the door — the meter can drift below the edge mid-walk
+                    neighT: 0,            // #2588: meet-up walk retry throttle
                 }
                 s.events.push({ t: 'visit', name: 'Ivy' })
                 think(s, gift
@@ -2081,6 +2164,7 @@ function updateIvy(s, dt) {
             v.chatT += dt
             partner.needs.social = Math.min(1, partner.needs.social + IVY_SOCIAL * dt)
             relAdd(s, 'ivy', IVY_CHAT * dt)   // a slower burner than Fern, by design
+            if (relLevel(s.rel.neigh) >= NEIGH_WARM_AT) relAdd(s, 'ivy', IVY_CHAT * (NEIGH_WARM - 1) * dt)   // #2588: cross-warmth, same law as Fern's block
             // #2240: a resident's bubble re-arms EVERY visit (the lifetime
             // crossing below belongs to Fern whenever she came first, which
             // left Ivy's ring silent however long they hung). Resetting the
@@ -2100,7 +2184,8 @@ function updateIvy(s, dt) {
         return
     }
     // if furniture changed around them, re-home toward the kitchen
-    if (v.state === 'hang' && !v.path && !partnerNear(s, v) && !v.repathT) v.repathT = 3
+    if (v.state === 'hang' && !v.path && !partnerNear(s, v) && !v.repathT &&
+        !(s.visitor && s.visitor.state === 'hang' && !s.visitor.claim && !v.claim)) v.repathT = 3   // #2588: company beats the stove
     if (v.repathT) {
         v.repathT -= dt
         if (v.repathT <= 0 && !v.path) {
@@ -2813,6 +2898,7 @@ function applyHourAt(s, hh) {
     relSub(s, 'fern', 0.035)
     relSub(s, 'ivy', IVY_FADE)     // #2143: Ivy cools slower than Fern, faster than home
     relSub(s, 'kid', KID_FADE)     // #2203: a child at home barely cools at all — but silence still counts
+    relSub(s, 'neigh', NEIGH_FADE) // #2588: the softest bond of all — a shared afternoon is never far away
 }
 function newDay(s) {
     for (const p of s.people) p.workedToday = false
@@ -2876,6 +2962,7 @@ export function advance(s, dt) {
     updatePet(s, simDt)
     updateKid(s, simDt)
     updateHouseBond(s, simDt)
+    updateNeighbours(s, simDt)   // #2588: the pair's own bond forms over the top of the choreography (kept behind the documented five-deep chain)
     updatePaper(s)          // #2238: the route rides the same world clock, kept behind the documented five-deep chain
     updateMeals(s)          // #2244: so do the bells, right behind the news
     updateBin(s)            // #2303: and the truck — the eve arms, dawn resolves
@@ -3170,11 +3257,13 @@ export function stateHash(s) {
     mix(s.rel.house); mix(s.rel.fern)   // #1817: bonds ride the hash
     mix(s.rel.ivy)                     // #2143: so does the second neighbour's
     mix(s.rel.kid)                     // #2203: and the child's
+    mix(s.rel.neigh)                 // #2588: and the neighbours' own opinion of each other
     mix(s.spats); mix(s.grudge)        // #2070: quarrels and grudges ride it too
     mix(s.cmdCd)                       // #2131: the command cooldown rides it too
     mix(s.holdT)                       // #2171: so does the pending thumb-court hold (-1 = none)
     mix(s.courtPick === 'house' ? 1 : s.courtPick === 'fern' ? 2 : s.courtPick === 'ivy' ? 3 : s.courtPick === 'kid' ? 4 : 0)   // #2235: so does the preferred addressee
     mix(s.triTell); mix(s.triHits)   // #2154: the choreography tell and its beat count ride it too
+    mix(s.neighTell); mix(s.neighHits)   // #2588: so do the pair's own exchange throttle and beat count
     mix(s.paperDay)                    // #2238: today's route stamps the day it landed
     mix(s.mealDay)                     // #2244: so do the bells — the day the plate landed
     mix(s.mealSlot); mix(s.mealSerial) // and which bell rang, and how many ever rang
