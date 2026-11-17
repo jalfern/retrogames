@@ -189,20 +189,38 @@ faster heat.
   keys: TEST seats, Esc returns, lap finishes to the bay, empty draft refuses
   by name, rows stay 8); flatten-the-transient-branch mutant reddens the
   identity gates.
-- **CLOSED by #2603:** OWN TERRAIN — `ownTerrain(i)` (levels.js): the bay's TEST
-  draft (TRANSIENT) and every registered custom are YOURS, and a ride on your
-  own terrain owes you an exit. Seated on own terrain the pad grows a sky **EXIT**
-  button (`VirtualControls` thirdAction → `Escape`, B stays GEAR), and `Esc`
-  mid-race on a splash-seated saved custom abandons the race back into the bay
-  with the design loaded — the draft is read from the seated entry's own
-  `stamps` (the compile output rides inside it; `compileCustom` re-sorts, so the
-  draft is byte-identical to the terrain you were riding). Abandoning submits
-  nothing: `doFrameSim` stops the tick the screen leaves `play`, and `finish()`
-  is the only writer of the leaderboard. League tracks 1–6 keep the full-race
-  commitment (by design — the league is the league), and a storage-off session
-  still loses its designs at page reload (the existing storage law, untouched).
-  Proven by the `excitecheck` OWN EXIT block (+1 mutant) and driven by
-  `exciteplay` with real Esc and real EXIT taps.
+- **CLOSED by #2606:** **ABANDON on the pad** — a test ride is now a phone's
+  too. While a draft is seated the pad grows a third button (`data-vc="c"`,
+  sky, labelled ABANDON) that fires the SAME Escape law `endTestRide` already
+  honored — zero new exit logic: the seat owns the button, so it appears exactly
+  on `play && testRide.active` and leaves with the seat (the badge reads
+  "ABANDON OR ESC TO BAY"). The prop rides a component-state mirror (`testing`)
+  because `testRide` lives in the effect closure the JSX cannot read. The bay
+  never grows it (EXIT already lives in the tool strip, reachable by cursor+A).
+  Proven: exciteplay +6 — no C in the bay, C grows seated, label+code law
+  (`Escape`), thumb-tap lands in the bay draft-intact, C leaves with the seat,
+  no C in a league race — 90/90 on :5176, excitecheck 336/336 untouched.
+  Harness catch: the pad hides on keyboard use (Step 5 feel) — gates wake it
+  with `touchstart` after keyboard legs or they measure the hide, not the law.
+- **CLOSED by #2603:** OWN TERRAIN — the same third button, generalized.
+  `ownTerrain(i)` (levels.js): the bay's TEST draft (TRANSIENT) and every
+  registered custom are YOURS, and a ride on your own terrain owes you an exit
+  (this supersedes #2606's decline of candidate 8, which #2603 — the README
+  gap idle-kick filed — ships): the pad's third button rides on ALL own
+  terrain — ABANDON where the badge teaches it (#2606), **EXIT** on a
+  splash-seated saved design — and `Esc` mid-race on a registered custom
+  abandons the race back into the bay with the design loaded from the seated
+  entry's own `stamps` (the compile output rides inside it; `compileCustom`
+  re-sorts, so the draft is byte-identical to the terrain you were riding; no
+  storage round trip). Abandoning submits nothing: `doFrameSim` stops the tick
+  the screen leaves `play`, and `finish()` is the only writer of the
+  leaderboard. League tracks 1–6 keep the full-race commitment — mid-race
+  Escape stays a dead key THERE (the shipped pin stands, league-only) — and a
+  storage-off session still loses its designs at page reload (the existing
+  storage law, untouched). Proven by the `excitecheck` OWN EXIT block
+  (law ×13, reload byte-identity ×2 customs, structural submit-nothing; two
+  by-hand structural mutants die by name) and driven by `exciteplay` with real
+  Esc, a real EXIT thumb-tap, and a bay→splash→re-seat loop (97/97 merged).
 - **Custom laps are fixed at 2** and the rivals ride their GENERIC pace line
   over your terrain (`rivalSpeed` is terrain-computed, never per-custom
   tuned): a well-drawn course beats the pack on pace, a crowded one may be

@@ -411,6 +411,29 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
         if (c.x !== d0.m.x || c.y !== d0.m.y) mMoved = true
     }
     r.check('seat M steers its own cursor through its own manager (no human pad touches it)', mMoved)
+    // #2561 items 2+3: money landing on the twin till names itself on the floor,
+    // the seat chip arms its growth blink when credit lands, and seat M's buys
+    // flash in model cyan. The painter reacts in the rAF chain, which fast-forward
+    // starves — so the loop pumps the event chain itself (step's 4th arg) until
+    // all three ceremonies have been seen.
+    const tillSeen = await page.evaluate(() => {
+        const g = window.__floorbossTest
+        const fxs = new Set(), flashLabels = new Set()
+        const growArmed = [0, 0]
+        for (let i = 0; i < 9200 && !g.sim().end; i++) {
+            g.step(1, {}, true, true)
+            if (i % 1500 === 1499) g.shipNow(1) // #2561: a trickle of seat-1 shipping (kept below the model's own pace so #2555's verdict gate stands) so freight lands on a named till
+            for (const f of g.sim().fx) if (/^\+\d+ (RACK|FREIGHT) (YOU|MODEL)$/.test(f.msg)) fxs.add(f.msg)
+            const tf = g.tillFx()
+            if (tf.flash && tf.flash.col === '#57c7ff' && /MODEL/.test(tf.flash.label)) flashLabels.add(tf.flash.label)
+            for (let s = 0; s < 2; s++) if (tf.grow[s] > 0 && tf.grow[s] > g.sim().tick - 120) growArmed[s]++
+            if (fxs.size >= 2 && growArmed[1] > 0 && flashLabels.size > 0) break
+        }
+        return { fxs: [...fxs], flashLabels: [...flashLabels], growArmed }
+    })
+    r.check('credits landing on the twin till name themselves (+N RACK/FREIGHT seat) (#2561)', tillSeen.fxs.some((m) => /\+5 RACK MODEL$/.test(m)) && tillSeen.fxs.some((m) => /\+\d+ FREIGHT /.test(m)), tillSeen.fxs.join(' | ') || 'none')
+    r.check('the leading seat chip arms its growth blink when credit lands (#2561 item 2)', tillSeen.growArmed[1] > 0, `growArmed ${tillSeen.growArmed.join(',')}`)
+    r.check("seat M's purchases flash in model cyan (#2561 item 3)", tillSeen.flashLabels.length > 0, tillSeen.flashLabels.join(' | ') || 'none')
     await page.evaluate(() => { const g = window.__floorbossTest; for (let i = 0; i < 9200 && !g.sim().end; i++) g.step(1, {}, true) })
     const dEnd = await page.evaluate(() => { const g = window.__floorbossTest.sim(); return { end: g.end, winner: g.duelWinner, tills: g.credits ? g.credits.slice(0, 2) : null, score: g.score, cons: !!g.duel && g.score === 100 + g.credits[0] + g.credits[1] + g.credits[2] - g.spent } })
     r.check('duel shift runs to the whistle through the loop', !!dEnd.end, `${dEnd.end} score ${dEnd.score}`)
