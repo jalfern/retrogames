@@ -237,8 +237,20 @@ faster heat.
    the baseline pack. The lap book is UNIFORM two laps: the original's
    lap-count variation is VS-mode options this port does not model. Both laws
    pinned by excitecheck's PER-COURSE LEAGUE section (336 checks).
+- **CLOSED by #2573 (splash feel):** the last three items of the splash pass.
+  (2) The wordmark no longer crowds the app chrome at phone widths — it shrinks
+  with the viewport (`clamp`), sitting clear between ARCADE/PAUSE/the speaker,
+  proven by a clearance law in exciteplay (wordmark rect keeps ≥4px from every
+  visible button, attract and splash, at 375x380). (3) The roster cursor is the
+  NES catalogue's little bike, not a `▶`: a 16px sprite in the RIDE palette
+  (red body, white helmet, yellow wheels) bobbing two frames (`bikebob`,
+  `steps(1)`); `data-on` exposes WHICH row wears it, so the walk and the wrap
+  over a grown roster are graded from the DOM against the cursor law. (4)
+  Seating a course revs the engine once before the countdown, keyed to the
+  gear you seated in — LOW grinds 160→480 Hz, HIGH winds 220→760 Hz — with
+  `revLog` receipts on the probe so the tie is provable, not vibes.
 - The bay's ghost preview is a silhouette + colour bar, not the animated
-  NES stamp cursor; palette labels are text (see also open polish #2573).
+  NES stamp cursor; palette labels are text.
 
 ## Juice layer (#2387)
 

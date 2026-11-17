@@ -46,6 +46,23 @@ const RIDE = {
     ],
 }
 
+// #2573 item 3 — the splash cursor is the little bike the NES catalogue put
+// beside the selected track, not a typographic ▶. It bobs two frames while the
+// menu idles (bikebob, index.css); colours come from the RIDE palette: red
+// body, white helmet, yellow wheels. data-on lets the harness read WHICH row
+// wears it — the cursor law lives in one place, provable from the DOM.
+const BikeCursor = ({ on }) => (
+    <svg data-bikecursor="" data-on={on ? '1' : '0'} width="16" height="12" viewBox="0 0 16 12"
+        className={`inline-block align-middle ${on ? '' : 'opacity-0'}`}
+        style={on ? { animation: 'bikebob 0.5s steps(1) infinite' } : undefined} aria-hidden="true">
+        <circle cx="3.5" cy="8.5" r="3" fill="#101010" stroke="#ffe23f" strokeWidth="1" />
+        <circle cx="12.5" cy="8.5" r="3" fill="#101010" stroke="#ffe23f" strokeWidth="1" />
+        <rect x="4" y="4.5" width="8" height="2" fill={RIDE.you.body} />
+        <rect x="5.5" y="1" width="4" height="4" fill={RIDE.you.body} />
+        <rect x="6.5" y="0" width="3" height="2" fill={RIDE.you.hel} />
+    </svg>
+)
+
 let proven = null
 const provenRun = () => { if (!proven) proven = plan({ track: 0 }); return proven }
 
@@ -723,6 +740,8 @@ const ExcitebikeGame = () => {
             leanYou.t = 0; for (const k of Object.keys(wasAir)) delete wasAir[k]
             preTell = false
         }
+        // #2573 item 4 — seat-rev receipts: the sweep each seating actually played.
+        const revLog = []
         const startPlay = (trackIdx = 0) => {
             gs = makeGame(trackIdx, { gear: gearRef.current })
             watchingRef.current = false; setWatching(false) // #1637 a new race starts in your hands
@@ -737,7 +756,13 @@ const ExcitebikeGame = () => {
             // walks out mid-race. Tracks 1-6 (the league) keep the full commitment.
             seatOwn(ownTerrain(trackIdx))
             if (ownRef.current) say('★ YOUR DESIGN — EXIT BACKS TO THE BAY')
-            audioController.playSweep(220, 660, 0.25, 'sawtooth', 0.07)
+            // #2573 item 4 — seat the bike with ONE engine rev before the
+            // countdown's own beeps, keyed to the gear you seated in: LOW grinds
+            // shorter and lower, HIGH winds further up (the same sweep the rev
+            // gauge teaches: gear is a promise the sound now makes out loud).
+            const [revLo, revHi] = gearRef.current === 'low' ? [160, 480] : [220, 760]
+            audioController.playSweep(revLo, revHi, 0.3, 'sawtooth', 0.08)
+            revLog.push([revLo, revHi, gearRef.current])
         }
 
         // ---- #2576 EDIT TRACK — design your own course, save it, ride it ----
@@ -995,6 +1020,7 @@ const ExcitebikeGame = () => {
                     own: ownRef.current, // #2603 own terrain — the pad shows EXIT
                     sel: selRef.current, tracks: TRACK_COUNT, // #2563 splash cursor + roster size
                     customs: customsRef.current, rows: TRACK_COUNT + customsRef.current + 1, // #2576 saved designs + EDIT row
+                    rev: revLog.slice(-4), // #2573 item 4 — gear-bound seat-rev receipts
                     edit: screenRef.current === 'edit' ? {
                         cursor: draft.cursor, tool: TOOLS[draft.tool], stamps: draft.stamps.map((s) => [s.kind, s.x]),
                         fits: fitsAt(draft.stamps, TOOLS[draft.tool], draft.cursor),
@@ -1160,8 +1186,8 @@ const ExcitebikeGame = () => {
             {screen === 'attract' && (
                 <>
                     <div className="absolute inset-0 bg-black/55 pointer-events-none" />
-                    <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
-                        <h1 className="text-4xl font-black tracking-tight" style={{ color: '#e40000', textShadow: '2px 2px 0 #ffe23f, 4px 4px 0 #000' }}>EXCITEBIKE</h1>
+                    <div className="absolute inset-x-0 text-center pointer-events-none" style={{ top: 'calc(5rem + var(--sat, 0px))' }}>
+                        <h1 data-wordmark className="font-black tracking-tight" style={{ color: '#e40000', fontSize: 'clamp(1.5rem, 5vh, 2.25rem)', textShadow: '2px 2px 0 #ffe23f, 4px 4px 0 #000' }}>EXCITEBIKE</h1>
                         <p className="text-white font-mono font-bold mt-3 animate-pulse">{PRESS}</p>
                         <span className="block mt-2 font-mono text-[11px] tracking-widest text-emerald-300/90">{WATCH_ATTRACT_HINT}</span>
                         <AttractMessage className="text-cyan-100/80 mt-2 px-8" messages={MESSAGES} />
@@ -1176,14 +1202,17 @@ const ExcitebikeGame = () => {
             {screen === 'tracks' && (
                 <>
                     <div className="absolute inset-0 bg-black/72 pointer-events-none" />
-                    <div className="absolute inset-x-0 top-3 text-center pointer-events-none">
-                        <h1 className="text-2xl font-black tracking-tight" style={{ color: '#e40000', textShadow: '2px 2px 0 #ffe23f, 3px 3px 0 #000' }}>EXCITEBIKE</h1>
+                    <div className="absolute inset-x-0 text-center pointer-events-none" style={{ top: 'calc(0.9rem + var(--sat, 0px))' }}>
+                        {/* #2573 item 2 — at phone widths the wordmark shared the chrome row
+                            and crowded ARCADE/PAUSE/the speaker; it now shrinks with the
+                            viewport so it always sits clear BETWEEN the corner buttons. */}
+                        <h1 data-wordmark className="font-black tracking-tight" style={{ color: '#e40000', fontSize: 'clamp(1rem, 3.5vw, 1.5rem)', textShadow: '2px 2px 0 #ffe23f, 3px 3px 0 #000' }}>EXCITEBIKE</h1>
                         <div className="mt-1 text-white/70 font-mono text-[10px] tracking-[0.4em]">TRACKS</div>
                     </div>
                     <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex flex-col items-center gap-1 pointer-events-none font-mono">
                         {[...Array(TRACK_COUNT + customs)].map((_, i) => (
                             <div key={i} className={`flex items-center gap-2 text-sm sm:text-base ${i === sel ? 'text-yellow-300' : 'text-white/85'}`}>
-                                <span className={`w-5 text-right ${i === sel ? 'opacity-100' : 'opacity-0'}`} style={{ textShadow: '0 0 8px #ffe23f' }}>▶</span>
+                                <span className="w-5 text-right"><BikeCursor on={i === sel} /></span>
                                 <span className="w-16 text-right">{i < TRACK_COUNT ? `TRACK ${i + 1}` : `CUSTOM ${i - TRACK_COUNT + 1}`}</span>
                                 <span className={`w-32 text-left font-bold ${i === sel ? '' : 'font-normal'}`}>{i < TRACK_COUNT ? trackName(i) : '·  ·  ·  ·  ·'}</span>
                                 {i < TRACK_COUNT ? (
@@ -1197,7 +1226,7 @@ const ExcitebikeGame = () => {
                         ))}
                         {/* #2576 EDIT TRACK — the original's second menu entry: last row, digit 0, or walk the cursor onto it */}
                         <div className={`flex items-center gap-2 text-sm sm:text-base ${sel >= TRACK_COUNT + customs ? 'text-yellow-300' : 'text-white/85'}`}>
-                            <span className={`w-5 text-right ${sel >= TRACK_COUNT + customs ? 'opacity-100' : 'opacity-0'}`} style={{ textShadow: '0 0 8px #ffe23f' }}>▶</span>
+                            <span className="w-5 text-right"><BikeCursor on={sel >= TRACK_COUNT + customs} /></span>
                             <span className="w-16 text-right">EDIT</span>
                             <span className="w-32 text-left font-bold">DESIGN TRACK</span>
                             <span className="text-[11px] leading-none text-cyan-300" aria-label="design your own course">✎ 0</span>

@@ -825,7 +825,75 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     const board1 = await board()
     r.check('two abandonments, zero leaderboard entries (abandon submits nothing)', board0 === board1, `board ${board0} -> ${board1}`)
     r.check('the roster stands as density says (no phantom from the exits)', p.customs === 1 && p.rows === 8, `customs=${p.customs} rows=${p.rows}`)
+}
 
+// ---- #2573 SPLASH FEEL — wordmark clearance, bike-sprite cursor, gear-bound rev ----
+{
+    // The chrome law: the EXCITEBIKE wordmark keeps ≥4px from every on-screen
+    // button (the app's fixed ARCADE/PAUSE/speaker chrome). Phone viewport first
+    // — that is where the crowding was reported.
+    const clearance = () => page.evaluate(() => {
+        const wm = document.querySelector('[data-wordmark]')
+        if (!wm) return { ok: false, why: 'no [data-wordmark]' }
+        const rg = document.createRange(); rg.selectNodeContents(wm) // the WORD's box, not the full-width line
+        const a = rg.getBoundingClientRect()
+        for (const b of document.querySelectorAll('button')) {
+            const q = b.getBoundingClientRect()
+            const cs = getComputedStyle(b)
+            if (!q.width || !q.height || cs.visibility === 'hidden' || cs.opacity === '0') continue
+            const dx = Math.max(0, Math.max(a.left - q.right, q.left - a.right))
+            const dy = Math.max(0, Math.max(a.top - q.bottom, q.top - a.bottom))
+            if (dx < 4 && dy < 4) return { ok: false, button: (b.getAttribute('aria-label') || b.textContent.trim() || 'button').slice(0, 14), dx: +dx.toFixed(1), dy: +dy.toFixed(1), wm: [Math.round(a.left), Math.round(a.top), Math.round(a.width)] }
+        }
+        return { ok: true, top: Math.round(a.top), w: Math.round(a.width) }
+    })
+    await page.setViewportSize({ width: 375, height: 380 })
+    await page.goto(URL)
+    await page.waitForFunction(() => !!window.__bikeTest, null, { timeout: 30000 })
+    await wait(400)
+    const cA = await clearance()
+    r.check('attract wordmark clears the app chrome at phone width (#2573)', cA.ok, JSON.stringify(cA))
+    await page.keyboard.press('Enter'); await wait(300)
+    let p = await probe()
+    const cS = await clearance()
+    r.check('splash wordmark clears the app chrome at phone width (#2573)', cS.ok && p.screen === 'tracks', JSON.stringify({ cS, s: p.screen }))
+    // bike-sprite cursor: one bike, and it walks with the cursor law
+    const curs = () => page.evaluate(() => [...document.querySelectorAll('svg[data-bikecursor]')].map((s) => s.dataset.on))
+    const c0 = await curs()
+    r.check('splash rows carry bike sprites, not text glyphs (one lit)', c0.length === p.rows && c0.filter((v) => v === '1').length === 1 && c0[0] === '1', JSON.stringify(c0))
+    await page.keyboard.press('ArrowDown'); await wait(140)
+    p = await probe()
+    const c1 = await curs()
+    r.check('the bike walks with the cursor (row 2)', p.sel === 1 && c1[1] === '1' && c1[0] === '0', `sel=${p.sel} ${JSON.stringify(c1)}`)
+    for (let i = 0; i < p.rows - 2; i++) { await page.keyboard.press('ArrowDown'); await wait(70) }
+    p = await probe()
+    const c2 = await curs()
+    r.check('the bike reaches the EDIT row last', p.sel === p.rows - 1 && c2[c2.length - 1] === '1', `sel=${p.sel} ${JSON.stringify(c2)}`)
+    await page.keyboard.press('ArrowDown'); await wait(90)
+    p = await probe()
+    const c3 = await curs()
+    r.check('the bike wraps the grown roster exactly with the cursor', p.sel === 0 && c3[0] === '1' && c3.filter((v) => v === '1').length === 1, `sel=${p.sel} ${JSON.stringify(c3)}`)
+    // gear-bound seat rev — HIGH seat first (fresh load defaults HIGH)
+    p = await probe()
+    r.check('the rev log is fresh at the splash (no phantom seat)', p.rev.length === 0, JSON.stringify(p.rev))
+    await page.keyboard.press('Enter'); await wait(160)
+    p = await probe()
+    r.check('seating HIGH revs the engine before the countdown ends (#2573)', p.screen === 'play' && p.count > 0 && p.rev.length === 1 && p.rev[0][0] === 220 && p.rev[0][1] === 760 && p.rev[0][2] === 'high', JSON.stringify({ s: p.screen, c: p.count, rev: p.rev }))
+    await page.waitForFunction(() => window.__bikeTest.probe().count === 0, null, { timeout: 8000 }).catch(() => {})
+    await page.evaluate(() => window.__bikeTest.setup({ x: 6340 }))
+    await page.waitForFunction(() => !!window.__bikeTest.probe().end, null, { timeout: 20000 }).catch(() => {})
+    // LOW leg on a FRESH mount — the over→attract→splash walk is a timing minefield
+    // (attract auto-WATCHes after a dwell and steals the keys mid-chain); reload
+    // lands splash-side fast and also resets revLog, so the LOW seat is rev[0].
+    await page.goto(URL)
+    await page.waitForFunction(() => !!window.__bikeTest, null, { timeout: 30000 })
+    await wait(300)
+    await page.keyboard.press('Enter'); await wait(250)
+    await page.keyboard.press('KeyG'); await wait(140) // gear LOW on the splash
+    await page.keyboard.press('Enter'); await wait(160)
+    p = await probe()
+    r.check('LOW seats a LOWER rev — the sweep is keyed to the gear (#2573)', p.screen === 'play' && p.count > 0 && p.gear === 'low' && p.rev.length === 1 && p.rev[0][0] === 160 && p.rev[0][1] === 480 && p.rev[0][2] === 'low', JSON.stringify({ s: p.screen, g: p.gear, c: p.count, rev: p.rev }))
+    await page.setViewportSize({ width: 620, height: 680 })
 }
 
 r.check('zero page errors across the whole ride', errors.length === 0, errors.slice(0, 4).join(' | '))
