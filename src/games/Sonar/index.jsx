@@ -135,7 +135,7 @@ const SonarGame = () => {
                 else if (e.type === 'hit') { audioController.playNoise(0.18, 0.1); audioController.playSweep(300, 90, 0.3, 'sawtooth', 0.08); buzz([90, 40, 90]) }   // #2383: the long one — you got touched
                 else if (e.type === 'die') audioController.playDeath()
                 else if (e.type === 'pearlEcho') audioController.playTone(155, 0.18, 'sine', 0.06)   // #2601: the ghost's revival — low, flat, below every live sound
-                else if (e.type === 'descend') { audioController.playSweep(220, 880, 0.5, 'triangle', 0.08); toast = 40 }
+                else if (e.type === 'descend') { audioController.playSweep(220, 880, 0.5, 'triangle', 0.08); toast = 40 }   // #2601 item 2: the beat's toast text teaches the per-cave memory reset
                 else if (e.type === 'contact') nearestRing = nearestRing < 0 ? e.ring : Math.min(nearestRing, e.ring)
             }
             if (nearestRing >= 0) {
@@ -308,8 +308,20 @@ const SonarGame = () => {
                     ctx.fillStyle = '#fff'
                     ctx.fillRect(px + 6, py + 5, 2, 2)
                 } else {
-                    ctx.fillStyle = 'rgba(255,190,225,0.34)'
-                    ctx.fillRect(px + 7, py + 7, 2, 2)
+                    // #2601 item 1: the remembered pearl must read unmistakably NOT
+                    // terrain. The static 2×2 dot at α 0.34 sat at the noise floor of
+                    // a dim rock face. Terrain never draws as an outline — the glyph
+                    // vocabulary of this game reserves arcs for marks — so the ghost
+                    // is a hollow ring with a very slow 2-phase shimmer: the low phase
+                    // says "remembered", the rise says "still here" (the vent ghost's
+                    // readability, the issue's own reference). Hollow also keeps the
+                    // solid-vs-hollow hierarchy against the fresh bead, and the alpha
+                    // band 0.30–0.58 stays inside sonarplay's dim window and below
+                    // the bright floor (α 0.745), so a ghost can never read fresh.
+                    const ph = (Math.sin(t * 0.045) + 1) / 2      // ~70-tick slow cycle
+                    ctx.strokeStyle = `rgba(255,190,225,${(0.3 + 0.28 * ph * ph).toFixed(3)})`
+                    ctx.lineWidth = 1.5
+                    ctx.beginPath(); ctx.arc(px + 8, py + 8, 4.5, 0, Math.PI * 2); ctx.stroke()
                 }
             }
             // eels: contact blips at the cell where a wavefront TOUCHED them —
@@ -600,7 +612,7 @@ const SonarGame = () => {
                     </span>
                 </div>
                 <div ref={setHud('toast')} className="absolute inset-x-0 top-1/3 text-center text-teal-300 font-mono font-bold text-2xl transition-opacity duration-500" style={{ opacity: 0, textShadow: '0 0 12px #0ff' }}>
-                    DESCENDING...
+                    THE MAP FORGETS
                 </div>
             </div>
 
