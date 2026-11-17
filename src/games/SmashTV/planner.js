@@ -11,13 +11,100 @@
 // harness can replay a 2P run from seed + per-player pad streams.
 
 import { makeGame, step, stateHash, q8, los, CFG, boardW, blockedPx, cellOf } from './sim.js'
-import { exitsOf, ENEMIES, CH, HUD_H } from './levels.js'
+import { exitsOf, ENEMIES, CH, HUD_H, GH } from './levels.js'
 
 const cx = (c) => c * 16 + 8
 const cy = (r) => 24 + r * 16 + 8
 const exitPos = (e) => [cx(e.c), cy(e.r)]
 
 const seatOf = (gs, pi) => gs.players[pi] || gs.player
+
+// #2530 the relocation router. The seat's legs are quantized 8-way vectors, and
+// the stall breaker re-rolls them on a clock — but three rooms' geometries beat
+// both: a threat in a diagonal alcove deafens every shot the seam clips (seed
+// 84), a bar corner re-arms the wall-side leg the instant the detour releases
+// (seed 25 room 8, seed 41 room 2), and a cleared seat can pace under a door
+// its own quantization can't climb (seed 25 room 8's walk-out). What all three
+// lack is the one thing a human brings: LOOK, then WALK CELL BY CELL around the
+// chrome. BFS over the room's cell grid; commit to the waypoint chain; the
+// volley gate still owns the body on every tick. Zero randomness — same state,
+// same route, every time.
+const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+
+function cellFree(gs, c, r) {
+    const gw = (gs.roomData && gs.roomData.gw) || 16
+    if (c < 0 || r < 0 || c >= gw || r >= GH) return false
+    return !blockedPx(gs, cx(c), cy(r), CFG.playerR)
+}
+
+function bfsFrom(gs, hc, hr) {
+    const prev = new Map([[`${hc},${hr}`, null]])
+    const q = [[hc, hr]]
+    for (let qi = 0; qi < q.length; qi++) {
+        const [c, r] = q[qi]
+        for (const [dc, dr] of DIRS4) {
+            const nc = c + dc, nr = r + dr, k = `${nc},${nr}`
+            if (prev.has(k) || !cellFree(gs, nc, nr)) continue
+            prev.set(k, [c, r])
+            q.push([nc, nr])
+        }
+    }
+    return prev
+}
+
+function pathOn(prev, to) {
+    const k = `${to[0]},${to[1]}`
+    if (!prev.has(k)) return null
+    const path = []
+    let cur = k
+    while (prev.get(cur)) {
+        const [c, r] = cur.split(',').map(Number)
+        path.push([c, r])
+        cur = prev.get(cur)
+    }
+    return path.reverse()
+}
+
+// are all cells strictly between two CARDINAL-aligned cells open? (the strict
+// corridor the los 5px sample can miss at chrome seams, #2491). Non-aligned
+// cells have no corridor by this law — false.
+function corridorOpen(gs, c0, r0, c1, r1) {
+    if (!(c0 === c1 || r0 === r1)) return false
+    const dc = Math.sign(c1 - c0), dr = Math.sign(r1 - r0)
+    let c = c0 + dc, r = r0 + dr
+    while (c !== c1 || r !== r1) {
+        if (gs.walls.has(`${c},${r}`)) return false
+        c += dc; r += dr
+    }
+    return true
+}
+
+// nearest cell aligned (any of the 8 aims) with the threat whose corridor to
+// it is wall-free — a stand the shot can actually land from. Scored by walk
+// distance first, then by closeness; null when the threat is provably
+// unreachable (no aligned stand is connected to the seat).
+function findStand(gs, p, e) {
+    const [ec, er] = cellOf(e.x, e.y)
+    const [hc, hr] = cellOf(p.x, p.y)
+    const prev = bfsFrom(gs, hc, hr)
+    // cardinal stands only: a shot down a wall-free row/column from a centred
+    // cell always lands. Diagonal corridors clip their corner seams (#2491).
+    let best = null, bs = 1e9
+    for (let k = 1; k <= 5; k++) {
+        for (const [dc, dr] of DIRS4) {
+            const c = ec + dc * k, r = er + dr * k
+            if (!cellFree(gs, c, r) || !corridorOpen(gs, ec, er, c, r)) continue
+            const pk = `${c},${r}`
+            if (!prev.has(pk)) continue
+            let n = 0, cur = pk
+            while (prev.get(cur)) { n++; cur = prev.get(cur) }
+            const sc = n + k * 0.5
+            if (sc < bs) { bs = sc; best = pathOn(prev, [c, r]) }
+        }
+    }
+    return best && best.length ? best : null
+}
+
 const stallOf = (gs, pi) => {
     gs._st = gs._st || []
     return gs._st[pi] || (gs._st[pi] = { last: null, wantMove: false, stall: 0, detour: 0, side: 1 })
@@ -269,7 +356,7 @@ function seatDrive(gs, pi = 0) {
             st.stall = Math.hypot(p.x - ox, p.y - oy) < 4 ? st.stall + 1 : 0
         } else st.stall = moved < 0.3 ? st.stall + 1 : 0
     } else st.hist = []
-    if (st.rn !== gs.room) { st.rn = gs.room; st.streak = 0; st.hist = [] }
+    if (st.rn !== gs.room) { st.rn = gs.room; st.streak = 0; st.hist = []; st.rt = null; st.rtG = null; st.rtKill = null }
     st.last = [p.x, p.y]
     st.wantMove = false
     const inp = {}
@@ -366,8 +453,73 @@ function objectiveDrive(gs, pi, st, p) {
         return inp
     }
 
+    // #2530 relocation router: the waypoint chain owns the legs while it lasts.
+    // It drops when its threat dies, when the duel line goes genuinely live
+    // (aligned aim AND a wall-free corridor between cells — not the 5px los
+    // sample the seam fooled in #2491), or when the chain runs out.
+    if (st.rt) {
+        let drop = false
+        const th = pickThreat(gs, p, st)
+        if (st.rtKill != null && (!th || th.id !== st.rtKill)) drop = true
+        else if (th) {
+            const dx = th.x - p.x, dy = th.y - p.y
+            // the duel may take over only from a CENTRED cell aligned with the
+            // threat across a wall-free corridor — the geometry whose shots are
+            // proven to land (a diagonal seam still clips, #2491).
+            const [pc, pr] = cellOf(p.x, p.y)
+            const [tc, tr] = cellOf(th.x, th.y)
+            const aligned = (pc === tc && Math.abs(p.x - cx(tc)) <= 3) || (pr === tr && Math.abs(p.y - cy(tr)) <= 3)
+            if (Math.hypot(dx, dy) <= 90 && aligned && ((pc === tc && pr === tr) || corridorOpen(gs, pc, pr, tc, tr))) drop = true
+        }
+        if (!drop && gs.tick - (st.rtT || 0) > 60) {
+            // goal may have walked (a chaser) or been claimed — repath cheaply
+            st.rtT = gs.tick
+            const [hc, hr] = cellOf(p.x, p.y)
+            const tgt = st.rtKill != null ? gs.enemies.find((en) => en.hp > 0 && en.id === st.rtKill) : null
+            let pth = null
+            if (tgt) pth = findStand(gs, p, tgt)
+            else if (st.rtG) {
+                const [tc, tr] = st.rtG
+                if (hc !== tc || hr !== tr) pth = pathOn(bfsFrom(gs, hc, hr), [tc, tr])
+            }
+            if (pth && pth.length) st.rt = pth
+            else if (!tgt) { drop = true }
+        }
+        while (!drop && st.rt.length && Math.hypot(cx(st.rt[0][0]) - p.x, cy(st.rt[0][1]) - p.y) < 7) st.rt.shift()
+        if (drop || !st.rt.length) { st.rt = null; st.rtG = null; st.rtKill = null; st.streak = 0 }
+        else {
+            const wp = st.rt[0]
+            const [qx, qy] = q8(cx(wp[0]) - p.x, cy(wp[1]) - p.y)
+            if (qx || qy) {
+                inp.mx = qx; inp.my = qy
+                st.wantMove = true; st.gx = qx; st.gy = qy
+                if (th && los(gs, p.x, p.y, th.x, th.y)) aimH(gs, inp, p, th.x, th.y)
+                return inp
+            }
+        }
+    }
+
     const aimAt = (x, y) => aimH(gs, inp, p, x, y)
-    const moveToward = (x, y, drop = 0) => { moveH(gs, inp, p, x, y, drop); if (inp.mx || inp.my) { st.wantMove = true; st.gx = inp.mx; st.gy = inp.my } }
+    const moveToward = (x, y, drop = 0) => {
+        moveH(gs, inp, p, x, y, drop)
+        // #2530: a second deep stall in this room says the straight legs keep
+        // losing to the geometry — plan the walk instead of re-rolling it.
+        // Walking onto a live threat routes to a stand its shot lands from,
+        // never into its contact ring. A failed plan waits 60 ticks so the BFS
+        // stays a rarity, never a per-tick tax.
+        const rawD = Math.hypot(x - p.x, y - p.y)
+        if (!st.rt && st.streak >= 2 && gs.tick - (st.rtT || 0) > 60 && (inp.mx || inp.my) && rawD > 14) {
+            st.rtT = gs.tick
+            const [tc, tr] = cellOf(x, y)
+            const [hc, hr] = cellOf(p.x, p.y)
+            if (hc !== tc || hr !== tr) {
+                const tgt = gs.enemies.find((en) => en.hp > 0 && cellOf(en.x, en.y)[0] === tc && cellOf(en.x, en.y)[1] === tr)
+                const pth = tgt ? findStand(gs, p, tgt) : pathOn(bfsFrom(gs, hc, hr), [tc, tr])
+                if (pth && pth.length) { st.rt = pth; st.rtG = [tc, tr]; if (tgt) st.rtKill = tgt.id }
+            }
+        }
+        if (inp.mx || inp.my) { st.wantMove = true; st.gx = inp.mx; st.gy = inp.my }
+    }
 
     if (room.bonus) {
         let civ = null, bd = 1e9
@@ -543,7 +695,16 @@ function objectiveDrive(gs, pi, st, p) {
                     st.dead = st.dead || new Set()
                     st.dead.add(threat.id)
                     st.dz = null
-                    if (!gs.enemies.some((e) => e.hp > 0 && !st.dead.has(e.id))) st.dead.clear()
+                    if (!gs.enemies.some((e) => e.hp > 0 && !st.dead.has(e.id))) {
+                        st.dead.clear()
+                        // #2530: the seam that deafened the lane is still under
+                        // the barrel — clearing the ledger only re-arms the same
+                        // blind volley (seed 84 fired its last body's seam for
+                        // 59k ticks). The fresh line comes from a fresh stand:
+                        // route around to one the corridor proves open.
+                        const pth = findStand(gs, p, threat)
+                        if (pth) { st.rt = pth; st.rtG = cellOf(threat.x, threat.y); st.rtT = gs.tick; st.rtKill = threat.id }
+                    }
                     return inp
                 }
                 inp.mx = 0; inp.my = 0
