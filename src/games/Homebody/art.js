@@ -1565,6 +1565,53 @@ export function drawIceTruck(ctx, x, y, t, roll) {
     ctx.fillRect(x + TRUCK_W - 6, yy + 30, 3, 3)              // a headlight wink at the horizon it's chasing
 }
 
+// #2508 item 5: the curb gets a crowd — one or two neighbourhood kids pad to
+// the truck while it parks (The Sims, PC 2000: the young ones run out with
+// money in hand when the jingle comes; ours sell the hot afternoon without
+// ever touching the law). Draw-only by construction: no sim entity, no need,
+// no payout, no path — the cone stays the sim's single curb citizen. Count
+// and palettes are arithmetic off the day (the icePassHour doctrine: no rng
+// in the view, so every seed and every replay shows the same kids). The
+// crowd anchors to the truck's PARKED spot, not its live x — when the stop
+// is spent the truck rolls east and the kids jog WEST home, and the diverge
+// is the picture. `flee` 0..1 drives that dash and the fade into the heat.
+export const crowdKids = (day) => 1 + (day % 2)   // quiet afternoon, busy Saturday-by-parity
+const KID_PAL = [
+    { shirt: '#ffd24a', shorts: '#7a9ec9', skin: '#e8b98a', hair: '#6b4a2b' },
+    { shirt: '#a4c8f0', shorts: '#8a5c2a', skin: '#c98d5e', hair: '#3a2f26' },
+    { shirt: '#ff9dbf', shorts: '#5a6b8a', skin: '#f0cfa8', hair: '#d9b23c' },
+]
+export function drawCurbKids(ctx, px, y, t, day, flee) {
+    const n = crowdKids(day)
+    for (let i = 0; i < n; i++) {
+        const p = KID_PAL[(day + i * 2) % KID_PAL.length]
+        const kx = px + (i ? 44 : 18) - flee * 110            // one at the counter, one a step back
+        const bob = Math.abs(Math.sin(t * (4.2 + i * 1.7))) * (flee > 0 ? 2.6 : 1.6)   // the impatient hop
+        const ky = y + 44 - bob                               // feet on the asphalt line the truck's shadow rides
+        ctx.save()
+        ctx.globalAlpha = 1 - flee * flee
+        ctx.fillStyle = 'rgba(30,20,10,0.16)'
+        ctx.beginPath(); ctx.ellipse(kx, y + 44, 5, 1.5, 0, 0, 7); ctx.fill()
+        ctx.fillStyle = p.skin
+        ctx.fillRect(kx - 1.6, ky - 6, 1.4, 6)              // legs
+        ctx.fillRect(kx + 0.4, ky - 6, 1.4, 6)
+        ctx.fillStyle = p.shorts
+        ctx.fillRect(kx - 2.2, ky - 9.4, 4.4, 3.8)
+        ctx.fillStyle = p.shirt
+        ctx.fillRect(kx - 2.6, ky - 17, 5.2, 8)             // little torso
+        const wave = Math.sin(t * 6 + i * 2) > 0 ? -1 : 0   // the arm pump at the counter
+        ctx.fillStyle = p.skin
+        ctx.fillRect(kx - 3.8, ky - 16, 1.4, 5)             // trailing arm
+        ctx.fillRect(kx + 2.4, ky - 20 + wave, 1.4, 5)      // the arm raised at the serving window
+        ctx.fillStyle = p.skin
+        ctx.fillRect(kx - 2, ky - 21, 4, 4)                 // head — at counter height on the parked body
+        ctx.fillStyle = p.hair
+        ctx.fillRect(kx - 2.4, ky - 22.4, 4.8, 2)           // hair cap
+        ctx.fillRect(kx - 2.4, ky - 21, 1, 2.4)             // a side tuft
+        ctx.restore()
+    }
+}
+
 // --------------------------------------------------------------- atmo -----
 export function drawClouds(ctx, t) {
     ctx.fillStyle = 'rgba(255,255,255,0.16)'

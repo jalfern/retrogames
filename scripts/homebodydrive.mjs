@@ -753,6 +753,71 @@ check('contract state ticks', f0.tick > 0 && typeof f0.score === 'number', `tick
         JSON.stringify({ first: r1, second: r2 }))
 }
 
+// #2508 item 5 — the curb gets a CROWD. While the truck parks, one or two
+// neighbourhood kids paint at the counter (draw-only — the sim's cone law is
+// untouched: no tap here, the stop ends on its own or through Pip's own buy).
+// The view machine is probe-visible on truckView.crowd: off → gather (armed
+// at the park; size arithmetic off the day, the icePassHour doctrine) → flee
+// (the truck leaves east, the kids jog west) → off. Pixels prove the bodies:
+// a warm skin-family census in the band in front of the counter rises only
+// while the crowd stands — no truck colour is in that family.
+{
+    if ((await st()).screen !== 'play') { await page.keyboard.press('Space'); await wait(400) }
+    const s0 = await st()
+    check('#2508 item 5 no crowd at the curb before the jingle',
+        s0.truckView.crowd.phase === 'off' && s0.truckView.crowd.n === 0, JSON.stringify(s0.truckView.crowd))
+    const skinBand = (px) => page.evaluate((bx) => {
+        const c = document.querySelector('canvas')
+        const d = c.getContext('2d').getImageData(bx + 10, 434 + 16, 42, 16).data   // the front of the counter, the truck's own lane (item 1's band)
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) {
+            const [r, g, b] = [d[i], d[i + 1], d[i + 2]]
+            if (d[i + 3] > 200 && r > 150 && r > b + 25 && g > b + 15 && r >= g) n++   // tan skin family
+        }
+        return n
+    }, px)
+    const base = await skinBand(92)
+    await page.evaluate(() => { window.__homebodyTest.money(500); window.__homebodyTest.ringTruck() })
+    let crowd = null, daySeen = null
+    for (let i = 0; i < 100 && !crowd; i++) {
+        const s = await st()
+        if (s.truckView.phase === 'parked' && s.truckView.crowd.phase === 'gather') { crowd = { ...s.truckView.crowd }; daySeen = s.day; break }
+        await wait(40)
+    }
+    check('#2508 item 5 the crowd gathers when the wheels stop — phase gather, size off the day (1 + day%2)',
+        !!crowd && crowd.n === 1 + (daySeen % 2) && crowd.n >= 1 && crowd.n <= 2, JSON.stringify({ crowd, day: daySeen }))
+    let skinPeak = base
+    for (let i = 0; i < 20; i++) { skinPeak = Math.max(skinPeak, await skinBand(92)); await wait(50) }
+    check('#2508 item 5 the kids paint at the counter — the warm census in front of the window rises',
+        skinPeak - base >= 10, `skin base ${base} peak ${skinPeak}`)
+    let sawFlee = false, crowdOff = null
+    for (let i = 0; i < 500 && !crowdOff; i++) {
+        const s = await st()
+        if (s.truckView.crowd.phase === 'flee') sawFlee = true
+        if (s.truckView.crowd.phase === 'off' && s.truckView.phase === 'off') crowdOff = s
+        await wait(50)
+    }
+    check('#2508 item 5 the stop ends (close or Pip\'s own buy) and the crowd jogs home — flee, then off',
+        sawFlee && !!crowdOff && crowdOff.truckView.crowd.n === 0, JSON.stringify({ sawFlee, coneLeft: !(crowdOff && crowdOff.cone) }))
+    check('#2508 item 5 the curb is empty again after the dash',
+        (await skinBand(92)) <= base + 4, `skin after ${await skinBand(92)} base ${base}`)
+    // determinism: not an rng draw — a re-ring seats the size the day's parity
+    // says (same day, same n; the formula pin covers a midnight crossing).
+    const dayNow = (await st()).day
+    await page.evaluate(() => { window.__homebodyTest.ringTruck() })
+    let crowd2 = null
+    for (let i = 0; i < 100 && !crowd2; i++) {
+        const s = await st()
+        if (s.truckView.phase === 'parked' && s.truckView.crowd.phase === 'gather') { crowd2 = { ...s.truckView.crowd, day: s.day }; break }
+        await wait(40)
+    }
+    check('#2508 item 5 the size is arithmetic, not chance — a re-ring seats the day\'s own n',
+        !!crowd2 && crowd2.n === 1 + (crowd2.day % 2) && (crowd2.day !== dayNow || crowd2.n === crowd.n),
+        JSON.stringify({ first: { ...crowd, day: daySeen }, second: crowd2 }))
+    // let this second stop run out too, so the next section sees a clean street
+    for (let i = 0; i < 500 && (await st()).truckView.phase !== 'off'; i++) await wait(50)
+}
+
 check('zero page errors across the whole drive', errors.length === 0, JSON.stringify(errors.slice(0, 3)))
 await browser.close()
 console.log(`\n=== homebodydrive: ${pass} pass, ${fail} fail ===`)

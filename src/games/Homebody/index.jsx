@@ -51,6 +51,7 @@ import {
 import {
     drawGround, drawGate, drawItem, drawPerson, nightTint, drawPanel, drawTopBar,
     drawIceTruck, TRUCK_W,   // #2508 item 1: the truck gets wheels — the view-side arrival and drive-off
+    drawCurbKids, crowdKids,   // #2508 item 5: the crowd at the truck — draw-only kids, day-arithmetic count
     drawCatalog, catalogHit, tabHit, speedHit, drawBuildCursor, drawThoughts, drawClouds,   // #2227: speedHit — the dial's tap route
     drawPet,   // #2197: Miso
     drawKid,   // #2203: Pip
@@ -163,6 +164,14 @@ const HomebodyGame = () => {
         const ICE_TRUCK_IN_S = 2, ICE_TRUCK_OUT_S = 4
         const ICE_TRUCK_Y = H - 46   // on the street below the fence — nearest thing to the camera, so it paints last
         const iceTruck = { phase: 'off', px: 0, from: 0, parked: 0, t0: 0, jingle: 'A' }
+        // #2508 item 5: while the truck parks, a small CROWD of neighbourhood
+        // kids gathers at the counter (the original's hot-afternoon tell). The
+        // crowd is paint and probe state only — no sim entity, no payout, no
+        // path. It arms when the wheels stop (including the restore snap-park),
+        // jogs home west when the truck rolls east, and rides sim-seconds so
+        // pause freezes it with the truck.
+        const ICE_KID_FLEE_S = 1.6
+        const iceCrowd = { phase: 'off', t0: 0, day: 0 }
         // #2508 item 2: the call varies and SWELLS — iceVol reads the truck's live
         // progress toward its curb spot, so early notes are round-the-corner quiet
         // and the bar that lands at the curb plays full. Distance-based, view-only.
@@ -742,6 +751,12 @@ const HomebodyGame = () => {
                 iceTruck.px = iceTruck.from + (W + TRUCK_W + 8 - iceTruck.from) * k
                 if (k >= 1) iceTruck.phase = 'off'
             }
+            // #2508 item 5: the crowd arms when the wheels stop (the park and the
+            // restore snap-park both land here) and runs home the moment the truck
+            // does — same rewound-clock guard the drive-off earned.
+            if (iceCrowd.phase === 'off' && iceTruck.phase === 'parked') { iceCrowd.phase = 'gather'; iceCrowd.t0 = g.sec; iceCrowd.day = g.day }
+            if (iceCrowd.phase === 'gather' && (iceTruck.phase === 'out' || iceTruck.phase === 'off')) { iceCrowd.phase = 'flee'; iceCrowd.t0 = g.sec }
+            if (iceCrowd.phase === 'flee') { const fk = (g.sec - iceCrowd.t0) / ICE_KID_FLEE_S; if (!(fk >= 0) || fk >= 1) iceCrowd.phase = 'off' }
             for (const it of g.items) drawItem(ctx, it, g.sec, nightLevel(g.hour))   // #2264: the meal sprite keeps night hours (steam dim/slow, warm halo)
             const order = [...g.people.map((p) => ({ p, v: p.y })), ...(g.visitor ? [{ p: g.visitor, v: g.visitor.y }] : []), ...(g.ivy ? [{ p: g.ivy, v: g.ivy.y }] : []), ...(g.pet ? [{ p: g.pet, v: g.pet.y }] : []), ...(g.kid ? [{ p: g.kid, v: g.kid.y }] : []), ...(g.sneak ? [{ p: g.sneak, v: g.sneak.y }] : []), ...(g.giftFx > 0 && g.giftAt ? [{ p: { x: g.giftAt.x, y: g.giftAt.y }, giftLanded: true }] : [])].sort((a, b) => a.v - b.v)   // #2143: both neighbours share the lot; #2197: so does the cat; #2203: and the child; #2520: and the sneak; #2240: so the set-down basket rides the depth line
             for (const o of order) {
@@ -762,6 +777,13 @@ const HomebodyGame = () => {
             // #2508 item 1: the truck paints after everyone — it is the nearest
             // thing to the camera, so it laps the fence, the gate and the residents cleanly.
             if (iceTruck.phase !== 'off') drawIceTruck(ctx, iceTruck.px, ICE_TRUCK_Y, g.sec, iceTruck.phase === 'parked' ? 0 : 1)
+            // #2508 item 5: the crowd paints with the truck and anchors to its
+            // PARKED spot — when the stop is spent, the truck leaves east and the
+            // kids jog west; two directions, one goodbye.
+            if (iceCrowd.phase !== 'off') {
+                const fk = iceCrowd.phase === 'flee' ? Math.max(0, Math.min(1, (g.sec - iceCrowd.t0) / ICE_KID_FLEE_S)) : 0
+                drawCurbKids(ctx, iceTruck.parked, ICE_TRUCK_Y, g.sec, iceCrowd.day, fk)
+            }
             if (g.cooFx > 0 && g.cooAt) {
                 // #2131: the warm tell — a pixel heart (FAMILY) or gold glint lifts
                 // off the pair's midpoint and fades on the real clock.
@@ -1209,7 +1231,7 @@ const HomebodyGame = () => {
                     kid: gs.kid ? { name: gs.kid.name, r: gs.kid.r, c: gs.kid.c, state: gs.kid.state, asleep: gs.kid.asleep, needs: { ...gs.kid.needs }, cd: Math.round(gs.kid.cd * 10) / 10, x: Math.round(gs.kid.x), y: Math.round(gs.kid.y) } : null,   // #2203
                     paper: gs.paper ? { r: gs.paper.r, c: gs.paper.c } : null, paperDay: gs.paperDay,   // #2238: the route
                     cone: gs.cone ? { r: gs.cone.r, c: gs.cone.c } : null, iceSerial: gs.iceSerial, iceDay: gs.iceDay, treats: gs.treats,   // #2503: the truck's stop and the cone ledger
-                    truckView: { phase: iceTruck.phase, x: Math.round(iceTruck.px), jingle: iceTruck.jingle },   // #2508 item 1: the view-side truck — QA reads the slide (phase 'off'/'in'/'parked'/'out') here; item 2: which ending bar this pass rang ('A'/'B')
+                    truckView: { phase: iceTruck.phase, x: Math.round(iceTruck.px), jingle: iceTruck.jingle, crowd: { phase: iceCrowd.phase, n: iceCrowd.phase === 'off' ? 0 : crowdKids(iceCrowd.day) } },   // #2508 item 1: the view-side truck — QA reads the slide (phase 'off'/'in'/'parked'/'out') here; item 2: which ending bar this pass rang ('A'/'B'); item 5: the curb crowd (phase 'off'/'gather'/'flee', size off the day)
                     heldTreats: [...gs.people, gs.kid].filter(Boolean).map((e) => ({ name: e.name, hold: Math.round(e.coneHold * 10) / 10, drips: e.coneDrips })),   // #2508 item 3: the eat beat — who holds a cone, how much hold is left, how many drips fell
                     meal: gs.meal ? { r: gs.meal.r, c: gs.meal.c, name: gs.mealName } : null, mealDay: gs.mealDay, mealSlot: gs.mealSlot, mealSerial: gs.mealSerial, mealEaten: gs.mealEaten.length,   // #2244: the bells
                     queues: gs.people.map((p) => p.queue.map((o) => (o.kind === 'use' ? o.it.id : o.kind))),   // #2470: the pending lists, head first
