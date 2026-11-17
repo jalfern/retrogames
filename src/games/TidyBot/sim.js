@@ -162,7 +162,7 @@ const distToRect = (px, py, r) => {
 const overlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
 
 // mutant hooks (tidycheck --mutate only; production never sets these)
-export const SIMHOOKS = { noBlock: false, freeRun: false, softStow: false, lifo: false, noAim: false }
+export const SIMHOOKS = { noBlock: false, freeRun: false, softStow: false, lifo: false, noAim: false, noTapAct: false }
 
 export const blockers = (gs) => {
     const out = [...WALLS, COUNTER, STOVE, TABLE, ...PLANTS]
@@ -758,6 +758,92 @@ export function flourishPick(gs) {
         if (best) return { id: best.id, kind: best.kind, c: c.id, slot: bs }
     }
     return null
+}
+
+// ---- #2537 TAP-ACT — the chore collapses into ONE tap ------------------
+// The pure half of tap-to-open/place/retrieve. A tap on a container is an
+// ORDER, not just an address: tapAct names the chore it asks for and the spot
+// the bot must reach to perform it, using the autopilot's own approach
+// helpers (zoneCenter/bodyApproach — one approach law in the game).
+// pendingAlive answers "is the target still there?"; pendingFire answers
+// "push which verb THIS tick?" against live state — and the A/B verb laws in
+// step() resolve everything exactly as before, so no rule is duplicated or
+// bypassed. All three are pure like routeDir/aimAt (#2250/#2338): they read
+// gs and never write, and the shell rides the injected press onto the pad
+// like any other input, so seed + pads determinism is untouched.
+// What a tap may schedule: exactly the verbs the game already refuses
+// honestly when it must — open, place (only the MATCHING kind: a mismatched
+// tap can never sneak a WRONG STOW), and retrieve (named or by the default
+// law). A tap elsewhere keeps the plain floor-glide law untouched.
+export function tapAct(gs, tx, ty) {
+    const miss = { ok: false }
+    const inRect = (c) => tx >= c.x + 2 && tx <= c.x + c.w - 2 && ty >= c.y + 2 && ty <= c.y + c.h - 2
+    const held = frontItem(gs)
+    // carried item first — mirror A's own ordering: place, then open, then
+    // the rest. Same kind or nothing (see the header).
+    if (held) {
+        for (const c of CONTAINERS) {
+            if (!inRect(c)) continue
+            if (KINDS[held.kind].to !== c.id) return miss
+            const g = zoneCenter(c, gs)
+            return { ok: true, c: c.id, act: 'place', id: held.id, gx: g.x, gy: g.y }
+        }
+    }
+    const a = aimAt(gs, tx, ty)
+    if (a.ok) {
+        const c = CONTAINERS.find((k) => k.id === a.c)
+        const g = zoneCenter(c, gs)
+        return { ok: true, c: a.c, act: 'retrieve', id: a.id, gx: g.x, gy: g.y }
+    }
+    for (const c of CONTAINERS) {
+        if (!inRect(c)) continue
+        const cc = c.id === 'dw' ? gs.dw : gs.fr
+        if (!isOpen(cc)) {
+            const g = bodyApproach(c, gs)
+            return { ok: true, c: c.id, act: 'open', id: null, gx: g.x, gy: g.y }
+        }
+        if (stowTargets(gs, cc).length) {
+            const g = zoneCenter(c, gs)
+            return { ok: true, c: c.id, act: 'retrieve', id: null, gx: g.x, gy: g.y }
+        }
+        return miss // open and empty: nothing to fire, the tap stays a walk
+    }
+    return miss
+}
+
+// Which verb the pending chore pushes this tick, or null (still walking,
+// or the moment isn't right). `place` fires A against a SHUT body too —
+// that press opens and the order stays pending until the item actually
+// lands, which is what makes one tap worth its name.
+export function pendingFire(gs, pending) {
+    if (!pending || !pending.ok || SIMHOOKS.noTapAct) return null
+    const c = CONTAINERS.find((k) => k.id === pending.c)
+    const cc = pending.c === 'dw' ? gs.dw : gs.fr
+    if (pending.act === 'open') return isShut(cc) && nearBody(c, gs.rx, gs.ry) ? 'a' : null
+    if (pending.act === 'place') {
+        if (isOpen(cc) && inZone(c, gs.rx, gs.ry)) return 'a'
+        // a shut body opens from the flank zones (never the door footprint —
+        // that's bodyApproach's law, and STAND CLEAR stays a real refusal)
+        return isShut(cc) && inZone(c, gs.rx, gs.ry) && nearBody(c, gs.rx, gs.ry) ? 'a' : null
+    }
+    return isOpen(cc) && nearBody(c, gs.rx, gs.ry) && stowTargets(gs, cc).length ? 'b' : null
+}
+
+// Is the tap's order still worth walking toward? A target that vanished
+// (item retrieved, door that opened by other hands, cargo dropped) kills
+// the plan quietly — a pending order is a promise, and a promise whose
+// object is gone must never fire an unrelated verb.
+export function pendingAlive(gs, pending) {
+    if (!pending || !pending.ok) return false
+    const cc = pending.c === 'dw' ? gs.dw : gs.fr
+    if (pending.act === 'open') return isShut(cc)
+    if (pending.act === 'place') {
+        const h = frontItem(gs)
+        return !!h && h.id === pending.id
+    }
+    if (!isOpen(cc)) return false
+    const pool = stowTargets(gs, cc)
+    return pending.id === null ? pool.length > 0 : pool.some((i) => i.id === pending.id)
 }
 
 export function routeDir(gs, tx, ty) {

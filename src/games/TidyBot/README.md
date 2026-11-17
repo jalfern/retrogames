@@ -69,6 +69,34 @@ didn't say MODERN.
   B is the COMMIT gesture — it must never clear the mark at keydown (a harness
   bug the browser gate caught by name).
 
+## Tap-to-act (#2537) — the chore collapses into one tap
+- **`tapAct(gs, tx, ty)` (pure, `sim.js`)** judges a tap into one order:
+  carrying + matching container → PLACE (a mismatched carry simply refuses —
+  one tap is never a blind WRONG STOW); an `aimAt` hit → RETRIEVE THE NAMED
+  item (mark + order in the same tap); shut body → OPEN; open cavity with
+  things in → RETRIEVE the default stow; open + empty → the tap stays a plain
+  #2250 glide. Ordering mirrors the A/B verbs (place, aim, body, cavity).
+- **The order rides the pad, not the keyboard.** The shell parks a pending
+  chore and its fire-block in `doSim` synthesizes the press once the bot is
+  at the spot (`pendingFire`: OPEN by the body, PLACE in the zone — a place
+  aimed at a shut body fires the OPEN first and survives until it lands,
+  RETRIEVE when the cavity is open and still holds its item). A refusal
+  (STAND CLEAR / ARMS FULL) sets a 20-tick back-off instead of spamming.
+  Because it lands in the merged pad, seed + pads determinism, replays and
+  every hash gate are untouched; `contractHoldsLoop()` keeps the pending
+  dormant while a contract driver owns the clock.
+- **Cancel law mirrors glide+mark** (§Glide, §Aimed retrieve): any key, any
+  new tap, WATCH, level change, reset or a human verb clears the order. It
+  fires at most once.
+- Supersedes the #2338 clause "the two-step law stands" — taps now carry
+  their verb; the autopilot still emits plain pads (purity gates unchanged).
+- Gates: `tidycheck` Node 109 — tapAct purity (each act, mismatch refusal,
+  open+empty miss), fire/aliveness rules, determinism through the pending —
+  plus live gates (real tap on the shut washer orders OPEN and ONE tap walks
+  over and opens it; one tap on a far plate marks AND pulls; an arrow press
+  mid-order cancels both). Mutant `tapact` (tapAct always misses) turns 4
+  named gates red.
+
 ## Polish pass (#2343): the demo sells the aim, the pull shows the reach
 - **Attract flourish (overlay, not autopilot).** `flourishPick(gs)` (pure, in
   `sim.js`) names the lowest-slot stow in an open cavity; the attract loop
@@ -131,16 +159,17 @@ didn't say MODERN.
 
 ## Verify
 ```
-npm run tidycheck            # 103 Node gates + browser gates (needs npm run dev)
+npm run tidycheck            # Node 109 + browser gates, 135 green (needs npm run dev)
 npm run tidycheck -- --node  # Node-only
-npm run tidycheck -- --mutate   # door mutant (TIDY_MUT=door|glass|run|tidy|order|aim)
+npm run tidycheck -- --mutate   # door mutant (TIDY_MUT=door|glass|run|tidy|order|aim|tapact)
 CONTRACT_ONLY=tidy-bot npm run contractcheck
 ```
 Mutants: `door` (open doors stop blocking), `glass` (plates stop shattering),
 `run` (empty washer starts), `tidy` (wrong stows stop costing),
 `order` (carry queue flips FIFO→LIFO), `aim` (#2338 aiming ignored — the three
 aimed-retrieve clauses go NAMED-red) — each turns NAMED gates red; restore
-after.
+after. `tapact` (#2537 tap-to-act neutered to a plain glide) kills the four
+one-tap chore gates by name.
 
 ## Honest gaps
 - **CLOSED by #2250**: GLIDE TO IT — tap the floor and the bot BFS-routes
@@ -162,5 +191,7 @@ after.
   every 36 ticks plus bubble ticks — and a cleared attract shift clocks into the
   NEXT room instead of hard-rebooting; marker added by #2488, the work shipped
   then and the bullet lacked it, #961 pattern).
-- Glide walks but never acts — tap-to-open/place would collapse the chore loop
-  into single taps; held back until the verbs feel as good one-handed.
+- **CLOSED by #2537**: TAP-TO-ACT — a tap now carries its verb (open/place/
+  aimed retrieve/default retrieve, judged by pure `tapAct`); the chore loop is
+  one tap end to end, refusals stay honest (mismatched carry = no order).
+  See §Tap-to-act above.

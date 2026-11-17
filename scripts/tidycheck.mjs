@@ -13,7 +13,7 @@
 // on a real Space, the robot pixels land where the sim says after real
 // strokes, and a scripted chore run banks points with zero page errors.
 //
-// Mutants (TIDY_MUT=door|glass|run|tidy|order|aim):
+// Mutants (TIDY_MUT=door|glass|run|tidy|order|aim|tapact):
 //   door  — open doors stop blocking the floor
 //   glass — plates stop being fragile
 //   run   — the washer starts even when empty
@@ -21,6 +21,8 @@
 //   order — the carry queue flips FIFO→LIFO (#2266 order gates go red)
 //   aim   — aiming is ignored; every pull falls back to the default (#2338
 //           aimed-retrieve gates go red)
+//   tapact — a tap never fires its verb (#2537 tap-act gates go red: the
+//           chore un-collapses back into a walk that arrives and does nothing)
 
 import * as s from '../src/games/TidyBot/sim.js'
 import { readFileSync } from 'node:fs'
@@ -33,7 +35,7 @@ const fails = []
 const ok = (c, m) => { if (c) { pass++; console.log(`  PASS  ${m}`) } else { fails.push(m); console.log(`  \x1b[31mFAIL\x1b[0m  ${m}`) } }
 const section = (t) => console.log(`\n\x1b[1m${t}\x1b[0m`)
 
-if (MUT && !['door', 'glass', 'run', 'tidy', 'order', 'aim'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
+if (MUT && !['door', 'glass', 'run', 'tidy', 'order', 'aim', 'tapact'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); console.error(`  (valid: door, glass, run, tidy, order, aim, tapact)`); process.exit(2) }
 if (MUT) console.log(`\x1b[33mMUTANT ACTIVE: ${MUT}\x1b[0m`)
 const applyMut = () => {
     if (MUT === 'door') s.SIMHOOKS.noBlock = true
@@ -42,6 +44,7 @@ const applyMut = () => {
     if (MUT === 'tidy') s.SIMHOOKS.softStow = true
     if (MUT === 'order') s.SIMHOOKS.lifo = true
     if (MUT === 'aim') s.SIMHOOKS.noAim = true
+    if (MUT === 'tapact') s.SIMHOOKS.noTapAct = true
 }
 applyMut()
 
@@ -49,6 +52,7 @@ const {
     makeGame, step, autopilot, playthrough, loadLevel, blockers,
     DW, FR, CONTAINERS, LEVEL_TIME, KINDS, LEVELS, ROBOT_R, REACH,
     rackSlot, aimAt, RACK_CAP, flourishPick,
+    tapAct, pendingFire, pendingAlive, routeDir,
 } = s
 
 
@@ -545,6 +549,147 @@ section('aimed retrieve + rack slots (#2338)')
     ok(pureDefault && gW.end === 'win', 'the autopilot never aims and still wins — the default law is the prover law')
 }
 
+section('tap-to-act (#2537): the chore collapses into ONE tap')
+{
+    const atZoneT = (g) => { g.dw.door = 1; g.dw.target = 1; g.dw.cd = 0; g.rx = 79; g.ry = 58 }
+    const stowT = (g, it) => { it.state = 'held'; g.held = it.id; step(g, [{ a: true }]) }
+    const isOpenNow = (g, id) => (id === 'dw' ? g.dw : g.fr).door >= 0.9
+    // the shell mirror: glide to the work spot + fire the verb when due,
+    // exactly the law index.jsx runs each tick (pendingFire + goto merge)
+    const drive = (g, pend0) => {
+        let pend = pend0.ok ? { ...pend0, cd: 0 } : null
+        let gotoP = pend ? { x: pend.gx, y: pend.gy } : null
+        let ticks = 0
+        let after = 0
+        const evs = []
+        while (ticks++ < 3000) {
+            if (pend && !pendingAlive(g, pend)) pend = null
+            const pad = {}
+            if (pend) {
+                if (pend.act === 'retrieve' && pend.id !== null) pad.aim = pend.id
+                if (pend.cd > 0) pend.cd--
+                else {
+                    const v = pendingFire(g, pend)
+                    if (v) {
+                        pad[v] = true
+                        if (pend.act !== 'place' || isOpenNow(g, pend.c)) pend = null
+                    }
+                }
+            }
+            if (gotoP) {
+                const r = routeDir(g, gotoP.x, gotoP.y)
+                if (!r.ok || r.arrived) gotoP = null
+                else if (r.dir) pad[r.dir] = true
+            }
+            step(g, [pad])
+            evs.push(...g.ev)
+            if (!pend && !gotoP) { if (++after > 40) break } // let doors finish their slide
+            else after = 0
+        }
+        return { pend, ticks, evs }
+    }
+
+    // ---- classification ----
+    const g0 = makeGame(42)
+    const tOpen = tapAct(g0, DW.x + DW.w / 2, DW.y + DW.h / 2)
+    ok(tOpen.ok && tOpen.act === 'open' && tOpen.c === 'dw', 'a tap on the SHUT washer body schedules OPEN (not a dead walk)')
+    ok(routeDir(g0, tOpen.gx, tOpen.gy).ok, 'the open order routes — its work spot has a road')
+    ok(!tapAct(g0, 246, 146).ok, 'a tap on the table is not a chore — the floor-glide law owns it')
+    const tFr0 = tapAct(g0, FR.x + FR.w / 2, FR.y + FR.h / 2)
+    ok(tFr0.ok && tFr0.act === 'open' && tFr0.c === 'fr', 'a shut fridge tap schedules OPEN too')
+
+    const gt = makeGame(42); atZoneT(gt)
+    const plateT = gt.items.find((it) => it.kind === 'plate')
+    const cupT = gt.items.find((it) => it.kind === 'cup')
+    stowT(gt, plateT); stowT(gt, cupT)
+    const spT = rackSlot(DW, plateT.slot)
+    const tRet = tapAct(gt, spT.x, spT.y)
+    ok(tRet.ok && tRet.act === 'retrieve' && tRet.id === plateT.id, 'a tap beside a named stow schedules a retrieve of THAT item')
+    const spGap = { x: DW.x + DW.w - 2, y: DW.y + DW.h - 2 } // cavity corner, >6.5px from every slot
+    const tDef = tapAct(gt, spGap.x, spGap.y)
+    ok(tDef.ok && tDef.act === 'retrieve' && tDef.id === null, 'a tap inside the cavity between slots schedules a retrieve by the default law')
+    gt.dw.door = 0; gt.dw.target = 0
+    const tShutR = tapAct(gt, spT.x, spT.y)
+    ok(tShutR.ok && tShutR.act === 'open', 'the same tap on a cavity that shut schedules OPEN — the chain starts at the door')
+    gt.dw.door = 1; gt.dw.target = 1
+    const gE = makeGame(42); gE.dw.door = 1; gE.dw.target = 1
+    ok(!tapAct(gE, DW.x + DW.w / 2, DW.y + DW.h / 2).ok, 'an open, EMPTY cavity schedules nothing — the tap stays a walk')
+    const gA2 = makeGame(42)
+    const appleA = setHeld(gA2, 'apple')
+    const tPl = tapAct(gA2, FR.x + FR.w / 2, FR.y + FR.h / 2)
+    ok(tPl.ok && tPl.act === 'place' && tPl.id === appleA.id, 'a fridge tap with a MATCHING carry schedules PLACE, pinning the carried item')
+    ok(!tapAct(gA2, DW.x + DW.w / 2, DW.y + DW.h / 2).ok, 'a mismatched carry tap refuses — WRONG STOW is never one tap deep (RED under a laundering mutant)')
+
+    // ---- fire law ----
+    const gF = makeGame(42)
+    const pOpen = tapAct(gF, DW.x + DW.w / 2, DW.y + DW.h / 2)
+    ok(pendingFire(gF, pOpen) === null, 'an open order does not fire while the bot is far from the body')
+    gF.rx = pOpen.gx; gF.ry = pOpen.gy
+    ok(pendingFire(gF, pOpen) === 'a', 'the open order fires A at the bodyApproach spot')
+    gF.dw.door = 1; gF.dw.target = 1
+    ok(pendingFire(gF, pOpen) === null && !pendingAlive(gF, pOpen), 'an open order at an already-open door dies silently and never closes it')
+    const gF2 = makeGame(42); atZoneT(gF2)
+    const cupF = gF2.items.find((it) => it.kind === 'cup')
+    stowT(gF2, cupF)
+    const gF3 = makeGame(42); gF3.dw.door = 1; gF3.dw.target = 1; gF3.rx = 79; gF3.ry = 58
+    const pRetF = tapAct(gF3, DW.x + DW.w / 2, DW.y + DW.h / 2)
+    ok(pendingFire(gF3, pRetF) === null && !pendingAlive(gF3, pRetF), 'a retrieve order at an empty rack neither fires nor lingers')
+
+    // ---- orders that lose their object die quietly ----
+    const gV = makeGame(42); atZoneT(gV)
+    const appleV = setHeld(gV, 'apple')
+    const pPlV = tapAct(gV, FR.x + FR.w / 2, FR.y + FR.h / 2)
+    appleV.state = 'gone'
+    ok(!pendingAlive(gV, pPlV), 'a place order whose cargo vanished is dropped — no verb fires at an empty arm')
+    const gV2 = makeGame(42); atZoneT(gV2)
+    const plateV2 = gV2.items.find((it) => it.kind === 'plate')
+    stowT(gV2, plateV2)
+    const pRv2 = tapAct(gV2, rackSlot(DW, plateV2.slot).x, rackSlot(DW, plateV2.slot).y)
+    plateV2.state = 'gone'
+    ok(!pendingAlive(gV2, pRv2), 'a named-pull order whose item left the rack is dropped')
+
+    // ---- the collapsed chore, end to end ----
+    const choreA = () => {
+        const g = makeGame(99)
+        const apple = setHeld(g, 'apple')
+        const pend = tapAct(g, FR.x + FR.w / 2, FR.y + FR.h / 2)
+        const r = drive(g, pend)
+        return { landed: apple.state === 'in' && apple.cont === 'fr', hash: g.hash, ticks: r.ticks, pend: r.pend }
+    }
+    const a1 = choreA(); const a2 = choreA()
+    ok(a1.landed && !a1.pend, `ONE tap on the SHUT fridge stows the apple — open + place in ${a1.ticks} ticks, zero extra verbs`)
+    ok(a1.hash === a2.hash && a1.ticks === a2.ticks, 'the collapsed chore is deterministic — same seed, same walk, identical hash')
+    const choreB = () => {
+        const g = makeGame(7)
+        const pend = tapAct(g, DW.x + DW.w / 2, DW.y + DW.h / 2)
+        const r = drive(g, pend)
+        return { opened: g.dw.door >= 0.9, pend: r.pend, closed: g.fr.door }
+    }
+    const b1 = choreB()
+    ok(b1.opened && !b1.pend && b1.closed <= 0.01, 'ONE tap on the washer body walks over and opens it — and nothing else')
+    const choreC = () => {
+        const g = makeGame(4242); atZoneT(g)
+        const appleC = g.items.find((it) => it.kind === 'apple')
+        const plateC = g.items.find((it) => it.kind === 'plate')
+        stowT(g, appleC); stowT(g, plateC)
+        g.rx = 150; g.ry = 200
+        const pend = tapAct(g, rackSlot(DW, plateC.slot).x, rackSlot(DW, plateC.slot).y)
+        const r = drive(g, pend)
+        return { held: heldOf(g)?.kind, aimed: r.evs.some((e) => e.type === 'retrieve' && e.aimed === true), pend: r.pend }
+    }
+    const c1 = choreC()
+    ok(c1.held === 'plate' && c1.aimed && !c1.pend, 'ONE tap on a far rack plate walks the bot over and pulls THE NAMED plate (RED under tapact/aim mutants)')
+    const choreD = () => {
+        const g = makeGame(555)
+        const pend = tapAct(g, DW.x + DW.w / 2, DW.y + DW.h / 2)
+        g.dw.door = 1; g.dw.target = 1 // someone else opened it mid-order
+        const r = drive(g, pend)
+        return { stillOpen: g.dw.door >= 0.9, pressed: r.evs.some((e) => e.type !== 'noop') }
+    }
+    const d1 = choreD()
+    ok(d1.stillOpen && !d1.pressed, 'an open order opened by other hands expires without a stray press (never closes the door you asked to open)')
+}
+
 section('polish pass (#2343): flourish picker + pull-anim plumbing')
 {
     const atZoneP = (g) => { g.dw.door = 1; g.dw.target = 1; g.dw.cd = 0; g.rx = 79; g.ry = 58 }
@@ -714,21 +859,21 @@ if (!NODE_ONLY) {
         await page.keyboard.up('ArrowUp')
         ok(cancelled === false, 'a real arrow press cancels the glide — the human is the driver')
 
-        // #2338 AIM: a real mouse tap on a rack item marks it (teal brackets
-        // painted at the slot), pad B pulls THE NAMED item — not the wrong-stow
-        // default — and a real arrow press clears the mark (human drives).
+        // #2537 TAP-ACT replaced #2338's two-step: a real mouse tap on a rack
+        // item MARKS it (brackets ride the walk), glides the bot over and the
+        // named pull fires on arrival — one tap, one chore. A movement key
+        // mid-order cancels it: the human is still the driver.
+        await page.evaluate(() => { window.__game.reset(31415); window.__game.release() })
         await page.evaluate(() => {
-            const g = window.__game
-            g.reset(31415)
             const gs = window.__tidybotTest.sim()
             gs.dw.door = 1; gs.dw.target = 1; gs.dw.cd = 0
-            gs.rx = 79; gs.ry = 58
+            gs.rx = 150; gs.ry = 200
             const apple = gs.items.find((it) => it.kind === 'apple')
             const plate = gs.items.find((it) => it.kind === 'plate')
             apple.state = 'in'; apple.cont = 'dw'; apple.slot = null
             plate.state = 'in'; plate.cont = 'dw'; plate.slot = null
         })
-        await page.waitForTimeout(150) // let a tick heal the slots (apple 0, plate 1)
+        await page.waitForTimeout(150) // heal slots: apple 0, plate 1
         const aimPt = await page.evaluate(() => {
             const gs = window.__tidybotTest.sim()
             const plate = gs.items.find((it) => it.kind === 'plate')
@@ -739,32 +884,21 @@ if (!NODE_ONLY) {
         })
         await page.mouse.click(aimPt.x, aimPt.y)
         let st2 = await page.evaluate(() => window.__tidybotTest.state())
-        ok(st2.aim === aimPt.plateId, 'a real tap on a rack item marks it for retrieval')
-        // wait out the glide + arrival ring so the only teal left is the bracket
-        for (let i = 0; i < 60 && (await page.evaluate(() => window.__tidybotTest.gliding())); i++) await page.waitForTimeout(100)
-        await page.waitForTimeout(400)
-        const brPx = await page.evaluate((pt) => {
-            const cv = window.__tidybotTest.canvas()
-            const g = cv.getContext('2d')
-            const r = cv.getBoundingClientRect()
-            const X = Math.round((pt.x - r.left) * (cv.width / r.width))
-            const Y = Math.round((pt.y - r.top) * (cv.height / r.height))
-            const d = g.getImageData(X - 9, Y - 9, 19, 19).data
-            let teal = 0
-            for (let i = 0; i < d.length; i += 4) if (d[i + 1] > 150 && d[i + 2] > 150 && d[i] < 160) teal++
-            return { teal, X, Y }
-        }, aimPt)
-        ok(brPx.teal >= 4, `aim brackets are painted at the slot (${brPx.teal} teal px at ${brPx.X},${brPx.Y})`)
-        await page.keyboard.press('KeyB')
-        await page.waitForTimeout(120)
+        ok(st2.aim === aimPt.plateId && st2.pending === 'retrieve', 'a real tap on a rack item MARKS it and ORDERS the pull (one tap)')
+        let pulled = false
+        for (let i = 0; i < 80 && !pulled; i++) {
+            await page.waitForTimeout(100)
+            pulled = (await page.evaluate(() => window.__tidybotTest.state())).held === 'plate'
+        }
         st2 = await page.evaluate(() => window.__tidybotTest.state())
-        ok(st2.held === 'plate' && st2.aim === -1, 'real B pulls THE MARKED plate — the wrong stow waits its turn')
-        // cancel law mirrors the glide: any movement key drops the mark
-        await page.evaluate(() => { const g = window.__game; g.reset(31415) })
+        ok(pulled && st2.pending === '' && st2.aim === -1,
+            'ONE real tap walked the bot over and pulled THE NAMED plate — the mark and order are spent (RED under tapact)')
+        // cancel law: a movement key mid-order drops mark AND order
+        await page.evaluate(() => { window.__game.reset(31415); window.__game.release() })
         await page.evaluate(() => {
             const gs = window.__tidybotTest.sim()
             gs.dw.door = 1; gs.dw.target = 1; gs.dw.cd = 0
-            gs.rx = 79; gs.ry = 58
+            gs.rx = 150; gs.ry = 200
             const apple = gs.items.find((it) => it.kind === 'apple')
             apple.state = 'in'; apple.cont = 'dw'; apple.slot = null
         })
@@ -779,12 +913,38 @@ if (!NODE_ONLY) {
         })
         await page.mouse.click(applePt.x, applePt.y)
         await page.waitForTimeout(80)
-        let st3 = await page.evaluate(() => window.__tidybotTest.state())
-        ok(st3.aim === applePt.appleId, 'the re-tap marks the apple for retrieval')
+        const ordered = await page.evaluate(() => window.__tidybotTest.state())
+        ok(ordered.aim === applePt.appleId && ordered.pending === 'retrieve', 'the re-tap marks the apple AND orders the pull')
         await page.keyboard.down('ArrowUp')
-        const cleared = (await page.evaluate(() => window.__tidybotTest.state())).aim === -1
+        const cancelSt = await page.evaluate(() => window.__tidybotTest.state())
+        await page.waitForTimeout(600)
+        const heldAfter = await page.evaluate(() => window.__tidybotTest.state())
         await page.keyboard.up('ArrowUp')
-        ok(cleared, 'a real arrow press cancels the mark — the human is the driver')
+        ok(cancelSt.pending === '' && cancelSt.aim === -1 && heldAfter.held === '',
+            'a real arrow press cancels the mark AND the order — the human is the driver')
+
+        // #2537 one-tap OPEN: click the shut washer body → the bot walks over
+        // and opens it by itself; the fridge is untouched.
+        await page.evaluate(() => { window.__game.reset(777); window.__game.release() })
+        await page.waitForTimeout(150)
+        const dwPt = await page.evaluate(() => {
+            const cv = window.__tidybotTest.canvas()
+            const r = cv.getBoundingClientRect()
+            return { x: r.left + ((window.__tidybotTest.DW.x + window.__tidybotTest.DW.w / 2) / 320) * r.width,
+                y: r.top + ((window.__tidybotTest.DW.y + window.__tidybotTest.DW.h / 2) / 240) * r.height }
+        })
+        await page.mouse.click(dwPt.x, dwPt.y)
+        const pend = await page.evaluate(() => window.__tidybotTest.state().pending)
+        ok(pend === 'open',
+            `a real tap on the shut washer orders OPEN${pend === 'open' ? '' : ` (got ${JSON.stringify(pend)})`}`)
+        let opened = false
+        for (let i = 0; i < 80 && !opened; i++) {
+            await page.waitForTimeout(100)
+            opened = (await page.evaluate(() => window.__tidybotTest.state())).dwDoor >= 0.9
+        }
+        const doorSt = await page.evaluate(() => window.__tidybotTest.state())
+        ok(opened && doorSt.pending === '' && doorSt.frDoor <= 0.01,
+            'ONE real tap walked over and opened the washer — and touched nothing else (RED under tapact)')
         await page.evaluate(() => { const g = window.__game; g.reset(31415); g.release() })
 
         // scripted chore progress through the contract keeps the clock honest
