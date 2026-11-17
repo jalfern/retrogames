@@ -57,6 +57,7 @@ const ExcitebikeGame = () => {
     const [gear, setGear] = useState('high')
     const [sel, setSel] = useState(0) // #2563: the splash cursor — which of the six you're riding
     const [customs, setCustoms] = useState(0) // #2576: saved EDIT TRACK slots loaded (splash grows)
+    const [testing, setTesting] = useState(false) // #2573: render mirror of testRide.active — the pad's ABANDON button rides this
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const gearRef = useRef('high')
@@ -662,7 +663,7 @@ const ExcitebikeGame = () => {
                 // no rank, no leaderboard, just the terrain and the throttle.
                 ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(W / 2 - 100, 4, 200, 11)
                 ctx.fillStyle = '#8fe0ff'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'
-                ctx.fillText('TEST TRACK · LAP 1 · ESC BACK TO THE BAY', W / 2, 12)
+                ctx.fillText('TEST TRACK · LAP 1 · ABANDON OR ESC TO BAY', W / 2, 12)
                 ctx.textAlign = 'left'
             }
             if (scr === 'play' && gs.count > 0) {
@@ -798,6 +799,7 @@ const ExcitebikeGame = () => {
             if (!a.ok) { draft.msg = a.why; draft.msgT = 200; audioController.playNoise(0.14, 0.07); audioController.playTone(140, 0.12, 'square', 0.05); return }
             setTestTrack(built)
             testRide.active = true
+            setTesting(true) // #2573: the pad grows ABANDON while a draft is seated
             gs = makeGame(TRANSIENT, { gear: gearRef.current, laps: 1 })
             watchingRef.current = false; setWatching(false)
             bikeMem = { pump: 0 }
@@ -811,6 +813,7 @@ const ExcitebikeGame = () => {
         }
         const endTestRide = (msg) => {
             testRide.active = false
+            setTesting(false) // #2573: ABANDON leaves the pad with the seat
             clearTestTrack()
             keys.g = keys.b = keys.j = keys.l = keys.r = false
             parts.length = 0
@@ -1186,7 +1189,10 @@ const ExcitebikeGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'EXCITEBIKE')} onResume={handleResume} />}
-            <VirtualControls visible={(play || screen === 'tracks' || screen === 'edit') && !paused} />
+            {/* #2573: a test ride is the one seat a phone can leave — the third
+                pad button abandons the draft lap (fires the shipped Escape law;
+                a league race never grows it — races stay unescapable). */}
+            <VirtualControls visible={(play || screen === 'tracks' || screen === 'edit') && !paused} thirdAction={play && testing ? { label: 'ABANDON', code: 'Escape' } : null} />
         </div>
     )
 }

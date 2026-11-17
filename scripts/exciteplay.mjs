@@ -718,5 +718,48 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     r.check('an empty draft refuses TEST by name (stays in the bay)', p.screen === 'edit' && p.test === false && !!p.edit && p.edit.msg.includes('DRAW'), JSON.stringify(p && { s: p.screen, m: p.edit && p.edit.msg }))
 }
 
+// ---- ABANDON (#2573): a phone leaves a test ride too — the third pad ----
+// button carries the shipped Escape law. The C button lives or dies with the
+// seat: bay and splash never grow it (EXIT stays in the tool strip there),
+// and a league race never grows it either — races stay unescapable.
+{
+    const cSel = '[data-vc="c"]'
+    const wakePad = () => page.evaluate(() => window.dispatchEvent(new Event('touchstart')))
+    await wakePad(); await wait(150)
+    r.check('no ABANDON in the bay — EXIT lives in the tool strip', (await page.locator(cSel).count()) === 0)
+
+    // re-open the bay clean, stamp one RAMP, seat the TEST lap
+    await page.keyboard.press('Escape'); await wait(150) // bay -> splash
+    await page.keyboard.press('Digit0'); await wait(200) // fresh bay
+    for (let i = 0; i < 3; i++) { await page.keyboard.press('ArrowRight'); await wait(40) }
+    await page.keyboard.press('Space'); await wait(120)  // RAMP @240
+    for (let i = 0; i < 6; i++) { await page.keyboard.press('ArrowDown'); await wait(40) }
+    await page.keyboard.press('Space'); await wait(250)   // TEST seats the lap
+    let p = await probe()
+    await wakePad(); await wait(150) // keyboard use hides the pad (Step 5 feel) — a thumb brings it back
+    r.check('a seated test ride grows an ABANDON button on the pad', (await page.locator(cSel).count()) === 1 && p.screen === 'play' && p.test === true, `${JSON.stringify(p && { s: p.screen, t: p.test })} c=${await page.locator(cSel).count()}`)
+    r.check('the button is labelled ABANDON and rides the Escape law', await page.locator(cSel).getAttribute('data-key') === 'Escape' && (await page.locator(cSel).innerText()).trim() === 'ABANDON')
+
+    // a thumb press walks back to the bay — same law, same landing as Esc
+    const cb = await page.locator(cSel).boundingBox()
+    if (cb) {
+        await page.mouse.move(cb.x + cb.width / 2, cb.y + cb.height / 2)
+        await page.mouse.down(); await wait(60); await page.mouse.up()
+        await wait(200)
+        p = await probe()
+        r.check('tapping ABANDON returns to the bay with the draft intact', p.screen === 'edit' && p.test === false && !!p.edit && p.edit.stamps.length === 1 && p.edit.msg.includes('BACK TO THE BAY'), JSON.stringify(p && { s: p.screen, t: p.test, m: p.edit && p.edit.msg }))
+    } else {
+        r.check('tapping ABANDON returns to the bay with the draft intact', false, 'no [data-vc="c"] to tap')
+    }
+    r.check('ABANDON leaves the pad when the seat does', (await page.locator(cSel).count()) === 0)
+
+    // the league stays unescapable: no ABANDON grows for a real race
+    await page.keyboard.press('Escape'); await wait(150)
+    await page.keyboard.press('Digit1'); await wait(400)
+    await wakePad(); await wait(150) // wake the pad so this measures the law, not the keyboard-hide
+    p = await probe()
+    r.check('a league race grows no ABANDON (races are not a draft)', p.screen === 'play' && p.test === false && (await page.locator(cSel).count()) === 0, JSON.stringify(p && { s: p.screen, t: p.test }))
+}
+
 r.check('zero page errors across the whole ride', errors.length === 0, errors.slice(0, 4).join(' | '))
 r.exit(browser)
