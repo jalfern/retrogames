@@ -1273,7 +1273,7 @@ const FloorBossGame = () => {
                 hash: () => stateHash(gs),
                 canvas: () => canvas,
                 sim: () => gs,
-                step: (n = 1, pad = {}) => { for (let i = 0; i < n; i++) step(gs, [pad]) },
+                step: (n = 1, pad = {}, useM = false) => { for (let i = 0; i < n; i++) step(gs, useM && duelMode ? [pad, apM(gs)] : [pad]) }, // #2555: useM fast-forwards a duel through the model's own manager
                 click: (x, y) => clickCell(gs, x, y),
                 press: (code) => onKeyDown({ code, preventDefault() {}, repeat: false }),
                 release: (code) => onKeyUp({ code }),

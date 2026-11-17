@@ -196,6 +196,36 @@ score; three expired orders and you're fired. Quota: 1000.
   source pins, no-hardcode guard); mutants `--mutate-rush` (clock drifts without a
   re-measure), `--mutate-price` (the card claims a free rung) — each dies.
 
+## Duel seats — model vs human at one console (#2555)
+
+- One console, two seats: **seat H** is the existing human channel (mouse/touch/
+  pad); **seat M** is the model manager — the quota-proven autopilot driving its
+  own cursor/tool channel from `pads[1]` (AGENTS.md: a CPU opponent is the
+  default; there is no second on-screen pad). Entry: `D` at the attract or the
+  cyan DUEL chip.
+- One budget stays the floor's: `gs.score` and every purchase/fee/fine/quota law
+  are untouched, so the autopilot plays an economically identical game at either
+  seat and the win proof transfers (#1917 zero footprint — solo hashes are
+  byte-identical). What the duel adds is **production credit** on three laws:
+  a stow pays the RACK owner (bot or gantry); a packed order's escrow rides the
+  parcel to the seat that staged MORE of its crates (no strict majority → the
+  HOUSE); the full-trailer freight bonus accrues per box onto the loading ledger
+  (`truck.bonus[0..2]`) and pays at drive-off. Ownership stamps: racks/robots
+  carry `owner` (0 you, 1 model, −1 the house legacy fleet); staged crates
+  remember their bot's seat in `stOwn`. Conservation law (gated every tick):
+  `score = 100 + Σcredits − spent`.
+- Verdict at any end: the richer seat-till is **MANAGER OF THE NIGHT**, named on
+  the over screen; the house is not a manager. Career shifts carry the ledgers
+  (credit persists; the freight tally resets with the trailer like the pad).
+- Seat marks: racks wear owner frames (green you / cyan model / classic house
+  orange), hired bots wear an employer dot, seat M steers a cyan bracket; the
+  twin till rides the HUD between the escrow chip and the tool chips.
+- The Plaicraft episode finally seats the model: duels record
+  `players: 2, sources: ['human','model']`, slot 1 carrying the model's own pad
+  states per tick — the second slot the #1144 format always pinned.
+- Duel hash segment `D[...]` (credits, spent, verdict, owners, seat-M channel) is
+  duel-only — additive (#1373) and absent from every solo hash.
+
 ## Verify
 ```bash
 npm run floorbosscheck          # Node: boots/rules/win/determinism/episode (mutant-proven) + servo presentation source pins (#1877) + load-out (#1911) + freight-line conservation/bonus/express laws (#1921) + freight tiers: side-stream golden, tiered bonus, road law, dest spread (#1927) + load weight: dest+weight goldens, mix sentinels, rate literals 60/54, dock speed 14/14/28 (#1931)
@@ -209,7 +239,8 @@ node scripts/floorbosscheck.mjs --mutate-miles   # the truck cannot answer insta
 node scripts/floorbosscheck.mjs --mutate-weight  # heavy crates cannot claim their rate (#1931)
 node scripts/floorbosscheck.mjs --mutate-slow    # heavies cannot cost the dock their ticks (#1931)
 node scripts/floorbosscheck.mjs --mutate-bands   # the inverted dest band (REGIONAL 72%) cannot return (#1931)
-npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877); real-tap pad call/send + drawn-truck-is-sim-truck gates (#1911); escrow-books-at-pack + freight-paid-at-drive-off gates (#1921); violet far-post tag pixels + road-commit + tap-on-road-silence gates (#1927 — verb gates run with auto-dispatch off and settle dock+truck+road together); steel heavy-tag pixel [154,215,255] + padWeight simState eye (#1931)
+node scripts/floorbosscheck.mjs --mutate-duel    # bot stows cannot bypass the rack-owner credit law (#2555)
+npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877); real-tap pad call/send + drawn-truck-is-sim-truck gates (#1911); escrow-books-at-pack + freight-paid-at-drive-off gates (#1921); violet far-post tag pixels + road-commit + tap-on-road-silence gates (#1927 — verb gates run with auto-dispatch off and settle dock+truck+road together); steel heavy-tag pixel [154,215,255] + padWeight simState eye (#1931); DUEL live drive: D enters the duel, cyan model cursor moves on its own, twin till updates, verdict banner lands (#2555)
 CONTRACT_ONLY=floor-boss npm run contractcheck
 node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
 ```
@@ -245,8 +276,14 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
 - ~~Only one shift template; difficulty varies by seed, not by level ladder~~
   **CLOSED by #2346**: the career ladder — clearing a shift clocks into the next
   with an honest, pure ramp (see "Shift ladder" below).
-- Two-player manager seats (model vs human, one slot each) are the #1144
-  follow-up: the episode format already pins `sources`.
+- ~~Two-player manager seats (model vs human, one slot each) are the #1144
+  follow-up: the episode format already pins `sources`~~ **CLOSED by #2555**:
+  DUEL seats — the model manager (autopilot) drives its own slot beside the
+  human; credit follows work (rack-owner stows, shipper escrow, per-box freight
+  bonus), the whistle names MANAGER OF THE NIGHT, and episodes record
+  `players: 2, sources: ['human','model']` (see "Duel seats" above). Hot-seat
+  two-*human* managers (a second keyboard channel) stay a future idea — the gap
+  as written asked for model vs human, and that is what shipped.
 - Rack placement is 1-cell blocks; real warehouse aisle-clearance rules
   (turn radii, forklift lanes) are faked by BFS. — **first slice shipped by
   #2546**: aisle reachability is now a *law* at the click point
