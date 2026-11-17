@@ -800,6 +800,35 @@ after dark — and an answer on the shelf.
   hash carriers, rng-free source, determinism twin, win economy intact,
   marquee/case/art/rig source pins. 650 checks, 0 fail.
 
+## Even-night prowl (#2532) — the sneak's mirror: Miso keeps the dark halves
+
+The day/night tail's second night citizen. The sneak took the odd nights
+(#2520); **even nights belong to the cat** (The Sims, PC 2000 — the household
+cat is a night creature, out working the lot after the house is asleep).
+
+- **Parity, not rng**: `prowlNightDue(day) = day % 2 === 0`. The two
+  complementary parities can never overlap — odd nights boots on the gravel,
+  even nights cat paws, and Miso never shares a dark with the sneak.
+- **The wake-and-slip**: night normally beds Miso (updatePet's loaf branch);
+  on a due night at 23:00 she wakes (stretch), and `updateProwl` walks her to
+  the far corner of the lot (deterministic scan: farthest walkable cell from
+  the gate), then home to the nearest warm floor cell — visitor-shaped BFS,
+  non-solid, cat pace. Midnight calls her in however far she got (`newDay`,
+  the sneak's own rule mirrored); one prowl a night, stamped by day.
+- **Cat-scale pay, economy-safe**: the prowl pays `PET_PROWL_FUN` (0.30 fun)
+  and nothing else — never `s.money`, never `s.lost` (the #2520 win-margin
+  law: night features must not touch the attract's thin wish margin).
+- **Look**: night-eyes — two small amber glints ride the sprite while she
+  prowls (view-only); soft rising pads out, a two-note lift home; banners
+  `MISO IS OUT ON THE LOT` / `MISO IS HOME FOR THE NIGHT`; the attract
+  marquee teaches `MISO PROWLS EVEN NIGHTS AT ELEVEN…`.
+- **Honest refusals**: odd nights she sleeps exactly as before; a lot without
+  Miso never hears a prowl. `ringProwl` (F1/harness) opens the flap any night
+  — with no cat on the lot it refuses in words.
+- Verify: `npm run peoplecheck` §PROWL pins + the sim twin
+  (parity due/stamp/retire across seeds; no-cat quiet). `sneak-gone`/`prowl-home`
+  cross-check: neither a sneak nor a prowl ever lands on the same night.
+
 ## Honest gaps (filed to QA #…)
 
 - **CLOSED by #1806:** multiple rooms — one expansion ships: the Spare Room kit
