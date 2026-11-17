@@ -71,6 +71,7 @@ const MUTANTS = {
     ventRipple: 'the vent swirl ignores freshness — remembered exits ripple forever and the front stops teaching',
     attractJoin: 'the attract showcase join disabled — the demo starts cold at tick 0 and a five-second viewer never sees a hot mark (#2383)',
     pearlGhost: 'remembered pearls fade to black — the prize is forgotten while the exit is not; fixed-feature recall is dead (#2594)',
+    pearlEcho: 're-hearing a ghosted pearl is silent — the audio channel drops the fresh/remembered distinction the pixels make (#2601)',
 }
 if (MUT_NAME) {
     if (!(MUT_NAME in MUTANTS)) { console.error(`unknown mutant ${MUT_NAME}`); process.exit(2) }
@@ -361,15 +362,17 @@ section('PEARL MEMORY (heard pearls stay remembered until taken, #2594)')
     ok(g.pearls[0] === pearl, 'pearl fixture drifted')
     ok(s.pearlSignal(g, 0) === 0, 'a pearl glows for an ear no sound ever carried to it — pearl memory leaks truth')
 
-    let firstFresh = -1, firstGhost = -1, wentDark = -1
+    let firstFresh = -1, firstGhost = -1, wentDark = -1, firstRunEcho = false
     s.ping(g, { noCd: true })
     for (let t = 0; t <= arrival + CFG.fade * 3 + 8; t++) {
         s.step(g)
+        if (g.events.some(e => e.type === 'pearlEcho')) firstRunEcho = true
         const sig = s.pearlSignal(g, 0)
         if (sig === 2 && firstFresh < 0) firstFresh = g.tick
         if (sig === 1 && firstFresh >= 0 && firstGhost < 0) firstGhost = g.tick
         if (firstGhost >= 0 && sig === 0 && wentDark < 0) wentDark = g.tick
     }
+    ok(!firstRunEcho, 'the FIRST hearing rang the low-memory tone — the tone is for the ghost coming back, not the first glimpse (#2601)')
     ok(firstFresh === arrival, `pearl painted fresh at tick ${firstFresh}, wavefront says ${arrival} — freshness does not ride the front`)
     ok(firstGhost === arrival + CFG.fade + 1, `ghost began at tick ${firstGhost}, fade law says ${arrival + CFG.fade + 1} — remembered treasure flickers at the wrong boundary`)
     ok(wentDark < 0, `remembered pearl went black at tick ${wentDark} — the exit keeps its ghost but the prize forgets itself (#2594 persistence is dead)`)
@@ -381,9 +384,15 @@ section('PEARL MEMORY (heard pearls stay remembered until taken, #2594)')
     for (let t = 0; t < arrival + CFG.fade + 2; t++) s.step(g2)
     ok(s.pearlSignal(g2, 0) === 1, `expected ghost before the re-ping, got signal ${s.pearlSignal(g2, 0)} — fixture drifted`)
     s.ping(g2, { noCd: true })
-    let revived = false
-    for (let t = 0; t <= arrival + 1; t++) { s.step(g2); if (s.pearlSignal(g2, 0) === 2) revived = true }
+    let revived = false, echoTick = -1
+    for (let t = 0; t <= arrival + 1; t++) { s.step(g2); if (echoTick < 0 && g2.events.some(e => e.type === 'pearlEcho')) echoTick = g2.tick; if (s.pearlSignal(g2, 0) === 2) revived = true }
     ok(revived, 'a second wavefront never refreshed the pearl mark — re-confirmation is dead for the prize')
+    // #2601 — the audio channel carries the dim→bright flip: ONE low-memory
+    // tone, on the re-arrival front's tick. Computed, not sampled: the second
+    // ping fires at tick arrival+fade+2 (the ghost is one tick past the fade
+    // edge), and the front walks the same `arrival` rings to the pearl.
+    const reArrival = (arrival + CFG.fade + 2) + arrival
+    ok(echoTick === reArrival, `pearlEcho rang at tick ${echoTick}, the re-arrival front says ${reArrival} — the low-memory tone does not ride the front (#2601)`)
 
     // a ghost is still a prize: walk into a remembered pearl and it banks.
     const g3 = s.makeGame(cave)
@@ -397,6 +406,23 @@ section('PEARL MEMORY (heard pearls stay remembered until taken, #2594)')
     // pickup banks +50 and all-collect +150 (pre-existing rules); the ghost
     // must clear at any memory state.
     ok(g3.have === 1 && g3.score === 200 && s.pearlSignal(g3, 0) === 0, `ghost pickup wrong: have=${g3.have} score=${g3.score} sig=${s.pearlSignal(g3, 0)} — taken must clear at any memory state (50 pickup + 150 completion, unchanged)`)
+
+    // #2601 — and never on an ordinary re-light: a pearl that is STILL fresh
+    // when a second front lands is re-confirmed, not revived.
+    const g4 = s.makeGame(cave)
+    g4.eels = []
+    s.ping(g4, { noCd: true })
+    for (let t = 0; t < arrival + 1; t++) s.step(g4)
+    ok(s.pearlSignal(g4, 0) === 2, 'g4 fixture drifted — the pearl is not still fresh when the second front arrives')
+    s.ping(g4, { noCd: true })
+    let freshEcho = false
+    for (let t = 0; t <= arrival + 1; t++) { s.step(g4); if (g4.events.some(e => e.type === 'pearlEcho')) freshEcho = true }
+    ok(!freshEcho, 'a FRESH pearl rang the low-memory tone — the tone must mark the dim→bright flip, not an ordinary re-light (#2601)')
+
+    // #2601 — static: the shell must ring the tone. A sim event nobody plays
+    // is a silence the pixels pretend to explain.
+    const jsxP = readFileSync(new URL('../src/games/Sonar/index.jsx', import.meta.url), 'utf8')
+    ok(/pearlEcho[\s\S]{0,80}playTone\(155/.test(jsxP), 'the ghost-revive tone is not wired in the shell — pearlEcho events go unplayed (#2601)')
 
     // knowledge law, replayed live: across the full demo every pearl that
     // lights does so as FRESH (sig 2), the ghost never sits on a never-heard
@@ -691,6 +717,9 @@ if (MUT) {
         ['the remembered glint stops being drawn — fresh and ghost collapse to one look', jsxPath, jsxOrig,
             "ctx.fillStyle = 'rgba(255,190,225,0.34)'",
             "ctx.fillStyle = 'rgba(255,220,240,0.85)'"],
+        ['the ghost-revive tone goes silent — the shell drops the pearlEcho handler (#2601)', jsxPath, jsxOrig,
+            "e.type === 'pearlEcho') audioController.playTone(155",
+            "e.type === 'pearlEcho') /* silenced */"],
     ]
     for (const [name, path, orig, from, to] of pearlMutants) {
         if (!orig.includes(from)) { ok(false, `pearl mutant anchor: ${name}`); continue }

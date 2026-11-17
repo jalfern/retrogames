@@ -134,6 +134,7 @@ const SonarGame = () => {
                 else if (e.type === 'pearl') { audioController.playSweep(880, 1760, 0.14, 'square', 0.07); audioController.playTone(2093, 0.08, 'square', 0.03) }
                 else if (e.type === 'hit') { audioController.playNoise(0.18, 0.1); audioController.playSweep(300, 90, 0.3, 'sawtooth', 0.08); buzz([90, 40, 90]) }   // #2383: the long one — you got touched
                 else if (e.type === 'die') audioController.playDeath()
+                else if (e.type === 'pearlEcho') audioController.playTone(155, 0.18, 'sine', 0.06)   // #2601: the ghost's revival — low, flat, below every live sound
                 else if (e.type === 'descend') { audioController.playSweep(220, 880, 0.5, 'triangle', 0.08); toast = 40 }
                 else if (e.type === 'contact') nearestRing = nearestRing < 0 ? e.ring : Math.min(nearestRing, e.ring)
             }

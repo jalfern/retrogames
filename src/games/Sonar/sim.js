@@ -57,6 +57,7 @@ export const CFG = {
     swirlFresh: 6,       // #2367: ticks a wavefront arrival still counts as fresh (≈300 ms — a readable beat at 60 fps)
     attractJoin: true,   // #2383: the attract joins its proven replay just before the first NEAR contact (false = always start at tick 0)
     pearlGhost: true,    // #2594: a heard pearl stays as a dim ghost past the fade, like the vent ghost (false = remembered treasure goes black)
+    pearlEcho: true,     // #2601: re-hearing a GHOSTED pearl rings the low-memory tone (false = the dim→bright flip is silent)
 }
 
 export const DIRS = {
@@ -375,6 +376,11 @@ export function ping(g, opts = {}) {
 // — knowledge recorded at the instant the sound arrives, so heat/pitch can read
 // nearness without anyone in the draw path ever seeing where an eel LIVES.
 function light(g, c, t, ring) {
+    // #2601 — the ghost's revival, read at the instant of arrival: the cell was
+    // REMEMBERED (mem >= 0) but no longer known — the dim ghost — so this front
+    // flips the pearl dim→bright. First arrival (mem was -1) and a fresh
+    // re-light (still bright) are not revivals and stay silent.
+    const wasGhost = g.mem[c] >= 0 && !(CFG.decay ? t - g.mem[c] <= CFG.fade : true)
     g.mem[c] = t
     if (g.grid[c] === ROCK) return
     const x = cx(c), y = cy(c)
@@ -385,6 +391,11 @@ function light(g, c, t, ring) {
         if (eelCell(e) === c) {
             g.blips.push({ x, y, t, id: e.id, ring })
             g.events.push({ type: 'contact', ring })
+        }
+    }
+    if (wasGhost && CFG.pearlEcho) {
+        for (let i = 0; i < g.pearls.length; i++) {
+            if (g.pearls[i] === c && !g.taken[i]) { g.events.push({ type: 'pearlEcho' }); break }
         }
     }
 }
