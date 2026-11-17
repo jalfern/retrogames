@@ -529,13 +529,13 @@ const ArenaArcheryGame = () => {
                     scores: [gs.p[0].score, gs.p[1].score],
                     quiver: [gs.p[0].quiver, gs.p[1].quiver],
                     p1: { x: gs.p[0].x, y: gs.p[0].y, alive: gs.p[0].alive, charge: gs.p[0].charge, quiver: gs.p[0].quiver, receipts: gs.receipts[0] },
-                    p2: { x: gs.p[1].x, y: gs.p[1].y, alive: gs.p[1].alive, quiver: gs.p[1].quiver, receipts: gs.receipts[1] },
+                    p2: { x: gs.p[1].x, y: gs.p[1].y, alive: gs.p[1].alive, charge: gs.p[1].charge, quiver: gs.p[1].quiver, receipts: gs.receipts[1] },
                     flying: gs.arrows.filter((a) => a.state === 'fly').length,
                     stuck: gs.stuck.length,
                     // #2377 the heat engine, visible to the browser harness
                     heat: gs.heat, lastHit: gs.lastHit, dryTicks: gs.tick - gs.lastHit,
                     stuckCells: gs.stuck.map((s) => ({ cell: s.cell, age: s.age, x: (s.cell % gs.W) * CW + CW / 2, y: Math.floor(s.cell / gs.W) * CW + CW / 2 })),
-                    arrows: gs.arrows.map((a) => ({ id: a.id, state: a.state, owner: a.owner, born: a.born })),
+                    arrows: gs.arrows.map((a) => ({ id: a.id, state: a.state, owner: a.owner, born: a.born, x: Math.round(a.x), y: Math.round(a.y) })),
                     ledger: { ...gs.ledger, total: gs.total + gs.supplied, now: gs.p[0].quiver + gs.p[1].quiver + gs.arrows.filter((a) => a.state !== 'stuck').length + gs.stuck.length + gs.ledger.hit + gs.ledger.lost },
                     // attract is a separate sim instance — the harness grades
                     // THAT moving, not the idle gs
