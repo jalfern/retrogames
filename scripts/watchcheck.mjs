@@ -2648,8 +2648,12 @@ for (const [name, f] of Object.entries(B4_SRC)) {
         /const clean = !st\.done && !st\.timeout && !st\.held && !Object\.values\(st\.goals\)\.some\(Boolean\)/.test(rlSrc)
         && /NO_GUIDE/.test(rlSrc))
     const fbSrc = readFileSync(B4_SRC.FLOORBOSS, 'utf8')
+    // #2560 gave seat M its own pad (recordTick(pad, mpad)) and widened the
+    // gap to the pad ternary; the honesty rule is unchanged — while watching,
+    // the autopilot pad (not a human-shaped lie) is what reaches step() and
+    // the replay recorder. Window widened to span the mpad line.
     rep.check('FLOORBOSS: the watching branch feeds the autopilot pad into the episode tick (no human-shaped lie)',
-        /const pad = watchingRef\.current && !gs\.end \? ap\(gs\) : livePad\(\)[\s\S]{0,80}recordTick\(pad\)/.test(fbSrc))
+        /const pad = watchingRef\.current && !gs\.end \? ap\(gs\) : livePad\(\)[\s\S]{0,200}recordTick\(pad(, ?mpad)?\)/.test(fbSrc))
     const rlySrc = readFileSync(B4_SRC.RALLY, 'utf8')
     // #1663 updated: net never seats the watcher AND says so (amber chip, not silence).
     rep.check('RALLY: online never seats the watcher (the wire owns the seats)',

@@ -187,16 +187,35 @@ page.on('pageerror', () => { pageErrors++ })
     r.check('the arrow ledger is exact in the browser too', b.ledger.now === b.ledger.total, JSON.stringify(b.ledger))
     // #2565 fletching, both seats at once: the bot duel keeps shafts of BOTH
     // owners in the terrain — every sampled tail must carry its owner's barbs,
-    // proving the tint tracks the shooter, not the surface. The duel keeps
-    // running live, so poll a few windows for the both-owners frame.
+    // proving the tint tracks the shooter, not the surface. #2176 repair
+    // family: a same-frame both-owners sighting is a coincidence the bridge
+    // must chase, not wait for — on CI's slow tab the lone P1 shaft had
+    // already been hit or pulled when the scan ran (nightly 44119695377: one
+    // cyan shaft, no red ever sampled). Loft two of P1's own arrows first
+    // (real Space holds, varied charge = varied carry), poll wider, and let
+    // the owners be proven ACROSS scans — every shaft seen in any scan must
+    // still wear its owner's barbs, so a tint regression fails as before.
+    for (const ms of [160, 380]) {
+        await page.keyboard.down('Space')
+        await sleep(ms)
+        await page.keyboard.up('Space')
+        await sleep(250)
+    }
     let fletchBots = []
     let fOkBots = false
-    for (let k = 0; k < 8 && !fOkBots; k++) {
+    const tintSeen = new Set()
+    let allBarbed = true
+    for (let k = 0; k < 16 && !fOkBots; k++) {
         fletchBots = await fletchScan()
-        fOkBots = fletchOk(fletchBots, true)
+        if (fletchBots.length) {
+            if (fletchOk(fletchBots, false)) fletchBots.forEach((o) => tintSeen.add(o.owner))
+            else allBarbed = false
+        }
+        fOkBots = allBarbed && tintSeen.has(0) && tintSeen.has(1)
         if (!fOkBots) await sleep(150)
     }
-    r.check('stuck shafts wear owner-tinted fletching — red for P1, cyan for P2 (#2565)', fOkBots, JSON.stringify(fletchBots))
+    r.check('stuck shafts wear owner-tinted fletching — red for P1, cyan for P2 (#2565)', fOkBots,
+        `${JSON.stringify(fletchBots)} owners-with-barbs=${JSON.stringify([...tintSeen])}`)
     const rc = await page.evaluate(() => window.__archeryTest.replayCheck())
     r.check('live replay of the input stream hashes identical', rc && rc.match,
         rc && `${rc.live} vs ${rc.replay} tick ${rc.tick}/${rc.twinTick} p1 ${JSON.stringify(rc.liveP1)} vs ${JSON.stringify(rc.twinP1)} stuck ${rc.liveStuck.length}/${rc.twinStuck.length}`)

@@ -467,8 +467,32 @@ r.check('the party strip prints HP numbers on the cards', hpLit > 40, `lit px in
 // The first probe after the step is the staging window: the group slides in
 // from the right (300 ms + stagger), so mid-slide its plate is off its slot.
 const catchMid = (p) => (p.slide > 0 && p.slideX && p.slideX.x - p.slideX.sx > 12) ? p : null
+// #2176 repair family: probe AND sample the two pixel windows inside ONE page
+// evaluate. Two separate px() round trips could burn the whole ~440 ms slide
+// on CI's software-rendered Chrome — the plate had settled into its slot
+// before the second window was read, and a settled board lights both windows
+// (nightly 44119695377: band=71 slot=70). This grades the frame it saw.
+const midGrade = () => page.evaluate(() => {
+    const p = window.__deepTest.probe()
+    const out = { p }
+    if (p.slide > 0 && p.slideX && p.slideX.x - p.slideX.sx > 12) {
+        const g = document.querySelector('canvas[data-deep-view]').getContext('2d')
+        const w = Math.round(p.slideX.size * 0.8), h = Math.round(p.slideX.size * 0.7)
+        const y = Math.max(0, Math.round(140 - p.slideX.size * 0.85))
+        const lit = (cx) => {
+            const d = g.getImageData(Math.max(0, Math.round(cx - w / 2)), y, w, h).data
+            let n = 0
+            for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 200) n++
+            return n
+        }
+        out.bandLit = lit(p.slideX.x)
+        out.slotLit = lit(p.slideX.sx)
+    }
+    return out
+})
 let ambush = null
 let mid = null
+let grade = null
 // #2315 — grade that a roaming pack is DRAWN before it springs. The walk
 // already steps forward while the hall is open; when the probe reports a
 // monster dead ahead, read the centre column. In the GL corridor the billboard
@@ -477,8 +501,9 @@ let mid = null
 const MONCOL = [110, 92, 36, 20]
 let monLit = null, monLitRange = 0, monPix = 0
 for (let stepN = 0; stepN < 130 && !ambush; stepN++) {
-    const p = await probe()
-    if (p.mode === 'combat') { ambush = p; mid = catchMid(p); break }
+    const g = await midGrade()
+    const p = g.p
+    if (p.mode === 'combat') { ambush = p; mid = catchMid(p); if (g.bandLit != null) grade = g; break }
     if (p.mode === 'map' && p.view.monsters && (monLit == null || p.view.monRange < monLitRange)) {
         // keep the CLOSEST sighting — at arm's length the pack fills the corridor
         await settleGl()
@@ -508,8 +533,9 @@ if (ambush && !mid) {
     await wait(400)
     const seen = new Set()
     for (let t = 0; t < 200 && !mid; t++) {
-        const p = await probe()
-        if (p.mode === 'combat') { ambush = p; mid = catchMid(p); break }
+        const g = await midGrade()
+        const p = g.p
+        if (p.mode === 'combat') { ambush = p; mid = catchMid(p); if (g.bandLit != null) grade = g; break }
         if (p.mode !== 'map') { await wait(70); continue }
         const cell = `${p.x},${p.y}`
         await page.keyboard.press(seen.has(cell) || p.view.wallDist === 1 ? 'ArrowRight' : 'ArrowUp')
@@ -522,11 +548,17 @@ if (ambush && !mid) {
 r.check('an ambush opens with a slide-in (plate off its slot on the first frame)', !!mid,
     mid ? `slide ${Math.round(mid.slide)} ms left, plate at x=${Math.round(mid.slideX.x)} vs slot ${Math.round(mid.slideX.sx)}` : 'never caught a mid-slide frame')
 if (mid && mid.slideX) {
-    const w = Math.round(mid.slideX.size * 0.8), h = Math.round(mid.slideX.size * 0.7)
-    const y = Math.round(140 - mid.slideX.size * 0.85)
-    const slotLit = await px(Math.round(mid.slideX.sx - w / 2), y, w, h, 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 200)
-    const bandLit = await px(Math.round(mid.slideX.x - w / 2), y, w, h, 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 200)
-    r.check('the mid-slide plate is painted right of its final slot', bandLit > slotLit + 10, `band=${bandLit} slot=${slotLit} (plate at x=${Math.round(mid.slideX.x)})`)
+    let bandLit, slotLit
+    const atom = grade && grade.bandLit != null
+    if (atom) {
+        bandLit = grade.bandLit; slotLit = grade.slotLit
+    } else {
+        const w = Math.round(mid.slideX.size * 0.8), h = Math.round(mid.slideX.size * 0.7)
+        const y = Math.round(140 - mid.slideX.size * 0.85)
+        slotLit = await px(Math.round(mid.slideX.sx - w / 2), y, w, h, 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 200)
+        bandLit = await px(Math.round(mid.slideX.x - w / 2), y, w, h, 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 200)
+    }
+    r.check('the mid-slide plate is painted right of its final slot', bandLit > slotLit + 10, `band=${bandLit} slot=${slotLit} (plate at x=${Math.round(mid.slideX.x)}${atom ? ', atomic' : ''})`)
 }
 // the plate gate below samples the SETTLED frame — wait the slide out
 for (let i = 0; i < 50 && (await probe()).slide > 0; i++) await wait(40)
