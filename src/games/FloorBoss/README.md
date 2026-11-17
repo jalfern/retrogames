@@ -311,5 +311,21 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
    arm, Manhattan 2, neither at a mouth). Bay on either arm, plugged mouth
    (one-way spur) or a 1-cell arm stays legal, mirroring #2546/#2614; pure
    geometry, zero footprint, curated spots never trip it. `floorbosscheck`
-   +15 gates, `--mutate-corner` kill. Refusal-teaching (stage 2) and swing
-   markers (stage 3) stay open in #2627.
+   +15 gates, `--mutate-corner` kill. — **stage 2 of #2627 shipped**
+   (`76784d2`): refusal-teaching — `cornerEscapes(gs,x,y)` names the honest
+   plugs (each verified legal in its own right AND clearing the original
+   click — a pure zero-footprint query), the painter pulses green `PLUG`
+   frames with a `SPUR IT` tail, and a pocket-trap rig kills
+   `--mutate-teach`. — **stage 3 ships with this PR**: the grammar reads at
+   a glance — `swingMarkers(gs)` sweeps LIVE elbows (open cells with exactly
+   two perpendicular open neighbours faced by an existing rack: the
+   Manhattan-1 work-stop sits in the turn), and `paintSwing` lays a faint
+   amber keep-clear box + quarter turn-arc on each, raising the alpha when
+   `hard` (both arms tight to open mouths — the double-blind sightline the
+   click-point law misses when arms tighten after the facing rack landed).
+   Straight corridor faces (±p neighbours, opposite) and T-junctions are no
+   swing and stay bare; pure, deterministic, zero footprint —
+   `floorbosscheck` +13 gates, `--mutate-swing` kill, live pixel leg plus a
+   paint-follows-grammar step (racking an arm cools the corner). Residual
+   honest gap: carts are still kinematic points on BFS paths — true swept
+   volumes and forklift-lane routing stay faked.
