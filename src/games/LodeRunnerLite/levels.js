@@ -114,18 +114,24 @@ export const LEVELS = [
         { exit: { x: EXIT_X, y: 2 }, lives: 3, proves: ['swing', 'pursued'] }),
 
     // --------------------------------------------------------- level 3 ----
-    // THE VAULT — a long line over the middle, gold on each floor tier, and a
-    // guard that must be crossed on the way to the exit ladder. Take every
-    // gold, then the exit ladder is the only way off the top of the screen.
+    // THE VAULT — a long line over the middle, gold on each tier, and a guard
+    // that must be crossed on the way to the exit ladder. The crossing is the
+    // ROPE, not the floor: the last nugget hangs at the line's far end (x20),
+    // so the runner collects all five aloft — the one highway the walker can
+    // never enter — and rides it home. Landing west of the guard with its own
+    // slack, the runner takes the hidden ladder and the vault clears without
+    // spending a life (#2550: perfect play must pay, and the attract demo IS
+    // the proof). Take every gold, then the exit ladder is the only way off
+    // the top of the screen.
     parse(vault(
         [
             ex(() => '.'),                                                    // 2
             ex(() => '.'),                                                    // 3
             ex((x) => (x >= 5 && x <= 20 ? '~' : '.')),                       // 4: the line
-            ex((x) => (x === 5 ? '|' : (x === 8 || x === 12 || x === 16 ? '*' : '.'))),  // 5: ladder top + gold
+            ex((x) => (x === 5 ? '|' : (x === 8 || x === 12 || x === 16 || x === 20 ? '*' : '.'))),  // 5: ladder top + gold (last nugget at the line's end)
             ...Array.from({ length: 9 }, () => ladderCol([5], () => '.')),    // 6-14: col-5 ladder
         ],
-        { 1: 'P', 4: '*', 24: '*', 15: 'G' },
+        { 1: 'P', 4: '*', 18: 'G' },
     ), 'THE VAULT',
         { exit: { x: EXIT_X, y: 2 }, lives: 3, proves: ['swing', 'pursued'] }),
 ]
