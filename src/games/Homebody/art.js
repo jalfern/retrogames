@@ -14,6 +14,7 @@ import {
     petMood, PET_FEED_T,   // #2200: Miso's mood row + the lingering bowl
     YARN_PLAY_T,   // #2256: the yarn session's stage time
     GIFT_LAND_T,   // #2240: the set-down basket's stage time
+    ICE_HOLD_T, ICE_DRIPS,   // #2508 item 3: the eat beat — how long the cone rides in hand, and its drip ticks
     nightLevel,   // #2264: one night curve for the tint, the steam and the plate halo
 } from './sim.js'
 
@@ -560,6 +561,10 @@ export function drawPerson(ctx, p, t, active, fx = null, lean = 0) {
         ctx.beginPath(); ctx.arc(0.5, -1.5, 1.6, 0, 7); ctx.fill()
         ctx.restore()
     }
+    // #2508 item 3: the eat beat — the cone bought at the curb rides home in
+    // the hand, pastel and dripping, until the world-clock countdown licks it
+    // away (view-only staging, the p.gift doctrine at treat scale).
+    if (p.coneHold > 0) drawHeldCone(ctx, x + 8, y - 2 + bob * 0.5, p.coneHold, t)
     // #2520: the sneak — a snap-brim fedora pulled low over the eyes; on a
     // dark-coat silhouette the lot learns him at a glance (drawn over the
     // hair the body painter laid, so the brim sits where a hat sits).
@@ -883,6 +888,9 @@ export function drawKid(ctx, p, t) {
         for (const [px, ph] of [[-6, 0], [0, 0.5], [6, 0.2]]) star(ctx, x + px, y - 20 - (1 - k) * 9 + ph * 2, 2, '#ffd24a')
         ctx.globalAlpha = 1
     }
+    // #2508 item 3: the kid's cone rides the same beat — the curb glyph at
+    // kid scale, on her facing side, drip and all.
+    if (p.coneHold > 0) drawHeldCone(ctx, x + 7 * p.face, y - 4 + bob * 0.5, p.coneHold, t, 0.72)
 }
 
 // #2264: the tint curve is one source with the steam/glow law — nightLevel
@@ -1469,6 +1477,43 @@ function rr(ctx, x, y, w, h, r) {
 // it arrives from the west, parks at the cone, and leaves the way the original
 // does — down the street, jingle fading. `roll` > 0 while the wheels turn
 // (spokes spin, parked wheels rest); parked it rides a two-frame bob.
+// #2508 item 3: the eat beat — a bought cone rides in its buyer's hand for
+// ICE_HOLD_T world seconds (sim.js counts; this paints; nothing else is asked).
+// The curb glyph's palette at hand scale — waffle, pastel scoop, cherry — the
+// last lick shrinking the scoop and one falling drop per drip tick, timed by
+// the same arithmetic sim.js uses to count the drips (one law, one source).
+export function drawHeldCone(ctx, x, y, hold, t, k = 1) {
+    if (hold <= 0) return
+    ctx.save(); ctx.translate(x, y); ctx.scale(k, k)
+    ctx.rotate(Math.sin(t * 7) * 0.06)                        // the wrist-turn of a thing being licked
+    const lickK = Math.min(1, hold / 1.2)                     // the last licks take the scoop down
+    ctx.fillStyle = '#b07a3f'
+    ctx.beginPath(); ctx.moveTo(-2.6, 0); ctx.lineTo(2.6, 0); ctx.lineTo(0, 8.4); ctx.closePath(); ctx.fill()
+    ctx.strokeStyle = '#8a5c2a'; ctx.lineWidth = 0.8
+    ctx.beginPath(); ctx.moveTo(-1.7, 2.6); ctx.lineTo(1.7, 2.6); ctx.moveTo(-0.9, 5); ctx.lineTo(0.9, 5); ctx.stroke()
+    ctx.fillStyle = '#ffe9f0'
+    ctx.beginPath(); ctx.arc(0, -2.4, 3.6 * lickK, 0, 7); ctx.fill()
+    ctx.fillStyle = '#ffc9dd'
+    ctx.beginPath(); ctx.arc(-0.9, -3.8, 2.1 * lickK, 0, 7); ctx.fill()
+    if (lickK > 0.55) {
+        ctx.fillStyle = '#c94f43'
+        ctx.beginPath(); ctx.arc(0, -5.6, 1.1, 0, 7); ctx.fill()
+        ctx.fillStyle = '#fff'
+        ctx.fillRect(-0.5, -6.4, 1, 1)                       // the cherry's gleam
+    }
+    const elapsed = ICE_HOLD_T - hold
+    for (let i = 0; i < ICE_DRIPS; i++) {
+        const u = elapsed - ICE_HOLD_T * (i + 1) / (ICE_DRIPS + 1)
+        if (u >= 0 && u <= 0.9) {
+            ctx.globalAlpha = 1 - u / 0.9
+            ctx.fillStyle = '#cfe8ff'
+            ctx.beginPath(); ctx.arc(0.6, 8.4 + u * 12, 1.1, 0, 7); ctx.fill()
+            ctx.globalAlpha = 1
+        }
+    }
+    ctx.restore()
+}
+
 export const TRUCK_W = 96
 export function drawIceTruck(ctx, x, y, t, roll) {
     const bob = roll > 0 ? 0 : Math.sin(t * 3.5) > 0 ? 0 : -1   // parked: the engine hum lifts it a pixel

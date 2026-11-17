@@ -505,6 +505,29 @@ export const ICE_SAVOR_LINES = [
 // recipe) — deterministic, and no rng stream touched.
 export const icePassHour = (day) => ICE_DUE[0] + ((Math.imul(day, 2654435761) >>> 9) % 200) / 100
 
+// #2508 item 3: the eat beat — the original keeps the cone IN HAND while the
+// buyer strolls home licking it; ours used to delete the glyph at the tap.
+// View-only staging like feedT/giftFx/#2240: the timer rides the WORLD clock
+// (freezes at gear ||, compresses on the dial), never stateHash, and pays no
+// sim rule — the fun landed at the sale; the hold is only the sight of it.
+// The drip ticks are arithmetic off the countdown (#2303's no-rng lesson):
+// ICE_DRIPS drops at evenly spaced thirds of the hold.
+export const ICE_HOLD_T = 12             // world seconds the treat stays in hand
+export const ICE_DRIPS = 2              // melt ticks per cone (at ⅓ and ⅔ elapsed)
+export const coneDripCount = (left) => Math.min(ICE_DRIPS, Math.floor((ICE_HOLD_T - left) / (ICE_HOLD_T / (ICE_DRIPS + 1))))
+
+// One tick of a held cone (resident or kid): count the countdown down and let
+// each drip tick speak once — a soft ice-drip event the shell voices as a blip.
+function holdConeTick(s, e, dt) {
+    if (e.coneHold <= 0) return
+    e.coneHold = Math.max(0, e.coneHold - dt)
+    const n = coneDripCount(e.coneHold)
+    while (e.coneDrips < n) {
+        e.coneDrips++
+        s.events.push({ t: 'ice-drip', name: e.name, x: Math.round(e.x), y: Math.round(e.y) })
+    }
+}
+
 // The one honest voice for "can the cone order stand": a cone is standing
 // (the truck is here) and the till can pay. Placement/sale never consult it;
 // only a human ordering the treat does (the binOrderOk pattern, #2303).
@@ -867,6 +890,7 @@ const person = (name, r, c, hue, worksOn) => ({
     workedToday: false, working: false,
     mood: 1, walkPhase: 0, face: 1,
     chatT: 0, chatWith: null, alarmT: 0, wasRed: {},   // #2240: chatT re-arms per guest
+    coneHold: 0, coneDrips: 0,   // #2508 item 3: the eat beat — a bought cone rides in the hand (view-only, off the hash)
     wasAmber: {},                // #2253: one-shot amber prompt per need crossing
     roomSeen: false,             // #1814: one move-in glance per resident
     mealTaken: 0,              // #2244: serial of the last plate this resident ate
@@ -2271,6 +2295,7 @@ export function adoptKid(s) {
         path: bfsPath(s, { r: 12, c: 5 }, [dest]), state: 'enter', t: 0, face: 1, walkPhase: 0,
         needs: { hunger: 0.8, fun: 0.7, energy: 0.85, social: 0.75 },
         asleep: false, cd: 0, giggleT: 0, cryT: 0, wanderT: 2, food: false, playObj: false, treat: false, bedT: 0, stepDist: 0,
+        coneHold: 0, coneDrips: 0,   // #2508 item 3: the eat beat — view-only, off the hash
     }
     s.events.push({ t: 'kid', name: KID.name, x: s.kid.x, y: s.kid.y })
     think(s, ADOPT_KID_LINE)
@@ -2297,6 +2322,7 @@ function updateKid(s, dt) {
     k.t += dt
     if (k.cd > 0) k.cd = Math.max(0, k.cd - dt)
     if (k.giggleT > 0) k.giggleT = Math.max(0, k.giggleT - dt)
+    holdConeTick(s, k, dt)   // #2508 item 3: the cone in her hand melts on the world clock
     if (k.cryT > 0) k.cryT = Math.max(0, k.cryT - dt)
     const dh = dt / HOUR_SEC
     k.needs.hunger = Math.max(0, k.needs.hunger - KID_DECAY.hunger * dh)
@@ -2390,6 +2416,7 @@ function updateKid(s, dt) {
             s.items = s.items.filter((x) => x !== it)
             s.cone = null
             k.giggleT = 1.4
+            k.coneHold = ICE_HOLD_T; k.coneDrips = 0   // #2508 item 3: the kid's cone rides home in her hand too — same view-only beat
             s.events.push({ t: 'kid-ice', name: k.name, x: k.x, y: k.y })
             think(s, ICE_KID_LINES[s.treats % ICE_KID_LINES.length].replace('{k}', k.name))
         } else {
@@ -2570,6 +2597,7 @@ function finishUse(s, p) {
         s.items = s.items.filter((x) => x !== it)
         s.cone = null
         s.events.push({ t: 'ice-cream', name: p.name, x: tileX(it.c) + TILE / 2, y: tileY(it.r) + TILE / 2 })
+        p.coneHold = ICE_HOLD_T; p.coneDrips = 0   // #2508 item 3: the cone leaves the street IN HIS HAND — the eat beat starts at the curb
         think(s, pick(s, ICE_SAVOR_LINES).replace('{n}', p.name))
         return
     }
@@ -2858,6 +2886,7 @@ export function advance(s, dt) {
     for (const p of s.people) {
         p.mood = avg(p)
         if (p.alarmT > 0) p.alarmT = Math.max(0, p.alarmT - simDt)
+        holdConeTick(s, p, simDt)   // #2508 item 3: the cone in hand melts on the world clock (faints and commutes let it drip too — it is only a sight)
         if (p.working) {
             if (s.hour >= WORK_END - 1e-9) endWork(s, p)
             continue

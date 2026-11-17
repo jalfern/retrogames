@@ -216,7 +216,7 @@ see §Speed dial.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 686 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), garbage day — roster, eve set-out, dawn collection, honest skip, hash (#2303), ice-cream truck — arithmetic stop, paid buy, broke refusals, one serving, kid chase, rot, hash (#2503), truck arrival + drive-off view — rolls in 2 s, out 4 s, draw-only, truckView (#2508), winnable seeds, determinism
+npm run peoplecheck          # 701 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), garbage day — roster, eve set-out, dawn collection, honest skip, hash (#2303), ice-cream truck — arithmetic stop, paid buy, broke refusals, one serving, kid chase, rot, hash (#2503), truck arrival + drive-off view — rolls in 2 s, out 4 s, draw-only, truckView (#2508), cone in hand — the eat beat, world-clock hold, two arithmetic drips, view-only, hash-still, drive-verified (#2508 item 3), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -685,6 +685,17 @@ generic pay, so the luxury never feeds the win economy by accident.
   non-solid by construction — nobody can be fenced in — and it paints after
   the people as the nearest thing to the camera. The slide reads live at
   `__homebodyTest.probe().truckView` (`{phase, x}`).
+- **The cone is held, not deleted (#2508 item 3).** In the original the buyer
+  strolls home licking the cone; ours used to erase the glyph at the tap. Both
+  sales arm `coneHold = ICE_HOLD_T` (12 s) on the buyer — resident or kid —
+  and the shell paints a pastel mini-cone in the hand (art.js
+  `drawHeldCone`: waffle + scoop + cherry, wrist-turn, the last lick shrinking
+  the scoop, one falling drop per drip tick). The timer rides the WORLD clock
+  (speed-dial gears scale it, pause freezes it — like `feedT`/`giftFx`), and
+  the two drip ticks are arithmetic thirds of the countdown (`coneDripCount`,
+  no rng), voiced as soft `ice-drip` blips. View-only: fun/money/treats move
+  only at the sale, the hash never sees `coneHold`, and QA reads
+  `probe().heldTreats` (`[{name, hold, drips}]`).
 
 Gates: `peoplecheck` §ICE CREAM TRUCK (35 pins: lot-owned object, arithmetic
 schedule law, one-truck-a-day stamp across two days, land + nearest-free
@@ -695,7 +706,11 @@ the-clock pin and the marquee price bound to `CONE_PRICE`, and the #2508 view
 pins: sprite ships wheels/awning/roof-cone, the 2 s-in/4 s-out constants, all
 four roll-off paths wired, draw-only + `truckView` readable). Mutant proven:
 `!coneOrderOk(s) → false` at the order gate — exactly the two order-refusal
-gates go red (620 → 618/2); restore.
+gates go red (620 → 618/2); restore. Mutant #2508 item 3: zero the adult arm
+(`p.coneHold = 0` in finishUse) — exactly the arm, empty-on-clock and drive-
+determinism gates go red (701 → 698/3); restore. Or drop the resident-loop
+tick (`holdConeTick(s, p, simDt)`) — exactly the empty, determinism and both-
+loops pin gates go red (701 → 698/3); restore.
 
 ## Queue polish (#2474) — the NOW is seen, the append is named
 

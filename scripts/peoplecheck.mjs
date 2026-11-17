@@ -105,6 +105,7 @@ import {
     YARN_CD, YARN_CAT_FUN, YARN_BOND, YARN_SOCIAL, YARN_PLAY_T, PET_SELF_FUN, PET_BORED, yarnOrderOk,   // #2256: the yarn ball — ordered play + the cat's own game
     BIN, BIN_HOME, BIN_CURB, GARBAGE_EVERY, TRUCK_DUE, BIN_FUN, BIN_BOND, binOrderOk,   // #2303: garbage day — the eve, the curb, the truck
     CONE, CONE_PRICE, ICE_DUE, ICE_WINDOW, ICE_FUN, ICE_KID_FUN, KID_ICE_FLOOR, coneOrderOk, ringTruck, icePassHour, ICE_TIMBRE, ICE_ENDINGS,   // #2503: the ice-cream truck — the jingle, the curb, the price, the chase
+    ICE_HOLD_T, ICE_DRIPS, coneDripCount,   // #2508 item 3: the eat beat — the hold, its drips, the drip math
     SNEAK_DUE, SNEAK_WINDOW, SNEAK_LOOT, sneakNightDue, hasAlarm, ringSneak, SNEAK_CREEP, SNEAK_SIREN,   // #2520: the sneak — the window, the loot list, the parity, the alarm, the rig
     PROWL_DUE, PROWL_WINDOW, prowlNightDue, PET_PROWL_FUN, ringProwl, PROWL_PADS, PROWL_HOME_SFX,   // #2532: Miso's even-night prowl — the window, the parity, the cat-scale pay, the rig, the sound tables
 } from '../src/games/Homebody/sim.js'
@@ -2950,8 +2951,8 @@ section('ICE CREAM TRUCK (#2503): the jingle passes, the cone sells, the truck m
     ringTruck(s2); advance(s2, DT)
     check('a rigged ring lands a fresh cone and the order gate stands', !!s2.cone && coneOrderOk(s2))
     check('the tap issues the order', cmdUse(s2, s2.people[0], s2.cone))
-    let bought = null, m0 = s2.money, fun0 = s2.people[0].needs.fun
-    for (let i = 0; i < 60 * 40 && !bought; i++) { advance(s2, DT); keepAlive(s2); bought = drain(s2).find((e) => e.t === 'ice-cream') || null }
+    let bought = null, m0 = s2.money, fun0 = s2.people[0].needs.fun, armHeld2 = -1
+    for (let i = 0; i < 60 * 40 && !bought; i++) { advance(s2, DT); keepAlive(s2); bought = drain(s2).find((e) => e.t === 'ice-cream') || null; if (bought) armHeld2 = s2.people[0].coneHold }   // #2508 item 3: the arm instant — the sale tick stamps the hold
     check('the walk pays the till, pays the fun bar, and retires the cone',
         !!bought && m0 - s2.money === CONE_PRICE && s2.treats === 1 && s2.cone === null
         && s2.people[0].needs.fun >= Math.min(1, fun0 + ICE_FUN))
@@ -2989,8 +2990,8 @@ section('ICE CREAM TRUCK (#2503): the jingle passes, the cone sells, the truck m
     const s6 = newRun(47)
     adoptKid(s6)
     ringTruck(s6)
-    let kidEv = null
-    for (let i = 0; i < 60 * 60 && !kidEv; i++) { autoStep(s6, DT); kidEv = drain(s6).find((e) => e.t === 'kid-ice') || null }
+    let kidEv = null, kidArmHeld = -1
+    for (let i = 0; i < 60 * 60 && !kidEv; i++) { autoStep(s6, DT); kidEv = drain(s6).find((e) => e.t === 'kid-ice') || null; if (kidEv) kidArmHeld = s6.kid.coneHold }   // #2508 item 3: the kid's arm rides the same tick as the catch
     check('with the jingle up the child beats the toy box to the curb and pays for the joy',
         !!kidEv && s6.treats === 1 && s6.kid.needs.fun >= ICE_KID_FUN - 0.01)
 
@@ -3069,6 +3070,48 @@ section('ICE CREAM TRUCK (#2503): the jingle passes, the cone sells, the truck m
         iSim.indexOf('iceVol') === -1 && iSim.indexOf('ICE_VOL') === -1 && iSim.indexOf('audioController') === -1)
     check('pin: #2508 item 2 — a sim restart mid-roll never flings the truck west: rewound clocks finish the slide (both animators)',
         (iJsx.match(/if \(!\(k >= 0\)\) k = 1/g) || []).length === 2)
+
+    // #2508 item 3: the eat beat — the cone rides home in the buyer's hand.
+    // View-only: a world-clock countdown on the holder, two arithmetic drip
+    // ticks, paint in both painters. No sim rule joins the party.
+    check('#2508 item 3 — both sales arm the hold: adult at the curb, kid at the catch',
+        armHeld2 === ICE_HOLD_T && kidArmHeld === ICE_HOLD_T, `adult ${armHeld2}, kid ${kidArmHeld}`)
+    check('#2508 item 3 — the hold is a visible beat, not a blink',
+        ICE_HOLD_T >= 8 && ICE_HOLD_T <= 20 && ICE_DRIPS === 2)
+    check('#2508 item 3 — the drip math is arithmetic: none at the arm, one by mid-hold, both by the end',
+        coneDripCount(ICE_HOLD_T) === 0 && coneDripCount(ICE_HOLD_T / 2) === 1 && coneDripCount(0) === ICE_DRIPS)
+    let dripEv = 0
+    for (let i = 0; i < Math.round((ICE_HOLD_T + 0.6) / DT); i++) {
+        advance(s2, DT); keepAlive(s2)
+        dripEv += drain(s2).filter((e) => e.t === 'ice-drip').length
+    }
+    check('#2508 item 3 — the hold empties on the world clock and every drip tick spoke exactly once',
+        s2.people[0].coneHold === 0 && s2.people[0].coneDrips === ICE_DRIPS && dripEv === ICE_DRIPS,
+        `hold ${s2.people[0].coneHold}, drips ${s2.people[0].coneDrips}, events ${dripEv}`)
+    check('#2508 item 3 — the beat pays no rule: no second sale off the same cone', s2.treats === 1)
+    const sH = newRun(53)
+    const hH = stateHash(sH)
+    sH.people[0].coneHold = ICE_HOLD_T; sH.people[0].coneDrips = 1
+    check('#2508 item 3 — view-only: the hold rides no hash', stateHash(sH) === hH)
+    const dH1 = newRun(54), dH2 = newRun(54)
+    for (const r of [dH1, dH2]) { ringTruck(r); advance(r, DT); cmdUse(r, r.people[0], r.cone) }
+    let dH1n = 0, dH2n = 0
+    for (let i = 0; i < Math.round(ICE_HOLD_T * 2 / DT); i++) {
+        advance(dH1, DT); keepAlive(dH1); dH1n += drain(dH1).filter((e) => e.t === 'ice-drip').length
+        advance(dH2, DT); keepAlive(dH2); dH2n += drain(dH2).filter((e) => e.t === 'ice-drip').length
+    }
+    check('#2508 item 3 — the same seed holds the same cone: identical hashes, identical drips',
+        dH1n === ICE_DRIPS && dH1n === dH2n && stateHash(dH1) === stateHash(dH2), `drips ${dH1n}/${dH2n}`)
+    const holdBodyH = iSim.match(/function holdConeTick\(s, e, dt\) \{[\s\S]*?\n\}/)?.[0] || 'MISSING'
+    check('pin: #2508 item 3 — the hold ticks on the world clock in both loops, and its drip voice draws no rng',
+        /holdConeTick\(s, p, simDt\)/.test(iSim) && /holdConeTick\(s, k, dt\)/.test(iSim)
+        && holdBodyH !== 'MISSING' && !/s\.rng\(\)|pick\(s,/.test(holdBodyH)
+        && !/mix\(.*coneHold/.test(iSim))
+    check('pin: #2508 item 3 — the art ships the held cone and paints it in both painters',
+        /export function drawHeldCone/.test(iArt) && (iArt.match(/drawHeldCone\(ctx/g) || []).length === 3
+        && /p\.coneHold > 0\) drawHeldCone/.test(iArt))
+    check('pin: #2508 item 3 — the shell voices the drip and QA can read the hold',
+        /case 'ice-drip'/.test(iJsx) && /heldTreats:/.test(iJsx))
 }
 
 // ---------------------------------------------- SNEAK IN THE NIGHT (#2520) ----
