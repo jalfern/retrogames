@@ -184,7 +184,11 @@ for (let i = 0; i < LEVELS.length; i++) {
     ok(g.win && g.end === 'clear', `not winnable: end=${g.end} tick=${g.tick} have=${g.have}/${g.need}`)
     ok(!r.floatBad, `${b.meta.name}: LIP LAW broken on the solver's route — ${r.floatBad}`)
     ok(g.have === g.need, `cleared with ${g.have}/${g.need} gold — the exit opened early`)
-    ok(g.lives >= 1, `the witness spent every life (${g.lives}) — a winning run must not run dry`)
+    // #2550 PERFECT PLAY PAYS: the witness is what the attract screen shows —
+    // a player who copies it must clear the vault WITHOUT spending a life. The
+    // old `>= 1` floor tolerated THE VAULT's catch; the supply floor is what
+    // the one-fewer-life slack pass below is for.
+    ok(g.lives === (b.meta.lives ?? CFG.lives), `${b.meta.name}: the witness spent a life (${g.lives}) — the attract demo must play clean (#2550)`)
     const jumps = g.cmds.filter((c) => c.act.startsWith('JUMP')).length
     ok(jumps === 0, `${b.meta.name}: the witness jumped ${jumps} times — the classic has no jump`)
     ok(!r.evs.has('dig'), `${b.meta.name}: the witness dug — digging is the player's tool, not the solver's route`)
@@ -213,6 +217,30 @@ for (let i = 0; i < LEVELS.length; i++) {
     const rt = drive(tight)
     ok(tight.win, `${b.meta.name}: one fewer life lost the vault — the route needs the full life supply`)
     receipts[i] = { tick: g.tick, lives: g.lives, cmds: g.cmds.length, evs: [...r.evs] }
+}
+
+// #2550 — THE VAULT zero-deaths BY DESIGN: the crossing is the rope, not the
+// floor. Its treasure hangs on the line (the one highway the walker can never
+// enter), and only the spawn-side nugget stands on the walk row — so the
+// witness can collect everything aloft and ride home over the guard's head.
+// Put a nugget back on the far floor (as it was before #2550) and the route
+// is a head-on corridor crossing the runner loses a life to: this pin and
+// the clean-witness gate above both go red together.
+{
+    const b = LEVELS.findIndex((l) => l.name === 'THE VAULT')
+    ok(b >= 0, 'THE VAULT is no longer on the shelf (#2550)')
+    if (b >= 0) {
+        const grid = buildLevel(b).grid
+        const walkRow = H - 4
+        let onFloor = 0, aloft = 0
+        for (let y = 0; y < H; y++) {
+            for (let x = 1; x < W - 1; x++) {
+                if (grid[y * W + x] !== GOLD) continue
+                if (y === walkRow) onFloor++; else aloft++
+            }
+        }
+        ok(onFloor === 1 && aloft >= 3, `THE VAULT carries ${onFloor} walk-row nugget(s) and ${aloft} aloft — the far gold must hang on the line; the crossing must not be the floor (#2550)`)
+    }
 }
 
 // ------------------------------------------------- the classic rules, pinned ----

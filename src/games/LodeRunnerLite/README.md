@@ -94,7 +94,7 @@ to clear, it is unclassic and lodecheck's winnability gate fails it.
 
 | | |
 |---|---|
-| `npm run lodecheck` | 125 Node checks (153 with `--mutate`): construction contracts including the **strata law** (three diggable brick layers over an open walk row, per vault) and the **pair contract** (a multi-guard vault on the shelf, THE ROPE ≥2, #1991), per-vault solve + determinism both ways + one-fewer-life slack, every classic rule pinned by a scenario, the carved three-cell shaft (drop in, deepen twice, climb out), its live paid deep grave (1000 — guardPay plus one stratum), the hand-placed two-guard **chain pay** in one closing brick (the original's double), the **live chain from real spawns** (#1991: both ROPE hunters ride the scripted col-9 shaft together, n=2 pays 1500, both wings pursue), fourteen mutant runs that MUST die. CI runs the plain audit in the static gate
+| `npm run lodecheck` | 136 Node checks (164 with `--mutate`): construction contracts including the **strata law** (three diggable brick layers over an open walk row, per vault) and the **pair contract** (a multi-guard vault on the shelf, THE ROPE ≥2, #1991), per-vault solve + determinism both ways + one-fewer-life slack, the **#2550 clean-witness law** (no vault's attract witness may spend a life — perfect play pays) and THE VAULT design pin (one walk-row nugget, the rest hang on the line), every classic rule pinned by a scenario, the carved three-cell shaft (drop in, deepen twice, climb out), its live paid deep grave (1000 — guardPay plus one stratum), the hand-placed two-guard **chain pay** in one closing brick (the original's double), the **live chain from real spawns** (#1991: both ROPE hunters ride the scripted col-9 shaft together, n=2 pays 1500, both wings pursue), fourteen mutant runs that MUST die. CI runs the plain audit in the static gate
 (`--mutate` is the local deep pass). |
 | `npm run lodeplay` | Chrome, real key events only: the attract demo moves by itself, a held arrow runs the runner, dig→hole→refill graded in pixels, the paint graded in pixels too (warm mortar brick distinct from cool concrete in hue AND density; runner and guard distinct sprites; the original palette itself — navy background, aqua runner, orange guard, grey ladder and rope), climb-to-hang on the real ladder, guards hunt untouched, R replays your lost run as a ghost, in-page replay hash-matches mid-run. |
 
@@ -136,8 +136,19 @@ to clear, it is unclassic and lodecheck's winnability gate fails it.
   reads the primary hunter. — **CLOSED by #1949** (marker added by #2064 —
   the work shipped then, merged `e4a0ad8`; the bullet lacked it and kept
   re-kicking lanes, #961).
-- Vault 3's witness spends one life (a guard closes the crossing); the
-  one-fewer-life slack check proves the route is still robust.
+- **Vault 3's witness spends one life (a guard closes the crossing); the
+  one-fewer-life slack check proves the route is still robust.** — **CLOSED
+  by #2550**: the crossing is the ROPE now. The far nugget hangs at the
+  line's end (x20) instead of standing on the east floor, and the guard
+  stands post at x18 under the line's tail — so the witness collects all
+  five aloft (the one highway a walker can never enter), rides home over the
+  guard's head, lands clear at x6 and takes the exit ladder with lives
+  3/3. The attract demo is that witness. lodecheck pins it two ways: a
+  CLEAN-WITNESS gate (no vault may finish at less than full lives — the
+  attract screen must show perfect play) and a design-law pin (THE VAULT
+  keeps exactly one walk-row nugget, the spawn-side one; the rest hang on
+  the line). Mutant: guard back at x15 → the corridor crossing returns and
+  both gates go red together.
 - No keyboard-less vault skipping on phones: pads withdraw on menus, and
   vault select is 1/2/3. The vault chain carries score+lives, so a phone
   player who dies on vault 2 restarts at 1 — the honest classic.

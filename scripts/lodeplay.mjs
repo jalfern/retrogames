@@ -423,7 +423,7 @@ const greyPx = (gx, gy) => page.evaluate(([x, y]) => {
     }
     return n ? { r: r / n, g: g / n, b: b / n, n } : null
 }, [gx, gy])
-const ladY = Math.min(climbed.y + 2, 15)   // a ladder rung below the runner, clear of him
+const ladY = Math.min(climbed.y + 2, 14)   // a ladder rung below the runner (col-8 rungs span rows 6-14), clear of him
 const ladPx = await greyPx(8, ladY)
 r.check(`the ladder paints the original's light grey (col 8, row ${ladY})`,
     ladPx && ladPx.n > 20 && ladPx.r > 100 && Math.abs(ladPx.r - ladPx.g) < 30 && Math.abs(ladPx.g - ladPx.b) < 30,
