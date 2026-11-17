@@ -19,7 +19,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { W, H, makeGame, step, stateHash, CFG } from './sim.js'
-import { track, groundY, LAP, MUD, WATER, BOOST, nextSel, TRACK_COUNT, trackName, trackBite, buildTrack, registerCustom, customCount, TRANSIENT, setTestTrack, clearTestTrack } from './levels.js'
+import { track, groundY, LAP, MUD, WATER, BOOST, nextSel, TRACK_COUNT, trackName, trackBite, buildTrack, registerCustom, customCount, TRANSIENT, setTestTrack, clearTestTrack, ownTerrain } from './levels.js'
 import { TOOLS, SPAN, CUR_STEP, CUSTOM_KEY, CUSTOM_MAX, compileCustom, auditCustomData, fitsAt, stampAt, stampShape, encodeCustom, decodeCustom } from './custom.js'
 import { plan, decide } from './planner.js'
 import { PRESS, MESSAGES } from './attract.js'
@@ -66,6 +66,8 @@ const ExcitebikeGame = () => {
     const overAtRef = useRef(0)
     const [watching, setWatching] = useState(false) // #1637 WATCH: excitecheck's rollout planner rides the gate
     const watchingRef = useRef(false)
+    const [ownRide, setOwnRide] = useState(false) // #2603 riding your own design — the pad grows EXIT
+    const ownRef = useRef(false)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hudRef = useRef({})
     const setHud = (k) => (el) => { hudRef.current[k] = el }
@@ -99,6 +101,9 @@ const ExcitebikeGame = () => {
         // four messages. Headlines (prio 2) override anything; minors (prio 1)
         // yield to a live headline but pass freely once it has faded.
         const say = (m, p = 1) => { if (toast > 0 && p < toastPrio) return; toastMsg = m; toastPrio = p; toast = 90 }
+        // #2603 seat/unseat the own-terrain pad law (the component renders the
+        // pad from React state; the ref keeps the sim tick and the probe honest).
+        const seatOwn = (v) => { ownRef.current = v; setOwnRide(v) }
         // #2387 juice layer — pops/flashes/scars are pinned to WORLD x so the
         // camera carries them with the dirt (a popup that slides past its own
         // overtake is paint lying about physics). Zero sim state touched.
@@ -728,6 +733,10 @@ const ExcitebikeGame = () => {
             clearJuice()
             keys.g = keys.b = keys.j = keys.l = keys.r = false
             setMode('play')
+            // #2603 your own design gives you an exit: the pad grows EXIT and Esc
+            // walks out mid-race. Tracks 1-6 (the league) keep the full commitment.
+            seatOwn(ownTerrain(trackIdx))
+            if (ownRef.current) say('★ YOUR DESIGN — EXIT BACKS TO THE BAY')
             audioController.playSweep(220, 660, 0.25, 'sawtooth', 0.07)
         }
 
@@ -809,6 +818,7 @@ const ExcitebikeGame = () => {
             clearJuice()
             keys.g = keys.b = keys.j = keys.l = keys.r = false
             setMode('play')
+            seatOwn(true) // #2603 the draft is own terrain — the pad shows EXIT
             audioController.playSweep(520, 980, 0.22, 'square', 0.07)
         }
         const endTestRide = (msg) => {
@@ -819,8 +829,33 @@ const ExcitebikeGame = () => {
             parts.length = 0
             lastContact.length = 0
             clearJuice()
+            seatOwn(false) // #2603 back in the bay, the pad returns to its plain face
             setMode('edit')
             draft.msg = msg; draft.msgT = 200
+            audioController.playSweep(520, 330, 0.18, 'square', 0.06)
+        }
+        // #2603 ESC FROM YOUR OWN TRACK — a splash-seated custom is abandoned back
+        // into the bay with the design loaded. The registry entry rides its own
+        // compile output (`stamps`), so the draft that opens is byte-for-byte the
+        // terrain you were just riding — no storage round trip, no reinterpretation.
+        // Abandoning submits nothing: the sim stops the tick the screen leaves
+        // play, and finish() (the only writer of the leaderboard) never runs.
+        const abandonToBay = () => {
+            const t = track(gs.track)
+            const st = ((t && t.stamps) || []).map(([kind, x]) => ({ kind, x }))
+            draft.stamps = st
+            draft.cursor = 120
+            draft.tool = 0
+            rebuildDraft()
+            keys.g = keys.b = keys.j = keys.l = keys.r = false
+            parts.length = 0
+            lastContact.length = 0
+            clearJuice()
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+            seatOwn(false)
+            setMode('edit')
+            draft.msg = st.length ? 'BACK TO THE BAY — DESIGN LOADED' : 'BACK TO THE BAY — DRAW SOMETHING'
+            draft.msgT = 200
             audioController.playSweep(520, 330, 0.18, 'square', 0.06)
         }
         const editExecute = () => {
@@ -891,6 +926,10 @@ const ExcitebikeGame = () => {
             // #2587 a TEST lap is one Esc long — straight back to the bay with
             // the draft exactly where you left it (the missing esc-to-the-bay).
             if (testRide.active && e.code === 'Escape') { endTestRide('BACK TO THE BAY'); return }
+            // #2603 your own design gives you back — Esc mid-custom walks out of
+            // the race into the bay, stamps loaded from the seated entry. The
+            // league keeps its promise: tracks 0-5 never match ownTerrain.
+            if (e.code === 'Escape' && ownTerrain(gs.track)) { abandonToBay(); return }
             // #1637 WATCH: Y seats the rollout planner at any live state (it
             // re-decides from the bike every tick); any driving key takes over.
             if (isWatchKey(e)) {
@@ -953,6 +992,7 @@ const ExcitebikeGame = () => {
                 probe: () => ({
                     screen: screenRef.current, tick: gs.tick, track: gs.track, end: gs.end,
                     test: testRide.active, // #2587 riding a draft, not the league
+                    own: ownRef.current, // #2603 own terrain — the pad shows EXIT
                     sel: selRef.current, tracks: TRACK_COUNT, // #2563 splash cursor + roster size
                     customs: customsRef.current, rows: TRACK_COUNT + customsRef.current + 1, // #2576 saved designs + EDIT row
                     edit: screenRef.current === 'edit' ? {
@@ -1189,10 +1229,12 @@ const ExcitebikeGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'EXCITEBIKE')} onResume={handleResume} />}
-            {/* #2573: a test ride is the one seat a phone can leave — the third
-                pad button abandons the draft lap (fires the shipped Escape law;
-                a league race never grows it — races stay unescapable). */}
-            <VirtualControls visible={(play || screen === 'tracks' || screen === 'edit') && !paused} thirdAction={play && testing ? { label: 'ABANDON', code: 'Escape' } : null} />
+            {/* #2573/#2603 own terrain earns an on-screen exit: the third pad
+                button rides beside the action zone and fires the exact Escape the
+                esc-to-the-bay laws already honor. The TEST badge calls it ABANDON
+                (#2573), a splash-seated design calls it EXIT (#2603 ownTerrain);
+                the league's pad stays byte-unchanged — tracks 1-6 commit. */}
+            <VirtualControls visible={(play || screen === 'tracks' || screen === 'edit') && !paused} thirdAction={play && ownRide ? { label: testing ? 'ABANDON' : 'EXIT', code: 'Escape' } : null} />
         </div>
     )
 }

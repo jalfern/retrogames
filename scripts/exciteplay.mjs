@@ -761,5 +761,72 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     r.check('a league race grows no ABANDON (races are not a draft)', p.screen === 'play' && p.test === false && (await page.locator(cSel).count()) === 0, JSON.stringify(p && { s: p.screen, t: p.test }))
 }
 
+// ---- OWN EXIT (#2603): your track gives you back — pad EXIT + Esc reloads the bay ----
+{
+    await page.goto(URL, { waitUntil: 'load' })
+    await page.waitForFunction(() => !!window.__bikeTest, null, { timeout: 30000 })
+    await wait(700)
+    const board = () => page.evaluate(() => { try { return JSON.parse(localStorage.getItem('excitebike.board') || '[]').length } catch { return -1 } })
+    const exitBtn = () => page.locator('[data-vc="c"]')
+
+    // the league keeps its commitment: no EXIT button, no own flag, Escape is
+    // still not a door — the pad face on tracks 1-6 is byte-shape unchanged.
+    await page.keyboard.press('KeyZ'); await wait(200)
+    await page.keyboard.press('Enter'); await wait(250)
+    let p = await probe()
+    r.check('league seat: track 1 is not own terrain', p.screen === 'play' && p.track === 0 && p.own === false, JSON.stringify(p && { s: p.screen, tk: p.track, own: p.own }))
+    await page.keyboard.press('Escape')
+    r.check('league race keeps running through Escape (the full-race promise stands)', (await probe()).screen === 'play')
+
+    // seat the saved CUSTOM 1: the pad grows EXIT and the toast teaches it
+    await page.goto(URL, { waitUntil: 'load' })
+    await page.waitForFunction(() => !!window.__bikeTest, null, { timeout: 30000 })
+    await wait(700)
+    await page.keyboard.press('KeyZ'); await wait(200)
+    for (let i = 0; i < 6; i++) { await page.keyboard.press('ArrowDown'); await wait(40) }
+    await page.keyboard.press('Enter'); await wait(250)
+    p = await probe()
+    r.check('a splash-seated custom is own terrain (the save-and-race gate is off)', p.screen === 'play' && p.track === 6 && p.own === true, JSON.stringify(p && { s: p.screen, tk: p.track, own: p.own }))
+    r.check('the seat toast teaches the exit on your own design', p.toast.msg.includes('YOUR DESIGN'), p.toast && p.toast.msg)
+    const board0 = await board()
+
+    // ride a while, then walk out with the PAD button (the phone's door).
+    // NB the pad hides under trusted keyboard (step-5 feel law) — wake it AFTER
+    // the gas hold, immediately before asserting and clicking, exactly as a
+    // phone thumb would find it.
+    await page.waitForFunction(() => window.__bikeTest.probe().count === 0, null, { timeout: 8000 }).catch(() => {})
+    const x0 = (await probe()).x
+    await hold('ArrowUp', 1600)
+    p = await probe()
+    r.check('the custom ride actually moved before the exit (x advanced)', p.x > x0 + 80, `x ${x0.toFixed(0)} -> ${p.x.toFixed(0)}`)
+    await page.evaluate(() => window.dispatchEvent(new Event('touchstart')))
+    await wait(250)
+    const eb = exitBtn()
+    r.check('the pad grows EXIT beside the action zone on own rides', await eb.count() === 1 && await eb.getAttribute('data-key') === 'Escape' && (await eb.innerText()).includes('EXIT'), `count=${await eb.count()} key=${await eb.getAttribute('data-key')}`)
+    await eb.click(); await wait(200)
+    p = await probe()
+    r.check('pad EXIT walks a custom race back into the bay, design loaded', p.screen === 'edit' && p.own === false && !!p.edit && p.edit.stamps.length === 1 && p.edit.stamps[0][0] === 'RAMP' && p.edit.stamps[0][1] === 240 && p.edit.msg.includes('DESIGN LOADED'), JSON.stringify(p && { s: p.screen, own: p.own, st: p.edit && p.edit.stamps, m: p.edit && p.edit.msg }))
+    r.check('EXIT detaches when the ride ends (the bay pad is plain again)', (await exitBtn().count()) === 0)
+
+    // Esc chain: bay -> splash lands on the custom row; Enter re-seats; a real
+    // keyboard Escape mid-custom opens the same door (same bytes loaded).
+    await page.keyboard.press('Escape'); await wait(200)
+    p = await probe()
+    r.check('Esc out of the bay lands on the custom row (the loop closes)', p.screen === 'tracks' && p.sel === 6, `screen=${p.screen} sel=${p.sel}`)
+    await page.keyboard.press('Enter'); await wait(250)
+    p = await probe()
+    r.check('re-seating the custom owns the ride again (exit is law, not one-shot)', p.screen === 'play' && p.track === 6 && p.own === true, JSON.stringify(p && { s: p.screen, tk: p.track, own: p.own }))
+    await page.waitForFunction(() => window.__bikeTest.probe().count === 0, null, { timeout: 8000 }).catch(() => {})
+    await page.keyboard.press('Escape'); await wait(200)
+    p = await probe()
+    r.check('keyboard Esc mid-custom reloads the same design (entry stamps, byte-honest)', p.screen === 'edit' && !!p.edit && JSON.stringify(p.edit.stamps) === JSON.stringify([['RAMP', 240]]), JSON.stringify(p && { s: p.screen, st: p.edit && p.edit.stamps }))
+
+    // abandoning submits nothing: the leaderboard saw neither walk-out
+    const board1 = await board()
+    r.check('two abandonments, zero leaderboard entries (abandon submits nothing)', board0 === board1, `board ${board0} -> ${board1}`)
+    r.check('the roster stands as density says (no phantom from the exits)', p.customs === 1 && p.rows === 8, `customs=${p.customs} rows=${p.rows}`)
+
+}
+
 r.check('zero page errors across the whole ride', errors.length === 0, errors.slice(0, 4).join(' | '))
 r.exit(browser)
