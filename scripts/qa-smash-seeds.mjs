@@ -10,10 +10,15 @@
 // 6 lost, 7 STUCK {17,19,20,34,41,48,62}, 18 ROAM
 // {18,23,28,30,32,43,44,47,54,55,57,60,65,66,73,86,92,95}.
 // Re-measured at 9ba4e31 (pathOn parent re-key fix): 80 won, 13 lost,
-// 0 stuck, 4 ROAM {20,53,60,66} — the wide-corner ping-pong class still
-// open on the issue. The fix must drive the remaining class to zero, keep
-// the nine certified pilot seeds winning, and then graduate into
-// smashcheck's roll-seeds gate (done for the fixed seeds at 9ba4e31).
+// 0 stuck, 4 ROAM {20,53,60,66}. Re-measured after the goal-progress stall
+// detector (studio, 2026-11-17): 81 won, 13 lost, 0 stuck, 3 ROAM
+// {53,60,66} — seed 20 (static turret, east-commit/volt-back ping-pong) now
+// wins; 53's mechanism is measured (a dropped flame barrel sits ON the
+// route's own cell — the #2032 avoid law and the router fight at the d<=16
+// boundary forever), 60 and 66 stay tracked on the issue. The fix must drive
+// the remaining class to zero, keep the nine certified pilot seeds winning,
+// and then graduate into smashcheck's roll-seeds gate (done for the fixed
+// seeds; seed 20 joined).
 // Usage: node scripts/qa-smash-seeds.mjs [maxTicks]
 
 const { makeGame, step } = await import('../src/games/SmashTV/sim.js')

@@ -1148,11 +1148,13 @@ console.log('pilot')
     ok(scores[2] === 27900, 'seed 2 pays the lane-sound duel (the deaf variant forfeits 700)', `score=${scores[2]}`)
     // #2530 roll-seed regression gate: the audit (scripts/qa-smash-seeds.mjs)
     // found 25 seeds where the autopilot froze forever on random-roll games.
-    // These are the seeds the BFS-router fix (pathOn) un-wedged — none may
-    // stall again: score/room/lives/weapon must not freeze >12k ticks before
-    // the game ends. 84 is the issue's own seam-wedge case.
+    // These are the seeds the fixes un-wedged — none may stall again:
+    // score/room/lives/weapon must not freeze >12k ticks before the game ends.
+    // 84 is the issue's own seam-wedge case; 20 joined with the goal-progress
+    // stall detector (ping-pong roam: the 24-tick displacement window never
+    // armed the router because the body travelled big chords toward nothing).
     {
-        const FIXED = [17, 18, 19, 23, 28, 30, 32, 34, 41, 43, 44, 47, 48, 54, 55, 57, 62, 65, 73, 84, 86, 92, 95]
+        const FIXED = [17, 18, 19, 20, 23, 28, 30, 32, 34, 41, 43, 44, 47, 48, 54, 55, 57, 62, 65, 73, 84, 86, 92, 95]
         const wedged = []
         for (const seed of FIXED) {
             const gs = S.makeGame(seed)
@@ -1167,7 +1169,7 @@ console.log('pilot')
             }
             if (!gs.end && frozen > 12000) wedged.push(seed)
         }
-        ok(!wedged.length, 'roll seeds #2530: the un-wedged autopilot seeds never stall (23 seeds, 45k cap)', `wedged ${wedged.join(',')}`)
+        ok(!wedged.length, 'roll seeds #2530: the un-wedged autopilot seeds never stall (24 seeds, 45k cap)', `wedged ${wedged.join(',')}`)
     }
     // #2491 lane-sound duel — replay pin. The sweep used to catch a deaf-duel
     // mutant by luck of route: seed 4 walked onto the (12,10) chrome corner and
