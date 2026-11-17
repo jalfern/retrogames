@@ -298,6 +298,121 @@ section('FLUSH — a stuck shaft lies against the surface that holds it (#2565)'
         `flush(midair): knock-out shaft angled ${ka.ang} with no surface beneath — arrival angle must be kept where there is no stone`)
 }
 
+// --------------------------------------- UNDERSIDE hangs (#2579, WIP gates) ----
+// The economy-aware lift: a shaft whose tip crossed a one-row canopy's BOTTOM
+// face while rising hangs UNDER the canopy (air cell below the slab, tip-up
+// flush) whenever that cell is the walker's own pull row (solid directly
+// below it). Canopies over deep air keep lifting their hits (the #1685 loop).
+// Suspended shafts sway: they do not knock, do not block the bot's route
+// graph, and are still pullable / replaced / dried-out terrain.
+// STATUS: these gates pass; the two MATCH tempo pins on arena 1 are the open
+// blocker — hangs feed the loser bot's pull economy (measured: one hang at
+// (11,4) turns KNOCKBACK into a 917-tick duel whose dry spell crosses the
+// heat gate at 451).
+section('UNDERSIDE — rising hits hang where they struck, deep canopies still lift (#2579)')
+{
+    const deg = (a) => (a * 180) / Math.PI
+    const canopyLab = (row) => {
+        const g = scratch()
+        for (let x = 10; x <= 16; x++) g.grid[row * g.W + x] = 1
+        g.p[1].invuln = 1e9   // the lab is about shafts, not seats (ghost precedent)
+        g.p[0].x = 12 * CFG.cell + CFG.cell / 2; g.p[0].y = FLOOR_Y; g.p[0].grounded = true
+        g.p[0].firing = true; g.p[0].charge = 0.25
+        step(g, { mx: 0, my: 0, fire: false, aim: { x: 0.2, y: -1 } }, null)
+        const ar = g.arrows[g.arrows.length - 1]
+        for (let t = 0; t < 80 && ar.state === 'fly'; t++) step(g, null, null)
+        return { g, ar }
+    }
+    // 1) low canopy (row 10 above floor 12): hangs in row 11, tip-up flush
+    const a = canopyLab(10)
+    ok(a.ar.state === 'stuck' && Math.floor(a.ar.cell / a.g.W) === 11,
+        `underside(hang): shaft at cell ${a.ar.cell} (row ${Math.floor(a.ar.cell / a.g.W)}) — a rising hit under a corridor canopy must hang BELOW the slab`)
+    ok(a.ar.hang === true, 'underside(flag): a corridor-canopy stick did not register as suspended')
+    ok(deg(a.ar.ang) <= -60 && deg(a.ar.ang) >= -90,
+        `underside(flush): hang sits at ${deg(a.ar.ang).toFixed(1)}° — underside hangs wear the −75° ceiling family`)
+
+    // 2) the hang lives in the walker's pull row: stand under it, walk ammo home
+    a.g.p[0].quiver = 2
+    a.g.p[0].x = (a.ar.cell % a.g.W) * CFG.cell + CFG.cell / 2
+    a.g.p[0].y = FLOOR_Y; a.g.p[0].vy = 0; a.g.p[0].grounded = true
+    step(a.g, { mx: 0, my: 0, fire: false }, null)
+    ok(a.g.p[0].quiver === 3 && a.g.stuck.length === 0,
+        `underside(pull): standing in the hang cell left quiver ${a.g.p[0].quiver} and ${a.g.stuck.length} stuck — hangs must return to the quiver loop`)
+
+    // 3) a canopy over deep air still lifts — the #1685 economy witness
+    const c = canopyLab(7)
+    ok(c.ar.state === 'stuck' && Math.floor(c.ar.cell / c.g.W) === 6 && c.ar.hang !== true,
+        `underside(lift): deep-canopy hit at row ${Math.floor(c.ar.cell / c.g.W)} — nothing pullable sits below, the arrow must return from above`)
+
+    // 4) double-thickness stone over the corridor now hangs in AIR under the
+    // lowest course instead of embedding mid-stone (same −75° family)
+    const d = (() => {
+        const g = scratch()
+        for (let y = 9; y <= 10; y++) for (let x = 10; x <= 16; x++) g.grid[y * g.W + x] = 1
+        g.p[1].invuln = 1e9
+        g.p[0].x = 12 * CFG.cell + CFG.cell / 2; g.p[0].y = FLOOR_Y; g.p[0].grounded = true
+        g.p[0].firing = true; g.p[0].charge = 0.55
+        step(g, { mx: 0, my: 0, fire: false, aim: { x: 0.2, y: -1 } }, null)
+        const ar = g.arrows[g.arrows.length - 1]
+        for (let t = 0; t < 100 && ar.state === 'fly'; t++) step(g, null, null)
+        return { g, ar }
+    })()
+    ok(d.ar.state === 'stuck' && Math.floor(d.ar.cell / d.g.W) === 11 && g0(d.g, 11, d.ar.cell % d.g.W) === 0 && deg(d.ar.ang) <= -60,
+        `underside(thick): double stone over the corridor sticks at row ${Math.floor(d.ar.cell / d.g.W)} ang ${deg(d.ar.ang).toFixed(1)}° — it should hang in the air cell below, tip-up`)
+    function g0(g, r, cx) { return g.grid[r * g.W + cx] }
+
+    // 5) swaying law: a flat lane shot crosses a hang without knocking; a
+    // stone-set shaft in the same lane still eats the arc (control). The
+    // shooter fires from the row above the lane — a floor-level flat would
+    // drop into the floor long before it reached the shaft's cell.
+    {
+        const laneShot = (withHang) => {
+            const g = scratch()
+            const hang = { id: 991, owner: 1, state: 'stuck', cell: 11 * g.W + 8, age: 0, x: 8 * CFG.cell + 12, y: 272, ang: -1.31, vx: 0, vy: 0 }
+            if (withHang) hang.hang = true
+            g.stuck.push(hang)
+            g.p[1].invuln = 1e9
+            g.p[0].x = 60; g.p[0].y = 252; g.p[0].grounded = false   // muzzle on the lane's line
+            g.p[0].firing = true; g.p[0].charge = 1
+            step(g, { mx: 0, my: 0, fire: false, aim: { x: 1, y: 0 } }, null)
+            const flat = g.arrows[g.arrows.length - 1]
+            let crossed = false, knocked = false
+            for (let t = 0; t < 80 && !knocked && flat.state === 'fly'; t++) {
+                step(g, null, null)
+                knocked = g.events.some((e) => e.type === 'knockout')
+                if (!knocked && flat.x > (hang.cell % g.W) * CFG.cell + CFG.cell) crossed = true
+                g.events.length = 0
+            }
+            return { crossed, knocked }
+        }
+        const sway = laneShot(true)
+        ok(sway.crossed && !sway.knocked,
+            `underside(sway): flat shot crossing the hang cell — crossed=${sway.crossed} knocked=${sway.knocked} — suspended shafts must be crossed, not clashed`)
+        const clash = laneShot(false)
+        ok(clash.knocked, 'underside(control): a stone-set shaft in the lane did NOT knock — the old terrain law is load-bearing')
+    }
+
+    // 6) the hang fades: TTL recycles it home like any stuck shaft (ledger
+    // leg). Quiver stays FULL — the pull stays a choice, not an automatic
+    // reroute of this test onto itself.
+    {
+        const b = canopyLab(10)
+        // walk the shooter off the hang's column (pull stays a choice, and the
+        // quiver keeps room so the dryout walks the shaft home, not lost)
+        b.g.p[0].x = 5 * CFG.cell + CFG.cell / 2
+        const q0 = b.g.p[0].quiver
+        let dry = -1
+        for (let t = 0; t < CFG.stuckTTL + 200 && dry < 0; t++) {
+            step(b.g, { mx: 0, my: 0, fire: false }, null)
+            b.g.lastHit = b.g.tick                             // referee keeps it cool (plain-data precedent)
+            if (b.g.events.some((e) => e.type === 'dryout')) dry = b.g.tick
+            b.g.events.length = 0
+        }
+        ok(dry > 0 && b.g.p[0].quiver === q0 + 1 && b.g.stuck.length === 0,
+            `underside(fade): dry=${dry} quiver ${b.g.p[0].quiver}/${q0 + 1} stuck ${b.g.stuck.length} — hangs must walk home on the TTL like any terrain shaft`)
+    }
+}
+
 // ------------------------------------------------ each arena, won for real ----
 const receipts = {}
 for (let i = 0; i < ARENAS_COUNT; i++) {
@@ -680,6 +795,19 @@ if (MUT) {
             g.events.length = 0
         }
         return notes.length >= 2 && heatAt - notes[0] >= 45
+    })
+    tryMut('always-lift (single-row undersides collapse back to lift-everything — #2579)', { hangUnderside: false }, () => {
+        // with the economy-hang dead, a rising hit under a corridor canopy
+        // sticks ABOVE the slab again — the honest row-below assertion reddens.
+        const g = scratch()
+        for (let x = 10; x <= 16; x++) g.grid[10 * g.W + x] = 1
+        g.p[1].invuln = 1e9
+        g.p[0].x = 12 * CFG.cell + CFG.cell / 2; g.p[0].y = FLOOR_Y; g.p[0].grounded = true
+        g.p[0].firing = true; g.p[0].charge = 0.25
+        step(g, { mx: 0, my: 0, fire: false, aim: { x: 0.2, y: -1 } }, null)
+        const ar = g.arrows[g.arrows.length - 1]
+        for (let t = 0; t < 80 && ar.state === 'fly'; t++) step(g, null, null)
+        return ar.state === 'stuck' && Math.floor(ar.cell / g.W) === 11
     })
 }
 

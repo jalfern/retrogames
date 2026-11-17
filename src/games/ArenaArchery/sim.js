@@ -59,6 +59,13 @@ export const CFG = {
     // replay/hash contract is untouched. flushSticks:false is the test-only
     // kill switch (mutant: floppy shafts keep any arrival angle).
     flushSticks: true,
+    // #2579 UNDERSIDE HANGS. The #1685 lift hoists every single-row slab hit
+    // into the cell above the slab so the arrow can walk home; but a shaft
+    // that crossed a canopy's BOTTOM face under a canopy it could be PULLED
+    // from hangs where it struck (TowerFall keeps its shafts honest). Lift vs
+    // hang decides by economy, not direction — see stickArrow.
+    // hangUnderside:false is the test-only kill switch (mutant: always-lift).
+    hangUnderside: true,
     // #2385 heat telegraph: the shell rings two rising warning notes across
     // the last heatWarnLead ticks of the cool dry spell (gate-lead and
     // gate-lead/2), so "cover is about to go" is audible BEFORE the rumble.
@@ -210,6 +217,13 @@ function flushAngle(g, cell, ar) {
     const dx = ar.vx >= 0 ? 1 : -1
     const tip = ar.vy >= 0 ? 1 : -1
     if (g.grid[cell] === 0) {
+        // #2579 THE UNDERSIDE: a shaft that arrived RISING and has stone above
+        // hangs tip-up against that face — the surface that caught it is the
+        // one it arrived at, so this wins even when stone sits below too (a
+        // low canopy over the floor). Descending arrivals keep the old order:
+        // floor below → tip-down; nothing below → mid-air knock keeps its raw
+        // arrival angle (the preservation branch, untouched).
+        if (ar.vy < 0 && solid(cx, cy - 1)) return dx > 0 ? -FLUSH_DOWN : -(Math.PI - FLUSH_DOWN)
         if (!solid(cx, cy + 1)) return Math.atan2(ar.vy, ar.vx) // mid-air knock: no surface
         return dx > 0 ? FLUSH_DOWN : Math.PI - FLUSH_DOWN        // floor stick: tip into the stone
     }
@@ -224,6 +238,21 @@ function flushAngle(g, cell, ar) {
     return dx > 0 ? tip * FLUSH_FLAT : Math.PI - tip * FLUSH_FLAT // side face: wall
 }
 
+// #2579 THE UNDERSIDE LAW's economy test: does a hung shaft under a slab stay
+// in the game's OWN pull doctrine? Pulling is a stance, not a rumour — the
+// walker occupies centre row f−1 on a face at row f (the sim's three stuckAt
+// samples all sit in that one row, and the autopilot's scavenger targets
+// exactly that row). So the hang cell h is economy-live iff h = f−1: the face
+// directly beneath it (d = 1). A d≥2 hang is acrobatically reachable (the
+// head-butt jump touches it) but OUTSIDE the doctrine — measured: hanging d=2
+// canopies starves the autopilot's scavenger and arena 1's dry spell crossed
+// the 450-tick heat gate (451). That is the #1685 freeze in new clothes.
+// Narrow law: hang iff solid lies directly below the hang cell — the shaft
+// hangs at head height in the corridor the duel actually walks.
+function hangReachable(g, cx, h) {
+    return h + 1 < g.H && g.grid[(h + 1) * g.W + cx] === SOLID
+}
+
 function stickArrow(g, ar) {
     const cx = Math.floor(ar.x / CFG.cell), cy = Math.floor(ar.y / CFG.cell)
     let cell = cy * g.W + cx
@@ -232,12 +261,27 @@ function stickArrow(g, ar) {
     // only place the pull-back economy can reach. A wall stays a wall
     // cell (visible, knocks, recycles on the TTL; you cannot pull an
     // arrow out of the middle of a wall you cannot touch). The lift is
-    // direction-agnostic ON PURPOSE (#1685 economy): every arrow the world
-    // accepts must return to the quiver loop or the TTL, and a thin
-    // direction-gate on the lift starves the pull economy (measured: the
-    // autopilot flips to 2-3 on every arena). Single-row undersides are
-    // documented terrain behaviour — see README honest gaps.
-    if (solidAt(g, ar.x, ar.y) && cy > 0 && !solidAt(g, ar.x, ar.y - CFG.cell)) cell = (cy - 1) * g.W + cx
+    // #1685 economy: every arrow the world accepts must return to the
+    // quiver loop or the TTL. #2579 makes it ECONOMY-aware, not
+    // direction-blind: a shaft whose tip crossed the slab's BOTTOM face
+    // while rising hangs under the canopy whenever that hang cell is
+    // itself pullable (hangReachable) — the arrow still returns to the
+    // loop, from below, and the paint keeps the TowerFall truth of where
+    // it struck. Only canopies no one can reach from underneath keep
+    // lifting their hits above the slab (that lift is how those arrows
+    // walk home). Floors, wall hits, top-row grazes and double-thickness
+    // ceilings are byte-identical behaviour.
+    if (solidAt(g, ar.x, ar.y) && cy > 0) {
+        // last-crossed face, the flushAngle criterion: the smaller the
+        // penetration, the later the shaft crossed that face.
+        const px = ar.x - cx * CFG.cell, py = ar.y - cy * CFG.cell
+        const penX = ar.vx > 0 ? px : ar.vx < 0 ? CFG.cell - px : Infinity
+        const penY = ar.vy > 0 ? py : ar.vy < 0 ? CFG.cell - py : Infinity
+        const hang = CFG.hangUnderside && ar.vy < 0 && penY < penX &&
+            !solidAt(g, ar.x, ar.y + CFG.cell) && hangReachable(g, cx, cy + 1)
+        if (hang) { cell = (cy + 1) * g.W + cx; ar.hang = true }
+        else if (!solidAt(g, ar.x, ar.y - CFG.cell)) cell = (cy - 1) * g.W + cx
+    }
     const old = g.stuck.find((s) => s.cell === cell)
     if (old) {
         // the newcomer replaces its rival in the cell — the old arrow is
@@ -383,7 +427,14 @@ function stepArrows(g) {
             if (solidAt(g, ar.x, ar.y)) { stickArrow(g, ar); done = true; break }
             if (CFG.knockout) {
                 const s2 = stuckAt(g, ar.x, ar.y)
-                if (s2) {
+                // #2579 a SUSPENDED shaft sways but does not knock: it holds
+                // its cell against landings (replacement still runs below), it
+                // can be pulled, it dries out — but a flying arrow crosses it.
+                // Knock-out is the law of cover embedded in stone; making the
+                // head-height hangs intercept turned KNOCKBACK's flat lanes
+                // into arrow-grids and honest duels slogged past the heat gate
+                // (measured 451-tick dry spell — the #2377 promise, broken).
+                if (s2 && !s2.hang) {
                     g.events.push({ type: 'knockout', who: ar.owner, cell: s2.cell })
                     stickArrow(g, ar)
                     done = true
@@ -489,7 +540,11 @@ function predictHit(g, me, tx, ty, ax, ay, charge) {
             x += vx / 2
             y += vy / 2
             if (solidAt(g, x, y)) return -1
-            if (CFG.knockout && stuckAt(g, x, y)) return -1
+            // #2579 the bot's forward-sim must see the lane law the duel
+            // plays: suspended shafts (hang) are crossed, stone-set shafts
+            // still eat the arc.
+            const s3 = stuckAt(g, x, y)
+            if (CFG.knockout && s3 && !s3.hang) return -1
         }
         if (Math.hypot(x - tx, y - ty) < R + 3) return t
         if (x < 0 || x > g.W * CFG.cell) return -1
@@ -525,7 +580,11 @@ function reachableStep(g, p, prefCx, maxRise, maxCols, banCell = -1, grants = nu
     // a stuck arrow is solid to the flying arrow AND to the jumping body:
     // its cell at head height (the row the head occupies above the feet)
     // turns the hop into a ceiling-bump. The route must be sky-clear.
-    const sky = (cx, r) => !g.stuck.some((s) => s.cell === r * g.W + cx)
+    // #2579 exception: a SUSPENDED shaft (hang) is crossed, not clashed —
+    // moveBody only collides with stone, and a walking body pulls a hang in
+    // range. One swaying shaft at (11,4) stalled KNOCKBACK's route graph for
+    // ~40 s when the doctrine treated it like embedded cover (measured).
+    const sky = (cx, r) => !g.stuck.some((s) => s.cell === r * g.W + cx && !s.hang)
     const cand = []
     for (let gain = 1; gain <= maxRise; gain++) {
         const slab = cur - gain
