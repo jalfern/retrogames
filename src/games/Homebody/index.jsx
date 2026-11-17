@@ -322,6 +322,10 @@ const HomebodyGame = () => {
                         iceTruckRollOut(s)   // #2508 item 1: same law for the kid's catch — the truck leaves when its tray is empty
                         if (live) { say(`${e.name.toUpperCase()} CHASED THE TRUCK DOWN ♥`); heartBurst(e.x, e.y - 12) }
                         break
+                    case 'ice-drip':   // #2508 item 3: a melt tick — the cone in hand loses a drop (the countdown's arithmetic, not a rule)
+                        audioController.playTone(1760, 0.035, 'sine', 0.022)
+                        if (live) burst(e.x, e.y - 10, 2, '#cfe8ff', 1)
+                        break
                     case 'ice-gone':   // #2503: the truck moved on — a falling jingle tail and a pastel puff at the empty curb (the cold-plate doctrine, at ice-cream scale)
                         audioController.playSweep(880, 523, 0.28, 'triangle', 0.04)
                         iceTruckRollOut(s)   // #2508 item 1: the window closed on unsold cones — it still rolls, it no longer vanishes
@@ -1206,6 +1210,7 @@ const HomebodyGame = () => {
                     paper: gs.paper ? { r: gs.paper.r, c: gs.paper.c } : null, paperDay: gs.paperDay,   // #2238: the route
                     cone: gs.cone ? { r: gs.cone.r, c: gs.cone.c } : null, iceSerial: gs.iceSerial, iceDay: gs.iceDay, treats: gs.treats,   // #2503: the truck's stop and the cone ledger
                     truckView: { phase: iceTruck.phase, x: Math.round(iceTruck.px), jingle: iceTruck.jingle },   // #2508 item 1: the view-side truck — QA reads the slide (phase 'off'/'in'/'parked'/'out') here; item 2: which ending bar this pass rang ('A'/'B')
+                    heldTreats: [...gs.people, gs.kid].filter(Boolean).map((e) => ({ name: e.name, hold: Math.round(e.coneHold * 10) / 10, drips: e.coneDrips })),   // #2508 item 3: the eat beat — who holds a cone, how much hold is left, how many drips fell
                     meal: gs.meal ? { r: gs.meal.r, c: gs.meal.c, name: gs.mealName } : null, mealDay: gs.mealDay, mealSlot: gs.mealSlot, mealSerial: gs.mealSerial, mealEaten: gs.mealEaten.length,   // #2244: the bells
                     queues: gs.people.map((p) => p.queue.map((o) => (o.kind === 'use' ? o.it.id : o.kind))),   // #2470: the pending lists, head first
                     collapse: gs.people.map((_, pi) => (collapseCache.has(pi) ? COLLAPSE_FRAMES : 0)),   // #2474 item 4: which rows are ghosting (QA-visible, view-only)
