@@ -24,6 +24,10 @@ const MUTCONT = process.argv.includes('--mutate-continue')
 let pass = 0, fail = 0
 const ok = (cond, msg) => { if (cond) { pass++; console.log(`  ok  ${msg}`) } else { fail++; console.error(`FAIL  ${msg}`) } }
 
+// headless CI Chrome has no audio device — the AudioContext device error is
+// noise, not a page fault (the britanniadrive/exciteplay/homebodydrive filter).
+const deviceNoise = (s) => /AudioContext encountered an error from the audio device/i.test(String(s || ''))
+
 const P = (o = {}) => ({ left: false, right: false, up: false, down: false, lp: false, hp: false, lk: false, hk: false, ...o })
 const bust = (p) => `${p}?c=${Date.now()}${MUT ? 'm' : ''}`
 
@@ -685,6 +689,28 @@ if (MUT) {
     pull(path.join(HERE, '../src/engine/.mutant-fighting2.mjs'))
 }
 
+// ---- README honest-gaps honesty (#2569) ----------------------------------------
+// parseGaps (scripts/lib/idle.mjs) turns this README's "## Honest gaps" section
+// into the never-dry ladder's targets. The stun/air-throw bullet was a phantom:
+// both mechanics shipped in #1792 (engine `stunMeter`/`airThrow`, gated in the
+// #1785 block above), yet the line still counted as an open gap — it scored
+// IRON RING as the shelf's weakest title and nearly had a lane rebuild shipped
+// mechanics. Pinned: every bullet in the section carries a CLOSED marker, the
+// parser counts zero open gaps here, and the phantom never returns.
+{
+    const { readFileSync } = await import('node:fs')
+    const { parseGaps } = await import('./lib/idle.mjs')
+    const md = readFileSync(path.join(HERE, '../src/games/IronRing/README.md'), 'utf8')
+    const gaps = parseGaps(md)
+    const sec = ((md.split(/^##\s+Honest gaps/im)[1] || '').split(/^##\s/m)[0])
+    const marked = (sec.match(/^\s*-\s*\*\*CLOSED by/gim) || []).length
+    ok(marked >= 7, `README gaps section carries its CLOSED markers (got ${marked}, want >= 7)`)
+    ok(gaps.length === 0,
+        `no counted gap left in the README (#2569)${gaps.length ? ' — leaked: ' + gaps.map((g) => g.slice(0, 60)).join(' | ') : ''}`)
+    ok(!gaps.some((g) => /stun system|throws escapable in air/i.test(g)),
+        'the stun/air-throw phantom no longer counts for the ladder (#2569)')
+}
+
 console.log(`part A: ${pass} ok, ${fail} fail`)
 
 // ---- Part A2: the online select-start gate (#1761) ------------------------------
@@ -884,8 +910,8 @@ if (!MUT) {
     const browser = await launch()
     const page = await browser.newPage({ viewport: { width: 1024, height: 640 } })
     const errors = []
-    page.on('console', (msg) => { if (msg.type() === 'error' && !relayNoise(msg.text(), msg.location())) errors.push(msg.text()) })
-    page.on('pageerror', (err) => errors.push(String(err)))
+    page.on('console', (msg) => { if (msg.type() === 'error' && !relayNoise(msg.text(), msg.location()) && !deviceNoise(msg.text())) errors.push(msg.text()) })
+    page.on('pageerror', (err) => { if (!deviceNoise(err)) errors.push(String(err)) })
     await page.goto(URL, { waitUntil: 'networkidle' })
     await page.waitForFunction(() => document.querySelector('canvas[data-ironring-stage]') && window.__ironRingTest, null, { timeout: 15000 })
 
