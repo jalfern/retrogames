@@ -161,6 +161,14 @@ function moveBody(g, p) {
 function looseArrow(g, p) {
     if (p.quiver <= 0) { g.events.push({ type: 'dry', who: p.id }); return }
     let ax = p.aimX, ay = p.aimY
+    // A keyboard jump press with no sideways zeroes the aim X ("straight up
+    // is a jump, not a shot"), and a release with no direction keys zeroes
+    // the aim Y — together they used to hand this function the vector (0,0):
+    // the shaft spawned at the body with zero velocity, a Dud at the shooter's
+    // feet (TowerFall has no such thing). A no-direction release looses
+    // toward the facing instead. Solver-named aims are never zero, so this
+    // fires only for the fizzle.
+    if (ax === 0 && ay === 0) ax = p.face
     const m = Math.hypot(ax, ay) || 1
     ax /= m; ay /= m
     const v = CFG.arrowMin + (CFG.arrowMax - CFG.arrowMin) * p.charge
@@ -168,6 +176,11 @@ function looseArrow(g, p) {
         id: ++g.arrowSeq, owner: p.id,
         x: p.x + ax * (R + 6), y: p.y + ay * (R + 6),
         vx: ax * v, vy: ay * v, state: 'fly', age: 0, cell: -1,
+        // the tick this shaft left the string — pure bookkeeping (stateHash
+        // mixes neither id-sequence nor born), and it is what lets the
+        // browser harness name the P1-then-P2 stamp order: two arrows that
+        // share a `born` were loosed on ONE tick, seat order preserved.
+        born: g.tick,
     })
     p.quiver--
     g.events.push({ type: 'loose', who: p.id, charge: p.charge })

@@ -9,7 +9,9 @@
 //   - hold/release on Space is a real charge-and-loose,
 //   - an arrow stuck by the sim is painted, and a pulled one is not,
 //   - one key starts, ? pauses, R restarts, and zero page errors fall on
-//     the floor during the whole ride.
+//     the floor during the whole ride,
+//   - and (#2558) SEAT TWO: the `2` duel is driven by real WASD+F keystrokes
+//     — walk, jump, draw, hit, pull, the same-tick stamp, and the win.
 import { launch, openGame, Report } from './lib/harness.mjs'
 
 const URL = process.env.ARCHERY_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/arena-archery`
@@ -247,17 +249,183 @@ page.on('pageerror', () => { pageErrors++ })
     const res = await page.evaluate(() => {
         const t = window.__archeryTest
         t.start('1p', 0)
+        // warnNotes is a session accumulator (resetJuice re-arms the latch but
+        // the counter spans matches): RAF stretches between earlier evaluates
+        // drove seat 1 human-idle vs seat 2's bot — a legitimate stalemate
+        // that may ring the bell by design. Sample the DELTA across THIS pure
+        // bot stream, not the session lifetime (the lodeplay #2553 lesson).
+        const warnBase = t.probe().fx ? t.probe().fx.warnNotes : 0
         let warn = -1
         for (let k = 0; k < 40 && t.probe().screen === 'play'; k++) {
             t.drive(30)
             const fx = t.probe().fx
-            if (fx) warn = fx.warnNotes
+            if (fx) warn = fx.warnNotes - warnBase
         }
         const p = t.probe()
         return { hasFx: !!p.fx, warn, dryFx: p.fx ? p.fx.dryFx : -1, screen: p.screen }
     })
     r.check('the shell exposes #2385 fx receipts on the probe', res.hasFx && res.dryFx >= 0 && res.warn >= 0, JSON.stringify(res))
     r.check('an honest tempo never rings the heat telegraph', res.warn === 0, `warnNotes=${res.warn} (driven to ${res.screen})`)
+}
+
+// ------------------------------------------------- DUEL — seat two (#2558) ----
+{
+    // The gap this session closes: `archeryplay` drives P1 only. Reload to the
+    // marquee, seat TWO humans, and drive seat 2 with real WASD+F keystrokes.
+    // Geometry (CROSSGLOVE): P1 spawn centre x=132, P2 x=300, both centres at
+    // y=280 with the floor top 8 px below — a flat shaft self-fires into the
+    // floor after v·t ≈ 88 px at full charge, which is why every seat-2 hit
+    // here is taken at ~70 px, the range the physics actually grants.
+    await page.reload()
+    await page.waitForFunction(() => window.__archeryTest)
+    await sleep(250)
+    await page.keyboard.press('Digit2')
+    await sleep(250)
+    const seat = await probe()
+    r.check('2 seats a two-human duel (no bot at seat 2)', seat.screen === 'play' && seat.mode === '2p', `${seat.screen}/${seat.mode}`)
+    const hud2 = await page.evaluate(() => document.body.textContent.includes('P2 0'))
+    r.check('the HUD re-names the seat: P2, not BOT', hud2)
+
+    // No second on-screen touchpad (AGENTS.md multiplayer law). The retired pad
+    // was the ONLY pad rendering glyph buttons (◀▲▼▶ + J); the P1 pad is SVG.
+    const pads = await page.evaluate(() => {
+        const glyph = (b) => ['◀', '▲', '▼', '▶', 'J'].includes((b.textContent || '').trim())
+        return [...document.querySelectorAll('button')].filter(glyph).length
+    })
+    r.check('no second touchpad on screen — duel is the keyboard option (#2558)', pads === 0, `second-pad glyph buttons found: ${pads}`)
+
+    // Bot-vacated proof: the basic bot LOOSES within ~0.5 s of a duel start
+    // (it fires whenever the foe is within 240 px, and spawns 168 px apart).
+    // Two idle humans must still hold full quivers after 1.2 s.
+    const i0 = await probe()
+    await sleep(1200)
+    const i1 = await probe()
+    r.check('seat 2 is human: quivers stay full untouched (a bot would be loosing)',
+        i1.p1.quiver === 6 && i1.p2.quiver === 6 && i1.arrows.length === 0,
+        `q ${i1.p1.quiver}/${i1.p2.quiver} arrows ${i1.arrows.length}`)
+
+    // seat-2 locomotion
+    const w0 = i1.p2.x
+    await page.keyboard.down('KeyA')
+    await sleep(600)
+    await page.keyboard.up('KeyA')
+    await sleep(120)
+    const w1 = await probe()
+    r.check('held KeyA walks P2 left (real keys)', w1.p2.x < w0 - 20, `${w0.toFixed(0)} -> ${w1.p2.x.toFixed(0)}`)
+    const litP2 = await page.evaluate(() => {
+        const c = document.querySelector('canvas[data-archery-stage]')
+        const x = window.__archeryTest.probe().p2
+        const g = c.getContext('2d')
+        const s = c.width / (20 * 24)
+        const px = Math.round(x.x * s), py = Math.round(x.y * s)
+        let count = 0
+        const d = g.getImageData(Math.max(0, px - 8), Math.max(0, py - 10), 16, 20).data
+        for (let i = 0; i < d.length; i += 4) if (d[i] < 130 && d[i + 1] > 150 && d[i + 2] > 150) count++
+        return count
+    })
+    r.check('seat 2 is PAINTED at his logical position', litP2 > 20, `${litP2} cyan pixels at (p2.x, p2.y)`)
+    const jy0 = (await probe()).p2.y
+    await page.keyboard.down('KeyW')
+    let jMinY = jy0
+    for (let k = 0; k < 12; k++) { await sleep(60); const s = await probe(); jMinY = Math.min(jMinY, s.p2.y) }
+    await page.keyboard.up('KeyW')
+    r.check('W jumps P2 too (both seats share the stick)', jMinY < jy0 - 10, `${jy0.toFixed(0)} -> ${jMinY.toFixed(0)}`)
+    await sleep(500)
+
+    // NO DUD AT THE FEET (this stage's sim fix, proven on the live board): a
+    // jump press zeroes the aim X ("straight up is a jump"), and a release
+    // with no direction keys zeroes the aim Y — together they used to hand
+    // looseArrow the vector (0,0): a shaft spawning at the body with zero
+    // velocity, fizzling into the floor and pulling back (+1 receipt). TowerFall
+    // always fires: the fix looses toward the facing. Proof: after a released
+    // draw at zero aim the quiver is down EXACTLY one and no receipt moved —
+    // the shaft flew downrange, it did not fizzle and come home.
+    const d0 = await probe()
+    const dMaxId = Math.max(0, ...d0.arrows.map((a) => a.id))
+    await page.keyboard.down('KeyF')
+    await sleep(220)
+    await page.keyboard.up('KeyF')
+    await sleep(250)
+    const d1 = await probe()
+    const dArrow = d1.arrows.filter((a) => a.owner === 1 && a.id > dMaxId)[0]
+    r.check('a direction-free release fires toward the facing — no dud at the feet',
+        !!dArrow && dArrow.x < d1.p2.x - 8 && d1.p2.quiver === d0.p2.quiver - 1 && d1.p2.receipts === d0.p2.receipts,
+        `${dArrow ? `#${dArrow.id}@x${dArrow.x} vs shooter x${Math.round(d1.p2.x)} (P2 faces left)` : 'no shaft at all'} q ${d0.p2.quiver}->${d1.p2.quiver} rc ${d0.p2.receipts}->${d1.p2.receipts}`)
+
+    // ONE TICK, TWO HUMANS: Space and KeyF released together — two shafts born
+    // the same tick, P1's numbered first (the stamp order, visible in pixels).
+    // At the 168 px spawn gap both arcs land short on the floor (flat range is
+    // v·t), so the exchange is a draw by physics — and leaves cover to pull.
+    const q0 = await probe()
+    await page.keyboard.down('Space')
+    await page.keyboard.down('KeyF')
+    await sleep(300)
+    await page.keyboard.up('Space')
+    await page.keyboard.up('KeyF')
+    await sleep(120)
+    const stamp = await probe()
+    const newArrows = stamp.arrows.filter((a) => a.born >= q0.tick)
+    const b0 = newArrows.filter((a) => a.owner === 0)
+    const b1 = newArrows.filter((a) => a.owner === 1)
+    const sameTick = b0.length === 1 && b1.length === 1 && b0[0].born === b1[0].born && b1[0].id === b0[0].id + 1
+    r.check('both humans loose the SAME tick, P1 stamped first', sameTick,
+        JSON.stringify(newArrows.map((a) => `#${a.id} p${a.owner + 1}@${a.born}`)))
+
+    // the pull economy runs at seat 2 too: the exchange's flat shafts land on
+    // the floor just ahead (~84 px, the range the physics grants) and stick in
+    // the walk row; walking P2 over one must move P2's receipts — P1 never
+    // moved, so any other pull would be the bot's ghost.
+    await sleep(500)                      // the shafts come home first
+    const r0 = await probe()
+    await page.keyboard.down('KeyA')
+    await sleep(900)
+    await page.keyboard.up('KeyA')
+    await sleep(150)
+    const r1 = await probe()
+    r.check('P2 pulls stuck arrows walking over them (seat-2 economy)',
+        r1.p2.receipts > r0.p2.receipts && r1.p1.receipts === r0.p1.receipts && r1.stuck < r0.stuck,
+        `p2 receipts ${r0.p2.receipts}->${r1.p2.receipts}, stuck ${r0.stuck}->${r1.stuck}`)
+
+    // drive home the win: nudge — measure, not guess — into a clear lane ~55 px
+    // right of P1's respawn (P1 centre x=132, bodies share cells, so the park
+    // band 140–165 keeps the leftward lane free of the shooter's own stuck
+    // shafts, which would knock out the draw). Full draws into P1's spawn, and
+    // the duel ends for PLAYER 2. Each victim gets the honest 75-tick respawn
+    // and 45-tick invulnerability; the loop waits them out (4.3 s per kill).
+    for (let n = 0; n < 8; n++) {
+        const s = await probe()
+        const dx = s.p2.x - 155
+        if (Math.abs(dx) < 8) break
+        const key = dx > 0 ? 'KeyA' : 'KeyD'
+        await page.keyboard.down(key)
+        await sleep(Math.min(400, Math.abs(dx) * 12))
+        await page.keyboard.up(key)
+        await sleep(120)
+    }
+    await sleep(120)
+    let duel = await probe()
+    let kills = 0
+    for (let round = 0; round < 5 && duel.scores[1] < 3; round++) {
+        await page.keyboard.down('KeyF')
+        await sleep(1000)
+        await page.keyboard.up('KeyF')
+        await sleep(400)
+        const hit = await probe()
+        if (hit.scores[1] > duel.scores[1]) kills++
+        duel = hit
+        if (duel.scores[1] < 3) await sleep(4300) // respawn + invulnerability
+    }
+    r.check('seat 2 scores the hits (P1 keeps falling, P2 keeps scoring)', kills >= 3 && duel.scores[1] === 3, JSON.stringify(duel.scores))
+    await sleep(300)
+    const fin = await probe()
+    r.check('the duel ends with PLAYER 2 TAKES THE ARENA', fin.screen === 'over' && fin.end != null, `${fin.screen} ${JSON.stringify(fin.scores)}`)
+    const endTxt = await page.evaluate(() => document.body.textContent.includes('PLAYER 2 TAKES THE ARENA'))
+    r.check('the result screen credits seat 2', endTxt)
+
+    // and the dual-driven stream is still honest: replay reproduces the whole
+    // two-human duel hash-for-hash (both seats were stamped into cmds all along)
+    const rc2 = await page.evaluate(() => window.__archeryTest.replayCheck())
+    r.check('the two-human duel replays hash-identical', rc2 && rc2.match, rc2 && `${rc2.live} vs ${rc2.replay} tick ${rc2.tick}`)
 }
 
 r.check('zero page errors across the whole session', pageErrors === 0, `errors=${pageErrors}`)

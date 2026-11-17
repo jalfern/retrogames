@@ -13,7 +13,9 @@
 //     re-replays your own stream and compares hashes.
 //
 // One stick per archer: arrows/WASD aim and move, SPACE/F draws, release
-// looses. Up is jump AND the 45° lob — TowerFall's own bargain.
+// looses. Up is jump AND the 45° lob — TowerFall's own bargain. The duel
+// (`2` at the marquee) is the desktop-keyboard option per AGENTS.md's
+// multiplayer law — on a phone one pad drives you against the autopilot.
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
@@ -527,13 +529,13 @@ const ArenaArcheryGame = () => {
                     scores: [gs.p[0].score, gs.p[1].score],
                     quiver: [gs.p[0].quiver, gs.p[1].quiver],
                     p1: { x: gs.p[0].x, y: gs.p[0].y, alive: gs.p[0].alive, charge: gs.p[0].charge, quiver: gs.p[0].quiver, receipts: gs.receipts[0] },
-                    p2: { x: gs.p[1].x, y: gs.p[1].y, alive: gs.p[1].alive, quiver: gs.p[1].quiver, receipts: gs.receipts[1] },
+                    p2: { x: gs.p[1].x, y: gs.p[1].y, alive: gs.p[1].alive, charge: gs.p[1].charge, quiver: gs.p[1].quiver, receipts: gs.receipts[1] },
                     flying: gs.arrows.filter((a) => a.state === 'fly').length,
                     stuck: gs.stuck.length,
                     // #2377 the heat engine, visible to the browser harness
                     heat: gs.heat, lastHit: gs.lastHit, dryTicks: gs.tick - gs.lastHit,
                     stuckCells: gs.stuck.map((s) => ({ cell: s.cell, age: s.age, x: (s.cell % gs.W) * CW + CW / 2, y: Math.floor(s.cell / gs.W) * CW + CW / 2 })),
-                    arrows: gs.arrows.map((a) => ({ id: a.id, state: a.state, owner: a.owner })),
+                    arrows: gs.arrows.map((a) => ({ id: a.id, state: a.state, owner: a.owner, born: a.born, x: Math.round(a.x), y: Math.round(a.y) })),
                     ledger: { ...gs.ledger, total: gs.total + gs.supplied, now: gs.p[0].quiver + gs.p[1].quiver + gs.arrows.filter((a) => a.state !== 'stuck').length + gs.stuck.length + gs.ledger.hit + gs.ledger.lost },
                     // attract is a separate sim instance — the harness grades
                     // THAT moving, not the idle gs
@@ -687,7 +689,12 @@ const ArenaArcheryGame = () => {
                 </div>
             )}
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'ARENA ARCHERY')} onResume={handleResume} />}
-            <VirtualControls visible={play && !paused} secondPad={{ up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', action: 'KeyF' }} />
+            {/* AGENTS.md, Jon's multiplayer law: the CPU opponent is the default
+                (phone gets one pad); two players is a DESKTOP KEYBOARD option —
+                no second on-screen touchpad. `2` seats the duel; WASD+F drives
+                seat two. (The pad used to ship anyway, and painted even in 1p
+                mode where seat 2 belongs to the bot — dead buttons.) */}
+            <VirtualControls visible={play && !paused} />
         </div>
     )
 }

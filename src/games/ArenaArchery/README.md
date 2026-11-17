@@ -26,7 +26,15 @@ pins flat range to `v·t`, the 45° apex to the integrator's own math, ±1
 cell. A keyboard stick only gives {0°, ±45°} — straight-up is a jump, and
 up-with-no-sideways aims the 45° toward the facing; a solver may also
 name the aim explicitly in its input (`inp.aim`), which is legitimately
-part of the recorded stream.
+part of the recorded stream. **No zero-vector loose (#2558):** a jump press
+zeroes the aim X (up-alone is the jump) and a direction-free release zeroes
+the aim Y — together they once handed `looseArrow` (0,0), spawning a shaft
+at the body with no velocity: a dud that stuck at the shooter's feet and
+pulled itself back. TowerFall always fires, so a no-direction release now
+looses toward the facing. The bots never produce (0,0) (their streams are
+byte-identical — receipts prove it), so this law is pinned in the browser:
+`archeryplay` DUEL fires a draw at zero aim and grades the shaft leaves
+TOWARD THE FACING (x < shooter − 8), never at it.
 
 **Stuck = terrain.** An arrow that hits stone sticks — in the AIR cell
 beside what it hit (a floor hit sticks one above the floor so a walking
@@ -115,6 +123,21 @@ danger. Probe `fx: { ash, homes, warnNotes, dryFx, warnStep }` receipts.
   `heatTicks − heatWarnLead` and its midpoint, is silent outside and once hot,
   the first note lands ≥ 45 ticks before the rumble (hard constant), and the
   longest dry spell of a real autopilot duel stays under the window.
+- **DUEL — seat two (#2558, `archeryplay`)**: the two-human duel is driven with
+  real WASD+F keystrokes in the browser — `2` seats it and the bot vacates
+  seat 2 (an idle duel sips no ammo); KeyA walks and KeyW jumps P2 with the
+  cyan sprite painted at the logical position; KeyF charges and looses with
+  exact seat-2 quiver accounting; a direction-free release fires toward the
+  facing (the no-dud law above — the mutant that removes the facing fallback
+  is caught HERE, born at the shooter's own x, since no bot stream ever
+  exercises it); both humans loose the same tick with P1's shaft numbered
+  first (arrows carry `born`; the stamp order in pixels); P2 pulls stuck
+  shafts walking over them (receipts move for seat 2, not seat 1); P2 scores
+  3 through the honest respawn+invulnerability cycles and the result screen
+  credits `PLAYER 2 TAKES THE ARENA`; the dual-driven stream replays
+  hash-identical. Phone law: no second on-screen touchpad exists (the pad
+  that shipped — painting dead even in 1p — was retired per AGENTS.md; the
+  duel is the desktop-keyboard option).
 - Eight + three mutants must die (`--mutate`, wired into the CI static job):
   no-stick, no-knockout, no-pull, no-arrow-gravity, no-player-gravity,
   clock-too-short, lob-bot (now patched with `climbSeek: false` too — the
@@ -151,9 +174,13 @@ danger. Probe `fx: { ash, homes, warnNotes, dryFx, warnStep }` receipts.
 
 ## Honest gaps
 
-- The 2P duel has no harness yet beyond the pad dispatch existing
+- ~~The 2P duel has no harness yet beyond the pad dispatch existing
   (`secondPad` is `VirtualControls`' contract, exercised by IceClimber);
-  `archeryplay` drives P1 only.
+  `archeryplay` drives P1 only.~~
+  **CLOSED by #2558** (the DUEL section drives seat 2 with real keys end to
+  end — walk/jump/draw/hit/pull/win — and the on-screen second pad was
+  retired per AGENTS.md's multiplayer law: duel = keyboard, phone = one pad
+  vs the autopilot).
 - ~~`stuckTTL` (40 s) is tuned for 3-win matches; a stalemate to the clock
   is proven not to happen (the match receipts), but a very defensive duel
   could get boring near the wall — the wander keeps it honest, not fast.~~
