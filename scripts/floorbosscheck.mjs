@@ -40,6 +40,7 @@
 //   node scripts/floorbosscheck.mjs --mutate-duel      # bot stows pay the house, not the rack owner — credit law dies, demand RED (#2555)
 //   node scripts/floorbosscheck.mjs --mutate-lane      # no-pass lanes allowed — racks may seal a long tight aisle, demand RED (#2614)
 //   node scripts/floorbosscheck.mjs --mutate-corner    # corner stacks allowed — racks may choke a tight elbow, demand RED (#2627)
+//   node scripts/floorbosscheck.mjs --mutate-swing     # swing sweep paints corridor faces as elbows, demand RED (#2627 s3)
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -50,7 +51,7 @@ import {
     SHIFT, QUOTA, STRIKES, RACK_CAP, OVERFLOW_FINE, EXPIRE_FINE, BREAK_FINE, BASE_PAY,
     STOW_PAY, RACK_COST, ROBOT_COST, ARM_PATIENCE, ARM_CELL, PAD_CAP, PAD_AGE, OUT_CELLS,
     FREIGHT_PER_BOX, FULL_TRAILER, DISPATCH_FEE,
-    shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice, LANE_LONG, ARM_MIN, cornerEscapes,
+    shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice, LANE_LONG, ARM_MIN, cornerEscapes, swingMarkers,
 } from '../src/games/FloorBoss/sim.js'
 import { createEpisode, validateEpisode } from '../src/utils/robot/episode.js'
 import { hashString } from '../src/utils/robot/physics.js'
@@ -80,7 +81,8 @@ const MUT_DUEL = ARGS.includes('--mutate-duel')
 const MUT_LANE = ARGS.includes('--mutate-lane')
 const MUT_CORNER = ARGS.includes('--mutate-corner')
 const MUT_TEACH = ARGS.includes('--mutate-teach')
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH) {
+const MUT_SWING = ARGS.includes('--mutate-swing')
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_SWING) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const src = readFileSync(sim, 'utf8')
     const [from, to, name] = MUT_YIELD
@@ -121,6 +123,8 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                     ? ["if (cornerChokes(gs, { x, y }).length) return 'corner'", "if (cornerChokes(gs, { x, y }).length && false) return 'corner'", 'the corner-stack law is off — racks may choke a tight elbow (#2627)']
                                                                     : MUT_TEACH
                                                                     ? ['if (strandsFloor(gs, m.x, m.y) !== false) continue // an illegal plug teaches nothing', 'if (false) continue // MUTANT: legality check off', 'the teach ignores legality — a plug that would strand floor lights up as the fix (#2627 s2)']
+                                                                    : MUT_SWING
+                                                                    ? ['if (a1[0] * a2[0] + a1[1] * a2[1] !== 0) continue // perpendicular only — a straight face doesn\'t swing', 'if (false) continue // MUTANT: perpendicular check off', 'the sweep paints straight corridor faces as elbows — the corridor skip is gone (#2627 s3)']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(sim, src.replace(from, to))
@@ -1210,6 +1214,108 @@ console.log('— teach the elbow (#2627 stage 2) —')
     ok(/cornerEscapes\(gs/.test(ui) && /paintTeach/.test(ui), 'the painter draws the elbow lesson (cornerEscapes → paintTeach) (#2627 s2)')
     ok(/PLUG/.test(ui) && /SPUR IT/.test(ui), 'the lesson names itself on canvas — PLUG cells, SPUR IT tail (#2627 s2)')
     ok(/why === 'corner'/.test(ui) && /cornerEscapes\(gs, e\.x, e\.y\)/.test(ui), 'the lesson keys off the refused click itself — drain-time derivation (#2627 s2)')
+}
+
+// ---- swing paint (#2627 s3) — live elbows carry faint keep-clear paint ----
+console.log('— swing paint (#2627 stage 3) —')
+{
+    const mk = () => { const g = makeGame(11); g.score = 9000; g.racks.length = 0; return g }
+    const put = (g, x, y) => { g.tool = 'rack'; return clickCell(g, x, y) }
+    const key = (m) => `${m.x},${m.y}`
+    const NEED = [[18, 3], [19, 3], [19, 5], [20, 3], [20, 5], [17, 5], [19, 6], [17, 6]]
+    // a LIVE elbow: the stage-1 rig minus the facing rack's bite — a bay notch
+    // on the south arm keeps the click legal (#2614 pull-off escape), so the
+    // elbow EXISTS on the live board: rack (17,4) faces corner B=(18,4), whose
+    // exactly-two open neighbours (19,4),(18,5) are perpendicular.
+    const live = () => {
+        const g = mk()
+        for (const [x, y] of NEED) { if (x === 19 && y === 6) continue; if (put(g, x, y) !== 'build') return null }
+        if (put(g, 17, 4) !== 'build') return null
+        return g
+    }
+    {
+        const g = live()
+        ok(g !== null, 'the live-elbow rig builds clean — bay escape keeps the facing rack legal (#2614)')
+        const ms = swingMarkers(g)
+        // two live elbows: B=(18,4) faces (17,4); and (17,3) — the corner where
+        // the west aisle (x<17) meets the north aisle (y<3), itself a service
+        // cell of racks (17,4)/(18,3). Two corners, one rig; the sweep names both.
+        const keys = ms.map(key).sort().join(' ')
+        ok(keys === '17,3 18,4', `the rack row paints its two live corners (${keys})`)
+        const b = ms.find((m) => key(m) === '18,4')
+        const arms = b && b.arms.map(([ax, ay]) => `${ax},${ay}`).sort().join(' ')
+        ok(arms === '0,1 1,0', 'the marker carries the two perpendicular arms — east and south (#2627 s3)')
+        ok(b && b.h === 0, 'the bay-notched arm is quiet — only through-traffic arms raise the tier (#2627 s3)')
+    }
+    // hard tier: arms tightened AFTER the facing rack landed — every click legal
+    // on its own, yet the rig now meets the stage-1 shape live. This is the
+    // case the click-point law cannot catch and the paint exists for.
+    {
+        const g = mk()
+        ok(put(g, 17, 4) === 'build', 'the rack facing open floor builds — no elbow yet')
+        const fails = NEED.filter(([x, y]) => put(g, x, y) !== 'build')
+        ok(fails.length === 0, 'tightening both arms around the landed rack is legal click-by-click — no single click completes a corner choke')
+        const ms = swingMarkers(g)
+        const b = ms.find((m) => key(m) === '18,4')
+        ok(b && b.h === 1, 'the order-made elbow paints HARD — both arms run tight to open mouths, the double-sightline case (#2627 s3)')
+        ok(ms.length === 3, `the tightened rig paints its corners, tiered (${ms.map((m) => `${key(m)}:h${m.h}`).join(' ')})`)
+        ok(ms.every((m) => key(m) === '17,3' || key(m) === '18,4' || key(m) === '20,6'),
+            'the third corner (20,6) is real — the (19,6)+(20,5) rack step turns the south-east floor; the sweep sees every elbow the row creates (#2627 s3)')
+    }
+    // negatives: the shapes that are NOT elbows
+    {
+        const g = mk()
+        ok(put(g, 10, 6) === 'build' && put(g, 10, 8) === 'build', 'corridor rig builds — rack above, plug below, aisle straight through y=7')
+        ok(!swingMarkers(g).some((m) => key(m) === '10,7'), 'a rack facing a STRAIGHT corridor paints nothing — ±p neighbours are opposite, not a swing (#2614 country)')
+        ok(swingMarkers(g).length === 0, 'the corridor rig carries no markers at all (#2627 s3)')
+    }
+    {
+        const g = mk()
+        ok(put(g, 12, 6) === 'build', 'T-junction rig builds')
+        ok(!swingMarkers(g).some((m) => key(m) === '12,7'), 'a rack facing a T-junction paints nothing — three open neighbours is a fork, not a corner')
+    }
+    // purity + determinism (#1917)
+    {
+        const g = live()
+        const h0 = stateHash(g)
+        const one = JSON.stringify(swingMarkers(g))
+        const two = JSON.stringify(swingMarkers(g))
+        ok(one === two && stateHash(g) === h0, 'swingMarkers is pure — same answer twice, board hash unchanged (#1917)')
+        ok(JSON.stringify(live() && swingMarkers(live())) === JSON.stringify(swingMarkers(live())), 'the sweep is deterministic — identical rigs, identical paint lists')
+    }
+    // the opening floor and the autopilot expansion: the sweep never throws,
+    // and every painted cell satisfies the grammar's own truth (open floor,
+    // a rack facing it, perpendicular arms)
+    {
+        for (const seed of [7, 11]) {
+            const g = makeGame(seed)
+            const ms = swingMarkers(g)
+            const lies = ms.filter((m) => {
+                if (g.racks.some((r) => r.x === m.x && r.y === m.y)) return true
+                const faces = g.racks.some((r) => Math.abs(r.x - m.x) + Math.abs(r.y - m.y) === 1)
+                const perp = m.arms[0][0] * m.arms[1][0] + m.arms[0][1] * m.arms[1][1] === 0
+                return !faces || !perp
+            })
+            ok(lies.length === 0, `opening seed ${seed}: ${ms.length} live elbow(s), every marker on open floor facing a rack with perpendicular arms`)
+        }
+        const g = makeGame(4242)
+        const ap = createAutopilot()
+        while (!g.end && g.tick < SHIFT + 10) step(g, [ap(g)])
+        const ms = swingMarkers(g)
+        ok(Array.isArray(ms), `a full autopilot shift, then the sweep — ${ms.length} markers, no throw; presentation never breaks a shift (#2627 s3)`)
+    }
+    // curated expansion never crashes the sweep either (autopilot invariant shape)
+    {
+        const g = mk()
+        let fails = 0
+        for (const sp of RACK_SPOTS) { g.tool = 'rack'; if (clickCell(g, sp.x, sp.y) !== 'build') fails++ }
+        ok(fails === 0 && swingMarkers(g).length >= 0, 'every curated RACK_SPOT builds, then the sweep runs clean on the full curated floor')
+    }
+    // the painter draws it — under the racks' layer and below the teach lesson
+    const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    ok(/swingMarkers\(gs\)/.test(ui) && /paintSwing\(\)/.test(ui), 'the painter draws the swing paint (swingMarkers → paintSwing) (#2627 s3)')
+    ok(ui.indexOf('paintRacks()') < ui.indexOf('paintSwing()') && ui.indexOf('paintSwing()') < ui.indexOf('paintTeach(tick)'), 'floor paint order: racks, then the faint floor-markings, then the louder lesson on top (#2627 s3)')
+    ok(/swing: \(\) => swingMarkers\(gs\)/.test(ui), 'the DEV hook exposes the live elbow list for the browser gate (#2627 s3)')
 }
 
 // ---- duel seats (#2555) — two managers, one floor, credit follows work ----
