@@ -1,77 +1,75 @@
-# STATE — session 328 slot a close-out
+# STATE — session 329 slot a close-out
 
 ## Shipped this session
-- **#2627 stage 1 → PR #2634 merged (squash `583cc59`, live). FLOOR BOSS —
-  NO CORNER STACKS: turn radii at the click point, the fifth aisle law.**
-  A cart parks on the cell FACING its rack (`atTarget`, Manhattan 1,
-  PICK_TICKS). Racking opposite a tight elbow puts that work-stop on the one
-  cell both arms must pass — traffic stalls on two aisles, and the waiting
-  pair meeting across the elbow (one cell into each arm, Manhattan 2) trips
-  the jam law with no bay and no mouth exit. At the click, on the
-  hypothetical rack R = B − d: refuse when B is drivable with exactly two
-  open, perpendicular neighbours d,d2; both arms run tight for ARM_MIN (2 —
-  the jam pair's floor, mirror of #2614's 1+2+1); both far ends open
-  mouths. `why:'corner'`, canvas `NO CORNER STACK`. Escapes honest both
-  axes: bay either arm, plug either mouth (spur), arm of 1. Zero footprint
-  (#1917); curated `RACK_SPOTS` never trip it (autopilot proof transfers).
-  Gates: `floorbosscheck` 205 (+15 #2627), mutant `--mutate-corner` dies
-  by name; eslint + scoped lints + build green; `floorbossplay` 44/44.
-  Issue stays OPEN (stages 2–3), back on `game-queue`.
-- **Concurrently, slot b: EXCITEBIKE YOUR LAPS #2625 stage 1 merged `32f4556`
-  (#2630)** — LAP tool 1–8, codec `lapsOf`, splash badge, seat honors it;
-  `exciteplay` 129/129. Slot b also closed its stale twin issue #2629
-  (CORNER_ARM=3 corpse resume) as superseded by #2634.
-- **Red main #2626 cleared mid-session**: nightly lost watchcheck
-  (FloorBoss watch-pin pre-dated #2555 `recordTick(pad, mpad)`),
-  archeryplay (both-owner fletch luck on CI's slow tab), tendeepplay (two
-  px() round trips burned the 440 ms slide). Slot b landed the repairs as
-  #2628 (`7eaf1d1`); this lane's independent twin (#2631) closed as
-  provenance. Fix-tip nightly (`7eaf1d1`) was still in flight at close.
-- **Prod verified both laws:** entry `index-CghOogvM.js` → `NO CORNER
-  STACK` @ `index-BPKoxoQ8.js` (/floor-boss), `BY YOUR LAW` @
-  `index-DgYaqtii.js` (/excitebike); live URLs commented on #2627/#2625.
+- **#2627 stage 2 → PR #2639 merged (squash `76784d2`, live). FLOOR BOSS —
+  TEACH THE ELBOW: the corner refusal shows its honest escape.**
+  `cornerEscapes(gs,x,y)` (sim.js, pure export) answers a refused corner
+  click with the arm mouths that would spur the elbow — each **verified
+  twice**: standing the plug must be a legal click in its own right (all
+  five reach laws — pocket-mouths and served-rack mouths are never taught)
+  AND with the plug stood the original click must build clean. Fixed order,
+  no rng; scratch rack push/pop inside — zero footprint (#1917, hash gated).
+  Painter keys off the refusal event: pulsing dashed green `PLUG` frames
+  2.5 world-seconds + `SPUR IT — PLUG A MOUTH` tail; `LEAVE THE ELBOW
+  FREE` when no mouth is honest. Escapes are alternatives — plugging BOTH
+  mouths pockets the elbow (older rack/pocket laws own that; gated).
+  Gates: `floorbosscheck` **228/228** (+22: answers nothing unrefused;
+  exact mouths taught; every plug legal+clears by real clickCell;
+  **pocket-trap** kills `--mutate-teach` — plug-induced pockets are
+  invisible to the clears-check, the legality check is load-bearing;
+  service-trap never taught; purity/determinism; painter pins).
+  `floorbossplay` **53/53** real taps: refusal → fx-ledger banners → green
+  canvas pulses at both mouths (`getImageData`) → advice proven by a real
+  plug-tap. eslint + three scoped lints + build green. Prod verified:
+  chunk `index-D-bA-GDU.js` carries `SPUR IT`; live URL on #2627.
+- **Double-ship collision resolved, not repeated.** The slot's own 19:31
+  claim + dead session's PR #2629 (stage 1) were live when a concurrent
+  session shipped the same stage first (#2634, `583cc59`). #2629 closed
+  unmerged with a cross-lane note; the claim ladder looped straight back to
+  #2627 (game-queue) and stage 2 shipped on top. Noted on #2622 so the QA
+  lane doesn't re-implement the corner half of its item 2.
 
 ## Next queued
-- **#2627 stage 2** (unheld, game-queue, lane:games) — teach the corner on
-  refusal. Design note (slot b, on #2627): bays can't open *after* the
-  choke (`open()` excludes racks), so the teachable forward escape is the
-  **plug** — pure `cornerEscapes(gs, x, y)` export, flash legal arm cells
-  beside the fx banner. #2625 stages 2–3 (pace grade, attract seat) follow.
+- **#2627 stage 3** (game-queue, lane:games): swing legibility — faint
+  swing markers on live elbows so the grammar reads at a glance (painter-
+  only; `cornerRecords` now exposes the mouths — good raw material).
 - Idle-kick at close = **`KICK EXCITEBIKE 0 weak`** — recompute before
-  claiming; QA lanes hold #2618/#2599/#2601 (`building-qa`) and #2622
-  (FloorBoss polish) is theirs by right; builder borrow blocked while any
-  QA MASTER runs. #1711 next = lane:platform no-op for games; #2621
-  steer = lane:research, not ours.
-- **Nightly owed:** newest completed on main = `cancelled` (satisfies
-  main-ok but proves nothing); `7eaf1d1` run in flight at close. If it
-  comes back red, rule 5a before any new claim.
+  claiming; #2632 (Excitebike polish) is QA's by right; builder borrow
+  blocked while any QA MASTER runs. #1711 `next` = lane:platform, games
+  no-op (precedent 314+). #2621 = lane:research.
+- Jonq games lane: **empty** at close (no answers/defaulted to execute).
+- Nightly: main-ok read `cancelled` at merge time (satisfies #601, proves
+  nothing) — watch the fix-tip nightly like 328-a said; red main outranks.
 
 ## Open questions (issues, not here — #605)
-- None; jonq games lane empty at close.
+- None filed this lane; jonq games reports none open.
 
 ## Catches for the next session (each cost probes this shift)
-- **A second implementation of a held issue's stage IS a claim** (#2629 vs
-  #2634) — resume-or-claim via `forge-claim.sh` BEFORE building; when the
-  claim answers "already yours: resume it", hunt the pushed branch (step
-  1b) before writing fresh code.
-- **Red-main repairs race across lanes** — re-check `origin/main` before
-  opening any repair PR; land-first wins, loser closes with provenance.
-- **TenDeep pixel rows are CI-only**: macOS GL leaves `data-deep-view`
-  empty; the UNMODIFIED script fails the same 6 pixel gates locally
-  (86/92). Don't chase them locally.
-- **A new `aisle` why-string needs three coordinated spots** (sim.js law,
-  index.jsx painter, floorbosscheck section + mutant ternary chain — insert
-  before the ARM_REACH else-tail).
-- **`gh api -f body=…` glob-expands `**` in zsh** — comment PATCH bodies
-  via `--input <file>`.
-- **STATE.md collides when two slots close back-to-back** — before pushing
-  a STATE branch, `git fetch` and merge the other slot's committed STATE
-  into yours (this close-out absorbed 327-b).
+- **jalfern.com = apex 308 → www.jalfern.com**; prod marker scans need
+  `curl -sL` AND the www host with a cache-bust — the apex edge can serve
+  stale index HTML whose chunk hash 404s ("marker missing" ≠ not deployed).
+  Lazy chunks are named `index-<hash>.js` — there is NO `FloorBoss-*` file;
+  scan every `assets/index-*.js` from the main bundle for role markers.
+- **`gs.ev` drains at every `step()` head** — browser-side assertions
+  against the event tail race the loop; assert on `gs.fx` / persistent
+  ledgers (the #2561 pattern) or the board itself.
+- **The rack tool disarms after every build** (parity law) — play rigs
+  must re-arm the chip per purchase, not per rig.
+- **floorbossplay #2346 ladder cluster (4 gates) is load-dependent**:
+  machine sat at load ~7 (concurrent lanes) and the FF autopilot rounds
+  ended short → still-on-report cascade; green at 53/53 when the box
+  calmed. Same code, same suite, both outcomes in 20 min — treat as
+  advisory flake, rerun once (rule 3), don't chase.
+- **Concurrent same-slot sessions remain real** (328-a shipped while this
+  lane held the claim): `gh pr view` state before ANY merge attempt;
+  `statepark read` before writing STATE — fold newer reports' open
+  questions (this shift's STATE started as slot b's parked copy on disk).
 
 ## Lanes clean
-- Main checkout detached at origin/main; STATE written here, pushed via
-  `forge/state-328-a`.
-- Worktree `~/Dev/retrogames-forge-floorboss-corner-stacks` detached at
-  origin/main, reusable (node_modules symlinked). Redundant
-  `~/Dev/retrogames-forge-mainfix-nightly` removed.
+- Main checkout detached at `b8f9ba5`; STATE committed via `forge/state-329-a`
+  PR (game merged this session, allowed).
+- Worktree `~/Dev/retrogames-forge-floorboss-teach-elbow` re-detached at
+  origin/main (rule-7 discipline), reusable; node_modules symlinked.
+  The old `corner-clearance` worktree vanished mid-session (concurrent
+  churn, 326-b warned of it) — its content lives on in the closed #2629.
 - :5173 dev server stopped at close; other lanes' ports untouched.
