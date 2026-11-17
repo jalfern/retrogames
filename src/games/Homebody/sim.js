@@ -95,6 +95,15 @@ export const NEIGH_IGNORE_T = 30      // s of one-ear waiting that sours the pai
 export const NEIGH_SPAT_DROP = 4      // rel.neigh lost per pair spat (SPAT_DROP scaled soft)
 export const NEIGH_MAKEUP = 2         // the reunion pays after absence thaws (softest thaw)
 export const NEIGH_SPAT_CD = 40      // s before another pair spat can fire (SPAT_CD mirror)
+export const NEIGH_STROLL_T = 12     // #2611: s of free pair-chat banked before the pair walks the lot
+// #2611: the pair's circuit — fixed hang spots the lot actually offers (front
+// path beside the gravel run, east lawn beyond the fence line, back lawn above
+// the house). Rotation is a counter, never rng: every seed walks the same lap.
+export const NEIGH_SPOTS = [
+    { r: 10, c: 6 },    // front path, just off the gravel run
+    { r: 5, c: 13 },    // east lawn, past the fence's end
+    { r: 0, c: 8 },     // back lawn, above the roof line
+]
 
 // #2240: THE GIFT LANDS. FRIENDS+ used to pay hunger with a toast and nothing
 // physical; now the basket Ivy carried in gets SET DOWN when she reaches the
@@ -963,6 +972,8 @@ export function newRun(seed) {
         neiSpats: 0,              // #2604: pair quarrels this run (rides the hash)
         neiGrudge: 0,             // #2604: 1 = the pair is in cold war until absence thaws (rides the hash)
         neiMending: 0,            // #2604: thawed by absence — the next shared moment makes up (rides the hash)
+        neiStroll: 0,             // #2611: free-chat seconds banked toward the next pair stroll (clock, not hash)
+        neiWalk: 0,              // #2611: next spot on the pair's circuit (discrete, rides the hash)
         neiSpatCd: 0,             // #2604: real seconds until the next pair spat may fire (clock, not hash)
         pet: null,                  // #2197: the household cat, once adopted
         kid: null,                  // #2203: the adopted child, once the agency calls
@@ -1799,6 +1810,12 @@ export const NEIGH_MAKEUP_LINES = [
     'Fern and Ivy meet at the gate mid-sentence — fine, FINE, it is over.',
     'A sigh, a shrug, two sprigs of rosemary: the neighbours are neighbours again.',
 ]
+// #2611: the circuit, beat by beat — one line per spot on the lap.
+export const NEIGH_STROLL_LINES = [
+    'Fern takes the gossip down to the front path — Ivy falls in at her heels.',
+    'The pair strolls the east lawn, still talking; the fence keeps the private parts.',
+    'Fern leads the conversation around behind the house — the back lawn earns its quiet.',
+]
 function eligibleNear(s, v) {
     return s.people
         .map((p, i) => ({ p, i, d: Math.abs(p.r - v.r) + Math.abs(p.c - v.c) }))
@@ -1860,6 +1877,7 @@ function updateNeighbours(s, dt) {
         // cools a pair grudge. While one is gone the quarrel thaws; the pay
         // waits for the reunion (no rng, mirrors the household's exit-by-absence).
         s.neiIgnore = 0
+        s.neiStroll = 0   // #2611: and absence resets the walk — a new visit starts at the gate
         if (s.neiGrudge) {
             s.neiGrudge = 0
             s.neiMending = 1
@@ -1892,6 +1910,33 @@ function updateNeighbours(s, dt) {
             }
             return
         }
+        // #2611 NEIGH STROLL: a conversation worth having is a conversation worth
+        // walking — after long enough together the pair takes the lot. Fern leads
+        // (this is HER street) to the next fixed circuit spot; Ivy follows the host
+        // to a free cell beside it — the #2588 etiquette, Ivy's legs doing the
+        // crossing. Only mobile chat banks the walk (a mid-stride conversation never
+        // queues another), and the chat law itself stays #2588's: proximity pays.
+        // Claims and meet distance carry the bank; a spat or an absence zeroes it.
+        // Rotation is a counter, never rng.
+        if (!fv.path && !iv.path) {
+            s.neiStroll += dt
+            if (s.neiStroll >= NEIGH_STROLL_T) {
+                s.neiStroll = 0
+                const idx = s.neiWalk
+                s.neiWalk = (s.neiWalk + 1) % NEIGH_SPOTS.length
+                const spot = NEIGH_SPOTS[idx]
+                const dest = walkable(s, spot.r, spot.c) ? spot : nearestFreeTo(s, spot.r, spot.c)
+                const fpath = dest ? bfsPath(s, { r: fv.r, c: fv.c }, [dest]) : null
+                if (fpath) {
+                    fv.path = fpath
+                    const near = freeCellNear(s, dest.r, dest.c) || dest
+                    const ipath = bfsPath(s, { r: iv.r, c: iv.c }, [near])
+                    if (ipath) iv.path = ipath
+                    s.events.push({ t: 'neigh-stroll', i: idx, x: (fv.x + iv.x) / 2, y: (fv.y + iv.y) / 2 })
+                    think(s, NEIGH_STROLL_LINES[idx])
+                }
+            }
+        }
         relAdd(s, 'neigh', NEIGH_CHAT * dt)
         if (relLevel(s.rel.neigh) >= NEIGH_WARM_AT && s.neighTell <= 0) {
             s.neighHits += 1                             // lines rotate, cleanly (#2154 pattern)
@@ -1909,6 +1954,7 @@ function updateNeighbours(s, dt) {
             s.neiIgnore += dt
             if (s.neiIgnore >= NEIGH_IGNORE_T && s.neiSpatCd <= 0) {
                 s.neiIgnore = 0
+                s.neiStroll = 0   // #2611: the walk dies with the quarrel
                 s.neiSpatCd = NEIGH_SPAT_CD
                 s.neiGrudge = 1
                 s.neiSpats += 1
@@ -3336,6 +3382,7 @@ export function stateHash(s) {
     mix(s.triTell); mix(s.triHits)   // #2154: the choreography tell and its beat count ride it too
     mix(s.neighTell); mix(s.neighHits)   // #2588: so do the pair's own exchange throttle and beat count
     mix(s.neiSpats); mix(s.neiGrudge); mix(s.neiMending)   // #2604: the pair's quarrel ledger rides it (the timers don't — clocks like spatCd stay off)
+    mix(s.neiWalk)                                           // #2611: the circuit beat rides it; the bank (neiStroll) is a clock and stays off
     mix(s.paperDay)                    // #2238: today's route stamps the day it landed
     mix(s.mealDay)                     // #2244: so do the bells — the day the plate landed
     mix(s.mealSlot); mix(s.mealSerial) // and which bell rang, and how many ever rang

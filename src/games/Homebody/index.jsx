@@ -80,6 +80,7 @@ const MESSAGES = [
     'CHAT builds BONDS — Fern at FAMILY visits sooner and lingers. Neglect cools them.',
     'Ivy shops the market — chat grows HER bond too. At FRIENDS she brings a basket; FAMILY adds honey-money.',
     'FERN AND IVY MIND THEIR OWN BUSINESS — a shared afternoon climbs their NEIGH bond, and friends chat deeper.',
+    'WHILE THEY TALK THE PAIR WANDERS THE LOT — a long chat takes laps of the lawn; follow it if you want an ear.',
     'A guest WATCHED but never HEARD sours — leave one neighbour waiting too long and the pair SPAT. Absence cools it, meeting again mends it.',
     'Order the court on glass: tap ✓ for the kind word — hold ✓ on someone and the insult flies.',
     'Red needs flare tempers — a SPAT cracks BONDS. Fill both, side by side, to thaw.',
@@ -419,6 +420,11 @@ const HomebodyGame = () => {
                         audioController.playTone(587, 0.05, 'triangle', 0.03)
                         setTimeout(() => audioController.playTone(440, 0.08, 'triangle', 0.03), 70)
                         if (live) showSay(s, e)
+                        break
+                    case 'neigh-stroll': // #2611: the pair takes its gossip for a lap — teal pips, soft two-note
+                        audioController.playTone(330, 0.05, 'triangle', 0.02)
+                        setTimeout(() => audioController.playTone(392, 0.07, 'triangle', 0.02), 90)
+                        if (live) { say('FERN AND IVY TAKE A WALK'); burst(e.x, e.y, 4, '#4fae5f', 1.8) }
                         break
                     case 'coo': // #2131: the compliment — a warm two-note and gold glints
                         audioController.playTone(659, 0.06, 'triangle', 0.05)

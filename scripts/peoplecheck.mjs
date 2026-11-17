@@ -99,6 +99,7 @@ import {
     TRI_TELL_CD, TRI_LINES, IVY_SOCIAL,   // #2154: visitor choreography law
     NEIGH_CHAT, NEIGH_GLANCE, NEIGH_FADE, NEIGH_COOL_CD, NEIGH_WARM, NEIGH_LINES,   // #2588: the third-party bond
     NEIGH_IGNORE_T, NEIGH_SPAT_DROP, NEIGH_MAKEUP, NEIGH_SPAT_CD,   // #2604: the pair's own quarrel law
+    NEIGH_STROLL_T, NEIGH_SPOTS, NEIGH_STROLL_LINES,   // #2611: the pair's circuit — bank, spots, beat lines
     PAPER, PAPER_LATE, PAPER_LINES,   // #2238: the paper route
     MEAL, MEAL_NAMES, MEAL_DUE, MEAL_WINDOW, MEAL_BOND, MEAL_LINES, SHARED_MEAL_LINES, HOUR_SEC,   // #2244: the meal bells
     MEAL_TIMBRE, SHARED_TABLE_CHORDS, sharedChord, nightLevel,   // #2264: per-bell timbres, the rotating table chord, one night curve
@@ -1707,6 +1708,155 @@ section('NEIGH SPAT (#2604): third-party grudge — souring, cold war, thaw, reu
         /who === 'neigh' \? 'FERN AND IVY SPAT!'/.test(spJsx) && /who === 'neigh' \? 'THE NEIGHBOURS MADE UP/.test(spJsx)
         && /neiGrudge \? '#2c6b5b' : '#3aa08a'/.test(spArt))
     check('pin: the marquee teaches the law', /WATCHED but never HEARD/.test(spJsx))
+}
+
+// ------------------------------------------- NEIGH STROLL (#2611) -------
+section('NEIGH STROLL (#2611): the pair walks the lot — bank, circuit, walk-pause, carry, zeroing, hash')
+{
+    const stSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const stJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const hang = (g, key, name, r, c, hue) => {
+        g.visitAfter = 99; g.ivyAfter = 99; g.ivyGap = 0
+        g[key] = { name, r, c, x: tileX(c) + TILE / 2, y: tileY(r) + TILE / 2, path: null, state: 'hang',
+            t: 0, hue, face: 1, walkPhase: 0, chatT: 0, hangUntil: 9999, neighT: 0 }
+        return g[key]
+    }
+    const park = (p, r, c) => { p.r = r; p.c = c; p.x = tileX(c) + TILE / 2; p.y = tileY(r) + TILE / 2; p.path = null; p.goal = null; p.use = null; p.working = false; p.faintT = 0; if (p.queue) p.queue.length = 0; p.owner = null; if (p.needs) for (const n of ['hunger', 'energy', 'fun', 'social', 'bladder']) p.needs[n] = Math.max(p.needs[n], 0.55) }   // #2604 clamp — laps are long
+    // Hold RESIDENTS only, and in cells whose d≤2 claim halo never touches the
+    // circuit (road cells, the west corridor, row 0): a claim mid-lap would open
+    // the kitchen re-home guard, split the pair, and fake both a leak and a stall.
+    const free = (g) => [[g.people[0], 6, 8], [g.people[1], 1, 1]]   // residents also stay arm's-reach apart — idle co-presence would grow rel.house
+    const ear = (g) => [[g.people[0], 3, 4], [g.people[1], 1, 1]]   // p0 claims Fern at (3,5); Ivy watches beside her
+    // laps run past the hour-19 visitor exit, so these soaks pin the clock below it —
+    // needs clamp (above) keeps the household out of the collapse lane (STATE #2604 catch).
+    const lap = (g, pairs, sec, sink) => { for (let i = 0; i < Math.round(sec / DT); i++) { pairs.forEach(([p, r, c]) => park(p, r, c)); g.hour = Math.min(g.hour, 10); advance(g, DT); if (sink) sink.push(...drain(g)); else drain(g) } }
+    const strolls = (evs) => evs.filter((e) => e.t === 'neigh-stroll')
+
+    // The bank and the boundary: chat accrues the walk, and nothing fires short.
+    const a = newRun(2611); hang(a, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(a, 'ivy', 'Ivy', 3, 7, '#a3579b')
+    const evA = []
+    lap(a, free(a), NEIGH_STROLL_T - 1, evA)
+    check('free chat banks the walk but sours nothing early (boundary under the timer)',
+        strolls(evA).length === 0 && a.neiStroll >= NEIGH_STROLL_T - 1.05 && a.neiStroll < NEIGH_STROLL_T - 0.5
+        && a.rel.neigh > 0, `bank=${a.neiStroll.toFixed(2)}`)
+    lap(a, free(a), 1.5, evA)
+    const e0 = strolls(evA)
+    check('the 12th second of free chat sends the pair off on lap one, bank cleared',
+        e0.length === 1 && e0[0].i === 0 && a.neiStroll < 1.05 && !!a.visitor.path && !!a.ivy.path,
+        JSON.stringify(e0.map((e) => e.i)))
+    check('the stroll event carries a spot for the tell',
+        e0.length === 1 && Number.isFinite(e0[0].x) && Number.isFinite(e0[0].y), JSON.stringify(e0))
+
+    // Fern leads, Ivy trails: the pair arrives at the front-path spot together.
+    const evW = []
+    lap(a, free(a), 16, evW)
+    check('Fern leads to the front path and Ivy takes the cell beside her',
+        !a.visitor.path && a.visitor.r === NEIGH_SPOTS[0].r && a.visitor.c === NEIGH_SPOTS[0].c
+        && Math.abs(a.visitor.r - a.ivy.r) + Math.abs(a.visitor.c - a.ivy.c) <= 2,
+        `f=${a.visitor.r},${a.visitor.c} iv=${a.ivy.r},${a.ivy.c}`)
+    check('a mid-stride pair never queues the next stroll — the bank only fills once both are mobile',
+        a.neiStroll > 0 && a.neiStroll < 6.5, `bank=${a.neiStroll.toFixed(2)}`)
+    check('no second stroll while the first lap is still walking', strolls(evW).length === 0, `${strolls(evW).length}`)
+    const rnHere = a.rel.neigh
+    const evLap = []
+    lap(a, free(a), 5, evLap)
+    check('arrived and mobile, the pair chats at full rate again',
+        a.rel.neigh - rnHere >= 5 * NEIGH_CHAT - 0.08 && a.rel.neigh - rnHere <= 5 * NEIGH_CHAT + 0.01,
+        `grew=${(a.rel.neigh - rnHere).toFixed(3)}`)
+
+    // The circuit: every lap must point at its fixed spot, and the rotation wraps.
+    // Capture each fire's target at the fire tick — walk lengths drift, the law doesn't.
+    const fires = []
+    let maxD = 0
+    for (let i = 0; i < Math.round(95 / DT); i++) {
+        free(a).forEach(([p, r, c]) => park(p, r, c))
+        a.hour = Math.min(a.hour, 10)
+        advance(a, DT)
+        for (const e of a.events) if (e.t === 'neigh-stroll')
+            fires.push({ i: e.i, tail: Array.isArray(a.visitor.path) ? a.visitor.path[a.visitor.path.length - 1] : null })
+        a.events.length = 0
+        maxD = Math.max(maxD, Math.abs(a.visitor.r - a.ivy.r) + Math.abs(a.visitor.c - a.ivy.c))
+    }
+    check('every lap aims at its fixed circuit spot',
+        fires.length >= 4 && fires.every((f) => f.tail && f.tail.r === NEIGH_SPOTS[f.i].r && f.tail.c === NEIGH_SPOTS[f.i].c),
+        JSON.stringify(fires.map((f) => `${f.i}:${f.tail ? f.tail.r + ',' + f.tail.c : 'null'}`)))
+    check('the rotation advances one spot a lap, mod three, and wraps past the back lawn',
+        fires.length >= 4 && fires.every((f, k) => k === 0 || f.i === (fires[k - 1].i + 1) % 3)
+        && fires.some((f, k) => k > 0 && f.i === 0 && fires[k - 1].i === 2),
+        fires.map((f) => f.i).join(','))
+    check('the pair never splits past gossip reach across the whole circuit',
+        maxD <= 4 && !a.done, `maxD=${maxD} f=${a.visitor.r},${a.visitor.c} iv=${a.ivy.r},${a.ivy.c}`)
+
+    // Isolation: the lap belongs to the pair — household meters and content never move.
+    check('the stroll lap pays NOTHING to the household meters',
+        a.rel.fern === 0 && a.rel.ivy === 0 && a.rel.house === 0, `fern=${a.rel.fern} ivy=${a.rel.ivy} house=${a.rel.house}`)
+
+    // Claims CARRY the bank (a paused conversation resumes where it stopped)…
+    const c = newRun(2613); hang(c, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(c, 'ivy', 'Ivy', 3, 7, '#a3579b')
+    const evC = []
+    lap(c, free(c), 10)
+    lap(c, ear(c), 20, evC)
+    check('while an ear is on the pair the walk is held — claims freeze, never fire',
+        strolls(evC).length === 0 && c.neiStroll >= 9.5, `bank=${c.neiStroll.toFixed(2)}`)
+    const evC2 = []
+    lap(c, free(c), 3, evC2)
+    check('the peace resumes the walk on the carried bank — no reset', strolls(evC2).length === 1)
+
+    // …but a spat KILLS it, and absence resets it to a full timer.
+    const d1 = newRun(2615); hang(d1, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(d1, 'ivy', 'Ivy', 3, 7, '#a3579b')
+    lap(d1, free(d1), 10)
+    lap(d1, ear(d1), NEIGH_IGNORE_T + 2)
+    check('the quarrel zeroes the walk bank — a cold pair takes no exercise',
+        d1.neiSpats === 1 && d1.neiStroll === 0, `spats=${d1.neiSpats} bank=${d1.neiStroll}`)
+    const cold = newRun(2617); hang(cold, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(cold, 'ivy', 'Ivy', 3, 7, '#a3579b')
+    cold.neiGrudge = 1
+    const evCold = []
+    lap(cold, free(cold), 30, evCold)
+    check('the cold war refuses the circuit outright (thirty free seconds, no lap)',
+        strolls(evCold).length === 0 && cold.rel.neigh <= 0.001, `strolls=${strolls(evCold).length}`)
+    cold.neiGrudge = 0; cold.neiMending = 1
+    const evWarm = []
+    lap(cold, free(cold), 20, evWarm)
+    check('after the thaw the circuit walks again', strolls(evWarm).length >= 1 && cold.rel.neigh > 0,
+        `strolls=${strolls(evWarm).length} neigh=${cold.rel.neigh.toFixed(2)}`)
+    const ab = newRun(2619); hang(ab, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(ab, 'ivy', 'Ivy', 3, 7, '#a3579b')
+    lap(ab, free(ab), 10)
+    ab.ivy = null
+    advance(ab, DT); drain(ab)
+    ab.visitor.repathT = null   // Fern's single solo tick may arm a sofa re-home — that drift is rig noise, not the law
+    check('absence zeroes the bank — a visit starts its walks at the gate', ab.neiStroll === 0, `bank=${ab.neiStroll}`)
+    hang(ab, 'ivy', 'Ivy', 3, 7, '#a3579b')
+    const evAb = []
+    lap(ab, free(ab), 10, evAb)
+    check('the fresh pair needs the FULL timer before the next stroll', strolls(evAb).length === 0 && ab.neiStroll >= 9.5 && ab.neiStroll < NEIGH_STROLL_T - 0.5, `bank=${ab.neiStroll.toFixed(2)}`)
+    lap(ab, free(ab), 4, evAb)
+    check('…and takes it when the bank fills', strolls(evAb).length === 1)
+
+    // Hash law: the beat rides it, the clock stays off (the spatCd rule, mirrored).
+    const w0 = newRun(31)
+    const w1 = newRun(31); w1.neiWalk = 1
+    const w2 = newRun(31); w2.neiStroll = 5
+    check('the circuit beat rides the hash; the bank (a clock) stays off',
+        stateHash(w1) !== stateHash(w0) && stateHash(w2) === stateHash(w0))
+    const strollRun = (seed) => {
+        const g = newRun(seed); hang(g, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(g, 'ivy', 'Ivy', 3, 7, '#a3579b')
+        lap(g, free(g), 60)
+        return stateHash(g)
+    }
+    check('a minute of strolling is seed-exact', strollRun(7) === strollRun(7) && strollRun(2611) === strollRun(2611))
+
+    // Pins: the law, the tells, the honest circuit.
+    check('pin: the bank fires on the named constant and the rotating spot table',
+        /s\.neiStroll >= NEIGH_STROLL_T/.test(stSim) && /NEIGH_SPOTS\[idx\]/.test(stSim)
+        && /s\.neiWalk = \(s\.neiWalk \+ 1\) % NEIGH_SPOTS\.length/.test(stSim))
+    check('pin: the bank fills only while both are mobile, and the lap runs after the cold-war return',
+        /if \(!fv\.path && !iv\.path\) \{\s*s\.neiStroll \+= dt/.test(stSim) && /if \(s\.neiGrudge\) return/.test(stSim))
+    check('pin: the tell names the pair and the marquee teaches the law',
+        /FERN AND IVY TAKE A WALK/.test(stJsx) && /THE PAIR WANDERS THE LOT/.test(stJsx))
+    const fresh = newRun(3)
+    check('the circuit is honest — three fixed spots, all walkable, one line each',
+        NEIGH_SPOTS.length === 3 && NEIGH_SPOTS.every((sp) => walkable(fresh, sp.r, sp.c))
+        && NEIGH_STROLL_LINES.length === NEIGH_SPOTS.length && NEIGH_STROLL_T === 12)
 }
 
 // ----------------------------------------------------------- PET (#2197) -----
