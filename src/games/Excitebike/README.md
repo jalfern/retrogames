@@ -9,9 +9,10 @@ replayed tick-for-tick through the same `step()` the harness audits.
 
 ## Design (issue #176)
 
-Core loop: hold gas through a 2-lap course of ramps, whoops, mud, water and
-boost arrows against a countdown the lap line extends. Speed is bought with
-heat — redline too long and the engine bogs until it cools. Every big jump
+Core loop: pick one of six carved circuits at the splash, then hold gas
+through a 2-lap course of ramps, whoops, mud, water and boost arrows against
+a countdown the lap line extends. Speed is bought with heat — redline too long
+and the engine bogs until it cools. Every big jump
 asks the same question: nose attitude at landing. Lean back too far you
 backflip; too far forward you agency-plant; both put you on the ground
 counting seconds while the field rides over you — unless you mash A, which
@@ -19,7 +20,7 @@ is also how you crawl out of a stalled water hole. The one harness we
 demand: `excitecheck` in Node — terrain audited as data (every up-step
 clearable at wide-open throttle, every launch landable, features only on
 real ground), the autopilot (which rolls the REAL sim per candidate, the
-Spy Hunter lesson) clearing both tracks in first, and the **slack rule**:
+Spy Hunter lesson) clearing every course in the roster in first, and the **slack rule**:
 the campaign re-wins with less clock at every lap line, with thicker mud and
 faster heat.
 
@@ -76,15 +77,19 @@ faster heat.
 
 ## Controls (faithful to the NES mapping)
 
+- Any key/tap at the marquee opens the **splash**: `↑/↓` (or `←/→`) walk the
+  six-course roster, `ENTER`/`SPACE`/a tap off the pad rides, digits `1-6`
+  fast-seat, `G` sets gear here too, `Esc` steps back to the marquee.
 - `↑` gas on the ground, **lean back in the air** · `↓` brake, **lean nose
   down in the air** · `SPACE` jump (hold = longer), and **pump it** in mud,
-  water and after a crash · `G` gear High/Low at the title · `?` pause.
+  water and after a crash · `G` gear High/Low · `?` pause.
 - `←`/`→` steer ACROSS the track (#2457, full authority on the ground, half
   in the air): pass on the open line — same-line traffic is solid, and
   matched speed in the same line is a RUB.
 - Touch pad: up/down arrows are the throttle and brake (and lean), the
   stick's left/right are the lines, the A button is jump/pump. Tap anywhere
-  to start.
+  to start. On the splash the same pad steers the cursor and A rides; a tap
+  outside the pad seats the picked course (one pad, always).
 
 ## Honest gaps
 
@@ -111,9 +116,23 @@ faster heat.
   clean line break — the CRASH LEAGUE receipts stand. Proven by the
   excitecheck BARGAIN block (engage/monitor/hazard-refusal/release-cooldown/
   skill-grade/receipts) + 4 bargain mutants.
-- The NES splash screen (EDIT TRACK / 6 tracks) is not here: two carved
-  tracks, 2 laps each, which is where the fidelity muscle (controls,
-  feel, terrain) actually lives.
+- **CLOSED by #2563:** THE SPLASH — the NES track catalogue landed. Six
+  hand-carved circuits (MOTOCROSS, SUPERCROSS + SAND CROSS, SLALOM CROSS,
+  BIG AIR, K.O. CROSS), a marquee→splash→race flow, a cursor law (`nextSel`,
+  wrap) shared by shell and harness, grade pips, digits 1-6 fast-seat, G gear
+  at the splash, Esc back, and the pad steering the menu on phones (a tap
+  outside the pad seats; still one pad, per the multiplayer law). The two
+  shipped courses are BYTE-PINNED (ground fingerprint + auditor step record
+  in `excitecheck` SPLASH) so witnesses can never be reshaped by a menu PR.
+  Proven: SPLASH block + terrain/WOT/campaign/determinism/slack extended to
+  all six (autopilot clears every new course in first: SAND 2585t,
+  SLALOM 2698t, BIG AIR 2529t, K.O. 2672t), nextSel mutant reddens the gate;
+  exciteplay drives marquee→splash→cursor→tap→race in real keys/touch.
+  Balance note: SLALOM rides dry — its knuckle rhythm plus the long boost
+  home; water lives on BIG AIR and K.O. CROSS.
+- The splash's other half — **EDIT TRACK** (draw your own obstacle course and
+  store it as a custom track, the NES original's second menu entry) — is not
+  here. The roster is six carved circuits, 2 laps each.
 
 ## Juice layer (#2387)
 

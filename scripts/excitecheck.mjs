@@ -15,7 +15,7 @@
 //   npm run excitecheck -- --mutate   # re-break the load-bearing rules; a
 //                                     # surviving mutant means a check died
 import { makeGame, step, stateHash, CFG } from '../src/games/Excitebike/sim.js'
-import { track, groundY, featureAt, LAP, MUD, WATER, BOOST } from '../src/games/Excitebike/levels.js'
+import { track, groundY, featureAt, LAP, MUD, WATER, BOOST, TRACK_COUNT, nextSel, trackName } from '../src/games/Excitebike/levels.js'
 import { plan, decide } from '../src/games/Excitebike/planner.js'
 
 const MUT = process.argv.includes('--mutate')
@@ -27,7 +27,7 @@ const section = (s) => console.log(`\x1b[1m${s}\x1b[0m`)
 // ------------------------------------------------------------- terrain audit ----
 section('TERRAIN (the course is projected, not trusted)')
 {
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < TRACK_COUNT; i++) {
         const tr = track(i)
         // the lap closes: height and shape must not teleport at the seam
         const a = groundY(tr.ground, LAP - 2), b = groundY(tr.ground, 2)
@@ -55,7 +55,7 @@ section('TERRAIN (the course is projected, not trusted)')
     // a wide-open-throttle, no-skill ride must not die STUCK in a hole. The
     // up-steps live at the tops of ramps so a charging rider always tops them;
     // only the water hole may bite (and it recovers).
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < TRACK_COUNT; i++) {
         const g = makeGame(i, { count: 0 })
         let maxStuck = 0, stuck = 0
         for (let t = 0; t < 6000 && !g.end; t++) {
@@ -74,11 +74,42 @@ section('TERRAIN (the course is projected, not trusted)')
         ok(boiled, 'full throttle never overheated the engine — heat/overheat is theatre')
     }}
 
+// --------------------------------------------------------------- splash ----
+section('SPLASH (the roster of six — the NES menu law, #2563)')
+{
+    ok(TRACK_COUNT === 6, `the splash catalogues SIX courses, got ${TRACK_COUNT} (the NES roster)`)
+    const names = [...Array(TRACK_COUNT)].map((_, i) => trackName(i))
+    ok(new Set(names).size === TRACK_COUNT, `roster names repeat: ${names.join(',')}`)
+    ok(names.every((n) => n && n === n.toUpperCase()), `every course has a carved-in marquee name: ${names.join(',')}`)
+    ok(JSON.stringify(names) === JSON.stringify(['MOTOCROSS', 'SUPERCROSS', 'SAND CROSS', 'SLALOM CROSS', 'BIG AIR', 'K.O. CROSS']),
+        `the shipped roster is MOTOCROSS, SUPERCROSS, SAND CROSS, SLALOM CROSS, BIG AIR, K.O. CROSS — got ${names.join(', ')}`)
+    // the cursor law: ±1 with wrap, for every roster size the shell may pass
+    for (let n = 1; n <= 8; n++) {
+        ok(nextSel(0, -1, n) === n - 1 && nextSel(n - 1, 1, n) === 0, `cursor wrap broken at n=${n}`)
+    }
+    ok(nextSel(2, 1) === 3 && nextSel(5, 1) === 0 && nextSel(0, -1) === 5, 'cursor law on the six-course roster')
+    // grade pips are the menu's honesty column: one per course, climbing
+    const bites = [...Array(TRACK_COUNT)].map((_, i) => track(i).bite)
+    ok(bites.every((b, i) => b === i + 1), `grade pips climb 1..6 in roster order, got ${bites.join(',')}`)
+    // BYTE PIN: the two original circuits are carved stone. The witnesses
+    // (CRASH LEAGUE receipts, attract replay, contact pins) were tuned on
+    // their exact ground — a splash PR must not reshape them.
+    const PIN = [66775052, 68196743]
+    for (const i of [0, 1]) {
+        const g = track(i).ground
+        let s = 0
+        for (let x = 0; x < g.length; x++) s += Math.round(g[x] * 100)
+        ok(s === PIN[i], `track ${i + 1} (${names[i]}) ground fingerprint moved (${s} != ${PIN[i]}) — the shipped courses are byte-pinned`)
+    }
+    ok(JSON.stringify(track(0).steps) === JSON.stringify([{ x: 2744, rise: 46, grade: 0.319 }, { x: 2750, rise: 2, grade: 0.333 }, { x: 3680, rise: 50, grade: 0.313 }]), 'MOTOCROSS up-steps moved — the auditor record is pinned')
+    ok(JSON.stringify(track(1).steps) === JSON.stringify([{ x: 2846, rise: 38, grade: 0.442 }, { x: 2852, rise: 2, grade: 0.333 }, { x: 3820, rise: 56, grade: 0.35 }]), 'SUPERCROSS up-steps moved — the auditor record is pinned')
+}
+
 // --------------------------------------------------- the campaign + the ledger ----
 section('THE CAMPAIGN (the autopilot = the attract demo) + LEDGER')
 const t0 = Date.now()
 const runs = []
-for (let i = 0; i < 2; i++) {
+for (let i = 0; i < TRACK_COUNT; i++) {
     let ledger = 0
     const r = plan({
         track: i,
@@ -97,7 +128,7 @@ for (let i = 0; i < 2; i++) {
 
 // ------------------------------------------------------------ determinism ----
 section('DETERMINISM (the attract replay is not theatre)')
-for (let i = 0; i < 2; i++) {
+for (let i = 0; i < TRACK_COUNT; i++) {
     const { r } = runs[i]
     const g = makeGame(i, {})
     for (const inp of r.script) step(g, inp)
@@ -116,7 +147,7 @@ for (let i = 0; i < 2; i++) {
 
 // ------------------------------------------------------------- slack rule ----
 section('SLACK (one fewer of every supply, same win — or the goods were theatre)')
-for (let i = 0; i < 2; i++) {
+for (let i = 0; i < TRACK_COUNT; i++) {
     for (const tax of [4, 8]) {
         const r = plan({ track: i, bonusTax: tax })
         ok(r.ok, `track ${i + 1}: ZERO SLACK — with ${34 - tax}s (not ${34}) at the line it finishes ${r.end} rank ${r.rank}`)
