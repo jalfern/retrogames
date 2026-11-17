@@ -31,9 +31,12 @@
 //                ghost while merely remembered, and the painter gates the whole
 //                thing through ventSignal(); a faint expanding ring per ping
 //                teaches ring→distance in pixels.
+//   PEARL MEMORY #2594: the same fixed-feature doctrine applied to the prize —
+//                a pearl once heard stays a dim ghost past the fade until taken,
+//                never-heard pearls stay dark, and re-hearing refreshes.
 //   DEATH/DESCEND  a touching eel takes a life; the vent takes you down.
 //   DETERMINISM  replays match, a dropped command does not (tamper probe).
-//   MUTATIONS    nine rules silenced in children, each must turn a NAMED check
+//   MUTATIONS    ten rules silenced in children, each must turn a NAMED check
 //                red, or a check has stopped touching its rule.
 
 import { spawnSync } from 'node:child_process'
@@ -64,6 +67,7 @@ const MUTANTS = {
     cue: 'distance cue frozen — every contact reads the same nearness; the ring→heat map is dead',
     ventRipple: 'the vent swirl ignores freshness — remembered exits ripple forever and the front stops teaching',
     attractJoin: 'the attract showcase join disabled — the demo starts cold at tick 0 and a five-second viewer never sees a hot mark (#2383)',
+    pearlGhost: 'remembered pearls fade to black — the prize is forgotten while the exit is not; fixed-feature recall is dead (#2594)',
 }
 if (MUT_NAME) {
     if (!(MUT_NAME in MUTANTS)) { console.error(`unknown mutant ${MUT_NAME}`); process.exit(2) }
@@ -314,6 +318,101 @@ section('VENT SIGNAL (fresh knowledge ripples, remembered knowledge ghosts, #236
     ok(!/eelCell\(|gs\.eels\b/.test(pSrc), 'the paint path reaches a LIVE eel cell — knowledge law broken')
 }
 
+section('PEARL MEMORY (heard pearls stay remembered until taken, #2594)')
+{
+    // same deterministic corridor as the vent section: spawn (4,13), pearl on
+    // the route, vent at the far end (never stood on here). Arrival ticks are
+    // computed, so every state boundary is pinned, not sampled.
+    const grid = new Uint8Array(N).fill(ROCK)
+    for (let x = 4; x <= 30; x++) grid[s.idx(x, 13)] = OPEN
+    const pearl = s.idx(22, 13)
+    const cave = { seed: 40, depth: 1, grid, spawn: s.idx(4, 13), vent: s.idx(30, 13), rooms: [], centers: [], pearls: [pearl] }
+    const arrival = Math.ceil(s.bfsField(grid, s.idx(4, 13))[pearl] / CFG.waveSpeed)
+
+    // never-heard: the pearl is in the game object at tick 0 (truth) and on
+    // the canvas must be NOTHING (knowledge) — the ghost cannot leak.
+    const g = s.makeGame(cave)
+    g.eels = []
+    ok(g.pearls[0] === pearl, 'pearl fixture drifted')
+    ok(s.pearlSignal(g, 0) === 0, 'a pearl glows for an ear no sound ever carried to it — pearl memory leaks truth')
+
+    let firstFresh = -1, firstGhost = -1, wentDark = -1
+    s.ping(g, { noCd: true })
+    for (let t = 0; t <= arrival + CFG.fade * 3 + 8; t++) {
+        s.step(g)
+        const sig = s.pearlSignal(g, 0)
+        if (sig === 2 && firstFresh < 0) firstFresh = g.tick
+        if (sig === 1 && firstFresh >= 0 && firstGhost < 0) firstGhost = g.tick
+        if (firstGhost >= 0 && sig === 0 && wentDark < 0) wentDark = g.tick
+    }
+    ok(firstFresh === arrival, `pearl painted fresh at tick ${firstFresh}, wavefront says ${arrival} — freshness does not ride the front`)
+    ok(firstGhost === arrival + CFG.fade + 1, `ghost began at tick ${firstGhost}, fade law says ${arrival + CFG.fade + 1} — remembered treasure flickers at the wrong boundary`)
+    ok(wentDark < 0, `remembered pearl went black at tick ${wentDark} — the exit keeps its ghost but the prize forgets itself (#2594 persistence is dead)`)
+
+    // re-hearing revives: while GHOST, a fresh ping must paint it bright again.
+    const g2 = s.makeGame(cave)
+    g2.eels = []
+    s.ping(g2, { noCd: true })
+    for (let t = 0; t < arrival + CFG.fade + 2; t++) s.step(g2)
+    ok(s.pearlSignal(g2, 0) === 1, `expected ghost before the re-ping, got signal ${s.pearlSignal(g2, 0)} — fixture drifted`)
+    s.ping(g2, { noCd: true })
+    let revived = false
+    for (let t = 0; t <= arrival + 1; t++) { s.step(g2); if (s.pearlSignal(g2, 0) === 2) revived = true }
+    ok(revived, 'a second wavefront never refreshed the pearl mark — re-confirmation is dead for the prize')
+
+    // a ghost is still a prize: walk into a remembered pearl and it banks.
+    const g3 = s.makeGame(cave)
+    g3.eels = []
+    s.ping(g3, { noCd: true })
+    for (let t = 0; t < arrival + CFG.fade + 2; t++) s.step(g3)
+    ok(s.pearlSignal(g3, 0) === 1, 'fixture drifted before the ghost-collection walk')
+    let walked = true
+    for (let k = 0; k < 18; k++) if (!s.playerMove(g3, 'ArrowRight')) walked = false
+    ok(walked && g3.player.c === pearl, 'the ghost-collection walk never reached the remembered cell')
+    // pickup banks +50 and all-collect +150 (pre-existing rules); the ghost
+    // must clear at any memory state.
+    ok(g3.have === 1 && g3.score === 200 && s.pearlSignal(g3, 0) === 0, `ghost pickup wrong: have=${g3.have} score=${g3.score} sig=${s.pearlSignal(g3, 0)} — taken must clear at any memory state (50 pickup + 150 completion, unchanged)`)
+
+    // knowledge law, replayed live: across the full demo every pearl that
+    // lights does so as FRESH (sig 2), the ghost never sits on a never-heard
+    // cell, and two replays agree tick for tick. Why no ghosts in the demo:
+    // sound outruns the diver — greedy-route pearls are banked well inside
+    // the fade, and the descent restarts memory. Organic ghosting is the
+    // wait-and-return scenario pinned deterministically below.
+    const cave2 = s.genCave(0xC0FFEE, 2)
+    const gg0 = s.makeGame(cave2)
+    const fresh0 = gg0.pearls.map((c, i) => s.pearlSignal(gg0, i))
+    ok(fresh0.every(v => v === 0), 'some pearl is visible before the first ping on a real cave — the dark is leaking')
+    let ghostBad = 0, ghostsSeen = 0, sigBad = 0, freshSeen = 0
+    const traceA = [], traceB = []
+    const traceTick = (acc) => (gg) => {
+        const sig = gg.pearls.map((c, i) => s.pearlSignal(gg, i))
+        acc.push(sig.join(''))
+        for (let i = 0; i < gg.pearls.length; i++) {
+            const c = gg.pearls[i]
+            if (sig[i] === 1) { ghostsSeen++; if (gg.mem[c] < 0) ghostBad++ }
+            if (sig[i] === 2) freshSeen++
+            if (sig[i] === 2 && !s.known(gg, c)) sigBad++
+        }
+    }
+    s.replay(cave2, s.planRun(cave2).cmds, { onTick: traceTick(traceA) })
+    s.replay(cave2, s.planRun(cave2).cmds, { onTick: traceTick(traceB) })
+    ok(freshSeen > 100, `only ${freshSeen} fresh-pearl ticks across the demo — pearls barely light on the run (vacuous coverage)`)
+    ok(ghostsSeen === 0, `${ghostsSeen} ghost-pearl ticks in the greedy demo — a remembered pearl outlived its fade here, breaking the attract determinism claim (re-measure before believing)`)
+    ok(ghostBad === 0, `${ghostBad} ghost pearls sit on cells no sound ever reached — the glint is inventing knowledge`)
+    ok(sigBad === 0, `${sigBad} fresh pearls were painted where knowledge says dark — fresh gate broken`)
+    ok(traceA.join('|') === traceB.join('|'), 'two replays disagree about pearl memory — the ghost is not deterministic')
+
+    // painter law: the shell gates the prize through pearlSignal, keeps a
+    // distinct remembered rendering, and still cannot reach live eel truth.
+    const jsx = readFileSync(new URL('../src/games/Sonar/index.jsx', import.meta.url), 'utf8')
+    const paintAt = jsx.indexOf('const paint = ')
+    const pSrc = jsx.slice(paintAt, paintAt + jsx.slice(paintAt).indexOf('const hud ='))
+    ok(/pearlSignal\(gs, ?i\)/.test(pSrc), 'the painter does not gate pearls through pearlSignal — #2594 is decoration elsewhere')
+    ok(/sig === 2/.test(pSrc) && /rgba\(255,190,225/.test(pSrc), 'the painter has no distinct remembered rendering — fresh and ghost would look identical')
+    ok(!/gs\.taken\[i\] \|\| !known\(gs, ?c\)/.test(pSrc), 'the old known()-only pearl draw is back — remembered prizes vanish at the fade again')
+}
+
 section('OCCLUSION (a sealed pocket is dark until the echo walks in the door)')
 {
     // chamber — one passage — top corridor — pocket fed ONLY by a far door
@@ -545,6 +644,29 @@ if (MUT) {
         try {
             const child = spawnSync(process.execPath, [process.argv[1]], { encoding: 'utf8' })
             ok(child.status !== 0, `vent-ring mutant SURVIVED: ${name}`)
+        } finally {
+            pull(path)
+        }
+    }
+}
+
+if (MUT) {
+    const jsxPath = new URL('../src/games/Sonar/index.jsx', import.meta.url).pathname
+    const jsxOrig = readFileSync(jsxPath, 'utf8')
+    const pearlMutants = [
+        ['the painter ignores pearlSignal — remembered pearls go black at the fade again (#2594 gap)', jsxPath, jsxOrig,
+            'const sig = pearlSignal(gs, i)',
+            'const sig = known(gs, gs.pearls[i]) ? 2 : 0'],
+        ['the remembered glint stops being drawn — fresh and ghost collapse to one look', jsxPath, jsxOrig,
+            "ctx.fillStyle = 'rgba(255,190,225,0.34)'",
+            "ctx.fillStyle = 'rgba(255,220,240,0.85)'"],
+    ]
+    for (const [name, path, orig, from, to] of pearlMutants) {
+        if (!orig.includes(from)) { ok(false, `pearl mutant anchor: ${name}`); continue }
+        plant(path, orig.replace(from, to))
+        try {
+            const child = spawnSync(process.execPath, [process.argv[1]], { encoding: 'utf8' })
+            ok(child.status !== 0, `pearl mutant SURVIVED: ${name}`)
         } finally {
             pull(path)
         }
