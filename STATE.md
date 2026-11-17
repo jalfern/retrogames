@@ -1,77 +1,55 @@
-# STATE — session 320 slot b close-out
+# STATE — session 321 slot a close-out
 
 ## Shipped this session
-- **#2576 → PR #2580 merged (`0c16e34`, live). EXCITEBIKE — EDIT TRACK.**
-  The splash's other half (NES design mode): stamp your own course
-  (RAMP STEP WHOOPS MUD WATER BOOST + ERASE/SAVE/EXIT), save it, ride it at
-  TRACK 7+. `custom.js` is pure: the compiler splices sorted stamps into a
-  rolling base lap (template cps inside a span replaced, edges seated on the
-  base line → deterministic, order-independent, byte-pinned), every obstacle
-  real geometry (RAMP lip +52 @ grade 0.347; WATER its own bowl).
-  `auditCustomData` = ONE legality law read by live cursor / SAVE / Node
-  (blank, overlap, seam margin, off-lap, HOLES refuse by name). 3 localStorage
-  slots (garbage-in empty-out); customs register into CACHE at 6+slot so
-  sim/planner/WATCH/rivals/renderer ride them UNTOUCHED; `track()` now wraps
-  CACHE.length (was TRACK_COUNT — index 6 aliased to MOTOCROSS); shipped-six
-  byte pins asserted unmoved. Digit `0`/EDIT row opens the bay; pad steers it
-  (cursor + A executes; tap opens). Gates: excitecheck **305/305** (+37 EDIT:
-  determinism, refusal-by-name, live-law==save-law, codec, roster pins, WOT
-  finish + deterministic rides of two saved drafts); mutant flatten-RAMP →
-  step gate red, restored. exciteplay **76/76** (:5178 real keys/touch —
-  design, refuse, save, reload persistence, CUSTOM 1 seats and races on
-  pixels, zero page errors; splash wrap pins updated where the MENU grew).
-  lint mario/fps/ai + eslint + build green. Prod marker verified
-  ('EDIT TRACK' in live bundle, Vercel pass). #2576 shipped+closed (auto via
-  Closes); #2573 told items 2-6 stay QA's.
-- TARGET #2568 claim REFUSED correctly (slot a held it fresh — it shipped
-  #2575 meanwhile); normal ladder: steer none, next #1711 lane:platform
-  no-op, queue empty, QA lane live (feedback borrow refused) → never-dry
-  rung: idle-kick `KICK EXCITEBIKE 0 weak` (gap 0 EDIT TRACK unowned —
-  #2573 does not own it by ownsGap wording; #2568 precedent: scoped issue
-  + report to parent). Filed #2576, claimed, shipped.
+- **ARENA ARCHERY — thick-ceiling undersides (#2579 stage 1), PR #2583,
+  squash `a3efd02`, live.** Rising hits under multi-course stone hang
+  tip-up in the air below the lowest course (never mid-stone); suspended
+  shafts sway (no knock-out, sky-crossed route, honest `predictHit`),
+  pull/replace/fade like all stuck terrain. `archerycheck` 170/170,
+  `--mutate` 196/196 — all 13 mutants die (always-lift re-aimed at the
+  thick gate). All three arena MATCH receipts byte-identical to main
+  (`996 3-2 / 685 3-0 / 996 3-2`) — #2377 tempo promise untouched by
+  construction. eslint + three scoped lint gates + build green.
 
 ## Next queued
-- `game-queue` empty at close; `next` = **#1711** (lane:platform — no
-  games-lane action, precedent 314-319). Live `building`: **#2579**
-  (ARENA ARCHERY economy lift, another lane), #2516 (lane:research).
-- idle-kick at close says **KICK EXCITEBIKE 0 weak** again — legitimately:
-  my README closed EDIT TRACK but opened NEW honest gaps (no in-bay
-  test-ride, generic rival pace / fixed 2 laps on customs, attract never
-  flies customs, static ghost preview). Recompute before claiming; if it
-  still lands on EXCITEBIKE, take its oldest unowned gap (test-ride first).
-  #2573 (items 2-6) is the QA lane's.
+- **#2579 stage 2 = jonq #2585** (single-row corridor hangs vs #2377's
+  tempo promise; default B = keep the promise, decline single-row).
+  Resuming the full law needs only the widened predicate + blessed
+  constants — full shape in commit `a002199` on the (now-merged stage-1
+  history). #2579 stays `building` (Part of, stage 2 pending Jon).
+- **Owed proof leg:** `archeryplay` UNDERSIDE chrome section (real-key
+  browser smoke of hang paint) — file as its own small PR next session.
+- After that: `node scripts/idle-kick.mjs` — ArenaArchery is held
+  (#2579 open building); expect a different title's kick.
 
 ## Open questions (issues, not here — #605)
-- None filed this lane. Lane-foreign: **#2529** (lane:research, AWAITING,
-  deadline 2026-11-19T00:01Z, default A) — not ours.
+- #2585 (lane:games, AWAITING, default B) — this lane's stage-2 ruling.
+- Lane-foreign: #2529 (lane:research, AWAITING, deadline 2026-11-19T00:01Z,
+  default A).
 
 ## Catches for the next session (each cost probes this shift)
-- **`track(i)` wrapped TRACK_COUNT, not CACHE.length** — any index ≥6
-  silently aliased to a shipped course. Fixed (roster-aware); remember:
-  register BEFORE seating a custom index, and slots stay dense
-  (`registerCustom` refuses holes).
-- **A splice filter can delete the WORLD and pass every local check** —
-  one inverted `filter` kept only cps inside stamp spans (audit still said
-  ok until a seam check half-noticed). The law now samples the whole lap
-  for ground (HOLES). Generalize: a compiler needs at least one GLOBAL
-  invariant, not just per-feature ones.
-- **Menu rows growing is not a cursor-law change** — exciteplay's splash
-  wrap pins had to move (backward wrap now lands on the EDIT row). When
-  you grow a menu, hunt the tests that count rows, not the law tests.
-- **Prod markers can hide in lazy chunks** — poll the registry string
-  ('EDIT TRACK' from games.js controls, always in the index chunk), and
-  use `curl -sL` (308→www). Vercel `pass` on the merge SHA is the other
-  half of the proof.
-- **exitEdit restores the entered cursor** (clamped to the last course) —
-  a test expecting it to land on CUSTOM was the wrong expectation, not a
-  bug; decide clamp semantics before pinning them.
-- `idle-kick.mjs` lives at `scripts/idle-kick.mjs` (lib/ holds the pure
-  module only); jalfern.com 308 → `curl -sL` (still true).
+- **Enemy-supply was a phantom:** ownership-stream probe showed ZERO
+  enemy-hang pulls in arena 1's 917-tick duel; owner-pull and hang-TTL
+  mutants came back byte-identical. Before claiming a cascade mechanism,
+  log WHO pulled WHAT owner — receipts first, story second.
+- **One hang can break a knife-edge matchup:** arena 1 tempo died to a
+  SINGLE hang at the (4,11) spawn corridor, not systemic economy. Any law
+  that adds stuck-arrow positions inside a bot corridor re-arms KNOCKBACK;
+  re-measure `honestMaxDry` before believing "green on all arenas".
+- **Cell size is 24, not 16** (`CFG.cell`), arena grids H=13; ASCII dumps
+  from `--arena` print WITHOUT the roof line offset you expect — count from
+  the source rows in levels.js, not from the dump.
+- **Sweep harnesses must gate the main-match winner**, not just tempo+slack
+  — my first sweep called a combo PASS while arena 0 sat at 2-3.
+- **`gh pr merge --delete-branch` concurrent-ref flake:** when another lane
+  pushes main mid-merge, post-merge `checkout --detach origin/main` still
+  lands correctly (a3efd02) — verify with `git log --oneline -1`, don't
+  re-run the merge.
 
 ## Lanes clean
-- Main checkout detached at origin/main; this STATE written here, parked via
-  `statepark.mjs park b`, committed to main via `forge/state-320-b`
-  (game merged this session, so STATE is committable — #2552/#2556 shape).
-- Worktree `~/Dev/retrogames-forge-excite-edit` re-detached at origin/main,
-  reusable. :5178 dev server stopped at close-out; other lanes' ports
-  untouched.
+- Main checkout detached at origin/main (`a3efd02`); STATE.md committed
+  WITH the merge (rule 9 satisfied).
+- Worktree `~/Dev/retrogames-forge-archery-underside` = merged branch,
+  detached at `a3efd02` — free to reuse or remove.
+- :5173 never started this session (no browser leg ran); other lanes'
+  ports untouched.
