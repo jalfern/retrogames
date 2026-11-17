@@ -51,6 +51,28 @@ const fletchScan = () => page.evaluate(() => {
 const fletchOk = (cells, bothOwners) => cells.length >= 1
     && cells.every((o) => (o.owner === 0 ? o.red >= 2 : o.cyan >= 2))
     && (!bothOwners || (cells.some((o) => o.owner === 0) && cells.some((o) => o.owner === 1)))
+// #2565 item 3 — ceremony pixels: seat chips above the bodies and DRAW! across
+// the centre strip. Chips paint at baseline p.y−24 (body top is p.y−12), so the
+// 14-row boxes cannot be answered by the archers themselves; the centre strip
+// holds no gameplay ink — the board is HELD at spawn while the ceremony rings
+// (no ticks run, so no arrows can exist), and the only gold on it is the word.
+const ceremonyScan = () => page.evaluate(() => {
+    const c = document.querySelector('canvas[data-archery-stage]')
+    const g = c.getContext('2d')
+    const st = window.__archeryTest.probe()
+    const near = (a, b, w) => Math.abs(a - b) <= w
+    const count = (x, y, w, h, test) => {
+        const d = g.getImageData(Math.max(0, Math.round(x)), Math.max(0, Math.round(y)), w, h).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (test(d[i], d[i + 1], d[i + 2])) n++
+        return n
+    }
+    return {
+        p1: count(st.p1.x - 12, st.p1.y - 36, 24, 14, (r, gg, b) => near(r, 255, 50) && near(gg, 93, 50) && near(b, 108, 50)),
+        p2: count(st.p2.x - 12, st.p2.y - 36, 24, 14, (r, gg, b) => near(r, 74, 50) && near(gg, 215, 45) && near(b, 255, 30)),
+        gold: count(c.width / 2 - 70, c.height / 2 - 44, 140, 38, (r, gg, b) => near(r, 255, 40) && near(gg, 210, 45) && near(b, 62, 80)),
+    }
+})
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
 
 let pageErrors = 0
@@ -330,6 +352,30 @@ page.on('pageerror', () => { pageErrors++ })
     r.check('2 seats a two-human duel (no bot at seat 2)', seat.screen === 'play' && seat.mode === '2p', `${seat.screen}/${seat.mode}`)
     const hud2 = await page.evaluate(() => document.body.textContent.includes('P2 0'))
     r.check('the HUD re-names the seat: P2, not BOT', hud2)
+
+    // #2565 item 3 — DUEL CEREMONY: the board announces a two-seat match
+    // before it lets the duel begin. The world HOLDS (ticks delayed, never
+    // skipped), seat pings ring in the seats' own pitches (the #2565 loose
+    // split 320/390 — readable by ear), chips name the archers, DRAW! lands,
+    // and the release hands the board over.
+    {
+        const cer0 = await probe()
+        r.check('the duel holds the board for its ceremony, seat 1 rings first',
+            cer0.ceremony.pings[0] === 1 && cer0.tick <= 2,
+            `ms ${cer0.ceremony.ms} pings ${JSON.stringify(cer0.ceremony.pings)} tick ${cer0.tick}`)
+        await sleep(Math.max(0, cer0.ceremony.ms - 150))
+        const cer1 = await probe()
+        r.check('seat pings ring P1 then P2 and the DRAW beat lands',
+            cer1.ceremony.pings[0] === 1 && cer1.ceremony.pings[1] === 1 && cer1.ceremony.draw === 1,
+            JSON.stringify(cer1.ceremony))
+        const cerPx = await ceremonyScan()
+        r.check('the ceremony is PAINTED — P1/P2 chips and DRAW across the board',
+            cerPx.p1 >= 4 && cerPx.p2 >= 4 && cerPx.gold >= 30, JSON.stringify(cerPx))
+        await sleep(260)
+        const cer2 = await probe()
+        r.check('DRAW releases the board — the duel runs',
+            cer2.ceremony.ms === 0 && cer2.tick > 0, `ms ${cer2.ceremony.ms} tick ${cer2.tick}`)
+    }
 
     // No second on-screen touchpad (AGENTS.md multiplayer law). The retired pad
     // was the ONLY pad rendering glyph buttons (◀▲▼▶ + J); the P1 pad is SVG.
