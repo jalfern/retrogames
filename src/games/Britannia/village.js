@@ -133,6 +133,19 @@ export function plotVillage(gates, terrainAt, shrines = []) {
 
 export const villageBlockMap = (village) => new Map(village.map((c) => [c.x + ',' + c.y, c.gi]))
 
+// #2499 item 1: doors face the plaza. The gate side of each cottage carries
+// its door glyph, so the eye reads housefronts turned toward the square and
+// the timber knock lands on a cottage whose front the pilgrim can see. The
+// law is pure and deterministic: same cottage + gate => same face. The
+// dominant axis wins; ties (diagonal cottages) turn east/west, so the front
+// faces the plaza's cross rather than hiding under the eave.
+export const doorFace = (c, gate) => {
+    const d = (a, b) => { let v = a - b; if (v > MAPW / 2) v -= MAPW; if (v < -MAPW / 2) v += MAPW; return v }
+    const dx = d(gate.x, c.x), dy = d(gate.y, c.y)
+    if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? 'e' : 'w'
+    return dy >= 0 ? 's' : 'n'
+}
+
 // the panel's view — [x, y, gi] per cottage, the shrines-array shape so
 // britanniacheck can diff node plots against the live panel.
 export const villageTriples = (village) => village.map((c) => [c.x, c.y, c.gi])

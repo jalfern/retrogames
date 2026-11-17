@@ -15,11 +15,11 @@ import { FACES, faceFor, walkFrame, drawAvatar } from '../src/games/Britannia/av
 import { WARP_LEN, WARP_PEAK, warpActive, warpFlash, warpSwapAt, warpRing, warpMotes } from '../src/games/Britannia/warp.js'
 import { MOONS, PHASES, DAY_TICKS, moonPhase, moonName, phaseLit, PHASE_FLAVOR, gateFlavor, routeDest, ROUTE_OFFSET } from '../src/games/Britannia/moons.js'
 import { shadeAt, mixHex, builtPalette, cobbleBlock } from '../src/games/Britannia/tiles.js'
-import { TOWN_R, FLAT as TOWN_FLAT, townScore, hasCottage } from '../src/games/Britannia/towns.js'
+import { TOWN_R, FLAT as TOWN_FLAT, townScore, hasCottage, stepVoice } from '../src/games/Britannia/towns.js'
 import { decodeCon, decodeRecord, CON_TERR, FLAT } from '../src/games/Britannia/ega.js'
 import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches, SPLAT, splatIntensity, dimples, splashStrikes, SPLAT_GAP, ROUGH_MEMORY, seaRough, crestGain, foamGain, SAIL_DRAG, shipCd, SURF_FLOOR, surfVoice, surfDue } from '../src/games/Britannia/swell.js'
 import { SHRINE_DIST, AVATARS, shrineTitle, shrineSpot, plotShrines } from '../src/games/Britannia/shrines.js'
-import { plotVillage, cottageSeed, villageTriples, KEEP_RING, PLAZA_MIN_TS } from '../src/games/Britannia/village.js'
+import { plotVillage, cottageSeed, villageTriples, KEEP_RING, PLAZA_MIN_TS, doorFace } from '../src/games/Britannia/village.js'
 import { plotWalls, wallTriples, openTriples } from '../src/games/Britannia/walls.js'
 import { HULL_MAX, STRAIN_STORM, strain, wear, repair, nearestCoast, GROAN_GAP, sailState } from '../src/games/Britannia/hull.js'
 import { START_GOLD, FARE, TRIBUTE, payToll, tribute, moorReach } from '../src/games/Britannia/purse.js'
@@ -57,6 +57,13 @@ const MUT = {
     '--mutate-wall-flat': { target: 'src/games/Britannia/walls.js', from: 'const wallable = ringTiles(gate.x, gate.y).filter(([x, y]) => FLAT.has(terrainAt(x, y)))', to: 'const wallable = ringTiles(gate.x, gate.y)', name: 'walls sit on any terrain' },
     '--mutate-wall-noopen': { target: 'src/games/Britannia/walls.js', from: "const walls = new Set(wallable.filter(([x, y]) => x + ',' + y !== openK).map(([x, y]) => x + ',' + y))", to: "const walls = new Set(wallable.map(([x, y]) => x + ',' + y))", name: 'gate sealed — no opening in the ring' },
     '--mutate-village-flood': { target: 'src/games/Britannia/village.js', from: 'if (cottageSeed(x, y) >= 40) continue', to: 'if (false) continue', name: 'cottage seed law flooded' },
+    // #2499 door/footstep: --mutate-door-blind ignores the gate (every door
+    // faces east — the plaza-facing law gone); --mutate-door-flip points a
+    // vertical door away from its gate; --mutate-stone-grass steals the
+    // plaza's stone tick back to the grass mutter.
+    '--mutate-door-blind': { target: 'src/games/Britannia/village.js', from: 'const dx = d(gate.x, c.x), dy = d(gate.y, c.y)', to: 'const dx = 1, dy = 0', name: 'door faces ignore the gate' },
+    '--mutate-door-flip': { target: 'src/games/Britannia/village.js', from: "return dy >= 0 ? 's' : 'n'", to: "return dy >= 0 ? 'n' : 's'", name: 'vertical doors look away from the gate' },
+    '--mutate-stone-grass': { target: 'src/games/Britannia/towns.js', from: 'export const stepVoice = (ts, tick) => ts > 0', to: 'export const stepVoice = (ts, tick) => ts > 99', name: 'plaza stone trampled back to grass' },
     '--mutate-captain-echo': { target: 'src/games/Britannia/index.jsx', from: "audioController.playTone(300, 0.09, 'square', 0.10)\n                    audioController.playTone(190, 0.16, 'square', 0.10)", to: "audioController.playSweep(96, 60, 0.14, 'square', 0.16)", name: 'the captain stealing the chapel thud back' },
 }
 const mutKey = Object.keys(MUT).find(k => ARGS.includes(k))
@@ -1430,6 +1437,41 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     ok(v1.every(c => { const v = world.get(c.x, c.y); return !isSea(v) && TOWN_FLAT.has(v) && townScore(c.x, c.y, gates, terrain) >= PLAZA_MIN_TS }),
         'every cottage stands on the built-up skirt: level town score >= 0.5, never sea, cliff, hill, forest or marsh')
     ok(new Set(v1.map(c => c.x + ',' + c.y)).size === v1.length, 'no tile hosts two cottages')
+
+    // #2499 item 1: doors face the plaza. The door glyph rides the cottage
+    // side that looks at its own gate — dot > 0 against the gate delta on the
+    // dominant axis, ties turning e/w — so the eye reads housefronts, not a
+    // row of identical backs, and the timber knock lands on a visible front.
+    const wd = (a, b) => { let v = a - b; if (v > MAPW / 2) v -= MAPW; if (v < -MAPW / 2) v += MAPW; return v }
+    const FACEV = { e: [1, 0], w: [-1, 0], s: [0, 1], n: [0, -1] }
+    let faceOk = true
+    const faces = new Set()
+    for (const c of v1) {
+        const g = gates[c.gi], f = doorFace(c, g), fv = FACEV[f]
+        faces.add(f)
+        const dx = wd(g.x, c.x), dy = wd(g.y, c.y)
+        if (fv[0] * dx + fv[1] * dy <= 0) faceOk = false
+        if (f === 'e' || f === 'w' ? Math.abs(dx) < Math.abs(dy) : Math.abs(dy) < Math.abs(dx)) faceOk = false
+    }
+    ok(faceOk, `every cottage door faces its own gate (${v1.length} cottages, dot > 0 on the dominant axis)`)
+    ok(faces.size >= 3, `doors turn with the plaza, not one way for all (${[...faces].sort().join('/')} seen across the shelf)`)
+    const dxSrc = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+    ok(/doorFace\(c, gates\[c\.gi\]\)/.test(dxSrc), 'index.jsx: the panel derives each cottage door face from that cottage\'s own gate (view follows the law)')
+    ok(/#8a5a2b/.test(dxSrc) && /ctx\.fillStyle = '#9a948a'; ctx\.fillRect\(cx \+ ddx - 1, sy \+ dtop \+ 7/.test(dxSrc),
+        'index.jsx: the door is framed oak with a sill stone — a house front, not a hole in the wall')
+
+    // #2499 item 4: footstep voice on built-up ground — the grass mutter
+    // stays bit-identical (#1135); past ts > 0, the threshold the town toast
+    // and tint already read, the step turns hard, short and higher.
+    const gStep = stepVoice(0, 7), sStep = stepVoice(0.5, 7)
+    ok(gStep.f === 90 + (7 % 3) * 14 && gStep.type === 'triangle' && gStep.d === 0.03 && gStep.g === 0.06,
+        'open-ground mutter unchanged (grass keeps its exact #1135 voice)')
+    ok(sStep.type === 'square' && sStep.d < gStep.d && sStep.f > gStep.f,
+        'built-up ground ticks hard and short (stone against mutter: wave, length and pitch all differ)')
+    ok(stepVoice(0.001, 7).type === 'square' && stepVoice(0, 7).type === 'triangle',
+        'the stone voice switches at ts > 0 — the same threshold the toast and tint read')
+    ok(/stepVoice\(townScore\(nx, ny, gates, terrainAt\)/.test(dxSrc),
+        'index.jsx: the footstep voice reads the tile being stepped ONTO, not the one left behind')
 
     // anti-stranding, verified HERE independently of village.js: block every
     // cottage + sanctum and walk the land; every gate keeps >= KEEP_RING of

@@ -24,8 +24,8 @@ import { AMB, AMB_NAME, AMB_CELL, ambientAt, flockOf, flightOf, progressOf } fro
 import { faceFor, walkFrame, drawAvatar } from './avatar.js'
 import { WARP_LEN, warpFlash, warpRing, warpMotes, warpSwapAt } from './warp.js'
 import { TERR, hash2, TILE, SUB, blockShades, builtPalette, cobbleBlock } from './tiles.js'
-import { townScore } from './towns.js'
-import { plotVillage, villageBlockMap, villageTriples } from './village.js'
+import { townScore, stepVoice } from './towns.js'
+import { plotVillage, villageBlockMap, villageTriples, doorFace } from './village.js'
 import { plotWalls, wallBlockMap, wallTriples, openTriples } from './walls.js'
 import { AVATARS, shrineTitle, plotShrines } from './shrines.js'
 import { buildClassicStamps, buildBrickStamps, variantOf } from './ega.js'
@@ -94,6 +94,8 @@ const BritanniaGame = () => {
         let shrines = [], shrineBlock = new Map()
         // #2494: the seeded village — cottages that stand (block) on the plaza
         let village = [], villageBlock = new Map()
+        // #2499 item 1: which side of each cottage carries its door (faces the gate)
+        let doorBy = new Map()
         // walls (POLISH #2516-ladder): stone rings with one gate per town —
         // wallBlock bars the foot, openBy names the one tile that lets it in
         let walls = [], wallOpens = [], wallBlock = new Map(), openBy = new Map()
@@ -134,6 +136,7 @@ const BritanniaGame = () => {
             // ring walkable (village.js), so the town never traps its pilgrim.
             village = plotVillage(gates, terrainAt, shrines)
             villageBlock = villageBlockMap(village)
+            doorBy = new Map(village.map((c) => [c.x + ',' + c.y, doorFace(c, gates[c.gi])]))
             // POLISH (#2516 ladder): the towns get their walls — a stone ring
             // with one seeded gate per town, never stranding the pilgrim and
             // never costing a road (walls.js laws; britanniacheck pins it).
@@ -441,7 +444,13 @@ const BritanniaGame = () => {
                     S.toast = 110; S.toastMsg = 'Thou enterest the town by its gate.'
                 }
                 S.face = faceFor(dx, dy); S.anim++
-                if ((S.tick % 2) === 0) audioController.playTone(90 + (S.tick % 3) * 14, 0.03, 'triangle', 0.06)
+                if ((S.tick % 2) === 0) {
+                    // #2499 item 4: the foot speaks the ground it lands on —
+                    // the open-road mutter outside, a hard short tick on the
+                    // trodden plaza within (stepVoice, towns.js).
+                    const vo = stepVoice(townScore(nx, ny, gates, terrainAt), S.tick)
+                    audioController.playTone(vo.f, vo.d, vo.type, vo.g)
+                }
             }
             if (!S.ship) {
                 // #1829 hazard: out of the water the carpenters tighten her up —
@@ -572,8 +581,19 @@ const BritanniaGame = () => {
             ctx.fillStyle = '#7f7668'; ctx.fillRect(cx - 7, sy + 12, 14, 10)
             ctx.fillStyle = '#42352a'
             ctx.beginPath(); ctx.moveTo(cx - 9, sy + 12); ctx.lineTo(cx, sy + 3); ctx.lineTo(cx + 9, sy + 12); ctx.closePath(); ctx.fill()
-            ctx.fillStyle = '#2b2118'; ctx.fillRect(cx - 2, sy + 16, 4, 6)
-            ctx.fillStyle = '#ffd98a'; ctx.fillRect(cx + 3, sy + 14, 3, 3)
+            // #2499 item 1: the door faces the plaza — a framed oak leaf with a
+            // lit knob and a sill stone, riding the side of the cottage that
+            // looks toward its moongate (doorBy, village.doorFace). Tucked to the
+            // eave when the gate lies north, so the front still reads at a glance;
+            // the window takes the far side so front and flank never compete.
+            const face = doorBy.get(tx + ',' + ty) || 's'
+            const ddx = face === 'e' ? 3 : face === 'w' ? -5 : -2
+            const dtop = face === 'n' ? 13 : 15
+            ctx.fillStyle = '#3a2712'; ctx.fillRect(cx + ddx - 1, sy + dtop - 1, 6, 8)
+            ctx.fillStyle = '#8a5a2b'; ctx.fillRect(cx + ddx, sy + dtop, 4, 6)
+            ctx.fillStyle = '#ffd98a'; ctx.fillRect(face === 'e' ? cx + ddx : cx + ddx + 3, sy + dtop + 2, 1, 1)
+            ctx.fillStyle = '#9a948a'; ctx.fillRect(cx + ddx - 1, sy + dtop + 7, 6, 1)
+            ctx.fillStyle = '#ffd98a'; ctx.fillRect(face === 'e' ? cx - 6 : cx + 3, sy + 14, 3, 3)
             const ph = (t / 3 + hash2(tx, ty, 5) * 40) % 20
             ctx.fillStyle = `rgba(214,214,220,${(0.34 * (1 - ph / 20)).toFixed(3)})`
             ctx.beginPath(); ctx.arc(cx + 4 + Math.sin(ph / 3 + tx) * 2, sy + 2 - ph, 2 + ph * 0.14, 0, 7); ctx.fill()
