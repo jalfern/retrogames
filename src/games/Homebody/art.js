@@ -16,7 +16,12 @@ import {
     GIFT_LAND_T,   // #2240: the set-down basket's stage time
     ICE_HOLD_T, ICE_DRIPS,   // #2508 item 3: the eat beat — how long the cone rides in hand, and its drip ticks
     nightLevel,   // #2264: one night curve for the tint, the steam and the plate halo
+    NEIGH_WARM_AT,   // #2599: cross-warmth — the rung that deepens each neighbour's chat
 } from './sim.js'
+
+// #2599 item 1: the pair's own hues — Fern-green and Ivy-plum, the two guests'
+// dress colours, so a line between THEM reads as theirs at a glance.
+export const PAIR_HUES = ['#4fae5f', '#a3579b']
 
 const P = {
     grass: '#69a23f', grass2: '#5d9236', grass3: '#77b04a',
@@ -1165,6 +1170,13 @@ export function drawPanel(ctx, s, t, collapse = null, hoverName = null) {
             ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1
             ctx.strokeRect(row.x + 3 * 8 + 0.5, row.y + 0.5, 5, 5)
         }
+        if (row.warm && Math.floor(t * 2.5) % 2 === 0) {
+            // #2599 item 4: cross-warmth sparkle — a teal diamond (the NEIGH
+            // strand's colour) breathing beside the row the law touches.
+            ctx.fillStyle = '#3aa08a'
+            const dx = row.x + 82, dy = row.y + 3.5
+            ctx.beginPath(); ctx.moveTo(dx, dy - 3); ctx.lineTo(dx + 3, dy); ctx.lineTo(dx, dy + 3); ctx.lineTo(dx - 3, dy); ctx.closePath(); ctx.fill()
+        }
     }
     const mood = petMood(s)
     if (mood !== null) {
@@ -1271,8 +1283,11 @@ export function bondRows(s) {
     const by = LOT_Y + 26 + s.people.length * 74 + 2
     const rows = [
         { key: 'house', glyph: 'heart', col: s.grudge ? '#8c3b34' : '#e2574c', lv: relLevel(s.rel.house), label: 'HOUSE', x: PANEL_X + 12, y: by + 12, pulse: relLevel(s.rel.house) === 3 },
-        { key: 'fern', glyph: 'leaf', col: '#4fae5f', lv: relLevel(s.rel.fern), label: 'FERN', x: PANEL_X + 12, y: by + 26, pulse: relLevel(s.rel.fern) === 3 },
-        { key: 'ivy', glyph: 'flower', col: '#a3579b', lv: relLevel(s.rel.ivy), label: 'IVY', x: PANEL_X + 12, y: by + 40, pulse: relLevel(s.rel.ivy) === 3 },
+        // #2599 item 4: `warm` marks the rows the cross-warmth law touches —
+        // at rung NEIGH_WARM_AT+ each neighbour chats 25% deeper with the
+        // household, and the panel says so (view-only, derived like `pulse`).
+        { key: 'fern', glyph: 'leaf', col: '#4fae5f', lv: relLevel(s.rel.fern), label: 'FERN', x: PANEL_X + 12, y: by + 26, pulse: relLevel(s.rel.fern) === 3, warm: relLevel(s.rel.neigh) >= NEIGH_WARM_AT },
+        { key: 'ivy', glyph: 'flower', col: '#a3579b', lv: relLevel(s.rel.ivy), label: 'IVY', x: PANEL_X + 12, y: by + 40, pulse: relLevel(s.rel.ivy) === 3, warm: relLevel(s.rel.neigh) >= NEIGH_WARM_AT },
         // #2588: the third-party rung — twin leaves, the neighbours' own row.
         // Teal: far enough from Fern-green and Ivy-plum to read as a pair's
         // own colour (and from every other row hue in the phone-scale probe).
@@ -1451,9 +1466,27 @@ export function drawSay(ctx, b) {
     ctx.fillStyle = 'rgba(248,244,230,0.93)'
     rr(ctx, x, y, bw, bh, 5); ctx.fill()
     const tx = Math.max(x + 8, Math.min(x + bw - 8, b.x))
-    ctx.beginPath(); ctx.moveTo(tx - 4, y + bh - 1); ctx.lineTo(tx + 4, y + bh - 1); ctx.lineTo(tx, y + bh + 6); ctx.closePath(); ctx.fill()
-    ctx.strokeStyle = `rgba(122,92,44,${(0.8 * a).toFixed(3)})`; ctx.lineWidth = 1
-    rr(ctx, x + 0.5, y + 0.5, bw - 1, bh - 1, 5); ctx.stroke()
+    if (b.hues) {
+        // #2599 item 1: a pair line wears the pair — the rim runs Fern-green on
+        // the left half and Ivy-plum on the right, and TWO tinted tails replace
+        // the single one: two voices, one line.
+        ctx.save(); ctx.beginPath(); ctx.rect(x - 2, y - 2, bw / 2 + 2, bh + 4); ctx.clip()
+        ctx.strokeStyle = b.hues[0]; ctx.lineWidth = 1.5
+        rr(ctx, x + 0.5, y + 0.5, bw - 1, bh - 1, 5); ctx.stroke()
+        ctx.restore()
+        ctx.save(); ctx.beginPath(); ctx.rect(x + bw / 2, y - 2, bw / 2 + 2, bh + 4); ctx.clip()
+        ctx.strokeStyle = b.hues[1]; ctx.lineWidth = 1.5
+        rr(ctx, x + 0.5, y + 0.5, bw - 1, bh - 1, 5); ctx.stroke()
+        ctx.restore()
+        ctx.fillStyle = b.hues[0]
+        ctx.beginPath(); ctx.moveTo(tx - 12, y + bh - 1); ctx.lineTo(tx - 4, y + bh - 1); ctx.lineTo(tx - 8, y + bh + 6); ctx.closePath(); ctx.fill()
+        ctx.fillStyle = b.hues[1]
+        ctx.beginPath(); ctx.moveTo(tx + 4, y + bh - 1); ctx.lineTo(tx + 12, y + bh - 1); ctx.lineTo(tx + 8, y + bh + 6); ctx.closePath(); ctx.fill()
+    } else {
+        ctx.beginPath(); ctx.moveTo(tx - 4, y + bh - 1); ctx.lineTo(tx + 4, y + bh - 1); ctx.lineTo(tx, y + bh + 6); ctx.closePath(); ctx.fill()
+        ctx.strokeStyle = `rgba(122,92,44,${(0.8 * a).toFixed(3)})`; ctx.lineWidth = 1
+        rr(ctx, x + 0.5, y + 0.5, bw - 1, bh - 1, 5); ctx.stroke()
+    }
     ctx.fillStyle = `rgba(60,42,23,${a.toFixed(3)})`
     lines.forEach((l, i) => ctx.fillText(l, x + bw / 2, y + 9 + i * 12 + 1))
     ctx.globalAlpha = 1

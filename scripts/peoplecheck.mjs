@@ -112,6 +112,7 @@ import {
     SNEAK_DUE, SNEAK_WINDOW, SNEAK_LOOT, sneakNightDue, hasAlarm, ringSneak, SNEAK_CREEP, SNEAK_SIREN,   // #2520: the sneak — the window, the loot list, the parity, the alarm, the rig
     PROWL_DUE, PROWL_WINDOW, prowlNightDue, PET_PROWL_FUN, ringProwl, PROWL_PADS, PROWL_HOME_SFX,   // #2532: Miso's even-night prowl — the window, the parity, the cat-scale pay, the rig, the sound tables
 } from '../src/games/Homebody/sim.js'
+import { bondRows } from '../src/games/Homebody/art.js'   // #2599: the BONDS rows are pure data — the view gate reads them straight
 import { readFileSync } from 'node:fs'
 
 const DT = FIXED_DT / 1000
@@ -1857,6 +1858,50 @@ section('NEIGH STROLL (#2611): the pair walks the lot — bank, circuit, walk-pa
     check('the circuit is honest — three fixed spots, all walkable, one line each',
         NEIGH_SPOTS.length === 3 && NEIGH_SPOTS.every((sp) => walkable(fresh, sp.r, sp.c))
         && NEIGH_STROLL_LINES.length === NEIGH_SPOTS.length && NEIGH_STROLL_T === 12)
+}
+
+// --------------------------------------------------------- NEIGH VIEW (#2599) ----
+// The pair's identity on the VIEW side: their lines wear their hues, their
+// reunion sparkles teal, their cold war leans them apart, and the panel teaches
+// cross-warmth. No economy here — sim.js must not learn any of these words.
+section('NEIGH VIEW (#2599): pair bubbles, teal reunion, guest sulks, warmth sparkle')
+{
+    const nvArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    const nvJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const nvSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+
+    // bondRows behaviour: the warmth flag is data, derived like `pulse`.
+    const w0 = newRun(5)
+    const r0 = bondRows(w0)
+    check('below the rung no row is marked warm', r0.every((r) => !r.warm))
+    const w1 = newRun(5); w1.rel.neigh = REL_EDGES[0]   // rung 1 — the rung the chat law deepens at
+    const r1 = bondRows(w1)
+    const by = (k) => r1.find((r) => r.key === k)
+    check('at the rung BOTH guest rows carry the warmth tell', by('fern').warm === true && by('ivy').warm === true)
+    check('warmth marks only the guests — the house and the pair row stay clean', !by('house').warm && !by('neigh').warm)
+
+    check('pin: the warmth flag derives from NEIGH_WARM_AT, twice over (no drift)',
+        (nvArt.match(/relLevel\(s\.rel\.neigh\) >= NEIGH_WARM_AT/g) || []).length === 2 && /NEIGH_WARM_AT,/.test(nvArt))
+    check('pin: the panel breathes a teal diamond on warm rows', /row\.warm && Math\.floor\(t \* 2\.5\)/.test(nvArt) && /row\.x \+ 82, dy = row\.y \+ 3\.5/.test(nvArt))
+    check('pin: pair hues are THE pair colours — the same ones the rows and dresses paint',
+        /export const PAIR_HUES = \['#4fae5f', '#a3579b'\]/.test(nvArt) && /col: '#4fae5f'/.test(nvArt) && /col: '#a3579b'/.test(nvArt))
+    check('pin: showSay stamps the pair hue by the event, nothing else',
+        /e\.t === 'neigh' \|\| e\.who === 'neigh' \? PAIR_HUES : null/.test(nvJsx))
+    check('pin: drawSay wears split rims and twin tinted tails for pair lines',
+        /if \(b\.hues\)/.test(nvArt) && /b\.hues\[0\]/.test(nvArt) && /b\.hues\[1\]/.test(nvArt)
+        && (nvArt.match(/ctx\.clip\(\)/g) || []).length >= 2)
+    check('pin: pair reunions sparkle leaves; household ones keep their hearts',
+        /if \(e\.who === 'neigh'\) pairSparkle\(e\.x, e\.y - 12\); else heartBurst/.test(nvJsx))
+    check('pin: the leaf particle is the twin-leaf NEIGH glyph in flight',
+        /kind === 'leaf'/.test(nvJsx) && /mirrored leaves/.test(nvJsx) && /'#3aa08a' : '#7fd0c0'/.test(nvJsx))
+    check('pin: the guests borrow the cold-war idiom — lean apart while neiGrudge holds',
+        /g\.neiGrudge && g\.visitor && g\.ivy && \(o\.p === g\.visitor \|\| o\.p === g\.ivy\)/.test(nvJsx)
+        && /o\.p === g\.visitor \? g\.ivy : g\.visitor/.test(nvJsx))
+    check('pin: the guests\u2019 puff arms at the crack and fades on the real clock',
+        /if \(e\.who === 'neigh'\) neighSulks = 2\.4/.test(nvJsx) && /neighSulks = Math\.max\(0, neighSulks - dtMs \/ 1000\)/.test(nvJsx))
+    check('pin: no stale pair-puff across streets', /sayB\.life = 0[\s\S]{0,120}neighSulks = 0/.test(nvJsx))
+    check('pin: the view pass stays out of the sim — the economy never heard of these tells',
+        !/PAIR_HUES|pairSparkle|neighSulks|neigh\.warm/.test(nvSim))
 }
 
 // ----------------------------------------------------------- PET (#2197) -----
