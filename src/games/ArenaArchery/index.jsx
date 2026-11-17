@@ -13,7 +13,9 @@
 //     re-replays your own stream and compares hashes.
 //
 // One stick per archer: arrows/WASD aim and move, SPACE/F draws, release
-// looses. Up is jump AND the 45° lob — TowerFall's own bargain.
+// looses. Up is jump AND the 45° lob — TowerFall's own bargain. The duel
+// (`2` at the marquee) is the desktop-keyboard option per AGENTS.md's
+// multiplayer law — on a phone one pad drives you against the autopilot.
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
@@ -687,7 +689,12 @@ const ArenaArcheryGame = () => {
                 </div>
             )}
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'ARENA ARCHERY')} onResume={handleResume} />}
-            <VirtualControls visible={play && !paused} secondPad={{ up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', action: 'KeyF' }} />
+            {/* AGENTS.md, Jon's multiplayer law: the CPU opponent is the default
+                (phone gets one pad); two players is a DESKTOP KEYBOARD option —
+                no second on-screen touchpad. `2` seats the duel; WASD+F drives
+                seat two. (The pad used to ship anyway, and painted even in 1p
+                mode where seat 2 belongs to the bot — dead buttons.) */}
+            <VirtualControls visible={play && !paused} />
         </div>
     )
 }
