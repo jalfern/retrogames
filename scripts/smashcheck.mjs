@@ -1130,13 +1130,22 @@ console.log('pilot')
     // seed 1 is back clean. If a future change loses one again, update this
     // pin AND the README together, Pong's seed 25 style.
     const wins = [], deathless = []
+    const scores = []
     for (const seed of [0, 1, 2, 3, 4, 5, 6, 7, 8]) {
         const r = S.plan(seed)
         if (r.won) { wins.push(seed); if (r.deaths === 0) deathless.push(seed) }
+        scores[seed] = r.score
         console.log(`  seed ${seed}: ${r.won ? 'WON' : 'lost'} deaths=${r.deaths} score=${r.score}`)
     }
     ok(wins.length === 9, 'pilot clears all 9 seeds unshielded — zero mercy, zero losses', `won ${wins.join(',')}`)
     ok(deathless.includes(1) && deathless.includes(7), 'seeds 1 and 7 prove the deathless matinee under zero mercy', `deathless ${deathless.join(',')}`)
+    // #2491 lane-sound duel pays on seed 2's line (#2542): since #2540's router
+    // re-key the deaf-duel mutant no longer LOSES seed 4 (the route re-walks
+    // itself), so the fatal seed-4 witness went stale and the mutant survived.
+    // The doctrine still earns its keep: switching the branch off forfeits 700
+    // pts on seed 2 (27900 -> 27200, measured). Pin the payment so the mutant
+    // dies again; update this pin AND the README together, Pong's seed 25 style.
+    ok(scores[2] === 27900, 'seed 2 pays the lane-sound duel (the deaf variant forfeits 700)', `score=${scores[2]}`)
     // #2530 roll-seed regression gate: the audit (scripts/qa-smash-seeds.mjs)
     // found 25 seeds where the autopilot froze forever on random-roll games.
     // These are the seeds the BFS-router fix (pathOn) un-wedged — none may
@@ -1643,7 +1652,7 @@ if (process.argv.includes('--mutate')) {
     const PLANNER = 'src/games/SmashTV/planner.js'
     const PLANNER_MUTANTS = [
         ['#2032: the seat walks onto the dropped flamer', 'if (d > 16) return inp', 'if (d > -1e9) return inp'],
-        ['#2491: the lane-sound duel is deaf again (seed 4 re-nails onto the chrome corner)', 'if (staticDuel && Math.abs(qx) > Math.abs(qy) && !hOpen && vOpen) {', 'if (false) {'],
+        ['#2491: the lane-sound duel is deaf again (seed 2 forfeits the duel\'s 700 — #2542 re-pinned after #2540 un-wedged seed 4)', 'if (staticDuel && Math.abs(qx) > Math.abs(qy) && !hOpen && vOpen) {', 'if (false) {'],
         ['#2491: the pilot loiters under queued spawns again', 'if (hot && hd < 40) {', 'if (hot && hd < -40) {'],
         ['#2491: the dry-tank reload never fires', "const dry = p.weapon === 'laser' && gs.energy < CFG.dryLimit", 'const dry = false'],
         ['#2507: the autopilot re-hardcodes its own threshold and drifts off the HUD', 'gs.energy < CFG.dryLimit', 'gs.energy < 44'],
@@ -1671,14 +1680,14 @@ if (process.argv.includes('--mutate')) {
     const IDX = 'src/games/SmashTV/index.jsx'
     const IDX_MUTANTS = [
         ['#1978: the far-door confirm goes blind', 'if (farExitPx(q.x, q.y, doors) > FAR_EXIT_PX) {', 'if (false) {'],
-        ['#1978: the combo pop slides back onto the door row', 'ctx.translate(camX + CW / (2 * zs), HUD_H + 48)', 'ctx.translate(camX + CW / (2 * zs), HUD_H + 30)'],
+        ['#1978: the combo pop slides back onto the door row', 'ctx.translate(CW / 2 + camX, HUD_H + 48)', 'ctx.translate(CW / 2 + camX, HUD_H + 30)'],
         ['#2011: the swell drops out of the bed', 'MURMUR.vol + MURMUR_SWELL * (e.hype || 0)', 'MURMUR.vol'],
         ['#2011: the camera never settles toward the exit', 'camLead(leadDx, bd)', '0'],
         ['#2507: the dry meter goes numb (bar holds slate)', 'const dryTank = powerLow(gs.weapon, gs.energy, CFG.dryLimit)', 'const dryTank = false'],
         ['#2507: the dry ping goes mute at the reload edge', 'powerLow(gs.weapon, gs.energy, CFG.dryLimit) && gs.tick % POWER_PING.every', 'false && gs.tick % POWER_PING.every'],
         ['#2507: room spawns lose their ring — the hook re-gates to boss adds', 'bornFx.push({ x: e.x, y: e.y, t: 0 })', 'if (e.bossAdd) bornFx.push({ x: e.x, y: e.y, t: 0 })'],
         ['#2521: the zoom transform dies — the reveal never widens the frame', 'ctx.scale(zs, zs)', 'ctx.scale(1, zs)'],
-        ['#2521: edge chips go blind through the pull-back', 'edgeMarks(marks, camX, CW / zs)', 'edgeMarks(marks, camX, CW)'],
+        ['#2521: edge chips go blind through the pull-back', 'edgeMarks(marks, camX - zOver, CW / zs)', 'edgeMarks(marks, camX - zOver, CW)'],
         ['#2521: room entry forgets to arm the reveal', 'roomTotal = 0; roomBump = 0; clearedAt = -1; zt = 0', 'roomTotal = 0; roomBump = 0; clearedAt = -1'],
     ]
     const targets = [[SIM, MUTANTS], [SPRITE, SPRITE_MUTANTS], [LEVELS, LEVELS_MUTANTS], [PLANNER, PLANNER_MUTANTS], [JUICE, JUICE_MUTANTS], [IDX, IDX_MUTANTS]]
