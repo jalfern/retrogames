@@ -50,6 +50,7 @@ import {
 } from './sim.js'
 import {
     drawGround, drawGate, drawItem, drawPerson, nightTint, drawPanel, drawTopBar,
+    drawIceTruck, TRUCK_W,   // #2508 item 1: the truck gets wheels — the view-side arrival and drive-off
     drawCatalog, catalogHit, tabHit, speedHit, drawBuildCursor, drawThoughts, drawClouds,   // #2227: speedHit — the dial's tap route
     drawPet,   // #2197: Miso
     drawKid,   // #2203: Pip
@@ -152,6 +153,19 @@ const HomebodyGame = () => {
         let digitPick = -1        // #2222: digit picks within the open shelf
         let speedPick = null      // #2227: digits 1-4 outside buy mode set the dial
         let speedCycled = 0       // #2227: , / . cycle the dial in every mode
+        // #2508 item 1: the jingle now has a body — the truck ROLLS in along the
+        // curb row (~2 s), parks at the cone, and drives off east when the stop is
+        // spent (~4 s, past the last sale to the window's end). View-only: the sim
+        // law is untouched and the truck is draw-only, so it is non-solid by
+        // construction — nobody ever gets fenced in. Timed in sim-seconds like every
+        // other sprite (pause freezes the roll); the paint tick polls cone presence,
+        // so restores and any missed event still self-heal into the drive-off.
+        const ICE_TRUCK_IN_S = 2, ICE_TRUCK_OUT_S = 4
+        const ICE_TRUCK_Y = H - 46   // on the street below the fence — nearest thing to the camera, so it paints last
+        const iceTruck = { phase: 'off', px: 0, from: 0, parked: 0, t0: 0 }
+        const iceTruckRollOut = (sim) => {
+            if (iceTruck.phase === 'in' || iceTruck.phase === 'parked') { iceTruck.from = iceTruck.px; iceTruck.t0 = sim ? sim.sec : 0; iceTruck.phase = 'out' }
+        }
         const say = (m) => { toastMsg = m; toast = 120 }
         const speedBlip = (n, up) => {
             if (n === 0) audioController.playTone(200, 0.09, 'square', 0.05)
@@ -274,22 +288,27 @@ const HomebodyGame = () => {
                         break
                     case 'ice-truck': {   // #2503: the jingle rolls down the street — a music-box motif plays the table verbatim, pastel glints at the curb
                         ICE_TIMBRE.forEach(([f, d, ms]) => setTimeout(() => audioController.playTone(f, d, 'triangle', 0.04), ms))
+                        iceTruck.parked = LOT_X + e.c * TILE - 44   // #2508 item 1: the body follows the jingle — wheels up at the west edge, roll in to the cone
+                        iceTruck.from = iceTruck.px = -(TRUCK_W + 8); iceTruck.t0 = s.sec; iceTruck.phase = 'in'
                         if (live) { say('THE ICE CREAM MAN COMES'); burst(tilePx(e.c), tilePy(e.r) + 8, 8, '#ffd9e8', 2) }
                         break
                     }
                     case 'ice-cream':   // #2503: the cone changed hands — a bright pop and a heart where it was caught
                         audioController.playTone(1046, 0.06, 'triangle', 0.05)
                         setTimeout(() => audioController.playTone(1318, 0.12, 'triangle', 0.05), 70)
+                        iceTruckRollOut(s)   // #2508 item 1: one cone per stop — the stop is spent, the truck drives off empty (its own words, now its own wheels)
                         if (live) { say(`${e.name.toUpperCase()} GOT A CONE ♥`); heartBurst(e.x, e.y - 12) }
                         break
                     case 'kid-ice':   // #2503: the child beat the melting clock — the giggle climbs an octave higher than the adult's pop
                         audioController.playTone(1318, 0.05, 'triangle', 0.05)
                         setTimeout(() => audioController.playTone(1568, 0.05, 'triangle', 0.05), 60)
                         setTimeout(() => audioController.playTone(2093, 0.14, 'triangle', 0.05), 120)
+                        iceTruckRollOut(s)   // #2508 item 1: same law for the kid's catch — the truck leaves when its tray is empty
                         if (live) { say(`${e.name.toUpperCase()} CHASED THE TRUCK DOWN ♥`); heartBurst(e.x, e.y - 12) }
                         break
                     case 'ice-gone':   // #2503: the truck moved on — a falling jingle tail and a pastel puff at the empty curb (the cold-plate doctrine, at ice-cream scale)
                         audioController.playSweep(880, 523, 0.28, 'triangle', 0.04)
+                        iceTruckRollOut(s)   // #2508 item 1: the window closed on unsold cones — it still rolls, it no longer vanishes
                         if (live) { say('THE TRUCK MOVED ON'); burst(tilePx(e.c), tilePy(e.r) + 8, 6, '#ffd9e8', 1.4) }
                         break
                     case 'sneak-in': {   // #2520: boots on the gravel — three falling low steps, near-silent. The lot sleeps; the view keeps watch.
@@ -680,6 +699,25 @@ const HomebodyGame = () => {
             drawGround(ctx, g)
             drawGate(ctx, g.sec)
             drawClouds(ctx, g.sec)
+            // #2508 item 1: the truck's paint tick — poll cone presence so a restore
+            // or any missed exit event still ends in a drive-off, never a vanish.
+            if (g.cone) {
+                if (iceTruck.phase === 'off' || iceTruck.phase === 'out') {   // a cone is standing with no truck (restore path) — snap-park it
+                    iceTruck.parked = LOT_X + g.cone.c * TILE - 44
+                    iceTruck.px = iceTruck.from = iceTruck.parked; iceTruck.phase = 'parked'
+                }
+            } else if (iceTruck.phase === 'in' || iceTruck.phase === 'parked') {
+                iceTruckRollOut(g)
+            }
+            if (iceTruck.phase === 'in') {
+                const k = Math.min(1, (g.sec - iceTruck.t0) / ICE_TRUCK_IN_S)
+                iceTruck.px = iceTruck.from + (iceTruck.parked - iceTruck.from) * k
+                if (k >= 1) { iceTruck.px = iceTruck.parked; iceTruck.phase = 'parked' }
+            } else if (iceTruck.phase === 'out') {
+                const k = Math.min(1, (g.sec - iceTruck.t0) / ICE_TRUCK_OUT_S)
+                iceTruck.px = iceTruck.from + (W + TRUCK_W + 8 - iceTruck.from) * k
+                if (k >= 1) iceTruck.phase = 'off'
+            }
             for (const it of g.items) drawItem(ctx, it, g.sec, nightLevel(g.hour))   // #2264: the meal sprite keeps night hours (steam dim/slow, warm halo)
             const order = [...g.people.map((p) => ({ p, v: p.y })), ...(g.visitor ? [{ p: g.visitor, v: g.visitor.y }] : []), ...(g.ivy ? [{ p: g.ivy, v: g.ivy.y }] : []), ...(g.pet ? [{ p: g.pet, v: g.pet.y }] : []), ...(g.kid ? [{ p: g.kid, v: g.kid.y }] : []), ...(g.sneak ? [{ p: g.sneak, v: g.sneak.y }] : []), ...(g.giftFx > 0 && g.giftAt ? [{ p: { x: g.giftAt.x, y: g.giftAt.y }, giftLanded: true }] : [])].sort((a, b) => a.v - b.v)   // #2143: both neighbours share the lot; #2197: so does the cat; #2203: and the child; #2520: and the sneak; #2240: so the set-down basket rides the depth line
             for (const o of order) {
@@ -697,6 +735,9 @@ const HomebodyGame = () => {
                 }
                 drawPerson(ctx, o.p, g.sec, g.people[g.active] === o.p, fx, lean)
             }
+            // #2508 item 1: the truck paints after everyone — it is the nearest
+            // thing to the camera, so it laps the fence, the gate and the residents cleanly.
+            if (iceTruck.phase !== 'off') drawIceTruck(ctx, iceTruck.px, ICE_TRUCK_Y, g.sec, iceTruck.phase === 'parked' ? 0 : 1)
             if (g.cooFx > 0 && g.cooAt) {
                 // #2131: the warm tell — a pixel heart (FAMILY) or gold glint lifts
                 // off the pair's midpoint and fades on the real clock.
@@ -1144,6 +1185,7 @@ const HomebodyGame = () => {
                     kid: gs.kid ? { name: gs.kid.name, r: gs.kid.r, c: gs.kid.c, state: gs.kid.state, asleep: gs.kid.asleep, needs: { ...gs.kid.needs }, cd: Math.round(gs.kid.cd * 10) / 10, x: Math.round(gs.kid.x), y: Math.round(gs.kid.y) } : null,   // #2203
                     paper: gs.paper ? { r: gs.paper.r, c: gs.paper.c } : null, paperDay: gs.paperDay,   // #2238: the route
                     cone: gs.cone ? { r: gs.cone.r, c: gs.cone.c } : null, iceSerial: gs.iceSerial, iceDay: gs.iceDay, treats: gs.treats,   // #2503: the truck's stop and the cone ledger
+                    truckView: { phase: iceTruck.phase, x: Math.round(iceTruck.px) },   // #2508 item 1: the view-side truck — QA reads the slide (phase 'off'/'in'/'parked'/'out') here
                     meal: gs.meal ? { r: gs.meal.r, c: gs.meal.c, name: gs.mealName } : null, mealDay: gs.mealDay, mealSlot: gs.mealSlot, mealSerial: gs.mealSerial, mealEaten: gs.mealEaten.length,   // #2244: the bells
                     queues: gs.people.map((p) => p.queue.map((o) => (o.kind === 'use' ? o.it.id : o.kind))),   // #2470: the pending lists, head first
                     collapse: gs.people.map((_, pi) => (collapseCache.has(pi) ? COLLAPSE_FRAMES : 0)),   // #2474 item 4: which rows are ghosting (QA-visible, view-only)

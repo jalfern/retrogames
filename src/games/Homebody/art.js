@@ -1461,6 +1461,65 @@ function rr(ctx, x, y, w, h, r) {
     ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath()
 }
 
+// ------------------------------------------------------ ice-cream truck (#2508 item 1) --
+// The jingle finally has a body: a pastel soft-serve wagon that ROLLS in down
+// the curb row and drives off when the stop is spent (the view's own state
+// machine — the sim law stays untouched, the truck is draw-only, so it is
+// non-solid by construction and nobody ever gets fenced in). East-facing cab:
+// it arrives from the west, parks at the cone, and leaves the way the original
+// does — down the street, jingle fading. `roll` > 0 while the wheels turn
+// (spokes spin, parked wheels rest); parked it rides a two-frame bob.
+export const TRUCK_W = 96
+export function drawIceTruck(ctx, x, y, t, roll) {
+    const bob = roll > 0 ? 0 : Math.sin(t * 3.5) > 0 ? 0 : -1   // parked: the engine hum lifts it a pixel
+    const yy = y + bob
+    ctx.fillStyle = 'rgba(30,20,10,0.16)'                       // shadow stays on the asphalt, not on the bob
+    ctx.beginPath(); ctx.ellipse(x + TRUCK_W / 2, y + 44, 44, 4, 0, 0, 7); ctx.fill()
+    ctx.fillStyle = '#8fdcc6'                                   // pastel mint body, white roof, pink stripe — the original's ice-cream palette
+    ctx.fillRect(x + 4, yy + 12, TRUCK_W - 8, 26)
+    ctx.fillStyle = '#f4f1e6'
+    ctx.fillRect(x + 4, yy + 12, TRUCK_W - 8, 5)
+    ctx.fillStyle = '#ffc9dd'
+    ctx.fillRect(x + 4, yy + 26, TRUCK_W - 26, 4)
+    ctx.fillStyle = '#bdeedd'
+    ctx.fillRect(x + 62, yy + 12, 26, 15)                      // cab glass house, east end
+    ctx.fillStyle = '#7a6f5d'
+    ctx.fillRect(x + 66, yy + 15, 8, 9)                        // the driver, a silhouette with a cap
+    ctx.fillStyle = '#e8e4d4'
+    ctx.fillRect(x + 65, yy + 14, 10, 2)
+    ctx.fillStyle = '#f4f1e6'                                  // serving window with a striped awning
+    ctx.fillRect(x + 12, yy + 16, 20, 10)
+    for (let i = 0; i < 4; i++) {
+        ctx.fillStyle = i % 2 ? '#ff9dbf' : '#fff'
+        ctx.fillRect(x + 10 + i * 6, yy + 13, 6, 3)
+    }
+    ctx.fillStyle = '#fff'                                     // roof sign, and on it a tiny cone
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x + 24, yy + 2, 30, 10, 3) : ctx.rect(x + 24, yy + 2, 30, 10); ctx.fill()
+    ctx.fillStyle = '#b07a3f'
+    ctx.beginPath(); ctx.moveTo(x + 36, yy + 6); ctx.lineTo(x + 42, yy + 6); ctx.lineTo(x + 39, yy + 11); ctx.closePath(); ctx.fill()
+    ctx.fillStyle = '#ffe9f0'
+    ctx.beginPath(); ctx.arc(x + 39, yy + 5, 2.4, 0, 7); ctx.fill()
+    ctx.fillStyle = '#c94f43'
+    ctx.beginPath(); ctx.arc(x + 39, yy + 3, 1.1, 0, 7); ctx.fill()
+    ctx.fillStyle = '#4a4038'                                  // wheels; spokes spin while the truck rolls
+    for (const wx of [x + 22, x + 72]) {
+        ctx.beginPath(); ctx.arc(wx, yy + 38, 6.5, 0, 7); ctx.fill()
+        ctx.fillStyle = '#9a9ca6'
+        ctx.beginPath(); ctx.arc(wx, yy + 38, 2.4, 0, 7); ctx.fill()
+        if (roll > 0) {
+            ctx.strokeStyle = '#d8dade'; ctx.lineWidth = 1.4
+            const a = t * roll * 9
+            ctx.beginPath()
+            ctx.moveTo(wx - Math.cos(a) * 5, yy + 38 - Math.sin(a) * 5)
+            ctx.lineTo(wx + Math.cos(a) * 5, yy + 38 + Math.sin(a) * 5)
+            ctx.stroke()
+        }
+        ctx.fillStyle = '#4a4038'
+    }
+    ctx.fillStyle = '#ffd24a'
+    ctx.fillRect(x + TRUCK_W - 6, yy + 30, 3, 3)              // a headlight wink at the horizon it's chasing
+}
+
 // --------------------------------------------------------------- atmo -----
 export function drawClouds(ctx, t) {
     ctx.fillStyle = 'rgba(255,255,255,0.16)'
