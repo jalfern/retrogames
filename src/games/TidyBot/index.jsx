@@ -22,6 +22,7 @@ import WatchButton, { WatchToast, AttractWatchButton } from '../../components/Wa
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import {
     makeGame, step, autopilot, loadLevel, markChores, stateHash, routeDir, aimAt, rackSlot, flourishPick,
+    tapAct, pendingFire, pendingAlive,
     VIEW_W, VIEW_H, WALL, COUNTER, STOVE, TABLE, PLANTS, DW, FR, LEVELS, RACK_CAP, RACK_ROWS, RACK_COLS,
 } from './sim.js'
 
@@ -137,6 +138,13 @@ const TidyBotGame = () => {
         let aim = null
         let aimLevel = 0
         const clearAim = () => { aim = null }
+        // #2537 TAP-ACT: a container tap carries a chore (open/place/retrieve)
+        // that rides with the glide and fires its verb on arrival — the chore
+        // collapses into one tap. Cancel law mirrors the glide and the mark:
+        // any key, any new tap, WATCH, a level change or a reset drops it.
+        let pending = null
+        let pendingLevel = 0
+        const clearPending = () => { pending = null }
         // #2258 polish: expanding ring left at the spot a glide completes;
         // wash-cycle hum ticker; footfall dust bookkeeping.
         let ringPop = null
@@ -226,6 +234,7 @@ const TidyBotGame = () => {
             watchingRef.current = false; setWatching(false) // #1637 the shift ends in your hands
             goto = null // #2250
             clearAim() // #2338
+            clearPending() // #2537
             setEnd({ won, score: gs.score, tidy: gs.tidies, breaks: gs.breaks, wrongs: gs.wrongs, spills: gs.spills, jams: gs.jams, reason: gs.endReason })
             const board = (() => { try { return JSON.parse(localStorage.getItem('tidybot.board') || '[]') } catch { return [] } })()
             if (gs.score > 0) localStorage.setItem('tidybot.board', JSON.stringify([...board, { score: gs.score, date: new Date().toISOString().slice(2, 10) }].sort((a, b) => b.score - a.score).slice(0, 8)))
@@ -312,8 +321,34 @@ const TidyBotGame = () => {
                     } else if (r.dir) pad[r.dir] = true
                 }
             }
+            // #2537 TAP-ACT: an order still worth walking toward pushes its
+            // verb the moment live state allows — position is judged by the
+            // same law step() honors, so the press lands, it never guesses.
+            // A place against a shut body fires the OPEN and stays pending;
+            // the order completes when the item actually lands.
+            if (!watchingRef.current && pending) {
+                if (gs.level !== pendingLevel) pending = null
+                else if (!pendingAlive(gs, pending)) pending = null
+                else {
+                    if (pending.cd > 0) pending.cd--
+                    const v = pending.cd > 0 ? null : pendingFire(gs, pending)
+                    if (v) {
+                        pad[v] = true
+                        const cc = pending.c === 'dw' ? gs.dw : gs.fr
+                        if (pending.act !== 'place' || cc.door >= 0.9) {
+                            audioController.playTone(940, 0.05, 'sine', 0.035)
+                            audioController.playTone(1410, 0.07, 'sine', 0.03, 0.06)
+                            ringPop = { x: gs.rx, y: gs.ry, t: 0 }
+                            clearPending()
+                            if (v === 'b') clearAim() // the named pull spent its mark
+                        }
+                    }
+                }
+            }
             step(gs, [pad])
             const verbPressed = edgeA || edgeB // #2338: any verb press ends the mark (B consumed it, A spoke elsewhere)
+            if (verbPressed) clearPending() // #2537 — and the human's verb ends a tap-order too
+            if (pending && gs.ev.some((e) => e.type === 'refuse')) pending.cd = 20 // STAND CLEAR/ARMS FULL: back off, retry after walking
             edgeA = false; edgeB = false
             if (verbPressed || (aim && aimLevel !== gs.level)) clearAim()
             handleEvents(gs.ev)
@@ -802,6 +837,7 @@ const TidyBotGame = () => {
             if (isWatchKey(e)) {
                 goto = null // #2250 the prover takes the wheel; the glide steps down
                 clearAim() // #2338 and so does a pending mark
+                clearPending() // #2537 and a pending chore
                 if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
                 else if (!gs.end) { watchingRef.current = true; setWatching(true); playWatchStart() }
                 return
@@ -809,6 +845,7 @@ const TidyBotGame = () => {
             if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             // #2250 GLIDE: keys are the human speaking — a glide yields at once.
             goto = null
+            clearPending() // #2537 same law for a pending chore
             // #2338 mark cancel law: MOVEMENT interrupts the mark; B is the
             // COMMIT gesture, so it must not be cleared at keydown — doSim
             // ends the mark when the press lands (consume or refuse, never a
@@ -842,17 +879,26 @@ const TidyBotGame = () => {
                 const wx = (e.clientX - rect.left) * (VIEW_W / rect.width)
                 const wy = (e.clientY - rect.top) * (VIEW_H / rect.height)
                 clearAim() // #2338 a new tap is a new order, same law as the glide
-                const a = aimAt(gs, wx, wy)
-                if (a.ok) {
-                    // tap-the-rack: NAME the item, then B pulls it. The tap
-                    // itself never fires the verb (#2250 two-step law stands),
-                    // but it walks you to the rack like any floor tap would.
-                    aim = a.id; aimLevel = gs.level
-                    audioController.playTone(980, 0.05, 'sine', 0.035)
-                    audioController.playTone(1470, 0.06, 'sine', 0.03, 0.05)
-                    gs.fx.push({ msg: 'AIMED', x: a.x, y: a.y - 7, k: 0, t: 'ok' })
-                    const r = routeDir(gs, wx, wy)
-                    if (r.ok && !r.arrived) { goto = { x: wx, y: wy }; gotoLevel = gs.level }
+                clearPending() // #2537 so is a new chore
+                const ta = tapAct(gs, wx, wy)
+                if (ta.ok) {
+                    // #2537 TAP-ACT: a container tap is an ORDER — the bot
+                    // routes to the work spot and the verb fires on arrival
+                    // (open / place / retrieve, judged by pendingFire).
+                    pending = { ...ta, cd: 0 }; pendingLevel = gs.level
+                    if (ta.act === 'retrieve' && ta.id !== null) {
+                        // a named pull still sells its name — brackets + AIMED
+                        // ride the mark until the B lands (#2338 presentation,
+                        // but now the tap is also the commit)
+                        aim = ta.id; aimLevel = gs.level
+                        const it = gs.items.find((i2) => i2.id === ta.id)
+                        const p = it ? rackSlot(ta.c === 'dw' ? DW : FR, it.slot || 0) : { x: wx, y: wy }
+                        gs.fx.push({ msg: 'AIMED', x: p.x, y: p.y - 7, k: 0, t: 'ok' })
+                        audioController.playTone(980, 0.05, 'sine', 0.035)
+                        audioController.playTone(1470, 0.06, 'sine', 0.03, 0.05)
+                    } else audioController.playTone(660, 0.04, 'sine', 0.03)
+                    const rr = routeDir(gs, ta.gx, ta.gy)
+                    if (rr.ok && !rr.arrived) { goto = { x: ta.gx, y: ta.gy }; gotoLevel = gs.level }
                 } else {
                     const r = routeDir(gs, wx, wy)
                     if (r.ok) {
@@ -894,6 +940,7 @@ const TidyBotGame = () => {
             breaks: gs.breaks,
             items: gs.items.map((it) => [it.kind, Math.round(it.x), Math.round(it.y), it.state, it.cont || '']),
             aim: aim === null ? -1 : aim, // #2338 marked item (-1 = none)
+            pending: pending ? pending.act : '', // #2537 open/place/retrieve ('' = none)
             endReason: gs.endReason,
         })
         const testState = () => ({ ...simState(), mode: screenRef.current })
@@ -908,6 +955,7 @@ const TidyBotGame = () => {
                 parts.length = 0
                 goto = null // #2250 contract resets clear the glide too
                 clearAim() // #2338 and the aim mark
+                clearPending() // #2537 and the pending chore
                 flourish = null; pullAnim = null // #2343
                 setEnd(null)
                 setMode('play')
