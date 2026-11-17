@@ -98,6 +98,7 @@ import {
     SPEED_MULT, SPEED_NAMES, setSpeed, cycleSpeed, attractSpeed,   // #2227: the speed dial
     TRI_TELL_CD, TRI_LINES, IVY_SOCIAL,   // #2154: visitor choreography law
     NEIGH_CHAT, NEIGH_GLANCE, NEIGH_FADE, NEIGH_COOL_CD, NEIGH_WARM, NEIGH_LINES,   // #2588: the third-party bond
+    NEIGH_IGNORE_T, NEIGH_SPAT_DROP, NEIGH_MAKEUP, NEIGH_SPAT_CD,   // #2604: the pair's own quarrel law
     PAPER, PAPER_LATE, PAPER_LINES,   // #2238: the paper route
     MEAL, MEAL_NAMES, MEAL_DUE, MEAL_WINDOW, MEAL_BOND, MEAL_LINES, SHARED_MEAL_LINES, HOUR_SEC,   // #2244: the meal bells
     MEAL_TIMBRE, SHARED_TABLE_CHORDS, sharedChord, nightLevel,   // #2264: per-bell timbres, the rotating table chord, one night curve
@@ -1564,6 +1565,148 @@ section('NEIGHBOURS (#2588): third-party bond — chat, glance, meet, warm')
         /relAdd\(s, 'neigh', NEIGH_CHAT \* dt\)/.test(nbSim) && /relAdd\(s, 'neigh', NEIGH_GLANCE \* dt\)/.test(nbSim) && /relSub\(s, 'neigh', NEIGH_FADE\)/.test(nbSim))
     check('pin: the BONDS panel runs the twin-leaf NEIGH row',
         /key: 'neigh', glyph: 'twin'/.test(nbArt) && /'NEIGH'/.test(nbArt))
+}
+
+// --------------------------------------------- NEIGH SPAT (#2604) -------
+section('NEIGH SPAT (#2604): third-party grudge — souring, cold war, thaw, reunion, cooldown')
+{
+    const spSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const spJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const spArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    const hang = (g, key, name, r, c, hue) => {
+        g.visitAfter = 99; g.ivyAfter = 99; g.ivyGap = 0
+        g[key] = { name, r, c, x: tileX(c) + TILE / 2, y: tileY(r) + TILE / 2, path: null, state: 'hang',
+            t: 0, hue, face: 1, walkPhase: 0, chatT: 0, hangUntil: 9999, neighT: 0 }
+        return g[key]
+    }
+    const park = (p, r, c) => { p.r = r; p.c = c; p.x = tileX(c) + TILE / 2; p.y = tileY(r) + TILE / 2; p.path = null; p.goal = null; p.use = null; p.working = false; p.faintT = 0; if (p.queue) p.queue.length = 0; p.owner = null; if (p.needs) for (const n of ['hunger', 'energy', 'fun', 'social', 'bladder']) p.needs[n] = Math.max(p.needs[n], 0.55) }   // #2604: a held resident stays out of the collapse lane — these soaks are long, and a frozen lost world tests nothing
+    const hold = (pairs) => pairs.forEach(([p, r, c]) => park(p, r, c))
+    const soak = (g, pairs, sec) => { for (let i = 0; i < Math.round(sec / DT); i++) { hold(pairs); advance(g, DT); drain(g) } }
+    const soakEv = (g, pairs, sec, sink) => { for (let i = 0; i < Math.round(sec / DT); i++) { hold(pairs); advance(g, DT); sink.push(...drain(g)) } }
+    // one-ear layout: Fern (3,5) has the ear of p0 (3,4); Ivy waits beside her at
+    // (3,7) — inside the pair ring, watching; p1 parked out of everyone's reach.
+    const ear = (g) => [[g.visitor, 3, 5], [g.ivy, 3, 7], [g.people[0], 3, 4], [g.people[1], 1, 1]]
+    const free = (g) => [[g.visitor, 3, 5], [g.ivy, 3, 7], [g.people[0], 1, 12], [g.people[1], 1, 1]]
+
+    // The souring: exactly one ear, the other watches — 30 s and the pair cracks.
+    const s1 = newRun(2604); hang(s1, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(s1, 'ivy', 'Ivy', 3, 7, '#a3579b')
+    s1.rel.neigh = 20
+    const rn0 = s1.rel.neigh
+    soak(s1, ear(s1), NEIGH_IGNORE_T - 1)
+    check('a near-miss of one-ear waiting sours NOTHING (boundary under the timer)',
+        s1.neiGrudge === 0 && s1.neiSpats === 0 && s1.neiIgnore >= NEIGH_IGNORE_T - 1.05 && s1.neiIgnore < NEIGH_IGNORE_T - 0.5,
+        `ignore=${s1.neiIgnore.toFixed(2)}`)
+    const ev1 = []
+    soakEv(s1, ear(s1), 2, ev1)
+    check('the 30th second of watched-but-unheard cracks the pair',
+        s1.neiGrudge === 1 && s1.neiSpats === 1 && s1.neiIgnore === 0, `grudge=${s1.neiGrudge} spats=${s1.neiSpats}`)
+    const evSpat = ev1.filter((e) => e.t === 'spat')
+    check('the pair spat rides the household crack event, names itself, carries a spot',
+        evSpat.length === 1 && evSpat[0].who === 'neigh' && Number.isFinite(evSpat[0].x) && Number.isFinite(evSpat[0].y), JSON.stringify(evSpat))
+    check('the spat takes NEIGH_SPAT_DROP off the pair and only the pair',
+        s1.rel.neigh >= rn0 - NEIGH_SPAT_DROP - 0.02 && s1.rel.neigh <= rn0 - NEIGH_SPAT_DROP + (NEIGH_IGNORE_T + 2) * NEIGH_GLANCE + 0.02
+        && s1.rel.fern > 0 && s1.rel.house === 0,
+        `neigh=${s1.rel.neigh.toFixed(3)} (was ${rn0}) fern=${s1.rel.fern.toFixed(3)}`)
+
+    // The cold war: proximity builds NOTHING — no chat, no glance, no meet-up —
+    // while individual chats with residents are untouched (the grudge is theirs).
+    // Tolerances: the hourly absence-fade (NEIGH_FADE per 5 s sim-hour) still
+    // runs while cold — so "builds nothing" means NOTHING POSITIVE, and each
+    // 10 s soak may lose up to three hour-ticks (0.06) to the ordinary clock.
+    const rnCold = s1.rel.neigh, fernCold = s1.rel.fern
+    soak(s1, [[s1.visitor, 3, 5], [s1.ivy, 3, 7], [s1.people[0], 1, 12], [s1.people[1], 1, 1]], 6)   // both free, in ring: chat WOULD pay
+    check('a cold pair in the ring builds nothing (chat silenced)',
+        s1.rel.neigh > rnCold - 3 * NEIGH_FADE - 0.001 && s1.rel.neigh <= rnCold && s1.neiIgnore === 0)
+    let coldWalk = false
+    for (let i = 0; i < Math.round(6 / DT); i++) {
+        hold([[s1.visitor, 3, 5], [s1.ivy, 3, 10], [s1.people[0], 1, 12], [s1.people[1], 1, 1]]); advance(s1, DT); drain(s1)
+        if (Array.isArray(s1.ivy.path) && s1.ivy.path.length) coldWalk = true   // apart: meet-up WOULD walk
+    }
+    check('a cold pair keeps its distance — the meet-up walk is refused',
+        !coldWalk && s1.rel.neigh > rnCold - 6 * NEIGH_FADE - 0.001, `walk=${coldWalk}`)
+    const fernMid = s1.rel.fern
+    soak(s1, ear(s1), 6)   // one ear again: glance WOULD pay
+    check('a cold pair at a glance stays flat — while the resident chat is NOT the pair\u2019s quarrel',
+        s1.rel.neigh > rnCold - 9 * NEIGH_FADE - 0.001 && s1.rel.neigh <= rnCold && s1.rel.fern > fernMid,
+        `neigh=${(s1.rel.neigh - rnCold).toFixed(3)} fern=+${(s1.rel.fern - fernMid).toFixed(3)}`)
+
+    // The exit is absence: one goes home → thaw; the pay waits for the reunion.
+    s1.visitor = null
+    soak(s1, [[s1.ivy, 3, 7], [s1.people[0], 1, 12], [s1.people[1], 1, 1]], 4)
+    check('absence thaws the pair grudge into mending', s1.neiGrudge === 0 && s1.neiMending === 1)
+    const rn2 = s1.rel.neigh, ct2 = s1.content
+    hang(s1, 'visitor', 'Fern', 3, 5, '#4fae5f')
+    const ev2 = []
+    soakEv(s1, free(s1), 2, ev2)   // back together, nobody claiming
+    const evMake = ev2.filter((e) => e.t === 'makeup')
+    check('the reunion in the ring pays the thaw once: +NEIGH_MAKEUP, hearts, no content',
+        s1.neiMending === 0 && evMake.length === 1 && evMake[0].who === 'neigh'
+        && s1.rel.neigh >= rn2 + NEIGH_MAKEUP - 3 * NEIGH_FADE - 0.001 && s1.rel.neigh <= rn2 + NEIGH_MAKEUP + 2 * NEIGH_CHAT + 0.02 && s1.content === ct2,
+        `neigh=+${(s1.rel.neigh - rn2).toFixed(3)} content=${s1.content}`)
+    const ct3 = s1.content
+    soakEv(s1, free(s1), 4, ev2)
+    check('the thaw pays once — the chat law takes it from there',
+        ev2.filter((e) => e.t === 'makeup').length === 1 && s1.rel.neigh > rn2 + NEIGH_MAKEUP && s1.content === ct3)
+
+    // Resets: the timer counts WAITING, not time. Any peace breaks it.
+    // Resets: the timer counts WAITING, not time. Any peace breaks it. Each
+    // run stays under the hour-19 exit so the pair lives to answer for itself.
+    const resetCase = (name, midPairs) => {
+        const g = newRun(2610); hang(g, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(g, 'ivy', 'Ivy', 3, 7, '#a3579b')
+        soak(g, ear(g), 16)
+        check(`${name}: the watch accumulates before the peace`, g.neiIgnore >= 15.9 && g.neiSpats === 0, `ignore=${g.neiIgnore.toFixed(2)}`)
+        soak(g, midPairs(g), 10)
+        check(`${name} resets the souring clock`, g.neiIgnore === 0 && g.neiSpats === 0, `ignore=${g.neiIgnore.toFixed(2)}`)
+        soak(g, ear(g), 16)   // 32 one-ear seconds total — without the reset the timer would have fired
+        check(`${name}: a restarted watch cannot reach the timer on borrowed minutes`,
+            g.neiIgnore < NEIGH_IGNORE_T && g.neiSpats === 0, `ignore=${g.neiIgnore.toFixed(2)} spats=${g.neiSpats}`)
+        return g
+    }
+    resetCase('both hang free together', free)
+    resetCase('both guests share an ear', (g) => [[g.visitor, 3, 5], [g.ivy, 3, 7], [g.people[0], 3, 4], [g.people[1], 3, 8]])
+    resetCase('the waiting neighbour steps out of gossip reach', (g) => [[g.visitor, 3, 5], [g.ivy, 3, 10], [g.people[0], 3, 4], [g.people[1], 1, 1]])
+
+    // The cooldown mirror: SPAT_CD holds even a re-soured pair. The flags and
+    // the timer are state — forcing them stands in for "the pair already had
+    // its full sour stretch", so this run stays short of the hour-19 exits.
+    const cd = newRun(2614); hang(cd, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(cd, 'ivy', 'Ivy', 3, 7, '#a3579b')
+    cd.neiIgnore = NEIGH_IGNORE_T - 3
+    soak(cd, ear(cd), 4)
+    check('the cooldown rig: first spat fired on schedule', cd.neiSpats === 1 && cd.neiGrudge === 1)
+    cd.neiGrudge = 0; cd.neiMending = 0; cd.neiIgnore = NEIGH_IGNORE_T   // re-soured to the teeth, mid-cooldown
+    soak(cd, ear(cd), 2)
+    check('the SPAT_CD mirror: a re-soured pair inside the cooldown waits',
+        cd.neiSpats === 1 && cd.neiIgnore >= NEIGH_IGNORE_T && cd.neiSpatCd > 0, `spats=${cd.neiSpats} cd=${cd.neiSpatCd.toFixed(1)}`)
+    soak(cd, ear(cd), cd.neiSpatCd + 1.5)
+    check('when the cooldown runs out, the sour pair cracks again', cd.neiSpats === 2 && cd.neiGrudge === 1)
+
+    // Hash, determinism, source pins: the ledger is state and the law is wired.
+    const k0 = newRun(31)
+    const k1 = newRun(31); k1.neiSpats = 1
+    const k2 = newRun(31); k2.neiGrudge = 1
+    const k3 = newRun(31); k3.neiMending = 1
+    check('the pair\u2019s quarrel ledger rides the hash',
+        stateHash(k1) !== k0 && stateHash(k2) !== k0 && stateHash(k3) !== k0)
+    const spatRun = (seed) => {
+        const g = newRun(seed); hang(g, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(g, 'ivy', 'Ivy', 3, 7, '#a3579b')
+        soak(g, ear(g), NEIGH_IGNORE_T + 2)          // crack
+        g.visitor = null; soak(g, [[g.ivy, 3, 7], [g.people[0], 1, 12], [g.people[1], 1, 1]], 3)   // absence
+        hang(g, 'visitor', 'Fern', 3, 5, '#4fae5f')
+        soak(g, free(g), 2)                          // reunion
+        return stateHash(g)
+    }
+    check('a whole quarrel — crack, absence, reunion — is seed-exact',
+        spatRun(7) === spatRun(7) && spatRun(2604) === spatRun(2604))
+    check('pin: the cold war silences the pair by returning before any pay',
+        /if \(s\.neiGrudge\) return/.test(spSim) && /s\.neiIgnore >= NEIGH_IGNORE_T && s\.neiSpatCd <= 0/.test(spSim))
+    check('pin: absence thaws, reunion pays NEIGH_MAKEUP once',
+        /if \(s\.neiGrudge\) \{\s*s\.neiGrudge = 0\s*s\.neiMending = 1/.test(spSim)
+        && /relAdd\(s, 'neigh', NEIGH_MAKEUP\)/.test(spSim) && /if \(s\.neiMending && !fv\.claim && !iv\.claim && d <= NEIGH_REACH\)/.test(spSim))
+    check('pin: the ledger mixes into stateHash', /mix\(s\.neiSpats\); mix\(s\.neiGrudge\); mix\(s\.neiMending\)/.test(spSim))
+    check('pin: the banners name the pair, the NEIGH row runs ash while cold',
+        /who === 'neigh' \? 'FERN AND IVY SPAT!'/.test(spJsx) && /who === 'neigh' \? 'THE NEIGHBOURS MADE UP/.test(spJsx)
+        && /neiGrudge \? '#2c6b5b' : '#3aa08a'/.test(spArt))
+    check('pin: the marquee teaches the law', /WATCHED but never HEARD/.test(spJsx))
 }
 
 // ----------------------------------------------------------- PET (#2197) -----

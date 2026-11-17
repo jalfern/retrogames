@@ -1276,7 +1276,9 @@ export function bondRows(s) {
         // #2588: the third-party rung — twin leaves, the neighbours' own row.
         // Teal: far enough from Fern-green and Ivy-plum to read as a pair's
         // own colour (and from every other row hue in the phone-scale probe).
-        { key: 'neigh', glyph: 'twin', col: '#3aa08a', lv: relLevel(s.rel.neigh), label: 'NEIGH', x: PANEL_X + 12, y: by + 54, pulse: relLevel(s.rel.neigh) === 3 },
+        // #2604: ash-teal while the pair's own grudge holds — the HOUSE row's
+        // grudge-ash pattern, mirrored on the web's third strand.
+        { key: 'neigh', glyph: 'twin', col: s.neiGrudge ? '#2c6b5b' : '#3aa08a', lv: relLevel(s.rel.neigh), label: 'NEIGH', x: PANEL_X + 12, y: by + 54, pulse: relLevel(s.rel.neigh) === 3 },
     ]
     if (s.kid) rows.push({ key: 'kid', glyph: 'star', col: '#ffd24a', lv: relLevel(s.rel.kid), label: 'PIP', x: PANEL_X + 12, y: by + 68, pulse: false })
     return rows

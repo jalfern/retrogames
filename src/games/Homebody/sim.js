@@ -84,6 +84,17 @@ export const NEIGH_MEET_CD = 3        // s between meet-up walk retries (the rep
 export const NEIGH_COOL_CD = 11       // s between exchanged lines (the #2135 cooling-beat pattern)
 export const NEIGH_WARM = 1.25        // friendship warms: each neighbour chats 25% deeper
 export const NEIGH_WARM_AT = 1        // with the household once the pair is on speaking terms
+// #2604: neighbours SPAT — the web's dark half. The #2070 cold war is household
+// only, so Fern and Ivy could be ignored patiently forever. New law: while both
+// hang and exactly one has an ear, the watched-but-unheard minutes sour. Ignore
+// long enough and the pair SPAT — the bond falls and the pair's own grudge sets:
+// proximity builds nothing until absence thaws it and reunion pays. No rng in the
+// triggers, like every spat. Individual chats with residents are untouched —
+// the grudge is the pair's own.
+export const NEIGH_IGNORE_T = 30      // s of one-ear waiting that sours the pair
+export const NEIGH_SPAT_DROP = 4      // rel.neigh lost per pair spat (SPAT_DROP scaled soft)
+export const NEIGH_MAKEUP = 2         // the reunion pays after absence thaws (softest thaw)
+export const NEIGH_SPAT_CD = 40      // s before another pair spat can fire (SPAT_CD mirror)
 
 // #2240: THE GIFT LANDS. FRIENDS+ used to pay hunger with a toast and nothing
 // physical; now the basket Ivy carried in gets SET DOWN when she reaches the
@@ -948,6 +959,11 @@ export function newRun(seed) {
         triHits: 0,                 // #2154: three-way tells fired this run (the line variant rides it)
         neighTell: 0,               // #2588: world seconds until the next exchanged neighbour line
         neighHits: 0,              // #2588: neighbour exchanges fired this run (line variant rides it)
+        neiIgnore: 0,             // #2604: seconds one neighbour has been watched-but-unheard (clock, not hash)
+        neiSpats: 0,              // #2604: pair quarrels this run (rides the hash)
+        neiGrudge: 0,             // #2604: 1 = the pair is in cold war until absence thaws (rides the hash)
+        neiMending: 0,            // #2604: thawed by absence — the next shared moment makes up (rides the hash)
+        neiSpatCd: 0,             // #2604: real seconds until the next pair spat may fire (clock, not hash)
         pet: null,                  // #2197: the household cat, once adopted
         kid: null,                  // #2203: the adopted child, once the agency calls
         paper: null,                // #2238: today's news on the step (item ref | null)
@@ -1769,6 +1785,20 @@ export const NEIGH_LINES = [
     'Ivy shows Fern a seed packet; Fern pretends to be appalled and asks for two.',
     'Fern hums a bar; Ivy finishes the tune. Both pretend that was an accident.',
 ]
+// #2604: the quarrel, the thaw, the reunion — the pair's own weather.
+export const NEIGH_SPAT_LINES = [
+    'Fern and Ivy SPAT — something about the tomatoes, and years of being second.',
+    'Two neighbours, one ear: the waiting minutes finally catch fire.',
+    'Ivy says it plain, Fern says it back — the gate goes quiet.',
+]
+export const NEIGH_THAW_LINES = [
+    'One gate closed, and the quarrel has nobody left to perform for.',
+    'With half the pair gone home, the sour air thins off the porch.',
+]
+export const NEIGH_MAKEUP_LINES = [
+    'Fern and Ivy meet at the gate mid-sentence — fine, FINE, it is over.',
+    'A sigh, a shrug, two sprigs of rosemary: the neighbours are neighbours again.',
+]
 function eligibleNear(s, v) {
     return s.people
         .map((p, i) => ({ p, i, d: Math.abs(p.r - v.r) + Math.abs(p.c - v.c) }))
@@ -1822,12 +1852,37 @@ function freeCellNear(s, r, c) {
 }
 function updateNeighbours(s, dt) {
     if (s.neighTell > 0) s.neighTell = Math.max(0, s.neighTell - dt)
+    if (s.neiSpatCd > 0) s.neiSpatCd = Math.max(0, s.neiSpatCd - dt)
     const fv = hasVisitor(s) && s.visitor.state === 'hang' ? s.visitor : null
     const iv = hasIvy(s) && s.ivy.state === 'hang' ? s.ivy : null
-    if (!fv || !iv) return
+    if (!fv || !iv) {
+        // #2604: apart, nothing accumulates — and absence is the ONLY thing that
+        // cools a pair grudge. While one is gone the quarrel thaws; the pay
+        // waits for the reunion (no rng, mirrors the household's exit-by-absence).
+        s.neiIgnore = 0
+        if (s.neiGrudge) {
+            s.neiGrudge = 0
+            s.neiMending = 1
+            think(s, pick(s, NEIGH_THAW_LINES))
+        }
+        return
+    }
     if (iv.neighT > 0) iv.neighT = Math.max(0, iv.neighT - dt)
     const d = Math.abs(fv.r - iv.r) + Math.abs(fv.c - iv.c)
+    // #2604 cold war: proximity builds NOTHING — no chat, no glance, no meet-up
+    // walk. The household doctrine verbatim; the pair stand where they stand.
+    if (s.neiGrudge) return
+    if (s.neiMending && !fv.claim && !iv.claim && d <= NEIGH_REACH) {
+        // #2604: the thaw pays at the first unclaimed moment back in the ring —
+        // softest on the panel, and no content: the win economy is the household's.
+        s.neiMending = 0
+        relAdd(s, 'neigh', NEIGH_MAKEUP)
+        s.events.push({ t: 'makeup', who: 'neigh', x: (fv.x + iv.x) / 2, y: (fv.y + iv.y) / 2 })
+        think(s, pick(s, NEIGH_MAKEUP_LINES))
+        return
+    }
     if (!fv.claim && !iv.claim) {
+        s.neiIgnore = 0   // nobody waits: together they talk, apart they walk
         if (d > NEIGH_REACH) {
             // the meet-up: nobody to talk to, so the newcomer crosses the room
             if (!iv.path && iv.neighT <= 0) {
@@ -1847,8 +1902,24 @@ function updateNeighbours(s, dt) {
         return
     }
     if (fv.claim === null ? iv.claim !== null : iv.claim === null) {
-        if (d <= NEIGH_GLANCE_REACH) relAdd(s, 'neigh', NEIGH_GLANCE * dt)   // gossip carries further than walk-talk
+        if (d <= NEIGH_GLANCE_REACH) {
+            relAdd(s, 'neigh', NEIGH_GLANCE * dt)   // gossip carries further than walk-talk
+            // #2604: but gossip is not being HEARD. Watched-but-unheard minutes
+            // sour, and a long enough stretch of them cracks the pair.
+            s.neiIgnore += dt
+            if (s.neiIgnore >= NEIGH_IGNORE_T && s.neiSpatCd <= 0) {
+                s.neiIgnore = 0
+                s.neiSpatCd = NEIGH_SPAT_CD
+                s.neiGrudge = 1
+                s.neiSpats += 1
+                relSub(s, 'neigh', NEIGH_SPAT_DROP)
+                s.events.push({ t: 'spat', who: 'neigh', x: (fv.x + iv.x) / 2, y: (fv.y + iv.y) / 2 })
+                think(s, pick(s, NEIGH_SPAT_LINES))
+            }
+        } else s.neiIgnore = 0   // out of gossip reach — distance is not neglect
+        return
     }
+    s.neiIgnore = 0   // both have an ear — nobody is watching
 }
 
 // ------------------------------------------------------- paper route ------
@@ -3264,6 +3335,7 @@ export function stateHash(s) {
     mix(s.courtPick === 'house' ? 1 : s.courtPick === 'fern' ? 2 : s.courtPick === 'ivy' ? 3 : s.courtPick === 'kid' ? 4 : 0)   // #2235: so does the preferred addressee
     mix(s.triTell); mix(s.triHits)   // #2154: the choreography tell and its beat count ride it too
     mix(s.neighTell); mix(s.neighHits)   // #2588: so do the pair's own exchange throttle and beat count
+    mix(s.neiSpats); mix(s.neiGrudge); mix(s.neiMending)   // #2604: the pair's quarrel ledger rides it (the timers don't — clocks like spatCd stay off)
     mix(s.paperDay)                    // #2238: today's route stamps the day it landed
     mix(s.mealDay)                     // #2244: so do the bells — the day the plate landed
     mix(s.mealSlot); mix(s.mealSerial) // and which bell rang, and how many ever rang

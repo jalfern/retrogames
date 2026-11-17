@@ -74,7 +74,7 @@ see §Speed dial.
   thaw answers with a warm major chord. Honesty (#237): The Sims *orders*
   insults and compliments; spats here are a law of neglected living, not a
   button — romance landed (#2131) and so did third-party relationships
-  (#2588, §Neighbours who meet); spats between neighbours stay open (Honest gaps).
+  (#2588, §Neighbours who meet); the pair's own quarrel shipped in #2604 (§Neighbours SPAT).
 - Spat polish (#2076): the quarrel now stages itself ON the lot. `s.spatFx`
   (2.4 s, real clock, view-only) arms at the crack: both residents get a
   storm puff with a gold bolt over the head, knifed brows and a shaking
@@ -239,7 +239,7 @@ see §Speed dial.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 722 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), neighbours who meet — third-party rel.neigh: chat/glance/meet/cross-warmth/ladder/hash (#2588), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), garbage day — roster, eve set-out, dawn collection, honest skip, hash (#2303), ice-cream truck — arithmetic stop, paid buy, broke refusals, one serving, kid chase, rot, hash (#2503), truck arrival + drive-off view — rolls in 2 s, out 4 s, draw-only, truckView (#2508), cone in hand — the eat beat, world-clock hold, two arithmetic drips, view-only, hash-still, drive-verified (#2508 item 3), winnable seeds, determinism
+npm run peoplecheck          # 751 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), neighbours who meet — third-party rel.neigh: chat/glance/meet/cross-warmth/ladder/hash (#2588), neighbours SPAT — one-ear souring timer, cold-war silence, absence-thaw, reunion pay, CD mirror, hash, seed-exact quarrel (#2604), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), garbage day — roster, eve set-out, dawn collection, honest skip, hash (#2303), ice-cream truck — arithmetic stop, paid buy, broke refusals, one serving, kid chase, rot, hash (#2503), truck arrival + drive-off view — rolls in 2 s, out 4 s, draw-only, truckView (#2508), cone in hand — the eat beat, world-clock hold, two arithmetic drips, view-only, hash-still, drive-verified (#2508 item 3), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -884,6 +884,48 @@ cat is a night creature, out working the lot after the house is asleep).
   (parity due/stamp/retire across seeds; no-cat quiet). `sneak-gone`/`prowl-home`
   cross-check: neither a sneak nor a prowl ever lands on the same night.
 
+## Neighbours SPAT (#2604) — the web's dark half
+
+The #2070 cold war was household only — Fern and Ivy could be ignored patiently
+forever. `updateNeighbours` now carries the pair's own weather, mirrored from the
+household law with neighbour-appropriate signals, no rng in any trigger:
+
+- **Souring.** While both neighbours hang and **exactly one has an ear**
+  (`claim`, settled by the #2154 arbitration) with the other still inside gossip
+  reach (`≤ NEIGH_GLANCE_REACH`), the watched-but-unheard minutes count:
+  `neiIgnore` accrues. Any peace breaks it — both hang unclaimed (they have each
+  other), both claimed (nobody waits), either out of gossip reach, either off the
+  lot.
+- **The crack.** `NEIGH_IGNORE_T` 30 continuous seconds: the pair SPAT —
+  `relSub(neigh, NEIGH_SPAT_DROP = 4)`, `neiGrudge = 1`, `neiSpats++`,
+  `neiSpatCd = NEIGH_SPAT_CD` (40 s, the SPAT_CD mirror; no re-crack inside it).
+  The `spat` event carries `who: 'neigh'` — the shell names the pair
+  (`FERN AND IVY SPAT!`) over the #2070 crack: sour dissonance, red sparks, jolt.
+- **Cold war.** While `neiGrudge` holds, `updateNeighbours` returns before any
+  pay — no chat, no glance, no meet-up walk: *proximity builds nothing, only
+  absence cools*, the household doctrine verbatim. Chats with residents are
+  untouched — the grudge is the pair's own. The panel NEIGH row runs ash-teal
+  while cold (the HOUSE row's grudge-ash pattern).
+- **The exit is absence, then reunion.** One of the pair leaves the lot →
+  `neiGrudge = 0`, `neiMending = 1` (a thaw line; no timer, the visits keep
+  their own hours). The first time both hang unclaimed inside `NEIGH_REACH`
+  again the pair makes up: `relAdd(neigh, NEIGH_MAKEUP = 2)`, a `makeup` event
+  (`who: 'neigh'` → `THE NEIGHBOURS MADE UP ♥`, hearts, warm chord), once per
+  thaw — and no content: the win economy stays the household's.
+- **State.** `neiSpats`/`neiGrudge`/`neiMending` ride `stateHash`;
+  `neiIgnore`/`neiSpatCd` are clocks like `spatCd` and stay off it. The marquee
+  teaches the law in one line.
+
+Proof: `peoplecheck` NEIGH SPAT block — timer boundary exactness (29 s silent,
+30 s cracks), drop-and-only-the-pair accounting, the crack event's `who` and
+spot, three reset cases (free-together / both-claimed / out-of-reach, each
+proving 32 borrowed seconds cannot fire), cold-war silence on all three pays
+while resident chat survives, absence-thaw, reunion pay-once, the CD mirror
+(a re-soured pair waits; when the cooldown expires it cracks again), hash
+carries, and a scripted crack→absence→reunion run is seed-exact. Mutant
+(proved by hand): neuter the cold-war return → the three silence gates and the
+source pin go red.
+
 ## Honest gaps (filed to QA #…)
 
 - **CLOSED by #1806:** multiple rooms — one expansion ships: the Spare Room kit
@@ -912,9 +954,9 @@ the coo, held past it the insult flies mid-hold, on the same laws and the same
 cooldown as C/X. **The pet half of that tail landed in #2197 — Miso the
 adoptable cat (see Cat (#2197))**; the kids half landed in #2203 — Pip, the
 adoptable child (see Kids (#2203)). **Third-party relationships landed in #2588
-— Fern and Ivy form their own bond (see §Neighbours who meet).** Still open:
-neighbours never SPAT (no third-party grudge — the cold-war law is household
-only); the pair ring is proximity, not pathing choreography beyond the meet-up
+— Fern and Ivy form their own bond (see §Neighbours who meet); the third-party
+grudge landed in #2604 — the pair SPAT too (see §Neighbours SPAT).** Still open:
+the pair ring is proximity, not pathing choreography beyond the meet-up
 (they chat where the lot parks them); Miso and Pip don't mediate the pair.
 - Visitors are Fern and Ivy (#2143); pets landed (#2197, Miso — and #2200 gave
   her a mood row on the panel and neighbours who greet her); kids landed
