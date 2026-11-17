@@ -303,14 +303,19 @@ function laneRuns(gs, extra) {
 // and changes no hash. Curated RACK_SPOTS never trip it (floorbosscheck pins
 // the autopilot win proof transfers).
 export const ARM_MIN = 2
-function cornerChokes(gs, extra) {
+// Rich records of the same scan — the mouths ride along so stage 2 (#2627 s2
+// TEACH THE ELBOW) can name the honest fixes; cornerChokes stays the law's
+// identical string output (same scan, same order).
+function cornerRecords(gs, extras) {
+    const ex = extras || []
     const open = (x, y) => inGrid(x, y) && map[y][x] === CELL.FLOOR
-        && !(extra && extra.x === x && extra.y === y)
+        && !ex.some((e) => e.x === x && e.y === y)
         && !gs.racks.some((r) => r.x === x && r.y === y)
     const chokes = []
-    if (!extra) return chokes // only a rack can be the one that faces the corner
+    if (!ex.length) return chokes // only a rack can be the one that faces the corner
+    const R = ex[0] // the hypothetical facing rack — every choke hangs off it
     for (const [dx, dy] of NB) { // d = the arm the rack faces; B = R + d
-        const bx = extra.x + dx, by = extra.y + dy
+        const bx = R.x + dx, by = R.y + dy
         if (!open(bx, by)) continue
         for (const [px, py] of [[dy, dx], [-dy, -dx]]) { // d2 candidates (a perpendicular pair)
             // exact elbow: arms open along d and p; the two back cells closed
@@ -327,13 +332,44 @@ function cornerChokes(gs, extra) {
                 while (open(bx + (k + 1) * ax, by + (k + 1) * ay)
                     && !open(bx + (k + 1) * ax + fx, by + (k + 1) * ay + fy)
                     && !open(bx + (k + 1) * ax - fx, by + (k + 1) * ay - fy)) k++
-                const mouth = open(bx + (k + 1) * ax, by + (k + 1) * ay) // past the tight run: an open mouth, or a wall/spur
-                return k >= ARM_MIN && mouth
+                const m = { x: bx + (k + 1) * ax, y: by + (k + 1) * ay } // past the tight run: an open mouth, or a wall/spur
+                return k >= ARM_MIN && open(m.x, m.y) ? m : null
             }
-            if (run(dx, dy, px, py) && run(px, py, dx, dy)) chokes.push(`e${bx},${by}:${dx},${dy}`)
+            const m1 = run(dx, dy, px, py), m2 = run(px, py, dx, dy)
+            if (m1 && m2) chokes.push({ bx, by, dx, dy, px, py, mouths: [m1, m2] })
         }
     }
     return chokes
+}
+function cornerChokes(gs, extra) {
+    return cornerRecords(gs, extra ? [extra] : null).map((c) => `e${c.bx},${c.by}:${c.dx},${c.dy}`)
+}
+// #2627 stage 2 TEACH THE ELBOW — the refusal banner names the law; this
+// answers "what would clear it?". Pure query for the painter, which lights
+// these cells at the refusal (show the escape, don't tell). Honest fixes only:
+// a mouth counts as a PLUG iff racking it would be a legal click in its own
+// right (all five reach laws hold, so the lesson never suggests a refusal),
+// AND with the plug stood the original click would build clean. The check
+// stands the plug on a scratch cell pushed onto gs.racks and popped again —
+// no charge, no landed rack, no event: state identical after the call
+// (#1917 zero footprint). Fixed scan order, no rng — same board, same
+// answer. A click that isn't refused answers nothing.
+export function cornerEscapes(gs, x, y) {
+    const chokes = cornerRecords(gs, [{ x, y }])
+    if (!chokes.length) return []
+    const out = []
+    const seen = new Set()
+    for (const c of chokes) for (const m of c.mouths) {
+        const k = `${m.x},${m.y}`
+        if (seen.has(k)) continue
+        seen.add(k)
+        if (strandsFloor(gs, m.x, m.y) !== false) continue // an illegal plug teaches nothing
+        gs.racks.push({ x: m.x, y: m.y, items: [], owner: -1 })
+        let clears = false
+        try { clears = strandsFloor(gs, x, y) === false } finally { gs.racks.pop() }
+        if (clears) out.push({ x: m.x, y: m.y })
+    }
+    return out
 }
 function strandsFloor(gs, x, y) {
     if (map[y][x] !== CELL.FLOOR || gs.racks.some((r) => r.x === x && r.y === y)) return false // other laws refuse first
