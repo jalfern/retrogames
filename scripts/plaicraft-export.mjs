@@ -21,6 +21,9 @@
 //
 // Usage: node scripts/plaicraft-export.mjs [--out data/plaicraft] [--fast]
 //        --fast caps every run at 4000 ticks (a quick corpus for the check).
+//        #2621: [--slack] [--hero wizard] [--partner elf] stamp the hard
+//        setting into every recording's rules (must name --out); replay and
+//        rl's playscore rebuild the stamped game from the file itself.
 
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
@@ -151,8 +154,13 @@ export function collectRun(seed, opts = {}) {
     // #2430: the planner corpus keeps its proven elf partner EXPLICITLY (stamp
     // and sim agree) — newGame's absent-partnerKey default is now the live sim
     // default (valkyrie), and unstamped synthetic files must not claim it.
-    const gs = newGame(seed, { partnerKey: 'elf' })
-    const rec = createRecorder({ gameId: 'gauntlet', method: 'stick', seed, players: 2, sources: [{ kind: 'model' }, { kind: opts.seatKind || 'cpu' }], rules: () => ({ hero: 'warrior', partnerKey: 'elf' }) })
+    // #2621 (stage 3d): opts.rules stamps the run — slack/hero/partnerKey ride
+    // the recording's rules, the replay rebuilds them through newGame (which
+    // reads every one of these knobs since stage 3c), and verify() still closes.
+    // opts absent → stamp identical to the historical corpus, byte for byte.
+    const stamp = { partnerKey: 'elf', ...(opts.rules || {}) }
+    const gs = newGame(seed, stamp)
+    const rec = createRecorder({ gameId: 'gauntlet', method: 'stick', seed, players: 2, sources: [{ kind: 'model' }, { kind: opts.seatKind || 'cpu' }], rules: () => ({ hero: stamp.hero || 'warrior', partnerKey: stamp.partnerKey, ...(stamp.slack ? { slack: true } : {}) }) })
     const codec = makeHeroPadCodec()
     const hst = { prevA: false, prevB: false }
     const featMem = {}
@@ -261,8 +269,24 @@ if (process.argv[1] && process.argv[1].endsWith('plaicraft-export.mjs')) {
     const out = resolve(opt('--out', 'data/plaicraft'))
     const fast = args.includes('--fast')
     const maxTicks = fast ? 4000 : 30000
+    // #2621 (stage 3d): the hard-setting stamp. --slack --hero wizard
+    // [--partner k] stamps every recording's rules; replay (makeReplayDriver)
+    // and rl's playscore read the SAME knobs, so exported rows are the hard
+    // game, verified. No flags → default corpus, unchanged names, unchanged
+    // bytes. A stamped corpus MUST name its own --out (the default belongs to
+    // the unstamped corpus and must not be silently overwritten).
+    const rules = {}
+    if (args.includes('--slack')) rules.slack = true
+    const heroV = opt('--hero', null)
+    if (heroV) rules.hero = heroV
+    const partnerV = opt('--partner', null)
+    if (partnerV) rules.partnerKey = partnerV
+    if (Object.keys(rules).length && !args.includes('--out')) {
+        console.error('stamped export must name --out (protects the default corpus)')
+        process.exit(1)
+    }
     mkdirSync(resolve(out, 'rec'), { recursive: true })
-    const runs = collectAll([...PRACTICE_SEEDS, ...HELDOUT_SEEDS], { maxTicks })
+    const runs = collectAll([...PRACTICE_SEEDS, ...HELDOUT_SEEDS], { maxTicks, rules })
     const rows = []
     const stats = {}
     for (const r of runs) {
