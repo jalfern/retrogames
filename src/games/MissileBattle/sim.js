@@ -205,7 +205,10 @@ function fire(g, tx, ty) {
     b.ammo--
     const sx = b.x, sy = CFG.groundY + 8
     const eta = Math.max(1, Math.round(Math.hypot(tx - sx, ty - sy) / CFG.ivSpeed))
-    g.intc.push({ id: g.nextId++, x: sx, y: sy, tx, ty, vx: (tx - sx) / eta, vy: (ty - sy) / eta, eta, t: 0, bat: bi })
+    // #2510 item 3: the shot stamps WHOSE sky it defended — the renderer
+    // names the partner from it (autopilot trails fly their own hue). Solo
+    // stamps seat 0 and the stateHash (id/x/y only) never moves.
+    g.intc.push({ id: g.nextId++, x: sx, y: sy, tx, ty, vx: (tx - sx) / eta, vy: (ty - sy) / eta, eta, t: 0, bat: bi, seat: g.seat })
     g.fired++
     g.firedBy[bi]++
     g.events.push({ type: 'ifire', x: sx, y: sy, tx: Math.round(tx), ty: Math.round(ty), bat: bi, tick: g.tick })
