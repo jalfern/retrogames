@@ -74,7 +74,7 @@ transcribed into source:
   obeys the wind class (`sailState` in hull.js): full canvas in FRESH/GALE,
   reefed in STEADY, furled on a becalmed sea.
 - Town walls/buildings are still tile terrain; enterable buildings are stage 2.
-  — **CLOSED by #PRNUM** for the WALLS half: six of eight gate-towns stand
+  — **CLOSED by #2538** for the WALLS half: six of eight gate-towns stand
   behind a seeded stone ring with one gate (#2516-ladder POLISH — see "Town
   walls" below). The enterable half is now data-proven stage-2, not choice:
   every `*.ULT` region file in the bundle is exactly 1280 B (terrain-only)
@@ -565,7 +565,7 @@ npm run dev                 # play at /retrogames/britannia
   landed in #1829-item-1 below, and storms now endanger the hull — see
   "Storms endanger the hull".)
 
-## Town walls — the gate-towns become places (#PRNUM, POLISH #2516 ladder)
+## Town walls — the gate-towns become places (#2538, POLISH #2516 ladder)
 
 In the original (Ultima IV, Origin 1985) every town is walled with a gate.
 Until now ours were open tinted skirts. `walls.js` (pure + deterministic, the
