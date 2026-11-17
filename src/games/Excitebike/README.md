@@ -198,6 +198,17 @@ faster heat.
   tuned): a well-drawn course beats the pack on pace, a crowded one may be
   a slab of whoops — there is no "difficulty grade" beyond what you draw.
   The attract demo still flies MOTOCROSS only; saved designs never enter it.
+- **PER-COURSE LEAGUE (#2573 items 5+6):** every course carries a `pace`
+   (MOTOCROSS/SUPERCROSS 0 — calibration, all receipts byte-honest; then
+   +0.02/+0.03/+0.04, K.O. CROSS +0.06) and `PACK_TIER` [1,2/3,1/3,0,0] rides
+   it on the front ranks (K.O.: MARIO 5.36, KATO 5.22, GORDON 5.07; SONJA and
+   IVAN baseline). The cap is measured: the pass-spec's +0.15 ate the
+   autopilot's FIRST margin to 3.1px and died on every SLACK tax, and even
+   +0.01 at SUPERCROSS broke its CONTACT phase pins — the bite tops out where
+   a taxed win survives. Customs/TEST drafts carry no `pace` key, so they ride
+   the baseline pack. The lap book is UNIFORM two laps: the original's
+   lap-count variation is VS-mode options this port does not model. Both laws
+   pinned by excitecheck's PER-COURSE LEAGUE section (336 checks).
 - The bay's ghost preview is a silhouette + colour bar, not the animated
   NES stamp cursor; palette labels are text (see also open polish #2573).
 

@@ -29,6 +29,11 @@ const TRACKS = [
     {
         name: 'MOTOCROSS',
         bite: 1,
+        pace: 0,        // #2573 PER-COURSE LEAGUE: later circuits run the
+        // original's faster pack (see PACK_TIER below). MOTOCROSS and
+        // SUPERCROSS are the calibration courses at pace 0 — every shipped
+        // receipt (CRASH LEAGUE, CONTACT, PACK, attract replay) stands
+        // byte-honest there, and the bite ramps +0.02..+0.06 after them.
         // rolling hills, one big jump, a whoop field, a mud pit, a water hole,
         // a boost straight and one clearable up-step. Closes flat-ish at LAP.
         cps: [
@@ -70,6 +75,7 @@ const TRACKS = [
     },
     {
         name: 'SUPERCROSS',
+        pace: 0,
         bite: 2,
         // busier: two jumps, a bigger whoop field, back-to-back mud, a taller
         // step, and a harder water landing. Same loop length.
@@ -109,6 +115,7 @@ const TRACKS = [
     },
     {
         name: 'SAND CROSS',
+        pace: 0.02,
         bite: 3,
         // the desert course: long rolling dunes, one mid lip, a WIDE whoop
         // field, a long sand-mud flat (the longest drag in the roster), the
@@ -138,6 +145,7 @@ const TRACKS = [
     },
     {
         name: 'SLALOM CROSS',
+        pace: 0.03,
         bite: 4,
         // the rhythm course: three knuckles strung close together (the landing
         // of one sets the take-off of the next), a tight whoop straight between
@@ -174,6 +182,7 @@ const TRACKS = [
     },
     {
         name: 'BIG AIR',
+        pace: 0.04,
         bite: 5,
         // two tall lips with long glides and a water crossing in between (the
         // recovery section), then a whoop run, mud, the step, and a boost
@@ -208,6 +217,7 @@ const TRACKS = [
     },
     {
         name: 'K.O. CROSS',
+        pace: 0.06,
         bite: 6,
         // the whole roster at full stretch: three big lips, TWO whoop fields,
         // back-to-back mud, the tallest step in the game, a deep water bowl,
@@ -365,6 +375,15 @@ export const RIVALS = [
     { name: 'SONJA', base: 4.88, skill: 0.66 },
     { name: 'IVAN', base: 4.66, skill: 0.52 },
 ]
+
+// #2573 PER-COURSE LEAGUE — the original's later circuits bite harder: the
+// pack's front ranks carry the course's pace bonus, the tail rides the
+// baseline. The bonus per course lives on the track table (`pace`); its cap
+// is measured, not guessed — +0.15 on the leader ate the autopilot's FIRST
+// margin to 3.1px and broke the SLACK law, so K.O. CROSS tops out at +0.06
+// (+0.06/+0.04/+0.02 front ranks). Customs/TEST drafts carry no `pace`
+// field and ride generic baseline pace (the honest remainder, README).
+export const PACK_TIER = [1, 2 / 3, 1 / 3, 0, 0]
 
 // rival speed at distance d: they ease through the same terrain the player
 // must (backing off the climbs, sucking through mud), but never crash.
