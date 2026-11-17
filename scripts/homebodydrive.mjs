@@ -597,6 +597,74 @@ check('contract state ticks', f0.tick > 0 && typeof f0.score === 'number', `tick
     check('#2474 item 4 cancelling a chip arms the row-collapse beat', armed && (await st()).queues[piC].length === 0, `collapse=${JSON.stringify((await st()).collapse)}`)
 }
 
+// #2532 — Miso's even-night prowl live: no cat refuses in words, a real adoption
+// puts Miso on the lot, the rig opens the flap, and the drive SEES the walk —
+// the banner names it, the sprite's own cell changes, amber night-eyes ride the
+// head — and the night ends with her home, stamped, one visit on the serial.
+{
+    if ((await st()).screen !== 'play') { await page.keyboard.press('Space'); await wait(400) }
+    const noCat = await page.evaluate(() => window.__homebodyTest.ringProwl())
+    check('#2532 no cat, no call — the rig refuses in words on a catless lot',
+        /no cat/.test(String(noCat)) && (await st()).prowl === null, String(noCat))
+    await page.evaluate(() => { window.__homebodyTest.money(1000); window.__homebodyTest.adopt() })
+    const ad = await st()
+    check('#2532 the counter sells Miso to the lot', !!ad.pet && ad.pet.name === 'Miso', JSON.stringify(ad.pet && ad.pet.name))
+    const ledger0 = ad.prowlLedger
+    await page.evaluate(() => window.__homebodyTest.ringProwl())
+    let pw = null
+    for (let i = 0; i < 80 && !(pw = (await st()).prowl); i++) await wait(50)
+    check('#2532 the flap opens — the drive reads the cat out on the lot', !!pw && pw.state === 'out', JSON.stringify(pw))
+    // the banner: cream glyphs (cream #ffe9a8 lives nowhere else on screen) on the
+    // front-lawn card, y≈348
+    const bannerInk = () => page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const d = c.getContext('2d').getImageData(150, 334, 340, 30).data
+        let ink = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 235 && d[i + 1] > 215 && d[i + 2] > 140 && d[i + 2] < 232) ink++
+        return ink
+    })
+    // night-eyes: amber #ffb347 around the sprite head — the golds on the lot
+    // (#ffd24a, g=210) sit above the window, the tabby (#d98e4a) below r=240
+    const eyesScan = async () => {
+        const p = (await st()).pet
+        if (!p) return 0
+        return page.evaluate(([x, y]) => {
+            const c = document.querySelector('canvas')
+            const d = c.getContext('2d').getImageData(Math.max(0, x - 12), Math.max(0, y - 18), 24, 12).data
+            let n = 0
+            for (let i = 0; i < d.length; i += 4) if (d[i] > 240 && d[i + 1] > 160 && d[i + 1] < 200 && d[i + 2] < 110) n++
+            return n
+        }, [p.x, p.y])
+    }
+    let outInk = 0, moved = false
+    const cell0 = [ad.pet.r, ad.pet.c]
+    for (let i = 0; i < 40 && (!moved || !outInk); i++) {
+        outInk = Math.max(outInk, await bannerInk())
+        const s = await st()
+        if (s.pet && (s.pet.r !== cell0[0] || s.pet.c !== cell0[1])) moved = true
+        await wait(60)
+    }
+    check('#2532 the walk-out banner paints cream over the lawn', outInk >= 20, `ink ${outInk}`)
+    check('#2532 the sprite walks where the logic says — her cell changes on the lot', moved, `from d(${cell0})`)
+    let amber = 0
+    for (let i = 0; i < 12 && !(amber = await eyesScan()); i++) await wait(80)
+    check('#2532 night-eyes — amber glints paint while she works the lot', amber >= 4, `amber px ${amber}`)
+    // the whole errand home: dial FASTEST and wait out both legs (or midnight)
+    await page.keyboard.press('Digit4')
+    let home = null, homeInk = 0
+    for (let i = 0; i < 400 && !home; i++) {
+        const s = await st()
+        if (!s.prowl) { homeInk = Math.max(homeInk, await bannerInk()); if ((s.prowlLedger || {}).serial >= ledger0.serial + 1) home = s }
+        await wait(100)
+    }
+    check('#2532 the night ends — home, stamped, one visit on the serial',
+        !!home && home.prowl === null && home.prowlLedger.night === home.day && home.prowlLedger.serial === ledger0.serial + 1,
+        JSON.stringify(home && home.prowlLedger))
+    check('#2532 the home banner paints too — the lift-home is voiced on screen', homeInk >= 20, `ink ${homeInk}`)
+    await page.keyboard.press('Digit2')
+    await stWait((x) => x.speed === 1)
+}
+
 check('zero page errors across the whole drive', errors.length === 0, JSON.stringify(errors.slice(0, 3)))
 await browser.close()
 console.log(`\n=== homebodydrive: ${pass} pass, ${fail} fail ===`)
