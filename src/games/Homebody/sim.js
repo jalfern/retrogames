@@ -463,6 +463,16 @@ export const KID_ICE_FLOOR = 0.85         // a child chases the truck unless joy
 // shell plays this table verbatim (#2240 VISIT_TIMBRE, #2264 MEAL_TIMBRE
 // pattern). [freq, dur, delayMs]
 export const ICE_TIMBRE = [[659, 0.12, 0], [784, 0.12, 140], [1046, 0.14, 280], [784, 0.12, 430], [1046, 0.24, 570]]
+// #2508 item 2: the call VARIES — two ending bars follow the motif, chosen by
+// pass parity off iceSerial (odd → A, even → B — the serial stamps before the
+// event drains), so no two passes jingle the same
+// twice. Offsets continue past the motif's last note (570+240 = 810 ms). The
+// shell swells each note with the truck's approach (the swell lives there) —
+// presentation only; the sim's scheduling and economy are untouched.
+export const ICE_ENDINGS = [
+    [[1318, 0.10, 840], [1046, 0.10, 950], [1318, 0.22, 1060]],   // A — the high flourish
+    [[880, 0.10, 840], [1175, 0.10, 950], [1318, 0.22, 1060]],    // B — the rising close
+]
 export const ICE_ARRIVE_LINES = [
     'The ice-cream man rounds the corner — the jingle rolls down the empty street.',
     'A pastel truck crests the hill: cones at the curb while the engine idles.',

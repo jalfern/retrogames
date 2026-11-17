@@ -104,7 +104,7 @@ import {
     GIFT_LAND_T, VISIT_TIMBRE,   // #2240: the set-down basket + the visitor timbres
     YARN_CD, YARN_CAT_FUN, YARN_BOND, YARN_SOCIAL, YARN_PLAY_T, PET_SELF_FUN, PET_BORED, yarnOrderOk,   // #2256: the yarn ball — ordered play + the cat's own game
     BIN, BIN_HOME, BIN_CURB, GARBAGE_EVERY, TRUCK_DUE, BIN_FUN, BIN_BOND, binOrderOk,   // #2303: garbage day — the eve, the curb, the truck
-    CONE, CONE_PRICE, ICE_DUE, ICE_WINDOW, ICE_FUN, ICE_KID_FUN, KID_ICE_FLOOR, coneOrderOk, ringTruck, icePassHour, ICE_TIMBRE,   // #2503: the ice-cream truck — the jingle, the curb, the price, the chase
+    CONE, CONE_PRICE, ICE_DUE, ICE_WINDOW, ICE_FUN, ICE_KID_FUN, KID_ICE_FLOOR, coneOrderOk, ringTruck, icePassHour, ICE_TIMBRE, ICE_ENDINGS,   // #2503: the ice-cream truck — the jingle, the curb, the price, the chase
     SNEAK_DUE, SNEAK_WINDOW, SNEAK_LOOT, sneakNightDue, hasAlarm, ringSneak, SNEAK_CREEP, SNEAK_SIREN,   // #2520: the sneak — the window, the loot list, the parity, the alarm, the rig
     PROWL_DUE, PROWL_WINDOW, prowlNightDue, PET_PROWL_FUN, ringProwl, PROWL_PADS, PROWL_HOME_SFX,   // #2532: Miso's even-night prowl — the window, the parity, the cat-scale pay, the rig, the sound tables
 } from '../src/games/Homebody/sim.js'
@@ -3052,6 +3052,21 @@ section('ICE CREAM TRUCK (#2503): the jingle passes, the cone sells, the truck m
         (iJsx.match(/iceTruckRollOut\(s\)/g) || []).length === 3 && /iceTruckRollOut\(g\)/.test(iJsx))
     check('pin: #2508 — the truck is draw-only: the sim is untouched and the slide is QA-readable',
         iSim.indexOf('drawIceTruck') === -1 && /truckView: \{ phase:/.test(iJsx))
+    // #2508 item 2: the call varies and swells — two ending bars on alternating
+    // passes, per-note gain riding the truck's approach. Presentation only.
+    const iceMotifEnd = ICE_TIMBRE[ICE_TIMBRE.length - 1][2] + ICE_TIMBRE[ICE_TIMBRE.length - 1][1] * 1000
+    check('pin: #2508 item 2 — the call varies: two ending bars, each landing after the motif ends',
+        Array.isArray(ICE_ENDINGS) && ICE_ENDINGS.length === 2
+        && ICE_ENDINGS.every((bar) => bar.length >= 3 && bar.every(([f, d, ms]) => f > 0 && d > 0 && ms >= iceMotifEnd)))
+    check('pin: #2508 item 2 — the ending alternates by pass parity off iceSerial, and QA can read which one rang',
+        /iceTruck\.jingle = \(s\.iceSerial \+ 1\) % 2/.test(iJsx)
+        && /ICE_ENDINGS\[iceTruck\.jingle === 'A' \? 0 : 1\]/.test(iJsx)
+        && /jingle: iceTruck\.jingle/.test(iJsx))
+    check('pin: #2508 item 2 — the volume swells with the approach: far < near and every jingle note rides iceVol',
+        /const ICE_VOL_FAR = ([\d.]+), ICE_VOL_NEAR = ([\d.]+)/.test(iJsx) && Number(RegExp.$1) < Number(RegExp.$2)
+        && (iJsx.match(/audioController\.playTone\(f, d, 'triangle', iceVol\(\)\)/g) || []).length === 2)
+    check('pin: #2508 item 2 — presentation only: the swell lives in the shell, the sim ships no audio',
+        iSim.indexOf('iceVol') === -1 && iSim.indexOf('ICE_VOL') === -1 && iSim.indexOf('audioController') === -1)
 }
 
 // ---------------------------------------------- SNEAK IN THE NIGHT (#2520) ----

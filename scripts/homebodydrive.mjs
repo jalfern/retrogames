@@ -727,6 +727,32 @@ check('contract state ticks', f0.tick > 0 && typeof f0.score === 'number', `tick
         mintPeak - mint0 >= 30 && (await mintBand()) < mint0 + 8, `mint base ${mint0} peak ${mintPeak} after ${await mintBand()}`)
 }
 
+// #2508 item 2 — the call VARIES. Headless Chrome hears nothing, so the ending
+// bar each pass rang is probe-visible: truckView.jingle. Two consecutive passes
+// must ring different bars; the parity law (iceSerial) is pinned in peoplecheck,
+// including the swell (far < near, every note routed through iceVol).
+{
+    if ((await st()).screen !== 'play') { await page.keyboard.press('Space'); await wait(400) }
+    const ringRead = async () => {
+        const before = (await st()).iceSerial
+        await page.evaluate(() => { window.__homebodyTest.money(500); window.__homebodyTest.ringTruck() })
+        for (let i = 0; i < 100; i++) {
+            const s = await st()
+            if (s.iceSerial > before && s.truckView.jingle) return { serial: s.iceSerial, jingle: s.truckView.jingle }
+            await wait(40)
+        }
+        return { serial: null, jingle: null }
+    }
+    const r1 = await ringRead()
+    const r2 = await ringRead()
+    check('#2508 item 2 — two consecutive passes ring different ending bars (the call varies)',
+        !!r1.jingle && !!r2.jingle && r1.jingle !== r2.jingle, JSON.stringify({ first: r1, second: r2 }))
+    check('#2508 item 2 — the bar rides iceSerial parity deterministically ((serial+1) even → A)',
+        !!r1.jingle && r1.jingle === ((r1.serial + 1) % 2 === 0 ? 'A' : 'B')
+        && !!r2.jingle && r2.jingle === ((r2.serial + 1) % 2 === 0 ? 'A' : 'B'),
+        JSON.stringify({ first: r1, second: r2 }))
+}
+
 check('zero page errors across the whole drive', errors.length === 0, JSON.stringify(errors.slice(0, 3)))
 await browser.close()
 console.log(`\n=== homebodydrive: ${pass} pass, ${fail} fail ===`)
