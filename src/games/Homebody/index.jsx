@@ -80,6 +80,7 @@ const MESSAGES = [
     'CHAT builds BONDS — Fern at FAMILY visits sooner and lingers. Neglect cools them.',
     'Ivy shops the market — chat grows HER bond too. At FRIENDS she brings a basket; FAMILY adds honey-money.',
     'FERN AND IVY MIND THEIR OWN BUSINESS — a shared afternoon climbs their NEIGH bond, and friends chat deeper.',
+    'A guest WATCHED but never HEARD sours — leave one neighbour waiting too long and the pair SPAT. Absence cools it, meeting again mends it.',
     'Order the court on glass: tap ✓ for the kind word — hold ✓ on someone and the insult flies.',
     'Red needs flare tempers — a SPAT cracks BONDS. Fill both, side by side, to thaw.',
     'Bank §300, then B + R: hammer on a Spare Room and the lot grows.',
@@ -396,7 +397,7 @@ const HomebodyGame = () => {
                         audioController.playTone(233, 0.09, 'sawtooth', 0.06)
                         setTimeout(() => audioController.playTone(220, 0.16, 'sawtooth', 0.06), 100)
                         shake = 6
-                        if (live) { say('OTTO AND MIRA SPAT!'); burst(e.x, e.y, 12, '#e23b2e', 3.0); showSay(s, e) }
+                        if (live) { say(e.who === 'neigh' ? 'FERN AND IVY SPAT!' : 'OTTO AND MIRA SPAT!'); burst(e.x, e.y, 12, '#e23b2e', 3.0); showSay(s, e) }   // #2604: the pair's crack names the pair
                         break
                     case 'grudge-cool': // #2135: the cold war speaks — a low, sour murmur
                         audioController.playTone(196, 0.16, 'triangle', 0.04)
@@ -407,7 +408,7 @@ const HomebodyGame = () => {
                         audioController.playTone(523, 0.07, 'triangle', 0.05)
                         setTimeout(() => audioController.playTone(659, 0.07, 'triangle', 0.05), 90)
                         setTimeout(() => audioController.playTone(784, 0.14, 'triangle', 0.05), 180)
-                        if (live) { say('MADE UP ♥'); heartBurst(e.x, e.y - 12); showSay(s, e) }   // #2076: hearts, named by the BONDS glyph
+                        if (live) { say(e.who === 'neigh' ? 'THE NEIGHBOURS MADE UP ♥' : 'MADE UP ♥'); heartBurst(e.x, e.y - 12); showSay(s, e) }   // #2076: hearts, named by the BONDS glyph; #2604: pair reunions name themselves
                         break
                     case 'chat': // #2135: the neighbours talk ON screen now — a soft murmur, then the bubble
                         audioController.playTone(e.k === 'ivy' ? 494 : 523, 0.05, 'sine', 0.03)
@@ -1220,8 +1221,9 @@ const HomebodyGame = () => {
                     people: gs.people.map((p) => ({ name: p.name, x: Math.round(p.x), y: Math.round(p.y), needs: { ...p.needs }, working: p.working, fainted: p.faintT > 0, mealTaken: p.mealTaken })),
                     items: gs.items.map((it) => ({ id: it.id, r: it.r, c: it.c })),
                     ext: gs.ext,
-                    rel: { house: gs.rel.house, fern: gs.rel.fern, ivy: gs.rel.ivy },   // #2143: third meter
+                    rel: { house: gs.rel.house, fern: gs.rel.fern, ivy: gs.rel.ivy, neigh: gs.rel.neigh },   // #2143: third meter; #2588: the pair's own rung joins the view
                     spats: gs.spats, grudge: gs.grudge, spatFx: Math.round(gs.spatFx * 10) / 10,   // #2070/#2076
+                    neiSpats: gs.neiSpats, neiGrudge: gs.neiGrudge, neiIgnore: Math.round(gs.neiIgnore),   // #2604: the pair's own quarrel ledger, visible to harness and panel-debug
                     cmdCd: Math.round(gs.cmdCd * 10) / 10, cooFx: Math.round(gs.cooFx * 10) / 10, cooDeep: !!gs.cooDeep,   // #2131
                     courtKind: (() => { const t = courtTarget(gs); return t ? t.k : null })(), active: gs.active,
                     courtPick: gs.courtPick,   // #2235: the preferred addressee (null = nearest law)
