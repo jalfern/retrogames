@@ -89,7 +89,13 @@ transcribed into source:
   contradicts the sheet's colour runs, so wiring it would mislabel marsh vs
   heath vs plains (#1135 archaeology). Sea/cliff/plains have no named tileset
   and stay flat fills. The EGA map palette in `ega.js` reproduces the semantic
-  colour use the tilesets prove (the original set it by port I/O at runtime).
+  colour use the tilesets prove (the original set it by port I/O at runtime). —
+  **CLOSED by #2538** (88215bd shipped it the same day as the walls): `ega.js`
+  decodes the six terrain CONs (+ BRICK) into classic stamps, `classicOn` wires
+  them into the renderer, and britanniacheck proves the structure per file with
+  a relabel mutant (FOREST↔GRASS swap goes red). The bullet outlived its own
+  ship — an idle-ladder kick onto BRITANNIA gap 0 (2026-11-17) hit exactly this
+  #961 shape: a stale gap re-kicking lanes onto closed work.
 
 ## Rain shadow (#1135 polish)
 
