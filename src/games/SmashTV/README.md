@@ -193,7 +193,8 @@ re-measured honestly on the new boards: **solo clears all 9 seeds** — the
 #1973 seed-3 forced loss is retired (the directed break ends the fan attrition
 without costing another seed; smashcheck pins the count — if a future change
 loses one again, update pin and README together, Pong's seed 25 style).
-Seeds 1, 5 and 7 prove the deathless matinee; the slack runs (seeds 0–2) and
+Seeds 1 and 7 prove the deathless matinee (#2530's router fix re-laid the
+lines — matinee {1,2,3,5,7}; the slack runs (seeds 0–2) and
 co-op (all nine seeds) still win.
 
 ## BONUS GIBS — the splatter sprites (#2044)
@@ -375,8 +376,18 @@ doctrine laws in `planner.js` plus two physics laws in `sim.js`:
 Honest re-measure, pins and README together (Pong's seed 25 style): the
 9-seed sweep wins **9/9 unshielded**, co-op wins **9/9**, slack seeds 0–2 all
 win on the stripped boards, and the deathless matinee moved from {1,5,7} to
-**{7,8}** — under zero mercy the opening volley costs first blood on seven
-boards. First blood the shields used to eat is now read or paid.
+{7,8} (#2491) and to **{1,2,3,5,7}** with #2530's router fix — under zero
+mercy the opening volley costs first blood on most boards. First blood the
+shields used to eat is now read or paid.
+
+#2530 audit note: a 97-roll-seed sweep (`scripts/qa-smash-seeds.mjs`) found
+25 autopilot stalls; the cause was `pathOn` re-keying the BFS prev-map with
+its own array values (Map keys are strict), collapsing every relocation route
+to its goal cell — the seat then walked straight into the chrome it was being
+routed around. Re-keying the parent cells fixed 21 of 25 (wins 66→80, stuck
+0); the four wide-corner ping-pong roamers that remain (20, 53, 60, 66) stay
+tracked on the issue. smashcheck's `roll seeds` gate pins the 23 un-wedged
+seeds against re-freeze.
 
 Gates: rules-section pins (spawn unshielded, entry round kills, solo + co-op
 respawn exposed, open-door landing), pilot pins above, slack pins 0–2. Four
