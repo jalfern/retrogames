@@ -260,12 +260,33 @@ function volleyGate(gs, p, st, inp) {
         // seat as a standing target, so it only holds while it still walks.
         const c = lane(st.dk[0], st.dk[1])
         if (c.safe && !c.pin && !c.close) {
-            const [qx, qy] = q8(st.dk[0], st.dk[1])
-            inp.mx = qx; inp.my = qy
-            st.wantMove = true
-            return inp
+            // #2530 seed 66: the commit that outlived its dodge. A round that
+            // fell south leaves the north lane safe FOREVER, so one slip off
+            // the turret's line became a 90px retreat every reload — the route
+            // south never arrived. When the router holds a goal and the commit
+            // carries the body AWAY from it, watch the objective lane: once it
+            // has been walkable for a full 10-tick hysteresis the dodge is
+            // paid (single-tick flickers must not release — #2491's fluency
+            // lesson), and the legs return to the route.
+            let paid = false
+            if (st.rt && st.rt.length) {
+                const wp = st.rt[0]
+                const ox = cx(wp[0]) - p.x, oy = cy(wp[1]) - p.y
+                if (st.dk[0] * ox + st.dk[1] * oy < 0) {
+                    const o2 = lane(ox, oy)
+                    if (o2.safe && !o2.pin && !o2.close) st.dkS = (st.dkS || 0) + 1
+                    else st.dkS = 0
+                    paid = st.dkS >= 10
+                } else st.dkS = 0
+            } else st.dkS = 0
+            if (!paid) {
+                const [qx, qy] = q8(st.dk[0], st.dk[1])
+                inp.mx = qx; inp.my = qy
+                st.wantMove = true
+                return inp
+            }
         }
-        st.dk = null
+        st.dk = null; st.dkS = 0
     }
     const o = lane(omx, omy)
     if (o.safe && !o.close) { st.dk = null; return inp }
@@ -275,7 +296,7 @@ function volleyGate(gs, p, st, inp) {
         const sc = d[0] * omx + d[1] * omy + (c.safe ? c.margin / 100 - (c.pin ? 0.6 : 0) - (c.close ? 1.2 : 0) : 0)
         if (c.hit > bk || (c.hit === bk && sc > bs)) { bk = c.hit; bs = sc; best = d }
     }
-    st.dk = best
+    st.dk = best; st.dkS = 0
     const [qx, qy] = q8(best[0], best[1])
     inp.mx = qx; inp.my = qy
     st.wantMove = true
@@ -606,7 +627,14 @@ function objectiveDrive(gs, pi, st, p) {
         : null
     if (refuel) {
         const th = nearestEnemy(gs, true, p)
+        // #2530 seed 60: the dry walk stops at the 4px drop-radius and the
+        // trigger only ever aimed at a VISIBLE enemy — behind chrome there is
+        // none, so the seat stood silent against the shut gun crate forever
+        // (energy frozen under dryLimit, mv(0,0) with wantMove false so every
+        // stall breaker stayed disarmed). The crate IS the dry tank: when the
+        // refuel target is a crate and no enemy owns the aim, shoot the crate.
         if (th) aimAt(th.x, th.y)
+        else if (refuel.hp != null) aimAt(refuel.x, refuel.y)
         moveToward(refuel.x, refuel.y, 4)
         return inp
     }

@@ -19,6 +19,14 @@
 // the cleared-room barrel ring in the router BFS (studio, 2026-11-17): 82 won,
 // 13 lost (list byte-identical), 0 stuck, 2 ROAM {60,66} — seed 53 (flame
 // barrel on the exit-route cell) wins; 60 and 66 stay tracked on the issue.
+// Re-measured after the dry-crate shoot (refuel walks aim their crate when no
+// enemy owns the sight-line) and the paid commit release (a volley commit
+// carrying the body away from the router's waypoint releases after 10
+// walkable-objective ticks): 85 won, 12 lost {13,16,25,29,57,64,69,77,80,85,
+// 89,96}, 0 stuck, 0 ROAM — the class is closed. 43/76 flipped lost→won on
+// the new lines; seed 13 flipped won→lost (paid-release re-lays its duel
+// approach; r8 attrition t≈8.7k) — tracked honestly, not certified. {60,66}
+// graduated into smashcheck's roll-seeds gate (now 27 seeds).
 // The fix must drive
 // the remaining class to zero, keep the nine certified pilot seeds winning,
 // and then graduate into smashcheck's roll-seeds gate (done for the fixed
