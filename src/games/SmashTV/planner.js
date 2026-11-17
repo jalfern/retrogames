@@ -31,20 +31,33 @@ const seatOf = (gs, pi) => gs.players[pi] || gs.player
 // same route, every time.
 const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]]
 
-function cellFree(gs, c, r) {
+// `ring` (cleared-room, non-boss routes only, #2530 seed 53): a dropped flame
+// barrel is not chrome but it is a no-go disc — the #2032 avoid law repels the
+// body at d<=16, so an exit walk whose chain runs through the barrel cell fights
+// that law forever (router waypt = barrel centre, 1.2px wobble for 57k ticks).
+// Ringing the barrel's cell and its four cardinals in the GRID makes BFS route
+// around the disc instead of into it. Never during combat, never in a boss room,
+// never for a kill-stand: those walks are duellists' footwork whose timing the
+// audits certify as-is, and ringing there phase-shifted seed 21's mid-fight
+// routes and lost its boss line (bisect 2026-11-17: cleared-gate keeps seed 21
+// byte-identical AND un-wedges seed 53).
+function cellFree(gs, c, r, ring) {
     const gw = (gs.roomData && gs.roomData.gw) || 16
     if (c < 0 || r < 0 || c >= gw || r >= GH) return false
+    if (ring) for (const it of gs.items) {
+        if (it.t === 'weapon' && it.w === 'flame' && Math.hypot(cx(c) - it.x, cy(r) - it.y) <= 16) return false
+    }
     return !blockedPx(gs, cx(c), cy(r), CFG.playerR)
 }
 
-function bfsFrom(gs, hc, hr) {
+function bfsFrom(gs, hc, hr, ring) {
     const prev = new Map([[`${hc},${hr}`, null]])
     const q = [[hc, hr]]
     for (let qi = 0; qi < q.length; qi++) {
         const [c, r] = q[qi]
         for (const [dc, dr] of DIRS4) {
             const nc = c + dc, nr = r + dr, k = `${nc},${nr}`
-            if (prev.has(k) || !cellFree(gs, nc, nr)) continue
+            if (prev.has(k) || !cellFree(gs, nc, nr, ring)) continue
             prev.set(k, [c, r])
             q.push([nc, nr])
         }
@@ -485,7 +498,7 @@ function objectiveDrive(gs, pi, st, p) {
             if (tgt) pth = findStand(gs, p, tgt)
             else if (st.rtG) {
                 const [tc, tr] = st.rtG
-                if (hc !== tc || hr !== tr) pth = pathOn(bfsFrom(gs, hc, hr), [tc, tr])
+                if (hc !== tc || hr !== tr) pth = pathOn(bfsFrom(gs, hc, hr, gs.cleared && !(room && room.boss)), [tc, tr])
             }
             if (pth && pth.length) st.rt = pth
             else if (!tgt) { drop = true }
@@ -519,7 +532,7 @@ function objectiveDrive(gs, pi, st, p) {
             const [hc, hr] = cellOf(p.x, p.y)
             if (hc !== tc || hr !== tr) {
                 const tgt = gs.enemies.find((en) => en.hp > 0 && cellOf(en.x, en.y)[0] === tc && cellOf(en.x, en.y)[1] === tr)
-                const pth = tgt ? findStand(gs, p, tgt) : pathOn(bfsFrom(gs, hc, hr), [tc, tr])
+                const pth = tgt ? findStand(gs, p, tgt) : pathOn(bfsFrom(gs, hc, hr, gs.cleared && !(room && room.boss)), [tc, tr])
                 if (pth && pth.length) { st.rt = pth; st.rtG = [tc, tr]; if (tgt) st.rtKill = tgt.id }
             }
         }

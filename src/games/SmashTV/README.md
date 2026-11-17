@@ -392,12 +392,15 @@ so the pilot now also judges GOAL PROGRESS (600 ticks of wanted walking with
 no net 16px toward a goal that keeps its place, no score, no hp flinch, no
 boss in the room = the straight legs are losing → grow the streak and let the
 BFS router plan the walk). Seed 20 (static turret, east/volt-back line) now
-wins: 81/13/0/3. Three roamers stay tracked on the issue — 53 (a dropped
-flame barrel sits ON its exit route's cell: the #2032 avoid law and the
-router fight at the d≤16 ring forever; a barrel-aware `cellFree` fixes 53 but
-phase-shifts seed 21's boss line into a loss — the ring needs a scoped home),
-60 and 66. smashcheck's `roll seeds` gate pins the 24 un-wedged seeds against
-re-freeze.
+wins: 81/13/0/3. Seed 53 then fell to the BARREL RING: a dropped flame barrel
+sits ON its exit-route cell — the #2032 avoid law repels the body at d≤16
+while the router commands east into the barrel centre, a 1.2px wobble forever;
+the router's BFS now rings flame-barrel cells, but only on cleared-room,
+non-boss, non-kill routes — an unscoped ring phase-shifted seed 21's mid-fight
+routes into a boss-room loss, the cleared gate keeps seed 21 byte-identical
+AND un-wedges 53: 82/13/0/2. Two roamers stay tracked on the issue — 60
+(multi-room freezes r1+r4) and 66 (arm→short-path→drop cycle at point-blank).
+smashcheck's `roll seeds` gate pins the 25 un-wedged seeds against re-freeze.
 
 Duel re-measure (nightly 43996221673, same family): the sweep's proof of the
 lane-sound duel was route luck too — seed 4's corner walk died with the router

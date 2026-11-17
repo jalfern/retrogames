@@ -1152,9 +1152,11 @@ console.log('pilot')
     // score/room/lives/weapon must not freeze >12k ticks before the game ends.
     // 84 is the issue's own seam-wedge case; 20 joined with the goal-progress
     // stall detector (ping-pong roam: the 24-tick displacement window never
-    // armed the router because the body travelled big chords toward nothing).
+    // armed the router because the body travelled big chords toward nothing);
+    // 53 joined with the cleared-room barrel ring (the exit walk and the #2032
+    // flame-barrel avoid law fought over the barrel's own cell forever).
     {
-        const FIXED = [17, 18, 19, 20, 23, 28, 30, 32, 34, 41, 43, 44, 47, 48, 54, 55, 57, 62, 65, 73, 84, 86, 92, 95]
+        const FIXED = [17, 18, 19, 20, 23, 28, 30, 32, 34, 41, 43, 44, 47, 48, 53, 54, 55, 57, 62, 65, 73, 84, 86, 92, 95]
         const wedged = []
         for (const seed of FIXED) {
             const gs = S.makeGame(seed)
@@ -1169,7 +1171,7 @@ console.log('pilot')
             }
             if (!gs.end && frozen > 12000) wedged.push(seed)
         }
-        ok(!wedged.length, 'roll seeds #2530: the un-wedged autopilot seeds never stall (24 seeds, 45k cap)', `wedged ${wedged.join(',')}`)
+        ok(!wedged.length, 'roll seeds #2530: the un-wedged autopilot seeds never stall (25 seeds, 45k cap)', `wedged ${wedged.join(',')}`)
     }
     // #2491 lane-sound duel — replay pin. The sweep used to catch a deaf-duel
     // mutant by luck of route: seed 4 walked onto the (12,10) chrome corner and
