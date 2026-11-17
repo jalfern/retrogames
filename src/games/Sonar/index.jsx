@@ -52,6 +52,12 @@ const SonarGame = () => {
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
+    // #2601 items 4+5: the seed ledger made actionable — `end`'s seed mirrored
+    // in a ref so the keyboard path (outside React render) can replay it, and
+    // the ?seed= pin mirrored so U can pull it without a URL edit.
+    const endRef = useRef(null)
+    const pinRef = useRef(null)
+    const [pin, setPin] = useState(null)
     const [watching, setWatching] = useState(false) // #1637 WATCH: mirrors the seat flag for the chrome
     const watchingRef = useRef(false)
 
@@ -83,6 +89,12 @@ const SonarGame = () => {
         let toast = 0
         let runScore = 0, livesCarry = CFG.lives
         const held = []
+        // #2601 item 5: read the ?seed= pin ONCE at mount (startPlay used to
+        // re-read the query on every start — the #1473 pin held forever with no
+        // escape but editing the URL). U pulls it; see onDown.
+        const qPin = seedFromQuery()
+        if (qPin != null) { pinRef.current = qPin >>> 0; setPin(qPin >>> 0) }
+        let overHoldAt = 0   // #2601 item 4: pointer-hold timer on the over screen
 
         // #2383 haptics. The arcade pattern (navigator.vibrate, try/caught),
         // gated so harness runs stay silent: the __game contract handle is the
@@ -150,6 +162,7 @@ const SonarGame = () => {
         const finish = () => {
             const cause = gs.end === 'dead' ? 'TAKEN IN THE DARK' : 'ASCENDED'
             setEnd({ score: runScore + gs.score, depth, seed, won: gs.win, cause })
+            endRef.current = seed >>> 0   // #2601 item 4: the ledger row the player may re-swim
             if (runScore + gs.score > 0) localStorage.setItem('sonar.board', JSON.stringify([...board(), { score: runScore + gs.score, depth, seed, date: new Date().toISOString().slice(2, 10) }].sort((a, b) => b.score - a.score).slice(0, 8)))
             overAtRef.current = performance.now()
             // #1637 WATCH: the light at the end of the dive IS the end of the
@@ -392,10 +405,13 @@ const SonarGame = () => {
         }
 
         // ---------- input ----------
-        const startPlay = () => {
+        const startPlay = (replaySeed = null) => {
             // #1473: honor ?seed=N so a filed feedback report's seed replays this exact
-            // cave set (caves are pure functions of seed + depth).
-            const pin = seedFromQuery()
+            // cave set (caves are pure functions of seed + depth). #2601 item 4:
+            // replaySeed (E / hold on the over screen) outranks it — the ledger's
+            // own seed. #2601 item 5: pinRef is the pin after U pulled it (null),
+            // so the escape hatch needs no URL edit.
+            const pin = replaySeed != null ? replaySeed : pinRef.current
             seed = pin != null ? pin >>> 0 : (Date.now() ^ (Math.floor(performance.now() * 1000) << 8)) >>> 0
             runScore = 0; livesCarry = CFG.lives
             // #2594 order law: setMode BEFORE loadDepth. loadDepth decides the
@@ -417,8 +433,25 @@ const SonarGame = () => {
             }
             if (ARROWS.includes(e.code) || e.code === 'Space') e.preventDefault()
             const sc = screenRef.current
+            // #2601 item 5: U pulls the ?seed= pin wherever it is felt. Any key
+            // on attract would otherwise START the pinned dive — the tester had
+            // no way back to random caves but editing the URL. Copy announces it.
+            if (e.code === 'KeyU' && pinRef.current != null) {
+                pinRef.current = null
+                setPin(null)
+                audioController.playSweep(660, 220, 0.18, 'triangle', 0.06)   // the pin comes out
+                return
+            }
             if (sc === 'attract') { startPlay(); return }
-            if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
+            if (sc === 'over') {
+                if (performance.now() - overAtRef.current > 900) {
+                    // #2601 item 4: E swims the run's seed again — the seed the
+                    // DEEP LOG row just printed, replayable without the URL.
+                    if (e.code === 'KeyE' && endRef.current != null) { startPlay(endRef.current); return }
+                    setMode('attract')
+                }
+                return
+            }
             if (pausedRef.current) return
             // #1637 WATCH: Y seats the proven diver (planStep drives the real
             // playerMove/ping on the sim's own cadence); any driving key hands
@@ -439,7 +472,13 @@ const SonarGame = () => {
         const onPointer = (e) => {
             const sc = screenRef.current
             if (sc === 'attract') { startPlay(); return }
-            if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
+            if (sc === 'over') {
+                // #2601 item 4: on touch there is no E key — the decision moves
+                // to pointerup: a hold ≥600 ms re-swims the just-shown seed, a
+                // tap keeps the old any-tap-to-attract law.
+                if (performance.now() - overAtRef.current > 900) overHoldAt = performance.now()
+                return
+            }
             if (sc === 'play' && e.target === canvas) {
                 // #1637 WATCH: a tap on the water is the player pinging — the
                 // seat hands back before the ping drives.
@@ -449,10 +488,19 @@ const SonarGame = () => {
                 handleEvents(gs.events.slice(before))
             }
         }
+        const onPointerUp = () => {
+            if (!overHoldAt) return
+            const heldFor = performance.now() - overHoldAt
+            overHoldAt = 0
+            if (screenRef.current !== 'over') return
+            if (heldFor >= 600 && endRef.current != null) startPlay(endRef.current)
+            else setMode('attract')
+        }
         window.addEventListener('keydown', onDown)
         window.addEventListener('keyup', onUp)
         window.addEventListener('blur', onBlur)
         window.addEventListener('pointerdown', onPointer)
+        window.addEventListener('pointerup', onPointerUp)
 
         const resize = () => {
             const r = wrap.getBoundingClientRect()
@@ -544,6 +592,16 @@ const SonarGame = () => {
                     return route.length
                 },
                 start: startPlay,
+                // #2601: the active ?seed= pin (null = the next dive is random).
+                pin: () => pinRef.current,
+                // DEV rig for the ledger test: the run ends, but ONLY as the sim
+                // ends it — set the death state and the live loop calls finish()
+                // itself (the dashcheck law: rig the setup, never the outcome).
+                forceOver: () => {
+                    if (!gs || screenRef.current !== 'play' || gs.end) return false
+                    gs.lives = 0; gs.end = 'dead'; gs.win = false
+                    return true
+                },
             }
             exposeGame({
                 id: 'sonar',
@@ -583,6 +641,7 @@ const SonarGame = () => {
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)
             window.removeEventListener('pointerdown', onPointer)
+            window.removeEventListener('pointerup', onPointerUp)
             window.removeEventListener('resize', resize)
             cancelAnimationFrame(raf)
             canvas.remove()
@@ -623,6 +682,12 @@ const SonarGame = () => {
                     <p className="text-white font-mono font-bold animate-pulse">{PRESS}</p>
                     {/* #1654: the discoverable WATCH line, before the first Y press. */}
                     <div className="mt-4 text-cyan-100/60 font-mono text-xs tracking-widest">{WATCH_ATTRACT_HINT}</div>
+                    {/* #2601 item 5: the pin is invisible until it is announced —
+                        and un-announced pins made ?seed= reports impossible to
+                        leave. U pulls it; the dive after that is random. */}
+                    {pin != null && (
+                        <div className="mt-2 text-teal-300/90 font-mono text-xs tracking-widest">SEED {(pin >>> 0).toString(16)} PINNED — U UNPINS</div>
+                    )}
                 </div>
             )}
 
@@ -638,7 +703,12 @@ const SonarGame = () => {
                             </div>
                         ))}
                     </div>
-                    <p className="mt-5 animate-pulse font-bold">TAP / PRESS ANY KEY</p>
+                    {/* #2601 item 4: the seed printed above is now a verb — E (or
+                        holding the water on touch) swims THIS cave again. */}
+                    <p className="mt-5 animate-pulse font-bold">ANY KEY — NEW DIVE</p>
+                    {end.seed != null && (
+                        <p className="mt-1 text-xs text-cyan-300/80 tracking-widest">E / HOLD — SWIM seed {end.seed.toString(16)} AGAIN{pin != null ? ' · U UNPINS' : ''}</p>
+                    )}
                 </div>
             )}
 

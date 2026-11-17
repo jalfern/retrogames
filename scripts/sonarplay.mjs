@@ -513,5 +513,67 @@ for (let i = 0; i < 900; i++) {
     r.check('a second ping revives the remembered pearl to bright (pixels)', revivePx >= 4, `revive=${revivePx}`)
 }
 
+// ---- #2601 items 4+5: the seed ledger made actionable ------------------
+// A DEEP LOG row printed a seed hex and the game had no way to act on it:
+// ?seed= pinned EVERY dive with no escape, and the just-finished seed was
+// display-only. These gates drive the real keys/mouse: ?seed= pins and is
+// announced; E (keyboard) and a ≥600 ms hold (touch) re-swim the finished
+// seed; U pulls the pin and the next dive is random again — no URL edits.
+{
+    const SEED = 0xab12
+    await page.goto(`${URL}?seed=${SEED}`, { waitUntil: 'load' })
+    await page.waitForFunction(() => !!window.__sonarTest, null, { timeout: 25000 })
+    await wait(700)
+    const announced = await page.evaluate(() => document.body.innerText.includes('PINNED'))
+    r.check('a pinned page announces the pin (no silent pinning)', announced)
+    await tap('Enter')
+    await wait(350)
+    let sp = await probe()
+    r.check('?seed= pins the first dive to that exact seed', sp.screen === 'play' && sp.seed === SEED, `screen=${sp.screen} seed=${(sp.seed ?? -1).toString(16)}`)
+    r.check('the pin is probeable', (await page.evaluate(() => window.__sonarTest.pin())) === SEED)
+
+    // E on the over screen replays the run's own seed.
+    await page.evaluate(() => window.__sonarTest.forceOver())
+    await wait(1100)
+    r.check('rig: the live loop ends the dive onto the over screen', (await probe()).screen === 'over')
+    await tap('KeyE')
+    await wait(350)
+    sp = await probe()
+    r.check('E on the over screen swims the SAME seed again', sp.screen === 'play' && sp.seed === SEED, `screen=${sp.screen} seed=${(sp.seed ?? -1).toString(16)}`)
+
+    // touch path: hold the water ≥600 ms to repeat, short before it, tap stays
+    // any-tap-to-attract (exercised at the end of the section).
+    await page.evaluate(() => window.__sonarTest.forceOver())
+    await wait(1100)
+    const box = await page.evaluate(() => {
+        const c = document.querySelector('canvas[data-sonar-stage]')
+        const b = c.getBoundingClientRect()
+        return { x: b.x + b.width / 2, y: b.y + b.height / 2 }
+    })
+    await page.mouse.move(box.x, box.y)
+    await page.mouse.down()
+    await wait(700)
+    await page.mouse.up()
+    await wait(350)
+    sp = await probe()
+    r.check('holding the water repeats the dive on the same seed (touch)', sp.screen === 'play' && sp.seed === SEED, `screen=${sp.screen} seed=${(sp.seed ?? -1).toString(16)}`)
+
+    // U pulls the pin: it un-pins WITHOUT starting (any key on attract starts),
+    // and the dive after it is random again.
+    await page.evaluate(() => window.__sonarTest.forceOver())
+    await wait(1100)
+    await tap('Enter')                       // any other key still leaves for attract
+    await wait(300)
+    r.check('a plain key on the over screen still goes to attract', (await probe()).screen === 'attract')
+    await tap('KeyU')
+    await wait(250)
+    sp = await probe()
+    r.check('U pulls the pin without starting a dive', (await page.evaluate(() => window.__sonarTest.pin())) === null && sp.screen === 'attract', `screen=${sp.screen}`)
+    await tap('Enter')
+    await wait(350)
+    sp = await probe()
+    r.check('after U the next dive is random again (no URL edit)', sp.screen === 'play' && sp.seed !== SEED, `screen=${sp.screen} seed=${(sp.seed ?? -1).toString(16)}`)
+}
+
 r.check('zero page errors across the whole playthrough', errors.length === 0, errors.slice(0, 4).join(' | '))
 r.exit(browser)
