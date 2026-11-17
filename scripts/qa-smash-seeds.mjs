@@ -15,7 +15,11 @@
 // {53,60,66} — seed 20 (static turret, east-commit/volt-back ping-pong) now
 // wins; 53's mechanism is measured (a dropped flame barrel sits ON the
 // route's own cell — the #2032 avoid law and the router fight at the d<=16
-// boundary forever), 60 and 66 stay tracked on the issue. The fix must drive
+// boundary forever), 60 and 66 stay tracked on the issue. Re-measured after
+// the cleared-room barrel ring in the router BFS (studio, 2026-11-17): 82 won,
+// 13 lost (list byte-identical), 0 stuck, 2 ROAM {60,66} — seed 53 (flame
+// barrel on the exit-route cell) wins; 60 and 66 stay tracked on the issue.
+// The fix must drive
 // the remaining class to zero, keep the nine certified pilot seeds winning,
 // and then graduate into smashcheck's roll-seeds gate (done for the fixed
 // seeds; seed 20 joined).
