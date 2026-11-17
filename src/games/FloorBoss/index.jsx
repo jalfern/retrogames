@@ -26,7 +26,7 @@ import { MANIFEST_REV } from '../../utils/robot/assets.js'
 import {
     makeGame, step, state, stateHash, createAutopilot, clickCell, setTool,
     toggleAuto, clickOrder, hireRobot, nextShift, rungPrice, rushNow,
-    COLS, ROWS, SHIFT, STRIKES, RACK_COST, ROBOT_COST, RACK_CAP,
+    COLS, ROWS, SHIFT, STRIKES, RACK_COST, ROBOT_COST, RACK_CAP, STOW_PAY,
     BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS,
 } from './sim.js'
 
@@ -184,10 +184,10 @@ const FloorBossGame = () => {
                         // painter the bay handoff uses, timed to the swing so the cargo
                         // visibly travels the gantry's sweep instead of just landing
                         if (gs.arm.held && gs.arm.target) arcItems.push({ x0: armTip.x, y0: armTip.y + 4, x1: PX(gs.arm.target.x) + 13, y1: PY(gs.arm.target.y) + 3, k: 0, n: gs.arm.swingT0 || 44, kind: gs.arm.held, servo: true }); break
-                    case 'armstow': audioController.playTone(560, 0.05, 'square', 0.05); audioController.playTone(840, 0.07, 'square', 0.04, 0.06); burst(PX(e.x) + 13, PY(e.y) + 13, 4, '#7ec8ff', 1.2); fx('SERVO', '#7ec8ff', PX(e.x) + 13, PY(e.y) + 4); break
+                    case 'armstow': audioController.playTone(560, 0.05, 'square', 0.05); audioController.playTone(840, 0.07, 'square', 0.04, 0.06); burst(PX(e.x) + 13, PY(e.y) + 13, 4, '#7ec8ff', 1.2); fx('SERVO', '#7ec8ff', PX(e.x) + 13, PY(e.y) + 4); if (e.s >= 0) tillFx(e.s, `+${STOW_PAY} RACK`); break // #2561 item 2
                     case 'pick': audioController.playSweep(440, 760, 0.07, 'square', 0.05); burst(PX(e.x) + 13, PY(e.y) + 13, 3, '#ffe9a8', 1); break
                     case 'bay': audioController.playSweep(320, 560, 0.07, 'triangle', 0.05); arcItems.push({ x0: armTip.x, y0: armTip.y + 4, x1: PX(e.x) + 13, y1: PY(e.y) + 3, k: 0, kind: e.k }); break
-                    case 'stow': audioController.playTone(620, 0.05, 'square', 0.05); audioController.playTone(930, 0.07, 'square', 0.04, 0.05); burst(PX(e.x) + 13, PY(e.y) + 13, 4, '#9fe8b4', 1.2); break
+                    case 'stow': audioController.playTone(620, 0.05, 'square', 0.05); audioController.playTone(930, 0.07, 'square', 0.04, 0.05); burst(PX(e.x) + 13, PY(e.y) + 13, 4, '#9fe8b4', 1.2); if (e.s >= 0) tillFx(e.s, `+${STOW_PAY} RACK`); break // #2561 item 2: the credit names itself on the till it lands
                     case 'deliver': audioController.playTone(740, 0.06, 'square', 0.05); break
                     case 'ship': {
                         // #1921 freight line: pack no longer rings the till — it BOOKS
@@ -212,6 +212,10 @@ const FloorBossGame = () => {
                     case 'bonus': {
                         audioController.playTone(660, 0.07, 'triangle', 0.06); audioController.playTone(880, 0.09, 'triangle', 0.06, 0.08); audioController.playTone(1175, 0.12, 'triangle', 0.05, 0.17)
                         fx(`FREIGHT +${e.amt}`, '#ffd23f', PX(OUT_CELLS[1].x) + 13, PY(OUT_CELLS[1].y) - 26)
+                        if (gs.duel) { // #2561 item 2: the drive-off pays each seat's till — name each share
+                            if (e.s0 > 0) tillFx(0, `+${e.s0} FREIGHT`)
+                            if (e.s1 > 0) tillFx(1, `+${e.s1} FREIGHT`)
+                        }
                         if (e.heavy) fx(`HEAVY x${e.heavy}`, '#9ad7ff', PX(OUT_CELLS[1].x) + 13, PY(OUT_CELLS[1].y) - 38) // heavy freight names itself on the till (#1931)
                         burst(PX(OUT_CELLS[1].x) + 13, PY(OUT_CELLS[1].y) + 13, 8, '#ffd23f', 2)
                         break
@@ -234,8 +238,12 @@ const FloorBossGame = () => {
                     case 'turbo': audioController.playTone(900 + Math.random() * 300, 0.03, 'square', 0.03); repairPulse.set(`${e.x},${e.y}`, gs.tick); break
                     case 'break': audioController.playNoise(0.18, 0.09); audioController.playSweep(300, 90, 0.24, 'sawtooth', 0.07); shake = 7; fx('BREAKDOWN', '#ff5a4f', PX(e.x) + 13, PY(e.y) + 8); break
                     case 'repaired': audioController.playSweep(400, 900, 0.14, 'triangle', 0.06); burst(PX(e.x) + 13, PY(e.y) + 13, 5, '#7ec8ff', 1.5); break
-                    case 'build': audioController.playTone(180, 0.1, 'square', 0.07); burst(PX(e.x) + 13, PY(e.y) + 13, 5, '#e0954e', 1.5); spendFlash = { label: `RACK −$${RACK_COST} — SPEND COMES OUT OF THROUGHPUT`, until: gs.tick + 180 }; break
-                    case 'hire': audioController.playTone(480, 0.07, 'square', 0.06); audioController.playTone(600, 0.1, 'square', 0.05, 0.08); spendFlash = { label: `BOT −$${ROBOT_COST} — SPEND COMES OUT OF THROUGHPUT`, until: gs.tick + 180 }; break
+                    case 'build': audioController.playTone(180, 0.1, 'square', 0.07); burst(PX(e.x) + 13, PY(e.y) + 13, 5, '#e0954e', 1.5); spendFlash = e.s === 1 // #2561 item 3: seat M's buys must read as M's — model colors, model credit
+                        ? { label: `MODEL BUILDS — RACK −$${RACK_COST} OFF ITS NIGHT`, until: gs.tick + 180, col: '#57c7ff' }
+                        : { label: `RACK −$${RACK_COST} — SPEND COMES OUT OF THROUGHPUT`, until: gs.tick + 180 }; break
+                    case 'hire': audioController.playTone(480, 0.07, 'square', 0.06); audioController.playTone(600, 0.1, 'square', 0.05, 0.08); spendFlash = e.s === 1 // #2561 item 3
+                        ? { label: `MODEL HIRES — BOT −$${ROBOT_COST} OFF ITS NIGHT`, until: gs.tick + 180, col: '#57c7ff' }
+                        : { label: `BOT −$${ROBOT_COST} — SPEND COMES OUT OF THROUGHPUT`, until: gs.tick + 180 }; break
                     case 'poor': audioController.playTone(120, 0.12, 'square', 0.06); fx('NO BUDGET', '#ff9a4f', PX(e.x) + 13, PY(e.y) + 8); break
                     case 'refuse': audioController.playTone(110, 0.1, 'square', 0.05); break
                     case 'aisle': audioController.playSweep(240, 120, 0.12, 'square', 0.05); fx(e.why === 'pocket' ? 'DEAD-END AISLE' : e.why === 'rack' ? 'STRANDED A RACK' : 'NO SERVICE LANE', '#ffd23f', PX(e.x) + 13, PY(e.y) + 8); break // #2546
@@ -255,8 +263,11 @@ const FloorBossGame = () => {
 
         // #2561: a credit landing on the twin till must name itself — the seat's
         // color, anchored under the till (house credit has no seat chip to name).
+        // It also arms the seat chip's growth blink (#2561 item 2).
+        const tillGrowAt = [-9999, -9999]
         const tillFx = (seat, msg) => {
             if (!gs.duel || seat < 0 || seat > 1) return
+            tillGrowAt[seat] = gs.tick
             fx(`${msg} ${seat === 0 ? 'YOU' : 'MODEL'}`, seat === 0 ? '#ffd23f' : '#57c7ff', 436, 44)
         }
         const fx = (msg, col, x, y) => {
@@ -727,12 +738,18 @@ const FloorBossGame = () => {
             if (gs.duel) {
                 // #2555 twin till — the manager scoreboard rides beside escrow;
                 // the leading seat burns bright, the trailer stays steady dim.
+                // #2561 item 2: the leader also BLINKS for 2 world-seconds after
+                // credit lands on it — the ESCROW chip blink law (#1877), so a
+                // growth that names itself on the floor also rings on the chip.
                 const [h, mm] = gs.credits
                 const lead = h === mm ? -1 : (h > mm ? 0 : 1)
+                const chipCol = (seat, hot, cold) => lead === seat
+                    ? (tick - tillGrowAt[seat] < 120 && tick % 50 >= 34 ? cold : hot)
+                    : cold
                 ctx.font = 'bold 8px monospace'; ctx.textAlign = 'left'
-                ctx.fillStyle = lead === 0 ? '#ffd23f' : '#8f7f45'
+                ctx.fillStyle = chipCol(0, '#ffd23f', '#8f7f45')
                 ctx.fillText(`YOU ${h}`, 436, 12)
-                ctx.fillStyle = lead === 1 ? '#57c7ff' : '#3f6f88'
+                ctx.fillStyle = chipCol(1, '#57c7ff', '#3f6f88')
                 ctx.fillText(`MODEL ${mm}`, 436, 26)
             }
             // shift clock
@@ -816,7 +833,7 @@ const FloorBossGame = () => {
             // #2254 item 3: a purchase dropped THROUGHPUT with no explanation — the
             // spend lands in the footer for 3 world-seconds, spelled out.
             if (spendFlash && gs.tick < spendFlash.until) {
-                ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 10px monospace'
+                ctx.fillStyle = spendFlash.col || '#ffd23f'; ctx.font = 'bold 10px monospace' // #2561 item 3: model buys flash in model cyan
                 ctx.fillText(spendFlash.label, 12, y + 28)
             } else spendFlash = null
             ctx.fillStyle = '#cfe6f5'; ctx.font = 'bold 9px monospace'
@@ -1091,8 +1108,12 @@ const FloorBossGame = () => {
             paintArcs(worldDt)
             paintTutorial(tick)
             paintCursor(tick)
-            paintDuel(tick)
+            // #2561 item 4: ownership must survive the whole bot lifecycle — the
+            // fx plates (BREAKDOWN over a broken bot, JAM, pickup bursts) bury the
+            // employer dots when duel marks paint first, so dots paint on top of
+            // effects instead of under them.
             paintParticles()
+            paintDuel(tick)
             paintRushWash(tick)
             paintRushScan(tick)
             paintTruck(tick)
@@ -1279,15 +1300,18 @@ const FloorBossGame = () => {
                 hash: () => stateHash(gs),
                 canvas: () => canvas,
                 sim: () => gs,
-                step: (n = 1, pad = {}, useM = false) => { for (let i = 0; i < n; i++) step(gs, useM && duelMode ? [pad, apM(gs)] : [pad]) }, // #2555: useM fast-forwards a duel through the model's own manager
+                step: (n = 1, pad = {}, useM = false, pump = false) => { for (let i = 0; i < n; i++) { step(gs, useM && duelMode ? [pad, apM(gs)] : [pad]); if (pump) { handleEvents(gs.ev, gs.tick); gs.ev.length = 0 } } }, // #2555: useM fast-forwards a duel through the model's own manager; #2561: pump drives the painter ceremony (fx/till) that the rAF chain would otherwise skip while FF starves paint
                 click: (x, y) => clickCell(gs, x, y),
                 press: (code) => onKeyDown({ code, preventDefault() {}, repeat: false }),
                 release: (code) => onKeyUp({ code }),
                 // ship a covered order on the next tick (harness: proves the truck cycle)
-                shipNow: () => {
+                shipNow: (seat = 0) => {
                     const o = gs.orders.find((x) => !x.shipped && !x.expired)
                     if (!o) return null
-                    for (const k of o.items) gs.staging.push(k)
+                    for (const k of o.items) {
+                        gs.staging.push(k)
+                        if (gs.duel) gs.stOwn.push(seat) // #2561: the duel ledger needs a shipper — the harness says who staged it
+                    }
                     gs.packT = 1
                     return o.id
                 },
@@ -1303,6 +1327,10 @@ const FloorBossGame = () => {
                 arm: () => ({ held: gs.arm.held, swing: gs.arm.swing, swingT0: gs.arm.swingT0, target: gs.arm.target ? { ...gs.arm.target } : null, heldT: gs.arm.heldT, reach: ARM_REACH }),
                 // #1877 eyes on the servo presentation ghosts (renderer-only state)
                 servoFx: () => ({ arcs: arcItems.filter((a) => a.servo).length, diamond: diamondA, dmode: gs.arm.swing > 0 ? 'swing' : gs.tool === 'rack' ? 'rack' : gs.arm.held ? 'pulse' : 'off', tool: gs.tool, sway: gripSway, shud: gripShud }),
+                // #2561 eyes on the twin-till ceremony (renderer-only state): when
+                // each seat's chip last armed its growth blink, and the live spend
+                // flash (label + color) so the browser gate can name model buys.
+                tillFx: () => ({ grow: tillGrowAt.slice(), flash: spendFlash ? { label: spendFlash.label, col: spendFlash.col || '#ffd23f' } : null }),
                 // #1637 watchcheck pilot drives these.
                 watching: () => watchingRef.current,
                 probe: () => ({ tick: gs.tick, score: gs.score, escrow: gs.escrow, freight: gs.freight, fees: gs.fees, shipped: gs.shipped, stows: gs.stows, racks: gs.racks.length, end: gs.end, away: gs.truck.away, far: gs.truck.far, padDest: gs.pad.map((p) => p.d || 0), padWeight: gs.pad.map((p) => p.w || 0), heavy: gs.truck.grid.reduce((s, r) => s + r[2], 0), duel: gs.duel ? { tills: gs.credits.slice(0, 2), house: gs.credits[2], spent: gs.spent, winner: gs.duelWinner, rackOwners: gs.racks.map((r) => r.owner), botOwners: gs.robots.map((b) => b.owner) } : null }), // away/far/padDest #1927, padWeight/heavy #1931, duel eyes #2555
