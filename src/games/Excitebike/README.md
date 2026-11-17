@@ -81,7 +81,11 @@ faster heat.
   no DOM, no localStorage access in this file. `levels.js` gained
   `buildTrack/registerCustom/customCount`: customs join CACHE after the six
   (index 6+slot) so every index-driven reader rides them untouched;
-  `TRACK_COUNT` still means SIX (the shipped roster is pinned).
+  `TRACK_COUNT` still means SIX (the shipped roster is pinned). #2587 adds the
+  TEST verb to the strip and `TRANSIENT` (-1) to `levels.js` — a seat resolved
+  by `track()` before the CACHE wrap (`setTestTrack/clearTestTrack/
+  hasTestTrack`), so an unsaved draft drives every course-reader without ever
+  appearing in CACHE.
 
 ## Controls (faithful to the NES mapping)
 
@@ -100,10 +104,14 @@ faster heat.
   outside the pad seats the picked course (one pad, always).
 - **EDIT TRACK (#2576)**: `0` at the splash (or the EDIT row / pad cursor +
   tap) opens the design bay — `←/→` walk a 40px stamp cursor, `↑/↓` walk the
-  tool strip (RAMP STEP WHOOPS MUD WATER BOOST ERASE SAVE EXIT, both wrap),
-  `SPACE`/A executes the tool under the cursor, `1`/`2`/`3` save a legal draft
-  into CUSTOM slots, `Esc` exits. A draft that fails the audit (overlap, the
+  tool strip (RAMP STEP WHOOPS MUD WATER BOOST TEST ERASE SAVE EXIT, both
+  wrap), `SPACE`/A executes the tool under the cursor, `1`/`2`/`3` save a legal
+  draft into CUSTOM slots, `Esc` exits. A draft that fails the audit (overlap, the
   start/finish seam, blank) refuses to save. Saved customs ride at TRACK 7+.
+- **TEST RIDE (#2587)**: with a draft drawn, select TEST and press `SPACE`/A —
+  the bay audits it exactly like SAVE, then seats one unsaved lap of your own
+  terrain. `Esc` (or the finish line) walks you back to the bay, draft intact.
+  Nothing is stored, nothing joins the roster, no leaderboard.
 
 ## Honest gaps
 
@@ -165,9 +173,26 @@ faster heat.
   deterministic rides of two saved drafts) and exciteplay 76/76 designing,
   refusing, saving, reloading and racing CUSTOM 1 in real keys/touch. Mutant:
   flatten the RAMP rise → the step-geometry gate reddens.
-- **No test-ride inside the bay** — you save, then seat it (the NES flow was
-  save-and-race too). A draft always rides in the same tab after SAVE (the
-  slot registers immediately), but there is no esc-to-the-bay-from-the-gate.
+- **CLOSED by #2587:** **TEST RIDE** — the bay's missing esc-to-the-bay. A
+  TEST tool (between BOOST and ERASE, so the strip's backward wrap pins hold)
+  compiles the CURRENT draft through the SAME compiler and the SAME legality law
+  SAVE reads (illegal draft → refusal by name, the bay never leaves), then seats
+  it for one lap: `makeGame(TRANSIENT, { laps: 1 })`. `TRANSIENT` (-1) is a
+  levels.js alias resolved by `track()` BEFORE the CACHE wrap — the draft never
+  enters CACHE, so the splash roster never grows a phantom row, while
+  sim/planner/renderer/rival pace ride it honestly (they all read the course
+  through `track(gs.track)`). `Esc` — or the lap line — walks you back to the
+  bay with stamps/cursor/tool exactly as left; the over screen and the
+  leaderboard stay the league's. Proven: excitecheck TEST RIDE block (+12:
+  refusal-before-seating, SAVE-byte-identity, one-lap WOT finish + determinism,
+  roster-leak check, alias wrap restored on clear) and exciteplay (+8 real
+  keys: TEST seats, Esc returns, lap finishes to the bay, empty draft refuses
+  by name, rows stay 8); flatten-the-transient-branch mutant reddens the
+  identity gates.
+- **Test rides are keyboard-escapable only** — a phone ends a test lap by
+  riding it (one lap is short); there is no on-screen Esc. And a SAVED track
+  chosen at the splash still uses the save-and-race gate — esc-to-the-bay is
+  the TEST path's, not every custom entry's.
 - **Custom laps are fixed at 2** and the rivals ride their GENERIC pace line
   over your terrain (`rivalSpeed` is terrain-computed, never per-custom
   tuned): a well-drawn course beats the pack on pace, a crowded one may be

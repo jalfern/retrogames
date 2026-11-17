@@ -17,8 +17,10 @@ import { LAP, MUD, WATER, BOOST } from './levels.js'
 export const CUSTOM_MAX = 3            // three save slots, like a cartridge battery
 export const CUSTOM_BITE = 7         // custom courses grade past the six (#2573 item 5 may retune)
 export const STAMP_KINDS = ['RAMP', 'STEP', 'WHOOPS', 'MUD', 'WATER', 'BOOST']
-// the editor's tool strip: the six obstacles plus ERASE / SAVE / EXIT verbs
-export const TOOLS = [...STAMP_KINDS, 'ERASE', 'SAVE', 'EXIT']
+// the editor's tool strip: the six obstacles plus TEST / ERASE / SAVE / EXIT
+// verbs. TEST (#2587) sits BEFORE the verbs on purpose: the strip's backward
+// wrap from the first stamp still lands on EXIT, so every menu-wrap pin holds.
+export const TOOLS = [...STAMP_KINDS, 'TEST', 'ERASE', 'SAVE', 'EXIT']
 export const CUR_STEP = 40           // cursor quantum; stamp footprints align to it
 export const MAX_STAMPS = 12
 

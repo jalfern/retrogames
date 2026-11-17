@@ -382,7 +382,23 @@ export function rivalSpeed(t, d, base) {
     return Math.max(3.2, s)
 }
 
+// ---- the TEST lap (#2587) --------------------------------------------------
+// The bay's TEST tool seats a draft that was never SAVED: it must not enter
+// CACHE (the splash roster is built from CACHE density — a phantom row would
+// lie about what exists), so the draft lives under one transient alias that
+// track() resolves BEFORE the CACHE wrap. The sim, planner, rival pace lines
+// and renderer all read courses through track(gs.track), so seating a draft
+// at TRANSIENT drives every reader honestly with one line of law. One test at
+// a time; clearing it restores track(-1) to the plain roster wrap it always
+// was (no shipped behaviour moved: nothing passed -1 before #2587).
+export const TRANSIENT = -1
+let transient = null
+export const setTestTrack = (built) => { transient = built }
+export const clearTestTrack = () => { transient = null }
+export const hasTestTrack = () => transient != null
+
 export function track(i) {
+    if (i === TRANSIENT && transient) return transient
     // #2576: the roster includes registered EDIT TRACK customs — wrap over the
     // GROWN cache, not the shipped six. With zero customs this is the same
     // law as before (CACHE.length === TRACK_COUNT), so every shipped pin holds.

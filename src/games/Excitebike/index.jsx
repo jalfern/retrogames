@@ -19,7 +19,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { W, H, makeGame, step, stateHash, CFG } from './sim.js'
-import { track, groundY, LAP, MUD, WATER, BOOST, nextSel, TRACK_COUNT, trackName, trackBite, buildTrack, registerCustom, customCount } from './levels.js'
+import { track, groundY, LAP, MUD, WATER, BOOST, nextSel, TRACK_COUNT, trackName, trackBite, buildTrack, registerCustom, customCount, TRANSIENT, setTestTrack, clearTestTrack } from './levels.js'
 import { TOOLS, SPAN, CUR_STEP, CUSTOM_KEY, CUSTOM_MAX, compileCustom, auditCustomData, fitsAt, stampAt, stampShape, encodeCustom, decodeCustom } from './custom.js'
 import { plan, decide } from './planner.js'
 import { PRESS, MESSAGES } from './attract.js'
@@ -278,7 +278,12 @@ const ExcitebikeGame = () => {
             for (let i = pops.length - 1; i >= 0; i--) if (++pops[i].t > 52) pops.splice(i, 1)
             for (let i = flashes.length - 1; i >= 0; i--) if (++flashes[i].t > 12) flashes.splice(i, 1)
             for (let i = scars.length - 1; i >= 0; i--) { scars[i].t++; if (scars[i].fade > 0 && ++scars[i].fade > 40) scars.splice(i, 1) }
-            if (gs.end) finish(gs.end === 'win')
+            if (gs.end) {
+                // #2587 a test lap finishing walks you back to the bay — the
+                // over screen and the leaderboard are the league's, not a draft's.
+                if (testRide.active) endTestRide(gs.end === 'win' ? 'LAP DOWN — BACK TO THE BAY' : 'TIME OUT — BACK TO THE BAY')
+                else finish(gs.end === 'win')
+            }
         }
         const tickDemo = () => {
             if (!demoReady) return
@@ -463,7 +468,7 @@ const ExcitebikeGame = () => {
             }
             ctx.globalAlpha = 1
         }
-        const KIND_COLOR = { RAMP: '#ffe23f', STEP: '#f0d080', WHOOPS: '#c98a3a', MUD: '#8a5a1a', WATER: '#60a0ff', BOOST: '#ffe23f', ERASE: '#ff6a4a', SAVE: '#80e000', EXIT: '#f8f8f8' }
+        const KIND_COLOR = { RAMP: '#ffe23f', STEP: '#f0d080', WHOOPS: '#c98a3a', MUD: '#8a5a1a', WATER: '#60a0ff', BOOST: '#ffe23f', TEST: '#8fe0ff', ERASE: '#ff6a4a', SAVE: '#80e000', EXIT: '#f8f8f8' }
         const drawEditor = () => {
             const tr = draft.track
             const camX = Math.max(0, Math.min(LAP - W + 1, draft.cursor - Math.floor(W / 2)))
@@ -483,9 +488,9 @@ const ExcitebikeGame = () => {
             }
             // the cursor: pulsing plumb line, footprint bracket, ghost preview
             const kind = TOOLS[draft.tool]
-            const verb = kind === 'SAVE' || kind === 'EXIT' || kind === 'ERASE'
+            const verb = kind === 'SAVE' || kind === 'EXIT' || kind === 'ERASE' || kind === 'TEST'
             const fits = verb || fitsAt(draft.stamps, kind, draft.cursor)
-            const col = kind === 'ERASE' ? '#ff6a4a' : kind === 'SAVE' ? '#80e000' : fits ? '#ffe23f' : '#ff2a1a'
+            const col = kind === 'ERASE' ? '#ff6a4a' : kind === 'SAVE' ? '#80e000' : kind === 'TEST' ? '#8fe0ff' : fits ? '#ffe23f' : '#ff2a1a'
             const cx = draft.cursor - camX
             const gy = g2s(groundY(tr.ground, draft.cursor))
             const pulse = Math.sin(vclock * 0.14) * 2
@@ -543,6 +548,11 @@ const ExcitebikeGame = () => {
                 ctx.textAlign = 'left'; ctx.globalAlpha = 1
             }
             ctx.fillStyle = 'rgba(143,224,255,0.75)'; ctx.font = '7px monospace'; ctx.textAlign = 'center'
+            if (kind === 'TEST') {
+                ctx.fillStyle = '#8fe0ff'
+                ctx.fillText('SPACE RIDES THE DRAFT UNSAVED · ESC ENDS THE TEST LAP', W / 2, H - 34)
+            }
+            ctx.fillStyle = 'rgba(143,224,255,0.75)'
             ctx.fillText('←→ MOVE · ↑↓ TOOL · SPACE SETS · 1-3 SAVE · ESC EXIT', W / 2, H - 28)
             ctx.textAlign = 'left'
         }
@@ -647,6 +657,14 @@ const ExcitebikeGame = () => {
             ctx.textAlign = 'left'
             ctx.globalAlpha = 1
             ctx.restore()
+            if (scr === 'play' && testRide.active) {
+                // the trial badge: your own course on the clock of one lap —
+                // no rank, no leaderboard, just the terrain and the throttle.
+                ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(W / 2 - 100, 4, 200, 11)
+                ctx.fillStyle = '#8fe0ff'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'
+                ctx.fillText('TEST TRACK · LAP 1 · ESC BACK TO THE BAY', W / 2, 12)
+                ctx.textAlign = 'left'
+            }
             if (scr === 'play' && gs.count > 0) {
                 const lit = Math.ceil(gs.count / 50)
                 ctx.fillStyle = '#101010'; ctx.fillRect(W / 2 - 46, 60, 92, 34)
@@ -718,6 +736,12 @@ const ExcitebikeGame = () => {
         // the ONE legality law shared by the live cursor, SAVE, and the Node
         // gate. Nothing here mutates the sim — the editor is a compiler UI.
         const draft = { stamps: [], cursor: 120, tool: 0, msg: '', msgT: 0, track: null, savePtr: 0 }
+        // #2587 TEST RIDE: seat the CURRENT draft without saving — one lap,
+        // and Esc (or the line) walks you back into the bay. The draft itself
+        // (stamps/cursor/tool) is untouched by the ride; the compiled copy is
+        // handed to the engine under levels.js TRANSIENT, never registered in
+        // CACHE, so the splash roster never sees a phantom row.
+        const testRide = { active: false }
         const storedList = () => {
             try { return decodeCustom(localStorage.getItem(CUSTOM_KEY)) } catch { return [] }
         }
@@ -766,9 +790,40 @@ const ExcitebikeGame = () => {
             draft.msgT = 200
             audioController.playSweep(440, 880, 0.25, 'square', 0.08)
         }
+        const testDraft = () => {
+            // ONE legality law (the same auditCustomData SAVE reads) — an
+            // illegal draft refuses by name and the bay never leaves.
+            const built = buildTrack(compileCustom(draft.stamps, 'CUSTOM'))
+            const a = auditCustomData(built, groundY)
+            if (!a.ok) { draft.msg = a.why; draft.msgT = 200; audioController.playNoise(0.14, 0.07); audioController.playTone(140, 0.12, 'square', 0.05); return }
+            setTestTrack(built)
+            testRide.active = true
+            gs = makeGame(TRANSIENT, { gear: gearRef.current, laps: 1 })
+            watchingRef.current = false; setWatching(false)
+            bikeMem = { pump: 0 }
+            noteAt = gs.tick
+            parts.length = 0
+            lastContact.length = 0
+            clearJuice()
+            keys.g = keys.b = keys.j = keys.l = keys.r = false
+            setMode('play')
+            audioController.playSweep(520, 980, 0.22, 'square', 0.07)
+        }
+        const endTestRide = (msg) => {
+            testRide.active = false
+            clearTestTrack()
+            keys.g = keys.b = keys.j = keys.l = keys.r = false
+            parts.length = 0
+            lastContact.length = 0
+            clearJuice()
+            setMode('edit')
+            draft.msg = msg; draft.msgT = 200
+            audioController.playSweep(520, 330, 0.18, 'square', 0.06)
+        }
         const editExecute = () => {
             const kind = TOOLS[draft.tool]
             if (kind === 'SAVE') return saveDraft(null)
+            if (kind === 'TEST') return testDraft()
             if (kind === 'EXIT') return exitEdit()
             if (kind === 'ERASE') {
                 const i = stampAt(draft.stamps, draft.cursor)
@@ -830,6 +885,9 @@ const ExcitebikeGame = () => {
                 return
             }
             if (pausedRef.current || e.repeat) return
+            // #2587 a TEST lap is one Esc long — straight back to the bay with
+            // the draft exactly where you left it (the missing esc-to-the-bay).
+            if (testRide.active && e.code === 'Escape') { endTestRide('BACK TO THE BAY'); return }
             // #1637 WATCH: Y seats the rollout planner at any live state (it
             // re-decides from the bike every tick); any driving key takes over.
             if (isWatchKey(e)) {
@@ -891,6 +949,7 @@ const ExcitebikeGame = () => {
             window.__bikeTest = {
                 probe: () => ({
                     screen: screenRef.current, tick: gs.tick, track: gs.track, end: gs.end,
+                    test: testRide.active, // #2587 riding a draft, not the league
                     sel: selRef.current, tracks: TRACK_COUNT, // #2563 splash cursor + roster size
                     customs: customsRef.current, rows: TRACK_COUNT + customsRef.current + 1, // #2576 saved designs + EDIT row
                     edit: screenRef.current === 'edit' ? {
