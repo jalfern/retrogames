@@ -19,6 +19,38 @@ const browser = await launch()
 const page = await openGame(browser, { url: URL, hook: '__archeryTest', wait: 300 })
 const r = new Report('archeryplay')
 const probe = () => page.evaluate(() => window.__archeryTest.probe())
+// #2565 Fletching pixels: for every stuck shaft, count owner-colour pixels
+// around its tail — the paint point is the stuck CELL centre and the shaft
+// draws along s.ang, so the tail sits at −8 px along it (barbs at the very
+// end). Seat red #ff5d6c / cyan #4ad7ff collide with nothing in that
+// neighbourhood (stone grey-blue, shafts tan) — except the archers' own
+// bodies, so cells whose tail box overlaps a body are skipped: only barbs
+// may answer for the colour here.
+const fletchScan = () => page.evaluate(() => {
+    const c = document.querySelector('canvas[data-archery-stage]')
+    const g = c.getContext('2d')
+    const s = c.width / (20 * 24)
+    const near = (a, b, w) => Math.abs(a - b) <= w
+    const st = window.__archeryTest.probe()
+    const bods = [st.p1, st.p2].map((p) => ({ x: p.x * s, y: (p.y - 10) * s }))
+    const out = []
+    for (const sc of st.stuckCells) {
+        const tx = Math.round((sc.x - 8 * Math.cos(sc.ang)) * s)
+        const ty = Math.round((sc.y - 8 * Math.sin(sc.ang)) * s)
+        if (bods.some((b) => Math.abs(tx - b.x) < 16 && Math.abs(ty - b.y) < 20)) continue
+        const d = g.getImageData(Math.max(0, tx - 5), Math.max(0, ty - 5), 11, 11).data
+        let red = 0, cyan = 0
+        for (let i = 0; i < d.length; i += 4) {
+            if (near(d[i], 255, 50) && near(d[i + 1], 93, 50) && near(d[i + 2], 108, 50)) red++
+            if (near(d[i], 74, 50) && near(d[i + 1], 215, 45) && near(d[i + 2], 255, 30)) cyan++
+        }
+        out.push({ owner: sc.owner, ang: sc.ang, red, cyan })
+    }
+    return out
+})
+const fletchOk = (cells, bothOwners) => cells.length >= 1
+    && cells.every((o) => (o.owner === 0 ? o.red >= 2 : o.cyan >= 2))
+    && (!bothOwners || (cells.some((o) => o.owner === 0) && cells.some((o) => o.owner === 1)))
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
 
 let pageErrors = 0
@@ -131,6 +163,18 @@ page.on('pageerror', () => { pageErrors++ })
     const b = await probe()
     r.check('the bot archer actually fights (it moves and shoots)', b.p2.x !== a.p2.x || b.p2.quiver !== a.p2.quiver, JSON.stringify([a.p2.x, a.p2.quiver]) + ' -> ' + JSON.stringify([b.p2.x, b.p2.quiver]))
     r.check('the arrow ledger is exact in the browser too', b.ledger.now === b.ledger.total, JSON.stringify(b.ledger))
+    // #2565 fletching, both seats at once: the bot duel keeps shafts of BOTH
+    // owners in the terrain — every sampled tail must carry its owner's barbs,
+    // proving the tint tracks the shooter, not the surface. The duel keeps
+    // running live, so poll a few windows for the both-owners frame.
+    let fletchBots = []
+    let fOkBots = false
+    for (let k = 0; k < 8 && !fOkBots; k++) {
+        fletchBots = await fletchScan()
+        fOkBots = fletchOk(fletchBots, true)
+        if (!fOkBots) await sleep(150)
+    }
+    r.check('stuck shafts wear owner-tinted fletching — red for P1, cyan for P2 (#2565)', fOkBots, JSON.stringify(fletchBots))
     const rc = await page.evaluate(() => window.__archeryTest.replayCheck())
     r.check('live replay of the input stream hashes identical', rc && rc.match,
         rc && `${rc.live} vs ${rc.replay} tick ${rc.tick}/${rc.twinTick} p1 ${JSON.stringify(rc.liveP1)} vs ${JSON.stringify(rc.twinP1)} stuck ${rc.liveStuck.length}/${rc.twinStuck.length}`)
@@ -158,6 +202,7 @@ page.on('pageerror', () => { pageErrors++ })
     })
     const ov = await probe()
     r.check('a real match ENDS and shows the result', ov.screen === 'over', `${ov.screen} ${JSON.stringify(ov.scores)}`)
+    r.check('every kill made the board flinch (#2565 kill juice receipt)', (ov.juice || {}).kills >= 3, `kills=${(ov.juice || {}).kills}`)
     await sleep(1000)
     await page.keyboard.press('KeyR')
     await sleep(250)
@@ -370,12 +415,22 @@ page.on('pageerror', () => { pageErrors++ })
     const sameTick = b0.length === 1 && b1.length === 1 && b0[0].born === b1[0].born && b1[0].id === b0[0].id + 1
     r.check('both humans loose the SAME tick, P1 stamped first', sameTick,
         JSON.stringify(newArrows.map((a) => `#${a.id} p${a.owner + 1}@${a.born}`)))
+    r.check('both seats loosed (seat-keyed release receipts, #2565)',
+        stamp.fx.seatLoose[0] >= 1 && stamp.fx.seatLoose[1] >= 1,
+        JSON.stringify(stamp.fx.seatLoose))
 
     // the pull economy runs at seat 2 too: the exchange's flat shafts land on
     // the floor just ahead (~84 px, the range the physics grants) and stick in
     // the walk row; walking P2 over one must move P2's receipts — P1 never
     // moved, so any other pull would be the bot's ghost.
     await sleep(500)                      // the shafts come home first
+
+    // Fletching at seat-two too (the strict both-owners proof runs in the
+    // bot match above): whatever shafts this exchange leaves stuck — the
+    // crossing lanes knock each other — every one must wear its owner tint.
+    const fletch = await fletchScan()
+    r.check('stuck shafts wear owner-tinted fletching (duel seats, #2565)',
+        fletchOk(fletch, false), JSON.stringify(fletch))
     const r0 = await probe()
     await page.keyboard.down('KeyA')
     await sleep(900)
@@ -405,17 +460,28 @@ page.on('pageerror', () => { pageErrors++ })
     await sleep(120)
     let duel = await probe()
     let kills = 0
+    const flinches = []
     for (let round = 0; round < 5 && duel.scores[1] < 3; round++) {
         await page.keyboard.down('KeyF')
         await sleep(1000)
         await page.keyboard.up('KeyF')
-        await sleep(400)
-        const hit = await probe()
+        // poll fast so the ~130 ms shake window of the kill lands inside a
+        // sample: flinch = the stepped screen-shake counter, > 0 right after
+        // the sim tick that scored (hitstop + killFx arm in the same frame).
+        let hit = duel
+        for (let k = 0; k < 20; k++) {
+            await sleep(25)
+            hit = await probe()
+            flinches.push(hit.juice.shake)
+            if (hit.scores[1] > duel.scores[1]) break
+        }
         if (hit.scores[1] > duel.scores[1]) kills++
         duel = hit
         if (duel.scores[1] < 3) await sleep(4300) // respawn + invulnerability
     }
     r.check('seat 2 scores the hits (P1 keeps falling, P2 keeps scoring)', kills >= 3 && duel.scores[1] === 3, JSON.stringify(duel.scores))
+    r.check('the board visibly flinches when P1 falls (live screen shake, #2565)',
+        flinches.length > 0 && Math.max(...flinches) > 0, `max shake=${flinches.length ? Math.max(...flinches) : '-'}`)
     await sleep(300)
     const fin = await probe()
     r.check('the duel ends with PLAYER 2 TAKES THE ARENA', fin.screen === 'over' && fin.end != null, `${fin.screen} ${JSON.stringify(fin.scores)}`)
