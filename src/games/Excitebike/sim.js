@@ -14,7 +14,7 @@
 // autopilot rolls the REAL sim to decide its lean, exactly the lesson the
 // Spy Hunter planner learned the hard way.
 
-import { LAP, groundY, slopeAt, featureAt, rivalSpeed, track, RIVALS } from './levels.js'
+import { LAP, groundY, slopeAt, featureAt, rivalSpeed, track, RIVALS, PACK_TIER } from './levels.js'
 
 export const W = 256
 export const H = 240
@@ -158,6 +158,10 @@ let uid = 0
 export function makeGame(trackIdx = 0, opts = {}) {
     const tr = track(trackIdx)
     const clockSec = opts.clock !== undefined ? opts.clock : CFG.clock
+    // #2573 PER-COURSE LEAGUE: the course's pace bonus rides on the front of
+    // the pack (PACK_TIER). MOTOCROSS pace=0 and customs/drafts carry no pace
+    // field → every rival keeps the baseline base, byte-identical to before.
+    const pk = tr.pace || 0
     return {
         id: ++uid,
         tick: 0,
@@ -186,14 +190,17 @@ export function makeGame(trackIdx = 0, opts = {}) {
         boostAt: -999,
         inBand: null,
         rank: RIVALS.length + 1,
-        rivals: RIVALS.map((r, idx) => ({
-            ...r, d: -idx * 14, v: r.base, alt: groundY(tr.ground, 0),
+        rivals: RIVALS.map((r, idx) => {
+            const b = +(r.base + pk * PACK_TIER[idx]).toFixed(4)
+            return {
+            ...r, base: b, d: -idx * 14, v: b, alt: groundY(tr.ground, 0),
             vy: 0, air: false, pitch: 0, down: 0, cool: 0, crashes: 0,
             tk: 0, flown: false,          // contact cooldown / flyby-once flag (#2391)
             held: 0,                     // blocked behind a body (#2420) — brake latch
             lane: 0, rk: 0,             // #2457 lateral line / rub bite cooldown
             bg: 0, latch: false,       // #2460 bargain cooldown / active line-contest flag
-        })),
+            };
+        }),
         // #2420: one-drama-per-PAIR matrix (i*N+j and j*N+i), the contactCool
         // law extended to rival-vs-rival. Int ticks, decremented in pack().
         pk: new Array(RIVALS.length * RIVALS.length).fill(0),

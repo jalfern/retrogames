@@ -161,6 +161,36 @@ for (let i = 0; i < TRACK_COUNT; i++) {
     ok(all.ok, `track ${i + 1}: stripped of slack on EVERY supply it cannot win (end=${all.end} rank=${all.rank})`)
 }
 
+// ------------------------------------------------- per-course league ----
+section('PER-COURSE LEAGUE (later circuits bite harder — #2573)')
+{
+    // The original's later circuits ran faster; here each course carries a
+    // `pace` and the front ranks of PACK_TIER (1, 2/3, 1/3, 0, 0) carry it.
+    // The ramp is capped by the margin law, not guessed: +0.15 on the leader
+    // finished a near-perfect autopilot lap 3.1px ahead of MARIO and lost
+    // FIRST under every SLACK tax, so the bite tops out where a taxed win
+    // survives (+0.06 at K.O. CROSS — see the SLACK section).
+    const PACE = [0, 0, 0.02, 0.03, 0.04, 0.06]
+    for (let i = 0; i < TRACK_COUNT; i++) {
+        ok((track(i).pace || 0) === PACE[i], `track ${i + 1}: pace ${(track(i).pace || 0).toFixed(2)}, want ${PACE[i].toFixed(2)} — the later-circuit ramp is the law`)
+    }
+    const ko = makeGame(5, {})
+    const WANT = [5.36, 5.22, 5.07, 4.88, 4.66]   // +0.06/+0.04/+0.02 on the front ranks
+    ko.rivals.forEach((r, j) => ok(Math.abs(r.base - WANT[j]) < 1e-9 && r.v === r.base,
+        `K.O. CROSS ${r.name} seats at base ${r.base}, want ${WANT[j]} (PACK_TIER × pace 0.06)`))
+    ok(ko.rivals.every((r, j) => j === 0 || ko.rivals[j - 1].base > r.base), 'the pace nudge reordered the pack — ranks must hold')
+    // Customs/drafts compile {name,cps,bands} — no pace field means the
+    // baseline pack (the honest remainder; generic pace on customs stands).
+    const draft = compileCustom([{ kind: STAMP_KINDS[0], x: 900 }])
+    ok(draft && !draft.pace, 'a compiled draft carries pace — customs must ride the baseline pack')
+    // Item 6, the lap book: the shipped mode runs TWO laps on every circuit
+    // (the original's lap-count variation lives only in VS-mode options this
+    // port does not model). Pin the uniformity so a silent drift reddens here.
+    for (let i = 0; i < TRACK_COUNT; i++) {
+        ok(makeGame(i, {}).laps === 2 && CFG.laps === 2, `track ${i + 1}: laps drifted from the two-lap book`)
+    }
+}
+
 // --------------------------------------------------------- crash league ----
 section('CRASH LEAGUE (rivals are riding bodies — receipts exact, #2384)')
 const LEAGUE = []
