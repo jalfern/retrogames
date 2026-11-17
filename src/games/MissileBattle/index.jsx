@@ -48,6 +48,8 @@ const BLAST_HUE = { iv: '225,250,255', chain: '255,214,90', city: '255,104,66', 
 // the shared reserve a pale steel — readable at a glance, in the game's own
 // night-sky palette rather than anyone else's.
 const SEAT_RGB = { 1: '57,210,255', 2: '255,180,94', 0: '208,214,235' }
+// #2510 item 5: the rescue beat's spark colour — the survivor's sector hue
+const SEAT_HEX = { 1: '#39d2ff', 2: '#ffb45e' }
 
 const MissileBattleGame = () => {
     const stageRef = useRef(null)
@@ -95,6 +97,10 @@ const MissileBattleGame = () => {
         // #2483 item 4: the crossed sector band strobes red when a seat
         // reaches over the line — the refusal is seen as well as heard.
         let denyFlash = 0, denyBand = -1
+        // #2510 item 5: the rescue beat — a sector falls, its six tubes
+        // re-light in the survivor's colour: the moment pulses for a beat,
+        // the pips keep the handover for the rest of the war.
+        let relight = 0, relightSeat = 0
         const keys = { l: false, r: false, u: false, d: false, f: false, fTap: false }
         const tap = { on: false, x: 128, y: 90 }
         const seatHeld = [new Map(), new Map()] // #2473 the CPU seat's own reservations
