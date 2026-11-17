@@ -162,6 +162,25 @@ see §Speed dial.
   NEIGH row (teal #3aa08a — distinct from Fern-green and Ivy-plum at phone
   scale; bondRows is the one source, `bondsPix` reads it). No rng anywhere —
   rotation and proximity only, every seed replays exact.
+- Neighbour view pass (#2599): the pair's identity, painted. All view-only —
+  sim.js economy untouched (pin-proved: it never hears of these tells).
+  (1) **Pair bubbles wear the pair** — a line spoken *between* the guests
+  (`neigh` events, and pair spat/makeup lines) renders as a split-rim bubble:
+  Fern-green left half, Ivy-plum right (#4fae5f/#a3579b, `PAIR_HUES` — the
+  same hues the rows and dresses paint), and two tinted tails instead of one:
+  two voices, one plate. Resident chatter keeps the cream/brown idiom.
+  (2) **Pair reunions sparkle teal** — a `makeup` with `who:'neigh'` lifts
+  twin-leaf particles (the NEIGH glyph in flight, #3aa08a/#7fd0c0) where the
+  household's thaw pays hearts; banner and chord shared. (3) **The guests
+  sulk too** — while `neiGrudge` holds, Fern and Ivy borrow the #2076 idiom:
+  a storm puff for 2.4 real s after the crack, then a sullen away-lean
+  (computed from the partner's side, paint-only — the meet-up law stays
+  frozen by law, the pathing honesty of #2604 untouched).
+  (4) **Cross-warmth is visible** — `bondRows` marks the FERN and IVY rows
+  `warm` when `rel.neigh ≥ NEIGH_WARM_AT`, and the panel breathes a teal
+  diamond beside them — the 25% law taught from the panel. Items still open
+  on #2599: the meet-up wave beat, the attract IVY-ring hook, the cold-war
+  murmur. Gates: peoplecheck §NEIGH VIEW (14).
 - Court pick (#2235): when the reach ring is CONTESTED, the player chooses the
   ear. `courtReach(s)` lists everyone the word can find (partner pushed first,
   fainting and leaving excluded — the old candidate law); when two or more share
@@ -240,7 +259,7 @@ see §Speed dial.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 776 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), neighbours who meet — third-party rel.neigh: chat/glance/meet/cross-warmth/ladder/hash (#2588), neighbours SPAT — one-ear souring timer, cold-war silence, absence-thaw, reunion pay, CD mirror, hash, seed-exact quarrel (#2604), neighbours stroll — mobile-chat bank, fixed 3-spot circuit with lead/trail, walk-freeze, claim-carry, spat/absence zeroing, cold-war refusal, hash, seed-exact lap (#2611), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), garbage day — roster, eve set-out, dawn collection, honest skip, hash (#2303), ice-cream truck — arithmetic stop, paid buy, broke refusals, one serving, kid chase, rot, hash (#2503), truck arrival + drive-off view — rolls in 2 s, out 4 s, draw-only, truckView (#2508), cone in hand — the eat beat, world-clock hold, two arithmetic drips, view-only, hash-still, drive-verified (#2508 item 3), winnable seeds, determinism
+npm run peoplecheck          # 790 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), neighbours who meet — third-party rel.neigh: chat/glance/meet/cross-warmth/ladder/hash (#2588), neighbours SPAT — one-ear souring timer, cold-war silence, absence-thaw, reunion pay, CD mirror, hash, seed-exact quarrel (#2604), neighbours stroll — mobile-chat bank, fixed 3-spot circuit with lead/trail, walk-freeze, claim-carry, spat/absence zeroing, cold-war refusal, hash, seed-exact lap (#2611), neighbour view pass — pair-hue bubbles, teal leaf reunion, guest sulks, warmth sparkle (#2599), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), garbage day — roster, eve set-out, dawn collection, honest skip, hash (#2303), ice-cream truck — arithmetic stop, paid buy, broke refusals, one serving, kid chase, rot, hash (#2503), truck arrival + drive-off view — rolls in 2 s, out 4 s, draw-only, truckView (#2508), cone in hand — the eat beat, world-clock hold, two arithmetic drips, view-only, hash-still, drive-verified (#2508 item 3), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.

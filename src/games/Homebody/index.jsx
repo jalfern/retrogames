@@ -56,6 +56,7 @@ import {
     drawPet,   // #2197: Miso
     drawKid,   // #2203: Pip
     drawSay,   // #2135: the spoken-word bubble over the pair
+    PAIR_HUES,   // #2599: the pair's own hues for pair-spoken bubbles
     drawGroundGift, bondRows,   // #2240: the set-down basket + the BONDS rows as data
     queueHit,   // #2470: the queue chips' tap route (shares the painter's geometry)
     QCELL,   // #2474 item 3: the chip pitch — the drag threshold derives from it
@@ -134,8 +135,9 @@ const HomebodyGame = () => {
         let particles = [], shake = 0
         const refuses = []   // #1823: red ghost-cell flashes on refused placements
         // #2135: the spoken-word bubble — quoted lines lift over the pair, not just the log.
-        const sayB = { text: '', x: 0, y: 0, life: 0 }
-        const showSay = (s2, e) => { const t = s2.thoughts[0]; if (t) { sayB.text = t.text; sayB.x = e.x ?? W / 2; sayB.y = e.y ?? H / 2; sayB.life = 4.2 } }
+        const sayB = { text: '', x: 0, y: 0, life: 0, hues: null }
+        const showSay = (s2, e) => { const t = s2.thoughts[0]; if (t) { sayB.text = t.text; sayB.x = e.x ?? W / 2; sayB.y = e.y ?? H / 2; sayB.life = 4.2; sayB.hues = e.t === 'neigh' || e.who === 'neigh' ? PAIR_HUES : null } }   // #2599: pair lines wear the pair
+        let neighSulks = 0   // #2599 handoff 1: storm-puff window over the pair at the crack (real seconds, view-only)
         let toastMsg = '', toast = 0
         // #2474 items 2+4: the view-only chip layer. collapseCache arms the row-
         // collapse ghosts (Map<personIndex, {glyphs, rest, t}>); hoverReveal is the
@@ -398,6 +400,7 @@ const HomebodyGame = () => {
                         audioController.playTone(233, 0.09, 'sawtooth', 0.06)
                         setTimeout(() => audioController.playTone(220, 0.16, 'sawtooth', 0.06), 100)
                         shake = 6
+                        if (e.who === 'neigh') neighSulks = 2.4   // #2599 handoff 1: the guests' crack gets the #2076 puff too
                         if (live) { say(e.who === 'neigh' ? 'FERN AND IVY SPAT!' : 'OTTO AND MIRA SPAT!'); burst(e.x, e.y, 12, '#e23b2e', 3.0); showSay(s, e) }   // #2604: the pair's crack names the pair
                         break
                     case 'grudge-cool': // #2135: the cold war speaks — a low, sour murmur
@@ -409,7 +412,7 @@ const HomebodyGame = () => {
                         audioController.playTone(523, 0.07, 'triangle', 0.05)
                         setTimeout(() => audioController.playTone(659, 0.07, 'triangle', 0.05), 90)
                         setTimeout(() => audioController.playTone(784, 0.14, 'triangle', 0.05), 180)
-                        if (live) { say(e.who === 'neigh' ? 'THE NEIGHBOURS MADE UP ♥' : 'MADE UP ♥'); heartBurst(e.x, e.y - 12); showSay(s, e) }   // #2076: hearts, named by the BONDS glyph; #2604: pair reunions name themselves
+                        if (live) { say(e.who === 'neigh' ? 'THE NEIGHBOURS MADE UP ♥' : 'MADE UP ♥'); if (e.who === 'neigh') pairSparkle(e.x, e.y - 12); else heartBurst(e.x, e.y - 12); showSay(s, e) }   // #2076: hearts, named by the BONDS glyph; #2604: pair reunions name themselves; #2599 handoff 3: pair reunions sparkle twin-leaf teal
                         break
                     case 'chat': // #2135: the neighbours talk ON screen now — a soft murmur, then the bubble
                         audioController.playTone(e.k === 'ivy' ? 494 : 523, 0.05, 'sine', 0.03)
@@ -540,6 +543,14 @@ const HomebodyGame = () => {
             for (let i = 0; i < 6; i++) {
                 const a = Math.random() * 6.28
                 particles.push({ x: x + (Math.random() - 0.5) * 12, y: y - 6 - Math.random() * 6, vx: Math.cos(a) * 1.1, vy: -0.9 - Math.random() * 1.1, life: 28 + Math.random() * 10, max: 38, col: i % 2 ? '#ff8fb3' : '#e2574c', size: 2 + Math.random() * 1.4, kind: 'heart' })
+            }
+        }
+        // #2599 handoff 3: pair reunions tell from household ones at a glance —
+        // twin teal leaves (the NEIGH glyph in flight) where hearts would rise.
+        const pairSparkle = (x, y) => {
+            for (let i = 0; i < 6; i++) {
+                const a = Math.random() * 6.28
+                particles.push({ x: x + (Math.random() - 0.5) * 12, y: y - 6 - Math.random() * 6, vx: Math.cos(a) * 1.1, vy: -0.9 - Math.random() * 1.1, life: 28 + Math.random() * 10, max: 38, col: i % 2 ? '#3aa08a' : '#7fd0c0', size: 2.2 + Math.random() * 1.2, kind: 'leaf' })
             }
         }
 
@@ -778,11 +789,19 @@ const HomebodyGame = () => {
                 if (g.kid && o.p === g.kid) { drawKid(ctx, o.p, g.sec); continue }   // #2203: Pip on the same depth line
                 // #2076: the pair argues and sulks ON screen — storm puff at the
                 // crack, a lasting away-lean through the cold war (residents only).
+                // #2599 handoff 1: the guests borrow the idiom — while the pair's
+                // own cold war holds (neiGrudge), Fern and Ivy lean apart too, with
+                // a puff for the first moments after the crack. Paint only; the
+                // pair's pathing stays honest (the meet-up law stays frozen by law).
                 let fx = null, lean = 0
                 const ri = g.people.indexOf(o.p)
                 if (ri >= 0 && g.grudge) {
                     fx = g.spatFx > 0 ? 'spat' : 'cold'
                     const other = g.people[ri === 0 ? 1 : 0]
+                    lean = o.p.x <= other.x ? -1 : 1
+                } else if (ri < 0 && g.neiGrudge && g.visitor && g.ivy && (o.p === g.visitor || o.p === g.ivy)) {
+                    fx = neighSulks > 0 ? 'spat' : 'cold'
+                    const other = o.p === g.visitor ? g.ivy : g.visitor
                     lean = o.p.x <= other.x ? -1 : 1
                 }
                 drawPerson(ctx, o.p, g.sec, g.people[g.active] === o.p, fx, lean)
@@ -916,6 +935,12 @@ const HomebodyGame = () => {
                     ctx.arc(pt.x + ox + s * 0.45, pt.y + oy - s * 0.25, s * 0.5, Math.PI, 0)
                     ctx.lineTo(pt.x + ox, pt.y + oy + s * 0.75)
                     ctx.closePath(); ctx.fill()
+                } else if (pt.kind === 'leaf') {
+                    // #2599 handoff 3: the NEIGH glyph in flight — two mirrored leaves
+                    const s = pt.size
+                    ctx.fillStyle = pt.col
+                    ctx.beginPath(); ctx.ellipse(pt.x + ox - s * 0.5, pt.y + oy, s * 0.42, s * 0.8, Math.PI / 4, 0, 7); ctx.fill()
+                    ctx.beginPath(); ctx.ellipse(pt.x + ox + s * 0.5, pt.y + oy, s * 0.42, s * 0.8, -Math.PI / 4, 0, 7); ctx.fill()
                 } else {
                     ctx.fillStyle = pt.col
                     ctx.beginPath(); ctx.arc(pt.x + ox, pt.y + oy, pt.size, 0, 7); ctx.fill()
@@ -958,6 +983,7 @@ const HomebodyGame = () => {
             // while the banner (undecaying) lived forever. Found by the paper
             // banner; the landmine predates it (#2135). Take the frame's dt.
             if (sayB.life > 0) sayB.life = Math.max(0, sayB.life - dtMs / 1000)   // #2135: real-clock fade, like the toast
+            if (neighSulks > 0) neighSulks = Math.max(0, neighSulks - dtMs / 1000)   // #2599 handoff 1: the guests' puff fades on the real clock (the world may be frozen in buy mode)
         }
 
         const frame = (ts) => {
@@ -1059,6 +1085,7 @@ const HomebodyGame = () => {
             gs = newRun(seed)
             particles = []; shake = 0; toast = 0; refuses.length = 0
             sayB.life = 0   // #2135: no stale bubble across streets
+            neighSulks = 0   // #2599: nor a stale pair-puff
             prev.left = prev.right = prev.up = prev.down = prev.a = prev.b = prev.pdown = false
             actQueued = buildQueued = switchQueued = false; digitPick = -1; courtQueued = null
             tabQueued = 0; specialPick = null   // #2222
