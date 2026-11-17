@@ -37,7 +37,10 @@ const px = (x, y) => page.evaluate(([x, y]) => {
 }, [x, y])
 const wait = ms => page.waitForTimeout(ms)
 const tap = k => page.keyboard.press(k)
-const swim = async (k) => { await page.keyboard.down(k); await wait(90); await page.keyboard.up(k); await wait(20) }
+// Hold a direction long enough to span a moveEvery boundary for certain:
+// 90 ms ≈ 1.8 ticks can straddle two boundaries and step zero times —
+// under load that stalls the planner swim and the descent flakes.
+const swim = async (k) => { await page.keyboard.down(k); await wait(160); await page.keyboard.up(k); await wait(25) }
 
 await page.goto(URL, { waitUntil: 'load' })
 try {
@@ -221,19 +224,36 @@ for (let i = 0; i < 900; i++) {
         const c = document.querySelector('canvas[data-sonar-stage]')
         const d = c.getContext('2d').getImageData(x * 16, y * 16, 16, 16).data
         let mx = -255, red = 0, cold = 0, low = 0
+        const rows = []
         for (let p = 0; p < d.length; p += 4) {
             const rb = d[p] - d[p + 2]
             mx = Math.max(mx, rb)
             if (rb >= 30) {
                 red++
-                if ((p / 4) % 16 >= 11) low++          // #2383: below row 10 — chevron country
+                const q = p / 4
+                const rrow = Math.floor(q / 16), rcol = q % 16
+                rows.push(`${rrow}:${rcol}`)
+                if (rrow >= 11) low++          // #2383: below row 10 — chevron country
             }
             if (d[p] >= 85 && d[p + 2] - d[p] >= 25 && d[p + 1] <= 170) cold++
         }
-        return { max: mx, red, cold, low }
+        return { max: mx, red, cold, low, rows, x, y }
     }, [x, y])
     const collect = async (s) => {
         if (s.screen !== 'play') return
+        // A cell the route already touched on a NEAR ring still paints that
+        // hot mark (chevron included) for the whole fade window; a later cold
+        // contact in the same cell cannot make the cell "single". Grade cold
+        // only on cells with no live hot blip.
+        // hot paint (halo + chevron) is heat > 0.55, i.e. ring <= 6 (contactHeat
+        // at ring 6 = 0.56). Exclude those cells — and their 8-neighbours, the
+        // danger halo (r ≈ 14 px) spills red into the lower band of adjacent
+        // cells — not just the ring<=5 showcase set.
+        const hotCells = new Set()
+        for (const m of (s.contactMarks || [])) {
+            if (m.ring < 0 || m.ring > 6) continue
+            for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) hotCells.add(`${m.x + dx},${m.y + dy}`)
+        }
         for (const m of (s.contactMarks || [])) {
             if (m.ring < 0) continue
             // Load spikes stall page.evaluate for seconds — by then a blip has
@@ -241,6 +261,7 @@ for (let i = 0; i < 900; i++) {
             // sample marks still bright (world age <10 ticks: alpha ≥ 0.93).
             if ((m.age || 0) > 10) continue
             if (m.x === s.player.x && m.y === s.player.y) continue
+            if (m.ring >= 9 && hotCells.has(`${m.x},${m.y}`)) continue
             const key = `${m.x},${m.y},${m.ring}`
             if (seen.has(key)) continue
             seen.set(key, await sampleCell(m.x, m.y))
@@ -266,9 +287,15 @@ for (let i = 0; i < 900; i++) {
         const c0 = classify()
         if (c0.coldN >= 1 && c0.hotN >= 1) break
         if (st.cooldown <= 1) { await tap('Space'); pings++ }
-        // rig a patrol to walk at the diver: its contact must arrive on a
+        // Rig a patrol to walk at the diver: its contact must arrive on a
         // NEAR ring (setup-only — the wavefront touch itself stays honest).
-        if (c0.hotN === 0 && st.cooldown <= 1 && i % 12 === 11 && st.lives === 3) await page.evaluate(() => window.__sonarTest.trailEel())
+        // The death section above may already have spent a life — a respawned
+        // diver still catches rig approaches. Re-seat every iteration while no
+        // hot sample exists: a compound gate of (modulo AND cooldown) only
+        // offered a few coin-flips per run, and zero offers meant zero hot
+        // samples. trailEel re-routes from the eel's CURRENT cell, so calling
+        // it repeatedly is just a steady chase, not a teleport chain.
+        if (c0.hotN === 0 && st.lives >= 1) await page.evaluate(() => window.__sonarTest.trailEel())
         await wait(70)
     }
     const c = classify()
@@ -287,7 +314,7 @@ for (let i = 0; i < 900; i++) {
     r.check('hot marks grow the double-stroke chevron (shape cue, pixels)', c.hotN >= 1 && hLowOk === c.hotN,
         `${hLowOk}/${c.hotN} hot samples carry the chevron`)
     r.check('cold marks stay single (shape cue, pixels)', c.coldN >= 1 && cLowBad === 0,
-        `${cLowBad}/${c.coldN} cold samples leaked lower-band red`)
+        `${cLowBad}/${c.coldN} cold samples leaked lower-band red` + (cLowBad ? ` @ ${[...seen].filter(([k, v]) => Number(k.split(',')[2]) >= 9 && v.low > 2).map(([k, v]) => `${k}[${v.rows.slice(0, 12).join(' ')}]`).join(' | ')}` : ''))
     // #2383 haptics: the hot contact must have rung a short pulse. The motors
     // stay silent under the harness (window.__game); the logged intent proves
     // the rule fired. (hit's long pulse is proven after the death section.)
