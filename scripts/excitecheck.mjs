@@ -15,9 +15,9 @@
 //   npm run excitecheck -- --mutate   # re-break the load-bearing rules; a
 //                                     # surviving mutant means a check died
 import { makeGame, step, stateHash, CFG } from '../src/games/Excitebike/sim.js'
-import { track, groundY, featureAt, LAP, MUD, WATER, BOOST, TRACK_COUNT, nextSel, trackName, buildTrack, registerCustom, customCount } from '../src/games/Excitebike/levels.js'
+import { track, groundY, featureAt, LAP, MUD, WATER, BOOST, TRACK_COUNT, nextSel, trackName, buildTrack, registerCustom, customCount, TRANSIENT, setTestTrack, clearTestTrack, hasTestTrack } from '../src/games/Excitebike/levels.js'
 import { plan, decide } from '../src/games/Excitebike/planner.js'
-import { compileCustom, auditCustomData, encodeCustom, decodeCustom, fitsAt, stampAt, SPAN, EDGE, STAMP_KINDS, CUSTOM_KEY, CUSTOM_MAX } from '../src/games/Excitebike/custom.js'
+import { compileCustom, auditCustomData, encodeCustom, decodeCustom, fitsAt, stampAt, SPAN, EDGE, STAMP_KINDS, CUSTOM_KEY, CUSTOM_MAX, TOOLS } from '../src/games/Excitebike/custom.js'
 
 const MUT = process.argv.includes('--mutate')
 let pass = 0
@@ -1448,6 +1448,61 @@ section('EDIT TRACK (a course is data: the compiler, the law, the grown roster, 
         for (let t = 0; t < 2000 && !h2.end; t++) { step(h2, { g: true }); h2.events.length = 0 }
         ok(stateHash(h) === stateHash(h2), `${label}: the custom ride is not deterministic`)
     }
+}
+
+// ---------------------------------------------------------------- test ride ----
+section('TEST RIDE (the bay seats an unsaved draft — TRANSIENT, #2587)')
+{
+    const fpG = (g) => { let s = 0; for (let x = 0; x < g.length; x++) s += Math.round(g[x] * 100); return s }
+    // the same reference draft the EDIT block uses (CACHE keeps its slots —
+    // registration is process state, the names here are block-scoped)
+    const A = [
+        { kind: 'RAMP', x: 1200 }, { kind: 'WHOOPS', x: 2000 }, { kind: 'MUD', x: 2600 },
+        { kind: 'BOOST', x: 3200 }, { kind: 'WATER', x: 3800 }, { kind: 'STEP', x: 4400 },
+    ]
+    const da = buildTrack(compileCustom(A))
+    ok(TRANSIENT === -1, 'TRANSIENT must stay -1 (the seat alias the shell hands makeGame)')
+    ok(TOOLS.indexOf('TEST') === 6 && TOOLS.indexOf('ERASE') === 7 && TOOLS[TOOLS.length - 1] === 'EXIT' && TOOLS.length === 10, 'the TEST tool must sit before the verbs — the strip wrap pins depend on it')
+
+    // with the bay not seated, track(-1) is the plain roster wrap it always was
+    ok(fpG(track(TRANSIENT).ground) === fpG(track(customCount() + TRACK_COUNT - 1).ground), 'track(-1) stopped wrapping the roster when no test is seated')
+
+    // refusal before seating: ONE legality law — the blank draft refuses by
+    // name here exactly as SAVE refuses it, so the shell never seats a phantom
+    ok(!auditCustomData(buildTrack(compileCustom([])), groundY).ok, 'a blank draft passed the law the bay must refuse with')
+
+    // seat draft A (registered above at slot 0): the TRANSIENT course is
+    // byte-identical to what SAVE would store — TEST compiles, never re-shapes
+    setTestTrack(da)
+    ok(hasTestTrack() && track(TRANSIENT) === da, 'the seated draft is not what track(TRANSIENT) returns')
+    ok(fpG(track(TRANSIENT).ground) === fpG(da.ground), 'the test course differs from the compiled draft — TEST is not riding SAVE data')
+
+    // it RIDES: one lap, real sim, rivals on real pace, deterministic
+    const rideT = (hash) => {
+        const g = makeGame(TRANSIENT, { count: 0, laps: 1 })
+        let stuck = 0, maxStuck = 0
+        for (let t = 0; t < 9000 && !g.end; t++) {
+            step(g, { g: true })
+            if (g.crash > 0 || g.stall > 0) stuck++; else stuck = 0
+            maxStuck = Math.max(maxStuck, stuck); g.events.length = 0
+        }
+        if (hash) return { h: stateHash(g), g }
+        return { g, maxStuck }
+    }
+    const gT = makeGame(TRANSIENT, { count: 0, laps: 1 })
+    ok(gT.track === TRANSIENT && gT.laps === 1, `a test seat must be TRANSIENT for one lap (track ${gT.track}, laps ${gT.laps})`)
+    const runA = rideT()
+    ok(runA.g.end === 'win' && runA.g.lap >= 1 && runA.maxStuck < 400, `draft A at WOT on a TEST lap: ${runA.g.end ?? 'unfinished'} lap ${runA.g.lap} maxStuck ${runA.maxStuck}`)
+    ok(runA.g.rivals.every((r) => r.d > 1000), 'rivals did not ride the test terrain (pace lines blind to TRANSIENT?)')
+    const d1 = rideT(true), d2 = rideT(true)
+    ok(d1.h === d2.h, 'the TEST lap is not deterministic — the same draft cannot be re-tested fairly')
+
+    // the roster never saw it: the phantom is not CACHE's guest
+    ok(customCount() === 2 && fpG(track(6).ground) === fpG(da.ground) && fpG(track(7).ground) === fpG(track(customCount() + TRACK_COUNT - 1).ground), 'the test seat leaked into the roster')
+
+    // clearing returns the alias to the plain wrap
+    clearTestTrack()
+    ok(!hasTestTrack() && fpG(track(TRANSIENT).ground) === fpG(track(7).ground), 'after clearing, track(-1) must return to the roster wrap')
 }
 
 console.log(`\nexcitecheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

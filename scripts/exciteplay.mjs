@@ -667,5 +667,56 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     r.check('the custom course races on real pixels (gas on, world scrolling, rider painted)', p.x > 200 && px.n > 12, `x=${p.x.toFixed(0)} red px=${px.n}`)
 }
 
+// ---- TEST RIDE (#2587): seat the draft unsaved, Esc back to the bay ----
+{
+    await page.goto(URL, { waitUntil: 'load' })
+    await page.waitForFunction(() => !!window.__bikeTest, null, { timeout: 30000 })
+    await wait(700)
+    await page.keyboard.press('KeyZ'); await wait(200)
+    await page.keyboard.press('Digit0'); await wait(200)
+    let p = await probe()
+    r.check('the bay opens clean (tool RAMP, cursor 120)', p.screen === 'edit' && !!p.edit && p.edit.tool === 'RAMP' && p.edit.cursor === 120, `screen=${p.screen} ${JSON.stringify(p.edit)}`)
+
+    // draft: one RAMP at 240
+    for (let i = 0; i < 3; i++) { await page.keyboard.press('ArrowRight'); await wait(40) }
+    await page.keyboard.press('Space'); await wait(120)
+    p = await probe()
+    r.check('draft drawn (one RAMP @240)', !!p.edit && p.edit.stamps.length === 1 && p.edit.stamps[0][0] === 'RAMP' && p.edit.stamps[0][1] === 240, JSON.stringify(p.edit && p.edit.stamps))
+
+    // walk the strip down onto TEST (RAMP(0) --down x6--> TEST(6))
+    for (let i = 0; i < 6; i++) { await page.keyboard.press('ArrowDown'); await wait(40) }
+    p = await probe()
+    r.check('the tool strip offers TEST between BOOST and ERASE', !!p.edit && p.edit.tool === 'TEST', p.edit && p.edit.tool)
+
+    // TEST seats a lap of the draft — one lap, the TRANSIENT seat, the gate up
+    await page.keyboard.press('Space'); await wait(250)
+    p = await probe()
+    r.check('TEST seats the draft — one lap, TRANSIENT track, gate up', p.screen === 'play' && p.test === true && p.track === -1 && p.laps === 1 && p.count > 0, JSON.stringify(p && { s: p.screen, t: p.test, tk: p.track, l: p.laps, c: p.count }))
+
+    // Esc walks straight back to the bay — the missing esc-to-the-bay
+    await page.keyboard.press('Escape'); await wait(150)
+    p = await probe()
+    r.check('Esc returns to the bay with the draft intact', p.screen === 'edit' && p.test === false && !!p.edit && p.edit.stamps.length === 1 && p.edit.msg.includes('BACK TO THE BAY'), JSON.stringify(p && { s: p.screen, t: p.test, m: p.edit && p.edit.msg }))
+
+    // ride it to the line: the lap itself ends the test — back to the bay,
+    // never the over screen, never the leaderboard
+    await page.keyboard.press('Space'); await wait(250)
+    await page.waitForFunction(() => window.__bikeTest.probe().count === 0, null, { timeout: 8000 }).catch(() => {})
+    await hold('ArrowUp', 500)
+    await page.evaluate(() => window.__bikeTest.setup({ x: 6340 }))
+    await hold('ArrowUp', 1200)
+    p = await probe()
+    r.check('finishing the test lap returns to the bay (no over screen)', p.screen === 'edit' && p.test === false && !!p.edit && p.edit.msg.includes('LAP DOWN') && p.edit.stamps.length === 1, JSON.stringify(p && { s: p.screen, t: p.test, m: p.edit && p.edit.msg }))
+    r.check('a test seat never grows the roster (the phantom is nowhere)', p.customs === 1 && p.rows === 8, `customs=${p.customs} rows=${p.rows}`)
+
+    // an illegal draft refuses TEST by name — the same law SAVE reads
+    await page.keyboard.press('ArrowDown'); await wait(40) // TEST -> ERASE
+    await page.keyboard.press('Space'); await wait(120)    // lift the RAMP under the cursor
+    await page.keyboard.press('ArrowUp'); await wait(40)   // back onto TEST
+    await page.keyboard.press('Space'); await wait(150)
+    p = await probe()
+    r.check('an empty draft refuses TEST by name (stays in the bay)', p.screen === 'edit' && p.test === false && !!p.edit && p.edit.msg.includes('DRAW'), JSON.stringify(p && { s: p.screen, m: p.edit && p.edit.msg }))
+}
+
 r.check('zero page errors across the whole ride', errors.length === 0, errors.slice(0, 4).join(' | '))
 r.exit(browser)
