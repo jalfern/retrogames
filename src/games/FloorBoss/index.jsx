@@ -27,7 +27,7 @@ import {
     makeGame, step, state, stateHash, createAutopilot, clickCell, setTool,
     toggleAuto, clickOrder, hireRobot, nextShift, rungPrice, rushNow,
     COLS, ROWS, SHIFT, STRIKES, RACK_COST, ROBOT_COST, RACK_CAP, STOW_PAY,
-    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS,
+    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS, cornerEscapes,
 } from './sim.js'
 
 const SIM_MS = 1000 / 60
@@ -246,7 +246,26 @@ const FloorBossGame = () => {
                         : { label: `BOT −$${ROBOT_COST} — SPEND COMES OUT OF THROUGHPUT`, until: gs.tick + 180 }; break
                     case 'poor': audioController.playTone(120, 0.12, 'square', 0.06); fx('NO BUDGET', '#ff9a4f', PX(e.x) + 13, PY(e.y) + 8); break
                     case 'refuse': audioController.playTone(110, 0.1, 'square', 0.05); break
-                    case 'aisle': audioController.playSweep(240, 120, 0.12, 'square', 0.05); fx(e.why === 'pocket' ? 'DEAD-END AISLE' : e.why === 'rack' ? 'STRANDED A RACK' : e.why === 'lane' ? 'NO PASSING LANE' : e.why === 'corner' ? 'NO CORNER STACK' : 'NO SERVICE LANE', '#ffd23f', PX(e.x) + 13, PY(e.y) + 8); break // #2546, #2614, #2627
+                    case 'aisle': {
+                        audioController.playSweep(240, 120, 0.12, 'square', 0.05); fx(e.why === 'pocket' ? 'DEAD-END AISLE' : e.why === 'rack' ? 'STRANDED A RACK' : e.why === 'lane' ? 'NO PASSING LANE' : e.why === 'corner' ? 'NO CORNER STACK' : 'NO SERVICE LANE', '#ffd23f', PX(e.x) + 13, PY(e.y) + 8) // #2546, #2614, #2627
+                        // #2627 s2 TEACH THE ELBOW: a corner refusal shows its honest
+                        // exit — the mouths that would spur the elbow light up green,
+                        // so the fifth law self-teaches like the reach diamond taught
+                        // patience (#1877). Re-deriving at drain time is exact: the
+                        // refusal landed no rack (#1917), so the floor is exactly
+                        // the board the refused click saw.
+                        if (e.why === 'corner') {
+                            const esc = cornerEscapes(gs, e.x, e.y)
+                            elbowTeach = { cells: esc, from: gs.tick, until: gs.tick + 150 } // from: a restart resets gs.tick; a stale lesson must not follow the player into a new floor
+                            if (esc.length) {
+                                audioController.playTone(520, 0.05, 'triangle', 0.04); audioController.playTone(780, 0.07, 'triangle', 0.04, 0.07)
+                                fx('SPUR IT — PLUG A MOUTH', '#5dff8f', PX(e.x) + 13, PY(e.y) + 20)
+                            } else {
+                                fx('LEAVE THE ELBOW FREE', '#5dff8f', PX(e.x) + 13, PY(e.y) + 20)
+                            }
+                        }
+                        break
+                    }
                     case 'dispatch': audioController.playSweep(500, 700, 0.05, 'square', 0.04); break
                     case 'select': audioController.playTone(660, 0.03, 'sine', 0.04); break
                     case 'prio': audioController.playTone(820, 0.05, 'triangle', 0.05); break
@@ -283,6 +302,7 @@ const FloorBossGame = () => {
         // click at the bot, painter-only like the rest of the fx.
         const repairPulse = new Map() // "x,y" -> tick of the last turbo click
         let spendFlash = null // { label, until } — #2254 item 3: buying reads as a cost
+        let elbowTeach = null // { cells, until } — #2627 s2: a corner refusal lights its honest plugs
         let clockIn = null // { shift, quota, until } — #2352: the night number slams in on advance
 
         const finish = () => {
@@ -514,6 +534,31 @@ const FloorBossGame = () => {
                     drawItem(ctx, k, x + 8 + (i % 2) * 10, y + 8 + Math.floor(i / 2) * 10, 0.72)
                 })
                 if (r.items.length >= RACK_CAP) { ctx.strokeStyle = '#ff5a4f'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1) }
+            }
+        }
+
+        const paintTeach = (tick) => {
+            // #2627 s2 TEACH THE ELBOW — a corner refusal lights the honest exits:
+            // dashed green frames on the mouths that would spur the elbow (plugging
+            // either turns the two-way choke into a legal dead-end spur, #2546).
+            // Painter-only: the law and the refusal stay sim truth; this is the
+            // lesson, drawn where the refusal happened, fading over 2.5 world
+            // seconds. Deterministic (rides the paint tick, never Math.random).
+            if (!elbowTeach) return
+            if (tick < (elbowTeach.from || 0) || tick > elbowTeach.until) { elbowTeach = null; return }
+            const k = (elbowTeach.until - tick) / 150 // the whole lesson fades out
+            const pulse = 0.5 + 0.5 * Math.sin(tick * 0.22)
+            for (const m of elbowTeach.cells) {
+                const x = PX(m.x), y = PY(m.y)
+                ctx.fillStyle = `rgba(93,255,143,${(0.1 + 0.12 * pulse) * k})`
+                ctx.fillRect(x + 3, y + 3, TILE - 6, TILE - 6)
+                ctx.strokeStyle = `rgba(93,255,143,${(0.45 + 0.4 * pulse) * k})`; ctx.lineWidth = 2
+                ctx.setLineDash([4, 3]); ctx.strokeRect(x + 2, y + 2, TILE - 4, TILE - 4); ctx.setLineDash([])
+            }
+            if (elbowTeach.cells.length) {
+                ctx.fillStyle = `rgba(93,255,143,${0.85 * k})`; ctx.font = 'bold 6px monospace'; ctx.textAlign = 'center'
+                for (const m of elbowTeach.cells) ctx.fillText('PLUG', PX(m.x) + TILE / 2, PY(m.y) + TILE - 5)
+                ctx.textAlign = 'left'
             }
         }
 
@@ -1103,6 +1148,7 @@ const FloorBossGame = () => {
             paintConveyor(tick)
             paintOutbound(tick)
             paintRacks()
+            paintTeach(tick)
             paintArm(tick)
             paintRobots(tick)
             paintArcs(worldDt)

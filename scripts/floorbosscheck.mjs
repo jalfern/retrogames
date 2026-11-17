@@ -50,7 +50,7 @@ import {
     SHIFT, QUOTA, STRIKES, RACK_CAP, OVERFLOW_FINE, EXPIRE_FINE, BREAK_FINE, BASE_PAY,
     STOW_PAY, RACK_COST, ROBOT_COST, ARM_PATIENCE, ARM_CELL, PAD_CAP, PAD_AGE, OUT_CELLS,
     FREIGHT_PER_BOX, FULL_TRAILER, DISPATCH_FEE,
-    shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice, LANE_LONG, ARM_MIN,
+    shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice, LANE_LONG, ARM_MIN, cornerEscapes,
 } from '../src/games/FloorBoss/sim.js'
 import { createEpisode, validateEpisode } from '../src/utils/robot/episode.js'
 import { hashString } from '../src/utils/robot/physics.js'
@@ -79,7 +79,8 @@ const MUT_AISLE = ARGS.includes('--mutate-aisle')
 const MUT_DUEL = ARGS.includes('--mutate-duel')
 const MUT_LANE = ARGS.includes('--mutate-lane')
 const MUT_CORNER = ARGS.includes('--mutate-corner')
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER) {
+const MUT_TEACH = ARGS.includes('--mutate-teach')
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const src = readFileSync(sim, 'utf8')
     const [from, to, name] = MUT_YIELD
@@ -118,6 +119,8 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                     ? ["for (const r of laneRuns(gs, { x, y })) if (!was.has(r)) return 'lane'", "for (const r of laneRuns(gs, { x, y })) if (!was.has(r) && false) return 'lane'", 'the no-pass lane law is off — racks may seal long tight aisles into one-way traps (#2614)']
                                                                     : MUT_CORNER
                                                                     ? ["if (cornerChokes(gs, { x, y }).length) return 'corner'", "if (cornerChokes(gs, { x, y }).length && false) return 'corner'", 'the corner-stack law is off — racks may choke a tight elbow (#2627)']
+                                                                    : MUT_TEACH
+                                                                    ? ['if (strandsFloor(gs, m.x, m.y) !== false) continue // an illegal plug teaches nothing', 'if (false) continue // MUTANT: legality check off', 'the teach ignores legality — a plug that would strand floor lights up as the fix (#2627 s2)']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(sim, src.replace(from, to))
@@ -1102,6 +1105,95 @@ console.log('— no corner stacks (#2627) —')
     // the painter names the fifth law
     const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
     ok(/why === 'corner'/.test(ui) && /NO CORNER STACK/.test(ui), 'the painter names NO CORNER STACK on screen (#2627)')
+}
+
+// ---- teach the elbow (#2627 s2) — the corner refusal shows its honest escape ----
+console.log('— teach the elbow (#2627 stage 2) —')
+{
+    const mk = () => { const g = makeGame(11); g.score = 9000; g.racks.length = 0; return g }
+    const put = (g, x, y) => { g.tool = 'rack'; return clickCell(g, x, y) }
+    const NEED = [[18, 3], [19, 3], [19, 5], [20, 3], [20, 5], [17, 5], [19, 6], [17, 6]]
+    const rig = () => { const g = mk(); for (const [x, y] of NEED) if (put(g, x, y) !== 'build') return null; return g }
+    ok(cornerEscapes(mk(), 17, 4).length === 0, 'an open floor answers nothing — no choke, no lesson')
+    {
+        const g = rig()
+        ok(g !== null, 'rig builds clean (fresh mk) — refused click comes next')
+        const esc = cornerEscapes(g, 17, 4)
+        const keys = esc.map((m) => `${m.x},${m.y}`)
+        ok(esc.length === 2 && keys.includes('21,4') && keys.includes('18,7'),
+            'the refused elbow teaches its mouths as plugs — (21,4) east, (18,7) south (plugging either spurs the arm, #2546)')
+    }
+    {
+        const g = rig()
+        const esc = cornerEscapes(g, 17, 4)
+        // honesty #1: every taught cell is a legal click on the live board
+        let bad = 0
+        for (const m of esc) if (put(g, m.x, m.y) !== 'build') bad++
+        ok(bad === 0, 'every taught plug actually builds — the lesson never recommends a refusal')
+        // the escapes are alternatives, not a recipe: plugging BOTH mouths
+        // walls the elbow itself into a sealed pocket — the older laws
+        // (rack/pocket) refuse the second plug's follow-up, and that is right.
+        // The canvas tail says PLUG A MOUTH, singular, because one wins.
+        ok(put(g, 17, 4) !== 'build', 'plugging both mouths then facing the corner is still refused — the pocket the self-made spur leaves behind is the rack/pocket law’s, not the elbow’s; the lesson names one mouth on purpose (#2627 s2)')
+    }
+    {
+        const g = rig()
+        // single-plug clears: taking EITHER taught mouth alone must clear it
+        for (const m of cornerEscapes(g, 17, 4)) {
+            const q = rig()
+            ok(put(q, m.x, m.y) === 'build' && put(q, 17, 4) === 'build', `plugging (${m.x},${m.y}) alone clears the elbow — the teach was specific`)
+        }
+    }
+    {
+        const g = rig()
+        // determinism: the query is pure — repeated calls agree, state untouched
+        const h0 = stateHash(g)
+        const one = JSON.stringify(cornerEscapes(g, 17, 4))
+        const two = JSON.stringify(cornerEscapes(g, 17, 4))
+        ok(one === two && stateHash(g) === h0, 'cornerEscapes is pure — same answer twice, board hash unchanged (#1917)')
+    }
+    {
+        // the teacher never teaches a refusal: a mouth that is some rack's
+        // last service face is a TRAP, not a lesson — racking it would strand
+        // that rack (the rack law). Wall (22,4) in except toward the mouth.
+        const g = mk()
+        const seq = [...NEED, [22, 4], [23, 4], [22, 3], [22, 5]]
+        const fails = []
+        for (const [x, y] of seq) if (put(g, x, y) !== 'build') fails.push([x, y])
+        ok(fails.length === 0, 'service-trap rig builds clean — rack (22,4) sits behind the east mouth, served only through (21,4)')
+        const esc = cornerEscapes(g, 17, 4)
+        const keys = esc.map((m) => `${m.x},${m.y}`)
+        ok(!keys.includes('21,4'), 'the mouth served-rack guards is never taught — plugging (21,4) would strand (22,4) (#2627 s2 honesty)')
+        ok(keys.includes('18,7'), 'the other mouth is still taught — the lesson adapts to the board, not a canned pair')
+    }
+    {
+        // bay escape mirrors #2614: skip a flank rack and there is no elbow
+        const g = mk()
+        const seq = NEED.filter(([x, y]) => !(x === 17 && y === 6))
+        ok(seq.every(([x, y]) => put(g, x, y) === 'build'), 'bay rig builds — the notched south arm stays legal…')
+        ok(put(g, 17, 4) === 'build', '…and its elbow builds two clicks later (no refusal to teach about)')
+        ok(cornerEscapes(g, 17, 4).length === 0, 'a bay-legal elbow answers nothing — the lesson only fires with a choke')
+    }
+    {
+        // zero footprint on the real click: a refused click then escapes then
+        // re-refused clicks land the SAME hash (nothing was learned from the
+        // query except by the painter).
+        const g = mk()
+        for (const [x, y] of NEED) put(g, x, y)
+        ok(put(g, 17, 4) === 'aisle', 'elbow refuses (control)')
+        const a = JSON.stringify(cornerEscapes(g, 17, 4))
+        ok(put(g, 17, 4) === 'aisle' && stateHash(g) === (() => { const q = mk(); for (const [x, y] of NEED) put(q, x, y); put(q, 17, 4); return stateHash(q) })(),
+            'query between two refusals changes nothing — same board, same hash (#1917)')
+        void a
+    }
+    // determinism: identical seeds answer identically across processes of the rig
+    const escOf = () => { const g = rig(); return JSON.stringify(cornerEscapes(g, 17, 4)) }
+    ok(escOf() === escOf(), 'the teacher is deterministic — same rig, same lesson, fixed order')
+    // the painter lights the lesson
+    const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    ok(/cornerEscapes\(gs/.test(ui) && /paintTeach/.test(ui), 'the painter draws the elbow lesson (cornerEscapes → paintTeach) (#2627 s2)')
+    ok(/PLUG/.test(ui) && /SPUR IT/.test(ui), 'the lesson names itself on canvas — PLUG cells, SPUR IT tail (#2627 s2)')
+    ok(/why === 'corner'/.test(ui) && /cornerEscapes\(gs, e\.x, e\.y\)/.test(ui), 'the lesson keys off the refused click itself — drain-time derivation (#2627 s2)')
 }
 
 // ---- duel seats (#2555) — two managers, one floor, credit follows work ----
