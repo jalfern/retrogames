@@ -21,7 +21,11 @@ const page = await browser.newPage({ viewport: { width: 900, height: 640 }, devi
 page.setDefaultTimeout(120000)
 const errors = []
 page.on('pageerror', e => errors.push(`[pageerror] ${e.message}`))
-page.on('console', m => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
+// Headless boxes with no audio device throw "AudioContext encountered an
+// error from the audio device/WebAudio renderer" (britanniadrive precedent) —
+// environmental, not game code; real page/console errors still land.
+const ENV_NOISE = /AudioContext encountered an error from the audio device/i
+page.on('console', m => { if (m.type() === 'error' && !relayNoise(m.text(), m.location()) && !ENV_NOISE.test(m.text())) errors.push(`[console.error] ${m.text()}`) })
 
 const probe = () => page.evaluate(() => window.__sonarTest.probe())
 const hint = () => page.evaluate(() => window.__sonarTest.hint())
@@ -83,6 +87,11 @@ await wait(400)
 {
     const a = await probe()
     r.check('a real key starts a fresh seeded run', a.screen === 'play' && a.score === 0 && a.lives === 3 && a.pearls > 0, `screen=${a.screen} lives=${a.lives} pearls=${a.pearls} seed=${a.seed}`)
+    // #2589/#2594 order law: a run started FROM ATTRACT must be dark and cold.
+    // With loadDepth called before the mode flips, seeds shaped like the fixed
+    // fallback layout inherit the attract replay's mid-dive state: pre-lit map
+    // and gs.tick ≈ join (seed 20261135 → tick 152, the #2589 fingerprint).
+    r.check('the fresh run starts dark and cold — no inherited attract state (#2589)', a.t < 2 && a.cooldown === 0 && a.litOpen < 80, `t=${a.t.toFixed(2)}s litOpen=${a.litOpen} cd=${a.cooldown}`)
     const p0 = await px(a.player.x, a.vent.y)
     void p0
     const pp = await px(a.player.x, a.player.y)
@@ -227,6 +236,10 @@ for (let i = 0; i < 900; i++) {
         if (s.screen !== 'play') return
         for (const m of (s.contactMarks || [])) {
             if (m.ring < 0) continue
+            // Load spikes stall page.evaluate for seconds — by then a blip has
+            // faded toward alpha 0.3 and cannot count cold on any ground. Only
+            // sample marks still bright (world age <10 ticks: alpha ≥ 0.93).
+            if ((m.age || 0) > 10) continue
             if (m.x === s.player.x && m.y === s.player.y) continue
             const key = `${m.x},${m.y},${m.ring}`
             if (seen.has(key)) continue
@@ -378,6 +391,92 @@ for (let i = 0; i < 900; i++) {
     }
     r.check('the ping paints a visible expanding wavefront ring (pixels)', ringOk,
         `peak=${ringPeak} plain=${ringPlain}`)
+}
+
+// ---- #2594 pearl memory, in pixels + real keys: bright when heard, a dim
+// glint when remembered, bright again on re-hearing. Organic ghosting: after
+// one real SPACE ping the diver simply WAITS (the core dodge), so no wavefront
+// refreshes the memory — the fade boundary is reached by living, not rigging.
+// Fresh = counted pink-white px; ghost = counted dim-pink px on a cell the
+// knowledge says dark (only the remembered pearl draw can brighten it). ----
+{
+    const cellPix = (x, y) => page.evaluate(([x, y]) => {
+        const c = document.querySelector('canvas[data-sonar-stage]')
+        const d = c.getContext('2d').getImageData(x * 16, y * 16, 16, 16).data
+        let bright = 0, dim = 0
+        for (let p = 0; p < d.length; p += 4) {
+            const R = d[p], G = d[p + 1], B = d[p + 2]
+            if (R >= 190 && G >= 150 && B >= 170) bright++                 // fresh pearl / glint
+            if (R >= 55 && R <= 170 && G >= 35 && G <= 130 && B >= 45 && B <= 170) dim++   // remembered glint on black
+        }
+        return { bright, dim }
+    }, [x, y])
+    let st = await probe()
+    if (st.screen !== 'play') { await tap('KeyG'); await wait(1100) }
+    let freshPx = -1, ghostPx = -1, revivePx = -1, knownAfterGhost = true, recoveries = 0, attempts = 0
+    let gx = -1, gy = -1, gIdx = -1
+    for (let i = 0; i < 240 && ghostPx < 0 && attempts < 8; i++) {
+        st = await probe()
+        if (st.screen !== 'play') {
+            if (++recoveries > 4) break
+            await tap('KeyR'); await wait(1100); attempts++
+            freshPx = ghostPx = revivePx = -1
+            continue
+        }
+        if (freshPx < 0) {
+            if (st.cooldown > 1) { await wait(150); continue }
+            await tap('Space')                                             // the one honest ping
+            const t0 = Date.now()
+            while (Date.now() - t0 < 900) {
+                const s2 = await probe()
+                if (s2.screen !== 'play') break
+                for (let k = 0; k < s2.pearlSignals.length; k++) {
+                    if (s2.pearlSignals[k] !== 2) continue
+                    const cell = s2.pearlCells[k]
+                    if (cell.taken) continue
+                    const v = await cellPix(cell.x, cell.y)
+                    if (v.bright >= 4) { freshPx = v.bright; gx = cell.x; gy = cell.y; gIdx = k; break }
+                }
+                if (freshPx >= 0) break
+                await wait(80)
+            }
+            continue
+        }
+        // wait out the fade WITHOUT pinging — this is the ghost forming in plain
+        // living. Poll the sim's own signal; sample pixels only once it is 1.
+        const sig = st.pearlSignals[gIdx]
+        if (sig === 1) {
+            knownAfterGhost = await knownAt(gx, gy)
+            const v = await cellPix(gx, gy)
+            ghostPx = v.dim
+            break
+        }
+        if (sig === 0) break                                              // collected/never — restart the hunt
+        await wait(120)
+        if (i % 40 === 39) attempts++                                     // bound stalled waits
+    }
+    r.check('a real ping paints a fresh pearl bright (pixels)', freshPx >= 4, `bright=${freshPx}`)
+    r.check('the remembered pearl keeps a dim glint after the fade (pixels)', ghostPx >= 2, `dim=${ghostPx}`)
+    r.check('the ghosted pearl cell is knowledge-dark — only memory draws it', ghostPx >= 2 && !knownAfterGhost, `known=${knownAfterGhost}`)
+    if (ghostPx >= 2) {
+        await wait(200)
+        for (let k = 0; k < 20 && revivePx < 0; k++) {
+            const s3 = await probe()
+            if (s3.screen !== 'play') break
+            if (s3.cooldown <= 1) await tap('Space')
+            const t0 = Date.now()
+            while (Date.now() - t0 < 900) {
+                const s4 = await probe()
+                if (s4.screen !== 'play') break
+                if (s4.pearlSignals[gIdx] === 2) {
+                    const v = await cellPix(gx, gy)
+                    if (v.bright >= 4) { revivePx = v.bright; break }
+                }
+                await wait(80)
+            }
+        }
+    }
+    r.check('a second ping revives the remembered pearl to bright (pixels)', revivePx >= 4, `revive=${revivePx}`)
 }
 
 r.check('zero page errors across the whole playthrough', errors.length === 0, errors.slice(0, 4).join(' | '))

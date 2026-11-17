@@ -385,8 +385,14 @@ const SonarGame = () => {
             const pin = seedFromQuery()
             seed = pin != null ? pin >>> 0 : (Date.now() ^ (Math.floor(performance.now() * 1000) << 8)) >>> 0
             runScore = 0; livesCarry = CFG.lives
-            loadDepth(1, true)
+            // #2594 order law: setMode BEFORE loadDepth. loadDepth decides the
+            // attract replay join by reading screenRef — called while the ref
+            // still says 'attract', a fresh start inherits the mid-replay demo
+            // state on seeds shaped like the fixed fallback layout (pre-lit
+            // map, script-ping ticks, gs.tick ≈150+). That was #2589's
+            // "reset(seed) started at tick 152" — seed roulette, not a flake.
             setMode('play')
+            loadDepth(1, true)
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
         }
         const onDown = (e) => {
@@ -468,7 +474,7 @@ const SonarGame = () => {
                         end: gs.end, hash: stateHash(gs),
                         cooldown: Math.max(0, CFG.pingCd - (gs.tick - gs.lastPing)),
                         litOpen, litRock, contacts: contacts.length, hiddenEels,
-                        contactMarks: contacts.map(b => ({ x: b.x, y: b.y, ring: (b.ring == null ? -1 : b.ring) })),
+                        contactMarks: contacts.map(b => ({ x: b.x, y: b.y, ring: (b.ring == null ? -1 : b.ring), age: gs.tick - b.t })),
                         eels: gs.eels.map(e => ({ x: cx(eelCell(e)), y: cy(eelCell(e)) })),
                         ventKnown: known(gs, gs.vent),
                         ventSignal: ventSignal(gs),
@@ -533,8 +539,9 @@ const SonarGame = () => {
                     tickBase = 0
                     seed = s >>> 0
                     runScore = 0; livesCarry = CFG.lives
-                    loadDepth(1, true)
+                    // #2589/#2594: mode BEFORE depth — see startPlay's order law.
                     setMode('play')
+                    loadDepth(1, true)
                 },
                 tick: (pad) => {
                     if (gs.end) { gs.tick += 1; return }

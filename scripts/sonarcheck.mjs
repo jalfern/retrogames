@@ -34,6 +34,9 @@
 //   PEARL MEMORY #2594: the same fixed-feature doctrine applied to the prize —
 //                a pearl once heard stays a dim ghost past the fade until taken,
 //                never-heard pearls stay dark, and re-hearing refreshes.
+//   FRESH START  #2589: mode flips BEFORE loadDepth at both entry points —
+//                called the other way, a seed shaped like the fallback layout
+//                inherits the attract replay (pre-lit map, tick ≈ join).
 //   DEATH/DESCEND  a touching eel takes a life; the vent takes you down.
 //   DETERMINISM  replays match, a dropped command does not (tamper probe).
 //   MUTATIONS    ten rules silenced in children, each must turn a NAMED check
@@ -316,6 +319,28 @@ section('VENT SIGNAL (fresh knowledge ripples, remembered knowledge ghosts, #236
     ok(/gs\.pings/.test(pSrc) && /p\.maxK/.test(pSrc), 'no expanding wavefront ring is drawn from the live pings — the ring→distance teach is missing')
     ok(/arc\(sx, sy, lead \* CFG\.waveSpeed \* TS/.test(pSrc), 'the live ping ring never strokes an arc at the wavefront radius — the ring is declared but not drawn')
     ok(!/eelCell\(|gs\.eels\b/.test(pSrc), 'the paint path reaches a LIVE eel cell — knowledge law broken')
+}
+
+section('FRESH START (the order law, #2589)')
+{
+    // #2589 fingerprint, computed: the nightlybot's seed joins the demo replay
+    // at exactly tick 152 — the reported "started at tick 152" was NOT phantom
+    // time, it was the attract state leaking into a fresh start because the
+    // shell called loadDepth while the screen ref still said 'attract'. The
+    // order law (mode BEFORE depth) is pinned statically below; this pin
+    // records that the hazard is real sim geometry, so the fix has a number.
+    ok(s.attractJoinAt(s.genCave(20261135 >>> 0, 1), s.planRun(s.genCave(0xC0FFEE, 1)).cmds) === 152,
+        '#2589 fingerprint moved — seed 20261135 no longer joins at tick 152; re-read the order-law comment before trusting fresh-start checks')
+
+    // order law, statically pinned: both entry points must set mode BEFORE
+    // loadDepth, or loadDepth's attract branch re-seats the demo replay.
+    const jsxO = readFileSync(new URL('../src/games/Sonar/index.jsx', import.meta.url), 'utf8')
+    const sp = jsxO.slice(jsxO.indexOf('const startPlay'), jsxO.indexOf('const onDown'))
+    ok(sp.indexOf("setMode('play')") >= 0 && sp.indexOf("setMode('play')") < sp.indexOf('loadDepth(1, true)'),
+        "startPlay calls loadDepth while the screen ref still says attract — #2589's pre-lit fresh start is back")
+    const rb = jsxO.slice(jsxO.indexOf('reset: (s) =>'), jsxO.indexOf('tick: (pad) =>'))
+    ok(rb.indexOf("setMode('play')") >= 0 && rb.indexOf("setMode('play')") < rb.indexOf('loadDepth(1, true)'),
+        "exposeGame reset calls loadDepth while the screen ref still says attract — reset(seed) no longer starts at tick 0")
 }
 
 section('PEARL MEMORY (heard pearls stay remembered until taken, #2594)')
@@ -637,6 +662,12 @@ if (MUT) {
         ['the vent swirl reverts to always-on for any known cell (#2367 gap)', jsxPath, jsxOrig,
             'const sig = ventSignal(gs)',
             'const sig = known(gs, gs.vent) ? 2 : 0'],
+        ['startPlay loads depth before flipping the mode — attract state leaks into fresh runs (#2589)', jsxPath, jsxOrig,
+            "setMode('play')\n            loadDepth(1, true)",
+            "loadDepth(1, true)\n            setMode('play')"],
+        ['contract reset loads depth before flipping the mode — reset(seed) starts mid-replay (#2589)', jsxPath, jsxOrig,
+            "setMode('play')\n                    loadDepth(1, true)",
+            "loadDepth(1, true)\n                    setMode('play')"],
     ]
     for (const [name, path, orig, from, to] of ringMutants) {
         if (!orig.includes(from)) { ok(false, `vent-ring mutant anchor: ${name}`); continue }
