@@ -1124,8 +1124,11 @@ console.log('pilot')
     // out and the sweep re-measured honestly on the law: all nine seeds win
     // UNshielded, and the deathless matinee moved from {1,5,7} to {7,8} —
     // with zero mercy the opening volley costs first blood on seven boards.
-    // If a future change loses one again, update this pin AND the README
-    // together, Pong's seed 25 style.
+    // #2530's router fix (pathOn re-keyed the BFS prev-map properly, so routes
+    // finally walk cell-by-cell instead of straight into chrome) re-laid the
+    // lines: matinee is now {1,2,3,5,7} — seed 8 pays first blood twice and
+    // seed 1 is back clean. If a future change loses one again, update this
+    // pin AND the README together, Pong's seed 25 style.
     const wins = [], deathless = []
     for (const seed of [0, 1, 2, 3, 4, 5, 6, 7, 8]) {
         const r = S.plan(seed)
@@ -1133,7 +1136,30 @@ console.log('pilot')
         console.log(`  seed ${seed}: ${r.won ? 'WON' : 'lost'} deaths=${r.deaths} score=${r.score}`)
     }
     ok(wins.length === 9, 'pilot clears all 9 seeds unshielded — zero mercy, zero losses', `won ${wins.join(',')}`)
-    ok(deathless.includes(7) && deathless.includes(8), 'seeds 7 and 8 prove the deathless matinee under zero mercy', `deathless ${deathless.join(',')}`)
+    ok(deathless.includes(1) && deathless.includes(7), 'seeds 1 and 7 prove the deathless matinee under zero mercy', `deathless ${deathless.join(',')}`)
+    // #2530 roll-seed regression gate: the audit (scripts/qa-smash-seeds.mjs)
+    // found 25 seeds where the autopilot froze forever on random-roll games.
+    // These are the seeds the BFS-router fix (pathOn) un-wedged — none may
+    // stall again: score/room/lives/weapon must not freeze >12k ticks before
+    // the game ends. 84 is the issue's own seam-wedge case.
+    {
+        const FIXED = [17, 18, 19, 23, 28, 30, 32, 34, 41, 43, 44, 47, 48, 54, 55, 57, 62, 65, 73, 84, 86, 92, 95]
+        const wedged = []
+        for (const seed of FIXED) {
+            const gs = S.makeGame(seed)
+            let sig = '', frozen = 0
+            while (!gs.end && gs.tick < 45000) {
+                const inp = S.decide(gs)
+                S.step(gs, inp)
+                gs.events.length = 0
+                const s = `${gs.score}|${gs.room}|${gs.lives}|${gs.weapon}`
+                if (s !== sig) { sig = s; frozen = 0 } else frozen++
+                if (frozen > 12000) break
+            }
+            if (!gs.end && frozen > 12000) wedged.push(seed)
+        }
+        ok(!wedged.length, 'roll seeds #2530: the un-wedged autopilot seeds never stall (23 seeds, 45k cap)', `wedged ${wedged.join(',')}`)
+    }
 }
 
 // ------------------------------------------------------------- varisize ----

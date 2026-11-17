@@ -60,7 +60,12 @@ function pathOn(prev, to) {
     while (prev.get(cur)) {
         const [c, r] = cur.split(',').map(Number)
         path.push([c, r])
-        cur = prev.get(cur)
+        // the map's values are [c,r] ARRAYS — re-keying prev.get(cur) with the
+        // array itself misses every time (Map keys are strict), which collapsed
+        // every route to its goal cell: the seat walked straight into the chrome
+        // it was being routed around (#2530's roam class in full).
+        const [pc, pr] = prev.get(cur)
+        cur = `${pc},${pr}`
     }
     return path.reverse()
 }
