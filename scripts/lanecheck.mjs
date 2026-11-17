@@ -622,9 +622,10 @@ section('D. statepark — race-proof STATE.md handoff (#1430)')
 // D4 — the playbook commands exist and name the tool, so sessions actually run
 // them: step 1 parks slot-scoped first, step 9 self-parks, QA reads via the CLI.
 {
-    ok(forgeMd.includes('STATE.<slot>.parked.md /tmp/forge/STATE.parked.md')
+    ok(forgeMd.includes('cp STATE.md /tmp/forge/STATE.<slot>.parked.md && cp STATE.md /tmp/forge/STATE.parked.md && git checkout -- STATE.md')
+        && !/STATE\.<slot>\.parked\.md \/tmp\/forge\/STATE\.parked\.md/.test(forgeMd)
         && forgeMd.includes('node scripts/statepark.mjs read'),
-        'D4a FORGE.md step 1 parks slot-scoped before reverting and names the reader')
+        'D4a FORGE.md step 1 parks slot-scoped before reverting, one cp per destination (#2547), and names the reader')
     ok(forgeMd.includes('node scripts/statepark.mjs park <slot>'),
         'D4b FORGE.md step 9 parks the report it just wrote')
     ok(qaMd.includes('node scripts/statepark.mjs read'),
