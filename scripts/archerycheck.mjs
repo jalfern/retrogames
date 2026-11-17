@@ -298,6 +298,135 @@ section('FLUSH — a stuck shaft lies against the surface that holds it (#2565)'
         `flush(midair): knock-out shaft angled ${ka.ang} with no surface beneath — arrival angle must be kept where there is no stone`)
 }
 
+// ---------------------------------------- UNDERSIDE hangs (#2579 stage 1) ----
+// The economy-aware lift, thick-stone half: a shaft whose tip crossed a
+// MULTI-COURSE ceiling's bottom face while rising hangs in the air cell below
+// the lowest course (tip-up flush) whenever that cell is the walker's own
+// pull row — it never embeds mid-stone. Single-row canopies keep lifting
+// their hits (the #1685 loop): measured by event-stream diff, one single-row
+// hang in KNOCKBACK's spawn corridor re-knits the autopilot matchup into a
+// 917-tick duel whose dry spell rings the #2377 heat bell — the single-row
+// half of #2579 is gated on Jon's ruling (jonq #2585). Suspended shafts
+// sway: they do not knock, do not block the bot's route graph, and stay
+// pullable / replaceable / dry-out terrain. All three arena MATCH receipts
+// are byte-identical to main — the thick law never fires in arena duels, so
+// tempo is preserved by construction, not by re-tuning.
+section('UNDERSIDE — thick-ceiling hits hang in air; single-row canopies still lift (#2579 stage 1)')
+{
+    const deg = (a) => (a * 180) / Math.PI
+    const canopyLab = (row) => {
+        const g = scratch()
+        for (let x = 10; x <= 16; x++) g.grid[row * g.W + x] = 1
+        g.p[1].invuln = 1e9   // the lab is about shafts, not seats (ghost precedent)
+        g.p[0].x = 12 * CFG.cell + CFG.cell / 2; g.p[0].y = FLOOR_Y; g.p[0].grounded = true
+        g.p[0].firing = true; g.p[0].charge = 0.25
+        step(g, { mx: 0, my: 0, fire: false, aim: { x: 0.2, y: -1 } }, null)
+        const ar = g.arrows[g.arrows.length - 1]
+        for (let t = 0; t < 80 && ar.state === 'fly'; t++) step(g, null, null)
+        return { g, ar }
+    }
+    // 1) a SINGLE-row corridor canopy still lifts (stage-1 scope, jonq #2585):
+    //    the hit crosses the bottom face and rides ABOVE the slab, main byte.
+    const a = canopyLab(10)
+    ok(a.ar.state === 'stuck' && Math.floor(a.ar.cell / a.g.W) === 9,
+        `underside(lift-single): shaft at cell ${a.ar.cell} (row ${Math.floor(a.ar.cell / a.g.W)}) — a single-row canopy must lift its hit above the slab (#1685 economy; the hang half is gated on jonq #2585)`)
+    ok(a.ar.hang !== true, 'underside(scope): a single-row canopy stick registered as suspended — stage 1 hangs only multi-course stone')
+
+    // 2) the lifted shaft sits OUT the walker's pull row: the lift, not the
+    //    walk, carries it home — exactly main behaviour under this canopy.
+    a.g.p[0].quiver = 2
+    a.g.p[0].x = (a.ar.cell % a.g.W) * CFG.cell + CFG.cell / 2
+    a.g.p[0].y = FLOOR_Y; a.g.p[0].vy = 0; a.g.p[0].grounded = true
+    step(a.g, { mx: 0, my: 0, fire: false }, null)
+    ok(a.g.p[0].quiver === 2 && a.g.stuck.length === 1,
+        `underside(no-pull): standing under a lifted single-row stick left quiver ${a.g.p[0].quiver} and ${a.g.stuck.length} stuck — stage 1 must not hand the floor walker new ammo`)
+
+    // 3) a canopy over deep air still lifts — the #1685 economy witness
+    const c = canopyLab(7)
+    ok(c.ar.state === 'stuck' && Math.floor(c.ar.cell / c.g.W) === 6 && c.ar.hang !== true,
+        `underside(lift): deep-canopy hit at row ${Math.floor(c.ar.cell / c.g.W)} — nothing pullable sits below, the arrow must return from above`)
+
+    // 4) double-thickness stone over the corridor now hangs in AIR under the
+    // lowest course instead of embedding mid-stone (same −75° family)
+    const d = (() => {
+        const g = scratch()
+        for (let y = 9; y <= 10; y++) for (let x = 10; x <= 16; x++) g.grid[y * g.W + x] = 1
+        g.p[1].invuln = 1e9
+        g.p[0].x = 12 * CFG.cell + CFG.cell / 2; g.p[0].y = FLOOR_Y; g.p[0].grounded = true
+        g.p[0].firing = true; g.p[0].charge = 0.55
+        step(g, { mx: 0, my: 0, fire: false, aim: { x: 0.2, y: -1 } }, null)
+        const ar = g.arrows[g.arrows.length - 1]
+        for (let t = 0; t < 100 && ar.state === 'fly'; t++) step(g, null, null)
+        return { g, ar }
+    })()
+    ok(d.ar.state === 'stuck' && Math.floor(d.ar.cell / d.g.W) === 11 && g0(d.g, 11, d.ar.cell % d.g.W) === 0 && deg(d.ar.ang) <= -60,
+        `underside(thick): double stone over the corridor sticks at row ${Math.floor(d.ar.cell / d.g.W)} ang ${deg(d.ar.ang).toFixed(1)}° — it should hang in the air cell below, tip-up`)
+    function g0(g, r, cx) { return g.grid[r * g.W + cx] }
+
+    // 5) swaying law: a flat lane shot crosses a hang without knocking; a
+    // stone-set shaft in the same lane still eats the arc (control). The
+    // shooter fires from the row above the lane — a floor-level flat would
+    // drop into the floor long before it reached the shaft's cell.
+    {
+        const laneShot = (withHang) => {
+            const g = scratch()
+            const hang = { id: 991, owner: 1, state: 'stuck', cell: 11 * g.W + 8, age: 0, x: 8 * CFG.cell + 12, y: 272, ang: -1.31, vx: 0, vy: 0 }
+            if (withHang) hang.hang = true
+            g.stuck.push(hang)
+            g.p[1].invuln = 1e9
+            g.p[0].x = 60; g.p[0].y = 252; g.p[0].grounded = false   // muzzle on the lane's line
+            g.p[0].firing = true; g.p[0].charge = 1
+            step(g, { mx: 0, my: 0, fire: false, aim: { x: 1, y: 0 } }, null)
+            const flat = g.arrows[g.arrows.length - 1]
+            let crossed = false, knocked = false
+            for (let t = 0; t < 80 && !knocked && flat.state === 'fly'; t++) {
+                step(g, null, null)
+                knocked = g.events.some((e) => e.type === 'knockout')
+                if (!knocked && flat.x > (hang.cell % g.W) * CFG.cell + CFG.cell) crossed = true
+                g.events.length = 0
+            }
+            return { crossed, knocked }
+        }
+        const sway = laneShot(true)
+        ok(sway.crossed && !sway.knocked,
+            `underside(sway): flat shot crossing the hang cell — crossed=${sway.crossed} knocked=${sway.knocked} — suspended shafts must be crossed, not clashed`)
+        const clash = laneShot(false)
+        ok(clash.knocked, 'underside(control): a stone-set shaft in the lane did NOT knock — the old terrain law is load-bearing')
+    }
+
+    // 6) the hang fades: TTL recycles it home like any stuck shaft (ledger
+    // leg). Quiver stays FULL — the pull stays a choice, not an automatic
+    // reroute of this test onto itself. Source: the thick rig (the law's
+    // only stage-1 hang).
+    {
+        const b = (() => {
+            const g = scratch()
+            for (let y = 9; y <= 10; y++) for (let x = 10; x <= 16; x++) g.grid[y * g.W + x] = 1
+            g.p[1].invuln = 1e9
+            g.p[0].x = 12 * CFG.cell + CFG.cell / 2; g.p[0].y = FLOOR_Y; g.p[0].grounded = true
+            g.p[0].firing = true; g.p[0].charge = 0.55
+            step(g, { mx: 0, my: 0, fire: false, aim: { x: 0.2, y: -1 } }, null)
+            const ar = g.arrows[g.arrows.length - 1]
+            for (let t = 0; t < 100 && ar.state === 'fly'; t++) step(g, null, null)
+            return { g, ar }
+        })()
+        ok(b.ar.hang === true, 'underside(fade-setup): the thick-ceiling stick is not suspended — the fade test would score the lift')
+        // walk the shooter off the hang's column (pull stays a choice, and the
+        // quiver keeps room so the dryout walks the shaft home, not lost)
+        b.g.p[0].x = 5 * CFG.cell + CFG.cell / 2
+        const q0 = b.g.p[0].quiver
+        let dry = -1
+        for (let t = 0; t < CFG.stuckTTL + 200 && dry < 0; t++) {
+            step(b.g, { mx: 0, my: 0, fire: false }, null)
+            b.g.lastHit = b.g.tick                             // referee keeps it cool (plain-data precedent)
+            if (b.g.events.some((e) => e.type === 'dryout')) dry = b.g.tick
+            b.g.events.length = 0
+        }
+        ok(dry > 0 && b.g.p[0].quiver === q0 + 1 && b.g.stuck.length === 0,
+            `underside(fade): dry=${dry} quiver ${b.g.p[0].quiver}/${q0 + 1} stuck ${b.g.stuck.length} — hangs must walk home on the TTL like any terrain shaft`)
+    }
+}
+
 // ------------------------------------------------ each arena, won for real ----
 const receipts = {}
 for (let i = 0; i < ARENAS_COUNT; i++) {
@@ -680,6 +809,20 @@ if (MUT) {
             g.events.length = 0
         }
         return notes.length >= 2 && heatAt - notes[0] >= 45
+    })
+    tryMut('always-lift (underside hangs collapse back to lift-everything — #2579)', { hangUnderside: false }, () => {
+        // with the economy-hang dead, a rising hit under a MULTI-course
+        // ceiling embeds/lifts instead of hanging in the corridor — the
+        // air-cell assertion reddens (mirrors the UNDERSIDE thick gate).
+        const g = scratch()
+        for (let y = 9; y <= 10; y++) for (let x = 10; x <= 16; x++) g.grid[y * g.W + x] = 1
+        g.p[1].invuln = 1e9
+        g.p[0].x = 12 * CFG.cell + CFG.cell / 2; g.p[0].y = FLOOR_Y; g.p[0].grounded = true
+        g.p[0].firing = true; g.p[0].charge = 0.55
+        step(g, { mx: 0, my: 0, fire: false, aim: { x: 0.2, y: -1 } }, null)
+        const ar = g.arrows[g.arrows.length - 1]
+        for (let t = 0; t < 100 && ar.state === 'fly'; t++) step(g, null, null)
+        return ar.state === 'stuck' && Math.floor(ar.cell / g.W) === 11
     })
 }
 
