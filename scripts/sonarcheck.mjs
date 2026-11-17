@@ -424,6 +424,17 @@ section('PEARL MEMORY (heard pearls stay remembered until taken, #2594)')
     const jsxP = readFileSync(new URL('../src/games/Sonar/index.jsx', import.meta.url), 'utf8')
     ok(/pearlEcho[\s\S]{0,80}playTone\(155/.test(jsxP), 'the ghost-revive tone is not wired in the shell — pearlEcho events go unplayed (#2601)')
 
+    // #2601 item 2 — the law the descent toast promises: memory never carries a
+    // cave across. A descent starts with zero knowledge — ghosts and all.
+    const g5 = s.makeGame(cave)
+    g5.eels = []
+    s.ping(g5, { noCd: true })
+    for (let t = 0; t < arrival + 1; t++) s.step(g5)
+    ok(g5.mem[pearl] >= 0, 'pearl knowledge never formed — the descent-reset fixture drifted')
+    const g6 = s.makeGame({ ...cave, depth: cave.depth + 1 })
+    ok(Array.from(g6.mem).every(m => m < 0), 'a new depth inherited knowledge — the descent must wipe memory (the map forgets, #2601)')
+    ok(s.pearlSignal(g6, 0) === 0, 'the pearl glows straight through a descent — remembered state leaked across caves (#2601)')
+
     // knowledge law, replayed live: across the full demo every pearl that
     // lights does so as FRESH (sig 2), the ghost never sits on a never-heard
     // cell, and two replays agree tick for tick. Why no ghosts in the demo:
@@ -462,6 +473,13 @@ section('PEARL MEMORY (heard pearls stay remembered until taken, #2594)')
     ok(/pearlSignal\(gs, ?i\)/.test(pSrc), 'the painter does not gate pearls through pearlSignal — #2594 is decoration elsewhere')
     ok(/sig === 2/.test(pSrc) && /rgba\(255,190,225/.test(pSrc), 'the painter has no distinct remembered rendering — fresh and ghost would look identical')
     ok(!/gs\.taken\[i\] \|\| !known\(gs, ?c\)/.test(pSrc), 'the old known()-only pearl draw is back — remembered prizes vanish at the fade again')
+    // #2601 item 1 — the remembered mark must read NOT terrain, not merely exist:
+    // terrain never draws as an outline, so the ghost is a hollow ring. (The pixel
+    // half lives in sonarplay's pearl-memory section: the dim window counts the
+    // ring's arc — measured ~30 px, floor pinned at 10.)
+    ok(/pearlSignal\(gs, ?i\)[\s\S]*?arc\(px \+ 8, py \+ 8, 4\.5/.test(pSrc), 'the remembered pearl is not drawn as a hollow ring — the ghost collapsed back to a terrain-ish dot (#2601)')
+    // #2601 item 2 — the descent toast teaches the reset the sim enforces above.
+    ok(/THE MAP FORGETS/.test(jsx), 'the descent toast no longer teaches the memory reset — new caves arrive silent (#2601)')
 }
 
 section('OCCLUSION (a sealed pocket is dark until the echo walks in the door)')
@@ -715,8 +733,14 @@ if (MUT) {
             'const sig = pearlSignal(gs, i)',
             'const sig = known(gs, gs.pearls[i]) ? 2 : 0'],
         ['the remembered glint stops being drawn — fresh and ghost collapse to one look', jsxPath, jsxOrig,
-            "ctx.fillStyle = 'rgba(255,190,225,0.34)'",
-            "ctx.fillStyle = 'rgba(255,220,240,0.85)'"],
+            'ctx.strokeStyle = `rgba(255,190,225,${(0.3 + 0.28 * ph * ph).toFixed(3)})`',
+            "ctx.strokeStyle = 'rgba(255,220,240,0.85)'"],
+        ['#2601: the ghost ring collapses back to a static dot', jsxPath, jsxOrig,
+            'ctx.arc(px + 8, py + 8, 4.5, 0, Math.PI * 2); ctx.stroke()',
+            'ctx.rect(px + 7, py + 7, 2, 2); ctx.stroke()'],
+        ['#2601: the descent toast stops teaching the memory reset', jsxPath, jsxOrig,
+            'THE MAP FORGETS\n',
+            'DESCENDING...\n'],
         ['the ghost-revive tone goes silent — the shell drops the pearlEcho handler (#2601)', jsxPath, jsxOrig,
             "e.type === 'pearlEcho') audioController.playTone(155",
             "e.type === 'pearlEcho') /* silenced */"],
