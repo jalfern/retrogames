@@ -416,6 +416,13 @@ export const setTestTrack = (built) => { transient = built }
 export const clearTestTrack = () => { transient = null }
 export const hasTestTrack = () => transient != null
 
+// #2603 OWN TERRAIN — whose course is this ride. The bay's TEST draft and every
+// registered custom are YOURS: they owe you an exit back to the bay (the pad's
+// EXIT button / Esc, index.jsx). Tracks 1-6 are the league's - the full-race
+// commitment stands there. The law lives in one pure line so excitecheck can
+// pin it, and it never mutates anything: it only reads the roster density.
+export const ownTerrain = (i) => i === TRANSIENT || (i >= TRACK_COUNT && i < TRACK_COUNT + customCount())
+
 export function track(i) {
     if (i === TRANSIENT && transient) return transient
     // #2576: the roster includes registered EDIT TRACK customs — wrap over the

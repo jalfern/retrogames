@@ -14,8 +14,9 @@
 //   npm run excitecheck
 //   npm run excitecheck -- --mutate   # re-break the load-bearing rules; a
 //                                     # surviving mutant means a check died
+import { readFileSync } from 'node:fs'
 import { makeGame, step, stateHash, CFG } from '../src/games/Excitebike/sim.js'
-import { track, groundY, featureAt, LAP, MUD, WATER, BOOST, TRACK_COUNT, nextSel, trackName, buildTrack, registerCustom, customCount, TRANSIENT, setTestTrack, clearTestTrack, hasTestTrack } from '../src/games/Excitebike/levels.js'
+import { track, groundY, featureAt, LAP, MUD, WATER, BOOST, TRACK_COUNT, nextSel, trackName, buildTrack, registerCustom, customCount, TRANSIENT, setTestTrack, clearTestTrack, hasTestTrack, ownTerrain } from '../src/games/Excitebike/levels.js'
 import { plan, decide } from '../src/games/Excitebike/planner.js'
 import { compileCustom, auditCustomData, encodeCustom, decodeCustom, fitsAt, stampAt, SPAN, EDGE, STAMP_KINDS, CUSTOM_KEY, CUSTOM_MAX, TOOLS } from '../src/games/Excitebike/custom.js'
 
@@ -1533,6 +1534,50 @@ section('TEST RIDE (the bay seats an unsaved draft — TRANSIENT, #2587)')
     // clearing returns the alias to the plain wrap
     clearTestTrack()
     ok(!hasTestTrack() && fpG(track(TRANSIENT).ground) === fpG(track(7).ground), 'after clearing, track(-1) must return to the roster wrap')
+}
+
+// ---------------------------------------------------------------- own exit ----
+section('OWN EXIT (your track gives you back — ownTerrain, #2603)')
+{
+    const fpG = (g) => { let s = 0; for (let x = 0; x < g.length; x++) s += Math.round(g[x] * 100); return s }
+    // THE LAW, one line: the league commits, your terrain gives you back.
+    for (let i = 0; i < TRACK_COUNT; i++) ok(!ownTerrain(i), `league track ${i + 1} counts as own terrain — the bay exit would leak into the league`)
+    ok(ownTerrain(TRANSIENT), 'the bay TEST draft is not own terrain — TEST lost its exit')
+    const c0 = customCount() // the EDIT block registered its two reference drafts
+    ok(c0 === 2, `expected the 2 reference customs seated from the EDIT block, got ${c0}`)
+    for (let k = 0; k < c0; k++) ok(ownTerrain(TRACK_COUNT + k), `registered custom slot ${k + 1} is not own terrain — a saved design lost its exit`)
+    ok(!ownTerrain(TRACK_COUNT + c0), 'an unregistered slot counts as own terrain (roster density lies)')
+    ok(!ownTerrain(TRACK_COUNT + c0 + 5) && !ownTerrain(-2), 'indices outside the roster must not be own terrain')
+    // a seated ride reports its index — ownTerrain reads gs.track
+    ok(makeGame(TRACK_COUNT + 1, { count: 0 }).track === TRACK_COUNT + 1, 'a seated custom ride does not report its roster index')
+
+    // RELOAD LAW: the bay redraws exactly what you rode. Abandoning reads the
+    // seated entry's own `stamps` (the compile output rides inside it) and
+    // recompiles — byte-identical terrain, no storage round trip, no
+    // reinterpretation. What you edit is what you rode.
+    for (let k = 0; k < c0; k++) {
+        const i = TRACK_COUNT + k
+        const seated = track(i)
+        const st = (seated.stamps || []).map(([kind, x]) => ({ kind, x }))
+        ok(st.length > 0, `custom ${k + 1}: the seated entry carries no stamps — the bay reload would open blank on a ridden course`)
+        const re = buildTrack(compileCustom(st, seated.name))
+        ok(fpG(re.ground) === fpG(seated.ground), `bay reload ${k + 1}: terrain differs from the seated custom — Esc loads a different course`)
+        ok(JSON.stringify(re.cps) === JSON.stringify(seated.cps), `bay reload ${k + 1}: control points moved through the round trip`)
+        ok(JSON.stringify(re.bands) === JSON.stringify(seated.bands), `bay reload ${k + 1}: feature bands moved through the round trip`)
+        ok(JSON.stringify(re.stamps) === JSON.stringify(seated.stamps), `bay reload ${k + 1}: stamps moved (sort/shape law broken)`)
+        ok(auditCustomData(re, groundY).ok === auditCustomData(seated, groundY).ok, `bay reload ${k + 1}: audit answers differently for the reload than for the seated course`)
+    }
+    // reload never re-registers: no phantom row, the roster stays as density says
+    ok(customCount() === c0, 'the reload path registered a phantom custom')
+
+    // abandoning submits nothing: the ONLY writer of the leaderboard is the
+    // shell's finish(), reached only when the sim ends inside screen `play` —
+    // the sim module itself must stay free of persistence (a sim that booked
+    // scores at abandon would forge the league from a walk-out).
+    ok(!/localStorage|excitebike\.board/.test(
+        readFileSync(new URL('../src/games/Excitebike/sim.js', import.meta.url), 'utf8') +
+        readFileSync(new URL('../src/games/Excitebike/levels.js', import.meta.url), 'utf8')
+    ), 'the pure sim/levels layer touches the leaderboard — abandon-submits-nothing is no longer structural')
 }
 
 console.log(`\nexcitecheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

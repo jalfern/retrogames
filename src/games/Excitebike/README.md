@@ -189,10 +189,20 @@ faster heat.
   keys: TEST seats, Esc returns, lap finishes to the bay, empty draft refuses
   by name, rows stay 8); flatten-the-transient-branch mutant reddens the
   identity gates.
-- **Test rides are keyboard-escapable only** — a phone ends a test lap by
-  riding it (one lap is short); there is no on-screen Esc. And a SAVED track
-  chosen at the splash still uses the save-and-race gate — esc-to-the-bay is
-  the TEST path's, not every custom entry's.
+- **CLOSED by #2603:** OWN TERRAIN — `ownTerrain(i)` (levels.js): the bay's TEST
+  draft (TRANSIENT) and every registered custom are YOURS, and a ride on your
+  own terrain owes you an exit. Seated on own terrain the pad grows a sky **EXIT**
+  button (`VirtualControls` thirdAction → `Escape`, B stays GEAR), and `Esc`
+  mid-race on a splash-seated saved custom abandons the race back into the bay
+  with the design loaded — the draft is read from the seated entry's own
+  `stamps` (the compile output rides inside it; `compileCustom` re-sorts, so the
+  draft is byte-identical to the terrain you were riding). Abandoning submits
+  nothing: `doFrameSim` stops the tick the screen leaves `play`, and `finish()`
+  is the only writer of the leaderboard. League tracks 1–6 keep the full-race
+  commitment (by design — the league is the league), and a storage-off session
+  still loses its designs at page reload (the existing storage law, untouched).
+  Proven by the `excitecheck` OWN EXIT block (+1 mutant) and driven by
+  `exciteplay` with real Esc and real EXIT taps.
 - **Custom laps are fixed at 2** and the rivals ride their GENERIC pace line
   over your terrain (`rivalSpeed` is terrain-computed, never per-custom
   tuned): a well-drawn course beats the pack on pace, a crowded one may be
