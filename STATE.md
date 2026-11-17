@@ -34,6 +34,14 @@
   run exceeds a shift budget. Left for the right lane; rationale in session log.
 - Slot A ran live all shift; Britannia/MissileBattle/SmashTV held by
   building-qa issues — untouched.
+- **RED MAIN at close (watch live):** blocking = nightly.yml 43947467784
+  (tip 7fa8438) failed `smash-tv resumes` — the seat-poll repair (#2524,
+  closes #2523) squash-merged 23:33 and is IN the current tip. Nightly
+  43983438362 on `6df49c1` in flight (23:55); a background watcher merges
+  STATE PR #2527 when green, then detaches main. If it reds again: verify's
+  failures were all pre-existing families (kingsquest/ultima DOS boot, kart
+  smoke, minesweeper bot, robot-lab #1099 text-fit, demo-fox) — none touch
+  Homebody; fix or quarantine per rule 5a naming open issues.
 
 ## Next queued
 - Nothing invented. Known big-builds self-claim: HOMEBODY day/night tail
