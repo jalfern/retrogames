@@ -20,7 +20,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { W, H, makeGame, step, stateHash, CFG } from './sim.js'
 import { track, groundY, LAP, MUD, WATER, BOOST, nextSel, TRACK_COUNT, trackName, trackBite, buildTrack, registerCustom, customCount, TRANSIENT, setTestTrack, clearTestTrack, ownTerrain } from './levels.js'
-import { TOOLS, SPAN, CUR_STEP, CUSTOM_KEY, CUSTOM_MAX, compileCustom, auditCustomData, fitsAt, stampAt, stampShape, encodeCustom, decodeCustom } from './custom.js'
+import { TOOLS, SPAN, CUR_STEP, CUSTOM_KEY, CUSTOM_MAX, LAPS_DEFAULT, LAPS_MIN, LAPS_MAX, lapsOf, compileCustom, auditCustomData, fitsAt, stampAt, stampShape, encodeCustom, decodeCustom } from './custom.js'
 import { plan, decide } from './planner.js'
 import { PRESS, MESSAGES } from './attract.js'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -491,7 +491,7 @@ const ExcitebikeGame = () => {
             }
             ctx.globalAlpha = 1
         }
-        const KIND_COLOR = { RAMP: '#ffe23f', STEP: '#f0d080', WHOOPS: '#c98a3a', MUD: '#8a5a1a', WATER: '#60a0ff', BOOST: '#ffe23f', TEST: '#8fe0ff', ERASE: '#ff6a4a', SAVE: '#80e000', EXIT: '#f8f8f8' }
+        const KIND_COLOR = { RAMP: '#ffe23f', STEP: '#f0d080', WHOOPS: '#c98a3a', MUD: '#8a5a1a', WATER: '#60a0ff', BOOST: '#ffe23f', TEST: '#8fe0ff', LAP: '#ff9c00', ERASE: '#ff6a4a', SAVE: '#80e000', EXIT: '#f8f8f8' }
         const drawEditor = () => {
             const tr = draft.track
             const camX = Math.max(0, Math.min(LAP - W + 1, draft.cursor - Math.floor(W / 2)))
@@ -511,9 +511,9 @@ const ExcitebikeGame = () => {
             }
             // the cursor: pulsing plumb line, footprint bracket, ghost preview
             const kind = TOOLS[draft.tool]
-            const verb = kind === 'SAVE' || kind === 'EXIT' || kind === 'ERASE' || kind === 'TEST'
+            const verb = kind === 'SAVE' || kind === 'EXIT' || kind === 'ERASE' || kind === 'TEST' || kind === 'LAP'
             const fits = verb || fitsAt(draft.stamps, kind, draft.cursor)
-            const col = kind === 'ERASE' ? '#ff6a4a' : kind === 'SAVE' ? '#80e000' : kind === 'TEST' ? '#8fe0ff' : fits ? '#ffe23f' : '#ff2a1a'
+            const col = kind === 'ERASE' ? '#ff6a4a' : kind === 'SAVE' ? '#80e000' : kind === 'TEST' ? '#8fe0ff' : kind === 'LAP' ? '#ff9c00' : fits ? '#ffe23f' : '#ff2a1a'
             const cx = draft.cursor - camX
             const gy = g2s(groundY(tr.ground, draft.cursor))
             const pulse = Math.sin(vclock * 0.14) * 2
@@ -555,17 +555,20 @@ const ExcitebikeGame = () => {
             let px = 4
             for (let i = 0; i < TOOLS.length; i++) {
                 const on = i === draft.tool
+                // #2625 the LAP tool's face wears its state: `LAP 3` reads the
+                // designer's number without opening a panel or guessing.
+                const lb = TOOLS[i] === 'LAP' ? 'LAP ' + draft.laps : TOOLS[i]
                 ctx.fillStyle = on ? (KIND_COLOR[TOOLS[i]] || '#ffe23f') : 'rgba(248,248,248,0.5)'
                 ctx.font = (on ? 'bold 8px monospace' : '8px monospace')
-                if (on) { ctx.fillStyle = 'rgba(255,226,63,0.14)'; ctx.fillRect(px - 2, H - 22, ctx.measureText(TOOLS[i]).width + 8, 14); ctx.fillStyle = KIND_COLOR[TOOLS[i]] || '#ffe23f' }
-                ctx.fillText(TOOLS[i], px + 4, H - 12)
-                px += ctx.measureText(TOOLS[i]).width + 10
+                if (on) { ctx.fillStyle = 'rgba(255,226,63,0.14)'; ctx.fillRect(px - 2, H - 22, ctx.measureText(lb).width + 8, 14); ctx.fillStyle = KIND_COLOR[TOOLS[i]] || '#ffe23f' }
+                ctx.fillText(lb, px + 4, H - 12)
+                px += ctx.measureText(lb).width + 10
             }
             if (draft.msgT > 0) {
                 draft.msgT--
                 ctx.globalAlpha = draft.msgT < 40 ? draft.msgT / 40 : 1
                 ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center'
-                const okMsg = draft.msg.startsWith('SAVED') || draft.msg === 'ERASED'
+                const okMsg = draft.msg.startsWith('SAVED') || draft.msg === 'ERASED' || draft.msg.startsWith('LAPS ')
                 ctx.fillStyle = okMsg ? '#80e000' : '#ff6a4a'
                 ctx.fillText(draft.msg, W / 2, 44)
                 ctx.textAlign = 'left'; ctx.globalAlpha = 1
@@ -574,6 +577,10 @@ const ExcitebikeGame = () => {
             if (kind === 'TEST') {
                 ctx.fillStyle = '#8fe0ff'
                 ctx.fillText('SPACE RIDES THE DRAFT UNSAVED · ESC ENDS THE TEST LAP', W / 2, H - 34)
+            }
+            if (kind === 'LAP') {
+                ctx.fillStyle = '#ffb85c'
+                ctx.fillText('SPACE SETS THE LAP COUNT ' + LAPS_MIN + '–' + LAPS_MAX + ' · YOUR TRACK, YOUR LENGTH', W / 2, H - 34)
             }
             ctx.fillStyle = 'rgba(143,224,255,0.75)'
             ctx.fillText('←→ MOVE · ↑↓ TOOL · SPACE SETS · 1-3 SAVE · ESC EXIT', W / 2, H - 28)
@@ -743,7 +750,12 @@ const ExcitebikeGame = () => {
         // #2573 item 4 — seat-rev receipts: the sweep each seating actually played.
         const revLog = []
         const startPlay = (trackIdx = 0) => {
-            gs = makeGame(trackIdx, { gear: gearRef.current })
+            // #2625 your design runs on YOUR laps: a seated custom hands its
+            // stored number to the engine ({laps} already rides sim.js — TEST
+            // laps proved the pipe). The league (tracks 0-5) has no `laps` key,
+            // gets no option, and rides the two-lap book byte-identically.
+            const t0 = track(trackIdx)
+            gs = makeGame(trackIdx, { gear: gearRef.current, ...(ownTerrain(trackIdx) && t0 && t0.laps ? { laps: lapsOf(t0.laps) } : {}) })
             watchingRef.current = false; setWatching(false) // #1637 a new race starts in your hands
             bikeMem = { pump: 0 }
             noteAt = gs.tick
@@ -756,6 +768,9 @@ const ExcitebikeGame = () => {
             // walks out mid-race. Tracks 1-6 (the league) keep the full commitment.
             seatOwn(ownTerrain(trackIdx))
             if (ownRef.current) say('★ YOUR DESIGN — EXIT BACKS TO THE BAY')
+            // #2625 when the design deviates from the two-lap book, say so —
+            // the length of the race is a promise the seat makes out loud.
+            if (ownRef.current && gs.laps !== CFG.laps) say(gs.laps === 1 ? 'ONE LAP — BY YOUR LAW' : gs.laps + ' LAPS — BY YOUR LAW')
             // #2573 item 4 — seat the bike with ONE engine rev before the
             // countdown's own beeps, keyed to the gear you seated in: LOW grinds
             // shorter and lower, HIGH winds further up (the same sweep the rev
@@ -770,7 +785,7 @@ const ExcitebikeGame = () => {
         // {cps,bands} table the shipped six ride on, and auditCustomData is
         // the ONE legality law shared by the live cursor, SAVE, and the Node
         // gate. Nothing here mutates the sim — the editor is a compiler UI.
-        const draft = { stamps: [], cursor: 120, tool: 0, msg: '', msgT: 0, track: null, savePtr: 0 }
+        const draft = { stamps: [], cursor: 120, tool: 0, msg: '', msgT: 0, track: null, savePtr: 0, laps: LAPS_DEFAULT }
         // #2587 TEST RIDE: seat the CURRENT draft without saving — one lap,
         // and Esc (or the line) walks you back into the bay. The draft itself
         // (stamps/cursor/tool) is untouched by the ride; the compiled copy is
@@ -791,6 +806,7 @@ const ExcitebikeGame = () => {
             for (const e of list) {
                 const built = buildTrack(compileCustom(e.stamps, e.name))
                 if (!auditCustomData(built, groundY).ok) continue // garbage or a stale rule — drop it, stay dense
+                built.laps = lapsOf(e.laps) // #2625 stored designs re-enter the roster on their own terms
                 if (registerCustom(built, n) < 0) break
                 n++
             }
@@ -798,7 +814,7 @@ const ExcitebikeGame = () => {
             setCustoms(n)
         }
         const openEdit = () => {
-            draft.stamps = []; draft.cursor = 120; draft.tool = 0; draft.msg = 'DESIGN YOUR OWN TRACK'; draft.msgT = 200
+            draft.stamps = []; draft.cursor = 120; draft.tool = 0; draft.laps = LAPS_DEFAULT; draft.msg = 'DESIGN YOUR OWN TRACK'; draft.msgT = 200
             rebuildDraft()
             setMode('edit')
             audioController.playSweep(330, 520, 0.18, 'square', 0.06)
@@ -816,9 +832,10 @@ const ExcitebikeGame = () => {
             if (!a.ok) { draft.msg = a.why; draft.msgT = 200; audioController.playNoise(0.14, 0.07); audioController.playTone(140, 0.12, 'square', 0.05); return }
             const list = storedList()
             let at = slotHint != null ? Math.min(slotHint, list.length) : (list.length >= CUSTOM_MAX ? draft.savePtr++ % CUSTOM_MAX : list.length)
-            list[at] = { name: built.name, stamps: draft.stamps.map((s) => [s.kind, s.x]) }
+            list[at] = { name: built.name, laps: draft.laps, stamps: draft.stamps.map((s) => [s.kind, s.x]) }
             while (list.length > CUSTOM_MAX) list.pop()
             try { localStorage.setItem(CUSTOM_KEY, encodeCustom(list)) } catch { /* storage off: it rides this session anyway */ }
+            built.laps = lapsOf(draft.laps) // #2625 the seated entry carries the designer's number too
             registerCustom(built, at)
             syncCustoms()
             draft.msg = 'SAVED — TRACK ' + (TRACK_COUNT + at + 1)
@@ -869,6 +886,7 @@ const ExcitebikeGame = () => {
             const t = track(gs.track)
             const st = ((t && t.stamps) || []).map(([kind, x]) => ({ kind, x }))
             draft.stamps = st
+            draft.laps = lapsOf(t && t.laps) // #2625 reload carries the number you rode, not just the terrain
             draft.cursor = 120
             draft.tool = 0
             rebuildDraft()
@@ -888,6 +906,15 @@ const ExcitebikeGame = () => {
             if (kind === 'SAVE') return saveDraft(null)
             if (kind === 'TEST') return testDraft()
             if (kind === 'EXIT') return exitEdit()
+            // #2625 LAP is a SETTING, not a stamp — it never touches the draft's
+            // geometry or the fits law; it just advances the designer's number,
+            // wrapping 8→1 so the whole 1–8 book is reachable by repeating A.
+            if (kind === 'LAP') {
+                draft.laps = draft.laps >= LAPS_MAX ? LAPS_MIN : draft.laps + 1
+                audioController.playTone(300 + draft.laps * 55, 0.07, 'square', 0.05)
+                draft.msg = 'LAPS ' + draft.laps; draft.msgT = 80
+                return
+            }
             if (kind === 'ERASE') {
                 const i = stampAt(draft.stamps, draft.cursor)
                 if (i >= 0) { draft.stamps.splice(i, 1); rebuildDraft(); audioController.playTone(200, 0.08, 'triangle', 0.05); draft.msg = 'ERASED'; draft.msgT = 90 }
@@ -1020,9 +1047,11 @@ const ExcitebikeGame = () => {
                     own: ownRef.current, // #2603 own terrain — the pad shows EXIT
                     sel: selRef.current, tracks: TRACK_COUNT, // #2563 splash cursor + roster size
                     customs: customsRef.current, rows: TRACK_COUNT + customsRef.current + 1, // #2576 saved designs + EDIT row
+                    customLaps: [...Array(customsRef.current)].map((_, k) => lapsOf((track(TRACK_COUNT + k) || {}).laps)), // #2625 each saved design's race length, in roster order
                     rev: revLog.slice(-4), // #2573 item 4 — gear-bound seat-rev receipts
                     edit: screenRef.current === 'edit' ? {
                         cursor: draft.cursor, tool: TOOLS[draft.tool], stamps: draft.stamps.map((s) => [s.kind, s.x]),
+                        laps: draft.laps, // #2625 the designer's number, live in the bay
                         fits: fitsAt(draft.stamps, TOOLS[draft.tool], draft.cursor),
                         msg: draft.msgT > 0 ? draft.msg : '',
                     } : null,
@@ -1210,7 +1239,12 @@ const ExcitebikeGame = () => {
                         <div className="mt-1 text-white/70 font-mono text-[10px] tracking-[0.4em]">TRACKS</div>
                     </div>
                     <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex flex-col items-center gap-1 pointer-events-none font-mono">
-                        {[...Array(TRACK_COUNT + customs)].map((_, i) => (
+                        {[...Array(TRACK_COUNT + customs)].map((_, i) => {
+                            // #2625 a design that breaks the two-lap book wears
+                            // its number on the roster — you see the length you're
+                            // about to ride before you seat it.
+                            const L = i >= TRACK_COUNT ? lapsOf((track(i) || {}).laps) : LAPS_DEFAULT
+                            return (
                             <div key={i} className={`flex items-center gap-2 text-sm sm:text-base ${i === sel ? 'text-yellow-300' : 'text-white/85'}`}>
                                 <span className="w-5 text-right"><BikeCursor on={i === sel} /></span>
                                 <span className="w-16 text-right">{i < TRACK_COUNT ? `TRACK ${i + 1}` : `CUSTOM ${i - TRACK_COUNT + 1}`}</span>
@@ -1220,10 +1254,11 @@ const ExcitebikeGame = () => {
                                         {'▰'.repeat(trackBite(i))}<span className="text-white/25">{'▱'.repeat(TRACK_COUNT - trackBite(i))}</span>
                                     </span>
                                 ) : (
-                                    <span className="text-[11px] leading-none text-orange-300" aria-label="your own design">★ YOURS</span>
+                                    <span className="text-[11px] leading-none text-orange-300" aria-label="your own design" data-custom-laps={L}>★ YOURS{L !== LAPS_DEFAULT ? ` · ${L} LAP${L === 1 ? '' : 'S'}` : ''}</span>
                                 )}
                             </div>
-                        ))}
+                            )
+                        })}
                         {/* #2576 EDIT TRACK — the original's second menu entry: last row, digit 0, or walk the cursor onto it */}
                         <div className={`flex items-center gap-2 text-sm sm:text-base ${sel >= TRACK_COUNT + customs ? 'text-yellow-300' : 'text-white/85'}`}>
                             <span className="w-5 text-right"><BikeCursor on={sel >= TRACK_COUNT + customs} /></span>
