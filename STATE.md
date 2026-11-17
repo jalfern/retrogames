@@ -1,67 +1,81 @@
-# STATE — session 322 slot a close-out
+# STATE — session 323 slot b close-out
 
 ## Shipped this session
-- **HOMEBODY — NEIGHBOURS WHO MEET (#2588), PR #2592, squash `3af15e9`.**
-  The third-party tail #2070 left open: Fern↔Ivy form `rel.neigh` — full chat
-  0.05/s while both hang unclaimed within ring 2; glance 0.02/s when exactly
-  one has an ear (≤4); meet-up walk (Ivy crosses, Fern waits — #2154 tie-law
-  etiquette) and NO sofa/stove auto-re-home while the pair are free; shared
-  ladder 12/30/60 (+2 content/crossing), −0.02/h relSub fade. Cross-warmth:
-  rung 1+ makes each neighbour chat ×1.25 with the household — additive
-  relAdds, base lines byte-identical below the rung. NEIGH_LINES bubbles on
-  an 11 s throttle, twin-leaf teal NEIGH row (bondRows single source),
-  marquee teaches it. No rng. `peoplecheck` **722/722** (+26 NEIGHBOURS
-  gates); mutants: kill Fern warmth → 710/2, zero NEIGH_CHAT → 709/3;
-  restore. `homebodydrive` 92/92 live on :5173 (phone-scale BONDS leg now
-  four rows — updated). eslint + three scoped gates + build green. Filed
-  polish pass **#2599** (view/feel: pair-hued bubbles, meet wave, attract
-  overlap, warmth sparkle).
-- TARGET #2579 claim was REFUSED (slot b held it fresh, 8-min checkpoint) →
-  normal ladder: steer none, next #1711 lane:platform no-op (precedent
-  314-321), queue empty, live QA masters ×3 → borrow refused → flagship
-  stage spent (all four flagships `heldDirs`) → never-dry: `KICK HOMEBODY 0
-  weak` (score 2) → filed #2588 with why-weakest, claimed, shipped.
+- **#2594 → PR #2597 merged (`6ae2f7b`, live). SONAR ABYSS — remembered pearls
+  keep glowing (#1571 never-dry pick).** `pearlSignal(g,i)` in sim.js —
+  0 never-heard (dark is the game) / 1 remembered ghost (past the fade,
+  forever, until taken) / 2 known-now — the vent doctrine (#2367: fixed
+  geometry is rememberable knowledge) extended to the prize. `CFG.pearlGhost`
+  switch; painter renders a distinct dim static dot; zero sim state added (all
+  attract/replay/planner hash pins byte-match main). Fold-in: attract chevron
+  SHAPE line (#2383 follow-up). Bonus prize: sonarplay repeated a "pre-lit
+  fresh start" until rule 8 read it right — **the same PR root-cured #2589**
+  (closed): `startPlay()`/`reset()` called `loadDepth` while the screen-ref
+  still said attract, so fallback-shaped seeds inherited the attract replay's
+  mid-dive state; `attractJoinAt(genCave(20261135,1), demoCmds) === 152` =
+  the exact tick nightlybot filed. Mode now flips BEFORE depth at both entry
+  points; repro command answers 1/1 OK.
+  Gates: sonarcheck **250/250** (PEARL MEMORY + FRESH START sections —
+  computed-boundary pins, organic 0-ghost greedy proof, ghost⊆heard,
+  determinism, painter/order law); `--mutate` **271/271**, all 21 mutants die
+  by name (incl. both order-swaps). sonarplay **33/33** real keys (:5178 —
+  fresh-bright 32px, organic ghost 4px on a knowledge-dark cell, revive,
+  dark&cold start). eslint + lint mario/fps/ai + build green. Prod verified:
+  chunk `index-DUN9crn-.js` carries both markers. QA pass filed **#2601**.
+- **sonarplay hardening (three #2383 flake families, measured not assumed):**
+  sampler no longer grades faded marks (world age ≤10 ticks — probe now
+  exposes `age`); cold-single grading excludes cells with a live ring≤6 blip
+  and its 8-neighbours (chevron+halo legitimately paint red next to a cold
+  mark; heat>0.55 ⇒ ring≤6, NOT the ≤5 showcase set); lower-band counter now
+  counts ROWS ≥11 as the #2383 spec says (it counted COLUMNS). Near-rig gate
+  decoupled (modulo×cooldown compound left ~3 coin-flips/run → 0/0 hot
+  samples); swim hold 160ms spans a moveEvery boundary for certain; headless
+  no-audio-device console error filtered (britanniadrive precedent).
 
 ## Next queued
-- `game-queue` empty at close; `next` = **#1711** (lane:platform — no
-  games-lane action). `building`: #2579 (slot b), #2516 (research).
-- Recompute `node scripts/idle-kick.mjs` before claiming; Homebody gap 0
-  stays PARTIAL (third-party landed; no third-party SPAT remains) — expect
-  Homebody weak again or a fresh title. Open feedback is QA's (#2573, #2508,
-  #2561, #2599).
-- Owed proof legs: none from this shift (drive leg ran in-session).
+- **#2579 is slot b's held issue** — resume = `forge-claim.sh 2579 b`, then
+  check **#2585**: ANSWERED A → build stage 2 (law shape at `a002199`, recover
+  via `git fetch origin pull/2583/head`; tempo-constant widening is all that's
+  left); ANSWERED B **or defaulted after 2026-11-19T10:55Z** → record the
+  ruling on #2579, keep stage 1 (`a3efd02`) as shipped law, ship+close.
+  Do NOT build single-row hangs while #2585 is AWAITING.
+- `game-queue` empty at close; `next` = **#1711** (lane:platform — games-lane
+  no-op, precedent 314–319). Idle-kick at close = **`KICK EXCITEBIKE 0 weak`**
+  — README gap 0 is #2573 candidate 7 (test rides are keyboard-escapable only;
+  phones have no on-screen Esc) + splash-seated customs keep the save-and-race
+  gate; #2573 sits plain `feedback` (QA released it). With QA running, the
+  never-dry rung claims it: on-screen ABANDON for the bay/test ride is the
+  concrete next stage. Homebody #2588 merged (3af15e9) — slot a's shelf is free.
+- QA lane live: #2561/#2573 building-qa, #2601 fresh; feedback borrow refused
+  all session (two QA MASTER sessions running).
 
 ## Open questions (issues, not here — #605)
-- #2585 (lane:games, AWAITING, default B) — #2579 stage-2 ruling, slot b's
-  live issue now; not this lane's to fold.
-- Lane-foreign: #2529 (lane:research, AWAITING, default A).
+- None filed this lane. Lane-adjacent: **#2585** (AWAITING, gates our held
+  #2579). Lane-foreign: #2529 (lane:research).
 
 ## Catches for the next session (each cost probes this shift)
-- **`pull_request` CI can sit invisible for ~20 min** — `gh pr checks` shows
-  only Vercel while nothing is queued; don't conclude "static missing", check
-  `api …/commits/<sha>/check-runs` and, if truly absent, `gh workflow run
-  ci.yml --ref <branch>` (dispatch attaches static to the SHA; the rule-5
-  `gh pr checks` loop then can't see it — poll check-runs instead).
-- **QA lanes ship into YOUR files constantly** — two Homebody PRs landed
-  mid-session; expect rebase on every Homebody change. README gate-count
-  lines collide on merge: take main's entries + yours and RE-COUNT against
-  reality (main advertised 701, actually 696+26=722; the count in main's
-  text was already stale).
-- **Glance reach collides with kitchen drift** — Ivy re-homing toward the
-  stove legitimately walks the pair to d=4; harness gates that isolate the
-  reach law must HOLD the visitors (park() cheats are fine); prove movement
-  in a separate unheld gate (the meet test).
-- **Both-claimed ≠ different-claims** — glance condition is XOR of
-  "claimed-null", not `fv.claim !== iv.claim` (two hosts → still silent).
-- **`grep -l pat >/dev/null`** prints nothing — use `grep -q` when capturing
-  a hit in a shell variable.
-- Prod marker for a lazy game chunk: index.html lists only the entry; Vercel
-  deploy status on the merge SHA (check-runs) is the reliable signal.
+- **Prod verification: local build chunk hashes ≠ prod hashes** (different
+  build box). Don't poll `dist/` names against prod. Resolve from prod: HTML
+  (needs `curl -L` — bare `/retrogames/` answers a redirect) → entry chunk →
+  its 63 lazy-chunk refs → fetch in parallel → grep markers. ~30s.
+- **zsh `for c in $chunks` does NOT word-split newlines** — loops silently
+  fetched garbage URLs. Pipe `| while read c` instead; verify with `ls | wc -l`.
+- **Painter heat threshold is ring ≤ 6** (`contactHeat > 0.55`), not the
+  showcase NEAR_RING=5. Anything gating "hot-looking pixels" must use 6.
+- **A pre-lit fresh run was shipped law for weeks** (#2383 joined replays made
+  the leak seed-dependent AND made near-contact demos easier). Fixes can
+  surface flake compensation in drive suites — expect drive-leg tuning after
+  order/state fixes; that's the suite adapting, not the fix breaking.
+- **Never quote mutant counts in a PR before running the widened suite** —
+  the first body draft said 19; the real number was 21 and it needed the run.
+- mutateguard refuses to plant in a dirty tree — commit the check-script edit
+  first, then `--mutate` (cost one aborted run).
 
 ## Lanes clean
-- Main checkout (`~/Dev/retrogames`) untouched; this worktree
-  `~/Dev/retrogames-forge-homebody-neighbours` = merged branch, detached at
-  `3af15e9` — free to reuse or remove.
-- STATE.md written in the worktree, parked via `statepark.mjs park a`,
-  committed to main via `forge/state-322-a` (game merged this session).
-- :5173 dev server stopped at close-out; other lanes' ports untouched.
+- Main checkout detached at origin/main; this STATE written here, parked via
+  `statepark.mjs park b`, committed to main via `forge/state-323-b` (game
+  merged this session, so STATE is committable — #2552/#2556 shape).
+- Worktree `~/Dev/retrogames-forge-sonar-pearl` re-detached at origin/main,
+  reusable. :5178 dev server stopped at close-out; other lanes' ports
+  untouched (:5173 slot a, :5174/:5176 QA, :5199 nightlybot — killed only
+  its own leftover).
