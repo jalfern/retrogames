@@ -27,6 +27,7 @@ import {
     wizFireGap, WIZ_FIRE_BASE, WIZ_FIRE_FLOOR, WIZ_DEEP_FROM, WIZ_FAN_STEP,
 } from '../src/games/MagicCarpet/sim.js'
 import { WAVE_CYCLE, arcTint } from '../src/games/MagicCarpet/renderer.js' // #1764 item 4 stage 4: the wave law's clock constant, for the JS twin; #2449 item 1: the arc-keyed sky tint, for the real function
+import { CAPTIONS, VILLAGER_CAPS, FALLBACKS, attractCaption } from '../src/games/MagicCarpet/attract.js' // #2568 (#2449 item 4): the attract caption law
 
 const wrap = (v, m) => ((v % m) + m) % m
 const wrapD = (v) => wrap(v + MAP / 2, MAP) - MAP / 2
@@ -411,6 +412,55 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
             src.includes('selectTap(') && src.includes('paintSelect()'),
             'source pin')
     }
+}
+
+// ---- #2568 (#2449 item 4): attract captions — the story is TOLD by the live
+// demo, one line at a time (docs/ART.md bar 6). attract.js is pure presentation
+// (never touches the sim — pinned), the wall is deleted (index.jsx pin), and the
+// beat floor is MEASURED, not guessed: replay tickDemo's own cadence (seed 7,
+// resettle every 2600 ticks, autopilot steering) and demand the demo really
+// shows that many story beats.
+{
+    const capSrc = await readFile(new URL('../src/games/MagicCarpet/attract.js', import.meta.url), 'utf8')
+    const simCap = await readFile(new URL('../src/games/MagicCarpet/sim.js', import.meta.url), 'utf8')
+    const ixSrc = await readFile(new URL('../src/games/MagicCarpet/index.jsx', import.meta.url), 'utf8')
+    r.check('#2568 captions are one-line story text: ≤44 chars, uppercase opens, distinct beat keys never share a line',
+        Object.values(CAPTIONS).concat(Object.values(VILLAGER_CAPS), FALLBACKS)
+            .every((t) => typeof t === 'string' && t.length <= 44 && /^[A-Z]/.test(t)) &&
+        new Set(Object.values(CAPTIONS).concat(Object.values(VILLAGER_CAPS))).size ===
+            Object.keys(CAPTIONS).length + Object.keys(VILLAGER_CAPS).length,
+        `${Object.keys(CAPTIONS).length + Object.keys(VILLAGER_CAPS).length} beats + ${FALLBACKS.length} cadence lines`)
+    r.check('#2568 attractCaption: unknown events caption null (never an empty line), known beats answer',
+        attractCaption(null) === null && attractCaption({}) === null &&
+        attractCaption({ type: 'nonsense' }) === null && attractCaption({ type: 'villager', what: 'release' }) === null &&
+        attractCaption({ type: 'pickup' }) === CAPTIONS.pickup &&
+        attractCaption({ type: 'villager', what: 'grab' }) === VILLAGER_CAPS.grab,
+        'the one law')
+    r.check('#2568 the quiet-spell fallback is 3–5 distinct cadence lines',
+        FALLBACKS.length >= 3 && FALLBACKS.length <= 5 && new Set(FALLBACKS).size === FALLBACKS.length,
+        `${FALLBACKS.length} lines`)
+    r.check('#2568 presentation-only: the sim never mentions captions and attract.js imports no sim',
+        !simCap.includes('attract.js') && !capSrc.includes('./sim.js') && !capSrc.includes('require'),
+        'sim/attract pin')
+    r.check('#2568 the nine-line rule-wall is deleted; index.jsx paints ONE caption line driven by attract.js',
+        ixSrc.includes("from './attract.js'") && ixSrc.includes('attractCaption(e)') &&
+        ixSrc.includes('id="mc-attract-cap"') && !ixSrc.includes('AttractMessage') &&
+        !ixSrc.includes('ARROWS STEER THE CARPET') && !ixSrc.includes('FORTY-FIVE WORLDS ·'),
+        'index.jsx pin')
+    const beatTypes = new Set()
+    let dseed = 7, dgs = makeGame(dseed)
+    for (let cyc = 0; cyc < 4; cyc++) {
+        for (let i = 0; i < 2600 && !dgs.end; i++) {
+            step(dgs, autopilot(dgs))
+            for (const e of dgs.events.splice(0)) {
+                const c = attractCaption(e)
+                if (c) beatTypes.add(e.type === 'villager' ? `villager:${e.what}` : e.type)
+            }
+        }
+        dseed = (dseed * 31 + 17) % 9973; dgs = makeGame(dseed)
+    }
+    r.check('#2568 the attract demo really shows ≥8 distinct story beats (measured over 4 demo worlds)',
+        beatTypes.size >= 8, `${beatTypes.size} beats: ${[...beatTypes].sort().join(',')}`)
 }
 
 // ---- carrying an over-quota load does NOT win; only delivery does
@@ -3948,6 +3998,31 @@ r.info('#1703 premise', 'issue item 2\'s "non-WebGL 2D world" does not exist her
     r.check('#1740 phone tap-to-start honors the cursor (world 2, seed pinned)',
         pgo.screen === 'play' && pgo.level === 1 && pgo.seed === 7, `screen ${pgo.screen} level ${pgo.level + 1} seed ${pgo.seed}`)
     r.check('#1740 phone select pass: zero page errors', pErrs2.length === 0, pErrs2.join(' | '))
+
+    // ---- #2568 (#2449 item 4): the caption lives in the real DOM — exactly
+    // one line, the wall gone, and it MOVES while the demo flies (event beats
+    // hold 4 s, quiet spells cycle the fallbacks every 3 s: sampling ~3.3 s
+    // apart guarantees distinct texts whether beats or cadence drive it).
+    await phone.goto(DEV_URL, { waitUntil: 'load' })
+    await phone.waitForFunction(() => document.getElementById('mc-attract-cap'), null, { timeout: 15000 })
+    const caps = []
+    for (let i = 0; i < 3; i++) {
+        caps.push(await phone.evaluate(() => ({
+            n: document.querySelectorAll('#mc-attract-cap').length,
+            t: (document.getElementById('mc-attract-cap') || {}).textContent || '',
+        })))
+        if (i < 2) await phone.waitForTimeout(3300)
+    }
+    const bodyTxt = await phone.evaluate(() => document.body.innerText)
+    r.check('#2568 attract paints exactly ONE caption line and the nine-line wall is gone from the DOM',
+        caps.every((c) => c.n === 1 && c.t.length > 8) && !bodyTxt.includes('CANNOT CRASH'),
+        caps.map((c) => `${c.n}: ${c.t}`).join(' | '))
+    r.check('#2568 the caption moves while the demo flies (one-at-a-time cycling, never blank)',
+        new Set(caps.map((c) => c.t)).size >= 2 && caps.every((c) => c.t.trim().length > 8),
+        caps.map((c) => c.t).join(' | '))
+    const capScreen = await phone.evaluate(() => window.__carpetTest.probe().screen)
+    r.check('#2568 caption pass: attract unbroken, zero page errors',
+        capScreen === 'attract' && pErrs2.length === 0, `${capScreen}; ${pErrs2.join(' | ')}`)
 }
 
 await phone.close()
