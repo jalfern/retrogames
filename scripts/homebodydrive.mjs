@@ -511,9 +511,9 @@ check('#2227 the drive leaves the house at NORMAL', sd.speed === 1)
     await page.setViewportSize(vp)
     await wait(300)
     check('#2240 BONDS at phone scale — glyph and label ink survive the resample on every row',
-        !!bp && bp.k < 0.65 && bp.rows.length === 3 && bp.rows.every((r) => r.glyph > 0 && r.labelInk > 0),
+        !!bp && bp.k < 0.65 && bp.rows.length === 4 && bp.rows.every((r) => r.glyph > 0 && r.labelInk > 0),
         JSON.stringify(bp && { k: bp.k, rows: bp.rows.map((r) => `${r.label}:${r.glyph}/${r.labelInk}/${r.pips}`) }))
-    check('#2240 the three bond rows stay three rows at phone size, and the FAMILY pulse keeps its gold',
+    check('#2240 the bond rows (now four, #2588 included) stay separated at phone size, and the FAMILY pulse keeps its gold',
         !!bp && bp.bands >= 3 && bp.rows.some((r) => r.key !== 'kid' && r.gold > 0),
         JSON.stringify(bp && { bands: bp.bands, gold: bp.rows.map((r) => r.gold) }))
 }

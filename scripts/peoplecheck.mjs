@@ -97,6 +97,7 @@ import {
     CAT_TABS, TAB_CARDS, TAB_OF, tabCards, setSel, flipTab, selectTab, digitCard,   // #2222: catalog shelves
     SPEED_MULT, SPEED_NAMES, setSpeed, cycleSpeed, attractSpeed,   // #2227: the speed dial
     TRI_TELL_CD, TRI_LINES, IVY_SOCIAL,   // #2154: visitor choreography law
+    NEIGH_CHAT, NEIGH_GLANCE, NEIGH_FADE, NEIGH_COOL_CD, NEIGH_WARM, NEIGH_LINES,   // #2588: the third-party bond
     PAPER, PAPER_LATE, PAPER_LINES,   // #2238: the paper route
     MEAL, MEAL_NAMES, MEAL_DUE, MEAL_WINDOW, MEAL_BOND, MEAL_LINES, SHARED_MEAL_LINES, HOUR_SEC,   // #2244: the meal bells
     MEAL_TIMBRE, SHARED_TABLE_CHORDS, sharedChord, nightLevel,   // #2264: per-bell timbres, the rotating table chord, one night curve
@@ -1423,6 +1424,148 @@ section('CHOREOGRAPHY (#2154): nearest resident, contested pays closer, three-wa
         /\.filter\(\(e\) => e\.d <= 2 && e\.p\.faintT <= 0 && !e\.p\.working\)/.test(chSim))
 }
 
+// --------------------------------------------- NEIGHBOURS (#2588) -------
+section('NEIGHBOURS (#2588): third-party bond — chat, glance, meet, warm')
+{
+    const nbSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const nbArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    const hang = (g, key, name, r, c, hue) => {
+        g.visitAfter = 99; g.ivyAfter = 99; g.ivyGap = 0
+        g[key] = { name, r, c, x: tileX(c) + TILE / 2, y: tileY(r) + TILE / 2, path: null, state: 'hang',
+            t: 0, hue, face: 1, walkPhase: 0, chatT: 0, hangUntil: 9999, neighT: 0 }
+        return g[key]
+    }
+    const park = (p, r, c) => { p.r = r; p.c = c; p.x = tileX(c) + TILE / 2; p.y = tileY(r) + TILE / 2; p.path = null; p.goal = null; p.use = null; p.working = false; p.faintT = 0 }
+    const hold = (pairs) => pairs.forEach(([p, r, c]) => park(p, r, c))
+    const soak = (g, pairs, sec) => { for (let i = 0; i < Math.round(sec / DT); i++) { hold(pairs); advance(g, DT); drain(g) } }
+
+    // Full chat: both guests free, ring 2 — the pair climbs and nobody else's
+    // meter moves. (The bond web now has a spoke the household is NOT on.)
+    const a = newRun(2588); hang(a, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(a, 'ivy', 'Ivy', 3, 7, '#a3579b')
+    const na0 = a.rel.neigh, ca0 = a.content
+    soak(a, [[a.people[0], 1, 12], [a.people[1], 1, 1]], 4)
+    const grewA = a.rel.neigh - na0
+    check('two free neighbours inside the ring befriend at NEIGH_CHAT/s',
+        grewA >= 4 * NEIGH_CHAT - 0.03 && grewA <= 4 * NEIGH_CHAT + 0.01, `grew=${grewA.toFixed(3)}`)
+    check('the pair bond pays NOTHING to the household meters',
+        a.rel.fern === 0 && a.rel.ivy === 0 && a.rel.house === 0 && a.content === ca0)
+
+    // Silence laws: out of gossip reach, both hosts busy, or solo company.
+    // (Idle and apart is NOT silence — that's the meet-up. The held cells
+    // isolate the reach gate from Ivy's honest drift toward the kitchen.)
+    const f = newRun(2590); hang(f, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(f, 'ivy', 'Ivy', 3, 10, '#a3579b')
+    soak(f, [[f.visitor, 3, 5], [f.ivy, 3, 10], [f.people[0], 3, 4], [f.people[1], 1, 1]], 4)   // p0 claims Fern; Ivy waits, held at d 5
+    check('across the room the pair stays silent (d 5 > glance reach)', f.rel.neigh === 0, `neigh=${f.rel.neigh.toFixed(3)}`)
+    const b = newRun(2592); hang(b, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(b, 'ivy', 'Ivy', 3, 7, '#a3579b')
+    soak(b, [[b.people[0], 3, 4], [b.people[1], 3, 8]], 4)   // p0 nearest Fern, p1 nearest Ivy
+    check('when BOTH guests have the ear, the pair says nothing',
+        b.rel.neigh === 0 && b.rel.fern > 0 && b.rel.ivy > 0,
+        `neigh=${b.rel.neigh.toFixed(3)} fern=${b.rel.fern.toFixed(3)} ivy=${b.rel.ivy.toFixed(3)}`)
+    const c = newRun(2594); hang(c, 'visitor', 'Fern', 3, 5, '#4fae5f')
+    soak(c, [[c.people[0], 1, 12], [c.people[1], 1, 1]], 4)
+    check('one neighbour alone on the lot grows no pair', c.rel.neigh === 0)
+
+    // Glance: exactly one claimed, within gossip reach — the waiting neighbour
+    // rides the rumour at the slower law.
+    const gl = newRun(2596); hang(gl, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(gl, 'ivy', 'Ivy', 3, 7, '#a3579b')
+    soak(gl, [[gl.people[0], 3, 4], [gl.people[1], 1, 1]], 4)
+    const grewGl = gl.rel.neigh
+    check('one claimed, one waiting — the pair still grows at glance rate',
+        grewGl > 4 * NEIGH_GLANCE - 0.06 && grewGl <= 4 * NEIGH_GLANCE + 0.01 && grewGl < 4 * NEIGH_CHAT - 0.05,
+        `grew=${grewGl.toFixed(3)}`)
+
+    // The meet-up: both idle and far apart, the newcomer crosses the room
+    // (#2588 etiquette — the first neighbour stays home, Ivy walks).
+    const m = newRun(2598); hang(m, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(m, 'ivy', 'Ivy', 3, 10, '#a3579b')
+    let walked = false
+    for (let i = 0; i < Math.round(8 / DT); i++) {
+        hold([[m.visitor, 3, 5], [m.people[0], 1, 12], [m.people[1], 1, 1]]); advance(m, DT); drain(m)
+        if (Array.isArray(m.ivy.path) && m.ivy.path.length) walked = true
+    }
+    const dEnd = Math.abs(m.ivy.r - m.visitor.r) + Math.abs(m.ivy.c - m.visitor.c)
+    check('idle and apart, Ivy walks a real path to Fern and the pair then chats',
+        walked && dEnd <= 2 && m.rel.neigh > 0.05 && m.visitor.path === null,
+        `d=${dEnd} neigh=${m.rel.neigh.toFixed(3)} walked=${walked}`)
+
+    // Crossing: exactly one rel-up, level named, content pays like every ladder.
+    const x = newRun(2600); hang(x, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(x, 'ivy', 'Ivy', 3, 7, '#a3579b')
+    x.rel.neigh = 11.95
+    const cx0 = x.content
+    const ups = []
+    for (let i = 0; i < Math.round(2 / DT); i++) { hold([[x.people[0], 1, 12], [x.people[1], 1, 1]]); advance(x, DT); ups.push(...drain(x).filter((e) => e.t === 'rel-up')) }
+    check('crossing the first rung pays the pair exactly one rel-up, level 1, +2 content',
+        ups.length === 1 && ups[0].k === 'neigh' && ups[0].level === 1 && x.content === cx0 + 2, JSON.stringify(ups))
+
+    // Cross-warmth: a pair on speaking terms chats DEEPER with the house.
+    const warmth = (neigh0) => {
+        const g = newRun(2602); hang(g, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(g, 'ivy', 'Ivy', 3, 7, '#a3579b')
+        g.rel.neigh = neigh0
+        soak(g, [[g.people[0], 3, 4], [g.people[1], 1, 1]], 4)
+        return g.rel.fern
+    }
+    const fCold = warmth(0), fWarm = warmth(12)
+    check('at rung 1+ Fern chats 25% deeper with the household (cross-warmth)',
+        fWarm > fCold + 4 * 0.07 * (NEIGH_WARM - 1) - 0.04 && fWarm < fCold + 4 * 0.07 * (NEIGH_WARM - 1) + 0.03,
+        `cold=${fCold.toFixed(3)} warm=${fWarm.toFixed(3)}`)
+    const iw = newRun(2604); hang(iw, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(iw, 'ivy', 'Ivy', 3, 7, '#a3579b')
+    iw.rel.neigh = 12
+    soak(iw, [[iw.people[0], 3, 8], [iw.people[1], 1, 1]], 4)
+    check('the warmth law reaches Ivy too', iw.rel.ivy > 4 * IVY_CHAT * NEIGH_WARM - 0.06 && iw.rel.ivy <= 4 * IVY_CHAT * NEIGH_WARM + 0.01,
+        `ivy=${iw.rel.ivy.toFixed(3)}`)
+    check('below the rung the law is invisible — Fern grows at exactly the old rate',
+        fCold > 4 * 0.07 - 0.06 && fCold <= 4 * 0.07 + 0.001, `cold=${fCold.toFixed(3)}`)
+
+    // The pair's own conversation: beats on the throttle, wordings rotate.
+    const w = newRun(2606); hang(w, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(w, 'ivy', 'Ivy', 3, 7, '#a3579b')
+    w.rel.neigh = 13.5
+    const nbTicks = []
+    let hitsSeen = 0, nbAt = null
+    for (let i = 0; i < Math.round(23 / DT); i++) {
+        hold([[w.people[0], 1, 12], [w.people[1], 1, 1]]); advance(w, DT)
+        const got = drain(w).filter((e) => e.t === 'neigh')
+        if (got.length) { hitsSeen += got.length; nbTicks.push(i); if (!nbAt) nbAt = got[0] }
+    }
+    const nbCdOk = nbTicks.every((t, i) => i === 0 || t - nbTicks[i - 1] >= Math.floor(NEIGH_COOL_CD / DT) - 1)
+    check('a warm pair trades three lines in 23 s, spaced ≥ the exchange throttle',
+        hitsSeen === 3 && w.neighHits === 3 && nbCdOk, `hits=${hitsSeen} ticks=${nbTicks.join(',')}`)
+    check('exchange events carry a spot for the bubble',
+        !!nbAt && Number.isFinite(nbAt.x) && Number.isFinite(nbAt.y))
+    check('the pair rotates its three wordings', NEIGH_LINES.length === 3)
+
+    // Absence cools the pair — the softest fade on the panel.
+    const cool = newRun(2608)
+    cool.rel.neigh = 30.01   // just above the FRIENDS edge — two hours of quiet tips it over
+    for (let i = 0; i < Math.round(10.2 / DT); i++) { advance(cool, DT); drain(cool) }   // two sim-hours, nobody visits
+    check('absence demotes the pair through relSub, quietly',
+        cool.rel.neigh < 30 && cool.rel.neigh >= 30 - 2 * NEIGH_FADE - 0.01 && cool.rel.neigh > 30 - 3 * NEIGH_FADE,
+        `neigh=${cool.rel.neigh.toFixed(3)}`)
+
+    // Hash + determinism: the web rides the state and replays exactly.
+    const h0 = newRun(31)
+    const h1 = newRun(31); h1.rel.neigh = 40
+    const h2 = newRun(31); h2.neighTell = 4.5
+    const h3 = newRun(31); h3.neighHits = 1
+    check('rel.neigh and the exchange throttle/beat count ride the hash',
+        stateHash(h1) !== h0 && stateHash(h2) !== h0 && stateHash(h3) !== h0)
+    const meet = (seed) => {
+        const g = newRun(seed); hang(g, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(g, 'ivy', 'Ivy', 3, 10, '#a3579b')
+        g.rel.neigh = 13.5
+        soak(g, [[g.people[0], 3, 4], [g.people[1], 1, 1]], 14)
+        return stateHash(g)
+    }
+    check('an afternoon under the neighbour law is seed-exact', meet(7) === meet(7) && meet(2588) === meet(2588))
+
+    // Source pins: the law must not be silently unwired.
+    check('pin: the pair law runs after the household tick, off the settled claims',
+        /updateHouseBond\(s, simDt\)\n\s*updateNeighbours\(s, simDt\)/.test(nbSim))
+    check('pin: cross-warmth stands in BOTH chat blocks',
+        (nbSim.match(/NEIGH_WARM - 1/g) || []).length === 2)
+    check('pin: the pair rates are the named constants',
+        /relAdd\(s, 'neigh', NEIGH_CHAT \* dt\)/.test(nbSim) && /relAdd\(s, 'neigh', NEIGH_GLANCE \* dt\)/.test(nbSim) && /relSub\(s, 'neigh', NEIGH_FADE\)/.test(nbSim))
+    check('pin: the BONDS panel runs the twin-leaf NEIGH row',
+        /key: 'neigh', glyph: 'twin'/.test(nbArt) && /'NEIGH'/.test(nbArt))
+}
+
 // ----------------------------------------------------------- PET (#2197) -----
 section('PET (#2197): Miso — counter law, cat day, coos, hash')
 {
@@ -2016,8 +2159,8 @@ section('COURT POLISH (#2135): spoken chat, cooling beats, the ring tell')
     check('pin: the cooling beat emits its own event once', (cpSim.match(/t: 'grudge-cool'/g) || []).length === 1)
     check('pin: the reach ring paints only when a word is ready (cooldown closed, buy mode closed)',
         /g\.cmdCd <= 0/.test(cpJsx) && /courtTarget\(g\)/.test(cpJsx) && /ctx\.ellipse\(t\.p\.x/.test(cpJsx))
-    check('pin: spoken lines render as a bubble over the pair (art + shell + all five spoken events)',
-        /export function drawSay/.test(cpArt) && /drawSay\(ctx, sayB\)/.test(cpJsx) && (cpJsx.match(/showSay\(s, e\)/g) || []).length === 7)
+    check('pin: spoken lines render as a bubble over the pair (art + shell + all six spoken events)',
+        /export function drawSay/.test(cpArt) && /drawSay\(ctx, sayB\)/.test(cpJsx) && (cpJsx.match(/showSay\(s, e\)/g) || []).length === 8)
     check('pin: the marquee teaches C/X and the ring tell', /SAY THE KIND THING \u2014 C coos, X cuts\./.test(cpJsx) && /gold ring/.test(cpJsx))
 }
 
