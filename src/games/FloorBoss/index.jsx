@@ -232,6 +232,7 @@ const FloorBossGame = () => {
                     case 'hire': audioController.playTone(480, 0.07, 'square', 0.06); audioController.playTone(600, 0.1, 'square', 0.05, 0.08); spendFlash = { label: `BOT −$${ROBOT_COST} — SPEND COMES OUT OF THROUGHPUT`, until: gs.tick + 180 }; break
                     case 'poor': audioController.playTone(120, 0.12, 'square', 0.06); fx('NO BUDGET', '#ff9a4f', PX(e.x) + 13, PY(e.y) + 8); break
                     case 'refuse': audioController.playTone(110, 0.1, 'square', 0.05); break
+                    case 'aisle': audioController.playSweep(240, 120, 0.12, 'square', 0.05); fx(e.why === 'pocket' ? 'DEAD-END AISLE' : e.why === 'rack' ? 'STRANDED A RACK' : 'NO SERVICE LANE', '#ffd23f', PX(e.x) + 13, PY(e.y) + 8); break // #2546
                     case 'dispatch': audioController.playSweep(500, 700, 0.05, 'square', 0.04); break
                     case 'select': audioController.playTone(660, 0.03, 'sine', 0.04); break
                     case 'prio': audioController.playTone(820, 0.05, 'triangle', 0.05); break

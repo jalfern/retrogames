@@ -248,4 +248,10 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
 - Two-player manager seats (model vs human, one slot each) are the #1144
   follow-up: the episode format already pins `sources`.
 - Rack placement is 1-cell blocks; real warehouse aisle-clearance rules
-  (turn radii, forklift lanes) are faked by BFS.
+  (turn radii, forklift lanes) are faked by BFS. — **first slice shipped by
+  #2546**: aisle reachability is now a *law* at the click point
+  (`strandsFloor` in `sim.js` — a rack that would wall out a stocked rack,
+  sit without a service side, or seal a dead-end pocket is refused, money
+  back, the refusal named on screen; `floorbosscheck` gates the three laws,
+  the all-spots autopilot invariant, and a `--mutate-aisle` kill). True turn
+  radii / two-way lane widths stay future work.
