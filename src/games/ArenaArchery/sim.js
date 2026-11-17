@@ -168,6 +168,11 @@ function looseArrow(g, p) {
         id: ++g.arrowSeq, owner: p.id,
         x: p.x + ax * (R + 6), y: p.y + ay * (R + 6),
         vx: ax * v, vy: ay * v, state: 'fly', age: 0, cell: -1,
+        // the tick this shaft left the string — pure bookkeeping (stateHash
+        // mixes neither id-sequence nor born), and it is what lets the
+        // browser harness name the P1-then-P2 stamp order: two arrows that
+        // share a `born` were loosed on ONE tick, seat order preserved.
+        born: g.tick,
     })
     p.quiver--
     g.events.push({ type: 'loose', who: p.id, charge: p.charge })

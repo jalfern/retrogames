@@ -535,7 +535,7 @@ const ArenaArcheryGame = () => {
                     // #2377 the heat engine, visible to the browser harness
                     heat: gs.heat, lastHit: gs.lastHit, dryTicks: gs.tick - gs.lastHit,
                     stuckCells: gs.stuck.map((s) => ({ cell: s.cell, age: s.age, x: (s.cell % gs.W) * CW + CW / 2, y: Math.floor(s.cell / gs.W) * CW + CW / 2 })),
-                    arrows: gs.arrows.map((a) => ({ id: a.id, state: a.state, owner: a.owner })),
+                    arrows: gs.arrows.map((a) => ({ id: a.id, state: a.state, owner: a.owner, born: a.born })),
                     ledger: { ...gs.ledger, total: gs.total + gs.supplied, now: gs.p[0].quiver + gs.p[1].quiver + gs.arrows.filter((a) => a.state !== 'stuck').length + gs.stuck.length + gs.ledger.hit + gs.ledger.lost },
                     // attract is a separate sim instance — the harness grades
                     // THAT moving, not the idle gs
