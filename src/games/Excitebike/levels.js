@@ -302,8 +302,29 @@ export const nextSel = (i, dir, n = TRACK_COUNT) => ((i + dir) % n + n) % n
 // every index-driven reader (sim, planner, rival pace, renderer, harness)
 // rides it unchanged. Slot is dense (0..CUSTOM_MAX-1); re-saving a slot
 // replaces it. TRACK_COUNT keeps meaning SIX — the shipped roster is pinned.
+// #2642 GRADED PACK — a custom course learns the league grammar: buildTrack
+// grades its pack from the terrain the designer drew. H is what the lap takes
+// from the pack — the mean speed the pace lines pay to slope/mud/water (the
+// penalties rivalSpeed already rides), plus whoop coverage, which rivals do not
+// feel but the player lands through. The grade gives back what the terrain
+// took: a clean lap rides the cap, a crowded slab stays on the baseline. The
+// cap is #2573's measured ceiling (+0.06 — the value that survives every
+// SLACK tax), not a guess. Pure and deterministic: same stamps, same grade.
+export const PACE = { CAP: 0.06, K: 0.10 }   // K = grade lost per px/tick of terrain loss
+export function paceOfBuilt(t) {
+    let loss = 0, n = 0
+    for (let x = 0; x < LAP; x += 8) { loss += Math.max(0, 5 - rivalSpeed(t, x, 5)); n++ }
+    let wh = 0
+    for (const b of t.bands || []) if (b.whoops) wh += (b.whoops[1] - b.whoops[0]) / LAP
+    const H = loss / Math.max(1, n) + Math.min(1, wh)
+    return +Math.max(0, Math.min(PACE.CAP, PACE.CAP - PACE.K * H)).toFixed(4)
+}
+
 export function buildTrack(t) {
-    return { ...t, ground: buildGround(t.cps, t.bands), steps: stepsOf(t.cps) }
+    const ground = buildGround(t.cps, t.bands)
+    const tb = { ...t, ground, steps: stepsOf(t.cps) }
+    // a table value (league-style pace, incl. 0) is law; a drawn course is graded
+    return { ...tb, pace: t.pace ?? paceOfBuilt(tb) }
 }
 export function registerCustom(built, slot) {
     if (!(slot >= 0 && slot < 3)) return -1
@@ -381,8 +402,8 @@ export const RIVALS = [
 // baseline. The bonus per course lives on the track table (`pace`); its cap
 // is measured, not guessed — +0.15 on the leader ate the autopilot's FIRST
 // margin to 3.1px and broke the SLACK law, so K.O. CROSS tops out at +0.06
-// (+0.06/+0.04/+0.02 front ranks). Customs/TEST drafts carry no `pace`
-// field and ride generic baseline pace (the honest remainder, README).
+// (+0.06/+0.04/+0.02 front ranks). Customs/TEST drafts learn this grammar at
+// build time since #2642 — GRADED PACK, paceOfBuilt below.
 export const PACK_TIER = [1, 2 / 3, 1 / 3, 0, 0]
 
 // rival speed at distance d: they ease through the same terrain the player

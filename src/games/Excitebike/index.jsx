@@ -1048,6 +1048,7 @@ const ExcitebikeGame = () => {
                     sel: selRef.current, tracks: TRACK_COUNT, // #2563 splash cursor + roster size
                     customs: customsRef.current, rows: TRACK_COUNT + customsRef.current + 1, // #2576 saved designs + EDIT row
                     customLaps: [...Array(customsRef.current)].map((_, k) => lapsOf((track(TRACK_COUNT + k) || {}).laps)), // #2625 each saved design's race length, in roster order
+                    customPace: [...Array(customsRef.current)].map((_, k) => (track(TRACK_COUNT + k) || {}).pace ?? null), // #2642 each saved design's pack grade, in roster order
                     rev: revLog.slice(-4), // #2573 item 4 — gear-bound seat-rev receipts
                     edit: screenRef.current === 'edit' ? {
                         cursor: draft.cursor, tool: TOOLS[draft.tool], stamps: draft.stamps.map((s) => [s.kind, s.x]),
@@ -1244,6 +1245,9 @@ const ExcitebikeGame = () => {
                             // its number on the roster — you see the length you're
                             // about to ride before you seat it.
                             const L = i >= TRACK_COUNT ? lapsOf((track(i) || {}).laps) : LAPS_DEFAULT
+                            // #2642 GRADED PACK — your design wears its pack grade
+                            // (0–3 pips of the measured cap), the catalogue grammar.
+                            const PK = i >= TRACK_COUNT ? Math.max(0, Math.min(3, Math.round(((track(i) || {}).pace || 0) / 0.02))) : 0
                             return (
                             <div key={i} className={`flex items-center gap-2 text-sm sm:text-base ${i === sel ? 'text-yellow-300' : 'text-white/85'}`}>
                                 <span className="w-5 text-right"><BikeCursor on={i === sel} /></span>
@@ -1254,7 +1258,10 @@ const ExcitebikeGame = () => {
                                         {'▰'.repeat(trackBite(i))}<span className="text-white/25">{'▱'.repeat(TRACK_COUNT - trackBite(i))}</span>
                                     </span>
                                 ) : (
-                                    <span className="text-[11px] leading-none text-orange-300" aria-label="your own design" data-custom-laps={L}>★ YOURS{L !== LAPS_DEFAULT ? ` · ${L} LAP${L === 1 ? '' : 'S'}` : ''}</span>
+                                    <>
+                                        <span className="text-[11px] leading-none text-orange-300" aria-label="your own design" data-custom-laps={L}>★ YOURS{L !== LAPS_DEFAULT ? ` · ${L} LAP${L === 1 ? '' : 'S'}` : ''}</span>
+                                        <span className="text-[11px] leading-none tracking-tight text-emerald-300" style={{ textShadow: '1px 1px #000' }} data-pack={PK} aria-label={`pack grade ${PK} of 3`}>{'▰'.repeat(PK)}<span className="text-white/25">{'▱'.repeat(3 - PK)}</span></span>
+                                    </>
                                 )}
                             </div>
                             )

@@ -955,6 +955,14 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     const badge = await page.locator('[data-custom-laps]').first().textContent().catch(() => '')
     r.check('the splash row labels the deviation (★ YOURS · 1 LAP)', /YOURS/.test(badge || '') && /1 LAP/.test(badge || ''), JSON.stringify(badge))
 
+    // #2642 GRADED PACK — the row wears the grade the engine will race (pips
+    // match the seated custom's pace through the probe, drawn == logical)
+    p = await probe()
+    const wantPk = p.customPace && p.customPace[0] != null ? Math.max(0, Math.min(3, Math.round(p.customPace[0] / 0.02))) : -1
+    r.check('the saved design carries a pack grade in the browser', p.customPace && p.customPace[0] > 0 && p.customPace[0] <= 0.06, JSON.stringify(p.customPace))
+    const pipAttr = await page.locator('[data-pack]').first().getAttribute('data-pack').catch(() => null)
+    r.check('the splash row wears the pack pips the engine will race', pipAttr !== null && +pipAttr === wantPk, JSON.stringify({ dom: pipAttr, probe: wantPk }))
+
     // seat it: the engine races the designer's book, and says so
     for (let i = 0; i < 6; i++) { await page.keyboard.press('ArrowDown'); await wait(40) }
     await page.keyboard.press('Enter'); await wait(250)

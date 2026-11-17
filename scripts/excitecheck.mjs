@@ -16,7 +16,7 @@
 //                                     # surviving mutant means a check died
 import { readFileSync } from 'node:fs'
 import { makeGame, step, stateHash, CFG } from '../src/games/Excitebike/sim.js'
-import { track, groundY, featureAt, LAP, MUD, WATER, BOOST, TRACK_COUNT, nextSel, trackName, buildTrack, registerCustom, customCount, TRANSIENT, setTestTrack, clearTestTrack, hasTestTrack, ownTerrain } from '../src/games/Excitebike/levels.js'
+import { track, groundY, featureAt, LAP, MUD, WATER, BOOST, TRACK_COUNT, nextSel, trackName, buildTrack, registerCustom, customCount, TRANSIENT, setTestTrack, clearTestTrack, hasTestTrack, ownTerrain, PACE } from '../src/games/Excitebike/levels.js'
 import { plan, decide } from '../src/games/Excitebike/planner.js'
 import { compileCustom, auditCustomData, encodeCustom, decodeCustom, fitsAt, stampAt, SPAN, EDGE, STAMP_KINDS, CUSTOM_KEY, CUSTOM_MAX, LAPS_DEFAULT, LAPS_MIN, LAPS_MAX, lapsOf, TOOLS } from '../src/games/Excitebike/custom.js'
 
@@ -180,10 +180,11 @@ section('PER-COURSE LEAGUE (later circuits bite harder — #2573)')
     ko.rivals.forEach((r, j) => ok(Math.abs(r.base - WANT[j]) < 1e-9 && r.v === r.base,
         `K.O. CROSS ${r.name} seats at base ${r.base}, want ${WANT[j]} (PACK_TIER × pace 0.06)`))
     ok(ko.rivals.every((r, j) => j === 0 || ko.rivals[j - 1].base > r.base), 'the pace nudge reordered the pack — ranks must hold')
-    // Customs/drafts compile {name,cps,bands} — no pace field means the
-    // baseline pack (the honest remainder; generic pace on customs stands).
+    // Customs/drafts: the baseline-pack remainder is CLOSED — GRADED PACK
+    // (#2642, below) grades every built custom. The compiler still emits pure
+    // geometry with no pace key: the grade is build-time law, not compiler output.
     const draft = compileCustom([{ kind: STAMP_KINDS[0], x: 900 }])
-    ok(draft && !draft.pace, 'a compiled draft carries pace — customs must ride the baseline pack')
+    ok(draft && !('pace' in draft), 'a compiled draft carries pace — grading must live in buildTrack, not the compiler')
     // Item 6, the lap book: the shipped mode runs TWO laps on every circuit
     // (the original's lap-count variation lives only in VS-mode options this
     // port does not model). Pin the uniformity so a silent drift reddens here.
@@ -1388,6 +1389,22 @@ if (MUT) {
     tryMut('bargRate=0 (bargaining is theatre)', flat({ bargRate: 0 }), probeBargain)
     tryMut('bargRange=0 (blind to your gap)', flat({ bargRange: 0 }), probeBargain)
     tryMut('bargain ignores hazard reads (lines outrank ground)', flat({ hazBase: 0, hazSkill: 0 }), probeHazStays)
+    // ---- graded-pack mutant (#2642) — PACE lives on its own knob ----
+    {
+        const crowdedS = [...Array(11)].map((_, k) => ({ kind: ['WHOOPS', 'MUD', 'WATER', 'BOOST'][k % 4], x: 120 + k * 340 }))
+        const probeGrade = () => {
+            const cl = buildTrack(compileCustom([{ kind: 'BOOST', x: 900 }])).pace
+            const cr = buildTrack(compileCustom(crowdedS)).pace
+            return cr <= cl / 3   // honest law: crowded refunds most of the grade
+        }
+        const honest = probeGrade()
+        ok(honest, 'mutation harness broken: baseline crowded-vs-clean grade does not hold')
+        const k0 = PACE.K; PACE.K = 0
+        const survived = probeGrade()
+        PACE.K = k0
+        console.log(`  mut paceK=0 (grade ignores terrain): ${survived ? 'SURVIVED (BAD)' : 'caught by the audit'}`)
+        ok(!survived, 'paceK=0 SURVIVED — the graded-pack law stopped touching terrain')
+    }
 }
 
 // ---------------------------------------------------------------- edit ----
@@ -1646,6 +1663,76 @@ section('YOUR LAPS (the designer sets the race length — #2625 stage 1)')
     ok(/built\.laps = lapsOf\(e\.laps\)/.test(src), 'hydrate stopped restoring stored laps to the roster')
     ok(/draft\.laps = lapsOf\(t && t\.laps\)/.test(src), 'abandon no longer carries the number you rode back into the bay')
     ok(/if \(kind === 'LAP'\)/.test(src), 'the LAP tool lost its setting-branch — a cycle should never push a stamp')
+}
+
+// ---------------------------------------------------------------- graded pack ----
+section('GRADED PACK (customs ride a graded pack — terrain-derived pace, #2642)')
+{
+    const D2 = [{ kind: 'RAMP', x: 1200 }, { kind: 'BOOST', x: 2400}, { kind: 'STEP', x: 3400 }]
+    const clean = buildTrack(compileCustom([{ kind: 'BOOST', x: 900}]))
+    const mk = (st) => buildTrack(compileCustom(st))
+    const crowded = [...Array(11)].map((_, k) => ({ kind: ['WHOOPS', 'MUD', 'WATER', 'BOOST'][k % 4], x: 120 + k * 340 }))
+    const slab = [...Array(12)].map((_, k) => ({ kind: 'WHOOPS', x: 120 + k * 340 }))
+
+    // THE LAW: buildTrack grades the drawn course — H is what the terrain takes
+    // from the pack (pace-line losses + whoop coverage) and the grade gives it
+    // back, capped at #2573's measured ceiling.
+    ok(PACE.CAP === 0.06, `the cap drifted from the measured ceiling (${PACE.CAP}) — +0.06 is where a taxed win survives`)
+    ok(clean.pace === PACE.CAP, `a clean lap did not grade at the cap (${clean.pace}) — the pack should ride the ceiling where terrain costs nothing`)
+    ok(Math.abs(mk(D2).pace - 0.0576) < 1e-9, `the reference draft re-graded (${mk(D2).pace}, want 0.0576) — deterministic grade drifted`)
+    ok(buildTrack(compileCustom([{ kind: 'MUD', x: 1200 }])).pace < clean.pace, 'a mud pit did not cost the pack its grade — terrain is being ignored')
+
+    // monotone: adding any obstacle to a draft never RAISES the grade.
+    const mono = ['RAMP', 'STEP', 'WHOOPS', 'MUD', 'WATER'].every((kind) => mk([...D2, { kind, x: 4800 }]).pace <= mk(D2).pace)
+    ok(mono, 'adding an obstacle raised a custom\'s pack grade — the law is not monotone in terrain')
+
+    // range: every honest draft rides inside [0, cap].
+    const range = [clean, mk(D2), mk(crowded), mk(slab)].every((t) => t.pace >= 0 && t.pace <= PACE.CAP)
+    ok(range, 'a pack grade left the [0, cap] band — the measured ceiling or the floor broke')
+
+    // crowded refunds the grade; a full whoop slab refunds it ALL (and is a
+    // legal design — the packs get their baseline back exactly where the
+    // terrain already fights the player hardest).
+    ok(auditCustomData(mk(slab), groundY).ok, 'the whoop-slab draft became illegal — the slab law needs a real design')
+    ok(mk(slab).pace === 0, `a full whoop slab graded ${mk(slab).pace}, want 0 — a crowded course must stay on the baseline pack`)
+    const crowdedRef = mk(crowded).pace
+    ok(Math.abs(crowdedRef - 0.0142) < 1e-9, `the crowded reference re-graded (${crowdedRef}, want 0.0142) — crowded drafts kept most of the cap and the determinism broke`)
+    ok(crowdedRef <= clean.pace / 3, `a crowded draft kept ${crowdedRef} of ${clean.pace} — crowded courses still ride too fast`)
+
+    // the league table outranks the grader: a table pace (including a true 0)
+    // survives buildTrack — `??`, never `||`.
+    ok(buildTrack({ ...compileCustom([{ kind: 'BOOST', x: 900}]), pace: 0 }).pace === 0, 'buildTrack overwrote a table pace of 0 — the league calibration would silently re-grade')
+
+    // TRANSIENT drafts are graded too (TEST rides the same law SAVE will).
+    setTestTrack(clean)
+    ok(track(TRANSIENT).pace === PACE.CAP, 'the TEST seat rides ungraded — the bay previews a different pack than SAVE will race')
+    clearTestTrack()
+
+    // SEAT RECEIPT: the sim pays the grade exactly as #2573 pays the league —
+    // PACK_TIER on the front ranks, tail untouched, ranks unshuffled.
+    const crowd = mk(crowded)
+    const slot = customCount()
+    ok(registerCustom(crowd, slot) === TRACK_COUNT + slot, 'the graded custom did not register for the seat receipt')
+    const gs = makeGame(TRACK_COUNT + slot, { count: 0 })
+    const WANT = [5.30, 5.18, 5.05, 4.88, 4.66].map((b, j) => +(b + crowd.pace * [1, 2 / 3, 1 / 3, 0, 0][j]).toFixed(4))
+    gs.rivals.forEach((r, j) => ok(Math.abs(r.base - WANT[j]) < 1e-9 && r.v === r.base,
+        `graded seat ${r.name} base ${r.base}, want ${WANT[j]} (PACK_TIER × pace ${crowd.pace})`))
+    ok(gs.rivals.every((r, j) => j === 0 || gs.rivals[j - 1].base > r.base), 'the grade reordered the pack — ranks must hold')
+
+    // WINNABLE: a WOT ride of the crowded graded course finishes FIRST — the
+    // grade never makes your own design unwinnable — and twice, identically.
+    const wot = (i) => {
+        const g = makeGame(i, { count: 0 })
+        for (let t = 0; t < 9000 && !g.end; t++) { step(g, { g: true }); g.events.length = 0 }
+        return g
+    }
+    const wr1 = wot(TRACK_COUNT + slot)
+    ok(wr1.end === 'win', `a WOT ride could not win its own crowded course (${wr1.end ?? 'unfinished'}) — the grade made the design unbeatable`)
+    ok(stateHash(wot(TRACK_COUNT + slot)) === stateHash(wr1), 'the graded ride is not deterministic — the same design cannot be raced fairly twice')
+
+    // visible grammar: the splash row wears the grade (exciteplay drives the DOM).
+    const sx = readFileSync(new URL('../src/games/Excitebike/index.jsx', import.meta.url), 'utf8')
+    ok(/data-pack=\{PK\}/.test(sx) && /pack grade \$\{PK\} of 3/.test(sx), 'the splash stopped wearing the pack grade — customs lost their catalogue grammar')
 }
 
 console.log(`\nexcitecheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

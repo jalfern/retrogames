@@ -241,12 +241,23 @@ faster heat.
   1 and 3 laps racing provably different distances at WOT with determinism, and
   source pins for the wiring excitecheck can't drive). Re-recorded pin: strip is
   11 tools, TEST 6 · LAP 7 · ERASE 8, EXIT last.
-- **Custom pace grade (#2625 stage 2, open):** rivals ride their GENERIC pace
-  line over your terrain (`rivalSpeed` is terrain-computed, never per-custom
-  tuned): a well-drawn course beats the pack on pace, a crowded one may be a
-  slab of whoops — beyond the length you choose (stage 1, shipped) there is no
-  "difficulty grade". The mechanism exists (per-course `pace`, #2573); customs
-  carry no `pace` key yet.
+- **CLOSED by #2642:** **GRADED PACK** — customs learn the league grammar
+  (#2573) at build time. `buildTrack` grades every drawn course (registered and
+  TRANSIENT): `H` = what the lap takes from the pack — the mean pace-line speed
+  loss to slope/mud/water (`rivalSpeed`'s own penalties sampled across the lap)
+  plus whoop coverage, which rivals do not feel but the player lands through —
+  then `pace = clamp(0.06 − 0.10·H, 0, 0.06)`, capped at #2573's measured
+  ceiling (+0.06 survives every SLACK tax). Terrain gives back what it took: a
+  clean lap rides the pack at the cap, a full whoop slab refunds it all to the
+  baseline. Pure and deterministic (same stamps, same grade); league tracks keep
+  their table value (`pace ?? grade`, never `||` — a true table zero survives,
+  gated); the compiler still emits geometry only. Visible: custom splash rows
+  wear pack pips (`data-pack`, 0–3 pips of the cap) beside ★ YOURS. Proven by
+  the excitecheck GRADED PACK block (+12: cap law, exact receipts for a clean
+  and a crowded reference draft, monotone under every stamp kind, [0,cap]
+  range, slab→0, TRANSIENT grading, PACK_TIER seat receipts with ranks intact,
+  a WOT ride still wins its own crowded course twice identically, source pin
+  for the seat pips) + `paceK=0` mutant caught.
 - **Attract never sees your designs (#2625 stage 3, open):** the attract demo
   still flies MOTOCROSS only; saved designs never enter it.
 - **PER-COURSE LEAGUE (#2573 items 5+6):** every course carries a `pace`
@@ -256,10 +267,10 @@ faster heat.
    IVAN baseline). The cap is measured: the pass-spec's +0.15 ate the
    autopilot's FIRST margin to 3.1px and died on every SLACK tax, and even
    +0.01 at SUPERCROSS broke its CONTACT phase pins — the bite tops out where
-   a taxed win survives. Customs/TEST drafts carry no `pace` key, so they ride
-   the baseline pack. The lap book is UNIFORM two laps: the original's
+   a taxed win survives. Customs/TEST drafts carried no `pace` key (baseline pack)
+   until #2642 taught them to grade — see GRADED PACK above. The lap book is UNIFORM two laps: the original's
    lap-count variation is VS-mode options this port does not model. Both laws
-   pinned by excitecheck's PER-COURSE LEAGUE section (336 checks).
+   pinned by excitecheck's PER-COURSE LEAGUE and GRADED PACK sections.
 - **CLOSED by #2573 (splash feel):** the last three items of the splash pass.
   (2) The wordmark no longer crowds the app chrome at phone widths — it shrinks
   with the viewport (`clamp`), sitting clear between ARCADE/PAUSE/the speaker,
