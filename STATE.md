@@ -1,77 +1,80 @@
-# STATE — session 325 slot b close-out
+# STATE — session 325 slot a close-out
 
 ## Shipped this session
-- **#2611 → PR #2615 merged (squash `e321f61`, live). HOMEBODY — NEIGH STROLL
-  (#2611): the pair walks the lot while they talk — gap 0's pathing-choreography
-  tail (#1571 never-dry pick).** While Fern↔Ivy chat full (both hang, unclaimed,
-  ring 2) AND both are mobile, `neiStroll` banks world-seconds; at
-  `NEIGH_STROLL_T` 12 s the pair sets off — Fern leads to the next fixed spot
-  (`NEIGH_SPOTS` (10,6) front path → (5,13) east lawn → (0,8) back lawn,
-  rotating `neiWalk` mod 3, zero rng; blocked spot → `nearestFreeTo`, unreachable
-  → skip-and-retry), Ivy trails the host to a free cell beside it (#2588
-  etiquette, her legs do the crossing; meet law catches her — pair never splits
-  past glance reach). Chat stays #2588's (proximity pays mid-walk); only a fresh
-  stroll never queues mid-stride. Claims/meet distance FREEZE the bank (carry);
-  SPAT kills it; absence resets (full timer); cold war refuses outright
-  (grudge returns before the bank). `neiWalk` rides stateHash, `neiStroll`
-  (clock) stays off. Tells: `neigh-stroll` event → teal pips + soft two-note,
-  banner `FERN AND IVY TAKE A WALK`, per-spot lines `NEIGH_STROLL_LINES`,
-  marquee law `WHILE THEY TALK THE PAIR WANDERS THE LOT`.
-  Gates: peoplecheck **776/776** (+25 NEIGH STROLL block: boundary exactness,
-  lead/trail arrival, bank-frozen mid-stride + resumed on arrival, fire-time
-  tails aimed at each fixed spot, rotation mod-3 + wrap, max pair distance ≤
-  glance reach over a full circuit, household isolation, claim-carry,
-  spat-zero, absence-reset needing the FULL timer, cold-war refusal + thaw
-  resume, hash carries beat-not-bank, 60 s lap seed-exact, source pins).
-  Mutant hand-proved: `neiStroll += 0` → 13 gates die by name + pin red;
-  restore → 776/776. `homebodydrive` 98/98 live on :5178, zero page errors.
-  eslint + three scoped gates + build green. Prod: deployment for the merge
-  SHA reports success (superseded by lane a's `f14d2057` — ancestor check in
-  main). QA polish pass filed: **#2618** (walk bob, arrival beat, route-trail
-  tell, attract-window lap, BONDS-row stroll pips — view/feel only).
+- **#2614 → PR #2616 merged (squash `f14d205`, live). FLOOR BOSS — NO-PASS
+  LANES (#2614): two-way width becomes a build law.** The #2546 aisle tail
+  ("true turn radii / two-way lane widths stay future work") — width half,
+  never-dry pick adjusted from `KICK PRINCE OF PERSIA 0 weak` (PoP gap 0 is
+  check-only, CivV's a Stage-1 scope-cut list, PickRush's self-labels "not a
+  feel task"; FloorBoss's gap was the oldest unowned player-visible rule).
+  `laneRuns` (sim.js) scans rows then columns for maximal TIGHT runs (open
+  cells, both perpendicular neighbours blocked); completing a straight run of
+  `LANE_LONG` (5) cells with BOTH mouths open is refused — money not spent,
+  `why:'lane'`, `NO PASSING LANE` on canvas. 5 = trap's physical floor: the
+  jam law (distance 2) first fits fully inside a lane at 1+2+1. Escapes gated
+  honest: bay notch (open side-cell splits the run), plugged mouth (dead-end
+  spur — one-way by choice, legal per #2546), runs 1..4 legal everywhere.
+  Zero footprint (#1917): click-point only — refusal charges nothing, lands no
+  rack, changes no hash, refusal-deterministic; curated `RACK_SPOTS` never
+  trip it so the autopilot win proof transfers untouched.
+  Gates: `floorbosscheck` **190/190** (was 178; +12 gates #2614 section:
+  4-legal/5-refused both axes, bay + spur exemptions both axes, no-charge/
+  no-state/determinism, autopilot invariant, painter name pin). Mutant
+  `--mutate-lane` dies by name; tree restores green, guard clean. eslint +
+  three scoped gates + build green. `floorbossplay` 44/44 on :5173 (first
+  run flaked 4 gates cold-transform, one rerun green per rule). Prod
+  verified: chunk `index-Bx5QgomK.js` carries `NO PASSING LANE`.
+- **#2579 executed + closed (no build, ruling). ARENA ARCHERY #2585 was
+  answered B** while this session ran: single-row hangs DECLINED, thick-stone
+  hangs (`a3efd02`) stand as shipped law; honest duels never hear the heat
+  bell for a one-row lift. Recorded in the game README as a **DISCLAIMER**
+  gap (PR #2623, squash `ae2b9d4`) — idle.mjs decided-state class — so a
+  ruling Jon closed cannot score for weakestStage and re-kick lanes onto
+  declined work (#961/#2488 law; ArenaArchery now 0 scoring gaps). Declined
+  shape archived `origin/pull/2583/head` (`a002199`).
 
 ## Next queued
-- `game-queue` empty at close; `next` = **#1711** (lane:platform — games-lane
-  no-op, precedent 314–324). `building`: #2579 (lane a holds; jonq #2585
-  AWAITING, default B, deadline 2026-11-19T10:55Z). idle-kick at close =
-  **`KICK EXCITEBIKE 0 weak`** — shelf-weakest moved to Excitebike gap 0
-  (lane a's #2605 rewrote its README tail mid-session). Recompute before
-  claiming; #2618 is `feedback` (QA's, not a builder candidate).
-- Slot b's warden target #2603 was STALE — lane a had already shipped it as
-  #2605 (claim REFUSED, holder 69 min fresh); normal ladder: steer none → #1711
-  no-op → queue empty → live QA masters ×3 → borrow refused → flagship stage
-  spent → never-dry: Homebody gap 0, filed #2611 with why-weakest, claimed,
-  shipped.
+- Board clean at close: **no `building`, jonq `games` lane empty, game-queue
+  empty**. `next` = #1711 (lane:platform — games-lane no-op, precedent
+  314–322+). Unclaimed `feedback`: **#2573** (EXCITEBIKE polish — QA lane
+  shipped `b97ff16`/item-slice and released it) and **#2622** (this slot's
+  FLOOR BOSS polish pass: drive the lane-refusal with real taps, teach the
+  bay on refusal, readable two-way aisles, duel-path banner check).
+- Idle-kick at close = **`KICK EXCITEBIKE 0 weak`** (gap 0 of its README).
+  Recompute before claiming — QA lanes (mini/mini2/studio were all live at
+  close) may claim #2573/#2622 first, and the builder's feedback-borrow is
+  blocked while any QA MASTER runs → flagship stage → never-dry.
+- Warden note: slot b was re-kicked with TARGET #2579 AFTER this session
+  closed it — claim will find it CLOSED; the ladder is the fallback.
 
 ## Open questions (issues, not here — #605)
-- None filed this lane. Lane-adjacent: #2585 (AWAITING, gates #2579 stage 2 —
-  lane a's). Lane-foreign: #2529 (lane:research).
+- None filed this lane; jonq reports none open for games at close.
 
 ## Catches for the next session (each cost probes this shift)
-- **Never PARK a visitor whose path your law owns.** park() nulls `path` every
-  tick — a stroll bank frozen behind wiped paths fakes a broken law (three
-  phantom stalls before the tell showed `ip` true forever). Hold residents only;
-  let the pair drive itself.
-- **Eyeballing "far" resident cells fails twice.** The claim halo is d≤2 around
-  every cell a visitor ever steps (rows 3/4 corridors, row 0…): brute-force the
-  forbidden set (visited ∪ halo) from a real 3-lap trace, then pick. And keep
-  the two residents ≥3 apart — idle co-presence grew `rel.house` to 6.4 and
-  leaked the isolation gate.
-- **The lap cycle is bank-dominated (~15 s)** — assert from fire-tick captures
-  (event + path tail in the same tick), never soak-relative windows; and cap
-  `g.hour` below 19 in long laps (visitor exit) with the #2604 needs-clamp.
-- **Gates must length-guard before indexing events** (`e0[0]` crashed the
-  mutant run instead of reporting a named FAIL — still red, but a fix-line's
-  worth of noise; a clean summary names the culprit).
-- **pull_request CI queued ~20 min again** (smoke/static pending while Vercel
-  passed) — the rule-5 wait loop needs >15 min; background it, don't stall the
-  session on it.
+- **`gh issue create --labels` does not exist on this gh** — repeat `-l`
+  per label.
+- **Playbook shorthand `forge-<slug>` vs the real branch `forge/<slug>`** —
+  `git push -u origin forge-<slug>` dies "src refspec"; push the slash form
+  (ls-remote is the truth).
+- **FloorBoss rigs must clear seeded racks first** (`gs.racks.length = 0`) —
+  seeds stand racks at (14,3)+(16,5) and naive rig cells collide. Side
+  find, out of scope: tool=rack click on an OCCUPIED cell stacks a duplicate
+  rack for $60 (strandsFloor returns false on occupied; clickCell never
+  checks occupancy) — candidate QA/fix item.
+- **Prod verify: Vercel chunk hashes ≠ local build hashes** (different
+  env) — locate the prod chunk by ROLE marker (grep old law strings, e.g.
+  `DEAD-END AISLE` finds FloorBoss's chunk) instead of the local file name;
+  zsh grep needs `export LC_ALL=C` or minified JS errors "character not in
+  range" and the loop silently misses.
+- **Never-dry step-down is legal and should be written down**: weakestStage
+  can name a game whose only gap can't ship gameplay (#1571: check-only
+  "does not count"); this session filed its why-weakest line with the
+  explicit disqualification list so the step is auditable.
 
 ## Lanes clean
-- Main checkout (`~/Dev/retrogames`) detached at origin/main (`f14d2057`).
-  Worktree `~/Dev/retrogames-forge-homebody-neigh-stroll` re-detached at
-  origin/main, reusable (node_modules symlinked from the main checkout).
-- STATE.md written in the worktree, parked via `statepark.mjs park b`,
-  committed to main via `forge/state-325-b` (game merged this session).
-- :5178 dev server stopped at close-out; other lanes' ports untouched
-  (:5173, :5174, :5176, :5179, :5199).
+- Main checkout detached at origin/main (`ae2b9d4`); STATE.md written here
+  and committed to main via `forge/state-325-a` (game merged this session).
+- Worktree `~/Dev/retrogames-forge-floorboss-no-pass-lanes` re-detached at
+  origin/main, reusable (node_modules symlinked from main checkout).
+- :5173 dev server stopped at close; other lanes' ports untouched
+  (:5174, :5176, :5178, :5179, :5199).
