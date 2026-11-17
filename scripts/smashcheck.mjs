@@ -1671,14 +1671,14 @@ if (process.argv.includes('--mutate')) {
     const IDX = 'src/games/SmashTV/index.jsx'
     const IDX_MUTANTS = [
         ['#1978: the far-door confirm goes blind', 'if (farExitPx(q.x, q.y, doors) > FAR_EXIT_PX) {', 'if (false) {'],
-        ['#1978: the combo pop slides back onto the door row', 'ctx.translate(camX + CW / (2 * zs), HUD_H + 48)', 'ctx.translate(camX + CW / (2 * zs), HUD_H + 30)'],
+        ['#1978: the combo pop slides back onto the door row', 'ctx.translate(CW / 2 + camX, HUD_H + 48)', 'ctx.translate(CW / 2 + camX, HUD_H + 30)'],
         ['#2011: the swell drops out of the bed', 'MURMUR.vol + MURMUR_SWELL * (e.hype || 0)', 'MURMUR.vol'],
         ['#2011: the camera never settles toward the exit', 'camLead(leadDx, bd)', '0'],
         ['#2507: the dry meter goes numb (bar holds slate)', 'const dryTank = powerLow(gs.weapon, gs.energy, CFG.dryLimit)', 'const dryTank = false'],
         ['#2507: the dry ping goes mute at the reload edge', 'powerLow(gs.weapon, gs.energy, CFG.dryLimit) && gs.tick % POWER_PING.every', 'false && gs.tick % POWER_PING.every'],
         ['#2507: room spawns lose their ring — the hook re-gates to boss adds', 'bornFx.push({ x: e.x, y: e.y, t: 0 })', 'if (e.bossAdd) bornFx.push({ x: e.x, y: e.y, t: 0 })'],
         ['#2521: the zoom transform dies — the reveal never widens the frame', 'ctx.scale(zs, zs)', 'ctx.scale(1, zs)'],
-        ['#2521: edge chips go blind through the pull-back', 'edgeMarks(marks, camX, CW / zs)', 'edgeMarks(marks, camX, CW)'],
+        ['#2521: edge chips go blind through the pull-back', 'edgeMarks(marks, camX - zOver, CW / zs)', 'edgeMarks(marks, camX - zOver, CW)'],
         ['#2521: room entry forgets to arm the reveal', 'roomTotal = 0; roomBump = 0; clearedAt = -1; zt = 0', 'roomTotal = 0; roomBump = 0; clearedAt = -1'],
     ]
     const targets = [[SIM, MUTANTS], [SPRITE, SPRITE_MUTANTS], [LEVELS, LEVELS_MUTANTS], [PLANNER, PLANNER_MUTANTS], [JUICE, JUICE_MUTANTS], [IDX, IDX_MUTANTS]]
