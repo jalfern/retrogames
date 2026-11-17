@@ -20,6 +20,7 @@ import { decodeCon, decodeRecord, CON_TERR, FLAT } from '../src/games/Britannia/
 import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches, SPLAT, splatIntensity, dimples, splashStrikes, SPLAT_GAP, ROUGH_MEMORY, seaRough, crestGain, foamGain, SAIL_DRAG, shipCd, SURF_FLOOR, surfVoice, surfDue } from '../src/games/Britannia/swell.js'
 import { SHRINE_DIST, AVATARS, shrineTitle, shrineSpot, plotShrines } from '../src/games/Britannia/shrines.js'
 import { plotVillage, cottageSeed, villageTriples, KEEP_RING, PLAZA_MIN_TS } from '../src/games/Britannia/village.js'
+import { plotWalls, wallTriples, openTriples } from '../src/games/Britannia/walls.js'
 import { HULL_MAX, STRAIN_STORM, strain, wear, repair, nearestCoast, GROAN_GAP, sailState } from '../src/games/Britannia/hull.js'
 import { START_GOLD, FARE, TRIBUTE, payToll, tribute, moorReach } from '../src/games/Britannia/purse.js'
 
@@ -51,6 +52,10 @@ const MUT = {
     // seeds a cottage on EVERY plaza tile — the anti-stranding pin must see a
     // gate lose its ring to the sprawl.
     '--mutate-village-block': { target: 'src/games/Britannia/index.jsx', from: "} else if (villageBlock.has(nx + ',' + ny)) {", to: '} else if (false) {', name: 'cottage refusal deleted' },
+    // POLISH walls: flat-law dropped (stone on sea and forest), and the gate
+    // sealed (wall with no opening strands every plaza).
+    '--mutate-wall-flat': { target: 'src/games/Britannia/walls.js', from: 'const wallable = ringTiles(gate.x, gate.y).filter(([x, y]) => FLAT.has(terrainAt(x, y)))', to: 'const wallable = ringTiles(gate.x, gate.y)', name: 'walls sit on any terrain' },
+    '--mutate-wall-noopen': { target: 'src/games/Britannia/walls.js', from: "const walls = new Set(wallable.filter(([x, y]) => x + ',' + y !== openK).map(([x, y]) => x + ',' + y))", to: "const walls = new Set(wallable.map(([x, y]) => x + ',' + y))", name: 'gate sealed — no opening in the ring' },
     '--mutate-village-flood': { target: 'src/games/Britannia/village.js', from: 'if (cottageSeed(x, y) >= 40) continue', to: 'if (false) continue', name: 'cottage seed law flooded' },
     '--mutate-captain-echo': { target: 'src/games/Britannia/index.jsx', from: "audioController.playTone(300, 0.09, 'square', 0.10)\n                    audioController.playTone(190, 0.16, 'square', 0.10)", to: "audioController.playSweep(96, 60, 0.14, 'square', 0.16)", name: 'the captain stealing the chapel thud back' },
 }
@@ -1037,7 +1042,7 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     ok(Object.keys(CON_TERR).length === 6 && [...Object.keys(CON_TERR), ...Object.keys(FLAT)].map(Number).sort((a, b) => a - b).join(',') === '0,1,2,3,4,5,6,7,8', 'every terrain 0..8 is either a named original tileset or an honest flat fill (no silent gaps)')
     const src = readFileSync('src/games/Britannia/index.jsx', 'utf8')
     ok(/tiles = buildTileCaches\(zip\)/.test(src), 'index.jsx: the classic cache is built from the original bundle bytes')
-    ok(/cs\[variantOf\(hash2, tx, ty, vv\) % cs\.length\]/.test(src), 'index.jsx: classic mode stamps the decoded variants, deterministic per world tile')
+    ok(/cs\[variantOf\(hash2, tx, ty, walled \? 9 : vv\) % cs\.length\]/.test(src), 'index.jsx: classic mode stamps the decoded variants, deterministic per world tile (walls pick the BRICK seed, POLISH #2516 ladder)')
 }
 
 // rain on the sea (#1135): precipitation used to add nothing on open water
@@ -1633,6 +1638,127 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     // harness visibility: a drive can prove the theatre fired.
     ok(/coinFx: S\.coins \? 1 : 0, purseFlash: S\.purseFlash,/.test(idx), 'index.jsx: coin arc and purse flash ride the harness state')
     ok(/moor: S\.ship \? -1 : moorReach\(S\.gold\), sail: sailState\(S\.wind\)/.test(idx), 'index.jsx: mooring reach and sail state ride the harness state')
+}
+
+// ---- town walls (POLISH #2516 ladder): the towns become places ----
+// One seeded gate per walled town, stone only on level ground, never strands,
+// never costs a road. Expectations (6 walled towns, side names) are BOOKED
+// literally HERE — a harness that re-reads walls.js can never go red (#1822).
+{
+    const terrain = (x, y) => world.get(((x % MAPW) + MAPW) % MAPW, ((y % MAPW) + MAPW) % MAPW)
+    const { walls, opens } = plotWalls(gates, terrain)
+    const wSet = new Set(walls.map((w) => w.x + ',' + w.y))
+    // determinism
+    let wDet = true
+    const firstW = JSON.stringify([wallTriples(walls), openTriples(opens)])
+    for (let i = 0; i < 40; i++) {
+        const p = plotWalls(gates, terrain)
+        if (JSON.stringify([wallTriples(p.walls), openTriples(p.opens)]) !== firstW) wDet = false
+    }
+    ok(wDet, 'the wall plot is deterministic (40 recomputes, byte-identical)')
+
+    // booked result on real Britannia
+    ok(walls.length > 0 && opens.length === 6, `six gate-towns stand walled on real Britannia (got ${opens.length}; towns 2 and 6 are thin isles — under six level ring tiles, honest skips)`,
+        `tiles ${walls.length}, gates ${opens.map((o) => `${o.gi}:${o.dir}`).join(' ')}`)
+    ok(opens.every((o) => o.gi >= 0 && o.gi < 8 && 'snew'.includes(o.dir)), 'every opening names a cardinal side of its town')
+
+    // siting law (recomputed here, independently): level ground only, never a
+    // gate, sanctum, cottage, or another town's opening
+    const sancta = new Set(plotShrines(gates, terrain).filter(Boolean).map((s) => s.x + ',' + s.y))
+    const cotta = new Set(plotVillage(gates, terrain, plotShrines(gates, terrain)).map((c) => c.x + ',' + c.y))
+    const gateK = new Set(gates.map((g) => g.x + ',' + g.y))
+    const openK = new Set(opens.map((o) => o.x + ',' + o.y))
+    ok(walls.every((w) => TOWN_FLAT.has(terrain(w.x, w.y))), 'every wall tile stands on level ground (FLAT: grass/heath/plains)')
+    ok(walls.every((w) => !gateK.has(w.x + ',' + w.y) && !sancta.has(w.x + ',' + w.y) && !cotta.has(w.x + ',' + w.y) && !openK.has(w.x + ',' + w.y)),
+        'walls never cover a gate, a sanctum, a cottage, or an opening')
+
+    // ring law: inside the ring, every level tile is masonry or THE gate
+    let ringOK = true
+    for (const o of opens) {
+        const g = gates[o.gi]
+        for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== 3) continue
+            const x = ((g.x + dx) % 256 + 256) % 256, y = ((g.y + dy) % 256 + 256) % 256
+            if (!TOWN_FLAT.has(terrain(x, y))) continue
+            const k = x + ',' + y
+            if (!wSet.has(k) && !(x === o.x && y === o.y)) ringOK = false
+        }
+    }
+    ok(ringOK, 'each walled town: level ring-3 ground is fully walled except the single gate (gaps only where the land itself is not level)')
+
+    // never strands: booked BFS from the gate, around the walls, out to the land
+    const reachOut = (g, blocked) => {
+        const seen = new Set([g.x + ',' + g.y]); const q = [[g.x, g.y]]
+        while (q.length) {
+            const [x, y] = q.shift()
+            for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const nx = ((x + dx) % 256 + 256) % 256, ny = ((y + dy) % 256 + 256) % 256
+                const k = nx + ',' + ny
+                if (seen.has(k) || terrain(nx, ny) === 0 || blocked.has(k)) continue
+                if (Math.max(Math.abs(nx - g.x), Math.abs(ny - g.y)) > 7) continue
+                seen.add(k); q.push([nx, ny])
+            }
+        }
+        return [...seen].some((k) => {
+            const [x, y] = k.split(',').map(Number)
+            return Math.max(Math.abs(x - g.x), Math.abs(y - g.y)) > 3
+        })
+    }
+    ok(opens.every((o) => reachOut(gates[o.gi], wSet)), 'no walled town strands its pilgrim: the gate really lets the foot out')
+
+    // never costs a road: rim connectivity at radius 6 unchanged by the walls
+    const rimComp = (g, blocked) => {
+        const rim = []
+        for (let dy = -6; dy <= 6; dy++) for (let dx = -6; dx <= 6; dx++) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== 6) continue
+            const x = g.x + dx, y = g.y + dy
+            if (terrain(((x % 256) + 256) % 256, ((y % 256) + 256) % 256) !== 0) rim.push([x, y])
+        }
+        const comp = new Map()
+        for (const [x, y] of rim) {
+            const k = x + ',' + y
+            if (comp.has(k)) continue
+            const seen = new Set([k]); const q = [[x, y]]
+            while (q.length) {
+                const [cx, cy] = q.shift()
+                for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                    const nx = cx + dx, ny = cy + dy, nk = nx + ',' + ny
+                    if (seen.has(nk) || Math.max(Math.abs(nx - g.x), Math.abs(ny - g.y)) > 6) continue
+                    if (terrain(((nx % 256) + 256) % 256, ((ny % 256) + 256) % 256) === 0) continue
+                    if (blocked.has(nk)) continue
+                    seen.add(nk); q.push([nx, ny])
+                }
+            }
+            for (const sk of seen) if (!comp.has(sk)) comp.set(sk, k)
+        }
+        return comp
+    }
+    let roadsOK = true
+    for (const o of opens) {
+        const g = gates[o.gi]
+        const after = rimComp(g, wSet), before = rimComp(g, new Set())
+        for (const [ka, va] of after) for (const [kb, vb] of after) {
+            if (before.get(ka) === before.get(kb) && va !== vb) roadsOK = false
+        }
+    }
+    ok(roadsOK, 'walls never cost a country road (rim connectivity at radius 6 unchanged, every walled town)')
+
+    // foreign worlds answer honestly
+    ok(plotWalls([{ x: 100, y: 100 }], () => 0).walls.length === 0, 'a gate in open sea gets no walls (empty, no crash)')
+    const flatWorld = plotWalls([{ x: 40, y: 40 }], () => 1)
+    ok(flatWorld.walls.length === 23 && flatWorld.opens.length === 1, 'level foreign land: a full 24-tile ring minus one honest gate (23 stones)')
+
+    // purity + wiring
+    const wallsSrc = readFileSync('src/games/Britannia/walls.js', 'utf8')
+    ok(!/\bctx\.|\bS\./.test(wallsSrc), 'walls.js stays pure: numbers in, tiles out, never the walk itself')
+    const wIdx = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+    ok(/else if \(wallBlock\.has\(nx \+ ',' \+ ny\)\)/.test(wIdx), 'index.jsx: the foot asks the wall before stepping onto stone')
+    ok(/wallBlock\.has\(tx \+ ',' \+ ty\)\) \{ drawWall/.test(wIdx), 'index.jsx: walls are PAINTED exactly where they BLOCK'
+    )
+    ok(/tiles\.brick \? tiles\.brick : tiles\.classic\[vv\]/.test(wIdx), 'index.jsx: classic mode stamps ORIGIN\'S BRICK.CON on the walls')
+    ok(/barrest the way/.test(wIdx) && /enterest the town by its gate/.test(wIdx), 'index.jsx: the wall knocks and the gate threshold both speak')
+    ok(/walls: wallTriples\(walls\)/.test(wIdx) && /opens: openTriples\(wallOpens\)/.test(wIdx), 'index.jsx: walls and gates ride the harness state (panel parity)')
+    ok(/buildBrickStamps/.test(readFileSync('src/games/Britannia/ega.js', 'utf8')), 'ega.js: BRICK.CON (the held city tileset) is decoded for classic walls')
 }
 
 console.log(fails ? `\nBRITANNIA: ${fails} FAILURES` : '\nBRITANNIA: all checks pass')
