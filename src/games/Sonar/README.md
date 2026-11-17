@@ -40,13 +40,23 @@ releases the seat silently. DEV probes: `__sonarTest.watching()`,
 
 ## Verify
 ```bash
-npm run sonarcheck            # 228 checks: gen, wavefront honesty, determinism,
+npm run sonarcheck            # 255 checks: gen, wavefront honesty, determinism,
                               # eel timelines, distance-cue ring/heat (#2365),
                               # vent signal fresh/ghost/dark boundaries (#2367),
                               # attract showcase (#2383), vent-win crossings
 DEV_PORT=<p> npm run watchcheck -- --only sonar   # 182: seat pilot + source pins
 DEV_PORT=<p> npm run sonarplay                    # real keys + pixels (#2365/#2367/#2383)
 ```
+
+## The pearl's echo (#2601)
+A wavefront that RE-ARRIVES at a pearl cell remembered-but-faded (the dim→
+bright revival) pushes a `pearlEcho` event; the shell rings ONE low, flat
+155 Hz sine — below the contact-blip floor (170 Hz) and the ping-sweep
+landing (240 Hz), no sweep of its own — so the audio channel carries the
+fresh/remembered distinction the pixels already make. The FIRST hearing and
+an ordinary re-light of a still-fresh pearl stay silent. Pinned in
+`sonarcheck` at the computed re-arrival tick plus both negatives; a
+`pearlEcho:false` mutant and a shell-handler mutant die by name.
 
 ## The vent signal (#2367)
 `ventSignal(g)` (sim.js) grades the vent cell through `known()`: 0 never heard,
