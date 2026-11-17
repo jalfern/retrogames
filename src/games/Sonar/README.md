@@ -70,6 +70,28 @@ by name. Each live ping also strokes a faint expanding ring (with three trailing
 echoes) from its source — the ring→distance mapping the #2365 heat cue leans on,
 now visible; it draws from `gs.pings`, cells still light solely by BFS arrival.
 
+## The seed ledger made actionable (#2601 items 4+5)
+The over screen printed `seed 636f6666` and the DEEP LOG printed one per row,
+yet no key acted on any of it: `?seed=` (#1473) pinned EVERY dive with no way
+back but editing the URL, and the just-finished seed was display-only. Now:
+
+- **E / hold re-swims the finished seed.** On the over screen (after its 900 ms
+  grace) `KeyE` starts a dive on `endRef.current` — the seed `finish()` just
+  recorded. Touch has no E key, so the over-screen decision moved to
+  pointerup: hold ≥600 ms re-swims, a tap keeps any-tap-to-attract. Caves are
+  pure functions of seed+depth, so the replay is the SAME caves.
+- **U pulls the pin.** The query pin is read ONCE at mount into `pinRef`;
+  `KeyU` wherever the pin is felt clears it without starting a dive (any key
+  on attract starts — the hatch had to be a non-starting key). Attract and
+  over both announce the pin (`SEED xxxx PINNED — U UNPINS`) — an invisible
+  pin is indistinguishable from a broken RNG.
+- Keys chosen against live collisions: `KeyR`/`KeyG`/`KeyL` are already
+  sonarplay's any-key drivers, so replay is E and unpin is U. DEV probes:
+  `__sonarTest.pin()`, and `forceOver()` which only sets the sim's own death
+  state — the live loop calls `finish()` itself (rig the setup, never the
+  outcome). Pinned by `sonarplay` (§SEED LEDGER: pin announced + honored,
+  E replay, hold replay, U unpin without start, random after U).
+
 ## Honest gaps
 - **CLOSED by #2365:** eels telegraph only via contacts; no distance cue on a
   ping's first lit ring — contacts now carry the ring that lit them and
