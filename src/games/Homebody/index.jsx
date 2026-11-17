@@ -726,11 +726,15 @@ const HomebodyGame = () => {
                 iceTruckRollOut(g)
             }
             if (iceTruck.phase === 'in') {
-                const k = Math.min(1, (g.sec - iceTruck.t0) / ICE_TRUCK_IN_S)
+                let k = (g.sec - iceTruck.t0) / ICE_TRUCK_IN_S
+                if (!(k >= 0)) k = 1   // a sim restart mid-roll leaves t0 on the dead clock — finish the slide instead of flinging the truck west
+                else k = Math.min(1, k)
                 iceTruck.px = iceTruck.from + (iceTruck.parked - iceTruck.from) * k
                 if (k >= 1) { iceTruck.px = iceTruck.parked; iceTruck.phase = 'parked' }
             } else if (iceTruck.phase === 'out') {
-                const k = Math.min(1, (g.sec - iceTruck.t0) / ICE_TRUCK_OUT_S)
+                let k = (g.sec - iceTruck.t0) / ICE_TRUCK_OUT_S
+                if (!(k >= 0)) k = 1   // #2508: same law for the drive-off (homebodydrive caught x = -2342 on a rewound clock)
+                else k = Math.min(1, k)
                 iceTruck.px = iceTruck.from + (W + TRUCK_W + 8 - iceTruck.from) * k
                 if (k >= 1) iceTruck.phase = 'off'
             }

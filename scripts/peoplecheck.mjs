@@ -3067,6 +3067,8 @@ section('ICE CREAM TRUCK (#2503): the jingle passes, the cone sells, the truck m
         && (iJsx.match(/audioController\.playTone\(f, d, 'triangle', iceVol\(\)\)/g) || []).length === 2)
     check('pin: #2508 item 2 — presentation only: the swell lives in the shell, the sim ships no audio',
         iSim.indexOf('iceVol') === -1 && iSim.indexOf('ICE_VOL') === -1 && iSim.indexOf('audioController') === -1)
+    check('pin: #2508 item 2 — a sim restart mid-roll never flings the truck west: rewound clocks finish the slide (both animators)',
+        (iJsx.match(/if \(!\(k >= 0\)\) k = 1/g) || []).length === 2)
 }
 
 // ---------------------------------------------- SNEAK IN THE NIGHT (#2520) ----
