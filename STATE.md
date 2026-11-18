@@ -1,64 +1,73 @@
-# STATE — session 330 slot b close-out (EXCITEBIKE GRADED PACK shipped)
-
-Slot-b run 23:05–00:25Z. Ladder: #1711 REFUSED (slot a, alive 19 min),
-#2627 REFUSED (slot a liveness-comment window) → never-dry #1571 →
-filed #2642 and shipped it. AGENTS rule 4 satisfied: game code merged.
+# STATE — session 331 slot a close-out
 
 ## Shipped this session
-- **#2642 GRADED PACK — CLOSED shipped** (PR #2644, squash `4ed658f`,
-  live on prod: chunk `index-BUR0wl4Z.js` carries `pack grade` at
-  /retrogames/excitebike). Customs + TEST drafts now grade the pack from
-  their own terrain: `H` = mean `rivalSpeed` loss to slope/mud/water +
-  whoop coverage; `pace = clamp(0.06 − 0.10·H, 0, 0.06)` — #2573's
-  measured cap. Clean designs ride the cap (fixes the free win), a full
-  whoop slab refunds to baseline. `pace ?? grade` keeps league table zeros
-  (gated). Custom splash rows wear pack pips (`data-pack`, 0–3).
-  Proof: excitecheck 407/407 (+12 GRADED PACK gates; old baseline-pack
-  remainder pin replaced; `paceK=0` mutant caught), exciteplay 131/131
-  (+2: probe carries grade, DOM pips == seated grade), eslint +
-  lint:mario/fps/ai + build green.
-- Slot a shipped FLOOR BOSS SWING PAINT (#2627 s3, `f2260f5`) mid-session
-  — different title, no collision; #2627 complete, both its stages live.
+- **#2627 stage 3 SWING PAINT — CLOSED shipped.** Merged `f2260f5`
+  (PR #2643), static SUCCESS, prod verified: live chunk
+  `index-Bn392qlR.js` at jalfern.com/retrogames/floor-boss carries the
+  painter byte-identical (`rgba(255,210,63,${s.h?.085:.05})` keep-clear box
+  + quarter turn-arc). Game code: `swingMarkers(gs)` pure sweep of live
+  elbows (open cell, exactly two perpendicular open neighbours, faced by an
+  existing rack = Manhattan-1 work-stop in the turn) + `paintSwing`
+  (tiered amber floor-paint; `hard` = both arms tight-to-open-mouths — the
+  double-sightline case the click-point law misses when arms tighten AFTER
+  the facing rack lands) + DEV eye `swing`. Harness: floorbosscheck 251/251
+  (+13 gates: live rig pins BOTH corners (17,3)+(18,4), order-made HARD
+  tier, corridor/T negatives, purity+determinism, autopilot invariant,
+  paint order), `--mutate-swing` killed by name; floorbossplay 58/58 real
+  taps (warm-pixel probe 8/8, paint-follows-grammar cool-down), zero page
+  errors. All three stages of the turn-radii tail are now live (no corner
+  stacks / teach the elbow / swing paint); README records the residual
+  honest gap (kinematic-point carts, true swept volumes stay faked).
+- **#1711 (TARGET, platform): evidence session, no code.** FIRST scheduled
+  nightly grading run verified: `plaicraft-grade-nightly` 44126455014 event
+  `schedule` SUCCESS, armed (JON_KEY), reached the store — audit item 3
+  CLOSED (commented); `gradeselftest` 29/29 at tip; store unchanged 14 takes
+  all marker-graded; Jalfern 3/3 counted human sessions stand. Released to
+  `next` — S1's only open line is Jon's completed `/claptest` take (≥3
+  slaps coincident with ≥3 heard claps); the nightly self-grades the night
+  it lands, a lane hand-grades earlier (audit protocol #2157).
+
+## Claims / board
+- #1711 claimed at warden order, released to `next` after evidence.
+- #2627 closed `shipped` — game-queue is now EMPTY; `next` = #1711 only.
 
 ## Next queued
-- game-queue EMPTY, nothing `building` at `f2260f5`; jonq games empty.
-- idle-kick answers `KICK EXCITEBIKE 0 weak` — the attract gap (#2625
-  stage 3: the demo never sees saved designs) is now the shelf's weakest
-  unowned gap. Next builder: file + claim it per #1571, or run the normal
-  ladder if the warden has queued something by then.
-- QA holds five titles (#2599/#2618 family etc.) — don't touch; #2632
-  owns Excitebike's YOUR-LAPS polish pass (this stage's pips are not in
-  its scope; QA may extend it — no new feedback issue filed).
+- `node scripts/idle-kick.mjs` answers `KICK FLOOR BOSS 0 weak` at
+  `86ab910`: the never-dry pick re-lands on FLOOR BOSS — the residual
+  swept-volume/forklift-lane sentence in its README honest-gaps plus
+  open QA feedback naming the title. A QA MASTER was live this shift
+  (node studio, :5176), so the next session must re-run idle-kick before
+  claiming (builder borrow blocked while QA MASTER runs) and file
+  `POLISH — FLOOR BOSS: …` for the unowned residual if it still scores.
+- #1712 (S2 dataset export) stays unlabeled until #1711 closes with
+  evidence (big-build rule: one stage at `next`).
 
 ## Open questions (issues, not here — #605)
-- None. jonq games lane empty at close.
+- None filed via jonq (games lane empty at close).
 
 ## Catches for the next session (each cost probes this shift)
-- **Prod polling must follow the redirect and the chunk map.**
-  `jalfern.com` 308s to `www.jalfern.com` and a bare `curl` returns the
-  15-byte "Redirecting..." body — 14 blind polls before reading the body.
-  The HTML entry chunk contains NO game strings; games are lazy chunks
-  listed in `__vite__mapDeps` inside the entry. Probe: fetch with `-L`,
-  enumerate mapDeps chunks, grep the marker there.
-- **Idle-kick re-aims the moment a README gap is CLOSED in the same PR**
-  (parseGaps skips `CLOSED by` entries) — closing gap text in the shipping
-  PR is what keeps never-dry picks honest; my claim-time pick (pace gap,
-  score 5) and close-time pick (attract gap) differ by exactly that.
-- **A dense legal draft needs spacing ≥ 340 without RAMP** (audit margins:
-  RAMP spans 480) — an "illegal" crowded probe silently grades different
-  terrain than any designer can save.
-- **The warden auto-closed #2642 at merge** — single-stage, so correct
-  this time; check stage-count in the PR body before assuming a close is
-  the #2627 misfire pattern.
-- Also valid: warden double-kick (pgrep with count, not head); orphaned
-  trainers clobber on completion; `gh pr merge` needs the explicit number
-  from detached HEAD; preserve foreign STATE dirt to its slot park.
+- **Prod-verify is content, not hash**: entry hashes are machine-dependent;
+  grep a NEW string literal from the shipped code (mine: `.085`) inside the
+  live chunk referenced by www.jalfern.com's entry — and note the apex
+  308s to `www.` (curl -L or you poll a redirect page forever, cost 40
+  cycles).
+- **mutateguard refuses `--mutate-*` on a dirty tree** — commit increments
+  first, then run the kill (the guard worked exactly as the law says).
+- **`forge-claim.sh` prints "already yours: resume" when the SAME slot
+  last claimed** — with no pushed branch there is no corpse; open a fresh
+  worktree anyway. Push refspec is `HEAD:refs/heads/forge/<slug>` (slash),
+  not the FORGE.md step-7 hyphen form (push fails on it).
+- **Fresh-worktree rigs**: `npm ci` needed before any check; `.env.local`
+  (store keys) is NOT copied — cp from the main checkout if the lane needs
+  the store eye; delete after, never commit.
+- **First floorbossplay run after cold Vite** flaked once early-suite;
+  immediate rerun green — advisory per rule 3, don't chase.
 
 ## Lanes clean
-- Main checkout detached at `origin/main` (`f2260f5`); STATE.md written
-  here and landed via its own STATE PR (game code merged this session,
-  so step 9 allows it); parked slot-scoped then shared (`statepark park b`).
-- Lane worktree `retrogames-forge-excitebike-pace-grade` pruned after
-  merge; merged rl-style local branch gone.
-- :5178 stopped by this lane; foreign ports (:5173 slot a, :5176 QA)
-  untouched.
+- Main checkout detached at `origin/main` (`86ab910` before this STATE
+  commit); tree clean. :5173 dev server stopped; foreign ports (:5176
+  studio QA) untouched.
+- My worktrees removed (`forge-floorboss-elbow`, `forge-plaicraft-s1-close`);
+  foreign worktrees untouched; branches deleted with the merges.
+- Slot b's session 330 STATE committed to main (`86ab910`) mid-session —
+  nothing to fold beyond its #2646 ship note, already accounted here.
