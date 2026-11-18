@@ -112,7 +112,7 @@ const ExcitebikeGame = () => {
         let vclock = 0 // #2576 editor pulse clock (the sim is parked in EDIT; menus still breathe)
         // #2665 paint-time receipt of the bay stamp (the probe speaks it; the
         // harness compares it against real pixels — law, paint and receipt once again agree)
-        let bayPaint = { cx: -1, gy: -1, on: false }
+        let bayPaint = { cx: -1, gy: -1, on: false, labels: [] }
         const lastContact = []
         const keys = { g: false, b: false, j: false, l: false, r: false }
         let bikeMem = { pump: 0 } // #1637 decide()'s per-seat memory (pump taps)
@@ -624,6 +624,7 @@ const ExcitebikeGame = () => {
             ctx.fillText('X' + draft.cursor, 250, 12)
             ctx.fillStyle = 'rgba(0,0,0,0.62)'; ctx.fillRect(0, H - 24, W, 24)
             let px = 4
+            bayPaint.labels = [] // #2665 per-frame palette receipt: the colour EACH label actually painted with
             // #2651 12 labels cannot ride 8px on a 256px canvas (SAVE/EXIT ran
             // off-canvas at 11 with gutter 10 already): at 12 the strip steps
             // down to 6px with a 4px gutter — still NES-small, now all visible.
@@ -650,6 +651,7 @@ const ExcitebikeGame = () => {
                     ctx.fillRect(px - 2, H - 22, ctx.measureText(lb).width + 8, 14)
                 }
                 ctx.fillText(lb, px + 4, H - 12)
+                bayPaint.labels.push({ t: TOOLS[i], c: ctx.fillStyle, on }) // #2665 what actually hit the canvas
                 px += ctx.measureText(lb).width + (TOOLS.length >= 12 ? 4 : 10)
             }
             if (draft.msgT > 0) {
@@ -1200,6 +1202,7 @@ const ExcitebikeGame = () => {
                         tip: draft.tipT > 0 ? draft.tip : '', // #2632 item 4 — the one-time lesson, live
                         flash: draft.flashT, // #2632 item 2 — the end-of-book flinch frames
                         stamp: { bob: bikeBob(vclock), cx: bayPaint.cx, gy: bayPaint.gy, on: bayPaint.on }, // #2665 paint-time receipt of the bay stamp
+                        labels: bayPaint.labels, // #2665 per-label paint colours as the canvas saw them
                     } : null,
                     customNames: [...Array(customsRef.current)].map((_, k) => (track(TRACK_COUNT + k) || {}).name || ''), // #2651 the roster speaks its names
                     x: gs.x, total: gs.total, v: gs.v, alt: gs.alt, vy: gs.vy, pitch: gs.pitch,
