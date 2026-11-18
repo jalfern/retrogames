@@ -1,73 +1,71 @@
-# STATE — session 334 slot a close-out
+# STATE — session 334 slot b close-out (THE SLAPS GET NAMED)
+
+Slot-b run ~02:32–03:30Z. Warden TARGET #1711: claim SUCCEEDED at attempt 1
+(slot a had released it; their session then saw the claim b-live and refused).
+Audited the store (14 takes, unchanged, lines 1/2/4 hold; line 3 = Jon's phone
+take, jonq #2652 AWAITING — never waited), shipped the increment that makes
+that take one attempt away, merged, verified prod. AGENTS rule 4 satisfied.
 
 ## Shipped this session
-- **QA: fixed #2632 via PR #2660** — EXCITEBIKE YOUR-LAPS polish, squash
-  `bf1a96e` on main, prod verified. All four items of the pass shipped as
-  PURE helpers in `custom.js` (law lives once, page paints it): (1) over
-  screen announces the book — off-book customs end on `CUSTOM 1 · 1 LAP`
-  (`overBookLabel`, `[data-over-book]`; league/default runs stay plain);
-  (2) LAP wheel tells at its ends — top(8) and wrap(8→1) flinch the tool
-  cell white (5-frame decay) + double-note (rising fifth / falling drop),
-  mid-book stays the old single tone (`lapCycle` names the ends); (3) badge
-  compact form under `sm` (`★ 3L`, default `★`) — 375px row clears the pack
-  pips, wordmark-law geometry in exciteplay, one `[data-custom-laps]`
-  holder either way so old receipts byte-identical; (4) first default-book
-  SAVE teaches `TIP: LAP SETS YOUR RACE LENGTH` once per storage
-  (`excitebike.lap-tip.v1`), lapsed designers never see it, later receipts
-  replace the line. Proof: excitecheck **469/469** (+18 pins; hand-mutant
-  `>=`→`>` on the wrap dies on 2 named lines), exciteplay **160/160** (+9:
-  flinch live in probe top/wrap, mid-book zero after settle, 375px badge
-  clearance, over-book DOM on a real one-lap finish, tip fires-once/quiet/
-  not-for-lapsed/flag-unspent), zero page errors; lint:mario/fps/ai +
-  build green.
+- **#1711 REPORT CARD — PR #2659 squash `d54c80e`** (static SUCCESS; prod:
+  chunk `index-A3CXdv-a.js` carries `EVERY SLAP, IN ORDER`). The graded
+  claptest screen now speaks one row PER SLAP in time order — `PAIR ✓ ±ms` /
+  `OFF ±ms` / `NO TOUCH` / `NO SOUND` / `+N more` — so Jon sees WHICH habit
+  failed, not just totals. Pure spine: `matchClapEdges` gained timed residue
+  (`unmatchedOnsetMs`/`unmatchedTapMs` — additive on every return path;
+  ok/pairs/matched/why/SHAPE-LAW byte-identical); `clapReportRows` (pure)
+  decides pair-vs-off by CLAP_TOL_MS (opts-overridable, pinned — the gate is
+  the constant) with a 12-row cap that ADMITS the hidden count; `screenVerdict`
+  grades the empty seat so loud-claps/no-touches (seed978353) names every clap.
+  Rows reuse COACH_LIVE_TEXT verbatim — one vocabulary; any rename QA #2654
+  decides applies to card + live badge at once. Take bytes/sim/hash/consent/
+  outbox untouched. Proof: recordcheck **257/257** (+17 pins; hand-mutant
+  kinds-swap killed 3 named pins); claptestplay **52/52 + honest SKIPs**
+  (box ran 12–22 fps all suite — three lanes; new paint==verdict gates PASSED
+  throughout, incl. a starved-clock take whose NO TOUCH ×3 + NO SOUND card
+  named truthfully); lint:mario/fps/ai + build green. QA #2654 got a note to
+  witness the coach time-order gate (fps-gated) on a quiet box.
 
 ## Claims / board
-- Warden TARGET #1711: claim **REFUSED** (b live, newest claim 11 min old at
-  attempt). Normal ladder: steer/next/game-queue all empty → feedback borrow
-  (no QA MASTER live) → #2632 (oldest, meat, jalfern-authored; #2654 was
-  skipped — its claptest files are inside b's live `forge/plaicraft-s1-close`)
-  → claimed `building-qa` as node `a`, shipped, closed `shipped`.
-- #1711 stays b's (building, lane:platform); its line 3 still waits Jon's
-  ≥3-pair `/claptest` take.
-- Filed nothing new. game-queue empty.
+- #1711: claimed at warden order, released back to `next` after evidence +
+  ship — only Jon's ≥3-pair take moves it (nightly grades the night it lands).
+- #2632 shipped by slot a same shift (QA borrow, #2660). No collisions:
+  their files = excitebike custom.js, mine = clapSync/clapTestCore/ClapTest.
+- game-queue empty at close; steer/next empty except #1711. No new jonq filed
+  (nothing taste/priority-grade; #2652 already owns the take-vs-waive ask).
 
 ## Next queued
-- Re-derive the pick at `bf1a96e`: `node scripts/idle-kick.mjs` (do NOT
-  trust this file — my lane's flagship/never-dry pick was never reached;
-  the feedback borrow consumed the ladder).
-- #2654 (QA claptest coach polish) is claptest-lane work — b is inside those
-  files on #1711; leave it to a quiet window or b's follow-up.
+- `next` = #1711 but its ONLY remaining line needs Jon — re-claiming it to
+  re-audit is spinning. Next builder: re-run `node scripts/idle-kick.mjs` at
+  whatever tip is current (do NOT trust this file; slot a's EXCITEBIKE YOUR-LAPS
+  pass consumed one gap at `bf1a96e` — the pick has moved again).
+- #2654 (QA claptest coach polish) = QA's, now extended with the report-card
+  wordings + the fps-gated coach card gate.
 
 ## Open questions (issues, not here — #605)
-- #2652 (jonq, platform lane, AWAITING) — phone take vs waiver for #1711
-  line 3. Not this lane's to answer; nightly grades the night a take lands.
+- #2652 (jonq, platform lane, AWAITING, deadline 2026-11-20) — Jon's phone
+  take vs waiving the phone shape for #1711 line 3.
 
 ## Catches for the next session (each cost probes this shift)
-- **A bay toast that outlives its receipt is a stale lie.** The LAP tip
-  painted for ~4 s, so the NEXT save inherited it and two harness gates
-  caught it red: scope lesson lines to the save that earned them
-  (`else draft.tipT = 0`), don't just set-and-decay.
-- **`sm:` breakpoint = 640px — the exciteplay default viewport is 620.**
-  Responsive forms flip at the suite's "desktop" width. textContent of a
-  hidden CSS-form span still contains its text, which is the only reason
-  old badge regexes survived; assert VISIBLE form via
-  `getComputedStyle().display`, never textContent, for width-shaped claims.
-- **flash-frame gates need fps insurance both ways**: "tell live" reads
-  settle-fast right after the keypress (survives slow boxes); "no tell"
-  must first wait > frames × 100 ms (600 ms for 5 frames @10 fps) or a
-  slow box false-reds on leftover decay.
-- **BFS prod chunks in Python, not bash** — a quoted `"$refs | wc -l"`
-  swallowed the loop and one prod-verify looked like a missing deploy for
-  8 minutes; deploy was fine (and Excitebike rides a lazy chunk, so the
-  entry chunk is the WRONG probe — grep the graph).
-- Foreign lanes on the box (b's #1711 session) did not wedge my suite:
-  all ms-shaped gates below passed on the loaded machine; no SKIP needed.
+- **The rule-5 merge loop cannot start before CI registers checks**: `gh pr
+  checks --json … [0].state` on an EMPTY array errors (null.state) → the
+  `while` exits non-zero ~instantly, looking like a merge failure. Wait once
+  (`gh pr checks` shows IN_PROGRESS), then re-run the exact command.
+- **Never pipe a background dev server through `head`** — head fills, closes
+  the pipe, Vite dies on SIGPIPE later (my suite had already run; an orphan
+  held :5178 until killed). Run bare; verify readiness by polling the URL.
+- **Prod-verify lazy routes by BFS over the chunk graph** (slot a's Python
+  lesson, node version worked): the HTML-referenced chunks do NOT contain
+  route-page strings — grep ~40 chunks or you'll poll a correct deploy forever.
+- Starved box (12–22 fps) makes claptestplay SKIP time-shaped gates BY DESIGN;
+  the new card gates are shape-agnostic (surface agreement, not ms) so they
+  prove value even there. Take-byte uploads went to the LOCAL relaysim — the
+  real store stayed clean (14/14, unchanged).
+- Two lanes writing STATE.md the same shift: park slot-scoped FIRST, fold the
+  other slot's parked report into yours (`statepark read` + read the dirt).
 
 ## Lanes clean
-- Main checkout detached at `origin/main` (`bf1a96e`); tree clean (STATE.md
-  parked then committed via its own docs/state PR — game code merged).
-- My :5173 dev server stopped; foreign ports (:5176 QA, :5178 slot b)
-  untouched and unseen this shift.
-- Worktree `retrogames-qa-2632` removed + pruned (its node_modules was a
-  symlink to main's — main's dir survives, verified); foreign worktrees
-  untouched.
+- Main checkout detached at `origin/main`; STATE.md lands via its own STATE PR
+  (game merged, so step 9 allows it); parked slot-scoped then shared.
+- :5178 stopped (orphan killed); foreign ports (:5173 slot a, :5176 QA)
+  untouched. Lane worktree + local branch gone (gh --delete-branch), pruned.
