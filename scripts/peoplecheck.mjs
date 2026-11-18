@@ -25,6 +25,10 @@
 //   6c. COURT PICK — #2235: a contested ring is the player's choice: tap a
 //                  shared-ring person and they hear the next words until they
 //                  leave the ring; uncontested rings keep the nearest law.
+//   6d. GO-SAY — #2683: choose WHICH two share the ring: a tap on Fern/Ivy/Pip
+//                  beyond reach walks the resident over and the coo lands the
+//                  tick they meet — pick promotion, cooldown wait, honest folds,
+//                  bounded chase, queue parity, speaks-as-itself, hash.
 //   7. SECOND VISITOR — #2143: Ivy, the market neighbour — her own schedule
 //                  window, rel.ivy ladder (growth, one-rel-up law, fade and
 //                  demote), the FRIENDS+/FAMILY gift economy, linger/return
@@ -90,6 +94,8 @@ import {
     court, courtTarget, COO_BOND, AFFECTION_BOND, INSULT_DROP, CMD_CD, REL_EDGES,   // #2131
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court
     courtReach, courtPickSet,   // #2235: choose your court target
+    cmdGoSay, goSayTarget, GO_SAY_CHASE, COURT_REACH,   // #2683: go-say — the far tap walks the word over
+    cmdQueue, orderBusy,   // #2470: the queue law the promise rides
     ivyChatPool, IVY_CHAT, IVY_FADE, IVY_GIFT_HUNGER, IVY_GIFT_CASH,   // #2143
     adoptPet, adoptOk, PET, PET_COOS,   // #2197: Miso
     petMood, PET_FEED_T, CAT_MEET_BOND, CAT_MEET_DIST,   // #2200: mood row, visible kibble, meet law
@@ -1200,9 +1206,179 @@ section('COURT PICK (#2235)')   // when the ring is crowded, tap decides WHO hea
     const cpSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
     const cpJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
     check('pin: the view spends the tap on a shared-ring person before the switch and walk idioms (#2235)',
-        /for \(const c of courtReach\(gs\)\)[\s\S]{0,240}courtPickSet\(gs, c\.k\)[\s\S]{0,300}\/\/ tap a person to switch/.test(cpJsx))
+        // #2683: the go-say loop now sits between the pick and the switch — the window grew,
+        // and the GO-SAY section pins the new order itself; the pick still spends first.
+        /for \(const c of courtReach\(gs\)\)[\s\S]{0,240}courtPickSet\(gs, c\.k\)[\s\S]{0,2600}\/\/ tap a person to switch/.test(cpJsx))
     check('pin: the expiry rides every live step alongside the hold clock', /courtPick && !courtReach\(s\)/.test(cpSim))
     check('pin: the pick rides the hash like every other live state', /mix\(s\.courtPick/.test(cpSim))
+}
+
+section('GO-SAY (#2683)')   // choose WHICH two share the ring — a far tap walks over; the coo lands on arrival
+{
+    const far = (g, { pr = 12, pc = 5, fr = 3, fc = 4 } = {}) => {   // Fern hangs by the sofa; a resident waits at the gate — the lot divided
+        g.people[0].r = pr; g.people[0].c = pc
+        g.people[1].r = 6; g.people[1].c = 6
+        g.people[0].path = null; g.people[1].path = null
+        g.people[0].goal = null; g.people[1].goal = null
+        g.cmdCd = 0; g.holdT = -1; g.courtPick = null; g.grudge = 0; g.spatCd = 0
+        g.visitor = { name: 'Fern', r: fr, c: fc, x: tileX(fc) + TILE / 2, y: tileY(fr) + TILE / 2, path: null, state: 'hang', t: 5, hue: '#4fae5f', face: 1, walkPhase: 0, chatT: 0, hangUntil: 9999, metCat: false }
+        return g
+    }
+    // pin Fern at the sofa and the spare resident at rest; run until the
+    // promise settles (or the tick budget runs), collecting every event.
+    const runPin = (g, ticks, stopOn = null) => {
+        const seen = []
+        for (let i = 0; i < ticks; i++) {
+            if (g.visitor) { g.visitor.r = 3; g.visitor.c = 4; g.visitor.path = null }
+            g.people[1].r = 6; g.people[1].c = 6; g.people[1].path = null
+            advance(g, DT)
+            seen.push(...drain(g))
+            if (stopOn && seen.some(stopOn)) break
+        }
+        return seen
+    }
+
+    const g0 = far(newRun(201))
+    g0.people[0].r = 3; g0.people[0].c = 3   // step right up to Fern — the same-ring case
+    check('same-ring taps keep the old idioms — go-say refuses an ear already in reach',
+        cmdGoSay(g0, g0.people[0], 'fern') === false && g0.people[0].goal === null)
+    check('neither a resident (the switch idiom owns them) nor an absent neighbour can be promised a word',
+        cmdGoSay(g0, g0.people[0], 'house') === false && cmdGoSay(g0, g0.people[0], 'ivy') === false && cmdGoSay(g0, g0.people[0], 'kid') === false && g0.people[0].goal === null)
+
+    const g1 = far(newRun(202))
+    const ok1 = cmdGoSay(g1, g1.people[0], 'fern')
+    check('the far tap issues: a gosay goal, a real path, the hand owns it, the ping names the promise',
+        ok1 === true && g1.people[0].goal && g1.people[0].goal.kind === 'gosay' && g1.people[0].goal.k === 'fern'
+        && g1.people[0].path && g1.people[0].path.length > 0 && g1.people[0].owner === 'human'
+        && g1.orderPing.label === 'GO SAY IT — FERN')
+
+    const g2 = far(newRun(203))
+    cmdGoSay(g2, g2.people[0], 'fern')
+    const evs2 = runPin(g2, Math.round(60 / DT), (e) => e.t === 'go-say')
+    const fires = evs2.filter((e) => e.t === 'go-say' && e.stage === 'fire')
+    const coos = evs2.filter((e) => e.t === 'coo' && e.k === 'fern')
+    check('the errand walks and the word lands: one go-say fire, one coo through the existing law',
+        fires.length === 1 && coos.length === 1 && g2.people[0].goal === null)
+    check('arrival pays the bond and the cooldown — court law untouched (chat-drift tolerated to one coo)',
+        g2.rel.fern >= COO_BOND && g2.rel.fern <= COO_BOND * 1.5 && g2.cmdCd > CMD_CD - 2 && g2.cmdCd <= CMD_CD + 1e-9)
+    check('arrival promotes the promise to the #2235 pick — the chosen ear, now in-ring',
+        g2.courtPick === 'fern')
+    const evs2b = runPin(g2, Math.round(2 / DT))
+    check('the coo lands ONCE — the errand does not loop on the doorstep',
+        evs2b.filter((e) => e.t === 'coo').length === 0 && evs2b.filter((e) => e.t === 'go-say').length === 0)
+
+    const g3 = far(newRun(204))
+    g3.people[0].r = 3; g3.people[0].c = 3   // parked right beside Fern — arrival is now
+    g3.people[0].path = null
+    g3.people[0].goal = { kind: 'gosay', k: 'fern', tries: 0 }
+    g3.cmdCd = 5
+    const seen3 = []
+    for (let i = 0; i < Math.round(3 / DT); i++) { g3.visitor.r = 3; g3.visitor.c = 4; g3.visitor.path = null; g3.people[1].r = 6; g3.people[1].c = 6; g3.people[1].path = null; advance(g3, DT); seen3.push(...drain(g3)) }
+    check('a word that just landed elsewhere makes the promise WAIT — goal held, the coo not yet spoken',
+        g3.people[0].goal !== null && g3.people[0].goal.kind === 'gosay' && !seen3.some((e) => e.t === 'coo' && e.k === 'fern') && !seen3.some((e) => e.t === 'go-say'))
+    const seen3b = []
+    for (let i = 0; i < Math.round(6 / DT); i++) { g3.visitor.r = 3; g3.visitor.c = 4; g3.visitor.path = null; g3.people[1].r = 6; g3.people[1].c = 6; g3.people[1].path = null; advance(g3, DT); seen3b.push(...drain(g3)) }
+    check('when the cooldown clears the held word fires at once',
+        g3.people[0].goal === null && seen3b.filter((e) => e.t === 'coo' && e.k === 'fern').length === 1
+        && seen3b.some((e) => e.t === 'go-say' && e.stage === 'fire'))
+
+    const g4 = far(newRun(205))
+    cmdGoSay(g4, g4.people[0], 'fern')
+    g4.visitor.state = 'leaving'
+    const evs4 = runPin(g4, Math.round(30 / DT))
+    check('an ear that starts to leave takes the promise with her — lost, unpaid',
+        evs4.some((e) => e.t === 'go-say' && e.stage === 'lost') && g4.people[0].goal === null && g4.rel.fern === 0
+        && !evs4.some((e) => e.t === 'coo'))
+
+    const g5 = far(newRun(206))
+    g5.hour = 23   // the child's nap is the dark's law — the fold must be tested while she truly sleeps
+    g5.kid = { name: 'Pip', r: 8, c: 8, x: 0, y: 0, path: null, needs: { hunger: 0.8, fun: 0.8, social: 0.8, energy: 0.9 }, asleep: true, cd: 0, giggleT: 0, cryT: 0, wanderT: 2, food: false, playObj: false, treat: false, bedT: 0, stepDist: 0 }
+    check('a sleeping child cannot even be promised — the target law refuses the tap',
+        goSayTarget(g5, 'kid') === null && cmdGoSay(g5, g5.people[0], 'kid') === false)
+    g5.people[0].goal = { kind: 'gosay', k: 'kid', tries: 0 }
+    g5.people[0].path = null
+    const evs5 = []
+    for (let i = 0; i < Math.round(2 / DT); i++) { g5.people[0].path = null; advance(g5, DT); evs5.push(...drain(g5)) }
+    check('a promise already walking when the ear falls asleep folds honestly',
+        evs5.some((e) => e.t === 'go-say' && e.stage === 'lost') && g5.people[0].goal === null)
+
+    const g6 = far(newRun(207))
+    cmdGoSay(g6, g6.people[0], 'fern')
+    let triesSeen = 0
+    let repathed = false
+    const evs6 = []
+    for (let i = 0; i < Math.round(30 / DT); i++) {
+        g6.visitor.r = 3; g6.visitor.c = 4; g6.visitor.path = null
+        g6.people[1].r = 6; g6.people[1].c = 6; g6.people[1].path = null
+        g6.people[0].r = 12; g6.people[0].c = 5; g6.people[0].path = null   // Fern keeps slipping — the walker never closes
+        advance(g6, DT)
+        evs6.push(...drain(g6))
+        if (g6.people[0].goal) { triesSeen = Math.max(triesSeen, g6.people[0].goal.tries); if (g6.people[0].path && g6.people[0].path.length) repathed = true }
+    }
+    check('a slipping target is chased with fresh paths — and the chase is bounded',
+        repathed && triesSeen === GO_SAY_CHASE && g6.people[0].goal === null
+        && evs6.some((e) => e.t === 'go-say' && e.stage === 'lost') && g6.rel.fern === 0)
+
+    const g7 = far(newRun(208))
+    g7.people[0].path = [{ r: 11, c: 5 }]   // an errand mid-step — the tap lands on a busy hand
+    g7.people[0].goal = { kind: 'walk' }
+    check('busy? the promise joins the list like any errand (#2470), and the queue holds it',
+        cmdQueue(g7, g7.people[0], { kind: 'gosay', k: 'fern' }) === true && g7.people[0].queue.some((o) => o.kind === 'gosay' && o.k === 'fern'))
+    g7.people[0].path = null; g7.people[0].goal = null
+    const evs7 = runPin(g7, Math.round(60 / DT), (e) => e.t === 'go-say')
+    check('when the errand before it ends the promise re-issues from wherever they stand and pays',
+        evs7.some((e) => e.t === 'coo' && e.k === 'fern') && g7.rel.fern >= COO_BOND)
+    const g8 = far(newRun(209))
+    cmdQueue(g8, g8.people[0], { kind: 'gosay', k: 'fern' })
+    g8.people[0].path = null; g8.people[0].goal = null
+    g8.visitor = null   // Fern went home between the tap and the turn
+    const evs8 = []
+    for (let i = 0; i < Math.round(6 / DT); i++) { g8.people[1].r = 6; g8.people[1].c = 6; g8.people[1].path = null; advance(g8, DT); evs8.push(...drain(g8)) }
+    check('an ear gone home before the queue turns around — the listed promise drops honestly',
+        evs8.some((e) => e.t === 'queue-drop' && e.id === 'gosay') && g8.rel.fern === 0)
+
+    const g9 = far(newRun(210))
+    cmdGoSay(g9, g9.people[1], 'fern')   // the promise sits on Mira while the hand holds Otto
+    const soc0 = g9.people[1].needs.social
+    const evs9 = []
+    for (let i = 0; i < Math.round(60 / DT) && g9.people[1].goal; i++) { g9.visitor.r = 3; g9.visitor.c = 4; g9.visitor.path = null; g9.people[0].r = 12; g9.people[0].c = 5; g9.people[0].path = null; advance(g9, DT); evs9.push(...drain(g9)) }
+    check('the errand speaks AS ITSELF — the walker delivers it even while the hand sits on the other resident',
+        evs9.some((e) => e.t === 'go-say' && e.stage === 'fire' && e.name === g9.people[1].name)
+        && g9.people[1].needs.social > soc0 && g9.active === 0)
+
+    const g10 = far(newRun(211))
+    g10.people[1].r = 3; g10.people[1].c = 3   // the partner is already at Fern's shoulder — the auto-law would take the nearest
+    cmdGoSay(g10, g10.people[0], 'fern')
+    const evs10 = []
+    for (let i = 0; i < Math.round(60 / DT) && g10.people[0].goal; i++) { g10.visitor.r = 3; g10.visitor.c = 4; g10.visitor.path = null; g10.people[1].r = 3; g10.people[1].c = 3; g10.people[1].path = null; advance(g10, DT); evs10.push(...drain(g10)) }
+    const coo10 = evs10.find((e) => e.t === 'coo')
+    check('arrival in a crowd still pays the CHOSEN ear — the pick law extended to promises',
+        !!coo10 && coo10.k === 'fern' && g10.courtPick === 'fern')
+
+    const gosayScript = (seed) => { const g = far(newRun(seed)); cmdGoSay(g, g.people[0], 'fern'); for (let i = 0; i < Math.round(30 / DT); i++) { g.visitor.r = 3; g.visitor.c = 4; g.visitor.path = null; g.people[1].r = 6; g.people[1].c = 6; g.people[1].path = null; advance(g, DT) } return stateHash(g) }
+    check('the promise rides determinism — seed-exact twins walk the same errand',
+        gosayScript(212) === gosayScript(212))
+    const gH = far(newRun(213)); const gHa = far(newRun(213))
+    cmdQueue(gHa, gHa.people[0], { kind: 'gosay', k: 'fern' })
+    check('a listed promise is state — the hash hears it', stateHash(gH) !== stateHash(gHa))
+
+    const gA = newRun(214)
+    let attractGo = 0
+    for (let i = 0; i < Math.round(240 / DT); i++) { autoStep(gA, DT); attractGo += drain(gA).filter((e) => e.t === 'go-say').length; if (gA.people.some((p) => p.goal && p.goal.kind === 'gosay')) attractGo++ }
+    check('the attract bot never go-says — old demos stay byte-identical', attractGo === 0)
+
+    const gsSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const gsJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const gsArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    const gsReg = readFileSync(new URL('../src/config/games.js', import.meta.url), 'utf8')
+    check('pin: the far-tap loop sits after the #2235 pick loop and before the switch idiom',
+        /for \(const kk of \['fern', 'ivy', 'kid'\]\)[\s\S]{0,1300}\/\/ tap a person to switch/.test(gsJsx))
+    check('pin: arrival is wired into the goal chain of advance', /kind === 'gosay'\) \{ goSayArrive\(s, p\); continue \}/.test(gsSim))
+    check('pin: a listed gosay re-validates at issue, and rides the hash', /o\.kind === 'gosay'\) return cmdGoSay/.test(gsSim) && /o\.kind === 'gosay'\) \{ mix/.test(gsSim))
+    check('pin: the errand speaks as itself — court, courtReach and courtTarget take the speaker',
+        /function court\(s, kind, speakerIdx = s\.active\)/.test(gsSim) && /function courtReach\(s, speakerIdx = s\.active\)/.test(gsSim) && /function courtTarget\(s, speakerIdx = s\.active\)/.test(gsSim))
+    check('pin: the chip and the marquee and the registry all name the errand',
+        /id === 'gosay'\) return 'chat'/.test(gsArt) && /walks it over and says the kind thing/.test(gsJsx) && /walks the word over/.test(gsReg))
 }
 
 section('SECOND VISITOR')   // #2143 — Ivy, the market neighbour

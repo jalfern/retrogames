@@ -889,6 +889,42 @@ check('contract state ticks', f0.tick > 0 && typeof f0.score === 'number', `tick
         !!med2 && med2.neiGrudge === 0 && med2.neiMediated === 1, JSON.stringify(med2 && { g: med2.neiGrudge, md: med2.neiMediated }) + ' cells=' + JSON.stringify(await page.evaluate(() => window.__homebodyTest.medCells())))
 }
 
+// -------------------------------------- GO-SAY (#2683): the far tap walks the word over ---
+{
+    let pre = await st()
+    for (let i = 0; i < 40 && pre.done; i++) { await page.keyboard.press('KeyR'); await wait(250); pre = await st() }
+    const rig = await page.evaluate(() => window.__homebodyTest.promiseFar())
+    await wait(120)
+    await tap(rig.vx, rig.vy)   // a REAL pointer click on Fern across the lot
+    let armed = null
+    for (let i = 0; i < 40 && !armed; i++) { const s = await st(); if (s.goSay) armed = s.goSay; else await wait(50) }
+    check('#2683 the far tap promises it on the live street — the errand is Otto->fern',
+        armed === 'Otto->fern', JSON.stringify(armed))
+    let ringGold = 0
+    for (let i = 0; i < 30 && !(ringGold >= 8); i++) {
+        await page.evaluate(() => window.__homebodyTest.parkFar())
+        ringGold = await page.evaluate(([vx, vy]) => {
+            const c = document.querySelector('canvas')
+            const d = c.getContext('2d').getImageData(Math.round(vx - 17), Math.round(vy + 2), 34, 15).data
+            let n = 0
+            for (let j = 0; j < d.length; j += 4) if (d[j] > 140 && d[j] - d[j + 2] > 90 && d[j + 1] - d[j + 2] > 60) n++
+            return n
+        }, [rig.vx, rig.vy])
+        await wait(50)
+    }
+    check('#2683 the promised ear wears the travelling gold while the walk runs', ringGold >= 8, `gold=${ringGold}`)
+    let fired = null
+    for (let i = 0; i < 240 && !fired; i++) {
+        await page.evaluate(() => window.__homebodyTest.parkFar())
+        const s = await st()
+        if (!s.goSay && s.rel.fern > 0) fired = s
+        await wait(50)
+    }
+    check('#2683 arrival lands the coo on canvas — bond paid, promise settled into the pick',
+        !!fired && fired.rel.fern > 0 && fired.courtPick === 'fern',
+        JSON.stringify(fired && { rel: Math.round(fired.rel.fern * 100) / 100, pick: fired.courtPick }))
+}
+
 check('zero page errors across the whole drive', errors.length === 0, JSON.stringify(errors.slice(0, 3)))
 await browser.close()
 console.log(`\n=== homebodydrive: ${pass} pass, ${fail} fail ===`)

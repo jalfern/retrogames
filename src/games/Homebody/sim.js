@@ -1161,8 +1161,8 @@ export const HOUSE_LINES = [
 // #2131: player-ordered romance. Who is within arm's reach of the commanded
 // resident — partner first by distance, Fern while she hangs about. Fainted
 // folks are not company (their own and yours).
-export function courtReach(s) {   // #2235: everyone the word can find, partner pushed first
-    const me = s.people[s.active]
+export function courtReach(s, speakerIdx = s.active) {   // #2235: everyone the word can find, partner pushed first; #2683: the go-say errand speaks as ITSELF, not the seated hand
+    const me = s.people[speakerIdx]
     if (!me || me.faintT > 0) return []
     const cand = []
     const partner = s.people[1 - s.active]
@@ -1173,14 +1173,14 @@ export function courtReach(s) {   // #2235: everyone the word can find, partner 
     return cand.filter((c) => Math.abs(me.r - c.p.r) + Math.abs(me.c - c.p.c) <= COURT_REACH)
 }
 
-export function courtTarget(s) {
-    const cand = courtReach(s)
+export function courtTarget(s, speakerIdx = s.active) {
+    const cand = courtReach(s, speakerIdx)
     if (!cand.length) return null
     if (s.courtPick) {   // #2235: the chosen ear outranks the nearest while it shares the ring (expiry: courtTick)
         const p = cand.find((c) => c.k === s.courtPick)
         if (p) return p   // stale pick (they left/fainted) simply falls through to the old law
     }
-    const me = s.people[s.active]
+    const me = s.people[speakerIdx]
     let best = cand[0], bd = COURT_REACH + 1   // partner-first on ties: cand[0] is the partner
     for (const c of cand) {
         const d = Math.abs(me.r - c.p.r) + Math.abs(me.c - c.p.c)
@@ -1230,11 +1230,11 @@ const INSULT_LINES = [
     'You sneer; the room goes quiet in the bad way.',
 ]
 
-export function court(s, kind) {
+export function court(s, kind, speakerIdx = s.active) {
     if (s.cmdCd > 0) return null
-    const t = courtTarget(s)
+    const t = courtTarget(s, speakerIdx)
     if (!t) return null
-    const me = s.people[s.active], other = t.p, k = t.k
+    const me = s.people[speakerIdx], other = t.p, k = t.k
     const mx = (me.x + other.x) / 2, my = (me.y + other.y) / 2
     if (kind === 'coo') {
         const deep = k === 'house' && relLevel(s.rel.house) >= 3
@@ -1293,6 +1293,105 @@ export function courtTap(s) {           // release before the threshold
     s.holdT = -1
     const r = court(s, 'coo')
     return r ? { fired: 'coo', ...r } : { refused: true }
+}
+
+// #2683 — GO-SAY: CHOOSE WHICH TWO SHARE THE RING. #2235 let the hand pick
+// the ear inside a crowded ring; the promise that the pair be chosen ACROSS
+// the lot stayed unbuilt — the word only reached whoever already shared the
+// speaker's 2-tile ring. This is the original's idiom (The Sims, PC 2000):
+// click the person you want to talk to and your Sim walks over and does it.
+// A tap on Fern/Ivy/Pip beyond COURT_REACH issues a walk-to-them errand;
+// the tick the two actually share the ring, the coo lands through court()
+// unchanged — bond, sparkle, cooldown, lines, all existing law. Arrival
+// converts the promise into the #2235 pick, so even a crowd pays the chosen
+// ear. An ear that leaves, faints or falls asleep takes the promise with it
+// (fainted-folks-are-not-company law); a target that slips away mid-walk
+// is chased GO_SAY_CHASE re-paths, then the word waits for another day.
+// The partner keeps the historic switch idiom (tap a resident = change hand),
+// so GO-SAY rides the visitors and the child. Nothing here draws on rng at
+// issue, and the attract bot never go-says — old demos stay byte-identical.
+export const GO_SAY_CHASE = 3
+const GO_SAY_LOST_LINES = [
+    'The one you meant to thank has gone — the kind word waits for another day.',
+    'You arrive where someone was; they are elsewhere now, and the errand folds.',
+]
+
+function goSayArrive(s, p) {
+    const k = p.goal.k
+    const v = goSayTarget(s, k)
+    if (!v || v.faintT > 0) {
+        p.goal = null
+        s.events.push({ t: 'go-say', k, stage: 'lost', name: p.name })
+        think(s, pick(s, GO_SAY_LOST_LINES))
+        return
+    }
+    const d = Math.abs(p.r - v.r) + Math.abs(p.c - v.c)
+    if (d <= COURT_REACH) {
+        if (s.cmdCd > 0) return   // a word just landed elsewhere — the promise waits for the cooldown to clear
+        s.courtPick = k           // arrival makes it a #2235 pick: the crowd pays the chosen ear
+        const pi = s.people.indexOf(p)
+        court(s, 'coo', pi)
+        p.goal = null
+        s.events.push({ t: 'go-say', k, stage: 'fire', name: p.name })
+        return
+    }
+    if (p.goal.tries >= GO_SAY_CHASE) {
+        p.goal = null
+        s.events.push({ t: 'go-say', k, stage: 'lost', name: p.name })
+        think(s, `${v.name} is keeping you walking — the word waits for another day.`)
+        return
+    }
+    p.goal.tries++
+    const tg = goSayCells(s, v)
+    const path = tg.length ? bfsPath(s, { r: p.r, c: p.c }, tg) : null
+    if (!path) {
+        p.goal = null
+        s.events.push({ t: 'go-say', k, stage: 'lost', name: p.name })
+        return
+    }
+    p.path = path
+    p.walkN0 = path.length
+}
+
+// the person the promise is addressed to — valid while they're on the lot,
+// not leaving, not asleep. The partner is deliberately absent (switch idiom).
+export function goSayTarget(s, k) {
+    if (k === 'fern') return s.visitor && s.visitor.state !== 'leaving' ? s.visitor : null
+    if (k === 'ivy') return s.ivy && s.ivy.state !== 'leaving' ? s.ivy : null
+    if (k === 'kid') return s.kid && !s.kid.asleep ? s.kid : null
+    return null
+}
+
+// cells you can stand on to share the ring — the neighbours' tiles (d = 1 is
+// inside COURT_REACH 2 even if the target shifts a step on arrival)
+function goSayCells(s, v) {
+    const out = []
+    for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+            if (dr === 0 && dc === 0) continue
+            if (walkable(s, v.r + dr, v.c + dc)) out.push({ r: v.r + dr, c: v.c + dc })
+        }
+    }
+    return out
+}
+
+export function cmdGoSay(s, p, k) {
+    if (!s.people.includes(p) || p.faintT > 0 || p.working) return false
+    const v = goSayTarget(s, k)
+    if (!v) return false
+    if (Math.abs(p.r - v.r) + Math.abs(p.c - v.c) <= COURT_REACH) return false   // same-ring: the #2235 pick idiom keeps the tap
+    const tg = goSayCells(s, v)
+    const path = tg.length ? bfsPath(s, { r: p.r, c: p.c }, tg) : null
+    if (!path) return false
+    p.path = path
+    p.goal = { kind: 'gosay', k, tries: 0 }
+    p.owner = 'human'
+    p.walkN0 = path.length
+    s.orderPing.x = v.x
+    s.orderPing.y = v.y
+    s.orderPing.label = `GO SAY IT — ${v.name.toUpperCase()}`
+    s.orderPing.t = 1.6
+    return true
 }
 
 // ------------------------------------------------------------- occupancy -------
@@ -1547,6 +1646,7 @@ function issueOrder(s, p, o) {
     if (p.faintT > 0 || p.working) return false
     if (o.kind === 'walk') return cmdWalk(s, p, o.r, o.c)
     if (o.kind === 'work') return cmdWork(s, p)
+    if (o.kind === 'gosay') return cmdGoSay(s, p, o.k)   // #2683: the promised ear re-validates at issue too — Fern may have gone home since the tap
     if (!s.items.includes(o.it)) return false   // sold or moved on — drop it
     return cmdUse(s, p, o.it)
 }
@@ -3265,6 +3365,9 @@ export function advance(s, dt) {
             think(s, pick(s, ROOM_SEE_LINES).replace(/\{p\}/g, p.name))
             continue
         }
+        // #2683: the go-say errand — the word lands the tick the two actually
+        // share the ring; the wait, the chase and the honest loss live there.
+        if (p.goal && p.goal.kind === 'gosay') { goSayArrive(s, p); continue }
         // #1814: the hammer fell and this resident hasn't looked yet — send
         // them through the doorway; re-offered if the player interrupts the walk
         if (s.ext && s.roomReact > 0 && !p.roomSeen) {
@@ -3481,6 +3584,7 @@ export function stateHash(s) {
         for (const o of p.queue) {   // #2470: plans are state — a queued list changes the hash
             if (o.kind === 'walk') { mix(o.r * COLS + o.c + 1); continue }
             if (o.kind === 'work') { mix(-1000); continue }
+            if (o.kind === 'gosay') { mix(o.k === 'fern' ? -4001 : o.k === 'ivy' ? -4002 : -4003); continue }   // #2683: a promised ear is a plan
             mix(-(s.items.indexOf(o.it) + 2))   // sold since enqueue reads as its own value (-1)
         }
     }
