@@ -45,6 +45,7 @@
 //   node scripts/floorbosscheck.mjs --mutate-swing     # swing sweep paints corridor faces as elbows, demand RED (#2627 s3)
 //   node scripts/floorbosscheck.mjs --mutate-flow      # flow paint claims two-way traffic for spurs/too-long runs, demand RED (#2622 item 3)
 //   node scripts/floorbosscheck.mjs --mutate-flowheat   # the second route on a cell stops counting — live traffic heat dies, demand RED (#2680)
+//   node scripts/floorbosscheck.mjs --mutate-duck    # carts never pull off into bays — avoidable freezes stay freezes, demand RED (#2692)
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -56,6 +57,7 @@ import {
     STOW_PAY, RACK_COST, ROBOT_COST, ARM_PATIENCE, ARM_CELL, PAD_CAP, PAD_AGE, OUT_CELLS,
     FREIGHT_PER_BOX, FULL_TRAILER, DISPATCH_FEE,
     shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice, LANE_LONG, ARM_MIN, cornerEscapes, laneEscapes, swingMarkers, flowMarks, laneRuns, flowHeat,
+    pullOff, YIELD_WAIT, YIELD_MAX, YIELD_CD,
 } from '../src/games/FloorBoss/sim.js'
 import { createEpisode, validateEpisode } from '../src/utils/robot/episode.js'
 import { hashString } from '../src/utils/robot/physics.js'
@@ -89,7 +91,8 @@ const MUT_LANE_TEACH = ARGS.includes('--mutate-lane-teach')
 const MUT_SWING = ARGS.includes('--mutate-swing')
 const MUT_FLOW = ARGS.includes('--mutate-flow')
 const MUT_FLOWHEAT = ARGS.includes('--mutate-flowheat')
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT) {
+const MUT_DUCK = ARGS.includes('--mutate-duck')
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const src = readFileSync(sim, 'utf8')
     const [from, to, name] = MUT_YIELD
@@ -136,6 +139,8 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                     ? ['if (a1[0] * a2[0] + a1[1] * a2[1] !== 0) continue // perpendicular only — a straight face doesn\'t swing', 'if (false) continue // MUTANT: perpendicular check off', 'the sweep paints straight corridor faces as elbows — the corridor skip is gone (#2627 s3)']
                                                                     : MUT_FLOW
                                                                     ? ["if (n < LANE_LONG && open(x - 1, y) && open(x1 + 1, y)) {", 'if (true) {', 'the flow paint claims two-way traffic for dead-end spurs and ignores the length law (#2622 item 3)']
+                                                                    : MUT_DUCK
+                                                                    ? ['bot.wait < YIELD_WAIT', 'bot.wait < 1e9', 'carts never pull off — every bay goes unused and every avoidable freeze stays a freeze (#2692)']
                                                                     : MUT_FLOWHEAT
                                                                     ? ['counts.set(k, (counts.get(k) || 0) + 1)', 'counts.set(k, 1)', 'the second route on a cell stops counting — convergence, the heat ramp and the shared-lane read all die (#2680)']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
@@ -1483,6 +1488,125 @@ console.log('— live traffic heat (#2680) —')
     ok(ui.indexOf('paintFlow()') < ui.indexOf('paintHeat(tick)') && ui.indexOf('paintHeat(tick)') < ui.indexOf('paintSwing()'),
         'floor paint order: legality tint, live heat beneath the amber law boxes — law paint outranks traffic paint (#2680, #2622 item 3)')
     ok(/heat: \(\) => flowHeat\(gs\)/.test(ui), 'the DEV hook exposes live traffic heat for the browser gate (#2680)')
+}
+
+// ---- duck & pass (#2692) — the bay a lane-law left, a cart now uses ----
+console.log('— duck & pass (#2692) —')
+{
+    // rig: the arm-bay crush lifted from seed 1337's live trace (@6404 a toArm
+    // cart at (16,3) pulled west to (15,3) beside the rack while two rivals
+    // held the bay mouths). Three carts, one bay, rack shoulders at (14,3) and
+    // (18,3). A stalls behind B (working the bay) with C walling the alternate
+    // mouth — the stall branch, where the real freezes live.
+    const bayRig = ({ sealW = false, sealE = false, sealS = false, brokenRival = false } = {}) => {
+        const g = makeGame(11)
+        g.score = 9000
+        g.arm.held = 'crate'
+        g.racks.push({ x: 18, y: 3, items: [], owner: -1 }) // C's stock target — emptiest race sends B west to (14,3)
+        if (sealW) g.racks.push({ x: 15, y: 3, items: [], owner: -1 })
+        if (sealE) g.racks.push({ x: 17, y: 3, items: [], owner: -1 })
+        if (sealS) g.racks.push({ x: 16, y: 4, items: [], owner: -1 })
+        const [A, B] = g.robots
+        A.x = 16; A.y = 3; A.carry = null; A.task = { kind: 'toArm' }; A.path = []; A.moveT = 0; A.wait = 0; A.yield = null; A.yieldCd = 0
+        B.x = 16; B.y = 2; B.carry = null; B.task = { kind: 'toArm' }; B.path = []; B.moveT = 0; B.wait = 0; B.pickT = 24; B.jam = false; B.broken = brokenRival; B.repair = brokenRival ? 400 : 0
+        g.robots.push({ id: 3, x: 17, y: 1, carry: 'crate', owner: -1, task: { kind: 'toStock', rx: 18, ry: 3 }, path: [], moveT: brokenRival ? 9999 : 36, wait: 0, jam: false, pickT: 0, broken: false, repair: 0, wear: 0, wearMax: 9999, dir: 2, hist: [], stall: 0, yield: null, yieldCd: 0, ducked: 0 })
+        return { g, A, B }
+    }
+    {
+        const { g, A } = bayRig()
+        let duckTick = -1, resumeTick = -1, jammed = 0, bayAfter = false, heldWhileGone = false
+        const picks = []
+        for (let t = 0; t < 400 && !g.end; t++) {
+            step(g, [{}])
+            for (const e of g.ev) {
+                if (e.type === 'duck' && e.fx === 16 && e.fy === 3 && e.x === 15 && e.y === 3) duckTick = duckTick < 0 ? g.tick : duckTick
+                if (e.type === 'jam') jammed++
+                if (e.type === 'pick' || e.type === 'stow') picks.push(`${e.type}@${e.x},${e.y}@${g.tick}`)
+            }
+            if (A.yield && duckTick > 0) heldWhileGone = heldWhileGone || (A.x === 15 && A.y === 3 && g.robots[1].x !== 16)
+            if (!A.yield && duckTick > 0 && resumeTick < 0) resumeTick = g.tick
+            if (resumeTick > 0 && A.x === 16 && A.y === 2) bayAfter = true
+        }
+        ok(duckTick > 0 && A.ducked === 1,
+            `the stalled cart ducks west into the bay (tick ${duckTick}, (16,3)->(15,3)) — the exact shape seed 1337 produced live (#2692)`)
+        ok(heldWhileGone, 'it holds the shoulder while the rival drives off the bay — courtesy, not a detour (#2692)')
+        ok(picks.length > 0, `the rival stocked through while the cart held (picks ${picks.join(' ')}) — the bay never blocks the traffic it freed (#2692)`)
+        ok(resumeTick > duckTick && resumeTick - duckTick <= YIELD_MAX && bayAfter,
+            `the cart resumes into the bay it yielded the queue for (held ${resumeTick - duckTick} ticks, reached the bay after) — patience pays the yielder (#2692)`)
+        ok(jammed === 0, 'no jam was ever named — the freeze this rig used to call is now traffic (#2692)')
+    }
+    {
+        // the backpedal: no side bay, a pull-back in line still clears the mouth
+        const { g, A } = bayRig({ sealW: true, sealE: true })
+        let duckAt = null
+        for (let t = 0; t < 400 && !g.end; t++) {
+            step(g, [{}])
+            const e = g.ev.find((x) => x.type === 'duck')
+            if (e && !duckAt) duckAt = `${e.fx},${e.fy}->${e.x},${e.y}`
+        }
+        ok(duckAt === '16,3->16,4', `both sides walled, the cart backs off the mouth instead (${duckAt}) — the queue case has an honest shoulder too (#2692)`)
+    }
+    {
+        // honesty where it must fail: sealed on every side — no courtesy to fake
+        const { g, A } = bayRig({ sealW: true, sealE: true, sealS: true })
+        let deep = 0
+        for (let t = 0; t < 200 && !g.end; t++) { step(g, [{}]); if (A.wait >= YIELD_WAIT && !A.yield) deep++ }
+        ok(g.ducks === 0 && deep > 0 && A.yield === null,
+            `no shoulder, no duck — the cart waits like it always did (wait≥${YIELD_WAIT} for ${deep} ticks, ducks ${g.ducks}) — yield never teleports a cart through racks (#2692)`)
+    }
+    {
+        // a rival that never moves is a breakdown, not traffic — ducking lies
+        const { g, A } = bayRig({ brokenRival: true })
+        for (let t = 0; t < 200 && !g.end; t++) step(g, [{}])
+        ok(g.ducks === 0 && A.wait > 2 * YIELD_WAIT, `the blocker is DOWN — no courtesy is paid to a cart that cannot flow (ducks ${g.ducks}, wait ${A.wait}) — repair stays the manager's job (#2692)`)
+    }
+    {
+        // racks are not rivals: a wall-block never earns a duck (wait is cheap there)
+        const { g, A } = bayRig()
+        g.racks.push({ x: 16, y: 2, items: [], owner: -1 }) // wall the bay — no robot is the blocker now
+        ok(pullOff(g, A, { x: 16, y: 2 }) === null, 'a rack at the blocked cell answers nothing — walls never move, so lines at walls never pull over (#2692)')
+    }
+    {
+        // purity (#1917): the query sees, the hash stays; the Y mark rides truth
+        const { g, A } = bayRig()
+        A.wait = YIELD_WAIT
+        const h0 = stateHash(g)
+        const a1 = JSON.stringify(pullOff(g, A, { x: 16, y: 2 }))
+        const a2 = JSON.stringify(pullOff(g, A, { x: 16, y: 2 }))
+        ok(a1 === '{"x":15,"y":3}' && a2 === a1 && stateHash(g) === h0, `the shoulder query is pure and names the bay cell (${a1}) — the read that routes, hash untouched (#1917, #2692)`)
+        A.yield = { fx: 16, fy: 3, nx: 16, ny: 2, t: 30 }
+        const hY = stateHash(g)
+        ok(hY !== h0, 'holding a shoulder moves the hash (Y mark) — a parked cart is sim truth, not paint (#2692)')
+        g.ducks = 1
+        ok(stateHash(g) !== hY, 'the duck tally rides the hash (DK) — additive (#1373 law, #2692)')
+    }
+    {
+        // determinism: the same rig ducks at the same tick in both runs
+        const run = () => {
+            const { g } = bayRig()
+            let duck = -1
+            for (let t = 0; t < 400 && !g.end; t++) { step(g, [{}]); const e = g.ev.find((x) => x.type === 'duck'); if (e && duck < 0) duck = g.tick }
+            return `${duck}:${stateHash(g)}`
+        }
+        ok(run() === run(), 'twin determinism — same rig, same duck tick, same final hash (#2692)')
+        ok(YIELD_WAIT === 4 && YIELD_MAX === 60 && YIELD_CD === 24, 'duck cadence pinned 4/60/24 — the measured rhythm (W-sweep 4/6/8/12 on 15 seeds) cannot drift unannounced (#2692)')
+    }
+    {
+        // the live floor ducks on its own: the shelf-proof seeds, autopilot seats
+        const seeds = [1337, 11, 13, 17, 42]
+        let ducks = 0, jams = 0, wins = 0
+        for (const seed of seeds) {
+            const g = makeGame(seed)
+            const ap = createAutopilot(0)
+            while (!g.end) { step(g, [ap(g)]); jams += g.ev.filter((e) => e.type === 'jam').length }
+            ducks += g.ducks; if (g.score >= g.params.quota) wins++
+        }
+        ok(ducks >= 1 && jams === 0 && wins === seeds.length,
+            `autopilot shifts: ${ducks} ducks, 0 jams, ${wins}/${seeds.length} wins — real traffic takes the bays and the win proof rides (#2692)`)
+    }
+    const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    ok(/paintYield\(tick\)/.test(ui) && ui.indexOf('paintRobots(tick)') < ui.indexOf('paintYield(tick)'), 'the courtesy ring paints over the cart (#2692)')
+    ok(/case 'duck'/.test(ui) && /yields: \(\) =>/.test(ui) && /' BAY'/.test(ui), 'the duck event lands with sound, the DEV eye reads the holds, the panel says BAY (#2692)')
 }
 
 // ---- duel refusal seat stamp (#2622 item 4) — a banner names WHOSE click died ----

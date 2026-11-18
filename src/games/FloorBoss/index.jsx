@@ -235,6 +235,10 @@ const FloorBossGame = () => {
                     case 'jam': audioController.playTone(140, 0.12, 'square', 0.08); audioController.playTone(110, 0.1, 'square', 0.06, 0.12); audioController.playNoise(0.06, 0.05); fx('JAM!', PX(e.x) + 13, PY(e.y) + 8); break
                     case 'jamclear': audioController.playSweep(220, 480, 0.09, 'square', 0.05); burst(PX(e.x) + 13, PY(e.y) + 13, 3, '#7ec8ff', 1.2); break
                     case 'jamauto': audioController.playSweep(200, 380, 0.12, 'square', 0.04); break
+                    case 'duck': // #2692 DUCK & PASS — a cart taking the bay reads quiet and cyan: courtesy, not alarm
+                        audioController.playSweep(620, 380, 0.06, 'triangle', 0.035); burst(PX(e.fx) + 13, PY(e.fy) + 13, 3, '#78dceb', 1.1)
+                        if (gs.duel && e.s >= 0) fx(`BAY: ${e.s === 1 ? 'MODEL' : 'YOU'}`, e.s === 1 ? '#57c7ff' : '#ffd23f', PX(e.x) + 13, PY(e.y) + 8)
+                        break
                     case 'turbo': audioController.playTone(900 + Math.random() * 300, 0.03, 'square', 0.03); repairPulse.set(`${e.x},${e.y}`, gs.tick); break
                     case 'break': audioController.playNoise(0.18, 0.09); audioController.playSweep(300, 90, 0.24, 'sawtooth', 0.07); shake = 7; fx('BREAKDOWN', '#ff5a4f', PX(e.x) + 13, PY(e.y) + 8); break
                     case 'repaired': audioController.playSweep(400, 900, 0.14, 'triangle', 0.06); burst(PX(e.x) + 13, PY(e.y) + 13, 5, '#7ec8ff', 1.5); break
@@ -630,6 +634,26 @@ const FloorBossGame = () => {
                     ctx.fillStyle = `rgba(255,86,26,${0.22 + 0.22 * pulse})`
                     ctx.fillRect(x + TILE / 2 - 3, y + TILE / 2 - 3, 6, 6)
                 }
+            }
+        }
+        const paintYield = (tick) => {
+            // #2692 DUCK & PASS — the cart that gave the aisle wears the courtesy:
+            // a dashed cyan ring (cyan is the traffic's own livery, #2622/#2680 —
+            // amber stays the law colour, orange stays exertion) and the lane cell
+            // it vacated glows softly where it used to stand: the road reads where
+            // traffic made way. Painter-only, deterministic — the pulse rides
+            // gs.tick like every lesson frame; nothing here writes state.
+            for (const b of gs.robots) {
+                if (!b.yield) continue
+                const pulse = 0.5 + 0.5 * Math.sin(tick * 0.25 + b.id)
+                const ox = PX(b.yield.fx), oy = PY(b.yield.fy)
+                ctx.fillStyle = `rgba(46,168,184,${0.06 + 0.05 * pulse})`
+                ctx.fillRect(ox + 3, oy + 3, TILE - 6, TILE - 6)
+                const cx = PX(b.x) + TILE / 2, cy = PY(b.y) + TILE / 2
+                ctx.strokeStyle = `rgba(120,220,235,${0.5 + 0.35 * pulse})`; ctx.lineWidth = 2
+                ctx.setLineDash([3, 3])
+                ctx.beginPath(); ctx.arc(cx, cy, TILE * 0.46, 0, Math.PI * 2); ctx.stroke()
+                ctx.setLineDash([])
             }
         }
         const paintTeach = (tick) => {
@@ -1249,6 +1273,7 @@ const FloorBossGame = () => {
             paintTeach(tick)
             paintArm(tick)
             paintRobots(tick)
+            paintYield(tick) // #2692: courtesy ring + vacated-lane glow paint over the cart, under the arcs
             paintArcs(worldDt)
             paintTutorial(tick)
             paintCursor(tick)
@@ -1475,6 +1500,8 @@ const FloorBossGame = () => {
                 swing: () => swingMarkers(gs).map((m) => ({ x: m.x, y: m.y, h: m.h })),
                 flow: () => flowMarks(gs).map((m) => ({ axis: m.axis, n: m.flow, cells: m.cells.map((c) => `${c.x},${c.y}`).join('|') })), // #2622 item 3: the two-way grammar, readable to QA
                 heat: () => flowHeat(gs).map((c) => ({ x: c.x, y: c.y, n: c.n })), // #2680: live traffic heat — route claims per cell, readable to QA
+                yields: () => gs.robots.filter((b) => b.yield).map((b) => ({ id: b.id, x: b.x, y: b.y, fx: b.yield.fx, fy: b.yield.fy, t: b.yield.t })), // #2692: carts holding shoulders — the pull-off, readable to QA
+                ducks: () => gs.ducks, // #2692: the shift's duck tally
                 // #2561 eyes on the twin-till ceremony (renderer-only state): when
                 // each seat's chip last armed its growth blink, and the live spend
                 // flash (label + color) so the browser gate can name model buys.
@@ -1491,7 +1518,7 @@ const FloorBossGame = () => {
                     `shift ${gs.shift} | tick ${gs.tick}/${SHIFT} | earned ${gs.score - gs.shiftBase}/${gs.params.quota} strikes ${gs.strikes}/${STRIKES} | ${gs.end || 'running'} ${gs.endReason}`,
                     `banked ${gs.cleared} | score ${gs.score} | flow ${gs.params.orderBase} due x${gs.params.dueMult} wear −${gs.params.wearCut} | shipped ${gs.shipped} staging [${gs.staging.join('')}] escrow ${gs.escrow} paid ${gs.paid} freight +${gs.freight} express −${gs.fees} | stows ${gs.stows} arm ${gs.arm.held || '-'} servo ${gs.arm.swing > 0 ? `swing→${gs.arm.target.x},${gs.arm.target.y} (${gs.arm.swing})` : `wait ${gs.arm.heldT}`} auto ${gs.auto ? 'on' : 'off'} tool ${gs.tool || '-'}`,
                     `road ${gs.truck.away} far ${gs.truck.far} tiers [${gs.truck.tiers.join('')}] pad [${gs.pad.map((p) => `${p.n}x${(p.d || 0) + 1}${(p.w || 0) > 0 ? `w${(p.w || 0) + 1}` : ''}`).join(' ')}] heavy ${gs.truck.grid.reduce((s, r) => s + r[2], 0)}`, // #1927 freight tiers, #1931 weight classes
-                    gs.robots.map((b, i) => `bot${i + 1} (${b.x},${b.y}) ${b.task.kind}${b.carry ? ' ' + b.carry : ''}${b.broken ? ' DOWN' : ''}${b.jam ? ' JAM' : ''} wear ${Math.round((b.wear / b.wearMax) * 100)}%`).join(' | '),
+                    gs.robots.map((b, i) => `bot${i + 1} (${b.x},${b.y}) ${b.task.kind}${b.carry ? ' ' + b.carry : ''}${b.broken ? ' DOWN' : ''}${b.jam ? ' JAM' : ''}${b.yield ? ' BAY' : ''} wear ${Math.round((b.wear / b.wearMax) * 100)}%`).join(' | '),
                 ],
                 actions: [
                     { label: '+$200 budget', run: () => { gs.score += 200; return '+200' } },
