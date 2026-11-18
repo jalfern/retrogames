@@ -110,11 +110,19 @@ export function matchClapEdges(r) {
     const tapTicks = [...tapSet].sort((a, b) => a - b)
     const ignored = edges.length - tapSet.size
     const clock = r.clock || []
-    if (!clock.length) return { ok: false, pairs: [], matched: 0, unmatchedOnsets: onsets.length, ignoredEdges: edges.length, worstMs: null, why: 'no clock trace' }
-    if (!tapTicks.length) return { ok: false, pairs: [], matched: 0, unmatchedOnsets: onsets.length, ignoredEdges: ignored, worstMs: null, why: 'no A-button taps recorded — the clap test names the A button (#2056)' }
+    // #1711 report card: the residue WITH times. The pairing loop already knows
+    // which onsets never met a tap and which taps never met an onset — before,
+    // it threw those times away and kept only counts, so the phone's graded
+    // screen could not say WHICH slap was airborne and which was silent. These
+    // fields are the same numbers the counts already measure (additive — ok,
+    // pairs, matched and every verdict word are untouched).
+    const onsetMs = (o) => +((o / sr) * 1000).toFixed(1)
+    if (!clock.length) return { ok: false, pairs: [], matched: 0, unmatchedOnsets: onsets.length, ignoredEdges: edges.length, unmatchedOnsetMs: [], unmatchedTapMs: [], worstMs: null, why: 'no clock trace' }
+    if (!tapTicks.length) return { ok: false, pairs: [], matched: 0, unmatchedOnsets: onsets.length, ignoredEdges: ignored, unmatchedOnsetMs: onsets.map(onsetMs), unmatchedTapMs: [], worstMs: null, why: 'no A-button taps recorded — the clap test names the A button (#2056)' }
     const pairs = []
     const used = new Set()
     let unmatched = 0
+    const unmatchedOnsetMs = []
     for (const o of onsets) {
         const heardMs = (o / sr) * 1000
         let best = null
@@ -124,14 +132,16 @@ export function matchClapEdges(r) {
             const d = Math.abs(heardMs - expectedMs)
             if (d <= win && d <= (best ? best.d : Infinity) && !used.has(t)) { best = { t, expectedMs, d }; }
         }
-        if (!best) { unmatched++; continue }
+        if (!best) { unmatched++; unmatchedOnsetMs.push(onsetMs(o)); continue }
         used.add(best.t)
         pairs.push({ tick: best.t, expectedMs: +best.expectedMs.toFixed(1), heardMs: +heardMs.toFixed(1), offsetMs: +(heardMs - best.expectedMs).toFixed(1) })
     }
     pairs.sort((a, b) => a.tick - b.tick)
     const matched = pairs.length
+    const unmatchedTapMs = tapTicks.filter((t) => !used.has(t))
+        .map((t) => tickToMs(clock, t)).filter((ms) => Number.isFinite(ms)).map((ms) => +ms.toFixed(1))
     if (matched < minPairs) {
-        return { ok: false, pairs, matched, unmatchedOnsets: unmatched, ignoredEdges: ignored, worstMs: null,
+        return { ok: false, pairs, matched, unmatchedOnsets: unmatched, ignoredEdges: ignored, unmatchedOnsetMs, unmatchedTapMs, worstMs: null,
             why: `${matched} clap-coincident A-tap(s) of ${onsets.length} clap(s) — need ${minPairs} (a real take has a clap per tap)` }
     }
     const worst = pairs.reduce((w, p) => (Math.abs(p.offsetMs) > Math.abs(w) ? p.offsetMs : w), 0)
@@ -142,6 +152,8 @@ export function matchClapEdges(r) {
         matched,
         unmatchedOnsets: unmatched,
         ignoredEdges: ignored,
+        unmatchedOnsetMs,
+        unmatchedTapMs,
         worstMs: +worst.toFixed(1),
         why: broke.length ? `${broke.length}/${matched} clap(s) outside ±${tol} ms` : `${matched} clap(s) inside ±${tol} ms`,
     }
