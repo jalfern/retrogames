@@ -278,7 +278,7 @@ const FloorBossGame = () => {
                         // #1373 — this is chrome, the law stays sim truth).
                         if (gs.duel && (e.why === 'lane' || e.why === 'corner')) {
                             fx(`${e.why === 'lane' ? 'LANE' : 'ELBOW'}: ${e.s === 1 ? 'MODEL' : 'YOU'}`,
-                                e.s === 1 ? '#57c7ff' : '#ffd23f', PX(e.x) + 13, PY(e.y) + (elbowTeach && elbowTeach.cells.length ? 32 : 20))
+                                e.s === 1 ? '#57c7ff' : '#ffd23f', PX(e.x) + 13, PY(e.y) + 8) // same anchor as the law — the #2254 lane stack raises it above the banner and the tail, one line per message
                         }
                         break
                     }

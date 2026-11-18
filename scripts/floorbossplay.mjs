@@ -775,10 +775,11 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     r.check('seat-stamp leg builds the lane rig by real taps', builtD === 9, `${builtD}/9`)
     await tapCellD(18, 3) // complete the lane — the refusal fires with the clock running
     // probe FIRST (fx live ~50 world ticks ≈ 0.83 s — the ledger read must not
-    // eat the window): the stamp lands at lane 2, y ≈ 167 (banner 143, tail 155).
+    // eat the window): the #2254 stack grows UP (y − lane*11), so at the third
+    // message the stamp rides y ≈ 116 — band y 104..121, clear of the law row (130).
     const stampYellow = async () => page.evaluate(() => {
         const c = window.__floorbossTest.canvas()
-        const d = c.getContext('2d').getImageData(412 * 2, 160 * 2, 150 * 2, 12 * 2).data
+        const d = c.getContext('2d').getImageData(412 * 2, 104 * 2, 150 * 2, 18 * 2).data
         let n = 0
         for (let j = 0; j < d.length; j += 4) if (d[j] > 190 && d[j + 1] > 140 && d[j + 2] < 120) n++
         return n
