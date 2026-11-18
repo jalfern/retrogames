@@ -159,6 +159,50 @@ export function matchClapEdges(r) {
     }
 }
 
+// LOAD-HONEST PAIR GATE (#1711, #2664; hardened by the 2026-11-18 AUDIT item 3)
+// — the synth clap run's verdict on a RED ±50 ms pair, as one pure decision.
+// A contended box jitters the CDP key arrival while the audio side stays stable:
+// when the take's OWN clock trace proves the world paced >tol off realtime
+// (driftMs = voiceDrift(clock).maxLagMs) and the worst offset sits inside that
+// demonstrated band (+tol), the measurement is noise — SKIP, named, never PASS.
+// A desync LARGER than the proven drift goes RED regardless (anti-laundering),
+// and --witness turns the skip off entirely for the quiet-box proof.
+//
+// THE SIGNATURE ZONE (audit 2026-11-18 item 3): the first bf1a96e studio run
+// failed line 3 with ONE 102.8 ms offset while the same trace drifted 102 ms —
+// and #2664's rule skipped it as jitter. But an offset that sits ON the drift
+// is not random arrival noise: it is exactly what audio stamped on REALTIME
+// instead of the frame clock measures (offset ≡ clock-vs-realtime lag, by
+// construction). Random jitter landing within a millisecond of the drift
+// constant is possible but rare; a refusal costs one rerun. So when |worst −
+// drift| ≤ CLAP_OPUS_FRAME_MS (one opus frame — the encoder/onset precision of
+// the measurement itself) the gate REFUSES to skip: RED, naming the signature
+// and the margin. Also hardening the band comparison to |offset| throughout —
+// the old signed form let a −200 ms EARLY offset slip under drift+tol.
+export const CLAP_OPUS_FRAME_MS = 20
+
+export function clapPairGate(r = {}) {
+    const tol = Number.isFinite(r.tolMs) ? r.tolMs : CLAP_TOL_MS
+    const band = Number.isFinite(r.sigBandMs) ? r.sigBandMs : CLAP_OPUS_FRAME_MS
+    if (r.ok) return { action: 'PASS' }
+    const worst = Number.isFinite(r.worstMs) ? Math.abs(r.worstMs) : null
+    const drift = Number.isFinite(r.driftMs) ? Math.abs(r.driftMs) : 0
+    if (worst === null) return { action: 'RED', why: 'red pair with no measured offset' }
+    if (r.witness) return { action: 'RED', why: `worst ${worst} ms — strict --witness run, skips off` }
+    if (Math.abs(worst - drift) <= band) {
+        return {
+            action: 'RED',
+            signature: true,
+            marginMs: +(worst - drift).toFixed(1),
+            why: `worst ${worst} ms sits ${Math.abs(worst - drift).toFixed(1)} ms from the take's own ${drift.toFixed(1)} ms drift (<= ${band} ms = one opus frame) — the realtime-stamp signature (#1711 audit 2026-11-18: audio stamped on wall clock instead of the frame clock measures exactly this). Not jitter; refuse SKIP. Fix the stamp, or prove the shape with --witness on a quiet box.`,
+        }
+    }
+    if (drift > tol && worst <= drift + tol) {
+        return { action: 'SKIP', why: `contended box: world paced ${drift.toFixed(1)} ms off realtime; worst offset ${worst} ms is inside that drift band (+${tol}) but ${Math.abs(worst - drift).toFixed(1)} ms off the drift constant — arrival jitter, not the pipeline. Rerun when the box is quiet, or --witness on a quiet box.` }
+    }
+    return { action: 'RED', why: `worst ${worst} ms exceeds drift band ±${(drift + tol).toFixed(0)} ms${drift <= tol ? ' (clean box — no demonstrated drift to excuse it)' : ''}` }
+}
+
 // takeEdges(rec) — the per-seat edge flattening the studio analyzer uses
 // (#2156: the phone screen must grade with the SAME code, so the extraction
 // moves here from scripts/plaicraft-clap.mjs and both surfaces call it).

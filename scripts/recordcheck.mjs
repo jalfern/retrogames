@@ -646,7 +646,7 @@ const bucketRowBySeed = (seed) => {
 // offline — including the ones that MUST fail (shifted clock, dropped clap),
 // so the clap verdict is provably load-bearing before a single mic opens.
 {
-    const { detectClaps, clapVerdict, matchClapEdges, CLAP_TOL_MS } = await import('../src/utils/clapSync.js')
+    const { detectClaps, clapVerdict, matchClapEdges, clapPairGate, CLAP_TOL_MS, CLAP_OPUS_FRAME_MS } = await import('../src/utils/clapSync.js')
     const SR = 48000
     const TICK_MS = 1000 / 60
     const mkPcm = (clapsMs, durMs = 6000) => {
@@ -687,6 +687,33 @@ const bucketRowBySeed = (seed) => {
     const mispressed = clapVerdict({ sampleRate: SR, onsets, pressTicks: [61, 145, 289], clock: realtimeClock(300) })
     ok(!mispressed.ok, 'MUTANT press 1000 ms from its clap -> RED', mispressed.why)
     ok(detectClaps(mkPcm([], 4000), { sampleRate: SR }).length === 0, 'sub-threshold hum detects nothing (real claps are the only trigger)')
+
+    // LOAD-HONEST PAIR GATE (#1711 #2664 + AUDIT 2026-11-18 item 3): the pure
+    // skip decision. PASS rides the verdict; jitter SKIPs only inside a proven
+    // drift band AND away from the drift constant; the SIGNATURE ZONE (|offset −
+    // drift| ≤ one 20 ms opus frame — the bf1a96e shape: 102.8 vs 102 ms) is
+    // the realtime-stamp failure and REFUSES the skip; bigger desync goes RED
+    // regardless; --witness turns skips off.
+    ok(CLAP_OPUS_FRAME_MS === 20, 'signature band is one opus frame (20 ms)')
+    ok(clapPairGate({ ok: true, worstMs: 3.2, driftMs: 90 }).action === 'PASS', 'gate: green verdict PASSes whatever the drift says')
+    ok(clapPairGate({ ok: false, worstMs: 130, driftMs: 102 }).action === 'SKIP', 'gate: jitter inside the drift band, clear of the drift constant -> SKIP (named)', JSON.stringify(clapPairGate({ ok: false, worstMs: 130, driftMs: 102 }).why))
+    ok(clapPairGate({ ok: false, worstMs: 152, driftMs: 102 }).action === 'SKIP', 'gate: drift+tol band edge (152 @ 102) still SKIPs — the signature zone is only ±20 ms around the drift constant', JSON.stringify(clapPairGate({ ok: false, worstMs: 152, driftMs: 102 }).action))
+    ok(clapPairGate({ ok: false, worstMs: 51.5, driftMs: 102 }).action === 'SKIP', 'gate: just over tolerance deep inside the band -> SKIP')
+    ok(clapPairGate({ ok: false, worstMs: 81.9, driftMs: 102 }).action === 'SKIP', 'gate: signature-zone outer edge (20.1 ms above the drift constant) still SKIPs', String(clapPairGate({ ok: false, worstMs: 81.9, driftMs: 102 }).action))
+    {
+        const sig = clapPairGate({ ok: false, worstMs: 102.8, driftMs: 102 })
+        ok(sig.action === 'RED' && sig.signature === true && Math.abs(sig.marginMs - 0.8) < 0.05,
+            'AUDIT MUTANT bf1a96e shape (102.8 ms offset @ 102 ms drift) -> RED realtime-stamp signature, SKIP refused (old rule skipped it)', JSON.stringify(sig))
+        const sigEdge = clapPairGate({ ok: false, worstMs: 121.9, driftMs: 102 })
+        ok(sigEdge.action === 'RED' && sigEdge.signature === true, 'signature zone edge (|offset−drift| ≤ 20 ms) -> RED', JSON.stringify(sigEdge))
+        const sigNeg = clapPairGate({ ok: false, worstMs: -101.5, driftMs: -102 })
+        ok(sigNeg.action === 'RED' && sigNeg.signature === true, 'signed drift (late mic −102 ms) with matching early offset -> same signature RED')
+    }
+    ok(clapPairGate({ ok: false, worstMs: 200, driftMs: 102 }).action === 'RED', 'gate: 200 ms over 102 ms drift -> RED (a desync larger than the demonstrated drift never launders)', clapPairGate({ ok: false, worstMs: 200, driftMs: 102 }).why)
+    ok(clapPairGate({ ok: false, worstMs: -200, driftMs: 102 }).action === 'RED', 'ANTI-LAUNDER: EARLY −200 ms offset vs 102 ms drift -> RED (the old signed comparison slipped it under the band)', clapPairGate({ ok: false, worstMs: -200, driftMs: 102 }).why)
+    ok(clapPairGate({ ok: false, worstMs: 130, driftMs: 102, witness: true }).action === 'RED', 'gate: --witness turns the skip off — a contended strict run goes RED by design')
+    ok(clapPairGate({ ok: false, worstMs: 60, driftMs: 10 }).action === 'RED', 'gate: clean box (no demonstrated drift) — a red pair is RED, not excused')
+    ok(clapPairGate({ ok: false, worstMs: null, driftMs: 102 }).action === 'RED', 'gate: red pair with no measured offset -> RED, never vacuous')
 
     // #2056 phone grading + the 2026-11-12 AUDIT fix: a real phone take is NOT
     // one clean direction stream — steering/drift adds edges and the clap taps
