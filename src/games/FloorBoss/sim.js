@@ -144,6 +144,23 @@ export const TRUCK_HOME = -90, TRUCK_PARK = 613, TRUCK_EXIT = 830
 const TRUCK_BACK = 2.6, TRUCK_FWD = 3.2
 const JAM_WAIT = 60 // waited this long next to another waiter -> JAM
 const JAM_AUTO = 300 // self-resolve after 5 s
+// #2692 DUCK & PASS — yield-and-pass routing. #2614 legislated that a legal
+// two-way lane must leave a BAY (an open pull-off cell); #2680 made the
+// converging traffic READABLE; the residual both named was the routing itself:
+// "the read displays the paths, it does not re-route them". This is the use:
+// a cart blocked by a rival robot for YIELD_WAIT ticks (racks never move, so
+// rack blocks never count) ducks into the shoulder — the free cell PERPENDICULAR
+// to the blocked heading, fixed order north-before-south / west-before-east —
+// holds until the rival has passed its old cell (or YIELD_MAX expires), then
+// resumes. The duck is a real step: it costs the same tick cadence and wear, so
+// hesitation is never free. Honest where it must fail: a dead-end spur has no
+// perpendicular shoulder, and a rival that never moves out-times the hold — both
+// fall back to the jam law and the manager's click, exactly as before. The
+// resume cooldown stops duck-resume-duck oscillation. Determinism holds: robots
+// iterate in array order, sides in fixed order, no rng.
+export const YIELD_WAIT = 4 // blocked-by-rival ticks before a cart seeks the shoulder (≪ JAM_WAIT: congestion should duck, not freeze)
+export const YIELD_MAX = 60 // ticks a cart holds the shoulder awaiting the pass
+export const YIELD_CD = 24 // ticks after resuming before this cart may duck again
 export const REPAIR_TICKS = 1200 // idle repair length; the painter shows it as a ring (#2254)
 const TURBO_CUT = 15
 const CURSOR_STEP = 4 // keyboard/mobile cursor: one cell per 4 ticks
@@ -768,6 +785,7 @@ function newRobot(gs, x, y, owner = -1) {
         task: { kind: 'idle' }, path: [], moveT: 0, wait: 0, jam: false,
         pickT: 0, broken: false, repair: 0, wear: 0,
         wearMax: 260 + Math.floor(gs.rng() * 180) - gs.params.wearCut, dir: 0, hist: [], stall: 0,
+        yield: null, yieldCd: 0, ducked: 0, // #2692: { fx, fy, nx, ny, t } while holding a shoulder; CD ticks; career duck count
     }
 }
 
@@ -879,6 +897,7 @@ export function makeGame(seed = 1337, opts = {}) {
         pad: [], // staged parcels awaiting a trailer, { n: boxes, since: tick, esc: escrowed pay, d: destination class, w: weight class } (#1911/#1921/#1927/#1931)
         escrow: 0, paid: 0, freight: 0, fees: 0, // freight-line ledger (#1921)
         shipped: 0, expired: 0, stows: 0, quotaHit: false,
+        ducks: 0, // #2692 career count of yield-and-pass ducks (ducks are traffic, traffic is truth)
         spawnT: 60, orderT: 240, convT: 0, packT: 30,
         nextBotId: 1, nextOrderId: 1,
         end: null, endReason: '',
@@ -958,6 +977,62 @@ function tryShip(gs) {
         const w = wr < WEIGHT_ODDS[WEIGHT_HEAVY] ? WEIGHT_HEAVY : wr < WEIGHT_ODDS[WEIGHT_HEAVY] + WEIGHT_ODDS[WEIGHT_STANDARD] ? WEIGHT_STANDARD : WEIGHT_LIGHT
         gs.pad.push({ n: o.items.length, since: gs.tick, esc: pay, d, w, o: shipper }) // stage the parcel for a trailer (#1911); escrow rides the parcel (#1921), destination joins it (#1927), weight joins it (#1931) — and the shipper's seat rides it too (#2555)
         gs.ev.push({ type: onTime ? 'ship' : 'late', pay, o: o.id, d, w, s: shipper })
+    }
+}
+
+// #2692 the shoulder query — where (if anywhere) a blocked cart pulls off to.
+// Pure: answers the cell or null, never mutates. Legal only when the blocker is
+// a RIVAL ROBOT (walls and racks never move, so waiting in line at them is the
+// cheaper law), the cart has waited past YIELD_WAIT (transient serialization
+// clears on its own), it is not cooling down or already holding. Shoulder
+// first, perpendicular to the rival's bearing (fixed order north-before-south /
+// west-before-east); when the aisle offers no side bay, a straight BACKPEDAL in
+// line clears the corridor mouth instead (the queue case — the bay the #2614 law
+// wished for was already walled by refusal time; reverse to the last pull-off).
+// In a no-route stall nx is the adjacent rival blocking the corridor (NB order).
+export function pullOff(gs, bot, nx) {
+    if (!nx || bot.yield || bot.yieldCd > 0 || bot.broken || bot.jam || bot.pickT > 0 || bot.task.kind === 'idle' || bot.wait < YIELD_WAIT) return null
+    const rival = gs.robots.find((r) => r.id !== bot.id && r.x === nx.x && r.y === nx.y)
+    if (!rival || rival.broken) return null
+    const sides = nx.y === bot.y ? [[0, -1], [0, 1]] : [[-1, 0], [1, 0]]
+    for (const [sx, sy] of sides) {
+        const px = bot.x + sx, py = bot.y + sy
+        if (!blocked(gs, px, py, bot.id)) return { x: px, y: py }
+    }
+    const back = { x: bot.x + (bot.x - nx.x), y: bot.y + (bot.y - nx.y) }
+    if (!blocked(gs, back.x, back.y, bot.id)) return back
+    return null
+}
+// stall helper: the rival adjacent to a routeless cart whose corridor its body
+// is walling (fixed NB order); none when the box is racks, not traffic.
+function stallRival(gs, bot) {
+    for (const [dx, dy] of NB) {
+        const r = gs.robots.find((o) => o.id !== bot.id && !o.broken && o.x === bot.x + dx && o.y === bot.y + dy)
+        if (r) return r
+    }
+    return null
+}
+// the duck itself — one law, one place: a real step (cadence + wear cost), a
+// hold marked on the hash, an event named for the painter and the play rigs.
+function duckTo(gs, bot, p, rx, ry) {
+    const fx = bot.x, fy = bot.y
+    bot.yield = { fx, fy, nx: rx, ny: ry, t: YIELD_MAX }
+    bot.hist.push({ x: fx, y: fy })
+    if (bot.hist.length > 6) bot.hist.shift()
+    bot.dir = nbDir(p.x - fx, p.y - fy)
+    bot.x = p.x; bot.y = p.y
+    bot.wear += 1
+    bot.moveT = STEP_TICKS
+    bot.wait = 0
+    bot.stall = 0
+    bot.ducked++
+    gs.ducks++
+    gs.ev.push({ type: 'duck', x: p.x, y: p.y, fx, fy, s: bot.owner }) // events stay out of stateHash (#1373); the Y mark carries the truth
+    if (bot.wear >= bot.wearMax) {
+        bot.broken = true
+        bot.repair = REPAIR_TICKS
+        debit(gs, BREAK_FINE) // the duck drove there too — wear is honest
+        gs.ev.push({ type: 'break', x: bot.x, y: bot.y, s: bot.owner })
     }
 }
 
@@ -1068,15 +1143,35 @@ function stepRobot(gs, bot) {
         return
     }
 
+    // #2692 shoulder hold — parked in the bay while its route to task is
+    // walled by traffic; the moment BFS finds a way again the cart drives on.
+    // A hold that never opens (a rival broken down in the corridor) out-times
+    // into the old law — wait, jam, the manager's click — honesty by timeout.
+    if (bot.yield) {
+        bot.yield.t--
+        repath(gs, bot)
+        if (bot.path.length || bot.yield.t <= 0) { bot.yield = null; bot.yieldCd = YIELD_CD }
+        return
+    }
+
     // movement
     if (bot.moveT > 0) { bot.moveT--; return }
     if (!bot.path.length) repath(gs, bot)
-    if (!bot.path.length) { bot.stall++; bot.wait++; tryJam(gs, bot, null); return }
+    if (!bot.path.length) {
+        bot.stall++; bot.wait++
+        const wr = stallRival(gs, bot) // #2692: no route at all and traffic is what walls it — pull off and let the corridor flow
+        const p = wr ? pullOff(gs, bot, { x: wr.x, y: wr.y }) : null
+        if (p) { duckTo(gs, bot, p, wr.x, wr.y); return }
+        tryJam(gs, bot, null)
+        return
+    }
     const nx = bot.path[0]
     if (blocked(gs, nx.x, nx.y, bot.id)) {
         // rival in the way — wait, and if BOTH are stuck, call it a jam
         bot.wait++
         bot.path = []
+        const p = pullOff(gs, bot, nx) // #2692 DUCK & PASS: a bay here means the freeze was avoidable
+        if (p) { duckTo(gs, bot, p, nx.x, nx.y); return }
         tryJam(gs, bot, nx)
         return
     }
@@ -1366,6 +1461,7 @@ export function nextShift(gs) {
     for (const b of gs.robots) {
         b.broken = false; b.repair = 0; b.wear = 0
         b.jam = false; b.wait = 0; b.pickT = 0; b.stall = 0; b.hist = []
+        b.yield = null; b.yieldCd = 0 // #2692: maintenance bay — a new night starts off the shoulder
         b.task = b.carry ? { kind: 'toOut' } : { kind: 'idle' }
         b.path = []
     }
@@ -1377,7 +1473,7 @@ export function nextShift(gs) {
 // --- state / hash ----------------------------------------------------------
 export function stateHash(gs) {
     let s = `${gs.tick}:${gs.score}:${gs.strikes}:${gs.auto ? 1 : 0}|${gs.arm.held || '-'}|sw${gs.arm.swing}:${gs.arm.target ? gs.arm.target.x + ',' + gs.arm.target.y : '-'}|`
-    for (const b of gs.robots) s += `${b.id}@${b.x},${b.y}c${b.carry || '-'}${b.broken ? 'B' : ''}${b.jam ? 'J' : ''}t${b.task.kind};`
+    for (const b of gs.robots) s += `${b.id}@${b.x},${b.y}c${b.carry || '-'}${b.broken ? 'B' : ''}${b.jam ? 'J' : ''}${b.yield ? 'Y' : ''}t${b.task.kind};` // Y = holding a shoulder (#2692), additive (#1373 law)
     for (const r of gs.racks) s += `${r.x},${r.y}[${r.items.join('')}];`
     s += `S[${gs.staging.join('')}]|`
     s += `T[${gs.truck.mode}:${gs.truck.carry}:${Math.round(gs.truck.x)}:${gs.truck.away}:${gs.truck.tiers.join('')}:${gs.truck.grid.map((r) => r.join('')).join('')}]P[${gs.pad.map((p) => `${p.n}:${p.esc || 0}:${p.d || 0}:${p.w || 0}`).join(',')}]|` // load-out (#1911) + per-parcel escrow (#1921) + tiers/road (#1927) + weight manifest/classes (#1931), additive (#1373 law)
@@ -1390,6 +1486,7 @@ export function stateHash(gs) {
     for (const o of gs.orders) s += `${o.id}{${o.items.join(',')}}${o.due - gs.tick}${o.prio ? '!' : ''};`
     for (const c of gs.conv) s += `${c.kind}@${c.x};`
     s += `|SH${gs.shift}:${gs.shiftBase}:${gs.cleared}:${gs.params.quota}:${gs.params.orderBase}:${gs.params.dueMult}:${gs.params.wearCut}` // ladder (#2346), additive (#1373 law)
+    s += `|DK${gs.ducks}` // #2692 duck tally, additive (#1373 law)
     return hashString(s)
 }
 
@@ -1433,6 +1530,8 @@ export function state(gs) {
         shipped: gs.shipped,
         expired: gs.expired,
         stows: gs.stows,
+        ducks: gs.ducks, // #2692 career duck tally
+        yielding: gs.robots.filter((b) => b.yield).map((b) => ({ id: b.id, x: b.x, y: b.y, left: b.yield.t })), // #2692 DEV eye: carts holding shoulders
         end: gs.end,
         endReason: gs.endReason,
         ...(gs.duel ? {
