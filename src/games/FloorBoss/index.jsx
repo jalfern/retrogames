@@ -27,7 +27,7 @@ import {
     makeGame, step, state, stateHash, createAutopilot, clickCell, setTool,
     toggleAuto, clickOrder, hireRobot, nextShift, rungPrice, rushNow,
     COLS, ROWS, SHIFT, STRIKES, RACK_COST, ROBOT_COST, RACK_CAP, STOW_PAY,
-    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS, cornerEscapes, laneEscapes, swingMarkers, flowMarks, flowHeat,
+    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS, cornerEscapes, laneEscapes, swingMarkers, flowMarks, flowHeat, liveKnees,
 } from './sim.js'
 
 const SIM_MS = 1000 / 60
@@ -133,7 +133,7 @@ const FloorBossGame = () => {
         let duckTaughtOn = null // the game instance whose first duck has been named (new makeGame resets per identity; shiftstart re-names per night)
         let duckTeach = null // { x, y, from, until } — the GIVE WAY plate on a shift's first duck
         const givenAt = new Map() // "x,y" -> tick — the moment a rival crossed a vacated cell: that bay reads GIVEN
-        const ATTRACT_SEEDS = [2053, 102, 241, 412, 858] // #2700 measured: every seed wins WITH ducks, first duck ≤ ~4400 — courtesy in the shop window
+        const ATTRACT_SEEDS = [20, 42, 29, 40, 30] // #2711 re-measured after the knee law: every seed wins WITH ducks (first duck 4804–5721); #2700's pick was scored on the point-cart floor where 2053/102/858 ducked — knee routing routes them clear of the bays, so the shop window cycles honest replacement seeds
         const orderEnter = new Map() // order id -> slide-in ticks left
         const arcItems = [] // transfer ghosts { x0,y0,x1,y1,k,n?,kind,servo? } — bay handoff + servo carry (#1877)
         let armTip = { x: 0, y: 0 }
@@ -277,7 +277,13 @@ const FloorBossGame = () => {
                     case 'poor': audioController.playTone(120, 0.12, 'square', 0.06); fx('NO BUDGET', '#ff9a4f', PX(e.x) + 13, PY(e.y) + 8); break
                     case 'refuse': audioController.playTone(110, 0.1, 'square', 0.05); break
                     case 'aisle': {
-                        audioController.playSweep(240, 120, 0.12, 'square', 0.05); fx(e.why === 'pocket' ? 'DEAD-END AISLE' : e.why === 'rack' ? 'STRANDED A RACK' : e.why === 'lane' ? 'NO PASSING LANE' : e.why === 'corner' ? 'NO CORNER STACK' : 'NO SERVICE LANE', '#ffd23f', PX(e.x) + 13, PY(e.y) + 8) // #2546, #2614, #2627
+                        audioController.playSweep(240, 120, 0.12, 'square', 0.05); fx(e.why === 'pocket' ? 'DEAD-END AISLE' : e.why === 'rack' ? 'STRANDED A RACK' : e.why === 'lane' ? 'NO PASSING LANE' : e.why === 'corner' ? 'NO CORNER STACK' : e.why === 'knee' ? 'NO KNEE — RACKED THE SWING' : 'NO SERVICE LANE', '#ffd23f', PX(e.x) + 13, PY(e.y) + 8) // #2546, #2614, #2627, #2711
+                        // #2711 KNEE refusal — the click sat in the swing of a turn
+                        // the floor drives. No provable plug exists (demolition is
+                        // not a verb and the elbow itself is not the offense — the
+                        // diagonal is), so the lesson is the cell: an amber
+                        // keep-clear box over the refusal, fading like the others.
+                        if (e.why === 'knee') kneeMark = { x: e.x, y: e.y, from: gs.tick, until: gs.tick + 150 }
                         // #2627 s2 TEACH THE ELBOW: a corner refusal shows its honest
                         // exit — the mouths that would spur the elbow light up green,
                         // so the fifth law self-teaches like the reach diamond taught
@@ -306,8 +312,8 @@ const FloorBossGame = () => {
                         // you. In duel, the refusal names its seat in the seat's own
                         // colour beneath the amber law (events stay out of stateHash,
                         // #1373 — this is chrome, the law stays sim truth).
-                        if (gs.duel && (e.why === 'lane' || e.why === 'corner')) {
-                            fx(`${e.why === 'lane' ? 'LANE' : 'ELBOW'}: ${e.s === 1 ? 'MODEL' : 'YOU'}`,
+                        if (gs.duel && (e.why === 'lane' || e.why === 'corner' || e.why === 'knee')) {
+                            fx(`${e.why === 'lane' ? 'LANE' : e.why === 'knee' ? 'KNEE' : 'ELBOW'}: ${e.s === 1 ? 'MODEL' : 'YOU'}`,
                                 e.s === 1 ? '#57c7ff' : '#ffd23f', PX(e.x) + 13, PY(e.y) + 8) // same anchor as the law — the #2254 lane stack raises it above the banner and the tail, one line per message
                         }
                         break
@@ -349,6 +355,7 @@ const FloorBossGame = () => {
         const repairPulse = new Map() // "x,y" -> tick of the last turbo click
         let spendFlash = null // { label, until } — #2254 item 3: buying reads as a cost
         let elbowTeach = null // { cells, until } — #2627 s2 / #2622: a corner or lane refusal lights its honest plugs
+        let kneeMark = null // { x, y, until } — #2711: a knee refusal keep-clears its cell
         let clockIn = null // { shift, quota, until } — #2352: the night number slams in on advance
 
         const finish = () => {
@@ -379,7 +386,7 @@ const FloorBossGame = () => {
         const warmAttract = () => {
             while (gs.tick < 3600 && !gs.end) step(gs, [ap(gs)])
             gs.ev.length = 0 // no minute of stale events bursts into the painter
-            duckSlide.clear(); givenAt.clear(); botAnim.clear(); elbowTeach = null; duckTeach = null
+            duckSlide.clear(); givenAt.clear(); botAnim.clear(); elbowTeach = null; duckTeach = null; kneeMark = null
         }
 
         const doSim = () => {
@@ -756,6 +763,27 @@ const FloorBossGame = () => {
             }
         }
 
+        const paintKnee = (tick) => {
+            // #2711 NO KNEE keep-clear — the refused click sat in the swing of a
+            // turn. Amber stays the law colour (#2622 grammar): a pulsing dashed
+            // box on the cell with the quarter swing arc across its inner corner,
+            // fading over 2.5 world seconds like the elbow lesson. Rides the paint
+            // tick, deterministic — painter-only, the refusal itself is sim truth.
+            if (!kneeMark) return
+            if (tick < (kneeMark.from || 0) || tick > kneeMark.until) { kneeMark = null; return }
+            const k = (kneeMark.until - tick) / 150
+            const pulse = 0.5 + 0.5 * Math.sin(tick * 0.22)
+            const x = PX(kneeMark.x), y = PY(kneeMark.y)
+            ctx.fillStyle = `rgba(255,210,63,${(0.1 + 0.12 * pulse) * k})`
+            ctx.fillRect(x + 3, y + 3, TILE - 6, TILE - 6)
+            ctx.strokeStyle = `rgba(255,210,63,${(0.45 + 0.4 * pulse) * k})`; ctx.lineWidth = 2
+            ctx.setLineDash([4, 3]); ctx.strokeRect(x + 2, y + 2, TILE - 4, TILE - 4); ctx.setLineDash([])
+            ctx.strokeStyle = `rgba(255,210,63,${0.7 * k})`; ctx.lineWidth = 1.5
+            ctx.beginPath(); ctx.arc(x, y, TILE * 0.9, 0, Math.PI / 2); ctx.stroke()
+            ctx.fillStyle = `rgba(255,210,63,${0.85 * k})`; ctx.font = 'bold 6px monospace'; ctx.textAlign = 'center'
+            ctx.fillText('SWING', x + TILE / 2, y + TILE - 5); ctx.textAlign = 'left'
+        }
+
         const paintRobots = (tick) => {
             for (const b of gs.robots) {
                 const x = PX(b.x) + TILE / 2, y = PY(b.y) + TILE / 2
@@ -859,7 +887,15 @@ const FloorBossGame = () => {
                         }
                     }
                 }
-                if (b.carry) drawItem(ctx, b.carry, bx, by - 14 + Math.sin(tick * 0.12) * 1, 0.85)
+                if (b.carry) {
+                    // #2711: a loaded cart shows its body — the amber nose sits on
+                    // the leading edge (the cell that knee law sweeps), so the
+                    // swing that cannot pass a rack corner is visible at a glance.
+                    const nv = [[0, -1], [1, 0], [0, 1], [-1, 0]][b.dir] || [0, -1]
+                    ctx.fillStyle = 'rgba(255,210,63,0.4)'
+                    ctx.fillRect(bx + nv[0] * 10 - 3, by + nv[1] * 10 - 3, 6, 6)
+                    drawItem(ctx, b.carry, bx, by - 14 + Math.sin(tick * 0.12) * 1, 0.85)
+                }
             }
         }
 
@@ -1365,6 +1401,7 @@ const FloorBossGame = () => {
             paintHeat(tick) // #2680: traffic heat rides the grammar — under the amber law paint, above the cyan legality tint
             paintSwing()
             paintTeach(tick)
+            paintKnee(tick) // #2711: the knee refusal keep-clear rides the lesson layer
             paintArm(tick)
             paintRobots(tick)
             paintYield(tick) // #2692: courtesy ring + vacated-lane glow paint over the cart, under the arcs
@@ -1594,6 +1631,7 @@ const FloorBossGame = () => {
                 swing: () => swingMarkers(gs).map((m) => ({ x: m.x, y: m.y, h: m.h })),
                 flow: () => flowMarks(gs).map((m) => ({ axis: m.axis, n: m.flow, cells: m.cells.map((c) => `${c.x},${c.y}`).join('|') })), // #2622 item 3: the two-way grammar, readable to QA
                 heat: () => flowHeat(gs).map((c) => ({ x: c.x, y: c.y, n: c.n })), // #2680: live traffic heat — route claims per cell, readable to QA
+                knees: () => liveKnees(gs).map((m) => ({ x: m.x, y: m.y, i: m.in, o: m.out, k: `${m.kx},${m.ky}` })), // #2711: knee-blocked turns on the live floor — QA eye
                 yields: () => gs.robots.filter((b) => b.yield).map((b) => ({ id: b.id, x: b.x, y: b.y, fx: b.yield.fx, fy: b.yield.fy, t: b.yield.t })), // #2692: carts holding shoulders — the pull-off, readable to QA
                 ducks: () => gs.ducks, // #2692: the shift's duck tally
                 duckTeach: () => (duckTeach ? { x: duckTeach.x, y: duckTeach.y, k: (duckTeach.until - gs.tick) / 150 } : null), // #2700 DEV eye: the GIVE WAY plate is live (play gates sample it atomically with pixels)
