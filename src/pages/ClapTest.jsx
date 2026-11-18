@@ -22,10 +22,16 @@ import {
     armLiveCapture, unexposeGame, exposeGame, contractHoldsLoop, recordLiveTick, isRecording,
     exposeFeedbackState, unexposeFeedbackState, seedFromQuery,
 } from '../utils/gameContract'
-import { createTestSim, screenVerdict, FIXED_DT, SLAPS_NEEDED, lastGapMs, pushHistory, formatHistory, hardFailNote, createPairCoach, pairCoachFeed, pairCoachAge, COACH_LIVE_TEXT } from '../utils/clapTestCore'
+import { createTestSim, screenVerdict, FIXED_DT, SLAPS_NEEDED, lastGapMs, pushHistory, formatHistory, hardFailNote, createPairCoach, pairCoachFeed, pairCoachAge, COACH_LIVE_TEXT, coachHaptics } from '../utils/clapTestCore'
 
 const NEON = '#39ff14'
 const AMBER = '#ffd840'
+// #2654 item 3: a named coach event pulses the target ring in its own colour —
+// the ring is where the eye already sits mid-take, so the news lands without
+// reading. Pair green, off amber; the misses borrow the page's warning hues
+// (nosound = the too-quiet orange, notouch the harder red — the prompt and the
+// miss read differently in the corner of an eye).
+const COACH_RING = { pair: NEON, off: AMBER, notouch: '#ff5050', nosound: '#ff8040' }
 // #2205 item 1: the shared live-level scale (peak/128 × 2.5) runs 0..1; a slap
 // registering below this is too quiet to survive the detector reliably. Kept
 // well under a real palm slap (~1.0 on the meter) so it never false-scolds.
@@ -47,6 +53,7 @@ const ClapTest = () => {
     const [flash, setFlash] = useState(0)
     const [coach, setCoach] = useState(null) // #1711 live pair coach: last named event {kind, ms, n}
     const [pairs, setPairs] = useState(0) // pairs matched so far THIS take (guidance, not verdict)
+    const [coachPulse, setCoachPulse] = useState(0) // #2654: bump per named event — re-triggers the ring animation
     const simRef = useRef(null)
     const seedRef = useRef(0)
     const heldRef = useRef(false)
@@ -87,6 +94,13 @@ const ClapTest = () => {
         if (!st.last || st.seq === coachSeqRef.current) return
         coachSeqRef.current = st.seq
         setCoach(st.last)
+        setCoachPulse((q) => q + 1)
+        // #2654 item 3: the news lands in the hand too — one rhythm per kind
+        // (the table is pure in clapTestCore; the page only plays what it says).
+        if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+            const pat = coachHaptics(st.last.kind)
+            if (pat) { try { navigator.vibrate(pat) } catch { /* unsupported */ } }
+        }
         if (coachTimerRef.current) clearTimeout(coachTimerRef.current)
         coachTimerRef.current = setTimeout(() => setCoach(null), 1100)
     }, [])
@@ -196,7 +210,7 @@ const ClapTest = () => {
                     setResult(null); setUpload(null); setTaps(0); tapsRef.current = 0
                     setGapMs(null); setQuiet(false)
                     coachRef.current = createPairCoach(); coachSeqRef.current = 0; liveNRef.current = 0
-                    setCoach(null); setPairs(0)
+                    setCoach(null); setPairs(0); setCoachPulse(0)
                     setPhase('attract')
                     mirror()
                 },
@@ -366,7 +380,7 @@ const ClapTest = () => {
                 <div className="w-full max-w-md text-center pointer-events-none">
                     <div className="text-sm tracking-widest text-gray-300">SLAP THE SCREEN — about 2 s apart</div>
                     <div className="mt-1 text-xs text-gray-500">volume down · palm on the glass</div>
-                    <div key={flash} className="mt-10 mx-auto w-56 h-56 rounded-full border-4 flex items-center justify-center" style={{ borderColor: NEON, background: flash ? 'rgba(57,255,20,0.22)' : 'rgba(57,255,20,0.06)', boxShadow: `0 0 40px rgba(57,255,20,0.25) inset` }}>
+                    <div key={`${flash}:${coachPulse}`} className="mt-10 mx-auto w-56 h-56 rounded-full border-4 flex items-center justify-center" data-clap-coach-pulse={coach ? coach.kind : undefined} style={{ borderColor: coach ? COACH_RING[coach.kind] : NEON, background: flash ? 'rgba(57,255,20,0.22)' : 'rgba(57,255,20,0.06)', boxShadow: coach ? `0 0 46px ${COACH_RING[coach.kind]}55 inset, 0 0 34px ${COACH_RING[coach.kind]}44` : '0 0 40px rgba(57,255,20,0.25) inset', animation: coachPulse ? 'clapCoachPulse 550ms ease-out' : undefined }}>
                         <span className="text-7xl font-bold" style={{ color: NEON }}>{taps}<span className="text-3xl text-gray-400">/{SLAPS_NEEDED}</span></span>
                     </div>
                     <div className="mt-8 mx-auto w-56" data-clap-meter="" aria-hidden="true" style={{ height: 10, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(57,255,20,0.35)', borderRadius: 5, overflow: 'hidden' }}>
@@ -385,9 +399,10 @@ const ClapTest = () => {
                         </div>
                     )}
                     <div className="mt-2 text-[10px] text-gray-400" data-clap-pairs={String(pairs)}>
-                        sound + touch matched so far: <b style={{ color: pairs > 0 ? NEON : undefined }}>{pairs}</b>
+                        live pairs so far — the verdict keeps the final count: <b style={{ color: pairs > 0 ? NEON : undefined }}>{pairs}</b>
                     </div>
                     <div className="mt-3 text-xs text-gray-500">ends by itself after the {SLAPS_NEEDED}rd slap</div>
+                    <style>{`@keyframes clapCoachPulse{0%{transform:scale(1)}30%{transform:scale(1.08)}100%{transform:scale(1)}}`}</style>
                 </div>
             )}
 

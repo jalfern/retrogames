@@ -255,3 +255,21 @@ export const COACH_LIVE_TEXT = {
     nosound: 'NO SOUND — slap harder (louder, closer)',
 }
 
+// #2654 item 3: the named event lands in the HAND, not only the eyes — the
+// #2205 vibrate idiom, one distinct rhythm per kind, mid-take (the final
+// verdict keeps its own two patterns, PASS [60] / FAIL [140,70,140]).
+// Rhythms are chosen to be told apart blind and to never impersonate the
+// verdict: pair is a crisp double (✓), off one medium tap, notouch one long
+// buzz (the miss is the glass), nosound a machine-gun triple (slap louder).
+// Pure so recordcheck pins the table — the page only plays what this says.
+export const COACH_HAPTICS = {
+    pair: [20, 30, 20],
+    off: [70],
+    notouch: [120],
+    nosound: [50, 50, 50],
+}
+
+export function coachHaptics(kind) {
+    return Object.prototype.hasOwnProperty.call(COACH_HAPTICS, kind) ? COACH_HAPTICS[kind] : null
+}
+
