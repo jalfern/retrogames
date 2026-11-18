@@ -94,6 +94,50 @@ const errors = []
 let sharedContext = null
 let prevCleanPass = false // did the previous accepted run grade a real PASS to persist?
 
+// the synth mic (shared by runOnce + coachOnce): bakes full-scale claps at
+// window.__CLAP.clapMs (ms from mic-open) into the fake getUserMedia stream —
+// only the sound source is synthetic; consent/recorder/clock/outbox are the
+// real production path. __clapWall anchors the aim AFTER buffer fill (#2156).
+function synthMicInit() {
+    window.__CLAP = { clapMs: [] }
+    const synth = async () => {
+        const AC = window.AudioContext || window.webkitAudioContext
+        const ctx = new AC()
+        try { await ctx.resume() } catch { /* autoplay flag covers this */ }
+        const dest = ctx.createMediaStreamDestination()
+        const sr = ctx.sampleRate
+        const secs = 14, n = Math.round(secs * sr)
+        const buf = ctx.createBuffer(1, n, sr)
+        const ch = buf.getChannelData(0)
+        let s = 12345
+        const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s / 0x3fffffff) - 1 }
+        const claps = ((window.__CLAP && window.__CLAP.clapMs) || []).map((ms) => Math.round((ms / 1000) * sr))
+        for (let i = 0; i < n; i++) {
+            let v = 0.03 * Math.sin(2 * Math.PI * 220 * i / sr)
+            for (const c of claps) {
+                const k = i - c
+                if (k >= 0 && k < 0.05 * sr) {
+                    const env = Math.exp(-k / (0.012 * sr))
+                    v = (0.55 * rnd() + 0.55 * Math.sin(k * 2 * Math.PI * 190 / sr) + 0.35 * Math.sin(k * 2 * Math.PI * 760 / sr)) * env
+                }
+            }
+            ch[i] = Math.max(-1, Math.min(1, v))
+        }
+        const src = ctx.createBufferSource()
+        src.buffer = buf
+        src.loop = true
+        src.connect(dest)
+        src.start(0)
+        window.__keepSynth = { ctx, src }
+        // anchor AFTER start: the buffer-fill loop costs hundreds of ms; a
+        // t0 captured before it makes every aim late by that fill jitter.
+        const tStart = Date.now()
+        window.__clapWall = claps.map((p) => tStart + (p / sr) * 1000)
+        return dest.stream
+    }
+    navigator.mediaDevices.getUserMedia = () => synth()
+}
+
 async function runOnce(cfg, { requireGate, sink }) {
     // Checks land in the sink, not the report: a throttled attempt must not be
     // able to turn the suite red when its retry proves the honest green.
@@ -106,45 +150,7 @@ async function runOnce(cfg, { requireGate, sink }) {
     if (cfg.freshContext) { if (sharedContext) await sharedContext.close().catch(() => {}); sharedContext = null } // a taught device cannot re-learn — it must be a stranger again
     const context = sharedContext || await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true })
     sharedContext = context
-    await context.addInitScript(() => {
-        window.__CLAP = { clapMs: [] }
-        const synth = async () => {
-            const AC = window.AudioContext || window.webkitAudioContext
-            const ctx = new AC()
-            try { await ctx.resume() } catch { /* autoplay flag covers this */ }
-            const dest = ctx.createMediaStreamDestination()
-            const sr = ctx.sampleRate
-            const secs = 14, n = Math.round(secs * sr)
-            const buf = ctx.createBuffer(1, n, sr)
-            const ch = buf.getChannelData(0)
-            let s = 12345
-            const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s / 0x3fffffff) - 1 }
-            const claps = ((window.__CLAP && window.__CLAP.clapMs) || []).map((ms) => Math.round((ms / 1000) * sr))
-            for (let i = 0; i < n; i++) {
-                let v = 0.03 * Math.sin(2 * Math.PI * 220 * i / sr)
-                for (const c of claps) {
-                    const k = i - c
-                    if (k >= 0 && k < 0.05 * sr) {
-                        const env = Math.exp(-k / (0.012 * sr))
-                        v = (0.55 * rnd() + 0.55 * Math.sin(k * 2 * Math.PI * 190 / sr) + 0.35 * Math.sin(k * 2 * Math.PI * 760 / sr)) * env
-                    }
-                }
-                ch[i] = Math.max(-1, Math.min(1, v))
-            }
-            const src = ctx.createBufferSource()
-            src.buffer = buf
-            src.loop = true
-            src.connect(dest)
-            src.start(0)
-            window.__keepSynth = { ctx, src }
-            // anchor AFTER start: the buffer-fill loop costs hundreds of ms; a
-            // t0 captured before it makes every aim late by that fill jitter.
-            const tStart = Date.now()
-            window.__clapWall = claps.map((p) => tStart + (p / sr) * 1000)
-            return dest.stream
-        }
-        navigator.mediaDevices.getUserMedia = () => synth()
-    })
+    await context.addInitScript(synthMicInit)
     const page = await context.newPage()
     // run two lives in a second tab — without this its loop starves in the
     // background (frames skip, palm holds vanish, the meter undersamples).
@@ -527,6 +533,7 @@ async function coachOnce(sink) {
         skip: (label, detail = '') => sink.push({ skip: true, label, detail }),
     }
     const context = await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true })
+    await context.addInitScript(synthMicInit)
     const page = await context.newPage()
     await page.bringToFront()
     page.setDefaultTimeout(30000)
