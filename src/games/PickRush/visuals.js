@@ -7,7 +7,7 @@
 // BIN_VIS is a mutable object, not bare consts: pickcheck's `vis`/`whip`
 // mutants freeze one law each the way the amb mutant collapses an era.
 
-import { barrelUpright, KINDS, BINS, BIN_TOP, GRAV, BREAK_VY, GRAB_DX } from './sim.js'
+import { barrelUpright, KINDS, BINS, BIN_TOP, BELT_END, GRAV, BREAK_VY, GRAB_DX } from './sim.js'
 
 export const BIN_VIS = {
     cap: 12,      // pieces a bin visibly holds before the lamp thunks and wraps
@@ -61,9 +61,10 @@ export function stepWhip(w, target) {
 // tells import the predicates instead of re-deriving them, so the paint can
 // never drift from what the jaws actually do.
 
-// Mutant handle (PICK_MUT=tell): freeze the whole family to its warning-off
-// reading. Named pickcheck gates go red — scripts/pickcheck.mjs §TELL.
-export const TELL = { freeze: false }
+// Mutant handles: PICK_MUT=tell freezes the whole family to its warning-off
+// reading; PICK_MUT=aim mutes only the #2690 intent/ownership pair. Named
+// pickcheck gates go red — scripts/pickcheck.mjs §TELL and §AIM.
+export const TELL = { freeze: false, aimFreeze: false }
 
 // Ring state for an on-belt piece: 'ok' = a clamp attempt bites this tick,
 // 'off' = it would slip, null = not a roller.
@@ -114,4 +115,43 @@ export const jawWarn = (gs, seat) => {
     return gs.items.some((it) => it.onBelt && it.carriedBy === -1
         && Math.abs(it.x - arm.x) <= GRAB_DX
         && KINDS[it.kind].roll && !barrelUpright(it))
+}
+
+// ---- rival intent & ring ownership (#2690 QA) -----------------------------
+// Two cranes share one belt, but nothing on the rails said what the foreman's
+// brain was hunting — and two claws homing on the same barrel gave the catch
+// ring one face. These are pure reads of ALREADY-stepped state: the
+// autopilot's target memory (`arm.target` — motion-carrier, never hashed, cf.
+// pos/clawY #1184) and approach geometry. The rules and hashes never see
+// them: same law as the #2678 meters. Whether a seat is brain-driven is the
+// caller's business (a human partner has no readable intent); these helpers
+// just report what the memory says.
+
+// What this seat's crane is hunting right now: the live belt piece its
+// autopilot last locked. Null while carrying (the slam meter tells that
+// story), and when the memory went stale — the piece was grabbed, landed,
+// or ran off the line end. Mirrors the autopilot's own reach filter so the
+// tell never points at a piece the brain already gave up on.
+export const craneAim = (gs, seat) => {
+    if (TELL.freeze || TELL.aimFreeze) return null
+    const arm = gs.arms[seat]
+    if (!arm || arm.held !== null) return null
+    const it = gs.items.find((i2) => i2.id === arm.target)
+    if (!it || !it.onBelt || it.carriedBy !== -1 || it.x > BELT_END - 24) return null
+    return { id: it.id, kind: it.kind, bin: KINDS[it.kind].bin, x: it.x }
+}
+
+// Who is converging on this piece: 'mine' when seat `me`'s empty claw is
+// lowering into the grab window, 'rival' when the other crane alone is,
+// null when nobody is. Mine wins ties — the fast blink is yours.
+export const ringClaim = (gs, it, me = 0) => {
+    if (TELL.freeze || TELL.aimFreeze) return null
+    const near = (s) => {
+        const a = gs.arms[s]
+        return !!a && a.held === null && a.mode === 'lowering'
+            && Math.abs(a.x - it.x) <= GRAB_DX
+    }
+    if (near(me)) return 'mine'
+    for (let s = 0; s < gs.arms.length; s++) if (s !== me && near(s)) return 'rival'
+    return null
 }

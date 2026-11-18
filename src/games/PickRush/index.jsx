@@ -16,7 +16,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { AMB_ZONES, zoneForShift, fireAt } from './ambience'
-import { BIN_VIS, makeBinVis, stepBinVis, makeWhip, stepWhip, whipTarget, catchRing, slamTell, jawWarn } from './visuals'
+import { BIN_VIS, makeBinVis, stepBinVis, makeWhip, stepWhip, whipTarget, catchRing, slamTell, jawWarn, craneAim, ringClaim } from './visuals'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -25,7 +25,7 @@ import {
     makeGame, step, autopilot,
     VIEW_W, VIEW_H, RAIL_Y, BELT_Y, BELT_END,
     BIN_TOP, FLOOR_Y, SHIFT_TICKS, FUSES, GRAB_DX,
-    BINS, SHIFTS, WAVES,
+    BINS, KINDS, SHIFTS, WAVES,
 } from './sim.js'
 
 const SIM_MS = 1000 / 60
@@ -492,11 +492,13 @@ const PickRushGame = () => {
             const x = Math.round(it.x), y = Math.round(it.y)
             const ring = catchRing(it)
             if (ring) {
-                const near = gs.arms.some((a) => a.held === null && a.mode === 'lowering'
-                    && Math.abs(a.x - it.x) <= GRAB_DX)
+                // #2690 ownership split: mine fast (8), rival slow (16) — when
+                // two cranes converge on one barrel the ring says who's first.
+                const claim = ringClaim(gs, it, 0)
+                const period = claim === 'mine' ? 8 : claim === 'rival' ? 16 : 0
                 ctx.lineWidth = ring === 'ok' ? 1.6 : 1
                 ctx.strokeStyle = ring === 'ok' ? '#5dff8f' : '#ff5a4f'
-                ctx.globalAlpha = ring === 'ok' ? (near && tick % 8 >= 4 ? 0.35 : 0.85) : 0.45
+                ctx.globalAlpha = ring === 'ok' ? (period && tick % period >= period / 2 ? 0.35 : 0.85) : 0.45
                 circle(ctx, x, y, 8.8); ctx.stroke()
                 ctx.globalAlpha = 1
             } else if (it.fragile) {
@@ -622,7 +624,28 @@ const PickRushGame = () => {
             ctx.fillStyle = '#c8a11c'
             for (let sx = x - 9; sx < x + 9; sx += 6) ctx.fillRect(sx, ry - 2, 3, 5)
             const blink = (tick + seat * 17) % 40 < 20
-            ctx.fillStyle = blink ? skin : dark; circle(ctx, x, ry - 10, 2); ctx.fill()
+            // #2690 rival intent: while his target memory is locked on a live
+            // piece, his beacon stops blinking identity and burns steady under a
+            // tag-coloured halo, and a marching dashed lead line runs to the
+            // piece he's hunting. The memory is only ever written by the brain,
+            // so a human at seat 2 carries no aim and paints nothing; and a
+            // harness driving seat 1 through the contract paints, which is what
+            // pickcheck's gates prove. Render-only — craneAim reads un-hashed
+            // motion-carrier state (#1184 family).
+            const aim = seat === 1 ? craneAim(gs, 1) : null
+            const tag = aim ? TAG[aim.kind] : null
+            ctx.fillStyle = aim ? skin : (blink ? skin : dark); circle(ctx, x, ry - 10, 2); ctx.fill()
+            if (aim) {
+                ctx.globalAlpha = tick % 24 < 12 ? 0.75 : 0.55
+                ctx.fillStyle = tag; circle(ctx, x, ry - 10, 3.4); ctx.fill()
+                const tx = Math.round(aim.x)
+                ctx.globalAlpha = 0.85
+                ctx.strokeStyle = tag; ctx.lineWidth = 1
+                ctx.setLineDash([3, 5]); ctx.lineDashOffset = -(tick % 8)
+                ctx.beginPath(); ctx.moveTo(x, ry - 14); ctx.lineTo(tx, BELT_Y - 5); ctx.stroke()
+                ctx.setLineDash([])
+                ctx.globalAlpha = 1
+            }
             // wheels
             ctx.fillStyle = '#0d131b'; ctx.fillRect(x - 12, ry + 4, 5, 3); ctx.fillRect(x + 7, ry + 4, 5, 3)
         }
@@ -981,6 +1004,8 @@ const PickRushGame = () => {
             }, []), // #2684 catch-ring truth per rolling piece on the belt
             slamTell: (() => { const t = slamTell(gs, 0); return t ? [t.impact, t.safe ? 1 : 0, t.dy] : null })(), // #2684 projected landing of carried glass
             jawWarn: gs.arms.map((a, s2) => jawWarn(gs, s2)), // #2684 descent aimed at off-axis cargo
+            rivalAim: (() => { const a = craneAim(gs, 1); return a ? [a.id, Math.round(a.x * 10) / 10, a.bin] : null })(), // #2690 the piece the foreman crane is hunting
+            ringClaim: gs.items.reduce((acc, it) => { const c = it.onBelt && it.carriedBy === -1 && KINDS[it.kind].roll ? ringClaim(gs, it, 0) : null; if (c) acc.push([it.id, c]); return acc }, []), // #2690 whose claw is converging on each barrel
             ambZone: zoneForShift(gs.shift), // #2234 era the floor sounds like
             pos: Math.round(gs.arms[0].x * 10) / 10,
             clawY: Math.round(gs.arms[0].tip * 10) / 10,
@@ -1066,12 +1091,28 @@ const PickRushGame = () => {
                     .filter((it) => it.onBelt && it.carriedBy === -1 && it.kind === 'barrel')
                     .map((it) => {
                         const r = ((it.rot % Math.PI) + Math.PI) % Math.PI
-                        return { id: it.id, x: Math.round(it.x), y: Math.round(it.y), ring: catchRing(it), upright: r < 0.42 || r > Math.PI - 0.42 }
+                        // #2690 claim written INLINE (the 11 px window spelled out
+                        // again) so a gate can catch the ownership tell lying too.
+                        const n = (a) => !!a && a.held === null && a.mode === 'lowering' && Math.abs(a.x - it.x) <= 11
+                        return { id: it.id, x: Math.round(it.x), y: Math.round(it.y), ring: catchRing(it), upright: r < 0.42 || r > Math.PI - 0.42, claim: n(gs.arms[0]) ? 'mine' : n(gs.arms[1]) ? 'rival' : null }
                     }),
+                // #2690 intent eye: the foreman's aim next to a live/parity
+                // verdict written inline, so a gate checks the tell against the
+                // sim, not against itself.
+                aimEye: () => {
+                    const arm = gs.arms[1]
+                    const it = arm ? gs.items.find((i2) => i2.id === arm.target) : null
+                    const live = !!(it && it.onBelt && it.carriedBy === -1 && it.x <= BELT_END - 24)
+                    const a = craneAim(gs, 1)
+                    return { tick: gs.tick, held: arm ? arm.held !== null : false, live, parity: it ? (it.n ?? 0) % 2 : -1, aim: a, tag: a ? TAG[a.kind] : null }
+                },
                 hash: () => gs.hash,
                 canvas: () => canvas,
                 sim: () => gs,
-                step: (n = 1, pad = {}) => { for (let i = 0; i < n; i++) step(gs, [pad]) },
+                step: (n = 1, pad = {}, pads = null) => { for (let i = 0; i < n; i++) step(gs, pads || [pad]) },
+                // #2690: gates drive the rival with the REAL brain (its pads
+                // are the only writer of the intent memory the beacon reads).
+                auto: (seat = 1) => autopilot(gs, seat),
                 press: (code) => onKeyDown({ code, preventDefault() {}, repeat: false }),
                 release: (code) => onKeyUp({ code }),
                 CORE, BELT_Y, BIN_TOP, RAIL_Y, FLOOR_Y,
