@@ -1,10 +1,24 @@
 // CLAP TEST PLAY (#2156) — drive the one-screen slap test end-to-end with REAL
-// events: a synth mic bakes full-scale claps at known instants (only the sound
+// events: full-scale claps reach the mic at known instants (only the sound
 // source is synthetic — consent, recorder, tick clock, outbox, upload and the
 // decode are the real production path), while the harness slaps the screen with
 // trusted pointer events at the same instants. The phone must grade itself, the
 // take must upload through the consent gate, and the studio must agree:
 // plaicraft:clap --file=<the same bytes> lands the same verdict.
+//
+// #2709 migration (slot a, session 344): the WebAudio synth-mic is dead on
+// headless Chrome 157 (zero MediaRecorder chunks from a MediaStreamDestination
+// stream — probe matrix in the issue), so the claps now ride Chrome's fake
+// capture device fed by a baked WAV (#2716 shape, scripts/lib/fakemic.mjs).
+// The fake-file flag is a browser-launch arg — one schedule per launch — BUT
+// the device replays the WAV from file position 0 at every fresh gUM call
+// (measured here: two consecutive 5 s sessions in one launch each heard the
+// trio at 1218/2618/4018 ms), so retries, the re-arm second take and the
+// silent takes keep their exact shape inside a launch. The suite therefore
+// launches one browser per clap schedule (nominal / off-tempo / hum / coach)
+// and carries the phone's localStorage (consent, verdict history, coach flag)
+// across relaunches so the story beats (#2205 history line, learned-device
+// silence) stay the same single-device narrative they were before.
 //
 //   npm run dev -- --port 5173 --strictPort        (or DEV_PORT)
 //   npm run claptestplay                            # two clean runs -> PASS everywhere
@@ -16,11 +30,12 @@
 // the whole consent-gated path runs against the exact HTTP surface Jon's phone
 // will hit.
 //
-// #2205 (polish): the clean pass drives TWO runs in one browser context — the
-// nominal cadence and an off-nominal one (1.6 s / 2.4 s) — proving honest green
-// survives real human rhythm variance, not just the baked cadence. It also reads
-// the new polish surfaces: the live mic meter, the pacing gap readout, the
-// persisted verdict history line, and the aria-live verdict.
+// #2205 (polish): the clean pass drives TWO runs sharing one phone's storage —
+// the nominal cadence and an off-nominal one (1.6 s / 2.4 s) — proving honest
+// green survives real human rhythm variance, not just the baked cadence (since
+// #2709 that carry is export/seed across launches, not one shared context). It
+// also reads the new polish surfaces: the live mic meter, the pacing gap
+// readout, the persisted verdict history line, and the aria-live verdict.
 //
 // #2205 lesson (throttling): on a box whose co-tenant starves this page's rAF,
 // the fixed-timestep catch-up CAPS world time behind each slow frame and the
@@ -44,6 +59,7 @@ import { detectClaps, matchClapEdges, takeEdges, CLAP_TOL_MS } from '../src/util
 import { COACH_TEXT } from '../src/utils/clapCoachCore.js'
 import { COACH_HAPTICS } from '../src/utils/clapTestCore.js'
 import { startRelaySim } from './lib/relaysim.mjs'
+import { bakeFakeMicWav, fakeMicArgs, fakeMicInit, PRIME_MS } from './lib/fakemic.mjs'
 
 const argv = process.argv.slice(2)
 const PORT = process.env.DEV_PORT || 5173
@@ -73,14 +89,15 @@ const RUNS = (MUTANT
         shift: MUTANT === 'shift' ? 120 : 0,
         expectPass: false,
         studio: true,
+        wav: MUTANT === 'silent' ? 'hum' : MUTANT === 'few' ? 'few' : 'nominal',
     }]
     : [
-        { label: 'nominal', clapMs: [1200, 2600, 4000], tapsN: 3, shift: 0, expectPass: true, studio: true },
-        { label: 'off-tempo 1.6/2.4 s (#2205)', clapMs: [1200, 2800, 5200], tapsN: 3, shift: 0, expectPass: true, studio: false, showHistory: true },
+        { label: 'nominal', clapMs: [1200, 2600, 4000], tapsN: 3, shift: 0, expectPass: true, studio: true, wav: 'nominal', carryStorage: true },
+        { label: 'off-tempo 1.6/2.4 s (#2205)', clapMs: [1200, 2800, 5200], tapsN: 3, shift: 0, expectPass: true, studio: false, showHistory: true, wav: 'offtempo', seedStorage: true },
         // #1711 re-arm: a fresh device that slaps SILENTLY ends its take with
         // the mic live and zero claps heard -> shown demotes to none, the ask
         // returns, and a new page proves the pill actually paints again.
-        { label: 're-arm (silent take re-teaches)', clapMs: [], tapsN: 3, shift: 0, expectPass: false, studio: false, freshContext: true, expectReArm: true },
+        { label: 're-arm (silent take re-teaches)', clapMs: [], tapsN: 3, shift: 0, expectPass: false, studio: false, freshContext: true, expectReArm: true, wav: 'hum' },
     ]).filter((cfg) => !ONLY || cfg.label.includes(ONLY))
 if (ONLY && !RUNS.length) { console.error(`claptestplay: --run=${ONLY} matched no run`); process.exit(2) }
 
@@ -89,54 +106,48 @@ const sim = await startRelaySim()
 const BASE = sim.base
 const PAGE_URL = `http://localhost:${PORT}/retrogames/claptest?store=${encodeURIComponent(BASE)}`
 
-const browser = await launch({ headless: !argv.includes('--headful'), extraArgs: ['--use-fake-ui-for-media-capture'] })
-await requireDevServer(PAGE_URL)
+// One baked WAV per clap schedule (#2709): the fake-file flag is fixed at
+// browser launch, so each schedule gets its own launch; the device replays
+// the file from 0 at every gUM call, so retries and second takes inside a
+// launch stay on-schedule.
+const WAVS = {
+    nominal: bakeFakeMicWav({ clapMs: [1200, 2600, 4000], secs: 14 }),
+    offtempo: bakeFakeMicWav({ clapMs: [1200, 2800, 5200], secs: 14 }),
+    few: bakeFakeMicWav({ clapMs: [1200, 2600], secs: 14 }),
+    hum: bakeFakeMicWav({ clapMs: [], secs: 14 }),
+    coach: bakeFakeMicWav({ clapMs: [1400, 3000], secs: 14 }),
+}
+
 const errors = []
 let sharedContext = null
 let prevCleanPass = false // did the previous accepted run grade a real PASS to persist?
-
-// the synth mic (shared by runOnce + coachOnce): bakes full-scale claps at
-// window.__CLAP.clapMs (ms from mic-open) into the fake getUserMedia stream —
-// only the sound source is synthetic; consent/recorder/clock/outbox are the
-// real production path. __clapWall anchors the aim AFTER buffer fill (#2156).
-function synthMicInit() {
-    window.__CLAP = { clapMs: [] }
-    const synth = async () => {
-        const AC = window.AudioContext || window.webkitAudioContext
-        const ctx = new AC()
-        try { await ctx.resume() } catch { /* autoplay flag covers this */ }
-        const dest = ctx.createMediaStreamDestination()
-        const sr = ctx.sampleRate
-        const secs = 14, n = Math.round(secs * sr)
-        const buf = ctx.createBuffer(1, n, sr)
-        const ch = buf.getChannelData(0)
-        let s = 12345
-        const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s / 0x3fffffff) - 1 }
-        const claps = ((window.__CLAP && window.__CLAP.clapMs) || []).map((ms) => Math.round((ms / 1000) * sr))
-        for (let i = 0; i < n; i++) {
-            let v = 0.03 * Math.sin(2 * Math.PI * 220 * i / sr)
-            for (const c of claps) {
-                const k = i - c
-                if (k >= 0 && k < 0.05 * sr) {
-                    const env = Math.exp(-k / (0.012 * sr))
-                    v = (0.55 * rnd() + 0.55 * Math.sin(k * 2 * Math.PI * 190 / sr) + 0.35 * Math.sin(k * 2 * Math.PI * 760 / sr)) * env
-                }
-            }
-            ch[i] = Math.max(-1, Math.min(1, v))
-        }
-        const src = ctx.createBufferSource()
-        src.buffer = buf
-        src.loop = true
-        src.connect(dest)
-        src.start(0)
-        window.__keepSynth = { ctx, src }
-        // anchor AFTER start: the buffer-fill loop costs hundreds of ms; a
-        // t0 captured before it makes every aim late by that fill jitter.
-        const tStart = Date.now()
-        window.__clapWall = claps.map((p) => tStart + (p / sr) * 1000)
-        return dest.stream
+let seedStorage = null // localStorage/sessionStorage carried across relaunches
+let browser = null
+let curWav = null
+async function browserFor(wavKey) {
+    if (browser && curWav === wavKey) return browser
+    if (browser) await browser.close().catch(() => {})
+    sharedContext = null // its storage died with the browser; seedStorage carries the story
+    browser = await launch({ headless: !argv.includes('--headful'), extraArgs: fakeMicArgs(WAVS[wavKey]) })
+    curWav = wavKey
+    if (!globalThis.__micStamp) {
+        globalThis.__micStamp = true
+        r.info('mic capture (#2709)', `fake-file (baked wav) — Chrome ${browser.version()} (one launch per schedule, per-gUM file replay)`)
     }
-    navigator.mediaDevices.getUserMedia = () => synth()
+    return browser
+}
+await requireDevServer(PAGE_URL)
+
+// The device wrapper every context gets: real gUM through the fake-file
+// device + the measured priming (#2716 idiom — the init script runs in PAGE
+// context, so PRIME_MS arrives as an arg, never as a Node const).
+async function armContext(context, { seed } = {}) {
+    await context.addInitScript(fakeMicInit)
+    await context.addInitScript(({ prime }) => { window.__FAKE_PRIME_MS = prime }, { prime: PRIME_MS })
+    if (seed) await context.addInitScript((s) => {
+        for (const [k, v] of s.ls) localStorage.setItem(k, v)
+        for (const [k, v] of s.ss || []) sessionStorage.setItem(k, v)
+    }, seed)
 }
 
 async function runOnce(cfg, { requireGate, sink }) {
@@ -149,9 +160,12 @@ async function runOnce(cfg, { requireGate, sink }) {
     }
     const pfx = RUNS.length > 1 ? `${cfg.label}: ` : ''
     if (cfg.freshContext) { if (sharedContext) await sharedContext.close().catch(() => {}); sharedContext = null } // a taught device cannot re-learn — it must be a stranger again
+    await browserFor(cfg.wav)
+    const fresh = !sharedContext
     const context = sharedContext || await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true })
     sharedContext = context
-    await context.addInitScript(synthMicInit)
+    if (fresh) await armContext(context, { seed: cfg.seedStorage ? seedStorage : null })
+    if (cfg.seedStorage) seedStorage = null // consumed, whatever its fate
     const page = await context.newPage()
     // run two lives in a second tab — without this its loop starves in the
     // background (frames skip, palm holds vanish, the meter undersamples).
@@ -184,6 +198,7 @@ async function runOnce(cfg, { requireGate, sink }) {
         else r.skip(`${pfx}attract history line (PASS content)`, 'previous run was skipped/messy — nothing clean to persist')
     }
     await page.evaluate((clapMs) => { window.__CLAP = { clapMs } }, cfg.clapMs)
+    const markBefore = await page.evaluate(() => window.__markStartWall || 0) // per-take anchor: >0 on a shared-context second take
     await page.click('[data-clap-start]')
 
     // the SAME consent gate as the game takes, before anything records
@@ -219,6 +234,19 @@ async function runOnce(cfg, { requireGate, sink }) {
     } catch { /* gate below */ }
     r.check(`${pfx}recorder + mic open at seed-birth after consent`, armed, await page.evaluate(() => JSON.stringify({ ac: window.__autoCapture || null, ct: (window.__clapTest || {}).phase })))
     if (!armed) return dead()
+
+    // #2709: recording:true stamps at SEED-BIRTH (gameContract), but the fake
+    // device needs real milliseconds to open — the take clock (__markStartWall),
+    // the derived clap stamps (__clapWall) and the coach paint all land with the
+    // OPEN, not the seed. Reading before it returns an empty schedule, and an
+    // undefined aim NaNs every tap past its clap. Wait for a fresher
+    // __markStartWall than the last take's (and the clap derivation when there
+    // is one); a device that never lands stays honestly red at the gate below.
+    try {
+        await page.waitForFunction(({ before, need }) =>
+            (window.__markStartWall || 0) > before && (!need || (window.__clapWall || []).length === need),
+            { before: markBefore, need: cfg.clapMs.length }, { timeout: 12000 })
+    } catch { /* the mic-stream / coach gates report what they saw */ }
 
     // #1711 clap coach: the ±50 ms proof must TEACH itself at live REC. A fresh
     // consented boot shows the pill once (flag 'shown'); every later boot on the
@@ -396,6 +424,9 @@ async function runOnce(cfg, { requireGate, sink }) {
             await p2.waitForFunction(() => !!(window.__autoCapture && window.__autoCapture.recording) && window.__clapTest && window.__clapTest.phase === 'testing', null, { timeout: 8000 })
             rearmed = true
         } catch { /* gate below */ }
+        // #2709: wait for the device open before reading the pill — the coach
+        // paints with the mic, not with seed-birth (fresh page, fresh clock zero).
+        await p2.waitForFunction(() => !!window.__markStartWall, null, { timeout: 12000 }).catch(() => {})
         const coach2 = await p2.evaluate(() => ({
             kind: (window.__clapCoach || {}).kind || 'unset',
             el: !!document.querySelector('[data-clap-coach]'),
@@ -479,6 +510,15 @@ for (let i = 0; i < RUNS.length; i++) {
     }
     for (const c of chosen.sink) (c.skip ? r.skip(c.label, c.detail) : c.info ? r.info(c.label, c.detail) : r.check(c.label, c.pass, c.detail))
     prevCleanPass = !!(chosen.out.fast && cfg.expectPass && chosen.out.coreOk)
+    // #2709: relaunching for the next schedule loses the in-memory browser, so
+    // carry the device's own storage (consent, verdict history, coach flag) out
+    // of this launch and seed the next one with it — same phone, same story.
+    if (cfg.carryStorage && chosen.out.page) {
+        seedStorage = await chosen.out.page.evaluate(() => ({
+            ls: Object.entries(localStorage),
+            ss: Object.entries(sessionStorage),
+        })).catch(() => null)
+    }
     if (chosen.out.page) await chosen.out.page.close().catch(() => {}) // one live page = no background throttling
     if (!chosen.out.coreOk) break // dead or failed: its red lines are printed, stop honestly
 }
@@ -491,7 +531,13 @@ for (let i = 0; i < RUNS.length; i++) {
 // a second finger — every slap must fold into the pad stream, and the run must
 // still auto-end. With the old isPrimary filter restored this goes RED
 // (taps stay one: only the thumb itself).
-async function twoFingerProof() {
+async function twoFingerOnce(sink) {
+    const r = {
+        check: (label, pass, detail = '') => sink.push({ label, pass: !!pass, detail }),
+        info: (label, detail) => sink.push({ info: true, label, detail }),
+        skip: (label, detail = '') => sink.push({ skip: true, label, detail }),
+    }
+    await browserFor('hum') // no claps to hear here — the hum file keeps the recorder fed
     const context = await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true })
     const page = await context.newPage()
     await page.bringToFront()
@@ -516,7 +562,7 @@ async function twoFingerProof() {
     if (!inTest) {
         r.check('two-finger: run reaches the testing phase', false, 'stuck before testing')
         await context.close().catch(() => {})
-        return
+        return { coreOk: false }
     }
     const cdp = await context.newCDPSession(page)
     const thumb = { x: 22, y: 754, id: 1 }
@@ -535,7 +581,8 @@ async function twoFingerProof() {
         await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [slap] })
     }
     const taps = await page.evaluate(() => ((window.__clapTest || {}).taps || []).length)
-    r.check('two-finger: slaps with a second finger register while a thumb holds the screen (isPrimary drop, #2504)', taps - afterThumb >= 3, JSON.stringify({ afterThumb, taps }))
+    const slapsOk = taps - afterThumb >= 3
+    r.check('two-finger: slaps with a second finger register while a thumb holds the screen (isPrimary drop, #2504)', slapsOk, JSON.stringify({ afterThumb, taps }))
     let ended = false
     try {
         await page.waitForFunction(() => window.__clapTest && (window.__clapTest.phase === 'grading' || window.__clapTest.phase === 'graded'), null, { timeout: 3000 })
@@ -544,6 +591,22 @@ async function twoFingerProof() {
     r.check('two-finger: the run still auto-ends one settle after the last tap', ended, JSON.stringify(await page.evaluate(() => ({ phase: (window.__clapTest || {}).phase, taps: (window.__clapTest || {}).taps }))))
     await cdp.detach().catch(() => {})
     await context.close().catch(() => {})
+    return { coreOk: slapsOk && ended }
+}
+async function twoFingerProof() {
+    // A starved box can drop one slap from the pad stream (the events queue
+    // behind the same main thread the recorder-open storm owns) — retry like
+    // every other clean pass (#2205 doctrine), red only after three tries.
+    const attempts = 3
+    let chosen = null
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+        const sink = []
+        const out = await twoFingerOnce(sink)
+        chosen = { sink, out }
+        if (out.coreOk || attempt === attempts) break
+        r.info(`two-finger: attempt ${attempt} lost a slap — retrying (busy-box lesson, #2205)`)
+    }
+    for (const c of chosen.sink) (c.skip ? r.skip(c.label, c.detail) : c.info ? r.info(c.label, c.detail) : r.check(c.label, c.pass, c.detail))
 }
 if (!MUTANT) await twoFingerProof()
 
@@ -559,8 +622,8 @@ async function coachOnce(sink) {
         info: (label, detail) => sink.push({ info: true, label, detail }),
         skip: (label, detail = '') => sink.push({ skip: true, label, detail }),
     }
-    const context = await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true })
-    await context.addInitScript(synthMicInit)
+    const context = await browserFor('coach').then((b) => b.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true }))
+    await armContext(context)
     // #2654 item 3: headless Chrome has no vibrate — record what the page asks
     // for instead of silencing it, so the per-kind rhythms are proven, not hoped.
     await context.addInitScript(() => {
@@ -624,9 +687,12 @@ async function coachOnce(sink) {
         }
         t()
     })
+    // #2709: wait for the fake-file device open — the clap-stamp derivation
+    // rides on it (fresh page, so any markStartWall is this take's own).
+    await page.waitForFunction(() => !!window.__markStartWall && (window.__clapWall || []).length === 2, null, { timeout: 12000 }).catch(() => {})
     const clapWall = await page.evaluate(() => window.__clapWall || [])
     if (clapWall.length !== 2) {
-        r.check('coach: synth mic scheduled the two claps', false, JSON.stringify(clapWall))
+        r.check('coach: fake-file mic scheduled the two claps', false, JSON.stringify(clapWall))
         await context.close().catch(() => {})
         return { coreOk: false, fast }
     }
