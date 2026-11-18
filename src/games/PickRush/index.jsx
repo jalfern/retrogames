@@ -16,7 +16,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { AMB_ZONES, zoneForShift, fireAt } from './ambience'
-import { BIN_VIS, makeBinVis, stepBinVis, makeWhip, stepWhip, whipTarget } from './visuals'
+import { BIN_VIS, makeBinVis, stepBinVis, makeWhip, stepWhip, whipTarget, catchRing, slamTell, jawWarn } from './visuals'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -24,7 +24,7 @@ import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, 
 import {
     makeGame, step, autopilot,
     VIEW_W, VIEW_H, RAIL_Y, BELT_Y, BELT_END,
-    BIN_TOP, FLOOR_Y, SHIFT_TICKS, FUSES,
+    BIN_TOP, FLOOR_Y, SHIFT_TICKS, FUSES, GRAB_DX,
     BINS, SHIFTS, WAVES,
 } from './sim.js'
 
@@ -485,6 +485,31 @@ const PickRushGame = () => {
             ctx.fillStyle = '#0d131b'; ctx.fillRect(421, BELT_Y - 20, 4, 5)
         }
 
+        // #2684 grab-read telegraphs — pure reads from visuals.js; the painter
+        // only decides what they look like. The catch ring mirrors the jaw law
+        // on the belt; the fragile glint teaches the slam risk before the grab.
+        const paintTell = (it, tick) => {
+            const x = Math.round(it.x), y = Math.round(it.y)
+            const ring = catchRing(it)
+            if (ring) {
+                const near = gs.arms.some((a) => a.held === null && a.mode === 'lowering'
+                    && Math.abs(a.x - it.x) <= GRAB_DX)
+                ctx.lineWidth = ring === 'ok' ? 1.6 : 1
+                ctx.strokeStyle = ring === 'ok' ? '#5dff8f' : '#ff5a4f'
+                ctx.globalAlpha = ring === 'ok' ? (near && tick % 8 >= 4 ? 0.35 : 0.85) : 0.45
+                circle(ctx, x, y, 8.8); ctx.stroke()
+                ctx.globalAlpha = 1
+            } else if (it.fragile) {
+                const ph = tick % 24
+                ctx.fillStyle = 'rgba(255,255,255,0.85)'
+                ctx.fillRect(x + 1, y - (ph < 8 ? 7 : ph < 16 ? 4 : 0), 1.5, 1.5)
+                ctx.globalAlpha = 0.5
+                ctx.fillStyle = '#ff9dec'
+                ctx.fillRect(x - 3, y + 2, 1.5, 1.5)
+                ctx.globalAlpha = 1
+            }
+        }
+
         const paintBins = (tick) => {
             for (let i = 0; i < BINS.length; i++) {
                 const b = BINS[i]
@@ -571,6 +596,25 @@ const PickRushGame = () => {
             if (arm.held !== null) {
                 const it = gs.items.find((i2) => i2.id === arm.held)
                 if (it) drawItem(ctx, it.kind, x, arm.tip + 9, it.rot)
+            }
+            // #2684 slam meter: fragile cargo over a bin column paints its
+            // projected fall — red pips while the landing would smash it,
+            // green once feathered into the safe zone. Feather visibly and the
+            // drop turns safe under your thumb.
+            const slam = slamTell(gs, seat)
+            if (slam) {
+                ctx.fillStyle = slam.safe ? '#5dff8f' : '#ff5a4f'
+                ctx.globalAlpha = slam.safe ? 0.95 : 0.85
+                for (let py = arm.tip + 21; py < BIN_TOP - 2; py += 6) ctx.fillRect(x - 1, py, 2, 3)
+                ctx.globalAlpha = 1
+            }
+            // #2684 jaw warn: this descent lands on an off-axis barrel — the
+            // slip is already decided, say it before the jaws bounce
+            if (jawWarn(gs, seat)) {
+                ctx.strokeStyle = '#ff5a4f'; ctx.lineWidth = 1.4
+                ctx.globalAlpha = tick % 8 < 4 ? 0.9 : 0.5
+                ctx.beginPath(); ctx.arc(x, arm.tip, 8.5, Math.PI * 0.15, Math.PI * 0.85); ctx.stroke()
+                ctx.globalAlpha = 1
             }
             // carriage on the rail: hazard-striped box with a beacon
             ctx.fillStyle = dark; ctx.fillRect(x - 11, ry - 8, 22, 13)
@@ -795,6 +839,7 @@ const PickRushGame = () => {
             for (const it of gs.items) {
                 if (it.carriedBy !== -1) continue
                 drawItem(ctx, it.kind, Math.round(it.x), Math.round(it.y), it.rot)
+                paintTell(it, tick) // #2684 catch ring / fragile glint
             }
             paintBins(tick)
             for (let i = landings.length - 1; i >= 0; i--) {
@@ -929,6 +974,13 @@ const PickRushGame = () => {
             binVis: binVis.map((v) => v.fill), // #2678 fill-meter columns (render-only)
             binLamp: binVis.map((v) => v.flash > 0), // #2678 full-bin lamps lit now
             whip: Math.round(whips[0].y * 100) / 100, // #2678 cable head offset, world px
+            barrelTell: gs.items.reduce((acc, it) => {
+                const r = it.onBelt && it.carriedBy === -1 ? catchRing(it) : null
+                if (r) acc.push([it.id, r, Math.round(it.x)])
+                return acc
+            }, []), // #2684 catch-ring truth per rolling piece on the belt
+            slamTell: (() => { const t = slamTell(gs, 0); return t ? [t.impact, t.safe ? 1 : 0, t.dy] : null })(), // #2684 projected landing of carried glass
+            jawWarn: gs.arms.map((a, s2) => jawWarn(gs, s2)), // #2684 descent aimed at off-axis cargo
             ambZone: zoneForShift(gs.shift), // #2234 era the floor sounds like
             pos: Math.round(gs.arms[0].x * 10) / 10,
             clawY: Math.round(gs.arms[0].tip * 10) / 10,
@@ -1006,6 +1058,16 @@ const PickRushGame = () => {
                 ambZones: AMB_ZONES,
                 // #2223 per-wave pitch step: the cue ledger the gate reads
                 waveCues: () => waveCues.slice(),
+                // #2684 ring-truth eye: every rolling piece's ring state next to
+                // an upright verdict written INLINE here (the 0.42 window spelled
+                // out again, independent of the helper) so a gate can catch the
+                // tell lying, not just missing.
+                tells: () => gs.items
+                    .filter((it) => it.onBelt && it.carriedBy === -1 && it.kind === 'barrel')
+                    .map((it) => {
+                        const r = ((it.rot % Math.PI) + Math.PI) % Math.PI
+                        return { id: it.id, x: Math.round(it.x), y: Math.round(it.y), ring: catchRing(it), upright: r < 0.42 || r > Math.PI - 0.42 }
+                    }),
                 hash: () => gs.hash,
                 canvas: () => canvas,
                 sim: () => gs,
@@ -1024,6 +1086,7 @@ const PickRushGame = () => {
                 actions: [
                     { label: 'spawn can', run: () => { gs.items.push({ id: 9000 + gs.tick, kind: 'can', x: 200, y: BELT_Y - 8, vx: 0, vy: 0, rot: 0, onBelt: true, carriedBy: -1, fragile: false }); return 'can @200' } },
                     { label: 'spawn bottle', run: () => { gs.items.push({ id: 9000 + gs.tick, kind: 'bottle', x: 200, y: BELT_Y - 9, vx: 0, vy: 0, rot: 0, onBelt: true, carriedBy: -1, fragile: true }); return 'bottle @200' } },
+                    { label: 'spawn barrel', run: () => { gs.items.push({ id: 9000 + gs.tick, kind: 'barrel', x: 250, y: BELT_Y - 8, vx: 0, vy: 0, rot: 1.1, onBelt: true, carriedBy: -1, fragile: false }); return 'barrel @250 off-axis' } },
                     { label: 'drop into BIN[1]', run: () => { gs.arms[0].x = 141; return 'arm -> CAN bin' } },
                     { label: 'force win', run: () => { gs.correct = 99; gs.shiftTick = SHIFT_TICKS - 1; gs.shift = SHIFTS.length - 1; return 'quota armed' } },
                     { label: 'reset', run: () => { gs = makeGame(1337, 2); setMode('attract'); return 'rebooted' } },

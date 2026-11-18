@@ -169,7 +169,9 @@ const itemById = (gs, id) => gs.items.find((it) => it.id === id) || null
 
 const clampX = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
 
-const barrelUpright = (it) => {
+// exported so the #2684 paint tells can import THE catch law instead of
+// re-deriving it — the ring can't drift from what the jaws actually do
+export const barrelUpright = (it) => {
     const r = ((it.rot % Math.PI) + Math.PI) % Math.PI
     return r < 0.42 || r > Math.PI - 0.42
 }
