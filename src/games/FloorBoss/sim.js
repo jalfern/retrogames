@@ -563,6 +563,94 @@ export function flowHeat(gs) {
     }
     return out
 }
+// ---- #2711 KNEE LAW — the cart has a body through the turn ----
+// The residual gap after the #2546 family said it plainly: "carts remain
+// kinematic points — true swept volumes through corners stay faked." Real
+// yards legislate exactly this (the sign on every distribution-center bend:
+// KEEP SWING CLEAR — no staging at corners): a cart turning 90° carries its
+// nose through the diagonal on the OUTSIDE of the turn. Model it minimally
+// and honestly:
+//   turning at cell B from bearing dIn to perpendicular dOut, the swept cell
+//   is the outer diagonal B + dIn + dOut. A RACK there clips the swing, so
+//   a loaded cart's route never turns there (rule 2); and a rack click that
+//   would strand the knee-driven network is refused like every other law
+//   (rule 6), so a floor can never become drivable-in-name-only.
+// Walls stay OUT of the knee: concrete corners are fixed geometry the aisle
+// was designed around — racks are the movable hazard the manager places, the
+// same object family #2546/#2614/#2627 legislate. Unloaded carts carry only
+// their forks, so they turn free: empty legs run the classic BFS
+// byte-identically (#1917 discipline — the knee is cargo physics).
+const kneeRack = (gs, x, y, extra) => gs.racks.some((r) => r.x === x && r.y === y)
+    || !!(extra && extra.x === x && extra.y === y)
+// The law as one question: does a loaded cart turning at (x,y) clip a rack?
+export function kneeTurn(gs, x, y, dIn, dOut, extra = null) {
+    if (dIn[0] === dOut[0] && dIn[1] === dOut[1]) return false // straight — no sweep
+    if (dIn[0] === -dOut[0] && dIn[1] === -dOut[1]) return false // backpedal — body stays in lane (#2546 spur law)
+    return kneeRack(gs, x + dIn[0] + dOut[0], y + dIn[1] + dOut[1], extra)
+}
+// The knee-driven service net: same anchors as serviceNet (docks, pads, bay),
+// same fixed flood, but a seeded turn is only rideable if its knee is clear.
+// States are (cell, heading) — every anchor can be entered facing any way; a
+// cell is on the network when SOME heading reaches it. Pure map+racks, no
+// rng, zero footprint; used by the sixth law at the click point — exported
+// for the harness gates (the laneRuns/cornerChokes idiom).
+export function kneeNet(gs, extra) {
+    const seen = new Set()
+    let frontier = []
+    const floor = (x, y) => inGrid(x, y) && map[y][x] === CELL.FLOOR && !kneeRack(gs, x, y, extra)
+    const seed = (x, y) => {
+        if (!floor(x, y)) return
+        for (let i = 0; i < 4; i++) {
+            const k = `${x},${y},${i}`
+            if (!seen.has(k)) { seen.add(k); frontier.push({ x, y, i }) }
+        }
+    }
+    for (const d of OUT_DOCKS) seed(d.x, d.y)
+    for (const p of HOME_PADS) seed(p.x, p.y)
+    for (const [dx, dy] of NB) seed(BAY_CELL.x + dx, BAY_CELL.y + dy)
+    while (frontier.length) {
+        const next = []
+        for (const n of frontier) {
+            for (let i = 0; i < 4; i++) {
+                const [dx, dy] = NB[i]
+                const [hx, hy] = NB[n.i]
+                if (!floor(n.x + dx, n.y + dy)) continue
+                const turn = (hx !== dx || hy !== dy) && !(hx === -dx && hy === -dy) // backpedal free, #2546 spur law
+                if (turn && kneeRack(gs, n.x + hx + dx, n.y + hy + dy, extra)) continue // the swing clips the rack
+                const k = `${n.x + dx},${n.y + dy},${i}`
+                if (!seen.has(k)) { seen.add(k); next.push({ x: n.x + dx, y: n.y + dy, i }) }
+            }
+        }
+        frontier = next
+    }
+    const cells = new Set()
+    for (const k of seen) cells.add(k.slice(0, k.lastIndexOf(',')))
+    return cells
+}
+// The knee-blocked turns standing on the LIVE floor: open cell B with open,
+// perpendicular arms dIn/dOut and a rack on the swept diagonal B+dIn+dOut.
+// A loaded cart meeting this turns the long way — the painter/DEV eye read
+// it, the routers enforce it. Pure, fixed order, zero footprint.
+export function liveKnees(gs) {
+    const open = (x, y) => inGrid(x, y) && map[y][x] === CELL.FLOOR && !gs.racks.some((r) => r.x === x && r.y === y)
+    const out = []
+    for (let y = 1; y < ROWS - 1; y++) for (let x = 1; x < COLS - 1; x++) {
+        if (!open(x, y)) continue
+        for (let i = 0; i < 4; i++) {
+            const [ix, iy] = NB[i]
+            if (!open(x + ix, y + iy)) continue
+            for (let j = 0; j < 4; j++) {
+                const [ox, oy] = NB[j]
+                if (ix === ox && iy === oy) continue // straight — no sweep
+                if (ix === -ox && iy === -oy) continue // backpedal — body stays in lane
+                if (!open(x + ox, y + oy)) continue
+                if (gs.racks.some((r) => r.x === x + ix + ox && r.y === y + iy + oy)) out.push({ x, y, in: i, out: j, kx: x + ix + ox, ky: y + iy + oy })
+            }
+        }
+    }
+    return out
+}
+
 function strandsFloor(gs, x, y) {
     if (map[y][x] !== CELL.FLOOR || gs.racks.some((r) => r.x === x && r.y === y)) return false // other laws refuse first
     const before = serviceNet(gs, null)
@@ -577,6 +665,21 @@ function strandsFloor(gs, x, y) {
     // #2627 the fifth law, same hypothetical rack: a click whose rack FACES a
     // tight elbow is refused (see cornerChokes above).
     if (cornerChokes(gs, { x, y }).length) return 'corner'
+    // #2711 the sixth law, same hypothetical rack: the KNEE. A click that
+    // takes a cell off the knee-driven network — a rack standing in the swing
+    // of a turn the floor drives through — is refused: named `NO KNEE`,
+    // money back, nothing lands. Every cell that rode the knee net before
+    // must still ride it, and every rack (old and this one) must keep a
+    // knee-reachable service side, so a loaded cart can always carry its
+    // pick out of the aisle it came from.
+    {
+        const was = kneeNet(gs, null)
+        const after = kneeNet(gs, { x, y })
+        for (const k of was) if (k !== `${x},${y}` && !after.has(k)) return 'knee' // the click cell leaves by definition (#2546 pocket law mirrors)
+        const side = (px, py) => NB.some(([dx, dy]) => after.has(`${px + dx},${py + dy}`))
+        if (!side(x, y)) return 'knee'
+        for (const r of gs.racks) if (!side(r.x, r.y)) return 'knee'
+    }
     return false
 }
 
@@ -641,6 +744,43 @@ function bfs(gs, fx, fy, pred, ignoreId) {
 }
 
 const rackAt = (gs, x, y) => gs.racks.find((r) => r.x === x && r.y === y) || null
+
+// #2711 KNEE LAW, routing half: a LOADED cart plans its path with its body.
+// Same fixed BFS (same NB order, same refusal of occupied cells) but states
+// carry the heading: a 90° step at cell n is refused when a rack stands on
+// the outer diagonal n + dIn + dOut — the cell the load's nose sweeps
+// (kneeTurn above). Straight steps are free; unloaded carts never consult
+// this (their paths stay byte-identical to the classic BFS). dIn0 is the
+// cart's current facing — the knee at its very next turn is real too.
+export function bfsKnee(gs, fx, fy, pred, ignoreId, dIn0) {
+    if (pred(fx, fy)) return []
+    const seen = new Set([`${fx},${fy},${dIn0}`])
+    let frontier = [{ x: fx, y: fy, i: dIn0, path: [] }]
+    while (frontier.length) {
+        const next = []
+        for (const n of frontier) {
+            for (let i = 0; i < 4; i++) {
+                const [dx, dy] = NB[i]
+                const [hx, hy] = NB[n.i]
+                const x = n.x + dx, y = n.y + dy
+                const k = `${x},${y},${i}`
+                if (!inGrid(x, y) || seen.has(k)) continue
+                if (blocked(gs, x, y, ignoreId)) continue
+                // straight — free; backpedal — free too (forklifts drive both
+                // ways, load trailing, and #2546 already blesses the reverse
+                // out of a spur). Only the 90° swing sweeps: the diagonal.
+                const turn = (hx !== dx || hy !== dy) && !(hx === -dx && hy === -dy)
+                if (turn && kneeRack(gs, n.x + hx + dx, n.y + hy + dy)) continue // the knee is racked — the swing would clip it
+                const p = n.path.concat([{ x, y }])
+                if (pred(x, y)) return p
+                seen.add(k)
+                next.push({ x, y, i, path: p })
+            }
+        }
+        frontier = next
+    }
+    return null
+}
 
 // Racks the gantry can reach from its post with room on a shelf, deterministic
 // order: nearest first, ties by x then y (#1872).
@@ -833,8 +973,12 @@ function repath(gs, bot) {
     const t = bot.task
     if (t.kind === 'toRack') bot.path = bfs(gs, bot.x, bot.y, nearCell(t.rx, t.ry), bot.id)
     else if (t.kind === 'toArm') bot.path = bfs(gs, bot.x, bot.y, nearCell(ARM_CELL.x, ARM_CELL.y), bot.id)
-    else if (t.kind === 'toStock') bot.path = bfs(gs, bot.x, bot.y, nearCell(t.rx, t.ry), bot.id)
-    else if (t.kind === 'toOut') bot.path = bfs(gs, bot.x, bot.y, (x, y) => OUT_DOCKS.some((d) => d.x === x && d.y === y), bot.id)
+    // #2711: the loaded legs (stow home, deliver out) plan with the body —
+    // a cart carrying freight will not turn where its swing clips a rack.
+    else if (t.kind === 'toStock') bot.path = bfsKnee(gs, bot.x, bot.y, nearCell(t.rx, t.ry), bot.id, bot.dir)
+    else if (t.kind === 'toOut') bot.path = bot.carry
+        ? bfsKnee(gs, bot.x, bot.y, (x, y) => OUT_DOCKS.some((d) => d.x === x && d.y === y), bot.id, bot.dir)
+        : bfs(gs, bot.x, bot.y, (x, y) => OUT_DOCKS.some((d) => d.x === x && d.y === y), bot.id)
     else bot.path = []
     if (bot.path == null) { bot.path = []; bot.stall++ } else bot.stall = 0
 }
