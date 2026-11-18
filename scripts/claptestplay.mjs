@@ -42,6 +42,7 @@ import path from 'node:path'
 import { validate } from '../src/utils/recording.js'
 import { detectClaps, matchClapEdges, takeEdges, CLAP_TOL_MS } from '../src/utils/clapSync.js'
 import { COACH_TEXT } from '../src/utils/clapCoachCore.js'
+import { COACH_HAPTICS } from '../src/utils/clapTestCore.js'
 import { startRelaySim } from './lib/relaysim.mjs'
 
 const argv = process.argv.slice(2)
@@ -560,6 +561,17 @@ async function coachOnce(sink) {
     }
     const context = await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true })
     await context.addInitScript(synthMicInit)
+    // #2654 item 3: headless Chrome has no vibrate — record what the page asks
+    // for instead of silencing it, so the per-kind rhythms are proven, not hoped.
+    await context.addInitScript(() => {
+        window.__vibes = []
+        try {
+            Object.defineProperty(navigator, 'vibrate', {
+                configurable: true,
+                value: (p) => { window.__vibes.push(Array.isArray(p) ? p.join(',') : String(p)); return true },
+            })
+        } catch { /* frozen navigator — the gate reports what it sees */ }
+    })
     const page = await context.newPage()
     await page.bringToFront()
     page.setDefaultTimeout(30000)
@@ -597,11 +609,15 @@ async function coachOnce(sink) {
     // page-side badge sampler (rAF tracker, same non-blocking idiom as __lvlMax)
     await page.evaluate(() => {
         window.__coachSeen = []
+        window.__pulseSeen = []
         window.__pairsMax = 0
         const t = () => {
             const el = document.querySelector('[data-clap-coach-live]')
             const v = el ? el.getAttribute('data-clap-coach-live') : null
             if (v && window.__coachSeen[window.__coachSeen.length - 1] !== v) window.__coachSeen.push(v)
+            const ring = document.querySelector('[data-clap-coach-pulse]')
+            const pv = ring ? ring.getAttribute('data-clap-coach-pulse') : null
+            if (pv && window.__pulseSeen[window.__pulseSeen.length - 1] !== pv) window.__pulseSeen.push(pv)
             const p = document.querySelector('[data-clap-pairs]')
             if (p) window.__pairsMax = Math.max(window.__pairsMax, Number(p.getAttribute('data-clap-pairs')) || 0)
             requestAnimationFrame(t)
@@ -628,7 +644,7 @@ async function coachOnce(sink) {
     try {
         await page.waitForFunction(() => window.__clapTest && window.__clapTest.phase === 'graded', null, { timeout: 25000 })
     } catch { /* gated below */ }
-    const seen = await page.evaluate(() => ({ coach: window.__coachSeen || [], pairs: window.__pairsMax || 0, ct: window.__clapTest || null }))
+    const seen = await page.evaluate(() => ({ coach: window.__coachSeen || [], pulse: window.__pulseSeen || [], vibes: window.__vibes || [], pairs: window.__pairsMax || 0, ct: window.__clapTest || null }))
     phase = seen.ct && seen.ct.phase
     r.check('coach: the take ended and graded itself', phase === 'graded', phase)
     let coreOk = phase === 'graded'
@@ -646,6 +662,12 @@ async function coachOnce(sink) {
     r.check('coach: silent tap named NO SOUND while the take runs (the seed144524 shape, live)', q, JSON.stringify(seen.coach))
     const pr = has('pair') || has('off'); coreOk = coreOk && pr
     r.check('coach: the coincident slap named as a PAIR — never as a missing half', pr, JSON.stringify(seen.coach))
+    // #2654 item 3 juice: every named event ALSO pulses the ring in its colour
+    // and buzzes its own rhythm — the same kind set, in the eye and in the hand.
+    const pu = seen.coach.every((k) => seen.pulse.includes(k)); coreOk = coreOk && pu
+    r.check('coach: every named event pulsed the target ring in its kind colour (#2654)', pu, JSON.stringify({ coach: seen.coach, pulse: seen.pulse }))
+    const vb = seen.coach.length > 0 && seen.coach.every((k) => COACH_HAPTICS[k] && seen.vibes.includes(COACH_HAPTICS[k].join(','))); coreOk = coreOk && vb
+    r.check('coach: every named event buzzed its own hand rhythm, matching the pure table (#2654, #2205 idiom)', vb, JSON.stringify({ coach: seen.coach, vibes: seen.vibes }))
     const pn = seen.pairs >= 1; coreOk = coreOk && pn
     r.check('coach: the matched-pair counter reached 1', pn, String(seen.pairs))
     const v = seen.ct && seen.ct.verdict

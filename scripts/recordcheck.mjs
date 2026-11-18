@@ -956,6 +956,16 @@ const bucketRowBySeed = (seed) => {
     const crowded = clapReportRows({ pairs: [], unmatchedOnsetMs: Array.from({ length: MAX_REPORT_ROWS + 2 }, (_, i) => i * 1000), unmatchedTapMs: [] })
     ok(crowded.length === MAX_REPORT_ROWS + 1 && crowded[MAX_REPORT_ROWS].kind === 'more' && crowded[MAX_REPORT_ROWS].ms === 2, `crowded card caps at ${MAX_REPORT_ROWS} rows and admits the hidden count (+2 more)`, JSON.stringify(crowded.slice(-2)))
     ok(crowded[MAX_REPORT_ROWS - 1].n === MAX_REPORT_ROWS, 'numbering survives the cap (row 12 is #12)')
+
+    // #2654 item 3: haptics per kind — distinct, verdict-pure, unknown silent.
+    const { COACH_HAPTICS, coachHaptics } = await import('../src/utils/clapTestCore.js')
+    const verdictPatterns = ['60', '140,70,140'] // the final PASS/FAIL buzzes (item 5, #2205)
+    ok(Object.keys(COACH_HAPTICS).sort().join(',') === 'notouch,nosound,off,pair', 'haptics table covers exactly the four named kinds')
+    ok(Object.values(COACH_HAPTICS).every((p) => Array.isArray(p) && p.length > 0 && p.every((n) => Number.isInteger(n) && n > 0 && n <= 200)), 'every live pattern is short, positive, integer ms (mid-take guidance, never a seizure)')
+    const sigs = Object.values(COACH_HAPTICS).map((p) => p.join(','))
+    ok(new Set(sigs).size === sigs.length, 'all four live rhythms are distinct from each other (told apart blind)')
+    ok(sigs.every((s) => !verdictPatterns.includes(s)), 'no live rhythm impersonates the final PASS/FAIL buzz (verdict stays the only end-of-take statement)')
+    ok(coachHaptics('pair') === COACH_HAPTICS.pair && coachHaptics('bogus') === null, 'coachHaptics answers known kinds, null for unknown (never vibrate on a name the table lacks)')
 }
 
 // --- query plumbing -----------------------------------------------------------
