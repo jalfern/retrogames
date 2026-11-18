@@ -1406,6 +1406,13 @@ export function courtTap(s) {           // release before the threshold
 // so GO-SAY rides the visitors and the child. Nothing here draws on rng at
 // issue, and the attract bot never go-says — old demos stay byte-identical.
 export const GO_SAY_CHASE = 3
+// #2697 tail 1: the arrival settle beat (Sims social pause). Reaching the ring
+// is not the meeting — the two hold for one breath (0.3 s of world ticks) before
+// the coo lands. A cooldown hold FREEZES the breath (the promise already waits);
+// a repath discards it; the hold is deterministic, spends no rng.
+export const GO_SAY_SETTLE = 18
+const GO_SAY_ISSUE_LINE = 'You cross the lot to say the thing you mean.'
+const GO_SAY_BLOCKED_LINE = 'The way over is shut — the kind word waits for another day.'
 const GO_SAY_LOST_LINES = [
     'The one you meant to thank has gone — the kind word waits for another day.',
     'You arrive where someone was; they are elsewhere now, and the errand folds.',
@@ -1416,6 +1423,7 @@ function goSayArrive(s, p) {
     const v = goSayTarget(s, k)
     if (!v || v.faintT > 0) {
         p.goal = null
+        p.settleT = undefined   // #2697: the breath dies with the errand
         s.events.push({ t: 'go-say', k, stage: 'lost', name: p.name })
         think(s, pick(s, GO_SAY_LOST_LINES))
         return
@@ -1423,6 +1431,11 @@ function goSayArrive(s, p) {
     const d = Math.abs(p.r - v.r) + Math.abs(p.c - v.c)
     if (d <= COURT_REACH) {
         if (s.cmdCd > 0) return   // a word just landed elsewhere — the promise waits for the cooldown to clear
+        // #2697 tail 1: the face-and-breath — first arrival at the ring starts the
+        // hold; the word lands only when the breath ends. No rng, pure cadence.
+        if (p.settleT === undefined) p.settleT = GO_SAY_SETTLE
+        if (--p.settleT > 0) return
+        p.settleT = 0
         s.courtPick = k           // arrival makes it a #2235 pick: the crowd pays the chosen ear
         const pi = s.people.indexOf(p)
         court(s, 'coo', pi)
@@ -1432,16 +1445,19 @@ function goSayArrive(s, p) {
     }
     if (p.goal.tries >= GO_SAY_CHASE) {
         p.goal = null
+        p.settleT = undefined
         s.events.push({ t: 'go-say', k, stage: 'lost', name: p.name })
         think(s, `${v.name} is keeping you walking — the word waits for another day.`)
         return
     }
     p.goal.tries++
+    p.settleT = undefined        // #2697: a repath discards the breath — the meeting starts over
     const tg = goSayCells(s, v)
     const path = tg.length ? bfsPath(s, { r: p.r, c: p.c }, tg) : null
     if (!path) {
         p.goal = null
         s.events.push({ t: 'go-say', k, stage: 'lost', name: p.name })
+        think(s, GO_SAY_BLOCKED_LINE)   // #2697 tail 2: every lost stage speaks honestly (fixed text — no rng spend)
         return
     }
     p.path = path
@@ -1480,12 +1496,14 @@ export function cmdGoSay(s, p, k) {
     if (!path) return false
     p.path = path
     p.goal = { kind: 'gosay', k, tries: 0 }
+    p.settleT = undefined       // #2697: a fresh errand carries no stale breath
     p.owner = 'human'
     p.walkN0 = path.length
     s.orderPing.x = v.x
     s.orderPing.y = v.y
     s.orderPing.label = `GO SAY IT — ${v.name.toUpperCase()}`
     s.orderPing.t = 1.6
+    think(s, GO_SAY_ISSUE_LINE)   // #2697 tail 2: the errand names itself at issue (fixed text — no rng spend)
     return true
 }
 
