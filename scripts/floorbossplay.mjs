@@ -661,5 +661,141 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     r.check('plugging the taught mouth then completing the wall builds — the advice is good (#2622)', clearedL.plug && clearedL.completer, JSON.stringify(clearedL))
 }
 
+// ---- two-way flow paint (#2622 item 3): legal two-way aisles carry cyan arrows — drive it with real taps ----
+{
+    await page.goto(URL) // a clean floor — the aisle wants no seeded racks near it
+    await page.waitForFunction(() => !!window.__floorbossTest, null, { timeout: 15000 })
+    if (!await waitMode('attract', 5000)) r.check('flow leg: fresh page reaches attract', false, 'no attract')
+    const bareFlow = await page.evaluate(() => window.__floorbossTest.flow())
+    r.check('the opening floor\'s own grammar is honest — every mark a legal 1..4-cell run (#2622 item 3)', bareFlow.every((m) => m.n >= 1 && m.n <= 4), `${bareFlow.length} mark(s): ${bareFlow.map((m) => `${m.axis}${m.n}`).join(' ') || 'none'}`)
+    await page.keyboard.press('Space')
+    if (!await waitMode('play')) r.check('flow leg: Space clocks in', false, 'no play')
+    await page.evaluate(() => {
+        const g = window.__floorbossTest.sim()
+        g.racks.length = 0; g.score = 9000 // the aisle wants the whole row to itself, built by hand
+        g.auto = false // the crew stays at the pads through the rig build
+        const pads = [[23, 12], [24, 12], [22, 12], [21, 12]]
+        g.robots.forEach((b, i) => { b.x = pads[i % 4][0]; b.y = pads[i % 4][1]; b.task = { kind: 'idle' }; b.carry = null; b.moveT = 0 })
+    })
+    const chipF = await page.evaluate(() => {
+        const c = window.__floorbossTest.canvas()
+        const b = c.getBoundingClientRect()
+        return { x: b.left + (572 + 37) / 800 * b.width, y: b.top + (6 + 14) / 520 * b.height }
+    })
+    await page.mouse.click(chipF.x, chipF.y)
+    r.check('flow leg arms the rack tool (chip tap)', (await st()).tool === 'rack')
+    const tapCellF = async (x, y) => {
+        if ((await st()).tool !== 'rack') await page.mouse.click(chipF.x, chipF.y) // re-arm after every build
+        await page.evaluate(([x, y]) => { const b = window.__floorbossTest.sim().robots.find((bb) => bb.x === x && bb.y === y); if (b) { b.x = 23; b.y = 12; b.task = { kind: 'idle' }; b.moveT = 0 } }, [x, y])
+        const p = await clientXY(x, y)
+        await page.mouse.click(p.x, p.y)
+        await new Promise((res) => setTimeout(res, 90))
+    }
+    const FLOW_RIG = [[9, 6], [10, 6], [11, 6], [9, 8], [10, 8], [11, 8]]
+    let builtF = 0
+    for (const [x, y] of FLOW_RIG) {
+        await tapCellF(x, y)
+        if (await page.evaluate(([x, y]) => window.__floorbossTest.sim().racks.some((r) => r.x === x && r.y === y), [x, y])) builtF++
+    }
+    r.check('the two-way aisle rig builds by real taps (6/6 land)', builtF === 6, `${builtF}/6`)
+    const fl = await page.evaluate(() => window.__floorbossTest.flow())
+    const fk = fl.map((m) => `${m.axis}${m.n}[${m.cells}]`).join(' ')
+    r.check('the DEV eye marks the 3-cell aisle two-way (h3, one mark)', fl.length === 1 && fl[0].axis === 'h' && fl[0].n === 3 && fl[0].cells === '9,7|10,7|11,7', fk || 'none')
+    await page.keyboard.press('KeyB') // disarm — the amber reach-diamond must not bleed into the probes
+    const farPF = await clientXY(4, 10)
+    await page.mouse.move(farPF.x, farPF.y)
+    await new Promise((res) => setTimeout(res, 120))
+    // cool-pixel probe: cyan traffic paint shifts B over R; measure the DELTA
+    // against a bare reference cell (same method as the swing warm probe, inverted).
+    const cool = async (cx, cy) => page.evaluate(([cx, cy]) => {
+        const c = window.__floorbossTest.canvas()
+        const x0 = (10 + cx * 26 + 4) * 2, y0 = (44 + cy * 26 + 4) * 2
+        const d = c.getContext('2d').getImageData(x0, y0, (26 - 8) * 2, (26 - 8) * 2).data
+        let s = 0
+        for (let i = 0; i < d.length; i += 4) s += d[i + 2] - d[i]
+        return s / (d.length / 4)
+    }, [cx, cy])
+    let chits = 0
+    for (let i = 0; i < 8; i++) {
+        const a = await cool(10, 7)
+        const b = await cool(10, 10)
+        if (a - b >= 2) chits++
+        await new Promise((res) => setTimeout(res, 120))
+    }
+    r.check('the two-way aisle paints cooler (cyan) than bare floor — flow arrows visible on canvas (#2622 item 3)', chits >= 4, `cool-delta hits ${chits}/8`)
+    await tapCellF(8, 7) // plug the west mouth — one-way by choice (#2546)
+    await new Promise((res) => setTimeout(res, 150))
+    const fl2 = await page.evaluate(() => window.__floorbossTest.flow())
+    r.check('a spurred dead-end drops every arrow — the paint follows the grammar (#2622 item 3)', !fl2.some((m) => m.cells.includes('10,7')), fl2.map((m) => `${m.axis}${m.n}[${m.cells}]`).join(' ') || 'none')
+    let cold = 0
+    for (let i = 0; i < 6; i++) {
+        const a = await cool(10, 7)
+        const b = await cool(10, 10)
+        if (Math.abs(a - b) < 2) cold++
+        await new Promise((res) => setTimeout(res, 120))
+    }
+    r.check('the spurred aisle cools — no stale arrows left behind (#2622 item 3)', cold >= 3, `cool hits ${cold}/6`)
+}
+
+// ---- duel refusal seat stamp (#2622 item 4): mid-duel a banner names WHOSE click died ----
+{
+    await page.goto(URL) // a clean console — the lane wants no seeded racks near the aisle
+    await page.waitForFunction(() => !!window.__floorbossTest, null, { timeout: 15000 })
+    if (!await waitMode('attract', 5000)) r.check('seat-stamp leg: fresh page reaches attract', false, 'no attract')
+    await page.keyboard.press('KeyD') // #2555: D seats the model manager beside you
+    if (!await waitMode('play')) r.check('seat-stamp leg: D enters the duel', false, 'no play')
+    const dueling = await page.evaluate(() => !!window.__floorbossTest.sim().duel)
+    r.check('seat-stamp leg runs in duel mode (#2555 chrome live)', dueling, dueling ? 'duel' : 'solo')
+    await page.evaluate(() => {
+        const g = window.__floorbossTest.sim()
+        g.racks.length = 0; g.score = 9000
+        g.auto = false // park the crew away from the rig so the law meets only my taps
+        const pads = [[23, 12], [24, 12], [22, 12], [21, 12]]
+        g.robots.forEach((b, i) => { b.x = pads[i % 4][0]; b.y = pads[i % 4][1]; b.task = { kind: 'idle' }; b.carry = null; b.moveT = 0 })
+    })
+    const chipD = await page.evaluate(() => {
+        const c = window.__floorbossTest.canvas()
+        const b = c.getBoundingClientRect()
+        return { x: b.left + (572 + 37) / 800 * b.width, y: b.top + (6 + 14) / 520 * b.height }
+    })
+    await page.mouse.click(chipD.x, chipD.y)
+    const tapCellD = async (x, y) => {
+        if ((await st()).tool !== 'rack') await page.mouse.click(chipD.x, chipD.y) // re-arm after every build
+        await page.evaluate(([x, y]) => { const b = window.__floorbossTest.sim().robots.find((bb) => bb.x === x && bb.y === y); if (b) { b.x = 23; b.y = 12; b.task = { kind: 'idle' }; b.moveT = 0 } }, [x, y])
+        const p = await clientXY(x, y)
+        await page.mouse.click(p.x, p.y)
+        await new Promise((res) => setTimeout(res, 90))
+    }
+    const D_RIG = [[14, 5], [15, 5], [16, 5], [17, 5], [18, 5], [14, 3], [15, 3], [16, 3], [17, 3]]
+    let builtD = 0
+    for (const [x, y] of D_RIG) {
+        await tapCellD(x, y)
+        if (await page.evaluate(([x, y]) => window.__floorbossTest.sim().racks.some((r) => r.x === x && r.y === y), [x, y])) builtD++
+    }
+    r.check('seat-stamp leg builds the lane rig by real taps', builtD === 9, `${builtD}/9`)
+    await tapCellD(18, 3) // complete the lane — the refusal fires with the clock running
+    // probe FIRST (fx live ~50 world ticks ≈ 0.83 s — the ledger read must not
+    // eat the window): the #2254 stack grows UP (y − lane*11), so at the third
+    // message the stamp rides y ≈ 116 — band y 104..121, clear of the law row (130).
+    const stampYellow = async () => page.evaluate(() => {
+        const c = window.__floorbossTest.canvas()
+        const d = c.getContext('2d').getImageData(412 * 2, 104 * 2, 150 * 2, 18 * 2).data
+        let n = 0
+        for (let j = 0; j < d.length; j += 4) if (d[j] > 190 && d[j + 1] > 140 && d[j + 2] < 120) n++
+        return n
+    })
+    let yHits = 0
+    for (let i = 0; i < 8; i++) {
+        if (await stampYellow() > 2) yHits++
+        await new Promise((res) => setTimeout(res, 80))
+    }
+    r.check('the seat stamp paints on canvas beneath the banner (#2622 item 4)', yHits >= 3, `yellow hits ${yHits}/8`)
+    const dFx = await page.evaluate(() => window.__floorbossTest.sim().fx.slice(-5).map((f) => f.msg))
+    r.check('the duel refusal still names the law', dFx.includes('NO PASSING LANE'), dFx.join(' | ') || 'none')
+    r.check('the duel refusal names its seat — LANE: YOU under the law (#2622 item 4)', dFx.includes('LANE: YOU'), dFx.join(' | ') || 'none')
+    const notLanded = await page.evaluate(() => !window.__floorbossTest.sim().racks.some((r) => r.x === 18 && r.y === 3))
+    r.check('the refused duel click lands no rack — law unchanged, seat added (#1917)', notLanded, notLanded ? 'clean' : 'rack landed')
+}
+
 r.check('zero page errors', errors.length === 0, errors.join(' | '))
 r.exit(browser)

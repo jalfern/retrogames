@@ -242,6 +242,7 @@ node scripts/floorbosscheck.mjs --mutate-bands   # the inverted dest band (REGIO
 node scripts/floorbosscheck.mjs --mutate-duel    # bot stows cannot bypass the rack-owner credit law (#2555)
 node scripts/floorbosscheck.mjs --mutate-lane    # long tight aisles cannot be sealed into one-way traps (#2614)
 node scripts/floorbosscheck.mjs --mutate-corner   # racks cannot choke a tight elbow at its swing (#2627)
+node scripts/floorbosscheck.mjs --mutate-flow     # dead-end spurs cannot claim two-way arrows (#2622 item 3)
 npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877); real-tap pad call/send + drawn-truck-is-sim-truck gates (#1911); escrow-books-at-pack + freight-paid-at-drive-off gates (#1921); violet far-post tag pixels + road-commit + tap-on-road-silence gates (#1927 — verb gates run with auto-dispatch off and settle dock+truck+road together); steel heavy-tag pixel [154,215,255] + padWeight simState eye (#1931); DUEL live drive: D enters the duel, cyan model cursor moves on its own, twin till updates, verdict banner lands (#2555)
 CONTRACT_ONLY=floor-boss npm run contractcheck
 node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
@@ -344,5 +345,28 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
    drives the refusal with real taps — nine-tap rig, banner named on the fx
    ledger AND in yellow pixels, no charge, no ghost rack, both mouths pulse
    green, and plugging the taught mouth then completing the wall builds.
-   Still open on #2622: two-way flow tint (item 3) and the duel banner check
-   (item 4); Jon's corner-drive rig (item 5) is covered by #2627 s2's leg.
+   Still open on #2622: none — items 3+4 shipped by this PR (below); Jon's
+   corner-drive rig (item 5) is covered by #2627 s2's leg.
+  - **TWO-WAY FLOW + SEAT-STAMPED REFUSALS shipped by this PR (#2622 items
+    3+4):** the grammar reads at a glance now — `flowMarks(gs)` marks every
+    LEGAL two-way aisle: a tight straight run of 1..`LANE_LONG`−1 open cells
+    with BOTH mouths open (the exact complement of the #2614 trap: ≥5 can't
+    stand, a closed mouth is a dead-end spur — one-way by choice, bare; a bay
+    notch splits the scan, the pull-off is its own mark). `flow` = the aisle's
+    width in its own paint: a committed 4-cell lane paints brightest, a stub
+    dimmest. The painter lays a faint cyan corridor tint + inward arrowheads at
+    both mouths (`paintFlow`, after the amber swing boxes, under the louder
+    lesson); cyan = the bots' own traffic livery, amber stays the law colour.
+    Pure, deterministic, zero footprint — `floorbosscheck` +16 gates (spur goes
+    bare, bay splits, vertical mirror, law complement, purity, autopilot
+    invariant, paint order, DEV eye `flow`) and a `--mutate-flow` kill;
+    `floorbossplay` drives it with real taps (6-tap aisle, cool-pixel delta vs
+    bare floor, plugging the mouth cools the arrows — paint follows grammar).
+    Item 4: aisle refusals carry their seat (`s`, events stay out of
+    `stateHash`, #1373); mid-duel the painter stamps `LANE: YOU`/`ELBOW: YOU`
+    (amber) or `…: MODEL` (cyan) beneath the law — a banner no longer accuses
+    the wrong manager while the clock runs. Play leg: duel rig by real taps,
+    refusal named + seat-stamped in the fx ledger and yellow pixels under the
+    banner. Residual honest gap: the arrows mark aisle legality, not bot
+    traffic — live flow (who's driving where this tick) stays unsimulated
+    kinematics (#2627 residual stands).
