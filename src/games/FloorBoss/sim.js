@@ -246,7 +246,10 @@ function serviceNet(gs, extra) {
 // meeting). Pure map+racks scan, fixed order (rows then columns, ascending),
 // no rng: click-point only, movers and BFS never consult it.
 export const LANE_LONG = 5
-function laneRuns(gs, extra) {
+// Rich records of the same scan — the mouths ride along so #2622 TEACH THE LANE
+// can name the honest fixes; laneRuns stays the law's identical string output
+// (same scan, same order).
+function laneChokes(gs, extra) {
     const open = (x, y) => inGrid(x, y) && map[y][x] === CELL.FLOOR
         && !(extra && extra.x === x && extra.y === y)
         && !gs.racks.some((r) => r.x === x && r.y === y)
@@ -257,7 +260,7 @@ function laneRuns(gs, extra) {
             if (open(x, y) && !open(x, y - 1) && !open(x, y + 1)) {
                 let x1 = x
                 while (open(x1 + 1, y) && !open(x1 + 1, y - 1) && !open(x1 + 1, y + 1)) x1++
-                if (x1 - x + 1 >= LANE_LONG && open(x - 1, y) && open(x1 + 1, y)) runs.push(`h${y}:${x}-${x1}`)
+                if (x1 - x + 1 >= LANE_LONG && open(x - 1, y) && open(x1 + 1, y)) runs.push({ k: `h${y}:${x}-${x1}`, mouths: [{ x: x - 1, y }, { x: x1 + 1, y }] })
                 x = x1 + 1
             } else x++
         }
@@ -268,12 +271,15 @@ function laneRuns(gs, extra) {
             if (open(x, y) && !open(x - 1, y) && !open(x + 1, y)) {
                 let y1 = y
                 while (open(x, y1 + 1) && !open(x - 1, y1 + 1) && !open(x + 1, y1 + 1)) y1++
-                if (y1 - y + 1 >= LANE_LONG && open(x, y - 1) && open(x, y1 + 1)) runs.push(`v${x}:${y}-${y1}`)
+                if (y1 - y + 1 >= LANE_LONG && open(x, y - 1) && open(x, y1 + 1)) runs.push({ k: `v${x}:${y}-${y1}`, mouths: [{ x, y: y - 1 }, { x, y: y1 + 1 }] })
                 y = y1 + 1
             } else y++
         }
     }
     return runs
+}
+function laneRuns(gs, extra) {
+    return laneChokes(gs, extra).map((r) => r.k)
 }
 // #2627 NO CORNER STACKS — the turn-radii tail of #2546/#2614: nothing at the
 // click point stopped you racking the SWING of a corner. Real warehouses
@@ -368,6 +374,38 @@ export function cornerEscapes(gs, x, y) {
         let clears = false
         try { clears = strandsFloor(gs, x, y) === false } finally { gs.racks.pop() }
         if (clears) out.push({ x: m.x, y: m.y })
+    }
+    return out
+}
+// #2622 TEACH THE LANE — the fourth law's refusal shows its honest exit, in the
+// same green language the elbow lesson speaks (#2627 s2). The lane law bites the
+// click that COMPLETES a ≥5-cell tight two-way run; the actionable fix is the
+// mouth: racking either mouth turns the aisle into a dead-end spur — one-way by
+// choice, legal by #2546. A bay (a notch left in the wall) is the better layout,
+// but by refusal time the wall already stands and demolition is not a verb — so
+// the lesson teaches the plug it can prove. Honest only: a mouth counts iff
+// racking it is a legal click in its own right (all five laws hold) AND with the
+// plug stood the refused click builds clean — the check stands the plug on a
+// scratch rack pushed and popped: no charge, no landed rack, no event, state
+// identical after the call (#1917 zero footprint). Fixed scan order, no rng —
+// same board, same answer. A click that isn't lane-refused answers nothing.
+export function laneEscapes(gs, x, y) {
+    if (strandsFloor(gs, x, y) !== 'lane') return []
+    const was = new Set(laneRuns(gs, null))
+    const out = []
+    const seen = new Set()
+    for (const c of laneChokes(gs, { x, y })) {
+        if (was.has(c.k)) continue // an existing run — this click did not complete it
+        for (const m of c.mouths) {
+            const k = `${m.x},${m.y}`
+            if (seen.has(k)) continue
+            seen.add(k)
+            if (strandsFloor(gs, m.x, m.y) !== false) continue // illegal plug teaches nothing
+            gs.racks.push({ x: m.x, y: m.y, items: [], owner: -1 })
+            let clears = false
+            try { clears = strandsFloor(gs, x, y) === false } finally { gs.racks.pop() }
+            if (clears) out.push({ x: m.x, y: m.y })
+        }
     }
     return out
 }

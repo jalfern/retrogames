@@ -587,5 +587,79 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     r.check('dead elbow cools — no stale paint left behind (#2627 s3)', gone >= 4, `cool hits ${gone}/6`)
 }
 
+// ---- teach the lane (#2622): drive a NO PASSING LANE refusal with REAL taps and watch the lesson light ----
+{
+    await page.goto(URL) // a clean floor — the lane wants no seeded racks near the aisle
+    await page.waitForFunction(() => !!window.__floorbossTest, null, { timeout: 15000 })
+    if (!await waitMode('attract', 5000)) r.check('lane leg: fresh page reaches attract', false, 'no attract')
+    await page.keyboard.press('Space')
+    if (!await waitMode('play')) r.check('lane leg: Space clocks in', false, 'no play')
+    await page.evaluate(() => {
+        const g = window.__floorbossTest.sim()
+        g.racks.length = 0; g.score = 9000 // the rig wants the whole aisle to itself, built by hand
+        g.auto = false // the crew stays at the pads through the rig build
+        const pads = [[23, 12], [24, 12], [22, 12], [21, 12]]
+        g.robots.forEach((b, i) => { b.x = pads[i % 4][0]; b.y = pads[i % 4][1]; b.task = { kind: 'idle' }; b.carry = null; b.moveT = 0 })
+    })
+    const chipL = await page.evaluate(() => {
+        const c = window.__floorbossTest.canvas()
+        const b = c.getBoundingClientRect()
+        return { x: b.left + (572 + 37) / 800 * b.width, y: b.top + (6 + 14) / 520 * b.height }
+    })
+    await page.mouse.click(chipL.x, chipL.y)
+    r.check('lane leg arms the rack tool (chip tap)', (await st()).tool === 'rack')
+    const tapCellL = async (x, y) => {
+        if ((await st()).tool !== 'rack') await page.mouse.click(chipL.x, chipL.y) // re-arm after every build
+        await page.evaluate(([x, y]) => { const b = window.__floorbossTest.sim().robots.find((bb) => bb.x === x && bb.y === y); if (b) { b.x = 23; b.y = 12; b.task = { kind: 'idle' }; b.moveT = 0 } }, [x, y])
+        const p = await clientXY(x, y)
+        await page.mouse.click(p.x, p.y)
+        await new Promise((res) => setTimeout(res, 90))
+    }
+    const LANE_RIG = [[14, 5], [15, 5], [16, 5], [17, 5], [18, 5], [14, 3], [15, 3], [16, 3], [17, 3]]
+    let builtL = 0
+    for (const [x, y] of LANE_RIG) {
+        await tapCellL(x, y)
+        if (await page.evaluate(([x, y]) => window.__floorbossTest.sim().racks.some((r) => r.x === x && r.y === y), [x, y])) builtL++
+    }
+    r.check('the lane under construction builds by real taps', builtL === 9, `${builtL}/9`)
+    const preLane = await page.evaluate(() => { const g = window.__floorbossTest.sim(); return { score: g.score } })
+    await tapCellL(18, 3)
+    const aftL = await page.evaluate(() => { const g = window.__floorbossTest.sim(); return { racks: g.racks.some((r) => r.x === 18 && r.y === 3), score: g.score, fxs: g.fx.slice(-4).map((f) => f.msg) } })
+    r.check('real tap completing the five-cell tight lane is refused — rack never lands', !aftL.racks, JSON.stringify(aftL))
+    r.check('the refused lane tap charges nothing (#1917)', aftL.score === preLane.score, `${preLane.score} -> ${aftL.score}`)
+    r.check('the refusal names NO PASSING LANE on the fx ledger', aftL.fxs.some((m) => m === 'NO PASSING LANE'), aftL.fxs.join(' | ') || 'none')
+    r.check('the refusal teaches with a SPUR IT tail (#2622)', aftL.fxs.some((m) => m === 'SPUR IT — PLUG A MOUTH'), aftL.fxs.join(' | ') || 'none')
+    // one interleaved sample window: the yellow banner (fx lifetime ~50 ticks)
+    // and the green mouth pulses (teach lifetime 150 ticks) both start at the
+    // refusal, so probe them together. Disarm the tool first — the amber
+    // reach-diamond on the cursor cell would otherwise bleed into the probe.
+    await page.keyboard.press('KeyB')
+    let ban = 0
+    const litL = { w: 0, e: 0 }
+    const probeL = async (x0, y0, w0, h0, kind) => page.evaluate(([x0, y0, w0, h0, kind]) => {
+        const c = window.__floorbossTest.canvas()
+        const d = c.getContext('2d').getImageData(x0, y0, w0, h0).data
+        let n = 0
+        for (let j = 0; j < d.length; j += 4) {
+            if (kind === 'yellow' ? (d[j] > 190 && d[j + 1] > 140 && d[j + 2] < 120) : (d[j + 1] > 150 && d[j + 1] > d[j] + 50 && d[j + 1] > d[j + 2] + 30)) n++
+        }
+        return n
+    }, [x0, y0, w0, h0, kind])
+    for (let i = 0; i < 14; i++) {
+        if (await probeL((10 + 18 * 26 + 13 - 70) * 2, (44 + 3 * 26 + 8 - 16) * 2, 140 * 2, 24 * 2, 'yellow') > 20) ban++
+        if (await probeL((10 + 13 * 26 + 3) * 2, (44 + 4 * 26 + 3) * 2, (26 - 6) * 2, (26 - 6) * 2, 'green') > 6) litL.w++
+        if (await probeL((10 + 19 * 26 + 3) * 2, (44 + 4 * 26 + 3) * 2, (26 - 6) * 2, (26 - 6) * 2, 'green') > 6) litL.e++
+        await new Promise((res) => setTimeout(res, 90))
+    }
+    r.check('the yellow NO PASSING LANE banner paints on canvas (#2622 item 1)', ban >= 3, `banner hits ${ban}/14`)
+    r.check('the west mouth pulses green PLUG at the lesson (#2622)', litL.w >= 3, `hits ${litL.w}/14`)
+    r.check('the east mouth pulses green PLUG at the lesson (#2622)', litL.e >= 3, `hits ${litL.e}/14`)
+    // and taking the teacher's advice by a real tap clears the lane
+    await tapCellL(13, 4)
+    await tapCellL(18, 3)
+    const clearedL = await page.evaluate(() => { const g = window.__floorbossTest.sim(); return { plug: g.racks.some((r) => r.x === 13 && r.y === 4), completer: g.racks.some((r) => r.x === 18 && r.y === 3) } })
+    r.check('plugging the taught mouth then completing the wall builds — the advice is good (#2622)', clearedL.plug && clearedL.completer, JSON.stringify(clearedL))
+}
+
 r.check('zero page errors', errors.length === 0, errors.join(' | '))
 r.exit(browser)

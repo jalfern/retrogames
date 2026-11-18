@@ -329,3 +329,20 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
    paint-follows-grammar step (racking an arm cools the corner). Residual
    honest gap: carts are still kinematic points on BFS paths — true swept
    volumes and forklift-lane routing stay faked.
+ - **TEACH THE LANE shipped by this PR (#2622 items 1+2):** the fourth law
+   now teaches like the fifth. `laneEscapes(gs,x,y)` answers a `why:'lane'`
+   refusal with the mouths of the run the click completed — each verified a
+   legal click in its own right AND clearing the original click once stood
+   (pure, zero footprint, fixed order; a click that isn't lane-refused
+   answers nothing). The painter reuses the #2627 s2 green lesson (`PLUG`
+   frames, `SPUR IT — PLUG A MOUTH` tail; `LEAVE A BAY` when even the mouths
+   are traps — the bay the law wished for is already walled by refusal time,
+   demolition is not a verb, so the lesson shows the plug it can prove).
+   `floorbosscheck` +13 gates (mouths, pocket-trap honesty, single-plug
+   clears, both-plugs falls to the pocket law, purity, bay-notch beats the
+   lesson, vertical mirror) and a `--mutate-lane-teach` kill; `floorbossplay`
+   drives the refusal with real taps — nine-tap rig, banner named on the fx
+   ledger AND in yellow pixels, no charge, no ghost rack, both mouths pulse
+   green, and plugging the taught mouth then completing the wall builds.
+   Still open on #2622: two-way flow tint (item 3) and the duel banner check
+   (item 4); Jon's corner-drive rig (item 5) is covered by #2627 s2's leg.

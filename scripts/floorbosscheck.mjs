@@ -39,6 +39,8 @@
 //   node scripts/floorbosscheck.mjs --mutate-price     # the clock-in card claims a free rung, demand RED (#2352)
 //   node scripts/floorbosscheck.mjs --mutate-duel      # bot stows pay the house, not the rack owner — credit law dies, demand RED (#2555)
 //   node scripts/floorbosscheck.mjs --mutate-lane      # no-pass lanes allowed — racks may seal a long tight aisle, demand RED (#2614)
+//   node scripts/floorbosscheck.mjs --mutate-teach     # (implied) corner teach ignores legality, demand RED (#2627 s2)
+//   node scripts/floorbosscheck.mjs --mutate-lane-teach # the lane teach lights a mouth that would strand a served rack, demand RED (#2622)
 //   node scripts/floorbosscheck.mjs --mutate-corner    # corner stacks allowed — racks may choke a tight elbow, demand RED (#2627)
 //   node scripts/floorbosscheck.mjs --mutate-swing     # swing sweep paints corridor faces as elbows, demand RED (#2627 s3)
 
@@ -51,7 +53,7 @@ import {
     SHIFT, QUOTA, STRIKES, RACK_CAP, OVERFLOW_FINE, EXPIRE_FINE, BREAK_FINE, BASE_PAY,
     STOW_PAY, RACK_COST, ROBOT_COST, ARM_PATIENCE, ARM_CELL, PAD_CAP, PAD_AGE, OUT_CELLS,
     FREIGHT_PER_BOX, FULL_TRAILER, DISPATCH_FEE,
-    shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice, LANE_LONG, ARM_MIN, cornerEscapes, swingMarkers,
+    shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice, LANE_LONG, ARM_MIN, cornerEscapes, laneEscapes, swingMarkers,
 } from '../src/games/FloorBoss/sim.js'
 import { createEpisode, validateEpisode } from '../src/utils/robot/episode.js'
 import { hashString } from '../src/utils/robot/physics.js'
@@ -81,8 +83,9 @@ const MUT_DUEL = ARGS.includes('--mutate-duel')
 const MUT_LANE = ARGS.includes('--mutate-lane')
 const MUT_CORNER = ARGS.includes('--mutate-corner')
 const MUT_TEACH = ARGS.includes('--mutate-teach')
+const MUT_LANE_TEACH = ARGS.includes('--mutate-lane-teach')
 const MUT_SWING = ARGS.includes('--mutate-swing')
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_SWING) {
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const src = readFileSync(sim, 'utf8')
     const [from, to, name] = MUT_YIELD
@@ -123,6 +126,8 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                     ? ["if (cornerChokes(gs, { x, y }).length) return 'corner'", "if (cornerChokes(gs, { x, y }).length && false) return 'corner'", 'the corner-stack law is off — racks may choke a tight elbow (#2627)']
                                                                     : MUT_TEACH
                                                                     ? ['if (strandsFloor(gs, m.x, m.y) !== false) continue // an illegal plug teaches nothing', 'if (false) continue // MUTANT: legality check off', 'the teach ignores legality — a plug that would strand floor lights up as the fix (#2627 s2)']
+                                                                    : MUT_LANE_TEACH
+                                                                    ? ['if (strandsFloor(gs, m.x, m.y) !== false) continue // illegal plug teaches nothing', 'if (false) continue // MUTANT: legality check off', 'the lane teach ignores legality — a plug that would strand floor behind a mouth lights up as the fix (#2622)']
                                                                     : MUT_SWING
                                                                     ? ['if (a1[0] * a2[0] + a1[1] * a2[1] !== 0) continue // perpendicular only — a straight face doesn\'t swing', 'if (false) continue // MUTANT: perpendicular check off', 'the sweep paints straight corridor faces as elbows — the corridor skip is gone (#2627 s3)']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
@@ -1214,6 +1219,92 @@ console.log('— teach the elbow (#2627 stage 2) —')
     ok(/cornerEscapes\(gs/.test(ui) && /paintTeach/.test(ui), 'the painter draws the elbow lesson (cornerEscapes → paintTeach) (#2627 s2)')
     ok(/PLUG/.test(ui) && /SPUR IT/.test(ui), 'the lesson names itself on canvas — PLUG cells, SPUR IT tail (#2627 s2)')
     ok(/why === 'corner'/.test(ui) && /cornerEscapes\(gs, e\.x, e\.y\)/.test(ui), 'the lesson keys off the refused click itself — drain-time derivation (#2627 s2)')
+}
+
+// ---- teach the lane (#2622) — the NO PASSING LANE refusal shows its honest exit ----
+console.log('— teach the lane (#2622) —')
+{
+    const mk = () => { const g = makeGame(11); g.score = 9000; g.racks.length = 0; return g }
+    const put = (g, x, y) => { g.tool = 'rack'; return clickCell(g, x, y) }
+    const ROW5 = [[14, 5], [15, 5], [16, 5], [17, 5], [18, 5]]
+    const ROW3 = [[14, 3], [15, 3], [16, 3], [17, 3]]
+    const rig = () => { const g = mk(); for (const [x, y] of [...ROW5, ...ROW3]) if (put(g, x, y) !== 'build') return null; return g }
+    ok(laneEscapes(mk(), 18, 3).length === 0, 'an open floor answers nothing — no completed lane, no lesson')
+    {
+        const g = rig()
+        ok(g !== null, 'the lane rig builds clean — the refused completing click comes next')
+        ok(put(g, 18, 3) === 'aisle' && g.ev.at(-1)?.why === 'lane', 'the completing click refuses (control)')
+        const esc = laneEscapes(g, 18, 3)
+        const keys = esc.map((m) => `${m.x},${m.y}`)
+        ok(esc.length === 2 && keys.includes('13,4') && keys.includes('19,4'),
+            'the refused lane teaches its mouths as plugs — (13,4) west, (19,4) east (plugging either spurs the aisle, #2546)')
+    }
+    {
+        const g = rig()
+        put(g, 18, 3)
+        let bad = 0
+        for (const m of laneEscapes(g, 18, 3)) if (put(g, m.x, m.y) !== 'build') bad++
+        ok(bad === 0, 'every taught plug actually builds — the lesson never recommends a refusal')
+    }
+    {
+        // single-plug clears: taking EITHER taught mouth alone must clear the click
+        for (const [mx, my] of [[13, 4], [19, 4]]) {
+            const q = rig()
+            ok(put(q, mx, my) === 'build' && put(q, 18, 3) === 'build', `plugging (${mx},${my}) alone clears the lane — the teach was specific`)
+        }
+    }
+    {
+        const q = mk()
+        for (const [x, y] of [...ROW5, ...ROW3]) put(q, x, y)
+        ok(put(q, 13, 4) === 'build' && put(q, 19, 4) === 'build' && put(q, 18, 3) === 'aisle' && q.ev.at(-1)?.why === 'pocket',
+            'plugging BOTH mouths then completing the wall is refused by the pocket law — the sealed aisle belongs to the older laws, so the lesson names one mouth on purpose (#2622)')
+    }
+    {
+        // pocket-trap: open cell (12,4) hangs behind the west mouth, reachable
+        // ONLY through (13,4) — plugging it strands floor. The clears-check
+        // cannot see it (its before-net computes with the plug already stood,
+        // so the stranded cell was never reachable to begin with); only the
+        // legality check excludes it. This rig is what kills --mutate-lane-teach.
+        const g = mk()
+        const seq = [...ROW5, ...ROW3, [12, 3], [12, 5], [11, 4]] // (12,4) stays open floor
+        const fails = []
+        for (const [x, y] of seq) if (put(g, x, y) !== 'build') fails.push([x, y])
+        ok(fails.length === 0, 'pocket-trap rig builds clean — (12,4) hangs behind the west mouth (13,4), reachable only through it')
+        const keys = laneEscapes(g, 18, 3).map((m) => `${m.x},${m.y}`)
+        ok(!keys.includes('13,4'), 'the pocket-mouth is never taught — plugging (13,4) would strand (12,4) (#2622 honesty)')
+        ok(keys.includes('19,4'), 'the other mouth is still taught — the lesson adapts to the board, not a canned pair')
+    }
+    {
+        // purity + determinism: same answer twice, board hash unchanged
+        const g = rig()
+        put(g, 18, 3)
+        const h0 = stateHash(g)
+        const one = JSON.stringify(laneEscapes(g, 18, 3))
+        const two = JSON.stringify(laneEscapes(g, 18, 3))
+        ok(one === two && stateHash(g) === h0, 'laneEscapes is pure — same answer twice, board hash unchanged (#1917)')
+    }
+    {
+        // the bay beats the lesson: leave a notch in the wall and there is no
+        // refusal to teach about — the doctrine stays bay-first, plug-second.
+        const g = mk()
+        const seq = [[14, 5], [15, 5], [17, 5], [18, 5], ...ROW3]
+        ok(seq.every(([x, y]) => put(g, x, y) === 'build'), 'the notched wall builds — an open bay cell at (16,5)…')
+        ok(put(g, 18, 3) === 'build' && laneEscapes(g, 18, 3).length === 0, '…keeps the aisle bayed — the same completing click builds and answers nothing')
+    }
+    {
+        // vertical mirror
+        const g = mk()
+        let okV = true
+        for (let y = 3; y <= 6; y++) { if (put(g, 14, y) !== 'build') okV = false; if (put(g, 16, y) !== 'build') okV = false }
+        okV = put(g, 16, 7) === 'build' && okV
+        ok(okV && put(g, 14, 7) === 'aisle' && g.ev.at(-1)?.why === 'lane', 'the vertical completing click refuses too (control)')
+        const keys = laneEscapes(g, 14, 7).map((m) => `${m.x},${m.y}`)
+        ok(keys.length === 2 && keys.includes('15,2') && keys.includes('15,8'), 'the vertical lane teaches its mouths — (15,2) north, (15,8) south; columns mirror rows')
+    }
+    // the painter lights the lane lesson too
+    const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    ok(/why === 'lane'/.test(ui) && /laneEscapes\(gs, e\.x, e\.y\)/.test(ui), 'the painter keys the bay lesson off the refused lane click — drain-time derivation (#2622)')
+    ok(/LEAVE A BAY/.test(ui), 'the lane lesson names the doctrine when even the mouths are traps (#2622)')
 }
 
 // ---- swing paint (#2627 s3) — live elbows carry faint keep-clear paint ----
