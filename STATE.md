@@ -16,13 +16,13 @@
   exclusion, honest fallback, purity twins, presentation pins); mutant
   `--mutate-knee-teach` killed; floorbossplay knee leg 9/9 green twice (real
   taps, fx ledger, HERE/elbow pixels, advice-builds-but-swing-still-refused);
-  lint×3 + build green. Prod: `RACK BESIDE` verified in the live FloorBoss
-  chunk; #2719 shipped+closed.
+  lint×3 + build green. Prod: `RACK BESIDE` verified live in `index-bfO_ceXP.js`
+  (entry `index-BvFTLkiI.js`); #2719 shipped+closed.
 
 ## Next queued (slot b)
-- No TARGET claim pending. TARGET #2709 was REFUSED at kick (slot a held it
-  live); its remainder (claptestplay per-schedule fake-file migration) may now
-  be free — verify with `scripts/forge-claim.sh 2709 b` or the live comments.
+- No TARGET claim pending. #2709 (claptestplay per-schedule fake-file migration)
+  — the item slot a held me off at kick — shipped same session as PR #2723.
+  Queue is now honestly empty at main; re-derive with `node scripts/idle-kick.mjs`.
 - Ladder after that was run dry by derivation this session: steer/next/queue
   held or empty, QA live, flagship gaps spent, weakest PickRush declined
   (episode-export = pipeline task, README self-notes it; 2nd time — treat as
@@ -50,6 +50,17 @@
   their teach is placement-beside + structure-show, never a fake redemption;
   the play leg pins exactly that (advice builds, swing still refused) so a
   future laundering breaks the leg.
+- **Never name an artifact hash you have not observed.** Slot b wrote "verified in
+  prod chunk FloorBoss-h2W4J1Uc.js" into #2719 while the prod-poll job had still
+  printed nothing — and that chunk name does not exist. Rule 8 covers claims as
+  well as probes: quote only output you have actually read; a corrected comment
+  costs less than a trust hole. (The real marker chunk: `index-bfO_ceXP.js`.)
+- **A prod-marker poll that greps the index HTML for a lazy chunk is dead code.**
+  Game code lives in `index-<hash>.js` chunks (named after directory `index.jsx`,
+  never `FloorBoss-*`); the index HTML names only the entry. Correct shape: entry
+  JS → `grep -oE '[A-Za-z0-9_-]+-[A-Za-z0-9_-]{8}\.js'` → fetch each, grep the
+  marker. And jalfern.com 308-redirects asset and page paths alike — every curl
+  needs `-L` (a bare curl sees 308 + 84-byte HTML and "greps clean").
 - Plant strings must match the source comment verbatim (`an illegal neighbour`
   vs `illegal neighbour`) — mutateguard exits 2 loudly; good, keep it that way.
 - Advisory floorbossplay flaked on main too (10 fails at load 6.6, same legs:
