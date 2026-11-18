@@ -27,7 +27,7 @@ import {
     makeGame, step, state, stateHash, createAutopilot, clickCell, setTool,
     toggleAuto, clickOrder, hireRobot, nextShift, rungPrice, rushNow,
     COLS, ROWS, SHIFT, STRIKES, RACK_COST, ROBOT_COST, RACK_CAP, STOW_PAY,
-    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS, cornerEscapes, swingMarkers,
+    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS, cornerEscapes, laneEscapes, swingMarkers,
 } from './sim.js'
 
 const SIM_MS = 1000 / 60
@@ -254,14 +254,20 @@ const FloorBossGame = () => {
                         // patience (#1877). Re-deriving at drain time is exact: the
                         // refusal landed no rack (#1917), so the floor is exactly
                         // the board the refused click saw.
-                        if (e.why === 'corner') {
-                            const esc = cornerEscapes(gs, e.x, e.y)
+                        // #2622 TEACH THE LANE: the same green lesson on a lane
+                        // refusal — laneEscapes names the mouths that would spur the
+                        // aisle into a legal dead-end; the bay the law wished for is
+                        // already walled by the time the banner fires, so the lesson
+                        // shows the plug it can prove (and says LEAVE A BAY when even
+                        // the mouths are traps).
+                        if (e.why === 'corner' || e.why === 'lane') {
+                            const esc = e.why === 'corner' ? cornerEscapes(gs, e.x, e.y) : laneEscapes(gs, e.x, e.y)
                             elbowTeach = { cells: esc, from: gs.tick, until: gs.tick + 150 } // from: a restart resets gs.tick; a stale lesson must not follow the player into a new floor
                             if (esc.length) {
                                 audioController.playTone(520, 0.05, 'triangle', 0.04); audioController.playTone(780, 0.07, 'triangle', 0.04, 0.07)
                                 fx('SPUR IT — PLUG A MOUTH', '#5dff8f', PX(e.x) + 13, PY(e.y) + 20)
                             } else {
-                                fx('LEAVE THE ELBOW FREE', '#5dff8f', PX(e.x) + 13, PY(e.y) + 20)
+                                fx(e.why === 'corner' ? 'LEAVE THE ELBOW FREE' : 'LEAVE A BAY', '#5dff8f', PX(e.x) + 13, PY(e.y) + 20)
                             }
                         }
                         break
@@ -302,7 +308,7 @@ const FloorBossGame = () => {
         // click at the bot, painter-only like the rest of the fx.
         const repairPulse = new Map() // "x,y" -> tick of the last turbo click
         let spendFlash = null // { label, until } — #2254 item 3: buying reads as a cost
-        let elbowTeach = null // { cells, until } — #2627 s2: a corner refusal lights its honest plugs
+        let elbowTeach = null // { cells, until } — #2627 s2 / #2622: a corner or lane refusal lights its honest plugs
         let clockIn = null // { shift, quota, until } — #2352: the night number slams in on advance
 
         const finish = () => {
