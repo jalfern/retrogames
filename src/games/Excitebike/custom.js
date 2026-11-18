@@ -69,6 +69,25 @@ export const lapTipFor = (laps, seen) => (laps === LAPS_DEFAULT && !seen ? LAP_T
 export const CUR_STEP = 40           // cursor quantum; stamp footprints align to it
 export const MAX_STAMPS = 12
 
+// #2665 THE BAY RIDES THE STAMP — the two view laws the honest-gaps list owed:
+// the bay's cursor was a plumb line + static ghost ("a silhouette + colour bar,
+// not the animated NES stamp cursor"), and the palette strip's labels were
+// uniform grey ("palette labels are text"). Both laws live here, pure, so
+// `excitecheck` grades them without a browser while the page paints them:
+//  1) bikeBob — the bay carries the splash cursor's little bike (the #2573
+//     law), and it bobs on the SAME cadence: the splash svg runs
+//     `bikebob 0.5s steps(1)` (two frames, flip every 0.25s); the bay breathes
+//     on vclock (one tick per drawn frame at 60fps), so BOB_TICKS = 15 ticks
+//     per flip keeps bay and splash beating as one clock.
+//  2) toolLabelColor — every tool wears its kind's colour in the strip, so
+//     identity arrives before the word does. Opaque, never alpha: the colour
+//     is readable straight off the canvas pixels (the harness proves it) and
+//     the #2651 strip layout is untouched — colour changes, geometry doesn't.
+export const BOB_TICKS = 15
+export const bikeBob = (v) => Math.floor(v / BOB_TICKS) % 2
+export const KIND_COLOR = { RAMP: '#ffe23f', STEP: '#f0d080', WHOOPS: '#c98a3a', MUD: '#8a5a1a', WATER: '#60a0ff', BOOST: '#ffe23f', TEST: '#8fe0ff', LAP: '#ff9c00', ERASE: '#ff6a4a', SAVE: '#80e000', EXIT: '#f8f8f8' }
+export const toolLabelColor = (tool) => KIND_COLOR[tool] || '#f8f8f8' // NAME (no kind) falls back to chalk white
+
 // footprint width per kind (px of lap the stamp claims, audit margin included)
 export const SPAN = { RAMP: 480, STEP: 460, WHOOPS: 260, MUD: 220, WATER: 200, BOOST: 240 }
 export const EDGE = 80               // keep the start/finish seam flat

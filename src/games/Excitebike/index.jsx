@@ -20,7 +20,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { W, H, makeGame, step, stateHash, CFG } from './sim.js'
 import { track, groundY, LAP, MUD, WATER, BOOST, nextSel, TRACK_COUNT, trackName, trackBite, buildTrack, registerCustom, customCount, TRANSIENT, setTestTrack, clearTestTrack, ownTerrain } from './levels.js'
-import { TOOLS, SPAN, CUR_STEP, CUSTOM_KEY, CUSTOM_MAX, LAPS_DEFAULT, LAPS_MIN, LAPS_MAX, lapsOf, compileCustom, auditCustomData, fitsAt, stampAt, stampShape, encodeCustom, decodeCustom, NAME_MAX, NAME_WHEEL, pushName, popName, designName, lapCycle, overBookLabel, lapTipFor, LAP_TIP, LAP_TIP_KEY, badgeCompact } from './custom.js'
+import { TOOLS, SPAN, CUR_STEP, CUSTOM_KEY, CUSTOM_MAX, LAPS_DEFAULT, LAPS_MIN, LAPS_MAX, lapsOf, compileCustom, auditCustomData, fitsAt, stampAt, stampShape, encodeCustom, decodeCustom, NAME_MAX, NAME_WHEEL, pushName, popName, designName, lapCycle, overBookLabel, lapTipFor, LAP_TIP, LAP_TIP_KEY, badgeCompact, bikeBob, KIND_COLOR, toolLabelColor } from './custom.js'
 import { plan, decide } from './planner.js'
 import { PRESS, MESSAGES, demoSeats, demoSeatTrack, demoSeatName } from './attract.js'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -110,6 +110,9 @@ const ExcitebikeGame = () => {
         let demoAt = 0, demoReady = false, toast = 0, toastMsg = '', toastPrio = 0, shake = 0
         let noteAt = 0, heatBeep = 0, fxRBump = 0 // #2434 renderer-side rbump counter (vacuity probe)
         let vclock = 0 // #2576 editor pulse clock (the sim is parked in EDIT; menus still breathe)
+        // #2665 paint-time receipt of the bay stamp (the probe speaks it; the
+        // harness compares it against real pixels — law, paint and receipt once again agree)
+        let bayPaint = { cx: -1, gy: -1, on: false }
         const lastContact = []
         const keys = { g: false, b: false, j: false, l: false, r: false }
         let bikeMem = { pump: 0 } // #1637 decide()'s per-seat memory (pump taps)
@@ -538,7 +541,8 @@ const ExcitebikeGame = () => {
             }
             ctx.globalAlpha = 1
         }
-        const KIND_COLOR = { RAMP: '#ffe23f', STEP: '#f0d080', WHOOPS: '#c98a3a', MUD: '#8a5a1a', WATER: '#60a0ff', BOOST: '#ffe23f', TEST: '#8fe0ff', LAP: '#ff9c00', ERASE: '#ff6a4a', SAVE: '#80e000', EXIT: '#f8f8f8' }
+        // #2665 KIND_COLOR moved to custom.js — the palette identity is law now,
+        // graded by excitecheck and painted here (and on the strip below).
         const drawEditor = () => {
             const tr = draft.track
             const camX = Math.max(0, Math.min(LAP - W + 1, draft.cursor - Math.floor(W / 2)))
@@ -589,6 +593,26 @@ const ExcitebikeGame = () => {
                 ctx.strokeRect(cx - 8, gy - 16, 18, 18)
                 ctx.beginPath(); ctx.moveTo(cx - 6, gy - 14); ctx.lineTo(cx + 8, gy + 0); ctx.moveTo(cx + 8, gy - 14); ctx.lineTo(cx - 6, gy + 0); ctx.stroke()
             }
+            // #2665 THE BAY RIDES THE STAMP — the splash cursor's little bike
+            // (#2573 law), seated on the surface at the cursor and bobbing two
+            // frames at the splash cadence (bikeBob lives in custom.js; 15 ticks
+            // per flip = the svg's 0.5s steps(1) beat at 60fps). Identity wears
+            // the RIDE palette: black tyres, yellow rims, red body, white helmet
+            // — the same colours the splash BikeCursor paints. It is identity,
+            // not verdict: FIT/NO stays exactly where it was (plumb, bracket,
+            // ghost bar), and ERASE is the one hide — its red X owns the ground.
+            const by = Math.round(gy) - bikeBob(vclock)
+            bayPaint.cx = cx; bayPaint.gy = gy; bayPaint.on = kind !== 'ERASE'
+            if (kind !== 'ERASE') {
+                ctx.fillStyle = '#101010'
+                ctx.fillRect(cx - 8, by - 6, 5, 5); ctx.fillRect(cx + 3, by - 6, 5, 5)
+                ctx.fillStyle = '#ffe23f'
+                ctx.fillRect(cx - 7, by - 5, 3, 3); ctx.fillRect(cx + 4, by - 5, 3, 3)
+                ctx.fillStyle = RIDE.you.body
+                ctx.fillRect(cx - 5, by - 9, 10, 3); ctx.fillRect(cx - 2, by - 14, 5, 5)
+                ctx.fillStyle = RIDE.you.hel
+                ctx.fillRect(cx - 1, by - 17, 4, 3)
+            }
             // chrome: title, palette strip, status line, help
             ctx.fillStyle = 'rgba(0,0,0,0.62)'; ctx.fillRect(0, 0, W, 18)
             ctx.fillStyle = '#e40000'; ctx.font = 'bold 10px monospace'
@@ -609,9 +633,15 @@ const ExcitebikeGame = () => {
                 // #2625 the LAP tool's face wears its state: `LAP 3` reads the
                 // designer's number without opening a panel or guessing.
                 const lb = TOOLS[i] === 'LAP' ? 'LAP ' + draft.laps : TOOLS[i]
-                ctx.fillStyle = on ? (KIND_COLOR[TOOLS[i]] || '#ffe23f') : 'rgba(248,248,248,0.5)'
+                // #2665 every label wears its kind's colour (toolLabelColor is
+                // law in custom.js) — the strip was uniform grey chalk, so the
+                // palette read as text only. Selection keeps its own tells: the
+                // yellow wash and the bold weight; only the colour arrives new,
+                // and the #2651 measured layout (font, gutter, order) is byte
+                // for byte untouched.
+                ctx.fillStyle = toolLabelColor(TOOLS[i])
                 ctx.font = (on ? `bold ${fsz}px monospace` : `${fsz}px monospace`)
-                if (on) { ctx.fillStyle = 'rgba(255,226,63,0.14)'; ctx.fillRect(px - 2, H - 22, ctx.measureText(lb).width + 8, 14); ctx.fillStyle = KIND_COLOR[TOOLS[i]] || '#ffe23f' }
+                if (on) { ctx.fillStyle = 'rgba(255,226,63,0.14)'; ctx.fillRect(px - 2, H - 22, ctx.measureText(lb).width + 8, 14); ctx.fillStyle = toolLabelColor(TOOLS[i]) }
                 // #2632 item 2: the LAP cell flinches white at the ends of the
                 // book — five frames of fading white over the highlight, the
                 // visual half of the double-note.
@@ -1169,6 +1199,7 @@ const ExcitebikeGame = () => {
                         msg: draft.msgT > 0 ? draft.msg : '',
                         tip: draft.tipT > 0 ? draft.tip : '', // #2632 item 4 — the one-time lesson, live
                         flash: draft.flashT, // #2632 item 2 — the end-of-book flinch frames
+                        stamp: { bob: bikeBob(vclock), cx: bayPaint.cx, gy: bayPaint.gy, on: bayPaint.on }, // #2665 paint-time receipt of the bay stamp
                     } : null,
                     customNames: [...Array(customsRef.current)].map((_, k) => (track(TRACK_COUNT + k) || {}).name || ''), // #2651 the roster speaks its names
                     x: gs.x, total: gs.total, v: gs.v, alt: gs.alt, vy: gs.vy, pitch: gs.pitch,
