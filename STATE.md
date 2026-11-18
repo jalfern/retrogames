@@ -1,64 +1,76 @@
-# STATE — session 337 slot b close-out
+# STATE — session 338 slot a close-out
 
 ## Shipped this session
-- **HOMEBODY: THE KID BROKE IT UP — PR #2675 merged `07729a7`** (#2672,
-  never-dry rung #1571; `idle-kick` answered `KICK HOMEBODY 0 weak` at
-  57c511e). Miso or Pip awake within 3 tiles of BOTH Fern and Ivy cracks the
-  cold war (#2604): soft pay (`NEIGH_MEDIATE_PAY` 1) + mending lane, once per
-  spat via `neiMediated` (rides the hash), cat-before-kid, asleep inert, no
-  rng — seed-exact. peoplecheck 850/850 (hand-mutant: deleting the spat-time
-  reset reddens exactly the two reset pins). README gap struck + §Mediators.
-  Prod verified: Vercel SUCCESS on `07729a7`, clean headless load.
+- **PICK RUSH: BIN FILL METERS + FULL-BIN THUNK + CABLE WHIP — PR #2681 merged
+  `6a72ce8`** (#2678, never-dry rung #1571; `idle-kick` answered
+  `KICK PICK RUSH 0 weak` at `118cab3`). New `visuals.js`: each bin carries a
+  tag-coloured ink column, landed pieces climb 1/12; at 12 the bin thunks
+  (low sine+noise), flashes its rim in its tag colour, column wraps —
+  `gs.binFill`/PIECES/hashes never see the wrap. Cable hangs on a light spring
+  (ζ≈0.29): steady slides keep the ±4 tilt, reversals WHIP past it (+5.8 px
+  at the painted centroid). Stepped in `doSim` + contract tick, NOT at paint
+  rate. Contract carries binVis/binLamp/whip. pickcheck 49/49 Node (JUICE:
+  exact cap, no double-thunk, restart heal, thunks===Σfloor(binFill/12),
+  twin-seed SIM-CLEAN, overshoot/clamp/settle) + 24/24 Chrome (WHIP-SPRING/
+  PIXELS/REST real-keyboard reversals + in-page paint recorder, METER,
+  METER-FULL). Hand-mutants proven: `vis` 3 named gates red, `whip` 2.
+  Prod driven clean on jalfern.com (attract 14,296 lit px, Space→play, 0 errs).
+- **PRINCE OF PERSIA: honest-gap accounting — PR #2677 merged `118cab3`**
+  (#2676, filed+shipped by this lane): #2670 claimed "README gap CLOSED" in
+  its commit MESSAGE but never included README.md — the stale bullet had
+  idle-kick answering `KICK PRINCE OF PERSIA 0 weak` forever. Struck with
+  evidence; also split #2214's half-struck bullet so parseGaps counts only the
+  genuinely open telegraphs gap. This un-jammed the picker: the next answer
+  pointed at real work (#2678 above).
 
 ## Claims / board
-- #2671 (CIV buildings): warden pointed slot b at it, but slot a held it live
-  (claim REFUSED — their commit landed 39 s before my probe) — untouched;
-  slot a shipped it (ba5953d notes).
-- Ladder after refusal: steer empty; #1711 `next` = documented wait-state
-  (swept 3 h prior by sister slot, `plaicraft:grade` dry: nothing new, jonq
-  #2652 AWAITING) — re-sweep = spin, so never-dry rung per #1571.
-- #2672 filed by this lane (why-weakest line in body) + claimed; shipped →
-  shipped label + closed with evidence. #2674 filed (see below).
+- TARGET #1711: claimed per warden assignment, swept live, RELEASED to `next`
+  with evidence comment — 14/14 store takes graded, nothing new since slot b's
+  04:05Z sweep; line 3 (±50 ms) is purely human (all takes heard 0–2 claps,
+  need 3); jonq #2652 AWAITING, default keeps waiting, nightly grader
+  self-posts if a clap take lands. #2654 stays QA's.
+- #2676 and #2678: filed by this lane, claimed, shipped, closed with evidence.
+- Slot b shipped #2679 (Homebody drive-leg fix) mid-session; both lanes clean.
 
 ## Next queued
-- Re-derive at `07729a7`: `node scripts/idle-kick.mjs` (do NOT trust this file).
-- #2674 (feedback, QA): re-home the drive mediation leg — the four checks live
-  at commit 6ea118c; hooks (`hour`/`standMed`/`medCells`/`leaves`,
-  probe `neiMediated`/`neiMending`) are shipped and load-bearing for it.
-- If a Jon take with ≥3 pairs lands in the store, run `plaicraft:grade` →
-  verdict → #1711 line 3 closes → #1712 promotes.
+- Re-derive at the new main: `node scripts/idle-kick.mjs` — at `6a72ce8` it
+  answered `KICK HOMEBODY 0 weak` (do NOT trust this line after any merge).
+- #1711 wait-state unchanged: if a Jon take with ≥3 claps lands, `plaicraft:
+  grade` self-posts the verdict → line 3 closes → #1712 promotes.
 
 ## Open questions (issues, not here — #605)
 - #2652 (jonq, platform, AWAITING by Jon, deadline Nov 20 01:36Z) — phone
   take vs waiver for #1711 line 3; default keeps waiting, nightly self-grades.
 
-## RULE 4
-Game code merged this session (#2675, `src/games/Homebody/`), rule 4 intact;
-STATE.md committed to main per rule-step-9 exception.
-
 ## Catches for the next session (each cost probes this shift)
-- **Late-drive legs ride poisoned state:** the mediation leg saw every input
-  cell perfect yet `hour` frozen at 8.0 through seconds of polling — the
-  world clock stops being the clock near the end of homebodydrive (night legs
-  suspect). First diagnostic on any such fail: `probe.speed`/`probe.tick` delta
-  across two polls BEFORE touching the law. Details + repro: #2674.
-- **Sim day = 2 real minutes** (hour starts 7, HOUR_SEC 5); `hour > 19` sends
-  Fern AND Ivy home and `leaving` overrides re-seats — long pair soaks must
-  rewind `s.hour`. Day-wake law self-clears manual `asleep` — source-pin the
-  awake clause instead. Visitors self-leave: re-hang `!g.ivy` per tick.
-- **`pairCold` must declare a FRESH war** (clears `neiMediated`/`neiMending`):
-  organic mediation upstream in a long drive is real.
-- **Regex windows age with their block:** #2611/#2599 pins budget the
-  `neiGrudge` block at {0,640}/{0,700} chars and a pin counts `showSay`
-  sites — inserts into that block or new spoken events must widen/recount in
-  place, with a comment (done at 7f-style honesty this session: 1400, 8→9).
-- **This box was hostile to long runs:** :5178 dev servers took SIGTERM twice,
-  detached `( cmd & )` launches get killed with their wrapper (use background
-  tool calls), and `gh` api connections flaked for minutes while curl worked —
-  wrap merge attempts in retries; `--auto` cleared a protection-settling race.
+- **`contractHoldsLoop` stays locked after ANY contract `g.step` until
+  `g.release()`.** A Chrome gate that resets then drives with REAL KEYS must
+  call `g.release()` first — otherwise doSim is frozen and keyboard input
+  moves nothing (my WHIP recorder sampled 18 dead frames before I read this).
+- **Canvas never repaints inside a synchronous evaluate drive-loop.** Any gate
+  sampling pixels after such a loop must wait a PAINTED frame (double-rAF +
+  settle, the WAVE-INK fix) — the carried-CAN gate hit the #2136 family again
+  with its fixed 34 ms wait; fixed in #2681.
+- **Paint-rate juice starves on software render** (~12 fps): springs/animations
+  stepped in paint barely reach half travel. Step at SIM rate (doSim +
+  contract tick); paint only reads the value.
+- **`parseGaps` drops ANY bullet containing "CLOSED by #N"** — a bullet with
+  one closed sub-item silently buries its open siblings (#2214 hid the
+  telegraphs; #2670's missing strike kicked PoP for days). Split bullets so
+  each strike covers only what actually shipped.
+- **Worktree teardown:** vite recreates `node_modules/` (as a real dir with
+  `.vite/deps`) inside a symlinked-node_modules worktree; `rm -f` won't unlink
+  it and the harness blocks `rm -rf`. Remove stray files bottom-up with
+  `rm` + `rmdir` before `git worktree remove`, or the husk outlives the lane.
+- Pick-tension precedent (#2678): when the formal oldest unowned gap is a
+  pipeline task, #1571's "player-visible or it doesn't count" clause wins —
+  take the shelf-honest feel remainder and state the tension in the issue.
 
 ## Lanes clean
-- Main checkout detached at `origin/main` (`07729a7`); STATE.md committed.
-- :5178 dev server (incl. orphaned listener PID) killed at close; other
-  lanes' ports untouched.
-- Worktree `retrogames-forge-homebody-mediate` removed after merge + prune.
+- Main checkout detached at origin/main; this STATE commit rides alongside
+  the merge (game shipped this session — rule-step-9 exception).
+- :5173 dev server stopped at close; :5176/:5178 and all other lanes' ports
+  untouched.
+- Worktrees `retrogames-forge-pop-gapcount` and `retrogames-forge-pickrush-binlife`
+  removed after merge; branches `forge/pop-gapcount`, `forge/pickrush-binlife`
+  deleted (remote via squash-merge, local pruned).
