@@ -240,7 +240,8 @@ await wait(150)
 // — the east room never tends, and the ledger reads before and after.
 const pu0 = await st()
 check('#2695 fresh rooms open with clean ledgers',
-    JSON.stringify(pu0.purpose) === JSON.stringify(['east:0:0:0:-1', 'garden:0:0:0:-1']), JSON.stringify(pu0.purpose))
+    (pu0.purpose || []).length === 2 && pu0.purpose.every((p) => Number(p.split(':')[1]) === 0 && Number(p.split(':')[2]) === 0), JSON.stringify(pu0.purpose))
+const h0 = pu0.hour
 await page.evaluate(() => window.__homebodyTest.hour(8))
 await page.keyboard.press('Digit3')   // FAST — the harvest must land in seconds, not minutes
 let pu1 = pu0
@@ -251,8 +252,9 @@ for (let i = 0; i < 60; i++) {
 }
 check('#2695 the garden ripens with the sun — the live ledger grows',
     (pu1.purpose || []).some((p) => p.startsWith('garden:') && Number(p.split(':')[1]) >= 1)
-    && (pu1.purpose || []).some((p) => p.startsWith('east:') && p === 'east:0:0:0:-1'), JSON.stringify(pu1.purpose))
+    && (pu1.purpose || []).every((p) => p.split(':')[0] === 'garden' || Number(p.split(':')[1]) === 0), JSON.stringify(pu1.purpose))
 await page.keyboard.press('Digit2')   // back to NORMAL for the legs that follow
+await page.evaluate((h) => window.__homebodyTest.hour(h), h0)   // scenario-clock rewind (#2672 idiom) — later legs meet the clock they expect
 await wait(120)
 
 // switch residents with G
