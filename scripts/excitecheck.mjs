@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs'
 import { makeGame, step, stateHash, CFG } from '../src/games/Excitebike/sim.js'
 import { track, groundY, featureAt, LAP, MUD, WATER, BOOST, TRACK_COUNT, nextSel, trackName, buildTrack, registerCustom, customCount, TRANSIENT, setTestTrack, clearTestTrack, hasTestTrack, ownTerrain, PACE } from '../src/games/Excitebike/levels.js'
 import { plan, decide } from '../src/games/Excitebike/planner.js'
-import { compileCustom, auditCustomData, encodeCustom, decodeCustom, fitsAt, stampAt, SPAN, EDGE, STAMP_KINDS, CUSTOM_KEY, CUSTOM_MAX, LAPS_DEFAULT, LAPS_MIN, LAPS_MAX, lapsOf, TOOLS, NAME_MAX, NAME_WHEEL, pushName, popName, designName } from '../src/games/Excitebike/custom.js'
+import { compileCustom, auditCustomData, encodeCustom, decodeCustom, fitsAt, stampAt, SPAN, EDGE, STAMP_KINDS, CUSTOM_KEY, CUSTOM_MAX, LAPS_DEFAULT, LAPS_MIN, LAPS_MAX, lapsOf, TOOLS, NAME_MAX, NAME_WHEEL, pushName, popName, designName, lapLabel, overBookLabel, lapCycle, badgeCompact, lapTipFor, LAP_TIP } from '../src/games/Excitebike/custom.js'
 import { demoSeats, demoSeatTrack, demoSeatLabel, demoSeatName } from '../src/games/Excitebike/attract.js'
 
 const MUT = process.argv.includes('--mutate')
@@ -1828,6 +1828,36 @@ section('NAME RIDES THE NAME (letter wheel + badge grammar — your design is ca
     ok(/data-demo-name=\{demoTrack\}/.test(sx), 'the badge stopped wearing the name in the DOM — prod cannot see it rides')
     ok(/demoSeatName\(seat, seat === 0 \? null :/.test(sx), 'tickDemo stopped asking the name law at the seat change — the badge is back to roster numbers')
     ok(/t\.name !== 'CUSTOM' \? t\.name : ''/.test(sx), 'abandon stopped carrying the name back to the bay — re-saving would silently rename the design')
+}
+
+// ---- #2632 YOUR-LAPS POLISH — the four view-layer tells graded as pure
+// helpers (the page paints them; exciteplay drives them with real keys):
+// the over screen announces the book, the LAP wheel tells at its ends, the
+// splash badge has a phone-width form, and the first default-book SAVE
+// teaches the LAP tool once per storage. ----
+section('YOUR-LAPS POLISH (#2632): over-book line, book-end tells, compact badge, first-SAVE tip')
+{
+    ok(lapLabel(1) === '1 LAP' && lapLabel(5) === '5 LAPS', '#2632: a single lap must read "1 LAP", not "1 LAPS"')
+    ok(overBookLabel(1, 5) === 'CUSTOM 1 · 5 LAPS', '#2632: the over screen no longer spells the book the way the body asks')
+    ok(overBookLabel(1, LAPS_DEFAULT) === '', '#2632: a default-book run announced a book — the plain board line is byte law')
+    ok(overBookLabel(0, 5) === '' && overBookLabel(-5, 5) === '', '#2632: a league seat (or a bogus one) must never wear the CUSTOM label')
+    ok(lapCycle(2).laps === 3 && lapCycle(2).tell === null, '#2632: a mid-book LAP press changed rules (3 expected, no tell)')
+    ok(lapCycle(7).laps === 8 && lapCycle(7).tell === 'top', '#2632: arriving at the top of the book stopped carrying the tell')
+    ok(lapCycle(8).laps === 1 && lapCycle(8).tell === 'wrap', '#2632: the 8->1 wrap stopped carrying the tell (or the wheel itself moved)')
+    ok(lapCycle(LAPS_MAX).tell === 'wrap' && lapCycle(LAPS_MIN).tell === null, '#2632: the tell misfires at the wrong end of the book')
+    ok(badgeCompact(LAPS_DEFAULT) === '★' && badgeCompact(3) === '★ 3L', '#2632: compact badge grammar moved (default stays silent, deviation reads 3L)')
+    ok(lapTipFor(LAPS_DEFAULT, false) === LAP_TIP, '#2632: the first default-book SAVE no longer teaches the LAP tool')
+    ok(lapTipFor(LAPS_DEFAULT, true) === '' && lapTipFor(5, false) === '', '#2632: the LAP tip nagged again, or preached to a designer who already sets the length')
+    ok(LAP_TIP === 'TIP: LAP SETS YOUR RACE LENGTH', '#2632: the tip line drifted from the issue body')
+
+    // SOURCE PINS — the page must ride the helpers, not law them a second time.
+    const sx = readFileSync(new URL('../src/games/Excitebike/index.jsx', import.meta.url), 'utf8')
+    ok(/overBookLabel\(gs\.track - TRACK_COUNT \+ 1, gs\.laps\)/.test(sx), '#2632: finish() stopped asking the pure book law — the over line would law twice')
+    ok(/const c = lapCycle\(draft\.laps\)/.test(sx), '#2632: the bay stopped cycling LAP through the pure wheel helper')
+    ok(/draft\.flashCell = draft\.tool; draft\.flashT = 5/.test(sx), '#2632: the white flinch left the LAP bump at the ends of the book')
+    ok(/lapTipFor\(draft\.laps, seenTip\)/.test(sx) && /LAP_TIP_KEY/.test(sx), '#2632: the first-SAVE tip stopped reading storage before it spoke')
+    ok(/data-over-book=\{end\.book\}/.test(sx), '#2632: the over screen stopped wearing the book in the DOM — prod cannot see it rides')
+    ok(/data-badge-compact=\{badgeCompact\(L\)\}/.test(sx), '#2632: the badge lost its compact phone form — the 375px row crowds the pack pips')
 }
 
 console.log(`\nexcitecheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

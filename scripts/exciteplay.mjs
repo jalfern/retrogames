@@ -927,6 +927,26 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     r.check('LAP wraps 8 -> 1 so every length is reachable by repeating A', !!p.edit && p.edit.laps === 1 && p.edit.msg.includes('LAPS 1'), JSON.stringify(p.edit && { l: p.edit.laps, m: p.edit.msg }))
     r.check('a LAPS message paints as OK, not an error refusal', !!p.edit && p.edit.msg.startsWith('LAPS') && !p.edit.msg.includes('NO'), p.edit && p.edit.msg)
 
+    // #2632 item 2 — the ends of the book get the flinch + double-note. Climb
+    // 1→7 slowly, then the top press is read fast: the white flinch (5 frames)
+    // must still be live when the probe lands. The wrap gets the same tell.
+    for (let i = 0; i < 6; i++) { await page.keyboard.press('Space'); await wait(45) } // 1→7
+    await page.keyboard.press('Space'); await wait(30)                                  // 7→8: TOP
+    p = await probe()
+    r.check('#2632: arriving at the top of the book flinches the LAP cell white', !!p.edit && p.edit.laps === 8 && p.edit.flash > 0, JSON.stringify(p.edit && { l: p.edit.laps, f: p.edit.flash }))
+    await page.keyboard.press('Space'); await wait(30)                                  // 8→1: WRAP
+    p = await probe()
+    r.check('#2632: the 8->1 wrap flinches too (the tell rides both ends)', !!p.edit && p.edit.laps === 1 && p.edit.flash > 0, JSON.stringify(p.edit && { l: p.edit.laps, f: p.edit.flash }))
+    // mid-book must earn NO flinch: settle past the wrap's 5 frames (600 ms is
+    // >5 frames even at 10 fps), then press once and read fast — flash stays 0.
+    await wait(600)
+    await page.keyboard.press('Space'); await wait(30)                                  // 1→2: mid-book
+    p = await probe()
+    r.check('#2632: a mid-book press earns no flinch (the tell is only for the ends)', !!p.edit && p.edit.laps === 2 && p.edit.flash === 0, JSON.stringify(p.edit && { l: p.edit.laps, f: p.edit.flash }))
+    // return the number to 1 (the leg below saves the design carrying the 1)
+    for (let i = 0; i < 6; i++) { await page.keyboard.press('Space'); await wait(45) } // 2→8
+    await page.keyboard.press('Space'); await wait(45)                                  // 8→1 wrap
+
     // draw something legal and SAVE it carrying the 1
     await page.keyboard.press('ArrowUp'); await wait(40) // back onto RAMP? no — LAP(7) -> BOOST(6)
     await page.keyboard.press('ArrowUp'); await wait(40)
@@ -958,6 +978,29 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     const badge = await page.locator('[data-custom-laps]').first().textContent().catch(() => '')
     r.check('the splash row labels the deviation (★ YOURS · 1 LAP)', /YOURS/.test(badge || '') && /1 LAP/.test(badge || ''), JSON.stringify(badge))
 
+    // #2632 item 3 — at 375px the badge takes its compact form and the row
+    // clears the pack-pip column: a geometry proof like the wordmark law (#2573).
+    await page.setViewportSize({ width: 375, height: 812 })
+    await wait(200)
+    const geo = await page.evaluate(() => {
+        const b = document.querySelector('[data-custom-laps]')
+        if (!b) return { ok: false, why: 'no [data-custom-laps]' }
+        const vis = (el) => !!el && getComputedStyle(el).display !== 'none'
+        const compact = b.querySelector('[data-badge-compact]')
+        const full = b.querySelector('span:not([data-badge-compact])')
+        const pips = document.querySelector('[data-pack]')
+        const br = b.getBoundingClientRect()
+        const gap = pips ? pips.getBoundingClientRect().left - br.right : 999
+        const cl = (compact && compact.getAttribute('data-badge-compact')) || ''
+        return {
+            ok: vis(compact) && !vis(full) && /L/.test(cl) && gap >= 2 && br.right <= window.innerWidth + 0.5,
+            compact: cl, gap: +gap.toFixed(1), right: Math.round(br.right), vw: window.innerWidth, visFull: vis(full),
+        }
+    })
+    r.check('#2632: at 375px the badge is compact, clears the pack pips, and the receipt holds', geo.ok, JSON.stringify(geo))
+    await page.setViewportSize({ width: 620, height: 680 })
+    await wait(200)
+
     // #2642 GRADED PACK — the row wears the grade the engine will race (pips
     // match the seated custom's pace through the probe, drawn == logical)
     p = await probe()
@@ -981,6 +1024,10 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     await hold('ArrowUp', 900)
     p = await probe()
     r.check('the one-lap custom finishes at the line (win, not another lap)', p.end === 'win' && p.screen === 'over' && p.lap >= 1, JSON.stringify({ e: p.end, s: p.screen, lap: p.lap }))
+
+    // #2632 item 1 — the over screen announces the book this custom ran.
+    const bookAttr = await page.locator('[data-over-book]').getAttribute('data-over-book').catch(() => null)
+    r.check('#2632: the over screen names the seat and the length it ran', bookAttr === 'CUSTOM 1 · 1 LAP', JSON.stringify(bookAttr))
 
     // abandon carries the number you rode, not just the terrain
     await wait(1200) // the over screen keeps its 900 ms dwell before any key lands
@@ -1116,6 +1163,37 @@ r.check('the start-gate lifts (countdown reaches GO)', ready, `count=${(await pr
     await page.waitForFunction(() => window.__bikeTest.demo().seat === 0, null, { timeout: 5000 })
     d = await demoState()
     r.check('the design lapped and handed back to MOTOCROSS, board still empty', d.d.label === 'MOTOCROSS' && d.board === 0 && (await probe()).screen === 'attract', JSON.stringify(d))
+    await page.evaluate(() => localStorage.clear())
+}
+
+// ---- #2632 item 4 — the first default-book SAVE teaches the LAP tool, and
+// never repeats: one lesson per storage, quiet for a designer who sets the
+// length, quiet again for every SAVE after that. ----
+{
+    await page.goto(URL, { waitUntil: 'load' })
+    await page.waitForFunction(() => !!window.__bikeTest, null, { timeout: 30000 })
+    await wait(700)
+    await page.keyboard.press('KeyZ'); await wait(200)
+    await page.evaluate(() => localStorage.clear()) // a clean storage: the lesson is unseen here
+    await page.keyboard.press('Digit0'); await wait(200)
+    await page.keyboard.press('Space'); await wait(120) // stamp RAMP @120 — legal, default book
+    for (let i = 0; i < 10; i++) { await page.keyboard.press('ArrowDown'); await wait(35) } // RAMP(0) -> SAVE(10)
+    await page.keyboard.press('Space'); await wait(150)
+    let p = await probe()
+    r.check('#2632: the first default-book SAVE teaches the LAP tool', !!p.edit && p.edit.msg.includes('SAVED') && p.edit.tip === 'TIP: LAP SETS YOUR RACE LENGTH', JSON.stringify(p.edit && { m: p.edit.msg, t: p.edit.tip }))
+    await page.keyboard.press('Space'); await wait(150) // save again — never nag
+    p = await probe()
+    r.check('#2632: the tip never nags — a second SAVE stays quiet', !!p.edit && p.edit.msg.includes('SAVED') && p.edit.tip === '', JSON.stringify(p.edit && { m: p.edit.msg, t: p.edit.tip }))
+    // a designer who sets their own length is not preached to even on fresh storage
+    await page.evaluate(() => localStorage.clear())
+    for (let i = 0; i < 3; i++) { await page.keyboard.press('ArrowUp'); await wait(35) }   // SAVE(10) -> LAP(7)
+    await page.keyboard.press('Space'); await wait(45)                                        // laps 2 -> 3
+    for (let i = 0; i < 3; i++) { await page.keyboard.press('ArrowDown'); await wait(35) } // back onto SAVE
+    await page.keyboard.press('Space'); await wait(150)
+    p = await probe()
+    r.check('#2632: a self-set length earns no tip (the lesson is for the default book)', !!p.edit && p.edit.msg.includes('SAVED') && p.edit.laps === 3 && p.edit.tip === '', JSON.stringify(p.edit && { m: p.edit.msg, l: p.edit.laps, t: p.edit.tip }))
+    const flag = await page.evaluate(() => localStorage.getItem('excitebike.lap-tip.v1'))
+    r.check('#2632: a lapsed save does not spend the tip flag', flag === null, JSON.stringify(flag))
     await page.evaluate(() => localStorage.clear())
 }
 
