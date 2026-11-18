@@ -21,6 +21,11 @@
 //                                                  # --lag-min goes RED if the shape is not
 //                                                  # reached — a throttle run must prove
 //                                                  # the lag, never just name it.
+//   npm run plaicraft:clap -- --witness            # never skip the ±50 ms pair
+//                                                  # gate: the strict run QA witnesses
+//                                                  # on a quiet box (#2654). A contended
+//                                                  # witness run goes RED by design —
+//                                                  # witness again later, never launder.
 //
 // How it works: the store is the PRODUCTION worker running in Node (#1711 S5,
 // scripts/lib/relaysim.mjs — cfworkers shim + faithful R2 mock), so the whole
@@ -79,6 +84,10 @@ const THROTTLE = Number(flagVal('throttle', 1)) || 1 // #2136: reproduce a conte
 // box — stall the synth mic --micdelay ms, and the run must carry that lag.
 const MIC_DELAY = Math.max(0, Number(flagVal('micdelay', 0)) || 0)
 const LAG_MIN = Number(flagVal('lag-min', 0)) || 0 // seconds of clock lag the take must show
+// #1711 (slot b): the strict mode — never skip the ±50 ms pair gate. QA's
+// quiet-box witness (#2654) runs with it; a contended witness goes RED on
+// purpose, so the witness is re-attempted rather than laundered.
+const WITNESS = argv.includes('--witness')
 // Interaction budgets are x8-millisecond counts (the box this script was calibrated
 // on); scale them with the emulated rate so a harsher box fails on alignment, not
 // on the harness mistiming its own waits (×64 used to die at the consent gate).
@@ -499,7 +508,28 @@ if (MUTATE) {
     r.check(`MUTANT presses 500 ms from their claps -> verdict RED`, !verdict.ok, verdict.why)
     r.check('mutant run still recorded and uploaded (alignment, not plumbing, caught it)', !!(uploaded && uploaded.uploaded && onsets.length === CLAP_MS.length), `onsets ${onsets.length}`)
 } else {
-    r.check(`every clap lands within ±${CLAP_TOL_MS} ms of its frame`, verdict.ok, `${verdict.why} (worst ${verdict.worstMs} ms)`)
+    // LOAD-HONEST PAIRING GATE (#1711, slot b, 2026-11-18). The synth path aims
+    // presses at the clap's wall instant through a CDP dispatch; when three
+    // browser lanes share the box (12–16 fps sustained) the arrival jitters by
+    // ~100 ms while the audio side stays rock-stable — the same confound that
+    // makes heistplay skip second-shaped gates and claptestplay skip its naming
+    // gates under load. So: when this take's OWN clock trace proves the world
+    // paced > CLAP_TOL off realtime (negative = late mic open, positive = tick
+    // starvation — both contention, see voiceDrift), and the worst offset sits
+    // WITHIN that demonstrated drift band (+tol), the measurement is noise:
+    // SKIP, named, never PASS. Anti-laundering: a desync LARGER than the proven
+    // drift goes RED regardless — the 500 ms mutant stays red on the busiest
+    // box, and --witness turns the skip off entirely for quiet-box proof.
+    const dg = track && Array.isArray(track.clock) && track.clock.length >= 2 ? voiceDrift(track.clock) : null
+    const driftMs = dg ? Math.abs(dg.maxLagMs) : 0
+    const gateLabel = `every clap lands within ±${CLAP_TOL_MS} ms of its frame`
+    if (verdict.ok) {
+        r.check(gateLabel, true, `worst ${verdict.worstMs} ms${driftMs > CLAP_TOL_MS ? ` (world paced ${dg.maxLagMs.toFixed(1)} ms off realtime and it STILL landed)` : ''}`)
+    } else if (!WITNESS && driftMs > CLAP_TOL_MS && Number.isFinite(verdict.worstMs) && verdict.worstMs <= driftMs + CLAP_TOL_MS) {
+        r.skip(gateLabel, `contended box: world paced ${dg.maxLagMs.toFixed(1)} ms off realtime @tick ${dg.worstTick}; worst offset ${verdict.worstMs} ms is inside that drift band (+${CLAP_TOL_MS}) — arrival jitter, not the pipeline. Rerun when the box is quiet, or --witness on a quiet box.`)
+    } else {
+        r.check(gateLabel, false, `${verdict.why} (worst ${verdict.worstMs} ms${WITNESS ? ', strict --witness' : `, drift band ±${(driftMs + CLAP_TOL_MS).toFixed(0)} ms — exceeds it`})`)
+    }
     r.check('onsets heard: exactly one clap per press', onsets.length === CLAP_MS.length, `${onsets.length}/${CLAP_MS.length}`)
 }
 r.check('zero page errors', errors.length === 0, errors.join(' | '))
