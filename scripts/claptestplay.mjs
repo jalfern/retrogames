@@ -228,6 +228,7 @@ async function runOnce(cfg, { requireGate, sink }) {
     {
         const coach = await page.evaluate(() => ({
             kind: (window.__clapCoach || {}).kind || 'unset',
+            state: (window.__clapCoach || {}).state || 'unset',
             text: (window.__clapCoach || {}).text || '',
             el: !!document.querySelector('[data-clap-coach]'),
             flag: localStorage.getItem('vc.clapCoach'),
@@ -236,9 +237,17 @@ async function runOnce(cfg, { requireGate, sink }) {
             r.check(`${pfx}clap coach appears at live REC (fresh device learns the ±50 ms proof)`,
                 coach.kind === 'coach' && coach.text === COACH_TEXT && coach.flag === '1', JSON.stringify(coach))
             r.check(`${pfx}coach pill is painted on screen`, coach.el, JSON.stringify(coach))
-        } else {
+        } else if (coach.flag === '2') {
+            // Cached consent usually means the device learned earlier — but a
+            // starved box can re-arm and re-learn within this run (paint reads
+            // '1'/null, the first heard clap flips the flag to '2' mid-take,
+            // #2466's own path). The honest truths are the flag + state; `kind`
+            // is the paint-time snapshot and may name the pill that taught.
             r.check(`${pfx}no second lesson on a learned device — coach rests, habit proven`,
-                coach.kind === 'hidden' && !coach.el && coach.flag === '2', JSON.stringify(coach))
+                !coach.el && coach.state === 'learned', JSON.stringify(coach))
+        } else {
+            r.check(`${pfx}cached-consent device that never learned keeps being asked (#2466 re-arm)`,
+                coach.kind === 'coach' && coach.state === 'shown', JSON.stringify(coach))
         }
     }
 
