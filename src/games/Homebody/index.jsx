@@ -59,6 +59,7 @@ import {
     drawKid,   // #2203: Pip
     drawSay,   // #2135: the spoken-word bubble over the pair
     PAIR_HUES,   // #2599: the pair's own hues for pair-spoken bubbles
+    promiseTell, earReact, drawGardenLamp, LOST_RING_T,   // #2688: the promise told in motion + the garden's night lamp
     pairStride, strollTrail, drawStrollTrail,   // #2618: the stroll stride, the route tell, the walk sell
     drawGroundGift, bondRows,   // #2240: the set-down basket + the BONDS rows as data
     queueHit,   // #2470: the queue chips' tap route (shares the painter's geometry)
@@ -150,6 +151,7 @@ const HomebodyGame = () => {
         const refuses = []   // #1823: red ghost-cell flashes on refused placements
         // #2135: the spoken-word bubble — quoted lines lift over the pair, not just the log.
         const sayB = { text: '', x: 0, y: 0, life: 0, hues: null }
+    const lostRing = { x: 0, y: 0, t: 0 }   // #2688 tail 2: the ring dying — grey flicker where an errand folded
         const showSay = (s2, e) => { const t = s2.thoughts[0]; if (t) { sayB.text = t.text; sayB.x = e.x ?? W / 2; sayB.y = e.y ?? H / 2; sayB.life = 4.2; sayB.hues = e.t === 'neigh' || e.who === 'neigh' ? PAIR_HUES : null } }   // #2599: pair lines wear the pair
         let neighSulks = 0   // #2599 handoff 1: storm-puff window over the pair at the crack (real seconds, view-only)
         let neighWave = 0, neighPrevD = 99   // #2599 item 2: meet-up greeting beat + last frame's pair ring distance (view-only; the sim never hears of it)
@@ -467,6 +469,8 @@ const HomebodyGame = () => {
                         if (e.stage === 'lost') {
                             audioController.playSweep(420, 300, 0.12, 'triangle', 0.04)
                             if (live) say(`${e.name.toUpperCase()} — THE WORD WILL HAVE TO WAIT`)
+                            const q = s.people.find((pp) => pp.name === e.name)   // #2688 tail 2: the ring dies where the errand folded
+                            if (live && q) { lostRing.x = q.x; lostRing.y = q.y; lostRing.t = LOST_RING_T }
                         }
                         break
                     case 'affection': // #2131: the FAMILY tier pays in hearts — full chord
@@ -931,17 +935,40 @@ const HomebodyGame = () => {
             if (live && !g.build) {
                 // #2683: the promised ear — while a go-say errand walks toward a
                 // person, a dotted gold ring trails them across the lot.
-                const pr = g.people.find((q) => q.goal && q.goal.kind === 'gosay')
-                if (pr) {
-                    const v = goSayTarget(g, pr.goal.k)
-                    if (v) {
-                        ctx.globalAlpha = 0.3 + 0.22 * Math.sin(g.sec * 3)
-                        ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1.5
-                        ctx.setLineDash([4, 3])
-                        ctx.beginPath(); ctx.ellipse(v.x, v.y + 9, 15, 5.5, 0, 0, Math.PI * 2); ctx.stroke()
-                        ctx.setLineDash([]); ctx.globalAlpha = 1
+                // #2688 tails 2 & 6: the tell now MOVES — dots walk the remaining
+                // route, the ring tightens as the errand nears, and the ear
+                // answers with a hue wink once the walker is close enough to see.
+                const pt = promiseTell(g)
+                if (pt) {
+                    for (const [i, tc] of pt.trail.entries()) {
+                        if ((i + Math.floor(g.sec * 6)) % 3) continue   // one dot in three lit — the march
+                        ctx.globalAlpha = 0.55 - tc.k * 0.35
+                        ctx.fillStyle = '#ffd24a'
+                        ctx.fillRect(LOT_X + tc.c * TILE + TILE / 2 - 1, LOT_Y + tc.r * TILE + TILE / 2 - 1, 2, 2)
                     }
+                    ctx.globalAlpha = 0.3 + 0.22 * Math.sin(g.sec * 3) + pt.tight * 0.3
+                    ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1.5 + pt.tight
+                    ctx.setLineDash([4, 3])
+                    ctx.beginPath(); ctx.ellipse(pt.vx, pt.vy + 9, 15 - 5 * pt.tight, 5.5 - 1.5 * pt.tight, 0, 0, Math.PI * 2); ctx.stroke()
+                    ctx.setLineDash([]); ctx.globalAlpha = 1
                 }
+                const er = earReact(g)
+                if (er) {
+                    ctx.globalAlpha = 0.4 + 0.4 * Math.sin(g.sec * 7)
+                    ctx.fillStyle = er.hue
+                    ctx.fillRect(Math.round(er.x) - 1, Math.round(er.y) - 21, 2, 2)   // the ear knows
+                    ctx.globalAlpha = 1
+                }
+            }
+            if (live && lostRing.t > 0) {
+                // #2688 tail 2: an errand that lost its ear — the ring dies where
+                // the walker folded, grey and flickering, then fades out.
+                const k = lostRing.t / LOST_RING_T
+                ctx.globalAlpha = k * (0.28 + 0.3 * Math.abs(Math.sin(g.sec * 16)))
+                ctx.strokeStyle = '#9aa0a8'; ctx.lineWidth = 1.5
+                ctx.setLineDash([3, 3])
+                ctx.beginPath(); ctx.ellipse(lostRing.x, lostRing.y + 9, 15, 5.5, 0, 0, Math.PI * 2); ctx.stroke()
+                ctx.setLineDash([]); ctx.globalAlpha = 1
             }
             if (live && g.holdT >= 0) {
                 // #2171: the heat tell — angry ticks climb over the addressed
@@ -979,6 +1006,7 @@ const HomebodyGame = () => {
             }
             ctx.restore()
             nightTint(ctx, g.hour, g.ext, g.wings)
+            drawGardenLamp(ctx, g)   // #2688 handoff 3: the garden's bench keeps a lamp after dusk
             drawTopBar(ctx, g)
             drawPanel(ctx, g, g.sec, live ? collapseCache : null, live ? hoverReveal : null)
             drawThoughts(ctx, g)
@@ -1089,6 +1117,7 @@ const HomebodyGame = () => {
             // banner; the landmine predates it (#2135). Take the frame's dt.
             if (sayB.life > 0) sayB.life = Math.max(0, sayB.life - dtMs / 1000)   // #2135: real-clock fade, like the toast
             if (neighSulks > 0) neighSulks = Math.max(0, neighSulks - dtMs / 1000)   // #2599 handoff 1: the guests' puff fades on the real clock (the world may be frozen in buy mode)
+            if (lostRing.t > 0) lostRing.t = Math.max(0, lostRing.t - dtMs / 1000)   // #2688: the dead ring flickers out on the real clock, like every other tell
             if (neighArrive > 0) neighArrive = Math.max(0, neighArrive - dtMs / 1000)   // #2618 item 2: the settle lives on the real clock, like the puff
             if (strollFx > 0) strollFx = Math.max(0, strollFx - dtMs / 1000)   // #2618 item 3: the route tell fades with the lap's first breath
             // #2599 item 2: the meet-up greeting — Ivy's meet-walk arrives beside
@@ -1229,6 +1258,7 @@ const HomebodyGame = () => {
             neighSulks = 0   // #2599: nor a stale pair-puff
             neighWave = 0; neighPrevD = 99   // #2599 item 2: nor a stale greeting
             stridePrevWalk = false; neighArrive = 0; strollFx = 0; strollDots = null   // #2618: nor a stale stride, settle, or route tell
+            lostRing.t = 0   // #2688: nor a stale dead ring
             prev.left = prev.right = prev.up = prev.down = prev.a = prev.b = prev.pdown = false
             actQueued = buildQueued = switchQueued = false; digitPick = -1; courtQueued = null
             tabQueued = 0; specialPick = null   // #2222

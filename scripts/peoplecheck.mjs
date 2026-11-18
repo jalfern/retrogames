@@ -122,6 +122,7 @@ import {
     eastWing, GARDEN, EAST_ANCHORS, DEFAULT_ANCHOR, wingPick, wingGeom, WINGS_MAX, groundAt,   // #2689: deeper multi-room — the anchor law, the garden cottage, the pick
 } from '../src/games/Homebody/sim.js'
 import { bondRows, pairStride, strollTrail, STRIDE_BOB } from '../src/games/Homebody/art.js'   // #2599: the BONDS rows are pure data — the view gate reads them straight; #2618: so are the stride and the trail
+import { promiseTell, earReact, gardenLamp, EAR_REACT, PROMISE_TIGHTEN, EAR_HUES, PAIR_HUES, LOST_RING_T } from '../src/games/Homebody/art.js'   // #2688: the go-say tells and the garden lamp are pure derivations too
 import { readFileSync } from 'node:fs'
 
 const DT = FIXED_DT / 1000
@@ -4441,6 +4442,111 @@ section('EVEN-NIGHT PROWL (#2532): even 23:00s the flap opens, midnight calls he
     check('pin: the sound tables hold — three soft pads out, a two-note lift home',
         Array.isArray(PROWL_PADS) && PROWL_PADS.length === 3 && PROWL_PADS.every(([f, d, ms]) => f > 0 && d > 0 && ms >= 0)
         && Array.isArray(PROWL_HOME_SFX) && PROWL_HOME_SFX.length === 2 && PROWL_HOME_SFX.every(([f, d, ms]) => f > 0 && d > 0 && ms >= 0))
+}
+
+// ---------------------------------------------------------- FEEL PASS (#2688) ----
+// #2688 tails 2 & 6 + the wings handoff 3 — all view-only: the promise ring
+// tightens as the errand nears, gold dots walk the remaining route, a folded
+// errand's ring dies grey, the promised ear winks its hue when the walker is
+// close, and the garden's potting bench keeps a lamp after dusk. sim.js must
+// not learn any of these words — the economy is #2683/#2689's, untouched.
+section('FEEL PASS (#2688): tightening ring, marching trail, hue wink, grey death ring, garden night lamp')
+{
+    const fpSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const fpJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const fpArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+
+    // the divided lot (the #2683 rig shape): Fern hangs by the sofa, the
+    // commanded resident stands at the gate — a nine-tile promise.
+    const divide = (seed) => {
+        const g = newRun(seed)
+        g.visitAfter = 99; g.ivyAfter = 99
+        if (!g.visitor) g.visitor = { name: 'Fern' }
+        const v = g.visitor
+        v.r = 3; v.c = 5; v.x = tileX(5) + TILE / 2; v.y = tileY(3) + TILE / 2
+        v.path = null; v.state = 'hang'; v.t = 0; v.hue = '#4fae5f'; v.face = 1; v.walkPhase = 0; v.chatT = 0; v.hangUntil = 9999; v.neighT = 0
+        const p = g.people[0]
+        p.r = 12; p.c = 5; p.x = tileX(5) + TILE / 2; p.y = tileY(12) + TILE / 2
+        p.path = null; p.goal = null; p.use = null; p.queue.length = 0; p.owner = null; p.working = false; p.faintT = 0
+        g.active = 0; g.cmdCd = 0; g.holdT = -1; g.courtPick = null
+        return g
+    }
+
+    const g = divide(7)
+    check('no errand, no tell — the lot reads clean before the tap', promiseTell(g) === null && earReact(g) === null)
+    check('the far tap issues the errand', cmdGoSay(g, g.people[0], 'fern') === true)
+    const t0 = promiseTell(g)
+    check('a live promise tells: nine tiles out, the ring is at its widest', t0 && t0.d === 9 && t0.tight === 0)
+    check('the promised ear wears her dress colour', t0 && t0.hue === EAR_HUES.fern && EAR_HUES.fern === PAIR_HUES[0])
+    let prevT = -1; let mono = true
+    for (const d of [8, 7, 6, 4, 2, 1, 0]) {
+        g.people[0].r = 3 + d
+        const tt = promiseTell(g)
+        if (!tt || !(tt.tight > prevT)) mono = false
+        prevT = tt ? tt.tight : prevT
+    }
+    check('the ring closes as the errand nears — tight climbs at every step inside PROMISE_TIGHTEN', mono && prevT === 1)
+    g.people[0].r = 3 + EAR_REACT
+    const ear4 = earReact(g)
+    check('the ear knows at exactly EAR_REACT tiles — it winks in her hue', ear4 && ear4.hue === EAR_HUES.fern && ear4.x === g.visitor.x && ear4.y === g.visitor.y)
+    g.people[0].r = 3 + EAR_REACT + 1
+    check('one tile further and the wink waits — the reaction has a range', earReact(g) === null && promiseTell(g) !== null)
+
+    const g2 = divide(8)
+    cmdGoSay(g2, g2.people[0], 'fern')
+    const trail = promiseTell(g2).trail
+    check('dots have a route to walk — the trail is the errand\u2019s remaining path', Array.isArray(trail) && trail.length > 0 && trail.length === g2.people[0].path.length)
+    check('the trail fades along the route, walker end bright to the door', trail[0].k === 0 && trail[trail.length - 1].k === 1 && trail[1].k > trail[0].k)
+    g2.people[0].goal = null
+    check('a delivered or dropped errand trails nothing', promiseTell(g2) === null)
+    g2.people[0].goal = { kind: 'gosay', k: 'fern', tries: 0 }
+    g2.visitor.state = 'leaving'
+    check('the promise rides with the ear — a leaving Fern silences every tell', promiseTell(g2) === null && earReact(g2) === null)
+
+    const g3 = divide(9)
+    g3.ivyAfter = 99
+    if (!g3.ivy) g3.ivy = { name: 'Ivy', gift: false }
+    const iv = g3.ivy
+    iv.r = 3; iv.c = 7; iv.x = tileX(7) + TILE / 2; iv.y = tileY(3) + TILE / 2
+    iv.path = null; iv.state = 'hang'; iv.t = 0; iv.hue = '#a3579b'; iv.face = 1; iv.walkPhase = 0; iv.claim = null
+    cmdGoSay(g3, g3.people[0], 'ivy')
+    g3.people[0].r = 5; g3.people[0].c = 7
+    check('the second guest answers in plum — the wink is the pair idiom scaled to one ear', promiseTell(g3).hue === PAIR_HUES[1] && earReact(g3).hue === PAIR_HUES[1])
+
+    // garden lamp: a lot's own geometry + the one night curve decide it
+    const h = newRun(11); h.hour = 21
+    check('day one, no wings, no lamp — the pool belongs to the garden at night', gardenLamp(h) === null)
+    h.ext = 1; h.wings = [{ id: 'east', r0: 2 }]
+    check('the east wing alone stays furniture-dark — the handoff names the garden', gardenLamp(h) === null)
+    h.wings = [{ id: 'east', r0: 2 }, { id: 'garden' }]
+    const lamp = gardenLamp(h)
+    check('the garden stands and dusk falls — the bench gets its pool', lamp !== null && GARDEN.floor.some(([r, c]) => r === lamp.r && c === lamp.c))
+    h.hour = 12
+    check('dawn puts the lamp out', gardenLamp(h) === null)
+    h.hour = 20
+    check('the lamp keeps the panes\u2019 own dusk floor (nightLevel > 0.2)', gardenLamp(h) === null && nightLevel(20) <= 0.2 && nightLevel(21) > 0.2)
+
+    // pins — the wiring, the paint, and the sim's silence
+    check('pin: the view pass stays out of the sim — the economy never heard of these tells',
+        !/promiseTell|earReact|gardenLamp|EAR_REACT|PROMISE_TIGHTEN|EAR_HUES|LOST_RING|lostRing/.test(fpSim))
+    check('pin: the ring radius and stroke ride the tighten factor (no drift)',
+        /15 - 5 \* pt\.tight/.test(fpJsx) && /5\.5 - 1\.5 \* pt\.tight/.test(fpJsx) && /ctx\.lineWidth = 1\.5 \+ pt\.tight/.test(fpJsx))
+    check('pin: the dots march — one cell in three lights, the lit set advances with the clock',
+        /Math\.floor\(g\.sec \* 6\)/.test(fpJsx) && /% 3\) continue/.test(fpJsx) && /0\.55 - tc\.k \* 0\.35/.test(fpJsx))
+    check('pin: the wink paints in the derivation\u2019s hue, pulsing on the real clock',
+        /earReact\(g\)/.test(fpJsx) && /ctx\.fillStyle = er\.hue/.test(fpJsx) && /0\.4 \+ 0\.4 \* Math\.sin\(g\.sec \* 7\)/.test(fpJsx))
+    check('pin: the death ring arms at the fold, flickers grey, decays on the real clock, and never crosses streets',
+        /e\.stage === 'lost'[\s\S]{0,460}lostRing\.t = LOST_RING_T/.test(fpJsx)
+        && /lostRing\.t \/ LOST_RING_T/.test(fpJsx) && /Math\.sin\(g\.sec \* 16\)/.test(fpJsx)
+        && /'#9aa0a8'/.test(fpJsx)
+        && /lostRing\.t = Math\.max\(0, lostRing\.t - dtMs \/ 1000\)/.test(fpJsx) && /lostRing\.t = 0/.test(fpJsx))
+    check('pin: the hue table derives from PAIR_HUES — guests wear their dresses, Pip her star',
+        /fern: PAIR_HUES\[0\], ivy: PAIR_HUES\[1\], kid: '#ffd24a'/.test(fpArt))
+    check('pin: the lamp paints from its own derivation and the one night curve, lit right after the tint',
+        /const l = gardenLamp\(s\)/.test(fpArt) && /nightLevel\(s\.hour\)/.test(fpArt)
+        && /nightTint\(ctx, g\.hour, g\.ext, g\.wings\)\s*\n\s*drawGardenLamp\(ctx, g\)/.test(fpJsx))
+    check('pin: the tight range names both ends — react inside, tighten outside',
+        EAR_REACT === 4 && PROMISE_TIGHTEN === 8 && LOST_RING_T > 0)
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)
