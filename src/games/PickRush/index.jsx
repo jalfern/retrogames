@@ -16,6 +16,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { AMB_ZONES, zoneForShift, fireAt } from './ambience'
+import { BIN_VIS, makeBinVis, stepBinVis, makeWhip, stepWhip, whipTarget } from './visuals'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -164,6 +165,8 @@ const PickRushGame = () => {
         const parts = []
         const landings = []
         const waveCues = [] // #2223 wave-cue ledger {name, fam, wi, step, tick} for the gate
+        const binVis = makeBinVis(BINS.length) // #2678 per-bin fill meter + full lamp (render-only)
+        const whips = [makeWhip(), makeWhip()] // #2678 cable whip spring, one per seat
         let boost = 0
         let attractAt = 0
         const keys = { left: false, right: false, down: false }
@@ -351,18 +354,24 @@ const PickRushGame = () => {
             return pads
         }
 
+        const whipSim = () => {
+            for (let s = 0; s < gs.arms.length; s++) stepWhip(whips[s], whipTarget(gs.arms[s].vx))
+        }
+
         const doSim = () => {
             ensureHum()
             const sc = screenRef.current
             if (sc === 'attract') {
                 if (demoAt > 90 && gs.end) { gs = makeGame(1337 + (demoAt % 97), 2); demoAt = 0 }
                 step(gs, [autopilot(gs, 0), autopilot(gs, 1)])
+                whipSim()
                 handleEvents(gs.ev)
                 demoAt++
                 return
             }
             if (sc !== 'play') return
             step(gs, livePads())
+            whipSim() // #2678 cable spring rides the sim clock, not paint rate — steady at any fps
             edgeA = false; edgeB = false; edge2A = false
             handleEvents(gs.ev)
             // #2234: scheduled ambience — the floor's era follows the shift.
@@ -487,8 +496,15 @@ const PickRushGame = () => {
                 ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fillRect(b.x, y, 2, FLOOR_Y - y)
                 // open mouth
                 ctx.fillStyle = '#0a0f16'; ctx.fillRect(b.x + 4, y + 1, b.w - 8, 3)
+                // #2678 the bin steps its own visual counter: fills to the cap,
+                // thunks, wraps. Read-only over gs.binFill — sim/hash untouched.
+                const vis = binVis[i]
+                if (stepBinVis(vis, gs.binFill[i])) {
+                    audioController.playTone(72, 0.14, 'sine', 0.03) // full-pallet thunk
+                    audioController.playNoise(0.09, 0.02)
+                }
                 // landed stock: the bin's own kind, stacking and squashing in
-                const fill = Math.min(10, gs.binFill[i])
+                const fill = vis.fill
                 const tag = BIN_TAG[i]
                 for (let k = 0; k < fill; k++) {
                     const bxp = b.x + 8 + (k % 3) * 18 + ((k * 13) % 6)
@@ -500,6 +516,23 @@ const PickRushGame = () => {
                     if (k % 3 === 2) { circle(ctx, bxp + 6, byp + 4, 5); ctx.fill() } else ctx.fillRect(bxp, byp + 8 - 8 * squash, 12, 8 * squash)
                     ctx.globalAlpha = 0.25
                     ctx.fillStyle = '#0a0f16'; ctx.fillRect(bxp, byp + 8 - 8 * squash + 5, 12 * (k % 3 === 2 ? 0.8 : 1), 2)
+                    ctx.globalAlpha = 1
+                }
+                // #2678 fill meter: the bin's tag-coloured ink column climbs the
+                // right wall as the bin fills; a full bin flashes its whole rim.
+                const mTop = y + 8, mBot = FLOOR_Y - 3, mx = b.x + b.w - 6
+                ctx.fillStyle = '#0a0f16'; ctx.fillRect(mx, mTop, 4, mBot - mTop)
+                const inkH = Math.round((mBot - mTop - 2) * (fill / BIN_VIS.cap))
+                if (inkH > 0) {
+                    ctx.globalAlpha = 0.8
+                    ctx.fillStyle = tag
+                    ctx.fillRect(mx + 1, mBot - 1 - inkH, 2, inkH)
+                    ctx.globalAlpha = 1
+                }
+                if (vis.flash > 0) {
+                    ctx.globalAlpha = Math.min(1, vis.flash / 18)
+                    ctx.strokeStyle = tag; ctx.lineWidth = 1
+                    ctx.strokeRect(b.x + 1.5, y + 1.5, b.w - 3, FLOOR_Y - y - 2)
                     ctx.globalAlpha = 1
                 }
                 // tag plate
@@ -521,8 +554,9 @@ const PickRushGame = () => {
             const skin = ARM_SKIN[seat], dark = ARM_DARK[seat]
             const ry = seat === 0 ? RAIL_Y : RAIL_Y + 9
             const x = Math.round(arm.x)
-            // cable with a slight whip when the arm moves
-            const whip = Math.max(-4, Math.min(4, -arm.vx * 1.6))
+            // cable on a whip spring (#2678), stepped in doSim at sim rate; the
+            // painter just reads where the head hangs this frame
+            const whip = whips[seat].y
             ctx.strokeStyle = seat === 0 ? CABLE : 'rgba(159,174,190,0.8)'; ctx.lineWidth = 1.6
             ctx.beginPath(); ctx.moveTo(x, ry + 4); ctx.quadraticCurveTo(x + whip, (ry + arm.tip) / 2, x, arm.tip - 8); ctx.stroke()
             // claw head + jaws
@@ -892,6 +926,9 @@ const PickRushGame = () => {
             waveName: WAVES[Math.min(gs.shift, WAVES.length - 1)][gs.wave.wi].name,
             waveTotal: WAVES[Math.min(gs.shift, WAVES.length - 1)][gs.wave.wi].kinds.length, // #2223 pips
             waveSpawned: gs.wave.ki,                                                        // #2223 pips dimmed
+            binVis: binVis.map((v) => v.fill), // #2678 fill-meter columns (render-only)
+            binLamp: binVis.map((v) => v.flash > 0), // #2678 full-bin lamps lit now
+            whip: Math.round(whips[0].y * 100) / 100, // #2678 cable head offset, world px
             ambZone: zoneForShift(gs.shift), // #2234 era the floor sounds like
             pos: Math.round(gs.arms[0].x * 10) / 10,
             clawY: Math.round(gs.arms[0].tip * 10) / 10,
@@ -922,6 +959,7 @@ const PickRushGame = () => {
                     setMode('play')
                 }
                 step(gs, pads && pads.length ? pads : [pad])
+                whipSim()
                 handleEvents(gs.ev)
                 if (gs.end && screenRef.current === 'play') finish()
             },

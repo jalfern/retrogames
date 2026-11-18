@@ -106,11 +106,13 @@ to one shift's waves; `amb` flattens the ambience eras (#2234); named gates go r
   `pickcheck` gates it: AMB zone/cadence/schedule/era-bleed/play-door in Node
   + attract-silent, live beep and graveyard-chatter proofs in Chrome;
   `PICK_MUT=amb` goes red on two named gates.)
-- Still open from #2214 (rolled into #2223, the next PickRush polish): per-bin
-  fill bars + bin-full thunk, cable whip on gantry reversal, wobble/rotation
-  telegraphs for glass clusters and barrel pairs, and a wave-completion tick on
-  the quota gauge. — the wave-progress tell CLOSED by #2223 as its own lamp row
-  (see below); the quota gauge keeps its own pulse.
+- Per-bin fill bars + bin-full thunk and cable whip on gantry reversal —
+  **CLOSED by #2678** (`visuals.js`, see §Bin life & cable whip); the
+  wave-completion tell was CLOSED by #2223 as its own lamp row (see below),
+  the quota gauge keeps its own pulse.
+- Still open from #2214: wobble/rotation telegraphs for glass clusters and
+  barrel pairs — an off-axis grab or a shatter risk on the belt carries no
+  pre-warning today.
 
 ## Wave read & rhythm (#2223 — QA polish pass)
 
@@ -137,3 +139,29 @@ to one shift's waves; `amb` flattens the ambience eras (#2234); named gates go r
   post-reset frame (red twice on main 2026-11-14, deterministic under load).
   The gate now waits for a real painted frame (double-rAF + settle);
   thresholds and colors untouched.
+
+## Bin life & cable whip (#2678 — never-dry polish)
+
+- **Fill meters:** every bin carries a tag-coloured ink column on its right
+  wall — landed pieces climb it one twelfth at a time. At 12 the bin thunks
+  (one low sine + noise hit), flashes its whole rim in its tag colour, and
+  the column wraps to empty. `gs.binFill` stays the lifetime count (PIECES
+  and state hashes never see the wrap); the visual counter lives in
+  `visuals.js` and heals silently when a new game drops the raw counts.
+- **Cable whip:** the hoist cable hangs on a light spring (`BIN_VIS.spring`,
+  ζ≈0.29) instead of the old speed-tilt. Steady slides settle at the classic
+  ±4 px trailing tilt; a reversal makes the head WHIP past it (measured
+  +5.8 px on live Chrome) before hanging straight again. Stepped in `doSim`
+  at sim rate (paint-rate stepping starved the spring to a crawl on software
+  render), and in the contract tick too, so bots and replays see the cable
+  move like thumbs do.
+- **Proven:** pickcheck `JUICE` (Node — exact 12-cap, no double-thunk,
+  restart heal, thunks === Σ floor(binFill/12) over a full autopilot line,
+  twin-seed SIM-CLEAN, spring overshoot/clamp/settle) plus live
+  `WHIP-SPRING` / `WHIP-PIXELS` / `WHIP-REST` / `METER` / `METER-FULL`
+  (contract state + canvas sampling, real keyboard reversals). `PICK_MUT=vis`
+  (bins never fill) reddens 3 gates by name; `PICK_MUT=whip` (dead spring)
+  reddens 2.
+- **Also here:** the carried-CAN pixel gate waits for a PAINTED frame instead
+  of a fixed 34 ms — same #2136 lesson as WAVE-INK above; the chase loop
+  never yields to rAF, so loaded boxes sampled stale canvas bits.
