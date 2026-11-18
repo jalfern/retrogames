@@ -23,19 +23,35 @@ export const MUSIC_BUS_REF = 0.16               // documentation only; the live 
 export const BED_VOICE = 0.6                    // the loudest bed voice unit (_note/bass)
 export const DUCK_LEVEL = 0.5                   // how far the bed ducks while a chase cue plays
 export const CHASE_CUES = ['escort', 'doorCross']
-// #326-1: during a duel the Jaffar ostinato competes with parry rings and hits.
-// The bed yields ~4 dB (0.63 ≈ -4 dBFS ratio) for the length of the exchange —
-// shallower than the chase duck, because a duel runs many cues in a row and a
-// deep pump would make the music hiccup.
+// #326-1, re-shaped by #2667: during a duel the Jaffar ostinato competes with
+// parry rings and hits. It first yielded ~4 dB (0.63 ≈ -4 dBFS) per cue — but
+// a duel chains cues, so the bed pumped on every clash; #326-1 itself noted a
+// deep pump makes the music hiccup. The pump was the bug. Now the bed lays
+// back ONCE for the exchange: engaged at the first duel cue, held until
+// DUEL_HELD ticks past the LAST one, then it glides back up over the quiet.
+// Same depth as before (one breath of ~4 dB, never silent), no pumping.
 export const DUEL_DUCK = 0.63
 export const DUEL_CUES = ['parry', 'hit', 'hitPlayer', 'guardWind']
+// world ticks (60 fps): the bed returns 1.4 s after the last duel cue.
+export const DUEL_HELD = 84
+// The exchange state machine — pure, so popcheck S12 pins it without a
+// browser. Feed every tick with the latest duel cue (or null); it returns the
+// tick until which the bed stays ducked (0 = not ducked). Engages on any duel
+// cue and EXTENDS on later ones; a quiet run past the hold releases it. A hold
+// whose clock went backwards is from a run that reset (R, attract, level
+// change) and never survives: a fresh hour must never start already ducked.
+export function duelHold(prevUntil, tick, cueType) {
+    if (DUEL_CUES.includes(cueType)) return tick + DUEL_HELD
+    if (!(prevUntil > 0)) return 0
+    if (tick > prevUntil || prevUntil > tick + DUEL_HELD) return 0
+    return prevUntil
+}
 // #326-2: a room flip is a stone event; the bed dips for the slide, and the
 // flip cue itself is two layers (see SFX.room).
 export const ROOM_DUCK = 0.55
 export const ROOM_CUES = ['room']
 export function duckFor(cueType) {
     if (CHASE_CUES.includes(cueType)) return DUCK_LEVEL
-    if (DUEL_CUES.includes(cueType)) return DUEL_DUCK
     if (ROOM_CUES.includes(cueType)) return ROOM_DUCK
     return 1
 }

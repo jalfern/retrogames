@@ -11,7 +11,7 @@ import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, 
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { drawScene, VW, VH, fitAttractFont, moonSources, moonShade, paneShift } from './art.js'
 import { LEVEL_COUNT, LEVEL_NAMES, RW, T } from './levels.js'
-import { SFX, trackFor, duckFor, stepFor } from './music.js'
+import { SFX, trackFor, duckFor, stepFor, duelHold, DUEL_DUCK } from './music.js'
 
 const LITE = typeof window !== 'undefined' && /[?&]lite=/.test(window.location.search)
 
@@ -226,16 +226,38 @@ const PrinceOfPersiaGame = () => {
                 else if (st[0] === 'noise') audioController.playNoise(st[1], st[2])
             }
         }
+        // #2667 held duel duck: the bus lays back while an exchange runs and
+        // glides back once the steel is quiet. setMusicLevel holds the fraction;
+        // momentary ducks (chase, room) still stack beneath it, because
+        // duckMusic recovers to the HELD level by contract.
+        let duelUntil = 0
+        let duelDucked = false
+        const applyDuel = () => {
+            const duck = duelUntil > 0
+            if (duck === duelDucked) return
+            duelDucked = duck
+            audioController.setMusicLevel(duck ? DUEL_DUCK : 1)
+        }
+
         const sfx = (before) => {
             const events = g.events.slice(before)
+            let dueled = false
             for (const ev of events) {
                 const recipe = SFX[ev.type]
                 if (recipe) play(recipe(ev))
                 // a chase cue ducks the bed so it peaks over the music, not into it
                 if (duckFor(ev.type) < 1) audioController.duckMusic(duckFor(ev.type))
+                // #2667: a duel cue engages/extends the held layback (the bed
+                // ducks once for the exchange, not per clash — the law is
+                // duelHold, pinned by popcheck S12; never on the attract)
+                if (!attract) {
+                    const next = duelHold(duelUntil, g.tick, ev.type)
+                    if (next !== duelUntil) { duelUntil = next; dueled = true }
+                }
                 if (ev.type === 'die') audioController.playDeath()
                 if (ev.type === 'win') audioController.playFanfare()
             }
+            if (dueled) applyDuel()
         }
 
         // the bed under the hour: silence on the attract screen and when you die
@@ -298,6 +320,9 @@ const PrinceOfPersiaGame = () => {
                 step(g, watchingRef.current && g.status === 'play' ? decide(g) : readInputs())
             }
             sfx(before)
+            // #2667: the held layback expires on the world clock even with no
+            // new cues (and never arms on the attract screen).
+            if (!attract) { duelUntil = duelHold(duelUntil, g.tick, null); applyDuel() }
             music()
             ambience()
             // a fresh hang re-teaches the ledge grammar (transient, ~2 s)
