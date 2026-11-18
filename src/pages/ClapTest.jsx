@@ -101,6 +101,7 @@ const ClapTest = () => {
                 taps: simRef.current.taps, verdict: resultRef.current, uploaded: !!(uploadRef.current && uploadRef.current.uploaded),
                 key: (uploadRef.current && uploadRef.current.key) || null,
                 coach: coachRef.current.last ? coachRef.current.last.kind : null, pairs: coachRef.current.pairs,
+                report: (resultRef.current && resultRef.current.report) || null,
             }
         }
     }, [])
@@ -407,8 +408,18 @@ const ClapTest = () => {
                         <div className="border border-gray-700 rounded-lg p-3 bg-white/5"><div className="text-2xl font-bold" style={{ color: AMBER }}>{result.matched}</div><div className="text-[10px] text-gray-400 mt-1">pairs matched</div></div>
                         <div className="border border-gray-700 rounded-lg p-3 bg-white/5"><div className="text-2xl font-bold" style={{ color: AMBER }}>{worstAbs === null ? '—' : `${worstAbs} ms`}</div><div className="text-[10px] text-gray-400 mt-1">worst gap</div></div>
                     </div>
-                    {result.pairs && result.pairs.length > 0 && (
-                        <div className="mt-3 text-[10px] text-gray-500">{result.pairs.map((p, i) => `#${i + 1} ${p.offsetMs > 0 ? '+' : ''}${p.offsetMs} ms`).join('   ')}</div>
+                    {result.report && result.report.length > 0 && (
+                        <div className="mt-4 w-full text-left border border-gray-700 rounded-xl p-4 bg-white/5 space-y-1" data-clap-report="">
+                            <div className="text-[10px] tracking-widest text-gray-400 mb-1">EVERY SLAP, IN ORDER</div>
+                            {result.report.map((row, i) => (
+                                <div key={i} className="text-xs" data-clap-row={row.kind}>
+                                    <span className="text-gray-500">#{row.n}</span>{' '}
+                                    <span style={{ color: row.kind === 'pair' ? NEON : row.kind === 'off' ? AMBER : row.kind === 'more' ? undefined : '#ff8040' }}>
+                                        {row.kind === 'more' ? `+${row.ms} more events` : typeof COACH_LIVE_TEXT[row.kind] === 'function' ? COACH_LIVE_TEXT[row.kind](row.ms) : COACH_LIVE_TEXT[row.kind] || row.kind}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
                     )}
                     {hardFailNote(result) && (
                         <div className="mt-3 text-[10px] text-gray-400" data-clap-worst-note="">{hardFailNote(result)}</div>

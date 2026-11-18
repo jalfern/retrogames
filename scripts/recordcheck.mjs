@@ -918,6 +918,44 @@ const bucketRowBySeed = (seed) => {
     ok(/OFF 62/.test(COACH_LIVE_TEXT.off(62)) && /glass/.test(COACH_LIVE_TEXT.off(62)), 'off text names OFF + ms + the glass', COACH_LIVE_TEXT.off(62))
     ok(/TOUCH/.test(COACH_LIVE_TEXT.notouch) && /glass/.test(COACH_LIVE_TEXT.notouch), 'notouch text says TOUCH + glass')
     ok(/SOUND/.test(COACH_LIVE_TEXT.nosound) && /slap harder/i.test(COACH_LIVE_TEXT.nosound), 'nosound text says SOUND + prompts louder (one-sided bias: prompt, never claim)')
+
+    // --- REPORT CARD (#1711): one named row per slap, in time order -----------
+    // The totals ("0 of 2 paired") never told Jon WHICH habit failed — silent
+    // tap vs airborne clap vs late palm all read the same. The card speaks each
+    // row from the verdict's own residue (matchClapEdges' timed unmatched lists),
+    // so card and verdict can never disagree.
+    const { clapReportRows, MAX_REPORT_ROWS } = await import('../src/utils/clapTestCore.js')
+
+    // residue WITH times on matchClapEdges — additive (counts unchanged)
+    const resNoTaps = matchClapEdges({ sampleRate: SR, onsets: dc2(Float32Array.from(mkI16(CLAPS_AT(T1)), (v) => v / 32767), { sampleRate: SR }), edges: [], clock: mkTake(T1).voice.tracks[0].clock })
+    ok(resNoTaps.unmatchedOnsetMs.length === 3 && resNoTaps.unmatchedOnsetMs.every((ms, i) => Math.abs(ms - CLAPS_AT(T1)[i]) <= 2), 'residue: claps with no taps keep their heard times (seed978353 shape)', JSON.stringify(resNoTaps.unmatchedOnsetMs))
+    ok(resNoTaps.unmatchedTapMs.length === 0 && resNoTaps.unmatchedOnsets === 3, 'residue times agree with the counts already graded')
+    const resNoClock = matchClapEdges({ sampleRate: SR, onsets: [1000], edges: [{ t: 1, control: 'a' }], clock: [] })
+    ok(Array.isArray(resNoClock.unmatchedOnsetMs) && resNoClock.unmatchedOnsetMs.length === 0 && resNoClock.unmatchedTapMs.length === 0, 'no clock -> empty residue lists (no ms can be computed, never fabricated)')
+
+    // clean take: three PAIR rows, ascending, each within the line
+    ok(clean.report.length === 3 && clean.report.every((r) => r.kind === 'pair') && clean.report.every((r) => Math.abs(r.ms) <= 50), 'clean take card: three PAIR rows within ±50 ms', JSON.stringify(clean.report))
+    ok(clean.report.every((r, i) => r.n === i + 1) && clean.report.every((r, i) => i === 0 || r.atMs >= clean.report[i - 1].atMs), 'card rows are numbered and time-ordered')
+    ok(clean.report.length === clean.matched, 'card says exactly one row per matched pair (paint == verdict)')
+
+    // the three acceptance mutants each name their own failure shape
+    ok(m1.report.length === 3 && m1.report.every((r) => r.kind === 'off' && r.ms < -50), 'taps +120 ms card: three OFF rows, signed late vs the glass', JSON.stringify(m1.report.map((r) => r.ms)))
+    ok(m2.report.length === 3 && m2.report.every((r) => r.kind === 'nosound'), 'silent taps card: three NO SOUND rows (the seed144524 habit named per slap)', JSON.stringify(m2.report.map((r) => r.kind)))
+    ok(m3.report.map((r) => r.kind).join() === 'pair,pair,nosound', 'two claps + three taps card: the third slap named NO SOUND in place', JSON.stringify(m3.report.map((r) => r.kind)))
+
+    // airborne clap card: loud claps, zero touches -> every row NO TOUCH
+    ok(zeroTapSound.report.length === 3 && zeroTapSound.report.every((r) => r.kind === 'notouch'), 'heard claps with zero touches card: three NO TOUCH rows (seed978353 named at grading)', JSON.stringify(zeroTapSound.report))
+    ok(zeroTapDead.report.length === 0, 'dead take card is empty — no events happened, none invented')
+    ok(noVoice.report.length === 0, 'voiceless take card is empty — nothing was heard to name')
+
+    // the row builder is a law of its own constants, not baked text
+    const fakeV = { pairs: [{ tick: 1, expectedMs: 1000, heardMs: 1060, offsetMs: 60 }], unmatchedOnsetMs: [], unmatchedTapMs: [] }
+    ok(clapReportRows(fakeV)[0].kind === 'off', 'row kind uses the acceptance line (60 ms > ±50 -> OFF)')
+    ok(clapReportRows({ ...fakeV, pairs: [{ tick: 1, expectedMs: 1000, heardMs: 1050, offsetMs: 50 }], unmatchedOnsetMs: [], unmatchedTapMs: [] })[0].kind === 'pair', 'exactly ±50 ms still Pairs on the card (the line itself, not tighter)')
+    ok(clapReportRows(fakeV, 70)[0].kind === 'pair', 'tolMs opts override honoured -> the gate is the constant, not baked text')
+    const crowded = clapReportRows({ pairs: [], unmatchedOnsetMs: Array.from({ length: MAX_REPORT_ROWS + 2 }, (_, i) => i * 1000), unmatchedTapMs: [] })
+    ok(crowded.length === MAX_REPORT_ROWS + 1 && crowded[MAX_REPORT_ROWS].kind === 'more' && crowded[MAX_REPORT_ROWS].ms === 2, `crowded card caps at ${MAX_REPORT_ROWS} rows and admits the hidden count (+2 more)`, JSON.stringify(crowded.slice(-2)))
+    ok(crowded[MAX_REPORT_ROWS - 1].n === MAX_REPORT_ROWS, 'numbering survives the cap (row 12 is #12)')
 }
 
 // --- query plumbing -----------------------------------------------------------

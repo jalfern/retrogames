@@ -107,10 +107,10 @@ export function hardFailNote(v) {
 
 export function screenVerdict({ sampleRate, samples, rec, minPairs = CLAP_MIN_PAIRS, tolMs = CLAP_TOL_MS }) {
     if (!rec || !rec.voice || !Array.isArray(rec.voice.tracks) || !rec.voice.tracks.length || !rec.voice.tracks[0].clock || rec.voice.tracks[0].clock.length < 2) {
-        return { ok: false, claps: 0, pairs: [], matched: 0, worstMs: null, why: 'no audio track in the take', hint: 'no microphone audio — say YES to the voice switch, and check the mic permission for this site' }
+        return { ok: false, claps: 0, pairs: [], matched: 0, worstMs: null, report: [], why: 'no audio track in the take', hint: 'no microphone audio — say YES to the voice switch, and check the mic permission for this site' }
     }
     if (!samples || samples.length < 1000) {
-        return { ok: false, claps: 0, pairs: [], matched: 0, worstMs: null, why: 'the mic recorded nothing', hint: "didn't hear the slaps, try louder" }
+        return { ok: false, claps: 0, pairs: [], matched: 0, worstMs: null, report: [], why: 'the mic recorded nothing', hint: "didn't hear the slaps, try louder" }
     }
     const onsets = detectClaps(Float32Array.from(samples, (v) => v / 32767), { sampleRate })
     const track = rec.voice.tracks[0]
@@ -119,8 +119,13 @@ export function screenVerdict({ sampleRate, samples, rec, minPairs = CLAP_MIN_PA
         .sort((a, b) => (b.verdict.ok - a.verdict.ok)
             || ((a.verdict.worstMs ?? 1e9) - (b.verdict.worstMs ?? 1e9))
             || (b.verdict.matched - a.verdict.matched))
-    const best = seats[0]
-    const v = (best && best.verdict) || { ok: false, pairs: [], matched: 0, unmatchedOnsets: onsets.length, ignoredEdges: 0, worstMs: null, why: 'no controls recorded — slap the screen 3 times' }
+    let v = (seats[0] && seats[0].verdict) || null
+    if (!v) {
+        // no seat had any edges — grade the empty seat anyway: the onset residue
+        // (each heard clap with NO touch) is exactly what the report card must
+        // name (Jon's seed978353 shape: loud claps, empty pad stream).
+        v = matchClapEdges({ sampleRate, onsets, edges: [], clock: track.clock, minPairs, tolMs })
+    }
     // #2205 item 3: zero registered touches is its own failure mode (never hit
     // START / wrong page) — say it plainly instead of the generic minPairs line.
     const noTouches = !seats.some((c) => c.edges && c.edges.length)
@@ -140,11 +145,41 @@ export function screenVerdict({ sampleRate, samples, rec, minPairs = CLAP_MIN_PA
         matched: v.matched || 0,
         unmatchedOnsets: v.unmatchedOnsets || 0,
         ignoredEdges: v.ignoredEdges || 0,
+        unmatchedTapMs: v.unmatchedTapMs || [],
         noTouches,
         worstMs: v.worstMs === undefined ? null : v.worstMs,
+        report: clapReportRows(v, tolMs),
         why: v.why,
         hint,
     }
+}
+
+// REPORT CARD (#1711): one row per event the take produced — every slap named
+// by WHAT it was, in time order, using the coach's own words. The three failed
+// phone takes (#1711 audit) each failed differently (silent tap / airborne clap
+// / late palm), but the graded screen only ever showed totals ("0 of 2 paired"),
+// so the player couldn't see which habit to fix. Rows ride the verdict's own
+// residue (matchClapEdges' unmatchedOnsetMs/unmatchedTapMs — the counts' times,
+// no second law): pair/off carry the signed ±ms (positive = sound arrived LATE
+// vs the frame clock), notouch = clap heard with no tap, nosound = tap with no
+// clap. cap keeps the phone screen sane under pointer noise; `more` admits the
+// hidden count honestly instead of pretending.
+export const MAX_REPORT_ROWS = 12
+export function clapReportRows(v, tolMs = CLAP_TOL_MS, cap = MAX_REPORT_ROWS) {
+    const rows = []
+    for (const p of (v && v.pairs) || []) {
+        rows.push({ kind: Math.abs(p.offsetMs) <= tolMs ? 'pair' : 'off', ms: Math.round(p.offsetMs), atMs: Math.round(p.expectedMs) })
+    }
+    for (const ms of (v && v.unmatchedOnsetMs) || []) rows.push({ kind: 'notouch', ms: null, atMs: Math.round(ms) })
+    for (const ms of (v && v.unmatchedTapMs) || []) rows.push({ kind: 'nosound', ms: null, atMs: Math.round(ms) })
+    rows.sort((a, b) => a.atMs - b.atMs || (a.kind === 'pair' || a.kind === 'off' ? -1 : 1))
+    rows.forEach((row, i) => { row.n = i + 1 })
+    if (rows.length > cap) {
+        const hidden = rows.length - cap
+        rows.length = cap
+        rows.push({ kind: 'more', ms: hidden, atMs: null, n: cap + 1 })
+    }
+    return rows
 }
 
 // --- live pair coach (#1711) ---------------------------------------------------
