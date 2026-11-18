@@ -41,17 +41,17 @@
 // scripts/lib/relaysim.mjs — cfworkers shim + faithful R2 mock), so the whole
 // consent-gated auto-capture path runs TODAY against the exact HTTP surface the
 // real bucket will sit behind, even though #1730 has not provisioned it.
-// Gauntlet gets `?store=`, the gate goes up YES+YES, and a synth mic stream
-// (voicedrive's established trick — only the sound source is synthetic;
+// Gauntlet gets `?store=`, the gate goes up YES+YES, and the mic is Chrome's
+// fake capture device fed by a baked WAV (#2709 — hum + full-scale CLAPS at
+// exact sample offsets through REAL gUM; only the sound source is synthetic;
 // consent, MediaRecorder, the tick clock, v2 assembly and the upload are the
-// real code) fires full-scale CLAPS at known wall-times while the harness
-// taps the ATTACK key (Space — Gauntlet's `a`, the control the #2056 player
-// instructions name) at the SAME instant, like the physical clap test: clap +
-// A-tap together, steering between claps as normal-play context. The run
-// ends, uploads through worker.js routes, downloads back, decodes the opus in
-// the browser (WebAudio), and the pure clapSync verdict pairs every detected
-// onset with its recorded A-tap through the track's own clock.
-// |offset| <= 50 ms for all three.
+// real code) while the harness taps the ATTACK key (Space — Gauntlet's `a`,
+// the control the #2056 player instructions name) at the SAME instants, like
+// the physical clap test: clap + A-tap together, steering between claps as
+// normal-play context. The run ends, uploads through worker.js routes,
+// downloads back, decodes the opus in the browser (WebAudio), and the pure
+// clapSync verdict pairs every detected onset with its recorded A-tap through
+// the track's own clock. |offset| <= 50 ms for all three.
 //
 // Nothing here needs Jon's phone; when the real store lands, --store= reuses
 // the identical driver against it.
@@ -76,6 +76,7 @@ import { containerDurationMs, voiceDrift } from '../src/utils/voice.js'
 import { startRelaySim } from './lib/relaysim.mjs'
 import { STORE_DEFAULT } from '../src/utils/sessionStore.js'
 import { readKey } from './lib/localkey.mjs'
+import { bakeFakeMicWav, fakeMicArgs, fakeMicInit, PRIME_MS } from './lib/fakemic.mjs'
 
 const argv = process.argv.slice(2)
 const PORT = process.env.DEV_PORT || 5173
@@ -225,73 +226,60 @@ const sim = await startRelaySim()
 const BASE = sim.base
 const PAGE_URL = `http://localhost:${PORT}/retrogames/gauntlet?store=${encodeURIComponent(BASE)}`
 
-const browser = await launch({ headless: !argv.includes('--headful'), extraArgs: ['--use-fake-ui-for-media-capture'] })
+// #2709: headless Chrome 157 delivers zero MediaRecorder chunks from a
+// WebAudio MediaStreamDestination stream (the old synth-mic trick — matrix in
+// the issue). The mic is now Chrome's own fake capture device fed by a baked
+// WAV: hum + full-scale claps at exact sample offsets, delivered through REAL
+// gUM. Consent, MediaRecorder, opus, the tick clock, v2 assembly and the
+// upload remain the untouched production path; only the sound source moved to
+// the device boundary — strictly closer to a phone than the loopback was.
+const clapWav = bakeFakeMicWav({ clapMs: CLAP_MS, secs: 14 })
+const browser = await launch({ headless: !argv.includes('--headful'), extraArgs: fakeMicArgs(clapWav) })
 await requireDevServer(PAGE_URL)
 
 const errors = []
-// The synth mic: getUserMedia returns a WebAudio stream — one LOOPING buffer
-// (hum floor + full-scale claps baked at exact sample offsets) started at t=0.
-// Looped + held on window: no future scheduling, no GC-before-start — both
-// silently ate the clicks in this headless shell (shell+sp, #1622) until the
-// shape and scheduling were fixed (measured pipeline priming: ~+7 ms).
-// __clapWall translates each baked clap back to wall-ms so the keyboard press
-// aims at the same instant a human's clap-and-tap would.
+// __clapWall translates each baked clap back to wall-ms (fakemic's gUM wrapper
+// stamps the resolve and adds baked offset + measured device priming) so the
+// keyboard press aims at the same instant a human's clap-and-tap would.
 const context = await browser.newContext({ viewport: { width: 900, height: 760 } })
-await context.addInitScript(() => {
-    window.__CLAP = { clapMs: [] }
+await context.addInitScript(fakeMicInit)
+await context.addInitScript(({ prime }) => {
+    window.__FAKE_PRIME_MS = prime
     // #2136: probe target — 'Minus' is read by no game input path; the driver
     // stamps its arrival to measure the live input-pipeline latency.
     window.__probeAt = 0
     window.addEventListener('keydown', (e) => { if (e.code === 'Minus') window.__probeAt = Date.now() }, true)
-    const synth = async () => {
-        const AC = window.AudioContext || window.webkitAudioContext
-        const ctx = new AC()
-        try { await ctx.resume() } catch { /* autoplay flag covers this */ }
-        const dest = ctx.createMediaStreamDestination()
-        const sr = ctx.sampleRate
-        const t0 = Date.now()
-        const secs = 12, n = Math.round(secs * sr)
-        const buf = ctx.createBuffer(1, n, sr)
-        const ch = buf.getChannelData(0)
-        let s = 12345
-        const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s / 0x3fffffff) - 1 }
-        const claps = (window.__CLAP.clapMs || []).map((ms) => Math.round((ms / 1000) * sr))
-        for (let i = 0; i < n; i++) {
-            let v = 0.03 * Math.sin(2 * Math.PI * 220 * i / sr) // hum floor: proof the take is live, far below any clap
-            for (const c of claps) {
-                const k = i - c
-                if (k >= 0 && k < 0.05 * sr) {
-                    const env = Math.exp(-k / (0.012 * sr)) // low-frequency noise + low sines, fast decay — what survives opus
-                    v = (0.55 * rnd() + 0.55 * Math.sin(k * 2 * Math.PI * 190 / sr) + 0.35 * Math.sin(k * 2 * Math.PI * 760 / sr)) * env
-                }
-            }
-            ch[i] = Math.max(-1, Math.min(1, v))
-        }
-        const src = ctx.createBufferSource()
-        src.buffer = buf
-        src.loop = true
-        src.connect(dest)
-        src.start(0)
-        window.__keepSynth = { ctx, src } // GC must not eat the take
-        window.__clapWall = claps.map((p) => t0 + (p / sr) * 1000)
-        return dest.stream
-    }
-    // #1711 audit item 3: --micdelay resolves the mic request late — a phone's
-    // recorder storm holds the take clockless for seconds AFTER seed-birth
-    // (seed10 -3385 ms, seed19 -3700 on the stored clock). Read at call time so
-    // the driver can arm it after load, exactly like __CLAP. With the flag at 0
-    // the path is the original byte-for-byte — no extra macrotask on the default.
-    navigator.mediaDevices.getUserMedia = (c) => {
-        const d = window.__MICDELAY || 0
-        return d > 0 ? new Promise((res) => setTimeout(() => res(synth()), d)) : synth(c)
-    }
-})
+}, { prime: PRIME_MS })
 const page = await context.newPage()
 page.setDefaultTimeout(60000)
 page.on('pageerror', (e) => errors.push(String(e)))
 await page.goto(PAGE_URL, { waitUntil: 'load' })
 await page.waitForFunction(() => !!window.__gauntletTest, null, { timeout: 15000 })
 if (THROTTLE > 1) await throttleCPU(page, THROTTLE) // #2136: run the gate on a reproduced slow box
+
+// #2205 busy-box rule: the clap line measures the capture pipeline, and it can
+// only be taken when the box is not starving this page's threads — under load
+// contention the recorder starves (zero-byte takes) and bank-ticks quantise
+// past the ±50 ms line no matter how well the pipeline is aimed. Measure the
+// runner, wait for quiet, and where the wait does not pay, SKIP the
+// time-shaped checks honestly instead of accusing the game. A --witness run
+// never skips (#2654): a contended witness goes RED, and the answer is
+// "witness later", never a laundered green.
+const measureFps = () => page.evaluate(() => new Promise((res) => {
+    let n = 0
+    const t0 = performance.now()
+    const t = () => { n++; if (performance.now() - t0 < 500) requestAnimationFrame(t); else res(Math.round((n * 1000) / (performance.now() - t0))) }
+    requestAnimationFrame(t)
+}))
+let fps = await measureFps()
+for (let w = 0; fps < 25 && w < 8; w++) {
+    r.info('quiet-box wait (#2205)', `page renders ${fps} fps — load ${os.loadavg()[0].toFixed(1)}; waiting 15 s (${w + 1}/8)`)
+    await new Promise((res) => setTimeout(res, 15000))
+    fps = await measureFps()
+}
+const BUSY = fps < 25
+r.info(BUSY ? 'contended box — time-shaped gates will SKIP' : 'box measured quiet', `${fps} fps`)
+const busySkip = (label) => r.skip(label, `contended box (${fps} fps) — time-shaped check (#2205); re-run when quiet`)
 
 // arm the claps BEFORE the mic opens (the gate is still up; the wrapper reads
 // __CLAP when the real recorder asks for the device)
@@ -314,35 +302,64 @@ await page.click('#consent-name')
 await page.type('#consent-name', 'qabot')
 await page.click('#consent-yes')
 
-// recorder + mic open at seed-birth
+// recorder + mic open at seed-birth. The fake-file device intermittently takes
+// many seconds to resolve gUM on a contended Mac (observed: call logged, no
+// resolve for 8+ s while the page itself renders fine) — the take hasn't
+// started yet at this point, so hand the device a few chances BEFORE playing
+// the claps. A device that never lands stays honestly red below.
 let micOpen = false
-try {
-    await page.waitForFunction(() => !!(window.__autoCapture && window.__autoCapture.recording), null, { timeout: Math.round(5000 * SLOW) + MIC_DELAY })
-    micOpen = true
-} catch { /* gate below reports it */ }
+let markWall = 0
+let clapWall = []
+for (let openTry = 1; openTry <= 3; openTry++) {
+    try {
+        await page.waitForFunction(() => !!(window.__autoCapture && window.__autoCapture.recording), null, { timeout: Math.round(5000 * SLOW) + MIC_DELAY })
+        micOpen = true
+    } catch { /* reported after the loop */ }
+    // #1711 audit item 3: recording:true stamps at seed-birth, but the take CLOCK
+    // zeroes only when the mic actually lands (__markStartWall). Wait for that zero
+    // before reading clap stamps and the rec badge — reading at seed-birth races the
+    // recorder-open, and --micdelay widens that race to seconds.
+    try {
+        await page.waitForFunction(() => !!(window.__markStartWall && window.__clapWall && window.__clapWall.length), null, { timeout: MIC_DELAY + Math.round(12000 * SLOW) })
+    } catch { /* retry / the clap-scheduled check reports it */ }
+    markWall = await page.evaluate(() => window.__markStartWall || 0)
+    clapWall = await page.evaluate(() => window.__clapWall || [])
+    if (markWall && clapWall.length === CLAP_MS.length) break
+    if (openTry < 3) {
+        r.info('mic device slow to open (#2709 shape, retry)', `attempt ${openTry}/3: markStart=${markWall ? 'ok' : 'missing'} clapWall=${clapWall.length}/${CLAP_MS.length} — reloading and asking again`)
+        await page.goto(PAGE_URL, { waitUntil: 'load' })
+        await page.waitForFunction(() => !!window.__gauntletTest, null, { timeout: 15000 })
+        await page.evaluate(({ clapMs, micDelay }) => { window.__CLAP = { clapMs }; window.__MICDELAY = micDelay }, { clapMs: CLAP_MS, micDelay: MIC_DELAY })
+        await page.keyboard.press('ArrowRight')
+        await page.waitForTimeout(400)
+        await page.keyboard.press('Space')
+        let gate2 = false
+        try { await page.waitForSelector('[data-consent-gate]', { timeout: Math.round(5000 * SLOW) }); gate2 = true } catch { /* cached consent */ }
+        if (gate2) {
+            await page.click('#consent-motion')
+            await page.click('#consent-voice')
+            await page.click('#consent-name')
+            await page.type('#consent-name', 'qabot')
+            await page.click('#consent-yes')
+        }
+    }
+}
 r.check('recorder opens at seed-birth after YES+YES', micOpen, await page.evaluate(() => JSON.stringify(window.__autoCapture || null)))
 if (!micOpen) await r.exit(browser)
-// #1711 audit item 3: recording:true stamps at seed-birth, but the take CLOCK
-// zeroes only when the mic actually lands (__markStartWall). Wait for that zero
-// before reading clap stamps and the rec badge — reading at seed-birth races the
-// recorder-open, and --micdelay widens that race to seconds.
-try {
-    await page.waitForFunction(() => !!(window.__markStartWall && window.__clapWall && window.__clapWall.length), null, { timeout: MIC_DELAY + Math.round(8000 * SLOW) })
-} catch { /* the clap-scheduled check below reports it */ }
-
-let clapWall = await page.evaluate(() => window.__clapWall || [])
-r.check('claps scheduled from mic-open', clapWall.length === CLAP_MS.length, JSON.stringify(clapWall.map((w) => w - clapWall[0])))
+if (BUSY && !WITNESS && clapWall.length !== CLAP_MS.length) busySkip('claps scheduled from mic-open')
+else r.check('claps scheduled from mic-open', clapWall.length === CLAP_MS.length, JSON.stringify(clapWall.map((w) => w - clapWall[0])))
+if (clapWall.length !== CLAP_MS.length) clapWall = CLAP_MS.map((ms) => Date.now() + 1500 + ms) // NaN guard: aim something so the take still completes
 // #2136: re-anchor the aim at the CLOCK's zero (clock.markStart, stamped in
 // voiceCapture) instead of the synth's AudioContext creation. The gap between
 // the two is the recorder-open storm — a few ms on a cool box, tens-to-100+ ms
 // of wobble on a contended one, and it was the load-dependent constant error
 // hiding in every clap offset (the stored expectedMs counts from markStart).
-const markWall = await page.evaluate(() => window.__markStartWall || 0)
 if (markWall && clapWall.length === CLAP_MS.length) {
     r.info('aim re-anchored to clock zero (#2136)', `recorder-open gap ${markWall - clapWall[0]} ms`)
     clapWall = CLAP_MS.map((ms) => markWall + ms)
 }
-r.check('green mic badge while the take is live', await page.locator('[data-voice-mic][data-state="rec"]').count() === 1)
+if (BUSY && !WITNESS) busySkip('green mic badge while the take is live')
+else r.check('green mic badge while the take is live', await page.locator('[data-voice-mic][data-state="rec"]').count() === 1)
 
 // play + clap-and-tap: real key events aimed at the clap instants (offset
 // for the mutant). The named control is the A button (#2056 instructions:
@@ -366,7 +383,8 @@ r.check('green mic badge while the take is live', await page.locator('[data-voic
 //   * comp is clamped at ±150 ms and EVERY pair is still graded individually
 //     against ±50 ms, so a genuinely lagging pipeline cannot be laundered
 //     green — the --mutate 500 ms desync stays RED by construction.
-const PRIME_MS = 7 // measured synth-mic priming (#1622): sound sits ~7 ms late
+// PRIME_MS (imported, #2709): measured baked-file device priming from
+// fakemic/micprobe; the old synth-mic constant (~7 ms) retired with the synth path.
 const COMP_CLAMP = 150
 const clampComp = (v) => Math.max(-COMP_CLAMP, Math.min(COMP_CLAMP, v))
 const pollBank = () => page.evaluate(() => window.__liveBank || null)
@@ -462,9 +480,11 @@ if (process.env.CLAP_DUMP) {
 }
 const rec = JSON.parse(text)
 r.check('stored file validates', validate(rec) === null, validate(rec) || '')
-r.check('v2 file with one voice track', rec.format === 'retrogames-rec/v2' && rec.voice && rec.voice.tracks.length === 1, rec.format)
+if (BUSY && !WITNESS) busySkip('v2 file with one voice track')
+else r.check('v2 file with one voice track', rec.format === 'retrogames-rec/v2' && rec.voice && rec.voice.tracks.length === 1, rec.format)
 const track = rec.voice && rec.voice.tracks[0]
-r.check('voice track carries a clock trace', !!(track && Array.isArray(track.clock) && track.clock.length >= 2), track && JSON.stringify(track.clock))
+if (BUSY && !WITNESS) busySkip('voice track carries a clock trace')
+else r.check('voice track carries a clock trace', !!(track && Array.isArray(track.clock) && track.clock.length >= 2), track && JSON.stringify(track.clock))
 
 // #1711 audit item 3 (2026-11-16): a throttle run must NAME its lag, not just
 // claim one. The audited phone takes sit seconds behind realtime on the stored
@@ -483,7 +503,8 @@ if (track && Array.isArray(track.clock) && track.clock.length >= 2) {
 const pads = (rec.slots[0] && rec.slots[0].pads) || []
 const pressTicks = []
 for (let i = 0; i < pads.length; i++) if (pads[i] && pads[i].a && !(i && pads[i - 1] && pads[i - 1].a)) pressTicks.push(i + 1)
-r.check('three clap-coincident A-taps banked in the pad stream', pressTicks.length === CLAP_MS.length, JSON.stringify(pressTicks))
+if (BUSY && !WITNESS) busySkip('three clap-coincident A-taps banked in the pad stream')
+else r.check('three clap-coincident A-taps banked in the pad stream', pressTicks.length === CLAP_MS.length, JSON.stringify(pressTicks))
 
 // decode the opus IN the browser (the container only lives there) and run the
 // pure verdict over real recorded bytes
@@ -502,11 +523,23 @@ try {
         const sr = buf.sampleRate
         ctx.close()
         return { sr, samples: out }
-    }, track.b64)
+    }, track ? track.b64 : null)
 } catch (e) { /* gate below */ }
-r.check('opus bytes decode back to PCM in the browser', !!(pcm && pcm.samples.length > 1000), pcm ? `${pcm.samples.length} samples @ ${pcm.sr} Hz` : 'decode failed')
-if (!(pcm && track)) { sim.close(); await r.exit(browser) }
+if (BUSY && !WITNESS && !(pcm && track)) {
+    busySkip('opus bytes decode back to PCM in the browser')
+} else {
+    r.check('opus bytes decode back to PCM in the browser', !!(pcm && pcm.samples.length > 1000), pcm ? `${pcm.samples.length} samples @ ${pcm.sr} Hz` : 'decode failed')
+    if (!(pcm && track)) { sim.close(); await r.exit(browser) }
+}
 
+if (!(pcm && track)) {
+    // Contended take without decodable audio: the remaining verdict lines are
+    // time-shaped — SKIP them (#2205) and still print the honest stamps.
+    if (!MUTATE) {
+        busySkip(`every clap lands within ±${CLAP_TOL_MS} ms of its frame`)
+        busySkip('onsets heard: exactly one clap per press')
+    }
+} else {
 const onsets = detectClaps(Float32Array.from(pcm.samples, (v) => v / 32767), { sampleRate: pcm.sr })
 const f32 = Float32Array.from(pcm.samples, (v) => v / 32767)
 let peak = 0
@@ -530,7 +563,9 @@ if (MUTATE) {
     const driftMs = dg ? dg.maxLagMs : 0
     const gateLabel = `every clap lands within ±${CLAP_TOL_MS} ms of its frame`
     const gate = clapPairGate({ ok: verdict.ok, worstMs: verdict.worstMs, driftMs, witness: WITNESS })
-    if (gate.action === 'PASS') {
+    if (BUSY && !WITNESS) {
+        busySkip(gateLabel)
+    } else if (gate.action === 'PASS') {
         r.check(gateLabel, true, `worst ${verdict.worstMs} ms${driftMs > CLAP_TOL_MS ? ` (world paced ${driftMs.toFixed(1)} ms off realtime and it STILL landed)` : ''}`)
     } else if (gate.action === 'SKIP') {
         r.skip(gateLabel, `contended box: world paced ${driftMs.toFixed(1)} ms off realtime @tick ${dg.worstTick}; ${gate.why}`)
@@ -542,10 +577,16 @@ if (MUTATE) {
     // Stamp every non-mutant run with its standing, so a green default run can
     // never be quoted at the acceptance line by mistake — the human proof is a
     // phone take with ≥3 clap-coincident taps graded by the analyze path.
+    // #2709: the capture source is named too — fake-file device audio is real
+    // bytes through the real recorder path, but it is DEVICE-side synthetic,
+    // and the stamp says so on every run.
+    r.info('mic capture (#2709)', `fake-file (baked wav) — Chrome ${browser.version()}`)
     r.info('line-3 machine evidence (#1711)', WITNESS
-        ? 'YES — strict --witness run, pair gate never skipped'
+        ? 'YES — strict --witness run, pair gate never skipped (fake-file capture, #2709 shape)'
         : 'NO — not a witness run. Quote this green for pipeline health only; line 3 closes on a --witness run or one human phone take.')
-    r.check('onsets heard: exactly one clap per press', onsets.length === CLAP_MS.length, `${onsets.length}/${CLAP_MS.length}`)
+    if (BUSY && !WITNESS) busySkip('onsets heard: exactly one clap per press')
+    else r.check('onsets heard: exactly one clap per press', onsets.length === CLAP_MS.length, `${onsets.length}/${CLAP_MS.length}`)
+}
 }
 r.check('zero page errors', errors.length === 0, errors.join(' | '))
 

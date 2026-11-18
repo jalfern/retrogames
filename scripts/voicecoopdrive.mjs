@@ -14,7 +14,7 @@ const r = new Report('voicecoopdrive')
 // Fake media (voicedrive's idiom): a generated tone stands in for the mic so
 // the consent + session flow runs headless; our OWN overlay still must be
 // clicked — --use-fake-ui only pre-grants the browser bubble.
-const browser = await launch({ headless: opt(process.argv, '--headful', true) === false, extraArgs: ['--use-fake-device-for-media-capture', '--use-fake-ui-for-media-capture'] })
+const browser = await launch({ headless: opt(process.argv, '--headful', true) === false, extraArgs: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] })
 const page = await openGame(browser, { url: URL, hook: '__gauntletTest', start: false, viewport: { width: 820, height: 640 } })
 const errors = []
 page.on('pageerror', (e) => errors.push(String(e)))

@@ -240,6 +240,23 @@ workgroupBarrier();   // all stage writes complete before next stage reads
 WebGPU shader with an in-place butterfly (COMET DRIFT HD included, if it ever adds one)
 should carry the same pattern — visual review alone will not see the race.
 
+## The fake mic (#2709) — `npm run micprobe`
+
+Headless Chrome 157 (macOS) delivers **zero MediaRecorder chunks** from a `MediaStreamDestination`
+stream handed out by a `getUserMedia` override — the synth-mic trick every voice suite used since
+#1247 is dead on that engine (probe matrix in the issue; `micprobe` re-runs it, prints the Chrome
+version, and names the state before a suite red-herrings it). The replacement shape is Chrome's own
+fake capture device fed by a baked WAV (`scripts/lib/fakemic.mjs`): hum + full-scale claps at exact
+sample offsets, delivered through **real** gUM, so consent, MediaRecorder, opus, the tick clock, v2
+assembly and the upload all run untouched on real bytes. Measured device priming: **+17.6 ms,
+spread 0.2 ms** (folded into `PRIME_MS`). `plaicraft-clap` and `voicedrive` are migrated;
+`claptestplay` still needs its per-schedule file restructure (several clap schedules share one
+browser today — one file serves one schedule). Honest-source rule: every run stamps its capture
+source (`mic capture: fake-file (baked wav)`); a fake-file witness never launders as phone audio —
+line 3 still closes on the audited human take. Under cross-lane load the recorder and rAF starve
+together — that is why the clap drivers carry the #2205 quiet-box preflight: SKIP honestly, never
+grade a starved box.
+
 ## The Forge (autonomous game production)
 `/forge` (route `ForgeBoard.jsx`) is the live progress board + request box: it reads the
 `game-queue/building/shipped` GitHub labels, and "＋ PROPOSE A GAME" is a prefilled
