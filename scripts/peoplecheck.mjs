@@ -1628,7 +1628,10 @@ section('GO-SAY (#2683)')   // choose WHICH two share the ring — a far tap wal
     check('pin: the errand speaks as itself — court, courtReach and courtTarget take the speaker',
         /function court\(s, kind, speakerIdx = s\.active\)/.test(gsSim) && /function courtReach\(s, speakerIdx = s\.active\)/.test(gsSim) && /function courtTarget\(s, speakerIdx = s\.active\)/.test(gsSim))
     check('pin: the chip and the marquee and the registry all name the errand',
-        /id === 'gosay'\) return 'chat'/.test(gsArt) && /walks it over and says the kind thing/.test(gsJsx) && /walks the word over/.test(gsReg))
+        /id === 'gosay'\) return 'gosay'/.test(gsArt) && /walks it over and says the kind thing/.test(gsJsx) && /walks the word over/.test(gsReg))
+    check('the walking word wears its OWN chip — a bubble-on-legs glyph, not the seated chat glyph (#2704 tail 3)',
+        /id === 'gosay'\) return 'gosay'/.test(gsArt) && /case 'gosay'/.test(gsArt) &&
+        /gosay: \[\[740, 0\.04, 0\], \[988, 0\.05, 50\], \[460, 0\.035, 110\]\]/.test(gsSim))
 }
 
 section('SECOND VISITOR')   // #2143 — Ivy, the market neighbour
@@ -4699,6 +4702,38 @@ section('FEEL PASS (#2688): tightening ring, marching trail, hue wink, grey deat
         && /nightTint\(ctx, g\.hour, g\.ext, g\.wings\)\s*\n\s*drawGardenLamp\(ctx, g\)/.test(fpJsx))
     check('pin: the tight range names both ends — react inside, tighten outside',
         EAR_REACT === 4 && PROMISE_TIGHTEN === 8 && LOST_RING_T > 0)
+}
+
+section('POLISH 3 (#2704): the walking word wears legs; the garden arrives worked')
+{
+    const plArt = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    const plSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const plJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    check('the gosay chip derives its own glyph — the walk-over no longer hides behind the seated chat glyph',
+        /id === 'gosay'\) return 'gosay'/.test(plArt) && /case 'gosay'/.test(plArt))
+    check('the leg-glyph paints a bubble AND two striding legs (one shorter — mid-step)',
+        /case 'gosay':[\s\S]{0,500}ctx\.fillRect\(x - 4, y - 5\.5, 8, 5\.5\)[\s\S]{0,200}ctx\.fillRect\(x - 3, y \+ 0\.5, 1\.6, 3\.5\)[\s\S]{0,200}ctx\.fillRect\(x \+ 1\.4, y \+ 0\.5, 1\.6, 2\.4\)/.test(plArt))
+    check('the chip sounds like the errand: chat pair + one step; the SEATED chat timbre untouched',
+        /gosay: \[\[740, 0\.04, 0\], \[988, 0\.05, 50\], \[460, 0\.035, 110\]\]/.test(plSim)
+        && /chat: \[\[740, 0\.04, 0\], \[988, 0\.05, 50\]\]/.test(plSim))
+    check('the garden bake arrives with a crate and a watering can at the bench\u2019s south end',
+        /#2704 tail 6[\s\S]{0,500}crate[\s\S]{0,700}watering can/.test(plArt)
+        && /g\.fillStyle = '#8a6134'; g\.fillRect\(x \+ 5, y \+ 7, 12, 10\)/.test(plArt)
+        && /g\.fillStyle = '#4a7a8c'; g\.fillRect\(x2 \+ 6, y \+ 9, 9, 7\)/.test(plArt))
+    check('the props are baked INSIDE the garden branch only — the east wing stays as it shipped',
+        /if \(geom\.id === 'east'\)[\s\S]*?#2704 tail 6[\s\S]*?wingLayers\.set\(key, cv\)/.test(plArt))
+    check('draw-only doctrine: the paint lives only in art.js and the garden geometry is byte-untouched (#2689 site stands)',
+        plArt.includes('x2 + 6, y + 9, 9, 7') && !plSim.includes('x2 + 6, y + 9, 9, 7')
+        && JSON.stringify(GARDEN.floor) === JSON.stringify([[9, 0], [9, 1], [9, 2], [9, 3], [10, 0], [10, 1], [10, 2], [10, 3]])
+        && GARDEN.door[0] === 8 && GARDEN.door[1] === 2)
+    check('the kit card previews its wing BEFORE the pick — hover feeds the same ghost painter, mouse-only (#2704 tail 5)',
+        /let kitPreview = null/.test(plJsx) &&
+        /if \(hi >= 0 && CATALOG\[hi\] && CATALOG\[hi\]\.room\) kitPreview = gs\.ext >= 1 \? GARDEN : eastWing\(DEFAULT_ANCHOR\)/.test(plJsx) &&
+        /else if \(kitPreview\) drawWingGhost\(ctx, kitPreview, buildRoomOk\(g, kitPreview\)\)/.test(plJsx))
+    check('the preview can never outrank the hand: it paints only while NO kit is selected, and a mouse leaving the lot puts it out',
+        /else if \(kitPreview\)/.test(plJsx) &&
+        /mouseHover = null; kitPreview = null; return/.test(plJsx) &&
+        /kitPreview = null\n/.test(plJsx.replace(/\r/g, '')))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)
