@@ -327,7 +327,7 @@ its pin go red; restore.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 957 gates: settle beat — arrival face-and-breath cadence, errand names itself, shut-way line (#2697), feel pass — promise ring tightens + marching trail + ear hue-wink + grey death ring + garden night lamp (#2688), boot, rules, spare-room wing (#1806) + deeper multi-room — anchor law derived from MAP, garden room after any anchor, keepsWing refusals, two-per-lot, canopy fits both rooms, hash carries which-where, links in source (#2689), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), neighbours who meet — third-party rel.neigh: chat/glance/meet/cross-warmth/ladder/hash (#2588), neighbours SPAT — one-ear souring timer, cold-war silence, absence-thaw, reunion pay, CD mirror, hash, seed-exact quarrel (#2604), mediators — reach-both ring, soft pay, mending lane, once-per-spat ledger, cat-before-kid, hash, seed-exact mediation (#2672), neighbours stroll — mobile-chat bank, fixed 3-spot circuit with lead/trail, walk-freeze, claim-carry, spat/absence zeroing, cold-war refusal, hash, seed-exact lap (#2611), stroll view pass — pair stride bob + facing turn, arrival settle, route trail, attract lap beat, panel walk pips (#2618), neighbour view pass — pair-hue bubbles, teal leaf reunion, guest sulks, warmth sparkle, meet-up wave beat, cold-war murmur, attract pair-ring hook (#2599), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), garbage day — roster, eve set-out, dawn collection, honest skip, hash (#2303), ice-cream truck — arithmetic stop, paid buy, broke refusals, one serving, kid chase, rot, hash (#2503), truck arrival + drive-off view — rolls in 2 s, out 4 s, draw-only, truckView (#2508), cone in hand — the eat beat, world-clock hold, two arithmetic drips, view-only, hash-still, drive-verified (#2508 item 3), go-say — far tap walks over, arrival coo once, pick promotion, cooldown wait, leaving/asleep folds, bounded chase, queue re-issue, speaks-as-itself, hash, seed-exact, attract invariant (#2683), rooms with purpose — exact ripeness arithmetic, night silence, hungriest-eats with roster ties, lodging joy with the one-night stamp, geometry-not-item, empty-lot hash hygiene (#2695), winnable seeds, determinism
+npm run peoplecheck          # 966 gates: settle beat — arrival face-and-breath cadence, errand names itself, shut-way line (#2697), feel pass — promise ring tightens + marching trail + ear hue-wink + grey death ring + garden night lamp (#2688), boot, rules, spare-room wing (#1806) + deeper multi-room — anchor law derived from MAP, garden room after any anchor, keepsWing refusals, two-per-lot, canopy fits both rooms, hash carries which-where, links in source (#2689), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), neighbours who meet — third-party rel.neigh: chat/glance/meet/cross-warmth/ladder/hash (#2588), neighbours SPAT — one-ear souring timer, cold-war silence, absence-thaw, reunion pay, CD mirror, hash, seed-exact quarrel (#2604), mediators — reach-both ring, soft pay, mending lane, once-per-spat ledger, cat-before-kid, hash, seed-exact mediation (#2672), neighbours stroll — mobile-chat bank, fixed 3-spot circuit with lead/trail, walk-freeze, claim-carry, spat/absence zeroing, cold-war refusal, hash, seed-exact lap (#2611), stroll view pass — pair stride bob + facing turn, arrival settle, route trail, attract lap beat, panel walk pips (#2618), neighbour view pass — pair-hue bubbles, teal leaf reunion, guest sulks, warmth sparkle, meet-up wave beat, cold-war murmur, attract pair-ring hook (#2599), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), garbage day — roster, eve set-out, dawn collection, honest skip, hash (#2303), ice-cream truck — arithmetic stop, paid buy, broke refusals, one serving, kid chase, rot, hash (#2503), truck arrival + drive-off view — rolls in 2 s, out 4 s, draw-only, truckView (#2508), cone in hand — the eat beat, world-clock hold, two arithmetic drips, view-only, hash-still, drive-verified (#2508 item 3), go-say — far tap walks over, arrival coo once, pick promotion, cooldown wait, leaving/asleep folds, bounded chase, queue re-issue, speaks-as-itself, hash, seed-exact, attract invariant (#2683), rooms with purpose — exact ripeness arithmetic, night silence, hungriest-eats with roster ties, lodging joy with the one-night stamp, geometry-not-item, empty-lot hash hygiene (#2695), polish pass — walking chip glyph+timbre, worked-garden bake, kit hover-preview, geometry byte-untouched (#2704), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -1122,7 +1122,9 @@ over and did it.
   resident is the switch idiom.
 - **Queue parity (#2470):** a busy hand lists it — `{ kind:'gosay', k }` joins
   `cmdQueue`, re-validates at issue (an ear gone home drops honest), rides the
-  hash, and gets the chat glyph + chat timbre on the chip.
+  hash, and gets its OWN chip: a bubble-on-legs glyph and a chat-pair-plus-step
+  timbre (#2704 tail 3 — the errand that walks over no longer hides behind the
+  seated chat glyph; the seated `phone` chat keeps its old chip untouched).
 - **Seen before it lands:** the order ping rings the target at the tap
   ("GO SAY IT — FERN"), and while the errand is in flight the painter trails
   a dotted gold ring under the promised ear across the lot — the #2135 tell
@@ -1161,9 +1163,36 @@ the moment of loss). Mutants: `GO_SAY_SETTLE = 0` → the cadence gate goes red;
 decrement before the `cmdCd` return → the frozen-breath wording and cadence
 break; restore.
 
-Honest residual (#2697 tails 3–7, re-filed): the chip still reuses the chat
-glyph, no `Tab`-cycles-ears desktop idiom, no kit hover-preview, empty starter
-garden, and the attract never buys kit two.
+Honest residual (#2697 tails 3–7): **CLOSED by #2704, three of five** (§ Polish
+pass below) — the chip now wears a bubble-on-legs, the garden arrives with a
+crate and watering can, and hovering the kit card previews the wing. Still open
+(re-filed): no `Tab`-cycles-ears desktop idiom (Tab is the resident switch today —
+the far-tap keyboard idiom needs its own key law and a no-second-pad check), and
+the attract never buys kit two (mind the autopilot pin `3836882361`).
+
+## Polish pass (#2704 QA) — the walk shows its legs, the garden shows its work
+
+Three view-only beats from #2697's residual list. `sim.js` changes ONE line's
+worth of timbre-table data (`QUEUE_TIMBRE` gains `gosay` — a constant table the
+hash never reads); no rule, no economy, no rng, the attract bot still never
+go-says, and the garden's GARDEN geometry is byte-untouched (pinned).
+
+- **The chip walks.** `queueGlyphFor('gosay')` returns its own `'gosay'` glyph:
+  a chat bubble on two striding legs (one lifted mid-step), and the append
+  timbre is the chat pair plus one soft step — *I will walk over and say it*
+  reads (and sounds) distinct from the seated chat of `phone`.
+- **The garden arrives worked.** The cottage bake gets a produce crate (greens
+  peeking the rim) and a watering can at the bench's south end — same bake,
+  same cache key, draw-only like the bench: it blocks nothing.
+- **The kit previews itself.** A mouse resting on the Spare Room card paints
+  the wing ghost at the site `place` would default to (east anchor, or the
+  garden after wing one) with the real `buildRoomOk` legality — the choose-a-row
+  beat sells before R/tap picks. Mouse-only (behind the touch early-return),
+  never while a kit is selected, and a pointer leaving the lot puts it out.
+
+Gates: `peoplecheck` §POLISH 3 (8 — glyph derivation, leg strokes in order,
+timbre pair+step with the seated chat untouched, props painted, garden-branch
+only, geometry byte-untouched, hover→ghost wiring, the two outrank guards).
 
 ## Honest gaps (filed to QA #…)
 

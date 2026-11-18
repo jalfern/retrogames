@@ -29,7 +29,7 @@ import {
     newRun, advance, autoStep, cmdUse, cmdWalk, cmdWork,   // #2470: tryUse moved to tryUseOrQueue below
     cmdQueue, queueCancel, queuePromote, orderBusy, tryUseOrQueue,   // #2470: the action queue — append while busy, cancel by chip; #2474 item 3: promote by pull
     WORK_START, WORK_END,   // #2470: the mail order is only queued while the window is honestly open
-    place, sellAt, cellItem, targetsOf, walkable, manualMove, placeOk, buildRoom,
+    place, sellAt, cellItem, targetsOf, walkable, manualMove, placeOk, buildRoom, buildRoomOk,
     adoptPet, adoptOk, PET,   // #2197: the cat counter
     adoptKid, adoptKidOk, KID,   // #2203: the child counter
     setSel, flipTab, selectTab, digitCard,   // #2222: catalog shelves
@@ -171,6 +171,7 @@ const HomebodyGame = () => {
         let mouseHover = null
         let pressName = null   // { x, y, t0, revealed } — the held-thumb clock
         let hoverReveal = null
+        let kitPreview = null   // #2704 tail 5: geometry of the wing the pointer is merely HOverING on a kit card — the ghost arrives before the pick
         const prev = { left: false, right: false, up: false, down: false, a: false, b: false, pdown: false }
         const heldKeys = { left: false, right: false, up: false, down: false }
         let actQueued = false, buildQueued = false, switchQueued = false
@@ -1005,6 +1006,7 @@ const HomebodyGame = () => {
                 // where the hammer would fall — the row you point at is the row
                 // the room takes.
                 if (CATALOG[g.sel] && CATALOG[g.sel].room) drawWingGhost(ctx, wingPick(g, g.cursor.r, g.cursor.c), placeOk(g, g.cursor.r, g.cursor.c))
+                else if (kitPreview) drawWingGhost(ctx, kitPreview, buildRoomOk(g, kitPreview))   // #2704 tail 5: hovering the kit card previews the wing at its default site — the choose-a-row beat sells itself before R
             }
             for (const f of refuses) {   // #1823: refused cell — red fill pulsing out
                 const k = f.life / 36
@@ -1370,7 +1372,7 @@ const HomebodyGame = () => {
         // #2474 item 2: the name reveal — a mouse resting on a chip reads it; the
         // watch pill stopPropagation()s its own presses, e.target is this canvas.
         const onMove = (e) => {
-            if (screenRef.current !== 'play' || pausedRef.current || !canvas || e.target !== canvas || watchingRef.current) { mouseHover = null; return }
+            if (screenRef.current !== 'play' || pausedRef.current || !canvas || e.target !== canvas || watchingRef.current) { mouseHover = null; kitPreview = null; return }
             const r = canvas.getBoundingClientRect()
             if (!r.width) return
             const mx = (e.clientX - r.left) / r.width * W, my = (e.clientY - r.top) / r.height * H
@@ -1378,6 +1380,14 @@ const HomebodyGame = () => {
             if (e.pointerType === 'touch') return   // a thumb ends where it last tapped — hover is the mouse's idiom
             mouseHover = chipHover(gs, mx, my)
             hoverReveal = mouseHover
+            // #2704 tail 5: a mouse resting on the Spare Room kit card previews
+            // the future wing at its default site (the same law `place` falls
+            // back to) — the buyer sees WHAT the card buys before picking it.
+            kitPreview = null
+            if (gs.build && !(CATALOG[gs.sel] && CATALOG[gs.sel].room)) {
+                const hi = catalogHit(mx, my, gs)
+                if (hi >= 0 && CATALOG[hi] && CATALOG[hi].room) kitPreview = gs.ext >= 1 ? GARDEN : eastWing(DEFAULT_ANCHOR)
+            }
         }
         const onLift = () => {
             // #2474: the thumb clock ends with the lift; its revealed name goes

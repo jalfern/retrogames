@@ -228,6 +228,20 @@ function wingCanvas(geom) {
             g.fillStyle = '#5d8a3c'; g.fillRect(x + 6, y - 2, 6, 6); g.fillRect(x + 18, y, 5, 4)
             g.fillStyle = '#c96a3c'; g.fillRect(x + 5, y + 4, 8, 4)
         }
+        // #2704 tail 6: the room arrives lived-in — a produce crate and a
+        // watering can by the bench's south end, so the garden looks WORKED
+        // the day it stands, not furnished-that-nobody-uses. Draw-only, like
+        // the bench: it blocks nothing and the hash never hears of it.
+        {
+            const x = tileX(0), y = tileY(10)
+            g.fillStyle = '#8a6134'; g.fillRect(x + 5, y + 7, 12, 10)          // crate
+            g.fillStyle = '#a8794a'; g.fillRect(x + 5, y + 7, 12, 2); g.fillRect(x + 5, y + 12, 12, 1)
+            g.fillStyle = '#5d8a3c'; g.fillRect(x + 7, y + 5, 4, 3); g.fillRect(x + 12, y + 4, 3, 4)   // greens peeking over the rim
+            const x2 = tileX(1)
+            g.fillStyle = '#4a7a8c'; g.fillRect(x2 + 6, y + 9, 9, 7)            // watering can
+            g.fillStyle = '#4a7a8c'; g.fillRect(x2 + 2, y + 7, 5, 2)            // spout
+            g.fillStyle = '#38606f'; g.fillRect(x2 + 8, y + 6, 5, 1.6)          // handle
+        }
     }
     wingLayers.set(key, cv)
     return cv
@@ -1090,7 +1104,7 @@ function pIndex(s, p) {
 export function queueGlyphFor(id) {
     if (id === 'walk') return 'arrow'
     if (id === 'work' || id === 'mail') return 'case'
-    if (id === 'gosay') return 'chat'   // #2683: a promised word is a social errand — the chip borrows the chat glyph
+    if (id === 'gosay') return 'gosay'   // #2704 tail 3: the errand that WALKS over wears its own chip — a bubble-on-legs, distinct from the chat glyph of a word spoken sitting down
     const d = DEF[id]
     return (d && d.need && NEED_ICON[d.need]) || 'star'
 }
@@ -1384,6 +1398,11 @@ function needIcon(ctx, x, y, kind, col) {
         case 'chat':
             ctx.fillRect(x - 4, y - 4, 8, 6)
             ctx.beginPath(); ctx.moveTo(x - 2, y + 2); ctx.lineTo(x - 2, y + 5); ctx.lineTo(x + 1, y + 2); ctx.closePath(); ctx.fill()
+            break
+        case 'gosay':   // #2704 tail 3: the chat bubble grows legs — "this word walks over", not "sits and talks"
+            ctx.fillRect(x - 4, y - 5.5, 8, 5.5)
+            ctx.fillRect(x - 3, y + 0.5, 1.6, 3.5)   // two striding legs, one lifted mid-step
+            ctx.fillRect(x + 1.4, y + 0.5, 1.6, 2.4)
             break
         case 'drop':
             ctx.beginPath(); ctx.moveTo(x, y - 5); ctx.quadraticCurveTo(x + 4.6, y + 1, x, y + 4.6); ctx.quadraticCurveTo(x - 4.6, y + 1, x, y - 5); ctx.fill()

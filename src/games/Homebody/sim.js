@@ -1711,6 +1711,7 @@ export const QUEUE_TIMBRE = {
     moon: [[300, 0.11, 0]],                          // energy — one soft low hum
     star: [[880, 0.04, 0], [1174, 0.05, 55], [1568, 0.06, 110]],   // fun — a bright triple bounce
     chat: [[740, 0.04, 0], [988, 0.05, 50]],        // social — a chirpy pair
+    gosay: [[740, 0.04, 0], [988, 0.05, 50], [460, 0.035, 110]],   // #2704 tail 3: the promised word — the chat pair plus one step (the errand walks over)
     drop: [[520, 0.07, 0]],                          // bladder — a single droplet
     case: [[220, 0.07, 0], [165, 0.10, 70]],        // work — a briefcase thunk, down
     arrow: [[460, 0.035, 0]],                        // walk — one soft step
