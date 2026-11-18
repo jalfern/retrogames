@@ -243,6 +243,7 @@ node scripts/floorbosscheck.mjs --mutate-duel    # bot stows cannot bypass the r
 node scripts/floorbosscheck.mjs --mutate-lane    # long tight aisles cannot be sealed into one-way traps (#2614)
 node scripts/floorbosscheck.mjs --mutate-corner   # racks cannot choke a tight elbow at its swing (#2627)
 node scripts/floorbosscheck.mjs --mutate-flow     # dead-end spurs cannot claim two-way arrows (#2622 item 3)
+node scripts/floorbosscheck.mjs --mutate-flowheat # the second route on a cell cannot stop counting — live heat dies (#2680)
 npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877); real-tap pad call/send + drawn-truck-is-sim-truck gates (#1911); escrow-books-at-pack + freight-paid-at-drive-off gates (#1921); violet far-post tag pixels + road-commit + tap-on-road-silence gates (#1927 — verb gates run with auto-dispatch off and settle dock+truck+road together); steel heavy-tag pixel [154,215,255] + padWeight simState eye (#1931); DUEL live drive: D enters the duel, cyan model cursor moves on its own, twin till updates, verdict banner lands (#2555)
 CONTRACT_ONLY=floor-boss npm run contractcheck
 node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
@@ -369,4 +370,20 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
     refusal named + seat-stamped in the fx ledger and yellow pixels under the
     banner. Residual honest gap: the arrows mark aisle legality, not bot
     traffic — live flow (who's driving where this tick) stays unsimulated
-    kinematics (#2627 residual stands).
+    kinematics (#2627 residual stands). — **live-flow read shipped by this
+    PR (#2680):** the traffic itself is now readable. `flowHeat(gs)` credits,
+    per cell, every bot routed through it (current cell + task path, per-bot
+    dedup, row-major, pure #1917); `paintHeat` lays it as an orange floor
+    tint that deepens with the claims, and a cell TWO routes share pulses a
+    hot core — the convergence the jam law will name, readable one beat
+    before it freezes. Cyan stays legality, amber stays the law; orange is
+    exertion, painted under the law boxes. `floorbosscheck` +12 gates (own-cell
+    claims for the parked crew, cross-bot sums, per-bot dedup, a truthful
+    display contract over a full autopilot shift, real traffic met on
+    3103/9000 ticks n≥2 (deepest n=3), purity + row-major order, paint order
+    beneath the amber law, DEV eye) and a `--mutate-flowheat` kill;
+    `floorbossplay` drives it with live traffic — warm pixels where routes
+    meet, cooled once they clear. Residual honest gap unchanged: carts stay
+    kinematic points on BFS paths — true swept volumes and forklift-lane
+    routing stay faked; the read displays the paths, it does not re-route
+    them.

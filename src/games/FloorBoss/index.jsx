@@ -27,7 +27,7 @@ import {
     makeGame, step, state, stateHash, createAutopilot, clickCell, setTool,
     toggleAuto, clickOrder, hireRobot, nextShift, rungPrice, rushNow,
     COLS, ROWS, SHIFT, STRIKES, RACK_COST, ROBOT_COST, RACK_CAP, STOW_PAY,
-    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS, cornerEscapes, laneEscapes, swingMarkers, flowMarks,
+    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS, REPAIR_TICKS, cornerEscapes, laneEscapes, swingMarkers, flowMarks, flowHeat,
 } from './sim.js'
 
 const SIM_MS = 1000 / 60
@@ -606,6 +606,29 @@ const FloorBossGame = () => {
                     ctx.lineTo(cx + ax * 4, cy + ay * 4)
                     ctx.lineTo(cx + ax * -5 - px * 4, cy + ay * -5 - py * 4)
                     ctx.stroke()
+                }
+            }
+        }
+        const paintHeat = (tick) => {
+            // #2680 LIVE TRAFFIC HEAT — cells burn with the routes their bots
+            // drive (flowHeat in sim.js): one orange cell-tint per bot routed
+            // through it, brighter per claim; a cell TWO routes share is the
+            // jam's prologue (the occupancy law serialises it, the jam law
+            // freezes it), so it pulses a hot core on the tick clock. Orange
+            // sits beside the grammar without wearing its colours: cyan is the
+            // aisle's legality, amber is the law, this is the floor's own
+            // exertion. Pure paint over a pure query, deterministic — the only
+            // animation is the convergence pulse, riding gs.tick like every
+            // lesson frame; nothing here writes state.
+            for (const c of flowHeat(gs)) {
+                const x = PX(c.x), y = PY(c.y)
+                const a = c.n >= 3 ? 0.16 : c.n === 2 ? 0.1 : 0.05
+                ctx.fillStyle = `rgba(255,120,40,${a})`
+                ctx.fillRect(x + 2, y + 2, TILE - 4, TILE - 4)
+                if (c.n >= 2) {
+                    const pulse = 0.5 + 0.5 * Math.sin(tick * 0.2)
+                    ctx.fillStyle = `rgba(255,86,26,${0.22 + 0.22 * pulse})`
+                    ctx.fillRect(x + TILE / 2 - 3, y + TILE / 2 - 3, 6, 6)
                 }
             }
         }
@@ -1221,6 +1244,7 @@ const FloorBossGame = () => {
             paintOutbound(tick)
             paintRacks()
             paintFlow()
+            paintHeat(tick) // #2680: traffic heat rides the grammar — under the amber law paint, above the cyan legality tint
             paintSwing()
             paintTeach(tick)
             paintArm(tick)
@@ -1450,6 +1474,7 @@ const FloorBossGame = () => {
                 // #2627 s3 eye on the swing paint — live elbows the painter marks (renderer-only query, sim untouched)
                 swing: () => swingMarkers(gs).map((m) => ({ x: m.x, y: m.y, h: m.h })),
                 flow: () => flowMarks(gs).map((m) => ({ axis: m.axis, n: m.flow, cells: m.cells.map((c) => `${c.x},${c.y}`).join('|') })), // #2622 item 3: the two-way grammar, readable to QA
+                heat: () => flowHeat(gs).map((c) => ({ x: c.x, y: c.y, n: c.n })), // #2680: live traffic heat — route claims per cell, readable to QA
                 // #2561 eyes on the twin-till ceremony (renderer-only state): when
                 // each seat's chip last armed its growth blink, and the live spend
                 // flash (label + color) so the browser gate can name model buys.

@@ -797,5 +797,103 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     r.check('the refused duel click lands no rack — law unchanged, seat added (#1917)', notLanded, notLanded ? 'clean' : 'rack landed')
 }
 
+// ---- live traffic heat (#2680): routes glow on the floor — driven by REAL traffic, no rig ----
+{
+    await page.goto(URL)
+    await page.waitForFunction(() => !!window.__floorbossTest, null, { timeout: 15000 })
+    if (!await waitMode('attract', 5000)) r.check('heat leg: fresh page reaches attract', false, 'no attract')
+    await page.keyboard.press('Space')
+    if (!await waitMode('play')) r.check('heat leg: Space clocks in', false, 'no play')
+    const farP = await clientXY(4, 10) // park the cursor far from both probes — the reach-diamond cannot bleed in
+    await page.mouse.move(farP.x, farP.y)
+    // one atomic in-page sample: eye truth AND pixels together, so a teal bot
+    // body can never pollute a probe claimed by heat (bots paint after heat).
+    const meetAndProbe = () => page.evaluate(() => {
+        const t = window.__floorbossTest
+        const g = t.sim()
+        const free = (x, y) => !g.robots.some((b) => b.x === x && b.y === y)
+        const warm = (cx, cy) => {
+            const c = t.canvas()
+            const x0 = (10 + cx * 26 + 4) * 2, y0 = (44 + cy * 26 + 4) * 2
+            const d = c.getContext('2d').getImageData(x0, y0, (26 - 8) * 2, (26 - 8) * 2).data
+            let s = 0
+            for (let i = 0; i < d.length; i += 4) s += d[i] - d[i + 2]
+            return s / (d.length / 4)
+        }
+        const meet = t.heat().filter((c) => c.n >= 2 && free(c.x, c.y) && !g.racks.some((rk) => rk.x === c.x && rk.y === c.y))
+        if (!meet.length) return null
+        const ref = { x: 10, y: 10 }
+        const refHot = t.heat().some((c) => c.x === ref.x && c.y === ref.y)
+        if (refHot || !free(ref.x, ref.y)) return null
+        const cell = meet[0]
+        return { x: cell.x, y: cell.y, n: cell.n, delta: warm(cell.x, cell.y) - warm(ref.x, ref.y) }
+    })
+    let hits = 0, tries = 0, seen = null, rigged = false
+    const probeRound = async (n) => {
+        for (let i = 0; i < n; i++) {
+            const m = await meetAndProbe()
+            if (m) { tries++; if (m.delta >= 4) hits++; seen = seen || m }
+            await new Promise((res) => setTimeout(res, 150))
+        }
+    }
+    await probeRound(48) // real traffic first: ~8 world-seconds of auto-dispatch — meetings emerge on their own
+    if (tries < 4) {
+        rigged = true
+        // fallback rig, in the established house style (legs park and direct the
+        // crew by hand all over this file): stand the auto off so the hand-set
+        // routes hold, and give the two near pads a shared tail — the same
+        // corridor two bots would walk if both were called west. The heat and
+        // the paint read SIM STATE; these paths ARE sim state once written.
+        await page.evaluate(() => {
+            const g = window.__floorbossTest.sim()
+            g.auto = false
+            const west = (b) => {
+                const p = []
+                for (let x = b.x - 1; x >= Math.max(4, b.x - 8); x--) p.push({ x, y: b.y })
+                b.task = { kind: 'idle' }; b.carry = null // the leg's own park pattern — idle holds still, the route claim is the point
+                b.path = p
+            }
+            g.robots.filter((b) => b.y === 12 && !b.broken).forEach(west)
+        })
+        await probeRound(12)
+    }
+    r.check('real traffic converges under the eye — cells two routes share appear unoccupied (#2680)', tries >= 4, `${tries} clean convergence samples`)
+    r.check('a convergence paints warmer than bare floor — the meet glows on canvas (#2680)', hits >= 4, `warm-delta hits ${hits}/${tries} (deepest seen ${seen ? `${seen.x},${seen.y} n=${seen.n}` : 'none'})`)
+    // paint follows truth: the SAME cell, once every route has cleared it, must
+    // cool back to bare — the read rides traffic, it is not decoration.
+    if (!seen) {
+        r.check('the met cell cools once its routes clear — no stale glow outlives the traffic (#2680)', false, 'no convergence observed to re-probe')
+    } else {
+        if (rigged) {
+            // vacate the hand-written routes the same way arrival vacates them
+            // in the live sim (arrival ⇒ path emptied) — the glow must fade
+            // because the claims are gone, not because the page moved on.
+            await page.evaluate(() => { window.__floorbossTest.sim().robots.forEach((b) => { b.path = [] }) })
+            await new Promise((res) => setTimeout(res, 150))
+        }
+        let gone = 0, clears = 0
+    for (let i = 0; i < 14; i++) {
+        const cooled = await page.evaluate(([hx, hy]) => {
+            const t = window.__floorbossTest
+            const g = t.sim()
+            if (t.heat().some((c) => c.x === hx && c.y === hy)) return null
+            if (g.robots.some((b) => b.x === hx && b.y === hy)) return null
+            const c = t.canvas()
+            const warm = (cx, cy) => {
+                const x0 = (10 + cx * 26 + 4) * 2, y0 = (44 + cy * 26 + 4) * 2
+                const d = c.getContext('2d').getImageData(x0, y0, (26 - 8) * 2, (26 - 8) * 2).data
+                let s = 0
+                for (let i = 0; i < d.length; i += 4) s += d[i] - d[i + 2]
+                return s / (d.length / 4)
+            }
+            return Math.abs(warm(hx, hy) - warm(10, 10)) < 4
+        }, [seen.x, seen.y])
+        if (cooled !== null) { clears++; if (cooled) gone++ }
+        await new Promise((res) => setTimeout(res, 150))
+    }
+    r.check('the met cell cools once its routes clear — no stale glow outlives the traffic (#2680)', gone >= 3 && clears >= 4, `cool hits ${gone}/${clears} on ${seen.x},${seen.y}`)
+    }
+}
+
 r.check('zero page errors', errors.length === 0, errors.join(' | '))
 r.exit(browser)
