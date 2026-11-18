@@ -62,6 +62,7 @@ import {
     PAIR_HUES,   // #2599: the pair's own hues for pair-spoken bubbles
     promiseTell, earReact, drawGardenLamp, LOST_RING_T,   // #2688: the promise told in motion + the garden's night lamp
     drawPurposeView, sleepingCells, drawMoonlitWait,   // #2705: the purpose view — ripeness bed, harvest hamper, lodged panes, moonlit wait
+    pauseLedger,   // #2713 tail 4: the rooms' tallies read on the pause sheet
     pairStride, strollTrail, drawStrollTrail,   // #2618: the stroll stride, the route tell, the walk sell
     drawGroundGift, bondRows,   // #2240: the set-down basket + the BONDS rows as data
     queueHit,   // #2470: the queue chips' tap route (shares the painter's geometry)
@@ -132,6 +133,10 @@ const HomebodyGame = () => {
     const stageRef = useRef(null)
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
+    // #2713 tail 4: the pause sheet's ledger row-set, snapshotted the moment
+    // '?' seats the sheet — a paused world doesn't tick, so the snapshot IS the
+    // live truth (the tick guard early-returns while pausedRef holds).
+    const [ledgerSnap, setLedgerSnap] = useState(null)
     const [endInfo, setEndInfo] = useState(null)
     const [watching, setWatching] = useState(false) // #1637 batch 17: the attract brain runs the street
     const screenRef = useRef('attract')
@@ -1316,7 +1321,7 @@ const HomebodyGame = () => {
         const onDown = (e) => {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
             if (code === 'Question' || code === 'Escape' || code === 'Backquote') {
-                if (screenRef.current === 'play') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current) }
+                if (screenRef.current === 'play') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); setLedgerSnap(pausedRef.current ? pauseLedger(gs) : null) }
                 return
             }
             if (e.code === 'Tab') e.preventDefault()
@@ -1698,7 +1703,7 @@ const HomebodyGame = () => {
         }
     }, [])
 
-    const handleResume = useCallback(() => { setPaused(false); pausedRef.current = false }, [])
+    const handleResume = useCallback(() => { setPaused(false); pausedRef.current = false; setLedgerSnap(null) }, [])
     const play = screen === 'play'
 
     return (
@@ -1740,7 +1745,7 @@ const HomebodyGame = () => {
                     <WatchButton on={watching} />
                 </div>
             )}
-            {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'HOMEBODY')} onResume={handleResume} />}
+            {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'HOMEBODY')} ledger={ledgerSnap} onResume={handleResume} />}
             <VirtualControls visible={play && !paused} secondAction={{ label: '⚒', code: 'KeyB' }} />
         </div>
     )
