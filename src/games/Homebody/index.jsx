@@ -57,6 +57,7 @@ import {
     drawKid,   // #2203: Pip
     drawSay,   // #2135: the spoken-word bubble over the pair
     PAIR_HUES,   // #2599: the pair's own hues for pair-spoken bubbles
+    pairStride, strollTrail, drawStrollTrail,   // #2618: the stroll stride, the route tell, the walk sell
     drawGroundGift, bondRows,   // #2240: the set-down basket + the BONDS rows as data
     queueHit,   // #2470: the queue chips' tap route (shares the painter's geometry)
     QCELL,   // #2474 item 3: the chip pitch — the drag threshold derives from it
@@ -99,6 +100,9 @@ const MESSAGES = [
 // the NEIGH marquee line, derived from the text so a reordered marquee can never
 // silently drift the hook away from the copy it stages.
 const NEIGH_MARQUEE = MESSAGES.findIndex((m) => m.startsWith('FERN AND IVY'))
+// #2618 item 4: the same trick on the WALK line — deriving the index from the
+// copy keeps the staging glued to the sentence it sells.
+const STROLL_MARQUEE = MESSAGES.findIndex((m) => m.startsWith('WHILE THEY TALK'))
 const PRESS = 'TAP / PRESS ANY KEY TO MOVE IN'
 // #2143: bond-key → name, for the toast lines (three points on the triangle now).
 const BONDER = { house: 'HOUSEHOLD', fern: 'FERN', ivy: 'IVY', kid: 'PIP', neigh: 'NEIGHBOURS' }   // #2203: the child rows a bond; #2588: so do the neighbours between themselves
@@ -145,6 +149,10 @@ const HomebodyGame = () => {
         const showSay = (s2, e) => { const t = s2.thoughts[0]; if (t) { sayB.text = t.text; sayB.x = e.x ?? W / 2; sayB.y = e.y ?? H / 2; sayB.life = 4.2; sayB.hues = e.t === 'neigh' || e.who === 'neigh' ? PAIR_HUES : null } }   // #2599: pair lines wear the pair
         let neighSulks = 0   // #2599 handoff 1: storm-puff window over the pair at the crack (real seconds, view-only)
         let neighWave = 0, neighPrevD = 99   // #2599 item 2: meet-up greeting beat + last frame's pair ring distance (view-only; the sim never hears of it)
+        let stridePrevWalk = false   // #2618 item 2: last painted frame had BOTH guests mid-path (view-only)
+        let neighArrive = 0         // #2618 item 2: the settle beat after a lap lands — faces hold on each other
+        let strollFx = 0, strollDots = null   // #2618 item 3: the route tell — first cells of the lead's path, riding the fire tick
+        let strollBeatRung = null   // #2618 item 4: the demo run whose STROLL beat rang Ivy, if any
         let toastMsg = '', toast = 0
         // #2474 items 2+4: the view-only chip layer. collapseCache arms the row-
         // collapse ghosts (Map<personIndex, {glyphs, rest, t}>); hoverReveal is the
@@ -435,6 +443,11 @@ const HomebodyGame = () => {
                         audioController.playTone(330, 0.05, 'triangle', 0.02)
                         setTimeout(() => audioController.playTone(392, 0.07, 'triangle', 0.02), 90)
                         if (live) { say('FERN AND IVY TAKE A WALK'); burst(e.x, e.y, 4, '#4fae5f', 1.8) }
+                        // #2618 item 3: the route, named before feet hit it — the
+                        // first cells of Fern's path light as fading teal dots for
+                        // the walk's first breath (draw-only, both streets).
+                        strollDots = strollTrail(s.visitor && s.visitor.path)
+                        strollFx = 2.5
                         break
                     case 'coo': // #2131: the compliment — a warm two-note and gold glints
                         audioController.playTone(659, 0.06, 'triangle', 0.05)
@@ -789,6 +802,26 @@ const HomebodyGame = () => {
             if (iceCrowd.phase === 'gather' && (iceTruck.phase === 'out' || iceTruck.phase === 'off')) { iceCrowd.phase = 'flee'; iceCrowd.t0 = g.sec }
             if (iceCrowd.phase === 'flee') { const fk = (g.sec - iceCrowd.t0) / ICE_KID_FLEE_S; if (!(fk >= 0) || fk >= 1) iceCrowd.phase = 'off' }
             for (const it of g.items) drawItem(ctx, it, g.sec, nightLevel(g.hour))   // #2264: the meal sprite keeps night hours (steam dim/slow, warm halo)
+            // #2618: the pair's walk sell, painted per frame (view-only — the
+            // sim never hears of any of it). Mid-lap both guests stride toward
+            // each other; when the lap lands they settle facing one another for
+            // half a second — choosing the hang, starting the conversation.
+            let ps = null
+            if (g.visitor && g.ivy && !g.neiGrudge) {
+                ps = pairStride(g.visitor, g.ivy)
+                // The pair lands unevenly — Fern reaches the spot a beat before
+                // Ivy's trail catches up. The settle fires when the LAST walker
+                // stops, so the flag survives a half-landed pair.
+                const walkN = (g.visitor.path && g.visitor.path.length ? 1 : 0) + (g.ivy.path && g.ivy.path.length ? 1 : 0)
+                if (walkN === 2) stridePrevWalk = true
+                else if (walkN === 0 && stridePrevWalk && g.visitor.state === 'hang' && g.ivy.state === 'hang') {
+                    stridePrevWalk = false
+                    neighArrive = 0.5
+                    // live only: the attract paints through here before the audio unlock.
+                    if (live) audioController.playTone(523, 0.09, 'sine', 0.02)   // one soft note — the lap came home
+                }
+                if (!ps && neighArrive > 0) ps = { aFace: g.ivy.x >= g.visitor.x ? 1 : -1, bFace: g.visitor.x >= g.ivy.x ? 1 : -1 }
+            } else stridePrevWalk = false
             const order = [...g.people.map((p) => ({ p, v: p.y })), ...(g.visitor ? [{ p: g.visitor, v: g.visitor.y }] : []), ...(g.ivy ? [{ p: g.ivy, v: g.ivy.y }] : []), ...(g.pet ? [{ p: g.pet, v: g.pet.y }] : []), ...(g.kid ? [{ p: g.kid, v: g.kid.y }] : []), ...(g.sneak ? [{ p: g.sneak, v: g.sneak.y }] : []), ...(g.giftFx > 0 && g.giftAt ? [{ p: { x: g.giftAt.x, y: g.giftAt.y }, giftLanded: true }] : [])].sort((a, b) => a.v - b.v)   // #2143: both neighbours share the lot; #2197: so does the cat; #2203: and the child; #2520: and the sneak; #2240: so the set-down basket rides the depth line
             for (const o of order) {
                 if (o.giftLanded) { drawGroundGift(ctx, g); continue }   // #2240
@@ -813,8 +846,10 @@ const HomebodyGame = () => {
                 } else if (ri < 0 && neighWave > 0 && g.visitor && o.p === g.visitor) {
                     fx = 'wave'   // #2599 item 2: the street's host greets the arriving pair — Fern waves (the grudge branches above outrank the beat)
                 }
-                drawPerson(ctx, o.p, g.sec, g.people[g.active] === o.p, fx, lean)
+                drawPerson(ctx, o.p, g.sec, g.people[g.active] === o.p, fx, lean,
+                    ps ? (o.p === g.visitor ? { face: ps.aFace } : o.p === g.ivy ? { face: ps.bFace } : null) : null)   // #2618 item 1: the pair strides facing each other; #2618 item 2: settles facing on arrival
             }
+            if (strollFx > 0) drawStrollTrail(ctx, strollDots, strollFx / 2.5)   // #2618 item 3: the route, fading behind the first steps
             // #2508 item 1: the truck paints after everyone — it is the nearest
             // thing to the camera, so it laps the fence, the gate and the residents cleanly.
             if (iceTruck.phase !== 'off') drawIceTruck(ctx, iceTruck.px, ICE_TRUCK_Y, g.sec, iceTruck.phase === 'parked' ? 0 : 1)
@@ -993,6 +1028,8 @@ const HomebodyGame = () => {
             // banner; the landmine predates it (#2135). Take the frame's dt.
             if (sayB.life > 0) sayB.life = Math.max(0, sayB.life - dtMs / 1000)   // #2135: real-clock fade, like the toast
             if (neighSulks > 0) neighSulks = Math.max(0, neighSulks - dtMs / 1000)   // #2599 handoff 1: the guests' puff fades on the real clock (the world may be frozen in buy mode)
+            if (neighArrive > 0) neighArrive = Math.max(0, neighArrive - dtMs / 1000)   // #2618 item 2: the settle lives on the real clock, like the puff
+            if (strollFx > 0) strollFx = Math.max(0, strollFx - dtMs / 1000)   // #2618 item 3: the route tell fades with the lap's first breath
             // #2599 item 2: the meet-up greeting — Ivy's meet-walk arrives beside
             // Fern and Fern waves. Honest view-side arrival: the ring distance
             // crossing from outside to inside (mirror of sim.js NEIGH_REACH), only
@@ -1065,6 +1102,16 @@ const HomebodyGame = () => {
                         neighBeatRung = demoG
                         demoG.ivyAfter = Math.min(demoG.ivyAfter, Math.floor(demoG.hour)); demoG.ivyGap = 0
                     }
+                    // #2618 item 4: the WALK copy sells the walk — on the stroll
+                    // marquee beat, ring Ivy into the demo while Fern hangs (same
+                    // clock law, its own once-per-run guard), so the 12 s bank
+                    // starts under the line that teaches it and a lap lands inside
+                    // the demo window instead of blinking past unseen.
+                    if (demoG && !strollBeatRung && marqueeIx.current === STROLL_MARQUEE
+                        && demoG.visitor && demoG.visitor.state === 'hang' && !demoG.ivy && demoG.hour < 19) {
+                        strollBeatRung = demoG
+                        demoG.ivyAfter = Math.min(demoG.ivyAfter, Math.floor(demoG.hour)); demoG.ivyGap = 0
+                    }
                 } else if (screenRef.current === 'play' && gs && !gs.done) {
                     if (!contractHoldsLoop()) {
                         // #1637 batch 17 WATCH: the seat is autoStep — bot + advance,
@@ -1105,7 +1152,7 @@ const HomebodyGame = () => {
         }
 
         // ------------------------------------------------------------- start ----
-        const freshDemo = () => { neighBeatRung = null; const d = newRun((Date.now() >>> 5) ^ 0x5eed); return d }
+        const freshDemo = () => { neighBeatRung = null; strollBeatRung = null; stridePrevWalk = false; neighArrive = 0; strollFx = 0; strollDots = null; const d = newRun((Date.now() >>> 5) ^ 0x5eed); return d }
 
         const startPlay = (sd) => {
             if (sd !== undefined) seed = sd >>> 0
@@ -1120,6 +1167,7 @@ const HomebodyGame = () => {
             sayB.life = 0   // #2135: no stale bubble across streets
             neighSulks = 0   // #2599: nor a stale pair-puff
             neighWave = 0; neighPrevD = 99   // #2599 item 2: nor a stale greeting
+            stridePrevWalk = false; neighArrive = 0; strollFx = 0; strollDots = null   // #2618: nor a stale stride, settle, or route tell
             prev.left = prev.right = prev.up = prev.down = prev.a = prev.b = prev.pdown = false
             actQueued = buildQueued = switchQueued = false; digitPick = -1; courtQueued = null
             tabQueued = 0; specialPick = null   // #2222
@@ -1340,6 +1388,10 @@ const HomebodyGame = () => {
                 ringProwl: () => (gs ? ringProwl(gs) : 'no sim'),   // #2532: open the flap now (harness/F1 only — the parity law never reads it)
                 ivyHome: () => { if (gs && gs.ivy) { gs.ivy.state = 'leaving'; gs.ivy.path = null } },   // #2143: rig the next visit (scenario setup, like park/foul)
                 pairCold: (cd) => { if (gs) { const seat = (o, r, c, hue) => { o.r = r; o.c = c; o.x = LOT_X + c * TILE + TILE / 2; o.y = LOT_Y + r * TILE + TILE / 2; o.path = null; o.state = 'hang'; o.t = 0; o.hue = hue; o.face = 1; o.walkPhase = 0; o.chatT = 0; o.hangUntil = 9999; o.neighT = 0 }; gs.visitAfter = 99; gs.ivyAfter = 99; gs.ivyGap = 0; if (!gs.visitor) gs.visitor = { name: 'Fern' }; if (!gs.ivy) gs.ivy = { name: 'Ivy', gift: false }; seat(gs.visitor, 3, 5, '#4fae5f'); seat(gs.ivy, 3, 7, '#a3579b'); for (const p of gs.people) { p.queue.length = 0; p.owner = null; p.working = false } gs.neiGrudge = 1; gs.neiMurrs = 0; gs.neiMurmurCd = cd ?? 0; sayB.life = 0 } return 'pair cold' },   // #2599 handoff 2 scenario rig: the pair seated apart and cold, the murmur clock armed — scenario setup like park/foul/ringIvy
+                hangPair: () => { if (gs) { const seat = (o, r, c, hue) => { o.r = r; o.c = c; o.x = LOT_X + c * TILE + TILE / 2; o.y = LOT_Y + r * TILE + TILE / 2; o.path = null; o.state = 'hang'; o.t = 0; o.hue = hue; o.face = 1; o.walkPhase = 0; o.chatT = 0; o.hangUntil = 9999; o.neighT = 0 }; gs.visitAfter = 99; gs.ivyAfter = 99; gs.ivyGap = 0; if (!gs.visitor) gs.visitor = { name: 'Fern' }; if (!gs.ivy) gs.ivy = { name: 'Ivy', gift: false }; seat(gs.visitor, 3, 5, '#4fae5f'); seat(gs.ivy, 3, 7, '#a3579b'); gs.neiGrudge = 0; gs.neiMending = 0; gs.neiStroll = 0; gs.neiIgnore = 0; gs.neiWalk = 0; gs.visitor.claim = null; gs.ivy.claim = null; gs.visitor.repathT = 0; gs.ivy.repathT = 0; gs.visitor.neighT = 0; gs.ivy.neighT = 0; const q = [[gs.people[0], 6, 8], [gs.people[1], 1, 1]]; for (const [p, r, c] of q) { p.r = r; p.c = c; p.x = LOT_X + c * TILE + TILE / 2; p.y = LOT_Y + r * TILE + TILE / 2; p.path = null; p.goal = null; p.use = null; p.working = false; p.faintT = 0; p.queue.length = 0; p.owner = null; for (const n of NEEDS) p.needs[n] = 1 }   // needs topped FULL — the autonomy scan engages under 0.55 and would otherwise chase the pair mid-lap; a full tank outlasts the drive
+                    stridePrevWalk = false; neighArrive = 0; strollFx = 0; strollDots = null } return 'pair hanging — the lap banks from zero' },   // #2618 scenario rig: pair seated warm and mobile, residents parked off every route's halo, the bank zeroed — the drive leg for the stroll view pass
+                holdResidents: () => { if (gs) { const q = [[gs.people[0], 6, 8], [gs.people[1], 1, 1]]; for (const [p, r, c] of q) { p.r = r; p.c = c; p.x = LOT_X + c * TILE + TILE / 2; p.y = LOT_Y + r * TILE + TILE / 2; p.path = null; p.goal = null; p.use = null; p.working = false; p.faintT = 0; p.queue.length = 0; p.owner = null; for (const n of NEEDS) p.needs[n] = 1 } if (gs.visitor) gs.visitor.claim = null; if (gs.ivy) gs.ivy.claim = null } return 'residents held off the routes' },   // #2618 drive leg: keeps the household out of the pair's claim halo between polls (the harness equivalent of peoplecheck's per-tick park)
+                strollView: () => (gs ? ({ stride: !!(gs.visitor && gs.ivy && pairStride(gs.visitor, gs.ivy)), walking: !!(gs.visitor && gs.visitor.path && gs.visitor.path.length), dots: strollFx > 0 && strollDots ? strollDots.length : 0, fx: Math.round(strollFx * 10) / 10, arrive: Math.round(neighArrive * 100) / 100, pips: !!(gs.visitor && gs.visitor.path && gs.visitor.path.length || gs.ivy && gs.ivy.path && gs.ivy.path.length), bank: Math.round(gs.neiStroll * 10) / 10, grudge: gs.neiGrudge }) : null),   // #2618: the view-pass state as data for the drive
                 // #2070: rig the spat scenario — park the pair beside each
                 // other, both in the red; `thaw` lifts their tempers up.
                 foul: () => { if (gs) { const [a, b] = gs.people; a.r = 3; a.c = 3; b.r = 3; b.c = 4; b.path = null; for (const p of gs.people) { for (const n of NEEDS) p.needs[n] = 0.3; p.working = false; p.faintT = 0 } gs.grudge = 0; gs.spatCd = 0; gs.spats = 0; for (const p of gs.people) { p.queue.length = 0; p.owner = null } } },   // the rigged spat counts as the run's first — earlier organic barbs in a long drive are clock noise, not the law
