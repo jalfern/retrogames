@@ -1473,6 +1473,24 @@ export function goSayTarget(s, k) {
     return null
 }
 
+// #2708 tail 5 (desktop far-tap): the ears the keyboard can address, in the
+// pointer's own tap order. Tab is the resident switch (#1806) — the desktop
+// go-say idiom gets its OWN key (KeyT cycles the ear, C says it), never a
+// second on-screen pad (Jon's rule: one pad, keyboard parity on desktop).
+export const FAR_EARS = ['fern', 'ivy', 'kid']
+
+// the next addressable ear after `from` ('' / null = first press) — ears that
+// are off the lot, leaving or asleep are skipped; null when none can hear.
+// Pure: reads, never spends rng, never mutates (the hint is view state).
+export function farCycle(s, from) {
+    const start = FAR_EARS.indexOf(from)
+    for (let i = 1; i <= FAR_EARS.length; i++) {
+        const k = FAR_EARS[(start + i + FAR_EARS.length) % FAR_EARS.length]
+        if (goSayTarget(s, k)) return k
+    }
+    return null
+}
+
 // cells you can stand on to share the ring — the neighbours' tiles (d = 1 is
 // inside COURT_REACH 2 even if the target shifts a step on arrival)
 function goSayCells(s, v) {

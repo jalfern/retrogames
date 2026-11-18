@@ -1165,10 +1165,15 @@ break; restore.
 
 Honest residual (#2697 tails 3–7): **CLOSED by #2704, three of five** (§ Polish
 pass below) — the chip now wears a bubble-on-legs, the garden arrives with a
-crate and watering can, and hovering the kit card previews the wing. Still open
-(re-filed): no `Tab`-cycles-ears desktop idiom (Tab is the resident switch today —
-the far-tap keyboard idiom needs its own key law and a no-second-pad check), and
-the attract never buys kit two (mind the autopilot pin `3836882361`).
+crate and watering can, and hovering the kit card previews the wing. The
+far-tap keyboard idiom shipped in #2708 (§ Far-tap key below). Still open:
+the attract never buys kit two — and #2708's probe says why a beat cannot fix
+it: the demo economy nets §520 start + §100/day and spends phone+pet+kid+kit
+one before the wish lands (~day 3, 12:30h), so a second §300 never arrives
+honestly inside a winning run. Selling kit two in the demo needs an economy
+call, not a staging beat — a money grant launders the economy the win
+proves, and re-cutting the #2209 family-first tour starves Pip out of the
+demo again (that gate is exact: `pet,kid`).
 
 ## Polish pass (#2704 QA) — the walk shows its legs, the garden shows its work
 

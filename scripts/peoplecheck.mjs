@@ -95,6 +95,7 @@ import {
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court
     courtReach, courtPickSet,   // #2235: choose your court target
     cmdGoSay, goSayTarget, GO_SAY_CHASE, GO_SAY_SETTLE, COURT_REACH,   // #2683: go-say — the far tap walks the word over; #2697: the settle cadence
+    farCycle, FAR_EARS,   // #2708 tail 5: the desktop far-tap — T cycles the ear, C says it
     cmdQueue, orderBusy,   // #2470: the queue law the promise rides
     ivyChatPool, IVY_CHAT, IVY_FADE, IVY_GIFT_HUNGER, IVY_GIFT_CASH,   // #2143
     adoptPet, adoptOk, PET, PET_COOS,   // #2197: Miso
@@ -4818,6 +4819,35 @@ section('POLISH PASS (#2705): ripeness ramp on the bed, harvest hamper at the do
         /rgba\(214,228,255,/.test(pvArt) && /sin\(sec \* 2\.1/.test(pvArt))
     check('pin: the lodger question is the law\u2019s own geometry — art asks wingSets, and sim exports it for the view',
         /export function wingLodged\(wg, sleepers\)/.test(pvArt) && /wingSets\(wg\)\.floor\.has/.test(pvArt) && /export function wingSets\(g\)/.test(pvSim))
+}
+
+section('FAR-TAP KEY (#2708 tail 5): T picks the ear, C says it — the desktop idiom')
+{
+    const g = newRun(7)
+    const needs0 = () => g.kid ? Object.assign(g.kid, { hunger: 0.5, fun: 0.5, energy: 0.5, social: 0.5 }) : null
+    check('no ear, no cycle — null on an empty lot', farCycle(g, null) === null && farCycle(g, 'fern') === null)
+    g.visitor = { name: 'Fern', state: 'hang' }
+    if (!g.kid) g.kid = { r: 7, c: 2, asleep: false, needs: { hunger: 0.5, fun: 0.5, energy: 0.5, social: 0.5 } }; else g.kid.asleep = false; needs0()
+    check('the first press lands the pointer tap order (fern first)', farCycle(g, null) === 'fern' && farCycle(g, '') === 'fern')
+    g.ivy = { state: 'visit' }
+    check('the cycle walks fern → ivy → kid → fern', farCycle(g, 'fern') === 'ivy' && farCycle(g, 'ivy') === 'kid' && farCycle(g, 'kid') === 'fern')
+    g.kid.asleep = true
+    check('an asleep Pip is skipped, not listed', farCycle(g, 'ivy') === 'fern')
+    g.visitor.state = 'leaving'
+    check('a leaving Fern is skipped', farCycle(g, 'kid') === 'ivy')
+    g.ivy.state = 'leaving'
+    check('when none can hear, the cycle answers null (the shell says so)', farCycle(g, 'fern') === null)
+    const h0 = stateHash(g)
+    farCycle(g, null); farCycle(g, 'ivy'); farCycle(g, 'kid')
+    check('the cycle spends neither state nor rng (the hash never hears of it)', stateHash(g) === h0)
+    check('the ear order is the pointer tap order, and the partner is absent', JSON.stringify(FAR_EARS) === JSON.stringify(['fern', 'ivy', 'kid']))
+    const ftSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const ftIdx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    check('the law ships pure — farCycle reads goSayTarget, mutates nothing', /function farCycle\(s, from\) \{[\s\S]*?if \(goSayTarget\(s, k\)\) return k[\s\S]*?\n\}/.test(ftSim) && !/function farCycle[\s\S]{0,500}(s\.[a-zA-Z]+ ?=|pick\(s|Math\.random)/.test(ftSim))
+    check('the shell drives it from KeyT, Tab untouched as the switch', ftIdx.includes("const EAR_KEYS = new Set(['KeyT'])") && ftIdx.includes('farCycle(gs, earHint)') && ftIdx.includes("const SWITCH_KEYS = new Set(['KeyG', 'Tab'])"))
+    check('C with a hint runs the pointer\u2019s three legs (pick / list / walk)', ftIdx.includes("courtPickSet(gs, k); court(gs, 'coo')") && ftIdx.includes("{ kind: 'gosay', k }") && ftIdx.includes('cmdGoSay(gs, p, k)'))
+    check('no second pad — the pad keeps exactly one build button', (ftIdx.match(/secondAction=\{\{[^}]*\}\}/g) || []).length === 1)
+    check('the registry teaches the idiom', readFileSync(new URL('../src/config/games.js', import.meta.url), 'utf8').includes('T picks the ear'))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)

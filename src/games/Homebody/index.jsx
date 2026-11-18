@@ -37,6 +37,7 @@ import {
     court, courtTarget,   // #2131: player-ordered romance commands
     courtReach, courtPickSet,   // #2235: choose your court target — tap a shared-ring person
     cmdGoSay, goSayTarget, COURT_REACH,   // #2683: go-say — tap someone far and the word walks over
+    farCycle,   // #2708 tail 5: the desktop far-tap — T cycles the ear, C says it
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court — one pad button, two orders
     scheduleMeals, MEAL_WINDOW, SPAT_CD,   // #2244: the meal bells — the F1 cheat re-seeds today's hours
     MEAL_TIMBRE, sharedChord, nightLevel,   // #2264: per-bell motifs, the rotating table chord, one night curve
@@ -119,10 +120,11 @@ const ACTION_KEYS = new Set(['Space', 'Enter', 'NumpadEnter'])
 const BUILD_KEYS = new Set(['KeyB'])
 const COURT_KEYS = new Set(['KeyC', 'KeyX'])   // #2131: coo / insult
 const SWITCH_KEYS = new Set(['KeyG', 'Tab'])
+const EAR_KEYS = new Set(['KeyT'])   // #2708 tail 5: cycle the ear the keyboard addresses (Tab stays the resident switch)
 const ROOM_KEYS = new Set(['KeyR'])
 const PET_KEYS = new Set(['KeyP'])   // #2197: pounce on the adoption card
 const KID_KEYS = new Set(['KeyK'])   // #2203: key K to the child counter
-const KEY_SET = new Set([...MOVE_KEYS, ...ACTION_KEYS, ...BUILD_KEYS, ...COURT_KEYS, ...SWITCH_KEYS, ...ROOM_KEYS, ...PET_KEYS, ...KID_KEYS, ...'123456789'])
+const KEY_SET = new Set([...MOVE_KEYS, ...ACTION_KEYS, ...BUILD_KEYS, ...COURT_KEYS, ...SWITCH_KEYS, ...EAR_KEYS, ...ROOM_KEYS, ...PET_KEYS, ...KID_KEYS, ...'123456789'])
 
 const nextSeed = (s) => (Math.imul(s, 1664525) + 1013904223) >>> 0
 
@@ -179,6 +181,7 @@ const HomebodyGame = () => {
         let tabQueued = 0         // #2222: [ / ] pending shelf flip
         let specialPick = null    // #2197/#2203: R/K ids route through the shelf now
         let courtQueued = null    // #2131: 'coo' | 'insult' pending from C/X
+        let earHint = null        // #2708 tail 5: the ear KeyT last chose ('' between presses) — view state, the sim never hears of it
         let digitPick = -1        // #2222: digit picks within the open shelf
         let speedPick = null      // #2227: digits 1-4 outside buy mode set the dial
         let speedCycled = 0       // #2227: , / . cycle the dial in every mode
@@ -810,7 +813,18 @@ const HomebodyGame = () => {
                 }
             }
             if (courtQueued && !gs.build) {
-                court(gs, courtQueued)   // #2131: C coo / X insult — sound + sparks ride the event queue
+                // #2708 tail 5: C with a hinted ear is the keyboard far-tap —
+                // the pointer's own three legs: pick inside the ring (the #2235
+                // idiom lands the coo on the chosen ear), list when the hand is
+                // busy (#2470), walk the word over when it's free (#2683). An
+                // ear that left the lot since the press falls back to plain C.
+                const k = courtQueued === 'coo' ? earHint : null
+                earHint = null
+                const v = k ? goSayTarget(gs, k) : null
+                if (v && Math.abs(p.r - v.r) + Math.abs(p.c - v.c) <= COURT_REACH) { courtPickSet(gs, k); court(gs, 'coo') }
+                else if (v && p.owner === 'human' && orderBusy(gs, p)) { if (cmdQueue(gs, p, { kind: 'gosay', k })) audioController.playTone(740, 0.05, 'triangle', 0.04) }
+                else if (v && cmdGoSay(gs, p, k)) audioController.playTone(740, 0.05, 'triangle', 0.04)
+                else court(gs, courtQueued)   // #2131: C coo / X insult — sound + sparks ride the event queue
                 courtQueued = null
             }
             if (switchQueued) { gs.active = (gs.active + 1) % gs.people.length; switchQueued = false; audioController.playTone(720, 0.05, 'triangle', 0.04) }
@@ -1040,6 +1054,18 @@ const HomebodyGame = () => {
                 ctx.fillRect(g.orderPing.x - pw / 2, g.orderPing.y - 24, pw, 11)
                 ctx.fillStyle = '#8ef0e4'
                 ctx.fillText(g.orderPing.label, g.orderPing.x, g.orderPing.y - 14)
+            }
+            // #2708 tail 5: the ear the keyboard is holding — a gold ring on the
+            // chosen resident while the hint stands (view-only; the law runs when
+            // C fires, exactly the pointer's far-tap legs).
+            if (live && earHint) {
+                const v = goSayTarget(g, earHint)
+                if (v) {
+                    const pu = 0.5 + 0.5 * Math.sin(g.sec * 7)
+                    ctx.strokeStyle = `rgba(255,210,74,${(0.45 + 0.4 * pu).toFixed(3)})`
+                    ctx.lineWidth = 2
+                    ctx.beginPath(); ctx.arc(v.x, v.y, 12 + 2 * pu, 0, 7); ctx.stroke()
+                }
             }
             if (g.build) drawCatalog(ctx, g)
             if (g.fastT > 0) {
@@ -1277,7 +1303,7 @@ const HomebodyGame = () => {
             stridePrevWalk = false; neighArrive = 0; strollFx = 0; strollDots = null   // #2618: nor a stale stride, settle, or route tell
             lostRing.t = 0   // #2688: nor a stale dead ring
             prev.left = prev.right = prev.up = prev.down = prev.a = prev.b = prev.pdown = false
-            actQueued = buildQueued = switchQueued = false; digitPick = -1; courtQueued = null
+            actQueued = buildQueued = switchQueued = false; digitPick = -1; courtQueued = null; earHint = null
             tabQueued = 0; specialPick = null   // #2222
             speedPick = null; speedCycled = 0   // #2227: a new street moves in at normal
             collapseCache.clear(); hoverReveal = null; mouseHover = null; pressName = null; qPrevSnap = null   // #2474: no ghosts or stale names across streets
@@ -1328,6 +1354,19 @@ const HomebodyGame = () => {
             if (BUILD_KEYS.has(e.code)) buildQueued = true
             if (COURT_KEYS.has(e.code)) courtQueued = e.code === 'KeyC' ? 'coo' : 'insult'   // #2131
             if (SWITCH_KEYS.has(e.code)) switchQueued = true
+            if (EAR_KEYS.has(e.code) && gs) {
+                // #2708 tail 5: T walks the addressable ears — Fern, Ivy, Pip,
+                // skipping whoever can't hear (home, leaving, asleep). The gold
+                // ring holds on the chosen ear until C spends it (painter below);
+                // C then runs the pointer's own far-tap legs (the pump).
+                earHint = farCycle(gs, earHint)
+                if (earHint) {
+                    const v = goSayTarget(gs, earHint)
+                    gs.orderPing.x = v.x; gs.orderPing.y = v.y; gs.orderPing.t = 1.6
+                    gs.orderPing.label = `SAY IT TO — ${v.name.toUpperCase()}`
+                    audioController.playTone(660, 0.05, 'triangle', 0.04)
+                } else say('NO EAR ON THE LOT TO HEAR')
+            }
             if (ROOM_KEYS.has(e.code)) specialPick = 'roomkit'   // #2222: counter keys ride setSel so the shelf follows
             if (PET_KEYS.has(e.code)) specialPick = 'petkit'   // #2197
             if (KID_KEYS.has(e.code)) specialPick = 'kidkit'   // #2203
