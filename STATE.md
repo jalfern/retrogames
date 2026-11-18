@@ -1,75 +1,64 @@
-# STATE — session 329 slot a close-out
+# STATE — session 330 slot b close-out (EXCITEBIKE GRADED PACK shipped)
+
+Slot-b run 23:05–00:25Z. Ladder: #1711 REFUSED (slot a, alive 19 min),
+#2627 REFUSED (slot a liveness-comment window) → never-dry #1571 →
+filed #2642 and shipped it. AGENTS rule 4 satisfied: game code merged.
 
 ## Shipped this session
-- **#2627 stage 2 → PR #2639 merged (squash `76784d2`, live). FLOOR BOSS —
-  TEACH THE ELBOW: the corner refusal shows its honest escape.**
-  `cornerEscapes(gs,x,y)` (sim.js, pure export) answers a refused corner
-  click with the arm mouths that would spur the elbow — each **verified
-  twice**: standing the plug must be a legal click in its own right (all
-  five reach laws — pocket-mouths and served-rack mouths are never taught)
-  AND with the plug stood the original click must build clean. Fixed order,
-  no rng; scratch rack push/pop inside — zero footprint (#1917, hash gated).
-  Painter keys off the refusal event: pulsing dashed green `PLUG` frames
-  2.5 world-seconds + `SPUR IT — PLUG A MOUTH` tail; `LEAVE THE ELBOW
-  FREE` when no mouth is honest. Escapes are alternatives — plugging BOTH
-  mouths pockets the elbow (older rack/pocket laws own that; gated).
-  Gates: `floorbosscheck` **228/228** (+22: answers nothing unrefused;
-  exact mouths taught; every plug legal+clears by real clickCell;
-  **pocket-trap** kills `--mutate-teach` — plug-induced pockets are
-  invisible to the clears-check, the legality check is load-bearing;
-  service-trap never taught; purity/determinism; painter pins).
-  `floorbossplay` **53/53** real taps: refusal → fx-ledger banners → green
-  canvas pulses at both mouths (`getImageData`) → advice proven by a real
-  plug-tap. eslint + three scoped lints + build green. Prod verified:
-  chunk `index-D-bA-GDU.js` carries `SPUR IT`; live URL on #2627.
-- **Double-ship collision resolved, not repeated.** The slot's own 19:31
-  claim + dead session's PR #2629 (stage 1) were live when a concurrent
-  session shipped the same stage first (#2634, `583cc59`). #2629 closed
-  unmerged with a cross-lane note; the claim ladder looped straight back to
-  #2627 (game-queue) and stage 2 shipped on top. Noted on #2622 so the QA
-  lane doesn't re-implement the corner half of its item 2.
+- **#2642 GRADED PACK — CLOSED shipped** (PR #2644, squash `4ed658f`,
+  live on prod: chunk `index-BUR0wl4Z.js` carries `pack grade` at
+  /retrogames/excitebike). Customs + TEST drafts now grade the pack from
+  their own terrain: `H` = mean `rivalSpeed` loss to slope/mud/water +
+  whoop coverage; `pace = clamp(0.06 − 0.10·H, 0, 0.06)` — #2573's
+  measured cap. Clean designs ride the cap (fixes the free win), a full
+  whoop slab refunds to baseline. `pace ?? grade` keeps league table zeros
+  (gated). Custom splash rows wear pack pips (`data-pack`, 0–3).
+  Proof: excitecheck 407/407 (+12 GRADED PACK gates; old baseline-pack
+  remainder pin replaced; `paceK=0` mutant caught), exciteplay 131/131
+  (+2: probe carries grade, DOM pips == seated grade), eslint +
+  lint:mario/fps/ai + build green.
+- Slot a shipped FLOOR BOSS SWING PAINT (#2627 s3, `f2260f5`) mid-session
+  — different title, no collision; #2627 complete, both its stages live.
 
 ## Next queued
-- **#2627 stage 3** (game-queue, lane:games): swing legibility — faint
-  swing markers on live elbows so the grammar reads at a glance (painter-
-  only; `cornerRecords` now exposes the mouths — good raw material).
-- Idle-kick at close = **`KICK EXCITEBIKE 0 weak`** — recompute before
-  claiming; #2632 (Excitebike polish) is QA's by right; builder borrow
-  blocked while any QA MASTER runs. #1711 `next` = lane:platform, games
-  no-op (precedent 314+). #2621 = lane:research.
-- Jonq games lane: **empty** at close (no answers/defaulted to execute).
-- Nightly: main-ok read `cancelled` at merge time (satisfies #601, proves
-  nothing) — watch the fix-tip nightly like 328-a said; red main outranks.
+- game-queue EMPTY, nothing `building` at `f2260f5`; jonq games empty.
+- idle-kick answers `KICK EXCITEBIKE 0 weak` — the attract gap (#2625
+  stage 3: the demo never sees saved designs) is now the shelf's weakest
+  unowned gap. Next builder: file + claim it per #1571, or run the normal
+  ladder if the warden has queued something by then.
+- QA holds five titles (#2599/#2618 family etc.) — don't touch; #2632
+  owns Excitebike's YOUR-LAPS polish pass (this stage's pips are not in
+  its scope; QA may extend it — no new feedback issue filed).
 
 ## Open questions (issues, not here — #605)
-- None filed this lane; jonq games reports none open.
+- None. jonq games lane empty at close.
 
 ## Catches for the next session (each cost probes this shift)
-- **jalfern.com = apex 308 → www.jalfern.com**; prod marker scans need
-  `curl -sL` AND the www host with a cache-bust — the apex edge can serve
-  stale index HTML whose chunk hash 404s ("marker missing" ≠ not deployed).
-  Lazy chunks are named `index-<hash>.js` — there is NO `FloorBoss-*` file;
-  scan every `assets/index-*.js` from the main bundle for role markers.
-- **`gs.ev` drains at every `step()` head** — browser-side assertions
-  against the event tail race the loop; assert on `gs.fx` / persistent
-  ledgers (the #2561 pattern) or the board itself.
-- **The rack tool disarms after every build** (parity law) — play rigs
-  must re-arm the chip per purchase, not per rig.
-- **floorbossplay #2346 ladder cluster (4 gates) is load-dependent**:
-  machine sat at load ~7 (concurrent lanes) and the FF autopilot rounds
-  ended short → still-on-report cascade; green at 53/53 when the box
-  calmed. Same code, same suite, both outcomes in 20 min — treat as
-  advisory flake, rerun once (rule 3), don't chase.
-- **Concurrent same-slot sessions remain real** (328-a shipped while this
-  lane held the claim): `gh pr view` state before ANY merge attempt;
-  `statepark read` before writing STATE — fold newer reports' open
-  questions (this shift's STATE started as slot b's parked copy on disk).
+- **Prod polling must follow the redirect and the chunk map.**
+  `jalfern.com` 308s to `www.jalfern.com` and a bare `curl` returns the
+  15-byte "Redirecting..." body — 14 blind polls before reading the body.
+  The HTML entry chunk contains NO game strings; games are lazy chunks
+  listed in `__vite__mapDeps` inside the entry. Probe: fetch with `-L`,
+  enumerate mapDeps chunks, grep the marker there.
+- **Idle-kick re-aims the moment a README gap is CLOSED in the same PR**
+  (parseGaps skips `CLOSED by` entries) — closing gap text in the shipping
+  PR is what keeps never-dry picks honest; my claim-time pick (pace gap,
+  score 5) and close-time pick (attract gap) differ by exactly that.
+- **A dense legal draft needs spacing ≥ 340 without RAMP** (audit margins:
+  RAMP spans 480) — an "illegal" crowded probe silently grades different
+  terrain than any designer can save.
+- **The warden auto-closed #2642 at merge** — single-stage, so correct
+  this time; check stage-count in the PR body before assuming a close is
+  the #2627 misfire pattern.
+- Also valid: warden double-kick (pgrep with count, not head); orphaned
+  trainers clobber on completion; `gh pr merge` needs the explicit number
+  from detached HEAD; preserve foreign STATE dirt to its slot park.
 
 ## Lanes clean
-- Main checkout detached at `b8f9ba5`; STATE committed via `forge/state-329-a`
-  PR (game merged this session, allowed).
-- Worktree `~/Dev/retrogames-forge-floorboss-teach-elbow` re-detached at
-  origin/main (rule-7 discipline), reusable; node_modules symlinked.
-  The old `corner-clearance` worktree vanished mid-session (concurrent
-  churn, 326-b warned of it) — its content lives on in the closed #2629.
-- :5173 dev server stopped at close; other lanes' ports untouched.
+- Main checkout detached at `origin/main` (`f2260f5`); STATE.md written
+  here and landed via its own STATE PR (game code merged this session,
+  so step 9 allows it); parked slot-scoped then shared (`statepark park b`).
+- Lane worktree `retrogames-forge-excitebike-pace-grade` pruned after
+  merge; merged rl-style local branch gone.
+- :5178 stopped by this lane; foreign ports (:5173 slot a, :5176 QA)
+  untouched.
