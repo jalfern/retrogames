@@ -861,9 +861,9 @@ check('contract state ticks', f0.tick > 0 && typeof f0.score === 'number', `tick
     check('#2672 the cat is home while the pair is cold', !!catHome && catHome.needs !== undefined, JSON.stringify(catHome && { state: catHome.state }))
     await page.evaluate(() => window.__homebodyTest.standMed('pet', 2, 6))
     let med = null
-    for (let i = 0; i < 60 && !med; i++) { const s = await st(); if (s.neiMediated === 1) { med = s; break } await wait(50) }
+    for (let i = 0; i < 60 && !med; i++) { await page.evaluate(() => window.__homebodyTest.standMed('pet', 2, 6)); const s = await st(); if (s.neiMediated === 1) { med = s; break } await wait(50) }
     check('#2672 the cat between them cracks the cold war — flag set, war over',
-        !!med && med.neiGrudge === 0 && med.neiMediated === 1, JSON.stringify(med && { g: med.neiGrudge, m: med.neiMending, md: med.neiMediated }))   // mending may already have paid its reunion by the poll — mediation itself is the proof
+        !!med && med.neiGrudge === 0 && med.neiMediated === 1, JSON.stringify(med && { g: med.neiGrudge, m: med.neiMending, md: med.neiMediated }) + ' cells=' + JSON.stringify(await page.evaluate(() => window.__homebodyTest.medCells())))   // mending may already have paid its reunion by the poll — mediation itself is the proof
     let lv = 0
     for (let i = 0; i < 10 && lv < 6; i++) { lv = await page.evaluate(() => window.__homebodyTest.leaves()); if (lv < 6) await wait(40) }
     check('#2672 the mediation sparkles the pair leaf on the live canvas', lv >= 6, `leaves=${lv}`)

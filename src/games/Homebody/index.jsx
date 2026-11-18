@@ -1409,6 +1409,7 @@ const HomebodyGame = () => {
                 hearts: () => particles.filter((pt) => pt.kind === 'heart').length,   // #2076: the make-up paid hearts?
                 leaves: () => particles.filter((pt) => pt.kind === 'leaf').length,   // #2672: did the mediation sparkle the pair leaf?
                 standMed: (kind, r, c) => { const m = gs ? (kind === 'kid' ? gs.kid : gs.pet) : null; if (!m) return false; m.r = r; m.c = c; m.x = LOT_X + c * TILE + TILE / 2; m.y = LOT_Y + r * TILE + TILE / 2; m.path = null; m.wanderT = 9999; m.play = false; for (const n of Object.keys(m.needs)) m.needs[n] = 1; return true },   // #2672: seat a mediator mid-cold-war, held still (the drive-leg twin of peoplecheck's stand)
+                medCells: () => gs ? ({ fv: gs.visitor ? [gs.visitor.r, gs.visitor.c, gs.visitor.state] : null, iv: gs.ivy ? [gs.ivy.r, gs.ivy.c, gs.ivy.state] : null, pet: gs.pet ? [gs.pet.r, gs.pet.c, gs.pet.asleep, gs.pet.state] : null, hour: Math.round(gs.hour * 10) / 10, grudge: gs.neiGrudge, med: gs.neiMediated }) : null,   // #2672 debug read: the cells and states the mediation law actually sees
                 // #2240: the SET-DOWN, counted on the live canvas at the landing
                 // cell — greens + tomato are the basket's own signature (the floor's
                 // plank tan deliberately does NOT match them), honey amber only ever
