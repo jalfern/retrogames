@@ -22,7 +22,7 @@ import {
     armLiveCapture, unexposeGame, exposeGame, contractHoldsLoop, recordLiveTick, isRecording,
     exposeFeedbackState, unexposeFeedbackState, seedFromQuery,
 } from '../utils/gameContract'
-import { createTestSim, screenVerdict, FIXED_DT, SLAPS_NEEDED, lastGapMs, pushHistory, formatHistory, hardFailNote } from '../utils/clapTestCore'
+import { createTestSim, screenVerdict, FIXED_DT, SLAPS_NEEDED, lastGapMs, pushHistory, formatHistory, hardFailNote, createPairCoach, pairCoachFeed, pairCoachAge, COACH_LIVE_TEXT } from '../utils/clapTestCore'
 
 const NEON = '#39ff14'
 const AMBER = '#ffd840'
@@ -45,6 +45,8 @@ const ClapTest = () => {
     const [result, setResult] = useState(null)
     const [upload, setUpload] = useState(null)
     const [flash, setFlash] = useState(0)
+    const [coach, setCoach] = useState(null) // #1711 live pair coach: last named event {kind, ms, n}
+    const [pairs, setPairs] = useState(0) // pairs matched so far THIS take (guidance, not verdict)
     const simRef = useRef(null)
     const seedRef = useRef(0)
     const heldRef = useRef(false)
@@ -54,6 +56,10 @@ const ClapTest = () => {
     const uploadRef = useRef(null)
     const meterFillRef = useRef(null)
     const quietTimerRef = useRef(0)
+    const coachRef = useRef(createPairCoach())
+    const coachSeqRef = useRef(0)
+    const coachTimerRef = useRef(0)
+    const liveNRef = useRef(0)
 
     // #2205: one edge handler for both drivers (loop + DEV tick) — refresh the
     // pacing readout from the sim's own tick bank and flash the quiet warning
@@ -67,7 +73,25 @@ const ClapTest = () => {
             if (quietTimerRef.current) clearTimeout(quietTimerRef.current)
             quietTimerRef.current = setTimeout(() => setQuiet(false), 900)
         }
+        // #1711 live pair coach: the touch half of the slap, stamped on the same
+        // performance.now() clock the recorder stamps its clap onsets.
+        pairCoachFeed(coachRef.current, 'tap', performance.now())
+        applyCoachRef.current()
     }, [])
+
+    // paint the coach machine's newest named event (PAIR/OFF/NO TOUCH/NO SOUND);
+    // each new seq shows for a beat, the badge never stacks.
+    const applyCoach = useCallback(() => {
+        const st = coachRef.current
+        setPairs(st.pairs)
+        if (!st.last || st.seq === coachSeqRef.current) return
+        coachSeqRef.current = st.seq
+        setCoach(st.last)
+        if (coachTimerRef.current) clearTimeout(coachTimerRef.current)
+        coachTimerRef.current = setTimeout(() => setCoach(null), 1100)
+    }, [])
+    const applyCoachRef = useRef(applyCoach)
+    useEffect(() => { applyCoachRef.current = applyCoach }, [applyCoach])
 
     const setPhase = useCallback((p) => { phaseRef.current = p; setPhaseState(p) }, [])
     const mirror = useCallback(() => {
@@ -76,6 +100,7 @@ const ClapTest = () => {
                 phase: phaseRef.current, seed: seedRef.current, ticks: simRef.current.ticks,
                 taps: simRef.current.taps, verdict: resultRef.current, uploaded: !!(uploadRef.current && uploadRef.current.uploaded),
                 key: (uploadRef.current && uploadRef.current.key) || null,
+                coach: coachRef.current.last ? coachRef.current.last.kind : null, pairs: coachRef.current.pairs,
             }
         }
     }, [])
@@ -169,6 +194,8 @@ const ClapTest = () => {
                     uploadRef.current = null
                     setResult(null); setUpload(null); setTaps(0); tapsRef.current = 0
                     setGapMs(null); setQuiet(false)
+                    coachRef.current = createPairCoach(); coachSeqRef.current = 0; liveNRef.current = 0
+                    setCoach(null); setPairs(0)
                     setPhase('attract')
                     mirror()
                 },
@@ -195,6 +222,22 @@ const ClapTest = () => {
                 const lvl = phaseRef.current === 'testing' && typeof window.__voiceLevel === 'number' ? window.__voiceLevel : 0
                 meterFillRef.current.style.width = `${Math.round(Math.max(0, Math.min(1, lvl)) * 100)}%`
             }
+            // #1711 live pair coach: consume clap onsets the recorder published
+            // this frame (n only ever rises within a take; a drop means a new
+            // recorder opened — resync without feeding) and age the windows, so
+            // a lone clap or a lone tap gets named within one window of the glass.
+            if (phaseRef.current === 'testing') {
+                const pub = typeof window !== 'undefined' ? window.__liveClap : null
+                if (pub && Number.isFinite(pub.n) && Number.isFinite(pub.ms)) {
+                    if (pub.n < liveNRef.current) liveNRef.current = pub.n
+                    else if (pub.n > liveNRef.current) {
+                        liveNRef.current = pub.n
+                        pairCoachFeed(coachRef.current, 'clap', pub.ms)
+                    }
+                }
+                pairCoachAge(coachRef.current, performance.now())
+                applyCoachRef.current()
+            }
             acc += now - last
             last = now
             if (acc > 250) acc = 250 // one driver per loop; catch-up capped like every game shell
@@ -220,6 +263,7 @@ const ClapTest = () => {
         return () => {
             cancelAnimationFrame(raf)
             if (quietTimerRef.current) clearTimeout(quietTimerRef.current)
+            if (coachTimerRef.current) clearTimeout(coachTimerRef.current)
             endRun() // an unmount mid-take ends it the honest way
             unexposeGame()
             unexposeFeedbackState()
@@ -241,6 +285,8 @@ const ClapTest = () => {
                 tapsRef.current = 0
                 setResult(null); setUpload(null); setTaps(0)
                 setGapMs(null); setQuiet(false)
+                coachRef.current = createPairCoach(); coachSeqRef.current = 0; liveNRef.current = 0
+                setCoach(null); setPairs(0)
                 beginRun() // opens at seed-birth when the plan says record
                 setPhase('testing')
                 mirror()
@@ -332,6 +378,14 @@ const ClapTest = () => {
                     {quiet && (
                         <div className="mt-3 text-sm font-bold" data-clap-quiet="1" style={{ color: '#ff8040' }}>TOO QUIET — slap harder</div>
                     )}
+                    {coach && (
+                        <div className="mt-3 text-sm font-bold" data-clap-coach-live={coach.kind} style={{ color: coach.kind === 'pair' ? NEON : AMBER }}>
+                            {typeof COACH_LIVE_TEXT[coach.kind] === 'function' ? COACH_LIVE_TEXT[coach.kind](coach.ms) : COACH_LIVE_TEXT[coach.kind] || ''}
+                        </div>
+                    )}
+                    <div className="mt-2 text-[10px] text-gray-400" data-clap-pairs={String(pairs)}>
+                        sound + touch matched so far: <b style={{ color: pairs > 0 ? NEON : undefined }}>{pairs}</b>
+                    </div>
                     <div className="mt-3 text-xs text-gray-500">ends by itself after the {SLAPS_NEEDED}rd slap</div>
                 </div>
             )}
