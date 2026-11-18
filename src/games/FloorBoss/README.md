@@ -244,7 +244,8 @@ node scripts/floorbosscheck.mjs --mutate-lane    # long tight aisles cannot be s
 node scripts/floorbosscheck.mjs --mutate-corner   # racks cannot choke a tight elbow at its swing (#2627)
 node scripts/floorbosscheck.mjs --mutate-flow     # dead-end spurs cannot claim two-way arrows (#2622 item 3)
 node scripts/floorbosscheck.mjs --mutate-flowheat # the second route on a cell cannot stop counting — live heat dies (#2680)
-npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877); real-tap pad call/send + drawn-truck-is-sim-truck gates (#1911); escrow-books-at-pack + freight-paid-at-drive-off gates (#1921); violet far-post tag pixels + road-commit + tap-on-road-silence gates (#1927 — verb gates run with auto-dispatch off and settle dock+truck+road together); steel heavy-tag pixel [154,215,255] + padWeight simState eye (#1931); DUEL live drive: D enters the duel, cyan model cursor moves on its own, twin till updates, verdict banner lands (#2555)
+node scripts/floorbosscheck.mjs --mutate-duck   # carts stop yielding into bays — the avoidable freeze comes back (#2692)
+npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877); real-tap pad call/send + drawn-truck-is-sim-truck gates (#1911); escrow-books-at-pack + freight-paid-at-drive-off gates (#1921); violet far-post tag pixels + road-commit + tap-on-road-silence gates (#1927 — verb gates run with auto-dispatch off and settle dock+truck+road together); steel heavy-tag pixel [154,215,255] + padWeight simState eye (#1931); DUEL live drive: D enters the duel, cyan model cursor moves on its own, twin till updates, verdict banner lands (#2555); yield holds on live traffic — the dashed cyan courtesy ring sampled atomically with the yields eye (#2692)
 CONTRACT_ONLY=floor-boss npm run contractcheck
 node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
 ```
@@ -386,4 +387,31 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
     meet, cooled once they clear. Residual honest gap unchanged: carts stay
     kinematic points on BFS paths — true swept volumes and forklift-lane
     routing stay faked; the read displays the paths, it does not re-route
-    them.
+    them. — **DUCK & PASS shipped by this PR (#2692):** the bays now have a
+    use. `pullOff(gs,bot,nx)` answers a blocked step or a no-route stall with
+    the standing shoulder — a free cell perpendicular to the rival's bearing
+    (fixed order N-before-S / W-before-E), else a straight backpedal off the
+    mouth (the queue case) — and `duckTo` steps the cart into it (real cadence,
+    real wear), holds while its route is walled, and drives on the moment BFS
+    finds a way again; a hold that never opens (a rival broken down
+    mid-corridor) out-times into the jam law, exactly as before. Racks are
+    never ducked for — `pullOff` requires a *moveable* robot: courtesy never
+    pretends to traffic, and the seal rig proves it never teleports through
+    racks either. Fixed orders everywhere — same seed, same duck tick (twin
+    gate). The hold is sim truth: `Y` on the bot and a `DK` tally join
+    `stateHash` (additive, #1373), `yields`/`ducks` DEV eyes feed QA, and the
+    painter lays a dashed cyan courtesy ring on the holding cart (cyan stays
+    the traffic livery — amber the law, orange the exertion) with the vacated
+    lane cell glowing softly where it gave way. `floorbosscheck` +17 gates
+    (§YIELD: the arm-bay crush rig lifted from seed 1337's live duck @6404,
+    backpedal, sealed variant, broken rival, wall-block, purity, Y/DK hash
+    marks, cadence pins 4/60/24, twin determinism, live-floor autopilot 5/5
+    wins 0 jams) and a `--mutate-duck` kill; `floorbossplay` holds leg drives
+    real traffic first (cyan ring pixels sampled atomically with the eye).
+    Measured, not assumed: YIELD_WAIT swept 4/6/8/12 over 15 seeds (12 fires
+    zero — dead code refused), W=4 wins 14/15, avg 1425 vs main 1420, jams 0,
+    thin seed 42 recovers 1323→1408; unmanaged floors are bit-identical
+    (jams need density the floor only reaches with an expanding manager).
+    Residual honest gap stands: carts remain kinematic points — true swept
+    volumes through corners stay faked; the routing now yields to traffic, it
+    does not measure the cart's body through the turn.

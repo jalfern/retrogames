@@ -895,5 +895,73 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     }
 }
 
-r.check('zero page errors', errors.length === 0, errors.join(' | '))
-r.exit(browser)
+// ---- duck & pass (#2692): the courtesy ring rides real holds ----
+{
+    await page.goto(URL)
+    await page.waitForFunction(() => !!window.__floorbossTest, null, { timeout: 15000 })
+    if (!await waitMode('attract', 5000)) r.check('yield leg: fresh page reaches attract', false, 'no attract')
+    await page.keyboard.press('Space')
+    if (!await waitMode('play')) r.check('yield leg: Space clocks in', false, 'no play')
+    const farP = await clientXY(4, 10)
+    await page.mouse.move(farP.x, farP.y)
+    // one atomic in-page sample: which cart holds (eye truth) AND a cyan read
+    // of the ring band around it, in the same paint — pixels can never lie
+    // about a hold the sim no longer has. Ring points sit on the axes at the
+    // dashed radius, outside the body edge, and reference cells are sampled
+    // clean (no bot, no hold) so the delta is the courtesy, not ambience.
+    const holdAndProbe = () => page.evaluate(() => {
+        const t = window.__floorbossTest
+        const g = t.sim()
+        const ys = t.yields()
+        if (!ys.length) return { holds: 0 }
+        const y = ys[0]
+        if (g.robots.some((b) => b.yield && (b.x !== y.x || b.y !== y.y))) return { holds: -1 } // eye disagreement — do not sample
+        const c = t.canvas()
+        const band = (cx, cy) => {
+            let hits = 0
+            const ANG = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.72, 0.72], [-0.72, 0.72], [0.72, -0.72], [-0.72, -0.72]]
+            for (const [ux, uy] of ANG) {
+                const x = (10 + cx * 26 + 13 + ux * 12) * 2, yy = (44 + cy * 26 + 13 + uy * 12) * 2
+                const d = c.getContext('2d').getImageData(x - 2, yy - 2, 5, 5).data
+                for (let i = 0; i < d.length; i += 4) if (d[i + 2] > 140 && d[i + 1] > 110 && d[i + 2] - d[i] > 45) { hits++; break }
+            }
+            return hits
+        }
+        const ring = band(y.x, y.y)
+        const ref = band(4, 10) // bare floor, far west column — no lanes, no crews there
+        return { holds: 1, x: y.x, y: y.y, ring, ref }
+    })
+    let holds = 0, cyanHits = 0, sample
+    for (let i = 0; i < 64 && holds < 8; i++) {
+        sample = await holdAndProbe()
+        if (sample.holds === 1) { holds++; if (sample.ring >= 2 && sample.ring > sample.ref) cyanHits++ }
+        await new Promise((res) => setTimeout(res, 150))
+    }
+    if (holds < 4) {
+        // fallback rig in house style: the bay crush written straight onto sim
+        // state (the legs park and direct the crew by hand all over this file) —
+        // the eye and the paint still read truth, the leg only stages traffic.
+        await page.evaluate(() => {
+            const t = window.__floorbossTest
+            const g = t.sim()
+            g.auto = false
+            g.score = 9000
+            g.arm.held = 'crate'
+            g.racks.push({ x: 18, y: 3, items: [], owner: -1 })
+            const [A, B] = g.robots
+            g.robots.forEach((b) => { b.pickT = 0; b.jam = false; b.broken = false; b.repair = 0; b.yield = null; b.yieldCd = 0; b.wait = 0 }) // park the crew FIRST — pickT residue would grab the cargo instead of stalling
+            A.x = 16; A.y = 3; A.carry = null; A.task = { kind: 'toArm' }; A.path = []; A.moveT = 0; A.wait = 0
+            B.x = 16; B.y = 2; B.carry = null; B.task = { kind: 'toArm' }; B.path = []; B.moveT = 0; B.wait = 0; B.pickT = 90 // long bay job — the hold stays visible while A queues one cell back; B.jam = false
+            g.robots.push({ id: 9001, x: 17, y: 1, carry: 'crate', owner: -1, task: { kind: 'toStock', rx: 18, ry: 3 }, path: [], moveT: 36, wait: 0, jam: false, pickT: 0, broken: false, repair: 0, wear: 0, wearMax: 9999, dir: 2, hist: [], stall: 0, yield: null, yieldCd: 0, ducked: 0 })
+        })
+        for (let i = 0; i < 40 && holds < 8; i++) {
+            sample = await holdAndProbe()
+            if (sample.holds === 1) { holds++; if (sample.ring >= 2 && sample.ring > sample.ref) cyanHits++ }
+            await new Promise((res) => setTimeout(res, 150))
+        }
+    }
+    r.check('a cart holds a shoulder on the live floor — the yields eye reports holds (#2692)', holds >= 4, `holds ${holds} samples, ducks ${await page.evaluate(() => window.__floorbossTest.ducks())}`)
+    r.check('the yielding cart wears the dashed cyan ring on canvas — courtesy visible on a phone (#2692)', cyanHits >= 3, `cyan ring hits ${cyanHits}/${holds}`)
+    r.check('zero page errors', errors.length === 0, errors.join(' | '))
+    r.exit(browser)
+}
