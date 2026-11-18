@@ -164,7 +164,7 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                     : MUT_KNEE_ROUTE
                                                                     ? ['if (turn && kneeRack(gs, n.x + hx + dx, n.y + hy + dy)) continue // the knee is racked — the swing would clip it', 'if (false && turn && kneeRack(gs, n.x + hx + dx, n.y + hy + dy)) continue // MUTANT', 'loaded carts clip corners again — the body is gone from the route planner (#2711)']
                                                                     : MUT_KNEE_TEACH
-                                                                    ? ['if (strandsFloor(gs, ax, ay) !== false) continue // illegal neighbour teaches nothing', 'if (false && strandsFloor(gs, ax, ay) !== false) continue // MUTANT', 'the knee lesson teaches illegal beside-places — racking a taught cell would refuse, the fix is a lie (#2711 s2)']
+                                                                    ? ['if (strandsFloor(gs, ax, ay) !== false) continue // an illegal neighbour teaches nothing', 'if (false && strandsFloor(gs, ax, ay) !== false) continue // MUTANT', 'the knee lesson teaches illegal beside-places — racking a taught cell would refuse, the fix is a lie (#2711 s2)']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(tgt, src.replace(from, to))
