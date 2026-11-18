@@ -28,6 +28,11 @@
 // claps no matter how the harness aims. That is a property of the MACHINE, not
 // of the game, so a clean run that failed its core is re-attempted (fresh
 // context, up to 3 tries) and only the accepted attempt's check lines print.
+//
+// #1711 live pair coach: coachProof() drives the two failure shapes measured
+// out of Jon's stored Nov-16 takes (airborne clap / silent tap) plus one honest
+// coincident slap and proves the page NAMES each live (NO TOUCH / NO SOUND /
+// PAIR) while the take's own verdict stays honest (2 claps, 1 pair).
 
 import { requireDevServer, launch, Report } from './lib/harness.mjs'
 import { spawn } from 'node:child_process'
@@ -508,6 +513,127 @@ async function twoFingerProof() {
     await context.close().catch(() => {})
 }
 if (!MUTANT) await twoFingerProof()
+
+// #1711 live pair coach: drive the EXACT shapes Jon's phone took (measured from
+// the stored bytes — airborne clap seed978353, silent tap seed144524) plus one
+// honest coincident slap, and prove the page names each while the take runs:
+// NO TOUCH, NO SOUND, PAIR/OFF. The take itself must stay honest — the studio
+// re-grades the same bytes and sees 2 claps / 1 aligned pair, so the coach
+// guided without touching the measurement. Retries like a clean run (#2205).
+async function coachOnce(sink) {
+    const r = {
+        check: (label, pass, detail = '') => sink.push({ label, pass: !!pass, detail }),
+        info: (label, detail) => sink.push({ info: true, label, detail }),
+        skip: (label, detail = '') => sink.push({ skip: true, label, detail }),
+    }
+    const context = await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true })
+    const page = await context.newPage()
+    await page.bringToFront()
+    page.setDefaultTimeout(30000)
+    page.on('pageerror', (e) => errors.push(String(e)))
+    await page.goto(PAGE_URL, { waitUntil: 'load' })
+    await page.waitForSelector('[data-clap-test]', { timeout: 15000 })
+    await page.evaluate(() => { window.__CLAP = { clapMs: [1400, 3000] } })
+    await page.tap('[data-clap-start]')
+    let gate = false
+    try { await page.waitForSelector('[data-consent-gate]', { timeout: 5000 }); gate = true } catch { /* cached consent */ }
+    if (gate) {
+        await page.tap('#consent-motion')
+        await page.tap('#consent-voice')
+        await page.tap('#consent-name')
+        await page.type('#consent-name', 'qabot')
+        await page.tap('#consent-yes')
+    }
+    let armed = false
+    try {
+        await page.waitForFunction(() => !!(window.__autoCapture && window.__autoCapture.recording) && window.__clapTest && window.__clapTest.phase === 'testing', null, { timeout: 8000 })
+        armed = true
+    } catch { /* gated below */ }
+    if (!armed) {
+        r.check('coach: run arms the recorder', false, 'stuck before testing')
+        await context.close().catch(() => {})
+        return { coreOk: false, fast: true }
+    }
+    const fps = await page.evaluate(() => new Promise((res) => {
+        let n = 0
+        const t0 = performance.now()
+        const t = () => { n++; if (performance.now() - t0 < 500) requestAnimationFrame(t); else res(Math.round((n * 1000) / (performance.now() - t0))) }
+        requestAnimationFrame(t)
+    }))
+    const fast = fps >= 30
+    // page-side badge sampler (rAF tracker, same non-blocking idiom as __lvlMax)
+    await page.evaluate(() => {
+        window.__coachSeen = []
+        window.__pairsMax = 0
+        const t = () => {
+            const el = document.querySelector('[data-clap-coach-live]')
+            const v = el ? el.getAttribute('data-clap-coach-live') : null
+            if (v && window.__coachSeen[window.__coachSeen.length - 1] !== v) window.__coachSeen.push(v)
+            const p = document.querySelector('[data-clap-pairs]')
+            if (p) window.__pairsMax = Math.max(window.__pairsMax, Number(p.getAttribute('data-clap-pairs')) || 0)
+            requestAnimationFrame(t)
+        }
+        t()
+    })
+    const clapWall = await page.evaluate(() => window.__clapWall || [])
+    if (clapWall.length !== 2) {
+        r.check('coach: synth mic scheduled the two claps', false, JSON.stringify(clapWall))
+        await context.close().catch(() => {})
+        return { coreOk: false, fast }
+    }
+    // silent tap at +2.2 s (no clap in its window), coincident slap at +3.0 s
+    // (the mic's clap@3000 and this press aim the same instant). The clap@1400
+    // rides alone: the airborne clap.
+    for (const ms of [2200, 3000]) {
+        const aim = clapWall[0] + ms
+        await new Promise((res) => setTimeout(res, Math.max(0, aim - Date.now())))
+        await page.mouse.down()
+        await page.waitForTimeout(fast ? 130 : 420)
+        await page.mouse.up()
+    }
+    let phase = null
+    try {
+        await page.waitForFunction(() => window.__clapTest && window.__clapTest.phase === 'graded', null, { timeout: 25000 })
+    } catch { /* gated below */ }
+    const seen = await page.evaluate(() => ({ coach: window.__coachSeen || [], pairs: window.__pairsMax || 0, ct: window.__clapTest || null }))
+    phase = seen.ct && seen.ct.phase
+    r.check('coach: the take ended and graded itself', phase === 'graded', phase)
+    let coreOk = phase === 'graded'
+    const last = await page.evaluate(() => window.__autoRecord && window.__autoRecord.last)
+    r.check('coach: the take uploaded through the consent gate', !!(last && last.uploaded), JSON.stringify(last))
+    coreOk = coreOk && !!(last && last.uploaded)
+    if (!fast) {
+        r.skip('coach naming gates', `runner at ${fps} fps — windows quantize past the naming resolution`)
+        return { coreOk, fast }
+    }
+    const has = (k) => seen.coach.includes(k)
+    const p = has('notouch'); coreOk = coreOk && p
+    r.check('coach: airborne clap named NO TOUCH while the take runs (the seed978353 shape, live)', p, JSON.stringify(seen.coach))
+    const q = has('nosound'); coreOk = coreOk && q
+    r.check('coach: silent tap named NO SOUND while the take runs (the seed144524 shape, live)', q, JSON.stringify(seen.coach))
+    const pr = has('pair') || has('off'); coreOk = coreOk && pr
+    r.check('coach: the coincident slap named as a PAIR — never as a missing half', pr, JSON.stringify(seen.coach))
+    const pn = seen.pairs >= 1; coreOk = coreOk && pn
+    r.check('coach: the matched-pair counter reached 1', pn, String(seen.pairs))
+    const v = seen.ct && seen.ct.verdict
+    const vh = !!(v && !v.ok && v.claps === 2 && v.matched === 1 && /TOUCH/i.test(v.hint || ''))
+    coreOk = coreOk && vh
+    r.check('coach guided WITHOUT touching the measurement: honest verdict — 2 claps, 1 pair, hint names the touch half', vh, JSON.stringify(v))
+    return { coreOk, fast }
+}
+async function coachProof() {
+    const attempts = 3
+    let chosen = null
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+        const sink = []
+        const out = await coachOnce(sink)
+        chosen = { sink, out }
+        if (out.coreOk || attempt === attempts) break
+        r.info(`coach: attempt ${attempt} ${out.fast ? 'missed a naming gate' : 'ran on a starved box'} — retrying (busy-box lesson, #2205)`)
+    }
+    for (const c of chosen.sink) (c.skip ? r.skip(c.label, c.detail) : c.info ? r.info(c.label, c.detail) : r.check(c.label, c.pass, c.detail))
+}
+if (!MUTANT) await coachProof()
 
 r.check('zero page errors', errors.length === 0, errors.join(' | '))
 sim.close()
