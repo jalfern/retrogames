@@ -35,6 +35,7 @@ import {
     SPEED_MULT, SPEED_NAMES, setSpeed, cycleSpeed, attractSpeed,   // #2227: the speed dial
     court, courtTarget,   // #2131: player-ordered romance commands
     courtReach, courtPickSet,   // #2235: choose your court target — tap a shared-ring person
+    cmdGoSay, goSayTarget, COURT_REACH,   // #2683: go-say — tap someone far and the word walks over
     courtHoldArm, courtTick, courtTap, HOLD_INSULT_MS,   // #2171: thumb court — one pad button, two orders
     scheduleMeals, MEAL_WINDOW, SPAT_CD,   // #2244: the meal bells — the F1 cheat re-seeds today's hours
     MEAL_TIMBRE, sharedChord, nightLevel,   // #2264: per-bell motifs, the rotating table chord, one night curve
@@ -91,6 +92,7 @@ const MESSAGES = [
     'THE CLOCK IS YOURS — keys 1-4 set the speed dial (|| ▶ ▶▶ ▶▶▶), or tap SPEED in the panel.',
     'SAY THE KIND THING — C coos, X cuts. The gold ring under a visitor shows who will hear you.',
     'WHEN THE RING IS CROWDED — tap a person in reach. They hear your next words until they step away.',
+    'SOMEONE ACROSS THE LOT — tap Fern, Ivy or Pip from afar: your resident walks it over and says the kind thing on arrival.',
     'Adopt a child for §150 — K opens the counter. Pip scampers, snackes, plays and tumbles.',
     'A lonely Pip cries and the whole house feels it. Nearby family, toys and a cozy corner keep the giggles coming.',
     'MISO WANTS A GAME — buy the Yarn Ball (§60, FUN shelf) and tap it: your resident dangles, the tabby pounces, BONDS climb.',
@@ -459,6 +461,12 @@ const HomebodyGame = () => {
                         setTimeout(() => audioController.playTone(831, 0.12, 'triangle', 0.05), 80)
                         if (live) { say(e.k === 'fern' ? 'A WORD FOR FERN ♥' : e.k === 'ivy' ? 'A WORD FOR IVY ♥' : e.k === 'kid' ? 'A WORD FOR PIP ♥' : 'A WORD FOR YOUR BETTER HALF ♥'); burst(e.x, e.y - 10, 5, '#ffe6a8', 2.2, 'flash'); showSay(s, e) }
                         break
+                    case 'go-say': // #2683: the fire itself rings through the coo event; an errand that lost its ear is felt honestly
+                        if (e.stage === 'lost') {
+                            audioController.playSweep(420, 300, 0.12, 'triangle', 0.04)
+                            if (live) say(`${e.name.toUpperCase()} — THE WORD WILL HAVE TO WAIT`)
+                        }
+                        break
                     case 'affection': // #2131: the FAMILY tier pays in hearts — full chord
                         audioController.playTone(523, 0.07, 'sine', 0.05)
                         setTimeout(() => audioController.playTone(659, 0.07, 'sine', 0.05), 80)
@@ -656,6 +664,31 @@ const HomebodyGame = () => {
                     say(`${c.p.name.toUpperCase()} WILL HEAR YOU`)
                     return
                 }
+            }
+            // #2683: choose WHICH TWO share the ring — a tap on Fern, Ivy or Pip
+            // from across the lot sends your resident walking and the coo lands
+            // the tick they meet (sim.js goSayArrive owns the arrival law). A
+            // busy resident lists it like any errand (#2470); same-ring taps keep
+            // the historic pick/walk idioms untouched.
+            for (const kk of ['fern', 'ivy', 'kid']) {
+                const v = goSayTarget(gs, kk)
+                if (!v || Math.hypot(v.x - px, v.y - py) >= 18) continue
+                if (Math.abs(p.r - v.r) + Math.abs(p.c - v.c) <= COURT_REACH) break   // in reach: the old idioms keep the tap
+                if (p.owner === 'human' && orderBusy(gs, p)) {
+                    if (cmdQueue(gs, p, { kind: 'gosay', k: kk })) {
+                        audioController.playTone(740, 0.05, 'triangle', 0.04)
+                        say(`${v.name.toUpperCase()} WILL HEAR IT LATER — LISTED`)
+                        return
+                    }
+                    break   // queue full — the queue-full event speaks its own line
+                }
+                if (cmdGoSay(gs, p, kk)) {
+                    audioController.playTone(740, 0.05, 'triangle', 0.04)
+                    say(`WALKING IT OVER — ${v.name.toUpperCase()} WILL HEAR YOU`)
+                    return
+                }
+                say('CANNOT REACH THAT')
+                return
             }
             // tap a person to switch
             for (const q of gs.people) {
@@ -891,6 +924,21 @@ const HomebodyGame = () => {
                     ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 2
                     ctx.beginPath(); ctx.ellipse(t.p.x, t.p.y + 9, 13, 4.5, 0, 0, Math.PI * 2); ctx.stroke()
                     ctx.globalAlpha = 1
+                }
+            }
+            if (live && !g.build) {
+                // #2683: the promised ear — while a go-say errand walks toward a
+                // person, a dotted gold ring trails them across the lot.
+                const pr = g.people.find((q) => q.goal && q.goal.kind === 'gosay')
+                if (pr) {
+                    const v = goSayTarget(g, pr.goal.k)
+                    if (v) {
+                        ctx.globalAlpha = 0.3 + 0.22 * Math.sin(g.sec * 3)
+                        ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1.5
+                        ctx.setLineDash([4, 3])
+                        ctx.beginPath(); ctx.ellipse(v.x, v.y + 9, 15, 5.5, 0, 0, Math.PI * 2); ctx.stroke()
+                        ctx.setLineDash([]); ctx.globalAlpha = 1
+                    }
                 }
             }
             if (live && g.holdT >= 0) {
@@ -1348,6 +1396,7 @@ const HomebodyGame = () => {
                     cmdCd: Math.round(gs.cmdCd * 10) / 10, cooFx: Math.round(gs.cooFx * 10) / 10, cooDeep: !!gs.cooDeep,   // #2131
                     courtKind: (() => { const t = courtTarget(gs); return t ? t.k : null })(), active: gs.active,
                     courtPick: gs.courtPick,   // #2235: the preferred addressee (null = nearest law)
+                    goSay: (() => { const q = gs.people.find((p) => p.goal && p.goal.kind === 'gosay'); return q ? `${q.name}->${q.goal.k}` : null })(),   // #2683: the promise in flight — who is walking it to whom
                     holdT: Math.round(gs.holdT), courtArmed: gs.holdT >= 0,   // #2171: the thumb court
                     visitor: gs.visitor ? gs.visitor.name : null,
                     ivy: gs.ivy ? { name: gs.ivy.name, gift: !!gs.ivy.gift, state: gs.ivy.state, x: Math.round(gs.ivy.x), y: Math.round(gs.ivy.y) } : null,   // #2143
@@ -1408,6 +1457,8 @@ const HomebodyGame = () => {
                 clearQueues: () => { if (gs) for (const p of gs.people) { p.queue.length = 0; p.owner = null } return 'lists wiped' },   // #2470: scenario-boundary flush — a gate that measures a FRESH single tap starts with empty lists
                 hearts: () => particles.filter((pt) => pt.kind === 'heart').length,   // #2076: the make-up paid hearts?
                 leaves: () => particles.filter((pt) => pt.kind === 'leaf').length,   // #2672: did the mediation sparkle the pair leaf?
+                promiseFar: () => { if (!gs) return null; gs.visitAfter = 99; gs.ivyAfter = 99; if (!gs.visitor) gs.visitor = { name: 'Fern' }; const v = gs.visitor; v.r = 3; v.c = 5; v.x = LOT_X + 5 * TILE + TILE / 2; v.y = LOT_Y + 3 * TILE + TILE / 2; v.path = null; v.state = 'hang'; v.t = 0; v.hue = '#4fae5f'; v.face = 1; v.walkPhase = 0; v.chatT = 0; v.hangUntil = 9999; const p = gs.people[0]; p.r = 12; p.c = 5; p.x = LOT_X + 5 * TILE + TILE / 2; p.y = LOT_Y + 12 * TILE + TILE / 2; p.path = null; p.goal = null; p.use = null; p.queue.length = 0; p.owner = null; p.working = false; p.faintT = 0; gs.active = 0; gs.cmdCd = 0; gs.holdT = -1; gs.courtPick = null; gs.grudge = 0; gs.spatCd = 0; gs.rel.fern = 0; sayB.life = 0; return { vx: v.x, vy: v.y, hx: p.x, hy: p.y } },   // #2683 scenario rig: the lot divided — Fern seated by the sofa, the commanded resident parked at the gate, promise state cleared; the drive's far-tap leg rides a real pointer click into pointerPx
+                parkFar: () => { if (gs && gs.visitor) { const v = gs.visitor; v.r = 3; v.c = 5; v.x = LOT_X + 5 * TILE + TILE / 2; v.y = LOT_Y + 3 * TILE + TILE / 2; v.path = null; v.state = 'hang'; v.repathT = 9999; v.hangUntil = 9999 } return !!gs.visitor },   // #2683: hold the promised ear on her sofa cell while the drive watches the walk (a rig-set repathT outranks the hang-wander law's re-arm)
                 standMed: (kind, r, c) => { const m = gs ? (kind === 'kid' ? gs.kid : gs.pet) : null; if (!m) return false; m.r = r; m.c = c; m.x = LOT_X + c * TILE + TILE / 2; m.y = LOT_Y + r * TILE + TILE / 2; m.path = null; m.wanderT = 9999; m.play = false; for (const n of Object.keys(m.needs)) m.needs[n] = 1; return true },   // #2672: seat a mediator mid-cold-war, held still (the drive-leg twin of peoplecheck's stand)
                 medCells: () => gs ? ({ fv: gs.visitor ? [gs.visitor.r, gs.visitor.c, gs.visitor.state] : null, iv: gs.ivy ? [gs.ivy.r, gs.ivy.c, gs.ivy.state] : null, pet: gs.pet ? [gs.pet.r, gs.pet.c, gs.pet.asleep, gs.pet.state] : null, hour: Math.round(gs.hour * 10) / 10, grudge: gs.neiGrudge, med: gs.neiMediated, tick: gs.tick, done: gs.done, prowl: !!gs.prowl, sneak: !!gs.sneak, build: gs.build, content: gs.content, screen: gs.screen }) : null,   // #2672 debug read: the cells and states the mediation law actually sees (#2674: build/content/screen — a won or buried run freezes advance() and blinds the leg)
                 // #2240: the SET-DOWN, counted on the live canvas at the landing

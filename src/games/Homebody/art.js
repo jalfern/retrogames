@@ -1015,6 +1015,7 @@ function pIndex(s, p) {
 export function queueGlyphFor(id) {
     if (id === 'walk') return 'arrow'
     if (id === 'work' || id === 'mail') return 'case'
+    if (id === 'gosay') return 'chat'   // #2683: a promised word is a social errand — the chip borrows the chat glyph
     const d = DEF[id]
     return (d && d.need && NEED_ICON[d.need]) || 'star'
 }
@@ -1031,7 +1032,7 @@ export function chipProgress(p) {
         return { frac, glyph: queueGlyphFor(p.use.it.id), id: p.use.it.id }
     }
     if (p.path && p.path.length && p.walkN0) {
-        const id = p.goal && p.goal.kind === 'use' ? p.goal.it.id : 'walk'
+        const id = p.goal && p.goal.kind === 'use' ? p.goal.it.id : p.goal && p.goal.kind === 'gosay' ? 'gosay' : 'walk'   // #2683: the walk chip names a promised word
         return { frac: Math.max(0, 1 - p.path.length / p.walkN0), glyph: queueGlyphFor(id), id }
     }
     return null

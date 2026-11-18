@@ -271,7 +271,7 @@ see §Speed dial.
 
 ## Verify
 ```bash
-npm run peoplecheck          # 850 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), neighbours who meet — third-party rel.neigh: chat/glance/meet/cross-warmth/ladder/hash (#2588), neighbours SPAT — one-ear souring timer, cold-war silence, absence-thaw, reunion pay, CD mirror, hash, seed-exact quarrel (#2604), mediators — reach-both ring, soft pay, mending lane, once-per-spat ledger, cat-before-kid, hash, seed-exact mediation (#2672), neighbours stroll — mobile-chat bank, fixed 3-spot circuit with lead/trail, walk-freeze, claim-carry, spat/absence zeroing, cold-war refusal, hash, seed-exact lap (#2611), stroll view pass — pair stride bob + facing turn, arrival settle, route trail, attract lap beat, panel walk pips (#2618), neighbour view pass — pair-hue bubbles, teal leaf reunion, guest sulks, warmth sparkle, meet-up wave beat, cold-war murmur, attract pair-ring hook (#2599), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), garbage day — roster, eve set-out, dawn collection, honest skip, hash (#2303), ice-cream truck — arithmetic stop, paid buy, broke refusals, one serving, kid chase, rot, hash (#2503), truck arrival + drive-off view — rolls in 2 s, out 4 s, draw-only, truckView (#2508), cone in hand — the eat beat, world-clock hold, two arithmetic drips, view-only, hash-still, drive-verified (#2508 item 3), winnable seeds, determinism
+npm run peoplecheck          # 876 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), spats/cold-war/make-up (#2070), sprite tell + loud fade (#2076), court commands — coo/affection/insult + cooldown economy (#2131), second neighbour Ivy — schedule/gift/ladder/court/hash (#2143), visitor choreography — nearest ring, contested pays closer, three-way tell (#2154), neighbours who meet — third-party rel.neigh: chat/glance/meet/cross-warmth/ladder/hash (#2588), neighbours SPAT — one-ear souring timer, cold-war silence, absence-thaw, reunion pay, CD mirror, hash, seed-exact quarrel (#2604), mediators — reach-both ring, soft pay, mending lane, once-per-spat ledger, cat-before-kid, hash, seed-exact mediation (#2672), neighbours stroll — mobile-chat bank, fixed 3-spot circuit with lead/trail, walk-freeze, claim-carry, spat/absence zeroing, cold-war refusal, hash, seed-exact lap (#2611), stroll view pass — pair stride bob + facing turn, arrival settle, route trail, attract lap beat, panel walk pips (#2618), neighbour view pass — pair-hue bubbles, teal leaf reunion, guest sulks, warmth sparkle, meet-up wave beat, cold-war murmur, attract pair-ring hook (#2599), thumb court — tap coos, held A insults (#2171), cat — counter law, cat day, coos, hash (#2197), pet polish — mood law, visible kibble, greeting law (#2200), kids — counter law, kid day, tumbles/cries, court, hash (#2203), catalog shelves — partition/flip/memory/digits/hash (#2222), speed dial (#2227), court polish — spoken chat crossing, cooling beats, ring tell (#2135), court pick — crowded ring tap chooses the ear, expiry, hash (#2235), paper route — hourly news, day stamp, rot (#2238), meal bells — three bells, one helping each, cold window, shared table, die-under-the-walk refusal (#2244), meal polish — three timbres, rotating chords, night steam, eater-cluster hearts, cold tell (#2264), first pass — morning grace, amber prompts, order ping, ✓ on glass (#2253), attract family tour — the demo sells Pip, cat then child (#2209), Ivy polish II — gift set-down, visit timbres, stranded rescue, per-guest hello, BONDS rows data (#2240), garbage day — roster, eve set-out, dawn collection, honest skip, hash (#2303), ice-cream truck — arithmetic stop, paid buy, broke refusals, one serving, kid chase, rot, hash (#2503), truck arrival + drive-off view — rolls in 2 s, out 4 s, draw-only, truckView (#2508), cone in hand — the eat beat, world-clock hold, two arithmetic drips, view-only, hash-still, drive-verified (#2508 item 3), go-say — far tap walks over, arrival coo once, pick promotion, cooldown wait, leaving/asleep folds, bounded chase, queue re-issue, speaks-as-itself, hash, seed-exact, attract invariant (#2683), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
@@ -1039,18 +1039,65 @@ refusal and post-thaw resume, hash carries the beat not the bank, and a 60 s lap
 is seed-exact. Mutant (proved by hand): `neiStroll += 0` → 13 gates die by name
 and the pin goes red.
 
+## Go-say (#2683) — choose WHICH two share the ring
+
+The #2235 court pick let the hand choose the ear inside a crowded ring; the
+pair itself was still chosen by proximity — the word only reached whoever
+already shared the speaker's `COURT_REACH` 2. Go-say closes the tail: a tap
+on Fern, Ivy or Pip beyond arm's reach issues a walk-to-them errand, and the
+tick the two actually share the ring, `court(s, 'coo', walker)` lands the
+compliment through the existing law — bond pay, sparkle midpoint, `cmdCd`,
+thought lines, all unchanged. The original's idiom, finally: The Sims
+(PC 2000) let you click the person you wanted to talk to and your Sim walked
+over and did it.
+
+- **Arrival is the law** (`goSayArrive`, sim.js, run from `advance`'s goal
+  chain): in reach → the promise converts to the #2235 pick (`s.courtPick`,
+  so even a crowd pays the chosen ear) and fires; `cmdCd` still up → the goal
+  waits where it stands and fires the tick the cooldown clears; the ear left,
+  fainted or fell asleep → `go-say` `stage:'lost'` and the errand folds
+  unpaid (fainted-folks-are-not-company, and the kids' own night law); the
+  target slipped away → fresh BFS path, capped at `GO_SAY_CHASE` 3 re-paths,
+  then lost. The coo lands exactly ONCE either way.
+- **The errand speaks as itself.** `court`/`courtReach`/`courtTarget` take an
+  optional `speakerIdx` (default `s.active` — every older call byte-identical),
+  so a promise issued to Mira delivers Mira's compliment even after the hand
+  moves to Otto. The partner is deliberately NOT a go-say target: tapping a
+  resident is the switch idiom.
+- **Queue parity (#2470):** a busy hand lists it — `{ kind:'gosay', k }` joins
+  `cmdQueue`, re-validates at issue (an ear gone home drops honest), rides the
+  hash, and gets the chat glyph + chat timbre on the chip.
+- **Seen before it lands:** the order ping rings the target at the tap
+  ("GO SAY IT — FERN"), and while the errand is in flight the painter trails
+  a dotted gold ring under the promised ear across the lot — the #2135 tell
+  stretched to the full distance. Marquee and registry controls teach it.
+- **Determinism:** nothing at issue draws rng; the attract bot never go-says,
+  so old demos are byte-identical; listed promises ride `stateHash`.
+Gates: `peoplecheck` §GO-SAY (26: same-ring refusal and the switch guard,
+issue + path + ping, walk-and-land fires once, bond+cooldown parity, pick
+promotion, crowd pays the chosen ear, cooldown WAIT then fire, leaving/asleep
+folds, bounded chase, queue re-issue + honest drop, speaks-as-itself,
+seed-exact, hash, attract invariant, source pins). Mutants proven: stub the
+in-ring fire — exactly the eight arrival gates go red (876 → 868/8); hardcode
+the speaker to `s.active` — exactly the speaks-as-itself gate goes red
+(876 → 875/1); restore.
+
 ## Honest gaps (filed to QA #…)
 
 - **CLOSED by #1806:** multiple rooms — one expansion ships: the Spare Room kit
   grows a wing on the east lawn (floor/walls/door/windows, connectivity-guarded,
-  one per lot). Deeper multi-room building (choose placement, second wing, rooms
-  with purpose) remains the open tail of this old line.
+  one per lot).
+- Deeper multi-room building (choose placement, second wing, rooms with purpose) —
+  the self-declared open tail of the line above, hidden under that #1806 strike
+  until #2683's honest accounting (Nov 18) surfaced it as its own bullet; the
+  picker could not see it.
 - **CLOSED by #1814 (QA pass, partial):** the wing glows at night and the
   residents react to the build. #2076 taught the bond law on the attract
   marquee (the bonds line of that list). #2135's pass closed chat speech
   bubbles, the cooling log lines and the C/X marquee + reach-ring tell.
   **CLOSED by #2272:** wing-themed furniture — the Canopy Bed (§ above).
-  Still open: choosing WHICH two share the ring.
+  **CLOSED by #2683:** choosing WHICH two share the ring — go-say (§ Go-say
+  above): a far tap walks your resident over and the coo lands in-ring.
 - **CLOSED by #1823 (QA pass):** walk-surface step timbre (plank/gravel/lawn)
   and the red ghost-cell flash on refused placements.
 - **PARTIAL by #1817 + #2070 + #2131:** bonds climb the chat loop, unlock a topic/
@@ -1062,17 +1109,17 @@ and the pin goes red.
   grudge sets, with the #2070 human exit still the only way back. The second
   point of the triangle landed in #2143 (Ivy, the market neighbour — own
   schedule, own meter, gift economy). The pad got its own handle on the line
-(#2171 shipped): one button, two orders — release inside ⅔ s is
-the coo, held past it the insult flies mid-hold, on the same laws and the same
-cooldown as C/X. **The pet half of that tail landed in #2197 — Miso the
-adoptable cat (see Cat (#2197))**; the kids half landed in #2203 — Pip, the
-adoptable child (see Kids (#2203)). **Third-party relationships landed in #2588
-— Fern and Ivy form their own bond (see §Neighbours who meet); the third-party
-grudge landed in #2604 — the pair SPAT too (see §Neighbours SPAT); pair pathing
-choreography landed in #2611 — a long chat strolls the lot on a fixed circuit (see
-§Neighbours stroll).** **CLOSED by #2672:** Miso and Pip mediate the pair — see
-§Mediators below; the pair's cold war now has a third door out (see §Neighbours
-SPAT).
+  (#2171 shipped): one button, two orders — release inside ⅔ s is
+  the coo, held past it the insult flies mid-hold, on the same laws and the same
+  cooldown as C/X. **The pet half of that tail landed in #2197 — Miso the
+  adoptable cat (see Cat (#2197))**; the kids half landed in #2203 — Pip, the
+  adoptable child (see Kids (#2203)). **Third-party relationships landed in #2588
+  — Fern and Ivy form their own bond (see §Neighbours who meet); the third-party
+  grudge landed in #2604 — the pair SPAT too (see §Neighbours SPAT); pair pathing
+  choreography landed in #2611 — a long chat strolls the lot on a fixed circuit (see
+  §Neighbours stroll).** **CLOSED by #2672:** Miso and Pip mediate the pair — see
+  §Mediators below; the pair's cold war now has a third door out (see §Neighbours
+  SPAT).
 - Visitors are Fern and Ivy (#2143); pets landed (#2197, Miso — and #2200 gave
   her a mood row on the panel and neighbours who greet her); kids landed
   (#2203, Pip); **CLOSED by #2222:** the buy catalog got its category shelves
