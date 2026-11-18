@@ -46,6 +46,8 @@
 //   node scripts/floorbosscheck.mjs --mutate-flow      # flow paint claims two-way traffic for spurs/too-long runs, demand RED (#2622 item 3)
 //   node scripts/floorbosscheck.mjs --mutate-flowheat   # the second route on a cell stops counting — live traffic heat dies, demand RED (#2680)
 //   node scripts/floorbosscheck.mjs --mutate-duck    # carts never pull off into bays — avoidable freezes stay freezes, demand RED (#2692)
+//   node scripts/floorbosscheck.mjs --mutate-manners # the first duck of a shift never names itself — the courtesy stays decoration, demand RED (#2700)
+//   node scripts/floorbosscheck.mjs --mutate-attract # the shop window loses its promised ducks — cold seeds come back, demand RED (#2700)
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -92,9 +94,12 @@ const MUT_SWING = ARGS.includes('--mutate-swing')
 const MUT_FLOW = ARGS.includes('--mutate-flow')
 const MUT_FLOWHEAT = ARGS.includes('--mutate-flowheat')
 const MUT_DUCK = ARGS.includes('--mutate-duck')
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK) {
+const MUT_MANNERS = ARGS.includes('--mutate-manners') // #2700: the give-way teach never fires
+const MUT_ATTRACT = ARGS.includes('--mutate-attract') // #2700: the shop window seeds go cold again
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
-    const src = readFileSync(sim, 'utf8')
+    const tgt = MUT_MANNERS || MUT_ATTRACT ? new URL('../src/games/FloorBoss/index.jsx', import.meta.url) : sim // #2700: presentation laws plant in the painter
+    const src = readFileSync(tgt, 'utf8')
     const [from, to, name] = MUT_YIELD
         ? ['if (gs.arm.heldT >= ARM_PATIENCE && !bayClaimed(gs)) {', 'if (gs.arm.heldT >= ARM_PATIENCE) {', 'the servo ignores detailed bots and swings anyway']
         : MUT_CAP
@@ -143,9 +148,13 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                     ? ['bot.wait < YIELD_WAIT', 'bot.wait < 1e9', 'carts never pull off — every bay goes unused and every avoidable freeze stays a freeze (#2692)']
                                                                     : MUT_FLOWHEAT
                                                                     ? ['counts.set(k, (counts.get(k) || 0) + 1)', 'counts.set(k, 1)', 'the second route on a cell stops counting — convergence, the heat ramp and the shared-lane read all die (#2680)']
+                                                                    : MUT_MANNERS
+                                                                    ? ['if (duckTaughtOn !== gs) {', 'if (duckTaughtOn !== gs && false) {', 'the first duck never names itself — GIVE WAY stays decoration, the grammar goes unlearned (#2700)']
+                                                                    : MUT_ATTRACT
+                                                                    ? ['const ATTRACT_SEEDS = [2053, 102, 241, 412, 858]', 'const ATTRACT_SEEDS = [1337]', 'the shop window is cold again — the demo seed never ducks while a visitor watches (#2700)']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
-    plant(sim, src.replace(from, to))
+    plant(tgt, src.replace(from, to))
     console.log(`  ..    mutated: ${name} — this run MUST report FAILs`)
     const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], { encoding: 'utf8' })
     pull(sim)
@@ -1607,6 +1616,49 @@ console.log('— duck & pass (#2692) —')
     const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
     ok(/paintYield\(tick\)/.test(ui) && ui.indexOf('paintRobots(tick)') < ui.indexOf('paintYield(tick)'), 'the courtesy ring paints over the cart (#2692)')
     ok(/case 'duck'/.test(ui) && /yields: \(\) =>/.test(ui) && /' BAY'/.test(ui), 'the duck event lands with sound, the DEV eye reads the holds, the panel says BAY (#2692)')
+}
+
+// ---- manners polish (#2700) — ducks steer, name themselves, read directional, count, and show ----
+console.log('— manners polish (#2700, source pins + attract sweep) —')
+{
+    const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    ok(/const duckSlide = new Map\(\)/.test(ui), 'the painter tracks a duck slide per bot (#2700)')
+    ok(/const es = 1 - \(1 - k\) \* \(1 - k\)/.test(ui), 'the duck slide eases out — swing in and settle, no linear blink (#2700)')
+    ok(/const k = \(tick - sl\.t0\) \/ 14/.test(ui), 'the slide rides gs.tick across one cadence (14t) — a WORLD clock, not display frames (#1877 law, #2700)')
+    ok(/if \(anim\.sway\)/.test(ui) && /anim\.turn \* 0\.16 \+ anim\.sway \* 0\.12/.test(ui), 'the backpedal swings at 180° where dir-change sway goes silent (#2700)')
+    ok(/if \(duckTaughtOn !== gs\) \{/.test(ui), 'the first duck of a shift names itself once — per game identity (#2700)')
+    ok(/case 'shiftstart'[^']*duckTaughtOn = null/.test(ui), 'a new night re-arms the GIVE WAY lesson (#2700)')
+    ok(/ctx\.fillText\('GIVE WAY', x \+ TILE \/ 2, y - 3\)/.test(ui) && /until: gs\.tick \+ 150/.test(ui), 'the lesson plates the bay cell with its name for 150 world ticks (#2700)')
+    ok(/fx\('GIVE WAY', '#78dceb'/.test(ui), 'the tail rings on the fx ledger too — QA-readable, not only pixels (#2700)')
+    ok(/const ang = Math\.atan2\(ddy, ddx\)/.test(ui), 'the shoulder chevron points at the actual pull-off direction (#2700)')
+    ok(/fillText\('GIVEN'/.test(ui) && /r\.x === b\.yield\.fx && r\.y === b\.yield\.fy/.test(ui), 'the vacated cell stamps GIVEN the moment a rival crosses it (#2700)')
+    ok(/given: \(\) => \[\.\.\.givenAt\.keys\(\)\]/.test(ui) && /duckTeach: \(\) =>/.test(ui), 'QA eyes read the teach plate and the GIVEN stamps atomically (#2700)')
+    ok(/BAYS TAKEN \$\{gs\.ducks\}/.test(ui), 'the whistle sheet counts BAYS TAKEN — courtesy is countable (#2700)')
+    ok(/floorboss\.bays/.test(ui), 'career manners persist — the board honours the smoothest floor (#2700)')
+    ok(/while \(gs\.tick < 3600 && !gs\.end\) step\(gs, \[ap\(gs\)\]\)/.test(ui), 'the attract demo clocks in mid-heat — the build-up fast-forwards, fixed seeds × fixed autopilot (#2700)')
+    ok(/makeGame\(ATTRACT_SEEDS\[\+\+demoSeed % ATTRACT_SEEDS\.length\]\)/.test(ui), 'the attract cycles measured duck-rich seeds (#2700)')
+    ok(/gs\.ev\.length = 0 \/\/ no minute of stale events/.test(ui), 'the warm-up drains stale events — no minute of sound bursts into the painter (#2700)')
+    ok(/GIVE WAY — CARTS DUCK INTO BAYS AND PASS/.test(ui), 'the attract card sells the new grammar in the shop window (#2700)')
+    ok(/warmAttract\(\) \/\/ #2700: the first shop-window/.test(ui), 'the mount demo is warm too — the very first loop a visitor sees ducks (#2700)')
+    const simSrc = readFileSync(new URL('../src/games/FloorBoss/sim.js', import.meta.url), 'utf8')
+    ok(!simSrc.includes('#2700'), 'the sim is untouched — manners live painter-side, the engine law stays byte-law (#1917)')
+    // honest sweep: every shop-window seed must deliver its duck while a visitor watches
+    const seeds = JSON.parse(ui.match(/const ATTRACT_SEEDS = (\[[0-9, ]+\])/)[1])
+    ok(seeds.length >= 4, `the shop window cycles ${seeds.length} seeds (#2700)`)
+    let allDuck = true
+    const detail = []
+    for (const seed of seeds) {
+        const g = makeGame(seed)
+        const a = createAutopilot(0)
+        while (g.tick < 3600 && !g.end) step(g, [a(g)])
+        const startDucks = g.ducks
+        let first = -1
+        while (!g.end && g.tick < 9100) { step(g, [a(g)]); if (first < 0 && g.ducks > startDucks) first = g.tick }
+        const won = g.score >= g.params.quota
+        detail.push(`${seed}@${first < 0 ? 'never' : first}${won ? '' : ' short'}`)
+        if (!(won && first > 3600 && first < 4500)) allDuck = false
+    }
+    ok(allDuck, `warm attract floors duck at ${JSON.stringify(detail)} — every demo loop shows courtesy inside the first minute on screen (#2700)`)
 }
 
 // ---- duel refusal seat stamp (#2622 item 4) — a banner names WHOSE click died ----

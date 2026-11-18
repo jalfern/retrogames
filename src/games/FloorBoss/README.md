@@ -245,6 +245,8 @@ node scripts/floorbosscheck.mjs --mutate-corner   # racks cannot choke a tight e
 node scripts/floorbosscheck.mjs --mutate-flow     # dead-end spurs cannot claim two-way arrows (#2622 item 3)
 node scripts/floorbosscheck.mjs --mutate-flowheat # the second route on a cell cannot stop counting — live heat dies (#2680)
 node scripts/floorbosscheck.mjs --mutate-duck   # carts stop yielding into bays — the avoidable freeze comes back (#2692)
+node scripts/floorbosscheck.mjs --mutate-manners # the first duck never names itself — courtesy stays decoration (#2700)
+node scripts/floorbosscheck.mjs --mutate-attract # the shop window goes cold — the demo seed stops ducking on screen (#2700)
 npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877); real-tap pad call/send + drawn-truck-is-sim-truck gates (#1911); escrow-books-at-pack + freight-paid-at-drive-off gates (#1921); violet far-post tag pixels + road-commit + tap-on-road-silence gates (#1927 — verb gates run with auto-dispatch off and settle dock+truck+road together); steel heavy-tag pixel [154,215,255] + padWeight simState eye (#1931); DUEL live drive: D enters the duel, cyan model cursor moves on its own, twin till updates, verdict banner lands (#2555); yield holds on live traffic — the dashed cyan courtesy ring sampled atomically with the yields eye (#2692)
 CONTRACT_ONLY=floor-boss npm run contractcheck
 node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
@@ -415,3 +417,24 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
     Residual honest gap stands: carts remain kinematic points — true swept
     volumes through corners stay faked; the routing now yields to traffic, it
     does not measure the cart's body through the turn.
+  - **MANNERS POLISH shipped by this PR (#2700):** the courtesy now reads as
+    law-grammar mid-duel. The duck *steers*: the body slides into the shoulder
+    over one cadence (ease-out, `gs.tick` clock per #1877) with a swing impulse
+    for the backpedal, which never triggered the perpendicular turn. The first
+    duck of every shift *names itself* once — a dashed cyan `GIVE WAY` plate on
+    the bay cell + fx tail (per-game identity, re-armed at `shiftstart`, like
+    the reach diamond taught patience #1877). The hold is *directional*: a
+    shoulder chevron points out of the aisle (the pull-off bearing, perpendicular
+    or backpedal) and the vacated cell stamps `GIVEN` the instant a rival
+    crosses it — who-yielded-to-whom is glanceable. Manners are *countable*:
+    `BAYS TAKEN n` rides the whistle sheet and `floorboss.bays` keeps the
+    career best on the attract board. The shop window *shows* it: measured across
+    4000 seeds the first autopilot duck lands at tick 3780+, so attract cycles
+    five duck-rich winning seeds and fast-forwards each to tick 3600 (fixed seeds
+    × fixed autopilot = the same hot floor every loop; drains stale events,
+    clears memo) — courtesy lands within the first minute on screen, teach
+    included; plus an attract grammar card. `floorbosscheck` +20 gates (§POLISH
+    source pins, sim-untouched pin, honest 5-seed sweep asserting every demo loop
+    ducks in-window) and mutants `--mutate-manners` (the teach never fires) and
+    `--mutate-attract` (cold seeds return) — each dies. Zero footprint: the sim
+    is byte-identical; all law unchanged.
