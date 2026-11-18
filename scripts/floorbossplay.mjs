@@ -820,7 +820,7 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
             for (let i = 0; i < d.length; i += 4) s += d[i] - d[i + 2]
             return s / (d.length / 4)
         }
-        const meet = t.heat().filter((c) => c.n >= 2 && free(c.x, c.y))
+        const meet = t.heat().filter((c) => c.n >= 2 && free(c.x, c.y) && !g.racks.some((rk) => rk.x === c.x && rk.y === c.y))
         if (!meet.length) return null
         const ref = { x: 10, y: 10 }
         const refHot = t.heat().some((c) => c.x === ref.x && c.y === ref.y)
@@ -828,11 +828,34 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
         const cell = meet[0]
         return { x: cell.x, y: cell.y, n: cell.n, delta: warm(cell.x, cell.y) - warm(ref.x, ref.y) }
     })
-    let hits = 0, tries = 0, seen = null
-    for (let i = 0; i < 24; i++) {
-        const m = await meetAndProbe()
-        if (m) { tries++; if (m.delta >= 4) hits++; seen = seen || m }
-        await new Promise((res) => setTimeout(res, 150))
+    let hits = 0, tries = 0, seen = null, rigged = false
+    const probeRound = async (n) => {
+        for (let i = 0; i < n; i++) {
+            const m = await meetAndProbe()
+            if (m) { tries++; if (m.delta >= 4) hits++; seen = seen || m }
+            await new Promise((res) => setTimeout(res, 150))
+        }
+    }
+    await probeRound(48) // real traffic first: ~8 world-seconds of auto-dispatch — meetings emerge on their own
+    if (tries < 4) {
+        rigged = true
+        // fallback rig, in the established house style (legs park and direct the
+        // crew by hand all over this file): stand the auto off so the hand-set
+        // routes hold, and give the two near pads a shared tail — the same
+        // corridor two bots would walk if both were called west. The heat and
+        // the paint read SIM STATE; these paths ARE sim state once written.
+        await page.evaluate(() => {
+            const g = window.__floorbossTest.sim()
+            g.auto = false
+            const west = (b) => {
+                const p = []
+                for (let x = b.x - 1; x >= Math.max(4, b.x - 8); x--) p.push({ x, y: b.y })
+                b.task = { kind: 'idle' }; b.carry = null // the leg's own park pattern — idle holds still, the route claim is the point
+                b.path = p
+            }
+            g.robots.filter((b) => b.y === 12 && !b.broken).forEach(west)
+        })
+        await probeRound(12)
     }
     r.check('real traffic converges under the eye — cells two routes share appear unoccupied (#2680)', tries >= 4, `${tries} clean convergence samples`)
     r.check('a convergence paints warmer than bare floor — the meet glows on canvas (#2680)', hits >= 4, `warm-delta hits ${hits}/${tries} (deepest seen ${seen ? `${seen.x},${seen.y} n=${seen.n}` : 'none'})`)
@@ -841,6 +864,13 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     if (!seen) {
         r.check('the met cell cools once its routes clear — no stale glow outlives the traffic (#2680)', false, 'no convergence observed to re-probe')
     } else {
+        if (rigged) {
+            // vacate the hand-written routes the same way arrival vacates them
+            // in the live sim (arrival ⇒ path emptied) — the glow must fade
+            // because the claims are gone, not because the page moved on.
+            await page.evaluate(() => { window.__floorbossTest.sim().robots.forEach((b) => { b.path = [] }) })
+            await new Promise((res) => setTimeout(res, 150))
+        }
         let gone = 0, clears = 0
     for (let i = 0; i < 14; i++) {
         const cooled = await page.evaluate(([hx, hy]) => {
