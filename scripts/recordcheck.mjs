@@ -960,7 +960,7 @@ const bucketRowBySeed = (seed) => {
     // #2654 item 3: haptics per kind — distinct, verdict-pure, unknown silent.
     const { COACH_HAPTICS, coachHaptics } = await import('../src/utils/clapTestCore.js')
     const verdictPatterns = ['60', '140,70,140'] // the final PASS/FAIL buzzes (item 5, #2205)
-    ok(Object.keys(COACH_HAPTICS).sort().join(',') === 'notouch,nosound,off,pair', 'haptics table covers exactly the four named kinds')
+    ok(Object.keys(COACH_HAPTICS).sort().join(',') === 'nosound,notouch,off,pair', 'haptics table covers exactly the four named kinds')
     ok(Object.values(COACH_HAPTICS).every((p) => Array.isArray(p) && p.length > 0 && p.every((n) => Number.isInteger(n) && n > 0 && n <= 200)), 'every live pattern is short, positive, integer ms (mid-take guidance, never a seizure)')
     const sigs = Object.values(COACH_HAPTICS).map((p) => p.join(','))
     ok(new Set(sigs).size === sigs.length, 'all four live rhythms are distinct from each other (told apart blind)')
