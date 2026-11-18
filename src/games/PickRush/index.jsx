@@ -16,7 +16,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { AMB_ZONES, zoneForShift, fireAt } from './ambience'
-import { BIN_VIS, makeBinVis, stepBinVis, makeWhip, stepWhip, whipTarget, catchRing, slamTell, jawWarn, craneAim, ringClaim } from './visuals'
+import { BIN_VIS, makeBinVis, stepBinVis, makeWhip, stepWhip, whipTarget, catchRing, slamTell, travelTell, jawWarn, craneAim, ringClaim, RING_OK, RING_OFF, BARREL_CORE } from './visuals'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -33,7 +33,7 @@ const SIM_MS = 1000 / 60
 // signature paint per kind — body cores are all mutually distinct so the
 // harness can prove each cargo type is painted exactly where the sim puts it
 const CORE = {
-    crate: '#a06a34', can: '#e0a030', barrel: '#b8862f',
+    crate: '#a06a34', can: '#e0a030', barrel: BARREL_CORE,
     bottle: '#ff5ce0', coil: '#43d67c', scrap: '#8b8f98',
 }
 const TAG = { crate: '#3fd8ff', can: '#ffb03a', barrel: '#ffb03a', bottle: '#ff4fd8', coil: '#5dff8f', scrap: '#ff5a4f' }
@@ -497,14 +497,23 @@ const PickRushGame = () => {
                 const claim = ringClaim(gs, it, 0)
                 const period = claim === 'mine' ? 8 : claim === 'rival' ? 16 : 0
                 ctx.lineWidth = ring === 'ok' ? 1.6 : 1
-                ctx.strokeStyle = ring === 'ok' ? '#5dff8f' : '#ff5a4f'
+                ctx.strokeStyle = ring === 'ok' ? RING_OK : RING_OFF
                 ctx.globalAlpha = ring === 'ok' ? (period && tick % period >= period / 2 ? 0.35 : 0.85) : 0.45
                 circle(ctx, x, y, 8.8); ctx.stroke()
                 ctx.globalAlpha = 1
             } else if (it.fragile) {
+                // #2694: the two-pixel twinkle grew into a crack-spark — a hot
+                // core with four short arms, trading shoulders so it reads as a
+                // distinct sparkle at 2× (docs/ART.md), plus the old heel glint.
                 const ph = tick % 24
+                const sx = x + (ph < 8 ? 1 : ph < 16 ? -2 : 1)
+                const sy = y - (ph < 8 ? 7 : ph < 16 ? 3 : -1)
                 ctx.fillStyle = 'rgba(255,255,255,0.85)'
-                ctx.fillRect(x + 1, y - (ph < 8 ? 7 : ph < 16 ? 4 : 0), 1.5, 1.5)
+                ctx.fillRect(sx, sy, 1.5, 1.5)              // hot core
+                ctx.fillRect(sx - 1.5, sy + 0.5, 1.2, 1)   // west arm
+                ctx.fillRect(sx + 1.5, sy + 0.5, 1.2, 1)   // east arm
+                ctx.fillRect(sx + 0.25, sy - 1.5, 1, 1.2)  // north arm
+                ctx.fillRect(sx + 0.25, sy + 1.5, 1, 1.2)  // south arm
                 ctx.globalAlpha = 0.5
                 ctx.fillStyle = '#ff9dec'
                 ctx.fillRect(x - 3, y + 2, 1.5, 1.5)
@@ -605,9 +614,22 @@ const PickRushGame = () => {
             // drop turns safe under your thumb.
             const slam = slamTell(gs, seat)
             if (slam) {
-                ctx.fillStyle = slam.safe ? '#5dff8f' : '#ff5a4f'
+                ctx.fillStyle = slam.safe ? RING_OK : RING_OFF
                 ctx.globalAlpha = slam.safe ? 0.95 : 0.85
                 for (let py = arm.tip + 21; py < BIN_TOP - 2; py += 6) ctx.fillRect(x - 1, py, 2, 3)
+                ctx.globalAlpha = 1
+            }
+            // #2694 travel hint: glass in the air with no bin under it paints a
+            // dim ghost column at its tagged home bin — the destination keeps
+            // talking while the carriage crosses the gaps between bins.
+            const travel = slam ? null : travelTell(gs, seat)
+            if (travel) {
+                const hb = BINS[travel.bin]
+                const gx = Math.round(hb.x + hb.w / 2)
+                ctx.fillStyle = travel.safe ? RING_OK : RING_OFF
+                ctx.globalAlpha = 0.32 + 0.1 * (((tick >> 3) % 2))
+                for (let py = Math.max(arm.tip + 21, BIN_TOP - 60); py < BIN_TOP - 2; py += 6) ctx.fillRect(gx - 1, py, 2, 3)
+                ctx.fillRect(gx - 4, BIN_TOP - 1, 9, 2) // ghost lip over the home mouth
                 ctx.globalAlpha = 1
             }
             // #2684 jaw warn: this descent lands on an off-axis barrel — the
@@ -1003,6 +1025,7 @@ const PickRushGame = () => {
                 return acc
             }, []), // #2684 catch-ring truth per rolling piece on the belt
             slamTell: (() => { const t = slamTell(gs, 0); return t ? [t.impact, t.safe ? 1 : 0, t.dy] : null })(), // #2684 projected landing of carried glass
+            travelTell: (() => { const t = travelTell(gs, 0); return t ? [t.impact, t.safe ? 1 : 0, t.bin, t.dx] : null })(), // #2694 ghost hint: home bin + fall verdict while between bins
             jawWarn: gs.arms.map((a, s2) => jawWarn(gs, s2)), // #2684 descent aimed at off-axis cargo
             rivalAim: (() => { const a = craneAim(gs, 1); return a ? [a.id, Math.round(a.x * 10) / 10, a.bin] : null })(), // #2690 the piece the foreman crane is hunting
             ringClaim: gs.items.reduce((acc, it) => { const c = it.onBelt && it.carriedBy === -1 && KINDS[it.kind].roll ? ringClaim(gs, it, 0) : null; if (c) acc.push([it.id, c]); return acc }, []), // #2690 whose claw is converging on each barrel

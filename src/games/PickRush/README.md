@@ -207,6 +207,42 @@ rival intent and ring ownership (#2690); named gates go red.
   `tells()` pairs every ring with an independently written upright verdict.
   `PICK_MUT=tell` (the belt goes mute) reddens 6 named gates.
 
+## Travel & prediction polish (#2694 — QA pass 2)
+
+- **Travel ghost column:** fragile glass in the air with no bin under it now
+  paints a dim pulsing column at its TAGGED HOME bin (pip column + ghost lip),
+  coloured by the same discrete Euler-fall verdict the live slam meter uses —
+  so you can pre-feather across the gap and arrive at the bin already green.
+  Over a bin column it goes silent (`travelTell === null` — one column, one
+  story). Contract key `travelTell: [impact, safe, bin, dx]`.
+- **Jaw-warn went predictive:** the arc no longer reads the present pose — it
+  mirrors the meeting. From the press tick it projects the barrel n discrete
+  ticks ahead (`rot += vb/BARREL_R`, belt speed and claw speed imported from
+  the sim, n whole ticks — never a continuous formula, #2684's catch) and
+  warns if the load WILL be off-axis when the tip reaches the attempt window.
+  Two consequences, both honest: the ~2-frame landing arc became a full
+  press-to-landing warning (head-start with time to abort), and a barrel
+  off-axis NOW that the roll rights before the attempt stays quiet (the old
+  present-tense arc cried wolf there). `ATTEMPT_TIP`, `BARREL_R` and `beltV`
+  are now exported from the sim so paint and gates mirror the same constants.
+- **Crack-spark glint:** the fragile twinkle grew from two pixels to a hot
+  core with four short arms trading shoulders — distinct at 2× (docs/ART.md).
+- **Colour-blind law:** the ring's verdict pair and the barrel core moved into
+  `visuals.js` (`RING_OK`/`RING_OFF`/`BARREL_CORE`) so pickcheck's §CB gate
+  can prove them apart under a deuteranopia transform (Machado 1.0 + CIE76):
+  ok/off ΔE 40.6, ok/core 34.9, off/core 15.4, ring/glass-marquee 72.6
+  (the marquee glass hex is pinned from the painter's source so a palette edit
+  without a re-check goes red). The ring additionally carries lineWidth + blink
+  redundancy.
+- **Proven:** §PREDICT (PREDICT-TRUTH: arc ≡ an independently re-spelled
+  meeting mirror every tick, both seats, seed 7's whole line, 0 lies;
+  PREDICT-EXTENDS: 154 warned frames land above the attempt window;
+  PREDICT-HEADSTART: 26/26 slips already warned the tick before), §TRAVEL
+  (DEST/FEATHER/HANDOFF + PURE: 171 gap frames read idempotent, hash-clean,
+  never the wrong home), §CB; RING-PREDICTS(ok) rewritten to let the barrel
+  roll naturally (quiet ⇔ upright at the attempt). `PICK_MUT=tell` reddens
+  15 named gates (was 6).
+
 ## Rival intent & ring ownership (#2690 — QA polish pass)
 
 - **Intent beacon:** while the foreman's autopilot is locked on a piece, his

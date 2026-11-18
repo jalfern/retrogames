@@ -7,7 +7,7 @@
 // BIN_VIS is a mutable object, not bare consts: pickcheck's `vis`/`whip`
 // mutants freeze one law each the way the amb mutant collapses an era.
 
-import { barrelUpright, KINDS, BINS, BIN_TOP, BELT_END, GRAV, BREAK_VY, GRAB_DX } from './sim.js'
+import { barrelUpright, KINDS, BINS, BIN_TOP, BELT_END, GRAV, BREAK_VY, GRAB_DX, ATTEMPT_TIP, CLAW_SPEED, BARREL_R, beltV } from './sim.js'
 
 export const BIN_VIS = {
     cap: 12,      // pieces a bin visibly holds before the lamp thunks and wraps
@@ -66,6 +66,14 @@ export function stepWhip(w, target) {
 // pickcheck gates go red — scripts/pickcheck.mjs §TELL and §AIM.
 export const TELL = { freeze: false, aimFreeze: false }
 
+// #2694 colourblind law: the ring's two verdicts and the barrel core it
+// circles live HERE, not as literals in the painter, so pickcheck's §CB gate
+// can prove the palette stays distinguishable under a deuteranopia transform
+// at the game's native 426×240. The painter imports these; drift fails the gate.
+export const RING_OK = '#5dff8f'    // a clamp this tick bites
+export const RING_OFF = '#ff5a4f'   // it would slip
+export const BARREL_CORE = '#b8862f' // the body the hoop rides over
+
 // Ring state for an on-belt piece: 'ok' = a clamp attempt bites this tick,
 // 'off' = it would slip, null = not a roller.
 export const catchRing = (it) => {
@@ -101,20 +109,48 @@ export const slamTell = (gs, seat) => {
     }
 }
 
-// A descent that is doomed before it lands: the claw is dropping and the
-// load under it is an off-axis barrel within the grab window. Paint the
-// warning for the WHOLE descent — by the time tip reaches the attempt window
-// (stepArm's tip >= 76) the slip is one tick away and a warning there is
-// theatre, not information. The player still has the whole fall to abort (A
+// A descent that is doomed before it lands: the barrel the converging claw
+// will meet WHEN the tip reaches the attempt window is off-axis — say so from
+// the press tick, a whole cable-length before the jaws get there (#2694).
+// The mirror is discrete — the belt's own per-tick roll (rot += vb/BARREL_R),
+// n whole ticks of it — never a continuous formula (the #2684 catch), and the
+// verdict is PREDICTIVE, not present tense: a barrel off-axis NOW that the
+// roll rights before the attempt is not doomed, and the arc stays quiet for it
+// (the old present-tense arc cried wolf there). At tip >= ATTEMPT_TIP the
+// projection is n = 0, i.e. exactly this tick — the moment of truth the
+// original law already knew. The player still has the whole fall to abort (A
 // rises) or re-time the dip.
 export const jawWarn = (gs, seat) => {
     if (TELL.freeze) return false
     const arm = gs.arms[seat]
     if (!arm || arm.held !== null || arm.clamp > 0) return false
     if (arm.mode !== 'lowering') return false
-    return gs.items.some((it) => it.onBelt && it.carriedBy === -1
-        && Math.abs(it.x - arm.x) <= GRAB_DX
-        && KINDS[it.kind].roll && !barrelUpright(it))
+    const vb = beltV(gs)
+    const n = Math.max(0, Math.ceil((ATTEMPT_TIP - arm.tip) / CLAW_SPEED))
+    const ax = arm.x + arm.vx * n // coast the carriage to where it will be
+    return gs.items.some((it) => it.onBelt && it.carriedBy === -1 && KINDS[it.kind].roll
+        && Math.abs(it.x + vb * n - ax) <= GRAB_DX
+        && !barrelUpright({ rot: it.rot + (vb * n) / BARREL_R }))
+}
+
+// #2694 travel hint: while fragile glass is aboard and NO bin sits under it,
+// the slam meter has nothing to say (its column only means something over a
+// bin mouth). A dim ghost column at the cargo's tagged home bin keeps the
+// destination story alive across the gap — its colour is the same discrete
+// fall verdict the live slam column gives, so the player can pre-feather on
+// the way and arrive already green. Reads only stepped state; hash-clean.
+export const travelTell = (gs, seat) => {
+    if (TELL.freeze) return null
+    const arm = gs.arms[seat]
+    if (!arm || arm.held === null) return null
+    const it = gs.items.find((i2) => i2.id === arm.held)
+    if (!it || !it.fragile) return null
+    if (BINS.some((b) => it.x >= b.x + 5 && it.x <= b.x + b.w - 5)) return null // slamTell owns the bin span
+    const dest = KINDS[it.kind].bin
+    const dy = BIN_TOP - (it.y + KINDS[it.kind].h / 2)
+    let vy = 2, fall = 0, n = 0
+    while (fall < dy && n < 200) { vy += GRAV; fall += vy; n++ } // the sim's own Euler fall
+    return { bin: dest, dx: Math.round(BINS[dest].x + BINS[dest].w / 2 - it.x), dy, impact: vy, safe: vy <= BREAK_VY }
 }
 
 // ---- rival intent & ring ownership (#2690 QA) -----------------------------

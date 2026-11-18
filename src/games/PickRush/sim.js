@@ -21,6 +21,8 @@ export const CLAW_DOWN = 97       // claw tip at the belt
 export const CLAW_SPEED = 3.0
 export const CARRY_TIP = 60       // auto-hoist stops here (item clears the belt)
 export const GRAB_DX = 11
+export const ATTEMPT_TIP = 76        // tip height where clamp attempts begin
+export const BARREL_R = 6.5          // roll radius: rot += v/r while on the belt
 export const BIN_TOP = 152
 export const FLOOR_Y = 208
 export const GRAV = 0.5
@@ -162,7 +164,9 @@ export function makeGame(seed = 1, players = 1) {
 }
 
 const beltSpeed = (gs) => SHIFTS[Math.min(gs.shift, SHIFTS.length - 1)].speed
-const beltV = (gs) => 1.05 * beltSpeed(gs)
+// exported for the #2694 predictive jaw-warn: the paint projects a barrel the
+// belt's own speed instead of re-deriving the shift table
+export const beltV = (gs) => 1.05 * beltSpeed(gs)
 const quotaFor = (gs) => SHIFTS[Math.min(gs.shift, SHIFTS.length - 1)].quota
 
 const itemById = (gs, id) => gs.items.find((it) => it.id === id) || null
@@ -244,7 +248,7 @@ function stepArm(gs, seat, pad) {
     }
 
     // clamp attempt while the claw is open and in the grab window, empty
-    if (arm.held === null && arm.clamp === 0 && arm.tip >= 76) {
+    if (arm.held === null && arm.clamp === 0 && arm.tip >= ATTEMPT_TIP) {
         for (const it of gs.items) {
             if (it.carriedBy !== -1 || !it.onBelt) continue
             if (Math.abs(it.x - arm.x) > GRAB_DX) continue
@@ -296,7 +300,7 @@ function stepItems(gs) {
         if (it.onBelt) {
             it.x += vb
             const K = KINDS[it.kind]
-            if (K.roll) it.rot += vb / 6.5
+            if (K.roll) it.rot += vb / BARREL_R
             if (it.x > BELT_END) {
                 it.onBelt = false
                 it.vy = 0

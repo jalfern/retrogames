@@ -25,8 +25,9 @@
 //   aim   — rival intent and ring ownership go blind (#2690)
 
 import * as s from '../src/games/PickRush/sim.js'
+import { readFileSync } from 'node:fs' // §CB pins the marquee colour from the painter's source
 import { AMB_ZONES, zoneForShift, fireAt } from '../src/games/PickRush/ambience.js'
-import { BIN_VIS, makeBinVis, stepBinVis, makeWhip, stepWhip, whipTarget, TELL, catchRing, slamTell, jawWarn, craneAim, ringClaim } from '../src/games/PickRush/visuals.js'
+import { BIN_VIS, makeBinVis, stepBinVis, makeWhip, stepWhip, whipTarget, TELL, catchRing, slamTell, travelTell, jawWarn, craneAim, ringClaim, RING_OK, RING_OFF, BARREL_CORE } from '../src/games/PickRush/visuals.js'
 import { scriptFor } from './lib/contractGames.mjs'
 
 const args = process.argv.slice(2)
@@ -59,7 +60,7 @@ applyMut()
 const {
     makeGame, step, autopilot, stateHash, barrelUpright,
     BELT_Y, BIN_TOP, BELT_END, CARRY_TIP, CLAW_DOWN, FUSES, SHIFT_TICKS,
-    VIEW_H, GRAB_DX, BREAK_VY,
+    VIEW_H, GRAB_DX, BREAK_VY, ATTEMPT_TIP, CLAW_SPEED, BARREL_R, beltV,
     KINDS, BINS, SHIFTS, WAVES,
 } = s
 
@@ -657,17 +658,23 @@ section('AIM — rival intent & ring ownership (#2690 QA)')
     })
     ok(off.fx.some((f) => f.t === 'slip') && offFrames >= 100 && warnFrames >= 2 && off.arms[0].held === null,
         `RING-PREDICTS (off): a pinned off-axis barrel reads red on ${offFrames} of the drive (the ring is the approach tell), the jaws warn on ${warnFrames} descent-in-range frames — and the descent slips`)
-    const up = makeGame(22, 1)
-    while (up.tick < 40) step(up, [{}]); clearLine(up)
-    const br2 = spawnAt(up, 'barrel', 200); br2.rot = 0.1
-    up.arms[0].x = br2.x
-    let warned = false
-    grabFrom(up, br2, 400, () => {
-        br2.rot = 0.1
-        if (jawWarn(up, 0)) warned = true
-    })
-    ok(up.arms[0].held === br2.id && !warned && catchRing(br2) === 'ok',
-        'RING-PREDICTS (ok): the upright barrel keeps the jaws quiet all chase, rings green, and clamps clean')
+    // #2694 rewrite: the upright case lets the barrel roll for real now — the
+    // arc's promise is about the ATTIMPT tick, so a natural-roll descent that
+    // meets the jaws upright must be quiet all the way, whatever the roll did
+    // mid-fall. Search the phase; a clean clamp with zero arc proves the
+    // predictive mirror tracks the roll, not the present pose.
+    let clean = null
+    for (let rot0 = 0; clean === null && rot0 <= Math.PI; rot0 += 0.02) {
+        const up = makeGame(22, 1)
+        while (up.tick < 40) step(up, [{}]); clearLine(up)
+        const br2 = spawnAt(up, 'barrel', 200); br2.rot = rot0
+        up.arms[0].x = br2.x
+        let warned = false
+        grabFrom(up, br2, 400, () => { if (jawWarn(up, 0)) warned = true })
+        if (up.arms[0].held === br2.id && !warned && catchRing(br2) === 'ok') clean = Math.round(rot0 * 100) / 100
+    }
+    ok(clean !== null,
+        `RING-PREDICTS (ok): spawn phase ${clean} — the barrel rolls naturally, the whole descent reads quiet, the ring is green at the bite, and the jaws clamp clean (predictive law: quiet ⇔ upright at the attempt)`)
 }
 {
     // SLAM-LAW: the pip column's colour IS the physics' verdict. Swept
@@ -722,6 +729,129 @@ section('AIM — rival intent & ring ownership (#2690 QA)')
     ok(slamTell(mute, 0) === null, 'SLAM-SILENT: a carried CAN (not fragile) never paints a slam column')
     mute.items.find((i2) => i2.id === mute.arms[0].held).x = 108 // over the bare floor gap
     ok(slamTell(mute, 0) === null, 'SLAM-SILENT: even glass over bare floor (no bin under it) paints no column')
+    ok(travelTell(mute, 0) === null, 'TRAVEL-SILENT (CAN): glass-less cargo never paints a ghost column')
+}
+
+section('PREDICT — the jaw arc reads the meeting, not the moment (#2694)')
+{
+    // PREDICT-TRUTH: over seed 7's real 2P line the arc equals an
+    // independently re-spelled predictive mirror on EVERY tick, both seats —
+    // belt speed, attempt tip, claw speed, roll radius and the 0.42 upright
+    // window all written out again here (not imported), so a helper that
+    // drifts from the sim's own kinematics goes red by name.
+    const gs = makeGame(7, 2)
+    let lies = 0, dirty = 0, earlyWarn = 0, warnFrames = 0
+    const hist = [[], []]
+    const slips = []
+    while (!gs.end && gs.tick < SHIFTS.length * SHIFT_TICKS + 900) {
+        step(gs, [autopilot(gs, 0), autopilot(gs, 1)])
+        const h0 = gs.hash
+        for (let s2 = 0; s2 < gs.arms.length; s2++) {
+            const a = gs.arms[s2]
+            const vbq = 1.05 * SHIFTS[Math.min(gs.shift, SHIFTS.length - 1)].speed // belt law, spelled again
+            const nq = Math.max(0, Math.ceil((76 - a.tip) / 3)) // attempt tip / claw speed, spelled again
+            const expect = a.held === null && a.clamp === 0 && a.mode === 'lowering' &&
+                gs.items.some((it) => {
+                    if (!it.onBelt || it.carriedBy !== -1 || it.kind !== 'barrel') return false
+                    const dxq = Math.abs(it.x + vbq * nq - (a.x + (a.vx || 0) * nq))
+                    const rq = (((it.rot + (vbq * nq) / 6.5) % Math.PI) + Math.PI) % Math.PI
+                    return dxq <= 11 && !(rq < 0.42 || rq > Math.PI - 0.42) // grab window + upright window, spelled again
+                })
+            const j = jawWarn(gs, s2)
+            if (j !== expect) lies++
+            if (j) { warnFrames++; if (a.tip < 76) earlyWarn++ }
+            hist[s2].push(j)
+        }
+        for (const e of gs.ev) if (e.type === 'slip') slips.push([e.seat ?? 0, gs.tick])
+        if (gs.hash !== h0 || stateHash(gs) !== h0) dirty++
+    }
+    const headed = slips.filter(([s2, T]) => T >= 2 && hist[s2][T - 2]).length
+    ok(lies === 0 && dirty === 0,
+        `PREDICT-TRUTH: seed 7's whole line — jaw arc ≡ the independently re-spelled meeting mirror on every tick, both seats (${warnFrames} warned frames, ${lies} lies, ${dirty} dirty)`)
+    ok(earlyWarn >= 40,
+        `PREDICT-EXTENDS: ${earlyWarn} warned frames land ABOVE the attempt window (tip < 76) — the arc now speaks from the press, not the last two frames of the fall`)
+    ok(slips.length >= 5 && headed >= Math.ceil(slips.length * 0.6),
+        `PREDICT-HEADSTART: ${headed}/${slips.length} slips on the line were already warned the tick before the jaws bounced — the warning arrives with time to abort`)
+}
+
+section('TRAVEL — the ghost column guides glass home (#2694)')
+{
+    // TRAVEL-DEST: glass in the air over the CAN/BOTTLE gap says WHERE it
+    // belongs and HOW it would land — the same discrete Euler fall the slam
+    // column uses, re-spelled here independently at both heights.
+    const gs = makeGame(31, 1)
+    while (gs.tick < 40) step(gs, [{}]); clearLine(gs)
+    const bt = spawnAt(gs, 'bottle', 166)
+    gs.arms[0].x = bt.x
+    ok(grabFrom(gs, bt), 'TRAVEL-SET: the bottle is aboard')
+    let tn = 0
+    while (gs.arms[0].held !== null && gs.arms[0].tip > CARRY_TIP && tn < 40) { step(gs, [{ a: false }]); tn++ }
+    const it = gs.items.find((i2) => i2.id === gs.arms[0].held)
+    gs.arms[0].x = 176; it.x = 176 // centre of the CAN/BOTTLE gap — no bin's judgment, just travel
+    const t = travelTell(gs, 0)
+    const dyq = BIN_TOP - (it.y + KINDS.bottle.h / 2)
+    let vyq = 2, fallq = 0; while (fallq < dyq) { vyq += 0.5; fallq += vyq } // the sim's gravity, spelled again
+    ok(t && t.bin === 2 && BINS[t.bin].kind === 'bottle' && t.dx === Math.round(213 - it.x) && t.impact === vyq && t.safe === false,
+        `TRAVEL-DEST: glass hoisted in the gap names its home bin (${t && BINS[t.bin].label}, dx ${t && t.dx}) and paints the fall RED — impact ${t && t.impact} vs the shatter law, matching the independent mirror exactly (${vyq})`)
+    let fn = 0
+    while (gs.arms[0].held !== null && gs.arms[0].tip < CLAW_DOWN - 2 && fn < 60) { step(gs, [{ a: false, down: true }]); fn++ }
+    const t2 = travelTell(gs, 0)
+    ok(t2 && t2.safe === true && t2.bin === 2 && t2.impact <= BREAK_VY,
+        `TRAVEL-FEATHER: on the way the ghost turns green at impact ${t2 && t2.impact} — pre-feather while travelling, arrive already safe`)
+    gs.arms[0].x = 213; it.x = 213 // over the home bin mouth: slamTell owns the story
+    const t3 = travelTell(gs, 0), s3 = slamTell(gs, 0)
+    ok(t3 === null && s3 !== null, 'TRAVEL-HANDOFF: over a bin column the ghost yields to the live slam meter (one column, one story)')
+    // PURE: idempotent reads across a real line, and a non-null never names a
+    // bin other than the cargo's own tag.
+    const gs2 = makeGame(7, 2)
+    let dirty = 0, gapFrames = 0, wrongHome = 0
+    while (!gs2.end && gs2.tick < SHIFTS.length * SHIFT_TICKS + 900) {
+        step(gs2, [autopilot(gs2, 0), autopilot(gs2, 1)])
+        const h0 = gs2.hash
+        for (let s2 = 0; s2 < 2; s2++) {
+            const t1 = travelTell(gs2, s2), t2 = travelTell(gs2, s2)
+            if (JSON.stringify(t1) !== JSON.stringify(t2)) dirty++
+            if (t1) {
+                gapFrames++
+                const held = gs2.items.find((i2) => i2.id === gs2.arms[s2].held)
+                if (!held || t1.bin !== KINDS[held.kind].bin) wrongHome++
+            }
+        }
+        if (gs2.hash !== h0 || stateHash(gs2) !== h0) dirty++
+    }
+    ok(dirty === 0 && wrongHome === 0 && gapFrames >= 100,
+        `TRAVEL-PURE: seed 7's line read the ghost ${gapFrames} frames — idempotent, hash-clean, and it never named the wrong home (${dirty} dirty, ${wrongHome} wrong)`)
+}
+
+section('CB — the catch ring reads colour-blind (#2694)')
+{
+    // deuteranopia transform (Machado et al. 2009, severity 1.0) + CIE76, run
+    // on the palette constants the painter imports, in the game's native
+    // 426×240. ok-vs-off is the verdict pair; each ring state vs the barrel
+    // core is the figure/ground pair the issue flagged. The marquee's glass
+    // family colour is pinned from the painter's source text so a palette edit
+    // without a re-run of this gate goes red.
+    const src = readFileSync(new URL('../src/games/PickRush/index.jsx', import.meta.url), 'utf8')
+    const glassTag = (src.match(/TAG = \{[^}]*?bottle: '#([0-9a-fA-F]{6})'/) || [])[1] || ''
+    ok(glassTag.toLowerCase() === 'ff4fd8', `CB-PIN: the marquee glass colour is ${glassTag} — if you retune TAG.bottle, this gate stops you until the pair has been re-checked`)
+    const rgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]
+    const lin = (v) => { const s = v / 255; return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4) }
+    const dex2 = (h) => {
+        const [r, g, b] = rgb(h).map(lin)
+        const m = [[0.151600, 0.793665, 0.054710], [0.115329, 0.692357, 0.192314], [0.032024, 0.104195, 0.863781]]
+        const d = m.map((row) => row[0] * r + row[1] * g + row[2] * b)
+        const X = 0.4124 * d[0] + 0.3576 * d[1] + 0.1805 * d[2]
+        const Y = 0.2126 * d[0] + 0.7152 * d[1] + 0.0722 * d[2]
+        const Z = 0.0193 * d[0] + 0.1192 * d[1] + 0.9505 * d[2]
+        const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116)
+        const fx = f(X / 0.95047), fy = f(Y), fz = f(Z / 1.08883)
+        return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)]
+    }
+    const dE = (a, b) => { const A = dex2(a), B = dex2(b); return Math.round(Math.hypot(A[0] - B[0], A[1] - B[1], A[2] - B[2]) * 10) / 10 }
+    const vOk = dE(RING_OK, RING_OFF), vCoreOk = dE(RING_OK, BARREL_CORE), vCoreOff = dE(RING_OFF, BARREL_CORE)
+    const vGlass = dE(RING_OK, `#${glassTag}`)
+    ok(vOk >= 25 && vCoreOk >= 15 && vCoreOff >= 15 && vGlass >= 25,
+        `CB-RING: under deuteranopia at native res — ok/off verdict pair ΔE ${vOk}, ok/core ${vCoreOk}, off/core ${vCoreOff}, ring/glass-marquee ${vGlass} (thresholds 25/15/15/25; the ring also carries lineWidth + blink redundancy)`)
 }
 
 // ---------------------------------------------------------------- Chrome
