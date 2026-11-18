@@ -97,6 +97,14 @@ export const NEIGH_MAKEUP = 2         // the reunion pays after absence thaws (s
 export const NEIGH_SPAT_CD = 40      // s before another pair spat can fire (SPAT_CD mirror)
 export const NEIGH_MURMUR_CD = 24    // #2599 handoff 2: s between the pair's sour murmurs while the cold war holds (household GRUDGE_COOL_CD scaled long — the fence carries less than a kitchen)
 export const NEIGH_STROLL_T = 12     // #2611: s of free pair-chat banked before the pair walks the lot
+// #2672 MEDIATORS: a cold war between two grown-ups is only the grown-ups'
+// problem while the room is empty. An awake Miso or Pip standing within reach
+// of BOTH of them cracks the tension on the spot: a soft pay lands at once
+// and the pair enters #2604's mending lane, so the reunion pays its way too.
+// Once per spat (the neiMediated ledger), deterministic, and it never waives
+// the offence — mediation softens the recovery, not the fall.
+export const NEIGH_MEDIATE_REACH = 3      // tiles from the mediator to EACH of the pair
+export const NEIGH_MEDIATE_PAY = 1        // half the reunion's grace — thawed faster, not forgiven
 // #2611: the pair's circuit — fixed hang spots the lot actually offers (front
 // path beside the gravel run, east lawn beyond the fence line, back lawn above
 // the house). Rotation is a counter, never rng: every seed walks the same lap.
@@ -973,11 +981,13 @@ export function newRun(seed) {
         neiSpats: 0,              // #2604: pair quarrels this run (rides the hash)
         neiGrudge: 0,             // #2604: 1 = the pair is in cold war until absence thaws (rides the hash)
         neiMending: 0,            // #2604: thawed by absence — the next shared moment makes up (rides the hash)
+        neiMediated: 0,           // #2672: 1 = a mediator already broke THIS spat's cold war (rides the hash; a new spat clears it)
         neiStroll: 0,             // #2611: free-chat seconds banked toward the next pair stroll (clock, not hash)
         neiWalk: 0,              // #2611: next spot on the pair's circuit (discrete, rides the hash)
         neiSpatCd: 0,             // #2604: real seconds until the next pair spat may fire (clock, not hash)
     neiMurmurCd: 0,           // #2599 handoff 2: seconds until the pair's next sour murmur (clock, not hash)
     neiMurrs: 0,              // #2599 handoff 2: rotation position through NEIGH_SOUR_LINES (clock, not hash)
+    neiMeds: 0,               // #2672: rotation position through NEIGH_MEDIATE_LINES (clock, not hash)
         pet: null,                  // #2197: the household cat, once adopted
         kid: null,                  // #2203: the adopted child, once the agency calls
         paper: null,                // #2238: today's news on the step (item ref | null)
@@ -1822,6 +1832,18 @@ export const NEIGH_MAKEUP_LINES = [
     'Fern and Ivy meet at the gate mid-sentence — fine, FINE, it is over.',
     'A sigh, a shrug, two sprigs of rosemary: the neighbours are neighbours again.',
 ]
+// #2672: the mediation beat — the kid or the cat breaks it up. Each mediator
+// has its own voice; rotation rides a counter, never rng (the #2154 pattern).
+export const NEIGH_MEDIATE_LINES = {
+    pet: [
+        'Miso weaves figure-eights through two pairs of ankles; neither can keep a straight face.',
+        'Miso sits down fair in the middle of the argument and starts grooming. The volume drops.',
+    ],
+    kid: [
+        'Pip grabs one hand in each and pulls — the argument loses the thread mid-sentence.',
+        'A small intervention at the gate: somebody dropped a crayon, and the war is forgotten.',
+    ],
+}
 // #2611: the circuit, beat by beat — one line per spot on the lap.
 export const NEIGH_STROLL_LINES = [
     'Fern takes the gossip down to the front path — Ivy falls in at her heels.',
@@ -1879,6 +1901,18 @@ function freeCellNear(s, r, c) {
     }
     return null
 }
+// #2672: who could mediate? An awake pet or kid standing within the mediation
+// ring of BOTH quarrellers. The cat is asked before the kid — Miso arrived
+// first (#2197 precedes #2203), so the order is the shelf's own, not a coin.
+function mediatorNear(s, fv, iv) {
+    for (const m of [s.pet, s.kid]) {
+        if (!m || m.asleep) continue
+        const dF = Math.abs(m.r - fv.r) + Math.abs(m.c - fv.c)
+        const dI = Math.abs(m.r - iv.r) + Math.abs(m.c - iv.c)
+        if (dF <= NEIGH_MEDIATE_REACH && dI <= NEIGH_MEDIATE_REACH) return m
+    }
+    return null
+}
 function updateNeighbours(s, dt) {
     if (s.neighTell > 0) s.neighTell = Math.max(0, s.neighTell - dt)
     if (s.neiSpatCd > 0) s.neiSpatCd = Math.max(0, s.neiSpatCd - dt)
@@ -1905,6 +1939,22 @@ function updateNeighbours(s, dt) {
     // cooldown (the #2135 household beat, scaled). Lines and a clock only: the
     // murmur builds nothing, pays nothing, and never rides the hash.
     if (s.neiGrudge) {
+        // #2672 THE KID BROKE IT UP: before the murmur, before the absence — if an
+        // awake mediator stands between the pair, the cold war cracks here and now.
+        // The pair drops into #2604's mending lane (so the reunion still pays), and
+        // a soft warmth lands at once. Once per spat; the offence itself stands.
+        if (!s.neiMediated) {
+            const med = mediatorNear(s, fv, iv)
+            if (med) {
+                s.neiMediated = 1
+                s.neiGrudge = 0
+                s.neiMending = 1
+                relAdd(s, 'neigh', NEIGH_MEDIATE_PAY)
+                s.events.push({ t: 'mediate', who: 'neigh', med: med === s.pet ? 'pet' : 'kid', x: (fv.x + iv.x) / 2, y: (fv.y + iv.y) / 2 })
+                think(s, NEIGH_MEDIATE_LINES[med === s.pet ? 'pet' : 'kid'][s.neiMeds++ % 2])
+                return
+            }
+        }
         if (s.neiMurmurCd <= 0) {
             s.neiMurmurCd = NEIGH_MURMUR_CD
             think(s, NEIGH_SOUR_LINES[s.neiMurrs++ % NEIGH_SOUR_LINES.length])   // rotation, not rng (#2154 pattern) — seeded timelines hold
@@ -1979,6 +2029,7 @@ function updateNeighbours(s, dt) {
                 s.neiStroll = 0   // #2611: the walk dies with the quarrel
                 s.neiSpatCd = NEIGH_SPAT_CD
                 s.neiGrudge = 1
+                s.neiMediated = 0   // #2672: a fresh spat earns a fresh chance at mediation
                 s.neiMurmurCd = GRUDGE_FIRST_CD   // #2599 handoff 2: the first sour murmur comes after the crack, not on top of it (#2135 mirror)
                 s.neiSpats += 1
                 relSub(s, 'neigh', NEIGH_SPAT_DROP)
@@ -3405,6 +3456,7 @@ export function stateHash(s) {
     mix(s.triTell); mix(s.triHits)   // #2154: the choreography tell and its beat count ride it too
     mix(s.neighTell); mix(s.neighHits)   // #2588: so do the pair's own exchange throttle and beat count
     mix(s.neiSpats); mix(s.neiGrudge); mix(s.neiMending)   // #2604: the pair's quarrel ledger rides it (the timers don't — clocks like spatCd stay off)
+    mix(s.neiMediated)                                       // #2672: the mediation flag rides with the ledger
     mix(s.neiWalk)                                           // #2611: the circuit beat rides it; the bank (neiStroll) is a clock and stays off
     mix(s.paperDay)                    // #2238: today's route stamps the day it landed
     mix(s.mealDay)                     // #2244: so do the bells — the day the plate landed

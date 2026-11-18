@@ -99,6 +99,7 @@ import {
     TRI_TELL_CD, TRI_LINES, IVY_SOCIAL,   // #2154: visitor choreography law
     NEIGH_CHAT, NEIGH_GLANCE, NEIGH_FADE, NEIGH_COOL_CD, NEIGH_WARM, NEIGH_LINES,   // #2588: the third-party bond
     NEIGH_IGNORE_T, NEIGH_SPAT_DROP, NEIGH_MAKEUP, NEIGH_SPAT_CD,   // #2604: the pair's own quarrel law
+    NEIGH_MEDIATE_PAY,   // #2672: the mediators — soft warmth of the break-up
     NEIGH_STROLL_T, NEIGH_SPOTS, NEIGH_STROLL_LINES,   // #2611: the pair's circuit — bank, spots, beat lines
     NEIGH_MURMUR_CD, NEIGH_SOUR_LINES,   // #2599 handoff 2: the cold-war murmur — clock and sour lines
     PAPER, PAPER_LATE, PAPER_LINES,   // #2238: the paper route
@@ -1701,8 +1702,9 @@ section('NEIGH SPAT (#2604): third-party grudge — souring, cold war, thaw, reu
     check('a whole quarrel — crack, absence, reunion — is seed-exact',
         spatRun(7) === spatRun(7) && spatRun(2604) === spatRun(2604))
     const cwBlk = (spSim.match(/\n    if \(s\.neiGrudge\) \{[\s\S]*?\n    \}\n/) || [''])[0]
-    check('pin: the cold war silences the pair by returning before any pay (#2599: it may murmur lines — never pay)',
-        /return/.test(cwBlk) && !/rel(?:Add|Sub)|money|content|neiSpats/.test(cwBlk)
+    const cwNoMed = cwBlk.replace(/if \(!s\.neiMediated\) \{[\s\S]*?\n        \}\n/, '')   // #2672: mediation is an EXIT from the cold war, not the cold war — strip it before the never-pay test
+    check('pin: the cold war silences the pair by returning before any pay (#2599: it may murmur lines — never pay; #2672: except the mediation exit)',
+        /return/.test(cwBlk) && !/rel(?:Add|Sub)|money|content|neiSpats/.test(cwNoMed)
         && /s\.neiIgnore >= NEIGH_IGNORE_T && s\.neiSpatCd <= 0/.test(spSim))
     check('pin: absence thaws, reunion pays NEIGH_MAKEUP once',
         /if \(s\.neiGrudge\) \{\s*s\.neiGrudge = 0\s*s\.neiMending = 1/.test(spSim)
@@ -1712,6 +1714,139 @@ section('NEIGH SPAT (#2604): third-party grudge — souring, cold war, thaw, reu
         /who === 'neigh' \? 'FERN AND IVY SPAT!'/.test(spJsx) && /who === 'neigh' \? 'THE NEIGHBOURS MADE UP/.test(spJsx)
         && /neiGrudge \? '#2c6b5b' : '#3aa08a'/.test(spArt))
     check('pin: the marquee teaches the law', /WATCHED but never HEARD/.test(spJsx))
+}
+
+// ------------------------------------------ NEIGH MEDIATE (#2672) -------
+section('NEIGH MEDIATE (#2672): the kid broke it up — reach ring, once per spat, soft pay, mending lane, hash')
+{
+    const mdSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const mdJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const hang = (g, key, name, r, c, hue) => {
+        g.visitAfter = 99; g.ivyAfter = 99; g.ivyGap = 0
+        g[key] = { name, r, c, x: tileX(c) + TILE / 2, y: tileY(r) + TILE / 2, path: null, state: 'hang',
+            t: 0, hue, face: 1, walkPhase: 0, chatT: 0, hangUntil: 9999, neighT: 0 }
+        return g[key]
+    }
+    const park = (p, r, c) => { p.r = r; p.c = c; p.x = tileX(c) + TILE / 2; p.y = tileY(r) + TILE / 2; p.path = null; p.goal = null; p.use = null; p.working = false; p.faintT = 0; if (p.queue) p.queue.length = 0; p.owner = null; if (p.needs) for (const n of ['hunger', 'energy', 'fun', 'social', 'bladder']) p.needs[n] = Math.max(p.needs[n], 0.55) }   // #2604 pattern
+    const stand = (m, r, c) => { m.r = r; m.c = c; m.x = tileX(c) + TILE / 2; m.y = tileY(r) + TILE / 2; m.path = null; m.wanderT = 9999; m.play = false }   // #2672: mediators get position held only — pets/kids carry no queue, and standing their needs up would invent NaN
+    const hold = (pairs) => pairs.forEach(([p, r, c]) => park(p, r, c))
+    const soak = (g, pairs, sec) => { for (let i = 0; i < Math.round(sec / DT); i++) { hold(pairs); advance(g, DT); drain(g) } }
+    const soakEv = (g, pairs, sec, sink) => { for (let i = 0; i < Math.round(sec / DT); i++) { hold(pairs); advance(g, DT); sink.push(...drain(g)) } }
+    const ear = (g) => [[g.visitor, 3, 5], [g.ivy, 3, 7], [g.people[0], 3, 4], [g.people[1], 1, 1]]
+    const free = (g) => [[g.visitor, 3, 5], [g.ivy, 3, 7], [g.people[0], 1, 12], [g.people[1], 1, 1]]
+    // A cracked pair (Fern 3,5 / Ivy 3,7 — the #2604 layout), paid-for, money
+    // in pocket. Mediators enter by the real counter; positions then stand-held.
+    const crack = (seed) => {
+        const g = newRun(seed); hang(g, 'visitor', 'Fern', 3, 5, '#4fae5f'); hang(g, 'ivy', 'Ivy', 3, 7, '#a3579b')
+        g.rel.neigh = 20
+        soak(g, ear(g), NEIGH_IGNORE_T + 1)
+        g.money = 900
+        return g
+    }
+
+    // The law: an awake mediator within reach of BOTH cracks the cold war —
+    // soft pay at once, mending lane entered (the reunion still pays its own).
+    const m1 = crack(2672)
+    adoptPet(m1)
+    check('a cold war with nobody nearby just murmurs — no mediation, nothing paid', (() => {
+        const before = m1.rel.neigh
+        soak(m1, free(m1), 3)
+        return m1.neiGrudge === 1 && m1.neiMediated === 0 && m1.rel.neigh <= before + 0.001
+    })(), `grudge=${m1.neiGrudge} mediated=${m1.neiMediated}`)
+    const ev1 = []
+    const rnA = m1.rel.neigh
+    soakEv(m1, [...free(m1), [m1.pet, 1, 6]], 2, ev1)   // (1,6): exactly 3 from Fern, exactly 3 from Ivy — the boundary in
+    check('a mediator at exactly reach 3 of BOTH cracks the cold war', m1.neiGrudge === 0 && m1.neiMediated === 1)
+    check('the mediation pays its soft warmth and enters the mending lane', (() => {
+        const makeup = ev1.filter((e) => e.t === 'makeup').length
+        return rnA + NEIGH_MEDIATE_PAY + (makeup ? NEIGH_MAKEUP : 0) - 0.12 <= m1.rel.neigh && m1.rel.neigh <= rnA + NEIGH_MEDIATE_PAY + (makeup ? NEIGH_MAKEUP : 0) + 0.12
+    })(), `neigh=${m1.rel.neigh.toFixed(3)} (was ${rnA.toFixed(3)})`)
+    const evMediate = ev1.filter((e) => e.t === 'mediate')
+    check('the mediate event names the pair, the mediator and a spot — once only',
+        evMediate.length === 1 && evMediate[0].who === 'neigh' && evMediate[0].med === 'pet' && Number.isFinite(evMediate[0].x), JSON.stringify(evMediate))
+
+    // Reach is to BOTH: one elbow out of the ring and the war stands. (The
+    // awake clause is source-pinned below — a daytime soak cannot hold a pet
+    // asleep: updatePet's day-wake law rightly overrides it, and inventing a
+    // second sleep law to make the pin pass would be the harness wagging the dog.)
+    const m2 = crack(31)
+    adoptPet(m2)
+    soak(m2, [...free(m2), [m2.pet, 0, 6]], 3)   // (0,6): 4 from each — out
+    check('a mediator out of reach of the pair mediates nothing', m2.neiGrudge === 1 && m2.neiMediated === 0)
+
+    // After the peace: an inert bystander. Then a SECOND cold war that arrives
+    // WITHOUT a fresh spat must stay locked (absence-thaws the war, but only a
+    // new spat re-arms the mediation chance). Then the real second spat: thaw
+    // apart, reunite, sour past the cooldown — and the cat breaks IT.
+    const ev3 = []
+    soakEv(m1, [...free(m1), [m1.pet, 1, 6]], 2, ev3)
+    check('after the peace, a mediator standing there is inert', m1.neiMediated === 1 && ev3.filter((e) => e.t === 'mediate').length === 0)
+    m1.neiGrudge = 1; m1.neiMending = 0   // a cold war without a new spat: the lock holds
+    soak(m1, [...free(m1), [m1.pet, 1, 6]], 2)
+    check('the once-per-spat lock holds while no new spat has fired', m1.neiGrudge === 1 && m1.neiMediated === 1 && m1.neiMending === 0)
+    m1.visitor = null
+    soak(m1, [[m1.ivy, 3, 7], [m1.people[0], 1, 12], [m1.people[1], 1, 1], [m1.pet, 1, 6]], 3)   // absence thaws…
+    check('absence thaws the locked war too', m1.neiGrudge === 0 && m1.neiMending === 1)
+    hang(m1, 'visitor', 'Fern', 3, 5, '#4fae5f')
+    soak(m1, [...free(m1), [m1.pet, 1, 6]], 2)   // …and the reunion pays; mediation stays locked
+    check('the reunion pays, but mediation waits for a new spat', m1.neiMending === 0 && m1.neiMediated === 1)
+    // Sour again, past the cooldown. A whole day is only ~2 min of real time
+    // (#2244's clock), and past hour 19 both neighbours head home — this soak
+    // runs at the *end* of a long scripted day, so rewind the hour first
+    // (visitors then stay through the souring; the cooldown wait has played
+    // out for real, and Ivy's patience gets re-hangs if she still wanders).
+    m1.hour = 8; m1.sec = 0
+    for (let i = 0; i < Math.round(44 / DT); i++) {
+        if (!m1.visitor) hang(m1, 'visitor', 'Fern', 3, 5, '#4fae5f')
+        if (!m1.ivy) hang(m1, 'ivy', 'Ivy', 3, 7, '#a3579b')
+        hold([...ear(m1), [m1.pet, 1, 6]]); advance(m1, DT); drain(m1)
+    }
+    check('the second spat re-arms mediation — and the cat breaks it at once',
+        m1.neiSpats === 2 && m1.neiMediated === 1 && m1.neiGrudge === 0 && m1.neiMending === 1,
+        `spats=${m1.neiSpats} mediated=${m1.neiMediated} grudge=${m1.neiGrudge}`)
+
+    // The kid takes the cat's job when the cat is out of the ring — med names the kid.
+    const k1 = crack(7)
+    adoptPet(k1); adoptKid(k1)
+    const evK = []
+    soakEv(k1, [...free(k1), [k1.pet, 12, 1], [k1.kid, 2, 6]], 1, evK)
+    check('the kid mediates when the cat is out of the ring, and is named for it', (() => {
+        const e = evK.filter((x) => x.t === 'mediate')
+        return e.length === 1 && e[0].med === 'kid' && k1.neiMediated === 1
+    })(), JSON.stringify(evK.filter((x) => x.t === 'mediate')))
+
+    // The cat is asked before the kid — Miso arrived first (#2197 precedes #2203).
+    const k2 = crack(9)
+    adoptPet(k2); adoptKid(k2)
+    const evK2 = []
+    soakEv(k2, [...free(k2), [k2.pet, 1, 6], [k2.kid, 2, 6]], 1, evK2)
+    check('both nearby: the cat breaks it up (shelf order, not a coin)', (() => {
+        const e = evK2.filter((x) => x.t === 'mediate')
+        return e.length === 1 && e[0].med === 'pet'
+    })(), JSON.stringify(evK2.filter((x) => x.t === 'mediate')))
+
+    // Hash + determinism: the ledger flag is state; a mediated day is seed-exact.
+    const h0 = newRun(31)
+    const h1 = newRun(31); h1.neiMediated = 1
+    check('the mediation flag rides the hash', stateHash(h1) !== stateHash(h0))
+    const medRun = (seed) => {
+        const g = crack(seed); adoptPet(g)
+        const ev = []
+        soakEv(g, [...free(g), [g.pet, 1, 6]], 3, ev)
+        return { h: stateHash(g), med: ev.filter((e) => e.t === 'mediate').length }
+    }
+    check('a mediated quarrel is seed-exact, and it really mediated',
+        medRun(2672).h === medRun(2672).h && medRun(5).h === medRun(5).h && medRun(2672).med === 1 && medRun(5).med === 1,
+        JSON.stringify({ a: medRun(2672), b: medRun(5) }))
+
+    // Source pins: the ring tests BOTH, a new spat clears the flag, the view names the mediator.
+    check('pin: the ring asks BOTH quarrellers and the cat goes first',
+        /function mediatorNear\(s, fv, iv\) \{\s*for \(const m of \[s\.pet, s\.kid\]\)/.test(mdSim)
+        && /dF <= NEIGH_MEDIATE_REACH && dI <= NEIGH_MEDIATE_REACH/.test(mdSim) && /if \(!m \|\| m\.asleep\) continue/.test(mdSim))
+    check('pin: a fresh spat clears the ledger flag; the hash mixes it',
+        /s\.neiGrudge = 1\s*s\.neiMediated = 0/.test(mdSim) && /mix\(s\.neiMediated\)/.test(mdSim))
+    check('pin: the view plays the beat — soft chord, named mediator, pair bubble',
+        /case 'mediate'/.test(mdJsx) && /e\.med === 'kid' \? 'PIP' : 'MISO'/.test(mdJsx) && /BROKE IT UP ♥/.test(mdJsx))
 }
 
 // ------------------------------------------- NEIGH STROLL (#2611) -------
@@ -1854,7 +1989,7 @@ section('NEIGH STROLL (#2611): the pair walks the lot — bank, circuit, walk-pa
         /s\.neiStroll >= NEIGH_STROLL_T/.test(stSim) && /NEIGH_SPOTS\[idx\]/.test(stSim)
         && /s\.neiWalk = \(s\.neiWalk \+ 1\) % NEIGH_SPOTS\.length/.test(stSim))
     check('pin: the bank fills only while both are mobile, and the lap runs after the cold-war return',
-        /if \(!fv\.path && !iv\.path\) \{\s*s\.neiStroll \+= dt/.test(stSim) && /if \(s\.neiGrudge\) \{[\s\S]{0,640}?\n    \}\n    if \(s\.neiMending/.test(stSim))
+        /if \(!fv\.path && !iv\.path\) \{\s*s\.neiStroll \+= dt/.test(stSim) && /if \(s\.neiGrudge\) \{[\s\S]{0,1400}?\n    \}\n    if \(s\.neiMending/.test(stSim))   // #2672: the mediation exit widened the grudge block — window 640→1400
     check('pin: the tell names the pair and the marquee teaches the law',
         /FERN AND IVY TAKE A WALK/.test(stJsx) && /THE PAIR WANDERS THE LOT/.test(stJsx))
     const fresh = newRun(3)
@@ -1966,7 +2101,7 @@ section('NEIGH VIEW (#2599): pair bubbles, teal reunion, guest sulks, warmth spa
         && !/pick\(s, NEIGH_SOUR_LINES\)/.test(nvSim) && /export const NEIGH_SOUR_LINES = \[/.test(nvSim)
         && (nvSim.match(/export const NEIGH_SOUR_LINES = \[[\s\S]*?\]/)[0].match(/,$/gm) || []).length >= 3)
     check('pin: absence still ends the war — the murmur block lives inside the grudge return',
-        /if \(s\.neiGrudge\) \{[\s\S]{0,700}?\n    \}\n    if \(s\.neiMending/.test(nvSim))
+        /if \(s\.neiGrudge\) \{[\s\S]{0,1400}?\n    \}\n    if \(s\.neiMending/.test(nvSim))   // #2672: the mediation exit widened the grudge block — window 700→1400
 
     // #2599 item 3 — the attract sells the pair on its own copy beat.
     const nmJsx = readFileSync(new URL('../src/components/AttractMessage.jsx', import.meta.url), 'utf8')
@@ -2682,8 +2817,8 @@ section('COURT POLISH (#2135): spoken chat, cooling beats, the ring tell')
     check('pin: the cooling beat emits its own event once per cold war — household + pair (#2599)', (cpSim.match(/t: 'grudge-cool'/g) || []).length === 2)
     check('pin: the reach ring paints only when a word is ready (cooldown closed, buy mode closed)',
         /g\.cmdCd <= 0/.test(cpJsx) && /courtTarget\(g\)/.test(cpJsx) && /ctx\.ellipse\(t\.p\.x/.test(cpJsx))
-    check('pin: spoken lines render as a bubble over the pair (art + shell + all six spoken events)',
-        /export function drawSay/.test(cpArt) && /drawSay\(ctx, sayB\)/.test(cpJsx) && (cpJsx.match(/showSay\(s, e\)/g) || []).length === 8)
+    check('pin: spoken lines render as a bubble over the pair (art + shell + all spoken events)',
+        /export function drawSay/.test(cpArt) && /drawSay\(ctx, sayB\)/.test(cpJsx) && (cpJsx.match(/showSay\(s, e\)/g) || []).length === 9)   // #2672: the mediate beat speaks too — 8→9
     check('pin: the marquee teaches C/X and the ring tell', /SAY THE KIND THING \u2014 C coos, X cuts\./.test(cpJsx) && /gold ring/.test(cpJsx))
 }
 

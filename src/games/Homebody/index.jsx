@@ -429,6 +429,11 @@ const HomebodyGame = () => {
                         setTimeout(() => audioController.playTone(784, 0.14, 'triangle', 0.05), 180)
                         if (live) { say(e.who === 'neigh' ? 'THE NEIGHBOURS MADE UP ♥' : 'MADE UP ♥'); if (e.who === 'neigh') pairSparkle(e.x, e.y - 12); else heartBurst(e.x, e.y - 12); showSay(s, e) }   // #2076: hearts, named by the BONDS glyph; #2604: pair reunions name themselves; #2599 handoff 3: pair reunions sparkle twin-leaf teal
                         break
+                    case 'mediate': // #2672: the kid broke it up — two soft notes, a small pair sparkle, the line in pair hues
+                        audioController.playTone(659, 0.08, 'triangle', 0.04)
+                        setTimeout(() => audioController.playTone(880, 0.12, 'triangle', 0.04), 110)
+                        if (live) { say(`${e.med === 'kid' ? 'PIP' : 'MISO'} BROKE IT UP ♥`); pairSparkle(e.x, e.y - 12); showSay(s, e) }
+                        break
                     case 'chat': // #2135: the neighbours talk ON screen now — a soft murmur, then the bubble
                         audioController.playTone(e.k === 'ivy' ? 494 : 523, 0.05, 'sine', 0.03)
                         setTimeout(() => audioController.playTone(e.k === 'ivy' ? 392 : 415, 0.07, 'sine', 0.03), 70)
