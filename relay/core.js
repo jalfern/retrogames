@@ -448,7 +448,12 @@ export function sessionMeta(rec, player) {
         seed: String(rec.seed),
         ticks: String(rec.ticks),
         players: String(rec.players),
-        audio: rec.voice ? '1' : '0',
+        // #1711 audit trail (Chrome 157, 2026-11-18): a take whose voice section
+        // exists but holds ZERO track bytes has no audio — the section is the
+        // RECORD of the ask (consent, declines), not proof of capture. Deriving
+        // the flag from the section's presence listed broken-capture takes as
+        // audio:true and the admin view lied. Flag = bytes present.
+        audio: rec.voice && Array.isArray(rec.voice.tracks) && rec.voice.tracks.length > 0 ? '1' : '0',
         player: String(player),
     }
 }
