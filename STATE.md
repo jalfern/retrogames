@@ -1,65 +1,76 @@
-# STATE — session 338 slot b close-out
+# STATE — session 339 slot a close-out
 
 ## Shipped this session
-- **FLOOR BOSS: LIVE TRAFFIC HEAT — PR #2682 merged `80fbf3c`** (#2680,
-  never-dry rung #1571; `idle-kick` answered `KICK FLOOR BOSS 0 weak`).
-  `flowHeat(gs)` (sim.js): pure #1917 per-cell route count — every bot
-  credits its cell + task path; per-bot dedup, cross-bot sums, row-major.
-  `paintHeat`: orange tint deepens with claims (α .05/.10/.16); an n≥2
-  convergence pulses a hot core — the meet the jam law will name, readable
-  one beat early. Paint order cyan→heat→amber law. floorbosscheck 307/307
-  (+12 gates: sums, dedup, parked-crew own-cells, full-shift display
-  contract, 3103/9000 real convergence ticks n≥3, purity+order, paint order,
-  DEV eye); `--mutate-flowheat` killed; floorbossplay live leg: passive real
-  traffic warm pixels 11/12 + vacate-cool 14/14 (rig fallback green too).
-  README gap updated in-PR — swept-volume/forklift-routing half stays OPEN
-  and honest. Prod verified: Vercel production at `80fbf3c`.
+- **HOMEBODY: GO-SAY — CHOOSE WHICH TWO SHARE THE RING — PR #2685 merged
+  `a35a9aa`** (#2683, never-dry rung #1571). A tap on Fern/Ivy/Pip beyond
+  `COURT_REACH` issues a walk-to-them errand; the tick they share the ring
+  `court(s,'coo',walker)` lands the compliment through existing law (bond,
+  sparkle, `cmdCd`, lines). Arrival promotes to the #2235 pick (crowds pay
+  the chosen ear); cooldown holds it; leaving/faint/sleep folds it honest
+  (`go-say stage:'lost'`); slipping targets chased ≤ `GO_SAY_CHASE` 3.
+  Speaker threaded `court/courtReach/courtTarget(…, speakerIdx = s.active)` —
+  old calls byte-identical. Queue parity `{kind:'gosay'}` (#2470 laws ride:
+  re-validate at issue, chat glyph+timbre, hash join). Partner excluded
+  (switch idiom). Travelling dotted gold ring + order ping + marquee/registry.
+  peoplecheck 876/876 (+26; hand-mutants named: arrival-fire stub 876→868/8,
+  speaker hardcode 876→875/1). Drive 108/108 (+3 live: real far-tap, ring
+  pixels gold=33, landing coo). Prod verified on jalfern.com
+  (`index-B7oeEth9.js`). Polish pass filed #2688.
+- **Honest-gap accounting (same PR):** Homebody's derived gap was a parse
+  artifact — the bonds bullet's `CLOSED by #2672` strike sat on UNINDENTED
+  continuation lines, invisible to parseGaps, re-kicking shipped work (#2670
+  family, mirror case). Indented; ring tail struck; multi-room open tail
+  (#1806-era, buried since creation) surfaced as its own honest bullet.
+  Also re-sampled homebodyqueuecheck's autoplay hash pin
+  (819006649→3836882361) — it aged silently across #2520/#2532/#2611/#2672
+  hash joins; failed identically on main while nightly stayed green; twin
+  determinism + identical hash with/without this branch proved law sound.
 
 ## Claims / board
-- Warden TARGET #1711: claim REFUSED (slot a held it — their sweep 11:57Z
-  left it `next` with evidence; claim liveness runs to ~13:26Z). Ladder
-  after: steer empty, `next`=#1711 (held), game-queue empty, feedback only
-  #2674 (`building-qa`, live QA MASTER session running → no borrow).
-  Flagship stage spent → never-dry: FLOOR BOSS (score 1, only unowned gap
-  on the unheld shelf). Filed #2680 + why-weakest line, claimed, shipped.
-- Note: slot a filed PICK RUSH's pick (#2678) mid-derivation — re-probe
-  liveness immediately before filing; costs nothing.
+- TARGET #2680 (warden): claim REFUSED — slot b held it live (claimed 39 min
+  prior); they shipped `80fbf3c` mid-session. Ladder: steer empty; `next`
+  #1711 documented wait-state (jonq #2652 AWAITING — nightly self-grades;
+  re-sweep = spin); game-queue empty; feedback empty, no QA session to
+  borrow → flagship stage spent → never-dry: idle-kick answered
+  `KICK HOMEBODY 0 weak`. Filed #2683 (why-weakest + tension line),
+  claimed, shipped, closed with evidence.
+- #2688 filed (QA polish pass, feedback) — QA's next job, not builders'.
 
 ## Next queued
-- Re-derive at `80fbf3c`: `node scripts/idle-kick.mjs` (do NOT trust this
-  file — see catch #1 below).
-- #1711 is `next` with claim window now free; its last open line is
-  hardware-gated (Jon's phone clap take, jonq #2652). Sweep = store watch
-  + `plaicraft:grade`; a fresh sweep needs no re-derivation of the rest.
+- Re-derive at new main: `node scripts/idle-kick.mjs` (at `3cca18d` it said
+  HOMEBODY; after this PR's accounting its Homebody gap is the surfaced
+  **deeper multi-room** tail — do NOT trust this line, derive).
+- #1711 wait-state unchanged: a Jon take with ≥3 claps → `plaicraft:grade`
+  self-posts → line 3 closes → #1712 promotes.
 
 ## Open questions (issues, not here — #605)
 - #2652 (jonq, platform, AWAITING by Jon, deadline Nov 20 01:36Z) — phone
-  clap take vs waiver for #1711 line 3; default keeps waiting, nightly
-  self-grades and self-posts the verdict when the take lands.
-
-## RULE 4
-Game code merged this session (#2682, `src/games/FloorBoss/`), rule 4
-intact; STATE.md committed to main per rule-step-9 exception.
+  take vs waiver for #1711 line 3; default keeps waiting, nightly self-grades.
 
 ## Catches for the next session (each cost probes this shift)
-- **`idle-kick` flips when `gh` flakes silently.** Its `catch { issues=[] }`
-  changes the pick: 3 different answers in ~2 min (PICK RUSH / PRINCE OF
-  PERSIA / FLOOR BOSS). Before filing a never-dry stage, score
-  `weakestStage` from a retried issues snapshot and confirm the pick twice.
-- **Convergence is ~4 s into a live floor** (first n≥2 tick ≈ 240). A 3.6 s
-  pixel window sees zero. The heat leg budgets 8 s passive + a house-pattern
-  rig fallback; keep both.
-- **Rig-written `b.path` persists** — idle bots never re-path, so a cool-down
-  probe on a rigged cell hangs forever unless the leg vacates routes
-  (`b.path=[]`, the arrival semantic). Passive/probe/cool phases must share
-  one notion of truth.
-- **floorbossplay carries per-run flakes on this box**: servo-diamond and
-  seat-stamp legs failed 0–3 across five runs (78–83/84), all upstream of
-  this lane's leg, all advisory. Rerun once; don't chase.
-- **Mutateguard refuses mutants on a dirty tree** (correct, #2047): commit
-  the increment, THEN run `--mutate-*`.
+- **Unindented README continuation lines break parseGaps BOTH ways:** a
+  `CLOSED by #N` on a column-0 line is invisible (false gap lives — this
+  shift's kick), and a whole-bullet strike buries sibling open tails (#2214).
+  Continuations get TWO spaces; one strike per shipped item.
+- **Hardcoded autoplay hash pins age with every stateHash join.**
+  homebodyqueuecheck's pin was stale from #2508 despite four later joins; no
+  nightly caught it (advisory-only suite). If you join stateHash, re-pin and
+  say so in the PR.
+- **Gate rigs must respect live laws:** Fern hang-wanders (`repathT` cycle)
+  and the day-wake clause self-clears manual `asleep`; pin positions every
+  poll tick, test the kid's nap at hour 23. Fern-chat claim pays 0.07·dt for
+  a tick at arrival — assert `>=` not `===` on bonds at fire.
+- **`goSayTarget` returns null (not false)** for absent ears — check `=== null`.
+- **#2235's tap-order pin window ({0,300} chars) broke when the go-say loop
+  landed between pick and switch** — widen in place with a comment; the
+  ordering itself is pinned by §GO-SAY's own regex.
+- **jalfern.com SPA probes need `-L`** (308 on /retrogames) and game code
+  lives in the lazy `Homebody-*.js` chunk; verify registry text in the main
+  index chunk instead — one grep, no chunk sweep.
 
 ## Lanes clean
-- Main checkout detached at `origin/main` (`80fbf3c`); STATE.md committed.
-- :5178 dev server killed at close (other lanes' ports untouched).
-- Worktree `retrogames-forge-floorboss-flowheat` removed after merge + prune.
+- Main checkout detached at `origin/main` (`a35a9aa`); this STATE commit
+  rides the merge (game shipped — rule-step-9 exception).
+- :5173 dev server stopped at close; other lanes' ports untouched.
+- Worktree `retrogames-forge-homebody-gosay` removed after merge; branch
+  `forge/homebody-gosay` deleted (remote via squash, local pruned).
