@@ -19,9 +19,12 @@
 //   quota — shift 1's quota becomes unreachable
 //   wave  — the authored line collapses to one shift's waves (#2210)
 //   amb   — the ambience eras collapse (early beeps at graveyard cadence, #2234)
+//   vis   — the bins never fill (meter cap frozen at 9999, #2678)
+//   whip  — the cable spring dies (no overshoot on reversal, #2678)
 
 import * as s from '../src/games/PickRush/sim.js'
 import { AMB_ZONES, zoneForShift, fireAt } from '../src/games/PickRush/ambience.js'
+import { BIN_VIS, makeBinVis, stepBinVis, makeWhip, stepWhip, whipTarget } from '../src/games/PickRush/visuals.js'
 import { scriptFor } from './lib/contractGames.mjs'
 
 const args = process.argv.slice(2)
@@ -34,7 +37,7 @@ const ok = (c, m) => { if (c) { pass++; console.log(`  PASS  ${m}`) } else { fai
 const section = (t) => console.log(`\n\x1b[1m${t}\x1b[0m`)
 
 if (MUT) {
-    if (!['judge', 'glass', 'roll', 'quota', 'wave', 'amb'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
+    if (!['judge', 'glass', 'roll', 'quota', 'wave', 'amb', 'vis', 'whip'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
     console.log(`\x1b[33mMUTANT ACTIVE: ${MUT}\x1b[0m`)
 }
 const applyMut = () => {
@@ -44,6 +47,8 @@ const applyMut = () => {
     if (MUT === 'quota') s.SHIFTS[0].quota = 99999
     if (MUT === 'wave') s.WAVES.length = 1
     if (MUT === 'amb') AMB_ZONES[0].cues.beep.every = 330 // early floor beeps at graveyard cadence — the night stops changing
+    if (MUT === 'vis') BIN_VIS.cap = 9999 // bins never fill — the lamp never thunks (#2678)
+    if (MUT === 'whip') BIN_VIS.spring = { k: 0, d: 0.22 } // cable spring dead — the head never whips past the tilt (#2678)
 }
 applyMut()
 
@@ -471,6 +476,65 @@ section('STATE — motion carriers (#1184)')
         'CARRIERS: arm positions + cargo are in the sim state (pos/clawY ride the contract)')
 }
 
+section('JUICE — bin meters, full lamp, cable whip are render-only (#2678)')
+{
+    // Caps are hardcoded 12 on purpose: the vis mutant freezes the law, and a
+    // pin that asked the law what it currently is would let any mutant survive.
+    const st = makeBinVis(1)[0]
+    const fired = []
+    for (let k = 1; k <= 12; k++) if (stepBinVis(st, k)) fired.push(k)
+    ok(fired.length === 1 && fired[0] === 12 && st.fill === 0 && st.flash > 0,
+        'BIN-METER: counts 1..11 stay quiet, the 12th thunks — lamp lights, column wraps to 0')
+    let fired2 = 0
+    for (let k = 13; k <= 24; k++) if (stepBinVis(st, k)) fired2++
+    ok(fired2 === 1 && st.fill === 0, 'BIN-METER: refills exactly to cap — no double-thunk, no drift')
+    const rst = makeBinVis(1)[0]
+    stepBinVis(rst, 7)
+    ok(!stepBinVis(rst, 0) && rst.fill === 0 && rst.base === 0,
+        'BIN-METER: a fresh game heals the counter silently — no phantom thunk on restart')
+}
+{
+    // The visual accounting equals the line's real drop accounting, seed-exact.
+    const vis = makeBinVis(BINS.length)
+    let triggers = 0
+    const gs = makeGame(7, 2)
+    while (!gs.end && gs.tick < SHIFTS.length * SHIFT_TICKS + 900) {
+        step(gs, [autopilot(gs, 0), autopilot(gs, 1)])
+        for (let i = 0; i < BINS.length; i++) if (stepBinVis(vis[i], gs.binFill[i])) triggers++
+    }
+    const floorSum = gs.binFill.reduce((a, f) => a + Math.floor(f / 12), 0)
+    ok(triggers >= 1 && triggers === floorSum,
+        `BIN-METER accounting matches real drops: ${triggers} thunks === Σ floor(binFill/12) = ${floorSum}`)
+}
+{
+    // Hash-clean: twin seeds, one driven with the juice stepping every frame.
+    const drive = (juice) => {
+        const gs = makeGame(31, 2)
+        const vis = makeBinVis(BINS.length)
+        const ws = [makeWhip(), makeWhip()]
+        while (gs.tick < 600) {
+            step(gs, [autopilot(gs, 0), autopilot(gs, 1)])
+            if (juice) {
+                for (let i = 0; i < BINS.length; i++) stepBinVis(vis[i], gs.binFill[i])
+                for (let a = 0; a < 2; a++) stepWhip(ws[a], whipTarget(gs.arms[a].vx))
+            }
+        }
+        return stateHash(gs)
+    }
+    ok(drive(true) === drive(false), 'SIM-CLEAN: twin seeds hash identically with and without the juice — render never reaches the sim (#1142)')
+}
+{
+    const w = makeWhip()
+    for (let t = 0; t < 160; t++) stepWhip(w, whipTarget(2.5)) // steady east slide
+    ok(Math.abs(w.y + 4) < 0.3, `WHIP-SPRING: a steady slide settles at the classic trailing tilt (${w.y.toFixed(1)} px)`)
+    let maxY = -9, maxAbs = 0
+    for (let t = 0; t < 160; t++) { stepWhip(w, whipTarget(-2.5)); maxY = Math.max(maxY, w.y); maxAbs = Math.max(maxAbs, Math.abs(w.y)) }
+    ok(maxY >= 4.2, `WHIP-SPRING: reversing overshoots the static tilt (+${maxY.toFixed(1)} px past +4) — the cable head keeps travelling`)
+    ok(maxAbs <= BIN_VIS.clamp + 1e-9, `WHIP-SPRING: the offset stays clamped (max ${maxAbs.toFixed(1)} ≤ ${BIN_VIS.clamp}) — the cable never paints off the crane`)
+    for (let t = 0; t < 240; t++) stepWhip(w, whipTarget(0))
+    ok(Math.abs(w.y) < 0.05, 'WHIP-SPRING: at rest the cable hangs straight again')
+}
+
 // ---------------------------------------------------------------- Chrome
 if (!NODE_ONLY) {
     const { openGame, launch, requireDevServer, Report } = await import('./lib/harness.mjs')
@@ -507,7 +571,9 @@ if (!NODE_ONLY) {
         await page.keyboard.down('ArrowRight')
         await page.waitForTimeout(320)
         await page.keyboard.up('ArrowRight')
-        await page.waitForTimeout(120)
+        // #2678 the cable hangs on a spring — give it the settle time (was 120 ms,
+        // mid-oscillation under software render; the gate demands the REST position)
+        await page.waitForTimeout(500)
         const cable = await page.evaluate((b0) => {
             const st = window.__pickrushTest.state()
             const c = window.__pickrushTest.canvas()
@@ -527,7 +593,6 @@ if (!NODE_ONLY) {
         // contract, carry it low over its bin, and sample the core colour
         const cargo = await page.evaluate(async () => {
             const g = window.__game
-            const wait = () => new Promise((r) => setTimeout(r, 34))
             const it = () => window.__pickrushTest.state()
             g.reset(7, 1)
             window.__dbg.act('spawn can')
@@ -562,7 +627,9 @@ if (!NODE_ONLY) {
             }
             g.step([{ a: false }], 1)
             g.step([{ a: true }], 1)
-            await wait()
+            // painted frame, not 34 ms: the chase loop never yielded to rAF, so
+            // under software render a fixed wait sampled stale canvas bits (#2136)
+            await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 50))))
             const s1 = it()
             const c = window.__pickrushTest.canvas()
             const ix = Math.round(s1.pos * 2)
@@ -750,6 +817,88 @@ if (!NODE_ONLY) {
             stepz.length >= 2 && stepz.every((c) => c.step === Math.round(Math.pow(2, (c.wi * 2) / 12) * 1000) / 1000)
                 && stepz[0].wi === 1 && stepz[1].wi === 2 && stepz[1].step > stepz[0].step,
             JSON.stringify(stepz))
+
+        // WHIP-SPRING live (#2678): the cable head trails the trolley and
+        // OVERSHOOTS the old static ±4 tilt mid-reversal. An in-page recorder
+        // catches the biggest spring offset plus the cable ink centroid at that
+        // very frame while real keyboard strokes slam the gantry both ways.
+        await page.evaluate(() => {
+            const g = window.__game
+            g.reset(7, 1)
+            g.release() // hand the loop back to the rAF driver — this gate moves the arm with real keys
+            window.__whipRec = { max: 0, inkOff: null, samples: [], rec: true }
+            const loop = () => {
+                const R = window.__whipRec
+                if (!R.rec) return
+                const st = g.state()
+                R.samples.push(st.whip)
+                if (Math.abs(st.whip) > Math.abs(R.max)) {
+                    R.max = st.whip
+                    const c = window.__pickrushTest.canvas()
+                    const cx = Math.round(st.pos * 2)
+                    const midY = Math.round(((34 + (st.clawY - 8)) / 2) * 2)
+                    const d = c.getContext('2d').getImageData(cx - 10, midY - 3, 21, 6).data
+                    let sx = 0, n = 0
+                    for (let p = 0; p < d.length; p += 4) {
+                        if (Math.abs(d[p] - 207) < 40 && Math.abs(d[p + 1] - 216) < 40 && Math.abs(d[p + 2] - 227) < 40) { sx += (p / 4) % 21; n++ }
+                    }
+                    R.inkOff = n > 0 ? sx / n - 10 : null
+                }
+                requestAnimationFrame(loop)
+            }
+            requestAnimationFrame(loop)
+        })
+        await page.keyboard.down('ArrowRight')
+        await page.waitForTimeout(450)
+        await page.keyboard.up('ArrowRight')
+        await page.keyboard.down('ArrowLeft')
+        await page.waitForTimeout(500)
+        await page.keyboard.up('ArrowLeft')
+        await page.waitForTimeout(500)
+        const whipGate = await page.evaluate(() => {
+            window.__whipRec.rec = false
+            return { max: window.__whipRec.max, inkOff: window.__whipRec.inkOff, settle: window.__game.state().whip, n: window.__whipRec.samples.length }
+        })
+        rep.check('WHIP-SPRING: reversing the gantry overshoots the static ±4 tilt on the live spring',
+            Math.abs(whipGate.max) >= 4.2, `max whip ${Number(whipGate.max).toFixed(2)} px over ${whipGate.n} frames`)
+        rep.check('WHIP-PIXELS: at the biggest whip the painted cable centroid sits off the trolley line',
+            whipGate.inkOff !== null && Math.abs(whipGate.inkOff) >= 2, `centroid ${whipGate.inkOff} device px off centre`)
+        rep.check('WHIP-REST: steady again, the cable hangs straight', Math.abs(whipGate.settle) < 0.5, `settle ${Number(whipGate.settle).toFixed(2)} px`)
+
+        // METER (#2678): the fill column paints at the matching height and the
+        // full bin thunks — lamp lit, tag-coloured rim flashed, column wrapped.
+        // Raw counts ride the sim hook only (the #2234 amb-audit pattern).
+        const meter = await page.evaluate(async () => {
+            const g = window.__game
+            const painted = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 50))))
+            g.reset(7, 1)
+            await painted()
+            const q = window.__pickrushTest.sim()
+            q.binFill[1] = 5
+            await painted()
+            const c = window.__pickrushTest.canvas()
+            const tagInk = (x, y, w, h) => {
+                const d = c.getContext('2d').getImageData(x, y, w, h).data
+                let n = 0
+                for (let p = 0; p < d.length; p += 4) {
+                    if (d[p] > 150 && d[p + 1] > 90 && d[p + 1] < 205 && d[p + 2] < 110) n++ // CAN-tag amber, blended over the slot
+                }
+                return n
+            }
+            const half = tagInk(336, 376, 5, 30) // CAN meter slot, inked to 5/12
+            const visHalf = g.state().binVis[1]
+            q.binFill[1] = 12 // raw crosses cap — the next painted frame thunks
+            let lamp = false
+            for (let i = 0; i < 120 && !lamp; i++) { await new Promise((r) => setTimeout(r, 16)); lamp = g.state().binLamp[1] }
+            const rim = lamp ? tagInk(219, 310, 5, 60) : 0 // rim flash on the bin's left edge, same frame
+            const lowInk = tagInk(336, 398, 5, 10) // meter bottom after the wrap: empty
+            return { half, lamp, rim, lowInk, visHalf, visAfter: g.state().binVis[1] }
+        })
+        rep.check('METER: a bin at 5/12 paints its amber column to the matching height',
+            meter.half >= 40 && meter.visHalf === 5, `${meter.half} ink px in the slot, state fill ${meter.visHalf}`)
+        rep.check('METER-FULL: crossing the cap lights the lamp and flashes the rim; the column wraps to 0',
+            meter.lamp === true && meter.rim >= 20 && meter.lowInk === 0 && meter.visAfter === 0,
+            `lamp ${meter.lamp}, rim ${meter.rim} px, low ink ${meter.lowInk}, vis ${meter.visAfter}`)
 
         // determinism through the live contract
         const script = scriptFor('pick-rush')
