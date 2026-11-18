@@ -1,73 +1,68 @@
-# STATE — session 331 slot a close-out
+# STATE — session 332 slot b close-out (ATTRACT RIDES YOUR DESIGNS shipped)
+
+Slot-b run ~22:50–01:30Z. Ladder: #1711 REFUSED (slot a held it; it since
+released to `next` needing only Jon's clap-take), game-queue empty, QA MASTER
+live (no feedback borrow), flagship gaps spent → never-dry rung. Filed #2647
+from `weakestStage` (EXCITEBIKE, score 4 — shelf max) and shipped it. AGENTS
+rule 4 satisfied: game code merged.
 
 ## Shipped this session
-- **#2627 stage 3 SWING PAINT — CLOSED shipped.** Merged `f2260f5`
-  (PR #2643), static SUCCESS, prod verified: live chunk
-  `index-Bn392qlR.js` at jalfern.com/retrogames/floor-boss carries the
-  painter byte-identical (`rgba(255,210,63,${s.h?.085:.05})` keep-clear box
-  + quarter turn-arc). Game code: `swingMarkers(gs)` pure sweep of live
-  elbows (open cell, exactly two perpendicular open neighbours, faced by an
-  existing rack = Manhattan-1 work-stop in the turn) + `paintSwing`
-  (tiered amber floor-paint; `hard` = both arms tight-to-open-mouths — the
-  double-sightline case the click-point law misses when arms tighten AFTER
-  the facing rack lands) + DEV eye `swing`. Harness: floorbosscheck 251/251
-  (+13 gates: live rig pins BOTH corners (17,3)+(18,4), order-made HARD
-  tier, corridor/T negatives, purity+determinism, autopilot invariant,
-  paint order), `--mutate-swing` killed by name; floorbossplay 58/58 real
-  taps (warm-pixel probe 8/8, paint-follows-grammar cool-down), zero page
-  errors. All three stages of the turn-radii tail are now live (no corner
-  stacks / teach the elbow / swing paint); README records the residual
-  honest gap (kinematic-point carts, true swept volumes stay faked).
-- **#1711 (TARGET, platform): evidence session, no code.** FIRST scheduled
-  nightly grading run verified: `plaicraft-grade-nightly` 44126455014 event
-  `schedule` SUCCESS, armed (JON_KEY), reached the store — audit item 3
-  CLOSED (commented); `gradeselftest` 29/29 at tip; store unchanged 14 takes
-  all marker-graded; Jalfern 3/3 counted human sessions stand. Released to
-  `next` — S1's only open line is Jon's completed `/claptest` take (≥3
-  slaps coincident with ≥3 heard claps); the nightly self-grades the night
-  it lands, a lane hand-grades earlier (audit protocol #2157).
-
-## Claims / board
-- #1711 claimed at warden order, released to `next` after evidence.
-- #2627 closed `shipped` — game-queue is now EMPTY; `next` = #1711 only.
+- **#2647 ATTRACT RIDES YOUR DESIGNS — CLOSED shipped** (PR #2649, squash
+  `1ea2e70`, live: chunk `index-DXRRqDWD.js` carries `data-demo-track`).
+  **The bug behind the gap:** the attract replay reached the MOTOCROSS finish
+  at t2561 and `doSim` called `finish(true)` — the BOT wrote score 14300 into
+  `excitebike.board` every ~43 s and the marquee froze on the over screen
+  until a key. Two laws: **VIEWER SEATS** (demo end on `attract`/`tracks`
+  submits nothing, never leaves the screen; `play`/TEST/WATCH receipts
+  untouched) and **SEAT ROTATION** (`demoSeats` pure in attract.js:
+  MOTOCROSS first, then CUSTOM 1..n roster order; zero designs → `[0]`,
+  byte-honest). Designs ride an honest lazy `plan({track,laps:1})` cached on
+  terrain OBJECT identity (re-saves swap CACHE items → re-plan, never stale
+  dirt). `DEMO · MOTOCROSS` / `DEMO · CUSTOM k` badge (`data-demo-track`).
+  Proof: excitecheck 426/426 (+19 ATTRACT DESIGN; by-hand mutants — guard
+  removed, seats frozen — die by name), exciteplay 137/137 (+6, real frames
+  cross the line, board stays empty, seat rotates onto design terrain), plus
+  a 46 s real-clock marquee cycle during dev. eslint + lint:mario/fps/ai +
+  build green. README gap CLOSED; honest remainder recorded (badge is roster
+  number, not the saved design name — open polish, may seed the next pick).
 
 ## Next queued
-- `node scripts/idle-kick.mjs` answers `KICK FLOOR BOSS 0 weak` at
-  `86ab910`: the never-dry pick re-lands on FLOOR BOSS — the residual
-  swept-volume/forklift-lane sentence in its README honest-gaps plus
-  open QA feedback naming the title. A QA MASTER was live this shift
-  (node studio, :5176), so the next session must re-run idle-kick before
-  claiming (builder borrow blocked while QA MASTER runs) and file
-  `POLISH — FLOOR BOSS: …` for the unowned residual if it still scores.
-- #1712 (S2 dataset export) stays unlabeled until #1711 closes with
-  evidence (big-build rule: one stage at `next`).
+- `next` = #1711 only; it needs JON's ≥3-slaps `/claptest` take before a lane
+  can close S1 (slot a's evidence session says so) — not lane-buildable now.
+- game-queue EMPTY. Next builder: re-run `node scripts/idle-kick.mjs` (the
+  pick moved once already: slot a saw FLOOR BOSS at `86ab910`, I saw
+  EXCITEBIKE at the same tip — re-derive, don't trust this file's pick).
+  QA MASTER was live this shift (:5176), so builder feedback-borrow stays
+  blocked unless it's gone.
+- QA shipped #2618 (HOMEBODY NEIGH STROLL view pass, PR #2648) onto main
+  mid-session — the QA lane is productive. #2632 remains Excitebike's open
+  YOUR-LAPS view pass (this stage's badge is not in its scope; QA may
+  extend). Don't touch what QA holds.
 
 ## Open questions (issues, not here — #605)
-- None filed via jonq (games lane empty at close).
+- None. jonq games lane empty at close.
 
 ## Catches for the next session (each cost probes this shift)
-- **Prod-verify is content, not hash**: entry hashes are machine-dependent;
-  grep a NEW string literal from the shipped code (mine: `.085`) inside the
-  live chunk referenced by www.jalfern.com's entry — and note the apex
-  308s to `www.` (curl -L or you poll a redirect page forever, cost 40
-  cycles).
-- **mutateguard refuses `--mutate-*` on a dirty tree** — commit increments
-  first, then run the kill (the guard worked exactly as the law says).
-- **`forge-claim.sh` prints "already yours: resume" when the SAME slot
-  last claimed** — with no pushed branch there is no corpse; open a fresh
-  worktree anyway. Push refspec is `HEAD:refs/heads/forge/<slug>` (slash),
-  not the FORGE.md step-7 hyphen form (push fails on it).
-- **Fresh-worktree rigs**: `npm ci` needed before any check; `.env.local`
-  (store keys) is NOT copied — cp from the main checkout if the lane needs
-  the store eye; delete after, never commit.
-- **First floorbossplay run after cold Vite** flaked once early-suite;
-  immediate rerun green — advisory per rule 3, don't chase.
+- **Prod-verify BFS: game chunks are generic `index-*.js` and lazy refs are
+  RELATIVE (`./index-*.js`).** An `assets/…`-prefixed regex finds NO chunk map
+  (cost 30 blind polls). Probe: BFS from `/retrogames/`, resolve every
+  `["'(][.A-Za-z0-9_/-]+\.js` against the chunk's own directory, grep the
+  new string literal (mine: `data-demo-track`). ~96 fetches to reach it.
+- **A replayed planner script ENDS the game.** `plan()` records to `g.end`, so
+  any shell replaying `run.script` through `doSim` hits the end path — that is
+  how the bot submitted scores. If a consumer replays scripts outside `play`,
+  the viewer guard is the law; keep it before `finish()`.
+- **Rotation re-seats `gs`:** after a seat change `probe().track/tick` belong
+  to the NEW game (track 6, tick ~6). Asserting the old seat post-rotation
+  reds your own gate (cost one exciteplay rerun).
+- Also valid: warden double-kick (pgrep with count); STATE PR mechanism for
+  close-outs; `gh pr merge` from detached HEAD; park slot-scoped first.
 
 ## Lanes clean
-- Main checkout detached at `origin/main` (`86ab910` before this STATE
-  commit); tree clean. :5173 dev server stopped; foreign ports (:5176
-  studio QA) untouched.
-- My worktrees removed (`forge-floorboss-elbow`, `forge-plaicraft-s1-close`);
-  foreign worktrees untouched; branches deleted with the merges.
-- Slot b's session 330 STATE committed to main (`86ab910`) mid-session —
-  nothing to fold beyond its #2646 ship note, already accounted here.
+- Main checkout detached at `origin/main`; STATE.md landed via its own STATE
+  PR (game code merged this session, so step 9 allows it); parked slot-scoped
+  then shared (`statepark park b`).
+- Lane worktree `retrogames-forge-excitebike-attract-designs` pruned after
+  merge; local branch gone with the remote one.
+- :5178 stopped by this lane; foreign ports (:5173 slot a, :5176 QA)
+  untouched.
