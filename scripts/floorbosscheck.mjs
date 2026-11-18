@@ -1260,15 +1260,18 @@ console.log('— teach the lane (#2622) —')
             'plugging BOTH mouths then completing the wall is refused by the pocket law — the sealed aisle belongs to the older laws, so the lesson names one mouth on purpose (#2622)')
     }
     {
-        // service-trap: rack (12,4) served only through the west mouth — plugging
-        // (13,4) would strand it, so that mouth is never taught; the east stands.
+        // pocket-trap: open cell (12,4) hangs behind the west mouth, reachable
+        // ONLY through (13,4) — plugging it strands floor. The clears-check
+        // cannot see it (its before-net computes with the plug already stood,
+        // so the stranded cell was never reachable to begin with); only the
+        // legality check excludes it. This rig is what kills --mutate-lane-teach.
         const g = mk()
-        const seq = [...ROW5, ...ROW3, [12, 4], [12, 3], [12, 5], [11, 4]]
+        const seq = [...ROW5, ...ROW3, [12, 3], [12, 5], [11, 4]] // (12,4) stays open floor
         const fails = []
         for (const [x, y] of seq) if (put(g, x, y) !== 'build') fails.push([x, y])
-        ok(fails.length === 0, 'service-trap rig builds clean — rack (12,4) sits behind the west mouth, served only through (13,4)')
+        ok(fails.length === 0, 'pocket-trap rig builds clean — (12,4) hangs behind the west mouth (13,4), reachable only through it')
         const keys = laneEscapes(g, 18, 3).map((m) => `${m.x},${m.y}`)
-        ok(!keys.includes('13,4'), 'the served-rack-guarded mouth is never taught — plugging (13,4) would strand rack (12,4) (#2622 honesty)')
+        ok(!keys.includes('13,4'), 'the pocket-mouth is never taught — plugging (13,4) would strand (12,4) (#2622 honesty)')
         ok(keys.includes('19,4'), 'the other mouth is still taught — the lesson adapts to the board, not a canned pair')
     }
     {
