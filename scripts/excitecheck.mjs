@@ -1824,7 +1824,7 @@ section('NAME RIDES THE NAME (letter wheel + badge grammar — your design is ca
     ok(/e\.code === 'Backspace'/.test(sx) && /label: 'DEL', code: 'Backspace'/.test(sx), 'the pad lost its DEL button — phones cannot take a letter back')
     ok(/compileCustom\(draft\.stamps, designName\(draft\.name\)\)/.test(sx), 'saveDraft stopped storing the drafted name — the badge would never ride a real name')
     ok(/NAME_WHEEL\[draft\.nameSel\]/.test(sx), 'the bay stopped showing the naming line — the wheel would be blind')
-    ok(/TOOLS\.length >= 12 \? 6 : 10/.test(sx), 'the tool gutter stopped tightening — the verbs ran off the 256px canvas')
+    ok(/TOOLS\.length >= 12 \? 4 : 10/.test(sx) && /TOOLS\.length >= 12 \? 6 : 8/.test(sx), 'the tool strip stopped shrinking type/gutter — the verbs ran off the 256px canvas')
     ok(/data-demo-name=\{demoTrack\}/.test(sx), 'the badge stopped wearing the name in the DOM — prod cannot see it rides')
     ok(/demoSeatName\(seat, seat === 0 \? null :/.test(sx), 'tickDemo stopped asking the name law at the seat change — the badge is back to roster numbers')
     ok(/t\.name !== 'CUSTOM' \? t\.name : ''/.test(sx), 'abandon stopped carrying the name back to the bay — re-saving would silently rename the design')

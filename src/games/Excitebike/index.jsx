@@ -596,24 +596,26 @@ const ExcitebikeGame = () => {
             ctx.fillText('X' + draft.cursor, 250, 12)
             ctx.fillStyle = 'rgba(0,0,0,0.62)'; ctx.fillRect(0, H - 24, W, 24)
             let px = 4
+            // #2651 12 labels cannot ride 8px on a 256px canvas (SAVE/EXIT ran
+            // off-canvas at 11 with gutter 10 already): at 12 the strip steps
+            // down to 6px with a 4px gutter — still NES-small, now all visible.
+            const fsz = TOOLS.length >= 12 ? 6 : 8
             for (let i = 0; i < TOOLS.length; i++) {
                 const on = i === draft.tool
                 // #2625 the LAP tool's face wears its state: `LAP 3` reads the
                 // designer's number without opening a panel or guessing.
                 const lb = TOOLS[i] === 'LAP' ? 'LAP ' + draft.laps : TOOLS[i]
                 ctx.fillStyle = on ? (KIND_COLOR[TOOLS[i]] || '#ffe23f') : 'rgba(248,248,248,0.5)'
-                ctx.font = (on ? 'bold 8px monospace' : '8px monospace')
+                ctx.font = (on ? `bold ${fsz}px monospace` : `${fsz}px monospace`)
                 if (on) { ctx.fillStyle = 'rgba(255,226,63,0.14)'; ctx.fillRect(px - 2, H - 22, ctx.measureText(lb).width + 8, 14); ctx.fillStyle = KIND_COLOR[TOOLS[i]] || '#ffe23f' }
                 ctx.fillText(lb, px + 4, H - 12)
-                // #2651 the NAME row grew the strip to 12 — tighten the gutter so
-                // the verbs stay on the canvas (SAVE/EXIT ran off-canvas at 10).
-                px += ctx.measureText(lb).width + (TOOLS.length >= 12 ? 6 : 10)
+                px += ctx.measureText(lb).width + (TOOLS.length >= 12 ? 4 : 10)
             }
             if (draft.msgT > 0) {
                 draft.msgT--
                 ctx.globalAlpha = draft.msgT < 40 ? draft.msgT / 40 : 1
                 ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center'
-                const okMsg = draft.msg.startsWith('SAVED') || draft.msg === 'ERASED' || draft.msg.startsWith('LAPS ')
+                const okMsg = draft.msg.startsWith('SAVED') || draft.msg === 'ERASED' || draft.msg.startsWith('LAPS ') || draft.msg.startsWith('NAME ')
                 ctx.fillStyle = okMsg ? '#80e000' : '#ff6a4a'
                 ctx.fillText(draft.msg, W / 2, 44)
                 ctx.textAlign = 'left'; ctx.globalAlpha = 1
