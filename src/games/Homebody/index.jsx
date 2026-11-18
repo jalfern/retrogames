@@ -78,7 +78,7 @@ const MESSAGES = [
     'Tap a fridge, a bed, the TV — they walk over and use it. Feed them, rest them.',
     'When a resident turns AMBER, the lot says what they need — tap the named object before the red alarm.',
     'The mailbox pays the bills on workdays. § buys furniture to raise the home.',
-    'THE LOT GROWS TWICE — Spare Room kit one rises on the east lawn (point at a row to choose where); kit two raises a garden room out back.',
+    'THE LOT GROWS — Spare Room kit one rises on the east lawn (point at a row to choose where); save a second §300 and kit two raises a garden room out back.',
     'Morning brings the paper — the boy sweeps past and today\'s edition waits on the step. Tap it for a laugh.',
     'THE BELLS RING THREE TIMES A DAY — a warm plate waits by the kitchen. Tap to eat; eat together and BONDS rise.',
     'GARBAGE DAY EVERY THIRD DAY — the eve says WHEEL IT OUT, dawn sends the truck. Miss the curb and the lot gets skipped.',
