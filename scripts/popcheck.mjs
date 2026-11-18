@@ -18,7 +18,7 @@ import { makeGame, step, CFG, cloneGame, stateHash, chompDown, GUARD_STYLE, gate
 import { decide, P } from '../src/games/PrinceOfPersia/planner.js'
 import { LEVEL_COUNT, makeLevel, RW, FH, GROUND, roomOf, SOLID, SPIKE, LOOSE, GATE, EXITPLATE } from '../src/games/PrinceOfPersia/levels.js'
 import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR, lightAt, torchGlow, facet, darkAlpha, LIGHT_AMBIENT, TORCH_RADIUS, LIGHT_DIR, escortSilhouettes, DOOR_ZONE, LIGHT_AMBIENT_LITE, HUD_LINE, torchSum, tempAt, bounceAt, poolVisibleAt, ambientFor, coolGlow, coolAt, moonSources, rimColor, bandAt, propShade, MOON_RADIUS, MOON_STRENGTH, VW, MOON_DILUTE, moonTint, coolBandAt, rimAlpha, paneKeyY, paneShift, WINDOW_ROW_PX, cloudCross, SKY_DRIFT, starField, skyTwinkle, shaftMotes, SHAFT_MOTES, archPath, fitAttractFont, moonSpot, skyline, HORIZON_F, cloudPhase, cloudBank, SKY_CLOUDS, CLOUD_DIM, moonDrift, MOON_DRIFT, moonPane, moonShade } from '../src/games/PrinceOfPersia/art.js'
-import { SFX, trackFor, TRACKS, duckFor, DUCK_LEVEL, DUEL_DUCK, ROOM_DUCK, BED_VOICE, CHASE_CUES, stepFor, PRESSURE_MIN, FINAL_MIN } from '../src/games/PrinceOfPersia/music.js'
+import { SFX, trackFor, TRACKS, duckFor, DUCK_LEVEL, DUEL_DUCK, ROOM_DUCK, BED_VOICE, CHASE_CUES, stepFor, PRESSURE_MIN, FINAL_MIN, duelHold, DUEL_HELD, DUEL_CUES } from '../src/games/PrinceOfPersia/music.js'
 import { MUSIC, MUSIC_BUS } from '../src/utils/AudioController.js'
 
 let pass = 0, fail = 0
@@ -1288,11 +1288,28 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
 {
     const bedRaw = BED_VOICE * MUSIC_BUS
     const peak = (steps) => Math.max(...steps.map((st) => (st[0] === 'noise' ? st[2] : st[0] === 'sweep' ? st[5] : st[4])))
-    ok('S12: duel cues duck the bed ~4 dB — shallower than the chase, never silent',
-        DUEL_DUCK > DUCK_LEVEL && DUEL_DUCK < 1
-        && duckFor('parry') === DUEL_DUCK && duckFor('hit') === DUEL_DUCK
-        && duckFor('hitPlayer') === DUEL_DUCK && duckFor('guardWind') === DUEL_DUCK)
-    ok('S12: a parry ring still peaks over the ducked bed', peak(SFX.parry({})) > bedRaw * DUEL_DUCK)
+    const duelIdxSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'index.jsx'), 'utf8')
+    ok('S12: duel cues lay the bed back ~4 dB — shallower than the chase, never silent',
+        DUEL_DUCK > DUCK_LEVEL && DUEL_DUCK < 1)
+    ok('S12: the exchange is ONE held layback, not a per-clash pump (#2667)',
+        duckFor('parry') === 1 && duckFor('hit') === 1
+        && duckFor('hitPlayer') === 1 && duckFor('guardWind') === 1)
+    ok('S12: duelHold engages on a cue, extends on later ones, holds between',
+        duelHold(0, 100, 'guardWind') === 100 + DUEL_HELD
+        && duelHold(100 + DUEL_HELD, 130, 'parry') === 130 + DUEL_HELD
+        && duelHold(130 + DUEL_HELD, 160, null) === 130 + DUEL_HELD)
+    ok('S12: duelHold releases after the quiet, and a non-duel cue never re-arms it',
+        duelHold(130 + DUEL_HELD, 130 + DUEL_HELD + 1, null) === 0
+        && duelHold(0, 500, 'foot') === 0 && duelHold(0, 500, 'doorCross') === 0)
+    ok('S12: a stale hold never survives a reset — a fresh hour starts unducked (#2667)',
+        duelHold(9000, 5, null) === 0 && duelHold(9000, 5, 'foot') === 0
+        && duelHold(0, 5, 'guardWind') === 5 + DUEL_HELD)
+    ok('S12: the hold reads like a fight — between half a second and three seconds',
+        DUEL_HELD >= 30 && DUEL_HELD <= 180)
+    ok('S12: the game engages the layback through setMusicLevel (and the attract never arms it)',
+        /duelHold\(duelUntil/.test(duelIdxSrc) && /setMusicLevel\(duck \? DUEL_DUCK : 1\)/.test(duelIdxSrc)
+        && /if \(!attract\)/.test(duelIdxSrc))
+    ok('S12: a parry ring still peaks over the laid-back bed', peak(SFX.parry({})) > bedRaw * DUEL_DUCK)
     ok('S12: ordinary sounds never trip the duel duck (foot, potion, checkpoint)',
         duckFor('foot') === 1 && duckFor('potion') === 1 && duckFor('checkpoint') === 1)
     ok('S12: the room flip punches two stone layers and dips the bed for the slide',

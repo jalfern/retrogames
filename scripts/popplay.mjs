@@ -3,6 +3,7 @@
 // with zero page errors and the drawn state tracking the sim after every
 // input. Needs `npm run dev` (or POP_URL).
 import { launch, openGame, Report, opt } from './lib/harness.mjs'
+import { DUEL_DUCK } from '../src/games/PrinceOfPersia/music.js'
 
 const URL = process.env.POP_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/prince-of-persia`
 const r = new Report('popplay')
@@ -156,6 +157,95 @@ await page.evaluate(() => window.__dbg && window.__dbg.act('win'))
 await page.waitForTimeout(1200)
 const mEnd = await mus()
 r.check('the rescued hour drops the bed at the princess door', mEnd.track !== 'pop' || !mEnd.playing, `track ${mEnd.track} playing ${mEnd.playing}`)
+
+// ---- #2667 held duel duck: the measured bed at the live analyser ----------
+// The old per-hit duel duck left nothing long enough to measure (350 ms dip,
+// recover, pump). The held layback keeps the bus at DUEL_DUCK across the whole
+// exchange, so the duck-over-bed relationship can finally be proven at the
+// analyser tap: real arrows walk the prince into a real guard's wind-up on
+// L1 room 0 (drive validated tick-exact against the sim: engage tick 31,
+// release 129, two cues, unharmed with the block held), the bed audibly
+// lays back, and comes back up when the steel goes quiet.
+// Dismiss the end card AND confirm the reset actually ran before seating the
+// duel at L1. Two traps, both measured this session: an R-restart leaves the
+// end-seen latch set (the next arrow re-kicks a fresh L0 — no guards); and a
+// quick press() can fall entirely between polled input frames on a loaded box
+// (presses must be held long enough to be seen). Fresh-L0 signature: play +
+// level 0 + zero guards (only L0 has none).
+const arrowTap = async () => {
+    await page.keyboard.down('ArrowRight')
+    await page.waitForTimeout(150)
+    await page.keyboard.up('ArrowRight')
+    await page.waitForTimeout(150)
+}
+for (let i = 0; i < 20; i++) {
+    const pD = await probe()
+    if (pD.status === 'play' && pD.level === 0 && (!pD.guards || pD.guards.length === 0)) break
+    await arrowTap()
+}
+// Seat L1 and PROVE it sticks (guards present) — a late end-card kick can
+// land right after goto(1) and silently drop the drive back to L0.
+for (let i = 0; i < 10; i++) {
+    await page.evaluate(() => window.__popTest.goto(1))
+    await page.waitForTimeout(160)
+    const pS = await probe()
+    if (pS.level === 1 && pS.guards && pS.guards.length > 0) break
+}
+await page.evaluate(() => window.__dbg && window.__dbg.act('give sword'))
+await page.waitForFunction(() => window.__popTest.musicState().playing, null, { timeout: 4000 })
+// Base bed: only samples taken while the bus is at full level (the guard
+// closes into range within ~1 s of seating, and on a starved box wind-up can
+// land mid-sampling). The recovered window below also feeds the baseline, so
+// an early engage can't contaminate the ratio.
+let baseMax = 0
+for (let i = 0; i < 16; i++) {
+    const mB = await mus()
+    if (mB.level !== 1) break
+    baseMax = Math.max(baseMax, mB.peak)
+    await page.waitForTimeout(50)
+}
+await page.keyboard.down('ArrowRight')
+await page.keyboard.down('ArrowUp')
+let engaged = false
+const engTrace = []
+for (let i = 0; i < 100 && !engaged; i++) {
+    const mE = await mus()
+    engaged = mE.level === DUEL_DUCK
+    if (!engaged && i % 10 === 0) {
+        const p2 = await probe()
+        engTrace.push(`x${p2.x.toFixed(0)} st=${p2.status} L${p2.level}R${p2.room} hp${p2.hp} g0=${JSON.stringify(p2.guards && p2.guards[0])} lvl=${mE.level}`)
+    }
+    if (!engaged) await page.waitForTimeout(40)
+}
+r.check('stepping into a guard wind-up engages the held layback (#2667)',
+    engaged, engaged ? 'bus held at DUEL_DUCK' : `never engaged — ${engTrace.join(' | ')}`)
+let duckMax = 0
+for (let i = 0; i < 12; i++) { duckMax = Math.max(duckMax, (await mus()).peak); await page.waitForTimeout(50) }
+await page.keyboard.up('ArrowRight')
+await page.keyboard.up('ArrowUp')
+// Retreat in short bursts: a ~1.4 s left-walk from mid-room runs the prince
+// off the room's left drop (the hour restarts and the bed restarts quiet —
+// the recovery window would sample a newborn level). Bursts cover the same
+// ground with the drop still ahead; the hold releases on the quiet timer.
+let freed = false
+for (let i = 0; i < 40 && !freed; i++) {
+    await page.keyboard.down('ArrowLeft')
+    await page.waitForTimeout(180)
+    await page.keyboard.up('ArrowLeft')
+    freed = (await mus()).level === 1
+    if (!freed) await page.waitForTimeout(120)
+}
+let recMax = 0
+for (let i = 0; i < 50; i++) { recMax = Math.max(recMax, (await mus()).peak); await page.waitForTimeout(50) }
+const mDuel = await mus()
+// The bus tap is a sparse byte signal — note bursts land ~every stepDur. The
+// honest pair is the ducked window vs the LONG recovered window: if the law
+// broke (no layback), the 400 ms duck window at 60fps would catch bursts at
+// full scale and the ratio check would go red — it is not vacuous.
+r.check('duck-over-bed MEASURED on the live analyser: bed peak falls while the exchange lays back (#2667)',
+    engaged && duckMax > 0 && duckMax < recMax * 0.85, `ducked ${duckMax} vs recovered ${recMax} (base ${baseMax})`)
+r.check('the bed returns when the steel goes quiet — never silent, never stuck (#2667)',
+    freed && recMax > duckMax * 1.15 && mDuel.playing, `ducked ${duckMax} -> back ${recMax}, playing ${mDuel.playing}`)
 
 // --- the phone page (#2324): ✋ GRAB = Shift by thumb, end to end -------------
 // A fresh touch page (keyboard untouched — trusted keys hide the pad by law).
