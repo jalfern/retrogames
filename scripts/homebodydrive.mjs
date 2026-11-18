@@ -848,12 +848,46 @@ check('contract state ticks', f0.tick > 0 && typeof f0.score === 'number', `tick
     for (let i = 0; i < 500 && (await st()).truckView.phase !== 'off'; i++) await wait(50)
 }
 
-// #2672 MEDIATE leg: deferred — see #2674. The four checks (cat between them
-// cracks the cold war, leaf sparkle, far-away stands, cat-back cracks again)
-// live in git history at 6ea118c and pass standalone; late in the full drive
-// the world clock reads frozen (hour pinned 8.0 through seconds of polling)
-// and the law never evaluates — QA owns the re-home. Hooks stay wired: hour(),
-// standMed(), medCells(), leaves(), probe.neiMediated/neiMending.
+// -------------------------------------- MEDIATE (#2672): the kid broke it up ---
+{
+    // #2674: the drive's late legs run thin-tanked at speed — the household can
+    // collapse on the way here, and done freezes advance() at its top (sim.js):
+    // hooks still mutate, the loop still paints, but NO law evaluates. Restart to
+    // a fresh lot when the run ended before this leg; the rig below is fully
+    // self-contained (money/hour/pair/adopt), so day-1 state changes nothing it
+    // tests and the law rides a live sim again.
+    let pre = await st()
+    for (let i = 0; i < 40 && pre.done; i++) { await page.keyboard.press('KeyR'); await wait(250); pre = await st() }
+    check('#2674 the leg rides a live lot — a drive-end collapse is cleared, not sensed blind',
+        !pre.done && pre.screen === 'play', JSON.stringify({ done: pre.done, screen: pre.screen }))
+    // Rewind the clock first — this leg rides at the END of a long drive whose
+    // late legs deliberately run at night, and hour>19 sends the pair home
+    // (absence would thaw the war before any mediator could act). Then: rig the
+    // pair cold, adopt the cat, seat her between them — the live law cracks the
+    // war on the spot; with the cat away a fresh rig-set war stays cold.
+    await page.evaluate(() => { window.__homebodyTest.money(1000); window.__homebodyTest.hour(8); window.__homebodyTest.pairCold(999); window.__homebodyTest.adopt() })
+    let catHome = null
+    for (let i = 0; i < 150 && !catHome; i++) { const s = await st(); if (s.pet) catHome = s.pet; else await wait(50) }
+    check('#2672 the cat is home while the pair is cold', !!catHome && catHome.needs !== undefined, JSON.stringify(catHome && { state: catHome.state }) + ' cells=' + JSON.stringify(await page.evaluate(() => window.__homebodyTest.medCells())))
+    await page.evaluate(() => window.__homebodyTest.standMed('pet', 2, 6))
+    let med = null
+    for (let i = 0; i < 60 && !med; i++) { await page.evaluate(() => window.__homebodyTest.standMed('pet', 2, 6)); const s = await st(); if (s.neiMediated === 1) { med = s; break } await wait(50) }
+    check('#2672 the cat between them cracks the cold war — flag set, war over',
+        !!med && med.neiGrudge === 0 && med.neiMediated === 1, JSON.stringify(med && { g: med.neiGrudge, m: med.neiMending, md: med.neiMediated }) + ' cells=' + JSON.stringify(await page.evaluate(() => window.__homebodyTest.medCells())))   // mending may already have paid its reunion by the poll — mediation itself is the proof
+    let lv = 0
+    for (let i = 0; i < 10 && lv < 6; i++) { lv = await page.evaluate(() => window.__homebodyTest.leaves()); if (lv < 6) await wait(40) }
+    check('#2672 the mediation sparkles the pair leaf on the live canvas', lv >= 6, `leaves=${lv}`)
+    await page.evaluate(() => { window.__homebodyTest.pairCold(0); window.__homebodyTest.standMed('pet', 12, 10) })   // fresh cold war, mediator parked far out
+    await wait(900)
+    const cold = await st()
+    check('#2672 with the mediator far away a cold war just stands',
+        cold.neiGrudge === 1 && cold.neiMediated === 0, JSON.stringify({ g: cold.neiGrudge, md: cold.neiMediated }))
+    await page.evaluate(() => window.__homebodyTest.standMed('pet', 2, 6))
+    let med2 = null
+    for (let i = 0; i < 60 && !med2; i++) { const s = await st(); if (s.neiMediated === 1) { med2 = s; break } await wait(50) }
+    check('#2672 the cat back between them cracks it again — presence drives the law',
+        !!med2 && med2.neiGrudge === 0 && med2.neiMediated === 1, JSON.stringify(med2 && { g: med2.neiGrudge, md: med2.neiMediated }) + ' cells=' + JSON.stringify(await page.evaluate(() => window.__homebodyTest.medCells())))
+}
 
 check('zero page errors across the whole drive', errors.length === 0, JSON.stringify(errors.slice(0, 3)))
 await browser.close()
