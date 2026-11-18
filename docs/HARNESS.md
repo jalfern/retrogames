@@ -169,6 +169,24 @@ gh workflow run ci.yml --ref <branch>     # opt into the browser suite
 gh run download <run-id> -n mario-frames  # grab the captured frames
 ```
 
+**Event-delivery blackouts (#2666): GitHub goes silent and rule-5 waits spin blind.**
+On 2026-11-18, ~03:29–04:01Z GitHub delivered zero `pull_request` events repo-wide: PRs
+opened/reopened/pushed in the window registered no check suites (`gh pr checks` → empty;
+`commits/<head>/check-runs` shows only stale entries) and Vercel went silent too — the App
+*deliveries* were down, not the runner queue (`workflow_dispatch` ran jobs to completion
+throughout). The rule-5 merge loop polls `gh pr checks` for `static`; with no suite at all
+`.state` is `null`, so the loop spins silently to timeout while main's nightly stays green.
+Diagnose before you push: is the newest `pull_request` run from your minute?
+`gh run list --limit 5 --json event,headBranch,createdAt` — if it predates your push, do
+**not** keep pushing probes (each queues a delivery that won't land either); checkpoint per
+FORGE-QA step 6, cite #2666, and retry the land next session. Recovery marker: once
+deliveries resume, a same-SHA force-push (`git push --force-with-lease origin <branch>`)
+re-fires `synchronize` and the suite registers within seconds — nothing is stranded; every
+open PR still had `static` on its head when the 15:08Z sweep closed #2666. The repo-side
+twin of this failure — a ci.yml that yields zero check-runs — is already guarded (#1676:
+`ciyamlcheck` fails loudly, `shimcheck` locks the merge-loop vocabulary); a platform-side
+blackout is not repo-fixable and stays a runbook line, not a harness.
+
 The browser suite is manual on purpose: headless audio on a shared runner is the flaky
 part. Promote it to `pull_request` once it has been green a handful of times.
 
