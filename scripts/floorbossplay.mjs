@@ -661,6 +661,86 @@ await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927
     r.check('plugging the taught mouth then completing the wall builds — the advice is good (#2622)', clearedL.plug && clearedL.completer, JSON.stringify(clearedL))
 }
 
+// ---- knee teach (#2711 s2): drive a NO KNEE refusal with REAL taps and watch the bend light ----
+{
+    await page.goto(URL) // a clean floor — the throat garden wants no seeded racks near it
+    await page.waitForFunction(() => !!window.__floorbossTest, null, { timeout: 15000 })
+    if (!await waitMode('attract', 5000)) r.check('knee teach leg: fresh page reaches attract', false, 'no attract')
+    await page.keyboard.press('Space')
+    if (!await waitMode('play')) r.check('knee teach leg: Space clocks in', false, 'no play')
+    await page.evaluate(() => {
+        const g = window.__floorbossTest.sim()
+        g.racks.length = 0; g.score = 9000
+        g.auto = false
+        const pads = [[23, 12], [24, 12], [22, 12], [21, 12]]
+        g.robots.forEach((b, i) => { b.x = pads[i % 4][0]; b.y = pads[i % 4][1]; b.task = { kind: 'idle' }; b.carry = null; b.moveT = 0 })
+    })
+    const chip3 = await page.evaluate(() => {
+        const c = window.__floorbossTest.canvas()
+        const b = c.getBoundingClientRect()
+        return { x: b.left + (572 + 37) / 800 * b.width, y: b.top + (6 + 14) / 520 * b.height }
+    })
+    await page.mouse.click(chip3.x, chip3.y)
+    r.check('knee teach leg arms the rack tool (chip tap)', (await st()).tool === 'rack')
+    const armRackK = async () => { if ((await st()).tool !== 'rack') await page.mouse.click(chip3.x, chip3.y) }
+    const tapCellK = async (x, y) => {
+        await armRackK()
+        await page.evaluate(([x, y]) => { const b = window.__floorbossTest.sim().robots.find((bb) => bb.x === x && bb.y === y); if (b) { b.x = 23; b.y = 12; b.task = { kind: 'idle' }; b.moveT = 0 } }, [x, y])
+        const p = await clientXY(x, y)
+        await page.mouse.click(p.x, p.y)
+        await new Promise((res) => setTimeout(res, 90))
+    }
+    const NEED = [[18, 3], [19, 3], [19, 5], [20, 3], [20, 5], [17, 5], [19, 6], [17, 6]]
+    let builtK = 0
+    for (const [x, y] of NEED) {
+        await tapCellK(x, y)
+        if (await page.evaluate(([x, y]) => window.__floorbossTest.sim().racks.some((r) => r.x === x && r.y === y), [x, y])) builtK++
+    }
+    r.check('knee teach rig builds by real taps', builtK === 8, `${builtK}/8`)
+    const preKnee = await page.evaluate(() => window.__floorbossTest.sim().score)
+    await tapCellK(18, 7) // plug the throat — the sixth law's own bite
+    const afterK = await page.evaluate(() => { const g = window.__floorbossTest.sim(); return { racks: g.racks.some((r) => r.x === 18 && r.y === 7), score: g.score, fxs: g.fx.slice(-4).map((f) => f.msg) } })
+    r.check('real tap into the swing is refused — rack never lands', !afterK.racks, JSON.stringify(afterK))
+    r.check('the refused knee tap charges nothing (#1917)', afterK.score === preKnee, `${preKnee} -> ${afterK.score}`)
+    r.check('the refusal names NO KNEE on the fx ledger (#2711)', afterK.fxs.some((m) => m === 'NO KNEE — RACKED THE SWING'), afterK.fxs.join(' | ') || 'none')
+    r.check('the refusal teaches RACK BESIDE — KEEP THE SWING CLEAR (#2711 s2)', afterK.fxs.some((m) => m === 'RACK BESIDE — KEEP THE SWING CLEAR'), afterK.fxs.join(' | ') || 'none')
+    // pixels: green HERE pulses on the flank beside-places; amber elbows light at the bends
+    const litK = { w: 0, e: 0, a: 0 }
+    const probeG = async (cx, cy) => page.evaluate(([cx, cy]) => {
+        const c = window.__floorbossTest.canvas()
+        const x0 = (10 + cx * 26 + 3) * 2, y0 = (44 + cy * 26 + 3) * 2
+        const d = c.getContext('2d').getImageData(x0, y0, (26 - 6) * 2, (26 - 6) * 2).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i + 1] > 150 && d[i + 1] > d[i] + 50 && d[i + 1] > d[i + 2] + 30) n++
+        return n
+    }, [cx, cy])
+    const probeA = async (cx, cy) => page.evaluate(([cx, cy]) => {
+        const c = window.__floorbossTest.canvas()
+        const x0 = (10 + cx * 26 + 2) * 2, y0 = (44 + cy * 26 + 2) * 2
+        const d = c.getContext('2d').getImageData(x0, y0, (26 - 4) * 2, (26 - 4) * 2).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 120 && d[i] > d[i + 1] + 15 && d[i] > d[i + 2] + 40) n++
+        return n
+    }, [cx, cy])
+    for (let i = 0; i < 14; i++) {
+        if (await probeG(19, 7) > 6) litK.e++
+        if (await probeG(17, 7) > 6) litK.w++
+        if (await probeA(17, 8) + await probeA(19, 8) > 6) litK.a++
+        await new Promise((res) => setTimeout(res, 90))
+    }
+    r.check('the east beside-place pulses green HERE at the lesson (#2711 s2)', litK.e >= 3, `hits ${litK.e}/14`)
+    r.check('the west beside-place pulses green HERE at the lesson (#2711 s2)', litK.w >= 3, `hits ${litK.w}/14`)
+    r.check('an amber elbow lights at the bend the click blocked (#2711 s2)', litK.a >= 3, `hits ${litK.a}/14`)
+    // the advice is good AND honest: the taught beside-place builds, and the swing
+    // cell stays refused above it — the knee law is monotonic, the lesson promises
+    // placement, never redemption. A future "fix" that lets the swing cell build
+    // after racking beside it breaks the law, not the leg.
+    await tapCellK(19, 7)
+    await tapCellK(18, 7)
+    const advK = await page.evaluate(() => { const g = window.__floorbossTest.sim(); return { beside: g.racks.some((r) => r.x === 19 && r.y === 7), throat: g.racks.some((r) => r.x === 18 && r.y === 7) } })
+    r.check('taking the advice builds the beside rack — and the swing cell is STILL refused: placement, not redemption (#2711 s2)', advK.beside && !advK.throat, JSON.stringify(advK))
+}
+
 // ---- two-way flow paint (#2622 item 3): legal two-way aisles carry cyan arrows — drive it with real taps ----
 {
     await page.goto(URL) // a clean floor — the aisle wants no seeded racks near it
