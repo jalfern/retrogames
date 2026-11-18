@@ -60,6 +60,7 @@ import {
     drawSay,   // #2135: the spoken-word bubble over the pair
     PAIR_HUES,   // #2599: the pair's own hues for pair-spoken bubbles
     promiseTell, earReact, drawGardenLamp, LOST_RING_T,   // #2688: the promise told in motion + the garden's night lamp
+    drawPurposeView, sleepingCells, drawMoonlitWait,   // #2705: the purpose view — ripeness bed, harvest hamper, lodged panes, moonlit wait
     pairStride, strollTrail, drawStrollTrail,   // #2618: the stroll stride, the route tell, the walk sell
     drawGroundGift, bondRows,   // #2240: the set-down basket + the BONDS rows as data
     queueHit,   // #2470: the queue chips' tap route (shares the painter's geometry)
@@ -827,6 +828,7 @@ const HomebodyGame = () => {
             const sy = shake ? (Math.random() - 0.5) * shake : 0
             ctx.save(); ctx.translate(sx, sy)
             drawGround(ctx, g)
+            drawPurposeView(ctx, g)   // #2705: the garden's bed + the hamper at its door, ground level under the furniture
             drawGate(ctx, g.sec)
             drawClouds(ctx, g.sec)
             // #2508 item 1: the truck's paint tick — poll cone presence so a restore
@@ -1019,8 +1021,9 @@ const HomebodyGame = () => {
                 ctx.globalAlpha = 1
             }
             ctx.restore()
-            nightTint(ctx, g.hour, g.ext, g.wings)
+            nightTint(ctx, g.hour, g.ext, g.wings, sleepingCells(g))   // #2705 tail 3: a room that lodges glows deeper
             drawGardenLamp(ctx, g)   // #2688 handoff 3: the garden's bench keeps a lamp after dusk
+            drawMoonlitWait(ctx, g, g.sec)   // #2705 tail 5: the silver glint of a bed waiting for morning
             drawTopBar(ctx, g)
             drawPanel(ctx, g, g.sec, live ? collapseCache : null, live ? hoverReveal : null)
             drawThoughts(ctx, g)

@@ -18,6 +18,7 @@ import {
     nightLevel,   // #2264: one night curve for the tint, the steam and the plate halo
     NEIGH_WARM_AT,   // #2599: cross-warmth — the rung that deepens each neighbour's chat
     goSayTarget,   // #2688: the promised ear — the view derives the errand the same way the sim resolves it
+    TEND_HOURS, wingSets,   // #2705: the purpose view reads the sun-law's own constant and the room's own floor
 } from './sim.js'
 
 // #2599 item 1: the pair's own hues — Fern-green and Ivy-plum, the two guests'
@@ -1004,7 +1005,7 @@ export function drawKid(ctx, p, t) {
 
 // #2264: the tint curve is one source with the steam/glow law — nightLevel
 // lives in sim.js (pure, gateable) and this pass paints exactly what it says.
-export function nightTint(ctx, hour, ext, wings = null) {
+export function nightTint(ctx, hour, ext, wings = null, sleepers = null) {
     const a = nightLevel(hour)
     if (a <= 0) return
     ctx.fillStyle = `rgba(24,32,72,${a.toFixed(3)})`
@@ -1024,12 +1025,21 @@ export function nightTint(ctx, hour, ext, wings = null) {
         if (ext) {
             const wlist = (wings && wings.length ? wings : [{ id: 'east', r0: 2 }]).map(wingGeom)
             for (const wg of wlist) {
+                // #2705 tail 3: a room that LODGES runs deeper amber — the
+                // lodging law asks its own geometry question (a sleeper inside
+                // the wing's floor cells), and the panes answer with it. The
+                // tell cools at waking on its own: the sleeper's use clears.
+                const occ = wingLodged(wg, sleepers)
                 for (const [wr, wc] of wg.windows) {
                     const x = tileX(wc), y = tileY(wr)
-                    ctx.fillStyle = `rgba(255,224,138,${(a * 0.9).toFixed(3)})`
+                    ctx.fillStyle = occ ? `rgba(255,186,84,${Math.min(1, a * 1.05).toFixed(3)})` : `rgba(255,224,138,${(a * 0.9).toFixed(3)})`
                     ctx.fillRect(x + 6, y + 10, 16, 10)
                     ctx.fillStyle = `rgba(120,86,34,${(a * 0.5).toFixed(3)})`
                     ctx.fillRect(x + 13, y + 10, 2, 10); ctx.fillRect(x + 6, y + 14, 16, 2)
+                    if (occ) {                                   // a soft glow halo on the lodged room's glass
+                        ctx.fillStyle = `rgba(255,186,84,${(a * 0.22).toFixed(3)})`
+                        ctx.fillRect(x + 3, y + 7, 22, 16)
+                    }
                 }
             }
         }
@@ -1057,6 +1067,105 @@ export function drawGardenLamp(ctx, s) {
     ctx.beginPath(); ctx.ellipse(lx, ly, 26, 9, 0, 0, Math.PI * 2); ctx.fill()
     ctx.fillStyle = `rgba(255,240,170,${(a * 0.95).toFixed(3)})`
     ctx.fillRect(lx - 2, ly - 18, 4, 5)   // the little lamp above the pots
+}
+
+// #2705 purpose view pass — the ledgers #2695 keeps are now SEEN mid-game.
+// Every tell derives purely from state the sim already records (tend / herbs
+// / night sleepers): no law, no rng, no new clock, and the hash never hears
+// of any of it — the #2076 view-only doctrine.
+
+export const HAMPER_CAP = 4   // the sprite caps; the ledger keeps counting
+
+// The ripeness ramp 0..1 — the sun-law ledger read at a glance. Only the
+// garden room tends; east wings answer 0.
+export function ripenessOf(w) {
+    if (!w || w.id !== 'garden') return 0
+    return Math.max(0, Math.min(1, (w.tend || 0) / TEND_HOURS))
+}
+
+// The harvest hamper at the garden door — the food gets a place in the world
+// before it reaches the hunger bar. It sits on the doorstep cell's garden
+// side (door (8,2) → (9,2)), draw-only like the crate: nobody is fenced in.
+export function hamperLoad(s) {
+    if (!s || !s.ext || !s.wings) return null
+    const wg = s.wings.find((w) => w.id === 'garden')
+    if (!wg || !(wg.herbs > 0)) return null
+    return { r: 9, c: 2, n: Math.min(wg.herbs, HAMPER_CAP) }
+}
+
+// Cells where a resident is asleep THROUGH the night — the lodging law's own
+// sleepers (use.night, set at dusk by the sleep law), read so the panes can
+// name the room that lodges. Day naps never light the occupied variant.
+export function sleepingCells(s) {
+    if (!s || !s.people) return []
+    return s.people.filter((p) => p.use && p.use.night && p.use.def && p.use.def.sleep).map((p) => ({ r: p.r, c: p.c }))
+}
+
+// Which wing the night's sleepers stand inside — the SAME geometry question
+// the lodging law asks (#2695: the bed's cell inside wingSets(geom).floor),
+// asked of the view so the panes can name the room. Per-wing: a sleeper in
+// the east wing lodges the east wing, never the garden.
+export function wingLodged(wg, sleepers) {
+    return !!(wg && sleepers && sleepers.length
+        && sleepers.some((sl) => wingSets(wg).floor.has(`${sl.r},${sl.c}`)))
+}
+
+// A half-ripened garden under a closed sky WAITS — the growing gold goes
+// quiet under the tint and a cool glint takes over, so waiting and growing
+// read differently at a glance (the ring-vs-die pattern, #2688). Night floor
+// matches the lit panes' dusk; a spent or empty bed shows nothing.
+export function moonlitWait(s) {
+    if (!s || !s.ext || !s.wings) return false
+    const wg = s.wings.find((w) => w.id === 'garden')
+    if (!wg || nightLevel(s.hour) <= 0.2) return false
+    const t = wg.tend || 0
+    return t > 0 && t < TEND_HOURS
+}
+
+// Ground-level paints, run right after drawGround: the bed sits under the
+// furniture, the hamper at the door. Daylight shows the turned soil, a slow
+// gold creep keyed to ripeness, and sprouts thickening toward the harvest;
+// night dims the same gold under the tint while the silver glint (drawn
+// later, over the tint) names the wait.
+export function drawPurposeView(ctx, s) {
+    const wg = s && s.ext && s.wings && s.wings.find((w) => w.id === 'garden')
+    if (wg) {
+        const bx = tileX(2), by = tileY(10), bw = TILE * 2
+        ctx.fillStyle = 'rgba(72,48,26,0.72)'                        // turned soil, the bed
+        ctx.fillRect(bx + 3, by + 14, bw - 6, 12)
+        const r = ripenessOf(wg)
+        if (r > 0) {
+            ctx.fillStyle = 'rgba(217,178,60,0.85)'                   // the gold creep east across the bed
+            ctx.fillRect(bx + 3, by + 14, (bw - 6) * r, 12)
+            const n = 1 + Math.floor(r * 4)                           // vines densify
+            ctx.fillStyle = r > 0.75 ? '#ffd24a' : '#7ec850'          // gold tips near the harvest
+            for (let i = 0; i < n; i++) ctx.fillRect(bx + 5 + i * 12, by + 11, 2, 4)
+        }
+    }
+    const hb = hamperLoad(s)
+    if (hb) {
+        const x = tileX(hb.c), y = tileY(hb.r)
+        ctx.fillStyle = '#6d4c26'; ctx.fillRect(x + 9, y + 16, 14, 9)                // hamper body
+        ctx.fillStyle = '#8a6134'; ctx.fillRect(x + 9, y + 16, 14, 2)                // rim
+        for (let i = 0; i < hb.n; i++) {                                              // sprigs over the rim
+            ctx.fillStyle = i === hb.n - 1 ? '#8fd060' : '#5d8a3c'
+            ctx.fillRect(x + 11 + i * 3, y + 12 - (i % 2), 2, 5)
+        }
+    }
+}
+
+// Over the night tint: pale silver glints on a bed that waits for morning.
+// The sine is paint-phase only (real seconds in, view-phase out) — the sim
+// clock it decorates is the sun-law, frozen at night by its own rule.
+export function drawMoonlitWait(ctx, s, sec = 0) {
+    if (!moonlitWait(s)) return
+    const a = nightLevel(s.hour)
+    const bx = tileX(2), by = tileY(10)
+    for (let i = 0; i < 3; i++) {
+        const tw = 0.16 + 0.12 * Math.sin(sec * 2.1 + i * 2.1)
+        ctx.fillStyle = `rgba(214,228,255,${(a * tw).toFixed(3)})`
+        ctx.fillRect(bx + 6 + i * 18, by + 16, 2, 2)
+    }
 }
 
 // ------------------------------------------------------------------ HUD ----
