@@ -2497,9 +2497,9 @@ console.log('44. city buildings — the lot rises (#2671)')
 
     // (a) the table is sane before anything rides it
     ok(BUILDING_IDS.length === 5, 'a). five named buildings — Granary, Library, Market, Workshop, Walls')
-    ok(BUILDING_IDS.every((id) => TECH[BUILDINGS[id].tech] && BUILDINGS[id].cost >= 30 && BUILDINGS[id].cost <= 60
+    ok(BUILDING_IDS.every((id) => TECH[BUILDINGS[id].tech] && BUILDINGS[id].cost >= 25 && BUILDINGS[id].cost <= 60
         && ((BUILDINGS[id].y && Object.keys(BUILDINGS[id].y).length === 1) || BUILDINGS[id].def > 0)),
-        'a). every building names a real tech, costs 30–60 shields, and carries one numeric effect')
+        'a). every building names a real tech, costs 25–60 shields, and carries one numeric effect')
     ok(bldKind('BLD_GRANARY') && !bldKind('ARK_COCKPIT') && !bldKind('WARRIOR') && !bldKind(null),
         'a). one queue-kind namespace — buildings, plates and units read one string space apart')
 

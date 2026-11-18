@@ -293,11 +293,11 @@ export const WONDER_IDS = Object.keys(WONDER)
 // Queue kinds are 'BLD_<ID>' so one string space serves all projects.
 export const BLD_PREFIX = 'BLD_'
 export const BUILDINGS = {
-    GRANARY: { name: 'Granary', tech: 'POTTERY', cost: 40, y: { f: 2 }, effect: '+2 food' },
-    LIBRARY: { name: 'Library', tech: 'WRITING', cost: 40, y: { sci: 2 }, effect: '+2 science' },
-    MARKET: { name: 'Market', tech: 'CURRENCY', cost: 50, y: { g: 3 }, effect: '+3 gold' },
-    WORKSHOP: { name: 'Workshop', tech: 'THE_WHEEL', cost: 45, y: { p: 2 }, effect: '+2 production' },
-    WALLS: { name: 'Walls', tech: 'BRONZE_WORKING', cost: 35, def: 6, effect: '+6 city defence' },
+    GRANARY: { name: 'Granary', tech: 'POTTERY', cost: 25, y: { f: 2 }, effect: '+2 food' },
+    LIBRARY: { name: 'Library', tech: 'WRITING', cost: 30, y: { sci: 2 }, effect: '+2 science' },
+    MARKET: { name: 'Market', tech: 'CURRENCY', cost: 40, y: { g: 3 }, effect: '+3 gold' },
+    WORKSHOP: { name: 'Workshop', tech: 'THE_WHEEL', cost: 35, y: { p: 2 }, effect: '+2 production' },
+    WALLS: { name: 'Walls', tech: 'BRONZE_WORKING', cost: 30, def: 6, effect: '+6 city defence' },
 }
 export const BUILDING_IDS = Object.keys(BUILDINGS)
 export const bldKind = (kind) => typeof kind === 'string' && kind.startsWith(BLD_PREFIX)

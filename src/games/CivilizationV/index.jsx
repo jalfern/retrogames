@@ -21,7 +21,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import * as THREE from 'three'
-import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP, canDeclareWar, canMakePeace, canTrade, canGift, csInfo, CS_IDS, coastalCityOf, canEmbark, canLand, hullSupplied, suppliedSea, canQueue, queueDeny, bldDeny, BUILDINGS, BUILDING_IDS, arkKind, ARK_PARTS, arkPartsOf, arkPartsDone, eraCurve, cultureBeats, eraCrossNote, eraBoughtInfo } from './sim.js'
+import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP, canDeclareWar, canMakePeace, canTrade, canGift, csInfo, CS_IDS, coastalCityOf, canEmbark, canLand, hullSupplied, suppliedSea, canQueue, queueDeny, bldKind, bldDeny, BUILDINGS, BUILDING_IDS, BLD_PREFIX, arkKind, ARK_PARTS, arkPartsOf, arkPartsDone, eraCurve, cultureBeats, eraCrossNote, eraBoughtInfo } from './sim.js'
 import { decide, RESEARCH_ORDER } from './planner.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -433,8 +433,9 @@ const CivilizationVGame = () => {
             if (h.build) {
                 const city = gs.cities.find((c) => c.civ === 0 && c.alive)
                 const q = city && city.queue && city.queue[0]
-                const qcost = q ? (UNIT[q] ? UNIT[q].cost : WONDER[q].cost) : 0
-                h.build.textContent = q ? `BUILDING ${q} ${Math.floor(city.buildP || 0)}/${qcost}${city.queue.length > 1 ? ` +${city.queue.length - 1}` : ''}` : 'BUILD: 1 warrior · 2 archer · 3 settler · 4 worker · C catapult · N trireme · K musket · L galleon · U wonders · Q welds an Ark plate'
+                // any project kind may head the queue — units, wonders, plates, buildings (#2671: a BLD head once crashed this line)
+                const qcost = q ? (UNIT[q] ? UNIT[q].cost : WONDER[q] ? WONDER[q].cost : bldKind(q) && BUILDINGS[q.slice(BLD_PREFIX.length)] ? BUILDINGS[q.slice(BLD_PREFIX.length)].cost : 0) : 0
+                h.build.textContent = q ? `BUILDING ${q.replace(BLD_PREFIX, '')} ${Math.floor(city.buildP || 0)}/${qcost}${city.queue.length > 1 ? ` +${city.queue.length - 1}` : ''}` : 'BUILD: 1 warrior · 2 archer · 3 settler · 4 worker · C catapult · N trireme · K musket · L galleon · U wonders · Q welds an Ark plate'
                 h.build.style.display = city ? '' : 'none'
             }
             if (h.worker) {
@@ -531,7 +532,7 @@ const CivilizationVGame = () => {
             if (!inb(c, r)) return
             if (!gs.explored[0][r * CFG.W + c]) { say('UNKNOWN LAND'); return }
             const own = gs.units.find((u) => u.alive && !u.loaded && u.civ === 0 && u.c === c && u.r === r)
-            if (own) { gs.selected = own.id; pending = { select: own.id }; audioController.playTone(440, 0.03, 'sine', 0.04); return }
+            if (own) { gs.selected = own.id; pending = { ...pending, select: own.id }; audioController.playTone(440, 0.03, 'sine', 0.04); return }
             const sel = gs.units.find((u) => u.id === gs.selected && u.alive && !u.loaded && u.civ === 0)
             const hostile = gs.units.find((u) => u.alive && !u.loaded && u.c === c && u.r === r && atWar(gs, 0, u.civ))
             const tl = gs.tiles[r * CFG.W + c]
@@ -576,7 +577,7 @@ const CivilizationVGame = () => {
             if (open) { pending = { land: [open[0], open[1]] }; audioController.playTone(260, 0.04, 'triangle', 0.05); return }
             say('NO BEACH IN REACH'); audioController.playTone(120, 0.05, 'square', 0.04)
         }
-        const endTurn = () => { pending = { endTurn: true }; audioController.playTone(200, 0.05, 'sine', 0.04) }
+        const endTurn = () => { pending = { ...pending, endTurn: true }; audioController.playTone(200, 0.05, 'sine', 0.04) }
 
         const refreshPanel = () => {
             const R = gs.tech[0]
