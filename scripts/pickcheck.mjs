@@ -21,10 +21,11 @@
 //   amb   — the ambience eras collapse (early beeps at graveyard cadence, #2234)
 //   vis   — the bins never fill (meter cap frozen at 9999, #2678)
 //   whip  — the cable spring dies (no overshoot on reversal, #2678)
+//   tell  — the grab-read telegraphs go silent (ring/jaw/slam never warn, #2684)
 
 import * as s from '../src/games/PickRush/sim.js'
 import { AMB_ZONES, zoneForShift, fireAt } from '../src/games/PickRush/ambience.js'
-import { BIN_VIS, makeBinVis, stepBinVis, makeWhip, stepWhip, whipTarget } from '../src/games/PickRush/visuals.js'
+import { BIN_VIS, makeBinVis, stepBinVis, makeWhip, stepWhip, whipTarget, TELL, catchRing, slamTell, jawWarn } from '../src/games/PickRush/visuals.js'
 import { scriptFor } from './lib/contractGames.mjs'
 
 const args = process.argv.slice(2)
@@ -37,7 +38,7 @@ const ok = (c, m) => { if (c) { pass++; console.log(`  PASS  ${m}`) } else { fai
 const section = (t) => console.log(`\n\x1b[1m${t}\x1b[0m`)
 
 if (MUT) {
-    if (!['judge', 'glass', 'roll', 'quota', 'wave', 'amb', 'vis', 'whip'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
+    if (!['judge', 'glass', 'roll', 'quota', 'wave', 'amb', 'vis', 'whip', 'tell'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
     console.log(`\x1b[33mMUTANT ACTIVE: ${MUT}\x1b[0m`)
 }
 const applyMut = () => {
@@ -49,13 +50,14 @@ const applyMut = () => {
     if (MUT === 'amb') AMB_ZONES[0].cues.beep.every = 330 // early floor beeps at graveyard cadence — the night stops changing
     if (MUT === 'vis') BIN_VIS.cap = 9999 // bins never fill — the lamp never thunks (#2678)
     if (MUT === 'whip') BIN_VIS.spring = { k: 0, d: 0.22 } // cable spring dead — the head never whips past the tilt (#2678)
+    if (MUT === 'tell') TELL.freeze = true // the belt goes mute: ring never lights, jaws never warn, pips never paint (#2684)
 }
 applyMut()
 
 const {
-    makeGame, step, autopilot, stateHash,
+    makeGame, step, autopilot, stateHash, barrelUpright,
     BELT_Y, BIN_TOP, BELT_END, CARRY_TIP, CLAW_DOWN, FUSES, SHIFT_TICKS,
-    VIEW_H,
+    VIEW_H, GRAB_DX, BREAK_VY,
     KINDS, BINS, SHIFTS, WAVES,
 } = s
 
@@ -535,6 +537,119 @@ section('JUICE — bin meters, full lamp, cable whip are render-only (#2678)')
     ok(Math.abs(w.y) < 0.05, 'WHIP-SPRING: at rest the cable hangs straight again')
 }
 
+section('TELL — the grab-read telegraphs never lie (#2684)')
+{
+    // RING-TRUTH: over a real rolling line, every painted ring agrees with
+    // the jaw law it mirrors — green only on frames a clamp would bite.
+    const gs = makeGame(7, 2)
+    let seenOk = 0, seenOff = 0, lies = 0, dirty = 0
+    while (!gs.end && gs.tick < SHIFTS.length * SHIFT_TICKS + 900) {
+        step(gs, [autopilot(gs, 0), autopilot(gs, 1)])
+        const h0 = gs.hash
+        for (const it of gs.items) {
+            if (!it.onBelt || it.carriedBy !== -1) continue
+            const r = catchRing(it)
+            if (!r) continue
+            if (r === 'ok') seenOk++; else seenOff++
+            if (r !== (barrelUpright(it) ? 'ok' : 'off')) lies++
+        }
+        for (let s2 = 0; s2 < gs.arms.length; s2++) {
+            const j1 = jawWarn(gs, s2), j2 = jawWarn(gs, s2)
+            const t1 = JSON.stringify(slamTell(gs, s2)), t2 = JSON.stringify(slamTell(gs, s2))
+            if (j1 !== j2 || t1 !== t2) dirty++
+        }
+        if (gs.hash !== h0 || stateHash(gs) !== h0) dirty++
+    }
+    ok(seenOk >= 20 && seenOff >= 20 && lies === 0,
+        `RING-TRUTH: seed 7's line ran ${seenOk} catchable / ${seenOff} off-axis barrel frames — ring ≡ barrelUpright on every one (a tell that never flips, or ever lies, goes red here)`)
+    ok(dirty === 0,
+        `TELL-PURE: ring/jaw/slam reads are idempotent and leave the state hash unmoved across the whole line (${dirty} dirty frames)`)
+}
+{
+    // RING-PREDICTS: the ring's promise is an outcome — red reads all
+    // descent and the jaws bounce; green reads all descent and they bite.
+    const off = makeGame(21, 1)
+    while (off.tick < 40) step(off, [{}]); clearLine(off)
+    const br = spawnAt(off, 'barrel', 200); br.rot = 1.1
+    off.arms[0].x = br.x
+    let warnFrames = 0, offFrames = 0
+    // sample INSIDE the chase (the descent happens within grabFrom's own
+    // loop — sampling after it returns sees only the post-slip aftermath)
+    grabFrom(off, br, 400, () => {
+        br.rot = 1.1
+        const a = off.arms[0]
+        if (br.onBelt && catchRing(br) === 'off') offFrames++
+        if (a.mode === 'lowering' && Math.abs(br.x - a.x) <= GRAB_DX && jawWarn(off, 0)) warnFrames++
+    })
+    ok(off.fx.some((f) => f.t === 'slip') && offFrames >= 100 && warnFrames >= 2 && off.arms[0].held === null,
+        `RING-PREDICTS (off): a pinned off-axis barrel reads red on ${offFrames} of the drive (the ring is the approach tell), the jaws warn on ${warnFrames} descent-in-range frames — and the descent slips`)
+    const up = makeGame(22, 1)
+    while (up.tick < 40) step(up, [{}]); clearLine(up)
+    const br2 = spawnAt(up, 'barrel', 200); br2.rot = 0.1
+    up.arms[0].x = br2.x
+    let warned = false
+    grabFrom(up, br2, 400, () => {
+        br2.rot = 0.1
+        if (jawWarn(up, 0)) warned = true
+    })
+    ok(up.arms[0].held === br2.id && !warned && catchRing(br2) === 'ok',
+        'RING-PREDICTS (ok): the upright barrel keeps the jaws quiet all chase, rings green, and clamps clean')
+}
+{
+    // SLAM-LAW: the pip column's colour IS the physics' verdict. Swept
+    // release heights through the real fall: green ⇔ lands clean, red ⇔
+    // the bottle shatters — the discrete mirror must agree at every height,
+    // boundary band included (dy 60–63, where the naive continuous formula
+    // would cry wolf).
+    const slamCase = (targetTip) => {
+        const gs = makeGame(23, 1)
+        while (gs.tick < 40) step(gs, [{}]); clearLine(gs)
+        const b = spawnAt(gs, 'bottle', 200)
+        gs.arms[0].x = b.x
+        if (!grabFrom(gs, b)) return { t: null }
+        let n = 0
+        while (gs.arms[0].held !== null && gs.arms[0].tip > CARRY_TIP && n < 40) { step(gs, [{ a: false }]); n++ } // hoist home
+        while (gs.arms[0].held !== null && gs.arms[0].tip < targetTip && n < 100) { step(gs, [{ down: true }]); n++ }
+        const t = slamTell(gs, 0)
+        const c0 = gs.correct, w0 = gs.warnings
+        // release in ONE step, feather held: the A-edge frees the load before
+        // the mode logic can lift the claw. A two-step release ({a:false} then
+        // {a:true}) climbs 3 px AFTER the tell snapshot — the fall would then
+        // start from a different height than the tell read, exactly the drift
+        // this sweep exists to catch (the tell must speak about the drop the
+        // player is actually about to make).
+        step(gs, [{ a: true }])
+        resolve(gs)
+        return { t, shattered: gs.warnings > w0, scored: gs.correct > c0 }
+    }
+    const high = slamCase(CARRY_TIP)
+    ok(high.t && high.t.safe === false && high.shattered,
+        `SLAM-LAW: carried glass at hoist height reads red (impact ${high.t && high.t.impact}) — and physics agrees, it shatters`)
+    const deep = slamCase(CLAW_DOWN - 12)
+    ok(deep.t && deep.t.safe === true && !deep.shattered && deep.scored,
+        `SLAM-LAW: feathered to the lip the column reads green (impact ${deep.t && deep.t.impact}) — the bottle lands clean and scores`)
+    let agree = 0, riskN = 0, safeN = 0, counted = 0
+    for (let tipStop = 60; tipStop <= CLAW_DOWN - 1; tipStop += 3) {
+        const c = slamCase(tipStop)
+        if (!c.t) continue
+        counted++
+        if (c.t.safe) safeN++; else riskN++
+        if (c.t.safe === !c.shattered) agree++
+    }
+    ok(agree === counted && riskN >= 4 && safeN >= 4,
+        `SLAM-LAW sweep: ${agree}/${counted} release heights — the tell's colour IS the physics verdict at every one (${riskN} red heights shatter, ${safeN} green heights land clean)`)
+    // the column keeps its silence where it has no meaning
+    const mute = makeGame(24, 1)
+    while (mute.tick < 40) step(mute, [{}]); clearLine(mute)
+    ok(slamTell(mute, 0) === null, 'SLAM-SILENT: an empty claw paints no column')
+    const cn = spawnAt(mute, 'can', 200)
+    mute.arms[0].x = cn.x
+    grabFrom(mute, cn)
+    ok(slamTell(mute, 0) === null, 'SLAM-SILENT: a carried CAN (not fragile) never paints a slam column')
+    mute.items.find((i2) => i2.id === mute.arms[0].held).x = 108 // over the bare floor gap
+    ok(slamTell(mute, 0) === null, 'SLAM-SILENT: even glass over bare floor (no bin under it) paints no column')
+}
+
 // ---------------------------------------------------------------- Chrome
 if (!NODE_ONLY) {
     const { openGame, launch, requireDevServer, Report } = await import('./lib/harness.mjs')
@@ -899,6 +1014,131 @@ if (!NODE_ONLY) {
         rep.check('METER-FULL: crossing the cap lights the lamp and flashes the rim; the column wraps to 0',
             meter.lamp === true && meter.rim >= 20 && meter.lowInk === 0 && meter.visAfter === 0,
             `lamp ${meter.lamp}, rim ${meter.rim} px, low ink ${meter.lowInk}, vis ${meter.visAfter}`)
+
+        // BARREL-RING (#2684): the catch ring is PAINTED and mirrors the jaw
+        // law. Put a known-rotation barrel on the belt, let the page paint, and
+        // sample the annulus around it: no green while it lies off-axis; roll
+        // it upright and the green hoop appears. The DEV eye pairs every ring
+        // with an independent inline upright verdict — the tell is caught lying,
+        // not just missing.
+        const ringGate = await page.evaluate(async () => {
+            const g = window.__game
+            const painted = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 50))))
+            const eye = () => window.__pickrushTest.tells().find((t) => t.id === 7777)
+            const ringInk = () => {
+                const b = eye()
+                const c = window.__pickrushTest.canvas()
+                const d = c.getContext('2d').getImageData(b.x * 2 - 22, b.y * 2 - 22, 44, 44).data
+                let n = 0
+                for (let p = 0; p < d.length; p += 4) {
+                    if (d[p] < 150 && d[p + 1] > 195 && d[p + 2] > 90 && d[p + 2] < 195) n++ // catch-green, blended
+                }
+                return { n, ring: b.ring, upright: b.upright }
+            }
+            g.reset(9, 1)
+            const q = window.__pickrushTest.sim()
+            q.nextSpawn = Number.MAX_SAFE_INTEGER // the gate owns the belt
+            q.items.push({ id: 7777, n: 500, kind: 'barrel', x: 250, y: 88.5, vx: 0, vy: 0, rot: 1.1, onBelt: true, carriedBy: -1, fragile: false })
+            g.step([{}], 1) // one belt tick — rot 1.26, still off-axis
+            await painted()
+            const offRead = ringInk()
+            q.items.find((i2) => i2.id === 7777).rot = 0.05
+            g.step([{}], 1) // +0.16 → 0.21, upright — the hoop should light
+            await painted()
+            const okRead = ringInk()
+            const tell = g.state().barrelTell
+            return { offRead, okRead, okTell: tell.find((t) => t[0] === 7777) || null }
+        })
+        rep.check('BARREL-RING: an off-axis barrel rides dark — no catch-green ink, and eye/law/contract agree it reads off',
+            ringGate.offRead.ring === 'off' && ringGate.offRead.upright === false && ringGate.offRead.n <= 5,
+            JSON.stringify(ringGate.offRead))
+        rep.check('BARREL-RING: roll the same barrel upright and the green catch hoop paints (state + eye + canvas)',
+            ringGate.okRead.ring === 'ok' && ringGate.okRead.upright === true && ringGate.okRead.n >= 60,
+            JSON.stringify(ringGate.okRead))
+        rep.check('BARREL-STATE: the contract carries the ring truth for the rolling piece',
+            !!ringGate.okTell && ringGate.okTell[1] === 'ok', JSON.stringify(ringGate.okTell))
+
+        // SLAM-TELL (#2684): real-keys story — hoist glass over its bin and
+        // the projected fall paints red (carry height is 8.8 against a law of
+        // 8.0 — every high release shatters); feather and the column turns
+        // green; release on green and the bottle lands clean, fuse intact.
+        const slamGate = await page.evaluate(async () => {
+            const g = window.__game
+            const painted = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 50))))
+            g.reset(7, 1)
+            window.__dbg.act('spawn bottle')
+            let pressed = false
+            for (let i = 0; i < 300; i++) {
+                const s0 = g.state()
+                if (s0.carried === 'bottle') break
+                const item = s0.items.find((x) => x[0] === 'bottle' && x[3] === -1)
+                if (!item) break
+                const dx = item[1] - s0.pos
+                const lead = s0.beltV * Math.ceil((97 - s0.clawY) / 3)
+                const pad = { left: false, right: false, a: false }
+                const want = dx - lead
+                if (!pressed) {
+                    if (want > 1.5) pad.right = true
+                    else if (want < -1.5) pad.left = true
+                    else { pad.a = true; pressed = true }
+                } else if (s0.carried === '') {
+                    if (dx > 8) pad.right = true
+                    else if (dx < -8) pad.left = true
+                }
+                g.step([pad], 1)
+            }
+            if (g.state().carried !== 'bottle') return { fail: 'no bottle' }
+            for (let i = 0; i < 200; i++) {
+                const s0 = g.state()
+                const dx = 213 - s0.pos // over the BOTTLE bin mouth
+                g.step([{ left: dx < -1.5, right: dx > 1.5 }], 1)
+                if (Math.abs(dx) <= 2) break
+            }
+            const slamHigh = g.state().slamTell
+            await painted()
+            const pipInk = (mode) => {
+                const st = g.state()
+                const c = window.__pickrushTest.canvas()
+                const x = Math.round(st.pos * 2)
+                const d = c.getContext('2d').getImageData(x - 3, Math.round((st.clawY + 21) * 2), 7, Math.round((150 - (st.clawY + 21)) * 2)).data
+                let n = 0
+                for (let p = 0; p < d.length; p += 4) {
+                    if (mode === 'r' ? (d[p] > 195 && d[p + 1] < 150 && d[p + 2] < 140)
+                        : (d[p] < 150 && d[p + 1] > 195 && Math.abs(d[p + 2] - 143) < 60)) n++
+                }
+                return n
+            }
+            const red = pipInk('r')
+            let green = null
+            let greenInk = 0
+            for (let i = 0; i < 120; i++) {
+                g.step([{ down: true }], 1)
+                const t = g.state().slamTell
+                if (t && t[1] === 1) {
+                    await painted()
+                    green = t
+                    greenInk = pipInk('g')
+                    break
+                }
+            }
+            const w0 = g.state().fusesLeft
+            const c0 = g.state().correct
+            g.step([{ a: true, down: true }], 1) // release ON green
+            // drive the fall itself: the claw is already empty on this tick,
+            // so a `carried !== ''` loop would exit without a single step —
+            // the bottle needs ticks to reach the lip and be judged.
+            for (let i = 0; i < 60; i++) g.step([{}], 1)
+            await painted()
+            const s2 = g.state()
+            g.release()
+            return { slamHigh, red, green, greenInk, w0, wAfter: s2.fusesLeft, gained: s2.correct - c0, slamAfter: s2.slamTell, done: s2.done }
+        })
+        rep.check('SLAM-TELL: glass hoisted over its bin paints a red fall column — the impact is past the shatter law',
+            !!slamGate.slamHigh && slamGate.slamHigh[1] === 0 && slamGate.slamHigh[0] > 8 && slamGate.red >= 40,
+            `impact ${slamGate.slamHigh && slamGate.slamHigh[0]}, red ${slamGate.red} px`)
+        rep.check('SLAM-TELL: feathering turns the column green, and releasing on green lands the bottle clean — no fuse, quota point',
+            !!slamGate.green && slamGate.greenInk >= 24 && slamGate.w0 === 3 && slamGate.wAfter === 3 && slamGate.gained >= 1 && slamGate.slamAfter === null,
+            JSON.stringify(slamGate))
 
         // determinism through the live contract
         const script = scriptFor('pick-rush')
