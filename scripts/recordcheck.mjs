@@ -869,6 +869,55 @@ const bucketRowBySeed = (seed) => {
     ok(pushHistory([null, 7, { nope: true }], { d: 1, ok: true, worstMs: 1, key: 'x' }).length === 1, 'corrupt stored history is dropped, not fatal')
     ok(/PASS 12ms.*FAIL 84ms/.test(formatHistory([{ d: Date.now(), ok: true, worstMs: 12, key: 'a' }, { d: Date.now(), ok: false, worstMs: -84, key: 'b' }])), 'history line renders day + verdict + |worst| ms, newest first')
     ok(formatHistory(null) === '', 'no history -> empty line')
+
+    // --- LIVE PAIR COACH (#1711) pins ------------------------------------------
+    // The three Nov-16 phone takes missed by HALF (airborne clap / silent tap —
+    // measured from the stored bytes), so the coach must name the missing half
+    // live. These pins run the same pure machine the page drives.
+    const { createPairCoach, pairCoachFeed, pairCoachAge, COACH_LIVE_TEXT } = await import('../src/utils/clapTestCore.js')
+    const { CLAP_TOL_MS: TOL, CLAP_SEARCH_MS: WIN } = await import('../src/utils/clapSync.js')
+
+    // green inside the SAME lines the studio grades with (not a second law)
+    const c1 = pairCoachFeed(pairCoachFeed(createPairCoach(), 'tap', 1000), 'clap', 1020)
+    ok(c1.last && c1.last.kind === 'pair' && c1.last.ms === 20 && c1.pairs === 1, 'coincident clap+tap -> PAIR naming its ms', JSON.stringify(c1.last))
+    const cBound = pairCoachFeed(pairCoachFeed(createPairCoach(), 'tap', 0), 'clap', TOL)
+    ok(cBound.last.kind === 'pair', `exactly ±${TOL} ms still PAIRs (the acceptance line itself, not tighter)`)
+    const cJust = pairCoachFeed(pairCoachFeed(createPairCoach(), 'tap', 0), 'clap', TOL + 1)
+    ok(cJust.last.kind === 'off' && cJust.last.ms === TOL + 1, `MUTANT: apart ${TOL + 1} ms -> OFF, never green (the ±50 line has teeth)`, JSON.stringify(cJust.last))
+    const cFar = pairCoachFeed(pairCoachFeed(createPairCoach(), 'tap', 0), 'clap', WIN)
+    ok(cFar.pairs === 1 && cFar.last.kind === 'off', `apart ${WIN} ms still PAIRs at OFF (window = the grader's CLAP_SEARCH_MS)`)
+    const cOut = pairCoachFeed(pairCoachFeed(createPairCoach(), 'tap', 0), 'clap', WIN + 1)
+    ok(cOut.pairs === 0 && cOut.openT === 0 && cOut.openC === WIN + 1, `MUTANT: apart ${WIN + 1} ms -> no pair — both events stay open for their own naming`)
+    // opts override proves the machine READS its constants (a hardcoded 60 dies here)
+    const cOpt = pairCoachFeed(pairCoachFeed(createPairCoach(), 'tap', 0), 'clap', 45, { tolMs: 40 })
+    ok(cOpt.last.kind === 'off', 'tolMs opts override honoured -> green gate is the constant, not baked text')
+
+    // the two named half-misses Jon's takes actually showed
+    const n1 = pairCoachAge(pairCoachFeed(createPairCoach(), 'clap', 3000), 3000 + WIN + 1)
+    ok(n1.last.kind === 'notouch' && n1.last.ms === 0 && n1.pairs === 0, 'airborne clap (seed978353 shape) -> NO TOUCH named when its window closes')
+    const n2 = pairCoachAge(pairCoachFeed(createPairCoach(), 'tap', 4000), 4000 + WIN + 1)
+    ok(n2.last.kind === 'nosound' && n2.last.ms === 0, 'silent tap (seed144524 shape) -> NO SOUND named when its window closes')
+    const stillInFlight = pairCoachAge(pairCoachFeed(createPairCoach(), 'clap', 3000), 3000 + WIN)
+    ok(stillInFlight.last === null, 'naming waits the FULL window — never nags a slap still in flight')
+
+    // consumption + supersede + idempotence guards
+    const d1 = pairCoachFeed(pairCoachAge(pairCoachFeed(pairCoachFeed(createPairCoach(), 'tap', 0), 'clap', 10), 'clap', 20), 20 + WIN + 1)
+    ok(d1.pairs === 1 && d1.last.kind === 'notouch', 'one slap cannot double-pair: the extra clap ages out as its own notouch')
+    const d2 = pairCoachFeed(pairCoachFeed(pairCoachFeed(createPairCoach(), 'tap', 0), 'tap', 100), 'clap', 120)
+    ok(d2.pairs === 1 && d2.last.ms === 20, 'supersede: a lone clap pairs with the MOST RECENT open tap')
+    ok(pairCoachFeed(createPairCoach(), 'x', 0).last === null, 'unknown event kind is a no-op, never a phantom pair')
+    const ageTwice = pairCoachAge(pairCoachAge(pairCoachFeed(createPairCoach(), 'tap', 0), 400), 500)
+    ok(ageTwice.last.kind === 'nosound' && ageTwice.seq === 1, 'an expired event is named EXACTLY once (age clears the window)')
+
+    // determinism: identical event streams produce identical machines (deep)
+    const stream = (s0) => { pairCoachFeed(s0, 'tap', 100); pairCoachFeed(s0, 'clap', 110); pairCoachAge(s0, 500); pairCoachFeed(s0, 'clap', 900); pairCoachAge(s0, 1300); return s0 }
+    ok(JSON.stringify(stream(createPairCoach())) === JSON.stringify(stream(createPairCoach())), 'coach stream is deterministic (replay-safe)')
+
+    // the words the player reads, and honesty: naming carries no fake number
+    ok(COACH_LIVE_TEXT.pair(12).startsWith('PAIR ✓ 12'), 'pair text names PAIR + ms', COACH_LIVE_TEXT.pair(12))
+    ok(/OFF 62/.test(COACH_LIVE_TEXT.off(62)) && /glass/.test(COACH_LIVE_TEXT.off(62)), 'off text names OFF + ms + the glass', COACH_LIVE_TEXT.off(62))
+    ok(/TOUCH/.test(COACH_LIVE_TEXT.notouch) && /glass/.test(COACH_LIVE_TEXT.notouch), 'notouch text says TOUCH + glass')
+    ok(/SOUND/.test(COACH_LIVE_TEXT.nosound) && /slap harder/i.test(COACH_LIVE_TEXT.nosound), 'nosound text says SOUND + prompts louder (one-sided bias: prompt, never claim)')
 }
 
 // --- query plumbing -----------------------------------------------------------
