@@ -18,8 +18,8 @@ import { readFileSync } from 'node:fs'
 import { makeGame, step, stateHash, CFG } from '../src/games/Excitebike/sim.js'
 import { track, groundY, featureAt, LAP, MUD, WATER, BOOST, TRACK_COUNT, nextSel, trackName, buildTrack, registerCustom, customCount, TRANSIENT, setTestTrack, clearTestTrack, hasTestTrack, ownTerrain, PACE } from '../src/games/Excitebike/levels.js'
 import { plan, decide } from '../src/games/Excitebike/planner.js'
-import { compileCustom, auditCustomData, encodeCustom, decodeCustom, fitsAt, stampAt, SPAN, EDGE, STAMP_KINDS, CUSTOM_KEY, CUSTOM_MAX, LAPS_DEFAULT, LAPS_MIN, LAPS_MAX, lapsOf, TOOLS } from '../src/games/Excitebike/custom.js'
-import { demoSeats, demoSeatTrack, demoSeatLabel } from '../src/games/Excitebike/attract.js'
+import { compileCustom, auditCustomData, encodeCustom, decodeCustom, fitsAt, stampAt, SPAN, EDGE, STAMP_KINDS, CUSTOM_KEY, CUSTOM_MAX, LAPS_DEFAULT, LAPS_MIN, LAPS_MAX, lapsOf, TOOLS, NAME_MAX, NAME_WHEEL, pushName, popName, designName } from '../src/games/Excitebike/custom.js'
+import { demoSeats, demoSeatTrack, demoSeatLabel, demoSeatName } from '../src/games/Excitebike/attract.js'
 
 const MUT = process.argv.includes('--mutate')
 let pass = 0
@@ -1514,7 +1514,7 @@ section('TEST RIDE (the bay seats an unsaved draft — TRANSIENT, #2587)')
     // #2625 re-recorded with LAP: the LAW (not just the numbers) — TEST/LAP sit
     // before the verbs, EXIT stays last, and the backward wrap from the first
     // stamp still lands on EXIT.
-    ok(TOOLS.indexOf('TEST') === 6 && TOOLS.indexOf('LAP') === 7 && TOOLS.indexOf('ERASE') === 8 && TOOLS[TOOLS.length - 1] === 'EXIT' && TOOLS.length === 11, 'the TEST/LAP tools must sit before the verbs — the strip wrap pins depend on it')
+    ok(TOOLS.indexOf('TEST') === 6 && TOOLS.indexOf('LAP') === 7 && TOOLS.indexOf('ERASE') === 8 && TOOLS.indexOf('NAME') === 9 && TOOLS.indexOf('SAVE') === 10 && TOOLS[TOOLS.length - 1] === 'EXIT' && TOOLS.length === 12, 'the TEST/LAP/NAME tools must sit before the verbs — the strip wrap pins depend on it (#2651 grew the strip to 12)')
     ok(nextSel(0, -1, TOOLS.length) === TOOLS.length - 1 && nextSel(TOOLS.length - 1, 1, TOOLS.length) === 0, 'the tool strip wrap moved — first stamp back must reach EXIT, forward from EXIT must reach RAMP')
 
     // with the bay not seated, track(-1) is the plain roster wrap it always was
@@ -1781,6 +1781,53 @@ section('ATTRACT DESIGN (viewer seats + rotation — the marquee flies your gara
     ok(/plan\(\{ track: idx, laps: 1 \}\)/.test(sx), 'attract seats no longer lazy-plan designs through the proven autopilot — the demo would fly scripts the engine never rolled')
     ok(/demoCache\.has\(t\)/.test(sx), 'the lazy-plan cache lost its terrain-identity key — re-saved designs would ride stale demos')
     ok(/data-demo-track/.test(sx) && /DEMO · \{demoTrack\}/.test(sx), 'the marquee stopped wearing the seat badge — the garage cannot see itself from across the room')
+}
+
+// ------------------------------------------------------------------- name rides ----
+section('NAME RIDES THE NAME (letter wheel + badge grammar — your design is called by its own name, #2651)')
+{
+    const sx = readFileSync(new URL('../src/games/Excitebike/index.jsx', import.meta.url), 'utf8')
+
+    // THE WHEEL — 27 glyphs, A opens it, space closes the loop; the cap is the
+    // badge's budget (compileCustom slices 12).
+    ok(NAME_WHEEL.length === 27 && NAME_WHEEL[0] === 'A' && NAME_WHEEL[NAME_WHEEL.length - 1] === ' ', 'the letter wheel lost a glyph — the pad law is A–Z + space, wrapping')
+    ok(NAME_MAX === 12, 'the name cap moved off the bay grammar — badge and storage would disagree')
+    ok(pushName('AB', 'C') === 'ABC' && pushName('', 'Z') === 'Z', 'the wheel commit stopped appending')
+    ok(pushName('ABCDEFGHIJKL', 'X') === null, 'a thirteenth letter slipped past the cap — the marquee badge could grow past its budget')
+    ok(popName('AB') === 'A' && popName('A') === '' && popName('') === '', 'DEL undercut the name — below empty is not a thing')
+
+    // SAVE GRAMMAR: storage sees one shape (upper, collapsed, capped), and the
+    // unnamed draft lands on the placeholder the badge fallback expects.
+    ok(designName(' skate  park ') === 'SKATE PARK', 'the save grammar stopped uppercasing/collapsing — one name would render three ways')
+    ok(designName('') === 'CUSTOM' && designName('   ') === 'CUSTOM' && designName(null) === 'CUSTOM', 'an unnamed draft stopped landing on CUSTOM — the attract fallback would see empty names')
+    ok(designName('skateboardparkextra') === 'SKATEBOARDPA', 'the save-time cap moved — stored names would overflow the badge budget')
+
+    // THE BADGE LAW, pure: MOTOCROSS untouchable; a real name rides; a
+    // placeholder (or nothing) reads EXACTLY the old roster bytes.
+    ok(demoSeatName(0, 'JUNK') === 'MOTOCROSS', 'a name leaked onto the MOTOCROSS seat — the byte-pinned course is never a design')
+    ok(demoSeatName(1, 'SKATEPARK') === 'SKATEPARK', "the badge stopped riding the design's own name")
+    ok(demoSeatName(3, ' skate  park ') === 'SKATE PARK', 'badge text skipped the collapse — raw roster noise would reach the marquee')
+    ok(demoSeatName(2, 'CUSTOM 2') === 'CUSTOM 2' && demoSeatName(2, 'CUSTOM') === 'CUSTOM 2' && demoSeatName(2, '') === 'CUSTOM 2' && demoSeatName(2, null) === 'CUSTOM 2', 'the roster fallback moved — pre-naming saves must read exactly as before (#2647)')
+
+    // end-to-end grammar: a named save seats as its name, and its attract seat
+    // reads that name off the roster.
+    const NL = [{ kind: 'RAMP', x: 1200 }, { kind: 'BOOST', x: 2400 }, { kind: 'MUD', x: 3200 }]
+    const named = buildTrack(compileCustom(NL, designName('skate park')))
+    ok(auditCustomData(named, groundY).ok, 'the naming fixture refused before it could be graded')
+    ok(registerCustom(named, 0) === TRACK_COUNT, 'the named fixture could not enter the roster (slot 0)')
+    ok(track(TRACK_COUNT).name === 'SKATE PARK', 'the seated track kept raw input as its name — the marquee would ride un-normalized dirt')
+    ok(demoSeatName(1, track(TRACK_COUNT).name) === 'SKATE PARK', 'the seat badge and the stored name disagree — the marquee names a different dirt than the board holds')
+
+    // SOURCE PINS — exciteplay drives these with real keys and real taps.
+    ok(/TOOLS\[draft\.tool\] === 'NAME'/.test(sx), 'the arrows stopped steering the letter wheel on the NAME row')
+    ok(/pushName\(draft\.name, NAME_WHEEL\[draft\.nameSel\]\)/.test(sx), 'the A/SPACE commit stopped riding the pure wheel helper — the cap law would live twice')
+    ok(/e\.code === 'Backspace'/.test(sx) && /label: 'DEL', code: 'Backspace'/.test(sx), 'the pad lost its DEL button — phones cannot take a letter back')
+    ok(/compileCustom\(draft\.stamps, designName\(draft\.name\)\)/.test(sx), 'saveDraft stopped storing the drafted name — the badge would never ride a real name')
+    ok(/NAME_WHEEL\[draft\.nameSel\]/.test(sx), 'the bay stopped showing the naming line — the wheel would be blind')
+    ok(/TOOLS\.length >= 12 \? 6 : 10/.test(sx), 'the tool gutter stopped tightening — the verbs ran off the 256px canvas')
+    ok(/data-demo-name=\{demoTrack\}/.test(sx), 'the badge stopped wearing the name in the DOM — prod cannot see it rides')
+    ok(/demoSeatName\(seat, seat === 0 \? null :/.test(sx), 'tickDemo stopped asking the name law at the seat change — the badge is back to roster numbers')
+    ok(/t\.name !== 'CUSTOM' \? t\.name : ''/.test(sx), 'abandon stopped carrying the name back to the bay — re-saving would silently rename the design')
 }
 
 console.log(`\nexcitecheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

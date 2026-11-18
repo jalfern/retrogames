@@ -20,9 +20,9 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { W, H, makeGame, step, stateHash, CFG } from './sim.js'
 import { track, groundY, LAP, MUD, WATER, BOOST, nextSel, TRACK_COUNT, trackName, trackBite, buildTrack, registerCustom, customCount, TRANSIENT, setTestTrack, clearTestTrack, ownTerrain } from './levels.js'
-import { TOOLS, SPAN, CUR_STEP, CUSTOM_KEY, CUSTOM_MAX, LAPS_DEFAULT, LAPS_MIN, LAPS_MAX, lapsOf, compileCustom, auditCustomData, fitsAt, stampAt, stampShape, encodeCustom, decodeCustom } from './custom.js'
+import { TOOLS, SPAN, CUR_STEP, CUSTOM_KEY, CUSTOM_MAX, LAPS_DEFAULT, LAPS_MIN, LAPS_MAX, lapsOf, compileCustom, auditCustomData, fitsAt, stampAt, stampShape, encodeCustom, decodeCustom, NAME_MAX, NAME_WHEEL, pushName, popName, designName } from './custom.js'
 import { plan, decide } from './planner.js'
-import { PRESS, MESSAGES, demoSeats, demoSeatTrack, demoSeatLabel } from './attract.js'
+import { PRESS, MESSAGES, demoSeats, demoSeatTrack, demoSeatName } from './attract.js'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
@@ -351,7 +351,9 @@ const ExcitebikeGame = () => {
                 gs = makeGame(demoSeatTrack(seat, TRACK_COUNT), { gear: 'high', ...(seat === 0 ? {} : { laps: 1 }) })
                 demoAt = 0
                 clearJuice()
-                saySeat(demoSeatLabel(seat)) // the badge names what flies
+                // #2651 the badge rides the NAME: a saved design flies under its
+                // own name; unnamed/placeholder saves keep the roster grammar.
+                saySeat(demoSeatName(seat, seat === 0 ? null : (track(demoSeatTrack(seat, TRACK_COUNT)) || {}).name))
             }
             doSim(run.script[demoAt++])
         }
@@ -603,7 +605,9 @@ const ExcitebikeGame = () => {
                 ctx.font = (on ? 'bold 8px monospace' : '8px monospace')
                 if (on) { ctx.fillStyle = 'rgba(255,226,63,0.14)'; ctx.fillRect(px - 2, H - 22, ctx.measureText(lb).width + 8, 14); ctx.fillStyle = KIND_COLOR[TOOLS[i]] || '#ffe23f' }
                 ctx.fillText(lb, px + 4, H - 12)
-                px += ctx.measureText(lb).width + 10
+                // #2651 the NAME row grew the strip to 12 — tighten the gutter so
+                // the verbs stay on the canvas (SAVE/EXIT ran off-canvas at 10).
+                px += ctx.measureText(lb).width + (TOOLS.length >= 12 ? 6 : 10)
             }
             if (draft.msgT > 0) {
                 draft.msgT--
@@ -622,6 +626,10 @@ const ExcitebikeGame = () => {
             if (kind === 'LAP') {
                 ctx.fillStyle = '#ffb85c'
                 ctx.fillText('SPACE SETS THE LAP COUNT ' + LAPS_MIN + '–' + LAPS_MAX + ' · YOUR TRACK, YOUR LENGTH', W / 2, H - 34)
+            }
+            if (kind === 'NAME') { // #2651 the naming line: the wheel, live, with the draft's name so far
+                ctx.fillStyle = '#80e000'
+                ctx.fillText('NAME ' + (draft.name || '—') + ' ◂' + NAME_WHEEL[draft.nameSel] + '▸ · A ADDS · B TAKES BACK', W / 2, H - 34)
             }
             ctx.fillStyle = 'rgba(143,224,255,0.75)'
             ctx.fillText('←→ MOVE · ↑↓ TOOL · SPACE SETS · 1-3 SAVE · ESC EXIT', W / 2, H - 28)
@@ -826,7 +834,7 @@ const ExcitebikeGame = () => {
         // {cps,bands} table the shipped six ride on, and auditCustomData is
         // the ONE legality law shared by the live cursor, SAVE, and the Node
         // gate. Nothing here mutates the sim — the editor is a compiler UI.
-        const draft = { stamps: [], cursor: 120, tool: 0, msg: '', msgT: 0, track: null, savePtr: 0, laps: LAPS_DEFAULT }
+        const draft = { stamps: [], cursor: 120, tool: 0, msg: '', msgT: 0, track: null, savePtr: 0, laps: LAPS_DEFAULT, name: '', nameSel: 0 }
         // #2587 TEST RIDE: seat the CURRENT draft without saving — one lap,
         // and Esc (or the line) walks you back into the bay. The draft itself
         // (stamps/cursor/tool) is untouched by the ride; the compiled copy is
@@ -856,6 +864,7 @@ const ExcitebikeGame = () => {
         }
         const openEdit = () => {
             draft.stamps = []; draft.cursor = 120; draft.tool = 0; draft.laps = LAPS_DEFAULT; draft.msg = 'DESIGN YOUR OWN TRACK'; draft.msgT = 200
+            draft.name = ''; draft.nameSel = 0 // #2651 a new design starts unnamed — the badge falls back to the roster
             rebuildDraft()
             setMode('edit')
             audioController.playSweep(330, 520, 0.18, 'square', 0.06)
@@ -868,7 +877,7 @@ const ExcitebikeGame = () => {
             audioController.playSweep(520, 330, 0.18, 'square', 0.06)
         }
         const saveDraft = (slotHint) => {
-            const built = buildTrack(compileCustom(draft.stamps, 'CUSTOM'))
+            const built = buildTrack(compileCustom(draft.stamps, designName(draft.name))) // #2651 the draft is saved under its own name
             const a = auditCustomData(built, groundY)
             if (!a.ok) { draft.msg = a.why; draft.msgT = 200; audioController.playNoise(0.14, 0.07); audioController.playTone(140, 0.12, 'square', 0.05); return }
             const list = storedList()
@@ -879,7 +888,7 @@ const ExcitebikeGame = () => {
             built.laps = lapsOf(draft.laps) // #2625 the seated entry carries the designer's number too
             registerCustom(built, at)
             syncCustoms()
-            draft.msg = 'SAVED — TRACK ' + (TRACK_COUNT + at + 1)
+            draft.msg = 'SAVED ' + built.name + ' — TRACK ' + (TRACK_COUNT + at + 1) // #2651 the receipt speaks the name it stored
             draft.msgT = 200
             audioController.playSweep(440, 880, 0.25, 'square', 0.08)
         }
@@ -928,6 +937,8 @@ const ExcitebikeGame = () => {
             const st = ((t && t.stamps) || []).map(([kind, x]) => ({ kind, x }))
             draft.stamps = st
             draft.laps = lapsOf(t && t.laps) // #2625 reload carries the number you rode, not just the terrain
+            draft.name = t && t.name && t.name !== 'CUSTOM' ? t.name : '' // #2651 the name rides back too — re-saving never silently renames
+            draft.nameSel = 0
             draft.cursor = 120
             draft.tool = 0
             rebuildDraft()
@@ -947,6 +958,17 @@ const ExcitebikeGame = () => {
             if (kind === 'SAVE') return saveDraft(null)
             if (kind === 'TEST') return testDraft()
             if (kind === 'EXIT') return exitEdit()
+            // #2651 NAME is a SETTING like LAP — geometry untouched. A commits
+            // the wheel letter; the 12-char cap refuses by name (same manner as
+            // the legality audit refuses a bad stamp — the bay never lies).
+            if (kind === 'NAME') {
+                const next = pushName(draft.name, NAME_WHEEL[draft.nameSel])
+                if (next === null) { draft.msg = NAME_MAX + ' LETTERS MAX'; draft.msgT = 90; audioController.playTone(140, 0.1, 'square', 0.05); return }
+                draft.name = next
+                audioController.playTone(660 + draft.name.length * 40, 0.05, 'square', 0.05)
+                draft.msg = 'NAME ' + draft.name; draft.msgT = 60
+                return
+            }
             // #2625 LAP is a SETTING, not a stamp — it never touches the draft's
             // geometry or the fits law; it just advances the designer's number,
             // wrapping 8→1 so the whole 1–8 book is reachable by repeating A.
@@ -1003,13 +1025,18 @@ const ExcitebikeGame = () => {
             // #2576 EDIT TRACK keys: ←/→ walk the 40px cursor, ↑/↓ the tool
             // strip (both wrap, the same cursor law as the splash), Space/A
             // executes the tool under the cursor, 1-3 save slots, Esc exits.
+            // #2651 NAME repurposes the same keys on its row: ←/→ walk the
+            // 27-glyph letter wheel (A–Z + space), A/SPACE commits the letter,
+            // Backspace (the pad's DEL) takes one back. One pad, no new axes.
             if (sc === 'edit') {
                 if ((e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') && e.repeat) return
-                if (e.code === 'ArrowLeft') { draft.cursor = (draft.cursor - CUR_STEP + LAP) % LAP; audioController.playTone(300, 0.03, 'square', 0.03) }
-                else if (e.code === 'ArrowRight') { draft.cursor = (draft.cursor + CUR_STEP) % LAP; audioController.playTone(300, 0.03, 'square', 0.03) }
+                const naming = TOOLS[draft.tool] === 'NAME'
+                if (e.code === 'ArrowLeft') { if (naming) draft.nameSel = (draft.nameSel + NAME_WHEEL.length - 1) % NAME_WHEEL.length; else draft.cursor = (draft.cursor - CUR_STEP + LAP) % LAP; audioController.playTone(naming ? 520 + draft.nameSel * 18 : 300, 0.03, 'square', 0.03) }
+                else if (e.code === 'ArrowRight') { if (naming) draft.nameSel = (draft.nameSel + 1) % NAME_WHEEL.length; else draft.cursor = (draft.cursor + CUR_STEP) % LAP; audioController.playTone(naming ? 520 + draft.nameSel * 18 : 300, 0.03, 'square', 0.03) }
                 else if (e.code === 'ArrowUp') { draft.tool = nextSel(draft.tool, -1, TOOLS.length); audioController.playTone(440 + draft.tool * 40, 0.04, 'square', 0.04) }
                 else if (e.code === 'ArrowDown') { draft.tool = nextSel(draft.tool, 1, TOOLS.length); audioController.playTone(440 + draft.tool * 40, 0.04, 'square', 0.04) }
                 else if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space') editExecute()
+                else if (e.code === 'Backspace') { if (naming && draft.name) { draft.name = popName(draft.name); audioController.playTone(240, 0.05, 'square', 0.04) } } // #2651 DEL — the pad's B button lands here
                 else if (/^Digit[1-3]$/.test(e.code)) saveDraft(+e.code.slice(5) - 1)
                 else if (e.code === 'KeyX' || e.code === 'Escape') exitEdit()
                 else if (e.code === 'KeyG') { gearRef.current = gearRef.current === 'high' ? 'low' : 'high'; setGear(gearRef.current) }
@@ -1094,9 +1121,11 @@ const ExcitebikeGame = () => {
                     edit: screenRef.current === 'edit' ? {
                         cursor: draft.cursor, tool: TOOLS[draft.tool], stamps: draft.stamps.map((s) => [s.kind, s.x]),
                         laps: draft.laps, // #2625 the designer's number, live in the bay
+                        name: draft.name, nameSel: draft.nameSel, // #2651 the naming wheel, live
                         fits: fitsAt(draft.stamps, TOOLS[draft.tool], draft.cursor),
                         msg: draft.msgT > 0 ? draft.msg : '',
                     } : null,
+                    customNames: [...Array(customsRef.current)].map((_, k) => (track(TRACK_COUNT + k) || {}).name || ''), // #2651 the roster speaks its names
                     x: gs.x, total: gs.total, v: gs.v, alt: gs.alt, vy: gs.vy, pitch: gs.pitch,
                     air: gs.air, airT: gs.airT, crash: gs.crash, stall: gs.stall, pumpT: gs.pumpT,
                     heat: gs.heat, hot: gs.hot, gear: gs.gear, rank: gs.rank, score: gs.score,
@@ -1271,7 +1300,7 @@ const ExcitebikeGame = () => {
                         {/* #2647 the marquee names what flies — MOTOCROSS or YOUR
                             design, so the garage sees itself from across the room.
                             A caption, not a message (#365 one-at-a-time holds). */}
-                        <span data-demo-track className="block mt-3 font-mono text-[10px] tracking-[0.35em] text-[#ffe23f]/70">DEMO · {demoTrack}</span>
+                        <span data-demo-track data-demo-name={demoTrack} className="block mt-3 font-mono text-[10px] tracking-[0.35em] text-[#ffe23f]/70">DEMO · {demoTrack}</span>
                     </div>
                 </>
             )}
@@ -1303,7 +1332,7 @@ const ExcitebikeGame = () => {
                             <div key={i} className={`flex items-center gap-2 text-sm sm:text-base ${i === sel ? 'text-yellow-300' : 'text-white/85'}`}>
                                 <span className="w-5 text-right"><BikeCursor on={i === sel} /></span>
                                 <span className="w-16 text-right">{i < TRACK_COUNT ? `TRACK ${i + 1}` : `CUSTOM ${i - TRACK_COUNT + 1}`}</span>
-                                <span className={`w-32 text-left font-bold ${i === sel ? '' : 'font-normal'}`}>{i < TRACK_COUNT ? trackName(i) : '·  ·  ·  ·  ·'}</span>
+                                <span className={`w-32 text-left font-bold ${i === sel ? '' : 'font-normal'}`}>{i < TRACK_COUNT ? trackName(i) : (trackName(i) !== 'CUSTOM' ? trackName(i) : '·  ·  ·  ·  ·')}</span>
                                 {i < TRACK_COUNT ? (
                                     <span className="text-[11px] leading-none tracking-tight" style={{ textShadow: '1px 1px #000' }} aria-label={`grade ${trackBite(i)}`}>
                                         {'▰'.repeat(trackBite(i))}<span className="text-white/25">{'▱'.repeat(TRACK_COUNT - trackBite(i))}</span>
@@ -1356,7 +1385,7 @@ const ExcitebikeGame = () => {
                 esc-to-the-bay laws already honor. The TEST badge calls it ABANDON
                 (#2573), a splash-seated design calls it EXIT (#2603 ownTerrain);
                 the league's pad stays byte-unchanged — tracks 1-6 commit. */}
-            <VirtualControls visible={(play || screen === 'tracks' || screen === 'edit') && !paused} thirdAction={play && ownRide ? { label: testing ? 'ABANDON' : 'EXIT', code: 'Escape' } : null} />
+            <VirtualControls visible={(play || screen === 'tracks' || screen === 'edit') && !paused} secondAction={screen === 'edit' ? { label: 'DEL', code: 'Backspace' } : null} thirdAction={play && ownRide ? { label: testing ? 'ABANDON' : 'EXIT', code: 'Escape' } : null} />
         </div>
     )
 }
