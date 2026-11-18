@@ -267,6 +267,8 @@ ok(heldGames([QA(911, 'BLOB BATTLE', 'polish pass')]).length === 0,
     'idle-kick: a non-flagship QA issue holds nothing')
 ok(heldGames([{ title: 'QA — comet drift hd polish', body: '' }]).join() === 'COMET DRIFT HD',
     'idle-kick: the held match is case-insensitive')
+ok(heldGames([{ title: 'QA — MYST: polish pass', body: 'SSX and Emberwood quote gap-free in this derivation; COMET DRIFT HD too' }]).join() === 'Myst',
+    '#2571: heldGames matches TITLES only — bodies that verbatim-name other flagships must not phantom-hold them')
 ok(claimOrder([]) === null && flagshipStage({ gapsByGame: FIX_GAPS, qaIssues: [QA(913, 'BLOB BATTLE', 'polish pass')], buildingQa: [] }).game === 'SSX',
     '#869: empty queue + unowned gap -> KICK; QA noise on non-flagship games changes nothing')
 

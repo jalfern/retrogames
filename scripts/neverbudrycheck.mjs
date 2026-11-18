@@ -110,6 +110,9 @@ ok(weakestStage({ games: [], qaIssues: [], heldDirs: [] }) === null,
 'an empty shelf answers null — ONLY then is STOP legal')
 ok(heldDirs(GS, [{ labels: ['building'], title: 'POLISH — HELD GAME: q', body: '' }]).join() === 'Held',
 'heldDirs skips titles a building/building-qa issue is inside')
+ok(heldDirs(GS, [{ labels: ['building-qa'], title: 'QA — HELD GAME: polish pass',
+    body: 'PONG scores 2 but held; Adventure is gap-free — SSX/Emberwood/COMET/Myst gap-free' }]).join() === 'Held',
+'#2571: heldDirs matches TITLES only — a why-weakest body that verbatim-names skipped titles must not phantom-hold them')
 
 // ------------------------------------------------------ jonq pure fixtures ----
 ok(validateAsk({ lane: 'games', question: 'The queue is empty — what should we build next?', options: ['a', 'b'], defaultText: 'a' }).length > 0,
