@@ -22,10 +22,11 @@
 //   vis   — the bins never fill (meter cap frozen at 9999, #2678)
 //   whip  — the cable spring dies (no overshoot on reversal, #2678)
 //   tell  — the grab-read telegraphs go silent (ring/jaw/slam never warn, #2684)
+//   aim   — rival intent and ring ownership go blind (#2690)
 
 import * as s from '../src/games/PickRush/sim.js'
 import { AMB_ZONES, zoneForShift, fireAt } from '../src/games/PickRush/ambience.js'
-import { BIN_VIS, makeBinVis, stepBinVis, makeWhip, stepWhip, whipTarget, TELL, catchRing, slamTell, jawWarn } from '../src/games/PickRush/visuals.js'
+import { BIN_VIS, makeBinVis, stepBinVis, makeWhip, stepWhip, whipTarget, TELL, catchRing, slamTell, jawWarn, craneAim, ringClaim } from '../src/games/PickRush/visuals.js'
 import { scriptFor } from './lib/contractGames.mjs'
 
 const args = process.argv.slice(2)
@@ -38,7 +39,7 @@ const ok = (c, m) => { if (c) { pass++; console.log(`  PASS  ${m}`) } else { fai
 const section = (t) => console.log(`\n\x1b[1m${t}\x1b[0m`)
 
 if (MUT) {
-    if (!['judge', 'glass', 'roll', 'quota', 'wave', 'amb', 'vis', 'whip', 'tell'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
+    if (!['judge', 'glass', 'roll', 'quota', 'wave', 'amb', 'vis', 'whip', 'tell', 'aim'].includes(MUT)) { console.error(`unknown mutant ${MUT}`); process.exit(2) }
     console.log(`\x1b[33mMUTANT ACTIVE: ${MUT}\x1b[0m`)
 }
 const applyMut = () => {
@@ -51,6 +52,7 @@ const applyMut = () => {
     if (MUT === 'vis') BIN_VIS.cap = 9999 // bins never fill — the lamp never thunks (#2678)
     if (MUT === 'whip') BIN_VIS.spring = { k: 0, d: 0.22 } // cable spring dead — the head never whips past the tilt (#2678)
     if (MUT === 'tell') TELL.freeze = true // the belt goes mute: ring never lights, jaws never warn, pips never paint (#2684)
+    if (MUT === 'aim') TELL.aimFreeze = true // the second crane goes invisible: no intent beacon, no ring ownership (#2690)
 }
 applyMut()
 
@@ -565,6 +567,78 @@ section('TELL — the grab-read telegraphs never lie (#2684)')
     ok(dirty === 0,
         `TELL-PURE: ring/jaw/slam reads are idempotent and leave the state hash unmoved across the whole line (${dirty} dirty frames)`)
 }
+
+section('AIM — rival intent & ring ownership (#2690 QA)')
+{
+    // AIM-TRUTH: over seed 7's real 2P line the foreman's intent tell names
+    // a live piece of HIS parity — and never lies about the brain's pick:
+    // while the claw is empty and up that pick is the nearest reachable
+    // parity piece, re-derived HERE from the parity law the README documents
+    // (not imported from autopilot's source), so a helper that drifts goes red.
+    const gs = makeGame(7, 2)
+    let seen = 0, lies = 0, stale = 0, dirty = 0
+    while (!gs.end && gs.tick < SHIFTS.length * SHIFT_TICKS + 900) {
+        step(gs, [autopilot(gs, 0), autopilot(gs, 1)])
+        const h0 = gs.hash
+        const a = craneAim(gs, 1)
+        const arm = gs.arms[1]
+        if (a) {
+            seen++
+            const it = gs.items.find((i2) => i2.id === a.id)
+            if (!(it.onBelt && it.carriedBy === -1)) lies++
+            if (((it.n ?? 0) % 2) !== 1) lies++ // parity ownership, spelled out again
+            if (arm.held === null && arm.mode === 'up') {
+                // Reconstruct the frame the BRAIN saw: it picked from the PRE-step
+                // snapshot, and the harness reads POST-step (#2214 drift family).
+                // arm.vx is recorded per tick, every free piece rode the belt one
+                // vb, and pieces born this tick (px at the mouth) were not yet on
+                // the line for the brain. In that frame the predicates are the
+                // autopilot's own, so id equality is exact — the 6 px tolerance
+                // only forgives the rare ARM_MAX clamp where vx lies about how far
+                // the claw actually travelled.
+                const ax = arm.x - (arm.vx || 0)
+                const vbq = 1.05 * SHIFTS[Math.min(gs.shiftTick === 0 && gs.tick > 1 ? gs.shift - 1 : gs.shift, SHIFTS.length - 1)].speed
+                let best = a, bx = a.x - vbq // the aim is always a candidate (outer checks prove it live+odd)
+                for (const it2 of gs.items) {
+                    if (it2.carriedBy !== -1 || !it2.onBelt || it2.id === a.id) continue
+                    const px = it2.x - vbq
+                    if (px <= -11.99) continue // born this tick — invisible to the brain
+                    if (px > BELT_END - 24) continue
+                    if (((it2.n ?? 0) % 2) !== 1) continue // parity ownership, spelled out again
+                    if (px < ax - 40) continue
+                    if (px < bx) { best = it2; bx = px }
+                }
+                if (best.id !== a.id && Math.abs(bx - (a.x - vbq)) > 6) lies++ // nearer head-of-line ignored: a lie
+                if (bx <= ax - 40 || bx > BELT_END - 24) stale++ // nothing truly in the brain's window: honest memory
+            }
+        }
+        const a2 = craneAim(gs, 1)
+        if (JSON.stringify(a) !== JSON.stringify(a2) || gs.hash !== h0 || stateHash(gs) !== h0) dirty++
+    }
+    ok(seen >= 200 && lies === 0,
+        `AIM-TRUTH: foreman intent live on ${seen} ticks of seed 7's line (${stale} honest behind-claw memories) — every read named a live odd-parity piece, and at rest it IS the brain's nearest pick (${lies} lies)`)
+    ok(dirty === 0,
+        `AIM-PURE: intent reads are idempotent and leave the state hash unmoved across the whole line (${dirty} dirty frames)`)
+}
+{
+    // CLAIM splits the blink on built geometry: nobody = steady, rival =
+    // slow, mine = fast — and when both claws converge on one barrel the
+    // fast read wins ("mine"). A loaded claw never claims.
+    const gs = makeGame(5, 2)
+    clearLine(gs)
+    const br = spawnAt(gs, 'barrel', 210); br.rot = 0.1
+    const A = gs.arms[0], B = gs.arms[1]
+    A.x = 250; A.mode = 'up'; B.x = 400; B.mode = 'up'
+    const idle = ringClaim(gs, br, 0)
+    B.x = br.x + 5; B.mode = 'lowering'
+    const rival = ringClaim(gs, br, 0)
+    A.x = br.x - 5; A.mode = 'lowering'
+    const both = ringClaim(gs, br, 0)
+    A.held = 4242 // carrying something else: no longer converging
+    const mineHeld = ringClaim(gs, br, 0)
+    ok(idle === null && rival === 'rival' && both === 'mine' && mineHeld === 'rival',
+        `CLAIM-TRUTH: nobody says null, the rival's approach says rival, both converging mine wins, a loaded claw drops the claim (${idle}/${rival}/${both}/${mineHeld})`)
+}
 {
     // RING-PREDICTS: the ring's promise is an outcome — red reads all
     // descent and the jaws bounce; green reads all descent and they bite.
@@ -1057,6 +1131,61 @@ if (!NODE_ONLY) {
             JSON.stringify(ringGate.okRead))
         rep.check('BARREL-STATE: the contract carries the ring truth for the rolling piece',
             !!ringGate.okTell && ringGate.okTell[1] === 'ok', JSON.stringify(ringGate.okTell))
+
+        // AIM-BEACON (#2690): in a live foreman race the autopilot's target
+        // is painted — a tag-coloured lead line marches from his carriage to
+        // the piece he's locked on. Run the page's own loop until the
+        // contract names an aim, then sample the canvas corridor between the
+        // carriage and the item (the item itself sits below the sampled band).
+        const aimGate = await page.evaluate(async () => {
+            const g = window.__game
+            g.reset(7, 2)
+            let s0 = null, eye = null
+            for (let i = 0; i < 500 && !(s0 = g.state()).rivalAim; i++) {
+                window.__pickrushTest.step(1, {}, [{}, window.__pickrushTest.auto(1)]) // the real brain drives seat 1
+            }
+            if (!s0 || !s0.rivalAim) return { fail: 'no foreman aim in 500 ticks' }
+            eye = window.__pickrushTest.aimEye()
+            if (!eye.aim) return { fail: 'contract aimed but the eye says no' }
+            await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))))
+            const c = window.__pickrushTest.canvas()
+            const hex = eye.tag
+            const rgb = [1, 3, 5].map((o) => parseInt(hex.slice(o, o + 2), 16))
+            const lo = Math.round(Math.min(s0.arm2Pos, eye.aim.x) * 2) - 6
+            const wid = Math.max(14, Math.round(Math.abs(s0.arm2Pos - eye.aim.x) * 2) + 12)
+            const d = c.getContext('2d').getImageData(Math.max(0, lo), 94, wid, 66).data // world y 47..80: below carriage, above belt cargo
+            let tag = 0
+            for (let p = 0; p < d.length; p += 4) {
+                if (Math.abs(d[p] - rgb[0]) < 90 && Math.abs(d[p + 1] - rgb[1]) < 90 && Math.abs(d[p + 2] - rgb[2]) < 90) tag++
+            }
+            return { n: tag, live: eye.live, parity: eye.parity, kind: eye.aim.kind }
+        })
+        rep.check('AIM-BEACON: the foreman paints a tag-coloured lead line to the parity piece his brain hunts — state, eye and canvas agree',
+            !aimGate.fail && aimGate.live === true && aimGate.parity === 1 && aimGate.n >= 40, JSON.stringify(aimGate))
+
+        // CLAIM-FLIP (#2690): the ownership read lives on the contract. Put a
+        // barrel mid-belt, let the RIVAL crane converge on it (arm lowering,
+        // inside the grab window, short of the attempt height so nothing
+        // bites), read 'rival'; bring MY claw in too and the read flips to
+        // 'mine'. The DEV eye re-derives the claim inline — helper vs geometry.
+        const flipGate = await page.evaluate(async () => {
+            const g = window.__game
+            g.reset(9, 2)
+            const q = window.__pickrushTest.sim()
+            q.nextSpawn = Number.MAX_SAFE_INTEGER // the gate owns the belt
+            q.items.push({ id: 7778, n: 501, kind: 'barrel', x: 250, y: 88.5, vx: 0, vy: 0, rot: 0.1, onBelt: true, carriedBy: -1, fragile: false })
+            q.arms[1].x = 255; q.arms[1].mode = 'lowering'; q.arms[1].tip = 55
+            g.step([{}], 2) // rival descends into the window (tip 61 — no attempt yet)
+            const rival = ((g.state().ringClaim.find((r) => r[0] === 7778) || [])[1]) || null
+            q.arms[0].x = 245; q.arms[0].mode = 'lowering'; q.arms[0].tip = 55
+            g.step([{}], 2) // mine converges too
+            const s = g.state()
+            const mine = ((s.ringClaim.find((r) => r[0] === 7778) || [])[1]) || null
+            const eye = window.__pickrushTest.tells().find((t) => t.id === 7778)
+            return { rival, mine, eyeClaim: eye ? eye.claim : null, ring: eye ? eye.ring : null }
+        })
+        rep.check("CLAIM-FLIP: the rival's converging claw reads rival on the contract; when mine closes on the same barrel the claim flips to mine (eye agrees)",
+            flipGate.rival === 'rival' && flipGate.mine === 'mine' && flipGate.eyeClaim === 'mine', JSON.stringify(flipGate))
 
         // SLAM-TELL (#2684): real-keys story — hoist glass over its bin and
         // the projected fall paints red (carry height is 8.8 against a law of

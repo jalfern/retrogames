@@ -84,9 +84,10 @@ Landing juice (#2214): a correct drop adds a low sheet-metal thud under the
 ding, a deeper first-frame squash (0.32) with a faster recovery, a rim dip on
 the struck bin and a light shake; smash gets three bright after-tinkles.
 
-Mutants: `PICK_MUT=judge|glass|roll|quota|wave|amb|vis|whip|tell` — `wave` collapses the table
+Mutants: `PICK_MUT=judge|glass|roll|quota|wave|amb|vis|whip|tell|aim` — `wave` collapses the table
 to one shift's waves; `amb` flattens the ambience eras (#2234); `vis` freezes the
-bin meters (#2678); `tell` silences the grab-read telegraphs (#2684); named gates go red.
+bin meters (#2678); `tell` silences the grab-read telegraphs (#2684); `aim` blinds
+rival intent and ring ownership (#2690); named gates go red.
 
 ## Honest gaps
 
@@ -116,8 +117,8 @@ bin meters (#2678); `tell` silences the grab-read telegraphs (#2684); named gate
   pre-warning today. — **CLOSED by #2684** (see §Grab-read telegraphs): the
   catch ring says *now* whether jaws bite, the jaw arc says *this descent
   slips*, and the slam column says *this fall shatters* until feathered
-  green. (Adjacent remains open: what the foreman crane is diving on is
-  still unreadable — a rival-intent tell was NOT part of this gap.)
+  green. (Adjacent CLOSED by #2690, see §Rival intent & ring ownership:
+  what the foreman crane is diving on now reads on the rails.)
 
 ## Wave read & rhythm (#2223 — QA polish pass)
 
@@ -205,3 +206,33 @@ bin meters (#2678); `tell` silences the grab-read telegraphs (#2684); named gate
   real contract-driven feather to green then a clean score). The DEV eye's
   `tells()` pairs every ring with an independently written upright verdict.
   `PICK_MUT=tell` (the belt goes mute) reddens 6 named gates.
+
+## Rival intent & ring ownership (#2690 — QA polish pass)
+
+- **Intent beacon:** while the foreman's autopilot is locked on a piece, his
+  carriage beacon stops blinking identity and burns steady under a halo in the
+  target's bin-tag colour, and a marching dashed lead line runs from the
+  carriage to the piece he's hunting — 2P race-reading at a glance. The tell
+  reads the autopilot's `target` memory (a motion carrier, never hashed —
+  #1184 family) through `craneAim` in `visuals.js`; a human partner's crane
+  carries no memory and paints nothing. Null while carrying (the slam meter
+  owns that story) and when the memory goes stale (piece grabbed, landed, or
+  off the line end — the filter mirrors the brain's own reach rule).
+- **Ring ownership:** the catch ring's near-blink splits by claim —
+  `ringClaim` says `mine` when MY empty claw is lowering into the grab
+  window (fast 8-tick blink), `rival` when only the other crane converges
+  (slow 16-tick), and mine wins ties. Two cranes converging on one barrel
+  now say *who's first* instead of both flashing. `rivalAim` and `ringClaim`
+  ride the contract for bots/replays.
+- **Proven:** pickcheck §AIM — AIM-TRUTH over seed 7's whole 2P line: every
+  live intent named a live odd-parity piece, and at rest it IS the brain's
+  pick, re-derived in the *pre-step frame* the brain actually saw (`arm.vx`
+  + one belt delta — the #2214 drift family again: compared post-step it
+  cries wolf on window-edge ticks; successive odd pieces sit ≥120 px apart,
+  so a 6 px tolerance forgives drift and still catches a wrong-piece lie);
+  AIM-PURE idempotent reads, hash unmoved; CLAIM-TRUTH on built geometry
+  (null/rival/mine-tie/loaded-drops-claim). Chrome: AIM-BEACON samples the
+  canvas corridor between carriage and cargo for the tag-hued lead line;
+  CLAIM-FLIP flips `rival`→`mine` on the contract as the geometry changes,
+  with the DEV eye re-deriving inline. `PICK_MUT=aim` reddens 2 Node gates
+  by name; `PICK_MUT=tell` reddens 8 (the whole telegraph family + these).
