@@ -20,7 +20,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { W, H, makeGame, step, stateHash, CFG } from './sim.js'
 import { track, groundY, LAP, MUD, WATER, BOOST, nextSel, TRACK_COUNT, trackName, trackBite, buildTrack, registerCustom, customCount, TRANSIENT, setTestTrack, clearTestTrack, ownTerrain } from './levels.js'
-import { TOOLS, SPAN, CUR_STEP, CUSTOM_KEY, CUSTOM_MAX, LAPS_DEFAULT, LAPS_MIN, LAPS_MAX, lapsOf, compileCustom, auditCustomData, fitsAt, stampAt, stampShape, encodeCustom, decodeCustom, NAME_MAX, NAME_WHEEL, pushName, popName, designName } from './custom.js'
+import { TOOLS, SPAN, CUR_STEP, CUSTOM_KEY, CUSTOM_MAX, LAPS_DEFAULT, LAPS_MIN, LAPS_MAX, lapsOf, compileCustom, auditCustomData, fitsAt, stampAt, stampShape, encodeCustom, decodeCustom, NAME_MAX, NAME_WHEEL, pushName, popName, designName, lapCycle, overBookLabel, lapTipFor, LAP_TIP, LAP_TIP_KEY, badgeCompact } from './custom.js'
 import { plan, decide } from './planner.js'
 import { PRESS, MESSAGES, demoSeats, demoSeatTrack, demoSeatName } from './attract.js'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
@@ -259,7 +259,11 @@ const ExcitebikeGame = () => {
         const finish = (win) => {
             watchingRef.current = false; setWatching(false) // #1637 the run ends in your hands
             const sc = gs.score
-            setEnd({ win, score: sc, rank: gs.rank })
+            // #2632 item 1: the over screen announces the book. The NES-era edit
+            // runs said their distance; a custom off the house book says
+            // `CUSTOM 1 · 5 LAPS`. A default-book run stays the plain line.
+            const book = ownRef.current ? overBookLabel(gs.track - TRACK_COUNT + 1, gs.laps) : ''
+            setEnd({ win, score: sc, rank: gs.rank, book })
             if (win) localStorage.setItem('excitebike.board', JSON.stringify([...board(), { score: sc, date: new Date().toISOString().slice(2, 10) }].sort((a, b) => b.score - a.score).slice(0, 8)))
             overAtRef.current = performance.now()
             setMode('over')
@@ -608,6 +612,13 @@ const ExcitebikeGame = () => {
                 ctx.fillStyle = on ? (KIND_COLOR[TOOLS[i]] || '#ffe23f') : 'rgba(248,248,248,0.5)'
                 ctx.font = (on ? `bold ${fsz}px monospace` : `${fsz}px monospace`)
                 if (on) { ctx.fillStyle = 'rgba(255,226,63,0.14)'; ctx.fillRect(px - 2, H - 22, ctx.measureText(lb).width + 8, 14); ctx.fillStyle = KIND_COLOR[TOOLS[i]] || '#ffe23f' }
+                // #2632 item 2: the LAP cell flinches white at the ends of the
+                // book — five frames of fading white over the highlight, the
+                // visual half of the double-note.
+                if (on && i === draft.flashCell && draft.flashT > 0) {
+                    ctx.fillStyle = `rgba(255,255,255,${(0.8 * draft.flashT / 5).toFixed(2)})`
+                    ctx.fillRect(px - 2, H - 22, ctx.measureText(lb).width + 8, 14)
+                }
                 ctx.fillText(lb, px + 4, H - 12)
                 px += ctx.measureText(lb).width + (TOOLS.length >= 12 ? 4 : 10)
             }
@@ -618,6 +629,17 @@ const ExcitebikeGame = () => {
                 const okMsg = draft.msg.startsWith('SAVED') || draft.msg === 'ERASED' || draft.msg.startsWith('LAPS ') || draft.msg.startsWith('NAME ')
                 ctx.fillStyle = okMsg ? '#80e000' : '#ff6a4a'
                 ctx.fillText(draft.msg, W / 2, 44)
+                ctx.textAlign = 'left'; ctx.globalAlpha = 1
+            }
+            // #2632 item 2 decay (the flash outlives its own keypress); item 4:
+            // the one-time LAP lesson rides under the SAVED receipt it belongs to.
+            if (draft.flashT > 0) draft.flashT--
+            if (draft.tipT > 0) {
+                draft.tipT--
+                ctx.globalAlpha = draft.tipT < 60 ? draft.tipT / 60 : 1
+                ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'
+                ctx.fillStyle = '#8fe0ff'
+                ctx.fillText(draft.tip, W / 2, 56)
                 ctx.textAlign = 'left'; ctx.globalAlpha = 1
             }
             ctx.fillStyle = 'rgba(143,224,255,0.75)'; ctx.font = '7px monospace'; ctx.textAlign = 'center'
@@ -836,7 +858,7 @@ const ExcitebikeGame = () => {
         // {cps,bands} table the shipped six ride on, and auditCustomData is
         // the ONE legality law shared by the live cursor, SAVE, and the Node
         // gate. Nothing here mutates the sim — the editor is a compiler UI.
-        const draft = { stamps: [], cursor: 120, tool: 0, msg: '', msgT: 0, track: null, savePtr: 0, laps: LAPS_DEFAULT, name: '', nameSel: 0 }
+        const draft = { stamps: [], cursor: 120, tool: 0, msg: '', msgT: 0, track: null, savePtr: 0, laps: LAPS_DEFAULT, name: '', nameSel: 0, flashCell: -1, flashT: 0, tip: '', tipT: 0 }
         // #2587 TEST RIDE: seat the CURRENT draft without saving — one lap,
         // and Esc (or the line) walks you back into the bay. The draft itself
         // (stamps/cursor/tool) is untouched by the ride; the compiled copy is
@@ -867,6 +889,7 @@ const ExcitebikeGame = () => {
         const openEdit = () => {
             draft.stamps = []; draft.cursor = 120; draft.tool = 0; draft.laps = LAPS_DEFAULT; draft.msg = 'DESIGN YOUR OWN TRACK'; draft.msgT = 200
             draft.name = ''; draft.nameSel = 0 // #2651 a new design starts unnamed — the badge falls back to the roster
+            draft.flashCell = -1; draft.flashT = 0; draft.tipT = 0 // #2632 fresh bay, fresh tells
             rebuildDraft()
             setMode('edit')
             audioController.playSweep(330, 520, 0.18, 'square', 0.06)
@@ -893,6 +916,16 @@ const ExcitebikeGame = () => {
             draft.msg = 'SAVED ' + built.name + ' — TRACK ' + (TRACK_COUNT + at + 1) // #2651 the receipt speaks the name it stored
             draft.msgT = 200
             audioController.playSweep(440, 880, 0.25, 'square', 0.08)
+            // #2632 item 4: a default-book SAVE is the moment to teach the tool
+            // that sets the race length. Once per storage, then it never nags.
+            let seenTip = true // storage off: the tip stays unseen rather than looping
+            try { seenTip = localStorage.getItem(LAP_TIP_KEY) === '1' } catch { /* no storage */ }
+            const tip = lapTipFor(draft.laps, seenTip)
+            if (tip) {
+                try { localStorage.setItem(LAP_TIP_KEY, '1') } catch { /* it rides this session anyway */ }
+                draft.tip = tip; draft.tipT = 260
+                audioController.playTone(880, 0.06, 'triangle', 0.04, 0.28)
+            }
         }
         const testDraft = () => {
             // ONE legality law (the same auditCustomData SAVE reads) — an
@@ -975,8 +1008,16 @@ const ExcitebikeGame = () => {
             // geometry or the fits law; it just advances the designer's number,
             // wrapping 8→1 so the whole 1–8 book is reachable by repeating A.
             if (kind === 'LAP') {
-                draft.laps = draft.laps >= LAPS_MAX ? LAPS_MIN : draft.laps + 1
+                const c = lapCycle(draft.laps) // #2625 the wheel law; #2632 names its ends
+                draft.laps = c.laps
                 audioController.playTone(300 + draft.laps * 55, 0.07, 'square', 0.05)
+                // #2632 item 2: the top of the book and the wrap deserve tells —
+                // the cell flinches white and the step tone becomes a double-note
+                // (a rising fifth home, a falling drop off the wrap).
+                if (c.tell) {
+                    audioController.playTone(c.tell === 'top' ? 1110 : 237, 0.07, 'square', 0.05, 0.09)
+                    draft.flashCell = draft.tool; draft.flashT = 5
+                }
                 draft.msg = 'LAPS ' + draft.laps; draft.msgT = 80
                 return
             }
@@ -1126,6 +1167,8 @@ const ExcitebikeGame = () => {
                         name: draft.name, nameSel: draft.nameSel, // #2651 the naming wheel, live
                         fits: fitsAt(draft.stamps, TOOLS[draft.tool], draft.cursor),
                         msg: draft.msgT > 0 ? draft.msg : '',
+                        tip: draft.tipT > 0 ? draft.tip : '', // #2632 item 4 — the one-time lesson, live
+                        flash: draft.flashT, // #2632 item 2 — the end-of-book flinch frames
                     } : null,
                     customNames: [...Array(customsRef.current)].map((_, k) => (track(TRACK_COUNT + k) || {}).name || ''), // #2651 the roster speaks its names
                     x: gs.x, total: gs.total, v: gs.v, alt: gs.alt, vy: gs.vy, pitch: gs.pitch,
@@ -1341,7 +1384,14 @@ const ExcitebikeGame = () => {
                                     </span>
                                 ) : (
                                     <>
-                                        <span className="text-[11px] leading-none text-orange-300" aria-label="your own design" data-custom-laps={L}>★ YOURS{L !== LAPS_DEFAULT ? ` · ${L} LAP${L === 1 ? '' : 'S'}` : ''}</span>
+                                        {/* #2632 item 3 — the badge has two forms: the full
+                                            `★ YOURS · 3 LAPS` from sm up (byte-identical), and a
+                                            compact `★ 3L` under it, so the row clears the pack-pip
+                                            column at 375px. One [data-custom-laps] holder either way. */}
+                                        <span className="text-[11px] leading-none text-orange-300" aria-label="your own design" data-custom-laps={L}>
+                                            <span className="hidden sm:inline">★ YOURS{L !== LAPS_DEFAULT ? ` · ${L} LAP${L === 1 ? '' : 'S'}` : ''}</span>
+                                            <span className="sm:hidden" data-badge-compact={badgeCompact(L)}>{badgeCompact(L)}</span>
+                                        </span>
                                         <span className="text-[11px] leading-none tracking-tight text-emerald-300" style={{ textShadow: '1px 1px #000' }} data-pack={PK} aria-label={`pack grade ${PK} of 3`}>{'▰'.repeat(PK)}<span className="text-white/25">{'▱'.repeat(3 - PK)}</span></span>
                                     </>
                                 )}
@@ -1372,6 +1422,9 @@ const ExcitebikeGame = () => {
                 <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-yellow-50 font-mono px-6">
                     <h2 className={`text-4xl font-black mb-1 ${end.win ? 'text-green-300' : 'text-red-400'}`}>{end.win ? 'FIRST PLACE!' : 'GAME OVER'}</h2>
                     <p className="text-lg mb-3">{end.score} pts {end.win ? `· finished ${end.rank}${['st', 'nd', 'rd'][end.rank - 1] || 'th'}` : '· the clock ran out'}</p>
+                    {/* #2632 item 1: the NES edit runs announced their distance —
+                        a custom off the house book names its seat and length. */}
+                    {end.book && <p className="-mt-2 mb-3 text-xs font-bold tracking-[0.25em] text-orange-300" data-over-book={end.book}>{end.book}</p>}
                     <div className="bg-black/50 border border-yellow-400/40 rounded p-3 w-72 max-w-full text-sm">
                         <div className="text-yellow-300 font-bold mb-1 tracking-widest">HALL OF FAME</div>
                         {board().map((r, i) => (<div key={i} className="flex justify-between gap-2"><span>{i + 1}.</span><span>{r.date}</span><span>{r.score}</span></div>))}

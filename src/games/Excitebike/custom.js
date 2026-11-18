@@ -46,6 +46,26 @@ export const designName = (name) => {
     const n = String(name || '').trim().replace(/\s+/g, ' ').toUpperCase().slice(0, NAME_MAX)
     return n || 'CUSTOM'
 }
+
+// #2632 YOUR-LAPS polish — the four view-layer tells the QA pass asked for,
+// kept PURE so `excitecheck` grades them without a browser (the page paints
+// them; the law lives once, here):
+//  1) the over screen announces the book — the NES edit runs said their
+//     distance; a default-book run stays exactly the plain board line;
+//  2) the LAP bump gets a tell at the ends of the book: arriving at the
+//     top (8) and wrapping back to 1 deserve more than the step tone;
+//  3) the splash badge has a compact form for phone widths (pips grammar);
+//  4) the first default-book SAVE teaches the LAP tool — once per storage.
+export const lapLabel = (laps) => `${laps} LAP${laps === 1 ? '' : 'S'}`
+export const overBookLabel = (seat, laps) => (seat >= 1 && laps !== LAPS_DEFAULT ? `CUSTOM ${seat} · ${lapLabel(laps)}` : '')
+export const lapCycle = (laps) => {
+    const next = laps >= LAPS_MAX ? LAPS_MIN : laps + 1
+    return { laps: next, tell: next === LAPS_MAX ? 'top' : next === LAPS_MIN ? 'wrap' : null }
+}
+export const badgeCompact = (laps) => (laps === LAPS_DEFAULT ? '★' : `★ ${laps}L`)
+export const LAP_TIP = 'TIP: LAP SETS YOUR RACE LENGTH'
+export const LAP_TIP_KEY = 'excitebike.lap-tip.v1'
+export const lapTipFor = (laps, seen) => (laps === LAPS_DEFAULT && !seen ? LAP_TIP : '')
 export const CUR_STEP = 40           // cursor quantum; stamp footprints align to it
 export const MAX_STAMPS = 12
 
