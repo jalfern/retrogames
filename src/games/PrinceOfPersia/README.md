@@ -496,8 +496,14 @@ red, parity ternaries removed → 2 red; restored → 350/350.
   (`moonShade`, the 4th channel of `moonSources`). `popcheck` §25 pins the whole
   law (48/48 panes dim ≤0.8 and clear within 6000 ticks); `popplay` proves the
   glass lives on the real canvas.
-- The duck is proven by a pure peak model (cue vol vs bus·voice); `popplay` does
+- ~~The duck is proven by a pure peak model (cue vol vs bus·voice); `popplay` does
   not yet assert the duck on the live analyser. The `duckMusic` path is wired and
   exercised (chase cues fire it), but a measured duck-over-bed popplay check is a
-  follow-up if Jon wants the browser-side proof too.
+  follow-up if Jon wants the browser-side proof too.~~ **CLOSED by #2670**: the
+  held duel layback (`duelHold` in `music.js`) keeps the bus at `DUEL_DUCK` across
+  the whole exchange, so `popplay` MEASURES the duck-over-bed drop on the live
+  analyser — bed peak falls while the exchange lays back and returns after it
+  (popplay 31/31, `popcheck` §12 re-pinned at 404/404). The strike itself was
+  left out of #2670's commit (message claimed the gap closed; the diff carried
+  code only) — struck here for the board's sake (#2676), no behaviour change.
 
