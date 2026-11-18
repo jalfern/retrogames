@@ -1122,6 +1122,24 @@ export function moonlitWait(s) {
     return t > 0 && t < TEND_HOURS
 }
 
+// #2713 tail 4 (#2705 tail 4): what each room earned reads at a glance on the
+// PAUSE sheet, not just mid-game. The sheet is the player's rest screen, so it
+// carries the rooms' tallies — "SPARE ROOM — lodged 3", "HERBS 2" — as pip
+// rows. Pure derivation of the wing records #2695 keeps: no law, no rng, no
+// new state, and the hash never hears of it (view-only doctrine, #2076). A
+// lot with no wings answers null so every other help screen — and this game's
+// bare-lot sheet — stays byte-for-byte unchanged (the guide-slot doctrine).
+// The overlay stays generic: the WORDS are authored here, in the game.
+export function pauseLedger(s) {
+    if (!s || !s.wings || !s.wings.length) return null
+    return {
+        title: 'THE HOUSE PROVIDES',
+        rows: s.wings.map((w) => (w.id === 'garden'
+            ? { text: `HERBS ${w.herbs || 0}`, n: w.herbs || 0, color: '#7ec850' }                        // the harvest green of the glints (#2695)
+            : { text: `SPARE ROOM — lodged ${w.sleptWell || 0}`, n: w.sleptWell || 0, color: '#a8d4ee' })),  // the moonlit pane blue (#2705)
+    }
+}
+
 // Ground-level paints, run right after drawGround: the bed sits under the
 // furniture, the hamper at the door. Daylight shows the turned soil, a slow
 // gold creep keyed to ripeness, and sprouts thickening toward the harvest;

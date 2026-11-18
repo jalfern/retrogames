@@ -126,7 +126,7 @@ import {
 } from '../src/games/Homebody/sim.js'
 import { bondRows, pairStride, strollTrail, STRIDE_BOB } from '../src/games/Homebody/art.js'   // #2599: the BONDS rows are pure data — the view gate reads them straight; #2618: so are the stride and the trail
 import { promiseTell, earReact, gardenLamp, EAR_REACT, PROMISE_TIGHTEN, EAR_HUES, PAIR_HUES, LOST_RING_T } from '../src/games/Homebody/art.js'   // #2688: the go-say tells and the garden lamp are pure derivations too
-import { ripenessOf, hamperLoad, sleepingCells, wingLodged, moonlitWait, HAMPER_CAP } from '../src/games/Homebody/art.js'   // #2705: the purpose view — ripeness ramp, harvest hamper, lodged panes, moonlit wait, all pure derivations
+import { ripenessOf, hamperLoad, sleepingCells, wingLodged, moonlitWait, HAMPER_CAP, pauseLedger } from '../src/games/Homebody/art.js'   // #2705: the purpose view — ripeness ramp, harvest hamper, lodged panes, moonlit wait, all pure derivations (+ #2713 the pause-sheet ledger)
 import { readFileSync } from 'node:fs'
 
 const DT = FIXED_DT / 1000
@@ -532,6 +532,60 @@ section('PURPOSE (#2695): a room earns its keep — ripening gardens, lodging wi
     check('pin: the lodging tally stamps the day — one night, one lodging', /w\.lodgeDay !== s\.day/.test(pSrc))
     check('pin: the shell voices ripening and lodging', /THE GARDEN RIPENS/.test(pJsx) && /SLEPT WELL IN THE WING/.test(pJsx))
     check('pin: the view carries what each room earned', /purpose: gs\.wings\.map/.test(pJsx))
+}
+
+section('LEDGER SHEET (#2713 tail 4): the pause sheet reads what the rooms provide')
+{
+    // #2705 tail 4: sleptWell/herbs were view-only — the tally reached the
+    // screen as a momentary toast and never stayed readable. pauseLedger (art)
+    // derives the pause rows from the wing records; the shell snaps it the
+    // moment '?' seats the sheet (a paused world ticks nothing, so the snap IS
+    // the live truth); PauseOverlay draws rows from a generic per-game slot —
+    // the overlay stays game-blind (the CAUTION: no forking the shared sheet).
+    const bare = newRun(731)
+    check('a bare lot answers null — every sheet without a ledger is byte-for-byte unchanged', pauseLedger(bare) === null && pauseLedger(null) === null)
+
+    const s1 = newRun(732); s1.money = 99999; buildRoom(s1, eastWing(2))
+    s1.wings.find((w) => w.id === 'east').sleptWell = 3
+    const L1 = pauseLedger(s1)
+    check('the east room names itself and its lodged tally', L1 && L1.rows.length === 1 && L1.rows[0].text === 'SPARE ROOM — lodged 3' && L1.rows[0].n === 3 && L1.rows[0].color === '#a8d4ee')
+
+    const s2 = newRun(733); s2.money = 99999; buildRoom(s2, GARDEN)
+    s2.wings[0].herbs = 2
+    const L2 = pauseLedger(s2)
+    check('the garden row counts herbs in the harvest green', L2 && L2.rows.length === 1 && L2.rows[0].text === 'HERBS 2' && L2.rows[0].n === 2 && L2.rows[0].color === '#7ec850')
+
+    // live tallies ride it — lodge a night, ripen a bed, read the sheet
+    const lodge = (st, p, bed) => {
+        p.use = { it: bed, def: DEF.canopy, t: 0, dur: 9, night: true }
+        st.hour = 10
+        for (let i = 0; i < 60 * 3 && p.use; i++) advance(st, FIXED_DT / 1000)
+    }
+    const s3 = newRun(734); s3.money = 99999
+    buildRoom(s3, eastWing(2)); buildRoom(s3, GARDEN)
+    s3.items.push({ uid: 93, id: 'canopy', r: 4, c: 12 })
+    lodge(s3, s3.people[0], s3.items[s3.items.length - 1])
+    s3.hour = 8
+    for (let i = 0; i < 60 * 60 * 2; i++) { advance(s3, FIXED_DT / 1000); if (s3.wings.some((w) => w.herbs > 0)) break }
+    const L3 = pauseLedger(s3)
+    check('earned tallies ride the sheet — one lodged night, one harvest, both rooms', L3 && L3.title === 'THE HOUSE PROVIDES' && L3.rows.some((r) => r.text === 'SPARE ROOM — lodged 1' && r.n === 1) && L3.rows.some((r) => r.text === 'HERBS 1' && r.n === 1), JSON.stringify(L3))
+
+    // purity: the view never touches the world — no mutation, twins one world,
+    // and the hash never hears of the sheet (queuecheck's seed pin stays put)
+    const twin = (seed) => { const st = newRun(seed); st.money = 99999; buildRoom(st, GARDEN); buildRoom(st, eastWing(2)); st.wings[0].herbs = 1; st.wings[1].sleptWell = 2; return st }
+    const tA = twin(735); const tB = twin(735)
+    const hBefore = stateHash(tA)
+    const jA = JSON.stringify(pauseLedger(tA)); JSON.stringify(pauseLedger(tA))
+    check('the ledger is pure — the same lot reads the same sheet, twice, unchanged', jA === JSON.stringify(pauseLedger(tB)) && stateHash(tA) === hBefore)
+
+    // source pins: the overlay stays generic (no room names), the pips cap,
+    // the shell wires the pure derivation, and the WORDS live in the game
+    const pSheetJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    const ovSrc = readFileSync(new URL('../src/components/PauseOverlay.jsx', import.meta.url), 'utf8')
+    check('pin: the shared overlay is game-blind — the words are authored per-game', !/SPARE ROOM|HERBS|THE HOUSE PROVIDES/.test(ovSrc) && /ledger\?\.rows\?\.length/.test(ovSrc))
+    check('pin: pip rows cap at eight — a long tally can never eat the sheet', /Math\.min\(Math\.max\(row\.n \|\| 0, 0\), 8\)/.test(ovSrc))
+    check('pin: the shell snaps the ledger at the pause toggle (a paused world is the truth)', /setLedgerSnap\(pausedRef\.current \? pauseLedger\(gs\)/.test(pSheetJsx) && /ledger=\{ledgerSnap\}/.test(pSheetJsx))
+    check('pin: the pause sheet\u2019s copy lives in the view module, beside the other purpose derivations', /export function pauseLedger/.test(readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')))
 }
 
 section('WINNABLE (attract autopilot, several seeds)')

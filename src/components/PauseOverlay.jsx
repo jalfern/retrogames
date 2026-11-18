@@ -9,7 +9,7 @@ import { WATCH_KEY, gameHasWatch } from '../utils/watch'
 // packed into pages with packPages — desktop keeps the old single column;
 // short screens flip pages with thumb-sized ‹ › buttons, swipe, or the
 // arrow keys. The RESUME button stays pinned on every page.
-const PauseOverlay = ({ game, badge, onResume }) => {
+const PauseOverlay = ({ game, badge, ledger, onResume }) => {
     const bodyRef = useRef(null)
     const mirrorRef = useRef(null)
     const touchRef = useRef(null)
@@ -88,6 +88,29 @@ const PauseOverlay = ({ game, badge, onResume }) => {
                         </div>
                     )
                 }),
+            ]
+            : []),
+        // #2713 tail 4 — an optional, game-authored ledger: what the game's own
+        // rooms (or whatever it tracks) have earned THIS run. The content is
+        // entirely game-side — the overlay knows no room names, only rows —
+        // { text, n, color } — and the section renders ONLY when a game passes
+        // one, so every other help screen stays byte-for-byte unchanged. Each
+        // row draws a pip row: one pip per earned unit, capped at eight so a
+        // long tally can never eat the sheet; the exact number rides the text.
+        ...(ledger?.rows?.length
+            ? [
+                <div key="lh" className="text-xl font-bold text-[#ffd840] border-b border-gray-700 pb-2 w-full max-w-md text-left pt-2">{ledger.title}</div>,
+                ...ledger.rows.map((row, i) => (
+                    <div key={`l${i}`} data-ledger-row={row.text} className="flex items-center w-full max-w-md text-base text-gray-100 text-left">
+                        <span aria-hidden className="mr-2 mt-1 inline-block w-3 h-3 rounded-sm shrink-0 border border-white/40" style={{ background: row.color }} />
+                        <span>{row.text}</span>
+                        <span aria-hidden className="ml-2 flex gap-1">
+                            {Array.from({ length: Math.min(Math.max(row.n || 0, 0), 8) }, (_, j) => (
+                                <span key={j} className="w-1.5 h-1.5 rounded-full" style={{ background: row.color }} />
+                            ))}
+                        </span>
+                    </div>
+                )),
             ]
             : []),
         // #1636: research write-up link, only for titles that register one.
