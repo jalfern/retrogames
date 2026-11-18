@@ -48,6 +48,8 @@
 //   node scripts/floorbosscheck.mjs --mutate-duck    # carts never pull off into bays — avoidable freezes stay freezes, demand RED (#2692)
 //   node scripts/floorbosscheck.mjs --mutate-manners # the first duck of a shift never names itself — the courtesy stays decoration, demand RED (#2700)
 //   node scripts/floorbosscheck.mjs --mutate-attract # the shop window loses its promised ducks — cold seeds come back, demand RED (#2700)
+//   node scripts/floorbosscheck.mjs --mutate-knee # the sixth law is blind — racks may stand in the swing and sever the knee net, demand RED (#2711)
+//   node scripts/floorbosscheck.mjs --mutate-knee-route # loaded carts route through racked corners again — the body is gone from the path planner, demand RED (#2711)
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -60,6 +62,7 @@ import {
     FREIGHT_PER_BOX, FULL_TRAILER, DISPATCH_FEE,
     shiftParams, nextShift, LADDER_QUOTA_STEP, rushNow, rungPrice, LANE_LONG, ARM_MIN, cornerEscapes, laneEscapes, swingMarkers, flowMarks, laneRuns, flowHeat,
     pullOff, YIELD_WAIT, YIELD_MAX, YIELD_CD,
+    kneeTurn, bfsKnee, kneeNet, liveKnees,
 } from '../src/games/FloorBoss/sim.js'
 import { createEpisode, validateEpisode } from '../src/utils/robot/episode.js'
 import { hashString } from '../src/utils/robot/physics.js'
@@ -96,7 +99,9 @@ const MUT_FLOWHEAT = ARGS.includes('--mutate-flowheat')
 const MUT_DUCK = ARGS.includes('--mutate-duck')
 const MUT_MANNERS = ARGS.includes('--mutate-manners') // #2700: the give-way teach never fires
 const MUT_ATTRACT = ARGS.includes('--mutate-attract') // #2700: the shop window seeds go cold again
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT) {
+const MUT_KNEE = ARGS.includes('--mutate-knee') // #2711: the sixth law goes blind to the swing
+const MUT_KNEE_ROUTE = ARGS.includes('--mutate-knee-route') // #2711: loaded carts clip corners again
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES || MUT_WEIGHT || MUT_SLOW || MUT_BANDS || MUT_LADDER || MUT_ADVANCE || MUT_BANK || MUT_RUSH || MUT_PRICE || MUT_AISLE || MUT_DUEL || MUT_LANE || MUT_CORNER || MUT_TEACH || MUT_LANE_TEACH || MUT_SWING || MUT_FLOW || MUT_FLOWHEAT || MUT_DUCK || MUT_MANNERS || MUT_ATTRACT || MUT_KNEE || MUT_KNEE_ROUTE) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const tgt = MUT_MANNERS || MUT_ATTRACT ? new URL('../src/games/FloorBoss/index.jsx', import.meta.url) : sim // #2700: presentation laws plant in the painter
     const src = readFileSync(tgt, 'utf8')
@@ -151,7 +156,11 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS |
                                                                     : MUT_MANNERS
                                                                     ? ['if (duckTaughtOn !== gs) {', 'if (duckTaughtOn !== gs && false) {', 'the first duck never names itself — GIVE WAY stays decoration, the grammar goes unlearned (#2700)']
                                                                     : MUT_ATTRACT
-                                                                    ? ['const ATTRACT_SEEDS = [2053, 102, 241, 412, 858]', 'const ATTRACT_SEEDS = [1337]', 'the shop window is cold again — the demo seed never ducks while a visitor watches (#2700)']
+                                                                    ? ['const ATTRACT_SEEDS = [20, 42, 29, 40, 30]', 'const ATTRACT_SEEDS = [1337]', 'the shop window is cold again — the demo seed never ducks while a visitor watches (#2700 seeds re-measured #2711)']
+                                                                    : MUT_KNEE
+                                                                    ? ['const after = kneeNet(gs, { x, y })', 'const after = kneeNet(gs, null)', 'the sixth law is blind — racks may stand in the swing and sever the knee network (#2711)']
+                                                                    : MUT_KNEE_ROUTE
+                                                                    ? ['if (turn && kneeRack(gs, n.x + hx + dx, n.y + hy + dy)) continue // the knee is racked — the swing would clip it', 'if (false && turn && kneeRack(gs, n.x + hx + dx, n.y + hy + dy)) continue // MUTANT', 'loaded carts clip corners again — the body is gone from the route planner (#2711)']
                                                                     : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(tgt, src.replace(from, to))
@@ -806,9 +815,13 @@ console.log('— shift ladder (#2346) —')
     // every 600-tick mark plus the whistle). The live engine must match at the
     // comma — the hash may differ only by the documented additive shift bits.
     const TRACE = {
-        4242: '600:45:1:0|1200:144:2:0|1800:109:2:0|2400:114:3:0|3000:79:4:0|3600:110:5:0|4200:135:7:0|4800:273:8:0|5400:373:9:0|6000:503:10:0|6600:533:11:0|7200:823:12:0|7800:948:13:0|8400:968:15:0|9000:1395:15:0|END win 1395',
-        1337: '600:45:1:0|1200:118:2:0|1800:138:3:0|2400:93:4:0|3000:53:4:0|3600:122:6:0|4200:147:7:0|4800:2:8:0|5400:130:9:0|6000:697:10:0|6600:727:11:0|7200:1104:13:0|7800:1134:14:0|8400:1397:14:0|9000:1577:16:0|END win 1577',
-        777: '600:50:1:0|1200:50:2:0|1800:20:3:0|2400:45:4:0|3000:50:4:0|3600:21:5:0|4200:26:6:0|4800:46:7:0|5400:427:9:0|6000:457:10:0|6600:798:11:0|7200:913:11:0|7800:938:13:0|8400:1291:15:0|9000:1301:16:0|END win 1301',
+        // #2711 RE-PIN: the knee law routes loaded carts around protruding rack
+        // corners — a real physics change, so the marks move (avg +33, wins hold).
+        // Traces regenerated from the live engine; prior marks belonged to the
+        // point-cart floor (#2346 rig law: literal traces, re-measured, not vibes).
+        4242: '600:45:1:0|1200:144:2:0|1800:109:2:0|2400:114:3:0|3000:79:4:0|3600:110:5:0|4200:135:7:0|4800:263:8:0|5400:496:9:0|6000:541:10:0|6600:739:11:0|7200:854:12:0|7800:979:12:0|8400:989:15:0|9000:1426:16:0|END win 1426',
+        1337: '600:45:1:0|1200:113:2:0|1800:78:3:0|2400:93:4:0|3000:53:4:0|3600:117:6:0|4200:147:7:0|4800:-3:8:0|5400:250:9:0|6000:615:10:0|6600:810:11:0|7200:859:12:0|7800:1210:14:0|8400:1210:14:0|9000:1310:16:0|END win 1310',
+        777: '600:50:1:0|1200:50:2:0|1800:20:3:0|2400:45:4:0|3000:50:4:0|3600:16:5:0|4200:21:6:0|4800:24:7:0|5400:420:9:0|6000:465:10:0|6600:748:11:0|7200:873:12:0|7800:1089:13:0|8400:1414:14:0|9000:1409:15:0|END win 1409',
     }
     let bad = null
     for (const seed of Object.keys(TRACE)) {
@@ -873,7 +886,10 @@ console.log('— shift ladder (#2346) —')
             runs++
             nextShift(gs)
         }
-        ok(runs >= 5, `career seed ${seed}: the ladder climbs rung by rung (${runs} banked${end ? `, the ramp bites: ${end}` : ''})`)
+        // #2711: the knee costs the back of the ladder a night on two seeds
+        // (measured 4–6, was 5–8) — loaded routes around protruding corners
+        // arrive later, and the ramp climbs while they round.
+        ok(runs >= 4, `career seed ${seed}: the ladder climbs rung by rung (${runs} banked${end ? `, the ramp bites: ${end}` : ''})`)
     }
 }
 {
@@ -1103,12 +1119,21 @@ console.log('— no corner stacks (#2627) —')
     {
         const g = mk()
         const spur = [[18, 3], [19, 3], [19, 5], [20, 3], [20, 5], [17, 5], [19, 6], [17, 6], [18, 7]].every(([x, y]) => put(g, x, y) === 'build')
-        ok(spur && put(g, 17, 4) === 'build', 'plugging the south mouth makes it a dead-end spur — one-way by choice, legal (#2546)')
+        // #2711 KNEE law rewrites this ruling on this board: (18,7) is the
+        // throat of shaft (18,5)-(18,6), whose only entry is the straight
+        // through-lane below — plugging the throat strands the shaft, and the
+        // swing into it from (18,4) clips the flank racks at (17,5)/(19,5).
+        // A point-cart could snake it; a loaded cart cannot. The plug is now
+        // refused, and the elbow behind it stays corner-refused.
+        ok(!spur && g.ev.at(-1)?.why === 'knee', 'plugging the south throat is refused — the shaft behind it hangs on a swing the plug clips (#2711 updates #2546 here)')
+        ok(put(g, 17, 4) === 'aisle' && g.ev.at(-1)?.why === 'corner', 'and the elbow stays refused — nothing about the corner law loosened')
     }
     {
         const g = mk()
         const spur = [[18, 3], [19, 3], [19, 5], [20, 3], [20, 5], [17, 5], [19, 6], [17, 6], [21, 4]].every(([x, y]) => put(g, x, y) === 'build')
-        ok(spur && put(g, 17, 4) === 'build', 'plugging the east mouth clears it too — a corner with one way through cannot meet two aisles')
+        ok(spur, 'plugging the east mouth builds — its spur keeps a straight entry, the knee is free')
+        ok(put(g, 17, 4) === 'aisle' && g.ev.at(-1)?.why === 'knee',
+            '…but the elbow click is now the knee’s, not the corner’s (#2711): (17,4) would close the aisle at (18,4), where both swings clip (17,5)/(19,5) and strand corridor (19,4)-(20,4) — the corner law clears the spur, the knee law still refuses')
     }
     {
         const g = mk()
@@ -1150,9 +1175,14 @@ console.log('— teach the elbow (#2627 stage 2) —')
         const g = rig()
         ok(g !== null, 'rig builds clean (fresh mk) — refused click comes next')
         const esc = cornerEscapes(g, 17, 4)
-        const keys = esc.map((m) => `${m.x},${m.y}`)
-        ok(esc.length === 2 && keys.includes('21,4') && keys.includes('18,7'),
-            'the refused elbow teaches its mouths as plugs — (21,4) east, (18,7) south (plugging either spurs the arm, #2546)')
+        // #2711 KNEE law retires both mouth plugs on this rig: (18,7) is
+        // illegal outright (it severs the shaft below the throat, see the
+        // corner-law spur gates above), and (21,4) is legal but no longer
+        // clears the click — with the east mouth plugged, (17,4) is refused
+        // by the knee instead (it would strand corridor (19,4)-(20,4)).
+        // The lesson answers nothing it cannot prove and falls back to
+        // LEAVE THE ELBOW FREE on canvas — adapt, never suggest a refusal.
+        ok(esc.length === 0, 'the knee law retires both plugs on this board — the honest lesson falls back, it never teaches an illegal or useless plug (#2711 updates #2627 s2)')
     }
     {
         const g = rig()
@@ -1194,10 +1224,14 @@ console.log('— teach the elbow (#2627 stage 2) —')
         const seq = [...NEED, [17, 8], [19, 8], [18, 9]]
         const fails = []
         for (const [x, y] of seq) if (put(g, x, y) !== 'build') fails.push([x, y])
-        ok(fails.length === 0, 'pocket-trap rig builds clean — (18,8) hangs behind south mouth (18,7), reachable only through it')
+        ok(fails.length === 1 && fails[0][0] === 18 && fails[0][1] === 9 && g.ev.at(-1)?.why === 'knee',
+            'the trap rig builds until (18,9) — #2711 refuses the cap below the shaft outright (it strands (18,8) on swings clipped by (17,6)/(19,6)), so the trap forms before the click even happens; the pocket-mouth doctrine below still holds')
         const esc = cornerEscapes(g, 17, 4)
         ok(!esc.some((m) => m.x === 18 && m.y === 7), 'the pocket-mouth is never taught — plugging (18,7) would strand (18,8) (#2627 s2 honesty)')
-        ok(esc.some((m) => m.x === 21 && m.y === 4), 'the clean east mouth is still taught — the lesson adapts cell by cell')
+        // #2711: on the trap board the knee law takes the east mouth too
+        // ((21,4) no longer clears the click once the trap floor stands) —
+        // the lesson falls back rather than teach a plug that misfires.
+        ok(esc.length === 0, 'the trap board leaves no provable plug — the lesson falls back to LEAVE THE ELBOW FREE (#2711)')
     }
     {
         // the teacher never teaches a refusal: a mouth that is some rack's
@@ -1211,7 +1245,10 @@ console.log('— teach the elbow (#2627 stage 2) —')
         const esc = cornerEscapes(g, 17, 4)
         const keys = esc.map((m) => `${m.x},${m.y}`)
         ok(!keys.includes('21,4'), 'the mouth served-rack guards is never taught — plugging (21,4) would strand (22,4) (#2627 s2 honesty)')
-        ok(keys.includes('18,7'), 'the other mouth is still taught — the lesson adapts to the board, not a canned pair')
+        // #2711: with (21,4) off the menu, the south plug is next… and the knee
+        // law retired it too (the shaft throat, see the corner-law spur gates) —
+        // nothing is left to prove, and the lesson says nothing it cannot sell.
+        ok(!keys.includes('18,7'), 'the knee law retires the other mouth here too — determinism, not decoration: the lesson adapts to the physics of the board (#2711)')
     }
     {
         // bay escape mirrors #2614: skip a flank rack and there is no elbow
@@ -1264,9 +1301,15 @@ console.log('— teach the lane (#2622) —')
     {
         const g = rig()
         put(g, 18, 3)
-        let bad = 0
-        for (const m of laneEscapes(g, 18, 3)) if (put(g, m.x, m.y) !== 'build') bad++
-        ok(bad === 0, 'every taught plug actually builds — the lesson never recommends a refusal')
+        const esc = laneEscapes(g, 18, 3)
+        // #2711: the two mouths were ALTERNATIVES, never a stack — and the
+        // knee law now enforces that physically: with (13,4) stood, (19,4)
+        // would strand the spur corridor on swings clipped by (19,3)/(19,5).
+        // The first plug builds, the second is the knee's.
+        const r1 = esc.length ? put(g, esc[0].x, esc[0].y) : 'build'
+        const r2 = esc.length > 1 ? put(g, esc[1].x, esc[1].y) : 'build'
+        ok(r1 === 'build' && r2 === 'aisle' && g.ev.at(-1)?.why === 'knee',
+            'the first taught plug builds; the knee law refuses the second on top of it — one spur at a time, the physics says it now (#2711)')
     }
     {
         // single-plug clears: taking EITHER taught mouth alone must clear the click
@@ -1278,8 +1321,14 @@ console.log('— teach the lane (#2622) —')
     {
         const q = mk()
         for (const [x, y] of [...ROW5, ...ROW3]) put(q, x, y)
-        ok(put(q, 13, 4) === 'build' && put(q, 19, 4) === 'build' && put(q, 18, 3) === 'aisle' && q.ev.at(-1)?.why === 'pocket',
-            'plugging BOTH mouths then completing the wall is refused by the pocket law — the sealed aisle belongs to the older laws, so the lesson names one mouth on purpose (#2622)')
+        // #2711: the west plug stands, but the east plug is refused by the
+        // knee before the wall could ever seal — (19,4) would strand corridor
+        // (18,4), whose only swings out clip the flank racks at (19,3)/(19,5).
+        // The aisle never gets sealed, so there is no completing click left to
+        // test — the older laws keep their precedence, the knee just gets
+        // there first on this board.
+        ok(put(q, 13, 4) === 'build' && put(q, 19, 4) === 'aisle' && q.ev.at(-1)?.why === 'knee' && put(q, 18, 3) === 'build',
+            'the west plug spurs; the east plug is knee-refused before the seal — the aisle belongs to the knee now, not to the pocket (#2711 reorders #2622 both-mouths)')
     }
     {
         // pocket-trap: open cell (12,4) hangs behind the west mouth, reachable
@@ -1294,7 +1343,10 @@ console.log('— teach the lane (#2622) —')
         ok(fails.length === 0, 'pocket-trap rig builds clean — (12,4) hangs behind the west mouth (13,4), reachable only through it')
         const keys = laneEscapes(g, 18, 3).map((m) => `${m.x},${m.y}`)
         ok(!keys.includes('13,4'), 'the pocket-mouth is never taught — plugging (13,4) would strand (12,4) (#2622 honesty)')
-        ok(keys.includes('19,4'), 'the other mouth is still taught — the lesson adapts to the board, not a canned pair')
+        // #2711: the knee takes the east mouth too on this board (plugging
+        // (19,4) strands corridor (18,4) on its clipped swings) — the lesson
+        // falls back rather than teach a plug that misfires.
+        ok(!keys.includes('19,4'), 'the knee retires the east mouth on the trap board too — nothing left to prove, nothing taught (#2711)')
     }
     {
         // purity + determinism: same answer twice, board hash unchanged
@@ -1656,7 +1708,10 @@ console.log('— manners polish (#2700, source pins + attract sweep) —')
         while (!g.end && g.tick < 9100) { step(g, [a(g)]); if (first < 0 && g.ducks > startDucks) first = g.tick }
         const won = g.score >= g.params.quota
         detail.push(`${seed}@${first < 0 ? 'never' : first}${won ? '' : ' short'}`)
-        if (!(won && first > 3600 && first < 4500)) allDuck = false
+        // #2711: knee routing defers the first courtesy (~12–35s later than the
+        // point-cart floor measured in #2700) — window widened to 36s of screen
+        // time, still inside the first minute on the shop window.
+        if (!(won && first > 3600 && first < 5800)) allDuck = false
     }
     ok(allDuck, `warm attract floors duck at ${JSON.stringify(detail)} — every demo loop shows courtesy inside the first minute on screen (#2700)`)
 }
@@ -1694,7 +1749,7 @@ console.log('— duel refusal seat stamp (#2622 item 4) —')
     }
     const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
     ok(/type: 'aisle', x, y, why: strand, s: seat/.test(readFileSync(new URL('../src/games/FloorBoss/sim.js', import.meta.url), 'utf8')), 'the sim stamps every aisle refusal with its seat (#2622 item 4)')
-    ok(/gs\.duel && \(e\.why === 'lane' \|\| e\.why === 'corner'\)/.test(ui) && /e\.s === 1 \? 'MODEL' : 'YOU'/.test(ui), 'the painter stamps the refusal seat in the duel chrome — YOU vs MODEL under the amber law (#2622 item 4)')
+    ok(/gs\.duel && \(e\.why === 'lane' \|\| e\.why === 'corner' \|\| e\.why === 'knee'\)/.test(ui) && /e\.s === 1 \? 'MODEL' : 'YOU'/.test(ui), 'the painter stamps the refusal seat in the duel chrome — YOU vs MODEL under the amber law (#2622 item 4, #2711 seat-stamps the knee too)')
 }
 
 // ---- swing paint (#2627 s3) — live elbows carry faint keep-clear paint ----
@@ -1895,5 +1950,109 @@ console.log('— duel seats (#2555) —')
     ok(/players: duel \? 2 : 1/.test(ui) && /\['human', 'model'\]/.test(ui), "the episode records players:2, sources ['human','model'] (#1144 slot two)")
 }
 
+// ---- knee law (#2711) — loaded carts have bodies through the turn ----
+console.log('— knee law (#2711) — swept volumes: geometry, routing, and the sixth placement law —')
+{
+    const mk = () => {
+        const g = makeGame(7); g.score = 9000; g.racks.length = 0; g.auto = false
+        g.robots.forEach((b, i) => { b.x = 23 - i; b.y = 12; b.task = { kind: 'idle' }; b.carry = null; b.path = [] })
+        return g
+    }
+    const put = (g, x, y) => { g.cursor = { x, y }; g.tool = 'rack'; const r = clickCell(g, x, y); if (r === 'build') g.tool = null; return r }
+    // The NEED board: a rack garden whose south throat (18,7) feeds shaft
+    // (18,5)-(18,6). Straight north through the throat is the only ride in —
+    // the swings into (18,4) clip the flank racks at (17,5)/(19,5), and every
+    // reversible route in through the throat dies at (18,7).
+    const NEED = [[18, 3], [19, 3], [19, 5], [20, 3], [20, 5], [17, 5], [19, 6], [17, 6]]
+    const rigN = (extra) => { const g = mk(); for (const [x, y] of NEED) g.racks.push({ x, y, items: [], owner: -1 }); if (extra) g.racks.push({ x: extra[0], y: extra[1], items: [], owner: -1 }); return g }
+    {
+        const g = mk()
+        ok(kneeTurn(g, 10, 10, [1, 0], [1, 0]) === false && kneeTurn(g, 10, 10, [1, 0], [-1, 0]) === false,
+            'straight and backpedal never sweep — only the 90° swing moves the nose onto the diagonal (#2711)')
+        g.racks.push({ x: 10, y: 9, items: [], owner: -1 })
+        ok(kneeTurn(g, 9, 10, [1, 0], [0, -1]) === true, 'east→north at (9,10) with a rack at (10,9): the OUTER diagonal is the sweep, and it is racked')
+        ok(kneeTurn(g, 9, 10, [1, 0], [0, 1]) === false, 'south is the inside of that turn — the tail stays in lane; the diagonal across the swing is the law')
+    }
+    {
+        // routing: the throat at (18,7). With the throat OPEN, a loaded cart
+        // straightens up from below and rides into (18,6); with the throat
+        // RACKED the shaft is unreachable — every turn into (18,4)/(18,5)/(18,6)
+        // clips a flank, and reversals cannot turn corners either.
+        const open = rigN()
+        const pIn = bfsKnee(open, 18, 8, (x, y) => x === 18 && y === 5, null, 0) // facing north at the mouth
+        ok(pIn && pIn.length === 3, `open throat: the shaft ride is a straight three (${pIn ? pIn.length : 'null'}) — straight lines never knee`)
+        const sealed = rigN([18, 7])
+        const pOut = bfsKnee(sealed, 18, 8, (x, y) => x === 18 && y === 5, null, 0)
+        ok(pOut === null, 'throat racked, shaft dead: no knee-legal route exists into (18,5) from below — the law is real routing, not a banner (#2711)')
+        // purity of the answer: every turn on every knee path is knee-clean
+        // (reversals skipped — the body never sweeps in reverse, by law).
+        let dirty = 0
+        const NBv = [[0, -1], [1, 0], [0, 1], [-1, 0]]
+        const dirOf = (a, b) => NBv.find(([dx, dy]) => b.x - a.x === dx && b.y - a.y === dy)
+        const heads = [[18, 8, 0], [16, 8, 1], [22, 4, 3]]
+        for (const [sx, sy, sd] of heads) {
+            const q = bfsKnee(open, sx, sy, (x, y) => x === 18 && y === 5, null, sd)
+            if (!q) continue
+            const cells = [{ x: sx, y: sy }, ...q]
+            for (let i = 1; i < cells.length - 1; i++) {
+                const di = dirOf(cells[i - 1], cells[i]), do2 = dirOf(cells[i], cells[i + 1])
+                if (di[0] === -do2[0] && di[1] === -do2[1]) continue // a reversal leg — legal by the spur doctrine
+                if (kneeTurn(open, cells[i].x, cells[i].y, di, do2)) dirty++
+            }
+        }
+        ok(dirty === 0, 'knee paths never turn where the swing clips a rack — the path IS the law, checked trip by trip (#2711)')
+    }
+    {
+        // the sixth law at the click: plugging the throat strands the shaft.
+        const g = rigN()
+        const score0 = g.score, hash0 = stateHash(g)
+        ok(put(g, 18, 7) === 'aisle' && g.ev.at(-1)?.why === 'knee', 'the click that plugs the throat and strands the shaft is refused (why=knee) (#2711)')
+        ok(g.score === score0 && stateHash(g) === hash0 && !g.racks.some((r) => r.x === 18 && r.y === 7), 'the knee refusal charges nothing and lands nothing — click-point law, zero footprint (#1917)')
+        const was = kneeNet(rigN(), null), after = kneeNet(rigN(), { x: 18, y: 7 })
+        const cut = [...was].filter((k) => !after.has(k) && k !== '18,7').sort().join(' ')
+        ok(cut === '18,5 18,6', `the knee net names exactly what the plug strands: ${cut || 'nothing'} — honest scope, the shaft and nothing else (#2711)`)
+    }
+    {
+        // the law deepens with the floor: once the shaft has racks on both
+        // flanks, sealing its mouth from BELOW is the same severment — the
+        // shaft's last knee-rideable exit goes, and the net says so.
+        const g = mk()
+        for (const [x, y] of [...NEED, [17, 8], [19, 8]]) put(g, x, y)
+        ok(put(g, 18, 9) === 'aisle' && g.ev.at(-1)?.why === 'knee', 'with the shaft walled, the click that seals its mouth from below is refused too — one cell, both directions, knee law (#2711)')
+    }
+    {
+        // live knees: the grammar reads on any board before any refusal fires.
+        const g = rigN()
+        const lk = liveKnees(g)
+        ok(lk.some((k) => k.kx === 17 && k.ky === 5 && (k.x === 18 || k.x === 17) && (k.y === 4 || k.y === 5)), 'liveKnees finds the clipped flanks of the throat garden — the knee is visible before the banner (#2711)')
+        const h0 = stateHash(g)
+        ok(JSON.stringify(liveKnees(g)) === JSON.stringify(lk) && stateHash(g) === h0, 'liveKnees is pure — same answer twice, board hash unchanged (#1917)')
+    }
+    {
+        // determinism twins + curated innocence: the autopilot economy transfers.
+        let wins = 0, jams = 0, kneeEv = 0
+        for (const seed of [4242, 1337, 777, 7, 99, 2, 12]) {
+            const gs = makeGame(seed); const ap = createAutopilot()
+            while (!gs.end && gs.tick < SHIFT + 10) { step(gs, [ap(gs)]); jams += gs.ev.filter((e) => e.type === 'jam').length; kneeEv += gs.ev.filter((e) => e.type === 'aisle' && e.why === 'knee').length }
+            if (gs.end === 'win') wins++
+        }
+        ok(wins >= 6 && jams === 0, `autopilot wins ${wins}/7 with zero jams on the knee floor — the win proof transfers, the knee never wedges a lawful floor (#2711)`)
+        ok(kneeEv === 0, 'curated expansion never stands in a swing — the sixth law stays a defense, never a tax on the demo floor (#2711)')
+        const t1 = makeGame(4242), t2 = makeGame(4242)
+        const a1 = createAutopilot(), a2 = createAutopilot()
+        let same = true
+        for (let t = 0; t < 2000; t++) { step(t1, [a1(t1)]); step(t2, [a2(t2)]); if (stateHash(t1) !== stateHash(t2)) same = false }
+        ok(same, 'twin autopilots stay byte-identical through 2000 ticks — the knee is pure geometry, no rng (#2711)')
+    }
+    {
+        // presentation pins: the banner, the keep-clear box, the body, the eye.
+        const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+        ok(/NO KNEE — RACKED THE SWING/.test(ui), 'the painter names NO KNEE on screen — the sixth law speaks (#2711)')
+        ok(ui.indexOf('paintTeach(tick)') < ui.indexOf('paintKnee(tick)'), 'the knee keep-clear rides above the lesson layer — the loudest truth last, in amber (#2711)')
+        ok(/SWING/.test(ui) && /paintKnee/.test(ui), 'the refused swing gets its keep-clear box on the canvas (#2711)')
+        ok(/rgba\(255,210,63,0\.4\)/.test(ui), 'loaded carts carry an amber nose on the leading edge — the sweeping cell is visible at a glance (#2711)')
+        ok(/knees: \(\) => liveKnees\(gs\)/.test(ui), 'the DEV eye reads live knees for the browser gate (#2711)')
+    }
+}
 console.log(fails ? `\nFLOOR BOSS CHECK: ${fails} FAILED` : '\nFLOOR BOSS CHECK: all green')
 process.exit(fails ? 1 : 0)

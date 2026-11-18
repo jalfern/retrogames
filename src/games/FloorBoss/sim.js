@@ -615,10 +615,11 @@ export function kneeNet(gs, extra) {
                 const [dx, dy] = NB[i]
                 const [hx, hy] = NB[n.i]
                 if (!floor(n.x + dx, n.y + dy)) continue
-                const turn = (hx !== dx || hy !== dy) && !(hx === -dx && hy === -dy) // backpedal free, #2546 spur law
+                const back = hx === -dx && hy === -dy // backpedal — legal, never sweeps (forklifts drive both ways)
+                const turn = !back && (hx !== dx || hy !== dy)
                 if (turn && kneeRack(gs, n.x + hx + dx, n.y + hy + dy, extra)) continue // the swing clips the rack
-                const k = `${n.x + dx},${n.y + dy},${i}`
-                if (!seen.has(k)) { seen.add(k); next.push({ x: n.x + dx, y: n.y + dy, i }) }
+                const k = `${n.x + dx},${n.y + dy},${back ? n.i : i}` // the body never rotates on a reverse
+                if (!seen.has(k)) { seen.add(k); next.push({ x: n.x + dx, y: n.y + dy, i: back ? n.i : i }) }
             }
         }
         frontier = next
@@ -638,11 +639,11 @@ export function liveKnees(gs) {
         if (!open(x, y)) continue
         for (let i = 0; i < 4; i++) {
             const [ix, iy] = NB[i]
-            if (!open(x + ix, y + iy)) continue
+            if (!open(x - ix, y - iy)) continue // the arrival arm: a cart comes INTO B from B − dIn
             for (let j = 0; j < 4; j++) {
                 const [ox, oy] = NB[j]
                 if (ix === ox && iy === oy) continue // straight — no sweep
-                if (ix === -ox && iy === -oy) continue // backpedal — body stays in lane
+                if (ix === -ox && iy === -oy) continue // backpedal — body stays in lane (and never in a plan)
                 if (!open(x + ox, y + oy)) continue
                 if (gs.racks.some((r) => r.x === x + ix + ox && r.y === y + iy + oy)) out.push({ x, y, in: i, out: j, kx: x + ix + ox, ky: y + iy + oy })
             }
@@ -763,18 +764,15 @@ export function bfsKnee(gs, fx, fy, pred, ignoreId, dIn0) {
                 const [dx, dy] = NB[i]
                 const [hx, hy] = NB[n.i]
                 const x = n.x + dx, y = n.y + dy
-                const k = `${x},${y},${i}`
-                if (!inGrid(x, y) || seen.has(k)) continue
+                if (!inGrid(x, y)) continue
                 if (blocked(gs, x, y, ignoreId)) continue
-                // straight — free; backpedal — free too (forklifts drive both
-                // ways, load trailing, and #2546 already blesses the reverse
-                // out of a spur). Only the 90° swing sweeps: the diagonal.
-                const turn = (hx !== dx || hy !== dy) && !(hx === -dx && hy === -dy)
+                const back = hx === -dx && hy === -dy // backpedal — legal: forklifts drive both ways, load trailing; the knee never sweeps the reverse
+                const turn = !back && (hx !== dx || hy !== dy)
                 if (turn && kneeRack(gs, n.x + hx + dx, n.y + hy + dy)) continue // the knee is racked — the swing would clip it
                 const p = n.path.concat([{ x, y }])
                 if (pred(x, y)) return p
-                seen.add(k)
-                next.push({ x, y, i, path: p })
+                const k2 = `${x},${y},${back ? n.i : i}` // reversing keeps the facing — the body never rotates
+                if (!seen.has(k2)) { seen.add(k2); next.push({ x, y, i: back ? n.i : i, path: p }) }
             }
         }
         frontier = next
